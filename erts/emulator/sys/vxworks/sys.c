@@ -90,6 +90,7 @@ EXTERN_FUNCTION(int, next_time, (_VOID_));
 EXTERN_FUNCTION(int, send_error_to_logger, (Eterm));
 EXTERN_FUNCTION(void, set_reclaim_free_function, (FreeFunction));
 EXTERN_FUNCTION(int, erl_mem_info_get, (MEM_PART_STATS *));
+EXTERN_FUNCTION(void, erl_crash_dump, (char* file, int line, char* fmt, ...));
 
 #define NULLTV  ((struct timeval *) 0)
 #define NULLFDS ((struct fd_set *) 0)
@@ -208,6 +209,12 @@ void erts_sys_alloc_init(void)
 #ifdef DEBUG
     printf("emulator task id = 0x%x\n", erlang_id);
 #endif
+}
+
+void
+erts_sys_pre_init(void)
+{
+
 }
 
 void
@@ -2633,7 +2640,7 @@ erl_assert_error(char* expr, char* file, int line)
     fprintf(stderr, "Assertion failed: %s in %s, line %d\n",
 	    expr, file, line);
     fflush(stderr);
-    erl_crash_dump(NULL, NULL);
+    erl_crash_dump(file, line, "Assertion failed: %s\n", expr);
     abort();
 }
 void

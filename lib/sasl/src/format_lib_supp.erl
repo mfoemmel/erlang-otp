@@ -17,13 +17,14 @@
 %%
 -module(format_lib_supp).
 
-%%%--------------------------------------------------------------------------
+%%%---------------------------------------------------------------------
 %%% Description:
-%%% This module contains generic formatting functions for the SUPPort tools. 
+%%% This module contains generic formatting functions for the SUPPort
+%%% tools. 
 %%% The main parts are:
-%%% 1) print_info.  Prints information tagged by 'header', 'data', 'table',
-%%%    'items' and 'newline'.
-%%%---------------------------------------------------------------------------
+%%% 1) print_info.  Prints information tagged by 'header', 'data',
+%%%    'table', 'items' and 'newline'.
+%%%---------------------------------------------------------------------
 
 %% intermodule exports
 -export([print_info/2, print_info/3]).
@@ -31,14 +32,14 @@
 %% exports for use within module
 -export([maxcol/2]).
 
-%%-----------------------------------------------------------------
+%%---------------------------------------------------------------------
 %% Format is an ordered list of:
 %%   {header, HeaderString}
 %%   {data, List_Of_KeyValue_tuples}
 %%        The KeyValues_tuples will be printed on one line
 %%        (if possible); 'Key:     Value'.
-%%        Elements in the list may also be single terms, which are printed
-%%        as they are.
+%%        Elements in the list may also be single terms, which are
+%%        printed as they are.
 %%   {table, {TableName, ColumnNames, Columns}}
 %%        ColumnNames is a tuple of names for the columns, and
 %%        Columns is a list, where each element is a tuple of
@@ -69,7 +70,7 @@ print_header2(Device, Line, Header) ->
     io:format(Device, Format1, [Header]),
     io:format(Device, Format2, [$=]).
     
-print_format(Device, Line, []) ->
+print_format(Device, _Line, []) ->
     io:format(Device, '~n', []);
 print_format(Device, Line, [{data, Data}|T]) ->
     print_data(Device, Line, Data),
@@ -106,8 +107,6 @@ print_newlines(Device, N) when N > 0 ->
     print_newlines(Device, N-1).
 
 print_one_line(Device, Line, Key, Value) ->
-    HalfLine = Line div 2,			% FIXME: HalfLine not used!
-%    StrKey = lists:append(term_to_string(Key), ":"),
     StrKey = term_to_string(Key),
     KeyLen = lists:min([length(StrKey), Line]),
     ValueLen = Line - KeyLen,
@@ -123,7 +122,6 @@ print_one_line(Device, Line, Key, Value) ->
 	    io:format(Device, "~n         ", []),
 	    Format3 = lists:concat(["~", Line, ".9p~n"]),
 	    io:format(Device, Format3, [Value])
-%	    io:put_chars(Device, print_term(Value, "        ", true, Line)),
     end.
 
 term_to_string(Value) ->
@@ -146,7 +144,7 @@ print_items(Device, Line, Name, Items) ->
     print_one_line(Device, Line, Name, " "),
     print_item_elements(Device, Line, Items).
 
-print_item_elements(Device, Line, []) -> ok;
+print_item_elements(_Device, _Line, []) -> ok;
 print_item_elements(Device, Line, [{Key, Value}|T]) ->
     print_one_line(Device, Line, lists:concat(["   ", Key]), Value),
     print_item_elements(Device, Line, T).
@@ -182,11 +180,14 @@ print_table(Device, Line, TableName, _TupleOfColumnNames, []) ->
 
 print_table(Device, Line, TableName, TupleOfColumnNames, ListOfTuples) 
                 when list(ListOfTuples), tuple(TupleOfColumnNames) ->
-    case is_correct_column_length(size(TupleOfColumnNames), ListOfTuples) of
+    case is_correct_column_length(size(TupleOfColumnNames),
+				  ListOfTuples) of
 	true -> 
 	    print_one_line(Device, Line, TableName, " "),
 	    ListOfColumnNames = tuple_to_list(TupleOfColumnNames),
-	    ListOfLists = lists:map(fun(Tuple) -> tuple_to_list(Tuple) end,
+	    ListOfLists = lists:map(fun(Tuple) ->
+					    tuple_to_list(Tuple)
+				    end,
 				    ListOfTuples),
 	    ColWidths = find_max_col([ListOfColumnNames |
 				      ListOfLists],
@@ -196,12 +197,15 @@ print_table(Device, Line, TableName, TupleOfColumnNames, ListOfTuples)
 					      end,
 					      ColWidths), "~n"]),
 	    io:format(Device, Format, ListOfColumnNames),
-	    io:format(Device, lists:concat(['~', extra_space_between_columns(),
-					    'c', '~', lists:sum(ColWidths)
-					    + (length(ColWidths) - 1)
-					    * extra_space_between_columns(),
-					    'c~n']), [$ , $-]),
-	    lists:foreach(fun(List) -> print_row(List, Device, Format) end,
+	    io:format(Device,
+		      lists:concat(['~', extra_space_between_columns(),
+				    'c', '~', lists:sum(ColWidths)
+				    + (length(ColWidths) - 1)
+				    * extra_space_between_columns(),
+				    'c~n']), [$ , $-]),
+	    lists:foreach(fun(List) ->
+				  print_row(List, Device, Format)
+			  end,
 			  ListOfLists),
 	    io:format(Device, '~n', []),
 	    true;
@@ -214,7 +218,6 @@ print_table(Device, Line, TableName, TupleOfColumnNames, ListOfTuples)
 %% Device MUST be 2nd arg because of extraarg ni foreach...
 %%--------------------------------------------------
 print_row(Row, Device, Format) ->
-    io:format(Device, Format, lists:map(fun(Term) -> term_to_string(Term) end,
-					Row)).
-
-
+    io:format(Device, Format,
+	      lists:map(fun(Term) -> term_to_string(Term) end,
+			Row)).

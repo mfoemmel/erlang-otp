@@ -58,11 +58,11 @@
 %% Effect   : Functions demanded by the gen_server module. 
 %%------------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-handle_info(Info, State) ->
-    ?debug_print("INFO: ~p~n", [Info]),
+handle_info(_Info, State) ->
+    ?debug_print("INFO: ~p~n", [_Info]),
     {noreply, State}.
 
 %%----------------------------------------------------------%
@@ -75,7 +75,7 @@ init([Timer]) ->
     timer:start(),
     {ok, ?get_InitState(Timer)}.
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------
@@ -98,7 +98,7 @@ register(OE_THIS, State, EventInterface, Data) ->
 %% Arguments: TimerEventHandler - objref#
 %% Returns  : ok
 %%-----------------------------------------------------------
-unregister(OE_THIS, State, TimerEventHandler) ->
+unregister(_OE_THIS, State, TimerEventHandler) ->
     catch corba:dispose(TimerEventHandler),
     {reply, ok, State}.
 
@@ -107,7 +107,7 @@ unregister(OE_THIS, State, TimerEventHandler) ->
 %% Arguments: TimerEvent - #'CosTimerEvent_TimerEventT'{utc, event_data}
 %% Returns  : CosTime::UTO
 %%-----------------------------------------------------------
-event_time(OE_THIS, State, #'CosTimerEvent_TimerEventT'{utc=Utc}) ->
+event_time(_OE_THIS, State, #'CosTimerEvent_TimerEventT'{utc=Utc}) ->
     {reply,  'CosTime_UTO':oe_create([Utc],[{pseudo,true}]), State}.
 
 

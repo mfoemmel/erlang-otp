@@ -25,9 +25,9 @@
 -export([raw_latency/2,
 	 war_latency/2,
 	 waw_latency/2,
-	 m_raw_latency/2,
-	 m_war_latency/2,
-	 m_waw_latency/2,
+	 %% m_raw_latency/2,
+	 %% m_war_latency/2,
+	 %% m_waw_latency/2,
 	 m_raw_latency/0,
 	 m_war_latency/0,
 	 m_waw_latency/0,
@@ -58,7 +58,7 @@ init_resources(_Size) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init_instr_resources(N,Nodes) ->
-    ultra_instr_rsrcs(Nodes,hipe_vectors:init(N)).
+    ultra_instr_rsrcs(Nodes,hipe_vectors:new(N, '')).
 
 ultra_instr_rsrcs([],I_res) -> I_res;
 ultra_instr_rsrcs([N|Ns],I_res) ->
@@ -187,14 +187,14 @@ waw_latency(_I0,_I1) ->
 %% At present, all load/stores are assumed to hit in the L1 cache,
 %% which isn't really satisfying.
 
-m_raw_latency(_St,_Ld) ->
-    1.
-
-m_war_latency(_Ld,_St) ->
-    1.
-
-m_waw_latency(_St1,_St2) ->
-    1.
+%% m_raw_latency(_St,_Ld) ->
+%%     1.
+%% 
+%% m_war_latency(_Ld,_St) ->
+%%     1.
+%% 
+%% m_waw_latency(_St1,_St2) ->
+%%     1.
 
 %% Use these for 'default latencies' = do not permit reordering.
 

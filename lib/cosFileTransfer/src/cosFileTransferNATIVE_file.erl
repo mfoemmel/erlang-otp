@@ -74,11 +74,11 @@
 %% Returns  : {ok, Ref} | {error, ehost} for future use
 %% Effect   : 
 %%----------------------------------------------------------------------
-open(Host) ->
+open(_Host) ->
     {ok, 'NATIVE'}.
-open(Host, Port) ->
+open(_Host, _Port) ->
     {ok, 'NATIVE'}.
-open(Host, Port, Flags) ->
+open(_Host, _Port, _Flags) ->
     {ok, 'NATIVE'}.
 
 %%----------------------------------------------------------------------
@@ -88,7 +88,7 @@ open(Host, Port, Flags) ->
 %% Returns  : ok | {error, euser | econn} for future use
 %% Effect   : 
 %%----------------------------------------------------------------------
-user(Ref, User, Password) ->
+user(_Ref, _User, _Password) ->
     ok.
 
 %%----------------------------------------------------------------------
@@ -97,7 +97,7 @@ user(Ref, User, Password) ->
 %% Returns  : {ok, string()} | {error, elogin | econn}
 %% Effect   : 
 %%----------------------------------------------------------------------
-pwd(Ref) ->
+pwd(_Ref) ->
     case file:get_cwd() of
 	{ok, Cwd} ->
 	    {ok, Cwd};
@@ -112,7 +112,7 @@ pwd(Ref) ->
 %% Returns  : ok | {error, epath | elogin | econn}
 %% Effect   : 
 %%----------------------------------------------------------------------
-cd(Ref, Dir) ->
+cd(_Ref, Dir) ->
     case file:set_cwd(Dir) of
 	ok ->
 	    ok;
@@ -127,11 +127,11 @@ cd(Ref, Dir) ->
 %% Returns  : ok | {error, epath}
 %% Effect   : 
 %%----------------------------------------------------------------------
-mkdir(Ref, Dir) ->
+mkdir(_Ref, Dir) ->
     case file:make_dir(Dir) of
 	ok ->
 	    ok;
-	{error, Reason} ->
+	{error, _Reason} ->
 	    {error, epath}
     end.
 	    
@@ -142,11 +142,11 @@ mkdir(Ref, Dir) ->
 %% Returns  : ok | {error, epath}
 %% Effect   : 
 %%----------------------------------------------------------------------
-rmdir(Ref, Dir) ->
+rmdir(_Ref, Dir) ->
     case file:del_dir(Dir) of
 	ok ->
 	    ok;
-	 {error, Reason} ->
+	 {error, _Reason} ->
 	    {error, epath}
     end.
 	    
@@ -157,37 +157,37 @@ rmdir(Ref, Dir) ->
 %% Returns  : {ok, Listing} | {error, epath | elogin | econn}
 %% Effect   : 
 %%----------------------------------------------------------------------
-nlist(Ref) ->
+nlist(_Ref) ->
     case file:get_cwd() of
 	{ok, Cwd} ->
 	    %% Here we can assume that it's a Directory is tested.
-	    convert_to_nlist(file:list_dir(Cwd), Cwd);
+	    convert_to_nlist(file:list_dir(Cwd));
 	_ ->
 	    {error, epath}
     end.
-nlist(Ref, Dir) ->
+nlist(_Ref, Dir) ->
     case file:list_dir(Dir) of
 	{error, _} ->
 	    %% Might be a File
 	    case file:read_file_info(Dir) of
 		{ok, _} ->
-		    convert_to_nlist_helper([Dir], Dir, []);
+		    convert_to_nlist_helper([Dir], []);
 		_ ->
 		    {error, epath}  
 	    end;
 	{ok, Content} ->
-	    convert_to_nlist_helper(Content, Dir, [])
+	    convert_to_nlist_helper(Content, [])
     end.
 
-convert_to_nlist({error, _}, _) ->
+convert_to_nlist({error, _}) ->
     {error, epath};
-convert_to_nlist({ok, Content}, Dir) ->
-    convert_to_nlist_helper(Content, Dir, []).
+convert_to_nlist({ok, Content}) ->
+    convert_to_nlist_helper(Content, []).
 
-convert_to_nlist_helper([], _, Acc) ->
+convert_to_nlist_helper([], Acc) ->
     {ok, lists:concat(Acc)};
-convert_to_nlist_helper([H|T], Dir, Acc) ->
-    convert_to_nlist_helper(T, Dir, [Dir, "/", H, "\r\n"|Acc]).
+convert_to_nlist_helper([H|T], Acc) ->
+    convert_to_nlist_helper(T, [H, "\r\n"|Acc]).
 
 %%----------------------------------------------------------------------
 %% function : delete
@@ -196,11 +196,11 @@ convert_to_nlist_helper([H|T], Dir, Acc) ->
 %% Returns  : ok | {error, epath}
 %% Effect   : 
 %%----------------------------------------------------------------------
-delete(Ref, File) ->
+delete(_Ref, File) ->
     case file:delete(File) of
 	ok ->
 	    ok;
-	 {error, Reason} ->
+	 {error, _Reason} ->
 	    {error, epath}
     end.
   
@@ -210,9 +210,9 @@ delete(Ref, File) ->
 %% Returns  : ok | {error, epath | elogin | econn}
 %% Effect   : 
 %%----------------------------------------------------------------------
-recv(Ref, Remote) ->
+recv(_Ref, _Remote) ->
     ok.
-recv(Ref, Remote, Local) ->
+recv(_Ref, Remote, Local) ->
     copy_file(Remote, Local).
 
 %%----------------------------------------------------------------------
@@ -221,9 +221,9 @@ recv(Ref, Remote, Local) ->
 %% Returns  : ok | {error, epath | elogin | econn | etnospc | epnospc | efnamena}
 %% Effect   : 
 %%----------------------------------------------------------------------
-send(Ref, Local) -> 
+send(_Ref, _Local) -> 
     ok.
-send(Ref, Local, Remote) -> 
+send(_Ref, Local, Remote) -> 
     copy_file(Local, Remote).
 
 %%----------------------------------------------------------------------
@@ -245,7 +245,7 @@ close(_) ->
 %% Returns  : ok
 %% Effect   : 
 %%----------------------------------------------------------------------
-insert(Ref, Source, Target, Offset) ->
+insert(_Ref, Source, Target, Offset) ->
     case file:open(Source, [raw, binary, read]) of
 	{ok, SourceDev} ->
 	    case file:open(Target, [raw, binary, read, write]) of
@@ -270,7 +270,7 @@ insert_file_helper(SourceDev, TargetDev, SSize, TSize, Offset) ->
     insert_data(SourceDev, TargetDev, 0, Offset, BuffSize),
     file:close(SourceDev),
     file:close(TargetDev).
-move_data(F, RLocation, WLocation, Counter, BuffSize) when Counter == 0 ->
+move_data(_F, _RLocation, _WLocation, Counter, _BuffSize) when Counter == 0 ->
     ok;
 move_data(F, RLocation, WLocation, Counter, BuffSize) when Counter =< BuffSize ->
     case file:pread(F, RLocation-Counter, Counter) of
@@ -323,7 +323,7 @@ copy_file_helper(SourceDev, TargetDev, BuffSize) ->
 	{0, _} ->
 	    file:close(SourceDev),
 	    file:close(TargetDev);
-	{N, Bin} ->
+	{_N, Bin} ->
 	    case  file:write(TargetDev, Bin) of
 		ok ->
 		    copy_file_helper(SourceDev, TargetDev, BuffSize);

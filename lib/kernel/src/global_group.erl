@@ -23,7 +23,8 @@
 
 %% External exports
 -export([start/0, start_link/0, stop/0, init/1]).
--export([handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([handle_call/3, handle_cast/2, handle_info/2, 
+	 terminate/2, code_change/3]).
 
 -export([global_groups/0]).
 -export([monitor_nodes/1]).
@@ -147,7 +148,7 @@ request(Req, Time) ->
     case whereis(global_group) of
 	P when pid(P) ->
 	    gen_server:call(global_group, Req, Time);
-	Other -> 
+	_Other -> 
 	    {error, global_group_not_runnig}
     end.
 
@@ -202,7 +203,7 @@ init([]) ->
 	{ok, NodeGrps} ->
 	    {DefGroupName, PubTpGrp, DefNodes, DefOther} = 
 		case catch config_scan(NodeGrps, publish_type) of
-		    {error, Error2} ->
+		    {error, _Error2} ->
 			update_publish_nodes(PT),
 			exit({error, {'invalid global_groups definition', NodeGrps}});
 		    {DefGroupNameT, PubType, DefNodesT, DefOtherT} ->
@@ -229,7 +230,7 @@ init([]) ->
 %%% a release upgrade. It can also be ordered if somthing has made the nodes
 %%% to disagree of the global_groups definition.
 %%%====================================================================================
-handle_call(sync, From, S) ->
+handle_call(sync, _From, S) ->
 %    io:format("~p sync ~p~n",[node(), application:get_env(kernel, global_groups)]),
     case application:get_env(kernel, global_groups) of
 	undefined ->
@@ -241,7 +242,7 @@ handle_call(sync, From, S) ->
 	{ok, NodeGrps} ->
 	    {DefGroupName, PubTpGrp, DefNodes, DefOther} = 
 		case catch config_scan(NodeGrps, publish_type) of
-		    {error, Error2} ->
+		    {error, _Error2} ->
 			exit({error, {'invalid global_groups definition', NodeGrps}});
 		    {DefGroupNameT, PubType, DefNodesT, DefOtherT} ->
 			update_publish_nodes(S#state.publish_type, {PubType, DefNodesT}),
@@ -266,12 +267,12 @@ handle_call(sync, From, S) ->
 %%%
 %%% Get the names of the global groups
 %%%====================================================================================
-handle_call(global_groups, From, S) ->
+handle_call(global_groups, _From, S) ->
     Result = case S#state.sync_state of
 		 no_conf ->
 		     undefined;
 		 synced ->
-		     Other = lists:foldl(fun({N,L}, Acc) -> Acc ++ [N]
+		     Other = lists:foldl(fun({N,_L}, Acc) -> Acc ++ [N]
 					 end,
 					 [], S#state.other_grps),
 		     {S#state.group_name, Other}
@@ -298,7 +299,7 @@ handle_call({monitor_nodes, Flag}, {Pid, _}, StateIn) ->
 %%%
 %%% Get a list of nodes in the own global group
 %%%====================================================================================
-handle_call(own_nodes, From, S) ->
+handle_call(own_nodes, _From, S) ->
     Nodes = case S#state.sync_state of
 		no_conf ->
 		    [node() | nodes()];
@@ -316,7 +317,7 @@ handle_call(own_nodes, From, S) ->
 %%%
 %%% Get the registered names from a specified Node, or GlobalGroupName.
 %%%====================================================================================
-handle_call({registered_names, {group, Group}}, From, S) when Group == S#state.group_name ->
+handle_call({registered_names, {group, Group}}, _From, S) when Group == S#state.group_name ->
     Res = global:registered_names(),
     {reply, Res, S};
 handle_call({registered_names, {group, Group}}, From, S) ->
@@ -331,7 +332,7 @@ handle_call({registered_names, {group, Group}}, From, S) ->
 	    put(registered_names, [{Pid, From} | Wait]),
 	    {noreply, S}
     end;
-handle_call({registered_names, {node, Node}}, From, S) when Node == node() ->
+handle_call({registered_names, {node, Node}}, _From, S) when Node == node() ->
     Res = global:registered_names(),
     {reply, Res, S};
 handle_call({registered_names, {node, Node}}, From, S) ->
@@ -367,7 +368,7 @@ handle_call({send, Name, Msg}, From, S) ->
 	    {reply, Found, S}
     end;
 %% Search in the specified global group, which happens to be the own group.
-handle_call({send, {group, Grp}, Name, Msg}, From, S) when Grp == S#state.group_name ->
+handle_call({send, {group, Grp}, Name, Msg}, _From, S) when Grp == S#state.group_name ->
     case global:whereis_name(Name) of
 	undefined ->
 	    {reply, {badarg, {Name, Msg}}, S};
@@ -419,7 +420,7 @@ handle_call({whereis_name, Name}, From, S) ->
 	    {reply, Found, S}
     end;
 %% Search in the specified global group, which happens to be the own group.
-handle_call({whereis_name, {group, Group}, Name}, From, S) 
+handle_call({whereis_name, {group, Group}, Name}, _From, S) 
   when Group == S#state.group_name ->
     Res = global:whereis_name(Name),
     {reply, Res, S};
@@ -449,10 +450,10 @@ handle_call({whereis_name, {node, Node}, Name}, From, S) ->
 %%% The node is not resynced automatically because it would cause this node to
 %%% be disconnected from those nodes not yet been upgraded.
 %%%====================================================================================
-handle_call({global_groups_changed, NewPara}, From, S) ->
+handle_call({global_groups_changed, NewPara}, _From, S) ->
     {NewGroupName, PubTpGrp, NewNodes, NewOther} = 
 	case catch config_scan(NewPara, publish_type) of
-	    {error, Error2} ->
+	    {error, _Error2} ->
 		exit({error, {'invalid global_groups definition', NewPara}});
 	    {DefGroupName, PubType, DefNodes, DefOther} ->
 		update_publish_nodes(S#state.publish_type, {PubType, DefNodes}),
@@ -491,11 +492,11 @@ handle_call({global_groups_changed, NewPara}, From, S) ->
 %%% The node is not resynced automatically because it would cause this node to
 %%% be disconnected from those nodes not yet been upgraded.
 %%%====================================================================================
-handle_call({global_groups_added, NewPara}, From, S) ->
+handle_call({global_groups_added, NewPara}, _From, S) ->
 %    io:format("### global_groups_changed, NewPara ~p ~n",[NewPara]),
     {NewGroupName, PubTpGrp, NewNodes, NewOther} = 
 	case catch config_scan(NewPara, publish_type) of
-	    {error, Error2} ->
+	    {error, _Error2} ->
 		exit({error, {'invalid global_groups definition', NewPara}});
 	    {DefGroupName, PubType, DefNodes, DefOther} ->
 		update_publish_nodes(S#state.publish_type, {PubType, DefNodes}),
@@ -534,8 +535,8 @@ handle_call({global_groups_added, NewPara}, From, S) ->
 %%%====================================================================================
 %%% global_groups parameter removed
 %%%====================================================================================
-handle_call({global_groups_removed, NewPara}, From, S) ->
-%    io:format("### global_groups_removed, NewPara ~p ~n",[NewPara]),
+handle_call({global_groups_removed, _NewPara}, _From, S) ->
+%    io:format("### global_groups_removed, NewPara ~p ~n",[_NewPara]),
     update_publish_nodes(S#state.publish_type),
     NewS = S#state{sync_state = no_conf, group_name = [], nodes = [], 
 		   sync_error = [], no_contact = [], 
@@ -548,7 +549,7 @@ handle_call({global_groups_removed, NewPara}, From, S) ->
 %%% belong to the same global group.
 %%% It could happen that our node is not yet updated with the new node_group parameter
 %%%====================================================================================
-handle_call({ng_add_check, Node, PubType, OthersNG}, From, S) ->
+handle_call({ng_add_check, Node, PubType, OthersNG}, _From, S) ->
     %% Check which nodes are already updated
     OwnNG = get_own_nodes(),
     case S#state.group_publish_type == PubType of
@@ -574,7 +575,7 @@ handle_call({ng_add_check, Node, PubType, OthersNG}, From, S) ->
 %%%====================================================================================
 %%% Misceleaneous help function to read some variables
 %%%====================================================================================
-handle_call(info, From, S) ->    
+handle_call(info, _From, S) ->    
     Reply = [{state,          S#state.sync_state},
 	     {own_group_name, S#state.group_name},
 	     {own_group_nodes, get_own_nodes()},
@@ -587,7 +588,7 @@ handle_call(info, From, S) ->
 
     {reply, Reply, S};
 
-handle_call(get, From, S) ->
+handle_call(get, _From, S) ->
     {reply, get(), S};
 
 
@@ -599,24 +600,24 @@ handle_call({registered_names_test, {node, 'test3844zty'}}, From, S) ->
     Wait = get(registered_names),
     put(registered_names, [{Pid, From} | Wait]),
     {noreply, S};
-handle_call({registered_names_test, {node, Node}}, From, S) ->
+handle_call({registered_names_test, {node, _Node}}, _From, S) ->
     {reply, {error, illegal_function_call}, S};
 handle_call({send_test, Name, 'test3844zty'}, From, S) ->
     Pid = global_search:start(send_test, 'test3844zty'),
     Wait = get(send),
     put(send, [{Pid, From, Name, 'test3844zty'} | Wait]),
     {noreply, S};
-handle_call({send_test, Name, Msg }, From, S) ->
+handle_call({send_test, _Name, _Msg }, _From, S) ->
     {reply, {error, illegal_function_call}, S};
 handle_call({whereis_name_test, 'test3844zty'}, From, S) ->
     Pid = global_search:start(whereis_test, 'test3844zty'),
     Wait = get(whereis_name),
     put(whereis_name, [{Pid, From} | Wait]),
     {noreply, S};
-handle_call({whereis_name_test, Name}, From, S) ->
+handle_call({whereis_name_test, _Name}, _From, S) ->
     {reply, {error, illegal_function_call}, S};
 
-handle_call(Call, From, S) ->
+handle_call(Call, _From, S) ->
 %    io:format("***** handle_call ~p~n",[Call]),
     {reply, {illegal_message, Call}, S}.
     
@@ -760,7 +761,7 @@ handle_cast({conf_check, Vsn, Node, From, sync, CCName, PubType, CCNodes}, S) ->
 	    %%---------------------------------
 	    {ok, NodeGrps} ->
 		case catch config_scan(NodeGrps, publish_type) of
-		    {error, Error2} ->
+		    {error, _Error2} ->
 			%% Our node_group definition was erroneous
 			disconnect_nodes([Node]),
 			{global_group_check, Node} ! {config_error, Vsn, From, node()},
@@ -797,8 +798,8 @@ handle_cast({conf_check, Vsn, Node, From, sync, CCName, PubType, CCNodes}, S) ->
     {noreply, NS};
 
 
-handle_cast(Cast, S) ->
-%    io:format("***** handle_cast ~p~n",[Cast]),
+handle_cast(_Cast, S) ->
+%    io:format("***** handle_cast ~p~n",[_Cast]),
     {noreply, S}.
     
 
@@ -912,15 +913,18 @@ handle_info({'EXIT', ExitPid, Reason}, S) ->
     {noreply, S};
 
 
-handle_info(Info, S) ->
-%    io:format("***** handle_info = ~p~n",[Info]),
+handle_info(_Info, S) ->
+%    io:format("***** handle_info = ~p~n",[_Info]),
     {noreply, S}.
 
 
 
-terminate(_Reason, S) ->
+terminate(_Reason, _S) ->
     ok.
     
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 
 
@@ -941,19 +945,9 @@ config_scan(NodeGrps, original) ->
 	    Error
     end;
 config_scan(NodeGrps, publish_type) ->
-    Sname = init:get_argument(sname),
-    Lname = init:get_argument(name),
-    MyNode = case {Sname, Lname} of
-		 {{ok,[[MyNode1]]}, error} ->
-		     list_to_atom(MyNode1);
-		 {error, {ok,[[MyNode1]]}} ->
-		     list_to_atom(MyNode1);
-		 _ ->
-		     node()
-	     end,
     config_scan(node(), normal, NodeGrps, no_name, [], []).
 
-config_scan(MyNode, PubType, [], Own_name, OwnNodes, OtherNodeGrps) ->
+config_scan(_MyNode, PubType, [], Own_name, OwnNodes, OtherNodeGrps) ->
     {Own_name, PubType, lists:sort(OwnNodes), lists:reverse(OtherNodeGrps)};
 config_scan(MyNode, PubType, [GrpTuple|NodeGrps], Own_name, OwnNodes, OtherNodeGrps) ->
     {Name, PubTypeGroup, Nodes} = grp_tuple(GrpTuple),
@@ -1005,7 +999,7 @@ sync_check_node([Node|Nodes], Up, Down) ->
 sync_check_init(Type, Up, Cname, Nodes, Down, PubType) ->
     sync_check_init(Type, Up, Cname, Nodes, 3, [], Down, PubType).
 
-sync_check_init(Type, NoContact, Cname, Nodes, 0, ErrorNodes, Down, PubType) ->
+sync_check_init(_Type, NoContact, _Cname, _Nodes, 0, ErrorNodes, Down, _PubType) ->
     case ErrorNodes of
 	[] -> 
 	    gen_server:cast(global_group, {synced, lists:sort(NoContact ++ Down)});
@@ -1030,7 +1024,7 @@ sync_check_init(Type, Up, Cname, Nodes, N, ErrorNodes, Down, PubType) ->
     lists:foreach(fun(Node) -> 
 			  gen_server:cast({global_group, Node}, ConfCheckMsg)
 		  end, Up),
-    case sync_check(Up, Up) of
+    case sync_check(Up) of
 	{ok, synced} ->
 	    sync_check_init(Type, [], Cname, Nodes, 0, ErrorNodes, Down, PubType);
 	{error, NewErrorNodes} ->
@@ -1041,12 +1035,12 @@ sync_check_init(Type, Up, Cname, Nodes, N, ErrorNodes, Down, PubType) ->
 	    sync_check_init(Type, Rem, Cname, Nodes, N-1, ErrorNodes ++ NewErrorNodes, Down, PubType)
     end.
 
-sync_check(Up, Up) ->
+sync_check(Up) ->
     sync_check(Up, Up, []).
 
-sync_check([], Up, []) ->
+sync_check([], _Up, []) ->
     {ok, synced};
-sync_check([], Up, ErrorNodes) ->
+sync_check([], _Up, ErrorNodes) ->
     {error, ErrorNodes};
 sync_check(Rem, Up, ErrorNodes) ->
     receive
@@ -1150,7 +1144,7 @@ check_exit(ExitPid, Reason) ->
     check_exit_where(get(whereis_name), ExitPid, Reason).
 
 
-check_exit_reg(undefined, ExitPid, Reason) ->
+check_exit_reg(undefined, _ExitPid, _Reason) ->
     ok;
 check_exit_reg(Reg, ExitPid, Reason) ->
     case lists:keysearch(ExitPid, 1, lists:delete(undefined, Reg)) of
@@ -1163,9 +1157,9 @@ check_exit_reg(Reg, ExitPid, Reason) ->
     end.
 
 
-check_exit_send(undefined, ExitPid, Reason) ->
+check_exit_send(undefined, _ExitPid, _Reason) ->
     ok;
-check_exit_send(Send, ExitPid, Reason) ->
+check_exit_send(Send, ExitPid, _Reason) ->
     case lists:keysearch(ExitPid, 1, lists:delete(undefined, Send)) of
 	{value, {ExitPid, From, Name, Msg}} ->
 	    NewSend = lists:delete({ExitPid, From, Name, Msg}, Send),
@@ -1176,7 +1170,7 @@ check_exit_send(Send, ExitPid, Reason) ->
     end.
 
 
-check_exit_where(undefined, ExitPid, Reason) ->
+check_exit_where(undefined, _ExitPid, _Reason) ->
     ok;
 check_exit_where(Where, ExitPid, Reason) ->
     case lists:keysearch(ExitPid, 1, lists:delete(undefined, Where)) of

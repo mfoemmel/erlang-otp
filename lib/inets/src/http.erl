@@ -1,4 +1,4 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
@@ -9,254 +9,234 @@
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Mobile Arts AB
-%% Portions created by Mobile Arts are Copyright 2002, Mobile Arts AB
-%% All Rights Reserved.''
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
 %% 
+%%     $Id$
 %%
-
-%%% This version of the HTTP/1.1 client implements:
+%% This module is very loosely based on code initially developed by 
+%% Johan Blom at Mobile Arts AB
+%% Description:
+%%% This version of the HTTP/1.1 client supports:
 %%%      - RFC 2616 HTTP 1.1 client part
-%%%      - RFC 2817 Upgrading to TLS Within HTTP/1.1 (not yet!)
 %%%      - RFC 2818 HTTP Over TLS
-%%%      - RFC 3229 Delta encoding in HTTP (not yet!)
-%%%      - RFC 3230 Instance Digests in HTTP (not yet!)
-%%%      - RFC 3310 Authentication and Key Agreement (AKA) (not yet!)
-%%%      - HTTP/1.1 Specification Errata found at
-%%%        http://skrb.org/ietf/http_errata.html
-%%%    Additionaly follows the following recommendations:
-%%%      - RFC 3143 Known HTTP Proxy/Caching Problems (not yet!)
-%%%      - draft-nottingham-hdrreg-http-00.txt (not yet!)
-%%%
-%%% Depends on
-%%%      - uri.erl for all URL parsing (except what is handled by the C driver)
-%%%      - http_lib.erl for all parsing of body and headers
-%%%
-%%% Supported Settings are:
-%%% http_timeout      % (int) Milliseconds before a request times out
-%%% http_useproxy     % (bool) True if a proxy should be used
-%%% http_proxy        % (string) Proxy
-%%% http_noproxylist  % (list) List with hosts not requiring proxy
-%%% http_autoredirect % (bool) True if automatic redirection on 30X responses
-%%% http_ssl          % (list) SSL settings. A non-empty list enables SSL/TLS
-%%%                      support in the HTTP client
-%%% http_pipelinesize % (int) Length of pipeline. 1 means no pipeline.
-%%%                      Only has effect when initiating a new session.
-%%% http_sessions     % (int) Max number of open sessions for {Addr,Port}
-%%%
-%%% TODO: (Known bugs!)
-%% - Cache handling
-%% - Doesn't handle a bunch of entity headers properly
-%% - Better handling of status codes different from 200,30X and 50X 
-%% - Many of the settings above are not implemented!
-%% - close_session/2 and cancel_request/1 doesn't work
-%% - Variable pipe size.
-%% - Due to the fact that inet_drv only has a single timer, the timeouts given
-%%   for pipelined requests are not ok (too long)
-%%
-%% Note:
-%% - Some servers (e.g. Microsoft-IIS/5.0) may sometimes not return a proper
-%%   'Location' header on a redirect.
-%%   The client will normally fail with {error,no_scheme} in these cases.
-%%   Setting the relax option will cause the client to interpret the value as
-%%   relativeURI 
 
 -module(http).
--author("johan.blom@mobilearts.se").
 
--export([start/0,
-	 request/3,request/4,cancel_request/1,
-	 request_sync/2,request_sync/3]).
+%% API
+-export([request/4, cancel_request/1, set_options/1]).
 
 -include("http.hrl").
--include("jnets_httpd.hrl").
 
--define(START_OPTIONS,[]).
+%%%=========================================================================
+%%%  API
+%%%=========================================================================
 
-%%% HTTP Client manager. Used to store open connections.
-%%% Will be started automatically unless started explicitly.
-start() ->
-    application:start(ssl),
-    httpc_manager:start().
-
-%%% Asynchronous HTTP request that spawns a handler.
-%%% Method                          HTTPReq
-%%% options,get,head,delete,trace = {Url,Headers}
-%%% post,put                      = {Url,Headers,ContentType,Body}
-%%%  where Url is a {Scheme,Host,Port,PathQuery} tuple, as returned by uri.erl
-%%% 
-%%% Returns: {ok,ReqId} |
-%%%          {error,Reason}
-%%% If {ok,ReqId} was returned, the handler will return with
-%%%    gen_server:cast(From,{Ref,ReqId,{error,Reason}}) |
-%%%    gen_server:cast(From,{Ref,ReqId,{Status,Headers,Body}})
-%%%  where Reason is an atom and Headers a #res_headers{} record
-%%% http:format_error(Reason) gives a more informative description.
-%%% 
-%%% Note:
-%%% - Always try to find an open connection to a given host and port, and use
-%%%   the associated socket.
-%%% - Unless a 'Connection: close' header is provided don't close the socket
-%%%   after a response is given 
-%%% - A given Pid, found in the database, might be terminated before the
-%%%   message is sent to the Pid. This will happen e.g., if the connection is
-%%%   closed by the other party and there are no pending requests.
-%%% - The HTTP connection process is spawned, if necessary, in
-%%%   httpc_manager:add_connection/4
-request(Ref,Method,HTTPReqCont) ->
-    request(Ref,Method,HTTPReqCont,[],self()).
-
-request(Ref,Method,HTTPReqCont,Settings) ->
-    request(Ref,Method,HTTPReqCont,Settings,self()).
-
-request(Ref,Method,{{Scheme,Host,Port,PathQuery},
-		    Headers,ContentType,Body},Settings,From) ->
-    case create_settings(Settings,#client_settings{}) of
-	{error,Reason} ->
-	    {error,Reason};
-	CS ->
-	    case create_headers(Headers,#req_headers{}) of
-		{error,Reason} ->
-		    {error,Reason};
-		H ->
-		    Req=#request{ref=Ref,from=From,
-				 scheme=Scheme,address={Host,Port},
-				 pathquery=PathQuery,method=Method,
-				 headers=H,content={ContentType,Body},
-				 settings=CS},
-		    httpc_manager:request(Req)
-	    end
-    end;
-request(Ref,Method,{Url,Headers},Settings,From) ->
-    request(Ref,Method,{Url,Headers,[],[]},Settings,From).
-
-%%% Cancels requests identified with ReqId.
-%%% FIXME! Doesn't work... 
-cancel_request(ReqId) ->
-    httpc_manager:cancel_request(ReqId).
-
-%%% Close all sessions currently open to Host:Port
-%%% FIXME! Doesn't work... 
-close_session(Host,Port) ->
-    httpc_manager:close_session(Host,Port).
-    
-
-%%% Synchronous HTTP request that waits until a response is created
-%%% (e.g. successfull reply or timeout)
-%%% Method                          HTTPReq
-%%% options,get,head,delete,trace = {Url,Headers}
-%%% post,put                      = {Url,Headers,ContentType,Body}
-%%%  where Url is a string() or a {Scheme,Host,Port,PathQuery} tuple
-%%% 
-%%% Returns: {Status,Headers,Body} |
-%%%          {error,Reason}
-%%% where Reason is an atom. 
-%%% http:format_error(Reason) gives a more informative description.
-request_sync(Method,HTTPReqCont) ->
-    request_sync(Method,HTTPReqCont,[]).
-
-request_sync(Method,{Url,Headers},Settings)
+%%--------------------------------------------------------------------------
+%% request(Method, Request, HTTPOptions, Options) ->
+%%           {ok, {StatusLine, Headers, Body}} | {ok, {Status, Body}} |
+%%           {ok, RequestId} | {error,Reason} 
+%%
+%%	Method - atom() = head | get | put | post | trace | options| delete 
+%%	Request - {Url, Headers} | {Url, Headers, ContentType, Body} 
+%%	Url - string() 
+%%	HTTPOptions - [HttpOption]
+%%	HTTPOption - {timeout, Time} | {ssl, SSLOptions} 
+%%	SSLOptions = [SSLOption]
+%%	SSLOption =  {verify, code()} | {depth, depth()} | {certfile, path()} |
+%%	{keyfile, path()} | {password, string()} | {cacertfile, path()} |
+%%	{ciphers, string()} 
+%%	Options - [Option]
+%%	Option - {sync, Boolean} | {body_format, BodyFormat} | 
+%%	{full_result, Boolean}
+%%	StatusLine = {HTTPVersion, StatusCode, ReasonPhrase}</v>
+%%	HTTPVersion = string()
+%%	StatusCode = integer()
+%%	ReasonPhrase = string()
+%%	Headers = [Header]
+%%      Header = {Field, Value}
+%%	Field = string()
+%%	Value = string()
+%%	Body = string() | binary() - HTLM-code
+%%
+%% Description: Sends a HTTP-request. The function can be both
+%% syncronus and asynchronous in the later case the function will
+%% return {ok, RequestId} and later on a message will be sent to the
+%% calling process on the format {http, {RequestId, {StatusLine,
+%% Headers, Body}}} or {http, {RequestId, {error, Reason}}}
+%% %%--------------------------------------------------------------------------
+request(Method, {Url, Headers}, HTTPOptions, Options) 
   when Method==options;Method==get;Method==head;Method==delete;Method==trace ->
-    case uri:parse(Url) of
+    case http_uri:parse(Url) of
 	{error,Reason} ->
 	    {error,Reason};
 	ParsedUrl ->
-	    request_sync2(Method,{ParsedUrl,Headers,[],[]},Settings)
+	    handle_request(Method, {ParsedUrl, Headers, [], []}, 
+			   HTTPOptions, Options)
     end;
-request_sync(Method,{Url,Headers,ContentType,Body},Settings)
+     
+request(Method, {Url,Headers,ContentType,Body}, HTTPOptions, Options) 
   when Method==post;Method==put ->
-    case uri:parse(Url) of
+    case http_uri:parse(Url) of
 	{error,Reason} ->
 	    {error,Reason};
 	ParsedUrl ->
-	    request_sync2(Method,{ParsedUrl,Headers,ContentType,Body},Settings)
-    end;
-request_sync(Method,Request,Settings) ->
-    {error,bad_request}.
+	    handle_request(Method, {ParsedUrl, Headers, ContentType, Body}, 
+			   HTTPOptions, Options)
+    end.
 
-request_sync2(Method,HTTPCont,Settings) ->
-    case request(request_sync,Method,HTTPCont,Settings,self()) of
-	{ok,_ReqId} ->
-	    receive
-		{'$gen_cast',{request_sync,_ReqId2,{Status,Headers,Body}}} ->
-		    {Status,pp_headers(Headers),binary_to_list(Body)};
-		{'$gen_cast',{request_sync,_ReqId2,{error,Reason}}} ->
-		    {error,Reason}
+%%--------------------------------------------------------------------------
+%% request(RequestId) -> ok
+%%   RequestId - As returned by request/4  
+%%                                 
+%% Description: Cancels a HTTP-request.
+%%-------------------------------------------------------------------------
+cancel_request(RequestId) ->
+    ok = httpc_manager:cancel_request(RequestId), 
+    receive  
+	%% If the request was allready fullfilled throw away the 
+	%% answer as the request has been canceled.
+	{http, {RequestId, _}} ->
+	    ok 
+    after 0 ->
+	    ok
+    end.
+
+%%--------------------------------------------------------------------------
+%% set_options(Options) ->
+%%   Options - [Option]
+%%   Option - {proxy, {Proxy, NoProxy}} 
+%%   Proxy - {Host, Port}
+%%   NoProxy - [Domain | HostName | IPAddress]                              
+%% Description: Informs the httpc_manager of the new settings. Only the
+%% proxy option is currently supported.  
+%%-------------------------------------------------------------------------
+set_options(Options) ->
+    ensure_started(no_scheme),
+    httpc_manager:set_options(Options).
+
+%%%========================================================================
+%%% Internal functions
+%%%========================================================================
+handle_request(Method, {{Scheme, Host, Port, Path, Query},
+			Headers, ContentType, Body}, HTTPOptions, Options)->
+    HTTPRecordOptions = http_options(HTTPOptions, #http_options{}), 
+    NewHeaders = lists:map(fun({Key, Val}) -> 
+				   {httpd_util:to_lower(Key), Val} end,
+			   Headers),
+    RecordHeaders = header_record(NewHeaders, #http_request_h{}, Host), 
+    Request = #request{from = self(),
+		       scheme = Scheme, address = {Host,Port},
+		       path = Path, pquery = Query, method = Method,
+		       headers = RecordHeaders, content = {ContentType,Body},
+		       settings = HTTPRecordOptions},
+    
+    ensure_started(Scheme),
+    
+    case httpc_manager:request(Request) of
+	{ok, RequestId} ->
+	    Sync = httpd_util:key1search(Options, sync, true),
+	    handle_answer(RequestId, Sync, Options);
+	{error, Reason} ->
+	    {error, Reason}
+    end.
+
+handle_answer(RequestId, false, _) ->
+    {ok, RequestId};
+handle_answer(RequestId, true, Options) ->
+    receive
+	{http, {RequestId, {StatusLine, Headers, BinBody}}} ->
+	    Body = 
+		case httpd_util:key1search(Options, body_format, string) of
+		    string ->
+			binary_to_list(BinBody);
+		    _ ->
+			BinBody
+		end,
+	    case httpd_util:key1search(Options, full_result, true) of
+		true ->
+		    {ok, {StatusLine, Headers, Body}};
+		false ->
+		    {_, Status, _} = StatusLine,
+		    {ok, {Status, Body}}
 	    end;
-	Error ->
-	    Error
+	{http, {RequestId, {error, Reason}}} ->
+	    {error, Reason}
     end.
+ 
+http_options([], Acc) ->
+    Acc;
+http_options([{timeout, Val} | Settings], Acc) 
+  when is_integer(Val), Val >= 0->
+    http_options(Settings, Acc#http_options{timeout = Val});
+http_options([{timeout, infinity} | Settings], Acc) ->
+    http_options(Settings, Acc#http_options{timeout = infinity});
+http_options([{autoredirect, Val} | Settings], Acc)   
+  when Val == true; Val == false ->
+    http_options(Settings, Acc#http_options{autoredirect = Val});
+http_options([{ssl, Val} | Settings], Acc) ->
+    http_options(Settings, Acc#http_options{ssl = Val});
+http_options([{relaxed, Val} | Settings], Acc)
+  when Val == true; Val == false ->
+    http_options(Settings, Acc#http_options{relaxed = Val});
+http_options([{cookie, Val} | Settings], Acc) when 
+  Val == true; Val == false ->
+    http_options(Settings, Acc#http_options{cookie = Val});
+http_options([Option | Settings], Acc) ->
+    error_logger:info_report("Invalid option ignored ~p~n", [Option]),
+    http_options(Settings, Acc).
 
+header_record([], RequestHeaders, Host) ->
+    validate_headers(RequestHeaders, Host);
+header_record([{"expect", Val} | Rest], RequestHeaders, Host) ->
+    header_record(Rest, RequestHeaders#http_request_h{expect = Val}, Host);
+header_record([{"host", Val} | Rest], RequestHeaders, Host) ->
+    header_record(Rest, RequestHeaders#http_request_h{host = Val}, Host);
+header_record([{"te", Val} | Rest], RequestHeaders, Host) ->
+    header_record(Rest, RequestHeaders#http_request_h{te = Val}, Host);  
 
-create_settings([],Out) ->
-    Out;
-create_settings([{http_timeout,Val}|Settings],Out) ->
-    create_settings(Settings,Out#client_settings{timeout=Val});
-create_settings([{http_useproxy,Val}|Settings],Out) ->
-    create_settings(Settings,Out#client_settings{useproxy=Val});
-create_settings([{http_proxy,Val}|Settings],Out) ->
-    create_settings(Settings,Out#client_settings{proxy=Val});
-create_settings([{http_noproxylist,Val}|Settings],Out) ->
-    create_settings(Settings,Out#client_settings{noproxylist=Val});
-create_settings([{http_autoredirect,Val}|Settings],Out) ->
-    create_settings(Settings,Out#client_settings{autoredirect=Val});
-create_settings([{http_ssl,Val}|Settings],Out) ->
-    create_settings(Settings,Out#client_settings{ssl=Val});
-create_settings([{http_pipelinesize,Val}|Settings],Out)
-  when integer(Val),Val>0 ->
-    create_settings(Settings,Out#client_settings{max_quelength=Val});
-create_settings([{http_sessions,Val}|Settings],Out)
-  when integer(Val),Val>0 ->
-    create_settings(Settings,Out#client_settings{max_sessions=Val});
-create_settings([{http_relaxed,Val}|Settings],Out) when Val==true;Val==false ->
-    create_settings(Settings,Out#client_settings{relaxed=Val});
-create_settings([{Key,_Val}|_Settings],_Out) ->
-    io:format("ERROR bad settings, got ~p~n",[Key]),
-    {error,bad_settings}.
+%% All other headers are  not processed by the client so
+%% put them in other even if they might not belong here ...
+%% Probably a good idea to skip the record altogether in
+%% this case, think about this for next version.
+header_record([{Key, Val} | Rest], RequestHeaders, Host) ->
+    header_record(Rest, RequestHeaders#http_request_h{
+			  other = [{Key, Val} |
+				   RequestHeaders#http_request_h.other]}, 
+		  Host).
 
+validate_headers(RequestHeaders = #http_request_h{te = undefined}, Host) ->
+    validate_headers(RequestHeaders#http_request_h{te = ""}, Host);
+validate_headers(RequestHeaders = #http_request_h{host = undefined}, Host) ->
+    validate_headers(RequestHeaders#http_request_h{host = Host}, Host);
+validate_headers(RequestHeaders, _) ->
+    RequestHeaders.
 
-create_headers([],Req) ->
-    Req;
-create_headers([{Key,Val}|Rest],Req) ->
-    case httpd_util:to_lower(Key) of
-	"expect" ->
-	    create_headers(Rest,Req#req_headers{expect=Val});
-	OtherKey ->
-	    create_headers(Rest,
-			   Req#req_headers{other=[{OtherKey,Val}|
-						  Req#req_headers.other]})
+ensure_started(Scheme) ->
+    %% Start of the inets application should really be handled by the 
+    %% application using inets. 
+    case application:start(inets) of
+	{error,{already_started,inets}} ->
+	    ok;
+	ok ->
+	    error_logger:info_report("The inets application was not started."
+				     " Has now been started as a temporary" 
+				     " application.")
+    end,
+    
+    case Scheme of
+	https ->
+	    %% Start of the ssl application should really be handled by the 
+	    %% application using inets. 
+	    case application:start(ssl) of
+		{error,{already_started,ssl}} ->
+		    ok;
+		ok ->
+		    error_logger:info_report("The ssl application was not "
+					     "started. Has now been started " 
+					     "as a temporary application.")
+	    end;
+	_ ->
+	    ok
     end.
-		
-
-pp_headers(#res_headers{connection=Connection,
-			transfer_encoding=Transfer_encoding,
-			retry_after=Retry_after,
-			content_length=Content_length,
-			content_type=Content_type,
-			location=Location,
-			other=Other}) ->
-    H1=case Connection of
-	   undefined -> [];
-	   _ ->	 [{'Connection',Connection}]
-       end,
-    H2=case Transfer_encoding of
-	   undefined -> [];
-	   _ ->	 [{'Transfer-Encoding',Transfer_encoding}]
-       end,
-    H3=case Retry_after of
-	   undefined -> [];
-	   _ ->	 [{'Retry-After',Retry_after}]
-       end,
-    H4=case Location of
-	   undefined -> [];
-	   _ ->	 [{'Location',Location}]
-       end,
-    HCL=case Content_length of
-	   "0" -> [];
-	   _ ->	 [{'Content-Length',Content_length}]
-       end,
-    HCT=case Content_type of
-	   undefined -> [];
-	   _ ->	 [{'Content-Type',Content_type}]
-       end,
-    H1++H2++H3++H4++HCL++HCT++Other.

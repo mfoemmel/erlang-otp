@@ -2,6 +2,8 @@ $Id$
 
 HiPE SPARC ABI
 ==============
+This document describes aspects of HiPE's runtime system
+that are specific for the SPARC architecture.
 
 See SPARC ABI for background:
    http://soldc.sun.com/articles/sparcv9abi.html
@@ -162,15 +164,7 @@ The caller-save registers are used as temporary scratch registers.
 
 Calling Convention
 ------------------
-Parameters after the first N are pushed on the stack, in left-to-right
-order. (At the moment N is 16).
 (The bif glue assumes that at least 3 arguments are passed in regs.)
-
-Left-to-right order is used to cater for the BEAM interpreter's
-calling convention for closures. 
-
-The callee deallocates the actual parameters from the stack
-before returning. This is required for correct implementation of tailcalls.
 
 Stack Frame Layout
 ------------------
@@ -184,58 +178,14 @@ The callee pops the actuals.
 
 Stack Descriptors
 -----------------
-(This is not completely accurate, see hipe_bif0.c )
-For each native code call site there is a stack descriptor which
-describes certain static properties of that call:
-- The call site's return address, used as key for lookups.
-- The caller's local exception handler code address, if present.
-- The caller's (fixed) frame size, in words. (Locals + RA)
-- The set of "live" or "traceable" words in the caller's frame.
-- The caller's arity. If f/N recursively calls g/M, then the
-  call site's arity is N, not M. (M is not a function of the
-  return address, due to the presence of tailcalls.)
+sdesc_fsize() is the frame size \emph{including} the return address word.
 
 Exceptions
 ----------
-A recursive call occurring within the scope of a local exception
-handler is indicated by having a stack descriptor with a non-NULL
-exception handler code address.
-
-If an exception is thrown, the runtime system will unwind the native
-stack one frame at a time, using the stack descriptors associated
-with each frame's return address.
-
-When a frame with an active exception handler is found, the stack
-pointer is reset to the low address of the fixed portion of that frame,
-and a branch is made to the handler with the exception value in ARG0.
-
-Garbage Collection Interface
-----------------------------
-[gc-points are call sites. each call site has a stack descriptor.
-the descriptor allows the gc to traverse the stack and to find
-all live Erlang terms.]
+The exception handler receives the exception value in ARG0.
 
 BIFs
 ----
-C BIFs are called on the C stack, not the current native stack.
-
-A C BIF returns a single tagged Erlang value. To indicate an
-exceptional condition, it puts an error code in p->freason
-and returns THE_NON_VALUE (zero, except in debug mode).
-
-If p->freason == TRAP, then the BIF redirects its call to some
-other function, given by p->fvalue and p->def_arg_reg[].
-The other function has the same arity as the BIF.
-
-A BIF can suspend the call by setting p->freason == RESCHEDULE.
-The caller should return immediately to the scheduler. When
-the process is resumed, the caller should re-execute the call.
-
-The "hipe_sparc_bifs.m4" macro file takes care of these issues
-by automatically generating assembly code which performs the
-necessary stack switching, parameter copying, and checking for
-and handling of exceptional conditions. To compiled Erlang code,
-a call to a C BIF looks like an ordinary function call.
 (Note that hipe_sparc_bifs.m4 assumes that some register are
  C-callee saves (like P and TEMP3).)
  

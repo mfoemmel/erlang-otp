@@ -87,8 +87,8 @@ init([Options, ServerOpts]) ->
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
-    ?DBG("Terminating ~p~n", [Reason]),
+terminate(_Reason, _State) ->
+    ?DBG("Terminating ~p~n", [_Reason]),
     ok.
 
 %%----------------------------------------------------------------------
@@ -96,7 +96,7 @@ terminate(Reason, State) ->
 %% Returns    : {ok, NewState}
 %% Description: Convert process state when code is changed
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%---------------------------------------------------------------------%
@@ -106,11 +106,11 @@ code_change(OldVsn, State, Extra) ->
 %%            {stop, Reason, State}
 %% Effect   : Functions demanded by the gen_server module. 
 %%----------------------------------------------------------------------
-handle_info({'EXIT', Pid, Reason}, #state{cadmins = CAdmins} = State) ->
-    ?DBG("Probably a child terminated with Reason: ~p~n", [Reason]),
+handle_info({'EXIT', Pid, _Reason}, #state{cadmins = CAdmins} = State) ->
+    ?DBG("Probably a child terminated with Reason: ~p~n", [_Reason]),
     {noreply, State#state{cadmins = lists:keydelete(Pid, 2, CAdmins)}};
-handle_info(Info, State) ->
-    ?DBG("Unknown Info ~p~n", [Info]),
+handle_info(_Info, State) ->
+    ?DBG("Unknown Info ~p~n", [_Info]),
     {noreply, State}.
 
 
@@ -148,12 +148,12 @@ for_suppliers(OE_This, _, #state{server_options = ServerOpts} = State) ->
 								    State#state.pull_interval,
 								    ServerOpts],
 								   [{sup_child, true}|ServerOpts]) of
-	{ok, Pid, AdminSu} ->
+	{ok, _Pid, AdminSu} ->
 	    ?DBG("Created a new CosEventChannelAdmin_SupplierAdmin.~n", []),
 	    {reply, AdminSu, State};
 	Other ->
-	    orber:debug_level_print("[~p] oe_CosEventComm_Channel:for_suppliers(); Error: ~p", 
-				    [?LINE, Other], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] oe_CosEventComm_Channel:for_suppliers();~nError: ~p", 
+		      [?LINE, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -173,7 +173,7 @@ destroy(_, _, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-send(OE_This, #state{cadmins = CAdmins} = State, Any) ->
+send(_OE_This, #state{cadmins = CAdmins} = State, Any) ->
     ?DBG("Received Event ~p~n", [Any]),
     case send_helper(CAdmins, Any, [], false) of
 	ok ->
@@ -191,7 +191,7 @@ send(OE_This, #state{cadmins = CAdmins} = State, Any) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-send_sync(OE_This, OE_From, #state{cadmins = CAdmins, blocking = BL} = State, Any) ->
+send_sync(_OE_This, OE_From, #state{cadmins = CAdmins, blocking = BL} = State, Any) ->
     ?DBG("Received Event ~p~n", [Any]),
     corba:reply(OE_From, ok),
     case send_helper(CAdmins, Any, [], BL) of
@@ -217,8 +217,9 @@ send_helper([{ObjRef, Pid}|T], Event, Dropped, false) ->
 	ok ->
 	    send_helper(T, Event, Dropped, false);
 	What ->
-	    orber:debug_level_print("[~p] oe_CosEventComm_Channel:send_helper(~p, ~p); Bad return value ~p. Closing connection.", 
-				    [?LINE, ObjRef, Event, What], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] oe_CosEventComm_Channel:send_helper(~p, ~p);~n" 
+		      "Bad return value ~p. Closing connection.", 
+		      [?LINE, ObjRef, Event, What], ?DEBUG_LEVEL),
 	    send_helper(T, Event, [{ObjRef, Pid}|Dropped], false)
     end;
 send_helper([{ObjRef, Pid}|T], Event, Dropped, Sync) ->
@@ -226,8 +227,9 @@ send_helper([{ObjRef, Pid}|T], Event, Dropped, Sync) ->
 	ok ->
 	    send_helper(T, Event, Dropped, Sync);
 	What ->
-	    orber:debug_level_print("[~p] oe_CosEventComm_Channel:send_helper(~p, ~p); Bad return value ~p. Closing connection.", 
-				    [?LINE, ObjRef, Event, What], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] oe_CosEventComm_Channel:send_helper(~p, ~p);~n" 
+		      "Bad return value ~p. Closing connection.", 
+		      [?LINE, ObjRef, Event, What], ?DEBUG_LEVEL),
 	    send_helper(T, Event, [{ObjRef, Pid}|Dropped], Sync)
     end.
 

@@ -71,6 +71,8 @@ erts_put_fun_entry(Eterm mod, int uniq, int index)
     template.old_index = index;
     template.module = mod;
     fe = (ErlFunEntry *) hash_put(&erts_fun_table, (void*) &template);
+    sys_memset(fe->uniq, 0, sizeof(fe->uniq));
+    fe->index = 0;
     fe->refc++;
     return fe;
 }
@@ -87,7 +89,7 @@ erts_put_fun_entry2(Eterm mod, int old_uniq, int old_index,
     template.old_index = old_index;
     template.module = mod;
     fe = (ErlFunEntry *) hash_put(&erts_fun_table, (void*) &template);
-    memcpy(fe->uniq, uniq, sizeof(fe->uniq));
+    sys_memcpy(fe->uniq, uniq, sizeof(fe->uniq));
     fe->index = index;
     fe->arity = arity;
     fe->refc++;
@@ -100,35 +102,6 @@ struct my_key {
     int index;
     ErlFunEntry* fe;
 };
-
-static void
-search(void* b, void* data)
-{
-    struct my_key* key = (struct my_key *) data;
-    ErlFunEntry* fe = (ErlFunEntry *) b;
-
-    if (fe->module == key->mod &&
-	fe->index == key->index &&
-	memcmp(fe->uniq, key->uniq, 16) == 0) {
-	key->fe = fe;
-    }
-}
-
-ErlFunEntry*
-erts_put_debug_fun_entry(Eterm mod, byte* uniq, int index)
-{
-    struct my_key key;
-
-    key.mod = mod;
-    key.uniq = uniq;
-    key.index = index;
-    key.fe = NULL;
-    hash_foreach(&erts_fun_table, search, &key);
-    if (key.fe != NULL) {
-	key.fe->refc++;
-    }
-    return key.fe;
-}
 
 ErlFunEntry*
 erts_get_fun_entry(Eterm mod, int uniq, int index)
@@ -149,6 +122,7 @@ erts_erase_fun_entry(ErlFunEntry* fe)
 }
 
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
 void
 erts_cleanup_funs(ErlFunThing* funp)
 {
@@ -160,6 +134,7 @@ erts_cleanup_funs(ErlFunThing* funp)
 	funp = funp->next;
     }
 }
+#endif
 #endif
 
 void

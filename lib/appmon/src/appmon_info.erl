@@ -113,7 +113,8 @@
 
 %% gen server stuff
 -behaviour(gen_server).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+	 terminate/2]).
 -export([code_change/3]).
 
 
@@ -161,20 +162,12 @@ start_link(Node, Client, Opts) ->
 start_link2(Starter, Client, Opts) ->
     Name = {local, ?MODULE},
     Args = {Starter, Opts, Client},
-    %% Check for existence because gen_server gives error when trie
-    %% multiple times
-    case whereis(?MODULE) of
-	Pid when pid(Pid) -> 
-	    register_client(Pid, Client),
+    case gen_server:start(Name, ?MODULE, Args, []) of
+	{ok, Pid} ->
 	    {ok, Pid};
-	_ ->
-	    case catch gen_server:start(Name, ?MODULE, Args, []) of
-		{ok, Pid} when pid(Pid) -> {ok, Pid};
-		{error, {already_started, Pid}} when pid(Pid) -> 
-		    register_client(Pid, Client),
-		    {ok, Pid};
-		Other -> Other
-	    end
+	{error, {already_started, Pid}} -> 
+	    register_client(Pid, Client),
+	    {ok, Pid}
     end.
 	
 
@@ -254,18 +247,17 @@ status() ->
 %%----------------------------------------------------------------------
 
 init({Starter, Opts, Pid}) ->
-    %%io:format("init opts: ~p, pid: ~p, ~n", [Opts, Pid]),
     link(Pid),
     process_flag(trap_exit, true),
     WorkStore = ets:new(workstore, [set, public]),
-    {ok, #state{starter=Starter, opts=Opts, work=WorkStore, clients=[Pid]}}.
+    {ok, #state{starter=Starter, opts=Opts, work=WorkStore,
+		clients=[Pid]}}.
 
-terminate(Reason, State) ->
-    tell("Terminating ~p ~p~n", [?MODULE, node()], 5, State#state.opts),
+terminate(_Reason, State) ->
     ets:delete(State#state.work),
     ok.
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
@@ -275,18 +267,15 @@ code_change(OldVsn, State, Extra) ->
 %%
 %%----------------------------------------------------------------------
 
-handle_call(stop, From, State) ->
+handle_call(stop, _From, State) ->
     {reply, stop, normal, State};
-handle_call({register_client, Pid}, From, State) ->
-%%    io:format("ns add client: Pid: ~p, List: ~p~n",
-%%	      [Pid, State#state.clients]),
+handle_call({register_client, Pid}, _From, State) ->
     NewState = case lists:member(Pid, State#state.clients) of
 		   true -> State;
 		   _ -> State#state{clients=[Pid | State#state.clients]}
 	       end,
     {reply, ok, NewState};
-handle_call(Other, From, State) ->
-    tell("~p got unknown call: ~p~n", [?MODULE, Other], 1, State#state.opts),
+handle_call(_Other, _From, State) ->
     {reply, ok, State}.
 
 %%----------------------------------------------------------------------
@@ -301,11 +290,10 @@ handle_cast({From, Cmd, Aux, OnOff, Opts}, State) ->
 handle_cast(status, State) ->
     print_state(State),
     {noreply, State};
-handle_cast({From, set_option, Opt}, State) ->
+handle_cast({_From, set_option, Opt}, State) ->
     NewOpts = ins_opt(Opt, State#state.opts),
     {noreply, State#state{opts=NewOpts}};
-handle_cast(Other, State) ->
-    tell("~p got unknown cast: ~p~n", [?MODULE, Other], 1, State#state.opts),
+handle_cast(_Other, State) ->
     {noreply, State}.
 
 
@@ -327,7 +315,8 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 	    {stop, Reason, State};
 	_Other ->
 	    Work = State#state.work,
-	    del_work(ets:match(Work, {{'$1', '$2', Pid}, '_', '_', '_'}), Pid, Work),
+	    del_work(ets:match(Work, {{'$1','$2',Pid}, '_', '_', '_'}),
+		     Pid, Work),
 	    case lists:delete(Pid, State#state.clients) of
 		[] -> case get_opt(stay_resident, State#state.opts) of
 			  true -> {noreply, State#state{clients=[]}};
@@ -336,9 +325,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 		NewClients -> {noreply, State#state{clients=NewClients}}
 	    end
     end;
-handle_info(Other, State) ->
-%%    io:format("gad: ~p~n", [Other]),
-    tell("~p got unknown info: ~p~n", [?MODULE, Other], 1, State#state.opts),
+handle_info(_Other, State) ->
     {noreply, State}.
 
 
@@ -349,17 +336,11 @@ handle_info(Other, State) ->
 %%----------------------------------------------------------------------
 
 do_work(Key, State) ->
-    %%io:format("Do work ~p~n", [Key]),
     WorkStore = State#state.work,
-    {Cmd, Aux, From, OldRef, Old, Opts} = retreive(WorkStore, Key),
-    %%tell("Work: ~p, ~p, ~p~n", [Cmd, Aux, From], 5, State#state.opts),
-    {ok, Result} = do_work2(Cmd, Aux, From, Old, Opts, State),
+    {Cmd, Aux, From, _OldRef, Old, Opts} = retreive(WorkStore, Key),
+    {ok, Result} = do_work2(Cmd, Aux, From, Old, Opts),
     if  Result==Old -> ok;
 	true ->
-%%%	    tell("Result delivered:~n", [], 4, State#state.opts),
-%%%	    tell("   cmd:~p, aux:~p, ", [Cmd, Aux], 4, State#state.opts),
-%%%	    tell("from:~p, opts:~p, res:~p~n", 
-%%%		 [From, Opts, Result], 4, State#state.opts),
 	    From ! {delivery, self(), Cmd, Aux, Result}
     end,
     case get_opt(timeout, Opts) of
@@ -378,27 +359,23 @@ do_work(Key, State) ->
 %%
 %% Maintenance Note: Add a clause here for each new task.
 %%
-do_work2(load, Aux, From, Old, Opts, State) ->
-    calc_load(load, Aux, From, Old, Opts);
-do_work2(app_ctrl, Aux, From, Old, Opts, State) ->
-    calc_app_on_node(app_ctr, Aux, From, Old, Opts);
-do_work2(app, Aux, From, Old, Opts, State) ->
-    R = calc_app_tree(app, Aux, From, Old, Opts),
-    %%io:format("Result: ~p~n", [R]),
-    R;
-do_work2(pinfo, Aux, From, Old, Opts, State) ->
-    calc_pinfo(pinfo, Aux, From, Old, Opts);
-do_work2(Cmd, Aux, From, Old, Opts, State) ->
-    tell("Do work: ~p~n", [Cmd], 5, State#state.opts),
+do_work2(load, _Aux, _From, Old, Opts) ->
+    calc_load(Old, Opts);
+do_work2(app_ctrl, _Aux, _From, _Old, _Opts) ->
+    calc_app_on_node();
+do_work2(app, Aux, _From, _Old, Opts) ->
+    calc_app_tree(Aux, Opts);
+do_work2(pinfo, Aux, _From, _Old, _Opts) ->
+    calc_pinfo(pinfo, Aux);
+do_work2(Cmd, Aux, _From, _Old, _Opts) ->
     {Cmd, Aux}.
 
 
 retreive(Tab, Key) ->
-    %%io:format("Retrieve: ~p~n", [Key]),
     case ets:lookup(Tab, Key) of
 	[{{Cmd, Aux, From}, Ref, Old, Opts}] ->
 	    {Cmd, Aux, From, Ref, Old, Opts};
-	Other ->
+	_Other ->
 	    false
     end.
 
@@ -416,7 +393,7 @@ store(Tab, Key, Ref, Old, Opts) ->
 update_worklist(Cmd, Aux, From, true, Opts, State) ->
     add_task(Cmd, Aux, From, Opts, State),
     State;
-update_worklist(Cmd, Aux, From, Other, Opts, State) ->
+update_worklist(Cmd, Aux, From, _Other, _Opts, State) ->
     del_task(Cmd, Aux, From, State#state.work),
     State.
 
@@ -431,19 +408,12 @@ add_task(Cmd, Aux, From, Opts, State) ->
     store(WorkStore, Key, nil, nil, ins_opts(Opts, OldOpts)),
     catch do_work(Key, State),
     ok.
-%%self() ! ?MK_DOIT(Key).
-
-    
-%%    {ok, Ref} = timer:send_after(get_opt(timeout, Opts), 
-%%				 {do_it, Cmd, Aux, From}),
-%%ets:insert(WorkStore, {{Cmd, Aux, From}, Ref, Opts}).
 
 %% Delete a list of tasks belonging to a pid
 del_work([[Cmd, Aux] | Ws], Pid, Work) ->
-%%    io:format("Deleting ~p ~p ~p~n", [Cmd, Aux, Pid]),
     del_task(Cmd, Aux, Pid, Work),
     del_work(Ws, Pid, Work);
-del_work([], Pid, Work) -> ok.
+del_work([], _Pid, _Work) -> ok.
 
 %% Must return old options or empty list
 del_task(Cmd, Aux, From, WorkStore) ->
@@ -452,7 +422,7 @@ del_task(Key, WorkStore) ->
     OldStuff = retreive(WorkStore, Key),
     ets:delete(WorkStore, Key),
     case OldStuff of
-	{Cmd, Aux, From, Ref, Old, Opts} ->
+	{_Cmd, _Aux, _From, Ref, _Old, Opts} ->
 	    if  Ref /= nil ->
 		    timer:cancel(Ref),
 		    receive
@@ -501,7 +471,7 @@ del_task(Key, WorkStore) ->
 %%----------------------------------------------------------------------
 
 
-calc_app_tree(Cmd, Name, From, Old, Opts) ->
+calc_app_tree(Name, Opts) ->
     Mode = get_opt(info_type, Opts),
     case application_controller:get_master(Name) of
 	Pid when pid(Pid) ->
@@ -524,10 +494,7 @@ calc_app_tree(Cmd, Name, From, Old, Opts) ->
 	    R;
 	_ ->
 	    {ok, {[], [], [], []}}
-    end;
-calc_app_tree(Cmd, undefined, From, Old, Opts) ->
-    {ok, {[], [], [], []}}.
-
+    end.
 
 get_pid(P) when pid(P) -> P;
 get_pid(P) when port(P) -> P;
@@ -541,8 +508,6 @@ do_find_proc(Mode, DB, GL, Avoid) ->
     case get_next(DB) of
 	{{value, V}, DB2} ->
 	    do_find_proc2(V, Mode, DB2, GL, Avoid);
-%%	    DB3 = add_proc(V, Mode, DB2, GL, Avoid),
-%%	    do_find_proc(Mode, DB3, GL, Avoid);
 	{empty, DB2} ->
 	    {ok, DB2}
     end.
@@ -555,14 +520,10 @@ do_find_proc2(X, Mode, DB, GL, Avoid) when port(X) ->
     do_find_proc(Mode, DB2, GL, Avoid);
 do_find_proc2(X, Mode, DB, GL, Avoid) ->
     Xpid = get_pid(X),
-%%    io:format("Adding ~p (~p)~n", [XX, X]),
     DB2 = case is_proc(DB, Xpid) of
 	      false ->
 		  add_proc(DB, Xpid),
-%%		  ets:insert(P, {Xpid}),
 		  C1 = find_children(X, Mode),
-%%		  ?ifthen(Mode==sup, io:format("find_children ret ~p~n", 
-%%					       [C1])),
 		  add_children(C1, Xpid, DB, GL, Avoid, Mode);
 	      _ -> 
 		  DB
@@ -580,22 +541,19 @@ find_children(X, sup) when pid(X) ->
     %% better be a supervisor, we are smoked otherwise
     supervisor:which_children(X);
 find_children(X, link) when pid(X), node(X) /= node() ->
-%%    io:format("Proc on other node: ~p~n", [X]),
     [];
 find_children(X, link) when pid(X) ->
     case process_info(X, links) of
 	{links, Links} ->
-%%	    Links;
 	    lists:reverse(Links); % OTP-4082
 	_ -> []
     end;
 find_children({master, X}, sup) -> 
-%%    io:format("Adding master ~p~n", [X]),
     case application_master:get_child(X) of
-	{Pid, Name} when pid(Pid) -> [Pid];
+	{Pid, _Name} when pid(Pid) -> [Pid];
 	Pid when pid(Pid)	  -> [Pid]
     end;
-find_children({_, X, worker, _}, sup) -> [];
+find_children({_, _X, worker, _}, sup) -> [];
 find_children({_, X, supervisor, _}, sup) ->
     lists:filter(fun(Thing) -> 
 			 Pid = get_pid(Thing),
@@ -609,7 +567,7 @@ find_children({_, X, supervisor, _}, sup) ->
 %% Add links to primary (L1) or secondary (L2) sets and return an
 %% updated queue. A link is considered secondary if its endpoint is in
 %% the queue of un-visited but known processes.
-add_children(CList, Paren, DB, GL, Avoid, sup) ->
+add_children(CList, Paren, DB, _GL, _Avoid, sup) ->
     foldr(fun(C, DB2) -> 
 		  case get_pid(C) of
 		      P when pid(P) -> 
@@ -617,7 +575,7 @@ add_children(CList, Paren, DB, GL, Avoid, sup) ->
 		      _ -> DB2 end end,
 	  DB, CList);
 
-add_children(CList, Paren, DB, GL, Avoid, Mode) ->
+add_children(CList, Paren, DB, GL, Avoid, _Mode) ->
     foldr(fun(C, DB2) ->
 		  maybe_add_child(C, Paren, DB2, GL, Avoid)
 	  end, DB, CList).
@@ -632,7 +590,6 @@ maybe_add_child(C, Paren, DB, GL, Avoid) ->
 
 %% Check if process on this node
 maybe_add_child_node(C, Paren, DB, GL, Avoid) ->
-%%    io:format("Try node: ~p (~p)~n", [C, node(get_pid(C))]),
     if  node(C) /= node() -> 
 	    add_foreign(C, Paren, DB);
 	true -> 
@@ -641,46 +598,41 @@ maybe_add_child_node(C, Paren, DB, GL, Avoid) ->
 
 %% Check if child is on the avoid list
 maybe_add_child_avoid(C, Paren, DB, GL, Avoid) ->
-%%    io:format("Try avoid: ~p~n", [C]),
     case lists:member(C, Avoid) of
 	true -> DB;
 	false ->
-	    maybe_add_child_port(C, Paren, DB, GL, Avoid)
+	    maybe_add_child_port(C, Paren, DB, GL)
     end.
 
 %% Check if it is a port, then it is added
-maybe_add_child_port(C, Paren, DB, GL, Avoid) ->
+maybe_add_child_port(C, Paren, DB, GL) ->
     if  port(C) ->
 	    add_prim(C, Paren, DB);
 	true ->
-	    maybe_add_child_sasl(C, Paren, DB, GL, Avoid)
+	    maybe_add_child_sasl(C, Paren, DB, GL)
     end.
 
 %% Use SASL stuff if present
-maybe_add_child_sasl(C, Paren, DB, GL, Avoid) ->
+maybe_add_child_sasl(C, Paren, DB, GL) ->
     case check_sasl_ancestor(Paren, C) of
 	yes ->					% Primary
-%%	    io:format("Try: Was SASL primary ~p~n", [C]),
 	    add_prim(C, Paren, DB);
 	no ->					% Secondary
-%%	    io:format("Try: was SASL sec ~p~n", [C]),
 	    add_sec(C, Paren, DB);
 	dont_know ->
-	    maybe_add_child_gl(C, Paren, DB, GL, Avoid)
+	    maybe_add_child_gl(C, Paren, DB, GL)
     end.
 		    
 %% Check group leader
-maybe_add_child_gl(C, Paren, DB, GL, Avoid) ->
-%%    io:format("Try gl: ~p, gl: ~p, cgl: ~p~n", [C, GL, groupl(get_pid(C))]),
+maybe_add_child_gl(C, Paren, DB, GL) ->
     case cmp_groupl(GL, groupl(C)) of
-	true -> maybe_add_child_sec(C, Paren, DB, GL, Avoid);
+	true -> maybe_add_child_sec(C, Paren, DB);
 	_ -> DB
     end.
 
 %% Check if the link should be a secondary one. Note that this part is
 %% pretty much a guess.
-maybe_add_child_sec(C, Paren, DB, GL, Avoid) ->
-%%    io:format("Try sec: ~p~n", [C]),
+maybe_add_child_sec(C, Paren, DB) ->
     case is_in_queue(DB, C) of
 	true ->					% Yes, secondary
 	    add_sec(C, Paren, DB);
@@ -738,51 +690,12 @@ is_proc(DB, P) ->
 	[] -> false;
 	_ -> true
     end.
-is_in_queue(DB, P) ->				% Should really be in queue.erl
+is_in_queue(DB, P) -> % Should really be in queue.erl
     {L1, L2} = DB#db.q,
     case lists:member(P, L1) of
 	true -> true;
 	false -> lists:member(P, L2)
     end.
-
-%add_children([C | Cs], Paren, Q, P, L1, L2, GL, Avoid) ->
-%    case lists:member(get_pid(C), Avoid) of
-%	false ->
-%	    case queue_member(C, Q) of
-%		false ->
-%		    case add_link(P, L1, Paren, GL, get_pid(C)) of
-%			added ->
-%			    [C | add_children(Cs, Paren, Q, P, L1, L2, 
-%					      GL, Avoid)];
-%			_ ->
-%			    add_children(Cs, Paren, Q, P, L1, L2, GL, Avoid)
-%		    end;
-%		true ->
-%		    add_link(P, L2, Paren, GL, get_pid(C)),
-%		    add_children(Cs, Paren, Q, P, L1, L2, GL, Avoid)
-%	    end;
-%	true -> 
-%	    add_children(Cs, Paren, Q, P, L1, L2, GL, Avoid)
-%    end;
-%add_children([], Paren, Q, P, L1, L2, GL, Avoid) -> Q.
-
-
-
-%% Add a link if . Do not add link if group leaders differ.
-%%add_link() ->
-%%    case ets:lookup(L, Child) of
-%%	[] -> 
-%%	    case ets:lookup(P, Child) of
-%%		[] -> 
-%%		    case cmp_groupl(GL, groupl(Child)) of
-%%			true ->
-%%			    ets:insert(L, {Paren, Child}), added;
-%%			_ -> not_added
-%%		    end;
-%%		_ -> not_added
-%%	    end;
-%%	_ -> not_added
-%%    end.
 
 
 %% Group leader handling. No processes or Links to processes must be
@@ -793,10 +706,10 @@ groupl(P) when port(P) -> nil;
 groupl(P) when pid(P) ->
     case process_info(P, group_leader) of
 	{group_leader, GL} -> GL;
-	Other -> nil
+	_Other -> nil
     end;
 groupl(_) -> nil.
-cmp_groupl(GL1, nil) -> true;
+cmp_groupl(_GL1, nil) -> true;
 cmp_groupl(GL1, GL1) -> true;
 cmp_groupl(_, _) -> false.
 
@@ -865,7 +778,7 @@ to_list(X) -> X.
 %%----------------------------------------------------------------------
 
 %% Finds all applications on a node
-calc_app_on_node(Cmd, Aux, From, Old, Opts) ->
+calc_app_on_node() ->
     NewApps = reality_check(application:which_applications()),
     {ok, NewApps}.
 
@@ -903,7 +816,7 @@ reality_check([]) -> [].
 %%**********************************************************************
 %%----------------------------------------------------------------------
 
-calc_load(load, Aux, From, Old, Opts) ->
+calc_load(Old, Opts) ->
     L = load(Opts),
     case get_opt(load_average, Opts) of
 	true ->
@@ -946,13 +859,8 @@ load(Opts) ->
 		end
     end.
 
-	    
-
-%%%%		min(time_map(Td/Tot)+trunc(Q*load_range()/6), load_range() ),
-
-
 min(X,Y) when X<Y -> X;
-min(X,Y)->Y.
+min(_,Y)->Y.
 
 
 %%
@@ -984,14 +892,11 @@ delta(KeyWord, Val, CheatDelta) ->
 		 Other ->
 		     if
 			 Other > Val ->
-			     %%?D("Delta error: ~p ~p ~p ~p~n", 
-			     %%[Other, Val, Val-Other, CheatDelta]),
 			     CheatDelta;
 			 true ->
 			     Val-Other
 		     end
 	     end,
-    %%?D("~p delta: ~p ~p~n", [node(), RetVal, CheatDelta]),
     put(KeyWord, Val),
     RetVal.
 
@@ -1021,17 +926,18 @@ load_range() -> 16.
 %%**********************************************************************
 %%----------------------------------------------------------------------
 
-calc_pinfo(pinfo, Pid, From, Old, Opts) when pid(Pid) ->
+calc_pinfo(pinfo, Pid) when pid(Pid) ->
     Info = process_info(Pid),
-    {ok, io_lib:format("Node: ~p, Process: ~p~n~p~n~n", [node(), Pid, Info])};
-calc_pinfo(pinfo, Pid, From, Old, Opts) when port(Pid) ->
+    {ok, io_lib:format("Node: ~p, Process: ~p~n~p~n~n",
+		       [node(), Pid, Info])};
+calc_pinfo(pinfo, Pid) when port(Pid) ->
     Info = lists:map(fun(Key) ->erlang:port_info(Pid, Key) end,
 		     [id, name, connected, links, input, output]),
     
     {ok, io_lib:format("Node: ~p, Port: ~p~n~p~n~n", 
 		       [node(),  element(2, erlang:port_info(Pid, id)),
 			Info])};
-calc_pinfo(pinfo, Pid, From, Old, Opts) ->
+calc_pinfo(pinfo, _Pid) ->
     {ok, ""}.
 
 
@@ -1055,7 +961,8 @@ calc_pinfo(pinfo, Pid, From, Old, Opts) ->
 %%
 %%----------------------------------------------------------------------
 print_state(State) ->
-    io:format("Status:~n    Opts: ~p~n    Clients: ~p~n    WorkStore:~n",
+    io:format("Status:~n    Opts: ~p~n"
+	      "Clients: ~p~n    WorkStore:~n",
 	      [State#state.opts, State#state.clients]),
     print_work(ets:tab2list(State#state.work)).
 
@@ -1063,9 +970,6 @@ print_work([W|Ws]) ->
     io:format("        ~p~n", [W]), print_work(Ws);
 print_work([]) -> ok.
     
-
-
-
 
 %%----------------------------------------------------------------------
 %%
@@ -1087,7 +991,6 @@ default(load_method)	-> time;
 default(load_scale)	-> prog;
 default(load_average)	-> true;
 default(timeout)	-> 2000;
-default(verbosity)	-> 0;
 default(info_type)	-> link;
 default(stay_resident)	-> false;
 default({avoid, _})	-> false;
@@ -1100,10 +1003,3 @@ ins_opts([], Opts2) -> Opts2.
 ins_opt({Opt, Val}, [{Opt, _} | Os]) -> [{Opt, Val} | Os];
 ins_opt(Opt, [Opt2 | Os]) -> [Opt2 | ins_opt(Opt, Os)];
 ins_opt(Opt, []) -> [Opt].
-
-
-tell(F, A, Prio, Opts) ->
-    P2 = get_opt(verbosity, Opts),
-    if  P2 > Prio -> io:format(F, A);
-	true -> ok
-    end.

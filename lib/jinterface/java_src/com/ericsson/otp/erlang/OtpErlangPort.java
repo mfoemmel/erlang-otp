@@ -69,7 +69,7 @@ public class OtpErlangPort extends OtpErlangObject implements Serializable, Clon
    *
    * @param node the nodename.
    *
-   * @param id an arbitrary number. Only the low order 18 bits will
+   * @param id an arbitrary number. Only the low order 28 bits will
    * be used.
    *
    * @param creation another arbitrary number. Only the low order
@@ -77,7 +77,7 @@ public class OtpErlangPort extends OtpErlangObject implements Serializable, Clon
    **/
   public OtpErlangPort(String node, int id, int creation) {
     this.node = node;
-    this.id = id & 0x3ffff; // 18 bits
+    this.id = id & 0xfffffff; // 28 bits
     this.creation = creation & 0x03 ; // 2 bits
   }
   

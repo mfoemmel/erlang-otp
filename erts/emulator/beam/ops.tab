@@ -23,6 +23,34 @@
 # instruction transformations; thus, they never occur in BEAM files.
 #
 
+# Special instruction used to generate an error message when
+# trying to load a module compiled by the V1 compiler (R5 & R6).
+# (Specially treated in the beam_load.c.)
+
+too_old_compiler/0
+too_old_compiler
+
+#
+# Obsolete instructions follow.
+#
+
+is_list p S => too_old_compiler
+is_nonempty_list p R => too_old_compiler
+is_nil p R => too_old_compiler
+
+is_tuple p S => too_old_compiler
+test_arity p S Arity => too_old_compiler
+
+is_integer p R => too_old_compiler
+is_float p R => too_old_compiler
+is_atom p R => too_old_compiler
+
+is_eq_exact p S1 S2 => too_old_compiler
+
+#
+# All the other instructions.
+#
+
 label L
 i_func_info I a a I
 int_code_end
@@ -35,6 +63,9 @@ i_debug_breakpoint
 i_count_breakpoint
 i_return_to_trace
 i_yield
+i_global_cons
+i_global_tuple
+i_global_copy
 
 return
 
@@ -234,7 +265,7 @@ i_put_big w d
 
 # Receive operations.
 
-wait_timeout Fail Src=iw => gen_literal_timeout(Fail, Src)
+wait_timeout Fail Src=iow => gen_literal_timeout(Fail, Src)
 wait_timeout Fail Src=o => i_put_float Src x | wait_timeout Fail x
 
 remove_message
@@ -303,7 +334,6 @@ is_eq Lbl S1 S2 => i_fetch S1 S2 | i_is_eq Lbl
 is_ne Lbl S1 S2 => i_fetch S1 S2 | i_is_ne Lbl
 
 is_eq_exact Lbl=f S1 S2 => i_fetch S1 S2 | i_is_eq_exact Lbl
-is_eq_exact p S1 S2 => i_fetch S1 S2 | is_eq_exact_body
 is_ne_exact Lbl S1 S2 => i_fetch S1 S2 | i_is_ne_exact Lbl
 
 i_is_lt f
@@ -312,8 +342,6 @@ i_is_eq f
 i_is_ne f
 i_is_eq_exact f
 i_is_ne_exact f
-
-is_eq_exact_body
 
 %macro: i_is_eq_const Equal -fail_action
 i_is_eq_const f r c
@@ -477,25 +505,10 @@ is_tuple_of_arity f x A
 is_tuple_of_arity f y A
 is_tuple_of_arity f r A
 
-is_tuple p S=rxy | test_arity p S=rxy Arity => is_tuple_of_arity_body S Arity
-test_arity p S Arity => test_arity_body S Arity
-
-%macro:is_tuple_of_arity_body IsTupleOfArity -fail_action
-is_tuple_of_arity_body r A
-is_tuple_of_arity_body x A
-is_tuple_of_arity_body y A
-
 %macro: is_tuple IsTuple -fail_action
 is_tuple f x
 is_tuple f y
 is_tuple f r
-
-is_tuple p R => is_tuple_body R
-
-%macro: is_tuple_body IsTuple -fail_action
-is_tuple_body r
-is_tuple_body x
-is_tuple_body y
 
 test_arity Fail=f cwo Arity => jump Fail
 
@@ -503,13 +516,6 @@ test_arity Fail=f cwo Arity => jump Fail
 test_arity f x A
 test_arity f y A
 test_arity f r A
-
-%macro: test_arity_body IsArity -fail_action
-%cold
-test_arity_body x A
-test_arity_body y A
-test_arity_body r A
-%hot
 
 is_tuple_of_arity Fail=f Reg Arity | get_tuple_element Reg P=u==0 Dst=xy => \
   is_tuple_of_arity Fail Reg Arity | extract_next_element Dst | original_reg Reg P
@@ -570,15 +576,6 @@ is_integer f x
 is_integer f y
 is_integer f r
 
-is_integer p R => is_integer_body R
-
-%macro: is_integer_body IsInteger -fail_action
-%cold
-is_integer_body r
-is_integer_body x
-is_integer_body y
-%hot
-
 is_list Fail=f n =>
 is_list Fail=f cow => jump Fail
 %macro: is_list IsList -fail_action
@@ -604,15 +601,6 @@ is_nonempty_list f x
 is_nonempty_list f y
 is_nonempty_list f r
 
-is_nonempty_list p R => is_nonempty_list_body R
-
-%macro: is_nonempty_list_body IsNonemptyList -fail_action
-is_nonempty_list_body x
-is_nonempty_list_body y
-is_nonempty_list_body r
-
-is_nil p R => is_nil_body R
-
 %macro: is_atom IsAtom -fail_action
 is_atom f x
 is_atom f r
@@ -631,24 +619,8 @@ is_float f y
 is_float Fail=f nwai => jump Fail
 is_float Fail=f o =>
 
-is_float p R => is_float_body R
-
-%macro: is_float_body IsFloat -fail_action
-%cold
-is_float_body r
-is_float_body x
-is_float_body y
-%hot
-
 is_nil Fail=f n =>
 is_nil Fail=f owia => jump Fail
-
-%macro: is_nil_body IsNil -fail_action
-%cold
-is_nil_body r
-is_nil_body x
-is_nil_body y
-%hot
 
 %macro: is_nil IsNil -fail_action
 is_nil f x
@@ -663,12 +635,12 @@ is_binary f x
 is_binary f y
 %hot
 
-is_ref Fail=f cwo => jump Fail
-%macro: is_ref IsRef -fail_action
-is_ref f r
-is_ref f x
+is_reference Fail=f cwo => jump Fail
+%macro: is_reference IsRef -fail_action
+is_reference f r
+is_reference f x
 %cold
-is_ref f y
+is_reference f y
 %hot
 
 is_pid Fail=f cwo => jump Fail
@@ -685,6 +657,17 @@ is_port f r
 is_port f x
 %cold
 is_port f y
+%hot
+
+is_boolean Fail=f a==am_true =>
+is_boolean Fail=f a==am_false =>
+is_boolean Fail=f a => jump Fail
+is_boolean Fail=f c => jump Fail
+%cold
+%macro: is_boolean IsBoolean -fail_action
+is_boolean f r
+is_boolean f x
+is_boolean f y
 %hot
 
 # Allocating & initializing.
@@ -724,15 +707,6 @@ call_ext_only u==0 Bif=u$bif:erlang:garbage_collect/0 => i_call_ext_only Bif
 call_ext u==1 Bif=u$bif:erlang:garbage_collect/1 => i_call_ext Bif
 call_ext_last u==1 Bif=u$bif:erlang:garbage_collect/1 D => i_call_ext_last Bif D
 call_ext_only u==1 Bif=u$bif:erlang:garbage_collect/1 => i_call_ext_only Bif
-
-#
-# The BIF vector:set/3 must be called like a function,
-# to allow it to invoke the garbage collector.
-#
-
-call_ext u==3 Bif=u$bif:vector:set/3 => i_call_ext Bif
-call_ext_last u==3 Bif=u$bif:vector:set/3 D => i_call_ext_last Bif D
-call_ext_only u==3 Bif=u$bif:vector:set/3 => i_call_ext_only Bif
 
 #
 # The process_info/1,2 BIF should be called like a function, to force
@@ -775,18 +749,25 @@ call_ext_only u==1 Bif=u$bif:erlang:exit/1 => call_bif1 Bif
 call_ext_only u==1 Bif=u$bif:erlang:throw/1 => call_bif1 Bif
 
 #
-# The fault/1 and fault/2 BIFs never execute the instruction following them;
+# The error/1 and error/2 BIFs (and their old aliases fault/1 and
+# fault/2) never execute the instruction following them;
 # thus there is no need to generate any return instruction.
 # However, they generate stack backtraces, so if the call instruction
 # is call_ext_only/2 instruction, we explicitly do an allocate/2 to store
 # the continuation pointer on the stack.
 #
 
+call_ext_last u==1 Bif=u$bif:erlang:error/1 D => call_bif1 Bif
 call_ext_last u==1 Bif=u$bif:erlang:fault/1 D => call_bif1 Bif
+call_ext_last u==2 Bif=u$bif:erlang:error/2 D => call_bif2 Bif
 call_ext_last u==2 Bif=u$bif:erlang:fault/2 D => call_bif2 Bif
 
+call_ext_only Ar=u==1 Bif=u$bif:erlang:error/1 => \
+  allocate u Ar | call_bif1 Bif
 call_ext_only Ar=u==1 Bif=u$bif:erlang:fault/1 => \
   allocate u Ar | call_bif1 Bif
+call_ext_only Ar=u==2 Bif=u$bif:erlang:error/2 => \
+  allocate u Ar | call_bif2 Bif
 call_ext_only Ar=u==2 Bif=u$bif:erlang:fault/2 => \
   allocate u Ar | call_bif2 Bif
 
@@ -804,6 +785,23 @@ call_ext_only u==0 u$func:erlang:yield/0 => i_yield | return
 call_ext u==3 u$func:erlang:hibernate/3 => i_hibernate
 call_ext_last u==3 u$func:erlang:hibernate/3 D => i_hibernate
 call_ext_only u==3 u$func:erlang:hibernate/3 => i_hibernate
+
+#
+# Hybrid memory architecture need special cons and tuple instructions
+# that allocate on the message area. These looks like BIFs in the BEAM code.
+#
+
+call_ext u==2 u$func:hybrid:cons/2 => i_global_cons
+call_ext_last u==2 u$func:hybrid:cons/2 D => i_global_cons | deallocate_return D
+call_ext_only Ar=u==2 u$func:hybrid:cons/2 => i_global_cons | return
+
+call_ext u==1 u$func:hybrid:tuple/1 => i_global_tuple
+call_ext_last u==1 u$func:hybrid:tuple/1 D => i_global_tuple | deallocate_return D
+call_ext_only Ar=u==1 u$func:hybrid:tuple/1 => i_global_tuple | return
+
+call_ext u==1 u$func:hybrid:copy/1 => i_global_copy
+call_ext_last u==1 u$func:hybrid:copy/1 D => i_global_copy | deallocate_return D
+call_ext_only u==1 Ar=u$func:hybrid:copy/1 => i_global_copy | return
 
 #
 # The general case for BIFs that have no special instructions.
@@ -837,6 +835,10 @@ call_ext_only Ar=u==3 Bif=u$is_bif => \
 # with call instructions.
 #
 
+move S=c r | call_ext Ar=u Func=u$is_not_bif => i_move_call_ext S r Func
+move S=c r | call_ext_last Ar=u Func=u$is_not_bif D => i_move_call_ext_last Func D S r
+move S=c r | call_ext_only Ar=u Func=u$is_not_bif => i_move_call_ext_only Func S r 
+
 call_ext Ar=u Func        => i_call_ext Func
 call_ext_last Ar=u Func D => i_call_ext_last Func D
 call_ext_only Ar=u Func   => i_call_ext_only Func
@@ -863,6 +865,8 @@ call_bif3 e
 bif0 Bif=u$bif:erlang:self/0 Dst=d => self Dst
 bif0 Bif=u$bif:erlang:node/0 Dst=d => node Dst
 
+bif1 Fail Bif=u$bif:erlang:get/1 Src=s Dst=d => i_get Src Dst
+
 bif2 Jump=j u$bif:erlang:element/2 S1=ow S2=ow Dst=d => badarg Jump
 bif2 Jump=j u$bif:erlang:element/2 S1=ow S2=s Dst=d => badarg Jump
 bif2 Jump=j u$bif:erlang:element/2 S1=s S2=ow Dst=d => badarg Jump
@@ -874,6 +878,8 @@ bif1 p Bif S1 Dst => bif1_body Bif S1 Dst
 
 bif2 p Bif S1 S2 Dst => i_fetch S1 S2 | i_bif2_body Bif Dst
 bif2 Fail=f Bif S1 S2 Dst => i_fetch S1 S2 | i_bif2 Fail Bif Dst
+
+i_get s d
 
 %macro: self Self
 self r
@@ -899,25 +905,37 @@ i_bif2_body b d
 # Internal calls.
 #
 
+move S=c r | call Ar P=f => i_move_call S r P
 move S=s r | call Ar P=f => move_call S r P
 
-%macro:move_call MoveCall -arg_f -size -nonext
+i_move_call c r f
 
+%macro:move_call MoveCall -arg_f -size -nonext
 move_call/3
+
 move_call x r f
 move_call y r f
-move_call n r f
-move_call c r f
 
+move S=c r | call_last Ar P=f D => i_move_call_last P D S r
 move S r | call_last Ar P=f D => move_call_last S r P D
+
+i_move_call_last f P c r
 
 %macro:move_call_last MoveCallLast -arg_f -nonext
 
 move_call_last/4
 move_call_last x r f P
 move_call_last y r f P
-move_call_last c r f P
-move_call_last n r f P
+
+move S=c r | call_only Ar P=f => i_move_call_only P S r
+move S=x r | call_only Ar P=f => move_call_only S r P
+
+i_move_call_only f c r
+
+%macro:move_call_only MoveCallOnly -arg_f -nonext
+move_call_only/3
+
+move_call_only x r f
 
 call Ar Func        => i_call Func
 call_last Ar Func D => i_call_last Func D
@@ -930,6 +948,10 @@ i_call_only f
 i_call_ext e
 i_call_ext_last e P
 i_call_ext_only e
+
+i_move_call_ext c r e
+i_move_call_ext_last e P c r
+i_move_call_ext_only e c r
 
 # Fun calls.
 
@@ -953,6 +975,8 @@ is_function f y
 is_function f r
 is_function Fail=f cwo => jump Fail
 
+func_info M=a a==am_module_info A=u==0 | label L | move n r => gen_func_info_mi(M, A, L)
+func_info M=a a==am_module_info A=u==1 | label L | move n r => gen_func_info_mi(M, A, L)
 func_info M=a F=a A=u | label L => gen_func_info(M, F, A, L)
 
 #
@@ -1044,16 +1068,47 @@ i_bs_skip_bits_all Fail | bs_test_tail f u==0 => i_bs_skip_bits_all Fail
 #
 %cold
 
-bs_init Size Flags=u | bs_need_buf Bits=u | assign_heap_bin_flag(Flags, Bits) => \
-	i_bs_init
-bs_init Size Flags | reset_heap_bin_flag() => i_bs_init
+bs_init2 Fail Sz=u Words=u==0 Regs Flags Dst | should_gen_heap_bin(Sz) | new_bs_instructions() => i_bs_init_heap_bin Sz Regs Dst
+bs_init2 Fail Sz=u Words=u==0 Regs Flags Dst | new_bs_instructions() => i_bs_init Sz Regs Dst
+
+bs_init2 Fail Sz=u Words Regs Flags Dst | should_gen_heap_bin(Sz) | new_bs_instructions() => i_bs_init_heap_bin_heap Sz Words Regs Dst
+bs_init2 Fail Sz=u Words Regs Flags Dst | new_bs_instructions() => \
+   i_bs_init_heap Sz Words Regs Dst
+
+bs_init2 Fail Sz Words=u==0 Regs Flags Dst | new_bs_instructions() => \
+  i_bs_init_fail Sz Fail Regs Dst
+bs_init2 Fail Sz Words Regs Flags Dst | new_bs_instructions() => \
+  i_fetch Sz r | i_bs_init_fail_heap Words Fail Regs Dst
+
+i_bs_init_fail r j I d
+i_bs_init_fail x j I d
+i_bs_init_fail y j I d
+
+i_bs_init_fail_heap I j I d
+
+i_bs_init I I d
+i_bs_init_heap_bin I I d
+
+i_bs_init_heap I I I d
+i_bs_init_heap_bin_heap I I I d
+
+bs_bits_to_bytes Fail Src Dst => i_bs_bits_to_bytes Src Fail Dst
+
+i_bs_bits_to_bytes r j d
+i_bs_bits_to_bytes x j d
+i_bs_bits_to_bytes y j d
+
+bs_add Fail S1 S2 Unit D => i_fetch S1 S2 | i_bs_add Fail Unit D
+
+i_bs_add j I d
+
+## Old instructions.
+bs_init Size Flags | old_bs_instructions() => i_bs_init_old
 bs_need_buf Bits =>
 
-bs_final Fail Dst | generate_heap_bin() => i_bs_final_heap Dst
 bs_final Fail Dst => i_bs_final Fail Dst
 
-i_bs_init
-i_bs_final_heap d
+i_bs_init_old
 i_bs_final j d
 
 #
@@ -1066,11 +1121,17 @@ bs_put_integer Fail=j Sz=s Unit=u Flags=u Bad=o => badarg Fail
 bs_put_integer Fail=j Sz=s Unit=u Flags=u Src=s => \
 			gen_put_integer(Fail, Sz, Unit, Flags, Src)
 
+%macro: i_new_bs_put_integer NewBsPutInteger
+%macro: i_new_bs_put_integer_imm NewBsPutIntegerImm
+
+i_new_bs_put_integer j s I s
+i_new_bs_put_integer_imm j I I s
+
+## Old instructions.
+
 %macro: i_bs_put_integer BsPutInteger
-%macro: i_bs_put_integer_imm BsPutIntegerImm
 
 i_bs_put_integer j s I s
-i_bs_put_integer_imm j I I s
 
 #
 # Storing floats into binaries.
@@ -1084,11 +1145,18 @@ bs_put_float Fail=j Sz=s Unit=u Flags=u Float=o => \
 
 bs_put_float Fail=j Sz=s Unit=u Flags=u Src=s => \
 			gen_put_float(Fail, Sz, Unit, Flags, Src)
-i_bs_put_float j s I s
-i_bs_put_float_imm j I I s
+
+%macro: i_new_bs_put_float NewBsPutFloat
+%macro: i_new_bs_put_float_imm NewBsPutFloatImm
+
+i_new_bs_put_float j s I s
+i_new_bs_put_float_imm j I I s
+
+## Old instructions.
 
 %macro: i_bs_put_float BsPutFloat
-%macro: i_bs_put_float_imm BsPutFloatImm
+
+i_bs_put_float j s I s
 
 #
 # Storing binaries into binaries.
@@ -1098,20 +1166,34 @@ bs_put_binary Fail=j Sz=s Unit=u Flags=u Bad=ow => badarg Fail
 bs_put_binary Fail=j Sz=s Unit=u Flags=u Src=s => \
 			gen_put_binary(Fail, Sz, Unit, Flags, Src)
 
+%macro: i_new_bs_put_binary NewBsPutBinary
+i_new_bs_put_binary j s I s
+
+%macro: i_new_bs_put_binary_imm NewBsPutBinaryImm
+i_new_bs_put_binary_imm j I s
+
+%macro: i_new_bs_put_binary_all NewBsPutBinaryAll
+i_new_bs_put_binary_all j s
+
+## Old instructions.
+
 %macro: i_bs_put_binary BsPutBinary
 i_bs_put_binary j s I s
-
-%macro: i_bs_put_binary_imm BsPutBinaryImm
-i_bs_put_binary_imm j I s
 
 %macro: i_bs_put_binary_all BsPutBinaryAll
 i_bs_put_binary_all j s
 
 #
-# Warning: The bs_put_string instruction is specially treated in the loader.
+# Warning: The i_bs_put_string and i_new_bs_put_string instructions
+# are specially treated in the loader.
 # Don't change the instruction format unless you change the loader too.
 #
-bs_put_string I I
+
+bs_put_string Len String | query_new_instructions() => i_new_bs_put_string Len String
+bs_put_string Len String => i_bs_put_string Len String
+
+i_bs_put_string I I
+i_new_bs_put_string I I
 
 %hot
 
@@ -1131,7 +1213,6 @@ fconv Big=w Dst=l => i_put_big Big x | fconv x Dst
 
 fmove o l
 fmove d l
-fmove l d
 fconv d l
 
 i_fadd l l l
@@ -1146,3 +1227,22 @@ fcheckerror p => i_fcheckerror
 
 i_fcheckerror
 fclearerror
+
+fmove FR=l Dst=d | new_float_allocation() => fmove_new FR Dst
+fmove FR=l Dst=d  => fmove_old FR Dst
+
+# The new instruction for moving a float out of a floating point register.
+# (No allocation.)
+fmove_new l d
+
+# The old instruction for moving a float out of a floating point register.
+# (Allocates a heap fragment.)
+
+fmove_old l d
+
+#
+# New apply instructions in R10B.
+#
+
+apply I
+apply_last I P

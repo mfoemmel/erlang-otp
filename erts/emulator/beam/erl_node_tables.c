@@ -86,7 +86,9 @@ dist_table_alloc(void *dep_tmpl)
     dep->refc       = 0;
     dep->sysname    = ((DistEntry *) dep_tmpl)->sysname;
     dep->cid        = NIL;
-    dep->links      = NULL;
+    dep->nlinks      = NULL;
+    dep->node_links      = NULL;
+    dep->monitors   = NULL;
     dep->status     = 0;
     dep->flags      = 0;
     dep->cache      = NULL;
@@ -116,7 +118,9 @@ dist_table_free(void *vdep)
 
     ASSERT(dep->refc == 0);
     ASSERT(is_nil(dep->cid));
-    ASSERT(dep->links == NULL);
+    ASSERT(dep->nlinks == NULL);
+    ASSERT(dep->node_links == NULL);
+    ASSERT(dep->monitors == NULL);
 
     /* Link out */
 
@@ -562,7 +566,9 @@ void erts_init_node_tables(void)
     erts_this_dist_entry->refc			= 0;
     erts_this_dist_entry->sysname		= am_Noname;
     erts_this_dist_entry->cid			= NIL;
-    erts_this_dist_entry->links			= NULL;
+    erts_this_dist_entry->node_links		= NULL;
+    erts_this_dist_entry->nlinks		= NULL;
+    erts_this_dist_entry->monitors		= NULL;
     erts_this_dist_entry->status		= 0;
     erts_this_dist_entry->flags			= 0;
     erts_this_dist_entry->cache			= NULL;
@@ -608,6 +614,7 @@ void erts_init_node_tables(void)
 
 static Eterm AM_heap;
 static Eterm AM_link;
+static Eterm AM_monitor;
 static Eterm AM_process;
 static Eterm AM_port;
 static Eterm AM_ets;
@@ -618,7 +625,7 @@ static Eterm AM_dist;
 static Eterm AM_node;
 static Eterm AM_dist_references;
 static Eterm AM_node_references;
-#ifdef SHARED_HEAP
+#if defined(SHARED_HEAP) || defined(HYBRID)
 static Eterm AM_processes;
 #endif
 
@@ -630,6 +637,7 @@ typedef struct node_referrer_ {
     struct node_referrer_ *next;
     int heap_ref;
     int link_ref;
+    int monitor_ref;
     int ets_ref;
     int bin_ref;
     Eterm id;
@@ -678,6 +686,7 @@ erts_get_node_and_dist_references(struct process *proc)
     if (references_atoms_need_init) {
 	INIT_AM(heap);
 	INIT_AM(link);
+	INIT_AM(monitor);
 	INIT_AM(process);
 	INIT_AM(port);
 	INIT_AM(ets);
@@ -691,6 +700,7 @@ erts_get_node_and_dist_references(struct process *proc)
 #ifdef SHARED_HEAP
 	INIT_AM(processes);
 #endif
+	references_atoms_need_init = 0;
     }
 
     setup_reference_table();
@@ -716,10 +726,11 @@ erts_get_node_and_dist_references(struct process *proc)
 
 #define HEAP_REF 1
 #define LINK_REF 2
-#define ETS_REF  3
+#define ETS_REF  3 
 #define BIN_REF  4
 #define NODE_REF 5
 #define CTRL_REF 6
+#define MONITOR_REF 7
 
 #define INC_TAB_SZ 10
 
@@ -797,6 +808,7 @@ insert_node_referrer(ReferredNode *referred_node, int type, Eterm id)
 	}
 	nrp->heap_ref = 0;
 	nrp->link_ref = 0;
+	nrp->monitor_ref = 0;
 	nrp->ets_ref = 0;
 	nrp->bin_ref = 0;
     }
@@ -806,6 +818,7 @@ insert_node_referrer(ReferredNode *referred_node, int type, Eterm id)
     case LINK_REF:	nrp->link_ref++;	break;
     case ETS_REF:	nrp->ets_ref++;		break;
     case BIN_REF:	nrp->bin_ref++;		break;
+    case MONITOR_REF:   nrp->monitor_ref++;     break;
     default:		ASSERT(0);
     }
 }
@@ -902,18 +915,49 @@ insert_offheap(ErlOffHeap *oh, int type, Eterm id)
 #endif
 }
 
-static void
-insert_links(ErlLink *links, Eterm id)
+static void doit_insert_monitor(ErtsMonitor *monitor, void *p)
 {
-    ErlLink *lp;
-    for (lp = links; lp; lp = lp->next) {
-	if(is_external(lp->item))
-	    insert_node(external_thing_ptr(lp->item)->node, LINK_REF, id);
-	if(is_external(lp->data))
-	    insert_node(external_thing_ptr(lp->data)->node, LINK_REF, id);
-	if(is_external(lp->ref))
-	    insert_node(external_thing_ptr(lp->ref)->node, LINK_REF, id);
-    }
+    Eterm *idp = p;
+    if(is_external(monitor->pid))
+	insert_node(external_thing_ptr(monitor->pid)->node, MONITOR_REF, *idp);
+    if(is_external(monitor->ref))
+	insert_node(external_thing_ptr(monitor->ref)->node, MONITOR_REF, *idp);
+}
+
+static void doit_insert_link(ErtsLink *lnk, void *p)
+{
+    Eterm *idp = p;
+    if(is_external(lnk->pid))
+	insert_node(external_thing_ptr(lnk->pid)->node, LINK_REF, 
+		    *idp);
+}
+
+
+static void
+insert_monitors(ErtsMonitor *monitors, Eterm id)
+{
+    erts_doforall_monitors(monitors,&doit_insert_monitor,&id);
+}
+
+static void
+insert_links(ErtsLink *lnk, Eterm id)
+{
+    erts_doforall_links(lnk,&doit_insert_link,&id);
+}
+
+static void doit_insert_link2(ErtsLink *lnk, void *p)
+{
+    Eterm *idp = p;
+    if(is_external(lnk->pid))
+	insert_node(external_thing_ptr(lnk->pid)->node, LINK_REF, 
+		    *idp);
+    insert_links(lnk->root, *idp);
+}
+
+static void
+insert_links2(ErtsLink *lnk, Eterm id)
+{
+    erts_doforall_links(lnk,&doit_insert_link2,&id);
 }
 
 static void
@@ -972,10 +1016,15 @@ setup_reference_table(void)
 
 #ifdef SHARED_HEAP
     /* Insert Heap */
-    insert_offheap(&erts_global_mso, HEAP_REF, AM_processes);
+    insert_offheap(&erts_global_offheap, HEAP_REF, AM_processes);
     /* Insert message buffers */
     for(hfp = global_mbuf; hfp; hfp = hfp->next)
 	insert_offheap(&hfp->off_heap, HEAP_REF, AM_processes);
+#endif
+
+#ifdef HYBRID
+    /* Insert Heap */
+    insert_offheap(&erts_global_offheap, HEAP_REF, AM_processes);
 #endif
 
     /* Insert all processes */
@@ -993,8 +1042,10 @@ setup_reference_table(void)
 			       process_tab[i]->id);
 #endif
 	    /* Insert links */
-	    if(process_tab[i]->links)
-		insert_links(process_tab[i]->links, process_tab[i]->id);
+	    if(process_tab[i]->nlinks)
+		insert_links(process_tab[i]->nlinks, process_tab[i]->id);
+	    if(process_tab[i]->monitors)
+		insert_monitors(process_tab[i]->monitors, process_tab[i]->id);
 	    /* Insert controller */
 	    if (process_tab[i]->dist_entry)
 		insert_dist_entry(process_tab[i]->dist_entry,
@@ -1009,8 +1060,8 @@ setup_reference_table(void)
 	    continue;
 
 	/* Insert links */
-	if(erts_port[i].links)
-	    insert_links(erts_port[i].links, erts_port[i].id);
+	if(erts_port[i].nlinks)
+	    insert_links(erts_port[i].nlinks, erts_port[i].id);
 	/* Insert port data */
 	for(hfp = erts_port[i].bp; hfp; hfp = hfp->next)
 	    insert_offheap(&(hfp->off_heap), HEAP_REF, erts_port[i].id);
@@ -1045,7 +1096,9 @@ setup_reference_table(void)
 	oh.mso = mso;
 	oh.externals = NULL;
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
 	oh.funs = NULL;
+#endif
 #endif
 	insert_offheap(&oh, BIN_REF, AM_match_spec);
 #undef  ADD_BINARY
@@ -1054,20 +1107,32 @@ setup_reference_table(void)
     /* Insert all dist links */
 
     for(dep = erts_visible_dist_entries; dep; dep = dep->next) {
-	if(dep->links)
-	    insert_links(dep->links, dep->sysname);
+	if(dep->nlinks)
+	    insert_links2(dep->nlinks, dep->sysname);
+	if(dep->node_links)
+	    insert_links(dep->node_links, dep->sysname);
+	if(dep->monitors)
+	    insert_monitors(dep->monitors, dep->sysname);
     }
 
     for(dep = erts_hidden_dist_entries; dep; dep = dep->next) {
-	if(dep->links)
-	    insert_links(dep->links, dep->sysname);
+	if(dep->nlinks)
+	    insert_links2(dep->nlinks, dep->sysname);
+	if(dep->node_links)
+	    insert_links(dep->node_links, dep->sysname);
+	if(dep->monitors)
+	    insert_monitors(dep->monitors, dep->sysname);
     }
 
     /* Not connected dist entries should not have any links,
        but inspect them anyway */
     for(dep = erts_not_connected_dist_entries; dep; dep = dep->next) {
-	if(dep->links)
-	    insert_links(dep->links, dep->sysname);
+	if(dep->nlinks)
+	    insert_links2(dep->nlinks, dep->sysname);
+	if(dep->node_links)
+	    insert_links(dep->node_links, dep->sysname);
+	if(dep->monitors)
+	    insert_monitors(dep->monitors, dep->sysname);
     }
 
     /* Insert all ets tables */
@@ -1129,6 +1194,10 @@ reference_table_term(Uint **hpp, Uint *szp)
 		tup = MK_2TUP(AM_link, MK_UINT(nrp->link_ref));
 		nrl = MK_CONS(tup, nrl);
 	    }
+	    if(nrp->monitor_ref) {
+		tup = MK_2TUP(AM_monitor, MK_UINT(nrp->monitor_ref));
+		nrl = MK_CONS(tup, nrl);
+	    }
 	    if(nrp->ets_ref) {
 		tup = MK_2TUP(AM_ets, MK_UINT(nrp->ets_ref));
 		nrl = MK_CONS(tup, nrl);
@@ -1163,12 +1232,14 @@ reference_table_term(Uint **hpp, Uint *szp)
 		tup = MK_2TUP(AM_port, nrid);
 	    }
 	    else if(nrp->ets_ref) {
-		ASSERT(!nrp->heap_ref && !nrp->link_ref && !nrp->bin_ref);
+		ASSERT(!nrp->heap_ref && !nrp->link_ref && 
+		       !nrp->monitor_ref && !nrp->bin_ref);
 		tup = MK_2TUP(AM_ets, nrid);
 	    }
 	    else if(nrp->bin_ref) {
 		ASSERT(is_small(nrid) || is_big(nrid));
-		ASSERT(!nrp->heap_ref && !nrp->ets_ref && !nrp->link_ref);
+		ASSERT(!nrp->heap_ref && !nrp->ets_ref && !nrp->link_ref && 
+		       !nrp->monitor_ref);
 		tup = MK_2TUP(AM_match_spec, nrid);
 	    }
 	    else  {

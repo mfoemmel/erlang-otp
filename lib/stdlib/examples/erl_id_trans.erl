@@ -295,6 +295,15 @@ gexpr({call,Line,{remote,La,{atom,Lb,erlang},{atom,Lc,F}},As0}) ->
 	true -> As1 = gexpr_list(As0),
 		{call,Line,{remote,La,{atom,Lb,erlang},{atom,Lc,F}},As1}
     end;
+% Unfortunately, writing calls as {M,F}(...) is also allowed.
+gexpr({call,Line,{tuple,La,[{atom,Lb,erlang},{atom,Lc,F}]},As0}) ->
+    case erl_internal:guard_bif(F, length(As0)) or
+	 erl_internal:arith_op(F, length(As0)) or 
+	 erl_internal:comp_op(F, length(As0)) or
+	 erl_internal:bool_op(F, length(As0)) of
+	true -> As1 = gexpr_list(As0),
+		{call,Line,{tuple,La,[{atom,Lb,erlang},{atom,Lc,F}]},As1}
+    end;
 gexpr({bin,Line,Fs}) ->
     Fs2 = pattern_grp(Fs),
     {bin,Line,Fs2};
@@ -400,11 +409,12 @@ expr({'receive',Line,Cs0,To0,ToEs0}) ->
     ToEs1 = exprs(ToEs0),
     Cs1 = icr_clauses(Cs0),
     {'receive',Line,Cs1,To1,ToEs1};
-expr({'try',Line,Es0,Scs0,Ccs0}) ->
+expr({'try',Line,Es0,Scs0,Ccs0,As0}) ->
     Es1 = exprs(Es0),
     Scs1 = icr_clauses(Scs0),
     Ccs1 = icr_clauses(Ccs0),
-    {'try',Line,Es1,Scs1,Ccs1};
+    As1 = exprs(As0),
+    {'try',Line,Es1,Scs1,Ccs1,As1};
 expr({'fun',Line,Body}) ->
     case Body of
 	{clauses,Cs0} ->

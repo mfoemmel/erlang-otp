@@ -67,6 +67,8 @@
 	 db_put/3,
 	 db_select/2,	 
 	 db_select/3,
+	 db_select_init/4,
+	 db_select_cont/3,
 	 db_slot/2,
 	 db_slot/3,
 	 db_update_counter/3,
@@ -1041,9 +1043,21 @@ db_select(Storage, Tab, Pat) ->
     end.
 
 catch_select(disc_only_copies, Tab, Pat) ->
-    dets:select(Tab, Pat);
+    catch dets:select(Tab, Pat);
 catch_select(_, Tab, Pat) ->
-    ets:select(Tab, Pat).
+    catch ets:select(Tab, Pat).
+
+db_select_init(disc_only_copies, Tab, Pat, Limit) ->
+    dets:select(Tab, Pat, Limit);
+db_select_init(_, Tab, Pat, Limit) ->
+    ets:select(Tab, Pat, Limit).
+
+db_select_cont(disc_only_copies, Cont0, Ms) ->
+    Cont = dets:repair_continuation(Cont0, Ms),
+    dets:select(Cont);
+db_select_cont(_, Cont0, Ms) ->
+    Cont = ets:repair_continuation(Cont0, Ms),
+    ets:select(Cont).
 
 db_fixtable(ets, Tab, Bool) ->
     ets:safe_fixtable(Tab, Bool);

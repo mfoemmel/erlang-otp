@@ -194,37 +194,30 @@ stop() ->
 %% either goes.
 init({NodeName, AppName, AppId}) ->
     process_flag(trap_exit, true),
-    %%case rpc:call(NodeName, appmon_info, start_link, [self()]) of
-    case appmon_info:start_link(NodeName, self(), []) of
-	{ok, Client} ->
-	    init_ref(),
-	    init_foreign_places(),
-	    DG = digraph:new([cyclic, public]),
-	    State = #astate{app=AppId, name=AppName, 
-			    client=Client, digraph=DG},
-	    refresh(State),
-	    setup_base_win(NodeName, AppName),
-	    {ok, State};
-	Other ->
-	    ignore
-    end.
-
-
-terminate(Reason, State) ->
-    ok.
-
-code_change(OldVsn, State, Extra) ->
+    {ok, Client} = appmon_info:start_link(NodeName, self(), []),
+    init_ref(),
+    init_foreign_places(),
+    DG = digraph:new([cyclic, public]),
+    State = #astate{app=AppId, name=AppName, client=Client, digraph=DG},
+    refresh(State),
+    setup_base_win(NodeName, AppName),
     {ok, State}.
 
-handle_call(norequest, From, State) ->
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+handle_call(norequest, _From, State) ->
     {reply, null, State}.
 
 %%------------------------------------------------------------
 %% handle casts
 
-handle_cast({ping, Node, From}, State) ->
+handle_cast({ping, _Node, _From}, State) ->
     {noreply, State};
-handle_cast(Other, State) ->
+handle_cast(_Other, State) ->
     {noreply, State}.
 
 
@@ -240,7 +233,8 @@ handle_info({gs, _, click, _, [?REFRESHTXT|_]}, State) ->
     refresh(State),
     {noreply, State};
 handle_info({gs, _, click, _, [?HELPTXT|_]}, State) ->
-    HelpFile = filename:join(code:priv_dir(appmon), "../doc/index.html"),
+    HelpFile = filename:join([code:lib_dir(appmon),
+			      "doc", "html", "part_frame.html"]),
     tool_utils:open_help(gs:start(), HelpFile),
     {noreply, State};
 handle_info({gs, Id, click, {mode, Mode}, _}, State) ->
@@ -258,17 +252,17 @@ handle_info({gs, Id, buttonpress, _,[1, X, Y|_]}, State) ->
     catch find_pid(State, Id, X, Y),
     set_default_mode(),
     {noreply, State};
-handle_info({gs, Win, configure, Data, [W, H, X, Y]}, State) ->
-    case win() of Win -> user_driven_resize(W, H, X, Y);
+handle_info({gs, Win, configure, _Data, [W, H|_]}, State) ->
+    case win() of Win -> user_driven_resize(W, H);
 	_-> ok
     end,
     {noreply, State};
 
-handle_info({delivery, S, pinfo, N, Res}, State) ->
+handle_info({delivery, _S, pinfo, _N, Res}, State) ->
     appmon_txt:print(Res),
     {noreply, State};
 handle_info({delivery, S, app, N, Res}, State) ->
-    {delivery, Serv, app, Name, {Root, Vs, Ls, SecLs}} = 
+    {delivery, _Serv, app, _Name, {Root, Vs, Ls, SecLs}} = 
 	flush({delivery, S, app, N, Res}),
     update2(Vs, Root, Ls, SecLs, State),
     {noreply, State};
@@ -277,9 +271,9 @@ handle_info({kill}, State) ->
     {stop, normal, State};
 handle_info({state}, State) ->
     {noreply, State};
-handle_info({'EXIT', Pid, Reason}, State) ->
+handle_info({'EXIT', _Pid, _Reason}, State) ->
     {noreply, State};
-handle_info(Other, State) ->
+handle_info(_Other, State) ->
     {noreply, State}.
 
 
@@ -303,7 +297,7 @@ find_pid(State, Id, X, Y) ->
 		  {error, _} ->
 		      gs:read(Id, {hit, {X, Y}}); % Try new format
 		  Num when integer(Num) -> [Num];
-		  Other -> []
+		  _Other -> []
 	      end,
     DG = State#astate.digraph,
     All = appmon_dg:get(all, DG),
@@ -311,11 +305,11 @@ find_pid(State, Id, X, Y) ->
 
 find_pid2([Id | Ids], All, DG, State) ->
     case search_for_pid(All, DG, Id) of
-	{ok, KeyStr, Pid} ->
+	{ok, _KeyStr, Pid} ->
 	    catch handle_proc_press(mode(), Pid, State);
 	_ -> find_pid2(Ids, All, DG, State)
     end;
-find_pid2([], All, DG, State) -> ok.
+find_pid2([], _All, _DG, _State) -> ok.
 
 search_for_pid([V|Vs], DG, ObjId) ->
     VD = appmon_dg:get(data, DG, V),
@@ -323,7 +317,7 @@ search_for_pid([V|Vs], DG, ObjId) ->
 	    {ok, V, VD#vdata.type};
 	true -> search_for_pid(Vs, DG, ObjId)
     end;
-search_for_pid([], DG, ObjId) -> false.
+search_for_pid([], _DG, _ObjId) -> false.
 
 
 %%
@@ -332,22 +326,22 @@ search_for_pid([], DG, ObjId) -> false.
 handle_proc_press(info, Pid, State) -> 
     appmon_info:pinfo(State#astate.client, Pid, true, 
 		      [{timeout, at_most_once}]);
-handle_proc_press(send, Pid, State) -> 
+handle_proc_press(send, Pid, _State) -> 
     {P, Msg} = two_entries(winroot(), 250, 70, "Send", "To: ", "Msg: ", 
 			   pid_to_list(Pid), "", bg()),
     list_to_pid(P) ! list_to_term(Msg);
-handle_proc_press(trace, Pid, State) -> 
+handle_proc_press(trace, Pid, _State) -> 
     case trace_state(Pid) of
 	true ->
 	    io:format("Removing trace on ~p~n", [Pid]),
 	    sys:trace(Pid, false),
 	    set_trace_state(Pid, false);
-	Other ->
+	_Other ->
 	    io:format("Putting trace on ~p~n", [Pid]),
 	    sys:trace(Pid, true, 1000),
 	    set_trace_state(Pid, true)
     end;
-handle_proc_press(kill, Pid, State) -> 
+handle_proc_press(kill, Pid, _State) -> 
     exit(Pid, kill).
 
 
@@ -358,7 +352,7 @@ set_default_mode() ->
     {Id, Mode} = get(default_mode),
     case mode() of
 	Mode -> true;
-	Other -> set_mode(Id, Mode)
+	_Other -> set_mode(Id, Mode)
     end.
 set_default_mode(Id, Mode) ->
     put(default_mode, {Id, Mode}),
@@ -436,7 +430,7 @@ add_procs([{Pid, Str}|Vs], DG, Ref) ->
 		_ -> [Str | add_procs(Vs, DG, Ref)]
 	    end
     end;
-add_procs([], DG, Ref) -> [].
+add_procs([], _DG, _Ref) -> [].
 
 
 %% Add links to digraph. NOTE that foreign links get a special weight
@@ -457,16 +451,16 @@ add_links([{V1, V2}|Ls], DG, Ref, Weight) ->
 		    case appmon_dg:eadd(DG, L, mk_edata(L, Ref), Ref) of
 			known -> add_links(Ls, DG, Ref, Weight);
 			updated -> add_links(Ls, DG, Ref, Weight);
-			Other -> [L | add_links(Ls, DG, Ref, Weight)]
+			_Other -> [L | add_links(Ls, DG, Ref, Weight)]
 		    end;
 		true ->
 		    add_links(Ls, DG, Ref, Weight)
 	    end
     end;
-add_links([], DG, Ref, Weight) -> [].
+add_links([], _DG, _Ref, _Weight) -> [].
 
 %% Make an edge data structure
-mk_edata(L, Ref) ->
+mk_edata(_L, Ref) ->
     #edata{ref=Ref}.
 
 %% Make a vertex data structure, note that pid can be either a pid or
@@ -485,7 +479,7 @@ del_procs([V|Vs], DG, Ref) ->
 			       [{V, VD} | del_procs(Vs, DG, Ref)];
 	true -> del_procs(Vs, DG, Ref)
     end;
-del_procs([], DG, Ref) -> [].
+del_procs([], _DG, _Ref) -> [].
 
 
 %% Deletes links that have the wrong reference from the digraph, note
@@ -498,7 +492,7 @@ del_links([L | Ls], DG, Ref) ->
 			       [{L, ED} | del_links(Ls, DG, Ref)];
 	true -> del_links(Ls, DG, Ref)
     end;
-del_links([], DG, Ref) -> [].
+del_links([], _DG, _Ref) -> [].
 
 %% Del deletes the GS objects of the list of should-be-deleted
 %% items. Returns nothing particular.
@@ -508,7 +502,7 @@ del(L) ->
 				  dealloc_foreign({V1, V2, Weight});
 			     true -> ok end,
 			  destroy(D#edata.line);
-		     ({I, D}) when record(D, vdata) ->
+		     ({_I, D}) when record(D, vdata) ->
 			  destroy(D#vdata.sym_obj),
 			  destroy(D#vdata.txt_obj)
 		  end, L).
@@ -549,7 +543,7 @@ move_edge(DG, E) ->
     move_line(DG, VD1, VD2, Line, Weight).
 move_line(DG, VD1, VD2, Line, Weight) when list(Line) ->
     move_line(DG, VD1, VD2, hd(Line), Weight);
-move_line(DG, VD1, VD2, Line, Weight) ->
+move_line(_DG, VD1, VD2, Line, Weight) ->
     Coords = calc_coords(VD1, VD2, Weight),
     gs:config(Line, [{coords, Coords} | line_opts(Weight)]).
 
@@ -642,7 +636,7 @@ calc_coords(From, To, primary) ->
     Y3 = trunc((Y1+Y2)/2),
     [{X1, Y1}, {X1, Y3}, {X2, Y3}, {X2, Y2}];
 
-calc_coords(V1, V2, Weight) ->
+calc_coords(V1, V2, _Weight) ->
     Y1  = scaley(V1#vdata.y),
     X1  = V1#vdata.x,
     X1w = X1+V1#vdata.width,
@@ -756,7 +750,7 @@ nice_line_coords(W, H) ->
 %%------------------------------
 %% Button stuff
 
-mk_butt_area(Win, W, Butts) ->
+mk_butt_area(Win, W) ->
     H = ?BUTTAREA_H,
     F = gs:create(frame, Win,[{x,0}, {y,0}, %%{bg, frame_col()},
 			      {width,W}, {height,H}]),
@@ -784,19 +778,16 @@ mk_butt_area(Win, W, Butts) ->
     HM = gs:create(menu, HMB, []),
     gs:create(menuitem, HM, [{label, {text, ?HELPTXT}}]),
   
-    ButtIds = nil,
-    {F, C, L, ButtIds}.
+    {F, C, L}.
 
 mk_std_butts(Win, W) ->
-    {F, C, L, ButtIds} = mk_butt_area(Win, W, ["Close", "Refresh"]),
+    {F, C, L} = mk_butt_area(Win, W),
     set_bframe(F), set_bcanvas(C), set_bline(L),
-    Group = now(),
 
     IButt = mk_mode_butt({text, "Info"}, {mode, info}, 10),
-    SButt = mk_mode_butt({text, "Send"}, {mode, send}, 90),
-    %%DButt = mk_mode_butt({text, "D"}, {mode, debug}, 170),
-    TButt = mk_mode_butt({text, "Trace"}, {mode, trace}, 170),
-    KButt = mk_mode_butt({text, "Kill"}, {mode, kill}, 250),
+    mk_mode_butt({text, "Send"}, {mode, send}, 90),
+    mk_mode_butt({text, "Trace"}, {mode, trace}, 170),
+    mk_mode_butt({text, "Kill"}, {mode, kill}, 250),
 
     set_default_mode(IButt, info),
     
@@ -854,7 +845,7 @@ two_entries(Root, W, H, Name, LTxt1, LTxt2, StartTxt1, StartTxt2, BG) ->
 
     Ret = case catch two_entries_loop(E1, E2, Ok, Cn) of
 	      {P2, Msg} -> {P2, Msg};
-	      Other -> %%io:format("Ooops: ~p~n", [Other]), 
+	      _Other ->
 		  false
 	  end,
     gs:destroy(Win),
@@ -970,7 +961,7 @@ tree_driven_resize(TWidth, THeight) ->
 adjust_win(Dim, TreeSize) ->
     case get({Dim, user_resize}) of
 	true -> ok;
-	XXX ->
+	_ ->
 	    WinSize = gs:read(win(), Dim),%%get_dim(Dim, win()),
 	    case get_wanted_winsize(Dim, TreeSize) + winadj(Dim) of
 		WinSize -> ok;
@@ -1002,7 +993,7 @@ old_win_size(Dim) -> get({Dim, winsize}).
 %%	resized this way then normal tree driven resize is not allow
 %%	to alter the size in that dimension. User overrides.
 %%
-user_driven_resize(W, H, X, Y) ->
+user_driven_resize(W, H) ->
     gs:config(win(), {configure, false}),
     check_user_resize(width, W),
     check_user_resize(height, H),
@@ -1013,7 +1004,7 @@ user_driven_resize(W, H, X, Y) ->
 check_user_resize(Dim, Size) ->
     case old_win_size(Dim) of
 	Size -> false;
-	Old ->
+	_ ->
 	    put({Dim, user_resize}, true),
 	    set_old_win_size(Dim, Size),
 	    fit_tree_to_win(Dim, get({Dim, tree}))

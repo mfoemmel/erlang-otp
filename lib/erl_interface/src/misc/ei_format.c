@@ -356,7 +356,7 @@ static int plist(const char** fmt, union arg** args, ei_x_buff* x, int size)
     return res;
 }
 
-static union arg* read_args(const char* fmt, va_list ap)
+static int read_args(const char* fmt, va_list ap, union arg **argp)
 {
     const char* p = fmt;
     int arg_count = 0;
@@ -365,13 +365,20 @@ static union arg* read_args(const char* fmt, va_list ap)
 
     /* Count the number of format strings. Assume null terminated string. */
 
+    *argp = NULL;
+
     while (*p) if (*p++ == '~') arg_count++;
 
+
+    if (!arg_count) {
+	return 0;
+    }
     /* Allocate space for the arguments */
 
     args = (union arg*)ei_malloc(arg_count * sizeof(union arg));
 
-    if (!args) return NULL;
+    if (!args) 
+	return -1;
 
     p = fmt;			/* Start again and fill array */
 
@@ -379,7 +386,7 @@ static union arg* read_args(const char* fmt, va_list ap)
       if (*p++ == '~') {
 	if (!*p) {
 	  ei_free(args);
-	  return NULL;	/* Error, string not complete */
+	  return -1;	/* Error, string not complete */
 	}
 	switch (*p++) {
 	case 'a': 
@@ -399,11 +406,12 @@ static union arg* read_args(const char* fmt, va_list ap)
 	  break;	
 	default:
 	  ei_free(args);	/* Invalid specifier */
-	  return NULL;
+	  return -1;
 	}
       }
     }
-    return args;
+    *argp = args;
+    return 0;
 }
        
 int ei_x_format(ei_x_buff* x, const char* fmt, ... )
@@ -417,9 +425,13 @@ int ei_x_format(ei_x_buff* x, const char* fmt, ... )
     if (res < 0) return res;
 
     va_start(ap, fmt);
-    saved_args = args = read_args(fmt, ap);
+    res = read_args(fmt,ap,&args);
+    saved_args = args;
     va_end(ap);
-    if (!args) return -1;
+    if (res < 0) {
+	return -1;
+    }
+
     res = eiformat(&fmt, &args, x);
     ei_free(saved_args);
 
@@ -433,9 +445,11 @@ int ei_x_format_wo_ver(ei_x_buff* x, const char* fmt, ... )
     int res;
 
     va_start(ap, fmt);
-    args = read_args(fmt, ap);
+    res = read_args(fmt,ap,&args);
     va_end(ap);
-    if (!args) return -1;
+    if (res < 0) {
+	return -1;
+    }
     res = eiformat(&fmt, &args, x);
     ei_free(args);
 

@@ -62,13 +62,12 @@ BIF_RETTYPE open_port_2(BIF_ALIST_2)
        else
 	  str = "einval";
        BIF_P->fvalue = am_atom_put(str, strlen(str));
-       BIF_ERROR(BIF_P, USER_ERROR);
+       BIF_ERROR(BIF_P, EXC_ERROR);
     }
 
     port_val = erts_port[port_num].id;
-    erts_port[port_num].links = new_link(erts_port[port_num].links,LNK_LINK,
-					 BIF_P->id, NIL);
-    BIF_P->links = new_link(BIF_P->links, LNK_LINK, port_val, NIL);
+    erts_add_link(&(erts_port[port_num].nlinks), LINK_PID, BIF_P->id);
+    erts_add_link(&(BIF_P->nlinks), LINK_PID, port_val);
     BIF_RET(port_val);
 }
 
@@ -164,7 +163,7 @@ BIF_RETTYPE port_command_2(BIF_ALIST_2)
 
     if (BIF_P->status == P_EXITING) {
        KILL_CATCHES(BIF_P);	/* Must exit */
-       BIF_ERROR(BIF_P, USER_ERROR);
+       BIF_ERROR(BIF_P, EXC_ERROR);
     }
     BIF_RET(am_true);
 }
@@ -209,6 +208,7 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
     Eterm res;
     int result_size;
     Eterm *hp;
+    Eterm *hp_end;              /* To satisfy hybrid heap architecture */
     unsigned ret_flags = 0U;
 
     port_resp = port_result;
@@ -276,20 +276,19 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
 	goto error;
     }
     hp = HAlloc(BIF_P, result_size);
+    hp_end = hp + result_size;
     endp = port_resp;
     if ((res = erts_from_external_format(NULL, &hp, &endp, &MSO(BIF_P)))
 	== THE_NON_VALUE) {
 	goto error;
     }
-    HRelease(BIF_P, hp);
+    HRelease(BIF_P, hp_end, hp);
     if (port_resp != port_result && !(ret_flags & DRIVER_CALL_KEEP_BUFFER)) {
 	driver_free(port_resp);
     }
     return res;
 }
     
-    
-
 BIF_RETTYPE port_control_3(BIF_ALIST_3)
 {
     Port* p;
@@ -303,7 +302,8 @@ BIF_RETTYPE port_control_3(BIF_ALIST_3)
     if (!term_to_Uint(BIF_ARG_2, &op)) {
 	goto error;
     }
-    if (port_control(BIF_P, p, op, BIF_ARG_3, &res) == 0) {
+    res = erts_port_control(BIF_P, p, op, BIF_ARG_3);
+    if (is_non_value(res)) {
 	goto error;
     }
     BIF_RET(res);
@@ -341,10 +341,8 @@ BIF_RETTYPE port_connect_2(BIF_ALIST_2)
 	goto error;
     }
     
-    if (find_link(&rp->links,LNK_LINK,prt->id,NIL) == NULL) {
-	rp->links = new_link(rp->links, LNK_LINK, prt->id, NIL);
-	prt->links = new_link(prt->links, LNK_LINK, pid, NIL);	
-    }
+    erts_add_link(&(rp->nlinks), LINK_PID, prt->id);
+    erts_add_link(&(prt->nlinks), LINK_PID, pid);
 
     prt->connected = pid; /* internal pid */
     BIF_RET(am_true);
@@ -416,7 +414,7 @@ open_port(Process* p, Eterm name, Eterm settings)
     SysDriverOpts opts;
     int binary_io;
     int soft_eof;
-    int linebuf;
+    Sint linebuf;
     byte dir[MAXPATHLEN];
 
     /* These are the defaults */
@@ -598,7 +596,7 @@ open_port(Process* p, Eterm name, Eterm settings)
 	    driver = &spawn_driver_entry;
 	} else if (*tp == am_fd) { /* An fd port */
 	    int n;
-	    char sbuf[16];
+	    struct Sint_buf sbuf;
 	    char* p;
 
 	    if (arity != make_arityval(3)) {
@@ -612,11 +610,11 @@ open_port(Process* p, Eterm name, Eterm settings)
 
 	    /* Syntesize name from input and output descriptor. */
 	    name_buf = tmp_buf;
-	    p = int_to_buf(opts.ifd, sbuf);
+	    p = Sint_to_buf(opts.ifd, &sbuf);
 	    n = sys_strlen(p);
 	    sys_strncpy(name_buf, p, n);
 	    name_buf[n] = '/';
-	    p = int_to_buf(opts.ofd, sbuf);
+	    p = Sint_to_buf(opts.ofd, &sbuf);
 	    sys_strcpy(name_buf+n+1, p);
 
 	    driver = &fd_driver_entry;

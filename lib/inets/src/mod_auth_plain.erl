@@ -78,9 +78,9 @@ list_users(DirData) ->
     PWDB = httpd_util:key1search(DirData, auth_user_file),
     case ets:match(PWDB, '$1') of
 	Records when list(Records) ->
-	    {ok, lists:foldr(fun({User,PassWd,Data}, A) -> [User|A] end, 
+	    {ok, lists:foldr(fun({User, _PassWd, _Data}, A) -> [User | A] end, 
 			     [], lists:flatten(Records))};
-	O ->
+	_ ->
 	    {ok, []}
     end.
 
@@ -89,12 +89,13 @@ delete_user(DirData, UserName) ->
 	"~n   UserName: ~p",[UserName]),
     PWDB = httpd_util:key1search(DirData, auth_user_file),
     case ets:lookup(PWDB, UserName) of
-	[{UserName, SomePassword, SomeData}] ->
+	[{UserName, _SomePassword, _SomeData}] ->
 	    ets:delete(PWDB, UserName),
 	    case list_groups(DirData) of
 		{ok,Groups}->
 		    lists:foreach(fun(Group) -> 
-					  delete_group_member(DirData, Group, UserName) 
+					  delete_group_member(DirData, 
+							      Group, UserName) 
 				  end,Groups),
 		    true;
 		_->
@@ -154,7 +155,7 @@ list_groups(DirData) ->
 	    {ok, []};
 	Groups0 when list(Groups0) ->
 	    ?DEBUG("list_groups -> Groups0: ~p",[Groups0]),
-	    {ok, httpd_util:uniq(lists:foldr(fun({G, U}, A) -> [G|A] end,
+	    {ok, httpd_util:uniq(lists:foldr(fun({G, _}, A) -> [G|A] end,
 					     [], lists:flatten(Groups0)))};
 	_ ->
 	    {ok, []}
@@ -165,7 +166,6 @@ delete_group_member(DirData, Group, User) ->
 	   "     Group: ~p~n"
 	   "     User:  ~p",[Group,User]),
     GDB = httpd_util:key1search(DirData, auth_group_file),
-    UDB = httpd_util:key1search(DirData, auth_user_file),
     case ets:lookup(GDB, Group) of
 	[{Group, Users}] when list(Users) ->
 	    case lists:member(User, Users) of
@@ -187,7 +187,7 @@ delete_group(DirData, Group) ->
     ?DEBUG("list_group_members -> Group: ~p",[Group]),
     GDB = httpd_util:key1search(DirData, auth_group_file),
     case ets:lookup(GDB, Group) of
-	[{Group, Users}] ->
+	[{Group, _Users}] ->
 	    ?DEBUG("list_group_members -> delete",[]),
 	    ets:delete(GDB, Group),
 	    true;
@@ -196,8 +196,7 @@ delete_group(DirData, Group) ->
 	    {error, no_such_group}
     end.
 
-
-store_directory_data(Directory, DirData) ->
+store_directory_data(_Directory, DirData) ->
     PWFile = httpd_util:key1search(DirData, auth_user_file),
     GroupFile = httpd_util:key1search(DirData, auth_group_file),
     case load_passwd(PWFile) of

@@ -74,7 +74,7 @@ loop(LoopData) ->
 	    lists:foreach({gse,disable},[trace_file, trace_file_browse]),
 	    loop(LoopData);
 
-	{gs, trace_to_file, click, _Data, [_Text,_,Value]} ->
+	{gs, trace_to_file, click, _Data, [_Text,_,_Value]} ->
 	    lists:foreach({gse,enable},[trace_file, trace_file_browse]),
 	    loop(LoopData);
 
@@ -89,8 +89,8 @@ loop(LoopData) ->
 		    loop(LoopData)
 	    end;
 
-	Other ->
-	    %% io:format("loop got: ~p~n",[Other]),
+	_Other ->
+	    %% io:format("loop got: ~p~n",[_Other]),
 	    loop(LoopData)
     end.
 
@@ -393,7 +393,7 @@ read_from_ok_file(File) ->
 	       true -> {default, format, #trace_options{}}
 	    end;
 	{ok, []} -> {default,format,#trace_options{}};
-	{ok, [Term1,Term2|Rest]} -> {default,format,#trace_options{}};
+	{ok, [_Term1,_Term2|_Rest]} -> {default,format,#trace_options{}};
 	{error, read} -> {default, format, #trace_options{}};
 	{error, open} -> {default, file, #trace_options{}};
 	_Anything -> {default, file, #trace_options{}}
@@ -408,9 +408,7 @@ read_from_ok_file(File) ->
 save_to_file(Options, File) ->
 
     case file:open(File,[write]) of
-	{error, Reason} ->
-	     exit({file_problem, File});
-	{error, Reason} ->
+	{error, _Reason} ->
 	     exit({file_problem, File});
 	{ok, Fd} ->
 	    {{Year,Month,Day},{H,M,S}} = calendar:local_time(),

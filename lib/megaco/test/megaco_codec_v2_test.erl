@@ -2537,6 +2537,7 @@ msgs4() ->
      {msg51f, msg51f(), Plain, [{dbg, false}]},
      {msg51g, msg51g(), Plain, [{dbg, false}]},
      {msg51h, msg51h(), Plain, [{dbg, false}]},
+     {msg51i, msg51i(), Plain, [{dbg, false}]},
      {msg52,  msg52(),  Plain, [{dbg, false}]},
      {msg53,  msg53(),  Plain, [{dbg, false}]},
      {msg54a, msg54a(), Plain, [{dbg, false}]},
@@ -3293,6 +3294,23 @@ msg51h(Mid) ->
 					     asn1_NOVALUE, 
 					     asn1_NOVALUE, 
 					     [IAPP]),
+    IASP  = cre_IndAudStreamParms(IALCD),
+    SID   = 123,
+    IASD  = cre_IndAudStreamDescriptor(SID, IASP),
+    msg51(Mid, IASP).
+
+
+msg51i() ->
+    msg51i(?MG2_MID).
+msg51i(Mid) ->
+    Name  = "nt/jit",
+    Name2 = "tdmc/ec",
+    IAPP  = cre_IndAudPropertyParm(Name),
+    IAPP2 = cre_IndAudPropertyParm(Name2),
+    IALCD = cre_IndAudLocalControlDescriptor('NULL', 
+					     'NULL', 
+					     'NULL', 
+					     [IAPP, IAPP2]),
     IASP  = cre_IndAudStreamParms(IALCD),
     SID   = 123,
     IASD  = cre_IndAudStreamDescriptor(SID, IASP),

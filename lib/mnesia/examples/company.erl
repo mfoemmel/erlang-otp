@@ -18,10 +18,10 @@
 -module(company).
 
 -compile(export_all).
--compile({parse_transform,mnemosyne_lc}).
 
 %0
 
+-include_lib("stdlib/include/qlc.hrl").
 -include("company.hrl").
 
 init() ->
@@ -61,23 +61,15 @@ mk_projs(_, []) -> ok.
 
 %1
 
-%15
--argtype({females, employee}).
-females(E) :-
-    E <- table(employee),
-    E.sex = female.
-%15
-
 %2
 females() ->
     F = fun() ->
-                Q = query [E.name || E <- table(employee),
-                                     E.sex = female] end,
-                mnemosyne:eval(Q)
-        end,
+		Q = qlc:q([E#employee.name || E <- mnesia:table(employee),
+					      E#employee.sex == female]),
+		qlc:e(Q)
+	end,
     mnesia:transaction(F).
 %2
-
 %20
 all_females() ->
     F = fun() ->
@@ -87,40 +79,29 @@ all_females() ->
     mnesia:transaction(F).
 %20
 
-%16
-females2() ->
-    F = fun() ->
-                Q = query [E.name || E <- rule(females) ] end,
-                mnemosyne:eval(Q)
-        end,
-    mnesia:transaction(F).
-%16
-
 g() -> l.
 
 %3
 female_bosses() ->
-    Q = query [{E.name, Boss.name} ||
-                  E <- table(employee),
-                  E.sex = female,
-                  Boss <- table(employee),
-                  Atdep <- table(at_dep),
-                  Mgr <- table(manager),
-                  Atdep.emp = E.emp_no,
-                  Mgr.emp = Boss.emp_no,
-                  Atdep.dept_id = Mgr.dept]
-         end,
-     mnesia:transaction(fun() -> mnemosyne:eval(Q) end).
+    Q = qlc:q( [{E#employee.name, Boss#employee.name} ||
+		   E <- mnesia:table(employee),
+		   Boss <- mnesia:table(employee),
+		   Atdep <- mnesia:table(at_dep),
+		   Mgr <- mnesia:table(manager),
+		   E#employee.sex == female,
+		   Atdep#at_dep.emp == E#employee.emp_no,
+		   Mgr#manager.emp == Boss#employee.emp_no,
+		   Atdep#at_dep.dept_id == Mgr#manager.dept]
+	      ),
+    mnesia:transaction(fun() -> qlc:e(Q) end).
 %3
 
-
-                    
 %4
 raise_females(Amount) ->
     F = fun() ->
-                Q = query [E || E <- table(employee),
-                                E.sex = female] end,
-                Fs = mnemosyne:eval(Q),
+                Q = qlc:q([E || E <- mnesia:table(employee),
+                                E#employee.sex == female]),
+		Fs = qlc:e(Q),
                 over_write(Fs, Amount)
         end,
     mnesia:transaction(F).
@@ -157,37 +138,17 @@ bad_raise(Eno, Raise) ->
         end,
     mnesia:transaction(F).
 %6
-
-
-%7
-f1() ->
-    Q = query 
-         [E || E <- table(employee), 
-          E.sex = female]
-    end, 
-    F = fun() -> mnemosyne:eval(Q) end,
-    mnesia:transaction(F).
-%7
-
-%8
-f2() ->
-    WildPat = mnesia:table_info(employee, wild_pattern),
-    Pat = WildPat#employee{sex = female},
-    F = fun() -> mnesia:match_object(Pat) end,
-    mnesia:transaction(F).
-%8
-
                        
 %9
 get_emps(Salary, Dep) ->
-    Q = query 
-          [E || E <- table(employee),
-                At <- table(at_dep),
-                E.salary > Salary,
-                E.emp_no = At.emp,
-                At.dept_id = Dep]
-        end,
-    F = fun() -> mnemosyne:eval(Q) end,
+    Q = qlc:q( 
+          [E || E <- mnesia:table(employee),
+                At <- mnesia:table(at_dep),
+                E#employee.salary > Salary,
+                E#employee.emp_no == At#at_dep.emp,
+                At#at_dep.dept_id == Dep]
+	 ),
+    F = fun() -> qlc:e(Q) end,
     mnesia:transaction(F).
 %9
 %10
@@ -230,7 +191,7 @@ search_deps(Name, [D|Tail], Dep) ->
         D#at_dep.dept_id == Dep -> true;
         true -> search_deps(Name, Tail, Dep)
     end;
-search_deps(Name, Tail, Dep) ->
+search_deps(_Name, _Tail, _Dep) ->
     false.
 
 %10
@@ -294,9 +255,9 @@ dist_init() ->
 %13
 remove_proj(ProjName) ->
     F = fun() ->
-                Ip = mnemosyne:eval(query [X || X <- table(in_proj),
-                                                X.proj_name = ProjName]
-                                    end),
+                Ip = qlc:e(qlc:q([X || X <- mnesia:table(in_proj),
+				       X#in_proj.proj_name == ProjName]
+				)),
                 mnesia:delete({project, ProjName}),
                 del_in_projs(Ip)
         end,
@@ -308,7 +269,7 @@ del_in_projs([Ip|Tail]) ->
 del_in_projs([]) ->
     done.
 %13
-                           
+        
 %14
 sync() ->
     case mnesia:wait_for_tables(tabs(), 10000) of

@@ -18,9 +18,9 @@
 %%              * 2001-07-30 EJ (happi@csd.uu.se):
 %%               Fixed some bugs and started cleanup.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2002/10/01 12:44:28 $
-%%              $Revision: 1.10 $
+%%              $Author: kostis $
+%%              $Date: 2004/04/08 16:01:18 $
+%%              $Revision: 1.18 $
 %% ====================================================================
 %%  Exports  :
 %%    gen_switch_val(I, VarMap, ConstTab, Options, ExitInfo)
@@ -29,9 +29,13 @@
 
 -module(hipe_rtl_mk_switch).
 -export([gen_switch_val/5,gen_switch_tuple/5]).
+
 %%-------------------------------------------------------------------------
+
 -include("../main/hipe.hrl").
+
 %%-------------------------------------------------------------------------
+
 -define(MINFORJUMPTABLE,9).
 	% Minimum number of integers needed to use something else than an inline search.
 -define(MINFORINTSEARCHTREE,65).  % Must be at least 3
@@ -48,7 +52,7 @@
 -define(MAXINLINEATOMSEARCH,64). % Must be at least 3
 	% The cutoff point between inlined and non-inlined binary search for atoms
 
--define(WORDSIZE, 4).
+-define(WORDSIZE, hipe_rtl_arch:word_size()).
 -define(MINDENSITY, 0.5).
         % Minimum density required to use a jumptable instead of a binary search.
 
@@ -60,18 +64,20 @@
 %% Options used by this module:
 %%
 %% [no_]use_indexing
-%%    Determines if any indexing be should be done at all. Turned on by default at 
-%%    optimization level o2 and higher.
+%%    Determines if any indexing be should be done at all. Turned on
+%%    by default at optimization level o2 and higher.
+%%
 %% [no_]use_clusters
-%%    Controls whether we attempt to divide sparse integer switches into smaller
-%%    dense clusters for which jumptables are practical. Turned off by
-%%    default since it can increase compilation time considerably and
-%%    most programs will gain little benefit from it.
+%%    Controls whether we attempt to divide sparse integer switches
+%%    into smaller dense clusters for which jumptables are practical.
+%%    Turned off by default since it can increase compilation time
+%%    considerably and most programs will gain little benefit from it.
+%%
 %% [no_]use_inline_atom_search
-%%    Controls whether we use an inline binary search for small number of atoms.
-%%    Turned off by default since this is currently only supported on sparc 
-%%    (and not on x86) and probably needs a bit more testing before it
-%%    can be turned on by default.
+%%    Controls whether we use an inline binary search for small number
+%%    of atoms. Turned off by default since this is currently only
+%%    supported on SPARC (and not on x86) and probably needs a bit
+%%    more testing before it can be turned on by default.
 
 gen_switch_val(I, VarMap, ConstTab, Options, ExitInfo) ->
   case proplists:get_bool(use_indexing, Options) of
@@ -81,7 +87,7 @@ gen_switch_val(I, VarMap, ConstTab, Options, ExitInfo) ->
 
 gen_fast_switch_val(I, VarMap, ConstTab, Options, ExitInfo) ->
   {Arg, VarMap0} = 
-	hipe_rtl_varmap:icode_var2rtl_var(hipe_icode:switch_val_arg(I), VarMap),
+    hipe_rtl_varmap:icode_var2rtl_var(hipe_icode:switch_val_arg(I), VarMap),
   IcodeFail = hipe_icode:switch_val_fail_label(I),
   {Fail, VarMap1} = hipe_rtl_varmap:icode_label2rtl_label(IcodeFail, VarMap0),
   %% Important that the list of cases is sorted when handling integers.
@@ -94,13 +100,10 @@ gen_fast_switch_val(I, VarMap, ConstTab, Options, ExitInfo) ->
   {Types, InitCode} = split_types(Cases, Arg),
   handle_types(Types, InitCode, VarMap1, ConstTab, Arg, {I, Fail, Options, ExitInfo}).
 
-handle_types([{Type, Lbl, Cases}| Types], Code, VarMap, ConstTab, Arg,
-	     Info) ->
-
+handle_types([{Type,Lbl,Cases}|Types], Code, VarMap, ConstTab, Arg, Info) ->
   {Code1,VarMap1,ConstTab1} = gen_fast_switch_on(Type, Cases, 
 						 VarMap, 
 						 ConstTab, Arg, Info),
-
   handle_types(Types, [Code,Lbl,Code1], VarMap1, ConstTab1, Arg, Info);
 handle_types([], Code, VarMap, ConstTab, _, _) ->
   {Code, VarMap, ConstTab}.
@@ -147,7 +150,7 @@ gen_fast_switch_on(atom, Cases, VarMap, ConstTab, Arg, {_I, Fail, Options, _Exit
 	  gen_search_switch_val(Arg, Cases, Fail, VarMap, ConstTab, Options)
       end
   end;	
-gen_fast_switch_on(_, _Cases, VarMap, ConstTab, _Arg, {I, _Fail, Options, ExitInfo})  ->
+gen_fast_switch_on(_, _, VarMap, ConstTab, _, {I,_Fail,Options,ExitInfo})  ->
   %% We can only handle smart indexing of integers and atoms
   %% TODO: Consider bignum
   gen_slow_switch_val(I, VarMap, ConstTab, Options, ExitInfo).
@@ -162,15 +165,14 @@ split_types([],_) ->
   %% Cant happen.
   ?EXIT({empty_caselist}).
 
-switch_on_types([{Type, Cases}], AccCode, AccCases, _Arg) ->
+switch_on_types([{Type,Cases}], AccCode, AccCases, _Arg) ->
   Lbl = hipe_rtl:mk_new_label(),
   I = hipe_rtl:mk_goto(hipe_rtl:label_name(Lbl)),
-  {[{Type, Lbl, lists:reverse(Cases)}| AccCases],lists:reverse([I|AccCode])};
-switch_on_types([{other, Cases}| Rest], AccCode, AccCases, Arg) ->
+  {[{Type,Lbl,lists:reverse(Cases)} | AccCases], lists:reverse([I|AccCode])};
+switch_on_types([{other,Cases} | Rest], AccCode, AccCases, Arg) ->
   %% Make sure the general case is handled last.
-  switch_on_types([Rest ++ {other, Cases}], AccCode, AccCases, Arg);
-
-switch_on_types([{Type, Cases}| Rest], AccCode, AccCases, Arg) ->
+  switch_on_types(Rest ++ [{other,Cases}], AccCode, AccCases, Arg);
+switch_on_types([{Type,Cases} | Rest], AccCode, AccCases, Arg) ->
   TLab = hipe_rtl:mk_new_label(),
   FLab = hipe_rtl:mk_new_label(),
   TestCode = 
@@ -180,15 +182,14 @@ switch_on_types([{Type, Cases}| Rest], AccCode, AccCases, Arg) ->
 				   hipe_rtl:label_name(FLab), 0.5);
       atom ->
 	hipe_tagscheme:test_atom(Arg, hipe_rtl:label_name(TLab), 
-				   hipe_rtl:label_name(FLab), 0.5);
+				 hipe_rtl:label_name(FLab), 0.5);
       bignum ->
 	hipe_tagscheme:test_bignum(Arg, hipe_rtl:label_name(TLab), 
 				   hipe_rtl:label_name(FLab), 0.5);
       _ -> ?EXIT({ooops, type_not_handled, Type})
     end,
-	
-  switch_on_types(Rest, [[TestCode, FLab]|AccCode], 
-		  [{Type, TLab, lists:reverse(Cases)}|AccCases],Arg).
+  switch_on_types(Rest, [[TestCode,FLab] | AccCode],
+		  [{Type,TLab,lists:reverse(Cases)} | AccCases], Arg).
 
 split([Case|Cases], Type, Current, Rest) ->
   case casetype(Case) of
@@ -203,34 +204,33 @@ split([], Type, Current, Rest) ->
 %% Determine what type an entry in the caselist has
 
 casetype({Const,_}) ->
-	casetype(hipe_icode:const_value(Const));
+  casetype(hipe_icode:const_value(Const));
 casetype(A) ->
-	if
-	  is_integer(A) -> 
-	    case hipe_tagscheme:is_fixnum(A) of
-	      true -> integer;
-	      false -> bignum
-	    end;
-	  is_float(A) -> float;
-	  is_atom(A) -> atom;
-	  true -> other
-	end.
-
+  if
+    is_integer(A) -> 
+      case hipe_tagscheme:is_fixnum(A) of
+	true -> integer;
+	false -> bignum
+      end;
+    is_float(A) -> float;
+    is_atom(A) -> atom;
+    true -> other
+  end.
 
 %% check that no duplicate values occur in the case list and also
 %% check that all case values have the same type.
 check_duplicates([]) -> true;
 check_duplicates([_]) -> true;
 check_duplicates([{Const1,_},{Const2,L2}|T]) ->
-	C1 = hipe_icode:const_value(Const1),
-	C2 = hipe_icode:const_value(Const2),
-%%	T1 = casetype(C1),
-%%	T2 = casetype(C2),
-	if C1 =/= C2 -> %% , T1 =:= T2 ->
-		check_duplicates([{Const2,L2}|T]);
-	   true ->
-	   	?EXIT({bad_values_in_switchval,C1})
-	end.	
+  C1 = hipe_icode:const_value(Const1),
+  C2 = hipe_icode:const_value(Const2),
+  %%	T1 = casetype(C1),
+  %%	T2 = casetype(C2),
+  if C1 =/= C2 -> %% , T1 =:= T2 ->
+      check_duplicates([{Const2,L2}|T]);
+     true ->
+      ?EXIT({bad_values_in_switchval,C1})
+  end.
 
 %%
 %% Determine the optimal way to divide Cases into clusters such that each 
@@ -253,95 +253,95 @@ check_duplicates([{Const1,_},{Const2,L2}|T]) ->
 %% each cluster is dense.
 
 minclusters(Cases) when is_list(Cases) ->
-	minclusters(list_to_tuple(Cases));
+  minclusters(list_to_tuple(Cases));
 minclusters(Cases) when is_tuple(Cases) ->
-	N = size(Cases),
-	MinClusters = list_to_tuple([0|n_list(N,inf)]),
-	i_loop(1,N,MinClusters,Cases).
+  N = size(Cases),
+  MinClusters = list_to_tuple([0|n_list(N,inf)]),
+  i_loop(1,N,MinClusters,Cases).
 
 %% Create a list with N elements initialized to Init
 n_list(0,_) -> [];
 n_list(N,Init) -> [Init | n_list(N-1,Init)].
 
 
-
 %% Do the dirty work of minclusters
 i_loop(I,N,MinClusters,_Cases) when I > N -> 
-	MinClusters;
+  MinClusters;
 i_loop(I,N,MinClusters,Cases) when I =< N ->
-	M = j_loop(0, I-1, MinClusters, Cases),
-	i_loop(I+1, N, M, Cases).
+  M = j_loop(0, I-1, MinClusters, Cases),
+  i_loop(I+1, N, M, Cases).
 
 %% More dirty work	
 j_loop(J,I1,MinClusters,_Cases) when J > I1 ->
-	MinClusters;
+  MinClusters;
 j_loop(J,I1,MinClusters,Cases) when J =< I1 ->
-	D = density(Cases,J+1,I1+1),
-	A0 = element(J+1,MinClusters),
-	A = if
-		is_number(A0) ->
-			A0+1;
-		true ->
-			A0
-	end,
-	B = element(I1+2,MinClusters),
-	M = if
-		D >= ?MINDENSITY, A<B ->
-			setelement(I1+2,MinClusters,A);
-		true ->
-			MinClusters
-	end,
-	j_loop(J+1,I1,M,Cases).
-		
+  D = density(Cases,J+1,I1+1),
+  A0 = element(J+1,MinClusters),
+  A = if
+	is_number(A0) ->
+	  A0+1;
+	true ->
+	  A0
+      end,
+  B = element(I1+2,MinClusters),
+  M = if
+	D >= ?MINDENSITY, A<B ->
+	  setelement(I1+2,MinClusters,A);
+	true ->
+	  MinClusters
+      end,
+  j_loop(J+1,I1,M,Cases).
+
 
 %% Determine the density of a (subset of a) case list
 %% A is a tuple with the cases in order from smallest to largest
 %% I is the index of the first element and J of the last
 
 density(A,I,J) ->
-	{AI,_}=element(I,A),
-	{AJ,_}=element(J,A),
-	(J-I+1)/(hipe_icode:const_value(AJ)-hipe_icode:const_value(AI)+1).
+  {AI,_} = element(I,A),
+  {AJ,_} = element(J,A),
+  (J-I+1)/(hipe_icode:const_value(AJ)-hipe_icode:const_value(AI)+1).
 
 
 %% Split a case list into dense clusters
 %% Returns a list of lists of cases.
-%% Cases is the case list and Clust is a list describing the optimal clustering
-%% as returned by minclusters
 %%
-%% If the value in the last place in minclusters is M then we can split the case
-%% list into M clusters. We then search for the last (== right-most) occurance of
-%% the value M-1 in minclusters. That indicates the largest number of cases that 
-%% can be split into M-1 clusters. This means that the cases in between constitute
-%% one cluster. Then we recurse on the remainder of the cases.
+%% Cases is the case list and Clust is a list describing the optimal
+%% clustering as returned by minclusters
 %%
-%% The various calls to lists:reverse are just to ensure that the cases remain in
-%% the correct, sorted order.
+%% If the value in the last place in minclusters is M then we can
+%% split the case list into M clusters. We then search for the last
+%% (== right-most) occurance of the value M-1 in minclusters. That
+%% indicates the largest number of cases that can be split into M-1
+%% clusters. This means that the cases in between constitute one
+%% cluster. Then we recurse on the remainder of the cases.
+%%
+%% The various calls to lists:reverse are just to ensure that the
+%% cases remain in the correct, sorted order.
 
 cluster_split(Cases,Clust) ->
-	A=tl(tuple_to_list(Clust)),
-	Max = element(size(Clust),Clust),
-	L1=lists:reverse(Cases),
-	L2=lists:reverse(A),
-	cluster_split(Max,[],[],L1,L2).
+  A = tl(tuple_to_list(Clust)),
+  Max = element(size(Clust),Clust),
+  L1 = lists:reverse(Cases),
+  L2 = lists:reverse(A),
+  cluster_split(Max,[],[],L1,L2).
 
 cluster_split(0,[],Res,Cases,_Clust) -> 
-	L=lists:reverse(Cases),
-	{H,_}=hd(L),
-	{T,_}=hd(Cases),
-	[{dense,hipe_icode:const_value(H),hipe_icode:const_value(T),L}|Res];
+  L = lists:reverse(Cases),
+  {H,_} = hd(L),
+  {T,_} = hd(Cases),
+  [{dense,hipe_icode:const_value(H),hipe_icode:const_value(T),L}|Res];
 
 cluster_split(N,[],Res,Cases,[N|Clust]) -> 
-	cluster_split(N-1,[],Res,Cases,[N|Clust]);
+  cluster_split(N-1,[],Res,Cases,[N|Clust]);
 
 cluster_split(N,Sofar,Res,Cases,[N|Clust]) -> 
-	{H,_}=hd(Sofar),
-	{T,_}=lists:last(Sofar),
-	cluster_split(N-1,[],[{dense,hipe_icode:const_value(H),hipe_icode:const_value(T),Sofar}|Res],Cases,[N|Clust]);
+  {H,_} = hd(Sofar),
+  {T,_} = lists:last(Sofar),
+  cluster_split(N-1,[],[{dense,hipe_icode:const_value(H),hipe_icode:const_value(T),Sofar}|Res],Cases,[N|Clust]);
 
 cluster_split(N,Sofar,Res,[C|Cases],[_|Clust]) ->
-	cluster_split(N,[C|Sofar],Res,Cases,Clust).
-
+  cluster_split(N,[C|Sofar],Res,Cases,Clust).
 
 %%
 %% Merge adjacent small clusters into larger sparse clusters
@@ -349,154 +349,144 @@ cluster_split(N,Sofar,Res,[C|Cases],[_|Clust]) ->
 cluster_merge([C]) -> [C];
 
 cluster_merge([{dense,Min,Max,C}|T]) when length(C) >= ?MINFORJUMPTABLE ->
-	C2=cluster_merge(T),
-	[{dense,Min,Max,C}|C2];
+  C2 = cluster_merge(T),
+  [{dense,Min,Max,C}|C2];
 
 cluster_merge([{sparse,Min,_,C},{sparse,_,Max,D}|T]) ->
-	R = {sparse,Min,Max,C ++ D},
-	cluster_merge([R|T]);
+  R = {sparse,Min,Max,C ++ D},
+  cluster_merge([R|T]);
 
 cluster_merge([{sparse,Min,_,C},{dense,_,Max,D}|T]) when length(D) < ?MINFORJUMPTABLE ->
-	R = {sparse,Min,Max,C ++ D},
-	cluster_merge([R|T]);
+  R = {sparse,Min,Max,C ++ D},
+  cluster_merge([R|T]);
 
 cluster_merge([{dense,Min,_,C},{dense,_,Max,D}|T]) when length(C) < ?MINFORJUMPTABLE, length(D) < ?MINFORJUMPTABLE ->
-	R = {sparse,Min,Max,C ++ D},
-	cluster_merge([R|T]);
+  R = {sparse,Min,Max,C ++ D},
+  cluster_merge([R|T]);
 
 cluster_merge([{dense,Min,_,D},{sparse,_,Max,C}|T]) when length(D) < ?MINFORJUMPTABLE ->
-	R = {sparse,Min,Max,C ++ D},
-	cluster_merge([R|T]);
+  R = {sparse,Min,Max,C ++ D},
+  cluster_merge([R|T]);
 
 cluster_merge([A,{dense,Min,Max,C}|T]) when length(C) >= ?MINFORJUMPTABLE ->
-	R=cluster_merge([{dense,Min,Max,C}|T]),
-	[A|R].
+  R = cluster_merge([{dense,Min,Max,C}|T]),
+  [A|R].
 
 
 %% Generate code to search for the correct cluster
 
 find_cluster([{sparse,_Min,_Max,C}],VarMap,ConstTab,Options,Arg,Fail,_IcodeFail) ->
-	case length(C) < ?MINFORINTSEARCHTREE of
-	   true ->
-	   	gen_small_switch_val(Arg,C,Fail,VarMap,ConstTab,Options);
-	   _ ->
-		gen_search_switch_val(Arg,C,Fail,VarMap,ConstTab,Options)
-	end;
-
-	
+  case length(C) < ?MINFORINTSEARCHTREE of
+    true ->
+      gen_small_switch_val(Arg,C,Fail,VarMap,ConstTab,Options);
+    _ ->
+      gen_search_switch_val(Arg,C,Fail,VarMap,ConstTab,Options)
+  end;
 find_cluster([{dense,Min,_Max,C}],VarMap,ConstTab,Options,Arg,Fail,IcodeFail) ->	
-	case length(C) < ?MINFORJUMPTABLE of
-	   true ->
-	   	gen_small_switch_val(Arg,C,Fail,VarMap,ConstTab,Options);
-	   _ ->
-		gen_jump_table(Arg,Fail,IcodeFail,VarMap,ConstTab,C,Min)
-	end;
-
-	
+  case length(C) < ?MINFORJUMPTABLE of
+    true ->
+      gen_small_switch_val(Arg,C,Fail,VarMap,ConstTab,Options);
+    _ ->
+      gen_jump_table(Arg,Fail,IcodeFail,VarMap,ConstTab,C,Min)
+  end;
 find_cluster([{Density,Min,Max,C}|T],VarMap,ConstTab,Options,Arg,Fail,IcodeFail) ->
-	
-	ClustLab=hipe_rtl:mk_new_label(),
-	NextLab=hipe_rtl:mk_new_label(),
-	{ClustCode,V1,C1}=find_cluster([{Density,Min,Max,C}],VarMap,ConstTab,Options,Arg,Fail,IcodeFail),
+  ClustLab = hipe_rtl:mk_new_label(),
+  NextLab = hipe_rtl:mk_new_label(),
+  {ClustCode,V1,C1} = find_cluster([{Density,Min,Max,C}],VarMap,ConstTab,Options,Arg,Fail,IcodeFail),
 
-	{Rest,V2,C2}=find_cluster(T,V1,C1,Options,Arg,Fail,IcodeFail),
-
-	{[
-	hipe_rtl:mk_branch(Arg , gt, hipe_rtl:mk_imm(hipe_tagscheme:mk_fixnum(Max)),
-			hipe_rtl:label_name(NextLab), 
-			hipe_rtl:label_name(ClustLab) , 0.50),	
-	ClustLab
-	] ++	
-	ClustCode ++
-	[NextLab] ++
-	Rest,
-	V2,C2}.
-
+  {Rest,V2,C2} = find_cluster(T,V1,C1,Options,Arg,Fail,IcodeFail),
+  
+  {[
+    hipe_rtl:mk_branch(Arg, gt, hipe_rtl:mk_imm(hipe_tagscheme:mk_fixnum(Max)),
+		       hipe_rtl:label_name(NextLab), 
+		       hipe_rtl:label_name(ClustLab), 0.50),	
+    ClustLab
+   ] ++	
+   ClustCode ++
+   [NextLab] ++
+   Rest,
+   V2,C2}.
 
 %% Generate efficient code for a linear search through the case list.
 %% Only works for atoms and integer.
 gen_linear_switch_val(Arg,Cases,Fail,VarMap,ConstTab,_Options) ->
-	{Values,_Labels} = split_cases(Cases),
-	{LabMap,VarMap1} = lbls_from_cases(Cases,VarMap),
-	
-	Code = fast_linear_search(Arg,Values,LabMap,Fail),
-	{Code,VarMap1,ConstTab}.
+  {Values,_Labels} = split_cases(Cases),
+  {LabMap,VarMap1} = lbls_from_cases(Cases,VarMap),
+  Code = fast_linear_search(Arg,Values,LabMap,Fail),
+  {Code,VarMap1,ConstTab}.
 
 fast_linear_search(_Arg,[],[],Fail) ->
-	[
-	hipe_rtl:mk_goto(hipe_rtl:label_name(Fail))
-	];
+  [hipe_rtl:mk_goto(hipe_rtl:label_name(Fail))];
 fast_linear_search(Arg,[Case|Cases],[Label|Labels],Fail) ->
-	Reg= hipe_rtl:mk_new_reg(),
-	NextLab = hipe_rtl:mk_new_label(),
-	C2 = fast_linear_search(Arg,Cases,Labels,Fail),
-	C1 =
-	  if
-	    is_integer(Case) ->
-	  	TVal= hipe_tagscheme:mk_fixnum(Case),
-  		[
-	  	hipe_rtl:mk_move(Reg,hipe_rtl:mk_imm(TVal)),
-  		hipe_rtl:mk_branch(Arg,eq,Reg,
-				Label,
-				hipe_rtl:label_name(NextLab), 0.5),
-		NextLab
-		];
-	    is_atom(Case) ->
-	  	[
-  		hipe_rtl:mk_load_atom(Reg,Case),
-	  	hipe_rtl:mk_branch(Arg,eq,Reg,
-				Label,
-				hipe_rtl:label_name(NextLab), 0.5),
-	  	NextLab
-	  	];
-	    true ->   % This should never happen !
-	  	?EXIT({internal_error_in_switch_val,Case})
-	  end,
-	[C1,C2].
+  Reg = hipe_rtl:mk_new_reg(),
+  NextLab = hipe_rtl:mk_new_label(),
+  C2 = fast_linear_search(Arg,Cases,Labels,Fail),
+  C1 =
+    if
+      is_integer(Case) ->
+	TVal = hipe_tagscheme:mk_fixnum(Case),
+	[
+	 hipe_rtl:mk_move(Reg,hipe_rtl:mk_imm(TVal)),
+	 hipe_rtl:mk_branch(Arg,eq,Reg,
+			    Label,
+			    hipe_rtl:label_name(NextLab), 0.5),
+	 NextLab
+	];
+      is_atom(Case) ->
+	[
+	 hipe_rtl:mk_load_atom(Reg,Case),
+	 hipe_rtl:mk_branch(Arg,eq,Reg,
+			    Label,
+			    hipe_rtl:label_name(NextLab), 0.5),
+	 NextLab
+	];
+      true ->   % This should never happen !
+	?EXIT({internal_error_in_switch_val,Case})
+    end,
+  [C1,C2].
 
 
 %% Generate code to search through a small cluster of integers using
 %% binary search
 gen_small_switch_val(Arg,Cases,Fail,VarMap,ConstTab,_Options) -> 
-	{Values,_Labels} = split_cases(Cases),
-	{LabMap,VarMap1} = lbls_from_cases(Cases,VarMap),
-	Keys = [hipe_tagscheme:mk_fixnum(X)    % Add tags to the values
-		|| X <- Values],
-	Code = inline_search(Keys, LabMap, Arg, Fail),
-	{Code, VarMap1, ConstTab}.
+  {Values,_Labels} = split_cases(Cases),
+  {LabMap,VarMap1} = lbls_from_cases(Cases,VarMap),
+  Keys = [hipe_tagscheme:mk_fixnum(X)    % Add tags to the values
+	  || X <- Values],
+  Code = inline_search(Keys, LabMap, Arg, Fail),
+  {Code, VarMap1, ConstTab}.
 
 
 %% Generate code to search through a small cluster of atoms
 gen_atom_switch_val(Arg,Cases,Fail,VarMap,ConstTab,_Options) -> 
-	{Values, _Labels} = split_cases(Cases),
-	{LabMap,VarMap1} = lbls_from_cases(Cases,VarMap),
-	LMap = [{label,L} || L <- LabMap],
-	
-	{NewConstTab,Id} = hipe_consttab:insert_sorted_block(ConstTab, Values),
-	{NewConstTab2,LabId} = hipe_consttab:insert_sorted_block(NewConstTab, 4 , word, LMap, Values),
+  {Values, _Labels} = split_cases(Cases),
+  {LabMap,VarMap1} = lbls_from_cases(Cases,VarMap),
+  LMap = [{label,L} || L <- LabMap],
+  
+  {NewConstTab,Id} = hipe_consttab:insert_sorted_block(ConstTab, Values),
+  {NewConstTab2,LabId} =
+    hipe_consttab:insert_sorted_block(NewConstTab, word, LMap, Values),
+  
+  Code = inline_atom_search(0, length(Cases)-1, Id, LabId, Arg, Fail, LabMap),
+  
+  {Code, VarMap1, NewConstTab2}.
 
-	Code = inline_atom_search(0, length(Cases)-1, Id, LabId, Arg, Fail, LabMap),
-	
-	{Code, VarMap1, NewConstTab2}.
 
-
-%% calculate the middle position of a list (+ 1 because of 1-indexing of listes)
+%% calculate the middle position of a list (+ 1 because of 1-indexing of lists)
 get_middle(List) ->
-    N = length(List),
-    N div 2 + 1.
-
+  N = length(List),
+  N div 2 + 1.
 
 %% get element [N1, N2] from a list
 get_cases(_, 0, 0) ->
-     [];
+  [];
 get_cases([H|T], 0, N) ->
-    [H | get_cases(T, 0, N - 1)];
+  [H | get_cases(T, 0, N - 1)];
 get_cases([_|T], N1, N2) ->
-    get_cases(T, N1 - 1, N2 - 1).
+  get_cases(T, N1 - 1, N2 - 1).
 
-    
 
-%% inline_search/4 creates rtl code for a inlined binary search.
+%% inline_search/4 creates RTL code for a inlined binary search.
 %% It requires two sorted tables - one with the keys to search
 %% through and one with the corresponding labels to jump to.
 %%    
@@ -509,209 +499,203 @@ get_cases([_|T], N1, N2) ->
 
 inline_search([], _LabelList, _KeyReg, _Default) -> [];
 inline_search(KeyList, LabelList, KeyReg, Default) ->
-    %% Create some registers and lables that we need.
-    Reg = hipe_rtl:mk_new_reg(),
-    Lab1 = hipe_rtl:mk_new_label(),
-    Lab2 = hipe_rtl:mk_new_label(),
-    Lab3 = hipe_rtl:mk_new_label(),
-
-    Length = length(KeyList),
-
-    if
-	Length >= 3 ->
-
-	    %% Get middle element and keys/labels before that and after
-	    Middle_pos = get_middle(KeyList),
-	    Middle_key = lists:nth(Middle_pos, KeyList),
-	    Keys_beginning = get_cases(KeyList, 0, Middle_pos - 1),
-	    Labels_beginning = get_cases(LabelList, 0, Middle_pos - 1),
-	    Keys_ending = get_cases(KeyList, Middle_pos, Length),
-	    Labels_ending = get_cases(LabelList, Middle_pos, Length),
-
-	    %% Create the code.
-
-	    %% Get the label and build it up properly
-	    Middle_label = lists:nth(Middle_pos, LabelList),
-
-	    A =[hipe_rtl:mk_move(Reg, hipe_rtl:mk_imm(Middle_key)),
-		hipe_rtl:mk_branch(KeyReg, lt, Reg, 
-		 			hipe_rtl:label_name(Lab2), 
-		 			hipe_rtl:label_name(Lab1), 0.5),
-		Lab1,
-		hipe_rtl:mk_branch(KeyReg, gt, Reg,
-					hipe_rtl:label_name(Lab3), 
-					Middle_label , 0.5),
-		Lab2],
-	    %% build search tree for keys less than the middle element
-	    B = inline_search(Keys_beginning, Labels_beginning, KeyReg, Default),
-	    %% ...and for keys bigger than the middle element
-	    D = inline_search(Keys_ending, Labels_ending, KeyReg, Default),
-
-	    %% append the code and return it
-	    A ++ B ++ [Lab3] ++ D;
-
-	Length == 2 ->
-	    %% get the first and second elements and theirs labels
-	    Key_first = hd(KeyList),
-	    First_label = hd(LabelList),
-
-	    % Key_second = hipe_tagscheme:mk_fixnum(lists:nth(2, KeyList)),
-	    Key_second = lists:nth(2, KeyList),
-	    Second_label = lists:nth(2, LabelList),
-
-	    NewLab = hipe_rtl:mk_new_label(),
-
-	    %% compare them
-	    A = [hipe_rtl:mk_move(Reg,hipe_rtl:mk_imm(Key_first)),
-		 hipe_rtl:mk_branch(KeyReg, eq, Reg,
-				    First_label, 
-				    hipe_rtl:label_name(NewLab) , 0.5),
-
-		 NewLab],
-		 
-	    B = [hipe_rtl:mk_move(Reg,hipe_rtl:mk_imm(Key_second)),
-		 hipe_rtl:mk_branch(KeyReg, eq, Reg,
-				    Second_label, 
-				    hipe_rtl:label_name(Default) , 0.5)],
-	    A ++ B;
-
-	Length == 1 ->
-	    Key = hd(KeyList),
-	    Label = hd(LabelList),
-
-	    [hipe_rtl:mk_move(Reg,hipe_rtl:mk_imm(Key)),
-	     hipe_rtl:mk_branch(KeyReg, eq, Reg,
-				Label, 
-				hipe_rtl:label_name(Default) , 0.5)]
-    end.
+  %% Create some registers and labels that we need.
+  Reg = hipe_rtl:mk_new_reg(),
+  Lab1 = hipe_rtl:mk_new_label(),
+  Lab2 = hipe_rtl:mk_new_label(),
+  Lab3 = hipe_rtl:mk_new_label(),
+  
+  Length = length(KeyList),
+  
+  if
+    Length >= 3 ->
+      %% Get middle element and keys/labels before that and after
+      Middle_pos = get_middle(KeyList),
+      Middle_key = lists:nth(Middle_pos, KeyList),
+      Keys_beginning = get_cases(KeyList, 0, Middle_pos - 1),
+      Labels_beginning = get_cases(LabelList, 0, Middle_pos - 1),
+      Keys_ending = get_cases(KeyList, Middle_pos, Length),
+      Labels_ending = get_cases(LabelList, Middle_pos, Length),
+      
+      %% Create the code.
+      
+      %% Get the label and build it up properly
+      Middle_label = lists:nth(Middle_pos, LabelList),
+      
+      A = [hipe_rtl:mk_move(Reg, hipe_rtl:mk_imm(Middle_key)),
+	   hipe_rtl:mk_branch(KeyReg, lt, Reg, 
+			      hipe_rtl:label_name(Lab2), 
+			      hipe_rtl:label_name(Lab1), 0.5),
+	   Lab1,
+	   hipe_rtl:mk_branch(KeyReg, gt, Reg,
+			      hipe_rtl:label_name(Lab3), 
+			      Middle_label , 0.5),
+	   Lab2],
+      %% build search tree for keys less than the middle element
+      B = inline_search(Keys_beginning, Labels_beginning, KeyReg, Default),
+      %% ...and for keys bigger than the middle element
+      D = inline_search(Keys_ending, Labels_ending, KeyReg, Default),
+      
+      %% append the code and return it
+      A ++ B ++ [Lab3] ++ D;
+    
+    Length == 2 ->
+      %% get the first and second elements and theirs labels
+      Key_first = hd(KeyList),
+      First_label = hd(LabelList),
+      
+      %% Key_second = hipe_tagscheme:mk_fixnum(lists:nth(2, KeyList)),
+      Key_second = lists:nth(2, KeyList),
+      Second_label = lists:nth(2, LabelList),
+      
+      NewLab = hipe_rtl:mk_new_label(),
+      
+      %% compare them
+      A = [hipe_rtl:mk_move(Reg,hipe_rtl:mk_imm(Key_first)),
+	   hipe_rtl:mk_branch(KeyReg, eq, Reg,
+			      First_label, 
+			      hipe_rtl:label_name(NewLab) , 0.5),
+	   NewLab],
+      
+      B = [hipe_rtl:mk_move(Reg,hipe_rtl:mk_imm(Key_second)),
+	   hipe_rtl:mk_branch(KeyReg, eq, Reg,
+			      Second_label, 
+			      hipe_rtl:label_name(Default) , 0.5)],
+      A ++ B;
+    
+    Length == 1 ->
+      Key = hd(KeyList),
+      Label = hd(LabelList),
+      
+      [hipe_rtl:mk_move(Reg,hipe_rtl:mk_imm(Key)),
+       hipe_rtl:mk_branch(KeyReg, eq, Reg,
+			  Label, 
+			  hipe_rtl:label_name(Default) , 0.5)]
+  end.
 
 
-
-inline_atom_search(Start,End, Block, LBlock, KeyReg, Default, Labels) ->
-	Reg = hipe_rtl:mk_new_reg(),
-
-	Length = (End - Start) +1,
-	
-	if
-	  Length >= 3 ->
-		Lab1 = hipe_rtl:mk_new_label(),
-		Lab2 = hipe_rtl:mk_new_label(),
-		Lab3 = hipe_rtl:mk_new_label(),
-		Lab4 = hipe_rtl:mk_new_label(),
-
-	  	Mid = ((End-Start) div 2)+Start,
-	  	End1 = Mid-1,
-	  	Start1 = Mid+1,
-	  	A = [
-		    hipe_rtl:mk_load_word_index(Reg,Block,Mid),
-		    hipe_rtl:mk_branch(KeyReg, lt, Reg,
-					hipe_rtl:label_name(Lab2),
-					hipe_rtl:label_name(Lab1), 0.5),
-	  	    Lab1,
-		    hipe_rtl:mk_branch(KeyReg, gt, Reg,
-					hipe_rtl:label_name(Lab3),
-					hipe_rtl:label_name(Lab4), 0.5),
-	  	    Lab4,
-		    hipe_rtl:mk_goto_index(LBlock, Mid, Labels),
-	  	    Lab2
-	  	    ],
-	  	B = [inline_atom_search(Start,End1,Block,LBlock,KeyReg,Default,Labels)],
-	  	C = [inline_atom_search(Start1,End,Block,LBlock,KeyReg,Default,Labels)],	  	
-		A ++ B ++ [Lab3] ++ C;
-	  
-	  Length == 2 ->
-		L1 = hipe_rtl:mk_new_label(),
-		L2 = hipe_rtl:mk_new_label(),
-		L3 = hipe_rtl:mk_new_label(),
-		[
-		hipe_rtl:mk_load_word_index(Reg,Block,Start),
-		hipe_rtl:mk_branch(KeyReg,eq,Reg,
-					hipe_rtl:label_name(L1),
-					hipe_rtl:label_name(L2), 0.5),
-		L1,
-		hipe_rtl:mk_goto_index(LBlock,Start,Labels),
-		
-		L2,
-		hipe_rtl:mk_load_word_index(Reg,Block,End),
-		hipe_rtl:mk_branch(KeyReg,eq,Reg,
-					hipe_rtl:label_name(L3),
-					hipe_rtl:label_name(Default), 0.5),
-		L3,
-		hipe_rtl:mk_goto_index(LBlock, End, Labels)
-		];
-		
-	  Length == 1 ->
-	  	NewLab = hipe_rtl:mk_new_label(),
-		[
-		hipe_rtl:mk_load_word_index(Reg,Block,Start),
-		hipe_rtl:mk_branch(KeyReg, eq, Reg,
-				   hipe_rtl:label_name(NewLab),
-				   hipe_rtl:label_name(Default) , 0.9),
-		NewLab,
-		hipe_rtl:mk_goto_index(LBlock, Start, Labels)
-		]
-	end.
+inline_atom_search(Start, End, Block, LBlock, KeyReg, Default, Labels) ->
+  Reg = hipe_rtl:mk_new_reg(),
+  
+  Length = (End - Start) +1,
+  
+  if
+    Length >= 3 ->
+      Lab1 = hipe_rtl:mk_new_label(),
+      Lab2 = hipe_rtl:mk_new_label(),
+      Lab3 = hipe_rtl:mk_new_label(),
+      Lab4 = hipe_rtl:mk_new_label(),
+      
+      Mid = ((End-Start) div 2)+Start,
+      End1 = Mid-1,
+      Start1 = Mid+1,
+      A = [
+	   hipe_rtl:mk_load_word_index(Reg,Block,Mid),
+	   hipe_rtl:mk_branch(KeyReg, lt, Reg,
+			      hipe_rtl:label_name(Lab2),
+			      hipe_rtl:label_name(Lab1), 0.5),
+	   Lab1,
+	   hipe_rtl:mk_branch(KeyReg, gt, Reg,
+			      hipe_rtl:label_name(Lab3),
+			      hipe_rtl:label_name(Lab4), 0.5),
+	   Lab4,
+	   hipe_rtl:mk_goto_index(LBlock, Mid, Labels),
+	   Lab2
+	  ],
+      B = [inline_atom_search(Start,End1,Block,LBlock,KeyReg,Default,Labels)],
+      C = [inline_atom_search(Start1,End,Block,LBlock,KeyReg,Default,Labels)],
+      A ++ B ++ [Lab3] ++ C;
+    
+    Length == 2 ->
+      L1 = hipe_rtl:mk_new_label(),
+      L2 = hipe_rtl:mk_new_label(),
+      L3 = hipe_rtl:mk_new_label(),
+      [
+       hipe_rtl:mk_load_word_index(Reg,Block,Start),
+       hipe_rtl:mk_branch(KeyReg,eq,Reg,
+			  hipe_rtl:label_name(L1),
+			  hipe_rtl:label_name(L2), 0.5),
+       L1,
+       hipe_rtl:mk_goto_index(LBlock,Start,Labels),
+       
+       L2,
+       hipe_rtl:mk_load_word_index(Reg,Block,End),
+       hipe_rtl:mk_branch(KeyReg,eq,Reg,
+			  hipe_rtl:label_name(L3),
+			  hipe_rtl:label_name(Default), 0.5),
+       L3,
+       hipe_rtl:mk_goto_index(LBlock, End, Labels)
+      ];
+    
+    Length == 1 ->
+      NewLab = hipe_rtl:mk_new_label(),
+      [
+       hipe_rtl:mk_load_word_index(Reg,Block,Start),
+       hipe_rtl:mk_branch(KeyReg, eq, Reg,
+			  hipe_rtl:label_name(NewLab),
+			  hipe_rtl:label_name(Default), 0.9),
+       NewLab,
+       hipe_rtl:mk_goto_index(LBlock, Start, Labels)
+      ]
+  end.
 
 
 %% Create a jumptable
 gen_jump_table(Arg,Fail,IcodeFail,VarMap,ConstTab,Cases,Min) ->
-	  %% Map is a rtl mapping of Dense
-	  {Max,DenseTbl} = dense_interval(Cases,Min,IcodeFail),
-	  {Map,VarMap2} = lbls_from_cases(DenseTbl,VarMap),
-
-	  %% Make some labels and registers that we need.
-	  BelowLab = hipe_rtl:mk_new_label(),
-	  UntaggedR = hipe_rtl:mk_new_reg(),
-	  StartR = hipe_rtl:mk_new_reg(),
-
-	  %% Generate the code to do the switch...
-	  {[
-	    %% Untag the index.
-	    %% 
-	    %% OBS:
-	    %% TODO: Use the tagscheme module for this!
-	    hipe_rtl:mk_alu(UntaggedR, Arg, sra, hipe_rtl:mk_imm(4))|
-	    %% Check that the index is within Min and Max.
-	    case Min of
-	      0 -> %% First element is 0 this is simple.
-		[hipe_rtl:mk_branch(UntaggedR, gtu, hipe_rtl:mk_imm(Max),
-				     hipe_rtl:label_name(Fail), 
-				     hipe_rtl:label_name(BelowLab) , 0.01),
-		 BelowLab,
-		 %% StartR contains the index into the jumptable
-		 hipe_rtl:mk_switch(UntaggedR, Map)];
-	      _ -> %% First element is not 0 
-		[hipe_rtl:mk_alu(StartR, UntaggedR, sub, 
-				 hipe_rtl:mk_imm(Min)), 
-		 hipe_rtl:mk_branch(StartR, gtu, hipe_rtl:mk_imm(Max-Min),
-				    hipe_rtl:label_name(Fail), 
-				    hipe_rtl:label_name(BelowLab) , 0.01),
-		 BelowLab,
-		 %% StartR contains the index into the jumptable
-		 hipe_rtl:mk_switch(StartR, Map)]
-	    end],
-	    VarMap2,
-	    ConstTab}.
+  %% Map is a rtl mapping of Dense
+  {Max,DenseTbl} = dense_interval(Cases,Min,IcodeFail),
+  {Map,VarMap2} = lbls_from_cases(DenseTbl,VarMap),
+  
+  %% Make some labels and registers that we need.
+  BelowLab = hipe_rtl:mk_new_label(),
+  UntaggedR = hipe_rtl:mk_new_reg(),
+  StartR = hipe_rtl:mk_new_reg(),
+  
+  %% Generate the code to do the switch...
+  {[
+    %% Untag the index.
+    hipe_tagscheme:untag_fixnum(UntaggedR, Arg)|
+    %% Check that the index is within Min and Max.
+    case Min of
+      0 -> %% First element is 0 this is simple.
+	[hipe_rtl:mk_branch(UntaggedR, gtu, hipe_rtl:mk_imm(Max),
+			    hipe_rtl:label_name(Fail), 
+			    hipe_rtl:label_name(BelowLab), 0.01),
+	 BelowLab,
+	 %% StartR contains the index into the jumptable
+	 hipe_rtl:mk_switch(UntaggedR, Map)];
+      _ -> %% First element is not 0 
+	[hipe_rtl:mk_alu(StartR, UntaggedR, sub, 
+			 hipe_rtl:mk_imm(Min)), 
+	 hipe_rtl:mk_branch(StartR, gtu, hipe_rtl:mk_imm(Max-Min),
+			    hipe_rtl:label_name(Fail), 
+			    hipe_rtl:label_name(BelowLab), 0.01),
+	 BelowLab,
+	 %% StartR contains the index into the jumptable
+	 hipe_rtl:mk_switch(StartR, Map)]
+    end],
+   VarMap2,
+   ConstTab}.
 
 
-% Generate the jumptable for Cases while filling in unused positions
-% with the fail label
+%% Generate the jumptable for Cases while filling in unused positions
+%% with the fail label
 
 dense_interval(Cases, Min, IcodeFail) ->
-	dense_interval(Cases, Min, IcodeFail, 0, 0).
+  dense_interval(Cases, Min, IcodeFail, 0, 0).
 dense_interval([Pair = {Const,_}|Rest], Pos, Fail, Range, NoEntries) ->
-	Val= hipe_icode:const_value(Const),
-	if 
-	    Pos < Val ->
-		{Max, Res} = 
-		dense_interval([Pair|Rest], Pos+1, Fail, Range+1, NoEntries),
-		{Max,[{hipe_icode:mk_const(Pos), Fail}|Res]};
-	    true ->
-		{Max, Res} = dense_interval(Rest, Pos+1, Fail, Range+1, NoEntries+1),
-		{Max, [Pair | Res]}
-	end;
+  Val = hipe_icode:const_value(Const),
+  if 
+    Pos < Val ->
+      {Max, Res} = 
+	dense_interval([Pair|Rest], Pos+1, Fail, Range+1, NoEntries),
+      {Max,[{hipe_icode:mk_const(Pos), Fail}|Res]};
+    true ->
+      {Max, Res} = dense_interval(Rest, Pos+1, Fail, Range+1, NoEntries+1),
+      {Max, [Pair | Res]}
+  end;
 dense_interval([], Max, _, _, _) -> 
-	{Max-1, []}.
+  {Max-1, []}.
 
 
 %%-------------------------------------------------------------------------
@@ -724,21 +708,21 @@ gen_slow_switch_val(I, VarMap, ConstTab, Options, ExitInfo) ->
   hipe_icode2rtl:translate_instrs(Is, VarMap, ConstTab, Options, ExitInfo).
 
 rewrite_switch_val(I) ->
-    Arg = hipe_icode:switch_val_arg(I),
-    Fail = hipe_icode:switch_val_fail_label(I),
-    Cases = hipe_icode:switch_val_cases(I),
-    rewrite_switch_val_cases(Cases, Fail, Arg).
+  Arg = hipe_icode:switch_val_arg(I),
+  Fail = hipe_icode:switch_val_fail_label(I),
+  Cases = hipe_icode:switch_val_cases(I),
+  rewrite_switch_val_cases(Cases, Fail, Arg).
 
 rewrite_switch_val_cases([{C,L}|Cases], Fail, Arg) ->
-    Tmp = hipe_icode:mk_new_var(),
-    NextLab = hipe_icode:mk_new_label(),
-    [hipe_icode:mk_mov(Tmp, C),
-     hipe_icode:mk_if(op_exact_eqeq_2, [Arg, Tmp], L,
-		      hipe_icode:label_name(NextLab)),
-     NextLab |
-     rewrite_switch_val_cases(Cases, Fail, Arg)];
+  Tmp = hipe_icode:mk_new_var(),
+  NextLab = hipe_icode:mk_new_label(),
+  [hipe_icode:mk_move(Tmp, C),
+   hipe_icode:mk_if(op_exact_eqeq_2, [Arg, Tmp], L,
+		    hipe_icode:label_name(NextLab)),
+   NextLab |
+   rewrite_switch_val_cases(Cases, Fail, Arg)];
 rewrite_switch_val_cases([], Fail, _Arg) ->
-    [hipe_icode:mk_goto(Fail)].
+  [hipe_icode:mk_goto(Fail)].
 
 
 %%-------------------------------------------------------------------------
@@ -749,9 +733,7 @@ gen_search_switch_val(Arg, Cases, Default, VarMap, ConstTab, _Options) ->
   ValTableR = hipe_rtl:mk_new_reg(),
 
   {Values,_Labels} = split_cases(Cases),
-  {NewConstTab,Id} =
-       hipe_consttab:insert_sorted_block(ConstTab, 
-			      Values),
+  {NewConstTab,Id} = hipe_consttab:insert_sorted_block(ConstTab, Values),
   {LabMap,VarMap1} = lbls_from_cases(Cases,VarMap),
   
   Code = 
@@ -762,7 +744,7 @@ gen_search_switch_val(Arg, Cases, Default, VarMap, ConstTab, _Options) ->
 
 %%-------------------------------------------------------------------------
 %%
-%% tab/5 creates rtl code for a binary search.
+%% tab/5 creates RTL code for a binary search.
 %% It requires two sorted tables one with the keys to search
 %% through and one with the corresponding labels to jump to.
 %%
@@ -867,8 +849,7 @@ tab(KeyList, LabelList, KeyReg, TablePntrReg, Default) ->
   LastOffset = (length(KeyList)-1)*?WORDSIZE, 
 
   %% Calculate the power of two closest to the size of the table.
-  Pow2 = 
-    trunc(math:pow(2,(trunc(math:log(LastOffset) / math:log(2))))),
+  Pow2 = trunc(math:pow(2,(trunc(math:log(LastOffset) / math:log(2))))),
 
   %% Create some registers an lables that we need.
   IndexReg = hipe_rtl:mk_new_reg(),
@@ -888,7 +869,7 @@ tab(KeyList, LabelList, KeyReg, TablePntrReg, Default) ->
    hipe_rtl:mk_load(Temp,TablePntrReg,hipe_rtl:mk_imm(Init)),
    hipe_rtl:mk_branch(Temp, ge, KeyReg,
 		      hipe_rtl:label_name(Lab2), 
-		      hipe_rtl:label_name(Lab1) , 0.5),
+		      hipe_rtl:label_name(Lab1), 0.5),
    Lab1,
    hipe_rtl:mk_alu(IndexReg, IndexReg, add, 
 		   hipe_rtl:mk_imm(Init+?WORDSIZE)),
@@ -899,55 +880,42 @@ tab(KeyList, LabelList, KeyReg, TablePntrReg, Default) ->
 
     [hipe_rtl:mk_branch(IndexReg, gt, hipe_rtl:mk_imm(LastOffset),
 		       hipe_rtl:label_name(Default), 
-		       hipe_rtl:label_name(Lab3) , 0.5),
+		       hipe_rtl:label_name(Lab3), 0.5),
      Lab3,
      hipe_rtl:mk_load(Temp2,TablePntrReg,IndexReg),
      hipe_rtl:mk_branch(Temp2, eq, KeyReg,
 			hipe_rtl:label_name(Lab4), 
-			hipe_rtl:label_name(Default) , 0.9),
+			hipe_rtl:label_name(Default), 0.9),
      Lab4,
-     hipe_rtl:mk_alu(IndexReg, IndexReg, sra, 
-		   hipe_rtl:mk_imm(2)),
-     hipe_rtl:mk_sorted_switch(IndexReg, LabelList, KeyList)]
-    .
+     hipe_rtl:mk_alu(IndexReg, IndexReg, sra,
+                     hipe_rtl:mk_imm(hipe_rtl_arch:log2_word_size())),
+     hipe_rtl:mk_sorted_switch(IndexReg, LabelList, KeyList)
+    ].
 
-step(?WORDSIZE,TablePntrReg,IndexReg,KeyReg) ->
-  Temp = hipe_rtl:mk_new_reg(),
-  TempIndex = hipe_rtl:mk_new_reg(),
-  Lab1 = hipe_rtl:mk_new_label(),
-  Lab2 = hipe_rtl:mk_new_label(),
-
-  [hipe_rtl:mk_alu(TempIndex, IndexReg, add, 
-		   hipe_rtl:mk_imm(?WORDSIZE)),
-
-   hipe_rtl:mk_load(Temp,TablePntrReg,TempIndex),
-   hipe_rtl:mk_branch(Temp, gt, KeyReg,
-		      hipe_rtl:label_name(Lab2), 
-		      hipe_rtl:label_name(Lab1) , 0.5),
-   Lab1,
-   hipe_rtl:mk_alu(IndexReg, IndexReg, add, 
-		   hipe_rtl:mk_imm(?WORDSIZE)),
-   hipe_rtl:mk_goto(hipe_rtl:label_name(Lab2)),
-   Lab2
-  ];
 step(I,TablePntrReg,IndexReg,KeyReg) ->
   Temp = hipe_rtl:mk_new_reg(),
   TempIndex = hipe_rtl:mk_new_reg(),
   Lab1 = hipe_rtl:mk_new_label(),
   Lab2 = hipe_rtl:mk_new_label(),
-
   [hipe_rtl:mk_alu(TempIndex, IndexReg, add, hipe_rtl:mk_imm(I)),
    hipe_rtl:mk_load(Temp,TablePntrReg,TempIndex),
    hipe_rtl:mk_branch(Temp, gt, KeyReg,
-		      hipe_rtl:label_name(Lab2), 
-		      hipe_rtl:label_name(Lab1) , 0.5),
-   Lab1,
-   hipe_rtl:mk_move(IndexReg, TempIndex),
-   hipe_rtl:mk_goto(hipe_rtl:label_name(Lab2)),
-   Lab2 |
-   step(I div 2,TablePntrReg,IndexReg,KeyReg)].
-
-
+                      hipe_rtl:label_name(Lab2), 
+                      hipe_rtl:label_name(Lab1) , 0.5),
+   Lab1] ++
+    case ?WORDSIZE of
+      I -> %% Recursive base case
+        [hipe_rtl:mk_alu(IndexReg, IndexReg, add, hipe_rtl:mk_imm(I)),
+         hipe_rtl:mk_goto(hipe_rtl:label_name(Lab2)),
+         Lab2
+        ];
+      _ -> %% Recursion case
+        [hipe_rtl:mk_move(IndexReg, TempIndex),
+         hipe_rtl:mk_goto(hipe_rtl:label_name(Lab2)),
+         Lab2
+         | step(I div 2,TablePntrReg,IndexReg,KeyReg)
+        ]
+    end.
 
 %%-------------------------------------------------------------------------
 
@@ -968,10 +936,6 @@ split_cases([{V,L}|Rest], Vs, Ls) ->
 
 %%-------------------------------------------------------------------------
 %%
-%%
-%%-------------------------------------------------------------------------
-
-%%
 %% {switch_tuple_arity,X,Fail,N,[{A1,L1},...,{AN,LN}]}
 %%
 %% if not boxed(X) goto Fail
@@ -979,41 +943,41 @@ split_cases([{V,L}|Rest], Vs, Ls) ->
 %% switch_int(Hdr,Fail,[{H(A1),L1},...,{H(AN),LN}])
 %% where H(Ai) = make_arityval(Ai)
 %% 
+%%-------------------------------------------------------------------------
 
 gen_switch_tuple(I, Map, ConstTab, _Options, _ExitInfo) ->
-    {X, Map1} = 
+  {X, Map1} = 
     hipe_rtl_varmap:icode_var2rtl_var(hipe_icode:switch_tuple_arity_arg(I), Map),
-    Fail0 = hipe_icode:switch_tuple_arity_fail_label(I),
-    {Fail1, Map2} = 
-    hipe_rtl_varmap:icode_label2rtl_label(Fail0, Map1),
-    FailLab = hipe_rtl:label_name(Fail1),
-    {Cases, Map3} =
-	lists:foldr(fun({A,L}, {Rest,M}) ->
-			    {L1,M1} = hipe_rtl_varmap:icode_label2rtl_label(L, M),
-			    L2 = hipe_rtl:label_name(L1),
-			    A1 = hipe_icode:const_value(A),
-			    H1 = hipe_tagscheme:mk_arityval(A1),
-			    {[{H1,L2}|Rest], M1} end,
-		    {[], Map2},
-		    hipe_icode:switch_tuple_arity_cases(I)),
-    Hdr = hipe_rtl:mk_new_reg(),
-    IsBoxedLab = hipe_rtl:mk_new_label(),
-    {[hipe_tagscheme:test_is_boxed(X, hipe_rtl:label_name(IsBoxedLab),
-				   FailLab, 0.9),
-      IsBoxedLab,
-      hipe_tagscheme:get_header(Hdr, X) |
-      gen_switch_int(Hdr, FailLab, Cases)],
-     Map3, ConstTab}.
+  Fail0 = hipe_icode:switch_tuple_arity_fail_label(I),
+  {Fail1, Map2} =  hipe_rtl_varmap:icode_label2rtl_label(Fail0, Map1),
+  FailLab = hipe_rtl:label_name(Fail1),
+  {Cases, Map3} =
+    lists:foldr(fun({A,L}, {Rest,M}) ->
+		    {L1,M1} = hipe_rtl_varmap:icode_label2rtl_label(L, M),
+		    L2 = hipe_rtl:label_name(L1),
+		    A1 = hipe_icode:const_value(A),
+		    H1 = hipe_tagscheme:mk_arityval(A1),
+		    {[{H1,L2}|Rest], M1} end,
+		{[], Map2},
+		hipe_icode:switch_tuple_arity_cases(I)),
+  Hdr = hipe_rtl:mk_new_reg(),
+  IsBoxedLab = hipe_rtl:mk_new_label(),
+  {[hipe_tagscheme:test_is_boxed(X, hipe_rtl:label_name(IsBoxedLab),
+				 FailLab, 0.9),
+    IsBoxedLab,
+    hipe_tagscheme:get_header(Hdr, X) |
+    gen_switch_int(Hdr, FailLab, Cases)],
+   Map3, ConstTab}.
 
 %%
-%% rtl-level switch-on-int
+%% RTL-level switch-on-int
 %%
 
 gen_switch_int(X, FailLab, [{C,L}|Rest]) ->
-    NextLab = hipe_rtl:mk_new_label(),
-    [hipe_rtl:mk_branch(X, eq, hipe_rtl:mk_imm(C), L,
-			hipe_rtl:label_name(NextLab), 0.5),
-     NextLab |
-     gen_switch_int(X, FailLab, Rest)];
+  NextLab = hipe_rtl:mk_new_label(),
+  [hipe_rtl:mk_branch(X, eq, hipe_rtl:mk_imm(C), L,
+		      hipe_rtl:label_name(NextLab), 0.5),
+   NextLab |
+   gen_switch_int(X, FailLab, Rest)];
 gen_switch_int(_, FailLab, []) ->
-    [hipe_rtl:mk_goto(FailLab)].
+  [hipe_rtl:mk_goto(FailLab)].

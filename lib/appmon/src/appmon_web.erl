@@ -14,19 +14,18 @@
 %% AB. All Rights Reserved.''
 %% 
 %%     $Id$
-%%                                                                        
+%%
 
-%%%----------------------------------------------------------------------
+%%%---------------------------------------------------------------------
 %%% File    : webappmon.erl
 %%% Author  : Martin G. <marting@erix.ericsson.se>
 %%% Purpose : Frontend to the webbased version of appmon.
 %%% Created : 24 Apr 2001 by Martin G. <marting@erix.ericsson.se>
-%%%----------------------------------------------------------------------
+%%%---------------------------------------------------------------------
 
 -module(appmon_web).
 
-% The functions that the user can call to interact with the
-% genserver
+%% The functions that the user can call to interact with the genserver
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2]).
 -export([terminate/2,code_change/3]).
 
@@ -34,15 +33,21 @@
 -export([proc_info/2,trace/2]).
 -export([start/0,stop/0,start_link/0]).
 
-% Export the function that returns the configuration data needed by  webtool
+%% Export the function that returns the configuration data needed by
+%% webtool
 -export([configData/0]).
--behavoiur(genserver).
+
+
+%% The following directive caters for (significantly) faster native
+%% code compilation of one function in this file by the HiPE compiler
+%% on register-poor architectures like the x86.
+-compile([{hipe,[{regalloc,graph_color}]}]).
+
+-behaviour(gen_server).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Start the genserver                                                  %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
-
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 start_link()->
     gen_server:start_link({local,webappmon_server},appmon_web,[],[]).
 start()->
@@ -50,50 +55,40 @@ start()->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Stop the genserver                                                   %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 stop()->
     gen_server:call(webappmon_server,stop,1000).
 
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Get the page that shows the nodes and the apps on the sel node       %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 node_info(Env,Input)->
     gen_server:call(webappmon_server,{node_data,Env,Input}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Get the application process tree                                     %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 application_info(Env,Input)->
     gen_server:call(webappmon_server,{app_data,Env,Input}).
 
-
-
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Get the page that shows the data about the process                   %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 proc_info(Env,Input)->
     gen_server:call(webappmon_server,{proc_data,Env,Input}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Get the spec on the app                                              %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 application_env(Env,Input)->
     gen_server:call(webappmon_server,{app_env,Env,Input}).
 
-
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Toggle the trace flag for the selected process                       %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 trace(Env,Input)->
     gen_server:call(webappmon_server,{trace,Env,Input}).
-
-
-
 
 configData()->
     {appmon,[{web_data,{"WebAppmon","/appmon/main_frame.html"}},
@@ -101,47 +96,45 @@ configData()->
 		{alias,{erl_alias,"/erl",[appmon_web]}},
 		{start,{child,{backend,{process_info,start_link,[]},
 			       permanent,100,worker,[process_info]}}},
-	     {start,{child,{{local,webappmon_server},{appmon_web,start_link,[]},
+	     {start,{child,{{local,webappmon_server},
+			    {appmon_web,start_link,[]},
 			    permanent,100,worker,[appmon_web]}}}
 	    ]}.
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                      %
 % Callback functions for the genserver                                 %
 %                                                                      %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-
-init(Arg)->
+init(_Arg)->
     {ok,[]}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%Create the different pages                                            %
+% Create the different pages                                           %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-handle_call({node_data,Env,Input},From,State)->
-    {reply,app_and_node_sel_page(Env,Input),State};
+handle_call({node_data,_Env,Input},_From,State)->
+    {reply,app_and_node_sel_page(Input),State};
 
-handle_call({app_data,Env,Input},From,State)->
-    {reply,process_tree_page(Env,Input),State};
+handle_call({app_data,_Env,Input},_From,State)->
+    {reply,process_tree_page(Input),State};
 
+handle_call({proc_data,_Env,Input},_From,State)->
+    {reply,process_specifickation_page(Input),State};
 
-handle_call({proc_data,Env,Input},From,State)->
-    {reply,process_specifickation_page(Env,Input),State};
+handle_call({app_env,_Env,Input},_From,State)->
+    {reply,application_specifickation_page(Input),State};
 
-handle_call({app_env,Env,Input},From,State)->
-    {reply,application_specifickation_page(Env,Input),State};
+handle_call({trace,_Env,Input},_From,State)->
+    {reply,toggle_trace(Input),State}.
 
-
-handle_call({trace,Env,Input},From,State)->
-    {reply,toggle_trace(Env,Input),State}.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Shutdown the genserver                                               %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-terminate(_,State)->
+terminate(_,_State)->
     ok.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%Callback function currently not used ...                              %
+% Callback function currently not used ...                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 handle_cast(_,State)->
     {noreply,State}.
@@ -149,29 +142,27 @@ handle_cast(_,State)->
 handle_info(_,State)->
     {noreply,State}.
 
-code_change(Old_vsn,State,Extra)->
+code_change(_OldVsn,State,_Extra)->
     {ok,State}.
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                    %%
-%%Private functions to create the part of the sides that is common    %%
-%%to all sides                                                        %%
+%% Private functions to create the part of the sides that is common   %%
+%% to all sides                                                       %%
 %%                                                                    %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Create the Header for the page If we now the mimetype use that type %%
-%%otherwise use text                                                  %%
+%% Create the Header for the page If we now the mimetype use that type%%
+%% otherwise use text                                                 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  
 header() ->
     header("text/html").
 header(MimeType) ->
     "Content-type: " ++ MimeType ++ "\r\n\r\n".
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
-%%Create the Htmlheader sett the title of the side to nothing if      %%       
-%%we dont know the name of the side                                   %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Create the Htmlheader sett the title of the side to nothing if     %%
+%% we dont know the name of the side                                  %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 html_header()->
    html_header("").
@@ -182,91 +173,103 @@ html_header(Part) ->
 	"<TITLE>Appmon " ++ Part ++  "</TITLE>\n" ++
 	"</HEAD>\n".
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Close the Html tag and if neccessay add some clean upp              %%
+%% Close the Html tag and if neccessay add some clean upp             %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 html_end()->
     "</HTML>".
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                                                                    %%
-%%The functions that creates the whole pages by collecting the        %%
-%%neccessary data                                                     %%
-%%                                                                    %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Returns the page where the user see's which nodes and apps that     %%
-%% are availible for monitoring                                       %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-app_and_node_sel_page(Env,Input)->
-    [header(),html_header(),node_body(httpd:parse_query(Input)),html_end()].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Returns the process tree for the application whose name is the first%%
-%%value in the Inputs key/value list                                  %%
+%%                                                                    %%
+%% The functions that creates the whole pages by collecting           %%
+%% the necessary data                                                 %%
+%%                                                                    %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-process_tree_page(Env,Input)->
-    %%Browser=getBrowser(Env),
-    [header(),html_header(),
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Returns the page where the user see's which nodes and apps that    %%
+%% are availible for monitoring                                       %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+app_and_node_sel_page(Input)->
+    [header(),
+     html_header(),
+     node_body(httpd:parse_query(Input)),
+     html_end()].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Returns the process tree for the application whose name is         %%
+%% the first value in the Inputs key/value list                       %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+process_tree_page(Input)->
+    [header(),
+     html_header(),
      application_javascript(httpd:parse_query(Input)),
      application_body(httpd:parse_query(Input)),
      html_end()].
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Send trace on or off to the process thats pid is the third arg of   %%
-%%the  inputs key/val list. Then it returns the process tree for the  %%
-%% application that is the first key/val pair of input                %%
+%% Send trace on or off to the process thats pid is the third arg of  %%
+%% the inputs key/val list. Then it returns the process tree for the  %%
+%% the application that is the first key/val pair of input            %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-toggle_trace(Env,Input)->
+toggle_trace(Input)->
    send_trace(httpd:parse_query(Input)),
-   [header(),html_header(),
+   [header(),
+    html_header(),
      application_javascript(httpd:parse_query(Input)),
-     application_body(httpd:parse_query(Input)),html_end()].
+     application_body(httpd:parse_query(Input)),
+    html_end()].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Creates the page that shows all information about the process that  %%
-%%that is the first arg of th input key/val pairs                     %%
+%% Creates the page that shows all information about the process that %%
+%% that is the first arg of th input key/val pairs                    %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-process_specifickation_page(Env,Input)->
-    [header(),html_header(),
-     process_body(httpd:parse_query(Input)),html_end()].
+process_specifickation_page(Input)->
+    [header(),
+     html_header(),
+     process_body(httpd:parse_query(Input)),
+     html_end()].
 
-application_specifickation_page(Env,Input)->
-    [header(),html_header(),application_env_body(httpd:parse_query(Input)),html_end()].
+application_specifickation_page(Input)->
+    [header(),
+     html_header(),
+     application_env_body(httpd:parse_query(Input)),
+     html_end()].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                                                                    %%
 %% The Private functions that do the job                              %%
 %% To build the the page that shows the applications                  %%
-%%                                                                    %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Build the body of the side that shows the node name and the         %%
-%%application list                                                    %%
+%% Build the body of the side that shows the node name and            %%
+%% the application list                                               %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 node_body([{"node",Node}|_Rest])->
     case  process_info:is_node(Node) of
 	{true,Controlled_node,Name} ->
-	    "<BODY BGCOLOR=\"#FFFFFF\">" ++ node_selections_javascripts() ++ (node_selection(Controlled_node)) ++ (node_title(Name)) ++ 
-		(application_tree(Controlled_node,Name)) ++  "</BODY>";
+	    "<BODY BGCOLOR=\"#FFFFFF\">" ++
+		node_selections_javascripts() ++
+		node_selection(Controlled_node) ++
+		node_title() ++
+		application_tree(Controlled_node,Name) ++
+		"</BODY>";
 	       
 	{false,Server_node,Name} ->
-	    "<BODY BGCOLOR=\"#FFFFFF\">" ++ node_selections_javascripts() ++ (node_selection(Server_node)) ++ (node_title(Name)) ++ 
-		(application_tree(Server_node,Name)) ++ "</BODY>"
+	    "<BODY BGCOLOR=\"#FFFFFF\">" ++
+		node_selections_javascripts() ++
+		node_selection(Server_node) ++
+		node_title() ++
+		application_tree(Server_node,Name) ++
+		"</BODY>"
     end;
-
-
-%%case we didnt get a node use the current
 
 node_body(_Whatever)->
     node_body([{atom_to_list(node),atom_to_list(node())}]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Returns the javascript that sets a new node to monitor              %%
-%%                                                                    %%
+%% Returns the javascript that sets a new node to monitor             %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 node_selections_javascripts()->
     "<SCRIPT>
       function node_selected()
@@ -276,62 +279,67 @@ node_selections_javascripts()->
            "document.node_selection.nodes[document.node_selection.nodes.selectedIndex].value;
       }
       </SCRIPT>".
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Insert the html code that shows the combobox where the user can     %%
-%%select another node to monitor                                      %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Insert the html code that shows the combobox where the user can    %%
+%% select another node to monitor                                     %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 node_selection(Node)->
     " <FORM ACTION=\"./node_info\" NAME=node_selection>\n
            <TABLE WIDTH=\"100%\" BORDER=\"0\">\n
               <TR><TD ALIGN=\"center\">\n 
                   <SELECT NAME=nodes onChange=\"node_selected()\">\n" ++
-	                  print_nodes(order_nodes(Node,process_info:get_nodes())) ++
-                    "</SELECT>\n
+	print_nodes(order_nodes(Node,process_info:get_nodes())) ++
+	"</SELECT>\n
               </TD></TR>\n
             </TABLE>\n
           </FORM>".
     
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Add the node we are working with in the beginning of the list and   %%
-%%remove it from other places so its always the first in the listbox  %%
+%% Add the node we are working with in the beginning of the list and  %%
+%% remove it from other places so its always the first in the listbox %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 order_nodes(Node,Node_list)->
     [Node|lists:delete(Node,Node_list)].
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Take the list of nodes and make it to a list of options to the      %%
-%%combobox                                                            %%
+%% Take the list of nodes and make it to a list of options to the     %%
+%% the combobox                                                       %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 print_nodes([])->
     [];
 print_nodes([Node|Rest])->
-    "<OPTION value=\"" ++ atom_to_list(Node) ++ "\">" ++ atom_to_list(Node) ++ "\n" ++
-    print_nodes(Rest).
+    "<OPTION value=\"" ++
+	atom_to_list(Node) ++
+	"\">" ++
+	atom_to_list(Node) ++
+	"\n" ++
+	print_nodes(Rest).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Create the header of the node info page i.e. the name of the node   %%
+%% Create the header of the node info page i.e. the name of the node  %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-node_title(Node)->
+node_title()->
    " <TABLE WIDTH=\"100%\" BORDER=\"0\">
 	<TR><TD ALIGN=\"center\"><FONT SIZE=5>Applications</FONT></TD></TR>
     </TABLE>\n".
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Build the body of the side that shows the node i.e the application  %%
-%%list                                                                %%
-%%Node and Node_name are the same just different types                %%
-%%Node are the atom  Node_name the string of the node name            %%  
+%% Build the body of the side that shows the node i.e the application %%
+%% list                                                               %%
+%% Node and Node_name are the same just different types               %%
+%% Node are the atom  Node_name the string of the node name           %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 application_tree(Node,Node_name)->
     Fun=fun(Name)->
-	    Name_str =atom_to_list(Name),
-	    "<LI><A HREF=\"./application_info?name=" ++ Name_str  ++ 
-		    "&mode=all&node=" ++ Node_name ++ "\" TARGET=main><B>" 
-		    ++ Name_str ++  "</B></A>" ++ print_space(15-length(Name_str),[]) ++
-		    "<A HREF=\"./application_env?name=" ++ Name_str ++ "&node=" 
-		    ++ Node_name ++ "\" TARGET=\"main\"><FONT SIZE=2>spec</FONT></A></LI>\n" 
+		Name_str =atom_to_list(Name),
+		"<LI><A HREF=\"./application_info?name=" ++ Name_str  ++
+		    "&mode=all&node=" ++ Node_name ++
+		    "\" TARGET=main><B>" ++ Name_str ++
+		    "</B></A>" ++ print_space(15-length(Name_str),[]) ++
+		    "<A HREF=\"./application_env?name=" ++ Name_str ++
+		    "&node=" ++ Node_name ++
+		    "\" TARGET=\"main\"><FONT SIZE=2>spec</FONT></A></LI>\n" 
 	end,
     "<UL>" ++ 
 	lists:map(Fun, (process_info:get_applications(Node))) ++
@@ -342,28 +350,23 @@ application_tree(Node,Node_name)->
 	"</FORM>" ++
 	"<!--<A HREF=\"../../appmon/application_help.html\" TARGET=main>Help</A>-->".
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Print spaces between the application name and the spec link        %%
-%%                                                                   %%
+%% Print spaces between the application name and the spec link       %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 print_space(N,Space)when N >0 ->
     print_space(N-1,"&nbsp;" ++ Space);
-print_space(N,Space)->
+print_space(_N,Space)->
     Space.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                                                                    %%
 %% The Private functions that do the job                              %%
 %% To build the the page that shows process in an application         %%
-%%                                                                    %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%Generates the javascript that govern the look of the page that      %%
 %%the processes of an application                                     %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 %%Args is the list whit input args should be App Mode, Node
 application_javascript(Args)when length(Args)>=3 ->
     Vars=
@@ -421,10 +424,9 @@ application_javascript(Args)when length(Args)>=3 ->
 application_javascript(_)->
     "<SCRIPT></SCRIPT>".
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Create the body i.e the process tree for the applications whose name%%
-%% is the second arg in the first tuple                              %%
+%% Create the body i.e the process tree for the applications whose    %%
+%% name is the second arg in the first tuple                          %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%args is the list [{_,Appname},{_,Mode},{_Node}]
 application_body(Args)when list(Args),length(Args) >= 3 ->
@@ -435,17 +437,17 @@ application_body(Args)when list(Args),length(Args) >= 3 ->
 	++ mode_selection(Mode) ++ 
 	selected_app_header(App,Node) ++ process_tree(App,Mode,Node)++ 
 	"</BODY>";
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%If the pattern above ain't match then something is wrong            %%
+%% If the pattern above ain't match then something is wrong           %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 application_body(_Whatever)->
     "Please use the links to the left".
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Create the part of the process tree page side where the user can    %%
-%%select the mode the view the tree in.                               %%
+%% Create the part of the process tree page side where the user can   %%
+%% select the mode the view the tree in.                              %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 mode_selection(Mode)->
     "<FORM NAME=\"reload_form\">\n" ++
 	"<TABLE>" ++
@@ -458,27 +460,25 @@ mode_selection(Mode)->
 	"</FORM>".
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Print the radiobuttons. if the mode is the one the current radio-but%%
-%% represent set the one checked                                      %%
+%% Print the radiobuttons. if the mode is the one the current         %%
+%% radiobutton represent set the one checked                          %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 print_radio_buttons([],_)->
     [];
 print_radio_buttons([{Mode,Name}|Rest],Mode)->
     "<TD><INPUT TYPE=\"radio\" NAME=\"mode\" CHECKED=\"true\" VALUE=\""++ 
-	Mode ++"\" onClick=\"reload_page()\">&nbsp;&nbsp;" ++Name ++  "</TD>\n" ++
-	print_radio_buttons(Rest,Mode);
+	Mode ++"\" onClick=\"reload_page()\">&nbsp;&nbsp;" ++Name ++
+	"</TD>\n" ++ print_radio_buttons(Rest,Mode);
 print_radio_buttons([{Mode1,Name}|Rest],Mode)->
     "<TD><INPUT TYPE=\"radio\" NAME=\"mode\" VALUE=\""++ Mode1 ++
-	"\" onClick=\"reload_page()\">&nbsp;&nbsp;" ++Name ++  "</TD>\n" ++
+	"\" onClick=\"reload_page()\">&nbsp;&nbsp;" ++ Name ++
+	"</TD>\n" ++
 	print_radio_buttons(Rest,Mode).
-
        
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%The part that shows the name of the application  that the process   %%
+%% The part that shows the name of the application  that the process  %%
 %% tree represent                                                     %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%	
-       
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 selected_app_header(App,Node)->
     {Year,Mon,Day}=date(),
     "<TABLE>
@@ -507,22 +507,26 @@ selected_app_header(App,Node)->
          </TD>
        </TR>
      </TABLE>".
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%get the process tree from process_info and build the nested unordered%%
-%%list that represent the applications process tree                    %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%	
 
-  process_tree(App,Mode,Node)->
-    case process_info:get_processes(list_to_atom(App),list_to_atom(Mode),list_to_atom(Node)) of
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%get the process tree from process_info and build the nested         %%
+%% unordered list that represent the applications process tree        %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+process_tree(App,Mode,Node)->
+    case process_info:get_processes(list_to_atom(App),
+				    list_to_atom(Mode),
+				    list_to_atom(Node)) of
 	unknown->
 	    "Unknown application please update application tree";
 	{Tree,Traced_dict} ->
-	    "<UL>" ++ htmlify_tree(Tree,Traced_dict,1,Node,Mode,App) ++ "</UL>"
+	    "<UL>" ++
+		htmlify_tree(Tree,Traced_dict,1,Node,Mode,App) ++
+		"</UL>"
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Build each node in the tree and then build its children             %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%	
+%% Build each node in the tree and then build its children            %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 htmlify_tree({Pid,Childs,Childs2},Proc_tab,N,Node,Mode,App)->
     case ets:lookup(Proc_tab,Pid) of
 	[] when N<3->
@@ -539,26 +543,26 @@ htmlify_tree({Pid,Childs,Childs2},Proc_tab,N,Node,Mode,App)->
 		htmlify_sec_child(Childs2)	      	 
     end.
 
-print_pid(Pid,Node,Mode,App,notrace)->
+print_pid(Pid,Node,_Mode,_App,notrace)->
     "<LI><A TARGET=\"proc_data\" STYLE=\"text-decoration:none; color:blue\" HREF=\"./proc_info?name=" ++ urlify_pid(Pid) ++ 
-		"&node="++ Node  ++" \" >"++ htmlify_pid(Pid,[])  ++ 
-                "</A>";
+	"&node="++ Node  ++" \" >"++ htmlify_pid(Pid,[])  ++ 
+	"</A>";
 
-print_pid([$P,$o,$r,$t|Rest],Node,Mode,App,TrMode)->
+print_pid([$P,$o,$r,$t|Rest],_Node,_Mode,_App,_TrMode)->
     "<LI>" ++ htmlify_pid([$P,$o,$r,$t|Rest],[]);
 
 print_pid(Pid,Node,Mode,App,TrMode)->
     "<LI><A TARGET=\"proc_data\" STYLE=\"text-decoration:none; color:blue\" HREF=\"./proc_info?name=" ++ 
-	urlify_pid(Pid) ++ "&node="++ Node  ++" \" >"++ htmlify_pid(Pid,[])  ++ 
-                "</A>"++ 
+	urlify_pid(Pid) ++ "&node="++ Node  ++" \" >"++
+	htmlify_pid(Pid,[])  ++ "</A>"++ 
 	"&nbsp;&nbsp;&nbsp
-                <A HREF=\"./trace?app="++App++"&mode="++Mode++"&node="++Node++"&proc="++urlify_pid(Pid)++"\">
+                <A HREF=\"./trace?app="++App++"&mode="++Mode++
+	"&node="++Node++"&proc="++urlify_pid(Pid)++"\">
                "++TrMode++"</A>".
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%Change the '<' sign and the '>' sign to the html representation of  %%
-%%the sign                                                           %%
+%% Change the '<' sign and the '>' sign to the html representation   %%
+%% of the sign                                                       %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 htmlify_pid([60|Pid],New)->
     htmlify_pid(Pid,";tl&"++New);
@@ -574,10 +578,10 @@ htmlify_pid([Chr|Pid],New)->
 htmlify_pid([],New)->
     lists:reverse(New).
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Change the < and > sign to the representation of the signs in the  %%
-%% HTTP protocol                                                     %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Change the < and > sign to the representation of the signs in      %%
+%% the HTTP protocol                                                  %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 urlify_pid(Pid) ->
     case regexp:first_match(Pid,"[<].*[>]") of
 	{match,Start,Len}->
@@ -585,10 +589,11 @@ urlify_pid(Pid) ->
 	_->
 	    Pid
     end.
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Change the < and > sign from the representation of the signs in the%%
-%% HTTP protocol                                                     %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Change the < and > sign from the representation of the signs in    %%
+%% the HTTP protocol                                                  %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 unurlify_pid(Pid)->
     unurlify_pid(Pid,[]).
 
@@ -604,9 +609,9 @@ unurlify_pid([],New)->
     lists:reverse(New).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Make html of the list of primary childs                             %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%	
-htmlify_prim_child([],Proc_tab,N,_Node,_Mode,_App)->
+%% Make html of the list of primary childs                            %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+htmlify_prim_child([],_Proc_tab,_N,_Node,_Mode,_App)->
     [];
 
 htmlify_prim_child(Childs,Proc_tab,N,Node,Mode,App)->
@@ -616,58 +621,57 @@ htmlify_prim_child(Childs,Proc_tab,N,Node,Mode,App)->
     "<UL>\n" ++ lists:map(Fun,Childs) ++ "</UL>\n".
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Make html of hte list whit sedondary childs, they has no childs     %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%	
+%% Make html of hte list whit sedondary childs, they has no childs    %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 htmlify_sec_child([])->
     [];
 
 htmlify_sec_child(Sec_child_list)->
     Htmlify_child=fun(Pid1)->
-			  "<LI><FONT COLOR=\"#FF2222\">" ++ Pid1 ++ "</FONT></LI>\n"
+			  "<LI><FONT COLOR=\"#FF2222\">" ++ Pid1 ++
+			      "</FONT></LI>\n"
 		  end,
     "<UL>" ++ lists:map(Htmlify_child,Sec_child_list) ++ "</UL>\n".
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                                                                    %%
 %% The Private functions that do the job                              %%
 %% To build the the page that shows process data                      %%
-%%                                                                    %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%The function that creates the collects the various part of the side %%
-%%that shows information about a specific process, Pid_name  should be%%
-%%the list representation of a pid                                    %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%	
+%% The function that creates the collects the various part of         %%
+%% the side that shows information about a specific process,          %%
+%% Pid_name should be the list representation of a pid                %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 process_body(Args) when length(Args)==2->
     Pid=element(2,lists:nth(1,Args)),
     Node=element(2,lists:nth(2,Args)),
-    "<BODY BGCOLOR=\"#FFFFFF\">"  ++ process_information_table(Pid,Node) ++ "</BODY>";
+    "<BODY BGCOLOR=\"#FFFFFF\">"  ++
+	process_information_table(Pid,Node) ++ "</BODY>";
 
 process_body(_)->
     "<BODY BGCOLOR=\"#FFFFFF\">Please dont call this side manually</BODY>".
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Create the table that shows the name of the pid to show extended    %%
-%%info about                                                          %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%     
+%% Create the table that shows the name of the pid to show extended   %%
+%% info about                                                         %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Get the table that shows the extended info about a process          %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%	
+%% Get the table that shows the extended info about a process         %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 process_information_table(Pid_name,Node)->
     PidID=unurlify_pid(Pid_name),
     case catch list_to_pid(PidID) of
 	Pid when pid(Pid) -> 
 	    get_process_table(Pid,Node);
-	Other ->
+	_Other ->
 	    io_lib:format("Not a process id ~s",[PidID])
     end.
 	      
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Create the table that shoows the extended info about processes      %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%	
+%% Create the table that shoows the extended info about processes     %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 get_process_table(Pid,Node_name) when list(Node_name)->
     Node=list_to_atom(Node_name),
     get_process_table(Pid,Node);
@@ -675,21 +679,22 @@ get_process_table(Pid,Node_name) when list(Node_name)->
 get_process_table(Pid,Node)when atom(Node)->
     case lists:member(Node,[node()|nodes()]) of
 	true-> 
-	    {Year,Mon,Day}=date(),
 	    Proc_data=process_info:get_process_data(Pid,Node),
 	    "<TABLE BORDER=1 >
                 <TR BGCOLOR=\"#8899AA\"><TD COLSPAN=6 ALIGN=\"center\" > 
-                       <FONT size=4> Process" ++ htmlify_pid(pid_to_list(Pid),[])  ++  "</FONT>
+                       <FONT size=4> Process" ++
+		htmlify_pid(pid_to_list(Pid),[])  ++  "</FONT>
                </TD></TR>" ++
-		   start_process_proc_data(Proc_data) ++ "</TABLE><BR><BR>";
-	_->
+		   start_process_proc_data(Proc_data) ++
+		"</TABLE><BR><BR>";
+	_ ->
 	    "Please try again the Node dont exists"
     end.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% The process information is quite messy tidi it up by creating a    %%
-%%table that looks like key           val                             %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%	
-
+%% table that looks like key           val                            %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 start_process_proc_data(Proc_data)->
     %%Pic out the special cases the links and the process dict
     {Special,Usual}=split_proc_data(Proc_data),
@@ -697,7 +702,6 @@ start_process_proc_data(Proc_data)->
     UsualProcData=process_proc_data(Usual2,0),
     SpecProcData=process_proc_data(Special),
     UsualProcData++SpecProcData.
-    
 
 append_empty(List) when length(List) rem 2 == 0 ->
     List;
@@ -714,7 +718,7 @@ split_proc_data(Proc_data)->
 			   end
 		   end,[links,dictionary,messages]),
     Spec2=clear(Spec,[]),
-    Usual=lists:filter(fun({Key,Val})->
+    Usual=lists:filter(fun({Key,_Val})->
 			       case Key of
 				   messages ->
 				       false;
@@ -742,39 +746,42 @@ process_proc_data([],_N)->
 process_proc_data(Data,0)->
     "<TR>"++process_proc_data(Data,1);
 
-
 process_proc_data([empty|Data],N)->
     "<TD>&nbsp;</TD><TD>&nbsp;</TD> "++process_proc_data(Data,N+1);
 
-
 process_proc_data([{current_function,MFA}|Rest],N)->
     "<TD NOWRAP=true><FONT SIZE=3><B>Current function:</B></TD><TD><FONT SIZE=3>"++ 
-	io_lib:format("~p",[MFA]) ++"</TD>\n " ++ process_proc_data(Rest,N+1);
-
+	io_lib:format("~p",[MFA]) ++"</TD>\n " ++
+	process_proc_data(Rest,N+1);
 
 process_proc_data([{error_handler,Mod}|Rest],N)->
     "<TD NOWRAP=\"true\"><B><FONT SIZE=3>Error handler:</B></TD><TD><FONT SIZE=3>" 
-	++ atom_to_list(Mod)  ++ "</TD>\n" ++ process_proc_data(Rest,N+1);
+	++ atom_to_list(Mod)  ++ "</TD>\n" ++
+	process_proc_data(Rest,N+1);
 
 process_proc_data([{group_leader,Grp}|Rest],N)->
     "<TD NOWRAP=\"true\"><FONT SIZE=3><B>Group leader:</B></TD><TD><FONT SIZE=3>" ++ 
-	htmlify_pid(pid_to_list(Grp),[])  ++ "</TD>\n " ++ process_proc_data(Rest,N+1);
+	htmlify_pid(pid_to_list(Grp),[])  ++ "</TD>\n " ++
+	process_proc_data(Rest,N+1);
 
 process_proc_data([{heap_size,Size}|Rest],N)->
     "<TD NOWRAP=\"true\"><FONT SIZE=3><B>Heap size:</B></TD><TD><FONT SIZE=3>" 
-	  ++ integer_to_list(Size)  ++ "</TD>\n " ++ process_proc_data(Rest,N+1);
-
+	  ++ integer_to_list(Size)  ++ "</TD>\n " ++
+	process_proc_data(Rest,N+1);
 
 process_proc_data([{initial_call,MFA}|Rest],N)->
     "<TD NOWRAP=\"true\"><FONT SIZE=3><B>Initial call:</B></TD><TD><FONT SIZE=3>"++ 
-         io_lib:format("~p",[MFA]) ++"</TD>\n " ++ process_proc_data(Rest,N+1);
+         io_lib:format("~p",[MFA]) ++"</TD>\n " ++
+	process_proc_data(Rest,N+1);
 	
 process_proc_data([{message_queue_len,Size}|Rest],N)->
     "<TD NOWRAP=\"true\"><FONT SIZE=3><B>Message queue length:</B></TD><TD><FONT SIZE=3>" ++
-	integer_to_list(Size)  ++ "</TD>\n " ++ process_proc_data(Rest,N+1);
+	integer_to_list(Size)  ++ "</TD>\n " ++
+	process_proc_data(Rest,N+1);
 
 process_proc_data([{priority,Level}|Rest],N)->
-    "<TD><FONT SIZE=3><B>Process priority:</B></TD><TD><FONT SIZE=3>" ++ atom_to_list(Level)  ++ "</TD>\n " ++
+    "<TD><FONT SIZE=3><B>Process priority:</B></TD><TD><FONT SIZE=3>" ++
+	atom_to_list(Level)  ++ "</TD>\n " ++
 	process_proc_data(Rest,N+1);
 
 process_proc_data([{reductions,Number}|Rest],N)->
@@ -784,7 +791,7 @@ process_proc_data([{reductions,Number}|Rest],N)->
 
 process_proc_data([{registered_name,Name}|Rest],N)->
     "<TD NOWRAP=\"true\"><FONT SIZE=3><B>Process Name:</B></TD><TD><FONT SIZE=3>" 
-	++ atom_to_list(Name)  ++ "</TD>\n"++
+	++ atom_to_list(Name)  ++ "</TD>\n" ++
 	process_proc_data(Rest,N+1);
 
 process_proc_data([{stack_size,Size}|Rest],N)->
@@ -804,10 +811,9 @@ process_proc_data([{trap_exit,Boolean}|Rest],N)->
 
 process_proc_data([{Key,Val}|Rest],N)->
     "<TD NOWRAP=\"true\" ><FONT SIZE=3><B>" ++  io_lib:write(Key) ++
-	"</B></TD><TD><FONT SIZE=3>" ++ io_lib:write(Val)  ++ "</TD>\n " ++
+	"</B></TD><TD><FONT SIZE=3>" ++ io_lib:write(Val)  ++
+	"</TD>\n " ++
 	process_proc_data(Rest,N). 
-
-
 
 process_proc_data([])->
     [];
@@ -824,14 +830,10 @@ process_proc_data([{dictionary,Dict}|Rest])->
 	get_dictionary_data(Dict) ++
 	process_proc_data(Rest).
 
-
-
-
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%In the process info there are the links to other processes print    %%
-%% this pid                                                           %%     
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%	
+%% In the process info there are the links to other processes print   %%
+%% this pid                                                           %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 print_links(Pids)->
     print_links(Pids,[]).
 			 
@@ -849,41 +851,37 @@ print_links([Pid|Rest],Links)when pid(Pid) ->
 
 print_links([Pid|Rest],Links)when port(Pid) ->
     print_links(Rest,Links ++ erlang:port_to_list(Pid) ++ ", ").
-   
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Fix the data in the process dictionary                              %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%	
+%% Fix the data in the process dictionary                             %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 get_dictionary_data([])->
     [];
 
 get_dictionary_data([{Key,Val}|Dict])->
     FormatedVal=add_space(htmlify_pid(lists:flatten(fix_type(Val)),[])),
-    "<TR><TD><FONT SIZE=3>" ++ htmlify_pid(lists:flatten(fix_type(Key)),[]) ++  "</TD><TD COLSPAN=5><FONT SIZE=3>" ++ 
-		  FormatedVal++ "</TD></TR>\n" ++
+    "<TR><TD><FONT SIZE=3>" ++
+	htmlify_pid(lists:flatten(fix_type(Key)),[]) ++
+	"</TD><TD COLSPAN=5><FONT SIZE=3>" ++ 
+	FormatedVal++ "</TD></TR>\n" ++
 	get_dictionary_data(Dict).
 
 add_space(List)->
     add_space(List,0,[]).
-add_space([],Len,New) ->
+add_space([],_Len,New) ->
     lists:reverse(New);
 add_space([Char|Rest],Len,New)when Len<50 ->
     add_space(Rest,Len+1,[Char|New]);
 
-add_space([$\,|Rest],Len,New) ->
+add_space([$\,|Rest],_Len,New) ->
     add_space(Rest,0,[$\ ,$,|New]);
 
 add_space([Char|Rest],Len,New) ->
     add_space(Rest,Len+1,[Char|New]).
 
-
-
-	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Interpret the type of the data and make it to a list                %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%	
-
+%% Interpret the type of the data and make it to a list               %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 fix_type(Val)when atom(Val) ->
     atom_to_list(Val);
 fix_type(Val)when float(Val) ->
@@ -908,30 +906,24 @@ fix_type(Val)when port(Val) ->
     pid_to_list(Val);
 fix_type(Val)when tuple(Val) ->
     io_lib:write(Val);
-fix_type(Val) ->
+fix_type(_Val) ->
     [].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                                                                    %%	
 %% The Private functions that send the trace signal to the process    %%
 %% thats the 4 member of the Arg list                                 %%
-%%                                                                    %%	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 send_trace(Args)when length(Args)>=4->
     {_,Proc}=lists:nth(4,Args),
     Pid2=unurlify_pid(Proc),
     process_info:send_trace(Pid2);
-
  
 send_trace(_Args)->
     arg_error.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                                                                    %%	
-%%Private functions that prints the application environment           %%	
-%%                                                                    %%	
+%% Private functions that prints the application environment          %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 application_env_body(Args)when length(Args)>=2 ->
     App=element(2,lists:nth(1,Args)),
     Node=element(2,lists:nth(2,Args)),
@@ -942,28 +934,27 @@ application_env_body(Args)when length(Args)>=2 ->
     <BODY BGCOLOR=\"#FFFFFF\" onLoad=reload_bottom_frame()>"
 	++ application_env_table(App,Node) ++ "</BODY>";
 
-
 application_env_body(_)->
     "<BODY BGCOLOR=\"#FFFFFF\">Please dont call this side manually</BODY>".
 
 application_env_table(App,Node)->
-    case process_info:get_application_keys(list_to_atom(App),list_to_atom(Node)) of
+    case process_info:get_application_keys(list_to_atom(App),
+					   list_to_atom(Node)) of
 	{ok,List}->
-	   "<TABLE BORDER=1>" ++ application_env_head(App,Node) ++ print_key_list(List,[]) ++ "</TABLE>";
+	    "<TABLE BORDER=1>" ++ application_env_head(App,Node) ++
+		print_key_list(List,[]) ++ "</TABLE>";
 	_ ->
 	    "Please try again,something went wrong"
     end.
 
 application_env_head(App,Node)->
-           "<TR BGCOLOR=\"#8899AA\"><TD ALIGN=\"center\" COLSPAN=3> 
+    "<TR BGCOLOR=\"#8899AA\"><TD ALIGN=\"center\" COLSPAN=3> 
                 <FONT SIZE=6>" ++ App ++ "@" ++ Node ++ "</FONT>\n
            </TD></TR>
            <TR><TD COLSPAN=3>&nbsp</TD></TR>
           <TR BGCOLOR=\"#8899AA\">
              <TD><B>Key</B></TD><TD><B>Val/Sec. key</B></TD><TD><B>Sec. Val</B></TD>
          </TR>".
-                  
-
 
 print_key_list([],Result)->
     Result;
@@ -981,41 +972,53 @@ print_key_list([{id,Id}|Rest],Result)->
     print_key_list(Rest,Result ++ print_key("ID:",fix_type(Id)));
 
 print_key_list([{modules,Mods}|Rest],Result)->
-    print_key_list(Rest,Result ++ print_key("Modules:","&nbsp;") ++ print_secondary_list(Mods,[]));
+    print_key_list(Rest,Result ++ print_key("Modules:","&nbsp;") ++
+		   print_secondary_list(Mods,[]));
 
 print_key_list([{maxP,Max}|Rest],Result)->
-    print_key_list(Rest,Result ++ print_key("Max nr of processes",fix_type(Max)));
+    print_key_list(Rest,Result ++
+		   print_key("Max nr of processes",fix_type(Max)));
 
 print_key_list([{maxT,Max}|Rest],Result)->
-    print_key_list(Rest,Result ++ print_key("Max running sec:",fix_type(Max)));
+    print_key_list(Rest,Result ++
+		   print_key("Max running sec:",fix_type(Max)));
 
 print_key_list([{registered,Names}|Rest],Result)->    
-    print_key_list(Rest,Result ++ print_key("Registered names:","&nbsp;") ++print_secondary_list(Names,[]));
+    print_key_list(Rest,Result ++
+		   print_key("Registered names:","&nbsp;") ++
+		   print_secondary_list(Names,[]));
 
 print_key_list([{applications,Apps}|Rest],Result)->
-    print_key_list(Rest,Result ++ print_key("Depends on:","&nbsp") ++ print_secondary_list(Apps,[]));
+    print_key_list(Rest,Result ++ print_key("Depends on:","&nbsp") ++
+		   print_secondary_list(Apps,[]));
 
 print_key_list([{included_applications,Inc_apps}|Rest],Result)->
-    print_key_list(Rest,Result ++ print_key("Included applications:",fix_type(Inc_apps)));
+    print_key_list(Rest,Result ++
+		   print_key("Included applications:",
+			     fix_type(Inc_apps)));
 
 print_key_list([{env,Env}|Rest],Result)->
-    print_key_list(Rest,Result ++ print_key("Environment:",fix_type(Env)));
+    print_key_list(Rest,Result ++
+		   print_key("Environment:",fix_type(Env)));
 
 print_key_list([{mod,Mod}|Rest],Result)->
-    print_key_list(Rest,Result ++ print_key("Application callback mod:",fix_type(Mod)));
+    print_key_list(Rest,Result ++
+		   print_key("Application callback mod:",
+			     fix_type(Mod)));
 
 print_key_list([{start_phases,Phase_arg}|Rest],Result)->
-    print_key_list(Rest,Result ++ print_key("Application callback mod:",fix_type(Phase_arg)));
+    print_key_list(Rest,Result ++
+		   print_key("Application callback mod:",
+			     fix_type(Phase_arg)));
 
 print_key_list([_|Rest],Result)->
     print_key_list(Rest,Result).
 
-
 print_key(Label,Val)->
     "<TR>
-        <TD><B>" ++ Label ++ "</B></TD><TD>" ++ Val ++  "</TD><TD>&nbsp;</TD>
+        <TD><B>" ++ Label ++ "</B></TD><TD>" ++ Val ++
+	"</TD><TD>&nbsp;</TD>
     </TR>".
-
 
 print_key2(Label,Val)->
     "<TR>
@@ -1025,70 +1028,9 @@ print_key2(Label,Val)->
 print_secondary_list([],Result)->
     Result;
 print_secondary_list([{Mod,Ver}|Rest],Result) ->
-    print_secondary_list(Rest,Result ++ print_key2(fix_type(Mod),fix_type(Ver)));
+    print_secondary_list(Rest,Result ++
+			 print_key2(fix_type(Mod),fix_type(Ver)));
 
 print_secondary_list([Mod|Rest],Result) ->
-    print_secondary_list(Rest,Result ++ print_key2(fix_type(Mod),"&nbsp;")).
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    print_secondary_list(Rest,Result ++
+			 print_key2(fix_type(Mod),"&nbsp;")).

@@ -19,6 +19,7 @@
 
 -module(compile).
 -include("erl_compile.hrl").
+-include("core_parse.hrl").
 
 %% High-level interface.
 -export([file/1,file/2,format_error/1,iofile/1]).
@@ -27,13 +28,11 @@
 -export([options/0]).
 
 %% Erlc interface.
--export([compile/3,compile_beam/3,compile_asm/3]).
+-export([compile/3,compile_beam/3,compile_asm/3,compile_core/3]).
 
 
 -import(lists, [member/2,reverse/1,keysearch/3,last/1,
-		map/2,foreach/2,foldr/3,any/2,filter/2]).
-
--define(DEF_VERSION, v3).			%Default compiler version.
+		map/2,flatmap/2,foreach/2,foldr/3,any/2,filter/2]).
 
 %% file(FileName)
 %% file(FileName, Options)
@@ -78,19 +77,11 @@ env_default_opts() ->
     end.
 	    
 do_compile(Input, Opts0) ->
-    Opts1 = foldr(fun expand_opt/2, [], Opts0),
-    Opts = filter_opts(Opts1),
+    Opts = expand_opts(Opts0),
     Self = self(),
     Serv = spawn_link(fun() -> internal(Self, Input, Opts) end),
     receive
 	{Serv,Rep} -> Rep
-    end.
-
-filter_opts(Opts0) ->
-    %% Native code generation is not supported if no_new_funs is given.
-    case member(no_new_funs, Opts0) of
-	false -> Opts0;
-	true -> Opts0 -- [native]
     end.
 
 %% Given a list of compilation options, returns true if compile:file/2
@@ -102,10 +93,23 @@ output_generated(Opts) ->
 	    (_Other) -> false
 	end, passes(file, Opts)).
 
-expand_opt(report, Os) -> [report_errors,report_warnings|Os];
-expand_opt(return, Os) -> [return_errors,return_warnings|Os];
-expand_opt(r7, Os) -> [no_float_opt,no_new_funs|Os];
+expand_opts(Opts) ->
+    foldr(fun expand_opt/2, [], Opts).
+
+expand_opt(report, Os) ->
+    [report_errors,report_warnings|Os];
+expand_opt(return, Os) ->
+    [return_errors,return_warnings|Os];
+expand_opt(r7, Os) ->
+    [no_float_opt,no_new_funs,no_new_binaries,no_new_apply|Os];
 expand_opt(O, Os) -> [O|Os].
+
+filter_opts(Opts0) ->
+    %% Native code generation is not supported if no_new_funs is given.
+    case member(no_new_funs, Opts0) of
+	false -> Opts0;
+	true -> Opts0 -- [native]
+    end.
 
 %% format_error(ErrorDescriptor) -> string()
 
@@ -142,6 +146,7 @@ format_error({bad_return,Pass,Reason}) ->
 		  ofile="",
 		  module=[],
 		  code=[],
+		  core_code=[],
 		  abstract_code=[],		%Abstract code for debugger.
 		  options=[],
 		  errors=[],
@@ -161,12 +166,20 @@ internal({forms,Forms}, Opts) ->
     internal_comp(Ps, "", "", #compile{code=Forms,options=Opts});
 internal({file,File}, Opts) ->
     Ps = passes(file, Opts),
-    case member(from_beam, Opts) of
-	true -> internal_comp(Ps, File, ".beam", #compile{options=Opts});
+    Compile = #compile{options=Opts},
+    case member(from_core, Opts) of
+	true -> internal_comp(Ps, File, ".core", Compile);
 	false ->
-	    case member(asm, Opts) of
-		true -> internal_comp(Ps, File, ".S", #compile{options=Opts});
-		false -> internal_comp(Ps, File, ".erl", #compile{options=Opts})
+	    case member(from_beam, Opts) of
+		true ->
+		    internal_comp(Ps, File, ".beam", Compile);
+		false ->
+		    case member(from_asm, Opts) orelse member(asm, Opts) of
+			true ->
+			    internal_comp(Ps, File, ".S", Compile);
+			false ->
+			    internal_comp(Ps, File, ".erl", Compile)
+		    end
 	    end
     end.
 
@@ -187,6 +200,13 @@ internal_comp(Passes, File, Suffix, St0) ->
 	{error,St2} -> comp_ret_err(St2)
     end.
 
+fold_comp([{Name,Test,Pass}|Ps], Run, St) ->
+    case Test(St) of
+	false ->				%Pass is not needed.
+	    fold_comp(Ps, Run, St);
+	true ->					%Run pass in the usual way.
+	    fold_comp([{Name,Pass}|Ps], Run, St)
+    end;
 fold_comp([{Name,Pass}|Ps], Run, St0) ->
     case Run({Name,Pass}, St0) of
 	{ok,St1} -> fold_comp(Ps, Run, St1);
@@ -247,17 +267,19 @@ passes(forms, Opts) ->
 passes(file, Opts) ->
     case member(from_beam, Opts) of
 	true ->
-	    Ps = [?pass(read_beam_file),
-		  ?pass(native_compile),
-		  {unless,binary,?pass(save_binary)}],
+	    Ps = [?pass(read_beam_file)|binary_passes()],
 	    select_passes(Ps, Opts);
 	false ->
-	    Ps = case member(asm, Opts) of
+	    Ps = case member(from_asm, Opts) orelse member(asm, Opts) of
 		     true ->
-			 [?pass(beam_consult_asm),?pass(beam_asm),
-			  {unless,binary,?pass(save_binary)}];
+			 [?pass(beam_consult_asm)|asm_passes()];
 		     false ->
-			 [?pass(parse_module)|standard_passes()]
+			 case member(from_core, Opts) of
+			     true ->
+				 [?pass(parse_core)|core_passes()];
+			     false ->
+				 [?pass(parse_module)|standard_passes()]
+			 end
 		 end,
 	    Fs = select_passes(Ps, Opts),
     
@@ -284,8 +306,12 @@ passes(file, Opts) ->
 %%    			Fun is an 'fun' taking one argument: a compile record.
 %%			The fun should return {ok,NewCompileRecord} or
 %%			{error,NewCompileRecord}.
-%%			Note: ?pass(Name) is equvivalent to {Name, fun Name/1}.
+%%			Note: ?pass(Name) is equvivalent to {Name,fun Name/1}.
 %%			Example: ?pass(parse_module)
+%%
+%%    {Name,Test,Fun}	Like {Name,Fun} above, but the pass will be run
+%%			(and listed by the `time' option) only if Test(St)
+%%			returns true.
 %%
 %%    {src_listing,Ext}	Produces an Erlang source listing with the
 %%			the file extension Ext.  (Ext should not contain
@@ -295,6 +321,12 @@ passes(file, Opts) ->
 %%			representation.  The extension of the listing
 %%			file will be Ext.  (Ext should not contain
 %%			a period.)   No more passes will be run.
+%%
+%%    {done,Ext}        End compilation at this point. Produce a listing
+%%                      as with {listing,Ext}, unless 'binary' is
+%%                      specified, in which case the current
+%%                      representation of the code is returned without
+%%                      creating an output file.
 %%
 %%    {iff,Flag,Cmd}	If the given Flag is given in the option list,
 %%			Cmd will be interpreted as a command.
@@ -310,8 +342,10 @@ passes(file, Opts) ->
 select_passes([{pass,Mod}|Ps], Opts) ->
     F = fun(St) ->
 		case catch Mod:module(St#compile.code, St#compile.options) of
-		    {ok,Code} -> {ok,St#compile{code=Code}};
-		    {error,Es} -> {error,St#compile{errors=St#compile.errors ++ Es}}
+		    {ok,Code} ->
+			{ok,St#compile{code=Code}};
+		    {error,Es} ->
+			{error,St#compile{errors=St#compile.errors ++ Es}}
 		end
 	end,
     [{Mod,F}|select_passes(Ps, Opts)];
@@ -319,19 +353,27 @@ select_passes([{src_listing,Ext}|_], _Opts) ->
     [{listing,fun (St) -> src_listing(Ext, St) end}];
 select_passes([{listing,Ext}|_], _Opts) ->
     [{listing,fun (St) -> listing(Ext, St) end}];
+select_passes([{done,Ext}|_], Opts) ->
+    select_passes([{unless,binary,{listing,Ext}}], Opts);
 select_passes([{iff,Flag,Pass}|Ps], Opts) ->
     select_cond(Flag, true, Pass, Ps, Opts);
 select_passes([{unless,Flag,Pass}|Ps], Opts) ->
     select_cond(Flag, false, Pass, Ps, Opts);
-select_passes([{Name,Fun}|Ps], Opts) when function(Fun) ->
-    [{Name,Fun}|select_passes(Ps, Opts)];
+select_passes([{_,Fun}=P|Ps], Opts) when is_function(Fun) ->
+    [P|select_passes(Ps, Opts)];
+select_passes([{_,Test,Fun}=P|Ps], Opts) when is_function(Test),
+					      is_function(Fun) ->
+    [P|select_passes(Ps, Opts)];
 select_passes([], _Opts) ->
     [];
-select_passes([List|Ps], Opts) when list(List) ->
-    Nested = select_passes(List, Opts),
-    case last(Nested) of
-	{listing,_Fun} -> Nested;
-	_Other         -> Nested ++ select_passes(Ps, Opts)
+select_passes([List|Ps], Opts) when is_list(List) ->
+    case select_passes(List, Opts) of
+	[] -> select_passes(Ps, Opts);
+	Nested ->
+	    case last(Nested) of
+		{listing,_Fun} -> Nested;
+		_Other         -> Nested ++ select_passes(Ps, Opts)
+	    end
     end.
 
 select_cond(Flag, ShouldBe, Pass, Ps, Opts) ->
@@ -345,50 +387,87 @@ select_cond(Flag, ShouldBe, Pass, Ps, Opts) ->
 
 standard_passes() ->
     [?pass(transform_module),
-     {iff,'P',{src_listing,"P"}},
+     {iff,'dpp',{listing,"pp"}},
      ?pass(lint_module),
+     {iff,'P',{src_listing,"P"}},
+     {iff,'to_pp',{done,"P"}},
+
+     {iff,'dabstr',{listing,"abstr"}},
      {iff,debug_info,?pass(save_abstract_code)},
+
      ?pass(expand_module),
-     {iff,dexp,{listing,"expand"}},
+     {iff,'dexp',{listing,"expand"}},
      {iff,'E',{src_listing,"E"}},
-     {iff,'abstr',{listing,"abstr"}},
+     {iff,'to_exp',{done,"E"}},
 
-     %% Core Erlang passes.
-     {pass,v3_core},
-     {iff,dcore,{listing,"core"}},
-     {unless,no_copt,{pass,v3_core_opt}},
+     %% Conversion to Core Erlang.
+     ?pass(core_module),
+     {iff,'dcore',{listing,"core"}},
+     {iff,'to_core0',{done,"core"}}
+     | core_passes()].
+
+core_passes() ->
+    %% Optimization and transforms of Core Erlang code.
+    [{unless,no_copt,
+      [{core_old_inliner,fun test_old_inliner/1,fun core_old_inliner/1},
+       ?pass(core_fold_module),
+       {unless,no_inline, 
+	[{iff,inline,
+	  [?pass(core_inline_module),		%The new inliner.
+	   ?pass(core_fold_module)]} ]} ]},
      {unless,no_copt,?pass(core_transforms)},
-     {iff,dcopt,{listing,"coreopt"}},
-     {iff,clint,?pass(core_lint_module)},
+     {iff,dcopt,{listing,"copt"}},
+     {iff,'to_core',{done,"core"}}
+     | kernel_passes()].
 
+kernel_passes() ->
+    %% Destructive setelement/3 optimization and core lint.
+    [?pass(core_dsetel_module),
+     {iff,clint,?pass(core_lint_module)},
+     {iff,core,?pass(save_core_code)},
+     
      %% Kernel Erlang and code generation.
-     {pass,v3_kernel},
+     ?pass(kernel_module),
      {iff,dkern,{listing,"kernel"}},
      {pass,v3_life},
      {iff,dlife,{listing,"life"}},
      {pass,v3_codegen},
-     {iff,dcg,{listing,"codegen"}},
+     {iff,dcg,{listing,"codegen"}}
+     | asm_passes()].
 
-     %% Assembly level optimisations.
-     {unless,no_postopt,
+asm_passes() ->
+    %% Assembly level optimisations.
+    [{unless,no_postopt,
       [{pass,beam_block},
        {iff,dblk,{listing,"block"}},
-       {pass,beam_bs},
-       {iff,dbs,{listing,"bs"}},
-       {unless,no_dopt,{pass,beam_dead}},
+       {unless,no_bopt,{pass,beam_bool}},
+       {iff,dbool,{listing,"bool"}},
+       {unless,no_topt,{pass,beam_type}},
+       {iff,dtype,{listing,"type"}},
+       {pass,beam_dead},	      %Must always run since it splits blocks.
        {iff,ddead,{listing,"dead"}},
        {unless,no_jopt,{pass,beam_jump}},
        {iff,djmp,{listing,"jump"}},
-       {unless,no_topt,{pass,beam_type}},
-       {iff,dtype,{listing,"type"}},
        {pass,beam_clean},
        {iff,dclean,{listing,"clean"}},
        {pass,beam_flatten}]},
+
+     %% If post optimizations are turned off, we still coalesce
+     %% adjacent labels and remove unused labels to keep the
+     %% HiPE compiler happy.
+     {iff,no_postopt,
+      [?pass(beam_unused_labels),
+       {pass,beam_clean}]},
+
      {iff,dopt,{listing,"optimize"}},
      {iff,'S',{listing,"S"}},
+     {iff,'to_asm',{done,"S"}},
 
-     ?pass(beam_asm),
-     {iff,native,?pass(native_compile)},
+     ?pass(beam_asm)
+     | binary_passes()].
+
+binary_passes() ->
+    [{native_compile,fun test_native/1,fun native_compile/1},
      {unless,binary,?pass(save_binary)}].
 
 %%%
@@ -498,13 +577,34 @@ parse_module(St) ->
 	    {error,St#compile{errors=St#compile.errors ++ Es}}
     end.
 
+parse_core(St) ->
+    case file:read_file(St#compile.ifile) of
+	{ok,Bin} ->
+	    case core_scan:string(binary_to_list(Bin)) of
+		{ok,Toks,_} ->
+		    case core_parse:parse(Toks) of
+			{ok,Mod} ->
+			    Name = (Mod#c_module.name)#c_atom.val,
+			    {ok,St#compile{module=Name,code=Mod}};
+			{error,E} ->
+			    Es = [{St#compile.ifile,[E]}],
+			    {error,St#compile{errors=St#compile.errors ++ Es}}
+		    end;
+		{error,E,_} ->
+		    Es = [{St#compile.ifile,[E]}],
+		    {error,St#compile{errors=St#compile.errors ++ Es}}
+	    end;
+	{error,E} ->
+	    Es = [{St#compile.ifile,[{none,compile,{open,E}}]}],
+	    {error,St#compile{errors=St#compile.errors ++ Es}}
+    end.
+
 compile_options([{attribute,_L,compile,C}|Fs]) when is_list(C) ->
     C ++ compile_options(Fs);
 compile_options([{attribute,_L,compile,C}|Fs]) ->
     [C|compile_options(Fs)];
 compile_options([_F|Fs]) -> compile_options(Fs);
 compile_options([]) -> [].
-
 
 transforms(Os) -> [ M || {parse_transform,M} <- Os ]. 
 
@@ -558,6 +658,7 @@ foldl_core_transforms(St, []) -> {ok,St}.
 
 %%% Fetches the module name from a list of forms. The module attribute must
 %%% be present.
+get_module([{attribute,_,module,{M,_As}} | _]) -> M;
 get_module([{attribute,_,module,M} | _]) -> M;
 get_module([_ | Rest]) ->
     get_module(Rest).
@@ -600,10 +701,52 @@ core_lint_module(St) ->
 %% expand_module(State) -> State'
 %%  Do the common preprocessing of the input forms.
 
-expand_module(St0) ->
-    {Mod,Exp,Forms,Opts} = sys_pre_expand:module(St0#compile.code,
-						 St0#compile.options),
+expand_module(#compile{code=Code,options=Opts0}=St0) ->
+    {Mod,Exp,Forms,Opts1} = sys_pre_expand:module(Code, Opts0),
+    Opts2 = expand_opts(Opts1),
+    Opts = filter_opts(Opts2),
     {ok,St0#compile{module=Mod,options=Opts,code={Mod,Exp,Forms}}}.
+
+core_module(#compile{code=Code0,options=Opts,ifile=File}=St) ->
+    {ok,Code,Ws} = v3_core:module(Code0, Opts),
+    {ok,St#compile{code=Code,warnings=St#compile.warnings ++ [{File,Ws}]}}.
+
+core_fold_module(#compile{code=Code0,options=Opts,ifile=File}=St) ->
+    {ok,Code,Ws} = sys_core_fold:module(Code0, Opts),
+    {ok,St#compile{code=Code,warnings=St#compile.warnings ++ [{File,Ws}]}}.
+
+test_old_inliner(#compile{options=Opts}) ->
+    %% The point of this test is to avoid loading the old inliner
+    %% if we know that it will not be used.
+    case any(fun(no_inline) -> true;
+		(_) -> false
+	     end, Opts) of
+      true -> false;
+      false ->
+	any(fun({inline,_}) -> true;
+	       (_) -> false
+	    end, Opts)
+    end.
+
+core_old_inliner(#compile{code=Code0,options=Opts}=St) ->
+    case catch sys_core_inline:module(Code0, Opts) of
+	{ok,Code} ->
+	    {ok,St#compile{code=Code}};
+	{error,Es} ->
+	    {error,St#compile{errors=St#compile.errors ++ Es}}
+    end.
+
+core_inline_module(#compile{code=Code0,options=Opts}=St) ->
+    Code = cerl_inline:core_transform(Code0, Opts),
+    {ok,St#compile{code=Code}}.
+
+core_dsetel_module(#compile{code=Code0,options=Opts}=St) ->
+    {ok,Code} = sys_core_dsetel:module(Code0, Opts),
+    {ok,St#compile{code=Code}}.
+
+kernel_module(#compile{code=Code0,options=Opts,ifile=File}=St) ->
+    {ok,Code,Ws} = v3_kernel:module(Code0, Opts),
+    {ok,St#compile{code=Code,warnings=St#compile.warnings ++ [{File,Ws}]}}.
 
 save_abstract_code(St) ->
     {ok,St#compile{abstract_code=abstract_code(St)}}.
@@ -615,6 +758,13 @@ abstract_code(#compile{code=Code}) ->
 	Other -> Other
     end.
 
+save_core_code(St) ->
+    {ok,St#compile{core_code=cerl:from_records(St#compile.code)}}.
+
+beam_unused_labels(#compile{code=Code0}=St) ->
+    Code = beam_jump:module_labels(Code0),
+    {ok,St#compile{code=Code}}.
+
 beam_asm(#compile{ifile=File,code=Code0,abstract_code=Abst,options=Opts0}=St) ->
     Source = filename:absname(File),
     Opts = filter(fun is_informative_option/1, Opts0),
@@ -622,6 +772,11 @@ beam_asm(#compile{ifile=File,code=Code0,abstract_code=Abst,options=Opts0}=St) ->
 	{ok,Code} -> {ok,St#compile{code=Code,abstract_code=[]}};
 	{error,Es} -> {error,St#compile{errors=St#compile.errors ++ Es}}
     end.
+
+test_native(#compile{options=Opts}) ->
+    %% This test must be made late, because the r7 or no_new_funs options
+    %% will turn off the native option.
+    member(native, Opts).
 
 native_compile(#compile{code=none}=St) -> {ok,St};
 native_compile(St) ->
@@ -634,14 +789,17 @@ native_compile(St) ->
     end.
 
 native_compile_1(St) ->
-    Opts0 = St#compile.options,
+    Opts0 = [no_new_binaries|St#compile.options],
     IgnoreErrors = member(ignore_native_errors, Opts0),
     Opts = case keysearch(hipe, 1, Opts0) of
 	       {value,{hipe,L}} when list(L) -> L;
 	       {value,{hipe,X}} -> [X];
 	       _ -> []
 	   end,
-    case catch hipe:compile(St#compile.module, St#compile.code, Opts) of
+    case catch hipe:compile(St#compile.module,
+			    St#compile.core_code,
+			    St#compile.code,
+			    Opts) of
 	{ok, {Type,Bin}} when binary(Bin) ->
 	    {ok, embed_native_code(St, {Type,Bin})};
 	{error, R} ->
@@ -663,15 +821,9 @@ native_compile_1(St) ->
 	    end
     end.
 
-embed_native_code(St, {Type,NativeCode}) ->
+embed_native_code(St, {Architecture,NativeCode}) ->
     {ok, _, Chunks0} = beam_lib:all_chunks(St#compile.code),
-    ChunkName =
-	case Type of
-	    ultrasparc -> "HS8P"; %% HiPE, SPARC, V8+ (implicit: 32-bit)
-	    x86 ->        "HX86"  %% HiPE, x86, (implicit: Unix)
-	    %% Future:     HSV9      HiPE, SPARC, V9 (implicit: 64-bit)
-            %%             HW32      HiPE, x86, Win32 
-	end,
+    ChunkName = hipe_unified_loader:chunk_name(Architecture),
     Chunks1 = lists:keydelete(ChunkName, 1, Chunks0),
     Chunks = Chunks1 ++ [{ChunkName,NativeCode}],
     {ok, BeamPlusNative} = beam_lib:build_module(Chunks),
@@ -727,14 +879,24 @@ report_errors(St) ->
 	false -> ok
     end.
 
-report_warnings(St) ->
-    case member(report_warnings, St#compile.options) of
+report_warnings(#compile{options=Opts,warnings=Ws0}) ->
+    case member(report_warnings, Opts) of
 	true ->
-	    foreach(fun ({{F,_L},Eds}) -> list_warnings(F, Eds);
-			({F,Eds}) -> list_warnings(F, Eds) end,
-		    St#compile.warnings);
+	    Ws1 = flatmap(fun({{F,_L},Eds}) -> format_message(F, Eds);
+			     ({F,Eds}) -> format_message(F, Eds) end,
+		     Ws0),
+	    Ws = ordsets:from_list(Ws1),
+	    foreach(fun({_,Str}) -> io:put_chars(Str) end, Ws);
 	false -> ok
     end.
+
+format_message(F, [{Line,Mod,E}|Es]) ->
+    M = {Line,io_lib:format("~s:~w: Warning: ~s\n", [F,Line,Mod:format_error(E)])},
+    [M|format_message(F, Es)];
+format_message(F, [{Mod,E}|Es]) ->
+    M = {none,io_lib:format("~s: Warning: ~s\n", [F,Mod:format_error(E)])},
+    [M|format_message(F, Es)];
+format_message(_, []) -> [].
 
 %% list_errors(File, ErrorDescriptors) -> ok
 
@@ -745,16 +907,6 @@ list_errors(F, [{Mod,E}|Es]) ->
     io:fwrite("~s: ~s\n", [F,Mod:format_error(E)]),
     list_errors(F, Es);
 list_errors(_F, []) -> ok.
-
-%% list_warnings(File, ErrorDescriptors) -> ok
-
-list_warnings(F, [{Line,Mod,E}|Es]) ->
-    io:fwrite("~s:~w: Warning: ~s\n", [F,Line,apply(Mod, format_error, [E])]),
-    list_warnings(F, Es);
-list_warnings(F, [{Mod,E}|Es]) ->
-    io:fwrite("~s: Warning: ~s\n", [F,apply(Mod, format_error, [E])]),
-    list_warnings(F, Es);
-list_warnings(_F, []) -> ok.
 
 %% erlfile(Dir, Base) -> ErlFile
 %% outfile(Base, Extension, Options) -> OutputFile
@@ -859,22 +1011,44 @@ help(_) ->
 %% compile(AbsFileName, Outfilename, Options)
 %%   Compile entry point for erl_compile.
 
-compile(File, _OutFile, Options) ->
+compile(File0, _OutFile, Options) ->
+    File = shorten_filename(File0),
     case file(File, make_erl_options(Options)) of
-	{ok, _Mod} -> ok;
+	{ok,_Mod} -> ok;
 	Other -> Other
     end.
 
-compile_beam(File, _OutFile, Opts) ->
+compile_beam(File0, _OutFile, Opts) ->
+    File = shorten_filename(File0),
     case file(File, [from_beam|make_erl_options(Opts)]) of
 	{ok,_Mod} -> ok;
 	Other -> Other
     end.
 
-compile_asm(File, _OutFile, Opts) ->
+compile_asm(File0, _OutFile, Opts) ->
+    File = shorten_filename(File0),
     case file(File, [asm|make_erl_options(Opts)]) of
 	{ok,_Mod} -> ok;
 	Other -> Other
+    end.
+
+compile_core(File0, _OutFile, Opts) ->
+    File = shorten_filename(File0),
+    case file(File, [from_core|make_erl_options(Opts)]) of
+	{ok,_Mod} -> ok;
+	Other -> Other
+    end.
+
+shorten_filename(Name0) ->
+    {ok,Cwd} = file:get_cwd(),
+    case lists:prefix(Cwd, Name0) of
+	false -> Name0;
+	true ->
+	    Name = case lists:nthtail(length(Cwd), Name0) of
+		       "/"++N -> N;
+		       N -> N
+		   end,
+	    Name
     end.
 
 %% Converts generic compiler options to specific options.

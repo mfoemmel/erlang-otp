@@ -778,13 +778,11 @@ attach(S) when port(S) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-is_sockopt_val(Opt,Val) ->
+is_sockopt_val(Opt, Val) ->
     case type_opt(Opt) of
 	undefined -> false;
 	Type -> type_value(Type,Val)
-    end;
-is_sockopt_val(_,_) ->
-    false.
+    end.
 
 %%
 %% Socket options processing
@@ -814,6 +812,7 @@ enc_opt(low_watermark)   -> ?INET_LOPT_TCP_LOWTRMRK;
 enc_opt(bit8)            -> ?INET_LOPT_BIT8;
 enc_opt(send_timeout)    -> ?INET_LOPT_TCP_SEND_TIMEOUT;
 enc_opt(delay_send)      -> ?INET_LOPT_TCP_DELAY_SEND;
+enc_opt(packet_size)     -> ?INET_LOPT_PACKET_SIZE;
 enc_opt(_) ->          -1.
 
 dec_opt(?INET_OPT_REUSEADDR)      -> reuseaddr;
@@ -841,6 +840,7 @@ dec_opt(?INET_LOPT_TCP_LOWTRMRK)  -> low_watermark;
 dec_opt(?INET_LOPT_BIT8)          -> bit8;
 dec_opt(?INET_LOPT_TCP_SEND_TIMEOUT) -> send_timeout;
 dec_opt(?INET_LOPT_TCP_DELAY_SEND) -> delay_send;
+dec_opt(?INET_LOPT_PACKET_SIZE)   -> packet_size;
 dec_opt(_)                        -> undefined.
 
 type_opt(reuseaddr)       -> bool;
@@ -860,9 +860,9 @@ type_opt(drop_membership) -> {ip,ip};
 %% driver options
 type_opt(header)          -> uint;
 type_opt(buffer)          -> int;
-type_opt(active)          ->
+type_opt(active) ->
     {enum, [{false, 0}, {true, 1}, {once, 2}]};
-type_opt(packet)        -> 
+type_opt(packet) -> 
     {enum, [{0, ?TCP_PB_RAW},
 	    {1, ?TCP_PB_1},
 	    {2, ?TCP_PB_2},
@@ -883,17 +883,18 @@ type_opt(deliver) ->
     {enum, [{port, ?INET_DELIVER_PORT},
 	    {term, ?INET_DELIVER_TERM}]};
 
-type_opt(exit_on_close) -> bool;
-type_opt(low_watermark)  -> int;
-type_opt(high_watermark) -> int;
+type_opt(exit_on_close)   -> bool;
+type_opt(low_watermark)   -> int;
+type_opt(high_watermark)  -> int;
 type_opt(bit8) ->
     {enum, [{clear, ?INET_BIT8_CLEAR},
 	    {set,   ?INET_BIT8_SET},
 	    {on,    ?INET_BIT8_ON},
 	    {off,   ?INET_BIT8_OFF}]};
-type_opt(send_timeout) -> time;
-type_opt(delay_send) -> bool;
-type_opt(_)         -> undefined.
+type_opt(send_timeout)    -> time;
+type_opt(delay_send)      -> bool;
+type_opt(packet_size)     -> uint;
+type_opt(_)               -> undefined.
 
 
 

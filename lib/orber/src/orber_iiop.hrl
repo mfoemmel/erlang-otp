@@ -355,9 +355,12 @@
 -define(ORB_ENV_LIGHT_IFR,                 16#80). %% FIXED!!
 -define(ORB_ENV_USE_IPV6,                  16#100). %% FIXED!!
 -define(ORB_ENV_SURVIVE_EXIT,              16#200). %% FIXED!!
--define(ORB_ENV_USE_BI_DIR_IIOP,           16#400). %% CAN BE CHANGED
--define(ORB_ENV_USE_CSIV2,                 16#800). %% CAN BE CHANGED
+-define(ORB_ENV_USE_ACL_INCOMING,          16#400). %% FIXED!!
+-define(ORB_ENV_USE_ACL_OUTGOING,          16#800). %% FIXED!!
+
 -define(ORB_ENV_EXCLUDE_CODESET_CTX,       16#1000). %% CAN BE CHANGED
+-define(ORB_ENV_USE_BI_DIR_IIOP,           16#2000). %% CAN BE CHANGED
+-define(ORB_ENV_USE_CSIV2,                 16#4000). %% CAN BE CHANGED
 
 
 -define(ORB_ENV_INIT_FLAGS,      16#00).
@@ -374,7 +377,9 @@
 	 {?ORB_ENV_SURVIVE_EXIT, "EXIT Tolerance Activated"},
 	 {?ORB_ENV_USE_PI, "Local Interceptors"},
 	 {?ORB_ENV_LIGHT_IFR, "Light IFR"},
-	 {?ORB_ENV_USE_BI_DIR_IIOP, "Use BiDirIIOP"}]).
+	 {?ORB_ENV_USE_BI_DIR_IIOP, "Use BiDirIIOP"},
+	 {?ORB_ENV_USE_ACL_INCOMING, "Use ACL for Incoming Connections"},
+	 {?ORB_ENV_USE_ACL_OUTGOING, "Use ACL for Outgoing Connections"}]).
 
 
 %%----------------------------------------------------------------------

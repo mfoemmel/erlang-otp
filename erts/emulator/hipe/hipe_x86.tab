@@ -1,0 +1,6 @@
+# $Id$
+# x86-specific atoms
+
+atom handle_fp_exception
+atom inc_stack_0
+atom x86

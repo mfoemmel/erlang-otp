@@ -1,46 +1,29 @@
+%%% -*- erlang-indent-level: 2 -*-
 %%% $Id$
 %%% x86 stack frame handling
 %%%
-%%% - apply temp -> reg/spill map from RA
 %%% - map non-register temps to stack slots
 %%% - add explicit stack management code to prologue and epilogue,
 %%%   and at calls and tailcalls
 %%%
 %%% TODO:
 %%% - Compute max stack in a pre-pass? (get rid of ref cell updates)
-%%% - Merge all_temps, defun_minframe, and defun_exnlabs to a single
+%%% - Merge all_temps and defun_minframe to a single
 %%%   pass, for compile-time efficiency reasons.
 
 -module(hipe_x86_frame).
 -export([frame/2]).
 -include("hipe_x86.hrl").
--include("../main/hipe.hrl").
 
-frame({Defun,TempMap,FpMap}, Options) ->
-  NewDefun =
-    case get(hipe_inline_fp) of
-      true ->
-	Defun1 = finalise_ra(Defun, TempMap, FpMap),
-	%%hipe_x86_pp:pp(Defun1),
-	hipe_x86_float:map(Defun1);
-      _ ->
-	finalise_ra(Defun, TempMap, FpMap)
-    end,
-  %%hipe_x86_pp:pp(NewDefun),
-  frame1(NewDefun, Options).
-
-frame1(Defun, _Options) ->
+frame(Defun, _Options) ->
   Formals = fix_formals(hipe_x86:defun_formals(Defun)),
   Temps0 = all_temps(hipe_x86:defun_code(Defun), Formals),
   MinFrame = defun_minframe(Defun),
   Temps = ensure_minframe(MinFrame, Temps0),
-  ExnLabs = defun_exnlabs(Defun),
   CFG0 = hipe_x86_cfg:init(Defun),
   Liveness = hipe_x86_liveness:analyse(CFG0),
   CFG1 = do_body(CFG0, Liveness, Formals, Temps),
-  CFG2 = hipe_x86_cfg:var_range_update(CFG1, []),
-  CFG3 = add_exnlabs(ExnLabs, CFG2),
-  hipe_x86_cfg:linearise(CFG3).
+  hipe_x86_cfg:linearise(CFG1).
 
 fix_formals(Formals) ->
   fix_formals(hipe_x86_registers:nr_args(), Formals).
@@ -63,7 +46,7 @@ do_blocks([Label|Labels], CFG, Context) ->
   Code = hipe_bb:code(Block),
   NewCode = do_block(Code, LiveOut, Context),
   NewBlock = hipe_bb:code_update(Block, NewCode),
-  NewCFG = hipe_x86_cfg:bb_update(CFG, Label, NewBlock),
+  NewCFG = hipe_x86_cfg:bb_add(CFG, Label, NewBlock),
   do_blocks(Labels, NewCFG, Context);
 do_blocks([], CFG, _) ->
   CFG.
@@ -102,7 +85,7 @@ do_insn(I, LiveOut, Context, FPoff) ->
     #pseudo_tailcall{} ->
       {do_pseudo_tailcall(I, Context), context_framesize(Context)};
     #push{} ->
-      {[do_push(I, Context, FPoff)], FPoff+4};
+      {[do_push(I, Context, FPoff)], FPoff+word_size()};
     #ret{} ->
       {do_ret(I, Context, FPoff), context_framesize(Context)};
     #shift{} ->
@@ -181,7 +164,7 @@ conv_pseudo(Temp, FPoff, Context) ->
   conv_pseudo(Temp, Off).
 
 conv_pseudo(Temp, Off) ->
-  hipe_x86:mk_mem(mk_esp(), hipe_x86:mk_imm(Off), hipe_x86:temp_type(Temp)).
+  hipe_x86:mk_mem(mk_sp(), hipe_x86:mk_imm(Off), hipe_x86:temp_type(Temp)).
 
 %%%
 %%% Return - deallocate frame and emit 'ret $N' insn.
@@ -189,13 +172,13 @@ conv_pseudo(Temp, Off) ->
 
 do_ret(_I, Context, FPoff) ->
   %% XXX: this conses up a new ret insn, ignoring the one rtl->x86 made
-  adjust_esp(FPoff, [hipe_x86:mk_ret(4*context_arity(Context))]).
+  adjust_sp(FPoff, [hipe_x86:mk_ret(word_size()*context_arity(Context))]).
 
-adjust_esp(N, Rest) ->
+adjust_sp(N, Rest) ->
   if N =:= 0 ->
       Rest;
      true ->
-      [hipe_x86:mk_alu('add', hipe_x86:mk_imm(N), mk_esp()) | Rest]
+      [hipe_x86:mk_alu('add', hipe_x86:mk_imm(N), mk_sp()) | Rest]
   end.
 
 %%%
@@ -203,18 +186,19 @@ adjust_esp(N, Rest) ->
 %%%
 
 do_pseudo_call(I, LiveOut, Context, FPoff0) ->
-  JmpCode = [hipe_x86:mk_jmp_label(hipe_x86:pseudo_call_contlab(I))],
-  ExnLab = hipe_x86:pseudo_call_exnlab(I),
+  #x86_sdesc{exnlab=ExnLab,arity=OrigArity} = hipe_x86:pseudo_call_sdesc(I),
   Fun0 = hipe_x86:pseudo_call_fun(I),
   Fun1 = conv_opnd(Fun0, FPoff0, Context),
   LiveTemps = [Temp || Temp <- LiveOut, temp_is_pseudo(Temp)],
   SDesc = mk_sdesc(ExnLab, Context, LiveTemps),
-  CallCode = [hipe_x86:mk_call(Fun1, SDesc) | JmpCode],
-  %% +4 for our RA and +4 for callee's RA should it need to call inc_stack
-  context_need_stack(Context, FPoff0 + 8),
-  OrigArity = hipe_x86:pseudo_call_arity(I),
+  ContLab = hipe_x86:pseudo_call_contlab(I),
+  Linkage = hipe_x86:pseudo_call_linkage(I),
+  CallCode = [hipe_x86:mk_pseudo_call(Fun1, SDesc, ContLab, Linkage)],
+  %% +word_size() for our RA and +word_size() for callee's RA should
+  %% it need to call inc_stack
+  context_need_stack(Context, FPoff0 + 2*word_size()),
   StkArity = max(0, OrigArity - hipe_x86_registers:nr_args()),
-  ArgsBytes = 4 * StkArity,
+  ArgsBytes = word_size() * StkArity,
   {CallCode, FPoff0 - ArgsBytes}.
 
 
@@ -223,20 +207,22 @@ do_pseudo_call(I, LiveOut, Context, FPoff0) ->
 %%%
 
 mk_sdesc(ExnLab, Context, Temps) ->	% for normal calls
-  Temps0 = remove_floats(Temps), % Floats aren't tagged so mustn't be alive
+  Temps0 = only_tagged(Temps),
   Live = mk_live(Context, Temps0),
   Arity = context_arity(Context),
   FSize = context_framesize(Context),
-  hipe_x86:mk_sdesc(ExnLab, FSize div 4, Arity, list_to_tuple(Live)).
+  hipe_x86:mk_sdesc(ExnLab, FSize div word_size(), Arity,
+                    list_to_tuple(Live)).
 
-remove_floats(Temps)->
-  [X || X <- Temps, hipe_x86:temp_type(X) /= 'double'].
+only_tagged(Temps)->
+  [X || X <- Temps, hipe_x86:temp_type(X) =:= 'tagged'].
 
 mk_live(Context, Temps) ->
   lists:sort([temp_to_slot(Context, Temp) || Temp <- Temps]).
 
 temp_to_slot(Context, Temp) ->
-  (context_framesize(Context) + context_offset(Context, Temp)) div 4.
+  (context_framesize(Context) + context_offset(Context, Temp))
+    div word_size().
 
 mk_minimal_sdesc(Context) ->		% for inc_stack_0 calls
   hipe_x86:mk_sdesc([], 0, context_arity(Context), {}).
@@ -251,16 +237,17 @@ do_pseudo_tailcall(I, Context) ->	% always at FPoff=context_framesize(Context)
   Fun0 = hipe_x86:pseudo_tailcall_fun(I),
   {Insns, FPoff1, Fun1} = do_tailcall_args(Args, Context, Fun0),
   context_need_stack(Context, FPoff1),
-  FPoff2 = FPoff1 + 4+4*Arity - 4*length(Args),
-  context_need_stack(Context, FPoff2 + 4),	% +4 for callee's inc_stack RA
-  I2 = hipe_x86:mk_jmp_fun(Fun1),
-  Insns ++ adjust_esp(FPoff2, [I2]).
+  FPoff2 = FPoff1 + word_size()+word_size()*Arity - word_size()*length(Args),
+  %% +word_size() for callee's inc_stack RA
+  context_need_stack(Context, FPoff2 + word_size()),
+  I2 = hipe_x86:mk_jmp_fun(Fun1, hipe_x86:pseudo_tailcall_linkage(I)),
+  Insns ++ adjust_sp(FPoff2, [I2]).
 
 do_tailcall_args(Args, Context, Fun0) ->
   FPoff0 = context_framesize(Context),
   Arity = context_arity(Context),
-  FrameTop = 4 + 4*Arity,
-  DangerOff = FrameTop - 4*length(Args),
+  FrameTop = word_size() + word_size()*Arity,
+  DangerOff = FrameTop - word_size()*length(Args),
   Moves = mk_moves(Args, FrameTop, []),
   {Stores, Simple, Conflict} =
     split_moves(Moves, Context, DangerOff, [], [], []),
@@ -284,9 +271,9 @@ do_tailcall_args(Args, Context, Fun0) ->
 	MEM0 = conv_pseudo(Fun0, FPoff2 + Fun0Off),
 	if Fun0Off >= DangerOff ->
 	    Fun1Off = hipe_x86:mk_imm(0),
-	    MEM1 = hipe_x86:mk_mem(mk_esp(), Fun1Off, Type),
+	    MEM1 = hipe_x86:mk_mem(mk_sp(), Fun1Off, Type),
 	    {[hipe_x86:mk_push(MEM0)],
-	     FPoff2 + 4,
+	     FPoff2 + word_size(),
 	     [hipe_x86:mk_move(MEM1, Temp1)],
 	     Temp1};
 	   true ->
@@ -314,7 +301,7 @@ do_tailcall_args(Args, Context, Fun0) ->
    FPoff3, Fun1}.
 
 mk_moves([Arg|Args], Off, Moves) ->
-  Off1 = Off - 4,
+  Off1 = Off - word_size(),
   mk_moves(Args, Off1, [{Arg,Off1}|Moves]);
 mk_moves([], _, Moves) ->
   Moves.
@@ -343,27 +330,29 @@ split_moves([], _, _, Stores, Simple, Conflict) ->
   {Stores, Simple, Conflict}.
 
 split_conflict([{SrcOff,DstOff,Type}|Conflict], FPoff, Pushes, Simple) ->
-  Push = hipe_x86:mk_push(hipe_x86:mk_mem(mk_esp(), hipe_x86:mk_imm(FPoff+SrcOff), Type)),
-  split_conflict(Conflict, FPoff+4, [Push|Pushes], [{-(FPoff+4),DstOff,Type}|Simple]);
+  Push = hipe_x86:mk_push(
+           hipe_x86:mk_mem(mk_sp(), hipe_x86:mk_imm(FPoff+SrcOff), Type)),
+  split_conflict(Conflict, FPoff+word_size(), [Push|Pushes],
+                 [{-(FPoff+word_size()),DstOff,Type}|Simple]);
 split_conflict([], FPoff, Pushes, Simple) ->
   {lists:reverse(Pushes), Simple, FPoff}.
 
 simple_moves([{SrcOff,DstOff,Type}|Moves], FPoff, TempReg, Rest) ->
   Temp = hipe_x86:mk_temp(TempReg, Type),
-  ESP = mk_esp(),
+  SP = mk_sp(),
   LoadOff = hipe_x86:mk_imm(FPoff+SrcOff),
-  LD = hipe_x86:mk_move(hipe_x86:mk_mem(ESP, LoadOff, Type), Temp),
+  LD = hipe_x86:mk_move(hipe_x86:mk_mem(SP, LoadOff, Type), Temp),
   StoreOff = hipe_x86:mk_imm(FPoff+DstOff),
-  ST = hipe_x86:mk_move(Temp, hipe_x86:mk_mem(ESP, StoreOff, Type)),
+  ST = hipe_x86:mk_move(Temp, hipe_x86:mk_mem(SP, StoreOff, Type)),
   simple_moves(Moves, FPoff, TempReg, [LD, ST | Rest]);
 simple_moves([], _, _, Rest) ->
   Rest.
 
 store_moves([{Src,DstOff}|Moves], FPoff, Rest) ->
   Type = typeof_src(Src),
-  ESP = mk_esp(),
+  SP = mk_sp(),
   StoreOff = hipe_x86:mk_imm(FPoff+DstOff),
-  ST = hipe_x86:mk_move(Src, hipe_x86:mk_mem(ESP, StoreOff, Type)),
+  ST = hipe_x86:mk_move(Src, hipe_x86:mk_mem(SP, StoreOff, Type)),
   store_moves(Moves, FPoff, [ST | Rest]);
 store_moves([], _, Rest) ->
   Rest.
@@ -409,17 +398,19 @@ context_ra(#context{ra=RA}) ->
   RA.
 
 mk_temp_map(Formals, RA, Temps) ->
-  {Map, _} = enter_vars(Formals, 4*length(Formals),
+  {Map, _} = enter_vars(Formals, word_size() * (length(Formals)+1),
 			tmap_bind(tmap_empty(), RA, 0)),
-  enter_vars(Temps, -4, Map).
+  enter_vars(tset_to_list(Temps), 0, Map).
 
-enter_vars([V|Vs], Off, Map) ->
-  case hipe_x86:temp_type(V) of
-    'double' -> enter_vars(Vs, Off-8, tmap_bind(Map, V, Off-4));
-    _ -> enter_vars(Vs, Off-4, tmap_bind(Map, V, Off))
-  end;
+enter_vars([V|Vs], PrevOff, Map) ->
+  Off =
+    case hipe_x86:temp_type(V) of
+      'double' -> PrevOff - 2*word_size();
+      _ -> PrevOff - word_size()
+    end,
+  enter_vars(Vs, Off, tmap_bind(Map, V, Off));
 enter_vars([], Off, Map) ->
-  {Map, Off+4}.
+  {Map, Off}.
 
 tmap_empty() ->
   gb_trees:empty().
@@ -434,10 +425,10 @@ tmap_lookup(Map, Key) ->
 %%% do_prologue: prepend stack frame allocation code.
 %%%
 %%% NewStart:
-%%%	temp0 = esp - MaxStack
-%%%	if( temp0 < ESP_LIMIT(P) ) goto IncStack else goto AllocFrame
+%%%	temp0 = sp - MaxStack
+%%%	if( temp0 < SP_LIMIT(P) ) goto IncStack else goto AllocFrame
 %%% AllocFrame:
-%%%	esp -= FrameSize
+%%%	sp -= FrameSize
 %%%	goto OldStart
 %%% OldStart:
 %%%	...
@@ -457,38 +448,41 @@ do_prologue(CFG, Context) ->
       Type = 'untagged',
       Preg = hipe_x86_registers:proc_pointer(),
       Pbase = hipe_x86:mk_temp(Preg, Type),
-      ESP_LIMIT_OFF = hipe_x86:mk_imm(hipe_x86_registers:esp_limit_offset()),
+      SP_LIMIT_OFF = hipe_x86:mk_imm(
+                        hipe_x86_registers:sp_limit_offset()),
       Temp0 = mk_temp0(Type),
-      ESP = mk_esp(),
+      SP = mk_sp(),
       NewStartCode =
 	%% hopefully this lea is faster than the mov;sub it replaced
-	[hipe_x86:mk_lea(hipe_x86:mk_mem(ESP, hipe_x86:mk_imm(-MaxStack), 'untagged'), Temp0),
-	 hipe_x86:mk_cmp(hipe_x86:mk_mem(Pbase, ESP_LIMIT_OFF, Type), Temp0),
+	[hipe_x86:mk_lea(
+           hipe_x86:mk_mem(SP, hipe_x86:mk_imm(-MaxStack), 'untagged'),
+           Temp0),
+	 hipe_x86:mk_cmp(
+           hipe_x86:mk_mem(Pbase, SP_LIMIT_OFF, Type), Temp0),
 	 hipe_x86:mk_pseudo_jcc('b', IncStackLab, AllocFrameLab, 0.01)],
       %%
       AllocFrameCode =
-	%% XXX: use adjust_esp instead?
+	%% XXX: use adjust_sp instead?
 	case FrameSize of
 	  0 ->
 	    %% XXX: candidate for dummy block removal
 	    [hipe_x86:mk_jmp_label(OldStartLab)];
 	  _ ->
-	    [hipe_x86:mk_alu('sub', hipe_x86:mk_imm(FrameSize), ESP),
+	    [hipe_x86:mk_alu('sub', hipe_x86:mk_imm(FrameSize), SP),
 	     hipe_x86:mk_jmp_label(OldStartLab)]
 	end,
       %%
       IncStackCode =
 	[hipe_x86:mk_call(hipe_x86:mk_prim('inc_stack_0'),
-			  mk_minimal_sdesc(Context)),
+			  mk_minimal_sdesc(Context), not_remote),
 	 hipe_x86:mk_jmp_label(NewStartLab)],
       %%
-      {LLo,_} = hipe_x86_cfg:label_range(CFG),
-      LHi = hipe_gensym:get_label(x86),
-      CFG0 = hipe_x86_cfg:label_range_update(CFG, {LLo,LHi}),
-      %%
-      CFG1 = hipe_x86_cfg:bb_add(CFG0, NewStartLab, hipe_bb:mk_bb(NewStartCode)),
-      CFG2 = hipe_x86_cfg:bb_add(CFG1, AllocFrameLab, hipe_bb:mk_bb(AllocFrameCode)),
-      CFG3 = hipe_x86_cfg:bb_add(CFG2, IncStackLab, hipe_bb:mk_bb(IncStackCode)),
+      CFG1 = hipe_x86_cfg:bb_add(CFG, NewStartLab,
+                                 hipe_bb:mk_bb(NewStartCode)),
+      CFG2 = hipe_x86_cfg:bb_add(CFG1, AllocFrameLab,
+                                 hipe_bb:mk_bb(AllocFrameCode)),
+      CFG3 = hipe_x86_cfg:bb_add(CFG2, IncStackLab,
+                                 hipe_bb:mk_bb(IncStackCode)),
       CFG4 = hipe_x86_cfg:start_label_update(CFG3, NewStartLab),
       %%
       CFG4;
@@ -508,10 +502,10 @@ typeof_src(Src) ->
       hipe_x86:mem_type(Src)
   end.
 
-%%% Cons up an '%esp' Temp.
+%%% Cons up an '%sp' Temp.
 
-mk_esp() ->
-  hipe_x86:mk_temp(hipe_x86_registers:esp(), 'untagged').
+mk_sp() ->
+  hipe_x86:mk_temp(hipe_x86_registers:sp(), 'untagged').
 
 %%% Cons up a '%temp0' Temp.
 
@@ -561,22 +555,25 @@ find_temps([], S) ->
   S.
 
 tset_empty() ->
-  ordsets:new().
+  gb_sets:new().
 
 tset_size(S) ->
-  ordsets:size(S).
+  gb_sets:size(S).
 
 tset_insert(S, T) ->
-  ordsets:add_element(T, S).
+  gb_sets:add_element(T, S).
 
 tset_add_list(S, Ts) ->
-  ordsets:union(S, ordsets:from_list(Ts)).
+  gb_sets:union(S, gb_sets:from_list(Ts)).
 
 tset_del_list(S, Ts) ->
-  ordsets:subtract(S, ordsets:from_list(Ts)).
+  gb_sets:subtract(S, gb_sets:from_list(Ts)).
 
 tset_filter(S, F) ->
-  ordsets:filter(F, S).
+  gb_sets:filter(F, S).
+
+tset_to_list(S) ->
+  gb_sets:to_list(S).
 
 %%%
 %%% Compute minimum permissible frame size, ignoring spilled temps.
@@ -619,283 +616,5 @@ ensure_minframe(MinFrame, Frame, Temps) ->
      true -> Temps
   end.
 
-%%% workaround for "vanishing catch blocks" problem
-
-defun_exnlabs(Defun) ->
-  code_exnlabs(hipe_x86:defun_code(Defun), ordsets:new()).
-
-code_exnlabs([I|Code], Set) ->
-  code_exnlabs(Code, insn_exnlab(I, Set));
-code_exnlabs([], Set) ->
-  ordsets:to_list(Set).
-
-insn_exnlab(I, Set) ->
-  case I of
-    #pseudo_call{exnlab=ExnLab} ->
-      case ExnLab of
-	[] -> Set;
-	_ -> ordsets:add_element(ExnLab, Set)
-      end;
-    _ -> Set
-  end.
-
-add_exnlabs([], CFG) -> CFG;
-add_exnlabs([L|Ls], CFG) ->
-  add_exnlabs(Ls, hipe_x86_cfg:add_fail_entrypoint(CFG, L)).
-
-%%%
-%%% Finalise the temp->reg/spill mapping.
-%%% (XXX: maybe this should be merged with the main pass,
-%%% but I just want this to work now)
-%%%
-
-finalise_ra(Defun, [], []) ->
-  Defun;
-finalise_ra(Defun, TempMap, FpMap) ->
-  Code = hipe_x86:defun_code(Defun),
-  {_, SpillLimit} = hipe_x86:defun_var_range(Defun),
-  Map = mk_ra_map(TempMap, SpillLimit),
-  FpMap0 = mk_ra_map_fp(FpMap, SpillLimit),
-  NewCode = ra_code(Code, Map, FpMap0),
-  Defun#defun{code=NewCode}.
-
-ra_code(Code, Map, FpMap) ->
-  [ra_insn(I, Map, FpMap) || I <- Code].
-
-ra_insn(I, Map, FpMap) ->
-  case I of
-    #alu{src=Src0,dst=Dst0} ->
-      Src = ra_opnd(Src0, Map),
-      Dst = ra_opnd(Dst0, Map),
-      I#alu{src=Src,dst=Dst};
-    #call{} ->
-      I;
-    #cmovcc{src=Src0,dst=Dst0} ->
-      Src = ra_opnd(Src0, Map),
-      Dst = ra_opnd(Dst0, Map),
-      I#cmovcc{src=Src,dst=Dst};
-    #cmp{src=Src0,dst=Dst0} ->
-      Src = ra_opnd(Src0, Map),
-      Dst = ra_opnd(Dst0, Map),
-      I#cmp{src=Src,dst=Dst};
-    #comment{} ->
-      I;
-    #dec{dst=Dst0} ->
-      Dst = ra_opnd(Dst0, Map),
-      I#dec{dst=Dst};
-    #finit{}->
-      I;
-    #fmov{src=Src0,dst=Dst0} ->
-      Src = ra_opnd(Src0, Map, FpMap),
-      Dst = ra_opnd(Dst0, Map, FpMap),
-      I#fmov{src=Src,dst=Dst};
-    #fp_unop{arg=Arg0} ->
-      Arg = ra_opnd(Arg0, Map, FpMap),
-      I#fp_unop{arg=Arg};
-    #fp_binop{src=Src0,dst=Dst0} ->
-      Src = ra_opnd(Src0, Map, FpMap),
-      Dst = ra_opnd(Dst0, Map, FpMap),
-      I#fp_binop{src=Src,dst=Dst};
-    #inc{dst=Dst0} ->
-      Dst = ra_opnd(Dst0, Map),
-      I#inc{dst=Dst};
-    #jcc{} ->
-      I;
-    #jmp_fun{'fun'=Fun0} ->
-      Fun = ra_opnd(Fun0, Map),
-      I#jmp_fun{'fun'=Fun};
-    #jmp_label{} ->
-      I;
-    #jmp_switch{temp=Temp0} ->
-      Temp = ra_temp(Temp0, Map),
-      I#jmp_switch{temp=Temp};
-    #label{} ->
-      I;
-    #lea{mem=Mem0,temp=Temp0} ->
-      Mem = ra_mem(Mem0, Map),
-      Temp = ra_temp(Temp0, Map),
-      I#lea{mem=Mem,temp=Temp};
-    #move{src=Src0,dst=Dst0} ->
-      Src = ra_opnd(Src0, Map),
-      Dst = ra_opnd(Dst0, Map),
-      I#move{src=Src,dst=Dst};
-    #movsx{src=Src0,dst=Dst0} ->
-      Src = ra_opnd(Src0, Map),
-      Dst = ra_opnd(Dst0, Map),
-      I#movsx{src=Src,dst=Dst};
-    #movzx{src=Src0,dst=Dst0} ->
-      Src = ra_opnd(Src0, Map),
-      Dst = ra_opnd(Dst0, Map),
-      I#movzx{src=Src,dst=Dst};
-    #nop{} ->
-      I;
-    #pseudo_call{'fun'=Fun0} ->
-      Fun = ra_opnd(Fun0, Map),
-      I#pseudo_call{'fun'=Fun};
-    #pseudo_jcc{} ->
-      I;
-    #pseudo_tailcall{'fun'=Fun0,stkargs=StkArgs0} ->
-      Fun = ra_opnd(Fun0, Map),
-      StkArgs = ra_args(StkArgs0, Map),
-      I#pseudo_tailcall{'fun'=Fun,stkargs=StkArgs};
-    #pseudo_tailcall_prepare{} ->
-      I;
-    #push{src=Src0} ->
-      Src = ra_opnd(Src0, Map),
-      I#push{src=Src};
-    #ret{} ->
-      I;
-    #shift{src=Src0,dst=Dst0} ->
-      Src = ra_opnd(Src0, Map),
-      Dst = ra_opnd(Dst0, Map),
-      I#shift{src=Src,dst=Dst}; 
-    _ ->
-      exit({?MODULE,ra_insn,I})
-  end.
-
-ra_args(Args, Map) ->
-  [ra_opnd(Opnd, Map) || Opnd <- Args].
-
-ra_opnd(Opnd, Map) ->
-  ra_opnd(Opnd, Map, tmap_empty()).
-ra_opnd(Opnd, Map, FpMap) ->
-  case Opnd of
-    #x86_temp{} -> ra_temp(Opnd, Map, FpMap);
-    #x86_mem{} -> ra_mem(Opnd, Map);
-    _ -> Opnd
-  end.
-
-ra_mem(Mem, Map) ->
-  #x86_mem{base=Base0,off=Off0} = Mem,
-  Base = ra_opnd(Base0, Map),
-  Off = ra_opnd(Off0, Map),
-  %% #x86_mem{base=Base,off=Off}.
-  Mem#x86_mem{base=Base,off=Off}.
-
-ra_temp(Temp, Map) ->
-  ra_temp(Temp, Map, tmap_empty()).
-
-ra_temp(Temp, Map, FpMap) ->
-  Reg = hipe_x86:temp_reg(Temp),
-  case hipe_x86:temp_type(Temp) of
-    double ->
-      case gb_trees:lookup(Reg, FpMap) of
-	{value,NewReg} -> 
-	  case on_fpstack(NewReg) of
-	    true -> hipe_x86:mk_fpreg(NewReg);
-	    false ->
-	      Temp#x86_temp{reg=NewReg}
-	  end;
-	_ ->
-	  Temp
-      end;
-    _->
-      case hipe_x86_registers:is_precoloured(Reg) of
-	true ->
-	  Temp;
-	_ ->
-	  case gb_trees:lookup(Reg, Map) of
-	    {value,NewReg} -> Temp#x86_temp{reg=NewReg};
-	    _ -> Temp
-	  end
-      end
-  end.
-
-mk_ra_map(TempMap, SpillLimit) ->
-  %% Build a partial map from pseudo to reg or spill.
-  %% Spills are represented as pseudos with indices above SpillLimit.
-  %% (I'd prefer to use negative indices, but that breaks
-  %% hipe_x86_registers:is_precoloured/1.)
-  %% The frame mapping proper is unchanged, since spills look just like
-  %% ordinary (un-allocated) pseudos.
-  lists:foldl(fun(MapLet, Map) ->
-		  {Key,Val} = conv_ra_maplet(MapLet, SpillLimit),
-		  gb_trees:insert(Key, Val, Map)
-	      end,
-	      gb_trees:empty(),
-	      TempMap).
-
-conv_ra_maplet(MapLet = {From,To}, SpillLimit) ->
-  %% From should be a pseudo, or a hard reg mapped to itself.
-  if is_integer(From), From =< SpillLimit ->
-      case hipe_x86_registers:is_precoloured(From) of
-	false -> [];
-	_ ->
-	  case To of
-	    {reg, From} -> [];
-	    _ -> ?EXIT({?MODULE,conv_ra_maplet,MapLet})
-		   end
-      end;
-     true -> ?EXIT({?MODULE,conv_ra_maplet,MapLet})
-	       end,
-  %% end of From check
-  case To of
-    {reg, NewReg} ->
-      %% NewReg should be a hard reg, or a pseudo mapped
-      %% to itself (formals are handled this way).
-      if is_integer(NewReg) ->
-	  case hipe_x86_registers:is_precoloured(NewReg) of
-	    true -> [];
-	    _ -> if From =:= NewReg -> [];
-		    true ->
-		     ?EXIT({?MODULE,conv_ra_maplet,MapLet})
-		       end
-	  end;
-	 true -> ?EXIT({?MODULE,conv_ra_maplet,MapLet})
-		   end,
-      %% end of NewReg check
-      {From, NewReg};
-    {spill, SpillIndex} ->
-      %% SpillIndex should be >= 0.
-      if is_integer(SpillIndex), SpillIndex >= 0 -> [];
-	 true -> ?EXIT({?MODULE,conv_ra_maplet,MapLet})
-		   end,
-      %% end of SpillIndex check
-      ToTempNum = SpillLimit+SpillIndex+1,
-      MaxTempNum = hipe_gensym:get_var(),
-      if MaxTempNum >= ToTempNum -> [];
-	 true -> hipe_gensym:set_var(ToTempNum)
-      end,
-      {From, ToTempNum};
-    _ -> ?EXIT({?MODULE,conv_ra_maplet,MapLet})
-	   end.
-
-mk_ra_map_fp(FpMap, SpillLimit) ->
-  lists:foldl(fun(MapLet, Map) ->
-		  {Key,Val} = conv_ra_maplet_fp(MapLet, SpillLimit),
-		  gb_trees:insert(Key, Val, Map)
-	      end,
-	      gb_trees:empty(),
-	      FpMap).
-
-conv_ra_maplet_fp(MapLet = {From,To}, SpillLimit) ->
-  %% From should be a pseudo
-  if is_integer(From), From =< SpillLimit -> [];
-     true -> ?EXIT({?MODULE,conv_ra_maplet_fp,MapLet})
-	       end,
-  %% end of From check
-  case To of
-    {reg, NewReg} ->
-      case on_fpstack(NewReg) of
-	true-> [];
-	false -> ?EXIT({?MODULE,conv_ra_maplet_fp,MapLet})
-		   end,
-      %% end of NewReg check.
-      {From, NewReg};
-    {spill, SpillIndex} ->
-      %% SpillIndex should be >= 0.
-      if is_integer(SpillIndex), SpillIndex >= 0 -> [];
-	 true -> ?EXIT({?MODULE,conv_ra_maplet_fp,MapLet})
-		   end,
-      %% end of SpillIndex check
-      ToTempNum = SpillLimit+SpillIndex+1,
-      MaxTempNum = hipe_gensym:get_var(),
-      if MaxTempNum >= ToTempNum -> [];
-	 true -> hipe_gensym:set_var(ToTempNum)
-      end,
-      {From, ToTempNum};
-    _ -> ?EXIT({?MODULE,conv_ra_maplet_fp,MapLet})
-	   end.
-
-on_fpstack(S)->
-  hipe_x86_specific_fp:is_precolored(S).
+word_size() ->
+  hipe_rtl_arch:word_size().

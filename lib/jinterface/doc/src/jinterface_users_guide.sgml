@@ -313,13 +313,12 @@ from the remote process.
     while (true) {
       try {
         o = mbox.receive();
-        if (o == null) continue;
         if (o instanceof OtpErlangTuple) {
           msg = (OtpErlangTuple)o;
           from = (OtpErlangPid)(msg.elementAt(0));
           mbox.send(from,msg.elementAt(1));
       }
-      catch (OtpErlangExit e) {
+      catch (Exception e) {
         System.out.println("" + e);
       }
     }
@@ -407,6 +406,9 @@ exception will be raised on a subsequent call to receive():
         }
         catch (OtpErlangExit e) {
           System.out.println("Remote pid " + e.pid() + " has terminated");
+        }
+        catch (OtpErlangDecodeException f) {
+          System.out.println("Received message could not be decoded: " + f);
         }
 </CODE>
                 

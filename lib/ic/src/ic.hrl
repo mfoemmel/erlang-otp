@@ -125,8 +125,6 @@
 -define(insert(T,K,V), ets:insert(T, {K, V})).
 
 
-
-
 %%---------------------------------------------------------------------
 %%
 %% Java specific macros
@@ -134,6 +132,23 @@
 %%
 -define(ERLANGPACKAGE,"com.ericsson.otp.erlang.").
 -define(ICPACKAGE,"com.ericsson.otp.ic.").
+
+
+%%
+%% Macros for reporting encode/decode errors in C back-ends.
+%%
+%%
+
+-define(emit_c_enc_rpt(Fd, Fill, Fmt, Vals), 
+	begin
+	    CType = mk_c_type(G, N, T, evaluate_not),
+	    ic_codegen:emit_c_enc_rpt(Fd, Fill, "~s : " ++ Fmt, [CType| Vals])
+	end).
+-define(emit_c_dec_rpt(Fd, Fill, Fmt, Vals), 
+	begin
+	    CType = mk_c_type(G, N, T, evaluate_not),
+	    ic_codegen:emit_c_dec_rpt(Fd, Fill, "~s : " ++ Fmt, [CType| Vals])
+	end).
 
 
 

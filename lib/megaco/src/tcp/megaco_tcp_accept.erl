@@ -25,6 +25,8 @@
 %% Include files
 %%-----------------------------------------------------------------
 -include_lib("megaco/src/tcp/megaco_tcp.hrl").
+
+
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
@@ -32,12 +34,14 @@
 	 start_link/1
 	]).
 
+
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
 -export([
 	 net_accept/4
 	]).
+
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -47,7 +51,8 @@
 %% Description: Starts the proces that makes the accept call.
 %%-----------------------------------------------------------------
 start_link({TcpRec, SupPid, Listen}) ->
-    Pid = proc_lib:spawn_link(?MODULE, net_accept, [TcpRec, SupPid, Listen, self()]),
+    Args = [TcpRec, SupPid, Listen, self()],
+    Pid  = proc_lib:spawn_link(?MODULE, net_accept, Args),
     {ok, Pid}.
 
 %%-----------------------------------------------------------------
@@ -66,8 +71,16 @@ net_accept(TcpRec, SupPid, ListenFd, Parent) ->
 	    case megaco_tcp:start_connection(SupPid, 
 					     TcpRec#megaco_tcp{socket=S}) of
 		{ok, Pid} ->
-		    gen_tcp:controlling_process(S, Pid);
+		    case gen_tcp:controlling_process(S, Pid) of
+			ok ->
+			    ok;
+			{error, _Reason} ->
+			    tcp_clear(S),
+			    gen_tcp:close(S)	
+		    end;
+			    
 		{error, _Reason} ->
+		    tcp_clear(S),
 		    gen_tcp:close(S)	
 	    end;
 	{error, Reason} ->
@@ -75,3 +88,15 @@ net_accept(TcpRec, SupPid, ListenFd, Parent) ->
     end,
     net_accept(TcpRec, SupPid, ListenFd, Parent).
 
+
+tcp_clear(Socket) ->
+    receive
+        {tcp, Socket, _Data} ->
+            tcp_clear(Socket);
+        {tcp_closed, Socket} ->
+            tcp_clear(Socket);
+        {tcp_error, Socket} ->
+            tcp_clear(Socket)
+    after 0 -> 
+            ok
+    end.

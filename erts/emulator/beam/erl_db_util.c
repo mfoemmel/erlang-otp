@@ -29,6 +29,7 @@
 #include "global.h"
 #include "erl_process.h"
 #include "error.h"
+#define ERTS_WANT_DB_INTERNAL__
 #include "erl_db.h"
 #include "bif.h"
 #include "big.h"
@@ -269,7 +270,7 @@ static Process match_pseudo_process;
 
 /* The trace control word. */
 
-static Uint trace_control_word;
+static Uint32 trace_control_word;
 
 
 Eterm
@@ -434,6 +435,18 @@ static DMCGuardBif guard_tab[] =
     {
 	am_trunc,
 	&trunc_1,
+	1,
+	DBIF_ALL
+    },
+    {
+	am_Plus,
+	&splus_1,
+	1,
+	DBIF_ALL
+    },
+    {
+	am_Minus,
+	&sminus_1,
 	1,
 	DBIF_ALL
     },
@@ -697,8 +710,10 @@ BIF_RETTYPE db_set_trace_control_word_1(Process *p, Eterm new)
     Eterm old;
     if (!term_to_Uint(new, &val))
 	BIF_ERROR(p, BADARG);
+    if (val != ((Uint32)val))
+	BIF_ERROR(p, BADARG);
     old = make_small_or_big(trace_control_word, p);
-    trace_control_word = val;
+    trace_control_word = ((Uint32)val);
     BIF_RET(old);
 }
 
@@ -707,6 +722,8 @@ static Eterm db_set_trace_control_word_fake_1(Process *p, Eterm new)
     Uint val;
     Eterm old;
     if (!term_to_Uint(new, &val))
+	BIF_ERROR(p, BADARG);
+    if (val != ((Uint32)val))
 	BIF_ERROR(p, BADARG);
     old = make_small_or_big(trace_control_word, p);
     BIF_RET(old);
@@ -1441,6 +1458,7 @@ Eterm db_prog_match(Process *p, Binary *bprog, Eterm term,
     ** b) this function is called again.
     */
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
     if (psp->mbuf || psp->off_heap.mso || psp->off_heap.funs
 	|| psp->off_heap.externals) {
 	ErlHeapFragment *bp = psp->mbuf;
@@ -1463,6 +1481,7 @@ Eterm db_prog_match(Process *p, Binary *bprog, Eterm term,
 	p->arith_check_me = NULL;
 #endif
     }
+#endif
 #endif
 
     *return_flags = 0U;
@@ -1705,6 +1724,14 @@ restart:
 	    while (n--) {
 		if (*--esp == am_true) {
 		    t = am_true;
+		} else if (*esp != am_false) {
+		    esp -= n;
+		    if (do_catch) {
+			t = FAIL_TERM;
+			break;
+		    } else {
+			FAIL();
+		    }
 		}
 	    }
 	    *esp++ = t;
@@ -1713,8 +1740,16 @@ restart:
 	    n = *pc++;
 	    t = am_true;
 	    while (n--) {
-		if (*--esp != am_true) {
+		if (*--esp == am_false) {
 		    t = am_false;
+		} else if (*esp != am_true) {
+		    esp -= n;
+		    if (do_catch) {
+			t = FAIL_TERM;
+			break;
+		    } else {
+			FAIL();
+		    }
 		}
 	    }
 	    *esp++ = t;
@@ -1724,13 +1759,27 @@ restart:
 	    if (*--esp == am_true) {
 		++esp;
 		pc = (prog->text) + prog->labels[n];
+	    } else if (*esp != am_false) {
+		if (do_catch) {
+		    *esp++ = FAIL_TERM;
+		    pc = (prog->text) + prog->labels[n];;
+		} else {
+		    FAIL();
+		}
 	    }
 	    break;
 	case matchAndThen:
 	    n = *pc++;
-	    if (*--esp != am_true) {
-		*esp++ = am_false;
+	    if (*--esp == am_false) {
+		esp++;
 		pc = (prog->text) + prog->labels[n];
+	    } else if (*esp != am_true) {
+		if (do_catch) {
+		    *esp++ = FAIL_TERM;
+		    pc = (prog->text) + prog->labels[n];;
+		} else {
+		    FAIL();
+		}
 	    }
 	    break;
 	case matchSelf:
@@ -2076,9 +2125,14 @@ static Eterm add_counter(Eterm counter, Eterm incr)
 ** Returns normal DB error code.
 */
 
-int db_do_update_counter(Process *p, void *bp /* XDbTerm **bp */, 
+int db_do_update_counter(Process *p,
+			 DbTableCommon *tb, void *bp /* XDbTerm **bp */, 
 			 Eterm *tpl, int counterpos,
-			 int (*realloc_fun)(void *, Uint, Eterm, int),
+			 int (*realloc_fun)(DbTableCommon *,
+					    void *,
+					    Uint,
+					    Eterm,
+					    int),
 			 Eterm incr,
 			 int warp,
 			 Eterm *ret)
@@ -2125,7 +2179,7 @@ int db_do_update_counter(Process *p, void *bp /* XDbTerm **bp */,
 	if (is_small(counter)) {
 	    *counterp = res;
 	} else {
-	    if ((*realloc_fun)(bp, 0, res, counterpos) < 0) 
+	    if ((*realloc_fun)(tb, bp, 0, res, counterpos) < 0) 
 		return DB_ERROR_SYSRES;
 	}
 	*ret = res;
@@ -2135,7 +2189,7 @@ int db_do_update_counter(Process *p, void *bp /* XDbTerm **bp */,
 	Uint sz = BIG_ARITY(ptr) + 1;
 	Eterm *hp;
 
-	if ((*realloc_fun)(bp, sz, res, counterpos) < 0) 
+	if ((*realloc_fun)(tb, bp, sz, res, counterpos) < 0) 
 	    return DB_ERROR_SYSRES;
 	hp = HAlloc(p, sz);
 	sys_memcpy(hp, ptr, sz*sizeof(Eterm));
@@ -2155,7 +2209,7 @@ int db_do_update_counter(Process *p, void *bp /* XDbTerm **bp */,
 ** structure is returned. Make sure (((char *) old) - offset) is a 
 ** pointer to a ERTS_ALC_T_DB_TERM allocated data area.
 */
-void* db_get_term(DbTerm* old, Uint offset, Eterm obj)
+void* db_get_term(DbTableCommon *tb, DbTerm* old, Uint offset, Eterm obj)
 {
     int size = size_object(obj);
     void *structp = ((char*) old) - offset;
@@ -2168,32 +2222,44 @@ void* db_get_term(DbTerm* old, Uint offset, Eterm obj)
 	if (size == old->size) {
 	    p = old;
 	} else {
+	    Uint new_sz = offset + sizeof(DbTerm) + sizeof(Eterm)*(size-1);
+	    Uint old_sz = offset + sizeof(DbTerm) + sizeof(Eterm)*(old->size-1);
+
 	    if (erts_ets_realloc_always_moves) {
-		void *nstructp = erts_alloc(ERTS_ALC_T_DB_TERM, 
-					    offset + sizeof(DbTerm) + 
-					    sizeof(Eterm)*(size-1));
+		void *nstructp = erts_db_alloc(ERTS_ALC_T_DB_TERM,
+					       (DbTable *) tb,
+					       new_sz);
 		memcpy(nstructp,structp,offset);
-		erts_free(ERTS_ALC_T_DB_TERM, structp);
+		erts_db_free(ERTS_ALC_T_DB_TERM,
+			     (DbTable *) tb,
+			     structp,
+			     old_sz);
 		structp = nstructp;
 	    } else {
-		structp = erts_realloc(ERTS_ALC_T_DB_TERM,
-				       structp,
-				       offset + sizeof(DbTerm) + 
-				       sizeof(Eterm)*(size-1));
+		structp = erts_db_realloc(ERTS_ALC_T_DB_TERM,
+					  (DbTable *) tb,
+					  structp,
+					  old_sz,
+					  new_sz);
 	    }
 	    p = (DbTerm*) ((void *)(((char *) structp) + offset));
 	}
     }
     else {
-	structp = erts_alloc(ERTS_ALC_T_DB_TERM,
-			     offset + sizeof(DbTerm) + sizeof(Eterm)*(size-1));
+	structp = erts_db_alloc(ERTS_ALC_T_DB_TERM,
+				(DbTable *) tb,
+				(offset
+				 + sizeof(DbTerm)
+				 + sizeof(Eterm)*(size-1)));
 	p = (DbTerm*) ((void *)(((char *) structp) + offset));
     }
     p->size = size;
     p->off_heap.mso = NULL;
     p->off_heap.externals = NULL;
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
     p->off_heap.funs = NULL;
+#endif
 #endif
     p->off_heap.overhead = 0;
 
@@ -2219,7 +2285,8 @@ void db_free_term_data(DbTerm* p)
 ** bp is a pure out parameter, i e it does not have to
 ** point to (((char *) b) - offset) when calling.
 */
-int db_realloc_counter(void** bp, DbTerm *b, Uint offset, Uint sz, 
+int db_realloc_counter(DbTableCommon *tb,
+		       void** bp, DbTerm *b, Uint offset, Uint sz, 
 		       Eterm new_counter, int counterpos)
 {
     DbTerm* new;
@@ -2248,8 +2315,9 @@ int db_realloc_counter(void** bp, DbTerm *b, Uint offset, Uint sz,
     basic_sz = b->size - old_sz;
     new_sz = basic_sz + sz;
 
-    newbp = erts_alloc(ERTS_ALC_T_DB_TERM,
-		       sizeof(DbTerm)+sizeof(Eterm)*(new_sz-1)+offset);
+    newbp = erts_db_alloc(ERTS_ALC_T_DB_TERM,
+			  (DbTable *) tb,
+			  sizeof(DbTerm)+sizeof(Eterm)*(new_sz-1)+offset);
 
     if (newbp == NULL)
 	return -1;
@@ -2261,7 +2329,9 @@ int db_realloc_counter(void** bp, DbTerm *b, Uint offset, Uint sz,
     new->off_heap.mso = NULL;
     new->off_heap.externals = NULL;
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
     new->off_heap.funs = NULL;
+#endif
 #endif
     new->off_heap.overhead = 0;
     top = new->v;
@@ -2274,8 +2344,11 @@ int db_realloc_counter(void** bp, DbTerm *b, Uint offset, Uint sz,
     new->tpl = tuple_val(copy);
 
     db_free_term_data(b);
-    erts_free(ERTS_ALC_T_DB_TERM,
-	      (void *) (((char *) b) - offset));  /* free old term */
+    /* free old term */
+    erts_db_free(ERTS_ALC_T_DB_TERM,
+		 (DbTable *) tb,
+		 (void *) (((char *) b) - offset),
+		 offset + sizeof(DbTerm) + sizeof(Eterm)*(b->size-1));
     *bp = newbp;     /* patch new */
 
     /* copy new counter */
@@ -2362,6 +2435,14 @@ int db_has_variable(Eterm obj)
 	    return 1;
     }
     return 0;
+}
+
+int erts_db_is_compiled_ms(Eterm term)
+{
+    return (!is_binary(term) || 
+	    !(thing_subtag(*binary_val(term)) == REFC_BINARY_SUBTAG) ||
+	    !((((ProcBin *) binary_val(term))->val)->flags & 
+	      BIN_FLAG_MATCH_PROG)) ? 0 : 1;
 }
 
 /* 
@@ -2534,6 +2615,7 @@ static DMCRet dmc_one_term(DMCContext *context,
 	case (_TAG_HEADER_FLOAT >> _TAG_PRIMARY_SIZE):
 	    DMC_PUSH(*text,matchEqFloat);
 	    DMC_PUSH(*text, (Uint) float_val(c)[1]);
+	    /* XXX: this reads and pushes random junk on ARCH_64 */
 	    DMC_PUSH(*text, (Uint) float_val(c)[2]);
 	    break;
 	default: /* BINARY, FUN, VECTOR, or EXTERNAL */

@@ -9,16 +9,16 @@
 %%  History  :	* 2001-07-24 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: happi $
-%%              $Date: 2002/05/28 21:01:26 $
-%%              $Revision: 1.7 $
+%%              $Author: kostis $
+%%              $Date: 2004/01/23 21:34:53 $
+%%              $Revision: 1.9 $
 %% ====================================================================
 %%  Exports  :
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_temp_map).
--export([cols2tuple/2, sorted_cols2tuple/2, is_spilled/2, 
+-export([cols2tuple/2, is_spilled/2, %% sorted_cols2tuple/2,
 	 in_reg/2, in_fp_reg/2, find/2, to_substlist/1]).
 
 %%-define(DO_ASSERT,true).
@@ -39,11 +39,10 @@ cols2tuple(Map, Target) ->
   SortedMap = lists:keysort(1, Map), 
   cols2tuple(0, SortedMap, [], Target). 
 
-sorted_cols2tuple(Map, Target) ->
-  ?ASSERT(check_list(Map)),
-  ?ASSERT(Map =:= lists:keysort(1, Map)),
-  cols2tuple(0, Map, [], Target). 
-
+%% sorted_cols2tuple(Map, Target) ->
+%%   ?ASSERT(check_list(Map)),
+%%   ?ASSERT(Map =:= lists:keysort(1, Map)),
+%%   cols2tuple(0, Map, [], Target). 
 
 %% Build a dense mapping 
 cols2tuple(_, [], Vs, _) ->
@@ -55,8 +54,8 @@ cols2tuple(N, [{R, C}|Ms], Vs, Target) when N =:= R ->
 cols2tuple(N, SourceMapping, Vs, Target) ->
   %% The source was sparce, make up some placeholders...
   Val = 	      
-    case Target:is_precolored(N) of
-      %% If it is precolored we know what to map it to.
+    case Target:is_precoloured(N) of
+      %% If it is precoloured, we know what to map it to.
       true -> 
 	case Target of
 	  hipe_sparc_specific_fp ->{fp_reg, N};
@@ -65,7 +64,6 @@ cols2tuple(N, SourceMapping, Vs, Target) ->
       false -> unknown
     end,
   cols2tuple(N+1, SourceMapping, [Val|Vs], Target).
-
 
 -ifdef(DO_ASSERT).
 %% True if temp Temp is spilled.

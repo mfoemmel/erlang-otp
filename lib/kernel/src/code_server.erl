@@ -42,14 +42,14 @@
 	       mode=interactive}).
 
 
-start(Name, Mod, Args, _) ->
+start(_Name, _Mod, Args, _) ->
     Init = fun() -> init(self(),Args) end,
     spawn_link(Init),
     receive 
 	Msg -> Msg
     end.
 
-start_link(Name, Mod, Args, _) ->
+start_link(_Name, _Mod, Args, _) ->
     Parent = self(),
     Init = fun() -> init(Parent,Args) end,
     spawn_link(Init),
@@ -67,13 +67,13 @@ init(Parent, [Root, Mode]) ->
     register(?MODULE, self()),
     process_flag(trap_exit, true),
 
-    IPath = case Mode of
-		interactive ->
+
+    IPath = if Mode == interactive ; Mode == minimal ->
 		    LibDir = filename:append(Root, "lib"),
 		    {ok,Dirs} = erl_prim_loader:list_dir(LibDir),
 		    {Paths,_Libs} = make_path(LibDir, Dirs),
 		    ["."|Paths];
-		_ ->
+	       true ->
 		    []
 	    end,
 
@@ -81,12 +81,16 @@ init(Parent, [Root, Mode]) ->
     foreach(fun (M) ->  ets:insert(Db, {M,preloaded}) end, erlang:pre_loaded()),
     foreach(fun (MF) -> ets:insert(Db, MF) end, init:fetch_loaded()),
     
-    Path = add_loader_path(IPath, Mode),
+    Mode1 = if Mode == minimal -> interactive;
+	       true -> Mode
+	    end,
+
+    Path = add_loader_path(IPath, Mode1),
     State0 = #state{root = Root,
 		    path = Path,
 		    moddb = Db,
 		    namedb = init_namedb(Path),
-		    mode = Mode},
+		    mode = Mode1},
     
     State = case init:get_argument(code_path_cache) of
 		error -> 
@@ -117,7 +121,7 @@ loop(#state{supervisor=Supervisor}=State0) ->
 		{reply, Res, State} ->
 		    reply(Pid, Res),
 		    loop(State);
-		{no_reply, State} ->
+		{noreply, State} ->
 		    loop(State);
 		{stop, Why, stopped, State} ->
 		    system_terminate(Why, Supervisor, [], State)
@@ -126,7 +130,7 @@ loop(#state{supervisor=Supervisor}=State0) ->
 	    system_terminate(Reason, Supervisor, [], State0);
 	{system, From, Msg} ->
 	    handle_system_msg(running,Msg, From, Supervisor, State0);
-	Msg ->
+	_Msg ->
 	    loop(State0)
     end.
 	
@@ -166,7 +170,7 @@ do_sys_cmd(SysState, get_status, Parent, Misc) ->
     Status = {status, self(), {module, ?MODULE},
 	      [get(), SysState, Parent, [], Misc]},
     {SysState, Status, Misc};
-do_sys_cmd(SysState, {debug, What}, _Parent, Misc) ->
+do_sys_cmd(SysState, {debug, _What}, _Parent, Misc) ->
     {SysState,ok,Misc};
 do_sys_cmd(suspended, {change_code, Module, Vsn, Extra}, _Parent, Misc0) ->
     {Res, Misc} = 
@@ -181,7 +185,7 @@ do_sys_cmd(SysState, Other, _Parent, Misc) ->
 system_continue(_Parent, _Debug, State) ->
     loop(State).
 
-system_terminate(Reason, _Parent, _Debug, State) ->
+system_terminate(_Reason, _Parent, _Debug, _State) ->
 %    error_msg("~p terminating: ~p~n ",[?MODULE,Reason]),
     exit(shutdown).
 
@@ -248,11 +252,11 @@ handle_call({set_path,PathList}, {_From,_Tag}, S) ->
     {Resp, NewPath,NewDb} = set_path(PathList, Path, S#state.namedb),
     {reply,Resp,rehash_cache(S#state{path = NewPath, namedb=NewDb})};
 
-handle_call({del_path,Name},{_From,_Tag}, S) ->
+handle_call({del_path,Name}, {_From,_Tag}, S) ->
     {Resp,Path} = del_path(Name,S#state.path,S#state.namedb),
     {reply,Resp,rehash_cache(S#state{path = Path})};
 
-handle_call({replace_path,Name,Dir},{_From,_Tag}, S) ->
+handle_call({replace_path,Name,Dir}, {_From,_Tag}, S) ->
     {Resp,Path} = replace_path(Name,Dir,S#state.path,S#state.namedb),
     {reply,Resp,rehash_cache(S#state{path = Path})};
 
@@ -332,6 +336,29 @@ handle_call({is_sticky, Mod}, {_From,_Tag}, S) ->
 handle_call(stop,{_From,_Tag}, S) ->
     {stop,normal,stopped,S};
 
+handle_call({is_cached,_File}, {_From,_Tag}, S=#state{cache=no_cache}) ->
+    {reply, no, S};
+
+handle_call({is_cached,File}, {_From,_Tag}, S=#state{cache=Cache}) ->
+    ObjExt = code_aux:objfile_extension(),
+    Ext = filename:extension(File),
+    Type = case Ext of
+	       ObjExt -> obj;
+	       ".app" -> app;
+	       _ -> undef
+	   end,
+    if Type == undef -> 
+	    {reply, no, S};
+       true ->
+	    Key = {Type,list_to_atom(filename:rootname(File, Ext))},
+	    case ets:lookup(Cache, Key) of
+		[] -> 
+		    {reply, no, S};
+		[{Key,Dir}] ->
+		    {reply, Dir, S}
+	    end
+    end;
+
 handle_call(Other,{_From,_Tag}, S) ->			
     error_msg(" ** Codeserver*** ignoring ~w~n ",[Other]),
     {noreply,S}.
@@ -371,46 +398,49 @@ rehash_cache(St = #state{cache = OldCache}) ->
     rehash_cache(Cache, St).
 
 rehash_cache(Cache, St = #state{path = Path}) ->
-    Ext = code_aux:objfile_extension(),
-    {Cache,NewPath} = locate_mods(lists:reverse(Path), first, Ext, Cache, []),
+    Exts = [{obj,code_aux:objfile_extension()}, {app,".app"}],
+    {Cache,NewPath} = locate_mods(lists:reverse(Path), first, Exts, Cache, []),
     St#state{cache = Cache, path=NewPath}.
 
 update_cache(Dirs, Where, Cache0) ->
-    Ext = code_aux:objfile_extension(),
-    {Cache, _} = locate_mods(Dirs, Where, Ext, Cache0, []),
+    Exts = [{obj,code_aux:objfile_extension()}, {app,".app"}],
+    {Cache, _} = locate_mods(Dirs, Where, Exts, Cache0, []),
     Cache.
 
-locate_mods([Dir0|Path], Where, Ext, Cache, Acc) ->
+locate_mods([Dir0|Path], Where, Exts, Cache, Acc) ->
     Dir = absname(Dir0), %% Cache always expands the path 
     case erl_prim_loader:list_dir(Dir) of
 	{ok, Files} -> 
-	    Cache = filter_mods(Files, Where, Ext, Dir, Cache),
-	    locate_mods(Path, Where, Ext, Cache, [Dir|Acc]);
+	    Cache = filter_mods(Files, Where, Exts, Dir, Cache),
+	    locate_mods(Path, Where, Exts, Cache, [Dir|Acc]);
 	error ->
-	    locate_mods(Path, Where, Ext, Cache, Acc)
+	    locate_mods(Path, Where, Exts, Cache, Acc)
     end;
 locate_mods([], _, _, Cache, Path) ->
     {Cache,Path}.
 
-filter_mods([File|Rest], Where, Ext, Dir, Cache) ->
-    case filename:extension(File) of
-	Ext ->
-	    Mod = list_to_atom(filename:rootname(File, Ext)),
+filter_mods([File|Rest], Where, Exts, Dir, Cache) ->
+    Ext = filename:extension(File),
+    Root = list_to_atom(filename:rootname(File, Ext)),
+    case lists:keysearch(Ext, 2, Exts) of
+	{value,{Type,_}} ->
+	    Key = {Type,Root},
 	    case Where of
 		first ->
-		    true = ets:insert(Cache, {Mod, Dir});
+		    true = ets:insert(Cache, {Key,Dir});
 		last ->
-		    case ets:lookup(Cache, Mod) of
+		    case ets:lookup(Cache, Key) of
 			[] ->
-			    true = ets:insert(Cache, {Mod, Dir});
+			    true = ets:insert(Cache, {Key,Dir});
 			_ ->
 			    ignore
 		    end
-	    end,
-	    filter_mods(Rest, Where, Ext, Dir, Cache);
-	_ ->
-	    filter_mods(Rest, Where, Ext, Dir, Cache)
-    end;
+	    end;
+	false ->
+	    ok
+    end,
+    filter_mods(Rest, Where, Exts, Dir, Cache);
+
 filter_mods([], _, _, _, Cache) ->
     Cache.
 
@@ -1043,6 +1073,7 @@ try_load_module(File, Mod, Bin, Db) ->
 		    case erlang:load_module(M, Bin) of
 			{module,M} ->
 			    ets:insert(Db, {M,File}),
+			    post_beam_load(Mod),
 			    {module,Mod};
 			{error,What} ->
 			    error_msg("Loading of ~s failed: ~p\n", [File, What]),
@@ -1060,35 +1091,13 @@ load_native_code(Mod, Bin) ->
     %% before trying to to load native code.
     case erlang:module_loaded(hipe_unified_loader) of
 	false -> no_native;
-	true -> load_native_code_1(Mod, Bin)
+	true -> hipe_unified_loader:load_native_code(Mod, Bin)
     end.
 
-load_native_code_1(Mod, Bin) ->
-    %% At this stage, we know that the hipe loader modules are loaded.
-    case erlang:system_info(hipe_architecture) of
-	ultrasparc ->
-	    hipe_unified_loader:patch_to_emu(Mod),
-	    load_native_code(Mod, Bin, "HS8P",
-			     fun(M, B) -> 
-				     hipe_unified_loader:load_module(M, B, Bin) 
-			     end);
-	x86 ->
-	    hipe_unified_loader:patch_to_emu(Mod),
-	    load_native_code(Mod, Bin, "HX86",
-			     fun(M, B) -> 
-				     hipe_unified_loader:load_module(M, B, Bin) 
-			     end);
-	_ ->
-	    %% Can't happen (in principle).
-	    no_native
-    end.
-
-
-load_native_code(Mod, Bin, ChunkTag, Loader) ->
-    case code:get_chunk(Bin, ChunkTag) of
-	undefined -> no_native;
-	NativeCode when binary(NativeCode) ->
-	    Loader(Mod, NativeCode)
+post_beam_load(Mod) ->
+    case erlang:module_loaded(hipe_unified_loader) of
+	false -> ok;
+	true -> hipe_unified_loader:post_beam_load(Mod)
     end.
 
 int_list([H|T]) when integer(H) -> int_list(T);
@@ -1102,16 +1111,17 @@ load_file(Mod, St=#state{path=Path,moddb=Db,cache=no_cache}) ->
 	{Mod,Binary,File} -> {St,try_load_module(File, Mod, Binary, Db)}
     end;
 load_file(Mod, St0=#state{moddb=Db,cache=Cache}) ->
-    case ets:lookup(Cache, Mod) of
+    Key = {obj,Mod},
+    case ets:lookup(Cache, Key) of
 	[] -> 
 	    St = rehash_cache(St0),
-	    case ets:lookup(St#state.cache, Mod) of
+	    case ets:lookup(St#state.cache, Key) of
 		[] -> 
 		    {St, {error,nofile}};
-		[{Mod,Dir}] ->
+		[{Key,Dir}] ->
 		    {St, try_load_module(Mod, Dir, Db)}
 	    end;
-	[{Mod,Dir}] ->
+	[{Key,Dir}] ->
 	    {St0, try_load_module(Mod, Dir, Db)}
     end.
 

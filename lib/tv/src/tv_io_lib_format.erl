@@ -114,9 +114,9 @@ collect_cc([$i|Fmt], [A|Args]) -> {$i,[A],Fmt,Args}.
 
 pcount(Cs) -> pcount(Cs, 0).
 
-pcount([{$p,As,F,Ad,P,Pad}|Cs], Acc) -> pcount(Cs, Acc+1);
-pcount([{$P,As,F,Ad,P,Pad}|Cs], Acc) -> pcount(Cs, Acc+1);
-pcount([C|Cs], Acc) -> pcount(Cs, Acc);
+pcount([{$p,_As,_F,_Ad,_P,_Pad}|Cs], Acc) -> pcount(Cs, Acc+1);
+pcount([{$P,_As,_F,_Ad,_P,_Pad}|Cs], Acc) -> pcount(Cs, Acc+1);
+pcount([_|Cs], Acc) -> pcount(Cs, Acc);
 pcount([], Acc) -> Acc.
 
 %% build([Control], Pc, Indentation) -> [Char].
@@ -131,14 +131,14 @@ build([{C,As,F,Ad,P,Pad}|Cs], Pc0, I) ->
 	Pc1 > 0 -> [S|build(Cs, Pc1, indentation(S, I))];
 	true -> [S|build(Cs, Pc1, I)]
     end;
-build([$\n|Cs], Pc, I) -> [$\n|build(Cs, Pc, 0)];
+build([$\n|Cs], Pc, _I) -> [$\n|build(Cs, Pc, 0)];
 build([$\t|Cs], Pc, I) -> [$\t|build(Cs, Pc, ((I + 8) div 8) * 8)];
 build([C|Cs], Pc, I) -> [C|build(Cs, Pc, I+1)];
-build([], Pc, I) -> [].
+build([], _, _) -> [].
 
 decr_pc($p, Pc) -> Pc - 1;
 decr_pc($P, Pc) -> Pc - 1;
-decr_pc(C, Pc) -> Pc.
+decr_pc(_C, Pc) -> Pc.
 
 %% control(FormatChar, [Argument], FieldWidth, Adjust, Precision, PadChar,
 
@@ -147,36 +147,36 @@ decr_pc(C, Pc) -> Pc.
 %%  This is the main dispatch function for the various formatting commands.
 %%  Field widths and precisions have already been calculated.
 
-control($w, [A], F, Adj, P, Pad, I) ->
+control($w, [A], F, Adj, P, Pad, _I) ->
     term(tv_io_lib:write(A, -1), F, Adj, P, Pad);
 control($p, [A], F, Adj, P, Pad, I) ->
     print(A, -1, F, Adj, P, Pad, I);
-control($W, [A,Depth], F, Adj, P, Pad, I) when integer(Depth) ->
+control($W, [A,Depth], F, Adj, P, Pad, _I) when integer(Depth) ->
     term(tv_io_lib:write(A, Depth), F, Adj, P, Pad);
 control($P, [A,Depth], F, Adj, P, Pad, I) when integer(Depth) ->
     print(A, Depth, F, Adj, P, Pad, I);
-control($s, [A], F, Adj, P, Pad, I) when atom(A) ->
+control($s, [A], F, Adj, P, Pad, _I) when atom(A) ->
     string(atom_to_list(A), F, Adj, P, Pad);
-control($s, [L], F, Adj, P, Pad, I) ->
+control($s, [L], F, Adj, P, Pad, _I) ->
     true = tv_io_lib:deep_char_list(L),		%Check if L a character list
     string(L, F, Adj, P, Pad);
-control($e, [A], F, Adj, P, Pad, I) when float(A) ->
+control($e, [A], F, Adj, P, Pad, _I) when float(A) ->
     fwrite_e(A, F, Adj, P, Pad);
-control($f, [A], F, Adj, P, Pad, I) when float(A) ->
+control($f, [A], F, Adj, P, Pad, _I) when float(A) ->
     fwrite_f(A, F, Adj, P, Pad);
-control($g, [A], F, Adj, P, Pad, I) when float(A) ->
+control($g, [A], F, Adj, P, Pad, _I) when float(A) ->
     fwrite_g(A, F, Adj, P, Pad);
-control($c, [A], F, Adj, P, Pad, I) when integer(A) ->
+control($c, [A], F, Adj, P, Pad, _I) when integer(A) ->
     char(A band 255, F, Adj, P, Pad);
-control($~, [], F, Adj, P, Pad, I) -> char($~, F, Adj, P, Pad);
-control($n, [], F, Adj, P, Pad, I) -> newline(F, Adj, P, Pad);
-control($i, [A], F, Adj, P, Pad, I) -> [].
+control($~, [], F, Adj, P, Pad, _I) -> char($~, F, Adj, P, Pad);
+control($n, [], F, Adj, P, Pad, _I) -> newline(F, Adj, P, Pad);
+control($i, [_A], _F, _Adj, _P, _Pad, _I) -> [].
 
 %% indentation([Char], Indentation) -> Indentation.
 %%  Calculate the indentation of the end of a string given its start
 %%  indentation. We assume tabs at 8 cols.
 
-indentation([$\n|Cs], I) -> indentation(Cs, 0);
+indentation([$\n|Cs], _I) -> indentation(Cs, 0);
 indentation([$\t|Cs], I) -> indentation(Cs, ((I + 8) div 8) * 8);
 indentation([C|Cs], I) when integer(C) ->
     indentation(Cs, I+1);
@@ -187,7 +187,7 @@ indentation([], I) -> I.
 %% term(TermList, Field, Adjust, Precision, PadChar)
 %%  Output the characters in a term.
 
-term(T, none, Adj, none, Pad) -> T;
+term(T, none, _Adj, none, _Pad) -> T;
 term(T, none, Adj, P, Pad) -> term(T, P, Adj, P, Pad);
 term(T, F, Adj, none, Pad) -> term(T, F, Adj, min(flat_length(T), F), Pad);
 term(T, F, Adj, P, Pad) when F >= P ->
@@ -198,14 +198,14 @@ term(T, F, Adj, P, Pad) when F >= P ->
 
 print(T, D, none, Adj, P, Pad, I) -> print(T, D, 80, Adj, P, Pad, I);
 print(T, D, F, Adj, none, Pad, I) -> print(T, D, F, Adj, I+1, Pad, I);
-print(T, D, F, right, P, Pad, I) ->
+print(T, D, F, right, P, _Pad, _I) ->
     tv_io_lib_pretty:pretty_print(T, P, F, D).
 
 %% fwrite_e(Float, Field, Adjust, Precision, PadChar)
 
 fwrite_e(Fl, none, Adj, none, Pad) ->		%Default values
     fwrite_e(Fl, none, Adj, 6, Pad);
-fwrite_e(Fl, none, Adj, P, Pad) when P >= 2 ->
+fwrite_e(Fl, none, _Adj, P, _Pad) when P >= 2 ->
     float_e(Fl, float_data(Fl), P);
 fwrite_e(Fl, F, Adj, none, Pad) ->
     fwrite_e(Fl, F, Adj, 6, Pad);
@@ -214,7 +214,7 @@ fwrite_e(Fl, F, Adj, P, Pad) when P >= 2 ->
 
 float_e(Fl, Fd, P) when Fl < 0.0 ->		%Negative numbers
     [$-|float_e(-Fl, Fd, P)];
-float_e(Fl, {Ds,E}, P) ->
+float_e(_Fl, {Ds,E}, P) ->
     case float_man(Ds, 1, P-1) of
 	{[$0|Fs],true} -> [[$1|Fs]|float_exp(E)];
 	{Fs,false} -> [Fs|float_exp(E-1)]
@@ -237,8 +237,8 @@ float_man([D|Ds], I, Dc) ->
 float_man([], I, Dc) ->				%Pad with 0's
     {string:chars($0, I, [$.|string:chars($0, Dc)]),false}.
 
-float_man([D|Ds], 0) when D >= $5 -> {[],true};
-float_man([D|Ds], 0) -> {[],false};
+float_man([D|_Ds], 0) when D >= $5 -> {[],true};
+float_man([_|_], 0) -> {[],false};
 float_man([D|Ds], Dc) ->
     case float_man(Ds, Dc-1) of
 	{Cs,true} when D == $9 -> {[$0|Cs],true};
@@ -259,7 +259,7 @@ float_exp(E) ->
 
 fwrite_f(Fl, none, Adj, none, Pad) ->		%Default values
     fwrite_f(Fl, none, Adj, 6, Pad);
-fwrite_f(Fl, none, Adj, P, Pad) when P >= 1 ->
+fwrite_f(Fl, none, _Adj, P, _Pad) when P >= 1 ->
     float_f(Fl, float_data(Fl), P);
 fwrite_f(Fl, F, Adj, none, Pad) ->
     fwrite_f(Fl, F, Adj, 6, Pad);
@@ -270,7 +270,7 @@ float_f(Fl, Fd, P) when Fl < 0.0 ->
     [$-|float_f(-Fl, Fd, P)];
 float_f(Fl, {Ds,E}, P) when E =< 0 ->
     float_f(Fl, {string:chars($0, -E+1, Ds),1}, P);	%Prepend enough 0's
-float_f(Fl, {Ds,E}, P) ->
+float_f(_Fl, {Ds,E}, P) ->
     case float_man(Ds, E, P) of
 	{Fs,true} -> "1" ++ Fs;			%Handle carry
 	{Fs,false} -> Fs
@@ -285,7 +285,7 @@ float_data([$e|E], Ds) ->
     {reverse(Ds),list_to_integer(E)+1};
 float_data([D|Cs], Ds) when D >= $0, D =< $9 ->
     float_data(Cs, [D|Ds]);
-float_data([D|Cs], Ds) ->
+float_data([_D|Cs], Ds) ->
     float_data(Cs, Ds).
 
 
@@ -315,26 +315,26 @@ fwrite_g(Fl, F, Adj, P, Pad) ->
 
 %% string(String, Field, Adjust, Precision, PadChar)
 
-string(S, none, Adj, none, Pad) -> S;
+string(S, none, _Adj, none, _Pad) -> S;
 string(S, F, Adj, none, Pad) ->
     string(S, F, Adj, min(flat_length(S), F), Pad);
-string(S, none, Adj, P, Pad) ->
+string(S, none, _Adj, P, Pad) ->
     string:left(flatten(S), P, Pad);
 string(S, F, Adj, P, Pad) when F >= P ->
     adjust(string:left(flatten(S), P, Pad), string:chars(Pad, F - P), Adj).
 
 %% char(Char, Field, Adjust, Precision, PadChar) -> [Char].
 
-char(C, none, Adj, none, Pad) -> [C];
-char(C, F, Adj, none, Pad) -> string:chars(C, F);
-char(C, none, Adj, P, Pad) -> string:chars(C, P);
+char(C, none, _Adj, none, _Pad) -> [C];
+char(C, F, _Adj, none, _Pad) -> string:chars(C, F);
+char(C, none, _Adj, P, _Pad) -> string:chars(C, P);
 char(C, F, Adj, P, Pad) when F >= P ->
     adjust(string:chars(C, P), string:chars(Pad, F - P), Adj).
 
 %% newline(Field, Adjust, Precision, PadChar) -> [Char].
 
-newline(none, Adj, P, Pad) -> "\n";
-newline(F, right, P, Pad) -> string:chars($\n, F).
+newline(none, _Adj, _P, _Pad) -> "\n";
+newline(F, right, _P, _Pad) -> string:chars($\n, F).
 
 %% adjust_error([Char], Field, Adjust, Max, PadChar) -> [Char].
 %%  Adjust the characters within the field if length less than Max padding
@@ -364,7 +364,7 @@ reverse([H|T], Stack) ->
 reverse([], Stack) -> Stack.
 
 min(L, R) when L < R -> L;
-min(L, R) -> R.
+min(_, R) -> R.
 
 %% flatten(List)
 %%  Flatten a list.
@@ -385,6 +385,6 @@ flat_length(List) -> flat_length(List, 0).
 
 flat_length([H|T], L) when list(H) ->
     flat_length(H, flat_length(T, L));
-flat_length([H|T], L) ->
+flat_length([_|T], L) ->
     flat_length(T, L + 1);
 flat_length([], L) -> L.

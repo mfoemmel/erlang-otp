@@ -166,8 +166,8 @@ start_channel(Options) when list(Options) ->
     ServerOpts = get_option(?SERVER, Options),
     'oe_CosEventComm_Channel':oe_create([Options, ServerOpts], ServerOpts);
 start_channel(Options) ->
-    orber:debug_level_print("[~p] cosEventApp:start_channel(~p); 
-Options not correct.", [?LINE, Options], ?DEBUG_LEVEL),
+    orber:dbg("[~p] cosEventApp:start_channel(~p);~n"
+	      "Options not correct.", [?LINE, Options], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
     
 %%-----------------------------------------------------------%
@@ -183,8 +183,8 @@ start_channel_link(Options) when list(Options) ->
     ServerOpts = get_option(?SERVER, Options),
     'oe_CosEventComm_Channel':oe_create_link([Options, ServerOpts], ServerOpts);
 start_channel_link(Options) ->
-    orber:debug_level_print("[~p] cosEventApp:start_channel_link(~p); 
-Options not correct.", [?LINE, Options], ?DEBUG_LEVEL),
+    orber:dbg("[~p] cosEventApp:start_channel_link(~p);~n"
+	      "Options not correct.", [?LINE, Options], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
     
 %%-----------------------------------------------------------%
@@ -253,15 +253,15 @@ get_option(Key, OptionList) ->
 %% Returns  : 'ok' or raises exception.
 %% Effect   : 
 %%------------------------------------------------------------
-type_check(Obj, Mod, false) ->
+type_check(_Obj, _Mod, false) ->
     ok;
 type_check(Obj, Mod, _) ->
     case catch corba_object:is_a(Obj, Mod:typeID()) of
         true ->
             ok;
         _ ->
-	    orber:debug_level_print("[~p] cosEventApp:type_check(~p) failed; Should be ~p", 
-				    [?LINE, Obj, Mod], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] cosEventApp:type_check(~p) failed; Should be ~p", 
+		      [?LINE, Obj, Mod], ?DEBUG_LEVEL),
 	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end.
 

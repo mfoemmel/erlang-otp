@@ -38,7 +38,7 @@ idle(Bmp, BoardPid) ->
 	    sleep(Level, Bmp, BoardPid, alarm(sleep_time(Level), wake_up));
 	quit ->
 	    exit(normal);
-	Other ->
+	_Other ->
 	    idle(Bmp, BoardPid)
     end.
 
@@ -56,7 +56,7 @@ sleep(Level, Bmp, BoardPid, Alarm) ->
 	{Alarm, wake_up} ->
 	    show_me(BoardPid, Bmp),
 	    show(Level, Bmp, BoardPid, alarm(2500, missed));
-	Other ->
+	_Other ->
 	    sleep(Level, Bmp, BoardPid, Alarm)
     end.
 
@@ -85,7 +85,7 @@ show(Level, Bmp, BoardPid, Alarm) ->
 	{Alarm, missed} ->
 	    missed_me(BoardPid, Bmp),
 	    bbmed(Level, Bmp, BoardPid, alarm(1500, hide));
-	Other ->
+	_Other ->
 	    show(Level, Bmp, BoardPid, Alarm)
     end.
 
@@ -103,7 +103,7 @@ bbmed(Level, Bmp, BoardPid, Alarm) ->
 	{Alarm, hide} ->
 	    hide_me(BoardPid, Bmp),
 	    sleep(Level, Bmp, BoardPid, alarm(sleep_time(Level), wake_up));
-	Other ->
+	_Other ->
 	    bbmed(Level, Bmp, BoardPid, Alarm)
     end.
 

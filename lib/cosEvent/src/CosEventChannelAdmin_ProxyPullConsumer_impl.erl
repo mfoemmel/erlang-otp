@@ -84,12 +84,12 @@ init([Admin, AdminPid, Channel, TypeCheck, PullInterval]) ->
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, #state{client = undefined}) ->
-    ?DBG("Terminating ~p; no client connected.~n", [Reason]),
+terminate(_Reason, #state{client = undefined}) ->
+    ?DBG("Terminating ~p; no client connected.~n", [_Reason]),
     ok;
-terminate(Reason, #state{client = Client} = State) ->
+terminate(_Reason, #state{client = Client} = State) ->
     stop_timer(State),
-    ?DBG("Terminating ~p~n", [Reason]),
+    ?DBG("Terminating ~p~n", [_Reason]),
     cosEventApp:disconnect('CosEventComm_PullSupplier', 
 			   disconnect_pull_supplier, Client),
     ok.
@@ -99,7 +99,7 @@ terminate(Reason, #state{client = Client} = State) ->
 %% Returns    : {ok, NewState}
 %% Description: Convert process state when code is changed
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
  
 %%---------------------------------------------------------------------%
@@ -111,13 +111,13 @@ code_change(OldVsn, State, Extra) ->
 %%----------------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, #state{admin_pid = Pid} = State) ->
     ?DBG("Parent Admin terminated ~p~n", [Reason]),
-    orber:debug_level_print("[~p] CosEventChannelAdmin_ProxyPullConsumer:handle_info(~p); 
-My Admin terminated and so will I.", [?LINE, Reason], ?DEBUG_LEVEL),
+    orber:dbg("[~p] CosEventChannelAdmin_ProxyPullConsumer:handle_info(~p);~n"
+	      "My Admin terminated and so will I.", [?LINE, Reason], ?DEBUG_LEVEL),
     {stop, Reason, State};
 handle_info(try_pull_event, State) ->
     try_pull_event(State);
-handle_info(Info, State) ->
-    ?DBG("Unknown Info ~p~n", [Info]),
+handle_info(_Info, State) ->
+    ?DBG("Unknown Info ~p~n", [_Info]),
     {noreply, State}.
  
 %%----------------------------------------------------------------------
@@ -126,13 +126,14 @@ handle_info(Info, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-connect_pull_supplier(OE_This, #state{client = undefined, 
-					 typecheck = TypeCheck} = State, NewClient) ->
+connect_pull_supplier(_OE_This, #state{client = undefined, 
+				       typecheck = TypeCheck} = State, NewClient) ->
     case corba_object:is_nil(NewClient) of
 	true ->
 	    ?DBG("A NIL client supplied.~n", []),
-	    orber:debug_level_print("[~p] CosEventChannelAdmin_ProxyPullConsumer:connect_pull_supplier(..); 
-Supplied a NIL reference which is not allowed.", [?LINE], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosEventChannelAdmin_ProxyPullConsumer:connect_pull_supplier(..);~n"
+		      "Supplied a NIL reference which is not allowed.", 
+		      [?LINE], ?DEBUG_LEVEL),
 	    corba:raise(#'BAD_PARAM'{completion_status = ?COMPLETED_NO});
 	false ->
 	    cosEventApp:type_check(NewClient, 'CosEventComm_PullSupplier', TypeCheck),
@@ -149,7 +150,7 @@ connect_pull_supplier(_, _, _) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-disconnect_pull_consumer(OE_This, State) ->
+disconnect_pull_consumer(_OE_This, State) ->
     NewState = stop_timer(State),
     ?DBG("Disconnect invoked ~p~n", [NewState]),
     {stop, normal, ok, NewState#state{client = undefined}}.
@@ -186,12 +187,14 @@ try_pull_event(State) ->
 	    {noreply, State}; 
 	{'EXCEPTION', #'CosEventComm_Disconnected'{}} ->
 	    ?DBG("Client claims we are disconnectedwhen trying to pull event.~n", []),
-	    orber:debug_level_print("[~p] CosEventChannelAdmin_ProxyPullConsumer:try_pull_event(); 
-Client claims we are disconnected when trying to pull event so I terminate.", [?LINE], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosEventChannelAdmin_ProxyPullConsumer:try_pull_event();~n"
+		      "Client claims we are disconnected when trying to pull event so I terminate.", 
+		      [?LINE], ?DEBUG_LEVEL),
 	    {stop, normal, State#state{client = undefined}};
 	What ->
-	    orber:debug_level_print("[~p] CosEventChannelAdmin_ProxyPullConsumer:try_pull_event(~p); 
-My Client behaves badly so I terminate.", [?LINE, What], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosEventChannelAdmin_ProxyPullConsumer:try_pull_event(~p);~n"
+		      "My Client behaves badly so I terminate.", 
+		      [?LINE, What], ?DEBUG_LEVEL),
 	    {stop, normal, State}
     end.
 

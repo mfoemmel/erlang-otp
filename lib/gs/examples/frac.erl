@@ -29,7 +29,7 @@ start() ->
 go() ->
     draw(),
     receive
-	X -> true
+	_X -> true
     end.
 
 draw() ->

@@ -1,0 +1,5 @@
+# $Id$
+# PowerPC-specific atoms
+
+atom inc_stack_0
+atom powerpc

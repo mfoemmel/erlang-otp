@@ -52,6 +52,8 @@
 
 -export([bytes_to_ip6/16, ip6_to_bytes/1, ip4_to_bytes/1, ip_to_bytes/1]).
 
+-export([get_rc/0]).
+
 %% format error
 -export([format_error/1]).
 
@@ -63,7 +65,10 @@
 -import(lists, [append/1, duplicate/2, member/2, filter/2,
 		map/2, foldl/3, foreach/2]).
 
-%%
+
+get_rc() ->
+    inet_db:get_rc().
+
 close(Socket) ->
     prim_inet:close(Socket).
 
@@ -290,7 +295,7 @@ stats() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 connect_options() ->
     [reuseaddr, keepalive, linger, sndbuf, recbuf, nodelay,
-     header, active, packet, buffer, mode, deliver,
+     header, active, packet, packet_size, buffer, mode, deliver,
      exit_on_close, high_watermark, low_watermark, bit8, send_timeout,
      delay_send].
     
@@ -346,7 +351,7 @@ listen_options() ->
     [reuseaddr, keepalive, linger, sndbuf, recbuf, nodelay,
      header, active, packet, buffer, mode, deliver, backlog,
      exit_on_close, high_watermark, low_watermark, bit8, send_timeout,
-     delay_send].
+     delay_send, packet_size].
 
 listen_options(Opts, Family) ->
     BaseOpts = 
@@ -494,8 +499,7 @@ getaddrs_tm(Address, Family, Timer) ->
 		{ok, Ent} -> {ok, Ent#hostent.h_addr_list};
 		Error -> Error
 	    end
-    end;
-getaddrs_tm(_,_,_) -> {error, einval}.
+    end.
 
 
 %%

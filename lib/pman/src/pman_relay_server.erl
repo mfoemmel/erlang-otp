@@ -45,10 +45,10 @@ loop(P) ->
 	{P, M,F,A} ->
 	    case catch apply(M, F, A) of
 		1 -> ok;
-		Other ->  P ! {print, "** Illegal trace request **\n", []}
+		_Other ->  P ! {print, "** Illegal trace request **\n", []}
 	    end,
 	    loop(P);
-	{'EXIT', P, Reason} ->
+	{'EXIT', P, _Reason} ->
 	    exit(normal);
 	Other ->             %% Here is the normal case for trace i/o
 	    P ! Other, 

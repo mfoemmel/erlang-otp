@@ -389,6 +389,196 @@ fi
 
 dnl ----------------------------------------------------------------------
 dnl
+dnl LM_FIND_ETHR_LIB
+dnl
+dnl Find a thread library to use. Sets ETHR_LIBS to libraries to link
+dnl with, ETHR_X_LIBS to extra libraries to link with (same as ETHR_LIBS
+dnl except that the ethread lib itself is not included), ETHR_DEFS to
+dnl defines to compile with, ETHR_THR_LIB_BASE to the name of the
+dnl thread library which the ethread library is based on, and ETHR_LIB_NAME
+dnl to the name of the library where the ethread implementation is located.
+dnl  LM_FIND_ETHR_LIB currently searches for 'pthreads', and
+dnl 'win32_threads'. If no thread library was found ETHR_LIBS, ETHR_X_LIBS,
+dnl ETHR_DEFS, ETHR_THR_LIB_BASE, and ETHR_LIB_NAME are all set to the
+dnl empty string.
+dnl
+
+AC_DEFUN(LM_FIND_ETHR_LIB,
+[
+
+dnl Name of lib where ethread implementation is located
+ethr_lib_name=ethread
+
+ETHR_THR_LIB_BASE=
+ETHR_X_LIBS=
+ETHR_LIBS=
+ETHR_LIB_NAME=
+ETHR_DEFS=
+
+dnl if test "x$host_os" = "x"; then
+dnl    AC_CANONICAL_HOST
+dnl fi
+
+dnl win32?
+AC_MSG_CHECKING([for native win32 threads])
+if test "X$host_os" = "Xwin32"; then
+    ETHR_X_LIBS=
+    ETHR_DEFS=
+    ETHR_THR_LIB_BASE=win32_threads
+    AC_DEFINE(ETHR_WIN32_THREADS, 1, [Define if you have win32 threads])
+    AC_MSG_RESULT(yes)
+else
+    AC_MSG_RESULT(no)
+
+dnl Try to find POSIX threads
+
+dnl The usual pthread lib...
+    AC_CHECK_LIB(pthread, pthread_create, ETHR_X_LIBS="-lpthread")
+
+dnl FreeBSD has pthreads in special c library, c_r...
+    if test "x$ETHR_X_LIBS" = "x"; then
+	AC_CHECK_LIB(c_r, pthread_create, ETHR_X_LIBS="-lc_r")
+    fi
+
+dnl On ofs1 the '-pthread' switch should be used
+    if test "x$ETHR_X_LIBS" = "x"; then
+	AC_MSG_CHECKING([if the '-pthread' switch can be used])
+	saved_cflags=$CFLAGS
+	CFLAGS="$CFLAGS -pthread"
+	AC_TRY_LINK([#include <pthread.h>],
+		    pthread_create((void*)0,(void*)0,(void*)0,(void*)0);,
+		    [ETHR_DEFS="-pthread"
+		     ETHR_X_LIBS="-pthread"])
+	CFLAGS=$saved_cflags
+	if test "x$ETHR_X_LIBS" != "x"; then
+	    AC_MSG_RESULT(yes)
+	else
+	    AC_MSG_RESULT(no)
+	fi
+    fi
+
+    if test "x$ETHR_X_LIBS" != "x"; then
+	ETHR_DEFS="$ETHR_DEFS -D_THREAD_SAFE -D_REENTRANT"
+	ETHR_THR_LIB_BASE=pthread
+    	AC_DEFINE(ETHR_PTHREADS, 1, [Define if you have pthreads])
+	case $host_os in
+	    solaris*)
+		ETHR_DEFS="$ETHR_DEFS -D_POSIX_PTHREAD_SEMANTICS" ;;
+	    linux*)
+		linux_kernel_vsn_=`uname -r` # FIXME: for cross compilation.
+
+		usable_sigusrx=no
+		usable_sigaltstack=no
+
+		# FIXME: Test for actual problems instead of kernel versions.
+		case $linux_kernel_vsn_ in
+		    0.*|1.*|2.0|2.0.*|2.1|2.1.*)
+			;;
+		    2.2|2.2.*|2.3|2.3.*)
+			usable_sigusrx=yes
+			;;
+		    *)
+			usable_sigusrx=yes
+			usable_sigaltstack=yes
+			;;
+		esac
+
+		AC_MSG_CHECKING(if SIGUSR1 and SIGUSR2 can be used)
+		AC_MSG_RESULT($usable_sigusrx)
+		if test $usable_sigusrx = no; then
+		    ETHR_DEFS="$ETHR_DEFS -DETHR_UNUSABLE_SIGUSRX"
+		fi
+
+		AC_MSG_CHECKING(if sigaltstack can be used)
+		AC_MSG_RESULT($usable_sigaltstack)
+		if test $usable_sigaltstack = no; then
+		    ETHR_DEFS="$ETHR_DEFS -DETHR_UNUSABLE_SIGALTSTACK"
+		fi
+
+		AC_DEFINE(ETHR_INIT_MUTEX_IN_CHILD_AT_FORK, 1, \
+[Define if mutexes should be reinitialized (instead of unlocked) in child at fork.]) ;;
+	    *) ;;
+	esac
+
+	dnl We sometimes need ETHR_DEFS in order to find certain headers
+	dnl (at least for pthread.h on osf1).
+	saved_cppflags=$CPPFLAGS
+	CPPFLAGS="$CPPFLAGS $ETHR_DEFS"
+
+	dnl We need the thread library in order to find some functions
+	saved_libs=$LIBS
+	LIBS="$CFLAGS $ETHR_X_LIBS"
+
+
+
+	dnl
+	dnl Check for headers
+	dnl
+
+	AC_CHECK_HEADER(pthread.h,
+			AC_DEFINE(ETHR_HAVE_PTHREAD_H, 1, \
+[Define if you have the <pthread.h> header file.]))
+
+	dnl Some Linuxes have <pthread/mit/pthread.h> instead of <pthread.h>
+	AC_CHECK_HEADER(pthread/mit/pthread.h, \
+			AC_DEFINE(ETHR_HAVE_MIT_PTHREAD_H, 1, \
+[Define if the pthread.h header file is in pthread/mit directory.]))
+
+	AC_CHECK_HEADER(sys/time.h, \
+			AC_DEFINE(ETHR_HAVE_SYS_TIME_H, 1, \
+[Define if you have the <sys/time.h> header file.]))
+
+	AC_TRY_COMPILE([#include <time.h>
+			#include <sys/time.h>], 
+			[struct timeval *tv; return 0;],
+			AC_DEFINE(ETHR_TIME_WITH_SYS_TIME, 1, \
+[Define if you can safely include both <sys/time.h> and <time.h>.]))
+
+
+	dnl
+	dnl Check for functions
+	dnl
+
+	AC_CHECK_FUNC(pthread_atfork, \
+			AC_DEFINE(ETHR_HAVE_PTHREAD_ATFORK, 1, \
+[Define if you have the pthread_atfork function.]))
+	AC_CHECK_FUNC(pthread_mutexattr_settype, \
+			AC_DEFINE(ETHR_HAVE_PTHREAD_MUTEXATTR_SETTYPE, 1, \
+[Define if you have the pthread_mutexattr_settype function.]))
+	AC_CHECK_FUNC(pthread_mutexattr_setkind_np, \
+			AC_DEFINE(ETHR_HAVE_PTHREAD_MUTEXATTR_SETKIND_NP, 1, \
+[Define if you have the pthread_mutexattr_setkind_np function.]))
+
+
+
+	dnl Restore LIBS
+	LIBS=$saved_libs
+	dnl restore CPPFLAGS
+	CPPFLAGS=$saved_cppflags
+
+    fi
+fi
+
+if test "x$ETHR_THR_LIB_BASE" != "x"; then
+	ETHR_LIBS="-l$ethr_lib_name $ETHR_X_LIBS"
+	ETHR_LIB_NAME=$ethr_lib_name
+fi
+
+AC_DEFINE(ETHR_HAVE_ETHREAD_DEFINES, 1, \
+[Define if you have all ethread defines])
+
+AC_SUBST(ETHR_X_LIBS)
+AC_SUBST(ETHR_LIBS)
+AC_SUBST(ETHR_LIB_NAME)
+AC_SUBST(ETHR_DEFS)
+AC_SUBST(ETHR_THR_LIB_BASE)
+
+])
+
+
+
+dnl ----------------------------------------------------------------------
+dnl
 dnl ERL_TIME_CORRECTION
 dnl
 dnl In the presence of a high resolution realtime timer Erlang can adapt

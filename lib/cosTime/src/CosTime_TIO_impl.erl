@@ -64,9 +64,9 @@
 %% Effect   : Functions demanded by the gen_server module. 
 %%------------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-handle_info(Info, State) ->
+handle_info(_Info, State) ->
     {noreply, State}.
 
 %%----------------------------------------------------------%
@@ -77,7 +77,7 @@ handle_info(Info, State) ->
 init([Interval, Tdf, Timer]) ->
     {ok, ?get_InitState(Interval, Tdf, Timer)}.
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------
@@ -88,7 +88,7 @@ terminate(Reason, State) ->
 %% Type     : readonly
 %% Returns  : 
 %%-----------------------------------------------------------
-'_get_time_interval'(OE_THIS, State) ->
+'_get_time_interval'(_OE_THIS, State) ->
     {reply, ?get_IntervalT(State), State}.
 
 %%-----------------------------------------------------------
@@ -100,7 +100,7 @@ terminate(Reason, State) ->
 %% Returns  : CosTime::OverLapType - enum()
 %%            TIO - out-parameter.
 %%-----------------------------------------------------------
-spans(OE_THIS, State, Time) ->
+spans(_OE_THIS, State, Time) ->
     ?time_TypeCheck(Time, 'CosTime_UTO'),
     case catch 'CosTime_UTO':'_get_utc_time'(Time) of
 	#'TimeBase_UtcT'{time = Btime, inacclo = InaccL, inacchi=InaccH} ->
@@ -143,7 +143,7 @@ spans(OE_THIS, State, Time) ->
 %% Returns  : CosTime::OverLapType - enum()
 %%            TIO - out-parameter.
 %%-----------------------------------------------------------
-overlaps(OE_THIS, State, Interval) ->
+overlaps(_OE_THIS, State, Interval) ->
     ?time_TypeCheck(Interval, 'CosTime_TIO'),
     case catch 'CosTime_TIO':'_get_time_interval'(Interval) of
 	#'TimeBase_IntervalT'{lower_bound=BL, upper_bound=BU} ->
@@ -181,7 +181,7 @@ overlaps(OE_THIS, State, Interval) ->
 %% Arguments: -
 %% Returns  : UTO
 %%-----------------------------------------------------------
-time(OE_THIS, State) ->
+time(_OE_THIS, State) ->
     L = ?get_Lower(State),
     H = ?get_Upper(State),
     Utc = #'TimeBase_UtcT'{time=(erlang:trunc(((H-L)/2))+L),

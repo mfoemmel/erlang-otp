@@ -2,28 +2,24 @@
 %% -*- erlang-indent-level: 2 -*-
 %% ====================================================================
 %%  Filename : 	hipe.hrl
-%%  Purpose  :  To define some usefull macros for debugging
-%%               and error reports. 
-%%  Notes    :  
+%%  Purpose  :  Defines some useful macros for debugging and error
+%%              reporting.
 %%              
-%%              
-%%              
-%%  History  :	* 2000-11-03 Erik Johansson (happi@csd.uu.se): 
-%%               Created.
+%%  History  :	* 2000-11-03 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
-%%              $Author: happi $
-%%              $Date: 2002/10/17 11:55:55 $
-%%              $Revision: 1.35 $
+%%              $Author: richardc $
+%%              $Date: 2004/08/10 16:17:54 $
+%%              $Revision: 1.46 $
 %% ====================================================================
 %%
-%%
 %% Defines:
-%%  version/0          - returns the version number of HiPE as a tuple.
+%%  VERSION/0          - returns the version number of HiPE as a tuple.
 %%  msg/2              - Works like io:format but prepends 
 %%                       ?MSGTAG to the message.
-%%                       If LOGGING is defined then error_logger is used.
+%%                       If LOGGING is defined then error_logger is used,
+%%			 or rather its substitute in code_server.
 %%  untagged_msg/2     - Like msg/2 but without the tag.
-%%  warning_msg/2      - Prints a tagged warning.
+%%  WARNING_MSG/2      - Prints a tagged warning.
 %%  error_msg/2        - Logs a tagged error.
 %%  debug_msg/2        - Prints a tagged msg if DEBUG is defined.
 %%  IF_DEBUG(A,B)      - Excutes A if DEBUG is defined B otherwise.    
@@ -33,11 +29,11 @@
 %%  ASSERT             - Exits if the expresion does not evaluate to true.
 %%  VERBOSE_ASSSERT    - A message is printed even when an asertion is true.
 %%  TIME_STMNT(Stmnt, String, FreeVar) 
-%%                     - Times the statemnet Stmnt if TIMING is on. 
-%%                       The execution time is bound to FreeVar. 
+%%                     - Times the statemnet Stmnt if TIMING is on.
+%%                       The execution time is bound to FreeVar.
 %%                       String is printed after the execution
-%%                       followed by the excution time in s and a newline.
-%%
+%%                       followed by the execution time in seconds and
+%%                       a newline.
 %%
 %% Flags:
 %%  DEBUG           - Turns on debugging. (Can be defined to a integer
@@ -46,61 +42,47 @@
 %%  HIPE_LOGGING    - Turn on logging of messages with erl_logger.
 %%  DO_ASSERT       - Turn on Assertions.
 %%  TIMING          - Turn on timing.
-%%  HIPE_INSTRUMENT_COMPILER - Turn on instrumentation of the compiler
+%%  HIPE_INSTRUMENT_COMPILER - Turn on instrumentation of the compiler.
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--define(version(),{2,0,2}).
--define(majorvnr,element(1,?version())).
--define(minorvnr,element(2,?version())).
--define(incrementvnr,element(3,?version())).
--define(msgtagmap(M), 
-	case M of 
-	  hipe -> "";
-	  hipe_main -> "";
-	  hipe_update_catches -> "";
-	  hipe_sparc_loader -> "Loader   ";
-	  hipe_beam_to_icode -> "";
-	  hipe_sparc_ra -> ""; 
-	  hipe_sparc_caller_saves -> ""; 
-	  hipe_icode_cfg -> ""; 
-	  hipe_rtl_cfg -> ""; 
-	  hipe_sparc_cfg -> ""; 
-	  hipe_x86_cfg -> ""; 
-	  _ ->  atom_to_list(M)
-	end).
+-define(VERSION(),{2,1,0}).
+-define(MAJOR_VERSION,element(1,?VERSION())).
+-define(MINOR_VERSION,element(2,?VERSION())).
+-define(PATCH_VERSION,element(3,?VERSION())).
 
-
--define(MMSGTAG(Mod), 
-	"<HiPE " ++ ?msgtagmap(Mod) ++
-	"(v " ++ integer_to_list(?majorvnr) ++ "."
-	++ integer_to_list(?minorvnr) ++ "."
-	++ integer_to_list(?incrementvnr) ++ ")> ").
--define(MSGTAG,?MMSGTAG(?MODULE)).
-
+-define(MSGTAG, 
+	"<HiPE " ++
+	"(v " ++ integer_to_list(?MAJOR_VERSION) ++ "."
+	      ++ integer_to_list(?MINOR_VERSION) ++ "."
+	      ++ integer_to_list(?PATCH_VERSION) ++ ")> ").
 
 %%
 %% Define the message macros with or without logging,
+%% depending on the value of the HIPE_LOGGING flag.
+%%
 
+-ifdef(HIPE_LOGGING).
 -define(msg(Msg, Args),
 	code_server:info_msg(?MSGTAG ++ Msg, Args)).
--define(mmsg(Msg, Args, Mod),
-	code_server:info_msg(?MMSGTAG(Mod) ++ Msg, Args)).
 -define(untagged_msg(Msg, Args),
 	code_server:info_msg(Msg, Args)).
+-else.
+-define(msg(Msg, Args),
+	io:format(?MSGTAG ++ Msg, Args)).
+-define(untagged_msg(Msg, Args),
+	io:format(Msg, Args)).
+-endif.
 
 %%
 %% Define error and warning messages.
+%%
 -define(error_msg(Msg, Args),
-	code_server:error_msg(
-	  ?MSGTAG ++
-	  "ERROR:~s:~w: " ++ Msg,
-	  [?FILE,?LINE|Args])).
-
--define(warning_msg(Msg, Args),
-	?msg("WARNING:~s:~w: " ++ Msg, [?FILE,?LINE|Args])).
-
-
+	code_server:error_msg(?MSGTAG ++
+			      "ERROR:~s:~w: " ++ Msg,
+			      [?MODULE,?LINE|Args])).
+-define(WARNING_MSG(Msg, Args),
+	?msg("WARNING:~s:~w: " ++ Msg, [?MODULE,?LINE|Args])).
 
 %%
 %% Define the macros that are dependent on the debug flag.
@@ -109,31 +91,30 @@
 -ifdef(DEBUG).
 -define(debug_msg(Msg,Data), ?msg(Msg,Data)).
 -define(debug_untagged_msg(Msg,Data), ?untagged_msg(Msg,Data)).
--define(IF_DEBUG(DebugAction,NoDebugAction),DebugAction).
+-define(IF_DEBUG(DebugAction,NoDebugAction), DebugAction).
 -define(IF_DEBUG_LEVEL(Level,DebugAction,NoDebugAction),
-	if(Level =< ?DEBUG) -> DebugAction; true -> NoDebugAction end ).
-
+	if (Level =< ?DEBUG) -> DebugAction; true -> NoDebugAction end).
 -else.
 -define(debug_msg(Msg,Data), no_debug).
 -define(debug_untagged_msg(Msg,Data), no_debug).
--define(IF_DEBUG(DebugAction,NoDebugAction),NoDebugAction).
--define(IF_DEBUG_LEVEL(Level,DebugAction,NoDebugAction),NoDebugAction).
+-define(IF_DEBUG(DebugAction,NoDebugAction), NoDebugAction).
+-define(IF_DEBUG_LEVEL(Level,DebugAction,NoDebugAction), NoDebugAction).
 -endif.
 
-
+%%
 %% Define the exit macro
 %%
 -ifdef(VERBOSE).
--define(EXIT(Reason),
- 	?msg("EXITED with reason ~w @~w:~w\n",
- 	    [Reason,?MODULE,?LINE]),
- 	erlang:fault({?MODULE,?LINE,Reason})).
+-define(EXIT(Reason), erlang:fault({?MODULE,?LINE,Reason})).
 -else.
--define(EXIT(Reason),erlang:fault({?MODULE,?LINE,Reason})).
+-define(EXIT(Reason),
+ 	?msg("EXITED with reason ~w @~w:~w\n", [Reason,?MODULE,?LINE]),
+ 	erlang:fault({?MODULE,?LINE,Reason})).
 -endif.
 
-
+%%
 %% Assertions.
+%%
 -ifdef(DO_ASSERT).
 -define(VERBOSE_ASSERT(X),
 	case X of 
@@ -156,15 +137,13 @@
 -endif.
 
 
-
-
 % Use this to display info, save stuff and so on.
-% Vars cannot be exported from Action
+% Vars cannot be exported from __Action
 -define(when_option(__Opt,__Opts,__Action),
 	case proplists:get_bool(__Opt,__Opts) of
-	    true -> __Action; false -> ok end).
-
-
+	  true -> __Action;
+	  false -> ok
+	end).
 
 %% Timing macros
 
@@ -176,7 +155,6 @@
 -else.
 -define(TIME_STMNT(STMNT,Msg,Timer),STMNT).
 -endif.
-
 
 -define(start_timer(Text), hipe_timing:start(Text, ?MODULE)).
 -define(stop_timer(Text), hipe_timing:stop(Text, ?MODULE)).
@@ -201,9 +179,12 @@
 	hipe_timing:start_optional_timer(Text,?MODULE)).
 -define(opt_stop_timer(Text),
 	hipe_timing:stop_optional_timer(Text,?MODULE)).
-		     
+     
+%%
 %% Turn on instrumentation of the compiler.
+%%
 -ifdef(HIPE_INSTRUMENT_COMPILER).
+
 -define(count_pre_ra_instructions(Options, NoInstrs),
 	?when_option(count_instrs, Options,
 		     put(pre_ra_instrs,
@@ -253,13 +234,11 @@
 	  _ -> put(Counter, [Val|get(Counter)])
 	end).
 
-
 -define(update_counter(Counter, Val, Op),
 	case get(Counter) of
 	  undefined -> true;
 	  _ -> put(Counter, get(Counter) Op Val)
 	end).
-
 
 -define(start_ra_instrumentation(Options, NoInstrs, NoTemps),
 	begin
@@ -296,8 +275,8 @@
 	  false -> true
 	end).
 	
-		     
 -else.  %% HIPE_INSTRUMENT_COMPILER
+
 -define(count_pre_ra_instructions(Options, NoInstrs), no_instrumentation).
 -define(count_post_ra_instructions(Options, NoInstrs),no_instrumentation).
 -define(start_time_regalloc(Options),no_instrumentation).
@@ -314,6 +293,5 @@
 -define(inc_counter(Counter, Val), no_instrumentation).
 -define(update_counter(Counter, Val, Op), no_instrumentation).
 -define(cons_counter(Counter, Val),no_instrumentation).
+
 -endif. %% HIPE_INSTRUMENT_COMPILER	
-
-

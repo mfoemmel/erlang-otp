@@ -1,3 +1,4 @@
+%% -*- erlang-indent-level: 4 -*-
 %% =====================================================================
 %% Type analysis of Core Erlang programs.
 %%
@@ -22,36 +23,37 @@
 %%
 %% $Id$
 %%
-%% =====================================================================
+%% @doc Type analysis of Core Erlang programs.
 
 %% TODO: filters must handle conjunctions for better precision!
-%% TODO: maybe get filters from patterns as well as guards.
+%% TODO: should get filters from patterns as well as guards.
 %% TODO: unused functions are being included in the analysis.
 
 -module(cerl_typean).
 
--export([analyze/1, analyze/2, analyze/5, annotate/1, annotate/2,
-	 annotate/5, core_transform/2]).
+-export([core_transform/2, analyze/1, pp_hook/0]).
+%%-export([analyze/2, analyze/5, annotate/1, annotate/2, annotate/5]).
 
 -import(erl_types, [t_any/0, t_atom/0, t_binary/0, t_cons/2,
-		    t_cons_hd/1, t_cons_tl/1, t_cons_or_nil/0,
+		    t_cons_hd/1, t_cons_tl/1, t_improper_list/0,
 		    t_components/1, t_float/0, t_fun/0, t_fun/2,
 		    t_inf/2, t_integer/0, t_atom_vals/1, t_is_cons/1,
-		    t_is_cons_or_nil/1, t_is_list/1, t_is_tuple/1,
-		    t_is_undefined/1, t_is_any/1, t_limit/2,
+		    t_is_improper_list/1, t_is_list/1, t_is_tuple/1,
+		    t_is_none/1, t_is_any/1, t_limit/2,
 		    t_list_elements/1, t_number/0, t_pid/0, t_port/0,
 		    t_product/1, t_ref/0, t_tuple/0, t_tuple/1,
 		    t_tuple_args/1, t_tuple_arity/1, t_sup/2,
-		    t_from_term/1, t_undefined/0]).
+		    t_from_range/2, t_from_term/1, t_none/0]).
 
 -import(cerl, [ann_c_fun/3, ann_c_var/2, alias_pat/1, alias_var/1,
-	       apply_args/1, apply_op/1, atom_val/1, bin_seg_size/1,
-	       bin_seg_val/1, binary_segs/1, c_letrec/2, c_nil/0,
+	       apply_args/1, apply_op/1, atom_val/1, bitstr_size/1,
+	       bitstr_val/1, bitstr_type/1, bitstr_flags/1, binary_segments/1, 
+	       c_letrec/2, c_nil/0,
 	       c_values/1, call_args/1, call_module/1, call_name/1,
 	       case_arg/1, case_clauses/1, catch_body/1, clause_body/1,
 	       clause_guard/1, clause_pats/1, concrete/1, cons_hd/1,
 	       cons_tl/1, fun_body/1, fun_vars/1, get_ann/1,
-	       is_c_atom/1, let_arg/1, let_body/1, let_vars/1,
+	       int_val/1, is_c_atom/1, is_c_int/1, let_arg/1, let_body/1, let_vars/1,
 	       letrec_body/1, letrec_defs/1, module_defs/1,
 	       module_defs/1, module_exports/1, pat_vars/1,
 	       primop_args/1, primop_name/1, receive_action/1,
@@ -59,6 +61,13 @@
 	       seq_body/1, set_ann/2, try_arg/1, try_body/1,
 	       try_evars/1, try_handler/1, try_vars/1, tuple_arity/1,
 	       tuple_es/1, type/1, values_es/1, var_name/1]).
+
+
+-ifdef(DEBUG).
+-define(ANNOTATE(X), case erl_types:t_to_string(X) of Q when length(Q) < 255 -> list_to_atom(Q); Q -> Q end).
+-else.
+-define(ANNOTATE(X), X).
+-endif.
 
 %% Limit for type representation depth.
 -define(DEF_LIMIT, 3).
@@ -121,8 +130,7 @@ annotate(T, Limit, Esc, Dep, Par) ->
 				      DelAnn(T);
 				  false ->
 				      set_ann(T, append_ann(type,
-%%%     erl_types:t_to_string(X), % debug
-    X,  % normal
+							    ?ANNOTATE(X),
 							    get_ann(T)))
 			      end;
 			  error ->
@@ -260,11 +268,11 @@ analyze(T, Limit, Esc0, Dep0, Par) ->
 %%%     io:fwrite("Escape: ~p.\n",[Esc0]),
     Esc = sets:from_list(Esc0),
     Any = t_any(),
-    Undef = t_undefined(),
+    None = t_none(),
     Funs0 = dict:new(),
     Vars0 = dict:store(any, Any, dict:new()),
-    Out0 = dict:store(top, Undef,
-		      dict:store(external, Undef, dict:new())),
+    Out0 = dict:store(top, None,
+		      dict:store(external, None, dict:new())),
     Envs0 = dict:store(top, dict:new(),
 		       dict:store(external, dict:new(), dict:new())),
     F = fun (T, S = {Fs, Vs, Os, Es}) ->
@@ -274,11 +282,11 @@ analyze(T, Limit, Esc0, Dep0, Par) ->
 			As = fun_vars(T),
 			X = case sets:is_element(L, Esc) of
 				true -> Any;
-				false -> Undef
+				false -> None
 			    end,
 			{dict:store(L, T, Fs),
 			 bind_vars_single(As, X, Vs),
-			 dict:store(L, Undef, Os),
+			 dict:store(L, None, Os),
 			 dict:store(L, dict:new(), Es)};
 		    _ ->
 			S
@@ -346,7 +354,7 @@ visit(T, Env, St) ->
 	    {t_from_term(concrete(T)), St};
 	var ->
 	    %% If a variable is not already in the store at this point,
-	    %% we initialize it to 'undefined()'.
+	    %% we initialize it to 'none()'.
 	    L = get_label(T),
 	    Vars = St#state.vars,
 	    case dict:find(L, Vars) of
@@ -360,7 +368,7 @@ visit(T, Env, St) ->
 			    {X, St}
 		    end;
 		error ->
-		    X = t_undefined(),
+		    X = t_none(),
 		    Vars1 = dict:store(L, X, Vars),
 		    St1 = St#state{vars = Vars1},
 		    {X, St1}
@@ -455,13 +463,13 @@ visit(T, Env, St) ->
 	    {_, St1} = visit(catch_body(T), Env, St),
 	    {t_any(), St1};
 	binary ->
-	    {_, St1} = visit_list(binary_segs(T), Env, St),
+	    {_, St1} = visit_list(binary_segments(T), Env, St),
 	    {t_binary(), St1};
-	bin_seg ->
+	bitstr ->
 	    %% The other fields are constant literals.
-	    {_, St1} = visit(bin_seg_val(T), Env, St),
-	    {_, St2} = visit(bin_seg_size(T), Env, St1),
-	    {t_undefined(), St2};
+	    {_, St1} = visit(bitstr_val(T), Env, St),
+	    {_, St2} = visit(bitstr_size(T), Env, St1),
+	    {t_none(), St2};
 	letrec ->
 	    %% All the bound funs should be revisited, because the
 	    %% environment might have changed.
@@ -477,7 +485,7 @@ visit(T, Env, St) ->
 	    {_, St1} = visit(c_letrec(module_defs(T),
 				      c_values(module_exports(T))),
 			     Env, St),
-	    {t_undefined(), St1}
+	    {t_none(), St1}
     end.
 
 visit_clause(T, Xs, Env, St) ->
@@ -502,7 +510,7 @@ join_visit_clauses(Xs, [T | Ts], Env, St) ->
     {X2, St2} = join_visit_clauses(Xs, Ts, Env, St1),
     {join(X1, X2), St2};
 join_visit_clauses(_, [], _Env, St) ->
-    {t_undefined(), St}.
+    {t_none(), St}.
 
 bind_defs([{V, F} | Ds], Vars, Out) ->
     Xs = [dict:fetch(get_label(V1), Vars) || V1 <- fun_vars(F)],
@@ -515,12 +523,12 @@ bind_defs([], Vars, _Out) ->
 bind_pats(Ps, any, Vars) ->
     bind_pats_single(Ps, t_any(), Vars);
 bind_pats(Ps, none, Vars) ->
-    bind_pats_single(Ps, t_undefined(), Vars);
+    bind_pats_single(Ps, t_none(), Vars);
 bind_pats(Ps, Xs, Vars) ->
     if length(Xs) == length(Ps) ->
 	    bind_pats_list(Ps, Xs, Vars);
        true ->
-	    bind_pats_single(Ps, t_undefined(), Vars)
+	    bind_pats_single(Ps, t_none(), Vars)
     end.
 
 bind_pats_list([P | Ps], [X | Xs], Vars) ->
@@ -561,7 +569,7 @@ bind_pat_vars(P, X, Vars) ->
 						  Vars),
 			    bind_pat_vars(cons_tl(P), X, Vars1);
 			false ->
-			    case t_is_cons_or_nil(X) of
+			    case t_is_improper_list(X) of
 				true ->
 				    %% If X is "cons cell of X1", both
 				    %% the head and tail have type X1.
@@ -586,6 +594,33 @@ bind_pat_vars(P, X, Vars) ->
 		    bind_vars_single(pat_vars(P), top_or_bottom(X),
 				     Vars)
 	    end;
+	binary ->
+	    bind_pats_single(binary_segments(P), t_none(), Vars);
+	bitstr ->
+	    %% Only the Value field is a new binding. Size is already
+	    %% bound, and the other fields are constant literals.
+	    %% We could create a filter for Size being an integer().
+	    Size = bitstr_size(P),
+	    ValType = 
+		case concrete(bitstr_type(P)) of
+		    float -> t_float();
+		    binary -> t_binary();
+		    integer ->
+			case is_c_int(Size) of
+			    false -> t_integer();
+			    true -> 
+				SizeVal = int_val(Size),
+				Flags = concrete(bitstr_flags(P)),
+				case lists:member(signed, Flags) of
+				    true -> 
+					t_from_range(-(1 bsl (SizeVal - 1)),
+						     1 bsl (SizeVal - 1) - 1);
+				    false -> 
+					t_from_range(0,1 bsl SizeVal - 1)
+				end
+			end
+		end,
+	    bind_pat_vars(bitstr_val(P), ValType, Vars);
 	alias ->
 	    P1 = alias_pat(P),
 	    Vars1 = bind_pat_vars(P1, X, Vars),
@@ -604,6 +639,8 @@ pat_type(P, Vars) ->
 		   pat_type(cons_hd(P), Vars));
 	tuple ->
 	    t_tuple([pat_type(E, Vars) || E <- tuple_es(P)]);
+	binary ->
+	    t_binary();
 	alias ->
 	    pat_type(alias_pat(P), Vars)
     end.
@@ -611,12 +648,12 @@ pat_type(P, Vars) ->
 bind_vars(Vs, any, Vars) ->
     bind_vars_single(Vs, t_any(), Vars);
 bind_vars(Vs, none, Vars) ->
-    bind_vars_single(Vs, t_undefined(), Vars);
+    bind_vars_single(Vs, t_none(), Vars);
 bind_vars(Vs, Xs, Vars) ->
     if length(Vs) == length(Xs) ->
 	    bind_vars_list(Vs, Xs, Vars);
        true ->
-	    bind_vars_single(Vs, t_undefined(), Vars)
+	    bind_vars_single(Vs, t_none(), Vars)
     end.
 
 bind_vars_list([V | Vs], [X | Xs], Vars) ->
@@ -707,14 +744,14 @@ join(X, Y) -> t_sup(X, Y).
 join_list([Xs | Xss]) ->
     join(Xs, join_list(Xss));
 join_list([]) ->
-    t_undefined().
+    t_none().
 
 equal(X, Y) -> X == Y.
 
 limit(X, K) -> t_limit(X, K).
 
 top_or_bottom(T) ->
-    case t_is_undefined(T) of
+    case t_is_none(T) of
 	true ->
 	    T;
 	false ->
@@ -724,13 +761,13 @@ top_or_bottom(T) ->
 strict(Xs, T) ->
     case any_none(Xs) of
 	true ->
-	    t_undefined();
+	    t_none();
 	false ->
 	    T
     end.
 
 any_none([X | Xs]) ->
-    case t_is_undefined(X) of
+    case t_is_none(X) of
 	true ->
 	    true;
 	false ->
@@ -765,8 +802,10 @@ queue__new() -> {[], []}.
 queue__put(X, {In, Out}) -> {[X | In], Out}.
 
 queue__get({In, [X | Out]}) -> {ok, X, {In, Out}};
-queue__get({[], []}) -> empty;
-queue__get({[X | In], _}) -> {ok, X, {[], lists:reverse(In)}}.
+queue__get({[], _}) -> empty;
+queue__get({In, _}) ->
+    [X | In1] = lists:reverse(In),
+    {ok, X, {[], In1}}.
 
 %% The work list - a queue without repeated elements.
 
@@ -813,7 +852,7 @@ get_deps(L, Dep) ->
 %% arguments have the correct type; if the call would actually fail,
 %% rather than return a value, this is a safe overapproximation.
 
-primop_type(match_fail, 1, _) -> t_undefined();
+primop_type(match_fail, 1, _) -> t_none();
 primop_type(_, _, Xs) -> strict(Xs, t_any()).
 
 call_type(M, F, A, Xs) ->
@@ -845,7 +884,7 @@ guard_filters(T, Env, Vars) ->
 			{erlang, is_integer, 1} ->
 			    filter(As, t_integer(), Env);
 			{erlang, is_list, 1} ->
-			    filter(As, t_cons_or_nil(), Env);
+			    filter(As, t_improper_list(), Env);
 			{erlang, is_number, 1} ->
 			    filter(As, t_number(), Env);
 			{erlang, is_pid, 1} ->
@@ -904,5 +943,34 @@ filter(As, X, Env) ->
 	    Env
     end.
 
+%% Callback hook for cerl_prettypr:
+
+pp_hook() ->
+    fun pp_hook/3.
+
+pp_hook(Node, Ctxt, Cont) ->
+    As = cerl:get_ann(Node),
+    As1 = proplists:delete(type, proplists:delete(label, As)),
+    D = Cont(cerl:set_ann(Node, []), Ctxt),
+    D1 = case proplists:lookup(type, As) of
+	     {type, T} ->
+		 case erl_types:t_is_any(T) of
+		     true ->
+			 D;
+		     false ->
+			 case cerl:is_literal(Node) of
+			     true ->
+				 D;
+			     false ->
+				 S = erl_types:t_to_string(T),
+				 Q = prettypr:beside(prettypr:text("::"),
+						     prettypr:text(S)),
+				 prettypr:beside(D, Q)
+			 end
+		 end;
+	     _ ->
+		 D
+	 end,
+    cerl_prettypr:annotate(D1, As1, Ctxt).
 
 %% =====================================================================

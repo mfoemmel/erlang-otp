@@ -39,7 +39,7 @@ int ei_encode_port(char *buf, int *index, const erlang_port *p)
     s += len;
 
     /* now the integers */
-    put32be(s,p->id);
+    put32be(s,p->id & 0x0fffffff /* 28 bits */);
     put8(s,(p->creation & 0x03));
   }
   

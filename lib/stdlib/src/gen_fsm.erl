@@ -452,7 +452,6 @@ terminate(Reason, Name, Msg, Mod, StateName, StateData, Debug) ->
 	    end
     end.
 
-%% Maybe we shouldn't do this?  We have the crash report...
 error_info(Reason, Name, Msg, StateName, StateData, Debug) ->
     Reason1 = 
 	case Reason of

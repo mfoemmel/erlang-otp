@@ -16,20 +16,17 @@
 %%     $Id$
 %%
 
-%%% Due to the fact that the application buttons in the appmon window gets
-%%% too small to read when the number of applications increases, this 
-%%% listbox window has been created. 
-%%% Because of the limitations of GS a listbox was chosen to keep the nodes
-%%% and applications. When it's possible to scroll a frame I think one should
-%%% put in scrollbars in the appmon main window. The listbox solution is to
-%%% slow with lots of applications.
+%%% Due to the fact that the application buttons in the appmon window
+%%% gets too small to read when the number of applications increases,
+%%% this listbox window has been created. 
+%%% Because of the limitations of GS a listbox was chosen to keep
+%%% the nodes and applications. When it's possible to scroll a frame I
+%%% think one should put in scrollbars in the appmon main window.
+%%% The listbox solution is too slow with lots of applications.
 %%%
 %%% In the listbox the nodes are shown with their applications beneith.
-%%% By double clicking on an application name, or a single click and then 
-%%% pressing the load button, its application window is started.
-%%% 
-%%% 
-
+%%% By double clicking on an application name, or a single click and
+%%% then pressing the load button, its application window is started.
 
 -module(appmon_lb).
 
@@ -336,11 +333,11 @@ loop (Win, Data) ->
 	    NewWin = configure (Win#win.pid, W, H),
 	    loop (NewWin, Data);
 
-	{gs, lb, doubleclick, _, Txt} ->
+	{gs, lb, doubleclick, _, _Txt} ->
 	    load_app (gs:read (lb, selection), Data),
 	    loop (Win, Data);
 	    
-	{gs, lb, click, _, Txt} ->
+	{gs, lb, click, _, _Txt} ->
 	    loop (Win, Data);
 
 	{gs, close, click, _D, _Arg} -> 
@@ -353,11 +350,11 @@ loop (Win, Data) ->
 	    end,
 	    loop (#win{}, Data);
 
-	{gs, load, click, _D, Txt} ->
+	{gs, load, click, _D, _Txt} ->
 	    load_app (gs:read (lb, selection), Data),
 	    loop (Win, Data);
 	
-	{gs, clear, click, _D, Txt} ->
+	{gs, clear, click, _D, _Txt} ->
 	    gs:config (lb, {selection, clear}),
 	    loop (Win, Data);
 	
@@ -378,7 +375,7 @@ init_win ({X, Y}) ->
 			       {y, Y},
 			       {width, ?WIN_W},
 			       {height, ?WIN_H},
-			       {title, "Appmon: nodes and applications"},
+			       {title,"Appmon: nodes and applications"},
 			       {configure, true}]),
 
     gs:listbox (lb, Win, [{x, 5},
@@ -455,7 +452,7 @@ dead_node (Node, Data) ->
 
 add_apps_1 (Apps, Node, Data) ->
     case lists:keysearch (Node, #node.node, Data) of
-	{value, Node_rec} ->
+	{value, _Node_rec} ->
 	    NewApps = parse_apps (Apps, []),
 	    lists:keyreplace (Node, #node.node, 
 			      Data, new_node (Node, NewApps));
@@ -478,7 +475,7 @@ remove_app_1 (App, Node, Data) ->
 	{value, Node_rec} ->
 	    L = Node_rec#node.apps,
 	    L2 = lists:keydelete (App, #app.app, L),
-	    lists:keyreplace (Node, #node.node, Data, new_node (Node, L2));
+	    lists:keyreplace(Node, #node.node, Data, new_node(Node,L2));
 	
 	_false ->
 	    Data
@@ -549,7 +546,7 @@ update_status_1 (Node, Status, Data) ->
 	    lists:keyreplace (Node, 
 			      #node.node, 
 			      Data, 
-			      new_node (Node, Status, Node_rec#node.apps));
+			      new_node(Node,Status,Node_rec#node.apps));
 
 	_not_found ->
 	    Data
@@ -562,7 +559,7 @@ update_status_1 (Node, Status, Data) ->
 %%% update updates the listbox with new data.
 %%%
 
-update (Data, win_closed) ->
+update (_Data, win_closed) ->
     true;
 
 update (Data, _Win) ->

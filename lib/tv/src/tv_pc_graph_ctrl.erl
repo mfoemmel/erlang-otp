@@ -89,7 +89,6 @@ win_conf(Msg, ProcVars) ->
 		 height = NewHeight}  = Msg,
 
     #process_variables{pd_pid        = PdPid,
-		       pw_pid        = PwPid,
 		       window_params = WinP}  = ProcVars,
     
     #window_params{window_width  = OldWindowWidth,

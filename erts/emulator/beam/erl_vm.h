@@ -20,6 +20,15 @@
 
 /* #define HEAP_FRAG_ELIM_TEST 1 */
 
+/* Shared do not work yet...
+ * #if defined(SHARED_HEAP) || defined(HYBRID)
+ */
+#if defined(HYBRID)
+/* #  define NOMOVE 1 */
+/* #  define INCREMENTAL_GC 1 */ /* Requires NOMOVE */
+/* #  define INC_TIME_BASED 1 */ /* Time based incremental GC (vs Work based) */
+#endif
+
 #if defined(HEAP_FRAG_ELIM_TEST) && (defined(HIPE) || defined(SHARED_HEAP))
 #  undef HEAP_FRAG_ELIM_TEST
 #endif
@@ -28,7 +37,7 @@
 #define EMULATOR "BEAM"
 #define SEQ_TRACE 1
 
-#define CONTEXT_REDS 1000	/* Swap process out after this number       */
+#define CONTEXT_REDS 1000	/* Swap process out after this number */
 #define MAX_ARG 256		/* Max number of arguments allowed */
 #define MAX_REG 1024            /* Max number of x(N) registers used */
 
@@ -41,7 +50,25 @@
 #define SH_DEFAULT_SIZE 121393  /* default shared heap min size */
 #endif
 
+#ifdef HYBRID
+#define SH_DEFAULT_SIZE 121393  /* default message area min size */
+//#define SH_DEFAULT_SIZE 300  /* default message area min size */
+#endif
+
 #define CP_SIZE			1
+
+#ifdef DEBUG
+/*
+ * Debug HAlloc that initialize all memory to bad things.
+ */
+#define HAlloc(p, sz)                                   \
+  (ASSERT_EXPR((sz) >= 0),                              \
+   ((((HEAP_LIMIT(p) - HEAP_TOP(p)) <= (sz)))           \
+    ? erts_heap_alloc((p),(sz))                         \
+    : (memset(HEAP_TOP(p),1,sz*sizeof(Eterm*)),         \
+      HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
+
+#else
 
 /*
  * Allocate heap memory, first on the ordinary heap;
@@ -53,10 +80,32 @@
     ? erts_heap_alloc((p),(sz))                         \
     : (HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
 
-#define HRelease(p, ptr)				\
-  if (HEAP_START(p) <= (ptr) && (ptr) < HEAP_TOP(p)) {	\
-      HEAP_TOP(p) = (ptr);				\
+#endif /* DEBUG */
+
+#ifdef HYBRID
+#define HRelease(p, from, to)	        		                  \
+  if (HEAP_TOP(p) == (from)) {	                                          \
+      HEAP_TOP(p) = (to);				                  \
+  } else if (ARITH_HEAP(p) == (from)) {                                   \
+      erts_arith_shrink(p,to);                                            \
+  } else {                                                                \
+      while (to < from) {                                                 \
+          *to++ = NIL;                                                    \
+      }                                                                   \
+  }
+/* FIND ME!
+if (size == 1) *ptr = NIL
+else 
+      *(ptr) = ((((ARITH_HEAP(p) - (ptr)) - 1) << _HEADER_ARITY_OFFS) |   \
+                _TAG_HEADER_HEAP_BIN);                                    \
+
+*/
+#else
+#define HRelease(p, endp, ptr)				                  \
+  if (HEAP_START(p) <= (ptr) && (ptr) < HEAP_TOP(p)) {	                  \
+      HEAP_TOP(p) = (ptr);				                  \
   } else {}
+#endif
 
 #define HeapWordsLeft(p)				\
   (HEAP_LIMIT(p) - HEAP_TOP(p))
@@ -65,40 +114,42 @@
 #  define ARITH_HEAP(p)     erts_global_arith_heap
 #  define ARITH_AVAIL(p)    erts_global_arith_avail
 #  define ARITH_LOWEST_HTOP(p) erts_global_arith_lowest_htop
-#  define ARITH_CHECK_ME(p) erts_global_arith_check_me
 extern Eterm* erts_global_arith_heap;
 extern Uint erts_global_arith_avail;
 extern Eterm* erts_global_arith_lowest_htop;
 #  ifdef DEBUG
+#    define ARITH_CHECK_ME(p) erts_global_arith_check_me
 extern Eterm* erts_global_arith_check_me;
 #  endif
 #else
 #  define ARITH_HEAP(p)     (p)->arith_heap
 #  define ARITH_AVAIL(p)    (p)->arith_avail
 #  define ARITH_LOWEST_HTOP(p) (p)->arith_lowest_htop
-#  define ARITH_CHECK_ME(p) (p)->arith_check_me
+#  ifdef DEBUG
+#    define ARITH_CHECK_ME(p) (p)->arith_check_me
+#  endif
 #endif
 
 /* Allocate memory on secondary arithmetic heap. */
 
 #if defined(DEBUG)
-#  define ARITH_MARKER 0xaf5e78cc
+#  define ARITH_MARKER (((0xcafebabeUL << 24) << 8) | 0xaf5e78ccUL)
 #  define ArithCheck(p) \
       ASSERT(ARITH_CHECK_ME(p)[0] == ARITH_MARKER);
-#  define ArithAlloc(p, need) \
-   (ASSERT_EXPR((need) >= 0), \
-    ((ARITH_AVAIL(p) < (need)) ? \
-     erts_arith_alloc((p), (p)->htop, (need)) : \
-     ((ARITH_HEAP(p) += (need)), (ARITH_AVAIL(p) -= (need)), \
-      (ARITH_CHECK_ME(p) = ARITH_HEAP(p)), \
+#  define ArithAlloc(p, need)                                   \
+   (ASSERT_EXPR((need) >= 0),                                   \
+    ((ARITH_AVAIL(p) < (need)) ?                                \
+     erts_arith_alloc((p), (p)->htop, (need)) :                 \
+     ((ARITH_HEAP(p) += (need)), (ARITH_AVAIL(p) -= (need)),    \
+      (ARITH_CHECK_ME(p) = ARITH_HEAP(p)),                      \
       (ARITH_HEAP(p) - (need)))))
 #else
 #  define ArithCheck(p)
-#  define ArithAlloc(p, need) \
-    ((ARITH_AVAIL(p) < (need)) ? \
-      erts_arith_alloc((p), (p)->htop, (need)) : \
-      ((ARITH_HEAP(p) += (need)), \
-       (ARITH_AVAIL(p) -= (need)), \
+#  define ArithAlloc(p, need)                       \
+    ((ARITH_AVAIL(p) < (need)) ?                    \
+      erts_arith_alloc((p), (p)->htop, (need)) :    \
+      ((ARITH_HEAP(p) += (need)),                   \
+       (ARITH_AVAIL(p) -= (need)),                  \
        (ARITH_HEAP(p) - (need))))
 #endif
 
@@ -134,7 +185,6 @@ extern int num_instructions;	/* Number of instruction in opc[]. */
 #define TMP_BUF_SIZE 65536
 
 #define ITIME 100		/* Number of milliseconds per clock tick    */
-#define BG_PROPORTION 8		/* Do bg processes after this # fg          */
 #define MAX_PORT_LINK 8		/* Maximum number of links to a port        */
 
 extern int H_MIN_SIZE;		/* minimum (heap + stack) */
@@ -154,12 +204,6 @@ extern int H_MIN_SIZE;		/* minimum (heap + stack) */
 
 #define make_signed_24(x,y,z) ((sint32) (((x) << 24) | ((y) << 16) | ((z) << 8)) >> 8)
 #define make_signed_32(x3,x2,x1,x0) ((sint32) (((x3) << 24) | ((x2) << 16) | ((x1) << 8) | (x0)))
-
-#ifdef DEBUG
-#define VERBOSE(x) do { if (verbose) x } while(0)
-#else
-#define VERBOSE(x)
-#endif
 
 int big_to_double(Eterm x, double* resp);
 

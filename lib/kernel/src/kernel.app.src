@@ -32,8 +32,9 @@
 	     heart,
 	     hipe_unified_loader,
 	     hipe_sparc_loader,
+	     hipe_ppc_loader,
 	     hipe_x86_loader,
-	     hipe_pack_constants,
+             hipe_amd64_loader,
 	     inet6_tcp,
 	     inet6_tcp_dist,
 	     inet6_udp,
@@ -112,6 +113,3 @@
   {mod, {kernel, []}}
  ]
 }.
-
-
-

@@ -43,7 +43,7 @@ do(Info) ->
 	    %% No user has been authorized.
 	    case httpd_util:key1search(Info#mod.data, status) of
 		%% A status code has been generated!
-		{401, PhraseArgs, Reason} ->
+		{401, _PhraseArgs, _Reason} ->
 		    case httpd_util:key1search(Info#mod.parsed_header,
 					       "authorization") of
 			undefined ->
@@ -54,8 +54,9 @@ do(Info) ->
 			    %% Someone tried to authenticate, and obviously failed!
 			    ?vlog("~n   Authentication failed: ~s",
 				  [EncodedString]),
-			    report_failed(Info, EncodedString,"Failed authentication"),
-			    take_failed_action(Info, EncodedString),
+			    DecodedString = http_base_64:decode(EncodedString),
+			    report_failed(Info, DecodedString,"Failed authentication"),
+			    take_failed_action(Info, DecodedString),
 			    {proceed, Info#mod.data}
 		    end;
 		_ ->
@@ -67,45 +68,40 @@ do(Info) ->
 	    Path = mod_alias:path(Info#mod.data,
 				  Info#mod.config_db,
 				  Info#mod.request_uri),
-	    {Dir, SDirData} = secretp(Path, Info#mod.config_db),
+	    {_Dir, SDirData} = secretp(Path, Info#mod.config_db),
 	    Addr = httpd_util:lookup(Info#mod.config_db, bind_address),
 	    Port = httpd_util:lookup(Info#mod.config_db, port),
-	    DF   = httpd_util:key1search(SDirData, data_file),
 	    case mod_security_server:check_blocked_user(Info, User, 
 							SDirData, 
 							Addr, Port) of
 		true ->
 		    ?vtrace("user blocked",[]),
-		    report_failed(Info,httpd_util:decode_base64(User) ,"User Blocked"),
+		    report_failed(Info, User ,"User Blocked"),
 		    {proceed, [{status, {403, Info#mod.request_uri, ""}}|Info#mod.data]};
 		false ->
 		    ?vtrace("user not blocked",[]),
-		    EncodedUser=httpd_util:decode_base64(User),
-		    report_failed(Info, EncodedUser,"Authentication Succedded"),
+		    report_failed(Info, User,"Authentication Succedded"),
 		    mod_security_server:store_successful_auth(Addr, Port, 
 							      User, SDirData),
 		    {proceed, Info#mod.data}
 	    end
     end.
 
-
-
-report_failed(Info, EncodedString,Event) ->
+report_failed(Info, Auth, Event) ->
     Request = Info#mod.request_line,
-    Decoded = httpd_util:decode_base64(EncodedString),
-    {PortNumber,RemoteHost}=(Info#mod.init_data)#init_data.peername,
-    String = RemoteHost++" : " ++ Event ++ " : "++Request++" : "++Decoded,
+    {_PortNumber,RemoteHost}=(Info#mod.init_data)#init_data.peername,
+    String = RemoteHost ++ " : " ++ Event ++ " : " ++ Request ++ " : " ++ Auth,
     mod_disk_log:security_log(Info,String),
     mod_log:security_log(Info, String).
 
-take_failed_action(Info, EncodedString) ->
-    Path = mod_alias:path(Info#mod.data,Info#mod.config_db, Info#mod.request_uri),
-    {Dir, SDirData} = secretp(Path, Info#mod.config_db),
+take_failed_action(Info, Auth) ->
+    Path = mod_alias:path(Info#mod.data, Info#mod.config_db, 
+			  Info#mod.request_uri),
+    {_Dir, SDirData} = secretp(Path, Info#mod.config_db),
     Addr = httpd_util:lookup(Info#mod.config_db, bind_address),
     Port = httpd_util:lookup(Info#mod.config_db, port),
-    DecodedString = httpd_util:decode_base64(EncodedString),
     mod_security_server:store_failed_auth(Info, Addr, Port, 
-					  DecodedString, SDirData).
+					  Auth, SDirData).
 
 secretp(Path, ConfigDB) ->
     Directories = ets:match(ConfigDB,{directory,'$1','_'}),
@@ -124,9 +120,9 @@ secretp(Path, ConfigDB) ->
 secret_path(Path,Directories) ->
     secret_path(Path, httpd_util:uniq(lists:sort(Directories)), to_be_found).
 
-secret_path(Path, [], to_be_found) ->
+secret_path(_Path, [], to_be_found) ->
     no;
-secret_path(Path, [], Directory) ->
+secret_path(_Path, [], Directory) ->
     {yes, Directory};
 secret_path(Path, [[NewDirectory]|Rest], Directory) ->
     case regexp:match(Path, NewDirectory) of
@@ -134,45 +130,44 @@ secret_path(Path, [[NewDirectory]|Rest], Directory) ->
 	    secret_path(Path, Rest, NewDirectory);
 	{match, _, Length} when Length > length(Directory)->
 	    secret_path(Path, Rest, NewDirectory);
-	{match, _, Length} ->
+	{match, _, _} ->
 	    secret_path(Path, Rest, Directory);
 	nomatch ->
 	    secret_path(Path, Rest, Directory)
     end.
 
 
-load([$<,$D,$i,$r,$e,$c,$t,$o,$r,$y,$ |Directory],[]) ->
+load("<Directory " ++ Directory,[]) ->
     Dir = httpd_conf:custom_clean(Directory,"",">"),
     {ok, [{security_directory, Dir, [{path, Dir}]}]};
-load(eof,[{security_directory,Directory, DirData}|_]) ->
+load(eof,[{security_directory,Directory, _DirData}|_]) ->
     {error, ?NICE("Premature end-of-file in "++Directory)};
-load([$S,$e,$c,$u,$r,$i,$t,$y,$D,$a,$t,$a,$F,$i,$l,$e,$ |FileName],
+load("SecurityDataFile " ++ FileName,
      [{security_directory, Dir, DirData}]) ->
     File = httpd_conf:clean(FileName),
     {ok, [{security_directory, Dir, [{data_file, File}|DirData]}]};
-load([$S,$e,$c,$u,$r,$i,$t,$y,$C,$a,$l,$l,$b,$a,$c,$k,$M,$o,$d,$u,$l,$e,$ |ModuleName],
+load("SecurityCallbackModule " ++ ModuleName,
      [{security_directory, Dir, DirData}]) ->
     Mod = list_to_atom(httpd_conf:clean(ModuleName)),
     {ok, [{security_directory, Dir, [{callback_module, Mod}|DirData]}]};
-load([$S,$e,$c,$u,$r,$i,$t,$y,$M,$a,$x,$R,$e,$t,$r,$i,$e,$s,$ |Retries],
+load("SecurityMaxRetries " ++ Retries,
      [{security_directory, Dir, DirData}]) ->
-    MaxRetries = httpd_conf:clean(Retries),
     load_return_int_tag("SecurityMaxRetries", max_retries, 
 			httpd_conf:clean(Retries), Dir, DirData);
-load([$S,$e,$c,$u,$r,$i,$t,$y,$B,$l,$o,$c,$k,$T,$i,$m,$e,$ |Time],
-     [{security_directory, Dir, DirData}]) ->
-    load_return_int_tag("SecurityBlockTime", block_time,
-			httpd_conf:clean(Time), Dir, DirData);
-load([$S,$e,$c,$u,$r,$i,$t,$y,$F,$a,$i,$l,$E,$x,$p,$i,$r,$e,$T,$i,$m,$e,$ |Time],
+load("SecurityBlockTime " ++ Time,
+      [{security_directory, Dir, DirData}]) ->
+	    load_return_int_tag("SecurityBlockTime", block_time,
+				httpd_conf:clean(Time), Dir, DirData);
+load("SecurityFailExpireTime " ++ Time,
      [{security_directory, Dir, DirData}]) ->
     load_return_int_tag("SecurityFailExpireTime", fail_expire_time,
 			httpd_conf:clean(Time), Dir, DirData);
-load([$S,$e,$c,$u,$r,$i,$t,$y,$A,$u,$t,$h,$T,$i,$m,$e,$o,$u,$t,$ |Time0],
+load("SecurityAuthTimeout " ++ Time0,
      [{security_directory, Dir, DirData}]) ->
     Time = httpd_conf:clean(Time0),
     load_return_int_tag("SecurityAuthTimeout", auth_timeout,
 			httpd_conf:clean(Time), Dir, DirData);
-load([$A,$u,$t,$h,$N,$a,$m,$e,$ |Name0],
+load("AuthName " ++ Name0,
      [{security_directory, Dir, DirData}]) ->
     Name = httpd_conf:clean(Name0),
     {ok, [{security_directory, Dir, [{auth_name, Name}|DirData]}]};
@@ -183,7 +178,7 @@ load_return_int_tag(Name, Atom, Time, Dir, DirData) ->
     case Time of
 	"infinity" ->
 	    {ok, [{security_directory, Dir, [{Atom, 99999999999999999999999999999}|DirData]}]};
-	Int ->
+	_Int ->
 	    case catch list_to_integer(Time) of
 		{'EXIT', _} ->
 		    {error, Time++" is an invalid "++Name};
@@ -192,22 +187,16 @@ load_return_int_tag(Name, Atom, Time, Dir, DirData) ->
 	    end
     end.
 
-store({security_directory, Dir0, DirData}, ConfigList) ->
+store({security_directory, _Dir0, DirData}, ConfigList) ->
     ?CDEBUG("store(security_directory) -> ~n"
 	    "      Dir0:       ~p~n"
 	    "      DirData:    ~p",
-	    [Dir0, DirData]),
+	    [_Dir0, DirData]),
     Addr = httpd_util:key1search(ConfigList, bind_address),
     Port = httpd_util:key1search(ConfigList, port),
     mod_security_server:start(Addr, Port),
     SR = httpd_util:key1search(ConfigList, server_root),
-    Dir = 
-	case filename:pathtype(Dir0) of
-	    relative ->
-		filename:join(SR, Dir0);
-	    _ ->
-		Dir0
-	end,
+    
     case httpd_util:key1search(DirData, data_file, no_data_file) of
 	no_data_file ->
 	    {error, no_security_data_file};

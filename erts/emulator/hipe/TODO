@@ -1,0 +1,12 @@
+PowerPC:
+* create and use trampolines for long calls
+
+X86:
+
+SPARC:
+* The inc_stack code saves more argument registers than
+  necessary: a C callee won't clobber %l or %i regs.
+* Does noproc_primop_interface_N really need to save and
+  restore FCALLS/HP/RA/NSP around P-less primop calls?
+  (x86 doesn't save and restore HP in this interface.)
+  Ditto for nocons_nofail_primop_interface_0.

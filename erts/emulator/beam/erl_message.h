@@ -48,7 +48,9 @@ typedef struct {
 typedef struct erl_off_heap {
     struct proc_bin* mso;	/* List of associated binaries. */
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
     struct erl_fun_thing* funs;	/* List of funs. */
+#endif
 #endif
     struct external_thing_* externals; /* List of external things. */
     int overhead;		/* Administrative overhead (used to force GC). */

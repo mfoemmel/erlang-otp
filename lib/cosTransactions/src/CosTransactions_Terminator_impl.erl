@@ -101,7 +101,7 @@ terminate(Reason, State) ->
 %% Effect   : Functions demanded by the module ic. 
 %%------------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 handle_call(_,_, State) ->
@@ -137,7 +137,7 @@ handle_info(Info, State) ->
 %%            HeuristicHazard - Lowest  priority
 %%------------------------------------------------------------
 
-commit(Self, State, Heuristics) when ?tr_is_retransmit(State) ->
+commit(_Self, State, _Heuristics) when ?tr_is_retransmit(State) ->
     ?debug_print("Terminator:commit() recalled.~n", []),
     {stop, normal, ?tr_get_reportH(State), State};
 commit(Self, State, Heuristics) ->
@@ -203,22 +203,22 @@ evaluate_answer(Self, State, Heuristics, false) ->
     evaluate_answer(Self, State, Heuristics, commit);
 evaluate_answer(Self, State, Heuristics, true) ->
     evaluate_answer(Self, State, Heuristics, rollback);
-evaluate_answer(Self, State, Heuristics, Vote) ->
+evaluate_answer(_Self, State, Heuristics, Vote) ->
     case catch 'ETraP_Common':send_stubborn('ETraP_Server', Vote, 
 					    ?tr_get_etrap(State), 
 					    ?tr_get_maxR(State), 
 					    ?tr_get_maxW(State)) of
 	ok ->
-	    ?eval_debug_fun({Self, commit_ok1}, State),
+	    ?eval_debug_fun({_Self, commit_ok1}, State),
 	    log_safe(?tr_get_terminator(State), committed),
-	    ?eval_debug_fun({Self, commit_ok2}, State),
+	    ?eval_debug_fun({_Self, commit_ok2}, State),
 %	    catch 'ETraP_Server':after_completion(?tr_get_etrap(State),
 %						  'StatusCommitted'),
 	    {stop, normal, ok, State};
 	{'EXCEPTION', E} when Heuristics == true,
 			      record(E,'CosTransactions_HeuristicMixed') ->
 	    log_safe(?tr_get_terminator(State), {heuristic, State, E}),
-	    ?eval_debug_fun({Self, commit_heuristic1}, State),
+	    ?eval_debug_fun({_Self, commit_heuristic1}, State),
 	    catch 'ETraP_Server':forget(?tr_get_etrap(State)),
 %	    catch 'ETraP_Server':after_completion(?tr_get_etrap(State),
 %						  'StatusRolledBack'),
@@ -251,12 +251,12 @@ evaluate_answer(Self, State, Heuristics, Vote) ->
 	     {'EXCEPTION', 
 	      #'TRANSACTION_ROLLEDBACK'{completion_status=?COMPLETED_YES}}, 
 	     State};
-	Other when Heuristics == true ->
+	_Other when Heuristics == true ->
 	    log_safe(?tr_get_terminator(State), rolled_back),
 %	    catch 'ETraP_Server':after_completion(?tr_get_etrap(State),
 %						  'StatusRolledBack'),
 	    {stop, normal, {'EXCEPTION', ?tr_hazard}, State};
-	Other ->
+	_Other ->
 	    log_safe(?tr_get_terminator(State), rolled_back),
 %	    catch 'ETraP_Server':after_completion(?tr_get_etrap(State),
 %						  'StatusRolledBack'),
@@ -271,7 +271,7 @@ evaluate_answer(Self, State, Heuristics, Vote) ->
 %% Effect   : 
 %%------------------------------------------------------------
 
-rollback(Self, State) ->
+rollback(_Self, State) ->
     ?debug_print("Terminator:rollback() called.~n", []),
     log_safe(?tr_get_terminator(State), rolled_back),
     catch 'ETraP_Server':rollback(?tr_get_etrap(State)),
@@ -345,18 +345,18 @@ do_restart(State, eof, Phase) ->
 	    end
     end;
 %% All done.
-do_restart(State, {done, Cursor}, Phase) ->
-    ?debug_print("Terminator:do_restart(~p)~n", [Phase]),
+do_restart(State, {done, _Cursor}, _Phase) ->
+    ?debug_print("Terminator:do_restart(~p)~n", [_Phase]),
     self() ! {suicide, self()},
     {ok, State};
-do_restart(State, {rolled_back, Cursor}, Phase) ->
-    ?debug_print("Terminator:do_restart(~p)~n", [Phase]),
+do_restart(State, {rolled_back, Cursor}, _Phase) ->
+    ?debug_print("Terminator:do_restart(~p)~n", [_Phase]),
     do_restart(State, get_next(?tr_get_terminator(State), Cursor), rolled_back);
-do_restart(State, {committed, Cursor}, Phase) ->
-    ?debug_print("Terminator:do_restart(~p)~n", [Phase]),
+do_restart(State, {committed, Cursor}, _Phase) ->
+    ?debug_print("Terminator:do_restart(~p)~n", [_Phase]),
     do_restart(State, get_next(?tr_get_terminator(State), Cursor), committed);
-do_restart(State, {{heuristic, SavedState, Exc}, Cursor}, Phase) ->
-    ?debug_print("Terminator:do_restart(~p)~n", [Phase]),
+do_restart(State, {{heuristic, SavedState, Exc}, Cursor}, _Phase) ->
+    ?debug_print("Terminator:do_restart(~p)~n", [_Phase]),
     do_restart(SavedState, get_next(?tr_get_terminator(State), Cursor), 
 	       {heuristic, Exc});
 do_restart(State, {{init_commit, SavedState}, Cursor}, _) ->

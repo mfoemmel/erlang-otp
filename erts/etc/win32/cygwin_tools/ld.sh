@@ -18,8 +18,8 @@ while test -n "$1" ; do
     case "$x" in
 	-dll| -DLL)
 	    BUILD_DLL=true;; 
-	-L/*)
-	    y=`echo $x | sed 's,^-L\(/.*\),\1,g'`;
+	-L/*|-L.*)
+	    y=`echo $x | sed 's,^-L\(.*\),\1,g'`;
 	    MPATH=`cygpath -m $y`;
 	    CMD="$CMD -libpath:\"$MPATH\"";; 
 	-lMSVCRT|-lmsvcrt)

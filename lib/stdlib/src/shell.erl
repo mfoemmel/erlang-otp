@@ -24,7 +24,9 @@
 -define(DEF_HISTORY, 20).
 -define(DEF_RESULTS, 20).
 
-start()->
+-define(RECORDS, shell_records).
+
+start() ->
     start(false).
 
 start(NoCtrlG) ->
@@ -33,7 +35,7 @@ start(NoCtrlG) ->
 
 %% Call this function to start a user restricted shell 
 %% from a normal shell session.
-start_restricted(RShMod) when atom(RShMod) ->
+start_restricted(RShMod) when is_atom(RShMod) ->
     case code:ensure_loaded(RShMod) of
 	{module,RShMod} -> 
 	    ok;
@@ -58,11 +60,18 @@ default_modules() ->
 %%%      {keylist, 'erl.lang.list.keylist'},
 %%%      {debug, 'erl.system.debug'}].
 
-server(NoCtrlG)->
+server(NoCtrlG) ->
     put(no_control_g, NoCtrlG),
     server().
     
 server() ->
+    %% The shell shouldn't start until the system is up and running.
+    case init:notify_when_started(self()) of
+	started ->
+	    ok;
+	_ ->
+	    init:wait_until_started()
+    end,
     %% Our spawner has fixed the process groups.
     Bs0 = erl_eval:new_bindings(),
     Bs = lists:foldl(fun ({K, V}, D) ->
@@ -74,6 +83,12 @@ server() ->
 				 Bs0, default_packages()),
 		     default_modules()),
     %% io:fwrite("Imported modules: ~p.\n", [erl_eval:bindings(Bs)]),
+
+    %% Use an Ets table for record definitions. It takes too long to
+    %% send a huge term to and from the evaluator. Ets makes it
+    %% possible to have thousands of record definitions.
+    RT = ets:new(?RECORDS, [public,ordered_set]),
+    _ = initiate_records(Bs, RT),
     process_flag(trap_exit, true),
 
     %% Check if we're in user restricted mode.
@@ -110,37 +125,37 @@ server() ->
     check_env(shell_saved_results, "max number of saved results"),
     History = get_env(shell_history_length, ?DEF_HISTORY),
     Results = get_env(shell_saved_results, ?DEF_RESULTS),
-    server_loop(0, start_eval(Bs, []), Bs, [], History, Results).
+    server_loop(0, start_eval(Bs, RT, []), Bs, RT, [], History, Results).
 
-server_loop(N0, Eval_0, Bs0, Ds0, History0, Results0) ->
+server_loop(N0, Eval_0, Bs0, RT, Ds0, History0, Results0) ->
     N = N0 + 1,
-    {Res, Eval0} = get_command(prompt(N), Eval_0, Bs0, Ds0),
+    {Res, Eval0} = get_command(prompt(N), Eval_0, Bs0, RT, Ds0),
     case Res of 
 	{ok,Es0,_EndLine} ->
             case expand_hist(Es0, N) of
                 {ok,Es} ->
-                    {V,Eval,Bs,Ds} = shell_cmd(Es, Eval0, Bs0, Ds0),
+                    {V,Eval,Bs,Ds} = shell_cmd(Es, Eval0, Bs0, RT, Ds0),
                     History = get_env(shell_history_length, ?DEF_HISTORY),
                     Results = min(History,
                                   get_env(shell_saved_results,?DEF_RESULTS)),
                     add_cmd(N, Es, V),
                     del_cmd(command, N - History, N - History0),
                     del_cmd(result, N - Results, N - Results0),
-                    server_loop(N, Eval, Bs, Ds, History, Results);
+                    server_loop(N, Eval, Bs, RT, Ds, History, Results);
                 {error,E} ->
                     io:fwrite("** ~s **\n", [E]),
-                    server_loop(N0, Eval0, Bs0, Ds0, History0, Results0)
+                    server_loop(N0, Eval0, Bs0, RT, Ds0, History0, Results0)
             end;
 	{error,{Line,Mod,What},_EndLine} ->
 	    io:fwrite("** ~w: ~s **\n", [Line,Mod:format_error(What)]),
-	    server_loop(N0, Eval0, Bs0, Ds0, History0, Results0);
+	    server_loop(N0, Eval0, Bs0, RT, Ds0, History0, Results0);
 	{error,terminated} ->			%Io process terminated
 	    exit(Eval0, kill),
 	    terminated;
 	{error,interrupted} ->			%Io process interrupted us
 	    exit(Eval0, kill),
-	    {_,Eval,_,_} = shell_rep(Eval0, Bs0, Ds0),
-	    server_loop(N0, Eval, Bs0, Ds0, History0, Results0);
+	    {_,Eval,_,_} = shell_rep(Eval0, Bs0, RT, Ds0),
+	    server_loop(N0, Eval, Bs0, RT, Ds0, History0, Results0);
 	{eof,_EndLine} ->
 	    io:fwrite("** Terminating erlang (~w) **\n", [node()]),
 	    halt();
@@ -149,18 +164,18 @@ server_loop(N0, Eval_0, Bs0, Ds0, History0, Results0) ->
 	    halt()
     end.
 
-get_command(Prompt, Eval, Bs, Ds) ->
+get_command(Prompt, Eval, Bs, RT, Ds) ->
     Parse = fun() -> exit(io:parse_erl_exprs(Prompt)) end,
     Pid = spawn_link(Parse),
-    get_command1(Pid, Eval, Bs, Ds).
+    get_command1(Pid, Eval, Bs, RT, Ds).
 
-get_command1(Pid, Eval, Bs, Ds) ->
+get_command1(Pid, Eval, Bs, RT, Ds) ->
     receive
 	{'EXIT', Pid, Res} ->
 	    {Res, Eval};
 	{'EXIT', Eval, Reason} ->
 	    io:fwrite("** exited: ~P **\n", [Reason, ?LINEMAX]),
-	    get_command1(Pid, start_eval(Bs, Ds), Bs, Ds)
+	    get_command1(Pid, start_eval(Bs, RT, Ds), Bs, RT, Ds)
     end.
 
 prompt(N) ->
@@ -215,15 +230,15 @@ expand_expr({call,L,{atom,_,e},[N]}, C) ->
 	    no_command(N);
 	{[Ce],_V} ->
 	    Ce;
-	{Ces,_V} when list(Ces) ->
+	{Ces,_V} when is_list(Ces) ->
 	    {block,L,Ces}
     end;
 expand_expr({call,L,{atom,_,v},[N]}, C) ->
     case get_cmd(N, C) of
         {_,undefined} ->
 	    no_command(N);
-	{Ces,V} when list(Ces) ->
-	    {value,L,V}
+	{Ces,V} when is_list(Ces) ->
+            {value,L,V}
     end;
 expand_expr({call,L,F,Args}, C) ->
     {call,L,expand_expr(F, C),expand_exprs(Args, C)};
@@ -283,133 +298,188 @@ del_cmd(Type, N, N0) ->
     erase({Type,N}),
     del_cmd(Type, N-1, N0).
 
-%% shell_cmd(Sequence, Evaluator, Bindings, Dictionary)
-%% shell_rep(Evaluator, Bindings, Dictionary) ->
+%% shell_cmd(Sequence, Evaluator, Bindings, RecordTable, Dictionary)
+%% shell_rep(Evaluator, Bindings, RecordTable, Dictionary) ->
 %%	{Value,Evaluator,Bindings,Dictionary}
 %%  Send a command to the evaluator and wait for the reply. Start a new
 %%  evaluator if necessary.
 
-shell_cmd(Es, Eval, Bs, Ds) ->
+shell_cmd(Es, Eval, Bs, RT, Ds) ->
     Eval ! {shell_cmd,self(),{eval,Es}},
-    shell_rep(Eval, Bs, Ds).
+    shell_rep(Eval, Bs, RT, Ds).
 
-shell_rep(Ev, Bs0, Ds0) ->
+shell_rep(Ev, Bs0, RT, Ds0) ->
     receive
 	{shell_rep,Ev,{value,V,Bs,Ds}} ->
-	    io:fwrite("~P~n", [V,?LINEMAX]),
+            VS = io_lib_pretty:print(V, ?LINEMAX, record_print_fun(RT)),
+            io:put_chars(VS),
+            io:nl(),
 	    {V,Ev,Bs,Ds};
         {shell_rep,Ev,{command_error,{Line,M,Error}}} -> 
 	    io:fwrite("** ~w: ~s **\n", [Line,M:format_error(Error)]),
             {{'EXIT',Error},Ev,Bs0,Ds0};
 	{shell_req,Ev,get_cmd} ->
 	    Ev ! {shell_rep,self(),get()},
-	    shell_rep(Ev, Bs0, Ds0);
+	    shell_rep(Ev, Bs0, RT, Ds0);
 	{shell_req,Ev,exit} ->
 	    Ev ! {shell_rep,self(),exit},
 	    exit(normal);
 	{shell_req,Ev,{update_dict,Ds}} ->	% Update dictionary
 	    Ev ! {shell_rep,self(),ok},
-	    shell_rep(Ev, Bs0, Ds);
+	    shell_rep(Ev, Bs0, RT, Ds);
 	{'EXIT',Ev,Reason} ->			% It has exited unnaturally
 	    io:fwrite("** exited: ~P **\n", [Reason,?LINEMAX]),
-	    {{'EXIT',Reason},start_eval(Bs0, Ds0), Bs0, Ds0};
+	    {{'EXIT',Reason},start_eval(Bs0, RT, Ds0), Bs0, Ds0};
 	{'EXIT',_Id,interrupt} ->		% Someone interrupted us
 	    exit(Ev, kill),
-	    shell_rep(Ev, Bs0, Ds0);
+	    shell_rep(Ev, Bs0, RT, Ds0);
 	{'EXIT',_Id,R} ->
 	    exit(Ev, R),
 	    exit(R);
 	_Other ->				% Ignore everything else
-	    shell_rep(Ev, Bs0, Ds0)
+	    shell_rep(Ev, Bs0, RT, Ds0)
     end.
 
-start_eval(Bs, Ds) ->
+start_eval(Bs, RT, Ds) ->
     Self = self(),
-    spawn_link(fun() -> evaluator(Self, Bs, Ds) end).
+    spawn_link(fun() -> evaluator(Self, Bs, RT, Ds) end).
 
-%% evaluator(Shell, Bindings, ProcessDictionary)
+%% evaluator(Shell, Bindings, RecordTable, ProcessDictionary)
 %%  Evaluate expressions from the shell. Use the "old" variable bindings
-%%  and ductionary.
+%%  and dictionary.
 
-evaluator(Shell, Bs, Ds) ->
+evaluator(Shell, Bs, RT, Ds) ->
     init_dict(Ds),
     case application:get_env(stdlib, restricted_shell) of
 	undefined ->
-	    eval_loop(Shell, Bs);
+	    eval_loop(Shell, Bs, RT);
 	{ok,RShMod} ->
 	    case get(restricted_shell_state) of
 		undefined -> put(restricted_shell_state, []);
 		_ -> ok
 	    end,
 	    put(restricted_expr_state, []),
-	    restricted_eval_loop(Shell, Bs, RShMod)
+	    restricted_eval_loop(Shell, Bs, RT, RShMod)
     end.
 
-eval_loop(Shell, Bs0) ->
+eval_loop(Shell, Bs0, RT) ->
     receive
 	{shell_cmd,Shell,{eval,Es}} ->
-            {R,Bs2} = 
-                case erl_eval:check_command(prep_check(Es), Bs0) of
-                    ok ->
-                        Lf = {eval,local_func_fun(Shell)},
-                        {value,V,Bs} = erl_eval:exprs(Es, Bs0, Lf),
-                        {{value,V,Bs,get()},Bs};
-                    {error,Error} ->
-                        {{command_error,Error},Bs0}
-                end,
+            Ef = none,
+            Lf = local_func_handler(Shell, RT, Ef),
+            {R,Bs2} = exprs(Es, Bs0, RT, Lf, none),
 	    Shell ! {shell_rep,self(),R},
-	    eval_loop(Shell, Bs2)
+	    eval_loop(Shell, Bs2, RT)
     end.
 
-restricted_eval_loop(Shell, Bs0, RShMod) ->
+restricted_eval_loop(Shell, Bs0, RT, RShMod) ->
     receive
 	{shell_cmd,Shell,{eval,Es}} ->
-            {R,Bs2} = 
-                case erl_eval:check_command(prep_check(Es), Bs0) of
-                    ok ->
-			{LFH,NLFH} = restrict_handlers(RShMod, Shell),
-			put(restricted_expr_state, []),
-			{value,V,Bs} = 
-			    erl_eval:exprs(Es, Bs0, {eval,LFH}, {value,NLFH}),
-                        {{value,V,Bs,get()},Bs};
-                    {error,Error} ->
-                        {{command_error,Error},Bs0}
-                end,
+            {LFH,NLFH} = restrict_handlers(RShMod, Shell, RT),
+            put(restricted_expr_state, []),
+            {R,Bs2} = exprs(Es, Bs0, RT, {eval,LFH}, {value,NLFH}),
 	    Shell ! {shell_rep,self(),R},
-	    restricted_eval_loop(Shell, Bs2, RShMod)
+	    restricted_eval_loop(Shell, Bs2, RT, RShMod)
     end.
 
-restrict_handlers(RShMod, Shell) ->
+exprs(Es, Bs0, RT, Lf, Ef) ->
+    exprs(Es, Bs0, RT, Lf, Ef, Bs0).
+
+exprs([E0|Es], Bs1, RT, Lf, Ef, Bs0) ->
+    UsedRecords = 
+        [{{record,Name},Def} || {Name,Def} <- used_record_defs(E0, RT)],
+    case erl_eval:check_command(prep_check([E0]), UsedRecords ++ Bs1) of
+        ok ->
+            E1 = expand_records(UsedRecords, E0),
+            {value,V,Bs2} = erl_eval:expr(E1, Bs1, Lf, Ef),
+            Bs = orddict:from_list([VV || {X,_}=VV <- erl_eval:bindings(Bs2),
+                                          not is_sys_pre_expand_variable(X)]),
+            if
+                Es =:= [] ->
+                    {{value,V,Bs,get()},Bs};
+                true -> 
+                    exprs(Es, Bs, RT, Lf, Ef, Bs0)
+            end;
+        {error,Error} ->
+            {{command_error,Error},Bs0}
+    end.
+
+is_sys_pre_expand_variable(V) ->
+    case catch atom_to_list(V) of
+        "pre" ++ _Integer -> true;
+        _ -> false
+    end.
+
+used_record_defs(E, RT) ->
+    record_defs(RT, lists:usort(used_records(E, [], RT))).
+
+used_records(E, U0, RT) ->
+    case used_records(E) of
+        {name,Name,E1} ->
+            U = used_records(ets:lookup(RT, Name), [Name | U0], RT),
+            used_records(E1, U, RT);
+        {expr,[E1 | Es]} ->
+            used_records(Es, used_records(E1, U0, RT), RT);
+        _ ->
+            U0
+    end.
+
+used_records({record_index,_,Name,F}) ->
+    {name, Name, F};
+used_records({record,_,Name,Is}) ->
+    {name, Name, Is};
+used_records({record_field,_,R,Name,F}) ->
+    {name, Name, [R | F]};
+used_records({record,_,R,Name,Ups}) ->
+    {name, Name, [R | Ups]};
+used_records({record_field,_,R,F}) -> % illegal
+    {expr, [R | F]};
+used_records({call,_,{atom,_,record},[A,{atom,_,Name}]}) ->
+    {name, Name, A};
+used_records({call,_,{atom,_,is_record},[A,{atom,_,Name}]}) ->
+    {name, Name, A};
+used_records({call,_,{remote,_,{atom,_,erlang},{atom,_,is_record}},
+              [A,{atom,_,Name}]}) ->
+    {name, Name, A};
+used_records({call,_,{atom,_,record_info},[A,{atom,_,Name}]}) ->
+    {name, Name, A};
+used_records(T) when is_tuple(T) ->
+    {expr, tuple_to_list(T)};
+used_records(E) ->
+    {expr, E}.
+
+restrict_handlers(RShMod, Shell, RT) ->
     { fun(F,As,Binds) -> 
-	      local_func_handler(F, As, RShMod, Binds, Shell) 
+	      local_func_handler(F, As, RShMod, Binds, Shell, RT) 
       end,
       fun(MF,As) -> 
 	      non_local_allowed(MF, As, RShMod, Shell) 
       end }.
 
-local_func_handler(F, As, RShMod, Bs, Shell) ->
-    case local_allowed(F, As, RShMod, Bs, Shell) of
+local_func_handler(F, As, RShMod, Bs, Shell, RT) ->
+    case local_allowed(F, As, RShMod, Bs, Shell, RT) of
 	disallowed ->
 	    {value,{disallowed,{F,As}},Bs};
 	{not_restricted,Res} ->
 	    Res;
 	{AsEv,Bs1} ->
-	    %% The arguments have already been evaluated but local_func/4 
+	    %% The arguments have already been evaluated but local_func/7
 	    %% expects them on abstract form. We can't send the original 
 	    %% (unevaluated) arguments since reevaluation may give 
 	    %% us unexpected results, so we use erl_parse:abstract/1.
+            {LFH,NLFH} = restrict_handlers(RShMod, Shell, RT),
 	    AsAbs = lists:map(fun(A) -> erl_parse:abstract(A) end, AsEv),
-	    local_func(F, AsAbs, Bs1, Shell)
+	    local_func(F, AsAbs, Bs1, Shell, RT, {eval,LFH}, {value,NLFH})
     end.
 
-local_allowed(F, As, RShMod, Bs, Shell) when atom(F) ->
+local_allowed(F, As, RShMod, Bs, Shell, RT) when is_atom(F) ->
+    {LFH,NLFH} = restrict_handlers(RShMod, Shell, RT),
     case not_restricted(F, As) of
 	true ->
-	    Res = local_func(F, As, Bs, Shell),
+	    Res = local_func(F, As, Bs, Shell, RT, {eval,LFH}, {value,NLFH}),
 	    {not_restricted,Res};
 	false ->
-	    {LFH,NLFH} = restrict_handlers(RShMod, Shell) ,
-	    {AsEv,Bs1} = erl_eval:expr_list(As, Bs, {eval,LFH}, {value,NLFH}),
+            {AsEv,Bs1} = erl_eval:expr_list(As, Bs, {eval,LFH}, {value,NLFH}),
 	    case RShMod:local_allowed(F, AsEv, {get(restricted_shell_state),
 						get(restricted_expr_state)}) of
 		{Result,{RShShSt,RShExprSt}} ->
@@ -440,27 +510,47 @@ non_local_allowed(MForFun, As, RShMod, Shell) ->
 
 %% The commands implemented in shell should not be checked if allowed
 %% (especially true for f/1, the argument must not be evaluated).
-not_restricted(f, _) ->
+not_restricted(f, []) ->
     true;
-not_restricted(h, _) ->
+not_restricted(f, [_]) ->
     true;
-not_restricted(b, _) ->
+not_restricted(h, []) ->
     true;
-not_restricted(which, _) ->
+not_restricted(b, []) ->
     true;
-not_restricted(import, _) ->
+not_restricted(which, [_]) ->
     true;
-not_restricted(import_all, _) ->
+not_restricted(import, [_]) ->
     true;
-not_restricted(use, _) ->
+not_restricted(import_all, [_]) ->
     true;
-not_restricted(use_all, _) ->
+not_restricted(use, [_]) ->
     true;
-not_restricted(history, _) ->
+not_restricted(use_all, [_]) ->
     true;
-not_restricted(results, _) ->
+not_restricted(history, [_]) ->
     true;
-not_restricted(exit, _) ->
+not_restricted(results, [_]) ->
+    true;
+not_restricted(exit, []) ->
+    true;
+not_restricted(rd, [_,_]) ->
+    true;
+not_restricted(rf, []) ->
+    true;
+not_restricted(rf, [_]) ->
+    true;
+not_restricted(rl, []) ->
+    true;
+not_restricted(rl, [_]) ->
+    true;
+not_restricted(rp, [_]) ->
+    true;
+not_restricted(rr, [_]) ->
+    true;
+not_restricted(rr, [_,_]) ->
+    true;
+not_restricted(rr, [_,_,_]) ->
     true;
 not_restricted(_, _) ->
     false.
@@ -471,25 +561,45 @@ prep_check({call,Line,{atom,_,f},[{var,_,_Name}]}) ->
 prep_check({value,Line,_Val}) ->
     %% erl_lint cannot handle the history expansion {value,_,_}.
     {atom,Line,ok};
-prep_check(T) when tuple(T) ->
+prep_check(T) when is_tuple(T) ->
     list_to_tuple(prep_check(tuple_to_list(T)));
-prep_check([]) ->
-    [];
 prep_check([E | Es]) ->
     [prep_check(E) | prep_check(Es)];
 prep_check(E) ->
     E.
+
+expand_records(UsedRecords, E0) ->
+    RecordDefs = [Def || {{record,_Name},Def} <- UsedRecords],
+    L = 1,
+    E = prep_rec(E0),
+    Forms = RecordDefs ++ [{function,L,foo,0,[{clause,L,[],[],[E]}]}],
+    {_,_,[F|_],_} = sys_pre_expand:module(Forms, []), 
+    {function,L,foo,0,[{clause,L,[],[],[NE]}]} = F,
+    prep_rec(NE).
+
+prep_rec({value,L,V}) ->
+    %% sys_pre_expand cannot handle the history expansion {value,_,_}.
+    {atom,{value,L,V},ok};
+prep_rec({atom,{value,L,V},ok}) -> 
+    %% Undo the effect of the previous clause...
+    {value,L,V};
+prep_rec({'fun',L,Cls,_AddedBySysPreExpand}) -> 
+    %% Undo what sys_pre_expand does to the 'fun' tuple.
+    {'fun',L,prep_rec(Cls)};
+prep_rec(T) when is_tuple(T) -> list_to_tuple(prep_rec(tuple_to_list(T)));
+prep_rec([E | Es]) -> [prep_rec(E) | prep_rec(Es)];
+prep_rec(E) -> E.
 
 init_dict([{K,V}|Ds]) ->
     put(K, V),
     init_dict(Ds);
 init_dict([]) -> true.
 
-%% local_func(Function, Args, Bindings, Shell) ->
-%%	{value,Val,Bs}
+%% local_func(Function, Args, Bindings, Shell, RecordTable, 
+%%            LocalFuncHandler, ExternalFuncHandler) -> {value,Val,Bs}
 %%  Evaluate local functions, including shell commands.
 
-local_func(h, [], Bs, Shell) ->
+local_func(h, [], Bs, Shell, RT, _Lf, _Ef) ->
     Cs = shell_req(Shell, get_cmd),
     Cs1 = lists:filter(fun({{command, _},_}) -> true;
 			  ({{result, _},_}) -> true;
@@ -499,27 +609,72 @@ local_func(h, [], Bs, Shell) ->
     Cs2 = lists:map(fun({{T, N}, V}) -> {{N, T}, V} end,
 		    Cs1),
     Cs3 = lists:keysort(1, Cs2),
-    {value,list_commands(Cs3),Bs};
-local_func(b, [], Bs, _Shell) ->
-    {value,list_bindings(erl_eval:bindings(Bs)),Bs};
-local_func(f, [], _Bs, _Shell) ->
+    {value,list_commands(Cs3, RT),Bs};
+local_func(b, [], Bs, _Shell, RT, _Lf, _Ef) ->
+    {value,list_bindings(erl_eval:bindings(Bs), RT),Bs};
+local_func(f, [], _Bs, _Shell, _RT, _Lf, _Ef) ->
     {value,ok,erl_eval:new_bindings()};
-local_func(f, [{var,_,Name}], Bs, _Shell) ->
+local_func(f, [{var,_,Name}], Bs, _Shell, _RT, _Lf, _Ef) ->
     {value,ok,erl_eval:del_binding(Name, Bs)};
-local_func(f, [_Other], _Bs, _Shell) ->
+local_func(f, [_Other], _Bs, _Shell, _RT, _Lf, _Ef) ->
     exit({function_clause,[{shell,f,1}]});
-local_func(which, [{atom,_,M}], Bs, _Shell) ->
+local_func(rd, [{atom,_,RecName},RecDef], Bs, _Shell, RT, _Lf, _Ef) ->
+    RDs = lists:flatten(erl_pp:expr(RecDef)),
+    Attr = lists:concat(["-record('", RecName, "',", RDs, ")."]),
+    {ok, Tokens, _} = erl_scan:string(Attr),
+    case erl_parse:parse_form(Tokens) of
+        {ok,AttrForm} ->
+            [RN] = add_records([AttrForm], Bs, RT),
+            {value,RN,Bs};
+        {error,{_Line,M,ErrDesc}} ->
+            ErrStr = io_lib:fwrite("~s", [M:format_error(ErrDesc)]),
+            exit(lists:flatten(ErrStr))
+    end;
+local_func(rd, [_,_], _Bs, _Shell, _RT, _Lf, _Ef) ->
+    exit({function_clause,[{shell,rd,2}]});
+local_func(rf, [], Bs, _Shell, RT, _Lf, _Ef) ->
+    true = ets:delete_all_objects(RT),
+    {value,initiate_records(Bs, RT),Bs};
+local_func(rf, [A], Bs0, _Shell, RT, Lf, Ef) ->
+    {[Recs],Bs} = erl_eval:expr_list([A], Bs0, Lf, Ef),
+    if '_' =:= Recs ->
+            true = ets:delete_all_objects(RT);
+       true -> 
+            lists:foreach(fun(Name) -> true = ets:delete(RT, Name)
+                          end, listify(Recs))
+    end,
+    {value,ok,Bs};
+local_func(rl, [], Bs, _Shell, RT, _Lf, _Ef) ->
+    {value,list_records(ets:tab2list(RT)),Bs};
+local_func(rl, [A], Bs0, _Shell, RT, Lf, Ef) ->
+    {[Recs],Bs} = erl_eval:expr_list([A], Bs0, Lf, Ef),
+    {value,list_records(record_defs(RT, listify(Recs))),Bs};
+local_func(rp, [A], Bs0, _Shell, RT, Lf, Ef) ->
+    {[V],Bs} = erl_eval:expr_list([A], Bs0, Lf, Ef),
+    io:put_chars(io_lib_pretty:print(V, record_print_fun(RT))),
+    io:nl(),
+    {value,ok,Bs};
+local_func(rr, [A], Bs0, _Shell, RT, Lf, Ef) ->
+    {[File],Bs} = erl_eval:expr_list([A], Bs0, Lf, Ef),
+    {value,read_and_add_records(File, '_', [], Bs, RT),Bs};
+local_func(rr, [_,_]=As0, Bs0, _Shell, RT, Lf, Ef) ->
+    {[File,Sel],Bs} = erl_eval:expr_list(As0, Bs0, Lf, Ef),
+    {value,read_and_add_records(File, Sel, [], Bs, RT),Bs};
+local_func(rr, [_,_,_]=As0, Bs0, _Shell, RT, Lf, Ef) ->
+    {[File,Sel,Options],Bs} = erl_eval:expr_list(As0, Bs0, Lf, Ef),
+    {value,read_and_add_records(File, Sel, Options, Bs, RT),Bs};
+local_func(which, [{atom,_,M}], Bs, _Shell, _RT, _Lf, _Ef) ->
     case erl_eval:binding({module,M}, Bs) of
 	{value, M1} ->
 	    {value,M1,Bs};
 	unbound ->
 	    {value,M,Bs}
     end;
-local_func(which, [_Other], _Bs, _Shell) ->
+local_func(which, [_Other], _Bs, _Shell, _RT, _Lf, _Ef) ->
     exit({function_clause,[{shell,which,1}]});
-local_func(import, [M], Bs, _Shell) ->
+local_func(import, [M], Bs, _Shell, _RT, _Lf, _Ef) ->
     case erl_parse:package_segments(M) of
-	error -> exit({badarg,[{shell,import,1}]});
+	error -> exit({function_clause,[{shell,import,1}]});
 	M1 ->
 	    Mod = package_to_string(M1),
 	    case packages:is_valid(Mod) of
@@ -531,11 +686,9 @@ local_func(import, [M], Bs, _Shell) ->
 		    exit({{bad_module_name, Mod}, [{shell,import,1}]})
 	    end
     end;
-local_func(import, [_Other], _Bs, _Shell) ->
-    exit({function_clause,[{shell,import,1}]});
-local_func(import_all, [P], Bs0, _Shell) ->
+local_func(import_all, [P], Bs0, _Shell, _RT, _Lf, _Ef) ->
     case erl_parse:package_segments(P) of
-	error -> exit({badarg,[{shell,import_all,1}]});
+	error -> exit({function_clause,[{shell,import_all,1}]});
 	P1 ->
 	    Name = package_to_string(P1),
 	    case packages:is_valid(Name) of
@@ -547,25 +700,23 @@ local_func(import_all, [P], Bs0, _Shell) ->
 			  [{shell,import_all,1}]})
 	    end
     end;
-local_func(import_all, [_Other], _Bs, _Shell) ->
-    exit({function_clause,[{shell,import_all,1}]});
-local_func(use, [M], Bs, Shell) ->
-    local_func(import, [M], Bs, Shell);
-local_func(use_all, [M], Bs, Shell) ->
-    local_func(import_all, [M], Bs, Shell);
-local_func(history, [{integer,_,N}], Bs, _Shell) ->
+local_func(use, [M], Bs, Shell, RT, Lf, Ef) ->
+    local_func(import, [M], Bs, Shell, RT, Lf, Ef);
+local_func(use_all, [M], Bs, Shell, RT, Lf, Ef) ->
+    local_func(import_all, [M], Bs, Shell, RT, Lf, Ef);
+local_func(history, [{integer,_,N}], Bs, _Shell, _RT, _Lf, _Ef) ->
     {value,history(N),Bs};
-local_func(history, [_Other], _Bs, _Shell) ->
+local_func(history, [_Other], _Bs, _Shell, _RT, _Lf, _Ef) ->
     exit({function_clause,{shell,history,1}});
-local_func(results, [{integer,_,N}], Bs, _Shell) ->
+local_func(results, [{integer,_,N}], Bs, _Shell, _RT, _Lf, _Ef) ->
     {value,results(N),Bs};
-local_func(results, [_Other], _Bs, _Shell) ->
+local_func(results, [_Other], _Bs, _Shell, _RT, _Lf, _Ef) ->
     exit({function_clause,[{shell,results,1}]});
-local_func(exit, [], _Bs, Shell) ->
+local_func(exit, [], _Bs, Shell, _RT, _Lf, _Ef) ->
     shell_req(Shell, exit),			%This terminates us
     exit(normal);
-local_func(F, As0, Bs0, Shell) when atom(F) ->
-    {As,Bs} = erl_eval:expr_list(As0, Bs0, {eval,local_func_fun(Shell)}),
+local_func(F, As0, Bs0, _Shell, _RT, Lf, Ef) when is_atom(F) ->
+    {As,Bs} = erl_eval:expr_list(As0, Bs0, Lf, Ef),
     case erlang:function_exported(user_default, F, length(As)) of
 	true ->
             {eval,{user_default,F},As,Bs};
@@ -573,8 +724,202 @@ local_func(F, As0, Bs0, Shell) when atom(F) ->
             {eval,{shell_default,F},As,Bs}
     end.
 
-local_func_fun(Shell) ->
-    fun(F, As, Bs) -> local_func(F, As, Bs, Shell) end.
+local_func_handler(Shell, RT, Ef) ->
+    H = fun(Lf) -> 
+                fun(F, As, Bs) -> 
+                        local_func(F, As, Bs, Shell, RT, {eval,Lf(Lf)}, Ef) 
+                end
+          end,
+    {eval,H(H)}.
+
+record_print_fun(RT) ->
+    fun(Tag, NoFields) ->
+            case ets:lookup(RT, Tag) of
+                [{_,{attribute,_,record,{Tag,Fields}}}] 
+                                  when length(Fields) =:= NoFields ->
+                    record_fields(Fields);
+                _ ->
+                    no
+            end
+    end.
+
+record_fields([{record_field,_,{atom,_,Field}} | Fs]) ->
+    [Field | record_fields(Fs)];
+record_fields([{record_field,_,{atom,_,Field},_} | Fs]) ->
+    [Field | record_fields(Fs)];
+record_fields([]) ->
+    [].
+
+initiate_records(Bs, RT) ->
+    RNs1 = init_rec(shell_default, Bs, RT),
+    RNs2 = case code:is_loaded(user_default) of
+               {file,_File} -> 
+                   init_rec(user_default, Bs, RT);
+               false ->
+                   []
+           end,
+    lists:usort(RNs1 ++ RNs2).
+
+init_rec(Module, Bs, RT) ->
+    case read_records(Module, []) of
+        RAs when is_list(RAs) ->
+            case catch add_records(RAs, Bs, RT) of
+                {'EXIT',_} ->
+                    [];
+                RNs ->
+                    RNs
+            end;
+        _Error ->
+            []
+    end.
+
+read_and_add_records(File, Selected, Options, Bs, RT) ->
+    case read_records(File, Selected, Options) of
+        RAs when is_list(RAs) ->
+            add_records(RAs, Bs, RT);
+        Error ->
+            Error
+    end.
+
+read_records(File, Selected, Options) ->
+    case read_records(File, listify(Options)) of
+        Error when is_tuple(Error) ->
+            Error;
+        RAs when Selected =:= '_' ->
+            RAs;
+        RAs ->
+            Sel = listify(Selected),
+            [RA || {attribute,_,_,{Name,_}}=RA <- RAs, 
+                   lists:member(Name, Sel)]
+    end.
+
+add_records(RAs, Bs, RT) ->
+    D = orddict:from_list([{Name,D} || {attribute,_,_,{Name,_}}=D <- RAs]),
+    RNs = orddict:fetch_keys(D),
+    Recs = orddict:to_list(D),
+    RecDefs = [{{record,Name},Def} || {Name,Def} <- Recs],
+    case erl_eval:check_command([], RecDefs ++ Bs) of
+        {error,{_Line,M,ErrDesc}} ->
+            %% A source file that has not been compiled.
+            ErrStr = io_lib:fwrite("~s", [M:format_error(ErrDesc)]),
+            exit(lists:flatten(ErrStr));
+        ok ->
+            true = ets:insert(RT, Recs),
+            RNs
+    end.
+
+listify(L) when is_list(L) ->
+    L;
+listify(E) ->
+    [E].
+
+%%% Read record information from file(s)
+
+read_records(FileOrModule, Opts0) ->
+    Opts = lists:delete(report_warnings, Opts0),
+    case find_file(FileOrModule) of
+        {beam,BeamFile} ->
+            case beam_lib:chunks(BeamFile, [abstract_code,"CInf"]) of
+                {ok,{_Mod,[{abstract_code,{_Version,Forms}},{"CInf",CB}]}} ->
+                    case record_attrs(Forms) of
+                        [] -> 
+                            %% If the version is raw_X, then this test
+                            %% is unnecessary.
+                            try_source(BeamFile, CB);
+                        Records -> 
+                            Records
+                    end;
+                {ok,{_Mod,[{abstract_code,no_abstract_code},{"CInf",CB}]}} ->
+                    try_source(BeamFile, CB);
+                Error ->
+                    Error
+            end;
+        {files,[File]} ->
+            parse_file(File, Opts);
+        {files,Files} ->
+            lists:flatmap(fun(File) ->
+                                  case parse_file(File, Opts) of
+                                      {error,_} -> [];
+                                      RAs when is_list(RAs) -> RAs
+                                  end
+                          end, Files);
+        Error ->
+            Error
+    end.
+
+-include_lib("kernel/include/file.hrl").
+
+find_file(Mod) when is_atom(Mod) ->
+    case code:which(Mod) of
+	File when is_list(File) ->
+	    {beam,File};
+	preloaded ->
+	    {_M,_Bin,File} = code:get_object_code(Mod),
+            {beam,File};
+        _Else -> % non_existing, interpreted, cover_compiled
+            {error,nofile}
+    end;
+find_file(File) ->
+    case catch filelib:wildcard(File) of
+        {'EXIT',_} ->
+            {error,invalid_filename};
+        Files ->
+            {files,Files}
+    end.
+
+%% This is how the debugger searches for source files. See int.erl.
+try_source(Beam, CB) ->
+    Os = case lists:keysearch(options, 1, binary_to_term(CB)) of
+             false -> [];
+             {value,{_,Os0}} -> Os0
+    end,
+    Src0 = filename:rootname(Beam) ++ ".erl",
+    case is_file(Src0) of
+	true -> parse_file(Src0, Os);
+	false ->
+	    EbinDir = filename:dirname(Beam),
+	    Src = filename:join([filename:dirname(EbinDir), "src",
+				 filename:basename(Src0)]),
+	    case is_file(Src) of
+		true -> parse_file(Src, Os);
+		false -> {error, nofile}
+	    end
+    end.
+
+is_file(Name) ->
+    case filelib:is_file(Name) of
+	true ->
+	    not filelib:is_dir(Name);
+	false ->
+	    false
+    end.
+
+parse_file(File, Opts) ->
+    Cwd = ".",
+    Dir = filename:dirname(File),
+    IncludePath = [Cwd,Dir|inc_paths(Opts)],
+    case epp:parse_file(File, IncludePath, pre_defs(Opts)) of
+        {ok,Forms} ->
+            record_attrs(Forms);
+        Error ->
+            Error
+    end.
+
+pre_defs([{d,M,V}|Opts]) ->
+    [{M,V}|pre_defs(Opts)];
+pre_defs([{d,M}|Opts]) ->
+    [M|pre_defs(Opts)];
+pre_defs([_|Opts]) ->
+    pre_defs(Opts);
+pre_defs([]) -> [].
+
+inc_paths(Opts) ->
+    [P || {i,P} <- Opts, list(P)].
+
+record_attrs(Forms) ->
+    [A || A = {attribute,_,record,_D} <- Forms].
+
+%%% End of reading record information from file(s)
 
 import_all(P, Bs0) ->
     Ms = packages:find_modules(P),
@@ -591,31 +936,46 @@ shell_req(Shell, Req) ->
 	{shell_rep,Shell,Rep} -> Rep
     end.
 
-list_commands([{{N,command},Es}, {{N,result}, V} |Ds]) ->
+list_commands([{{N,command},Es}, {{N,result}, V} |Ds], RT) ->
+    VS = io_lib_pretty:print(V, ?LINEMAX, record_print_fun(RT)),
     io:requests([{format,"~w: ~s~n",[N,erl_pp:exprs(Es)]},
-		 {format,"-> ~P~n",[V,?LINEMAX]}]),
-    list_commands(Ds);
-list_commands([{{N,command},Es} |Ds]) ->
+		 {format,"-> ",[]},
+                 {put_chars, VS},
+                 nl]),
+    list_commands(Ds, RT);
+list_commands([{{N,command},Es} |Ds], RT) ->
     io:requests([{format,"~w: ~s~n",[N,erl_pp:exprs(Es)]}]),
-    list_commands(Ds);
-list_commands([_D|Ds]) ->
-    list_commands(Ds);
-list_commands([]) -> ok.
+    list_commands(Ds, RT);
+list_commands([_D|Ds], RT) ->
+    list_commands(Ds, RT);
+list_commands([], _RT) -> ok.
 
-list_bindings([{{module,M},Val}|Bs]) ->
+list_bindings([{{module,M},Val}|Bs], RT) ->
     io:fwrite("~p is ~p~n", [M,Val]),
-    list_bindings(Bs);
-list_bindings([{Name,Val}|Bs]) ->
+    list_bindings(Bs, RT);
+list_bindings([{Name,Val}|Bs], RT) ->
     case erl_eval:fun_data(Val) of
         {fun_data,_FBs,FCs} ->
             F = {'fun',0,{clauses,FCs}},
             io:fwrite("~s = ~s~n", [Name,erl_pp:expr(F)]);
         false ->
-            io:fwrite("~s = ~P~n", [Name,Val,?LINEMAX])
+            ValS = io_lib_pretty:print(Val, ?LINEMAX, record_print_fun(RT)),
+            io:fwrite("~s = ", [Name]),
+            io:put_chars(ValS),
+            io:nl()
     end,
-    list_bindings(Bs);
-list_bindings([]) ->
+    list_bindings(Bs, RT);
+list_bindings([], _RT) ->
     ok.
+
+list_records(Records) ->
+    lists:foreach(fun({_Name,Attr}) -> 
+                          io:fwrite("~s", [erl_pp:attribute(Attr)])
+                  end, Records).
+
+record_defs(RT, Names) ->
+    lists:flatmap(fun(Name) -> ets:lookup(RT, Name)
+                  end, Names).
 
 min(X, Y) when X < Y ->
     X;
@@ -624,7 +984,7 @@ min(_X, Y) ->
 
 get_env(V, Def) ->
     case application:get_env(stdlib, V) of
-	{ok, Val} when integer(Val) ->
+	{ok, Val} when is_integer(Val) ->
 	    Val;
 	_ ->
 	    Def
@@ -634,12 +994,11 @@ check_env(V, Name) ->
     case application:get_env(stdlib, V) of
 	undefined ->
 	    ok;
-	{ok, Val} when integer(Val) ->
+	{ok, Val} when is_integer(Val) ->
 	    ok;
 	{ok, Val} ->
-	    Txt = io_lib:format("Invalid ~s ~p~n", [Name, Val]),
-	    error_logger:info_report(lists:flatten(Txt)),
-	    ok
+	    Txt = io_lib:fwrite("Invalid ~s ~p~n", [Name, Val]),
+	    error_logger:info_report(lists:flatten(Txt))
     end.
 	    
 set_env(App, Name, Val, Default) ->
@@ -652,13 +1011,13 @@ set_env(App, Name, Val, Default) ->
     application_controller:set_env(App, Name, Val),
     Prev.
 
-history(L) when integer(L), L >= 0 ->
+history(L) when is_integer(L), L >= 0 ->
     set_env(stdlib, shell_history_length, L, ?DEF_HISTORY).
 
-results(L) when integer(L), L >= 0 ->
+results(L) when is_integer(L), L >= 0 ->
     set_env(stdlib, shell_saved_results, L, ?DEF_RESULTS).
 
 %% In syntax trees, module/package names are atoms or lists of atoms.
 
-package_to_string(A) when atom(A) -> atom_to_list(A);
-package_to_string(L) when list(L) -> packages:concat(L).
+package_to_string(A) when is_atom(A) -> atom_to_list(A);
+package_to_string(L) when is_list(L) -> packages:concat(L).

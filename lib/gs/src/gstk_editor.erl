@@ -240,8 +240,6 @@ option(Option, Gstkid, _MainW, DB, Editor) ->
 	    Len = gstk:to_ascii(lists:flat_length(Text)),
 	    {c, [Editor, " del ",AI," \"",AI,"+",Len,"c\";",
 		 Editor, " ins ",AI," ", gstk:to_ascii(Text)]};
-	{wrap,            How} ->
-	    {c, [Editor, " conf -wrap ", gstk:to_ascii(How)]};
 	clear       -> {c, [Editor, " delete 1.0 end"]};
 	{load,        File} ->
 	    {ok, F2,_} = regexp:gsub(File, [92,92], "/"),

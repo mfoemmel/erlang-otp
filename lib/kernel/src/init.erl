@@ -52,7 +52,8 @@
 -deprecated([{get_args,0}]).
 
 % internal exports
--export([fetch_loaded/0,ensure_loaded/1,make_permanent/2]).
+-export([fetch_loaded/0,ensure_loaded/1,make_permanent/2,
+	 notify_when_started/1,wait_until_started/0]).
 
 % old interface functions kept for backward compability.
 -export([get_flag/1,get_flags/0]).
@@ -65,7 +66,8 @@
 		bootpid,
 		status = {starting, starting},
 		script_id = [],
-		loaded = []}).
+		loaded = [],
+		subscribed = []}).
 
 get_arguments() ->
     request(get_arguments).
@@ -111,6 +113,14 @@ ensure_loaded(Module) ->
 
 make_permanent(Boot,Config) ->
     request({make_permanent,Boot,Config}).
+
+notify_when_started(Pid) ->
+    request({notify_when_started,Pid}).
+
+wait_until_started() ->
+    receive 
+	{init,started} -> ok 
+    end.	    
 
 request(Req) ->
     init ! {self(),Req},
@@ -240,6 +250,11 @@ boot_loop(BootPid, State) ->
 	    boot_loop(BootPid,State#state{loaded = [ModLoaded|Loaded]});
 	{BootPid,started,KernelPid} ->
 	    boot_loop(BootPid, new_kernelpid(KernelPid, BootPid, State));
+	{BootPid,progress,started} ->
+            {InS,_} = State#state.status,
+	    notify(State#state.subscribed),
+	    boot_loop(BootPid,State#state{status = {InS,started},
+					  subscribed = []});
 	{BootPid,progress,NewStatus} ->
             {InS,_} = State#state.status,
 	    boot_loop(BootPid,State#state{status = {InS,NewStatus}});
@@ -247,7 +262,9 @@ boot_loop(BootPid, State) ->
 	    boot_loop(BootPid,State#state{script_id = Id});
 	{'EXIT',BootPid,normal} ->
             {_,PS} = State#state.status,
-	    loop(State#state{status = {started,PS}});
+	    notify(State#state.subscribed),
+	    loop(State#state{status = {started,PS},
+			     subscribed = []});
 	{'EXIT',BootPid,Reason} ->
 	    erlang:display({"init terminating in do_boot",Reason}),
 	    crash("init terminating in do_boot", [Reason]);
@@ -260,9 +277,9 @@ boot_loop(BootPid, State) ->
 	{From,fetch_loaded} ->   %% Fetch and reset initially loaded modules.
 	    From ! {init,State#state.loaded},
 	    garb_boot_loop(BootPid,State#state{loaded = []});
-	{From, {ensure_loaded, Module}} ->
+	{From,{ensure_loaded,Module}} ->
 	    {Res, Loaded} = ensure_loaded(Module, State#state.loaded),
-	    From ! {init, Res},
+	    From ! {init,Res},
 	    boot_loop(BootPid,State#state{loaded = Loaded});
 	Msg ->
 	    boot_loop(BootPid,handle_msg(Msg,State))
@@ -276,6 +293,10 @@ ensure_loaded(Module, Loaded) ->
 	Res ->
 	    {Res, Loaded}
     end.
+
+%% Tell subscribed processes the system has started.
+notify(Pids) ->
+    lists:foreach(fun(Pid) -> Pid ! {init,started} end, Pids).			 
 
 %% Garbage collect all info about initially loaded modules.
 %% This information is temporary stored until the code_server
@@ -333,7 +354,8 @@ do_handle_msg(Msg,State) ->
     #state{flags = Flags,
 	   status = Status,
 	   script_id = Sid,
-	   args = Args} = State,
+	   args = Args,
+	   subscribed = Subscribed} = State,
     case Msg of
 	{From,get_plain_arguments} ->
 	    From ! {init,Args};
@@ -362,6 +384,14 @@ do_handle_msg(Msg,State) ->
 	    end;
 	{From,get_flags} -> % Old interface 
 	    From ! {init,values_to_atoms_again(Flags)};
+	{From,{notify_when_started,Pid}} ->
+	    case Status of
+		{InS,PS} when InS == started ; PS == started ->
+		    From ! {init,started};
+		_ ->
+		    From ! {init,ok},
+		    {new_state,State#state{subscribed = [Pid|Subscribed]}}
+	    end;
 	X ->
 	    case whereis(user) of
 		undefined ->

@@ -94,6 +94,7 @@
 #include "putget.h"
 #include "ei_resolve.h"
 #include "ei_epmd.h"
+#include "ei_internal.h"
 
 int ei_tracelevel = 0;
 
@@ -1268,7 +1269,10 @@ static int send_name_or_challenge(int fd, char *nodename,
     put16be(s,siz - 2);
     put8(s, 'n');
     put16be(s, version);
-    put32be(s, (DFLAG_EXTENDED_REFERENCES|DFLAG_FUN_TAGS|DFLAG_NEW_FUN_TAGS));
+    put32be(s, (DFLAG_EXTENDED_REFERENCES
+		| DFLAG_EXTENDED_PIDS_PORTS
+		| DFLAG_FUN_TAGS
+		| DFLAG_NEW_FUN_TAGS));
     if (f_chall)
 	put32be(s, challenge);
     memcpy(s, nodename, strlen(nodename));
@@ -1329,6 +1333,15 @@ static int recv_challenge(int fd, unsigned *challenge,
 		      "handle extended references");
 	goto error;
     }
+
+    if (!(*flags & DFLAG_EXTENDED_PIDS_PORTS)
+	&& !ei_internal_use_r9_pids_ports()) {
+	EI_TRACE_ERR0("recv_challenge","<- RECV_CHALLENGE peer cannot "
+		      "handle extended pids and ports");
+	erl_errno = EIO;
+	goto error;
+    }
+	    
 
     if (getpeername(fd, (struct sockaddr *) &sin, &sin_len) < 0) {
 	EI_TRACE_ERR0("recv_challenge","<- RECV_CHALLENGE can't get peername");
@@ -1557,11 +1570,19 @@ static int recv_name(int fd,
     *flags = get32be(s);
 
     if (!(*flags & DFLAG_EXTENDED_REFERENCES)) {
-	EI_TRACE_ERR0("recv_name","<- RECV_CHALLENGE peer cannot handle"
+	EI_TRACE_ERR0("recv_name","<- RECV_NAME peer cannot handle"
 		      "extended references");
 	goto error;
     }
 
+    if (!(*flags & DFLAG_EXTENDED_PIDS_PORTS)
+	&& !ei_internal_use_r9_pids_ports()) {
+	EI_TRACE_ERR0("recv_name","<- RECV_NAME peer cannot "
+		      "handle extended pids and ports");
+	erl_errno = EIO;
+	goto error;
+    }
+	  
     if (getpeername(fd, (struct sockaddr *) &sin, &sin_len) < 0) {
 	EI_TRACE_ERR0("recv_name","<- RECV_NAME can't get peername");
 	erl_errno = errno;

@@ -86,7 +86,7 @@ int ei_decode_ei_term(const char* buf, int* index, ei_term* term)
 	len = get16be(s);
 	memcpy(term->value.port.node, s, len);
 	term->value.port.node[len] = '\0';
-	term->value.port.id = get32be(s);
+	term->value.port.id = get32be(s) & 0x0fffffff; /* 28 bits */;
 	term->value.port.creation = get8(s) & 0x03;
 	break;
     case ERL_PID_EXT:
@@ -98,7 +98,7 @@ int ei_decode_ei_term(const char* buf, int* index, ei_term* term)
 	s += len;
 	/* now the numbers: num (4), serial (4), creation (1) */
 	term->value.pid.num = get32be(s) & 0x7fff; /* 15 bits */
-	term->value.pid.serial = get32be(s) & 0x07; /* 3 bits */
+	term->value.pid.serial = get32be(s) & 0x1fff; /* 13 bits */
 	term->value.pid.creation = get8(s) & 0x03; /* 2 bits */
 	break;
     case ERL_SMALL_TUPLE_EXT:

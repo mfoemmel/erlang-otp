@@ -188,7 +188,7 @@ main_loop(Parent, State) ->
 	    terminate(Reason, State#state{child = undefined});
 	{'EXIT', _, timeout} ->
 	    terminate(normal, State);
-	{'EXIT', Pid, Reason} ->
+	{'EXIT', Pid, _Reason} ->
 	    Children = lists:delete(Pid, State#state.children),
 	    Procs = State#state.procs - 1,
 	    main_loop(Parent, State#state{children = Children, procs=Procs});
@@ -209,7 +209,7 @@ terminate_loop(Child, State) ->
 	    ok;
 	Other ->
 	    NewState = handle_msg(Other, State),
-	    terminate_loop(Child, State)
+	    terminate_loop(Child, NewState)
     end.
 
 

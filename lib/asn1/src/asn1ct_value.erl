@@ -24,6 +24,7 @@
 %-compile(export_all).
 
 -export([get_type/3]).
+-export([i_random/1]).
 
 
 %% Generate examples of values ******************************

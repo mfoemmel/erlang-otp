@@ -5,158 +5,121 @@
 %%%               Mapping to fp variables and creation of fp ebbs.
 %%%
 %%% Created : 23 Apr 2003 by Tobias Lindahl <tobiasl@it.uu.se>
+%%%
+%%% CVS      :
+%%%              $Author: richardc $
+%%%              $Date: 2004/08/13 15:15:14 $
+%%%              $Revision: 1.25 $
 %%%-------------------------------------------------------------------
+
 -module(hipe_icode_fp).
 
--export([cfg/1,
-	 cfg/2]).
+-export([cfg/2]).
 
--export([print_state_info/1]).
 
--import(erl_types, [
-		    t_any/0,
-		    t_float/0,
-		    t_from_term/1,
-		    t_inf/2,
-		    t_is_any/1,
-		    t_is_float/1,
-		    t_sup/2,
-		    t_to_string/1,
-		    t_undefined/0]).
-
-cfg(Cfg) ->
-  %%hipe_icode_cfg:pp(Cfg),
-  State = analyse(Cfg),
-  %%print_state_info(State),
-  NewState = place_fp_blocks(State),
-  NewCfg = state__cfg(NewState),
-  %%hipe_icode_cfg:pp(NewCfg),
-  NewCfg.
+-record(state, {info, info_map, block_map, edge_map, cfg}).
 
 cfg(Cfg, InfoMap) ->
-  State = new_state(Cfg, InfoMap),
+  %%hipe_icode_cfg:pp(Cfg),
+  NewCfg = annotate_fclearerror(Cfg),
+  State = new_state(NewCfg, InfoMap),
   NewState = place_fp_blocks(State),
-  NewCfg = state__cfg(NewState),
-  %%hipe_icode_cfg:pp(NewCfg),
-  NewCfg.
+  %%hipe_icode_cfg:pp(state__cfg(NewState)),
+  NewState2 = finalize(NewState),
+  NewCfg1 = state__cfg(NewState2),
+  %%hipe_icode_cfg:pp(NewCfg1),
+  NewCfg2 = unannotate_fclearerror(NewCfg1),
+
+  NewCfg2.
 
 %%____________________________________________________________
 %%
-%% Single pass analysis that only focus on floats.
+%% Annotate fclearerror with information of the fail label of the
+%% corresponding fcheckerror.
 %%
 
-analyse(Cfg)->
-  State = new_state(Cfg),
+annotate_fclearerror(Cfg) ->
   Labels = hipe_icode_cfg:reverse_postorder(Cfg),
-  analyse_blocks(Labels, State).
+  annotate_fclearerror(Labels, Cfg).
 
-analyse_blocks(Labels, State)->
-  analyse_blocks(Labels, Labels, State).
-
-analyse_blocks(Labels, [Label|Left], State)->
-  Info = state__info_in(State, Label),
-  NewState = analyse_block(Label, Info, State),
-  analyse_blocks(Labels, Left, NewState);
-analyse_blocks(_Labels, [], State) ->
-  State.
-
-analyse_block(Label, InfoIn, State)->
-  %%io:format("Handling ~w\n", [Label]),
-  BB = state__bb(State, Label),
+annotate_fclearerror([Label|Left], Cfg) ->
+  BB = hipe_icode_cfg:bb(Cfg, Label),
   Code = hipe_bb:code(BB),
-  Last = hipe_bb:last(BB),
-  NewInfoIn = analyse_insns(Code, InfoIn),
-  NewState = state__info_out_update(State, Label, NewInfoIn),
+  NewCode = annotate_fclearerror1(Code, Label, Cfg, []),
+  NewBB = hipe_bb:code_update(BB, NewCode),
+  NewCfg = hipe_icode_cfg:bb_add(Cfg, Label, NewBB),
+  annotate_fclearerror(Left, NewCfg);
+annotate_fclearerror([], Cfg) ->
+  Cfg.
 
-  case hipe_icode:type(Last) of
-    type ->
-      UpdateInfo = do_type(Last, NewInfoIn),
-      %%io:format("Update info for ~w:\n~w", [Label, UpdateInfo]),
-      do_updates(NewState, UpdateInfo);
-    _ ->
-      UpdateInfo = [{X, NewInfoIn}||X<-state__succ(NewState, Label)],
-      %%io:format("Update info for ~w:\n~w", [Label, UpdateInfo]),
-      do_updates(NewState, UpdateInfo)
-  end.
-
-analyse_insns([I|Insns], Info)->
-  NewInfo = 
-    case hipe_icode:type(I) of
-      mov ->
-	do_mov(I, Info);
-      call ->
-	do_call(I, Info);
-      phi ->
-	Type = join_list(uses(I), Info),
-	enter_defines(I, Type, Info);
-      _ ->
-	enter_defines(I, t_any(), Info)
-    end,
-  analyse_insns(Insns, NewInfo);  
-analyse_insns([], Info) ->
-  Info.
-
-do_mov(I, Info)->
-  %% Can't use uses/1 since we must keep constants.
-  Src = hipe_icode:mov_src(I), 
-  case const_type(Src) of
-    not_a_constant ->
-      %% Make the destination point to the source.
-      enter_defines(I, Src, Info);
-    ConstType ->
-      enter_defines(I, ConstType, Info)
-  end.
-
-do_call(I, Info)->
-  case hipe_icode:call_type(I) of
-    remote ->
+annotate_fclearerror1([I|Left], Label, Cfg, Acc) ->
+  case hipe_icode:type(I) of
+    call ->
       case hipe_icode:call_fun(I) of
-	{M, F, A} ->
-	  ArgTypes = lookup_type_list(uses(I), Info),
-	  Type = erl_bif_types:type(M, F, A, ArgTypes),
-	  enter_defines(I, Type, Info);
+	fclearerror ->
+	  Fail = lookahead_for_fcheckerror(Left, Label, Cfg),
+	  NewI = hipe_icode:call_fun_update(I, {fclearerror, Fail}),
+	  annotate_fclearerror1(Left, Label, Cfg, [NewI|Acc]);
 	_ ->
-	  Info
+	  annotate_fclearerror1(Left, Label, Cfg, [I|Acc])
       end;
-    local ->
-      case lists:keysearch(dst_type, 1, hipe_icode:info(I)) of
-	false ->
-	  enter_defines(I, t_any(), Info);
-	{value,{_, [Type]}}->
-	  enter_defines(I, Type, Info)
-      end;
-    primop ->
-      Fun = hipe_icode:call_fun(I),
-      ArgType = lookup_type_list(uses(I), Info),
-      DstType = hipe_rtl_primops:type(Fun, ArgType),
-      enter_defines(I, DstType, Info)
-  end.
-
-do_type(I, Info)->
-  [Var] = uses(I),
-  VarInfo = lookup_type(I, Info),
-  TrueLab = hipe_icode:type_true_label(I),
-  FalseLab = hipe_icode:type_false_label(I),
-  
-  case hipe_icode:type_type(I) of
-    float ->
-      TrueType = t_inf(t_float(), VarInfo),
-      TrueInfo = enter(Var, TrueType, Info),
-      FalseInfo = enter(Var, t_any(), Info),
-      [{TrueLab, TrueInfo}, {FalseLab, FalseInfo}];
     _ ->
-      [{TrueLab, Info}, {FalseLab, Info}]
+      annotate_fclearerror1(Left, Label, Cfg, [I|Acc])
+  end;
+annotate_fclearerror1([], _Label, _Cfg, Acc) ->
+  lists:reverse(Acc).
+
+lookahead_for_fcheckerror([I|Left], Label, Cfg) ->
+  case hipe_icode:type(I) of
+    call ->
+      case hipe_icode:call_fun(I) of
+	fcheckerror ->
+	  hipe_icode:call_fail_label(I);
+	_ ->
+	  lookahead_for_fcheckerror(Left, Label, Cfg)
+      end;
+    _ ->
+       lookahead_for_fcheckerror(Left, Label, Cfg)
+  end;
+lookahead_for_fcheckerror([], Label, Cfg) ->
+  case hipe_icode_cfg:succ(hipe_icode_cfg:succ_map(Cfg), Label) of
+    [] -> exit("Unterminated fp ebb");
+    SuccList ->
+      Succ = hd(SuccList),
+      Code = hipe_bb:code(hipe_icode_cfg:bb(Cfg, Label)),
+      lookahead_for_fcheckerror(Code, Succ, Cfg)
   end.
 
-do_updates(State, [{Label, Info}|Tail])->
-  case state__info_in_update(State, Label, Info) of
-    fixpoint ->
-      do_updates(State, Tail);
-    NewState ->
-      do_updates(NewState, Tail)
+unannotate_fclearerror(Cfg) ->
+  Labels = hipe_icode_cfg:reverse_postorder(Cfg),
+  unannotate_fclearerror(Labels, Cfg).
+
+unannotate_fclearerror([Label|Left], Cfg) ->
+  BB = hipe_icode_cfg:bb(Cfg, Label),
+  Code = hipe_bb:code(BB),
+  NewCode = unannotate_fclearerror1(Code, []),
+  NewBB = hipe_bb:code_update(BB, NewCode),
+  NewCfg = hipe_icode_cfg:bb_add(Cfg, Label, NewBB),
+  unannotate_fclearerror(Left, NewCfg);
+unannotate_fclearerror([], Cfg) ->
+  Cfg.
+
+unannotate_fclearerror1([I|Left], Acc) ->
+  case hipe_icode:type(I) of
+    call ->
+      case hipe_icode:call_fun(I) of
+	{fclearerror, _Fail} ->
+	  NewI = hipe_icode:call_fun_update(I, fclearerror),
+	  unannotate_fclearerror1(Left, [NewI|Acc]);
+	_ ->
+	  unannotate_fclearerror1(Left, [I|Acc])
+      end;
+    _ ->
+      unannotate_fclearerror1(Left, [I|Acc])
   end;
-do_updates(State, []) ->
-  State.
+unannotate_fclearerror1([], Acc) ->
+  lists:reverse(Acc).
+
 
 %%____________________________________________________________
 %%
@@ -164,131 +127,625 @@ do_updates(State, []) ->
 %%
 
 place_fp_blocks(State)->
-  Cfg = state__cfg(State),
-  Labels = hipe_icode_cfg:reverse_postorder(Cfg),
-  transform_block(Labels, gb_sets:empty(), State).
+  WorkList = new_worklist(State),
+  transform_block(WorkList, State).
 
-transform_block([Label|Left], BackEdgeSucc, State)->
-  BB = state__bb(State, Label),
-  Code = hipe_bb:code(BB),
-  Info = state__info_out(State, Label),
-  {Prelude, Map} = do_prelude(State, Label),
-  InBlock = state__in_block(State, Label),
-  {NewMap, NewCode, NewInBlock} = 
-    transform_instrs(Code, Map, Info, InBlock, []),
-  NewBB = hipe_bb:code_update(BB, Prelude++NewCode),
-  NewState0 = state__bb_update(State, Label, NewBB),
-  NewState1 = state__map_update(NewState0, Label, NewMap, NewInBlock),
-  case state__succ(NewState1, Label) of
-    [] ->
-      transform_block(Left, BackEdgeSucc, NewState1);
-    Succ ->
-      BackEdge = [X||X<-Succ, not lists:member(X, Left)],
-      NewBackEdgeSucc = lists:foldl(fun(X, Acc)->gb_sets:add(X, Acc)end,
-				    BackEdgeSucc, BackEdge),
-      transform_block(Left, NewBackEdgeSucc, NewState1)
-  end;
-transform_block([], BackEdgeSucc, State) ->
-  handle_back_edges(gb_sets:to_list(BackEdgeSucc), State).
-
-transform_instrs([I|Left], Map, Info, InBlock, Acc)->
-  case is_fop_cand(I, Info) of
-    false ->
-      {NewMap, NewAcc, NewInBlock} = end_block(I, Map, Acc, InBlock),
-      transform_instrs(Left, NewMap, Info, NewInBlock, NewAcc);
-    true ->
-      Uses = uses(I),
-      Defines = defines(I),
-      Convs =  [X||X <- remove_duplicates(Uses), lookup(X, Map)==none],
-      NewMap0 = add_new_bindings_assigned(Convs, Map),
-      NewMap = add_new_bindings_unassigned(Defines, NewMap0),
-      ConvIns = get_conv_instrs(Convs, NewMap, Info),
-      {Op, Cont, Fail} = get_info(I),
-      NewI = hipe_icode:mk_primop(lookup_list(Defines, NewMap), Op,
-				  lookup_list(Uses, NewMap), Cont, Fail),
-      case InBlock of
-	{true, Fail} -> %% We can continue the block
-	  transform_instrs(Left, NewMap, Info, InBlock, [NewI|ConvIns]++Acc);
-	{true, _NewFail} -> %% Must end previous block and start a new one.
-	  %% TODO: Find out if this ever happens. If so, handle it!
-	  exit('Different catches');
-	false ->
-	  BlockStart = hipe_icode:mk_primop([], fclearerror, []),
-	  transform_instrs(Left, NewMap, Info, {true, Fail}, 
-			   [NewI, BlockStart|ConvIns]++Acc)
-      end
-  end;
-transform_instrs([], Map, _Info, InBlock, Acc) ->
-  {Map, lists:reverse(Acc), InBlock}.
-
-end_block(I, Map, Code, InBlock)->
-  %% If there is instructions that need to operate on tagged values
-  %% that currently are untagged, we must end the block (if necessary)
-  %% and tag the values .
-  case hipe_icode:type(I) of
-    phi ->
-      Uses = uses(I),
-      case [{X, Y}||X<-Uses, (Y=lookup(X, Map))/=none] of
-	[] ->
-	  {Map, [I|Code], InBlock};
-	Subst0 ->
-	  Defines = defines(I),
-	  NewMap = add_new_bindings_assigned(Defines, Map),
-	  Dst = hd(Defines),
-	  Subst = [{Dst, lookup(Dst, NewMap)}|Subst0],
-	  NewI = hipe_icode:subst(Subst, I),
-	  {NewMap, [NewI|Code], InBlock}
-      end;
-    Other ->
-      LocalCallEndsBlock =
-	case Other of
-	  call ->
-	    case hipe_icode:call_type(I) of
-	      local -> InBlock;
-	      _ ->false
-	    end;
-	  _ ->
-	    false
-	end,
-      case lists:filter(fun(X)->must_be_tagged(X, Map)end, uses(I)) of
-	[] ->
-	  case LocalCallEndsBlock of
-	    {true, FailLab}->
-	      Fcheck = hipe_icode:mk_primop([], fcheckerror, [],
-					    [], FailLab),      
-	      {Map, [I, Fcheck|Code], false};
-	    false ->
-	      {Map, [I|Code], InBlock}
-	  end;
-	Tag ->
-	  TagIntrs = mk_tags(Tag, Map),
-	  NewMap = lists:foldl(fun(X,Tree)->gb_trees:delete(X, Tree)end,
-			       Map, Tag),
-	  case InBlock of
-	    {true, FailLab} ->
-	      Fcheck = hipe_icode:mk_primop([], fcheckerror, [],
-					    [], FailLab),      
-	      {NewMap, [I|TagIntrs]++[Fcheck|Code], false};
-	    _ ->
-	      {NewMap, [I|TagIntrs]++Code, InBlock}
-	  end
+transform_block(WorkList, State)->
+  case get_work(WorkList) of
+    none ->
+      State;
+    {Label, NewWorkList} ->      
+      %%io:format("Handling ~w \n", [Label]),
+      BB = state__bb(State, Label),
+      Code = hipe_bb:code(BB),
+      Info = state__info_out(State, Label),
+      NofPreds = length(state__pred(State, Label)),
+      Map = state__map(State, Label),
+      FilteredMap = filter_map(Map, NofPreds),
+      %%io:format("Label: ~w\nPhiMap: ~p\nMap ~p\n", [Label, Map, FilteredMap]),
+      Prelude = do_prelude(FilteredMap),
+      {NewMap, NewCode} = 
+	transform_instrs(Code, Map, FilteredMap, Info, []),
+      NewBB = hipe_bb:code_update(BB, Prelude++NewCode),
+      NewState = state__bb_add(State, Label, NewBB),
+      case state__map_update(NewState, Label, NewMap) of
+	fixpoint ->
+	  transform_block(NewWorkList, NewState);
+	NewState1 ->
+	  Succ = state__succ(NewState1, Label),
+	  NewWorkList1 = add_work(NewWorkList, Succ),
+	  transform_block(NewWorkList1, NewState1)
       end
   end.
 
-mk_tags(Tag, Map)->
-  [hipe_icode:mk_primop([Dst], unsafe_tag_float, [gb_trees:get(Dst, Map)])||
-    Dst<-Tag].
 
-%% We make a difference between values that has been assigned as
-%% tagged variables and those that has got a 'virtual' binding.
+transform_instrs([I|Left], PhiMap, Map, Info, Acc)->
+  Defines = defines(I),
+  NewMap = delete_all(Defines, Map),
+  NewPhiMap = delete_all(Defines, PhiMap),
+  
+  case hipe_icode:type(I) of
+    phi ->
+      Uses = uses(I),
+      case [X||X<-Uses,lookup(X, PhiMap)/=none] of
+	[] ->
+	  %% No ordinary variables from the argument has been untagged.
+	  transform_instrs(Left, NewPhiMap, NewMap, Info, [I|Acc]);
+	Uses ->
+	  %% All arguments are untagged. Let's untag the destination.
+	  Dst = hipe_icode:phi_dst(I),
+	  NewDst = hipe_icode:mk_new_fvar(),
+	  NewMap1 = gb_trees:enter(Dst, NewDst, NewMap),
+	  NewI = subst_phi_uncond(I, NewDst, PhiMap),
+	  transform_instrs(Left, NewPhiMap, NewMap1, Info, [NewI|Acc]);
+	_ ->
+	  %% Some arguments are untagged. Keep the destination.
+	  Dst = hipe_icode:phi_dst(I),
+	  NewI = subst_phi(I, Dst, PhiMap),
+	  transform_instrs(Left, NewPhiMap, NewMap, Info, [NewI|Acc])
+      end;
+    call ->
+      case hipe_icode:call_fun(I) of
+	X when X == unsafe_untag_float; X == conv_to_float ->
+	  [Dst] = defines(I),
+	  case uses(I) of
+	    [] -> %% Constant
+	      transform_instrs(Left, NewPhiMap, NewMap, Info, [I|Acc]);
+	    [Src] ->
+	      case lookup(Src, Map) of
+		none ->
+		  NewMap1 = gb_trees:enter(Src, {assigned, Dst}, NewMap),
+		  transform_instrs(Left, NewPhiMap, NewMap1, Info, [I|Acc]);
+		Dst ->
+		  %% This is the instruction that untagged the variable.
+		  %% Use old maps.
+		  transform_instrs(Left, NewPhiMap, Map, Info, [I|Acc]);
+		FVar -> 
+		  %% The variable was already untagged. 
+		  %% This instruction can be changed to a fmove.
+		  NewI = hipe_icode:mk_fmove(Dst, FVar),
+		  case hipe_icode:call_continuation(I) of
+		    [] ->
+		      transform_instrs(Left,NewPhiMap,NewMap,Info,[NewI|Acc]);
+		    ContLbl ->
+		      Goto = hipe_icode:mk_goto(ContLbl),
+		      transform_instrs(Left, NewPhiMap, NewMap, Info, 
+				       [Goto, NewI|Acc])
+		  end
+	      end
+	  end;
+	unsafe_tag_float ->
+	  [Dst] = defines(I),
+	  [Src] = uses(I),
+	  NewMap1 = gb_trees:enter(Dst, {assigned, Src}, NewMap),
+	  transform_instrs(Left, NewPhiMap, NewMap1, Info,[I|Acc]);
+	_ ->
+	  {NewMap1, NewAcc} = check_for_fop_candidates(I, NewMap, Info, Acc),
+	  transform_instrs(Left, NewPhiMap, NewMap1, Info, NewAcc)
+      end;
+    _ ->
+      NewIns = handle_untagged_arguments(I, NewMap),
+      transform_instrs(Left, NewPhiMap, NewMap, Info, NewIns ++ Acc)
+  end;
+transform_instrs([], _PhiMap, Map, _Info, Acc) ->
+  {Map, lists:reverse(Acc)}.
 
-add_new_bindings_unassigned([Var|Left], Map)->
+check_for_fop_candidates(I, Map, Info, Acc)->
+  case is_fop_cand(I, Info) of
+    false ->
+      NewIs = handle_untagged_arguments(I, Map),
+      {Map, NewIs ++ Acc};
+    true ->
+      Fail = hipe_icode:call_fail_label(I),
+      Cont = hipe_icode:call_continuation(I),
+      Op = fun_to_fop(hipe_icode:call_fun(I)), 
+      case Fail of
+	[] ->
+	  Args = args(I),
+	  ConstArgs = [X || X <- Args, hipe_icode:is_const(X)],
+	  case catch [float(hipe_icode:const_value(X)) || X <- ConstArgs] of
+	    {'EXIT', _} -> 
+	      %% This instruction will fail at runtime. The warning
+	      %% should already have happened in hipe_icode_type.
+	      NewIs = handle_untagged_arguments(I, Map),
+	      {Map, NewIs ++ Acc};
+	    _ ->
+	      %%io:format("Changing ~w to ~w\n", [hipe_icode:call_fun(I), Op]),
+	      Uses = uses(I),
+	      Defines = defines(I),
+	      Convs = [X||X <- remove_duplicates(Uses), lookup(X, Map)==none],
+	      NewMap0 = add_new_bindings_assigned(Convs, Map),
+	      NewMap = add_new_bindings_unassigned(Defines, NewMap0),
+	      ConvIns = get_conv_instrs(Convs, NewMap, Info),
+	      NewI = hipe_icode:mk_primop(lookup_list(Defines, NewMap), Op,
+					  lookup_list_keep_consts(Args,NewMap),
+					  Cont, Fail),
+	      NewI2 = conv_consts(ConstArgs, NewI),
+	      {NewMap, [NewI2|ConvIns]++Acc}
+	  end;
+	_ -> %% Bailing out! Can't handle instructions in catches (yet).
+	  NewIs = handle_untagged_arguments(I, Map),
+	  {Map, NewIs ++ Acc}
+      end
+  end.
+
+
+%% If this is an instruction that needs to operate on tagged values,
+%% which currently are untagged, we must tag the values and perhaps
+%% end the fp ebb.
+
+handle_untagged_arguments(I, Map)->
+  case lists:filter(fun(X)-> must_be_tagged(X, Map)end, uses(I)) of
+    [] ->
+      [I];
+    Tag ->
+      TagIntrs = 
+	[hipe_icode:mk_primop([Dst], unsafe_tag_float, 
+			      [gb_trees:get(Dst, Map)])||
+	  Dst<-Tag],
+      [I|TagIntrs]
+  end.
+
+%% Add phi nodes for untagged fp values.
+
+do_prelude(Map)->  
+  case gb_trees:lookup(phi, Map) of
+    none ->
+      [];
+    {value, List} ->
+      %%io:format("Adding phi: ~w\n", [List]),
+      Fun = fun({FVar, Bindings}, Acc) -> 
+		[hipe_icode:mk_phi(FVar, Bindings)|Acc]end,
+      lists:foldl(Fun, [], List)
+  end.
+
+split_code(Code)->
+  split_code(Code, []).
+
+split_code([I|[]], Acc) ->
+  {lists:reverse(Acc), I};
+split_code([I|Left], Acc)->
+  split_code(Left, [I|Acc]).
+
+
+%% When all code is mapped to fp instructions we must make sure that
+%% the fp ebb information goin in to each block is the same as the
+%% information coming out of each predecessor. Otherwise, we must add
+%% a block in between.
+
+finalize(State)->
+  Worklist = new_worklist(State),
+  NewState = place_error_handling(Worklist, State),
+  Edges = needs_fcheckerror(NewState),
+  finalize(Edges, NewState).
+
+finalize([{From, To}|Left], State) ->
+  NewState = add_fp_ebb_fixup(From, To, State),
+  finalize(Left, NewState);
+finalize([], State) ->
+  State.
+
+needs_fcheckerror(State) ->
+  Cfg = state__cfg(State),
+  Labels = hipe_icode_cfg:labels(Cfg),
+  needs_fcheckerror(Labels, State, []).
+
+needs_fcheckerror([Label|Left], State, Acc) ->
+  case state__get_in_block_in(State, Label) of
+    {true, _} ->
+      needs_fcheckerror(Left, State, Acc);
+    false ->
+      Pred = state__pred(State, Label),
+      case [X || X <- Pred, state__get_in_block_out(State, X) /= false] of
+	[] ->
+	  needs_fcheckerror(Left, State, Acc);
+	NeedsFcheck ->	  
+	  case length(Pred) == length(NeedsFcheck) of
+	    true ->
+	      %% All edges needs fcheckerror. Add this to the
+	      %% beginning of the block instead.
+	      needs_fcheckerror(Left, State, [{none, Label}|Acc]);
+	    false ->
+	      Edges = [{X, Label} || X <- NeedsFcheck],
+	      needs_fcheckerror(Left, State, Edges ++ Acc)
+	  end
+      end
+  end;
+needs_fcheckerror([], _State, Acc) ->
+  Acc.
+
+add_fp_ebb_fixup(From, To, State) when From == none ->
+  %% Add the fcheckerror to the start of the block.
+  BB = state__bb(State, To),
+  Code = hipe_bb:code(BB),
+  Phis = lists:takewhile(fun(X)-> hipe_icode:is_phi(X)end,Code),
+  TailCode = lists:dropwhile(fun(X)-> hipe_icode:is_phi(X)end,Code),
+  FC = hipe_icode:mk_primop([], fcheckerror, []),
+  NewCode = Phis ++ [FC|TailCode],
+  state__bb_add(State, To, hipe_bb:code_update(BB, NewCode));
+add_fp_ebb_fixup(From, To, State) ->
+  FCCode = [hipe_icode:mk_primop([], fcheckerror, [], To, [])],
+  FCBB = hipe_bb:mk_bb(FCCode),
+  FCLabel = hipe_icode:label_name(hipe_icode:mk_new_label()),
+  NewState = state__bb_add(State, FCLabel, FCBB),
+  NewState1 = state__redirect(NewState, From, To, FCLabel),
+  ToBB = state__bb(NewState, To),
+  ToCode = hipe_bb:code(ToBB),
+  NewToCode = redirect_phis(ToCode, From, FCLabel),
+  NewToBB = hipe_bb:code_update(ToBB, NewToCode),
+  state__bb_add(NewState1, To, NewToBB).
+
+redirect_phis(Code, OldFrom, NewFrom)->
+  redirect_phis(Code, OldFrom, NewFrom, []).
+
+redirect_phis([I|Left], OldFrom, NewFrom, Acc)->
+  case hipe_icode:type(I) of
+    phi ->
+      NewI = hipe_icode:phi_redirect_pred(I, OldFrom, NewFrom),
+      redirect_phis(Left, OldFrom, NewFrom, [NewI|Acc]);
+    _ ->
+      lists:reverse(Acc)++[I|Left]
+  end;
+redirect_phis([], _OldFrom, _NewFrom, Acc) ->
+  lists:reverse(Acc).
+
+subst_phi(I, Dst, Map) ->
+  ArgList = subst_phi_uses0(hipe_icode:phi_arglist(I), Map, []),
+  hipe_icode:mk_phi(Dst, ArgList).
+
+subst_phi_uses0([{Pred, Var}|Left], Map, Acc) ->
+  case gb_trees:lookup(Var, Map) of
+    {value, List} -> 
+      case lists:keysearch(Pred, 1, List) of
+	{value, {Pred, {assigned, _NewVar}}} -> 
+	  %% The variable is untagged, but it has been assigned. Keep it!
+	  subst_phi_uses0(Left, Map, [{Pred, Var}|Acc]);
+	{value, {Pred, NewVar}}-> 
+	  %% The variable is untagged and it has never been assigned as tagged.
+	  subst_phi_uses0(Left, Map, [{Pred, NewVar}|Acc]);
+	false ->
+	  %% The variable is not untagged.
+	  subst_phi_uses0(Left, Map, [{Pred, Var}|Acc])
+      end;
+    none ->
+      %% The variable is not untagged.
+      subst_phi_uses0(Left, Map, [{Pred, Var}|Acc])
+  end;
+subst_phi_uses0([], _Map, Acc) ->
+  Acc.
+
+subst_phi_uncond(I, Dst, Map) ->
+  ArgList = subst_phi_uses_uncond0(hipe_icode:phi_arglist(I), Map, []),
+  hipe_icode:mk_phi(Dst, ArgList).
+
+subst_phi_uses_uncond0([{Pred, Var}|Left], Map, Acc) ->
+  case gb_trees:lookup(Var, Map) of
+    {value, List} -> 
+      case lists:keysearch(Pred, 1, List) of
+	{value, {Pred, {assigned, NewVar}}} -> 
+	  %% The variable is untagged!
+	  subst_phi_uses_uncond0(Left, Map, [{Pred, NewVar}|Acc]);
+	{value, {Pred, NewVar}}-> 
+	  %% The variable is untagged!
+	  subst_phi_uses_uncond0(Left, Map, [{Pred, NewVar}|Acc]);
+	false ->
+	  %% The variable is not untagged.
+	  subst_phi_uses_uncond0(Left, Map, [{Pred, Var}|Acc])
+      end;
+    none ->
+      %% The variable is not untagged.
+      subst_phi_uses_uncond0(Left, Map, [{Pred, Var}|Acc])
+  end;
+subst_phi_uses_uncond0([], _Map, Acc) ->
+  Acc.
+
+
+place_error_handling(WorkList, State) ->
+  case get_work(WorkList) of
+    none ->
+      State;
+    {Label, NewWorkList} ->      
+      BB = state__bb(State, Label),
+      Code = hipe_bb:code(BB),
+      case state__join_in_block(State, Label) of
+	fixpoint ->
+	  place_error_handling(NewWorkList, State);
+	{NewState, NewInBlock} ->
+	  {NewCode1, InBlockOut} = place_error(Code, NewInBlock, []),
+	  Succ = state__succ(NewState, Label),
+	  NewCode2 = handle_unchecked_end(Succ, NewCode1, InBlockOut),
+	  NewBB = hipe_bb:code_update(BB, NewCode2),
+	  NewState1 = state__bb_add(NewState, Label, NewBB),
+	  NewState2 = state__in_block_out_update(NewState1, Label, InBlockOut),
+	  NewWorkList1 = add_work(NewWorkList, Succ),
+	  place_error_handling(NewWorkList1, NewState2)
+      end
+  end.
+
+place_error([I|Left], InBlock, Acc) ->
+  case hipe_icode:type(I) of
+    call ->
+      case hipe_icode:call_fun(I) of
+	X when X == fp_add; X == fp_sub; 
+	       X == fp_mul; X == fp_div; X == fnegate ->
+	  case InBlock of
+	    false ->
+	      Clear = hipe_icode:mk_primop([], {fclearerror, []}, []),
+	      place_error(Left, {true, []}, [I, Clear|Acc]);
+	    {true, _} ->
+	      place_error(Left, InBlock, [I|Acc])
+	  end;
+	unsafe_tag_float ->
+	  case InBlock of
+	    {true, Fail} ->
+	      Check = hipe_icode:mk_primop([], fcheckerror, [], [], Fail),
+	      place_error(Left, false, [I, Check|Acc]);
+	    false ->
+	      place_error(Left, InBlock, [I|Acc])
+	  end;
+	{fclearerror, Fail} ->
+	  case InBlock of
+	    {true, Fail} ->
+	      %% We can remove this fclearerror!
+	      case hipe_icode:call_continuation(I) of
+		[] ->
+		  place_error(Left, InBlock, Acc);
+		Cont ->
+		  place_error(Left, InBlock, [hipe_icode:mk_goto(Cont)|Acc])
+	      end;
+	    {true, _OtherFail} ->
+	      %% TODO: This can be handled but it requires breaking up
+	      %% the BB in two. Currently this should not happen.
+	      exit("Starting fp ebb with different fail label");
+	    false ->
+	      place_error(Left, {true, Fail}, [I|Acc])
+	  end;
+	fcheckerror ->
+	  case {true, hipe_icode:call_fail_label(I)} of
+	    InBlock ->
+	      %% No problem
+	      place_error(Left, false, [I|Acc]);
+	    NewInblock ->
+	      exit({"Fcheckerror has the wrong fail label",
+		    InBlock, NewInblock})
+	  end;
+	X when X == conv_to_float; X == unsafe_untag_float ->
+	  place_error(Left, InBlock, [I|Acc]);
+	_Other ->
+	  case hipe_icode:call_fails(I) of
+	    false ->
+	      place_error(Left, InBlock, [I|Acc]);
+	    true ->
+	      case InBlock of
+		{true, Fail} ->
+		  Check = hipe_icode:mk_primop([], fcheckerror, [], [], Fail),
+		  place_error(Left, false, [I, Check|Acc]);
+		false ->
+		  place_error(Left, InBlock, [I|Acc])
+	      end
+	  end
+      end;
+    X when X == fail; X == return; X == enter ->
+      case InBlock of
+	{true, []} ->
+	  Check = hipe_icode:mk_primop([], fcheckerror, []),
+	  place_error(Left, false, [I, Check|Acc]);
+	{true, _} ->
+	  exit({"End of control flow in caught fp ebb", I});
+	false ->
+	  place_error(Left, InBlock, [I|Acc])
+      end;
+    Other ->
+      case instr_allowed_in_fp_ebb(Other) of
+	true ->
+	  place_error(Left, InBlock, [I|Acc]);
+	false ->
+	  case InBlock of
+	    {true, []} ->
+	      Check = hipe_icode:mk_primop([], fcheckerror, []),
+	      place_error(Left, false, [I, Check|Acc]);
+	    {true, _} ->
+	      exit({"Illegal instruction in caught fp ebb", I});
+	    false ->
+	      place_error(Left, InBlock, [I|Acc])
+	  end
+      end
+  end;
+place_error([], InBlock, Acc) ->
+  {lists:reverse(Acc), InBlock}.
+
+%% If the block has no successors and we still are in a fp ebb we must
+%% end it to make sure we don't have any unchecked fp exceptions.
+
+handle_unchecked_end(Succ, Code, InBlock) ->
+  case Succ of
+    [] ->
+      case InBlock of
+	{true, []} ->
+	  {TopCode, Last} = split_code(Code),
+	  NewI = hipe_icode:mk_primop([], fcheckerror, []),
+	  TopCode++[NewI, Last];
+	false ->
+	  Code
+      end;
+    _ ->
+      Code
+  end.      
+
+instr_allowed_in_fp_ebb(Type) ->
+  case Type of
+    comment -> true;
+    fmove -> true;
+    goto -> true;
+    'if' -> true;
+    move -> true;
+    phi -> true;
+    restore_catch -> true;
+    switch_tuple_arity -> true;
+    switch_val -> true;
+    type -> true;
+    _ -> false
+  end.
+
+
+%%____________________________________________________________
+%%
+%% Help functions
+%%
+
+%% ------------------------------------------------------------ 
+%% Handling the gb_tree
+
+empty() ->
+  gb_trees:empty().
+
+delete_all([Key|Left], Tree) ->
+  delete_all(Left, gb_trees:delete_any(Key, Tree));
+delete_all([], Tree) ->
+  Tree.
+
+lookup_list(List, Info) ->
+  lookup_list(List, fun lookup/2, Info, []).
+
+lookup_list([H|T], Fun, Info, Acc) ->
+  lookup_list(T, Fun, Info, [Fun(H, Info)|Acc]);
+lookup_list([], _,  _, Acc) ->
+  lists:reverse(Acc).
+
+lookup(Key, Tree) ->
+  case hipe_icode:is_const(Key) of
+    %% This can be true if the same constant has been
+    %% untagged more than once
+    true -> none;
+    false ->
+      case gb_trees:lookup(Key, Tree) of
+	none -> none;
+	{value, {assigned, Val}} -> Val;
+	{value, Val} -> Val
+      end
+  end.
+
+lookup_list_keep_consts(List, Info) ->
+  lookup_list(List, fun lookup_keep_consts/2, Info, []).
+
+lookup_keep_consts(Key, Tree) ->
+  case hipe_icode:is_const(Key) of
+    true -> Key;
+    false ->
+      case gb_trees:lookup(Key, Tree) of
+	none -> none;
+	{value, {assigned, Val}} -> Val;
+	{value, Val} -> Val
+      end
+  end.
+
+lookup_type(Var, Tree) ->
+  case gb_trees:lookup(Var, Tree) of
+    none ->
+      case hipe_icode:is_const(Var) of
+	true -> hipe_icode_type:const_type(Var);
+	false -> erl_types:t_none()
+      end;
+    {value, Val} ->
+      case hipe_icode:is_var(Val) of
+	true ->
+	  lookup(Val, Tree);
+	false ->
+	  Val
+      end
+  end.
+
+%% ------------------------------------------------------------ 
+%% Handling the map from variables to fp-variables
+
+join_maps(Preds, BlockMap) ->
+  join_maps(Preds, BlockMap, empty()).
+
+join_maps([Pred|Left], BlockMap, Map) ->
+  case gb_trees:lookup(Pred, BlockMap) of
+    none ->
+      %%join_maps(Left, BlockMap, Map);
+      %% All predecessors have not been handled. Use empty map.
+      empty();
+    {value, OldMap} ->
+      NewMap = join_maps0(gb_trees:to_list(OldMap), Pred, Map),
+      join_maps(Left, BlockMap, NewMap)
+  end;
+join_maps([], _, Map) ->
+  Map.
+
+join_maps0([phi|Tail], Pred,  Map) ->
+  join_maps0(Tail, Pred, Map);
+join_maps0([{Var, FVar}|Tail], Pred,  Map) ->
+  case gb_trees:lookup(Var, Map) of
+    none ->
+      join_maps0(Tail, Pred, gb_trees:enter(Var, [{Pred, FVar}], Map));
+    {value, List} ->
+      case lists:keysearch(Pred, 1, List) of
+	{value, {Pred, FVar}} ->
+	  %% No problem.
+	  join_maps0(Tail, Pred, Map);
+	{value, _}->
+	  exit('New binding to same variable');
+	false ->
+	  join_maps0(Tail, Pred, gb_trees:update(Var, [{Pred, FVar}|List], Map))
+      end
+  end;
+join_maps0([], _, Map) ->
+  Map.
+
+filter_map(Map, NofPreds) ->
+  filter_map(gb_trees:to_list(Map), NofPreds, Map).
+
+filter_map([{Var, Bindings}|Left], NofPreds, Map) ->
+  case length(Bindings) == NofPreds of
+    true ->
+      case all_args_equal(Bindings) of
+	true ->
+	  {_, FVar} = hd(Bindings),
+	  filter_map(Left, NofPreds, gb_trees:update(Var, FVar, Map));
+	false ->
+	  PhiDst = hipe_icode:mk_new_fvar(),
+	  PhiArgs = strip_of_assigned(Bindings),
+	  NewMap =
+	    case gb_trees:lookup(phi, Map) of
+	      none ->
+		gb_trees:insert(phi, [{PhiDst, PhiArgs}], Map);
+	      {value, Val} ->
+		gb_trees:update(phi, [{PhiDst, PhiArgs}|Val], Map)
+	    end,
+	  filter_map(Left, NofPreds, gb_trees:update(Var, PhiDst, NewMap))
+      end;
+    false ->
+      filter_map(Left, NofPreds, gb_trees:delete(Var, Map))
+  end;
+filter_map([], _NofPreds, Map) ->
+  Map.
+
+%% all_args_equal returns true if the mapping for a variable is the
+%% same from all predecessors, i.e., we do not need a phi-node.
+
+all_args_equal([{_, FVar}|Left]) ->
+  all_args_equal(Left, FVar).
+
+all_args_equal([{_, FVar1}|Left], FVar1) ->
+  all_args_equal(Left, FVar1);
+all_args_equal([], _) ->
+  true;
+all_args_equal(_, _) ->
+  false.
+
+
+%% We differentiate between values that have been assigned as
+%% tagged variables and those that got a 'virtual' binding.
+
+add_new_bindings_unassigned([Var|Left], Map) ->
   FVar = hipe_icode:mk_new_fvar(),
   add_new_bindings_unassigned(Left, gb_trees:insert(Var, FVar, Map));
 add_new_bindings_unassigned([], Map) ->
   Map.
 
-add_new_bindings_assigned([Var|Left], Map)->
+add_new_bindings_assigned([Var|Left], Map) ->
   case lookup(Var, Map) of
     none ->
       FVar = hipe_icode:mk_new_fvar(),
@@ -300,238 +757,41 @@ add_new_bindings_assigned([Var|Left], Map)->
 add_new_bindings_assigned([], Map) ->
   Map.
 
+strip_of_assigned(List) ->
+  strip_of_assigned(List, []).
 
-get_conv_instrs(Vars, Map, Info)->
-  get_conv_instrs(Vars, Map, Info, []).
-
-get_conv_instrs([Var|Left], Map, Info, Acc)->
-  {_, Dst} = gb_trees:get(Var, Map),
-  NewI = 
-    case t_is_float(lookup_type(Var, Info)) of
-      true ->
-	hipe_icode:mk_primop([Dst],unsafe_untag_float,[Var]);
-      _ ->
-	hipe_icode:mk_primop([Dst],conv_to_float,[Var]) 
-    end,
-  get_conv_instrs(Left, Map, Info, [NewI|Acc]);
-get_conv_instrs([], _, _, Acc) ->
+strip_of_assigned([{Pred, {assigned, Val}}|Left], Acc) ->
+  strip_of_assigned(Left, [{Pred, Val}|Acc]);
+strip_of_assigned([Tuple|Left], Acc) ->
+  strip_of_assigned(Left, [Tuple|Acc]);
+strip_of_assigned([], Acc) ->
   Acc.
 
-do_prelude(State, Label)->  
-  %% Add phi nodes for untagged fp values.
-  Map = state__map(State, Label),
-  case state__pred(State, Label) of
-    List when length(List)>1 ->
-      {Ins, NewMap} = lists:foldl(fun(X, Acc)->get_phi(X, List, Acc)end,
-				  {[], Map}, gb_trees:to_list(Map)),
-      {Ins, init_map(NewMap)};
-    _ -> {[], init_map(Map)}
-  end.
+%% ------------------------------------------------------------ 
+%% Help functions for the transformation from ordinary instruction to
+%% fp-instruction
 
-get_phi({Var, PredList}, Preds, {InsAcc, Map})->
-  case all_args_equal(PredList) of
-    true ->
-      {InsAcc, Map};
-    false ->
-      FVar = hipe_icode:mk_new_fvar(),
-      NewMap = gb_trees:enter(Var, FVar, Map),
-      Phi0 = hipe_icode:mk_phi(FVar, Preds),
-      Phi1 = lists:foldl(fun(X, Ins)->
-			     case X of
-			       {Pred, {assigned, Val}}->
-				 hipe_icode:subst_phi_arg(Ins, Pred, Val);
-			       {Pred, Val} ->
-				 hipe_icode:subst_phi_arg(Ins, Pred, Val)
-			     end
-			 end,
-			 Phi0, PredList),
-      {[Phi1|InsAcc], NewMap}
-  end.
-
-all_args_equal([{_, FVar}|Left])->
-  all_args_equal(Left, FVar).
-
-all_args_equal([{_, FVar1}|Left], FVar2) when FVar1 == FVar2 ->
-  all_args_equal(Left, FVar2);
-all_args_equal([], _) ->
-  true;
-all_args_equal(_, _) ->
-  false.
-  
-handle_back_edges([Label|Left], State)->
-  %% When there is a back edge we must make sure that any phi nodes
-  %% has the rigth arguments since untagging might have occured after
-  %% the block was processed.
-  BB = state__bb(State, Label),
-  Code = hipe_bb:code(BB),
-  Map = init_map(state__map(State, Label)),
-  NewCode = lists:map(fun(X)->subst_phi_uses(X, Map)end, Code),
-  NewBB = hipe_bb:code_update(BB, NewCode),
-  NewState = state__bb_update(State, Label, NewBB),
-  handle_back_edges(Left, NewState);
-handle_back_edges([], State) ->
-  State.
-
-subst_phi_uses(I, Map)->
-  case hipe_icode:type(I) of
-    phi ->
-      Uses = uses(I),
-      case [{X, Y}||X<-Uses, (Y=lookup(X, Map))/=none] of
-	[] ->
-	  I;
-	Subst ->
-	  hipe_icode:subst(Subst, I)
-      end;
-    _ ->
-      I
-  end.
-
-
-%%____________________________________________________________
-%%
-%% Information handling help functions
-%%
-
-lookup(Key, Tree)->
-  case gb_trees:lookup(Key, Tree) of
-    none -> none;
-    {value, {assigned, Val}} -> Val;
-    {value, Val} -> Val
-  end.
-
-lookup_type(Var, Tree)->
-  case gb_trees:lookup(Var, Tree) of
-    none ->
-      t_any();
-    {value, Val} ->
-      case hipe_icode:is_var(Val) of
-	true ->
-	  lookup(Val, Tree);
-	_ ->
-	  Val
+is_fop_cand(I, Info) ->
+  case hipe_icode:call_fun(I) of
+    '/' -> true;
+    Fun ->
+      case fun_to_fop(Fun) of
+	false -> false;
+	_ -> any_is_float(args(I), Info)
       end
   end.
 
-lookup_type_list(List, Info)->
-  lookup_list(List, fun lookup_type/2, Info, []).
-
-lookup_list(List, Info)->
-  lookup_list(List, fun lookup/2, Info, []).
-
-lookup_list([H|T], Fun, Info, Acc)->
-  lookup_list(T, Fun, Info, [Fun(H, Info)|Acc]);
-lookup_list([], _,  _, Acc) ->
-  lists:reverse(Acc).
-
-enter([Key], Value, Tree)->
-  enter(Key, Value, Tree);
-enter(Key, Value, Tree)->
-  case t_is_any(Value) of
-    true ->
-      Tree;
-    _ ->
-      enter_to_leaf(Key, Value, Tree)
-  end.
-
-enter_to_leaf(Key, Value, Tree)->
-  case gb_trees:lookup(Key, Tree) of
-    {value, Value} ->
-      Tree;
-    {value, Val} ->
-      case hipe_icode:is_var(Val) of
-	true->
-	  enter_to_leaf(Val, Value, Tree);
-	_ ->
-	  gb_trees:enter(Key, Value, Tree)
-      end;
-    _ ->
-      gb_trees:insert(Key, Value, Tree)
-  end.
-
-enter_defines(I, Types, Info)when is_list(Types)->
-  case defines(I) of
-    []-> Info;
-    Def->
-      {NewInfo, _} =
-	lists:foldl(fun(X, {Info, [Type|Tail]})->
-			{enter(X,Type,Info), Tail}end,
-		    {Info, Types}, Def),
-      NewInfo
+any_is_float([Var|Left], Info) ->
+  case erl_types:t_is_float(lookup_type(Var, Info)) of
+    true -> true;
+    false -> any_is_float(Left, Info)
   end;
-enter_defines(I, Type, Info)->
-  case defines(I) of
-    []-> Info;
-    Def->
-      lists:foldl(fun(X, Acc)->enter(X, Type, Acc)end, Info, Def)
-  end.
+any_is_float([], _Info) ->
+  false.
 
-join_list(List, Info)->
-  join_list(List, Info, t_undefined()).
- 
-join_list([H|T], Info, Acc)->
-  Type = t_sup(lookup_type(H, Info), Acc),
-  join_list(T, Info, Type);
-join_list([], _, Acc) ->
-  Acc.
-
-join_info_in([{Var, Type}|Tail], InfoIn)->
-  case gb_trees:lookup(Var, InfoIn) of
-    none ->
-      join_info_in(Tail, enter(Var, Type, InfoIn));
-    {value, Type} ->
-      join_info_in(Tail, InfoIn);
-    {value, OldType}->
-      join_info_in(Tail, enter(Var, t_sup(OldType, Type), InfoIn))
-  end;
-join_info_in([], InfoIn) ->
-  InfoIn.
-
-join_maps(Pred, BlockMap)->
-  join_maps(Pred, BlockMap, empty()).
-
-join_maps([Pred|Left], BlockMap, Map)->
-  case gb_trees:lookup(Pred, BlockMap) of
-    none ->
-      join_maps(Left, BlockMap, Map);
-    {value, OldMap} ->
-      NewMap = join_maps0(gb_trees:to_list(OldMap), Pred, Map),
-      join_maps(Left, BlockMap, NewMap)
-  end;
-join_maps([], _, Map) ->
-  Map.
-
-join_maps0([{Var, FVar}|Tail], Pred,  Map)->
-  case lookup(Var, Map) of
-    none ->
-      join_maps0(Tail, Pred, gb_trees:enter(Var, [{Pred, FVar}], Map));
-    Val ->
-      join_maps0(Tail, Pred, gb_trees:enter(Var, [{Pred, FVar}|Val], Map))
-  end;
-join_maps0([], _, Map) ->
-  Map.
-
-%% The map has information about from which predecessor a particular
-%% binding comes from. When this information has been used we strip
-%% the map of it.
-init_map(Map)->
-  init_map(gb_trees:to_list(Map), empty()).
-
-init_map([{Var, [{_, FVar}|_]}|Left], Acc)->
-  init_map(Left, gb_trees:insert(Var, FVar, Acc));
-init_map([{Var, FVar}|Left], Acc)->
-  init_map(Left, gb_trees:insert(Var, FVar, Acc));
-init_map([], Acc) ->
-  Acc.
-
-defines(I)->
-  hipe_icode:defines(I).
-
-uses(I)->
-  hipe_icode:uses(I).
-
-remove_duplicates(List)->
+remove_duplicates(List) ->
   remove_duplicates(List, []).
-remove_duplicates([X|Left], Acc)->
+remove_duplicates([X|Left], Acc) ->
   case lists:member(X, Acc) of
     true ->
       remove_duplicates(Left, Acc);
@@ -541,108 +801,85 @@ remove_duplicates([X|Left], Acc)->
 remove_duplicates([], Acc) ->
   Acc.
 
-print_state_info(State)->
-  Labels = hipe_icode_cfg:reverse_postorder(state__cfg(State)),
-  lists:foreach(
-    fun(X)-> 
-	io:format("Label ~w:\n", [X]),
-	lists:foreach(
-	  fun({Y, Z})->
-	      io:format("\t~w: ~s\n", [Y, t_to_string(Z)])
-	  end,
-	  gb_trees:to_list(state__info_out(State, X)))
-    end,
-    Labels),
-  io:format("=========================\n", []),
-  ok.
-
-const_type(Var)->
-  case hipe_icode:is_const(Var) of
-    false ->
-      not_a_constant;
-    true ->
-      t_from_term(hipe_icode:const_value(Var))
-  end.
-
-is_fop_cand(I, Info)->
-  case get_info(I) of
-    false -> false;
-    {false, _, _} -> false;
-    _ ->
-      case [X||X<-uses(I), t_is_float(lookup_type(X, Info))] of
-	[] -> false;
-	_ -> true
-      end
-  end.
-
-get_info(I)->
-  case hipe_icode:type(I) of
-    call ->
-      Fail = hipe_icode:call_fail(I),
-      Cont = hipe_icode:call_continuation(I),
-      Op = fun_to_fop(hipe_icode:call_fun(I)), 
-      {Op, Cont, Fail};
-    enter ->
-      {fun_to_fop(hipe_icode:enter_fun(I)), [], []};
-    _ ->
-      false
-  end.
-
-fun_to_fop(Fun)->
+fun_to_fop(Fun) ->
   case Fun of
     '+' -> fp_add;
     '-' -> fp_sub;
-    {erlang, '/', 2} -> fp_div;
-    {erlang, '*', 2} -> fp_mul;
+    '*' -> fp_mul;
+    '/' -> fp_div;
     _ ->false
   end.
 
-must_be_tagged(Var, Map)->
-  %% If there is a tagged version of this variable available we don't
-  %% have to tag the untagged version.
+
+%% If there is a tagged version of this variable available we don't
+%% have to tag the untagged version.
+
+must_be_tagged(Var, Map) ->
   case gb_trees:lookup(Var, Map) of
     none -> false;
     {value, {assigned, _}} -> false; 
-    _ ->true
+    {value, Val} -> 
+      case hipe_icode:is_fvar(Val) of
+	true->
+	  true;
+	false ->
+	  false
+      end
   end.
+
+
+%% Converting to floating point variables
+
+get_conv_instrs(Vars, Map, Info) ->
+  get_conv_instrs(Vars, Map, Info, []).
+
+get_conv_instrs([Var|Left], Map, Info, Acc) ->
+  {_, Dst} = gb_trees:get(Var, Map),
+  NewI = 
+    case erl_types:t_is_float(lookup_type(Var, Info)) of
+      true ->
+	[hipe_icode:mk_primop([Dst],unsafe_untag_float,[Var])];
+      false ->
+	[hipe_icode:mk_primop([Dst],conv_to_float,[Var])] 
+    end,
+  get_conv_instrs(Left, Map, Info, NewI++Acc);
+get_conv_instrs([], _, _, Acc) ->
+  Acc.
+
+
+conv_consts(ConstArgs, I) ->
+  conv_consts(ConstArgs, I, []).
+
+conv_consts([Const|Left], I, Subst) ->
+  NewConst = hipe_icode:mk_const(float(hipe_icode:const_value(Const))),
+  conv_consts(Left, I, [{Const, NewConst}|Subst]);
+conv_consts([], I, Subst) ->
+  hipe_icode:subst_uses(Subst, I).
+  
+
+
+%% ------------------------------------------------------------ 
+%% Defines and uses
+
+defines(I)->
+  hipe_icode:defines(I).
+
+args(I)->
+  hipe_icode:args(I).
+
+uses(I)->
+  hipe_icode:uses(I).
 
 %% _________________________________________________________________
 %%
 %% Handling the state
 %%
 
--record(state, {info, info_map, block_map, cfg}).
-
-new_state(Cfg)->
-  Start = hipe_icode_cfg:start(Cfg),  
-  Info = case lists:keysearch(arg_type, 1, hipe_icode_cfg:info(Cfg)) of
-	   false ->
-	     Any = t_any(),
-	     lists:foldl(fun(X, Tree)->gb_trees:insert(X, Any, Tree)end,
-			 empty(), hipe_icode_cfg:params(Cfg));
-	   {value,{_, ArgType}}->
-	     add_arg_types(hipe_icode_cfg:params(Cfg), ArgType)
-	 end,
-  InfoMap = gb_trees:insert({Start, in}, Info, empty()),
-  new_state(Cfg, InfoMap).
-
 new_state(Cfg, InfoMap)->
-  Start = hipe_icode_cfg:start(Cfg),  
-  Block_map = gb_trees:insert({Start, inblock}, false, empty()),
-  #state{info_map=InfoMap, cfg=Cfg, block_map=Block_map}.
-
-add_arg_types(Args,Types)->
-  add_arg_types(Args, Types, empty()).
-
-add_arg_types([Arg|Args],[Type|Types], Acc)->
-  add_arg_types(Args,Types, enter(Arg, Type, Acc));
-add_arg_types([],[],Acc) ->
-  Acc;
-add_arg_types(A,B,_) ->
-  exit({wrong_number_of_arguments, {A, B}}).
-
-empty()->
-  gb_trees:empty().
+  Start = hipe_icode_cfg:start_label(Cfg),  
+  BlockMap = gb_trees:insert({inblock, Start}, false, empty()),
+  EdgeMap = gb_trees:empty(),
+  #state{info_map=InfoMap, cfg=Cfg, block_map=BlockMap, edge_map=EdgeMap}.
 
 state__cfg(#state{cfg=Cfg})->
   Cfg.
@@ -653,15 +890,16 @@ state__succ(#state{cfg=Cfg}, Label)->
 state__pred(#state{cfg=Cfg}, Label)->
   hipe_icode_cfg:pred(hipe_icode_cfg:pred_map(Cfg), Label).
 
+state__redirect(S=#state{cfg=Cfg}, From, ToOld, ToNew)->
+  NewCfg = hipe_icode_cfg:redirect(Cfg, From, ToOld, ToNew),
+  S#state{cfg=NewCfg}.
+
 state__bb(#state{cfg=Cfg}, Label)->
   hipe_icode_cfg:bb(Cfg, Label).
   
-state__bb_update(S=#state{cfg=Cfg}, Label, BB)->
-  NewCfg = hipe_icode_cfg:bb_update(Cfg, Label, BB),
+state__bb_add(S=#state{cfg=Cfg}, Label, BB)->
+  NewCfg = hipe_icode_cfg:bb_add(Cfg, Label, BB),
   S#state{cfg=NewCfg}.
-
-state__info_in(S, Label)->
-  state__info(S, {Label, in}).
 
 state__info_out(S, Label)->
   state__info(S, {Label, out}).
@@ -669,35 +907,114 @@ state__info_out(S, Label)->
 state__info(#state{info_map=IM}, Label)->
   case gb_trees:lookup(Label, IM) of
     {value, Info}-> Info;
-    _ -> empty()
+    none -> empty()
   end.
 
-state__info_in_update(S=#state{info_map=IM}, Label, Info)->
-  case gb_trees:lookup({Label, in}, IM) of
-    none ->
-      S#state{info_map=gb_trees:enter({Label, in}, Info, IM)};
-    {value, Info} ->
-      fixpoint;
-    {value, OldInfo} ->
-      NewInfo = join_info_in(gb_trees:to_list(OldInfo), Info),
-      S#state{info_map=gb_trees:enter({Label, in}, NewInfo, IM)}
-  end.
-
-state__info_out_update(S=#state{info_map=IM}, Label, Info)->
-  S#state{info_map=gb_trees:enter({Label, out}, Info, IM)}.
 
 state__map(S=#state{block_map=BM}, Label)->
   join_maps(state__pred(S, Label), BM).
 
-state__map_update(S=#state{block_map=BM}, Label, Map, InBlock)->
-  NewBM0 = gb_trees:enter(Label, Map, BM),
-  Succ = state__succ(S, Label),
-  Fun = fun(X, Acc)->gb_trees:enter({X, inblock}, InBlock, Acc)end,
-  NewBM = lists:foldl(Fun, NewBM0, Succ),
-  S#state{block_map=NewBM}.  
-
-state__in_block(#state{block_map=BM}, Label)->
-  case gb_trees:lookup({Label, inblock}, BM) of
-    {value, Ans}->
-      Ans
+state__map_update(S=#state{block_map=BM}, Label, Map)->
+  MapChanged = 
+    case gb_trees:lookup(Label, BM) of
+      {value, Map1} -> not match(Map1, Map);
+      none -> true
+    end,
+  case MapChanged of
+    true ->
+      NewBM = gb_trees:enter(Label, Map, BM),
+      S#state{block_map = NewBM};
+    false ->
+      fixpoint
   end.
+
+state__join_in_block(S=#state{edge_map = Map}, Label)->
+  Pred = state__pred(S, Label),
+  Edges = [{X, Label} || X <- Pred],
+  NewInBlock = join_in_block([gb_trees:lookup(X, Map) || X <- Edges]),
+  case gb_trees:lookup({inblock_in, Label}, Map) of
+    none ->
+      NewMap = gb_trees:insert({inblock_in, Label}, NewInBlock, Map),
+      {S#state{edge_map = NewMap}, NewInBlock};
+    {value, NewInBlock} ->
+      fixpoint;
+    _Other ->
+      NewMap = gb_trees:update({inblock_in, Label}, NewInBlock, Map),
+      {S#state{edge_map = NewMap}, NewInBlock}
+  end.
+
+state__in_block_out_update(S=#state{edge_map = Map}, Label, NewInBlock)->
+  Succ = state__succ(S, Label),
+  Edges = [{Label, X} || X <- Succ],
+  NewMap = update_edges(Edges, NewInBlock, Map),
+  NewMap1 = gb_trees:enter({inblock_out, Label}, NewInBlock, NewMap),
+  S#state{edge_map = NewMap1}.
+
+update_edges([Edge|Left], NewInBlock, Map)->
+  NewMap = gb_trees:enter(Edge, NewInBlock, Map),
+  update_edges(Left, NewInBlock, NewMap);
+update_edges([], _NewInBlock, NewMap) ->
+  NewMap.
+
+join_in_block([])->
+  false;
+join_in_block([none|_])->
+  false;
+join_in_block([{value, InBlock}|Left]) ->
+  join_in_block(Left, InBlock).
+
+join_in_block([none|_], _Current)->
+  false;
+join_in_block([{value, InBlock}|Left], Current) ->
+  if Current == InBlock -> join_in_block(Left, Current);
+     Current == false -> false;
+     InBlock == false -> false;
+     true -> exit("Basic block is in two different fp ebb:s")
+  end;
+join_in_block([], Current) ->
+  Current.
+	
+
+state__get_in_block_in(#state{edge_map=Map}, Label)->
+  gb_trees:get({inblock_in, Label}, Map).
+
+state__get_in_block_out(#state{edge_map=Map}, Label)->
+  gb_trees:get({inblock_out, Label}, Map).
+
+
+new_worklist(#state{cfg=Cfg})->
+  Start = hipe_icode_cfg:start_label(Cfg),
+  {[Start], [], gb_sets:insert(Start, gb_sets:empty())}.
+
+get_work({[Label|Left], List, Set})->
+  {Label, {Left, List, gb_sets:delete(Label, Set)}};
+get_work({[], [], _Set}) ->
+  none;
+get_work({[], List, Set}) ->
+  get_work({lists:reverse(List), [], Set}).
+
+add_work({List1, List2, Set}, [Label|Left])->
+  case gb_sets:is_member(Label, Set) of
+    true -> 
+      add_work({List1, List2, Set}, Left);
+    false -> 
+      %%io:format("Added work: ~w\n", [Label]),
+      NewSet = gb_sets:insert(Label, Set),
+      add_work({List1, [Label|List2], NewSet}, Left)
+  end;
+add_work(WorkList, []) ->
+  WorkList.
+
+
+match(Tree1, Tree2)->
+  match_1(gb_trees:to_list(Tree1), Tree2) andalso 
+    match_1(gb_trees:to_list(Tree2), Tree1).
+
+match_1([{Key, Val}|Left], Tree2)->
+  case gb_trees:lookup(Key, Tree2) of
+    {value, Val} ->
+      match_1(Left, Tree2);
+    _ -> false
+  end;
+match_1([], _) ->
+  true.

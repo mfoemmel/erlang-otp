@@ -17,9 +17,11 @@
 %%
 -module(overload). 
 
--export([start_link/0, request/0, set_config_data/2, get_overload_info/0]).
+-export([start_link/0, request/0, set_config_data/2,
+	 get_overload_info/0]).
 
--export([init/1, handle_call/3, handle_info/2, terminate/2, format_status/2]).
+-export([init/1, handle_call/3, handle_info/2, terminate/2,
+	 format_status/2]).
 
 %%%-----------------------------------------------------------------
 %%% This is a rewrite of overload from BS.3, by Peter Högfeldt.
@@ -33,8 +35,8 @@
 %%%
 %%% The intensity i is calculated according to the formula:
 %%%    i(n) = exp(-K*(T(n) - T(n-1)))*i(n-1) + Kappa
-%%% where i(n) is the intensity at event n, Kappa is a constant, and T(n) is
-%%% the time at event n.
+%%% where i(n) is the intensity at event n, Kappa is a constant, and
+%%% T(n) is the time at event n.
 %%%
 %%% The constant Kappa can be thought of as 1 / T, where T is the time 
 %%% constant. Kappa is externally referred to as Weight.
@@ -53,7 +55,8 @@
 
 -define(clear_timeout, 30000).
   
-start_link() -> gen_server:start_link({local, overload}, overload, [], []).
+start_link() ->
+    gen_server:start_link({local, overload}, overload, [], []).
 
 init([]) ->
     process_flag(priority, high),
@@ -114,24 +117,26 @@ handle_call(request, _From, State) ->
         true ->
 	    %% Set alarm if not already set.
 	    NewAlarm = set_alarm(Alarm),
-	    {reply, reject, State#state{call_counts = {TR+1, AR}, prev_t = T,
-					total = NewTI, accept = CurI,
+	    {reply, reject,
+	     State#state{call_counts = {TR+1, AR}, prev_t = T,
+			 total = NewTI, accept = CurI,
 				       alarm = NewAlarm},
 	    ?clear_timeout}
     end;
-handle_call({set_config_data, MaxIntensity, Weight}, _From, State) ->
-    {reply, ok, #state{max = MaxIntensity, kappa = Weight}, ?clear_timeout};
+handle_call({set_config_data, MaxIntensity, Weight}, _From, _State) ->
+    {reply, ok, #state{max = MaxIntensity, kappa = Weight},
+     ?clear_timeout};
 handle_call(get_overload_info, _From, State) ->
-    #state{max = MI, total = TI, accept = AI, kappa = Kappa, prev_t = PrevT,
-	   call_counts = {TR, AR}} =
-	State,
+    #state{max = MI, total = TI, accept = AI, kappa = Kappa,
+	   prev_t = PrevT, call_counts = {TR, AR}} = State,
     T = get_now(),
     CurI = new_intensity(AI, T, PrevT, Kappa),
     NewTI  = new_intensity(TI, T, PrevT, Kappa),
     Reply = [{total_intensity, NewTI}, {accept_intensity, CurI}, 
 	     {max_intensity, MI}, {weight, Kappa},
 	     {total_requests, TR}, {accepted_requests, AR}],
-    {reply, Reply, State#state{total = NewTI, accept = CurI}, ?clear_timeout}.
+    {reply, Reply, State#state{total = NewTI, accept = CurI},
+     ?clear_timeout}.
 
 handle_info(timeout, State) ->
     #state{total = TI, accept = AI, kappa = Kappa, prev_t = PrevT,
@@ -207,7 +212,8 @@ sub(X, Y) ->
     (X + (bnot Y) + 1) band ?mask27.
 
 format_status(Opt, [PDict, #state{max = MI, total = TI, accept = AI,
-				  kappa = K, call_counts = {TR, AR}}]) ->
+				  kappa = K,
+				  call_counts = {TR, AR}}]) ->
     [{data, [{"Total Intensity", TI},
 	     {"Accept Intensity", AI}, 
 	     {"Max Intensity", MI},

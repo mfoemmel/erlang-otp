@@ -45,6 +45,8 @@
 %% local generates a script with references to the directories there
 %% the applications are found.
 %%-----------------------------------------------------------------
+make_script([RelName|Opts]) when is_atom(RelName) ->
+    make_script([RelName], Opts);
 make_script(RelName) -> make_script(RelName, []).
 
 make_script(RelName, Opt) ->

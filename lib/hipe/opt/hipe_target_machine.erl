@@ -1,8 +1,8 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-%		  INTERFACE TO TARGET MACHINE MODEL
-%
-% Interfaces the instruction scheduler to the (resource) machine model.
+%%
+%%		  INTERFACE TO TARGET MACHINE MODEL
+%%
+%% Interfaces the instruction scheduler to the (resource) machine model.
 
 -module(hipe_target_machine).
 -export([init_resources/1,
@@ -13,9 +13,9 @@
 -export([raw_latency/2,
 	 war_latency/2,
 	 waw_latency/2,
-	 m_raw_latency/2,
-	 m_war_latency/2,
-	 m_waw_latency/2,
+	 %% m_raw_latency/2,
+	 %% m_war_latency/2,
+	 %% m_waw_latency/2,
 	 m_raw_latency/0,
 	 m_war_latency/0,
 	 m_waw_latency/0,
@@ -47,14 +47,14 @@ war_latency(From,To) ->
 waw_latency(From,To) ->
     ?target:waw_latency(From,To).
 
-m_raw_latency(From,To) ->
-    ?target:m_raw_latency(From,To).
+%% m_raw_latency(From,To) ->
+%%     ?target:m_raw_latency(From,To).
 
-m_war_latency(From,To) ->
-    ?target:m_war_latency(From,To).
+%% m_war_latency(From,To) ->
+%%     ?target:m_war_latency(From,To).
 
-m_waw_latency(From,To) ->
-    ?target:m_waw_latency(From,To).
+%% m_waw_latency(From,To) ->
+%%     ?target:m_waw_latency(From,To).
 
 m_raw_latency() ->
     ?target:m_raw_latency().

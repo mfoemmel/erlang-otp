@@ -221,10 +221,10 @@ get_input_and_search(DbList, IsRegExp, Notify, ListAsStr) ->
     case StrConvRes of
 	{ok, TermOrRE} ->
 	    search(IsRegExp, TermOrRE, DbList, ListAsStr);
-	{error, {Reason, Msg}} when Notify == true ->
+	{error, {_Reason, Msg}} when Notify == true ->
 	    gs:config(win, [beep]),
 	    tv_utils:notify(win, "TV Notification", Msg);
-	{error, {Reason, Msg}} ->
+	{error, {_Reason, _Msg}} ->
 	    done
     end.
 
@@ -391,7 +391,7 @@ traverse(Pattern, [Object | T], Row, Length, Acc, IsRegExp, ListAsStr) ->
 	0 ->
 	    traverse(Pattern, T, Row+1, Length, NewAcc, IsRegExp, ListAsStr)
     end;
-traverse(_Pattern, [], _N, Length, Acc, IsRegExp, ListAsStr) ->
+traverse(_Pattern, [], _N, _Length, Acc, _IsRegExp, _ListAsStr) ->
     gs:config(objects_found, 
 	      [{label, 
 		{text,integer_to_list(gs:read(listbox,size)) ++ 

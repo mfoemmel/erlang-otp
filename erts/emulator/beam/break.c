@@ -43,7 +43,9 @@
 /* Forward declarations -- should really appear somewhere else */
 static void process_killer(void);
 void do_break(void);
-extern void erl_crash_dump(char *, int, char *, va_list);
+void erl_crash_dump_v(char *file, int line, char* fmt, va_list args);
+void erl_crash_dump(char* file, int line, char* fmt, ...);
+
 #ifdef DEBUG
 static void bin_check(void);
 #endif
@@ -110,6 +112,64 @@ process_killer(void)
 	    }
 	}
     }
+}
+
+typedef struct {
+    int is_first;
+    CIO to;
+} PrintMonitorContext;
+
+static void doit_print_link(ErtsLink *lnk, void *vpcontext)
+{
+    PrintMonitorContext *pcontext = vpcontext;
+    CIO to = pcontext->to;
+
+    if (pcontext->is_first) {
+	pcontext->is_first = 0;
+    } else {
+	erl_printf(to,", ");
+    }	
+    display(lnk->pid, to);
+}
+    
+
+static void doit_print_monitor(ErtsMonitor *mon, void *vpcontext)
+{
+    PrintMonitorContext *pcontext = vpcontext;
+    CIO to = pcontext->to;
+ 
+    if (pcontext->is_first) {
+	pcontext->is_first = 0;
+    } else {
+	erl_printf(to,", ");
+    }	
+    erl_printf(to,"{");
+    if (mon->type == MON_ORIGIN) {
+
+	erl_printf(to,"to,");
+	if (is_atom(mon->pid)) { /* dist by name */
+	    ASSERT(is_node_name_atom(mon->pid));
+	    erl_printf(to,"{");
+	    display(mon->name, to);
+	    erl_printf(to,",");
+	    display(mon->pid, to);
+	    erl_printf(to,"}");
+	} else if (is_atom(mon->name)){ /* local by name */
+	    erl_printf(to,"{");
+	    display(mon->name, to);
+	    erl_printf(to,",");
+	    display(erts_this_dist_entry->sysname, to);
+	    erl_printf(to,"}");
+	} else { /* local and distributed by pid */
+	    display(mon->pid, to);
+	}
+    } else { /* MON_TARGET */
+	erl_printf(to,"from,");
+	display(mon->pid, to);
+    }
+    erl_printf(to,",");
+    display(mon->ref, to);
+    erl_printf(to,"}");
 }
 			       
 /* Display info about an individual Erlang process */
@@ -248,52 +308,13 @@ print_process_info(Process *p, CIO to)
     }
 
     /* display the links only if there are any*/
-    if (p->links != NULL) {
-	ErlLink* lnk = p->links;
+    if (p->nlinks != NULL || p->monitors != NULL) {
+	PrintMonitorContext context = {1,to}; 
 	erl_printf(to,"Link list: [");
-	while(lnk != NULL) {
-	    if (lnk->type == LNK_LINK1) {
-	       erl_printf(to,"{");
-	       if (lnk->item == p->id) {
-		  ErlLink **lnkp;
-		  erl_printf(to,"to,");
-
-		  if (is_atom(lnk->data)) {
-		      DistEntry *dep;
-
-		      ASSERT(is_node_name_atom(lnk->data));
-		      dep = erts_sysname_to_connected_dist_entry(lnk->data);
-		      lnkp = (dep
-			      ? find_link_by_ref(&dep->links, lnk->ref)
-			      : NULL);
-			  
-		      erl_printf(to,"{");
-		      if (lnkp)
-			  display((*lnkp)->data, to);
-		      else
-			  erl_printf(to, "undefined"); /* An error */
-		      erl_printf(to,",");
-		      display(lnk->data, to);
-		      erl_printf(to,"}");
-		  }
-		  else
-		      display(lnk->data, to);
-	       } else {
-		  erl_printf(to,"from,");
-		  display(lnk->item, to);
-	       }
-	       erl_printf(to,",");
-	       display(lnk->ref, to);
-	       erl_printf(to,"}");
-	    } else {
-	       display(lnk->item, to);
-	    }
-	    if ((lnk = lnk->next) != NULL)
-	       erl_printf(to, ",");
-	}
+	erts_doforall_links(p->nlinks, &doit_print_link, &context);	
+	erts_doforall_monitors(p->monitors, &doit_print_monitor, &context);
 	erl_printf(to,"]\n");
     }
-
 
     if (!erts_writing_erl_crash_dump) {
 
@@ -347,9 +368,13 @@ print_garb_info(Process* p, CIO to)
     erl_printf(to, "New heap top: %X\n", p->htop);
     erl_printf(to, "Stack top: %X\n", p->stop);
     erl_printf(to, "Stack end: %X\n", p->hend);
+#if (defined(NOMOVE) && defined(SHARED_HEAP))
+    erl_printf(to, "Insert intelligent info about old generation\n");
+#else
     erl_printf(to, "Old heap start: %X\n", OLD_HEAP(p));
     erl_printf(to, "Old heap top: %X\n", OLD_HTOP(p));
     erl_printf(to, "Old heap end: %X\n", OLD_HEND(p));
+#endif
 }
 
 void
@@ -395,37 +420,59 @@ loaded(CIO to)
     /*
      * Print one line per module.
      */
+
     for (i = 0; i < module_code_size; i++) {
-	if (module_code(i) != NULL &&
+	if (!erts_writing_erl_crash_dump) {
+	    /*
+	     * Interactive dump; keep it brief.
+	     */
+	    if (module_code(i) != NULL &&
 	    ((module_code(i)->code_length != 0) ||
 	     (module_code(i)->old_code_length != 0))) {
-	    erl_printf(to, "=mod:");
-	    print_atom(module_code(i)->module, to);
-	    erl_printf(to,"\n");
-	    erl_printf(to, "Current size: %d\n", module_code(i)->code_length);
-	    code = module_code(i)->code;
-	    if (code != NULL && code[MI_ATTR_PTR]) {
-		erl_printf(to, "Current attributes: ");
-		dump_attributes(to, (byte *) code[MI_ATTR_PTR], code[MI_ATTR_SIZE]);
-	    }
-	    if (code != NULL && code[MI_COMPILE_PTR]) {
-		erl_printf(to, "Current compilation info: ");
-		dump_attributes(to, (byte *) code[MI_COMPILE_PTR],
-				code[MI_COMPILE_SIZE]);
-	    }
-
-	    if (module_code(i)->old_code_length != 0) {
-		erl_printf(to, "Old size: %d\n", module_code(i)->old_code_length);
-		code = module_code(i)->old_code;
-		if (code[MI_ATTR_PTR]) {
-		    erl_printf(to, "Old attributes: ");
-		    dump_attributes(to, (byte *) code[MI_ATTR_PTR],
-				    code[MI_ATTR_SIZE]);
+		print_atom(module_code(i)->module, to);
+		cur += module_code(i)->code_length;
+		erl_printf(to," %d", module_code(i)->code_length );
+		if (module_code(i)->old_code_length != 0) {
+		    erl_printf(to," (%d old)", module_code(i)->old_code_length );
+		    old += module_code(i)->old_code_length;
 		}
-		if (code[MI_COMPILE_PTR]) {
-		    erl_printf(to, "Old compilation info: ");
+		erl_printf(to,"\n");
+	    }
+	} else {
+	    /*
+	     * To crash dump; make it parseable.
+	     */
+	    if (module_code(i) != NULL &&
+		((module_code(i)->code_length != 0) ||
+		 (module_code(i)->old_code_length != 0))) {
+		erl_printf(to, "=mod:");
+		print_atom(module_code(i)->module, to);
+		erl_printf(to,"\n");
+		erl_printf(to, "Current size: %d\n", module_code(i)->code_length);
+		code = module_code(i)->code;
+		if (code != NULL && code[MI_ATTR_PTR]) {
+		    erl_printf(to, "Current attributes: ");
+		    dump_attributes(to, (byte *) code[MI_ATTR_PTR], code[MI_ATTR_SIZE]);
+		}
+		if (code != NULL && code[MI_COMPILE_PTR]) {
+		    erl_printf(to, "Current compilation info: ");
 		    dump_attributes(to, (byte *) code[MI_COMPILE_PTR],
 				    code[MI_COMPILE_SIZE]);
+		}
+
+		if (module_code(i)->old_code_length != 0) {
+		    erl_printf(to, "Old size: %d\n", module_code(i)->old_code_length);
+		    code = module_code(i)->old_code;
+		    if (code[MI_ATTR_PTR]) {
+			erl_printf(to, "Old attributes: ");
+			dump_attributes(to, (byte *) code[MI_ATTR_PTR],
+					code[MI_ATTR_SIZE]);
+		    }
+		    if (code[MI_COMPILE_PTR]) {
+			erl_printf(to, "Old compilation info: ");
+			dump_attributes(to, (byte *) code[MI_COMPILE_PTR],
+					code[MI_COMPILE_SIZE]);
+		    }
 		}
 	    }
 	}
@@ -607,7 +654,7 @@ bin_check(void)
 
 /* XXX THIS SHOULD BE IN SYSTEM !!!! */
 void
-erl_crash_dump(char *file, int line, char* fmt, va_list args)
+erl_crash_dump_v(char *file, int line, char* fmt, va_list args)
 {
     int fd;
     time_t now;
@@ -683,4 +730,14 @@ erl_crash_dump(char *file, int line, char* fmt, va_list args)
     close(fd);
     sprintf(buf, "\r\nCrash dump was written to: %s\r\n", dumpname);
     write(2, buf, strlen(buf));
+}
+
+void
+erl_crash_dump(char* file, int line, char* fmt, ...)
+{
+  va_list args;
+  
+  va_start(args, fmt);
+  erl_crash_dump_v(file, line, fmt, args);
+  va_end(args);
 }

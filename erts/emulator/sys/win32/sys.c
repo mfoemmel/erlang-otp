@@ -24,6 +24,7 @@
 #include "erl_alloc.h"
 #include "erl_sys_driver.h"
 #include "global.h"
+#include "erl_threads.h"
 
 void erts_sys_init_float(void);
 void init_sys_select(void);
@@ -34,7 +35,7 @@ void erl_start(int, char**);
 void erl_exit(int n, char*, _DOTS_);
 void erl_error(char*, va_list);
 int send_error_to_logger(Eterm);
-void erl_crash_dump(char*, char*);
+void erl_crash_dump(char*, int, char*, ...);
 
 /*
  * Microsoft-specific function to map a WIN32 error code to a Posix errno.
@@ -868,6 +869,7 @@ spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
     HANDLE hChildStdin = INVALID_HANDLE_VALUE;		/* Child's stdin. */
     HANDLE hChildStdout = INVALID_HANDLE_VALUE;	/* Child's stout. */
     HANDLE hChildStderr = INVALID_HANDLE_VALUE;	/* Child's sterr. */
+    int close_child_stderr = 0;
     DriverData* dp;		/* Pointer to driver data. */
     ErlDrvData retval = ERL_DRV_ERROR_GENERAL; /* Return value. */
     int ok;
@@ -921,6 +923,7 @@ spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
     } else if (hChildStderr == INVALID_HANDLE_VALUE || hChildStderr == 0) {
 	hChildStderr = CreateFile("nul", GENERIC_WRITE, 0, &sa, OPEN_EXISTING,
 				  FILE_ATTRIBUTE_NORMAL, NULL);
+	close_child_stderr = 1;
     }
 
     /*
@@ -939,6 +942,10 @@ spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 			    (LPTSTR) opts->wd);
     CloseHandle(hChildStdin);
     CloseHandle(hChildStdout);
+    if (close_child_stderr && hChildStderr != INVALID_HANDLE_VALUE &&
+	hChildStderr != 0) {
+	CloseHandle(hChildStderr);
+    }
     if (envir != NULL) {
 	erts_free(ERTS_ALC_T_ENVIRONMENT, envir);
     }
@@ -2491,11 +2498,17 @@ erl_assert_error(char* expr, char* file, int line)
     sprintf(message, "File %hs, line %d: %hs", file, line, expr);
     MessageBox(GetActiveWindow(), message, "Assertion failed",
 	       MB_OK | MB_ICONERROR);
-    erl_crash_dump(NULL, NULL);
+    erl_crash_dump(file, line, "Assertion failed: %hs\n", expr);
     DebugBreak();
 }
 
 #endif /* DEBUG */
+
+void
+erts_sys_pre_init(void)
+{
+    erts_thr_init(NULL);
+}
 
 /*
  * the last two only used for standalone erlang
@@ -2503,13 +2516,23 @@ erl_assert_error(char* expr, char* file, int line)
  * enable standalone execution via erl_api-routines
  */
 
-void
-erl_sys_init()
+void noinherit_std_handle(DWORD type)
+{
+    HANDLE h = GetStdHandle(type);
+    if (h != 0 && h != INVALID_HANDLE_VALUE) {
+	SetHandleInformation(h,HANDLE_FLAG_INHERIT,0);
+    }
+}
+	    
+    
+
+void erl_sys_init(void)
 {
     HANDLE handle;
-    /*
-     * Firstly, initialise malloc to make it safe for us...
-     */
+
+    noinherit_std_handle(STD_OUTPUT_HANDLE);
+    noinherit_std_handle(STD_INPUT_HANDLE);
+    noinherit_std_handle(STD_ERROR_HANDLE);
 
     int_os_version.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
     GetVersionEx(&int_os_version);

@@ -141,8 +141,9 @@ start_factory() ->
 start_factory(Options) when list(Options) ->
     'CosEventDomainAdmin_EventDomainFactory':oe_create(Options);
 start_factory(Options) ->
-    orber:debug_level_print("[~p] cosEventDomainApp:start_factory(~p); 
-Options not correct.", [?LINE, Options], ?DEBUG_LEVEL),
+    orber:dbg("[~p] cosEventDomainApp:start_factory(~p);~n"
+	      "Options not correct.", 
+	      [?LINE, Options], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
     
 %%-----------------------------------------------------------%
@@ -157,8 +158,9 @@ start_factory_link() ->
 start_factory_link(Options) when list(Options) ->
     'CosEventDomainAdmin_EventDomainFactory':oe_create_link(Options);
 start_factory_link(Options) ->
-    orber:debug_level_print("[~p] cosEventDomainApp:start_factory_link(~p); 
-Options not correct.", [?LINE, Options], ?DEBUG_LEVEL),
+    orber:dbg("[~p] cosEventDomainApp:start_factory_link(~p);~n"
+	      "Options not correct.", 
+	      [?LINE, Options], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
     
 %%-----------------------------------------------------------%
@@ -255,7 +257,7 @@ create_id(OldID) ->
 
 
 create_id() ->
-    {A,B,C}=now(),
+    {_A,_B,C}=now(),
     C.
 %%------------------------------------------------------------
 %% function : get_qos

@@ -57,9 +57,9 @@ init() ->
 
 man_loop(Width0,Height0) ->
     receive
-	{gs,Win,configure,_,[Width0,Height0|_]} -> %% already got that size!
+	{gs,_Win,configure,_,[Width0,Height0|_]} -> %% already got that size!
 	    man_loop(Width0,Height0);
-	{gs,Win,configure,_,[Width,Height|_]} ->
+	{gs,_Win,configure,_,[Width,Height|_]} ->
 	    %%io:format("man: width=~w, height=~w ~n",[Width,Height]),
 	    gs:config(editor,[{width,Width},{height,Height-30}]),
 	    man_loop(Width,Height);
@@ -93,11 +93,11 @@ check_4_last([H|T]) ->
     case catch(get_4_last(reverse(H))) of
 	[46,116,120,116] -> % ".txt"
 	    [remove_4_last(H)|check_4_last(T)];
-	Any ->
+	_Any ->
 	    check_4_last(T)
     end.
 
-get_4_last([H1,H2,H3,H4|T]) ->
+get_4_last([H1,H2,H3,H4|_T]) ->
     [H4,H3,H2,H1].
 
 remove_4_last(Str) ->
@@ -111,7 +111,7 @@ load_page(Page) ->
     %%io:format("man: load page start.~n",[]),
     Filename = lists:flatten([dirManual(),Page,".txt"]),
     {ok,Bin}=file:read_file(Filename),
-    Txt=binary_to_list(Bin),
+    _Txt=binary_to_list(Bin),
     gs:config(editor,{enable,true}),
     gs:config(editor,{load,Filename}),
     gs:config(editor,{enable,false}),
@@ -142,7 +142,7 @@ browser_init(Pid,Items) ->
     process_flag(trap_exit,true),
     S=gs:start(),
     Win=gs:window(win,S,[{width,250},{height,270},{title,"Browser"}]),
-    Lbl=gs:label(Win,[{label,{text,"Select a Manual Page"}},{width,250}]),
+    _Lbl=gs:label(Win,[{label,{text,"Select a Manual Page"}},{width,250}]),
     gs:label(Win,[{width,40},{y,35},{label,{text,"Page:"}}]),
     Entry=gs:entry(Win,[{y,35},{width,205},{x,40},
 			{keypress,true},{focus,true}]),
@@ -166,17 +166,17 @@ browser_loop(Pid,Ok,Cancel,Entry,Lb) ->
 	    Pid ! {browser,{ok,Txt}};
 	{gs,Entry,keypress,_,_} ->
 	    browser_loop(Pid,Ok,Cancel,Entry,Lb);
-	{gs,Lb,click,_,[Idx, Txt| Rest]} ->
+	{gs,Lb,click,_,[_Idx, Txt| _Rest]} ->
 	    gs:config(Entry,{text,Txt}),
 	    browser_loop(Pid,Ok,Cancel,Entry,Lb);
-	{gs,Lb,doubleclick,_,[Idx, Txt| Rest]} ->
+	{gs,Lb,doubleclick,_,[_Idx, Txt| _Rest]} ->
 	    Pid ! {browser,{ok,Txt}};
 	{gs,_,destroy,_,_} ->
 	    Pid ! {browser,cancel};
 	wake_up ->
 	    gs:config(win,[{iconify,false},raise]),
 	    browser_loop(Pid,Ok,Cancel,Entry,Lb);
-	{'EXIT',Man,Why} ->
+	{'EXIT',_Man,Why} ->
 	    exit(Why);
 	X ->
 	    io:format("man: browser got other: ~w.~n",[X]),

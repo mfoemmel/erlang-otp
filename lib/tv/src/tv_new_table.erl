@@ -241,7 +241,7 @@ loop(NamedTab, Type, Prot, OpenBrowser, MPid) ->
 	    loop(NamedTab, Type, Prot, OpenBrowser, MPid);
 	
 
-	{gs, EntryId, keypress, _Data, ['Return' | _T]} ->
+	{gs, _EntryId, keypress, _Data, ['Return' | _T]} ->
 	    gs:config(win, [{cursor, busy}]),
 	    case create_table(NamedTab, Type, Prot, OpenBrowser, MPid) of
 		ok ->

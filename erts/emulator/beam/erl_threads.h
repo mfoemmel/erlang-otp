@@ -15,77 +15,279 @@
  * 
  *     $Id$
  */
-/*
- * Small thread function, wrapping threads on solaris,
- * emulating some pthread calls on Win32
+
+/* Description: Error checking thread interface to the ethread library.
+ *              All functions terminates the emulator on failure.
+ * Author: Rickard Green
  */
 
-#ifndef __ERL_THREADS_H__
-#define __ERL_THREADS_H__
+#ifndef ERL_THREAD_H__
+#define ERL_THREAD_H__
 
-#ifndef EXTERN
-#ifdef __cplusplus
-#   define EXTERN extern "C"
+#ifdef USE_THREADS
+
+#include "ethread.h"
+void erts_thr_fatal_error(int, char *); /* implemented in erl_init.c */
+
+#else /* #ifdef USE_THREADS */
+
+typedef int ethr_init_data;
+typedef int ethr_tid;
+typedef int ethr_mutex;
+typedef int ethr_cond;
+
+typedef struct {
+    long tv_sec;
+    long tv_nsec;
+} ethr_timeval;
+
+#define ETHR_REC_MUTEX_INITER		0
+#define ETHR_MUTEX_INITER		0
+#define ETHR_COND_INITER		0
+#define ETHR_INIT_DATA_DEFAULT_INITER 	0
+
+#endif /* #ifdef USE_THREADS */
+
+static ERTS_INLINE void
+erts_thr_init(ethr_init_data *id)
+{
+#ifdef USE_THREADS
+    int res = ethr_init(id);
+    if (res)
+	erts_thr_fatal_error(res, "initialize thread library");
+#endif
+}
+
+static ERTS_INLINE void
+erts_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg,
+		   int detached)
+{
+#ifdef USE_THREADS
+    int res = ethr_thr_create(tid, func, arg, detached);
+    if (res)
+	erts_thr_fatal_error(res, "create thread");
+#endif
+}
+
+static ERTS_INLINE void
+erts_thr_join(ethr_tid tid, void **thr_res)
+{
+#ifdef USE_THREADS
+    int res = ethr_thr_join(tid, thr_res);
+    if (res)
+	erts_thr_fatal_error(res, "join thread");
+#endif
+}
+
+
+static ERTS_INLINE void
+erts_thr_detach(ethr_tid tid)
+{
+#ifdef USE_THREADS
+    int res = ethr_thr_detach(tid);
+    if (res)
+	erts_thr_fatal_error(res, "detach thread");
+#endif
+}
+
+
+static ERTS_INLINE void
+erts_thr_exit(void *res)
+{
+#ifdef USE_THREADS
+    ethr_thr_exit(res);
+    erts_thr_fatal_error(0, "terminate thread");
+#endif
+}
+
+
+static ERTS_INLINE ethr_tid
+erts_thr_self(void)
+{
+#ifdef USE_THREADS
+    return ethr_self();
 #else
-#   define EXTERN extern
+    return 0;
 #endif
+}
+
+
+static ERTS_INLINE int
+erts_equal_tids(ethr_tid x, ethr_tid y)
+{
+#ifdef USE_THREADS
+    return ethr_equal_tids(x, y);
+#else
+    return 1;
 #endif
+}
 
-/* opaque data */
-typedef struct _erts_mutex_t* erts_mutex_t;
-typedef struct _erts_cond_t* erts_cond_t;
-typedef struct _erts_thread_t* erts_thread_t;
-
-EXTERN erts_mutex_t erts_mutex_create (void);
-EXTERN int erts_mutex_destroy (erts_mutex_t);
-EXTERN int erts_mutex_lock (erts_mutex_t);
-EXTERN int erts_mutex_unlock (erts_mutex_t);
-
-EXTERN erts_cond_t erts_cond_create (void);
-EXTERN int erts_cond_destroy (erts_cond_t);
-EXTERN int erts_cond_signal (erts_cond_t);
-EXTERN int erts_cond_broadcast (erts_cond_t);
-EXTERN int erts_cond_wait (erts_cond_t, erts_mutex_t);
-EXTERN int erts_cond_timedwait (erts_cond_t, erts_mutex_t, long);
-
-EXTERN int erts_thread_create (erts_thread_t*,
-			      void* (*func)(void*),
-			      void* arg,
-			      int detached);
-EXTERN erts_thread_t erts_thread_self (void);
-EXTERN void erts_thread_exit (void*);
-EXTERN int  erts_thread_join (erts_thread_t, void**);
-EXTERN int  erts_thread_kill (erts_thread_t);
-
-#ifdef ERL_THREADS_EMU_INTERNAL__
-
-#define ERTS_MUTEX_SYS_ELIB_MALLOC		0
-#define ERTS_MUTEX_SYS_CHILD_STATUS		1
-#define ERTS_MUTEX_SYS_INSTR			2
-#define ERTS_MUTEX_SYS_INSTR_X			3
-#define ERTS_MUTEX_SYS_MTRACE			4
-#define ERTS_MUTEX_SYS_MSEG			5
-#define ERTS_MUTEX_SYS_TEMP_ALLOC		6
-#define ERTS_MUTEX_SYS_SL_ALLOC			7
-#define ERTS_MUTEX_SYS_STD_ALLOC		8
-#define ERTS_MUTEX_SYS_LL_ALLOC			9
-#define ERTS_MUTEX_SYS_EHEAP_ALLOC		10
-#define ERTS_MUTEX_SYS_BINARY_ALLOC		11
-#define ERTS_MUTEX_SYS_ETS_ALLOC		12
-
-#define ERTS_MAX_SYS_MUTEX			13
-
-EXTERN erts_mutex_t erts_mutex_sys(int);
-EXTERN int erts_atfork_sys(void (*)(void), void (*)(void), void (*)(void));
-EXTERN int erts_mutex_set_default_atfork(erts_mutex_t mtx);
-EXTERN int erts_mutex_unset_default_atfork(erts_mutex_t mtx);
-#ifdef UNIX
-EXTERN int erts_thread_sigmask(int, const sigset_t *, sigset_t *);
-EXTERN int erts_thread_sigwait(const sigset_t *, int *);
+static ERTS_INLINE void
+erts_mtx_init(ethr_mutex *mtx)
+{
+#ifdef USE_THREADS
+    int res = ethr_mutex_init(mtx);
+    if (res)
+	erts_thr_fatal_error(res, "initialize mutex");
 #endif
-EXTERN void erts_sys_threads_init(void);
-#endif /* #ifdef ERL_THREADS_EMU_INTERNAL__ */
+}
 
-#endif /* #ifndef __ERL_THREADS_H__ */
+static ERTS_INLINE void
+erts_mtx_destroy(ethr_mutex *mtx)
+{
+#ifdef USE_THREADS
+    int res = ethr_mutex_destroy(mtx);
+    if (res)
+	erts_thr_fatal_error(res, "destroy mutex");
+#endif
+}
+
+static ERTS_INLINE void
+erts_mtx_set_forksafe(ethr_mutex *mtx)
+{
+#ifdef USE_THREADS
+    int res = ethr_mutex_set_forksafe(mtx);
+    if (res != 0 && res != ENOTSUP)
+	erts_thr_fatal_error(res, "set mutex forksafe");
+#endif
+}
+
+static ERTS_INLINE void
+erts_mtx_unset_forksafe(ethr_mutex *mtx)
+{
+#ifdef USE_THREADS
+    int res = ethr_mutex_unset_forksafe(mtx);
+    if (res != 0 && res != ENOTSUP)
+	erts_thr_fatal_error(res, "unset mutex forksafe");
+#endif
+}
+
+static ERTS_INLINE void
+erts_mtx_lock(ethr_mutex *mtx)
+{
+#ifdef USE_THREADS
+    int res = ethr_mutex_lock(mtx);
+    if (res)
+	erts_thr_fatal_error(res, "lock mutex");
+#endif
+}
+
+static ERTS_INLINE void
+erts_mtx_unlock(ethr_mutex *mtx)
+{
+#ifdef USE_THREADS
+    int res = ethr_mutex_unlock(mtx);
+    if (res)
+	erts_thr_fatal_error(res, "unlock mutex");
+#endif
+}
+
+static ERTS_INLINE void
+erts_cnd_init(ethr_cond *cnd)
+{
+#ifdef USE_THREADS
+    int res = ethr_cond_init(cnd);
+    if (res)
+	erts_thr_fatal_error(res, "initialize condition variable");
+#endif
+}
+
+static ERTS_INLINE void
+erts_cnd_destroy(ethr_cond *cnd)
+{
+#ifdef USE_THREADS
+    int res = ethr_cond_destroy(cnd);
+    if (res)
+	erts_thr_fatal_error(res, "destroy condition variable");
+#endif
+}
+
+static ERTS_INLINE void
+erts_cnd_wait(ethr_cond *cnd, ethr_mutex *mtx)
+{
+#ifdef USE_THREADS
+    int res;
+    do {
+	res = ethr_cond_wait(cnd, mtx);
+    } while (res == EINTR);
+    if (res)
+	erts_thr_fatal_error(res, "wait on condition variable");
+#endif
+}
+
+static ERTS_INLINE int
+erts_cnd_timedwait(ethr_cond *cnd, ethr_mutex *mtx, ethr_timeval *time)
+{
+#ifdef USE_THREADS
+    int res;
+    do {
+	res = ethr_cond_timedwait(cnd, mtx, time);
+    } while (res == EINTR);
+    if (res != 0 && res != ETIMEDOUT)
+	erts_thr_fatal_error(res,
+				 "wait with timeout on condition variable");
+    return res;
+#else
+    return 0;
+#endif
+}
+
+static ERTS_INLINE void
+erts_cnd_signal(ethr_cond *cnd)
+{
+#ifdef USE_THREADS
+    int res = ethr_cond_signal(cnd);
+    if (res)
+	erts_thr_fatal_error(res, "signal on condition variable");
+#endif
+}
 
 
+static ERTS_INLINE void
+erts_cnd_broadcast(ethr_cond *cnd)
+{
+#ifdef USE_THREADS
+    int res = ethr_cond_broadcast(cnd);
+    if (res)
+	erts_thr_fatal_error(res, "broadcast on condition variable");
+#endif
+}
+
+static ERTS_INLINE void
+erts_thr_time_now(ethr_timeval *time)
+{
+#ifdef USE_THREADS
+    int res = ethr_time_now(time);
+    if (res)
+	erts_thr_fatal_error(res, "get current time");
+#endif
+}
+
+#ifdef ETHR_HAVE_ETHR_SIG_FUNCS
+
+static ERTS_INLINE void
+erts_thr_sigmask(int how, const sigset_t *set, sigset_t *oset)
+{
+#ifdef USE_THREADS
+    int res = ethr_sigmask(how, set, oset);
+    if (res)
+	erts_thr_fatal_error(res, "get or set signal mask");
+#endif
+}
+
+static ERTS_INLINE void
+erts_thr_sigwait(const sigset_t *set, int *sig)
+{
+#ifdef USE_THREADS
+    int res;
+    do {
+	res = ethr_sigwait(set, sig);
+    } while (res == EINTR);
+    if (res)
+	erts_thr_fatal_error(res, "to wait for signal");
+#endif
+}
+
+#endif /* #ifdef HAVE_ETHR_SIG_FUNCS */
+
+#endif /* #ifndef ERL_THREAD_H__ */

@@ -34,9 +34,9 @@
 
 
 
-mergesort(KeyNo, [X], ReverseOrder) -> 
+mergesort(_KeyNo, [X], _ReverseOrder) -> 
     [X];
-mergesort(KeyNo, [], ReverseOrder) -> 
+mergesort(_KeyNo, [], _ReverseOrder) -> 
     [];
 mergesort(KeyNo, X, ReverseOrder) -> 
     split(KeyNo, X, [], [], ReverseOrder).
@@ -69,9 +69,9 @@ merge(KeyNo, [{E1, C1} | T1], [{E2, C2} | T2], Reverse) ->
 	{2, 1} ->
 	    [{E1, C1} | merge(KeyNo, T1, [{E2, C2} | T2], Reverse)] 
     end;
-merge(KeyNo, [], L2, Reverse) ->       % L2 may be the empty list also!
+merge(_KeyNo, [], L2, _Reverse) ->       % L2 may be the empty list also!
     L2;
-merge(KeyNo, L1, [], Reverse) ->       % L1 may be the empty list also!
+merge(_KeyNo, L1, [], _Reverse) ->       % L1 may be the empty list also!
     L1.
 
     
@@ -86,7 +86,7 @@ get_compare_value(KeyNo, E) when tuple(E) ->
 	V ->
 	    {tuple, V}
     end;
-get_compare_value(KeyNo, E) ->
+get_compare_value(_KeyNo, _E) ->
     no_tuple.
 
 
@@ -120,23 +120,23 @@ split(KeyNo, [], X, Y, Reverse) ->
 
 
 
-get_correct_order({tuple, V1}, E1, {tuple, V2}, E2) when V1 < V2 ->
+get_correct_order({tuple, V1}, _E1, {tuple, V2}, _E2) when V1 < V2 ->
     {1, 2};
-get_correct_order({tuple, V1}, E1, {tuple, V2}, E2) ->
+get_correct_order({tuple, _V1}, _E1, {tuple, _V2}, _E2) ->
     {2, 1};
-get_correct_order(short_tuple, E1, {tuple, V2}, E2) ->
+get_correct_order(short_tuple, _E1, {tuple, _V2}, _E2) ->
     {1, 2};
-get_correct_order({tuple, V1}, E1, short_tuple, E2) ->
+get_correct_order({tuple, _V1}, _E1, short_tuple, _E2) ->
     {2, 1};
 get_correct_order(short_tuple, E1, short_tuple, E2) when E1 < E2 ->
     {1, 2};
-get_correct_order(short_tuple, E1, short_tuple, E2) ->
+get_correct_order(short_tuple, _E1, short_tuple, _E2) ->
     {2, 1};
 get_correct_order(no_tuple, E1, no_tuple, E2) when E1 < E2 ->
     {1, 2};
-get_correct_order(no_tuple, E1, no_tuple, E2) ->
+get_correct_order(no_tuple, _E1, no_tuple, _E2) ->
     {2, 1};
-get_correct_order(_Anything, E1, no_tuple, E2) ->     % Tuples first, then other 
+get_correct_order(_Anything, _E1, no_tuple, _E2) ->     % Tuples first, then other 
     {1, 2};                                           % terms in correct order!
-get_correct_order(no_tuple, E1, _Anything, E2) ->
+get_correct_order(no_tuple, _E1, _Anything, _E2) ->
     {2, 1}.

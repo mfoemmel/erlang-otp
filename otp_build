@@ -64,7 +64,7 @@ set_config_flags ()
 	if target_contains solaris; then 
 		CONFIG_FLAGS="--enable-threads --enable-kernel-poll"
 	elif target_contains linux; then 
-		CONFIG_FLAGS="--enable-threads"
+		CONFIG_FLAGS="--enable-threads --disable-hipe"
 	fi
 	if target_contains "univel-sysv4"; then
 		CONFIG_FLAGS="--x-libraries=/usr/lib/X11"

@@ -37,13 +37,13 @@
 
 -record(c_nil, {anno=[]}).
 
--record(c_binary, {anno=[], segs}).	% segs :: [#ce_bin_seg{}]
+-record(c_binary, {anno=[], segments}).	% segments :: [#ce_bitstr{}]
 
--record(c_bin_seg, {anno=[],val,	% val :: Tree,
-		    size,		% size :: Tree,
-		    unit,		% unit :: integer(),
-		    type,		% type :: atom(),
-		    flags}).		% flags :: [atom()],
+-record(c_bitstr, {anno=[],val,	% val :: Tree,
+		   size,		% size :: Tree,
+		   unit,		% unit :: integer(),
+		   type,		% type :: atom(),
+		   flags}).		% flags :: [atom()],
 
 -record(c_cons, {anno=[], hd,		% hd :: Tree,
 		 tl}).			% tl :: Tree

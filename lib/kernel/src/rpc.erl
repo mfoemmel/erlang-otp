@@ -28,10 +28,10 @@
 -behaviour(gen_server).
 
 -export([start/0, start_link/0, stop/0,
-	 call/4,         
-	 block_call/4,   
-	 server_call/4,  
-	 cast/4,         
+	 call/4, call/5,
+	 block_call/4, block_call/5,
+	 server_call/4,
+	 cast/4,
 	 abcast/2,
 	 abcast/3,
 	 sbcast/2,
@@ -49,7 +49,7 @@
 	 yield/1,
 	 nb_yield/2,
 	 nb_yield/1,
-	 parallel_eval/1, 
+	 parallel_eval/1,
 	 pmap/3, pinfo/1, pinfo/2]).
 
 %% gen_server exports
@@ -187,25 +187,74 @@ set_group_leader(user) ->
 %% THE rpc client interface
 
 call(N,M,F,A) when node() == N ->  %% Optimize local call
-    case V = (catch apply(M,F,A)) of
-	{'EXIT', _} -> {badrpc, V};
-	Other -> Other
-    end;
+    local_call(M,F,A);
 call(N,M,F,A) ->
-    rpc_check(catch gen_server:call({?NAME,N},
-				    {call,M,F,A,group_leader()},
-				    infinity)).
+    do_call(N, {call,M,F,A,group_leader()}, infinity).
+
+call(N,M,F,A,_Timeout) when node() == N ->  %% Optimize local call
+    local_call(M,F,A);
+call(N,M,F,A,infinity) ->
+    do_call(N, {call,M,F,A,group_leader()}, infinity);
+call(N,M,F,A,Timeout) when integer(Timeout), Timeout >= 0 ->
+    do_call(N, {call,M,F,A,group_leader()}, Timeout).
 
 block_call(N,M,F,A) when node() == N -> %% Optimize local call
-    case V = (catch apply(M,F,A)) of
-	{'EXIT', _} -> {badrpc, V};
-	Other -> Other
-    end;
+    local_call(M,F,A);
 block_call(N,M,F,A) ->
-    rpc_check(catch gen_server:call({?NAME,N},
-				    {block_call,M,F,A,group_leader()},
-				    infinity)).
+    do_call(N, {block_call,M,F,A,group_leader()}, infinity).
 
+block_call(N,M,F,A,_Timeout) when node() == N ->  %% Optimize local call
+    local_call(M,F,A);
+block_call(N,M,F,A,infinity) ->
+    do_call(N, {block_call,M,F,A,group_leader()}, infinity);
+block_call(N,M,F,A,Timeout) when integer(Timeout), Timeout >= 0 ->
+    do_call(N, {block_call,M,F,A,group_leader()}, Timeout).
+
+local_call(M,F,A) ->
+    case catch apply(M,F,A) of
+	{'EXIT',_}=V -> {badrpc, V};
+	Other -> Other
+    end.
+
+do_call(Node, Request, infinity) ->
+    rpc_check(catch gen_server:call({?NAME,Node}, Request, infinity));
+do_call(Node, Request, Timeout) ->
+    Tag = make_ref(),
+    Caller = self(),
+    Receiver =
+	spawn(
+	  fun() ->
+		  %% Middleman process. Should be unsensitive to regular
+		  %% exit signals. The sychronization is needed in case
+		  %% the receiver would exit before the caller started
+		  %% the monitor.
+		  process_flag(trap_exit, true),
+		  Mref = erlang:monitor(process, Caller),
+		  receive
+		      {Caller,Tag} ->
+			  Result = gen_server:call({?NAME,Node}, 
+						   Request, Timeout),
+			  exit({self(),Tag,Result});
+		      {'DOWN',Mref,_,_,_} ->
+			  %% Caller died before sending us the go-ahead.
+			  %% Give up silently.
+			  exit(normal)
+		  end
+	  end),
+    Mref = erlang:monitor(process, Receiver),
+    Receiver ! {Caller,Tag},
+    receive
+	{'DOWN',Mref,_,_,{Receiver,Tag,Result}} ->
+	    rpc_check(Result);
+	{'DOWN',Mref,_,_,Reason} ->
+	    %% The middleman code failed. Or someone did 
+	    %% exit(_, kill) on the middleman process => Reason==killed
+	    rpc_check_t({'EXIT',Reason})
+    end.
+
+rpc_check_t({'EXIT', {timeout,_}}) -> {badrpc, timeout};
+rpc_check_t(X) -> rpc_check(X).
+	    
 rpc_check({'EXIT', {{nodedown,_},_}}) -> {badrpc, nodedown};
 rpc_check({'EXIT', X}) -> exit(X);
 rpc_check(X) -> X.
@@ -272,7 +321,11 @@ cast(Node,Mod,Fun,Args) ->
 abcast(Name, Mess) ->
     abcast([node() | nodes()], Name, Mess).
 abcast([Node|Tail], Name, Mess) ->
-    {Name, Node} ! Mess,
+    Dest = {Name,Node},
+    case catch erlang:send(Dest, Mess, [noconnect]) of
+	noconnect -> spawn(erlang, send, [Dest,Mess]);
+	_ -> ok
+    end,
     abcast(Tail, Name, Mess);
 abcast([], _,_) -> abcast.
 

@@ -720,14 +720,15 @@ catch_bif(0) -> bif;
 catch_bif(Lev) when integer(Lev) -> catch_bif.
 
 safe_bif(Catch,Name,As,Bs,Cm,Lc,Le,LineNo,F) ->
-    Ref = make_ref(),
-    case catch {Ref,erts_debug:apply(erlang,Name,As,clean_mfa(F))} of
-	{Ref,Value} when Lc==true ->
+    try apply(erlang, Name, As) of
+       	Value when Lc==true ->
 	    {value,Value,Bs};
-	{Ref,Value} ->
+	Value ->
 	    trace(return,{Le,Value,Lc}),
-	    {value,Value,Bs};
-	{'EXIT',Reason} ->
+	    {value,Value,Bs}
+    catch
+        error:Error ->
+            Reason = {Error,[{erlang,Name,As},clean_mfa(F)]},
 	    case Catch of
 		bif -> exit(Reason,Cm,LineNo,Bs);
 		catch_bif -> exit(Reason)
@@ -1005,15 +1006,8 @@ guard_exprs([], _) ->
 guard_expr({dbg,_,self,[]}, _) ->
     {value,get(self)};
 guard_expr({safe_bif,_,erlang,'not',As0}, Bs) ->
-    %% BUG compatible with R9C remove in R10
     {values,As} = guard_exprs(As0,Bs),
-%%    io:format("not ~p~n",[As]),
-    if [As] == [true] ->
-	    {value, false};
-       true ->
-	    {value, true}
-    end;
-%%   {value,apply(erlang,'not',As)};
+    {value,apply(erlang,'not',As)};
 guard_expr({safe_bif,_,Mod,Func,As0}, Bs) ->
     {values,As} = guard_exprs(As0,Bs),
     {value,apply(Mod,Func,As)};

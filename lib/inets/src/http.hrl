@@ -15,113 +15,160 @@
 %% 
 %%
 
--define(HTTP_REQUEST_TIMEOUT,   5000).
+-define(HTTP_REQUEST_TIMEOUT, infinity).
 -define(TCP_PIPELINE_LENGTH,3).
 -define(MAX_TCP_SESSIONS,400).
-
-
-%%% FIXME! These definitions should probably be possible to defined via
-%%% user settings
+-define(MAX_BODY_SIZE, nolimit).
+-define(MAX_HEADER_SIZE, 10240).
 -define(MAX_REDIRECTS, 4).
 
+-define(CR, "\r").
+-define(LF, "\n").
+-define(CRLF, "\r\n").
+-define(SP, "\s").
+-define(TAB, "\t").
 
-%%% Note that if not persitent the connection can be closed immediately on a
-%%% response, because new requests are not sent to this connection process.
-%%%	  address,     % ({Host,Port}) Destination Host and Port
 -record(tcp_session,{
-	  id,          % (int) Session Id identifies session in http_manager
-	  clientclose, % (bool) true if client requested "close" connection
-	  scheme,      % (atom) http (HTTP/TCP) or https (HTTP/SSL/TCP)
-	  socket,      % (socket) Open socket, used by connection
-	  pipeline=[], % (list) Sent requests, not yet taken care of by the
-	               %        associated http_responder.
-	  quelength=1, % (int) Current length of pipeline (1 when created)
-	  max_quelength% (int) Max pipeline length
+	  id,           % {{Host, Port}, HandlerPid}
+	  client_close, % true | false
+	  scheme,       % http (HTTP/TCP) | https (HTTP/SSL/TCP)
+	  socket,       % Open socket, used by connection
+	  pipeline_length = 1 % Current length of pipeline 
 	 }).
 
-%%%      [{Pid,RequestQue,QueLength},...] list where
-%%%   - RequestQue (implemented with a list) contains sent requests that
-%%%      has not yet received a response (pipelined) AND is not currently
-%%%      handled (awaiting data) by the session process.
-%%%   - QueLength is the length of this que, but 
 
 %%% All data associated to a specific HTTP request
 -record(request,{
-	  id,          % (int) Request Id
-	  ref,         % Caller specific
-	  from,        % (pid) Caller
-	  redircount=0,% (int) Number of redirects made for this request
-	  scheme,      % (http|https) (HTTP/TCP) or (HTTP/SSL/TCP) connection
-	  address,     % ({Host,Port}) Destination Host and Port
-	  pathquery,   % (string) Rest of parsed URL
-	  method,      % (atom) HTTP request Method
-	  headers,     % (list) Key/Value list with Headers
-	  content,     % ({ContentType,Body}) Current HTTP request
-	  settings     % (#client_settings{}) User defined settings
+	  id,            % ref() - Request Id
+	  from,          % pid() - Caller
+	  redircount = 0,% Number of redirects made for this request
+	  scheme,        % http | https 
+	  address,       % ({Host,Port}) Destination Host and Port
+	  path,          % string() - Path of parsed URL
+	  pquery,        % string() - Rest of parsed URL
+	  method,        % atom() - HTTP request Method
+	  headers,       % list() - Key/Value list with Headers
+	  content,       % {ContentType, Body} - Current HTTP request
+	  settings       % #client_settings{} - User defined settings
 	 }).
 
 -record(response,{
-	  scheme,      % (atom) http (HTTP/TCP) or https (TCP/SSL/TCP)
-	  socket,      % (socket) Open socket, used by connection
+	  scheme,      % http | https 
+	  socket,      % Open socket, used by connection
 	  status,
-	  version,     % int() HTTP minor version number, e.g. 0 or 1
-	  headers=#res_headers{},
+	  version,     % int() - HTTP minor version number, e.g. 0 or 1
+	  headers=#http_response_h{},
 	  body = <<>>
 	 }).
 
-
 %%% Response headers
--record(res_headers,{
+-record(http_response_h,{
 %%% --- Standard "General" headers
-% 	  cache_control,
+ 	  cache_control,
  	  connection,
-% 	  date,
-% 	  pragma,
-% 	  trailer,
+ 	  date,
+ 	  pragma,
+ 	  trailer,
  	  transfer_encoding,
-% 	  upgrade,
-% 	  via,
-% 	  warning,
+ 	  upgrade,
+ 	  via,
+ 	  warning,
 %%% --- Standard "Request" headers
-% 	  accept_ranges,
-% 	  age,
-% 	  etag,
+ 	  accept_ranges,
+ 	  age,
+ 	  etag,
  	  location,
-% 	  proxy_authenticate,
+ 	  proxy_authenticate,
  	  retry_after,
-% 	  server,
-% 	  vary,
-% 	  www_authenticate,
+ 	  server,
+ 	  vary,
+ 	  www_authenticate,
 %%% --- Standard "Entity" headers
-% 	  allow,
-% 	  content_encoding,
-% 	  content_language,
- 	  content_length="0",
-% 	  content_location,
-% 	  content_md5,
-% 	  content_range,
+ 	  allow,
+ 	  content_encoding,
+ 	  content_language,
+ 	  content_length = "0",
+ 	  content_location,
+	  content_md5,
+ 	  content_range,
  	  content_type,
-% 	  expires,
-% 	  last_modified,
-	  other=[]        % (list) Key/Value list with other headers
+ 	  expires,
+ 	  last_modified,
+	  other=[]        % list() - Key/Value list with other headers
+	 }).
+
+
+%%% Request headers
+-record(http_request_h,{
+%%% --- Standard "General" headers
+ 	  cache_control,
+ 	  connection="keep-alive",
+ 	  date,
+ 	  pragma,
+ 	  trailer,
+ 	  transfer_encoding,
+ 	  upgrade,
+ 	  via,
+ 	  warning,
+%%% --- Standard "Request" headers
+ 	  accept,
+ 	  accept_charset,
+ 	  accept_encoding,
+ 	  accept_language,
+ 	  authorization,
+ 	  expect, 
+ 	  from,
+ 	  host,
+ 	  if_match,
+ 	  if_modified_since,
+ 	  if_none_match,
+ 	  if_range,
+ 	  if_unmodified_since,
+ 	  max_forwards,
+	  proxy_authenticate, 
+ 	  range,
+ 	  referer,
+ 	  te, 
+ 	  user_agent,
+%%% --- Standard "Entity" headers
+	  allow,
+ 	  content_encoding,
+ 	  content_language,
+ 	  content_length = "0",
+ 	  content_location,
+ 	  content_md5,
+ 	  content_range,
+ 	  content_type,
+	  expires,
+ 	  last_modified,
+	  other=[]        % list() - Key/Value list with other headers
+	 }).
+
+
+-record(http_cookie,{
+	  key,  % {Domain,Path} tuple specifying validity of cookie
+	  name,
+	  value,
+	  comment,
+	  comment_url,
+	  port,
+	  discard,
+	  maxage,
+	  secure,
+	  version
 	 }).
 
 
 %%% HTTP Client settings
--record(client_settings,{
-	  timeout=?HTTP_REQUEST_TIMEOUT,
-	                     % (int) Milliseconds before a request times out
-	  useproxy=false,    % (bool) True if the proxy should be used
-	  proxy=undefined,   % (tuple) Parsed Proxy URL
-	  noproxylist=[],    % (list) List with hosts not requiring proxy
-	  autoredirect=true, % (bool) True if automatic redirection on 30X
-			     %        responses.
-	  max_sessions=?MAX_TCP_SESSIONS,% (int) Max open sessions for any Adr,Port
-	  max_quelength=?TCP_PIPELINE_LENGTH, % (int) Max pipeline length
-%	  ssl=[{certfile,"/jb/server_root/ssl/ssl_client.pem"},
-%	       {keyfile,"/jb/server_root/ssl/ssl_client.pem"},
-%	       {verify,0}]
-	  ssl=false,    % (list) SSL settings. A non-empty list enables SSL/TLS
-                        %  support in the HTTP client
-	  relaxed=false % (bool) true if not stricly standard compliant
+-record(http_options,{
+	  %% Milliseconds before a request times out
+	  timeout = ?HTTP_REQUEST_TIMEOUT,                 
+	  %% bool() - True if automatic redirection on 30X responses.
+	  autoredirect = true, 
+	  ssl = [], % Ssl socket options
+	  cookie = false, % bool() - cookies are not yet supported, keep ??
+	  relaxed = false % bool() true if not strictly standard compliant
 	 }).
+
+
+

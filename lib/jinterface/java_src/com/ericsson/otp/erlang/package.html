@@ -32,6 +32,21 @@
 <p> This package provides support for communication with Erlang and
 representation of Erlang datatypes.
 
+<p><em>Note:</em> By default, <code>jinterface</code> is only guaranteed
+to be compatible with other Erlang/OTP components from the same release as
+<code>jinterface</code> itself. For example, <code>jinterface</code>
+from the OTP R10 release is not compatible with an Erlang emulator from
+the OTP R9 release by default. <code>jinterface</code> can be set in
+compatibility mode of an earlier release (not earlier that R7), though.
+The compatibility mode is set by usage of the <code>OtpCompatRel</code>
+property. By starting the jvm with the command-line argument
+<code>-DOtpCompatRel=9</code>, <code>jinterface</code> will be compatible
+with the R9 release of OTP. <em>Warning!</em> You may run into trouble if
+this feature is used carelessly. Always make sure that all communicating
+components are either from the same Erlang/OTP release, or from release
+X and release Y where all components from release Y are in compatibility
+mode of release X.
+
 <p> The classes 
 {@link com.ericsson.otp.erlang.OtpErlangList}, 
 {@link com.ericsson.otp.erlang.OtpErlangTuple},

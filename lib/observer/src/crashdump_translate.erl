@@ -31,6 +31,8 @@
 -define(chunk_size,1000). % number of bytes read from crashdump at a time
 -define(max_line_size,500). % max number of bytes (i.e. characters) the
 			    % line/1 function can return
+-define(backwards_chunk_size,10000). % number of bytes read from crashdump 
+                                     % at a time when reading atoms
 
 %%%-----------------------------------------------------------------
 %%% Translate an old dump to a newer format
@@ -112,8 +114,9 @@ translate(Read,Write) ->
 	"Atoms\n" ->
 	    drop_line(Read), % divider
 	    write(Write,"=atoms\n"),
-	    {_,{Atoms,N}} = read_to_empty_line_reverse(Read),
-	    write(Write,[Atoms,"=num_atoms:",integer_to_list(N),"\n"]),
+	    translate_atoms(Read,Write),
+%	    {_,{Atoms,N}} = read_to_empty_line_reverse(Read),
+%	    write(Write,[Atoms,"=num_atoms:",integer_to_list(N),"\n"]),
 	    translate(Read,Write);
 	"Memory allocation information\n" -> 
 	    write(Write,"=old_instr_data\n"),
@@ -901,6 +904,78 @@ translate_fun(Read,Write) ->
 	    unexpected(Unexpected),
 	    translate_fun(Read,Write)
     end.
+
+
+translate_atoms(Read,Write) ->
+    StartPos = get_pos(Read),
+    jump_to_empty_line_or_eof(Read),
+    EndPos = get_pos(Read),
+    set_pos(Read,EndPos-2),
+    translate_atoms(Read,Write,StartPos,1),
+    set_pos(Read,EndPos).
+
+translate_atoms(Read,Write,StartPos,N) ->
+    {Atom,Pos} = read_line_backwards(Read,[]),
+    write(Write,[Atom,"\n"]),
+    if Pos<StartPos -> 
+	    write(Write,["=num_atoms:",integer_to_list(N),"\n"]);
+       true -> 
+	    translate_atoms(Read,Write,StartPos,N+1)
+    end.
+
+get_pos(Fd) ->
+    {ok,Pos0} = file:position(Fd,cur),
+    case get(chunk) of
+	undefined ->
+	    Pos0;
+	Bin ->
+	    Pos0 - size(Bin)
+    end.
+
+set_pos(Fd,Pos) ->
+    erase(chunk),
+    file:position(Fd,Pos).
+
+jump_to_empty_line_or_eof(Fd) ->    
+    case line(Fd) of
+	"\n" ->
+	    ok;
+	{eof,_PartOfLine} ->
+	    ok;
+	_Line ->
+	    jump_to_empty_line_or_eof(Fd)
+    end.
+
+read_line_backwards(Fd,Line) ->
+    {CurPos,Str} = get_backwards_chunk(Fd),
+    read_line_backwards(Fd,CurPos,Str,Line).
+
+read_line_backwards(_Fd,Pos,[$\n|Str],Line) ->
+    put(chunk,Str),
+    put(pos,Pos-1),
+    {Line,Pos-1};
+read_line_backwards(Fd,Pos,[$\r|Str],Line) ->
+    read_line_backwards(Fd,Pos-1,Str,Line);
+read_line_backwards(Fd,Pos,[Char|Str],Line) ->
+    read_line_backwards(Fd,Pos-1,Str,[Char|Line]);
+read_line_backwards(Fd,_Pos,[],Line) ->
+    read_line_backwards(Fd,Line).
+    
+
+get_backwards_chunk(Fd) ->
+    case erase(chunk) of
+	undefined ->
+	    erase(pos),
+	    {ok,Pos} = file:position(Fd,cur),
+	    file:position(Fd,{cur,-?backwards_chunk_size}),
+	    {ok,Bin} =     file:read(Fd,?backwards_chunk_size),
+	    file:position(Fd,{cur,-?backwards_chunk_size}),
+	    {Pos,lists:reverse(binary_to_list(Bin))};
+	Str ->
+	    {erase(pos),Str}
+    end.
+    
+
 
 %%%-----------------------------------------------------------------
 %%% Common library

@@ -176,7 +176,7 @@ BIF_RETTYPE lists_member_2(BIF_ALIST_2)
     Eterm item;
     int non_immed_key;
     int max_iter = 10 * CONTEXT_REDS;
-    
+
     if (is_nil(BIF_ARG_2)) {
 	BIF_RET(am_false);
     } else if (is_not_list(BIF_ARG_2)) {
@@ -305,7 +305,7 @@ static Eterm
 keyfind(int Bif, Process* p, Eterm Key, Eterm Pos, Eterm List)
 {
     int max_iter = 10 * CONTEXT_REDS;
-    int pos;
+    Sint pos;
     Eterm term;
 
     if (!is_small(Pos) || (pos = signed_val(Pos)) < 1) {

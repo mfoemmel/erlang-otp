@@ -48,23 +48,23 @@ format(Format, Args) ->
 
 write(Term) -> write(Term, -1).
 
-write(Term, 0) -> "...";
-write(Term, D) when integer(Term) -> integer_to_list(Term);
-write(Term, D) when float(Term) -> tv_io_lib_format:fwrite_g(Term);
-write(Atom, D) when atom(Atom) -> write_atom(Atom);
-write(Term, D) when port(Term) -> "#Port";
-write(Term, D) when pid(Term) -> pid_to_list(Term);
-write(Term, D) when reference(Term) -> "#Ref";
-write(Term, D) when binary(Term) -> "#Bin";
-write([], D) -> "[]";
-write({}, D) -> "{}";
+write(_Term, 0) -> "...";
+write(Term, _D) when integer(Term) -> integer_to_list(Term);
+write(Term, _D) when float(Term) -> tv_io_lib_format:fwrite_g(Term);
+write(Atom, _D) when atom(Atom) -> write_atom(Atom);
+write(Term, _D) when port(Term) -> "#Port";
+write(Term, _D) when pid(Term) -> pid_to_list(Term);
+write(Term, _D) when reference(Term) -> "#Ref";
+write(Term, _D) when binary(Term) -> "#Bin";
+write([], _D) -> "[]";
+write({}, _D) -> "{}";
 write([H|T], D) ->
     if
 	D == 1 -> "[...]";
 	true ->
 	    [$[,[write(H, D-1)|write_tail(T, D-1)],$]]
     end;
-write(F, D) when function(F) ->
+write(F, _D) when function(F) ->
     {module,M} = erlang:fun_info(F, module),
     ["#Fun<",atom_to_list(M),">"];
 write(T, D) when tuple(T) ->
@@ -79,8 +79,8 @@ write(T, D) when tuple(T) ->
 %% write_tail(List, Depth)
 %%  Test the terminating case first as this looks better with depth.
 
-write_tail([], D) -> "";
-write_tail(List, 1) -> "|...";
+write_tail([], _D) -> "";
+write_tail(_List, 1) -> "|...";
 write_tail([H|T], D) ->
     [$,,write(H, D-1)|write_tail(T, D-1)];
 write_tail(Other, D) ->
@@ -116,7 +116,7 @@ write_char(C, _, Tail) when C >= $ , C =< $~ ->
     [C|Tail];
 write_char(C, _, Tail) when C >= 128+$ , C =< 255 ->
     [C|Tail];
-write_char($\n, Q, Tail) ->			%\n = LF
+write_char($\n, _Q, Tail) ->			%\n = LF
     [$\\,$n|Tail];
 write_char($\r, _, Tail) ->			%\r = CR
     [$\\,$r|Tail];
@@ -180,7 +180,7 @@ quote_atom([]) ->
 char_list([C|Cs]) when integer(C), C >= 0, C =< 255 ->
     char_list(Cs);
 char_list([]) -> true;
-char_list(Other) -> false.			%Everything else is false
+char_list(_Other) -> false.			%Everything else is false
 
 deep_char_list(Cs) ->
     deep_char_list(Cs, []).
@@ -192,7 +192,7 @@ deep_char_list([C|Cs], More) when integer(C), C >= 0, C =< 255 ->
 deep_char_list([], [Cs|More]) ->
     deep_char_list(Cs, More);
 deep_char_list([], []) -> true;
-deep_char_list(Other, More) ->			%Everything else is false
+deep_char_list(_Other, _More) ->	     %Everything else is false
     false.
 
 %% printable_list([Char]) -> bool()
@@ -216,6 +216,6 @@ printable_list([$\f|Cs]) ->
 printable_list([$\e|Cs]) ->
     printable_list(Cs);
 printable_list([]) -> true;
-printable_list(Other) -> false.			%Everything else is false
+printable_list(_Other) -> false.	     %Everything else is false
 
 

@@ -21,43 +21,70 @@
 -module(beam_block).
 
 -export([module/2]).
--export([is_killed/2]).				%Used by beam_dead.
+-export([live_at_entry/1]).			%Used by beam_type, beam_bool.
+-export([is_killed/2]).				%Used by beam_dead, beam_type, beam_bool.
+-export([is_not_used/2]).			%Used by beam_bool.
 -export([merge_blocks/2]).			%Used by beam_jump.
--import(lists, [map/2,mapfoldr/3,reverse/1,reverse/2,foldl/3,member/2,sort/1]).
+-import(lists, [map/2,mapfoldr/3,reverse/1,reverse/2,foldl/3,
+		member/2,sort/1,all/2]).
 -define(MAXREG, 1024).
 
 module({Mod,Exp,Attr,Fs,Lc}, _Opt) ->
     {ok,{Mod,Exp,Attr,map(fun function/1, Fs),Lc}}.
 
-function({function,Name,Arity,CLabel,Asm0}) ->
-    Asm1 = block(Asm0, [], []),
-    Asm = opt_kill(Asm1),
-    {function,Name,Arity,CLabel,Asm}.
+function({function,Name,Arity,CLabel,Is0}) ->
+    %% Collect basic blocks and optimize them.
+    Is = blockify(Is0),
 
-block([{allocate_zero,Ns,R},{test_heap,Nh,R}|Is], Block, All) ->
-    block(Is, [{allocate,R,{no_opt,Ns,Nh,[]}}|Block], All);
-block([{bif,size,Fail,[Tuple],Tmp},
-       {test,is_eq_exact,Fail,[Tmp,{integer,Size}]},
-       {bif,element,Fail,[{integer,1},Tuple],Tmp},
-       {test,is_eq_exact,Fail,[Tmp,RecordTag]}|Is], Block, All) ->
-    %% XXX This kind of optimisation should be done at a higher level.
-    %% The record guard test should be moved into the head before
-    %% pattern matching compilation.
-    block([{test,is_tuple,Fail,[Tuple]},
-	   {test,test_arity,Fail,[Tuple,Size]},
-	   {get_tuple_element,Tuple,0,Tmp},
-	   {test,is_eq_exact,Fail,[Tmp,RecordTag]}|Is], Block, All);
-block([{loop_rec,{f,Fail},{x,0}},{loop_rec_end,_Lbl},{label,Fail}|Is], Block, All) ->
-    block(Is, Block, All);
-block([I|Is], Block, All) ->
-    case collect(I) of
-	false -> opt_block(Block, I, Is, All);
-	Ti when is_tuple(Ti) -> block(Is, [Ti|Block], All)
+    %% Done.
+    {function,Name,Arity,CLabel,Is}.
+
+%% blockify(Instructions0) -> Instructions
+%%  Collect sequences of instructions to basic blocks and
+%%  optimize the contents of the blocks. Also do some simple
+%%  optimations on instructions outside the blocks.
+
+blockify(Is) ->
+    blockify(Is, []).
+
+blockify([{loop_rec,{f,Fail},{x,0}},{loop_rec_end,_Lbl},{label,Fail}|Is], Acc) ->
+    %% Useless instruction sequence.
+    blockify(Is, Acc);
+blockify([{test,bs_test_tail,F,[Bits]}|Is],
+	 [{test,bs_skip_bits,F,[{integer,I},Unit,_Flags]}|Acc]) ->
+    blockify(Is, [{test,bs_test_tail,F,[Bits+I*Unit]}|Acc]);
+blockify([{test,bs_skip_bits,F,[{integer,I1},Unit1,_]}|Is],
+	 [{test,bs_skip_bits,F,[{integer,I2},Unit2,Flags]}|Acc]) ->
+    blockify(Is, [{test,bs_skip_bits,F,
+		   [{integer,I1*Unit1+I2*Unit2},1,Flags]}|Acc]);
+blockify([I|Is0]=IsAll, Acc) ->
+    case is_bs_put(I) of
+	true ->
+	    {BsPuts0,Is} = collect_bs_puts(IsAll),
+	    BsPuts = opt_bs_puts(BsPuts0),
+	    blockify(Is, reverse(BsPuts, Acc));
+	false ->
+	    case collect(I) of
+		error -> blockify(Is0, [I|Acc]);
+		Instr when is_tuple(Instr) ->
+		    {Block0,Is} = collect_block(IsAll),
+		    Block = opt_block(Block0),
+		    blockify(Is, [{block,Block}|Acc])
+	    end
     end;
-block([], [], All) ->
-    reverse(All);
-block([], Block, All) ->
-    block([], [], [opt_block(reverse(Block), All)]).
+blockify([], Acc) -> reverse(Acc).
+
+collect_block(Is) ->
+    collect_block(Is, []).
+
+collect_block([{allocate_zero,Ns,R},{test_heap,Nh,R}|Is], Acc) ->
+    collect_block(Is, [{allocate,R,{no_opt,Ns,Nh,[]}}|Acc]);
+collect_block([I|Is]=Is0, Acc) ->
+    case collect(I) of
+	error -> {reverse(Acc),Is0};
+	Instr -> collect_block(Is, [Instr|Acc])
+    end;
+collect_block([], Acc) -> {reverse(Acc),[]}.
 
 collect({allocate_zero,N,R}) -> {allocate,R,{zero,N,0,[]}};
 collect({test_heap,N,R})     -> {allocate,R,{nozero,nostack,N,[]}};
@@ -73,38 +100,18 @@ collect({set_tuple_element,S,D,I}) -> {set,[],[S,D],{set_tuple_element,I}};
 collect({get_list,S,D1,D2})  -> {set,[D1,D2],[S],get_list};
 collect(remove_message)      -> {set,[],[],remove_message};
 collect({'catch',R,L})       -> {set,[R],[],{'catch',L}};
-collect({'%live',R})  -> {'%live',R};
-collect(_) -> false.
+collect({'%live',_}=Live)    -> Live;
+collect(_)                   -> error.
 
-opt_block([], I, Is, All) -> block(Is, [], [I|All]);
-opt_block([{'%live',_}], I, Is, All) -> block(Is, [], [I|All]);
-opt_block(Block, I, Is, All) ->    
-    block(Is, [], [I|opt_block(reverse(Block), All)]).
-
-opt_block(Is0, Tail) ->
+opt_block(Is0) ->
     %% We explicitly move any allocate instruction upwards before optimising
     %% moves, to avoid any potential problems with the calculation of live
     %% registers.
     Is1 = find_fixpoint(fun move_allocates/1, Is0),
     Is2 = find_fixpoint(fun opt/1, Is1),
-    Is3 = opt_alloc(Is2),
-    Is = share_floats(Is3),
-    split_block(Is, [], Tail).
+    Is = opt_alloc(Is2),
+    share_floats(Is).
 
-%% We must split the basic block when we encounter instructions with labels,
-%% such as catches and BIFs. All labels must be visible for later passes.
-
-split_block([{set,[R],As,{bif,N,{f,Lbl}}}|Is], Bl, Acc) when Lbl =/= 0 ->
-    split_block(Is, [], [{bif,N,{f,Lbl},As,R}|make_block(Bl, Acc)]);
-split_block([{set,[R],[],{'catch',L}}|Is], Bl, Acc) ->
-    split_block(Is, [], [{'catch',R,L}|make_block(Bl, Acc)]);
-split_block([I|Is], Bl, Acc) ->
-    split_block(Is, [I|Bl], Acc);
-split_block([], Bl, Acc) -> make_block(Bl, Acc).
-
-make_block([], Acc) -> Acc;
-make_block(Bl, Acc) -> [{block,reverse(Bl)}|Acc].
-    
 find_fixpoint(OptFun, Is0) ->
     case OptFun(Is0) of
 	Is0 -> Is0;
@@ -139,6 +146,13 @@ merge_blocks_1([I|Is], Tail) ->
     [I|merge_blocks_1(Is, Tail)];
 merge_blocks_1([], Tail) -> Tail.
 
+opt([{set,[Dst],As,{bif,Bif,Fail}}=I1,
+     {set,[Dst],[Dst],{bif,'not',Fail}}=I2|Is]) ->
+    %% Get rid of the 'not' if the operation can be inverted.
+    case inverse_comp_op(Bif) of
+ 	none -> [I1,I2|opt(Is)];
+ 	RevBif -> [{set,[Dst],As,{bif,RevBif,Fail}}|opt(Is)]
+    end;
 opt([{set,[X],[X],move}|Is]) -> opt(Is);
 opt([{set,[D1],[{integer,Idx1},Reg],{bif,element,{f,0}}}=I1,
      {set,[D2],[{integer,Idx2},Reg],{bif,element,{f,0}}}=I2|Is])
@@ -186,12 +200,99 @@ is_transparent(R, {set,Ds,Ss,_Op}) ->
     end;
 is_transparent(_, _) -> false.
 
+%% is_killed(Register, [Instruction]) -> true|false
+%%  Determine whether a register is killed by the instruction sequence.
+%%  If true is returned, it means that the register will not be
+%%  referenced in ANY way (not even indirectly by an allocate instruction);
+%%  i.e. it is OK to enter the instruction sequence with Register
+%%  containing garbage.
+
+is_killed({x,N}=R, [{block,Blk}|Is]) ->
+    case is_killed(R, Blk) of
+	true -> true;
+	false ->
+	    %% Before looking beyond the block, we must be
+	    %% sure that the register is not referenced by
+	    %% any allocate instruction in the block.
+	    case all(fun({allocate,Live,_}) when N < Live -> false;
+			(_) -> true
+		     end, Blk) of
+		true -> is_killed(R, Is);
+		false -> false
+	    end
+    end;
+is_killed(R, [{block,Blk}|Is]) ->
+    case is_killed(R, Blk) of
+	true -> true;
+	false -> is_killed(R, Is)
+    end;
 is_killed(R, [{set,Ds,Ss,_Op}|Is]) ->
-    not member(R, Ss) andalso (member(R, Ds) orelse is_killed(R, Is));
+    case member(R, Ss) of
+	true -> false;
+	false ->
+	    case member(R, Ds) of
+		true -> true;
+		false -> is_killed(R, Is)
+	    end
+    end;
+is_killed(R, [{case_end,Used}|_]) -> R =/= Used;
+is_killed(R, [{badmatch,Used}|_]) -> R =/= Used;
+is_killed(_, [if_end|_]) -> true;
+is_killed(R, [{func_info,_,_,Ar}|_]) ->
+    case R of
+	{x,X} when X < Ar -> false;
+	_ -> true
+    end;
+is_killed(R, [{kill,R}|_]) -> true;
+is_killed(R, [{kill,_}|Is]) -> is_killed(R, Is);
+is_killed(R, [{bs_init2,_,_,_,_,_,Dst}|Is]) ->
+    if
+	R =:= Dst -> true;
+	true -> is_killed(R, Is)
+    end;
+is_killed(R, [{bs_put_string,_,_}|Is]) -> is_killed(R, Is);
 is_killed({x,R}, [{'%live',Live}|_]) when R >= Live -> true;
 is_killed({x,R}, [{'%live',_}|Is]) -> is_killed(R, Is);
-is_killed({x,R}, [{allocate,Live,_}|_]) when R >= Live -> true;
+is_killed({x,R}, [{allocate,Live,_}|_]) ->
+    %% Note: To be safe here, we must return either true or false,
+    %% not looking further at the instructions beyond the allocate
+    %% instruction.
+    R >= Live;
+is_killed({x,R}, [{call,Live,_}|_]) when R >= Live -> true;
+is_killed({x,R}, [{call_last,Live,_,_}|_]) when R >= Live -> true;
+is_killed({x,R}, [{call_only,Live,_}|_]) when R >= Live -> true;
+is_killed({x,R}, [{call_ext,Live,_}|_]) when R >= Live -> true;
+is_killed({x,R}, [{call_ext_last,Live,_,_}|_]) when R >= Live -> true;
+is_killed({x,R}, [{call_ext_only,Live,_}|_]) when R >= Live -> true;
+is_killed({x,R}, [return|_]) when R > 0 -> true;
 is_killed(_, _) -> false.
+
+%% is_not_used(Register, [Instruction]) -> true|false
+%%  Determine whether a register is used by the instruction sequence.
+%%  If true is returned, it means that the register will not be
+%%  referenced directly, but it may be referenced by an allocate
+%%  instruction (meaning that it is NOT allowed to contain garbage).
+
+is_not_used(R, [{block,Blk}|Is]) ->
+    case is_not_used(R, Blk) of
+	true -> true;
+	false -> is_not_used(R, Is)
+    end;
+is_not_used({x,R}=Reg, [{allocate,Live,_}|Is]) ->
+    if
+	R >= Live -> true;
+	true -> is_not_used(Reg, Is)
+    end;
+is_not_used(R, [{set,Ds,Ss,_Op}|Is]) ->
+    case member(R, Ss) of
+	true -> false;
+	false ->
+	    case member(R, Ds) of
+		true -> true;
+		false -> is_not_used(R, Is)
+	    end
+    end;
+is_not_used(R, Is) -> is_killed(R, Is).
 
 %% opt_alloc(Instructions) -> Instructions'
 %%  Optimises all allocate instructions.
@@ -241,15 +342,40 @@ count_ones(0, Acc) -> Acc;
 count_ones(Bits, Acc) ->
     count_ones(Bits bsr 1, Acc + (Bits band 1)).
 
+%% live_at_entry(Is) -> NumberOfRegisters
+%%  Calculate the number of register live at the entry to the code
+%%  sequence.
+
+live_at_entry([{block,[{allocate,R,_}|_]}|_]) ->
+    R;
+live_at_entry([{label,_}|Is]) ->
+    live_at_entry(Is);
+live_at_entry([{block,Bl}|_]) ->
+    live_at_entry(Bl);
+live_at_entry([{func_info,_,_,Ar}|_]) ->
+    Ar;
+live_at_entry(Is0) ->
+    case reverse(Is0) of
+	[{'%live',Regs}|Is] -> live_at_entry_1(Is, (1 bsl Regs)-1);
+	_ -> unknown
+    end.
+
+live_at_entry_1([{set,Ds,Ss,_}|Is], Rset0) ->
+    Rset = x_live(Ss, x_dead(Ds, Rset0)),
+    live_at_entry_1(Is, Rset);
+live_at_entry_1([{allocate,_,_}|Is], Rset) ->
+    live_at_entry_1(Is, Rset);
+live_at_entry_1([], Rset) -> live_regs_1(0, Rset).
+
 %% Calculate the new number of live registers when we move an allocate
 %% instruction upwards, passing a 'set' instruction.
 
 live_regs(Ds, Ss, Regs0) ->
     Rset = x_live(Ss, x_dead(Ds, (1 bsl Regs0)-1)),
-    live_regs(0, Rset).
+    live_regs_1(0, Rset).
 
-live_regs(N, 0) -> N;
-live_regs(N, Regs) -> live_regs(N+1, Regs bsr 1).
+live_regs_1(N, 0) -> N;
+live_regs_1(N, Regs) -> live_regs_1(N+1, Regs bsr 1).
 
 x_dead([{x,N}|Rs], Regs) -> x_dead(Rs, Regs band (bnot (1 bsl N)));
 x_dead([_|Rs], Regs) -> x_dead(Rs, Regs);
@@ -274,7 +400,7 @@ share_floats(Is0) ->
 	false ->
 	    MoreThanOnce = gb_sets:to_list(MoreThanOnce0),
 	    FreeX = highest_used(Is0, -1) + 1,
-	    {Regs0,_} = mapfoldr(fun(F, R) -> {{F,{x,R}},R+1} end, FreeX, MoreThanOnce),
+	    Regs0 = make_reg_map(MoreThanOnce, FreeX, []),
 	    Regs = gb_trees:from_orddict(Regs0),
 	    Is = map(fun({set,Ds,[{float,F}],Op}=I) ->
 			     case gb_trees:lookup(F, Regs) of
@@ -312,44 +438,132 @@ highest([_|Rs], High) ->
     highest(Rs, High);
 highest([], High) -> High.
 
-%%
-%% Remove kill/1 instructions before BIFs known not to need them.
-%%
+make_reg_map([F|Fs], R, Acc) when R < ?MAXREG ->
+    make_reg_map(Fs, R+1, [{F,{x,R}}|Acc]);
+make_reg_map(_, _, Acc) -> sort(Acc).
 
-opt_kill(Is) ->
-    opt_kill(Is, []).
+%% inverse_comp_op(Op) -> none|RevOp
 
-opt_kill([{call_ext,3,{extfunc,erlang,setelement,3}}=I|Is], Acc) ->
-    opt_kill(Is, I, Acc);
-opt_kill([I|Is], Acc) ->
-    opt_kill(Is, [I|Acc]);
-opt_kill([], Acc) -> reverse(Acc).
+inverse_comp_op('=:=') -> '=/=';
+inverse_comp_op('=/=') -> '=:=';
+inverse_comp_op('==') -> '/=';
+inverse_comp_op('/=') -> '==';
+inverse_comp_op('>') -> '=<';
+inverse_comp_op('<') -> '>=';
+inverse_comp_op('>=') -> '<';
+inverse_comp_op('=<') -> '>';
+inverse_comp_op(_) -> none.
 
-opt_kill([{block,[{allocate,_,_}|_]}|_]=Is, I, Acc) ->
-    opt_kill(Is, [I|Acc]);
-opt_kill(Is, I, Acc) ->
-    opt_kill(Is, I, Acc, []).
+%%%
+%%% Evaluation of constant bit fields.
+%%%
 
-opt_kill([{block,Block},Instr|_]=Is, I, [{kill,Y}=K|Acc], Kills) ->
-    case is_tail_call_or_ret(Instr) of
-	true -> opt_kill(Is, I, Acc, Kills);
-	false ->
-	    case is_killed(Y, Block) of
-		true -> opt_kill(Is, I, Acc, Kills);
-		false -> opt_kill(Is, I, Acc, [K|Kills])
-	    end
+is_bs_put({bs_put_integer,_,_,_,_,_}) -> true;
+is_bs_put({bs_put_float,_,_,_,_,_}) -> true;
+is_bs_put(_) -> false.
+
+collect_bs_puts(Is) ->
+    collect_bs_puts_1(Is, []).
+    
+collect_bs_puts_1([I|Is]=Is0, Acc) ->
+    case is_bs_put(I) of
+	false -> {reverse(Acc),Is0};
+	true -> collect_bs_puts_1(Is, [I|Acc])
     end;
-opt_kill([Instr|_]=Is, I, [{kill,_}=K|Acc], Kills) ->
-    case is_tail_call_or_ret(Instr) of
-	true -> opt_kill(Is, I, Acc, Kills);
-	false -> opt_kill(Is, I, Acc, [K|Kills])
-    end;
-opt_kill(Is, I, Acc, [_|_]=Kills) ->
-    opt_kill(Is, [I|reverse(Kills, Acc)]);
-opt_kill(Is, I, Acc, []) ->
-    opt_kill(Is, [I|Acc]).
+collect_bs_puts_1([], Acc) -> {reverse(Acc),[]}.
+    
+opt_bs_puts(Is) ->
+    opt_bs_1(Is, []).
 
-is_tail_call_or_ret({call_last,_,_,_}) -> true;
-is_tail_call_or_ret({call_ext_last,_,_,_}) -> true;
-is_tail_call_or_ret({deallocate,_}) -> true;
-is_tail_call_or_ret(_) -> false.
+opt_bs_1([{bs_put_float,Fail,{integer,Sz},1,Flags0,Src}=I0|Is], Acc) ->
+    case catch eval_put_float(Src, Sz, Flags0) of
+	{'EXIT',_} ->
+	    opt_bs_1(Is, [I0|Acc]);
+	<<Int:Sz>> ->
+	    Flags = force_big(Flags0),
+	    I = {bs_put_integer,Fail,{integer,Sz},1,Flags,{integer,Int}},
+	    opt_bs_1([I|Is], Acc)
+    end;
+opt_bs_1([{bs_put_integer,_,{integer,8},1,_,{integer,_}}|_]=IsAll, Acc0) ->
+    {Is,Acc} = bs_collect_string(IsAll, Acc0),
+    opt_bs_1(Is, Acc);
+opt_bs_1([{bs_put_integer,Fail,{integer,Sz},1,F,{integer,N}}=I|Is0], Acc) when Sz > 8 ->
+    case field_endian(F) of
+	big ->
+	    case bs_split_int(N, Sz, Fail, Is0) of
+		no_split -> opt_bs_1(Is0, [I|Acc]);
+		Is -> opt_bs_1(Is, Acc)
+	    end;
+	little ->
+	    case catch <<N:Sz/little>> of
+		{'EXIT',_} ->
+		    opt_bs_1(Is0, [I|Acc]);
+		<<Int:Sz>> ->
+		    Flags = force_big(F),
+		    Is = [{bs_put_integer,Fail,{integer,Sz},1,
+			   Flags,{integer,Int}}|Is0],
+		    opt_bs_1(Is, Acc)
+	    end;
+	native -> opt_bs_1(Is0, [I|Acc])
+    end;
+opt_bs_1([{Op,Fail,{integer,Sz},U,F,Src}|Is], Acc) when U > 1 ->
+    opt_bs_1([{Op,Fail,{integer,U*Sz},1,F,Src}|Is], Acc);
+opt_bs_1([I|Is], Acc) ->
+    opt_bs_1(Is, [I|Acc]);
+opt_bs_1([], Acc) -> reverse(Acc).
+
+eval_put_float(Src, Sz, Flags) ->
+    Val = value(Src),
+    case field_endian(Flags) of
+	little -> <<Val:Sz/little-float-unit:1>>;
+	big -> <<Val:Sz/big-float-unit:1>>
+        %% native intentionally not handled here - we can't optimize it.
+    end.
+
+value({integer,I}) -> I;
+value({float,F}) -> F;
+value({atom,A}) -> A.
+
+bs_collect_string(Is, [{bs_put_string,Len,{string,Str}}|Acc]) ->
+    bs_coll_str_1(Is, Len, reverse(Str), Acc);
+bs_collect_string(Is, Acc) ->
+    bs_coll_str_1(Is, 0, [], Acc).
+    
+bs_coll_str_1([{bs_put_integer,_,{integer,Sz},U,_,{integer,V}}|Is],
+	      Len, StrAcc, IsAcc) when U*Sz =:= 8 ->
+    Byte = V band 16#FF,
+    bs_coll_str_1(Is, Len+1, [Byte|StrAcc], IsAcc);
+bs_coll_str_1(Is, Len, StrAcc, IsAcc) ->
+    {Is,[{bs_put_string,Len,{string,reverse(StrAcc)}}|IsAcc]}.
+
+field_endian({field_flags,F}) -> field_endian_1(F).
+
+field_endian_1([big=E|_]) -> E;
+field_endian_1([little=E|_]) -> E;
+field_endian_1([native=E|_]) -> E;
+field_endian_1([_|Fs]) -> field_endian_1(Fs).
+
+force_big({field_flags,F}) ->
+    {field_flags,force_big_1(F)}.
+
+force_big_1([big|_]=Fs) -> Fs;
+force_big_1([little|Fs]) -> [big|Fs];
+force_big_1([F|Fs]) -> [F|force_big_1(Fs)].
+
+bs_split_int(0, Sz, _, _) when Sz > 64 ->
+    %% We don't want to split in this case because the
+    %% string will consist of only zeroes.
+    no_split;
+bs_split_int(N, Sz, Fail, Acc) ->
+    FirstByteSz = case Sz rem 8 of
+		      0 -> 8;
+		      Rem -> Rem
+		  end,
+    bs_split_int_1(N, FirstByteSz, Sz, Fail, Acc).
+
+bs_split_int_1(N, ByteSz, Sz, Fail, Acc) when Sz > 0 ->
+    Mask = (1 bsl ByteSz) - 1,
+    I = {bs_put_integer,Fail,{integer,ByteSz},1,
+	 {field_flags,[big]},{integer,N band Mask}},
+    bs_split_int_1(N bsr ByteSz, 8, Sz-ByteSz, Fail, [I|Acc]);
+bs_split_int_1(_, _, _, _, Acc) -> Acc.

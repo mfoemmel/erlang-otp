@@ -76,14 +76,14 @@ down(Win,Obj,Objtype,X1,Y1) ->
     gs:destroy(Obj),
     down(Win,nil,Objtype,X1,Y1).
 
-up(Win,nil,Objtype,X1,Y1,X2,Y2) ->
+up(Win,nil,Objtype,_X1,_Y1,X2,Y2) ->
     loop(Win,nil,Objtype,X2,Y2);
 up(Win,Obj,Objtype,X1,Y1,X2,Y2) ->
     gs:config(Obj,{coords,[{X1,Y1},{X2,Y2}]}),
     loop(Win,nil,Objtype,X2,Y2).
 
 
-move(Win,nil,Objtype,X1,Y1,X2,Y2) ->
+move(Win,nil,Objtype,X1,Y1,_X2,_Y2) ->
     loop(Win,nil,Objtype,X1,Y1);
 move(Win,Obj,Objtype,X1,Y1,X2,Y2) ->
     gs:config(Obj,{coords,[{X1,Y1},{X2,Y2}]}),

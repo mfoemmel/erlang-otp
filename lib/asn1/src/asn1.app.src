@@ -13,7 +13,10 @@
 	asn1rt_driver_handler
              ]},
   {registered, [
-	asn1_driver_owner
+	asn1_driver_owner,
+	asn1_driver_port,
+	asn1_ns,
+	asn1db
 		]},
   {env, []},
   {applications, [kernel, stdlib]}

@@ -87,28 +87,6 @@ static int initialized = 0;
 static Uint sys_alloc_carrier_size;
 #if HAVE_ERTS_MSEG
 static Uint max_mseg_carriers;
-#endif
-
-/* Threads ... */
-
-#ifdef USE_THREADS
-
-#ifdef DEBUG
-#  define LOCK(M)   ASSERT(0 == erts_mutex_lock((M)))
-#  define UNLOCK(M) ASSERT(0 == erts_mutex_unlock((M)))
-#else
-#  define LOCK(M)   ((void) erts_mutex_lock((M)))
-#  define UNLOCK(M) ((void) erts_mutex_unlock((M)))
-#endif
-
-#else /* #ifdef USE_THREADS */
-
-#define LOCK(M)
-#define UNLOCK(M)
-
-#endif /* #ifdef USE_THREADS */
-
-#if HAVE_ERTS_MSEG
 static Uint mseg_unit_size;
 #endif
 
@@ -1942,14 +1920,14 @@ erts_alcu_info_options(Allctr_t *allctr,
 
 #ifdef USE_THREADS
     if (allctr->thread_safe)
-	LOCK(allctr->mutex);
+	erts_mtx_lock(&allctr->mutex);
 #endif
 
     res = info_options(allctr, ciop, hpp, szp);
 
 #ifdef USE_THREADS
     if (allctr->thread_safe)
-	UNLOCK(allctr->mutex);
+	erts_mtx_unlock(&allctr->mutex);
 #endif
 
     return res;
@@ -1978,7 +1956,7 @@ erts_alcu_info(Allctr_t *allctr,
 
 #ifdef USE_THREADS
     if (allctr->thread_safe && !erts_writing_erl_crash_dump)
-	LOCK(allctr->mutex);
+	erts_mtx_lock(&allctr->mutex);
 #endif
 
     /* Update sbc values not continously updated */
@@ -2025,7 +2003,7 @@ erts_alcu_info(Allctr_t *allctr,
 
 #ifdef USE_THREADS
     if (allctr->thread_safe && !erts_writing_erl_crash_dump)
-	UNLOCK(allctr->mutex);
+	erts_mtx_unlock(&allctr->mutex);
 #endif
 
     return res;
@@ -2075,9 +2053,9 @@ erts_alcu_alloc_ts(ErtsAlcType_t type, void *extra, Uint size)
 {
     Allctr_t *allctr = (Allctr_t *) extra;
     void *res;
-    LOCK(allctr->mutex);
+    erts_mtx_lock(&allctr->mutex);
     res = do_erts_alcu_alloc(type, extra, size);
-    UNLOCK(allctr->mutex);
+    erts_mtx_unlock(&allctr->mutex);
     return res;
 }
 
@@ -2117,9 +2095,9 @@ void
 erts_alcu_free_ts(ErtsAlcType_t type, void *extra, void *p)
 {
     Allctr_t *allctr = (Allctr_t *) extra;
-    LOCK(allctr->mutex);
+    erts_mtx_lock(&allctr->mutex);
     do_erts_alcu_free(type, extra, p);
-    UNLOCK(allctr->mutex);
+    erts_mtx_unlock(&allctr->mutex);
 }
 
 #endif
@@ -2227,9 +2205,9 @@ erts_alcu_realloc_ts(ErtsAlcType_t type, void *extra, void *ptr, Uint size)
 {
     Allctr_t *allctr = (Allctr_t *) extra;
     void *res;
-    LOCK(allctr->mutex);
+    erts_mtx_lock(&allctr->mutex);
     res = do_erts_alcu_realloc(type, extra, ptr, size);
-    UNLOCK(allctr->mutex);
+    erts_mtx_unlock(&allctr->mutex);
     return res;
 }
 
@@ -2261,10 +2239,6 @@ erts_alcu_start(Allctr_t *allctr, AllctrInit_t *init)
 
     if (!allctr->vsn_str)
 	goto error;
-
-#ifdef USE_THREADS
-    allctr->sys_mutex_no		= init->smn;
-#endif
 
     allctr->name.alloc			= THE_NON_VALUE;
     allctr->name.realloc		= THE_NON_VALUE;
@@ -2299,12 +2273,8 @@ erts_alcu_start(Allctr_t *allctr, AllctrInit_t *init)
 #ifdef USE_THREADS
     if (init->ts) {
 	allctr->thread_safe = 1;
-	if (allctr->sys_mutex_no >= 0)
-	    allctr->mutex = erts_mutex_sys(allctr->sys_mutex_no);
-	else
-	    allctr->mutex = erts_mutex_create();
-	if (!allctr->mutex || erts_mutex_set_default_atfork(allctr->mutex))
-	    goto error;
+	erts_mtx_init(&allctr->mutex);
+	erts_mtx_set_forksafe(&allctr->mutex);
     }
 #endif
 
@@ -2347,12 +2317,8 @@ erts_alcu_start(Allctr_t *allctr, AllctrInit_t *init)
  error:
 
 #ifdef USE_THREADS
-    if (allctr->mutex) {
-	if (allctr->sys_mutex_no >= 0)
-	    erts_mutex_unset_default_atfork(allctr->mutex);
-	else
-	    erts_mutex_destroy(allctr->mutex);
-    }
+    if (allctr->thread_safe)
+	erts_mtx_destroy(&allctr->mutex);
 #endif
 
     return 0;
@@ -2372,13 +2338,8 @@ erts_alcu_stop(Allctr_t *allctr)
 	destroy_carrier(allctr, MBC2FBLK(allctr, allctr->mbc_list.first));
 
 #ifdef USE_THREADS
-    if (allctr->thread_safe) {
-	ASSERT(allctr->mutex);
-	if (allctr->sys_mutex_no >= 0)
-	    erts_mutex_unset_default_atfork(allctr->mutex);
-	else
-	    erts_mutex_destroy(allctr->mutex);
-    }
+    if (allctr->thread_safe)
+	erts_mtx_destroy(&allctr->mutex);
 #endif
 
 }

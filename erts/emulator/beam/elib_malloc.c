@@ -34,12 +34,8 @@
 #endif
 
 #include "erl_driver.h"
-#define ERL_THREADS_EMU_INTERNAL__
 #include "erl_threads.h"
 #include "elib_stat.h"
-#if THREAD_SAFE_ELIB_MALLOC && defined(POSIX_THREADS)
-#include <pthread.h>
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -77,109 +73,18 @@
 #define ASSERT(B) ((void) 1)
 #endif
 
-/* Threads ... */
-
-#if THREAD_SAFE_ELIB_MALLOC
-
-#ifdef POSIX_THREADS
-
 #ifndef USE_RECURSIVE_MALLOC_MUTEX
 #define USE_RECURSIVE_MALLOC_MUTEX 0
 #endif
 
 #if USE_RECURSIVE_MALLOC_MUTEX
-
-
-#ifndef HAVE_PTHREAD_MUTEXATTR_SETTYPE
-#define HAVE_PTHREAD_MUTEXATTR_SETTYPE 0
-#endif
-
-#ifndef HAVE_PTHREAD_MUTEXATTR_SETKIND_NP
-#define HAVE_PTHREAD_MUTEXATTR_SETKIND_NP 0
-#endif
-
-#if HAVE_PTHREAD_MUTEXATTR_SETTYPE
-#define PTHR_MTXATTR_SETTYPE pthread_mutexattr_settype
-#elif HAVE_PTHREAD_MUTEXATTR_SETKIND_NP
-#define PTHR_MTXATTR_SETTYPE pthread_mutexattr_setkind_np
-#else
-#error "Dont know how to set pthread mutex attributes"
-#endif
-
-#ifndef PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP
-#error "No PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP found"
-#endif
-
-static pthread_mutex_t malloc_mutex = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+static ethr_mutex malloc_mutex = ETHR_REC_MUTEX_INITER;
 #else /* #if USE_RECURSIVE_MALLOC_MUTEX */
-static pthread_mutex_t malloc_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t  malloc_cond  = PTHREAD_COND_INITIALIZER;
+static ethr_mutex malloc_mutex = ETHR_MUTEX_INITER;
+#if THREAD_SAFE_ELIB_MALLOC
+static ethr_cond  malloc_cond  = ETHR_COND_INITER;
+#endif
 #endif  /* #if USE_RECURSIVE_MALLOC_MUTEX */
-
-#ifdef DEBUG
-#define LOCK   do { ASSERT(0 == pthread_mutex_lock(&malloc_mutex)); } while(0)
-#define UNLOCK do { ASSERT(0 == pthread_mutex_unlock(&malloc_mutex)); } while(0)
-#else
-#define LOCK   ((void) pthread_mutex_lock(&malloc_mutex))
-#define UNLOCK ((void) pthread_mutex_unlock(&malloc_mutex))
-#endif
-
-#if HAVE_PTHREAD_ATFORK
-
-static void prepare_for_fork(void)   { LOCK; }
-static void cleanup_after_fork(void) { UNLOCK; }
-
-#define parent_cleanup_after_fork cleanup_after_fork
-#define child_cleanup_after_fork  cleanup_after_fork
-
-#if INIT_MUTEX_IN_CHILD_AT_FORK
-#undef child_cleanup_after_fork
-static void
-child_cleanup_after_fork(void)
-{
-#if USE_RECURSIVE_MALLOC_MUTEX
-    pthread_mutexattr_t attr;
-    pthread_mutexattr_init(&attr);
-    PTHR_MTXATTR_SETTYPE(&attr, PTHREAD_MUTEX_RECURSIVE_NP);
-    pthread_mutex_init(&malloc_mutex, &attr);
-    pthread_mutexattr_destroy(&attr);
-#else
-    pthread_mutex_init(&malloc_mutex, NULL);
-#endif
-}
-
-#endif /* #if INIT_MUTEX_IN_CHILD_AT_FORK */
-#endif /* #if HAVE_PTHREAD_ATFORK */
-
-#define LOCK_AND_INIT \
-do { LOCK; if (elib_need_init) locked_elib_init(NULL,(EWord)0); } while(0)
-
-#else /* #ifdef POSIX_THREADS */
-
-#undef USE_RECURSIVE_MALLOC_MUTEX
-#define USE_RECURSIVE_MALLOC_MUTEX 0
-
-erts_mutex_t heap_lock;
-#define LOCK erts_mutex_lock(heap_lock)
-#define UNLOCK erts_mutex_unlock(heap_lock)
-
-#define LOCK_AND_INIT \
-do { if (elib_need_init) elib_init(NULL,(EWord)0); LOCK; } while(0)
-
-#endif /* #ifdef POSIX_THREADS */
-
-#else /* #if THREAD_SAFE_ELIB_MALLOC */
-
-#undef USE_RECURSIVE_MALLOC_MUTEX
-#define USE_RECURSIVE_MALLOC_MUTEX 0
-
-#define LOCK   
-#define UNLOCK 
-
-#define LOCK_AND_INIT \
-do { if (elib_need_init) elib_init(NULL,(EWord)0); } while(0)
-
-#endif /* #if THREAD_SAFE_ELIB_MALLOC */
 
 typedef unsigned long EWord;       /* Assume 32-bit in this implementation */
 typedef unsigned short EHalfWord;  /* Assume 16-bit in this implementation */
@@ -497,12 +402,9 @@ void elib_init(EWord* addr, EWord sz)
 {
     if (!elib_need_init)
 	return;
-#if THREAD_SAFE_ELIB_MALLOC && !defined(POSIX_THREADS)
-    heap_lock = erts_mutex_sys(ERTS_MUTEX_SYS_ELIB_MALLOC);
-#endif
-    LOCK;
+    erts_mtx_lock(&malloc_mutex);
     locked_elib_init(addr, sz);
-    UNLOCK;
+    erts_mtx_unlock(&malloc_mutex);
 }
 
 static void locked_elib_init(EWord* addr, EWord sz)
@@ -512,29 +414,24 @@ static void locked_elib_init(EWord* addr, EWord sz)
 
 #if THREAD_SAFE_ELIB_MALLOC
 
-#if defined(POSIX_THREADS) && !USE_RECURSIVE_MALLOC_MUTEX
+#if !USE_RECURSIVE_MALLOC_MUTEX
     {
-	static pthread_t initer_tid;
+	static ethr_tid initer_tid;
 
 	if(elib_is_initing) {
-	    int wait_res;
-	    int old_cancelstate;
 
-	    if(pthread_equal(initer_tid, pthread_self()))
+	    if(erts_equal_tids(initer_tid, erts_thr_self()))
 		return;
 
 	    /* Wait until initializing thread is done with initialization */
 
-	    pthread_setcanceltype(PTHREAD_CANCEL_DISABLE, &old_cancelstate);
-	    while(!elib_need_init) {
-		wait_res = pthread_cond_wait(&malloc_cond, &malloc_mutex);
-		ASSERT(wait_res != 0 && wait_res == EINTR);
-	    }
-	    pthread_setcanceltype(old_cancelstate, NULL);
+	    while(elib_need_init)
+		erts_cnd_wait(&malloc_cond, &malloc_mutex);
+
 	    return;
 	}
 	else {
-	    initer_tid = pthread_self();
+	    initer_tid = erts_thr_self();
 	    elib_is_initing = 1;
 	}
     }
@@ -552,26 +449,14 @@ static void locked_elib_init(EWord* addr, EWord sz)
 #if THREAD_SAFE_ELIB_MALLOC
 
 #if !USE_RECURSIVE_MALLOC_MUTEX
-    UNLOCK;
-#endif
-    {	/* Recursive calls to malloc are allowed here... */
-
-#ifdef POSIX_THREADS
-#if HAVE_PTHREAD_ATFORK
-#ifdef DEBUG
-	int atfork_res =
-#endif
-	    pthread_atfork(prepare_for_fork,
-			   parent_cleanup_after_fork,
-			   child_cleanup_after_fork);
-	ASSERT(atfork_res == 0);
-#endif
+    erts_mtx_unlock(&malloc_mutex);
 #endif
 
+    /* Recursive calls to malloc are allowed here... */
+    erts_mtx_set_forksafe(&malloc_mutex);
 
-    }
 #if !USE_RECURSIVE_MALLOC_MUTEX
-    LOCK;
+    erts_mtx_lock(&malloc_mutex);
     elib_is_initing = 0;
 #endif
 
@@ -579,12 +464,8 @@ static void locked_elib_init(EWord* addr, EWord sz)
 
     elib_need_init = 0;
 
-#if THREAD_SAFE_ELIB_MALLOC \
-    && defined(POSIX_THREADS) \
-    && !USE_RECURSIVE_MALLOC_MUTEX
-
-    pthread_cond_broadcast(&malloc_cond);
-
+#if THREAD_SAFE_ELIB_MALLOC && !USE_RECURSIVE_MALLOC_MUTEX
+    erts_cnd_broadcast(&malloc_cond);
 #endif
 
 }
@@ -1210,7 +1091,9 @@ void* ELIB_PREFIX(malloc, (size_t nb))
     void *res;
     AllocatedBlock* p;
 
-    LOCK_AND_INIT;
+    erts_mtx_lock(&malloc_mutex);
+    if (elib_need_init)
+	locked_elib_init(NULL,(EWord)0);
 
     if (nb == 0)
 	res = NULL;
@@ -1221,7 +1104,7 @@ void* ELIB_PREFIX(malloc, (size_t nb))
     else
 	res = heap_exhausted();
 
-    UNLOCK;
+    erts_mtx_unlock(&malloc_mutex);
 
     return res;
 }
@@ -1233,7 +1116,9 @@ void* ELIB_PREFIX(calloc, (size_t nelem, size_t size))
     int nb;
     AllocatedBlock* p;
     
-    LOCK_AND_INIT;
+    erts_mtx_lock(&malloc_mutex);
+    if (elib_need_init)
+	locked_elib_init(NULL,(EWord)0);
 
     if ((nb = nelem * size) == 0)
 	res = NULL;
@@ -1244,7 +1129,7 @@ void* ELIB_PREFIX(calloc, (size_t nelem, size_t size))
     else
 	res = heap_exhausted();
 
-    UNLOCK;
+    erts_mtx_unlock(&malloc_mutex);
 
     return res;
 }
@@ -1255,12 +1140,14 @@ void* ELIB_PREFIX(calloc, (size_t nelem, size_t size))
 
 void ELIB_PREFIX(free, (EWord* p))
 {
-    LOCK_AND_INIT;
+    erts_mtx_lock(&malloc_mutex);
+    if (elib_need_init)
+	locked_elib_init(NULL,(EWord)0);
 
     if (p != 0)
 	deallocate((AllocatedBlock*)(p-1), 1);
 
-    UNLOCK;
+    erts_mtx_unlock(&malloc_mutex);
 }
 
 void ELIB_PREFIX(cfree, (EWord* p))
@@ -1279,7 +1166,9 @@ void* ELIB_PREFIX(realloc, (EWord* p, size_t nb))
     void *res = NULL;
     AllocatedBlock* pp;
 
-    LOCK_AND_INIT;
+    erts_mtx_lock(&malloc_mutex);
+    if (elib_need_init)
+	locked_elib_init(NULL,(EWord)0);
 
     if (p != 0) {
 	pp = (AllocatedBlock*) (p-1);
@@ -1301,7 +1190,7 @@ void* ELIB_PREFIX(realloc, (EWord* p, size_t nb))
 	    res = heap_exhausted();
     }
 
-    UNLOCK;
+    erts_mtx_unlock(&malloc_mutex);
 
     return res;
 }
@@ -1314,7 +1203,9 @@ void* ELIB_PREFIX(memresize, (EWord* p, int nb))
     void *res = NULL;
     AllocatedBlock* pp;
 
-    LOCK_AND_INIT;
+    erts_mtx_lock(&malloc_mutex);
+    if (elib_need_init)
+	locked_elib_init(NULL,(EWord)0);
 
     if (p != 0) {
 	pp = (AllocatedBlock*) (p-1);
@@ -1336,7 +1227,7 @@ void* ELIB_PREFIX(memresize, (EWord* p, int nb))
 	    res = heap_exhausted();
     }
 
-    UNLOCK;
+    erts_mtx_unlock(&malloc_mutex);
 
     return res;
 }
@@ -1349,7 +1240,9 @@ void* ELIB_PREFIX(memalign, (int a, int nb))
     void *res;
     AllocatedBlock* p;
 
-    LOCK_AND_INIT;
+    erts_mtx_lock(&malloc_mutex);
+    if (elib_need_init)
+	locked_elib_init(NULL,(EWord)0);
 
     if (nb == 0 || a <= 0)
 	res = NULL;
@@ -1360,7 +1253,7 @@ void* ELIB_PREFIX(memalign, (int a, int nb))
     else
 	res = heap_exhausted();
 
-    UNLOCK;
+    erts_mtx_unlock(&malloc_mutex);
 
     return res;
 }

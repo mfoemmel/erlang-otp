@@ -18,52 +18,47 @@
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
-ROOTDIR = $(ERL_TOP)/erts
-
 # ----------------------------------------------------
 # Release directory specification
 # ----------------------------------------------------
+
+SS_ROOT = $(ERL_TOP)/erts/start_scripts
+SS_TMP = $(SS_ROOT)/tmp
+LIBPATH= $(ERL_TOP)/lib
+SCRIPT_PATH = -I$(LIBPATH)/kernel/ebin -I$(LIBPATH)/stdlib/ebin -I$(LIBPATH)/sasl/ebin
 
 ifeq ($(findstring win32,$(TARGET)),win32)
 
 # This is a temporary fix until start_sasl is moved within the sasl app
 # and each application can specify it's actions at install time (in Erlang).
 INSTALL_SCRIPTS = \
-	start_clean.script \
-	start_clean.boot \
-	start_sasl.boot \
-	start_sasl.script
+	$(SS_ROOT)/start_clean.script \
+	$(SS_ROOT)/start_clean.boot \
+	$(SS_ROOT)/start_sasl.boot \
+	$(SS_ROOT)/start_sasl.script
 else
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 
 INSTALL_SCRIPTS = \
-	start_clean.script \
-	start_clean.boot \
-	start_sasl.boot \
-	start_sasl.script
+	$(SS_ROOT)/start_clean.script \
+	$(SS_ROOT)/start_clean.boot \
+	$(SS_ROOT)/start_sasl.boot \
+	$(SS_ROOT)/start_sasl.script
 else
 
 INSTALL_SCRIPTS = \
-	start_clean.script \
-	start_clean.boot
+	$(SS_ROOT)/start_clean.script \
+	$(SS_ROOT)/start_clean.boot
 endif
 endif 
 
 REL_SCRIPTS = \
-	start_clean.rel \
-	start_sasl.rel \
-	start_all_example.rel
-
-SASL_PATH = -pa $(ROOTDIR)/lib/sasl/ebin 
-ELIBROOT = ../..
-ELIBDIR = $(ELIBROOT)/lib
-SCRIPT_PATH = -I$(ELIBDIR)/kernel/ebin -I$(ELIBDIR)/stdlib/ebin -I$(ELIBDIR)/sasl/ebin
-SCRIPT_FLAGS = 
+	$(SS_ROOT)/start_clean.rel \
+	$(SS_ROOT)/start_sasl.rel \
+	$(SS_ROOT)/start_all_example.rel
 
 ##############################################################################
 # Get version numbers from the VSN files
-
-LIBPATH= ../../lib
 
 # VSN & SYSTEM_VSN
 include ../vsn.mk
@@ -81,13 +76,19 @@ debug opt script: rel $(INSTALL_SCRIPTS)
 
 rel:	$(REL_SCRIPTS)
 
-start_clean.script start_clean.boot:	start_clean.rel
-	$(ERLC) $(SASL_FLAGS) $(SCRIPT_FLAGS) $(SASL_PATH) $(SCRIPT_PATH) $<
+$(SS_ROOT)/start_clean.script \
+$(SS_ROOT)/start_clean.boot:	$(SS_ROOT)/start_clean.rel
+	$(INSTALL_DIR) $(SS_TMP)
+	( cd $(SS_TMP) && \
+	$(ERLC) $(SASL_FLAGS) $(SCRIPT_PATH) -o $@ $< )
 
-start_sasl.script start_sasl.boot:	start_sasl.rel
-	$(ERLC) $(SASL_FLAGS) $(SCRIPT_FLAGS) $(SASL_PATH) $(SCRIPT_PATH) $<
+$(SS_ROOT)/start_sasl.script \
+$(SS_ROOT)/start_sasl.boot:	$(SS_ROOT)/start_sasl.rel
+	$(INSTALL_DIR) $(SS_TMP)
+	( cd $(SS_TMP) && \
+	$(ERLC) $(SASL_FLAGS) $(SCRIPT_PATH) -o $@ $< )
 
-start_clean.rel: start_clean.rel.src \
+$(SS_ROOT)/start_clean.rel: $(SS_ROOT)/start_clean.rel.src \
 			../vsn.mk \
 			$(LIBPATH)/kernel/vsn.mk \
 			$(LIBPATH)/stdlib/vsn.mk
@@ -95,9 +96,9 @@ start_clean.rel: start_clean.rel.src \
             -e 's;%ERTS_VSN%;$(VSN);' \
             -e 's;%KERNEL_VSN%;$(KERNEL_VSN);' \
             -e 's;%STDLIB_VSN%;$(STDLIB_VSN);' \
-          start_clean.rel.src > start_clean.rel
+          $(SS_ROOT)/start_clean.rel.src > $(SS_ROOT)/start_clean.rel
 
-start_sasl.rel:	start_sasl.rel.src \
+$(SS_ROOT)/start_sasl.rel:	$(SS_ROOT)/start_sasl.rel.src \
 			../vsn.mk \
 			$(LIBPATH)/kernel/vsn.mk \
 			$(LIBPATH)/stdlib/vsn.mk \
@@ -107,9 +108,9 @@ start_sasl.rel:	start_sasl.rel.src \
             -e 's;%KERNEL_VSN%;$(KERNEL_VSN);' \
             -e 's;%STDLIB_VSN%;$(STDLIB_VSN);' \
             -e 's;%SASL_VSN%;$(SASL_VSN);' \
-          start_sasl.rel.src > start_sasl.rel
+          $(SS_ROOT)/start_sasl.rel.src > $(SS_ROOT)/start_sasl.rel
 
-start_all_example.rel:	start_all_example.rel.src \
+$(SS_ROOT)/start_all_example.rel:	$(SS_ROOT)/start_all_example.rel.src \
 			../vsn.mk \
 			$(LIBPATH)/kernel/vsn.mk \
 			$(LIBPATH)/stdlib/vsn.mk \
@@ -127,22 +128,34 @@ start_all_example.rel:	start_all_example.rel.src \
             -e 's;%MNESIA_VSN%;$(MNESIA_VSN);' \
             -e 's;%SNMP_VSN%;$(SNMPEA_VSN);' \
             -e 's;%INETS_VSN%;$(INETS_VSN);' \
-          start_all_example.rel.src > start_all_example.rel
+          $(SS_ROOT)/start_all_example.rel.src > $(SS_ROOT)/start_all_example.rel
 
 ## Special target used from $(ERL_TOP)/erts/Makefile.
 $(ERL_TOP)/bin/start.script:
-	$(ERLC) $(SASL_PATH) \
-	$(SCRIPT_PATH) $(SCRIPT_FLAGS) +otp_build -o $@ start_clean.rel
+	$(INSTALL_DIR) $(SS_TMP)
+	( cd $(SS_TMP) && \
+	  $(ERLC) $(SCRIPT_PATH) +otp_build -o $@ $(SS_ROOT)/start_clean.rel )
 
 $(ERL_TOP)/bin/start_sasl.script:
-	$(ERLC) $(SASL_PATH) \
-	$(SCRIPT_PATH) $(SCRIPT_FLAGS) +otp_build -o $@ start_sasl.rel
+	$(INSTALL_DIR) $(SS_TMP)
+	( cd $(SS_TMP) && \
+	  $(ERLC) $(SCRIPT_PATH) +otp_build -o $@ $(SS_ROOT)/start_sasl.rel )
+
+$(ERL_TOP)/bin/start_clean.script:
+	$(INSTALL_DIR) $(SS_TMP)
+	( cd $(SS_TMP) && \
+	  $(ERLC) $(SCRIPT_PATH) +otp_build -o $@ $(SS_ROOT)/start_clean.rel )
 
 ## Special target used from system/build/Makefile for source code release bootstrap.
-bootstrap_scripts: start_clean.rel
+bootstrap_scripts: $(SS_ROOT)/start_clean.rel
 	$(INSTALL_DIR) $(TESTROOT)/bin
-	$(ERLC) $(SASL_PATH) $(SCRIPT_PATH) $(SCRIPT_FLAGS) \
-           +otp_build -o $(TESTROOT)/bin/start.script start_clean.rel
+	$(INSTALL_DIR) $(SS_TMP)
+	( cd $(SS_TMP) && \
+	  $(ERLC) $(SCRIPT_PATH) +otp_build \
+	    -o $(TESTROOT)/bin/start.script $(SS_ROOT)/start_clean.rel )
+	( cd $(SS_TMP) && \
+	  $(ERLC) $(SCRIPT_PATH) +otp_build \
+	    -o $(TESTROOT)/bin/start_clean.script $(SS_ROOT)/start_clean.rel )
 
 clean:
 	$(RM) $(REL_SCRIPTS) $(INSTALL_SCRIPTS)

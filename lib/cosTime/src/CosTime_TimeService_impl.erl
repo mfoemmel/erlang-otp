@@ -62,11 +62,11 @@
 %% Effect   : Functions demanded by the gen_server module. 
 %%------------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-handle_info(Info, State) ->
-    ?debug_print("INFO: ~p~n", [Info]),
+handle_info(_Info, State) ->
+    ?debug_print("INFO: ~p~n", [_Info]),
     {noreply, State}.    
 
 %%----------------------------------------------------------%
@@ -78,7 +78,7 @@ init([Tdf, Inaccuracy]) ->
     process_flag(trap_exit, true),
     {ok, ?get_InitState(Tdf, Inaccuracy)}.
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------
@@ -105,7 +105,7 @@ universal_time(OE_THIS, State) ->
 %% Arguments: 
 %% Returns  : {'EXCEPTION", #'CosTime_TimeUnavailable'{}}
 %%-----------------------------------------------------------
-secure_universal_time(OE_THIS, State) ->
+secure_universal_time(_OE_THIS, _State) ->
     corba:raise(#'CosTime_TimeUnavailable'{}).
 
 %%----------------------------------------------------------%

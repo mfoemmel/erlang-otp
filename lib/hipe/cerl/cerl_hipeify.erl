@@ -17,21 +17,45 @@
 %% $Id$
 %%
 %% @author Richard Carlsson <richardc@csd.uu.se>
-%% @copyright 2000-2002 Richard Carlsson
+%% @copyright 2000-2004 Richard Carlsson
 %% @doc HiPE-ification of Core Erlang code. Prepares Core Erlang code
 %% for translation to ICode.
 %% @see cerl_to_icode
 
 -module(cerl_hipeify).
 
--export([module/1]).
+-define(NO_UNUSED, true).
+
+-export([transform/2]).
+-ifndef(NO_UNUSED).
+-export([core_transform/2]).
+-endif.
 
 -include("cerl_hipe_primops.hrl").
 
--record(ctxt, {class = expr}).
+-record(ctxt, {class = expr, line=0}).
 
 
-%% @spec module(Module::cerl()) -> cerl()
+%% @spec core_transform(Module::cerl_records(), Options::[term()]) ->
+%%           cerl_records()
+%%
+%% @doc Transforms a module represented by records. See
+%% <code>transform/2</code> for details.
+%%
+%% <p>Use the compiler option <code>{core_transform,
+%% cerl_hipeify}</code> to insert this function as a compilation
+%% pass.</p>
+%%
+%% @see transform/2
+
+-ifndef(NO_UNUSED).
+core_transform(M, Opts) ->
+    cerl:to_records(transform(cerl:from_records(M), Opts)).
+-endif.	% NO_UNUSED
+%% @clear
+
+
+%% @spec transform(Module::cerl(), Options::[term()]) -> cerl()
 %%
 %%    cerl() = cerl:cerl()
 %%
@@ -40,145 +64,170 @@
 %% details.
 %%
 %% @see cerl_to_icode
+%% @see cerl_cconv
 
-module(T) ->
-    {Ds, Env, Ren} = add_defs(cerl:module_defs(T), env__new(),
+transform(E, Opts) ->
+    %% Start by closure converting the code
+    module(cerl_cconv:transform(E, Opts)).
+
+module(E) ->
+    {Ds, Env, Ren} = add_defs(cerl:module_defs(E), env__new(),
 			      ren__new()),
-    M = cerl:module_name(T),
+    M = cerl:module_name(E),
     {Ds1, _} = defs(Ds, true, Env, Ren, s__new(cerl:atom_val(M))),
-    cerl:update_c_module(T, M, cerl:module_exports(T),
-			 cerl:module_attrs(T), Ds1).
+    cerl:update_c_module(E, M, cerl:module_exports(E),
+			 cerl:module_attrs(E), Ds1).
 
 %% Note that the environment is defined on the renamed variables.
 
-expr(T, Env, Ren, Ctxt, S0) ->
-    case cerl:type(T) of
- 	literal ->
-	    {T, S0};
-	var ->
-	    variable(T, Env, Ren, Ctxt, S0);
-	values ->
-	    {Ts, S1} = expr_list(cerl:values_es(T), Env, Ren, Ctxt, S0),
- 	    {cerl:update_c_values(T, Ts), S1};
-	cons ->
-	    {T1, S1} = expr(cerl:cons_hd(T), Env, Ren, Ctxt, S0),
-	    {T2, S2} = expr(cerl:cons_tl(T), Env, Ren, Ctxt, S1),
-	    {cerl:update_c_cons(T, T1, T2), S2};
- 	tuple ->
-	    {Ts, S1} = expr_list(cerl:tuple_es(T), Env, Ren, Ctxt, S0),
-	    {cerl:update_c_tuple(T, Ts), S1};
- 	'let' ->
-	    let_expr(T, Env, Ren, Ctxt, S0);
-	seq ->
-	    {A, S1} = expr(cerl:seq_arg(T), Env, Ren, Ctxt, S0),
-	    {B, S2} = expr(cerl:seq_body(T), Env, Ren, Ctxt, S1),
- 	    {cerl:update_c_seq(T, A, B), S2};
- 	apply ->
-	    {Op, S1} = expr(cerl:apply_op(T), Env, Ren, Ctxt, S0),
-	    {As, S2} = expr_list(cerl:apply_args(T), Env, Ren, Ctxt, S1),
- 	    {cerl:update_c_apply(T, Op, As), S2};
- 	call ->
-	    {M, S1} = expr(cerl:call_module(T), Env, Ren, Ctxt, S0),
-	    {N, S2} = expr(cerl:call_name(T), Env, Ren, Ctxt, S1),
-	    {As, S3} = expr_list(cerl:call_args(T), Env, Ren, Ctxt, S2),
- 	    {rewrite_call(T, M, N, As), S3};
- 	primop ->
-	    {As, S1} = expr_list(cerl:primop_args(T), Env, Ren, Ctxt, S0),
-	    N = cerl:primop_name(T),
-	    {rewrite_primop(T, N, As, S1), S1};
- 	'case' ->
-	    {A, S1} = expr(cerl:case_arg(T), Env, Ren, Ctxt, S0),
-	    {E, Vs, S2} = clauses(cerl:case_clauses(T), Env, Ren, Ctxt, S1),
- 	    {cerl:c_let(Vs, A, E), S2};
- 	'fun' ->
-	    Vs = cerl:fun_vars(T),
-	    {Vs1, Env1, Ren1} = add_vars(Vs, Env, Ren),
-	    {B, S1} = expr(cerl:fun_body(T), Env1, Ren1, Ctxt, S0),
-	    {cerl:update_c_fun(T, Vs1, B), S1};
- 	'receive' ->
-	    receive_expr(T, Env, Ren, Ctxt, S0);
- 	'try' ->
-	    {E, S1} = expr(cerl:try_arg(T), Env, Ren, Ctxt, S0),
-	    Vs = cerl:try_vars(T),
-	    {Vs1, Env1, Ren1} = add_vars(Vs, Env, Ren),
-	    {B, S2} = expr(cerl:try_body(T), Env1, Ren1, Ctxt, S1),
-	    Evs = cerl:try_evars(T),
-	    {Evs1, Env2, Ren2} = add_vars(Evs, Env, Ren),
-	    {H, S3} = expr(cerl:try_handler(T), Env2, Ren2, Ctxt, S2),
-	    {cerl:update_c_try(T, E, Vs1, B, Evs1, H), S3};
- 	'catch' ->
-	    {B, S1} = expr(cerl:catch_body(T), Env, Ren, Ctxt, S0),
-	    {cerl:update_c_catch(T, B), S1};
-	letrec ->
-	    {Ds, Env1, Ren1} = add_defs(cerl:letrec_defs(T), Env, Ren),
-	    {Ds1, S1} = defs(Ds, false, Env1, Ren1, S0),
-	    {B, S2} = expr(cerl:letrec_body(T), Env1, Ren1, Ctxt, S1),
-	    {cerl:update_c_letrec(T, Ds1, B), S2};
-	binary ->
-	    {Segs, S1}=expr_list(cerl:binary_segs(T), Env, Ren, Ctxt, S0),
-	    {cerl:update_c_binary(T, Segs), S1};
-	bin_seg ->
-	    {T1,S1} = expr(cerl:bin_seg_val(T), Env, Ren, Ctxt, S0),
-	    {T2,S2} = expr(cerl:bin_seg_size(T), Env, Ren, Ctxt, S1),	
-	    T3 = cerl:bin_seg_unit(T), 
-	    T4 = cerl:bin_seg_type(T),
-	    T5 = cerl:bin_seg_flags(T),
-	    {cerl:update_c_bin_seg(T, T1, T2, T3, T4, T5), S2} 
+expr(E, Env, Ren, Ctxt, S0) ->
+    %% Do peephole optimizations as we traverse the code.
+    E1 = cerl_lib:reduce_expr(E),
+    case get_line(cerl:get_ann(E1)) of
+	none ->
+	    expr_1(E1, Env, Ren, Ctxt, S0);
+	Line ->
+	    if Line > Ctxt#ctxt.line ->
+		    E2 = cerl:c_seq(cerl:c_primop(
+				      cerl:c_atom(?PRIMOP_SOURCE_LINE),
+				      [cerl:abstract(Line)]),
+				    E1),
+		    expr_1(E2, Env, Ren, Ctxt#ctxt{line = Line}, S0);
+	       true ->
+		    expr_1(E1, Env, Ren, Ctxt, S0)
+	    end
     end.
 
-guard_expr(T, Env, Ren, Ctxt, S) ->
-    expr(T, Env, Ren, Ctxt#ctxt{class = guard}, S).
+expr_1(E, Env, Ren, Ctxt, S0) ->
+    case cerl:type(E) of
+ 	literal ->
+	    {E, S0};
+	var ->
+	    variable(E, Env, Ren, Ctxt, S0);
+	values ->
+	    {Es, S1} = expr_list(cerl:values_es(E), Env, Ren, Ctxt, S0),
+ 	    {cerl:update_c_values(E, Es), S1};
+	cons ->
+	    {E1, S1} = expr(cerl:cons_hd(E), Env, Ren, Ctxt, S0),
+	    {E2, S2} = expr(cerl:cons_tl(E), Env, Ren, Ctxt, S1),
+	    {cerl:update_c_cons(E, E1, E2), S2};
+ 	tuple ->
+	    {Es, S1} = expr_list(cerl:tuple_es(E), Env, Ren, Ctxt, S0),
+	    {cerl:update_c_tuple(E, Es), S1};
+ 	'let' ->
+	    let_expr(E, Env, Ren, Ctxt, S0);
+	seq ->
+	    {A, S1} = expr(cerl:seq_arg(E), Env, Ren, Ctxt, S0),
+	    {B, S2} = expr(cerl:seq_body(E), Env, Ren, Ctxt, S1),
+ 	    {cerl:update_c_seq(E, A, B), S2};
+ 	apply ->
+	    {Op, S1} = expr(cerl:apply_op(E), Env, Ren, Ctxt, S0),
+	    {As, S2} = expr_list(cerl:apply_args(E), Env, Ren, Ctxt, S1),
+ 	    {cerl:update_c_apply(E, Op, As), S2};
+ 	call ->
+	    {M, S1} = expr(cerl:call_module(E), Env, Ren, Ctxt, S0),
+	    {N, S2} = expr(cerl:call_name(E), Env, Ren, Ctxt, S1),
+	    {As, S3} = expr_list(cerl:call_args(E), Env, Ren, Ctxt, S2),
+ 	    {rewrite_call(E, M, N, As), S3};
+ 	primop ->
+	    {As, S1} = expr_list(cerl:primop_args(E), Env, Ren, Ctxt, S0),
+	    N = cerl:primop_name(E),
+	    {rewrite_primop(E, N, As, S1), S1};
+ 	'case' ->
+	    {A, S1} = expr(cerl:case_arg(E), Env, Ren, Ctxt, S0),
+	    {E1, Vs, S2} = clauses(cerl:case_clauses(E), Env, Ren, Ctxt, S1),
+ 	    {cerl:c_let(Vs, A, E1), S2};
+ 	'fun' ->
+	    Vs = cerl:fun_vars(E),
+	    {Vs1, Env1, Ren1} = add_vars(Vs, Env, Ren),
+	    {B, S1} = expr(cerl:fun_body(E), Env1, Ren1, Ctxt, S0),
+	    {cerl:update_c_fun(E, Vs1, B), S1};
+ 	'receive' ->
+	    receive_expr(E, Env, Ren, Ctxt, S0);
+ 	'try' ->
+	    {A, S1} = expr(cerl:try_arg(E), Env, Ren, Ctxt, S0),
+	    Vs = cerl:try_vars(E),
+	    {Vs1, Env1, Ren1} = add_vars(Vs, Env, Ren),
+	    {B, S2} = expr(cerl:try_body(E), Env1, Ren1, Ctxt, S1),
+	    Evs = cerl:try_evars(E),
+	    {Evs1, Env2, Ren2} = add_vars(Evs, Env, Ren),
+	    {H, S3} = expr(cerl:try_handler(E), Env2, Ren2, Ctxt, S2),
+	    {cerl:update_c_try(E, A, Vs1, B, Evs1, H), S3};
+ 	'catch' ->
+	    {B, S1} = expr(cerl:catch_body(E), Env, Ren, Ctxt, S0),
+	    {cerl:update_c_catch(E, B), S1};
+	letrec ->
+	    {Ds, Env1, Ren1} = add_defs(cerl:letrec_defs(E), Env, Ren),
+	    {Ds1, S1} = defs(Ds, false, Env1, Ren1, S0),
+	    {B, S2} = expr(cerl:letrec_body(E), Env1, Ren1, Ctxt, S1),
+	    {cerl:update_c_letrec(E, Ds1, B), S2};
+	binary ->
+	    {Segs, S1}=expr_list(cerl:binary_segments(E), Env, Ren,
+				 Ctxt, S0),
+	    {cerl:update_c_binary(E, Segs), S1};
+	bitstr ->
+	    {E1,S1} = expr(cerl:bitstr_val(E), Env, Ren, Ctxt, S0),
+	    {E2,S2} = expr(cerl:bitstr_size(E), Env, Ren, Ctxt, S1),	
+	    E3 = cerl:bitstr_unit(E), 
+	    E4 = cerl:bitstr_type(E),
+	    E5 = cerl:bitstr_flags(E),
+	    {cerl:update_c_bitstr(E, E1, E2, E3, E4, E5), S2} 
+    end.
 
-expr_list(Ts, Env, Ren, Ctxt, S0) ->
-    list(Ts, Env, Ren, Ctxt, S0, fun expr/5).
+guard_expr(E, Env, Ren, Ctxt, S) ->
+    expr(E, Env, Ren, Ctxt#ctxt{class = guard}, S).
 
-list([T | Ts], Env, Ren, Ctxt, S0, F) ->
-    {T1, S1} = F(T, Env, Ren, Ctxt, S0),
-    {Ts1, S2} = list(Ts, Env, Ren, Ctxt, S1, F),
-    {[T1 | Ts1], S2};
+expr_list(Es, Env, Ren, Ctxt, S0) ->
+    list(Es, Env, Ren, Ctxt, S0, fun expr/5).
+
+list([E | Es], Env, Ren, Ctxt, S0, F) ->
+    {E1, S1} = F(E, Env, Ren, Ctxt, S0),
+    {Es1, S2} = list(Es, Env, Ren, Ctxt, S1, F),
+    {[E1 | Es1], S2};
 list([], _, _, _, S, _) ->
     {[], S}.
 
-pattern(T, Env, Ren) ->
-    case cerl:type(T) of
+pattern(E, Env, Ren) ->
+    case cerl:type(E) of
  	literal ->
-	    T;
+	    E;
 	var ->
-	    cerl:update_c_var(T, ren__map(cerl:var_name(T), Ren));
+	    cerl:update_c_var(E, ren__map(cerl:var_name(E), Ren));
 	values ->
-	    Ts = pattern_list(cerl:values_es(T), Env, Ren),
- 	    cerl:update_c_values(T, Ts);
+	    Es = pattern_list(cerl:values_es(E), Env, Ren),
+ 	    cerl:update_c_values(E, Es);
 	cons ->
-	    T1 = pattern(cerl:cons_hd(T), Env, Ren),
-	    T2 = pattern(cerl:cons_tl(T), Env, Ren),
-	    cerl:update_c_cons(T, T1, T2);
+	    E1 = pattern(cerl:cons_hd(E), Env, Ren),
+	    E2 = pattern(cerl:cons_tl(E), Env, Ren),
+	    cerl:update_c_cons(E, E1, E2);
  	tuple ->
-	    Ts = pattern_list(cerl:tuple_es(T), Env, Ren),
-	    cerl:update_c_tuple(T, Ts);
+	    Es = pattern_list(cerl:tuple_es(E), Env, Ren),
+	    cerl:update_c_tuple(E, Es);
 	alias ->
-	    V = pattern(cerl:alias_var(T), Env, Ren),
-	    P = pattern(cerl:alias_pat(T), Env, Ren),
-	    cerl:update_c_alias(T, V, P);
+	    V = pattern(cerl:alias_var(E), Env, Ren),
+	    P = pattern(cerl:alias_pat(E), Env, Ren),
+	    cerl:update_c_alias(E, V, P);
 	binary ->
-	    Segs=pattern_list(cerl:binary_segs(T), Env, Ren),
-	    cerl:update_c_binary(T, Segs);
-	bin_seg ->
-	    T1 = pattern(cerl:bin_seg_val(T), Env, Ren),
-	    T2 = pattern(cerl:bin_seg_size(T), Env, Ren),	
-	    T3 = cerl:bin_seg_unit(T), 
-	    T4 = cerl:bin_seg_type(T),
-	    T5 = cerl:bin_seg_flags(T),
-	    cerl:update_c_bin_seg(T, T1, T2, T3, T4, T5)
+	    Segs=pattern_list(cerl:binary_segments(E), Env, Ren),
+	    cerl:update_c_binary(E, Segs);
+	bitstr ->
+	    E1 = pattern(cerl:bitstr_val(E), Env, Ren),
+	    E2 = pattern(cerl:bitstr_size(E), Env, Ren),	
+	    E3 = cerl:bitstr_unit(E), 
+	    E4 = cerl:bitstr_type(E),
+	    E5 = cerl:bitstr_flags(E),
+	    cerl:update_c_bitstr(E, E1, E2, E3, E4, E5)
     end.
 
 
 
-pattern_list([T | Ts], Env, Ren) ->
-    [pattern(T, Env, Ren) | pattern_list(Ts, Env, Ren)];
+pattern_list([E | Es], Env, Ren) ->
+    [pattern(E, Env, Ren) | pattern_list(Es, Env, Ren)];
 pattern_list([], _, _) ->
     [].
 
-%% Visit the function body of each definition.
+%% Visit the function body of each definition. We insert an explicit
+%% reduction test at the start of each function.
 
 defs(Ds, Top, Env, Ren, S) ->
     defs(Ds, [], Top, Env, Ren, S).
@@ -189,7 +238,10 @@ defs([{V, F} | Ds], Ds1, Top, Env, Ren, S0) ->
 	     false -> S0
 	 end,
     {B, S2} = expr(cerl:fun_body(F), Env, Ren, #ctxt{}, S1),
-    F1 = cerl:update_c_fun(F, cerl:fun_vars(F), B),
+    B1 = cerl:c_seq(cerl:c_primop(cerl:c_atom(?PRIMOP_REDUCTION_TEST),
+				  []),
+		    B),
+    F1 = cerl:update_c_fun(F, cerl:fun_vars(F), B1),
     defs(Ds, [{V, F1} | Ds1], Top, Env, Ren, S2);
 defs([], Ds, _Top, _Env, _Ren, S) ->
     {lists:reverse(Ds), S}.
@@ -207,45 +259,49 @@ clauses(Cs, Env, Ren, Ctxt, S) ->
 clause_list(Cs, Env, Ren, Ctxt, S) ->
     list(Cs, Env, Ren, Ctxt, S, fun clause/5).
 
-clause(T, Env, Ren, Ctxt, S0) ->
-    Vs = cerl:clause_vars(T),
+clause(E, Env, Ren, Ctxt, S0) ->
+    Vs = cerl:clause_vars(E),
     {_, Env1, Ren1} = add_vars(Vs, Env, Ren),
     %% Visit patterns to rename variables.
-    Ps = pattern_list(cerl:clause_pats(T), Env1, Ren1),
-    {G, S1} = guard_expr(cerl:clause_guard(T), Env1, Ren1, Ctxt, S0),
-    {B, S2} = expr(cerl:clause_body(T), Env1, Ren1, Ctxt, S1),
-    {cerl:update_c_clause(T, Ps, G, B), S2}.
+    Ps = pattern_list(cerl:clause_pats(E), Env1, Ren1),
+    {G, S1} = guard_expr(cerl:clause_guard(E), Env1, Ren1, Ctxt, S0),
+    {B, S2} = expr(cerl:clause_body(E), Env1, Ren1, Ctxt, S1),
+    {cerl:update_c_clause(E, Ps, G, B), S2}.
 
 %% This does what 'expr' does, but only recurses into clause guard
 %% expressions, 'case'-expressions, and the bodies of lets and letrecs.
 %% Note that revisiting should not add further renamings, and we simply
 %% ignore making any bindings at all at this level.
 
-revisit_expr(T, Env, Ren, Ctxt, S0) ->
-    case cerl:type(T) of
+revisit_expr(E, Env, Ren, Ctxt, S0) ->
+    %% Also enable peephole optimizations here.
+    revisit_expr_1(cerl_lib:reduce_expr(E), Env, Ren, Ctxt, S0).
+
+revisit_expr_1(E, Env, Ren, Ctxt, S0) ->
+    case cerl:type(E) of
  	'case' ->
-	    {Cs, S1} = revisit_clause_list(cerl:case_clauses(T), Env,
+	    {Cs, S1} = revisit_clause_list(cerl:case_clauses(E), Env,
 					   Ren, Ctxt, S0),
-	    {cerl:update_c_case(T, cerl:case_arg(T), Cs), S1};
+	    {cerl:update_c_case(E, cerl:case_arg(E), Cs), S1};
 	'let' ->
-	    {B, S1} = revisit_expr(cerl:let_body(T), Env, Ren, Ctxt, S0),
-	    {cerl:update_c_let(T, cerl:let_vars(T), cerl:let_arg(T), B),
+	    {B, S1} = revisit_expr(cerl:let_body(E), Env, Ren, Ctxt, S0),
+	    {cerl:update_c_let(E, cerl:let_vars(E), cerl:let_arg(E), B),
 	     S1};
 	'letrec' ->
-	    {B, S1} = revisit_expr(cerl:letrec_body(T), Env, Ren, Ctxt, S0),
-	    {cerl:update_c_letrec(T, cerl:letrec_defs(T), B), S1};
+	    {B, S1} = revisit_expr(cerl:letrec_body(E), Env, Ren, Ctxt, S0),
+	    {cerl:update_c_letrec(E, cerl:letrec_defs(E), B), S1};
 	_ ->
-	    {T, S0}
+	    {E, S0}
     end.
 
 revisit_clause_list(Cs, Env, Ren, Ctxt, S) ->
     list(Cs, Env, Ren, Ctxt, S, fun revisit_clause/5).
 
-revisit_clause(T, Env, Ren, Ctxt, S0) ->
+revisit_clause(E, Env, Ren, Ctxt, S0) ->
     %% Ignore the bindings.
-    {G, S1} = guard_expr(cerl:clause_guard(T), Env, Ren, Ctxt, S0),
-    {B, S2} = revisit_expr(cerl:clause_body(T), Env, Ren, Ctxt, S1),
-    {cerl:update_c_clause(T, cerl:clause_pats(T), G, B), S2}.
+    {G, S1} = guard_expr(cerl:clause_guard(E), Env, Ren, Ctxt, S0),
+    {B, S2} = revisit_expr(cerl:clause_body(E), Env, Ren, Ctxt, S1),
+    {cerl:update_c_clause(E, cerl:clause_pats(E), G, B), S2}.
 
 %% We use the no-shadowing strategy, renaming variables on the fly and
 %% only when necessary to uphold the invariant.
@@ -301,7 +357,7 @@ add_defs([], Ds, Env, Ren) ->
 %% straightforwardly. In most cases however, it is simply because they
 %% are supposed to be represented as primop calls on the Icode level.
 
-rewrite_call(T, M, F, As) ->
+rewrite_call(E, M, F, As) ->
     case cerl:is_c_atom(M) and cerl:is_c_atom(F) of
 	true ->
 	    case call_to_primop(cerl:atom_val(M),
@@ -311,10 +367,10 @@ rewrite_call(T, M, F, As) ->
 		{yes, N} ->
 		    cerl:c_primop(cerl:c_atom(N), As);
 		no ->
-		    cerl:update_c_call(T, M, F, As)
+		    cerl:update_c_call(E, M, F, As)
 	    end;
 	false ->
-	    cerl:update_c_call(T, M, F, As)
+	    cerl:update_c_call(E, M, F, As)
     end.
 
 call_to_primop(erlang, 'not', 1) -> {yes, ?PRIMOP_NOT};
@@ -324,8 +380,8 @@ call_to_primop(erlang, '+', 2) -> {yes, ?PRIMOP_ADD};
 call_to_primop(erlang, '+', 1) -> {yes, ?PRIMOP_IDENTITY};
 call_to_primop(erlang, '-', 2) -> {yes, ?PRIMOP_SUB};
 call_to_primop(erlang, '-', 1) -> {yes, ?PRIMOP_NEG};
-%% call_to_primop(erlang, '*', 2) -> {yes, ?PRIMOP_MUL};
-%% call_to_primop(erlang, '/', 2) -> {yes, ?PRIMOP_DIV};
+call_to_primop(erlang, '*', 2) -> {yes, ?PRIMOP_MUL};
+call_to_primop(erlang, '/', 2) -> {yes, ?PRIMOP_DIV};
 %% call_to_primop(erlang, 'div', 2) -> {yes, ?PRIMOP_INTDIV};
 %% call_to_primop(erlang, 'rem', 2) -> {yes, ?PRIMOP_REM};
 call_to_primop(erlang, 'band', 2) -> {yes, ?PRIMOP_BAND};
@@ -354,6 +410,7 @@ call_to_primop(erlang, is_pid, 1) -> {yes, ?PRIMOP_IS_PID};
 call_to_primop(erlang, is_port, 1) -> {yes, ?PRIMOP_IS_PORT};
 call_to_primop(erlang, is_reference, 1) -> {yes, ?PRIMOP_IS_REFERENCE};
 call_to_primop(erlang, is_tuple, 1) -> {yes, ?PRIMOP_IS_TUPLE};
+call_to_primop(erlang, element, 2) -> {yes, ?PRIMOP_ELEMENT};
 call_to_primop(erlang, exit, 1) -> {yes, ?PRIMOP_EXIT};
 call_to_primop(erlang, throw, 1) -> {yes, ?PRIMOP_THROW};
 call_to_primop(erlang, error, 1) -> {yes, ?PRIMOP_ERROR};
@@ -365,7 +422,7 @@ call_to_primop(_, _, _) -> no.
 %% Also, some primops (introduced by Erlang to Core Erlang translation
 %% and possibly other stages) must be recognized and rewritten.
 
-rewrite_primop(T, N, As, S) ->
+rewrite_primop(E, N, As, S) ->
     case {cerl:atom_val(N), As} of
 	{match_fail, [R]} ->
 	    M = s__get_module_name(S),
@@ -386,25 +443,25 @@ rewrite_primop(T, N, As, S) ->
 							  [cerl:c_atom(M),
 							   cerl:c_atom(F),
 							   cerl:make_list(Xs)])]),
-					    match_fail(T, X, FStack);
+					    match_fail(E, X, FStack);
 					_ ->
-					    match_fail(T, R, Stack)
+					    match_fail(E, R, Stack)
 				    end;
 				false ->
-				    match_fail(T, R, Stack)
+				    match_fail(E, R, Stack)
 			    end;
 			_ ->
-			    match_fail(T, R, Stack)
+			    match_fail(E, R, Stack)
 		    end;
 		_ ->
-		    match_fail(T, R, Stack)
+		    match_fail(E, R, Stack)
 	    end;
 	_ ->
-	    cerl:update_c_primop(T, N, As)
+	    cerl:update_c_primop(E, N, As)
     end.
 
-match_fail(T, R, Stack) ->
-    cerl:update_c_primop(T, cerl:c_atom(?PRIMOP_ERROR), [R, Stack]).
+match_fail(E, R, Stack) ->
+    cerl:update_c_primop(E, cerl:c_atom(?PRIMOP_ERROR), [R, Stack]).
 
 %% Simple let-definitions (of degree 1) in guard context are always
 %% inline expanded. This is allowable, since they cannot have side
@@ -412,44 +469,44 @@ match_fail(T, R, Stack) ->
 %% expressions. It could cause repeated evaluations, but typically,
 %% local definitions within guards are used exactly once.
 
-let_expr(T, Env, Ren, Ctxt, S) ->
+let_expr(E, Env, Ren, Ctxt, S) ->
     if Ctxt#ctxt.class == guard ->
-	    case cerl:let_vars(T) of
+	    case cerl:let_vars(E) of
 		[V] ->
 		    {Name, Ren1} = rename(cerl:var_name(V), Env, Ren),
-		    Env1 = env__bind(Name, {expr, cerl:let_arg(T)}, Env),
-		    expr(cerl:let_body(T), Env1, Ren1, Ctxt, S);
+		    Env1 = env__bind(Name, {expr, cerl:let_arg(E)}, Env),
+		    expr(cerl:let_body(E), Env1, Ren1, Ctxt, S);
 		_ ->
-		    let_expr_1(T, Env, Ren, Ctxt, S)
+		    let_expr_1(E, Env, Ren, Ctxt, S)
 	    end;
        true ->
-	    let_expr_1(T, Env, Ren, Ctxt, S)
+	    let_expr_1(E, Env, Ren, Ctxt, S)
     end.
 
-let_expr_1(T, Env, Ren, Ctxt, S0) ->
-    {A, S1} = expr(cerl:let_arg(T), Env, Ren, Ctxt, S0),
-    Vs = cerl:let_vars(T),
+let_expr_1(E, Env, Ren, Ctxt, S0) ->
+    {A, S1} = expr(cerl:let_arg(E), Env, Ren, Ctxt, S0),
+    Vs = cerl:let_vars(E),
     {Vs1, Env1, Ren1} = add_vars(Vs, Env, Ren),
-    {B, S2} = expr(cerl:let_body(T), Env1, Ren1, Ctxt, S1),
-    {cerl:update_c_let(T, Vs1, A, B), S2}.
+    {B, S2} = expr(cerl:let_body(E), Env1, Ren1, Ctxt, S1),
+    {cerl:update_c_let(E, Vs1, A, B), S2}.
 
-variable(T, Env, Ren, Ctxt, S) ->
-    V = ren__map(cerl:var_name(T), Ren),
+variable(E, Env, Ren, Ctxt, S) ->
+    V = ren__map(cerl:var_name(E), Ren),
     if Ctxt#ctxt.class == guard ->
 	    case env__lookup(V, Env) of
-		{ok, {expr, E}} ->
-		    expr(E, Env, Ren, Ctxt, S);   % inline
+		{ok, {expr, E1}} ->
+		    expr(E1, Env, Ren, Ctxt, S);   % inline
 		_ ->
 		    %% Since we don't track all bindings when we revisit
 		    %% guards, some names will not be in the environment.
-		    variable_1(T, V, S)
+		    variable_1(E, V, S)
 	    end;
        true ->
-	    variable_1(T, V, S)
+	    variable_1(E, V, S)
     end.
 
-variable_1(T, V, S) ->
-    {cerl:update_c_var(T, V), S}.
+variable_1(E, V, S) ->
+    {cerl:update_c_var(E, V), S}.
 
 %% Receive-expressions are rewritten as follows:
 %%
@@ -491,6 +548,14 @@ receive_clauses([]) ->
     [cerl:c_clause([V], Call)].
 
 
+get_line([L | _As]) when integer(L) ->
+    L;
+get_line([_ | As]) ->
+    get_line(As);
+get_line([]) ->
+    none.
+
+
 %% ---------------------------------------------------------------------
 %% Environment
 
@@ -513,7 +578,7 @@ env__new_name(Env) ->
     rec_env:new_key(Env).
 
 env__new_function_name(F, Env) ->
-    rec_env:new_custom_key(F, Env).
+    rec_env:new_key(F, Env).
 
 
 %% ---------------------------------------------------------------------

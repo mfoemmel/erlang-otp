@@ -273,7 +273,7 @@ search_object(ProcVars, RegExp) ->
     DbList    = dblist2list(DbData#db_data.db),
     ListAsStr = ProcVars#process_variables.lists_as_strings,
     case catch tv_db_search:get_input_and_search(DbList, RegExp, ListAsStr) of
-	{'EXIT', Reason} ->
+	{'EXIT', _Reason} ->
 	    tv_db_search:reset_window(true),
 	    [];
 	List ->
@@ -325,7 +325,7 @@ update_sorting_mode(Msg, ProcVars, SearchWinCreated, OldSearchData, RegExp) ->
 		case catch tv_db_search:update_search(SearchWinCreated, 
 						      NewDbList, RegExp,
 						      ListAsStr) of
-		    {'EXIT', Reason} ->
+		    {'EXIT', _Reason} ->
 			tv_db_search:reset_window(true),
 			[];
 		    List ->
@@ -345,10 +345,10 @@ update_sorting_mode(Msg, ProcVars, SearchWinCreated, OldSearchData, RegExp) ->
 sort_db_list(DbList, Sort, Sort, Rev, Rev, KeyNo, KeyNo) ->
        % Already sorted!
     DbList;
-sort_db_list(DbList, false, OldSort, Rev, OldRev, KeyNo, OldKeyNo) ->
+sort_db_list(DbList, false, _OldSort, _Rev, _OldRev, _KeyNo, _OldKeyNo) ->
        % No sorting, i.e., the old list order suffices!
     DbList;
-sort_db_list(DbList, Sort, OldSort, Rev, OldRev, KeyNo, OldKeyNo) ->
+sort_db_list(DbList, _Sort, _OldSort, Rev, _OldRev, KeyNo, _OldKeyNo) ->
     tv_db_sort:mergesort(KeyNo, DbList, Rev).
     
 
@@ -405,13 +405,13 @@ send_subset(ProcVars, EtsreadTime, DbsTime) ->
 
 
 
-get_requested_row_data(undefined, DbList) ->
+get_requested_row_data(undefined, _DbList) ->
     [];
-get_requested_row_data(RowNo, []) ->
+get_requested_row_data(_RowNo, []) ->
     [];
 get_requested_row_data(RowNo, DbList) ->
     case catch lists:nth(RowNo, DbList) of
-	{'EXIT', Reason} ->
+	{'EXIT', _Reason} ->
 	    [];
 	RowData ->
 	    [RowData]
@@ -435,7 +435,6 @@ exit_signals(ExitInfo, MasterPid) ->
 update_db(NewList, ListOfKeys, ProcVars) ->
     DbData = ProcVars#process_variables.db_data,
     #db_data{db            = OldDbList,
-	     db_size       = DbSize,
 	     max_elem_size = MaxElemSize,
 	     deleted       = DelList,
 	     ets_type      = EtsType,
@@ -480,9 +479,7 @@ update_object(Obj, OldObj, OldColor, ObjNo, ProcVars) ->
     #process_variables{db_data     = DbData,
 		       etsread_pid = EtsreadPid}  = ProcVars,
     
-    #db_data{db            = DbList,
-	     db_size       = DbSize,
-	     key_no        = KeyNo} = DbData,
+    #db_data{key_no        = KeyNo} = DbData,
 
        %% Don't update if there are no changes!
     case OldObj of
@@ -555,7 +552,6 @@ update_object2(Obj, OldObj, OldColor, ObjNo, ProcVars) ->
     #process_variables{db_data = DbData}  = ProcVars,
     
     #db_data{db            = DbList,
-	     db_size       = DbSize,
 	     ets_type      = EtsType,     %% 'bag', 'set', 'ordered_set' or 
 					  %% 'duplicate_bag'
 	     max_elem_size = MaxElemSize,
@@ -579,18 +575,18 @@ update_object2(Obj, OldObj, OldColor, ObjNo, ProcVars) ->
 		    OldKey ->
 			fun({Data,Color}, {Replaced,AccDb}) when element(KeyNo,Data) /= Key ->
 				{Replaced, [{Data,Color} | AccDb]};
-			   ({Data,Color}, {Replaced,AccDb}) when Replaced == false,
+			   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false,
 								 OldColor == ?BLACK,
 								 Color == ?BLACK ->
 				{true, [{Obj,?RED1} | AccDb]};
-			   ({Data,Color}, {Replaced,AccDb}) when Replaced == false,
+			   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false,
 								 OldColor /= ?BLACK,
 								 Color /= ?BLACK ->
 				{true, [{Obj,?GREEN1} | AccDb]};
-			   ({Data,Color}, {Replaced,AccDb}) ->
+			   ({_Data,_Color}, {Replaced,AccDb}) ->
 				{Replaced, AccDb}
 			end;
-		    NewKey ->
+		    _NewKey ->
 			fun({Data,Color}, {Replaced,AccDb}) ->
 				ElemKey = element(KeyNo,Data),
 				case ElemKey of
@@ -615,23 +611,23 @@ update_object2(Obj, OldObj, OldColor, ObjNo, ProcVars) ->
 	    bag ->
 		case Key of
 		    OldKey ->
-			fun({Data,Color}, {Replaced,AccDb}) when Data == Obj ->
+			fun({Data,_Color}, {Replaced,AccDb}) when Data == Obj ->
 				{Replaced, AccDb};
 			   ({Data,Color}, {Replaced,AccDb}) when Data /= OldObj ->
 				{Replaced, [{Data,Color} | AccDb]};
 			      %% Clauses when Data == OldObj.
-			   ({Data,Color}, {Replaced,AccDb}) when Replaced == false,
+			   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false,
 								 OldColor == ?BLACK,
 								 Color == ?BLACK ->
 				{true, [{Obj,?RED1} | AccDb]};
-			   ({Data,Color}, {Replaced,AccDb}) when Replaced == false,
+			   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false,
 								 OldColor /= ?BLACK,
 								 Color /= ?BLACK ->
 				{true, [{Obj,Color} | AccDb]};
-			   ({Data,Color}, {Replaced,AccDb}) ->
+			   ({_Data,_Color}, {Replaced,AccDb}) ->
 				{Replaced, AccDb}
 			end;
-		    NewKey ->
+		    _NewKey ->
 			fun({Data,Color}, {Replaced,AccDb}) when Data == OldObj,
 								 Replaced == false,
 								 OldColor == ?BLACK,
@@ -642,9 +638,9 @@ update_object2(Obj, OldObj, OldColor, ObjNo, ProcVars) ->
 								 OldColor /= ?BLACK,
 								 Color /= ?BLACK ->
 				{true, [{Obj,?GREEN1} | AccDb]};
-			   ({Data,Color}, {Replaced,AccDb}) when Data == OldObj ->
+			   ({Data,_Color}, {Replaced,AccDb}) when Data == OldObj ->
 				{Replaced, AccDb};
-			   ({Data,Color}, {Replaced,AccDb}) when Data == Obj ->
+			   ({Data,_Color}, {Replaced,AccDb}) when Data == Obj ->
 				{Replaced, AccDb};
 			   ({Data,Color}, {Replaced,AccDb}) ->
 				{Replaced, [{Data,Color} | AccDb]}
@@ -660,18 +656,18 @@ update_object2(Obj, OldObj, OldColor, ObjNo, ProcVars) ->
 				{Replaced, [{Data,Color} | AccDb]};
 			   ({Data,Color}, {Replaced,AccDb}) when Data /= OldObj ->
 				{Replaced, [{Data,Color} | AccDb]};
-			   ({Data,Color}, {Replaced,AccDb}) when Replaced == false,
+			   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false,
 								 OldColor == ?BLACK,
 								 Color == ?BLACK ->
 				{true, [{Obj,?RED1} | AccDb]};
-			   ({Data,Color}, {Replaced,AccDb}) when Replaced == false,
+			   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false,
 								 OldColor /= ?BLACK,
 								 Color /= ?BLACK ->
 				{true, [{Obj,Color} | AccDb]};
 			   ({Data,Color}, {Replaced,AccDb}) ->
 				{Replaced, [{Data,Color} | AccDb]}
 			end;
-		    NewKey ->
+		    _NewKey ->
 			fun({Data,Color}, {Replaced,AccDb}) when Data == OldObj,
 								 Replaced == false,
 								 OldColor == ?BLACK,
@@ -746,7 +742,7 @@ update_object2(Obj, OldObj, OldColor, ObjNo, ProcVars) ->
 
 
 
-delete_object(Obj, ?BLACK, _ObjNo, ProcVars) ->
+delete_object(_Obj, ?BLACK, _ObjNo, ProcVars) ->
        %% Don't delete already deleted objects!!!
     {false, ProcVars};
 delete_object(undefined, undefined, _ObjNo, ProcVars) ->
@@ -756,14 +752,7 @@ delete_object(Obj, _ObjColor, ObjNo, ProcVars) ->
 		       etsread_pid = EtsreadPid}  = ProcVars,
     
     #db_data{db            = DbList,
-	     db_size       = DbSize,
-	     max_elem_size = MaxElemSize,
-	     ets_type      = EtsType,     %% 'bag', 'set' or 'duplicate_bag'
-	     deleted       = OldDeleted,
-	     sorting       = Sorting,
-	     rev_sorting   = RevSorting,
-	     sort_key_no   = SortKeyNo,
-	     key_no        = KeyNo} = DbData,
+	     deleted       = OldDeleted} = DbData,
     
        %% Before we try to update the internal database, we have to check to see
        %% whether the ETS/Mnesia update is allowed!
@@ -800,7 +789,7 @@ delete_object(Obj, _ObjColor, ObjNo, ProcVars) ->
 	       %% once, but we only want to remove it once!
 	    {Repl, TmpList} =
 		case split(ObjNo, DbList) of
-		    {L1, [{Obj,Color} | T]} ->
+		    {L1, [{Obj,_Color} | T]} ->
 			{true, L1 ++ [{Obj,?BLACK} | T]};
 		    {L1, L2} ->
 			{false, L1 ++ L2}
@@ -813,7 +802,7 @@ delete_object(Obj, _ObjColor, ObjNo, ProcVars) ->
 			Fun = fun({Data,TmpColor}, 
 				  {Removed,AccDb}) when Data /= Obj ->
 				      {Removed, [{Data,TmpColor} | AccDb]};
-				 ({Data,TmpColor}, 
+				 ({_Data,TmpColor}, 
 				  {Removed,AccDb}) when Removed == false, TmpColor /= ?BLACK ->
 				      {true, [{Obj,?BLACK} | AccDb]};
 				 ({Data,TmpColor}, 
@@ -837,7 +826,6 @@ new_object(Obj, ProcVars) ->
 		       etsread_pid = EtsreadPid}  = ProcVars,
     
     #db_data{db            = DbList,
-	     db_size       = DbSize,
 	     max_elem_size = MaxElemSize,
 	     ets_type      = EtsType,     %% 'bag', 'set' or 'duplicate_bag'
 	     sorting       = Sorting,
@@ -902,34 +890,34 @@ insert_new_object(EtsType,Key,KeyNo,Obj,DbList,Sorting,RevSorting,SortKeyNo) ->
 							 Color /= ?BLACK,
 							 Data /= Obj->
 			{true, [{Obj,?GREEN1} | AccDb]};
-		   ({Data,Color}, {Replaced,AccDb}) when Replaced == false, 
+		   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false, 
 							 Color /= ?BLACK ->
 			{true, [{Obj,Color} | AccDb]};
-		   ({Data,Color}, {Replaced,AccDb}) when Replaced == false, 
+		   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false, 
 							 Color == ?BLACK ->
 			{true, [{Obj, ?RED1} | AccDb]};
-		   ({Data,Color}, {Replaced,AccDb}) when Replaced == true, 
+		   ({_Data,Color}, {Replaced,AccDb}) when Replaced == true, 
 							 Color == ?BLACK ->
 			{false, AccDb};
-		   ({Data,Color}, {Replaced,AccDb}) ->
+		   ({_Data,_Color}, {Replaced,AccDb}) ->
 			{Replaced, AccDb}
 		end;
 	    bag ->
 		fun({Data,Color}, {Replaced,AccDb}) when Data /= Obj ->
 			{Replaced, [{Data,Color} | AccDb]};
-		   ({Data,Color}, {Replaced,AccDb}) when Replaced == false, 
+		   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false, 
 							 Color /= ?BLACK ->
 			{true, [{Obj,Color} | AccDb]};
-		   ({Data,Color}, {Replaced,AccDb}) when Replaced == true, 
+		   ({_Data,Color}, {Replaced,AccDb}) when Replaced == true, 
 							 Color /= ?BLACK ->
 			{true, AccDb};
-		   ({Data,Color}, {Replaced,AccDb}) when Replaced == true, 
+		   ({_Data,Color}, {Replaced,AccDb}) when Replaced == true, 
 							 Color == ?BLACK ->
 			{true, AccDb};
-		   ({Data,Color}, {Replaced,AccDb}) when Replaced == false, 
+		   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false, 
 							 Color == ?BLACK ->
 			{true, [{Obj, ?RED1} | AccDb]};
-		   ({Data,Color}, {Replaced,AccDb}) ->
+		   ({_Data,_Color}, {Replaced,AccDb}) ->
 			{Replaced, AccDb}
 		end;
 	    duplicate_bag ->
@@ -943,7 +931,7 @@ insert_new_object(EtsType,Key,KeyNo,Obj,DbList,Sorting,RevSorting,SortKeyNo) ->
 			lists:foldl(Fun, Acc0, L)
 		end,
     
-    {Replaced, TmpDbList} = 
+    {_Replaced, TmpDbList} = 
 	case EtsType of
 	    duplicate_bag ->
 		{false, DbList};
@@ -983,7 +971,7 @@ max_size([H | T], CurrMax) when tuple(H) ->
 	true ->
 	    max_size(T, CurrMax)
     end;
-max_size([H | T], CurrMax) ->
+max_size([_H | T], CurrMax) ->
     Size = 1,
     if
 	Size >= CurrMax ->
@@ -996,10 +984,10 @@ max_size([H | T], CurrMax) ->
 
 
 
-add_elements(KeyNo, Inserted, List, false, _RevSorting, _SortKeyNo) ->
+add_elements(_KeyNo, Inserted, List, false, _RevSorting, _SortKeyNo) ->
        % Remember that the order of the original list has to be preserved!
     List ++ list2dblist(Inserted, ?RED1);
-add_elements(_KeyNo, Inserted, List, Sorting, RevSorting, SortKeyNo) ->
+add_elements(_KeyNo, Inserted, List, _Sorting, RevSorting, SortKeyNo) ->
        % The original list is already sorted - sort the new elements, and
        % just merge the two lists together!
     SortedInsertedList = tv_db_sort:mergesort(SortKeyNo, 
@@ -1029,7 +1017,7 @@ mark_deleted(KeyNo, [Data | T], List) ->
 
 
 
-mark_one_element_deleted(_KeyNo, _KeyValue, Data, [], Acc) ->
+mark_one_element_deleted(_KeyNo, _KeyValue, _Data, [], Acc) ->
     Acc;
 mark_one_element_deleted(KeyNo, {tuple, KeyValue}, 
 			 Data, [{DataTuple, Color} | Tail], Acc) ->
@@ -1086,7 +1074,7 @@ replace_one_element(KeyNo, {tuple, Key1}, Data, [{DataTuple, Color} | Tail], Acc
 	    replace_one_element(KeyNo, {tuple, Key1}, Data, Tail, 
 				Acc ++ [{DataTuple, Color}])
     end;
-replace_one_element(KeyNo, _KeyValue, Data, [{DataTuple, Color} | Tail], Acc) ->
+replace_one_element(_KeyNo, _KeyValue, _Data, [{DataTuple, Color} | Tail], Acc) ->
        % Can't replace an element with no key!
     Acc ++ [{DataTuple, Color} | Tail].
     
@@ -1105,11 +1093,11 @@ group_difflists(duplicate_bag, _KeyNo, Inserted, Deleted) ->
        %% Since the ETS table is of duplicate_bag type, no element can be updated, i.e.,
        %% it can only be deleted and re-inserted, otherwise a new element will be added.
     {Inserted, Deleted, []};
-group_difflists(set, KeyNo, [], Deleted) ->
+group_difflists(set, _KeyNo, [], Deleted) ->
        %% Updated elements have to be present in both lists, i.e., if one list is empty,
        %% the other contains no updated elements - they are either inserted or deleted!
     {[], Deleted, []};
-group_difflists(set, KeyNo, Inserted, []) ->
+group_difflists(set, _KeyNo, Inserted, []) ->
     {Inserted, [], []};
 group_difflists(set, KeyNo, InsOrUpd, DelOrUpd) ->
     match_difflists(KeyNo, InsOrUpd, DelOrUpd, [], []).    
@@ -1170,7 +1158,7 @@ searchdelete(Key, ElemNo, [Tuple | Tail], Acc) ->
 
 dblist2list([]) ->
     [];
-dblist2list([{Data, Color} | T]) ->
+dblist2list([{Data, _Color} | T]) ->
     [Data | dblist2list(T)].
     
     
@@ -1179,7 +1167,7 @@ dblist2list([{Data, Color} | T]) ->
 
 
 
-list2dblist([], Color) ->    
+list2dblist([], _Color) ->    
     [];
 list2dblist([Data | T], Color) ->
     [{Data, Color} | list2dblist(T, Color)].
@@ -1237,7 +1225,7 @@ compute_elapsed_seconds({H1, M1, S1}, {H2, M2, S2}) ->
     ElapsedHours   = get_time_diff(hours, H1, H2),
     ElapsedMinutes = get_time_diff(minutes, M1, M2),
     ElapsedSeconds = get_time_diff(seconds, S1, S2),
-    (ElapsedHours * 3600) + (ElapsedHours * 60) + ElapsedSeconds + 1.
+    (ElapsedHours * 3600) + (ElapsedMinutes * 60) + ElapsedSeconds + 1.
 
 
 
@@ -1257,7 +1245,7 @@ get_time_diff(seconds, T1, T2) ->
 
 
 
-split(N, []) ->
+split(_N, []) ->
     {[], []};
 split(0, List) ->
     {[], List};
@@ -1268,9 +1256,9 @@ split(N, List) ->
 
 split2(Ctr, N, Acc, [H | T]) when Ctr < N ->
     split2(Ctr + 1, N, [H | Acc], T);
-split2(Ctr, N, Acc, []) ->
+split2(_Ctr, _N, Acc, []) ->
     {lists:reverse(Acc), []};
-split2(Ctr, N, Acc, List) ->
+split2(_Ctr, _N, Acc, List) ->
     {lists:reverse(Acc), List}.
 
 basetype(ordered_set) ->	    

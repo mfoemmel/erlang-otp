@@ -171,9 +171,21 @@ call(Name, Request, Timeout) ->
 %% -----------------------------------------------------------------
 %% Make a cast to a generic server.
 %% -----------------------------------------------------------------
-cast(Name, Request) ->
-    do_cast(Name, Request),
+cast({global,Name}, Request) ->
+    catch global:send(Name, cast_msg(Request)),
+    ok;
+cast({Name,Node}=Dest, Request) when atom(Name), atom(Node) -> 
+    do_cast(Dest, Request);
+cast(Dest, Request) when atom(Dest) ->
+    do_cast(Dest, Request);
+cast(Dest, Request) when pid(Dest) ->
+    do_cast(Dest, Request).
+
+do_cast(Dest, Request) -> 
+    do_send(Dest, cast_msg(Request)),
     ok.
+    
+cast_msg(Request) -> {'$gen_cast',Request}.
 
 %% -----------------------------------------------------------------
 %% Send a reply to the client.
@@ -184,13 +196,16 @@ reply({To, Tag}, Reply) ->
 %% ----------------------------------------------------------------- 
 %% Asyncronous broadcast, returns nothing, it's just send'n prey
 %%-----------------------------------------------------------------  
-abcast(Name, Mess) ->
-    abcast([node() | nodes()], Name, Mess).
-abcast([Node|Tail], Name, Mess) ->
-    do_cast({Name,Node},Mess),
-    abcast(Tail, Name, Mess);
-abcast([], _,_) -> abcast.
+abcast(Name, Request) when atom(Name) ->
+    do_abcast([node() | nodes()], Name, cast_msg(Request)).
 
+abcast(Nodes, Name, Request) when list(Nodes), atom(Name) ->
+    do_abcast(Nodes, Name, cast_msg(Request)).
+
+do_abcast([Node|Nodes], Name, Msg) when atom(Node) ->
+    do_send({Name,Node},Msg),
+    do_abcast(Nodes, Name, Msg);
+do_abcast([], _,_) -> abcast.
 
 %%% -----------------------------------------------------------------
 %%% Make a call to servers at several nodes.
@@ -310,25 +325,12 @@ loop(Parent, Name, State, Mod, Time, Debug) ->
 %%% ---------------------------------------------------
 %%% Send/recive functions
 %%% ---------------------------------------------------
-do_cast(Dest, Request) ->
-    Msg = {'$gen_cast',Request},
-    case Dest of
-	_ when atom(Dest); pid(Dest) ->
-	    do_cast_msg(Dest, Msg);
-	{global,Name} ->
-	    catch global:send(Name, Msg);
-	{_Name,_Node} ->
-	    do_cast_msg(Dest, Msg)
-    end.
-
-do_cast_msg(Dest, Msg) ->
+do_send(Dest, Msg) ->
     case catch erlang:send(Dest, Msg, [noconnect]) of
-	ok ->
-	    ok;
 	noconnect ->
 	    spawn(erlang, send, [Dest,Msg]);
-	_ ->
-	    ok
+	Other ->
+	    Other
     end.
 
 do_multi_call(Nodes, Name, Req, infinity) ->
@@ -668,7 +670,6 @@ terminate(Reason, Name, Msg, Mod, State, Debug) ->
 	    end
     end.
 
-%% Maybe we shouldn't do this?  We have the crash report...
 error_info(Reason, Name, Msg, State, Debug) ->
     Reason1 = 
 	case Reason of

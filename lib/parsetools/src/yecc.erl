@@ -554,13 +554,13 @@ insert_state(StateTab, RulePointerTab, State) ->
     {N, Items} = State,
     insert_rule_pointer(Items, RulePointerTab, N).
 
-insert_rule_pointer([{Rule_pointer, Lookahead, Rhs} | Items], RulePointerTab, N) ->
+insert_rule_pointer([{Rule_pointer, _Lookahead, _Rhs} | Items], RulePointerTab, N) ->
     ets:insert(RulePointerTab, {Rule_pointer, N}),
     insert_rule_pointer(Items, RulePointerTab, N);
-insert_rule_pointer([], RulePointerTab, N) ->
+insert_rule_pointer([], _RulePointerTab, _N) ->
     ok.
 
-compute_states1([], StateTab, RulePointerTab, CurrState, GotoTab, _, _, _) ->
+compute_states1([], StateTab, _RulePointerTab, _CurrState, GotoTab, _, _, _) ->
     {StateTab, GotoTab};
 compute_states1([{N, Symbols} | Try], StateTab, RulePointerTab, CurrState, GotoTab, TerminalTab, Rules,
 		Lc_table) ->
@@ -685,10 +685,10 @@ compute_state([{Rule_pointer, Lookahead, Rhs} | Items], Symbol, New_state,
 	    compute_state(Items, Symbol, New_state, TerminalTab, Rules, Lc_table)
     end.
 
-compute_closure([], State, TerminalTab, Rules, Lc_table) ->
+compute_closure([], State, _TerminalTab, _Rules, _Lc_table) ->
     [{I,X,Y} || {I,{X,Y}} <- gb_trees:to_list(State)];
 compute_closure([Item|Items], State, TerminalTab, Rules, Lc_table) ->
-    {Rule_pointer,Lookahead,Rhs} = Item,
+    {_Rule_pointer,Lookahead,Rhs} = Item,
     case Rhs of
 	[] ->
 	    compute_closure(Items, State, TerminalTab, Rules, Lc_table);
@@ -753,7 +753,7 @@ check_state([{_, N} | StateNumbers], New_state, StateTab, RulePointerTab) ->
 	Change_list ->
 	    {merge, N, Change_list}
     end;
-check_state([], New_state, StateTab, RulePointerTab) ->
+check_state([], _New_state, _StateTab, _RulePointerTab) ->
     add.
 
 check_state1([{Rule_pointer, Lookahead1, Rhs} | Items1],
@@ -870,7 +870,7 @@ top_find_left_corners(Followers, TerminalTab, LeftHandTab, Found1, Found2, Try) 
     Rules = ets:lookup(LeftHandTab, Head),
     find_left_corners(Rules, Followers, TerminalTab, LeftHandTab, Found1, Found2, Try).
     
-find_left_corners([{Head, Rhs} | Tail], Followers, TerminalTab, LeftHandTab, Found1, Found2, Try) ->
+find_left_corners([{_Head, Rhs} | Tail], Followers, TerminalTab, LeftHandTab, Found1, Found2, Try) ->
     Sisters = tl(Followers), % Skip Head
     Expansion = case Rhs of
 		    ['$empty'] ->
@@ -891,7 +891,7 @@ find_left_corners([{Head, Rhs} | Tail], Followers, TerminalTab, LeftHandTab, Fou
 			end
 		end,
     case Expansion of
-	[Symbol2 | Symbols] ->
+	[Symbol2 | _Symbols] ->
 	    Terminal = ets:lookup(TerminalTab, Symbol2),
 	    if
 		Terminal /= [] ->
@@ -924,7 +924,7 @@ find_left_corners([], _, _, _, _, Found2, []) ->
 find_left_corners([], _Followers, TerminalTab, LeftHandTab, Found1, Found2, [First | Rest]) ->
     top_find_left_corners(First, TerminalTab, LeftHandTab, Found1, Found2, Rest).
 
-find_prefix(X, []) ->
+find_prefix(_, []) ->
     false;
 find_prefix(X, [H | T]) ->
     case lists:prefix(X, H) of
@@ -1513,7 +1513,7 @@ output_goto1(Port, [{Nonterminal, {From, To}} | Tail], _Nonterminal) ->
 	    io:format(Port, "'yeccgoto_~s'(~w) ->", [atom_to_list(Nonterminal), From])),
     io:format(Port, ' ~w;~n', [To]),
     output_goto1(Port, Tail, Nonterminal);
-output_goto1(Port, [], Nonterminal) ->
+output_goto1(_Port, [], _Nonterminal) ->
     ?select(ok, io:format(Port, "'yeccgoto_~s'(__State) ->", [atom_to_list(Nonterminal)])),
     ?select(ok, io:format(Port, ' exit({~w, __State, missing_in_goto_table}).~n~n', [Nonterminal])).
 
@@ -1650,7 +1650,7 @@ output_parse_actions3(Port, State, Terminal,
 		       if Open_stack == true -> "[__Val | __Stack]";
 			  true -> "__Stack" end])
     end;
-output_parse_actions3(Port, State, Terminal, {shift, New_state, _}, Rules, _) ->
+output_parse_actions3(Port, State, Terminal, {shift, New_state, _}, _Rules, _) ->
     io:format(Port, 'yeccpars2(~w, ~s, __Ss, __Stack, __T, __Ts, __Tzr) ->~n',
 	      [State, quoted_atom(Terminal)]),
     io:format(Port,
@@ -1703,7 +1703,7 @@ add_if_not_there(X, L) ->
 	    [X | L]
     end.
 
-intersect([], L) ->
+intersect([], _L) ->
     [];
 intersect([H | T], L) ->
     case lists:member(H, L) of
@@ -1717,7 +1717,7 @@ ord_merge([H1|Es1], [H2|_]=Es2) when H1 < H2 ->
     [H1|ord_merge(Es1, Es2)];
 ord_merge([H1|Es1], [H2|Es2]) when H1 =:= H2 ->
     [H1|ord_merge(Es1, Es2)];
-ord_merge([H1|_]=Es1, [H2|Es2]) ->
+ord_merge([_|_]=Es1, [H2|Es2]) ->
     [H2|ord_merge(Es1, Es2)];
 ord_merge([], Es2) ->
     Es2;
@@ -1730,7 +1730,7 @@ ord_subset([H1 | _], [H2 | _]) when H1 < H2 ->
     false;
 ord_subset([], _) ->
     true;
-ord_subset(L, []) ->
+ord_subset(_L, []) ->
     false;
 ord_subset(L, [_ | T]) ->
     ord_subset(L, T).
@@ -1787,7 +1787,7 @@ pp_exprs([H | T]) ->
 compile(Input, Output, #options{verbose=Verbose, includes=Includes}) ->
     Args = [Input, Output, Verbose|include_option(Includes)],
     case catch apply(yecc, yecc, Args) of
-	{'EXIT', {yecc, Reason}} ->
+	{'EXIT', {yecc, _Reason}} ->
 	    error;
 	_Other ->
 	    ok

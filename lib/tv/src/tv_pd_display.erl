@@ -234,7 +234,7 @@ resize_column(RealCol, VirtualCol, Xdiff, ProcVars) ->
 
 
 
-display_data(Pos, Range, MaxValue, List, KeyList, MaxElemSize, MarkedRowData,ProcVars) ->
+display_data(Pos, Range, _MaxValue, List, KeyList, MaxElemSize, MarkedRowData,ProcVars) ->
     #process_variables{master_pid     = PcPid,
 		       rec_pid        = RecPid,
 		       pg_pid         = PgPid,
@@ -289,9 +289,7 @@ display_data(Pos, Range, MaxValue, List, KeyList, MaxElemSize, MarkedRowData,Pro
 
 
 scroll_vertically(MouseBtn, ProcVars) ->
-    #process_variables{pg_pid       = PgPid,
-		       pb_pid       = PbPid,
-		       scale_params = ScaleP} = ProcVars,
+    #process_variables{scale_params = ScaleP} = ProcVars,
     
     OldScalePos = ScaleP#scale_params.vscale_pos,
     NewScalePos  = get_new_scalepos(MouseBtn, OldScalePos),
@@ -332,8 +330,7 @@ scroll_horizontally(MouseBtn, ProcVars) ->
 perform_vertical_scroll(NewScalePos, ProcVars) ->
     #process_variables{master_pid   = MasterPid,
 		       initialising = Init,
-		       scale_params = ScaleP, 
-		       mark_params  = MarkP} = ProcVars,
+		       scale_params = ScaleP} = ProcVars,
     
        %% To avoid erroneous scrollbar signals during creation of the display.
     case Init of
@@ -432,7 +429,7 @@ marked_cell(true, VirtualCol, RealRow, VirtualRow, ProcVars) ->
 				},
     ProcVars#process_variables{mark_params = NewMarkP
 			      };
-marked_cell(false, VirtualCol, RealRow, VirtualRow, ProcVars) ->
+marked_cell(false, VirtualCol, _RealRow, VirtualRow, ProcVars) ->
     #process_variables{master_pid      = MasterPid, 
 		       rec_pid         = RecPid,
 		       pb_pid          = PbPid,
@@ -579,8 +576,7 @@ show_toolbar_editor(ProcVars) ->
     #process_variables{frame_params   = FrameP,
 		       toolbar_params = ToolP} = ProcVars,
     
-    #frame_params{toolbar_frame_width  = TWidth,
-		  toolbar_frame_height = THeight} = FrameP,
+    #frame_params{toolbar_frame_height = THeight} = FrameP,
     
     #toolbar_params{editor_frame_id = EdFrameId} = ToolP,
     
@@ -639,8 +635,8 @@ update_toolbar_editor(EdId, {DataToShow}) ->
 
 
 
-update_marks(true, DataList, ColorList, MarkedRowData, 
-	     Pos, NofRowsShown, Writable, Range, PcPid, PgPid, RecPid, ToolP, MarkP) ->
+update_marks(true, _DataList, _ColorList, _MarkedRowData, 
+	     _Pos, _NofRowsShown, _Writable, _Range, PcPid, PgPid, RecPid, ToolP, MarkP) ->
     PgPid ! #pg_remove_marks{sender = self()},
        %% Too much trouble trying to find the marked object again!
        %% On the other hand, is the mark based on the row number
@@ -663,9 +659,7 @@ update_marks(true, DataList, ColorList, MarkedRowData,
 update_marks(false, DataList, ColorList, MarkedRowData, 
 	     Pos, NofRowsShown, Writable, Range, PcPid, PgPid, RecPid, ToolP, MarkP) ->
     #mark_params{cell_col_no    = CellColNo,
-		 row_no         = RowNo,
-		 virtual_row_no = VirtualRowNo,
-		 marked_object  = OldMarkedObject}  = MarkP,
+		 virtual_row_no = VirtualRowNo}  = MarkP,
     
        % Marked row data contains the color also!
     {RowData, RowColors} = split_dblist(MarkedRowData, [], []),
@@ -713,13 +707,14 @@ update_marks(false, DataList, ColorList, MarkedRowData,
 
 				  
 
-choose_data_to_show(VirtualRowNo, undefined, RowData, DataList, Pos) when VirtualRowNo >= Pos, VirtualRowNo =< (Pos + length(DataList) - 1) ->
+choose_data_to_show(VirtualRowNo, undefined, _RowData, DataList, Pos) when VirtualRowNo >= Pos, VirtualRowNo =< (Pos + length(DataList) - 1) ->
     get_data_element(row, DataList, VirtualRowNo - Pos + 1, undefined);
-choose_data_to_show(VirtualRowNo, undefined, RowData, DataList, Pos) ->
+choose_data_to_show(_VirtualRowNo, undefined, RowData, _DataList, _Pos) ->
     get_data_element(row, RowData, 1, undefined);
-choose_data_to_show(VirtualRowNo, CellColNo, RowData, DataList, Pos) when VirtualRowNo >= Pos, VirtualRowNo =< (Pos + length(DataList) - 1) ->
+choose_data_to_show(VirtualRowNo, CellColNo, _RowData, DataList, Pos)
+  when VirtualRowNo >= Pos, VirtualRowNo =< (Pos + length(DataList) - 1) ->
     get_data_element(cell, DataList, VirtualRowNo - Pos + 1, CellColNo);
-choose_data_to_show(VirtualRowNo, CellColNo, RowData, DataList, Pos) ->
+choose_data_to_show(_VirtualRowNo, CellColNo, RowData, _DataList, _Pos) ->
     get_data_element(cell, RowData, 1, CellColNo).
     
 
@@ -810,22 +805,22 @@ init_toolbar_btns(TId, ToolP) ->
     PicDir = code:priv_dir(tv),
 %    PicDir = "../priv",
        % Toolbar btns are 25x25, the bitmaps are 20x20.
-    B1 = create_one_toolbar_btn(TId, 1, PicDir ++ "/edit1.xbm",
-				{toolbar, insert_object, "Edit Object"}),
-    B3 = create_one_toolbar_btn(TId, 3, PicDir ++ "/search.xbm",
-				{toolbar, search_object, "Search Object"}),
-    B5 = create_one_toolbar_btn(TId, 5, PicDir ++ "/sort.xbm",
-				{toolbar, sort_rising_order, "Sort Ascending"}),
-    B6 = create_one_toolbar_btn(TId, 6, PicDir ++ "/no_sort.xbm",
-				{toolbar, no_sorting,"No Sorting"}),
-    B7 = create_one_toolbar_btn(TId, 7, PicDir ++ "/sort_reverse.xbm",
-				{toolbar, sort_falling_order,"Sort Descending"}),
-    B9 = create_one_toolbar_btn(TId, 9, PicDir ++ "/poll.xbm",
-				{toolbar, poll_table,"Poll Table"}),
-    B11 = create_one_toolbar_btn(TId, 11, PicDir ++ "/info.xbm",
-				{toolbar, table_info,"Table Info"}),
-    B13 = create_one_toolbar_btn(TId, 13, PicDir ++ "/help.xbm",
-				 {toolbar, help_button, "Help"}),
+    create_one_toolbar_btn(TId, 1, PicDir ++ "/edit1.xbm",
+			   {toolbar, insert_object, "Edit Object"}),
+    create_one_toolbar_btn(TId, 3, PicDir ++ "/search.xbm",
+			   {toolbar, search_object, "Search Object"}),
+    create_one_toolbar_btn(TId, 5, PicDir ++ "/sort.xbm",
+			   {toolbar, sort_rising_order, "Sort Ascending"}),
+    create_one_toolbar_btn(TId, 6, PicDir ++ "/no_sort.xbm",
+			   {toolbar, no_sorting,"No Sorting"}),
+    create_one_toolbar_btn(TId, 7, PicDir ++ "/sort_reverse.xbm",
+			   {toolbar, sort_falling_order,"Sort Descending"}),
+    create_one_toolbar_btn(TId, 9, PicDir ++ "/poll.xbm",
+			   {toolbar, poll_table,"Poll Table"}),
+    create_one_toolbar_btn(TId, 11, PicDir ++ "/info.xbm",
+			   {toolbar, table_info,"Table Info"}),
+    create_one_toolbar_btn(TId, 13, PicDir ++ "/help.xbm",
+			   {toolbar, help_button, "Help"}),
     ToolP.
     
 
@@ -976,7 +971,7 @@ init_toolbar_editor(DispId, TWidth, THeight) ->
 
 
 
-get_toolbar_editor_coords(TWidth, THeight) ->
+get_toolbar_editor_coords(TWidth, _THeight) ->
     BgWidth  = TWidth,
     BgHeight = 200,
     BgXpos   = 0,
@@ -994,7 +989,7 @@ get_toolbar_editor_coords(TWidth, THeight) ->
 
 
 resize_toolbar_editor(FrId, EdId, TWidth, THeight) ->
-    {BgWidth, BgHeight, BgXpos, BgYpos, FgWidth, FgHeight, FgXpos, FgYpos} = 
+    {BgWidth, BgHeight, _BgXpos, _BgYpos, FgWidth, FgHeight, _FgXpos, _FgYpos} = 
 	get_toolbar_editor_coords(TWidth, THeight),
     gs:config(FrId, [{width, BgWidth},
 		     {height, BgHeight}
@@ -1010,8 +1005,8 @@ resize_toolbar_editor(FrId, EdId, TWidth, THeight) ->
 
 
 resize_toolbar_label(BgId, FgId, RowColId, BtnId, ParentWidth, ParentHeight, GWidth) ->
-    {BgWidth, BgHeight, BgXpos, BgYpos, FgWidth, FgHeight, FgXpos, FgYpos, BtnWidth,
-     BtnHeight, BtnXpos, BtnYpos} = 
+    {BgWidth, BgHeight, _BgXpos, _BgYpos, FgWidth, FgHeight, _FgXpos, _FgYpos, _BtnWidth,
+     _BtnHeight, BtnXpos, BtnYpos} = 
 	get_toolbar_label_coords(ParentWidth, ParentHeight),
 
     gs:config(RowColId, [{width, GWidth - ?VBTN_WIDTH}]),

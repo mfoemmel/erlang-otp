@@ -73,6 +73,10 @@ attribute(Thing) ->
 attribute({attribute,_Line,Name,Arg}, Hook) ->
     attribute(Name, Arg, Hook).
 
+attribute(module, {M,Vs}, _Hook) ->
+    format("-module(~s, ~s).\n", [pname(M), vlist(Vs)]);
+attribute(module, M, _Hook) ->
+    format("-module(~s).\n", [pname(M)]);
 attribute(export, Falist, _Hook) ->
     format("-export(~s).\n", [falist(Falist)]);
 attribute(import, Name, _Hook) when list(Name) ->
@@ -87,16 +91,24 @@ attribute(record, {Name,Is}, Hook) ->
     Nl = flatten(write(Name)),
     format("-record(~w, ~s).\n",
 	   [Name,record_fields(Is, 10+length(Nl), Hook)]);
-attribute(module, Name, _Hook) when list(Name) ->
-    format("-module(~s).\n", [pname(Name)]);
 attribute(Name, Arg, _Hook) ->
     format("-~w(~w).\n", [Name,Arg]).
 
+vlist([]) -> "[]";
+vlist(Vs) -> vlist(Vs, $[).
+
+vlist([V | Vs], P) ->
+    [P, format("~s", [V]) | vlist(Vs, $,)];
+vlist([], _) -> [$]].
+
 pname(['' | As]) ->
     [$. | pname(As)];
-pname([A]) -> write(A);
+pname([A]) ->
+    write(A);
 pname([A | As]) ->
-    [write(A),$.|pname(As)].
+    [write(A),$.|pname(As)];
+pname(A) when atom(A) ->
+    write(A).
 
 falist([]) -> "[]";
 falist(Fas) -> falist(Fas, $[).
@@ -294,7 +306,7 @@ expr({call,_,Name,Args}, I, Prec, Hook) ->
     Nl = expr(Name, I, F, Hook),
     El = [Nl|expr_list(Args, "(", ")", indentation(Nl, I), Hook)],
     maybe_paren(P, Prec, El);
-expr({'try',_,Es,Scs,Ccs}, I, _, Hook) ->
+expr({'try',_,Es,Scs,Ccs,As}, I, _, Hook) ->
     I1 = I + 4,
     ["try",nl_indent(I1),
      exprs(Es, I1, Hook),
@@ -306,7 +318,13 @@ expr({'try',_,Es,Scs,Ccs}, I, _, Hook) ->
 	      cr_clauses(Scs, I1, Hook),nl_indent(I)]
      end,
      "catch",nl_indent(I1),
-     cr_clauses(Ccs, I1, Hook),nl_indent(I),
+     try_clauses(Ccs, I1, Hook),nl_indent(I),
+     if As == [] ->
+	     [];
+	true ->
+	     ["after",nl_indent(I1),
+	      exprs(As, I1, Hook),nl_indent(I)]
+     end,
      "end"];
 expr({'catch',_,Expr}, I, Prec, Hook) ->
     {P,R} = preop_prec('catch'),
@@ -428,6 +446,22 @@ cr_clauses(Cs, I, Hook) -> clauses(fun cr_clause/3, I, Hook, Cs).
 
 cr_clause({clause,_,[T],G,B}, I, Hook) ->
     [expr(T, I, 0, Hook),
+     guard(G, I, Hook),
+     body(B, I+4, Hook)].
+
+%% try_clauses(Clauses, Indentation, Hook) -> [Char].
+%%  Print 'try' clauses.
+
+try_clauses(Cs, I, Hook) -> clauses(fun try_clause/3, I, Hook, Cs).
+
+try_clause({clause,_,[{tuple,_,[{atom,_,throw},V]}],G,B}, I, Hook) ->
+    [expr(V, I, 0, Hook),
+     guard(G, I, Hook),
+     body(B, I+4, Hook)];
+try_clause({clause,_,[{tuple,_,[C,V,S]}],G,B}, I, Hook) ->
+    Cs = expr(C, I, 0, Hook),
+    [Cs, ":", expr(V, indentation(Cs, I)+1, 0, Hook),
+     ":", expr(S, indentation(Cs, I)+1, 0, Hook),
      guard(G, I, Hook),
      body(B, I+4, Hook)].
 

@@ -34,139 +34,7 @@
 #include "benchmark.h"
 #include "erl_process.h"
 #include "erl_sys_driver.h"
-
-typedef enum {
-    LNK_UNDEF = 0,
-    LNK_LINK  = 1,  /* normal link */
-    LNK_NODE  = 2,  /* node link */
-    LNK_OMON  = 3,  /* originating object monitor (not implemented) */
-    LNK_TMON  = 4,  /* terminating object monitor (not implemented) */
-    LNK_LINK1 = 5   /* uni-directional link, for monitor/2 */
-} ErlLinkType;
-
-typedef struct erl_link {
-    struct erl_link* next;
-    ErlLinkType type;		/* type of link */
-    Eterm item;			/* the linked item */
-    Eterm data;			/* data depending on use */
-    Eterm ref;			/* for LINK1 links */
-    Uint heap[1];		/* Beginning of the "link internal heap" */
-} ErlLink;
-
-/* ERL_LINK_SIZE does not include the size of the "link internal heap" */
-#define ERL_LINK_SIZE ((sizeof(ErlLink) - sizeof(Uint))/sizeof(Uint))
-/* ERL_LINK_SH_SIZE include a small "link internal heap" */
-#define ERL_LINK_SH_SIZE (ERL_LINK_SIZE + REF_THING_SIZE)
-
-/* Total size of allocated links with a large "link internal heap" */
-extern Uint erts_tot_link_lh_size;
-
-ErlLink* new_link(ErlLink*, ErlLinkType, Eterm, Eterm);
-ErlLink* new_ref_link(ErlLink*, ErlLinkType, Eterm, Eterm, Eterm);
-void del_link(ErlLink**);
-ErlLink** find_link(ErlLink**, ErlLinkType, Eterm, Eterm);
-ErlLink** find_link_by_ref(ErlLink**, Eterm);
-Uint erts_link_size(ErlLink*);
-
-
-/* * * * * * * * * * * * Usage of the ErlLink structure  * * * * * * * * * * *\
- *                                                                           *
- * ------------------------------------------------------------------------- *
- * --- Process/Port Links -------------------------------------------------- *
- * ------------------------------------------------------------------------- *
- *                                                                           *
- * --- Local Process/Port Links -------------------------------------------- *
- *                                                                           *
- * X and Y are linked                                                        *
- *                                                                           *
- *         Node A -------------------------------------------                *
- *         Process/Port X                      Process/Port Y                *
- *                                                                           *
- * type:   LNK_LINK                            LNK_LINK                      *
- * item:   Y (pid|port)                        X (pid|port)                  *
- * data:   NIL                                 NIL                           *
- * ref:    NIL                                 NIL                           *
- *                                                                           *
- * --- Distributed Process Links ------------------------------------------- *
- *                                                                           *
- *         Node A ----------------------       Node B ---------------------- *
- *         Process X        Dist entry B       Process Y        Dist entry A *
- *                                                                           *
- * type:   LNK_LINK         LNK_LINK           LNK_LINK         LNK_LINK     *
- * item:   Y (pid)          X (pid)            X (pid)          Y (pid)      *
- * data:   NIL              Y (pid)            NIL              X (pid)      *
- * ref:    NIL              NIL                NIL              NIL          *
- *                                                                           *
- *                                                                           *
- * ------------------------------------------------------------------------- *
- * --- Process Monitors ---------------------------------------------------- *
- * ------------------------------------------------------------------------- *
- *                                                                           *
- * --- Local Process Monitors ---------------------------------------------- *
- *                                                                           *
- * X monitors Y                                                              *
- *                                                                           *
- * --- By Pid ---                                                            *
- *                                                                           *
- *         Node A -------------------------------------------                *
- *         Process X                           Process Y                     *
- *                                                                           *
- * type:   LNK_LINK1                           LNK_LINK1                     *
- * item:   X (pid)                             X (pid)                       *
- * data:   Y (pid)                             Y (pid)                       *
- * ref:    M (ref)                             M (ref)                       *
- *                                                                           *
- * --- By Registered Name ---                                                *
- *                                                                           *
- *         Node A ------------------------------------------                 *
- *         Process X                           Process Y                     *
- *                                                                           *
- * type:   LNK_LINK1                           LNK_LINK1                     *
- * item:   X (pid)                             X (pid)                       *
- * data:   Y (pid)                             Name of Y (atom)              *
- * ref:    M (ref)                             M (ref)                       *
- *                                                                           *
- * --- Distributed Process Monitors ---------------------------------------- *
- *                                                                           *
- * X monitors Y                                                              *
- *                                                                           *
- * --- By Pid ---                                                            *
- *                                                                           *
- *         Node A ----------------------       Node B ---------------------- *
- *         Process X        Dist entry B       Process Y        Dist entry A *
- *                                                                           *
- * type:   LNK_LINK1        LNK_LINK1          LNK_LINK1        LNK_LINK1    *
- * item:   X (pid)          X (pid)            X (pid)          X (pid)      *
- * data:   Y (pid)          Y (pid)            Y (pid)          Y (pid)      *
- * ref:    M (ref)          M (ref)            M (ref)          M (ref)      *
- *                                                                           *
- * --- By Registered Name ---                                                *
- *                                                                           *
- *         Node A ----------------------       Node B ---------------------- *
- *         Process X        Dist entry B       Process Y        Dist entry A *
- *                                                                           *
- * type:   LNK_LINK1        LNK_LINK1          LNK_LINK1        LNK_LINK1    *
- * item:   X (pid)          X (pid)            X (pid)          X (pid)      *
- * data:   B (atom)         Name of Y (atom)   Name of Y (atom) Y (pid)      *
- * ref:    M (ref)          M (ref)            M (ref)          M (ref)      *
- *                                                                           *
- *                                                                           *
- * ------------------------------------------------------------------------- *
- * --- Node Monitors ------------------------------------------------------- *
- * ------------------------------------------------------------------------- *
- *                                                                           *
- * X monitors B                                                              *
- *                                                                           *
- *         Node A ----------------------       Node B ---------------------- *
- *         Process X        Dist entry B                                     *
- *                                                                           *
- * type:   LNK_NODE         LNK_NODE                                         *
- * item:   B (atom)         X (pid)                                          *
- * data:   NIL              NIL                                              *
- * ref:    NIL              NIL                                              *
- *                                                                           *
-\* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
+#include "erl_debug.h"
 
 #define D_EXITING           1   /* Status field vals  for dist_enntry's */
 #define D_REAL_BUSY         4
@@ -218,7 +86,7 @@ typedef struct port {
     Eterm data;			/* Data associated with port. */
     ErlHeapFragment* bp;	/* Heap fragment holding data (NULL if imm data). */
     Uint status;		/* Status and type flags */
-    ErlLink* links;		/* List of links */
+    ErtsLink *nlinks;
     Uint bytes_in;		/* Number of bytes read */
     Uint bytes_out;		/* Number of bytes written */
     ErlTimer tm;                 /* Timer entry */
@@ -346,7 +214,7 @@ extern Uint16 erts_max_gen_gcs;
 
 extern int erts_disable_tolerant_timeofday;
 
-/* To get rid of all ifdefs in the code I add some here instead... :) */
+/* Defines to ease the change of memory architecture */
 #ifdef SHARED_HEAP
 #  define HEAP_START(p)     (p)->heap
 #  define HEAP_TOP(p)       (p)->htop
@@ -355,6 +223,7 @@ extern int erts_disable_tolerant_timeofday;
 #  define HEAP_SIZE(p)      (p)->heap_sz
 #  define SAVED_HEAP_TOP(p) global_saved_htop
 #  define STACK_START(p)    (p)->stack
+#  define STACK_TOP(p)      (p)->stop
 #  define STACK_END(p)      (p)->send
 #  define HIGH_WATER(p)     global_high_water
 #  define OLD_HEND(p)       global_old_hend
@@ -366,7 +235,7 @@ extern int erts_disable_tolerant_timeofday;
 #  define MBUF(p)           global_mbuf
 #  define HALLOC_MBUF(p)    global_halloc_mbuf
 #  define MBUF_SIZE(p)      global_mbuf_sz
-#  define MSO(p)            erts_global_mso
+#  define MSO(p)            erts_global_offheap
 #  define MIN_HEAP_SIZE(p)  H_MIN_SIZE
 #else
 #  define HEAP_START(p)     (p)->heap
@@ -376,6 +245,7 @@ extern int erts_disable_tolerant_timeofday;
 #  define HEAP_SIZE(p)      (p)->heap_sz
 #  define SAVED_HEAP_TOP(p) (p)->saved_htop
 #  define STACK_START(p)    (p)->hend
+#  define STACK_TOP(p)      (p)->stop
 #  define STACK_END(p)      (p)->htop
 #  define HIGH_WATER(p)     (p)->high_water
 #  define OLD_HEND(p)       (p)->old_hend
@@ -391,36 +261,122 @@ extern int erts_disable_tolerant_timeofday;
 #  define MIN_HEAP_SIZE(p)  (p)->min_heap_size
 #endif
 
-#ifdef SHARED_HEAP
-/* Global heap pointers */
-extern Eterm *global_heap;    /* Heap start */
-extern Eterm *global_hend;    /* Heap end */
-extern Eterm *global_htop;    /* Heap top (heap pointer) */
-extern Eterm *global_saved_htop; /* Saved heap top (heap pointer) */
-extern Uint global_heap_sz;   /* Heap size, in words */
-extern Uint global_heap_min_sz;
-extern ErlOffHeap erts_global_mso; /* Global MSO (OffHeap) list */
+#if (defined(NOMOVE) && defined(SHARED_HEAP))
+#  undef OLD_HEND
+#  undef OLD_HTOP
+#  undef OLD_HEAP
+#endif
 
-/* Global stuff for garbage collection */
-extern Eterm *global_high_water;
+#if defined(SHARED_HEAP) || defined(HYBRID)
+
+/* Global heap pointers */
+extern Eterm *global_heap;             /* Heap start */
+extern Eterm *global_hend;             /* Heap end */
+extern Eterm *global_htop;             /* Heap top (heap pointer) */
+extern Eterm *global_saved_htop;       /* Saved heap top (heap pointer) */
+extern Uint global_heap_sz;            /* Heap size, in words */
+extern ErlOffHeap erts_global_offheap; /* Global MSO (OffHeap) list */
+
+#ifdef NOMOVE
+extern Eterm *nm_heap;
+extern Eterm *nm_hend;
+#define OLD_M_DATA_START nm_heap
+#define OLD_M_DATA_END nm_hend
+#else
 extern Eterm *global_old_hend;
 extern Eterm *global_old_htop;
 extern Eterm *global_old_heap;
+#define OLD_M_DATA_START global_old_heap
+#define OLD_M_DATA_END global_old_htop
+#endif
+
+#ifdef INCREMENTAL_GC
+#  define ACTIVATE(p)
+#  define DEACTIVATE(p)
+#  define IS_ACTIVE(p) 1
+/* We still use the active-flag, but not in the same places */
+/*
+#  define INC_ACTIVATE(p)   (p)->active = 1;
+#  define INC_DEACTIVATE(p) (p)->active = 0;
+#  define INC_IS_ACTIVE(p)  ((p)->active != 0)
+*/
+
+#define INC_ACTIVATE(p) do {                                           \
+    if ((p)->active) {                                                 \
+        if ((p)->active_next != NULL) {                                \
+            (p)->active_next->active_prev = (p)->active_prev;          \
+            if ((p)->active_prev) {                                    \
+                (p)->active_prev->active_next = (p)->active_next;      \
+            } else {                                                   \
+                inc_active_proc = (p)->active_next;                    \
+            }                                                          \
+            inc_active_last->active_next = (p);                        \
+            (p)->active_next = NULL;                                   \
+            (p)->active_prev = inc_active_last;                        \
+            inc_active_last = (p);                                     \
+        }                                                              \
+    } else {                                                           \
+        (p)->active_next = NULL;                                       \
+        (p)->active_prev = inc_active_last;                            \
+        if (inc_active_last) {                                         \
+            inc_active_last->active_next = (p);                        \
+        } else {                                                       \
+            inc_active_proc = (p);                                     \
+        }                                                              \
+        inc_active_last = (p);                                         \
+        (p)->active = 1;                                               \
+    }                                                                  \
+} while(0);
+
+#define INC_DEACTIVATE(p) do {                                         \
+    ASSERT((p)->active == 1);                                          \
+    if ((p)->active_next == NULL) {                                    \
+        inc_active_last = (p)->active_prev;                            \
+    } else {                                                           \
+        (p)->active_next->active_prev = (p)->active_prev;              \
+    }                                                                  \
+    if ((p)->active_prev == NULL) {                                    \
+        inc_active_proc = (p)->active_next;                            \
+    } else {                                                           \
+        (p)->active_prev->active_next = (p)->active_next;              \
+    }                                                                  \
+    (p)->active = 0;                                                   \
+} while(0);
+
+#define INC_IS_ACTIVE(p)  ((p)->active != 0)
+
+#else
+#  define ACTIVATE(p)   (p)->active = 1;
+#  define DEACTIVATE(p) (p)->active = 0;
+#  define IS_ACTIVE(p)  ((p)->active != 0)
+#  define INC_ACTIVATE(p)
+#  define INC_IS_ACTIVE(p) 1
+extern Eterm *global_high_water;
+#endif
+
 extern Uint16 global_gen_gcs;
 extern Uint16 global_max_gen_gcs;
 extern Uint   global_gc_flags;
 
-extern ErlHeapFragment* global_mbuf;
-extern ErlHeapFragment* global_halloc_mbuf;
+#else
+#  define ACTIVATE(p)
+#  define DEACTIVATE(p)
+#  define IS_ACTIVE(p) 1
+#  define INC_ACTIVATE(p)
+#endif /* SHARED_HEAP || HYBRID */
+
+#ifdef SHARED_HEAP
+extern ErlHeapFragment *global_mbuf;
+extern ErlHeapFragment *global_halloc_mbuf;
 extern Uint global_mbuf_sz;
+#endif
+
+#ifdef HYBRID
+extern Uint global_heap_min_sz;
 #endif
 
 extern int bif_reductions;      /* reductions + fcalls (when doing call_bif) */
 extern int stackdump_on_exit;
-
-#ifdef DEBUG
-extern Uint verbose;		/* noisy mode = 1 */
-#endif
 
 extern Eterm system_seq_tracer;
 
@@ -547,6 +503,117 @@ Uint size_object(Eterm);
 Eterm copy_struct(Eterm, Uint, Eterm**, ErlOffHeap*);
 Eterm copy_shallow(Eterm*, Uint, Eterm**, ErlOffHeap*);
 
+#ifdef HYBRID
+extern Eterm *copy_src_stack;
+extern Uint copy_src_top;
+extern Uint copy_src_size;
+extern Eterm *copy_dst_stack;
+extern Uint copy_dst_top;
+extern Uint copy_dst_size;
+
+extern Eterm *copy_offset_stack;
+extern Uint copy_offset_top;
+extern Uint copy_offset_size;
+
+#define RRMA_DEFAULT_SIZE 256
+#define MA_ROOT_PUSH(p,ptr,src) do {                                    \
+  ASSERT((p)->rrma != NULL);                                            \
+  ASSERT((p)->rrsrc != NULL);                                           \
+  (p)->rrma[(p)->nrr] = (ptr);                                          \
+  (p)->rrsrc[(p)->nrr++] = (src);                                       \
+  if ((p)->nrr == (p)->rrsz)                                            \
+  {                                                                     \
+      ERTS_PROC_LESS_MEM(sizeof(Eterm) * (p)->rrsz * 2);                \
+      (p)->rrsz *= 2;                                                   \
+      ERTS_PROC_MORE_MEM(sizeof(Eterm) * (p)->rrsz * 2);                \
+      (p)->rrma = (Eterm *) erts_realloc(ERTS_ALC_T_ROOTSET,            \
+                                         (void*)(p)->rrma,              \
+                                         sizeof(Eterm) * (p)->rrsz);    \
+      (p)->rrsrc = (Eterm **) erts_realloc(ERTS_ALC_T_ROOTSET,          \
+                                           (void*)(p)->rrsrc,           \
+                                            sizeof(Eterm) * (p)->rrsz); \
+  }                                                                     \
+} while(0)
+
+#define ROOT_PUSH(_s_,ptr) do {                                         \
+  copy_##_s_##_stack[copy_##_s_##_top++] = (ptr);                       \
+  if (copy_##_s_##_top == copy_##_s_##_size)                            \
+  {                                                                     \
+      ERTS_PROC_LESS_MEM(sizeof(Eterm) * copy_##_s_##_size);            \
+      copy_##_s_##_size *= 2;                                           \
+      ERTS_PROC_MORE_MEM(sizeof(Eterm) * copy_##_s_##_size);            \
+      copy_##_s_##_stack =                                              \
+        (Eterm *) erts_realloc(ERTS_ALC_T_OBJECT_STACK,                 \
+                               (void*)copy_##_s_##_stack,               \
+                               sizeof(Eterm) * copy_##_s_##_size);      \
+  }                                                                     \
+} while(0)
+
+#define ROOT_POP(_s_) (copy_##_s_##_stack[--copy_##_s_##_top])
+#define ROOT_TOP(_s_) (copy_##_s_##_stack[copy_##_s_##_top - 1])
+#define ROOT_UPDATE(_s_,offset,value)  \
+  *(ptr_val(copy_##_s_##_stack[copy_##_s_##_top - 1]) + (offset)) = (value)
+
+#ifdef INCREMENTAL_GC
+#define NO_COPY(obj) (IS_CONST(obj) ||                        \
+                      (((ptr_val(obj) >= global_heap) &&      \
+                        (ptr_val(obj) < global_htop)) ||      \
+                       ((ptr_val(obj) >= inc_n2) &&           \
+                        (ptr_val(obj) < inc_n2_end)) ||       \
+                       ((ptr_val(obj) >= OLD_M_DATA_START) && \
+                        (ptr_val(obj) < OLD_M_DATA_END))))
+#else
+#define NO_COPY(obj) (IS_CONST(obj) ||                        \
+                      (((ptr_val(obj) >= global_heap) &&      \
+                        (ptr_val(obj) < global_htop)) ||      \
+                       ((ptr_val(obj) >= OLD_M_DATA_START) && \
+                        (ptr_val(obj) < OLD_M_DATA_END))))
+#endif
+
+#ifdef INCREMENTAL_GC
+#define NON_RECURSIVE_COPY
+#endif
+
+#ifdef NON_RECURSIVE_COPY
+
+#define LAZY_COPY(from,obj) do {                     \
+  if (!NO_COPY(obj)) {                               \
+      BM_LAZY_COPY_START;                            \
+      BM_COUNT(messages_copied);                     \
+      obj = copy_struct_lazy(from,obj,0);            \
+      ASSERT(copy_src_top == 0);                     \
+      ASSERT(copy_dst_top == 0);                     \
+      ASSERT(copy_offset_top == 0);                  \
+      BM_LAZY_COPY_STOP;                             \
+  }                                                  \
+} while(0)
+
+Eterm copy_struct_lazy(Process*, Eterm, Uint);
+
+#else
+
+#define LAZY_COPY(from,obj) do {                     \
+  if (!NO_COPY(obj)) {                               \
+      Eterm dest = NIL;                              \
+      BM_LAZY_COPY_START;                            \
+      BM_COUNT(messages_copied);                     \
+      ROOT_PUSH(dst,(Eterm)&dest);                   \
+      copy_struct_lazy(from,obj,0);                  \
+      ROOT_POP(dst);                                 \
+      ASSERT(copy_src_top == 0);                     \
+      ASSERT(copy_dst_top == 0);                     \
+      ASSERT(copy_offset_top == 0);                  \
+      obj = dest;                                    \
+      BM_LAZY_COPY_STOP;                             \
+  }                                                  \
+} while(0)
+
+void copy_struct_lazy(Process*, Eterm, Uint);
+
+#endif /* NON_RECURSIVE_COPY */
+
+#endif /* HYBRID */
+
 /* dist.c */
 /* More in dist.h */
 /* Atom cache */
@@ -575,12 +642,15 @@ void print_pass_through(int, byte*, int);
 int catchlevel(Process*);
 void init_emulator(_VOID_);
 void process_main(void);
+Eterm build_stacktrace(Process* c_p, Eterm exc);
+Eterm expand_error_value(Process* c_p, Eterm Value);
 
 /* erl_init.c */
 
 extern volatile int erts_writing_erl_crash_dump;
 extern Eterm erts_error_logger_warnings;
 extern int erts_initialized;
+extern int erts_compat_rel;
 void erts_short_init(void);
 void erl_start(int, char**);
 void erts_usage(void);
@@ -613,6 +683,19 @@ Uint erts_next_heap_size(Uint, Uint);
 Eterm erts_heap_sizes(Process* p);
 void erts_shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj);
 
+#ifdef HYBRID
+int erts_global_garbage_collect(Process*, int, Eterm*, int);
+#endif
+
+#ifdef NOMOVE
+void erts_nm_init(void);
+void erts_nm_cleanup(void);
+#endif
+
+#ifdef INCREMENTAL_GC
+Eterm *erts_alloc_with_gc(Process*, int);
+#endif
+
 /* io.c */
 
 void wake_process_later(Eterm, Process*);
@@ -622,7 +705,7 @@ void init_io(void);
 void cleanup_io(void);
 void do_exit_port(Eterm, Eterm, Eterm);
 void port_command(Eterm, Eterm, Eterm);
-int port_control(Process*, Port*, Uint, Eterm, Eterm*);
+Eterm erts_port_control(Process*, Port*, Uint, Eterm);
 int write_port(Eterm caller_id, int p, Eterm list);
 void print_port_info(int, CIO);
 void dist_port_command(Port*, byte*, int);
@@ -632,6 +715,10 @@ void event_ready(int, int, ErlDrvEventData);
 void driver_report_exit(int, int);
 LineBuf* allocate_linebuf(int);
 int async_ready(int ix, void* data);
+Sint erts_test_next_port(int, Uint);
+
+/* erl_obsolete.c */
+void erts_init_obsolete(void);
 
 /* time.c */
 void increment_time(int);
@@ -715,7 +802,7 @@ void erts_init_utils_mem(void);
 int eq(Eterm, Eterm);
 #define EQ(x,y) (((x) == (y)) || (is_not_both_immed((x),(y)) && eq((x),(y))))
 
-int cmp(Eterm, Eterm);
+Sint cmp(Eterm, Eterm);
 #define cmp_lt(a,b)	(cmp((a),(b)) < 0)
 #define cmp_le(a,b)	(cmp((a),(b)) <= 0)
 #define cmp_eq(a,b)	(cmp((a),(b)) == 0)
@@ -757,7 +844,16 @@ Eterm erts_bif_trace(int bif_index, Process* p,
 int member(Eterm, Eterm);
 void bin_write(CIO, byte*, int);
 int intlist_to_buf(Eterm, byte*, int);
-char* int_to_buf(int, char*);
+
+struct Sint_buf {
+#ifdef ARCH_64
+    char s[22];
+#else
+    char s[12];
+#endif
+};	
+char* Sint_to_buf(Sint, struct Sint_buf*);
+
 Eterm buf_to_intlist(Eterm**, byte*, int, Eterm);
 int io_list_to_buf(Eterm, char*, int);
 int io_list_len(Eterm);
@@ -778,17 +874,6 @@ Eterm erts_bor(Process* p, Eterm arg1, Eterm arg2);
 Eterm erts_bxor(Process* p, Eterm arg1, Eterm arg2);
 
 Uint erts_current_reductions(Process* current, Process *p);
-
-#ifdef DEBUG
-void upp(byte*, int);
-void pat(Eterm);
-void pinfo(void);
-void pp(Process*);
-void ppi(Eterm);
-void pba(Process*, int);
-void td(Eterm);
-void ps(Process*, Eterm*);
-#endif
 
 char* erts_get_system_version(int *len);
 

@@ -34,7 +34,7 @@ typedef struct db_table_tree {
     int slot;                 /* slot in db_tables */
     int keypos;               /* defaults to 1 */
     int nitems;               /* Total number of items */
-    Uint memory;              /* Total memory size */
+    Uint memory_size;         /* Total memory size. NOTE: in bytes! */
     int kept_items;           /* Always empty for trees */
     Uint megasec,sec,microsec; /* Last fixation time */
     DbFixation *fixations;     /* List of processes who have fixed 

@@ -36,6 +36,9 @@
 #ifdef ELIB_ALLOC_IS_CLIB
 #include "elib_stat.h"
 #endif
+#ifdef HIPE
+#include "hipe_arch.h"
+#endif
 
 #define DECL_AM(S) Eterm AM_ ## S = am_atom_put(#S, sizeof(#S) - 1)
 
@@ -57,6 +60,15 @@ static char erts_system_version[] = ("Erlang (" EMULATOR ")"
 #ifdef SHARED_HEAP
 				     " [shared heap]"
 #endif
+#ifdef HYBRID
+				     " [hybrid heap]"
+#endif
+#ifdef NOMOVE
+				     " [non-moving GC]"
+#endif
+#ifdef INCREMENTAL_GC
+				     " [incremental GC]"
+#endif
 #ifdef ET_DEBUG
 #if ET_DEBUG
 				     " [type-assertions]"
@@ -71,6 +83,10 @@ static char erts_system_version[] = ("Erlang (" EMULATOR ")"
 #ifdef USE_KERNEL_POLL
 				     " [kernel-poll]"
 #endif	
+#ifdef HEAP_FRAG_ELIM_TEST
+				     " [heap-frag]"
+#endif	
+
 				     "\n");
 
 
@@ -103,56 +119,136 @@ bld_bin_list(Uint **hpp, Uint *szp, ProcBin* pb)
     return res;
 }
 
-static Eterm
-make_link_list(Process *p, ErlLink *ls)
+
+/*
+  make_monitor_list:
+  returns a list of records..
+  -record(erl_monitor, {
+            type, % MON_ORIGIN or MON_TARGET (1 or 3)
+	    ref,
+	    pid, % Process or nodename
+	    name % registered name or []
+          }).
+*/
+
+static void do_calc_mon_size(ErtsMonitor *mon, void *vpsz)
+{
+    Uint *psz = vpsz;
+    *psz += IS_CONST(mon->ref) ? 0 : NC_HEAP_SIZE(mon->ref);
+    *psz += IS_CONST(mon->pid) ? 0 : NC_HEAP_SIZE(mon->pid);
+    *psz += 8; /* CONS + 5-tuple */ 
+}
+
+typedef struct {
+    Process *p;
+    Eterm *hp;
+    Eterm res;
+    Eterm tag;
+} MonListContext;
+
+static void do_make_one_mon_element(ErtsMonitor *mon, void * vpmlc)
+{
+    MonListContext *pmlc = vpmlc;
+    Eterm tup;
+    Eterm r = (IS_CONST(mon->ref)
+	       ? mon->ref
+	       : STORE_NC(&(pmlc->hp), &MSO(pmlc->p).externals, mon->ref));
+    Eterm p = (IS_CONST(mon->pid)
+	       ? mon->pid
+	       : STORE_NC(&(pmlc->hp), &MSO(pmlc->p).externals, mon->pid));
+    tup = TUPLE5(pmlc->hp, pmlc->tag, make_small(mon->type), r, p, mon->name);
+    pmlc->hp += 6;
+    pmlc->res = CONS(pmlc->hp, tup, pmlc->res);
+    pmlc->hp += 2;
+}
+
+static Eterm 
+make_monitor_list(Process *p, ErtsMonitor *root)
+{
+    DECL_AM(erl_monitor);
+    Uint sz = 0;
+    MonListContext mlc;
+
+    erts_doforall_monitors(root, &do_calc_mon_size, &sz);
+    if (sz == 0) {
+	return NIL;
+    }
+    mlc.p = p;
+    mlc.hp = HAlloc(p,sz);
+    mlc.res = NIL;
+    mlc.tag = AM_erl_monitor;
+    erts_doforall_monitors(root, &do_make_one_mon_element, &mlc);
+    return mlc.res;
+}
+
+/*
+  make_link_list:
+  returns a list of records..
+  -record(erl_link, {
+            type, % LINK_NODE or LINK_PID (1 or 3)
+	    pid, % Process or nodename
+	    targets % List of erl_link's or nil
+          }).
+*/
+
+static void do_calc_lnk_size(ErtsLink *lnk, void *vpsz)
+{
+    Uint *psz = vpsz;
+    *psz += IS_CONST(lnk->pid) ? 0 : NC_HEAP_SIZE(lnk->pid);
+    if (lnk->type != LINK_NODE && lnk->root != NULL) { 
+	/* Node links use this pointer as ref counter... */
+	erts_doforall_links(lnk->root,&do_calc_lnk_size,vpsz);
+    }
+    *psz += 7; /* CONS + 4-tuple */ 
+}
+
+typedef struct {
+    Process *p;
+    Eterm *hp;
+    Eterm res;
+    Eterm tag;
+} LnkListContext;
+
+static void do_make_one_lnk_element(ErtsLink *lnk, void * vpllc)
+{
+    LnkListContext *pllc = vpllc;
+    Eterm tup;
+    Eterm old_res, targets = NIL;
+    Eterm p = (IS_CONST(lnk->pid)
+	       ? lnk->pid
+	       : STORE_NC(&(pllc->hp), &MSO(pllc->p).externals, lnk->pid));
+    if (lnk->type == LINK_NODE) {
+	targets = make_small(ERTS_LINK_ROOT_AS_UINT(lnk));
+    } else if (lnk->root != NULL) {
+	old_res = pllc->res;
+	pllc->res = NIL;
+	erts_doforall_links(lnk->root,&do_make_one_lnk_element, vpllc);
+	targets = pllc->res;
+	pllc->res = old_res;
+    }
+    tup = TUPLE4(pllc->hp, pllc->tag, make_small(lnk->type), p, targets);
+    pllc->hp += 5;
+    pllc->res = CONS(pllc->hp, tup, pllc->res);
+    pllc->hp += 2;
+}
+
+static Eterm 
+make_link_list(Process *p, ErtsLink *root, Eterm tail)
 {
     DECL_AM(erl_link);
-    Eterm tup;
-    Eterm res;
-    Eterm *hp;
-    ErlLink *l;
-    Uint s;
-#ifdef DEBUG
-    Eterm *endp;
-#endif
+    Uint sz = 0;
+    LnkListContext llc;
 
-    for(l = ls, s = 0; l; l = l->next) {
-	s += IS_CONST(l->item) ? 0 : NC_HEAP_SIZE(l->item);
-	s += IS_CONST(l->data) ? 0 : NC_HEAP_SIZE(l->data);
-	s += IS_CONST(l->ref)  ? 0 : NC_HEAP_SIZE(l->ref);
-	s += 2 /* 1 cons cell */ + 6 /* 1 five-tuple */;
+    erts_doforall_links(root, &do_calc_lnk_size, &sz);
+    if (sz == 0) {
+	return tail;
     }
-
-    if(!s)
-	return NIL;
-
-    hp = HAlloc(p, s);
-
-#ifdef DEBUG
-    endp = hp + s;
-#endif
-
-    for(l = ls, res = NIL; l; l = l->next) {
-	Eterm i = (IS_CONST(l->item)
-		   ? l->item
-		   : STORE_NC(&hp, &MSO(p).externals, l->item));
-	Eterm d = (IS_CONST(l->data)
-		   ? l->data
-		   : STORE_NC(&hp, &MSO(p).externals, l->data));
-	Eterm r = (IS_CONST(l->ref)
-		   ? l->ref
-		   : STORE_NC(&hp, &MSO(p).externals, l->ref));
-	tup = TUPLE5(hp, AM_erl_link, make_small(l->type), i, d, r);
-	hp += 6;
-	res = CONS(hp, tup, res);
-	hp += 2;
-    }
-
-#ifdef DEBUG
-    ASSERT(hp == endp);
-#endif
-    
-    return res;
+    llc.p = p;
+    llc.hp = HAlloc(p,sz);
+    llc.res = tail;
+    llc.tag = AM_erl_link;
+    erts_doforall_links(root, &do_make_one_lnk_element, &llc);
+    return llc.res;
 }
 
 char*
@@ -249,6 +345,122 @@ process_info_1(Process* p, Eterm pid)
     }
 
     return result;
+}
+
+typedef struct {
+    Eterm entity;
+    Eterm node;
+} MonitorInfo;
+
+typedef struct {
+    MonitorInfo *mi;
+    Uint mi_i;
+    Uint mi_max;
+    int sz;
+} MonitorInfoCollection;
+
+#define INIT_MONITOR_INFOS(MIC) do {		\
+    (MIC).mi = NULL;				\
+    (MIC).mi_i = (MIC).mi_max = 0;		\
+    (MIC).sz = 0;                               \
+} while(0)
+
+#define MI_INC 50
+#define EXTEND_MONITOR_INFOS(MICP)					\
+do {									\
+    if ((MICP)->mi_i >= (MICP)->mi_max) {				\
+	(MICP)->mi = ((MICP)->mi ? erts_realloc(ERTS_ALC_T_TMP,		\
+						(MICP)->mi,		\
+						((MICP)->mi_max+MI_INC)	\
+						* sizeof(MonitorInfo))	\
+		      : erts_alloc(ERTS_ALC_T_TMP,			\
+				   MI_INC*sizeof(MonitorInfo)));	\
+	(MICP)->mi_max += MI_INC;					\
+    }									\
+ } while (0)
+#define DESTROY_MONITOR_INFOS(MIC)			\
+do {							\
+    if ((MIC).mi != NULL) {				\
+	erts_free(ERTS_ALC_T_TMP, (void *) (MIC).mi);	\
+    }							\
+ } while (0)
+
+static void collect_one_link(ErtsLink *lnk, void *vmicp)
+{
+    MonitorInfoCollection *micp = vmicp;
+    EXTEND_MONITOR_INFOS(micp);
+    if (!(lnk->type == LINK_PID)) {
+	return;
+    }
+    micp->mi[micp->mi_i].entity = lnk->pid;
+    micp->sz += 2 + NC_HEAP_SIZE(lnk->pid);
+    micp->mi_i++;
+} 
+
+static void collect_one_origin_monitor(ErtsMonitor *mon, void *vmicp)
+{
+    MonitorInfoCollection *micp = vmicp;
+ 
+    if (mon->type != MON_ORIGIN) {
+	return;
+    }
+    EXTEND_MONITOR_INFOS(micp);
+    if (is_atom(mon->pid)) { /* external by name */
+	micp->mi[micp->mi_i].entity = mon->name;
+	micp->mi[micp->mi_i].node = mon->pid;
+	micp->sz += 3; /* need one 2-tuple */
+    } else if (is_external_pid(mon->pid)) { /* external by pid */
+	micp->mi[micp->mi_i].entity = mon->pid;
+	micp->mi[micp->mi_i].node = NIL;
+	micp->sz += NC_HEAP_SIZE(mon->pid);
+    } else if (!is_nil(mon->name)) { /* internal by name */
+	micp->mi[micp->mi_i].entity = mon->name;
+	micp->mi[micp->mi_i].node = erts_this_dist_entry->sysname;
+	micp->sz += 3; /* need one 2-tuple */
+    } else { /* internal by pid */
+	micp->mi[micp->mi_i].entity = mon->pid;
+	micp->mi[micp->mi_i].node = NIL;
+	/* no additional heap space needed */
+    }
+    micp->mi_i++;
+    micp->sz += 2 + 3; /* For a cons cell and a 2-tuple */
+}
+
+static void collect_one_target_monitor(ErtsMonitor *mon, void *vmicp)
+{
+    MonitorInfoCollection *micp = vmicp;
+ 
+    if (mon->type != MON_TARGET) {
+	return;
+    }
+
+    EXTEND_MONITOR_INFOS(micp);
+  
+    micp->mi[micp->mi_i].node = NIL;
+    micp->mi[micp->mi_i].entity = mon->pid;
+    micp->sz += (NC_HEAP_SIZE(mon->pid) + 2 /* cons */);
+    micp->mi_i++;
+}
+
+
+static void one_link_size(ErtsLink *lnk, void *vpu)
+{
+    Uint *pu = vpu;
+    *pu += ERTS_LINK_SIZE*sizeof(Uint);
+    if(!IS_CONST(lnk->pid))
+	*pu += NC_HEAP_SIZE(lnk->pid)*sizeof(Uint);
+    if (lnk->root != NULL) {
+	erts_doforall_links(lnk->root,&one_link_size,vpu);
+    }
+}
+static void one_mon_size(ErtsMonitor *mon, void *vpu)
+{
+    Uint *pu = vpu;
+    *pu += ERTS_MONITOR_SIZE*sizeof(Uint);
+    if(!IS_CONST(mon->pid))
+	*pu += NC_HEAP_SIZE(mon->pid)*sizeof(Uint);
+    if(!IS_CONST(mon->ref))
+	*pu += NC_HEAP_SIZE(mon->ref)*sizeof(Uint);
 }
 
 BIF_RETTYPE process_info_2(BIF_ALIST_2) 
@@ -387,98 +599,39 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
 	hp = HAlloc(BIF_P, 3);
 	res = make_small(rp->msg.len);
     } else if (item == am_links) {
-	int sz = 0;
-	ErlLink* lnk;
+	MonitorInfoCollection mic;
+	int i;
 	Eterm item;
 
-	for (lnk = rp->links; lnk; lnk = lnk->next) {
-	    if (lnk->type == LNK_LINK) {
-		sz += NC_HEAP_SIZE(lnk->item);
-		sz += 2;
-	    }
-	}
-	hp = HAlloc(BIF_P, 3 + sz);
+	INIT_MONITOR_INFOS(mic);
+
+	erts_doforall_links(rp->nlinks,&collect_one_link,&mic);
+
+	hp = HAlloc(BIF_P, 3 + mic.sz);
 	res = NIL;
-	for (lnk = rp->links; lnk; lnk = lnk->next) {
-	    if (lnk->type == LNK_LINK) {
-		item = STORE_NC(&hp, &MSO(BIF_P).externals, lnk->item); 
-		res = CONS(hp, item, res);
-		hp += 2;
-	    }
+	for (i = 0; i < mic.mi_i; i++) {
+	    item = STORE_NC(&hp, &MSO(BIF_P).externals, mic.mi[i].entity); 
+	    res = CONS(hp, item, res);
+	    hp += 2;
 	}
+	DESTROY_MONITOR_INFOS(mic);
+
     } else if (item == am_monitors) {
-#undef  MI_INC
-#define MI_INC 50
-	int sz = 0;
-	struct {
-	    Eterm entity;
-	    Eterm node;
-	} *mi = NULL;
-	Uint mi_i = 0;
-	Uint mi_max = 0;
-	ErlLink* lnk;
-	ErlLink **lnkp;
+	MonitorInfoCollection mic;
+	int i;
 
-	/* lnk->item is the monitor link origin end */
-	for (lnk = rp->links; lnk; lnk = lnk->next) {
-	    if (mi_i >= mi_max) {
-		mi = (mi ? erts_realloc(ERTS_ALC_T_TMP,
-					mi,
-					(mi_max+MI_INC)*sizeof(*mi))
-		      : erts_alloc(ERTS_ALC_T_TMP, MI_INC*sizeof(*mi)));
-		mi_max += MI_INC;
-	    }
-	    if (lnk->type == LNK_LINK1 && rp->id == lnk->item) {
-		
-		if (is_atom(lnk->data)) {
-		    /* Dist monitor by name. */
-		    DistEntry *dep;
-
-		    ASSERT(is_node_name_atom(lnk->data));
-		    dep = erts_sysname_to_connected_dist_entry(lnk->data);
-		    if (!dep)
-			continue;
-		    lnkp = find_link_by_ref(&dep->links, lnk->ref);
-		    mi[mi_i].entity = (*lnkp)->data;
-		    mi[mi_i].node = lnk->data;
-
-		    /* Will need an additional 2-tuple. */
-		    sz += 3;
-		} else if (is_internal_pid(lnk->data)) {
-		    Process *p = pid2proc(lnk->data);
-		    if (!p)
-			continue;
-		    lnkp = find_link_by_ref(&p->links, lnk->ref);
-		    if (!lnkp)
-			continue;
-		    if (is_atom((*lnkp)->data)) { /* Local monitor by name. */
-			mi[mi_i].entity = (*lnkp)->data;
-			mi[mi_i].node = erts_this_dist_entry->sysname;
-			/* Will need an additional 2-tuple. */
-			sz += 3;
-		    }
-		    else
-			mi[mi_i].entity = lnk->data;
-		}
-		else {
-		    ASSERT(is_external_pid(lnk->data));
-		    mi[mi_i].entity = lnk->data;
-		    sz += NC_HEAP_SIZE(lnk->data);
-		}
-		mi_i++;
-		sz += 2 + 3; /* For a cons cell and a 2-tuple */
-	    }
-	}
-	hp = HAlloc(BIF_P, 3 + sz);
+	INIT_MONITOR_INFOS(mic);
+	erts_doforall_monitors(rp->monitors,&collect_one_origin_monitor,&mic);
+	hp = HAlloc(BIF_P, 3 + mic.sz);
 	res = NIL;
-	for (mi_max = mi_i, mi_i = 0; mi_i < mi_max; mi_i++) {
-	    if (is_atom(mi[mi_i].entity)) {
+	for (i = 0; i < mic.mi_i; i++) {
+	    if (is_atom(mic.mi[i].entity)) {
 		/* Monitor by name. 
 		 * Build {process, {Name, Node}} and cons it. 
 		 */
 		Eterm t1, t2;
 
-		t1 = TUPLE2(hp, mi[mi_i].entity, mi[mi_i].node);
+		t1 = TUPLE2(hp, mic.mi[i].entity, mic.mi[i].node);
 		hp += 3;
 		t2 = TUPLE2(hp, am_process, t1);
 		hp += 3;
@@ -490,42 +643,35 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
 		Eterm t;
 		Eterm pid = STORE_NC(&hp,
 				     &MSO(BIF_P).externals,
-				     mi[mi_i].entity);
+				     mic.mi[i].entity);
 		t = TUPLE2(hp, am_process, pid);
 		hp += 3;
 		res = CONS(hp, t, res);
 		hp += 2;
 	    }
 	}
-	if (mi)
-	    erts_free(ERTS_ALC_T_TMP, (void *) mi);
-#undef  MI_INC
+	DESTROY_MONITOR_INFOS(mic);
     } else if (item == am_monitored_by) {
-	int sz = 0;
-	ErlLink* lnk;
+	MonitorInfoCollection mic;
+	int i;
 	Eterm item;
 
-	/* lnk->item is the monitor link origin end */
-	for (lnk = rp->links; lnk; lnk = lnk->next) {
-	    if (lnk->type == LNK_LINK1 && rp->id != lnk->item) {
-		sz += NC_HEAP_SIZE(lnk->item);
-		sz += 2;
-	    }
-	}
-	hp = HAlloc(BIF_P, 3 + sz);
+	INIT_MONITOR_INFOS(mic);
+	erts_doforall_monitors(rp->monitors,&collect_one_target_monitor,&mic);
+	hp = HAlloc(BIF_P, 3 + mic.sz);
+
 	res = NIL;
-	for (lnk = rp->links; lnk; lnk = lnk->next) {
-	    if (lnk->type == LNK_LINK1 && rp->id != lnk->item) {
-		item = STORE_NC(&hp, &MSO(BIF_P).externals, lnk->item); 
-		res = CONS(hp, item, res);
-		hp += 2;
-	    }
+	for (i = 0; i < mic.mi_i; ++i) {
+	    item = STORE_NC(&hp, &MSO(BIF_P).externals, mic.mi[i].entity); 
+	    res = CONS(hp, item, res);
+	    hp += 2;
 	}
+	DESTROY_MONITOR_INFOS(mic);
     } else if (item == am_dictionary) {
-	res = dictionary_copy(BIF_P, rp->dictionary);
+	res = erts_dictionary_copy(BIF_P, rp->dictionary);
 	hp = HAlloc(BIF_P, 3);
     } else if (item == am_DollarDictionary) {
-	res = dictionary_copy(BIF_P, rp->debug_dictionary);
+	res = erts_dictionary_copy(BIF_P, rp->debug_dictionary);
 	hp = HAlloc(BIF_P, 3);
     } else if (item == am_trap_exit) {
 	hp = HAlloc(BIF_P, 3);
@@ -545,13 +691,10 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
     } else if (item == am_memory) { /* Memory consumed in bytes */
 	Uint size = 0;
 	Uint hsz = 3;
-	ErlLink* lnk;
-
 	size += sizeof(Process);
 
-	for(lnk = rp->links; lnk; lnk = lnk->next)
-	    size += erts_link_size(lnk);
-
+	erts_doforall_links(rp->nlinks, &one_link_size, &size);
+	erts_doforall_monitors(rp->monitors, &one_mon_size, &size);
 #ifdef SHARED_HEAP
 	size += (rp->stack - rp->send) * sizeof(Eterm);
 #else
@@ -666,6 +809,7 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
     }
     BIF_RET(TUPLE2(hp, item, res));
 }
+#undef MI_INC
 
 /*
  * This function takes care of calls to erlang:system_info/1 when the argument
@@ -779,34 +923,53 @@ info_1_tuple(Process* BIF_P,	/* Pointer to current process. */
 	BIF_RET(am_true);
 #endif
     } else if (sel == am_link_list) {
-	ErlLink *links = NULL;
+	ErtsLink *links = NULL;
 	if(is_internal_pid(*tp)) {
 	    Process *p = pid2proc(*tp);
 	    if(p)
-		links = p->links;
+		links = p->nlinks;
 	    else
 		return am_undefined;
 	}
 	else if(is_internal_port(*tp)) {
 	    Port *p = id2port(*tp);
 	    if(p)
-		links = p->links;
+		links = p->nlinks;
 	    else
 		return am_undefined;
 	}
 	else if(is_node_name_atom(*tp)) {
 	    DistEntry *dep = erts_find_dist_entry(*tp);
-	    if(dep)
-		links = dep->links;
-	    else
+	    if(dep) {
+		Eterm subres;
+		subres = make_link_list(BIF_P,dep->nlinks,NIL);
+		return make_link_list(BIF_P, dep->node_links, subres);
+	    } else {
 		return am_undefined;
+	    }
 	}
 	else
 	    return THE_NON_VALUE;
 
-	return make_link_list(BIF_P, links);
-    }
-    else if (sel == am_allocator && arity == 2) {
+	return make_link_list(BIF_P, links, NIL);
+    } else if (sel == am_monitor_list) {
+	if(is_internal_pid(*tp)) {
+	    Process *p = pid2proc(*tp);
+	    if(p) {
+		return make_monitor_list(BIF_P, p->monitors);
+	    } else {
+		return am_undefined;
+	    }
+	} else if(is_node_name_atom(*tp)) {
+	    DistEntry *dep = erts_find_dist_entry(*tp);
+	    if(dep) {
+		return make_monitor_list(BIF_P, dep->monitors);
+	    } else {
+		return am_undefined;
+	    }
+	}
+	return THE_NON_VALUE;
+    } else if (sel == am_allocator && arity == 2) {
 	return erts_allocator_info_term(BIF_P, *tp);
     }
 
@@ -832,6 +995,9 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	if (is_non_value(res))
 	    goto error;
 	return res;
+    } else if (BIF_ARG_1 == am_compat_rel) {
+	ASSERT(erts_compat_rel > 0);
+	BIF_RET(make_small(erts_compat_rel));
     } else if (BIF_ARG_1 == am_memory) {
 	BIF_RET(erts_memory(NULL, BIF_P, THE_NON_VALUE));
     } else if (BIF_ARG_1 == am_allocated_areas) {
@@ -840,11 +1006,7 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	BIF_RET(erts_instr_get_memory_map(BIF_P));
     } else if (BIF_ARG_1 == am_hipe_architecture) {
 #if defined(HIPE)
-#  define MAKE_STR2(x) #x
-#  define MAKE_STR(s) MAKE_STR2(s)
-	static char arch[] = MAKE_STR(HIPE_ARCHITECTURE);
-	BIF_RET(am_atom_put(arch, sizeof(arch) - 1));
-#  undef MAKE_STR
+	BIF_RET(hipe_arch_name);
 #else
 	BIF_RET(am_undefined);
 #endif
@@ -1097,8 +1259,13 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 
 	sz += global_heap_sz;
 	sz += global_mbuf_sz;
+#ifdef NOMOVE
+        /* The size of the old generation is a bit hard to define here...
+         * The ammount of live data in the last collection perhaps..? */
+#else
 	if (global_old_hend && global_old_heap)
 	    sz += global_old_hend - global_old_heap;
+#endif
 
 	sz *= sizeof(Eterm);
 
@@ -1110,10 +1277,12 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 #endif
 	return res;
     } else if (BIF_ARG_1 == am_heap_type) {
-#ifdef SHARED_HEAP
+#if defined(SHARED_HEAP)
 	return am_shared;
+#elif defined(HYBRID)
+        return am_hybrid;
 #else
-	return am_separate;
+	return am_private;
 #endif
 #if defined(__GNUC__) && defined(HAVE_SOLARIS_SPARC_PERFMON)
     } else if (BIF_ARG_1 == am_ultrasparc_read_tick1) {
@@ -1309,25 +1478,23 @@ BIF_RETTYPE port_info_2(BIF_ALIST_2)
 	res = make_small(internal_port_number(portid));
     }
     else if (item == am_links) {
-	int sz = 0;
-	ErlLink* lnk;
+	MonitorInfoCollection mic;
+	int i;
 	Eterm item;
 
-	for (lnk = erts_port[portix].links; lnk; lnk = lnk->next) {
-	    if (lnk->type == LNK_LINK) {
-		sz += NC_HEAP_SIZE(lnk->item); 
-		sz += 2;
-	    }
-	}
-	hp = HAlloc(BIF_P, 3 + sz);
+	INIT_MONITOR_INFOS(mic);
+
+	erts_doforall_links( erts_port[portix].nlinks,&collect_one_link,&mic);
+
+	hp = HAlloc(BIF_P, 3 + mic.sz);
 	res = NIL;
-	for (lnk = erts_port[portix].links; lnk; lnk = lnk->next) {
-	    if (lnk->type == LNK_LINK) {
-		item = STORE_NC(&hp, &MSO(BIF_P).externals, lnk->item); 
-		res = CONS(hp, item, res);
-		hp += 2;
-	    }
+	for (i = 0; i < mic.mi_i; i++) {
+	    item = STORE_NC(&hp, &MSO(BIF_P).externals, mic.mi[i].entity); 
+	    res = CONS(hp, item, res);
+	    hp += 2;
 	}
+	DESTROY_MONITOR_INFOS(mic);
+
     }
     else if (item == am_name) {
 	count = sys_strlen(erts_port[portix].name);
@@ -1362,13 +1529,11 @@ BIF_RETTYPE port_info_2(BIF_ALIST_2)
 	 */
 	Uint hsz = 3;
 	Uint size = 0;
-	ErlLink* lnk;
 	ErlHeapFragment* bp;
 
 	hp = HAlloc(BIF_P, 3);
 
-	for(lnk = erts_port[portix].links; lnk; lnk = lnk->next)
-	    size += erts_link_size(lnk);
+	erts_doforall_links(erts_port[portix].nlinks, &one_link_size, &size);
 
 	for (bp = erts_port[portix].bp; bp; bp = bp->next)
 	    size += sizeof(ErlHeapFragment) + (bp->size - 1)*sizeof(Eterm);

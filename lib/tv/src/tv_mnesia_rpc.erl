@@ -77,19 +77,19 @@ chk(Result) ->
 	{'EXIT', {aborted, {no_exists, _Table, _Arg}}} ->
 	    throw(no_table);
 	
-	{'EXIT', {aborted, {node_not_running, Node}}} ->
+	{'EXIT', {aborted, {node_not_running, _Node}}} ->
 	    throw(mnesia_not_started);
 	{'EXIT', {{badarg, {gen, set_monitor_mode, _Data}}, _Info}} ->
 	    throw(mnesia_not_started);
-	{'EXIT', {'EXIT', {aborted, {node_not_running,Node}}}} ->
+	{'EXIT', {'EXIT', {aborted, {node_not_running,_Node}}}} ->
 	    throw(mnesia_not_started);
-	{badrpc, {'EXIT', {aborted, {node_not_running,Node}}}} ->
+	{badrpc, {'EXIT', {aborted, {node_not_running,_Node}}}} ->
 	    throw(mnesia_not_started);
-	{badrpc, {'EXIT', {aborted, {no_exists,Table,Args}}}} ->
+	{badrpc, {'EXIT', {aborted, {no_exists,_Table,_Args}}}} ->
 	    throw(mnesia_not_started);
-	{badrpc, Reason} ->
+	{badrpc, _Reason} ->
 	    throw(mnesia_not_started);
-	{'EXIT', {undef, {mnesia,Fcn,Args}}} ->
+	{'EXIT', {undef, {mnesia,_Fcn,_Args}}} ->
 	    throw(mnesia_not_started);
 	
 	{'EXIT', Reason} ->

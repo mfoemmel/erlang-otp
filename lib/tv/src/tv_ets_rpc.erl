@@ -124,16 +124,16 @@ chk(Result) ->
 	    throw(nodedown);
 
 	%% Messages received when table doesn't exist.
-	{'EXIT', {badarg, {ets,local_info,Args}}} ->  
+	{'EXIT', {badarg, {ets,local_info,_Args}}} ->  
 	       %% Due to inconsistencies in R2D and earlier versions:
 	       %% ets:info/1 returned 'undefined' when table didn't
 	       %% exist, while ets:info/2 returned the exit-signal 
 	       %% above. This was corrected in R3A - now both functions 
 	       %% return 'undefined'  :-)
 	    throw(no_table);
-	{badrpc, {'EXIT', {badarg,Reason}}} ->
+	{badrpc, {'EXIT', {badarg,_Reason}}} ->
 	    throw(no_table);
-	{'EXIT', {badarg,Reason}} ->
+	{'EXIT', {badarg,_Reason}} ->
 	    throw(no_table);
 	Error when tuple(Error) ->   
 	    throw({unexpected_error,Error})

@@ -77,9 +77,10 @@
 
 -module(v3_kernel).
 
--export([module/2]).
+-export([module/2,format_error/1]).
 
--import(lists, [map/2,foldl/3,foldr/3,mapfoldl/3,splitwith/2,member/2]).
+-import(lists, [map/2,foldl/3,foldr/3,mapfoldl/3,splitwith/2,
+		member/2,reverse/1,reverse/2]).
 -import(ordsets, [add_element/2,del_element/2,union/2,union/1,subtract/2]).
 
 -include("core_parse.hrl").
@@ -87,7 +88,7 @@
 
 %% These are not defined in v3_kernel.hrl.
 get_kanno(Kthing) -> element(2, Kthing).
-%%set_kanno(Kthing, Anno) -> setelement(2, Kthing, Anno).
+set_kanno(Kthing, Anno) -> setelement(2, Kthing, Anno).
 
 %% Internal kernel expressions and help functions.
 %% N.B. the annotation field is ALWAYS the first field!
@@ -99,7 +100,6 @@ get_kanno(Kthing) -> element(2, Kthing).
 -record(ialias, {anno=[],vars,pat}).
 -record(iclause, {anno=[],sub,pats,guard,body}).
 -record(ireceive_accept, {anno=[],arg}).
--record(ireceive_reject, {anno=[],arg}).
 -record(ireceive_next, {anno=[],arg}).
 
 %% State record for kernel translator.
@@ -109,16 +109,17 @@ get_kanno(Kthing) -> element(2, Kthing).
 	       ds=[],				%Defined variables
 	       funs=[],				%Fun functions
 	       free=[],				%Free variables
+	       ws=[],				%Warnings.
 	       extinstr=false}).		%Generate extended instructions
 
 module(#c_module{anno=A,name=M,exports=Es,attrs=As,defs=Fs}, Options) ->
-    ExtInstr = member(r8, Options),
+    ExtInstr = not member(no_new_apply, Options),
     {Kfs,St} = mapfoldl(fun function/2, #kern{extinstr=ExtInstr}, Fs),
     Kes = map(fun (#c_fname{id=N,arity=Ar}) -> {N,Ar} end, Es),
     Kas = map(fun (#c_def{name=#c_atom{val=N},val=V}) ->
 		      {N,core_lib:literal_value(V)} end, As),
     {ok,#k_mdef{anno=A,name=M#c_atom.val,exports=Kes,attributes=Kas,
-		body=Kfs ++ St#kern.funs}}.
+		body=Kfs ++ St#kern.funs},St#kern.ws}.
 
 function(#c_def{anno=Af,name=#c_fname{id=F,arity=Arity},val=Body}, St0) ->
     %%ok = io:fwrite("kern: ~p~n", [{F,Arity}]),
@@ -144,155 +145,54 @@ body(Ce, Sub, St0) ->
     expr(Ce, Sub, St0).
 
 %% guard(Cexpr, Sub, State) -> {Kexpr,State}.
-%%  Do guard expression.  These are boolean expressions with values
-%%  which are tests.  These may be wrapped in a protected.  Sequences
-%%  of 'and' and 'or' are common so we join them and flatten them.  To
-%%  do guards efficiently we want to be in full control of the
-%%  evaluation order.  So we unflatten guards and then flatten them as
-%%  we want them.
+%%  We handle guards almost as bodies. The only special thing we
+%%  must do is to make the final Kexpr a #k_test{}.
+%%  Also, we wrap the entire guard in a try/catch which is
+%%  not strictly needed, but makes sure that every 'bif' instruction
+%%  will get a proper failure label.
 
-guard(G0, Sub, St) ->
-    G1 = ungexpr(G0, orddict:new()),
-    %%ok = io:fwrite("~w: ~p~n", [?LINE,{G0,G1}]),
-    gexpr(G1, Sub, St).
+guard(G0, Sub, St0) ->
+    {G1,St1} = wrap_guard(G0, St0),
+    {Ge0,Pre,St2} = expr(G1, Sub, St1),
+    {Ge,St} = gexpr_test(Ge0, St2),
+    {pre_seq(Pre, Ge),St}.
+
+%% Wrap the entire guard in a try/catch if needed.
+
+wrap_guard(#c_try{}=Try, St) -> {Try,St};
+wrap_guard(Core, St0) ->
+    {VarName,St} = new_var_name(St0),
+    Var = #c_var{name=VarName},
+    Try = #c_try{arg=Core,vars=[Var],body=Var,evars=[],handler=#c_atom{val=false}},
+    {Try,St}.
     
-%% ungexpr(Cexpr) -> Cexpr.
-
-ungexpr(#c_var{name=N}=Var, Vbs) ->
-    case orddict:find(N, Vbs) of
-	{ok,Val} -> Val;
-	error -> Var
-    end;
-ungexpr(#c_binary{segs=Ss}=Bin, Vbs) ->
-    Bin#c_binary{segs=ungexpr_bin(Ss, Vbs)};
-ungexpr(#c_cons{hd=H,tl=T}=Cons, Vbs) ->
-    Cons#c_cons{hd=ungexpr(H, Vbs),tl=ungexpr(T, Vbs)};
-ungexpr(#c_tuple{es=Es}=Tup, Vbs) ->
-    Tup#c_tuple{es=ungexpr_list(Es, Vbs)};
-ungexpr(#c_let{vars=[V],arg=A0,body=B}, Vbs0) ->
-    A1 = ungexpr(A0, Vbs0),
-    Vbs1 = orddict:store(V#c_var.name, A1, Vbs0),
-    ungexpr(B, Vbs1);
-ungexpr(#c_seq{arg=Arg,body=Body}=Seq, Vbs) ->
-    Seq#c_seq{arg=ungexpr(Arg, Vbs),
-	      body=ungexpr(Body, Vbs)};
-ungexpr(#c_let{arg=A,body=B}=Let, Vbs) ->
-    %% Difficult to get bindings so leave as let.
-    Let#c_let{arg=ungexpr(A, Vbs),
-	      body=ungexpr(B, Vbs)};
-ungexpr(#c_call{args=As}=Call, Vbs) ->
-    Call#c_call{args=ungexpr_list(As, Vbs)};
-ungexpr(#c_primop{args=As}=Prim, Vbs) ->
-    Prim#c_primop{args=ungexpr_list(As, Vbs)};
-ungexpr(#c_try{arg=B,vars=[#c_var{name=X}],body=#c_var{name=X},
-	       handler=#c_atom{val=false}}=Prot, Vbs) ->
-    %% Variables bindings do not cross protected boundary.
-    orddict:fold(fun (N, Val, Acc) ->
-			 case core_lib:is_var_used(N, B) of
-			     true -> #c_let{vars=[#c_var{name=N}],
-					    arg=Val,body=Acc};
-			     false -> Acc
-			 end
-		 end, Prot#c_try{arg=ungexpr(B, [])}, Vbs);
-ungexpr(E, _Vbs) ->
-    case core_lib:is_atomic(E) of
-	true -> E;
-	false ->
-	    %%ok = io:fwrite("~p~n", [E]),
-	    E
-    end.
-
-ungexpr_list(Es, Vbs) ->
-    map(fun (E) -> ungexpr(E, Vbs) end, Es).
-
-ungexpr_bin(Ss, Vbs) ->
-    map(fun (#c_bin_seg{val=V,size=S}=Seg) ->
-		Seg#c_bin_seg{val=ungexpr(V, Vbs),
-			      size=ungexpr(S, Vbs)}
-	end, Ss).
-
-%% gexpr(Cexpr, Sub, State) -> {Kexpr,State}.
-%%  Build a kernel guard expression.  These are a top-level tree of
-%%  boolean operators and protecteds with a valid test expression at
-%%  each node.  This structure is more optimised for Erlang rather
-%%  than general Core guards.
-
-gexpr(#c_call{module=#c_atom{val='erlang'},
-	      name=#c_atom{val='and'},
-	      args=[Ca,Cb]}, Sub, St0) ->
-    {Kas,St1} = gexpr_and(Ca, Sub, St0),
-    {Kbs,St2} = gexpr_and(Cb, Sub, St1),
-    {#k_guard_and{args=Kas ++ Kbs},St2};
-gexpr(#c_call{module=#c_atom{val='erlang'},
-	      name=#c_atom{val='or'},
-	      args=[Ca,Cb]}, Sub, St0) ->
-    {Kas,St1} = gexpr_or(Ca, Sub, St0),
-    {Kbs,St2} = gexpr_or(Cb, Sub, St1),
-    {#k_guard_or{args=Kas ++ Kbs},St2};
-gexpr(#c_call{module=#c_atom{val='erlang'},
-	      name=#c_atom{val='not'},
-	      args=[Ca]}, Sub, St0) ->
-    {Ka,St1} = gexpr(Ca, Sub, St0),
-    {#k_guard_not{arg=Ka},St1};
-gexpr(#c_try{arg=Ce,vars=[#c_var{name=X}],body=#c_var{name=X},
-	     handler=#c_atom{val=false}}, Sub, St0) ->
-    {Ke,St1} = gexpr(Ce, Sub, St0),
-    {#k_protected{body=Ke},St1};
-gexpr(Ce, Sub, St0) ->
-    %% Now we break out of our special handling.
-    %%ok = io:fwrite("~w: ~p~n", [?LINE,Ce]),
-    case body(Ce, Sub, St0) of
-	{_,[#iset{arg=#k_call{op=#k_remote{mod=#k_atom{val=erlang},
- 					   name=#k_atom{val=fault},
-					   arity=1}}}|_],_} ->
-	    {#k_atom{val=false},St0};
-	{Ke,Pe,St1} ->
-	    {Ge,St2} = gexpr_test(Ke, St1),
-	    %%ok = io:fwrite("~w: ~p~n", [?LINE,pre_seq(Pe, Ge)]),
-	    {pre_seq(Pe, Ge),St2}
-    end.
-
-gexpr_and(#c_call{module=#c_atom{val='erlang'},
-		  name=#c_atom{val='and'},
-		  args=[Ca,Cb]}, Sub, St0) ->
-    {Kas,St1} = gexpr_and(Ca, Sub, St0),
-    {Kbs,St2} = gexpr_and(Cb, Sub, St1),
-    {Kas ++ Kbs,St2};
-gexpr_and(Ce, Sub, St0) ->
-    {Kg,St1} = gexpr(Ce, Sub, St0),
-    {[Kg],St1}.
-
-gexpr_or(#c_call{module=#c_atom{val='erlang'},
-		 name=#c_atom{val='or'},
-		 args=[Ca,Cb]}, Sub, St0) ->
-    {Kas,St1} = gexpr_or(Ca, Sub, St0),
-    {Kbs,St2} = gexpr_or(Cb, Sub, St1),
-    {Kas ++ Kbs,St2};
-gexpr_or(Ce, Sub, St0) ->
-    {Kg,St1} = gexpr(Ce, Sub, St0),
-    {[Kg],St1}.
-
 %% gexpr_test(Kexpr, State) -> {Kexpr,State}.
 %%  Builds the final boolean test from the last Kexpr in a guard test.
-%%  Must enter protecteds and isets and find the last Kexpr in them.
+%%  Must enter try blocks and isets and find the last Kexpr in them.
 %%  This must end in a recognised BEAM test!
 
+gexpr_test(#k_bif{anno=A,op=#k_remote{mod=#k_atom{val=erlang},
+				      name=#k_atom{val=is_boolean},arity=1}=Op,
+		  args=Kargs}, St) ->
+    %% XXX Remove this clause in R11. For bootstrap purposes, we must
+    %% recognize erlang:is_boolean/1 here.
+    {#k_test{anno=A,op=Op,args=Kargs},St};
 gexpr_test(#k_bif{anno=A,op=#k_remote{mod=#k_atom{val=erlang},
 				      name=#k_atom{val=F},arity=Ar}=Op,
 		  args=Kargs}=Ke, St) ->
     %% Either convert to test if ok, or add test.
     %% At this stage, erlang:float/1 is not a type test. (It should
     %% have been converted to erlang:is_float/1.)
-    %% XX FIXME temporarily replaced call to erl_internal:new_type_test/2
-    case new_type_test(F, Ar) orelse
+    case erl_internal:new_type_test(F, Ar) orelse
 	erl_internal:comp_op(F, Ar) of
 	true -> {#k_test{anno=A,op=Op,args=Kargs},St};
 	false -> gexpr_test_add(Ke, St)		%Add equality test
     end;
-gexpr_test(#k_protected{body=B0}=Prot, St0) ->
-    {B1,St1} = gexpr_test(B0, St0),
-    %%ok = io:fwrite("~w: ~p~n", [?LINE,{B0,B1}]),
-    {Prot#k_protected{body=B1},St1};
+gexpr_test(#k_try{arg=B0,vars=[#k_var{name=X}],body=#k_var{name=X},
+		  handler=#k_atom{val=false}}=Try, St0) ->
+    {B,St} = gexpr_test(B0, St0),
+    %%ok = io:fwrite("~w: ~p~n", [?LINE,{B0,B}]),
+    {Try#k_try{arg=B},St};
 gexpr_test(#iset{body=B0}=Iset, St0) ->
     {B1,St1} = gexpr_test(B0, St0),
     {Iset#iset{body=B1},St1};
@@ -334,12 +234,12 @@ expr(#c_cons{anno=A,hd=Ch,tl=Ct}, Sub, St0) ->
 expr(#c_tuple{anno=A,es=Ces}, Sub, St0) ->
     {Kes,Ep,St1} = atomic_list(Ces, Sub, St0),
     {#k_tuple{anno=A,es=Kes},Ep,St1};
-expr(#c_binary{anno=A,segs=Cv}, Sub, St0) ->
+expr(#c_binary{anno=A,segments=Cv}, Sub, St0) ->
     case catch atomic_bin(Cv, Sub, St0, 0) of
 	{'EXIT',R} -> exit(R);
 	bad_element_size ->
 	    Erl = #c_atom{val=erlang},
-	    Name = #c_atom{val=fault},
+	    Name = #c_atom{val=error},
 	    Args = [#c_atom{val=badarg}],
 	    Fault = #c_call{module=Erl,name=Name,args=Args},
 	    expr(Fault, Sub, St0);
@@ -402,7 +302,8 @@ expr(#c_letrec{anno=A,defs=Cfs,body=Cb}, Sub0, St0) ->
     %% Run translation on functions and body.
     {Fs1,St2} = mapfoldl(fun ({N,Fd0}, St1) ->
 				 {Fd1,[],St2} = expr(Fd0, Sub1, St1),
-				 {{N,Fd1},St2}
+				 Fd = set_kanno(Fd1, A),
+				 {{N,Fd},St2}
 			 end, St1, Fs0),
     {Kb,Pb,St3} = body(Cb, Sub1, St2),
     {Kb,[#iletrec{anno=A,defs=Fs1}|Pb],St3};
@@ -416,14 +317,14 @@ expr(#c_receive{anno=A,clauses=Ccs0,timeout=Ce,action=Ca}, Sub, St0) ->
     {Ke,Pe,St1} = atomic(Ce, Sub, St0),		%Force this to be atomic!
     {Rvar,St2} = new_var(St1),
     %% Need to massage accept clauses and add reject clause before matching.
-    Ccs1 = map(fun (#c_clause{body=B0}=C) ->
-		       B1 = #c_seq{arg=#ireceive_accept{},body=B0},
-		       C#c_clause{body=B1}
+    Ccs1 = map(fun (#c_clause{anno=Banno,body=B0}=C) ->
+		       B1 = #c_seq{arg=#ireceive_accept{anno=A},body=B0},
+		       C#c_clause{anno=Banno,body=B1}
 	       end, Ccs0),
     {Mpat,St3} = new_var_name(St2),
-    Rc = #c_clause{pats=[#c_var{name=Mpat}],guard=#c_atom{val=true},
-		   body=#c_seq{arg=#ireceive_reject{},
-			       body=#ireceive_next{}}},
+    Rc = #c_clause{anno=[compiler_generated|A],
+		   pats=[#c_var{name=Mpat}],guard=#c_atom{anno=A,val=true},
+		   body=#ireceive_next{anno=A}},
     {Km,St4} = kmatch([Rvar], Ccs1 ++ [Rc], Sub, add_var_def(Rvar, St3)),
     {Ka,Pa,St5} = body(Ca, Sub, St4),
     {#k_receive{anno=A,var=Rvar,body=Km,timeout=Ke,action=pre_seq(Pa, Ka)},
@@ -452,7 +353,7 @@ expr(#c_call{anno=A,module=M0,name=F0,args=Cargs}, Sub, St0) ->
 			   name=#c_atom{val=apply},
 			   args=[M0,F0,make_list(Cargs)]},
 	    expr(Call, Sub, St0);
-	_Other ->				%New instruction in R8.
+	_Other ->				%New instruction in R10.
 	    Call = #k_call{anno=A,
 			   op=#k_remote{mod=M1,name=F1,arity=Ar},
 			   args=Kargs},
@@ -468,12 +369,6 @@ expr(#c_primop{anno=A,name=#c_atom{val=N},args=Cargs}, Sub, St0) ->
     {Kargs,Ap,St1} = atomic_list(Cargs, Sub, St0),
     Ar = length(Cargs),
     {#k_bif{anno=A,op=#k_internal{name=N,arity=Ar},args=Kargs},Ap,St1};
-expr(#c_try{anno=A,arg=Ce,vars=[#c_var{name=X}],body=#c_var{name=X},
-	    handler=#c_atom{val=false}}, Sub, St0) ->
-    %% Guard try expressions must be handled differently. Need this as
-    %% guards use expr/3!
-    {Ke,Ep,St1} = body(Ce, Sub, St0),
-    {#k_protected{anno=A,body=pre_seq(Ep, Ke)},[],St1};
 expr(#c_try{anno=A,arg=Ca,vars=Cvs,body=Cb,evars=Evs,handler=Ch}, Sub0, St0) ->
     %% The normal try expression. The body and exception handler
     %% variables behave as let variables.
@@ -489,8 +384,7 @@ expr(#c_catch{anno=A,body=Cb}, Sub, St0) ->
     {Kb,Pb,St1} = body(Cb, Sub, St0),
     {#k_catch{anno=A,body=pre_seq(Pb, Kb)},[],St1};
 %% Handle internal expressions.
-expr(#ireceive_accept{anno=A}, _Sub, St) -> {#k_receive_accept{anno=A},[],St};
-expr(#ireceive_reject{anno=A}, _Sub, St) -> {#k_receive_reject{anno=A},[],St}.
+expr(#ireceive_accept{anno=A}, _Sub, St) -> {#k_receive_accept{anno=A},[],St}.
 
 %% expr_list([Cexpr], Sub, State) -> {[Kexpr],[PreKexpr],State}.
 
@@ -529,7 +423,8 @@ flatten_seq(#iset{anno=A,vars=Vs,arg=Arg,body=B}) ->
     [#iset{anno=A,vars=Vs,arg=Arg}|flatten_seq(B)];
 flatten_seq(Ke) -> [Ke].
 
-pre_seq([#iset{anno=A,vars=Vs,arg=Arg}|Ps], K) ->
+pre_seq([#iset{anno=A,vars=Vs,arg=Arg,body=B}|Ps], K) ->
+    B = undefined,				%Assertion.
     #iset{anno=A,vars=Vs,arg=Arg,body=pre_seq(Ps, K)};
 pre_seq([P|Ps], K) ->
     #iset{vars=[],arg=P,body=pre_seq(Ps, K)};
@@ -558,14 +453,20 @@ force_atomic(Ke, St0) ->
 % 		  {[A|As],Ap ++ Asp,St1}
 % 	  end, {[],[],St}, Kes).
 
-atomic_bin([#c_bin_seg{anno=A,val=E0,size=S0,unit=U,type=T,flags=Fs0}|Es0],
+atomic_bin([#c_bitstr{anno=A,val=E0,size=S0,unit=U,type=T,flags=Fs}|Es0],
 	   Sub, St0, B0) ->
     {E,Ap1,St1} = atomic(E0, Sub, St0),
     {S1,Ap2,St2} = atomic(S0, Sub, St1),
     validate_bin_element_size(S1),
-    {B1,Fs1} = aligned(B0, S1, U, Fs0),
+    U0 = core_lib:literal_value(U),
+    Fs0 = core_lib:literal_value(Fs),
+    {B1,Fs1} = aligned(B0, S1, U0, Fs0),
     {Es,Ap3,St3} = atomic_bin(Es0, Sub, St2, B1),
-    {#k_bin_seg{anno=A,size=S1,unit=U,type=T,flags=Fs1,seg=E,next=Es},
+    {#k_bin_seg{anno=A,size=S1,
+		unit=U0,
+		type=core_lib:literal_value(T),
+		flags=Fs1,
+		seg=E,next=Es},
      Ap1++Ap2++Ap3,St3};
 atomic_bin([], _Sub, St, _Bits) -> {#k_bin_end{},[],St}.
 
@@ -643,7 +544,7 @@ pattern(#c_cons{anno=A,hd=Ch,tl=Ct}, Sub0, St0) ->
 pattern(#c_tuple{anno=A,es=Ces}, Sub0, St0) ->
     {Kes,Sub1,St1} = pattern_list(Ces, Sub0, St0),
     {#k_tuple{anno=A,es=Kes},Sub1,St1};
-pattern(#c_binary{anno=A,segs=Cv}, Sub0, St0) ->
+pattern(#c_binary{anno=A,segments=Cv}, Sub0, St0) ->
     {Kv,Sub1,St1} = pattern_bin(Cv, Sub0, St0),
     {#k_binary{anno=A,segs=Kv},Sub1,St1};
 pattern(#c_alias{anno=A,var=Cv,pat=Cp}, Sub0, St0) ->
@@ -659,14 +560,20 @@ flatten_alias(Pat) -> {[],Pat}.
 
 pattern_bin(Es, Sub, St) -> pattern_bin(Es, Sub, St, 0).
 
-pattern_bin([#c_bin_seg{anno=A,val=E0,size=S0,unit=U,type=T,flags=Fs0}|Es0], 
+pattern_bin([#c_bitstr{anno=A,val=E0,size=S0,unit=U,type=T,flags=Fs}|Es0], 
 	    Sub0, St0, B0) ->
     {S1,[],St1} = expr(S0, Sub0, St0),
-    %%ok= io:fwrite("~w: ~p~n", [?LINE,{B0,S1,U,Fs0}]),
-    {B1,Fs1} = aligned(B0, S1, U, Fs0),
+    U0 = core_lib:literal_value(U),
+    Fs0 = core_lib:literal_value(Fs),
+    %%ok= io:fwrite("~w: ~p~n", [?LINE,{B0,S1,U0,Fs0}]),
+    {B1,Fs1} = aligned(B0, S1, U0, Fs0),
     {E,Sub1,St2} = pattern(E0, Sub0, St1),
     {Es,Sub2,St3} = pattern_bin(Es0, Sub1, St2, B1),
-    {#k_bin_seg{anno=A,size=S1,unit=U,type=T,flags=Fs1,seg=E,next=Es},
+    {#k_bin_seg{anno=A,size=S1,
+		unit=U0,
+		type=core_lib:literal_value(T),
+		flags=Fs1,
+		seg=E,next=Es},
      Sub2,St3};
 pattern_bin([], Sub, St, _Bits) -> {#k_bin_end{},Sub,St}.
 
@@ -758,6 +665,11 @@ add_var_def(V, St) ->
 %% is_remote_bif(Mod, Name, Arity) -> true | false.
 %%  Test if function is really a BIF.
 
+is_remote_bif(erlang, is_boolean, 1) ->
+    %% XXX Remove this clause in R11. For bootstrap purposes, we must
+    %% recognize erlang:is_boolean/1 here.
+    true;
+is_remote_bif(erlang, get, 1) -> true;
 is_remote_bif(erlang, N, A) ->
     case erl_internal:guard_bif(N, A) of
 	true -> true;
@@ -833,11 +745,12 @@ first([H|T]) -> [H|first(T)].
 
 kmatch(Us, Ccs, Sub, St0) ->
     {Cs,St1} = match_pre(Ccs, Sub, St0),	%Convert clauses
-    %% Def = kernel_match_error,              %The strict case
+    %%Def = kernel_match_error,              %The strict case
     %% This should be a kernel expression from the first pass.
-    Def = #k_call{anno=[],op=#k_remote{mod=#k_atom{val=erlang},
-				       name=#k_atom{val=exit},
-				       arity=1},
+    Def = #k_call{anno=[compiler_generated],
+		  op=#k_remote{mod=#k_atom{val=erlang},
+			       name=#k_atom{val=exit},
+			       arity=1},
 		  args=[#k_atom{val=kernel_match_error}]},
     {Km,St2} = match(Us, Cs, Def, St1),               %Do the match.
     {Km,St2}.
@@ -877,12 +790,15 @@ match_guard(Cs0, Def0, St0) ->
     {Cs1,Def1,St1} = match_guard_1(Cs0, Def0, St0),
     {build_alt(build_guard(Cs1), Def1),St1}.
 
-match_guard_1([#iclause{sub=Sub,guard=G,body=B}|Cs0], Def0, St0) ->
+match_guard_1([#iclause{anno=A,sub=Sub,guard=G,body=B}|Cs0], Def0, St0) ->
     case is_true_guard(G) of
 	true ->
-	    %% The true clause body becomes to default.
+	    %% The true clause body becomes the default.
 	    {Kb,Pb,St1} = body(B, Sub, St0),
-	    {[],pre_seq(Pb, Kb),St1};
+	    Line = get_line(A),
+	    St2 = maybe_add_warning(Cs0, Line, St1),
+	    St = maybe_add_warning(Def0, Line, St2),
+	    {[],pre_seq(Pb, Kb),St};
 	false ->
 	    {Kg,St1} = guard(G, Sub, St0),
 	    {Kb,Pb,St2} = body(B, Sub, St1),
@@ -891,6 +807,27 @@ match_guard_1([#iclause{sub=Sub,guard=G,body=B}|Cs0], Def0, St0) ->
 	     Def1,St3}
     end;
 match_guard_1([], Def, St) -> {[],Def,St}. 
+
+maybe_add_warning([C|_], Line, St) ->
+    maybe_add_warning(C, Line, St);
+maybe_add_warning([], _Line, St) -> St;
+maybe_add_warning(fail, _Line, St) -> St;
+maybe_add_warning(Ke, MatchLine, St) ->
+    case get_kanno(Ke) of
+	[compiler_generated|_] -> St;
+	Anno ->
+	    Line = get_line(Anno),
+	    Warn = case MatchLine of
+		       none -> nomatch_shadow;
+		       _ -> {nomatch_shadow,MatchLine}
+		   end,
+	    add_warning(Line, Warn, St)
+    end.
+    
+get_line([Line|_]) when is_integer(Line) -> Line;
+get_line([_|T]) -> get_line(T);
+get_line([]) -> none.
+    
 
 %% is_true_guard(Guard) -> bool().
 %% is_false_guard(Guard) -> bool().
@@ -938,7 +875,7 @@ guard_value(#c_call{module=#c_atom{val=erlang},
     end;
 guard_value(#c_try{arg=E,vars=[#c_var{name=X}],body=#c_var{name=X},
 		   handler=#c_atom{val=false}}) ->
-    guard_value(E);    % Simple check in protected
+    guard_value(E);
 guard_value(_) -> unknown.
 
 %% partition([Clause]) -> [[Clause]].
@@ -994,12 +931,12 @@ match_con([U|Us], Cs, Def, St0) ->
     %%ok = io:format("ttcs = ~p~n", [Ttcs]),
     {Scs,St1} =
 	mapfoldl(fun ({T,Tcs}, St) ->
-			 {Sc,S1} =
-			     match_value([U|Us], T, Tcs, fail, St),
+			 {[S|_]=Sc,S1} = match_value([U|Us], T, Tcs, fail, St),
 			 %%ok = io:format("match_con type2 ~p~n", [T]),
-			 {#k_type_clause{type=T,values=Sc},S1} end,
+			 Anno = get_kanno(S),
+			 {#k_type_clause{anno=Anno,type=T,values=Sc},S1} end,
 		 St0, Ttcs),
-    {build_alt(build_select(U, Scs), Def),St1}.
+    {build_alt_1st_no_fail(build_select(U, Scs), Def),St1}.
 
 %% select_bin_con([Clause]) -> [{Type,[Clause]}].
 %%  Extract clauses for the k_bin_seg constructor.  As k_bin_seg
@@ -1031,7 +968,7 @@ match_value(Us, T, Cs0, Def, St0) ->
     Css = group_value(T, Cs0),
     %%ok = io:format("match_value ~p ~p~n", [T, Css]),
     {Css1,St1} = mapfoldl(fun (Cs, St) ->
-				  match_clause(Us, T, Cs, Def, St) end,
+				  match_clause(Us, Cs, Def, St) end,
 			  St0, Css),
     {Css1,St1}.
     %%{#k_select_val{type=T,var=hd(Us),clauses=Css1},St1}.
@@ -1069,17 +1006,18 @@ group_bin_seg([]) -> [].
 %     [[C|Same]|group_value(Rest)];
 % group_value([]) -> [].
 
-%% match_clause([Var], Con, [Clause], Default, State) -> {Clause,State}.
+%% match_clause([Var], [Clause], Default, State) -> {Clause,State}.
 %%  At this point all the clauses have the same "value".  Build one
 %%  select clause for this value and continue matching.  Rename
 %%  aliases as well.
 
-match_clause([U|Us], _, Cs0, Def, St0) ->
+match_clause([U|Us], [C|_]=Cs0, Def, St0) ->
+    Anno = get_kanno(C),
     {Match0,Vs,St1} = get_match(get_con(Cs0), St0),
     Match = sub_size_var(Match0, Cs0),
     {Cs1,St2} = new_clauses(Cs0, U, St1),
     {B,St3} = match(Vs ++ Us, Cs1, Def, St2),
-    {#k_val_clause{val=Match,body=B},St3}.
+    {#k_val_clause{anno=Anno,val=Match,body=B},St3}.
 
 sub_size_var(#k_bin_seg{size=#k_var{name=Name}=Kvar}=BinSeg, [#iclause{sub=Sub}|_]) ->
     BinSeg#k_bin_seg{size=Kvar#k_var{name=get_vsub(Name, Sub)}};
@@ -1127,14 +1065,18 @@ build_guard(Cs) -> #k_guard{clauses=Cs}.
 
 %% build_select(Var, [ConClause]) -> SelectExpr.
 
-build_select(V, Tcs) -> #k_select{var=V,types=Tcs}.
+build_select(V, [Tc|_]=Tcs) ->
+    Anno = get_kanno(Tc),
+    #k_select{anno=Anno,var=V,types=Tcs}.
 
 %% build_alt(First, Then) -> AltExpr.
 %%  Build an alt, attempt some simple optimisation.
 
 build_alt(fail, Then) -> Then;
-build_alt(First, fail) -> First;
-build_alt(First, Then) -> #k_alt{first=First,then=Then}.
+build_alt(First,Then) -> build_alt_1st_no_fail(First, Then).
+
+build_alt_1st_no_fail(First, fail) -> First;
+build_alt_1st_no_fail(First, Then) -> #k_alt{first=First,then=Then}.
 
 %% build_match([MatchVar], MatchExpr) -> Kexpr.
 %%  Build a match expr if there is a match.
@@ -1191,7 +1133,8 @@ arg_val(Arg) ->
 	#k_nil{} -> 0;
 	#k_cons{} -> 2; 
 	#k_tuple{es=Es} -> length(Es);
-	#k_bin_seg{size=S,unit=U,type=T,flags=Fs} -> {S,U,T,Fs};
+	#k_bin_seg{size=S,unit=U,type=T,flags=Fs} ->
+	    {set_kanno(S, []),U,T,Fs};
 	#k_bin_end{} -> 0;
 	#k_binary{} -> 0
     end.
@@ -1201,16 +1144,6 @@ arg_val(Arg) ->
 %%  either end with a #k_break{}, or with #k_return{} or an expression
 %%  which itself can return, #k_enter{}, #k_match{} ... .
 
-% ubody(#iset{anno=A,vars=Vs,arg=E0,body=#ivalues{args=Vs}=B0}, return, St0) ->
-%     case is_enter_expr(E0) of
-% 	true -> uexpr(E0, return, St0);
-% 	false -> 
-% 	    {E1,Eu,St1} = uexpr(E0, {break,Vs}, St0),
-% 	    {B1,Bu,St2} = ubody(B0, return, St1),
-% 	    Ns = lit_list_vars(Vs),
-% 	    Used = union(Eu, subtract(Bu, Ns)),
-% 	    {#k_seq{anno=#k{us=Used,ns=Ns,a=A},arg=E1,body=B1},Used,St2}
-%     end;
 ubody(#iset{vars=[],arg=#iletrec{}=Let,body=B0}, Br, St0) ->
     %% An iletrec{} should never be last.
     St1 = iletrec_funs(Let, St0),
@@ -1273,11 +1206,14 @@ iletrec_funs(#iletrec{defs=Fs}, St0) ->
 %% is_exit_expr(Kexpr) -> bool().
 %%  Test whether Kexpr always exits and never returns.
 
+is_exit_expr(#k_call{op=#k_remote{mod=erlang,name=throw,arity=1}}) -> true;
 is_exit_expr(#k_call{op=#k_remote{mod=erlang,name=exit,arity=1}}) -> true;
+is_exit_expr(#k_call{op=#k_remote{mod=erlang,name=error,arity=1}}) -> true;
+is_exit_expr(#k_call{op=#k_remote{mod=erlang,name=error,arity=2}}) -> true;
 is_exit_expr(#k_call{op=#k_remote{mod=erlang,name=fault,arity=1}}) -> true;
+is_exit_expr(#k_call{op=#k_remote{mod=erlang,name=fault,arity=2}}) -> true;
 is_exit_expr(#k_call{op=#k_internal{name=match_fail,arity=1}}) -> true;
-%%is_exit_expr(#k_bif{op=#k_internal{name=match_fail,arity=1}}) -> true;
-%%is_exit_expr(#k_bif{op=#k_internal{name=raise,arity=2}}) -> true;
+is_exit_expr(#k_bif{op=#k_internal{name=rethrow,arity=2}}) -> true;
 is_exit_expr(#k_receive_next{}) -> true;
 is_exit_expr(_) -> false.
 
@@ -1295,27 +1231,12 @@ is_enter_expr(_) -> false.
 %% uguard(Expr, State) -> {Expr,[UsedVar],State}.
 %%  Tag the guard sequence with its used variables.
 
-uguard(#k_guard_and{anno=A,args=As0}, St0) ->
-    {As1,Used,St1} = foldr(fun (A0, {As,Used,St1}) ->
-				   {A1,Us,St2} = uguard(A0, St1),
-				   {[A1|As],union(Us, Used),St2}
-			   end, {[],[],St0}, As0),
-    {#k_guard_and{anno=#k{us=Used,ns=[],a=A},args=As1},Used,St1};
-uguard(#k_guard_or{anno=A,args=As0}, St0) ->
-    {As1,Used,St1} = foldr(fun (A0, {As,Used,St1}) ->
-				   {A1,Us,St2} = uguard(A0, St1),
-				   {[A1|As],union(Us, Used),St2}
-			   end, {[],[],St0}, As0),
-    {#k_guard_or{anno=#k{us=Used,ns=[],a=A},args=As1},Used,St1};
-uguard(#k_guard_not{anno=A,arg=A0}, St0) ->
-    {A1,Au,St1} = uguard(A0, St0),
-    %%ok = io:fwrite("~w: ~p~n", [?LINE,{A0,A1}]),
-    {#k_guard_not{anno=#k{us=Au,ns=[],a=A},arg=A1},Au,St1};
-uguard(#k_protected{anno=A,body=B0}, St0) ->
+uguard(#k_try{anno=A,arg=B0,vars=[#k_var{name=X}],body=#k_var{name=X},
+	      handler=#k_atom{val=false}}=Try, St0) ->
     {B1,Bu,St1} = uguard(B0, St0),
-    {#k_protected{anno=#k{us=Bu,ns=[],a=A},body=B1},Bu,St1};
+    {Try#k_try{anno=#k{us=Bu,ns=[],a=A},arg=B1},Bu,St1};
 uguard(T, St) ->
-    %%ok = io:fwrite("~w: ~p~n", [?LINE,T0]),
+    %%ok = io:fwrite("~w: ~p~n", [?LINE,T]),
     uguard_test(T, St).
 
 %% uguard_test(Expr, State) -> {Test,[UsedVar],State}.
@@ -1330,9 +1251,10 @@ uguard_expr(#iset{anno=A,vars=Vs,arg=E0,body=B0}, Rs, St0) ->
     {B1,Bu,St2} = uguard_expr(B0, Rs, St1),
     Used = union(Eu, subtract(Bu, Ns)),
     {#k_seq{anno=#k{us=Used,ns=Ns,a=A},arg=E1,body=B1},Used,St2};
-uguard_expr(#k_protected{anno=A,body=B0}, Rs, St0) ->
+uguard_expr(#k_try{anno=A,arg=B0,vars=[#k_var{name=X}],body=#k_var{name=X},
+		   handler=#k_atom{val=false}}=Try, Rs, St0) ->
     {B1,Bu,St1} = uguard_expr(B0, Rs, St0),
-    {#k_protected{anno=#k{us=Bu,ns=lit_list_vars(Rs),a=A},body=B1,ret=Rs},
+    {Try#k_try{anno=#k{us=Bu,ns=lit_list_vars(Rs),a=A},arg=B1,ret=Rs},
      Bu,St1};
 uguard_expr(#k_test{anno=A,op=Op,args=As}=Test, Rs, St) ->
     [] = Rs,					%Sanity check
@@ -1348,6 +1270,15 @@ uguard_expr(#ivalues{anno=A,args=As}, Rs, St) ->
 			  #iset{anno=A,vars=[V],arg=Arg,body=Rhs}
 		  end, #k_atom{val=true}, Rs, As),
     uguard_expr(Sets, [], St);
+uguard_expr(#k_match{anno=A,vars=Vs,body=B0}, Rs, St0) ->
+    %% Experimental support for andalso/orelse in guards.
+    Br = case Rs of
+	     [] -> return;
+	     _ -> {break,Rs}
+	 end,
+    {B1,Bu,St1} = umatch(B0, Br, St0),
+    {#k_match{anno=#k{us=Bu,ns=lit_list_vars(Rs),a=A},
+	      vars=Vs,body=B1,ret=Rs},Bu,St1};
 uguard_expr(Lit, Rs, St) ->
     %% Transform literals to puts here.
     Used = lit_vars(Lit),
@@ -1364,9 +1295,9 @@ uexpr(#k_call{anno=A,op=#k_local{name=F,arity=Ar}=Op,args=As0}=Call, Br, St) ->
     Used = lit_list_vars(As1),
     {case Br of
 	 {break,Rs} ->
-	    Call#k_call{anno=#k{us=Used,ns=lit_list_vars(Rs),a=A},
-			op=Op#k_local{arity=Ar + length(Free)},
-			args=As1,ret=Rs};
+	     Call#k_call{anno=#k{us=Used,ns=lit_list_vars(Rs),a=A},
+			 op=Op#k_local{arity=Ar + length(Free)},
+			 args=As1,ret=Rs};
 	 return ->
 	     #k_enter{anno=#k{us=Used,ns=[],a=A},
 		      op=Op#k_local{arity=Ar + length(Free)},
@@ -1401,15 +1332,8 @@ uexpr(#k_receive{anno=A,var=V,body=B0,timeout=T,action=A0}, Br, St0) ->
      Used,St2};
 uexpr(#k_receive_accept{anno=A}, _, St) ->
     {#k_receive_accept{anno=#k{us=[],ns=[],a=A}},[],St};
-uexpr(#k_receive_reject{anno=A}, _, St) ->
-    {#k_receive_reject{anno=#k{us=[],ns=[],a=A}},[],St};
 uexpr(#k_receive_next{anno=A}, _, St) ->
     {#k_receive_next{anno=#k{us=[],ns=[],a=A}},[],St};
-uexpr(#k_protected{anno=A,body=B}, Br, St0) ->
-    %% Convert unnecessarily converted guard like try back to "normal" try.
-    {[V|Evs],St1} = new_vars(3, St0),
-    uexpr(#k_try{anno=A,arg=B,vars=[V],body=V,
-		 evars=Evs,handler=#k_atom{val=false}}, Br, St1);
 uexpr(#k_try{anno=A,arg=A0,vars=Vs,body=B0,evars=Evs,handler=H0},
       {break,Rs0}, St0) ->
     {Avs,St1} = new_vars(length(Vs), St0),	%Need dummy names here
@@ -1541,7 +1465,8 @@ umatch_list(Ms0, Br, St) ->
 %% op_vars(Op) -> [VarName].
 
 op_vars(#k_local{}) -> [];
-op_vars(#k_remote{}) -> [];
+op_vars(#k_remote{mod=Mod,name=Name}) ->
+    ordsets:from_list([V || #k_var{name=V} <- [Mod,Name]]);
 op_vars(#k_internal{}) -> [];
 op_vars(Atomic) -> lit_vars(Atomic).
 
@@ -1619,24 +1544,20 @@ integers(N, M) when N =< M ->
     [N|integers(N + 1, M)];
 integers(_, _) -> [].
 
-%% XX FIXME Temporary copy from erl_internal to solve bootstrap
-%% problem
+%%%
+%%% Handling of warnings.
+%%%
 
-%% -type new_type_test(Name, Arity) -> bool()
-%%	when Name = atom(), Arity = integer().
-%%  Erlang new-style type tests.
+format_error({nomatch_shadow,Line}) ->
+    M = io_lib:format("this clause cannot match because a previous clause at line ~p "
+		      "always matches", [Line]),
+    lists:flatten(M);
+format_error(nomatch_shadow) ->
+    "this clause cannot match because a previous clause always matches".
 
-new_type_test(is_atom, 1) -> true;
-new_type_test(is_binary, 1) -> true;
-new_type_test(is_constant, 1) -> true;
-new_type_test(is_float, 1) -> true;
-new_type_test(is_function, 1) -> true;
-new_type_test(is_integer, 1) -> true;
-new_type_test(is_list, 1) -> true;
-new_type_test(is_number, 1) -> true;
-new_type_test(is_pid, 1) -> true;
-new_type_test(is_port, 1) -> true;
-new_type_test(is_reference, 1) -> true;
-new_type_test(is_tuple, 1) -> true;
-new_type_test(is_record, 2) -> true;
-new_type_test(_, _) -> false.
+add_warning(none, Term, #kern{ws=Ws}=St) ->
+    St#kern{ws=[{?MODULE,Term}|Ws]};
+add_warning(Line, Term, #kern{ws=Ws}=St) when Line >= 0 ->
+    St#kern{ws=[{Line,?MODULE,Term}|Ws]};
+add_warning(_, _, St) -> St.
+

@@ -37,7 +37,7 @@
 %%%=============================================================================
 %%%=============================================================================
 %%%=============================================================================
-start([], Type, Apps) ->
+start([], _Type, _Apps) ->
     ok;
 start([{Phase,PhaseArgs}|Phases], Type, Apps) ->
     case start_apps(Phase, Type, Apps) of
@@ -51,7 +51,7 @@ start([{Phase,PhaseArgs}|Phases], Type, Apps) ->
 %%%=============================================================================
 %%% Start each application in the phase Phase. 
 %%%=============================================================================
-start_apps(Phase, Type, []) ->
+start_apps(_Phase, _Type, []) ->
     ok;
 start_apps(Phase, Type, [App | Apps]) ->
     case catch run_start_phase(Phase, Type, App) of

@@ -19,7 +19,8 @@
 
 %% File utilities.
 
--export([wildcard/1, wildcard/2, is_dir/1, is_file/1, compile_wildcard/1]).
+-export([wildcard/1, wildcard/2, is_dir/1, is_file/1, is_regular/1, 
+	 compile_wildcard/1]).
 -export([fold_files/5, last_modified/1, file_size/1, ensure_dir/1]).
 
 -include_lib("kernel/include/file.hrl").
@@ -41,9 +42,19 @@ is_dir(Dir) ->
 	    false
     end.
 
-is_file(File) ->
+is_file(File) -> %% exists(File)
     case file:read_file_info(File) of
-	{ok, _} ->
+	{ok, #file_info{type=regular}} ->
+	    true;
+	{ok, #file_info{type=directory}} ->
+	    true;
+        _ ->
+            false
+    end.
+
+is_regular(File) ->
+    case file:read_file_info(File) of
+	{ok, #file_info{type=regular}} ->
 	    true;
         _ ->
             false
@@ -61,28 +72,29 @@ fold_files(Dir, RegExp, Recursive, Fun, Acc) ->
 
 fold_files1(Dir, RegExp, Recursive, Fun, Acc) ->
     case file:list_dir(Dir) of
-	{ok, Files} -> fold_files(Files, Dir, RegExp, Recursive, Fun, Acc);
+	{ok, Files} -> fold_files2(Files, Dir, RegExp, Recursive, Fun, Acc);
 	{error, _}  -> Acc
     end.
 
-fold_files([File|T], Dir, RegExp, Recursive, Fun, Acc0) ->
-    FullName = Dir ++  [$/|File],
-    case is_file(FullName) of
+fold_files2([], _Dir, _RegExp, _Recursive, _Fun, Acc) -> Acc;
+fold_files2([File|T], Dir, RegExp, Recursive, Fun, Acc0) ->
+    FullName = filename:join(Dir, File),
+    case is_regular(FullName) of
 	true  ->
-	    case regexp:match(FullName, RegExp) of
+	    case regexp:match(File, RegExp) of
 		{match, _, _}  -> 
 		    Acc = Fun(FullName, Acc0),
-		    fold_files(T, Dir, RegExp, Recursive, Fun, Acc);
+		    fold_files2(T, Dir, RegExp, Recursive, Fun, Acc);
 		_ ->
-		    fold_files(T, Dir, RegExp, Recursive, Fun, Acc0)
+		    fold_files2(T, Dir, RegExp, Recursive, Fun, Acc0)
 	    end;
 	false ->
 	    case Recursive and is_dir(FullName) of
 		true ->
 		    Acc1 = fold_files1(FullName, RegExp, Recursive, Fun, Acc0),
-		    fold_files(T, Dir, RegExp, Recursive, Fun, Acc1);
+		    fold_files2(T, Dir, RegExp, Recursive, Fun, Acc1);
 		false ->
-		    fold_files(T, Dir, RegExp, Recursive, Fun, Acc0)
+		    fold_files2(T, Dir, RegExp, Recursive, Fun, Acc0)
 	    end
     end.
 

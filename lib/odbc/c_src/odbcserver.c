@@ -173,6 +173,7 @@ static SOCKET create_socket(void);
 static void send_msg(db_result_msg *msg, SOCKET socket);
 static byte * receive_msg(SOCKET socket);
 static Boolean receive_msg_part(SOCKET socket, byte * buffer, size_t msg_len);
+static Boolean send_msg_part(SOCKET socket, byte * buffer, size_t msg_len);
 static void close_socket(SOCKET socket);
 static void init_winsock(void);
 #elif MULTITHREAD_UNIX
@@ -181,6 +182,7 @@ static int create_socket(void);
 static void send_msg(db_result_msg *msg, int socket);
 static byte * receive_msg(int socket);
 static Boolean receive_msg_part(int socket, byte * buffer, size_t msg_len);
+static Boolean send_msg_part(int socket, byte * buffer, size_t msg_len);
 static void close_socket(int socket); 
 #endif
 static void clean_socket_lib(void);
@@ -226,7 +228,7 @@ static diagnos get_diagnos(SQLSMALLINT handleType, SQLHANDLE handle);
 
 /* ------------- Boolean functions ---------------------------------------*/
 
-static Boolean more_result_sets(db_state *state);
+static db_result_msg more_result_sets(db_state *state);
 static Boolean sql_success(SQLRETURN result);
 
 /* ----------------------------- CODE ------------------------------------*/
@@ -309,7 +311,7 @@ DWORD WINAPI database_handler(int port)
     db_result_msg msg;
     byte *request_buffer = NULL;
     db_state state =
-    {NULL, NULL, NULL, NULL, 0, {NULL, 0, 0}, FALSE, FALSE, FALSE};
+    {NULL, NULL, NULL, NULL, 0, {NULL, 0, 0}, FALSE, FALSE, FALSE, FALSE};
     byte request_id;
 #ifdef MULTITHREAD_WIN32
     SOCKET socket;
@@ -519,8 +521,11 @@ static db_result_msg db_query(byte *sql, db_state *state)
 				   connection_handle(state),
 				   &statement_handle(state))))
 	DO_EXIT(EXIT_ALLOC);
+
+    result = SQLExecDirect(statement_handle(state), sql, SQL_NTS);
     
-    if (!sql_success(SQLExecDirect(statement_handle(state), sql, SQL_NTS))){
+    /* SQL_SUCCESS_WITH_INFO at this point indicates error in user input. */
+    if (result != SQL_SUCCESS) {
 	diagnos =  get_diagnos(SQL_HANDLE_STMT, statement_handle(state));
 	msg = encode_error_message(diagnos.error_msg);
 	clean_state(state);
@@ -530,14 +535,20 @@ static db_result_msg db_query(byte *sql, db_state *state)
     ei_x_new_with_version(&dynamic_buffer(state));
   
     /* Handle multiple result sets */
-    do { 
+    do {
+
 	ei_x_encode_list_header(&dynamic_buffer(state), 1);
 	msg = encode_result(state);
 	/* We don't want to continue if an error occured */
 	if (msg.length != 0) { 
 	    break;
 	}
-    } while (more_result_sets(state)); 
+	msg = more_result_sets(state);
+	/* We don't want to continue if an error occured */
+	if (msg.length != 0) { 
+	    break;
+	}
+    } while (exists_more_result_sets(state)); 
   
     ei_x_encode_empty_list(&dynamic_buffer(state));
   
@@ -1545,7 +1556,7 @@ static Boolean receive_msg_part(int socket, byte * buffer, size_t msg_len)
     } else if(nr_bytes_received > 0 && nr_bytes_received < msg_len) {
 	return receive_msg_part(socket, buffer + nr_bytes_received,
 				msg_len - nr_bytes_received); 
-    } else if(nr_bytes_received = -1) { 
+    } else if(nr_bytes_received == -1) { 
 	return FALSE; 
     } else {  /* nr_bytes_received > msg_len */
 	close_socket(socket); 
@@ -1569,15 +1580,37 @@ static void send_msg(db_result_msg *msg, SOCKET socket)
     lengthstr[2] = (len >> 8) & 0x000000FF;
     lengthstr[3] = len &  0x000000FF;
 
-    if(send(socket, (void *)lengthstr, LENGTH_INDICATOR_SIZE, 0) !=
-       LENGTH_INDICATOR_SIZE) {
+    if(!send_msg_part(socket, lengthstr, LENGTH_INDICATOR_SIZE)) {
 	close_socket(socket);
 	DO_EXIT(EXIT_SOCKET_SEND_HEADER);
     }
-
-    if(send(socket, (void *)msg->buffer, len, 0) != len) {
+    
+    if(!send_msg_part(socket, msg->buffer, len)) {
 	close_socket(socket);
 	DO_EXIT(EXIT_SOCKET_SEND_BODY);
+    }
+}
+
+#ifdef MULTITHREAD_WIN32
+static Boolean send_msg_part(SOCKET socket, byte * buffer, size_t msg_len)
+#elif MULTITHREAD_UNIX  
+static Boolean send_msg_part(int socket, byte * buffer, size_t msg_len)
+#endif
+{
+    int nr_bytes_sent = 0;
+    
+    nr_bytes_sent = send(socket, (void *)buffer, msg_len, 0);
+    
+    if(nr_bytes_sent == msg_len) {
+	return TRUE; 
+    } else if(nr_bytes_sent > 0 && nr_bytes_sent < msg_len) {
+	return send_msg_part(socket, buffer + nr_bytes_sent,
+				msg_len - nr_bytes_sent); 
+    } else if(nr_bytes_sent == -1) { 
+	return FALSE; 
+    } else {  /* nr_bytes_sent > msg_len */
+	close_socket(socket); 
+	DO_EXIT(EXIT_SOCKET_SEND_MSGSIZE); 
     }
 }
 
@@ -2166,19 +2199,30 @@ static db_result_msg retrive_scrollable_cursor_support_info(db_state *state)
 /* ------------- Boolean functions ---------------------------------------*/
 
 /* Check if there are any more result sets */
-static Boolean more_result_sets(db_state *state)
+static db_result_msg more_result_sets(db_state *state)
 {
     SQLRETURN result;
-  
+    diagnos diagnos;
+    db_result_msg msg;
+
+    msg = encode_empty_message();
     result = SQLMoreResults(statement_handle(state));
   
     if(sql_success(result)){
-	return TRUE;
-    } else if(result == SQL_NO_DATA) {   
-	return FALSE;
+	exists_more_result_sets(state) = TRUE;
+	return msg;
+    } else if(result == SQL_NO_DATA) {
+	exists_more_result_sets(state) = FALSE;
+	return msg;
     } else {
-	DO_EXIT(EXIT_MORE_RESULTS);
-	return FALSE;
+	/* As we found an error we do not care about any potential more result
+	   sets */
+	exists_more_result_sets(state) = FALSE;
+	diagnos = get_diagnos(SQL_HANDLE_STMT, statement_handle(state));
+	strcat((char *)diagnos.error_msg,
+	       "Failed to create on of the result sets");
+	msg = encode_error_message(diagnos.error_msg);
+	return msg;
     }
 }
  

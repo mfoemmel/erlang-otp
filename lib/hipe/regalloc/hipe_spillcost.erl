@@ -1,15 +1,15 @@
 %%----------------------------------------------------------------------
 %% File    : hipe_spillcost.erl
-%% Author  : Andreas Wallin <d96awa@ida.dis.uu.se>, Thorild Selén
-%% Purpose : Be the biggest the best, better than the rest.
-%% Created : 31 Mar 2000 by Andreas Wallin <d96awa@ida.dis.uu.se>
+%% Author  : Andreas Wallin <d96awa@csd.uu.se>, Thorild Selén
+%% Purpose : Be the biggest, the best, better than the rest.
+%% Created : 31 Mar 2000 by Andreas Wallin <d96awa@csd.uu.se>
 %%----------------------------------------------------------------------
 
 -module(hipe_spillcost).
--author(['d96awa@ida.dis.uu.se', 'd95ths@csd.uu.se']).
+-author(['d96awa@csd.uu.se', 'd95ths@csd.uu.se']).
 
 -export([new/1,
-	 inc_cost/2,
+	 %% inc_cost/2,
 	 inc_costs/2,
 	 ref_in_bb/2,
 	 spill_cost/2 
@@ -93,15 +93,14 @@ inc_cost(Temporary, IG) ->
 %%----------------------------------------------------------------------
 
 ref_in_bb(Ref, IG) ->
-    hipe_ig:set_spill_costs(ref_in_bb(reflist, Ref,
+    hipe_ig:set_spill_costs(ref_in_bb_reflist(Ref,
 				      hipe_ig:spill_costs(IG)),
 			    IG).
-%% The symbol reflist means that we've converted the set to a list now
-%% (and that we've extracted the spill cost info from the IG)
-ref_in_bb(reflist, [], Spill_costs) -> Spill_costs;
-ref_in_bb(reflist, [R|Rs], Spill_costs) ->
+
+ref_in_bb_reflist([], Spill_costs) -> Spill_costs;
+ref_in_bb_reflist([R|Rs], Spill_costs) ->
     New_spill_costs = inc_bb_use(R, Spill_costs),
-    ref_in_bb(reflist, Rs, New_spill_costs).
+    ref_in_bb_reflist(Rs, New_spill_costs).
 
 %%----------------------------------------------------------------------
 %% Function:    nr_of_use

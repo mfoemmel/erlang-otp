@@ -20,7 +20,7 @@
 -module(beam_clean).
 
 -export([module/2]).
--import(lists, [member/2,map/2,foldl/3,mapfoldl/3]).
+-import(lists, [member/2,map/2,foldl/3,mapfoldl/3,reverse/1]).
 
 module({Mod,Exp,Attr,Fs0,_}, _Opt) ->
     Order = [Lbl || {function,_,_,Lbl,_} <- Fs0],
@@ -128,10 +128,18 @@ function_replace({function,Name,Arity,Entry,Asm0}, Dict) ->
 
 replace([{test,Test,{f,Lbl},Ops}|Is], Acc, D) ->
     replace(Is, [{test,Test,{f,label(Lbl, D)},Ops}|Acc], D);
-replace([{select_val,R,{f,Fail},{list,Vls0}}|Is], Acc, D) ->
-    Vls = map(fun ({f,L}) -> {f,label(L, D)};
-		  (Other) -> Other end, Vls0),
-    replace(Is, [{select_val,R,{f,label(Fail, D)},{list,Vls}}|Acc], D);
+replace([{select_val,R,{f,Fail0},{list,Vls0}}|Is], Acc, D) ->
+    Vls1 = map(fun ({f,L}) -> {f,label(L, D)};
+		   (Other) -> Other end, Vls0),
+    Fail = label(Fail0, D),
+    case redundant_values(Vls1, Fail, []) of
+	[] ->
+	    %% Oops, no choices left. The loader will not accept that.
+	    %% Convert to a plain jump.
+	    replace(Is, [{jump,{f,Fail}}|Acc], D);
+	Vls ->
+	    replace(Is, [{select_val,R,{f,Fail},{list,Vls}}|Acc], D)
+    end;
 replace([{select_tuple_arity,R,{f,Fail},{list,Vls0}}|Is], Acc, D) ->
     Vls = map(fun ({f,L}) -> {f,label(L, D)};
 		  (Other) -> Other end, Vls0),
@@ -162,6 +170,8 @@ replace([{make_fun,{f,Lbl},U1,U2}|Is], Acc, D) ->
     replace(Is, [{make_fun,{f,label(Lbl, D)},U1,U2}|Acc], D);
 replace([{make_fun2,{f,Lbl},U1,U2,U3}|Is], Acc, D) ->
     replace(Is, [{make_fun2,{f,label(Lbl, D)},U1,U2,U3}|Acc], D);
+replace([{bs_init2,{f,Lbl},Sz,Words,R,F,Dst}|Is], Acc, D) when Lbl =/= 0 ->
+    replace(Is, [{bs_init2,{f,label(Lbl, D)},Sz,Words,R,F,Dst}|Acc], D);
 replace([{bs_put_integer,{f,Lbl},Bits,Unit,Fl,Val}|Is], Acc, D) when Lbl =/= 0 ->
     replace(Is, [{bs_put_integer,{f,label(Lbl, D)},Bits,Unit,Fl,Val}|Acc], D);
 replace([{bs_put_binary,{f,Lbl},Bits,Unit,Fl,Val}|Is], Acc, D) when Lbl =/= 0 ->
@@ -170,6 +180,10 @@ replace([{bs_put_float,{f,Lbl},Bits,Unit,Fl,Val}|Is], Acc, D) when Lbl =/= 0 ->
     replace(Is, [{bs_put_float,{f,label(Lbl, D)},Bits,Unit,Fl,Val}|Acc], D);
 replace([{bs_final,{f,Lbl},R}|Is], Acc, D) when Lbl =/= 0 ->
     replace(Is, [{bs_final,{f,label(Lbl, D)},R}|Acc], D);
+replace([{bs_add,{f,Lbl},Src,Dst}|Is], Acc, D) when Lbl =/= 0 ->
+    replace(Is, [{bs_add,{f,label(Lbl, D)},Src,Dst}|Acc], D);
+replace([{bs_bits_to_bytes,{f,Lbl},Bits,Dst}|Is], Acc, D) when Lbl =/= 0 ->
+    replace(Is, [{bs_bits_to_bytes,{f,label(Lbl, D)},Bits,Dst}|Acc], D);
 replace([I|Is], Acc, D) ->
     replace(Is, [I|Acc], D);
 replace([], Acc, _) -> Acc.
@@ -180,3 +194,8 @@ label(Old, D) ->
 	error -> throw({error,{undefined_label,Old}})
     end.
 	    
+redundant_values([_,{f,Fail}|Vls], Fail, Acc) ->
+    redundant_values(Vls, Fail, Acc);
+redundant_values([Val,Lbl|Vls], Fail, Acc) ->
+    redundant_values(Vls, Fail, [Lbl,Val|Acc]);
+redundant_values([], _, Acc) -> reverse(Acc).

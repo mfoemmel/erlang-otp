@@ -143,20 +143,23 @@ public class OtpMbox {
    * @return an {@link OtpErlangObject OtpErlangObject} representing
    * the body of the next message waiting in this mailbox.
    *
+   * @exception OtpErlangDecodeException if the message can not be
+   * decoded.
+   *
    * @exception OtpErlangExit if a linked {@link OtpErlangPid pid} has
    * exited or has sent an exit signal to this mailbox.
-   *
    **/
   public OtpErlangObject receive() 
-    throws OtpErlangExit {
+    throws OtpErlangExit, OtpErlangDecodeException {
     try {
       return receiveMsg().getMsg();
     }
     catch (OtpErlangExit e) {
       throw e;
     }
-    catch (Exception f) { }
-    return null;
+    catch (OtpErlangDecodeException f) {
+      throw f;
+    }
   }
   
   /**
@@ -168,12 +171,14 @@ public class OtpMbox {
    * @return an {@link OtpErlangObject OtpErlangObject} representing
    * the body of the next message waiting in this mailbox.
    *
+   * @exception OtpErlangDecodeException if the message can not be
+   * decoded.
+   *
    * @exception OtpErlangExit if a linked {@link OtpErlangPid pid} has
    * exited or has sent an exit signal to this mailbox.
-   *
    **/
   public OtpErlangObject receive(long timeout) 
-    throws OtpErlangExit {
+    throws OtpErlangExit, OtpErlangDecodeException {
     try {
       OtpMsg m = receiveMsg(timeout);
       if (m != null) return m.getMsg();
@@ -181,7 +186,10 @@ public class OtpMbox {
     catch (OtpErlangExit e) {
       throw e;
     }
-    catch (Exception f) { }
+    catch (OtpErlangDecodeException f) {
+      throw f;
+    }
+    catch (InterruptedException g) { }
     return null;
   }
 
@@ -244,7 +252,7 @@ public class OtpMbox {
     case OtpMsg.exit2Tag:
       try {
 	OtpErlangObject o = m.getMsg();
-	throw new OtpErlangExit(o.toString(),m.getSenderPid());
+	throw new OtpErlangExit(o,m.getSenderPid());
       }
       catch (OtpErlangDecodeException e) {
 	throw new OtpErlangExit("unknown",m.getSenderPid());
@@ -281,7 +289,7 @@ public class OtpMbox {
     case OtpMsg.exit2Tag:
       try {
 	OtpErlangObject o = m.getMsg();
-	throw new OtpErlangExit(o.toString(),m.getSenderPid());
+	throw new OtpErlangExit(o,m.getSenderPid());
       }
       catch (OtpErlangDecodeException e) {
 	throw new OtpErlangExit("unknown",m.getSenderPid());
@@ -343,16 +351,47 @@ public class OtpMbox {
    **/
   public void send(String name, String node, OtpErlangObject msg) {
     try {
-      if (node.equals(home.node())) {
+      String currentNode = home.node();
+      if (node.equals(currentNode))
 	send(name,msg);
-      }
+      else if (node.indexOf('@',0)<0 && 
+	       node.equals(currentNode.substring(0,currentNode.indexOf('@',0))))
+	send(name,msg);
+
       else {
+	// other node
 	OtpCookedConnection conn = home.getConnection(node);
 	if (conn == null) return;
 	conn.send(self,name,msg);
       }
     }
     catch (Exception e) {}
+  }
+
+  /**
+   * Close this mailbox with the given reason.
+   *
+   * <p> After this operation, the mailbox will no longer be able to
+   * receive messages. Any delivered but as yet unretrieved messages
+   * can still be retrieved however. </p>
+   *
+   * <p> If there are links from this mailbox to other {@link
+   * OtpErlangPid pids}, they will be broken when this method is
+   * called and exit signals will be sent. </p>
+   *
+   * @param reason an Erlang term describing the reason for the exit.
+   **/
+  public void exit(OtpErlangObject reason) {
+    home.closeMbox(this, reason);
+  }
+
+  /**
+   * Equivalent to <code>exit(new OtpErlangAtom(reason))</code>. </p>
+   *
+   * @see #exit(OtpErlangObject)
+   **/
+  public void exit(String reason) {
+    exit(new OtpErlangAtom(reason));
   }
 
   /**
@@ -364,16 +403,26 @@ public class OtpMbox {
    * @param to the {@link OtpErlangPid pid} to which the exit signal
    * should be sent.
    *
-   * @param reason a string indicating the reason for the exit.
+   * @param reason an Erlang term indicating the reason for the exit.
    **/
   // it's called exit, but it sends exit2 
-  public void exit(OtpErlangPid to, String reason) {
+  public void exit(OtpErlangPid to, OtpErlangObject reason) {
     exit(2,to,reason);
+  }
+
+  /**
+   * <p> Equivalent to <code>exit(to, new
+   * OtpErlangAtom(reason))</code>. </p>
+   *
+   * @see #exit(OtpErlangPid, OtpErlangObject)
+   **/
+  public void exit(OtpErlangPid to, String reason) {
+    exit(to, new OtpErlangAtom(reason));
   }
 
   // this function used internally when "process" dies
   // since Erlang discerns between exit and exit/2.
-  private void exit(int arity, OtpErlangPid to, String reason) {
+  private void exit(int arity, OtpErlangPid to, OtpErlangObject reason) {
     try {
       String node = to.node();
       if (node.equals(home.node())) {
@@ -530,8 +579,10 @@ public class OtpMbox {
    *
    * <p> If there are links from this mailbox to other {@link
    * OtpErlangPid pids}, they will be broken when this method is
-   * called and exit signals will be sent. </p>
+   * called and exit signals with reason 'normal' will be sent. </p>
    *
+   * <p> This is equivalent to {@link #exit(String)
+   * exit("normal")}. </p>
    **/
   public void close() {
     home.closeMbox(this);
@@ -586,7 +637,7 @@ public class OtpMbox {
   }
 
   // used to break all known links to this mbox
-  void breakLinks(String reason) {
+  void breakLinks(OtpErlangObject reason) {
     Link[] l = links.clearLinks();
 
     if (l != null) {

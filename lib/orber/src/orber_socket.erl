@@ -36,7 +36,8 @@
 %% External exports
 %%-----------------------------------------------------------------
 -export([start/0, connect/4, listen/3, accept/2, write/3,
-	 controlling_process/3, close/2, peername/2, setopts/3]).
+	 controlling_process/3, close/2, peername/2, sockname/2, 
+	 peerdata/2, sockdata/2, setopts/3, clear/2, shutdown/3]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -153,14 +154,20 @@ listen(normal, Port, Options0) ->
 		   _MaxRequests ->
 		       [{active, once}|Options1]
 	       end,
+    Options3 = case orber_env:iiop_packet_size() of
+		   infinity ->
+		       Options2;
+		   MaxSize ->
+		       [{packet_size, MaxSize}|Options1]
+	       end,
     case catch gen_tcp:listen(Port, [binary, {packet,cdr},
 				     {reuseaddr,true}, {backlog, Backlog} |
-				     Options2]) of
+				     Options3]) of
 	{ok, ListenSocket} ->
 	    {ok, ListenSocket, check_port(Port, normal, ListenSocket)};
 	{error, eaddrinuse} ->
 	    AllOpts = [binary, {packet,cdr}, 
-		       {reuseaddr,true} | Options2],
+		       {reuseaddr,true} | Options3],
 	    orber:dbg("[~p] orber_socket:listen(normal, ~p, ~p);~n"
 		      "Looks like the listen port is already in use.~n"
 		      "Check if another Orber is started~n"
@@ -170,7 +177,7 @@ listen(normal, Port, Options0) ->
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
 	Error ->
 	    AllOpts = [binary, {packet,cdr}, 
-		       {reuseaddr,true} | Options2],
+		       {reuseaddr,true} | Options3],
 	    orber:dbg("[~p] orber_socket:listen(normal, ~p, ~p);~n"
 		      "Failed with reason: ~p", 
 		      [?LINE, Port, AllOpts, Error], ?DEBUG_LEVEL),
@@ -193,12 +200,18 @@ listen(ssl, Port, Options0) ->
 		   _MaxRequests ->
 		       [{active, once}|Options1]
 	       end,
+    Options3 = case orber_env:iiop_packet_size() of
+		   infinity ->
+		       Options2;
+		   MaxSize ->
+		       [{packet_size, MaxSize}|Options1]
+	       end,
     case catch ssl:listen(Port, [binary, {packet,cdr}, 
-				 {backlog, Backlog} | Options2]) of
+				 {backlog, Backlog} | Options3]) of
 	{ok, ListenSocket} ->
 	    {ok, ListenSocket, check_port(Port, ssl, ListenSocket)};
 	{error, eaddrinuse} ->	
-	    AllOpts = [binary, {packet,cdr} | Options2],
+	    AllOpts = [binary, {packet,cdr} | Options3],
 	    orber:dbg("[~p] orber_socket:listen(ssl, ~p, ~p);~n"
 		      "Looks like the listen port is already in use. Check if~n"
 		      "another Orber is started on the same node and uses the~n"
@@ -207,7 +220,7 @@ listen(ssl, Port, Options0) ->
 		      [?LINE, Port, AllOpts], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
 	Error ->
-	    AllOpts = [binary, {packet,cdr} | Options2],
+	    AllOpts = [binary, {packet,cdr} | Options3],
 	    orber:dbg("[~p] orber_socket:listen(ssl, ~p, ~p);~n"
 		      "Failed with reason: ~p", 
 		      [?LINE, Port, AllOpts, Error], ?DEBUG_LEVEL),
@@ -266,21 +279,97 @@ controlling_process(ssl, Socket, Pid) ->
 %% Get peername
 %% 
 peername(normal, Socket) ->
-    create_peerdata(inet:peername(Socket));
+    inet:peername(Socket);
 peername(ssl, Socket) ->
-    create_peerdata(ssl:peername(Socket)).
+    ssl:peername(Socket).
+
+%%-----------------------------------------------------------------
+%% Get peerdata
+%% 
+peerdata(normal, Socket) ->
+    create_data(inet:peername(Socket));
+peerdata(ssl, Socket) ->
+    create_data(ssl:peername(Socket)).
+
+%%-----------------------------------------------------------------
+%% Get sockname
+%% 
+sockname(normal, Socket) ->
+    inet:sockname(Socket);
+sockname(ssl, Socket) ->
+    ssl:sockname(Socket).
+
+%%-----------------------------------------------------------------
+%% Get sockdata
+%% 
+sockdata(normal, Socket) ->
+    create_data(inet:sockname(Socket));
+sockdata(ssl, Socket) ->
+    create_data(ssl:sockname(Socket)).
+
 
 %% IPv4
-create_peerdata({ok, {{N1,N2,N3,N4}, Port}}) ->
+create_data({ok, {{N1,N2,N3,N4}, Port}}) ->
     {lists:concat([N1, ".", N2, ".", N3, ".", N4]), Port};
 %% IPv6 
-create_peerdata({ok, {{N1,N2,N3,N4,N5,N6,N7,N8}, Port}}) ->
+create_data({ok, {{N1,N2,N3,N4,N5,N6,N7,N8}, Port}}) ->
     {lists:concat([N1, ":", N2, ":", N3, ":", N4, ":",
 		   N5, ":", N6, ":", N7, ":", N8]), Port};
-create_peerdata(What) ->
-    orber:dbg("[~p] orber_socket:peername();~n"
+create_data(What) ->
+    orber:dbg("[~p] orber_socket:peername() or orber_socket:sockname();~n"
 	      "Failed with reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
     {"Unable to lookup peername", 0}.
+
+
+%%-----------------------------------------------------------------
+%% Shutdown Connection
+%% How = read | write | read_write
+shutdown(normal, Socket, How) ->
+    gen_tcp:shutdown(Socket, How);
+shutdown(ssl, Socket, read_write) ->
+    %% SSL do no support shutdown. For now we'll use this solution instead.
+    close(ssl, Socket);
+shutdown(ssl, _Socket, _How) ->
+    {error, undefined}.
+
+%%-----------------------------------------------------------------
+%% Remove Messages from queue
+%%
+clear(normal, Socket) ->
+    tcp_clear(Socket);
+clear(ssl, Socket) ->
+    ssl_clear(Socket).
+
+
+
+%% Inet also checks for the following messages:
+%%  * {S, {data, Data}}
+%%  * {inet_async, S, Ref, Status}, 
+%%  * {inet_reply, S, Status}
+%% SSL doesn't.
+tcp_clear(Socket) ->
+    receive
+        {tcp, Socket, _Data} ->
+            tcp_clear(Socket);
+        {tcp_closed, Socket} ->
+            tcp_clear(Socket);
+        {tcp_error, Socket, _Reason} ->
+            tcp_clear(Socket)
+    after 0 -> 
+            ok
+    end.
+
+ssl_clear(Socket) ->
+    receive
+        {ssl, Socket, _Data} ->
+            ssl_clear(Socket);
+        {ssl_closed, Socket} ->
+            ssl_clear(Socket);
+        {ssl_error, Socket, _Reason} ->
+            ssl_clear(Socket)
+    after 0 -> 
+            ok
+    end.
 
 
 

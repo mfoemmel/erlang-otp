@@ -10,9 +10,9 @@
 %%  History  :	* 2001-11-16 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: happi $
-%%              $Date: 2002/07/24 23:10:28 $
-%%              $Revision: 1.13 $
+%%              $Author: kostis $
+%%              $Date: 2004/06/22 10:14:01 $
+%%              $Revision: 1.17 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -76,7 +76,7 @@ rewrite(Cfg, TempMap, FpMap, LastSpillPos, Options) ->
   ?opt_stop_timer("Caller Saves"),
   ?opt_start_timer("Opt Frame"),
   %% hipe_sparc_cfg:pp(Cfg1),
-  Cfg2 =   hipe_sparc_opt_frame:cfg(Cfg1),
+  Cfg2 = hipe_sparc_opt_frame:cfg(Cfg1),
   %% hipe_sparc_cfg:pp(Cfg2),
   ?opt_stop_timer("Opt Frame"),
   ?stop_time_caller_saves(Options),
@@ -90,16 +90,16 @@ rewrite(Cfg, TempMap, FpMap, LastSpillPos, Options) ->
 %% Go through each BasicBlock
 traverse(BBs, State) ->
   State1 = lists:foldr(fun handle_bb/2,State,BBs),  
-  {instrs(State1),spill_index(State1),new_blocks(State1)}.
+  {state__instrs(State1),state__spill_index(State1),state__newblocks(State1)}.
   
 %% For each BasicBlock go through the code bottom-up.
 handle_bb(BB,State) ->
   %% io:format("--------------\n",[]),
-  Code =  hipe_bb:code(bb(cfg(State),BB, ?TARGET)),
-  State1 = enter_bb(BB, State),
+  Code =  hipe_bb:code(bb(state__cfg(State),BB, ?TARGET)),
+  State1 = state__enter_bb(BB, State),
   State2 = bottom_up(Code, State1),
   %% io:format("-- Block ~w --\n",[BB]),
-  add_instrs(hipe_sparc:label_create(BB,[]), State2).
+  state__add_instrs(hipe_sparc:label_create(BB), State2).
 
 %% Go through each instruction from the last to the first.
 %% (Collect liveness from live out and backwards.)
@@ -110,12 +110,12 @@ bottom_up(Is, State) ->
 handle(I,State) ->
   {FpDefs, Defs}  = defines(I, ?TARGET),
   {FpUses, Uses} = uses(I, ?TARGET),
-  LiveOut = live(State)-- hipe_sparc_registers:global(),
+  LiveOut = state__live(State)-- hipe_sparc_registers:global(),
   Live = (LiveOut--Defs), %% Remove killed
   LiveIn = ordsets:union(ordsets:from_list(Live),ordsets:from_list(Uses))
     -- hipe_sparc_registers:global(),
 
-  FpLiveOut = live_fp(State),
+  FpLiveOut = state__live_fp(State),
   FpLive = (FpLiveOut--FpDefs), %% Remove killed
   FpLiveIn = ordsets:union(ordsets:from_list(FpLive),ordsets:from_list(FpUses)),
 
@@ -128,8 +128,8 @@ handle(I,State) ->
   State1 = update_call(I,State,Live, LiveOut, FpLive),
 
   %% Update the liveness information in the state.
-  State2 = update_live(LiveIn, State1),
-  update_live_fp(FpLiveIn, State2).
+  State2 = state__update_live(LiveIn, State1),
+  state__update_live_fp(FpLiveIn, State2).
 
 
 %% XXX: Make this target independent.
@@ -142,7 +142,7 @@ update_call(I,State,Live,_LiveOut,FpLive) ->
 	  %% No need for extra saving.
 	  %% Just add the live-info to the stack descriptor 
 	  %%  of the call.
-	  add_instrs(set_live_slots(I,State,Live),State);
+	  state__add_instrs(set_live_slots(I,State,Live),State);
 	
 	{ToSpill, ToSpillFp} ->
 	  %% We have at least one live temp that is not on the stack
@@ -152,19 +152,18 @@ update_call(I,State,Live,_LiveOut,FpLive) ->
     _ ->
       %% This is not a call, nothing to save.
       %% Just add the instruction to the state.
-      add_instrs(I,State)
+      state__add_instrs(I,State)
   end.
 
 
 
-%% Ugly function that finds the stackslots of all
-%% live temps and adds these to the stack descriptor
-%% of the call. 
+%% Ugly function that finds the stack slots of all live temps
+%% and adds these to the stack descriptor of the call. 
 set_live_slots(Call,State,LiveOut) ->
   Live =
     [stack_pos(T,State, reg) || T <- LiveOut],
   SD = hipe_sparc:call_link_stack_desc(Call),
-  NewSD = hipe_sparc_stack_descriptors:set_live(SD, Live),
+  NewSD = hipe_sparc:sdesc_live_slots_update(SD, Live),
   hipe_sparc:call_link_stack_desc_update(Call,NewSD).
 
 %% Helper function to set_live_slots.
@@ -172,14 +171,14 @@ set_live_slots(Call,State,LiveOut) ->
 stack_pos(T,State, Type) ->
   Map = 
     case Type of
-      reg ->tempmap(State);
-      fp_reg->fpmap(State)
+      reg -> state__tempmap(State);
+      fp_reg-> state__fpmap(State)
     end,
   case hipe_temp_map:find(T, Map) of
     {spill, P} ->
       P;
     _ ->
-      element(1,get_pos(T,extramap(State), Type))
+      element(1,get_pos(T,state__extramap(State), Type))
   end.
       
 %% XXX: Make target independent.
@@ -199,7 +198,7 @@ handle_call(I,State,ToSpill,LiveOut, FpLive)->
   %%        code to both branches of the call.
 
 
-  ExtraMap = extramap(State),
+  ExtraMap = state__extramap(State),
   {SpillPositions, NewExtraMap0} =
     get_spill_positions(ToSpill, ExtraMap, State, reg),
   {Saves0, Restores0} = gen_save_restore(SpillPositions, reg),
@@ -207,12 +206,12 @@ handle_call(I,State,ToSpill,LiveOut, FpLive)->
     get_spill_positions(FpLive, NewExtraMap0, State, fp_reg),
   {Saves1, Restores1} = gen_save_restore(SpillPositions_fp, fp_reg),
 
-  State1 = update_extramap(NewExtraMap, State),
+  State1 = state__update_extramap(NewExtraMap, State),
 
   ContLab = hipe_sparc:call_link_continuation(I),
   FailLab = hipe_sparc:call_link_fail(I),
   NewContLab = hipe_sparc:label_create_new(),
-  GotoCont =  hipe_sparc:goto_create(ContLab,[]),
+  GotoCont =  hipe_sparc:goto_create(ContLab),
   {NewI,State2} =
     case ContLab of
       [] -> {I, State1};
@@ -221,7 +220,7 @@ handle_call(I,State,ToSpill,LiveOut, FpLive)->
 	hipe_sparc:call_link_continuation_update(
 	  I,
 	  hipe_sparc:label_name(NewContLab)),
-	add_block(hipe_sparc:label_name(NewContLab),ContLab, State1)}
+	state__add_block(hipe_sparc:label_name(NewContLab),ContLab, State1)}
     end,
 
    
@@ -236,7 +235,7 @@ handle_call(I,State,ToSpill,LiveOut, FpLive)->
 	 NewCall,
 	 Restores0,
 	 Restores1],
-      add_instrs(NewCode,State2);
+      state__add_instrs(NewCode,State2);
     _ ->
       case FailLab of
 	[] ->
@@ -248,16 +247,16 @@ handle_call(I,State,ToSpill,LiveOut, FpLive)->
 	     Restores0,
 	     Restores1,
 	     GotoCont],
-	  add_instrs(NewCode,State2);
+	  state__add_instrs(NewCode,State2);
 	_ ->
 	  NewFailLab = hipe_sparc:label_create_new(),
-	  GotoFail =  hipe_sparc:goto_create(FailLab,[]),
+	  GotoFail =  hipe_sparc:goto_create(FailLab),
 	  NewI2 = 
 	    hipe_sparc:call_link_fail_update(
 	      NewCall,
 	      hipe_sparc:label_name(NewFailLab)),
 	  State3 = 
-	    add_block(hipe_sparc:label_name(NewFailLab),FailLab, State2),
+	    state__add_block(hipe_sparc:label_name(NewFailLab),FailLab, State2),
 	  NewCode = 
 	    [Saves0, 
 	     Saves1,
@@ -270,7 +269,7 @@ handle_call(I,State,ToSpill,LiveOut, FpLive)->
 	     Restores0,
 	     Restores1,
 	     GotoFail],
-	  add_instrs(NewCode,State3)
+	  state__add_instrs(NewCode,State3)
       end
   end.
 
@@ -278,8 +277,8 @@ handle_call(I,State,ToSpill,LiveOut, FpLive)->
 get_spill_positions([T|Temps], ExtraMap, State, Type) ->
   TempMap = 
     case Type of
-      reg -> tempmap(State);
-      fp_reg -> fpmap(State)
+      reg -> state__tempmap(State);
+      fp_reg -> state__fpmap(State)
     end,
   {Pos, NewMap} = 
     case hipe_temp_map:is_spilled(T, TempMap) of
@@ -377,63 +376,48 @@ insert(T,Next,Map) ->
 
 %% Create a new state.
 new_state(Liveness,  Cfg, TempMap, FpMap, LastSpillPos) ->
-  #state{instrs=[], 
+  #state{instrs = [], 
 	 extramap = new_extramap(LastSpillPos), 
 	 live = [],
 	 live_fp = [],
-	 liveness=Liveness,  
-	 cfg=Cfg,
-	 tempmap=TempMap,
-	 fpmap=FpMap,
-	newblocks=[]}.  
+	 liveness = Liveness,  
+	 cfg = Cfg,
+	 tempmap = TempMap,
+	 fpmap = FpMap,
+	 newblocks = []}.
 
 %% ____________________________________________________________________
 %% Selectors
-instrs(State) -> 
-  lists:flatten(State#state.instrs).
-extramap(State)->
-  State#state.extramap.
-live(State)->
-  State#state.live.
-live_fp(State)->
-  State#state.live_fp.
-liveness(State)->
-  State#state.liveness.
-cfg(State)->
-  State#state.cfg.
-tempmap(State)->
-  State#state.tempmap.
-fpmap(State)->
-  State#state.fpmap.
-spill_index(State) ->
-  index(State#state.extramap).
-new_blocks(State) ->
-  State#state.newblocks.
+
+state__instrs(#state{instrs=Instrs}) -> lists:flatten(Instrs).
+state__extramap(#state{extramap=ExtraMap}) -> ExtraMap.
+state__live(#state{live=Live}) -> Live.
+state__live_fp(#state{live_fp=LiveFP}) -> LiveFP.
+state__liveness(#state{liveness=Liveness}) -> Liveness.
+state__cfg(#state{cfg=CFG}) -> CFG.
+state__tempmap(#state{tempmap=TempMap}) -> TempMap.
+state__fpmap(#state{fpmap=FpMap}) -> FpMap.
+state__newblocks(#state{newblocks=NewBlocks}) -> NewBlocks.
+
+state__spill_index(State) -> index(state__extramap(State)).
 
 %% ____________________________________________________________________
 %% Updates
 
-enter_bb(BB, State) ->
-  {FpReg, Reg} = liveout(liveness(State), BB, hipe_sparc_specific),
+state__enter_bb(BB, State) ->
+  {FpReg, Reg} = liveout(state__liveness(State), BB, hipe_sparc_specific),
   State#state{live=ordsets:from_list(Reg), live_fp=ordsets:from_list(FpReg)}.
-		     
-  
-add_instrs(I,State) ->
-  State#state{instrs=[I|State#state.instrs]}.
-
-update_extramap(NewExtraMap, State) ->
+state__add_instrs(I,State) ->
+  State#state{instrs=[I|state__instrs(State)]}.
+state__update_extramap(NewExtraMap, State) ->
   State#state{extramap=NewExtraMap}.
-
-update_live(NewLive, State) ->
+state__update_live(NewLive, State) ->
   State#state{live=NewLive}.
-
-update_live_fp(NewLive, State) ->
+state__update_live_fp(NewLive, State) ->
   State#state{live_fp=NewLive}.
+state__add_block(New,Old, State) ->
+   State#state{newblocks=[{New,Old}|state__newblocks(State)]}.
 
-add_block(New,Old, State) ->
-   State#state{newblocks=[{New,Old}|State#state.newblocks]}.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Interface to target specific external functions.

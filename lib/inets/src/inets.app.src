@@ -2,17 +2,25 @@
  [{description,"INETS  CXC 138 49"},
   {vsn,"%VSN%"},
   {modules,[
+	    inets_sup,		
 	    %% FTP
 	    ftp,
 
             %% HTTP client:
             http,
-            http_lib,
             httpc_handler,
             httpc_manager,
-            uri,
+            http_uri,
 
-            %% HTTP server:
+            %% HTTP used by both client and server 
+	    http_base_64,
+	    http_chunk,
+	    http_cookie,	
+	    http_request,
+	    http_response,	
+	    http_transport,
+	    
+	    %% HTTP server:
             httpd,
             httpd_acceptor,
             httpd_acceptor_sup,
@@ -20,14 +28,12 @@
             httpd_example,
             httpd_manager,
             httpd_misc_sup,
-            httpd_parse,
             httpd_request_handler,
             httpd_response,
             httpd_socket,
             httpd_sup,
             httpd_util,
             httpd_verbosity,
-            inets_sup,
             mod_actions,
             mod_alias,
             mod_auth,
@@ -51,6 +57,6 @@
 	    mod_security_server,
 	    mod_trace   
 	]},
-  {registered,[inets_sup]},
+  {registered,[inets_sup, httpc_manager]},
   {applications,[kernel,stdlib]},
   {mod,{inets_sup,[]}}]}.

@@ -31,7 +31,7 @@ init() ->
     I= gs:start(),
     W= gs:window(I,[{title,"Ball"},{width,300},{height,300},{map,true}]),
     C= gs:canvas(W,[{width,300},{height,300},{bg,yellow}]),
-    B= gs:button(W,[{label, {text,"Quit Demo"}},{x,100}]),
+    gs:button(W,[{label, {text,"Quit Demo"}},{x,100}]),
     Ball = gs:oval(C,[{coords,[{0,0},{50,50}]},{fill,red}]),
     ball(Ball,0,0,5.5,4.1).
 
@@ -40,7 +40,7 @@ ball(Ball,X,Y,DX,DY) ->
     {NY,NDY} = cc(Y,DY),
     gs:config(Ball,{move,{DX,DY}}),    
     receive
-	{gs,Id,click,_,_} -> exit(normal);
+	{gs,_,click,_,_} -> exit(normal);
 	{gs,_,destroy,_,_} -> exit(normal)
     after 20 ->
 	    true

@@ -49,7 +49,7 @@ start(Text,Items) ->
 init(Pid,Text,Items) ->
     S=gs:start(),
     Win=gs:window(S,[{width,250},{height,270},{title,"Browser"}]),
-    Lbl=gs:label(Win,[{label,{text,Text}},{width,250}]),
+    gs:label(Win,[{label,{text,Text}},{width,250}]),
     Entry=gs:entry(Win,[{y,35},{width,240},{x,5},
 			{keypress,true},{setfocus,true}]),
     Lb=gs:listbox(Win,[{x,5},{y,65},{width,160},{height,195},
@@ -72,10 +72,10 @@ browser_loop(Pid,Ok,Cancel,Entry,Lb) ->
 	    Pid ! {browser,{ok,Txt}};
 	{gs,Entry,keypress,_,_} ->
 	    browser_loop(Pid,Ok,Cancel,Entry,Lb);
-	{gs,Lb,click,_,[Idx, Txt|_]} ->
+	{gs,Lb,click,_,[_Idx, Txt|_]} ->
 	    gs:config(Entry,{text,Txt}),
 	    browser_loop(Pid,Ok,Cancel,Entry,Lb);
-	{gs,Lb,doubleclick,_,[Idx, Txt|_]} ->
+	{gs,Lb,doubleclick,_,[_Idx, Txt|_]} ->
 	    Pid ! {browser,{ok,Txt}};
 	{gs,_,destroy,_,_} ->
 	    Pid ! {browser,cancel};

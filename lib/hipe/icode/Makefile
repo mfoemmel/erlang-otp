@@ -9,10 +9,6 @@
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
 #     $Id$
 #
 
@@ -42,11 +38,13 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 DOC_MODULES = hipe_icode hipe_icode_cfg hipe_icode_liveness \
-	hipe_icode_prop hipe_icode_heap_test hipe_icode_cleanup \
-	hipe_update_catches hipe_beam_to_icode hipe_icode_primops \
-	hipe_icode_binary_pass hipe_icode_ssa_phi hipe_icode_ssa_rename \
-	hipe_icode_ssa hipe_icode_ssa_propagate hipe_icode_ssa_check \
-	hipe_icode_type hipe_icode_ssa_copy_prop hipe_icode_pp hipe_icode_fp
+	hipe_icode_heap_test \
+	hipe_icode_exceptions hipe_beam_to_icode hipe_icode_primops \
+	hipe_icode_binary_pass \
+	hipe_icode_ssa \
+	hipe_icode_type hipe_icode_ssa_copy_prop hipe_icode_pp hipe_icode_fp \
+	hipe_icode_ssa_const_prop \
+	hipe_icode_split_arith hipe_icode_callgraph
 
 MODULES = $(DOC_MODULES) hipe_icode_ebb 
 
@@ -83,7 +81,7 @@ clean:
 	rm -f core
 
 $(DOCS)/%.html:%.erl
-	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s erlang halt
+	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s init stop
 
 # ----------------------------------------------------
 # Special Build Targets
@@ -102,19 +100,17 @@ release_spec: opt
 
 release_docs_spec:
 
-$(EBIN)/hipe_icode.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl
+$(EBIN)/hipe_icode.beam: hipe_icode.hrl ../main/hipe.hrl ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_icode_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_icode_ebb.beam: ../flow/ebb.inc
-$(EBIN)/hipe_icode_liveness.beam: ../util/hipe_vector.hrl ../flow/liveness.inc
+$(EBIN)/hipe_icode_liveness.beam: ../flow/liveness.inc
 $(EBIN)/hipe_icode_heap_test.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_icode_prop.beam: ../main/hipe.hrl
 $(EBIN)/hipe_update_catches.beam: ../main/hipe.hrl
-$(EBIN)/hipe_beam_to_icode.beam: ../main/hipe.hrl
+$(EBIN)/hipe_beam_to_icode.beam: hipe_icode.hrl ../main/hipe.hrl
 $(EBIN)/hipe_icode_binary_pass.beam: ../rtl/hipe_literals.hrl
 
-$(EBIN)/hipe_icode_ssa_rename.beam: ../ssa/hipe_ssa_rename.inc
-$(EBIN)/hipe_icode_ssa.beam: ../ssa/hipe_ssa.inc
+$(EBIN)/hipe_icode_ssa.beam: ../ssa/hipe_ssa.inc ../main/hipe.hrl ../ssa/hipe_ssa_liveness.inc
+$(EBIN)/hipe_icode_ssa_const_prop.beam: ../main/hipe.hrl ../ssa/hipe_ssa_const_prop.inc
 $(EBIN)/hipe_icode_ssa_copy_prop.beam: ../ssa/hipe_ssa_copy_prop.inc
-$(EBIN)/hipe_icode_ssa_propagate.beam: ../ssa/hipe_ssa_propagate.inc
-$(EBIN)/hipe_icode_ssa_phi.beam: ../ssa/hipe_ssa_phi.inc
-$(EBIN)/hipe_icode_ssa_check.beam: ../ssa/hipe_ssa_checker.inc
+$(EBIN)/hipe_icode_type.beam: hipe_icode_type.hrl

@@ -55,5 +55,8 @@ ERL = \
 	OtpErlangUInt \
 	OtpErlangUShort
 
-JAVA_FILES=$(EXCEPTIONS) $(ERL) $(COMM) 
+MISC = \
+	OtpSystem
+
+JAVA_FILES=$(EXCEPTIONS) $(ERL) $(COMM) $(MISC)
 

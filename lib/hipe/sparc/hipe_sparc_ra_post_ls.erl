@@ -9,9 +9,9 @@
 %%  History  :	* 2001-11-01 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: happi $
-%%              $Date: 2002/05/13 16:51:09 $
-%%              $Revision: 1.6 $
+%%              $Author: tobiasl $
+%%              $Date: 2004/06/22 12:47:58 $
+%%              $Revision: 1.8 $
 %% ====================================================================
 %%  Exports  :
 %%hipe:c({test13,test,0},[late_frames,{regalloc,lfls},pp_sparc]).
@@ -55,7 +55,7 @@ rewrite_instr(I, TempMap) ->
 	  NewI = 
 	    rewrite_uses(hipe_sparc:subst_defines(I, NewTemps),
 			 TempMap),
-	  NewI ++ [hipe_sparc:move_create(SpillR,NewTemp,[]) ||
+	  NewI ++ [hipe_sparc:move_create(SpillR,NewTemp) ||
 		     {SpillR,NewTemp} <- NewTemps]
       end
   end.
@@ -68,17 +68,33 @@ rewrite_uses(I, TempMap) ->
       
       NewTemps  = [{Spill1,hipe_sparc:mk_reg(hipe_sparc_registers:temp1())},
 		   {Spill2,hipe_sparc:mk_reg(hipe_sparc_registers:temp2())}],
-      [hipe_sparc:move_create(NewTemp, Spill,[]) ||
+      [hipe_sparc:move_create(NewTemp, Spill) ||
 	{Spill,NewTemp} <- NewTemps] ++ 
 	[remap(I, NewTemps)];
 
     [Spill1] ->
       NewTemps  = [{Spill1,hipe_sparc:mk_reg(hipe_sparc_registers:temp1())}],
-      [hipe_sparc:move_create(NewTemp, Spill,[]) ||
+      [hipe_sparc:move_create(NewTemp, Spill) ||
 	{Spill,NewTemp} <- NewTemps] ++ 
 	[remap(I, NewTemps)];
-    _ -> %% This must be a psudocall... not a problem?
-      [I]
+    _ ->
+      case hipe_sparc:type(I) of
+	store ->
+	  %% Store can have three spilled temporaries.
+	  Src = hipe_sparc:store_src(I),
+	  Dst = hipe_sparc:store_dest(I),
+	  Offs = hipe_sparc:store_off(I),
+	  Tmp1 = hipe_sparc:mk_reg(hipe_sparc_registers:temp1()),
+	  Tmp2 = hipe_sparc:mk_reg(hipe_sparc_registers:temp2()),
+	  [hipe_sparc:move_create(Tmp1, Dst),
+	   hipe_sparc:move_create(Tmp2, Offs),
+	   hipe_sparc:alu_create(Tmp1, Tmp1, '+', Tmp2),
+	   hipe_sparc:move_create(Tmp2, Src),
+	   remap(I, [{Dst, Tmp1}, {Offs, hipe_sparc:mk_imm(0)}, {Src, Tmp2}])];
+	_ -> 
+	  %% This must be a psudocall... not a problem?
+	  [I]
+      end
   end.
 
 	   

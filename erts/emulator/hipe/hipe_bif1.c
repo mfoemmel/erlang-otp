@@ -91,27 +91,70 @@ BIF_RETTYPE hipe_bifs_call_count_clear_1(BIF_ALIST_1)
     BIF_RET(make_small(count));
 }
 
+unsigned int hipe_trap_count;
+
+BIF_RETTYPE hipe_bifs_trap_count_get_0(BIF_ALIST_0)
+{
+    BIF_RET(make_small(hipe_trap_count));
+}
+
+BIF_RETTYPE hipe_bifs_trap_count_clear_0(BIF_ALIST_0)
+{
+    unsigned int count = hipe_trap_count;
+    hipe_trap_count = 0;
+    BIF_RET(make_small(count));
+}
+
 /*****************************************************************************
- * BIFs for benchmarking. These only do usefull things if __BENCHMARK__
- * is defined in beam/benchmark.h
- * If benchmarking is not enabled all BIFs will return false. If the required
- * benchmark feature is not enabled, the counter will remain zero.
+ * BIFs for benchmarking. These only do useful things if
+ * __BENCHMARK__ is defined in beam/benchmark.h. For documentation
+ * about how to add new counters or maintain the existing counters,
+ * see benchmark.h.
+ *
+ * If benchmarking is not enabled all BIFs will return false. If the
+ * required benchmark feature is not enabled, the counter will remain
+ * zero.
  *
  * process_info/0 -> { Number of live processes,
- *                     Processes spawned }
+ *                     Processes spawned in total }
+ *
+ *   Live processes are increased when a new process is created, and
+ *   decreased when a process dies. Processes spawned is increased
+ *   when a process is created.
+ *
  *
  * process_info_clear/0 -> true
+ *
+ *   Will reset the processes spawned-counters to zero. If this is
+ *   done at some improper time, live processes may become a negative
+ *   value. This is not a problem in itself, just as long as you know
+ *   about it.
+ *
  *
  * message_info/0 -> { Messages sent,
  *                     Messages copied,
  *                     Ego messages (sender = receiver),
  *                     Words sent,
- *                     Words copied }
+ *                     Words copied,
+ *                     Words preallocated }
+ *
+ *   Counting the words sent in a shared heap system will affect
+ *   runtime performance since it means that we have to calculate the
+ *   size of the mesage. With private heaps, this is done anyway and
+ *   will not affect performance.
+ *
  *
  * message_info_clear/0 -> true
  *
+ *   Reset the message counters to zero.
+ *
+ *
  * message_sizes/0 -> true
- *                    This BIF displays a bar diagram with message sizes
+ *
+ *   Displays a text-mode bar diagram with message sizes. There are no
+ *   guaranties that this is printed in a way the Erlang system is
+ *   supposed to print things.
+ *
  *
  * gc_info/0 -> { Minor collections,
  *                Major collections,
@@ -120,15 +163,34 @@ BIF_RETTYPE hipe_bifs_call_count_clear_1(BIF_ALIST_1)
  *                Max used heap,
  *                Max allocated heap }
  *
+ *   Information about private heap garbage collections. Number of
+ *   minor and major collections, how much heap is used and allocated
+ *   and how much heap has been in use and allocated at most since the
+ *   counters were reset.
+ *
+ *
  * shared_gc_info/0 -> { Minor collections of the shared heap,
  *                       Major collections of the shared heap,
  *                       Used shared heap,
  *                       Allocated shared heap,
  *                       Max used shared heap,
- *                       Max allocated shared heap }
+ *                       Max allocated shared heap,
+ *                       N.o. complete incremental GC cycles }
+ *
+ *   The same as above, but for the shared heap / message area. Note,
+ *   that in a shared heap system the max used heap and max allocated
+ *   heap are mostly the same, since the heap allways is filled before
+ *   a garbage collection, and most garbage collections do not enlarge
+ *   the heap. The private heap numbers are much more interesting.
+ *
  *
  * gc_info_clear/0 -> true
  *
+ *   Reset counters for both private and shared garbage collection.
+ *
+ *
+ * BM Timers
+ * ---------
  *
  * All timers returns tuples of the kind: { Minutes, Seconds, Milliseconds }
  * except for the max times in garbage collection where times are normally
@@ -136,26 +198,71 @@ BIF_RETTYPE hipe_bifs_call_count_clear_1(BIF_ALIST_1)
  *
  * system_timer/0 -> Mutator time
  *
+ *   This timer is not a real-time clock, it only runs when a process
+ *   is scheduled to run. You can not find out the accual time a
+ *   program has taken to run using this timer.
+ *
+ *
  * system_timer_clear/0 -> true
+ *
+ *   Reset system timer to zero.
+ *
  *
  * send_timer/0 -> { Send time,
  *                   Copy time,
  *                   Size time }
  *
+ *   Time spent in sending messages. The copy time and size time are
+ *   only active if the copying is needed in send. Copying of data
+ *   into ETS-tables etc is not timed with this timer.
+ *
+ *
  * send_timer_clear/0 -> true
  *
- * gc_timer/0 -> { Time in minor collection,          Time spent in GC
- *                 Time in major collection,
- *                 Max time in minor collection (us),
- *                 Max time in major collection (us) }
+ *   Reset send timers to zero.
  *
- * shared_gc_timer/0 -> { Time in minor collection,   Time spent in GC
- *                        Time in major collection,   of the shared heap
- *                        Max time in minor collection (us),
- *                        Max time in major collection (us) }
+ *
+ * gc_timer/0 -> { Time in minor collection,
+ *                 Time in major collection,
+ *                 Max time in minor collection (탎),
+ *                 Max time in major collection (탎) }
+ *
+ *   Total time spent in garbage collection of the private heaps. The
+ *   max times are for one separate collection.
+ *
+ *
+ * shared_gc_timer/0 -> { Time in minor collection,
+ *                        Time in major collection,
+ *                        Max time in minor collection (탎),
+ *                        Max time in major collection (탎) }
+ *
+ *   Total time spent in garbage collection of the shared heap /
+ *   message area. The max times are for one separate collection.
+ *
  *
  * gc_timer_clear/0 -> true
  *
+ *   Reset private and shared garbage collection timers to zero. Note,
+ *   that the max-times are also reset.
+ *
+ *
+ * misc_timer/0 -> { Misc 0, Misc 1, Misc 2 }
+ *
+ *   Timers for debug purposes. In a normal system, these timers are
+ *   never used. Add these timers at places where you want to time
+ *   something not covered here. Use BM_SWAP_TIMER(from,to) to start
+ *   one of the misc timers.
+ *
+ *   ... code timed by the system timer ...
+ *   BM_SWAP_TIMER(system,misc1);
+ *   ... code we want to time ...
+ *   BM_SWAP_TIMER(misc1,system);
+ *   ... back on system time ...
+ *
+ *
+ * misc_timer_clear/0 -> true
+ *
+ *   Reset misc timers to zero.
  */
 
 BIF_RETTYPE hipe_bifs_process_info_0(BIF_ALIST_0)
@@ -199,14 +306,16 @@ BIF_RETTYPE hipe_bifs_message_info_0(BIF_ALIST_0)
 #ifndef BM_MESSAGE_SIZES
     unsigned long words_sent   = 0;
     unsigned long words_copied = 0;
+    unsigned long words_prealloc = 0;
 #endif
 
-    hp = HAlloc(BIF_P, 6);
-    BIF_RET(TUPLE5(hp,make_small(messages_sent),
+    hp = HAlloc(BIF_P, 7);
+    BIF_RET(TUPLE6(hp,make_small(messages_sent),
                       make_small(messages_copied),
                       make_small(messages_ego),
                       make_small(words_sent),
-                      make_small(words_copied)));
+                      make_small(words_copied),
+		      make_small(words_prealloc)));
 #else
     BIF_RET(am_false);
 #endif
@@ -223,6 +332,7 @@ BIF_RETTYPE hipe_bifs_message_info_clear_0(BIF_ALIST_0)
 #ifdef BM_MESSAGE_SIZES
     words_sent   = 0;
     words_copied = 0;
+    words_prealloc = 0;
     {
         int i;
         for (i = 0; i < 1000; i++)
@@ -292,16 +402,23 @@ BIF_RETTYPE hipe_bifs_gc_info_0(BIF_ALIST_0)
     Uint max_allocated_heap = 0;
 #endif
     Eterm *hp;
+    Uint used_heap = (BIF_P->htop - BIF_P->heap) +
+#if !(defined(NOMOVE) && defined(SHARED_HEAP))
+                     (OLD_HTOP(BIF_P) - OLD_HEAP(BIF_P)) +
+#endif
+                     MBUF_SIZE(BIF_P);
+
+    Uint alloc_heap = (BIF_P->hend - BIF_P->heap) +
+#if !(defined(NOMOVE) && defined(SHARED_HEAP))
+                      (OLD_HEND(BIF_P) - OLD_HEAP(BIF_P)) +
+#endif
+                      MBUF_SIZE(BIF_P);
 
     hp = HAlloc(BIF_P, 7);
-    BIF_RET(TUPLE6(hp,make_small((uint)minor_garbage_cols),
-                      make_small((uint)major_garbage_cols),
-                      make_small((Uint)((BIF_P->htop - BIF_P->heap) +
-                                        (OLD_HTOP(BIF_P) - OLD_HEAP(BIF_P)) +
-                                        MBUF_SIZE(BIF_P))),
-                      make_small((Uint)((BIF_P->hend - BIF_P->heap) +
-                                        (OLD_HEND(BIF_P) - OLD_HEAP(BIF_P)) +
-                                        MBUF_SIZE(BIF_P))),
+    BIF_RET(TUPLE6(hp,make_small((Uint)minor_garbage_cols),
+                      make_small((Uint)major_garbage_cols),
+                      make_small((Uint)used_heap),
+                      make_small((Uint)alloc_heap),
                       make_small(max_used_heap),
                       make_small(max_allocated_heap)));
 #else
@@ -322,17 +439,29 @@ BIF_RETTYPE hipe_bifs_shared_gc_info_0(BIF_ALIST_0)
 #endif
     Eterm *hp;
 
-    hp = HAlloc(BIF_P, 7);
-    BIF_RET(TUPLE6(hp,make_small((uint)minor_global_garbage_cols),
+#if defined(SHARED_HEAP) || defined(HYBRID)
+    Uint tmp_used_heap = (Uint)((BIF_P->htop - BIF_P->heap) +
+#if !(defined(NOMOVE) && defined(SHARED_HEAP))
+                                (OLD_HTOP(BIF_P) - OLD_HEAP(BIF_P)) +
+#endif
+                                MBUF_SIZE(BIF_P));
+    Uint tmp_allocated_heap = (Uint)((BIF_P->hend - BIF_P->heap) +
+#if !(defined(NOMOVE) && defined(SHARED_HEAP))
+                                     (OLD_HEND(BIF_P) - OLD_HEAP(BIF_P)) +
+#endif
+                                     MBUF_SIZE(BIF_P));
+#else
+    Uint tmp_used_heap = 0;
+    Uint tmp_allocated_heap = 0;
+#endif
+    hp = HAlloc(BIF_P, 8);
+    BIF_RET(TUPLE7(hp,make_small((uint)minor_global_garbage_cols),
                       make_small((uint)major_global_garbage_cols),
-                      make_small((Uint)((BIF_P->htop - BIF_P->heap) +
-                                        (OLD_HTOP(BIF_P) - OLD_HEAP(BIF_P)) +
-                                        MBUF_SIZE(BIF_P))),
-                      make_small((Uint)((BIF_P->hend - BIF_P->heap) +
-                                        (OLD_HEND(BIF_P) - OLD_HEAP(BIF_P)) +
-                                        MBUF_SIZE(BIF_P))),
+                      make_small(tmp_used_heap),
+                      make_small(tmp_allocated_heap),
                       make_small(max_used_global_heap),
-                      make_small(max_allocated_global_heap)));
+                      make_small(max_allocated_global_heap),
+                      make_small(gc_cycles)));
 #else
     BIF_RET(am_false);
 #endif
@@ -359,36 +488,91 @@ BIF_RETTYPE hipe_bifs_gc_info_clear_0(BIF_ALIST_0)
 #endif
 }
 
+BIF_RETTYPE hipe_bifs_pause_times_0(BIF_ALIST_0)
+{
 #ifdef BM_TIMERS
-#if defined(__i386__) && USE_PERFCTR
+    int i;
+    int total_time = 0, n = 0;
+    int left = 0, right = 0, mid = 0;
+
+    printf("Pause times in minor collection:\r\n");
+    for (i = 0; i < MAX_PAUSE_TIME; i++)
+    {
+        if (pause_times[i] > 0) {
+            printf("%d: %d\r\n",i,pause_times[i]);
+            total_time += pause_times[i] * i;
+            n += pause_times[i];
+
+            if (i > mid)
+                right += pause_times[i];
+
+            while(right > left) {
+                left += pause_times[mid++];
+                right -= pause_times[mid];
+            }
+        }
+    }
+
+    printf("Number of collections: %d\r\n",n);
+    printf("Total collection time: %d\r\n",total_time);
+    if (n > 0)
+        printf("Mean pause time: %d\r\n",total_time / n);
+
+    printf("Geometrical mean: %d\r\n",mid);
+
+    total_time = 0; n = 0;
+    left = 0; right = 0; mid = 0;
+    printf("Pause times in major collection:\r\n");
+    for (i = 0; i < MAX_PAUSE_TIME; i++)
+    {
+        if (pause_times_old[i] > 0) {
+            printf("%d: %d\r\n",i,pause_times_old[i]);
+            total_time += pause_times_old[i] * i;
+            n += pause_times_old[i];
+        }
+    }
+
+    printf("Number of collections: %d\r\n",n);
+    printf("Total collection time: %d\r\n",total_time);
+    if (n > 0)
+        printf("Mean pause time: %d\r\n",total_time / n);
+
+    BIF_RET(am_true);
+#else
+    BIF_RET(am_false);
+#endif
+}
+
+#ifdef BM_TIMERS
+#if USE_PERFCTR
 #define MAKE_TIME(_timer_) {                          \
-    BM_TIMER_T tmp = _timer_;                         \
+    BM_TIMER_T tmp = _timer_##_time;                  \
     milli = (uint)(tmp - ((int)(tmp / 1000)) * 1000); \
     tmp /= 1000;                                      \
     sec = (uint)(tmp - ((int)(tmp / 60)) * 60);       \
     min = (uint)tmp / 60;                             }
 
 #define MAKE_MICRO_TIME(_timer_) {                    \
-    BM_TIMER_T tmp = _timer_ * 1000;                  \
+    BM_TIMER_T tmp = _timer_##_time * 1000;           \
     micro = (uint)(tmp - ((int)(tmp / 1000)) * 1000); \
     tmp /= 1000;                                      \
     milli = (uint)(tmp - ((int)(tmp / 1000)) * 1000); \
     sec = (uint)tmp / 1000;                           }
 
 #else
-#define MAKE_TIME(_timer_) {          \
-    BM_TIMER_T tmp = _timer_/1000000; \
-    milli = tmp % 1000;               \
-    tmp /= 1000;                      \
-    sec = tmp % 60;                   \
-    min = tmp / 60;                   }
+#define MAKE_TIME(_timer_) {                          \
+    BM_TIMER_T tmp = _timer_##_time / 1000000;        \
+    milli = tmp % 1000;                               \
+    tmp /= 1000;                                      \
+    sec = tmp % 60;                                   \
+    min = tmp / 60;                                   }
 
-#define MAKE_MICRO_TIME(_timer_) {    \
-    BM_TIMER_T tmp = _timer_/1000;    \
-    micro = tmp % 1000;               \
-    tmp /= 1000;                      \
-    milli = tmp % 1000;               \
-    sec = tmp / 1000;                 }
+#define MAKE_MICRO_TIME(_timer_) {                    \
+    BM_TIMER_T tmp = _timer_##_time / 1000;           \
+    micro = tmp % 1000;                               \
+    tmp /= 1000;                                      \
+    milli = tmp % 1000;                               \
+    sec = tmp / 1000;                                 }
 
 #endif
 #else
@@ -405,7 +589,7 @@ BIF_RETTYPE hipe_bifs_system_timer_0(BIF_ALIST_0)
     Eterm *hp;
 
     hp = HAlloc(BIF_P, 4);
-    MAKE_TIME(system_time);
+    MAKE_TIME(system);
     BIF_RET(TUPLE3(hp,make_small(min),
                       make_small(sec),
                       make_small(milli)));
@@ -435,19 +619,19 @@ BIF_RETTYPE hipe_bifs_send_timer_0(BIF_ALIST_0)
 
     hp = HAlloc(BIF_P, 4 * 4);
 
-    MAKE_TIME(send_time);
+    MAKE_TIME(send);
     sendtime = TUPLE3(hp,make_small(min),
                          make_small(sec),
                          make_small(milli));
     hp += 4;
 
-    MAKE_TIME(copy_time);
+    MAKE_TIME(copy);
     copytime = TUPLE3(hp,make_small(min),
                          make_small(sec),
                          make_small(milli));
     hp += 4;
 
-    MAKE_TIME(size_time);
+    MAKE_TIME(size);
     sizetime = TUPLE3(hp,make_small(min),
                          make_small(sec),
                          make_small(milli));
@@ -482,25 +666,25 @@ BIF_RETTYPE hipe_bifs_gc_timer_0(BIF_ALIST_0)
 
     hp = HAlloc(BIF_P, 4 * 4 + 5);
 
-    MAKE_TIME(minor_gc_time);
+    MAKE_TIME(minor_gc);
     minor = TUPLE3(hp,make_small(min),
                       make_small(sec),
                       make_small(milli));
     hp += 4;
 
-    MAKE_TIME(major_gc_time);
+    MAKE_TIME(major_gc);
     major = TUPLE3(hp,make_small(min),
                       make_small(sec),
                       make_small(milli));
     hp += 4;
 
-    MAKE_MICRO_TIME(max_minor_time);
+    MAKE_MICRO_TIME(max_minor);
     max_min = TUPLE3(hp,make_small(sec),
                         make_small(milli),
                         make_small(micro));
     hp += 4;
 
-    MAKE_MICRO_TIME(max_major_time);
+    MAKE_MICRO_TIME(max_major);
     max_maj = TUPLE3(hp,make_small(sec),
                         make_small(milli),
                         make_small(micro));
@@ -524,25 +708,25 @@ BIF_RETTYPE hipe_bifs_shared_gc_timer_0(BIF_ALIST_0)
 
     hp = HAlloc(BIF_P, 4 * 4 + 5);
 
-    MAKE_TIME(minor_global_gc_time);
+    MAKE_TIME(minor_global_gc);
     minor = TUPLE3(hp,make_small(min),
                       make_small(sec),
                       make_small(milli));
     hp += 4;
 
-    MAKE_TIME(major_global_gc_time);
+    MAKE_TIME(major_global_gc);
     major = TUPLE3(hp,make_small(min),
                       make_small(sec),
                       make_small(milli));
     hp += 4;
 
-    MAKE_MICRO_TIME(max_global_minor_time);
+    MAKE_MICRO_TIME(max_global_minor);
     max_min = TUPLE3(hp,make_small(sec),
                         make_small(milli),
                         make_small(micro));
     hp += 4;
 
-    MAKE_MICRO_TIME(max_global_major_time);
+    MAKE_MICRO_TIME(max_global_major);
     max_maj = TUPLE3(hp,make_small(sec),
                         make_small(milli),
                         make_small(micro));
@@ -571,6 +755,52 @@ BIF_RETTYPE hipe_bifs_gc_timer_clear_0(BIF_ALIST_0)
 #endif
 }
 
+BIF_RETTYPE hipe_bifs_misc_timer_0(BIF_ALIST_0)
+{
+#ifdef __BENCHMARK__
+    uint min   = 0;
+    uint sec   = 0;
+    uint milli = 0;
+    Eterm *hp;
+    Eterm misctime1, misctime2, misctime3;
+
+    hp = HAlloc(BIF_P, 4 * 4);
+
+    MAKE_TIME(misc0);
+    misctime1 = TUPLE3(hp,make_small(min),
+                          make_small(sec),
+                          make_small(milli));
+    hp += 4;
+
+    MAKE_TIME(misc1);
+    misctime2 = TUPLE3(hp,make_small(min),
+                          make_small(sec),
+                          make_small(milli));
+    hp += 4;
+
+    MAKE_TIME(misc2);
+    misctime3 = TUPLE3(hp,make_small(min),
+                          make_small(sec),
+                          make_small(milli));
+    hp += 4;
+    BIF_RET(TUPLE3(hp,misctime1,misctime2,misctime3));
+#else
+    BIF_RET(am_false);
+#endif
+}
+
+BIF_RETTYPE hipe_bifs_misc_timer_clear_0(BIF_ALIST_0)
+{
+#ifdef BM_TIMERS
+    misc0_time = 0;
+    misc1_time = 0;
+    misc2_time = 0;
+    BIF_RET(am_true);
+#else
+    BIF_RET(am_false);
+#endif
+}
+
 #undef MAKE_TIME
 #undef MAKE_MICRO_TIME
 
@@ -578,64 +808,26 @@ BIF_RETTYPE hipe_bifs_gc_timer_clear_0(BIF_ALIST_0)
 /*
  * HiPE hrvtime().
  * These implementations are currently available:
- * + On Linux/x86 with the perfctr driver we can use the process'
+ * + On Linux with the perfctr extension we can use the process'
  *   virtualised time-stamp counter. To enable this mode you must
  *   pass `--with-perfctr=/path/to/perfctr' when configuring.
  * + The fallback, which is the same as {X,_} = runtime(statistics).
  */
 
-#if defined(__i386__) && USE_PERFCTR
+#if USE_PERFCTR
 
-/*
- * This uses the Linux/x86 perfctr driver to virtualise the
- * x86 time-stamp counter.
- */
-#include "libperfctr.h"
-static struct vperfctr *vperfctr;
-static double cpu_khz;
-#define hrvtime_is_started()	(vperfctr != NULL)
+#include "hipe_perfctr.h"
+static int hrvtime_is_open;
+#define hrvtime_is_started()	hrvtime_is_open
 
 static void start_hrvtime(void)
 {
-    struct perfctr_info info;
-    struct vperfctr_control control;
-
-    if( vperfctr != NULL )
-	return;
-    vperfctr = vperfctr_open();
-    if( vperfctr == NULL )
-	return;
-    if( vperfctr_info(vperfctr, &info) >= 0 ) {
-	cpu_khz = (double)info.cpu_khz;
-	if( info.cpu_features & PERFCTR_FEATURE_RDTSC ) {
-	    memset(&control, 0, sizeof control);
-	    control.cpu_control.tsc_on = 1;
-	    if( vperfctr_control(vperfctr, &control) >= 0 )
-		return;
-	}
-    }
-    vperfctr_close(vperfctr);
-    vperfctr = NULL;
+    if (hipe_perfctr_hrvtime_open() >= 0)
+	hrvtime_is_open = 1;
 }
 
-static double get_hrvtime(void)
-{
-    unsigned long long ticks;
-    double milli_seconds;
-
-    ticks = vperfctr_read_tsc(vperfctr);
-    milli_seconds = (double)ticks / cpu_khz;
-    return milli_seconds;
-}
-
-static void stop_hrvtime(void)
-{
-    if( vperfctr ) {
-	vperfctr_stop(vperfctr);
-	vperfctr_close(vperfctr);
-	vperfctr = NULL;
-    }
-}
+#define get_hrvtime()		hipe_perfctr_hrvtime_get()
+#define stop_hrvtime()		hipe_perfctr_hrvtime_close()
 
 #else
 
@@ -670,7 +862,7 @@ BIF_RETTYPE hipe_bifs_get_hrvtime_0(BIF_ALIST_0)
 	    BIF_ERROR(BIF_P, BADARG);
     }
     f.fd = get_hrvtime();
-    hp = HAlloc(BIF_P, 3);
+    hp = HAlloc(BIF_P, FLOAT_SIZE_OBJECT);
     res = make_float(hp);
     PUT_DOUBLE(f, hp);
     BIF_RET(res);

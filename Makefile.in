@@ -101,7 +101,7 @@ RANLIB          = @RANLIB@
 
 # ----------------------------------------------------------------------
 
-# The directories bootsrap and bootstrap_compiler (during primary bootstrap)
+# The directories bootstrap and bootstrap_compiler (during primary bootstrap)
 # are placed under this directory, typically one might want to set
 # this to a fast local filesystem, or, the default, as ERL_TOP
 BOOTSTRAP_ROOT = $(ERL_TOP)
@@ -199,10 +199,6 @@ BOOT_BINDIR=$(BOOTSTRAP_ROOT)/bootstrap/erts/bin
 BEAM_EVM=$(ERL_TOP)/bin/$(TARGET)/beam_evm
 BOOTSTRAP_COMPILER  =  $(BOOTSTRAP_ROOT)/bootstrap_compiler
 
-build_boot:
-	cd erts/boot/src && ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
-		$(MAKE) opt
-
 emulator:
 	cd erts && ERL_TOP=$(ERL_TOP) $(MAKE) NO_START_SCRIPTS=true $(TYPE)
 
@@ -228,6 +224,7 @@ hlib:
 
 dep depend:
 	cd erts/emulator && ERL_TOP=$(ERL_TOP) $(MAKE) generate depend
+	cd erts/lib_src && ERL_TOP=$(ERL_TOP) $(MAKE) depend
 
 # Creates "erl" and "erlc" in bootstrap/bin which uses the precompiled 
 # libraries in the bootstrap directory
@@ -397,9 +394,9 @@ TESTS +=					\
 	emulator_test				\
 	epmd_test				\
 	erl_interface_test			\
-	eva_test				\
 	ic_test					\
 	inets_test				\
+	jinterface_test				\
 	kernel_test				\
 	megaco_test				\
 	mnemosyne_test				\
@@ -433,7 +430,8 @@ TESTS +=					\
 	odbc_test				\
 	ssl_test				\
 	tools_test				\
-	toolbar_test
+	toolbar_test				\
+	xmerl_test
 endif
 
 .PHONY: tests release_tests test_server emulator_test system_test epmd_test
@@ -505,7 +503,7 @@ bootstrap_nc_for_ne_no_debug_sym:
 #
 # Order is important here, don't change it!
 #
-install: install.dirs install.emulator install.libs install.boot install.Install install.bin
+install: install.dirs install.emulator install.libs install.Install install.bin
 
 install.emulator:
 	cd erts && \
@@ -522,10 +520,6 @@ else
 	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 	  $(MAKE) TESTROOT=$(ERLANG_LIBDIR) BUILD_ALL=true release 
 endif
-
-install.boot:
-	cd erts/boot/src && ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
-		$(MAKE) release TESTROOT=$(ERLANG_LIBDIR)
 
 install.Install:
 	cd $(ERLANG_LIBDIR) && ./Install -minimal $(ERLANG_LIBDIR)
@@ -562,5 +556,12 @@ clean:
 	find . -type f -name SKIP -print | xargs $(RM)
 	cd erts && ERL_TOP=$(ERL_TOP) $(MAKE) clean
 	cd lib  && ERL_TOP=$(ERL_TOP) $(MAKE) clean BUILD_ALL=true
+
+#
+# Just wipe out emulator, not libraries
+#
+
+eclean:
+	cd erts && ERL_TOP=$(ERL_TOP) $(MAKE) clean
 
 # ----------------------------------------------------------------------

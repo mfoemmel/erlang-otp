@@ -63,7 +63,7 @@ gethostbyaddr({A,B,C,D,E,F,G,H}) when integer(A+B+C+D+E+F+G+H) ->
 gethostbyaddr(Addr) when list(Addr) ->
     case inet_parse:address(Addr) of
 	{ok, IP} -> gethostbyaddr(IP);
-	Error -> {error, formerr}
+	_Error -> {error, formerr}
     end;
 gethostbyaddr(Addr) when atom(Addr) ->
     gethostbyaddr(atom_to_list(Addr));
@@ -75,7 +75,7 @@ gethostbyaddr(_) -> {error, formerr}.
 find_name(Name, Type) ->
     find_name(Name, ets:first(inet_hosts), Type).
 
-find_name(Name, '$end_of_table', Type) -> false;
+find_name(_Name, '$end_of_table', _Type) -> false;
 find_name(Name, Key, Type) ->
     [{IP, T, Ns}] = ets:lookup(inet_hosts, Key),
     LowerName = inet_db:tolower(Name),

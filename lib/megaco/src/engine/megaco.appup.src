@@ -1,5 +1,18 @@
 {"%VSN%",
- [{"2.1.2",
+ [{"2.1.4",
+   [
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v2,  soft_purge, soft_purge, []}
+   ]
+  },
+  {"2.1.3",
+   [
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v2,  soft_purge, soft_purge, []},
+    {load_module, megaco_text_parser_v2,          soft_purge, soft_purge, []}
+   ]
+  },
+  {"2.1.2",
    [
     {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
     {load_module, megaco_pretty_text_encoder_v1,  soft_purge, soft_purge, []},
@@ -41,7 +54,20 @@
   }
  ],
 
- [{"2.1.2",
+ [{"2.1.4",
+   [
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v2,  soft_purge, soft_purge, []}
+   ]
+  },
+  {"2.1.3",
+   [
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v2,  soft_purge, soft_purge, []},
+    {load_module, megaco_text_parser_v2,          soft_purge, soft_purge, []}
+   ]
+  },
+  {"2.1.2",
    [
     {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
     {load_module, megaco_pretty_text_encoder_v1,  soft_purge, soft_purge, []},

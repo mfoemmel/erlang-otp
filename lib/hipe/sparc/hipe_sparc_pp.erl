@@ -7,34 +7,28 @@
 %%  History  :	* 2001-10-25 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: toli6207 $
-%%              $Date: 2002/11/13 11:43:33 $
-%%              $Revision: 1.15 $
+%%              $Author: kostis $
+%%              $Date: 2004/06/22 22:00:58 $
+%%              $Revision: 1.21 $
 %% ====================================================================
 %%  Exports  :
-%%              pp/1,        Pretty prints linear sparc code.
+%%              pp/1,        Pretty prints linear SPARC code.
 %%	        pp/2,        -- "" -- To a file
-%%              pp_instr/1,  Pretty prints a sparc instruction.
-%%	        pp_instrs/3
+%%              pp_instr/1,  Pretty prints a SPARC instruction.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_sparc_pp).
--export([pp/1,         %% Pretty prints linear sparc code.
+-export([pp/1,         %% Pretty prints linear SPARC code.
 	 pp/2,         %% -- "" -- To a device (file)
-	 pp_instr/1,   %% Pretty prints a sparc instruction.
-	 pp_instrs/3]).%% -- "" -- to a file 
--export([pp_arg/2]).
+	 pp_instr/1]). %% Pretty prints a SPARC instruction.
 -include("../main/hipe.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Pretty printer
 %%
-%% - pp/1: pretty prints Sparc code
+%% - pp/1: pretty prints linear SPARC code
 %%
-
-%%pp(Sparc, FileName) ->
-
 
 pp(Sparc) ->
   pp(Sparc, standard_io).
@@ -83,14 +77,14 @@ pp_instr(I, Dev, Pre) ->
       io:format(Dev, "!    pseudo_enter ", []),
       pp_target(Dev, 
 		hipe_sparc:pseudo_enter_target(I),
-		hipe_sparc:pseudo_enter_type(I)),
+		hipe_sparc:pseudo_enter_is_known(I)),
       io:format(Dev, " ! (",[]),
       pp_args(Dev, hipe_sparc:pseudo_enter_args(I)),
       io:format(Dev, ")~n", []);
-    pseudo_push ->
-      io:format(Dev, "!    pseudo_push ", []),
-      pp_arg(Dev, hipe_sparc:pseudo_push_reg(I)),
-      io:format(Dev, "~n", []);
+%     pseudo_push ->
+%       io:format(Dev, "!    pseudo_push ", []),
+%       pp_arg(Dev, hipe_sparc:pseudo_push_reg(I)),
+%       io:format(Dev, "~n", []);
     pseudo_spill ->
       io:format(Dev, "!    pseudo_spill ", []),
       pp_arg(Dev, hipe_sparc:pseudo_spill_reg(I)),
@@ -111,11 +105,7 @@ pp_instr(I, Dev, Pre) ->
 
       io:format(Dev, "~n", []);
     label ->
-      case hipe_sparc:info(I) of
-	[] -> 	   io:format(Dev, ".~s_~w:~n", [Pre, hipe_sparc:label_name(I)]);
-	Info ->
-	  io:format(Dev, ".~s_~w: ! ~w~n", [Pre, hipe_sparc:label_name(I), Info])
-      end;
+      io:format(Dev, ".~s_~w:~n", [Pre, hipe_sparc:label_name(I)]);
     comment ->
       io:format(Dev, "    ! ~p~n", [hipe_sparc:comment_text(I)]);
     nop ->
@@ -161,19 +151,18 @@ pp_instr(I, Dev, Pre) ->
       io:format(Dev, ", ", []),
       pp_arg(Dev, hipe_sparc:alu_cc_dest(I)),
       io:format(Dev, "~n", []);
-    br ->
-      io:format(Dev, "    br", []),
-      pp_regcc(Dev, hipe_sparc:br_regcond(I)),
-      pp_annul(Dev, hipe_sparc:br_annul(I)),
-      pp_pred(Dev, hipe_sparc:br_taken(I)),
-      io:format(Dev, " ", []),
-      pp_arg(Dev, hipe_sparc:br_reg(I)),
-      pp_target(Dev, 
-		hipe_sparc:br_true_label(I),
-		hipe_sparc:br_false_label(I),
-		Pre),
-      io:format(Dev, "~n", []);
-
+%%     br ->
+%%       io:format(Dev, "    br", []),
+%%       pp_regcc(Dev, hipe_sparc:br_regcond(I)),
+%%       pp_annul(Dev, hipe_sparc:br_annul(I)),
+%%       pp_pred(Dev, hipe_sparc:br_taken(I)),
+%%       io:format(Dev, " ", []),
+%%       pp_arg(Dev, hipe_sparc:br_reg(I)),
+%%       pp_target(Dev, 
+%% 		hipe_sparc:br_true_label(I),
+%% 		hipe_sparc:br_false_label(I),
+%% 		Pre),
+%%       io:format(Dev, "~n", []);
     b ->
       io:format(Dev, "    b", []),
       pp_cc(Dev, hipe_sparc:b_cond(I)),
@@ -206,13 +195,12 @@ pp_instr(I, Dev, Pre) ->
       io:format(Dev, "    call ", []),
       pp_target(Dev, 
 		hipe_sparc:call_link_target(I),
-		hipe_sparc:call_link_type(I)),
+		hipe_sparc:call_link_is_known(I)),
       io:format(Dev, " ! (",[]),
       pp_args(Dev, hipe_sparc:call_link_args(I)),
       io:format(Dev, ") <", []),
       pp_args(Dev, hipe_sparc:call_link_dests(I)),
       io:format(Dev, ">", []),
-      io:format(Dev, "[~w]",[hipe_sparc:call_link_type(I)]),
       case hipe_sparc:call_link_fail(I) of
 	[] -> true;
 	L ->
@@ -223,7 +211,7 @@ pp_instr(I, Dev, Pre) ->
 	[] -> ok;
 	CL -> io:format(Dev, "   (~s_~w)", [Pre,CL])
       end,
-      hipe_sparc_stack_descriptors:pp(Dev, hipe_sparc:call_link_stack_desc(I)),
+      hipe_sparc:pp_sdesc(Dev, hipe_sparc:call_link_stack_desc(I)),
       io:format(Dev, "~n", []);
 
     load ->
@@ -236,8 +224,7 @@ pp_instr(I, Dev, Pre) ->
       io:format(Dev, "], ", []),
       pp_arg(Dev, hipe_sparc:load_dest(I)),
       io:format(Dev, "~n", []);
-      
-   load_atom ->
+    load_atom ->
       Atom = hipe_sparc:load_atom_atom(I),
       io:format(Dev, "   sethi %hi(~w), ", [hipe_bifs:atom_to_word(Atom)]),
       pp_arg(Dev, hipe_sparc:load_atom_dest(I)),
@@ -280,7 +267,6 @@ pp_instr(I, Dev, Pre) ->
 	      io:format(Dev, ", %lo(~w), ", [F]),
 	      pp_arg(Dev, hipe_sparc:load_address_dest(I))
 	  end;
-
 	constant ->
 	  io:format(Dev, "    sethi %hi( ", []),
 	  io:format(Dev, "~s_dl_~w), ", [Pre, Address]),
@@ -308,15 +294,8 @@ pp_instr(I, Dev, Pre) ->
 	closure ->
 	  io:format(Dev, "    lda ", []),
 	  io:format(Dev, "~s_~w, ", [Pre, Address]),
-	  pp_arg(Dev, hipe_sparc:load_address_dest(I))
-      end,
-
-      case Type of
-	'catch' ->
-	  io:format(Dev, " ! [catch]",[]);
-	'closure' ->
-	  io:format(Dev, " ! [closure]",[]);
-	_ -> ok
+	  pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	  io:format(Dev, " ! [closure]",[])
       end,
       io:format(Dev, "~n", []);
     store ->
@@ -356,17 +335,17 @@ pp_instr(I, Dev, Pre) ->
       pp_arg(Dev, hipe_sparc:store_fp_off(I)),
       io:format(Dev, "]~n", []);
 
-    fb ->
-      io:format(Dev, "    fb", []),
-      pp_fcc(Dev, hipe_sparc:fb_cond(I)),
-      pp_annul(Dev, hipe_sparc:fb_annul(I)),
-      pp_pred(Dev, hipe_sparc:fb_taken(I)),
-      io:format(Dev, " %fcc~w",[hipe_sparc:fb_fcc_reg(I)]),
-      pp_target(Dev, 
-		hipe_sparc:fb_true_label(I),
-		hipe_sparc:fb_false_label(I),
-		Pre),
-      io:format(Dev, "~n", []);
+%%     fb ->
+%%       io:format(Dev, "    fb", []),
+%%       pp_fcc(Dev, hipe_sparc:fb_cond(I)),
+%%       pp_annul(Dev, hipe_sparc:fb_annul(I)),
+%%       pp_pred(Dev, hipe_sparc:fb_taken(I)),
+%%       io:format(Dev, " %fcc~w",[hipe_sparc:fb_fcc_reg(I)]),
+%%       pp_target(Dev, 
+%% 		hipe_sparc:fb_true_label(I),
+%% 		hipe_sparc:fb_false_label(I),
+%% 		Pre),
+%%       io:format(Dev, "~n", []);
 
     fop ->
       io:format(Dev, "    ", []),
@@ -379,22 +358,22 @@ pp_instr(I, Dev, Pre) ->
       io:format(Dev, ", ", []),
       pp_arg(Dev, hipe_sparc:fop_dest(I)),
       io:format(Dev, "~n", []);
-    fcmp ->
-      io:format(Dev, "    fcmp", []),
-      case hipe_sparc:fcmp_exception(I) of
-	true -> io:format(Dev, "e",[]);
-	_ -> ok
-      end,
-      pp_fp_type(Dev,hipe_sparc:fcmp_type(I)),
-      io:format(Dev, " ", []),
-      io:format(Dev, " %fcc~w",[hipe_sparc:fcmp_fcc_reg(I)]),
-      io:format(Dev, ",", []),
-      pp_arg(Dev, hipe_sparc:fcmp_src1(I)),
-      io:format(Dev, ", ", []),
-      pp_arg(Dev, hipe_sparc:fcmp_src2(I)),
-      io:format(Dev, "~n", []);
-    fmov ->
-      case {hipe_sparc:fmov_negate(I),hipe_sparc:fmov_abs(I)} of
+%%     fcmp ->
+%%       io:format(Dev, "    fcmp", []),
+%%       case hipe_sparc:fcmp_exception(I) of
+%% 	true -> io:format(Dev, "e",[]);
+%% 	_ -> ok
+%%       end,
+%%       pp_fp_type(Dev,hipe_sparc:fcmp_type(I)),
+%%       io:format(Dev, " ", []),
+%%       io:format(Dev, " %fcc~w",[hipe_sparc:fcmp_fcc_reg(I)]),
+%%       io:format(Dev, ",", []),
+%%       pp_arg(Dev, hipe_sparc:fcmp_src1(I)),
+%%       io:format(Dev, ", ", []),
+%%       pp_arg(Dev, hipe_sparc:fcmp_src2(I)),
+%%       io:format(Dev, "~n", []);
+    fmove ->
+      case {hipe_sparc:fmove_negate(I),hipe_sparc:fmove_abs(I)} of
 	{true, false} ->
 	  io:format(Dev, "    fneg", []);
 	{false, true} ->
@@ -402,13 +381,13 @@ pp_instr(I, Dev, Pre) ->
 	{false, false} ->
 	  io:format(Dev, "    fmov", []);
 	_ ->
-	  ?EXIT({"Illegal sparc fmov instruction", I})
+	  ?EXIT({"Illegal SPARC fmov instruction", I})
       end,
-      pp_fp_type(Dev,hipe_sparc:fmov_type(I)),
+      pp_fp_type(Dev,hipe_sparc:fmove_type(I)),
       io:format(Dev, " ", []),
-      pp_arg(Dev, hipe_sparc:fmov_src(I)),
+      pp_arg(Dev, hipe_sparc:fmove_src(I)),
       io:format(Dev, ", ", []),
-      pp_arg(Dev, hipe_sparc:fmov_dest(I)),
+      pp_arg(Dev, hipe_sparc:fmove_dest(I)),
       io:format(Dev, "~n", []);
     conv_fp ->
       io:format(Dev, "    ", []),
@@ -511,14 +490,14 @@ pp_store_op(Dev, Type) ->
   io:format(Dev, "~s", [Str]).
 
 
-pp_regcc(Dev, CC) ->
-  io:format(Dev, "~s", [CC]).
+%% pp_regcc(Dev, CC) ->
+%%   io:format(Dev, "~s", [CC]).
 
 pp_cc(Dev, CC) ->
   io:format(Dev, "~s", [CC]).
 
-pp_fcc(Dev, FCC) ->
-  io:format(Dev, "~s", [FCC]).
+%% pp_fcc(Dev, FCC) ->
+%%   io:format(Dev, "~s", [FCC]).
 
 pp_arg(Dev, Arg) ->
   case  hipe_sparc:is_reg(Arg) of
@@ -573,17 +552,20 @@ pp_switch_labels(Dev, [L|Ls], Pos,Pre) ->
 pp_switch_labels(_Dev, [], _, _) -> ok.
 
 
-pp_target(Dev,T,Type) ->
-  case Type of
-    closure ->
-      pp_arg(Dev,T);
-    _ ->
-      case T of
-	{M, F, A} -> io:format(Dev, "~w_~w_~w ", [M, F, A]);
-	{F, A} -> io:format(Dev, "~w_~w ", [F, A]);
-	F -> io:format(Dev, "~w ", [F])
-      end
+pp_target(Dev,T,_Known=false) ->
+  pp_arg(Dev,T);
+pp_target(Dev,T,true) ->
+  case T of
+    {M, F, A} -> io:format(Dev, "~w_~w_~w ", [M, F, A]);
+    {F, A} -> io:format(Dev, "~w_~w ", [F, A]);
+    F -> io:format(Dev, "~w ", [F])
   end.
+
+pp_target(Dev, Target, [], Pre) ->
+  io:format(Dev, ", .~s_~w", [Pre, Target]);
+pp_target(Dev, Target, Fail, Pre) ->
+  io:format(Dev, ", .~s_~w ! .~s_~w", 
+	    [Pre, Target, Pre, Fail]). 
 
 pp_annul(Dev, A) ->
   case A of
@@ -598,8 +580,3 @@ pp_pred(Dev, P) ->
     false -> io:format(Dev, ",pn", [])
   end.
 
-pp_target(Dev, Target, [], Pre) ->
-  io:format(Dev, ", .~s_~w", [Pre, Target]);
-pp_target(Dev, Target, Fail, Pre) ->
-  io:format(Dev, ", .~s_~w ! .~s_~w", 
-	    [Pre, Target, Pre, Fail]). 

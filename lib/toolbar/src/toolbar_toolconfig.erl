@@ -131,7 +131,7 @@ loop(S,Window) ->
 				       "File has wrong version number"]);
 
 				%% Other error -- Notify user
-				Error ->
+				_Error ->
 				    tool_utils:notify(S,[FileName,
 				       "File is on erronous format"])
 			    end;
@@ -274,7 +274,6 @@ draw_window(S) ->
 				{keypress,true},{data,tool}]),
     
     %% Start function
-    X = 10,
     gs:create(label,Mid,[{x,10},{y,60},{width,80},{height,30},{align,e},
 			 {keypress,true},
 			 {label,{text,"Start:"}}]),
@@ -357,7 +356,7 @@ move_focus(Window,message) ->
     gs:config(Window#tfwindow.htmlentry,{setfocus,true});
 move_focus(Window,html) ->
     gs:config(Window#tfwindow.htmlentry,{setfocus,false});
-move_focus(Window,none) ->
+move_focus(_Window,none) ->
     true.
 
 %----------------------------------------
@@ -401,7 +400,7 @@ clear_info(Window) ->
 %     Key - html,     Val - string()
 % Display the different Val's in the appropriate entries of Window
 %----------------------------------------
-show_info(Window,[]) ->
+show_info(_Window,[]) ->
     ok;
 show_info(Window,[{tool,Tool}|Rest]) ->
     gs:config(Window#tfwindow.toolentry,{text,Tool}),
@@ -516,7 +515,7 @@ save_info2(File,ToolInfo) ->
 	    io:format(Fd,"}.~n",[]),
 	    file:close(Fd),
 	    ok;
-	Error ->
+	_Error ->
 	    {error,waccess}
     end.
 

@@ -80,20 +80,16 @@
 %%     <dd>Outputs internal debugging information during
 %%     compilation.</dd>
 %%
-%%   <dt><code>icode_prop</code></dt>
-%%     <dd>One pass of Icode optimization.</dd>
-%%
-%%   <dt><code>icode_ssa</code></dt>
-%%     <dd>Runs the compiler with Static Single Assignment (SSA) form on
-%%     the Icode level.</dd>
-%%
 %%   <dt><code>icode_ssa_copy_prop</code></dt>
-%%     <dd>Performs copy propagation on the SSA form on
-%%     the Icode level. Needs <code>icode_ssa</code> to be turned on </dd>
+%%     <dd>Performs copy propagation on the SSA form on the Icode
+%%     level.</dd>
+%%
+%%   <dt><code>icode_ssa_const_prop</code></dt>
+%%     <dd>Performs sparse conditional constant propagation on the SSA
+%%     form on the Icode level. </dd>
 %%
 %%   <dt><code>icode_type</code></dt>
-%%     <dd>A type propagator on the icode level. 
-%%     Needs <code>icode_ssa</code> to be turned on </dd>
+%%     <dd>A type propagator on the Icode level. </dd>
 %%
 %%   <dt><code>pp_all</code></dt>
 %%     <dd>Equivalent to <code>[pp_beam, pp_icode, pp_rtl,
@@ -141,24 +137,23 @@
 %%   <dt><code>remove_comments</code></dt>
 %%     <dd>Remove comments from intermediate code.</dd>
 %%
+%%   <dt><code>rtl_ssa_const_prop</code></dt>
+%%     <dd>Performs sparse conditional constant propagation on the SSA
+%%     form on the RTL level. </dd>
+%%
 %%   <dt><code>rtl_cse</code></dt>
 %%     <dd>Performs common subexpression elimination on RTL. Also
 %%	<code>{rtl_cse,CSE_type}</code>.
+%%      <p><code>CSE_type</code> is one of the following:
+%%      <ul>
+%%        <li><code>true</code>/<code>false</code>: normal CSE/no CSE</li>
+%%        <li><code>local</code>: CSE per block</li>
+%%        <li><code>ebb</code>: CSE per extended basic block</li>
+%%        <li><code>global</code>: CSE by fixpoint iteration</li>
+%%      </ul></p></dd>
 %%
-%%     <p><code>CSE_type</code> is one of the following:
-%%     <ul>
-%%       <li><code>true</code>/<code>false</code>: normal CSE/no
-%%       CSE</li>
-%%       <li><code>local</code>: CSE per block</li>
-%%       <li><code>ebb</code>: CSE per extended basic block</li>
-%%       <li><code>global</code>: CSE by fixpoint iteration</li>
-%%     </ul></p></dd>
-%%
-%%   <dt><code>rtl_prop_1</code></dt>
-%%     <dd>First pass of RTL optimization.</dd>
-%%
-%%   <dt><code>rtl_prop_2</code></dt>
-%%     <dd>Second pass of RTL optimization.</dd>
+%%   <dt><code>rtl_prop</code></dt>
+%%     <dd>Propagation of constants on RTL.</dd>
 %%
 %%   <dt><code>sparc_estimate_block_times</code></dt>
 %%     <dd>Do not perform scheduling, but annotate with cycle
@@ -208,6 +203,11 @@
 %%
 %%   <dt><code>use_indexing</code></dt>
 %%     <dd>Use indexing for multiple-choice branch selection.</dd>
+%%
+%%   <dt><code>use_callgraph</code></dt>
+%%     <dd>Use a static call-graph for determining the order in which
+%%         the functions of a module should be compiled (in reversed 
+%%         topological sort order).</dd>
 %% </dl></p>
 %%
 %% <h3>Debugging Options</h3>
@@ -219,19 +219,18 @@
 %% </dl>
 %%
 %% @end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% ====================================================================
 
 -module(hipe).
 
 -export([c/1,
 	 c/2,
-	 c/3,
  	 f/1,
  	 f/2,
 	 compile/1,
 	 compile/2,
-	 compile/3,
 	 compile/4,
+	 compile_core/4,
  	 file/1,
  	 file/2,
 	 load/1,
@@ -261,7 +260,7 @@
 %% @see load/2
 
 load(Mod) ->
-    load(Mod, beam_file(Mod)).
+  load(Mod, beam_file(Mod)).
 
 %% @spec load(Mod, Bin) -> {module, Mod} | {error, Reason}
 %%     Mod = mod()
@@ -280,18 +279,14 @@ load(Mod) ->
 %% @see load/1
 
 load(Mod, Bin) when is_binary(Bin) ->
-    do_load(Mod, Bin, false);
+  do_load(Mod, Bin, false);
 load(Mod, File) ->
-   ChunkName =
-	case erlang:system_info(hipe_architecture) of
-	    ultrasparc -> "HS8P";
-	    x86 -> "HX86"
-	end,
-    case beam_lib:chunks(File, [ChunkName]) of
-	{ok,{_,[{_,Bin}]}} ->
-	    do_load(Mod, Bin, File);
-	Error -> {error, Error}
-    end.
+  Architecture = erlang:system_info(hipe_architecture),
+  ChunkName = hipe_unified_loader:chunk_name(Architecture),
+  case beam_lib:chunks(File, [ChunkName]) of
+    {ok,{_,[{_,Bin}]}} -> do_load(Mod, Bin, File);
+    Error -> {error, Error}
+  end.
 
 
 -define(USER_DEFAULTS, [load]).
@@ -312,7 +307,7 @@ c(Name) ->
 %%     option() = term()
 %%     Reason = term()
 %%
-%% @type mfa(M::mod(),F::fun(),A::arity()) = {M,F,A}.
+%% @type mfa() = {M::mod(),F::fun(),A::arity()}.
 %%       A fully qualified function name.
 %%
 %% @type fun() = atom(). A function identifier.
@@ -422,8 +417,8 @@ beam_file({M,_F,_A}) ->
 beam_file(Module) when is_atom(Module) ->
   case code:which(Module) of
     non_existing ->
-      ?error_msg("Cannot find .beam file.",[]),
-      ?EXIT({cant_find_beam_file});
+      ?error_msg("Cannot find ~w.beam file.",[Module]),
+      ?EXIT({cant_find_beam_file,Module});
     File ->
       File
   end.
@@ -439,38 +434,96 @@ beam_file(Module) when is_atom(Module) ->
 %%
 %% @see compile/2
 
-compile(Name, {[], File}, Opts0) ->
-  compile(Name, File, Opts0);
-compile(Name, {Core, File}, Opts0) ->
-  compile(Name, Core, File, Opts0);
-compile(Name, File, Opts0) ->
-  DisasmFun = fun (_) -> hipe_beam_to_icode:disasm(File) end,
-  IcodeFun = fun (Code, Opts) ->
-		 get_beam_icode(Name, Code, File, Opts)
-	     end,
-  compile_1(Name, DisasmFun, IcodeFun, Opts0).
+compile(Name, File, Opts) ->
+  case proplists:get_value(core, Opts) of
+    true when is_binary(File) ->
+      ?error_msg("Cannot get Core Erlang code from BEAM binary.",[]),
+      ?EXIT({cant_compile_core_from_binary});
+    true ->
+      case filename:find_src(filename:rootname(File, ".beam")) of
+	{error, _} ->
+	  ?error_msg("Cannot find source code for ~p.",[File]),
+	  ?EXIT({cant_find_source_code});
+	{Source, CompOpts} ->
+	  CoreOpts = [X || X = {core_transform, _} <-Opts],
+	  %%io:format("Using: ~w\n", [CoreOpts]),
+	  case compile:file(Source, CoreOpts ++ [to_core, binary | CompOpts]) of
+	    {ok, _, Core} ->
+	      compile_core(Name, Core, File, Opts);
+	    Error ->
+	      ?error_msg("Error compiling ~p:\n~p.",[File, Error]),
+	      ?EXIT({cant_compile_source_code})
+	  end
+      end;
+    {src_file, Source} ->
+      CoreOpts1 = [X || X = {core_transform, _} <-Opts],
+      CoreOpts2 = [report_errors, to_core, binary, {i, "../include"}|CoreOpts1],
+      %%io:format("Using: ~w\n", [CoreOpts2]),
+      case compile:file(Source, CoreOpts2) of
+	{ok, _, Core} ->
+	  compile_core(Name, Core, File, Opts);
+	Error ->
+	  ?error_msg("Error compiling ~p:\n~p\n",[Source, Error]),
+	  ?EXIT({cant_compile_source_code, Error})
+      end;
+    Other when Other == false; Other == undefined ->
+      NewOpts =
+	case proplists:get_value(use_callgraph, Opts) of
+	  No when No == false; No == undefined -> Opts;
+	  _ ->
+	    case Name of
+	      {_M,_F,_A} ->
+		?WARNING_MSG("The option use_callgraph cannot be used when "
+			     "compiling a single function\n", []),
+		[no_use_callgraph|Opts];
+	      _ -> Opts
+	    end
+	end,
+      DisasmFun = fun (_) -> disasm(File) end,
+      IcodeFun = fun (Code, Opts_) ->
+		     get_beam_icode(Name, Code, File, Opts_)
+		 end,
+      run_compiler(Name, DisasmFun, IcodeFun, NewOpts)
+  end.
 
-compile(Name, Core, File, Opts0) when atom(Name) ->
+compile_core(Name, Core0, File, Opts) ->
+  Core = cerl:from_records(Core0),
+  Core1 = case (erlang:system_info(heap_type) == hybrid)
+	    andalso proplists:get_bool(hybrid, Opts) of
+	    true -> cerl_hybrid_transform:transform(Core, Opts);
+	    false -> Core
+	  end,
+  compile(Name, Core1, File, Opts).
+
+%% @spec compile(Name, Core, File, options()) ->
+%%           {ok, Binary} | {error, Reason}
+%%       Name = mod()
+%%       Core = coreErlang() | []
+%%       File = filename() | binary()
+%%       Binary = binary()
+%%       Reason = term()
+%% 
+%% @doc Like <code>compile/3</code>, but unless <code>Core</code> is
+%% <code>[]</code>, low-level code is generated from the given Core
+%% Erlang code instead of from the BEAM code.
+%%
+%% <p>Note that only whole modules can be compiled with this
+%% function.</p>
+%%
+%% @see compile/3
+
+compile(Name, [], File, Opts) ->
+  compile(Name, File, Opts);
+compile({M,F,A}, _Core, _File, _Opts) ->
+  ?WARNING_MSG("Cannot compile single functions from source code. (~p}.\n",[{M,F,A}]),
+  {ok, <<>>};  % dummy
+%  compile(M, Core, File, Opts);
+compile(Name, Core, File, Opts) when atom(Name) ->
   DisasmFun = fun (_) -> {false, []} end,
   IcodeFun = fun (_, Opts) ->
 		 get_core_icode(Name, Core, File, Opts)
 	     end,
-  compile_1(Name, DisasmFun, IcodeFun, Opts0).
-
-compile_1(Name, DisasmFun, IcodeFun, Opts0) ->
-  check_module(Name),
-  Opts = expand_basic_options(Opts0 ++ ?COMPILE_DEFAULTS),
-  ?when_option(verbose, Opts, ?debug_msg("Compiling: ~p\n",[Name])),
-  ?option_start_time("Compile", Opts),
-  Res = run_compiler(DisasmFun, IcodeFun, Opts),
-  ?option_stop_time("Compile",Opts),
-  Res.
-
-check_module(hipe_internal) ->
-  ?error_msg("Nope, can't do that\n",[]),
-  ?EXIT({cant_compile_hipe_internal});
-check_module(_) ->
-  ok.
+  run_compiler(Name, DisasmFun, IcodeFun, Opts).
 
 %% @spec file(File) -> {ok, Name, Binary} | {error, Reason}
 %%       File = filename() | binary()
@@ -511,32 +564,71 @@ file(File, Options) ->
   end.
 
 
+%%-----------------------------------------------------------------------
 %% The rest are internal functions:
+%%-----------------------------------------------------------------------
 
-get_beam_icode({M,_F,_A} = MFA, BeamCode, _File, Options) ->
-  %% When compiling just one function, then the emulated code for the
-  %% module must be loaded.
-  code:ensure_loaded(M),
+%% @doc
+%% Get BEAM code from `.beam' files or direct from binaries.
+%%   File is either a file name or a binary containing the BEAM code.
+
+disasm(File) ->
+  case beam_disasm:file(File) of
+    {beam_file,DisasmBeam} ->
+      {value,{code,BeamCode}} = lists:keysearch(code,1,DisasmBeam),
+      {value,{exports,BeamExports}} = lists:keysearch(exports,1,DisasmBeam),
+      {value,{comp_info,CompInfo}} = lists:keysearch(comp_info,1,DisasmBeam),
+      {value,{options,CompOpts}} = lists:keysearch(options,1,CompInfo),
+      HCompOpts = case lists:keysearch(hipe,1,CompOpts) of
+		    {value,{hipe,L}} when is_list(L) -> L;
+		    {value,{hipe,X}} -> [X];
+		    _ -> []
+		  end,
+      %% XXX: get module name too somehow
+      Exports = fix_beam_exports(BeamExports),
+      {{BeamCode, Exports}, HCompOpts};
+    Error ->
+      io:format("~s\n", [beam_lib:format_error(Error)]),
+      ?EXIT(no_beam_code)
+  end.
+
+fix_beam_exports(BeamExports) ->
+  fix_beam_exports(BeamExports, []).
+fix_beam_exports([{F,A,_}|BeamExports], Exports) ->
+  fix_beam_exports(BeamExports, [{F,A} | Exports]);
+fix_beam_exports([], Exports) ->
+  Exports.
+
+get_beam_icode({M,_F,_A} = MFA, {BeamCode, Exports}, _File, Options) ->
   ?option_time({ok,Icode} = 
 	       (catch {ok,hipe_beam_to_icode:mfa(BeamCode, MFA, Options)}),
 	       "BEAM-to-Icode", Options),
-  {Icode, M, false};
-get_beam_icode(Mod, BeamCode, File, Options) ->
+  {{M, Exports, Icode}, false};
+get_beam_icode(Mod, {BeamCode, Exports}, File, Options) ->
   ?option_time({ok, Icode} =
 	       (catch {ok, hipe_beam_to_icode:module(BeamCode, Options)}),
 	       "BEAM-to-Icode", Options),
   BeamBin = get_beam_code(File),
-  {Icode, Mod, BeamBin}.
+  {{Mod, Exports, Icode}, BeamBin}.
 
 get_core_icode(Mod, Core, File, Options) ->
   ?option_time({ok, Icode} =
 	       (catch {ok, cerl_to_icode:module(Core, Options)}),
 	       "BEAM-to-Icode", Options),
-  BeamBin = get_beam_code(File),
-  {Icode, Mod, BeamBin}.
+  NeedBeamCode = 
+    proplists:get_bool(type_only, Options) 
+    orelse (not proplists:get_bool(load, Options)),
+
+  BeamBin = 
+    case NeedBeamCode of
+      true -> [];
+      false -> get_beam_code(File)
+    end,
+  Exports = [],   %% FIXME: get list of exports from core code
+  {{Mod, Exports, Icode}, BeamBin}.
 
 get_beam_code(Bin) when is_binary(Bin) -> Bin;
-get_beam_code(FileName)->
+get_beam_code(FileName) ->
   case erl_prim_loader:get_file(FileName) of
     {ok,Bin,_} ->
       Bin;
@@ -544,117 +636,222 @@ get_beam_code(FileName)->
       ?EXIT(no_beam_file)
   end.
 
-%% Note that this function receives the "basic" options.  The DisasmFun
-%% and IcodeFun only collect the Icode. Most of the real work is done in
-%% the 'finalize' function.
 
-run_compiler(DisasmFun, IcodeFun, Options) ->
-  %% Spawn and link in case the linked CompProc gets killed. Make sure
-  %% the main process catches the signal if this happens.
-  process_flag(trap_exit, false),
+%% ---------------------------------------------------------------------
+%% All compilations go through this function. Note that it receives only
+%% "basic" options. Name is just used for verbosity. The DisasmFun and
+%% IcodeFun only collect the Icode; most of the real work is done in the
+%% 'finalize' function.
+
+run_compiler(Name, DisasmFun, IcodeFun, Opts0) ->
+  Opts = expand_basic_options(Opts0 ++ ?COMPILE_DEFAULTS),
+  ?when_option(verbose, Opts, ?debug_msg("Compiling: ~p\n",[Name])),
+  ?option_start_time("Compile", Opts),
+  Res = run_compiler_1(DisasmFun, IcodeFun, Opts),
+  ?option_stop_time("Compile", Opts),
+  Res.
+
+run_compiler_1(DisasmFun, IcodeFun, Options) ->
   Parent = self(),
-  CompProc = spawn_link(
-	       fun () ->
-		   %% Compiler process
-		   set_architecture(Options),
-		   pre_init(Options),
-		   {Code, CompOpts} = DisasmFun(Options),
-		   Opts = expand_options(Options ++ CompOpts),
-		   check_options(Opts),
-		   ?when_option(verbose, Options,
-				?debug_msg("Options: ~p.\n",[Opts])),
-		   init(Opts),
-		   {Icode, Mod, BeamBin} = IcodeFun(Code, Opts),
-		   Result = compile_finish(Icode, Mod, BeamBin, Opts),
-		   compiler_return(Result, Parent)
-	       end),
+  {trap_exit,TrapExit} = process_info(Parent, trap_exit),
+  %% Spawn a compilation process CompProc. In case this process gets
+  %% killed, the trap_exit flag is restored to that of the Parent process.
+  process_flag(trap_exit, true),
+  CompProc = spawn_link(fun () ->
+			    %% Compiler process
+			    set_architecture(Options),
+			    pre_init(Options),
+			    %% The full option expansion is not done
+			    %% until the DisasmFun returns.
+			    {Code, CompOpts} = DisasmFun(Options),
+			    Opts = expand_options(Options ++ CompOpts),
+			    check_options(Opts),
+			    ?when_option(verbose, Options,
+					 ?debug_msg("Options: ~p.\n",[Opts])),
+			    init(Opts),
+			    {Icode, WholeModule} = IcodeFun(Code, Opts),
+			    CompRes = compile_finish(Icode, WholeModule, Opts),
+			    compiler_return(CompRes, Parent)
+			end),
   Timeout = case proplists:get_value(timeout, Options) of
 	      N when is_integer(N), N >= 0 -> N;
 	      undefined -> ?DEFAULT_TIMEOUT;
 	      infinity -> infinity;
 	      Other ->
-		?warning_msg("Bad timeout value: ~P\n"
+		?WARNING_MSG("Bad timeout value: ~P\n"
 			     "Using default timeout limit.\n",	
 			     [Other, 5]),
 		?DEFAULT_TIMEOUT
 	    end,
-  receive 
-    {CompProc, Result} -> Result;
+  receive
+    {'EXIT', CompProc, normal} -> ok;
     {'EXIT', CompProc, Reason} -> exit(Reason)
   after Timeout ->
-      exit(CompProc, kill),  %% this kills the compilation process CompProc
-      ?error_msg("ERROR: Compilation timed out.~n",[]),
-      {error, timed_out}
+      %% Kill the compilation process
+      exit(CompProc, kill),
+      receive {'EXIT', CompProc, _} -> ok end,
+      flush(),
+      ?error_msg("ERROR: Compilation timed out.\n",[]),
+      exit(timed_out)
+  end,
+  Result = receive {CompProc, Res} -> Res end,
+  process_flag(trap_exit, TrapExit),
+  Result.
+
+flush() ->
+  receive
+    _ -> flush()
+  after 0 ->
+      ok
   end.
 
 compiler_return(Res, Client) ->
   Client ! {self(), Res}.
 
-compile_finish({'EXIT',Error}, _Mod, _WholeModule, _Options) ->
-  {error, Error};
-compile_finish(Icode, Mod, WholeModule, Options) ->
-  Res = finalize(Icode, Mod, WholeModule, Options),
-  post(Res, Options).
+compile_finish({Mod, Exports, Icode}, WholeModule, Options) ->
+  Res = finalize(Icode, Mod, Exports, WholeModule, Options),
+  post(Res, Icode, Options).
 
 
 %% ---------------------------------------------------------------------
-%% Finalize/3 compiles, assembles, and optionally loads a list of `{MFA,
+%% finalize/4 compiles, assembles, and optionally loads a list of `{MFA,
 %% Icode}' pairs, and returns `{ok, Binary}' or `{error, Reason}'.
 
-finalize(List, Mod, WholeModule, Opts) ->
+%% TODO: make the Exports info accessible to the compilation passes.
+finalize(List, Mod, Exports, WholeModule, Opts) ->
   {T1Compile,_} = erlang:statistics(runtime),
-  CompiledCode = [finalize_fun({MFA, Icode}, Opts)
-		  || {MFA, Icode} <- List],
+  CompiledCode =
+    case proplists:get_value(use_callgraph, Opts) of
+      true -> 
+	%% Compiling the functions bottom-up by using a call graph
+	CallGraph = hipe_icode_callgraph:construct(List),
+	OrdList = hipe_icode_callgraph:to_list(CallGraph),
+	[finalize_fun({MFA, Icode}, Opts)
+	 || {MFA, Icode} <- OrdList];
+      fixpoint ->
+	CallGraph = hipe_icode_callgraph:construct(List),
+	finalize_fun_fixpoint(CallGraph, Opts);
+      _ -> 
+	%% Compiling the functions bottom-up by reversing the list
+	OrdList = lists:reverse(List),
+	[finalize_fun({MFA, Icode}, Opts)
+	 || {MFA, Icode} <- OrdList]
+    end,
   {T2Compile,_} = erlang:statistics(runtime),
   ?when_option(verbose, Opts,
 	       ?debug_msg("Compiled ~p in ~.2f s\n",
 			  [Mod,(T2Compile-T1Compile)/1000])),
-  case proplists:get_bool(to_rtl, Opts) of
+  case proplists:get_bool(type_only, Opts) of
     true ->
-      {ok, CompiledCode};
+      {ok, Mod};
     false ->
-      Closures = 
-	[MFA || {MFA, Icode} <- List,
-		hipe_icode:icode_is_closure(Icode)],
-      {T1,_} = erlang:statistics(runtime),
-      ?when_option(verbose, Opts, ?debug_msg("Assembling ~w",[Mod])),
-      case catch assemble(CompiledCode, Closures, Opts) of
-	{'EXIT',Error} -> {error,Error};
-	Bin ->
-	  {T2,_} = erlang:statistics(runtime),
-	  ?when_option(verbose, Opts,
-		       ?debug_untagged_msg(" in ~.2f s\n",
-					   [(T2-T1)/1000])),
-	  maybe_load(Mod, Bin, WholeModule, Opts),
-	  TargetArch = get(hipe_target_arch),
-	  {ok, {TargetArch,Bin}}
+      case proplists:get_bool(to_rtl, Opts) of
+	true ->
+	  {ok, CompiledCode};
+	false ->
+	  Closures = 
+	    [MFA || {MFA, Icode} <- List,
+		    hipe_icode:icode_is_closure(Icode)],
+	  {T1,_} = erlang:statistics(runtime),
+	  ?when_option(verbose, Opts, ?debug_msg("Assembling ~w",[Mod])),
+	  case catch assemble(CompiledCode, Closures, Exports, Opts) of
+	    {'EXIT',Error} -> {error,Error};
+	    Bin ->
+	      {T2,_} = erlang:statistics(runtime),
+	      ?when_option(verbose, Opts,
+			   ?debug_untagged_msg(" in ~.2f s\n",
+					       [(T2-T1)/1000])),
+	      maybe_load(Mod, Bin, WholeModule, Opts),
+	      TargetArch = get(hipe_target_arch),
+	      {ok, {TargetArch,Bin}}
+	  end
       end
   end.
 
 finalize_fun({MFA, Icode}, Opts) ->
   {T1,_} = erlang:statistics(runtime),
   ?when_option(verbose, Opts, ?debug_msg("Compiling ~w",[MFA])),
-  DebugState = get(hipe_debug),
-  
-  case catch hipe_main:compile_icode(MFA, Icode, Opts, DebugState) of
+  case catch hipe_main:compile_icode(MFA, Icode, Opts) of
     {native, Platform, {unprofiled,Code}} ->
       {T2,_} = erlang:statistics(runtime),
       ?when_option(verbose, Opts,
 		   ?debug_untagged_msg(" in ~.2f s\n", [(T2-T1)/1000])),
       case Platform of
-	ultrasparc -> {Entry,Rest,Ct} = Code, {MFA,{Entry,Rest},Ct};
-	x86 -> {MFA, Code}
+	ultrasparc -> {Entry,Ct} = Code, {MFA,Entry,Ct};
+	powerpc -> {MFA, Code};
+	x86 -> {MFA, Code};
+        amd64 -> {MFA, Code}
       end;
     {rtl, LinearRtl} ->
+      io:format("~p~n", [LinearRtl]),
       {MFA, LinearRtl};
+    {type_only, Fixpoint} ->
+      {MFA, Fixpoint};
     {native, X} ->
-      ?error_msg("ERROR: unknown native format: ~P.\n",[X,25]),
+      ?error_msg("ERROR: unknown native code format: ~P.\n",[X]),
       ?EXIT(unknown_format);
-	{'EXIT', Error} -> 
+    {'EXIT', Error} -> 
       ?when_option(verbose, Opts,?debug_untagged_msg("\n",[])),
       ?error_msg("ERROR: ~p~n",[Error]),
       ?EXIT(Error)
   end.
+
+finalize_fun_fixpoint(CallGraph, Opts) ->
+  finalize_fun_fixpoint(CallGraph, Opts, []).
+
+finalize_fun_fixpoint(CallGraph, Opts, Acc) ->
+  case hipe_icode_callgraph:is_empty(CallGraph) of
+    true ->
+      lists:flatten(lists:reverse(Acc));
+    false ->
+      case hipe_icode_callgraph:take_first(CallGraph) of
+	{[SCC], NewCallGraph} ->
+	  %% One function
+	  finalize_fun_fixpoint(NewCallGraph, Opts, 
+				[finalize_fun(SCC, Opts)|Acc]);
+	{SCC, NewCallGraph} ->
+	  %% Ensure that this is only used with the option type_only
+	  Res = dets_fixpoint_loop(SCC, [type_only|Opts]),
+	  finalize_fun_fixpoint(NewCallGraph, Opts, [Res|Acc])
+      end
+  end.
+
+dets_fixpoint_loop(SCC, Opts) ->
+  case proplists:get_value(type_warnings, Opts) of
+    {pid, _Pid} ->
+      %% Ensure warnings are only sent once.
+      TmpOpts = proplists:normalize([no_type_warnings|Opts], 
+				    [{negations, opt_negations()}]),
+      {_Res, Redo} = dets_fixpoint_loop(SCC, false, TmpOpts, []),
+      case Redo of
+	true ->
+	  dets_fixpoint_loop(SCC, Opts);
+	false -> 
+	  %% Additional pass to emit warnings.
+	  {Res1, _} = dets_fixpoint_loop(SCC, false, Opts, []),
+	  Res1
+      end;
+    _ ->
+      {Res, Redo} = dets_fixpoint_loop(SCC, false, Opts, []),
+      case Redo of
+	true ->
+	  dets_fixpoint_loop(SCC, Opts);
+	false -> 
+	  Res
+      end
+  end.
+
+dets_fixpoint_loop([Fun = {MFA, _}|Left], Redo, Opts, Acc) ->
+  Res = finalize_fun(Fun, Opts),
+  case Res of
+    {MFA, fixpoint} ->
+      dets_fixpoint_loop(Left, Redo, Opts, [Res|Acc]);
+    {MFA, not_fixpoint} -> 
+      dets_fixpoint_loop(Left, true, Opts, [Res|Acc])
+  end;
+dets_fixpoint_loop([], Redo, _Opts, Acc) ->
+  {Acc, Redo}.
+
 
 maybe_load(Mod, Bin, WholeModule, Opts) ->
   case proplists:get_bool(load, Opts) of
@@ -671,92 +868,46 @@ do_load(Mod, Bin, WholeModule) ->
 
   %% Make sure we can do the load.
   if HostArch =/= TargetArch ->
-      ?EXIT({host_and_target_arch_differ,HostArch,TargetArch});
-     true -> ok
+    ?EXIT({host_and_target_arch_differ,HostArch,TargetArch});
+    true -> ok
   end,
 
   case WholeModule of 
     false ->
-      case get(hipe_host_arch) of
-	ultrasparc ->
-	  hipe_unified_loader:load(Mod, Bin);
-	x86 ->
-	  hipe_unified_loader:load(Mod, Bin);
-	Arch ->
-	  ?EXIT({executing_on_an_unsupported_architecture,Arch})
-      end;
+      %% In this case, the emulated code for the module must be loaded.
+      code:ensure_loaded(Mod),
+      hipe_unified_loader:load(Mod, Bin);
     _ ->
-      %% workaround for what may be an x86 bug
-      case get(hipe_host_arch) of
-	x86 ->
-	  %% x86 must run the old code for now
-	  case code:is_sticky(Mod) of
-	    true ->
-	      %% Don't load sticky mods.
-	      %%?error_msg("Can't load module that resides in sticky dir\n",[]),
-	      %%?EXIT({error,sticky_directory,Mod});
-	      %% Just don't purge stick mods.
-	      ok;
-	    _ ->
-	      code:purge(Mod),
-	      code:delete(Mod)
-	  end,
-	  case get(hipe_host_arch) of
-	    ultrasparc ->
-	      hipe_unified_loader:load_module(Mod, Bin, WholeModule);
-	    x86 ->
-	      hipe_unified_loader:load_module(Mod, Bin, WholeModule);
-	    Arch ->
-	      ?EXIT({executing_on_an_unsupported_architecture,Arch})
-	  end;
-	ultrasparc ->
-	  %% the new code, which alas trips a bug on x86
-	  case code:is_sticky(Mod) of
-	    true ->
-	      %% Don't purge or register sticky mods.
-	      case get(hipe_host_arch) of
-		ultrasparc ->
-		  hipe_unified_loader:load_module(Mod, Bin, WholeModule);
-		x86 ->
-		  hipe_unified_loader:load_module(Mod, Bin, WholeModule)
-	      end;
-	    _ -> %% Not a sticky module.
-	      Chunkname = case get(hipe_host_arch) of
-			    ultrasparc ->"HS8P";
-			    x86 -> "HX86"
-			  end,
-	      {ok, _, Chunks0} = beam_lib:all_chunks(WholeModule),
-	      Chunks = [{Chunkname,Bin}| lists:keydelete(Chunkname,1,Chunks0)],
-	      {ok, BeamPlusNative} = beam_lib:build_module(Chunks),
-	      Res = code:load_binary(Mod,code:which(Mod),
-				     BeamPlusNative),
-	      Res
-	  end
+      case code:is_sticky(Mod) of
+	true ->
+	  %% Don't purge or register sticky mods; just load native.
+	  hipe_unified_loader:load_module(Mod, Bin, WholeModule);
+	false ->
+	  %% Normal loading of a whole module
+	  Architecture = erlang:system_info(hipe_architecture),
+	  ChunkName = hipe_unified_loader:chunk_name(Architecture),
+	  {ok,_,Chunks0} = beam_lib:all_chunks(WholeModule),
+	  Chunks = [{ChunkName,Bin}|lists:keydelete(ChunkName,1,Chunks0)],
+	  {ok,BeamPlusNative} = beam_lib:build_module(Chunks),
+	  code:load_binary(Mod,code:which(Mod),BeamPlusNative)
       end
   end.
-      
 
-assemble(CompiledCode, Closures, Options) ->
+assemble(CompiledCode, Closures, Exports, Options) ->
   case get(hipe_target_arch) of
     ultrasparc ->
-      %% XXX: The "saver" should really be called an assembler now
-      hipe_sparc_saver:save(CompiledCode, Closures, Options);
+      hipe_sparc_assemble:assemble(CompiledCode, Closures, Exports, Options);
+    powerpc ->
+      hipe_ppc_assemble:assemble(CompiledCode, Closures, Exports, Options);
     x86 ->
-      x86_assemble(CompiledCode, Closures, Options);
+      hipe_x86_assemble:assemble(CompiledCode, Closures, Exports, Options);
+    amd64 ->
+      hipe_amd64_assemble:assemble(CompiledCode, Closures, Exports, Options);
     Arch ->
       ?EXIT({executing_on_an_unsupported_architecture,Arch})
   end.
 
-%% use option no_assemble_x86 to disable calling hipe_x86_assemble
-x86_assemble(Code, Closures, Options) ->
-  case proplists:get_bool(no_assemble_x86, Options) of
-    true ->
-      Code;
-    false ->
-      hipe_x86_assemble:assemble(Code, Closures, Options)
-  end.
-
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 
 %% Initialise host and target architectures. Target defaults to host,
 %% but can be overridden by passing an option {target, Target}.
@@ -776,30 +927,30 @@ pre_init(Opts) ->
   %% Initialise some counters used for measurements and benchmarking. If
   %% the option 'measure_regalloc' is given the compilation will return
   %% a keylist with the counter values.
-
   put(hipe_time,
-      case proplists:get_value(time, Options,false) of
+      case proplists:get_value(time, Options, false) of
 	true -> [hipe,hipe_main];
 	OptTime -> OptTime
       end),
   [?set_hipe_timer_val(Timer,0) || Timer <- hipe_timers()],
   [case Counter of
-     {CounterName, InitVal} -> put(CounterName, InitVal);
-     CounterName  -> put(CounterName,0)
+     {CounterName,InitVal} -> put(CounterName, InitVal);
+     CounterName  -> put(CounterName, 0)
    end
    || Counter <- proplists:get_value(counters, Options, [])],
   
-  put(hipe_debug,proplists:get_bool(debug, Options)),  
+  put(hipe_debug,     proplists:get_bool(debug, Options)),  
   put(hipe_inline_fp, proplists:get_bool(inline_fp, Options)),
-  put(hipe_inline_bs, proplists:get_bool(inline_bs, Options)),
   ok.
 
 %% Prepare the compiler process by setting up variables which are
 %% accessed globally. Options have been fully expanded at ths point.
 
 init(_Options) ->
-  %% `hipe_internal' must be loaded to compile gen_server
-  code:ensure_loaded(hipe_internal),
+  % XXX: If more options start to use this then make a list instead
+  %      and change hipe_icode_ssa_const_prop.erl accordingly
+  put(warn_expression_throws_exception,
+	proplists:get_bool(warn_expression_throws_exception, _Options)),
 
   put(regalloctime,0),
   put(callersavetime,0),
@@ -813,9 +964,9 @@ init(_Options) ->
   put(bbs,0),
   ok.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% --------------------------------------------------------------------
 
-post(Res, Options) ->
+post(Res, Icode, Options) ->
   TimerVals = 
     case proplists:get_value(timers,Options) of
       Timers when is_list(Timers) ->
@@ -839,14 +990,27 @@ post(Res, Options) ->
       false -> []
     end,
 
-  case TimerVals ++ CounterVals ++ Measures of
-    [] ->
-      Res;
-    Info -> 
-      {Res, Info}
+  Info = TimerVals ++ CounterVals ++ Measures,
+  
+  case proplists:get_bool(get_called_modules, Options) of
+    true ->
+      CalledMods = hipe_icode_callgraph:get_called_modules(Icode),
+      case Info of
+	[] ->
+	  {Res, {called_modules, CalledMods}};
+	_ ->
+	  {Res, {info, Info}, {called_modules, CalledMods}}
+      end;
+    false ->
+      case Info of
+	[] ->
+	  Res;
+	_ ->
+	  {Res, {info, Info}}
+      end
   end.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% --------------------------------------------------------------------
 
 %% @spec version() -> {Major, Minor, Increment}
 %% Major = integer()
@@ -854,7 +1018,7 @@ post(Res, Options) ->
 %% Increment  = integer() 
 %% @doc Returns the current HiPE version.
 version() ->
-  ?version().
+  ?VERSION().
 
 %% ____________________________________________________________________
 %% 
@@ -864,7 +1028,7 @@ version() ->
 %% @spec () -> ok
 %% @doc Prints on-line documentation to the standard output.
 help() ->
-  {V1,V2,V3} = ?version(),
+  {V1,V2,V3} = ?VERSION(),
   io:format("The HiPE Compiler (Version ~w.~w.~w)\n" ++
 	    " The normal way to native-compile Erlang code " ++
 	    "using HiPE is to\n" ++
@@ -894,8 +1058,6 @@ help() ->
 	    "     to memory. Name is an atom or a tuple {M,F,A}.\n" ++
 	    "   c(Name)\n" ++
 	    "     As above, but using only default options.\n" ++
-	    "   c(Name,File,Options)\n" ++
-	    "     As above, but reading BEAM code from File.\n" ++
 	    "   f(File,Options)\n" ++ 
 	    "     As c(Name,File,Options), but taking the module name\n" ++
 	    "     from File.\n" ++
@@ -906,8 +1068,6 @@ help() ->
 	    "     By default, this does not load to memory.\n" ++
 	    "   compile(Name)\n" ++ 
 	    "     As above, but using only default options.\n" ++
-	    "   compile(Name,File,Options)\n" ++
-	    "     As above, but reading BEAM code from File.\n" ++
 	    "   file(File,Options)\n" ++ 
 	    "     As compile(Name,File,Options), but taking the\n" ++
 	    "     module name from File.\n" ++
@@ -948,6 +1108,8 @@ help_options() ->
 	    "   pp_all = ~p,\n" ++
 	    "   pp_sparc = pp_native,\n" ++
 	    "   pp_x86 = pp_native,\n" ++
+	    "   pp_amd64 = pp_native,\n" ++
+	    "   pp_ppc = pp_native,\n" ++
 	    "   o0 = {'O',0},\n" ++
 	    "   o1 = {'O',1} = ~p,\n" ++
 	    "   o2 = {'O',2} = ~p ++ o1,\n" ++
@@ -972,15 +1134,16 @@ option_text(debug) ->
   "Outputs internal debugging information during compilation.";
 option_text(fill_delayslot) ->
   "Try to optimize Sparc delay slots.";
-option_text(icode_prop) ->
-  "One pass of Icode optimization.";
-option_text(icode_ssa) ->
-  "Runs the compiler with Static Single Assignment (SSA) Form\n"++
-  "on the Icode level.";
 option_text(icode_ssa_check) ->
   "Checks wheter Icode is on SSA form or not\n";
+option_text(icode_ssa_const_prop) ->
+  "Performs sparse conditional constant propagation on Icode SSA";
+option_text(warn_expression_throws_exception) ->
+  "Warns when detecting code that will throw an exception at runtime.";
 option_text(load) ->
   "Automatically load the produced code into memory.";
+option_text(peephole) ->
+  "Enables peephole optimizations.";
 option_text(pp_asm) ->
   "Displays assembly listing with addresses and bytecode.\n" ++
   "Currently available for x86 only.";
@@ -991,7 +1154,7 @@ option_text(pp_icode) ->
 option_text(pp_rtl) ->
   "Display the intermediate HiPE-RTL code.";
 option_text(pp_native) ->
-  "Display the generated native code.";
+  "Display the generated (back-end specific) native code.";
 option_text(regalloc) ->
   "Select register allocation algorithm. Used as {regalloc, METHOD}.\n" ++
   "    Currently available methods:\n" ++
@@ -1001,12 +1164,14 @@ option_text(regalloc) ->
   "        coalescing - tries hard to use registers.";
 option_text(remove_comments) ->
   "Strip comments from intermediate code.";
+option_text(rtl_ssa) ->
+  "Perform SSA conversion on the RTL level -- default starting at O2";
+option_text(rtl_ssa_const_prop) ->
+  "Performs sparse conditional constant propagation on RTL SSA";
 option_text(rtl_cse) ->
   "Common Subexpression Elimination on RTL.";
-option_text(rtl_prop_1) ->
-  "Perform RTL-level optimization early.";
-option_text(rtl_prop_2) ->
-  "Perform RTL-level optimization late.";
+option_text(rtl_prop) ->
+  "Perform RTL-level constant propagation.";
 option_text(sparc_peephole) ->
   "Perform Sparc peephole optimization.";
 option_text(sparc_prop) ->
@@ -1022,8 +1187,17 @@ option_text(timeout) ->
   "Specify compilation time limit in ms. Used as {timeout, LIMIT}.\n" ++
   "    The limit must be a non-negative integer or the atom 'infinity'.\n" ++
   "    The current default limit is 15 minutes (900000 ms).";
+option_text(type_only) ->
+  "Breaks the compilation after the icode type pass. No native code will " ++
+  "  be produced and no code will be loaded.";
+option_text(type_warnings) ->
+  "Turns on warnings from the icode type propagator";
 option_text(use_indexing) ->
   "Use indexing for multiple-choice branch selection.";
+option_text(use_callgraph) ->
+  "Compile the functions in a module according to a reversed topological "
+    "sorted order to gain more information when using a dets for storing "
+    "intra-modular type information.";
 option_text(verbose) ->
   "Output information about what is being done.";
 option_text(_) ->
@@ -1097,14 +1271,11 @@ hipe_timers() ->
 %%     count_instrs:
 %%     fill_delayslot:
 %%     {hot, Functions}:
-%%     hotness:
 %%     icode_type:
-%%     iproc_debug:
 %%     {ls_order, Order}:
 %%     {regalloc, Algorithm}:
 %%     remove_comments
 %%     sparc_estimate_block_time
-%%     sparc_opt_cfg:
 %%     sparc_peephole:
 %%     sparc_post_schedule
 %%     sparc_profile:
@@ -1114,7 +1285,6 @@ hipe_timers() ->
 %%     timers
 %%     safe
 %%     use_indexing
-%%     rtl_add_gc
 %%     rtl_cse
 
 %% Valid option keys. (Don't list aliases or negations - the check is
@@ -1122,7 +1292,9 @@ hipe_timers() ->
 
 opt_keys() ->
     ['O',
-     no_assemble_x86,
+     check_for_inlining,
+     core,
+     core_transform,
      counters,
      count_instrs,
      count_spills,
@@ -1131,33 +1303,36 @@ opt_keys() ->
      fill_delayslot,
      finalise_x86,
      frame_x86,
+     get_called_modules,
      hot,
-     hotness,
-     icode_prop,
-     icode_ssa,
+     icode_split_arith,
      icode_ssa_check,
      icode_ssa_copy_prop,
+     icode_ssa_const_prop,
      icode_type,
      inline_bs,
      inline_fp,
-     iproc_debug,
      ls_order,
      load,
      measure_regalloc,
+     peephole,
      pp_asm,
      pp_beam,
      pp_icode,
+     pp_icode_ssa,
      pp_opt_icode,
      pp_typed_icode,
+     pp_icode_liveness,
      pp_native,
      pp_rtl,
+     pp_rtl_liveness,
+     pp_rtl_ssa,
      regalloc,
      remove_comments,
-     rtl_add_gc,
+     rtl_ssa,
+     rtl_ssa_const_prop,
      rtl_cse,
-     rtl_prop_1,
-     rtl_prop_2,
-     rtl_prop_3,
+     rtl_prop,
      rtl_show_translation,
      safe,
      sparc_estimate_block_time,
@@ -1166,7 +1341,6 @@ opt_keys() ->
      sparc_profile,
      sparc_prop,
      sparc_schedule,
-     sparc_opt_cfg,
      sparc_rename,
      target,
      time,
@@ -1174,27 +1348,38 @@ opt_keys() ->
      timeregalloc,
      timers,
      to_rtl,
+     type_warnings,
+     type_only,
      use_indexing,
      use_inline_atom_search,
+     use_callgraph,
      use_clusters,
      use_jumptable,
-     verbose].
+     verbose,
+     warn_expression_throws_exception,
+     x87].
 
 %% Definitions: 
 
 o1_opts() ->
-  Common = [rtl_prop_2, inline_fp, inline_bs],
+  Common = [rtl_prop, inline_fp, inline_bs, peephole],
   case get(hipe_target_arch) of
     ultrasparc ->
       [sparc_peephole, fill_delayslot | Common];
+    powerpc ->
+      [rtl_prop, inline_bs];	% XXX: inline_fp not yet allowed
     x86 ->
+      Common;
+    amd64 ->
       Common;
     Arch ->
       ?EXIT({executing_on_an_unsupported_architecture,Arch})
   end.
 
 o2_opts() ->
-  Common = [icode_ssa, icode_type, icode_prop, icode_ssa_copy_prop,
+  Common = [icode_ssa_const_prop, icode_ssa_copy_prop, icode_type,
+	    %% warn_expression_throws_exception, 
+	    rtl_ssa, rtl_ssa_const_prop,
 	    use_indexing, remove_comments | o1_opts()],
   %% KOSTIS: The following do not work currently -- why?
   % Common = [rtl_cse | Common],
@@ -1202,18 +1387,26 @@ o2_opts() ->
   case get(hipe_target_arch) of
     ultrasparc ->
       [sparc_prop | Common];
+    powerpc ->
+      Common;
     x86 ->
+      Common;
+    amd64 ->
       Common;
     Arch -> 
       ?EXIT({executing_on_an_unsupported_architecture,Arch})
   end.
 
 o3_opts() ->
-  Common = [{regalloc,coalescing}, rtl_prop_3 | o2_opts()],
+  Common = [{regalloc,coalescing} | o2_opts()],
   case get(hipe_target_arch) of
     ultrasparc ->
       Common;
+    powerpc ->
+      Common;
     x86 ->
+      Common;
+    amd64 ->
       Common;
     Arch ->
       ?EXIT({executing_on_an_unsupported_architecture,Arch})
@@ -1224,31 +1417,33 @@ o3_opts() ->
 %% "if 'x' ..." instead of "if not 'no_x' ...".
 
 opt_negations() ->
-  [{assemble_x86, no_assemble_x86},    % normal form is negative!
+  [{no_core, core},
    {no_debug, debug},
    {no_fill_delayslot, fill_delayslot},
    {no_finalise_x86, finalise_x86},
-   {no_frame_x86, frame_x86},
-   {no_icode_prop, icode_prop},
-   {no_icode_ssa, icode_ssa},
+   {no_get_called_modules, get_called_modules},
+   {no_icode_split_arith, icode_split_arith},
    {no_icode_ssa_check, icode_ssa_check},
    {no_icode_ssa_copy_prop, icode_ssa_copy_prop},
+   {no_icode_ssa_const_prop, icode_ssa_const_prop},
+   {no_warn_expression_throws_exception, warn_expression_throws_exception},
    {no_icode_type, icode_type},
    {no_inline_bs, inline_bs},
    {no_inline_fp, inline_fp},
    {no_load, load},
+   {no_peephole, peephole},
    {no_pp_beam, pp_beam},
    {no_pp_icode, pp_icode},
+   {no_pp_icode_ssa, pp_icode_ssa},
    {no_pp_opt_icode, pp_opt_icode},
    {no_pp_typed_icode, pp_typed_icode},
    {no_pp_rtl, pp_rtl},
    {no_pp_native, pp_native},
    {no_remove_comments, remove_comments},
-   {no_rtl_add_gc, rtl_add_gc},
+   {no_rtl_ssa, rtl_ssa},
+   {no_rtl_ssa_const_prop, rtl_ssa_const_prop},
    {no_rtl_cse, rtl_cse},
-   {no_rtl_prop_1, rtl_prop_1},
-   {no_rtl_prop_2, rtl_prop_2},
-   {no_rtl_prop_3, rtl_prop_3},
+   {no_rtl_prop, rtl_prop},
    {no_rtl_show_translation, rtl_show_translation},
    {no_sparc_estimate_block_time, sparc_estimate_block_time},
    {no_sparc_peephole, sparc_peephole},
@@ -1257,6 +1452,9 @@ opt_negations() ->
    {no_sparc_prop, sparc_prop},
    {no_sparc_schedule, sparc_schedule},
    {no_time, time},
+   {no_type_only, type_only},
+   {no_type_warnings, type_warnings},
+   {no_use_callgraph, use_callgraph},
    {no_use_clusters, use_clusters},
    {no_use_inline_atom_search, use_inline_atom_search},
    {no_use_indexing, use_indexing}].
@@ -1271,7 +1469,9 @@ opt_aliases() ->
    {'O2', o2},
    {'O3', o3},
    {pp_sparc, pp_native},
-   {pp_x86, pp_native}].
+   {pp_x86, pp_native},
+   {pp_amd64, pp_native},
+   {pp_ppc, pp_native}].
 
 opt_basic_expansions() ->
   [{pp_all, [pp_beam, pp_icode, pp_rtl, pp_native]}].
@@ -1286,8 +1486,8 @@ opt_expansions() ->
   [{{'O', 1}, [{'O', 1} | o1_opts()]},
    {{'O', 2}, [{'O', 2} | o2_opts()]},
    {{'O', 3}, [{'O', 3} | o3_opts()]},
-   {safe, [{regalloc,graph_color}, no_use_indexing, rtl_add_gc]}
-   ].
+   {safe, [{regalloc,graph_color}, no_use_indexing]},
+   {x87, [x87, inline_fp]}].
 
 %% This expands "basic" options, which may be tested early and cannot be
 %% in conflict with options found in the source code.
@@ -1316,7 +1516,7 @@ check_options(Opts) ->
     [] ->
       ok;
     L ->
-      ?warning_msg("Unknown options: ~p.\n", [L]),
+      ?WARNING_MSG("Unknown options: ~p.\n", [L]),
       ok
   end.
 

@@ -109,6 +109,17 @@ nbif_callemu:
 	mov HIPE_MODE_SWITCH_RES_CALL,TEMP0
 
 /*
+ * nbif_apply
+ */
+	.global	nbif_apply
+nbif_apply:
+	st	ARG0, [P+P_ARG0]
+	st	ARG1, [P+P_ARG1]
+	st	ARG2, [P+P_ARG2]
+	ba	.suspend_exit
+	mov	HIPE_MODE_SWITCH_RES_APPLY, TEMP0
+
+/*
  * Native code calls an emulated-mode closure via a stub defined below.
  *
  * The closure is appended as the last actual parameter, and parameters
@@ -349,7 +360,7 @@ sparc_throw_to_native:
 	call	hipe_handle_exception
 	mov	P, %o0                  ! (delayslot)
 	
-	ld	[P+P_HP],HP		! hipe_handle_exception() conses :-(
+	ld	[P+P_HP],HP		! hipe_handle_exception() conses
 	/* now invoke the handler */
 	ld	[P+P_NCALLEE], %o1	! updated by hipe_find_handler()
 	ld	[P+P_NSP], NSP		! updated by hipe_find_handler()
@@ -469,7 +480,7 @@ nbif_stack_trap_ra:			! a return address, not a function
  *   The call is done by storing the previous returnaddress
  *   in TEMP2. 
  *   This procedure is responsible of storing the
- *   argumentents in ARG0 to ARG5 and restoring them afterwards.
+ *   argumentents in ARG0 to ARG15 and restoring them afterwards.
  *   It assumes that hipe_inc_nstack dont use local reg 
  *   (true as long as hipe_inc_nstack is implemented in C and
  *    uses register windows.)
@@ -538,7 +549,7 @@ nbif_inc_stack_0args:
 	st HP,[P+P_HP]
 
 	call hipe_inc_nstack
-	st NSP,[P+P_NSP]
+	st NSP,[P+P_NSP]       !! Delayslot
 
 	!! Restore registers and return
 	ld [P+P_HP_LIMIT],HP_LIMIT
@@ -547,16 +558,16 @@ nbif_inc_stack_0args:
 	ld [P+P_HP],HP
 	!! We restore all arguments, even unused ones. 	
 	ld [P+P_ARG15], ARG15
-!!	ld [P+P_ARG14], ARG14
+	ld [P+P_ARG14], ARG14
 	ld [P+P_ARG13], ARG13
 	ld [P+P_ARG12], ARG12
 	ld [P+P_ARG11], ARG11
 	ld [P+P_ARG10], ARG10
-!!	ld [P+P_ARG9], ARG9
-!!	ld [P+P_ARG8], ARG8
-!!	ld [P+P_ARG7], ARG7
-!!	ld [P+P_ARG6], ARG6
-!!	ld [P+P_ARG5], ARG5
+	ld [P+P_ARG9], ARG9
+	ld [P+P_ARG8], ARG8
+	ld [P+P_ARG7], ARG7
+	ld [P+P_ARG6], ARG6
+	ld [P+P_ARG5], ARG5
 	ld [P+P_ARG4], ARG4
 	ld [P+P_ARG3], ARG3
 	ld [P+P_ARG2], ARG2

@@ -28,7 +28,7 @@ do(Info) ->
 	"GET" ->
 	    case httpd_util:key1search(Info#mod.data,status) of
 		%% A status code has been generated!
-		{StatusCode,PhraseArgs,Reason} ->
+		{_StatusCode, _PhraseArgs, _Reason} ->
 		    {proceed,Info#mod.data};
 		%% No status code has been generated!
 		undefined ->
@@ -37,7 +37,7 @@ do(Info) ->
 			undefined ->
 			    do_dir(Info);
 			%% A response has been generated or sent!
-			Response ->
+			_Response ->
 			    {proceed,Info#mod.data}
 		    end
 	    end;
@@ -61,12 +61,22 @@ do_dir(Info) ->
 		   "      DefaultPath:       ~p~n"
 		   "      DecodedRequestURI: ~p",
 		   [Path,DefaultPath,DecodedRequestURI]),
-	    case dir(DefaultPath,string:strip(DecodedRequestURI,right,$/),Info#mod.config_db) of
+	    case dir(DefaultPath,string:strip(DecodedRequestURI,right,$/),
+		     Info#mod.config_db) of
 		{ok, Dir} ->
+		    LastModified =
+			case (catch httpd_util:rfc1123_date(
+				      FileInfo#file_info.mtime)) of
+			    Date when is_list(Date) ->
+				[{date, Date}];
+			    _ -> %% This will rarly happen, but could happen
+				%% if a computer is wrongly configured. 
+				[]
+			end,
 		    Head=[{content_type,"text/html"},
-			  {content_length,integer_to_list(httpd_util:flatlength(Dir))},
-			   {date,httpd_util:rfc1123_date(FileInfo#file_info.mtime)},
-			  {code,200}],
+			  {content_length,
+			   integer_to_list(httpd_util:flatlength(Dir))},
+			  {code,200} | LastModified],
 		    {proceed,[{response,{response,Head,Dir}},
 			      {mime_type,"text/html"}|Info#mod.data]};
 		{error, Reason} ->
@@ -75,7 +85,7 @@ do_dir(Info) ->
 		     [{status,{404,Info#mod.request_uri,Reason}}|
 		      Info#mod.data]}
 	    end;
-	{ok,FileInfo} ->
+	{ok, _FileInfo} ->
 	    ?DEBUG("do_dir -> ~n"
 		   "      Path:        ~p~n"
 		   "      DefaultPath: ~p~n"
@@ -99,110 +109,132 @@ dir(Path,RequestURI,ConfigDB) ->
 		 footer(Path,SortedFileList)]};
 	{error,Reason} ->
 	    {error,?NICE("Can't open directory "++Path++": "++Reason)}
-  end.
+    end.
 
 %% header
 
 header(Path,RequestURI) ->
-  Header=
-    "<HTML>\n<HEAD>\n<TITLE>Index of "++RequestURI++"</TITLE>\n</HEAD>\n<BODY>\n<H1>Index of "++
-    RequestURI++"</H1>\n<PRE><IMG SRC=\""++icon(blank)++
-    "\" ALT="     "> Name                   Last modified         Size  Description
-<HR>\n",
-  case regexp:sub(RequestURI,"[^/]*\$","") of
-    {ok,"/",_} ->
-      Header;
-    {ok,ParentRequestURI,_} ->
-      {ok,ParentPath,_}=regexp:sub(string:strip(Path,right,$/),"[^/]*\$",""),
-      Header++format(ParentPath,ParentRequestURI)
-  end.
+    Header = "<HTML>\n<HEAD>\n<TITLE>Index of "++ RequestURI ++
+	"</TITLE>\n</HEAD>\n<BODY>\n<H1>Index of "++
+	RequestURI ++ "</H1>\n<PRE><IMG SRC=\"" ++ icon(blank) ++
+	"\" ALT="     "> Name                   Last modified         "
+	"Size  Description <HR>\n",
+    case regexp:sub(RequestURI,"[^/]*\$","") of
+	{ok,"/",_} ->
+	    Header;
+	{ok,ParentRequestURI,_} ->
+	    {ok,ParentPath,_} =
+		regexp:sub(string:strip(Path,right,$/),"[^/]*\$",""),
+	    Header++format(ParentPath,ParentRequestURI)
+    end.
 
 format(Path,RequestURI) ->
-  {ok,FileInfo}=file:read_file_info(Path),
-  {{Year,Month,Day},{Hour,Minute,Second}}=FileInfo#file_info.mtime,
-  io_lib:format("<IMG SRC=\"~s\" ALT=\"[~s]\"> <A HREF=\"~s\">Parent directory</A>       ~2.2.0w-~s-~w ~2.2.0w:~2.2.0w        -\n",
-		[icon(back),"DIR",RequestURI,Day,
-		 httpd_util:month(Month),Year,Hour,Minute]).
+    {ok,FileInfo}=file:read_file_info(Path),
+    {{Year, Month, Day},{Hour, Minute, _Second}} = FileInfo#file_info.mtime,
+    io_lib:format("<IMG SRC=\"~s\" ALT=\"[~s]\">"
+		  " <A HREF=\"~s\">Parent directory</A>      "
+		  " ~2.2.0w-~s-~w ~2.2.0w:~2.2.0w        -\n",
+		  [icon(back),"DIR",RequestURI,Day,
+		   httpd_util:month(Month),Year,Hour,Minute]).
 
 %% body
 
-body(Path,RequestURI,ConfigDB,[]) ->
-  [];
-body(Path,RequestURI,ConfigDB,[Entry|Rest]) ->
-  [format(Path,RequestURI,ConfigDB,Entry)|body(Path,RequestURI,ConfigDB,Rest)].
+body(_Path, _RequestURI, _ConfigDB, []) ->
+    [];
+body(Path, RequestURI, ConfigDB, [Entry | Rest]) ->
+    [format(Path, RequestURI, ConfigDB, Entry)|
+     body(Path, RequestURI, ConfigDB, Rest)].
 
 format(Path,RequestURI,ConfigDB,Entry) ->
-  case file:read_file_info(Path++"/"++Entry) of
-    {ok,FileInfo} when FileInfo#file_info.type == directory ->
-      {{Year,Month,Day},{Hour,Minute,Second}}=FileInfo#file_info.mtime,
-      EntryLength=length(Entry),
-      if
-	EntryLength > 21 ->
-	  io_lib:format("<IMG SRC=\"~s\" ALT=\"[~s]\"> <A HREF=\"~s\">~-21.s..</A>~2.2.0w-~s-~w ~2.2.0w:~2.2.0w        -\n",
-			[icon(folder),"DIR",RequestURI++"/"++Entry++"/",Entry,
-			 Day,httpd_util:month(Month),Year,Hour,Minute]);
-	true ->
-	  io_lib:format("<IMG SRC=\"~s\" ALT=\"[~s]\"> <A HREF=\"~s\">~s</A>~*.*c~2.2.0w-~s-~w ~2.2.0w:~2.2.0w        -\n",
-			[icon(folder),"DIR",RequestURI++"/"++Entry++"/",Entry,
-			 23-EntryLength,23-EntryLength,$ ,Day,
-			 httpd_util:month(Month),Year,Hour,Minute])
-      end;
-    {ok,FileInfo} ->
-      {{Year,Month,Day},{Hour,Minute,Second}}=FileInfo#file_info.mtime,
-      Suffix=httpd_util:suffix(Entry),
-      MimeType=httpd_util:lookup_mime(ConfigDB,Suffix,""),
-      EntryLength=length(Entry),
-      if
-	EntryLength > 21 ->
-	  io_lib:format("<IMG SRC=\"~s\" ALT=\"[~s]\"> <A HREF=\"~s\">~-21.s..</A>~2.2.0w-~s-~w ~2.2.0w:~2.2.0w~8wk  ~s\n",
-			[icon(Suffix,MimeType),Suffix,RequestURI++"/"++Entry,
-			 Entry,Day,httpd_util:month(Month),Year,Hour,Minute,
-			 trunc(FileInfo#file_info.size/1024+1),MimeType]);
-	true ->
-	  io_lib:format("<IMG SRC=\"~s\" ALT=\"[~s]\"> <A HREF=\"~s\">~s</A>~*.*c~2.2.0w-~s-~w ~2.2.0w:~2.2.0w~8wk  ~s\n",
-			[icon(Suffix,MimeType),Suffix,RequestURI++"/"++Entry,
-			 Entry,23-EntryLength,23-EntryLength,$ ,Day,
-			 httpd_util:month(Month),Year,Hour,Minute,
-			 trunc(FileInfo#file_info.size/1024+1),MimeType])
-      end;
-    {error,Reason} ->
-      ""
-  end.
+    case file:read_file_info(Path++"/"++Entry) of
+	{ok,FileInfo} when FileInfo#file_info.type == directory ->
+	    {{Year, Month, Day},{Hour, Minute, _Second}} = 
+		FileInfo#file_info.mtime,
+	    EntryLength=length(Entry),
+	    if
+		EntryLength > 21 ->
+		    io_lib:format("<IMG SRC=\"~s\" ALT=\"[~s]\"> "
+				  "<A HREF=\"~s\">~-21.s..</A>"
+				  "~2.2.0w-~s-~w ~2.2.0w:~2.2.0w"
+				  "        -\n", [icon(folder),"DIR",
+						  RequestURI++"/"++Entry++"/",
+						  Entry,
+						  Day, httpd_util:month(Month),
+						  Year,Hour,Minute]);
+		true ->
+		    io_lib:format("<IMG SRC=\"~s\" ALT=\"[~s]\">"
+				  " <A HREF=\"~s\">~s</A>~*.*c~2.2.0"
+				  "w-~s-~w ~2.2.0w:~2.2.0w        -\n",
+				  [icon(folder),"DIR",RequestURI ++ "/" ++
+				   Entry ++ "/",Entry,
+				   23-EntryLength,23-EntryLength,$ ,Day,
+				   httpd_util:month(Month),Year,Hour,Minute])
+	    end;
+	{ok,FileInfo} ->
+	    {{Year, Month, Day},{Hour, Minute,_Second}} =
+		FileInfo#file_info.mtime,
+	    Suffix=httpd_util:suffix(Entry),
+	    MimeType=httpd_util:lookup_mime(ConfigDB,Suffix,""),
+	    EntryLength=length(Entry),
+	    if
+		EntryLength > 21 ->
+		    io_lib:format("<IMG SRC=\"~s\" ALT=\"[~s]\">"
+				  " <A HREF=\"~s\">~-21.s..</A>~2.2.0"
+				  "w-~s-~w ~2.2.0w:~2.2.0w~8wk  ~s\n",
+				  [icon(Suffix, MimeType), Suffix, RequestURI 
+				   ++"/"++Entry, Entry,Day,
+				   httpd_util:month(Month),Year,Hour,Minute,
+				   trunc(FileInfo#file_info.size/1024+1),
+				   MimeType]);
+		true ->
+		    io_lib:format("<IMG SRC=\"~s\" ALT=\"[~s]\"> "
+				  "<A HREF=\"~s\">~s</A>~*.*c~2.2.0w-~s-~w"
+				  " ~2.2.0w:~2.2.0w~8wk  ~s\n",
+				  [icon(Suffix, MimeType), Suffix, RequestURI
+				   ++ "/" ++ Entry, Entry, 23-EntryLength,
+				   23-EntryLength, $ ,Day,
+				   httpd_util:month(Month),Year,Hour,Minute,
+				   trunc(FileInfo#file_info.size/1024+1),
+				   MimeType])
+	    end;
+	{error, _Reason} ->
+	    ""
+    end.
 
 %% footer
 
 footer(Path,FileList) ->
-  case lists:member("README",FileList) of
-    true ->
-      {ok,Body}=file:read_file(Path++"/README"),
-      "</PRE>\n<HR>\n<PRE>\n"++binary_to_list(Body)++
-	"\n</PRE>\n</BODY>\n</HTML>\n";
-    false ->
-      "</PRE>\n</BODY>\n</HTML>\n"
-  end.
+    case lists:member("README",FileList) of
+	true ->
+	    {ok,Body}=file:read_file(Path++"/README"),
+	    "</PRE>\n<HR>\n<PRE>\n"++binary_to_list(Body)++
+		"\n</PRE>\n</BODY>\n</HTML>\n";
+	false ->
+	    "</PRE>\n</BODY>\n</HTML>\n"
+    end.
 
 %%
 %% Icon mappings are hard-wired ala default Apache (Ugly!)
 %%
 
 icon(Suffix,MimeType) ->
-  case icon(Suffix) of
-    undefined ->
-      case MimeType of
-	[$t,$e,$x,$t,$/|_] ->
-	  "/icons/text.gif";
-	[$i,$m,$a,$g,$e,$/|_] ->
-	  "/icons/image2.gif";
-	[$a,$u,$d,$i,$o,$/|_] ->
-	  "/icons/sound2.gif";
-	[$v,$i,$d,$e,$o,$/|_] ->
-	  "/icons/movie.gif";
-	_ ->
-	  "/icons/unknown.gif"
-      end;
-    Icon ->
-      Icon
-  end.
+    case icon(Suffix) of
+	undefined ->
+	    case MimeType of
+		[$t,$e,$x,$t,$/|_] ->
+		    "/icons/text.gif";
+		[$i,$m,$a,$g,$e,$/|_] ->
+		    "/icons/image2.gif";
+		[$a,$u,$d,$i,$o,$/|_] ->
+		    "/icons/sound2.gif";
+		[$v,$i,$d,$e,$o,$/|_] ->
+		    "/icons/movie.gif";
+		_ ->
+		    "/icons/unknown.gif"
+	    end;
+	Icon ->
+	    Icon
+    end.
 
 icon(blank) -> "/icons/blank.gif";
 icon(back) -> "/icons/back.gif";
@@ -254,9 +286,9 @@ read_file_info_error(eacces,Info,Path) ->
 read_file_info_error(enoent,Info,Path) ->
     read_file_info_error(404,Info,Path,"");
 read_file_info_error(enotdir,Info,Path) ->
-    read_file_info_error(404,Info,Path,
+    read_file_info_error(404, Info, Path,
 			 ": A component of the file name is not a directory");
-read_file_info_error(_,Info,Path) ->
+read_file_info_error(_, _, Path) ->
     read_file_info_error(500,none,Path,"").
 
 read_file_info_error(StatusCode,none,Path,Reason) ->

@@ -97,13 +97,12 @@ init([AdminPid, TypeCheck, MaxEvents]) ->
 %%            the next time it tries to pull an event.
 %%----------------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, #state{admin_pid = Pid} = State) ->
-    ?DBG("Parent Admin terminated ~p~n", [Reason]),
-    orber:debug_level_print("[~p] oe_CosEventComm_PullerS_impl:handle_info(~p); 
-My Admin terminated and so will I.", 
-			    [?LINE, Reason], ?DEBUG_LEVEL),
+    orber:dbg("[~p] oe_CosEventComm_PullerS_impl:handle_info(~p);~n"
+	      "My Admin terminated and so will I.", 
+	      [?LINE, Reason], ?DEBUG_LEVEL),
     {stop, Reason, State};
-handle_info(Info, State) ->
-    ?DBG("Unknown Info ~p~n", [Info]),
+handle_info(_Info, State) ->
+    ?DBG("Unknown Info ~p~n", [_Info]),
     {noreply, State}.
 
 %%---------------------------------------------------------------------%
@@ -111,23 +110,23 @@ handle_info(Info, State) ->
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, #state{client = undefined, respond_to = undefined, db = DB}) ->
-    ?DBG("Terminating ~p; no client connected and no pending pull's.~n", [Reason]),
+terminate(_Reason, #state{client = undefined, respond_to = undefined, db = DB}) ->
+    ?DBG("Terminating ~p; no client connected and no pending pull's.~n", [_Reason]),
     ets:delete(DB),
     ok;
-terminate(Reason, #state{client = undefined, respond_to = ReplyTo, db = DB}) ->
-    ?DBG("Terminating ~p; no client connected but a pending pull.~n", [Reason]),
+terminate(_Reason, #state{client = undefined, respond_to = ReplyTo, db = DB}) ->
+    ?DBG("Terminating ~p; no client connected but a pending pull.~n", [_Reason]),
     corba:reply(ReplyTo, {'EXCEPTION', #'CosEventComm_Disconnected'{}}),
     ets:delete(DB),
     ok;
-terminate(Reason, #state{client = Client, respond_to = undefined, db = DB}) ->
-    ?DBG("Terminating ~p; no pending pull~n", [Reason]),
+terminate(_Reason, #state{client = Client, respond_to = undefined, db = DB}) ->
+    ?DBG("Terminating ~p; no pending pull~n", [_Reason]),
     cosEventApp:disconnect('CosEventComm_PullConsumer', 
 			   disconnect_pull_consumer, Client),
     ets:delete(DB),
     ok;
-terminate(Reason, #state{client = Client, respond_to = ReplyTo, db = DB}) ->
-    ?DBG("Terminating ~p; pending pull~n", [Reason]),
+terminate(_Reason, #state{client = Client, respond_to = ReplyTo, db = DB}) ->
+    ?DBG("Terminating ~p; pending pull~n", [_Reason]),
     corba:reply(ReplyTo, {'EXCEPTION', #'CosEventComm_Disconnected'{}}),
     cosEventApp:disconnect('CosEventComm_PullConsumer', 
 			   disconnect_pull_consumer, Client),
@@ -139,7 +138,7 @@ terminate(Reason, #state{client = Client, respond_to = ReplyTo, db = DB}) ->
 %% Returns    : {ok, NewState}
 %% Description: Convert process state when code is changed
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%---------------------------------------------------------------------%
@@ -148,7 +147,7 @@ code_change(OldVsn, State, Extra) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-connect_pull_consumer(OE_This, OE_From, #state{client = undefined, 
+connect_pull_consumer(_OE_This, _OE_From, #state{client = undefined, 
 					       typecheck = TypeCheck} = State, 
 		      NewClient) ->
     case corba_object:is_nil(NewClient) of
@@ -170,7 +169,7 @@ connect_pull_consumer(_, _, _, _) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-pull(OE_This, OE_From, State) ->
+pull(_OE_This, OE_From, State) ->
     case get_event(State#state.db) of
 	false ->
 	    ?DBG("pull invoked but no event stored; put the client on hold.~n", []),
@@ -186,7 +185,7 @@ pull(OE_This, OE_From, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-try_pull(OE_This, OE_From, State) ->
+try_pull(_OE_This, _OE_From, State) ->
     case get_event(State#state.db) of
 	false ->
 	    ?DBG("try_pull invoked but no event stored.~n", []),
@@ -202,7 +201,7 @@ try_pull(OE_This, OE_From, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-disconnect_pull_supplier(OE_This, OE_From, State) ->
+disconnect_pull_supplier(_OE_This, _OE_From, State) ->
     ?DBG("Disconnect invoked ~p ~n", [State]),
     {stop, normal, ok, State#state{client = undefined}}.
 
@@ -216,11 +215,11 @@ disconnect_pull_supplier(OE_This, OE_From, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-send(OE_This, #state{respond_to = undefined} = State, Any) ->
+send(_OE_This, #state{respond_to = undefined} = State, Any) ->
     ?DBG("Received event ~p and stored it.~n", [Any]),
     store_event(State#state.db, State#state.maxevents, Any),
     {noreply, State};
-send(OE_This, State, Any) ->
+send(_OE_This, State, Any) ->
     ?DBG("Received event ~p and sent it to pending client.~n", [Any]),
     corba:reply(State#state.respond_to, Any),
     {noreply, State#state{respond_to = undefined}}.
@@ -231,11 +230,11 @@ send(OE_This, State, Any) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-send_sync(OE_This, OE_From, #state{respond_to = undefined} = State, Any) ->
+send_sync(_OE_This, _OE_From, #state{respond_to = undefined} = State, Any) ->
     ?DBG("Received event ~p and stored it (sync).~n", [Any]),
     store_event(State#state.db, State#state.maxevents, Any),
     {reply, ok, State};
-send_sync(OE_This, OE_From, State, Any) ->
+send_sync(_OE_This, _OE_From, State, Any) ->
     ?DBG("Received event ~p and sent it to pending client (sync).~n", [Any]),
     corba:reply(State#state.respond_to, Any),
     {reply, ok, State#state{respond_to = undefined}}.
@@ -253,8 +252,8 @@ store_event(DB, Max, Event) ->
 	CurrentSize when CurrentSize < Max -> 
 	    ets:insert(DB, {now(), Event}); 
 	_ ->
-	    orber:debug_level_print("[~p] oe_CosEventComm_PullerS:store_event(~p); DB full drop event.", 
-				    [?LINE, Event], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] oe_CosEventComm_PullerS:store_event(~p); DB full drop event.", 
+		      [?LINE, Event], ?DEBUG_LEVEL),
 	    true
     end.
 

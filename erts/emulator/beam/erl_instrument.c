@@ -23,6 +23,7 @@
 #include "global.h"
 #include "big.h"
 #include "erl_instrument.h"
+#include "erl_threads.h"
 
 typedef union { long l; double d; } Align_t;
 
@@ -55,22 +56,8 @@ typedef struct {
     Uint max_blocks_ever;
 } Stat_t;
 
-#ifdef USE_THREADS
-#define ERL_THREADS_EMU_INTERNAL__
-#include "erl_threads.h"
-static erts_mutex_t instr_mutex;
-static erts_mutex_t instr_x_mutex;
-#  ifdef DEBUG
-#    define LOCK(MTX)   ASSERT(0 == erts_mutex_lock((MTX)))
-#    define UNLOCK(MTX) ASSERT(0 == erts_mutex_unlock((MTX)))
-#  else
-#    define LOCK(MTX)   ((void) erts_mutex_lock((MTX)))
-#    define UNLOCK(MTX) ((void) erts_mutex_unlock((MTX)))
-#  endif
-#else
-#  define LOCK(MTX)
-#  define UNLOCK(MTX)
-#endif
+static ethr_mutex instr_mutex;
+static ethr_mutex instr_x_mutex;
 
 int erts_instr_memory_map;
 int erts_instr_stat;
@@ -289,7 +276,7 @@ stat_alloc(ErtsAlcType_t n, void *extra, Uint size)
     Uint ssize;
     void *res;
 
-    LOCK(instr_mutex);
+    erts_mtx_lock(&instr_mutex);
 
     ssize = size + STAT_BLOCK_HEADER_SIZE;
     res = (*real_af->alloc)(n, real_af->extra, ssize);
@@ -299,7 +286,7 @@ stat_alloc(ErtsAlcType_t n, void *extra, Uint size)
 	res = (void *) ((StatBlock_t *) res)->mem;
     }
 
-    UNLOCK(instr_mutex);
+    erts_mtx_unlock(&instr_mutex);
 
     return res;
 }
@@ -313,7 +300,7 @@ stat_realloc(ErtsAlcType_t n, void *extra, void *ptr, Uint size)
     void *sptr;
     void *res;
 
-    LOCK(instr_mutex);
+    erts_mtx_lock(&instr_mutex);
 
     if (ptr) {
 	sptr = (void *) (((char *) ptr) - STAT_BLOCK_HEADER_SIZE);
@@ -332,7 +319,7 @@ stat_realloc(ErtsAlcType_t n, void *extra, void *ptr, Uint size)
 	res = (void *) ((StatBlock_t *) res)->mem;
     }
 
-    UNLOCK(instr_mutex);
+    erts_mtx_unlock(&instr_mutex);
 
     return res;
 }
@@ -343,7 +330,7 @@ stat_free(ErtsAlcType_t n, void *extra, void *ptr)
     ErtsAllocatorFunctions_t *real_af = (ErtsAllocatorFunctions_t *) extra;
     void *sptr;
 
-    LOCK(instr_mutex);
+    erts_mtx_lock(&instr_mutex);
 
     if (ptr) {
 	sptr = (void *) (((char *) ptr) - STAT_BLOCK_HEADER_SIZE);
@@ -355,7 +342,7 @@ stat_free(ErtsAlcType_t n, void *extra, void *ptr)
 
     (*real_af->free)(n, real_af->extra, sptr);
 
-    UNLOCK(instr_mutex);
+    erts_mtx_unlock(&instr_mutex);
 
 }
 
@@ -370,7 +357,7 @@ map_stat_alloc(ErtsAlcType_t n, void *extra, Uint size)
     Uint msize;
     void *res;
 
-    LOCK(instr_mutex);
+    erts_mtx_lock(&instr_mutex);
 
     msize = size + MAP_STAT_BLOCK_HEADER_SIZE;
     res = (*real_af->alloc)(n, real_af->extra, msize);
@@ -391,7 +378,7 @@ map_stat_alloc(ErtsAlcType_t n, void *extra, Uint size)
 	res = (void *) mb->mem;
     }
 
-    UNLOCK(instr_mutex);
+    erts_mtx_unlock(&instr_mutex);
 
     return res;
 }
@@ -405,8 +392,8 @@ map_stat_realloc(ErtsAlcType_t n, void *extra, void *ptr, Uint size)
     void *mptr;
     void *res;
 
-    LOCK(instr_x_mutex);
-    LOCK(instr_mutex);
+    erts_mtx_lock(&instr_x_mutex);
+    erts_mtx_lock(&instr_mutex);
 
     if (ptr) {
 	mptr = (void *) (((char *) ptr) - MAP_STAT_BLOCK_HEADER_SIZE);
@@ -453,8 +440,8 @@ map_stat_realloc(ErtsAlcType_t n, void *extra, void *ptr, Uint size)
 	res = (void *) mb->mem;
     }
 
-    UNLOCK(instr_mutex);
-    UNLOCK(instr_x_mutex);
+    erts_mtx_unlock(&instr_mutex);
+    erts_mtx_unlock(&instr_x_mutex);
 
     return res;
 }
@@ -465,8 +452,8 @@ map_stat_free(ErtsAlcType_t n, void *extra, void *ptr)
     ErtsAllocatorFunctions_t *real_af = (ErtsAllocatorFunctions_t *) extra;
     void *mptr;
 
-    LOCK(instr_x_mutex);
-    LOCK(instr_mutex);
+    erts_mtx_lock(&instr_x_mutex);
+    erts_mtx_lock(&instr_mutex);
 
     if (ptr) {
 	MapStatBlock_t *mb;
@@ -489,25 +476,25 @@ map_stat_free(ErtsAlcType_t n, void *extra, void *ptr)
 
     (*real_af->free)(n, real_af->extra, mptr);
 
-    UNLOCK(instr_mutex);
-    UNLOCK(instr_x_mutex);
+    erts_mtx_unlock(&instr_mutex);
+    erts_mtx_unlock(&instr_x_mutex);
 
 }
 
 void
 erts_instr_set_curr_proc(Eterm pid)
 {
-    LOCK(instr_mutex);
+    erts_mtx_lock(&instr_mutex);
     current_pid = pid;
-    UNLOCK(instr_mutex);
+    erts_mtx_unlock(&instr_mutex);
 }
 
 void
 erts_instr_reset_curr_proc(void)
 {
-    LOCK(instr_mutex);
+    erts_mtx_lock(&instr_mutex);
     current_pid = THE_NON_VALUE;
-    UNLOCK(instr_mutex);
+    erts_mtx_unlock(&instr_mutex);
 }
 
 static void dump_memory_map_to_stream(FILE *fp)
@@ -516,7 +503,7 @@ static void dump_memory_map_to_stream(FILE *fp)
     MapStatBlock_t *bp;
 
     if (!erts_writing_erl_crash_dump) {
-	LOCK(instr_mutex);
+	erts_mtx_lock(&instr_mutex);
     }
 
     /* Write header */
@@ -575,7 +562,7 @@ static void dump_memory_map_to_stream(FILE *fp)
     }
 
     if (!erts_writing_erl_crash_dump) {
-	UNLOCK(instr_mutex);
+	erts_mtx_unlock(&instr_mutex);
     }
 }
 
@@ -639,8 +626,8 @@ Eterm erts_instr_get_memory_map(Process *proc)
     if (!am_a)
 	init_am_a();
 
-    LOCK(instr_x_mutex);
-    LOCK(instr_mutex);
+    erts_mtx_lock(&instr_x_mutex);
+    erts_mtx_lock(&instr_mutex);
 
     /* Header size */
     hsz = 5 + 1 + (ERTS_ALC_N_MAX+1-ERTS_ALC_N_MIN)*(1 + 4);
@@ -672,11 +659,11 @@ Eterm erts_instr_get_memory_map(Process *proc)
     org_mem_anchor = mem_anchor;
     mem_anchor = NULL;
 
-    UNLOCK(instr_mutex);
+    erts_mtx_unlock(&instr_mutex);
 
     hp = HAlloc(proc, hsz); /* May end up calling map_stat_alloc() */
 
-    LOCK(instr_mutex);
+    erts_mtx_lock(&instr_mutex);
 
 #ifdef DEBUG
     end_hp = hp + hsz;
@@ -806,8 +793,8 @@ Eterm erts_instr_get_memory_map(Process *proc)
 	mem_anchor = org_mem_anchor;
     }
 
-    UNLOCK(instr_mutex);
-    UNLOCK(instr_x_mutex);
+    erts_mtx_unlock(&instr_mutex);
+    erts_mtx_unlock(&instr_x_mutex);
 
     return res;
 }
@@ -934,7 +921,7 @@ erts_instr_get_stat(Process *proc, Eterm what, int begin_max_period)
     else
 	values = (Eterm *) erts_alloc(ERTS_ALC_T_TMP, arr_size);
 
-    LOCK(instr_mutex);
+    erts_mtx_lock(&instr_mutex);
 
     update_max_ever_values(stat_src, min, max);
 
@@ -943,7 +930,7 @@ erts_instr_get_stat(Process *proc, Eterm what, int begin_max_period)
     if (begin_max_period)
 	begin_new_max_period(stat_src, min, max);
 
-    UNLOCK(instr_mutex);
+    erts_mtx_unlock(&instr_mutex);
 
     hsz = 0;
     hszp = &hsz;
@@ -1003,7 +990,7 @@ dump_stat_to_stream(FILE *fp, int begin_max_period)
 {
     ErtsAlcType_t i, a_max, a_min;
 
-    LOCK(instr_mutex);
+    erts_mtx_lock(&instr_mutex);
 
     fprintf(fp,
 	    "{instr_vsn,%lu}.\n",
@@ -1092,7 +1079,7 @@ dump_stat_to_stream(FILE *fp, int begin_max_period)
 	begin_new_max_period(stats->n, ERTS_ALC_N_MIN, ERTS_ALC_N_MAX);
     }
 
-    UNLOCK(instr_mutex);
+    erts_mtx_unlock(&instr_mutex);
 
 }
 
@@ -1226,11 +1213,8 @@ erts_instr_init(int stat, int map_stat)
 
     stats = erts_alloc(ERTS_ALC_T_INSTR_INFO, sizeof(struct stats_));
 
-#ifdef USE_THREADS
-    instr_mutex = erts_mutex_sys(ERTS_MUTEX_SYS_INSTR);
-    if(!instr_mutex || erts_mutex_set_default_atfork(instr_mutex))
-	erl_exit(1, "Failed to initialize instr mutex\n");
-#endif
+    erts_mtx_init(&instr_mutex);
+    erts_mtx_set_forksafe(&instr_mutex);
 
     mem_anchor = NULL;
     current_pid = THE_NON_VALUE;
@@ -1253,11 +1237,10 @@ erts_instr_init(int stat, int map_stat)
     }
 
     if (map_stat) {
-#ifdef USE_THREADS
-	instr_x_mutex = erts_mutex_sys(ERTS_MUTEX_SYS_INSTR_X);
-	if(!instr_x_mutex || erts_mutex_set_default_atfork(instr_x_mutex))
-	    erl_exit(1, "Failed to initialize instr x mutex\n");
-#endif
+
+	erts_mtx_init(&instr_x_mutex);
+	erts_mtx_set_forksafe(&instr_x_mutex);
+
 	erts_instr_memory_map = 1;
 	erts_instr_stat = 1;
 	for (i = ERTS_ALC_A_MIN; i <= ERTS_ALC_A_MAX; i++) {

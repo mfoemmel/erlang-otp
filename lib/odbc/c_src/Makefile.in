@@ -50,11 +50,10 @@ RELSYSDIR = $(RELEASE_PATH)/lib/odbc-$(VSN)
 ifeq ($(findstring win32,$(TARGET)),win32)
 MAKEFILE = makefiles/Makefile.win32.src
 #
-# XXX Commented out for debug build. Don't forget to uncomment!!!
-#
-# ENTRY_OBJ=$(ERL_TOP)/erts/obj/$(TARGET)/port_entry.o
-# PORT_ENTRY_POINT=erl_port_entry
-# ENTRY_LDFLAGS=-entry:$(PORT_ENTRY_POINT)
+
+ENTRY_OBJ=$(ERL_TOP)/erts/obj/$(TARGET)/port_entry.o
+PORT_ENTRY_POINT=erl_port_entry
+ENTRY_LDFLAGS=-entry:$(PORT_ENTRY_POINT)
 WIN32_TARGET = $(WINBINDIR)/odbcserver.exe
 EXE_TARGET = $(WIN32_TARGET)
 else
@@ -83,9 +82,8 @@ ODBCINCLUDE = $(ODBCROOT)/include
 
 EIINCLUDE = $(EIROOT)/include
 INCLUDES = -I. -I$(EIINCLUDE) -I$(ODBCINCLUDE)
-CFLAGS = $(subst -O2,-g,@CFLAGS32@)
-#CFLAGS = @CFLAGS32@
-LDFLAGS += -g
+CFLAGS = @CFLAGS32@
+LDFLAGS += 
 CC = @CC32@
 
 
@@ -93,7 +91,7 @@ LIBS =  @LIBS@ @THR_LIBS@
 ifeq ($(TARGET),win32)
 ODBCLIBS = -lodbc32
 MULTITHREADFLAGS = -DMULTITHREAD_WIN32
-EILIBS = -lei_mdd
+EILIBS = -lei_md
 else
 ODBCLIBS = -lodbc
 MULTITHREADFLAGS = -D_REENTRANT -DMULTITHREAD_UNIX

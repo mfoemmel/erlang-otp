@@ -106,8 +106,15 @@ public class OtpLocalNode extends AbstractNode {
       pidCount = 0;
 
       serial++;
-      if (serial > 0x07) {
-	serial = 0;
+      if (OtpSystem.useExtendedPidsPorts()) {
+	  if (serial > 0x1fff) { /* 13 bits */
+	      serial = 0;
+	  }
+      }
+      else {
+	  if (serial > 0x07) { /* 3 bits */
+	      serial = 0;
+	  }
       }
     }
 
@@ -128,7 +135,17 @@ public class OtpLocalNode extends AbstractNode {
     OtpErlangPort p = new OtpErlangPort(node,portCount,creation);
 
     portCount++;
-    if (portCount > 0x3ffff) portCount = 0;
+
+    if (OtpSystem.useExtendedPidsPorts()) {
+	if (portCount > 0xfffffff) { /* 28 bits */
+	    portCount = 0;
+	}
+    }
+    else {
+	if (portCount > 0x3ffff) { /* 18 bits */
+	    portCount = 0;
+	}
+    }
 
     return p;
   }

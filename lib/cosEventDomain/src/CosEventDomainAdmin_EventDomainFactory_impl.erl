@@ -80,7 +80,7 @@ init([]) ->
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%----------------------------------------------------------------------
@@ -88,7 +88,7 @@ terminate(Reason, State) ->
 %% Returns    : {ok, NewState}
 %% Description: Convert process state when code is changed
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%----------------------------------------------------------------------
@@ -97,9 +97,9 @@ code_change(OldVsn, State, Extra) ->
 %%              {stop, Reason, State}  
 %% Description: Handle, for example, exit signals.
 %%----------------------------------------------------------------------
-handle_info({'EXIT', Pid, Reason}, State) ->
+handle_info({'EXIT', Pid, _Reason}, State) ->
     {noreply, State#state{domains=delete_domain(State#state.domains, Pid, [])}};
-handle_info(Info, State) ->
+handle_info(_Info, State) ->
     {noreply, State}.
 
 
@@ -112,7 +112,7 @@ handle_info(Info, State) ->
 %%              {'EXCEPTION', #'CosNotification_UnsupportedAdmin'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-create_event_domain(OE_This, State, InitialQoS, InitialAdmin) ->
+create_event_domain(_OE_This, State, InitialQoS, InitialAdmin) ->
     Id = cosEventDomainApp:create_id(State#state.current_id),
     Admin = cosEventDomainApp:get_admin(InitialAdmin),
     QoS = cosEventDomainApp:get_qos(InitialQoS),
@@ -123,8 +123,10 @@ create_event_domain(OE_This, State, InitialQoS, InitialAdmin) ->
 	    {reply, {ED, Id}, State#state{current_id = Id, 
 					  domains = [{Id, ED, Pid}|State#state.domains]}};
 	What ->
-	    orber:debug_level_print("[~p] CosEventDomainAdmin_EventDomainFactory:create_event_domain();
-Failed creatin a new EventDomain due to: ~p", [?LINE, What], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosEventDomainAdmin_EventDomainFactory:"
+		      "create_event_domain();~n"
+		      "Failed creatin a new EventDomain due to: ~p", 
+		      [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 		    
@@ -134,7 +136,7 @@ Failed creatin a new EventDomain due to: ~p", [?LINE, What], ?DEBUG_LEVEL),
 %% Returns    : CosEventDomainAdmin::DomainIDSeq - [long()]
 %% Description: 
 %%----------------------------------------------------------------------
-get_all_domains(OE_This, State) ->
+get_all_domains(_OE_This, State) ->
     {reply, get_all_domains_helper(State#state.domains, []), State}.
 
 get_all_domains_helper([], Acc) ->
@@ -150,7 +152,7 @@ get_all_domains_helper([{Id, _, _}|T], Acc) ->
 %%              {'EXCEPTION', #'CosEventDomainAdmin_DomainNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-get_event_domain(OE_This, State, DomainID) ->
+get_event_domain(_OE_This, State, DomainID) ->
     {reply, get_event_domain_helper(State#state.domains, DomainID), State}.
 
 get_event_domain_helper([], _) ->
@@ -166,9 +168,9 @@ get_event_domain_helper([_|T], Id) ->
 delete_domain([], _, Acc) ->
     %% The domain didn't exist.
     Acc;
-delete_domain([{Id, _, Pid}], Pid, Acc) ->
+delete_domain([{_Id, _, Pid}], Pid, Acc) ->
     Acc;
-delete_domain([{Id, _, Pid}|T], Pid, Acc) ->
+delete_domain([{_Id, _, Pid}|T], Pid, Acc) ->
     T++Acc;
 delete_domain([H|T], Pid, Acc) ->
     delete_domain(T, Pid, [H|Acc]).

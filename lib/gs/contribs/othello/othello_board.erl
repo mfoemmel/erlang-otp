@@ -108,12 +108,12 @@ init() ->
 
 loop(User,GamePid,Shell,Wids,Options) ->
     receive
-	{gs,ButtId, click,ButtId1,[Button]} ->
+	{gs,ButtId, click,_ButtId1,[Button]} ->
 	    GamePid1 = but_pressed(Button,ButtId,User,GamePid,Shell,
 				   Wids,Options),
 	    loop(User,GamePid1,Shell,Wids,Options);
 
-	{gs,_, click,_,[MenuItem,MenuIndex]} ->
+	{gs,_, click,_,[MenuItem,_MenuIndex]} ->
 	    Ops = menu_selected(MenuItem,User,GamePid,Wids,Options),
 	    loop(User,GamePid,Shell,Wids,Ops);
 
@@ -127,13 +127,13 @@ loop(User,GamePid,Shell,Wids,Options) ->
 	    game_msg(GameMsg,User,GamePid,Shell,Wids,Options)
     end.
 
-but_pressed("Quit",ButtId,User,GamePid,Shell,Wids,Op) ->
+but_pressed("Quit",_ButtId,_User,_GamePid,_Shell,_Wids,_Op) ->
     stop(),
     exit(quit);
-but_pressed("Rules",ButtId,User,GamePid,Shell,Wids,Op) ->
+but_pressed("Rules",_ButtId,_User,GamePid,_Shell,_Wids,_Op) ->
     io:format("No rules, do as you wish~n",[]),
     GamePid;
-but_pressed("Help",ButtId,User,GamePid,Shell,Wids,Op) ->
+but_pressed("Help",_ButtId,_User,GamePid,_Shell,_Wids,_Op) ->
     io:format("Othello game~n",[]),
     io:format("------------~n",[]),
     io:format("  Put markers by clicking in squares~n",[]),
@@ -141,58 +141,58 @@ but_pressed("Help",ButtId,User,GamePid,Shell,Wids,Op) ->
     io:format("  Change colour by clicking on it~n",[]),
     io:format("~n",[]),
     GamePid;
-but_pressed("Newgame",ButtId,User,GamePid,Shell,Wids,Options) ->
+but_pressed("Newgame",_ButtId,_User,GamePid,_Shell,Wids,Options) ->
     new_game(GamePid,Wids,Options);
-but_pressed([],ButtId,User,GamePid,Shell,Wids,Op) 
+but_pressed([],ButtId,User,GamePid,_Shell,_Wids,_Op) 
 					when pid(GamePid),User == player ->
     [C,R] = atom_to_list(ButtId),
     GamePid ! {self(),position,othello_adt:pos(C-96,translate(R-48))},
     GamePid;
-but_pressed([],ButtId,User,GamePid,Shell,Wids,Op) ->
+but_pressed([],ButtId,_User,GamePid,_Shell,_Wids,_Op) ->
     [C,R] = atom_to_list(ButtId),
     beep(othello_adt:pos(C-96,translate(R-48))),
     GamePid;
-but_pressed(Button,ButtId,User,GamePid,Shell,Wids,Op) ->
+but_pressed(Button,ButtId,_User,GamePid,_Shell,_Wids,_Op) ->
     io:format('Not implemented button pressed ~p, ~p!!!~n',[ButtId,Button]),
     GamePid.
 
-menu_selected("Black",User,GamePid,Wids,Options) ->
+menu_selected("Black",_User,_GamePid,Wids,Options) ->
     Op0 = setelement(1,Options,white),
     Op1 = setelement(2,Op0,white),
     write_options(Op1,Wids),
     Op1;
-menu_selected("White",User,GamePid,Wids,Options) ->
+menu_selected("White",_User,_GamePid,Wids,Options) ->
     Op0 = setelement(1,Options,black),
     Op1 = setelement(2,Op0,black),
     write_options(Op1,Wids),
     Op1;
-menu_selected("Black (begin)",User,GamePid,Wids,Options) ->
+menu_selected("Black (begin)",_User,_GamePid,Wids,Options) ->
     Op0 = setelement(1,Options,white),
     Op1 = setelement(2,Op0,black),
     write_options(Op1,Wids),
     Op1;
-menu_selected("White (begin)",User,GamePid,Wids,Options) ->
+menu_selected("White (begin)",_User,_GamePid,Wids,Options) ->
     Op0 = setelement(1,Options,black),
     Op1 = setelement(2,Op0,white),
     write_options(Op1,Wids),
     Op1;
-menu_selected("Beginner",User,GamePid,Wids,Options) ->
+menu_selected("Beginner",_User,_GamePid,Wids,Options) ->
     Op1 = setelement(3,Options,1),
     write_options(Op1,Wids),
     Op1;
-menu_selected("Intermediate",User,GamePid,Wids,Options) ->
+menu_selected("Intermediate",_User,_GamePid,Wids,Options) ->
     Op1 = setelement(3,Options,2),
     write_options(Op1,Wids),
     Op1;
-menu_selected("Advanced",User,GamePid,Wids,Options) ->
+menu_selected("Advanced",_User,_GamePid,Wids,Options) ->
     Op1 = setelement(3,Options,3),
     write_options(Op1,Wids),
     Op1;
-menu_selected("Expert",User,GamePid,Wids,Options) ->
+menu_selected("Expert",_User,_GamePid,Wids,Options) ->
     Op1 = setelement(3,Options,4),
     write_options(Op1,Wids),
     Op1;
-menu_selected(What,User,GamePid,Wids,Options) ->
+menu_selected(What,_User,_GamePid,_Wids,Options) ->
     io:format('Menu item not implemented <~s>~n',[What]),
     Options.
 
@@ -212,7 +212,7 @@ game_msg(Msg,User,GamePid,Shell,Wids,Options) ->
 	    GamePid ! {self(),go_on_play},
 	    loop(computer,GamePid,Shell,Wids,Options);
 
-	{GamePid,player,Computer,Player} ->
+	{GamePid,player,_Computer,Player} ->
 	    show_player(element(1,Wids),Player),
 	    cursor("top_left_arrow"),
 	    GamePid ! {self(),go_on_play},
@@ -246,7 +246,7 @@ new_game(GamePid,Wids,Options) when pid(GamePid) ->
 new_game(_,Wids,Options) ->
     new_game(Wids,Options).
 
-new_game(Wids,Options) ->
+new_game(_Wids,Options) ->
     label("",lastdraw),
     Computer = element(1,Options),
     Start = element(2,Options),
@@ -267,16 +267,16 @@ beep(Draw) ->
     Button = get(Name),
     bell(Button).
 
-show_player(Status,white) ->
+show_player(_Status,white) ->
     label("White to draw",todraw);
-show_player(Status,black) ->
+show_player(_Status,black) ->
     label("Black to draw",todraw).
 
-write_score(Wids,WhiteRes,BlackRes) ->
+write_score(_Wids,WhiteRes,BlackRes) ->
     label(integer_to_list(BlackRes),bscore),
     label(integer_to_list(WhiteRes),wscore).
 
-write_draw(Wids,Draw) ->
+write_draw(_Wids,Draw) ->
     Col = othello_adt:col(Draw),
     Row = othello_adt:row(Draw),
     label(lists:flatten(io_lib:format('{~w,~w}',[Col,Row])), lastdraw).
@@ -288,12 +288,12 @@ write_options(Options,Wids) ->
 write_colour(Options,Wids) ->
     write_colour(element(1,Options),element(2,Options),Wids).
 
-write_colour(black,white,Wids) -> label("White (begin)",colour);
-write_colour(black,black,Wids) -> label("White",colour);
-write_colour(white,black,Wids) -> label("Black (begin)",colour);
-write_colour(white,white,Wids) -> label("Black",colour).
+write_colour(black,white,_Wids) -> label("White (begin)",colour);
+write_colour(black,black,_Wids) -> label("White",colour);
+write_colour(white,black,_Wids) -> label("Black (begin)",colour);
+write_colour(white,white,_Wids) -> label("Black",colour).
     
-write_level(Options,Wids) ->
+write_level(Options,_Wids) ->
     case element(3,Options) of
 	1 -> label("Beginner",level);
 	2 -> label("Intermediate",level);
@@ -301,7 +301,7 @@ write_level(Options,Wids) ->
 	4 -> label("Expert",level)
     end.
 
-cursor(What) ->
+cursor(_What) ->
     done.
 %cursor(What) -> cursor(get(),What).
 

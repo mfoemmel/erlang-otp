@@ -66,9 +66,9 @@
 %% Effect   : Functions demanded by the gen_server module. 
 %%------------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-handle_info(Info, State) ->
+handle_info(_Info, State) ->
     {noreply, State}.
 
 %%----------------------------------------------------------%
@@ -79,7 +79,7 @@ handle_info(Info, State) ->
 init([Utc, TimeObj]) ->
     {ok, ?get_InitState(Utc, TimeObj)}.
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------
@@ -90,7 +90,7 @@ terminate(Reason, State) ->
 %% Type     : readonly
 %% Returns  : 
 %%-----------------------------------------------------------
-'_get_time'(OE_THIS, State) ->
+'_get_time'(_OE_THIS, State) ->
     {reply, ?get_Time(State), State}.
 
 %%----------------------------------------------------------%
@@ -98,7 +98,7 @@ terminate(Reason, State) ->
 %% Type     : readonly
 %% Returns  : 
 %%-----------------------------------------------------------
-'_get_inaccuracy'(OE_THIS, State) ->
+'_get_inaccuracy'(_OE_THIS, State) ->
     {reply, ?get_Inaccuracy(State), State}.
 
 %%----------------------------------------------------------%
@@ -106,7 +106,7 @@ terminate(Reason, State) ->
 %% Type     : readonly
 %% Returns  : 
 %%-----------------------------------------------------------
-'_get_tdf'(OE_THIS, State) ->
+'_get_tdf'(_OE_THIS, State) ->
     {reply, ?get_Tdf(State), State}.
 
 %%----------------------------------------------------------%
@@ -114,7 +114,7 @@ terminate(Reason, State) ->
 %% Type     : readonly
 %% Returns  : 
 %%-----------------------------------------------------------
-'_get_utc_time'(OE_THIS, State) ->
+'_get_utc_time'(_OE_THIS, State) ->
     {reply, ?get_Utc(State), State}.
 
 %%-----------------------------------------------------------
@@ -126,7 +126,7 @@ terminate(Reason, State) ->
 %% Returns  : UTO
 %% NOTE     : Return the base time to the relative time in the object.
 %%-----------------------------------------------------------
-absolute_time(OE_THIS, State) ->
+absolute_time(_OE_THIS, State) ->
     case catch 'CosTime_UTO':'_get_time'(
 		 'CosTime_TimeService':universal_time(?get_TimeObj(State)))+
 	?get_Time(State) of
@@ -149,7 +149,7 @@ absolute_time(OE_THIS, State) ->
 %% Returns  : TimeComparison - 'TCEqualTo' | 'TCLessThan' | 
 %%                             'TCGreaterThan' | 'TCIndeterminate'
 %%-----------------------------------------------------------
-compare_time(OE_THIS, State, 'IntervalC', Uto) ->
+compare_time(_OE_THIS, State, 'IntervalC', Uto) ->
     ?time_TypeCheck(Uto, 'CosTime_UTO'),
     case catch {'CosTime_UTO':'_get_time'(Uto),  
 		'CosTime_UTO':'_get_inaccuracy'(Uto)} of
@@ -171,7 +171,7 @@ compare_time(OE_THIS, State, 'IntervalC', Uto) ->
 	_ ->
 	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end;
-compare_time(OE_THIS, State, 'MidC', Uto) ->
+compare_time(_OE_THIS, State, 'MidC', Uto) ->
     ?time_TypeCheck(Uto, 'CosTime_UTO'),
     case catch 'CosTime_UTO':'_get_time'(Uto) of
 	Time when integer(Time) ->
@@ -186,7 +186,7 @@ compare_time(OE_THIS, State, 'MidC', Uto) ->
 	_ ->
 	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end;
-compare_time(OE_THIS, State, _, _) ->
+compare_time(_OE_THIS, _State, _, _) ->
     %% Comparison_type given not correct?!
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
@@ -195,7 +195,7 @@ compare_time(OE_THIS, State, _, _) ->
 %% Arguments: 
 %% Returns  : TIO
 %%-----------------------------------------------------------
-time_to_interval(OE_THIS, State, Uto) ->
+time_to_interval(_OE_THIS, State, Uto) ->
     ?time_TypeCheck(Uto, 'CosTime_UTO'),
     case catch 'CosTime_UTO':'_get_time'(Uto) of
 	Time when integer(Time) ->
@@ -223,7 +223,7 @@ time_to_interval(OE_THIS, State, Uto) ->
 %% Arguments: 
 %% Returns  : TIO
 %%-----------------------------------------------------------
-interval(OE_THIS, State) ->
+interval(_OE_THIS, State) ->
     Lower = ?get_Time(State) - ?get_Inaccuracy(State),
     Upper = ?get_Time(State) + ?get_Inaccuracy(State),
     {reply, 'CosTime_TIO':oe_create([#'TimeBase_IntervalT'{lower_bound=Lower, 

@@ -56,11 +56,11 @@ start() ->
 		{ok, FI} when FI#file_info.access==read_write ->
 		    register(sounder, spawn(sounder,go,[])),
 		    ok;
-		Other ->
+		_Other ->
 		    register(sounder, spawn(sounder,nosound,[])),
 		    silent
 	    end;
-	Pid ->
+	_Pid ->
 	    ok
     end.
 

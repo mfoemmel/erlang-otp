@@ -11,9 +11,7 @@
 %%-----------------------------------------------------------------------
 
 -module(hipe_coalescing_regalloc).
--author(['Thorild Selén', 'Andreas Wallin', 'Ingemar Åberg']).
-
--export([regalloc/4]).
+-export([regalloc/5]).
 
 %%-ifndef(DEBUG).
 %%-define(DEBUG,true).
@@ -36,7 +34,7 @@
 %%   Coloring    -- A coloring for specified CFG
 %%   SpillIndex0 -- A new spill index
 %%-----------------------------------------------------------------------
-regalloc(CFG, SpillIndex, SpillLimit, Target) ->
+regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   %% Build interference graph
   ?debug_msg("Build IG\n",[]),
   IG = hipe_ig:build(CFG, Target),
@@ -69,7 +67,7 @@ regalloc(CFG, SpillIndex, SpillLimit, Target) ->
   %% io:format("SelStk0 ~w\n",[SelStk0]),
   ?debug_msg("Default coloring\n",[]),
   {Color0,Node_sets1} = 
-    defaultColoring(hipe_node_sets:precolored(Node_sets0),
+    defaultColoring(hipe_node_sets:precoloured(Node_sets0),
 		    initColor(No_temporaries), Node_sets0, Target),
 
   ?debug_msg("Assign colors\n",[]),
@@ -112,10 +110,10 @@ regalloc(CFG, SpillIndex, SpillLimit, Target) ->
 do_coloring(IG, Worklists, Node_sets, Moves, Alias, SelStk, K, 
 	    SpillLimit, Target) ->
 
-  Simplify = not(hipe_reg_worklists:is_empty(simplify, Worklists)),
-  Coalesce = not(hipe_moves:is_empty(worklist, Moves)),
-  Freeze   = not(hipe_reg_worklists:is_empty(freeze, Worklists)),
-  Spill    = not(hipe_reg_worklists:is_empty(spill, Worklists)),
+  Simplify = not(hipe_reg_worklists:is_empty_simplify(Worklists)),
+  Coalesce = not(hipe_moves:is_empty_worklist(Moves)),
+  Freeze   = not(hipe_reg_worklists:is_empty_freeze(Worklists)),
+  Spill    = not(hipe_reg_worklists:is_empty_spill(Worklists)),
   if Simplify == true ->
       {IG0, Worklists0, Moves0, SelStk0} = 
 	simplify(hipe_reg_worklists:simplify(Worklists),
@@ -151,7 +149,7 @@ do_coloring(IG, Worklists, Node_sets, Moves, Alias, SelStk, K,
 %% Function:    adjacent
 %%
 %% Description: Adjacent nodes that's not coalesced, on the stack or
-%%               precolored.
+%%               precoloured.
 %% Parameters:
 %%   Node        --  Node that you want to adjacents of
 %%   Adj_list    --  An adjacent nodes list (created in IG)
@@ -160,7 +158,7 @@ do_coloring(IG, Worklists, Node_sets, Moves, Alias, SelStk, K,
 %%
 %%   Returns: 
 %%     A set with nodes/temporaries that are not coalesced, on the 
-%%      stack or precolored.
+%%      stack or precoloured.
 %%----------------------------------------------------------------------
 
 adjacent(Node, Adj_list, Coalesced, SelStk) ->
@@ -170,7 +168,6 @@ adjacent(Node, Adj_list, Coalesced, SelStk) ->
 adjacent_edges(Adjacent_edges, Coalesced, SelStk) ->
   Removed_coalesced = ordsets:subtract(Adjacent_edges, Coalesced),
   remove_stacked(Removed_coalesced, SelStk).
-
 
 %%----------------------------------------------------------------------
 %% Function:    simplify
@@ -196,12 +193,12 @@ adjacent_edges(Adjacent_edges, Coalesced, SelStk) ->
 simplify([], IG, _Node_sets, Worklists, Moves, SelStk, _K) -> 
   {IG, Worklists, Moves, SelStk};
 simplify([Node|Nodes], IG, Node_sets, Worklists, Moves, SelStk, K) ->
-  Worklists0 = hipe_reg_worklists:remove(simplify, Node, Worklists),
+  Worklists0 = hipe_reg_worklists:remove_simplify(Node, Worklists),
   Adj_nodes = hipe_adj_list:edges(Node, hipe_ig:adj_list(IG)),
   ?debug_msg("putting ~w on stack~n",[Node]),
   SelStk0 = push(Node, Adj_nodes,SelStk),
   Adjacent = adjacent_edges(Adj_nodes, 
-		      hipe_node_sets:coalesced(Node_sets), SelStk0),
+			    hipe_node_sets:coalesced(Node_sets), SelStk0),
   {New_ig, Worklists1, New_moves} =
     decrement_degree(Adjacent, IG, Node_sets, Worklists0, 
 		     Moves, SelStk0, K),
@@ -232,29 +229,27 @@ decrement_degree([], IG, _Node_sets, Worklists, Moves, _SelStk, _K) ->
   {IG, Worklists, Moves};
 decrement_degree([Node|Nodes], IG, Node_sets, Worklists, Moves, SelStk, K) ->
   Degree0 = hipe_ig:degree(IG),
+  PrevDegree = hipe_degree:degree(Node, Degree0),
   Degree1 = hipe_degree:dec(Node, Degree0),
   IG0 = hipe_ig:set_degree(Degree1, IG),
-  %% case (hipe_degree:degree(Node, Degree0) == K) of
-  %% The degree has to drop *below* K before it is colorable.
-  case (hipe_degree:degree(Node, Degree0) < K) of
-    true ->
+  if PrevDegree =:= K ->
       Adjacent = adjacent(Node, 
 			  hipe_ig:adj_list(IG0), 
 			  hipe_node_sets:coalesced(Node_sets),
 			  SelStk),
       Moves0 = enable_moves(ordsets:add_element(Node, Adjacent), Moves),
-      Worklists0 = hipe_reg_worklists:remove(spill, Node, Worklists),
+      Worklists0 = hipe_reg_worklists:remove_spill(Node, Worklists),
       case hipe_moves:move_related(Node, Moves0) of
 	true ->
-	  Worklists1 = hipe_reg_worklists:add(freeze, Node, Worklists0),
+	  Worklists1 = hipe_reg_worklists:add_freeze(Node, Worklists0),
 	  decrement_degree(Nodes, IG0, Node_sets, Worklists1, Moves0, 
 			   SelStk, K);
 	_ ->
-	  Worklists1 = hipe_reg_worklists:add(simplify, Node, Worklists0),
+	  Worklists1 = hipe_reg_worklists:add_simplify(Node, Worklists0),
 	  decrement_degree(Nodes, IG0, Node_sets, Worklists1, Moves0, 
 			   SelStk, K)
       end;
-    _ ->
+     true ->
       decrement_degree(Nodes, IG0, Node_sets, Worklists, Moves, SelStk,K)
   end.
 	    
@@ -294,10 +289,10 @@ enable_moves([Node|Nodes], Moves) ->
 
 enable_moves_active_to_worklist([], Moves) -> Moves;
 enable_moves_active_to_worklist([Node|Nodes], Moves) ->
-  case hipe_moves:member(active,Node,Moves) of
+  case hipe_moves:member_active(Node, Moves) of
     true ->
-      New_moves = hipe_moves:add(worklist, Node,
-				 hipe_moves:remove(active, Node, Moves)),
+      New_moves = hipe_moves:add_worklist(Node,
+				 hipe_moves:remove_active(Node, Moves)),
       enable_moves_active_to_worklist(Nodes, New_moves);
     _ ->
       enable_moves_active_to_worklist(Nodes, Moves)
@@ -352,7 +347,6 @@ build_alias_list([Alias|Aliases],I,List) when is_integer(Alias) ->
 build_alias_list([_Alias|Aliases],I,List) ->
   build_alias_list(Aliases,I+1,List).
 
-
 %%----------------------------------------------------------------------
 %% Function:    assignColors
 %%
@@ -382,26 +376,26 @@ assignColors(Stack,NodeSets,Color,Alias,AllColors,Target) ->
       {Color,NodeSets};
     [{Node,Edges}|Stack1] ->
       ?debug_msg("Coloring Node: ~p~n",[Node]),
-      lists:foreach(fun (E) ->
+      lists:foreach(fun (_E) ->
 			?debug_msg("  Edge ~w-><~w>->~w~n",
-				   begin A = getAlias(E,NodeSets,Alias),
-					 [E,A,getColor(A,Color)]
+				   begin A = getAlias(_E,NodeSets,Alias),
+					 [_E,A,getColor(A,Color)]
 				   end)
 		    end, Edges),
-      case hipe_node_sets:member(precolored,Node, NodeSets) of
-	true ->                                 % Already colored
+      case hipe_node_sets:member_precoloured(Node, NodeSets) of
+	true ->                             % Already coloured
 	  ?debug_msg("Node ~p is already colored~n",[Node]),
 	  assignColors(Stack1,NodeSets,Color,Alias,AllColors,Target);
-	false ->                                % Try to find color
+	false ->                            % Try to find color
 	  OkColors = findOkColors(Edges,AllColors,Color,NodeSets,Alias),
 	  case OkColors of
 	    [] ->                           % Spill case
-	      NodeSets1 = hipe_node_sets:add(spilled,Node,NodeSets),
+	      NodeSets1 = hipe_node_sets:add_spilled(Node, NodeSets),
 	      
 	      assignColors(Stack1,NodeSets1,Color,
 			   Alias,AllColors,Target);
-	    [Col|_Cols] ->                   % Colorize case
-	      NodeSets1 = hipe_node_sets:add(colored,Node,NodeSets),
+	    [Col|_Cols] ->                  % Color case
+	      NodeSets1 = hipe_node_sets:add_colored(Node, NodeSets),
 	      Color1 = 
 		setColor(Node, Target:physical_name(Col), Color),
 	      
@@ -429,7 +423,7 @@ defaultColoring([],Color,NodeSets,_Target) ->
   {Color,NodeSets};
 defaultColoring([Reg|Regs],Color,NodeSets,Target) ->
   Color1 = setColor(Reg,Target:physical_name(Reg),Color),
-  NodeSets1 = hipe_node_sets:add(colored,Reg,NodeSets),
+  NodeSets1 = hipe_node_sets:add_colored(Reg, NodeSets),
   defaultColoring(Regs,Color1,NodeSets1,Target).
 
 %% Find the colors that are OK for a node with certain edges.
@@ -444,8 +438,8 @@ findOkColors(Edges,AllColors,Color,NodeSets,Alias) ->
 find([],OkColors,_Color,_NodeSets,_Alias) ->
   ordsets:to_list(OkColors); 
 find([Node|Nodes],OkColors,Color,NodeSets,Alias) ->
-  case (hipe_node_sets:member(colored,Node,NodeSets) or 
-	hipe_node_sets:member(precolored,Node,NodeSets)) of
+  case (hipe_node_sets:member_colored(Node, NodeSets) or
+	hipe_node_sets:member_precoloured(Node, NodeSets)) of
     true ->  
       Col = getColor(Node,Color),
       OkColors1 = ordsets:del_element(Col,OkColors),
@@ -504,7 +498,6 @@ setColor(Node, _NodeColor, {color,_Color}) ->
   ?error_msg("ERROR: ~p: Node is not an integer ~p",
 	     [{?MODULE,setColor,3},Node]).
 
-
 %%----------------------------------------------------------------------
 %% Function:    coalesce
 %%
@@ -534,12 +527,12 @@ coalesce(Moves, IG, Worklists, Node_sets, Alias, SelStk, K, Target) ->
       
       Alias_src = getAlias(Source, Node_sets, Alias),
       Alias_dst = getAlias(Dest, Node_sets, Alias),
-      {U, V} = case Target:is_precolored(Alias_dst) of
+      {U, V} = case Target:is_precoloured(Alias_dst) of
 		 true -> {Alias_dst, Alias_src};
 		 false -> {Alias_src, Alias_dst}
 	       end,
 
-      Moves0 = hipe_moves:remove(worklist, Move, Moves),
+      Moves0 = hipe_moves:remove_worklist(Move, Moves),
       Degree0 = hipe_ig:degree(IG),
 
       %% XXX: (Happi) This is probably not the right fix -- but it
@@ -548,8 +541,7 @@ coalesce(Moves, IG, Worklists, Node_sets, Alias, SelStk, K, Target) ->
       case on_stack(V,SelStk) orelse 
 	   on_stack(U,SelStk) of
 	true -> 
-	  Moves1 = 
-	    hipe_moves:add(constrained, Move, Moves0),
+	  Moves1 = Moves0, % drop constrained move Move
 	  Worklists1 = 
 	    add_worklist(add_worklist(Worklists,
 				      U,
@@ -569,7 +561,7 @@ coalesce(Moves, IG, Worklists, Node_sets, Alias, SelStk, K, Target) ->
 	   Alias};
 	_ -> %% U and V not on the stack.
 	  if U == V ->
-	      Moves1 = hipe_moves:add(coalesced, Move, Moves0),
+	      Moves1 = Moves0, % drop coalesced move Move
 	      Worklists0 = add_worklist(Worklists, U, K, Moves1, Degree0, Target),
 	      {Moves1,
 	       IG,
@@ -577,11 +569,10 @@ coalesce(Moves, IG, Worklists, Node_sets, Alias, SelStk, K, Target) ->
 	       Node_sets,
 	       Alias};
 	     true ->
-	      case Target:is_precolored(V) or 
+	      case Target:is_precoloured(V) or 
 		hipe_adj_set:adjacent(U, V, hipe_ig:adj_set(IG)) of 
 		true ->
-		  Moves1 = 
-		    hipe_moves:add(constrained, Move, Moves0),
+		  Moves1 = Moves0, % drop constrained move Move
 		  Worklists1 = 
 		    add_worklist(add_worklist(Worklists,
 					      U,
@@ -604,15 +595,14 @@ coalesce(Moves, IG, Worklists, Node_sets, Alias, SelStk, K, Target) ->
 		  Coalesced_nodes = hipe_node_sets:coalesced(Node_sets),
 		  AdjU = adjacent(U, Adj_list, Coalesced_nodes, SelStk),
 		  AdjV = adjacent(V, Adj_list, Coalesced_nodes, SelStk),
-	      
-		  case (Target:is_precolored(U)
+		  case (Target:is_precoloured(U)
 			and all_adjacent_ok(AdjV, U, IG, K, Target))
-		    or (not(Target:is_precolored(U))
+		    or (not(Target:is_precoloured(U))
 			and (conservative(ordsets:union(AdjU, AdjV),
 					  IG,
 					  K))) of
 		    true ->
-		      Moves1 = hipe_moves:add(coalesced, Move, Moves0),
+		      Moves1 = Moves0, % drop coalesced move Move
 		      {IG0,
 		       Node_sets0,
 		       Worklists1,
@@ -641,7 +631,7 @@ coalesce(Moves, IG, Worklists, Node_sets, Alias, SelStk, K, Target) ->
 		       Node_sets0,
 		       Alias0};
 		    false ->
-		      {hipe_moves:add(active, Move, Moves0),
+		      {hipe_moves:add_active(Move, Moves0),
 		       IG,
 		       Worklists,
 		       Node_sets,
@@ -671,11 +661,11 @@ coalesce(Moves, IG, Worklists, Node_sets, Alias, SelStk, K, Target) ->
 %%----------------------------------------------------------------------
 
 add_worklist(Worklists, U, K, Moves, Degree, Target) ->
-  case (not(Target:is_precolored(U))
+  case (not(Target:is_precoloured(U))
 	and not(hipe_moves:move_related(U, Moves))
-	and (hipe_degree:is_simple(U, K, Degree))) of
+	and (hipe_degree:is_trivially_colorable(U, K, Degree))) of
     true ->
-      hipe_reg_worklists:transfer(freeze, simplify, U, Worklists);
+      hipe_reg_worklists:transfer_freeze_simplify(U, Worklists);
     false ->
       Worklists
   end.
@@ -701,38 +691,38 @@ add_worklist(Worklists, U, K, Moves, Degree, Target) ->
 %%----------------------------------------------------------------------
        
 combine(U, V, IG, Node_sets, Worklists, Moves, Alias, SelStk, K, Target) ->
-  Worklists1 = case hipe_reg_worklists:member(freeze, V, Worklists) of
-		 true -> hipe_reg_worklists:remove(freeze, V, Worklists);
-		 false -> hipe_reg_worklists:remove(spill, V, Worklists)
+  Worklists1 = case hipe_reg_worklists:member_freeze(V, Worklists) of
+		 true -> hipe_reg_worklists:remove_freeze(V, Worklists);
+		 false -> hipe_reg_worklists:remove_spill(V, Worklists)
 	       end,
-  Node_sets1 = hipe_node_sets:add(coalesced, V, Node_sets),
+  Node_sets1 = hipe_node_sets:add_coalesced(V, Node_sets),
   
   ?debug_msg("Coalescing ~p and ~p to ~p~n",[V,U,U]),
   
   Alias1 = setAlias(V, U, Alias),
   
-  %% NOTE: Here there is an error in the pseudocode for the algorithm!
+  %% Typo in published algorithm: s/nodeMoves/moveList/g to fix.
   Moves1 = hipe_moves:set_movelist(hipe_vectors_wrapper:set(hipe_moves:movelist(Moves),
 							    U,
 							    ordsets:union(hipe_moves:node_moves(U, Moves),
 									  hipe_moves:node_moves(V, Moves))),
 				   Moves),
-  
+  %% Missing in published algorithm. From Tiger book Errata.
+  Moves2 = enable_moves([V], Moves1),
   Adj_list = hipe_ig:adj_list(IG),
   Adjacent =
     adjacent(V, Adj_list, hipe_node_sets:coalesced(Node_sets1), SelStk),
   
-  {IG1, Worklists2, Moves2} =
+  {IG1, Worklists2, Moves3} =
     combine_edges(Adjacent, U, IG, Node_sets1, Worklists1,
-		  Moves1, SelStk, K, Target),
+		  Moves2, SelStk, K, Target),
 
-  New_worklists = case (not(hipe_degree:is_simple(U, K, hipe_ig:degree(IG1)))
-			and hipe_reg_worklists:member(freeze, U, Worklists2)) of
-		    true -> hipe_reg_worklists:transfer(freeze, spill, U, 
-							Worklists2);
+  New_worklists = case (not(hipe_degree:is_trivially_colorable(U, K, hipe_ig:degree(IG1)))
+			and hipe_reg_worklists:member_freeze(U, Worklists2)) of
+		    true -> hipe_reg_worklists:transfer_freeze_spill(U, Worklists2);
 		    false -> Worklists2
 		  end,
-  {IG1, Node_sets1, New_worklists, Moves2, Alias1}.
+  {IG1, Node_sets1, New_worklists, Moves3, Alias1}.
 
 %%----------------------------------------------------------------------
 %% Function:    combine_edges
@@ -781,8 +771,8 @@ combine_edges([T|Ts], U, IG, Node_sets, Worklists, Moves, SelStk, K, Target) ->
 %%----------------------------------------------------------------------
 
 ok(T, R, IG, K, Target) ->
-    ((hipe_degree:is_simple(T, K, hipe_ig:degree(IG)))
-     or Target:is_precolored(T)
+    ((hipe_degree:is_trivially_colorable(T, K, hipe_ig:degree(IG)))
+     or Target:is_precoloured(T)
      or hipe_adj_set:adjacent(T, R, hipe_ig:adj_set(IG))).
 
 %%----------------------------------------------------------------------
@@ -840,11 +830,10 @@ conservative(Nodes, IG, K) ->
 
 conservative_count([], _Degree, _K, Cnt) -> Cnt;
 conservative_count([Node|Nodes], Degree, K, Cnt) ->
-  case hipe_degree:is_simple(Node, K, Degree) of
+  case hipe_degree:is_trivially_colorable(Node, K, Degree) of
     true -> conservative_count(Nodes, Degree, K, Cnt);
     false -> conservative_count(Nodes, Degree, K, Cnt+1)
   end.
-
 
 %%---------------------------------------------------------------------
 %% Function:    selectSpill
@@ -870,8 +859,8 @@ selectSpill(WorkLists, Moves, IG, K, NodeSets, Alias, SpillLimit) ->
   SpillCost = getCost(CAR, IG,SpillLimit),
   M = findCheapest(CDR,IG,SpillCost,CAR, SpillLimit),
   
-  WorkLists1 = hipe_reg_worklists:remove(spill,M,WorkLists),
-  WorkLists2 = hipe_reg_worklists:add(simplify,M,WorkLists1),
+  WorkLists1 = hipe_reg_worklists:remove_spill(M, WorkLists),
+  WorkLists2 = hipe_reg_worklists:add_simplify(M, WorkLists1),
   freezeMoves(M, K, WorkLists2, Moves, hipe_ig:degree(IG), NodeSets, Alias).
 
 %% Find the node that is cheapest to spill
@@ -895,7 +884,6 @@ getCost(Node, IG, SpillLimit) ->
     true ->  inf;
     false -> hipe_spillcost:spill_cost(Node, IG)
   end.
-
 
 %%----------------------------------------------------------------------
 %% Function:    freeze
@@ -922,7 +910,7 @@ getCost(Node, IG, SpillLimit) ->
 freeze(K,WorkLists,Moves,Degrees,NodeSets,Alias) ->
   [U|_] = hipe_reg_worklists:freeze(WorkLists),         % Smarter routine?
   ?debug_msg("freezing node ~p~n",[U]),
-  WorkLists0 = hipe_reg_worklists:transfer(freeze, simplify, U, WorkLists),
+  WorkLists0 = hipe_reg_worklists:transfer_freeze_simplify(U, WorkLists),
   freezeMoves(U,K,WorkLists0,Moves,Degrees,NodeSets,Alias).
 
 %%----------------------------------------------------------------------
@@ -973,29 +961,28 @@ freezeEm(U,[M|Ms],K,WorkLists,Moves,Degrees,NodeSets,Alias) ->
   end.
 
 freezeEm2(U,V,M,K,WorkLists,Moves,Degrees,NodeSets,Alias) ->
-  case hipe_moves:member(active, M, Moves) of
+  case hipe_moves:member_active(M, Moves) of
     true ->
-      Moves1 = hipe_moves:remove(active, M, Moves),
+      Moves1 = hipe_moves:remove_active(M, Moves),
       freezeEm3(U,V,M,K,WorkLists,Moves1,Degrees,NodeSets,Alias);	
     false ->
-      Moves1 = hipe_moves:remove(worklist, M, Moves),
+      Moves1 = hipe_moves:remove_worklist(M, Moves),
       freezeEm3(U,V,M,K,WorkLists,Moves1,Degrees,NodeSets,Alias)
   end.
 
-freezeEm3(_U,V,M,K,WorkLists,Moves,Degrees,NodeSets,Alias) ->
-  Moves1 = hipe_moves:add(frozen,M,Moves),
+freezeEm3(_U,V,_M,K,WorkLists,Moves,Degrees,NodeSets,Alias) ->
+  Moves1 = Moves, % drop frozen move M
   V1 = getAlias(V,NodeSets,Alias),
   %% We know that hipe_moves:node_moves/2 returns an ordset (a list).
   case (hipe_moves:node_moves(V1,Moves1) == []) and 
-    hipe_degree:is_simple(V1,K,Degrees) of
+    hipe_degree:is_trivially_colorable(V1,K,Degrees) of
     true ->
       ?debug_msg("freezing move to ~p~n", [V]),
-      Worklists1 = hipe_reg_worklists:transfer(freeze, simplify, V1, WorkLists),
-      {Worklists1, Moves1};
+      Worklists1 = hipe_reg_worklists:transfer_freeze_simplify(V1, WorkLists),
+      {Worklists1,Moves1};
     false ->
       {WorkLists,Moves1}
   end.
-
 
 %%----------------------------------------------------------------------
 %% Function:     initAlias
@@ -1025,7 +1012,7 @@ initAlias(NrOfNodes) ->
 %%----------------------------------------------------------------------
 
 getAlias(Node, NodeSets, {alias,Alias}) when is_integer(Node) ->
-  case hipe_node_sets:member(coalesced,Node,NodeSets) of 
+  case hipe_node_sets:member_coalesced(Node, NodeSets) of
     true ->
       getAlias(hipe_vectors_wrapper:get(Alias,Node),NodeSets,{alias, Alias});
     false ->
@@ -1054,7 +1041,6 @@ when is_integer(Node), is_integer(ToNode) ->
 setAlias(Node, ToNode, {alias,_Alias}) ->
   ?error_msg("ERROR: ~p: Node not integer: ~p or ~p",
 	     [{?MODULE,setAlias,3},Node,ToNode]).
-
 
 %%----------------------------------------------------------------------
 %% SelStack

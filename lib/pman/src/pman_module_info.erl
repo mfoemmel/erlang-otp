@@ -107,12 +107,12 @@ loop(LoopState) ->
 	    gse:destroy(LoopState#module_state.topwin);
 
 	%% Destroy - destroy window and exit process.
-	{gs, TopWindow, destroy, [], []} ->
+	{gs, _TopWindow, destroy, [], []} ->
 	    unlink(LoopState#module_state.callingpid),
 	    gse:destroy(LoopState#module_state.topwin);
 
 
-        {gs, TopWindow, configure ,Data,[W,H,X,Y|_]} ->
+        {gs, TopWindow, configure ,_Data,[W,H,_X,_Y|_]} ->
 	    configure (TopWindow, LoopState#module_state.editor, W, H),
 	    loop (LoopState);
 
@@ -145,14 +145,14 @@ loop(LoopState) ->
 
 	    loop(LoopState);
 	
-	{'EXIT', Pid, Reason} ->
+	{'EXIT', _Pid, Reason} ->
 	    exit(Reason)
 
     end.
 
 	
 
-configure (Win, Editor, W, H) ->
+configure (_Win, Editor, W, H) ->
     gs:config (Editor, [{width, W - 3},
 			{height, H - 40}]).
     

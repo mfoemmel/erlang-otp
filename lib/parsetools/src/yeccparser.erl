@@ -58,12 +58,6 @@ format_error(Message) ->
 	    io_lib:write(Message)
     end.
 
-% To be used in grammar files to throw an error message to the parser toplevel.
-% Doesn't have to be exported!
-return_error(Line, Message) ->
-    throw({error, {Line, ?THIS_MODULE, Message}}).
-
-
 % Don't change yeccpars1/6 too much, it is called recursively by yeccpars2/8!
 yeccpars1([Token | Tokens], Tokenizer, State, States, Vstack) ->
     yeccpars2(State, element(1, Token), States, Vstack, Token, Tokens,
@@ -72,11 +66,11 @@ yeccpars1([], {M, F, A}, State, States, Vstack) ->
     case catch apply(M, F, A) of
         {eof, Endline} ->
             {error, {Endline, ?THIS_MODULE, "end_of_file"}};
-        {error, Descriptor, Endline} ->
+        {error, Descriptor, _Endline} ->
             {error, Descriptor};
         {'EXIT', Reason} ->
             {error, {0, ?THIS_MODULE, Reason}};
-        {ok, Tokens, Endline} ->
+        {ok, Tokens, _Endline} ->
 	    case catch yeccpars1(Tokens, {M, F, A}, State, States, Vstack) of
 		error ->
 		    Errorline = element(2, hd(Tokens)),

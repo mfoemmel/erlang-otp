@@ -41,7 +41,7 @@ int ei_decode_port(const char *buf, int *index, erlang_port *p)
   
   /* now the numbers: num (4), creation (1) */
   if (p) {
-    p->id = get32be(s);
+    p->id = get32be(s) & 0x0fffffff /* 28 bits */;
     p->creation = get8(s) & 0x03;
   }
   else s += 5;

@@ -185,22 +185,22 @@ create_image(nofile,_,_,_,_,_,_,_) ->
 create_image(ImageFile,Canvas,Bg,Fg,X,Y,W,H) ->
     case lists:last(string:tokens(ImageFile,".")) of
 	"xbm" ->
-	    Image = gs:create(image,Canvas,
-			      [{bitmap,ImageFile},
-			       {bg,Bg},{fg,Fg},
-			       {anchor,c},
-			       {coords,[{X+1+W/2,Y+1+H/2}]},
-			       {buttonpress,true},
-			       {buttonrelease,true},
-			       {enter,true},{leave,true}]);
+	    gs:create(image,Canvas,
+		      [{bitmap,ImageFile},
+		       {bg,Bg},{fg,Fg},
+		       {anchor,c},
+		       {coords,[{X+1+W/2,Y+1+H/2}]},
+		       {buttonpress,true},
+		       {buttonrelease,true},
+		       {enter,true},{leave,true}]);
 	"gif" ->
-	    Image = gs:create(image,Canvas,
-			      [{load_gif,ImageFile},
-			       {anchor,c},
-			       {coords,[{X+W/2,Y+H/2}]},
-			       {buttonpress,true},
-			       {buttonrelease,true},
-			       {enter,true},{leave,true}])
+	    gs:create(image,Canvas,
+		      [{load_gif,ImageFile},
+		       {anchor,c},
+		       {coords,[{X+W/2,Y+H/2}]},
+		       {buttonpress,true},
+		       {buttonrelease,true},
+		       {enter,true},{leave,true}])
     end.
 
 %----------------------------------------

@@ -1,0 +1,285 @@
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+# 
+#     $Id$
+#
+
+include $(ERL_TOP)/make/target.mk
+include ../include/internal/$(TARGET)/ethread.mk
+
+CC=@CC@
+LD=@LD@
+AR=@AR@
+RANLIB=@RANLIB@
+RM=@RM@
+MKDIR=@MKDIR@
+INSTALL=@INSTALL@
+INSTALL_DIR=@INSTALL_DIR@
+INSTALL_DATA=@INSTALL_DATA@
+INSTALL_PROGRAM=@INSTALL_PROGRAM@
+
+ERLANG_OSTYPE=@ERLANG_OSTYPE@
+
+ifeq ($(TYPE),debug)
+CFLAGS=@DEBUG_CFLAGS@ -DDEBUG
+TYPE_SUFFIX=.debug
+ifeq ($(TARGET),win32)
+LD_FLAGS += -g
+endif
+PRE_LD=
+
+else
+
+ifeq ($(TYPE),purify)
+CFLAGS=@CFLAGS@ -DPURIFY
+TYPE_SUFFIX=.purify
+PRE_LD=purify $(PURIFY_BUILD_OPTIONS)
+else
+ifeq ($(TYPE),quantify)
+CFLAGS=@CFLAGS@ -DQUANTIFY
+TYPE_SUFFIX=.quantify
+PRE_LD=quantify $(QUANTIFY_BUILD_OPTIONS)
+else
+ifeq ($(TYPE),purecov)
+CFLAGS=@DEBUG_CFLAGS@ -DPURECOV
+TYPE_SUFFIX=.purecov
+PRE_LD=purecov $(PURECOV_BUILD_OPTIONS)
+else
+TYPE=opt
+CFLAGS=@CFLAGS@
+TYPE_SUFFIX=
+PRE_LD=
+endif
+endif
+endif
+endif
+
+CFLAGS += @WFLAGS@ @DEFS@
+
+LIBS=@LIBS@
+
+TT_DIR=$(TARGET)/$(TYPE)
+
+ERTS_INCL=-I../include -I../include/$(TARGET)
+ERTS_INCL_INT=-I../include/internal -I../include/internal/$(TARGET)
+
+INCLUDES=$(ERTS_INCL) $(ERTS_INCL_INT)
+
+ifeq ($(TARGET),win32)
+LIB_SUFFIX=.lib
+LIB_PREFIX=
+else
+LIB_SUFFIX=.a
+LIB_PREFIX=lib
+endif
+
+OBJS_ROOT_DIR=obj
+OBJ_DIR=$(OBJS_ROOT_DIR)/$(TT_DIR)
+
+ERTS_LIB_DIR=../lib/$(TARGET)
+ERTS_LIB_INTERNAL_DIR=../lib/internal/$(TARGET)
+
+ERTS_ST_LIB_SRC=
+ERTS_ST_LIB_OBJS=
+ERTS_ST_LIB_NAME=erts_st$(TYPE_SUFFIX)
+ERTS_ST_LIB=$(ERTS_LIB_DIR)/$(LIB_PREFIX)$(ERTS_ST_LIB_NAME)$(LIB_SUFFIX)
+
+ifeq ($(strip $(ERTS_ST_LIB_OBJS)),)
+ERTS_ST_LIB=
+endif
+
+ifneq ($(strip $(ETHR_LIB_NAME)),)
+ETHREAD_LIB_SRC=common/ethread.c
+ETHREAD_LIB_OBJS=$(OBJ_DIR)/ethread_mt.o
+ETHREAD_LIB_NAME=ethread$(TYPE_SUFFIX)
+ETHREAD_LIB=$(ERTS_LIB_INTERNAL_DIR)/$(LIB_PREFIX)$(ETHREAD_LIB_NAME)$(LIB_SUFFIX)
+
+ERTS_MT_LIB_SRC=
+ERTS_MT_LIB_OBJS=
+ERTS_MT_LIB_NAME=erts_mt$(TYPE_SUFFIX)
+ERTS_MT_LIB=$(ERTS_LIB_DIR)/$(LIB_PREFIX)$(ERTS_MT_LIB_NAME)$(LIB_SUFFIX)
+
+ifeq ($(strip $(ERTS_MT_LIB_OBJS)),)
+ERTS_MT_LIB=
+endif
+
+else
+
+ETHREAD_LIB_SRC=
+ETHREAD_LIB_OBJS=
+ETHREAD_LIB_NAME=
+ETHREAD_LIB=
+
+ERTS_MT_LIB_SRC=
+ERTS_MT_LIB_OBJS=
+ERTS_MT_LIB_NAME=
+ERTS_MT_LIB=
+endif
+
+#
+# Everything to build
+#
+all: $(OBJ_DIR) $(ETHREAD_LIB) $(ERTS_ST_LIB) $(ERTS_MT_LIB)
+
+#
+# The libs ...
+#
+ifeq ($(TARGET),win32)
+AR_OUT=-out:
+AR_FLAGS=
+else
+AR_OUT=
+AR_FLAGS=rcv
+endif
+
+ifndef RANLIB
+RANLIB=true
+endif
+
+$(ETHREAD_LIB): $(ETHREAD_LIB_OBJS) $(ERTS_LIB_INTERNAL_DIR)
+	$(AR) $(AR_FLAGS) $(AR_OUT)$@ $(ETHREAD_LIB_OBJS)
+	$(RANLIB) $@
+
+$(ERTS_MT_LIB): $(ERTS_MT_LIB_OBJS) $(ERTS_LIB_DIR)
+	$(AR) $(AR_FLAGS) $(AR_OUT)$@ $(ERTS_MT_LIB_OBJS)
+	$(RANLIB) $@
+
+$(ERTS_ST_LIB): $(ERTS_ST_LIB_OBJS) $(ERTS_LIB_DIR)
+	$(AR) $(AR_FLAGS) $(AR_OUT)$@ $(ERTS_ST_LIB_OBJS)
+	$(RANLIB) $@
+
+#
+# Object files
+#
+
+$(OBJ_DIR)/%_mt.o: common/%.c
+	$(CC) $(ETHR_DEFS) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(OBJ_DIR)/%_mt.o: $(ERLANG_OSTYPE)/%.c
+	$(CC) $(ETHR_DEFS) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(OBJ_DIR)/%_st.o: common/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(OBJ_DIR)/%_st.o: $(ERLANG_OSTYPE)/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+#
+# Create directories
+#
+
+$(ERTS_LIB_INTERNAL_DIR):
+	$(MKDIR) -p $(ERTS_LIB_INTERNAL_DIR)
+
+$(ERTS_LIB_DIR):
+	$(MKDIR) -p $(ERTS_LIB_DIR)
+
+$(OBJ_DIR):
+	$(MKDIR) -p $(OBJ_DIR)
+
+#
+# Install
+#
+
+include $(ERL_TOP)/make/otp_release_targets.mk
+include ../vsn.mk
+RELSYSDIR = $(RELEASE_PATH)/erts-$(VSN)
+
+RELEASE_INCLUDES=
+RELEASE_LIBS=$(ERTS_MT_LIB) $(ERTS_ST_LIB)
+
+INTERNAL_RELEASE_INCLUDES= \
+	../include/internal/README \
+	../include/internal/ethread.h \
+	../include/internal/$(TARGET)/ethread.mk \
+	../include/internal/$(TARGET)/ethread_header_config.h
+INTERNAL_RELEASE_LIBS=../lib/internal/README $(ETHREAD_LIB)
+
+release_spec: all
+ifneq ($(strip $(RELEASE_INCLUDES)),)
+	$(INSTALL_DIR) $(RELSYSDIR)/include
+	$(INSTALL_DIR) $(RELEASE_PATH)/usr/include
+	$(INSTALL_DATA) $(RELEASE_INCLUDES) $(RELSYSDIR)/include
+	$(INSTALL_DATA) $(RELEASE_INCLUDES) $(RELEASE_PATH)/usr/include
+endif
+ifneq ($(strip $(INTERNAL_RELEASE_INCLUDES)),)
+	$(INSTALL_DIR) $(RELSYSDIR)/include/internal
+	$(INSTALL_DATA) $(INTERNAL_RELEASE_INCLUDES) $(RELSYSDIR)/include/internal
+endif
+ifneq ($(strip $(RELEASE_LIBS)),)
+	$(INSTALL_DIR) $(RELSYSDIR)/lib
+	$(INSTALL_DIR) $(RELEASE_PATH)/usr/lib
+	$(INSTALL_DATA) $(RELEASE_LIBS) $(RELSYSDIR)/lib
+	$(INSTALL_DATA) $(RELEASE_LIBS) $(RELEASE_PATH)/usr/lib
+endif
+ifneq ($(strip $(INTERNAL_RELEASE_LIBS)),)
+	$(INSTALL_DIR) $(RELSYSDIR)/lib/internal
+	$(INSTALL_DATA) $(INTERNAL_RELEASE_LIBS) $(RELSYSDIR)/lib/internal
+endif
+
+release_docs_spec:
+
+
+#
+# Cleanup
+#
+clean:
+	$(RM) -rf $(ERTS_LIB_DIR)/* >/dev/null 2>&1
+	$(RM) -rf $(OBJS_ROOT_DIR) >/dev/null 2>&1
+	$(RM) -f core *~ >/dev/null 2>&1
+
+#
+# Make dependencies
+#
+
+ifeq ($(TARGET),win32)
+DEP_CC=@EMU_CC@
+else
+DEP_CC=$(CC)
+endif
+
+SED_REPL_MT_O=s|^\([^:]*\)\.o:|$$(OBJ_DIR)/\1_mt.o:|g
+SED_REPL_ST_O=s|^\([^:]*\)\.o:|$$(OBJ_DIR)/\1_st.o:|g
+SED_REPL_TT_DIR=s|$(TT_DIR)/|$$(TT_DIR)/|g
+SED_REPL_TARGET=s|$(TARGET)/|$$(TARGET)/|g
+
+SED_MT_DEPEND=sed '$(SED_REPL_MT_O);$(SED_REPL_TT_DIR);$(SED_REPL_TARGET)'
+SED_ST_DEPEND=sed '$(SED_REPL_ST_O);$(SED_REPL_TT_DIR);$(SED_REPL_TARGET)'
+
+DEPEND_MK=$(TARGET)/depend.mk
+
+depend:
+	@echo "Generating dependency file $(DEPEND_MK)..."
+	@echo "# Generated dependency rules" > $(DEPEND_MK);
+ifneq ($(strip $(ETHREAD_LIB_SRC)),)
+	@echo "# ethread lib objects..." >> $(DEPEND_MK);
+	$(DEP_CC) -MM $(ETHR_DEFS) $(CFLAGS) $(INCLUDES) $(ETHREAD_LIB_SRC) \
+		| $(SED_MT_DEPEND) >> $(DEPEND_MK)
+endif
+ifneq ($(strip $(ERTS_MT_LIB_SRC)),)
+	@echo "# Mutithread erts lib objects..." >> $(DEPEND_MK);
+	$(DEP_CC) -MM $(ETHR_DEFS) $(CFLAGS) $(INCLUDES) $(ERTS_MT_LIB_SRC) \
+		| $(SED_MT_DEPEND) >> $(DEPEND_MK)
+endif
+ifneq ($(strip $(ERTS_ST_LIB_SRC)),)
+	@echo "# Singlethread erts lib objects..." >> $(DEPEND_MK);
+	$(DEP_CC) -MM $(CFLAGS) $(INCLUDES) $(ERTS_ST_LIB_SRC) \
+		| $(SED_ST_DEPEND) >> $(DEPEND_MK)
+endif
+	@echo "#" >> $(DEPEND_MK);
+
+-include $(DEPEND_MK)
+
+# eof

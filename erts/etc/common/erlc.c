@@ -161,6 +161,8 @@ main(int argc, char** argv)
      */
 
     PUSH("-noinput");
+    PUSH2("-mode", "minimal");
+    PUSH2("-boot", "start_clean");
     PUSH3("-s", "erl_compile", "compile_cmdline");
     rpc_eargv = eargv+eargc;
 
@@ -281,7 +283,13 @@ main(int argc, char** argv)
 		/** XXX Version perhaps, but of what? **/
 		break;
 	    case 'W':		/* Enable warnings. */
-		PUSH2("@warn", "1");
+		if (strcmp(argv[1]+2, "all") == 0) {
+		    PUSH2("@warn", "999");
+		} else if (isdigit((int)argv[1][2])) {
+		    PUSH2("@warn", argv[1]+2);
+		} else {
+		    PUSH2("@warn", "1");
+		}
 		break;
 	    case 'E':
 	    case 'S':

@@ -58,6 +58,7 @@
 	 start/0, start/1,
 	 start_link/0, start_link/1,
 	 which/1,
+	 where_is_file/1,
 	 clash/0]).
 
 -include_lib("kernel/include/file.hrl").
@@ -171,7 +172,9 @@ do_start(F,Flags) ->
     code_server:module_info(module),
     code_aux:module_info(module),
     packages:module_info(module),
-    catch load_hipe_modules(),
+    catch hipe_unified_loader:load_hipe_modules(),
+    gb_sets:module_info(module),
+    gb_trees:module_info(module),
 
     ets:module_info(module),
     os:module_info(module),
@@ -203,14 +206,6 @@ do_start(F,Flags) ->
 	    {error, crash}
     end.
 
-load_hipe_modules() ->
-    hipe_unified_loader:module_info(module),
-    case erlang:system_info(hipe_architecture) of
-	ultrasparc -> hipe_sparc_loader:module_info(module);
-	x86 -> hipe_x86_loader:module_info(module);
-	undefined -> ok
-    end.
-
 do_stick_dirs() ->
     do_s("compiler"),
     do_s("stdlib"),
@@ -231,6 +226,8 @@ get_mode(Flags) ->
 	    case init:get_argument(mode) of
 		{ok,[["embedded"]]} ->
 		    embedded;
+		{ok,[["minimal"]]} ->
+		    minimal;
 		_Else ->
 		    interactive
 	    end
@@ -273,6 +270,16 @@ which(File,Base,[Directory|Tail]) ->
 	    which(File,Base,Tail)
     end.
 
+%% Search the code path for a specific file. Try to locate
+%% it in the code path cache if possible.
+where_is_file(File) when list(File) ->
+    case call({is_cached,File}) of
+	no ->
+	    Path = get_path(),
+	    which(File, ".", Path);
+	Dir ->
+	    filename:join(Dir, File)
+    end.
 
 %% Search the entire path system looking for name clashes
 

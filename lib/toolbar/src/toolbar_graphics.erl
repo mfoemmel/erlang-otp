@@ -107,15 +107,15 @@
 % button (= no action) or with the mouse still inside the button (= action).
 %----------------------------------------
 %%% Mouse enters a icon, display short help message
-event(_LoopData,enter,{canvasbutton,Cbtn,{_Start,{message,String}}},_Args) ->
+event(_LoopData,enter,{canvasbutton,_Cbtn,{_Start,{message,String}}},_Args) ->
     {display,String};
 
 %% Mouse leaves a icon, clear display area
-event(_LoopData,leave,{canvasbutton,Cbtn,_Data},_Args) ->
+event(_LoopData,leave,{canvasbutton,_Cbtn,_Data},_Args) ->
     display_clear;
 
 %% An icon is pressed, create graphical illusion of this
-event(_LoopData,buttonpress,{canvasbutton,Canvasbutton,_},Args) ->
+event(_LoopData,buttonpress,{canvasbutton,Canvasbutton,_},_Args) ->
     canvasbutton:press(Canvasbutton),
     {newData,canvasbutton:read(Canvasbutton,coords)};
 
@@ -289,7 +289,7 @@ already_added(Window,ToolInfo) ->
 %   ToolInfos - [toolinfo record]
 %   Tool - atom() Tool name
 %----------------------------------------
-already_added2([#toolinfo{tool=Tool}|Rest],Tool) ->
+already_added2([#toolinfo{tool=Tool}|_Rest],Tool) ->
     true;
 already_added2([_|Rest],Tool) ->
     already_added2(Rest,Tool);

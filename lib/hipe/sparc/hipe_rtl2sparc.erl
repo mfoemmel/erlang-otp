@@ -17,7 +17,7 @@ translate(Rtl, _Options) ->
   Code = hipe_rtl:rtl_code(Rtl),
   Data = hipe_rtl:rtl_data(Rtl),
   hipe_gensym:init(sparc),
-  hipe_gensym:set_label(sparc,element(2,hipe_rtl:rtl_label_range(Rtl))+1),
+  hipe_gensym:set_label(sparc,hipe_gensym:get_label(rtl)+1),
   hipe_gensym:set_var(sparc,hipe_sparc_registers:first_virtual()),
   Arity = length(hipe_rtl:rtl_params(Rtl)),
   Closure = hipe_rtl:rtl_is_closure(Rtl),
@@ -27,7 +27,7 @@ translate(Rtl, _Options) ->
   {SparcCode, NewData} = translate_instructions(Code, VarMap1, Data),
   SparcCode1 = lists:flatten(SparcCode), 
   FirstLab = hd(SparcCode1),
-  Goto = hipe_sparc:goto_create(hipe_sparc:label_name(FirstLab),[]),
+  Goto = hipe_sparc:goto_create(hipe_sparc:label_name(FirstLab)),
   Sparc =
     hipe_sparc:mk_sparc(hipe_rtl:rtl_fun(Rtl),
 			Arity, Closure, Leaf,
@@ -68,42 +68,33 @@ translate_instruction(I, Map, ConstTab) ->
     store ->           translate_store(I, Map, ConstTab);
     call ->            translate_call(I, Map, ConstTab);
     enter ->
-      {Args, Map0} = rvs2srs(hipe_rtl:enter_args(I), Map),
+      {Args, Map0} = rvs2srs(hipe_rtl:enter_arglist(I), Map),
       {RegArgs,Head} = move_vars_to_args(Args),
-
-      Fun = hipe_rtl:enter_fun(I),
+      {Target, Map1} = conv_fun(hipe_rtl:enter_fun(I), Map0),
       Type = hipe_rtl:enter_type(I),
-      {Target, Map1} = case Type of
-			 closure -> rv2sr(Fun, Map0);
-			 _ -> {Fun, Map0}
-		       end,
-
-      Ins = [Head, hipe_sparc:pseudo_enter_create(Target, RegArgs, Type, [])],
+      Ins = [Head, hipe_sparc:pseudo_enter_create(Target, RegArgs, Type)],
       {Ins, Map1, ConstTab};
-
     branch ->
       {Src1, Map0} = rv2sr(hipe_rtl:branch_src1(I), Map),
       {Src2, Map1} = rv2sr(hipe_rtl:branch_src2(I), Map0),
       Zero = hipe_sparc:mk_reg(hipe_sparc_registers:zero()),
       Pred = hipe_rtl:branch_pred(I),
       Cond = rtl_cond_to_sparc_cc(hipe_rtl:branch_cond(I)),
-      Ins = [hipe_sparc:alu_cc_create(Zero, Src1, '-', Src2, []),
+      Ins = [hipe_sparc:alu_cc_create(Zero, Src1, '-', Src2),
 	     if Pred >= 0.5 ->
 		 hipe_sparc:b_create(
 		   Cond,
 		   hipe_rtl:branch_true_label(I),
 		   hipe_rtl:branch_false_label(I),
 		   Pred,
-		   na,
-		   []);
+		   na);
 		true ->
 		 hipe_sparc:b_create(
 		   neg_cond(Cond),
 		   hipe_rtl:branch_false_label(I),
 		   hipe_rtl:branch_true_label(I),
 		   1.0 - Pred,
-		   na,
-		   [])
+		   na)
 	     end],
       {Ins, Map1, ConstTab};
     alub -> %% this instruction is a little more high-level
@@ -119,18 +110,16 @@ translate_instruction(I, Map, ConstTab) ->
 				hipe_rtl:alub_true_label(I),
 				hipe_rtl:alub_false_label(I),
 				Pred,
-				na,
-				[]);
+				na);
 	   true ->
 	    hipe_sparc:b_create(neg_cond(Cond), 
 				hipe_rtl:alub_false_label(I),
 				hipe_rtl:alub_true_label(I),
 				1.0 - Pred,
-				na,
-				[])
+				na)
 	end,
 
-      Ins = [hipe_sparc:alu_cc_create(Dst, Src1, Op, Src2, []),
+      Ins = [hipe_sparc:alu_cc_create(Dst, Src1, Op, Src2),
 	     Branch],
       {Ins, Map2, ConstTab};
     switch -> % this instruction is a lot more high-level
@@ -139,37 +128,34 @@ translate_instruction(I, Map, ConstTab) ->
       {NewConstTab, JmpT} = 
 	case hipe_rtl:switch_sort_order(I) of
 	  [] -> 
-	    hipe_consttab:insert_block(ConstTab, 4, word, LMap);
+	    hipe_consttab:insert_block(ConstTab, word, LMap);
 	  SortOrder ->
-	    hipe_consttab:insert_sorted_block(ConstTab, 4, 
-					      word, LMap, SortOrder)
+	    hipe_consttab:insert_sorted_block(ConstTab, word, LMap, SortOrder)
 	end,
       JTR = hipe_sparc:mk_new_reg(),
       AlignedR = hipe_sparc:mk_new_reg(),
       DestR = hipe_sparc:mk_new_reg(),
       {StartR, Map1} = rv2sr(hipe_rtl:switch_src(I), Map),
       Ins = 
-	[hipe_sparc:load_address_create(JTR, JmpT, constant, 
-					[{comment,jump_table}]),
+	[hipe_sparc:load_address_create(JTR, JmpT, constant),
 
 	 %% Multiply by 4, wordalign 
-	 hipe_sparc:alu_create(AlignedR, StartR, '<<', hipe_sparc:mk_imm(2),
-			       [{comment,do_wordalign}]),
+	 hipe_sparc:alu_create(AlignedR, StartR, '<<',
+			       hipe_sparc:mk_imm(2)),
 
 	 %% Get the destination from: &JmpT + (Index-Min) * 4
-	 hipe_sparc:load_create(DestR, uw, JTR, AlignedR, []),
+	 hipe_sparc:load_create(DestR, uw, JTR, AlignedR),
 	 %% Jump to the dest.
-	 hipe_sparc:jmp_create(DestR, hipe_sparc:mk_imm(0), [], 
-			       Labels, [])],
+	 hipe_sparc:jmp_create(DestR, hipe_sparc:mk_imm(0), [], Labels)],
 
       {Ins, Map1, NewConstTab};
     return ->
-      {Regs, Map1} = rvs2srs(hipe_rtl:return_vars(I), Map),
+      {Regs, Map1} = rvs2srs(hipe_rtl:return_varlist(I), Map),
       {RegArgs, Moves} = move_vars_to_retregs(Regs),
       RetIs = [hipe_sparc:pseudo_return_create(RegArgs)],
       {Moves ++ RetIs, Map1, ConstTab};
     restore_catch ->
-      {Vars, Map1} = rvs2srs(hipe_rtl:restore_catch_vars(I), Map),
+      {Vars, Map1} = rvs2srs(hipe_rtl:restore_catch_varlist(I), Map),
       {_Regs, Moves} = move_rets_to_vars(Vars),
       {Moves, Map1, ConstTab};
     fail_to ->
@@ -178,10 +164,10 @@ translate_instruction(I, Map, ConstTab) ->
       case hipe_rtl:fail_to_label(I) of
 	[] -> {Moves, Map1, ConstTab};
 	L ->
-	  {Moves ++ [hipe_sparc:goto_create(L,[])],Map1, ConstTab}
+	  {Moves ++ [hipe_sparc:goto_create(L)],Map1, ConstTab}
       end;
     comment ->
-      Ins = [hipe_sparc:comment_create(hipe_rtl:comment_text(I), [])],
+      Ins = [hipe_sparc:comment_create(hipe_rtl:comment_text(I))],
       {Ins, Map, ConstTab};
     fload ->
       {Dst, Map0} = rv2sr(hipe_rtl:fload_dst(I), Map),
@@ -190,7 +176,7 @@ translate_instruction(I, Map, ConstTab) ->
       Ins = [hipe_sparc:load_fp_create(Dst, Src, Off)],
       {Ins, Map2, ConstTab};
     fstore ->
-      {Dst, Map0} = rv2sr(hipe_rtl:fstore_dst(I), Map),
+      {Dst, Map0} = rv2sr(hipe_rtl:fstore_base(I), Map),
       {Src, Map1} = rv2sr(hipe_rtl:fstore_src(I), Map0),
       {Off, Map2} = rv2sr(hipe_rtl:fstore_offset(I), Map1),
       Ins = [hipe_sparc:store_fp_create(Dst, Off, Src)],
@@ -206,17 +192,17 @@ translate_instruction(I, Map, ConstTab) ->
       {Dst, Map0} = rv2sr(hipe_rtl:fp_unop_dst(I), Map),
       {Src, Map1} = rv2sr(hipe_rtl:fp_unop_src(I), Map0),
       Ins = 
-	case rtl_op2sparc_op(hipe_rtl:fp_op(I)) of
+	case rtl_op2sparc_op(hipe_rtl:fp_unop_op(I)) of
 	  'fchs' ->
-	    [hipe_sparc:fmov_create(Dst,double,Src,true,false,[])];
+	    [hipe_sparc:fmove_create(Dst,double,Src,true,false)];
 	  Op ->
 	    exit({?MODULE, {"unknown fp_unop", Op}})
 	end,
       {Ins, Map1, ConstTab};
-    fmov ->
-      {Dst, Map0} = rv2sr(hipe_rtl:fmov_dst(I), Map),
-      {Src, Map1} = rv2sr(hipe_rtl:fmov_src(I), Map0),
-      Ins = [hipe_sparc:fmov_create(Dst,double,Src,false,false,[])],
+    fmove ->
+      {Dst, Map0} = rv2sr(hipe_rtl:fmove_dst(I), Map),
+      {Src, Map1} = rv2sr(hipe_rtl:fmove_src(I), Map0),
+      Ins = [hipe_sparc:fmove_create(Dst,double,Src,false,false)],
       {Ins, Map1, ConstTab};
     fconv ->
       {Dst, Map0} = rv2sr(hipe_rtl:fconv_dst(I), Map),
@@ -229,20 +215,19 @@ translate_instruction(I, Map, ConstTab) ->
 
 
 translate_label(I, Map, ConstTab)->
-  Ins = [hipe_sparc:label_create(hipe_rtl:label_name(I), 
-				 hipe_rtl:info(I))],
+  Ins = [hipe_sparc:label_create(hipe_rtl:label_name(I))],
   {Ins, Map, ConstTab}.
 
 translate_move(I, Map, ConstTab)->
   {Dst, Map0} = rv2sr(hipe_rtl:move_dst(I), Map),
   {Src, Map1} = rv2sr(hipe_rtl:move_src(I), Map0),
-  Ins = [hipe_sparc:move_create(Dst, Src, [])],
+  Ins = [hipe_sparc:move_create(Dst, Src)],
   {Ins, Map1, ConstTab}.
 
 translate_multimove(I, Map, ConstTab) ->
-  {Dst, Map0} = rvs2srs(hipe_rtl:multimove_dst(I), Map),
-  {Src, Map1} = rvs2srs(hipe_rtl:multimove_src(I), Map0),
-  Ins = [hipe_sparc:multimove_create(Dst, Src, [])],
+  {DstList, Map0} = rvs2srs(hipe_rtl:multimove_dstlist(I), Map),
+  {SrcList, Map1} = rvs2srs(hipe_rtl:multimove_srclist(I), Map0),
+  Ins = [hipe_sparc:multimove_create(DstList, SrcList)],
   {Ins, Map1, ConstTab}.
 
 translate_alu(I, Map, ConstTab) ->
@@ -250,42 +235,43 @@ translate_alu(I, Map, ConstTab) ->
   {Dst, Map0} = rv2sr(hipe_rtl:alu_dst(I), Map),
   {Src1, Map1} = rv2sr(hipe_rtl:alu_src1(I), Map0),
   {Src2, Map2} = rv2sr(hipe_rtl:alu_src2(I), Map1),
-  Ins = [hipe_sparc:alu_create(Dst, Src1, Op, Src2, [])],
+  Ins = [hipe_sparc:alu_create(Dst, Src1, Op, Src2)],
   {Ins, Map2, ConstTab}.
 
 translate_goto(I, Map, ConstTab) ->
-  Ins = [hipe_sparc:goto_create(hipe_rtl:goto_label(I), [])],
+  Ins = [hipe_sparc:goto_create(hipe_rtl:goto_label(I))],
   {Ins, Map, ConstTab}.
 
 
 translate_load(I, Map, ConstTab) ->
   %% v9-specific
-  %% byte, halfword load added
   {Dst, Map0} = rv2sr(hipe_rtl:load_dst(I), Map),
   {Src, Map1} = rv2sr(hipe_rtl:load_src(I), Map0),
   {Off, Map2} = rv2sr(hipe_rtl:load_offset(I), Map1),
   case hipe_rtl:load_size(I) of
     word ->
-      Ins = [hipe_sparc:load_create(Dst, uw, Src, Off, [])];
+      Ins = [hipe_sparc:load_create(Dst, uw, Src, Off)];
+    int32 ->
+      Ins = [hipe_sparc:load_create(Dst, uw, Src, Off)];
     _ ->
       case hipe_rtl:load_sign(I) of
 	signed ->
 	  case hipe_rtl:load_size(I) of
 	    
-	    halfword ->
-	      Ins = [hipe_sparc:load_create(Dst, sh, Src, Off, [])];
+	    int16 ->
+	      Ins = [hipe_sparc:load_create(Dst, sh, Src, Off)];
 	    
 	    byte ->
-	      Ins = [hipe_sparc:load_create(Dst, sb, Src, Off, [])]
+	      Ins = [hipe_sparc:load_create(Dst, sb, Src, Off)]
 	  end;
 	unsigned ->
 	  case hipe_rtl:load_size(I) of
 	   
-	    halfword ->
-	      Ins = [hipe_sparc:load_create(Dst, uh, Src, Off, [])];
+	    int16 ->
+	      Ins = [hipe_sparc:load_create(Dst, uh, Src, Off)];
 	    
 	    byte ->
-	      Ins = [hipe_sparc:load_create(Dst, ub, Src, Off, [])]
+	      Ins = [hipe_sparc:load_create(Dst, ub, Src, Off)]
 	   
 	  end
       end
@@ -294,7 +280,7 @@ translate_load(I, Map, ConstTab) ->
 
 translate_load_atom(I, Map, ConstTab) ->
   {Dst, Map0} = rv2sr(hipe_rtl:load_atom_dst(I), Map),
-  Ins = [hipe_sparc:load_atom_create(Dst, hipe_rtl:load_atom_atom(I), [])],
+  Ins = [hipe_sparc:load_atom_create(Dst, hipe_rtl:load_atom_atom(I))],
   {Ins, Map0, ConstTab}.
 
 
@@ -302,7 +288,7 @@ translate_load_word_index(I, Map, ConstTab) ->
   Block = hipe_rtl:load_word_index_block(I),
   Index = hipe_rtl:load_word_index_index(I),
   {Dst, Map0} = rv2sr(hipe_rtl:load_word_index_dst(I), Map),
-  Ins = [hipe_sparc:load_word_index_create(Dst, Block, Index, [])],
+  Ins = [hipe_sparc:load_word_index_create(Dst, Block, Index)],
   {Ins, Map0, ConstTab}.
 
 translate_goto_index(I, Map, ConstTab) ->
@@ -310,8 +296,8 @@ translate_goto_index(I, Map, ConstTab) ->
   Index = hipe_rtl:goto_index_index(I),
   Labels = hipe_rtl:goto_index_labels(I),
   JReg = hipe_sparc:mk_new_reg(),
-  Ins = [hipe_sparc:load_word_index_create(JReg, Block, Index, []),
-	 hipe_sparc:jmp_create(JReg, hipe_sparc:mk_imm(0),[], Labels, [])
+  Ins = [hipe_sparc:load_word_index_create(JReg, Block, Index),
+	 hipe_sparc:jmp_create(JReg, hipe_sparc:mk_imm(0),[], Labels)
 	],
   {Ins, Map, ConstTab}.
 
@@ -321,46 +307,51 @@ translate_load_address(I, Map, ConstTab) ->
   Ins = [hipe_sparc:load_address_create(
 	   Dst,
 	   hipe_rtl:load_address_address(I), 
-	   hipe_rtl:load_address_type(I), 
-	   [])],
+	   hipe_rtl:load_address_type(I))],
   {Ins, Map0, ConstTab}.
 
 translate_store(I, Map, ConstTab) ->
-%%byte and halfword stores added
-  {Dst, Map0} = rv2sr(hipe_rtl:store_dst(I), Map),
+  {Dst, Map0} = rv2sr(hipe_rtl:store_base(I), Map),
   {Src, Map1} = rv2sr(hipe_rtl:store_src(I), Map0),
   {Off, Map2} = rv2sr(hipe_rtl:store_offset(I), Map1),
-  Ins= 
-    case  hipe_rtl:store_size(I) of
+  Ins =
+    case hipe_rtl:store_size(I) of
       word ->
-	[hipe_sparc:store_create(Dst, Off, w, Src,[])];
-      halfword ->
-	[hipe_sparc:store_create(Dst, Off, h, Src,[])];
+	[hipe_sparc:store_create(Dst, Off, w, Src)];
+      int32 ->
+	[hipe_sparc:store_create(Dst, Off, w, Src)];
+      int16 ->
+	[hipe_sparc:store_create(Dst, Off, h, Src)];
       byte ->
-	[hipe_sparc:store_create(Dst, Off, b, Src,[])]
+	[hipe_sparc:store_create(Dst, Off, b, Src)]
     end,
   {Ins, Map2, ConstTab}.
 
 translate_call(I, Map, ConstTab) ->
-  {Args, Map0} = rvs2srs(hipe_rtl:call_args(I), Map),
-  {RetVals, Map1} = rvs2srs(hipe_rtl:call_dst(I), Map0),
+  {Args, Map0} = rvs2srs(hipe_rtl:call_arglist(I), Map),
+  {RetVals, Map1} = rvs2srs(hipe_rtl:call_dstlist(I), Map0),
+  {Target, Map2} = conv_fun(hipe_rtl:call_fun(I), Map1),
   Type = hipe_rtl:call_type(I),
-  {Target, Map2} = 
-    case Type of
-      closure -> 
-	rv2sr(hipe_rtl:call_fun(I), Map1);
-      _ -> 
-	{hipe_rtl:call_fun(I), Map1}
-    end,
-  Ins = conv_call(
-	  RetVals, Target, Args,  hipe_rtl:call_continuation(I),
-	  hipe_rtl:call_fail(I), Type,
-	  hipe_rtl:info(I)),
+  Ins = conv_call(RetVals, Target, Args,  hipe_rtl:call_continuation(I),
+		  hipe_rtl:call_fail(I), Type),
   {Ins, Map2, ConstTab}.
+
+conv_fun(Fun, Map) ->
+  case hipe_rtl:is_var(Fun) of
+    true ->
+      rv2sr(Fun, Map);
+    false ->
+      case hipe_rtl:is_reg(Fun) of
+	true ->
+	  rv2sr(Fun, Map);
+	false ->
+	  {Fun, Map}
+      end
+  end.
 
 %% Finalise the conversion of a call instruction.
 
-conv_call(Dsts, Fun, Args, ContLab, ExnLab, Type, Info) ->
+conv_call(Dsts, Fun, Args, ContLab, ExnLab, Type) ->
   {RetArgs,RealContLab, Tail} =
     case move_rets_to_vars(Dsts) of
       {[],[]} ->
@@ -383,16 +374,15 @@ conv_call(Dsts, Fun, Args, ContLab, ExnLab, Type, Info) ->
 	     hipe_sparc:label_name(NewContLab),
 	     [NewContLab |
 	      Moves ++
-	      [hipe_sparc:goto_create(ContLab,[])]]}
+	      [hipe_sparc:goto_create(ContLab)]]}
 	end
 	
     end,
   {RegArgs,Head} = move_vars_to_args(Args),
   CP = hipe_sparc:mk_reg(hipe_sparc_registers:return_address()),
 
-  CallInsn = hipe_sparc:call_link_create(
-	       Fun, CP, RetArgs, RegArgs,RealContLab,
-	       ExnLab, Type, Info),
+  CallInsn = hipe_sparc:call_link_create(Fun, CP, RetArgs, RegArgs,
+					 RealContLab, ExnLab, Type),
 
   [Head | [[CallInsn | Tail]]].
 
@@ -412,7 +402,7 @@ move_vars_to_args(Vars) ->
   case NoRegArgs > 0 of
     true ->
       RegArgs = arg_vars(NoRegArgs-1),
-      I = hipe_sparc:multimove_create(RegArgs, InRegs,[]),
+      I = hipe_sparc:multimove_create(RegArgs, InRegs),
 
       StackArgs = length(OnStack),
       case StackArgs > 0 of
@@ -434,7 +424,7 @@ move_vars_to_retregs(Vars) ->
   case NoRegArgs > 0 of
     true ->
       RegArgs = ret_vars(NoRegArgs-1),
-      I = hipe_sparc:multimove_create(RegArgs, InRegs,[]),
+      I = hipe_sparc:multimove_create(RegArgs, InRegs),
 
       StackArgs = length(OnStack),
       case StackArgs > 0 of
@@ -505,7 +495,7 @@ move_args_to_vars(InRegs, OnStack) ->
     true ->
       StackArgs = length(OnStack),
       RegArgs = arg_vars(NoRegArgs-1),
-      I = hipe_rtl:mk_multimove(InRegs, RegArgs),
+      I = hipe_sparc:multimove_create(InRegs, RegArgs),
       case StackArgs > 0 of
 	true ->
 	  {RegArgs,[I|move_args_to_vars(OnStack, NoRegArgs, StackArgs+NoRegArgs)]};
@@ -537,7 +527,7 @@ move_rets_to_vars(InRegs, OnStack) ->
     true ->
       StackArgs = length(OnStack),
       RegArgs = ret_vars(NoRegArgs-1),
-      I = hipe_rtl:mk_multimove(InRegs, RegArgs),
+      I = hipe_sparc:multimove_create(InRegs, RegArgs),
       case StackArgs > 0 of
 	true ->
 	  {RegArgs,[I|move_rets_to_vars(OnStack, NoRegArgs, StackArgs+NoRegArgs)]};
@@ -642,9 +632,8 @@ rtl_cond_to_sparc_cc(Cond) ->
 neg_cond(Cond) ->
   hipe_sparc:cc_negate(Cond).
 
-
 %%
-%% Convert a rtl instruction argument to a sparc ditto
+%% Convert an RTL instruction argument to a SPARC ditto
 %%
 
 rv2sr(Var, Map) ->
@@ -654,21 +643,21 @@ rv2sr(Var, Map) ->
     false ->
       Name = case hipe_rtl:is_var(Var) of
 	       true ->
-		 hipe_rtl:var_name(Var);
+		 hipe_rtl:var_index(Var);
 	       false ->
 		 case hipe_rtl:is_reg(Var) of
 		   true ->
-		     hipe_rtl:reg_name(Var);
+		     hipe_rtl:reg_index(Var);
 		   false ->
 		     case hipe_rtl:is_fpreg(Var) of
 		       true ->
-			 hipe_rtl:fpreg_name(Var);
+			 hipe_rtl:fpreg_index(Var);
 		       false ->
-			 ?EXIT({"bad rtl value", Var})
+			 ?EXIT({"bad RTL value",Var})
 		     end
 		 end
 	     end,
-      case hipe_sparc_registers:is_precolored(Name) of
+      case hipe_sparc_registers:is_precoloured(Name) of
 	true ->
 	  {hipe_sparc:mk_reg(Name), Map};
 	false ->

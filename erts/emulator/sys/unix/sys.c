@@ -107,7 +107,6 @@
 #endif
 
 #ifdef USE_THREADS
-#define ERL_THREADS_EMU_INTERNAL__
 #include "erl_threads.h"
 #endif
 
@@ -171,7 +170,7 @@ EXTERN_FUNCTION(void, erl_sys_args, (int*, char**));
 
 extern void erts_sys_init_float(void);
 
-extern void erl_crash_dump(char* fmt, va_list args);
+extern void erl_crash_dump(char* file, int line, char* fmt, ...);
 
 #ifdef USE_SELECT
 
@@ -265,7 +264,7 @@ static int debug_log = 0;
 #endif
 
 #if CHLDWTHR
-static erts_thread_t child_waiter_tid;
+static ethr_tid child_waiter_tid;
 #else
 static volatile int children_died;
 #endif
@@ -319,6 +318,63 @@ void sys_tty_reset(void)
   else if (isatty(0)) {
     tcsetattr(0,TCSANOW,&initial_tty_mode);
   }
+}
+
+#if defined(USE_THREADS) && defined(ETHR_HAVE_ETHR_SIG_FUNCS)
+/*
+ * Child thread inherits parents signal mask at creation. In order to
+ * guarantee that the main thread will receive all SIGINT, SIGCHLD, and
+ * SIGUSR1 signals sent to the process, we block these signals in the
+ * parent thread when creating a new thread.
+ */
+
+static sigset_t thr_create_sigmask;
+
+/*
+ * thr_create_prepare() is called in parent thread before thread creation.
+ * Returned value is passed as argument to thr_create_cleanup().
+ */
+static void *
+thr_create_prepare(void)
+{
+    sigset_t *saved_sigmask;
+    saved_sigmask = (sigset_t *) erts_alloc(ERTS_ALC_T_TMP, sizeof(sigset_t));
+    erts_thr_sigmask(SIG_BLOCK, &thr_create_sigmask, saved_sigmask);
+    return (void *) saved_sigmask;
+}
+
+
+/* thr_create_cleanup() is called in parent thread after thread creation. */
+static void
+thr_create_cleanup(void *saved_sigmask)
+{
+    /* Restore signalmask... */
+    erts_thr_sigmask(SIG_SETMASK, (sigset_t *) saved_sigmask, NULL);
+    erts_free(ERTS_ALC_T_TMP, saved_sigmask);
+}
+
+#endif
+
+void
+erts_sys_pre_init(void)
+{
+#ifdef USE_THREADS
+    ethr_init_data *eidp = NULL;
+#ifdef ETHR_HAVE_ETHR_SIG_FUNCS
+    ethr_init_data eid = {thr_create_prepare,	/* Before creation in parent */
+			  thr_create_cleanup,	/* After creation in parent */
+			  NULL			/* After creation in child */};
+
+    eidp = &eid;
+
+    sigemptyset(&thr_create_sigmask);
+    sigaddset(&thr_create_sigmask, SIGINT);   /* block interrupt */
+    sigaddset(&thr_create_sigmask, SIGCHLD);  /* block child signals */
+    sigaddset(&thr_create_sigmask, SIGUSR1);  /* block user defined signal */
+#endif
+
+    erts_thr_init(eidp);
+#endif
 }
 
 void
@@ -420,7 +476,7 @@ RETSIGTYPE (*sys_sigset(int sig, RETSIGTYPE (*func)(int)))(int)
 
 #ifdef USE_THREADS
 #undef  sigprocmask
-#define sigprocmask erts_thread_sigmask
+#define sigprocmask erts_thr_sigmask
 #endif
 
 void sys_sigblock(int sig)
@@ -479,11 +535,11 @@ static RETSIGTYPE request_break(int signum)
 
 }
 
-#ifdef UNUSABLE_SIGUSRX
+#ifdef ETHR_UNUSABLE_SIGUSRX
 #warning "Unusable SIGUSR1 & SIGUSR2. Disabling use of these signals"
 #endif
 
-#ifndef UNUSABLE_SIGUSRX
+#ifndef ETHR_UNUSABLE_SIGUSRX
 
 #if (defined(SIG_SIGSET) || defined(SIG_SIGNAL))
 static RETSIGTYPE user_signal1(void)
@@ -510,7 +566,7 @@ static RETSIGTYPE user_signal2(int signum)
 }
 #endif
 
-#endif /* #ifndef UNUSABLE_SIGUSRX */
+#endif /* #ifndef ETHR_UNUSABLE_SIGUSRX */
 
 #if (defined(SIG_SIGSET) || defined(SIG_SIGNAL))
 static RETSIGTYPE do_quit(void)
@@ -530,12 +586,12 @@ void erts_set_ignore_break(void) {
 void init_break_handler(void)
 {
    sys_sigset(SIGINT, request_break);
-#ifndef UNUSABLE_SIGUSRX
+#ifndef ETHR_UNUSABLE_SIGUSRX
    sys_sigset(SIGUSR1, user_signal1);
 #ifdef QUANTIFY
    sys_sigset(SIGUSR2, user_signal2);
 #endif
-#endif /* #ifndef UNUSABLE_SIGUSRX */
+#endif /* #ifndef ETHR_UNUSABLE_SIGUSRX */
    sys_sigset(SIGQUIT, do_quit);
 }
 
@@ -550,7 +606,7 @@ static void block_signals(void)
    sys_sigblock(SIGCHLD);
 #endif
    sys_sigblock(SIGINT);
-#ifndef UNUSABLE_SIGUSRX
+#ifndef ETHR_UNUSABLE_SIGUSRX
    sys_sigblock(SIGUSR1);
 #endif
 }
@@ -562,9 +618,9 @@ static void unblock_signals(void)
    sys_sigrelease(SIGCHLD);
 #endif
    sys_sigrelease(SIGINT);
-#ifndef UNUSABLE_SIGUSRX
+#ifndef ETHR_UNUSABLE_SIGUSRX
    sys_sigrelease(SIGUSR1);
-#endif /* #ifndef UNUSABLE_SIGUSRX */
+#endif /* #ifndef ETHR_UNUSABLE_SIGUSRX */
 }
 
 /******************* Routines for time measurement *********************/
@@ -714,9 +770,14 @@ static struct driver_data {
 } *driver_data;			/* indexed by fd */
 
 #if CHLDWTHR
-/* dead_child_status_lock is used to protect against concurrent accesses
+/* chld_stat_mtx is used to protect against concurrent accesses
    of the driver_data fields pid, alive, and status. */
-erts_mutex_t dead_child_status_lock;
+ethr_mutex chld_stat_mtx = ETHR_MUTEX_INITER;
+#define CHLD_STAT_LOCK		erts_mtx_lock(&chld_stat_mtx)
+#define CHLD_STAT_UNLOCK	erts_mtx_unlock(&chld_stat_mtx)
+#else
+#define CHLD_STAT_LOCK
+#define CHLD_STAT_UNLOCK
 #endif
 
 /* Driver interfaces */
@@ -874,9 +935,7 @@ static int spawn_init()
    sys_sigset(SIGCHLD, onchld); /* Reap children */
 
 #if CHLDWTHR
-   dead_child_status_lock = erts_mutex_sys(ERTS_MUTEX_SYS_CHILD_STATUS);
-   if(erts_thread_create(&child_waiter_tid, child_waiter, NULL, 0) != 0)
-     erl_exit(1, "Failed to start child waiter thread");
+   erts_thr_create(&child_waiter_tid, child_waiter, NULL, 0);
 #endif
 
    return 1;
@@ -1060,9 +1119,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
        to be safe. */
     block_signals();
 
-#if CHLDWTHR
-    erts_mutex_lock(dead_child_status_lock);
-#endif
+    CHLD_STAT_LOCK;
 
 #if !DISABLE_VFORK
     /* See fork/vfork discussion before this function. */
@@ -1241,11 +1298,9 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
        first complete putting away the info about our new subprocess. */
     unblock_signals();
 
-#if CHLDWTHR
-    /* Don't unlock dead_child_status_lock until now of the same reason
-       as above */
-    erts_mutex_unlock(dead_child_status_lock);
-#endif
+    /* Don't unlock chld_stat_mtx until now of the same reason as above */
+    CHLD_STAT_UNLOCK;
+
     return (ErlDrvData)res;
 }
 
@@ -1409,15 +1464,11 @@ static ErlDrvData fd_start(ErlDrvPort port_num, char* name,
 	    }
 	}
     }
-#if CHLDWTHR
-    erts_mutex_lock(dead_child_status_lock);
-#endif
+    CHLD_STAT_LOCK;
     res = (ErlDrvData)(long)set_driver_data(port_num, opts->ifd, opts->ofd,
 				      opts->packet_bytes,
 				      opts->read_write, 0, -1);
-#if CHLDWTHR
-    erts_mutex_unlock(dead_child_status_lock);
-#endif
+    CHLD_STAT_UNLOCK;
     return res;
 }
 
@@ -1469,15 +1520,12 @@ static ErlDrvData vanilla_start(ErlDrvPort port_num, char* name,
     }
     SET_NONBLOCKING(fd);
     init_fd_data(fd, port_num);
-#if CHLDWTHR
-    erts_mutex_lock(dead_child_status_lock);
-#endif
+
+    CHLD_STAT_LOCK;
     res = (ErlDrvData)(long)set_driver_data(port_num, fd, fd,
 				      opts->packet_bytes,
 				      opts->read_write, 0, -1);
-#if CHLDWTHR
-    erts_mutex_unlock(dead_child_status_lock);
-#endif
+    CHLD_STAT_UNLOCK;
     return res;
 }
 
@@ -1498,16 +1546,12 @@ static void stop(ErlDrvData fd)
 	(void) close(ofd);
     }
 
-#if CHLDWTHR
-  erts_mutex_lock(dead_child_status_lock);
-#endif
+    CHLD_STAT_LOCK;
 
     /* Mark as unused. Maybe resetting the 'port_num' slot is better? */
     driver_data[(int)(long)fd].pid = -1;
 
-#if CHLDWTHR
-  erts_mutex_unlock(dead_child_status_lock);
-#endif
+    CHLD_STAT_UNLOCK;
 }
 
 static void outputv(ErlDrvData e, ErlIOVec* ev)
@@ -1619,16 +1663,12 @@ static int port_inp_failure(int port_num, int ready_fd, int res)
     int status;
     int alive;
     
-#if CHLDWTHR
-    erts_mutex_lock(dead_child_status_lock);
-#endif
+    CHLD_STAT_LOCK;
 
     alive = driver_data[ready_fd].alive;
     status = driver_data[ready_fd].status;
 
-#if CHLDWTHR
-    erts_mutex_unlock(dead_child_status_lock);
-#endif
+    CHLD_STAT_UNLOCK;
 
     ASSERT(res <= 0);
     (void) driver_select(port_num, ready_fd, DO_READ|DO_WRITE, 0); 
@@ -3182,7 +3222,7 @@ erl_assert_error(char* expr, char* file, int line)
 	    expr, file, line);
     fflush(stderr);
     if (erts_initialized)
-	erl_crash_dump(NULL, NULL);
+	erl_crash_dump(file, line, "Assertion failed: %s\n", expr);
     abort();
 }
 
@@ -3232,17 +3272,14 @@ child_waiter(void *unused)
       pid = waitpid(-1, &status, 0);
       if(pid < 0 && errno == ECHILD) {
 	/* Based on that all threads block SIGCHLD all the time! */
-	if(erts_thread_sigwait(&chldsigset, &sig) < 0) {
-	  ASSERT(errno == EINTR);
-	}
-	else {
-	  ASSERT(sig == SIGCHLD);
-	}
+	erts_thr_sigwait(&chldsigset, &sig);
+	ASSERT(sig == SIGCHLD);
       }
     } while(pid < 0);
-    erts_mutex_lock(dead_child_status_lock);
+
+    CHLD_STAT_LOCK;
     note_child_death(pid, status);
-    erts_mutex_unlock(dead_child_status_lock);
+    CHLD_STAT_UNLOCK;
   }
 
   return NULL;

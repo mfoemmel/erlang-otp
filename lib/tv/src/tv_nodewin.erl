@@ -158,7 +158,7 @@ get_node_lists(CurrNode) ->
 
 get_node_mark_index(CurrNode, [H | T], Acc) when CurrNode /= H ->
     get_node_mark_index(CurrNode, T, Acc + 1);
-get_node_mark_index(CurrNode, [CurrNode | T], Acc) ->
+get_node_mark_index(CurrNode, [CurrNode | _], Acc) ->
     Acc.  %% Acc tells the index of the current head.  :-)
     
 
@@ -168,7 +168,7 @@ get_node_mark_index(CurrNode, [CurrNode | T], Acc) ->
 check_selected_node('nonode@nohost', _OldNode, _WinCreated) when node() == 'nonode@nohost' ->
        %% Not distributed, OK!
     'nonode@nohost';
-check_selected_node(Node, _OldNode, WinCreated) when node() == 'nonode@nohost' ->
+check_selected_node(_Node, _OldNode, WinCreated) when node() == 'nonode@nohost' ->
        %% No longer distributed, but previously was!
     handle_error(undistributed),
     update_node_listbox('nonode@nohost', WinCreated);
@@ -204,7 +204,7 @@ available_nodes() ->
 loop(Pid, CurrNode, HomeNode, WinCreated) ->
     receive
 
-	{nodedown, Node} ->
+	{nodedown, _Node} ->
 	    flush_nodedown_messages(),
 	    flush_nodeup_messages(),
 	    case lists:member(CurrNode, available_nodes()) of
@@ -220,7 +220,7 @@ loop(Pid, CurrNode, HomeNode, WinCreated) ->
 	    loop(Pid, NewCurrNode, node(), WinCreated);
 
 
-	{nodeup, Node} ->
+	{nodeup, _Node} ->
 	    flush_nodeup_messages(),
 	    flush_nodedown_messages(),
 	    case lists:member(CurrNode, available_nodes()) of
@@ -239,7 +239,7 @@ loop(Pid, CurrNode, HomeNode, WinCreated) ->
 	    loop(Pid, NewCurrNode, node(), WinCreated);
 
 
-	{gs, node_listbox, click, Data, [Idx, Txt | _]} ->
+	{gs, node_listbox, click, Data, [Idx, _Txt | _]} ->
 	    NewCurrNode = check_selected_node(lists:nth(Idx + 1, Data), CurrNode, WinCreated),
 	    tell_master(NewCurrNode, CurrNode, Pid),
 	    loop(Pid, NewCurrNode, node(), WinCreated);
@@ -285,12 +285,12 @@ loop(Pid, CurrNode, HomeNode, WinCreated) ->
 	    put(error_msg_mode, Mode),
 	    loop(Pid, CurrNode, HomeNode, WinCreated);
 
-	{'EXIT', Pid, Reason} ->
+	{'EXIT', Pid, _Reason} ->
 	    net_kernel:monitor_nodes(false),
 	    exit(normal);
 
 
-	{'EXIT', _OtherPid, Reason} ->
+	{'EXIT', _OtherPid, _Reason} ->
 	    loop(Pid, CurrNode, HomeNode, WinCreated);
 
 	
@@ -312,9 +312,9 @@ loop(Pid, CurrNode, HomeNode, WinCreated) ->
 			      
 
 
-tell_master(NewNode, NewNode, Pid) ->
+tell_master(NewNode, NewNode, _Pid) ->
     done;
-tell_master(NewNode, OldNode, Pid) ->
+tell_master(NewNode, _OldNode, Pid) ->
     Pid ! {tv_new_node, self(), NewNode}.
 
 
@@ -322,7 +322,7 @@ tell_master(NewNode, OldNode, Pid) ->
 
 flush_nodedown_messages() ->
     receive
-	{nodedown,Node} ->
+	{nodedown,_Node} ->
 	    flush_nodedown_messages()
     after
 	0 ->
@@ -334,7 +334,7 @@ flush_nodedown_messages() ->
 
 flush_nodeup_messages() ->
     receive
-	{nodeup,Node} ->
+	{nodeup,_Node} ->
 	    flush_nodeup_messages()
     after
 	0 ->

@@ -27,7 +27,7 @@ do(Info) ->
 	"GET" ->
 	    case httpd_util:key1search(Info#mod.data,status) of
 		%% A status code has been generated!
-		{StatusCode,PhraseArgs,Reason} ->
+		{_StatusCode, _PhraseArgs, _Reason} ->
 		    {proceed,Info#mod.data};
 		%% No status code has been generated!
 		undefined ->
@@ -36,7 +36,7 @@ do(Info) ->
 			undefined ->
 			    do_get(Info);
 			%% A response has been generated or sent!
-			Response ->
+			_Response ->
 			    {proceed,Info#mod.data}
 		    end
 	    end;
@@ -55,8 +55,8 @@ do_get(Info) ->
     send_response(Info#mod.socket,Info#mod.socket_type,Path,Info,FileInfo,LastModified).
 
 
-%%The common case when no range is specified
-send_response(Socket,SocketType,Path,Info,FileInfo,LastModified)->
+%% The common case when no range is specified
+send_response(_Socket, _SocketType, Path, Info, FileInfo, LastModified)->
     %% Send the file!
     %% Find the modification date of the file
     case file:open(Path,[raw,binary]) of
@@ -65,21 +65,26 @@ send_response(Socket,SocketType,Path,Info,FileInfo,LastModified)->
 	    Suffix = httpd_util:suffix(Path),
 	    MimeType = httpd_util:lookup_mime_default(Info#mod.config_db,
 						      Suffix,"text/plain"),
-	    %FileInfo=file:read_file_info(Path),
-	    Date = httpd_util:rfc1123_date(),
+	    %% FileInfo = file:read_file_info(Path),
 	    Size = integer_to_list(FileInfo#file_info.size),
-	    Header=case Info#mod.http_version of
-		       "HTTP/1.1" ->
-			   [httpd_util:header(200, MimeType, Info#mod.connection),
-			    "Last-Modified: ", LastModified, "\r\n",
-			    "Etag: ",httpd_util:create_etag(FileInfo),"\r\n",
-			    "Content-Length: ",Size,"\r\n\r\n"];
-		       "HTTP/1.0" ->
-			   [httpd_util:header(200, MimeType, Info#mod.connection),
-			    "Last-Modified: ", LastModified, "\r\n",
-			    "Content-Length: ",Size,"\r\n\r\n"]
-		   end,
-		       
+	    Header = case Info#mod.http_version of
+			 "HTTP/1.1" ->
+			     [httpd_util:header(200, 
+						MimeType, 
+						Info#mod.connection),
+			      LastModified, "\r\n",
+			      "Etag: ",
+			      httpd_util:create_etag(FileInfo),"\r\n",
+			      "Content-Length: ",Size,"\r\n\r\n"];
+			 %% OTP-4935
+			 _ ->
+			     %% i.e http/1.0 and http/0.9
+			     [httpd_util:header(200, MimeType, 
+						Info#mod.connection),
+			      LastModified, "\r\n",
+			      "Content-Length: ",Size,"\r\n\r\n"]
+		     end,
+	    
 	    send(Info#mod.socket_type, Info#mod.socket,
 		 Header, FileDescriptor),
 	    file:close(FileDescriptor),
@@ -145,14 +150,15 @@ open_error(StatusCode,Info,Path,Reason) ->
 get_modification_date(Path)->
     case file:read_file_info(Path) of
 	{ok, FileInfo0} ->
-	    {FileInfo0, httpd_util:rfc1123_date(FileInfo0#file_info.mtime)};
+	    case (catch httpd_util:rfc1123_date(FileInfo0#file_info.mtime)) of
+		Date when is_list(Date) ->
+		    {FileInfo0, "Last-Modified: " ++ Date};
+		_ ->
+		    {FileInfo0, ""}
+	    end;
 	_ ->
-	    {#file_info{},""}
+	    {#file_info{}, ""}
     end.
-
-
-
-
 
 
 

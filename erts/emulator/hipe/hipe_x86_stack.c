@@ -5,9 +5,12 @@
 #endif
 #include "global.h"
 #include "bif.h"
-#include "hipe_bif0.h"		/* for hipe_find_sdesc() */
 #include "hipe_stack.h"
-#include "hipe_x86_asm.h"	/* for X86_NR_ARG_REGS */
+#ifdef __x86_64__
+#include "hipe_amd64_asm.h"	/* for NR_ARG_REGS */
+#else
+#include "hipe_x86_asm.h"	/* for NR_ARG_REGS */
+#endif
 
 extern void nbif_fail(void);
 extern void nbif_stack_trap_ra(void);
@@ -18,6 +21,10 @@ extern void nbif_stack_trap_ra(void);
  */
 extern Eterm check_process_code_2(Process*, Eterm, Eterm);
 extern Eterm garbage_collect_1(Process*, Eterm);
+
+/* for -Wmissing-prototypes :-( */
+extern Eterm hipe_x86_check_process_code_2(Process*, Eterm, Eterm);
+extern Eterm hipe_x86_garbage_collect_1(Process*, Eterm);
 
 Eterm hipe_x86_check_process_code_2(BIF_ALIST_2)
 {
@@ -45,7 +52,9 @@ Eterm hipe_x86_garbage_collect_1(BIF_ALIST_1)
 static void print_slot(Eterm *sp, unsigned int live)
 {
     Eterm val = *sp;
-    printf(" | 0x%08lx | 0x%08lx | ", (long)sp, val);
+    printf(" | 0x%0*lx | 0x%0*lx | ",
+	   2*(int)sizeof(long), (unsigned long)sp,
+	   2*(int)sizeof(long), val);
     if( live )
 	ldisplay(val, COUT, 30);
     printf("\r\n");
@@ -64,11 +73,14 @@ void hipe_print_nstack(Process *p)
     unsigned int sdesc_size;
     unsigned int i;
     unsigned int nstkarity;
+    static const char dashes[2*sizeof(long)+5] = {
+	[0 ... 2*sizeof(long)+3] = '-'
+    };
 
     nsp = p->hipe.nsp;
     nsp_end = p->hipe.nstend;
 
-    nstkarity = p->hipe.narity - X86_NR_ARG_REGS;
+    nstkarity = p->hipe.narity - NR_ARG_REGS;
     if( (int)nstkarity < 0 )
 	nstkarity = 0;
     sdesc0.summary = nstkarity;
@@ -76,25 +88,45 @@ void hipe_print_nstack(Process *p)
     sdesc = &sdesc0;
 
     printf(" |      NATIVE  STACK      |\r\n");
-    printf(" |------------|------------|\r\n");
-    printf(" | heap       | 0x%08lx |\r\n", (unsigned long)p->heap);
+    printf(" |%s|%s|\r\n", dashes, dashes);
+    printf(" | %*s | 0x%0*lx |\r\n",
+	   2+2*(int)sizeof(long), "heap",
+	   2*(int)sizeof(long), (unsigned long)p->heap);
 #ifndef SHARED_HEAP
-    printf(" | high_water | 0x%08lx |\r\n", (unsigned long)p->high_water);
+    printf(" | %*s | 0x%0*lx |\r\n",
+	   2+2*(int)sizeof(long), "high_water",
+	   2*(int)sizeof(long), (unsigned long)p->high_water);
 #endif
-    printf(" | hend       | 0x%08lx |\r\n", (unsigned long)p->htop);
+    printf(" | %*s | 0x%0*lx |\r\n",
+	   2+2*(int)sizeof(long), "hend",
+	   2*(int)sizeof(long), (unsigned long)p->htop);
 #ifndef SHARED_HEAP
-    printf(" | old_heap   | 0x%08lx |\r\n", (unsigned long)p->old_heap);
-    printf(" | old_hend   | 0x%08lx |\r\n", (unsigned long)p->old_hend);
+    printf(" | %*s | 0x%0*lx |\r\n",
+	   2+2*(int)sizeof(long), "old_heap",
+	   2*(int)sizeof(long), (unsigned long)p->old_heap);
+    printf(" | %*s | 0x%0*lx |\r\n",
+	   2+2*(int)sizeof(long), "old_hend",
+	   2*(int)sizeof(long), (unsigned long)p->old_hend);
 #endif
-    printf(" | nsp        | 0x%08lx |\r\n", (unsigned long)p->hipe.nsp);
-    printf(" | nstend     | 0x%08lx |\r\n", (unsigned long)p->hipe.nstend);
-    printf(" | nstblacklim| 0x%08lx |\r\n", (unsigned long)p->hipe.nstblacklim);
-    printf(" | nstgraylim | 0x%08lx |\r\n", (unsigned long)p->hipe.nstgraylim);
-    printf(" |------------|------------|\r\n");
-    printf(" | Address    | Contents   |\r\n");
+    printf(" | %*s | 0x%0*lx |\r\n",
+	   2+2*(int)sizeof(long), "nsp",
+	   2*(int)sizeof(long), (unsigned long)p->hipe.nsp);
+    printf(" | %*s | 0x%0*lx |\r\n",
+	   2+2*(int)sizeof(long), "nstend",
+	   2*(int)sizeof(long), (unsigned long)p->hipe.nstend);
+    printf(" | %*s| 0x%0*lx |\r\n",
+	   2+2*(int)sizeof(long)+1, "nstblacklim",
+	   2*(int)sizeof(long), (unsigned long)p->hipe.nstblacklim);
+    printf(" | %*s | 0x%0*lx |\r\n",
+	   2+2*(int)sizeof(long), "nstgraylim",
+	   2*(int)sizeof(long), (unsigned long)p->hipe.nstgraylim);
+    printf(" |%s|%s|\r\n", dashes, dashes);
+    printf(" | %*s | %*s |\r\n",
+	   2+2*(int)sizeof(long), "Address",
+	   2+2*(int)sizeof(long), "Contents");
 
     for(;;) {
-	printf(" |------------|------------|\r\n");
+	printf(" |%s|%s|\r\n", dashes, dashes);
 	if( nsp >= nsp_end ) {
 	    if( nsp == nsp_end )
 		return;
@@ -111,13 +143,15 @@ void hipe_print_nstack(Process *p)
 	mask = sdesc->livebits[0];
 	for(;;) {
 	    if( i == sdesc_fsize(sdesc) ) {
-		printf(" | 0x%08lx | 0x%08lx | ", (long)&nsp[i], ra);
+		printf(" | 0x%0*lx | 0x%0*lx | ",
+		       2*(int)sizeof(long), (unsigned long)&nsp[i],
+		       2*(int)sizeof(long), ra);
 		if( ra == (unsigned long)nbif_stack_trap_ra )
-		    printf("STACK TRAP, ORIG RA 0x%08lx", (unsigned long)p->hipe.ngra);
+		    printf("STACK TRAP, ORIG RA 0x%lx", (unsigned long)p->hipe.ngra);
 		else
 		    printf("NATIVE RA");
 		if( (exnra = sdesc_exnra(sdesc1)) != 0 )
-		    printf(", EXNRA 0x%08lx", exnra);
+		    printf(", EXNRA 0x%lx", exnra);
 		printf("\r\n");
 	    } else {
 		print_slot(&nsp[i], (mask & 1));
@@ -147,7 +181,7 @@ void hipe_update_stack_trap(Process *p, const struct sdesc *sdesc)
 
     nsp = p->hipe.nsp;
     nsp_end = p->hipe.nstend;
-    if( (unsigned)((char*)nsp_end - (char*)nsp) < MINSTACK*sizeof(Eterm*) ) {
+    if( (unsigned long)((char*)nsp_end - (char*)nsp) < MINSTACK*sizeof(Eterm*) ) {
 	p->hipe.nstgraylim = NULL;
 	return;
     }
@@ -205,7 +239,7 @@ void hipe_find_handler(Process *p)
 
     nsp = p->hipe.nsp;
     nsp_end = p->hipe.nstend;
-    nstkarity = p->hipe.narity - X86_NR_ARG_REGS;
+    nstkarity = p->hipe.narity - NR_ARG_REGS;
     if( (int)nstkarity < 0 )
 	nstkarity = 0;
     arity = nstkarity;

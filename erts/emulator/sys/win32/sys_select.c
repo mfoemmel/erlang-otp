@@ -156,8 +156,13 @@ static void* debug_realloc(ErtsAlcType_t, void *, Uint);
 #  define SEL_FREE	erts_free
 #else
 #  define SEL_ALLOC	erts_alloc
-#  define SEL_REALLOC	erts_realloc
+#  define SEL_REALLOC	realloc_wrap
 #  define SEL_FREE	erts_free
+static __forceinline void *
+realloc_wrap(ErtsAlcType_t t, void *p, Uint ps, Uint s)
+{
+    return erts_realloc(t, p, s);
+}
 #endif
 
 BOOL WINAPI ctrl_handler(DWORD);
@@ -652,10 +657,27 @@ static void *debug_alloc(ErtsAlcType_t type, Uint size)
     memset(p, CleanLandFill, size);
     return p;
 }
-static void *debug_realloc(ErtsAlcType_t type, void *ptr, Uint size)
+static void *debug_realloc(ErtsAlcType_t type, void *ptr, Uint prev_size,
+			   Uint size)
 {
-    void* p = erts_realloc(type, ptr, size);
-    memset(p, CleanLandFill, size);
+    void *p;
+    size_t fill_size;
+    void *fill_ptr;
+
+    if (prev_size > size) {
+	size_t fill_size = (size_t) (prev_size - size);
+	void *fill_ptr = (void *) (((char *) p) + size);
+	memset(fill_ptr, NoMansLandFill, fill_size);
+    }
+
+    p = erts_realloc(type, ptr, size);
+
+    if (size > prev_size) {
+	size_t fill_size = (size_t) (size - prev_size);
+	void *fill_ptr = (void *) (((char *) p) + prev_size);
+	memset(fill_ptr, CleanLandFill, fill_size);
+    }
+
     return p;
 }
 #endif
@@ -668,9 +690,11 @@ static void new_waiter(void)
     int i;
 
     if (num_waiters == allocated_waiters) {
+	Uint old_size = sizeof(Waiter *)*allocated_waiters;
 	allocated_waiters += 64;
 	waiter = SEL_REALLOC(ERTS_ALC_T_WAITER_OBJ,
 			     (void *) waiter,
+			     old_size,
 			     sizeof(Waiter *)*allocated_waiters);
     }
 	

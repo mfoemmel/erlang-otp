@@ -25,50 +25,50 @@
 do(Info) ->
   case httpd_util:key1search(Info#mod.data,status) of
     %% A status code has been generated!
-    {StatusCode,PhraseArgs,Reason} ->
+    {_StatusCode, _PhraseArgs, _Reason} ->
       {proceed,Info#mod.data};
     %% No status code has been generated!
     undefined ->
       case httpd_util:key1search(Info#mod.data,response) of
 	%% No response has been generated!
 	undefined ->
-	  Path=mod_alias:path(Info#mod.data,Info#mod.config_db,
+	  Path = mod_alias:path(Info#mod.data,Info#mod.config_db,
 			      Info#mod.request_uri),
-	  Suffix=httpd_util:suffix(Path),
-	  MimeType=httpd_util:lookup_mime(Info#mod.config_db,Suffix,
+	  Suffix = httpd_util:suffix(Path),
+	  MimeType = httpd_util:lookup_mime(Info#mod.config_db,Suffix,
 					  "text/plain"),
-	  Actions=httpd_util:multi_lookup(Info#mod.config_db,action),
+	  Actions = httpd_util:multi_lookup(Info#mod.config_db,action),
 	  case action(Info#mod.request_uri,MimeType,Actions) of
-	    {yes,RequestURI} ->
-	      {proceed,[{new_request_uri,RequestURI}|Info#mod.data]};
+	    {yes, RequestURI} ->
+	      {proceed, [{new_request_uri, RequestURI} | Info#mod.data]};
 	    no ->
-	      Scripts=httpd_util:multi_lookup(Info#mod.config_db,script),
-	      case script(Info#mod.request_uri,Info#mod.method,Scripts) of
-		{yes,RequestURI} ->
-		  {proceed,[{new_request_uri,RequestURI}|Info#mod.data]};
+	      Scripts = httpd_util:multi_lookup(Info#mod.config_db, script),
+	      case script(Info#mod.request_uri, Info#mod.method, Scripts) of
+		{yes, RequestURI} ->
+		  {proceed,[{new_request_uri, RequestURI} | Info#mod.data]};
 		no ->
-		  {proceed,Info#mod.data}
+		  {proceed, Info#mod.data} 
 	      end
 	  end;
 	%% A response has been generated or sent!
-	Response ->
-	  {proceed,Info#mod.data}
+	_Response ->
+	  {proceed, Info#mod.data}
       end
   end.
 
-action(RequestURI,MimeType,[]) ->
+action(_RequestURI, _MimeType, []) ->
   no;
-action(RequestURI,MimeType,[{MimeType,CGIScript}|Rest]) ->
-  {yes,CGIScript++RequestURI};
-action(RequestURI,MimeType,[_|Rest]) ->
-  action(RequestURI,MimeType,Rest).
+action(RequestURI, MimeType, [{MimeType, CGIScript} | _Rest]) ->
+  {yes, CGIScript ++ RequestURI};
+action(RequestURI, MimeType, [_ | Rest]) ->
+  action(RequestURI, MimeType, Rest).
 
-script(RequestURI,Method,[]) ->
+script(_RequestURI, _Method, []) ->
   no;
-script(RequestURI,Method,[{Method,CGIScript}|Rest]) ->
-  {yes,CGIScript++RequestURI};
-script(RequestURI,Method,[_|Rest]) ->
-  script(RequestURI,Method,Rest).
+script(RequestURI, Method, [{Method, CGIScript} | _Rest]) ->
+  {yes, CGIScript ++ RequestURI};
+script(RequestURI, Method, [_ | Rest]) ->
+  script(RequestURI, Method, Rest).
 
 %%
 %% Configuration
@@ -76,17 +76,17 @@ script(RequestURI,Method,[_|Rest]) ->
 
 %% load
 
-load([$A,$c,$t,$i,$o,$n,$ |Action],[]) ->
-  case regexp:split(Action," ") of
-    {ok,[MimeType,CGIScript]} ->
-      {ok,[],{action,{MimeType,CGIScript}}};
+load("Action "++  Action, []) ->
+  case regexp:split(Action, " ") of
+    {ok,[MimeType, CGIScript]} ->
+      {ok,[],{action, {MimeType, CGIScript}}};
     {ok,_} ->
       {error,?NICE(httpd_conf:clean(Action)++" is an invalid Action")}
   end;
-load([$S,$c,$r,$i,$p,$t,$ |Script],[]) ->
-  case regexp:split(Script," ") of
-    {ok,[Method,CGIScript]} ->
-      {ok,[],{script,{Method,CGIScript}}};
+load("Script " ++ Script,[]) ->
+  case regexp:split(Script, " ") of
+    {ok,[Method, CGIScript]} ->
+      {ok,[],{script, {Method, CGIScript}}};
     {ok,_} ->
       {error,?NICE(httpd_conf:clean(Script)++" is an invalid Script")}
   end.

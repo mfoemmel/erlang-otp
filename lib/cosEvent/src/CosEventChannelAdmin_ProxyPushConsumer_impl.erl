@@ -81,11 +81,11 @@ init([Admin, AdminPid, Channel, TypeCheck]) ->
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, #state{client = undefined}) ->
-    ?DBG("Terminating ~p; no client connected.~n", [Reason]),
+terminate(_Reason, #state{client = undefined}) ->
+    ?DBG("Terminating ~p; no client connected.~n", [_Reason]),
     ok;
-terminate(Reason, #state{client = Client} = State) ->
-    ?DBG("Terminating ~p~n", [Reason]),
+terminate(_Reason, #state{client = Client} = _State) ->
+    ?DBG("Terminating ~p~n", [_Reason]),
     cosEventApp:disconnect('CosEventComm_PushSupplier', 
 			   disconnect_push_supplier, Client),
     ok.
@@ -95,7 +95,7 @@ terminate(Reason, #state{client = Client} = State) ->
 %% Returns    : {ok, NewState}
 %% Description: Convert process state when code is changed
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
  
 %%---------------------------------------------------------------------%
@@ -107,11 +107,12 @@ code_change(OldVsn, State, Extra) ->
 %%----------------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, #state{admin_pid = Pid} = State) ->
     ?DBG("Parent Admin terminated ~p~n", [Reason]),
-    orber:debug_level_print("[~p] CosEventChannelAdmin_ProxyPushConsumer:handle_info(~p); 
-My Admin terminated and so will I.", [?LINE, Reason], ?DEBUG_LEVEL),
+    orber:dbg("[~p] CosEventChannelAdmin_ProxyPushConsumer:handle_info(~p);~n"
+	      "My Admin terminated and so will I.", 
+	      [?LINE, Reason], ?DEBUG_LEVEL),
     {stop, Reason, State};
-handle_info(Info, State) ->
-    ?DBG("Unknown Info ~p~n", [Info]),
+handle_info(_Info, State) ->
+    ?DBG("Unknown Info ~p~n", [_Info]),
     {noreply, State}.
  
 %%----------------------------------------------------------------------
@@ -120,8 +121,8 @@ handle_info(Info, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-connect_push_supplier(OE_This, #state{client = undefined, 
-				      typecheck = TypeCheck} = State, NewClient) ->
+connect_push_supplier(_OE_This, #state{client = undefined, 
+				       typecheck = TypeCheck} = State, NewClient) ->
     case corba_object:is_nil(NewClient) of
 	true ->
 	    ?DBG("A NIL client supplied.~n", []),
@@ -141,7 +142,7 @@ connect_push_supplier(_, _, _) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-push(OE_This, State, Any) ->
+push(_OE_This, State, Any) ->
     %% We should not use corba:reply here since if we block incoming
     %% events this will prevent producers to flood the system.
     ?DBG("Received Event ~p and forwarded it successfully.~n", [Any]),
@@ -154,7 +155,7 @@ push(OE_This, State, Any) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-disconnect_push_consumer(OE_This, State) ->
+disconnect_push_consumer(_OE_This, State) ->
     ?DBG("Disconnect invoked ~p~n", [State]),
     {stop, normal, ok, State#state{client = undefined}}.
  

@@ -9,10 +9,6 @@
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
 #     $Id$
 #
 
@@ -62,7 +58,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += 
+ERL_COMPILE_FLAGS += +nowarn_shadow_vars
 
 # ----------------------------------------------------
 # Targets
@@ -81,7 +77,7 @@ clean:
 	rm -f core
 
 $(DOCS)/%.html:%.erl
-	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s erlang halt
+	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s init stop
 
 # ----------------------------------------------------
 # Special Build Targets

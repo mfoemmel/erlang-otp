@@ -61,7 +61,7 @@ calc_loop(Lbl,M,V,Op) ->
 	    calc(Lbl,Op,M,V,NewOp);
 	{gs,_,destroy,_,_} ->
 	    exit(normal);
-	Other -> 
+	_Other -> 
 	    calc_loop(Lbl,M,V,Op)
     end.
 
@@ -82,11 +82,11 @@ calc(Lbl,'*',M,V,Op) ->
     gs:config(Lbl,[{label,{text,NewM}}]),
     calc_loop(Lbl,NewM,0,Op).
 
-c(Lbl,M,V,Op) ->
+c(Lbl,M,_V,Op) ->
     gs:config(Lbl,[{label,{text,0}}]),
     calc_loop(Lbl,M,0,Op).
 
-ac(Lbl,M,V,Op) ->
+ac(Lbl,_M,_V,_Op) ->
     gs:config(Lbl,[{label,{text,0}}]),
     calc_loop(Lbl,0,0,'+').
 

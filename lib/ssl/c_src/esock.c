@@ -63,7 +63,7 @@
  *
  * Every SELECT_TIMEOUT second we try to write to those file
  * descriptors that have non-empty wq's (the only way to detect that a
- * far end has gone away is to write to it). XXX True?
+ * far end has gone away is to write to it).
  *
  * STATE TRANSITIONS
  *
@@ -96,17 +96,7 @@
  * A connection in state SSL_ACCEPT can be closed and removed without
  * synchronization.
  *
- * XXX We should ONLY consider the the states of fd and proxy->fd, and
- * neither rely on any control information received regarding their
- * desired states, nor send any control information about their actual
- * states. In particular, FROMNET_CLOSE should never be sent.
- *
- * XXX If we do not go through the JOINED state, we may leak proxy
- * file descriptors. It is when a connection is in the state CONNECTED
- * that a proxy file descriptor is created. It is ssl_broker.erl that
- * makes the connect. It knows cp->fd, and the port number of its own
- * socket.  It is however only if the broker crashes (or gets killed)
- * that we lose a descriptor.  */
+ */
 
 #ifdef __WIN32__
 #include "esock_winsock.h"
@@ -174,7 +164,9 @@ static int put_pars(unsigned char *buf, char *fmt, va_list args);
 static int get_pars(unsigned char *buf, char *fmt, va_list args);
 static FD do_connect(char *lipstring, int lport, char *fipstring, int fport);
 static FD do_listen(char *ipstring, int lport, int backlog, int *aport);
+static FD do_accept(FD listensock, struct sockaddr *saddr, int *len);
 static void print_connections(void);
+static int check_num_sock_fds(FD fd); 
 static void safe_close(FD fd);
 static Connection *new_connection(int state, FD fd);
 static Connection *get_connection(FD fd);
@@ -187,6 +179,7 @@ static void clean_up(void);
 
 static Connection  *connections = NULL;
 static fd_set readmask, writemask, exceptmask;
+static int num_sock_fds;	/* On UNIX all file descriptors */
 static Proxy *proxies = NULL;
 static int proxy_listensock = INVALID_FD;
 static int proxy_listenport = 0;
@@ -230,8 +223,11 @@ int main(int argc, char **argv)
 
     set_binary_mode();
     setvbuf(stderr, NULL, _IONBF, 0);
+    /* Two sockets for the stdin socket pipe (local thread). */
+    num_sock_fds = 2;		
 #else
     pid_t pid;
+    num_sock_fds = 3;		/* 0, 1, 2 */
 #endif
 
     pid = getpid();
@@ -266,7 +262,12 @@ int main(int argc, char **argv)
     }
     if (debug || debugmsg) {
 	DEBUGF(("Starting ssl_esock\n"));
-	if (logfile) open_ssllog(logfile);
+	if (logfile) {
+	    open_ssllog(logfile);
+#ifndef __WIN32__
+	    num_sock_fds++;
+#endif
+	}
 	atexit(close_ssllog);
 	DEBUGF(("pid = %d\n", getpid()));
     }
@@ -308,7 +309,6 @@ int main(int argc, char **argv)
 #endif
 
     /* Create the local proxy listen socket and set it to non-blocking */
-    /* XXX Check backlog */
     proxy_listensock = do_listen("127.0.0.1", proxy_listenport, 
 				 proxy_backlog, &proxy_listenport);
     if (proxy_listensock == INVALID_FD) {
@@ -377,8 +377,8 @@ static int loop(void)
 				 &exceptmask, sret) + 1;
 	if (sret) {
 	    print_connections();
-	    DEBUGF(("Before select: %d descriptor%s\n", cc, 
-		    (cc == 1) ? "" : "s"));
+	    DEBUGF(("Before select: %d descriptor%s (total %d)\n", cc, 
+		    (cc == 1) ? "" : "s", num_sock_fds));
 	}
 
 	sret = select(FD_SETSIZE, &readmask, &writemask, &exceptmask, &tv);
@@ -422,18 +422,17 @@ static int loop(void)
 	if (FD_ISSET(proxy_listensock, &readmask)) {
 	    while (1) {
 		length = sizeof(iserv_addr);
-		proxysock = accept(proxy_listensock, 
-				   (struct sockaddr *)&iserv_addr, 
-				   (int*)&length);
+		proxysock = do_accept(proxy_listensock, 
+				      (struct sockaddr *)&iserv_addr, 
+				      (int*)&length);
 		if(proxysock == INVALID_FD) {
 		    if (sock_errno() != ERRNO_BLOCK) {
-			/* XXX Here we have a major flaw. We can here
-			 * for example get the error EMFILE, i.e. no
-			 * more file descriptor available, but we do
-			 * not have any specific connection to report
-			 * the error to. 
-			 * We increment the error counter and saves the
-			 * last err.
+			/* We can here for example get the error
+			 * EMFILE, i.e. no more file descriptors
+			 * available, but we do not have any specific
+			 * connection to report the error to.  We
+			 * increment the error counter and saves the
+			 * last err.  
 			 */
 			proxysock_err_cnt++;
 			proxysock_last_err = sock_errno();
@@ -613,16 +612,20 @@ static int loop(void)
 			    cp->proxy->bp = 1;
 			switch (cp->state) {
 			case ESOCK_JOINED:
-			case ESOCK_SSL_SHUTDOWN:
-			    DEBUGF(("  close flag set\n"));
 			    cp->close = 1;
+			    if (JOINED_STATE_INVALID(cp))
+				leave_joined_state(cp);
+			    break;
+			case ESOCK_SSL_SHUTDOWN:
+			    cp->close = 1;
+			    DEBUGF(("  close flag set\n"));
 			    break;
 			default:
 			    DEBUGF(("-> (removal)\n"));
 			    close_and_remove_connection(cp);
 			}
 		    } else 
-			DEBUGF(("%s[ERLANG_CLOSE]: ERROR: fd = %d not found\n",
+			DEBUGF(("%s[CLOSE_CMD]: ERROR: fd = %d not found\n",
 				connstr[cp->state], fd));
 		    break;
 
@@ -810,8 +813,8 @@ static int loop(void)
 		DEBUGF(("ACTIVE_LISTENING - trying to accept on %d\n", 
 		       cp->fd));
 		length = sizeof(iserv_addr);
-		msgsock = accept(cp->fd, (struct sockaddr*)&iserv_addr, 
-				 (int*)&length);
+		msgsock = do_accept(cp->fd, (struct sockaddr*)&iserv_addr, 
+				    (int*)&length);
 		if(msgsock == INVALID_FD)  {
 		    DEBUGF(("accept error: %s\n", psx_errstr()));
 		    reply(ESOCK_ACCEPT_ERR, "4s", cp->fd, psx_errstr());
@@ -859,6 +862,8 @@ static int loop(void)
 		    /* SSL handshake successful: publish */
 		    reply(ESOCK_ACCEPT_REP, "44", cp->listen_fd, msgsock);
 		    DEBUGF(("-> CONNECTED\n"));
+		    DEBUGF((" Session was %sreused.\n", 
+			    (esock_ssl_session_reused(cp)) ? "" : "NOT "));
 		    cp->state = ESOCK_CONNECTED;
 		}
 		break;
@@ -1367,10 +1372,12 @@ static FD do_connect(char *lipstring, int lport, char *fipstring, int fport)
     long inaddr;
     FD fd;
    
-    if((fd = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_FD) {
+    if ((fd = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_FD) {
 	DEBUGF(("Error calling socket()\n"));
 	return fd;
     }
+    if (check_num_sock_fds(fd) < 0) 
+	return INVALID_FD;
     DEBUGF(("  fd = %d\n", fd));
 
     /* local */
@@ -1423,10 +1430,12 @@ static FD do_listen(char *ipstring, int lport, int backlog, int *aport)
     int length;
     FD fd;
     
-    if((fd = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_FD) {
+    if ((fd = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_FD) {
 	DEBUGF(("Error calling socket()\n"));
 	return fd;
     }
+    if (check_num_sock_fds(fd) < 0) 
+	return INVALID_FD;
     DEBUGF(("  fd = %d\n", fd));
     if ((inaddr = inet_addr(ipstring)) == INADDR_NONE) {
 	DEBUGF(("Error in inet_addr(): ipstring = %s\n", ipstring));
@@ -1463,6 +1472,18 @@ static FD do_listen(char *ipstring, int lport, int backlog, int *aport)
     return fd;
 }
 
+static FD do_accept(FD listensock, struct sockaddr *saddr, int *len)
+{
+    FD fd;
+
+    if ((fd = accept(listensock, saddr, len)) == INVALID_FD) {
+	DEBUGF(("Error calling accept()\n"));
+	return fd;
+    }
+    if (check_num_sock_fds(fd) < 0) 
+	return INVALID_FD;
+    return fd;
+}
 
 static Connection *new_connection(int state, FD fd)
 {
@@ -1479,7 +1500,7 @@ static Connection *new_connection(int state, FD fd)
     cp->ssl_want = 0;
     cp->eof = 0;
     cp->bp = 0;
-    cp->clean = 0;
+    cp->clean = 0;		/* XXX Used? */
     cp->close = 0;
     cp->origin = -1;
     cp->flags = NULL;
@@ -1550,7 +1571,7 @@ static void remove_connection(Connection *conn)
 	    DEBUGF(("remove_connection: fd = %d\n", cp->fd));
 	    esock_ssl_free(cp);	/* frees cp->opaque only */
 	    esock_free(cp->flags);
-	    closelog(cp->logfp);
+	    closelog(cp->logfp); /* XXX num_sock_fds */
 	    esock_free(cp->wq.buf);
 	    if (cp->proxy) {
 		safe_close(cp->proxy->fd);
@@ -1615,6 +1636,18 @@ static void remove_proxy(Proxy *proxy)
     }
 }
 
+static int check_num_sock_fds(FD fd) 
+{
+    num_sock_fds++;		/* fd is valid */
+    if (num_sock_fds > FD_SETSIZE) {
+	num_sock_fds--;
+	sock_set_errno(ERRNO_MFILE);
+	safe_close(fd);
+	return -1;
+    }
+    return 0;
+}
+
 static void safe_close(FD fd)
 {
     int err;
@@ -1622,7 +1655,9 @@ static void safe_close(FD fd)
     err = sock_errno();
     DEBUGF(("safe_close fd = %d\n", fd));
     if (sock_close(fd) < 0) {
-	DEBUGF(("sock_close close failed\n"));
+	DEBUGF(("safe_close failed\n"));
+    } else {
+	num_sock_fds--;
     }
     sock_set_errno(err);
 }

@@ -31,36 +31,42 @@ erts_sys_init_float(void)
 {
 }
 
+/*
+ ** These two functions should maybe use localeconv() to pick up
+ ** the current radix character, but since it is uncertain how
+ ** expensive such a system call is, and since no-one has heard
+ ** of other radix characters than '.' and ',' an ad-hoc 
+ ** low execution time solution is used instead.
+ */
+
 int 
-sys_chars_to_double(buf, fp)
-char* buf; double* fp;
+sys_chars_to_double(char *buf, double *fp)
 {
-    char *s = buf;
+    char *s = buf, *t, *dp;
     
     /* Robert says that something like this is what he really wanted:
+     * (The [.,] radix test is NOT what Robert wanted - it was added later)
      *
-     * 7 == sscanf(Tbuf, "%[+-]%[0-9].%[0-9]%[eE]%[+-]%[0-9]%s", ....);
+     * 7 == sscanf(Tbuf, "%[+-]%[0-9][.,]%[0-9]%[eE]%[+-]%[0-9]%s", ....);
      * if (*s2 == 0 || *s3 == 0 || *s4 == 0 || *s6 == 0 || *s7)
      *   break;
      */
     
     /* Scan string to check syntax. */
-    if (*s == '+' || *s == '-')
-      s++;
-    
+    if (*s == '+' || *s == '-') s++;
     if (!isdigit(*s))		/* Leading digits. */
       return -1;
     while (isdigit(*s)) s++;
-    if (*s++ != '.')		/* Decimal part. */
+    if (*s != '.' && *s != ',')/* Decimal part. */
       return -1;
+    dp = s++;			/* Remember decimal point pos just in case */
     if (!isdigit(*s))
       return -1;
     while (isdigit(*s)) s++;
     if (*s == 'e' || *s == 'E') {
 	/* There is an exponent. */
 	s++;
-	if (*s == '+' || *s == '-')
-	  s++;
+	if (*s == '+' || *s == '-') s++;
 	if (!isdigit(*s))
 	  return -1;
 	while (isdigit(*s)) s++;
@@ -69,9 +75,28 @@ char* buf; double* fp;
       return -1;
     
     errno = 0;
-    *fp = atof(buf);
-    if (errno == ERANGE && *fp > 1.0e-307) {
-	return -1;
+    *fp = strtod(buf, &t);
+    if (t != s) {		/* Whole string not scanned */
+	/* Try again with other radix char */
+	*dp = (*dp == '.') ? ',' : '.';
+	errno = 0;
+	*fp = strtod(buf, &t);
+	if (t != s) {		/* Whole string not scanned */
+	    return -1;
+	}
+    }
+    if (*fp < -1.0e-307 || 1.0e-307 < *fp) {
+	if (errno == ERANGE) {
+	    return -1;
+	}
+    } else {
+	if (errno == ERANGE) {
+	    /* Special case: Windows (at least some) regard very small 
+	     * i.e non-normalized numbers as a range error for strtod().
+	     * But not for atof. 
+	     */
+	    *fp = atof(buf);
+	}
     }
     
     return 0;
@@ -83,11 +108,18 @@ char* buf; double* fp;
 */
 
 int
-sys_double_to_chars(fp, buf)
-double fp; char* buf;
+sys_double_to_chars(double fp, char *buf)
 {
+    char *s = buf;
+    
     (void) sprintf(buf, "%.20e", fp);
-    return strlen(buf);
+    /* Search upto decimal point */
+    if (*s == '+' || *s == '-') s++;
+    while (isdigit(*s)) s++;
+    if (*s == ',') *s++ = '.'; /* Replace ',' with '.' */
+    /* Scan to end of string */
+    while (*s) s++;
+    return s-buf; /* i.e strlen(buf) */
 }
 
 int

@@ -26,22 +26,20 @@
 
 %% Mapping from extension to {M,F} to run the correct compiler.
 
-compiler(".erl") -> {compile,compile};
-compiler(".S") -> {compile,compile_asm};
-compiler(".beam") -> {compile,compile_beam};
-compiler(".core") -> {corec,compile};
-compiler(".mib") -> {snmp,compile};
-compiler(".bin") -> {snmp_mib_to_hrl,compile};
-compiler(".yrl") -> {yecc,compile};
-compiler(".xrl") -> {leex,compile};
-compiler(".script") -> {systools,script2boot};
-compiler(".rel") -> {systools,compile_rel};
-compiler(".h") -> {ig,compile};
-compiler(".idl") -> {ic,compile};
-compiler(".asn1") -> {asn1ct,compile_asn1};
-compiler(".asn") -> {asn1ct,compile_asn};
-compiler(".py") -> {asn1ct,compile_py};
-compiler(_) -> no.
+compiler(".erl") ->    {compile,         compile};
+compiler(".S") ->      {compile,         compile_asm};
+compiler(".beam") ->   {compile,         compile_beam};
+compiler(".core") ->   {compile,         compile_core};
+compiler(".mib") ->    {snmpc,           compile};
+compiler(".bin") ->    {snmpc,           mib_to_hrl};
+compiler(".yrl") ->    {yecc,            compile};
+compiler(".script") -> {systools,        script2boot};
+compiler(".rel") ->    {systools,        compile_rel};
+compiler(".idl") ->    {ic,              compile};
+compiler(".asn1") ->   {asn1ct,          compile_asn1};
+compiler(".asn") ->    {asn1ct,          compile_asn};
+compiler(".py") ->     {asn1ct,          compile_py};
+compiler(_) ->         no.
 
 %% Entry from command line.
 
@@ -109,8 +107,13 @@ compile1(['@dv', Name, Term|Rest], Cwd, Opts) ->
     Defines = Opts#options.defines,
     Value = make_term(atom_to_list(Term)),
     compile1(Rest, Cwd, Opts#options{defines=[{Name, Value}|Defines]});
-compile1(['@warn', Level|Rest], Cwd, Opts) ->
-    compile1(Rest, Cwd, Opts#options{warning=Level});
+compile1(['@warn', Level0|Rest], Cwd, Opts) ->
+    case catch list_to_integer(atom_to_list(Level0)) of
+	Level when is_integer(Level) ->
+	    compile1(Rest, Cwd, Opts#options{warning=Level});
+	_ ->
+	    compile1(Rest, Cwd, Opts)
+    end;
 compile1(['@verbose', false|Rest], Cwd, Opts) ->
     compile1(Rest, Cwd, Opts#options{verbose=false});
 compile1(['@verbose', true|Rest], Cwd, Opts) ->

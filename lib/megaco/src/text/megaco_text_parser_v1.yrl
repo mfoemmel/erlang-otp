@@ -594,7 +594,6 @@ terminationAudit     -> auditReturnParameter auditReturnParameterList :
 auditReturnParameterList -> 'COMMA' auditReturnParameter auditReturnParameterList : ['$2' | '$3'] .
 auditReturnParameterList -> '$empty' : [] .
 
-%% at-most-once except errorDescriptor
 auditReturnParameter -> mediaDescriptor           : {mediaDescriptor, '$1'} .
 auditReturnParameter -> modemDescriptor           : {modemDescriptor, '$1'} .
 auditReturnParameter -> muxDescriptor             : {muxDescriptor, '$1'} .

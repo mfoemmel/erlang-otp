@@ -29,7 +29,7 @@ my $hot = 1;
 my $num_file_opcodes = 0;
 
 # This is shift counts and mask for the packer.
-my $WHOLE_WORD = 0xFFFFFFFF;
+my $WHOLE_WORD = '';
 my @pack_instr;
 my @pack_shift;
 my @pack_mask;
@@ -37,11 +37,11 @@ my @pack_mask;
 $pack_instr[2] = ['6', 'i'];
 $pack_instr[3] = ['0', '0', 'i'];
 
-$pack_shift[2] = [0, 16];
-$pack_shift[3] = [0, 10, 20];
+$pack_shift[2] = ['0', 'BEAM_LOOSE_SHIFT'];
+$pack_shift[3] = ['0', 'BEAM_TIGHT_SHIFT', '(2*BEAM_TIGHT_SHIFT)'];
 
-$pack_mask[2]  = [0xFFF, $WHOLE_WORD];
-$pack_mask[3]  = [0xFFC, 0xFFC, 0xFFC];
+$pack_mask[2]  = ['BEAM_LOOSE_MASK', $WHOLE_WORD];
+$pack_mask[3]  = ['BEAM_TIGHT_MASK', 'BEAM_TIGHT_MASK', 'BEAM_TIGHT_MASK'];
 
 my $max_args = 4;
 my %gen_opnum;
@@ -468,6 +468,18 @@ sub emulator_output {
     print "#define NUM_GENERIC_OPS ", scalar(@gen_opname), "\n";
     print "#define NUM_SPECIFIC_OPS ", scalar(@op_to_name), "\n";
     print "\n";
+    print "#ifdef ARCH_64\n";
+    print "#  define BEAM_LOOSE_MASK 0x1FFFUL\n";
+    print "#  define BEAM_TIGHT_MASK 0xFFCUL\n";
+    print "#  define BEAM_LOOSE_SHIFT 16\n";
+    print "#  define BEAM_TIGHT_SHIFT 16\n";
+    print "#else\n";
+    print "#  define BEAM_LOOSE_MASK 0xFFF\n";
+    print "#  define BEAM_TIGHT_MASK 0xFFC\n";
+    print "#  define BEAM_LOOSE_SHIFT 16\n";
+    print "#  define BEAM_TIGHT_SHIFT 10\n";
+    print "#endif\n";
+    print "\n";
 
     #
     # Definitions of tags.
@@ -570,6 +582,7 @@ sub emulator_output {
     open(STDOUT, ">$name") || die "Failed to open $name for writing: $!\n";
     &comment('C');
     &print_code(\%cold_code);
+
 }
 
 sub init_item {
@@ -861,9 +874,9 @@ sub basic_generator {
     my($code);
     if (defined $macro{$name}) {
 	my($macro_code) = "$prefix$macro(" . join(', ', @f) . ");";
-	$var_decls .= "unsigned tmp_packed1;"
+	$var_decls .= "Uint tmp_packed1;"
 	    if $macro_code =~ /tmp_packed1/;
-	$var_decls .= "unsigned tmp_packed2;"
+	$var_decls .= "Uint tmp_packed2;"
 	    if $macro_code =~ /tmp_packed2/;
 	if ($flags =~ /-nonext/) {
 	    $code = "$macro_code\n";
@@ -978,7 +991,7 @@ sub make_unpack {
 
     my($e) = "tmp_packed$tmpnum";
     $e = "($e>>$shift)" if $shift;
-    $e = sprintf("%s&0x%X", $e, $mask) unless $mask == $WHOLE_WORD;
+    $e .= "&$mask" unless $mask eq $WHOLE_WORD;
     $e;
 }
 
@@ -1091,6 +1104,10 @@ sub tr_parse_op {
 	$_ = '';
     } elsif (/^\$is_bif(.*)/) {
 	$cond = 'is_bif';
+	$cond_val = -1;
+	$_ = $1;
+    } elsif (/^\$is_not_bif(.*)/) {
+	$cond = 'is_not_bif';
 	$cond_val = -1;
 	$_ = $1;
     } elsif (m@^\$bif:(\w+):(\w+)/(\d)(.*)@) {

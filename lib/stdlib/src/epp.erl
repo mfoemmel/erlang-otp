@@ -75,6 +75,8 @@ macro_defs(Epp) ->
 %% format_error(ErrorDescriptor) -> String
 %%  Return a string describing the error.
 
+format_error(cannot_parse) ->
+    io_lib:format("cannot parse file, giving up", []);
 format_error({bad,W}) ->
     io_lib:format("badly formed '~s'", [W]);
 format_error({call,What}) ->
@@ -292,8 +294,9 @@ scan_toks(From, St) ->
 	    wait_req_scan(St#epp{line=Cl});
 	{eof,Cl} ->
 	    leave_file(From, St#epp{line=Cl});
-	{error,E} ->
-	    exit(E)				%This serious, just exit!
+	{error,_E} ->
+            epp_reply(From, {error,{St#epp.line,epp,cannot_parse}}),
+	    leave_file(From, St)		%This serious, just exit!
     end.
 
 scan_toks([{'-',_Lh},{atom,Ld,define}|Toks], From, St) ->
@@ -413,6 +416,8 @@ scan_define_cont(F, St, M, Def) ->
     U = dict:store(M, macro_uses(Def), St#epp.uses),
     scan_toks(F, St#epp{uses=U, macs=Ms}).
 
+macro_uses(undefined) ->
+    undefined;
 macro_uses({_Args, Tokens}) ->
     Uses0 = macro_ref(Tokens),
     lists:usort(Uses0).
@@ -612,9 +617,9 @@ skip_toks(From, St, [I|Sis]) ->
 	    skip_toks(From, St#epp{line=Cl}, [I|Sis]);
 	{eof,Cl} ->
 	    leave_file(From, St#epp{line=Cl,istk=[I|Sis]});
-	{error,E} ->
-	    epp_reply(From, {error,E}),
-	    true				%This serious, just exit!
+	{error,_E} ->
+            epp_reply(From, {error,{St#epp.line,epp,cannot_parse}}),
+	    leave_file(From, St)		%This serious, just exit!
     end;
 skip_toks(From, St, []) ->
     scan_toks(From, St).

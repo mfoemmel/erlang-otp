@@ -250,6 +250,7 @@ ERL_OBJ_DIR	= $(RELDIR)/erts-$(ERTS_VER)/bin
 EI_VER		= 3.3.2
 EI_LIBDIR	= $(RELDIR)/lib/erl_interface-$(EI_VER)/lib
 EI_INCLDIR	= $(RELDIR)/lib/erl_interface-$(EI_VER)/include
+BEAM_DIR	= /clearcase/otp/erts/bin/ose_ppc750
 
 ERL_UTILS_SRC	= $(BUILD_DIR)/erl_utils
 ERL_PORT_SRC	= $(BUILD_DIR)/port_progs
@@ -375,7 +376,7 @@ $(OBJDIR)/$(ERL_DBG_TARGET).elf:	$(OBJS) $(ERL_DBG_OBJS) $(LCF)
 	$(OBJDIR)/epmd.o $(LIBDIRS) $(LIBS)  > $(OBJDIR)/$(ERL_DBG_TARGET).map
 
 $(OBJDIR)/$(ERL_TARGET).elf:	$(OBJS) $(ERL_OBJS) $(LCF)
-	$(CP) /clearcase/otp/erts/bin/ose_ppc750/beam $(OBJDIR)/beam.o
+	$(CP) $(BEAM_DIR)/beam $(OBJDIR)/beam.o
 	$(CP) $(ERL_OBJ_DIR)/epmd $(OBJDIR)/epmd.o
 	$(LD) $(LDFLAGS) -o $@ $(CRT) $(OBJS) $(ERL_OBJS) $(OBJDIR)/beam.o \
 	$(OBJDIR)/epmd.o $(LIBDIRS) $(LIBS)  > $(OBJDIR)/$(ERL_TARGET).map

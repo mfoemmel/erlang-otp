@@ -86,10 +86,9 @@ listen(Name) ->
 %% ------------------------------------------------------------
 
 accept(Listen) ->
-    spawn_link(?MODULE, accept_loop, [self(), Listen]).
+    spawn_opt(?MODULE, accept_loop, [self(), Listen], [link, {priority, max}]).
 
 accept_loop(Kernel, Listen) ->
-    process_flag(priority, max),
     case inet6_tcp:accept(Listen) of
         {ok, Socket} ->
             Kernel ! {accept,self(),Socket,inet,tcp},
@@ -128,12 +127,11 @@ flush_controller(Pid, Socket) ->
 %% ------------------------------------------------------------
 
 accept_connection(AcceptPid, Socket, MyNode, Allowed, SetupTime) ->
-    spawn_link(?MODULE, do_accept,
-               [self(), AcceptPid, Socket, MyNode,
-                Allowed, SetupTime]).
+    spawn_opt(?MODULE, do_accept,
+	      [self(), AcceptPid, Socket, MyNode, Allowed, SetupTime],
+	      [link, {priority, max}]).
 
 do_accept(Kernel, AcceptPid, Socket, MyNode, Allowed, SetupTime) ->
-    process_flag(priority, max),
     receive
         {AcceptPid, controller} ->
             Timer = dist_util:start_timer(SetupTime),
@@ -215,15 +213,11 @@ get_remote_id(Socket, Node) ->
 %% ------------------------------------------------------------
 
 setup(Node, Type, MyNode, LongOrShortNames,SetupTime) ->
-    spawn_link(?MODULE, do_setup, [self(),
-                                   Node,
-                                   Type,
-                                   MyNode,
-                                   LongOrShortNames,
-                                   SetupTime]).
+    spawn_opt(?MODULE, do_setup, 
+	      [self(), Node, Type, MyNode, LongOrShortNames, SetupTime],
+	      [link, {priority, max}]).
 
 do_setup(Kernel, Node, Type, MyNode, LongOrShortNames,SetupTime) ->
-    process_flag(priority, max),
     ?trace("~p~n",[{?MODULE,self(),setup,Node}]),
     [Name, Address] = splitnode(Node, LongOrShortNames),
     case inet:getaddr(Address, inet6) of

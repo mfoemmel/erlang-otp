@@ -11,7 +11,6 @@
 -export([alloc/2]).
 -define(HIPE_INSTRUMENT_COMPILER, true). %% Turn on instrumentation.
 -include("../main/hipe.hrl").
--include("../util/hipe_vector.hrl").
 
 %% XXX: Temporary so that unused function warnings are suppressed
 -compile(export_all).
@@ -48,13 +47,13 @@ alloc(_Cfg, _Options) ->
 %  %%  Turn the list into an O(1) mapping...  
 %  TempMaps = 
 %    lists:foldl(fun ({B,Map}, Vector) ->
-%		    ?vector_set(B,Vector,Map)
+%		    hipe_vectors:set(Vector,B,Map)
 %		end,
 %		%% Since 2 new BBs might be added for each call
 %		%% we play it safe and make the size of
 %		%% the vector 3 * Number of BBs.
 %		%% (At most one call per BB...)
-%		?vector_new(MaxL*3,[]),
+%		hipe_vectors:new(MaxL*3,[]),
 %		OrgMappings),
 
 
@@ -73,11 +72,11 @@ alloc(_Cfg, _Options) ->
 %    hipe_sparc_caller_saves:rewrite(
 %      NewCfg, SpillMap, NewSpillIndex, Options),
 %  NewMappings =
-%    [{Block,?vector_get(Old,TempMaps)} || {Block, Old} <- NewBlocks],
+%    [{Block,hipe_vectors:get(TempMaps,Old)} || {Block, Old} <- NewBlocks],
 %
 %  TempMaps2 =
 %    lists:foldl(fun ({B,Map}, Vector) ->
-%		    ?vector_set(B,Vector,Map)
+%		    hipe_vectors:set(Vector,B,Map)
 %		end,
 %		TempMaps,
 %		NewMappings),
@@ -89,7 +88,7 @@ split(Cfg) ->
   Labels = hipe_sparc_cfg:labels(Cfg),
   Groups = srewrite_bbs(Labels,Cfg,[]),
   Liveness = liveness(Cfg,hipe_sparc_specific),
-  Spill = new_spill(hipe_sparc_cfg:var_range(Cfg)),
+  Spill = new_spill(hipe_gensym:var_range(sparc)),
   {Mappings, {Six,Spos}} = ra_groups(Groups, Spill, Liveness, Cfg),
   DenseMappings = [{Group, 
 		    make_dense(Mapping,Spos)} ||
@@ -98,7 +97,7 @@ split(Cfg) ->
   %% hipe_sparc_cfg:pp(CFG0),
   {DenseMappings, Six, 
    hipe_temp_map:cols2tuple(
-     add_indices2(?vector_to_list(Spos),0),
+     add_indices2(hipe_vectors:vector_to_list(Spos),0),
      hipe_sparc_specific)}.
 
 
@@ -113,12 +112,12 @@ add_indices2([X|Xs],N) ->
   end.
 
 new_spill({_First,Last}) ->
-  {0,?vector_new(Last+1,unknown)}.
+  {0,hipe_vectors:new(Last+1,unknown)}.
 
 spill(X,Old = {Next,Spill}) ->
-  case ?vector_get(X+1, Spill) of
+  case hipe_vectors:get(Spill, X+1) of
     unknown ->
-      {Next, {Next+1, ?vector_set(X+1,Spill,Next)}};
+      {Next, {Next+1, hipe_vectors:set(Spill,X+1,Next)}};
     Pos ->
       {Pos, Old}
   end.
@@ -144,11 +143,11 @@ make_dense(N, [{R, C}|Ms], Max, Vs, Spill) when N =:= R ->
 make_dense(N, SourceMapping, Max, Vs, Spill) ->
   %% The source was sparce, make up some placeholders...
   Val = 	      
-    case hipe_sparc_specific:is_precolored(N) of
-      %% If it is precolored we know what to map it to.
+    case hipe_sparc_specific:is_precoloured(N) of
+      %% If it is precoloured we know what to map it to.
       true -> {N,{reg,N}};
       false ->
-	case ?vector_get(N+1,Spill) of
+	case hipe_vectors:get(Spill, N+1) of
 	  unknown -> {N, unknown};
 	  Pos -> {N, {spill, Pos}}
 	end
@@ -160,11 +159,10 @@ make_dense(N, SourceMapping, Max, Vs, Spill) ->
 	     Spill).
 
 
-
 srewrite_bbs([], CFG, Code) ->
   Code2 = lists:flatten(lists:reverse(Code)),
   split2(
-    [hipe_sparc_cfg:start(CFG)],	 
+    [hipe_sparc_cfg:start_label(CFG)],	 
     hipe_sparc_cfg:update_code(CFG, Code2),
     [[]],
     hipe_sparc_cfg:succ_map(CFG),
@@ -172,7 +170,7 @@ srewrite_bbs([], CFG, Code) ->
     []);
 srewrite_bbs([Lbl|Lbls], CFG, AccCode) ->
   BB = hipe_sparc_cfg:bb(CFG, Lbl),
-  Code = [hipe_sparc:label_create(Lbl,[])|hipe_bb:code(BB)],
+  Code = [hipe_sparc:label_create(Lbl)|hipe_bb:code(BB)],
   NewCode = rewrite_instrs(Code),
   srewrite_bbs(Lbls, CFG, [NewCode| AccCode]).
 
@@ -381,16 +379,16 @@ allocate([RegInt|RIS], Free, Active, Alloc, Spill, DontSpill, Target) ->
   
   %% Get the name of the temp in the current interval.
   Temp = reg(RegInt), 
-  case is_precolored(Temp, Target) of
+  case is_precoloured(Temp, Target) of
     true -> 
-      %% This is a precolored register we don't need to find a color
+      %% This is a precoloured register we don't need to find a color
       %% Get the physical name of the register.
       PhysName = physical_name(Temp, Target), 
-      %% Bind it to the precolored name.
+      %% Bind it to the precoloured name.
       NewAlloc = alloc(Temp, PhysName, Alloc), 
       case is_global(Temp, Target) of
 	true -> 
-	  %% this is a global precolored register 
+	  %% this is a global precoloured register 
 	  allocate(RIS, NewFree, NewActive,
 		   NewAlloc, Spill, DontSpill, Target);
 	false ->
@@ -401,11 +399,9 @@ allocate([RegInt|RIS], Free, Active, Alloc, Spill, DontSpill, Target) ->
 		       NewAlloc,
 		       Spill, DontSpill, Target);
 	    false ->
-	      %% Some other temp has taken this precolored register,
+	      %% Some other temp has taken this precoloured register,
 	      %% throw it out.
-
-	      {OtherActive, NewActive2} = 
-		deactivate(PhysName, NewActive),
+	      {OtherActive, NewActive2} = deactivate(PhysName, NewActive),
 	      OtherTemp = active_name(OtherActive),
 	      OtherEnd = active_endpoint(OtherActive),
 	      {NewAlloc2, NewActive3, NewSpill} = 
@@ -417,10 +413,9 @@ allocate([RegInt|RIS], Free, Active, Alloc, Spill, DontSpill, Target) ->
 		       NewAlloc2, NewSpill, DontSpill, Target)
 	  
 	  end
-	    
       end;
     false -> 
-      %% This is not a precolored register.
+      %% This is not a precoloured register.
       case NewFree of 
 	[] -> 
 	  %% No physical registers available, we have to spill.
@@ -538,7 +533,7 @@ spill(CurrentReg, CurrentEndpoint,
 	   add_active(SpillEndpoint, SpillPhysName, SpillName,
 		      NewActive2), NewSpill};
 	true ->
-	  %% It is not precolored...
+	  %% It is not precoloured...
 
 	  %% Allocate SpillCandidate to spill-slot SpillIndex
 	  {SpillIndex, NewSpill} = spill(active_name(SpillCandidate),Spill),
@@ -559,10 +554,9 @@ spill(CurrentReg, CurrentEndpoint,
 	
     false -> 
       %% The current register has the longest live-range.
-
       case can_spill(CurrentReg, DontSpill, Target) of 
 	false ->
-	  %% Cannot spill a precolored register
+	  %% Cannot spill a precoloured register
 	  {NewAlloc, NewActive2, NewSpill} = 
 	    spill(SpillName, SpillEndpoint, NewActive, Alloc,
 		  Spill, DontSpill, Target),
@@ -570,7 +564,7 @@ spill(CurrentReg, CurrentEndpoint,
 	    add_active(CurrentEndpoint, SpillPhysName, CurrentReg, NewActive2),
 	  {NewAlloc, NewActive3, NewSpill};
 	true ->
-	  %% It is not precolored...
+	  %% It is not precoloured...
 	  %% Allocate the current register to spill-slot SpillIndex
 	  {SpillIndex, NewSpill} = spill(CurrentReg,Spill),
 	  {spillalloc(CurrentReg, SpillIndex, Alloc), Active, NewSpill}
@@ -590,7 +584,7 @@ spill(CurrentReg, _CurrentEndpoint, [],
   end.
 
 can_spill(Name, DontSpill, Target) ->
-  (Name < DontSpill) and (not is_precolored(Name, Target)).
+  (Name < DontSpill) and (not is_precoloured(Name, Target)).
 
 %%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -690,10 +684,10 @@ sort_on_start(I)->
  lists:keysort(2,I).
 
 empty_interval(N) ->
-  ?vector_new(N, none).
+  hipe_vectors:new(N, none).
 
 interval_to_list(Intervals) ->
-  add_indices(?vector_to_list(Intervals),0).
+  add_indices(hipe_vectors:vector_to_list(Intervals),0).
 
 add_indices([{B,E,C}|Xs],N) when C > 0 ->
   [{N,B,E}|add_indices(Xs,N+1)];
@@ -717,7 +711,7 @@ flatten([],N,More) ->
 add_use_point([Temp|Temps],Pos,Intervals, C) ->
   %% Extend the old interval...
   NewInterval =
-    case ?vector_get(Temp+1, Intervals) of
+    case hipe_vectors:get(Intervals, Temp+1) of
       %% This is the first time we see this temp...
       none ->
 	%% ... create a new interval
@@ -729,7 +723,7 @@ add_use_point([Temp|Temps],Pos,Intervals, C) ->
     end,
 
   %% Add or update the extended interval.
-  Intervals2 = ?vector_set(Temp+1, Intervals, NewInterval),
+  Intervals2 = hipe_vectors:set(Intervals, Temp+1, NewInterval),
 
   %% Add the rest of the temporaries.
   add_use_point(Temps, Pos, Intervals2, C);
@@ -741,7 +735,7 @@ add_use_point([], _, I, _) ->
 add_def_point([Temp|Temps],Pos,Intervals, C) ->
   %% Extend the old interval...
   NewInterval =
-    case ?vector_get(Temp+1, Intervals) of
+    case hipe_vectors:get(Intervals, Temp+1) of
       %% This is the first time we see this temp...
       none ->
 	%% ... create a new interval
@@ -753,7 +747,7 @@ add_def_point([Temp|Temps],Pos,Intervals, C) ->
     end,
 
   %% Add or update the extended interval.
-  Intervals2 = ?vector_set(Temp+1, Intervals, NewInterval), 
+  Intervals2 = hipe_vectors:set(Intervals, Temp+1, NewInterval), 
 
   %% Add the rest of teh temporaries.
   add_def_point(Temps, Pos, Intervals2, C);
@@ -808,11 +802,8 @@ is_free(_, [] ) ->
 %% 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%function(CFG, Target) ->
-%%  Target:function(CFG).
-
 liveness(CFG, Target) ->
-   Target:analyze(CFG).
+  Target:analyze(CFG).
 
 bb(CFG, L, Target) ->
   Target:bb(CFG,L).
@@ -829,8 +820,8 @@ uses(I, Target)->
 defines(I, Target) ->
   regnames(Target:defines(I), Target).
 
-is_precolored(R, Target) ->
-  Target:is_precolored(R).
+is_precoloured(R, Target) ->
+  Target:is_precoloured(R).
 
 is_global(R, Target) ->
   Target:is_global(R).

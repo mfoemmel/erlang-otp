@@ -12,19 +12,18 @@ alloc(CFG, Options) ->
   ?inc_counter(ra_calls_counter,1), 
   SpillLimit = ?no_temps(CFG),
   ?inc_counter(bbs_counter, length(hipe_sparc_cfg:labels(CFG))),
-
   alloc(CFG, SpillLimit, Options).
 
 alloc(SparcCfg, SpillLimit, Options) ->
   ?inc_counter(ra_iteration_counter,1), 
   ?opt_start_timer("Alloc"),  
-  {Map, NewSpillIndex} = 
+  {Map,_NewSpillIndex} = 
     hipe_ls_regalloc:regalloc(
       SparcCfg,
       hipe_sparc_registers:allocatable() -- 
       %% Save temp1 and temp2 for spill load & stores
       [hipe_sparc_registers:temp1(),hipe_sparc_registers:temp2()],
-      [hipe_sparc_cfg:start(SparcCfg)],
+      [hipe_sparc_cfg:start_label(SparcCfg)],
       0,
       SpillLimit,
       Options,

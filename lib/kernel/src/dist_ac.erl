@@ -30,7 +30,7 @@
 
 %% Internal exports
 -export([init/1, handle_cast/2, handle_call/3, handle_info/2, terminate/2,
-	 send_timeout/3]).
+	 code_change/3, send_timeout/3]).
 -export([info/0]).
 
 -import(lists, [zf/2, filter/2, map/2, foreach/2, foldl/3, mapfoldl/3,
@@ -160,7 +160,6 @@ takeover_application(AppName, RestartType) ->
 %%-----------------------------------------------------------------
 permit_application(AppName, Bool) ->
     wait_for_sync_dacs(),
-    Nodes = get_nodes(AppName),
     LockId = {?LOCK_ID, self()},
     global:trans(
       LockId,
@@ -172,7 +171,6 @@ permit_application(AppName, Bool) ->
 
 permit_only_loaded_application(AppName, Bool) ->
     wait_for_sync_dacs(),
-    Nodes = get_nodes(AppName),
     LockId = {?LOCK_ID, self()},
     global:trans(
       LockId,
@@ -226,7 +224,7 @@ wait_dacs([Node | Nodes], KnownNodes, Appls, RStarted) ->
 	%% older versions of the protocol.  As we don't have any older
 	%% versions (that are supposed to work with this version), we
 	%% don't handle version mismatch here.
-	{dist_ac_new_node, Vsn, Node, HisAppls, HisStarted} ->
+	{dist_ac_new_node, _Vsn, Node, HisAppls, HisStarted} ->
 	    monitor_node(Node, false),
 	    NRStarted = RStarted ++ HisStarted,
 	    NAppls = dist_merge(Appls, HisAppls, Node),
@@ -335,7 +333,7 @@ handle_call({takeover_application, AppName, RestartType}, From, S) ->
     end;
 
 handle_call({permit_application, AppName, Bool, LockId, StartInfo}, From, S) ->
-    case lists:keysearch(AppName, #appl.name, Appls = S#state.appls) of
+    case lists:keysearch(AppName, #appl.name, S#state.appls) of
 	false ->
 	    %% This one covers the case with permit for non-distributed
 	    %% applications.  This shouldn't be handled like this, and not
@@ -429,7 +427,7 @@ handle_info({ac_application_run, AppName, Res}, S) ->
     send_msg({dist_ac_app_started, node(), AppName, Res}, Nodes),
     NId = case Res of
 	       ok -> local;
-	       {error, R} -> undefined
+	       {error, _R} -> undefined
 	  end,
     {value, Appl} = keysearch(AppName, #appl.name, Appls),
     %% Check if we have somebody waiting for the takeover result
@@ -501,7 +499,7 @@ handle_info({ac_application_stopped, AppName}, S) ->
 %% A new node gets running.
 %% Send him info about our started distributed applications.
 %%-----------------------------------------------------------------
-handle_info({dist_ac_new_node, Vsn, Node, HisAppls, []}, S) ->
+handle_info({dist_ac_new_node, _Vsn, Node, HisAppls, []}, S) ->
     Appls = S#state.appls,
     MyStarted = zf(fun(Appl) when Appl#appl.id == local ->
 			   {true, {node(), Appl#appl.name}};
@@ -684,7 +682,7 @@ handle_info({dist_ac_new_permission, Node, AppName, false, IsHisApp}, S) ->
 	    case catch start_appl(AppName, NewS, req) of
 		{ok, NewS2, _}  ->
 		    {noreply, NewS2};
-		{error, R} -> % if app was permanent, AC will shutdown the node
+		{error, _R} -> % if app was permanent, AC will shutdown the node
 		    {noreply, NewS}
 	    end;
 	_ ->
@@ -705,8 +703,11 @@ handle_info({internal_restart_appl, Name}, S) ->
 handle_info(_, S) ->
     {noreply, S}.
 
-terminate(Reason, S) ->
+terminate(_Reason, _S) ->
     ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 %%%-----------------------------------------------------------------
 %%% Internal functions
@@ -913,7 +914,7 @@ ac_started(req, Name, Node) ->
 
 ac_error(reply, Name, Error) ->
     ?AC ! {ac_start_application_reply, Name, {error, Error}};
-ac_error(req, Name, Error) ->
+ac_error(req, _Name, _Error) ->
     ok.
 
 ac_not_started(reply, Name) ->
@@ -924,7 +925,7 @@ ac_not_started(req, Name) ->
 ac_stop_it(Name) ->
   ?AC ! {ac_change_application_req, Name, stop_it}.
 
-ac_takeover(reply, Name, Node, RestartType) ->
+ac_takeover(reply, Name, Node, _RestartType) ->
     ?AC ! {ac_start_application_reply, Name, {takeover, Node}};
 ac_takeover(req, Name, Node, RestartType) ->
     ?AC ! {ac_change_application_req, Name, 
@@ -960,13 +961,13 @@ restart_appl(AppName, S) ->
     end.
     
 %% permit(ShouldBeRunning, IsRunning, ...)
-permit(false, {value, #appl{id = undefined}}, AppName, From, S, LockId) ->
+permit(false, {value, #appl{id = undefined}}, _AppName, _From, S, _LockId) ->
    {reply, ok, S}; % It's not running
-permit(false, {value, #appl{id = Id}}, _AppName, _From, S, LockId)
+permit(false, {value, #appl{id = Id}}, _AppName, _From, S, _LockId)
   when element(1, Id) == distributed ->
     %% It is running at another node already
     {reply, ok, S};
-permit(false, {value, _}, AppName, From, S, LockId) ->
+permit(false, {value, _}, AppName, From, S, _LockId) ->
     %% It is a distributed application
     %% Check if there is any runnable node
     case dist_get_runnable_nodes(S#state.appls, AppName) of
@@ -981,7 +982,7 @@ permit(false, {value, _}, AppName, From, S, LockId) ->
 	    NPReqs = [{From, AppName, false, Nodes} | PR],
 	    {noreply, S#state{p_reqs = NPReqs}}
     end;
-permit(true, {value, #appl{id = local}}, AppName, From, S, LockId) ->
+permit(true, {value, #appl{id = local}}, _AppName, _From, S, _LockId) ->
     {reply, ok, S};
 permit(true, _, AppName, From, S, LockId) ->
     case catch start_appl(AppName, S, req) of
@@ -998,6 +999,7 @@ permit(true, _, AppName, From, S, LockId) ->
 	    global:del_lock(LockId),
 	    {noreply, NewS#state{t_reqs = [{AppName, From} | TR]}};
 	{ok, NewS, false} ->
+	    %% XXX This looks strange. Shall really NewS be disregarded???
 	    {reply, ok, S};
 	{_ErrorTag, R} ->
 	    {stop, R, {error, R}, S}
@@ -1139,7 +1141,7 @@ collect_answers([Node | Nodes], Name, S, Res) when Node /= node() ->
 		    collect_answers(Nodes, Name, S, Res)
 	    end
     end;
-collect_answers([Node | Nodes], Name, S, Res) ->
+collect_answers([_ThisNode | Nodes], Name, S, Res) ->
     collect_answers(Nodes, Name, S, Res);
 collect_answers([], _Name, _S, Res) ->
     Res.
@@ -1147,7 +1149,7 @@ collect_answers([], _Name, _S, Res) ->
 send_nodes(Nodes, Msg) ->
     FlatNodes = flat_nodes(Nodes),
     foreach(fun(Node) when Node /= node() -> {?DIST_AC, Node} ! Msg;
-	       (Node) -> ok
+	       (_ThisNode) -> ok
 	    end, FlatNodes).
 
 send_after(Time, Msg) when integer(Time), Time >= 0 ->
@@ -1181,7 +1183,7 @@ keydelete_all(Key, N, [H|T]) when element(N, H) == Key ->
     keydelete_all(Key, N, T);
 keydelete_all(Key, N, [H|T]) ->
     [H|keydelete_all(Key, N, T)];
-keydelete_all(Key, N, []) -> [].
+keydelete_all(_Key, _N, []) -> [].
 
 -ifdef(NOTUSED).
 keysearchdelete(Key, Pos, List) ->
@@ -1237,16 +1239,16 @@ get_weight() ->
 
 get_dist_loaded(Name, [{{Name, Node}, HisNodes, Permission} | T]) ->
     [{Node, HisNodes, Permission} | get_dist_loaded(Name, T)];
-get_dist_loaded(Name, [H | T]) ->
+get_dist_loaded(Name, [_H | T]) ->
     get_dist_loaded(Name, T);
-get_dist_loaded(Name, []) ->
+get_dist_loaded(_Name, []) ->
     [].
 
-del_dist_loaded(Name, [{{Name, Node}, HisNodes, Permission} | T]) ->
+del_dist_loaded(Name, [{{Name, _Node}, _HisNodes, _Permission} | T]) ->
     del_dist_loaded(Name, T);
 del_dist_loaded(Name, [H | T]) ->
     [H | del_dist_loaded(Name, T)];
-del_dist_loaded(Name, []) ->
+del_dist_loaded(_Name, []) ->
     [].
 
 req_start_app(State, Name) ->
@@ -1310,7 +1312,7 @@ check_waiting([{From, AppName, false, Nodes} | Reqs],
     end;
 check_waiting([H | Reqs], S, Node, Appls, Res, SReqs) ->
     check_waiting(Reqs, Node, S, Appls, [H | Res], SReqs);
-check_waiting([], Node, S, Appls, Res, SReqs) ->
+check_waiting([], _Node, _S, Appls, Res, SReqs) ->
     {Res, Appls, SReqs}.
 	    
 intersection(Nodes1, Nodes2) ->
@@ -1404,7 +1406,8 @@ do_dist_change_update(Appls, AppName, NewTime, NewNodes) ->
 %% Merge his Permissions with mine.
 dist_merge(MyAppls, HisAppls, HisNode) ->
     zf(fun(Appl) ->
-	       #appl{name = AppName, nodes = Nodes, run = Run} = Appl,
+	       #appl{name = AppName, run = Run} = Appl,
+%	       #appl{name = AppName, nodes = Nodes, run = Run} = Appl,
 %	       HeIsMember = lists:member(HisNode, flat_nodes(Nodes)),
 	       HeIsMember = true,
 	       case keysearch(AppName, #appl.name, HisAppls) of
@@ -1474,7 +1477,7 @@ check_nodes([{Node, undefined} | T], Res, BadNodes) ->
     check_nodes(T, Res, [Node | BadNodes]);
 check_nodes([{Node, true} | T], Res, BadNodes) ->
     check_nodes(T, [Node | Res], BadNodes);
-check_nodes([{Node, false} | T], Res, BadNodes) ->
+check_nodes([{_Node, false} | T], Res, BadNodes) ->
     check_nodes(T, Res, BadNodes);
 check_nodes([], Res, BadNodes) ->
     {Res, BadNodes}.
@@ -1489,7 +1492,7 @@ dist_find_time([], Name) -> 0.
 %% to right now).
 dist_find_nodes([#appl{name = Name, nodes = Nodes} |_], Name) -> Nodes;
 dist_find_nodes([_ | T], Name) -> dist_find_nodes(T, Name);
-dist_find_nodes([], Name) -> [].
+dist_find_nodes([], _Name) -> [].
 
 dist_flat_nodes(Appls, Name) ->
     flat_nodes(dist_find_nodes(Appls, Name)).
@@ -1499,29 +1502,27 @@ dist_del_node(Appls, Node) ->
 		NRun = filter(fun({N, _Runnable}) when N == Node -> false;
 				 (_) -> true
 			      end, Appl#appl.run),
-		Appl#appl{run = NRun};
-	   (X) ->
-		X
+		Appl#appl{run = NRun}
 	end, Appls).
 
 validRestartType(permanent)   -> true;
 validRestartType(temporary)   -> true;
 validRestartType(transient)   -> true;
-validRestartType(RestartType) -> false.
+validRestartType(_RestartType) -> false.
 
 dist_mismatch(AppName, Node) ->
     error_msg("Distribution mismatch for application \"~p\" on nodes ~p and ~p~n",
 	      [AppName, node(), Node]),
     exit({distribution_mismatch, AppName, Node}).
 
-error_msg(Format) when list(Format) ->
-    error_msg(Format, []).
+%error_msg(Format) when list(Format) ->
+%    error_msg(Format, []).
 
 error_msg(Format, ArgList) when list(Format), list(ArgList) ->
     error_logger:error_msg("dist_ac on node ~p:~n" ++ Format, [node()|ArgList]).
 
-info_msg(Format) when list(Format) ->
-    info_msg(Format, []).
+%info_msg(Format) when list(Format) ->
+%    info_msg(Format, []).
 
-info_msg(Format, ArgList) when list(Format), list(ArgList) ->
-    error_logger:info_msg("dist_ac on node ~p:~n" ++ Format, [node()|ArgList]).
+%info_msg(Format, ArgList) when list(Format), list(ArgList) ->
+%    error_logger:info_msg("dist_ac on node ~p:~n" ++ Format, [node()|ArgList]).

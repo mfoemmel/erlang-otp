@@ -1,7 +1,7 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2000 by Erik Johansson.  
-%% Time-stamp: <02/02/26 09:30:15 happi>
+%% Time-stamp: <2004-01-19 20:53:54 richardc>
 %% ====================================================================
 %%  Filename : 	hipe_sparc_ra_fp_naive.erl
 %%  Module   :	hipe_sparc_ra_fp_naive
@@ -11,9 +11,9 @@
 %%  History  :	* 2000-08-21 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2002/05/13 11:29:54 $
-%%              $Revision: 1.2 $
+%%              $Author: richardc $
+%%              $Date: 2004/01/19 20:07:42 $
+%%              $Revision: 1.5 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -31,19 +31,16 @@ alloc(SparcCfg, _Options) ->
   %%  io:format("Map:~w\n",[TempMap]),
   TempMap.
 
-
 fp_alloc(Cfg) ->
-  {_,Last} = hipe_sparc_cfg:var_range(Cfg),
-  Map = hipe_vectors:empty(Last+1,undef),
+  Last = hipe_gensym:get_var(sparc),
+  Map = hipe_vectors:new(Last+1,undef),
   Code = hipe_sparc:sparc_code(hipe_sparc_cfg:linearize(Cfg)),
   {NewMap, _SpillPos} = traverse(Code,Map),
   [{T-1,Pos} || {T,Pos} <- hipe_vectors:list(NewMap),
 		Pos =/= undef].
 
-
 traverse(Code, Map) ->
   lists:foldl(fun map/2, {Map,0}, Code).
-
 
 map(I,{Map, Pos}) ->
   {Map1, Pos1} = map(hipe_sparc:fp_reg_defines(I), Map, Pos),
@@ -53,17 +50,12 @@ map(Temps, Map, Pos) ->
   lists:foldl(fun map_temp/2, {Map,Pos}, Temps).
    
 map_temp(T,{Map,Pos}) ->
-
   RealTemp = hipe_sparc:fpreg_nr(T),
-  Temp = RealTemp+1,
-
+  Temp = RealTemp + 1,
   case hipe_vectors:get(Map,Temp) of
     undef ->
-      {hipe_vectors:set(Map,Temp,
-			    {fp_reg,Pos}),
-       Pos +2};
+      {hipe_vectors:set(Map, Temp, {fp_reg,Pos}), Pos+2};
     _ ->
       {Map,Pos}
   end.
-
 

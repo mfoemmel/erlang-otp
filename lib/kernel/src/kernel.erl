@@ -17,7 +17,6 @@
 %%
 -module(kernel).
 
--behaviour(application).
 -behaviour(supervisor).
 
 %% External exports
@@ -97,6 +96,7 @@ args(X) -> X.
 
 init([]) ->
     SupFlags = {one_for_all, 0, 1},
+
     Config = {kernel_config,
 	      {kernel_config, start_link, []},
 	      permanent, 2000, worker, [kernel_config]},
@@ -113,28 +113,46 @@ init([]) ->
     User = {user,
 	    {user_sup, start, []},
 	    temporary, 2000, supervisor, [user_sup]},
-    Rpc = {rex, {rpc, start_link, []}, permanent, 2000, worker, [rpc]},
-    Global = {global_name_server, {global, start_link, []}, permanent, 2000,
-	      worker, [global]},
-    Glo_grp = {global_group,{global_group,start_link,[]},permanent,2000,
-	       worker,[global_group]},
-    InetDb = {inet_db, {inet_db, start_link, []},
-	      permanent, 2000, worker, [inet_db]},
-    NetSup = {net_sup, {erl_distribution, start_link, []}, permanent,
-	      infinity, supervisor,[erl_distribution]},
-    DistAC = start_dist_ac(),
-    Ddll = start_ddll(),
-    Timer = start_timer(),
-    config_zombies(),
-    SafeSupervisor = {kernel_safe_sup,
-		      {supervisor, start_link,
-		       [{local, kernel_safe_sup}, ?MODULE, safe]},
-		      permanent, infinity, supervisor, [?MODULE]},
-    {ok, {SupFlags,
-	  [Rpc, Global, InetDb | DistAC] ++ 
-	  [NetSup, Glo_grp, File, OldFile, Code, 
-	   User, Config, SafeSupervisor] ++
-	  Ddll ++ Timer}};
+    
+    case init:get_argument(mode) of
+	{ok, [["minimal"]]} ->
+
+	    SafeSupervisor = {kernel_safe_sup,
+			      {supervisor, start_link,
+			       [{local, kernel_safe_sup}, ?MODULE, safe]},
+			      permanent, infinity, supervisor, [?MODULE]},
+
+	    {ok, {SupFlags,
+		  [File, OldFile, Code, User,
+		   Config, SafeSupervisor]}};
+	_ ->
+	    Rpc = {rex, {rpc, start_link, []}, 
+		   permanent, 2000, worker, [rpc]},
+	    Global = {global_name_server, {global, start_link, []}, 
+		      permanent, 2000, worker, [global]},
+	    Glo_grp = {global_group, {global_group,start_link,[]},
+		       permanent, 2000, worker, [global_group]},
+	    InetDb = {inet_db, {inet_db, start_link, []},
+		      permanent, 2000, worker, [inet_db]},
+	    NetSup = {net_sup, {erl_distribution, start_link, []}, 
+		      permanent, infinity, supervisor,[erl_distribution]},
+	    DistAC = start_dist_ac(),
+
+	    Ddll = start_ddll(),
+
+	    Timer = start_timer(),
+
+	    SafeSupervisor = {kernel_safe_sup,
+			      {supervisor, start_link,
+			       [{local, kernel_safe_sup}, ?MODULE, safe]},
+			      permanent, infinity, supervisor, [?MODULE]},	    
+
+	    {ok, {SupFlags,
+		  [Rpc, Global, InetDb | DistAC] ++ 
+		  [NetSup, Glo_grp, File, OldFile, Code, 
+		   User, Config, SafeSupervisor] ++
+		  Ddll ++ Timer}}
+    end;
 
 init(safe) ->
     SupFlags = {one_for_one, 4, 3600},
@@ -142,14 +160,6 @@ init(safe) ->
     DiskLog = start_disk_log(),
     Pg2 = start_pg2(),
     {ok, {SupFlags, Boot ++ DiskLog ++ Pg2}}.
-
-config_zombies() ->
-    case application:get_env(kernel, keep_zombies) of
-	{ok, N} when integer(N) ->
-	    erlang:system_flag(keep_zombies, N);
-	_ ->
-	    ok
-    end.
 
 get_code_args() ->
     case init:get_argument(nostick) of

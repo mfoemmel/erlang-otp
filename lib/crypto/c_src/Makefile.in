@@ -67,11 +67,19 @@ RELSYSDIR = $(RELEASE_PATH)/lib/crypto-$(VSN)
 # Misc Macros
 # ----------------------------------------------------
 OBJS = $(OBJDIR)/crypto_drv.o
+DRV_MAKEFILE = $(PRIVDIR)/Makefile
 
 ifeq ($(findstring win32,$(TARGET)), win32)
 DYN_DRIVER = $(LIBDIR)/crypto_drv.dll
 else
 DYN_DRIVER = $(LIBDIR)/crypto_drv.so
+endif
+
+ifeq ($(HOST_OS),)
+HOST_OS := $(shell $(ERL_TOP)/erts/autoconf/config.guess)
+endif
+ifneq ($(findstring darwin,$(HOST_OS)),darwin)
+LD_R_OPT = -Wl,-R$(SSL_LIBDIR)
 endif
 
 # ----------------------------------------------------
@@ -92,7 +100,7 @@ $(OBJDIR)/%.o: %.c
 
 $(LIBDIR)/crypto_drv.so: $(OBJS)
 	$(INSTALL_DIR) $(LIBDIR)
-	$(CC) $(LDFLAGS) -L$(SSL_LIBDIR) -Wl,-R$(SSL_LIBDIR) \
+	$(CC) $(LDFLAGS) -L$(SSL_LIBDIR) $(LD_R_OPT) \
 			-o $@ $^ $(LDLIBS) -lcrypto
 
 $(LIBDIR)/crypto_drv.dll: $(OBJS)
@@ -111,7 +119,10 @@ docs:
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
+	$(INSTALL_DIR) $(RELSYSDIR)/priv/obj
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/lib
+	$(INSTALL_PROGRAM) $(DRV_MAKEFILE) $(RELSYSDIR)/priv/obj
+	$(INSTALL_PROGRAM) $(OBJS) $(RELSYSDIR)/priv/obj
 	$(INSTALL_PROGRAM) $(DYN_DRIVER) $(RELSYSDIR)/priv/lib
 
 release_docs_spec:

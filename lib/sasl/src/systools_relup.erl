@@ -148,7 +148,7 @@ mk_relup(TopRelFile, BaseUpRelDcs, BaseDnRelDcs, Opts) ->
     case {get_opt(silent, Opts), get_opt(noexec, Opts)} of
 	{false, false} ->
 	    case R of
-		{ok, Res, Mod, Ws} -> 
+		{ok, _Res, _Mod, Ws} -> 
 		    print_warnings(Ws),
 		    ok;
 		Other -> 
@@ -221,17 +221,26 @@ foreach_baserel_up(TopRel, TopApps, [BaseRelDc|BaseRelDcs], Path, Opts,
 	    {RUs1, Ws1} = 
 		collect_appup_scripts(up, TopApps, BaseRel, Ws, []),
 
-	    {RUs2, Ws2} = create_add_app_scripts(BaseRel, TopRel, TopApps,
+	    {RUs2, Ws2} = create_add_app_scripts(BaseRel, TopRel,
 						 RUs1, Ws1),
 
-	    {RUs3, Ws3} = create_remove_app_scripts(BaseRel, TopRel, TopApps,
+	    {RUs3, Ws3} = create_remove_app_scripts(BaseRel, TopRel,
 						    RUs2, Ws2),
 
 	    {RUs4, Ws4} = 
 		check_for_emulator_restart(TopRel, BaseRel, RUs3, Ws3, Opts),
 
+	    ModTest = false,
+	    BaseApps =
+		case systools_make:get_release(BaseRelFile, Path, ModTest) of
+		    {ok, _, NameVsnApps, _Warns} ->
+			lists:map(fun({_,App}) -> App end, NameVsnApps);
+		    Other1 ->
+			throw(Other1)
+		end,
+
 	    %% io:format("Scripts: ~p~n", [RUs4]),
-	    case systools_rc:translate_scripts(up, RUs4, TopApps) of
+	    case systools_rc:translate_scripts(up, RUs4, TopApps, BaseApps) of
 		{ok, RUs} ->
 		    VDR = {BaseRel#release.vsn, 
 			   extract_description(BaseRelDc), RUs},
@@ -279,17 +288,17 @@ foreach_baserel_dn(TopRel, TopApps, [BaseRelDc|BaseRelDcs], Path, Opts,
 
 	    RUs2 = RUs1,
 
-	    {RUs3, Ws3} = create_add_app_scripts(TopRel, BaseRel, BaseApps,
+	    {RUs3, Ws3} = create_add_app_scripts(TopRel, BaseRel,
 						 RUs2, Ws2),
 
-	    {RUs4, Ws4} = create_remove_app_scripts(TopRel, BaseRel, BaseApps,
+	    {RUs4, Ws4} = create_remove_app_scripts(TopRel, BaseRel,
 						    RUs3, Ws3),
 
 	    {RUs5, Ws5} = check_for_emulator_restart(TopRel, BaseRel,
 						     RUs4, Ws4, Opts),
 
 	    %% io:format("Scripts: ~p~n", [RUs5]),
-	    case systools_rc:translate_scripts(dn, RUs5, BaseApps) of
+	    case systools_rc:translate_scripts(dn, RUs5, BaseApps, TopApps) of
 		{ok, RUs} ->
 		    VDR = {BaseRel#release.vsn, 
 			   extract_description(BaseRelDc), RUs},
@@ -349,12 +358,12 @@ collect_appup_scripts(Mode, [TopApp|TopApps], BaseRel, Ws, RUs) ->
 collect_appup_scripts(_, [], _, Ws, RUs) -> {RUs, Ws}.
 
 
-%% create_add_app_scripts(FromRel, ToRel, ToApps, RU0s, W0s) -> {RUs, Ws}
+%% create_add_app_scripts(FromRel, ToRel, RU0s, W0s) -> {RUs, Ws}
 %%
 %% FromRel = ToRel = #release
 %% ToApps = [#application]
 %%
-create_add_app_scripts(FromRel, ToRel, ToApps, RU0s, W0s) -> 
+create_add_app_scripts(FromRel, ToRel, RU0s, W0s) -> 
     AddedNs = [N || {N, _V, _T} <- ToRel#release.applications,
 		    not lists:keymember(N, 1, FromRel#release.applications)],
     %% io:format("Added apps: ~p~n", [AddedNs]),
@@ -362,14 +371,14 @@ create_add_app_scripts(FromRel, ToRel, ToApps, RU0s, W0s) ->
     {RUs ++ RU0s, W0s}.
 
 
-%% create_remove_app_scripts(FromRel, ToRel, ToApps, RU0s, W0s) -> {RUs, Ws}
+%% create_remove_app_scripts(FromRel, ToRel, RU0s, W0s) -> {RUs, Ws}
 %%
 %% FromRel = ToRel = #release
 %% ToApps = [#application]
 %%
 %% XXX ToApps not used.
 %%
-create_remove_app_scripts(FromRel, ToRel, ToApps, RU0s, W0s) -> 
+create_remove_app_scripts(FromRel, ToRel, RU0s, W0s) -> 
     RemovedNs = [N || {N, _V, _T} <- FromRel#release.applications,
 		      not lists:keymember(N, 1, ToRel#release.applications)],
     %% io:format("Removed apps: ~p~n", [RemovedNs]),
@@ -417,10 +426,10 @@ get_script_from_appup(Mode, TopApp, BaseVsn, Ws, RUs) ->
 
 %% Primitives for the "lists of release names" that we upgrade from
 %% and to.
-extract_filename({N, D}) -> to_list(N);
+extract_filename({N, _D}) -> to_list(N);
 extract_filename(N) -> to_list(N).
 
-extract_description({N, D}) -> D;
+extract_description({_N, D}) -> D;
 extract_description(_) -> [].
 
 to_list(X) when atom(X) -> atom_to_list(X);

@@ -3000,7 +3000,9 @@ check_type(S=#state{recordtopname=TopName},Type,Ts) when record(Ts,type) ->
 		%% this case occures in a SEQUENCE when 
 		%% the type of the component is a ObjectClassFieldType
 		ClassSpec = check_class(S,ClRef),
-		NewTypeDef = maybe_open_type(S,ClassSpec,OCFT,Constr),
+		NewTypeDef = 
+		    maybe_open_type(S,ClassSpec,
+				    OCFT#'ObjectClassFieldType'{class=ClassSpec},Constr),
 		InnerTag = get_innertag(S,NewTypeDef),
 		MergedTag = merge_tags(Tag,InnerTag),
 		Ct =
@@ -3096,11 +3098,12 @@ merged_mod(S,RefMod,Ext) ->
 	    Ext#'Externaltypereference'.module
     end.
 
-%% maybe_open_type/2 -> {ClassSpec,FieldRefList} | 'ASN1_OPEN_TYPE'
+%% maybe_open_type/2 -> #ObjectClassFieldType with updated fieldname and
+%% type 
 %% if the FieldRefList points out a typefield and the class don't have
 %% any UNIQUE field, so that a component relation constraint cannot specify
-%% the type of a typefield, return 'ASN1_OPEN_TYPE', otherwise return
-%% {ClassSpec,FieldRefList}.
+%% the type of a typefield, return 'ASN1_OPEN_TYPE'.
+%% 
 maybe_open_type(S,ClassSpec=#objectclass{fields=Fs},
 		OCFT=#'ObjectClassFieldType'{fieldname=FieldRefList},
 		Constr) ->
@@ -3108,22 +3111,18 @@ maybe_open_type(S,ClassSpec=#objectclass{fields=Fs},
     FieldNames=get_referenced_fieldname(FieldRefList),
     case lists:last(FieldRefList) of
 	{valuefieldreference,_} ->
-%	    OCFT#'ObjectClassFieldType'{class=ClassSpec,
 	    OCFT#'ObjectClassFieldType'{fieldname=FieldNames,
 					type=Type};
 	{typefieldreference,_} ->
 	    case {catch get_unique_fieldname(#classdef{typespec=ClassSpec}),
 		  asn1ct_gen:get_constraint(Constr,componentrelation)}of
 		{Tuple,_} when tuple(Tuple) ->
-%		    OCFT#'ObjectClassFieldType'{class=ClassSpec,
 		    OCFT#'ObjectClassFieldType'{fieldname=FieldNames,
 						type='ASN1_OPEN_TYPE'};
 		{_,no} ->
-%		    OCFT#'ObjectClassFieldType'{class=ClassSpec,
 		    OCFT#'ObjectClassFieldType'{fieldname=FieldNames,
 						type='ASN1_OPEN_TYPE'};
 		_ ->
-%		    OCFT#'ObjectClassFieldType'{class=ClassSpec,
 		    OCFT#'ObjectClassFieldType'{fieldname=FieldNames,
 						type=Type}
 	    end
@@ -5260,6 +5259,7 @@ get_simple_table_info1(S,#'ComponentType'{typespec=TS},Cnames,Path) ->
 
 
 simple_table_info(S,#'ObjectClassFieldType'{classname=ClRef,
+					    class=ObjectClass,
 					  fieldname=FieldName},Path) ->
     
     ObjectClassFieldName =
@@ -5272,7 +5272,13 @@ simple_table_info(S,#'ObjectClassFieldType'{classname=ClRef,
     %%list of the ObjectClassFieldType. The last element may
     %%be of another class, that is referenced from the class
     %%of the ObjectClassFieldType
-    {_,ClassDef}=get_referenced_type(S,ClRef),
+    ClassDef =
+	case ObjectClass of
+	    [] ->
+		{_,CDef}=get_referenced_type(S,ClRef),
+		CDef;
+	    _ -> #classdef{typespec=ObjectClass}
+	end,
     UniqueName =
 	case (catch get_unique_fieldname(ClassDef)) of
 	    {error,'__undefined_'} -> no_unique;
@@ -5647,7 +5653,7 @@ component_index1(S,Name,[],_) ->
     error({type,{asn1,"component of at-list was not"
 		 " found in substructure",Name},S}).
 
-get_unique_fieldname(ClassDef) ->
+get_unique_fieldname(ClassDef) when record(ClassDef,classdef) ->
 %%    {_,Fields,_} = ClassDef#classdef.typespec,
     Fields = (ClassDef#classdef.typespec)#objectclass.fields,
     get_unique_fieldname(Fields,[]).
@@ -5737,7 +5743,7 @@ check_PrimitiveFieldNames(_S,_Fields,_) ->
 %% been checked (it may be a field type of an internal SEQUENCE) the
 %% class field = [], then the classdef has to be fetched by help of
 %% the class reference in the classname field.
-get_ObjectClassFieldType_classdef(S,#'ObjectClassFieldType'{classname=Name}) ->
+get_ObjectClassFieldType_classdef(S,#'ObjectClassFieldType'{classname=Name,class=[]}) ->
     {_,#classdef{typespec=TS}} = get_referenced_type(S,Name),
     TS;
 get_ObjectClassFieldType_classdef(_,#'ObjectClassFieldType'{class=Cl}) ->

@@ -34,6 +34,7 @@
 -include("../include/erl_bits.hrl").
 
 -record(expand, {module=[],			%Module name
+		 parameters=undefined,		%Module parameters
 		 package="",			%Module package
 		 exports=[],			%Exports
 		 imports=[],			%Imports
@@ -73,21 +74,40 @@ module(Fs, Opts) ->
 		 },
     %% Expand the functions.
     {Tfs,St1} = forms(Fs, foldl(fun define_function/2, St0, Fs)),
+    {Efs,St2} = expand_pmod(Tfs, St1),
     %% Get the correct list of exported functions.
-    Exports = case member(export_all, St1#expand.compile) of
-		  true -> St1#expand.defined;
-		  false -> St1#expand.exports
+    Exports = case member(export_all, St2#expand.compile) of
+		  true -> St2#expand.defined;
+		  false -> St2#expand.exports
 	      end,
     %% Generate all functions from stored info.
-    {Ats,St2} = module_attrs(St1),
-    {Mfs,St3} = module_info_funcs(St2),
-    {St3#expand.module,Exports,Ats ++ Tfs ++ Mfs,St3#expand.compile}.
+    {Ats,St3} = module_attrs(St2#expand{exports = Exports}),
+    {Mfs,St4} = module_predef_funcs(St3),
+    {St4#expand.module, St4#expand.exports, Ats ++ Efs ++ Mfs,
+     St4#expand.compile}.
+
+expand_pmod(Fs0, St) ->
+    case St#expand.parameters of
+	undefined ->
+	    {Fs0,St};
+	Ps ->
+	    {Fs1,Xs,Ds} = sys_expand_pmod:forms(Fs0, Ps,
+						St#expand.exports,
+						St#expand.defined),
+	    A = length(Ps),
+	    Vs = [{var,0,V} || V <- Ps],
+	    N = {atom,0,St#expand.module},
+	    B = [{tuple,0,[N|Vs]}],
+	    F = {function,0,new,A,[{clause,0,Vs,[],B}]},
+	    As = St#expand.attributes,
+	    {[F|Fs1],St#expand{exports=add_element({new,A}, Xs),
+			       defined=add_element({new,A}, Ds),
+			       attributes = [{abstract, true} | As]}}
+    end.
 
 %% -type define_function(Form, State) -> State.
 %%  Add function to defined if form a function.
 
-define_function({attribute,_,asm,{function,N,A,_Code}}, St) ->
-    St#expand{defined=add_element({N,A}, St#expand.defined)};
 define_function({function,_,N,A,_Cs}, St) ->
     St#expand{defined=add_element({N,A}, St#expand.defined)};
 define_function(_, St) -> St.
@@ -95,22 +115,25 @@ define_function(_, St) -> St.
 module_attrs(St) ->
     {[{attribute,0,Name,Val} || {Name,Val} <- St#expand.attributes],St}.
 
-module_info_funcs(St) ->
+module_predef_funcs(St) ->
+    PreDef = [{module_info,0},{module_info,1}],
+    PreExp = PreDef,
     {[{function,0,module_info,0,
-       [{clause,0,[],[], [{nil,0}]}]},
+       [{clause,0,[],[],
+        [{call,0,{remote,0,{atom,0,erlang},{atom,0,get_module_info}},
+          [{atom,0,St#expand.module}]}]}]},
       {function,0,module_info,1,
-       [{clause,0,[{var,0,'_'}],[], [{nil,0}]}]}],
-     St}.
+       [{clause,0,[{var,0,'X'}],[],
+        [{call,0,{remote,0,{atom,0,erlang},{atom,0,get_module_info}},
+          [{atom,0,St#expand.module},{var,0,'X'}]}]}]}],
+     St#expand{defined=union(from_list(PreDef), St#expand.defined),
+	       exports=union(from_list(PreExp), St#expand.exports)}}.
 
 %% forms(Forms, State) ->
 %%	{TransformedForms,State'}
 %%  Process the forms. Attributes are lost and just affect the state.
-%%  Asm things are funny, just pass them through. Ignore uninteresting forms
-%%  like eof and type.
+%%  Ignore uninteresting forms like eof and type.
 
-forms([{attribute,_,asm,{function,N,A,Code}}|Fs0], St0) ->
-    {Fs,St1} = forms(Fs0, St0),
-    {[{asm,N,A,Code}|Fs],St1};
 forms([{attribute,_,Name,Val}|Fs0], St0) ->
     St1 = attribute(Name, Val, St0),
     forms(Fs0, St1);
@@ -121,10 +144,15 @@ forms([{function,L,N,A,Cs}|Fs0], St0) ->
 forms([_|Fs], St) -> forms(Fs, St);
 forms([], St) -> {[],St}.
 
-%% -type attribute(Line, Attribute, Value, State) ->
+%% -type attribute(Attribute, Value, State) ->
 %%	State.
 %%  Process an attribute, this just affects the state.
 
+attribute(module, {Module, As}, St) ->
+    M = package_to_string(Module),
+    St#expand{module=list_to_atom(M),
+	      package = packages:strip_last(M),
+	      parameters=As};
 attribute(module, Module, St) ->
     M = package_to_string(Module),
     St#expand{module=list_to_atom(M),
@@ -184,8 +212,6 @@ pattern({float,_,_}=Float, St) ->
     {Float,[],[],St};
 pattern({atom,_,_}=Atom, St) ->
     {Atom,[],[],St};
-pattern({char,_,_}=Char, St) ->
-    {Char,[],[],St};
 pattern({string,_,_}=String, St) ->
     {String,[],[],St};
 pattern({nil,_}=Nil, St) ->
@@ -252,15 +278,37 @@ guard_tests([Gt0|Gts0], Vs, St0) ->
 guard_tests([], _, St) -> {[],[],[],St}.
 
 guard_test({call,Line,{atom,_,record},[A,{atom,_,Name}]}, Vs, St) ->
-    record_test(Line, A, Name, Vs, St);
+    record_test_in_guard(Line, A, Name, Vs, St);
 guard_test({call,Line,{atom,Lt,Tname},As}, Vs, St) ->
+    %% XXX This is ugly. We can remove this workaround if/when
+    %% we'll allow 'andalso' in guards. For now, we must have
+    %% different code in guards and in bodies.
     Test = {remote,Lt,
 	    {atom,Lt,erlang},
 	    {atom,Lt,normalise_test(Tname, length(As))}},
-    expr({call,Line,Test,As}, Vs, St);
-guard_test(Test, Vs, St) -> expr(Test, Vs, St).
+    put(sys_pre_expand_in_guard, yes),
+    R = expr({call,Line,Test,As}, Vs, St),
+    erase(sys_pre_expand_in_guard),
+    R;
+guard_test(Test, Vs, St) ->
+    %% XXX See the previous clause.
+    put(sys_pre_expand_in_guard, yes),
+    R = expr(Test, Vs, St),
+    erase(sys_pre_expand_in_guard),
+    R.
+
+%% record_test(Line, Term, Name, Vs, St) -> TransformedExpr
+%%  Generate code for is_record/1.
 
 record_test(Line, Term, Name, Vs, St) ->
+    case get(sys_pre_expand_in_guard) of
+	undefined ->
+	    record_test_in_body(Line, Term, Name, Vs, St);
+	yes ->
+	    record_test_in_guard(Line, Term, Name, Vs, St)
+    end.
+
+record_test_in_guard(Line, Term, Name, Vs, St) ->
     Fs = record_fields(Name, St),
     expr({op,Line,'and',
 	  {op,Line,'=:=',
@@ -269,6 +317,27 @@ record_test(Line, Term, Name, Vs, St) ->
 	  {op,Line,'=:=',
 	   {call,Line,{atom,Line,element},[{integer,Line,1},Term]},
 	   {atom,Line,Name}}}, Vs, St).
+
+record_test_in_body(Line, Expr, Name, Vs, St0) ->
+    %% As Expr may have side effects, we must evaluate it
+    %% first and bind the value to a new variable.
+    %% We must use also handle the case that Expr does not
+    %% evaluate to a tuple properly.
+    Fs = record_fields(Name, St0),
+    {Var,St} = new_var(Line, St0),
+
+    expr({block,Line,
+	  [{match,Line,Var,Expr},
+	   {op,Line,
+	    'andalso',
+	    {call,Line,{atom,Line,is_tuple},[Var]},
+	    {op,Line,'andalso',
+	     {op,Line,'=:=',
+	      {call,Line,{atom,Line,size},[Var]},
+	      {integer,Line,length(Fs)+1}},
+	     {op,Line,'=:=',
+	      {call,Line,{atom,Line,element},[{integer,Line,1},Var]},
+	      {atom,Line,Name}}}}]}, Vs, St).
 
 normalise_test(atom, 1)      -> is_atom;
 normalise_test(binary, 1)    -> is_binary;
@@ -414,7 +483,7 @@ expr({call,Line,{tuple,_,[{atom,_,_}=M,{atom,_,_}=F]},As}, Vs, St) ->
 expr({call,Line,F,As0}, Vs, St0) ->
     {[Fun1|As1],Asvs,Asus,St1} = expr_list([F|As0], Vs, St0),
     {{call,Line,Fun1,As1},Asvs,Asus,St1};
-expr({'try',Line,Es0,Scs0,Ccs0}, Vs, St0) ->
+expr({'try',Line,Es0,Scs0,Ccs0,As0}, Vs, St0) ->
     {Es1,Esvs,Esus,St1} = exprs(Es0, Vs, St0),
     Cvs = union(Esvs, Vs),
     {Scs1,Scsvss,Scsuss,St2} = icr_clauses(Scs0, Cvs, St1),
@@ -422,7 +491,9 @@ expr({'try',Line,Es0,Scs0,Ccs0}, Vs, St0) ->
     Csvss = Scsvss ++ Ccsvss,
     Csuss = Scsuss ++ Ccsuss,
     All = new_in_all(Vs, Csvss),
-    {{'try',Line,Es1,Scs1,Ccs1},union(Esvs, All),union([Esus|Csuss]),St3};
+    {As1,Asvs,Asus,St4} = exprs(As0, Cvs, St3),
+    {{'try',Line,Es1,Scs1,Ccs1,As1}, union([Asvs,Esvs,All]),
+     union([Esus,Asus|Csuss]), St4};
 expr({'catch',Line,E0}, Vs, St0) ->
     %% Catch exports no new variables.
     {E,_Evs,Eus,St1} = expr(E0, Vs, St0),
@@ -683,7 +754,7 @@ record_match(R, Name, Fs, Us, St0) ->
       [{clause,Lr,[{tuple,Lr,[{atom,Lr,Name}|Ps]}],[],
 	[{tuple,Lr,[{atom,Lr,Name}|News]}]},
        {clause,Lr,[{var,Lr,'_'}],[],
-	[call_fault(Lr, {tuple,Lr,[{atom,Lr,badrecord},{atom,Lr,Name}]})]}
+	[call_error(Lr, {tuple,Lr,[{atom,Lr,badrecord},{atom,Lr,Name}]})]}
       ]},
      St1}.
 
@@ -714,7 +785,7 @@ record_setel(R, Name, Fs, Us0) ->
 		      {call,Lf,{atom,Lf,setelement},[I,Acc,Val]} end,
 	      R, Us)]},
       {clause,Lr,[{var,Lr,'_'}],[],
-       [call_fault(Lr, {tuple,Lr,[{atom,Lr,badrecord},{atom,Lr,Name}]})]}]}.
+       [call_error(Lr, {tuple,Lr,[{atom,Lr,badrecord},{atom,Lr,Name}]})]}]}.
 
 %% Expand a call to record_info/2. We have checked that it is not
 %% shadowed by an import.
@@ -869,19 +940,35 @@ expand_package(M, _St) ->
 %% Create a case-switch on true/false, generating badarg for all other
 %% values.
 
-make_bool_switch(L,E,V,T,F) ->
-    {'case',L,E,
-     [{clause,L,[{atom,L,true}],[],[T]},
-      {clause,L,[{atom,L,false}],[],[F]},
-      {clause,L,[V],[],
-       [call_fault(L,{tuple,L,[{atom,L,badarg},V]})]}
+make_bool_switch(L, E, V, T, F) ->
+    case get(sys_pre_expand_in_guard) of
+	undefined -> make_bool_switch_body(L, E, V, T, F);
+	yes -> make_bool_switch_guard(L, E, V, T, F)
+    end.
+
+make_bool_switch_guard(_, E, _, {atom,_,true}, {atom,_,false}) -> E;
+make_bool_switch_guard(L, E, V, T, F) ->
+    NegL = -abs(L),
+    {'case',NegL,E,
+     [{clause,NegL,[{atom,NegL,true}],[],[T]},
+      {clause,NegL,[{atom,NegL,false}],[],[F]},
+      {clause,NegL,[V],[],[V]}
      ]}.
 
-%% call_fault(Line, Reason) -> Expr.
-%%  Build a call to erlang:fault/1 with reason Reason.
+make_bool_switch_body(L, E, V, T, F) ->
+    NegL = -abs(L),
+    {'case',NegL,E,
+     [{clause,NegL,[{atom,NegL,true}],[],[T]},
+      {clause,NegL,[{atom,NegL,false}],[],[F]},
+      {clause,NegL,[V],[],
+       [call_error(NegL,{tuple,NegL,[{atom,NegL,badarg},V]})]}
+     ]}.
 
-call_fault(L, R) ->
-    {call,L,{remote,L,{atom,L,erlang},{atom,L,fault}},[R]}.
+%% call_error(Line, Reason) -> Expr.
+%%  Build a call to erlang:error/1 with reason Reason.
+
+call_error(L, R) ->
+    {call,L,{remote,L,{atom,L,erlang},{atom,L,error}},[R]}.
 
 %% new_in_all(Before, RegionList) -> NewInAll
 %%  Return the variables new in all clauses.
@@ -889,11 +976,6 @@ call_fault(L, R) ->
 new_in_all(Before, Region) ->
     InAll = intersection(Region),
     subtract(InAll, Before).
-
-%% For storing the import list we use our own version of the module dict.
-%% This is/was the same as the original but we must be sure of the format
-%% (sorted list of pairs) so we can do ordset operations on them (see the
-%% the function eof/2. We know an empty set is [].
 
 %% import(Line, Imports, State) ->
 %%	State'
@@ -913,32 +995,11 @@ import(Mod0, St) ->
 				     St#expand.mod_imports)}.
 
 add_imports(Mod, [F|Fs], Is) ->
-    add_imports(Mod, Fs, store(F, Mod, Is));
+    add_imports(Mod, Fs, orddict:store(F, Mod, Is));
 add_imports(_, [], Is) -> Is.
 
 imported(F, A, St) ->
-    case find({F,A}, St#expand.imports) of
+    case orddict:find({F,A}, St#expand.imports) of
 	{ok,Mod} -> {yes,Mod};
 	error -> no
     end.
-
-%% This is our own version of the module dict which is/was the same as
-%% the original but we must be sure of the format (sorted list of pairs)
-%% so we can do ordset operations on them. We know an empty set is [].
-
-%% find(Key, Dictionary) -> {ok,Value} | error
-
-find(Key, [{K,_}|D]) when Key > K -> find(Key, D);
-find(Key, [{K,Value}|_]) when Key == K -> {ok,Value};
-find(Key, [{K,_}|_]) when Key < K -> error;
-find(_, []) -> error.
-
-%% store(Key, Value, Dictionary) -> Dictionary.
-
-store(Key, New, [{K,_}=Old|Dict]) when Key > K ->
-    [Old|store(Key, New, Dict)];
-store(Key, New, [{K,_Old}|Dict]) when Key == K ->
-    [{Key,New}|Dict];
-store(Key, New, [{K,_}=Old|Dict]) when Key < K ->
-    [{Key,New},Old|Dict];
-store(Key, New, []) -> [{Key,New}].

@@ -1,0 +1,4 @@
+{"%VSN%",
+ [{add_application, xmerl}],
+ [{remove_application, xmerl}]
+}.

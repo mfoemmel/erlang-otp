@@ -21,9 +21,9 @@
 %%              * 2001-07-16 EJ: Made less sparc-specific.
 %%
 %% CVS:
-%%    $Author: richardc $
-%%    $Date: 2002/10/01 12:45:59 $
-%%    $Revision: 1.4 $
+%%    $Author: kostis $
+%%    $Date: 2004/01/23 21:34:52 $
+%%    $Revision: 1.10 $
 %% =====================================================================
 %% Exported functions (short description):
 %%   regalloc(CFG,PhysRegs,Entrypoints, Options) -> 
@@ -47,7 +47,6 @@
 %-define(DEBUG,1).
 -define(HIPE_INSTRUMENT_COMPILER, true).
 -include("../main/hipe.hrl").
--include("../util/hipe_vector.hrl").
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -251,17 +250,17 @@ allocate([RegInt|RIS], Free, Active, Alloc, SpillIndex, DontSpill, Target) ->
   
   %% Get the name of the temp in the current interval.
   Temp = reg(RegInt), 
-  case is_precolored(Temp, Target) of
+  case is_precoloured(Temp, Target) of
     true -> 
-      %% This is a precolored register we don't need to find a color
+      %% This is a precoloured register we don't need to find a color
       %% Get the physical name of the register.
       PhysName = physical_name(Temp, Target), 
       Usage = count(RegInt),
-      %% Bind it to the precolored name.
+      %% Bind it to the precoloured name.
       NewAlloc = alloc(Temp, PhysName, Alloc), 
       case is_global(Temp, Target) of
 	true -> 
-	  %% this is a global precolored register 
+	  %% this is a global precoloured register 
 	  allocate(RIS, NewFree, NewActive,
 		   NewAlloc, SpillIndex, DontSpill, Target);
 	false ->
@@ -273,11 +272,9 @@ allocate([RegInt|RIS], Free, Active, Alloc, SpillIndex, DontSpill, Target) ->
 		       NewAlloc,
 		       SpillIndex, DontSpill, Target);
 	    false ->
-	      %% Some other temp has taken this precolored register,
+	      %% Some other temp has taken this precoloured register,
 	      %% throw it out.
-
-	      {OtherActive, NewActive2} = 
-		deactivate(PhysName, NewActive),
+	      {OtherActive, NewActive2} = deactivate(PhysName, NewActive),
 	      OtherTemp = active_name(OtherActive),
 	      OtherEnd = active_endpoint(OtherActive),
 	      OtherCount = active_count(OtherActive),
@@ -292,12 +289,10 @@ allocate([RegInt|RIS], Free, Active, Alloc, SpillIndex, DontSpill, Target) ->
 		       add_active(endpoint(RegInt), PhysName, Temp, 
 				  count(RegInt), NewActive3),
 		       NewAlloc2, NewSpillIndex, DontSpill, Target)
-	  
 	  end
-	    
       end;
     false -> 
-      %% This is not a precolored register.
+      %% This is not a precoloured register.
       case NewFree of 
 	[] -> 
 	  %% No physical registers available, we have to spill.
@@ -412,7 +407,7 @@ spill(CurrentReg, CurrentEndpoint, CurrentCount,
 		      SpillCount,
 		      NewActive2)};
 	true ->
-	  %% It is not precolored...
+	  %% It is not precoloured...
 
 	  %% Allocate SpillCandidate to spill-slot SpillIndex
 	  SpillAlloc = 
@@ -436,7 +431,7 @@ spill(CurrentReg, CurrentEndpoint, CurrentCount,
 
       case can_spill(CurrentReg, DontSpill, Target) of 
 	false ->
-	  %% Cannot spill a precolored register
+	  %% Cannot spill a precoloured register
 	  {NewAlloc, NewActive2} = 
 	    spill(SpillName, SpillEndpoint, SpillCount, NewActive, Alloc,
 		  SpillIndex, DontSpill, Target),
@@ -445,7 +440,7 @@ spill(CurrentReg, CurrentEndpoint, CurrentCount,
 		       CurrentCount, NewActive2),
 	  {NewAlloc, NewActive3};
 	true ->
-	  %% It is not precolored...
+	  %% It is not precoloured...
 	  %% Allocate the current register to spill-slot SpillIndex
 	  {spillalloc(CurrentReg, SpillIndex, Alloc), Active}
       end
@@ -462,7 +457,7 @@ spill(CurrentReg, CurrentEndpoint, CurrentCount, [],
   end.
 
 can_spill(Name, DontSpill, Target) ->
-  (Name < DontSpill) and (not is_precolored(Name, Target)).
+  (Name < DontSpill) and (not is_precoloured(Name, Target)).
 
 %%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 lowest_count([Min|Active]) ->
@@ -549,14 +544,14 @@ add_active(Endpoint, PhysReg, RegName, Count, [{P1,R1,O1,C1}|Active]) when P1 < 
 add_active(Endpoint, PhysReg, RegName, Count, Active) ->
   [{Endpoint, PhysReg, RegName, Count}|Active].
 
-active_reg({_,PhysReg,_,_}) ->
-  PhysReg.
-active_endpoint({EndPoint,_,_,_}) ->
+active_endpoint({ EndPoint, _PhysReg, _RegName, _Count}) ->
   EndPoint.
-active_name({_,_,RegName,_})->
+active_reg(     {_EndPoint,  PhysReg, _RegName, _Count}) ->
+  PhysReg.
+active_name(    {_EndPoint, _PhysReg,  RegName, _Count}) ->
   RegName.
-active_count(A) ->
-  element(4,A).
+active_count(   {_EndPoint, _PhysReg, _RegName,  Count}) ->
+  Count.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -692,10 +687,10 @@ extend_def_interval(Pos, Intervals) ->
 -else. %% isdef gb_intervals
 
 empty_interval(N) ->
-  ?vector_new(N, none).
+  hipe_vectors:new(N, none).
 
 interval_to_list(Intervals) ->
-  add_indices(?vector_to_list(Intervals),0).
+  add_indices(hipe_vectors:vector_to_list(Intervals),0).
 
 add_indices([{B,E,U}|Xs],N) ->
   [{N,B,E,U}|add_indices(Xs,N+1)];
@@ -718,7 +713,7 @@ flatten([],N,More) ->
 add_use_point([Temp|Temps],Pos,Intervals) ->
   %% Extend the old interval...
   NewInterval =
-    case ?vector_get(Temp+1, Intervals) of
+    case hipe_vectors:get(Intervals, Temp+1) of
       %% This is the first time we see this temp...
       none ->
 	%% ... create a new interval
@@ -730,7 +725,7 @@ add_use_point([Temp|Temps],Pos,Intervals) ->
     end,
 
   %% Add or update the extended interval.
-  Intervals2 = ?vector_set(Temp+1, Intervals, NewInterval),
+  Intervals2 = hipe_vectors:set(Intervals, Temp+1, NewInterval),
 
   %% Add the rest of the temporaries.
   add_use_point(Temps, Pos, Intervals2);
@@ -742,7 +737,7 @@ add_use_point([], _, I) ->
 add_def_point([Temp|Temps],Pos,Intervals) ->
   %% Extend the old interval...
   NewInterval =
-    case ?vector_get(Temp+1, Intervals) of
+    case hipe_vectors:get(Intervals, Temp+1) of
       %% This is the first time we see this temp...
       none ->
 	%% ... create a new interval
@@ -754,7 +749,7 @@ add_def_point([Temp|Temps],Pos,Intervals) ->
     end,
 
   %% Add or update the extended interval.
-  Intervals2 = ?vector_set(Temp+1, Intervals, NewInterval), 
+  Intervals2 = hipe_vectors:set(Intervals, Temp+1, NewInterval), 
 
   %% Add the rest of teh temporaries.
   add_def_point(Temps, Pos, Intervals2);
@@ -875,10 +870,6 @@ is_free(R, [_|Rs]) ->
 is_free(_, [] ) ->
   false.
 
-%%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Interface to external functions.
@@ -886,14 +877,11 @@ is_free(_, [] ) ->
 %% 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%function(CFG, Target) ->
-%%  Target:function(CFG).
-
 succ_map(CFG, Target) ->
   Target:succ_map(CFG).
 
 liveness(CFG, Target) ->
-   Target:analyze(CFG).
+  Target:analyze(CFG).
 
 bb(CFG, L, Target) ->
   Target:bb(CFG,L).
@@ -910,8 +898,8 @@ uses(I, Target)->
 defines(I, Target) ->
   regnames(Target:defines(I), Target).
 
-is_precolored(R, Target) ->
-  Target:is_precolored(R).
+is_precoloured(R, Target) ->
+  Target:is_precoloured(R).
 
 is_global(R, Target) ->
   Target:is_global(R).
@@ -924,5 +912,4 @@ regnames(Regs, Target) ->
 
 arg_vars(CFG, Target) ->
   Target:args(CFG).
-
 

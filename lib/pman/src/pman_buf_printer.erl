@@ -56,7 +56,7 @@ printer_loop(Editor,Buffer_pid)->
 	    pman_win:configeditor(Editor,clear),
 	    pman_win:configeditor(Editor, [{enable, false}]),
 	    printer_loop(Editor,Buffer_pid);
-	Other ->
+	_Other ->
 	    printer_loop(Editor,Buffer_pid)
     end.
 
@@ -68,10 +68,10 @@ printer_long(Trace,Editor) ->
 	    pman_win:configeditor(Editor,clear),
 	    pman_win:configeditor(Editor, [{enable, false}])
     after 0 ->
-	    {Length,Rest,Print} = pman_buf_utils:split(Trace,
-						       ?MAX_OUTPUT,
-						       0,
-						       []),
+	    {_Length,Rest,Print} = pman_buf_utils:split(Trace,
+							?MAX_OUTPUT,
+							0,
+							[]),
 	    print_trace(Editor,Print),
 	    printer_long(Rest,Editor)
     end.

@@ -33,7 +33,7 @@ tuple
 record_expr record_tuple record_field record_fields
 if_expr if_clause if_clauses case_expr cr_clause cr_clauses receive_expr
 fun_expr fun_clause fun_clauses
-try_expr query_expr
+try_expr try_catch try_clause try_clauses query_expr
 function_call argument_list
 exprs guard
 atomic strings
@@ -145,7 +145,7 @@ expr_max -> if_expr : '$1'.
 expr_max -> case_expr : '$1'.
 expr_max -> receive_expr : '$1'.
 expr_max -> fun_expr : '$1'.
-%%expr_max -> try_expr : '$1'.
+expr_max -> try_expr : '$1'.
 expr_max -> query_expr : '$1'.
 
 
@@ -268,10 +268,30 @@ fun_clause -> argument_list clause_guard clause_body :
 	{Args,Pos} = '$1',
 	{clause,Pos,'fun',Args,'$2','$3'}.
 
-try_expr -> 'try' exprs 'of' cr_clauses 'catch' cr_clauses 'end' :
-	{'try',line('$1'),'$2','$4','$6'}.
-try_expr -> 'try' exprs 'catch' cr_clauses 'end' :
-	{'try',line('$1'),'$2',[],'$4'}.
+try_expr -> 'try' exprs 'of' cr_clauses try_catch :
+	build_try(line('$1'),'$2','$4','$5').
+try_expr -> 'try' exprs try_catch :
+	build_try(line('$1'),'$2',[],'$3').
+
+try_catch -> 'catch' try_clauses 'end' :
+	{'$2',[]}.
+try_catch -> 'catch' try_clauses 'after' exprs 'end' :
+	{'$2','$4'}.
+try_catch -> 'after' exprs 'end' :
+	{[],'$2'}.
+
+try_clauses -> try_clause : ['$1'].
+try_clauses -> try_clause ';' try_clauses : ['$1' | '$3'].
+
+try_clause -> expr clause_guard clause_body :
+	L = line('$1'),
+	{clause,L,[{tuple,L,[{atom,L,throw},'$1',{var,L,'_'}]}],'$2','$3'}.
+try_clause -> atom ':' expr clause_guard clause_body :
+	L = line('$1'),
+	{clause,L,[{tuple,L,['$1','$3',{var,L,'_'}]}],'$4','$5'}.
+try_clause -> var ':' expr clause_guard clause_body :
+	L = line('$1'),
+	{clause,L,[{tuple,L,['$1','$3',{var,L,'_'}]}],'$4','$5'}.
 
 query_expr -> 'query' list_comprehension 'end' :
 	{'query',line('$1'),'$2'}.
@@ -426,12 +446,21 @@ build_attribute({atom,La,module}, Val) ->
     case Val of
 	[{atom,Lm,Module}] ->
 	    {attribute,La,module,Module};
+	[{atom,Lm,Module},ExpList] ->
+	    {attribute,La,module,{Module,var_list(ExpList)}};
 	[Name] ->
 	    case package_segments(Name) of
 		error ->
 		    error_bad_decl(La, module);
 		Module ->
 		    {attribute,La,module,Module}
+	    end;
+	[Name,ExpList] ->
+	    case package_segments(Name) of
+		error ->
+		    error_bad_decl(La, module);
+		Module ->
+		    {attribute,La,module,{Module,var_list(ExpList)}}
 	    end;
 	Other ->
 	    error_bad_decl(La, module)
@@ -480,6 +509,12 @@ build_attribute({atom,La,Attr}, Val) ->
 	    {attribute,La,Attr,term(Expr)};
 	Other -> return_error(La, "bad attribute")
     end.
+
+var_list({cons,Lc,{var,_,V},Tail}) ->
+    [V|var_list(Tail)];
+var_list({nil,Ln}) -> [];
+var_list(Other) ->
+    return_error(line(Other), "bad variable list").
 
 error_bad_decl(L, S) ->
     return_error(L, io_lib:format("bad ~w declaration", [S])).
@@ -546,6 +581,9 @@ check_clauses(Cs, Name, Arity) ->
 		 {clause,L,As,G,B};
 	     ({clause,L,N,As,G,B}) ->
 		 return_error(L, "head mismatch") end, Cs).
+
+build_try(L,Es,Scs,{Ccs,As}) ->
+    {'try',L,Es,Scs,Ccs,As}.
 
 %% mapl(F,List)
 %% an alternative map which always maps from left to right

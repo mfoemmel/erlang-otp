@@ -52,14 +52,14 @@ server(Win, Side, [Point1, Point2, Point3], OldCol) ->
 	    Col = {R, G, B},
 	    gs:config(Win, [{bg,Col}]),
 	    server(Win, Side, [Point1, Point2, Point3], Col);
-	{gs,Win,buttonpress,_,[X,Y|_]} ->
+	{gs,Win,buttonpress,_,[_X,_Y|_]} ->
 	    io:format("{color, ~w}\n", [OldCol]),
 	    server(Win, Side, [Point1, Point2, Point3], OldCol);
 	{gs,_,click,quit,_} ->
 	    exit(die);
 	{gs,Win,destroy,_,_} ->
 	    exit(die);
-	Any ->
+	_Any ->
 	    server(Win, Side, [Point1, Point2, Point3], OldCol)
     end.
 

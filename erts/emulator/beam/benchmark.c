@@ -25,16 +25,17 @@
 #include "benchmark.h"
 
 #ifdef BM_COUNTERS
-unsigned long processes_busy;
-unsigned long processes_spawned;
-unsigned long messages_sent;
-unsigned long messages_copied;
-unsigned long messages_ego;
-unsigned long minor_garbage_cols;
-unsigned long major_garbage_cols;
-unsigned long minor_global_garbage_cols;
-unsigned long major_global_garbage_cols;
-unsigned long gc_in_copy;
+unsigned long long processes_busy;
+unsigned long long processes_spawned;
+unsigned long long messages_sent;
+unsigned long long messages_copied;
+unsigned long long messages_ego;
+unsigned long long minor_garbage_cols;
+unsigned long long major_garbage_cols;
+unsigned long long minor_global_garbage_cols;
+unsigned long long major_global_garbage_cols;
+unsigned long long gc_in_copy;
+unsigned long long gc_cycles;
 #endif /* BM_COUNTERS */
 
 #ifdef BM_TIMERS
@@ -44,6 +45,7 @@ unsigned long gc_in_copy;
 #include "libperfctr.h"
 struct vperfctr *system_clock;
 double cpu_khz;
+BM_NEW_TIMER(start);
 
 static double get_hrvtime(void)
 {
@@ -73,10 +75,17 @@ static void stop_hrvtime(void)
 #include <time.h>
 BM_TIMER_T system_clock;
 #endif
-#endif /* BM_TIMERS */
+
+unsigned long local_pause_times[MAX_PAUSE_TIME];
+unsigned long pause_times[MAX_PAUSE_TIME];
+unsigned long pause_times_old[MAX_PAUSE_TIME];
+
+BM_TIMER_T mmu;
+BM_TIMER_T mmu_counter;
 
 BM_NEW_TIMER(timer);
 BM_NEW_TIMER(system);
+BM_NEW_TIMER(gc);
 BM_NEW_TIMER(minor_gc);
 BM_NEW_TIMER(major_gc);
 BM_NEW_TIMER(minor_global_gc);
@@ -88,24 +97,28 @@ BM_NEW_TIMER(max_minor);
 BM_NEW_TIMER(max_major);
 BM_NEW_TIMER(max_global_minor);
 BM_NEW_TIMER(max_global_major);
-BM_NEW_TIMER(local_in_global);
+BM_NEW_TIMER(misc0);
+BM_NEW_TIMER(misc1);
+BM_NEW_TIMER(misc2);
+#endif /* BM_TIMERS */
 
 #ifdef BM_HEAP_SIZES
-unsigned long max_used_heap;
-unsigned long max_allocated_heap;
-unsigned long max_used_global_heap;
-unsigned long max_allocated_global_heap;
+unsigned long long max_used_heap;
+unsigned long long max_allocated_heap;
+unsigned long long max_used_global_heap;
+unsigned long long max_allocated_global_heap;
 #endif /* BM_HEAP_SIZES */
 
 #ifdef BM_MESSAGE_SIZES
-unsigned long words_sent;
-unsigned long words_copied;
-unsigned long message_sizes[1000];
+unsigned long long words_sent;
+unsigned long long words_copied;
+unsigned long long words_prealloc;
+unsigned long long message_sizes[1000];
 #endif /* BM_MESSAGE_SIZES */
 
 /*****
- * The folowing functoins has to be defined, but they only have contents
- * if sertain keywords are defined.
+ * The following functions have to be defined, but they only have contents
+ * if certain keywords are defined.
  */
 
 void init_benchmarking()
@@ -115,6 +128,7 @@ void init_benchmarking()
     /* pass `--with-perfctr=/path/to/perfctr' when configuring */
     struct perfctr_info info;
     struct vperfctr_control control;
+    int i;
 
     system_clock = vperfctr_open();
     if (system_clock != NULL)
@@ -134,7 +148,15 @@ void init_benchmarking()
             system_clock = NULL;
         }
     }
-    timer_time = 0;
+
+    for (i = 0; i < 1000; i++)
+    {
+        BM_START_TIMER(system);
+        BM_STOP_TIMER(system);
+    }
+
+    timer_time = system_time / 1000;
+    start_time = 0;
 #else
     int i;
     for (i = 0; i < 1000; i++)
@@ -144,6 +166,18 @@ void init_benchmarking()
     }
     timer_time = system_time / 1000;
 #endif
+
+    for (i = 0; i < MAX_PAUSE_TIME; i++) {
+        local_pause_times[i] = 0;
+        pause_times[i] = 0;
+        pause_times_old[i] = 0;
+    }
+
+    mmu = 0;
+    mmu_counter = 0;
+
+    BM_MMU_INIT();
+
 #endif /* BM_TIMERS */
 
 #ifdef BM_COUNTERS
@@ -152,6 +186,7 @@ void init_benchmarking()
     minor_global_garbage_cols = 0;
     major_global_garbage_cols = 0;
     gc_in_copy         = 0;
+    gc_cycles          = 0;        /* N.o. complete cycles (Incremental GC) */
     processes_busy     = 0;
     processes_spawned  = 0;
     messages_sent      = 0;
@@ -169,6 +204,7 @@ void init_benchmarking()
 #ifdef BM_MESSAGE_SIZES
     words_sent   = 0;
     words_copied = 0;
+    words_prealloc = 0;
     {
         int i;
         for (i = 0; i < 1000; i++)
@@ -181,7 +217,7 @@ void save_statistics()
 {
 #ifdef BM_STATISTICS
     FILE *file = fopen(BM_STATISTICS_FILE,"a");
-    int i = 0;
+    long i = 0;
 
     if (file)
     {
@@ -205,44 +241,145 @@ void save_statistics()
         }
 
 #ifdef BM_COUNTERS
-        fprintf(file,"Number of processes spawned: %ld\n",processes_spawned);
-        fprintf(file,"Number of local minor GCs: %ld\n",minor_garbage_cols);
-        fprintf(file,"Number of local major GCs: %ld\n",major_garbage_cols);
-        fprintf(file,"Number of global minor GCs: %ld\n",minor_global_garbage_cols);
-        fprintf(file,"Number of global major GCs: %ld\n",major_global_garbage_cols);
-        fprintf(file,"Number of messages sent: %ld\n",messages_sent);
-        fprintf(file,"Number of messages copied: %ld\n",messages_copied);
-        fprintf(file,"Number of messages sent to self: %ld\n",messages_ego);
+        fprintf(file,"Number of processes spawned: %lld\n",processes_spawned);
+        fprintf(file,"Number of local minor GCs: %lld\n",minor_garbage_cols);
+        fprintf(file,"Number of local major GCs: %lld\n",major_garbage_cols);
+        fprintf(file,"Number of global minor GCs: %lld\n",minor_global_garbage_cols);
+        fprintf(file,"Number of global major GCs: %lld\n",major_global_garbage_cols);
+        fprintf(file,"Number of messages sent: %lld\n",messages_sent);
+        fprintf(file,"Number of messages copied: %lld\n",messages_copied);
+        fprintf(file,"Number of messages sent to self: %lld\n",messages_ego);
 #endif /* BM_COUNTERS */
 
 #ifdef BM_MESSAGE_SIZES
-        fprintf(file,"Number of words sent: %ld\n",words_sent);
-        fprintf(file,"Number of words copied: %ld\n",words_copied);
+        fprintf(file,"Number of words sent: %lld\n",words_sent);
+        fprintf(file,"Number of words copied: %lld\n",words_copied);
+        fprintf(file,"Number of words preallocated: %lld\n",words_prealloc);
 #endif /* BM_MESSAGE_SIZES */
 
 #ifdef BM_HEAP_SIZES
-        fprintf(file,"Biggest local heap used (in words): %ld\n",max_used_heap);
-        fprintf(file,"Biggest local heap allocated (in words): %ld\n",max_allocated_heap);
-        fprintf(file,"Biggest global heap used (in words): %ld\n",max_used_global_heap);
-        fprintf(file,"Biggest global heap allocated (in words): %ld\n",max_allocated_global_heap);
+        fprintf(file,"Biggest local heap used (in words): %lld\n",max_used_heap);
+        fprintf(file,"Biggest local heap allocated (in words): %lld\n",max_allocated_heap);
+        fprintf(file,"Biggest global heap used (in words): %lld\n",max_used_global_heap);
+        fprintf(file,"Biggest global heap allocated (in words): %lld\n",max_allocated_global_heap);
 #endif /* BM_HEAP_SIZES */
 
 #ifdef BM_TIMERS
         fprintf(file,"--- The total active system time is the sum of all times below ---\n");
-        BM_TIME_PRINTER("Mutator time: %d:%02d.%03d\n",system_time);
-        BM_TIME_PRINTER("Time spent in send (excluding size & copy): %d:%02d.%03d\n",send_time);
-        BM_TIME_PRINTER("Time spent in size: %d:%02d.%03d\n",size_time);
-        BM_TIME_PRINTER("Time spent in copy: %d:%02d.%03d\n",copy_time);
-        BM_TIME_PRINTER("Time spent in local minor GC: %d:%02d.%03d\n",minor_gc_time);
-        BM_TIME_PRINTER("Time spent in local major GC: %d:%02d.%03d\n",major_gc_time);
-        BM_TIME_PRINTER("Time spent in global minor GC: %d:%02d.%03d\n",minor_global_gc_time);
-        BM_TIME_PRINTER("Time spent in global major GC: %d:%02d.%03d\n",major_global_gc_time);
+        BM_TIME_PRINTER(Mutator time,system_time);
+        BM_TIME_PRINTER(Time spent in send (excluding size & copy),send_time);
+        BM_TIME_PRINTER(Time spent in size,size_time);
+        BM_TIME_PRINTER(Time spent in copy,copy_time);
+        BM_TIME_PRINTER(Time spent in local minor GC,minor_gc_time);
+        BM_TIME_PRINTER(Time spent in local major GC,major_gc_time);
+        BM_TIME_PRINTER(Time spent in global minor GC,minor_global_gc_time);
+        BM_TIME_PRINTER(Time spent in global major GC,major_global_gc_time);
         fprintf(file,"---\n");
-        BM_TIME_PRINTER("Maximum time spent in one separate local minor GC: %d:%02d.%03d\n",max_minor_time);
-        BM_TIME_PRINTER("Maximum time spent in one separate local major GC: %d:%02d.%03d\n",max_major_time);
-        BM_TIME_PRINTER("Maximum time spent in one separate global minor GC: %d:%02d.%03d\n",max_global_minor_time);
-        BM_TIME_PRINTER("Maximum time spent in one separate global major GC: %d:%02d.%03d\n",max_global_major_time);
+        BM_TIME_PRINTER(Maximum time spent in one separate local minor GC,max_minor_time);
+        BM_TIME_PRINTER(Maximum time spent in one separate local major GC,max_major_time);
+        BM_TIME_PRINTER(Maximum time spent in one separate global minor GC,max_global_minor_time);
+        BM_TIME_PRINTER(Maximum time spent in one separate global major GC,max_global_major_time);
 #endif /* BM_TIMERS */
+
+#if 0
+        /* Save a log file for import into excel */
+
+        long long total_time, n;
+        long left, right, mid;
+
+#ifdef BM_COUNTERS
+        fprintf(file,"Spawns\tLocalGC\tMAGC\tMessages\tMutator_t\tLocalGC_t\tMAGC_t\tLocMaxP\tLocMeanP\tLocGeoMP\tMAMaxP\tMAMeanP\tMAGeoMP\t\tCMAGC\tCMAGC_t\n");
+        fprintf(file,"%lld\t%lld\t%lld\t%lld\t",
+                processes_spawned,
+                minor_garbage_cols + major_garbage_cols,
+                minor_global_garbage_cols + major_global_garbage_cols,
+                messages_sent);
+#endif /* BM_COUNTERS */
+
+#ifdef BM_TIMERS
+        fprintf(file,"%lld\t%lld\t%lld\t",
+                (long long)(system_time + send_time + size_time + copy_time),
+                (long long)(minor_gc_time + major_gc_time),
+                (long long)(minor_global_gc_time + major_global_gc_time));
+
+        total_time = 0; n = 0;
+        left = 0; right = 0; mid = 0;
+        for (i = 0; i < MAX_PAUSE_TIME; i++) {
+            total_time += local_pause_times[i] * i;
+            n += local_pause_times[i];
+            if (i > mid)
+                right += local_pause_times[i];
+            while(right > left) {
+                left += local_pause_times[mid++];
+                right -= local_pause_times[mid];
+            }
+        }
+        fprintf(file,"%lld\t%lld\t%ld\t",
+                (long long)((max_minor_time > max_major_time ?
+                             max_minor_time :
+                             max_major_time)*1000),
+                total_time / n,
+                mid);
+
+        total_time = 0; n = 0;
+        left = 0; right = 0; mid = 0;
+        for (i = 0; i < MAX_PAUSE_TIME; i++) {
+            if (pause_times[i] > 0) {
+                total_time += pause_times[i] * i;
+                n += pause_times[i];
+                if (i > mid)
+                    right += pause_times[i];
+                while(right > left) {
+                    left += pause_times[mid++];
+                    right -= pause_times[mid];
+                }
+            }
+        }
+        fprintf(file,"%lld\t%lld\t%ld\t",
+                (long long)((max_global_minor_time > max_global_major_time ?
+                             max_global_minor_time :
+                             max_global_major_time)*1000),
+                (n > 0 ? total_time / n : 0),
+                mid);
+
+        fprintf(file,"\t%lld\t%lld\n",n,total_time);
+
+        fprintf(file,"\nMinor:\n");
+        for (i = 0; i < MAX_PAUSE_TIME; i++) {
+            if (i < 1000 || pause_times[i] > 0) {
+                fprintf(file,"%d\t%ld\n",i,pause_times[i]);
+            }
+        }
+
+        fprintf(file,"Major:\n");
+        for (i = 0; i < MAX_PAUSE_TIME; i++) {
+            if (pause_times_old[i] > 0) {
+                fprintf(file,"%d\t%ld\n",i,pause_times_old[i]);
+            }
+        }
+#endif /* BM_TIMERS */
+
+#ifdef BM_TIMERS
+        total_time = 0; n = 0;
+        left = 0; right = 0; mid = 0;
+        fprintf(file,"\nLocal:\n");
+        for (i = 0; i < MAX_PAUSE_TIME; i++) {
+            if (local_pause_times[i] > 0) {
+                fprintf(file,"%d\t%ld\n",i,local_pause_times[i]);
+                total_time += local_pause_times[i] * i;
+                n += local_pause_times[i];
+                if (i > mid)
+                    right += local_pause_times[i];
+                while(right > left) {
+                    left += local_pause_times[mid++];
+                    right -= local_pause_times[mid];
+                }
+            }
+        }
+        fprintf(file,"Mid: %ld  Mean: %ld\n",(long)mid,
+                (long)(n > 0 ? total_time / n : 0));
+#endif
+#endif /* 0 */
         fclose(file);
     }
     else

@@ -16,10 +16,6 @@ SYS = $(ERL_TOP)/erts/emulator/sys/win32
 OBJ = $(ERL_TOP)/erts/obj/$(TARGET)
 ROOTDIR = $(ERL_TOP)/erts
 
-INSTALL_NOTES = \
-	$(ROOTDIR)/notes.html \
-	$(ROOTDIR)/notes_history.html
-
 INSTALL_PROGS = \
 	$(BINDIR)/inet_gethost.exe \
 	$(BINDIR)/erl.exe \
@@ -32,8 +28,6 @@ INSTALL_PROGS = \
 
 INSTALL_SRC = ./start_erl.c ./Nmakefile.start_erl
 
-INSTALL_INCLUDE = \
-   $(RUNTIME)/erl_driver.h $(SYS)/driver_int.h 
 INSTALL_LIBS =  $(BINDIR)/erl_dll.lib
 
 INSTALL_README  = \
@@ -56,9 +50,7 @@ release_spec:
 	$(INSTALL_DIR) $(ROOTSYSDIR)/usr/lib
 	$(INSTALL_DIR) $(ROOTSYSDIR)/usr/lib/icons
 	$(INSTALL_PROGRAM) $(INSTALL_PROGS) $(RELSYSDIR)/bin
-	$(INSTALL_DATA) $(INSTALL_NOTES) $(RELSYSDIR)
 	$(INSTALL_DATA) $(INSTALL_SRC) $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(INSTALL_INCLUDE) $(ROOTSYSDIR)/usr/include
 	$(INSTALL_DATA) $(INSTALL_ICONS) $(ROOTSYSDIR)/usr/lib/icons
 
 release_docs release_docs_spec docs:

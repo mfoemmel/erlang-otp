@@ -482,6 +482,14 @@ int esock_ssl_connect(Connection *cp)
 }
 
 
+int esock_ssl_session_reused(Connection *cp)
+{
+    SSL *ssl = cp->opaque;
+
+    return SSL_session_reused(ssl);
+}
+
+
 /* esock_ssl_read(Connection *cp, char *buf, int len)
  *
  * Read at most `len' chars into `buf'. Returns number of chars
@@ -847,8 +855,6 @@ static int set_ssl_parameters(Connection *cp, SSL_CTX *ctx)
 	}
     }
     if (keyfile) { 
-
-
 	DEBUGF(("set_ssl_parameters: SSL_CTX_use_PrivateKey_file\n"));
 	if (SSL_CTX_use_PrivateKey_file(ctx, keyfile, 
 					SSL_FILETYPE_PEM) <= 0) {
@@ -900,6 +906,12 @@ static int set_ssl_parameters(Connection *cp, SSL_CTX *ctx)
     DEBUGF(("set_ssl_parameters: SSL_CTX_set_verify (verify = %d)\n", 
 	    verify)); 
     SSL_CTX_set_verify(ctx, verify_mode, verify_callback);
+
+    /* Session id context. Should be an option really. */
+    if (cp->origin == ORIG_LISTEN) {
+	unsigned char *sid = "Erlang/OTP/ssl";
+	SSL_CTX_set_session_id_context(ctx, sid, strlen(sid));
+    }
 
     /* info callback */
     if (debug) 

@@ -63,15 +63,18 @@ net_accept(Type, ListenFd, Parent) ->
 	    case orber_socket:controlling_process(Type, S, Pid) of
 		ok ->
 		    ok;
-		{error, closed} ->
-		    gen_server:cast(Pid, stop);
 		_Reason ->
 		    orber_socket:close(Type, S),
-		    gen_server:cast(Pid, stop)
+		    gen_server:cast(Pid, stop),
+		    orber_socket:clear(Type, S)
 	    end,
 	    ready_to_go(ReadyToGo);
+	denied ->
+	    orber_socket:close(Type, S),
+	    orber_socket:clear(Type, S);
 	_ ->
-	    orber_socket:close(Type, S)
+	    orber_socket:close(Type, S),
+	    orber_socket:clear(Type, S)
     end,
     net_accept(Type, ListenFd, Parent).
 

@@ -125,6 +125,7 @@ HTML_FILES = \
 
 
 EXTRA_FILES = \
+	notes_history.html \
 	summary.html.src \
 	$(DEFAULT_GIF_FILES) \
 	$(DEFAULT_HTML_FILES) \
@@ -167,7 +168,7 @@ ps: $(TOP_PS_FILE)
 html:$(HTML_FILES)
 
 jdoc:$(JAVA_SRC_FILES)
-	(cd ../../java_src;$(JAVADOC) -d $(JAVADOC_DEST) \
+	(cd ../../java_src;$(JAVADOC) -sourcepath . -d $(JAVADOC_DEST) \
 		-windowtitle $(JAVADOC_TITLE) $(JAVADOC_PKGS))
 
 man: 

@@ -118,7 +118,7 @@ start(Options) ->
 			   {si_server, {si_sasl_supp, start_link, [Options]},
 			    temporary, brutal_kill, worker, [si_sasl_supp]}).
 
-start_link(Options) ->
+start_link(_Options) ->
     gen_server:start_link({local, si_server}, si_sasl_supp, [], []).
 
 stop() ->
@@ -160,15 +160,15 @@ handle_call(stop, _From, State) ->
     start_log_impl(standard_io),
     {stop, normal, stopped, State}.
 
-terminate(_Reason, State) ->
+terminate(_Reason, _State) ->
     close_device(get(device)),
     ok.
 
-handle_cast(Msg, State) ->
+handle_cast(_Msg, State) ->
     {noreply, State}.
-handle_info(Info, State) ->
+handle_info(_Info, State) ->
     {noreply, State}.
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 close_device(standard_io) -> ok;
@@ -221,7 +221,7 @@ make_pid(P) when atom(P) ->
 	undefined ->
 	    case expand_abbrev(P, process_abbrevs()) of
 		{error, Reason} -> {error, Reason};
-		{value, {Abbrev, FullName}} ->
+		{value, {_Abbrev, FullName}} ->
 		    case whereis(FullName) of
 			undefined ->
 			    {error, {'process not registered', P}};
@@ -279,7 +279,7 @@ start_log_impl(FileName) ->
     put(device, open_log_file(get(device), FileName)).
 
 valid_opt(all) -> all;
-valid_opt(Opt) -> normal.
+valid_opt(_Opt) -> normal.
 
 
 print_help() ->

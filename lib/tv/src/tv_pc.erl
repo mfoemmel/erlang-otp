@@ -320,6 +320,7 @@ loop(ProcVars) ->
 		    
 
 		check_node ->
+		    %% XXX Probably wrong.
 		    NewProcVars  = check_node(ProcVars),
 		    loop(ProcVars);
 
@@ -368,6 +369,10 @@ check_node(ProcVars) ->
 	pang when LocalNode == false ->
 	    ProcVars;
 	pang when LocalNode == true ->
+	    %% XXX [siri] Will this ever happen? I thought local_node
+	    %% indicated if current_node was the node where tv was
+	    %% started. If so, we are pinging ourselves here, and
+	    %% a pang can never happen??
 	    WinTitle = ?MENU_FUNC_FILE:get_window_title(TableType,HomeNode,TableId,TableName),
 	    PwPid ! #pw_set_window_title{sender = self(),
 					 win_title = WinTitle},
@@ -754,9 +759,9 @@ max_time_required(T1, T2) when number(T1), number(T2) ->
 	true ->
 	    T2
     end;
-max_time_required(T1, T2) when number(T1) ->
+max_time_required(T1, _T2) when number(T1) ->
     T1;
-max_time_required(T1, T2) ->
+max_time_required(_T1, T2) ->
     T2.
     
 
@@ -783,8 +788,7 @@ too_short_pollinterval_chosen(undefined, _EtsreadTime, _DbsTime) ->
     false;
 too_short_pollinterval_chosen(PollInt, EtsreadTime, _DbsTime) when EtsreadTime >= PollInt, number(EtsreadTime) ->
     true;
-too_short_pollinterval_chosen(PollInt, EtsreadTime, DbsTime) when DbsTime >= PollInt, number(DbsTime) ->
+too_short_pollinterval_chosen(PollInt, _EtsreadTime, DbsTime) when DbsTime >= PollInt, number(DbsTime) ->
     true;
-too_short_pollinterval_chosen(PollInt, EtsreadTime, DbsTime) ->
+too_short_pollinterval_chosen(_PollInt, _EtsreadTime, _DbsTime) ->
     false.
-

@@ -66,7 +66,14 @@ else
 fi
 AC_ISC_POSIX
 
-AC_CONFIG_HEADER($host/config.h:config.h.in)
+AC_CONFIG_HEADER($host/config.h:config.h.in include/internal/$host/ethread_header_config.h:include/internal/ethread_header_config.h.in)
+
+case $host_os in
+	linux*)  AC_DEFINE(_GNU_SOURCE, 1, \
+[Define if you want to turn on some gnu features.]) ;;
+	*) ;;
+esac
+
 
 dnl ----------------------------------------------------------------------
 dnl Optional features.
@@ -86,9 +93,6 @@ AC_ARG_ENABLE(hipe,
 AC_ARG_ENABLE(tsp,
 [  --enable-tsp            compile tsp app])
 
-AC_ARG_ENABLE(shared-heap,
-[  --enable-shared-heap    enable shared heap model])
-
 AC_ARG_ENABLE(elib-malloc,
 [  --enable-elib-malloc    use elib_malloc instead of normal malloc])
 
@@ -101,10 +105,9 @@ fi
 AC_ARG_ENABLE(threads,
 [  --enable-threads        use threads],
 [ case "$enableval" in
-    no) enable_threads=nothreads ;;
-    *)  enable_threads=threads-error ;;
-  esac ], enable_threads=nothreads)
-
+    no) enable_threads=no ;;
+    *)  enable_threads=yes ;;
+  esac ], enable_threads=no)
 
 AC_ARG_ENABLE(kernel-poll,
 [  --enable-kernel-poll    enable kernel poll support])
@@ -208,6 +211,8 @@ i386)	ARCH=x86;;
 i486)	ARCH=x86;;
 i586)	ARCH=x86;;
 i686)	ARCH=x86;;
+x86_64) ARCH=amd64;;
+ppc)	ARCH=ppc;;
 esac
 AC_SUBST(OPSYS)
 AC_SUBST(ARCH)
@@ -226,10 +231,25 @@ if test "$ac_cv_path_PERL" = false; then
 fi
 AC_PROG_LN_S
 
+
 AC_CHECK_PROG(AR, ar, ar, false)
 if test "$ac_cv_prog_AR" = false; then
   AC_MSG_ERROR([No 'ar' command found in PATH])
 fi
+
+_search_path=/bin:/usr/bin:/usr/local/bin:$PATH
+
+AC_PATH_PROG(RM, rm, false, $_search_path)
+if test "$ac_cv_path_RM" = false; then
+  AC_MSG_ERROR([No 'rm' command found])
+fi
+
+AC_PATH_PROG(MKDIR, mkdir, false, $_search_path)
+if test "$ac_cv_path_MKDIR" = false; then
+  AC_MSG_ERROR([No 'mkdir' command found])
+fi
+
+_search_path=
 
 dnl
 dnl We can live with Solaris /usr/ucb/install
@@ -345,7 +365,90 @@ dnl ----------------------------------------------------------------------
 AC_CHECK_LIB(m, sin)
 AC_CHECK_LIB(dl, dlopen)
 AC_CHECK_LIB(inet, main)
-AC_CHECK_LIB(resolv, main)
+
+dnl Try to find a thread library.
+dnl
+dnl ETHR_LIB_NAME, ETHR_LIBS, ETHR_X_LIBS, ETHR_THR_LIB_BASE and ETHR_DEFS
+dnl are set by LM_FIND_ETHR_LIB
+LM_FIND_ETHR_LIB
+
+#
+# Figure out if the emulator should use threads. The default is set above
+# in the enable_threads variable. It can have the following values:
+#
+#   no      single-threaded emulator requested
+#   yes     multi-threaded emulator requested
+#   force   multi-threaded emulator required
+#
+# THR_LIB_NAME, THR_LIBS, THR_X_LIBS, and THR_DEFS is used by the emulator,
+# and can be used by applications that only require thread support when
+# the emulator has thread support. Other applications should use
+# ETHR_LIB_NAME, ETHR_LIBS, ETHR_X_LIBS, and ETHR_DEFS.
+#
+AC_MSG_CHECKING(if the emulator should use threads)
+
+THR_LIB_NAME=
+THR_X_LIBS=
+THR_LIBS=
+THR_DEFS=
+
+if test "X$ETHR_LIB_NAME" = "X"; then
+    found_threads=no
+else
+    found_threads=yes
+fi
+
+case "$enable_threads"-"$host_os" in
+	*-win32)
+		# The windows erlang emulator can never run without threads.
+		# It has to be enabled or the emulator will crash. Until that
+		# is fixed we force threads on win32.
+		enable_threads=force ;;
+	yes-osf*)
+		# The emulator hang when threads are enabled on osf
+		AC_MSG_ERROR(unresolved problems exist with threads on this platform) ;;
+	*) ;;
+esac
+
+case "$enable_threads"-"$found_threads" in
+    force-yes)
+	AC_MSG_RESULT(yes; thread support required and therefore forced) ;;
+    yes-yes)
+	AC_MSG_RESULT(yes; thread support requested) ;;
+    no-yes)
+	AC_MSG_RESULT(no; thread support found but not requested) ;;
+    no-no)
+	AC_MSG_RESULT(no) ;;
+    force-no)
+	AC_MSG_ERROR(thread support required but not found) ;;
+    yes-no)
+	AC_MSG_ERROR(thread support requested but not found) ;;
+    *)
+	AC_MSG_ERROR(internal error) ;;
+esac
+
+case $found_threads-$enable_threads in
+    yes-yes|yes-force)
+	# Threads enabled for emulator
+	THR_LIB_NAME=$ETHR_LIB_NAME
+	THR_X_LIBS=$ETHR_X_LIBS
+	THR_LIBS="-L$ERL_TOP/erts/lib/internal/$host $ETHR_LIBS"
+	THR_DEFS="-I$ERL_TOP/erts/include/internal -I$ERL_TOP/erts/include/internal/$host $ETHR_DEFS -DUSE_THREADS"
+	ENABLE_ALLOC_TYPE_VARS="$ENABLE_ALLOC_TYPE_VARS threads"
+	case $host_os in
+	    solaris*) AC_DEFINE(ENABLE_CHILD_WAITER_THREAD) ;;
+	    linux*) AC_DEFINE(USE_RECURSIVE_MALLOC_MUTEX) ;;
+	    *) ;;
+	esac ;;
+    *)
+	# No threads enabled for emulator
+	;;
+esac
+
+AC_SUBST(THR_LIB_NAME)
+AC_SUBST(THR_X_LIBS)
+AC_SUBST(THR_LIBS)
+AC_SUBST(THR_DEFS)
 
 dnl ----------------------------------------------------------------------
 dnl Try to figure out where to get the termcap functions from.
@@ -445,9 +548,22 @@ else
 	AC_MSG_RESULT(no)
 fi
 
-dnl Check if we have these, in which case we'll try to build
-dnl inet_gethost with ipv6 support.
-AC_CHECK_FUNCS([getipnodebyname getipnodebyaddr])
+dnl Check for type socklen_t
+dnl
+AC_MSG_CHECKING([for socklen_t])
+AC_TRY_COMPILE( [#include <sys/socket.h>], 
+		[socklen_t test;],
+		have_socklen_t=yes, 
+                have_socklen_t=no),
+
+if test $have_socklen_t = yes; then
+	AC_DEFINE(HAVE_SOCKLEN_T)
+	AC_MSG_RESULT(yes)
+else
+	AC_MSG_RESULT(no)
+fi
+
+
 dnl h_errno isn't always declared in netdb.h, and with some definitions
 dnl (e.g. function call for thread-safe) a simple 'extern int' may conflict
 dnl (we do assume that h_errno exists at all...)
@@ -464,6 +580,10 @@ dnl ----------------------------------------------------------------------
 dnl Checks for header files.
 dnl ----------------------------------------------------------------------
 
+dnl We sometimes need ETHR_DEFS in order to find certain headers.
+saved_cppflags=$CPPFLAGS
+CPPFLAGS="$CPPFLAGS $ETHR_DEFS"
+
 AC_HEADER_DIRENT
 AC_HEADER_STDC
 AC_HEADER_SYS_WAIT
@@ -473,12 +593,9 @@ dnl Interactive UX needs <net/errno.h> for socket related error codes.
 dnl Some Linuxes needs <sys/socketio.h> instead of <sys/sockio.h>
 dnl
 AC_CHECK_HEADERS(fcntl.h limits.h unistd.h syslog.h dlfcn.h ieeefp.h \
-                 thread.h pthread.h poll.h sys/stropts.h \
+                 poll.h sys/stropts.h \
                  sys/ioctl.h sys/time.h sys/uio.h sys/sockio.h sys/socketio.h \
                  net/errno.h malloc.h mach-o/dyld.h arpa/nameser.h)
-
-dnl Some Linuxes have <pthread/mit/pthread.h> instead of <pthread.h>
-AC_CHECK_HEADER(pthread/mit/pthread.h, AC_DEFINE(HAVE_MIT_PTHREAD_H))
 
 dnl Check if we have kernel poll support
 AC_CHECK_HEADER(sys/devpoll.h, AC_DEFINE(HAVE_SYS_DEVPOLL_H))
@@ -489,6 +606,8 @@ LM_DECL_SO_BSDCOMPAT
 LM_DECL_INADDR_LOOPBACK
 LM_DECL_SYS_ERRLIST
 
+dnl restore CPPFLAGS
+CPPFLAGS=$saved_cppflags
 
 dnl ----------------------------------------------------------------------
 dnl Checks for typedefs, structures, and compiler characteristics.
@@ -504,6 +623,7 @@ AC_STRUCT_TM
 LM_STRUCT_SOCKADDR_SA_LEN
 LM_STRUCT_EXCEPTION
 
+AC_CHECK_SIZEOF(char, 1)
 AC_CHECK_SIZEOF(short, 2)dnl Assumes all cross compiling is to 32bit uP
 AC_CHECK_SIZEOF(int, 4)dnl Assumes all cross compiling is to 32bit uP
 AC_CHECK_SIZEOF(long, 4)dnl Assumes all cross compiling is to 32bit uP
@@ -583,11 +703,42 @@ dnl ----------------------------------------------------------------------
 dnl Checks for library functions.
 dnl ----------------------------------------------------------------------
 
+dnl We may need the thread library in order to find some functions
+saved_libs=$LIBS
+LIBS="$LIBS $THR_X_LIBS"
+
+dnl Check if we have these, in which case we'll try to build
+dnl inet_gethost with ipv6 support.
+AC_CHECK_FUNCS([getipnodebyname getipnodebyaddr])
+
 AC_CHECK_FUNCS([ieee_handler fpsetmask finite isnan isinf res_gethostbyname dlopen \
 		poll pread pwrite writev memmove strerror strerror_r strncasecmp \
 		gethrtime localtime_r gmtime_r mremap memcpy mallopt])
 AC_FUNC_SETVBUF_REVERSED
-AC_FUNC_VFORK
+
+disable_vfork=false
+if test "x$THR_LIB_NAME" != "x"; then
+	AC_MSG_CHECKING([if vfork is known to hang multithreaded applications])
+	case $host_os in
+		osf*)
+			AC_MSG_RESULT(yes)
+			disable_vfork=true;;
+		*)
+			AC_MSG_RESULT(no);;
+	esac
+fi
+
+if test $disable_vfork = false; then
+	AC_FUNC_VFORK
+	if test $ac_cv_func_vfork_works = no; then
+		disable_vfork=true
+	fi
+fi
+
+if test $disable_vfork = true; then
+	AC_DEFINE(DISABLE_VFORK, 1, [Define if you want to disable vfork.])
+fi
+
 AC_FUNC_VPRINTF
 AC_FUNC_MMAP
 
@@ -595,6 +746,9 @@ dnl The AC_DEFINEs are necessary for autoheader to work. :-(
 dnl for gzio
 LM_CHECK_FUNC_DECL(fread, [extern int fread();],,
                    AC_DEFINE(HAVE_CONFLICTING_FREAD_DECLARATION))
+
+dnl Restore LIBS
+LIBS=$saved_libs
 
 dnl ----------------------------------------------------------------------
 dnl Checks for features/quirks in the system that affects Erlang.
@@ -613,14 +767,32 @@ AC_TRY_RUN([
 
 volatile int erl_fp_exception;
 
-#if defined(__i386__) && defined(__GNUC__) && !defined(__CYGWIN__)
+#if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__) && !defined(__CYGWIN__)
 
-static void unmask_fpe(void)
+static void unmask_x87(void)
 {
     unsigned short cw;
     __asm__ __volatile__("fstcw %0" : "=m"(cw));
     cw &= ~(0x01|0x04|0x08);   /* unmask IM, ZM, OM */
     __asm__ __volatile__("fldcw %0" : : "m"(cw));
+}
+
+#if defined(__x86_64__)
+static void unmask_sse2(void)
+{
+    unsigned int mxcsr;
+    __asm__ __volatile__("stmxcsr %0" : "=m"(mxcsr));
+    mxcsr &= ~(0x003F|0x0780); /* clear exn flags, unmask exns (not PE, UE) */
+    __asm__ __volatile__("ldmxcsr %0" : : "m"(mxcsr));
+}
+#else
+#define unmask_sse2()	do{}while(0)
+#endif
+
+static void unmask_fpe(void)
+{
+    unmask_x87();
+    unmask_sse2();
 }
 
 static __inline__ int check_fpe(double f)
@@ -631,6 +803,41 @@ static __inline__ int check_fpe(double f)
     __asm__ __volatile__("fninit");
     unmask_fpe();
     return 1;
+}
+
+#elif defined(__powerpc__) && defined(__linux__)
+
+#include <sys/prctl.h>
+
+static void set_fpexc(unsigned int val)
+{
+    if( prctl(PR_SET_FPEXC, val) < 0 ) {
+	perror("PR_SET_FPEXC");
+	exit(1);
+    }
+}
+
+static void set_fpscr(unsigned int fpscr)
+{
+    union {
+	double d;
+	unsigned int fpscr[2];
+    } u;
+    u.fpscr[0] = 0xFFF80000;
+    u.fpscr[1] = fpscr;
+    __asm__ __volatile__("lfd%U0 0,%0; mtfsf 255,0" : : "m"(u.d) : "fr0");
+}
+
+static void unmask_fpe(void)
+{
+    set_fpexc(PR_FP_EXC_PRECISE);
+    set_fpscr(0x80|0x40|0x10);	/* VE, OE, ZE; not UE or XE */
+}
+
+static __inline__ int check_fpe(double f)
+{
+    __asm__ __volatile__("" : "=m"(erl_fp_exception) : "fm"(f));
+    return erl_fp_exception;
 }
 
 #else
@@ -645,7 +852,7 @@ static __inline__ int check_fpe(double f)
 
 #endif
 
-#if defined(__linux__) && defined(__i386__) 
+#if defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__powerpc__))
 
 #include <ucontext.h>
 
@@ -653,8 +860,18 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
 {
     ucontext_t *uc = puc;
     mcontext_t *mc = &uc->uc_mcontext;
+#if defined(__x86_64__)
+    fpregset_t fpstate = mc->fpregs;
+    fpstate->mxcsr = 0x1F80;
+    fpstate->swd &= ~0xFF;
+#elif defined(__i386__)
     fpregset_t fpstate = mc->fpregs;
     fpstate->sw &= ~0xFF;
+#elif defined(__powerpc__)
+    unsigned long *regs = &mc->regs->gpr[0];
+    regs[PT_NIP] += 4;
+    regs[PT_FPSCR] = 0x80|0x40|0x10;	/* VE, OE, ZE; not UE or XE */
+#endif
     erl_fp_exception = 1;
 }
 
@@ -822,35 +1039,49 @@ AC_SUBST(TSP_APP)
 
 HIPE_ENABLED=
 HIPE_APP=
+HIPE_HELPERS=
 
 # if not disabled, autoenable HiPE on known supported platforms
 if test X${enable_hipe} != Xno; then
   case "$ARCH-$OPSYS" in
-    ultrasparc-sol2|x86-sol2|x86-linux)
+    ultrasparc-sol2|x86-sol2)
+      if test X$ac_cv_sizeof_void_p != X4; then
+       AC_MSG_WARN([HiPE is not supported in 64-bit builds])
+      else
+       enable_hipe=yes
+      fi;;
+    x86-linux|amd64-linux|ppc-linux)
       enable_hipe=yes
       ;;
   esac
 fi
 
 if test X${enable_hipe} = Xyes; then
-  if test X$ac_cv_sizeof_void_p != X4; then
+  if test X$ac_cv_sizeof_void_p != X4 -a X$ARCH != Xamd64; then
 	AC_MSG_WARN([HiPE is not supported in 64-bit builds])
   else
      HIPE_ENABLED=yes
      AC_DEFINE(HIPE)
      HIPE_APP=hipe
+     HIPE_HELPERS="xmerl syntax_tools edoc"
      ENABLE_ALLOC_TYPE_VARS="$ENABLE_ALLOC_TYPE_VARS hipe"
   fi
 fi
 AC_SUBST(HIPE_APP)
+AC_SUBST(HIPE_HELPERS)
 AC_SUBST(HIPE_ENABLED)
 
 #
-# Check if we should enable the shared heap model.
+# Check if HiPE should use a standard installation of perfctr.
 #
-if test X${enable_shared_heap} = Xyes; then
-  AC_DEFINE(SHARED_HEAP)
-  ENABLE_ALLOC_TYPE_VARS="$ENABLE_ALLOC_TYPE_VARS shared_heap"
+AC_SUBST(USE_PERFCTR)
+if test "x$HIPE_ENABLED" = "xyes" ; then
+  if test "x$with_perfctr" = "x" ; then
+      AC_CHECK_LIB(perfctr, vperfctr_info, [USE_PERFCTR=1
+	  AC_DEFINE(USE_PERFCTR)])
+  elif test "x$with_perfctr" != "xno" ; then
+      USE_PERFCTR=1
+  fi
 fi
 
 #
@@ -865,111 +1096,6 @@ if test X${enable_elib_malloc} = Xyes; then
 fi
 
 #
-# Figure out if we should use threads. The default is set above in the
-# enable_threads variable. It can have the following values:
-#
-#   nothreads      don't look for threads
-#   threads-ok     look for threads but it is ok if you can't find them
-#   threads-error  look for threads and if you can't find them it is an error
-#
-THR_LIBS=
-THR_DEFS=
-AC_SUBST(THR_LIBS)
-AC_SUBST(THR_DEFS)
-# As a matter of fact, the windows erlang emulator can never run without 
-# threads. It has to be enable or the emulator will crash. Until that is fixed
-# we force threads on win32.
-AC_MSG_CHECKING([if native win32 threads should be used])
-if test "X$host_os" = "Xwin32"; then
-    THR_LIBS=
-    THR_DEFS="-DUSE_THREADS"
-    # If someoune wants to check this later, it might as well be consistent 
-    # with variable values on other platforms with threads enabled...
-    enable_threads="threads-error"
-    found_threads=1
-    ENABLE_ALLOC_TYPE_VARS="$ENABLE_ALLOC_TYPE_VARS threads"
-    AC_MSG_RESULT([yes, required and therefore forced])
-else
-    AC_MSG_RESULT(no)
-    case "$enable_threads" in
-	threads-*)
-	    THR_LIBS=
-	    THR_DEFS="-DUSE_THREADS -D_REENTRANT"
-	    found_threads=0
-
-	    # Check for POSIX threads
-	    pthread_lib=""
-	    if test "$found_threads" = "0"; then
-		AC_CHECK_LIB(pthread, pthread_create, [found_threads=1
-		    THR_LIBS="-lpthread"
-		    THR_DEFS="$THR_DEFS -DPOSIX_THREADS -D_THREAD_SAFE"
-		    pthread_lib=pthread],
-		    found_threads=0)
-	    fi
-
-	    # FreeBSD has pthreads in special c library, c_r
-	    if test "$found_threads" = "0"; then
-		AC_CHECK_LIB(c_r, pthread_create, [found_threads=1
-		    THR_LIBS="-lc_r"
-		    THR_DEFS="$THR_DEFS -DPOSIX_THREADS -D_THREAD_SAFE"
-		    pthread_lib=c_r],
-		    found_threads=0)
-	    fi
-
-	    case "$found_threads"-"$enable_threads" in
-		0-threads-ok)
-		    # We couldn't find any threads, but that is ok
-		    THR_LIBS=
-		    THR_DEFS=
-		    ;;
-		0-threads-error)
-		    # If user specifically asked for threads give an error msg.
-		    AC_MSG_ERROR([don't know how to enable threads])
-		    ;;
-		*)
-		    # Threads found
-		    if test "x$pthread_lib" != "x"; then
-			AC_CHECK_LIB($pthread_lib, pthread_atfork,
-				AC_DEFINE(HAVE_PTHREAD_ATFORK))
-		    fi
-		    case $host_os in
-			solaris*)
-			    if test "x$pthread_lib" != "x"; then
-				THR_DEFS="$THR_DEFS -D_POSIX_PTHREAD_SEMANTICS"
-			    fi
-			    AC_DEFINE(ENABLE_CHILD_WAITER_THREAD) ;;
-			linux*)
-			    case `uname -r` in
-				0.*)	AC_DEFINE(UNUSABLE_SIGUSRX)	;;
-				1.*)	AC_DEFINE(UNUSABLE_SIGUSRX)	;;
-				2.0)	AC_DEFINE(UNUSABLE_SIGUSRX)	;;
-				2.0.*)	AC_DEFINE(UNUSABLE_SIGUSRX)	;;
-				2.1)	AC_DEFINE(UNUSABLE_SIGUSRX)	;;
-				2.1.*)	AC_DEFINE(UNUSABLE_SIGUSRX)	;;
-				*)					;;
-			    esac
-			    if test "x$pthread_lib" != "x"; then
-				AC_CHECK_LIB($pthread_lib,
-				  pthread_mutexattr_settype,
-				  AC_DEFINE(HAVE_PTHREAD_MUTEXATTR_SETTYPE))
-				AC_CHECK_LIB($pthread_lib,
-				  pthread_mutexattr_setkind_np,
-				  AC_DEFINE(HAVE_PTHREAD_MUTEXATTR_SETKIND_NP))
-			    fi
-			    AC_DEFINE(USE_RECURSIVE_MALLOC_MUTEX)
-			    AC_DEFINE(INIT_MUTEX_IN_CHILD_AT_FORK) ;;
-		    esac
-		    ENABLE_ALLOC_TYPE_VARS="$ENABLE_ALLOC_TYPE_VARS threads"
-		    ;;
-	    esac
-	    ;;
-	*)
-	    # Threads disabled
-	    ;;
-    esac
-fi
-
-#
 # Check if we should try to use kernel poll
 #
 if test X${enable_kernel_poll} = Xyes; then
@@ -981,6 +1107,7 @@ dnl Stuff that should be moved into their respective application
 dnl ----------------------------------------------------------------------
 
 dnl crypto
+dnl ssh
 #--------------------------------------------------------------------
 # Dynamic Erlang Drivers
 #
@@ -1059,17 +1186,18 @@ dnl
 LM_FIND_EMU_CC
 
 dnl
-dnl SSL and CRYPTO need the OpenSSL libraries
+dnl SSL, SSH and CRYPTO need the OpenSSL libraries
 dnl
 dnl Check flags --with-ssl, --without-ssl --with-ssl=PATH.
 dnl If no option is given or --with-ssl is set without a path then we
 dnl search for OpenSSL libraries and header files in the standard locations. 
-dnl If set to --without-ssl we disable the use of SSL and CRYPTO.
+dnl If set to --without-ssl we disable the use of SSL, SSH and CRYPTO.
 dnl If set to --with-ssl=PATH we use that path as the prefix, i.e. we
 dnl use "PATH/include" and "PATH/lib".
 
 AC_SUBST(SSL_APP)
 AC_SUBST(CRYPTO_APP)
+AC_SUBST(SSH_APP)
 AC_SUBST(SSL_INCLUDE)
 AC_SUBST(SSL_ROOT)
 AC_SUBST(SSL_LIBDIR)
@@ -1081,13 +1209,14 @@ AC_ARG_WITH(ssl,
 
 
 # Remove all SKIP files from previous runs
-for a in ssl crypto ; do
+for a in ssl crypto ssh; do
   /bin/rm -f $ERL_TOP/lib/$a/SKIP
 done
 
 if test "x$with_ssl" = "xno"; then
     SSL_APP=
     CRYPTO_APP=
+    SSH_APP=
 elif test "x$with_ssl" = "xyes" -o "x$with_ssl" = "x" ;then
     # On windows, we could try to find tha installation
     # of Shining Light OpenSSL, which can be found by poking in
@@ -1112,6 +1241,7 @@ elif test "x$with_ssl" = "xyes" -o "x$with_ssl" = "x" ;then
     # We search for OpenSSL in the common OS standard locations.
     SSL_APP=ssl
     CRYPTO_APP=crypto
+    SSH_APP=ssh
 
     AC_MSG_CHECKING(for OpenSSL >= 0.9.7 in standard locations) 
     for dir in $extra_dir /cygdrive/c/OpenSSL /usr/local /usr /usr/pkg \
@@ -1158,6 +1288,7 @@ dnl 		Should one use EXEEXT or ac_exeext?
 			AC_MSG_RESULT([$dir])
 			ssl_found=yes
 			],[
+			SSL_APP=
 			ssl_found=no
          		])
          		CPPFLAGS=$old_CPPFLAGS
@@ -1172,9 +1303,10 @@ dnl 		Should one use EXEEXT or ac_exeext?
        AC_MSG_RESULT([no])
        SSL_APP=
        CRYPTO_APP=
-       AC_MSG_WARN([No (usable) OpenSSL found, skipping ssl and crypto applications])
+       SSH_APP=
+       AC_MSG_WARN([No (usable) OpenSSL found, skipping ssl, ssh and crypto applications])
 
-       for a in ssl crypto ; do
+       for a in ssl crypto ssh; do
            echo "No usable OpenSSL found" > $ERL_TOP/lib/$a/SKIP
        done
     fi
@@ -1193,6 +1325,7 @@ else
     OPENSSL_CMD="$with_ssl/bin/openssl"
     SSL_APP=ssl
     CRYPTO_APP=crypto
+    SSH_APP=ssh
 fi
 
 if test "x$SSL_APP" != "x" ; then
@@ -1229,8 +1362,9 @@ if test "x$SSL_APP" != "x" ; then
 	    AC_MSG_RESULT([not found])
 	    SSL_APP=
 	    CRYPTO_APP=
+	    SSH_APP=
 	    AC_MSG_WARN([OpenSSL is configured for kerberos but no krb5.h found])
-	    for a in ssl crypto ; do
+	    for a in ssl crypto ssh ; do
 	 	echo "OpenSSL is configured for kerberos but no krb5.h found" > $ERL_TOP/lib/$a/SKIP
 	    done
         else
@@ -1341,6 +1475,9 @@ erts_dirs="
   $erts/obj.shared.beam
   $erts/obj.shared.beam/$host
 
+  $erts/obj.hybrid.beam
+  $erts/obj.hybrid.beam/$host
+
   $erts/obj.purify.beam
   $erts/obj.purify.beam/$host
       									
@@ -1353,6 +1490,7 @@ erts_dirs="
   $erts/emulator/$host/opt
   $erts/emulator/$host/debug
   $erts/emulator/$host/shared
+  $erts/emulator/$host/hybrid
   $erts/emulator/$host/purify
   $erts/emulator/$host/quantify
   $erts/emulator/$host/purecov
@@ -1377,6 +1515,8 @@ AC_OUTPUT(
   emulator/zlib/$host/Makefile:emulator/zlib/Makefile.in
   epmd/src/$host/Makefile:epmd/src/Makefile.in
   etc/common/$host/Makefile:etc/common/Makefile.in
+  include/internal/$host/ethread.mk:include/internal/ethread.mk.in
+  lib_src/$host/Makefile:lib_src/Makefile.in
   ../make/$host/otp.mk:../make/otp.mk.in
 dnl
 dnl The ones below should be moved to their respective lib
@@ -1386,6 +1526,7 @@ dnl
   ../lib/ssl/c_src/$host/Makefile:../lib/ssl/c_src/Makefile.in
   ../lib/ssl/examples/certs/$host/Makefile:../lib/ssl/examples/certs/Makefile.in
   ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in
+  ../lib/ssh/c_src/$host/Makefile:../lib/ssh/c_src/Makefile.in
   ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in
   ../lib/odbc/c_src/$host/Makefile:../lib/odbc/c_src/Makefile.in
   ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in

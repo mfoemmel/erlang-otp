@@ -20,23 +20,13 @@
 %% Simple text viewer
 %%
 %%------------------------------------------------------------
-%%
-%%
-%%		INTRODUCTION
-%%		------------
-%%
-%%------------------------------------------------------------
-
-
 
 -module(appmon_txt).
-
-
 -export([start/0, start/1, print/1, fprint/1]).
 
 %% gen_server stuff
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
-
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+	 terminate/2]).
 
 -define(LOADTXT, "Load file").
 -define(SAVETXT, "Save file").
@@ -50,8 +40,8 @@
 %% whatever.
 %%
 %%------------------------------------------------------------
-
-
+start() ->
+    start([]).
 
 %%------------------------------------------------------------
 %%
@@ -63,22 +53,11 @@
 %% {text, Text}		- insert text at startup
 %%
 %%------------------------------------------------------------
-
-
-start() ->
-    start([]).
-
 start(Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
 
 %% Start a text viewer if necessary
 print(Txt) ->
-%    case whereis(?MODULE) of
-%	Pid when pid(Pid) ->
-%	    ok;
-%	Other ->
-%	    start()
-%    end,
     catch start(),
     gen_server:call(?MODULE, {add_txt, Txt}),
     ok.
@@ -94,37 +73,28 @@ fprint(File) ->
 
 init(Opts) ->
     process_flag(trap_exit, true),
-    %%io:format("Starting editor w args: ~p~n", [Opts]),
     setup_base_win(),
     default_status(),
     setup_opts(Opts),
-%%    receive
-%%    after 6000 -> ok end,
     {ok, []}.
 
-terminate(Reason, State) ->
-    %%io:format("Terminating editor:~n", []),
+terminate(_Reason, _State) ->
     ok.
 
 %%------------------------------------------------------------
 %% gen server stuff
-handle_call({add_txt, Txt}, From, State) ->
-    %%io:format("~p got call: ~p~n", [self(), Request]),
+handle_call({add_txt, Txt}, _From, State) ->
     do_insert_text(Txt),
     scroll_to_last_line(),
     {reply, ok, State};
-handle_call({add_file, FileName}, From, State) ->
-    %%io:format("~p got call: ~p~n", [self(), Request]),
+handle_call({add_file, FileName}, _From, State) ->
     do_load_file(FileName),
     {reply, ok, State};
-handle_call(Request, From, State) ->
-    %%io:format("~p got call: ~p~n", [self(), Request]),
+handle_call(_Request, _From, State) ->
     {reply, ok, State}.
-handle_cast(Request, State) ->
-    %%io:format("~p got cast: ~p~n", [self(), Request]),
+handle_cast(_Request, State) ->
     {noreply, State}.
 handle_info({gs, _, click, _, [?CLOSETXT|_]}, State) ->
-    %%d:d("handle_info: exit: Close button pressed~n", []),
     {stop, normal, State};
 handle_info({gs, _, click, _, [?LOADTXT|_]}, State) ->
     ui_load(),
@@ -134,16 +104,7 @@ handle_info({gs, _, configure, _, [W, H | _]}, State) ->
     {noreply, State};
 
 handle_info({gs, _, destroy, _, _}, State) ->
-%%    ?D("handle_info: exit: window killed~n", []),
     {stop, normal, State};
-%%%handle_info({gs, _, click, _, [?HELPTXT|_]}, State) ->
-%%%    d:d("~p: help:~n", [node()]),
-%%%    print_help(),
-%%%    {noreply, State};
-%%%handle_info({gs, Id, click, {mode, Mode}, _}, State) ->
-%%%    %%io:format("handle_info: Setting mode: ~p~n", [Mode]),
-%%%    set_mode(Id, Mode),
-%%%    {noreply, State};
 handle_info(Request, State) ->
     io:format("~p got info: ~p~n", [self(), Request]),
     print_status("Not implemented"),
@@ -166,18 +127,17 @@ setup_opt(Opt) ->
 	    do_lock();
 	{text, Text} ->
 	    do_insert_text(Text);
-	Other ->
+	_Other ->
 	    ok
     end.
 
 do_load_file(FileName) ->
-    Msg = case catch i_load_file(FileName) of
-	      ok ->
-		  default_status();
-	      Other -> 
-		  print_status(lists:append(["File not found: ", FileName]))
-	  end.
-
+    case catch i_load_file(FileName) of
+	ok ->
+	    default_status();
+	_Other -> 
+	    print_status(lists:append(["File not found: ", FileName]))
+    end.
 
 i_load_file(FileName) ->
     {ok, Bin} = file:read_file(FileName),
@@ -192,17 +152,15 @@ ui_load() ->
     case catch ui_list_dialog(Title, "File: ", Files) of
 	{ok, FileName} ->
 	    do_load_file(FileName);
-	Other ->
+	_Other ->
 	    print_status("Load cancelled")
     end.
 
 get_file_list() ->
     case file:list_dir(".") of
 	{ok, FileList} -> lists:sort(FileList);
-	Other -> []
+	_Other -> []
     end.
-
-
 
 do_insert_text(Text) ->
     gs:config(editor(), {insert, {'end', Text}}),
@@ -213,21 +171,16 @@ scroll_to_last_line() ->
     H = gs:read(editor(), size),
     R = gs:read(editor(), height),
     TopRow = H-R/15,
-%%    io:format("Top: ~p, ~p - ~p~n", [TopRow, H, R]),
     if  TopRow > 0 -> gs:config(editor(), {vscrollpos, TopRow});
 	true       -> gs:config(editor(), {vscrollpos, 0})
 	end,
     ok.
 
-
 do_lock() ->    
     gs:config(editor(), {enable, false}).
 
-
-
 i_do_clear() ->
     gs:config(editor(), clear).
-
 
 %%------------------------------------------------------------
 %% Graphical stuff
@@ -243,7 +196,7 @@ setup_base_win() ->
     set_winroot(F),
 
     Win = gs:create(window, F, [{width, W}, {height, H}, 
-				{title, "APPMON: Process Information"}]),
+				{title,"APPMON: Process Information"}]),
 
     E = gs:create(editor, Win, [{x, 0}, {y, MenuHeight}, 
 				{width, W}, 
@@ -263,32 +216,15 @@ setup_base_win() ->
 
     FMB = gs:create(menubutton, MB, [{label, {text, "File"}}]),
     FM = gs:create(menu, FMB, []),
-    %%gs:create(menuitem, FM, [{label, {text, ?LOADTXT}}]),
-    %%gs:create(menuitem, FM, [{label, {text, ?SAVETXT}}]),
-    %%gs:create(menuitem, FM, [{label, {text, ?SAVEASTXT}}]),
-    %%gs:create(menuitem, FM, [{itemtype, separator}]),
     gs:create(menuitem, FM, [{label, {text, ?CLOSETXT}}]),
-
-%%    EMB = gs:create(menubutton, MB, [{label, {text, "Edit"}}]),
-%%    EM = gs:create(menu, EMB, []),
-    
-    
-%    HMB = gs:create(menubutton, MB, [{label, {text, "Help"}}, {side, right}]),
-%    HM = gs:create(menu, HMB, []),
-%    gs:create(menuitem, HM, [{label, {text, ?HELPTXT}}]),
 
     gs:config(Win, {configure, true}),
     ok.
 
 resize(W, H) ->
-%%    io:format("Resizing to: ~p, ~p~n", [W, H]),
-    %% resize editor
     gs:config(editor(), [{width, W}, {height, H-label_h()-menu_h()}]),
-    %% resize move label
     gs:config(status(), [{y, H-label_h()}, {width, W}]),
     ok.
-
-
 
 %%------------------------------------------------------------
 %% ui_list_dialog(
@@ -309,20 +245,25 @@ ui_list_dialog(Title, LeadText, TxtList) ->
     
     Win = gs:create(window, winroot(), [{title, Title}, 
 					{width, W},{height, H}]),
-    Ok = gs:create(button, Win, [{x, 10}, {y,10}, {width, 50}, {height, 20},
+    Ok = gs:create(button, Win, [{x, 10}, {y,10},
+				 {width, 50}, {height, 20},
 				 {label, {text, "Ok"}}]),
-    Cn = gs:create(button, Win, [{x, 70}, {y,10}, {width, 50}, {height, 20},
+    Cn = gs:create(button, Win, [{x, 70}, {y,10},
+				 {width, 50}, {height, 20},
 				 {label, {text, "Cancel"}}]),
 
-    gs:create(label, Win, [{x, 10}, {y, 50}, {width, 60}, {height, 20},
+    gs:create(label, Win, [{x, 10}, {y, 50},
+			   {width, 60}, {height, 20},
 			   {label, {text, LeadText}}]),
-    Box = gs:create(entry, Win, [{x, 10}, {y, 70}, {width, 160}, {height, 20},
+    Box = gs:create(entry, Win, [{x, 10}, {y, 70},
+				 {width, 160}, {height, 20},
 				 {keypress, true}]),
     List = gs:create(listbox, Win, [{x, 10}, {y, 100}, {width, 180}, 
 				    {height, 190},
 				    {items, TxtList}, {vscroll, right},
 				    {hscroll, false}, {click, true},
-				    {doubleclick, true}, {keypress, true}]),
+				    {doubleclick, true},
+				    {keypress, true}]),
     gs:config(Win, {map, true}),
 
     RetVal = ui_load_loop(Box, List, Ok, Cn),
@@ -339,17 +280,14 @@ ui_load_loop(Box, List, Ok, Cn) ->
 	    ui_load_loop(Box, List, Ok, Cn);
 	{gs, Ok, click, _, _} ->
 	    {ok, gs:read(Box, text)};
-	{gs, List, doubleclick, _, [Idx, Txt|_]} ->
+	{gs, List, doubleclick, _, [_Idx, Txt|_]} ->
 	    {ok, Txt};
-	{gs, List, click, _, [Idx, Txt|_]} ->
+	{gs, List, click, _, [_Idx, Txt|_]} ->
 	    gs:config(Box, {text, Txt}),
 	    ui_load_loop(Box, List, Ok, Cn);
-	Other -> 
+	_Other -> 
 	    something_else
     end.
-
-
-
 
 %% The status row at the bottom of the window
 set_status(Id) -> put(status_row, Id).
@@ -362,10 +300,3 @@ editor() -> get(editor).
 
 winroot() -> get(winroot).
 set_winroot(X) -> put(winroot, X).
-
-%%destroy(undefined) -> ok;
-%%destroy(Id) -> gs:destroy(Id).
-
-
-
-

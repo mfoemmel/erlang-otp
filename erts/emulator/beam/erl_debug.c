@@ -26,12 +26,40 @@
 #include "big.h"
 #include "bif.h"
 #include "beam_catches.h"
+#include "erl_debug.h"
+#include "ggc.h"
+
+#ifdef DEBUG
 
 #define WITHIN(ptr, x, y) ((x) <= (ptr) && (ptr) < (y))
 
-#define IN_HEAP(p, ptr) \
-   (WITHIN((ptr), p->heap, p->hend) || (OLD_HEAP(p) && \
+#if defined(HYBRID)
+#if defined(NOMOVE)
+/* Hybrid + NonMoving */
+#define IN_HEAP(p, ptr)                                 \
+   (WITHIN((ptr), p->heap, p->hend) || (OLD_HEAP(p) &&  \
+    WITHIN((ptr), OLD_HEAP(p), OLD_HEND(p))) ||         \
+    WITHIN((ptr), global_heap, global_hend) ||          \
+    WITHIN((ptr), nm_heap, nm_hend))
+#else
+/* Hybrid */
+#define IN_HEAP(p, ptr)                                 \
+   (WITHIN((ptr), p->heap, p->hend) || (OLD_HEAP(p) &&  \
+    WITHIN((ptr), OLD_HEAP(p), OLD_HEND(p))) ||         \
+    WITHIN((ptr), global_heap, global_hend) ||          \
+    (global_old_heap && WITHIN((ptr),global_old_heap,global_old_hend)))
+#endif
+#elif (defined(SHARED_HEAP) && defined(NOMOVE))
+/* Shared + NonMoving */
+#define IN_HEAP(p, ptr)                                 \
+   (WITHIN((ptr), p->heap, p->hend) ||                  \
+       WITHIN((ptr), nm_heap, nm_hend))
+#else
+/* Private & Shared */
+#define IN_HEAP(p, ptr)                                 \
+   (WITHIN((ptr), p->heap, p->hend) || (OLD_HEAP(p) &&  \
        WITHIN((ptr), OLD_HEAP(p), OLD_HEND(p))))
+#endif
 
 /*
  * This file defines functions for use within a debugger like gdb
@@ -86,7 +114,7 @@ pdisplay1(Process* p, Eterm obj, CIO fd)
 	print_atom((int)atom_val(obj), fd);
 	break;
     case SMALL_DEF:
-	erl_printf(fd, "%d", signed_val(obj));
+	erl_printf(fd, "%ld", signed_val(obj));
 	break;
 
     case BIG_DEF:
@@ -201,3 +229,270 @@ pps(Process* p, Eterm* stop)
 	sp--;
     }
 }
+
+#endif /* DEBUG */
+
+/*
+ * check_heap and check_memory will run through the heap silently if
+ * everything is ok.  If there are strange (untagged) data in the heap
+ * this check will (most likely) fail and segfault (which is the
+ * intended result..). I know it could be done in a nicer way with
+ * assertions etc, but right now I only want this to find holes in the
+ * heap.
+ */
+void check_heap(Process *p)
+{
+    check_memory(HEAP_START(p),HEAP_TOP(p));
+#ifndef NOMOVE
+    if (OLD_HEAP(p) != NULL)
+        check_memory(OLD_HEAP(p),OLD_HTOP(p));
+#endif
+}
+
+void check_memory(Eterm *start, Eterm *end)
+{
+    Eterm *pos = start;
+    volatile Sint check;
+
+    /* printf("Scan 0x%08x - 0x%08x\r\n",start,end); */
+    while (pos < end) {
+        Eterm hval = *pos++;
+
+#ifdef DEBUG
+#ifdef SHARED_HEAP
+        if (hval == ARITH_MARKER || hval == 0x01010101) {
+            continue;
+        }
+#else
+        if (hval == ARITH_MARKER) {
+            erl_exit(1, "erl_debug, check_memory: ARITH_MARKER found in heap fragment @ 0x%08x!\n",
+		     (Sint)(pos-1));
+            break;
+        }
+        else if (hval == 0x01010101) {
+            print_untagged_memory(start, end);
+            erl_exit(1, "erl_debug, check_memory: Uninitialized HAlloc'ed memory found @ 0x%08x!\n",
+		     (Sint)(pos-1));
+            break;
+        }
+#endif
+#endif
+        switch (primary_tag(hval)) {
+
+        case TAG_PRIMARY_LIST: {
+            Eterm *ptr = list_val(hval);
+            check = (Sint)*ptr;
+            continue;
+        }
+
+        case TAG_PRIMARY_BOXED: {
+            Eterm *ptr = boxed_val(hval);
+            check = (Sint)*ptr;
+            continue;
+        }
+
+        case TAG_PRIMARY_HEADER: {
+            if (header_is_thing(hval))
+                pos += (thing_arityval(hval));
+            continue;
+        }
+
+        default:
+            /* Immediate value */
+            continue;
+        }
+    }
+}
+
+/*
+ * print_untagged_memory will print the contents of given memory area.
+ */
+void print_untagged_memory(Eterm *pos, Eterm *end)
+{
+    int i = 0;
+    printf(" | H E A P   D U M P                                        |\r\n");
+    printf(" | From: 0x%08lx  to  0x%08lx                         |\r\n",
+	   (Uint)pos,(Uint)(end - 1));
+    printf(" | Address    | Contents                                    |\r\n");
+    printf(" |------------|---------------------------------------------|\r\n");
+    while( pos < end ) {
+        if (i == 0)
+            printf(" | 0x%08lx | ", (Uint)pos);
+        printf("0x%08lx ", (Uint)*pos);
+        pos++; i++;
+        if (i == 4) {
+            printf("|\r\n");
+            i = 0;
+        }
+    }
+    while (i && i < 4) {
+        printf("           ");
+        i++;
+    }
+    if (i != 0)
+        printf("|\r\n");
+    printf(" |------------|---------------------------------------------|\r\n");
+}
+
+/*
+ * print_tagged_memory will print contents of given memory area and
+ * display it as if it was tagged Erlang terms (which it hopefully
+ * is).  This function knows about forwarding pointers to be able to
+ * print a heap during garbage collection. ldisplay do not know about
+ * forwarding pointers though, so it will still crash if they are
+ * encoutered...
+ */
+void print_tagged_memory(Eterm *pos, Eterm *end)
+{
+    printf("From: 0x%08lx  to  0x%08lx\n\r",(Uint)pos,(Uint)(end - 1));
+    printf(" |         H E A P         |\r\n");
+    printf(" | Address    | Contents   |\r\n");
+    printf(" |------------|------------|\r\n");
+    while( pos < end ) {
+	Eterm val = pos[0];
+	printf(" | 0x%08lx | 0x%08lx | ", (Uint)pos, (Uint)val);
+	++pos;
+        if( is_arity_value(val) ) {
+	    printf("Arity(%lu)", arityval(val));
+	} else if( is_thing(val) ) {
+	    unsigned int ari = thing_arityval(val);
+	    printf("Thing Arity(%u) Tag(%lu)", ari, thing_subtag(val));
+	    while( ari ) {
+		printf("\r\n | 0x%08lx | 0x%08lx | THING",
+		       (Uint)pos, *pos);
+		++pos;
+		--ari;
+	    }
+	} else {
+            switch (primary_tag(val)) {
+            case TAG_PRIMARY_BOXED:
+                if (!is_header(*boxed_val(val))) {
+                    printf("Moved -> 0x%08x\r\n",
+                           (unsigned int)*boxed_val(val));
+                    continue;
+                }
+                break;
+
+            case TAG_PRIMARY_LIST:
+                if (is_non_value(*list_val(val))) {
+                    printf("Moved -> 0x%08x\r\n",
+                           (unsigned int)*(list_val(val) + 1));
+                    continue;
+                }
+                break;
+            }
+            ldisplay(val, COUT, 30);
+        }
+	printf("\r\n");
+    }
+    printf(" |------------|------------|\r\n");
+}
+
+#ifdef HYBRID
+void print_ma_info(void)
+{
+    printf("Message Area (start - top - end): 0x%08lx - 0x%08lx - 0x%08lx\r\n",
+           (unsigned long)global_heap,(unsigned long)global_htop,(unsigned long)global_hend);
+#ifndef NOMOVE
+    printf("  High water: 0x%08lx   Old gen: 0x%08lx - 0x%08lx - 0x%08lx\r\n",
+           (unsigned long)global_high_water,
+           (unsigned long)global_old_heap,(unsigned long)global_old_htop,(unsigned long)global_old_hend);
+#endif
+}
+
+void print_message_area(void)
+{
+    Eterm *pos = global_heap;
+    Eterm *end = global_htop;
+
+    printf("From: 0x%08lx  to  0x%08lx\n\r",(unsigned long)pos,(unsigned long)end);
+    printf("(Old generation: 0x%08lx  to 0x%08lx\n\r",(unsigned long)OLD_M_DATA_START,(unsigned long)OLD_M_DATA_END);
+    printf(" |         H E A P         |\r\n");
+    printf(" | Address    | Contents   |\r\n");
+    printf(" |------------|------------|\r\n");
+    while( pos < end ) {
+	Eterm val = pos[0];
+	printf(" | 0x%08lx | 0x%08x | ", (unsigned long)pos, (unsigned int)val);
+	++pos;
+	if( is_arity_value(val) ) {
+	    printf("Arity(%lu)", arityval(val));
+	} else if( is_thing(val) ) {
+	    unsigned int ari = thing_arityval(val);
+	    printf("Thing Arity(%u) Tag(%lu)", ari, thing_subtag(val));
+	    while( ari ) {
+		printf("\r\n | 0x%08lx | 0x%08lx | THING",
+		       (unsigned long)pos, *pos);
+		++pos;
+		--ari;
+	    }
+	} else
+	    ldisplay(val, COUT, 30);
+	printf("\r\n");
+    }
+    printf(" |------------|------------|\r\n");
+}
+
+void check_message_area()
+{
+    Eterm *pos = global_heap;
+    Eterm *end = global_htop;
+
+    while( pos < end ) {
+	Eterm val = *pos++;
+	if(is_header(val))
+	    pos += thing_arityval(val);
+	else if(!is_immed(val))
+	    if ((ptr_val(val) < global_heap || ptr_val(val) >= global_htop) &&
+                (ptr_val(val) < OLD_M_DATA_START || ptr_val(val) >= OLD_M_DATA_END))
+            {
+		printf("check_message_area: Stray pointer found\r\n");
+                print_message_area();
+                printf("Crashing to make it look real...\r\n");
+                pos = 0;
+            }
+    }
+}
+#endif /* HYBRID */
+
+void print_memory_info(Process *p)
+{
+    printf("===============================================================\r\n");
+    if (p != NULL) {
+        printf("| Memory info for %12s                                |\r\n",print_pid(p));
+        printf("|- local heap ------------------------------------------------|\r\n");
+        printf("| Young | 0x%08lx - (0x%08lx) - 0x%08lx - 0x%08lx |\r\n",(unsigned long)HEAP_START(p),(unsigned long)HIGH_WATER(p),(unsigned long)HEAP_TOP(p),(unsigned long)HEAP_END(p));
+        if (OLD_HEAP(p) != NULL)
+            printf("| Old   | 0x%08lx - 0x%08lx - 0x%08lx                |\r\n",(unsigned long)OLD_HEAP(p),(unsigned long)OLD_HTOP(p),(unsigned long)OLD_HEND(p));
+    } else {
+        printf("| Memory info (Global memory only)                            |\r\n");
+#ifdef SHARED_HEAP
+        printf("|- shared heap -----------------------------------------------|\r\n");
+        printf("| Young | 0x%08lx - (0x%08lx) - 0x%08lx - 0x%08lx |\r\n",(unsigned long)HEAP_START(p),(unsigned long)HIGH_WATER(p),(unsigned long)HEAP_TOP(p),(unsigned long)HEAP_END(p));
+        if (OLD_HEAP(p) != NULL)
+            printf("| Old   | 0x%08lx - 0x%08lx - 0x%08lx                |\r\n",(unsigned long)OLD_HEAP(p),(unsigned long)OLD_HTOP(p),(unsigned long)OLD_HEND(p));
+#endif
+    }
+#ifdef HYBRID
+    printf("|- message area ----------------------------------------------|\r\n");
+    printf("| Young | 0x%08lx - 0x%08lx - 0x%08lx                |\r\n",(unsigned long)global_heap,(unsigned long)global_htop,(unsigned long)global_hend);
+    printf("| Old   | 0x%08lx - 0x%08lx                             |\r\n",(unsigned long)OLD_M_DATA_START,(unsigned long)OLD_M_DATA_END);
+#endif
+#ifdef INCREMENTAL_GC
+    if (inc_n2 != NULL)
+        printf("| N2   | 0x%08lx - 0x%08lx                              |\r\n",(unsigned long)inc_n2,(unsigned long)inc_n2_end);
+#endif
+    printf("===============================================================\r\n");
+}
+
+#ifdef INCREMENTAL_GC
+void print_active_procs(void)
+{
+    Process *p = inc_active_proc;
+
+    printf("Active processes:\r\n");
+    while(p) {
+        printf("%s\r\n",print_pid(p));
+        p = p->active_next;
+    }
+}
+#endif /* INCREMENTAL_GC */

@@ -104,7 +104,7 @@ start_client(Opts,Nodes) ->
 
 try_random(random,Low,High) ->
     random:uniform()*(High-Low)+Low;
-try_random(Float,Low,High) when number(Float) -> Float.
+try_random(Float,_Low,_High) when number(Float) -> Float.
     
 
 %%-----------------------------------------------------------------
@@ -124,7 +124,7 @@ main(State, ActiveNodes, [Node|PassiveNodes], [Job|ToDo]) ->
     main(State, [Node|ActiveNodes], PassiveNodes, ToDo);
 main(State, ActiveNodes, [], ToDo) ->
     % We have work to do, but all nodes are active.
-    Node = wait_event(State,ActiveNodes,[],ToDo).
+    _Node = wait_event(State,ActiveNodes,[],ToDo).
     
 wait_event(State,ActiveNodes,PassiveNodes,ToDo) ->
     receive
@@ -135,7 +135,7 @@ wait_event(State,ActiveNodes,PassiveNodes,ToDo) ->
 		true -> true
 	    end,
 	    main(State,lists:delete(Node,ActiveNodes),[Node|PassiveNodes],ToDo);
-	{gs,_Img,buttonpress,_Data,[Butt,X,Y|_]} ->
+	{gs,_Img,buttonpress,_Data,[_Butt,X,Y|_]} ->
 	    #state{width=W,height=H,ymax=Ymax,xmax=Xmax,range=R,zoomstep=ZS} =
 		State,
 	    RX = Xmax-R+(X/W)*R,
@@ -147,7 +147,7 @@ wait_event(State,ActiveNodes,PassiveNodes,ToDo) ->
 	    io:format("{xmax,~w},{ymax,~w},{range,~w}~n", [Xmax2,Ymax2,R2]),
 	    ToDo2=make_jobs(State2),
 	    main(State2,ActiveNodes,PassiveNodes,ToDo2);
-	{gs,Win,destroy,_,_} ->
+	{gs,_Win,destroy,_,_} ->
 	    kill_nodes(lists:append(ActiveNodes,PassiveNodes));
 	{gs,_Win,configure,_Data,[W,H|_]}
 	when State#state.width==W+1, State#state.height==H+1->
@@ -172,9 +172,9 @@ kill_nodes([Node|Nodes]) ->
 distribute_job(Node, Job) ->
     {mandel_server, Node} ! {mandel_job, {self(), Job}}.
 
-draw(#state{image=Image, width=Wt, height=Ht, xmax=Xmax, ymax=Ymax,
+draw(#state{image=Image, width=Wt, height=Ht, xmax=Xmax,
 		maxiter=MI,colortable=ColorTable,range=R}, Node, Job) ->
-    #job{left=Left,right=Right,data=Data}=Job,
+    #job{left=Left,data=Data}=Job,
     io:format("Got data from node ~30w~n", [Node]),
 %% PixelX = K * RealX + M
 %% 0      = K * Xmin  + M
@@ -187,10 +187,10 @@ draw(#state{image=Image, width=Wt, height=Ht, xmax=Xmax, ymax=Ymax,
 draw_cols(Image, X, Ht, [H|T],MaxIter,ColorTable) ->
     draw_col(Image, X, 0, H,MaxIter,ColorTable),
     draw_cols(Image, X+1, Ht, T,MaxIter,ColorTable);
-draw_cols(Image, X, _, [],MaxIter,ColorTable) ->
+draw_cols(_Image, _X, _, [],_MaxIter,_ColorTable) ->
     done.
 
-draw_col(Image, X,Y,[{no_first_color,0}],MaxIter,ColorTable) ->
+draw_col(_Image, _X,_Y,[{no_first_color,0}],_MaxIter,_ColorTable) ->
     done;
 draw_col(Image, X,Y,[{Color,1}|T],MaxIter,ColorTable) ->
     gs:config(Image,[{pix_val,{{X,Y},
@@ -215,7 +215,7 @@ make_jobs(DX,Left,Xmax,JobSkel,Res) when Left =< Xmax ->
     Right = Left + DX,
     Job = JobSkel#job{left=Left,right=Right},
     make_jobs(DX,Right,Xmax,JobSkel,[Job | Res]);
-make_jobs(DX,Left,Xmax,JobSkel,Res)  -> Res.
+make_jobs(_DX,_Left,_Xmax,_JobSkel,Res)  -> Res.
     
 %%----------------------------------------------------------------------
 %% A small process that refreshes the screen now and then.
@@ -275,7 +275,7 @@ color_loop(Color,MaxIter,Za,Zb,Za2,Zb2,X,Y)
     Ztmp = Za2 - Zb2 + X,
     ZbN = 2 * Za * Zb + Y,
     color_loop(Color+1,MaxIter,Ztmp,ZbN,Ztmp * Ztmp,ZbN * ZbN,X,Y);
-color_loop(MaxIter,MaxIter,Za,Zb,Za2,Zb2,X,Y) ->
+color_loop(MaxIter,MaxIter,_Za,_Zb,_Za2,_Zb2,_X,_Y) ->
     0; % black
 color_loop(Color,_,_,_,_,_,_,_) ->
     Color.
@@ -312,13 +312,13 @@ best_pos(RGB, Sorted) ->
     pos_for_smallest_distance(D,1,1000,-1).
 
 pos_for_smallest_distance([],_CurPos,_SmallestDist,Pos) -> Pos;
-pos_for_smallest_distance([Dist|T],CurPos,SmallDist,Pos)
+pos_for_smallest_distance([Dist|T],CurPos,SmallDist,_Pos)
  when Dist < SmallDist ->
     pos_for_smallest_distance(T,CurPos+1,Dist,CurPos);
 pos_for_smallest_distance([_|T],CurPos,Smallest,Pos) ->
     pos_for_smallest_distance(T,CurPos+1,Smallest,Pos).
 
-distances(RGB,[]) ->
+distances(_RGB,[]) ->
     [];
 distances({R,G,B},[{R2,G2,B2}|T]) ->
     [lists:max([abs(R-R2),abs(G-G2),abs(B-B2)])|distances({R,G,B},T)].

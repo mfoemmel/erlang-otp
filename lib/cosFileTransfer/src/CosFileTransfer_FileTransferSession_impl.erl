@@ -99,14 +99,14 @@
 %%              {stop, Reason}
 %% Description: Initiates the server
 %%----------------------------------------------------------------------
-init(['FTP', Host, Port, User, Password, Account, Protocol, Timeout]) ->
+init(['FTP', Host, Port, User, Password, _Account, Protocol, Timeout]) ->
     {ok, Pid} = ftp:open(Host, Port, []),
     ok = ftp:user(Pid, User, Password),
     {ok, PWD} = ftp:pwd(Pid),
     {Connection, ProtocolSupport} = setup_local(Protocol),
     {ok, ?create_InitState(ProtocolSupport, Pid, 'FTP', 
 			   PWD, ftp, Connection, Protocol, Timeout)};
-init([{'NATIVE', Mod}, Host, Port, User, Password, Account, Protocol, Timeout]) ->
+init([{'NATIVE', Mod}, Host, Port, User, Password, _Account, Protocol, Timeout]) ->
     {ok, Pid} = Mod:open(Host, Port),
     ok = Mod:user(Pid, User, Password),
     {ok, PWD} = Mod:pwd(Pid),
@@ -120,7 +120,7 @@ init([{'NATIVE', Mod}, Host, Port, User, Password, Account, Protocol, Timeout]) 
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, State) ->
     case ?get_MyType(State) of
 	ssl ->
 	    catch ssl:close(?get_Connection(State));
@@ -134,7 +134,7 @@ terminate(Reason, State) ->
 %% Returns    : {ok, NewState}
 %% Description: Convert process state when code is changed
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%---------------------------------------------------------------------%
@@ -145,9 +145,9 @@ code_change(OldVsn, State, Extra) ->
 %%----------------------------------------------------------------------
 handle_info(Info, State) ->
     case Info of
-        {'EXIT', Pid, Reason} ->
+        {'EXIT', _Pid, Reason} ->
             {stop, Reason, State};
-        Other ->
+        _Other ->
             {noreply, State}
     end.
  
@@ -164,7 +164,7 @@ handle_info(Info, State) ->
 %%              }; 
 %% Description: 
 %%----------------------------------------------------------------------
-'_get_protocols_supported'(OE_This, State) ->
+'_get_protocols_supported'(_OE_This, State) ->
     {reply, ?get_Protocols(State), State}.
 
 %%----------------------------------------------------------------------
@@ -173,7 +173,7 @@ handle_info(Info, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-set_directory(OE_This, State, Directory)  when ?is_FTP(State); ?is_NATIVE(State) ->
+set_directory(_OE_This, State, Directory)  when ?is_FTP(State); ?is_NATIVE(State) ->
     Mod  = ?get_Module(State),
     Path = filename:join('CosFileTransfer_Directory':
 			 '_get_complete_file_name'(Directory)),
@@ -244,13 +244,12 @@ create_directory(OE_This, State, FileNameList) when ?is_FTP(State);
 get_file(OE_This, State, FileNameList) when ?is_FTP(State); 
 					    ?is_NATIVE(State) ->
     case check_type(OE_This, State, filename:join(FileNameList)) of
-	{ndirectory, Listing} ->
+	{ndirectory, _Listing} ->
 	    {reply, 
 	     #'CosFileTransfer_FileWrapper'{the_file = 
 					    cosFileTransferApp:
 					    create_dir(OE_This, 
-						       FileNameList, 
-						       Listing),
+						       FileNameList),
 					    file_type = ndirectory}, 
 	     State};
 	nfile ->
@@ -272,7 +271,7 @@ get_file(OE_This, State, FileNameList) when ?is_FTP(State);
 %% Returns    : -
 %% Description: 
 %%----------------------------------------------------------------------
-delete(OE_This, State, File) when ?is_FTP(State); ?is_NATIVE(State) ->
+delete(_OE_This, State, File) when ?is_FTP(State); ?is_NATIVE(State) ->
     Mod = ?get_Module(State),
     Result =
 	case 'CosPropertyService_PropertySet':
@@ -325,7 +324,7 @@ transfer(OE_This, State, SrcFile, DestFile) when ?is_ORBER_NATIVE(State) ->
 		      filename:join(SrcName)),
 	    check_reply(Pid),
 	    {reply, ok, State};
-	{target, SourceFTS} ->
+	{target, _SourceFTS} ->
 	    DestName = 'CosFileTransfer_File':'_get_complete_file_name'(DestFile),
 	    receive_file(?get_MyType(State), ?get_Connection(State), 
 			 ?get_ConnectionTimeout(State),
@@ -336,7 +335,7 @@ transfer(OE_This, State, SrcFile, DestFile) when ?is_FTP(State); ?is_NATIVE(Stat
     case which_FTS_type(OE_This, SrcFile, DestFile) of
 	{source, TargetFTS} ->
 	    source_FTS_operation(State, SrcFile, DestFile, transfer, 0, TargetFTS);
-	{target, SourceFTS} ->
+	{target, _SourceFTS} ->
 	    target_FTS_operation(State, SrcFile, DestFile, send, 0)
     end.
 
@@ -362,7 +361,7 @@ append(OE_This, State, SrcFile, DestFile) when ?is_ORBER_NATIVE(State) ->
 		      SrcName),
 	    check_reply(Pid),
 	    {reply, ok, State};
-	{target, SourceFTS} ->
+	{target, _SourceFTS} ->
 	    DestName = filename:join('CosFileTransfer_File':
 				     '_get_complete_file_name'(DestFile)),
 	    check_type(OE_This, State, DestName),
@@ -374,10 +373,10 @@ append(OE_This, State, SrcFile, DestFile) when ?is_NATIVE(State) ->
     case which_FTS_type(OE_This, SrcFile, DestFile) of
 	{source, TargetFTS} ->
 	    source_FTS_operation(State, SrcFile, DestFile, append, 0, TargetFTS);
-	{target, SourceFTS} ->
+	{target, _SourceFTS} ->
 	    target_FTS_operation(State, SrcFile, DestFile, append, 0)
     end;
-append(OE_This, State, SrcFile, DestFile) ->
+append(_OE_This, _State, _SrcFile, _DestFile) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO}).
 
 
@@ -405,10 +404,10 @@ insert(OE_This, State, SrcFile, DestFile, Offset) when ?is_NATIVE(State) ->
 	    {reply, ok, State};
 	{source, TargetFTS} ->
 	    source_FTS_operation(State, SrcFile, DestFile, insert, Offset, TargetFTS);
-	{target, SourceFTS} ->
+	{target, _SourceFTS} ->
 	    target_FTS_operation(State, SrcFile, DestFile, insert, Offset)
     end;
-insert(OE_This, State, SrcFile, DestFile, Offset) ->
+insert(_OE_This, _State, _SrcFile, _DestFile, _Offset) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO}).
 
 
@@ -418,7 +417,7 @@ insert(OE_This, State, SrcFile, DestFile, Offset) ->
 %% Returns    : -
 %% Description: 
 %%----------------------------------------------------------------------
-logout(OE_This, State) when ?is_FTP(State); ?is_NATIVE(State) ->
+logout(_OE_This, State) when ?is_FTP(State); ?is_NATIVE(State) ->
     Mod = ?get_Module(State),
     catch Mod:close(?get_Server(State)),
     {stop, normal, ok, State}.
@@ -438,7 +437,7 @@ oe_orber_create_directory_current(OE_This, State)  when ?is_FTP(State);
     Mod = ?get_Module(State),
     FileNameList = filename:split(?get_CurrentDir(State)),
     case Mod:nlist(?get_Server(State), ?get_CurrentDir(State)) of
-	{ok, Listing} ->
+	{ok, _Listing} ->
 	    {reply, cosFileTransferApp:create_dir(OE_This, FileNameList), 
 	     State};
 	{error, epath} ->
@@ -465,7 +464,7 @@ oe_orber_get_content(OE_This, State, FileNameList, Parent)  when ?is_FTP(State);
     Mod = ?get_Module(State),
     case Mod:nlist(?get_Server(State), filename:join(FileNameList)) of
 	{ok, Listing} ->
-	    create_content(Listing, OE_This, State, Parent);
+	    create_content(Listing, OE_This, State, Parent, FileNameList);
 	{error, epath} ->
 	    {reply, [], State};
 	_ ->
@@ -643,29 +642,30 @@ ssl_client_cacertfile_option() ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-create_content(Listing, OE_This, State, Parent) ->
+create_content(Listing, OE_This, State, Parent, PathList) ->
     create_content(string:tokens(Listing, ?SEPARATOR), OE_This, 
-		   State, Parent, []).
+		   State, Parent, PathList, []).
 
-create_content([], OE_This, State, Parent, Acc) ->
+create_content([], _OE_This, State, _Parent, _PathList, Acc) ->
     {reply, Acc, State};
-create_content([H|T], OE_This, State, Parent, Acc) ->
-    case check_type(OE_This, State, H) of
+create_content([H|T], OE_This, State, Parent, PathList, Acc) ->
+    FullPathList = PathList ++[filename:basename(H)],
+    case check_type(OE_This, State, filename:join(FullPathList)) of
 	nfile ->
-	    create_content(T, OE_This, State, Parent, 
+	    create_content(T, OE_This, State, Parent, PathList, 
 			   [#'CosFileTransfer_FileWrapper'
 			    {the_file = cosFileTransferApp:create_file(OE_This, 
-								       filename:split(H), 
+								       FullPathList, 
 								       Parent),
 			     file_type = nfile}|Acc]);
-	{ndirectory, Members} ->
-	    create_content(T, OE_This, State, Parent, 
+	{ndirectory, _Members} ->
+	    create_content(T, OE_This, State, Parent, PathList, 
 			   [#'CosFileTransfer_FileWrapper'
 			    {the_file = cosFileTransferApp:create_dir(OE_This, 
-								      filename:split(H), 
+								      FullPathList, 
 								      Parent),
 			     file_type = ndirectory}|Acc]);
-	 Other ->
+	Other ->
 	    Other
     end.
     
@@ -764,7 +764,7 @@ source_FTS_operation(State, SrcFile, DestFile, Op, Offset, FTS) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-target_FTS_operation(State, SrcFile, DestFile, Op, Offset) ->
+target_FTS_operation(State, _SrcFile, DestFile, Op, Offset) ->
     Mod = ?get_Module(State),
     DestName = 'CosFileTransfer_File':'_get_complete_file_name'(DestFile),
     TempName = cosFileTransferApp:create_name("TemporaryDestFile"),
@@ -943,7 +943,7 @@ Failed to open the file due to: ~p", [?LINE, File, What], ?DEBUG_LEVEL),
 %% 
 %% Furthermore, no need for traversing Listings etc.
 %%----------------------------------------------------------------------
-check_type(OE_This, State, FullName) when ?is_FTP(State); ?is_NATIVE(State) ->
+check_type(_OE_This, State, FullName) when ?is_FTP(State); ?is_NATIVE(State) ->
     Mod = ?get_Module(State),
     Result =
 	case Mod:nlist(?get_Server(State), FullName) of
@@ -972,9 +972,32 @@ check_type(OE_This, State, FullName) when ?is_FTP(State); ?is_NATIVE(State) ->
 					  #'CosFileTransfer_RequestFailureException'
 					  {reason="Unknown error."}}, State}
 				end;
+			    {error, E} ->
+				{error, E};	
 			    _ ->
 				nfile
 			end
+		end;
+	    {error, epath} ->
+		%% Might be a file.
+		DirName = filename:dirname(FullName),
+		case Mod:nlist(?get_Server(State), DirName) of
+		    {ok,  Listing} when length(Listing) > 0->
+			Members = string:tokens(Listing, ?SEPARATOR),
+			case lists:member(FullName, Members) of
+			    true ->
+				nfile;
+			    _ ->
+				BName = filename:basename(FullName),
+				case lists:member(BName, Members) of
+				    true ->
+					nfile;
+				    _ ->
+					{error, epath}
+				end
+			end;
+		    _ ->
+			{error, epath}
 		end;
 	    _ ->
 		case Mod:cd(?get_Server(State), FullName) of

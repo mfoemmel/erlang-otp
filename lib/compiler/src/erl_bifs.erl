@@ -83,9 +83,12 @@ is_bif(erlang, display, 1) -> true;
 is_bif(erlang, element, 2) -> true;
 is_bif(erlang, erase, 0) -> true;
 is_bif(erlang, erase, 1) -> true;
+is_bif(erlang, error, 1) -> true;
+is_bif(erlang, error, 2) -> true;
 is_bif(erlang, exit, 1) -> true;
 is_bif(erlang, exit, 2) -> true;
 is_bif(erlang, fault, 1) -> true;
+is_bif(erlang, fault, 2) -> true;
 is_bif(erlang, float, 1) -> true;
 is_bif(erlang, float_to_list, 1) -> true;
 is_bif(erlang, fun_info, 1) -> true;
@@ -106,6 +109,7 @@ is_bif(erlang, integer_to_list, 1) -> true;
 is_bif(erlang, is_alive, 0) -> true;
 is_bif(erlang, is_atom, 1) -> true;
 is_bif(erlang, is_binary, 1) -> true;
+is_bif(erlang, is_boolean, 1) -> true;
 is_bif(erlang, is_builtin, 3) -> true;
 is_bif(erlang, is_constant, 1) -> true;
 is_bif(erlang, is_float, 1) -> true;
@@ -271,11 +275,13 @@ is_guard_bif(erlang, 'rem', 2) -> true;
 is_guard_bif(erlang, 'xor', 2) -> true;
 is_guard_bif(erlang, abs, 1) -> true;
 is_guard_bif(erlang, element, 2) -> true;
+is_guard_bif(erlang, error, 1) -> true;  % unorthodox
 is_guard_bif(erlang, exit, 1) -> true;  % unorthodox
 is_guard_bif(erlang, fault, 1) -> true;  % unorthodox
 is_guard_bif(erlang, float, 1) -> true;  % (the type coercion function)
 is_guard_bif(erlang, hd, 1) -> true;
 is_guard_bif(erlang, is_atom, 1) -> true;
+is_guard_bif(erlang, is_boolean, 1) -> true;
 is_guard_bif(erlang, is_binary, 1) -> true;
 is_guard_bif(erlang, is_constant, 1) -> true;
 is_guard_bif(erlang, is_float, 1) -> true;
@@ -370,6 +376,7 @@ is_pure(erlang, hash, 2) -> false;
 is_pure(erlang, hd, 1) -> true;
 is_pure(erlang, integer_to_list, 1) -> true;
 is_pure(erlang, is_atom, 1) -> true;
+is_pure(erlang, is_boolean, 1) -> true;
 is_pure(erlang, is_binary, 1) -> true;
 is_pure(erlang, is_builtin, 3) -> true;
 is_pure(erlang, is_constant, 1) -> true;
@@ -435,7 +442,6 @@ is_pure(_, _, _) -> false.
 %%	and does not affect the state (although the value it returns
 %%	might depend on the state).
 
-is_safe(erlang, '+', 1) -> true;    % even for non-numbers
 is_safe(erlang, '/=', 2) -> true;
 is_safe(erlang, '<', 2) -> true;
 is_safe(erlang, '=/=', 2) -> true;
@@ -452,6 +458,7 @@ is_safe(erlang, get_keys, 1) -> true;
 is_safe(erlang, group_leader, 0) -> true;
 is_safe(erlang, is_alive, 0) -> true;
 is_safe(erlang, is_atom, 1) -> true;
+is_safe(erlang, is_boolean, 1) -> true;
 is_safe(erlang, is_binary, 1) -> true;
 is_safe(erlang, is_constant, 1) -> true;
 is_safe(erlang, is_float, 1) -> true;
@@ -465,7 +472,6 @@ is_safe(erlang, is_reference, 1) -> true;
 is_safe(erlang, is_tuple, 1) -> true;
 is_safe(erlang, make_ref, 0) -> true;
 is_safe(erlang, node, 0) -> true;
-is_safe(erlang, node, 1) -> true;
 is_safe(erlang, nodes, 0) -> true;
 is_safe(erlang, ports, 0) -> true;
 is_safe(erlang, pre_loaded, 0) -> true;

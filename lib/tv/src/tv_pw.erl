@@ -263,13 +263,14 @@ gs_messages(Msg, ProcVars) ->
 				     data   = Data},
 	    ProcVars;
 
-        {Win, keypress, _Data, [Key, _ , _, 1 | T]} ->
+        {_Win, keypress, _Data, [Key, _ , _, 1 | _T]} ->
 	    MenuP        = ProcVars#process_variables.menu_params,
 	    ShortcutList = MenuP#menu_params.shortcuts,
 	    send_shortcut_data(Key, ShortcutList, MasterPid),
 	    ProcVars;
 
-	{Win, configure, _Data, [W, H | _T]} ->
+	Msg0 = {Win, configure, _, _} ->
+	    {Win, configure, _, [W, H | _T]} = flush_msgs(Msg0),
 	    WinP = ProcVars#process_variables.window_params,
 	    #window_params{window_id         = WindowId,
 			   min_window_width  = MinAllowedWidth,
@@ -285,15 +286,19 @@ gs_messages(Msg, ProcVars) ->
 					},
 	    ProcVars#process_variables{window_params = NewWinP};
 
-	{Win, destroy, Data, _Args} ->
+	{_Win, destroy, _Data, _Args} ->
 	    exit(normal);
 
 	_Other ->
 	    ProcVars
     end.
 
-
-
+flush_msgs(Msg0 = {Win, Op, _, _}) ->
+    receive {gs, Win,Op,D,P} ->
+	    flush_msgs({Win,Op,D,P})
+    after 200 ->
+	    Msg0
+    end.
 
 send_shortcut_data(_Key, [], _MasterPid) ->
     done;

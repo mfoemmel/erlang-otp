@@ -1,17 +1,17 @@
 %%----------------------------------------------------------------------
 %% File    : hipe_adj_list.erl
-%% Author  : Andreas Wallin <d96awa@zeppo.it.uu.se>
+%% Author  : Andreas Wallin <d96awa@it.uu.se>
 %% Purpose : Keeps track of adjacency lists for the inference graph.
-%% Created : 18 Mar 2000 by Andreas Wallin <d96awa@zeppo.it.uu.se>
+%% Created : 18 Mar 2000 by Andreas Wallin <d96awa@it.uu.se>
 %%----------------------------------------------------------------------
 
 -module(hipe_adj_list).
 -author("Andreas Wallin").
 -export([new/1, 
 	 add_edge/3, 
-	 add_edges/3, 
-	 remove_edge/3, 
-	 remove_edges/3, 
+	 %% add_edges/3, 
+	 %% remove_edge/3, 
+	 %% remove_edges/3, 
 	 edges/2]).
 
 %%----------------------------------------------------------------------
@@ -45,9 +45,9 @@ new(Max_nodes) ->
 %%
 %%----------------------------------------------------------------------
 
-add_edges(_, [], Adj_list) -> Adj_list;
-add_edges(U, Vs, Adj_list) when is_list(Vs), is_integer(U) ->
-    hipe_vectors_wrapper:set(Adj_list, U, ordsets:union(Vs, hipe_vectors_wrapper:get(Adj_list, U))).
+%%add_edges(_, [], Adj_list) -> Adj_list;
+%%add_edges(U, Vs, Adj_list) when is_list(Vs), is_integer(U) ->
+%%    hipe_vectors_wrapper:set(Adj_list, U, ordsets:union(Vs, hipe_vectors_wrapper:get(Adj_list, U))).
 
 %%----------------------------------------------------------------------
 %% Function:    add_edge
@@ -66,7 +66,8 @@ add_edges(U, Vs, Adj_list) when is_list(Vs), is_integer(U) ->
 
 add_edge(U, U, Adj_list) -> Adj_list;
 add_edge(U, V, Adj_list) when is_integer(U), is_integer(V) ->
-    add_edges(U, [V], Adj_list).
+    hipe_vectors_wrapper:set(Adj_list, U,
+			     ordsets:add_element(V, hipe_vectors_wrapper:get(Adj_list, U))).
 
 %%----------------------------------------------------------------------
 %% Function:    remove_edges
@@ -83,9 +84,9 @@ add_edge(U, V, Adj_list) when is_integer(U), is_integer(V) ->
 %%
 %%----------------------------------------------------------------------
 
-remove_edges(_, [], Adj_list) -> Adj_list;
-remove_edges(U, Vs, Adj_list) when is_list(Vs), is_integer(U) ->
-    hipe_vectors_wrapper:set(Adj_list, U, ordsets:subtract(hipe_vectors_wrapper:get(Adj_list, U), Vs)).
+%% remove_edges(_, [], Adj_list) -> Adj_list;
+%% remove_edges(U, Vs, Adj_list) when is_list(Vs), is_integer(U) ->
+%%     hipe_vectors_wrapper:set(Adj_list, U, ordsets:subtract(hipe_vectors_wrapper:get(Adj_list, U), Vs)).
 
 %%----------------------------------------------------------------------
 %% Function:    remove_edge
@@ -102,9 +103,9 @@ remove_edges(U, Vs, Adj_list) when is_list(Vs), is_integer(U) ->
 %%
 %%----------------------------------------------------------------------
 
-remove_edge(U, U, Adj_list) -> Adj_list;
-remove_edge(U, V, Adj_list) when is_integer(U), is_integer(V) ->
-    remove_edges(U,  [V], Adj_list).
+%% remove_edge(U, U, Adj_list) -> Adj_list;
+%% remove_edge(U, V, Adj_list) when is_integer(U), is_integer(V) ->
+%%     remove_edges(U,  [V], Adj_list).
 
 %%----------------------------------------------------------------------
 %% Function:    edges

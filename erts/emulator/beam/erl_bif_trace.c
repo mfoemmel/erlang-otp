@@ -1639,7 +1639,6 @@ BIF_RETTYPE system_monitor_1(Process *p, Eterm spec) {
 
 BIF_RETTYPE system_monitor_2(Process *p, Eterm monitor_pid, Eterm list) {
     Eterm prev;
-    Process *monitor_p;
     if (monitor_pid == am_undefined || list == NIL) {
 	prev = system_monitor_get(p);
 	erts_system_monitor_clear();
@@ -1647,8 +1646,8 @@ BIF_RETTYPE system_monitor_2(Process *p, Eterm monitor_pid, Eterm list) {
     }
     if (is_not_internal_pid(monitor_pid)) goto error;
     if (internal_pid_index(monitor_pid) >= erts_max_processes) goto error;
-    monitor_p = process_tab[internal_pid_index(monitor_pid)];
-    if (INVALID_PID(monitor_p, monitor_pid)) goto error;
+    if (INVALID_PID(process_tab[internal_pid_index(monitor_pid)], monitor_pid))
+	goto error;
     if (is_not_list(list)) goto error;
     else {
 	Uint long_gc, large_heap;
@@ -1677,7 +1676,6 @@ BIF_RETTYPE system_monitor_2(Process *p, Eterm monitor_pid, Eterm list) {
 	if (is_not_nil(list)) goto error;
 	prev = system_monitor_get(p);
 	erts_system_monitor = monitor_pid;
-	monitor_p->flags |= F_TRACER;
 	erts_system_monitor_long_gc = long_gc;
 	erts_system_monitor_large_heap = large_heap;
 	erts_system_monitor_flags.busy_port = !!busy_port;

@@ -135,7 +135,7 @@ start(Var,DefaultOptions) ->
 %% message windows die whenever their parent dies.
 %% ---------------------------------------------------------------
 
-internal({Object,Supervisor},Parent, DefaultOptions, Db) ->
+internal({Object,Supervisor}, _Parent, DefaultOptions, Db) ->
 
     %% (???) This call will cause minor problems when the window has been
     %% invoked with proc/1 from for instance the shell.  The shell
@@ -177,7 +177,7 @@ internal({Object,Supervisor},Parent, DefaultOptions, Db) ->
 			{'EXIT', dead} ->
 			    T = "ERROR: The process is dead",
 			    pman_win:dialog_window(gs:start(),T);
-			{'EXIT',W} ->  
+			{'EXIT',_W} ->  
 			    T = "ERROR: Untracable process \n(unexpected EXIT reason)",
 			    pman_win:dialog_window(gs:start(),T);
 			{Win, Ed} ->
@@ -216,7 +216,7 @@ init_monitor_loop(Win,Ed,Object,Supervisor, DefaultOptions, Db) ->
     %% Find out an appropriate file name to write the trace output
     %% to if the output should go to a file.
 
-    FileName = case pman_process:is_pid(Object) of
+    FileName = case pman_process:is_pid_or_shell(Object) of
 		   true ->
 		       default_file_name(pman_process:get_pid(Object));
 		   false ->
@@ -383,7 +383,7 @@ options_to_flaglists(Options) ->
     TrueFun = fun ({Option,Flag}) ->
 		      case Option of
 			  true -> Flag;
-			  Otherwise -> false
+			  _Otherwise -> false
 		      end
 	      end,
     TrueFlags = mapfilter(TrueFun, AssocList),
@@ -391,7 +391,7 @@ options_to_flaglists(Options) ->
     FalseFun = fun ({Option,Flag}) ->
 		       case Option of
 			   false -> Flag;
-			   Otherwise -> false
+			   _Otherwise -> false
 		       end
 	       end,
     FalseFlags = mapfilter(FalseFun, AssocList),
@@ -490,7 +490,7 @@ execute_cmd(Cmd,Shell_data) ->
 	    Result = tool_utils:file_dialog([{type,save},
 					     {file,DefaultFile}]),
 	    case Result of
-		{ok, UserFile, State} ->	    
+		{ok, UserFile, _State} ->	    
 		    Buffer#buffer.buffer!{save_buffer,UserFile};
 		{error,_Reason} ->
 		    true
@@ -522,7 +522,7 @@ execute_cmd(Cmd,Shell_data) ->
 	    case pman_options:dialog(Window,
                                      "Trace Options for Process",
                                      TraceOptions) of
-		{error, Reason} ->
+		{error, _Reason} ->
 		    Shell_data;
 		Options ->
 		    perform_option_changes(Shell, Options, Buffer),
@@ -542,7 +542,7 @@ execute_cmd(Cmd,Shell_data) ->
 	    pman_shell:start({Pid, Shell_data#pman_shell.father},
 			     Shell_data#pman_shell.trace_options),
 	    Shell_data;
-	Other ->
+	_Other ->
 	    ?ALWAYS_ASSERT("Received unexpected event"),
 	    Shell_data
     end.
@@ -585,27 +585,25 @@ monitor_loop(Shell_data) ->
     receive
 
 	%% WM destroy
-	{gs,Window,destroy,[],[]} ->  %%Avoid links menus
+	{gs,_Window,destroy,[],[]} ->  %%Avoid links menus
 	    execute_cmd('Destroy', Shell_data);
 
 
 	%% Handle EXIT signal from parent process
-	{'EXIT', Pid, topquit} ->
+	{'EXIT', _Pid, topquit} ->
 	    clean_up(Shell_data#pman_shell.win,
 		     Shell_data#pman_shell.buffer,
 		     Shell_data#pman_shell.pid),
 	    exit(topquit);
 
 	%% (???) Ignore "stray" EXIT signal from converter
-	{'EXIT', Pid, win_killed} ->
+	{'EXIT', _Pid, win_killed} ->
 	    monitor_loop(Shell_data);
 
 
 	%% Handle EXIT signal from safely linked Pid
 	%% This is received when a traced process dies.
 	{'SAFE_EXIT', Pid, Reason} ->
-	    Buffer = Shell_data#pman_shell.buffer,
-	    
 	    New_Shell_data = exit_cmd(Pid, Reason,Shell_data ),
 	    monitor_loop(New_Shell_data);
 
@@ -614,7 +612,7 @@ monitor_loop(Shell_data) ->
 	%% some EXIT signals, such as the file_dialog opened, and possibly
 	%% others. 
 
-	{'EXIT', Pid, Reason} ->
+	{'EXIT', _Pid, _Reason} ->
 	    monitor_loop(Shell_data);
 
 	%% Handle incoming trace messages
@@ -634,7 +632,7 @@ monitor_loop(Shell_data) ->
 	    monitor_loop(New_Shell_data);
 
 	%% Catch all for unexpected messages
-	Anything ->
+	_Anything ->
 	    ?ALWAYS_ASSERT("Received unexpected event"),	    
 	    monitor_loop(Shell_data)
 	  
@@ -683,15 +681,15 @@ gs_cmd(Cmd, Shell_data) ->
       case Cmd of
 
 	  %%User Command
-	  {gs, Command, click, Data, Args}       ->
+	  {gs, Command, click, _Data, _Args}       ->
 	      execute_cmd(Command,Shell_data);
 
 	  %%Key accellerator
-	  {gs,Window,keypress,D,[Key,_,0,1]}     ->
+	  {gs,_Window,keypress,_D,[Key,_,0,1]}     ->
 	      execute_cmd(key(Key),Shell_data);
 
 	  %%Window Resize
-	  {gs,Window,configure,_,[X,Y|_]}        ->
+	  {gs,_Window,configure,_,[X,Y|_]}        ->
 	      execute_cmd({configure,{X,Y}},Shell_data);
 
 
@@ -774,7 +772,7 @@ safe_loop(Caller, Pid) ->
 	    Caller ! {'SAFE_EXIT', Pid, Reason};
 
 	%% Caller dies
-	{'EXIT', Caller, Reason} ->
+	{'EXIT', Caller, _Reason} ->
 	    unlink(Pid);
 	
 
@@ -820,7 +818,7 @@ db_insert_key (Db, Pid) ->
 		true ->
 		    true;
 		
-		Error ->
+		_Error ->
 		    error_insert_db
 	    end;
 
@@ -840,7 +838,7 @@ db_delete_key (Db, Pid) ->
 %% Function to collect all trace messages in the receive queue.
 %% Returns: {Messages,SuspendedProcesses}
 
-collect_tracs(Ack) -> collect_tracs(Ack, ordsets:new_set()).
+collect_tracs(Ack) -> collect_tracs(Ack, ordsets:new()).
     
 collect_tracs(Ack, Procs) ->
     receive
@@ -848,10 +846,10 @@ collect_tracs(Ack, Procs) ->
 	    P = suspend(Trac, Procs),
 	    collect_tracs([Trac | Ack], P)
     after 0 ->
-	    {lists:reverse(Ack), ordsets:set_to_list(Procs)}
+	    {lists:reverse(Ack), ordsets:to_list(Procs)}
     end.
 
-suspend({trace,From,call,Func}, Suspended) when node(From) == node() ->
+suspend({trace,From,call,_Func}, Suspended) when node(From) == node() ->
     case ordsets:is_element(From, Suspended) of
 	true -> Suspended;
 	false ->
@@ -862,4 +860,4 @@ suspend({trace,From,call,Func}, Suspended) when node(From) == node() ->
 		    Suspended
 	    end
     end;
-suspend(Other, Suspended) -> Suspended.
+suspend(_Other, Suspended) -> Suspended.

@@ -8,9 +8,9 @@
 %%  History  :	* 2001-11-01 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: happi $
-%%              $Date: 2002/05/13 16:51:09 $
-%%              $Revision: 1.3 $
+%%              $Author: richardc $
+%%              $Date: 2004/01/15 13:11:53 $
+%%              $Revision: 1.4 $
 %% ====================================================================
 %%  Exports  :
 %%hipe:c({test13,test,0},[late_frames,{regalloc,lfls},pp_sparc]).
@@ -58,7 +58,7 @@ rewrite_instr(I, TempMap, DontSpill) ->
 	  %%      {NewI ++ [hipe_sparc:pseudo_spill_create(NewTemp,
 	  %%					       hipe_temp_map:find(
 	  %%						 hipe_sparc:reg_nr(Spill),TempMap)) ||
-	  {NewI ++ [hipe_sparc:move_create(Spill,NewTemp,[]) ||
+	  {NewI ++ [hipe_sparc:move_create(Spill,NewTemp) ||
 		     {Spill,NewTemp} <- NewTemps],
 	   [ T || {_,T} <- NewTemps] ++ NewDontSpill}
       end
@@ -74,7 +74,7 @@ rewrite_uses(I, TempMap, DontSpill) ->
 %%      { [hipe_sparc:pseudo_unspill_create(NewTemp, 
 %%					  hipe_temp_map:find(hipe_sparc:reg_nr(Spill),TempMap)
 %%					 ) ||
-      { [hipe_sparc:move_create(NewTemp, Spill,[]) ||
+      { [hipe_sparc:move_create(NewTemp, Spill) ||
 	  {Spill,NewTemp} <- NewTemps] ++ 
 	 [remap(I, NewTemps)],
       [ element(2,T) || T <- NewTemps] ++DontSpill}

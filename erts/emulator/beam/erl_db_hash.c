@@ -35,6 +35,7 @@
 #include "global.h"
 #include "erl_process.h"
 #include "error.h"
+#define ERTS_WANT_DB_INTERNAL__
 #include "erl_db.h"
 #include "bif.h"
 #include "big.h"
@@ -116,16 +117,16 @@ struct mp_info {
 ** Forward decl's (static functions)
 */
 static HashDbTerm** alloc_seg(DbTableHash *tb);
-static int realloc_counter(HashDbTerm** bp, Uint sz, 
+static int realloc_counter(DbTableCommon *tb, HashDbTerm** bp, Uint sz, 
 			   Eterm new_counter, int counterpos);
 static HashDbTerm* next(DbTableHash *tb, Uint *iptr, HashDbTerm *list);
 static HashDbTerm* search_list(DbTableHash* tb, Eterm key, 
 			       HashValue hval, HashDbTerm *list);
 static void shrink(DbTableHash* tb);
 static void grow(DbTableHash* tb);
-static void free_term(HashDbTerm* p);
+static void free_term(DbTableHash *tb, HashDbTerm* p);
 static Eterm put_term_list(Process* p, HashDbTerm* ptr1, HashDbTerm* ptr2);
-static HashDbTerm* get_term(HashDbTerm* old, 
+static HashDbTerm* get_term(DbTableHash* tb, HashDbTerm* old, 
 			    Eterm obj, HashValue hval);
 static int analyze_pattern(DbTableHash *tb, Eterm pattern, 
 			   struct mp_info *mpi);
@@ -159,13 +160,15 @@ int db_fixtable_hash(DbTableHash *tb, Eterm arg)
 	HashDbTerm *b = *bp;
 
 	tb->fixdel = fx->next;
-	erts_free(ERTS_ALC_T_DB_FIX_DEL, (void *) fx);
+	erts_db_free(ERTS_ALC_T_DB_FIX_DEL,
+		     (DbTable *) tb,
+		     (void *) fx,
+		     sizeof(FixedDeletion));
 
 	while (b != NULL) {
 	    if (b->hvalue == INVALID_HASH) {
 		*bp = b->next;
-		ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(b));
-		free_term(b);
+		free_term(tb, b);
 		b = *bp;
 	    } else {
 		bp = &b->next;
@@ -179,16 +182,14 @@ int db_fixtable_hash(DbTableHash *tb, Eterm arg)
 
 int db_create_hash(Process *p, DbTableHash *tb)
 {
-    ERTS_DB_TAB_MORE_MEM(tb, sizeof(DbTable) / sizeof (Eterm));
     tb->szm = SZMASK;
     tb->nslots = SEGSZ;
     tb->nactive = SEGSZ;
     tb->p = 0;
     tb->nsegs = 1;
-    tb->seg = (HashDbTerm***) erts_alloc(ERTS_ALC_T_DB_SEG_TAB,
-					 sizeof(HashDbTerm**));
-    if (tb->seg)
-	ERTS_DB_TAB_MORE_MEM(tb, sizeof(HashDbTerm**) / sizeof(Eterm));
+    tb->seg = (HashDbTerm***) erts_db_alloc(ERTS_ALC_T_DB_SEG_TAB,
+					    (DbTable *) tb,
+					    sizeof(HashDbTerm**));
     tb->seg[0] = alloc_seg(tb);
     tb->fixdel = NULL;
 
@@ -275,7 +276,7 @@ int db_update_counter_hash(Process *p, DbTableHash *tb,
 	    break;
 	bp = &b->next;
 	b = *bp;
-    }
+   }
 
     if (b == 0) 
 	return DB_ERROR_BADKEY;
@@ -283,9 +284,14 @@ int db_update_counter_hash(Process *p, DbTableHash *tb,
     if (counterpos <= 0)
 	counterpos = tb->keypos + 1;
 
-    return db_do_update_counter(p, (void *) bp, b->dbterm.tpl,
+    return db_do_update_counter(p, (DbTableCommon *) tb,
+				(void *) bp, b->dbterm.tpl,
 				counterpos, 
-				(int (*)(void *, Uint, Eterm, int))
+				(int (*)(DbTableCommon *,
+					 void *,
+					 Uint,
+					 Eterm,
+					 int))
 				&realloc_counter, incr, warp, ret);
 }
 
@@ -311,14 +317,12 @@ int db_put_hash(Process *proc, DbTableHash *tb,
 	    && EQ(key, GETKEY(tb, b->dbterm.tpl))) {
 	    if (tb->status & DB_SET) {
 		HashDbTerm* bnext = b->next;
-		ERTS_DB_TAB_LESS_MEM(tb, b->dbterm.size);
 		if (b->hvalue == INVALID_HASH) {
 		    tb->nitems++;
 		}
-		q = get_term(b, obj, hval);
+		q = get_term(tb, b, obj, hval);
 		q->next = bnext;
 		q->hvalue = hval; /* In case of INVALID_HASH */
-		ERTS_DB_TAB_MORE_MEM(tb, q->dbterm.size);
 		*bp = q;
 		*ret = am_true;
 		return DB_ERROR_NONE;
@@ -352,16 +356,14 @@ int db_put_hash(Process *proc, DbTableHash *tb,
                     b = b->next;
                 }
 
-                q = get_term(NULL, obj, hval);
+                q = get_term(tb, NULL, obj, hval);
                 q->next = p;
-		ERTS_DB_TAB_MORE_MEM(tb, SIZ_DBTERM(q));
                 *tp = q;
 		goto Lupdate;
 	    }
 	    else {  /* if (tb->status & DB_DUPLICATE_BAG) */
-		q = get_term(NULL, obj, hval);
+		q = get_term(tb, NULL, obj, hval);
 		q->next = b;
-		ERTS_DB_TAB_MORE_MEM(tb, SIZ_DBTERM(q));
 		*bp = q;
 		goto Lupdate;
 	    }
@@ -370,9 +372,8 @@ int db_put_hash(Process *proc, DbTableHash *tb,
 	b = b->next;
     }
 
-    q = get_term(NULL, obj, hval);
+    q = get_term(tb, NULL, obj, hval);
     q->next = b;
-    ERTS_DB_TAB_MORE_MEM(tb, SIZ_DBTERM(q));
     *bp = q;
 
  Lupdate:
@@ -404,7 +405,8 @@ int db_get_hash(Process *p, DbTableHash *tb,
 	    Eterm copy;
 
 	    if ((tb->status & DB_BAG) || (tb->status & DB_DUPLICATE_BAG)) {
-		while((b2 != 0) && (b2->hvalue == hval) &&
+		while((b2 != 0) && ((b2->hvalue == hval) || 
+				    (b2->hvalue == INVALID_HASH)) &&
 		      EQ(key, GETKEY(tb, b2->dbterm.tpl)))
 		    b2 = b2->next;
 	    }
@@ -440,7 +442,8 @@ int db_get_element_array(DbTableHash *tb,
 		HashDbTerm* b;
 		HashDbTerm* b2 = b1->next;
 
-		while((b2 != 0) && (b2->hvalue == hval) &&
+		while((b2 != 0) && ((b2->hvalue == hval) || 
+				    (b2->hvalue == INVALID_HASH)) &&
 		      EQ(key, GETKEY(tb, b2->dbterm.tpl))) {
 		    if (ndex > arityval(b2->dbterm.tpl[0]))
 			return DB_ERROR_BADITEM;
@@ -580,8 +583,7 @@ int db_erase_bag_exact2(DbTableHash *tb,
 	    if ((arityval(b->dbterm.tpl[0]) == 2) && 
 		EQ(value, b->dbterm.tpl[2])) {
 		*bp = b->next;
-		ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(b));
-		free_term(b);
+		free_term(tb, b);
 		tb->nitems--;
 		b = *bp;
 		break;
@@ -621,7 +623,9 @@ int db_erase_hash(Process *p, DbTableHash *tb,
 	    if (tb->status & DB_FIXED) {
 		/* Pseudo remove */
 		FixedDeletion *fixd = (FixedDeletion *) 
-		    erts_alloc(ERTS_ALC_T_DB_FIX_DEL, sizeof(FixedDeletion));
+		    erts_db_alloc(ERTS_ALC_T_DB_FIX_DEL,
+				  (DbTable *) tb,
+				  sizeof(FixedDeletion));
 		fixd->slot = ix;
 		fixd->next = tb->fixdel;
 		tb->fixdel = fixd;
@@ -632,8 +636,7 @@ int db_erase_hash(Process *p, DbTableHash *tb,
 		b = b->next;
 	    } else {
 		*bp = b->next;
-		ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(b));
-		free_term(b);
+		free_term(tb, b);
 		tb->nitems--;
 		b = *bp;
 	    }
@@ -680,7 +683,9 @@ int db_erase_object_hash(Process *p, DbTableHash *tb,
 	    if (tb->status & DB_FIXED) {
 		/* Pseudo remove */
 		FixedDeletion *fixd = (FixedDeletion *) 
-		    erts_alloc(ERTS_ALC_T_DB_FIX_DEL, sizeof(FixedDeletion));
+		    erts_db_alloc(ERTS_ALC_T_DB_FIX_DEL,
+				  (DbTable *) tb,
+				  sizeof(FixedDeletion));
 		fixd->slot = ix;
 		fixd->next = tb->fixdel;
 		tb->fixdel = fixd;
@@ -691,8 +696,7 @@ int db_erase_object_hash(Process *p, DbTableHash *tb,
 		b = b->next;
 	    } else {
 		*bp = b->next;
-		ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(b));
-		free_term(b);
+		free_term(tb, b);
 		tb->nitems--;
 		b = *bp;
 	    }
@@ -719,7 +723,7 @@ int db_slot_hash(Process *p, DbTableHash *tb,
 		  Eterm slot_term,
 		  Eterm *ret)
 {
-    int slot;
+    Sint slot;
 
     if (is_not_small(slot_term) ||
 	((slot = signed_val(slot_term)) < 0) ||
@@ -1280,7 +1284,9 @@ int db_select_delete_hash(Process *p,
 			   0,&dummy)) == am_true) {
 	    if (tb->status & DB_FIXED) {
 		FixedDeletion *fixd = (FixedDeletion *)
-		    erts_alloc(ERTS_ALC_T_DB_FIX_DEL, sizeof(FixedDeletion));
+		    erts_db_alloc(ERTS_ALC_T_DB_FIX_DEL,
+				  (DbTable *) tb,
+				  sizeof(FixedDeletion));
 		int ix;
 		HASH(tb, (*current_list)->hvalue, ix);
 		fixd->slot = ix;
@@ -1292,8 +1298,7 @@ int db_select_delete_hash(Process *p,
 	    } else {
 		HashDbTerm *del = *current_list;
 		*current_list = (*current_list)->next;
-		ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(del));
-		free_term(del);
+		free_term(tb, del);
 		tb->nitems--;
 		did_erase = 1;
 	    }
@@ -1416,13 +1421,14 @@ int db_select_delete_continue_hash(Process *p,
 	    if (do_delete) {
 		HashDbTerm *del = *current_list;
 		*current_list = (*current_list)->next;
-		ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(del));
-		free_term(del);
+		free_term(tb, del);
 		tb->nitems--;
 		did_erase = 1;
 	    } else {
 		FixedDeletion *fixd = (FixedDeletion *) 
-		    erts_alloc(ERTS_ALC_T_DB_FIX_DEL, sizeof(FixedDeletion));
+		    erts_db_alloc(ERTS_ALC_T_DB_FIX_DEL,
+				  (DbTable *) tb,
+				  sizeof(FixedDeletion));
 		fixd->slot = chain_pos;
 		fixd->next = tb->fixdel;
 		tb->fixdel = fixd;
@@ -1598,7 +1604,9 @@ int db_mark_all_deleted_hash(DbTableHash *tb)
     for (i = 0; i < tb->nactive; i++) {
 	if ((list = BUCKET(tb,i)) != 0) {
 	    fixd = (FixedDeletion *)
-		erts_alloc(ERTS_ALC_T_DB_FIX_DEL, sizeof(FixedDeletion));
+		erts_db_alloc(ERTS_ALC_T_DB_FIX_DEL,
+			      (DbTable *) tb,
+			      sizeof(FixedDeletion));
 	    fixd->slot = i;
 	    fixd->next = tb->fixdel;
 	    tb->fixdel = fixd;
@@ -1651,7 +1659,10 @@ void free_hash_table(DbTableHash *tb)
     while (tb->fixdel != NULL) {
 	FixedDeletion *fx = tb->fixdel;
 	tb->fixdel = fx->next;
-	erts_free(ERTS_ALC_T_DB_FIX_DEL, (void *) fx);
+	erts_db_free(ERTS_ALC_T_DB_FIX_DEL,
+		     (DbTable *) tb,
+		     (void *) fx,
+		     sizeof(FixedDeletion));
     }
     while(n--) {
 	HashDbTerm** bp = *sp;
@@ -1663,17 +1674,23 @@ void free_hash_table(DbTableHash *tb)
 
 		while(p != 0) {
 		    HashDbTerm* nxt = p->next;
-		    free_term(p);
+		    free_term(tb, p);
 		    p = nxt;
 		}
 	    }
-	    erts_free(ERTS_ALC_T_DB_SEG, *sp);
+	    erts_db_free(ERTS_ALC_T_DB_SEG,
+			 (DbTable *) tb,
+			 (void *) *sp,
+			 sizeof(HashDbTerm*)*SEGSZ);
 	}
 	sp++;
     }
-    erts_free(ERTS_ALC_T_DB_SEG_TAB, tb->seg);
+    erts_db_free(ERTS_ALC_T_DB_SEG_TAB,
+		 (DbTable *) tb,
+		 (void *) tb->seg,
+		 sizeof(HashDbTerm**)*tb->nsegs);
 
-    ERTS_DB_TAB_LESS_MEM(tb, tb->memory);
+    ASSERT(tb->memory_size == sizeof(DbTable));
 }
 
 
@@ -1806,18 +1823,20 @@ static HashDbTerm** alloc_seg(DbTableHash *tb)
     HashDbTerm** bp;
     int sz = sizeof(HashDbTerm*)*SEGSZ;
 
-    bp = (HashDbTerm**) erts_alloc_fnf(ERTS_ALC_T_DB_SEG, sz);
+    bp = (HashDbTerm**) erts_db_alloc_fnf(ERTS_ALC_T_DB_SEG,
+					  (DbTable *) tb,
+					  sz);
     if (!bp)
 	return NULL;
-    ERTS_DB_TAB_MORE_MEM(tb, sz / sizeof(Eterm));
     memset(bp, 0, sz);
     return bp;
 }
 
 
-static HashDbTerm* get_term(HashDbTerm* old, 
+static HashDbTerm* get_term(DbTableHash* tb, HashDbTerm* old, 
 			    Eterm obj, HashValue hval) {
-    HashDbTerm* p = db_get_term((old != NULL) ? &(old->dbterm) : NULL, 
+    HashDbTerm* p = db_get_term((DbTableCommon *) tb,
+				(old != NULL) ? &(old->dbterm) : NULL, 
 				((char *) &(old->dbterm)) - ((char *) old),
 				obj);
     p->hvalue = hval;
@@ -1862,11 +1881,14 @@ static Eterm put_term_list(Process* p, HashDbTerm* ptr1, HashDbTerm* ptr2)
     return list;
 }
 
-static void free_term(HashDbTerm* p)
+static void free_term(DbTableHash *tb, HashDbTerm* p)
 {
 
     db_free_term_data(&(p->dbterm));
-    erts_free(ERTS_ALC_T_DB_TERM, (void *) p);
+    erts_db_free(ERTS_ALC_T_DB_TERM,
+		 (DbTable *) tb,
+		 (void *) p,
+		 SIZ_DBTERM(p)*sizeof(Eterm));
 }
 
 
@@ -1897,14 +1919,11 @@ static void grow(DbTableHash* tb)
 		else
 		    sz = tb->nsegs + SEG_INCREAMENT;
 		new_seg = (HashDbTerm***) 
-		    erts_realloc(ERTS_ALC_T_DB_SEG_TAB,
-				 tb->seg,
-				 sizeof(HashDbTerm**)*sz);
-
-		ERTS_DB_TAB_MORE_MEM(tb,
-				     (((sz - tb->nsegs)
-				       * sizeof(HashDbTerm**))
-				      / sizeof(Eterm)));
+		    erts_db_realloc(ERTS_ALC_T_DB_SEG_TAB,
+				    (DbTable *) tb,
+				    (void *) tb->seg,
+				    sizeof(HashDbTerm**)*tb->nsegs,
+				    sizeof(HashDbTerm**)*sz);
 		tb->seg = new_seg;
 		tb->nsegs = sz;
 		for (i = nxt+1; i < sz; i++)
@@ -1973,8 +1992,10 @@ static void shrink(DbTableHash* tb)
     if ((tb->nactive & SZMASK) == SZMASK) {
 	int six = (tb->nactive >> SZEXP)+1;
 
-	erts_free(ERTS_ALC_T_DB_SEG, (void *) tb->seg[six]);
-	ERTS_DB_TAB_LESS_MEM(tb, ((sizeof(HashDbTerm*)*SEGSZ)/sizeof(Eterm)));
+	erts_db_free(ERTS_ALC_T_DB_SEG,
+		     (DbTable *) tb,
+		     (void *) tb->seg[six],
+		     sizeof(HashDbTerm*)*SEGSZ);
 	tb->seg[six] = 0;
 	tb->nslots -= SEGSZ;
     }
@@ -2025,11 +2046,11 @@ static HashDbTerm* next(DbTableHash *tb, Uint *iptr, HashDbTerm *list)
 }
 
 
-static int realloc_counter(HashDbTerm** bp, Uint sz, 
+static int realloc_counter(DbTableCommon *tb, HashDbTerm** bp, Uint sz, 
 			   Eterm new_counter, int counterpos)
 {
     HashDbTerm* b = *bp;
-    return db_realloc_counter((void **) bp, &(b->dbterm),
+    return db_realloc_counter(tb, (void **) bp, &(b->dbterm),
 			      ((char *) &(b->dbterm)) - ((char *) b),
 			      sz, new_counter, counterpos);
 }

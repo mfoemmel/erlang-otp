@@ -64,6 +64,8 @@ done
 my_root=${ERL_TOP}/erts/emulator
 emu_test=$my_root/test
 beam=$my_root/beam
+erts_lib_src=${ERL_TOP}/erts/lib_src
+erts_incl_intrnl=${ERL_TOP}/erts/include/internal
 etcdir=${ERL_TOP}/erts/etc/common
 erlint_dir=${ERL_TOP}/lib/erl_interface/src
 epmd_dir=${ERL_TOP}/erts/epmd/src
@@ -78,6 +80,9 @@ zlibdir=${ERL_TOP}/erts/emulator/zlib
 runtime_tools_dir=${ERL_TOP}/lib/runtime_tools/c_src
 
 CONFIG_FILES="${ERL_TOP}/erts/emulator/$host/Makefile
+	    $erts_lib_src/$host/Makefile
+	    $erts_incl_intrnl/$host/ethread.mk
+	    $erts_incl_intrnl/$host/ethread_header_config.h
 	    $etcdir/$host/Makefile
 	    $erlint_dir/$host/Makefile
 	    $epmd_dir/$host/Makefile

@@ -197,9 +197,7 @@ document_uri(ConfigDB, RequestURI) ->
 	    {_, Name, {PathInfo, QueryString}} ->
 		{Name, "/"++PathInfo++"?"++QueryString};
 	    {_, Name, _} ->
-		{Name, ""};
-	    Gurka ->
-		io:format("Gurka: ~p~n", [Gurka])
+		{Name, ""}
 	end,
     VirtualPath = string:substr(RequestURI, 1, 
 				length(RequestURI)-length(AfterPath)),
@@ -519,24 +517,25 @@ send_in1(Info, Data, Head, FileInfo) ->
     {ok, _Context, Err, ParsedBody} = parse(Info,Data,?DEFAULT_CONTEXT,[],[]),
     Size = length(ParsedBody),
     ?vdebug("send_in1 -> Size: ~p",[Size]),
+
+    LastModified =
+	case (catch httpd_util:rfc1123_date(FileInfo#file_info.mtime)) of
+	    Date when is_list(Date) ->
+		"Last-Modified: " ++ Date;
+	    _ -> %% This will rarly happen, but could happen
+		 %% if a computer is wrongly configured. 
+		""
+	end,
+
     Head1 = case Info#mod.http_version of 
 		"HTTP/1.1"->
-		    Head ++ 
-			"Content-Length: " ++ 
-			integer_to_list(Size) ++
-			"\r\nEtag:" ++ 
-			httpd_util:create_etag(FileInfo,Size) ++"\r\n" ++
-			"Last-Modified: " ++ 
-			httpd_util:rfc1123_date(FileInfo#file_info.mtime)  ++ 
-			"\r\n\r\n";
+		    Head ++ "Content-Length: " ++ integer_to_list(Size) ++ 
+			"\r\nEtag:" ++ httpd_util:create_etag(FileInfo,Size) 
+			++"\r\n" ++ LastModified ++ "\r\n\r\n";
 		_->
 		    %% i.e http/1.0 and http/0.9
-		    Head ++
-			"Content-Length: " ++ 
-			integer_to_list(Size) ++
-			"\r\nLast-Modified: " ++ 
-			httpd_util:rfc1123_date(FileInfo#file_info.mtime)  ++ 
-			"\r\n\r\n"
+		    Head ++ "Content-Length: " ++ integer_to_list(Size) ++ 
+			"\r\n" ++ LastModified ++ "\r\n\r\n"
 	    end,
     httpd_socket:deliver(Info#mod.socket_type,Info#mod.socket, 
 			 [Head1,ParsedBody]),

@@ -36,9 +36,9 @@
 
 
 
-create(mnesia, _Node, LocalNode, TableName, Options) ->
+create(mnesia, _Node, _LocalNode, _TableName, _Options) ->
     error;
-create(ets, Node, true, TabName, Options) ->
+create(ets, _Node, true, TabName, Options) ->
     case catch internal_create(ets, TabName, Options) of
 	{TabName, Pid} when pid(Pid) ->
 	    {ok, {TabName,Pid}};
@@ -84,7 +84,7 @@ start() ->
 	    case catch register(?REGISTERED_NAME, ServerPid) of
 		true ->
 		    ok;
-		{'EXIT', Reason} ->
+		{'EXIT', _Reason} ->
 		    exit(ServerPid, kill),
 		    timer:sleep(500),
 		    start()

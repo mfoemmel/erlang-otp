@@ -33,7 +33,7 @@ do(Info) ->
     log_internal_info(Info,Date,Info#mod.data),
     case httpd_util:key1search(Info#mod.data,status) of
 	%% A status code has been generated!
-	{StatusCode,PhraseArgs,Reason} ->
+	{StatusCode, _PhraseArgs, Reason} ->
 	    transfer_log(Info,"-",AuthUser,Date,StatusCode,0),
 	    if
 		StatusCode >= 400 ->
@@ -48,12 +48,12 @@ do(Info) ->
 		{already_sent,StatusCode,Size} ->
 		    transfer_log(Info,"-",AuthUser,Date,StatusCode,Size),
 		    {proceed,Info#mod.data};
-		{response,Head,Body} ->
-		    Size=httpd_util:key1search(Head,content_length,unknown),
-		    Code=httpd_util:key1search(Head,code,unknown),
-		    transfer_log(Info,"-",AuthUser,Date,Code,Size),
-		    {proceed,Info#mod.data};
-		{StatusCode,Response} ->
+		{response, Head, _Body} ->
+		    Size = httpd_util:key1search(Head,content_length,unknown),
+		    Code = httpd_util:key1search(Head,code,unknown),
+		    transfer_log(Info, "-", AuthUser, Date, Code, Size),
+		    {proceed, Info#mod.data};
+		{_StatusCode, Response} ->
 		    transfer_log(Info,"-",AuthUser,Date,200,
 				 httpd_util:flatlength(Response)),
 		    {proceed,Info#mod.data};
@@ -64,10 +64,10 @@ do(Info) ->
     end.
 
 custom_date() ->
-    LocalTime=calendar:local_time(),
-    UniversalTime=calendar:universal_time(),
-    Minutes=round(diff_in_minutes(LocalTime,UniversalTime)),
-    {{YYYY,MM,DD},{Hour,Min,Sec}}=LocalTime,
+    LocalTime     = calendar:local_time(),
+    UniversalTime = calendar:universal_time(),
+    Minutes       = round(diff_in_minutes(LocalTime, UniversalTime)),
+    {{YYYY,MM,DD},{Hour,Min,Sec}} = LocalTime,
     Date = 
 	io_lib:format("~.2.0w/~.3s/~.4w:~.2.0w:~.2.0w:~.2.0w ~c~.2.0w~.2.0w",
 		      [DD, httpd_util:month(MM), YYYY, Hour, Min, Sec, 
@@ -81,7 +81,7 @@ diff_in_minutes(L,U) ->
 
 sign(Minutes) when Minutes > 0 ->
     $+;
-sign(Minutes) ->
+sign(_Minutes) ->
     $-.
 
 auth_user(Data) ->
@@ -94,7 +94,7 @@ auth_user(Data) ->
 
 %% log_internal_info
 
-log_internal_info(Info,Date,[]) ->
+log_internal_info(_Info, _Date, []) ->
     ok;
 log_internal_info(Info,Date,[{internal_info,Reason}|Rest]) ->
     error_log(Info,Date,Reason),
@@ -109,7 +109,8 @@ transfer_log(Info,RFC931,AuthUser,Date,StatusCode,Bytes) ->
 	undefined ->
 	    no_transfer_log;
 	TransferLog ->
-	    {PortNumber,RemoteHost}=(Info#mod.init_data)#init_data.peername,
+	    {_PortNumber, RemoteHost} = 
+		(Info#mod.init_data)#init_data.peername,
 	    case (catch io:format(TransferLog, "~s ~s ~s [~s] \"~s\" ~w ~w~n",
 				  [RemoteHost, RFC931, AuthUser, 
 				   Date, Info#mod.request_line,
@@ -133,33 +134,36 @@ security_log(Info, Reason) ->
 
 %% error_log
 
-error_log(Info,Date,Reason) ->
+error_log(Info, Date, Reason) ->
     case httpd_util:lookup(Info#mod.config_db, error_log) of
 	undefined ->
 	    no_error_log;
 	ErrorLog ->
-	    {PortNumber,RemoteHost}=(Info#mod.init_data)#init_data.peername,
-	    io:format(ErrorLog,"[~s] access to ~s failed for ~s, reason: ~p~n",
+	    {_PortNumber, RemoteHost} = 
+		(Info#mod.init_data)#init_data.peername,
+	    io:format(ErrorLog,
+		      "[~s] access to ~s failed for ~s, reason: ~p~n",
 		      [Date,Info#mod.request_uri,RemoteHost,Reason])
     end.
 
-error_log(SocketType,Socket,ConfigDB,{PortNumber,RemoteHost},Reason) ->
-    case httpd_util:lookup(ConfigDB,error_log) of
+error_log(_SocketType, _Socket, ConfigDB, {_PortNumber, RemoteHost}, Reason) ->
+    case httpd_util:lookup(ConfigDB, error_log) of
 	undefined ->
 	    no_error_log;
 	ErrorLog ->
-	    Date=custom_date(),
+	    Date = custom_date(),
 	    io:format(ErrorLog,"[~s] server crash for ~s, reason: ~p~n",
 		      [Date,RemoteHost,Reason]),
 	    ok
     end.
 
-report_error(ConfigDB,Error) ->
-    case httpd_util:lookup(ConfigDB,error_log) of
+
+report_error(ConfigDB, Error) ->
+    case httpd_util:lookup(ConfigDB, error_log) of
 	undefined ->
 	    no_error_log;
 	ErrorLog ->
-	    Date=custom_date(),
+	    Date = custom_date(),
 	    io:format(ErrorLog,"[~s] reporting error: ~s~n",[Date,Error]),
 	    ok
     end.
@@ -232,7 +236,7 @@ create_log(LogFile,ConfigList) ->
 			{ok,LogStream} ->
 			    file:position(LogStream,{eof,0}),
 			    {ok,LogStream};
-			{error,Reason} ->
+			{error, _Reason} ->
 			    {error,?NICE("Can't create "++AbsoluteFilename)}
 		    end
 	    end

@@ -311,7 +311,7 @@ ssl_server_certfile() ->
 	    V1;
 	{ok, V2}  when atom(V2) ->
 	    atom_to_list(V2);
-	What ->
+	_What ->
 	    {ok, Cwd} = file:get_cwd(),
 	    filename:join(Cwd,"ssl_server_cert.pem")
     end.
@@ -412,7 +412,7 @@ is_running() ->
 
 is_loaded([]) ->
     false;
-is_loaded([{cosFileTransfer, _, _} |As]) ->
+is_loaded([{cosFileTransfer, _, _} |_As]) ->
      true;
 is_loaded([_ |As]) ->
     is_loaded(As).

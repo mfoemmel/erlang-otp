@@ -313,9 +313,7 @@ resolve_initial_references_remote(ObjectId, [RemoteModifier| Rest])
 				[]}, 'true', infinity, IOR, []);
        false ->
 	    resolve_initial_references_remote(ObjectId, Rest)
-    end;
-resolve_initial_references_remote(_ObjectId, []) ->
-    raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
+    end.
 
 list_initial_services_remote([]) ->
     raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO});

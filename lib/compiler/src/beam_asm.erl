@@ -20,7 +20,6 @@
 -module(beam_asm).
 
 -export([module/4,format_error/1]).
--export([objfile_extension/0]).
 -export([encode/2]).
 
 -import(lists, [map/2,member/2,keymember/3,duplicate/2]).
@@ -36,12 +35,6 @@ module(Code, Abst, SourceFile, Opts) ->
 	    {ok, Bin}
     end.
 
-objfile_extension() ->
-    ".beam".
-
-format_error({too_big, Number, Bits}) ->
-    io_lib:format("[Internal error] Number '~p' too big to represent in ~p bits",
-		  [Number, Bits]);
 format_error({crashed, Why}) ->
     io_lib:format("beam_asm_int: EXIT: ~p", [Why]).
 
@@ -155,11 +148,9 @@ chunk(Id, Contents) when list(Contents) ->
 
 %% Build a correctly padded chunk (with a sub-header).
 
-chunk(Id, Head, Contents) when size(Id) == 4, binary(Head), binary(Contents) ->
+chunk(Id, Head, Contents) when size(Id) == 4, is_binary(Head), is_binary(Contents) ->
     Size = size(Head)+size(Contents),
     [<<Id/binary,Size:32,Head/binary>>,Contents|pad(Size)];
-chunk(Id, Head, Contents) when list(Head) ->
-    chunk(Id, list_to_binary(Head), Contents);
 chunk(Id, Head, Contents) when list(Contents) ->
     chunk(Id, Head, list_to_binary(Contents)).
 
@@ -225,8 +216,9 @@ make_op({'%live',_R}, Dict) ->
     {[],Dict};
 make_op({bif, Bif, nofail, [], Dest}, Dict) ->
     encode_op(bif0, [{extfunc, erlang, Bif, 0}, Dest], Dict);
-make_op({bif, raise, _Fail, [_,_]=Args, _Dest}, Dict) ->
-    encode_op(raise, Args, Dict);
+make_op({bif, raise, _Fail, [A1,A2,_], _Dest}, Dict) ->
+    %% Drop last arg so we can get a bif2.
+    encode_op(raise, [A1,A2], Dict);
 make_op({bif, Bif, Fail, Args, Dest}, Dict) ->
     Arity = length(Args),
     case bif_type(Bif, Arity) of
@@ -240,6 +232,8 @@ make_op({bif, Bif, Fail, Args, Dest}, Dict) ->
 	    encode_op(BifOp, [Fail, {extfunc, erlang, Bif, Arity}|Args++[Dest]],
 		      Dict)
     end;
+make_op({bs_add=Op,Fail,[Src1,Src2,Unit],Dest}, Dict) ->
+    encode_op(Op, [Fail,Src1,Src2,Unit,Dest], Dict);
 make_op({test,Cond,Fail,Ops}, Dict) when list(Ops) ->
     encode_op(Cond, [Fail|Ops], Dict);
 make_op({make_fun2,{f,Lbl},Index,OldUniq,NumFree}, Dict0) ->
@@ -249,18 +243,18 @@ make_op(Op, Dict) when atom(Op) ->
     encode_op(Op, [], Dict);
 make_op({kill,Y}, Dict) ->
     make_op({init,Y}, Dict);
-make_op({Name, Arg1}, Dict) ->
+make_op({Name,Arg1}, Dict) ->
     encode_op(Name, [Arg1], Dict);
-make_op({Name, Arg1, Arg2}, Dict) ->
-    encode_op(Name, [Arg1, Arg2], Dict);
-make_op({Name, Arg1, Arg2, Arg3}, Dict) ->
-    encode_op(Name, [Arg1, Arg2, Arg3], Dict);
-make_op({Name, Arg1, Arg2, Arg3, Arg4}, Dict) ->
-    encode_op(Name, [Arg1, Arg2, Arg3, Arg4], Dict);
-make_op({Name, Arg1, Arg2, Arg3, Arg4, Arg5}, Dict) ->
-    encode_op(Name, [Arg1, Arg2, Arg3, Arg4, Arg5], Dict);
-make_op({Name, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6}, Dict) ->
-    encode_op(Name, [Arg1, Arg2, Arg3, Arg4, Arg5, Arg6], Dict).
+make_op({Name,Arg1,Arg2}, Dict) ->
+    encode_op(Name, [Arg1,Arg2], Dict);
+make_op({Name,Arg1,Arg2,Arg3}, Dict) ->
+    encode_op(Name, [Arg1,Arg2,Arg3], Dict);
+make_op({Name,Arg1,Arg2,Arg3,Arg4}, Dict) ->
+    encode_op(Name, [Arg1,Arg2,Arg3,Arg4], Dict);
+make_op({Name,Arg1,Arg2,Arg3,Arg4,Arg5}, Dict) ->
+    encode_op(Name, [Arg1,Arg2,Arg3,Arg4,Arg5], Dict);
+make_op({Name,Arg1,Arg2,Arg3,Arg4,Arg5,Arg6}, Dict) ->
+    encode_op(Name, [Arg1,Arg2,Arg3,Arg4,Arg5,Arg6], Dict).
 
 encode_op(Name, Args, Dict0) when atom(Name) ->
     {EncArgs,Dict1} = encode_args(Args, Dict0),
@@ -282,16 +276,12 @@ encode_arg({y, Y}, Dict) when Y >= 0 ->
 encode_arg({atom, Atom}, Dict0) when atom(Atom) ->
     {Index, Dict} = beam_dict:atom(Atom, Dict0),
     {encode(?tag_a, Index), Dict};
-encode_arg({i, N}, Dict) ->
-    {encode(?tag_i, N), Dict};
 encode_arg({integer, N}, Dict) ->
     {encode(?tag_i, N), Dict};
 encode_arg(nil, Dict) ->
     {encode(?tag_a, 0), Dict};
 encode_arg({f, W}, Dict) ->
     {encode(?tag_f, W), Dict};
-encode_arg({arity, Arity}, Dict) ->
-    {encode(?tag_u, Arity), Dict};
 encode_arg({'char', C}, Dict) ->
     {encode(?tag_h, C), Dict};
 encode_arg({string, String}, Dict0) ->
@@ -305,16 +295,15 @@ encode_arg({list, List}, Dict0) ->
     {[encode(?tag_z, 1), encode(?tag_u, length(List))|L], Dict};
 encode_arg({float, Float}, Dict) when float(Float) ->
     {[encode(?tag_z, 0)|<<Float:64/float>>], Dict};
-encode_arg({fr, Fr}, Dict) ->
-    {[encode(?tag_z, 2), encode(?tag_u, Fr)], Dict};
-encode_arg({field_flags, Flags0}, Dict) ->
+encode_arg({fr,Fr}, Dict) ->
+    {[encode(?tag_z, 2),encode(?tag_u,Fr)], Dict};
+encode_arg({field_flags,Flags0}, Dict) ->
     Flags = lists:foldl(fun (F, S) -> S bor flag_to_bit(F) end, 0, Flags0),
     {encode(?tag_u, Flags), Dict};
-encode_arg(Int, Dict) when integer(Int) ->
-    {encode(?tag_u, Int), Dict};
-encode_arg(Atom, Dict0) when atom(Atom) ->
-    {Index, Dict} = beam_dict:atom(Atom, Dict0),
-    {encode(?tag_a, Index), Dict}.
+encode_arg({alloc,List}, Dict) ->
+    {encode_alloc_list(List),Dict};
+encode_arg(Int, Dict) when is_integer(Int) ->
+    {encode(?tag_u, Int),Dict}.
 
 flag_to_bit(aligned) -> 16#01;
 flag_to_bit(little)  -> 16#02;
@@ -325,12 +314,22 @@ flag_to_bit(exact)   -> 16#08;
 flag_to_bit(native) ->  16#10.
     
 encode_list([H|T], _Dict, _Acc) when is_list(H) ->
-    exit({illegal_nested_listed,encode_arg,[H|T]});
+    exit({illegal_nested_list,encode_arg,[H|T]});
 encode_list([H|T], Dict0, Acc) ->
     {Enc,Dict} = encode_arg(H, Dict0),
     encode_list(T, Dict, [Enc|Acc]);
 encode_list([], Dict, Acc) ->
     {lists:reverse(Acc), Dict}.
+
+encode_alloc_list(L0) ->
+    L = encode_alloc_list_1(L0),
+    [encode(?tag_z, 3),encode(?tag_u, length(L0))|L].
+
+encode_alloc_list_1([{words,Words}|T]) ->
+    [encode(?tag_u, 0),encode(?tag_u, Words)|encode_alloc_list_1(T)];
+encode_alloc_list_1([{floats,Floats}|T]) ->
+    [encode(?tag_u, 1),encode(?tag_u, Floats)|encode_alloc_list_1(T)];
+encode_alloc_list_1([]) -> [].
 
 encode(Tag, N) when N < 0 ->
     encode1(Tag, negative_to_bytes(N, []));

@@ -1337,7 +1337,10 @@ orphan_tables([Tab | Tabs], Node, Ns, Local, Remote) ->
     LocalContent = Cs#cstruct.local_content,
     RamCopyHoldersOnDiscNodes = mnesia_lib:intersect(RamCopyHolders, DiscNodes),
     Active = val({Tab, active_replicas}),
+    BeingCreated = (?catch_val({Tab, create_table}) == true),
     case lists:member(Node, DiscCopyHolders) of
+	_ when BeingCreated == true -> 
+	    orphan_tables(Tabs, Node, Ns, Local, Remote);
 	true when Active == [] ->
 	    case DiscCopyHolders -- Ns of
 		[] ->
@@ -1403,6 +1406,10 @@ update_whereabouts(Tab, Node, State) ->
 	LocalC == true ->
 	    %% Local contents, don't care about other node
 	    State;
+	BeingCreated == true ->	    
+	    %% The table is currently being created
+	    %% It will be handled elsewhere
+	    State;
 	Storage == unknown, Read == nowhere ->
 	    %% No own copy, time to read remotely
 	    %% if the other node is a good node
@@ -1429,12 +1436,6 @@ update_whereabouts(Tab, Node, State) ->
 		    ignore
 	    end,
 	    user_sync_tab(Tab),
-	    State;
-	BeingCreated == true ->
-	    %% The table is currently being created
-	    %% and we shall have an own copy of it.
-	    %% We will load the (empty) table locally.
-	    add_active_replica(Tab, Node),
 	    State;
 	Read == nowhere ->
 	    %% Own copy, go and get a copy of the table

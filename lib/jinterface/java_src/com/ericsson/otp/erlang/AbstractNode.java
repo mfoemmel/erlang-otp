@@ -76,18 +76,22 @@ public class AbstractNode {
   static final int dFlagExtendedReferences = 4;
   static final int dFlagDistMonitor = 8;
   static final int dFlagFunTags = 16;
+  static final int dFlagExtendedPidsPorts = 256;
 
   int ntype = NTYPE_R6;
   int proto = 0; // tcp/ip
   int distHigh = 5; // Cannot talk to nodes before R6
   int distLow = 5;  // Cannot talk to nodes before R6
   int creation = 0;
-  int flags = dFlagExtendedReferences;
+  int flags = dFlagExtendedReferences|dFlagExtendedPidsPorts;
 
   /* initialize hostname and default cookie */
   static {
     try {
       localHost = InetAddress.getLocalHost().getHostName();
+      /* Make sure it's a short name, i.e. strip of everything after first '.' */
+      int dot = localHost.indexOf(".");
+      if (dot != -1) localHost = localHost.substring(0,dot);
     }
     catch (UnknownHostException e) {
       localHost = "localhost";

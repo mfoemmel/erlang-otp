@@ -1,0 +1,8 @@
+# $Id$
+
+bif hipe_bifs:vperfctr_open/0
+bif hipe_bifs:vperfctr_close/0
+bif hipe_bifs:vperfctr_info/0
+bif hipe_bifs:vperfctr_read_tsc/0
+bif hipe_bifs:vperfctr_read_pmc/1
+bif hipe_bifs:vperfctr_control/1

@@ -59,8 +59,8 @@ continue(Player,Board) ->
     not_allowed(Draws,Player),
     ok.
 
-choose_draw(Computer,Computer,Board,Depth,Win,NoDs) ->    % Depth > 0 !!
-    {Draw,Value} = alpha_beta(Depth,Board,-11000,11000,Computer,NoDs),
+choose_draw(Computer,Computer,Board,Depth,_Win,NoDs) ->    % Depth > 0 !!
+    {Draw,_Value} = alpha_beta(Depth,Board,-11000,11000,Computer,NoDs),
 %    io:format('Choosen draw is {~w,~w} : (~w)~n',
 %	      [othello_adt:col(Draw),othello_adt:row(Draw),Value]),
 %    io:format('=====================~n',[]),
@@ -131,7 +131,7 @@ cutoff(Draw,Value,Depth,Alpha,Beta,Draws,Board,Record,Player,NoDs)
   when Value == Alpha, NoDs < 13 ->
     choose(Draws,Board,Depth,Alpha,Beta,random_choice(Draw,Record),
 	   Player,NoDs);
-cutoff(Draw,Value,Depth,Alpha,Beta,Draws,Board,Record,Player,NoDs)
+cutoff(_Draw,Value,Depth,Alpha,Beta,Draws,Board,Record,Player,NoDs)
   when Value =< Alpha ->
     choose(Draws,Board,Depth,Alpha,Beta,Record,Player,NoDs).
 
@@ -183,7 +183,7 @@ game_over(Player,Board) ->
 	    Draws
     end.
 
-game_over(Board,Player,Result,Win) ->
+game_over(_Board,_Player,Result,Win) ->
     Win ! {self(),game_over,white_res(Result),black_res(Result)}.
 
 white_res({{white,Res},_}) -> Res;
@@ -194,7 +194,7 @@ black_res({_,{black,Res}}) -> Res.
 
 not_allowed([],Player) ->
     throw({omit_draw, Player});
-not_allowed(_,Player) ->
+not_allowed(_,_Player) ->
     ok.
 
 omit(Player,Win) ->
@@ -204,7 +204,7 @@ omit(Player,Win) ->
 	    ok
     end.
 
-init_display(Board,Win,first_time) ->
+init_display(_Board,_Win,first_time) ->
     true;
 init_display(Board,Win,_) ->
     display(Board,Win).

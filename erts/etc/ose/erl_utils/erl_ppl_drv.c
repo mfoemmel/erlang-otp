@@ -35,7 +35,6 @@
 #include "ose.h"
 
 #include "ose_erl_driver.h"
-#include "erl_error.h"
 #include "ei.h"
 
 #include "stdlib.h"

@@ -38,10 +38,15 @@ RELSYSDIR = $(RELEASE_PATH)/lib/inets-$(VSN)
 MODULES = \
 	ftp \
 	http \
-	http_lib \
+	http_base_64 \
+	http_chunk \
+	http_cookie \
 	httpc_handler \
 	httpc_manager \
-	uri \
+	http_response \
+	http_request \
+	http_transport\
+	http_uri \
 	httpd \
 	httpd_acceptor \
 	httpd_acceptor_sup \
@@ -49,7 +54,6 @@ MODULES = \
 	httpd_example \
 	httpd_manager \
 	httpd_misc_sup \
-	httpd_parse \
 	httpd_request_handler \
 	httpd_response \
 	httpd_socket \
@@ -81,7 +85,7 @@ MODULES = \
 	mod_security_server
 
 HRL_FILES = httpd.hrl httpd_verbosity.hrl mod_auth.hrl \
-            http.hrl jnets_httpd.hrl
+            http.hrl 
 
 ERL_FILES = $(MODULES:%=%.erl)
 

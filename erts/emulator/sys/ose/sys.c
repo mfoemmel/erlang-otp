@@ -120,6 +120,12 @@ void erts_sys_alloc_init(void) {
   initialize_allocation();
 }
 
+void
+erts_sys_pre_init(void)
+{
+
+}
+
 void erl_sys_init(void)
 {
   break_requested = 0;

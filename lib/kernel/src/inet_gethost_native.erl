@@ -136,8 +136,8 @@ run_once() ->
     {Pid, R, Request} = receive
 			 {{Pid0,R0}, {?OP_GETHOSTBYNAME, Proto0, Name0}} ->
 			     {Pid0, R0, [<<1:32, ?OP_GETHOSTBYNAME:8, Proto0:8>>, Name0,0]};
-			{{Pid1,R1}, {?OP_GETHOSTBYNAME, Proto1, Name1}}  ->
-			     {Pid1, R1, [<<1:32, ?OP_GETHOSTBYNAME:8, Proto1:8>>, Name1,0]}
+			{{Pid1,R1}, {?OP_GETHOSTBYADDR, Proto1, Name1}}  ->
+			     {Pid1, R1, [<<1:32, ?OP_GETHOSTBYADDR:8, Proto1:8>>, Name1,0]}
 		     after Timeout ->
 			     exit(normal)
 		     end,

@@ -57,6 +57,9 @@ ERL_FILES = $(MODULES:%=%.erl)
 
 TARGET_FILES = $(MODULES:%=%.$(EMULATOR))
 
+COVER_SPEC_FILE = megaco.cover
+
+
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
@@ -304,7 +307,8 @@ release_docs_spec:
 
 release_tests_spec: tests
 	$(INSTALL_DIR)  $(RELSYSDIR)
-	$(INSTALL_DATA) $(TEST_SPEC_FILE) $(HRL_FILES) $(ERL_FILES) \
+	$(INSTALL_DATA) $(TEST_SPEC_FILE) $(COVER_SPEC_FILE) \
+                        $(HRL_FILES) $(ERL_FILES) \
                         $(RELSYSDIR)
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)
 	chmod -f -R u+w $(RELSYSDIR)

@@ -98,10 +98,10 @@ ESRC = .
 endif
 
 $(EBIN)/%.beam: $(ESRC)/%.erl
-	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 
 .erl.beam:
-	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(dir $@) $<
+	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(dir $@) $<
 
 #
 # When .erl files are automatically created GNU make removes them if
@@ -125,8 +125,12 @@ $(EBIN)/%.beam: $(ESRC)/%.erl
 #	SNMP language section
 # ----------------------------------------------------
 SNMP_TOOLKIT = $(ERL_TOP)/lib/snmp
-SNMP_BIN_TARGET_DIR = ../priv/mibs
-SNMP_HRL_TARGET_DIR = ../include
+ifeq ($(SNMP_BIN_TARGET_DIR),)
+  SNMP_BIN_TARGET_DIR = ../priv/mibs
+endif
+ifeq ($(SNMP_HRL_TARGET_DIR),)
+  SNMP_HRL_TARGET_DIR = ../include
+endif
 
 
 $(SNMP_BIN_TARGET_DIR)/%.bin: %.mib

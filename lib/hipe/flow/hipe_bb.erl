@@ -4,7 +4,7 @@
 %%
 %% Exports:
 %% ~~~~~~~~
-%% mk_bb(Code,NextBB) - construct a basic block, NextBB is the fall-through bb.
+%% mk_bb(Code) - construct a basic block.
 %% code(BB) - returns the code.
 %% code_update(BB, NewCode) - replace the code in a basic block.
 %% last(BB) - returns the last instruction.
@@ -12,10 +12,9 @@
 
 -module(hipe_bb).
 -export([mk_bb/1,
-	 mk_bb/2,
 	 code/1,
-	 annot/1,
 	 code_update/2,
+	 is_bb/1,
 	 last/1,
 	 butlast/1]).
 
@@ -27,17 +26,14 @@
 mk_bb(Code) ->
    {bb, Code, []}.
 
-mk_bb(Code, Annot) ->
-   {bb, Code, Annot}.
+is_bb({bb, _, _}) -> true;
+is_bb(_) -> false.
 
 code_update({bb, _Code, Annot}, NewCode) ->
    {bb, NewCode, Annot}.
 
 code({bb, Code, _Annot}) -> 
    Code.
-
-annot({bb, _Code, Annot}) -> 
-   Annot.
 
 last({bb, Code, _Annot}) -> 
    lists:last(Code).

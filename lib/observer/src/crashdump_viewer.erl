@@ -62,6 +62,7 @@
 	 read_file_frame/2,
 	 read_file/2,
 	 translate/2,
+	 redirect/2,
 	 filename_frame/2,
 	 menu_frame/2,
 	 initial_info_frame/2,
@@ -85,7 +86,8 @@
 	 sort_procs/2,
 	 expand/2,
 	 expand_binary/2,
-	 expand_memory/2]).
+	 expand_memory/2,
+	 next/2]).
 
 
 %% gen_server callbacks
@@ -130,7 +132,8 @@
 	      %% or newer)
 	      _=?space}).
 
--record(state,{file,procs_summary,sorted,shared_heap=false,wordsize=4,binaries}).
+-record(state,{file,procs_summary,sorted,shared_heap=false,
+	       wordsize=4,num_atoms="unknown",binaries,bg_status}).
 
 %%%-----------------------------------------------------------------
 %%% Debugging
@@ -325,6 +328,16 @@ expand_memory(_Env,Input) ->
 expand_binary(_Env,Input) ->
     call({expand_binary,Input}).
 
+%%%-----------------------------------------------------------------
+%%% Called when the "Next" link under atoms is clicked.
+next(_Env,Input) ->
+    call({next,Input}).
+
+%%%-----------------------------------------------------------------
+%%% Called on regular intervals while waiting for a dump to be read
+redirect(_Env,_Input) ->
+    call(redirect).
+
 %%====================================================================
 %% Server functions
 %%====================================================================
@@ -338,9 +351,9 @@ expand_binary(_Env,Input) ->
 %%          {stop, Reason}
 %%--------------------------------------------------------------------
 init([]) ->
-    ets:new(cdv_menu_table,[set,named_table,{keypos,#menu_item.index}]),
-    ets:new(cdv_dump_index_table,[bag,named_table]),
-    ets:new(cdv_decode_heap_table,[set,named_table]),
+    ets:new(cdv_menu_table,[set,named_table,{keypos,#menu_item.index},public]),
+    ets:new(cdv_dump_index_table,[bag,named_table,public]),
+    ets:new(cdv_decode_heap_table,[set,named_table,public]),
     {ok, #state{}}.
 
 %%--------------------------------------------------------------------
@@ -353,28 +366,52 @@ init([]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_call(start_page, _From, State=#state{file=undefined}) ->
+handle_call(start_page,_From,State=#state{file=undefined,bg_status=undefined})->
     Reply = crashdump_viewer_html:welcome(),
+    {reply,Reply,State};
+handle_call(start_page, _From, State=#state{file=undefined,bg_status={done,Page}}) ->
+    {reply,Page,State};
+handle_call(start_page, _From, State=#state{file=undefined,bg_status=Status}) ->
+    Reply = crashdump_viewer_html:redirect(Status),
     {reply,Reply,State};
 handle_call(start_page, _From, State) ->
     Reply = crashdump_viewer_html:start_page(),
     {reply,Reply,State};
 handle_call({read_file,Input}, _From, _State) ->
     {ok,File0} = get_value("path",httpd:parse_query(Input)),
-    {Reply,File,Binaries} = read_file(File0),
-    {reply, Reply, #state{file=File,binaries=Binaries}};
-handle_call({translate,Input}, _From, State=#state{file=File0}) ->
+    File = 
+	case File0 of
+	    [$"|FileAndSome] ->
+		%% Opera adds \"\" around the filename!
+		[$"|Elif] = lists:reverse(FileAndSome),
+		lists:reverse(Elif);
+	    _ ->
+		File0
+	end,
+    spawn_link(fun() -> read_file(File) end),
+    Status = background_status(reading,File),
+    Reply = crashdump_viewer_html:redirect(Status),
+    {reply, Reply, #state{bg_status=Status}};
+handle_call({translate,Input}, _From, State=#state{file=File}) ->
     {ok,TranslatedFile} = get_value("path",httpd:parse_query(Input)),
-    {Reply,File,Binaries} = do_translate(File0,TranslatedFile),
-    {reply,Reply,State#state{file=File,binaries=Binaries}};
+    spawn_link(fun() -> do_translate(File,TranslatedFile) end),
+    Status = background_status(translating,File),
+    Reply = crashdump_viewer_html:redirect(Status),
+    {reply, Reply, State#state{bg_status=Status}};
+handle_call(redirect,_From, State=#state{bg_status={done,Page}}) ->
+    {reply, Page, State#state{bg_status=undefined}};   
+handle_call(redirect,_From, State=#state{bg_status=Status}) ->
+    Reply = crashdump_viewer_html:redirect(Status),
+    {reply, Reply, State};
 handle_call(filename_frame,_From,State=#state{file=File}) ->
     Reply = crashdump_viewer_html:filename_frame(File),
     {reply,Reply,State};
 handle_call(initial_info_frame,_From,State=#state{file=File}) ->
     GenInfo = general_info(File),
+    NumAtoms = GenInfo#general_info.num_atoms,
     {WS,SH} = parse_vsn_str(GenInfo#general_info.system_vsn,4,false),
     Reply = crashdump_viewer_html:general_info(GenInfo),
-    {reply,Reply,State#state{shared_heap=SH,wordsize=WS}};
+    {reply,Reply,State#state{shared_heap=SH,wordsize=WS,num_atoms=NumAtoms}};
 handle_call({toggle,Input},_From,State) ->
     {ok,Index} = get_value("index",httpd:parse_query(Input)),
     do_toggle(list_to_integer(Index)),
@@ -402,13 +439,8 @@ handle_call({expand,Input},_From,State=#state{file=File}) ->
     {reply,Reply,State};
 handle_call({expand_memory,Input},_From,State=#state{file=File,binaries=B}) ->
     [{"pid",Pid},{"what",What}] = httpd:parse_query(Input),
-    Tags = [{"=proc_messages",Pid},
-	    {"=proc_dictionary",Pid},
-	    {"=debug_proc_dictionary",Pid},
-	    {"=proc_stack",Pid},
-	    {"=proc_heap",Pid}],
     Reply = 
-	case truncated_warning(Tags) of
+	case truncated_warning([{"=proc",Pid}]) of
 	    [] ->
 		Expanded = expand_memory(File,What,Pid,B),
 		crashdump_viewer_html:expanded_memory(What,Expanded);
@@ -428,6 +460,15 @@ handle_call({expand_binary,Input},_From,State=#state{file=File}) ->
     {Bin,_Line} = get_binary(val(Fd)),
     close(Fd),
     Reply=crashdump_viewer_html:expanded_binary(io_lib:format("~p",[Bin])),
+    {reply,Reply,State};
+handle_call({next,Input},_From,State=#state{file=File}) ->
+    [{"pos",Pos},{"num",N},{"start",Start},{"what",What}] =
+	httpd:parse_query(Input),
+    Tags = related_tags(What),
+    TW = truncated_warning(Tags),
+    Next = get_next(File,list_to_integer(Pos),list_to_integer(N),
+		    list_to_integer(Start),What),
+    Reply = crashdump_viewer_html:next(Next,TW),
     {reply,Reply,State};
 handle_call(general_info,_From,State=#state{file=File}) ->
     GenInfo=general_info(File),
@@ -535,10 +576,10 @@ handle_call(funs,_From,State=#state{file=File}) ->
     TW = truncated_warning(["=fun"]),
     Reply = crashdump_viewer_html:funs(Funs,TW),
     {reply,Reply,State};
-handle_call(atoms,_From,State=#state{file=File}) ->
+handle_call(atoms,_From,State=#state{file=File,num_atoms=Num}) ->
     Atoms=atoms(File),
     TW = truncated_warning(["=atoms","=num_atoms"]),
-    Reply = crashdump_viewer_html:atoms(Atoms,TW),
+    Reply = crashdump_viewer_html:atoms(Atoms,Num,TW),
     {reply,Reply,State};
 handle_call(memory,_From,State=#state{file=File}) ->
     Memory=memory(File),
@@ -575,8 +616,11 @@ handle_call(index_tables,_From,State=#state{file=File}) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_cast(_Msg, State) ->
-    {noreply, State}.
+handle_cast({background_done,{Page,File,Binaries},Dict}, State) ->
+    lists:foreach(fun({Key,Val}) -> put(Key,Val) end, Dict),
+    {noreply, State#state{file=File,binaries=Binaries,bg_status={done,Page}}};
+handle_cast({background_status,Status}, State) ->
+    {noreply, State#state{bg_status=Status}}.
 
 %%--------------------------------------------------------------------
 %% Function: handle_info/2
@@ -610,6 +654,9 @@ code_change(_OldVsn, State, _Extra) ->
 call(Request) ->
     gen_server:call(?SERVER,Request,?call_timeout).
 
+cast(Msg) ->
+    gen_server:cast(?SERVER,Msg).
+
 unexpected(_Fd,{eof,_LastLine},_Where) ->
     ok; % truncated file
 unexpected(Fd,{part,What},Where) ->
@@ -621,22 +668,62 @@ unexpected(_Fd,What,Where) ->
 truncated_warning([]) ->
     [];
 truncated_warning([Tag|Tags]) ->
-    case get(truncated) of
-	true ->
-	    case get(last_tag) of
-		Tag -> % Tag == {TagType,Id}
-		    truncated_warning();
-		{Tag,_Id} ->
-		    truncated_warning();
-		_Other ->
-		    truncated_warning(Tags)
-	    end;
-	false ->
-	    []
+    case truncated_here(Tag) of
+	true -> truncated_warning();
+	false -> truncated_warning(Tags)
     end.
 truncated_warning() ->
     ["WARNING: The crash dump is truncated here. "
      "Some information might be missing."].
+
+truncated_here(Tag) ->
+    case get(truncated) of
+	true ->
+	    case get(last_tag) of
+		Tag -> % Tag == {TagType,Id}
+		    true;
+		{Tag,_Id} ->
+		    true;
+		_LastTag ->
+		    truncated_earlier(Tag)
+	    end;
+	false ->
+	    false
+    end.
+		    
+
+%% Check if the dump was truncated with the same tag, but earlier id.
+%% Eg if this is {"=proc","<0.30.0>"}, we should warn if the dump was
+%% truncated in {"=proc","<0.29.0>"} or earlier
+truncated_earlier({"=proc",Pid}) ->
+    compare_pid(Pid,get(truncated_proc));
+truncated_earlier(_Tag) ->
+    false.
+
+compare_pid("<"++Id,"<"++OtherId) ->
+    Id>=OtherId;
+compare_pid(_,_) ->
+    false.
+
+background_status(Action,File) ->
+    SizeInfo = filesizeinfo(File), 
+    background_status(Action,File,SizeInfo).
+
+background_status(translating,File,SizeInfo) ->
+   "Converting "  ++ File ++ SizeInfo ++ " to new crashdump format";
+background_status(processing,File,SizeInfo) ->
+    "Processing " ++ File ++ SizeInfo;
+background_status(reading,File,SizeInfo) ->
+    "Reading file " ++ File ++ SizeInfo.
+
+filesizeinfo(File) ->
+    case file:read_file_info(File) of
+	{ok,#file_info{size=Size}} -> 
+	    " (" ++ integer_to_list(Size) ++ " bytes)";
+	_X ->
+	    ""
+    end.
+
 
 open(File) ->
     {ok,Fd} = file:open(File,[read,read_ahead,raw,binary]),
@@ -776,22 +863,37 @@ count_rest_of_line(Fd,<<>>,N) ->
 	eof -> {eof,N}
     end.
 
-get_rest_of_tag(Fd) ->
+get_n_lines_of_tag(Fd,N) ->
     case get_chunk(Fd) of
-	{ok,Bin} -> get_rest_of_tag(Fd,Bin,[]);
-	eof -> []
+	{ok,Bin} -> 
+	    {AllOrPart,Rest,Lines} = get_n_lines_of_tag(Fd,N,Bin,[]),
+	    {AllOrPart,N-Rest,Lines};
+	eof ->
+	    empty
     end.
-get_rest_of_tag(Fd,<<"\n=",Bin/binary>>,Acc) ->
+get_n_lines_of_tag(Fd,N,<<"\n=",_/binary>>=Bin,Acc) ->
     put_chunk(Fd,Bin),
-    lists:reverse(Acc);
-get_rest_of_tag(Fd,<<$\r:8,Bin/binary>>,Acc) ->
-    get_rest_of_tag(Fd,Bin,Acc);
-get_rest_of_tag(Fd,<<Char:8,Bin/binary>>,Acc) ->
-    get_rest_of_tag(Fd,Bin,[Char|Acc]);
-get_rest_of_tag(Fd,<<>>,Acc) ->
+    {all,N-1,lists:reverse(Acc)};
+get_n_lines_of_tag(Fd,0,Bin,Acc) ->
+    put_chunk(Fd,Bin),
+    {part,0,lists:reverse(Acc)};
+get_n_lines_of_tag(Fd,N,<<$\n:8,Bin/binary>>,Acc) ->
+    get_n_lines_of_tag(Fd,N-1,Bin,[$\n|Acc]);
+get_n_lines_of_tag(Fd,N,<<$\r:8,Bin/binary>>,Acc) ->
+    get_n_lines_of_tag(Fd,N,Bin,Acc);
+get_n_lines_of_tag(Fd,N,<<Char:8,Bin/binary>>,Acc) ->
+    get_n_lines_of_tag(Fd,N,Bin,[Char|Acc]);
+get_n_lines_of_tag(Fd,N,<<>>,Acc) ->
     case get_chunk(Fd) of
-	{ok,Bin} -> get_rest_of_tag(Fd,Bin,Acc);
-	eof -> lists:reverse(Acc)
+	{ok,Bin} -> 
+	    get_n_lines_of_tag(Fd,N,Bin,Acc);
+	eof -> 
+	    case Acc of
+		[$\n|_] ->
+		    {all,N,lists:reverse(Acc)};
+		_ ->
+		    {all,N-1,lists:reverse(Acc)}
+	    end
     end.
 
 count_rest_of_tag(Fd) ->
@@ -955,16 +1057,15 @@ toggle_children(Index,Max,Depth,ToggleState) ->
 
 %%%-----------------------------------------------------------------
 %%% Traverse crash dump and insert index in table for each heading
-read_file(File0) ->
-    File = 
-	case File0 of
-	    [$"|FileAndSome] ->
-		%% Opera adds \"\" around the filename!
-		[$"|Elif] = lists:reverse(FileAndSome),
-		lists:reverse(Elif);
-	    _ ->
-		File0
-	end,
+%%% 
+%%% This function is executed in a background process in order to
+%%% avoid a timeout in the web browser. The browser displays "Please
+%%% wait..." while this is going on.
+%%%
+%%% Variable written to process dictionary in this function are copied
+%%% to the crashdump_viewer_server when the function is completed (see
+%%% background_done/1).
+read_file(File) ->
     case file:read_file_info(File) of
 	{ok,#file_info{type=regular,access=FileA}} when FileA=:=read;
 							FileA=:=read_write ->
@@ -976,19 +1077,22 @@ read_file(File0) ->
 			"=erl_crash_dump" ->
 			    ets:delete_all_objects(cdv_dump_index_table),
 			    ets:insert(cdv_dump_index_table,{Tag,Id,N1+1}),
+			    put(last_tag,{Tag,""}),
+			    Status = background_status(processing,File),
+			    background_status(Status),
 			    indexify(Fd,Rest,N1),
 			    check_if_truncated(),
 			    initial_menu(),
 			    Binaries = read_binaries(Fd),
 			    R = crashdump_viewer_html:start_page(),
 			    close(Fd),
-			    {R,File,Binaries};
+			    background_done({R,File,Binaries});
 			_Other ->
 			    R = crashdump_viewer_html:error(
 				  "~s is not an Erlang crash dump~n",
 				  [File]),
 			    close(Fd),
-			    {R,undefined,undefined}
+			    background_done({R,undefined,undefined})
 		    end;
 		{ok,<<"<Erlang crash dump>",_Rest/binary>>} -> 
 		    %% old version - translate
@@ -1006,33 +1110,38 @@ read_file(File0) ->
 				    do_translate(File,TranslatedFile);
 				_ ->
 				    R = get_translated_filename(TranslatedFile),
-				    {R,File,undefined}
+				    background_done({R,File,undefined})
 			    end;
 			{ok,_FileInfo} ->
 			    R = get_translated_filename(File),
-			    {R,File,undefined}
+			    background_done({R,File,undefined})
 		    end;
 		_Other ->
 		    R = crashdump_viewer_html:error(
 			  "~s is not an Erlang crash dump~n",
 			  [File]),
 		    close(Fd),
-		    {R,undefined,undefined}
+		    background_done({R,undefined,undefined})
 	    end;
 	_other ->
 	    R = crashdump_viewer_html:error("~s is not an Erlang crash dump~n",
 					    [File]),
-	    {R,undefined,undefined}
+	    background_done({R,undefined,undefined})
     end.
 
+%%% Translate an old type crashdump.
+%%% This function is run in a background process - see more info in
+%%% comments for read_file/1 above.
 do_translate(File,TranslatedFile) ->
+    Status = background_status(translating,File),
+    background_status(Status),
     case crashdump_translate:old2new(File,TranslatedFile) of
 	ok ->
 	    read_file(TranslatedFile);
 	Error ->
 	    R=crashdump_viewer_html:error("Can not translate ~s:~n~p~n",
 					  [File,Error]),
-	    {R,undefined,undefined}
+	    background_done({R,undefined,undefined})
     end.
 
 get_translated_filename(File) ->
@@ -1085,25 +1194,49 @@ tag(Fd,<<>>,N,Gat,Di,Now) ->
 check_if_truncated() ->
     case get(last_tag) of
 	{"=end",_} ->
-	    put(truncated,false);
-	_TruncatedTag ->
-	    put(truncated,true)
+	    put(truncated,false),
+	    put(truncated_proc,false);
+	TruncatedTag ->
+	    put(truncated,true),
+	    find_truncated_proc(TruncatedTag)
     end.
 	    
-%%%-----------------------------------------------------------------
-%%% Functions for reading information from the dump
-read(File,Tag) ->
-    case ets:lookup(cdv_dump_index_table,Tag) of
-	[{Tag,_Id,Start}] ->
-	    Fd = open(File),
-	    pos_bof(Fd,Start),
-	    R = get_rest_of_tag(Fd),
-	    close(Fd),
-	    R;
-	_ ->
-	    []
+find_truncated_proc({"=atom",_Id}) ->
+    put(truncated_proc,false);
+find_truncated_proc({Tag,Pid}) ->
+    case is_proc_tag(Tag) of
+	true -> 
+	    put(truncated_proc,Pid);
+	false -> 
+	    %% This means that the dump is truncated between "=proc" and
+	    %% "=proc_heap" => memory info is missing for all procs.
+	    put(truncated_proc,"<0.0.0>")
     end.
 
+is_proc_tag(Tag)  when Tag=="=proc";
+		       Tag=="=proc_dictionary";
+		       Tag=="=proc_messages";
+		       Tag=="=proc_dictionary";
+		       Tag=="=debug_proc_dictionary";
+		       Tag=="=proc_stack";
+		       Tag=="=proc_heap" ->
+    true;
+is_proc_tag(_) ->
+    false.
+
+related_tags("Atoms") ->
+    ["=atoms","=num_atoms"].
+
+%%% Inform the crashdump_viewer_server that a background job is completed.
+background_done(Result) ->
+    Dict = get(),
+    cast({background_done,Result,Dict}).    
+
+background_status(Status) ->
+    cast({background_status,Status}).
+
+%%%-----------------------------------------------------------------
+%%% Functions for reading information from the dump
 general_info(File) ->
     [{"=erl_crash_dump",_Id,Start}] = 
 	ets:lookup(cdv_dump_index_table,"=erl_crash_dump"),
@@ -1282,10 +1415,19 @@ get_proc_details(File,Pid) ->
 
 if_exist(Tag,Key) ->
     case ets:select_count(cdv_dump_index_table,[{{Tag,Key,'_'},[],[true]}]) of
-	0 -> ?space;
-	_ -> expand
+	0 -> 
+	    Tag1 = 
+		case is_proc_tag(Tag) of
+		    true -> "=proc";
+		    false -> Tag
+		end,
+	    case truncated_here({Tag1,Key}) of
+		true -> truncated;
+		false -> ?space
+	    end;
+	_ -> 
+	    expand
     end.
-
 
 get_procinfo(Fd,Fun,Proc) ->
     case line_head(Fd) of
@@ -1298,7 +1440,13 @@ get_procinfo(Fd,Fun,Proc) ->
 	"Name" ->
 	    get_procinfo(Fd,Fun,Proc#proc{name=val(Fd)});
 	"Spawned as" ->
-	    get_procinfo(Fd,Fun,Proc#proc{init_func=val(Fd)});
+	    IF = val(Fd),
+	    case Proc#proc.name of
+		?space ->
+		    get_procinfo(Fd,Fun,Proc#proc{name=IF,init_func=IF});
+		_ ->
+		    get_procinfo(Fd,Fun,Proc#proc{init_func=IF})
+	    end;
 	"Spawned by" ->
 	    case val(Fd) of
 		"[]" ->
@@ -1672,6 +1820,10 @@ do_sort_procs("init_func",Procs,"init_func") ->
     {lists:reverse(lists:keysort(#proc.init_func,Procs)),"rinit_func"};
 do_sort_procs("init_func",Procs,_) ->
     {lists:keysort(#proc.init_func,Procs),"init_func"};
+do_sort_procs("name_func",Procs,"name_func") ->
+    {lists:reverse(lists:keysort(#proc.name,Procs)),"rname_func"};
+do_sort_procs("name_func",Procs,_) ->
+    {lists:keysort(#proc.name,Procs),"name_func"};
 do_sort_procs("name",Procs,Sorted) ->
     {No,Yes} = 
 	lists:foldl(fun(P,{N,Y}) ->
@@ -2041,7 +2193,23 @@ get_funinfo1(Fd,Fu) ->
     end.
 
 atoms(File) ->
-    read(File,"=atoms").
+    case ets:lookup(cdv_dump_index_table,"=atoms") of
+	[{_atoms,_Id,Start}] ->
+	    Fd = open(File),
+	    pos_bof(Fd,Start),
+	    R = case get_n_lines_of_tag(Fd,100) of
+		    {all,N,Lines} ->
+			{n_lines,1,N,"Atoms",Lines};
+		    {part,100,Lines} ->
+			{n_lines,1,100,"Atoms",Lines,get(pos)};
+		    empty ->
+			[]
+		end,
+	    close(Fd),
+	    R;
+	_ ->
+	    []
+    end.
 
 memory(File) ->
     case ets:lookup(cdv_dump_index_table,"=memory") of
@@ -2208,12 +2376,28 @@ get_indextableinfo1(Fd,IndexTable) ->
 
 get_expanded(File,Pos,Size) ->
     Fd = open(File),
-    case file:pread(Fd,Pos,Size) of
-	{ok,Bin}->
-	    binary_to_list(Bin);
-	eof ->
-	    ?space
-    end.
+    R = case file:pread(Fd,Pos,Size) of
+	    {ok,Bin}->
+		binary_to_list(Bin);
+	    eof ->
+		?space
+	end,
+    close(Fd),
+    R.
+
+
+get_next(File,Pos,N0,Start,What) ->
+    Fd = open(File),
+    pos_bof(Fd,Pos),
+    R = case get_n_lines_of_tag(Fd,N0) of
+	    {all,N,Lines} ->
+		{n_lines,Start,N,What,Lines};
+	    {part,N,Lines} ->
+		{n_lines,Start,N,What,Lines,get(pos)}
+	end,
+    close(Fd),
+    R.
+
 
 
 replace_all(From,To,[From|Rest],Acc) ->

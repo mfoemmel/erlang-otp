@@ -1,15 +1,12 @@
+%%% -*- erlang-indent-level: 2 -*-
 %%% $Id$
 %%% Linear Scan register allocator for x86
 
 -module(hipe_x86_ra_ls).
 -export([ra/3,regalloc/7]).
 
-%%-define(DEBUG,1).
-
--include("hipe_x86.hrl").
 -define(HIPE_INSTRUMENT_COMPILER, true). %% Turn on instrumentation.
 -include("../main/hipe.hrl").
--include("../util/hipe_vector.hrl").
 
 ra(X86Defun, SpillIndex, Options) ->
   ?inc_counter(ra_calls_counter,1), 
@@ -34,29 +31,26 @@ alloc(X86Defun, SpillIndex, SpillLimit, Options) ->
       X86Cfg, 
       hipe_x86_registers:allocatable()--
       [hipe_x86_registers:temp1(),
-	hipe_x86_registers:temp0()],
-      [hipe_x86_cfg:start(X86Cfg)],
+       hipe_x86_registers:temp0()],
+      [hipe_x86_cfg:start_label(X86Cfg)],
       SpillIndex, SpillLimit, Options,
       hipe_x86_specific),
 
-  {NewX86Defun, _, DontSpill} =
+  {NewX86Defun, _, _DontSpill} =
     hipe_x86_ra_ls_postconditions:check_and_rewrite(
       X86Defun, Coloring, [], Options),
-  %%hipe_x86_pp:pp(NewX86Defun),
+  %% hipe_x86_pp:pp(NewX86Defun),
   TempMap = hipe_temp_map:cols2tuple(Coloring, hipe_x86_specific),
-  {TempMap2, NewSpillIndex2} = 
+  {TempMap2,_NewSpillIndex2} = 
     hipe_spill_minimize:stackalloc(X86Cfg, [], 
 				   SpillIndex, Options, 
 				   hipe_x86_specific, 
 				   TempMap),
-	       
   Coloring2 = 
     hipe_spill_minimize:mapmerge(hipe_temp_map:to_substlist(TempMap), 
 				 TempMap2),
   ?add_spills(Options, NewSpillIndex),
   {NewX86Defun, Coloring2}.
-
-
 
 
 %%  Purpose  :  Perform a register allocation based on the 
@@ -98,7 +92,6 @@ regalloc(CFG,PhysRegs,Entrypoints, SpillIndex, DontSpill, Options, Target) ->
   ?debug_msg("Intervals ~w\n",[Intervals]),
   ?debug_msg("No intervals: ~w\n",[length(Intervals)]),
 
-
   Allocation = allocate(Intervals,PhysRegs, SpillIndex, DontSpill, Target),
   ?debug_msg("allocation (done) ~w\n",[erlang:statistics(runtime)]),
   Allocation.
@@ -121,8 +114,7 @@ calculate_intervals(CFG,Liveness,_Entrypoints, Options, Target) ->
   %% Add start point for the argument registers.
   Args = arg_vars(CFG, Target),
   Interval = 
-    add_def_point(Args, 0, 
-		  empty_interval(Target:number_of_temporaries(CFG))),
+    add_def_point(Args, 0, empty_interval(Target:number_of_temporaries(CFG))),
   Worklist =
     case proplists:get_value(ls_order, Options) of
       reversepostorder ->
@@ -138,9 +130,8 @@ calculate_intervals(CFG,Liveness,_Entrypoints, Options, Target) ->
       _ ->
 	Target:reverse_postorder(CFG)
     end,
-
   ?debug_msg("No BBs ~w\n",[length(Worklist)]),
-  intervals(Worklist, Interval, 1, CFG, Liveness, succ_map(CFG, Target), Target).
+  intervals(Worklist, Interval, 1, CFG, Liveness, succ_map(CFG,Target), Target).
 
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 %% intervals(WorkList, Intervals, InstructionNr,
@@ -152,22 +143,21 @@ calculate_intervals(CFG,Liveness,_Entrypoints, Options, Target) ->
 %%  Liveness: A map of live-in and live-out sets for each Basic-Block.
 %%  SuccMap: A map of successors for each BB name.
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-intervals([L|ToDO],Intervals,InstructionNr,CFG,Liveness,SuccMap, Target) ->
+intervals([L|ToDO],Intervals,InstructionNr,CFG,Liveness,SuccMap,Target) ->
   ?debug_msg("Block ~w\n",[L]),
   %% Add all variables that are live at the entry of this block
   %% to the interval data structure.
-  LiveIn = livein(Liveness,L, Target),
+  LiveIn = livein(Liveness,L,Target),
   Intervals2 = add_def_point(LiveIn,InstructionNr,Intervals),
-  LiveOut = liveout(Liveness,L, Target),
+  LiveOut = liveout(Liveness,L,Target),
   Unchanged = ordsets:intersection(LiveIn, LiveOut),
   ?debug_msg("In ~w -> Out ~w\n",[LiveIn, LiveOut]),
   %% Traverse this block instruction by instruction and add all
   %% uses and defines to the intervals.
 
-  Code = hipe_bb:code(bb(CFG,L, Target)),
+  Code = hipe_bb:code(bb(CFG,L,Target)),
   {Intervals3, NewINr} = traverse_block(Code, InstructionNr,
-					Intervals2, Unchanged,
-					Target),
+					Intervals2, Unchanged, Target),
   
   %% Add end points for the registers that are in the live-out set.
   Intervals4 = add_use_point(LiveOut, NewINr, Intervals3),
@@ -262,16 +252,16 @@ allocate([RegInt|RIS], Free, Active, Alloc, SpillIndex, DontSpill, Target) ->
   
   %% Get the name of the temp in the current interval.
   Temp = reg(RegInt), 
-  case is_precolored(Temp, Target) of
+  case is_precoloured(Temp, Target) of
     true -> 
-      %% This is a precolored register we don't need to find a color
+      %% This is a precoloured register we don't need to find a color
       %% Get the physical name of the register.
       PhysName = physical_name(Temp, Target), 
-      %% Bind it to the precolored name.
+      %% Bind it to the precoloured name.
       NewAlloc = alloc(Temp, PhysName, Alloc), 
       case is_global(Temp, Target) of
 	true -> 
-	  %% this is a global precolored register 
+	  %% this is a global precoloured register 
 	  allocate(RIS, NewFree, NewActive,
 		   NewAlloc, SpillIndex, DontSpill, Target);
 	false ->
@@ -282,7 +272,7 @@ allocate([RegInt|RIS], Free, Active, Alloc, SpillIndex, DontSpill, Target) ->
 		       NewAlloc,
 		       SpillIndex, DontSpill, Target);
 	    false ->
-	      %% Some other temp has taken this precolored register,
+	      %% Some other temp has taken this precoloured register,
 	      %% throw it out.
 
 	      {OtherActive, NewActive2} = 
@@ -303,7 +293,7 @@ allocate([RegInt|RIS], Free, Active, Alloc, SpillIndex, DontSpill, Target) ->
 	    
       end;
     false -> 
-      %% This is not a precolored register.
+      %% This is not a precoloured register.
       case NewFree of 
 	[] -> 
 	  %% No physical registers available, we have to spill.
@@ -415,7 +405,7 @@ spill(CurrentReg, CurrentEndpoint,
 	   add_active(SpillEndpoint, SpillPhysName, SpillName,
 		      NewActive2)};
 	true ->
-	  %% It is not precolored...
+	  %% It is not precoloured...
 
 	  %% Allocate SpillCandidate to spill-slot SpillIndex
 	  SpillAlloc = 
@@ -435,10 +425,9 @@ spill(CurrentReg, CurrentEndpoint,
 	
     false -> 
       %% The current register has the longest live-range.
-
       case can_spill(CurrentReg, DontSpill, Target) of 
 	false ->
-	  %% Cannot spill a precolored register
+	  %% Cannot spill a precoloured register
 	  {NewAlloc, NewActive2} = 
 	    spill(SpillName, SpillEndpoint, NewActive, Alloc,
 		  SpillIndex, DontSpill, Target),
@@ -446,7 +435,7 @@ spill(CurrentReg, CurrentEndpoint,
 	    add_active(CurrentEndpoint, SpillPhysName, CurrentReg, NewActive2),
 	  {NewAlloc, NewActive3};
 	true ->
-	  %% It is not precolored...
+	  %% It is not precoloured...
 	  %% Allocate the current register to spill-slot SpillIndex
 	  {spillalloc(CurrentReg, SpillIndex, Alloc), Active}
       end
@@ -463,7 +452,7 @@ spill(CurrentReg, _CurrentEndpoint, [],
   end.
 
 can_spill(Name, DontSpill, Target) ->
-  (Name < DontSpill) and (not is_precolored(Name, Target)).
+  (Name < DontSpill) and (not is_precoloured(Name, Target)).
 
 %%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -560,8 +549,6 @@ reg({RegName,{_S,_E}}) ->
 sort_on_start(I)->
  lists:keysort(2,I).
 
--define(gb_intervals,true).
--ifdef(gb_intervals).
 empty_interval(_) ->
   gb_trees:empty().
 
@@ -671,132 +658,6 @@ extend_def_interval(Pos, [{Beginning,none}|More]) ->
 extend_def_interval(Pos, _Intervals) ->
   {Pos, Pos}.
 
-%% ____________________________________________________________________
--else. %% isdef gb_intervals
-
-empty_interval(N) ->
-  ?vector_new(N, none).
-
-interval_to_list(Intervals) ->
-  lists:flatten(
-    lists:map(
-      fun({T, I}) when is_list(I) ->
-	  lists:map(
-	    fun ({none, End}) -> 
-		{T,{End,End}};
-		({Beg, none}) ->
-		{T,{Beg, Beg}}
-	    end,
-	    I);
-	 ({_,none}) ->
-	  [];
-	 (I) -> I
-      end,
-      add_indices(?vector_to_list(Intervals),0))).
-
-add_indices([],_N) -> [];
-add_indices([X|Xs],N) ->
-    [{N,X}|add_indices(Xs,N+1)].
-
-add_use_point([Temp|Temps],Pos,Intervals) ->
-  %% Extend the old interval...
-  NewInterval =
-    case ?vector_get(Temp+1, Intervals) of
-      %% This is the first time we see this temp...
-      none ->
-	%% ... create a new interval
-	[{none, Pos}];
-      %% This temp has an old interval...
-      Value ->
-	%% ... extend it.
-	extend_use_interval(Pos, Value)
-    end,
-
-  %% Add or update the extended interval.
-  Intervals2 = ?vector_set(Temp+1, Intervals, NewInterval),
-
-  %% Add the rest of the temporaries.
-  add_use_point(Temps, Pos, Intervals2);
-
-add_use_point([], _, I) ->
-  %% No more to add return the interval.
-  I.
-
-add_def_point([Temp|Temps],Pos,Intervals) ->
-  %% io:format("Add ~w~n",[Temp]),
-  %% Extend the old interval...
-  NewInterval =
-    case ?vector_get(Temp+1, Intervals) of
-      %% This is the first time we see this temp...
-      none ->
-	%% ... create a new interval
-	[{Pos, none}];
-      %% This temp has an old interval...
-      Value ->
-	%% ... extend it.
-	extend_def_interval(Pos, Value)
-    end,
-  %% io:format("Old ~w New ~w~n",[?vector_get(Temp+1, Intervals) ,NewInterval]),
-  %% Add or update the extended interval.
-  Intervals2 = ?vector_set(Temp+1, Intervals, NewInterval), 
-
-  %% Add the rest of teh temporaries.
-  add_def_point(Temps, Pos, Intervals2);
-
-add_def_point([], _, I) ->
-  %% No more to add return the interval.
-  I.
-
-extend_use_interval(Pos, {Beginning, End}) ->
-  %% If this position occures before the beginning
-  %%  of the interval, then extend the beginning to
-  %%  this position.
-
-  NewBeginning = 
-    if Pos < Beginning -> Pos;
-       true            -> Beginning
-    end,
-  %% If this position occures after the end
-  %%  of the interval, then extend the end to
-  %%  this position.
-  NewEnd = 
-    if Pos > End -> Pos;
-       true      -> End
-    end,
-
-  {NewBeginning, NewEnd};
-extend_use_interval(Pos, [{none,End}|More]) ->
-  {[{none,Pos},{none,End}|More]};
-extend_use_interval(Pos,  Intervals) ->
-  {Beginning,none} = lists:last(Intervals),
-  {Beginning, Pos}.
-
-
-extend_def_interval(Pos, {Beginning, End}) ->
-  %% If this position occures before the beginning
-  %%  of the interval, then extend the beginning to
-  %%  this position.
-
-  NewBeginning = 
-    if Pos < Beginning -> Pos;
-       true            -> Beginning
-    end,
-  %% If this position occures after the end
-  %%  of the interval, then extend the end to
-  %%  this position.
-  NewEnd = 
-    if Pos > End -> Pos;
-       true      -> End
-    end,
-
-  {NewBeginning, NewEnd}; 
-extend_def_interval(Pos, [{Beginning,none}|More]) ->
-  [{Pos,none}, {Beginning,none}|More];
-extend_def_interval(Pos, _Intervals) ->
-  {Pos, Pos}.
--endif. %% gb_intervals
-
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% The Free data structure.
@@ -811,10 +672,7 @@ is_free(R, [_|Rs]) ->
 is_free(_, [] ) ->
   false.
 
-%%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Interface to external functions.
@@ -822,14 +680,11 @@ is_free(_, [] ) ->
 %% 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%function(CFG, Target) ->
-%%  Target:function(CFG).
-
 succ_map(CFG, Target) ->
   Target:succ_map(CFG).
 
 liveness(CFG, Target) ->
-   Target:analyze(CFG).
+  Target:analyze(CFG).
 
 bb(CFG, L, Target) ->
   Target:bb(CFG,L).
@@ -846,14 +701,14 @@ uses(I, Target)->
 defines(I, Target) ->
   regnames(Target:defines(I), Target).
 
-is_precolored(R, Target) ->
-  Target:is_precolored(R).
+is_precoloured(R, Target) ->
+  Target:is_precoloured(R).
 
 is_global(_, hipe_x86_specific_fp) ->
-   false;
+  false;
 is_global(R, Target) ->
-  hipe_x86_registers:temp1() =:=R orelse 
-  hipe_x86_registers:temp0() =:=R orelse
+  hipe_x86_registers:temp1() =:= R orelse 
+  hipe_x86_registers:temp0() =:= R orelse
   Target:is_global(R).
 
 physical_name(R, Target) ->
@@ -878,25 +733,23 @@ count_caller_saves(CFG,Liveness, T) ->
 		    fun(I,{LiveOut,CS}) ->
 			UsesSet = ordsets:from_list(uses(I,T)),
 			DefsSet = ordsets:from_list(defines(I,T)),
-	                LiveOverI = ordsets:subtract(LiveOut,
-						      DefsSet),      
+	                LiveOverI = ordsets:subtract(LiveOut, DefsSet),      
 			NewCS = 
-			  case hipe_x86:insn_type(I) of
-			    pseudo_call ->
+			  case hipe_x86:is_pseudo_call(I) of
+			    true ->
 			      ordsets:union(CS,LiveOverI);
 			    _ -> CS
 			  end,
-			NewLiveOut = ordsets:union(
-                                       LiveOverI,
-				       UsesSet),
+			NewLiveOut = ordsets:union(LiveOverI, UsesSet),
 			{NewLiveOut,NewCS}
 		    end,
 		    {ordsets:from_list(liveout(Liveness,L,T)),
 		     CallerSaves},
 		    hipe_bb:code(T:bb(CFG,L)))),
-	not is_precolored(X,T)]	
+	not is_precoloured(X,T)]	
       end,
       [],
       T:labels(CFG)),
   %% io:format("Caller saves: ~w~n",[Ls]),	
-  length(Ls).	
+  length(Ls).
+

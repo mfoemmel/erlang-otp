@@ -1,3 +1,4 @@
+%%% -*- erlang-indent-level: 4 -*-
 %%% $Id$
 %%%
 %%% Translate 3-address RTL code to 2-address pseudo-x86 code.
@@ -6,7 +7,8 @@
 -export([translate/1]).
 
 translate(RTL) ->	% RTL function -> x86 defun
-    hipe_gensym:set_var(hipe_x86_registers:first_virtual()),
+    hipe_gensym:init(x86),
+    hipe_gensym:set_var(x86, hipe_x86_registers:first_virtual()),
     hipe_gensym:set_label(x86, hipe_gensym:get_label(rtl)),
     Map0 = vmap_empty(),
     {Formals, Map1} = conv_formals(hipe_rtl:rtl_params(RTL), Map0),
@@ -16,11 +18,9 @@ translate(RTL) ->	% RTL function -> x86 defun
     Code =
 	case RegFormals of
 	    [] -> Code0;
-	    _ -> [hipe_x86:mk_label(hipe_gensym:get_next_label(x86), false) |
+	    _ -> [hipe_x86:mk_label(hipe_gensym:get_next_label(x86)) |
 		  move_formals(RegFormals, Code0)]
 	end,
-    {LabelsLo, _} = hipe_rtl:rtl_label_range(RTL),
-    NewLabels = {LabelsLo, hipe_gensym:get_label(x86)},
     IsClosure = hipe_rtl:rtl_is_closure(RTL),
     IsLeaf = hipe_rtl:rtl_is_leaf(RTL),
     hipe_x86:mk_defun(conv_mfa(hipe_rtl:rtl_fun(RTL)),
@@ -29,8 +29,8 @@ translate(RTL) ->	% RTL function -> x86 defun
 		      IsLeaf,
 		      Code,
 		      NewData,
-		      {1, hipe_gensym:get_var()},
-		      NewLabels).
+		      [], 
+		      []).
 
 conv_insn_list([H|T], Map, Data) ->
     {NewH, NewMap, NewData1} = conv_insn(H, Map, Data),
@@ -87,20 +87,21 @@ conv_insn(I, Map, Data) ->
 	    %% Next:
 	    %%	<Dst> := eax
 	    %%	goto <Cont>
-	    {Args, Map0} = conv_src_list(hipe_rtl:call_args(I), Map),
-	    {Dsts, Map1} = conv_dst_list(hipe_rtl:call_dst(I), Map0),
+	    {Args, Map0} = conv_src_list(hipe_rtl:call_arglist(I), Map),
+	    {Dsts, Map1} = conv_dst_list(hipe_rtl:call_dstlist(I), Map0),
 	    {Fun, Map2} = conv_fun(hipe_rtl:call_fun(I), Map1),
 	    I2 = conv_call(Dsts, Fun, Args,
 			   hipe_rtl:call_continuation(I),
-			   hipe_rtl:call_fail(I)),
+			   hipe_rtl:call_fail(I),
+			   hipe_rtl:call_type(I)),
 	    {I2, Map2, Data};
 	comment ->
 	    I2 = [hipe_x86:mk_comment(hipe_rtl:comment_text(I))],
 	    {I2, Map, Data};
 	enter ->
-	    {Args, Map0} = conv_src_list(hipe_rtl:enter_args(I), Map),
+	    {Args, Map0} = conv_src_list(hipe_rtl:enter_arglist(I), Map),
 	    {Fun, Map1} = conv_fun(hipe_rtl:enter_fun(I), Map0),
-	    I2 = conv_tailcall(Fun, Args),
+	    I2 = conv_tailcall(Fun, Args, hipe_rtl:enter_type(I)),
 	    {I2, Map1, Data};
 	fail_to ->		% for SPARC this is eliminated by hipe_frame
 	    {Src, Map0} = conv_src(hipe_rtl:fail_to_reason(I), Map),
@@ -116,7 +117,7 @@ conv_insn(I, Map, Data) ->
 	    I2 = [hipe_x86:mk_jmp_label(hipe_rtl:goto_label(I))],
 	    {I2, Map, Data};
 	label ->
-	    I2 = [hipe_x86:mk_label(hipe_rtl:label_name(I), false)],
+	    I2 = [hipe_x86:mk_label(hipe_rtl:label_name(I))],
 	    {I2, Map, Data};
 	load ->
 	    {Dst, Map0} = conv_dst(hipe_rtl:load_dst(I), Map),
@@ -127,11 +128,11 @@ conv_insn(I, Map, Data) ->
 			 [hipe_x86:mk_movsx(hipe_x86:mk_mem(Src, Off, 'byte'), Dst)];
 		     {byte, unsigned} ->
 			 [hipe_x86:mk_movzx(hipe_x86:mk_mem(Src, Off, 'byte'), Dst)];
-		     {halfword, signed} ->
-			 [hipe_x86:mk_movsx(hipe_x86:mk_mem(Src, Off, 'halfword'), Dst)];
-		     {halfword, unsigned} ->
-			 [hipe_x86:mk_movzx(hipe_x86:mk_mem(Src, Off, 'halfword'), Dst)];
-		     _ ->
+		     {int16, signed} ->
+			 [hipe_x86:mk_movsx(hipe_x86:mk_mem(Src, Off, 'int16'), Dst)];
+		     {int16, unsigned} ->
+			 [hipe_x86:mk_movzx(hipe_x86:mk_mem(Src, Off, 'int16'), Dst)];
+		     _ -> % word and int32
 			 Type = typeof_dst(Dst),
 			 case hipe_x86:is_imm(Src) of
 			     false ->
@@ -161,32 +162,39 @@ conv_insn(I, Map, Data) ->
 	    I2 = [hipe_x86:mk_move(Src, Dst)],
 	    {I2, Map1, Data};
 	restore_catch ->	% for SPARC this is eliminated by hipe_frame
-	    [Dst0] = hipe_rtl:restore_catch_vars(I),
+	    [Dst0] = hipe_rtl:restore_catch_varlist(I),
 	    {Dst1,Map1} = conv_dst(Dst0, Map),
 	    Src = mk_eax(),
 	    {[hipe_x86:mk_move(Src, Dst1)], Map1, Data};
-	return ->
-	    %% TODO: multiple-value returns
-	    {[Arg], Map0} = conv_src_list(hipe_rtl:return_vars(I), Map),
-	    Dst = mk_eax(),
-	    I2 = [hipe_x86:mk_move(Arg, Dst),
-		  hipe_x86:mk_ret(-1)],	% frame will fill in npop later
+	return -> % frame will fill in npop later, hence the "mk_ret(-1)"
+	    {Arg, Map0} = conv_src_list(hipe_rtl:return_varlist(I), Map),
+	    I2 = mk_mult_move(Arg) ++ [hipe_x86:mk_ret(-1)], 
+	    %% Dst = mk_eax(),
+	    %% I2 = [hipe_x86:mk_move(Arg, Dst),
+	    %%       hipe_x86:mk_ret(-1)],	
 	    {I2, Map0, Data};
 	store ->
-	    {Ptr, Map0} = conv_dst(hipe_rtl:store_dst(I), Map),
+	    {Ptr, Map0} = conv_dst(hipe_rtl:store_base(I), Map),
 	    {Src, Map1} = conv_src(hipe_rtl:store_src(I), Map0),
 	    {Off, Map2} = conv_src(hipe_rtl:store_offset(I), Map1),
-	    Type =
-		case hipe_rtl:store_size(I) of
-		    word ->
-			typeof_src(Src);
-		    halfword ->
-			'halfword';
-		    byte ->
-			'byte'
-		end,
-	    I2 = [hipe_x86:mk_move(Src, hipe_x86:mk_mem(Ptr, Off, Type))],
+	    I2 = case hipe_rtl:store_size(I) of
+		     word ->
+			 Type = typeof_src(Src),
+			 [hipe_x86:mk_move(Src, hipe_x86:mk_mem(Ptr, Off, Type))];
+		     int32 ->
+			 Type = typeof_src(Src),
+			 [hipe_x86:mk_move(Src, hipe_x86:mk_mem(Ptr, Off, Type))];
+		     int16 ->
+			 Type = 'int16',
+			 {NewSrc, I1} = conv_small_store(Src),
+			 I1 ++ [hipe_x86:mk_move(NewSrc, hipe_x86:mk_mem(Ptr, Off, Type))];
+		     byte ->
+			 Type = 'byte',
+			 {NewSrc, I1} = conv_small_store(Src),
+			 I1 ++ [hipe_x86:mk_move(NewSrc, hipe_x86:mk_mem(Ptr, Off, Type))]
+		 end,
 	    {I2, Map2, Data};
+
 	switch ->	% this one also updates Data :-(
 	    %% from hipe_rtl2sparc, but we use a hairy addressing mode
 	    %% instead of doing the arithmetic manually
@@ -195,10 +203,10 @@ conv_insn(I, Map, Data) ->
 	    {NewData, JTabLab} =
 		case hipe_rtl:switch_sort_order(I) of
 		    [] ->
-			hipe_consttab:insert_block(Data, 4, word, LMap);
+			hipe_consttab:insert_block(Data, word, LMap);
 		    SortOrder ->
 			hipe_consttab:insert_sorted_block(
-			  Data, 4, word, LMap, SortOrder)
+			  Data, word, LMap, SortOrder)
 		end,
 	    %% no immediates allowed here
 	    {Index, Map1} = conv_dst(hipe_rtl:switch_src(I), Map),
@@ -210,13 +218,13 @@ conv_insn(I, Map, Data) ->
 	    {Dst, Map0} = conv_dst(hipe_rtl:fload_dst(I), Map),
 	    {Src, Map1} = conv_src(hipe_rtl:fload_src(I), Map0),
 	    {Off, Map2} = conv_src(hipe_rtl:fload_offset(I), Map1),
-	    I2 = [hipe_x86:mk_fmov(hipe_x86:mk_mem(Src, Off, 'double'),Dst)],
+	    I2 = [hipe_x86:mk_fmove(hipe_x86:mk_mem(Src, Off, 'double'),Dst)],
 	    {I2, Map2, Data};
 	fstore ->
-	    {Dst, Map0} = conv_dst(hipe_rtl:fstore_dst(I), Map),
+	    {Dst, Map0} = conv_dst(hipe_rtl:fstore_base(I), Map),
 	    {Src, Map1} = conv_src(hipe_rtl:fstore_src(I), Map0),
 	    {Off, Map2} = conv_src(hipe_rtl:fstore_offset(I), Map1),
-	    I2 = [hipe_x86:mk_fmov(Src, hipe_x86:mk_mem(Dst, Off, 'double'))],
+	    I2 = [hipe_x86:mk_fmove(Src, hipe_x86:mk_mem(Dst, Off, 'double'))],
 	    {I2, Map2, Data};
 	fp ->
 	    {Dst, Map0} = conv_dst(hipe_rtl:fp_dst(I), Map),
@@ -231,15 +239,15 @@ conv_insn(I, Map, Data) ->
 	    Op = hipe_rtl:fp_unop_op(I),
 	    I2 = conv_fp_unop(Dst, Src, Op),
 	    {I2, Map1, Data};
-	fmov ->
-	    {Dst, Map0} = conv_dst(hipe_rtl:fmov_dst(I), Map),
-	    {Src, Map1} = conv_src(hipe_rtl:fmov_src(I), Map0),
-	    I2 = [hipe_x86:mk_fmov(Src, Dst)],
+	fmove ->
+	    {Dst, Map0} = conv_dst(hipe_rtl:fmove_dst(I), Map),
+	    {Src, Map1} = conv_src(hipe_rtl:fmove_src(I), Map0),
+	    I2 = [hipe_x86:mk_fmove(Src, Dst)],
 	    {I2, Map1, Data};
 	fconv ->
 	    {Dst, Map0} = conv_dst(hipe_rtl:fconv_dst(I), Map),
 	    {Src, Map1} = conv_src(hipe_rtl:fconv_src(I), Map0),
-	    I2 = [hipe_x86:mk_fmov(Src, Dst)],
+	    I2 = [hipe_x86:mk_fmove(Src, Dst)],
 	    {I2, Map1, Data};
 	X ->
 	    %% gctest??
@@ -301,8 +309,14 @@ conv_shift(Dst, Src1, BinOp, Src2) ->
        end,
   I1 ++ I2.
 
-
-
+conv_small_store(Src) ->
+    case hipe_x86:is_imm(Src) of 
+	true ->
+	    {Src, []};
+	false ->
+	    NewSrc = hipe_x86:mk_temp(hipe_x86_registers:eax(), 'untagged'),
+	    {NewSrc, [hipe_x86:mk_move(Src, NewSrc)]}
+    end.
 
 
 %%% Finalise the conversion of a conditional branch operation, taking
@@ -398,12 +412,12 @@ same_opnd(Dst, Src) -> Dst =:= Src.
 
 %%% Finalise the conversion of a tailcall instruction.
 
-conv_tailcall(Fun, Args) ->
+conv_tailcall(Fun, Args, Linkage) ->
     Arity = length(Args),
     {RegArgs,StkArgs} = split_args(Args),
     move_actuals(RegArgs,
 		 [hipe_x86:mk_pseudo_tailcall_prepare(),
-		  hipe_x86:mk_pseudo_tailcall(Fun, Arity, StkArgs)]).
+		  hipe_x86:mk_pseudo_tailcall(Fun, Arity, StkArgs, Linkage)]).
 
 split_args(Args) ->
     split_args(0, hipe_x86_registers:nr_args(), Args, []).
@@ -424,12 +438,32 @@ move_formals([{Dst,Src}|Formals], Rest) ->
 
 %%% Finalise the conversion of a call instruction.
 
-conv_call(Dsts, Fun, Args, ContLab, ExnLab) ->
+conv_call(Dsts, Fun, Args, ContLab, ExnLab, Linkage) ->
+    case hipe_x86:is_prim(Fun) of
+	true ->
+	    conv_primop_call(Dsts, Fun, Args, ContLab, ExnLab, Linkage);
+	false ->
+	    conv_general_call(Dsts, Fun, Args, ContLab, ExnLab, Linkage)
+  end.
+
+conv_primop_call(Dsts, Prim, Args, ContLab, ExnLab, Linkage) ->
+    case hipe_x86:prim_prim(Prim) of
+	'fwait' ->
+	    conv_fwait_call(Dsts, Args, ContLab, ExnLab, Linkage);
+	_ ->
+	    conv_general_call(Dsts, Prim, Args, ContLab, ExnLab, Linkage)
+  end.
+
+conv_fwait_call([], [], [], [], not_remote) ->
+    [hipe_x86:mk_fp_unop('fwait', [])].
+
+conv_general_call(Dsts, Fun, Args, ContLab, ExnLab, Linkage) ->
     %% The backend does not support pseudo_calls without a
     %% continuation label, so we make sure each call has one.
-    {RealDsts, RealContLab, Tail} =
-	case do_call_results(Dsts) of
-	    {[], []} ->
+    {RealContLab, Tail} =
+	%% case do_call_results(Dsts) of
+	case do_call_results(Dsts) of   
+	    [] ->
 		%% Avoid consing up a dummy basic block if the moves list
 		%% is empty, as is typical for calls to suspend/0.
 		%% This should be subsumed by a general "optimise the CFG"
@@ -437,11 +471,11 @@ conv_call(Dsts, Fun, Args, ContLab, ExnLab) ->
                 case ContLab of
 	            [] ->
                         NewContLab = hipe_gensym:get_next_label(x86),
-                        {[],NewContLab,[hipe_x86:mk_label(NewContLab, false)]};
+                        {NewContLab, [hipe_x86:mk_label(NewContLab)]};
                     _ ->
-		        {[], ContLab, []}
+		        {ContLab, []}
                 end;
-	    {Moves, NewDsts} ->
+	    Moves ->
 		%% Change the call to continue at a new basic block.
 		%% In this block move the result registers to the Dsts,
 		%% then continue at the call's original continuation.
@@ -452,19 +486,19 @@ conv_call(Dsts, Fun, Args, ContLab, ExnLab) ->
 	        case ContLab of
 	            [] -> %% This is just a fallthrough
                           %% No jump back after the moves.
-                        {NewDsts, NewContLab,
-		         [hipe_x86:mk_label(NewContLab, false) |
+                        {NewContLab,
+		         [hipe_x86:mk_label(NewContLab) |
 		         Moves]};
 	            _ ->  %% The call has a continuation
                           %% jump to it.
-		        {NewDsts, NewContLab,
-		         [hipe_x86:mk_label(NewContLab, false) |
+		        {NewContLab,
+		         [hipe_x86:mk_label(NewContLab) |
 		         Moves ++
 		         [hipe_x86:mk_jmp_label(ContLab)]]}
 	        end
 	end,
-    CallInsn = hipe_x86:mk_pseudo_call(RealDsts, Fun, length(Args),
-				       RealContLab, ExnLab),
+    SDesc = hipe_x86:mk_sdesc(ExnLab, 0, length(Args), {}),
+    CallInsn = hipe_x86:mk_pseudo_call(Fun, SDesc, RealContLab, Linkage),
     {RegArgs,StkArgs} = split_args(Args),
     do_push_args(StkArgs, move_actuals(RegArgs, [CallInsn | Tail])).
 
@@ -473,12 +507,13 @@ do_push_args([Arg|Args], Tail) ->
 do_push_args([], Tail) ->
     Tail.
 
+
 do_call_results([]) ->
-    {[], []};
+    [];
 do_call_results([Dst]) ->
     EAX = hipe_x86:mk_temp(hipe_x86_registers:eax(), 'tagged'),
     MV = hipe_x86:mk_move(EAX, Dst),
-    {[MV], [EAX]};
+    [MV];
 do_call_results(Dsts) ->
     exit({?MODULE,do_call_results,Dsts}).
 
@@ -532,13 +567,13 @@ conv_dst(Opnd, Map) ->
     {Name, Type} =
 	case hipe_rtl:is_var(Opnd) of
 	    true ->
-		{hipe_rtl:var_name(Opnd), 'tagged'};
+		{hipe_rtl:var_index(Opnd), 'tagged'};
 	    false ->
 		case hipe_rtl:is_fpreg(Opnd) of
 		    true ->
-			{hipe_rtl:fpreg_name(Opnd), 'double'};
+			{hipe_rtl:fpreg_index(Opnd), 'double'};
 		    false ->
-			{hipe_rtl:reg_name(Opnd), 'untagged'}
+			{hipe_rtl:reg_index(Opnd), 'untagged'}
 		end
 	end,
     case hipe_x86_registers:is_precoloured(Name) of
@@ -638,7 +673,7 @@ conv_fp_unop(Dst, Src, Op) ->
 	true ->
 	    [hipe_x86:mk_fp_unop(Op, Dst)];
 	_ ->
-	    [hipe_x86:mk_fmov(Src, Dst),
+	    [hipe_x86:mk_fmove(Src, Dst),
 	     hipe_x86:mk_fp_unop(Op, Dst)]
     end.
 
@@ -649,7 +684,7 @@ conv_fp_binop(Dst, Src1, Op, Src2) ->
 	false ->		% z = x op y, where z != x
 	    case same_opnd(Dst, Src2) of
 		false ->	% z = x op y, where z != x && z != y
-		    [hipe_x86:mk_fmov(Src1, Dst),			% z = x
+		    [hipe_x86:mk_fmove(Src1, Dst),			% z = x
 		     hipe_x86:mk_fp_binop(Op, Src2, Dst)];	% z op= y
 		true ->		% y = x op y, where y != x
 		    case binop_commutes(Op) of
@@ -667,3 +702,22 @@ reverse_op(Op) ->
 	'fsub' -> 'fsubr';
 	'fdiv' -> 'fdivr'
     end.
+
+
+mk_mult_move(SrcLst) ->
+    LstSize = length(SrcLst),
+    X86Rets = hipe_x86_registers:nr_rets(),
+    case LstSize =< X86Rets of
+	true ->
+	    mk_mult_move(SrcLst, 0, []);
+	false ->
+	    exit({?MODULE,mk_mult_move,SrcLst})
+    end.
+
+mk_mult_move([Src|SrcLst], Cnt, Acc) ->
+    Dst = hipe_x86:mk_temp(hipe_x86_registers:ret(Cnt), 
+					  'tagged'),
+    I = hipe_x86:mk_move(Src, Dst),
+    mk_mult_move(SrcLst, Cnt+1, [I|Acc]);
+mk_mult_move([],_,Result) -> Result.
+	    

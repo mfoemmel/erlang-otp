@@ -78,8 +78,8 @@ init([Channel, ChannelPid, TypeCheck, PullInterval, ServerOpts]) ->
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
-    ?DBG("Terminating ~p~n", [Reason]),
+terminate(_Reason, _State) ->
+    ?DBG("Terminating ~p~n", [_Reason]),
     ok.
  
 %%----------------------------------------------------------------------
@@ -87,7 +87,7 @@ terminate(Reason, State) ->
 %% Returns    : {ok, NewState}
 %% Description: Convert process state when code is changed
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
  
 %%---------------------------------------------------------------------%
@@ -99,11 +99,12 @@ code_change(OldVsn, State, Extra) ->
 %%----------------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, #state{channel_pid = Pid} = State) ->
     ?DBG("Parent Channel terminated ~p~n", [Reason]),
-    orber:debug_level_print("[~p] CosEventChannelAdmin_SupplierAdmin:handle_info(~p); 
-My Channel terminated and so will I.", [?LINE, Reason], ?DEBUG_LEVEL),
+    orber:dbg("[~p] CosEventChannelAdmin_SupplierAdmin:handle_info(~p);~n"
+	      "My Channel terminated and so will I.", 
+	      [?LINE, Reason], ?DEBUG_LEVEL),
     {stop, Reason, State};
-handle_info(Info, State) ->
-    ?DBG("Unknown Info ~p~n", [Info]),
+handle_info(_Info, State) ->
+    ?DBG("Unknown Info ~p~n", [_Info]),
     {noreply, State}.
  
  
@@ -114,7 +115,7 @@ handle_info(Info, State) ->
 %% Description: 
 %%----------------------------------------------------------------------
 obtain_push_consumer(OE_This, #state{channel = Channel, 
-				     channel_pid = ChannelPid,
+				     channel_pid = _ChannelPid,
 				     typecheck = TypeCheck,
 				     server_options = ServerOpts} = State) ->
     ?DBG("Starting a new CosEventChannelAdmin_ProxyPushConsumer.~n", []),
@@ -133,7 +134,7 @@ obtain_push_consumer(OE_This, #state{channel = Channel,
 %% Description: 
 %%----------------------------------------------------------------------
 obtain_pull_consumer(OE_This, #state{channel = Channel, 
-				     channel_pid = ChannelPid,
+				     channel_pid = _ChannelPid,
 				     typecheck = TypeCheck,
 				     pull_interval= PullInterval,
 				     server_options = ServerOpts} = State) ->

@@ -107,7 +107,7 @@ decode_sections(Qd, An, Ns, Ar, Buffer, Ptr0) ->
 		    case decode_res_section(Ns, Buffer, Ptr2) of
 			{ok, {NsList, Ptr3}} ->
 			    case decode_res_section(Ar, Buffer, Ptr3) of
-				{ok, {ArList, Ptr4}} ->
+				{ok, {ArList,_Ptr4}} ->
 				    {ok, {QdList,AnList,NsList,ArList}};
 				Error -> Error
 			    end;

@@ -33,7 +33,7 @@
 -export([start/0, start_link/0, stop/0, reset/0, clear_cache/0]).
 -export([add_rr/1,add_rr/5,del_rr/4]).
 -export([add_ns/1,add_ns/2, ins_ns/1, ins_ns/2, del_ns/1, del_ns/0]).
--export([add_alt_ns/1,add_alt_ns/2, ins_alt_ns/1,ins_alt_ns/2, 
+-export([add_alt_ns/1,add_alt_ns/2, ins_alt_ns/1, ins_alt_ns/2, 
 	 del_alt_ns/1, del_alt_ns/0]).
 -export([add_search/1,ins_search/1,del_search/1, del_search/0]).
 -export([set_lookup/1, set_recurse/1]).
@@ -68,7 +68,7 @@
 -define(dbg(Fmd, Args), ok).
 -endif.
 
--import(lists, [foreach/2, reverse/1, keydelete/3]).
+-import(lists, [member/2, foreach/2, reverse/1, keydelete/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
@@ -247,14 +247,14 @@ set_udp_module(Module) -> call({set_udp_module, Module}).
 udp_module() -> db_get(udp_module).
 
 
-%% Add a .inetrc file
+%% Add an inetrc file
 add_rc(File) -> 
     case file:consult(File) of
 	{ok, List} -> add_rc_list(List);
 	Error -> Error
     end.
 
-%% Add a .inetrc binary term must be a rc list
+%% Add an inetrc binary term must be a rc list
 add_rc_bin(Bin) ->
     case catch binary_to_term(Bin) of
 	List when list(List) ->
@@ -313,6 +313,11 @@ add_rc_list_int(List) ->
 	      clear_cache();
 	 (clear_hosts) ->
 	      clear_hosts();
+	 (clear_ns) ->
+	      del_ns(),
+	      del_alt_ns();
+	 (clear_search) ->
+	      del_search();
 	 ({lookup, Ls}) ->
 	      set_lookup(translate_lookup(Ls));
 	 (Opt) -> 
@@ -330,28 +335,31 @@ translate_lookup(["yp" | Ls]) -> [yp | translate_lookup(Ls)];
 translate_lookup(["nis" | Ls]) -> [nis | translate_lookup(Ls)];
 translate_lookup(["nisplus" | Ls]) -> [nisplus | translate_lookup(Ls)];
 translate_lookup(["native" | Ls]) -> [native | translate_lookup(Ls)];
+translate_lookup([M | Ls]) when atom(M) -> translate_lookup([atom_to_list(M) | Ls]);
 translate_lookup([_ | Ls]) -> translate_lookup(Ls);
 translate_lookup([]) -> [].
 
-%% Reconstruct a .inetrc sturcture from inet_db
+%% Reconstruct an inetrc sturcture from inet_db
 get_rc() -> 
-    get_rc([domain, nameserver, search, alt_nameserver,
+    get_rc([hosts, domain, nameserver, search, alt_nameserver,
 	    timeout, retry, inet6, usevc,
 	    socks5_server, socks5_port, socks5_methods, socks5_noproxy,
-	    udp, tcp, host, cache_size, cache_refresh], []).
+	    udp, tcp, host, cache_size, cache_refresh, lookup], []).
 
 get_rc([K | Ks], Ls) ->
     case K of
+	hosts      -> get_rc_hosts(Ks, Ls);
 	domain     -> get_rc(domain, res_domain, "", Ks, Ls);
 	nameserver -> get_rc_ns(db_get(res_ns),nameserver,Ks,Ls);
 	alt_nameserver -> get_rc_ns(db_get(res_alt_ns),alt_nameserver,Ks,Ls);
-	search -> get_rc(search, res_search, [], Ks, Ls);
+	search  -> get_rc(search, res_search, [], Ks, Ls);
 	timeout -> get_rc(timeout,res_timeout,?RES_TIMEOUT, Ks,Ls);
 	retry   -> get_rc(rety, res_retry, ?RES_RETRY, Ks, Ls);
 	inet6   -> get_rc(inet6, res_inet6, false, Ks, Ls);
 	usevc   -> get_rc(usevc, res_usevc, false, Ks, Ls);
 	tcp     -> get_rc(tcp, tcp_module, ?DEFAULT_TCP_MODULE, Ks, Ls); 
 	udp     -> get_rc(udp, udp_module, ?DEFAULT_UDP_MODULE, Ks, Ls); 
+	lookup  -> get_rc(lookup, res_lookup, [native,file], Ks, Ls);
 	cache_size -> get_rc(cache_size, cache_size, ?CACHE_LIMIT, Ks, Ls);
 	cache_refresh ->
 	    get_rc(cache_refresh, cache_refresh_interval,?CACHE_REFRESH,Ks,Ls);
@@ -383,8 +391,14 @@ get_rc_ns([{IP,?NAMESERVER_PORT} | Ns], Tag, Ks, Ls) ->
     get_rc_ns(Ns, Tag, Ks, [{Tag, IP} | Ls]);
 get_rc_ns([{IP,Port} | Ns], Tag, Ks, Ls) ->
     get_rc_ns(Ns, Tag, Ks, [{Tag, IP, Port} | Ls]);
-get_rc_ns([], Tag, Ks, Ls) ->
+get_rc_ns([], _Tag, Ks, Ls) ->
     get_rc(Ks, Ls).
+
+get_rc_hosts(Ks, Ls) ->
+    Hosts = lists:map(fun({IP,_Ver,Aliases}) ->
+			      {host,IP,Aliases}
+		      end, ets:tab2list(inet_hosts)),
+    get_rc(Ks, Hosts++Ls).
 
 %%
 %% Resolver options
@@ -455,9 +469,9 @@ getbyname(Name,Type) ->
 getbysearch(Name, Dot, [Dom | Ds], Type) ->
     case hostent_by_domain(Name ++ Dot ++ Dom, Type) of
 	{ok, HEnt} -> {ok, HEnt};
-	Error -> getbysearch(Name, Dot, Ds, Type)
+	_Error -> getbysearch(Name, Dot, Ds, Type)
     end;
-getbysearch(Name, Dot, [], Type) ->
+getbysearch(Name, _Dot, [], Type) ->
     hostent_by_domain(Name, Type).
 
 
@@ -656,7 +670,7 @@ lookup_socket(Socket) when port(Socket) ->
 %% --------------
 %% socks5_server  Server          - IP address of the socks5 server
 %% socks5_port    Port            - TCP port of the socks5 server
-%% socks5_methods Ls              - List of authication methdos
+%% socks5_methods Ls              - List of authentication methods
 %% socks5_noproxy IPs             - List of {Net,Subnetmask}
 %%
 %% Generic tcp/udp options
@@ -715,7 +729,7 @@ reset_db(Db) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, Reply, State}     (terminate/2 is called)
 %%----------------------------------------------------------------------
-handle_call(Request, From, State) ->
+handle_call(Request, _From, State) ->
     Db = State#state.db,
     case Request of
 	%% temporary special case used only by inet_config to
@@ -726,10 +740,11 @@ handle_call(Request, From, State) ->
 	{add_host,{127,0,0,1},[TName|TAs]} when list(TName), list(TAs) ->
 	    [Name|As] = lists:map(fun tolower/1,[TName|TAs]),
 	    NameList = case ets:lookup(State#state.hosts,{127,0,0,1}) of
-			   [{IP,_,NList}] -> NList;
+			   [{_IP,_,NList}] -> NList;
 			   _ -> []
 		       end,
-	    ets:insert(State#state.hosts, {{127,0,0,1},inet,NameList ++ [Name|As]}),
+	    Ns = lists:filter(fun(N) -> not(member(N, NameList)) end, [Name|As]),
+	    ets:insert(State#state.hosts, {{127,0,0,1},inet,NameList ++ Ns}),
 	    {reply, ok, State};
 
 	{add_host,IP,[TName|TAs]} when tuple(IP), list(TName), list(TAs) ->
@@ -830,7 +845,7 @@ handle_call(Request, From, State) ->
 	    case inet_parse:visible_string(Dom) of
 		true ->
 		    [{_,Ds}] = ets:lookup(Db, res_search),
-		    case lists:member(Dom, Ds) of
+		    case member(Dom, Ds) of
 			true ->
 			    {reply, ok, State};
 			false ->
@@ -926,7 +941,7 @@ handle_call(Request, From, State) ->
 	{del_socks_methods, Ls} ->
 	    [{_,As}] = ets:lookup(Db, socks5_methods),
 	    As1 = As -- Ls,
-	    case lists:member(none, As1) of
+	    case member(none, As1) of
 		false -> ets:insert(Db, {socks5_methods, As1 ++ [none]});
 		true  -> ets:insert(Db, {socks5_methods, As1})
 	    end,
@@ -992,7 +1007,7 @@ handle_call(Request, From, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
-handle_cast(Msg, State) ->
+handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %%----------------------------------------------------------------------
@@ -1005,7 +1020,7 @@ handle_info(refresh_timeout, State) ->
     do_refresh_cache(State#state.cache),
     {noreply, State#state{cache_timer = init_timer()}};
 
-handle_info(Info, State) ->
+handle_info(_Info, State) ->
     {noreply, State}.
 
 %%----------------------------------------------------------------------
@@ -1013,7 +1028,7 @@ handle_info(Info, State) ->
 %% Purpose: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, State) ->
     stop_timer(State#state.cache_timer),
     ok.
 
@@ -1037,7 +1052,7 @@ do_add_rr(RR, Db, State) ->
 	    false
     end.
 
-cache_rr(Db, Cache, RR) ->
+cache_rr(_Db, Cache, RR) ->
     %% delete possible old entry
     ets:match_delete(Cache, RR#dns_rr { cnt = '_', tm = '_', ttl = '_',
 				        bm = '_', func = '_'}),
@@ -1070,7 +1085,7 @@ filter_rr([RR | RRs], Time) ->
     ets:match_delete(inet_cache, RR),
     ets:insert(inet_cache, RR#dns_rr { cnt = Time }),
     [RR | filter_rr(RRs, Time)];
-filter_rr([], Time) ->  [].
+filter_rr([], _Time) ->  [].
 
 
 %%

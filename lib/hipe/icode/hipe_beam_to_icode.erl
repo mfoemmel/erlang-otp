@@ -1,4 +1,4 @@
-% -*- erlang-indent-level: 2 -*-
+%% -*- erlang-indent-level: 2 -*-
 %%=======================================================================
 %% File        : hipe_beam_to_icode.erl
 %% Author      : Kostis Sagonas
@@ -10,12 +10,12 @@
 %%    This file translates symbolic BEAM code to Icode which is HiPE's
 %%    intermediate code representation.  Either the code of an entire
 %%    module, or the code of a specified function can be translated.
-%@
+%% @end
 %%=======================================================================
 
 -module(hipe_beam_to_icode).
 
--export([disasm/1,module/2,mfa/3]).
+-export([module/2, mfa/3]).
 
 %%-----------------------------------------------------------------------
 
@@ -26,55 +26,32 @@
 %%-ifndef(DEBUG).
 %%-define(DEBUG,6).
 %%-endif.
--export([mk_var/1]).
+
 -include("../main/hipe.hrl").
+-include("hipe_icode.hrl").
 -define(no_debug_msg(Str,Xs),ok).
 %%-define(no_debug_msg(Str,Xs),msg(Str,Xs)).
 
 -define(mk_debugcode(MFA, Env, Code),
-	case element(1,MFA) of
-	  io -> %% We do not want to loop infinitely if we are compiling
+	case MFA of
+	  {io,_,_} ->
+	    %% We do not want to loop infinitely if we are compiling
 	    %% the module io.
 	    {Code,Env};
-	  _ ->
+	  {M,F,A} ->
 	    MFAVar = mk_var(new),
 	    StringVar = mk_var(new),
 	    Ignore = mk_var(new),
-	    MkMfa = hipe_icode:mk_mov(MFAVar,hipe_icode:mk_const([MFA])),
-	    {M,F,A} = MFA,
-	    MkString = hipe_icode:mk_mov(StringVar,
-					 hipe_icode:mk_const(
-					   atom_to_list(M) ++ ":" ++ atom_to_list(F) ++"/"++ integer_to_list(A) ++ 
-					   " Native enter fun ~w\n")),
+	    MkMfa = hipe_icode:mk_move(MFAVar,hipe_icode:mk_const([MFA])),
+	    MkString = hipe_icode:mk_move(StringVar,
+					  hipe_icode:mk_const(
+					    atom_to_list(M) ++ ":" ++ atom_to_list(F) ++"/"++ integer_to_list(A) ++ 
+					    " Native enter fun ~w\n")),
 	    Call =
 	      hipe_icode:mk_call([Ignore],io,format,[StringVar,MFAVar],remote),
 	    {[MkMfa,MkString,Call | Code], Env}
 	end).
 
-
-%%-----------------------------------------------------------------------
-%% @doc
-%% Get BEAM code from `.beam' files or direct from binaries.
-%%   File is either a file name or a binary containing the code.
-%% @end
-%%-----------------------------------------------------------------------
-
-disasm(File) ->
-  case beam_disasm:file(File) of
-    {beam_file,DisasmBeam} ->
-      {value,{code,ModuleCode}} = lists:keysearch(code,1,DisasmBeam),
-      {value,{comp_info,CompInfo}} = lists:keysearch(comp_info,1,DisasmBeam),
-      {value,{options,CompOpts}} = lists:keysearch(options,1,CompInfo),
-      HCompOpts = case lists:keysearch(hipe,1,CompOpts) of
-		    {value,{hipe,L}} when is_list(L) -> L;
-		    {value,{hipe,X}} -> [X];
-		    _ -> []
-		  end,
-      {ModuleCode, HCompOpts};
-    Error ->
-      io:format("~s\n", [beam_lib:format_error(Error)]),
-      ?EXIT(no_beam_code)
-  end.
 
 %%-----------------------------------------------------------------------
 %% @doc
@@ -85,14 +62,35 @@ disasm(File) ->
 %%-----------------------------------------------------------------------
 
 module(BeamCode, Options) ->
-  {ModCode, ClosureInfo} = preprocess_code(BeamCode),
+  BeamCode1 = exclude_module_info_code(BeamCode,[]),
+  {ModCode, ClosureInfo} = preprocess_code(BeamCode1),
   pp_beam(ModCode, Options),
   [trans_beam_function_chunk(FunCode, ClosureInfo) || FunCode <- ModCode].
 
 trans_beam_function_chunk(FunBeamCode, ClosureInfo) ->
   {M,F,A} = find_mfa(FunBeamCode),
-  {_,Icode} = trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo),
+  Icode = trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo),
   {{M,F,A},Icode}.
+
+%%-----------------------------------------------------------------------
+%% The code chunks of module_info/[0,1] are excluded from the
+%% compilation to native code, since they are just dummy stubs.
+%% It is the BEAM loader that creates their real code, and HiPE relies
+%% on it to generate proper code for module_info/[0,1].
+%%-----------------------------------------------------------------------
+
+exclude_module_info_code([FunCode|FunCodes],Acc) ->
+  case FunCode of
+    [{label,L},{label,_},{func_info,MFA}|Insns] ->
+      NewFunCode = [{label,L},{func_info, MFA}|Insns],
+      exclude_module_info_code([NewFunCode|FunCodes], Acc);
+    [{label,_},{func_info,[_,{atom,module_info},A]}|_] when A =< 1->
+      exclude_module_info_code(FunCodes,Acc);
+    _Other ->
+      exclude_module_info_code(FunCodes,[FunCode|Acc])
+  end;
+exclude_module_info_code([],Acc) ->
+  lists:reverse(Acc).
 
 %%-----------------------------------------------------------------------
 %% @doc
@@ -106,28 +104,30 @@ trans_beam_function_chunk(FunBeamCode, ClosureInfo) ->
 %% @end
 %%-----------------------------------------------------------------------
 
+mfa(_, {_,module_info,A}, _) when A =< 1 ->
+  [];  % the module_info/[0,1] functions are just stubs in a BEAM file
 mfa(BeamCode, MFA, Options) ->
   {ModCode, ClosureInfo} = preprocess_code(BeamCode),
   mfa_loop([MFA], [], sets:new(), ModCode, ClosureInfo, Options).
 
-mfa_loop([{M, F, A} = MFA | MFAs], Ack, Seen, ModCode, ClosureInfo,
+mfa_loop([{M,F,A} = MFA | MFAs], Acc, Seen, ModCode, ClosureInfo,
 	 Options) ->
   case sets:is_element(MFA, Seen) of
     true ->
-      mfa_loop(MFAs, Ack, Seen, ModCode, ClosureInfo, Options);
+      mfa_loop(MFAs, Acc, Seen, ModCode, ClosureInfo, Options);
     false ->
       {Icode, FunMFAs} = mfa_get(M, F, A, ModCode, ClosureInfo, Options),
-      mfa_loop(FunMFAs ++ MFAs, [{MFA, Icode} | Ack],
+      mfa_loop(FunMFAs ++ MFAs, [{MFA, Icode} | Acc],
 	       sets:add_element(MFA, Seen),
 	       ModCode, ClosureInfo, Options)
   end;
-mfa_loop([], Ack, _, _, _, _) ->
-  lists:reverse(Ack).
+mfa_loop([], Acc, _, _, _, _) ->
+  lists:reverse(Acc).
 
 mfa_get(M, F, A, ModCode, ClosureInfo, Options) ->
   BeamCode = get_fun(ModCode, M,F,A),
   pp_beam([BeamCode],Options),  % cheat by using a list
-  {_,Icode} = trans_mfa_code(M,F,A, BeamCode, ClosureInfo),
+  Icode = trans_mfa_code(M,F,A, BeamCode, ClosureInfo),
   FunMFAs = get_fun_mfas(BeamCode),
   {Icode,FunMFAs}.
 
@@ -159,9 +159,9 @@ trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo) ->
 		  {Code3,_Env3} = {Code2,Env2}), % Code3 = fix_gotos(Code2),
 
   %% For stack optimization
-  {Code4,IsLeaf} = case hipe_icode:is_leaf0(Code3) of
-		     true  -> {[FunLbl,hipe_icode:mk_redtest()|Code3],true};
-		     false -> {[FunLbl,hipe_icode:mk_redtest()|Code3],false}
+  {Code4,IsLeaf} = case hipe_icode:is_leaf_code(Code3) of
+		     true  -> {[FunLbl,mk_redtest()|Code3],true};
+		     false -> {[FunLbl,mk_redtest()|Code3],false}
 		   end,
 
   IsClosure = case get_closure_info({M,F,A}, ClosureInfo) of
@@ -169,22 +169,23 @@ trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo) ->
 		_ -> true
 	      end,
 
-  Icode = hipe_icode:mk_icode({M,F,A},FunArgs,IsClosure,IsLeaf,
+  Code5 = hipe_icode:mk_icode({M,F,A},FunArgs,IsClosure,IsLeaf,
 			      remove_dead_code(Code4),
 			      hipe_gensym:var_range(icode),
 			      hipe_gensym:label_range(icode)),
 
-  Icode1 = %% If this function is the code for a closure ...
+  Icode = %% If this function is the code for a closure ...
     case get_closure_info({M,F,A}, ClosureInfo) of
-      not_a_closure -> Icode;
+      not_a_closure -> Code5;
       CI -> %% ... then patch the code to 
 	%% get the free_vars from the closure
-	patch_closure_entry(Icode,CI)
+	patch_closure_entry(Code5,CI)
     end,
 
   ?no_debug_msg("ok~n", []),
-  {FunBeamCode,Icode1}.
+  Icode.
 
+mk_redtest() -> hipe_icode:mk_primop([], redtest, []).
 
 %%-----------------------------------------------------------------------
 %% The main translation switch.
@@ -196,43 +197,41 @@ trans_fun([{label,B},{label,_},{func_info,MFA},{label,L}|Instructions], Env) ->
 trans_fun([{label,B},
 	   {func_info,[{atom,_M},{atom,_F},_A]},
 	   {label,L}|Instructions], Env) ->
-  %% Emit code to handle badmatch errors.  The BEAM test instructions
-  %% branch to this label if they fail inside a clause body.
+  %% Emit code to handle function_clause errors.  The BEAM test instructions
+  %% branch to this label if they fail during function clause selection.
   %% Obviously, we must goto past this error point on normal entry.
+%% NEW_EXCEPTIONS
+%%   Begin = mk_label(B,Env),
+%%   EntryPt = mk_label(L,Env),
+%%   Goto = hipe_icode:mk_goto(hipe_icode:label_name(EntryPt)),
+%%   Fail = hipe_icode:mk_fail([], {error,function_clause}),
+%%   [Goto,Begin,Fail,EntryPt | trans_fun(Instructions,Env)];
   Begin = mk_label(B,Env),
   V = mk_var(new),
   EntryPt = mk_label(L,Env),
   Goto = hipe_icode:mk_goto(hipe_icode:label_name(EntryPt)),
-  Mov = hipe_icode:mk_mov(V, hipe_icode:mk_const(function_clause)),
+  Mov = hipe_icode:mk_move(V, hipe_icode:mk_const(function_clause)),
   Fail = hipe_icode:mk_fail([V],fault),
   [Goto,Begin,Mov,Fail,EntryPt | trans_fun(Instructions,Env)];
 %%--- label ---
+trans_fun([{label,L1},{label,L2}|Instructions], Env) ->
+  %% Old beam code can have two consectutive labels.
+  Lab1 = mk_label(L1,Env),
+  Lab2 = mk_label(L2,Env),
+  Goto = hipe_icode:mk_goto(map_label(L2)),
+  [Lab1, Goto, Lab2 | trans_fun(Instructions, Env)];
 trans_fun([{label,L}|Instructions], Env) ->
   [mk_label(L,Env) | trans_fun(Instructions, Env)];
 %%--- int_code_end --- SHOULD NEVER OCCUR HERE
 %%--- call ---
-trans_fun([{call,_N,{M,F,A}}|Instructions], Env) ->
+trans_fun([{call,_N,MFA={_M,_F,A}}|Instructions], Env) ->
   Args = extract_fun_args(A),
   Dst = [mk_var({r,0})],
-  case {M,F,A} of
-    {erlang,exit,1} ->
-      [hipe_icode:mk_fail(Args,exit) | 
-       trans_fun(Instructions,Env)];
-    {erlang, throw, 1} ->
-      [hipe_icode:mk_fail(Args,throw) | 
-       trans_fun(Instructions,Env)];
-    {erlang, fault, 1} ->
-      [hipe_icode:mk_fail(Args,fault) | 
-       trans_fun(Instructions,Env)];
-    {erlang, fault, 2} ->
-      [hipe_icode:mk_fail(Args,fault2) | 
-       trans_fun(Instructions,Env)];
-    _ ->
-      [hipe_icode:mk_call(Dst,M,F,Args,local) | trans_fun(Instructions,Env)]
-  end;
+  I = trans_call(MFA,Dst,Args,local),
+  [I | trans_fun(Instructions,Env)];
 %%--- call_last ---
 %% Differs from call_only in that it deallocates the environment
-trans_fun([{call_last,_N,{M,F,A},_}|Instructions], Env) ->
+trans_fun([{call_last,_N,MFA={M,F,A},_}|Instructions], Env) ->
   %% IS IT OK TO IGNORE LAST ARG ??
   ?no_debug_msg("  translating call_last: ~p ...~n", [Env]),
   case env__get_mfa(Env) of
@@ -243,57 +242,38 @@ trans_fun([{call_last,_N,{M,F,A},_}|Instructions], Env) ->
        hipe_icode:mk_goto(Entry) | trans_fun(Instructions,Env)];
     _ ->
       Args = extract_fun_args(A),
-      [hipe_icode:mk_enter(M,F,Args,local) | trans_fun(Instructions,Env)]
+      I = trans_enter(MFA,Args,local),
+      [I | trans_fun(Instructions,Env)]
   end;
 %%--- call_only ---
 %% Used when the body contains only one call in which case 
 %% an environment is not needed/created.
-trans_fun([{call_only,_N,{M,F,A}}|Instructions], Env) ->
+trans_fun([{call_only,_N,MFA={_M,_F,A}}|Instructions], Env) ->
   ?no_debug_msg("  translating call_only: ~p ...~n", [Env]),
   case env__get_mfa(Env) of
-    {M,F,A} ->
+    MFA ->
       Entry = env__get_entry(Env),
       [hipe_icode:mk_comment(self_tail_recursive),
        hipe_icode:mk_goto(Entry) | trans_fun(Instructions,Env)];
     _ ->
       Args = extract_fun_args(A),
-      [hipe_icode:mk_enter(M,F,Args,local) | trans_fun(Instructions,Env)]
+      I = trans_enter(MFA,Args,local),
+      [I |  trans_fun(Instructions,Env)]
   end;
 %%--- call_ext ---
-trans_fun([{call_ext,_N,{M,F,A}}|Instructions], Env) ->
+trans_fun([{call_ext,_N,MFA={_M,_F,A}}|Instructions], Env) ->
   Args = extract_fun_args(A),
   Dst = [mk_var({r,0})],
-  case {M,F,A} of
-    {erlang,exit,1} ->
-      [hipe_icode:mk_fail(Args,exit) | trans_fun(Instructions,Env)];
-    {erlang,throw,1} ->
-      [hipe_icode:mk_fail(Args,throw) | trans_fun(Instructions,Env)];
-    {erlang,fault,1} ->
-      [hipe_icode:mk_fail(Args,fault) | trans_fun(Instructions,Env)];
-    {erlang,fault,2} ->
-      [hipe_icode:mk_fail(Args,fault2) | trans_fun(Instructions,Env)];
-    _ ->
-      [hipe_icode:mk_comment(call_ext),
-       hipe_icode:mk_call(Dst,M,F,Args,remote) | trans_fun(Instructions,Env)]
-  end;
+  I = trans_call(MFA,Dst,Args,remote),
+  [hipe_icode:mk_comment(call_ext),I | trans_fun(Instructions,Env)];
 %%--- call_ext_last ---
-trans_fun([{call_ext_last,_N,{M,F,A},_}|Instructions], Env) ->
+trans_fun([{call_ext_last,_N,MFA={_M,_F,A},_}|Instructions], Env) ->
   %% IS IT OK TO IGNORE LAST ARG ??
   Args = extract_fun_args(A),
   %% Dst = [mk_var({r,0})],
-  case {M,F,A} of
-    {erlang,exit,1} ->
-      [hipe_icode:mk_fail(Args,exit) | trans_fun(Instructions,Env)];
-    {erlang,throw,1} ->
-      [hipe_icode:mk_fail(Args,throw) | trans_fun(Instructions,Env)];
-    {erlang,fault,1} ->
-      [hipe_icode:mk_fail(Args,fault) | trans_fun(Instructions,Env)];
-    {erlang,fault,2} ->
-      [hipe_icode:mk_fail(Args,fault2) | trans_fun(Instructions,Env)];
-    _ ->
-      [hipe_icode:mk_comment(call_ext_last),
-       hipe_icode:mk_enter(M,F,Args,remote) | trans_fun(Instructions,Env)]
-  end;
+  I = trans_enter(MFA,Args,remote),
+  [hipe_icode:mk_comment(call_ext_last), I
+   | trans_fun(Instructions,Env)];
 %%--- bif0 ---
 trans_fun([{bif0,BifName,Reg}|Instructions], Env) ->
   BifInsts = trans_bif0(BifName,Reg),
@@ -344,12 +324,11 @@ trans_fun([timeout|Instructions], Env) ->
 %%--- loop_rec ---
 trans_fun([{loop_rec,{_,Lbl},Reg}|Instructions], Env) ->
   {Movs,[Temp],Env1} = get_constants_in_temps([Reg],Env),
-  {GetMsgLbl,Env2} = mk_label(new,Env1),
-  MboxEmpty = hipe_icode:mk_if(mbox_empty,[],
-			       map_label(Lbl),
-			       hipe_icode:label_name(GetMsgLbl)),
-  GetMsg = hipe_icode:mk_primop([Temp],get_msg,[]),
-  Movs ++ [MboxEmpty,GetMsgLbl,GetMsg | trans_fun(Instructions,Env2)];
+  {GotitLbl,Env2} = mk_label(new,Env1),
+  ChkGetMsg = hipe_icode:mk_primop([Temp],check_get_msg,[],
+				   hipe_icode:label_name(GotitLbl),
+				   map_label(Lbl)),
+  Movs ++ [ChkGetMsg, GotitLbl | trans_fun(Instructions,Env2)];
 %%--- loop_rec_end ---
 trans_fun([{loop_rec_end,{_,Lbl}}|Instructions], Env) ->
   Loop = hipe_icode:mk_goto(map_label(Lbl)),
@@ -461,7 +440,7 @@ trans_fun([{is_tuple,{_,Lbl},Arg}|Instructions], Env) ->
 %%--- test_arity ---
 trans_fun([{test_arity,{f,Lbl},Reg,N}|Instructions], Env) ->
   {True,Env1} = mk_label(new,Env),
-  I = hipe_icode:mk_type(mk_var(Reg),{tuple,N}, 
+  I = hipe_icode:mk_type([mk_var(Reg)],{tuple,N}, 
 			 hipe_icode:label_name(True),map_label(Lbl)),
   [I,True | trans_fun(Instructions,Env1)];
 %%--- select_val ---
@@ -491,8 +470,7 @@ trans_fun([{move,Src,Dst}|Instructions], Env) ->
 	   false ->
 	     trans_const(Src)
 	 end,
-  [hipe_icode:mk_mov(Dst1,Src1) | trans_fun(Instructions,Env)];
-
+  [hipe_icode:mk_move(Dst1,Src1) | trans_fun(Instructions,Env)];
 
 %%--- catch --- ITS PROCESSING IS POSTPONED
 trans_fun([{'catch',N,{_,EndLabel}}|Instructions], Env) ->
@@ -516,21 +494,29 @@ trans_fun([{try_case,_N}|Instructions], Env) ->
 
 %%--- try_case_end --- XXX: THIS IS A PRELIMINARY IMPLEMENTATION
 trans_fun([{try_case_end,Arg}|Instructions], Env) ->
+%% NEW_EXCEPTIONS
+%%   V = trans_arg(Arg),
+%%   Fail = hipe_icode:mk_fail([V], {error,try_clause}),
+%%   [Fail | trans_fun(Instructions,Env)];
   BadArg = trans_arg(Arg),
   ErrVar = mk_var(new),
   V = mk_var(new),
-  Atom = hipe_icode:mk_mov(ErrVar,hipe_icode:mk_const(try_clause)),
+  Atom = hipe_icode:mk_move(ErrVar,hipe_icode:mk_const(try_clause)),
   Tuple = hipe_icode:mk_primop([V],mktuple,[ErrVar,BadArg]),
   Fail = hipe_icode:mk_fail([V], fault),
   [Atom,Tuple,Fail | trans_fun(Instructions,Env)];
 
 %%--- raise ---
 trans_fun([{raise,Arg1,Arg2}|Instructions], Env) ->
+%% NEW_EXCEPTIONS
+%%   V1 = trans_arg(Arg1),
+%%   V2 = trans_arg(Arg2),
+%%   Fail = hipe_icode:mk_fail([V1,V2],raise),
+%%   [Fail | trans_fun(Instructions,Env)];
   Var1 = trans_arg(Arg1),
   Var2 = trans_arg(Arg2),
   I = hipe_icode:mk_fail([Var1,Var2],'raise'),
   [I | trans_fun(Instructions,Env)];
-
 
 %%--- get_list ---
 trans_fun([{get_list,List,Head,Tail}|Instructions], Env) ->
@@ -566,7 +552,7 @@ trans_fun([{set_tuple_element,Elem,Tuple,Index}|Instructions], Env) ->
   [I | trans_fun(Instructions,Env)];
 %%--- put_string ---
 trans_fun([{put_string,_Len,String,Dst}|Instructions], Env) ->
-  Mov = hipe_icode:mk_mov(mk_var(Dst),trans_const(String)),
+  Mov = hipe_icode:mk_move(mk_var(Dst),trans_const(String)),
   [Mov | trans_fun(Instructions,Env)];
 %%--- put_list ---
 trans_fun([{put_list,Car,Cdr,Dest}|Instructions], Env) ->
@@ -585,25 +571,36 @@ trans_fun([{put_tuple,_Size,Reg}|Instructions], Env) ->
 %%--- put --- SHOULD NOT REALLY EXIST HERE; put INSTRUCTIONS ARE HANDLED ABOVE.
 %%--- badmatch ---
 trans_fun([{badmatch,Arg}|Instructions], Env) ->
+%% NEW_EXCEPTIONS
+%%   V = trans_arg(Arg),
+%%   Fail = hipe_icode:mk_fail([V], {error,badmatch}),
+%%   [Fail | trans_fun(Instructions,Env)];
   BadVar = trans_arg(Arg),
   ErrVar = mk_var(new),
   V = mk_var(new),
-  Atom = hipe_icode:mk_mov(ErrVar,hipe_icode:mk_const(badmatch)),
+  Atom = hipe_icode:mk_move(ErrVar,hipe_icode:mk_const(badmatch)),
   Tuple = hipe_icode:mk_primop([V],mktuple,[ErrVar,BadVar]),
   Fail = hipe_icode:mk_fail([V], fault),
   [Atom,Tuple,Fail | trans_fun(Instructions,Env)];
 %%--- if_end ---
 trans_fun([if_end|Instructions], Env) ->
+%% NEW_EXCEPTIONS
+%%   Fail = hipe_icode:mk_fail([], {error,if_clause}),
+%%   [Fail | trans_fun(Instructions, Env)];
   V = mk_var(new),
-  Mov = hipe_icode:mk_mov(V,hipe_icode:mk_const(if_clause)),
+  Mov = hipe_icode:mk_move(V,hipe_icode:mk_const(if_clause)),
   Fail = hipe_icode:mk_fail([V], fault),
   [Mov,Fail | trans_fun(Instructions, Env)];
 %%--- case_end ---
 trans_fun([{case_end,Arg}|Instructions], Env) ->
+%% NEW_EXCEPTIONS
+%%   V = trans_arg(Arg),
+%%   Fail = hipe_icode:mk_fail([V], {error,case_clause}),
+%%   [Fail | trans_fun(Instructions,Env)];
   BadArg = trans_arg(Arg),
   ErrVar = mk_var(new),
   V = mk_var(new),
-  Atom = hipe_icode:mk_mov(ErrVar,hipe_icode:mk_const(case_clause)),
+  Atom = hipe_icode:mk_move(ErrVar,hipe_icode:mk_const(case_clause)),
   Tuple = hipe_icode:mk_primop([V],mktuple,[ErrVar,BadArg]),
   Fail = hipe_icode:mk_fail([V], fault),
   [Atom,Tuple,Fail | trans_fun(Instructions,Env)];
@@ -630,10 +627,11 @@ trans_fun([{is_function,{f,Lbl},Arg}|Instructions], Env) ->
   {Code,Env1} = trans_type_test(function,Lbl,Arg,Env),
   [Code | trans_fun(Instructions,Env1)];
 %%--- call_ext_only ---
-trans_fun([{call_ext_only,_N,{M,F,A}}|Instructions], Env) ->
+trans_fun([{call_ext_only,_N,MFA={_M,_F,A}}|Instructions], Env) ->
   Args = extract_fun_args(A),
-  [hipe_icode:mk_comment(call_ext_only),
-   hipe_icode:mk_enter(M,F,Args,remote) | trans_fun(Instructions,Env)];
+  I = trans_enter(MFA, Args, remote),
+  [hipe_icode:mk_comment(call_ext_only), I
+   | trans_fun(Instructions,Env)];
 
 %%--------------------------------------------------------------------
 %%--- Translation of binary instructions ---
@@ -671,7 +669,7 @@ trans_fun([{bs_put_float,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
 	   Instructions], Env) ->
   Flags = resolve_native_endianess(Flags0),
   %% Get source
-  {Src, SourceInstrs, ConstInfo} = 
+  {Src,SourceInstrs,ConstInfo} = 
     case is_var(Source) of
       true ->
 	{mk_var(Source),[], var};
@@ -680,37 +678,33 @@ trans_fun([{bs_put_float,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
 	  {float, X} when float(X) ->
 	    C = trans_const(Source),
 	    SrcVar = mk_var(new),
-	    I = hipe_icode:mk_mov(SrcVar, C),
+	    I = hipe_icode:mk_move(SrcVar, C),
 	    {SrcVar,[I],pass};
 	  _ -> 
 	    C = trans_const(Source),
 	    SrcVar = mk_var(new),
-	    I = hipe_icode:mk_mov(SrcVar, C),
+	    I = hipe_icode:mk_move(SrcVar, C),
 	    {SrcVar,[I],fail}
 	end
     end,
-
   %% Get type of put_float
-  {Name, Args,Env2} = 
+  {Name,Args,Env2} = 
     case Size of
-      {integer, NoBits} when NoBits >= 0 -> %% Create a N*Unit bits float
+      {integer,NoBits} when NoBits >= 0 -> %% Create a N*Unit bits float
 	{{bs_put_float, NoBits*Unit, Flags, ConstInfo}, [Src],Env};
-      {integer, NoBits} when NoBits < 0 ->
+      {integer,NoBits} when NoBits < 0 ->
 	?EXIT({bad_bs_size_constant,Size});
       BitReg -> % Use a number of bits only known at runtime.
 	Bits = mk_var(BitReg),
 	{{bs_put_float, Unit, Flags, ConstInfo}, [Src,Bits],Env}
     end,
-
   %% Generate code for calling the bs-op. 
   SourceInstrs ++ 
     trans_op_call({hipe_bs_primop,Name}, Lbl, Args, [], Env2, Instructions);  
-
 %%--- bs_put_binary ---
 %% Create a sub-binary.
 trans_fun([{bs_put_binary,{f,Lbl},Size,Unit,{field_flags,Flags},Source}|
 	   Instructions], Env) ->
-
   %% Get the source of the binary.
   {Src, SrcInstrs} = 
     case is_var(Source) of
@@ -719,38 +713,28 @@ trans_fun([{bs_put_binary,{f,Lbl},Size,Unit,{field_flags,Flags},Source}|
       false ->
 	C = trans_const(Source),
 	SrcVar = mk_var(new),
-	I = hipe_icode:mk_mov(SrcVar, C),
+	I = hipe_icode:mk_move(SrcVar, C),
 	{SrcVar,[I]}
     end,
-
   %% Get type of put_binary
   {Name, Args,Env2} = 
     case Size of
-      {atom, all} -> %% put all bits
+      {atom,all} -> %% put all bits
 	{{bs_put_binary_all, Flags},[Src],Env};
-      {integer, NoBits} when NoBits >= 0 -> %% Create a N*Unit bits subbinary
+      {integer,NoBits} when NoBits >= 0 -> %% Create a N*Unit bits subbinary
 	{{bs_put_binary, NoBits*Unit, Flags}, [Src],Env};
-      {integer, NoBits} when NoBits < 0 ->
+      {integer,NoBits} when NoBits < 0 ->
 	?EXIT({bad_bs_size_constant,Size});
       BitReg -> % Use a number of bits only known at runtime.
 	Bits = mk_var(BitReg),
 	{{bs_put_binary, Unit, Flags},[Src, Bits],Env}
     end,
-
   %% Generate code for calling the bs-op.
-    SrcInstrs ++ trans_op_call({hipe_bs_primop, Name}, 
-			       Lbl, Args, [], Env2, Instructions);
-
+  SrcInstrs ++ trans_op_call({hipe_bs_primop, Name}, 
+			     Lbl, Args, [], Env2, Instructions);
 %%--- bs_init ---
 trans_fun([{bs_init,Size,{field_flags,Flags}} |Instructions], Env) ->
-  %% What to do with Arg1 and Arg2?
-  Name =
-  case get(hipe_inline_bs) of
-    true ->
-      {bs_init,Size,Flags};
-    _ ->
-      bs_init
-  end,
+  Name = {bs_init,Size,Flags},
   [hipe_icode:mk_primop([],{hipe_bs_primop,Name},[]) |
    trans_fun(Instructions, Env)];
 %%--- bs_need_buf ---
@@ -765,7 +749,7 @@ trans_fun([{bs_put_string,SizeInBytes,{string,String}}|Instructions], Env) ->
    trans_fun(Instructions, Env)];
 %%--- bs_final ---
 trans_fun([{bs_final,{f,_Lbl},Dst}|Instructions], Env) ->
-  %% What to do with "_Lbl"?
+  %% XXX: What to do with "_Lbl"?
   [hipe_icode:mk_primop([mk_var(Dst)], {hipe_bs_primop, bs_final},[]) |
    trans_fun(Instructions, Env)];
 %%--- bs_start_match ---
@@ -781,9 +765,9 @@ trans_fun([{bs_get_integer,{f,Lbl},Size,Unit,{field_flags,Flags0},X}|
   %% Get size-type 
   {Name, Args} = 
     case Size of
-      {integer, NoBits} when NoBits >= 0 -> %% Create a N*Unit bits subbinary
-	{{bs_get_integer, NoBits*Unit,Flags}, []};
-      {integer, NoBits} when NoBits < 0 ->
+      {integer,NoBits} when NoBits >= 0 -> %% Create a N*Unit bits subbinary
+	{{bs_get_integer,NoBits*Unit,Flags}, []};
+      {integer,NoBits} when NoBits < 0 ->
 	?EXIT({bad_bs_size_constant,Size});
       BitReg -> % Use a number of bits only known at runtime.
 	Bits = mk_var(BitReg),
@@ -808,12 +792,12 @@ trans_fun([{bs_put_integer,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
 	  {integer, X} when integer(X) ->
 	    C = trans_const(Source),
 	    SrcVar = mk_var(new),
-	    I = hipe_icode:mk_mov(SrcVar, C),
+	    I = hipe_icode:mk_move(SrcVar, C),
 	    {SrcVar,[I], pass};
 	  _ ->
-	     C = trans_const(Source),
+	    C = trans_const(Source),
 	    SrcVar = mk_var(new),
-	    I = hipe_icode:mk_mov(SrcVar, C),
+	    I = hipe_icode:mk_move(SrcVar, C),
 	    {SrcVar,[I], fail}
 	    
 	end
@@ -822,18 +806,17 @@ trans_fun([{bs_put_integer,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
     case is_var(Size) of
       true ->
 	SVar = mk_var(Size),
-	{{bs_put_integer,Unit,Flags, ConstInfo},[SVar], Env};
+	{{bs_put_integer,Unit,Flags,ConstInfo}, [SVar], Env};
       false ->
 	case Size of
 	  {integer, NoBits} when NoBits >= 0 -> 
-	    {{bs_put_integer, NoBits*Unit,Flags, ConstInfo}, [], Env};
+	    {{bs_put_integer,NoBits*Unit,Flags,ConstInfo}, [], Env};
 	  _ -> 
 	    ?EXIT({bad_bs_size_constant,Size})
-	      end
+	end
     end,
-  SrcInstrs ++
-    trans_op_call({hipe_bs_primop, Name}, 
-		  Lbl, [Src|Args], [], Env2, Instructions);
+  SrcInstrs ++ trans_op_call({hipe_bs_primop, Name}, 
+			     Lbl, [Src|Args], [], Env2, Instructions);
 %%--- bs_save ---
 trans_fun([{bs_save,Index}| Instructions], Env) ->
   [hipe_icode:mk_primop([],{hipe_bs_primop,{bs_save,Index}},[]) |
@@ -844,7 +827,7 @@ trans_fun([{bs_restore,Index}| Instructions], Env) ->
 	 trans_fun(Instructions, Env)];
 %%--- bs_test_tail ---
 trans_fun([{bs_test_tail,{f,Lbl},Numbits}| Instructions], Env) ->
-  trans_op_call({hipe_bs_primop,{bs_test_tail, Numbits}}, 
+  trans_op_call({hipe_bs_primop,{bs_test_tail,Numbits}}, 
 		Lbl, [], [], Env, Instructions);
 %%--- bs_skip_bits ---
 trans_fun([{bs_skip_bits,{f,Lbl},Size,NumBits,{field_flags,Flags}}|
@@ -853,9 +836,9 @@ trans_fun([{bs_skip_bits,{f,Lbl},Size,NumBits,{field_flags,Flags}}|
   {Name, Args} = 
     case Size of
       {atom, all} -> %% Skip all bits
-	{{bs_skip_bits_all, Flags},[]};
+	{{bs_skip_bits_all,Flags},[]};
       {integer, BitSize} when BitSize >= 0-> %% Skip N bits
-	{{bs_skip_bits, BitSize*NumBits}, []};
+	{{bs_skip_bits,BitSize*NumBits}, []};
       {integer, BitSize} when BitSize < 0 ->
 	?EXIT({bad_bs_size_constant,Size});
       X -> % Skip a number of bits only known at runtime.
@@ -869,20 +852,59 @@ trans_fun([{bs_get_binary,{f,Lbl},Size,Unit,{field_flags,Flags},X}|
   {Name, Args} = 
     case Size of
       {atom, all} -> %% put all bits
-	{{bs_get_binary_all, Flags},[]};
+	{{bs_get_binary_all,Flags},[]};
       {integer, NoBits} when NoBits >= 0 -> %% Create a N*Unit bits subbinary
-	{{bs_get_binary, NoBits*Unit, Flags}, []};
+	{{bs_get_binary,NoBits*Unit,Flags}, []};
       {integer, NoBits} when NoBits < 0 ->
 	?EXIT({bad_bs_size_constant,Size});
       BitReg -> % Use a number of bits only known at runtime.
 	Bits = mk_var(BitReg),
-	{{bs_get_binary,Unit, Flags},[Bits]}
+	{{bs_get_binary,Unit,Flags},[Bits]}
     end,
   Dsts = [mk_var(X)],
   trans_op_call({hipe_bs_primop,Name}, Lbl, Args, Dsts, Env, Instructions);
+
+%%
+%% New bit syntax instructions added in February 2004 (R10B).
+%%
+
+trans_fun([{bs_init2,{f,Lbl},Size,Words,_LiveRegs,{field_flags,Flags0},X}|
+	   Instructions], Env) ->
+  Dst = mk_var(X),
+  Flags = resolve_native_endianess(Flags0),
+  Offset=mk_var(reg),
+  Base=mk_var(reg),
+  {Name, Args} =
+    case Size of
+      NoBytes when integer(NoBytes) ->
+	{{bs_init2, Size, Words, Flags}, []};
+      BitReg ->
+	Bits = mk_var(BitReg),
+	{{bs_init2, Words, Flags}, [Bits]}
+    end,
+  trans_bin_call({hipe_bs_primop,Name}, Lbl, Args, [Dst, Base, Offset],
+		 Base, Offset, Env, Instructions);
+trans_fun([{bs_bits_to_bytes, {f,Lbl}, Bits, Bytes}|Instructions], Env) ->
+  Src = mk_var(Bits), 
+  Dst = mk_var(Bytes),
+  trans_op_call({hipe_bs_primop,bs_bits_to_bytes}, Lbl, [Src], [Dst],
+		Env, Instructions);
+trans_fun([{bs_add, {f,Lbl}, Old, New, Unit, Res}|Instructions], Env) ->
+  NewVar = mk_var(New),
+  Dst = mk_var(Res),
+  case Old of
+    {integer, I} ->
+      trans_op_call({hipe_bs_primop,{bs_add,I,Unit}}, Lbl, [NewVar], [Dst],
+		    Env, Instructions);
+    _ ->
+      OldVar = mk_var(Old),
+      trans_op_call({hipe_bs_primop,{bs_add,Unit}}, Lbl, [OldVar,NewVar],
+		    [Dst], Env, Instructions)
+  end;
+
 %%--------------------------------------------------------------------
 %%--- Translation of floating point instructions ---
-%%
+%%--------------------------------------------------------------------
 
 %%--- fclearerror ---
 trans_fun([fclearerror|Instructions], Env) ->
@@ -893,7 +915,6 @@ trans_fun([fclearerror|Instructions], Env) ->
     _ -> 
       trans_fun(Instructions,Env)
   end;
-
 %%--- fcheckerror ---
 trans_fun([{fcheckerror,{_,Fail}}|Instructions], Env) ->
   case get(hipe_inline_fp) of
@@ -906,8 +927,8 @@ trans_fun([{fcheckerror,{_,Fail}}|Instructions], Env) ->
 	   ContLbl | trans_fun(Instructions,Env1)];
 	_ -> %% Can this happen?
 	  {Guard,Env2} =
-	    make_guard([],fcheckerror,[],
-		       hipe_icode:label_name(ContLbl),map_label(Fail),Env1),
+	    make_guard([], fcheckerror, [],
+		       hipe_icode:label_name(ContLbl), map_label(Fail), Env1),
 	  [Guard, ContLbl | trans_fun(Instructions,Env2)]
       end;
     _ ->
@@ -925,7 +946,7 @@ trans_fun([{fmove,Src,Dst}|Instructions], Env) ->
       case{hipe_icode:is_fvar(Dst1),
 	   hipe_icode:is_fvar(Src1)} of
 	{true, true} -> %% fvar := fvar 
-	  [hipe_icode:mk_fmov(Dst1,Src1) | trans_fun(Instructions,Env)];
+	  [hipe_icode:mk_fmove(Dst1,Src1) | trans_fun(Instructions,Env)];
 	{false, true} -> %% var := fvar
 	  [hipe_icode:mk_primop([Dst1], unsafe_tag_float, [Src1]) |
 	   trans_fun(Instructions,Env)];
@@ -997,11 +1018,93 @@ trans_fun([{fnegate,Lab,[SrcR],DestR}|Instructions], Env) ->
   end;
 
 %%--------------------------------------------------------------------
+%% New apply instructions added in April 2004 (R10B).
+%%--------------------------------------------------------------------
+
+trans_fun([{apply,Arity}|Instructions], Env) ->
+  BeamArgs = extract_fun_args(Arity+2), %% +2 is for M and F
+  {Args,[M,F]} = lists:split(Arity,BeamArgs),
+  Dst = [mk_var({r,0})],
+  I = trans_call({hipe,apply_N,Arity},Dst,[M,F|Args],remote),
+  [hipe_icode:mk_comment(apply), I | trans_fun(Instructions,Env)];
+trans_fun([{apply_last,Arity,_N}|Instructions], Env) -> % N is StackAdjustment?
+  BeamArgs = extract_fun_args(Arity+2), %% +2 is for M and F
+  {Args,[M,F]} = lists:split(Arity,BeamArgs),
+  I = trans_enter({hipe,apply_N,Arity},[M,F|Args],remote),
+  [hipe_icode:mk_comment(apply_last), I | trans_fun(Instructions,Env)];
+
+%%--------------------------------------------------------------------
+%% New test instruction added in April 2004 (R10B).
+%%--------------------------------------------------------------------
+%%--- is_boolean ---
+trans_fun([{is_boolean,{f,Lbl},Arg}|Instructions], Env) ->
+  {Code,Env1} = trans_type_test(boolean,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
+
+%%--------------------------------------------------------------------
 %%--- ERROR HANDLING ---
+%%--------------------------------------------------------------------
 trans_fun([X|_], _) ->
   ?EXIT({'trans_fun/2',X});
 trans_fun([], _) ->
   [].
+
+
+%%--------------------------------------------------------------------
+%% trans_call generates a correct Icode call, taking care to get the
+%% primop flag right, and recognizing fails.
+%%--------------------------------------------------------------------
+
+trans_call(MFA={M,F,_A},Dst,Args,Type) ->
+  case MFA of
+    {erlang,exit,1} ->
+      hipe_icode:mk_fail(Args,exit);
+    {erlang,throw,1} ->
+      hipe_icode:mk_fail(Args,throw);
+%% NEW_EXCEPTIONS
+%%     {erlang,fault,1} ->
+%%       hipe_icode:mk_fail(Args,error);
+%%     {erlang,fault,2} ->
+%%       hipe_icode:mk_fail(Args,error);
+%%     {erlang,error,1} ->
+%%       hipe_icode:mk_fail(Args,error);
+%%     {erlang,error,2} ->
+%%       hipe_icode:mk_fail(Args,error);
+    {erlang,fault,1} ->
+      hipe_icode:mk_fail(Args,fault);
+    {erlang,fault,2} ->
+      hipe_icode:mk_fail(Args,fault2);
+    _ ->
+      hipe_icode:mk_call(Dst,M,F,Args,Type)
+  end.
+
+%%--------------------------------------------------------------------
+%% trans_enter generates a correct Icode tail-call, taking care to get
+%% the primop flag right, and recognizing fails.
+%%--------------------------------------------------------------------
+
+trans_enter(MFA={M,F,_A},Args,Type) ->
+  case MFA of
+    {erlang,exit,1} ->
+      hipe_icode:mk_fail(Args,exit);
+    {erlang,throw,1} ->
+      hipe_icode:mk_fail(Args,throw);
+%% NEW_EXCEPTIONS
+%%     {erlang,fault,1} ->
+%%       hipe_icode:mk_fail(Args,error);
+%%     {erlang,fault,2} ->
+%%       hipe_icode:mk_fail(Args,error);
+%%     {erlang,error,1} ->
+%%       hipe_icode:mk_fail(Args,error);
+%%     {erlang,error,2} ->
+%%       hipe_icode:mk_fail(Args,error);
+    {erlang,fault,1} ->
+      hipe_icode:mk_fail(Args,fault);
+    {erlang,fault,2} ->
+      hipe_icode:mk_fail(Args,fault2);
+    _ ->
+      hipe_icode:mk_enter(M,F,Args,Type)
+  end.
 
 %%-----------------------------------------------------------------------
 %% trans_bif0(BifName, DestReg)
@@ -1011,22 +1114,22 @@ trans_fun([], _) ->
 trans_bif0(BifName, DestReg) ->
   ?no_debug_msg("  found BIF0: ~p() ...~n", [BifName]),
   BifRes = mk_var(DestReg),
-  Module = hipe_bif:bif_module(0,BifName),
-  I = hipe_icode:mk_primop([BifRes],{Module,BifName,0},[]),
+  I = hipe_icode:mk_call([BifRes],erlang,BifName,[],remote),
   [I].
 
+trans_bif(1, '+', _Lbl, [Arg], DestReg, Env) ->	%% the identity function
+  {trans_fun([{move,Arg,DestReg}], Env), Env};
 trans_bif(Arity, BifName, Lbl, Args, DestReg, Env) ->
   ?no_debug_msg("  found BIF: ~p(~p) ...~n", [BifName,Args]),
   BifRes = mk_var(DestReg),
   {Movs, SrcVars, Env1} = get_constants_in_temps(Args,Env),
-  Module = hipe_bif:bif_module(Arity,BifName),
   case Lbl of
     0 -> % Bif is not in a guard
-      I = hipe_icode:mk_primop([BifRes],{Module,BifName,Arity},SrcVars),
+      I = hipe_icode:mk_call([BifRes],erlang,BifName,SrcVars,remote),
       {Movs ++ [I], Env1};
     _ -> % Bif occurs in a guard - fail silently to Lbl
       {GuardI,Env2} =
-	make_fallthrough_guard([BifRes],{Module,BifName,Arity},SrcVars,
+	make_fallthrough_guard([BifRes],{erlang,BifName,Arity},SrcVars,
 			       map_label(Lbl),Env1),
       {[Movs,GuardI], Env2}
   end.
@@ -1038,9 +1141,136 @@ trans_op_call(Name, Lbl, Args, Dests, Env, Instructions) ->
 	I = hipe_icode:mk_primop(Dests, Name, Args),
 	{[I], Env};
       _ -> % op occurs in a guard - fail silently to Lbl
-	  make_fallthrough_guard(Dests,Name,Args,map_label(Lbl),Env)
+	make_fallthrough_guard(Dests,Name,Args,map_label(Lbl),Env)
     end,
   [Code|trans_fun(Instructions, Env1)].
+
+trans_bin_call(Name, Lbl, Args, Dests, Base, Offset, Env, Instructions) ->
+  {Code,Env1} =
+    case Lbl of
+      0 -> % Op is not in a guard
+	I = hipe_icode:mk_primop(Dests, Name, Args),
+	{[I], Env};
+      _ -> % op occurs in a guard - fail silently to Lbl
+	make_fallthrough_guard(Dests,Name,Args,map_label(Lbl),Env)
+    end,
+  [Code|trans_bin(Instructions, Base, Offset, Env1)].
+
+trans_bin([{bs_put_float,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
+	   Instructions], Base, Offset, Env) ->
+  Flags = resolve_native_endianess(Flags0),
+  %% Get source
+  {Src,SourceInstrs,ConstInfo} = 
+    case is_var(Source) of
+      true ->
+	{mk_var(Source),[], var};
+      false ->
+	case Source of
+	  {float, X} when float(X) ->
+	    C = trans_const(Source),
+	    SrcVar = mk_var(new),
+	    I = hipe_icode:mk_move(SrcVar, C),
+	    {SrcVar,[I],pass};
+	  _ -> 
+	    C = trans_const(Source),
+	    SrcVar = mk_var(new),
+	    I = hipe_icode:mk_move(SrcVar, C),
+	    {SrcVar,[I],fail}
+	end
+    end,
+  %% Get type of put_float
+  {Name,Args,Env2} = 
+    case Size of
+      {integer,NoBits} when NoBits >= 0 -> %% Create a N*Unit bits float
+	{{bs_put_float, NoBits*Unit, Flags, ConstInfo}, [Src, Base, Offset],Env};
+      {integer,NoBits} when NoBits < 0 ->
+	?EXIT({bad_bs_size_constant,Size});
+      BitReg -> % Use a number of bits only known at runtime.
+	Bits = mk_var(BitReg),
+	{{bs_put_float, Unit, Flags, ConstInfo}, [Src,Bits,Base,Offset],Env}
+    end,
+  %% Generate code for calling the bs-op. 
+  SourceInstrs ++ 
+    trans_bin_call({hipe_bs_primop,Name}, Lbl, Args, [Offset], Base, Offset, Env2, Instructions);
+trans_bin([{bs_put_binary,{f,Lbl},Size,Unit,{field_flags,Flags},Source}|
+	   Instructions], Base, Offset, Env) ->
+  %% Get the source of the binary.
+  {Src, SrcInstrs} = 
+    case is_var(Source) of
+      true ->
+	{mk_var(Source),[]};
+      false ->
+	C = trans_const(Source),
+	SrcVar = mk_var(new),
+	I = hipe_icode:mk_move(SrcVar, C),
+	{SrcVar,[I]}
+    end,
+  %% Get type of put_binary
+  {Name, Args,Env2} = 
+    case Size of
+      {atom,all} -> %% put all bits
+	{{bs_put_binary_all, Flags},[Src,Base,Offset],Env};
+      {integer,NoBits} when NoBits >= 0 -> %% Create a N*Unit bits subbinary
+	{{bs_put_binary, NoBits*Unit, Flags}, [Src,Base,Offset],Env};
+      {integer,NoBits} when NoBits < 0 ->
+	?EXIT({bad_bs_size_constant,Size});
+      BitReg -> % Use a number of bits only known at runtime.
+	Bits = mk_var(BitReg),
+	{{bs_put_binary, Unit, Flags},[Src, Bits,Base,Offset],Env}
+    end,
+  %% Generate code for calling the bs-op.
+  SrcInstrs ++ trans_bin_call({hipe_bs_primop, Name}, 
+			     Lbl, Args, [Offset], Base, Offset, Env2, Instructions);
+%%--- bs_put_string ---
+trans_bin([{bs_put_string,SizeInBytes,{string,String}}|Instructions], Base, 
+	  Offset, Env) ->
+  [hipe_icode:mk_primop([Offset],
+			{hipe_bs_primop,{bs_put_string, String, SizeInBytes}},
+			[Base, Offset]) |
+   trans_bin(Instructions, Base, Offset, Env)];
+trans_bin([{bs_put_integer,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
+	   Instructions], Base, Offset, Env) ->
+  Flags = resolve_native_endianess(Flags0),
+  %% Get size-type 
+  
+  %% Get the source of the binary.
+  {Src, SrcInstrs, ConstInfo} = 
+    case is_var(Source) of
+      true ->
+	{mk_var(Source),[], var};
+      false ->
+	case Source of
+	  {integer, X} when integer(X) ->
+	    C = trans_const(Source),
+	    SrcVar = mk_var(new),
+	    I = hipe_icode:mk_move(SrcVar, C),
+	    {SrcVar,[I], pass};
+	  _ ->
+	    C = trans_const(Source),
+	    SrcVar = mk_var(new),
+	    I = hipe_icode:mk_move(SrcVar, C),
+	    {SrcVar,[I], fail}
+	    
+	end
+    end,
+  {Name, Args, Env2} = 
+    case is_var(Size) of
+      true ->
+	SVar = mk_var(Size),
+	{{bs_put_integer,Unit,Flags,ConstInfo}, [SVar, Base, Offset], Env};
+      false ->
+	case Size of
+	  {integer, NoBits} when NoBits >= 0 -> 
+	    {{bs_put_integer,NoBits*Unit,Flags,ConstInfo}, [Base, Offset], Env};
+	  _ -> 
+	    ?EXIT({bad_bs_size_constant,Size})
+	end
+    end,
+  SrcInstrs ++ trans_bin_call({hipe_bs_primop, Name}, 
+			     Lbl, [Src|Args], [Offset], Base, Offset, Env2, Instructions);
+trans_bin(Instructions, _Base, _Offset, Env) ->
+  trans_fun(Instructions, Env).
+
 
 %%-----------------------------------------------------------------------
 %% trans_arith(Op, SrcVars, Des, Lab, Env) -> { Icode, NewEnv }
@@ -1057,9 +1287,8 @@ trans_op_call(Name, Lbl, Args, Dests, Env, Instructions) ->
 trans_arith(Op, SrcRs, DstR, Lbl, Env) ->
   {Movs,SrcVars,Env1} = get_constants_in_temps(SrcRs,Env),
   DstVar = mk_var(DstR),
-
-  %%io:format("hipe_beam_to_icode:trans_arith()\n ~w := ~w ~w\n",
-  %%		[DstVar,SrcVars, Op]),
+  %%io:format("~w:trans_arith()\n ~w := ~w ~w\n",
+  %%		[?MODULE,DstVar,SrcVars,Op]),
   case Lbl of
     0 ->  % Body arithmetic
       Primop = hipe_icode:mk_primop([DstVar],Op,SrcVars),
@@ -1086,20 +1315,18 @@ trans_test_guard(TestOp,F,Arg1,Arg2,Env) ->
 make_fallthrough_guard(DstVar,GuardOp,Args,FailLName,Env) ->
   {ContL,Env1} = mk_label(new,Env),
   ContLName = hipe_icode:label_name(ContL),
-  {Guard,Env2} =
-    make_guard(DstVar,GuardOp,Args,ContLName,FailLName,Env1),
+  {Guard,Env2} = make_guard(DstVar,GuardOp,Args,ContLName,FailLName,Env1),
   {[Guard,ContL],Env2}.
 
 %% Make sure DstVar gets initialised after a fail:
 make_guard([DstVar],GuardOp,Args,ContLName,FailLName,Env) ->
   {RestorCatchL,Env1} = mk_label(new,Env),
-  RestorCatchLName =  hipe_icode:label_name(RestorCatchL),
+  RestorCatchLName = hipe_icode:label_name(RestorCatchL),
   GuardOpIns = hipe_icode:mk_guardop([DstVar],GuardOp,Args,
-				  ContLName, 
-				  RestorCatchLName),
+				     ContLName,RestorCatchLName),
   Restore = [RestorCatchL,
-	    hipe_icode:mk_restore_catch(DstVar,RestorCatchLName),
-	    hipe_icode:mk_goto(FailLName)],
+	     hipe_icode:mk_restore_catch(DstVar,RestorCatchLName),
+	     hipe_icode:mk_goto(FailLName)],
   {[GuardOpIns|Restore], Env1};
 %% A guard that does not return anything:
 make_guard([],GuardOp,Args,ContLName,FailLName,Env) ->
@@ -1126,7 +1353,7 @@ make_guard(Dests,GuardOp,Args,ContLName,FailLName,Env) ->
   %  {[GuardOpIns|Restore], Env1}.
   %
   % nillify_rest([Var|Vars]) ->
-  %   [hipe_icode:mk_mov(Var,hipe_icode:mk_const([]))|nillify_rest(Vars)];
+  %   [hipe_icode:mk_move(Var,hipe_icode:mk_const([]))|nillify_rest(Vars)];
   % nillify_rest([]) -> [].
 
 %%-----------------------------------------------------------------------
@@ -1136,8 +1363,8 @@ make_guard(Dests,GuardOp,Args,ContLName,FailLName,Env) ->
 
 trans_type_test(Test, Lbl, Arg, Env) ->
   {True,Env1} = mk_label(new,Env),
-  {Move,Var,Env2} =  mk_move_and_var(Arg,Env1),
-  I = hipe_icode:mk_type(Var,Test,
+  {Move,Var,Env2} = mk_move_and_var(Arg,Env1),
+  I = hipe_icode:mk_type([Var],Test,
 			 hipe_icode:label_name(True),map_label(Lbl)),
   {[Move,I,True],Env2}.
 
@@ -1156,7 +1383,7 @@ trans_puts([{put,X}|Code], Vars, Moves, Env) ->
       trans_puts(Code,[Var|Vars],Moves,Env);
     {const,C} ->
       Var = mk_var(new),
-      Move = hipe_icode:mk_mov(Var,hipe_icode:mk_const(C)),
+      Move = hipe_icode:mk_move(Var,hipe_icode:mk_const(C)),
       trans_puts(Code,[Var|Vars],[Move|Moves],Env)
   end;
 trans_puts(Code, Vars, Moves, Env) ->    %% No more put operations
@@ -1182,7 +1409,8 @@ trans_is_eq_exact(Lbl,Arg1,Arg2,Env) ->
       trans_is_eq_exact_var_const(Lbl, Arg2, Arg1, Env);
     {false,false} -> %% Both arguments are constants !!!
       case Arg1 =:= Arg2 of
-	true ->   {[], Env};
+	true ->
+	  {[], Env};
 	false ->   
 	  {Never,Env1} = mk_label(new,Env),
 	  I = hipe_icode:mk_goto(map_label(Lbl)),
@@ -1197,11 +1425,11 @@ trans_is_eq_exact_var_const(Lbl, Arg1, Arg2, Env) -> % var =:= const
   FalseLabName = map_label(Lbl),
   I = case Arg2 of
 	{float,Float} ->
-	  hipe_icode:mk_if(op_exact_eqeq_2,
+	  hipe_icode:mk_if('=:=',
 			   [NewArg1, hipe_icode:mk_const(Float)],
 			   TrueLabName, FalseLabName);
 	_ ->
-	  hipe_icode:mk_type(NewArg1, Arg2,
+	  hipe_icode:mk_type([NewArg1], Arg2,
 			     TrueLabName, FalseLabName)
       end,
   {[I,True], Env1}.
@@ -1213,7 +1441,7 @@ mk_move_and_var(Var,Env) ->
   case type(Var) of
     {const,C} ->
       V = mk_var(new),
-      {[hipe_icode:mk_mov(V,hipe_icode:mk_const(C))], V, Env};
+      {[hipe_icode:mk_move(V,hipe_icode:mk_const(C))], V, Env};
     var ->
       V = mk_var(Var),
       {[], V, Env}
@@ -1222,7 +1450,12 @@ mk_move_and_var(Var,Env) ->
 %%-----------------------------------------------------------------------
 %% Find names of closures and number of free vars.
 %%-----------------------------------------------------------------------
--record(closure_info,{mfa, arity, fv_arity}).
+
+-record(closure_info, {mfa, arity, fv_arity}).
+
+closure_info_mfa(#closure_info{mfa=MFA}) -> MFA.
+closure_info_arity(#closure_info{arity=Arity}) -> Arity.
+%% closure_info_fv_arity(#closure_info{fv_arity=Arity}) -> Arity.
 
 find_closure_info(Code) -> mod_find_closure_info(Code, []).
 
@@ -1246,7 +1479,7 @@ find_closure_info([], ClosureInfo) ->
 %%-----------------------------------------------------------------------
 
 get_closure_info(MFA, [CI|Rest]) ->
-  case CI#closure_info.mfa of
+  case closure_info_mfa(CI) of
     MFA -> CI;
     _ -> get_closure_info(MFA, Rest)
   end;
@@ -1257,8 +1490,13 @@ get_closure_info(_, []) ->
 %% Patch closure entry.
 %%-----------------------------------------------------------------------
 
+%% NOTE: this changes the number of parameters in the ICode function,
+%% but does *not* change the arity in the function name. Thus, all
+%% closure-functions have the exact same names in Beam and in native
+%% code, although they have different calling conventions.
+
 patch_closure_entry(Icode, ClosureInfo)->
-  Arity = ClosureInfo#closure_info.arity, 
+  Arity = closure_info_arity(ClosureInfo), 
   %% ?msg("Arity ~w\n",[Arity]),
   {Args, Closure, FreeVars} = 
     split_params(Arity, hipe_icode:icode_params(Icode), []),
@@ -1283,7 +1521,7 @@ gen_get_free_vars(Vars, Closure, StartName) ->
 get_free_vars([V|Vs], Closure, No, MoveCode) ->
   %% TempV = hipe_icode:mk_new_var(),
   get_free_vars(Vs, Closure, No+1,
-		[%% hipe_icode:mk_mov(TempV,hipe_icode:mk_const(No)),
+		[%% hipe_icode:mk_move(TempV,hipe_icode:mk_const(No)),
 		 hipe_icode:mk_primop([V],{closure_element, No}, [Closure])
 		 |MoveCode]);
 get_free_vars([],_,_,MoveCode) ->
@@ -1295,7 +1533,7 @@ split_params(1, [Closure|OrgArgs], Args) ->
   {lists:reverse([Closure|Args]), Closure, [Closure|OrgArgs]};
 split_params(1, [], Args) ->
   Closure = hipe_icode:mk_new_var(),
-  {lists:reverse([Closure|Args]),  Closure, [Closure]};
+  {lists:reverse([Closure|Args]),  Closure, []};
 split_params(N, [ArgN|OrgArgs], Args) ->
   split_params(N-1, OrgArgs, [ArgN|Args]).
 
@@ -1351,8 +1589,10 @@ find_mfa([{func_info,[{atom,M},{atom,F},A]}|_]) ->
 get_fun([[L, {func_info,[{atom,M},{atom,F},A]} | Is] | _], M,F,A) ->
   [L, {func_info,[{atom,M},{atom,F},A]} | Is];
 get_fun([[_L1,_L2, {func_info,[{atom,M},{atom,F},A]} | _Is] | _], M,F,A) ->
-  ?EXIT({'get_fun/4','Consecutive labels found; please re-create the .beam file'});
-%%    [_L1,_L2, {func_info,[{atom,M},{atom,F},A]} | _Is];
+  io:format("WARNING!!!: Consecutive labels found; please re-create "
+	    "the .beam file~n", []),
+  %%?EXIT({'get_fun/4','Consecutive labels found; please re-create the .beam file'});
+  [_L1,_L2, {func_info,[{atom,M},{atom,F},A]} | _Is];
 get_fun([_|Rest], M,F,A) ->
   get_fun(Rest, M,F,A).    
 
@@ -1383,7 +1623,7 @@ get_constant_in_temp(Arg, Env) ->
     false -> % Create a new temp and move the constant into it
       Temp = mk_var(new),
       Const = trans_const(Arg),
-      {hipe_icode:mk_mov(Temp, Const), Temp, Env}
+      {hipe_icode:mk_move(Temp, Const), Temp, Env}
   end.
 
 %%-----------------------------------------------------------------------
@@ -1548,68 +1788,95 @@ is_var(_) ->
 %% Fixes the code for catches by adding some code.
 %%-----------------------------------------------------------------------
 
-fix_catches([{'catch',N,Lbl}|Code]) ->
-  {NewContLbl, _} =  mk_label(new,env__mk_env()),
-  NewCont = hipe_icode:label_name(NewContLbl),
-  CatchLbl = map_label(Lbl),
-  {NewCatchLbl, _} =  mk_label(new,env__mk_env()),
-  NewCatch =  hipe_icode:label_name(NewCatchLbl),
-  {EndLabel,_} = mk_label(new,env__mk_env()),
-  {CodeToCatch,RestOfCode} = split_code(Code,{catch_end,N}),
-  CatchedCode = fix_catches(CodeToCatch),
-  Code2 = fix_catches(RestOfCode),
-  GotoEndLabel = hipe_icode:mk_goto(hipe_icode:label_name(EndLabel)),
+fix_catches(Code) ->
+  fix_catches(Code, gb_trees:empty()).
 
-  [hipe_icode:mk_pushcatch(NewCatch,NewCont),NewContLbl] ++ 
-    CatchedCode ++
-    [hipe_icode:mk_label(CatchLbl),
-     hipe_icode:mk_remove_catch(NewCatch),
-     GotoEndLabel,
-     NewCatchLbl,
-     hipe_icode:mk_restore_catch(
-       mk_var({r,0}), NewCatch),
-     GotoEndLabel,EndLabel | Code2];
+%% Now fix catches is safe for merged catch blocks, that is several
+%% 'catch' with only one 'catch_end', and also several 'try' with one
+%% 'try_end'. If catch and try can be merged this will need additional
+%% handling.
+fix_catches([{'catch',N,Lbl}|Code], HandledCatchLbls) ->
+  case gb_trees:lookup(Lbl, HandledCatchLbls) of
+    {value, NewCatch} when is_number(NewCatch) ->
+      NewCode = fix_catches(Code, HandledCatchLbls),
+      {NewContLbl, _} =  mk_label(new,env__mk_env()),
+      NewCont = hipe_icode:label_name(NewContLbl),
+      [hipe_icode:mk_pushcatch(NewCatch,NewCont),NewContLbl | NewCode];
+    none ->
+      CatchLbl = map_label(Lbl),
+      {NewContLbl, _} =  mk_label(new,env__mk_env()),
+      NewCont = hipe_icode:label_name(NewContLbl),
+      {NewCatchLbl, _} =  mk_label(new,env__mk_env()),
+      NewCatch =  hipe_icode:label_name(NewCatchLbl),
+      {EndLabel,_} = mk_label(new,env__mk_env()),
+      {CodeToCatch,RestOfCode} = 
+	split_code(Code,hipe_icode:mk_label(CatchLbl),{catch_end,N}),
+      NewHandledCatchLbls = gb_trees:insert(Lbl, NewCatch, HandledCatchLbls),
+      %% The catched code can contain more catches with the same label.
+      CatchedCode = fix_catches(CodeToCatch, NewHandledCatchLbls),
+      %% The rest of the code cannot contain catches with the same label.
+      Code2 = fix_catches(RestOfCode, HandledCatchLbls),
+      GotoEndLabel = hipe_icode:mk_goto(hipe_icode:label_name(EndLabel)),
+      
+      [hipe_icode:mk_pushcatch(NewCatch,NewCont),NewContLbl] ++ 
+	CatchedCode ++
+	[hipe_icode:mk_label(CatchLbl),
+	 hipe_icode:mk_remove_catch(NewCatch),
+	 GotoEndLabel,
+	 NewCatchLbl,
+	 hipe_icode:mk_restore_catch(
+	   mk_var({r,0}), NewCatch),
+	 GotoEndLabel,EndLabel | Code2]
+  end;
 
-fix_catches([{'try',N,Lbl}|Code]) ->
-  {NewContLbl, _} =  mk_label(new,env__mk_env()),
-  NewCont = hipe_icode:label_name(NewContLbl),
-  CatchLbl = map_label(Lbl),
-  {NewCatchLbl, _} =  mk_label(new,env__mk_env()),
-  NewCatch =  hipe_icode:label_name(NewCatchLbl),
-  {EndLabel,_} = mk_label(new,env__mk_env()),
-  {CodeToCatch,RestOfCode} = split_code(Code,{try_end,N}),
-
-  CatchedCode = fix_catches(CodeToCatch),
-  Code2 = fix_catches(RestOfCode),
-  GotoEndLabel = hipe_icode:mk_goto(hipe_icode:label_name(EndLabel)),
-  GotoCatchLabel = hipe_icode:mk_goto(CatchLbl),
-
-  [hipe_icode:mk_pushtry(NewCatch,NewCont),NewContLbl] ++ CatchedCode ++
-    [
-     hipe_icode:mk_remove_catch(NewCatch),
-     GotoEndLabel,
-     NewCatchLbl,
-     hipe_icode:mk_restore_try(mk_var({x,1}),
-				 mk_var({r,0}),
-				 NewCatch),
-     GotoCatchLabel,EndLabel | Code2];
-fix_catches([Instr|Code]) ->
-  [Instr|fix_catches(Code)];
-fix_catches([]) ->
+fix_catches([{'try',N,Lbl}|Code], HandledCatchLbls) ->
+  case gb_trees:lookup(Lbl, HandledCatchLbls) of
+    {value, {'try', NewCatch}} ->
+      NewCode = fix_catches(Code, HandledCatchLbls),
+      {NewContLbl, _} =  mk_label(new,env__mk_env()),
+      NewCont = hipe_icode:label_name(NewContLbl),
+      [hipe_icode:mk_pushtry(NewCatch,NewCont),NewContLbl | NewCode];
+    none ->
+      {NewContLbl, _} =  mk_label(new,env__mk_env()),
+      NewCont = hipe_icode:label_name(NewContLbl),
+      CatchLbl = map_label(Lbl),
+      {NewCatchLbl, _} =  mk_label(new,env__mk_env()),
+      NewCatch =  hipe_icode:label_name(NewCatchLbl),
+      {EndLabel,_} = mk_label(new,env__mk_env()),
+      {CodeToCatch,RestOfCode} = split_code(Code,CatchLbl,{try_end,N}),
+      NewHandledCatchLbls = 
+	gb_trees:insert({'try', Lbl}, NewCatch, HandledCatchLbls),
+      %% The catched code can contain more catches with the same label.
+      CatchedCode = fix_catches(CodeToCatch, NewHandledCatchLbls),
+      %% The rest of the code cannot contain catches with the same label.
+      Code2 = fix_catches(RestOfCode, HandledCatchLbls),
+      GotoEndLabel = hipe_icode:mk_goto(hipe_icode:label_name(EndLabel)),
+      GotoCatchLabel = hipe_icode:mk_goto(CatchLbl),
+      
+      [hipe_icode:mk_pushtry(NewCatch,NewCont),NewContLbl] ++ CatchedCode ++
+	[hipe_icode:mk_remove_catch(NewCatch),
+	 GotoEndLabel,
+	 NewCatchLbl,
+	 hipe_icode:mk_restore_try(mk_var({x,1}), mk_var({r,0}), NewCatch),
+	 GotoCatchLabel,EndLabel | Code2]
+  end;
+fix_catches([Instr|Code], HandledCatchLbls) ->
+  [Instr|fix_catches(Code, HandledCatchLbls)];
+fix_catches([], _HandledCatchLbls) ->
   [].
 
 %% splits the code according to [ Before, To, After ]
-split_code([], _) ->
+split_code([], _, _) ->
   {[], []};
-split_code([Inst = {enter,_,_,_,_},{label,_,_},To|Code], To) ->
+split_code([Inst = #enter{},Label,To|Code], Label, To) ->
   {NewLabel,_} = mk_label(new,env__mk_env()),
   {[Inst,NewLabel], Code};
-split_code([{label,_,_},To|Code], To) ->
+split_code([Label,To|Code], Label, To) ->
   {[], Code};
-split_code([To|Code], To) ->
-  {[], Code};
-split_code([Instr|Code], To) ->
-  {Lst1, Lst2} = split_code(Code, To),
+%split_code([To|Code], _Label, To) ->
+%  {[], Code};
+split_code([Instr|Code], Label, To) ->
+  {Lst1, Lst2} = split_code(Code, Label, To),
   {[Instr|Lst1], Lst2}.
 
 %%-----------------------------------------------------------------------
@@ -1641,10 +1908,10 @@ skip_to_label([]) ->
 %%-----------------------------------------------------------------------
 
 resolve_native_endianess(Flags) ->
-  case {Flags band 16#10, get(hipe_target_arch)} of
-    {16#10, ultrasparc} ->
+  case {Flags band 16#10, hipe_rtl_arch:endianess()} of
+    {16#10, big} ->
       Flags band 5;
-    {16#10, x86} ->
+    {16#10, little} ->
       (Flags bor 2) band 7;  
     _ ->
       Flags band 7
@@ -1685,11 +1952,9 @@ env__store_entrypoint(Entry, Env) ->
   Env#environment{entry = Entry}.
 
 %% Get current MFA
-env__get_mfa(Env) ->
-  Env#environment.mfa.
+env__get_mfa(#environment{mfa=MFA}) -> MFA.
 
-%% Get entry point of the current function!
-env__get_entry(Env) ->
-  Env#environment.entry.
+%% Get entry point of the current function
+env__get_entry(#environment{entry=EP}) -> EP.
 
 %%-----------------------------------------------------------------------

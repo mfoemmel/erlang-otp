@@ -103,6 +103,7 @@
 #define internal_dist_entry(x)		(erts_this_node->dist_entry)
 #define external_dist_entry(x)		(external_node((x))->dist_entry)
 
+extern int erts_use_r9_pids_ports;
 
 /*
  * For this node (and previous incarnations of this node), 0 is used as
@@ -165,14 +166,17 @@
 
 /* Minimum NUMBER of processes for a small system to start */
 #define ERTS_MIN_PROCESSES		16
-/* Maximum NUMBER of processes */
-#define ERTS_MAX_PROCESSES		(1 << ERTS_PROCESSES_BITS)
+#define ERTS_MAX_R9_PROCESSES		(1 << ERTS_R9_PROC_BITS)
+#define ERTS_MAX_PROCESSES		(1 << ERTS_PROC_BITS)
 
 #define ERTS_MAX_PID_DATA		((1 << _PID_DATA_SIZE) - 1)
 #define ERTS_MAX_PID_NUMBER		((1 << _PID_NUM_SIZE) - 1)
 #define ERTS_MAX_PID_SERIAL		((1 << _PID_SER_SIZE) - 1)
+#define ERTS_MAX_PID_R9_SERIAL		((1 << _PID_R9_SER_SIZE) - 1)
 
-#define ERTS_PROCESSES_BITS		(_PID_SER_SIZE + _PID_NUM_SIZE)
+#define ERTS_R9_PROC_BITS		(_PID_R9_SER_SIZE + _PID_NUM_SIZE)
+#define ERTS_PROC_BITS			(_PID_SER_SIZE + _PID_NUM_SIZE)
+
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
  * Ports                                                                   *
 \*                                                                         */
@@ -221,11 +225,13 @@
    which defines the maximum number of simultaneous Ports
    in the Erlang node. ERTS_MAX_PORTS is a hard upper limit.
 */
+#define ERTS_MAX_R9_PORTS		(1 << ERTS_R9_PORTS_BITS)
 #define ERTS_MAX_PORTS			(1 << ERTS_PORTS_BITS)
 
 #define ERTS_MAX_PORT_DATA		((1 << _PORT_DATA_SIZE) - 1)
 #define ERTS_MAX_PORT_NUMBER		((1 << _PORT_NUM_SIZE) - 1)
 
+#define ERTS_R9_PORTS_BITS		(_PORT_R9_NUM_SIZE)
 #define ERTS_PORTS_BITS			(_PORT_NUM_SIZE)
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
  * Refs                                                                    *

@@ -45,7 +45,12 @@ set_bit_type(Size, default) ->
 set_bit_type(Size, TypeList) ->
     case catch set_bit(TypeList, #bittype{}) of
 	{ok,#bittype{type=Type,unit=Unit,sign=Sign,endian=Endian}} ->
-	    apply_defaults(Type, Size, Unit, Sign, Endian);
+	    case catch apply_defaults(Type, Size, Unit, Sign, Endian) of
+		{'EXIT',Reason} ->
+		    exit(Reason);
+		{ok,_,_}=OK -> OK;
+		{error,_}=Error -> Error
+	    end;
 	{error,_}=Error -> Error
     end.
 
@@ -92,6 +97,7 @@ merge_field(X, Y, What) ->
 %% 
 %% The default is integer.
 %% The default size is 'all' for binaries, 8 for integers, 64 for floats.
+%% No unit must be given if the size is not given.
 %% The default unit size is 8 for binaries, and 1 for integers and floats.
 %% The default sign is always unsigned.
 %% The default endian is always big.
@@ -101,11 +107,14 @@ apply_defaults(undefined, Size, Unit, Sign, Endian) -> %default type
     apply_defaults(integer, Size, Unit, Sign, Endian);
 
 apply_defaults(binary, default, Unit, Sign, Endian) -> %default size
-    apply_defaults(binary, all, Unit, Sign, Endian);
+    check_unit(Unit),
+    apply_defaults(binary, all, 8, Sign, Endian);
 apply_defaults(integer, default, Unit, Sign, Endian) ->
-    apply_defaults(integer, 8, Unit, Sign, Endian);
+    check_unit(Unit),
+    apply_defaults(integer, 8, 1, Sign, Endian);
 apply_defaults(float, default, Unit, Sign, Endian) ->
-    apply_defaults(float, 64, Unit, Sign, Endian);
+    check_unit(Unit),
+    apply_defaults(float, 64, 1, Sign, Endian);
 
 apply_defaults(binary, Size, undefined, Sign, Endian) -> %default unit
     apply_defaults(binary, Size, 8, Sign, Endian);
@@ -122,4 +131,7 @@ apply_defaults(Type, Size, Unit, Sign, undefined) -> %default endian
 
 apply_defaults(Type, Size, Unit, Sign, Endian) -> %done
     {ok,Size,#bittype{type=Type,unit=Unit,sign=Sign,endian=Endian}}.
+
+check_unit(undefined) -> ok;
+check_unit(_) -> throw({error,bittype_unit}).
 

@@ -35,12 +35,13 @@
 #include "global.h"
 #include "erl_process.h"
 #include "error.h"
+#define ERTS_WANT_DB_INTERNAL__
 #include "erl_db.h"
 #include "bif.h"
 #include "big.h"
 
 
-Uint erts_tot_ets_memory_words;
+Uint erts_tot_ets_memory_size;
 
 /*
 ** Utility macros
@@ -112,8 +113,6 @@ static int next_prime(int n);
 static BIF_RETTYPE ets_select_delete_1(Process *p, Eterm a1);
 static BIF_RETTYPE ets_select_count_1(Process *p, Eterm a1);
 static BIF_RETTYPE ets_select_trap_1(Process *p, Eterm a1);
-static DbFixation *alloc_fixation(DbTable *tb);
-static void free_fixation(DbTable *tb, DbFixation *fix);
 
 /* 
  * Exported global
@@ -155,7 +154,8 @@ BIF_RETTYPE ets_fixtable_2(BIF_ALIST_2)
 	while (tb->common.fixations != NULL) {
 	    fix = tb->common.fixations;
 	    tb->common.fixations = fix->next;
-	    free_fixation(tb, fix);
+	    erts_db_free(ERTS_ALC_T_DB_FIXATION,
+			 tb, (void *) fix, sizeof(DbFixation));
 	}
 	if (IS_HASH_TABLE(tb->common.status)) {
 	    cret = db_fixtable_hash(&(tb->hash), am_false);
@@ -215,7 +215,8 @@ BIF_RETTYPE ets_safe_fixtable_2(BIF_ALIST_2)
 		}
 	    }
 	    if (fix == NULL) {
-		fix = alloc_fixation(tb);
+		fix = (DbFixation *) erts_db_alloc(ERTS_ALC_T_DB_FIXATION,
+						   tb, sizeof(DbFixation));
 		fix->pid = BIF_P->id;
 		fix->counter = 1;
 		fix->next = tb->common.fixations;
@@ -248,7 +249,8 @@ BIF_RETTYPE ets_safe_fixtable_2(BIF_ALIST_2)
 		    db_erase_bag_exact2(&(meta_pid_to_fixed_tab->hash),
 					BIF_P->id,
 					make_small(tb->common.slot));
-		    free_fixation(tb, fix);
+		    erts_db_free(ERTS_ALC_T_DB_FIXATION,
+				 tb, (void *) fix, sizeof(DbFixation));
 		}
 		break;
 	    }
@@ -399,7 +401,7 @@ BIF_RETTYPE ets_update_counter_3(BIF_ALIST_3)
     Eterm ret;
     int cret;
     Eterm increment = BIF_ARG_3;
-    int position = 0;
+    Sint position = 0;
     Eterm threshold = NIL;
     Eterm warp_to = NIL;
 
@@ -758,7 +760,7 @@ BIF_RETTYPE ets_new_2(BIF_ALIST_2)
     Eterm val;
     Eterm ret;
     Uint32 status;
-    int keypos;
+    Sint keypos;
     int is_named;
     int cret;
     Eterm dummy;
@@ -878,7 +880,15 @@ BIF_RETTYPE ets_new_2(BIF_ALIST_2)
     /* ret will be the id for the table as well */
     /* Creat a new table and insert in db_tables */
 
-    tb = (DbTable*) erts_alloc(ERTS_ALC_T_DB_TABLE, sizeof(DbTable));
+    {
+        DbTable init_tb;
+	init_tb.common.memory_size = 0;
+	tb = (DbTable*) erts_db_alloc(ERTS_ALC_T_DB_TABLE,
+				      &init_tb,
+				      sizeof(DbTable));
+	tb->common.memory_size = init_tb.common.memory_size;
+    }
+
     tb->common.id = ret;
     tb->common.the_name = BIF_ARG_1;
     tb->common.status = status;
@@ -886,7 +896,6 @@ BIF_RETTYPE ets_new_2(BIF_ALIST_2)
     tb->common.owner = BIF_P->id;
 
     tb->common.nitems = 0;
-    tb->common.memory = 0;
     tb->common.kept_items = 0;
 
     tb->common.slot = slot;           /* store slot for erase */
@@ -903,7 +912,7 @@ BIF_RETTYPE ets_new_2(BIF_ALIST_2)
     }
 
     if (cret != DB_ERROR_NONE) {
-	erts_free(ERTS_ALC_T_DB_TABLE, (void *) tb);
+	erts_db_free(ERTS_ALC_T_DB_TABLE, tb, (void *) tb, sizeof(DbTable));
 	BIF_ERROR(BIF_P, BADARG);
     }
 
@@ -1005,7 +1014,7 @@ BIF_RETTYPE ets_member_2(BIF_ALIST_2)
 BIF_RETTYPE ets_lookup_element_3(BIF_ALIST_3)
 {
     DbTable* tb;
-    int index;
+    Sint index;
     int cret;
     Eterm ret;
 
@@ -1851,8 +1860,10 @@ BIF_RETTYPE ets_db_info_2(BIF_ALIST_2)
 	    BIF_RET(am_bag);
 	}
     }
-    if (BIF_ARG_2 == am_memory) 
-	BIF_RET(make_small_or_big(tb->common.memory, BIF_P));
+    if (BIF_ARG_2 == am_memory) {
+	Uint words = (tb->common.memory_size + sizeof(Uint) - 1)/sizeof(Uint);
+	BIF_RET(make_small_or_big(words, BIF_P));
+    }
     if (BIF_ARG_2 == am_owner) 
 	BIF_RET(tb->common.owner);
     if (BIF_ARG_2 == am_protection) {
@@ -1912,6 +1923,15 @@ BIF_RETTYPE ets_db_info_2(BIF_ALIST_2)
 }
 
 
+BIF_RETTYPE ets_is_compiled_ms_1(BIF_ALIST_1)
+{
+    if (erts_db_is_compiled_ms(BIF_ARG_1)) {
+	BIF_RET(am_true);
+    } else {
+	BIF_RET(am_false);
+    }
+}
+
 BIF_RETTYPE ets_match_spec_compile_1(BIF_ALIST_1)
 {
     Binary *mp = db_match_set_compile(BIF_P, BIF_ARG_1, DCOMP_TABLE);
@@ -1929,7 +1949,57 @@ BIF_RETTYPE ets_match_spec_compile_1(BIF_ALIST_1)
     pb->bytes = mp->orig_bytes;
     BIF_RET(make_binary(pb));
 }
+BIF_RETTYPE ets_match_spec_run_r_3(BIF_ALIST_3)
+{
+    Eterm ret = BIF_ARG_3;
+    int i = 0;
+    Eterm *hp;
+    Eterm lst;
+    ProcBin *bp;
+    Binary *mp;
+    Eterm res;
+    Uint32 dummy;
+    Uint sz;
 
+    if (!(is_list(BIF_ARG_1) || BIF_ARG_1 == NIL) || !is_binary(BIF_ARG_2)) {
+    error:
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    
+    bp = (ProcBin*) binary_val(BIF_ARG_2);
+    if (thing_subtag(bp->thing_word) != REFC_BINARY_SUBTAG) {
+	goto error;
+    }
+    mp = bp->val;
+    if (!(mp->flags & BIN_FLAG_MATCH_PROG)) {
+	goto error;
+    }
+
+    if (BIF_ARG_1 == NIL) {
+	BIF_RET(BIF_ARG_3);
+    }
+    for (lst = BIF_ARG_1; is_list(lst); lst = CDR(list_val(lst))) {
+	if (++i > CONTEXT_REDS) {
+	    BUMP_ALL_REDS(BIF_P);
+	    BIF_TRAP3(bif_export[BIF_ets_match_spec_run_r_3],
+		      BIF_P,lst,BIF_ARG_2,ret);
+	}
+	res = db_prog_match(BIF_P, mp, CAR(list_val(lst)), 0, &dummy);
+	if (is_value(res)) {
+	    sz = size_object(res);
+	    hp = HAlloc(BIF_P, sz + 2);
+	    res = copy_struct(res, sz, &hp, &MSO(BIF_P));
+	    ret = CONS(hp,res,ret);
+	    /*hp += 2;*/
+	} 
+    }
+    if (lst != NIL) {
+	goto error;
+    }
+    BIF_RET2(ret,i);
+}
+
+#if 0
 BIF_RETTYPE ets_match_spec_run_3(BIF_ALIST_3)
 {
     Binary *mp;
@@ -1992,7 +2062,7 @@ BIF_RETTYPE ets_match_spec_run_2(BIF_ALIST_2)
 {
     return ets_match_spec_run_3(BIF_P, BIF_ARG_1, BIF_ARG_2, 0U);
 }
-
+#endif
 /*
 ** External interface (NOT BIF's)
 */
@@ -2002,12 +2072,13 @@ BIF_RETTYPE ets_match_spec_run_2(BIF_ALIST_2)
 
 void init_db(void)
 {
+    DbTable init_tb;
     int i;
     int max_ets;
     extern Eterm* em_apply_bif;
     Eterm *hp;
 
-    erts_tot_ets_memory_words = 0;
+    erts_tot_ets_memory_size = 0;
     last_slot = 0;
     db_initialize_util();
     if (( max_ets = (user_requested_db_max_tabs*5)/4 ) < DB_DEF_MAX_TABS)
@@ -2015,9 +2086,9 @@ void init_db(void)
     else
 	db_max_tabs = next_prime(max_ets);
 
-    db_tables = erts_alloc(ERTS_ALC_T_DB_TABLES,
-			   sizeof(struct tab_entry)*db_max_tabs);
-    ERTS_DB_MORE_MEM(sizeof(struct tab_entry)*db_max_tabs);
+    db_tables = erts_db_alloc_nt(ERTS_ALC_T_DB_TABLES,
+				 sizeof(struct tab_entry)*db_max_tabs);
+
     no_tabs = 0;
     for (i=0; i<db_max_tabs; i++) {
 	db_tables[i].id = DB_NOTUSED;
@@ -2027,8 +2098,12 @@ void init_db(void)
     db_initialize_tree();
     /*TT*/
     /* Create meta table invertion. */
-    meta_pid_to_tab = (DbTable*) erts_alloc(ERTS_ALC_T_DB_TABLE,
-					    sizeof(DbTable));
+    init_tb.common.memory_size = 0;
+    meta_pid_to_tab = (DbTable*) erts_db_alloc(ERTS_ALC_T_DB_TABLE,
+					       &init_tb,
+					       sizeof(DbTable));
+    meta_pid_to_tab->common.memory_size = init_tb.common.memory_size;
+
     meta_pid_to_tab->common.id = NIL;
     meta_pid_to_tab->common.the_name = am_true;
     meta_pid_to_tab->common.status = (DB_NORMAL | DB_BAG | DB_LHASH | 
@@ -2036,13 +2111,17 @@ void init_db(void)
     meta_pid_to_tab->common.keypos = 1;
     meta_pid_to_tab->common.owner = NIL;
     meta_pid_to_tab->common.nitems = 0;
-    meta_pid_to_tab->common.memory = 0;
     meta_pid_to_tab->common.slot = -1;
     if (db_create_hash(NULL, &(meta_pid_to_tab->hash)) != DB_ERROR_NONE) {
 	erl_exit(1,"Unable to create ets metadata tables.");
     }
-    meta_pid_to_fixed_tab = (DbTable*) erts_alloc(ERTS_ALC_T_DB_TABLE,
-						  sizeof(DbTable));
+
+    init_tb.common.memory_size = 0;
+    meta_pid_to_fixed_tab = (DbTable*) erts_db_alloc(ERTS_ALC_T_DB_TABLE,
+						     &init_tb,
+						     sizeof(DbTable));
+    meta_pid_to_fixed_tab->common.memory_size = init_tb.common.memory_size;
+
     meta_pid_to_fixed_tab->common.id = NIL;
     meta_pid_to_fixed_tab->common.the_name = am_true;
     meta_pid_to_fixed_tab->common.status = (DB_NORMAL | DB_BAG | DB_LHASH | 
@@ -2050,7 +2129,6 @@ void init_db(void)
     meta_pid_to_fixed_tab->common.keypos = 1;
     meta_pid_to_fixed_tab->common.owner = NIL;
     meta_pid_to_fixed_tab->common.nitems = 0;
-    meta_pid_to_fixed_tab->common.memory = 0;
     meta_pid_to_fixed_tab->common.slot = -1;
     if (db_create_hash(NULL, &(meta_pid_to_fixed_tab->hash)) 
 	!= DB_ERROR_NONE) {
@@ -2128,7 +2206,7 @@ void db_proc_dead(Eterm pid)
 	    erl_exit(1,"Inconsistent ets metadata");
 	}
 	for (i = 0; i < arr_siz; ++i) {
-	    int ix = unsigned_val(arr[i]); /* slot */
+	    Sint ix = unsigned_val(arr[i]); /* slot */
 	    DbTable* tb = db_tables[ix].t;
 	    ASSERT(tb->common.owner == pid);
 	    free_table(tb);
@@ -2156,7 +2234,7 @@ void db_proc_dead(Eterm pid)
 	    erl_exit(1,"Inconsistent ets metadata");
 	}
 	for (i = 0; i < arr_siz; ++i) {
-	    int ix = unsigned_val(arr[i]); /* slot */
+	    Sint ix = unsigned_val(arr[i]); /* slot */
 	    DbTable* tb = db_tables[ix].t;
 	    if (tb == NULL) {
 		/* Was owner */
@@ -2174,7 +2252,8 @@ void db_proc_dead(Eterm pid)
 			     pid,
 			     make_small(tb->common.slot));
 		    }
-		    free_fixation(tb, fix);
+		    erts_db_free(ERTS_ALC_T_DB_FIXATION,
+				 tb, (void *) fix, sizeof(DbFixation));
 		    break;
 		}
 	    }
@@ -2227,7 +2306,7 @@ static int next_prime(int n)
 
 DbTable* db_get_table(Process *p, Eterm id, int what)
 {
-    int i, j;
+    Sint i, j;
 
     if (is_small(id))
 	j = unsigned_val(id);
@@ -2268,7 +2347,8 @@ static void free_table(DbTable *tb) {
     while (tb->common.fixations != NULL) {
 	fix = tb->common.fixations;
 	tb->common.fixations = fix->next;
-	free_fixation(tb, fix);
+	erts_db_free(ERTS_ALC_T_DB_FIXATION,
+		     tb, (void *) fix, sizeof(DbFixation));
     }
 
     if (IS_HASH_TABLE(tb->common.status))
@@ -2279,22 +2359,8 @@ static void free_table(DbTable *tb) {
     else
 	erl_exit(1,"Panic: Unknown table type (status word = 0x%08x)!",
 		 tb->common.status);
-    
-    erts_free(ERTS_ALC_T_DB_TABLE, (void *) tb);
-}
 
-static DbFixation *alloc_fixation(DbTable *tb)
-{
-    DbFixation *f = (DbFixation *) erts_alloc(ERTS_ALC_T_DB_FIXATION,
-					      sizeof(DbFixation));
-    ERTS_DB_TAB_MORE_MEM(tb, sizeof(DbFixation));
-    return f;
-}
-
-static void free_fixation(DbTable *tb, DbFixation *fix)
-{
-    ERTS_DB_TAB_LESS_MEM(tb, sizeof(DbFixation));
-    erts_free(ERTS_ALC_T_DB_FIXATION, (void *)fix);
+    erts_db_free(ERTS_ALC_T_DB_TABLE, tb, (void *) tb, sizeof(DbTable));
 }
 
 static void print_table(CIO fd, int show,  DbTable* tb)
@@ -2311,7 +2377,8 @@ static void print_table(CIO fd, int show,  DbTable* tb)
 	erl_printf(fd,"Table is of unknown type!\n");
     }
     erl_printf(fd, "Objects: %d\n", tb->common.nitems);
-    erl_printf(fd, "Words: %d\n", tb->common.memory);
+    erl_printf(fd, "Words: %d\n",
+	       (tb->common.memory_size + sizeof(Uint) - 1)/sizeof(Uint));
 }
 
 void db_info(CIO fd, int show)    /* Called by break handler */

@@ -1,0 +1,237 @@
+OVERVIEW
+
+ This is the low-level part of the SFTP client used in AXD 301 R10A.
+
+ Use it in any way you like.
+
+ I believe that the module ssh_transport contains the most interesting parts,
+ and the rest is probably less reusable.
+
+ If you decide to use it, I would appreciate feedback on any problems you come
+ across.
+
+ The IETF drafts in this archive are available from the IETF draft pages as
+ well (unless they have expired). The ...2.ps versions are really nice to have
+ in print, should you decide to get your hands dirty with SSH.
+
+ http://www.ietf.org/ids.by.wg/secsh.html
+
+ The SFTP API provided in ssh_ftp is a pure erlang translation of the draft
+ for SFTP, so read the draft to understand how to use it.
+
+
+BASICS
+
+ In SSH-2, an SSH connection is set up as a transport layer (typically running
+ on top of TCP).
+
+ The transport layer provides
+
+   * Server authentication (public key or X.509 certificate)
+
+   * Privacy and integrity (by means of negotiated algorithms) for
+     data sent and received over the transport.
+
+ On top of the SSH transport, one SSH connection can be started. Most servers
+ will agree to start an SSH connection only in response to a successful
+ client (user) authentication.
+
+ The connection layer provides one or more channels, each carrying one of:
+
+   * An SSH subsystem, such as sftp.
+
+   * A terminal session.
+
+   * A "shell dialogue".
+
+   * A remote command execution (non-interactive).
+
+   * "(TCP) port forwarding".
+
+
+REQUIREMENTS
+
+OTP R9C
+OpenSSL 0.9.7x (I have been using 0.9.7b).
+
+(compiling the linked-in driver with gcc in Unices goes something like:
+ gcc -fpic -shared -o ../priv/lib/ssh_crypto_drv.so \
+   -I$SSL_ROOT/include -I$OTP_ROOT/LXA_11930_R9C_5/erts-5.3.4/src \
+   -L$SSL_ROOT/lib -lcrypto ssh_crypto_drv.c
+)
+
+
+ALREADY DONE
+
+Client code for the transport layer, connection layer and sftp.
+
+The transport layer implements the REQUIRED algorithms from the transport
+draft, as well as
+* the ssh-rss public-key algorithm for server authentication purposes
+* the aes128-cbc block cipher algorithm
+* the hmac-md5 authentication algorithm
+
+The authentication module, ssh_userauth, implements the password authentication
+algorithm.
+
+The connection layer implements basic support to multiplex several channels
+over an ssh connection.
+
+The sftp module implements synchronous file operations (the protocol allows
+for asynchronous operations, which could probably provide better performance).
+
+The SFTP protocol version supported is 3. (This was also the case with OpenSsh
+the last time I checked.)
+Version 3 of the SFTP protocol is described in
+draft-ietf-secsh-filexfer-02.txt.
+Version 4 of the SFTP protocol is described in draft-ietf-secsh-filexfer-03.txt
+and draft-ietf-secsh-filexfer-04.txt.
+All of these documents have expired, but you can find expired drafts here:
+http://www.watersprings.org/pub/id/index-wgs.html
+
+TODO
+
+Make the C stuff run on windows? Move it to the crypto module? (I would not
+recommend the latter.)
+
+Correct bugs. (Of course I've corrected the ones I've found.)
+
+Probably clean up the APIs (in particular error codes and general behaviour).
+The current state is to use set_active_once/1,2 with the transport and
+connection layers. Although I would argue that it is sufficient, you might
+disagree.
+
+Tune buffer sizes to provide good performance without consuming too much
+memory. (Especially, how big chunks to send and receive over SFTP. What send
+and receive buffer sizes to use with the transport's TCP socket. Should
+messages sent in the connection and transport layers be buffered until a
+time or size limit is reached? Similarly, should nodelay be used with the
+TCP socket?)
+
+Implement server code (in the transport layer to begin with)?
+
+Implement the diffie-hellman-group-exchange-sha1 key exchange algorithm,
+described in draft-ietf-secsh-dh-group-exchange-04.txt.
+
+Implement user authentication through public-key algorithms.
+
+Implement server and user authentication through X.509 certificates.
+
+Implement other versions of the SFTP protocol.
+
+Build higher-level APIs for remote command execution, port forwarding etc.
+
+
+EXAMPLES
+
+% Open up an SSH transport towards the host 192.168.1.1, with no preference
+% of algorithms, accepting any host key:
+
+{ok, Ssh} = ssh_transport:open("192.168.1.1").
+
+% Dump the state of the transport:
+
+ssh_transport:dump_config(Ssh).
+
+% Force re-exchange of session keys for the transport:
+
+ssh_transport:exchange_keys(Ssh).
+
+% (dump the config again and compare what's changed in a re-exchange)
+%
+% Start the service "ssh-connection" over the transport, by authenticating:
+
+ssh_userauth:passwd(Ssh, "ericsson", "microsoftsupporter", "ssh-connection").
+
+% (where "ericsson" is a user name and "microsoftsupporter" is the
+% corresponding password)
+% Shut down the transport:
+
+ssh_transport:close(Ssh).
+
+%
+% Start an ssh connection on the host 192.168.1.1:
+% (This is a higher level API than the previously used functions...)
+
+{ok, SshConn} = ssh_connection:open("192.168.1.1"),
+ssh_connection:user(SshConn, "ericsson", "microsoftsupporter").
+
+% Execute a command on the server:
+
+{ok, Channel} = ssh_connection:exec(SshConn, "ls"),
+ssh_connection:set_active_once(SshConn, Channel),
+receive
+{ssh_connection, SshConn, Channel, Msg} ->
+io:format("~s", [binary_to_list(Msg)])
+after 5000 -> timeout
+end,
+ssh_connection:set_active_once(SshConn, Channel),
+receive
+SshConnectionClosingAfterExec ->
+SshConnectionClosingAfterExec
+end.
+
+% Try out the sftp API: (it makes use of ssh_connection)
+
+{ok, SftpSession} = ssh_ftp:start("192.168.1.1").
+
+ssh_ftp:user(SftpSession, "ericsson", "myvoiceismypasswd").
+
+ssh_ftp:realpath(SftpSession, ".").
+
+{ok, DirHandle} = ssh_ftp:opendir(SftpSession, ".").
+
+% (you may repeat the next command until the return value is
+% {error, {eof, Description}})
+ssh_ftp:readdir(SftpSession, DirHandle).
+
+ssh_ftp:close(SftpSession, DirHandle).
+
+ssh_ftp:stat(SftpSession, "existing_remote_file").
+
+{ok, FileHandle} = ssh_ftp:open(SftpSession, "existing_remote_file").
+
+%fstat is like stat, but for opened files
+ssh_ftp:fstat(SftpSession, FileHandle).
+
+ssh_ftp:read(SftpSession, FileHandle, 0, ChunkSize).
+
+ssh_ftp:close(SftpSession, FileHandle).
+
+{ok, WriteFileHandle} =
+ssh_ftp:open(SftpSession, "new_remote_file", [write, creat, trunc],
+ssh_ftp:empty_attrs()).
+
+ssh_ftp:write(SftpSession, WriteFileHandle, 0, "This goes into the new file.").
+
+ssh_ftp:close(SftpSession, WriteFileHandle).
+
+{ok, ReadFileHandle} = ssh_ftp:open(SftpSession, "new_remote_file").
+
+ssh_ftp:read(SftpSession, FileHandle, 0, 30).
+
+ssh_ftp:close(SftpSession, FileHandle).
+
+ssh_ftp:rename(SftpSession, "new_remote_file", "renamed_remote_file").
+
+ssh_ftp:remove(SftpSession, "renamed_remote_file").
+
+ssh_ftp:stop(SftpSession).
+
+% To get the fingerprints of a host's keys:
+
+ssh_transport:open(Host,
+[{verifun, fun(_,_) -> false  end},{pub_key_alg,["ssh-dss"]}]).
+ssh_transport:open(Host,
+[{verifun, fun(_,_) -> false  end},{pub_key_alg,["ssh-rsa"]}]).
+
+% The ability to provide a fun for verification of the server keys allows you
+% to use e.g. some GUI callback to ask an operator.
+
+% To start an SFTP session towards a known host (the fingerprint of the
+% server's key is known):
+
+Fingerprint = "76:7e:d7:44:06:46:92:ed:4b:75:b2:ed:1e:f8:b5:79",
+ssh_ftp:start(Host,
+[{verifun, fun("ssh-dss",Fingerprint) -> true; (_,_) -> false  end},
+{pub_key_alg,["ssh-dss"]}]).

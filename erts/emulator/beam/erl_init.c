@@ -21,6 +21,7 @@
 #endif
 
 #include "sys.h"
+#include <ctype.h>
 #include "erl_vm.h"
 #include "global.h"
 #include "erl_process.h"
@@ -31,7 +32,7 @@
 #include "erl_binary.h"
 #include "dist.h"
 #include "erl_mseg.h"
-#define ERL_THREADS_EMU_INTERNAL__
+#include "erl_nmgc.h"
 #include "erl_threads.h"
 
 #ifdef HIPE
@@ -40,18 +41,22 @@
 #endif
 
 /*
- * Note about VxWorks: All variables must be initialized by executable,
+ * Note about VxWorks: All variables must be initialized by executable code,
  * not by an initializer. Otherwise a new instance of the emulator will
- * inherit prevous values.
+ * inherit previous values.
  */
 
-extern void erl_crash_dump(char *, int, char *, va_list);
+extern void erl_crash_dump_v(char *, int, char *, va_list);
 #ifdef __WIN32__
 extern void ConWaitForExit(void);
 #endif
 
+#define ERTS_MIN_COMPAT_REL 7
+
 volatile int erts_writing_erl_crash_dump = 0;
 int erts_initialized = 0;
+
+static ethr_tid main_thread;
 
 /*
  * Configurable parameters.
@@ -75,8 +80,10 @@ Eterm erts_error_logger_warnings; /* What to map warning logs to, am_error,
 				     am_info or am_warning, am_error is 
 				     the default for BC */
 
+int erts_compat_rel;
+
 #ifdef DEBUG
-Uint verbose;			/* noisy mode = 1 */
+verbose_level verbose;     /* See erl_debug.h for information about verbose */
 #endif
 
 int erts_disable_tolerant_timeofday; /* Time correction can be disabled it is
@@ -88,23 +95,32 @@ int erts_disable_tolerant_timeofday; /* Time correction can be disabled it is
  * Other global variables.
  */
 
-#ifdef SHARED_HEAP
+int erts_use_r9_pids_ports;
+
+#if defined(SHARED_HEAP) || defined(HYBRID)
 Eterm *global_heap;
 Eterm *global_hend;
 Eterm *global_htop;
 Eterm *global_saved_htop;
-ErlOffHeap erts_global_mso;
+ErlOffHeap erts_global_offheap;
 Uint   global_heap_sz = SH_DEFAULT_SIZE;
-Uint   global_heap_min_sz;
 
+#ifndef INCREMENTAL_GC
 Eterm *global_high_water;
+#endif
+
+#ifndef NOMOVE
 Eterm *global_old_hend;
 Eterm *global_old_htop;
 Eterm *global_old_heap;
+#endif
+
 Uint16 global_gen_gcs;
 Uint16 global_max_gen_gcs;
-
 Uint   global_gc_flags;
+#endif
+
+#ifdef SHARED_HEAP
 ErlHeapFragment *global_mbuf;
 ErlHeapFragment *global_halloc_mbuf;
 Uint   global_mbuf_sz;
@@ -116,6 +132,10 @@ Eterm *erts_global_arith_check_me;
 #endif
 #endif
 
+#ifdef HYBRID
+Uint   global_heap_min_sz = SH_DEFAULT_SIZE;
+#endif
+
 byte* tmp_buf;
 Uint do_time;			/* set at clock interupt */
 Uint garbage_cols;		/* no of garbage collections */
@@ -124,6 +144,27 @@ Uint reclaimed;			/* no of words reclaimed in GCs */
 Eterm system_seq_tracer;
 
 int ignore_break;
+
+
+
+static int
+this_rel_num(void)
+{
+    static int this_rel = -1;
+
+    if (this_rel < 1) {
+	int i;
+	char this_rel_str[] = ERLANG_OTP_RELEASE;
+	    
+	i = 0;
+	while (this_rel_str[i] && !isdigit((int) this_rel_str[i]))
+	    i++;
+	this_rel = atoi(&this_rel_str[i]); 
+	if (this_rel < 1)
+	    erl_exit(-1, "Unexpected ERLANG_OTP_RELEASE format\n");
+    }
+    return this_rel;
+}
 
 /*
  * Common error printout function, all error messages
@@ -143,7 +184,12 @@ erts_short_init(void)
     erts_initialized = 0;
     erts_writing_erl_crash_dump = 0;
 
-    erts_sys_threads_init();
+    erts_compat_rel = this_rel_num();
+
+    erts_use_r9_pids_ports = 0;
+
+    erts_sys_pre_init();
+    main_thread = erts_thr_self();
     erts_alloc_init(NULL, NULL);
     erts_init_utils();
     erl_sys_init();
@@ -184,6 +230,7 @@ erl_init(void)
     init_load();
     erts_init_bif();
     erts_init_trace();
+    erts_init_obsolete();
 #if HAVE_ERTS_MSEG
     erts_mseg_late_init(); /* Must be after timer (init_time()) and thread
 			      initializations */
@@ -199,20 +246,12 @@ erl_init(void)
 static void
 init_shared_memory(int argc, char **argv)
 {
-#if defined(SHARED_HEAP)
+#if defined(SHARED_HEAP) || defined(HYBRID)
     int arg_size = 0;
 
     global_heap_sz = erts_next_heap_size(global_heap_sz,0);
-    global_mbuf = NULL;
-    global_mbuf_sz = 0;
-    global_halloc_mbuf = NULL;
-    erts_global_arith_heap = NULL;
-    erts_global_arith_avail = 0;
-    erts_global_arith_lowest_htop = NULL;
-#ifdef DEBUG
-    erts_global_arith_check_me = NULL;
-#endif
 
+    /* Make sure arguments will fit on the heap, no one else will check! */
     while (argc--)
         arg_size += 2 + strlen(argv[argc]);
     if (global_heap_sz < arg_size)
@@ -223,11 +262,40 @@ init_shared_memory(int argc, char **argv)
     global_hend = global_heap + global_heap_sz;
     global_htop = global_heap;
 
-    global_old_hend = global_old_htop = global_old_heap = NULL;
+#ifndef INCREMENTAL_GC
     global_high_water = global_heap;
+#endif
     global_gen_gcs = 0;
     global_max_gen_gcs = erts_max_gen_gcs;
     global_gc_flags = erts_default_process_flags;
+
+#ifndef NOMOVE
+    global_old_hend = global_old_htop = global_old_heap = NULL;
+#endif
+#endif
+
+#ifdef SHARED_HEAP
+    global_mbuf = NULL;
+    global_mbuf_sz = 0;
+    global_halloc_mbuf = NULL;
+    erts_global_arith_heap = NULL;
+    erts_global_arith_avail = 0;
+    erts_global_arith_lowest_htop = NULL;
+#ifdef DEBUG
+    erts_global_arith_check_me = NULL;
+#endif
+#endif
+
+#ifdef HYBRID
+    erts_global_offheap.mso = NULL;
+#ifndef HYBRID /* FIND ME! */
+    erts_global_offheap.funs = NULL;
+#endif
+    erts_global_offheap.overhead = 0;
+#endif
+
+#ifdef NOMOVE
+    erts_init_nmgc();
 #endif
 }
 
@@ -260,9 +328,8 @@ erts_first_process(Eterm modname, void* code, unsigned size, int argc, char** ar
     /*
      * We need a dummy parent process to be able to call erl_create_process().
      */
-
     erts_init_empty_process(&parent);
-#ifdef SHARED_HEAP
+#if defined(SHARED_HEAP) || defined(HYBRID)
     parent.heap_sz = global_heap_sz;
     parent.heap = global_heap;
     parent.hend = global_hend;
@@ -279,7 +346,7 @@ erts_first_process(Eterm modname, void* code, unsigned size, int argc, char** ar
     args = CONS(hp, new_binary(&parent, code, size), args);
     hp += 2;
     args = CONS(hp, args, NIL);
-#ifdef SHARED_HEAP
+#if defined(SHARED_HEAP) || defined(HYBRID)
     global_heap = parent.heap;
     global_htop = parent.htop;
     global_hend = parent.hend;
@@ -321,7 +388,7 @@ erl_first_process_otp(char* modname, void* code, unsigned size, int argc, char**
      */
 
     erts_init_empty_process(&parent);
-#ifdef SHARED_HEAP
+#if defined(SHARED_HEAP) || defined(HYBRID)
     parent.heap_sz = global_heap_sz;
     parent.heap = global_heap;
     parent.hend = global_hend;
@@ -339,7 +406,7 @@ erl_first_process_otp(char* modname, void* code, unsigned size, int argc, char**
     args = CONS(hp, args, NIL);
     hp += 2;
     args = CONS(hp, env, args);
-#ifdef SHARED_HEAP
+#if defined(SHARED_HEAP) || defined(HYBRID)
     global_heap = parent.heap;
     global_htop = parent.htop;
     global_hend = parent.hend;
@@ -455,6 +522,9 @@ void erts_usage(void)
     erl_printf(CERR, "-P number  set maximum number of processes on this node\n");
     erl_printf(CERR, "           valid range is [%d-%d]\n",
 	       ERTS_MIN_PROCESSES, ERTS_MAX_PROCESSES);
+    erl_printf(CERR, "-R number  set compatibility release number\n");
+    erl_printf(CERR, "           valid range [%d-%d]\n",
+	       ERTS_MIN_COMPAT_REL, this_rel_num());
     erl_printf(CERR, "-A number  set number of threads in async thread pool\n");
     erl_printf(CERR, "           valid range is [0-256]\n");
     erl_printf(CERR, "-M<X> <Y>  Memory allocator switches\n");
@@ -472,6 +542,7 @@ erl_start(int argc, char **argv)
 {
     int i = 1;
     char* arg=NULL;
+    char* Parg = NULL;
     int have_break_handler = 1;
     char* tmpenvbuf;
 
@@ -491,7 +562,13 @@ erl_start(int argc, char **argv)
     ignore_break = 0;
     program = argv[0];
 
-    erts_sys_threads_init();
+    erts_compat_rel = this_rel_num();
+
+    erts_use_r9_pids_ports = 0;
+
+    erts_sys_pre_init();
+    main_thread = erts_thr_self();
+
     erts_alloc_init(&argc, argv); /* Handles (and removes) -M flags */
 
     erts_init_utils();
@@ -522,7 +599,7 @@ erl_start(int argc, char **argv)
     
 
 #ifdef DEBUG
-    verbose = 0;
+    verbose = VERBOSE_SILENT;
 #endif
 
     erts_error_logger_warnings = am_error;
@@ -552,8 +629,8 @@ erl_start(int argc, char **argv)
 		erl_printf(CERR, "bad display items%s\n", arg);
 		erts_usage();
 	    }
-	    VERBOSE(erl_printf(COUT,"using display items %d\n",
-			       display_items););
+	    VERBOSE_MESSAGE((VERBOSE_CHATTY,"using display items %d\n",
+			     display_items));
 	    break;
 
 	case 'l':
@@ -583,6 +660,9 @@ erl_start(int argc, char **argv)
 #endif
 #ifdef SHARED_HEAP
                 strcat(tmp, ",SHARED_HEAP");
+#endif
+#ifdef HYBRID
+                strcat(tmp, ",HYBRID");
 #endif
 		erl_printf(CERR, "Erlang ");
 		if (tmp[1]) {
@@ -619,8 +699,8 @@ erl_start(int argc, char **argv)
 #ifdef SHARED_HEAP
             global_heap_sz = H_MIN_SIZE;
 #endif
-	    VERBOSE(erl_printf(COUT, "using minimum heap size %d\n",
-			       H_MIN_SIZE););
+	    VERBOSE_MESSAGE((VERBOSE_CHATTY, "using minimum heap size %d\n",
+			     H_MIN_SIZE));
 	    break;
 
 	case 'e':
@@ -630,8 +710,8 @@ erl_start(int argc, char **argv)
 		erl_printf(CERR, "bad maximum number of ets tables %s\n", arg);
 		erts_usage();
 	    }
-	    VERBOSE(erl_printf(COUT, "using maximum number of ets tables %d\n",
-			       user_requested_db_max_tabs););
+	    VERBOSE_MESSAGE((VERBOSE_CHATTY, "using maximum number of ets tables %d\n",
+			     user_requested_db_max_tabs));
 	    break;
 
 	case 'i':
@@ -667,13 +747,36 @@ erl_start(int argc, char **argv)
 
 	case 'P':
 	    /* set maximum number of processes */
+	    Parg = get_arg(argv[i]+2, argv[i+1], &i);
+	    erts_max_processes = atoi(Parg);
+	    /* Check of result is delayed until later. This because +p
+	       may be given after +P. */
+	    break;
+
+	case 'R': {
+	    /* set compatibility release */
+
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
-	    if (((erts_max_processes = atoi(arg)) < ERTS_MIN_PROCESSES)
-		|| erts_max_processes > ERTS_MAX_PROCESSES) {
-		erl_printf(CERR, "bad number of processes %s\n", arg);
+	    erts_compat_rel = atoi(arg);
+
+	    if (erts_compat_rel < ERTS_MIN_COMPAT_REL
+		|| erts_compat_rel > this_rel_num()) {
+		erl_printf(CERR, "bad compatibility release number %s\n", arg);
 		erts_usage();
 	    }
+
+	    ASSERT(ERTS_MIN_COMPAT_REL >= 7);
+	    switch (erts_compat_rel) {
+	    case 7:
+	    case 8:
+	    case 9:
+		erts_use_r9_pids_ports = 1;
+	    default:
+		break;
+	    }
+
 	    break;
+	}
 
 	case 'A':
 	    /* set number of threads in thread pool */
@@ -721,6 +824,15 @@ erl_start(int argc, char **argv)
 	i++;
     }
 
+    /* Delayed check of +P flag */
+    if (erts_max_processes < ERTS_MIN_PROCESSES
+	|| erts_max_processes > ERTS_MAX_PROCESSES
+	|| (erts_use_r9_pids_ports
+	    && erts_max_processes > ERTS_MAX_R9_PROCESSES)) {
+	erl_printf(CERR, "bad number of processes %s\n", Parg);
+	erts_usage();
+    }
+
    /* Restart will not reinstall the break handler */
     if (ignore_break)
         erts_set_ignore_break();
@@ -743,6 +855,84 @@ erl_start(int argc, char **argv)
 }
 
 
+#ifdef USE_THREADS
+
+void erts_thr_fatal_error(int err, char *what)
+{
+    char *errstr = err ? strerror(err) : NULL;
+    erl_exit(1,
+	     "Failed to %s: %s%s(%d)\n",
+	     what,
+	     errstr ? errstr : "",
+	     errstr ? " " : "",
+	     err);
+}
+
+#endif
+
+static void
+system_cleanup(int exit_code)
+{
+
+    /* No cleanup wanted if ...
+     * 1. we are about to dump core,
+     * 2. we haven't finished initializing, or
+     * 3. another thread than the main thread is performing the exit.
+     */
+    if (exit_code > 0
+	|| !erts_initialized
+	|| !erts_equal_tids(main_thread, erts_thr_self()))
+	return;
+
+#ifdef HYBRID
+    if (copy_src_stack) erts_free(ERTS_ALC_T_OBJECT_STACK,
+                                  (void *)copy_src_stack);
+    if (copy_dst_stack) erts_free(ERTS_ALC_T_OBJECT_STACK,
+                                  (void *)copy_dst_stack);
+    copy_src_stack = copy_dst_stack = NULL;
+    erts_cleanup_offheap(&erts_global_offheap);
+#endif
+
+#ifdef SHARED_HEAP
+    {
+      ErlHeapFragment *tmp;
+      while (global_mbuf != NULL) {
+        tmp = global_mbuf->next;
+        free_message_buffer(global_mbuf);
+        global_mbuf = tmp;
+      }
+    }
+#endif
+
+#if defined(SHARED_HEAP) || defined(HYBRID)
+    if (global_heap) {
+	ERTS_HEAP_FREE(ERTS_ALC_T_HEAP,
+		       (void*) global_heap,
+		       sizeof(Eterm) * global_heap_sz);
+    }
+    global_heap = NULL;
+#endif
+
+#ifdef NOMOVE
+    erts_cleanup_nmgc();
+#endif
+#ifdef INCREMENTAL_GC
+    erts_cleanup_incgc();
+#endif
+
+#ifdef USE_THREADS
+    exit_async();
+#endif
+#if HAVE_ERTS_MSEG
+    erts_mseg_exit();
+#endif
+
+    /*
+     * A lot more cleaning could/should have been done...
+     */
+
+}
+
 /*
  * Common exit function, all exits from the system go through here.
  * n <= 0 -> normal exit with status n;
@@ -759,26 +949,10 @@ void erl_exit0(char *file, int line, int n, char *fmt,...)
 
     save_statistics();
 
-#ifdef SHARED_HEAP
-    if (global_heap) {
-	ERTS_HEAP_FREE(ERTS_ALC_T_HEAP,
-		       (void*) global_heap,
-		       sizeof(Eterm) * global_heap_sz);
-    }
-    global_heap = NULL;
-
-    {
-      ErlHeapFragment *tmp;
-      while (global_mbuf != NULL) {
-        tmp = global_mbuf->next;
-        free_message_buffer(global_mbuf);
-        global_mbuf = tmp;
-      }
-    }
-#endif
+    system_cleanup(n);
 
     /* Produce an Erlang core dump if error */
-    if(n > 0 && erts_initialized) erl_crash_dump(file,line,fmt,args); 
+    if(n > 0 && erts_initialized) erl_crash_dump_v(file,line,fmt,args); 
 
     /* need to reinitialize va_args thing */
     va_end(args);
@@ -800,11 +974,10 @@ void erl_exit0(char *file, int line, int n, char *fmt,...)
 	erts_mtrace_exit((Uint32) an);
 
     if (n == 127)
-        exit(1);
+	ERTS_EXIT_AFTER_DUMP(1);
     else if (n > 0)
         abort();
-    else
-        exit(abs(n));
+    exit(an);
 }
 
 void erl_exit(int n, char *fmt,...)
@@ -816,26 +989,10 @@ void erl_exit(int n, char *fmt,...)
 
     save_statistics();
 
-#ifdef SHARED_HEAP
-    if (global_heap) {
-	ERTS_HEAP_FREE(ERTS_ALC_T_HEAP,
-		       (void *) global_heap,
-		       sizeof(Eterm) * global_heap_sz);
-    }
-    global_heap = NULL;
-
-    {
-      ErlHeapFragment *tmp;
-      while (global_mbuf != NULL) {
-        tmp = global_mbuf->next;
-        free_message_buffer(global_mbuf);
-        global_mbuf = tmp;
-      }
-    }
-#endif
+    system_cleanup(n);
 
     /* Produce an Erlang core dump if error */
-    if(n > 0 && erts_initialized) erl_crash_dump((char*) NULL,0,fmt,args); 
+    if(n > 0 && erts_initialized) erl_crash_dump_v((char*) NULL,0,fmt,args); 
 
     /* need to reinitialize va_args thing */
     va_end(args);
@@ -857,9 +1014,9 @@ void erl_exit(int n, char *fmt,...)
 	erts_mtrace_exit((Uint32) an);
 
     if (n == 127)
-        exit(1);
+	ERTS_EXIT_AFTER_DUMP(1);
     else if (n > 0)
         abort();
-    else
-        exit(an);
+    exit(an);
 }
+

@@ -105,4 +105,7 @@ int esock_ssl_shutdown(Connection *cp);
 int esock_ssl_getpeercert(Connection *cp, unsigned char **buf);
 int esock_ssl_getpeercertchain(Connection *cp, unsigned char **buf);
 
+/* Sessions */
+int esock_ssl_session_reused(Connection *cp);
+
 #endif

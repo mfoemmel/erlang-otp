@@ -12,7 +12,6 @@
 %%% term	::= <any Erlang term>
 %%% cc		::= <an atom denoting a condition code>
 %%% pred	::= <a real number between 0.0 and 1.0 inclusive>
-%%% isfail	::= 'true' | 'false'
 %%% npop	::= <a 32-bit natural number which is a multiple of 4>
 %%%
 %%% temp	::= {x86_temp, reg, type, allocatable}
@@ -21,9 +20,11 @@
 %%% imm		::= {x86_imm, value}
 %%% value	::= int32 | atom | {label, label_type}
 %%%
-%%% mem		::= {x86_mem, base, off, type}
+%%% mem		::= {x86_mem, base, off, mem_type}
 %%% base	::= temp | []		(XXX BUG: not quite true before RA)
 %%% off		::= imm | temp
+%%% mem_type	::= 'byte' | 'int16'	(only valid with mov{s,z}x)
+%%%		  | type
 %%%
 %%% src		::= temp | mem | imm
 %%% dst		::= temp | mem
@@ -57,34 +58,35 @@
 %%% After frame allocation, every temp must denote a physical register.
 
 -record(alu, {aluop, src, dst}).
--record(call, {'fun', sdesc}).
+-record(call, {'fun', sdesc, linkage}).
 -record(cmovcc, {cc, src, dst}).
--record(cmp, {src, dst}).		% a 'sub' alu which doesn't update dst
+-record(cmp, {src, dst}).       	% a 'sub' alu which doesn't update dst
 -record(comment, {term}).
 -record(dec, {dst}).
--record(finit, {}).
--record(fmov, {src, dst}).
+-record(fmove, {src, dst}).
 -record(fp_binop, {op, src, dst}).
--record(fp_unop, {op, arg}).
+-record(fp_unop, {op, arg}).		% arg may be [] :-(
 -record(inc, {dst}).
 -record(jcc, {cc, label}).
--record(jmp_fun, {'fun'}).		% tailcall, direct or indirect
+-record(jmp_fun, {'fun', linkage}).	% tailcall, direct or indirect
 -record(jmp_label, {label}).		% local jmp, direct
 -record(jmp_switch, {temp, jtab, labels}).	% local jmp, indirect
--record(label, {label, isfail}).
+-record(label, {label}).
 -record(lea, {mem, temp}).
 -record(move, {src, dst}).
 -record(movsx, {src, dst}).
 -record(movzx, {src, dst}).
 -record(nop, {}).
 -record(prefix_fs, {}).
--record(pseudo_call, {dsts, 'fun', arity, contlab, exnlab}). % dsts is [] or [EAX]
+-record(pseudo_call, {'fun', sdesc, contlab, linkage}).
 -record(pseudo_jcc, {cc, true_label, false_label, pred}).
--record(pseudo_tailcall, {'fun', arity, stkargs}).
+-record(pseudo_tailcall, {'fun', arity, stkargs, linkage}).
 -record(pseudo_tailcall_prepare, {}).
 -record(push, {src}).
+-record(pop, {dst}).
 -record(ret, {npop}).			% EAX is live-in
 -record(shift, {shiftop, src, dst}).
+-record(test, {src, dst}).
 %%% Function definitions.
 
 -record(defun, {mfa, formals, code, data, isclosure, isleaf,

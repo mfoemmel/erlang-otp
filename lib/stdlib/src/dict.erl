@@ -363,11 +363,11 @@ on_bucket(F, T, Slot) ->
 
 fold_dict(F, Acc, D) ->
     Segs = D#dict.segs,
-    fold_segs(F, Acc, Segs, size(Segs)).
+    fold_segs(F, Acc, Segs, erlang:size(Segs)).
 
 fold_segs(F, Acc, Segs, I) when I >= 1 ->
     Seg = element(I, Segs),
-    fold_segs(F, fold_seg(F, Acc, Seg, size(Seg)), Segs, I-1);
+    fold_segs(F, fold_seg(F, Acc, Seg, erlang:size(Seg)), Segs, I-1);
 fold_segs(_, Acc, _, _) -> Acc.
 
 fold_seg(F, Acc, Seg, I) when I >= 1 ->
@@ -526,7 +526,7 @@ expand_segs({B1,B2,B3,B4,B5,B6,B7,B8,B9,B10,B11,B12,B13,B14,B15,B16}, Empty) ->
      Empty,Empty,Empty,Empty,Empty,Empty,Empty,Empty,
      Empty,Empty,Empty,Empty,Empty,Empty,Empty,Empty};
 expand_segs(Segs, Empty) ->
-    list_to_tuple(tuple_to_list(Segs) ++ lists:duplicate(size(Segs), Empty)).
+    list_to_tuple(tuple_to_list(Segs) ++ lists:duplicate(erlang:size(Segs), Empty)).
 
 contract_segs({B1,_}) ->
     {B1};
@@ -540,5 +540,5 @@ contract_segs({B1,B2,B3,B4,B5,B6,B7,B8,B9,B10,B11,B12,B13,B14,B15,B16,
 	       _,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_}) ->
     {B1,B2,B3,B4,B5,B6,B7,B8,B9,B10,B11,B12,B13,B14,B15,B16};
 contract_segs(Segs) ->
-    Ss = size(Segs) div 2,
+    Ss = erlang:size(Segs) div 2,
     list_to_tuple(lists:sublist(tuple_to_list(Segs), 1, Ss)).

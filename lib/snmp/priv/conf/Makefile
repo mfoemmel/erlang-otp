@@ -19,41 +19,15 @@ include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 # ----------------------------------------------------
-# Application version
-# ----------------------------------------------------
-include ../../vsn.mk
-VSN=$(SNMPEA_VSN)
-
-# ----------------------------------------------------
-# Release directory specification
-# ----------------------------------------------------
-RELSYSDIR = $(RELEASE_PATH)/lib/snmp-$(VSN)
-
-# ----------------------------------------------------
-# Common macros
+# Common Macros
 # ----------------------------------------------------
 
-include files.mk
+include subdirs.mk
 
-
-# ----------------------------------------------------
-# Targets
-# ----------------------------------------------------
-
-debug opt:
-
-clean:
-
-docs:
+SPECIAL_TARGETS = 
 
 # ----------------------------------------------------
-# Release Target
-# ---------------------------------------------------- 
-include $(ERL_TOP)/make/otp_release_targets.mk
-
-release_spec: opt
-	$(INSTALL_DIR) $(RELSYSDIR)/priv/conf
-	$(INSTALL_DATA) $(CONF_FILES) $(RELSYSDIR)/priv/conf
-
-release_docs_spec:
+# Default Subdir Targets
+# ----------------------------------------------------
+include $(ERL_TOP)/make/otp_subdir.mk
 

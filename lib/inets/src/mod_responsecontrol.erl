@@ -26,8 +26,8 @@ do(Info) ->
     ?DEBUG("do -> response_control",[]),
     case httpd_util:key1search(Info#mod.data,status) of
 	%% A status code has been generated!
-	{StatusCode,PhraseArgs,Reason} ->
-	    {proceed,Info#mod.data};
+	{_StatusCode, _PhraseArgs, _Reason} ->
+	    {proceed, Info#mod.data};
 	%% No status code has been generated!
 	undefined ->
 	    case httpd_util:key1search(Info#mod.data,response) of
@@ -40,8 +40,8 @@ do(Info) ->
 			    {proceed,[Response|Info#mod.data]}
 		    end;
 		%% A response has been generated or sent!
-		Response ->
-		    {proceed,Info#mod.data}
+		_Response ->
+		    {proceed, Info#mod.data}
 	    end
     end.
 
@@ -118,7 +118,7 @@ control_range(Path,Info,FileInfo) ->
 	    end
     end.
 
-control_if_range(Path,Info,FileInfo,EtagOrDate) ->
+control_if_range(_Path, Info, FileInfo, EtagOrDate) ->
     case httpd_util:convert_request_date(strip_date(EtagOrDate)) of
 	bad_date ->
 	    FileEtag=httpd_util:create_etag(FileInfo),
@@ -128,7 +128,7 @@ control_if_range(Path,Info,FileInfo,EtagOrDate) ->
 		_ ->
 		    {if_range,send_file}
 	    end;
-	ErlDate ->    
+	_ErlDate ->    
 	    %%We got the date in the request if it is 
 	    case control_modification_data(Info,FileInfo#file_info.mtime,"if-range") of
 		modified ->
@@ -174,7 +174,7 @@ control_Etag(Path,Info,FileInfo)->
 %%Control if there are any Etags for HeaderField in the request if so 
 %%Control if they match the Etag for the requested file
 %%----------------------------------------------------------------------
-control_match(Info,FileInfo,HeaderField,FileEtag)-> 
+control_match(Info, _FileInfo, HeaderField, FileEtag)-> 
     case split_etags(httpd_util:key1search(Info#mod.parsed_header,HeaderField)) of
  	undefined->
 	    undefined;
@@ -246,55 +246,23 @@ control_modification_data(Info,ModificationTime,HeaderField)->
  	undefined->
 	    undefined;
 	LastModified0 ->
-	    LastModified=httpd_util:convert_request_date(LastModified0),
+	    LastModified = calendar:universal_time_to_local_time(
+			     httpd_util:convert_request_date(LastModified0)),
 	    ?DEBUG("control_modification_data() -> "
 		   "~n   Request-Field:    ~s"
 		   "~n   FileLastModified: ~p"
 		   "~n   FieldValue:       ~p",
 		   [HeaderField,ModificationTime,LastModified]),
-	    case LastModified of 
-		bad_date ->
-		    undefined;
-		_ ->
-		    FileTime=calendar:datetime_to_gregorian_seconds(ModificationTime),
-		    FieldTime=calendar:datetime_to_gregorian_seconds(LastModified),
-		    if 
-			FileTime=<FieldTime ->
-			    ?DEBUG("File unmodified~n", []),
-			    unmodified;
-			FileTime>=FieldTime ->
-			    ?DEBUG("File modified~n", []),
-			    modified	    
-		    end
+	    FileTime =
+		calendar:datetime_to_gregorian_seconds(ModificationTime),
+	    FieldTime = calendar:datetime_to_gregorian_seconds(LastModified),
+	    if 
+		FileTime =< FieldTime ->
+		    ?DEBUG("File unmodified~n", []), unmodified;
+		FileTime >= FieldTime ->
+		    ?DEBUG("File modified~n", []), modified	    
 	    end
     end.
-
-%%----------------------------------------------------------------------
-%%Compare to dates on the form {{YYYY,MM,DD},{HH,MIN,SS}}
-%%If the first date is the biggest returns biggest1 (read biggestFirst)
-%%If the first date is smaller 
-% compare_date(Date,bad_date)->
-%     bad_date;
-
-% compare_date({D1,T1},{D2,T2})->
-%     case compare_date1(D1,D2) of
-%       	equal ->
-% 	    compare_date1(T1,T2);
-% 	GTorLT->
-% 	    GTorLT
-%     end.
-
-% compare_date1({T1,T2,T3},{T12,T22,T32}) when T1>T12 ->
-%     bigger1;
-% compare_date1({T1,T2,T3},{T1,T22,T32}) when T2>T22 ->
-%     bigger1;
-% compare_date1({T1,T2,T3},{T1,T2,T32}) when T3>T32 ->
-%     bigger1;
-% compare_date1({T1,T2,T3},{T1,T2,T3})->
-%     equal;
-% compare_date1(_D1,_D2)->
-%     smaller1.
-
 
 %% IE4 & NS4 sends an extra '; length=xxxx' string at the end of the If-Modified-Since
 %% header, we detect this and ignore it (the RFCs does not mention this).
@@ -302,36 +270,29 @@ strip_date(undefined) ->
     undefined;
 strip_date([]) ->
     [];
-strip_date([$;,$ |Rest]) ->
+strip_date([$;,$ | _]) ->
     [];
 strip_date([C|Rest]) ->
     [C|strip_date(Rest)].
 
-send_return_value({412,_,_},FileInfo)->
+send_return_value({412,_,_}, _FileInfo)->
     {status,{412,none,"Precondition Failed"}};
 
-send_return_value({304,Info,Path},FileInfo)->
-    Suffix=httpd_util:suffix(Path),
-    MimeType = httpd_util:lookup_mime_default(Info#mod.config_db,Suffix,"text/plain"),
+send_return_value({304,Info,Path}, FileInfo)->
+    Suffix = httpd_util:suffix(Path),
+    MimeType = httpd_util:lookup_mime_default(Info#mod.config_db,Suffix,
+					      "text/plain"),
+    LastModified =
+	case (catch httpd_util:rfc1123_date(FileInfo#file_info.mtime)) of
+	    Date when is_list(Date) ->
+		[{last_modified, Date}];
+	    _ -> %% This will rarly happen, but could happen
+		 %% if a computer is wrongly configured. 
+		[]
+	end,
+    
     Header = [{code,304},
 	      {etag,httpd_util:create_etag(FileInfo)},
-	      {content_length,0},
-	      {last_modified,httpd_util:rfc1123_date(FileInfo#file_info.mtime)}],
+	      {content_length,0}, {mime_type, MimeType} | LastModified],
+
     {response,{response,Header,nobody}}.
-	      
-
-
-
-
-	
-
-
-
-
-
-
-
-
-
-
-

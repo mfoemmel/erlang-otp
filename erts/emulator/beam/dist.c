@@ -162,14 +162,151 @@ int is_node_name_atom(Eterm a)
 ** This function is called when a distribution 
 ** port or process terminates
 */
+static void doit_monitor_net_exits(ErtsMonitor *mon, void *vdep)
+{
+    Process *rp;
+    ErtsMonitor *rmon;
+    DistEntry *dep = vdep;
+    ASSERT(pid2proc(mon->pid) != NULL);
+    if (mon->type == MON_ORIGIN) {
+	/* local pid is beeing monitored */
+	if ((rp = pid2proc(mon->pid)) == NULL) {
+	    goto done;
+	}
+	rmon = erts_remove_monitor(&(rp->monitors),mon->ref);
+	/* ASSERT(rmon != NULL); nope, can happen during process exit */
+	if (rmon != NULL) {
+	    erts_destroy_monitor(rmon);
+	}
+    } else {
+	Eterm lhp[3];
+	Eterm watched;
+	ASSERT(mon->type == MON_TARGET);
+	
+	if ((rp = pid2proc(mon->pid)) == NULL)
+	    goto done;
+	rmon = erts_remove_monitor(&(rp->monitors),mon->ref);
+	/* ASSERT(rmon != NULL); can happen during process exit */
+	if (rmon != NULL) {
+	    ASSERT(is_atom(rmon->name) || is_nil(rmon->name));
+	    watched = (is_atom(rmon->name)
+		       ? TUPLE2(lhp, rmon->name, dep->sysname)
+		       : rmon->pid);
+	    queue_monitor_message(rp, mon->ref, am_process, 
+				  watched, am_noconnection);
+	    erts_destroy_monitor(rmon);
+	}
+    }
+ done:
+    erts_destroy_monitor(mon);
+}
+	
+typedef struct {
+    DistEntry *dep;
+    ErtsLink *lnk;
+} LinkNetExitsContext;
+
+/* 
+** This is the function actually doing the job of sending exit messages
+** for links in a dist entry upon net_exit (the node goes down), NB,
+** only process links, not node monitors are handled here, 
+** they reside in a separate tree....
+*/
+static void doit_link_net_exits_sub(ErtsLink *sublnk, void * vpcontext)
+{
+    LinkNetExitsContext *pcontext = vpcontext;
+    ErtsLink *lnk = pcontext->lnk; /* the local pid */
+    ErtsLink *rlnk;
+    Process *rp;
+    ASSERT(lnk->type == LINK_PID)
+    if (is_internal_pid(lnk->pid)) {
+	if ((rp = pid2proc(lnk->pid)) == NULL)
+	    goto done;
+	if (rp->flags & F_TRAPEXIT) {
+	    rlnk = erts_remove_link(&(rp->nlinks), sublnk->pid);
+	    if (rlnk != NULL) {
+		erts_destroy_link(rlnk);
+	    }
+	    deliver_exit_message(sublnk->pid, rp, am_noconnection);
+	    if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlnk != NULL) {
+		trace_proc(NULL, rp, 
+			   am_getting_unlinked, sublnk->pid);
+	    }
+	}
+	else
+	    schedule_exit(rp, am_noconnection);
+    }
+ done:
+    erts_destroy_link(sublnk);
+
+}
+    
+
+
+
+
+/* 
+** This function is called when a distribution 
+** port or process terminates, once for each link on the high level, 
+** it in turn traverses the link subtree for the specific link node...
+*/
+static void doit_link_net_exits(ErtsLink *lnk, void *vpdep)
+{
+    LinkNetExitsContext context = {(DistEntry *) vpdep, lnk};
+    ASSERT(lnk->type == LINK_PID)
+    erts_sweep_links(lnk->root,&doit_link_net_exits_sub,&context);
+#ifdef DEBUG
+    lnk->root = NULL;
+#endif
+    erts_destroy_link(lnk);
+}
+
+
+static void doit_node_link_net_exits(ErtsLink *lnk, void *vpdep)
+{
+    DistEntry *dep = vpdep;
+    Eterm name = dep->sysname;
+    Process *rp;
+    ErtsLink *rlnk;
+    Uint i,n;
+    ASSERT(lnk->type == LINK_NODE)
+    if (is_internal_pid(lnk->pid)) {
+	ErlHeapFragment* bp;
+	Eterm* hp;
+	Eterm tup;
+	if ((rp = pid2proc(lnk->pid)) == NULL)
+	    goto done;
+	rlnk = erts_remove_link(&(rp->nlinks), name);
+	if (rlnk != NULL) {
+	    ASSERT(is_atom(rlnk->pid) && (rlnk->type == LINK_NODE));
+	    erts_destroy_link(rlnk);
+	}
+	n = ERTS_LINK_ROOT_AS_UINT(lnk);
+	for (i = 0; i < n; ++i) {
+	    bp = new_message_buffer(3);
+	    hp = bp->mem;
+	    tup = TUPLE2(hp, am_nodedown, name);
+	    queue_message_tt(rp, bp, tup, NIL);
+	}
+#ifdef HEAP_FRAG_ELIM_TEST
+	if (SAVED_HEAP_TOP(rp) == NULL) {
+	    SAVED_HEAP_TOP(rp) = HEAP_TOP(rp);
+	    HEAP_TOP(rp) = HEAP_LIMIT(rp);
+	}
+#endif
+	MSO(rp).overhead = HEAP_SIZE(rp);
+	BUMP_ALL_REDS(rp);
+    }
+ done:
+    erts_destroy_link(lnk);
+}
+
+	
 
 int do_net_exits(DistEntry *dep)
 {
-    Eterm tup;
-    Eterm name;
-    Eterm item;
-    ErlLink* lnk;
-    Process *rp;
+    ErtsLink* lnk;
+
     if (dep == erts_this_dist_entry) {  /* Net kernel has died (clean up!!) */
 	DistEntry *tdep;
 
@@ -191,83 +328,20 @@ int do_net_exits(DistEntry *dep)
 	erts_set_this_node(am_Noname, 0);
     }
     else {
-	lnk = dep->links;
-	dep->links = NULL;
+	erts_sweep_monitors(dep->monitors,&doit_monitor_net_exits,dep);
+	dep->monitors = NULL;
 
-	while (lnk != NULL) {
-	    item = lnk->item;
-	    switch(lnk->type) {
-	    case LNK_LINK:
-		if (is_internal_pid(item)) {
-		    if ((rp = pid2proc(item)) == NULL)
-			break;
-		    if (rp->flags & F_TRAPEXIT) {
-			ErlLink **rlinkpp = 
-			    find_link(&rp->links, LNK_LINK, lnk->data, NIL);
-			del_link(rlinkpp);
-			deliver_exit_message(lnk->data, rp, am_noconnection);
-			if (IS_TRACED_FL(rp, F_TRACE_PROCS) 
-			    && rlinkpp != NULL) {
-			    trace_proc(NULL, rp, 
-				       am_getting_unlinked, lnk->data);
-			}
-		    }
-		    else
-			schedule_exit(rp, am_noconnection);
-		}
-		break;
+	lnk = dep->nlinks;
+	dep->nlinks = NULL;
 
-	    case LNK_LINK1:
-		if (is_external_pid(item)
-		    && external_pid_dist_entry(item) != erts_this_dist_entry) {
-		   /* We are being monitored */
-		   if ((rp = pid2proc(lnk->data)) == NULL)
-		      break;
-		   del_link(find_link_by_ref(&rp->links, lnk->ref));
-		} else {
-		   Eterm lhp[3];
-		   Eterm watched;
-		   /* We are monitoring */
-		   if ((rp = pid2proc(item)) == NULL)
-		      break;
-		   ASSERT(is_pid(lnk->data) || is_atom(lnk->data));
-		   watched = (is_atom(lnk->data)
-			      ? TUPLE2(&lhp[0], lnk->data, dep->sysname)
-			      : lnk->data);
-		   queue_monitor_message(rp, lnk->ref, am_process, 
-					 watched, am_noconnection);
-		   del_link(find_link_by_ref(&rp->links, lnk->ref));
-		}
-		break;
+	erts_sweep_links(lnk, &doit_link_net_exits, dep);
 
-	    case LNK_NODE:
-		name = dep->sysname;
-		if (is_internal_pid(item)) {
-		    ErlHeapFragment* bp;
-		    Eterm* hp;
-		    if ((rp = pid2proc(item)) == NULL)
-			break;
-		    del_link(find_link(&rp->links,LNK_NODE,name,NIL));
-		    bp = new_message_buffer(3);
-		    hp = bp->mem;
-		    tup = TUPLE2(hp, am_nodedown, name);
-		    queue_message_tt(rp, bp, tup, NIL);
-		    if (SAVED_HEAP_TOP(rp) == NULL) {
-			SAVED_HEAP_TOP(rp) = HEAP_TOP(rp);
-			HEAP_TOP(rp) = HEAP_LIMIT(rp);
-		    }
-		    MSO(rp).overhead = HEAP_SIZE(rp);
-		    BUMP_ALL_REDS(rp);
-		}
-		break;
-		
-	    case LNK_OMON:
-	    case LNK_TMON:
-	    default:
-		erl_exit(1, "bad link type in dist links\n");
-	    }
-	    del_link(&lnk);
-	}
+
+	lnk = dep->node_links;
+	dep->node_links = NULL;
+	
+	erts_sweep_links(lnk, &doit_node_link_net_exits, dep);
+
 	clear_dist_entry(dep);
     }
     return 1;
@@ -307,7 +381,9 @@ static int clear_dist_entry(DistEntry *dep)
 {
     clear_cache(dep);
     erts_set_dist_entry_not_connected(dep);
-    dep->links = NULL;
+    dep->nlinks = NULL;
+    dep->node_links = NULL;
+    dep->monitors = NULL;
     dep->status = 0;
     return 0;
 }
@@ -330,20 +406,32 @@ int dist_unlink(DistEntry *dep, Eterm local, Eterm remote)
     return pack_and_send(dep, ctl, THE_NON_VALUE, 0);
 }
 
+
+/* A local process that's beeing monitored by a remote one exits. We send:
+   {DOP_MONITOR_P_EXIT, Local pid or name, Remote pid, ref, reason},
+   which is rather sad as only the ref is needed, no pid's... */
 int dist_m_exit(DistEntry *dep, Eterm watcher, Eterm watched, 
 		Eterm ref, Eterm reason)
 {
     Eterm ctl;
     Eterm *hp = dmem;
+#ifdef DEBUG
+    ErtsMonitor *mon;
+#endif
 
     ctl = TUPLE5(hp, make_small(DOP_MONITOR_P_EXIT),
 		 watched, watcher, ref, reason);
 
-    del_link(find_link_by_ref(&(dep->links), ref));
+#ifdef DEBUG
+    mon = erts_remove_monitor(&(dep->monitors), ref);
+    ASSERT(mon == NULL);
+#endif
 
     return pack_and_send(dep, ctl, THE_NON_VALUE, 1);
 }
-
+/* We want to monitor a process (named or unnamed) on another node, we send:
+   {DOP_MONITOR_P, Local pid, Remote pid or name, Ref}, which is exactly what's
+   needed on the other side... */
 int dist_monitor(DistEntry *dep, Eterm watcher, Eterm watched, Eterm ref)
 {
     Eterm ctl;
@@ -355,6 +443,11 @@ int dist_monitor(DistEntry *dep, Eterm watcher, Eterm watched, Eterm ref)
 
     return pack_and_send(dep, ctl, THE_NON_VALUE, 0);
 }
+
+/* A local process monitoring a remote one wants to stop monitoring, either 
+   because of a demonitor bif call or because the local process died. We send
+   {DOP_DEMONITOR_P, Local pid, Remote pid or name, ref}, which is once again
+   rather redundant as only the ref will be needed on the other side... */
 
 int dist_demonitor(DistEntry *dep, Eterm watcher, Eterm watched, 
 		   Eterm ref, int force)
@@ -416,6 +509,7 @@ int dist_exit_tt(DistEntry *dep, Eterm local, Eterm remote,
 		 Eterm reason, Eterm token)
 {
     Eterm ctl;
+    ErtsLink *lnk, *sublnk;
 
     if (token != NIL) {	
 	/* token should be updated by caller */
@@ -424,7 +518,18 @@ int dist_exit_tt(DistEntry *dep, Eterm local, Eterm remote,
     } else {
 	ctl = TUPLE4(dmem, make_small(DOP_EXIT), local, remote, reason);
     }
-    del_link(find_link(&(dep->links), LNK_LINK, local, remote));
+    
+    lnk = erts_lookup_link(dep->nlinks, local);
+
+    if (lnk != NULL) {
+	sublnk = erts_remove_link(&(lnk->root), remote);
+	if (sublnk != NULL) {
+	    erts_destroy_link(sublnk);
+	}
+	if (lnk->root == NULL) {
+	    erts_destroy_link(erts_remove_link(&(dep->nlinks), local));
+	}
+    }
 
     return pack_and_send(dep, ctl, THE_NON_VALUE, 1);  /* forced, i.e ignore busy */
 }
@@ -432,7 +537,21 @@ int dist_exit_tt(DistEntry *dep, Eterm local, Eterm remote,
 int dist_exit(DistEntry *dep, Eterm local, Eterm remote, Eterm reason)
 {
     Eterm ctl = TUPLE4(dmem, make_small(DOP_EXIT), local, remote, reason);
-    del_link(find_link(&(dep->links), LNK_LINK, local, remote));
+    ErtsLink *lnk, *sublnk;
+
+    lnk = erts_lookup_link(dep->nlinks, local);
+
+    if (lnk != NULL) {
+	sublnk = erts_remove_link(&(lnk->root), remote);
+	if (sublnk != NULL) {
+	    erts_destroy_link(sublnk);
+	}
+	if (lnk->root == NULL) {
+	    erts_destroy_link(erts_remove_link(&(dep->nlinks), local));
+	}
+    }
+
+
     return pack_and_send(dep, ctl, THE_NON_VALUE, 1);  /* forced, i.e ignore busy */
 }
 
@@ -463,7 +582,6 @@ int dist_group_leader(DistEntry *dep, Eterm leader, Eterm remote)
 */
 int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 {
-    ErlLink **lnkp;
     byte *t;
     int i;
     int ctl_len;
@@ -482,15 +600,20 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 #endif
     ErlOffHeap off_heap;
     Eterm* hp;
-    int type;
+    Sint type;
     Eterm token;
     Eterm token_size;
     int orig_len = len;
+    ErtsMonitor *mon;
+    ErtsLink *lnk, *sublnk;
+    int res;
 
     /* Thanks to Luke Gorrie */
     off_heap.mso = NULL;
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
     off_heap.funs = NULL;
+#endif
 #endif
     off_heap.overhead = 0;
     off_heap.externals = NULL;
@@ -563,41 +686,61 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	    dist_exit(dep, to, from, am_noproc);
 	    break;
 	}
-	if (find_link(&rp->links,LNK_LINK, from, NIL) != NULL)
+
+	res = erts_add_link(&(rp->nlinks), LINK_PID, from);
+
+	if (res < 0) {
+	    /* It was already there! Lets skip the rest... */
 	    break;
-	dep->links = new_link(dep->links,LNK_LINK, to, from);
-	rp->links = new_link(rp->links, LNK_LINK, from, NIL);
+	}
+	lnk = erts_add_or_lookup_link(&(dep->nlinks), LINK_PID, rp->id);
+	erts_add_link(&(lnk->root), LINK_PID, from);
+
 	if (IS_TRACED_FL(rp, F_TRACE_PROCS))
 	    trace_proc(NULL, rp, am_getting_linked, from);
 	break;
 
     case DOP_UNLINK: {
-	ErlLink **rlinkpp;
 	from = tuple[2];
 	to = tuple[3];
 	
 	if ((rp = pid2proc(to)) == NULL)
 	    break;
-	rlinkpp = find_link(&rp->links, LNK_LINK, from, NIL);
-	del_link(rlinkpp);
-	del_link(find_link(&dep->links, LNK_LINK, to, from));
-	
-	if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlinkpp != NULL) {
+
+	lnk = erts_remove_link(&(rp->nlinks), from);
+	if (lnk != NULL) {
+	    erts_destroy_link(lnk);
+	}
+
+	if (IS_TRACED_FL(rp, F_TRACE_PROCS) && lnk != NULL) {
 	    trace_proc(NULL, rp, am_getting_unlinked, from);
 	}
+
+	lnk = erts_lookup_link(dep->nlinks, rp->id); 
+	if (lnk != NULL) {
+	    sublnk = erts_remove_link(&(lnk->root), from);
+	    if (sublnk != NULL) {
+		erts_destroy_link(sublnk);
+	    }
+	    if (lnk->root == NULL) {
+		erts_destroy_link(erts_remove_link(&(dep->nlinks), rp->id));
+	    } 
+	}
+
 	break;
     }
     
     case DOP_MONITOR_P: {
-	Eterm watched_p;
+	/* A remote process wants to monitor us, we get:
+	   {DOP_MONITOR_P, Remote pid, local pid or name, ref} */
+	Eterm name = NIL;
 
 	watcher = tuple[2];
 	watched = tuple[3];  /* local proc to monitor */
 	ref     = tuple[4];
 
-	watched_p = watched;
-
 	if (is_atom(watched)) {
+	    name = watched;
 	    rp = whereis_process(watched);
 	    if ((rp == NULL) || (rp->status == P_EXITING)) {
 		dist_m_exit(dep, watcher, watched, ref, am_noproc);
@@ -607,25 +750,41 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	} else if ((rp = pid2proc(watched)) == NULL) {
 	   dist_m_exit(dep, watcher, watched, ref, am_noproc);
 	   break;
-	}
-	dep->links = new_ref_link(dep->links, LNK_LINK1, watcher, watched, ref);
-	rp->links = new_ref_link(rp->links, LNK_LINK1, watcher, watched_p, ref);
+	} 
+	    
+
+	erts_add_monitor(&(dep->monitors), MON_ORIGIN, ref, watched, name);
+	erts_add_monitor(&(rp->monitors), MON_TARGET, ref, watcher, name);
 	break;
     }
 
     case DOP_DEMONITOR_P:
+	/* A remote node informs us that a local pid in no longer monitored
+	   We get {DOP_DEMONITOR_P, Remote pid, Local pid or name, ref},
+	   We need only the ref of course */
+
 	/* watcher = tuple[2]; */
 	/* watched = tuple[3]; May be an atom in case of monitor name */
 	ref = tuple[4];
 
-	lnkp = find_link_by_ref(&dep->links, ref);
-	if (lnkp == NULL)
+	mon = erts_remove_monitor(&(dep->monitors),ref);
+	/* ASSERT(mon != NULL); can happen in case of broken dist message */
+	if (mon == NULL) {
 	    break;
-	watched = (*lnkp)->data;
-	if ((rp = pid2proc(watched)) == NULL)
+	}
+	watched = mon->pid;
+	erts_destroy_monitor(mon);
+	rp = pid2proc(watched);
+	ASSERT(rp != NULL);
+	if (rp == NULL) {
 	   break;
-	del_link(lnkp);
-	del_link(find_link_by_ref(&rp->links, ref));
+	}
+	mon = erts_remove_monitor(&(rp->monitors),ref);
+	ASSERT(mon != NULL);
+	if (mon == NULL) {
+	    break;
+	}
+	erts_destroy_monitor(mon);
 	break;
 
     case DOP_NODE_LINK: /* XXX never sent ?? */
@@ -659,7 +818,31 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	    (void) erts_from_external_format(dep, &hp, &t, &msg->off_heap);
 	    free_message_buffer(msg);
 	} else {
+#ifdef SHARED_HEAP
+            if (rp->htop == NULL)
+            {
+                ASSERT(global_htop != NULL);
+                rp->htop = global_htop;
+                rp->heap = global_heap;
+                rp->hend = global_hend;
+                rp->heap_sz = global_heap_sz;
+		
+	        hp = HAlloc(rp, i + token_size);
+
+                global_htop = rp->htop;
+                global_heap = rp->heap;
+                global_hend = rp->hend;
+                global_heap_sz = rp->heap_sz;
+                rp->htop = NULL;
+                rp->heap = NULL;
+                rp->hend = NULL;
+                rp->heap_sz = 0;
+            }
+	    else
+	        hp = HAlloc(rp, i + token_size);
+#else
 	    hp = HAlloc(rp, i + token_size);
+#endif
 	    message = erts_from_external_format(dep, &hp, &t, &MSO(rp));
 	    if (is_non_value(message)) {
 		PURIFY_MSG("data error");
@@ -672,7 +855,6 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 		token = copy_struct(token, token_size, &hp, &MSO(rp));
 	    }
 	    queue_message_tt(rp, NULL, message, token);
-
 	}
 	break;
 
@@ -701,7 +883,31 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	    (void) erts_from_external_format(dep, &hp, &t, &msg->off_heap);
 	    free_message_buffer(msg);
 	} else {
+#ifdef SHARED_HEAP
+            if (rp->htop == NULL)
+            {
+                ASSERT(global_htop != NULL);
+                rp->htop = global_htop;
+                rp->heap = global_heap;
+                rp->hend = global_hend;
+                rp->heap_sz = global_heap_sz;
+		
+	        hp = HAlloc(rp, i + token_size);
+
+                global_htop = rp->htop;
+                global_heap = rp->heap;
+                global_hend = rp->hend;
+                global_heap_sz = rp->heap_sz;
+                rp->htop = NULL;
+                rp->heap = NULL;
+                rp->hend = NULL;
+                rp->heap_sz = 0;
+            }
+	    else
+	        hp = HAlloc(rp, i + token_size);
+#else
 	    hp = HAlloc(rp, i + token_size);
+#endif
 	    message = erts_from_external_format(dep, &hp, &t, &MSO(rp));
 	    if (is_non_value(message)) {
 		PURIFY_MSG("data error");
@@ -714,36 +920,47 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 		token = copy_struct(token, token_size, &hp, &MSO(rp));
 	    }
 	    queue_message_tt(rp, NULL, message, token);
-
 	}
 	break;
 
     case DOP_MONITOR_P_EXIT: {
+	/* We are monitoring a process on the remote node which dies, we get
+	   {DOP_MONITOR_P_EXIT, Remote pid or name, Local pid, ref, reason} */
+	   
+
 	Eterm lhp[3];
 
 	/* watched = tuple[2]; */  /* remote proc which died */
-	watcher = tuple[3];
+	/* watcher = tuple[3]; */
 	ref     = tuple[4];
 	reason  = tuple[5];
 
-	if ((rp = pid2proc(watcher)) == NULL)
-	   break;
-
-	lnkp = find_link_by_ref(&rp->links, ref);
-	if (lnkp == NULL)
+	mon = erts_remove_monitor(&(dep->monitors), ref);
+	/* ASSERT(mon != NULL); can happen when broken message */ 
+	if (mon == NULL) {
 	    break;
+	}
+	rp = pid2proc(mon->pid);
+	ASSERT(rp != NULL);
+	if (rp == NULL) {
+	    break;
+	}
 	
-	del_link(lnkp);
+	erts_destroy_monitor(mon);
 
-	lnkp = find_link_by_ref(&dep->links, ref);
+	mon = erts_remove_monitor(&(rp->monitors),ref);
+	ASSERT(mon != NULL);
+	if (mon == NULL) {
+	    break;
+	}
 	
-	ASSERT(is_pid((*lnkp)->data) || is_atom((*lnkp)->data));
-	watched = (is_atom((*lnkp)->data)
-		   ? TUPLE2(&lhp[0], (*lnkp)->data, dep->sysname)
-		   : (*lnkp)->data);
+	watched = (is_not_nil(mon->name)
+		   ? TUPLE2(&lhp[0], mon->name, dep->sysname)
+		   : mon->pid);
 	
 	queue_monitor_message(rp, ref, am_process, watched, reason);
-	del_link(lnkp);
+	
+	erts_destroy_monitor(mon);
 	break;
     }
 
@@ -763,16 +980,29 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	}
 	if (is_not_internal_pid(to) && is_not_internal_port(to))
 	    break;
-	del_link(find_link(&dep->links, LNK_LINK, to, from));
+
+	lnk = erts_lookup_link(dep->nlinks, to); 
+	if (lnk != NULL) {
+	    sublnk = erts_remove_link(&(lnk->root), from);
+	    if (sublnk != NULL) {
+		erts_destroy_link(sublnk);
+	    }
+	    if (lnk->root == NULL) {
+		erts_destroy_link(erts_remove_link(&(dep->nlinks), to));
+	    } 
+	}
+
 
 	if (is_internal_pid(to)) {
-	    ErlLink **rlinkpp;
 	    rp = internal_pid_index(to) < erts_max_processes ? 
 		process_tab[internal_pid_index(to)] : NULL;
 	    if (INVALID_PID(rp, to))
 		break;
-	    rlinkpp = find_link(&rp->links, LNK_LINK, from, NIL);
-	    del_link(rlinkpp);
+
+	    lnk = erts_remove_link(&(rp->nlinks), from);
+	    if (lnk != NULL) {
+		erts_destroy_link(lnk);
+	    }
 #if 0
 	    /* Arndt: Maybe it should never be 'kill', but it can be,
 	       namely when a linked process does exit(kill). Until we know
@@ -783,11 +1013,11 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	    if (rp->flags & F_TRAPEXIT) {
 		/* token updated by remote node */
 		deliver_exit_message_tt(from, rp, reason, token);
-		if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlinkpp != NULL) {
+		if (IS_TRACED_FL(rp, F_TRACE_PROCS) && lnk != NULL) {
 		    trace_proc(NULL, rp, am_getting_unlinked, from);
 		}
 	    } else if (reason == am_normal) {
-		if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlinkpp != NULL) {
+		if (IS_TRACED_FL(rp, F_TRACE_PROCS) && lnk != NULL) {
 		    trace_proc(NULL, rp, am_getting_unlinked, from);
 		}
 	    } else {
@@ -798,7 +1028,10 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	    /* Internal port */
 	    int ix = internal_port_index(to);
 	    if (! INVALID_PORT(erts_port+ix, to)) {
-		del_link(find_link(&erts_port[ix].links,LNK_LINK,from,NIL));
+		lnk = erts_remove_link(&(erts_port[ix].nlinks), from);
+		if (lnk != NULL) {
+		    erts_destroy_link(lnk);
+		}
 	    }
 	    do_exit_port(to, from, reason);
 	}
@@ -865,12 +1098,14 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	erts_cleanup_externals(off_heap.externals);
     }
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
     if (off_heap.funs) {
 	erts_cleanup_funs(off_heap.funs);
     }
     if (ctl != ctl_default) {
 	erts_free(ERTS_ALC_T_DCTRL_BUF, (void *) ctl);
     }
+#endif
 #endif
     return 0;
 
@@ -903,12 +1138,14 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	erts_cleanup_externals(off_heap.externals);
     }
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
     if (off_heap.funs) {
 	erts_cleanup_funs(off_heap.funs);
     }
     if (ctl != ctl_default) {
 	erts_free(ERTS_ALC_T_DCTRL_BUF, (void *) ctl);
     }
+#endif
 #endif
     do_exit_port(dep->cid, dep->cid, am_killed);
     return -1;
@@ -972,10 +1209,104 @@ static int pack_and_send(DistEntry *dep, Eterm ctl, Eterm mess, int force_busy)
     return 0;
 }
 
+static void doit_print_monitor_info(ErtsMonitor *mon, void *vciop)
+{
+    CIO *ciop = vciop;
+    Process *rp;
+    ErtsMonitor *rmon;
+    if ((rp = pid2proc(mon->pid)) == NULL || 
+	(rmon = erts_lookup_monitor(rp->monitors, mon->ref)) == NULL) {
+	erl_printf(*ciop, "Warning, stray monitor for: ");
+	display(mon->pid,*ciop);
+    } else if (mon->type == MON_ORIGIN) {
+	/* Local pid is being monitored */
+	erl_printf(*ciop, "Remotely monitored by: ");
+	display(mon->pid,*ciop);
+	erl_printf (*ciop, " ");
+	display(rmon->pid,*ciop);
+    } else {
+	erl_printf (*ciop, "Remote monitoring: ");
+	display(mon->pid,*ciop);
+	erl_printf (*ciop, " ");
+	if (is_not_atom(rmon->pid)) {
+	    display(rmon->pid, *ciop);
+	} else {
+	    erl_printf (*ciop,"{");
+	    display(rmon->name,*ciop);
+	    erl_printf (*ciop,", ");
+	    display(rmon->pid,*ciop); /* which in this case is the 
+					 remote system name... */
+	    erl_printf (*ciop,"}");
+	}
+    }
+    erl_printf(*ciop," \n");
+}    
+
+static void print_monitor_info(CIO to, ErtsMonitor *mon)
+{
+    erts_doforall_monitors(mon,&doit_print_monitor_info,&to);
+}
+
+typedef struct {
+    CIO *pto;
+    Eterm from;
+} PrintLinkContext;
+
+static void doit_print_link_info2(ErtsLink *lnk, void *vpplc)
+{
+    PrintLinkContext *pplc = vpplc;
+    erl_printf(*(pplc->pto), "Remote link: ");
+    display(pplc->from,*(pplc->pto));
+    erl_printf (*(pplc->pto), " ");
+    display(lnk->pid,*(pplc->pto));
+    erl_printf(*(pplc->pto)," \n");
+}
+
+static void doit_print_link_info(ErtsLink *lnk, void *vpto)
+{
+    if (is_internal_pid(lnk->pid)) {
+	PrintLinkContext plc = {(CIO *) vpto, lnk->pid}; 
+	if (pid2proc(lnk->pid) == NULL)
+	    return;
+	erts_doforall_links(lnk->root, &doit_print_link_info2, &plc);
+    } 
+}
+
+static void print_link_info(CIO to, ErtsLink *lnk)
+{
+    erts_doforall_links(lnk, &doit_print_link_info, &to);
+}
+
+typedef struct {
+    CIO *pto;
+    Eterm sysname;
+} PrintNodeLinkContext;
+    
+
+static void doit_print_nodelink_info(ErtsLink *lnk, void *vpcontext)
+{
+    PrintNodeLinkContext *pcontext = vpcontext;
+
+    if (is_internal_pid(lnk->pid)) {
+	if (pid2proc(lnk->pid) == NULL)
+	    return;
+	erl_printf(*(pcontext->pto), "Remote monitoring: ");
+	display(lnk->pid,*(pcontext->pto));
+	erl_printf (*(pcontext->pto), " ");
+	display(pcontext->sysname,*(pcontext->pto));
+    } 
+}
+
+static void print_nodelink_info(CIO to, ErtsLink *lnk, Eterm sysname)
+{
+    PrintNodeLinkContext context = {&to, sysname};
+    erts_doforall_links(lnk, &doit_print_nodelink_info, &context);
+}
+
+
 static int
 info_dist_entry(CIO to, DistEntry *dep, int visible, int connected)
 {
-  ErlLink* lnk;
 
   if (visible && connected) {
       erl_printf(to, "=visible_node:");
@@ -1007,7 +1338,7 @@ info_dist_entry(CIO to, DistEntry *dep, int visible, int connected)
 #endif
   erl_printf(to, "\n");
   if (!connected && is_nil(dep->cid)) {
-    if (dep->links) {
+    if (dep->nlinks) {
       erl_printf(to,"Error: Got links to not connected node:");
       display(dep->sysname, to);
       erl_printf(to, "\n");
@@ -1020,67 +1351,9 @@ info_dist_entry(CIO to, DistEntry *dep, int visible, int connected)
   erl_printf(to, "\n");
 
   erts_print_node_info(to, dep->sysname, NULL, NULL);
-
-  if ((lnk = dep->links)) {
-    while(lnk) {
-      switch(lnk->type) {
-      case LNK_LINK:
-	if (is_internal_pid(lnk->item)) {
-	  if (pid2proc(lnk->item) == NULL)
-	    break;
-	  erl_printf (to, "Remote link: ");
-	  display(lnk->item,to);
-	  erl_printf (to, " ");
-	  display(lnk->data,to);
-	}
-	break;
-      case LNK_LINK1:
-	if (is_external_pid(lnk->item)
-	    && external_pid_dist_entry(lnk->item) != erts_this_dist_entry) {
-	  /* We are being monitored */
-	  if (pid2proc(lnk->data) == NULL)
-	    break;
-	  erl_printf(to, "Remotely monitored by: ");
-	  display(lnk->data,to);
-	  erl_printf (to, " ");
-	  display(lnk->item,to);
-	} else {
-	  /* We are monitoring */
-	  if (pid2proc(lnk->item) == NULL)
-	    break;
-	  erl_printf (to, "Remote monitoring: ");
-	  display(lnk->item,to);
-	  erl_printf (to, " ");
-	  if (is_not_atom(lnk->data)) {
-	    display(lnk->data, to);
-	  } else {
-	    erl_printf (to,"{");
-	    display(lnk->data,to);
-	    erl_printf (to,", ");
-	    display(dep->sysname,to);
-	    erl_printf (to,"}");
-	  }
-	}
-	break;
-      case LNK_NODE:
-	if (is_internal_pid(lnk->item)) {
-	  if (pid2proc(lnk->item) == NULL)
-	    break;
-	  erl_printf (to, "Remote monitoring: ");
-	  display(lnk->item,to);
-	  erl_printf (to, " ");
-	  display(dep->sysname,to);
-	}
-	break;
-      case LNK_OMON:
-      case LNK_TMON:
-      default:
-	erl_printf (to, "Error: Bad remote link type (%d) found", lnk->type);
-      }
-      erl_printf(to," \n");
-      lnk = lnk->next;
-    }
-  }
+  print_monitor_info(to, dep->monitors);
+  print_link_info(to, dep->nlinks);
+  print_nodelink_info(to,dep->node_links, dep->sysname);
 
   return 0;
     
@@ -1428,7 +1701,7 @@ BIF_RETTYPE dist_exit_3(BIF_ALIST_3)
 	if (BIF_P->status != P_RUNNING) {
 	    BIF_P->fvalue = exit_value;
 	    KILL_CATCHES(BIF_P);
-	    BIF_ERROR(BIF_P, USER_EXIT);
+	    BIF_ERROR(BIF_P, EXC_EXIT);
 	}
     }
     else if (is_internal_port(local)) {
@@ -1436,7 +1709,7 @@ BIF_RETTYPE dist_exit_3(BIF_ALIST_3)
 	if (BIF_P->status != P_RUNNING) {
 	    BIF_P->fvalue = (BIF_ARG_2 == am_kill) ? am_killed : BIF_ARG_2;
 	    KILL_CATCHES(BIF_P);
-	    BIF_ERROR(BIF_P, USER_EXIT);         
+	    BIF_ERROR(BIF_P, EXC_EXIT);         
 	}
     }
     else if ((is_external_pid(local) || is_external_port(local))
@@ -1460,6 +1733,8 @@ BIF_RETTYPE dist_link_2(BIF_ALIST_2)
     Eterm remote;
     Process *lp;
     DistEntry *dep = BIF_P->dist_entry;
+    ErtsLink *lnk;
+
 
     /* Must be called from distribution process */
     if (!(BIF_P->flags & F_DISTRIBUTION) || (dep == NULL))
@@ -1479,11 +1754,12 @@ BIF_RETTYPE dist_link_2(BIF_ALIST_2)
     else /* no ports yet */
 	goto error;
 
-    if (find_link(&lp->links, LNK_LINK, remote,NIL) != NULL)
-        BIF_RET(am_true);
+    if (erts_add_link(&(lp->nlinks), LINK_PID, remote) < 0) {
+	BIF_RET(am_true);
+    }
+    lnk = erts_add_or_lookup_link(&(dep->nlinks), LINK_PID, lp->id);
 
-    dep->links = new_link(dep->links,LNK_LINK, local, remote);
-    lp->links = new_link(lp->links,LNK_LINK,remote,NIL);
+    erts_add_link(&(lnk->root), LINK_PID, remote);
 
     if (IS_TRACED_FL(lp, F_TRACE_PROCS))
         trace_proc(BIF_P, lp, am_getting_linked, remote);
@@ -1502,6 +1778,7 @@ BIF_RETTYPE dist_unlink_2(BIF_ALIST_2)
     Eterm remote = BIF_ARG_2;
     Process *lp;
     DistEntry *dep = BIF_P->dist_entry;
+    ErtsLink *lnk, *sublnk;
 
     /* Must be called from distribution process */
     if (!(BIF_P->flags & F_DISTRIBUTION) || (dep == NULL))
@@ -1519,8 +1796,22 @@ BIF_RETTYPE dist_unlink_2(BIF_ALIST_2)
 	goto error;
 
     /* unlink and ignore errors */
-    del_link(find_link(&lp->links, LNK_LINK, remote, NIL));
-    del_link(find_link(&dep->links, LNK_LINK, local, remote));
+    lnk = erts_lookup_link(dep->nlinks, local);
+
+    if (lnk != NULL) {
+	sublnk = erts_remove_link(&(lnk->root), remote);
+	if (sublnk != NULL) {
+	    erts_destroy_link(sublnk);
+	}
+	if (lnk->root == NULL) {
+	    erts_destroy_link(erts_remove_link(&(dep->nlinks), local));
+	}
+    }
+    lnk = erts_remove_link(&(lp->nlinks), remote);
+    if (lnk != NULL) {
+	erts_destroy_link(lnk);
+    }
+
     if (IS_TRACED_FL(lp, F_TRACE_PROCS))
         trace_proc(BIF_P, lp, am_unlink, remote);
     BIF_RET(am_true);
@@ -1657,6 +1948,7 @@ BIF_RETTYPE is_alive_0(BIF_ALIST_0)
 BIF_RETTYPE monitor_node_2(BIF_ALIST_2)
 {
     DistEntry *dep;
+    ErtsLink *lnk;
 
     if (is_not_atom(BIF_ARG_1) ||
 	((BIF_ARG_2 != am_true) && (BIF_ARG_2 != am_false)) ||
@@ -1671,14 +1963,30 @@ BIF_RETTYPE monitor_node_2(BIF_ALIST_2)
 	BIF_RET(am_true);
     if (BIF_ARG_2 == am_true) {
 	ASSERT(dep->cid != NIL);
-	dep->links = new_link(dep->links, LNK_NODE, BIF_P->id, NIL);
+	lnk = erts_add_or_lookup_link(&(dep->node_links), LINK_NODE, 
+				      BIF_P->id);
+	++ERTS_LINK_ROOT_AS_UINT(lnk);
+	lnk = erts_add_or_lookup_link(&(BIF_P->nlinks), LINK_NODE, BIF_ARG_1);
+	++ERTS_LINK_ROOT_AS_UINT(lnk);
 
-	BIF_P->links = new_link(BIF_P->links, LNK_NODE, BIF_ARG_1, NIL);
 	BIF_RET(am_true);
     }
     else  {
-	del_link(find_link(&(dep->links), LNK_NODE, BIF_P->id,NIL));
-	del_link(find_link(&(BIF_P->links), LNK_NODE, BIF_ARG_1, NIL));
+	lnk = erts_lookup_link(dep->node_links, BIF_P->id);
+	if (lnk != NULL) {
+	    if ((--ERTS_LINK_ROOT_AS_UINT(lnk)) == 0) {
+		erts_destroy_link(erts_remove_link(&(dep->node_links), 
+						   BIF_P->id));
+	    }
+	}
+	lnk = erts_lookup_link(BIF_P->nlinks, BIF_ARG_1);
+	if (lnk != NULL) {
+	    if ((--ERTS_LINK_ROOT_AS_UINT(lnk)) == 0) {
+		erts_destroy_link(erts_remove_link(&(BIF_P->nlinks), 
+						   BIF_ARG_1));
+	    }
+	}
+
 	BIF_RET(am_true);
     }
 }

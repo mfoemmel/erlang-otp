@@ -1704,19 +1704,23 @@ prepare_op(Tid, {op, create_table, TabDef}, _WaitFor) ->
 	    UseDirReason = {bad_type, Tab, Storage, node()},
             mnesia:abort(UseDirReason);
 	ram_copies ->
+	    mnesia_lib:set({Tab, create_table},true),
 	    create_ram_table(Tab, Cs#cstruct.type),
 	    insert_cstruct(Tid, Cs, false),
 	    {true, optional};
 	disc_copies ->
+	    mnesia_lib:set({Tab, create_table},true),
 	    create_ram_table(Tab, Cs#cstruct.type),
 	    create_disc_table(Tab),
 	    insert_cstruct(Tid, Cs, false),
 	    {true, optional};	
 	disc_only_copies ->
+	    mnesia_lib:set({Tab, create_table},true),
 	    create_disc_only_table(Tab,Cs#cstruct.type),
 	    insert_cstruct(Tid, Cs, false),
 	    {true, optional};
         unknown -> %% No replica on this node
+	    mnesia_lib:set({Tab, create_table},true),
 	    insert_cstruct(Tid, Cs, false),
             {true, optional}
     end;

@@ -28,7 +28,7 @@ do(Info) ->
 	"HEAD" ->
 	    case httpd_util:key1search(Info#mod.data,status) of
 		%% A status code has been generated!
-		{StatusCode,PhraseArgs,Reason} ->
+		{_StatusCode, _PhraseArgs, _Reason} ->
 		    {proceed,Info#mod.data};
 		%% No status code has been generated!
 		_undefined ->
@@ -37,10 +37,10 @@ do(Info) ->
 			undefined ->
 			    do_head(Info);
 			%% A response has been sent! Nothing to do about it!
-			{already_sent,StatusCode,Size} ->
+			{already_sent, _StatusCode, _Size} ->
 			    {proceed,Info#mod.data};
 			%% A response has been generated!
-			{StatusCode,Response} ->
+			{_StatusCode, _Response} ->
 			    {proceed,Info#mod.data}
 		    end
 	    end;

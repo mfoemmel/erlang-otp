@@ -291,7 +291,7 @@ get_worst_sync(0, _) ->
 get_worst_sync(N, Timeout) ->
     (catch memsup_helper ! {self(), collect_proc}),
     receive
-	{'DOWN', _, _, Info} -> % gotta be the helper here
+	{'DOWN', _, _, _Info} -> % gotta be the helper here
 	    receive 
 	    after trunc(Timeout/30) ->
 		    ok
@@ -323,7 +323,7 @@ get_sys_sync(N, Timeout) ->
     end.
 	    
 
-format_status(Opt, [PDict, #state{timeout = Timeout, mem_usage = MemUsage,
+format_status(_Opt, [_PDict, #state{timeout = Timeout, mem_usage = MemUsage,
 				  worst_mem_user = WorstMemUser}]) ->
     {Allocated, Total} = MemUsage,
     WorstMemFormat = case WorstMemUser of

@@ -32,7 +32,7 @@
 %%------------------------------------------------------------
 
 -import(lists, [foreach/2, foldl/3, foldr/3, map/2]).
--import(ic_codegen, [emit/2, emit/3]).
+-import(ic_codegen, [emit/2, emit/3, emit/4, emit_c_enc_rpt/4, emit_c_dec_rpt/4]).
 
 -include("icforms.hrl").
 -include("ic.hrl").
@@ -165,6 +165,15 @@ gen_headers(G, [], _X) ->
 	true ->
 	    HFd = ic_genobj:hrlfiled(G), 
 	    emit(HFd, "#include <stdlib.h>\n"), 
+	    case ic_options:get_opt(G, c_report) of 
+		true ->
+		    emit(HFd, "#ifndef OE_C_REPORT\n"), 
+		    emit(HFd, "#define OE_C_REPORT\n"), 
+		    emit(HFd, "#include <stdio.h>\n"), 
+		    emit(HFd, "#endif\n");
+		_  ->
+		    ok
+	    end,
 	    emit(HFd, "#include \"~s\"\n", [?IC_HEADER]), 
 	    emit(HFd, "#include \"~s\"\n", [?ERL_INTERFACEHEADER]), 
 	    emit(HFd, "#include \"~s\"\n", [?EICONVHEADER]), 
@@ -595,9 +604,18 @@ get_all_opnames(G, N, Bodies) ->
 %% Emit switch 
 %%------------------------------------------------------------
 
-emit_switch(_G, Fd, N, _X) ->
+emit_switch(G, Fd, N, _X) ->
+    emit(Fd, "#include <string.h>\n"),
+    case ic_options:get_opt(G, c_report) of 
+	true ->
+	    emit(Fd, "#ifndef OE_C_REPORT\n"), 
+	    emit(Fd, "#define OE_C_REPORT\n"), 
+	    emit(Fd, "#include <stdio.h>\n"), 
+	    emit(Fd, "#endif\n");
+	_  ->
+	    ok
+    end,
     StartCode =
-	"#include <string.h>\n" 
 	"#include \"ic.h\"\n"
 	"#include \"erl_interface.h\"\n"
 	"#include \"ei.h\"\n"
@@ -724,6 +742,8 @@ emit_exec_function(G, Fd, N, X, Name, RetType, TypeAttrArgs) ->
     emit(Fd, "  if (oe_env->_received != ~p) {\n", [length(InTypeAttrArgs)]), 
     emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, "
 	 "\"Wrong number of operation parameters\");\n"), 
+    emit_c_dec_rpt(Fd, "    ", "wrong number of parameters", []),
+    emit_c_dec_rpt(Fd, "    ", "server exec ~s\\n====\\n", [Name]),
     emit(Fd, "    return -1;\n", []), 
     emit(Fd, "  }\n"), 
     emit(Fd, "  else {\n", []), 
@@ -983,6 +1003,7 @@ emit_parameter_decoder_call(G, Fd, N, X, Name, _R, TypeAttrArgs) ->
 		 "    /* Decode parameters */\n" 
 		 "    if((oe_error_code = ~s(oe_obj, ~s, oe_env)) < 0) {\n", 
 		 [ParDecName, PLFDC]), 
+	    emit_c_dec_rpt(Fd, "    ", "parmeters", []),
 	    emit(Fd, 
 		 "      if(oe_env->_major == CORBA_NO_EXCEPTION)\n"
 		 "        CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
@@ -1689,30 +1710,34 @@ emit_encoding_stmt(G, N, X, Fd, T, LName) when element(1, T) == scoped_id ->
     case mk_c_type(G, N, T, evaluate_not) of
 	"erlang_pid" ->
 	    emit(Fd, "  if ((oe_error_code = "
-		 "oe_ei_encode_pid(oe_env, ~s)) < 0)\n", 
+		 "oe_ei_encode_pid(oe_env, ~s)) < 0) {\n", 
 		 [LName]), 
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_pid", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"erlang_port" ->
 	    emit(Fd, "  if ((oe_error_code = "
-		 "oe_ei_encode_port(oe_env, ~s)) < 0)\n", 
+		 "oe_ei_encode_port(oe_env, ~s)) < 0) {\n", 
 		 [LName]), 
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_port", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"erlang_ref" ->
 	    emit(Fd, "  if ((oe_error_code = "
-		 "oe_ei_encode_ref(oe_env, ~s)) < 0)\n", 
+		 "oe_ei_encode_ref(oe_env, ~s)) < 0) {\n", 
 		 [LName]), 
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_ref", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"ETERM*" ->
 	    emit(Fd, "  if ((oe_error_code = "
-		 "oe_ei_encode_term(oe_env, ~s)) < 0)\n", 
+		 "oe_ei_encode_term(oe_env, ~s)) < 0) {\n", 
 		 [LName]), 
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_term", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	{enum, FSN} ->
 	    emit_encoding_stmt(G, N, X, Fd, FSN, LName);
 	FSN ->
 	    emit_encoding_stmt(G, N, X, Fd, FSN, LName)
     end;
-emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) -> 
+emit_encoding_stmt(G, N, X, Fd, T, LName) when list(T) -> 
     %% Already a fullscoped name
     case get_param_tk(LName, X) of
 	error ->
@@ -1728,6 +1753,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 			 "CORBA_SYSTEM_EXCEPTION, "
 			 "BAD_PARAM, \"Bad operation parameter on encode\");"
 			 "\n"), 
+		    ?emit_c_enc_rpt(Fd, "    ", "", []),
 		    emit(Fd, "    return oe_error_code;\n  }\n\n");
 		false ->
 		    if atom(ParamTK) ->
@@ -1741,6 +1767,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "ushort", []),
 				    emit(Fd, "    return "
 					 "oe_error_code;\n  }\n\n");
 				tk_ulong -> 
@@ -1751,6 +1778,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "ulong", []),
 				    emit(Fd, "    return "
 					 "oe_error_code;\n  }\n\n");
 				tk_ulonglong -> 
@@ -1761,6 +1789,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "ulonglong", []),
 				    emit(Fd, "    return "
 					 "oe_error_code;\n  }\n\n");
 				tk_short ->
@@ -1771,6 +1800,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "short", []),
 				    emit(Fd, "    return "
 					 "oe_error_code;\n  }\n\n");
 				tk_long ->
@@ -1781,6 +1811,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "long", []),
 				    emit(Fd, "    return "
 					 "oe_error_code;\n  }\n\n");
 				tk_longlong ->
@@ -1791,6 +1822,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "longlong", []),
 				    emit(Fd, "    return "
 					 "oe_error_code;\n  }\n\n");
 				tk_float ->
@@ -1801,6 +1833,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "float", []),
 				    emit(Fd, "    return "
 					 "oe_error_code;\n  }\n\n");
 				tk_double ->
@@ -1811,6 +1844,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "double", []),
 				    emit(Fd, "    return "
 					 "oe_error_code;\n  }\n\n");
 				tk_boolean ->
@@ -1823,6 +1857,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "boolean", []),
 				    emit(Fd, "        return "
 					 "oe_error_code;\n      }\n"), 
 				    emit(Fd, "      break;\n"), 
@@ -1834,6 +1869,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "boolean", []),
 				    emit(Fd, "        return "
 					 "oe_error_code;\n      }\n"), 
 				    emit(Fd, "      break;\n"), 
@@ -1842,6 +1878,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "boolean", []),
 				    emit(Fd, "      return -1;\n"), 
 				    emit(Fd, "  }\n\n");
 				tk_char ->
@@ -1852,6 +1889,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "char", []),
 				    emit(Fd, "    return "
 					 "oe_error_code;\n  }\n\n");
 				tk_wchar ->  %% WCHAR
@@ -1862,6 +1900,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "wchar", []),
 				    emit(Fd, "    return "
 					 "oe_error_code;\n  }\n\n");
 				tk_octet ->
@@ -1872,6 +1911,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "octet", []),
 				    emit(Fd, "    return "
 					 "oe_error_code;\n  }\n\n");
 				tk_any ->
@@ -1882,6 +1922,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "any", []),
 				    emit(Fd, "    return "
 					 "oe_error_code;\n  }\n\n");
 				_ ->
@@ -1889,6 +1930,7 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 					 "CORBA_SYSTEM_EXCEPTION, "
 					 "BAD_PARAM, \"Bad operation "
 					 "parameter on encode\");\n"), 
+				    ?emit_c_enc_rpt(Fd, "    ", "tk_unknown", []),
 				    emit(Fd, "    return "
 					 "oe_error_code;\n  }\n\n"), 
 				    ok
@@ -1899,17 +1941,20 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 				    emit(Fd, "  if ((oe_error_code = "
 					 "~s~s(oe_env, ~s)) < 0) {\n", 
 					 [ic_util:mk_oe_name(G, "encode_"), 
-					  T, LName]);
+					  T, LName]),
+				    ?emit_c_enc_rpt(Fd, "    ", "enum", []);
 				tk_array ->
 				    emit(Fd, "  if ((oe_error_code = "
 					 "~s~s(oe_env, ~s)) < 0) {\n", 
 					 [ic_util:mk_oe_name(G, "encode_"), 
-					  T, LName]);
+					  T, LName]),
+				    ?emit_c_enc_rpt(Fd, "    ", "array", []);
 				_ ->
 				    emit(Fd, "  if ((oe_error_code = "
 					 "~s~s(oe_env, &~s)) < 0) {\n", 
 					 [ic_util:mk_oe_name(G, "encode_"), 
-					  T, LName])
+					  T, LName]),
+				    ?emit_c_enc_rpt(Fd, "    ", "", [])
 			    end, 
 			    emit(Fd, "    CORBA_exc_set(oe_env, "
 				 "CORBA_SYSTEM_EXCEPTION, "
@@ -1919,17 +1964,19 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) ->
 		    end
 	    end
     end;
-emit_encoding_stmt(_G, _N, _X, Fd, T, LName)  when record(T, string) ->
+emit_encoding_stmt(G, N, _X, Fd, T, LName)  when record(T, string) ->
     emit(Fd, "  if ((oe_error_code = "
 	 "oe_ei_encode_string(oe_env, (const char*) ~s)) < 0) {\n", 
 	 [LName]), 
     emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 	 "BAD_PARAM, \"Cannot encode string\");\n"), 
+    ?emit_c_enc_rpt(Fd, "    ", "string", []),
     emit(Fd, "    return oe_error_code;\n  }\n\n");
-emit_encoding_stmt(_G, _N, _X, Fd, T, LName) when record(T, wstring) ->
+emit_encoding_stmt(G, N, _X, Fd, T, LName) when record(T, wstring) ->
     emit(Fd, "  if ((oe_error_code = "
 	 "oe_ei_encode_wstring(oe_env, ~s)) < 0) {\n", 
 	 [LName]), 
+    ?emit_c_enc_rpt(Fd, "    ", "wstring", []),
     emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 	 "BAD_PARAM, \"Cannot encode string\");\n"), 
     emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -1939,6 +1986,7 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
 	    emit(Fd, "  if ((oe_error_code = "
 		 "oe_ei_encode_ulong(oe_env, (unsigned long) ~s)) < 0) {\n", 
 		 [LName]), 
+	    ?emit_c_enc_rpt(Fd, "    ", "ushort", []),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -1946,6 +1994,7 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
 	    emit(Fd, "  if ((oe_error_code = "
 		 "oe_ei_encode_ulong(oe_env, ~s)) < 0) {\n", 
 		 [LName]), 
+	    ?emit_c_enc_rpt(Fd, "    ", "ulong", []),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -1953,6 +2002,7 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
 	    emit(Fd, "  if ((oe_error_code = "
 		 "oe_ei_encode_ulonglong(oe_env, ~s)) < 0) {\n", 
 		 [LName]), 
+	    ?emit_c_enc_rpt(Fd, "    ", "ulonglong", []),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -1960,6 +2010,7 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
 	    emit(Fd, "  if ((oe_error_code = "
 		 "oe_ei_encode_long(oe_env, (long) ~s)) < 0) {\n", 
 		 [LName]), 
+	    ?emit_c_enc_rpt(Fd, "    ", "short", []),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -1967,6 +2018,7 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
 	    emit(Fd, "  if ((oe_error_code = "
 		 "oe_ei_encode_long(oe_env, ~s)) < 0) {\n", 
 		 [LName]), 
+	    ?emit_c_enc_rpt(Fd, "    ", "long", []),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -1974,6 +2026,7 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
 	    emit(Fd, "  if ((oe_error_code = "
 		 "oe_ei_encode_longlong(oe_env, ~s)) < 0) {\n", 
 		 [LName]), 
+	    ?emit_c_enc_rpt(Fd, "    ", "longlong", []),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -1981,6 +2034,7 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
 	    emit(Fd, "    if ((oe_error_code = "
 		 "oe_ei_encode_double(oe_env, (double) ~s)) < 0) {\n", 
 		 [LName]), 
+	    ?emit_c_enc_rpt(Fd, "    ", "float", []),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -1988,6 +2042,7 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
 	    emit(Fd, "  if ((oe_error_code = "
 		 "oe_ei_encode_double(oe_env, ~s)) < 0) {\n", 
 		 [LName]), 
+	    ?emit_c_enc_rpt(Fd, "    ", "double", []),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -1996,6 +2051,7 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
 	    emit(Fd, "    case 0 :\n"), 
 	    emit(Fd, "      if ((oe_error_code = "
 		 "oe_ei_encode_atom(oe_env, \"false\")) < 0) {\n"), 
+	    ?emit_c_enc_rpt(Fd, "    ", "boolean", []),
 	    emit(Fd, "        CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "        return oe_error_code;\n      }\n"), 
@@ -2003,11 +2059,13 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
 	    emit(Fd, "    case 1 :\n"), 
 	    emit(Fd, "      if ((oe_error_code = "
 		 "oe_ei_encode_atom(oe_env, \"true\")) < 0) {\n"), 
+	    ?emit_c_enc_rpt(Fd, "    ", "boolean", []),
 	    emit(Fd, "        CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "        return oe_error_code;\n      }\n"), 
 	    emit(Fd, "      break;\n"), 
 	    emit(Fd, "    default :\n"), 
+	    ?emit_c_enc_rpt(Fd, "    ", "boolean", []),
 	    emit(Fd, "      CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "      return -1;\n"), 
@@ -2016,6 +2074,7 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
 	    emit(Fd, "  if ((oe_error_code = "
 		 "oe_ei_encode_char(oe_env, ~s)) < 0) {\n", 
 		 [LName]), 
+	    ?emit_c_enc_rpt(Fd, "    ", "char", []),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -2023,6 +2082,7 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
 	    emit(Fd, "  if ((oe_error_code = "
 		 "oe_ei_encode_wchar(oe_env, ~s)) < 0) {\n", 
 		 [LName]), 
+	    ?emit_c_enc_rpt(Fd, "    ", "wchar", []),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -2030,16 +2090,19 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
 	    emit(Fd, "  if ((oe_error_code = "
 		 "oe_ei_encode_char(oe_env, ~s)) < 0) {\n", 
 		 [LName]), 
+	    ?emit_c_enc_rpt(Fd, "    ", "octet", []),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
 	{void, _} ->
 	    emit(Fd, "  if ((oe_error_code = "
 		 "oe_ei_encode_atom(oe_env, \"void\")) < 0) {\n"), 
+	    ?emit_c_enc_rpt(Fd, "    ", "void", []),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
 	{sequence, _, _} ->
+	    ?emit_c_enc_rpt(Fd, "    ", "sequence", []),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -2047,6 +2110,7 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
 	    emit(Fd, "  if ((oe_error_code = "
 		 "oe_ei_encode_long(oe_env, ~s)) < 0) {\n", 
 		 [LName]), 
+	    ?emit_c_enc_rpt(Fd, "    ", "any", []),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 		 "BAD_PARAM, \"Bad operation parameter on encode\");\n"), 
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -2100,6 +2164,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos,
 		 "&oe_env->_iin, ~s~s)) < 0) {\n", 
 		 [InBuffer, IndOp, LName]), 
 	    ic_cbe:emit_dealloc_stmts(Fd, "    ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "    ", "", []),
 	    emit(Fd, "    return oe_error_code;\n"),
 	    emit(Fd, "  }\n\n");
 	"erlang_port" ->
@@ -2107,6 +2172,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos,
 		 "&oe_env->_iin, ~s~s)) < 0) {\n", 
 		 [InBuffer, IndOp, LName]), 
 	    ic_cbe:emit_dealloc_stmts(Fd, "    ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "    ", "", []),
 	    emit(Fd, "    return oe_error_code;\n"),
 	    emit(Fd, "  }\n\n");
 	"erlang_ref" ->
@@ -2114,6 +2180,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos,
 		 "&oe_env->_iin, ~s~s)) < 0) {\n", 
 		 [InBuffer, IndOp, LName]), 
 	    ic_cbe:emit_dealloc_stmts(Fd, "    ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "    ", "", []),
 	    emit(Fd, "    return oe_error_code;\n"),
 	    emit(Fd, "  }\n\n");
 	"ETERM*" ->
@@ -2121,6 +2188,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos,
 		 "&oe_env->_iin, (void**)~s~s)) < 0) {\n", 
 		 [InBuffer, IndOp, LName]), 
 	    ic_cbe:emit_dealloc_stmts(Fd, "    ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "    ", "", []),
 	    emit(Fd, "    return oe_error_code;\n"),
 	    emit(Fd, "  }\n\n");
 	{enum, FSN} ->
@@ -2130,7 +2198,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos,
 	    emit_decoding_stmt(G, N, Fd, FSN, LName, IndOp, 
 			       InBuffer, Align, NextPos, DecType, AllocedPars) 
     end;
-emit_decoding_stmt(G, _N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos, 
+emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos, 
 		   DecType, AllocedPars)  when list(T) ->
     %% Already a fullscoped name
     Type = ictype:name2type(G, T), 
@@ -2157,19 +2225,21 @@ emit_decoding_stmt(G, _N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
 		 [ic_util:mk_oe_name(G, "decode_"), 
 		  T, NextPos, LName]), 
 	    ic_cbe:emit_dealloc_stmts(Fd, "        ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "    ", "", []),
 	    emit(Fd, "        return oe_error_code;\n"), 
 	    emit(Fd, "      }\n"),
 	    emit(Fd, "    }\n")
     end;
-emit_decoding_stmt(_G, _N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos, 
+emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos, 
 		   _DecType, AllocedPars)  when record(T, string) ->
     emit(Fd, "    if ((oe_error_code = ei_decode_string(~s, "
 	 "&oe_env->_iin, ~s~s)) < 0) {\n", 
 	 [InBuffer, IndOp, LName]), 
     ic_cbe:emit_dealloc_stmts(Fd, "      ", AllocedPars),
+    ?emit_c_dec_rpt(Fd, "    ", "", []),
     emit(Fd, "      return oe_error_code;\n"),
     emit(Fd, "    }\n");
-emit_decoding_stmt(_G, _N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos, 
+emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos, 
 		   _DecType, AllocedPars)  when record(T, wstring) ->  
     %% WSTRING
     emit(Fd, "    if ((oe_error_code = "
@@ -2177,6 +2247,7 @@ emit_decoding_stmt(_G, _N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
 	 "&oe_env->_iin, ~s~s)) < 0) {\n", 
 	 [InBuffer, IndOp, LName]), 
     ic_cbe:emit_dealloc_stmts(Fd, "      ", AllocedPars),
+    ?emit_c_dec_rpt(Fd, "    ", "", []),
     emit(Fd, "      return oe_error_code;\n\n"),
     emit(Fd, "    }\n");
 emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos, 
@@ -2193,10 +2264,12 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
 			 "&oe_env->_iin, 0)) < 0) {\n", 
 			 [InBuffer]), 
 		    ic_cbe:emit_dealloc_stmts(Fd, "    ", AllocedPars),
+		    ?emit_c_dec_rpt(Fd, "    ", "", []),
 		    emit(Fd, "    return oe_error_code;\n"),
 		    emit(Fd, "  }\n");
 		{sequence, _, _} ->
 		    %% XXX XXX Why?
+		    ?emit_c_dec_rpt(Fd, "    ", "", []),
 		    emit(Fd, "    return oe_error_code;\n\n");
 		{any, _} -> %% Fix for any type
 		    emit(Fd, 
@@ -2204,6 +2277,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
 			 "&oe_env->_iin, ~s~s)) < 0) {\n", 
 			 [InBuffer, IndOp, LName]), 
 		    ic_cbe:emit_dealloc_stmts(Fd, "    ", AllocedPars),
+		    ?emit_c_dec_rpt(Fd, "    ", "", []),
 		    emit(Fd, "    return oe_error_code;\n\n"),
 		    emit(Fd, "  }\n");
 		_ ->
@@ -2243,6 +2317,7 @@ emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp,
 	    emit(Fd, "    if ((oe_error_code = ei_decode_ulong(~s, "
 		 "&oe_env->_iin, &oe_ulong)) < 0) {\n", [InBuffer]), 
 	    ic_cbe:emit_dealloc_stmts(Fd, "      ", AllocedPars),
+	    emit_c_dec_rpt(Fd, "    ", "ushort", []),
 	    emit(Fd, "      return oe_error_code;\n"), 
 	    emit(Fd, "    }\n"), 
 	    emit(Fd, "    *~s = (unsigned short) oe_ulong;\n", [LName]), 
@@ -2253,6 +2328,7 @@ emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp,
 	    emit(Fd, "    if ((oe_error_code = ei_decode_long(~s, "
 		 "&oe_env->_iin, &oe_long)) < 0) {\n", [InBuffer]), 
 	    ic_cbe:emit_dealloc_stmts(Fd, "      ", AllocedPars),
+	    emit_c_dec_rpt(Fd, "    ", "short", []),
 	    emit(Fd, "      return oe_error_code;\n"), 
 	    emit(Fd, "    }\n"), 
 	    emit(Fd, "    *~s = (short) oe_long;\n", [LName]), 
@@ -2263,6 +2339,7 @@ emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp,
 	    emit(Fd, "    if ((oe_error_code = ei_decode_double(~s, "
 		 "&oe_env->_iin, &oe_double)) < 0) {\n", [InBuffer]), 
 	    ic_cbe:emit_dealloc_stmts(Fd, "      ", AllocedPars),
+	    emit_c_dec_rpt(Fd, "    ", "float", []),
 	    emit(Fd, "      return oe_error_code;\n"), 
 	    emit(Fd, "    }\n"), 
 	    emit(Fd, "    *~s = (float) oe_double;\n", [LName]), 
@@ -2273,6 +2350,7 @@ emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp,
 	    emit(Fd, "    if ((oe_error_code = ei_decode_atom(~s, "
 		 "&oe_env->_iin, oe_bool)) < 0) {\n", [InBuffer]), 
 	    ic_cbe:emit_dealloc_stmts(Fd, "      ", AllocedPars),
+	    emit_c_dec_rpt(Fd, "    ", "boolean", []),
 	    emit(Fd, "      return oe_error_code;\n"), 
 	    emit(Fd, "    }\n"), 
 	    emit(Fd, "    if (strcmp(oe_bool, \"false\") == 0) {\n"), 
@@ -2282,6 +2360,7 @@ emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp,
 	    emit(Fd, "      *(~s) = 1;\n", [LName]), 
 	    emit(Fd, "    } else {\n"), 
 	    ic_cbe:emit_dealloc_stmts(Fd, "      ", AllocedPars),
+	    emit_c_dec_rpt(Fd, "    ", "boolean", []),
 	    emit(Fd, "      return -1;\n"), 
 	    emit(Fd, "    }\n"), 
 	    emit(Fd, "  }\n\n");

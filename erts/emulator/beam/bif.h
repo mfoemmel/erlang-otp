@@ -38,14 +38,14 @@
 	(p)->fcalls = -CONTEXT_REDS;		\
 } while(0)
 
-#define BUMP_REDS(p, gc) do {			\
-     (p)->fcalls -= (gc); 			\
-     if ((p)->fcalls < 0) { 			\
-	if ((p)->ct == NULL) 			\
-           (p)->fcalls = 0; 			\
-	else if ((p)->fcalls < -CONTEXT_REDS) 	\
-           (p)->fcalls = -CONTEXT_REDS; 	\
-     } 						\
+#define BUMP_REDS(p, gc) do {			   \
+     (p)->fcalls -= (gc); 			   \
+     if ((p)->fcalls < 0) { 			   \
+	if ((p)->ct == NULL) 		           \
+           (p)->fcalls = 0; 			   \
+	else if ((p)->fcalls < -CONTEXT_REDS)      \
+           (p)->fcalls = -CONTEXT_REDS; 	   \
+     } 						   \
 } while(0)
     
 

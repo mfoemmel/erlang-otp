@@ -244,7 +244,7 @@ init([Verbosity]) ->
 
 %% handle_call
 
-handle_call(stop, _From, Tables) ->
+handle_call(stop, _From, _Tables) ->
     ?vlog("stop",[]),
     {stop, normal, ok, []};
 
@@ -318,7 +318,7 @@ handle_call({new_table, Addr, Port, Name}, _From, Tables) ->
 
 handle_call(delete_tables, _From, Tables) ->
     ?vlog("delete tables",[]),
-    lists:foreach(fun({Name, {ETS, DETS}}) ->
+    lists:foreach(fun({_Name, {ETS, DETS}}) ->
 			  dets:close(DETS),
 			  ets:delete(ETS)
 		  end, Tables),
@@ -399,38 +399,32 @@ handle_cast({store_failed_auth, [Info, DecodedString, SDirData]}, Tables) ->
     BlockTime = httpd_util:key1search(SDirData, block_time, 60),
     ?vtrace("~n   Max retries ~p, block time ~p",[MaxRetries,BlockTime]),
     case ets:match_object(ETS, {failed, {Key, '_', '_'}}) of
-	List1 ->
-	    ?vtrace("~n   ~p tries so far",[length(List1)]),
-	    if 
-		length(List1) >= MaxRetries ->
-		    %% Block this user until Future
-		    ?vtrace("block user '~p'",[User]),
-		    Future = Seconds+BlockTime*60,
-		    ?vtrace("future: ~p",[Future]),
-		    Reason = io_lib:format("Blocking user ~s from dir ~s "
-					   "for ~p minutes", 
-					   [User, Dir, BlockTime]),
-		    mod_log:security_log(Info, lists:flatten(Reason)),
-		    
-		    %% Event
-		    user_block_event(CBModule,Addr,Port,Dir,User),
-		    
-		    ets:match_delete(ETS,{blocked_user,
-					  {User, Addr, Port, Dir, '$1'}}), 
-		    dets:match_delete(DETS, {blocked_user,
-					     {User, Addr, Port, Dir, '$1'}}),
-		    BlockRecord = {blocked_user, 
-				   {User, Addr, Port, Dir, Future}},
-		    ets:insert(ETS, BlockRecord),
-		    dets:insert(DETS, BlockRecord),
-		    %% Remove previous failed requests.
-		    ets:match_delete(ETS, {failed, {Key, '_', '_'}}),
-		    dets:match_delete(DETS, {failed, {Key, '_', '_'}});
-		true ->
-		    ?vtrace("still some tries to go",[]),
-		    no
-	    end;
-	Other ->
+	List1 when length(List1) >= MaxRetries ->
+	    %% Block this user until Future
+	    ?vtrace("block user '~p'",[User]),
+	    Future = Seconds+BlockTime*60,
+	    ?vtrace("future: ~p",[Future]),
+	    Reason = io_lib:format("Blocking user ~s from dir ~s "
+				   "for ~p minutes", 
+				   [User, Dir, BlockTime]),
+	    mod_log:security_log(Info, lists:flatten(Reason)),
+	    
+	    %% Event
+	    user_block_event(CBModule,Addr,Port,Dir,User),
+	    
+	    ets:match_delete(ETS,{blocked_user,
+				  {User, Addr, Port, Dir, '$1'}}), 
+	    dets:match_delete(DETS, {blocked_user,
+				     {User, Addr, Port, Dir, '$1'}}),
+	    BlockRecord = {blocked_user, 
+			   {User, Addr, Port, Dir, Future}},
+	    ets:insert(ETS, BlockRecord),
+	    dets:insert(DETS, BlockRecord),
+	    %% Remove previous failed requests.
+	    ets:match_delete(ETS, {failed, {Key, '_', '_'}}),
+	    dets:match_delete(DETS, {failed, {Key, '_', '_'}});
+	_ ->
+	    ?vtrace("still some tries to go",[]),
 	    no
     end,
     {noreply, Tables};
@@ -483,7 +477,7 @@ code_change({down, _}, State, _Extra) ->
 
 %% code_change(FromVsn, State, Extra)
 %%
-code_change(_, State, Extra) ->
+code_change(_, State, _Extra) ->
     ?vlog("upgrade", []),
     {ok, State}.
 
@@ -542,7 +536,7 @@ unblock_user_int({User, Addr, Port, Dir}) ->
 		[] ->
 		    ?vtrace("not blocked",[]),
 		    {error, not_blocked};
-		Objects ->
+		_Objects ->
 		    ets:match_delete(ETS, {blocked_user,
 					   {User, Addr, Port, Dir, '_'}}),
 		    dets:match_delete(DETS, {blocked_user,
@@ -561,9 +555,9 @@ unblock_user_int({User, Addr, Port, Dir}) ->
 
 %% list_auth/2
 
-list_auth([], _Addr, _Port, Dir, Acc) ->
+list_auth([], _Addr, _Port, _Dir, Acc) ->
     Acc;
-list_auth([{Name, {ETS, DETS}}|Tables], Addr, Port, Dir, Acc) ->
+list_auth([{_Name, {ETS, DETS}}|Tables], Addr, Port, Dir, Acc) ->
     case ets:match_object(ETS, {success, {{'_', Dir, Addr, Port}, '_'}}) of
 	[] ->
 	    list_auth(Tables, Addr, Port, Dir, Acc);
@@ -589,7 +583,7 @@ list_auth([{Name, {ETS, DETS}}|Tables], Addr, Port, Dir, Acc) ->
 
 %% list_blocked/2
 
-list_blocked([], Addr, Port, Dir, Acc) ->
+list_blocked([], _Addr, _Port, _Dir, Acc) ->
     TN = universal_time(),
     lists:foldl(fun({U,Ad,P,D,T}, Ac) ->
 			if
@@ -600,7 +594,7 @@ list_blocked([], Addr, Port, Dir, Acc) ->
 			end
 		end, 
 		[], Acc);
-list_blocked([{Name, {ETS, DETS}}|Tables], Addr, Port, Dir, Acc) ->
+list_blocked([{_Name, {ETS, _DETS}}|Tables], Addr, Port, Dir, Acc) ->
     NewBlocked = 
 	case ets:match_object(ETS, {blocked_user, {'_',Addr,Port,Dir,'_'}}) of
 	    List when list(List) ->
@@ -641,10 +635,11 @@ check_blocked_user(Info, User, Dir, Addr, Port, ETS, DETS, CBModule) ->
 	_ ->
 	    false
     end.
-check_blocked_user(Info, User, Dir, Addr, Port, ETS, DETS, TN, [], CBModule) ->
+check_blocked_user(_Info, _User, _Dir, _Addr, _Port, _ETS, _DETS, _TN,
+		   [], _CBModule) ->
     false;
 check_blocked_user(Info, User, Dir, Addr, Port, ETS, DETS, TN, 
-		   [{User,Addr,Port,Dir,T}|Ls], CBModule) ->
+		   [{User,Addr,Port,Dir,T}| _], CBModule) ->
     TD = T-TN,
     if
 	TD =< 0 ->

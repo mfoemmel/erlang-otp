@@ -149,7 +149,7 @@ error_logger:error_msg("============ CosTransactions ==============~n"
 	case supervisor:start_child(?SUPERVISOR_NAME, SPEC) of
             {ok, Pid, Obj} when pid(Pid) ->
 		Obj;
-            Other->
+            _Other->
 		corba:raise(?tr_badparam)
         end).
 

@@ -1,44 +1,46 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Intermediate Code
+%% HiPE Intermediate Code
 %% ====================================================================
 %%  Filename : 	hipe_icode.erl
 %%  Module   :	hipe_icode
 %%  Purpose  :  Provide primops for the Icode data structure.
-%%  Notes    : 
 %%  History  :	1997-? Erik Johansson (happi@csd.uu.se): Created.
-%%               :  2001-01-30 EJ (happi@csd.uu.se): 
+%%              2001-01-30 EJ (happi@csd.uu.se):
 %%                             Apply, primop, guardop removed
-%%               :  2003-03-15 ES (happi@acm.org):
+%%              2003-03-15 ES (happi@acm.org):
 %%                             Started commenting in Edoc.
-%%                             Moved prettyprinter to separate file.
-%%  CVS      :
-%%              $Author: tobiasl $
-%%              $Date: 2003/05/07 17:47:44 $
-%%              $Revision: 1.44 $
-%% ====================================================================
-%%  TODO     :  Add some assertions to the constructors.
-%%              Split into several modules.
+%%                             Moved pretty printer to separate file.
 %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% $Id$
+%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%@doc This module implements "Linear Icode" and Icode instructions. 
+%%@doc
+%% This module implements "Linear Icode" and Icode instructions. 
 %%          
-%% <p>
-%% Icode is a simple (in that it has fwe instructions) imperative langue, used as the first 
-%% Intermediate Code in the HiPE compiler. Icode is closely related to Erlang, 
-%% and icode instructions operates on Erlang terms.
+%% <p> Icode is a simple (in that it has few instructions) imperative
+%% language, used as the first Intermediate Code in the HiPE compiler.
+%% Icode is closely related to Erlang, and Icode instructions operate
+%% on Erlang terms. </p>
 %%
+%% <h2><a href="#type-icode">Icode</a></h2>
+%%
+%% <p> Linear Icode for a function consists of:
+%%     <ul>
+%%       <li> the function's name (<code>{M,F,A}</code>), </li>
+%%       <li> a list of parameters, </li>
+%%       <li> a list of instructions, </li>
+%%       <li> data, </li>
+%%       <li> information about whether the function is a leaf function, </li>
+%%       <li> information about whether the function is a closure, and </li>
+%%       <li> the range for labels and variables in the code. </li>
+%%     </ul>
 %% </p>
-%% <h3><a href="#type-icode">Icode</a></h3>
-%% <p>
-%%    Linear Icode consists of a function name (<code>{M,F,A}</code>), a list of parameters,
-%%    a list of instructions, data, information about whether the function is a leaf function,
-%%    information about whether the function is  a closure, and the range for labels and variables 
-%%    in the code.
-%% </p>
-%% <h2><a href="#type-icode_instruction">Icode Instructions</a> (and their components)</h2>
+%%
+%% <h2><a href="#type-icode_instruction">Icode Instructions</a> (and
+%% their components)</h2>
+%%
 %% Control flow:
 %% <dl>
 %%    <dt><code><a href="#type-if">'if'</a> 
@@ -48,38 +50,37 @@
 %%           FalseLabel::<a href="#type-label_name">label_name()</a>
 %%          } :: 
 %%           <a href="#type-icode_instruction">icode_instruction()</a></code></dt>
-%%         <dd>
-%%         <p>
-%%        The if instruction compares the arguments (Args) with condition (Cond) and jumps to
-%%        either TrueLabel or FalseLabel. (At the moment...) There are only binary conditions so 
-%%        the number of arguments should be two.
-%%        </p><p>
-%%        An if instructions ends a basic block and should be followed by a label 
-%%        (or be the last instruction of the code).
-%%        </p>
-%%         </dd>
+%%    <dd>
+%%        The if instruction compares the arguments (Args) with
+%%        condition (Cond) and jumps to either TrueLabel or
+%%        FalseLabel. (At the moment...) There are only binary
+%%        conditions so the number of arguments should be two.
+%%        <p>
+%%        An if instructions ends a basic block and should be followed
+%%        by a label (or be the last instruction of the code).
+%%        </p></dd>
 %%
 %%    <dt><code><a href="#type-switch_val">switch_val</a> 
 %%                    {Arg::<a href="#type-arg">arg()</a>, 
 %%                     FailLabel::<a href="#type-label_name">label_name()</a>, 
 %%                     Length::integer(), 
-%%                     Cases::[{<a href="#type-symbol">symbol()</a>,<a href="#type-label_name">label_name()</a>}]
-%%        }::
+%%                     Cases::[{<a href="#type-symbol">symbol()</a>,<a
+%%                     href="#type-label_name">label_name()</a>}] %% }::
 %%           <a href="#type-icode_instruction">icode_instruction()</a></code></dt>
 %%    <dd>
-%%       <p>
-%%       The switch_val instruction compares the argument Arg to the symbols in the lists Cases, control is 
-%%       transfered to the label that corresponds to the first symbol that matches.
-%%       If no symbol matches control is transfered to FailLabel.
-%%       (NOTE: The length argument is not currently in use.)
+%%        The switch_val instruction compares the argument Arg to the
+%%        symbols in the lists Cases, control is transfered to the label
+%%        that corresponds to the first symbol that matches.  If no
+%%        symbol matches control is transfered to FailLabel.  (NOTE: The
+%%        length argument is not currently in use.)
+%%        <p>
+%%        The switch_val instruction can be assumed to be implemented as
+%%        efficiently as possible given the symbols in the case
+%%        list. (Jump-table, bianry-serach, or nested ifs)
 %%        </p><p>
-%%       The switch_val instruction can be assumed to be implemented as efficently as possible 
-%%       given the symbols in the case list. (Jump-table, bianry-serach, or nested ifs)
-%%        </p><p>
-%%        A switch_val instructions ends a basic block and should be followed by a label 
-%%        (or be the last instruction of the code).
-%%   </p>
-%%   </dd>
+%%        A switch_val instructions ends a basic block and should be
+%%        followed by a label (or be the last instruction of the code).
+%%        </p></dd>
 %%
 %%    <dt><code><a href="#type-switch_tuple_arity">switch_tuple_arity</a>
 %%         {
@@ -90,47 +91,54 @@
 %%        }::
 %%           <a href="#type-icode_instruction">icode_instruction()</a></code></dt>
 %%    <dd>
-%%       <p>
-%%       The switch_tuple_arity instruction compares the size of the tuple in the argument Arg 
-%%       to the integers in the lists Cases, control is 
-%%       transfered to the label that corresponds to the first integer that matches.
-%%       If no integer matches control is transfered to FailLabel.
-%%       (NOTE: The length argument is not currently in use.)
+%%        The switch_tuple_arity instruction compares the size of the
+%%        tuple in the argument Arg to the integers in the lists Cases,
+%%        control is transfered to the label that corresponds to the
+%%        first integer that matches.  If no integer matches control is
+%%        transfered to FailLabel.  (NOTE: The length argument is not
+%%        currently in use.)
+%%        <p>
+%%        The switch_tuple_arity instruction can be assumed to be
+%%        implemented as efficently as possible given the symbols in the
+%%        case list. (Jump-table, bianry-serach, or nested ifs)
 %%        </p><p>
-%%       The switch_tuple_arity instruction can be assumed to be implemented as efficently as possible 
-%%       given the symbols in the case list. (Jump-table, bianry-serach, or nested ifs)
-%%        </p><p>
-%%        A switch_tuple_arity instructions ends a basic block and should be followed by a label 
-%%        (or be the last instruction of the code).
-%%   </p>
-%%    </dd>
+%%        A switch_tuple_arity instructions ends a basic block and
+%%        should be followed by a label (or be the last instruction of
+%%        the code).
+%%        </p></dd>
+%%
 %%    <dt><code>type {typ_expr, arg, true_label, false_label}}</code></dt>
 %%    <dt><code>goto {label}</code></dt>
 %%    <dt><code>label {name}</code></dt>
 %% </dl>
-%% Move:
+%%
+%% Moves:
 %% <dl>
-%%    <dt><code>mov {dst, src}</code></dt>
-%%    <dt><code>fmov {dst, src}</code></dt>
-%%    <dt><code>phi {dst, name,args,predlist}</code></dt>
+%%    <dt><code>move {dst, src}</code></dt>
+%%    <dt><code>fmove {dst, src}</code></dt>
+%%    <dt><code>phi {dst, arglist}</code></dt>
 %% </dl>
+%%
 %% Function application:
 %% <dl>
-%%    <dt><code>call {[dst], fun, [arg], type, continuation, fail, code_change, in_guard}</code></dt>
-%%    <dd>Where <code>type</code> is one of {<code>'local', 'remote', 'primop'</code>} and
-%%           <code>code_cahnge</code> and <code>in_guard</code> is either <code>'true'</code>
-%%            or <code>'false'</code>.
-%%    </dd>
-%%    <dt><code>enter {fun, [arg], type, code_change}</code></dt>
-%%    <dd>Where <code>type</code> is one of {<code>'local', 'remote', 'primop'</code>} and
-%%           <code>code_cahnge</code> and <code>in_guard</code> is either <code>'true'</code>
-%%            or <code>'false'</code>.
-%%    </dd>
+%%    <dt><code>call {[dst], fun, [arg], type, continuation, fail,
+%%                    in_guard}</code></dt>
+%%    <dd>
+%%        Where <code>type</code> is one of {<code>'local', 'remote',
+%%        'primop'</code>} and <code>in_guard</code> is either
+%%        <code>'true'</code> or <code>'false'</code>.</dd>
+%%    <dt><code>enter {fun, [arg], type}</code></dt>
+%%    <dd>
+%%        Where <code>type</code> is one of {<code>'local', 'remote',
+%%        'primop'</code>} and <code>in_guard</code> is either
+%%        <code>'true'</code> or <code>'false'</code>.</dd>
 %%    <dt><code>return {[var]}</code></dt>
 %%    <dd>
-%%    <strong>WARNING:</strong> Multiple return values are yet not fully implemented and tested.
+%%        <strong>WARNING:</strong> Multiple return values are yet not
+%%        fully implemented and tested.
 %%    </dd>
 %% </dl>
+%%
 %% Error handling:
 %% <dl>
 %%    <dt><code>pushcatch {label, successor, type}</code></dt>
@@ -138,34 +146,39 @@
 %%    <dt><code>remove_catch {label}</code></dt>
 %%    <dt><code>fail{[reason], type}</code></dt>
 %%    <dd>Where <code>type</code> is one of 
-%%           {<code>'exit', 'throw', 'fault', 'fault2', 'raise'</code>}. 
-%%           For <code>fault2 reason</code> is reason and trace.
-%%           For <code>raise [reason]</code> is <code>[Type,Reason]</code>
+%%      {<code>'exit', 'throw', 'error', 'raise'</code>}.  For
+%%      <code>error/2</code>, <code>[reason]</code> is
+%%      <code>[Reason,Trace]</code>. For <code>raise</code>,
+%%      <code>[reason]</code> is <code>[Type,Reason]</code>
 %%    </dd>
 %% </dl>
+%%
 %% Comments:
 %% <dl>
 %%    <dt><code>comment{Text::string()}</code></dt>
 %% </dl>
+%%
 %% <h4>Notes</h4>
-%%  <p>A constant can only show up on the rhs of a mov instruction
-%%      and in 'if' and switch_*</p>
+%%
+%%  <p> A constant can only show up on the RHS of a `move' instruction
+%%      and in `if' and `switch_*'</p>
 %%  <p>
-%%        Classification of primops should be like this:
-%%        <ul>
-%%        <li><code>erlang:exit/1, erlang:throw/1 erlang:fault/1 
-%%           erlang:fault/2 </code>
-%%            should use the <a href="#type-fail">fail-instruction</a> in Icode.</li>
-%%        <li>Calls or tail-recursive calls to  BIFs, operators, or
-%%            internal functions, 
-%%            should be implemented with call or enter respectively, with the primop flag set.</li>
-%%        <li>All other Erlang functions 
-%%             should be implemented with call or enter respectively, without the primop flag set.</li>
-%%        </ul>
+%%      Classification of primops should be like this:
+%%      <ul>
+%%      <li> <code>erlang:exit/1, erlang:throw/1, erlang:error/1,
+%%           erlang:error/2, erlang:fault/1</code>,
+%%           and <code>erlang:fault/2</code> should use the
+%%           {link fail(). fail-instruction} in Icode.</li>
+%%      <li> Calls or tail-recursive calls to BIFs, operators, or internal
+%%           functions should be implemented with `call' or `enter' 
+%%           respectively, with the primop flag set.</li>
+%%      <li> All other Erlang functions should be implemented with `call'
+%%           or `enter' respectively, without the primop flag set.</li>
+%%      </ul>
 %%  </p>
 %%
-%%
 %% <h4>Primops</h4>
+%%
 %% <pre>
 %%  Constructors:
 %%    cons                       - [Car, Cdr]
@@ -193,18 +206,13 @@
 %%    'bsl','bsr',
 %%
 %%  Receive:         
-%%    get_msg       - []
+%%    check_get_msg - []
 %%    next_msg      - []
 %%    select_msg    - []
 %%    set_timeout   - [Timeout]
 %%    clear_timeout - []	 %% stupid name - only resets message pointer
 %%    suspend_msg   - []
 %%
-%%  Low-level:
-%%    redtest
-%%    gc_test
-%%
-%%    and bifs as a MFA.
 %% </pre>
 %%
 %% <h4>Guardops: (primops that can be used in guards and can fail.)</h4>
@@ -254,117 +262,106 @@
 %%    binary
 %%    function
 %% </pre>
-%% ____________________________________________________________________
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-%% ____________________________________________________________________
+%%=====================================================================
+
 -module(hipe_icode).
 -include("../main/hipe.hrl").
--define(hash, hipe_hash).
+-include("hipe_icode.hrl").
 
-%% @type icode(Fun, Params, IsClosure, IsLeaf,  Code, Data, VarRange, LabelRange)
+%% @type icode(Fun, Params, IsClosure, IsLeaf, Code, Data, VarRange,LabelRange)
 %%           Fun = mfa()
 %%           Params = [var()]
-%%           IsClousre = bool()
+%%           IsClosure = bool()
 %%           IsLeaf = bool()
 %%           Code = [icode_instruction()]
 %%           Data = data()
 %%           VarRange = {integer(),integer()}
 %%           LabelRange = {integer(),integer()}
--record(icode, {'fun', params, closure, leaf, 
-		code, data, var_range, label_range, info=[]}).
-
+%%
 %% @type icode_instruction(I) 
-%%   I = if() | switch_val() | switch_tuple_arity() | type() | goto() | label () 
-%%        | mov() | fmov() | phi() | call() | enter() | return() 
+%%   I = if() | switch_val() | switch_tuple_arity() | type() | goto() | label()
+%%        | move() | fmove() | phi() | call() | enter() | return() 
 %%        | pushcatch() | restore_catch() | remove_catch() | fail() | comment()
 %%
 %% @type if(Cond, Args, TrueLabel, FalseLabel)
-%%       Cond = cond()
-%%       Args = [arg()]
-%%       TrueLabel = label_name()
-%%       FalseLabel = label_name()
--record('if', {op, args, true_label, false_label, p, info=[]}).
-
+%%    Cond = cond()
+%%    Args = [arg()]
+%%    TrueLabel = label_name()
+%%    FalseLabel = label_name()
+%%
 %% @type switch_val(Arg, FailLabel, Length, Cases) 
-%%    Arg = arg() FailLabel=label_name() Length=integer() Cases = [{symbol(), label_name()}]
--record(switch_val, {arg, fail_label, length, cases, info=[]}).
-
+%%    Arg = arg()
+%%    FailLabel=label_name()
+%%    Length = integer()
+%%    Cases = [{symbol(),label_name()}]
+%%
 %% @type switch_tuple_arity(Arg, FailLabel, Length, Cases)
-%%    Arg = arg() FailLabel=label_name() Length=integer() Cases = [{symbol(), label_name()}]
--record(switch_tuple_arity, {arg, fail_label, length, cases, info=[]}).
-
-%% @type type(TypeRxpr, Arg, True_label, False_label)
-%%     TypeExpr = type_typr() 
-%%     Args = var()
-%%     TrueLabel = label_name()
-%%     FalseLabel = label_name()
--record(type, {type, var, true_label, false_label, p, info=[]}).
-
+%%    Arg = arg()
+%%    FailLabel = label_name()
+%%    Length = integer()
+%%    Cases = [{symbol(), label_name()}]
+%%
+%% @type type(TypeExpr, Arg, True_label, False_label)
+%%    TypeExpr = type_typr()
+%%    Args = [arg()]
+%%    TrueLabel = label_name()
+%%    FalseLabel = label_name()
+%%
 %% @type goto(Label) Label = label_name()
--record(goto, {label, info=[]}).
-
+%%
 %% @type label(Name) Name=label_name()
--record(label, {name, info=[]}).
-
-%% @type mov(Dst, Src) Dst = var() Src = arg()
--record(mov, {dst, src, info=[]}).
-
-%% @type fmov(Dst, Src) Dst = fvar() Src = farg()
--record(fmov, {dst, src, info=[]}).
-
-%%@type phi(Dst, Name, Args, PredList) 
-%%@end
-%% XXX: Could someone who knows how this works comment it?
--record(phi, {dst, name, args, predList, info=[]}).
-
-%% @type call(Dst, Fun, Arg, Type, Continuation, CodeChange, InGuard)
+%%
+%% @type move(Dst, Src) Dst = var() Src = arg()
+%%
+%% @type fmove(Dst, Src) Dst = fvar() Src = farg()
+%%
+%% @type phi(Dst, Id, Arglist) 
+%%           Dst = var()|fvar()
+%%           Id = var()|fvar()
+%%           Arglist=[{Pred, Src}]
+%%           Pred = label_name()
+%%           Var = var | fvar() 
+%%
+%% @type call(Dst, Fun, Arg, Type, Continuation, InGuard)
 %%                   Dst = [var()]
 %%                   Fun = mfa() | primop() | closure() 
 %%                   Arg = [var()]
 %%                   Type = call_type()
-%%                    Continuation = [] | label_name()
-%%                    Fail = []  | label_name()
-%%                    CodeChange = bool()
-%%                    InGuard = bool()
--record(call, {dst, 'fun', args, type, continuation_label, fail_label=[],
-	       in_guard=false, code_change=true, info=[]}).
-
-%% @type enter(Fun, Arg, Type, Code_change)
+%%                   Continuation = [] | label_name()
+%%                   Fail = []  | label_name()
+%%                   InGuard = bool()
+%%
+%% @type enter(Fun, Arg, Type)
 %%                   Fun = mfa() | primop() | closure() 
 %%                   Arg = [var()] 
 %%                   Type = call_type()
-%%                    CodeChange = bool()
--record(enter, {'fun', args, type, code_change=true, info=[]}).
-
+%%
 %% @type return (Vars) Vars = [var()]
--record(return, {vars, info=[]}).
-
+%%
 %% @type pushcatch(Fail, Successor, Type) 
 %%           Fail = label_name() Successor = label_name() Type= exit_type()
--record(pushcatch, {label, successor, type='catch', info=[]}).
-
+%%
 %% @type restore_catch(ReasonDst,TypeDst,Type, Label) 
 %%           ReasonDst = var()
 %%           TypeDst = var()
 %%           Type = exit_type()
 %%           Label  = label_name()
--record(restore_catch, {reason_dst,type_dst,catch_type, id, info=[]}).
-
+%%
 %% @type remove_catch(Label) Label = label_name()
--record(remove_catch, {id, info=[]}).
-
-%% @type fail(Reason,Type) Type = exit_type() Reason = fail_reason() | fault2_reason() | raise_reason()
--record(fail, {reason,  type, info=[]}).
-
+%%
+%% @type fail(Reason,Type,Label)
+%%    Type = exit_type()
+%%    Reason = fail_reason() | error2_reason() | raise_reason()
+%%    Label = label_name()
+%%
 %% @type comment(Text) Text = string()
--record(comment, {text, info=[]}).
 
-
-
-%% @type call_type()  = 'local' | 'remote'| 'primop'
-%% @type exit_type() = 'exit' | 'throw' | 'fault' | 'fault2' | 'raise'
-%% @type fault2_reason(Reason,Trace) = cons(var(),cons(var(),[]))
+%% @type call_type()  = 'local' | 'remote' | 'primop'
+%% @type exit_type() = 'exit' | 'throw' | 'error' | 'raise'
+%% @type error2_reason(Reason,Trace) = cons(var(),cons(var(),[]))
 %% @type raise_reason(Type,Reason) = cons(var(),cons(var(),[]))
 %% @type fail_reason(Reason) = cons(var(),[])
 %% @type cond() = gt | lt | geq | leq | eqeq | neq | exact_eqeq | exact_neq
@@ -398,9 +395,14 @@
 %% @type label_name(Name) Name = integer()
 %% @type symbol(S) = atom() | number()
 %% @type const(C)  C = const_fun() | immediate()
-%% @type const_fun(MFA,U,I,Args) = {MFA,U,I,Args} MFA=mfa() U = integer() I = integer() Args = [var()]
-%% @type immediate(I) = I I=term()
-%%@end
+%% @type const_fun(MFA,U,I,Args) = {MFA,U,I,Args}
+%%    MFA = mfa()
+%%    U = integer()
+%%    I = integer()
+%%    Args = [var()]
+%% @type immediate(I) = I
+%%    I = term()
+%% @end
 
 
 %% ____________________________________________________________________
@@ -420,154 +422,157 @@
 	 icode_code/1,
 	 icode_code_update/2,
 	 icode_data/1,
-	 icode_data_update/2,
+	 %% icode_data_update/2,
 	 icode_var_range/1,
 	 icode_label_range/1,
 	 icode_info/1,
-	 icode_info_add/2,
 	 icode_info_update/2]).
 
--export([	 
-		 mk_if/4,           %% mk_if(Op, Args, TrueLbl, FalseLbl)
-		 mk_if/5,           %% mk_if(Op, Args, TrueLbl, FalseLbl, P)
-		 if_op/1,
-		 if_true_label/1,
-		 if_false_label/1,
-		 if_args/1,
-		 if_pred/1,
-		 is_if/1,
+-export([mk_if/4,           %% mk_if(Op, Args, TrueLbl, FalseLbl)
+	 %% mk_if/5,	    %% mk_if(Op, Args, TrueLbl, FalseLbl, Prob)
+	 if_op/1,
+	 if_true_label/1,
+	 if_false_label/1,
+	 if_args/1,
+	 if_pred/1,
+	 %% is_if/1,
+	 
+	 mk_switch_val/4,
+	 %% mk_switch_val/5,
+	 switch_val_arg/1,
+	 switch_val_fail_label/1,
+	 %% switch_val_length/1,
+	 switch_val_cases/1,
+	 switch_val_cases_update/2,
+	 %% is_switch_val/1,
+	 
+	 mk_switch_tuple_arity/4,
+	 %% mk_switch_tuple_arityl/5,
+	 switch_tuple_arity_arg/1,
+	 switch_tuple_arity_fail_label/1,
+	 switch_tuple_arity_fail_label_update/2,
+	 %% switch_tuple_arity_length/1,
+	 switch_tuple_arity_cases/1,
+	 switch_tuple_arity_cases_update/2,
+	 %% is_switch_tuple_arity/1,
 
+	 mk_type/4,        %% mk_type(Args, Type, TrueLbl, FalseLbl)
+	 mk_type/5,	   %% mk_type(Args, Type, TrueLbl, FalseLbl, P)
+	 type_args/1,
+	 %% type_args_update/2,
+	 type_type/1,
+	 type_true_label/1,
+	 type_false_label/1,
+	 type_pred/1,
+	 %% is_type/1,
 
-		 mk_switch_val/4,
-		 mk_switch_val/5,
-		 switch_val_arg/1,
-		 switch_val_fail_label/1,
-		 switch_val_length/1,
-		 switch_val_cases/1,
-		 switch_val_info/1,
-		 is_switch_val/1,
+	 mk_guardop/5,     %% mk_guardop(Dst, Fun, Args, Continuation, Fail)
+	 mk_primop/3,      %% mk_primop(Dst, Fun, Args)
+	 mk_primop/5,      %% mk_primop(Dst, Fun, Args, Cont, Fail)
+	 mk_typed_call/6,  %% mk_call(Dst, Mod, Fun, Args, Type, DstType)
+	 mk_call/5,	   %% mk_call(Dst, Mod, Fun, Args, Type)
+	 %% mk_call/7,	   %% mk_call(Dst, Mod, Fun, Args, Type,
+	                   %%         Continuation, Fail)
+	 mk_call/8,	   %% mk_call(Dst, Mod, Fun, Args, Type,
+	                   %%         Continuation, Fail, Guard)
+	 call_dstlist/1,
+	 call_dstlist_update/2,
+	 call_dst_type/1,
+	 call_args/1,
+	 call_args_update/2,
+	 call_fun/1,
+	 call_fun_update/2,
+	 call_type/1,
+	 call_continuation/1,
+	 call_fail_label/1,
+	 call_set_fail_label/2,
+	 call_set_continuation/2,
+	 is_call/1, 
+	 call_in_guard/1,
+	 call_fails/1,
 
-		 mk_switch_tuple_arity/4,
-		 mk_switch_tuple_arityl/5,
-		 switch_tuple_arity_arg/1,
-		 switch_tuple_arity_fail_label/1,
-		 switch_tuple_arity_length/1,
-		 switch_tuple_arity_cases/1,
-		 switch_tuple_arity_info/1,
-		 is_switch_tuple_arity/1,
+	 mk_goto/1,              %% mk_goto(Lbl)
+	 goto_label/1,
+	 
+	 mk_enter/4,             %% mk_enter(Mod, Fun, Args, Type)
+	 mk_enter_primop/2,      %% mk_enter(Op, Type)
+	 enter_fun/1,
+	 enter_fun_update/2,
+	 enter_args/1,
+	 enter_args_update/2,
+	 enter_type/1,
+	 %% is_enter/1,
+	 
+	 mk_fmove/2,             %% mk_fmove(Dst, Src)
 
-
-		 mk_type/4,        %% mk_type(X, Type, TrueLbl, FalseLbl)
-		 mk_type/5,        %% mk_type(X, Type, TrueLbl, FalseLbl, P)
-		 type_var/1,
-		 type_var_update/2,
-		 type_type/1,
-		 type_true_label/1,
-		 type_false_label/1,
-		 type_pred/1,
-		 is_type/1,
-
-		 mk_guardop/5,     %% mk_guardop(Dst, Fun, Args,  Continuation, Fail)
-		 mk_primop/3,      %% mk_primop(Dst, Fun, Args)
-		 mk_primop/5,      %% mk_primop(Dst, Fun, Args, Cont, Fail)
-		 mk_typed_call/6,  %% mk_call(Dst, Mod, Fun, Args, Type, DstType)
-		 mk_call/5,        %% mk_call(Dst, Mod, Fun, Args, Type)
-		 mk_call/7,        %% mk_call(Dst, Mod, Fun, Args, Type,
-				   %%         Continuation, Fail)
-		 call_dst/1,
-		 call_dst_update/2,
-		 call_args/1,
-		 call_args_update/2,
-		 call_fun/1,
-		 call_fun_update/2,
-		 call_type/1,
-		 call_continuation/1,
-		 call_fail/1,
-		 call_set_fail/2,
-		 call_set_continuation/2,
-		 is_call/1, 
-		 call_in_guard/1,
-		 call_code_change/1,
-
-		 mk_goto/1,                % mk_goto(Lbl)
-		 goto_label/1,
-
-		 mk_enter/4,               %% mk_enter(Mod, Fun, Args, Type)
-		 mk_enter_primop/2,        %% mk_enter(Op, Type)
-		 enter_fun/1,
-		 enter_args/1,
-		 enter_type/1,
-		 is_enter/1,
-
-		 mk_fmov/2,                % mk_fmov(Dst, Src)
-
-		 mk_gctest/0,
-		 mk_redtest/0,
-		 mk_return/1,              % mk_return(Vars)
-		 mk_fail/1,                % mk_fail(Reason) type = exit
-		 mk_fail/2,                % mk_fail(Reason, Type)
-		 mk_mov/2,                 % mk_mov(Dst, Src)
-		 mk_movs/2,                % mk_movs(DstList, SrcList)
-		 mk_pushcatch/2,           % mk_pushcatch(Label, Successor)
-		 mk_pushtry/2,             % mk_pushtry(Label, Successor)
-		 mk_restore_catch/2,       % mk_restore_catch(ReasonDst, TypeDst, Label)
-		 mk_restore_try/3,	   % mk_restore_catch(ReasonDst, TypeDst, Label)
-		 mk_remove_catch/1,        % mk_remove_catch(Label)
-		 mk_elements/2,            % mk_elements(Tuple, Vars)
-		 mk_label/1,               % mk_label(Name)
-		 mk_new_label/0,           % mk_new_label()
-		 mk_comment/1,             % mk_comment(Text)
-		 mk_const/1,               % mk_const(Const)
-		 mk_const_fun/4,           % mk_const_fun(MFA,U,I,Args)
-		 mk_var/1,                 % mk_var(Id)
-		 add_type_to_var/2,        % add_type_to_var(Var, Type)
-		 mk_reg/1,                 % mk_reg(Id)
-		 mk_fvar/1,                % mk_fvar(Id)
-		 mk_new_var/0,             % mk_new_var()
-		 mk_new_fvar/0,             % mk_new_fvar()
-		 mk_new_reg/0,             % mk_new_reg()
-                 mk_phi/2,                 % mk_phi(Name, PredList)
-		 info_add/2,
-		 info_update/2,
-                 phi_name/1]).
-
+	 mk_return/1,            %% mk_return(Vars)
+	 %% mk_fail/1,	         %% mk_fail(Reason) type = exit
+	 mk_fail/2,              %% mk_fail(Reason, Type)
+	 %% mk_fail/3,              %% mk_fail(Reason, Type, Label)
+	 mk_move/2,              %% mk_move(Dst, Src)
+	 mk_moves/2,             %% mk_moves(DstList, SrcList)
+	 mk_pushcatch/2,         %% mk_pushcatch(Label, Successor)
+	 mk_pushtry/2,           %% mk_pushtry(Label, Successor)
+	 mk_restore_catch/2,     %% mk_restore_catch(ReasonDst, Label)
+	 mk_restore_try/3,       %% mk_restore_try(ReasonDst, TypeDst, Label)
+	 mk_remove_catch/1,      %% mk_remove_catch(Label)
+	 %% mk_elements/2,       %% mk_elements(Tuple, Vars)
+	 mk_label/1,             %% mk_label(Name)
+	 mk_new_label/0,         %% mk_new_label()
+	 mk_comment/1,           %% mk_comment(Text)
+	 mk_const/1,             %% mk_const(Const)
+	 %% mk_const_fun/4,	 %% mk_const_fun(MFA,U,I,Args)
+	 mk_var/1,               %% mk_var(Id)
+	 annotate_var/2,         %% annotate_var(Var, Type)
+	 mk_reg/1,               %% mk_reg(Id)
+	 mk_fvar/1,              %% mk_fvar(Id)
+	 mk_new_var/0,           %% mk_new_var()
+	 mk_new_fvar/0,          %% mk_new_fvar()
+	 mk_new_reg/0,           %% mk_new_reg()
+	 mk_phi/1,               %% mk_phi(Id)
+	 mk_phi/2                %% mk_phi(Id, ArgList)
+	]).
 
 %%
 %% Identifiers
 %%
 
 -export([type/1,
-	 is_fail/1,
-	 is_return/1,
-	 is_mov/1,
-	 is_pushcatch/1,
+	 %% is_fail/1,
+	 %% is_return/1,
+	 is_move/1,
+	 %% is_pushcatch/1,
 	 is_restore_catch/1,
-	 is_remove_catch/1,
+	 %% is_remove_catch/1,
 	 is_goto/1,
 	 is_label/1,
 	 is_comment/1,
 	 is_const/1,
 	 is_const_fun/1,
 	 is_var/1,
+	 %% is_annotated_var/1,
 	 is_fvar/1,
 	 is_reg/1,
 	 is_var_or_fvar_or_reg/1,
-	 is_uncond/1,
-	 is_fmov/1,
+	 %% is_uncond/1,
+	 %% is_fmove/1,
          is_phi/1]).
-
 
 %%
 %% Selectors
 %%
 
--export([subst_phi_arg/3,
-	 phi_getArgMap/1,
-	 phi_predList/1,
-	 phi_dst/1,
-	 mov_dst/1,
-	 mov_src/1,
-	 mov_src_update/2,
+-export([phi_dst/1,
+         phi_id/1,
+         %% phi_args/1,
+         phi_arg/2,
+         phi_arglist/1,
+	 phi_enter_pred/3,
+	 phi_remove_pred/2,
+	 phi_redirect_pred/3,
+	 move_dst/1,
+	 move_src/1,
+	 move_src_update/2,
 	 pushcatch_label/1,
 	 pushcatch_successor/1,
 	 restore_catch_reason_dst/1,
@@ -580,14 +585,17 @@
 	 return_vars/1,
 	 fail_reason/1,
 	 fail_type/1,
-	 var_name/1,
-	 fvar_name/1,
-	 reg_name/1,		 
+	 %% fail_label/1,
+	 %% var_name/1,
+	 %%var_annotation/1,
+	 %% fvar_name/1,
+	 %% reg_name/1,		 
 	 const_value/1,
-	 info/1,
-	 fmov_dst/1,
-	 fmov_src/1,
-	 fmov_src_update/2]).
+	 %% info/1,
+	 fmove_dst/1,
+	 fmove_src/1
+	 %% fmove_src_update/2
+	]).
 
 %%
 %% Misc
@@ -596,13 +604,8 @@
 -export([args/1,
 	 uses/1,
 	 defines/1,
-         phi_getArgMap/1,
-         phi_predList/1,
-         phi_dst/1,
-         phi_args/1,
-	 remove_phi_preds/2,
-	 is_pure/1,
-	 preprocess_code/1,
+	 is_safe/1,
+	 fixup_fallthroughs/1,
 	 strip_comments/1,
 	 subst/2,
 	 subst_uses/2,
@@ -610,21 +613,22 @@
 	 redirect_jmp/3,
 	 successors/1,
 	 is_branch/1,
-	 is_leaf/1,
-	 is_leaf0/1 % needs to be used in beam_to_icode
+	 is_leaf_code/1 % needs to be used in beam_to_icode
 	]).
 
 -export([highest_var/1,highest_label/1]).
 
-
-%% ____________________________________________________________________
+%%---------------------------------------------------------------------
 %% 
-%% icode
-%%@spec (Fun::mfa(), Params::[var()], Closure::bool(), Leaf::bool(), 
-%%             Code::[icode_instruction()],  VarRange::{integer(),integer()}, 
-%%             LabelRange::{integer(),integer()}) -> icode()
+%% Icode
 %%
+%%---------------------------------------------------------------------
 
+%% @spec mk_icode(Fun::mfa(), Params::[var()], Closure::bool(), 
+%%                Leaf::bool(), Code::[icode_instruction()],
+%%                VarRange::{integer(),integer()}, 
+%%                LabelRange::{integer(),integer()}) -> icode()
+%%
 mk_icode(Fun, Params, Closure, Leaf, Code, VarRange, LabelRange) ->
   #icode{'fun'=Fun, params=Params, code=Code,
 	 closure=Closure,
@@ -632,9 +636,11 @@ mk_icode(Fun, Params, Closure, Leaf, Code, VarRange, LabelRange) ->
 	 data=hipe_consttab:new(),
 	 var_range=VarRange,
 	 label_range=LabelRange}.
-%%@spec (Fun::mfa(), Params::[var()], Closure::bool(), Leaf::bool(), 
-%%             Code::[icode_instruction()],  Data::data(), VarRange::{integer(),integer()}, 
-%%             LabelRange::{integer(),integer()}) -> icode()
+%% @spec mk_icode(Fun::mfa(), Params::[var()], Closure::bool(), Leaf::bool(), 
+%%                Code::[icode_instruction()],  Data::data(),
+%%                VarRange::{integer(),integer()}, 
+%%                LabelRange::{integer(),integer()}) -> icode()
+%%
 mk_icode(Fun, Params, Closure, Leaf, Code, Data, VarRange, LabelRange) ->
   #icode{'fun'=Fun, params=Params, code=Code,
 	 data=Data, closure=Closure, leaf=Leaf,
@@ -643,40 +649,39 @@ mk_icode(Fun, Params, Closure, Leaf, Code, Data, VarRange, LabelRange) ->
 mk_typed_icode(Fun, Params, Closure, Leaf, Code, VarRange, 
 	       LabelRange, ArgType) ->
   #icode{'fun'=Fun, 
-	 params=Params, code=Code,
+	 params=Params,
+	 code=Code,
 	 closure=Closure,
 	 leaf=Leaf,
 	 data=hipe_consttab:new(),
 	 var_range=VarRange,
 	 label_range=LabelRange,
 	 info=[{arg_type, ArgType}]}.
-%%@spec(I::icode()) -> mfa()
-icode_fun(Icode) -> Icode#icode.'fun'.
-%%@spec(I::icode()) -> [var()]
-icode_params(Icode) -> Icode#icode.params.
-%%@spec(I::icode(),[var()]) -> icode()
+%% @spec icode_fun(I::icode()) -> mfa()
+icode_fun(#icode{'fun'=MFA}) -> MFA.
+%% @spec icode_params(I::icode()) -> [var()]
+icode_params(#icode{params=Params}) -> Params.
+%% @spec icode_params_update(I::icode(),[var()]) -> icode()
 icode_params_update(Icode, Params) -> 
   Icode#icode{params=Params}.
-%%@spec(I::icode()) -> bool()
-icode_is_closure(Icode) -> Icode#icode.closure.
-%%@spec(I::icode()) -> bool()
-icode_is_leaf(Icode) -> Icode#icode.leaf.
-%%@spec(I::icode()) -> [icode_instruction()]
-icode_code(Icode) -> Icode#icode.code.
-%%@spec(I::icode(), [icode_instruction()]) -> icode()
-icode_code_update(Icode,NewCode) -> 
-  Vmax = hipe_icode:highest_var(NewCode),
-  Lmax = hipe_icode:highest_label(NewCode),
-  Icode#icode{code=NewCode, var_range={0,Vmax},
-	      label_range={0,Lmax}}.
-%%@spec(I::icode()) -> data()
-icode_data(Icode) -> Icode#icode.data.
-%%@spec(I::icode(),data()) -> icode()
-icode_data_update(Icode, NewData) -> Icode#icode{data=NewData}.
-icode_var_range(Icode) -> Icode#icode.var_range.
-icode_label_range(Icode) -> Icode#icode.label_range.
-icode_info(Icode) -> Icode#icode.info.
-icode_info_add(Icode, Info) -> Icode#icode{info=[Info|icode_info(Icode)]}.
+%% @spec icode_is_closure(I::icode()) -> bool()
+icode_is_closure(#icode{closure=Closure}) -> Closure.
+%% @spec icode_is_leaf(I::icode()) -> bool()
+icode_is_leaf(#icode{leaf=Leaf}) -> Leaf.
+%% @spec icode_code(I::icode()) -> [icode_instruction()]
+icode_code(#icode{code=Code}) -> Code.
+%% @spec icode_code_update(I::icode(), [icode_instruction()]) -> icode()
+icode_code_update(Icode, NewCode) -> 
+  Vmax = highest_var(NewCode),
+  Lmax = highest_label(NewCode),
+  Icode#icode{code=NewCode, var_range={0,Vmax}, label_range={0,Lmax}}.
+%% @spec icode_data(I::icode()) -> data()
+icode_data(#icode{data=Data}) -> Data.
+%% %% @spec icode_data_update(I::icode(),data()) -> icode()
+%% icode_data_update(Icode, NewData) -> Icode#icode{data=NewData}.
+icode_var_range(#icode{var_range=VarRange}) -> VarRange.
+icode_label_range(#icode{label_range=LabelRange}) -> LabelRange.
+icode_info(#icode{info=Info}) -> Info.
 icode_info_update(Icode, Info) -> Icode#icode{info=Info}.
 
 %% ____________________________________________________________________
@@ -689,213 +694,254 @@ icode_info_update(Icode, Info) -> Icode#icode{info=Info}.
 
 mk_if(Op, Args, TrueLbl, FalseLbl) ->
   #'if'{op=Op, args=Args, true_label=TrueLbl, false_label=FalseLbl, p=0.5}.
-mk_if(Op, Args, TrueLbl, FalseLbl, P) ->
-  #'if'{op=Op, args=Args, true_label=TrueLbl, false_label=FalseLbl, p=P}.
-if_op(Cond) -> Cond#'if'.op.
-if_args(Cond) -> Cond#'if'.args.
-if_true_label(Cond) -> Cond#'if'.true_label.
-if_false_label(Cond) -> Cond#'if'.false_label.
-if_pred(Cond) -> Cond#'if'.p.
-is_if(I) when record(I, 'if') -> true;
-is_if(_) -> false.
+%% mk_if(Op, Args, TrueLbl, FalseLbl, P) ->
+%%   #'if'{op=Op, args=Args, true_label=TrueLbl, false_label=FalseLbl, p=P}.
+if_op(#'if'{op=Op}) -> Op.
+if_args(#'if'{args=Args}) -> Args.
+if_true_label(#'if'{true_label=TrueLbl}) -> TrueLbl.
+if_true_label_update(IF, TrueLbl) ->
+  IF#'if'{true_label=TrueLbl}.
+if_false_label(#'if'{false_label=FalseLbl}) -> FalseLbl.
+if_false_label_update(IF, FalseLbl) ->
+  IF#'if'{false_label=FalseLbl}.
+if_pred(#'if'{p=P}) -> P.
 
 %%
 %% switch_val
 %%
 
-mk_switch_val(Arg, Fail_label, Length, Cases) ->
-  #switch_val{arg=Arg, fail_label=Fail_label, length=Length, cases=Cases}.
-mk_switch_val(Arg, Fail_label, Length, Cases, Info) ->
-  #switch_val{arg=Arg, fail_label=Fail_label, length=Length,
-	      cases=Cases, info = Info}.
-switch_val_arg(Cond) -> Cond#switch_val.arg.
-switch_val_fail_label(Cond) -> Cond#switch_val.fail_label.
-switch_val_length(Cond) -> Cond#switch_val.length.
-switch_val_cases(Cond) -> Cond#switch_val.cases.
-switch_val_info(Cond) -> Cond#switch_val.info.
-is_switch_val(I) when record(I, switch_val) -> true;
-is_switch_val(_) -> false.
+mk_switch_val(Arg, FailLbl, Length, Cases) ->
+  #switch_val{arg=Arg, fail_label=FailLbl, length=Length, cases=Cases}.
+switch_val_arg(#switch_val{arg=Arg}) -> Arg.
+switch_val_fail_label(#switch_val{fail_label=FailLbl}) -> FailLbl.
+switch_val_fail_label_update(SV, FailLbl) ->
+  SV#switch_val{fail_label=FailLbl}.
+%% switch_val_length(#switch_val{length=Length}) -> Length.
+switch_val_cases(#switch_val{cases=Cases}) -> Cases.
+switch_val_cases_update(SV, NewCases) -> 
+  SV#switch_val{cases = NewCases}.
 
 %%
 %% switch_tuple_arity
 %%
 
-mk_switch_tuple_arity(Arg, Fail_label, Length, Cases) ->
-  #switch_tuple_arity{arg=Arg, fail_label=Fail_label, length=Length, cases=Cases}.
-mk_switch_tuple_arityl(Arg, Fail_label, Length, Cases, Info) ->
-  #switch_tuple_arity{arg=Arg, fail_label=Fail_label, length=Length,
-		      cases=Cases, info = Info}.
-switch_tuple_arity_arg(Cond) -> Cond#switch_tuple_arity.arg.
-switch_tuple_arity_fail_label(Cond) -> Cond#switch_tuple_arity.fail_label.
-switch_tuple_arity_length(Cond) -> Cond#switch_tuple_arity.length.
-switch_tuple_arity_cases(Cond) -> Cond#switch_tuple_arity.cases.
-switch_tuple_arity_info(Cond) -> Cond#switch_tuple_arity.info.
-is_switch_tuple_arity(I) when record(I, switch_tuple_arity) -> true;
-is_switch_tuple_arity(_) -> false.
+mk_switch_tuple_arity(Arg, FailLbl, Length, Cases) ->
+  #switch_tuple_arity{arg=Arg, fail_label=FailLbl, length=Length, cases=Cases}.
+switch_tuple_arity_arg(#switch_tuple_arity{arg=Arg}) -> Arg.
+switch_tuple_arity_fail_label(#switch_tuple_arity{fail_label=FailLbl}) -> 
+  FailLbl.
+switch_tuple_arity_fail_label_update(S, FailLbl) -> 
+  S#switch_tuple_arity{fail_label=FailLbl}.
+%% switch_tuple_arity_length(#switch_tuple_arity{length=Length}) -> Length.
+switch_tuple_arity_cases(#switch_tuple_arity{cases=Cases}) -> Cases.
+switch_tuple_arity_cases_update(Cond, NewCases) -> 
+  Cond#switch_tuple_arity{cases = NewCases}.
 
 %%
 %% type
 %%
 
 mk_type(X, Type, TrueLbl, FalseLbl) -> 
-  #type{type=Type, var=X, true_label=TrueLbl, false_label=FalseLbl, p=0.5}.
+  #type{type=Type, args=X, true_label=TrueLbl, false_label=FalseLbl, p=0.5}.
 mk_type(X, Type, TrueLbl, FalseLbl, P) -> 
-  #type{type=Type, var=X, true_label=TrueLbl, false_label=FalseLbl, p=P}.
-type_var(T) -> T#type.var.
-type_var_update(T, Var) -> T#type{var=Var}.
-type_type(T) -> T#type.type.
-type_true_label(T) -> T#type.true_label.
-type_false_label(T) -> T#type.false_label.
-type_pred(T) -> T#type.p.
-is_type(I) when record(I, type) -> true;
-is_type(_) -> false.
+  #type{type=Type, args=X, true_label=TrueLbl, false_label=FalseLbl, p=P}.
+type_type(#type{type=Type}) -> Type.
+type_args(#type{args=Args}) -> Args.
+%% type_args_update(T, Args) -> T#type{args=Args}.
+type_true_label(#type{true_label=TrueLbl}) -> TrueLbl.
+type_false_label(#type{false_label=FalseLbl}) -> FalseLbl.
+type_pred(#type{p=P}) -> P.
 
 %%
 %% goto
 %%
 
 mk_goto(Lbl) -> #goto{label=Lbl}.
-goto_label(G) -> G#goto.label.
-is_goto(I) when record(I, goto) -> true;
+goto_label(#goto{label=Lbl}) -> Lbl.
+is_goto(#goto{}) -> true;
 is_goto(_) -> false.
 
 %%
 %% return
 %%
 
-mk_return(Xs) -> #return{vars=Xs}.
-return_vars(R) -> R#return.vars.
-is_return(I) when record(I, return) -> true;
-is_return(_) -> false.
+mk_return(Vars) -> #return{vars=Vars}.
+return_vars(#return{vars=Vars}) -> Vars.
 
 %%
 %% fail
 %%
 
-mk_fail(Reason) when list(Reason) -> #fail{reason=Reason, type=exit}.
+%% mk_fail(Reason) when list(Reason) -> #fail{reason=Reason, type=exit}.
 mk_fail(Reason, Type) when list(Reason) -> #fail{reason=Reason, type=Type}.
-is_fail(I) when record(I, fail) -> true;
-is_fail(_) -> false.
-fail_reason(F) -> F#fail.reason.
-fail_type(F) -> F#fail.type.
+% mk_fail(Reason, Type, Label) when list(Reason) ->
+%   #fail{reason=Reason, type=Type, label=Label}.
+fail_reason(#fail{reason=Reason}) -> Reason.
+fail_type(#fail{type=Type}) -> Type.
+% fail_label(#fail{label=Label}) -> Label.
 
 %%
 %% move
 %%
 
-mk_mov(X, Y) -> #mov{dst=X, src=Y}.
-mov_dst(M) -> M#mov.dst.
-mov_src(M) -> M#mov.src.
-mov_src_update(M, NewSrc) -> M#mov{src=NewSrc}.
-is_mov(I) when record(I, mov) -> true;
-is_mov(_) -> false.
-
+mk_move(Dst, Src) -> #move{dst=Dst, src=Src}.
+move_dst(#move{dst=Dst}) -> Dst.
+move_src(#move{src=Src}) -> Src.
+move_src_update(M, NewSrc) -> M#move{src=NewSrc}.
+is_move(#move{}) -> true;
+is_move(_) -> false.
 
 %%
-%% phi  
+%% phi
 %%
 
-mk_phi(Var, PredList) ->
-  #phi{dst = Var, name = Var, args = ?hash:empty(),
-       predList = PredList}.
-phi_dst(P) -> P#phi.dst.
-phi_name(P) -> P#phi.name.
-phi_predList(P) -> P#phi.predList.
-phi_getArgMap(P) -> P#phi.args.
-subst_phi_arg(P, Pred, Value) ->
-  P#phi{args = ?hash:update(Pred, Value, P#phi.args)}.
-phi_args(P) -> 
-  get_phi_args(P#phi.predList, P#phi.args, P#phi.name, []).
-
-remove_phi_preds(P=#phi{args=Map, predList=PredList}, Remove) ->
-  NewMap = lists:foldl(fun(X, Acc)->?hash:delete(X, Acc)end, Map, Remove),
-  P#phi{args= NewMap, predList=PredList--Remove}.
-
-replace_phi_args([Pred | T], Map, Subst) ->
-  Map2 = case ?hash:lookup(Pred, Map) of
-           not_found    ->   Map;
-           {found, Var} ->   replace_phi_arg(Pred, Map, Var, Subst)
-         end,
-  replace_phi_args(T, Map2, Subst);
-
-replace_phi_args([], Map, _) -> Map.
-
-replace_phi_arg(Pred, Map, Var, [{Var, New} | T]) ->
-  replace_phi_arg(Pred, ?hash:update(Pred, New, Map), Var, T);
-
-replace_phi_arg(Pred, Map, Var, [_ | T]) ->
-  replace_phi_arg(Pred, Map, Var, T);
-
-replace_phi_arg(_, Map, _, []) -> Map.
-
-get_phi_args([Pred | T], Map, Name, Result) ->
-  Arg = case ?hash:lookup(Pred, Map) of
-          not_found      -> Name;
-          {found, Other} -> Other
-        end, 
-    get_phi_args(T, Map, Name, [Arg|Result]);
-
-get_phi_args([], _, _, Result) -> Result.
-
-is_phi(I) when record(I, phi) -> true;
+%% The id field is not entirely redundant. It is used in mappings
+%% in the SSA pass since the dst field can change.
+mk_phi(Var) -> #phi{dst = Var, id = Var, arglist = []}.
+mk_phi(Var, ArgList) -> #phi{dst = Var, id = Var, arglist = ArgList}.
+phi_dst(#phi{dst=Dst}) -> Dst.
+phi_id(#phi{id=Id}) -> Id.
+phi_arglist(#phi{arglist=ArgList}) -> ArgList.
+phi_args(P) -> [X || {_,X} <- phi_arglist(P)].
+phi_arg(P, Pred) -> 
+  case lists:keysearch(Pred, 1, phi_arglist(P)) of
+    false -> exit('No such predecessor to phi', {Pred, P});
+    {value, {_, Var}} -> Var
+  end.
+is_phi(#phi{}) -> true;
 is_phi(_) -> false.
+phi_enter_pred(P, Pred, Var) ->
+  P#phi{arglist=[{Pred,Var}|lists:keydelete(Pred, 1, phi_arglist(P))]}.
+phi_remove_pred(P, Pred) ->
+  P#phi{arglist=lists:keydelete(Pred, 1, phi_arglist(P))}.
+phi_argvar_subst(P, Subst) -> 
+  NewArgList = [{Pred, subst1(Subst, Var)} || {Pred,Var} <- phi_arglist(P)],
+  P#phi{arglist=NewArgList}.
+phi_redirect_pred(P, OldPred, NewPred)->
+  Subst = [{OldPred, NewPred}],
+  NewArgList = [{subst1(Subst, Pred), Var} || {Pred,Var} <- phi_arglist(P)],
+  P#phi{arglist=NewArgList}.
+
+%%
+%% primop and guardop
+%%
+%% Whether a function is a "primop" - i.e., an internal thing - or not,
+%% is really only shown by its name.  An {M,F,A} always represents a
+%% function in some Erlang module (althought it might be a BIF, and
+%% could possibly be inline expanded).  It is convenient to let the
+%% constructor functions check the name and set the type automatically,
+%% especially for guardops - some guardops are primitives and some are
+%% MFA:s, and this way we won't have to rewrite all calls to mk_guardop
+%% to flag whether they are primops or not.
+
+mk_primop(DstList, Fun, ArgList) ->
+  mk_primop(DstList, Fun, ArgList, [], []).
+mk_primop(DstList, Fun, ArgList, Continuation, Fail) ->
+  mk_primop(DstList, Fun, ArgList, Continuation, Fail, false).
+mk_primop(DstList, Fun, ArgList, Continuation, Fail, Guard) ->
+  Type = find_call_type(Fun),
+  make_call(DstList, Fun, ArgList, Type, Continuation, Fail, Guard).
+
+%% Note that a 'guardop' is just a primop that occurred in a guard.
+
+mk_guardop(DstList, Fun, ArgList, True, False) ->
+  mk_primop(DstList, Fun, ArgList, True, False, true).
+
+find_call_type(Fun) ->
+  case Fun of
+    {M,F,A} when atom(M), atom(F), integer(A) -> remote;
+    {_,_,_} -> exit({bad_primop, Fun});
+    _ -> primop
+  end.
 
 %%
 %% call
 %%
 mk_typed_call(Dst, M, F, Args, Type, DstType) ->
   Call = mk_call(Dst, M, F, Args, Type),
-  Call#call{info=[{dst_type, DstType}]}.
+  Call#call{dst_type=DstType}.
 
-mk_call(Dst, M, F, Args, Type) -> %% Deprecated Happi 001106.
-  Change = 
-    case Type of
-      local -> false;
-      remote -> true;
-      primop -> false;
-      _ -> exit(bad_call_type)
-    end,
-  #call{dst=Dst, 'fun'={M,F,length(Args)}, args=Args, type=Type,
-	continuation_label=[],fail_label=[],
-	in_guard=false, code_change=Change}.
-mk_call(Dst, M, F, Args, Type, Continuation, Fail) -> 
-  #call{dst=Dst, 'fun'={M,F,length(Args)}, args=Args, type=Type,
-	continuation_label=Continuation, fail_label=Fail,
-	in_guard=false, code_change=false}.
-call_dst(C) -> C#call.dst.
-call_dst_update(C,Dest) -> C#call{dst=Dest}.
-%%@spec (C::call()) -> [arg()]
-call_args(C) -> C#call.args.
-%%@spec (C::call(), [arg()]) -> call()
+mk_call(DstList, M, F, ArgList, Type) ->
+  mk_call(DstList, M, F, ArgList, Type, [], [], false).
+%% mk_call(DstList, M, F, ArgList, Type, Continuation, Fail) ->
+%%   mk_call(DstList, M, F, ArgList, Type, Continuation, Fail, false).
+mk_call(DstList, M, F, ArgList, Type, Continuation, Fail, Guard)
+  when atom(M), atom(F) ->
+  Fun = {M,F,length(ArgList)},
+  make_call(DstList, Fun, ArgList, Type, Continuation, Fail, Guard).
+
+%% The common constructor for all calls
+%%
+%% Note: If the "guard" flag is `true', it means that if the call fails,
+%% we can simply jump to the Fail label (if it exists) without
+%% generating any additional exception information - it isn't needed.
+%%
+make_call(DstList, Fun, ArgList, Type, Continuation, Fail, InGuard) ->
+  case Type of
+    local -> ok;
+    remote -> ok;
+    primop -> ok;
+    _ -> exit({bad_call_type, Type})
+  end,
+  #call{dstlist=DstList, 'fun'=Fun, args=ArgList,
+	type=Type, continuation=Continuation, fail_label=Fail,
+	in_guard=InGuard}.
+call_dstlist(#call{dstlist=DstList}) -> DstList.
+call_dstlist_update(C,Dest) -> C#call{dstlist=Dest}.
+call_type(#call{type=Type}) -> Type.
+call_dst_type(#call{dst_type=DstType}) -> DstType.
+%% @spec (C::call()) -> [arg()]
+call_args(#call{args=Args}) -> Args.
+%% @spec (C::call(), [arg()]) -> call()
 call_args_update(C,Args) -> C#call{args=Args}.
-call_fun(C) -> C#call.'fun'.
-call_fun_update(C, Fun) -> C#call{'fun'=Fun}.
-call_type(C) -> C#call.type.
-call_continuation(C) -> C#call.continuation_label.
-call_fail(C) ->  C#call.fail_label.
-call_set_continuation(I, Continuation) ->  
-  I#call{continuation_label = Continuation}.
-call_set_fail(I, Fail) ->
-  I#call{fail_label = Fail}.
-is_call(I) when record(I, call) -> true;
+call_fun(#call{'fun'=Fun}) -> Fun.
+%% Note that updating the name field requires recomputing the call type,
+%% in case it changes from a remote/local call to a primop call.
+call_fun_update(C, Fun) ->
+  Type = case find_call_type(Fun) of
+	   primop -> primop;
+	   _ -> call_type(C)
+	 end,
+  C#call{'fun'=Fun, type=Type}.
+call_continuation(#call{continuation=Continuation}) -> Continuation.
+call_fail_label(#call{fail_label=Fail}) -> Fail.
+call_set_continuation(I, Continuation) ->
+  I#call{continuation = Continuation}.
+call_set_fail_label(I, Fail) ->
+  case Fail of
+    [] ->
+      I#call{fail_label = Fail, in_guard=false};
+    _  ->
+      I#call{fail_label = Fail}
+  end.
+is_call(#call{}) -> true;
 is_call(_) -> false.
-call_in_guard(I) -> I#call.in_guard.
-call_code_change(I) -> I#call.code_change.
+call_in_guard(#call{in_guard=InGuard}) -> InGuard.
+call_fails(I) -> hipe_icode_primops:fails(call_fun(I)).
+  
 
 %%
 %% enter
 %%
 
 mk_enter(Mod, Fun, Args, Type) -> 
-  #enter{'fun'={Mod, Fun, length(Args)}, args=Args, type=Type}.
-enter_fun(E) -> E#enter.'fun'.
-enter_args(E) -> E#enter.args.
-enter_type(E) -> E#enter.type.
-%%enter_fail(I) ->  I#enter.fail_label.
-%%enter_set_fail(I, Fail) ->
-%%  I#enter{fail_label = Fail}.
-is_enter(I) when record(I, enter) -> true;
-is_enter(_) -> false.
+  case Type of
+    local -> ok;
+    remote -> ok;
+    primop -> ok;
+    _ -> exit({bad_enter_type, Type})
+  end,
+  #enter{'fun'={Mod,Fun,length(Args)}, args=Args, type=Type}.
+enter_fun(#enter{'fun'=MFA}) -> MFA.
+enter_fun_update(E, Fun) ->
+  Type = case find_call_type(Fun) of
+	   primop -> primop;
+	   _ -> enter_type(E)
+	 end,
+  E#enter{'fun'=Fun, type=Type}.
+enter_args(#enter{args=Args}) -> Args.
+enter_args_update(E, Args) -> E#enter{args=Args}.
+enter_type(#enter{type=Type}) -> Type.
 
 mk_enter_primop(Op, Args) ->
   #enter{'fun'=Op, args=Args, type=primop}.
@@ -907,56 +953,55 @@ mk_enter_primop(Op, Args) ->
 mk_pushcatch(Label, Successor) ->
   #pushcatch{label=Label, successor=Successor}.
 mk_pushtry(Label, Successor) ->
-  #pushcatch{label=Label, successor=Successor ,type='try'}.
-pushcatch_label(P) -> P#pushcatch.label.
-pushcatch_successor(P) -> P#pushcatch.successor.
-is_pushcatch(I) when record(I, pushcatch) -> true;
-is_pushcatch(_) -> false.
-
+  #pushcatch{label=Label, successor=Successor, type='try'}.
+pushcatch_label(#pushcatch{label=Label}) -> Label.
+pushcatch_successor(#pushcatch{successor=Successor}) -> Successor.
 
 %%
 %% remove_catch
 %%
 
 mk_remove_catch(Label) -> #remove_catch{id = Label}.
-remove_catch_label(P) -> P#remove_catch.id.
-is_remove_catch(I) when record(I, remove_catch) -> true;
-is_remove_catch(_) -> false.
+remove_catch_label(#remove_catch{id=Label}) -> Label.
 
 %%
 %% restore_catch
 %%
 
 mk_restore_catch(ReasonDst, Label) ->
-  #restore_catch{reason_dst=ReasonDst,type_dst=[], 
-		 catch_type='catch', id=Label}.
+  #restore_catch{reason_dst=ReasonDst, type_dst=[],
+		 type='catch', id=Label}.
 mk_restore_try(ReasonDst, TypeDst, Label) ->
-  #restore_catch{reason_dst=ReasonDst,type_dst=TypeDst, 
-		 catch_type='try', id=Label}.
-restore_catch_reason_dst(P) -> P#restore_catch.reason_dst.
-restore_catch_type_dst(P) -> P#restore_catch.type_dst.
-restore_catch_type(P) -> P#restore_catch.catch_type.
-restore_catch_label(P) -> P#restore_catch.id.
-is_restore_catch(I) when record(I, restore_catch) -> true;
+  #restore_catch{reason_dst=ReasonDst, type_dst=TypeDst, 
+		 type='try', id=Label}.
+restore_catch_reason_dst(#restore_catch{reason_dst=ReasonDst}) -> ReasonDst.
+restore_catch_type_dst(#restore_catch{type_dst=TypeDst}) -> TypeDst.
+restore_catch_type(#restore_catch{type=Type}) -> Type.
+restore_catch_label(#restore_catch{id=Label}) -> Label.
+is_restore_catch(#restore_catch{}) -> true;
 is_restore_catch(_) -> false.
-
 
 %%
 %% label
 %%
 
 mk_label(Name) -> #label{name=Name}.
-label_name(L) -> L#label.name.
-is_label(I) when record(I, label) ->true;
+label_name(#label{name=Name}) -> Name.
+is_label(#label{}) ->true;
 is_label(_) -> false.
 
 %%
 %% comment
 %%
 
+%% @spec mk_comment(Txt::term()) -> comment()
+%% @doc If `Txt' is a list of characters (possibly deep), it will be
+%% printed as a string; otherwise, `Txt' will be printed as a term.
 mk_comment(Txt) -> #comment{text=Txt}.
-comment_text(C) -> C#comment.text.
-is_comment(I) when record(I, comment) -> true;
+comment_text(#comment{text=Txt}) -> Txt.
+%% @spec is_comment(Instr::icode_instruction()) -> bool()
+%% @doc  True if this is the Icode instruction for comments.
+is_comment(#comment{}) -> true;
 is_comment(_) -> false.
 
 %% ____________________________________________________________________
@@ -966,126 +1011,60 @@ is_comment(_) -> false.
 %% Arguments (variables and constants)
 %%
 
-mk_const(C) -> {const, {flat, C}}.
-mk_const_fun(MFA,U,I,Args) -> {const, {const_fun, {MFA,U,I,Args}}}.
-const_value({const, {flat, X}}) -> X;
-const_value({const, {const_fun, X}}) -> X.
-is_const({const, _}) -> true;
+mk_const(C) -> {const,{flat,C}}.
+%% mk_const_fun(MFA,U,I,Args) -> {const,{const_fun,{MFA,U,I,Args}}}.
+const_value({const,{flat,X}}) -> X;
+const_value({const,{const_fun,X}}) -> X.
+%% @spec is_const(icode_arg()) -> bool()
+is_const({const,_}) -> true;
 is_const(_) -> false.
-is_const_fun({const, {const_fun, _}}) -> true;
+%% @spec is_const_fun(icode_arg()) -> bool()
+is_const_fun({const,{const_fun,_}}) -> true;
 is_const_fun(_) -> false.
 
-
-mk_var(V) -> {var, V}.
-var_name({var, Name}) -> Name.
-is_var({var, _}) -> true;
+mk_var(V) -> {var,V}.
+var_name({var,Name}) -> Name.
+%% @spec is_var(icode_arg()) -> bool()
+is_var({var,_}) -> true;
 is_var(_) -> false.
-
+  
 %% This representation of a variable is used only when pretty printing
 %% typed icode.
-add_type_to_var({var, Name}, Type)-> {var, Name, Type}.
+annotate_var({var, Name}, Type)-> {var, Name, Type}.
+%%is_annotated_var({var, _Name, _Type})-> true;
+%%is_annotated_var(_) -> false.
+%%var_annotation({var, _Name, Type})-> Type.
  
-mk_reg(V) -> {reg, V}.
-reg_name({reg, Name}) -> Name.
-is_reg({reg, _}) -> true;
+mk_reg(V) -> {reg,V}.
+reg_name({reg,Name}) -> Name.
+%% @spec is_reg(icode_arg()) -> bool()
+is_reg({reg,_}) -> true;
 is_reg(_) -> false.
 
-is_var_or_fvar_or_reg({var, _}) -> true;
-is_var_or_fvar_or_reg({fvar, _}) -> true;
-is_var_or_fvar_or_reg({reg, _}) -> true;
-
+%% @spec is_var_or_fvar_or_reg(icode_arg()) -> bool()
+is_var_or_fvar_or_reg({var,_}) -> true;
+is_var_or_fvar_or_reg({fvar,_}) -> true;
+is_var_or_fvar_or_reg({reg,_}) -> true;
 is_var_or_fvar_or_reg(_) -> false.
 
-mk_fvar(V) -> {fvar, V}.
-fvar_name({fvar, Name}) -> Name.
-is_fvar({fvar, _}) -> true;
+mk_fvar(V) -> {fvar,V}.
+fvar_name({fvar,Name}) -> Name.
+%% @spec is_fvar(icode_arg()) -> bool()
+is_fvar({fvar,_}) -> true;
 is_fvar(_) -> false.
 
 %%
-%% Misc. primops
-%%
-
-mk_primop(Dst, Fun, Args) ->
-  #call{dst=Dst, 'fun'=Fun, args=Args, type=primop,
-	continuation_label=[],fail_label=[],
-	in_guard=false, code_change=false}.
-mk_primop(Dst, Fun, Args, Cont, Fail) ->
-  #call{dst=Dst, 'fun'=Fun, args=Args, type=primop,
-	continuation_label=Cont ,fail_label=Fail,
-	in_guard=false, code_change=false}.
-mk_guardop(Dst, Fun, Args, True, False) ->
-  #call{dst=Dst, 'fun'=Fun, args=Args, type=primop,
-	continuation_label=True,fail_label=False,
-	in_guard=true, code_change=false}.
-mk_gctest() -> mk_primop([], gc_test, []).
-mk_redtest() -> mk_primop([], redtest, []).
-
-
-%%
-%% Floating point
+%% Floating point Icode instructions.
 %%
 
 %%
 %% fmove
 %%
 
-mk_fmov(X, Y) -> #fmov{dst=X, src=Y}.
-fmov_dst(M) -> M#fmov.dst.
-fmov_src(M) -> M#fmov.src.
-fmov_src_update(M, NewSrc) -> M#fmov{src=NewSrc}.
-is_fmov(I) when record(I, fmov) -> true;
-is_fmov(_) -> false.
-
-  
-
-%%
-%% info for all instructions
-%%
-
-info(I) ->
-  case type(I) of
-    'if' -> I#'if'.info;
-    type -> I#type.info;
-    goto -> I#goto.info;
-    mov -> I#mov.info;
-    fail -> I#fail.info;
-    call -> I#call.info;
-    enter -> I#enter.info;
-    return -> I#return.info;
-    pushcatch -> I#pushcatch.info;
-    restore_catch -> I#restore_catch.info;
-    remove_catch -> I#remove_catch.info;
-    comment -> I#comment.info;
-    switch_val -> I#switch_val.info;
-    switch_tuple_arity -> I#switch_tuple_arity.info;
-    label -> I#label.info;
-    fmov -> I#fmov.info
-  end.
-
-
-info_add(Instr, Info) ->
-  info_update(Instr, [Info | info(Instr)]).
-
-
-info_update(I, NewInfo) ->
-  case type(I) of 
-    'if' -> I#'if'{info = NewInfo};
-    type -> I#type{info = NewInfo};
-    goto -> I#goto{info = NewInfo};
-    mov -> I#mov{info = NewInfo};
-    fail -> I#fail{info = NewInfo};
-    call -> I#call{info = NewInfo};
-    enter -> I#enter{info = NewInfo};
-    return -> I#return{info = NewInfo};
-    pushcatch -> I#pushcatch{info = NewInfo};
-    restore_catch -> I#restore_catch{info = NewInfo};
-    remove_catch -> I#remove_catch{info = NewInfo};
-    comment -> I#comment{info = NewInfo};
-    switch_val -> I#switch_val{info = NewInfo};
-    switch_tuple_arity -> I#switch_tuple_arity{info = NewInfo};
-    label -> I#label{info = NewInfo};
-    fmov -> I#fmov{info = NewInfo}
-  end.
+mk_fmove(Dst, Src) -> #fmove{dst=Dst, src=Src}.
+fmove_dst(#fmove{dst=Dst}) -> Dst.
+fmove_src(#fmove{src=Src}) -> Src.
+%% fmove_src_update(M, NewSrc) -> M#fmove{src=NewSrc}.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1093,23 +1072,24 @@ info_update(I, NewInfo) ->
 %% Liveness info 
 %%
 
-uses(I) ->
-  remove_constants(args(I)).
+%% @spec uses(icode_instruction()) -> [icode_arg()]
+uses(Instr) ->
+  remove_constants(args(Instr)).
 
-%%@spec (I::icode_instruction()) -> [var()]
+%% @spec args(I::icode_instruction()) -> [var()]
 args(I) ->
-  case element(1, I) of
+  case type(I) of
     'if' -> if_args(I);
     switch_val -> [switch_val_arg(I)];
     switch_tuple_arity -> [switch_tuple_arity_arg(I)];
-    type -> [type_var(I)];
-    mov -> [mov_src(I)];
+    type -> type_args(I);
+    move -> [move_src(I)];
     fail -> fail_reason(I);
-    call -> I#call.args;
-    enter -> I#enter.args;
-    return -> I#return.vars;
-    fmov -> [fmov_src(I)];
-    phi -> get_phi_args(I#phi.predList, I#phi.args, I#phi.name, []);
+    call -> call_args(I);
+    enter -> enter_args(I);
+    return -> return_vars(I);
+    fmove -> [fmove_src(I)];
+    phi -> phi_args(I);
     %%    goto -> [];
     %%    pushcatch -> [];
     %%    restore_catch -> [];
@@ -1119,21 +1099,20 @@ args(I) ->
     _ -> []
   end.
 
-
 defines(I) ->
-  case element(1, I) of
-    mov -> remove_constants([I#mov.dst]);
-    fmov -> remove_constants([I#mov.dst]);
-    call -> remove_constants(I#call.dst);
+  case type(I) of
+    move -> remove_constants([move_dst(I)]);
+    fmove -> remove_constants([fmove_dst(I)]);
+    call -> remove_constants(call_dstlist(I));
     restore_catch -> 
-      case I#restore_catch.catch_type of
+      case restore_catch_type(I) of
 	'try' ->
-	  remove_constants([I#restore_catch.reason_dst,
-			    I#restore_catch.type_dst]);
+	  remove_constants([restore_catch_reason_dst(I),
+			    restore_catch_type_dst(I)]);
 	'catch' ->
-	  remove_constants([I#restore_catch.reason_dst])
+	  remove_constants([restore_catch_reason_dst(I)])
       end;
-    phi -> remove_constants([I#phi.dst]);
+    phi -> remove_constants([phi_dst(I)]);
     %%    'if' -> [];
     %%    switch_val -> [];
     %%    switch_tuple_arity -> [];
@@ -1150,19 +1129,18 @@ defines(I) ->
   end.
 
 
-
 remove_constants([]) ->
   [];
-remove_constants([{const, _}|Xs]) ->
+remove_constants([{const,_}|Xs]) ->
   remove_constants(Xs);
-remove_constants([{reg, Var}|Xs]) ->
-  [{reg, Var} | remove_constants(Xs)];
-remove_constants([{var, Var}|Xs]) ->
-  [{var, Var} | remove_constants(Xs)];
-remove_constants([{fvar, Var}|Xs]) ->
-  [{fvar, Var} | remove_constants(Xs)];
-remove_constants([{colored, Var}|Xs]) ->
-  [{colored, Var} | remove_constants(Xs)];
+remove_constants([{reg,Var}|Xs]) ->
+  [{reg,Var} | remove_constants(Xs)];
+remove_constants([{var,Var}|Xs]) ->
+  [{var,Var} | remove_constants(Xs)];
+remove_constants([{fvar,Var}|Xs]) ->
+  [{fvar,Var} | remove_constants(Xs)];
+remove_constants([{colored,Var}|Xs]) ->
+  [{colored,Var} | remove_constants(Xs)];
 remove_constants([_|Xs]) ->
   remove_constants(Xs).
 
@@ -1172,10 +1150,10 @@ remove_constants([_|Xs]) ->
 %% Utilities
 %%
 
-%%
-%% Returns the type of the icode instruction X. Hopefully, this can
-%% be compiled better than repeated calls to hipe_icode:is_branch/is_mov/...
-%%
+%% @doc 
+%%    Returns the type of the Icode instruction X. Hopefully, this can
+%%    be compiled better than repeated calls to hipe_icode:is_branch/is_move/..
+%% @end
 
 type(I) when tuple(I) -> element(1, I);
 type(O) -> ?EXIT({bad_icode_type,O}).
@@ -1189,36 +1167,37 @@ subst(Subst, X) ->
 
 subst_uses(Subst, X) ->
   case type(X) of
-    'if' -> X#'if'{args=subst_list(Subst, X#'if'.args)};
-    switch_val -> X#switch_val{arg=subst1(Subst, X#switch_val.arg)};
+    'if' -> X#'if'{args = subst_list(Subst, if_args(X))};
+    switch_val -> X#switch_val{arg = subst1(Subst, switch_val_arg(X))};
     switch_tuple_arity ->
-      X#switch_tuple_arity{arg=subst1(Subst, X#switch_tuple_arity.arg)};
-    type -> X#type{var=subst1(Subst, X#type.var)};
-    mov -> X#mov{src=subst1(Subst, X#mov.src)};
-    fail -> X#fail{reason=subst_list(Subst,fail_reason(X))};
-    call -> X#call{args=subst_list(Subst, X#call.args)};
-    enter -> X#enter{args=subst_list(Subst, X#enter.args)};
-    return -> X#return{vars=subst_list(Subst, X#return.vars)};
-    fmov -> X#fmov{src=subst1(Subst, X#fmov.src)};
-    phi -> X#phi{args = replace_phi_args(X#phi.predList, X#phi.args, Subst)};
+      X#switch_tuple_arity{arg = subst1(Subst, switch_tuple_arity_arg(X))};
+    type -> X#type{args = subst_list(Subst, type_args(X))};
+    move -> X#move{src = subst1(Subst, move_src(X))};
+    fail -> X#fail{reason = subst_list(Subst, fail_reason(X))};
+    call -> X#call{args = subst_list(Subst, call_args(X))};
+    enter -> X#enter{args = subst_list(Subst, enter_args(X))};
+    return -> X#return{vars = subst_list(Subst, return_vars(X))};
+    fmove -> X#fmove{src = subst1(Subst, fmove_src(X))};
+    phi -> phi_argvar_subst(X, Subst);
     _ -> X
-	 %%    goto -> X;
-	 %%    pushcatch -> X;
-	 %%    restore_catch -> X;
-	 %%    remove_catch -> X;
-	 %%    comment -> X;
-	 %%    label -> X
+%%  goto -> X;
+%%  pushcatch -> X;
+%%  restore_catch -> X;
+%%  remove_catch -> X;
+%%  comment -> X;
+%%  label -> X
   end.
 
-subst_defines(Subst,X) ->
+subst_defines(Subst, X) ->
   case type(X) of
-    mov ->  X#mov{dst=subst1(Subst,X#mov.dst)};
-    call -> X#call{dst=subst_list(Subst,X#call.dst)};
+    move -> X#move{dst = subst1(Subst, move_dst(X))};
+    call -> X#call{dstlist = subst_list(Subst, call_dstlist(X))};
     restore_catch -> 
-      NewX = X#restore_catch{reason_dst=subst1(Subst,X#restore_catch.reason_dst)},
-      NewX#restore_catch{type_dst=subst1(Subst,NewX#restore_catch.type_dst)};
-    fmov ->  X#fmov{dst=subst1(Subst,X#mov.dst)};
-    phi -> X#phi{dst = subst1(Subst, X#phi.dst)};
+      NX = X#restore_catch{reason_dst = subst1(Subst,
+					       restore_catch_reason_dst(X))},
+      NX#restore_catch{type_dst = subst1(Subst, restore_catch_type_dst(NX))};
+    fmove -> X#fmove{dst = subst1(Subst, move_dst(X))};
+    phi -> X#phi{dst = subst1(Subst, phi_dst(X))};
     _ -> X
   end.
 %%    'if' -> X;
@@ -1244,138 +1223,161 @@ subst1([{X,Y}|_],X) -> Y;
 subst1([_|Xs],X) -> subst1(Xs,X).
 
 %%
-%% The successors of a jump.
+%% @doc Returns the successors of an Icode branch instruction.
 %%
 
 successors(Jmp) ->
   case type(Jmp) of
-    'if' -> [Jmp#'if'.true_label, Jmp#'if'.false_label];
-    goto -> [Jmp#goto.label];
-    switch_val -> [Jmp#switch_val.fail_label|
+    'if' -> [if_true_label(Jmp), if_false_label(Jmp)];
+    goto -> [goto_label(Jmp)];
+    switch_val -> [switch_val_fail_label(Jmp)|
 		   lists:map(fun (C) -> element(2,C) end,
-			     Jmp#switch_val.cases)];
-    switch_tuple_arity -> [Jmp#switch_tuple_arity.fail_label|
+			     switch_val_cases(Jmp))];
+    switch_tuple_arity -> [switch_tuple_arity_fail_label(Jmp)|
 			   lists:map(fun (C) -> element(2,C) end,
-				     Jmp#switch_tuple_arity.cases)];
-    type -> [Jmp#type.true_label, Jmp#type.false_label];
-    call -> [Jmp#call.continuation_label| 
-	     case Jmp#call.fail_label of [] -> []; L -> [L] end];
-    pushcatch -> [Jmp#pushcatch.successor, Jmp#pushcatch.label];
+				     switch_tuple_arity_cases(Jmp))];
+    type -> [type_true_label(Jmp), type_false_label(Jmp)];
+    call -> [call_continuation(Jmp)| 
+	     case call_fail_label(Jmp) of [] -> []; L -> [L] end];
+    pushcatch -> [pushcatch_successor(Jmp), pushcatch_label(Jmp)];
     _ -> []
   end.
 
-
 %%
-%% Redirect jumps from label Old to label New.  If the instruction
-%% does not jump to Old it is unchanged.
+%% @doc Redirects jumps from label Old to label New. If the
+%%      instruction does not jump to Old, it remains unchanged.
 %%
 
 redirect_jmp(Jmp, ToOld, ToNew) ->
-  case type(Jmp) of
-    'if' ->
-      NewJmp = if ToOld =:= Jmp#'if'.true_label -> Jmp#'if'{true_label=ToNew};
-		  true -> Jmp
-	       end,
-      if ToOld =:= NewJmp#'if'.false_label -> NewJmp#'if'{false_label=ToNew};
-	 true -> NewJmp
+  NewIns =
+    case type(Jmp) of
+      'if' ->
+	NewJmp = case if_true_label(Jmp) of
+		   ToOld -> if_true_label_update(Jmp, ToNew);
+		   _ -> Jmp
+		 end,
+	case if_false_label(NewJmp) of
+	  ToOld -> if_false_label_update(NewJmp, ToNew);
+	  _ -> NewJmp
+	end;
+      switch_val ->
+	NewJmp = case switch_val_fail_label(Jmp) of
+		   ToOld -> switch_val_fail_label_update(Jmp, ToNew);
+		   _ -> Jmp
+		 end,
+	NewJmp#switch_val{cases = 
+			  lists:map(fun (Pair) ->
+					case Pair of 
+					  ({Val,ToOld}) -> {Val,ToNew};
+					  (Unchanged) -> Unchanged
+					end
+				    end, 
+				    switch_val_cases(NewJmp))
+			 };
+      switch_tuple_arity ->
+	NewJmp = case switch_tuple_arity_fail_label(Jmp) of
+		   ToOld -> 
+		     Jmp#switch_tuple_arity{fail_label=ToNew};
+		   _ -> Jmp
+		 end,
+	NewJmp#switch_tuple_arity{cases = 
+				  lists:map(fun (Pair) -> 
+						case Pair of
+						  ({Val,ToOld}) -> {Val,ToNew};
+						  (Unchanged) -> Unchanged
+						end
+					    end, 
+					    switch_tuple_arity_cases(NewJmp))
+				 };
+      type ->
+	NewJmp = case type_true_label(Jmp) of
+		   ToOld -> Jmp#type{true_label=ToNew};
+		   _ -> Jmp
+		 end,
+	case type_false_label(NewJmp) of
+	  ToOld -> NewJmp#type{false_label=ToNew};
+	  _ -> NewJmp
+	end;
+      goto ->
+	case goto_label(Jmp) of
+	  ToOld -> Jmp#goto{label=ToNew};
+	  _ -> Jmp
+	end;
+      call -> 
+	NewCont = case call_continuation(Jmp) of
+		    ToOld -> ToNew;
+		    OldCont -> OldCont
+		  end,
+	NewFail = case call_fail_label(Jmp) of
+		    ToOld -> ToNew;
+		    OldFail -> OldFail
+		  end,
+	Jmp#call{continuation = NewCont, 
+		 fail_label = NewFail};
+      pushcatch ->
+	NewLabl = case pushcatch_label(Jmp) of
+		    ToOld ->  ToNew;
+		    OldLab -> OldLab
+		  end,
+	NewSucc = case pushcatch_successor(Jmp) of
+		    ToOld ->  ToNew;
+		    OldSucc -> OldSucc
+		  end,
+	Jmp#pushcatch{label = NewLabl,successor=NewSucc};
+      _ ->  Jmp
+    end,
+  simplify_branch(NewIns).
+
+%%
+%% @doc Turns a branch into a goto if it has only one successor and it
+%%      is safe to do so.
+%%
+
+simplify_branch(I) ->
+  case ordsets:from_list(successors(I)) of
+    [Label] ->
+      Goto = mk_goto(Label),
+      case type(I) of
+	type -> Goto;
+	'if' -> Goto;
+	switch_tuple_arity -> Goto;
+	switch_val -> Goto;
+	_ -> I
       end;
-    switch_val ->
-      NewJmp = if ToOld =:= Jmp#switch_val.fail_label -> 
-		   Jmp#switch_val{fail_label=ToNew};
-		  true -> Jmp
-	       end,
-      NewJmp#switch_val{cases = 
-			lists:map(fun (Pair) ->
-				      case Pair of 
-					({Val,ToOld}) -> {Val, ToNew};
-					(Unchanged) -> Unchanged
-				      end
-				  end, 
-				  NewJmp#switch_val.cases)
-		       };
-    switch_tuple_arity ->
-      NewJmp = if ToOld =:= Jmp#switch_tuple_arity.fail_label -> 
-		   Jmp#switch_tuple_arity{fail_label=ToNew};
-		  true -> Jmp
-	       end,
-      NewJmp#switch_tuple_arity{cases = 
-				lists:map(fun (Pair) -> 
-					      case Pair of
-						({Val,ToOld}) -> {Val, ToNew};
-						(Unchanged) -> Unchanged
-					      end
-					  end, 
-					  NewJmp#switch_tuple_arity.cases)
-			       };
-
-
-    type ->
-      NewJmp = if ToOld =:= Jmp#type.true_label -> Jmp#type{true_label=ToNew};
-		  true -> Jmp
-	       end,
-      if ToOld =:= NewJmp#type.false_label -> NewJmp#type{false_label=ToNew};
-	 true -> NewJmp
-      end;
-
-    goto ->
-      if ToOld =:= Jmp#goto.label -> Jmp#goto{label=ToNew};
-	 true -> Jmp
-      end;
-
-    call -> 
-      NewCont = case Jmp#call.continuation_label of
-		  ToOld -> ToNew;
-		  OldCont  -> OldCont
-		end,
-      NewFail = case Jmp#call.fail_label of
-		  ToOld -> ToNew;
-		  OldFail -> OldFail
-		end,
-      Jmp#call{continuation_label = NewCont, 
-	       fail_label = NewFail};
-    pushcatch ->
-      NewLabl =	case pushcatch_label(Jmp) of
-		  ToOld ->  ToNew;
-		  OldLab -> OldLab
-		end,
-      NewSucc =	case pushcatch_successor(Jmp) of
-		  ToOld ->  ToNew;
-		  OldSucc -> OldSucc
-		end,
-      Jmp#pushcatch{label = NewLabl,successor=NewSucc};
-    _ ->  Jmp
+    _ -> I
   end.
 
 %%
 %% Is this an unconditional jump (causes a basic block not to have a 
-%% fallthrough successor)
+%% fallthrough successor).
 %%
 
-is_uncond(I) ->
-  case type(I) of
-    goto -> true;
-    fail -> true;
-    enter -> true;
-    return -> true;
-    call -> 
-      case call_fail(I) of
-	[] -> 
-	  case call_continuation(I) of
-	    [] -> false;
-	    _ -> true
-	  end;
-	_ -> true
-      end;
-    _ -> false
-  end.
+%% is_uncond(I) ->
+%%   case type(I) of
+%%     goto -> true;
+%%     fail -> true;
+%%     enter -> true;
+%%     return -> true;
+%%     call -> 
+%%       case call_fail_label(I) of
+%% 	[] -> 
+%% 	  case call_continuation(I) of
+%% 	    [] -> false;
+%% 	    _ -> true
+%% 	  end;
+%% 	_ -> true
+%%       end;
+%%     _ -> false
+%%   end.
 
+%% @spec is_branch(icode_instruction()) -> bool()
 %%
-%% Is this a branch i.e. a (possibly conditional) discontinuation of linear 
-%% control flow.
-%%
+%% @doc Succeeds if the Icode instruction is a branch. I.e. a
+%%      (possibly conditional) discontinuation of linear control flow.
+%% @end
 
-is_branch(I) ->
-  case type(I) of
+is_branch(Instr) ->
+  case type(Instr) of
     'if' -> true;
     switch_val -> true;
     switch_tuple_arity -> true;
@@ -1383,9 +1385,9 @@ is_branch(I) ->
     goto -> true;
     fail -> true;
     call -> 
-      case call_fail(I) of
+      case call_fail_label(Instr) of
 	[] -> 
-	  case call_continuation(I) of
+	  case call_continuation(Instr) of
 	    [] -> false;
 	    _ -> true
 	  end;
@@ -1398,170 +1400,161 @@ is_branch(I) ->
   end.
 
 %%
-%% Make a new variable
+%% @doc Makes a new variable.
 %%
 
 mk_new_var() ->
   mk_var(hipe_gensym:get_next_var(icode)).
 
 %%
-%% Make a new fp variable
+%% @doc Makes a new fp variable.
 %%
 
 mk_new_fvar() ->
   mk_fvar(hipe_gensym:get_next_var(icode)).
 
 %%
-%% Make a new register
+%% @doc Makes a new register.
 %%
 
 mk_new_reg() ->
   mk_reg(hipe_gensym:get_next_var(icode)).
 
 %%
-%% Make a new label
+%% @doc Makes a new label.
 %%
 
 mk_new_label() ->
   mk_label(hipe_gensym:get_next_label(icode)).
 
 %%
-%% Make a bunch of mov operations
+%% @doc Makes a bunch of move operations.
 %%
 
-mk_movs([], []) ->
+mk_moves([], []) ->
   [];
-mk_movs([X|Xs], [Y|Ys]) ->
-  [mk_mov(X, Y) | mk_movs(Xs, Ys)].
+mk_moves([X|Xs], [Y|Ys]) ->
+  [mk_move(X, Y) | mk_moves(Xs, Ys)].
 
 %%
-%% Make a series of element operations
+%% Makes a series of element operations.
 %%
 
-mk_elements(_, []) -> 
-  [];
-mk_elements(Tuple, [X|Xs]) ->
-  [mk_primop([X], {unsafe_element, length(Xs)+1}, [Tuple]) | 
-   mk_elements(Tuple, Xs)].
+%% mk_elements(_, []) -> 
+%%   [];
+%% mk_elements(Tuple, [X|Xs]) ->
+%%   [mk_primop([X], {unsafe_element, length(Xs)+1}, [Tuple]) | 
+%%    mk_elements(Tuple, Xs)].
 
 
 %%
-%% Convert old icode to new icode.
+%% @doc Converts old Icode to new Icode.
 %%  Compliant with calls ending basic blocks.
 %%
 
-preprocess_code(Icode) ->
+fixup_fallthroughs(Icode) ->
   Code = icode_code(Icode),
-  CompliantCode =  preprocess_code(Code,[]),
-  hipe_icode:icode_code_update(Icode,CompliantCode).
+  CompliantCode = fixup_fallthroughs(Code, []),
+  icode_code_update(Icode, CompliantCode).
 
-preprocess_code([I0|Is0], Acc) ->
-  {I,Is} = fallthrough_fixup(I0, Is0),
-  preprocess_code(Is, [I | Acc]);
-preprocess_code([], Acc) ->
+fixup_fallthroughs([I0|Is0], Acc) ->
+  {I,Is} = fixup_one_fallthrough(I0, Is0),
+  fixup_fallthroughs(Is, [I|Acc]);
+fixup_fallthroughs([], Acc) ->
   lists:reverse(Acc).
 
-
-fallthrough_fixup(I0, Is0 = [I1|_]) ->
+fixup_one_fallthrough(I0, Is0 = [I1|_]) ->
   case is_label(I1) of
     false ->
-      {I0, Is0};
+      {I0,Is0};
     true ->
       case is_branch(I0) of
 	true ->
-	  {I0, Is0};
-	false -> % non-branch before label, doubleplusungood
-	  %% io:format(standard_io, "~w: fixed unsafe fallthrough <~w,~w>\n", [?MODULE,I0,I1]),
-	  {I0, [mk_goto(label_name(I1)) | Is0]}
+	  {I0,Is0};
+	false -> %% non-branch before label, doubleplusungood
+	  %% io:format("~w: fixed unsafe fallthrough <~w,~w>\n", [?MODULE,I0,I1]),
+	  {I0,[mk_goto(label_name(I1)) | Is0]}
       end
   end;
-fallthrough_fixup(I0, []) ->
-  {I0, []}.
+fixup_one_fallthrough(I0, []) ->
+  {I0,[]}.
 
 
 %%
-%% Remove comments from intermediate code
+%% @doc Removes comments from Icode.
 %%
 
 strip_comments(ICode) ->
-  icode_code_update(ICode,strip_comment(icode_code(ICode))).
+  icode_code_update(ICode, no_comments(icode_code(ICode))).
 
-strip_comment([]) ->
+no_comments([]) ->
   [];
-strip_comment([I|Xs]) ->
+no_comments([I|Xs]) ->
   case is_comment(I) of 
-    true -> strip_comment(Xs);
-    false -> [I|strip_comment(Xs)]
+    true -> no_comments(Xs);
+    false -> [I|no_comments(Xs)]
   end.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%
-%% Is an instruction pure or not
-%%
+%%-----------------------------------------------------------------------
 
-is_pure(I) ->
-  case type(I) of
-    mov -> true;
-    fmov -> true;
+%% @spec is_safe(icode_instruction()) -> bool()
+%%
+%% @doc True if an Icode instruction is safe (can be removed if the
+%% result is not used).
+
+is_safe(Instr) ->
+  case type(Instr) of
+    move -> true;
+    fmove -> true;
+    phi -> true;
+    restore_catch -> true;
     call ->
-      is_pure_op(call_fun(I));
+      case call_fun(Instr) of
+	{M,F,A} ->
+	  erl_bifs:is_safe(M,F,A);
+	Op ->
+	  hipe_icode_primops:is_safe(Op)
+      end;
     _ -> false
   end.
 
-is_pure_op({unsafe_element, _}) -> true;
-is_pure_op(unsafe_hd) -> true;
-is_pure_op(unsafe_tl) -> true;
-is_pure_op(self) -> true;
-is_pure_op({erlang,make_ref,0}) -> true;
-is_pure_op({erlang,date,0}) -> true;
-is_pure_op({erlang,time,0}) -> true;
-is_pure_op({erlang,node,0}) -> true;
-is_pure_op({erlang,get,0}) -> true;
-is_pure_op({erlang,get,1}) -> true;
-is_pure_op(_) -> false.
+%% @spec is_leaf_code([icode_instruction()]) -> bool()
+%% @doc Returns <code>false</code> if code sequence is not leaf code,
+%% otherwise <code>true</code>.
 
-%%
-%% True iff Icode function is a leaf function
-%%
-
-is_leaf(Icode) ->
-  icode_is_leaf(Icode).
-
-
-is_leaf0([]) ->
+is_leaf_code([]) ->
   true;
-is_leaf0([I|Is]) ->
+is_leaf_code([I|Is]) ->
   case type(I) of
     call ->
-      case hipe_bif:is_bif(call_fun(I)) of
-	false -> 
-	  false; %% Call to nonbif
-	true -> 
+      case call_type(I) of
+	primop -> 
 	  case call_fun(I) of
-	    call_fun -> false; %% Call to closure
-	    {erlang, apply, _} -> false; %% MetaCall
-	    _ -> is_leaf0(Is) %% Call to bif is ok
-	  end
+	    call_fun -> false;		% Calls closure
+	    enter_fun -> false;		% Calls closure
+	    _ -> is_leaf_code(Is)	% Other primop calls are ok
+	  end;
+	_ -> 
+	  false    % non-primop call
       end;
     enter -> false;
     _ ->
-      is_leaf0(Is)
+      is_leaf_code(Is)
   end.
 
-
-%% ---------------------------------------------
+%%-----------------------------------------------------------------------
 
 highest_var(Code) ->
-  highest_var(Code,0).
+  highest_var(Code, 0).
 
-highest_var([I|Is],Max) ->
+highest_var([I|Is], Max) ->
   Defs = defines(I),
   Uses = uses(I),
-  highest_var(Is,new_max(Defs++Uses,Max));
-highest_var([],Max) ->
+  highest_var(Is, new_max(Defs++Uses,Max));
+highest_var([], Max) ->
   Max.
 
-new_max([V|Vs],Max) ->
+new_max([V|Vs], Max) ->
   VName = 
     case is_var(V) of
       true ->
@@ -1579,21 +1572,24 @@ new_max([V|Vs],Max) ->
      true ->
       new_max(Vs, Max)
   end;
-new_max([],Max) -> Max.
+new_max([], Max) ->
+  Max.
 
-%% ----------------------------------------
+%%-----------------------------------------------------------------------
 
 highest_label(Code) ->
-  highest_label(Code,0).
+  highest_label(Code, 0).
 
-highest_label([I|Is],Max) ->
+highest_label([I|Is], Max) ->
   case is_label(I) of 
     true ->
       L = label_name(I),
       NewMax = if L > Max -> L; true -> Max end,
-      highest_label(Is,NewMax);
+      highest_label(Is, NewMax);
     false ->
-      highest_label(Is,Max)
+      highest_label(Is, Max)
   end;
-highest_label([],Max) ->
+highest_label([], Max) ->
   Max.
+
+%%-----------------------------------------------------------------------

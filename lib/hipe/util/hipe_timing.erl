@@ -6,14 +6,17 @@
 %%  T               - Acc times for all named timers T.
 %%
 -module(hipe_timing).
--export([start_timer/0,stop_timer/1, start/2, stop/2,
-	 start_optional_timer/2, stop_optional_timer/2,
-	 start_hipe_timer/1, stop_hipe_timer/1,
-	 get_hipe_timer_val/1, set_hipe_timer_val/2]).
+-export([start/2, stop/2,
+	 %% start_timer/0, stop_timer/1,
+	 %% get_hipe_timer_val/1, set_hipe_timer_val/2,
+	 %% start_hipe_timer/1, stop_hipe_timer/1,
+	 start_optional_timer/2, stop_optional_timer/2]).
+
 -include("../main/hipe.hrl").
 
+%%=====================================================================
 
-start(Text, Mod) ->
+start(Text,_Mod) ->
   Timers = 
     case get(hipe_timers) of
       undefined -> [];
@@ -22,22 +25,20 @@ start(Text, Mod) ->
   Space = lists:duplicate(length(Timers),$|),
   Total = start_timer(),
   put(hipe_timers,[Total|Timers]),
-  ?mmsg("[@~7w]"++Space ++ "> ~s~n",[Total,Text],Mod).
+  ?msg("[@~7w]"++Space ++ "> ~s~n",[Total,Text]).
 
-stop(Text, Mod) ->
+stop(Text,_Mod) ->
   {Total,_Last} = erlang:statistics(runtime),
   case get(hipe_timers) of
     [StartTime|Timers] -> 
       Space = lists:duplicate(length(Timers),$|),
       put(hipe_timers,Timers),
-      ?mmsg("[@~7w]"++Space ++ "< ~s: ~w~n",
-	    [Total, Text, Total-StartTime], Mod);
+      ?msg("[@~7w]"++Space ++ "< ~s: ~w~n",
+	    [Total, Text, Total-StartTime]);
     _ ->
       put(hipe_timers, []),
-      ?mmsg("[@~7w]< ~s: ~w~n",
-	    [Total, Text, Total], Mod)
+      ?msg("[@~7w]< ~s: ~w~n", [Total, Text, Total])
   end.
-
 
 start_optional_timer(Text,Mod) ->
   case get(hipe_time) of 
@@ -69,34 +70,33 @@ start_timer() ->
   {Total,_Last} = erlang:statistics(runtime),
   Total.
 
-stop_timer(T) ->
-  {Total,_Last} = erlang:statistics(runtime),
-  Total - T.
-
-start_hipe_timer(Timer) ->
-  Time = erlang:statistics(runtime),
-  put({hipe_timer,Timer},Time).
-
-
-stop_hipe_timer(Timer) ->
-  {T2,_ } = erlang:statistics(runtime),
-  T1 =
-    case get({hipe_timer,Timer}) of
-      {T0,_} -> T0;
-      _ -> 0
-    end,
-  AccT = 
-    case get(Timer) of
-      T when is_integer(T) -> T;
-      _ -> 0
-    end,
-  put(Timer,AccT+T2-T1).
-
-get_hipe_timer_val(Timer) ->
-  case get(Timer) of
-    T when is_integer(T) -> T;
-    _ -> 0
-  end.
-
-set_hipe_timer_val(Timer, Val)->
-  put(Timer, Val).
+%% stop_timer(T) ->
+%%   {Total,_Last} = erlang:statistics(runtime),
+%%   Total - T.
+%% 
+%% start_hipe_timer(Timer) ->
+%%   Time = erlang:statistics(runtime),
+%%   put({hipe_timer,Timer},Time).
+%% 
+%% stop_hipe_timer(Timer) ->
+%%   {T2,_ } = erlang:statistics(runtime),
+%%   T1 =
+%%     case get({hipe_timer,Timer}) of
+%%       {T0,_} -> T0;
+%%       _ -> 0
+%%     end,
+%%   AccT = 
+%%     case get(Timer) of
+%%       T when is_integer(T) -> T;
+%%       _ -> 0
+%%     end,
+%%   put(Timer,AccT+T2-T1).
+%% 
+%% get_hipe_timer_val(Timer) ->
+%%   case get(Timer) of
+%%     T when is_integer(T) -> T;
+%%     _ -> 0
+%%   end.
+%% 
+%% set_hipe_timer_val(Timer, Val)->
+%%   put(Timer, Val).

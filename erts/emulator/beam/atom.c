@@ -76,8 +76,8 @@ more_atom_space(void)
     atom_text_end = atom_text_pos + ATOM_TEXT_SIZE;
     reserved_atom_space += sizeof(AtomText);
 
-    VERBOSE(erl_printf(COUT,"Allocated %d atom space\n",
-		       ATOM_TEXT_SIZE););
+    VERBOSE_MESSAGE((VERBOSE_CHATTY,"Allocated %d atom space\n",
+		     ATOM_TEXT_SIZE));
 }
 
 /*

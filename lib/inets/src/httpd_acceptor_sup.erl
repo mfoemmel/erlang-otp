@@ -39,7 +39,7 @@ start(Addr, Port, AccSupVerbosity) ->
     SupName = make_name(Addr, Port),
     supervisor:start_link({local, SupName}, ?MODULE, [AccSupVerbosity]).
 
-stop(StartArgs) ->
+stop(_StartArgs) ->
     ok.
 
 init([Verbosity]) -> % Supervisor
@@ -52,7 +52,8 @@ do_init(Verbosity) ->
     put(sname,acc_sup),
     ?vlog("starting", []),
     Flags     = {one_for_one, 500, 100},
-    KillAfter = timer:seconds(1),
+    %% FIXME This code was not used! Should it be?
+    %%KillAfter = timer:seconds(1),
     Workers   = [],
     {ok, {Flags, Workers}}.
 

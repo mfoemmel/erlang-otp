@@ -38,22 +38,14 @@
 #include "sys.h"
 #include "global.h"
 #include "erl_sock.h"
+#include "erl_threads.h"
 
 #define TRACE_PRINTOUTS 0
 #ifdef TRACE_PRINTOUTS
 #define MSB2BITS(X) ((((unsigned)(X))+1)*8)
 #endif
 
-#ifdef USE_THREADS
-#define ERL_THREADS_EMU_INTERNAL__
-#include "erl_threads.h"
-#define LOCK	erts_mutex_lock(mutex)
-#define UNLOCK	erts_mutex_unlock(mutex)
-static erts_mutex_t mutex;
-#else
-#define LOCK
-#define UNLOCK
-#endif
+static ethr_mutex mtrace_mutex;
 
 #define TRACE_BUF_SZ 				(16*1024)
 
@@ -474,12 +466,8 @@ void erts_mtrace_init(char *receiver)
 	    erts_allctrs[i].extra	= (void *) &real_allctrs[i];
 	}
 
-
-#ifdef USE_THREADS
-	mutex = erts_mutex_sys(ERTS_MUTEX_SYS_MTRACE);
-	if(!mutex || erts_mutex_set_default_atfork(mutex))
-	    erl_exit(1, "Failed to initialize mtrace mutex\n");
-#endif
+	erts_mtx_init(&mtrace_mutex);
+	erts_mtx_set_forksafe(&mtrace_mutex);
 
 	socket_desc = erts_sock_open();
 	if (socket_desc == ERTS_SOCK_INVALID_SOCKET) {
@@ -516,7 +504,7 @@ void erts_mtrace_init(char *receiver)
 void
 erts_mtrace_stop(void)
 {
-    LOCK;
+    erts_mtx_lock(&mtrace_mutex);
     if (erts_mtrace_enabled) {
 	Uint32 ti = get_time_inc();
     
@@ -544,13 +532,13 @@ erts_mtrace_stop(void)
 	    }
 	}
     }
-    UNLOCK;
+    erts_mtx_unlock(&mtrace_mutex);
 }
 
 void
 erts_mtrace_exit(Uint32 exit_value)
 {
-    LOCK;
+    erts_mtx_lock(&mtrace_mutex);
     if (erts_mtrace_enabled) {
 	Uint32 ti = get_time_inc();
     
@@ -582,7 +570,7 @@ erts_mtrace_exit(Uint32 exit_value)
 	    }
 	}
     }
-    UNLOCK;
+    erts_mtx_unlock(&mtrace_mutex);
 }
 
 static void *
@@ -592,7 +580,7 @@ mtrace_alloc(ErtsAlcType_t n, void *extra, Uint size)
     void *res;
     Uint32 ti;
 
-    LOCK;
+    erts_mtx_lock(&mtrace_mutex);
 
     res = (*real_af->alloc)(n, real_af->extra, size);
 
@@ -653,7 +641,7 @@ mtrace_alloc(ErtsAlcType_t n, void *extra, Uint size)
 
     }
 
-    UNLOCK;
+    erts_mtx_unlock(&mtrace_mutex);
 
     return res;
 }
@@ -665,7 +653,7 @@ mtrace_realloc(ErtsAlcType_t n, void *extra, void *ptr, Uint size)
     void *res;
     Uint32 ti;
 
-    LOCK;
+    erts_mtx_lock(&mtrace_mutex);
 
     res = (*real_af->realloc)(n, real_af->extra, ptr, size);
 
@@ -766,7 +754,7 @@ mtrace_realloc(ErtsAlcType_t n, void *extra, void *ptr, Uint size)
 	}
     }
 
-    UNLOCK;
+    erts_mtx_unlock(&mtrace_mutex);
 
     return res;
 
@@ -778,7 +766,7 @@ mtrace_free(ErtsAlcType_t n, void *extra, void *ptr)
     ErtsAllocatorFunctions_t *real_af = (ErtsAllocatorFunctions_t *) extra;
     Uint32 ti;
 
-    LOCK;
+    erts_mtx_lock(&mtrace_mutex);
 
     (*real_af->free)(n, real_af->extra, ptr);
 
@@ -825,7 +813,7 @@ mtrace_free(ErtsAlcType_t n, void *extra, void *ptr)
 
     }
 
-    UNLOCK;
+    erts_mtx_unlock(&mtrace_mutex);
 }
 
 #ifdef DEBUG

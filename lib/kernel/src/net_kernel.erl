@@ -1166,7 +1166,7 @@ del_pend(_, []) ->
 init_node(Name, LongOrShortNames) ->
     {NameWithoutHost,_Host} = lists:splitwith(fun($@)->false;(_)->true end,
 				  atom_to_list(Name)),
-    case create_name(Name, LongOrShortNames) of
+    case create_name(Name, LongOrShortNames, 1) of
 	{ok,Node} ->
 	    case start_protos(list_to_atom(NameWithoutHost),Node) of
 		{ok, Ls} -> 
@@ -1179,15 +1179,19 @@ init_node(Name, LongOrShortNames) ->
     end.
 
 %% Create the node name
-create_name(Name, LongOrShortNames) ->
+create_name(Name, LongOrShortNames, Try) ->
     put(longnames, case LongOrShortNames of 
 		       shortnames -> false; 
 		       longnames -> true 
 		   end),
-    {Head,Host1} = create_hostpart(Name,LongOrShortNames),
+    {Head,Host1} = create_hostpart(Name, LongOrShortNames),
     case Host1 of
-	{ok, HostPart} ->
+	{ok,HostPart} ->
 	    {ok,list_to_atom(Head ++ HostPart)};
+	{error,long} when Try == 1 ->
+	    %% It could be we haven't read domain name from resolv file yet
+	    inet_config:do_load_resolv(os:type(), longnames),
+	    create_name(Name, LongOrShortNames, 0);
 	{error,Type} ->
 	    error_logger:info_msg(
 	      lists:concat(["Can\'t set ",
@@ -1195,12 +1199,9 @@ create_name(Name, LongOrShortNames) ->
 			    " node name!\n"
 			    "Please check your configuration\n"])),
 	    {error,badarg}
-    end;
+    end.
 
-create_name(_Name, _) ->
-    {error, badarg}.
-
-create_hostpart(Name,LongOrShortNames) ->
+create_hostpart(Name, LongOrShortNames) ->
     {Head,Host} = lists:splitwith(fun($@)->false;(_)->true end,
 				  atom_to_list(Name)),
     Host1 = case {Host,LongOrShortNames} of

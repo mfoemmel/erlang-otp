@@ -1,25 +1,27 @@
 %% -*- erlang-indent-level: 2 -*-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% $Id$
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
-%% hipe_sparc_registers.erl
+%% File: hipe_sparc_registers.erl
 %%
-%% See OTP/erts/emulator/hipe/hipe_sparc_abi.txt
-%%
+%% @doc
+%% See the file: OTP_DIR/erts/emulator/hipe/hipe_sparc_abi.txt
+%% @end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_sparc_registers).
 
 -export([reg_name/1,
 	 fpreg_name/1,
 	 first_virtual/0,
-	 call_clobbered/0,
-	 is_precolored/1,
-	 all_precolored/0,
+	 %% call_clobbered/0,
+	 is_precoloured/1,
+	 all_precoloured/0,
 	 allocatable/0,
 	 is_fixed/1,
-	 fixed/0,
-	 number_of_physical/0,
+	 %% fixed/0,
+	 %% number_of_physical/0,
 	 register_args/0,
 	 register_rets/0,
 	 physical_name/1,
@@ -34,16 +36,18 @@
 	 zero/0,
 	 icc/0,
 	 xcc/0,
-	 fcc/1,
-	 y/0,
+	 %% fcc/1,
+	 %% y/0,
 	 arg/1,
 	 ret/1,
 	 temp0/0,
 	 temp1/0,
 	 temp2/0,
-	 temp3/0,
+	 %% temp3/0,
 	 cpsave/0,
-	 cplink/0]).
+	 %% cplink/0
+         alignment/0
+	]).
 
 -include("../rtl/hipe_literals.hrl").
 
@@ -53,8 +57,8 @@
 %% Numbers 0..38 denote physical registers:
 %%	0..31 denote the standard integer registers.
 %%	32 and 33 denote icc and xcc.
-%%            34 to 37 denotes fcc0 to fcc3
-%%	38 denote the y register.
+%%            34 to 37 denote fcc0 to fcc3
+%%	38 denotes the y register.
 %% Numbers > 38 denote virtual registers
 %%
 
@@ -104,10 +108,8 @@
 -define(LAST_PRECOLOURED,38).
 
 
-call_clobbered() ->
-  allocatable().
-%% -- [temp0(),temp1(),temp2(),temp3()].
-%  lists:seq(0,?LAST_PRECOLOURED).
+%% call_clobbered() ->
+%%   allocatable().
 
 
 %%
@@ -207,15 +209,15 @@ first_virtual() -> ?LAST_PRECOLOURED + 1.
 %%
 %% The number of physical registers
 %%
-number_of_physical() -> ?NR_PHYSICAL.
+%% number_of_physical() -> ?NR_PHYSICAL.
 
 %%
-%% True if a register number is precolored.
+%% True if a register number is precoulored.
 %%
-is_precolored(X) -> X =< ?LAST_PRECOLOURED.
+is_precoloured(X) -> X =< ?LAST_PRECOLOURED.
 
 %%
-%% The precolored registers.
+%% The precoloured registers.
 %%
 stack_pointer() -> ?STACK_POINTER.
 stack_limit() -> ?STACK_LIMIT.
@@ -226,14 +228,14 @@ fcalls() -> ?FCALLS.
 return_address() -> ?RETURN_ADDRESS.
 icc() -> ?ICC.
 xcc() -> ?XCC.
-fcc(N) -> 
-  case N of
-    0 -> ?FCC0;
-    1 -> ?FCC1;
-    2 -> ?FCC2;
-    3 -> ?FCC3
-  end.
-y() -> ?Y.
+%% fcc(N) -> 
+%%   case N of
+%%     0 -> ?FCC0;
+%%     1 -> ?FCC1;
+%%     2 -> ?FCC2;
+%%     3 -> ?FCC3
+%%   end.
+%% y() -> ?Y.
 zero() -> ?Z.
 arg(X) ->
    case X of
@@ -279,9 +281,9 @@ ret(X) ->
 temp0() -> ?TEMP0.
 temp1() -> ?TEMP1.
 temp2() -> ?TEMP2.
-temp3() -> ?TEMP3.
+%% temp3() -> ?TEMP3.
 cpsave() -> ?CPSAVE.
-cplink() -> ?CPLINK.
+%% cplink() -> ?CPLINK.
   
 
 %%
@@ -308,11 +310,11 @@ cplink() -> ?CPLINK.
 %%
 
 allocatable() ->
-      %% To discourage the regalloc from using argument registers they
-      %% are placed at the end. This should be handled somewhere else.
-   [?TEMP3, ?TEMP2, ?TEMP1, ?ARG14, ?ARG13, ?ARG12,
-    ?ARG11, ?ARG10, ?ARG9, ?ARG8, ?ARG7, ?ARG6, ?ARG5, 
-    ?ARG4, ?ARG3, ?ARG2, ?ARG1, ?ARG0, ?ARG15 ]. 
+  %% To discourage the regalloc from using argument registers they
+  %% are placed at the end. This should be handled somewhere else.
+  [?TEMP3, ?TEMP2, ?TEMP1, ?ARG14, ?ARG13, ?ARG12,
+   ?ARG11, ?ARG10, ?ARG9, ?ARG8, ?ARG7, ?ARG6, ?ARG5, 
+   ?ARG4, ?ARG3, ?ARG2, ?ARG1, ?ARG0, ?ARG15]. 
 
 %%
 %% Fixed registers.
@@ -326,14 +328,17 @@ is_fixed(?FCALLS) -> true;
 is_fixed(?RETURN_ADDRESS) -> true;
 is_fixed(_) -> false.
 
-fixed() ->
-  [?STACK_POINTER, 
-   ?STACK_LIMIT,
-   ?HEAP_POINTER,
-   ?HEAP_LIMIT,
-   ?PROC_POINTER,
-   ?FCALLS,
-   ?RETURN_ADDRESS].
+%% This appears to be needed for hipe_sparc_ra_ols but this module is
+%% currently unused.
+%%
+%% fixed() ->
+%%   [?STACK_POINTER, 
+%%    ?STACK_LIMIT,
+%%    ?HEAP_POINTER,
+%%    ?HEAP_LIMIT,
+%%    ?PROC_POINTER,
+%%    ?FCALLS,
+%%    ?RETURN_ADDRESS].
 
 %%
 %% Global registers. Always live, never saved in call frames.
@@ -347,9 +352,9 @@ global() ->
     ?FCALLS].
 
 %%
-%% A list of all precolored regs
+%% A list of all precoulored regs
 %%
-all_precolored() ->
+all_precoloured() ->
    [?STACK_POINTER,
     ?STACK_LIMIT,
     ?HEAP_POINTER,
@@ -390,5 +395,8 @@ register_args() -> ?SPARC_ARGS_IN_REGS.
 register_rets() -> ?SPARC_ARGS_IN_REGS.
 
 %%
-%% The actual register number a precolored register should use.
+%% The actual register number a precoulored register should use.
 physical_name(P) -> P.
+
+alignment() -> 4.
+

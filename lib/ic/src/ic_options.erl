@@ -191,6 +191,7 @@ allowed_opt(timeout, _V)	        -> true;
 allowed_opt({timeout, _}, V)     	-> is_bool(V);
 allowed_opt(c_timeout, {V1, V2})	-> is_int(V1) and is_int(V2);
 allowed_opt(c_timeout, V)               -> is_int(V);
+allowed_opt(c_report, V)             	-> is_bool(V);
 allowed_opt(scoped_op_calls, V)         -> is_bool(V);
 % Compatibility option (semantic check limitation)
 allowed_opt(scl, V)                     -> is_bool(V);

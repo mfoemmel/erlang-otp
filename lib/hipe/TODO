@@ -1,15 +1,12 @@
 Bugfix
 ======
- Find elusive bug2.
  "Correct" error messages
  P->current (Fix observable behaviour?)
- New callingconvention for guardbifs (Recognize at load time).
+ New calling convention for guard bifs (Recognize at load time).
  Long branches:
    timer:tc(hipe,c,[megaco_text_parser,[{timeout,infinity}]]).
    {4801210531,
      {error,[{problem,too_long_branch},{address,3381732},{length,-828622}]}}
-
-
 
 Performance
 ===========
@@ -17,8 +14,6 @@ Performance
  Core Erlang -> Icode
  Better handling of multimove in regalloc.
  Faster closure creation. (Can static fields be preallocated?)
- FP - arithmetic.
- Inline BS-instructions.
  Type info in Icode.
  Expand pseudo-ops before scheduler (SPARC)
  Stack maps for SPARC + Make frames in Sparc not in RTL.
@@ -34,12 +29,12 @@ Cleanup
 =======
 
  Speedup renaming and other bottlenecks in the compiler.
- Only calls with fail lable should end basic blocks.
+ Only calls with fail label should end basic blocks.
  Remove fail-entry-points from RTL (sparc/x86). 
- Cleanup hipe_*_reigsters.erl and interface/rules with regalloc.
+ Cleanup hipe_*_registers.erl and interface/rules with regalloc.
  HiPE in bootstrap.
  Cleanup and merge loaders. (Better handling of data.) 	
- Reexamine switching code.
+ Re-examine switching code.
 
 Extensions
 ==========
@@ -50,12 +45,102 @@ Extensions
  Unified heap + process optimization (+ PE).
  Incremental GC.
 
-
 Other
 =====
 
- Unified heap paper.
  BMs from Telia promotor, AXD301.
- KT2 projects.
  Release party HiPE 1.0
- DVP 4th-year project in Erlang.
+
+
+Old list compiled by Thomas Lindgren (needs cleaning up)
+========================================================
+
+<h1>Experimental implementations</h1>
+<h2>RTL</h2>
+<UL>
+  <LI> Algebraiska förenklingar av uttryck (ex. reducera integer multiply,
+      ta bort addition med 0, etc)
+  <LI> Partial redundancy elimination 
+</UL>
+
+<h1>Unimplemented optimizations</h1>
+
+<H2>Erlang/Core source-level-optimizations</H2>
+<UL>
+  <LI> Inlining. 
+  <LI> "Context compilation"
+  <LI> CDR-kodning
+  <LI> List reuse
+  <LI> Compilation by transformation
+  <LI> Pattern-matching compilation
+</UL>
+
+<H2>Icode-optimizations</H2>
+<UL>
+  <LI> Type analysis
+  <LI> Type based - strength reduction
+  <LI> Convertion to loops from recursive programs
+  <LI> Copy propagation (<a href="./thomasl/icode/local.erl">local</a>,global)
+  <LI> Dominatorer
+      (<a href="./thomasl/icode/dominators.erl">långsamma</a>, snabba)
+  <LI> Inlining again
+</UL>
+
+<H2>RTL-optimizations</H2>
+<UL>
+  <LI> Common subexpression elimination
+  <LI> Ta bort redundanta tester globalt (ex. upprepade typtester)
+  <LI> Ordna om hopp (ex. byt ordning på nil/cons-tester)
+  <LI> Goto eliminering (= expandera uncond. jumps m. känd måltavla)
+  <LI> Save/restore-placering: dataflödesanalys, interaktion m. catch-frames
+  <LI> Loop optimeringar
+      <UL>
+	<LI> Dominatorer (se dominatorer för icode)
+	<LI> Unrolling
+	<LI> Invariant expression removal
+      </UL>
+  <LI> Partial redundancy elimination by lazy code motion
+  <LI> Partially dead code
+</UL>
+
+<H2>Sparc-optimizations</H2>
+<UL>
+  <LI> Global register allocation
+      <UL>
+	<LI> <a href="./thomasl/regalloc/regalloc.erl">
+	    Pessimistisk färgning</a>
+	<LI> Optimistisk färgning (kan slås på i samma fil som pessimistisk
+	    färgning ovan).
+	<LI> Bättre beräkning av spillkostnader
+	<LI> Renaming
+	<LI> Callee-saves register
+	<LI> Live-range splitting
+      </UL>
+  <LI> Instruktionsschedulering
+      <UL>
+	<LI> Branch delay slot scheduling
+	<LI> Load delay slot scheduling
+	<LI> Spekulativa loads med lduwa
+	<LI> Kollapsa serier av tester med bpr
+	<LI> Begränsad predicated execution med movcc
+      </UL>
+  <LI> Kodlayout: statiska förutsägelser om riktning av hopp,
+      layout, sätta branch prediction bits i hopp, etc.
+  <LI> Prefetching av kod med SparcV9:s bpn.
+</UL>
+
+<H2>Other optimizations</H2>
+
+Profile driven optimizations.
+<UL>
+  <LI> Utplacering av räknare i CFG:er (per block, per båge)
+  <LI> Statiska metoder att uppskatta exekveringstid (inom och mellan proc.)
+  <LI> Feedback till program, annotering av CFG:er med profileringsinfo.
+  <LI> Kodlayout med profileringsinfo.
+  <LI> Skapa superblock
+  <LI> Skapa hyperblock
+  <LI> Plocka fram heta block, skapa en 'het' sub-CFG som hoppar
+      till den kalla huvud-CFG:n vid behov.
+  <LI> Optimering av het CFG, kodförflyttning från het till kall CFG.
+  <LI> Spawn-time specialization
+</UL>

@@ -91,13 +91,16 @@
 	'orber_iiop_tracer_silent',
 	'fixed',
 	'orber_exceptions',
-	'orber_diagnostics'
+	'orber_diagnostics',
+	'orber_acl',
+	'orber_tb',
+	'orber_env'
      ]	
   },
   {registered, [orber_sup, orber_iiop_sup, orber_iiop_net, orber_iiop_outsup, 
 	        orber_iiop_insup, orber_bootstrap, orber_init, orber_reqno,
 	        orber_objkeyserver, orber_iiop_socketsup, 
-                orber_iiop_pm]},
+                orber_iiop_pm, orber_env]},
   {applications, [stdlib, kernel]},
   {env, []},
   {mod, {orber, []}}

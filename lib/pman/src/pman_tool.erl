@@ -223,26 +223,26 @@ str_choices(Choices) ->
 %%            )
 
 %% This function is called when the OK button is pressed.
-ok_cb(Object, Event, Args, State, UserData) ->
+ok_cb(_Object, _Event, _Args, State, _UserData) ->
     return_selection(State).
 
 %% This function is called when the Cancle button is pressed.
-cancel_cb(Object, Event, Args, State, UserData) ->
+cancel_cb(_Object, _Event, _Args, State, _UserData) ->
     gse:destroy(State#state.topwin),
     {return, {cancelled, cancel}}.
     
 %% This function is called when an event occurs in a window..
-window_cb(Object, destroy, Args, State, UserData) ->
+window_cb(_Object, destroy, _Args, _State, _UserData) ->
     {return, {cancelled, destroyed}};
 
-window_cb(Object, configure, [Width, Height|_Rest], State, UserData) ->
+window_cb(_Object, configure, [Width, Height|_Rest], State, _UserData) ->
     gse:resize(State#state.frame, Width, Height),
     {state, State}.
 
 
 
 %% A doubleclick int the listbox will cause the dialog to return
-listbox_cb(Object, doubleclick, Args, State, UserData) ->
+listbox_cb(_Object, doubleclick, _Args, State, _UserData) ->
     return_selection(State).
 
 
@@ -289,7 +289,7 @@ gen_loop(State) ->
     receive
 
 	%% Handle all cases of events where no callback is defined.
-	{gs, Object, Event, [], _Args} ->
+	{gs, _Object, _Event, [], _Args} ->
 	    ?ALWAYS_ASSERT("gen_loop: No callback defined"),	    
 	    gen_loop(State);
 
@@ -302,7 +302,7 @@ gen_loop(State) ->
 		{state, State1} -> 
 		    gen_loop(State1)
 	    end;
-	AnyEvent ->
+	_AnyEvent ->
 	    ?ALWAYS_ASSERT("Received unexpected event"),
 	    gen_loop(State)
 	    

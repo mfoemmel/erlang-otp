@@ -54,7 +54,7 @@
 %%======================================================================
 
 
-ip(Master) ->
+ip(_Master) ->
     W = gs:window(win, gs:start(), [{width, 302},
 				    {height, 38},
 				    {bg, ?DEFAULT_BG_COLOR},
@@ -66,13 +66,13 @@ ip(Master) ->
 		      {bg, {255, 255, 255}}
 		     ]),
     gs:create(image, C, [{load_gif, code:priv_dir(tv) ++ "/erlang.gif"}]),
-    BgLabel = gs:label(W, [{width, 252},
-			   {height, 12}, 
-			   {x, 47},
-			   {y, 23},
-			   {bg, {0, 0, 0}},
-			   {cursor, arrow}
-			  ]),
+    gs:label(W, [{width, 252},
+		 {height, 12}, 
+		 {x, 47},
+		 {y, 23},
+		 {bg, {0, 0, 0}},
+		 {cursor, arrow}
+		]),
     
     LabelList = create_labels(?NOF_LABELS, W, 48),
     
@@ -215,9 +215,9 @@ update_window(LabelList, N, Hi, LblId, Text) ->
 %%======================================================================
 
 
-update_labels(LabelList, N, Hi) when N > ?NOF_LABELS ->
+update_labels(_LabelList, N, _Hi) when N > ?NOF_LABELS ->
     done;
-update_labels(LabelList, N, Hi) when N >= Hi ->
+update_labels(_LabelList, N, Hi) when N >= Hi ->
     done;
 update_labels(LabelList, N, Hi) ->
     LabelId = lists:nth(N, LabelList),

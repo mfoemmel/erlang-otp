@@ -72,6 +72,12 @@
 -define(PRIMOP_ERROR, error).			% arity 1
 -define(PRIMOP_RECEIVE_SELECT, receive_select).	% arity 0
 -define(PRIMOP_RECEIVE_NEXT, receive_next).	% arity 0
+-define(PRIMOP_ELEMENT, element).		% arity 2
+-define(PRIMOP_DSETELEMENT, dsetelement).	% arity 3
 -define(PRIMOP_MAKE_FUN, make_fun).		% arity 6
 -define(PRIMOP_APPLY_FUN, apply_fun).		% arity 2
 -define(PRIMOP_FUN_ELEMENT, closure_element).	% arity 2
+-define(PRIMOP_SET_LABEL, set_label).           % arity 1
+-define(PRIMOP_GOTO_LABEL, goto_label).         % arity 1
+-define(PRIMOP_REDUCTION_TEST, reduction_test). % arity 0
+-define(PRIMOP_SOURCE_LINE, line).		% arity 1

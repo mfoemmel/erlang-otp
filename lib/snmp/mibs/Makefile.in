@@ -22,7 +22,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # Application version
 # ----------------------------------------------------
 include ../vsn.mk
-VSN=$(SNMPEA_VSN)
+VSN = $(SNMP_VSN)
 
 # ----------------------------------------------------
 # Configured variables
@@ -105,6 +105,8 @@ TARGET_FILES = \
 # ----------------------------------------------------
 #SNMP_FLAGS = -I $(ERL_TOP)/lib/sasl/priv/mibs -I ../priv/mibs
 
+SNMP_FLAGS += -pa ../ebin +version 
+
 ifneq ($(MIBS_VERBOSITY),) 
 SNMP_FLAGS += +'{verbosity,$(MIBS_VERBOSITY)}'
 endif
@@ -144,6 +146,10 @@ info:
 	@echo "TARGET_FILES = $(TARGET_FILES)"
 	@echo ""
 	@echo "OTP_MIBDIR   = $(OTP_MIBDIR)"
+	@echo ""
+	@echo "SNMP_VSN    = $(SNMP_VSN)"
+	@echo "VSN         = $(VSN)"
+	@echo "RELSYSDIR   = $(RELSYSDIR)"
 
 v1/%.mib.v1: %.mib
 	$(ERL_TOP)/lib/snmp/bin/snmp-v2tov1 -o $@ $<

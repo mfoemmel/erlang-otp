@@ -9,9 +9,9 @@
 %%  History  :	* 2001-07-20 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: happi $
-%%              $Date: 2002/10/10 06:18:29 $
-%%              $Revision: 1.20 $
+%%              $Author: kostis $
+%%              $Date: 2004/08/21 16:39:00 $
+%%              $Revision: 1.24 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -27,7 +27,7 @@ allocate(_Fun, SparcCfg, Options) ->
   ?opt_start_timer("Regalloc"),
   ?start_ra_instrumentation(Options, 
 			    hipe_sparc_size:count_instrs_cfg(SparcCfg),
-			    element(2,hipe_sparc_cfg:var_range(SparcCfg))),
+			    hipe_gensym:get_var(sparc)),
 
   {NewCfg,TempMap, NextPos}  = 
     case proplists:get_value(regalloc,Options) of
@@ -43,13 +43,12 @@ allocate(_Fun, SparcCfg, Options) ->
       naive ->
 	hipe_sparc_ra_memory:alloc(
 	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
-%       cs ->
-%	hipe_sparc_ra_cs:alloc(
-%	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
-%       newls ->
-%	hipe_sparc_ra_new_ls:alloc(
-%	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
-      
+%%    cs ->
+%%	hipe_sparc_ra_cs:alloc(
+%%	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
+%%    newls ->
+%%	hipe_sparc_ra_new_ls:alloc(
+%%	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
       _ -> %% linear_scan made default register allocator
 	hipe_sparc_ra_ls:alloc(
 	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options)
@@ -58,7 +57,7 @@ allocate(_Fun, SparcCfg, Options) ->
   ?opt_stop_timer("Regalloc done"),
   ?stop_ra_instrumentation(Options, 
 			    hipe_sparc_size:count_instrs_cfg(NewCfg),
-			    element(2,hipe_sparc_cfg:var_range(NewCfg))),
+			    hipe_gensym:get_var(NewCfg)),
 
   {NewCfg2, FpMap, NextPos2}  = 
     case get(hipe_inline_fp) of
@@ -88,7 +87,7 @@ count_caller_saves(CFG, Liveness, T) ->
     lists:foldr(
       %% For each BB, take the set of CallerSaves from previous BBs
       fun(L, CallerSaves) -> 
-	  %% Just keep temps that are not precolored.
+	  %% Just keep temps that are not precoloured.
 	  [ X || 
 	    %% Get the set of caller saves (from {Liveness, CS}).
 	    X <- element(2,
@@ -99,9 +98,7 @@ count_caller_saves(CFG, Liveness, T) ->
 		    %% Calculate live-in
 		    UsesSet = ordsets:from_list(uses(I,T)),
 		    DefsSet = ordsets:from_list(defines(I,T)),
-		    LiveOverI = 
-		      ordsets:subtract(LiveOut,
-				       DefsSet),      
+		    LiveOverI = ordsets:subtract(LiveOut, DefsSet),      
 		      NewCS = 
 			case hipe_sparc:type(I) of
 			  %% If this is a call instruction, keep the CS-temps.
@@ -119,7 +116,7 @@ count_caller_saves(CFG, Liveness, T) ->
 		%% Get the instructions in the BB.
 		hipe_bb:code(T:bb(CFG,L)))),
 	    %% Filter
-	    not T:is_precolored(X)]	
+	    not T:is_precoloured(X)]	
       end,
       [],
       %% Get BBs
@@ -139,8 +136,8 @@ regnames(Regs2, Target) ->
     case Target of
       hipe_sparc_specific ->
 	hipe_sparc:keep_registers(Regs2);
-      hipe_sparc_specific_fp->
-	hipe_sparc:keep_fp_registers(Regs2);
+      %% hipe_sparc_specific_fp ->
+      %%  hipe_sparc:keep_fp_registers(Regs2);
       _ ->
 	Regs2
     end,

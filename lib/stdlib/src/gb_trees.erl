@@ -229,15 +229,10 @@ update_1(Key, Value, {_, _, Smaller, Bigger}) ->
 
 insert(Key, Val, {S, T}) ->
     S1 = S+1,
-    case insert_1(Key, Val, T, ?pow(S1, ?p)) of
-	{T1} ->
-	    {S1, T1}
-    end.
+    {S1,insert_1(Key, Val, T, ?pow(S1, ?p))}.
 
 insert_1(Key, Value, {Key1, V, Smaller, Bigger}, S) when Key < Key1 -> 
     case insert_1(Key, Value, Smaller, ?div2(S)) of
-	{T1} ->
-	    {{Key1, V, T1, Bigger}};
 	{T1, H1, S1} ->
 	    T = {Key1, V, T1, Bigger},
 	    {H2, S2} = count(Bigger),
@@ -246,15 +241,15 @@ insert_1(Key, Value, {Key1, V, Smaller, Bigger}, S) when Key < Key1 ->
 	    P = ?pow(SS, ?p),
 	    if
 		H > P -> 
-		    {balance(T, SS)};
+		    balance(T, SS);
 		true ->
 		    {T, H, SS}
-	    end
+	    end;
+	T1 ->
+	    {Key1, V, T1, Bigger}
     end;
 insert_1(Key, Value, {Key1, V, Smaller, Bigger}, S) when Key > Key1 -> 
     case insert_1(Key, Value, Bigger, ?div2(S)) of
-	{T1} ->
-	    {{Key1, V, Smaller, T1}};
 	{T1, H1, S1} ->
 	    T = {Key1, V, Smaller, T1},
 	    {H2, S2} = count(Smaller),
@@ -263,15 +258,17 @@ insert_1(Key, Value, {Key1, V, Smaller, Bigger}, S) when Key > Key1 ->
 	    P = ?pow(SS, ?p),
 	    if
 		H > P -> 
-		    {balance(T, SS)};
+		    balance(T, SS);
 		true ->
 		    {T, H, SS}
-	    end
+	    end;
+	T1 ->
+	    {Key1, V, Smaller, T1}
     end;
-insert_1(Key, Value, nil, S) when S == 0 ->
+insert_1(Key, Value, nil, S) when S =:= 0 ->
     {{Key, Value, nil, nil}, 1, 1};
 insert_1(Key, Value, nil, _S) ->
-    {{Key, Value, nil, nil}};
+    {Key, Value, nil, nil};
 insert_1(Key, _, _, _) ->
     erlang:fault({key_exists, Key}).
 
@@ -297,7 +294,7 @@ count({_, _, nil, nil}) ->
 count({_, _, Sm, Bi}) ->
     {H1, S1} = count(Sm),
     {H2, S2} = count(Bi),
-    {max(H1, H2) * 2, S1 + S2 + 1};
+    {?mul2(max(H1, H2)), S1 + S2 + 1};
 count(nil) ->
     {1, 0}.
 

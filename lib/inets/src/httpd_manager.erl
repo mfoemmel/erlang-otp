@@ -269,7 +269,7 @@ do_init(ConfigFile, ConfigList, Addr, Port, Verbosity) ->
     ?vlog("starting",[]),
     ConfigDB   = do_initial_store(ConfigList),
     ?vtrace("config db: ~p", [ConfigDB]),
-    SocketType = httpd_socket:config(ConfigDB),
+    SocketType = http_transport:config(ConfigDB),
     ?vtrace("socket type: ~p, now start acceptor", [SocketType]),
     case httpd_acceptor_sup:start_acceptor(SocketType, Addr, Port, ConfigDB) of
 	{ok, Pid} ->
@@ -334,7 +334,7 @@ handle_call(get_status, _From, State) ->
     ?vtrace("status = ~p",[S1]),
     {reply,S1,State};
 
-handle_call(is_busy, From, State) ->
+handle_call(is_busy, _From, State) ->
     Reply = case get_ustate(State) of
 		busy ->
 		    true;
@@ -344,7 +344,7 @@ handle_call(is_busy, From, State) ->
     ?vlog("is busy: ~p",[Reply]),
     {reply,Reply,State};
 
-handle_call(is_busy_or_blocked, From, State) ->
+handle_call(is_busy_or_blocked, _From, State) ->
     Reply = 
 	case get_astate(State) of
 	    unblocked ->
@@ -360,7 +360,7 @@ handle_call(is_busy_or_blocked, From, State) ->
     ?vlog("is busy or blocked: ~p",[Reply]),
     {reply,Reply,State};
 
-handle_call(is_blocked, From, State) ->
+handle_call(is_blocked, _From, State) ->
     Reply = 
 	case get_astate(State) of
 	    unblocked ->
@@ -371,23 +371,23 @@ handle_call(is_blocked, From, State) ->
     ?vlog("is blocked: ~p",[Reply]),
     {reply,Reply,State};
 
-handle_call(get_admin_state, From, State) ->
+handle_call(get_admin_state, _From, State) ->
     Reply = get_astate(State),
     ?vlog("admin state: ~p",[Reply]),
     {reply,Reply,State};
 
-handle_call(get_usage_state, From, State) ->
+handle_call(get_usage_state, _From, State) ->
     Reply = get_ustate(State),
     ?vlog("usage state: ~p",[Reply]),
     {reply,Reply,State};
 
-handle_call({verbosity,Who,Verbosity}, From, State) ->
+handle_call({verbosity,Who,Verbosity}, _From, State) ->
     V = ?vvalidate(Verbosity),
     ?vlog("~n   Set new verbosity to ~p for ~p",[V,Who]),
     Reply = set_verbosity(Who,V,State),
     {reply,Reply,State};
 
-handle_call(restart, From, State) when State#state.admin_state == blocked ->
+handle_call(restart, _From, State) when State#state.admin_state == blocked ->
     ?vlog("restart",[]),
     case handle_restart(State) of
 	{stop, Reply,S1} ->
@@ -396,11 +396,11 @@ handle_call(restart, From, State) when State#state.admin_state == blocked ->
 	    {reply,Reply,S1}
     end;
 
-handle_call(restart, From, State) ->
+handle_call(restart, _From, State) ->
     ?vlog("restart(~p)",[State#state.admin_state]),
     {reply,{error,{invalid_admin_state,State#state.admin_state}},State};
 
-handle_call(block, From, State) ->
+handle_call(block, _From, State) ->
     ?vlog("block(disturbing)",[]),
     {Reply,S1} = handle_block(State),
     {reply,Reply,S1};
@@ -410,7 +410,7 @@ handle_call(unblock, {From,_Tag}, State) ->
     {Reply,S1} = handle_unblock(State,From),
     {reply, Reply, S1};
 
-handle_call({new_connection, Pid}, From, State) ->
+handle_call({new_connection, Pid}, _From, State) ->
     ?vlog("~n   New connection (~p) when connection count = ~p",
 	  [Pid,length(State#state.connections)]),
     {S, S1} = handle_new_connection(State, Pid),
@@ -465,7 +465,7 @@ handle_info({block_timeout, Method}, State) ->
     S1 = handle_block_timeout(State,Method),
     {noreply, S1};
 
-handle_info({'DOWN', Ref, process, _Object, Info}, State) ->
+handle_info({'DOWN', Ref, process, _Object, _Info}, State) ->
     ?vlog("~n   down message for ~p",[Ref]),
     S1 = 
 	case State#state.blocker_ref of
@@ -518,12 +518,12 @@ terminate(R, #state{config_db = Db}) ->
 %% these function is actually never used. The reason for keeping
 %% this stuff is only for future use.
 %%
-code_change({down,ToVsn},State,Extra) ->
+code_change({down,_ToVsn}, State, _Extra) ->
     {ok,State};
 
 %% code_change(FromVsn, State, Extra)
 %%
-code_change(FromVsn,State,Extra) ->
+code_change(_FromVsn, State, _Extra) ->
     {ok,State}.
 
 
@@ -563,13 +563,13 @@ check_connections(#state{connections = Connections} = State, Pid, Reason) ->
     case lists:delete(Pid, Connections) of
 	Connections -> % Not a request handler, so ignore
 	    State;
-	Connections1 ->
+        NewConnections ->
 	    String = 
 		lists:flatten(
 		  io_lib:format("request handler (~p) crashed:"
 				"~n   ~p", [Pid, Reason])),
 	    report_error(State, String),
-	    State#state{connections = lists:delete(Pid, Connections)}
+	    State#state{connections = NewConnections}
     end.
 
 
@@ -585,7 +585,7 @@ handle_new_connection(State, Handler) ->
     AdminState = get_astate(State),
     handle_new_connection(UsageState, AdminState, State, Handler).
 
-handle_new_connection(busy, unblocked, State, Handler) ->
+handle_new_connection(busy, unblocked, State, _Handler) ->
     Status = update_heavy_load_status(State#state.status),
     {{reject, busy}, 
      State#state{status = Status}};
@@ -744,16 +744,16 @@ handle_block_timeout1(S,Method,TmrInfo) ->
     S#state{admin_state = unblocked,
 	    blocker_ref = undefined, blocking_tmr = undefined}.
 
-handle_unblock(S,FromA) ->
-    handle_unblock(S,FromA,S#state.admin_state).
+handle_unblock(S, FromA) ->
+    handle_unblock(S, FromA, S#state.admin_state).
 
-handle_unblock(S,_FromA,unblocked) ->
+handle_unblock(S, _FromA, unblocked) ->
     {ok,S};
-handle_unblock(S,FromA,_AdminState) ->
+handle_unblock(S, FromA, _AdminState) ->
     ?vtrace("handle_unblock -> (possibly) stop block timer",[]),
     stop_block_tmr(S#state.blocking_tmr),
     case S#state.blocking_tmr of
-	{Tmr,FromB,Ref} ->
+	{_Tmr,FromB,Ref} ->
 	    %% Another process is trying to unblock
 	    %% Inform the blocker
 	    FromB ! {block_reply, {error,{unblocked,FromA}},Ref};
@@ -880,10 +880,10 @@ stop_block_tmr(Ref) ->
 %% Monitor blocker functions
 monitor_blocker(Pid) when pid(Pid) ->
     case (catch erlang:monitor(process,Pid)) of
+	{'EXIT', _Reason} ->
+	    undefined;
 	MonitorRef ->
-	    MonitorRef;
-	{'EXIT',Reason} ->
-	    undefined
+	    MonitorRef
     end;
 monitor_blocker(_) ->
     undefined.
@@ -901,12 +901,12 @@ update_heavy_load_status(Status) ->
 
 update_connection_status(Status,ConnCount) ->
     S1 = case lists:keysearch(max_conn,1,Status) of
-	     {value,{max_conn,C1}} when ConnCount > C1 ->
+	     {value, {max_conn, C1}} when ConnCount > C1 ->
 		 lists:keyreplace(max_conn,1,Status,{max_conn,ConnCount});
-	     {value,{max_conn,C2}} ->
+	     {value, {max_conn, _C2}} ->
 		 Status;
 	     false ->
-		 [{max_conn,ConnCount}|Status]
+		 [{max_conn, ConnCount} | Status]
 	 end,
     update_status_with_time(S1,last_connection).
 
@@ -914,29 +914,6 @@ update_status_with_time(Status,Key) ->
     lists:keyreplace(Key,1,Status,{Key,universal_time()}).
 
 universal_time() -> calendar:universal_time().
-
-
-auth_status(P) when pid(P) ->
-    Items = [status, message_queue_len, reductions,
-	     heap_size, stack_size, current_function],
-    {auth_status, process_status(P,Items,[])};
-auth_status(_) ->
-    {auth_status, undefined}.
-
-sec_status(P) when pid(P) ->
-    Items = [status, message_queue_len, reductions,
-	     heap_size, stack_size, current_function],
-    {security_status, process_status(P,Items,[])};
-sec_status(_) ->
-    {security_status, undefined}.
-
-acceptor_status(P) when pid(P) ->
-    Items = [status, message_queue_len, reductions,
-	     heap_size, stack_size, current_function],
-    {acceptor_status, process_status(P,Items,[])};
-acceptor_status(_) ->
-    {acceptor_status, undefined}.
-
 
 manager_status(P) ->
     Items = [status, message_queue_len, reductions,

@@ -26,6 +26,7 @@
 -export([is_constant_expr/1, partial_eval/1]).
 
 %% Is used by standalone Erlang (escript).
+%% Also used by shell.erl.
 -export([match_clause/4]).
 
 %% The following exports are here for backwards compatibility.
@@ -189,17 +190,13 @@ expr({'if',_,Cs}, Bs, Lf, Ef, RBs) ->
 expr({'case',_,E,Cs}, Bs0, Lf, Ef, RBs) ->
     {value,Val,Bs} = expr(E, Bs0, Lf, Ef, none),
     case_clauses(Val, Cs, Bs, Lf, Ef, RBs);
-expr({'try',_,_Es,_Scs,_Ccs}, _Bs0, _Lf, _Ef, _RBs) ->
-    exit({try_not_yet_implemented,[{erl_eval,expr,3}]});
-%expr({'try',_,Es,Scs,Ccs}, Bs0, Lf, Ef, RBs) ->
-%    try exprs(Es, Bs0, Lf, Ef, RBs) of
-%        {value,Val,Bs} when [] =/= Scs ->
-%           case_clauses(Val, Scs, Bs, Lf, Ef, RBs);
-%        {value,V,Bs} ->
-%            ret_expr(V, Bs, RBs)
-%    catch Exception ->
-%        case_clauses(Exception, Ccs, Bs0, Lf, Ef, RBs)
-%    end;
+expr({'try',_,Es,Ocs,Ccs,As}, Bs0, Lf, Ef, RBs) ->
+    case try_fix(Es, Bs0, Lf, Ef, RBs) of
+	{value,V,Bs} -> 
+	    try_of(V, Ocs, As, Bs, Lf, Ef, RBs);
+	Ex ->
+	    try_catch(Ex, Ccs, As, Bs0, Lf, Ef, RBs)
+    end;
 expr({'receive',_,Cs}, Bs, Lf, Ef, RBs) ->
     receive_clauses(Cs, Bs, Lf, Ef, [], RBs);
 expr({'receive',_, Cs, E, TB}, Bs0, Lf, Ef, RBs) ->
@@ -255,27 +252,33 @@ expr({'fun',Line,{clauses,Cs}} = Ex, Bs, Lf, Ef, RBs) ->
 	    exit({{'argument_limit',{'fun',Line,Cs}},[{erl_eval,expr,3}]})
     end,
     ret_expr(F, Bs, RBs);
+expr({call,_,{remote,_,{atom,_,qlc},{atom,_,q}},[{lc,_,_E,_Qs}=LC | As0]}, 
+     Bs0, Lf, Ef, RBs) when length(As0) =< 1 ->
+    %% No expansion or evaluation of module name or function name.
+    case qlc:transform_from_evaluator(LC, Bs0) of
+        {ok,{call,L,Remote,[QLC]}} ->
+            expr({call,L,Remote,[QLC | As0]}, Bs0, Lf, Ef, RBs);
+        {not_ok,Error} ->
+            ret_expr(Error, Bs0, RBs)
+    end;
 expr({call,_,{remote,_,Mod,Func},As0}, Bs0, Lf, Ef, RBs) ->
     Mod1 = expand_module_name(Mod, Bs0),
     {value,M,Bs1} = expr(Mod1, Bs0, Lf, Ef, none),
     {value,F,Bs2} = expr(Func, Bs0, Lf, Ef, none),
     {As,Bs3} = expr_list(As0, merge_bindings(Bs1, Bs2), Lf, Ef),
     do_apply({M,F}, As, Bs3, Ef, RBs);
-expr({call,_,Func0,As0}, Bs0, Lf, Ef, RBs) ->
-    {value,Func,Bs1} = expr(Func0, Bs0, Lf, Ef, none),
-    if
-        is_atom(Func) ->
-	    case erl_internal:bif(Func, length(As0)) of
-		true ->
-		    {As,Bs2} = expr_list(As0, Bs1, Lf, Ef),
-                    bif(Func, As, Bs2, Ef, RBs);
-		false ->
-                    local_func(Func, As0, Bs1, Lf, RBs)
-	    end;
-        true -> % function or {Mod,Fun}
-	    {As,Bs2} = expr_list(As0, Bs1, Lf, Ef),
-            do_apply(Func, As, Bs2, Ef, RBs)
+expr({call,_,{atom,_,Func},As0}, Bs0, Lf, Ef, RBs) ->
+    case erl_internal:bif(Func, length(As0)) of
+        true ->
+            {As,Bs} = expr_list(As0, Bs0, Lf, Ef),
+            bif(Func, As, Bs, Ef, RBs);
+        false ->
+            local_func(Func, As0, Bs0, Lf, RBs)
     end;
+expr({call,_,Func0,As0}, Bs0, Lf, Ef, RBs) -> % function or {Mod,Fun}
+    {value,Func,Bs1} = expr(Func0, Bs0, Lf, Ef, none),
+    {As,Bs2} = expr_list(As0, Bs1, Lf, Ef),
+    do_apply(Func, As, Bs2, Ef, RBs);
 expr({'catch',_,Expr}, Bs0, Lf, Ef, RBs) ->
     Ref = make_ref(),
     case catch {Ref,expr(Expr, Bs0, Lf, Ef, none)} of
@@ -396,6 +399,19 @@ bif(Name, As, Bs, Ef, RBs) ->
 %%	ExternalFuncHandler = {value,F} | none.
 %% MF is a tuple {Module,Function} or a fun.
 
+do_apply({M,F}=Func, As, Bs0, Ef, RBs)
+  when is_tuple(M), size(M) >= 1, is_atom(element(1, M)), is_atom(F) ->
+    case Ef of
+        none when RBs == value ->
+            %% Make tail recursive calls when possible.
+            apply(M, F, As);
+        none ->
+            ret_expr(apply(M, F, As), Bs0, RBs);
+        {value,F} when RBs == value ->
+            F(Func, As);
+        {value,F} ->
+            ret_expr(F(Func, As), Bs0, RBs)
+    end;
 do_apply(Func, As, Bs0, Ef, RBs) ->
     Info = if
                is_function(Func) -> erlang:fun_info(Func, module);
@@ -543,8 +559,8 @@ eval_op('++', A1, A2) -> A1 ++ A2;
 eval_op('--', A1, A2) -> A1 -- A2;
 eval_op('!', E1, E2) -> E1 ! E2.
 
-eval_op('+', A) -> A;
-eval_op('-', A) -> -A;
+eval_op('+', A) -> + A;
+eval_op('-', A) -> - A;
 eval_op('bnot', A) -> bnot A;
 eval_op('not', A) -> not A.
 
@@ -567,6 +583,109 @@ case_clauses(Val, Cs, Bs, Lf, Ef, RBs) ->
 	nomatch ->
 	    exit({{case_clause,Val},[{erl_eval,expr,3}]})
     end.
+
+%% try_fix(Expressions, Bindings, LocalFuncHandler, ExtFuncHandler)
+%% Return {value,Value,NewBindings} 
+%%        | {CatchClass,Reason,Stacktrace}=Exception
+%%    CatchClass = error|exit|throw
+%%
+%% Tries to emulate the real try..of..catch..end semantics since we cannot 
+%% use it because stdlib has to be compiled with a old release compiler
+
+try_fix(Es, Bs, Lf, Ef, RBs) ->
+    Ref = make_ref(),
+    case catch {Ref,exprs(Es, Bs, Lf, Ef, RBs)} of
+	{Ref,{value,_,_}=Value} -> Value;
+	{'EXIT',Reason} ->
+	    {catch_class(Reason),Reason,[{erl_eval,expr,3}]};
+	Throw ->
+	    {throw,Throw,[{erl_eval,expr,3}]}
+    end.
+
+%% Make an educated guess of the exception class 
+
+catch_class({internal_error,_}) ->  error;
+catch_class({badarg,_}) ->          error;
+catch_class({badarith,_}) ->        error;
+catch_class({{badmatch,_},_}) ->    error;
+catch_class({function_clause,_}) -> error;
+catch_class({{case_clause,_},_}) -> error;
+catch_class({if_clause,_}) ->       error;
+catch_class({undef,_}) ->           error;
+catch_class({{badfun,_},_}) ->      error;
+catch_class({{badarity,_},_}) ->    error;
+catch_class({timeout_value,_}) ->   error;
+catch_class({noproc,_}) ->          error;
+catch_class({notalive,_}) ->        error;
+catch_class({system_limit,_}) ->    error;
+catch_class({{try_clause,_},_}) ->  error;
+catch_class(_) ->                   exit.
+
+%% try_of(Value, OfClauses, AfterExpressions, 
+%%        Bindings, LocalFuncHandler, ExtFuncHandler)
+
+try_of(V, [], As, Bs, Lf, Ef, RBs) ->
+    try_end(V, As, Bs, Lf, Ef, RBs);
+try_of(V, Ocs, As, Bs0, Lf, Ef, RBs) ->
+    case match_clause(Ocs, [V], Bs0, Lf, Ef) of
+	{B, Bs} ->
+	    try_after(B, As, Bs, Lf, Ef, RBs);
+	nomatch ->
+	    exit({{try_clause,V},[{erl_eval,expr,3}]})
+    end.
+
+%% try_catch(Exception, CatchClauses, 
+%%           AfterExpressions, Bindings, LocalFuncHandler, ExtFuncHandler)
+
+try_catch(Ex, [], As, Bs, Lf, Ef, RBs) ->
+    try_end_rethrow(Ex, As, Bs, Lf, Ef, RBs);
+try_catch(Ex, Ccs, As, Bs0, Lf, Ef, RBs) ->
+    case match_clause(Ccs, [Ex], Bs0, Lf, Ef) of
+	{B, Bs} ->
+	    try_after(B, As, Bs, Lf, Ef, RBs);
+	nomatch ->
+	    try_rethrow(Ex)
+    end.
+
+%% try_after(Body, AfterExpressions, 
+%%           Bindings, LocalFuncHandler, ExtFuncHandler)
+
+try_after(B, [], Bs, Lf, Ef, RBs) ->
+    exprs(B, Bs, Lf, Ef, RBs);
+try_after(B, As, Bs0, Lf, Ef,RBs) ->
+    case try_fix(B, Bs0, Lf, Ef, RBs) of
+	{value,V,Bs1} -> 
+	    try_end(V, As, Bs1, Lf, Ef, RBs);
+	Ex ->
+	    try_end_rethrow(Ex, As, Bs0, Lf, Ef, RBs)
+    end.
+
+%% try_end(Value, AfterExpressions, 
+%%         Bindings, LocalFuncHandler, ExtFuncHandler)
+
+try_end(V, [], Bs, _Lf, _Ef, _RBs) ->
+    {value,V,Bs};
+try_end(V, As, Bs0, Lf, Ef, RBs) ->
+    {value,_,Bs} = exprs(As, Bs0, Lf, Ef, RBs),
+    {value,V,Bs}.
+
+%% try_end_rethrow(Exception, AfterExpressions, 
+%%                 Bindings, LocalFuncHandler, ExtFuncHandler)
+try_end_rethrow(Ex, [], _Bs, _Lf, _Ef, _RBs) ->
+    try_rethrow(Ex);
+try_end_rethrow(Ex, As, Bs, Lf, Ef, RBs) ->
+    exprs(As, Bs, Lf, Ef, RBs),
+    try_rethrow(Ex).
+
+%% Try to simulate the orginal exception
+%% Kind of antifunction to catch_class/1 above.
+
+try_rethrow({error,V,_}) ->
+    exit(V); % erlang:fault(V) does not keep stacktrace
+try_rethrow({exit,V,_}) ->
+    exit(V);
+try_rethrow({throw,V,_}) ->
+    erlang:throw(V).
 
 %%
 %% receive_clauses(Clauses, Bindings, LocalFuncHnd,ExtFuncHnd, Messages, RBs) 
@@ -681,9 +800,12 @@ guard0([], _Bs, _Lf, _Ef) -> true.
 %%  Evaluate one guard test. Never fails, returns bool().
 
 guard_test({call,_,{atom,_,Name},As0}, Bs0, Lf, Ef) ->
-    case catch expr_list(As0, Bs0, Lf, Ef) of
-	{As1,Bs1} -> {value,type_test(Name, As1),Bs1}; % Ignore Ef.
-	_Other -> {value,false,Bs0}
+    case catch begin 
+                   {As1,Bs1} = expr_list(As0, Bs0, Lf, Ef),
+                   {value,type_test(Name, As1),Bs1} % Ignore Ef.
+               end of
+        {value,true,Bs2} -> {value,true,Bs2};
+        _Other -> {value,false,Bs0}
     end;
 guard_test({op,_,Op,A0}, Bs0, Lf, Ef) ->
     case catch begin
@@ -706,6 +828,19 @@ guard_test({atom,_,false}, Bs, _Lf, _Ef) -> {value,false,Bs};
 guard_test({var,_,V}, Bs, _Lf, _Ef) ->
     {value,Val} = binding(V, Bs),
     {value,Val == true,Bs};
+guard_test({call,_L,{remote,_Lr,{atom,_Lm,erlang},{atom,_Lf,F}},As0}, 
+          Bs0, Lf, Ef) ->
+    case catch begin
+                   {As1,Bs1} = expr_list(As0, Bs0, Lf, Ef),
+                   {value,type_test(F, As1),Bs1} % Ignore Ef.
+               end of
+        {value,true,Bs2} -> {value,true,Bs2};
+        _Other -> {value,false,Bs0}
+    end;
+guard_test({call,L,{tuple,L1,[{atom,Lm,erlang},{atom,L2,F}]},As}, 
+         Bs0, Lf, Ef) ->
+    guard_test({call,L,{remote,L1,{atom,Lm,erlang},{atom,L2,F}},As}, 
+               Bs0, Lf, Ef);
 guard_test(_Other, Bs, _Lf, _Ef) -> {value,false,Bs}.
 
 type_test(integer, [A]) -> erlang:is_integer(A);
@@ -887,6 +1022,18 @@ merge_bindings(Bs1, Bs2) ->
 		  end end,
 	  Bs2, orddict:to_list(Bs1)).
 
+%% del_bindings(Bs1, Bs2) -> % del all in Bs1 from Bs2
+%%     orddict:fold(
+%%       fun (Name, Val, Bs) ->
+%% 	      case orddict:find(Name, Bs) of
+%% 		  {ok,Val} -> orddict:erase(Name, Bs);
+%% 		  {ok,V1} -> exit({{badmatch,V1},[{erl_eval,expr,3}]});
+%% 		  error -> Bs
+%% 	      end
+%%       end, Bs2, Bs1).
+			  
+			  
+    
 
 %%----------------------------------------------------------------------------
 %%
@@ -967,8 +1114,8 @@ eval('=/=', X, Y) -> X =/= Y;
 eval('++', X, Y) -> X ++ Y;
 eval('--', X, Y) -> X -- Y.
 
-eval('+', X) -> 0 + X;
-eval('-', X) -> 0 - X;
+eval('+', X) -> + X;
+eval('-', X) -> - X;
 eval('bnot', X) -> bnot X;
 eval('not', X) ->  not X.
 

@@ -900,13 +900,24 @@ pgen_dispatcher(Erules,_Module,{Types,_Values,_,_,_Objects,_ObjectSets}) ->
 % 	_ ->
 % 	    emit(["decode(Type,Data) ->",nl])
 %     end,
-    emit(["decode(Type,Data) ->",nl]),
+
+    Return_rest = lists:member(undec_rest,get(encoding_options)),
+    Data = case {Erules,Return_rest} of
+	       {ber_bin_v2,true} -> "Data0";
+	       _ -> "Data"
+	   end,
+
+    emit(["decode(Type,",Data,") ->",nl]),
     DecAnonymous =
-	case Erules of
-	    ber_bin_v2 ->
+	case {Erules,Return_rest} of
+	    {ber_bin_v2,false} ->
 		io_lib:format("~s~s~s~n",
 			      ["element(1,?RT_BER:decode(Data",
 			       driver_parameter(),"))"]);
+	    {ber_bin_v2,true} ->
+		emit(["{Data,Rest} = ?RT_BER:decode(Data0",
+		      driver_parameter(),"),",nl]),
+		"Data";
 	    _ ->
 		"Data"
 	end,
@@ -916,21 +927,38 @@ pgen_dispatcher(Erules,_Module,{Types,_Values,_,_,_Objects,_ObjectSets}) ->
 		      DecAnonymous;
 		  _ -> "Data"
 	      end,
-	
+	    
     emit(["case catch decode_disp(Type,",DecWrap,") of",nl,
 	  "  {'EXIT',{error,Reason}} ->",nl,
 	  "    {error,Reason};",nl,
 	  "  {'EXIT',Reason} ->",nl,
 	  "    {error,{asn1,Reason}};",nl]),
-    case Erules of 
-	ber_bin_v2 ->
+    case {Erules,Return_rest} of 
+	{ber_bin_v2,false} ->
 	    emit(["  Result ->",nl,
 		  "    {ok,Result}",nl]);
-	_ ->
+	{ber_bin_v2,true} ->
+	    emit(["  Result ->",nl,
+		  "    {ok,Result,Rest}",nl]);
+	{_,false} ->
 	    emit(["  {X,_Rest} ->",nl,
 		  "    {ok,X};",nl,
 		  "  {X,_Rest,_Len} ->",nl,
-		  "    {ok,X}",nl])
+		  "    {ok,X}",nl]);
+	{Per,true} when Per==per; Per==per_bin ->
+	    emit(["  {X,{_,Rest}} ->",nl,
+		  "    {ok,X,Rest};",nl,
+		  "  {X,{_,Rest},_Len} ->",nl,
+		  "    {ok,X,Rest};",nl,
+		  "  {X,Rest} ->",nl,
+		  "    {ok,X,Rest};",nl,
+		  "  {X,Rest,_Len} ->",nl,
+		  "    {ok,X,Rest}",nl]);
+	_ ->
+	    emit(["  {X,Rest} ->",nl,
+		  "    {ok,X,Rest};",nl,
+		  "  {X,Rest,_Len} ->",nl,
+		  "    {ok,X,Rest}",nl])
     end,
     emit(["end.",nl,nl]),
 

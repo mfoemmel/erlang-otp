@@ -81,7 +81,7 @@ draw0(X0,Y0,Color,Pid) ->
 	    exit(normal);
 	{'EXIT',_,_} -> 
 	    exit(normal);
-	X-> draw1(X0,Y0,Color,Pid)
+	_X -> draw1(X0,Y0,Color,Pid)
     end.
 
 %% i'm now drawing
@@ -106,7 +106,7 @@ draw1(X0,Y0,Color,Pid) ->
 	    exit(normal);
 	{'EXIT',_,_} -> 
 	    exit(normal);
-	X-> draw1(X0,Y0,Color,Pid)
+	_X -> draw1(X0,Y0,Color,Pid)
     end.
 
 %% ------------------------------------------------------------

@@ -150,4 +150,5 @@ int ei_tracelevel;
 
 void ei_trace_printf(const char *name, int level, const char *format, ...);
 
+int ei_internal_use_r9_pids_ports(void);
 #endif /* _EI_INTERNAL_H */

@@ -54,10 +54,11 @@ ifndef HIPE_ENABLED
 HIPE_MODULES =
 else
 HIPE_MODULES = \
+	hipe_amd64_loader \
+	hipe_ppc_loader \
 	hipe_sparc_loader \
 	hipe_x86_loader \
-	hipe_unified_loader \
-	hipe_pack_constants
+	hipe_unified_loader
 endif
 
 MODULES = \
@@ -206,18 +207,11 @@ $(EBIN)/erl_epmd.beam: $(ESRC)/erl_epmd.erl
 		-o$(EBIN) $<
 
 ifdef HIPE_ENABLED
-HIPE_MKLITERALS=$(ERL_TOP)/bin/$(TARGET)/hipe_mkliterals
-
-$(HIPE_MKLITERALS):
-	cd $(ERL_TOP)/erts/emulator \
-	  && $(MAKE) generate ERL_TOP=$(ERL_TOP) TYPE=$(TYPE)
-
-../../hipe/rtl/hipe_literals.hrl: $(HIPE_MKLITERALS)
-	$(HIPE_MKLITERALS) -e > $@
-
 $(EBIN)/hipe_unified_loader.beam: ../../hipe/main/hipe.hrl hipe_ext_format.hrl
 $(EBIN)/hipe_sparc_loader.beam: ../../hipe/main/hipe.hrl
-$(EBIN)/hipe_x86_loader.beam: ../../hipe/rtl/hipe_literals.hrl ../../hipe/main/hipe.hrl
+$(EBIN)/hipe_ppc_loader.beam: ../../hipe/main/hipe.hrl
+$(EBIN)/hipe_x86_loader.beam: ../../hipe/main/hipe.hrl
+$(EBIN)/hipe_amd64_loader.beam: ../../hipe/main/hipe.hrl
 endif
 
 # ----------------------------------------------------

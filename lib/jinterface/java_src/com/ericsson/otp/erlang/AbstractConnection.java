@@ -407,7 +407,7 @@ public abstract class AbstractConnection extends Thread {
   }
 
   /* used internally when "processes" terminate */
-  protected void sendExit(OtpErlangPid from, OtpErlangPid dest, String reason) 
+  protected void sendExit(OtpErlangPid from, OtpErlangPid dest, OtpErlangObject reason) 
     throws IOException {
     sendExit(exitTag,from,dest,reason);
   }
@@ -416,18 +416,18 @@ public abstract class AbstractConnection extends Thread {
    * Send an exit signal to a remote process.
    * 
    * @param dest the Erlang PID of the remote process.
-   * @param reason a string describing the exit reason.
+   * @param reason an Erlang term describing the exit reason.
    * 
    * @exception java.io.IOException if the connection is not active or
    * a communication error occurs.
    **/
-  protected void sendExit2(OtpErlangPid from, OtpErlangPid dest, String reason) 
+  protected void sendExit2(OtpErlangPid from, OtpErlangPid dest, OtpErlangObject reason) 
     throws IOException {
     sendExit(exit2Tag,from,dest,reason);
   }
 
   
-  private void sendExit(int tag, OtpErlangPid from, OtpErlangPid dest, String reason) 
+  private void sendExit(int tag, OtpErlangPid from, OtpErlangPid dest, OtpErlangObject reason) 
     throws IOException {
     if (! connected) {
       throw new IOException("Not connected");
@@ -444,7 +444,7 @@ public abstract class AbstractConnection extends Thread {
     header.write_long(tag);
     header.write_any(from);
     header.write_any(dest);
-    header.write_string(reason);
+    header.write_any(reason);
 
     // fix up length in preamble
     header.poke4BE(0,header.count()-4);
@@ -497,7 +497,7 @@ public abstract class AbstractConnection extends Thread {
 	if (ibuf.read1() != passThrough) break receive_loop;
 
 	// got a real message (really)
-	OtpErlangAtom reason = null;
+	OtpErlangObject reason = null;
 	OtpErlangAtom cookie = null;
 	OtpErlangObject tmp = null;
 	OtpErlangTuple head = null;
@@ -592,14 +592,14 @@ public abstract class AbstractConnection extends Thread {
 
 	case exitTag:         // { EXIT, FromPid, ToPid, Reason }
 	case exit2Tag:        // { EXIT2, FromPid, ToPid, Reason }
-	  if (!(head.elementAt(3) instanceof OtpErlangAtom)) break receive_loop;
+	  if (head.elementAt(3) == null) break receive_loop;
 	  if (traceLevel >= ctrlThreshold) {
 	    System.out.println("<- " + headerType(head) + " " + head);
 	  }
 
 	  from = (OtpErlangPid)(head.elementAt(1));
 	  to = (OtpErlangPid)(head.elementAt(2));
-	  reason = (OtpErlangAtom)head.elementAt(3);
+	  reason = head.elementAt(3);
 
 	  deliver(new OtpMsg(tag,from,to,reason));
 	  break;
@@ -607,14 +607,14 @@ public abstract class AbstractConnection extends Thread {
 	case exitTTTag:	      // { EXIT, FromPid, ToPid, TraceToken, Reason }
 	case exit2TTTag:      // { EXIT2, FromPid, ToPid, TraceToken, Reason }
 	  // as above, but bifferent element number
-	  if (!(head.elementAt(4) instanceof OtpErlangAtom)) break receive_loop;
+	  if (head.elementAt(4) == null) break receive_loop;
 	  if (traceLevel >= ctrlThreshold) {
 	    System.out.println("<- " + headerType(head) + " " + head);
 	  }
 
 	  from = (OtpErlangPid)(head.elementAt(1));
 	  to = (OtpErlangPid)(head.elementAt(2));
-	  reason = (OtpErlangAtom)head.elementAt(4);
+	  reason = head.elementAt(4);
 
 	  deliver(new OtpMsg(tag,from,to,reason));
 	  break;
@@ -1071,6 +1071,16 @@ public abstract class AbstractConnection extends Thread {
 	peer.ntype = AbstractNode.NTYPE_R4_ERLANG;
       else
 	peer.ntype = AbstractNode.NTYPE_R4_HIDDEN;
+
+      if ((peer.flags & AbstractNode.dFlagExtendedReferences) == 0) {
+	  throw new IOException("Handshake failed - peer cannot handle extended references");
+      }
+      
+      if (OtpSystem.useExtendedPidsPorts()
+	  && (peer.flags & AbstractNode.dFlagExtendedPidsPorts) == 0) {
+	  throw new IOException("Handshake failed - peer cannot handle extended pids and ports");
+      }
+
     }
     catch (OtpErlangDecodeException e) {
       throw new IOException("Handshake failed - not enough data");
@@ -1113,6 +1123,16 @@ public abstract class AbstractConnection extends Thread {
       peer.node = hisname;
       peer.alive = hisname.substring(0,i);
       peer.host = hisname.substring(i+1,hisname.length());
+
+      if ((peer.flags & AbstractNode.dFlagExtendedReferences) == 0) {
+	  throw new IOException("Handshake failed - peer cannot handle extended references");
+      }
+      
+      if (OtpSystem.useExtendedPidsPorts()
+	  && (peer.flags & AbstractNode.dFlagExtendedPidsPorts) == 0) {
+	  throw new IOException("Handshake failed - peer cannot handle extended pids and ports");
+      }
+
     }
     catch (OtpErlangDecodeException e) {
       throw new IOException("Handshake failed - not enough data");

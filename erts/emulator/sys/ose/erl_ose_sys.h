@@ -159,9 +159,9 @@ void *memcpy(void *s1, const void *s2, size_t n);
 #define ERTS_RESTORE_FP_EXCEPTION()
 #define ERTS_FP_ERROR(f, Action) if (_isinf(f) || _isnan(f)) { Action; } else {}
 
-#define asinh undef_math_func_1
-#define acosh undef_math_func_1
-#define atanh undef_math_func_1
+#define NO_ASINH
+#define NO_ACOSH
+#define NO_ATANH
 
 /********************* time support ********************/
 

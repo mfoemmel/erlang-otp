@@ -95,6 +95,7 @@ publish_flag(_, OtherNode) ->
 
 make_this_flags(RequestType, OtherNode) ->
     publish_flag(RequestType, OtherNode) bor
+	?DFLAG_EXTENDED_PIDS_PORTS bor
 	?DFLAG_ATOM_CACHE bor
 	?DFLAG_EXTENDED_REFERENCES bor
 	?DFLAG_DIST_MONITOR bor
@@ -113,7 +114,7 @@ handshake_other_started(#hs_data{request_type = ReqType} = HSData) ->
 			       other_version = Version,
 			       other_node = Node,
 			       other_started = true},
-    check_dflag_x_ref(NewHSData),
+    check_dflag_xnc(NewHSData),
     is_allowed(NewHSData),
     mark_pending(NewHSData).
 %%
@@ -132,31 +133,45 @@ is_allowed(#hs_data{other_node = Node,
     end.
 
 %%
-%% Check that the other node can handle extended
-%% references. If it can not, abort the connection.
+%% Check that both nodes can handle the same types of extended
+%% node containers. If they can not, abort the connection.
 %%
-check_dflag_x_ref(#hs_data{other_node = Node,
-			   other_flags = OtherFlags,
-			   other_started = OtherStarted} = HSData) ->
-    case OtherFlags band ?DFLAG_EXTENDED_REFERENCES of
-	?DFLAG_EXTENDED_REFERENCES ->
+check_dflag_xnc(#hs_data{other_node = Node,
+			 other_flags = OtherFlags,
+			 other_started = OtherStarted} = HSData) ->
+    XRFlg = ?DFLAG_EXTENDED_REFERENCES,
+    XPPFlg = case erlang:system_info(compat_rel) of
+		 R when R >= 10 ->
+		     ?DFLAG_EXTENDED_PIDS_PORTS;
+		 _ ->
+		     0
+	     end,
+    ReqXncFlags = XRFlg bor XPPFlg,
+    case OtherFlags band ReqXncFlags == ReqXncFlags of
+	true ->
 	    ok;
-	0 ->
+	false ->
+	    What = case {OtherFlags band XRFlg == XRFlg,
+			 OtherFlags band XPPFlg == XPPFlg} of
+		       {false, false} -> "references, pids and ports";
+		       {true, false} -> "pids and ports";
+		       {false, true} -> "references"
+		   end,
 	    case OtherStarted of
 		true ->
 		    send_status(HSData, not_allowed),
-		    error_msg("** Connection attempt from node ~w rejected "
-			      "since it cannot handle extended references. "
-			      "**~n", [Node]);
+		    Dir = "from",
+		    How = "rejected";
 	        _ ->
-		    error_msg("** Connection attempt to node ~w aborted "
-			      "since it cannot handle extended references. "
-			      "**~n", [Node])
+		    Dir = "to",
+		    How = "aborted"
 	    end,
+	    error_msg("** ~w: Connection attempt ~s node ~w ~s "
+		      "since it cannot handle extended ~s. "
+		      "**~n", [node(), Dir, Node, How, What]),
 	    ?shutdown(Node)
     end.
 
-	    
 
 %% No nodedown will be sent if we fail before this process has
 %% succeeded to mark the node as pending !
@@ -282,12 +297,12 @@ do_remark_pending(Kernel, Node) ->
 %% is closed in a controlled way by inet_drv.
 %%
 
-shutdown(Line, Data) ->
+shutdown(_Line, _Data) ->
     flush_down(),
     exit(shutdown).
 %% Use this line to debug connection.  
 %% Set net_kernel verbose = 1 as well.
-%%    exit({shutdown, ?MODULE, Line, Data, erlang:now()}).
+%%    exit({shutdown, ?MODULE, _Line, _Data, erlang:now()}).
 
 
 flush_down() ->
@@ -316,7 +331,7 @@ handshake_we_started(#hs_data{request_type = ReqType,
     NewHSData = HSData#hs_data{this_flags = ThisFlags,
 			       other_flags = OtherFlags, 
 			       other_started = false}, 
-    check_dflag_x_ref(NewHSData),
+    check_dflag_xnc(NewHSData),
     MyChallenge = gen_challenge(),
     {MyCookie,HisCookie} = get_cookies(Node),
     send_challenge_reply(NewHSData,MyChallenge,
@@ -426,7 +441,7 @@ do_setnode(#hs_data{other_node = Node, socket = Socket,
 		    ?shutdown(Node);
 		{'EXIT', Other} ->
 		    exit(Other);
-		Else ->
+		_Else ->
 		    ok
 	    end;
 	_ ->
@@ -438,7 +453,6 @@ do_setnode(#hs_data{other_node = Node, socket = Socket,
 
 mark_nodeup(#hs_data{kernel_pid = Kernel, 
 		     other_node = Node, 
-		     socket = Socket, 
 		     other_flags = Flags,
 		     other_started = OtherStarted}, 
 	    Address) ->
@@ -488,7 +502,7 @@ con_loop(Kernel, Node, Socket, TcpAddress,
  			      "** Removing (timedout) connection **~n",
  			      [Node]),
  		    ?shutdown(Node);
-		Other ->
+		_Other ->
 		    ?shutdown(Node)
 	    end;
 	{From, get_status} ->
@@ -654,9 +668,9 @@ recv_status(#hs_data{kernel_pid = Kernel, socket = Socket,
 		    end;
 		_ -> Stat
 	    end;
-	Error ->
+	_Error ->
 	    ?debug({dist_util,self(),recv_status_error, 
-		    Node, Error}),
+		Node, _Error}),
 	    ?shutdown(Node)
     end.
 
@@ -735,7 +749,7 @@ send_tick(Socket, Tick, Type, MFTick, MFGetstat) ->
 
 send_tick(Socket, 0, MFTick) ->
     MFTick(Socket);
-send_tick(_, Pend, _) ->
+send_tick(_, _Pend, _) ->
     %% Dont send tick if pending write.
     ok.
 

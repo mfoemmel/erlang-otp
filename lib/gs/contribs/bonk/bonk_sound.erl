@@ -61,7 +61,7 @@ loop(Bonk, Ouch, Damn, Bomb, Missed, Game_over, New_level, Music, Start, BestS, 
 
 play_sound(Snd) ->
     case catch sounder:play(Snd) of
-	{'EXIT', Reason} ->
+	{'EXIT', _Reason} ->
 	    io:format("Cannot use audio device!\n"),
 	    sounder:stop(),
 	    silent_loop();

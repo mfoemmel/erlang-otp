@@ -65,8 +65,8 @@
 	 reset/1, reset/0,
 	 stop/0, stop/1]).
 -export([remote_start/1]).
--export([bump/5]).
--export([transform/3]). % for test purposes
+%-export([bump/5]).
+-export([transform/4]). % for test purposes
 
 -record(main_state, {compiled=[],           % [{Module,File}]
 		     imported=[],           % [{Module,File,ImportFile}]
@@ -82,6 +82,7 @@
 	       clause   = '_',              % integer()
 	       line     = '_'               % integer()
 	      }).
+-define(BUMP_REC_NAME,bump).
 
 -record(vars, {module,                      % atom() Module name
 	       vsn,                         % atom()
@@ -441,10 +442,10 @@ stop(Nodes) ->
 %%   Arity = Clause = Line = integer()
 %% This function is inserted into Cover compiled modules, once for each
 %% executable line.
-bump(Module, Function, Arity, Clause, Line) ->
-    Key = #bump{module=Module, function=Function, arity=Arity, clause=Clause,
-		line=Line},
-    ets:update_counter(?COVER_TABLE, Key, 1).
+%bump(Module, Function, Arity, Clause, Line) ->
+%    Key = #bump{module=Module, function=Function, arity=Arity, clause=Clause,
+%		line=Line},
+%    ets:update_counter(?COVER_TABLE, Key, 1).
 
 call(Request) ->
     Ref = erlang:monitor(process,?SERVER),
@@ -467,7 +468,8 @@ call(Request) ->
 
 reply(From, Reply) ->
     From ! {?SERVER,Reply}.
-
+is_from(From) ->
+    is_pid(From).
 
 remote_call(Node,Request) ->
     Ref = erlang:monitor(process,{?SERVER,Node}),
@@ -860,7 +862,23 @@ remote_process_loop(State) ->
 
 	get_status ->
 	    io:format("~p~n",[State]),
+	    remote_process_loop(State);
+
+	M ->
+	    io:format("WARNING: remote cover_server received\n~p\n",[M]),
+	    case M of
+		{From,_} ->
+		    case is_from(From) of
+			true ->
+			    reply(From,{error,not_main_node});
+		        false ->
+			    ok
+		    end;
+		_ ->
+		    ok
+	    end,
 	    remote_process_loop(State)
+	    
     end.
 
 
@@ -1238,7 +1256,8 @@ do_compile_beam(Module,Beam) ->
 
 transform(Vsn, Code, Module, Beam) when Vsn==abstract_v1; Vsn==abstract_v2 ->
     Vars0 = #vars{module=Module, vsn=Vsn},
-    {ok, MungedForms, Vars} = transform(Code, [], Vars0),
+    MainFile=find_main_filename(Code),
+    {ok, MungedForms,Vars} = transform_2(Code,[],Vars0,MainFile,on),
     
     %% Add module and export information to the munged forms
     %% Information about module_info must be removed as this function
@@ -1255,20 +1274,26 @@ transform(Vsn, Code, Module, Beam) when Vsn==abstract_v1; Vsn==abstract_v2 ->
 	     {attribute,2,export,Exports2}]++ MungedForms,
     {Forms,Vars};
 transform(Vsn=raw_abstract_v1, Code, Module, _Beam) ->
+    MainFile=find_main_filename(Code),
     Vars0 = #vars{module=Module, vsn=Vsn},
-    {ok, MungedForms, Vars} = transform(Code, [], Vars0),
+    {ok,MungedForms,Vars} = transform_2(Code,[],Vars0,MainFile,on),
     {MungedForms,Vars}.
     
+%% Helpfunction which returns the first found file-attribute, which can
+%% be interpreted as the name of the main erlang source file.
+find_main_filename([{attribute,_,file,{MainFile,_}}|_]) ->
+    MainFile;
+find_main_filename([_|Rest]) ->
+    find_main_filename(Rest).
 
-
-transform([Form|Forms], MungedForms, Vars) ->
-    case munge(Form, Vars) of
+transform_2([Form|Forms],MungedForms,Vars,MainFile,Switch) ->
+    case munge(Form,Vars,MainFile,Switch) of
 	ignore ->
-	    transform(Forms, MungedForms, Vars);
-	{MungedForm, Vars2} ->
-	    transform(Forms, [MungedForm|MungedForms], Vars2)
+	    transform_2(Forms,MungedForms,Vars,MainFile,Switch);
+	{MungedForm,Vars2,NewSwitch} ->
+	    transform_2(Forms,[MungedForm|MungedForms],Vars2,MainFile,NewSwitch)
     end;
-transform([], MungedForms, Vars) ->
+transform_2([],MungedForms,Vars,_,_) ->
     {ok, reverse(MungedForms), Vars}.
 
 %% This code traverses the abstract code, stored as the abstract_code
@@ -1276,18 +1301,24 @@ transform([], MungedForms, Vars) ->
 %% (Vsn=abstract_v2).
 %% The abstract format after preprocessing differs slightly from the abstract
 %% format given eg using epp:parse_form, this has been noted in comments.
-munge({function,0,module_info,_Arity,_Clauses}, _Vars) ->
+%% The switch is turned off when we encounter other files then the main file.
+%% This way we will be able to exclude functions defined in include files.
+munge({function,0,module_info,_Arity,_Clauses},_Vars,_MainFile,_Switch) ->
     ignore; % module_info will be added again when the forms are recompiled
-munge({function,Line,Function,Arity,Clauses}, Vars) ->
+munge({function,Line,Function,Arity,Clauses},Vars,_MainFile,on) ->
     Vars2 = Vars#vars{function=Function,
 		      arity=Arity,
 		      clause=1,
 		      lines=[],
 		      depth=1},
     {MungedClauses, Vars3} = munge_clauses(Clauses, Vars2, []),
-    {{function,Line,Function,Arity,MungedClauses}, Vars3};
-munge(Form, Vars) -> % attributes
-    {Form, Vars}.
+    {{function,Line,Function,Arity,MungedClauses},Vars3,on};
+munge(Form={attribute,_,file,{MainFile,_}},Vars,MainFile,_Switch) ->
+    {Form,Vars,on};                     % Switch on tranformation!
+munge(Form={attribute,_,file,{_InclFile,_}},Vars,_MainFile,_Switch) ->
+    {Form,Vars,off};                    % Switch off transformation!
+munge(Form,Vars,_MainFile,Switch) ->    % Other attributes and skipped includes.
+    {Form,Vars,Switch}.
 
 munge_clauses([{clause,Line,Pattern,Guards,Body}|Clauses], Vars, MClauses) ->
     {MungedGuards, _Vars} = munge_exprs(Guards, Vars#vars{is_guard=true},[]),
@@ -1333,12 +1364,21 @@ munge_body([Expr|Body], Vars, MungedBody) ->
 					    clause   = Vars#vars.clause,
 					    line     = Line},
 				      0}),
-	    Bump = {call, 0, {remote, 0, {atom,0,cover}, {atom,0,bump}},
-		    [{atom, 0, Vars#vars.module},
-		     {atom, 0, Vars#vars.function},
-		     {integer, 0, Vars#vars.arity},
-		     {integer, 0, Vars#vars.clause},
-		     {integer, 0, Line}]},
+	    Bump={call,0,{remote,0,{atom,0,ets},{atom,0,update_counter}},
+		  [{atom,0,?COVER_TABLE},
+		   {tuple,0,[{atom,0,?BUMP_REC_NAME},
+			     {atom,0,Vars#vars.module},
+			     {atom,0,Vars#vars.function},
+			     {integer,0,Vars#vars.arity},
+			     {integer,0,Vars#vars.clause},
+			     {integer,0,Line}]},
+		   {integer,0,1}]},
+%	    Bump = {call, 0, {remote, 0, {atom,0,cover}, {atom,0,bump}},
+%		    [{atom, 0, Vars#vars.module},
+%		     {atom, 0, Vars#vars.function},
+%		     {integer, 0, Vars#vars.arity},
+%		     {integer, 0, Vars#vars.clause},
+%		     {integer, 0, Line}]},
 	    Lines2 = [Line|Lines],
 
 	    {MungedExpr, Vars2} = munge_expr(Expr, Vars#vars{lines=Lines2}),
@@ -1416,11 +1456,13 @@ munge_expr({'receive',Line,Clauses,Expr,Body}, Vars) ->
     {MungedExpr, Vars3} = munge_expr(Expr, Vars2),
     {MungedBody, Vars4} = munge_body(Body, Vars3, []),
     {{'receive',Line,MungedClauses,MungedExpr,MungedBody}, Vars4};
-munge_expr({'try',Line,Exprs,Clauses,CatchClauses}, Vars) ->
+munge_expr({'try',Line,Exprs,Clauses,CatchClauses,After}, Vars) ->
     {MungedExprs, Vars1} = munge_exprs(Exprs, Vars, []),
     {MungedClauses, Vars2} = munge_clauses(Clauses, Vars1, []),
     {MungedCatchClauses, Vars3} = munge_clauses(CatchClauses, Vars2, []),
-    {{'try',Line,MungedExprs,MungedClauses,MungedCatchClauses}, Vars3};
+    {MungedAfter, Vars4} = munge_body(After, Vars3, []),
+    {{'try',Line,MungedExprs,MungedClauses,MungedCatchClauses,MungedAfter}, 
+     Vars4};
 %% Difference in abstract format after preprocessing: Funs get an extra
 %% element Extra.
 %% NOT NECESSARY FOR Vsn=raw_abstract_v1
@@ -1653,29 +1695,33 @@ print_lines(Module, InFd, OutFd, L, HTML) ->
     case io:get_line(InFd, '') of
 	eof ->
 	    ignore;
+ 	"%"++_=Line ->				%Comment line - not executed.
+ 	    io:put_chars(OutFd, [tab(),Line]),
+	    print_lines(Module, InFd, OutFd, L+1, HTML);
 	Line ->
 	    Pattern = {#bump{module=Module,line=L},'$1'},
 	    case ets:match(?COLLECTION_TABLE, Pattern) of
 		[] ->
-		    io:format(OutFd, "~s", [tab()++Line]);
+		    io:put_chars(OutFd, [tab(),Line]);
 		Ns ->
 		    N = lists:foldl(fun([Ni], Nacc) -> Nacc+Ni end, 0, Ns),
 		    if
 			N=:=0, HTML=:=true ->
-			    Str = string:right(integer_to_list(N), 6, 32),
 			    LineNoNL = Line -- "\n",
-			    RedLine = "<font color=red>" ++ Str ++ fill1() ++ 
-				LineNoNL ++"</font>\n",
-			    io:format(OutFd, "~s", [RedLine]);
+			    Str = "     0",
+			    %%Str = string:right("0", 6, 32),
+			    RedLine = ["<font color=red>",Str,fill1(),
+				       LineNoNL,"</font>\n"],
+			    io:put_chars(OutFd, RedLine);
 			N<1000000 ->
 			    Str = string:right(integer_to_list(N), 6, 32),
-			    io:format(OutFd, "~s", [Str++fill1()++Line]);
+			    io:put_chars(OutFd, [Str,fill1(),Line]);
 			N<10000000 ->
 			    Str = integer_to_list(N),
-			    io:format(OutFd, "~s", [Str++fill2()++Line]);
+			    io:put_chars(OutFd, [Str,fill2(),Line]);
 			true ->
 			    Str = integer_to_list(N),
-			    io:format(OutFd, "~s", [Str++fill3()++Line])
+			    io:put_chars(OutFd, [Str,fill3(),Line])
 		    end
 	    end,
 	    print_lines(Module, InFd, OutFd, L+1, HTML)

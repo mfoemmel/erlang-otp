@@ -22,14 +22,15 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # Common Macros
 # ----------------------------------------------------
 
-SUB_DIRECTORIES = mc_dummy mibs src examples priv/conf doc/src
+include subdirs.mk
 
 include vsn.mk
-VSN = $(SNMPEA_VSN)
+
+VSN = $(SNMP_VSN)
 
 SPECIAL_TARGETS = 
 
-DIR_NAME = snmp-$(VSN)
+DIR_NAME = snmp_src-$(VSN)$(PRE_VSN)
 
 ifndef APP_RELEASE_DIR
   APP_RELEASE_DIR = /tmp
@@ -50,12 +51,6 @@ else
   APP_INSTALL_DIR = /tmp/lib/erlang
 endif
 
-OS = $(shell uname -s)
-ifeq ($(OS),SunOS)
-  DOCB=true
-else
-  DOCB=false
-endif
 
 # ----------------------------------------------------
 # Default Subdir Targets
@@ -65,7 +60,7 @@ include $(ERL_TOP)/make/otp_subdir.mk
 conf: do_configure
 
 do_configure: configure 
-	./configure $(FLEX_SCANNER_LINENO)
+	./configure 
 
 configure: configure.in
 	autoconf
@@ -73,8 +68,12 @@ configure: configure.in
 .PHONY: info
 
 info: 
-	@echo "OS:   $(OS)"
-	@echo "DOCB: $(DOCB)"
+	@echo "OS:       $(OS)"
+	@echo "DOCB:     $(DOCB)"
+	@echo ""
+	@echo "SNMP_VSN: $(SNMP_VSN)"
+	@echo "APP_VSN:  $(APP_VSN)"
+
 
 # ----------------------------------------------------
 # Application (source) release targets
@@ -84,19 +83,16 @@ app_release: app_doc tar
 app_clean:
 	rm -rf $(APP_TAR_FILE) $(APP_DIR)
 
-ifeq ($(DOCB),true)
 app_doc:
 	cd doc/src; $(MAKE) html man
-else
-app_doc:
-	@echo "ignoring documention (cannot build on $(OS))"
-endif
 
 app_dir: $(APP_DIR)
 
 $(APP_DIR):
 	cat TAR.exclude | grep -v "snmp/doc" > TAR.exclude2; \
-        echo "snmp/TAR.exclude2" >> TAR.exclude2
+        echo "snmp/doc/src" >> TAR.exclude2; \
+        echo "snmp/TAR.exclude2" >> TAR.exclude2; \
+        echo "snmp/doc/internal" >> TAR.exclude2
 	(cd ..; find snmp -name 'findmerge.*' >> snmp/TAR.exclude2)
 	(cd ..; find snmp -name '*.contrib*' >> snmp/TAR.exclude2)
 	(cd ..; find snmp -name '*.keep*' >> snmp/TAR.exclude2)

@@ -526,12 +526,12 @@ public class OtpConnection extends AbstractConnection {
    * Send an exit signal to a remote process.
    * 
    * @param dest the Erlang PID of the remote process.
-   * @param reason a string describing the exit reason.
+   * @param reason an Erlang term describing the exit reason.
    * 
    * @exception java.io.IOException if the connection is not active or
    * a communication error occurs.
    **/
-  public void exit(OtpErlangPid dest, String reason) 
+  public void exit(OtpErlangPid dest, OtpErlangObject reason) 
     throws IOException {
     super.sendExit2(this.self.pid(),dest,reason);
   }

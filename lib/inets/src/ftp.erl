@@ -23,18 +23,17 @@
 %% file(3) and filename(3).
 %%
 
-
 -define(OPEN_TIMEOUT, 60*1000).
 -define(BYTE_TIMEOUT, 1000).   % Timeout for _ONE_ byte to arrive. (ms)
 -define(OPER_TIMEOUT, 300).    % Operation timeout (seconds)
 -define(FTP_PORT, 21).
 
-%% Client interface
+%%  API - Client interface
 -export([cd/2, close/1, delete/2, formaterror/1, help/0, 
 	 lcd/2, lpwd/1, ls/1, ls/2, 
 	 mkdir/2, nlist/1, nlist/2, 
 	 open/1, open/2, open/3, 
-	 pwd/1, 
+	 pwd/1, quote/2,
 	 recv/2, recv/3, recv_bin/2, 
 	 recv_chunk_start/2, recv_chunk/1, 
 	 rename/3, rmdir/2, 
@@ -44,14 +43,13 @@
 	 append/3, append/2, append_bin/3,
 	 append_chunk/2, append_chunk_end/1, append_chunk_start/2]).
 
-%% Internal
+%% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, 
 	 handle_info/2, terminate/2,code_change/3]).
 
-
-%%
-%% CLIENT FUNCTIONS
-%%
+%%%=========================================================================
+%%%  API - CLIENT FUNCTIONS
+%%%=========================================================================
 
 %% open(Host)
 %% open(Host, Flags)
@@ -68,13 +66,13 @@ open({option_list,Option_list})->
     %% Dbg = {debug,[trace,log,statistics]},
     %% Options = [Dbg],
     Options = [],
-    {ok,Pid1}=case lists:keysearch(flags,1,Option_list) of
+    {ok,Pid}=case lists:keysearch(flags,1,Option_list) of
 		  {value,{flags,Flags}}->
-		      {ok, Pid} = gen_server:start_link(?MODULE, [Flags], Options);
+		      gen_server:start_link(?MODULE, [Flags], Options);
 		  false ->
-		      {ok, Pid} = gen_server:start_link(?MODULE, [], Options)
+		      gen_server:start_link(?MODULE, [], Options)
 	      end,
-    gen_server:call(Pid1, {open, ip_comm,Option_list}, infinity);
+    gen_server:call(Pid, {open, ip_comm, Option_list}, infinity);
 	 
 
 %%The only option was the tuple form of the ip-number
@@ -273,7 +271,7 @@ send(Pid, LFile, RFile) ->
 %%           | {error, econn}
 send_bin(Pid, Bin, RFile) when binary(Bin) ->
   gen_server:call(Pid, {send_bin, Bin, RFile}, infinity);
-send_bin(Pid, Bin, RFile) ->
+send_bin(_Pid, _Bin, _RFile) ->
   {error, enotbinary}.
 
 %% send_chunk_start(Pid, RFile)
@@ -302,7 +300,7 @@ append_chunk_start(Pid, RFile) ->
 %%           | {error, econn}
 send_chunk(Pid, Bin) when binary(Bin) ->
   gen_server:call(Pid, {send_chunk, Bin}, infinity);
-send_chunk(Pid, Bin) ->
+send_chunk(_Pid, _Bin) ->
   {error, enotbinary}.
 
 %%append_chunk(Pid, Bin)
@@ -313,7 +311,7 @@ send_chunk(Pid, Bin) ->
 %%           | {error, econn}
 append_chunk(Pid, Bin) when binary(Bin) ->
   gen_server:call(Pid, {append_chunk, Bin}, infinity);
-append_chunk(Pid, Bin) ->
+append_chunk(_Pid, _Bin) ->
   {error, enotbinary}.
 
 %% send_chunk_end(Pid)
@@ -351,9 +349,18 @@ append(Pid, LFile, RFile) ->
 %%           | {error, econn}
 append_bin(Pid, Bin, RFile) when binary(Bin) ->
   gen_server:call(Pid, {append_bin, Bin, RFile}, infinity);
-append_bin(Pid, Bin, RFile) ->
+append_bin(_Pid, _Bin, _RFile) ->
   {error, enotbinary}.
 
+
+%% quote(Pid, Cmd)
+%%
+%% Purpose:  send arbitrary ftp command
+%% Args:     Pid = pid()
+%% Cmd:      string()
+%% Returns:  ok
+quote(Pid, Cmd) when list(Cmd) ->
+    gen_server:call(Pid, {quote, Cmd}, infinity).
 
 %% close(Pid)
 %%
@@ -421,6 +428,12 @@ help() ->
 	    "  user(Pid, User, Pass)\n"
 	    "  user(Pid, User, Pass,Account)\n").
 
+
+
+%%%========================================================================
+%%% gen_server callback functions 
+%%%========================================================================
+
 %%
 %% INIT
 %%
@@ -460,34 +473,18 @@ init([Flags]) ->
 -define(STOP_RET(E),{stop, normal, {error, E}, 
 		     State#state{csock = undefined}}).
 
-
-rescode(?POS_PREL,_,_)                   -> pos_prel; %%Positive Preleminary Reply
-rescode(?POS_COMPL,_,_)                  -> pos_compl; %%Positive Completion Reply
-rescode(?POS_INTERM,?AUTH_ACC,2)         -> pos_interm_acct; %%Positive Intermediate Reply nedd account
-rescode(?POS_INTERM,_,_)                 -> pos_interm; %%Positive Intermediate Reply
-rescode(?TRANS_NEG_COMPL,?FILE_SYSTEM,2) -> trans_no_space; %%No storage area no action taken
-rescode(?TRANS_NEG_COMPL,_,_)            -> trans_neg_compl;%%Temporary Error, no action taken
-rescode(?PERM_NEG_COMPL,?FILE_SYSTEM,2)  -> perm_no_space; %%Permanent disk space error, the user shall not try again
-rescode(?PERM_NEG_COMPL,?FILE_SYSTEM,3)  -> perm_fname_not_allowed; 
-rescode(?PERM_NEG_COMPL,_,_)             -> perm_neg_compl.
-
-retcode(trans_no_space,_)         -> etnospc;
-retcode(perm_no_space,_)          -> epnospc;
-retcode(perm_fname_not_allowed,_) -> efnamena;
-retcode(_,Otherwise)              -> Otherwise.
-
-handle_call({open,ip_comm,Conn_data},From,State) ->
+handle_call({open,ip_comm,Conn_data}, _From, State) ->
     case lists:keysearch(host,1,Conn_data) of
 	{value,{host,Host}}->
-	    Port=get_key1(port,Conn_data,?FTP_PORT),
-	    Timeout=get_key1(timeout,Conn_data,?OPEN_TIMEOUT),
+	    Port = get_key1(port,Conn_data,?FTP_PORT),
+	    Timeout = get_key1(timeout,Conn_data,?OPEN_TIMEOUT),
 	    open(Host,Port,Timeout,State);
 	false ->
 	    ehost
     end;
 	
-handle_call({open,ip_comm,Host,Port},From,State) ->
-    open(Host,Port,?OPEN_TIMEOUT,State); 
+handle_call({open, ip_comm, Host, Port}, _From, State) ->
+    open(Host, Port,  ?OPEN_TIMEOUT, State); 
 
 handle_call({user, User, Pass}, _From, State) ->
     #state{csock = CSock} = State,
@@ -558,22 +555,10 @@ handle_call({account,Acc},_From,State)->
     end;
 
 handle_call(pwd, _From, State) when State#state.chunk == false ->
-  #state{csock = CSock} = State,
-  %%
-  %% NOTE: The directory string comes over the control connection.
-  case sock_write(CSock, mk_cmd("PWD", [])) of
-    ok ->
-      {_, Line} = result_line(CSock),
-      {_, Cs}   = split($", Line),			% XXX Ugly
-      {Dir0, _} = split($", Cs),
-      Dir       = lists:delete($", Dir0),
-      {reply, {ok, Dir}, State};
-    {error, enotconn} ->
-      ?STOP_RET(econn)
-  end;
+ handle_pwd(State);
 
 handle_call(lpwd, _From, State) ->
-  #state{csock = CSock, ldir = LDir} = State,
+  #state{ldir = LDir} = State,
   {reply, {ok, LDir}, State};
 
 handle_call({cd, Dir}, _From, State) when State#state.chunk == false ->
@@ -588,7 +573,7 @@ handle_call({cd, Dir}, _From, State) when State#state.chunk == false ->
   end;
 
 handle_call({lcd, Dir}, _From, State) ->
-  #state{csock = CSock, ldir = LDir0} = State,
+  #state{ldir = LDir0} = State,
   LDir = absname(LDir0, Dir),
   case file:read_file_info(LDir) of
     {ok, _ } ->
@@ -613,37 +598,10 @@ handle_call({dir, Len, Dir}, _From, State) when State#state.chunk == false ->
 		     ctrl_cmd(CSock, Cmd ++ " ~s", [Dir])
 	     end,
     debug(" ctrl : command result: ~p~n",[Result]),
-    case Result of
-	pos_prel ->
-	    debug("  dbg : await the data connection", []),
-	    DSock = accept_data(LSock),
-	    debug("  dbg : await the data", []),
-	    Reply0 = 
-		case recv_data(DSock) of
-		    {ok, DirData} ->
-			debug(" data : DirData: ~p~n",[DirData]),
-			case result(CSock) of
-			    pos_compl ->
-				{ok, DirData};
-			    _ ->
-				{error, epath}
-			end;
-		    {error, Reason} ->
-			sock_close(DSock),
-			verbose(" data : error: ~p, ~p~n",[Reason, result(CSock)]),
-			{error, epath}
-		end,
-	    
-	    debug(" ctrl : reply: ~p~n",[Reply0]),
-	    reset_type(ascii, Type, CSock),
-	    {reply, Reply0, State};
-	{closed, _Why} ->
-	    ?STOP_RET(econn);
-	_ ->
-	    sock_close(LSock),
-	    {reply, {error, epath}, State}
-    end;
-
+    Reply = handle_dir_result(Result, Dir, LSock, State),
+    debug(" ctrl : reply: ~p~n",[Reply]),    
+    reset_type(ascii, Type, CSock),
+    Reply;
 
 handle_call({rename, CurrFile, NewFile}, _From, State) when State#state.chunk == false ->
   #state{csock = CSock} = State,
@@ -707,11 +665,17 @@ handle_call({type, Type}, _From, State) when State#state.chunk == false ->
       {reply, {error, etype}, State}
   end;
 
-handle_call({recv, RFile, LFile}, _From, #state{chunk = false} = State) ->
-    do_recv(RFile, LFile, State);
+handle_call({recv, RFile, LFile}, _From, #state{chunk = false, 
+						ldir = LocalDir} = State) ->
+    case LFile of
+	"" ->
+	    do_recv(RFile, absname(LocalDir, RFile), State);
+	_ ->
+	    do_recv(RFile, absname(LocalDir, LFile), State)
+    end;
 
 handle_call({recv_bin, RFile}, _From, State) when State#state.chunk == false ->
-    #state{csock = CSock, ldir = LDir} = State,
+    #state{csock = CSock} = State,
     LSock = listen_data(CSock, binary),
     case ctrl_cmd(CSock, "RETR ~s", [RFile]) of
 	pos_prel ->
@@ -778,8 +742,15 @@ handle_call(send_chunk_end, _From, State)
   when State#state.chunk == true ->
     end_chunk_transfer(State);
 
+handle_call({quote, Cmd}, _From,
+	    #state{chunk = false, csock = CSock} = State) ->
+    case ctrl_cmd(CSock, Cmd, [], true) of
+ 	{error, enotconn} ->
+ 	    ?STOP_RET(econn);
+ 	Verbatim ->
+	    {reply, Verbatim, State}
+    end;
 
-    
 handle_call(close, _From, State) when State#state.chunk == false ->
   #state{csock = CSock} = State,
   ctrl_cmd(CSock, "QUIT", []),
@@ -790,20 +761,23 @@ handle_call(_, _From, State) when State#state.chunk == true ->
   {reply, {error, echunk}, State}.
 
 
-handle_cast(Msg, State) ->
+handle_cast(_Msg, State) ->
   {noreply, State}.
 
 
-handle_info({Sock, {fromsocket, Bytes}}, State) when Sock == State#state.csock ->
+handle_info({Sock, {fromsocket, Bytes}}, 
+	    State) when Sock == State#state.csock ->
   put(leftovers, Bytes ++ leftovers()),
   {noreply, State};
 
 %% Data connection closed (during chunk sending)
-handle_info({Sock, {socket_closed, _Reason}}, State) when Sock == State#state.dsock ->
+handle_info({Sock, {socket_closed, _Reason}}, 
+	    State) when Sock == State#state.dsock ->
   {noreply, State#state{dsock = undefined}};
 
 %% Control connection closed.
-handle_info({Sock, {socket_closed, _Reason}}, State) when Sock == State#state.csock ->
+handle_info({Sock, {socket_closed, _Reason}}, 
+	    State) when Sock == State#state.csock ->
   debug("   sc : ~s~n",[leftovers()]),
   {stop, ftp_server_close, State#state{csock = undefined}};
 
@@ -811,12 +785,104 @@ handle_info(Info, State) ->
   error_logger:info_msg("ftp : ~w : Unexpected message: ~w\n", [self(),Info]),
   {noreply, State}.
 
-code_change(OldVsn,State,Extra)->
-    {ok,State}.
+code_change(_OldVsn, State, _Extra)->
+    {ok, State}.
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
   ok.
 
+%%%========================================================================
+%%% Internal functions
+%%%========================================================================
+handle_dir_result(pos_prel, Dir, LSock, State) ->
+    debug("  dbg : await the data connection~n", []),
+    DSock = accept_data(LSock),
+    debug("  dbg : await the data~n", []),
+    case recv_data(DSock) of
+	{ok, DirData} ->
+	    debug(" data : DirData: ~p~n",[DirData]),
+	    handle_dir_data(result(State#state.csock), Dir, DirData, State);
+	{error, Reason} ->
+	    sock_close(DSock),
+	    verbose(" data : error: ~p, ~p~n",[Reason, 
+					       result(State#state.csock)]),
+	    {reply, {error, epath}, State}
+    end;
+handle_dir_result({closed, _Why}, _, _, State) ->
+    ?STOP_RET(econn);
+handle_dir_result(_, _, LSock, State) ->
+    sock_close(LSock),
+    {reply, {error, epath}, State}.
+
+
+handle_dir_data(pos_compl, "", DirData, State) -> % Current directory
+    {reply, {ok, DirData}, State};
+
+handle_dir_data(pos_compl, Dir, DirData, State) ->
+    %% If there is only one line it might be a directory with on
+    %% file but it might be an error message that the directory
+    %% was not found. So in this case we have to endure a little
+    %% overhead to be able to give a good return value. Alas not
+    %% all ftp implementations behave the same and returning
+    %% an error string is allowed by the FTP RFC. 
+    case lists:dropwhile(fun($\r) -> false;(_) -> true end, DirData) of
+	[$\r, $\n] ->
+	    case handle_pwd(State) of
+		{_, {ok, OldDir}, NewState} ->
+		    case ctrl_cmd(NewState#state.csock, "CWD ~s", [Dir]) of
+			pos_compl ->
+			    ctrl_cmd(NewState#state.csock, "CWD ~s", [OldDir]),
+			    {reply, {ok, DirData}, State};
+			{error, enotconn} ->
+			    ?STOP_RET(econn);
+			_ ->
+			    {reply, {error, epath}, State}  
+		    end;
+		StopReturn ->
+		    StopReturn
+	    end;
+	_ ->
+	    {reply, {ok, DirData}, State}
+    end;
+
+handle_dir_data(_, _, _,State) ->
+    {reply, {error, epath}, State}.
+
+handle_pwd(State = #state{csock = CSock}) ->
+    %% NOTE: The directory string comes over the control connection.
+    case sock_write(CSock, mk_cmd("PWD", [])) of
+	ok ->
+	    {_, [Line]} = result_line(CSock),
+	    {_, Cs}   = split($", Line),		
+	    {Dir0, _} = split($", Cs),
+	    Dir       = lists:delete($", Dir0),
+	    {reply, {ok, Dir}, State};
+	{error, enotconn} ->
+	    ?STOP_RET(econn)
+    end.
+
+
+%% Positive Preleminary Reply
+rescode(?POS_PREL,_,_)                   -> pos_prel; 
+%% Positive Completion Reply
+rescode(?POS_COMPL,_,_)                  -> pos_compl;
+%% Positive Intermediate Reply nedd account
+rescode(?POS_INTERM,?AUTH_ACC,2)         -> pos_interm_acct;
+%% Positive Intermediate Reply
+rescode(?POS_INTERM,_,_)                 -> pos_interm; 
+%% No storage area no action taken
+rescode(?TRANS_NEG_COMPL,?FILE_SYSTEM,2) -> trans_no_space;
+%% Temporary Error, no action taken
+rescode(?TRANS_NEG_COMPL,_,_)            -> trans_neg_compl;
+%% Permanent disk space error, the user shall not try again
+rescode(?PERM_NEG_COMPL,?FILE_SYSTEM,2)  -> perm_no_space;
+rescode(?PERM_NEG_COMPL,?FILE_SYSTEM,3)  -> perm_fname_not_allowed; 
+rescode(?PERM_NEG_COMPL,_,_)             -> perm_neg_compl.
+
+retcode(trans_no_space,_)         -> etnospc;
+retcode(perm_no_space,_)          -> epnospc;
+retcode(perm_fname_not_allowed,_) -> efnamena;
+retcode(_,Otherwise)              -> Otherwise.
 
 %%
 %% OPEN CONNECTION
@@ -826,7 +892,7 @@ open(Host,Port,Timeout,State)->
 	{error, What} ->
 	    {stop, normal, {error, What}, State};
 	CSock ->
-	    case result(CSock, State#state.flags) of
+	    case result(CSock, State#state.flags, false) of
 		{error,Reason} ->
 		    sock_close(CSock),
 		    {stop,normal,{error,Reason},State};
@@ -840,13 +906,15 @@ open(Host,Port,Timeout,State)->
 %%
 %% CONTROL CONNECTION
 %%
-
 ctrl_cmd(CSock, Fmt, Args) ->
+    ctrl_cmd(CSock, Fmt, Args, false).
+
+ctrl_cmd(CSock, Fmt, Args, Verbatim) ->
     Cmd = mk_cmd(Fmt, Args),
     case sock_write(CSock, Cmd) of
 	ok ->
 	    debug("  cmd : ~s",[Cmd]),
-	    result(CSock);
+	    result(CSock, false, Verbatim);
 	{error, enotconn} ->
 	    {error, enotconn};
 	Other ->
@@ -860,23 +928,22 @@ mk_cmd(Fmt, Args) ->
 %%
 %% TRANSFER TYPE
 %%
-
 %%
 %% set_type(NewType, CurrType, CSock)
 %% reset_type(NewType, CurrType, CSock)
 %%
-set_type(Type, Type, CSock) ->
+set_type(Type, Type, _CSock) ->
   ok;
 set_type(NewType, _OldType, CSock) ->
   set_type(NewType, CSock).
 
-reset_type(Type, Type, CSock) ->
+reset_type(Type, Type, _CSock) ->
   ok;
 reset_type(_NewType, OldType, CSock) ->
   set_type(OldType, CSock).
 
 set_type(ascii, CSock) ->
-  ctrl_cmd(CSock, "TYPE A", []);
+ ctrl_cmd(CSock, "TYPE A", []);
 set_type(binary, CSock) ->
   ctrl_cmd(CSock, "TYPE I", []).
 
@@ -935,9 +1002,7 @@ recv_data(Sock, Sofar, Retry) ->
 %%
 %% BINARY TRANSFER
 %%
-
 %% --------------------------------------------------
-
 %% recv_binary(DSock,CSock) = {ok,Bin} | {error,Reason}
 %%
 recv_binary(DSock,CSock) ->
@@ -964,62 +1029,56 @@ recv_binary2(Sock, Bs, Retry) ->
 
 
 %% --------------------------------------------------
-
 %%
 %% do_recv
 %%
 
-do_recv(RemoteFile, "", #state{csock = CSock, ldir = LocalDir} = State) ->
-    do_recv(RemoteFile, absname(LocalDir, RemoteFile), CSock, State);
-
-do_recv(RemoteFile, LocalFile, #state{csock = CSock, ldir = LocalDir} = State) ->
-    do_recv(RemoteFile, absname(LocalDir, LocalFile), CSock, State).
-
-do_recv(RemoteFile, LocalFile, CSock, State) ->
+do_recv(RemoteFile, LocalFile, State) ->
     case file_open(LocalFile, write) of
 	{ok, Fd} ->
-	    LSock = listen_data(CSock, binary),
-	    Ret = 
-		case ctrl_cmd(CSock, "RETR ~s", [RemoteFile]) of
-		    pos_prel ->
-			DSock = accept_data(LSock),
-			Reply0 = 
-			    case recv_file(DSock, Fd) of
-				ok ->
-				    case result(CSock) of
-					pos_compl ->
-					    ok;
-					_ ->
-					    {error, epath}
-				    end,
-				    sock_close(DSock);				    
-				{error, Reason} = Error ->
-				    debug(" error: failed receiving file: ~p~n", [Reason]),
-				    sock_close(DSock),
-				    case result(CSock) of
-					perm_neg_compl ->
-					    ctrl_cmd(CSock, "ABOR", []),
-					    Error;
-					_ ->
-					    ?STOP_RET(econn)
-				    end
-			    end,
-			{reply, Reply0, State};
-		    {error, enotconn} ->
-			?STOP_RET(econn);
-		    Error ->
-			debug(" error: RETR failed for ~s: ~p~n", [RemoteFile, Error]),
-			{reply, {error, epath}, State}
-		end,
+	    Return = do_recv_file(Fd, RemoteFile, State),
 	    file_close(Fd),
-	    Ret;
+	    Return;
 	{error, _What} ->
 	    {reply, {error, epath}, State}
     end.
 	    
-    
-%% --------------------------------------------------
 
+do_recv_file(Fd, RemoteFile, State = #state{csock = CSock}) ->
+    LSock = listen_data(CSock, binary),
+    case ctrl_cmd(CSock, "RETR ~s", [RemoteFile]) of
+	pos_prel ->
+	    DSock = accept_data(LSock),
+	    Reply0 = 
+		case recv_file(DSock, Fd) of
+		    ok ->
+			case result(CSock) of
+			    pos_compl ->
+				ok;
+			    _ ->
+				{error, epath}
+			end,
+			sock_close(DSock);				    
+		    {error, Reason} = Error ->
+			debug(" error: failed receiving file: ~p~n", [Reason]),
+			sock_close(DSock),
+			case result(CSock) of
+			    perm_neg_compl ->
+				ctrl_cmd(CSock, "ABOR", []),
+				Error;
+			    _ ->
+				?STOP_RET(econn)
+			end
+		end,
+	    {reply, Reply0, State};
+	{error, enotconn} ->
+	    ?STOP_RET(econn);
+	Error ->
+	    debug(" error: RETR failed for ~s: ~p~n", [RemoteFile, Error]),
+	    {reply, {error, epath}, State}
+    end.
+
+%% --------------------------------------------------
 %%
 %% do_recv_chunk
 %%
@@ -1041,7 +1100,7 @@ recv_chunk1(Reply, #state{csock = CSock} = State) ->
 	    {reply, {error, epath}, State1}
     end.
     
-recv_chunk2(#state{dsock = DSock} = State, ?OPER_TIMEOUT) ->
+recv_chunk2(#state{dsock = DSock}, ?OPER_TIMEOUT) ->
     sock_close(DSock),
     {error, eclosed};
 recv_chunk2(#state{dsock = DSock} = State, Retry) ->
@@ -1057,7 +1116,6 @@ recv_chunk2(#state{dsock = DSock} = State, Retry) ->
 
 
 %% --------------------------------------------------
-
 %%
 %% FILE TRANSFER
 %%
@@ -1065,7 +1123,7 @@ recv_chunk2(#state{dsock = DSock} = State, Retry) ->
 recv_file(Sock, Fd) ->
     recv_file(Sock, Fd, 0).
 
-recv_file(Sock, Fd, ?OPER_TIMEOUT) ->
+recv_file(_Sock, _Fd, ?OPER_TIMEOUT) ->
     {error, timeout};
 recv_file(Sock, Fd, Retry) ->
     case sock_read(Sock) of
@@ -1151,7 +1209,7 @@ transfer_file(Cmd,LFile,RFile,State)->
     end.
 
 transfer_data(Cmd,Bin,RFile,State)->
-    #state{csock = CSock, ldir = LDir} = State,
+    #state{csock = CSock} = State,
     LSock = listen_data(CSock, binary),
     case ctrl_cmd(CSock, "~s ~s", [Cmd,RFile]) of
 	pos_prel ->
@@ -1159,18 +1217,18 @@ transfer_data(Cmd,Bin,RFile,State)->
 	    SReply = sock_write(DSock, Bin),
 	    sock_close(DSock),
 	    case {SReply,result(CSock)} of
-		{ok,pos_compl} ->
+		{ok, pos_compl} ->
 		    {reply, ok, State};
-		{ok,trans_no_space} ->
+		{ok, trans_no_space} ->
 		    ?STOP_RET(etnospc);
-		{ok,perm_no_space} ->
+		{ok, perm_no_space} ->
 		    ?STOP_RET(epnospc);
-		{ok,perm_fname_not_allowed} ->
+		{ok, perm_fname_not_allowed} ->
 		    ?STOP_RET(efnamena);
-		{ok,Other} ->
+		{ok, Other} ->
 		    debug(" error: unknown reply: ~p~n",[Other]),
 		    {reply, {error, epath}, State};
-		{{error,Why},Result} ->
+		{{error, _Why},Result} ->
 		    ?STOP_RET(retcode(Result,econn))
 		    %% {{error,_Why},_Result} ->
 		    %%    ?STOP_RET(econn)
@@ -1200,7 +1258,7 @@ start_chunk_transfer(Cmd, RFile, #state{csock = CSock} = State) ->
 
 
 chunk_transfer(Bin,State)->
-    #state{dsock = DSock, csock = CSock} = State,
+    #state{dsock = DSock} = State,
     case DSock of
 	undefined ->
 	    {reply,{error,econn},State};
@@ -1318,43 +1376,49 @@ end_chunk_transfer(State)->
 
 %% result(Sock) = rescode()
 %% 
+
 result(Sock) ->
-  result(Sock, false).
+    result(Sock, false, false).
 
 result_line(Sock) ->
-  result(Sock, true).
+    result(Sock, true, false).
 
-%% result(Sock, Bool) = {error,Reason} | rescode() | {rescode(), Lines}
-%% Printout if Bool = true.
-%%
-result(Sock, RetForm) ->
+%% result(Sock, Bool, Verbatime) = {error,Reason} | rescode() |
+%% {rescode(), Lines} 
+%% Printout if Bool = true. Return result code as integer if
+%% Verbatim = true
+result(Sock, RetForm, Verbatim) ->
     case getline(Sock) of
 	Line when length(Line) > 3 ->
 	    [D1, D2, D3| Tail] = Line,
-	    case Tail of
-		[$-| _] ->
-		    parse_to_end(Sock, [D1, D2, D3, $ ]); % 3 digits + space
-		_ ->
-		    ok
-	    end,
-	    result(D1,D2,D3,Line,RetForm);
-	X ->
+	    Lines = case Tail of
+			[$-| _] ->
+			    %% 3 digits + space
+			    parse_to_end(Sock, [D1, D2, D3, $ ], [Line]); 
+			_ ->
+			    [Line]
+		    end,
+	    result(D1,D2,D3,Lines,RetForm, Verbatim);
+	_ ->
 	    retform(rescode(?PERM_NEG_COMPL,-1,-1),[],RetForm)
     end.
 
-result(D1,_D2,_D3,Line,_RetForm) when D1 - $0 > 10 ->
-    {error,{invalid_server_response,Line}};
-result(D1,_D2,_D3,Line,_RetForm) when D1 - $0 < 0 ->
-    {error,{invalid_server_response,Line}};
-result(D1,D2,D3,Line,RetForm) ->
+result(D1, _D2 ,_D3, Lines, _RetForm, _Verbatim) when D1 - $0 > 10 ->
+    {error,{invalid_server_response,Lines}};
+result(D1, _D2, _D3, Lines, _RetForm, _Verbatim) when D1 - $0 < 0 ->
+    {error,{invalid_server_response, Lines}};
+result(D1, D2, D3, Lines, RetForm, false) ->
     Res1 = D1 - $0,
     Res2 = D2 - $0,
     Res3 = D3 - $0,
-    verbose("    ~w : ~s", [Res1, Line]),
-    retform(rescode(Res1,Res2,Res3),Line,RetForm).
+    verbose("    ~w : ~s", [Res1, Lines]),
+    retform(rescode(Res1,Res2,Res3),Lines,RetForm);
 
-retform(ResCode,Line,true) ->
-    {ResCode,Line};
+result(_D1, _D2, _D3, Lines, _, true) ->
+    Lines.
+
+retform(ResCode,Lines,true) ->
+    {ResCode,Lines};
 retform(ResCode,_,_) ->
     ResCode.
 
@@ -1384,22 +1448,22 @@ getline1(Sock, {[], Rest}, Retry) ->
 	{error, timeout} ->
 	    %% Retry..
 	    getline1(Sock, {[], Rest}, Retry+1);
-	Error ->
+	_ ->
 	    put(leftovers, Rest),
 	    []
     end;
-getline1(Sock, {Line, Rest}, Retry) ->
+getline1(_Sock, {Line, Rest}, _Retry) ->
     put(leftovers, Rest),
     Line.
 
-parse_to_end(Sock, Prefix) ->
-  Line = getline(Sock),
-  case lists:prefix(Prefix, Line) of
-    false ->
-      parse_to_end(Sock, Prefix);
-    true ->
-      ok
-  end.
+parse_to_end(Sock, Prefix, Lines) ->    
+    Line = getline(Sock),
+    case lists:prefix(Prefix, Line) of
+	false ->
+	    parse_to_end(Sock, Prefix, [Line | Lines]);
+	true ->
+	    lists:reverse(Lines)
+    end.
 
 
 %% Split list after first occurence of S.
@@ -1465,6 +1529,15 @@ sock_start() ->
 
 sock_connect(Host,Port,TimeOut) ->
     debug(" info : connect to server on ~p:~p~n",[Host,Port]),
+    
+    %% Code for supporting ipv6 but there was a bit more to it ... 
+    %%   {Opts, NewHost} = case inet:getaddr(Host, inet6) of
+    %% 			  {ok, IPAddr} ->
+    %% 			      {[{packet, 0}, {active, false}, inet6], IPAddr};
+    %% 			  {error, _} ->
+    %% 			      {[{packet, 0}, {active, false}], Host}
+    %% 		      end,
+    
     Opts = [{packet, 0}, {active, false}],
     case (catch gen_tcp:connect(Host, Port, Opts,TimeOut)) of
 	{'EXIT', R1} ->	% XXX Probably no longer needed.
@@ -1556,8 +1629,6 @@ get_key1(Key,List,Default)->
 	    Default
     end.
 
-
-
 %% ----------------------------------------------------------
 
 %%
@@ -1609,9 +1680,6 @@ verbose(F,A) -> verbose(get(verbose),F,A).
 verbose(true,F,A) -> print(F,A);
 verbose(_,_F,_A)  -> ok.
 
-
-
-
 %% debug -> ok
 %%
 %% Prints the string if debug enabled
@@ -1626,6 +1694,3 @@ debug(_,_F,_A)  -> ok.
 
 
 print(F,A) -> io:format(F,A).
-
-
-

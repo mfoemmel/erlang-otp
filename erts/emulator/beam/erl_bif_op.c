@@ -221,11 +221,47 @@ BIF_RETTYPE is_function_1(BIF_ALIST_1)
     }
 }
 
-/* Record test cannot actually be a bif. The epp processor is involved in
-   the real guard test, we have to add one more parameter, the 
-   returnvalue of record_info(size, Rec), which is the arity of the TUPLE.
-   This may seem awkward when applied from the shell, where the plain
-   tuple test is more understandable, I think... */
+BIF_RETTYPE is_boolean_1(BIF_ALIST_1)
+{
+    if (BIF_ARG_1 == am_true || BIF_ARG_1 == am_false) {
+	BIF_RET(am_true);
+    } else {
+	BIF_RET(am_false);
+    }
+}
+
+
+
+/*
+ * The compiler usually translates calls to is_record/2 to more primitive
+ * operations. In some cases this is not possible. We'll need to implement
+ * a weak version of is_record/2 as BIF (the size of the record cannot
+ * be verified).
+ */
+BIF_RETTYPE is_record_2(BIF_ALIST_2) 
+{
+    Eterm *t;
+
+    if (is_not_atom(BIF_ARG_2)) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+
+    if (is_tuple(BIF_ARG_1) &&
+	arityval(*(t = tuple_val(BIF_ARG_1))) >= 1 &&
+	t[1] == BIF_ARG_2) {
+ 	BIF_RET(am_true);
+    }
+    BIF_RET(am_false);
+}
+
+
+/*
+ * Record test cannot actually be a bif. The epp processor is involved in
+ * the real guard test, we have to add one more parameter, the 
+ * return value of record_info(size, Rec), which is the arity of the TUPLE.
+ * his may seem awkward when applied from the shell, where the plain
+ * tuple test is more understandable, I think...
+ */
 BIF_RETTYPE is_record_3(BIF_ALIST_3) 
 {
     Eterm *t;

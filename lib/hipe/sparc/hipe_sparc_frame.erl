@@ -24,9 +24,9 @@
 %%  History  :	* 2001-10-25 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2002/10/01 12:47:16 $
-%%              $Revision: 1.22 $
+%%              $Author: kostis $
+%%              $Date: 2004/06/22 10:14:01 $
+%%              $Revision: 1.30 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -51,7 +51,6 @@
 %% -define(DO_ASSERT,true).
 -include("../main/hipe.hrl").
 -include("../rtl/hipe_literals.hrl").
--include("../util/hipe_vector.hrl").
 
 -define(MK_CP_REG(),(hipe_sparc:mk_reg(hipe_sparc_registers:return_address()))).
 -define(MK_SP_REG(),(hipe_sparc:mk_reg(hipe_sparc_registers:stack_pointer()))).
@@ -126,17 +125,16 @@ rewrite(Cfg, TempMap, FpMap, NextSpillPos) ->
   %% Create a new CFG
   NewSparc = hipe_sparc:sparc_code_update(Sparc, lists:flatten(NewCode)),
   CFG0 = hipe_sparc_cfg:init(NewSparc),
-  CFG1 = hipe_sparc_cfg:var_range_update(CFG0, {0, 31}),
   %% io:format("\n\n\n\n\n\n\n\nAfter frame\n"),
   %%  hipe_sparc_cfg:pp(CFG1),
-  CFG1.
+  CFG0.
 
 rewrite_instrs([I|Is], TempMap, TempMaps, FpMap, Need, Arity, RetLabel) ->
   NewMap = 
     case hipe_sparc:is_label(I) of
       true ->
-%%	io:format("~w\n",[?vector_get(hipe_sparc:label_name(I),TempMaps)]),
-      	?vector_get(hipe_sparc:label_name(I),TempMaps);
+%%	io:format("~w\n",[hipe_vectors:get(TempMaps, hipe_sparc:label_name(I))]),
+      	hipe_vectors:get(TempMaps, hipe_sparc:label_name(I));
       false ->
 	TempMap
     end,
@@ -155,7 +153,7 @@ rewrite_instr(I, TempMap, FpMap, Need, Arity, RetLabel) ->
 remap_fp_regs(I, FpMap) ->
   case hipe_sparc:type(I) of
     %% These instructions handles their own remapping.
-    fmov -> I;
+    fmove -> I;
     pseudo_spill-> I;
     pseudo_unspill-> I;
     _->
@@ -198,7 +196,7 @@ rewrite_instr2(I, TempMap, FpMap, Need, Arity, RetLabel) ->
       %%      jmp with the live registers...
       case length(hipe_sparc:pseudo_return_regs(I)) == 1 of
 	true -> %% Just one retval all is ok
-	  hipe_sparc:goto_create(RetLabel,[return]);
+	  hipe_sparc:goto_create(RetLabel);
 	false ->
 	  %% Number of retvalues not 1.
 	  ?EXIT({multiple_retvals_not_handled,I})
@@ -207,8 +205,8 @@ rewrite_instr2(I, TempMap, FpMap, Need, Arity, RetLabel) ->
     pseudo_enter ->
       rewrite_enter(I, TempMap, Need, Arity);
 
-    fmov ->
-      rewrite_fmov(I, TempMap, FpMap);
+    fmove ->
+      rewrite_fmove(I, TempMap, FpMap);
     load_fp -> 
       rewrite_load_fp(I, TempMap);
     store_fp -> 
@@ -220,8 +218,8 @@ rewrite_instr2(I, TempMap, FpMap, Need, Arity, RetLabel) ->
       Off = hipe_sparc:mk_imm(get_offset(Need - 1)),
       SP = hipe_sparc:mk_reg(hipe_sparc_registers:stack_pointer()),
 
-      [hipe_sparc:store_create(SP, Off, w, Source, []),
-       hipe_sparc:load_fp_create(Dest, 32, single, SP, Off, []),
+      [hipe_sparc:store_create(SP, Off, w, Source),
+       hipe_sparc:load_fp_create(Dest, 32, single, SP, Off),
        hipe_sparc:conv_fp_create(Dest, Dest)];
     	
     _ -> 
@@ -244,18 +242,20 @@ rewrite_enter(I, TempMap, Need, Arity) ->
   Args = hipe_sparc:pseudo_enter_args(I), 
   RegArgs = lists:sublist(Args,1,NoRegArgs),
   %% Get target (closure or address).
-  {Target,GetTInstr}
-    = case hipe_sparc:pseudo_enter_type(I) of
-	closure ->
-	  {map(hipe_sparc:pseudo_enter_target(I), TempMap),[]};
-	_ ->
-	  TL = hipe_sparc:pseudo_enter_target(I),
-	  TR = ?MK_TEMP_REG(),
-	  TI = hipe_sparc:load_address_create(TR,TL,
-					      function,[]),
-	  {TR,TI}
-      end,
-  
+  T = hipe_sparc:pseudo_enter_target(I),
+  {Target,GetTInstr} =
+    case hipe_sparc:pseudo_enter_is_known(I) of
+      false ->
+	{map(T, TempMap),[]};
+      true ->
+	TR = ?MK_TEMP_REG(),
+	TT = case hipe_sparc:pseudo_enter_type(I) of
+	       remote -> remote_function;
+	       not_remote -> local_function
+	     end,
+	TI = hipe_sparc:load_address_create(TR, T, TT),
+	{TR,TI}
+    end,
   CP = ?MK_CP_REG(),
 
   %% The code for enter.
@@ -299,8 +299,8 @@ remap_call_regs(I, TempMap) ->
     lists:sublist(hipe_sparc:call_link_args(I), 
 		  hipe_sparc_registers:register_args()),
 
-  case hipe_sparc:call_link_type(I) of
-    closure ->
+  case hipe_sparc:call_link_is_known(I) of
+    false ->
       Target = hipe_sparc:call_link_target(I),
       case ?IS_SPILLED(Target,TempMap) of
 	true ->
@@ -313,7 +313,7 @@ remap_call_regs(I, TempMap) ->
 	false ->
 	  remap(I, [Target | (Defs ++ ArgsInRegs)],TempMap)
       end;
-    _ ->
+    true ->
       remap(I,Defs ++ ArgsInRegs, TempMap)
   end.
 
@@ -382,7 +382,7 @@ rewrite_spill(I, TempMap, FpMap) ->
 	false ->
 	  %% Spilling a spilled reg...
 	  ?ASSERT(check_spill(SrcFpRegNr,FpMap,Pos,I)),
-	  hipe_sparc:comment_create({already_spilled,I},[]);
+	  hipe_sparc:comment_create({already_spilled,I});
 	true -> %% Not spilled...
 	  Reg = map_fp(SrcReg, FpMap),
 	  gen_stack_store_fp(Pos, Reg)
@@ -393,7 +393,7 @@ rewrite_spill(I, TempMap, FpMap) ->
 	false ->
 	  %% Spilling a spilled reg...
 	  ?ASSERT(check_spill(SrcRegNr,TempMap,Pos,I)),
-	  hipe_sparc:comment_create({already_spilled,I},[]);
+	  hipe_sparc:comment_create({already_spilled,I});
 	true -> %% Not spilled...
 	  Reg = map(SrcReg,TempMap),
 	  gen_stack_store(Pos, Reg)
@@ -417,7 +417,7 @@ rewrite_unspill(I, TempMap, FpMap) ->
 	false ->
 	  %% Unspilling to a spilled fpreg...
 	  ?ASSERT(check_spill(DstFpRegNr,FpMap,Pos,I)),
-	  hipe_sparc:comment_create({already_unspilled,I},[]);
+	  hipe_sparc:comment_create({already_unspilled,I});
 	true -> %% Not spilled...
 	  Reg = map_fp(DstReg, FpMap),
 	  gen_stack_load_fp(Pos, Reg)
@@ -427,7 +427,7 @@ rewrite_unspill(I, TempMap, FpMap) ->
       case hipe_temp_map:in_reg(DstRegNr,TempMap) of
 	false -> %% Unspilling to a spilled reg.
 	  ?ASSERT(check_spill(DstRegNr,TempMap,Pos,I)),
-	  hipe_sparc:comment_create({already_unspilled,I},[]);
+	  hipe_sparc:comment_create({already_unspilled,I});
 	true -> %% Not spilled.
 	  Reg = map(DstReg,TempMap),
 	  gen_stack_load(Pos,Reg)
@@ -442,10 +442,10 @@ check_spill(RegNr,TempMap,Pos,I) ->
   end.
 -endif.
 
-rewrite_fmov(I0, TempMap, FpMap)->
+rewrite_fmove(I0, TempMap, FpMap)->
   I = map_temps(I0, TempMap),
-  Src = hipe_sparc:fmov_src(I),
-  Dest = hipe_sparc:fmov_dest(I),
+  Src = hipe_sparc:fmove_src(I),
+  Dest = hipe_sparc:fmove_dest(I),
   DestReg = hipe_sparc:fpreg_nr(Dest),
 
   case hipe_sparc:is_fpreg(Src) of
@@ -454,7 +454,7 @@ rewrite_fmov(I0, TempMap, FpMap)->
 	true ->
 	  Pos = get_spill_offset(hipe_temp_map:find(DestReg, FpMap)),
 	  Reg = ?MK_TEMP_FPREG(),
-	  [hipe_sparc:fmov_dest_update(I,Reg)|
+	  [hipe_sparc:fmove_dest_update(I,Reg)|
 	   gen_stack_store_fp(Pos, Reg)];
 	false ->
 	  remap_fp(I, [Dest], FpMap)
@@ -484,53 +484,52 @@ rewrite_fmov(I0, TempMap, FpMap)->
   end.  
 
 rewrite_load_fp(I, TempMap)->
-      NewI = map_temps(I, TempMap),
-      Source = hipe_sparc:load_fp_src(NewI),
-      Dest = hipe_sparc:load_fp_dest(NewI),
-      Off = hipe_sparc:load_fp_off(NewI),
-      Align = hipe_sparc:load_fp_align(NewI),
-      case hipe_sparc:load_fp_type(NewI) of
-	double ->
-	  Dest2 = hipe_sparc:mk_fpreg(hipe_sparc:fpreg_nr(Dest) + 1),
-	  case hipe_sparc:is_imm(Off) of
-	    true ->
-	      Off2 = hipe_sparc:mk_imm(hipe_sparc:imm_value(Off) + 4),
-	      [hipe_sparc:load_fp_create(Dest, Align, single, Source, Off, []),
-	       hipe_sparc:load_fp_create(Dest2, Align, single, Source, Off2,[])];
-	    _ -> %% The offset is a register
-	      [hipe_sparc:load_fp_create(Dest, Align, single, Source, Off, []),
-	       hipe_sparc:alu_create(Off, Off, '+', hipe_sparc:mk_imm(4), []),
-	       hipe_sparc:load_fp_create(Dest2, Align, single, Source, Off,[]),
-	       hipe_sparc:alu_create(Off, Off, '-', hipe_sparc:mk_imm(4), [])]
-	  end;
-	_ ->
-	  NewI
-      end.
-
+  NewI = map_temps(I, TempMap),
+  Source = hipe_sparc:load_fp_src(NewI),
+  Dest = hipe_sparc:load_fp_dest(NewI),
+  Off = hipe_sparc:load_fp_off(NewI),
+  Align = hipe_sparc:load_fp_align(NewI),
+  case hipe_sparc:load_fp_type(NewI) of
+    double ->
+      Dest2 = hipe_sparc:mk_fpreg(hipe_sparc:fpreg_nr(Dest) + 1),
+      case hipe_sparc:is_imm(Off) of
+	true ->
+	  Off2 = hipe_sparc:mk_imm(hipe_sparc:imm_value(Off) + 4),
+	  [hipe_sparc:load_fp_create(Dest, Align, single, Source, Off),
+	   hipe_sparc:load_fp_create(Dest2, Align, single, Source, Off2)];
+	_ -> %% The offset is a register
+	  [hipe_sparc:load_fp_create(Dest, Align, single, Source, Off),
+	   hipe_sparc:alu_create(Off, Off, '+', hipe_sparc:mk_imm(4)),
+	   hipe_sparc:load_fp_create(Dest2, Align, single, Source, Off),
+	   hipe_sparc:alu_create(Off, Off, '-', hipe_sparc:mk_imm(4))]
+      end;
+    _ ->
+      NewI
+  end.
 
 rewrite_store_fp(I, TempMap)->
-      NewI = map_temps(I, TempMap),
-      Source = hipe_sparc:store_fp_src(NewI),
-      Dest = hipe_sparc:store_fp_dest(NewI),
-      Off = hipe_sparc:store_fp_off(NewI),
-      Align = hipe_sparc:store_fp_align(NewI),
-      case hipe_sparc:store_fp_type(NewI) of
-	double ->
-	  Source2 = hipe_sparc:mk_fpreg(hipe_sparc:fpreg_nr(Source) + 1),
-	  case hipe_sparc:is_imm(Off) of
-	    true ->
-	      Off2 = hipe_sparc:mk_imm(hipe_sparc:imm_value(Off) + 4),
-	      [hipe_sparc:store_fp_create(Dest, Off, single, Align, Source, []),
-	       hipe_sparc:store_fp_create(Dest, Off2, single, Align, Source2, [])];
-	    _ ->
-	      [hipe_sparc:store_fp_create(Dest, Off, single, Align, Source, []),
-	       hipe_sparc:alu_create(Off, Off, '+', hipe_sparc:mk_imm(4), []),
-	       hipe_sparc:store_fp_create(Dest, Off, single, Align, Source2, []),
-	       hipe_sparc:alu_create(Off, Off, '-', hipe_sparc:mk_imm(4), [])]
-	  end;
+  NewI = map_temps(I, TempMap),
+  Source = hipe_sparc:store_fp_src(NewI),
+  Dest = hipe_sparc:store_fp_dest(NewI),
+  Off = hipe_sparc:store_fp_off(NewI),
+  Align = hipe_sparc:store_fp_align(NewI),
+  case hipe_sparc:store_fp_type(NewI) of
+    double ->
+      Source2 = hipe_sparc:mk_fpreg(hipe_sparc:fpreg_nr(Source) + 1),
+      case hipe_sparc:is_imm(Off) of
+	true ->
+	  Off2 = hipe_sparc:mk_imm(hipe_sparc:imm_value(Off) + 4),
+	  [hipe_sparc:store_fp_create(Dest, Off, single, Align, Source),
+	   hipe_sparc:store_fp_create(Dest, Off2, single, Align, Source2)];
 	_ ->
-	  NewI
-      end.
+	  [hipe_sparc:store_fp_create(Dest, Off, single, Align, Source),
+	   hipe_sparc:alu_create(Off, Off, '+', hipe_sparc:mk_imm(4)),
+	   hipe_sparc:store_fp_create(Dest, Off, single, Align, Source2),
+	   hipe_sparc:alu_create(Off, Off, '-', hipe_sparc:mk_imm(4))]
+      end;
+    _ ->
+      NewI
+  end.
 
 get_offset(O) ->
   -4*(O).
@@ -693,29 +692,28 @@ pushem([{spill,P}|Args], Pos, Temp) ->
   ToPos = Pos*4,
   [gen_stack_load(FromPos,Temp),
    gen_stack_store(ToPos, Temp)|
-    pushem(Args,Pos+1, Temp)];
+   pushem(Args,Pos+1, Temp)];
 pushem([{imm,I}|Args], Pos, Temp) ->
   ToPos = Pos*4,
-  [ hipe_sparc:move_create(Temp, hipe_sparc:mk_imm(I), [get_arg]),
-    gen_stack_store(ToPos, Temp)|
-    pushem(Args,Pos+1, Temp)];
+  [hipe_sparc:move_create(Temp, hipe_sparc:mk_imm(I)),
+   gen_stack_store(ToPos, Temp)|
+   pushem(Args,Pos+1, Temp)];
 pushem([],_,_) -> [].
 
 
-
 find_reg(Temp,Map) ->
-    case hipe_temp_map:find(hipe_sparc:reg_nr(Temp), Map) of 
-	{reg, Pos} ->
-	    Pos;
-	Where -> ?EXIT({temp_assumed_in_reg,Temp,Where})
-    end.
+  case hipe_temp_map:find(hipe_sparc:reg_nr(Temp), Map) of 
+    {reg, Pos} ->
+      Pos;
+    Where -> ?EXIT({temp_assumed_in_reg,Temp,Where})
+  end.
 
 find_fpreg(Temp,Map) ->
-    case hipe_temp_map:find(hipe_sparc:fpreg_nr(Temp), Map) of 
-	{fp_reg, Pos} ->
-	    Pos;
-	Where -> ?EXIT({temp_assumed_in_fpreg,Temp,Where})
-    end.
+  case hipe_temp_map:find(hipe_sparc:fpreg_nr(Temp), Map) of 
+    {fp_reg, Pos} ->
+      Pos;
+    Where -> ?EXIT({temp_assumed_in_fpreg,Temp,Where})
+  end.
 
 %%find_pos(Temp,Map) ->
 %%    case hipe_temp_map:find(hipe_sparc:reg_nr(Temp), Map) of
@@ -796,8 +794,7 @@ push_call_args(Args, TempMap) ->
       SP = ?MK_SP_REG(),
       TempReg = ?MK_TEMP_REG(),
       AdjustSP = 
-	hipe_sparc:alu_create(
-	  SP,SP,'+',hipe_sparc:mk_imm(4*NoArgs),[]),
+	hipe_sparc:alu_create(SP,SP,'+',hipe_sparc:mk_imm(4*NoArgs)),
       PushCode = pushem(MappedArgs,-NoArgs,TempReg),
       [AdjustSP|PushCode];
     true -> [] %% No args on the stack.
@@ -858,12 +855,10 @@ call_args_need(Args) ->
   length(args_on_stack(hipe_sparc_registers:register_args(), Args)).
 
 
-
-
 set_stack_size(Call,Size, Arity) ->
   SD = hipe_sparc:call_link_stack_desc(Call),
-  NewSD = hipe_sparc_stack_descriptors:set_size(SD, Size),
-  NewSD2 = hipe_sparc_stack_descriptors:set_arity(NewSD, Arity),
+  NewSD = hipe_sparc:sdesc_size_update(SD, Size),
+  NewSD2 = hipe_sparc:sdesc_arity_update(NewSD, Arity),
   hipe_sparc:call_link_stack_desc_update(Call,NewSD2).
 
 
@@ -872,9 +867,10 @@ gen_stack_test(StackNeed, SP, CP, Arity, Cfg) ->
   TempReg = ?MK_TEMP_REG(),
   TempReg1 = hipe_sparc:mk_reg(hipe_sparc_registers:temp1()),  
 
-
-  if (StackNeed) =:= 0 -> {[],[]};
-     (StackNeed) < ?HIPE_SPARC_LEAF_WORDS, Leaf =:= true -> {[],[]};
+  if (StackNeed) =:= 0 ->
+      {[],[]};
+     (StackNeed) < ?HIPE_SPARC_LEAF_WORDS, Leaf =:= true ->
+      {[],[]};
      true -> 
       Zero = hipe_sparc:mk_reg(hipe_sparc_registers:zero()),
       SL = hipe_sparc:mk_reg(hipe_sparc_registers:stack_limit()),
@@ -890,54 +886,39 @@ gen_stack_test(StackNeed, SP, CP, Arity, Cfg) ->
       TestCode = 
 	if ByteNeed > 16#fff -> %% Max in simm13.
 	    [
-	     hipe_sparc:alu_create(TempReg, SL, '-', SP, []),
+	     hipe_sparc:alu_create(TempReg, SL, '-', SP),
 	     hipe_sparc:sethi_create(TempReg1,
-				     hipe_sparc:mk_imm(
-				       high22(ByteNeed)),[]),
+				     hipe_sparc:mk_imm(high22(ByteNeed))),
 	     hipe_sparc:alu_create(TempReg1, TempReg1, 'or', 
-				   hipe_sparc:mk_imm(
-				     low10(ByteNeed)), 
-				   []),
-	     hipe_sparc:alu_cc_create(Zero, TempReg, '-', TempReg1,
-				      []),
-	     hipe_sparc:b_create(l, OverflowName, 
-				 StartName, Pred, na, []),
+				   hipe_sparc:mk_imm(low10(ByteNeed))),
+	     hipe_sparc:alu_cc_create(Zero, TempReg, '-', TempReg1),
+	     hipe_sparc:b_create(l, OverflowName, StartName, Pred, na),
 	     StartLbl];
-	   
 	   true ->
-	    [hipe_sparc:alu_create(TempReg, SL, '-', SP, []),
+	    [hipe_sparc:alu_create(TempReg, SL, '-', SP),
 	     hipe_sparc:alu_cc_create(Zero, TempReg, '-', 
-				      hipe_sparc:mk_imm(ByteNeed),
-				      []),
-	     hipe_sparc:b_create(l, OverflowName, 
-				 StartName, Pred, na, []),
+				      hipe_sparc:mk_imm(ByteNeed)),
+	     hipe_sparc:b_create(l, OverflowName, StartName, Pred, na),
 	     StartLbl]
 	end,
-	
-      
       CPSAVE = hipe_sparc:mk_reg(hipe_sparc_registers:cpsave()),
-      {[hipe_sparc:goto_create(TestName,[]),
+      {[hipe_sparc:goto_create(TestName),
 	TestLbl|TestCode],
        [OverflowLbl,
-	hipe_sparc:move_create(CPSAVE, CP,[savecp]),
+	hipe_sparc:move_create(CPSAVE, CP),
 	hipe_sparc:call_link_create(inc_stack_fun(Arity),
-				   CP,
-				   [CPSAVE],
-				    hipe_rtl:label_name(RetLbl), [], c, []), 
+				    CP,
+				    [CPSAVE],
+				    hipe_rtl:label_name(RetLbl), [], not_remote),
 	RetLbl,
-	hipe_sparc:move_create(CP, CPSAVE,[restorecp]),
-	hipe_sparc:goto_create(TestName,[])]
-      };
-     false ->
-      {[],[]}
+	hipe_sparc:move_create(CP, CPSAVE),
+	hipe_sparc:goto_create(TestName)]
+      }
   end.
 
 inc_stack_fun(Arity) ->
-  ArgsInRegs = 
-    min(Arity,
-	hipe_sparc_registers:register_args()), 
-  list_to_atom("inc_stack_" ++ 
-	       integer_to_list(ArgsInRegs) ++ "args_0").
+  ArgsInRegs = min(Arity, hipe_sparc_registers:register_args()), 
+  list_to_atom("inc_stack_" ++ integer_to_list(ArgsInRegs) ++ "args_0").
 
 
 gen_alloc_code(NeededBytes,SP) ->
@@ -947,17 +928,12 @@ gen_alloc_code(NeededBytes,SP) ->
   %% Alloc space on stack.
   if NeededBytes > 4092 -> %% To big for imm
       [hipe_sparc:sethi_create(TempReg,
-			       hipe_sparc:mk_imm(
-				 high22(NeededBytes)),[frame]),
+			       hipe_sparc:mk_imm(high22(NeededBytes))),
        hipe_sparc:alu_create(TempReg, TempReg, 'or', 
-			     hipe_sparc:mk_imm(
-			       low10(NeededBytes)), 
-			     []),
-       hipe_sparc:alu_create(
-	 SP,SP,'+',TempReg,[frame])];
+			     hipe_sparc:mk_imm(low10(NeededBytes))),
+       hipe_sparc:alu_create(SP,SP,'+',TempReg)];
      true ->
-      [hipe_sparc:alu_create(
-	 SP,SP,'+',hipe_sparc:mk_imm(NeededBytes),[frame])]
+      [hipe_sparc:alu_create(SP,SP,'+',hipe_sparc:mk_imm(NeededBytes))]
   end.
  
 gen_dealloc_code(Bytes) ->
@@ -966,17 +942,12 @@ gen_dealloc_code(Bytes) ->
   %% dealloc space on stack.
   if Bytes > 4092 -> %% To big for imm
       [hipe_sparc:sethi_create(TempReg,
-			       hipe_sparc:mk_imm(
-				 high22(Bytes)),[dealloc_frame]),
+			       hipe_sparc:mk_imm(high22(Bytes))),
        hipe_sparc:alu_create(TempReg, TempReg, 'or', 
-			     hipe_sparc:mk_imm(
-			       low10(Bytes)), 
-			     []),
-       hipe_sparc:alu_create(
-	 SP,SP,'-',TempReg,[dealloc__frame])];
+			     hipe_sparc:mk_imm(low10(Bytes))),
+       hipe_sparc:alu_create(SP,SP,'-',TempReg)];
      true ->
-      [hipe_sparc:alu_create(
-	 SP,SP,'-',hipe_sparc:mk_imm(Bytes),[dealloc_frame])]
+      [hipe_sparc:alu_create(SP,SP,'-',hipe_sparc:mk_imm(Bytes))]
   end.
 					
 gen_save_cp(Need)->
@@ -1018,7 +989,7 @@ gen_stack_load(Offset, DestReg) ->
      true ->
       SP = ?MK_SP_REG(),
       ImmOffset = hipe_sparc:mk_imm(Offset),
-      [hipe_sparc:load_create(DestReg, uw, SP, ImmOffset, [])]
+      [hipe_sparc:load_create(DestReg, uw, SP, ImmOffset)]
   end.
 
 gen_stack_store(Offset, Reg) ->
@@ -1027,7 +998,7 @@ gen_stack_store(Offset, Reg) ->
      true ->
       SP = ?MK_SP_REG(),
       ImmOffset = hipe_sparc:mk_imm(Offset),
-      [hipe_sparc:store_create(SP,ImmOffset, w, Reg, [])]
+      [hipe_sparc:store_create(SP,ImmOffset, w, Reg)]
   end.
 
 store_huge_spillpos(Offset,RegToSave)->
@@ -1039,7 +1010,7 @@ store_huge_spillpos(Offset,RegToSave)->
 load_huge_spillpos(Offset,RegToLoad)->
   SP = ?MK_SP_REG(),
   {DecCode, _IncCode, NewOffset} = adjust(Offset,RegToLoad),
-  [hipe_sparc:move_create(RegToLoad,SP,[]),
+  [hipe_sparc:move_create(RegToLoad,SP),
    DecCode, 
    hipe_sparc:load_create(RegToLoad,RegToLoad,
 			  hipe_sparc:mk_imm(NewOffset))].
@@ -1053,9 +1024,9 @@ gen_stack_load_fp(Offset, DestReg) ->
       DestReg2 = hipe_sparc:mk_fpreg(DestRegNr + 1),
       SP = ?MK_SP_REG(),
       [hipe_sparc:load_fp_create(DestReg, 32, single, SP, 
-				 hipe_sparc:mk_imm(Offset), []),
-       hipe_sparc:load_fp_create(DestReg2, 32, single, SP, 
-				 hipe_sparc:mk_imm(Offset2), [])]
+				 hipe_sparc:mk_imm(Offset)),
+       hipe_sparc:load_fp_create(DestReg2, 32, single, SP,
+				 hipe_sparc:mk_imm(Offset2))]
   end.
 
 gen_stack_store_fp(Offset, SrcReg) ->
@@ -1067,9 +1038,9 @@ gen_stack_store_fp(Offset, SrcReg) ->
       SrcReg2 = hipe_sparc:mk_fpreg(SrcRegNr + 1),
       SP = ?MK_SP_REG(),
       [hipe_sparc:store_fp_create(SP, hipe_sparc:mk_imm(Offset), 
-				  single, 32, SrcReg,[]),
+				  single, 32, SrcReg),
        hipe_sparc:store_fp_create(SP, hipe_sparc:mk_imm(Offset2), 
-				  single, 32, SrcReg2,[])]
+				  single, 32, SrcReg2)]
   end.
 
 store_huge_spillpos_fp(Offset2,RegToSave)->
@@ -1079,9 +1050,9 @@ store_huge_spillpos_fp(Offset2,RegToSave)->
   {DecCode, IncCode, NewOffset2} = adjust(Offset2,SP),
   [DecCode,
    hipe_sparc:store_fp_create(SP, hipe_sparc:mk_imm(NewOffset2+4), 
-			      single, 32, RegToSave,[]),
+			      single, 32, RegToSave),
    hipe_sparc:store_fp_create(SP, hipe_sparc:mk_imm(NewOffset2), 
-			      single, 32, RegToSave2,[]),
+			      single, 32, RegToSave2),
    IncCode].
 
 load_huge_spillpos_fp(Offset2,RegToLoad)->
@@ -1091,9 +1062,9 @@ load_huge_spillpos_fp(Offset2,RegToLoad)->
   {DecCode, IncCode, NewOffset2} = adjust(Offset2,SP),
   [DecCode,
    hipe_sparc:load_fp_create(RegToLoad, 32, single, SP, 
-			     hipe_sparc:mk_imm(NewOffset2+4), []),
+			     hipe_sparc:mk_imm(NewOffset2+4)),
    hipe_sparc:load_fp_create(RegToLoad2, 32, single, SP, 
-			     hipe_sparc:mk_imm(NewOffset2), []),
+			     hipe_sparc:mk_imm(NewOffset2)),
    IncCode].
 
 adjust(Offset,Reg) ->
@@ -1105,8 +1076,8 @@ adjust(Offset, Reg, Dec,Inc) ->
   NewOffset = Offset + 4092,
   Step = hipe_sparc:mk_imm(4092),
   adjust(NewOffset, Reg,
-	 [hipe_sparc:alu_create(Reg,Reg,'-',Step,[])| Dec],
-	 [hipe_sparc:alu_create(Reg,Reg,'+',Step,[])| Inc]).
+	 [hipe_sparc:alu_create(Reg,Reg,'-',Step)| Dec],
+	 [hipe_sparc:alu_create(Reg,Reg,'+',Step)| Inc]).
 	 
 
   

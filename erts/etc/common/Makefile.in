@@ -194,11 +194,6 @@ endif
 endif
 endif
 
-INSTALL_NOTES = \
-	$(ERL_TOP)/erts/notes.html \
-	$(ERL_TOP)/erts/notes_history.html
-
-
 etc:	$(ENTRY_OBJ) $(INSTALL_PROGS) $(INSTALL_LIBS) $(TEXTFILES) $(INSTALL_TOP_BIN)
 
 docs:
@@ -469,7 +464,6 @@ ifneq ($(INSTALL_SRC),)
 	$(INSTALL_DIR) $(RELEASE_PATH)/erts-$(VSN)/src
 	$(INSTALL_DATA) $(INSTALL_SRC) $(RELEASE_PATH)/erts-$(VSN)/src
 endif
-	$(INSTALL_DATA) $(INSTALL_NOTES) $(RELEASE_PATH)/erts-$(VSN)
 ifneq ($(INSTALL_EMBEDDED_DATA),)
 	$(INSTALL_DATA) $(INSTALL_EMBEDDED_DATA) $(RELEASE_PATH)/erts-$(VSN)/bin
 endif

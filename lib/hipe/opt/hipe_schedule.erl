@@ -51,7 +51,8 @@
 %%   stuff.
 
 -module(hipe_schedule).
--export([deps/1, block/2, cfg/1, est_cfg/1,delete_node/5]).
+-export([cfg/1, est_cfg/1,delete_node/5]).
+%% -export([deps/1, block/2]).
 
 %-define(debug1,true).
 -define(debug1,false).
@@ -101,21 +102,20 @@ cfg(CFG) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 update_all([],CFG) -> CFG;
 update_all([{L,NewB}|Ls],CFG) ->
-    update_all(Ls,hipe_sparc_cfg:bb_update(CFG,L,NewB)).
-
+    update_all(Ls,hipe_sparc_cfg:bb_add(CFG,L,NewB)).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 est_cfg(CFG) ->
-    update_all( [ {L, hipe_bb:mk_bb(est_block(hipe_bb:code(hipe_sparc_cfg:bb(CFG,L))))}
+    update_all([ {L, hipe_bb:mk_bb(est_block(hipe_bb:code(hipe_sparc_cfg:bb(CFG,L))))}
 		 || L <- hipe_sparc_cfg:labels(CFG) ], CFG).
 
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% Provides an estimation of how quickly a block will execute.
-% This is done by chaining all instructions in sequential order
-% by 0-cycle dependences (which means they will never be reordered), 
-% then scheduling the mess.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% Provides an estimation of how quickly a block will execute.
+%% This is done by chaining all instructions in sequential order
+%% by 0-cycle dependences (which means they will never be reordered), 
+%% then scheduling the mess.
 
 est_block([]) -> [];
 est_block([I]) -> [I];
@@ -160,29 +160,27 @@ lookup_instr([_|Xs],N) -> lookup_instr(Xs,N).
 %%                (=> just reverse the dependence arcs??)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Don't fire up the scheduler if there's no work to do.
+%% Don't fire up the scheduler if there's no work to do.
 block(_,[]) ->
     [];
 block(_L,[I]) -> 
     case hipe_sparc:is_any_branch(I) of
-	true -> [hipe_sparc:nop_create([]), I];
+	true -> [hipe_sparc:nop_create(), I];
 	false -> [I]
     end;
-
 block(_L,Blk) ->
     IxBlk = indexed_bb(Blk),
     case length(IxBlk) == 1 of % have to check length again, because comments
 	true ->                % and nops can have been removed.
 	    {_N,I} = hd(IxBlk),
 	    case hipe_sparc:is_any_branch(I) of
-		true -> [hipe_sparc:nop_create([]), I];
+		true -> [hipe_sparc:nop_create(), I];
 		false -> [I]
 	    end;
 	false ->
 	    {DAG, Preds} = deps(IxBlk),
 	    Sch = bb(IxBlk,{DAG, Preds}),
 	    {NewSch, NewIxBlk} = fill_delays(Sch, IxBlk, DAG),
-
 	    X = finalize_block(NewSch, NewIxBlk),
 	    case ?debug1 of
 		true ->
@@ -196,7 +194,6 @@ block(_L,Blk) ->
 		    ok
 	    end,
 	    X
-		    
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -467,13 +464,13 @@ separate_block(Sch,IxBlk) ->
 
 sep_comments([]) -> [];
 sep_comments([{C,I}|Xs]) ->
-    [hipe_sparc:comment_create({cycle,C},[]), I | sep_comments(Xs,C) ].
+    [hipe_sparc:comment_create({cycle,C}), I | sep_comments(Xs,C) ].
 
 sep_comments([],_) -> [];
 sep_comments([{C1,I}|Xs],C0) ->
     if
 	C1 > C0 ->
-	    [hipe_sparc:comment_create({cycle,C1},[]),I|sep_comments(Xs,C1)];
+	    [hipe_sparc:comment_create({cycle,C1}),I|sep_comments(Xs,C1)];
 	true ->
 	    [I|sep_comments(Xs,C0)]
     end.
@@ -487,7 +484,7 @@ finalize_block(Sch, IxBlk) ->
 	false -> ok
     end,
     
-    finalize_block(1, hipe_vectors:vsize(Sch), 1, Sch, IxBlk, []).
+    finalize_block(1, hipe_vectors:size(Sch), 1, Sch, IxBlk, []).
 
 finalize_block(N, End, _C, Sch, IxBlk, _Instrs) when N == End - 1 ->
     NextLast = get_instr(Sch, IxBlk, N),
@@ -498,7 +495,7 @@ finalize_block(N, End, _C, Sch, IxBlk, _Instrs) when N == End - 1 ->
     end,
     case hipe_sparc:is_any_branch(Last) of
 	true -> % Couldn't fill delayslot ==> add NOP
-	    [NextLast , hipe_sparc:nop_create([]), Last];
+	    [NextLast , hipe_sparc:nop_create(), Last];
 	false ->  % Last is a delayslot-filler ==> change order...
 	    [Last, NextLast]
     end;
@@ -628,7 +625,7 @@ cycle_sched(C,Ready,DAG,Preds,Earl,Rsrc,I_res,Prio,Sch,N,IxBlk) ->
 %% Description : 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 init_earliest(N) ->
-    hipe_vectors:init(N,1).
+    hipe_vectors:new(N,1).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
@@ -797,7 +794,7 @@ deps(IxBB) ->
 %% Description : DAG consists of dependence graph and predeccessors
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 empty_dag(N) ->
-    {hipe_vectors:init(N, []), hipe_vectors:init(N, 0)}. 
+    {hipe_vectors:new(N, []), hipe_vectors:new(N, 0)}. 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : indexed_bb
@@ -1073,7 +1070,7 @@ read_deps(Instr,Ty,{NxtWr,NxtWrTy},DAG) ->
 %% Description : Creates an empty dependence table (hash-table)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 empty_deptab() ->
-    hipe_hash:empty().
+    gb_trees:empty().
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : lookup
@@ -1084,10 +1081,10 @@ empty_deptab() ->
 %%               register X.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 lookup(X,DepTab) ->
-    case hipe_hash:lookup(X,DepTab) of
-	not_found ->
+    case gb_trees:lookup(X,DepTab) of
+	none ->
 	    {none,[]};
-	{found,{W,Rs}} ->
+	{value,{W,Rs}} ->
 	    {W,Rs}
     end.
 
@@ -1101,7 +1098,7 @@ lookup(X,DepTab) ->
 %% Description : Sets N tobe next writer on X
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 writer(X,N,Ty,DepTab) ->
-    hipe_hash:update(X,{{N,Ty},[]},DepTab).
+    gb_trees:enter(X,{{N,Ty},[]},DepTab).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : reader
@@ -1114,7 +1111,7 @@ writer(X,N,Ty,DepTab) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 reader(X,N,Ty,DepTab) ->
     {W,Rs} = lookup(X,DepTab),
-    hipe_hash:update(X,{W,[{N,Ty}|Rs]},DepTab).
+    gb_trees:enter(X,{W,[{N,Ty}|Rs]},DepTab).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %

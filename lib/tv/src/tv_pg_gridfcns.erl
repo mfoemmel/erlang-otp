@@ -75,8 +75,7 @@ init_grid(GridParentId, GridWidth,
     #process_variables{parent_pid  = ParentPid,
 		       grid_params = GridP}   = ProcVars,
     
-    #grid_params{bg_color        = GridBgColor,
-		 fg_color        = GridFgColor,
+    #grid_params{fg_color        = GridFgColor,
 		 nof_cols        = NofCols,
 		 col_width       = DefaultColWidth,
 		 first_col_shown = FirstColShown,
@@ -166,13 +165,9 @@ resize_grid(NewWidth, NewHeight, ProcVars) ->
     
     #grid_params{bg_frame         = BgFrame,
 		 fg_frame         = FgFrame,
-		 grid_xpos        = GridXpos,
-		 grid_ypos        = GridYpos,		 
 		 nof_cols         = NofCols,
 		 nof_rows         = NofRows,
 		 col_width        = DefaultColWidth,
-		 max_col_width    = MaxColWidth,
-		 min_col_width    = MinColWidth,
 		 first_col_shown  = FirstColShown,
 		 col_widths       = ColWidths,
 		 row_height       = RowHeight,
@@ -376,7 +371,6 @@ update_grid_data(Data, FirstRowShown, ProcVars) ->
 		 nof_rows         = NofRows,
 		 nof_rows_shown   = NofRowsShown,
 		 row_ids          = RowIds,
-		 col_ids          = ColIds,
 		 lists_as_strings = ListAsStr}  = GridP,
     
     NofColsShown = length(ColsShown),
@@ -418,7 +412,6 @@ scroll_grid_horizontally(NewFirstColShown, ProcVars) ->
 		       mark_params = MarkP}   = ProcVars,
     
     #grid_params{grid_width       = Width,
-		 grid_height      = Height,
 		 nof_cols         = NofCols,
 		 nof_rows         = NofRows,
 		 nof_rows_shown   = NofRowsShown,
@@ -672,11 +665,11 @@ remove_marks(ProcVars) ->
     case {VirtualCol, VirtualRow} of
 	{undefined, undefined} ->
 	    update_marked_cells(CellId, CellId, false);
-	{AnyCol, undefined} ->
+	{_AnyCol, undefined} ->
 	    NofColsShown = length(ColsShown),
 	    unmark_col(VirtualCol, FirstColShown, FirstColShown + NofColsShown - 1, 
 		       ColIds);
-	{undefined, AnyRow} ->
+	{undefined, _AnyRow} ->
 	    unmark_row(VirtualRow, FirstRowShown, FirstRowShown + NofRowsShown - 1, 
 		       RowIds);
 	_Other ->
@@ -725,32 +718,31 @@ move_marks(FirstCol, FirstRow, GridP, MarkP) ->
 		 col_ids         = ColIds,
 		 row_ids         = RowIds}  = GridP,
 
-    #mark_params{cell_id     = CellId,
-		 virtual_col = VirtualCol,
+    #mark_params{virtual_col = VirtualCol,
 		 virtual_row = VirtualRow} = MarkP,
 
 
-    NewMarkP = case {VirtualCol, VirtualRow} of
-		   {undefined, undefined} ->
-		       NofColsShown = length(ColsShown),
-		       move_marked_cell(FirstCol, FirstRow, NofColsShown, 
-					NofRowsShown, RowIds, MarkP);
-		   {AnyCol, undefined} ->
-		       NofColsShown = length(ColsShown),
-		       OldLastCol = OldFirstCol + NofColsShown - 1,
-		       LastCol    = FirstCol + NofColsShown - 1,
-		       move_marked_col(VirtualCol, OldFirstCol, OldLastCol, 
-				       FirstCol, LastCol, ColIds, MarkP);
-		   {undefined, AnyRow} ->
-		       OldLastRow = OldFirstRow + NofRowsShown - 1,
-		       LastRow    = FirstRow + NofRowsShown - 1,
-		       move_marked_row(VirtualRow, OldFirstRow, OldLastRow, 
-				       FirstRow, LastRow, RowIds, MarkP);
-		   {CellCol, CellRow} ->
-		       NofColsShown = length(ColsShown),
-		       move_marked_cell(FirstCol, FirstRow, NofColsShown, 
-					NofRowsShown, RowIds, MarkP)
-	       end.
+    case {VirtualCol, VirtualRow} of
+	{undefined, undefined} ->
+	    NofColsShown = length(ColsShown),
+	    move_marked_cell(FirstCol, FirstRow, NofColsShown, 
+			     NofRowsShown, RowIds, MarkP);
+	{_AnyCol, undefined} ->
+	    NofColsShown = length(ColsShown),
+	    OldLastCol = OldFirstCol + NofColsShown - 1,
+	    LastCol    = FirstCol + NofColsShown - 1,
+	    move_marked_col(VirtualCol, OldFirstCol, OldLastCol, 
+			    FirstCol, LastCol, ColIds, MarkP);
+	{undefined, _AnyRow} ->
+	    OldLastRow = OldFirstRow + NofRowsShown - 1,
+	    LastRow    = FirstRow + NofRowsShown - 1,
+	    move_marked_row(VirtualRow, OldFirstRow, OldLastRow, 
+			    FirstRow, LastRow, RowIds, MarkP);
+	{_CellCol, _CellRow} ->
+	    NofColsShown = length(ColsShown),
+	    move_marked_cell(FirstCol, FirstRow, NofColsShown, 
+			     NofRowsShown, RowIds, MarkP)
+    end.
     
 
 
@@ -779,8 +771,7 @@ refresh_marks(GridP, MarkP) ->
 		 col_ids         = ColIds,
 		 row_ids         = RowIds}  = GridP,
 
-    #mark_params{cell_id     = CellId,
-		 virtual_col = VirtualCol,
+    #mark_params{virtual_col = VirtualCol,
 		 virtual_row = VirtualRow} = MarkP,
 
 
@@ -789,14 +780,14 @@ refresh_marks(GridP, MarkP) ->
 	    NofColsShown = length(ColsShown),
 	    move_marked_cell(FirstCol, FirstRow, NofColsShown, NofRowsShown, 
 			     RowIds, MarkP);
-	{AnyCol, undefined} ->
+	{_AnyCol, undefined} ->
 	    NofColsShown = length(ColsShown),
 	    LastCol    = FirstCol + NofColsShown - 1,
 	    mark_col(VirtualCol, FirstCol, LastCol, ColIds, ?GRID_MARK_COLOR);
-	{undefined, AnyRow} ->
+	{undefined, _AnyRow} ->
 	    LastRow    = FirstRow + NofRowsShown - 1,
 	    mark_row(VirtualRow, FirstRow, LastRow, RowIds, ?GRID_MARK_COLOR);
-	{CellCol, CellRow} ->
+	{_CellCol, _CellRow} ->
 	    NofColsShown = length(ColsShown),
 	    move_marked_cell(FirstCol, FirstRow, NofColsShown, NofRowsShown, 
 			     RowIds, MarkP)
@@ -844,11 +835,11 @@ move_marked_col(VirtualCol,
 %%======================================================================
 
 
-mark_col(VirtualCol, FirstCol, LastCol, ColIds, Color) when VirtualCol < FirstCol ->
+mark_col(VirtualCol, FirstCol, _LastCol, _ColIds, _Color) when VirtualCol < FirstCol ->
     done;
-mark_col(VirtualCol, FirstCol, LastCol, ColIds, Color) when VirtualCol > LastCol ->
+mark_col(VirtualCol, _FirstCol, LastCol, _ColIds, _Color) when VirtualCol > LastCol ->
     done;
-mark_col(VirtualCol, FirstCol, LastCol, ColIds, Color) ->
+mark_col(VirtualCol, FirstCol, _LastCol, ColIds, Color) ->
     RealCol = VirtualCol - FirstCol + 1,
     MarkedColIds = lists:nth(RealCol, ColIds),
     mark_all_cells(MarkedColIds, Color).
@@ -892,7 +883,7 @@ unmark_col(VirtualCol, FirstCol, LastCol, ColIds) ->
 %%======================================================================
 
 
-mark_all_cells([], Color) ->
+mark_all_cells([], _Color) ->
     done;
 mark_all_cells([CellId | T], Color) ->
     gs:config(CellId, [{bg, Color}]),
@@ -916,11 +907,11 @@ mark_all_cells([CellId | T], Color) ->
 %%======================================================================
 
 
-mark_row(VirtualRow, FirstRow, LastRow, RowIds, Color) when VirtualRow < FirstRow ->
+mark_row(VirtualRow, FirstRow, _LastRow, _RowIds, _Color) when VirtualRow < FirstRow ->
     done;
-mark_row(VirtualRow, FirstRow, LastRow, RowIds, Color) when VirtualRow > LastRow ->
+mark_row(VirtualRow, _FirstRow, LastRow, _RowIds, _Color) when VirtualRow > LastRow ->
     done;
-mark_row(VirtualRow, FirstRow, LastRow, RowIds, Color) ->
+mark_row(VirtualRow, FirstRow, _LastRow, RowIds, Color) ->
     RealRow      = VirtualRow - FirstRow + 1,
     MarkedRowIds = lists:nth(RealRow, RowIds),
     mark_all_cells(MarkedRowIds, Color).
@@ -1036,15 +1027,15 @@ move_marked_cell(FirstColShown,
 %%======================================================================
 
 
-check_if_new_mark_visible(Col, Row, NofCols, NofRows) when Col > NofCols ->
+check_if_new_mark_visible(Col, _Row, NofCols, _NofRows) when Col > NofCols ->
     false;
-check_if_new_mark_visible(Col, Row, NofCols, NofRows) when Col =< 0 ->
+check_if_new_mark_visible(Col, _Row, _NofCols, _NofRows) when Col =< 0 ->
     false;
-check_if_new_mark_visible(Col, Row, NofCols, NofRows) when Row > NofRows ->
+check_if_new_mark_visible(_Col, Row, _NofCols, NofRows) when Row > NofRows ->
     false;
-check_if_new_mark_visible(Col, Row, NofCols, NofRows) when Row =< 0 ->
+check_if_new_mark_visible(_Col, Row, _NofCols, _NofRows) when Row =< 0 ->
     false;
-check_if_new_mark_visible(Col, Row, NofCols, NofRows) ->
+check_if_new_mark_visible(_Col, _Row, _NofCols, _NofRows) ->
     true.
     
 
@@ -1068,16 +1059,16 @@ check_if_new_mark_visible(Col, Row, NofCols, NofRows) ->
 %%======================================================================
 
 
-update_marked_cells(CellId, OldCellId, MarkedCell) when CellId == OldCellId ->
+update_marked_cells(CellId, OldCellId, _MarkedCell) when CellId == OldCellId ->
     gs:config(CellId, [{bg, ?DEFAULT_GRID_BGCOLOR}]);
-update_marked_cells(CellId, undefined, false) ->
+update_marked_cells(_CellId, undefined, false) ->
     done;
 update_marked_cells(CellId, undefined, true) ->
     gs:config(CellId, [{bg, ?GRID_MARK_COLOR}]);
 update_marked_cells(CellId, OldCellId, true) ->
     gs:config(OldCellId, [{bg, ?DEFAULT_GRID_BGCOLOR}]),
     gs:config(CellId, [{bg, ?GRID_MARK_COLOR}]);
-update_marked_cells(CellId, OldCellId, false) ->
+update_marked_cells(_CellId, OldCellId, false) ->
     gs:config(OldCellId, [{bg, ?DEFAULT_GRID_BGCOLOR}]).
 
     
@@ -1137,7 +1128,7 @@ notify_about_cell_marked(Pid, Marked, RealCol, RealRow, VirtCol, VirtRow, Text) 
 
 refresh_visible_rows([], _FirstColShown, _NofColsShown, _DataList, _ListAsStr) ->
     done;
-refresh_visible_rows(RowIds, FirstColShown, NofColsShown, [], ListAsStr) ->
+refresh_visible_rows(RowIds, _FirstColShown, _NofColsShown, [], _ListAsStr) ->
     clear_cols_or_rows(RowIds);
 refresh_visible_rows([OneRowIds | RemRowIds], FirstColShown, NofColsShown,
 		    [DataItemList | RemDataItemLists], ListAsStr) ->
@@ -1166,7 +1157,7 @@ refresh_visible_rows([OneRowIds | RemRowIds], FirstColShown, NofColsShown,
 
 update_visible_rows([], _FirstColShown, _NofColsShown, _DataList, _ListAsStr) ->
     done;
-update_visible_rows(RowIds, FirstColShown, NofColsShown, [], _ListAsStr) ->
+update_visible_rows(RowIds, _FirstColShown, _NofColsShown, [], _ListAsStr) ->
     clear_cols_or_rows(RowIds);
 update_visible_rows([OneRowIds | RemRowIds], FirstColShown, NofColsShown,
 		    [DataItem | RemData], ListAsStr) ->
@@ -1244,7 +1235,7 @@ make_row_data_list(N, NofRows, []) when N > NofRows ->
 make_row_data_list(N, NofRows, []) ->
        % If NofRows == N, we get the empty list here!
     lists:duplicate(NofRows- N, notext);
-make_row_data_list(N, NofRows, [DataItem | RemData]) when N > NofRows ->
+make_row_data_list(N, NofRows, [_DataItem | _RemData]) when N > NofRows ->
     [];
 make_row_data_list(N, NofRows, [DataItem | RemData]) ->
        % We convert the received item to a list! This way we know that 
@@ -1336,7 +1327,7 @@ get_data_sublist(DataList, StartPos, Length) ->
 %%======================================================================
 
 
-resize_all_grid_columns(RealCol, [], ColFrameIds, MaxColWidth, MinColWidth) ->
+resize_all_grid_columns(_RealCol, [], _ColFrameIds, _MaxColWidth, _MinColWidth) ->
     done;
 resize_all_grid_columns(RealCol, [ColWidth | Tail], ColFrameIds, MaxColWidth, MinColWidth) ->
 
@@ -1492,8 +1483,8 @@ clear_one_col_or_row([LabelId | RemLabelIds]) ->
 %%======================================================================
 
 
-check_nof_cols(ColsShown, NofNewCols, ColFrameIds, ColIds, RowIds, 
-	       NofRows, RowHeight, FgColor, BgColor) when NofNewCols =< 0 ->
+check_nof_cols(_ColsShown, NofNewCols, ColFrameIds, ColIds, RowIds, 
+	       _NofRows, _RowHeight, _FgColor, _BgColor) when NofNewCols =< 0 ->
     {length(ColFrameIds), ColFrameIds, ColIds, RowIds};
 check_nof_cols(ColsShown, NofNewCols, ColFrameIds, ColIds, 
 	       RowIds, NofRows, RowHeight, FgColor, BgColor) ->
@@ -1505,7 +1496,6 @@ check_nof_cols(ColsShown, NofNewCols, ColFrameIds, ColIds,
        % values on these important parameters, then he can only blame himself.
     ParentId = lists:nth((NewColNo - 1), ColFrameIds),
     ParentColWidth = lists:nth((NewColNo - 1), ColsShown),
-    NewColWidth = lists:nth(NewColNo, ColsShown),
     Xpos = ParentColWidth + 1,
 
     {ColFrameId, LabelIds} = add_one_col_frame(ParentId, NewColNo, Xpos, FgColor, 
@@ -1671,7 +1661,7 @@ compute_rows_shown(GridHeight, RowHeight) ->
 %%======================================================================
 
 
-compute_cols_shown(FirstColShown, ColWidths, GridWidth, NofCols, DefaultColWidth) ->
+compute_cols_shown(FirstColShown, ColWidths, GridWidth, _NofCols, DefaultColWidth) ->
     ColWidthsLength = length(ColWidths),
        % Normally ColWidths shall be long enough, but just to make sure...
        % (We could have chosen to update ColWidths here to, but right now
@@ -1755,7 +1745,7 @@ create_base_frame(ParentId, Width, Height, Xpos, Ypos, BgColor) ->
 %%======================================================================
 
 
-create_col_frames(0, NofRows, RowHeight, ParentId, GridP, ColFrameAcc, LabelAcc) ->
+create_col_frames(0, _NofRows, _RowHeight, _ParentId, _GridP, ColFrameAcc, LabelAcc) ->
     {lists:reverse(ColFrameAcc), lists:reverse(LabelAcc)};
 create_col_frames(N, NofRows, RowHeight, ParentId, GridP, ColFrameAcc, LabelAcc) ->
        % Yes, it *IS* inefficient to copy GridP for each loop.
@@ -1826,12 +1816,12 @@ create_one_col_frame(ParentId, Xpos, BgColor) ->
     ColFrameWidth     = 1200,
     ColFrameHeight    = 900,
     Ypos = 0,
-    F = gs:frame(ParentId, [{width, ColFrameWidth},
-			    {height, ColFrameHeight},
-			    {x, Xpos},
-			    {y, Ypos},
-			    {bg, BgColor}
-			   ]).
+    gs:frame(ParentId, [{width, ColFrameWidth},
+			{height, ColFrameHeight},
+			{x, Xpos},
+			{y, Ypos},
+			{bg, BgColor}
+		       ]).
     
 
 
@@ -1851,7 +1841,7 @@ create_one_col_frame(ParentId, Xpos, BgColor) ->
 %%======================================================================
 
 
-create_rows_on_frame(FrameId, RowNo, NofRows, H, Y, Fg, Bg, ColNo, Acc) when RowNo > NofRows -> 
+create_rows_on_frame(_FrameId, RowNo, NofRows, _H, _Y, _Fg, _Bg, _ColNo, Acc) when RowNo > NofRows -> 
     lists:reverse(Acc);
 create_rows_on_frame(FrameId, RowNo, NofRows, H, Y, Fg, Bg, ColNo, RAcc) -> 
     Width = 1200, 
@@ -1889,7 +1879,7 @@ create_rows_on_frame(FrameId, RowNo, NofRows, H, Y, Fg, Bg, ColNo, RAcc) ->
 %%======================================================================
 
 
-get_row_ids(0, Cols, RowAcc) ->
+get_row_ids(0, _Cols, RowAcc) ->
     RowAcc;
 get_row_ids(RowNo, Cols, RowAcc) ->
     Row = extract_ids_for_one_row(RowNo, Cols),
@@ -1912,7 +1902,7 @@ get_row_ids(RowNo, Cols, RowAcc) ->
 %%======================================================================
 
 
-extract_ids_for_one_row(N, []) ->
+extract_ids_for_one_row(_N, []) ->
     [];
 extract_ids_for_one_row(N, [ColIds | Tail]) ->
     [lists:nth(N, ColIds) | extract_ids_for_one_row(N, Tail)].
@@ -1940,7 +1930,7 @@ extract_ids_for_one_row(N, [ColIds | Tail]) ->
 
 max(A, B) when A > B ->
     A;
-max(A, B) ->
+max(_, B) ->
     B.
 
 
@@ -1962,6 +1952,6 @@ max(A, B) ->
 
 min(A, B) when A < B ->
     A;
-min(A, B) ->
+min(_, B) ->
     B.
     

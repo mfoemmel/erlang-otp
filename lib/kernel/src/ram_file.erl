@@ -116,9 +116,7 @@ open(Data, Mode) ->
 	    open(Data, ModeList);
 	Error ->
 	    Error
-    end;
-open(_, _) ->
-    {error, einval}.
+    end.
 
 close(#file_descriptor{module = ?MODULE, data = Port}) -> 
     ll_close(Port).

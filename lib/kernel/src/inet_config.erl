@@ -1,4 +1,4 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
@@ -20,9 +20,11 @@
 -include("inet_config.hrl").
 -include_lib("kernel/include/inet.hrl").
 
--import(lists, [foreach/2, member/2, reverse/1]).
+-import(lists, [foreach/2, member/2, reverse/1, flatten/1]).
 
 -export([init/0]).
+
+-export([do_load_resolv/2]).
 
 %%
 %% Must be called after inet_db:start
@@ -57,47 +59,26 @@ init() ->
 	_ ->
 	    ok
     end,
+
     set_hostname(),
+
+    %% Note: In shortnames (or non-distributed) mode we don't need to know
+    %% our own domain name. In longnames mode we do and we can't rely on 
+    %% the user to provide it (by means of inetrc), so we need to look 
+    %% for it ourselves.
+
+    do_load_resolv(OsType, erl_dist_mode()),
+
     case OsType of
-	{unix, Type} ->
-	    %% The Etc variable enables us to run tests with other configuration files than
-	    %% the normal ones 
-	    Etc = case os:getenv("ERL_INET_ETC_DIR") of
-		      false -> ?DEFAULT_ETC;
-		      _EtcDir -> 
-			  _EtcDir				 
-		  end,
-	    load_hosts(filename:join(Etc,?DEFAULT_HOSTS),unix),
-	    load_resolv(filename:join(Etc,"resolv.conf"), resolv),
-	    case Type of
-		unix_sv ->			% UnixWare 2.1.2
-		    case inet_db:add_rc_list([{lookup,["native"]}]) of
-			ok ->
-			    true;
-			{error, Reason} ->
-			    error("can't set lookup to native: ~p", [Reason])
-		    end;
-		freebsd -> %% we may have to check version (2.2.2)
-		    load_resolv(filename:join(Etc,"host.conf"), host_conf_freebsd);
-		'bsd/os' ->
-		    load_resolv(filename:join(Etc,"irs.conf"), host_conf_bsdos);
-		linux ->
-		    case load_resolv(filename:join(Etc,"host.conf"),
-				     host_conf_linux) of
-			ok ->
-			    ok;
-			_ ->
-			    load_resolv(filename:join(Etc,"nsswitch.conf"), 
-					nsswitch_conf)
-		    end,
-
-		    % It may be the case that the domain name was not set
-		    % because the hostname was short. But we can now look it
-		    % up and get the long name and the domain name from it.
-
-		    % FIXME: The second call to set_hostname will insert
-		    % a duplicate entry in the search list.
-
+	{unix,Type} ->
+	    if Type == linux ->
+		    %% It may be the case that the domain name was not set
+		    %% because the hostname was short. But NOW we can look it
+		    %% up and get the long name and the domain name from it.
+		    
+		    %% FIXME: The second call to set_hostname will insert
+		    %% a duplicate entry in the search list.
+		    
 		    case inet_db:res_option(domain) of
 			"" ->
 			    case inet:gethostbyname(inet_db:gethostname()) of
@@ -111,78 +92,141 @@ init() ->
 			_ ->
 			    true
 		    end;
-		sunos ->
-		    case os:version() of
-			{Major,_,_} when Major >= 5 ->
-			    load_resolv(filename:join(Etc,"nsswitch.conf"), nsswitch_conf);
-			_ -> 
-			    ok
-		    end;
-		netbsd ->
-		    case os:version() of
-			{Major,Minor,_} when Major >= 1, Minor >= 4 ->
-			    load_resolv(filename:join(Etc,"nsswitch.conf"), nsswitch_conf);
-			_ ->
-			    ok
-		    end;
-		_ ->
-		    inet_db:set_lookup([native]),
-		    ok
-	    end,
-	    add_dns_lookup(inet_db:res_option(lookup)),
-	    handle_native_lookup();
-	{win32, Type} ->
-	    win32_load_from_registry(Type),
-	    inet_db:set_lookup([native]);
-
-	vxworks ->
-	    vxworks_load_hosts(),
-	    inet_db:set_lookup([file, dns]),
-	    case os:getenv("ERLRESCONF") of
-		false ->
-		    no_ERLRESCONF;
-		Resolv ->
-		    load_resolv(Resolv, resolv)
-	    end;
-	{ose,Type} ->
-	    inet_db:set_lookup([file, dns]),
-	    case os:getenv("NAMESERVER") of
-		false ->
-		    case os:getenv("RESOLVFILE") of
-			false ->
-			    erlang:display('Warning: No NAMESERVER or RESOLVFILE specified!'),
-			    no_resolv;
-			Resolv ->
-			    load_resolv(Resolv, resolv)
-		    end;
-		Ns ->
-		    {ok,IP} = inet_parse:address(Ns),
-		    inet_db:add_rc_list([{nameserver,IP}])
-	    end,
-	    case os:getenv("DOMAIN") of
-		false ->
-		    no_domain;
-		D ->
-		    ok = inet_db:add_rc_list([{domain,D}])
-	    end,
-	    case os:getenv("HOSTSFILE") of
-		false ->
-		    erlang:display('Warning: No HOSTSFILE spedified!'),
-		    no_hosts_file;
-		File ->
-		    load_hosts(File, ose)
-	    end;
+	       true -> ok
+	    end,    
+	    add_dns_lookup(inet_db:res_option(lookup));
 	_ ->
-	    false
+	    ok
     end,
-    load_rc(),
+
+    %% Read inetrc file, if it exists.
+    {RcFile,CfgFiles,CfgList} = read_rc(),
+
+    %% Possibly read config files or system registry
+    lists:foreach(fun({file,hosts,File}) ->
+			  load_hosts(File, unix);
+		     ({file,Func,File}) ->
+			  load_resolv(File, Func);
+		     ({registry,win32}) ->
+			  case OsType of
+			      {win32,WinType} ->
+				  win32_load_from_registry(WinType);
+			      _ ->
+				  error("can not read win32 system registry~n", [])
+			  end
+		  end, CfgFiles),
+
+    %% Add inetrc config entries
+    case inet_db:add_rc_list(CfgList) of
+	ok -> ok;
+	_  -> error("syntax error in ~s~n", [RcFile])
+    end,
 
     %% Now test if we can lookup our own hostname in the inet_hosts table.
     standalone_host().
 
+erl_dist_mode() ->
+    case init:get_argument(sname) of
+	{ok,[[_SName]]} -> shortnames;
+	_ ->
+	    case init:get_argument(name) of
+		{ok,[[_Name]]} -> longnames;
+		_ -> nonames
+	    end
+    end.
+
+do_load_resolv({unix,Type}, longnames) ->
+    %% The Etc variable enables us to run tests with other 
+    %% configuration files than the normal ones 
+    Etc = case os:getenv("ERL_INET_ETC_DIR") of
+	      false -> ?DEFAULT_ETC;
+	      _EtcDir -> 
+		  _EtcDir				 
+	  end,
+    load_resolv(filename:join(Etc,"resolv.conf"), resolv),
+    case Type of
+	freebsd ->	    %% we may have to check version (2.2.2)
+	    load_resolv(filename:join(Etc,"host.conf"), host_conf_freebsd);
+	'bsd/os' ->
+	    load_resolv(filename:join(Etc,"irs.conf"), host_conf_bsdos);
+	sunos ->
+	    case os:version() of
+		{Major,_,_} when Major >= 5 ->
+		    load_resolv(filename:join(Etc,"nsswitch.conf"), 
+				nsswitch_conf);
+		_ -> 
+		    ok
+	    end;
+	netbsd ->
+	    case os:version() of
+		{Major,Minor,_} when Major >= 1, Minor >= 4 ->
+		    load_resolv(filename:join(Etc,"nsswitch.conf"), 
+				nsswitch_conf);
+		_ ->
+		    ok
+	    end;		
+	linux ->
+	    case load_resolv(filename:join(Etc,"host.conf"),
+			     host_conf_linux) of
+		ok ->
+		    ok;
+		_ ->
+		    load_resolv(filename:join(Etc,"nsswitch.conf"), 
+				nsswitch_conf)
+	    end;
+	_ ->
+	    ok
+    end,
+    inet_db:set_lookup([native]);
+
+do_load_resolv({win32,Type}, longnames) ->	
+    win32_load_from_registry(Type),
+    inet_db:set_lookup([native]);
+
+do_load_resolv(vxworks, _) ->	
+    vxworks_load_hosts(),
+    inet_db:set_lookup([file, dns]),
+    case os:getenv("ERLRESCONF") of
+	false ->
+	    no_ERLRESCONF;
+	Resolv ->
+	    load_resolv(Resolv, resolv)
+    end;
+
+do_load_resolv({ose,Type}, _) ->
+    inet_db:set_lookup([file, dns]),
+    case os:getenv("NAMESERVER") of
+	false ->
+	    case os:getenv("RESOLVFILE") of
+		false ->
+		    erlang:display('Warning: No NAMESERVER or RESOLVFILE specified!'),
+		    no_resolv;
+		Resolv ->
+		    load_resolv(Resolv, resolv)
+	    end;
+	Ns ->
+	    {ok,IP} = inet_parse:address(Ns),
+	    inet_db:add_rc_list([{nameserver,IP}])
+    end,
+    case os:getenv("DOMAIN") of
+	false ->
+	    no_domain;
+	D ->
+	    ok = inet_db:add_rc_list([{domain,D}])
+    end,
+    case os:getenv("HOSTSFILE") of
+	false ->
+	    erlang:display('Warning: No HOSTSFILE specified!'),
+	    no_hosts_file;
+	File ->
+	    load_hosts(File, ose)
+    end;
+
+do_load_resolv(_, _) ->
+    inet_db:set_lookup([native]).
+
 %% This host seems to be standalone.  Add a shortcut to enable us to
 %% lookup our own hostname.
-
 standalone_host() ->
     Name = inet_db:gethostname(),
     case inet_hosts:gethostbyname(Name) of
@@ -216,28 +260,6 @@ standalone_host() ->
     end.
 
 
-handle_native_lookup() ->
-    case is_native(inet_db:res_option(lookup)) of
-	true ->
-	    inet_db:set_lookup([native]),
-	    ok;
-	_ ->
-	    ok
-    end.
-
-is_native([]) ->
-    false;
-is_native([yp|T]) ->
-    true;
-is_native([nis|T]) ->
-    true;
-is_native([nisplus|T]) ->
-    true;
-is_native([wins|T]) ->
-    true;
-is_native([H|T]) ->
-    is_native(T).
-
 add_dns_lookup(L) ->
     case lists:member(dns,L) of
 	true -> ok;
@@ -255,7 +277,7 @@ add_dns_lookup([yp|T],Acc) ->
 add_dns_lookup([H|T],Acc) ->
     add_dns_lookup(T,[H|Acc]);
 add_dns_lookup([],Acc) ->
-    inet_db:set_lookup(lists:reverse(Acc)).
+    inet_db:set_lookup(reverse(Acc)).
 
 %%
 %% Set the hostname (SHORT)
@@ -296,13 +318,13 @@ set_search_dom(Domain) ->
 
 %%
 %% Load resolver data
-%% normally assume that we load from /etc/resolv.conf
 %%
 load_resolv(File, Func) ->
     case get_file(File) of
 	{ok,Bin} ->
 	    case apply(inet_parse, Func, [File,{chars,Bin}]) of
-		{ok, Ls} -> inet_db:add_rc_list(Ls);
+		{ok, Ls} ->
+		    inet_db:add_rc_list(Ls);
 		{error, Reason} ->
 		    error("parse error in file ~s: ~p", [File, Reason])
 	    end;
@@ -485,72 +507,79 @@ next_line([$\n|Rest]) ->
 next_line([First|Rest]) ->
     next_line(Rest).
 
-%% 
-%% Search .inetrc and let user provided inetrc files
-%% add more (or reset) information.
-%% If no .inetrc file is found this node may not set up any connections
-%% to other nodes !!
-%% 
-load_rc() ->
-    load_inetrc([config, root, home]).
+read_rc() ->
+    {RcFile,CfgList} = read_inetrc(),
+    case extract_cfg_files(CfgList, [], []) of
+	{CfgFiles,CfgList1} ->
+	    {RcFile,CfgFiles,CfgList1};
+	error ->
+	    {error,[],[]}
+    end.
 
-load_inetrc([F|Fs]) ->
-    case which_file(F) of
-	{ok,File} -> get_rc(File);
-	error -> ignore
-    end,
-    load_inetrc(Fs);
-load_inetrc([]) ->
-    ok.
 
-%% Determine the filename
-which_file(config) ->
-    case application:get_env(inetrc_dir) of
-	{ok, D} -> {ok, filename:join(D,".inetrc")};
-	_ -> error
-    end;
-which_file(cwd) ->  {ok, filename:join(".",".inetrc")};
-which_file(home) ->
-    case init:get_argument(home) of
-	{ok, [[Home]]} -> {ok,filename:join(Home, ".inetrc")};
-	_ -> error
-    end;
-which_file(root) ->
-    case init:get_argument(root) of
-	{ok, [[Root]]} -> {ok, filename:join([Root, "bin", ".inetrc"])};
-	_ -> error
-    end;
-which_file(File) when list(File) -> {ok,File};
-which_file(_) -> error.
 
+extract_cfg_files([E = {file,Type,_File} | Es], CfgFiles, CfgList) ->
+    extract_cfg_files1(Type, E, Es, CfgFiles, CfgList);
+extract_cfg_files([E = {registry,Type} | Es], CfgFiles, CfgList) ->
+    extract_cfg_files1(Type, E, Es, CfgFiles, CfgList);
+extract_cfg_files([E | Es], CfgFiles, CfgList) ->
+    extract_cfg_files(Es, CfgFiles, [E | CfgList]);
+extract_cfg_files([], CfgFiles, CfgList) ->
+    {reverse(CfgFiles),reverse(CfgList)}.
+
+extract_cfg_files1(Type, E, Es, CfgFiles, CfgList) ->
+    case valid_type(Type) of
+	true ->
+	    extract_cfg_files(Es, [E | CfgFiles], CfgList);
+	false ->
+	    error("invalid config value ~w in inetrc~n", [Type]),
+	    error
+    end.
+
+valid_type(resolv) ->            true;
+valid_type(host_conf_freebsd) -> true;
+valid_type(host_conf_bsdos) ->   true;
+valid_type(host_conf_linux) ->   true;
+valid_type(nsswitch_conf) ->     true;
+valid_type(hosts) ->             true;
+valid_type(win32) ->             true;
+valid_type(_) ->                 false.
+
+read_inetrc() ->
+   case application:get_env(inetrc) of
+       {ok,File} ->
+	   case get_rc(File) of
+		error -> {nofile,[]};
+		Ls ->    {File,Ls}
+	    end;	
+       _ ->
+	   {nofile,[]}
+   end.
 
 get_rc(File) ->
     case get_file(File) of
-	{ok, Bin} ->
+	{ok,Bin} ->
 	    case parse_inetrc(Bin) of
-		{ok, Ls} ->
-		    case inet_db:add_rc_list(Ls) of
-			ok -> ok;
-			Error ->
-			    error("syntax error in ~s~n", [File]),
-			    Error
-		    end;
-		Error -> 
+		{ok,Ls} -> 
+		    Ls;
+		_Error -> 
 		    error("parse error in ~s~n", [File]),
-		    Error
+		    error
 	    end;
-	Error -> Error
+	_Error -> 
+	    error("file ~s not found~n", [File]),
+	    error
     end.
 
 %% XXX Check if we really need to prim load the stuff
 get_file(File) ->
     case erl_prim_loader:get_file(File) of
-	{ok, Bin, _} -> {ok, Bin};
+	{ok,Bin,_} -> {ok,Bin};
 	Error -> Error
     end.
 
 error(Fmt, Args) ->
-    error_logger:error_msg("inet_config:" ++ Fmt, Args).
+    error_logger:error_msg("inet_config: " ++ Fmt, Args).
 
 warning(Fmt, Args) ->
     case application:get_env(kernel,inet_warnings) of
@@ -562,7 +591,7 @@ warning(Fmt, Args) ->
     end.
 
 %% 
-%% Parse .inetrc, i.e. make a binary of a term list.
+%% Parse inetrc, i.e. make a binary of a term list.
 %% The extra newline is to let the user ignore the whitespace !!!
 %% Ignore leading whitespace before a token (due to bug in erl_scan) !
 %% 
@@ -598,14 +627,14 @@ parse_inetrc(Str, Line, Ack) ->
 		{ok, Term} ->
 		    parse_inetrc(MoreChars, EndLine, [Term|Ack]);
 		Error ->
-		    {error, {'parse_.inetrc', Error}}
+		    {error, {'parse_inetrc', Error}}
 	    end;
 	{done, {eof, _}, _} ->
 	    {ok, reverse(Ack)};
 	{done, Error, _} ->
-	    {error, {'scan_.inetrc', Error}};
+	    {error, {'scan_inetrc', Error}};
 	{more_chars, _} ->
-	    {error, {'scan_.inetrc', {eof, Line}}};
+	    {error, {'scan_inetrc', {eof, Line}}};
 	{more, _} -> %% Bug in erl_scan !!
-	    {error, {'scan_.inetrc', {eof, Line}}}
+	    {error, {'scan_inetrc', {eof, Line}}}
     end.

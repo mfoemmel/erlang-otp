@@ -1,139 +1,86 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-%			  VECTORS IN ERLANG
-%
-% Abstract interface to vectors.
+%%
+%%			  VECTORS IN ERLANG
+%%
+%% Abstract interface to vectors.
 
-
-%%% XXX: replace the pure version with one based on gb_trees!
--define(impl,hipe_pure_vectors).
-%-define(impl,hipe_beam_vectors).
-
-%-define(VERIFY,1).
-%-define(pimpl,hipe_pure_vectors).
+%-define(USE_TUPLES, true).
+-define(USE_GBTREES, true).
 
 -module(hipe_vectors).
--export([set/3,
-	 set_all/3,
+-export([new/2,
+	 set/3,
 	 get/2,
-	 get_all/2,
-	 vsize/1,
-	 is_vector/1,
-	 verify_vector/1,
+	 size/1,
 	 vector_to_list/1,
 	 list_to_vector/1,
-	 empty/1, 
-	 empty/2,
-	 init/1,
-	 init/2,
-	 list/1,
-	 first_index/0
-	]).
+	 list/1]).
 
--ifdef(VERIFY).
-set({V1,V2},B,C) ->
-%%  io:format("Set"),
-  R1 = ?pimpl:set(V1,B,C),
-  R2 = ?impl:set(V2,B,C),
-%%  io:format(" ~w ~w\n",[R1,R2]),
-  {R1,R2}.
--else.
-set(V,B,C) ->
-  ?impl:set(V,B,C).
--endif.
+%% ---------------------------------------------------------------------
 
-set_all(A,B,C) ->
-    ?impl:set_all(A,B,C).
+-ifdef(USE_TUPLES).
 
--ifdef(VERIFY).
-get({V1,V2},B) ->
-%%  io:format("Get"),
-  R1 = ?pimpl:get(V1,B),
-  R2 = ?impl:get(V2,B),
-  case R1 of
-    R2 -> R1;
-    _ ->
-      io:format("Got ~w\n ~w\n",[R1,R2]),
-      io:format("V1 ~w\n V2 ~w\n",[V1,V2]),
-      R1
-  end.
+new(N, V) ->
+    erlang:make_tuple(N, V).
 
--else.
-get(A,B) ->
-    ?impl:get(A,B).
--endif.
+size(V) -> erlang:size(V).
 
-get_all(A,B) ->
-    ?impl:get_all(A,B).
+list(Vec) ->
+    index(tuple_to_list(Vec), 1).
 
--ifdef(VERIFY).
-vsize({V1,V2}) ->
-%%  io:format("Size"),
-  R1 =  ?impl:vsize(V1),
-  R2 =  ?impl:vsize(V2),
-  R1 = R2,
-%%  io:format(" ~w ~w\n",[R1,R2]),
-  R1.
--else.
-vsize(V) ->
-    ?impl:vsize(V).
--endif.
+index([X|Xs],N) ->
+    [{N,X} | index(Xs,N+1)];
+index([],_) ->
+    [].
 
-is_vector(V) ->
-    ?impl:is_vector(V).
-
-verify_vector(V) ->
-    ?impl:verify_vector(V).
+list_to_vector(Xs) ->
+    list_to_tuple(Xs).
 
 vector_to_list(V) ->
-    ?impl:vector_to_list(V).
+    tuple_to_list(V).
 
-list_to_vector(V) ->
-    ?impl:list_to_vector(V).
+set(Vec,Ix,V) ->
+    setelement(Ix,Vec,V).
 
-empty(E) ->
-    ?impl:empty(E).
+get(Vec,Ix) -> element(Ix,Vec).
 
-empty(A,B) ->
-    ?impl:empty(A,B).
+-endif. %% ifdef USE_TUPLES
 
--ifdef(VERIFY).
-init(Xs) ->
-  io:format("Init"),
-  V1 = ?pimpl:init(Xs),
-  V2 = ?impl:init(Xs),
-  io:format(" ~w ~w\n",[V1,V2]),
-  {V1,V2}.
--else.
-init(Xs) ->
-    ?impl:init(Xs).
--endif.
+%% ---------------------------------------------------------------------
 
--ifdef(VERIFY).
-init(A,B) ->
-  io:format("Init/2"),
-  V1 = ?pimpl:init(A,B),
-  V2 = ?impl:init(A,B),
-  io:format(" ~w ~w\n",[V1,V2]),
-  {V1,V2}.
--else.
-init(A,B) ->
-    ?impl:init(A,B).
--endif.
+-ifdef(USE_GBTREES).
 
--ifdef(VERIFY).
-list({V1,V2}) ->
-  io:format("List"),  
-  R1 = ?pimpl:list(V1),
-  R2 = ?impl:list(V2),
-  R1 = R2,
-  io:format(" ~w ~w\n",[R1,R2]),
-  R1.
-    
--else.
-list(V) ->
-    ?impl:list(V).
--endif.
+new(N, V) ->
+    gb_trees:from_orddict(mklist(N, V)).
 
-first_index() ->
-    ?impl:first_index().
+mklist(N, V) ->
+    mklist(1, N, V).
+
+mklist(M, N, V) when M =< N ->
+    [{M, V} | mklist(M+1, N, V)];
+mklist(_, _, _) ->
+    [].
+
+size(V) -> gb_trees:size(V).
+
+list(Vec) ->
+    gb_trees:to_list(Vec).
+
+list_to_vector(Xs) ->
+    gb_trees:from_orddict(index(Xs, 1)).
+
+index([X|Xs],N) ->
+    [{N,X} | index(Xs,N+1)];
+index([],_) ->
+    [].
+
+vector_to_list(V) ->
+    gb_trees:values(V).
+
+set(Vec,Ix,V) ->
+    gb_trees:update(Ix,V,Vec).
+
+get(Vec,Ix) ->
+    gb_trees:get(Ix,Vec).
+
+-endif. %% ifdef USE_GBTREES

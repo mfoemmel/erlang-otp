@@ -56,7 +56,7 @@
 %%   Procnum	Number of displayed processes
 %%
 
-pman_window(Size, HiddenModules, Nodes) ->
+pman_window(Size, _HiddenModules, Nodes) ->
     GS = gs:start([{kernel,true}]),
     Win_Options = [{title, lists:concat(["PMAN:Overview on ", node()])},
 		   {width, ?WIN_WIDTH}, {height, ?WIN_HEIGHT},
@@ -290,7 +290,7 @@ links_menus([_Port|Links],Pids) ->
 add_node_menu(MenuBar,Nodes) ->
     MenuButtNode=gs:create(menubutton, MenuBar, [{label, {text, " Nodes "}},
 						{underline, 1}]),
-    MenuNode = gs:create(menu, node, MenuButtNode, []),
+    gs:create(menu, node, MenuButtNode, []),
     add_menu(node,Nodes,"Show"),
     gse:disable(node()).
 
@@ -430,7 +430,7 @@ info(Procs,  ExcludedModules) ->
 %% Add the heading of the process overview grid.
 %% And 
 
-info([], Mods, _ExcludedModules, Ack) ->
+info([], _Mods, _ExcludedModules, Ack) ->
     addrows(1,[{'Pid','Current Function' ,'Name',
 		'Msgs', 'Reds', 'Size'} | Ack]);
 
@@ -535,7 +535,7 @@ uppdate_r(Grid, [Pid|OSPid], Row)  ->
 	%% have died since we found out about it's existence.
 	%% In that case the pman_process-functions called in addrow/3
 	%% will 'EXIT'. 
-	{'EXIT', Reason} ->
+	{'EXIT', _Reason} ->
 	    uppdate_r(Grid, OSPid, Row);
 
 	%% Normal return from addrow/3.
@@ -633,7 +633,7 @@ show(Process) ->
 colour(1) ->
     ?HEADER_COLOUR;
 
-colour(Row) ->
+colour(_Row) ->
     ?UNSELECTED_COLOUR.
 
 
@@ -642,7 +642,7 @@ colour(Row) ->
 %% Interchange colours between two rows
 %% ---------------------------------------------------------------
  
-change_colour(Grid,1,1) ->
+change_colour(_Grid,1,1) ->
     ok;
 
 change_colour(Grid,From,To) ->
@@ -745,7 +745,7 @@ vformat(Pad, {M,F,A}) when atom(F) ->
 vformat(Pad, [H|T]) ->
     kvformat(Pad, [H|T],"[");
 
-vformat(Pad, X) -> format("~p~n", [X]).
+vformat(_Pad, X) -> format("~p~n", [X]).
 
 format(Format) -> format(Format, []).
 
@@ -762,7 +762,7 @@ kvformat(S,[H|T],Buff) ->
 kvformat(_,[],Buff) -> 
     lists:reverse(["]\n"|Buff]).
 
-argformat(Pad,A) when integer(A) ->
+argformat(_Pad,A) when integer(A) ->
     format("/~p\n", [A]);
 argformat(_,A) ->
     lists:flatten([format("/~p\n", [length(A)]),
@@ -791,9 +791,9 @@ pformat({value, {Key, Vals}}) ->
     Pad = mkpad(io_lib:format("~p ",[Key])),
     format(lists:flatten(["~p: " ,vformat(Pad, Vals), "~n"]), [Key]).
    
-truncate(0, Chars) -> ".....";
+truncate(0, _Chars) -> ".....";
 truncate(I, [H|T]) -> [H|truncate(I-1, T)];
-truncate(I, []) -> [].
+truncate(_I, []) -> [].
 
 mkpad([_|T]) -> [32|mkpad(T)];
 mkpad([]) -> [].
@@ -808,7 +808,7 @@ proc_format(Pi) ->  %% process_info struct
     X7 = pformat(lists:keysearch(reductions, 1,Pi)),
     X8 = pformat(lists:keysearch(links, 1,Pi)),
     X9 = pformat(lists:keysearch(trap_exit, 1,Pi)),
-    Str = lists:flatten([X1, X2, X3, X4, X5,X6,X7,X8,X9]).
+    lists:flatten([X1, X2, X3, X4, X5,X6,X7,X8,X9]).
 
 
      
@@ -857,7 +857,7 @@ dialog_window(GSParent, Text) ->
 msg_win(Text) ->
     spawn_link(pman_win,msg_win,[Text,self()]).
 
-msg_win({Text,nolink},Parent) ->
+msg_win({Text,nolink},_Parent) ->
     {Text_obj,Win} = create_text_win(Text),
     dismiss(Text_obj,Win);
 
@@ -866,7 +866,7 @@ msg_win(Text,Parent) ->
     {Text_obj,Win} = create_text_win(Text),
     dismiss(Text_obj,Win).
 
-dismiss(Text_Obj,Win) ->
+dismiss(_Text_Obj,Win) ->
     gs:create(button,quit,Win,[{label,{text,"Dismiss"}},{width,100},
 			       {x,50},{y,40}]),
     gs:config(Win,{map,true}),

@@ -22,9 +22,10 @@
 %%-compile(export_all).
 -export([get_all_services/0,get_service/1,get_service/2,store_service/1,
 	 store_service/2,
-	 new_service/3, new_service/4, disable_service/2, enable_service/2,
-	 disable_service/1, enable_service/1, 
-	 remove_service/1, erlsrv/1, rename_service/2, rename_service/3]).
+	 new_service/3, new_service/4, disable_service/2,
+	 enable_service/2, disable_service/1, enable_service/1, 
+	 remove_service/1, erlsrv/1, rename_service/2,
+	 rename_service/3]).
 
 erlsrv(EVer) ->
     Root = code:root_dir(),
@@ -47,9 +48,7 @@ run_erlsrv(EVer, Command) ->
 		    failed;
 		 X ->
 		    {ok, X}
-	    end;
-	Error ->
-	    {port_error, Error}
+	    end
     end.
 
 run_erlsrv_interactive(EVer, Commands) ->
@@ -64,9 +63,7 @@ run_erlsrv_interactive(EVer, Commands) ->
 		    failed;
 		 X ->
 		    {ok, X}
-	    end;
-	Error ->
-	    {port_error, Error}
+	    end
     end.
 
 write_all_data(Port,[]) ->
@@ -96,7 +93,7 @@ get_all_services() ->
 	    [];
 	{ok, [_]} ->
 	    [];
-	{ok, [H|T]} ->
+	{ok, [_H|T]} ->
 	    F = fun(X) ->
 			hd(string:tokens(X,"\t "))
 		end,
@@ -126,7 +123,7 @@ rename_service(EVer, FromName, ToName) ->
 %%% servicename : The service name (equal to parameter...)
 %%% stopaction : The erlang expression that shall stop the node
 %%% onfail : Action to take when erlang fails unexpectedly
-%%% machine : The full pathname of the erlang machine or start_erl program
+%%% machine : Full pathname of the erlang machine or start_erl program
 %%% workdir : The initial working directory of the erlang machine
 %%% sname | name : The short name of the node
 %%% priority : The OS priority of the erlang process
@@ -163,9 +160,9 @@ get_service(EVer, ServiceName) ->
 	    F = fun(X) ->
 			{Name,Value} = splitline(X),
 			case lists:keysearch(Name,1,Table) of
-			    {value ,{Name,Atom,Value}} ->
+			    {value,{Name,_Atom,Value}} ->
 				[];
-			    {value ,{Name,Atom,_}} ->
+			    {value,{Name,Atom,_}} ->
 				{Atom,Value};
 			    _ ->
 				[]
@@ -281,7 +278,7 @@ new_service(NewServiceName, OldService, Data, RestartName) ->
 					end 
 				end, {false,[]}, Args),
     
-    {OtherFlags, DataDir} = case Found of
+    {OtherFlags, _DataDir} = case Found of
 				true ->
 				    check_tail(Tail);
 				false ->
@@ -335,7 +332,7 @@ check_tail(Tail) ->
 
 check_tail([], OtherFlags, DataDir) ->
     {OtherFlags, DataDir};
-check_tail(["-data", TheDataDir|T], OtherFlags, DataDir) ->
+check_tail(["-data", TheDataDir|T], OtherFlags, _DataDir) ->
     check_tail(T, OtherFlags, TheDataDir);
 check_tail([H|T],OtherFlags,DataDir) ->
     check_tail(T,[H|OtherFlags],DataDir).
@@ -409,50 +406,7 @@ splitline(Line) ->
 	    case length(string:substr(Line,N)) of
 		1 ->
 		    {string:substr(Line,1,N-1),""};
-		M ->
+		_ ->
 		    {string:substr(Line,1,N-1),string:substr(Line,N+2)}
 	    end
     end.
-
-
-
-
-
-
-%%run_erlsrv(Command) ->
-%%    [L,I,S,T,Sp|ServiceName] = Command,
-%%    get_erlsrv(ServiceName).
-
-%get_erlsrv("kalle_R4A") ->
-%    {ok, ["Service name: kalle_R4A",
-%	  "StopAction: erlang:halt()",
-%	  "OnFail: something",
-%	  "Machine: jam",
-%	  "WorkDir: /test/mydir/workdir",
-%	  "SName: asdfadasf",
-%	  "Name: kalle",
-%	  "Priority: high",
-%	  "Args: -boot nisse -- -reldir c:\myapproot"]};
-
-
-%get_erlsrv("kalle_R4B") ->
-%    {ok, ["Service name: kalle_R4B",
-%	  "StopAction: erlang:halt()",
-%	  "OnFail: something",
-%	  "Machine: jam",
-%	  "WorkDir: /test/mydir/workdir",
-%	  "SName: asdfadasf",
-%	  "Name: kalle",
-%	  "Priority: high",
-%	  "Args: -boot nisse -- -reldir c:\myapproot"]};
-
-%get_erlsrv("empty_R4A") ->
-%    {ok, ["Service name: empty_R4A",
-%	  "StopAction: erlang:halt()",
-%	  "OnFail: something",
-%	  "Machine: jam",
-%	  "WorkDir: /test/mydir/workdir",
-%	  "SName: asdfadasf",
-%	  "Name: kalle",
-%	  "Priority: high"]}.
-

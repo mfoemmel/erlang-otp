@@ -23,10 +23,6 @@
 #ifndef _ERL_UNIX_SYS_H
 #define _ERL_UNIX_SYS_H
 
-#if defined(__linux__) && defined(__GNUC__)
-#   define _GNU_SOURCE 1 /* we want to turn some features */
-#endif
-
 #include <stdio.h>
 #include <math.h>
 #include <limits.h>
@@ -198,17 +194,24 @@ extern volatile int erl_fp_exception;
 #  define ERTS_RESTORE_FP_EXCEPTION()
 #else
 #  define ERTS_FP_CHECK_INIT() do {erl_fp_exception = 0;} while (0)
-#  if defined(__i386__) && defined(__GNUC__)
-extern void erts_restore_x87(void);
-static __inline__ int erts_check_x87(double f)
+#  if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
+extern void erts_restore_fpu(void);
+static __inline__ int erts_check_fpe(double f)
 {
     __asm__ __volatile__("fwait" : "=m"(erl_fp_exception) : "m"(f));
     if( !erl_fp_exception )
        return 0;
-    erts_restore_x87();
+    erts_restore_fpu();
     return 1;
 }
-#  define ERTS_FP_ERROR(f, Action) do { if( erts_check_x87((f)) ) { Action; } } while (0)
+#  define ERTS_FP_ERROR(f, Action) do { if( erts_check_fpe((f)) ) { Action; } } while (0)
+#  elif defined(__powerpc__) && defined(__GNUC__)
+static __inline__ int erts_check_fpe(double f)
+{
+    __asm__ __volatile__("" : "=m"(erl_fp_exception) : "fm"(f));
+    return erl_fp_exception;
+}
+#  define ERTS_FP_ERROR(f, Action) do { if( erts_check_fpe((f)) ) { Action; } } while (0)
 #  else
 static __inline__ int erts_check_fpe(double f)
 {
@@ -240,5 +243,7 @@ static __inline__ int erts_check_fpe(double f)
 extern int init_async(int);
 extern int exit_async(void);
 #endif
+
+#define ERTS_EXIT_AFTER_DUMP _exit
 
 #endif /* #ifndef _ERL_UNIX_SYS_H */

@@ -132,7 +132,7 @@ init([Name, CompleteName, Parent, AssocSession]) ->
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%======================================================================
@@ -169,7 +169,7 @@ list(OE_This, State, Max) ->
 %% Returns    : CosFileTransfer::FileName - string
 %% Description: 
 %%----------------------------------------------------------------------
-'_get_name'(OE_This, State) ->
+'_get_name'(_OE_This, State) ->
     {reply, ?get_Name(State), State}.
 
 %%---------------------------------------------------------------------%
@@ -178,7 +178,7 @@ list(OE_This, State, Max) ->
 %% Returns    : CosFileTransfer::FileNameList - a list of strings's
 %% Description: 
 %%----------------------------------------------------------------------
-'_get_complete_file_name'(OE_This, State) ->
+'_get_complete_file_name'(_OE_This, State) ->
     {reply, ?get_CompleteName(State), State}.
 
 %%---------------------------------------------------------------------%
@@ -187,7 +187,7 @@ list(OE_This, State, Max) ->
 %% Returns    : CosFileTransfer::Directory
 %% Description: 
 %%----------------------------------------------------------------------
-'_get_parent'(OE_This, State) ->
+'_get_parent'(_OE_This, State) ->
     {reply, ?get_Parent(State), State}.
 
 %%---------------------------------------------------------------------%
@@ -196,7 +196,7 @@ list(OE_This, State, Max) ->
 %% Returns    : CosFileTransfer::FileTransferSession
 %% Description: 
 %%----------------------------------------------------------------------
-'_get_associated_session'(OE_This, State) ->
+'_get_associated_session'(_OE_This, State) ->
     {reply, ?get_AssocSession(State), State}.
 
 %%======================================================================
@@ -208,7 +208,7 @@ list(OE_This, State, Max) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-get_allowed_property_types(OE_This, State) ->
+get_allowed_property_types(_OE_This, State) ->
     {reply, 'CosPropertyService_PropertySetDef':
       get_allowed_property_types(?get_PropertyRef(State)), State}.
 
@@ -218,7 +218,7 @@ get_allowed_property_types(OE_This, State) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-get_allowed_properties(OE_This, State) ->
+get_allowed_properties(_OE_This, State) ->
     {reply, 'CosPropertyService_PropertySetDef':
      get_allowed_properties(?get_PropertyRef(State)), State}.
 
@@ -230,7 +230,7 @@ get_allowed_properties(OE_This, State) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-define_property_with_mode(OE_This, State, Name, Value, Mode) ->
+define_property_with_mode(_OE_This, State, Name, Value, Mode) ->
     {reply, 'CosPropertyService_PropertySetDef':
      define_property_with_mode(?get_PropertyRef(State), Name, Value, Mode), State}.
 
@@ -240,7 +240,7 @@ define_property_with_mode(OE_This, State, Name, Value, Mode) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-define_properties_with_modes(OE_This, State, PropertyDefs) ->
+define_properties_with_modes(_OE_This, State, PropertyDefs) ->
     {reply, 'CosPropertyService_PropertySetDef':
      define_properties_with_modes(?get_PropertyRef(State), PropertyDefs), State}.
 
@@ -250,7 +250,7 @@ define_properties_with_modes(OE_This, State, PropertyDefs) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-get_property_mode(OE_This, State, Name) ->
+get_property_mode(_OE_This, State, Name) ->
     {reply, 'CosPropertyService_PropertySetDef':
      get_property_mode(?get_PropertyRef(State), Name), State}.
 
@@ -261,7 +261,7 @@ get_property_mode(OE_This, State, Name) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-get_property_modes(OE_This, State, Names) ->
+get_property_modes(_OE_This, State, Names) ->
     {reply, 'CosPropertyService_PropertySetDef':
 	get_property_modes(?get_PropertyRef(State), Names), State}.
 
@@ -272,7 +272,7 @@ get_property_modes(OE_This, State, Names) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-set_property_mode(OE_This, State, Name, Mode) ->
+set_property_mode(_OE_This, State, Name, Mode) ->
     {reply, 'CosPropertyService_PropertySetDef':
      set_property_mode(?get_PropertyRef(State), Name, Mode), State}.
 
@@ -283,7 +283,7 @@ set_property_mode(OE_This, State, Name, Mode) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-set_property_modes(OE_This, State, PropertyModes) ->
+set_property_modes(_OE_This, State, PropertyModes) ->
     {reply, 'CosPropertyService_PropertySetDef':
      set_property_modes(?get_PropertyRef(State), PropertyModes), State}.
 
@@ -297,7 +297,7 @@ set_property_modes(OE_This, State, PropertyModes) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-define_property(OE_This, State, Name, Value) ->
+define_property(_OE_This, State, Name, Value) ->
     {reply, 'CosPropertyService_PropertySet':
      define_property(?get_PropertyRef(State), Name, Value), State}.
 
@@ -307,7 +307,7 @@ define_property(OE_This, State, Name, Value) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-define_properties(OE_This, State, Properties) ->
+define_properties(_OE_This, State, Properties) ->
     {reply, 'CosPropertyService_PropertySet':
      define_properties(?get_PropertyRef(State), Properties), State}.
 
@@ -318,7 +318,7 @@ define_properties(OE_This, State, Properties) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-get_number_of_properties(OE_This, State) ->
+get_number_of_properties(_OE_This, State) ->
     {reply, 'CosPropertyService_PropertySet':
      get_number_of_properties(?get_PropertyRef(State)), State}.
 
@@ -328,7 +328,7 @@ get_number_of_properties(OE_This, State) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-get_all_property_names(OE_This, State, Max) ->
+get_all_property_names(_OE_This, State, Max) ->
     {reply, 'CosPropertyService_PropertySet':
      get_all_property_names(?get_PropertyRef(State), Max), State}.
 
@@ -338,11 +338,11 @@ get_all_property_names(OE_This, State, Max) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-get_property_value(OE_This, State, "num_children") ->
+get_property_value(_OE_This, State, "num_children") ->
     Count = 'CosFileTransfer_FileTransferSession':
 	oe_orber_count_children(?get_AssocSession(State), ?get_CompleteName(State)),
     {reply, #any{typecode=tk_long, value=Count}, State};
-get_property_value(OE_This, State, Name) ->
+get_property_value(_OE_This, State, Name) ->
     {reply, 'CosPropertyService_PropertySet':
      get_property_value(?get_PropertyRef(State), Name), State}.
 
@@ -352,14 +352,14 @@ get_property_value(OE_This, State, Name) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-get_properties(OE_This, State, Names) ->
+get_properties(_OE_This, State, Names) ->
     {Bool, Props} = 
 	'CosPropertyService_PropertySet':get_properties(?get_PropertyRef(State), 
 							Names),
     NewProps = change_property(Props, [], State),
     {reply, {Bool, NewProps}, State}.
 
-change_property([], Acc, State) ->
+change_property([], Acc, _State) ->
     Acc;
 change_property([H|T], Acc, State) ->
     NewAcc = 
@@ -381,17 +381,17 @@ change_property([H|T], Acc, State) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-get_all_properties(OE_This, State, 0) ->
+get_all_properties(_OE_This, State, 0) ->
     %% WARNING if we start supporting more than 10 Properties the next line must
     %% be updated!
-    {ok, Props, Iterator} = 
+    {ok, Props, _Iterator} = 
 	'CosPropertyService_PropertySet':get_all_properties(?get_PropertyRef(State), 
 							    10),
     NewProps = change_property(Props, [], State),
     %% WARNING if the cosProperty:start_PropertiesIterator/1 is updated
     %% it must be done hear as well.
     {reply, {ok, [], cosProperty:start_PropertiesIterator(NewProps)}, State};
-get_all_properties(OE_This, State, Max) ->
+get_all_properties(_OE_This, State, Max) ->
     {ok, Props, Iterator} = 
 	'CosPropertyService_PropertySet':get_all_properties(?get_PropertyRef(State), 
 							    Max),
@@ -404,7 +404,7 @@ get_all_properties(OE_This, State, Max) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-delete_property(OE_This, State, Name) ->
+delete_property(_OE_This, State, Name) ->
     {reply, 'CosPropertyService_PropertySet':
      delete_property(?get_PropertyRef(State), Name), State}.
 
@@ -415,7 +415,7 @@ delete_property(OE_This, State, Name) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-delete_properties(OE_This, State, Names) ->
+delete_properties(_OE_This, State, Names) ->
     {reply, 'CosPropertyService_PropertySet':
      delete_properties(?get_PropertyRef(State), Names), State}.
 
@@ -426,7 +426,7 @@ delete_properties(OE_This, State, Names) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-delete_all_properties(OE_This, State) ->
+delete_all_properties(_OE_This, State) ->
     {reply, 'CosPropertyService_PropertySet':
      delete_all_properties(?get_PropertyRef(State)), State}.
 
@@ -436,7 +436,7 @@ delete_all_properties(OE_This, State) ->
 %% Returns    : See cosProperty application.
 %% Description: 
 %%----------------------------------------------------------------------
-is_property_defined(OE_This, State, Name) ->
+is_property_defined(_OE_This, State, Name) ->
     {reply, 'CosPropertyService_PropertySet':
      is_property_defined(?get_PropertyRef(State), Name), State}.
 

@@ -131,7 +131,7 @@ get_grid_size([Process|LIProcess],  Ack) ->
 	    get_grid_size(LIProcess, Ack);
 
 
-	Module ->
+	_Module ->
 	    get_grid_size(LIProcess, Ack+1)
     end.
 
@@ -153,8 +153,8 @@ get_nodes() ->
 %% ---------------------------------------------------------------
 
 update_nodes_menu(Pman_data) ->
-    OSNodesNew = ordsets:list_to_set(get_nodes()),
-    OSNodesOld = ordsets:list_to_set(Pman_data#gs_pman.nodes),
+    OSNodesNew = ordsets:from_list(get_nodes()),
+    OSNodesOld = ordsets:from_list(Pman_data#gs_pman.nodes),
 
     OSNodesAdd = ordsets:subtract(OSNodesNew,OSNodesOld),
     OSNodesDelete = ordsets:subtract(OSNodesOld,OSNodesNew),
@@ -180,7 +180,7 @@ update_nodes_menu(Pman_data) ->
 %% Returnd: New position Int
 %% ---------------------------------------------------------------
 
-check_focus_choice(To,      0) -> 1;
+check_focus_choice(_To,      0) -> 1;
 check_focus_choice(0,    Size) -> Size; 
 check_focus_choice(To,   Size) -> 
     case Size+1 of
@@ -201,7 +201,7 @@ get_pos(List, Element) ->
 get_pos([], _, _) -> 
     false;
 
-get_pos([Element | Rest], Element, Count) ->
+get_pos([Element | _Rest], Element, Count) ->
     Count;
 
 get_pos([_ | Rest], Element, Count) ->
@@ -334,7 +334,7 @@ execute_cmd(focus_next, Pman_data,_Data,_Args) ->
 %% New processes however, will be covered by the filters.
 %% 
 
-execute_cmd('Show All',Pman_data,Data,Args) ->
+execute_cmd('Show All',Pman_data,_Data,_Args) ->
 
     OSPidAll = pman_process:r_processes(Pman_data#gs_pman.node),
     
@@ -350,7 +350,7 @@ execute_cmd('Show All',Pman_data,Data,Args) ->
 %% Open a list of not shown (hidden + new + system) processes (PIDS)
 %% where the user can select which processes shall be shown.
 %% 
-execute_cmd('Show Selected',Pman_data,Data,Args) ->
+execute_cmd('Show Selected',Pman_data,_Data,_Args) ->
 
     %% Open a dialog with a list of all PIDs that are not currently shown
     OSPidAll = pman_process:r_processes(Pman_data#gs_pman.node),
@@ -399,7 +399,7 @@ execute_cmd('Show Selected',Pman_data,Data,Args) ->
 	    %% Add the selected PIDs from the dialog to the list
 	    %% of explicitly shown PIDs
 	    OSPidShown = ordsets:union(Pman_data#gs_pman.show_pids,
-				       ordsets:list_to_set(List2)),
+				       ordsets:from_list(List2)),
 	    New_Pman_data = Pman_data#gs_pman{show_pids = OSPidShown},
 	    
 	    %% Refresh the list of PIDs
@@ -413,7 +413,7 @@ execute_cmd('Show Selected',Pman_data,Data,Args) ->
 
 %% Start Help window
 
-execute_cmd('Help',Pman_data,Data,Args)  ->
+execute_cmd('Help',Pman_data,_Data,_Args)  ->
     HelpFile = filename:join(code:priv_dir(pman), "../doc/index.html"),
     tool_utils:open_help(gse:start([{kernel, true}]), HelpFile),
     Pman_data;
@@ -421,7 +421,7 @@ execute_cmd('Help',Pman_data,Data,Args)  ->
 
 %% Trace the shell
 
-execute_cmd('Trace Shell',Pman_data,Data,Args) ->
+execute_cmd('Trace Shell',Pman_data,_Data,_Args) ->
     Shell = pman_shell:find_shell(),
     pman_shell:start({{shell,Shell},self()},Pman_data#gs_pman.options),
     Pman_data;
@@ -430,7 +430,7 @@ execute_cmd('Trace Shell',Pman_data,Data,Args) ->
 
 %% Start Trace Window
 
-execute_cmd('Trace Process',Pman_data,Data,Args) ->
+execute_cmd('Trace Process',Pman_data,_Data,_Args) ->
     case get_pid_in_focus(Pman_data) of
 	false      ->
 	    Pman_data;
@@ -442,7 +442,7 @@ execute_cmd('Trace Process',Pman_data,Data,Args) ->
 
 %% Open trace windows for all pids linked to the pid in focus
 
-execute_cmd('All Links',Pman_data,Data,Args) ->
+execute_cmd('All Links',Pman_data,_Data,_Args) ->
     case get_pid_in_focus(Pman_data) of
 	false      -> Pman_data;
 	{true,{pidfunc,Pid,_}} ->
@@ -455,17 +455,17 @@ execute_cmd('All Links',Pman_data,Data,Args) ->
 
 %%  Open trace window for a specific pid linked to the pid in focus
 
-execute_cmd({'Links',LPid},Pman_data,Data,Args) ->
+execute_cmd({'Links',LPid},Pman_data,_Data,_Args) ->
     case get_pid_in_focus(Pman_data) of
 	false      -> Pman_data;
-	{true,{pidfunc,Pid,_}} ->
+	{true,{pidfunc,_Pid,_}} ->
 	    pman_shell:start(LPid, Pman_data#gs_pman.options),
 	    Pman_data
     end;
 
 %% Kill the pid in focus
 
-execute_cmd('Kill',Pman_data,Data,Args) ->
+execute_cmd('Kill',Pman_data,_Data,_Args) ->
     case get_pid_in_focus(Pman_data) of
 	false      -> 
 	    Pman_data;
@@ -476,7 +476,7 @@ execute_cmd('Kill',Pman_data,Data,Args) ->
 
 %% Open window with module information
 
-execute_cmd('Module',Pman_data,Data,Args) ->
+execute_cmd('Module',Pman_data,_Data,_Args) ->
     case get_pid_in_focus(Pman_data) of
 	false            -> Pman_data;		%0
 	
@@ -491,7 +491,7 @@ execute_cmd('Module',Pman_data,Data,Args) ->
 %% Hide an explicitly selected process (PID).
 %%
 
-execute_cmd('Hide Selected Process', Pman_data, Data, Args) ->
+execute_cmd('Hide Selected Process', Pman_data, _Data, _Args) ->
     case get_pid_in_focus(Pman_data) of
 	%% No process selected
 	false -> 
@@ -523,7 +523,7 @@ execute_cmd('Hide Selected Process', Pman_data, Data, Args) ->
 %% The selected modules are added to the list of hidden modules.
 %%
 
-execute_cmd('Hide Modules',Pman_data,Data,Args) ->
+execute_cmd('Hide Modules',Pman_data,_Data,_Args) ->
 
     %% Get all loaded modules, and then strip unnecessary info
 
@@ -533,7 +533,7 @@ execute_cmd('Hide Modules',Pman_data,Data,Args) ->
 		element(1,T)
 	end,
     OSModuleLoaded =
-	ordsets:list_to_set(lists:map(MapFun, LITupleLoaded)),
+	ordsets:from_list(lists:map(MapFun, LITupleLoaded)),
 
     %% Let the user select which of the loaded modules to exclude from the
     %% process overview
@@ -546,7 +546,7 @@ execute_cmd('Hide Modules',Pman_data,Data,Args) ->
 	{cancelled, _Reason} ->
 	    Pman_data;
 	Selection ->
-	    OSDialogResult = ordsets:list_to_set(Selection),
+	    OSDialogResult = ordsets:from_list(Selection),
     
 	    OSModuleHidden = ordsets:union(OSDialogResult,
 					   Pman_data#gs_pman.hide_modules),
@@ -566,7 +566,7 @@ execute_cmd('Hide Modules',Pman_data,Data,Args) ->
 %% I.e. they will remain hidden, but will be shown if the filter is
 %% switched off.
 
-execute_cmd('Hide All',Pman_data,Data,Args) ->
+execute_cmd('Hide All',Pman_data,_Data,_Args) ->
 
     OSPidAll = pman_process:r_processes(Pman_data#gs_pman.node),
 
@@ -593,7 +593,7 @@ execute_cmd('Hide All',Pman_data,Data,Args) ->
 %% Explicitly show a specific process (PID)
 %%
 
-execute_cmd('Show Selected Process', Pman_data, Data, Args) ->
+execute_cmd('Show Selected Process', Pman_data, _Data, _Args) ->
     case get_pid_in_focus(Pman_data) of
 
 	%% No process selected
@@ -615,13 +615,13 @@ execute_cmd('Show Selected Process', Pman_data, Data, Args) ->
 %% Set default options for tracing
 %%
 
-execute_cmd('Default Options',Pman_data,Data,Args) ->
+execute_cmd('Default Options',Pman_data,_Data,_Args) ->
     OldOptions = Pman_data#gs_pman.options,
     NewOptions = pman_options:dialog(Pman_data#gs_pman.win,
 				     "Default Trace Options",
                                      OldOptions),
     case NewOptions of
-	{error, Reason} ->
+	{error, _Reason} ->
 	    Pman_data;
 	Options ->
 	    Pman_data#gs_pman{options=Options}
@@ -631,7 +631,7 @@ execute_cmd('Default Options',Pman_data,Data,Args) ->
 %% Save the set default options to the users pman-frofile file
 %%
 
-execute_cmd('Save Options', Pman_data,Data,Args)->
+execute_cmd('Save Options', Pman_data,_Data,_Args)->
     %% Platform dependent code for determining where to store
     %% the user options
     FileName = pman_osdepend:options_file_name(),
@@ -644,7 +644,7 @@ execute_cmd('Save Options', Pman_data,Data,Args)->
     pman_osdepend:mkdir_for_file(FileName),
     
     case catch pman_options:save_to_file(Options,FileName) of
-	{'EXIT', {file_problem, Reason}} ->
+	{'EXIT', {file_problem, _Reason}} ->
 	    tool_utils:notify(Parent,"Could not save options.");
 	true ->
 	    tool_utils:notify(Parent,"Options saved in\n" ++ FileName)
@@ -657,7 +657,7 @@ execute_cmd('Save Options', Pman_data,Data,Args)->
 
 %% Exit the application
 
-execute_cmd('Exit',Pman_data,Data,Args) ->
+execute_cmd('Exit',Pman_data,_Data,_Args) ->
     gs:destroy(Pman_data#gs_pman.win),
     exit(topquit);
 
@@ -687,7 +687,7 @@ execute_cmd({node,Node},Pman_data,_Data,_Args) ->
 %% this must be "forwarded" to the geometry managing frame.
 %% It is also forwarded to a "manual" geometry manager for the grid.
 %% 
-execute_cmd({configure,W,H,X,Y},Pman_data,Data,Args) ->
+execute_cmd({configure,W,H,_X,_Y},Pman_data,_Data,_Args) ->
     
     gse:resize(Pman_data#gs_pman.frame, W, H-?MENU_HEIGHT),
 
@@ -711,7 +711,7 @@ execute_cmd({configure,W,H,X,Y},Pman_data,Data,Args) ->
 %%
 %% The checkbutton for hiding system processes has been selected.
 
-execute_cmd('Hide System', Pman_data, Data, Args ) ->
+execute_cmd('Hide System', Pman_data, _Data, Args ) ->
     [_Text, _Group, Bool|_Rest] = Args,
     New_Pman_data = Pman_data#gs_pman{hide_system=Bool},
     refresh(New_Pman_data);
@@ -723,7 +723,7 @@ execute_cmd('Hide System', Pman_data, Data, Args ) ->
 %%
 %% The checkbutton for hiding new processes has been selected.
 
-execute_cmd('Auto Hide New', Pman_data, Data, Args ) ->
+execute_cmd('Auto Hide New', Pman_data, _Data, Args ) ->
     [_Text, _Group, Bool|_Rest] = Args,
 
     Pman_data2 = Pman_data#gs_pman{hide_new=Bool},
@@ -736,7 +736,7 @@ execute_cmd('Auto Hide New', Pman_data, Data, Args ) ->
 
 
 
-execute_cmd(Cmd,Pman_data,Data,Args) -> Pman_data.
+execute_cmd(_Cmd,Pman_data,_Data,_Args) -> Pman_data.
 
 %% ---------------------------------------------------------------
 %% Execute the Various command requests received Through events
@@ -744,7 +744,6 @@ execute_cmd(Cmd,Pman_data,Data,Args) -> Pman_data.
 %% ---------------------------------------------------------------
 
 gs_cmd(Cmd,Pman_data) ->
-    Window = Pman_data#gs_pman.win,
     case Cmd of
        
 	%%Window manager commands
@@ -762,7 +761,7 @@ gs_cmd(Cmd,Pman_data) ->
 	%% Single click in the process list sets focus to the clicked process
 	{gs,_Gl,click,{pidfunc,_,_},[_Col,Row|_T]} when integer(Row) ->
 	    focus(Row,Pman_data);
-	{gs,_Gl,doubleclick,{pidfunc,P,M},[Col,Row| _]} when integer(Row) ->
+	{gs,_Gl,doubleclick,{pidfunc,_P,_M},[_Col,Row| _]} when integer(Row) ->
 	    execute_cmd('Trace Process',Pman_data,[],[]);
       
 	%%Menu Commands / Button presses
@@ -778,11 +777,11 @@ gs_cmd(Cmd,Pman_data) ->
 
 	{gs,_W,keypress,[],['Return',_,0,0]} ->
 	    execute_cmd('Trace',Pman_data,[],[]);
-        {gs,_W,keypress,D,[Key,_,0,1]} ->
+        {gs,_W,keypress,_D,[Key,_,0,1]} ->
 	    execute_cmd(key(Key),Pman_data,[],[]);
 
 
-     	Other ->
+     	_Other ->
 
 	    Pman_data
     end.
@@ -876,7 +875,7 @@ loop(Pman_data) ->
 	    loop(update_nodes_menu(Pman_data2));
 
 	%% Ignore EXIT signals from "inferior" processes. 
-	{'EXIT', Pid, Reason} ->
+	{'EXIT', _Pid, _Reason} ->
 	    loop(Pman_data);
 	
 
@@ -1028,7 +1027,7 @@ get_display_info(Pman_data) ->
 			[];
 
 		    OSPidOld ->
-			OSPidNew = ordsets:subtract(OSPidAll, OSPidOld)
+			ordsets:subtract(OSPidAll, OSPidOld)
 		end;
 
 	    false ->
@@ -1101,14 +1100,14 @@ get_current_name(Pman_data) ->
 	'nonode@nohost' ->
 	    node();
 
-	Otherwise ->
+	_Otherwise ->
 	    % 1. Previous was this, but distributed.
 	    case This of
 		'nonode@nohost' ->
 		    node();
 
 	    % 2. Last was another node.
-		Remote ->
+		_Remote ->
 		    LastName
 	    
 	    end

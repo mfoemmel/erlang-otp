@@ -25,7 +25,7 @@
 %% Internal stuff
 %%
 %%------------------------------------------------------------
--import(ic_codegen, [emit/2, emit/3]).
+-import(ic_codegen, [emit/2, emit/3, emit/4, emit_c_enc_rpt/4, emit_c_dec_rpt/4]).
 
 -include("icforms.hrl").
 -include("ic.hrl").
@@ -709,9 +709,10 @@ emit_decode(sequence_head, G, N, T, Fd, SeqName, ElType) ->
 	    emit(Fd, "    if ((oe_error_code = ei_decode_string("
 		 "oe_env->_inbuf, &oe_env->_iin, ~s)) < 0) {\n", [TmpBuf]),
 	    emit(Fd, "      CORBA_free(~s);\n\n", [TmpBuf]),
+	    emit_c_dec_rpt(Fd, "      ", "string1", []),
 	    emit(Fd, "      return oe_error_code;\n    }\n"),
 
-	    emit(Fd, "    for(oe_seq_count = 0; "
+	    emit(Fd, "    for (oe_seq_count = 0; "
 		 "oe_seq_count < oe_out->_length; oe_seq_count++)\n"), 
 	    case ictype:isBasicType(G, N, ElType) of
 		true -> %% BasicType
@@ -747,7 +748,7 @@ emit_decode(sequence_head, G, N, T, Fd, SeqName, ElType) ->
 
     if
 	Ctype == "CORBA_char *" ->
-	    emit(Fd, "    for(oe_seq_count = 0; "
+	    emit(Fd, "    for (oe_seq_count = 0; "
 		 "oe_seq_count < oe_out->_length; oe_seq_count++) {\n"),
 	    emit(Fd, "      oe_out->_buffer[oe_seq_count] = "
 		 "(void*) (oe_first + *oe_outindex);\n\n"),
@@ -759,7 +760,7 @@ emit_decode(sequence_head, G, N, T, Fd, SeqName, ElType) ->
 		 [align(["*oe_outindex + strlen(oe_out->_buffer["
 			 "oe_seq_count]) + 1"])]);
 	true ->
-	    emit(Fd, "    for(oe_seq_count = 0; "
+	    emit(Fd, "    for (oe_seq_count = 0; "
 		 "oe_seq_count < oe_out->_length; oe_seq_count++) {\n"), 
 	    case ictype:isArray(G, N, ElType) of
 		%% XXX Silly. There is no real difference between the
@@ -781,8 +782,9 @@ emit_decode(sequence_head, G, N, T, Fd, SeqName, ElType) ->
     emit(Fd, "    }\n"),
     emit(Fd, "    if (oe_out->_length != 0) {\n"),
     emit(Fd, "      if ((oe_error_code = ei_decode_list_header("
-	 "oe_env->_inbuf, &oe_env->_iin, &oe_seq_dummy)) < 0)\n"),
-    emit(Fd, "        return oe_error_code;\n"),
+	 "oe_env->_inbuf, &oe_env->_iin, &oe_seq_dummy)) < 0) {\n"),
+    emit_c_dec_rpt(Fd, "        ", "ei_decode_list_header", []),
+    emit(Fd, "        return oe_error_code;\n      }\n"),
     emit(Fd, "    } else\n"),
     emit(Fd, "        oe_out->_buffer = NULL;\n"),
     emit(Fd, "  }\n");
@@ -800,15 +802,18 @@ emit_decode(struct, G, N, _T, Fd, StructName, ElTypes) ->
     emit(Fd, "    *oe_outindex = ~s;\n\n", [align(AlignName)]),
 
     emit(Fd, "  if ((oe_error_code = ei_decode_tuple_header(oe_env->_inbuf, "
-	 "&oe_env->_iin, &~s)) < 0)\n", [Tname]),
-    emit(Fd, "    return oe_error_code;\n\n"),
+	 "&oe_env->_iin, &~s)) < 0) {\n", [Tname]),
+    emit_c_dec_rpt(Fd, "    ", "ei_decode_tuple_header", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
 
-    emit(Fd, "  if (~s != ~p)\n",[Tname, Length]),
-    emit(Fd, "    return -1;\n\n"),
+    emit(Fd, "  if (~s != ~p) {\n",[Tname, Length]),
+    emit_c_dec_rpt(Fd, "      ", "tuple header size != ~p", [Length]),
+    emit(Fd, "    return -1;\n  }\n"),
 
     emit(Fd, "  if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, "
-	 "&oe_env->_iin, ~s)) < 0)\n", [Tname1]),
-    emit(Fd, "    return oe_error_code;\n\n"),
+	 "&oe_env->_iin, ~s)) < 0) {\n", [Tname1]),
+    emit_c_dec_rpt(Fd, "    ", "ei_decode_atom", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
     emit(Fd, "  if (strcmp(~s, ~p) != 0)\n",[Tname1, StructName]),
     emit(Fd, "    return -1;\n\n"),
     lists:foreach(
@@ -1093,9 +1098,10 @@ array_decode_dimension_loop(G, N, Fd, [Dim], Dimstr, Type, TDFlag) ->
     ic_cbe:store_tmp_decl("  int ~s = 0;\n",[Tname]),
 
     emit(Fd, "  if ((oe_error_code = ei_decode_tuple_header(oe_env->_inbuf, "
-	 "&oe_env->_iin, &oe_array_size)) < 0)\n",
+	 "&oe_env->_iin, &oe_array_size)) < 0) {\n",
 	 []),
-    emit(Fd, "    return oe_error_code;\n\n"),
+    emit_c_dec_rpt(Fd, "    ", "ei_decode_tuple_header", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
 
     %% This is disabled due to a bug in erl_interface :
     %% tuples inside tuples hae no correct data about the size 
@@ -1103,7 +1109,7 @@ array_decode_dimension_loop(G, N, Fd, [Dim], Dimstr, Type, TDFlag) ->
     %%emit(Fd, "  if (oe_array_size != ~s)\n",[Dim]),
     %%emit(Fd, "    return -1;\n\n"),
 
-    emit(Fd, "  for(~s = 0; ~s < ~s; ~s++) {\n",
+    emit(Fd, "  for (~s = 0; ~s < ~s; ~s++) {\n",
 	 [Tname, Tname, Dim, Tname]),
 
 
@@ -1130,9 +1136,10 @@ array_decode_dimension_loop(G, N, Fd, [Dim | Ds], _Dimstr, Type, TDFlag) ->
     ic_cbe:store_tmp_decl("  int ~s = 0;\n",[Tname]),
 
     emit(Fd, "  if ((oe_error_code = ei_decode_tuple_header(oe_env->_inbuf, "
-	 "&oe_env->_iin, &oe_array_size)) < 0)\n",
+	 "&oe_env->_iin, &oe_array_size)) < 0) {\n",
 	 []),
-    emit(Fd, "    return oe_error_code;\n\n"),
+    emit_c_dec_rpt(Fd, "    ", "ei_decode_tuple_header", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
 
     %% This is disabled due to a bug in erl_interface :
     %% tuples inside tuples hae no correct data about the size 
@@ -1140,7 +1147,7 @@ array_decode_dimension_loop(G, N, Fd, [Dim | Ds], _Dimstr, Type, TDFlag) ->
     %%emit(Fd, "  if (oe_array_size != ~s)\n",[Dim]),
     %%emit(Fd, "    return -1;\n\n"),
 
-    emit(Fd, "  for(~s = 0; ~s < ~s; ~s++) {\n",
+    emit(Fd, "  for (~s = 0; ~s < ~s; ~s++) {\n",
 	 [Tname, Tname, Dim, Tname]),
     array_decode_dimension_loop(G, N, Fd, Ds, "[" ++ Tname ++ "]" , Type, 
 				TDFlag),
@@ -1176,11 +1183,12 @@ emit_encode(sequence_head, G, N, T, Fd, SeqName, ElType) ->
     emit(Fd, "  if (oe_rec->_length != 0) {\n"),
 
     emit(Fd, "    if ((oe_error_code = oe_ei_encode_list_header(oe_env, "
-	 "oe_rec->_length)) < 0)\n",
+	 "oe_rec->_length)) < 0) {\n",
 	 []),
-    emit(Fd, "      return oe_error_code;\n\n"),
+    emit_c_enc_rpt(Fd, "      ", "oi_ei_encode_list_header", []),
+    emit(Fd, "      return oe_error_code;\n    }\n"),
 
-    emit(Fd, "    for(~s = 0; ~s < oe_rec->_length; ~s++) {\n",
+    emit(Fd, "    for (~s = 0; ~s < oe_rec->_length; ~s++) {\n",
 	 [Tname, Tname, Tname]),
     case ElType of 
 	{_,_} -> %% ElType = elementary type or pointer type
@@ -1235,17 +1243,19 @@ emit_encode(sequence_head, G, N, T, Fd, SeqName, ElType) ->
     end,
     emit(Fd, "    }\n"),
     emit(Fd, "  }\n"),
-    emit(Fd, "  if ((oe_error_code = oe_ei_encode_empty_list(oe_env)) < 0)\n",
-	 []),
-    emit(Fd, "    return oe_error_code;\n\n");
+    emit(Fd, "  if ((oe_error_code = oe_ei_encode_empty_list(oe_env)) < 0) {\n"),
+    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_empty_list", []),
+    emit(Fd, "    return oe_error_code;\n  }\n");
 emit_encode(struct, G, N, _T, Fd, StructName, ElTypes) ->
     Length = length(ElTypes) + 1,
     emit(Fd, "  if ((oe_error_code = "
-	 "oe_ei_encode_tuple_header(oe_env, ~p)) < 0)\n", [Length]),
-    emit(Fd, "    return oe_error_code;\n\n"),
+	 "oe_ei_encode_tuple_header(oe_env, ~p)) < 0) {\n", [Length]),
+    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_tuple_header", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
     emit(Fd, "  if ((oe_error_code = "
-	 "oe_ei_encode_atom(oe_env, ~p)) < 0)\n", [StructName]),
-    emit(Fd, "    return oe_error_code;\n\n"),
+	 "oe_ei_encode_atom(oe_env, ~p)) < 0) {\n", [StructName]),
+    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_atom", []),
+    emit(Fd, "    return oe_error_code;\n    }\n"),
     lists:foreach(
       fun({ET, EN}) -> 
 	      case ET of
@@ -1348,10 +1358,11 @@ array_encode_dimension_loop(G, N, Fd, [Dim], {Str1,_Str2}, Type, TDFlag) ->
     ic_cbe:store_tmp_decl("  int ~s = 0;\n",[Tname]),
 
     emit(Fd, "  if ((oe_error_code = "
-	 "oe_ei_encode_tuple_header(oe_env, ~s)) < 0)\n", [Dim]),
-    emit(Fd, "    return oe_error_code;\n\n"),
+	 "oe_ei_encode_tuple_header(oe_env, ~s)) < 0) {\n", [Dim]),
+    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_tuple_header", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
 
-    emit(Fd, "  for(~s = 0; ~s < ~s; ~s++) {\n",
+    emit(Fd, "  for (~s = 0; ~s < ~s; ~s++) {\n",
 	 [Tname, Tname, Dim, Tname]),
 
     ArrAccess = 
@@ -1371,10 +1382,11 @@ array_encode_dimension_loop(G, N, Fd, [Dim | Ds],{Str1,Str2}, Type, TDFlag) ->
     ic_cbe:store_tmp_decl("  int ~s = 0;\n",[Tname]),
 
     emit(Fd, "  if ((oe_error_code = "
-	 "oe_ei_encode_tuple_header(oe_env, ~s)) < 0)\n", [Dim]),
-    emit(Fd, "    return oe_error_code;\n\n"),
+	 "oe_ei_encode_tuple_header(oe_env, ~s)) < 0) {\n", [Dim]),
+    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_tuple_header", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
 
-    emit(Fd, "  for(~s = 0; ~s < ~s; ~s++) {\n",
+    emit(Fd, "  for (~s = 0; ~s < ~s; ~s++) {\n",
 	 [Tname, Tname, Dim, Tname]),
     array_encode_dimension_loop(G, N, Fd, Ds,
 				{Str1 ++ "[" ++ Tname ++ "]", Str2},
@@ -1403,8 +1415,9 @@ emit_sizecount(sequence_head, G, N, T, Fd, SeqName, ElType) ->
     MaxSize = get_seq_max(T),
 
     emit(Fd, "  if ((oe_error_code = ei_get_type(oe_env->_inbuf, "
-	 "oe_size_count_index, &oe_type, &oe_seq_len)) < 0)\n"),
-    emit(Fd, "    return oe_error_code;\n\n"),
+	 "oe_size_count_index, &oe_type, &oe_seq_len)) < 0) {\n"),
+    emit_c_dec_rpt(Fd, "    ", "ei_get_type", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
 
     if 
 	MaxSize == infinity ->
@@ -1425,12 +1438,14 @@ emit_sizecount(sequence_head, G, N, T, Fd, SeqName, ElType) ->
     case ictype:isBasicTypeOrEterm(G, N, ElType) of
 	true ->
 	    emit(Fd, "    if ((oe_error_code = ei_decode_string(oe_env->"
-		 "_inbuf, oe_size_count_index, NULL)) < 0)\n"),
-	    emit(Fd, "      return oe_error_code;\n\n"),
+		 "_inbuf, oe_size_count_index, NULL)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "      ", "ei_decode_string", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n"),
 
 	    emit(Fd, "    oe_malloc_size = ~s;\n\n",
 		 [align(["sizeof(", CType, ") * oe_seq_len"])]);
 	false ->
+	    emit_c_dec_rpt(Fd, "    ", "non mea culpa", []),
 	    emit(Fd, "    return oe_error_code;\n\n")
     end,
 
@@ -1439,7 +1454,7 @@ emit_sizecount(sequence_head, G, N, T, Fd, SeqName, ElType) ->
     emit(Fd, "    oe_malloc_size = ~s;\n\n",
 	 [align(["sizeof(", CType, ") * oe_seq_len"])]),
 
-    emit(Fd, "    for(oe_seq_count = 0; oe_seq_count < oe_seq_len; "
+    emit(Fd, "    for (oe_seq_count = 0; oe_seq_count < oe_seq_len; "
 	 "oe_seq_count++) {\n"), 
     ic_cbe:emit_malloc_size_stmt(G, N, Fd, ElType,
 				 "oe_env->_inbuf", 0, generator),
@@ -1447,8 +1462,9 @@ emit_sizecount(sequence_head, G, N, T, Fd, SeqName, ElType) ->
 
     emit(Fd, "    if (oe_seq_len != 0) \n"),
     emit(Fd, "      if ((oe_error_code = ei_decode_list_header(oe_env->_inbuf,"
-	 "oe_size_count_index, NULL)) < 0)\n"),
-    emit(Fd, "        return oe_error_code;\n\n"),
+	 "oe_size_count_index, NULL)) < 0) {\n"),
+    emit_c_dec_rpt(Fd, "      ", "ei_decode_list_header", []),
+    emit(Fd, "        return oe_error_code;\n    }\n"),
     emit(Fd, "  }\n"),
     emit(Fd, "  *oe_size = ~s;\n\n", [align("*oe_size + oe_malloc_size")]);
 
@@ -1464,20 +1480,24 @@ emit_sizecount(struct, G, N, _T, Fd, StructName, ElTypes) ->
 
     emit(Fd, "  if ((oe_error_code = "
 	 "ei_get_type(oe_env->_inbuf, oe_size_count_index, &oe_type, "
-	 "&~s)) < 0)\n", [Tname]),
-    emit(Fd, "    return oe_error_code;\n\n"),
+	 "&~s)) < 0) {\n", [Tname]),
+    emit_c_dec_rpt(Fd, "    ", "ei_get_type", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
 
-    emit(Fd, "  if (~s != ~p)\n",[Tname, Length]),
-    emit(Fd, "    return -1;\n\n"),
+    emit(Fd, "  if (~s != ~p) {\n",[Tname, Length]),
+    emit_c_dec_rpt(Fd, "    ", "~s != ~p", [Tname, Length]),
+    emit(Fd, "    return -1;\n  }\n"),
 
 
     emit(Fd, "  if ((oe_error_code = "
 	 "ei_decode_tuple_header(oe_env->_inbuf, "
-	 "oe_size_count_index, 0)) < 0)\n"),
-    emit(Fd, "    return oe_error_code;\n\n"),
+	 "oe_size_count_index, 0)) < 0) {\n"),
+    emit_c_dec_rpt(Fd, "    ", "ei_decode_tuple_header", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
     emit(Fd, "  if ((oe_error_code = "
-	 "ei_decode_atom(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n", []),
-    emit(Fd, "    return oe_error_code;\n\n"),
+	 "ei_decode_atom(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n", []),
+    emit_c_dec_rpt(Fd, "    ", "ei_decode_atom", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
     lists:foreach(
       fun({ET, EN}) ->
 	      case ic_cbe:is_variable_size(G, N, ET) of
@@ -1568,18 +1588,21 @@ array_size_dimension_loop(G, N, Fd, [Dim], Type) ->
     ic_cbe:store_tmp_decl("  int ~s = 0;\n",[Tname]),
     emit(Fd, "  if ((oe_error_code = "
 	 "ei_get_type(oe_env->_inbuf, oe_size_count_index, "
-	 "&oe_type, &oe_array_size)) < 0)\n",
+	 "&oe_type, &oe_array_size)) < 0) {\n",
 	 []),
-    emit(Fd, "    return oe_error_code;\n\n"),
+    emit_c_dec_rpt(Fd, "    ", "ei_get_type", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
 
-    emit(Fd, "  if (oe_array_size != ~s)\n",[Dim]),
-    emit(Fd, "    return -1;\n\n"),
+    emit(Fd, "  if (oe_array_size != ~s) {\n",[Dim]),
+    emit_c_dec_rpt(Fd, "    ", "array size != ~s", [Dim]),
+    emit(Fd, "    return -1;\n  }\n"),
 
     emit(Fd, "  if ((oe_error_code = ei_decode_tuple_header(oe_env->_inbuf, "
-	 "oe_size_count_index, 0)) < 0)\n", []),
-    emit(Fd, "    return oe_error_code;\n\n"),
+	 "oe_size_count_index, 0)) < 0) {\n", []),
+    emit_c_dec_rpt(Fd, "    ", "ei_decode_tuple_header", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
 
-    emit(Fd, "  for(~s = 0; ~s < ~s; ~s++) {\n",
+    emit(Fd, "  for (~s = 0; ~s < ~s; ~s++) {\n",
 	 [Tname, Tname, Dim, Tname]),
     ic_cbe:emit_malloc_size_stmt(G, N, Fd, 
 				 Type, "oe_env->_inbuf", 0, generator),
@@ -1590,18 +1613,21 @@ array_size_dimension_loop(G, N, Fd, [Dim | Ds], Type) ->
     ic_cbe:store_tmp_decl("  int ~s = 0;\n",[Tname]),
     emit(Fd, "  if ((oe_error_code = "
 	 "ei_get_type(oe_env->_inbuf, oe_size_count_index, "
-	 "&oe_type, &oe_array_size)) < 0)\n", []),
-    emit(Fd, "    return oe_error_code;\n\n"),
+	 "&oe_type, &oe_array_size)) < 0) {\n", []),
+    emit_c_dec_rpt(Fd, "    ", "ei_get_type", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
 
-    emit(Fd, "  if (oe_array_size != ~s)\n",[Dim]),
-    emit(Fd, "    return -1;\n\n"),
+    emit(Fd, "  if (oe_array_size != ~s) {\n",[Dim]),
+    emit_c_dec_rpt(Fd, "    ", "array size != ~s", [Dim]),
+    emit(Fd, "    return -1;\n  }\n"),
 
     emit(Fd, "  if ((oe_error_code = ei_decode_tuple_header(oe_env->_inbuf, "
-	 "oe_size_count_index, 0)) < 0)\n",
+	 "oe_size_count_index, 0)) < 0) {\n",
 	 []),
-    emit(Fd, "    return oe_error_code;\n\n"),
+    emit_c_dec_rpt(Fd, "    ", "ei_decode_tuple_header", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
 
-    emit(Fd, "  for(~s = 0; ~s < ~s; ~s++) {\n",
+    emit(Fd, "  for (~s = 0; ~s < ~s; ~s++) {\n",
 	 [Tname, Tname, Dim, Tname]),
     array_size_dimension_loop(G, N, Fd, Ds, Type),
     emit(Fd, "  }\n").

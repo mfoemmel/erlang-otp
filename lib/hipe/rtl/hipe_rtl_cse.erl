@@ -11,21 +11,21 @@
 %% - add the stuff that keeps track of available expressions!
 
 -module(hipe_rtl_cse).
--export([block/1,blocks/1,cfg/1,ebb/1,fix/1]).
+-export([blocks/1,ebb/1,fix/1]).
 
 %% Performed on RTL code
 
-% test(CFG) ->
-%     io:format('==================== LOCAL CSE ====================~n',[]),
-%     hipe_rtl_cfg:pp(cfg(CFG)),
-%     io:format('====================  EBB  CSE ====================~n',[]),
-%     hipe_rtl_cfg:pp(ebb(CFG)),
-%     io:format('==================  EBB  CSE + OPT ==================~n',[]),
-%     hipe_rtl_cfg:pp(hipe_rtl_prop:cfg(ebb(CFG))),
-%     ok.
-
-cfg(CFG) ->
-    blocks(CFG).
+%% test(CFG) ->
+%%     io:format('==================== LOCAL CSE ====================~n',[]),
+%%     hipe_rtl_cfg:pp(cfg(CFG)),
+%%     io:format('====================  EBB  CSE ====================~n',[]),
+%%     hipe_rtl_cfg:pp(ebb(CFG)),
+%%     io:format('==================  EBB  CSE + OPT ==================~n',[]),
+%%     hipe_rtl_cfg:pp(hipe_rtl_prop:cfg(ebb(CFG))),
+%%     ok.
+%% 
+%% cfg(CFG) ->
+%%    blocks(CFG).
 
 blocks(CFG) ->
     cse_blocks(hipe_rtl_cfg:labels(CFG),CFG).
@@ -49,7 +49,7 @@ blocks(CFG) ->
 cse_blocks([],CFG) -> CFG;
 cse_blocks([L|Ls],CFG) ->
     NewBlk = hipe_bb:mk_bb(block(hipe_bb:code(hipe_rtl_cfg:bb(CFG,L)))),
-    NewCFG = hipe_rtl_cfg:bb_update(CFG,L,NewBlk),
+    NewCFG = hipe_rtl_cfg:bb_add(CFG,L,NewBlk),
     cse_blocks(Ls,NewCFG).
 
 block(Blk) ->
@@ -70,7 +70,7 @@ cse_ebb(EBB,CFG,Cache) ->
 	    L = hipe_rtl_ebb:node_label(EBB),
 	    BB = hipe_bb:code(hipe_rtl_cfg:bb(CFG,L)),
 	    {NewBB,NewCache} = cse0(BB,Cache),
-	    NewCFG = hipe_rtl_cfg:bb_update(CFG,L,hipe_bb:mk_bb(NewBB)),
+	    NewCFG = hipe_rtl_cfg:bb_add(CFG,L,hipe_bb:mk_bb(NewBB)),
 	    SuccEBBs = hipe_rtl_ebb:node_successors(EBB),
 	    cse_ebbs(SuccEBBs,NewCFG,NewCache)
     end.
@@ -155,8 +155,8 @@ i(Instr) ->
 		case pure_bif(Fun) of
 		    true ->
 			{maybe_cse,
-			 hipe_rtl:call_dst(Instr),
-			 {bif, Fun, hipe_rtl:call_args(Instr)}};
+			 hipe_rtl:call_dstlist(Instr),
+			 {bif, Fun, hipe_rtl:call_arglist(Instr)}};
 		    false ->
 			{barrier,none,none}
 		end;
@@ -214,9 +214,9 @@ vs([],Set) -> Set;
 vs([X|Xs],Set) ->
     I = case hipe_rtl:is_var(X) of
 	    true ->
-		hipe_rtl:var_name(X);
+		hipe_rtl:var_index(X);
 	    false -> % must be 'reg'
-		hipe_rtl:reg_name(X)
+		hipe_rtl:reg_index(X)
 	end,
     NewSet = gb_sets:add(I,Set),
     vs(Xs, NewSet).
@@ -266,12 +266,12 @@ cse_blks([],CFG,_In) ->
     CFG;
 cse_blks([L|Ls],CFG,In) ->
     NewBlk = hipe_bb:mk_bb(cse(hipe_bb:code(hipe_rtl_cfg:bb(CFG,L)),cache_of(L,In))),
-    NewCFG = hipe_rtl_cfg:bb_update(CFG,L,NewBlk),
+    NewCFG = hipe_rtl_cfg:bb_add(CFG,L,NewBlk),
     cse_blks(Ls,NewCFG,In).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-empty_tab() -> hipe_hash:empty().
+empty_tab() -> gb_trees:empty().
 
 % For CSE, the starting value is 'all expressions' and the LUB operator
 % is intersection.
@@ -282,23 +282,23 @@ empty_tab() -> hipe_hash:empty().
 % - less_than(Xs,Ys): if 
 
 changed(L,NewCache,In) ->
-    case hipe_hash:lookup(L,In) of
-	not_found ->
-	    {yes, hipe_hash:update(L,NewCache,In)};
-	{found,OldCache} ->
+    case gb_trees:lookup(L,In) of
+	none ->
+	    {yes, gb_trees:insert(L,NewCache,In)};
+	{value,OldCache} ->
 	    case less_than(NewCache,OldCache) of
 		true ->
 		    no;
 		false ->
-		    {yes, hipe_hash:update(L, lub(NewCache,OldCache), In) }
+		    {yes, gb_trees:update(L, lub(NewCache,OldCache), In) }
 	    end
     end.
 
 cache_of(L,In) ->
-    case hipe_hash:lookup(L,In) of
-	{found,Cache} ->
+    case gb_trees:lookup(L,In) of
+	{value,Cache} ->
 	    Cache;
-	not_found ->
+	none ->
 	    empty_cache()
     end.
 
@@ -320,4 +320,4 @@ less_than([X|Xs],Ys) ->
     end.
  
 starting_points(CFG) ->
-    [ hipe_rtl_cfg:start(CFG)].
+    [hipe_rtl_cfg:start_label(CFG)].

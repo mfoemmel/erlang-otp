@@ -27,7 +27,7 @@ ifeq ($(findstring vxworks,$(TARGET)),vxworks)
      snmp otp_mibs appmon erl_interface os_mon tools runtime_tools
   ifdef BUILD_ALL
     OTHER_SUB_DIRECTORIES += mnesia jinterface ic mnemosyne asn1 debugger \
-      eva inets mnesia_session orber pman tv observer cosTransactions cosEvent \
+	inets mnesia_session orber pman tv observer cosTransactions cosEvent \
       cosTime cosNotification cosProperty cosFileTransfer cosEventDomain
   endif
 else
@@ -39,9 +39,9 @@ else
 #      appmon os_mon tools runtime_tools
     ifdef BUILD_ALL
       OTHER_SUB_DIRECTORIES += mnesia mnemosyne \
-        eva inets mnesia_session pman tv observer
+        inets mnesia_session pman tv observer
 #      OTHER_SUB_DIRECTORIES += mnesia ic mnemosyne asn1 debugger \
-#        eva inets mnesia_session orber pman tv observer cosTransactions cosEvent \
+#        inets mnesia_session orber pman tv observer cosTransactions cosEvent \
 #        cosTime cosNotification cosProperty cosFileTransfer cosEventDomain
     endif
   else
@@ -49,18 +49,20 @@ else
     ifdef BUILD_ALL
       ifeq ($(findstring win32,$(TARGET)),win32)
         OTHER_SUB_DIRECTORIES = 			\
-          snmp otp_mibs appmon erl_interface asn1 jinterface eva gs inets ic \
+          snmp otp_mibs appmon erl_interface asn1 jinterface gs inets ic \
           mnesia mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools pman \
           $(SSL_APP) toolbar tools tv observer debugger odbc runtime_tools \
           cosTransactions cosEvent cosTime cosNotification cosProperty \
-          cosFileTransfer cosEventDomain et megaco webtool
+          cosFileTransfer cosEventDomain et megaco webtool syntax_tools \
+	  xmerl edoc
       else
         OTHER_SUB_DIRECTORIES = \
-          snmp otp_mibs appmon erl_interface asn1 jinterface eva debugger gs inets \
+          snmp otp_mibs appmon erl_interface asn1 jinterface debugger gs inets \
           ic mnesia  mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools \
           pman $(SSL_APP) toolbar tools tv observer \
           runtime_tools cosTransactions cosEvent cosTime cosNotification \
-          cosProperty cosFileTransfer cosEventDomain et megaco webtool
+          cosProperty cosFileTransfer cosEventDomain et megaco webtool \
+	  syntax_tools xmerl edoc
         ifeq ($(findstring sparc-sun-solaris,$(TARGET)),sparc-sun-solaris)
           OTHER_SUB_DIRECTORIES += odbc
         endif

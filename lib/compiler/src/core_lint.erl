@@ -47,7 +47,8 @@
 -export([module/1,module/2,format_error/1]).
 
 -import(lists, [reverse/1,all/2,foldl/3]).
--import(ordsets, [add_element/2,is_element/2,subtract/2,union/2]).
+-import(ordsets, [add_element/2,is_element/2,union/2]).
+%-import(ordsets, [subtract/2]).
 
 -include("core_parse.hrl").
 
@@ -236,8 +237,8 @@ gexpr(#c_cons{hd=H,tl=T}, Def, _Rt, St) ->
     gexpr_list([H,T], Def, St);
 gexpr(#c_tuple{es=Es}, Def, _Rt, St) ->
     gexpr_list(Es, Def, St);
-gexpr(#c_binary{segs=Ss}, Def, _Rt, St) ->
-    gbin_seg_list(Ss, Def, St);
+gexpr(#c_binary{segments=Ss}, Def, _Rt, St) ->
+    gbitstr_list(Ss, Def, St);
 gexpr(#c_seq{arg=Arg,body=B}, Def, Rt, St0) ->
     St1 = gexpr(Arg, Def, any, St0),		%Ignore values
     gbody(B, Def, Rt, St1);
@@ -252,7 +253,7 @@ gexpr(#c_call{module=#c_atom{val=erlang},
 gexpr(#c_primop{name=N,args=As}, Def, _Rt, St0) when record(N, c_atom) ->
     gexpr_list(As, Def, St0);
 gexpr(#c_try{arg=E,vars=[#c_var{name=X}],body=#c_var{name=X},
-	     evars=[#c_var{},#c_var{}],handler=#c_atom{val=false}},
+	     evars=[#c_var{},#c_var{},#c_var{}],handler=#c_atom{val=false}},
       Def, Rt, St) ->
     gbody(E, Def, Rt, St);
 gexpr(_, _, _, St) ->
@@ -263,12 +264,12 @@ gexpr(_, _, _, St) ->
 gexpr_list(Es, Def, St0) ->
     foldl(fun (E, St) -> gexpr(E, Def, 1, St) end, St0, Es).
 
-%% gbin_seg_list([Elem], Defined, State) -> State.
+%% gbitstr_list([Elem], Defined, State) -> State.
 
-gbin_seg_list(Es, Def, St0) ->
-    foldl(fun (E, St) -> gbin_seg(E, Def, St) end, St0, Es).
+gbitstr_list(Es, Def, St0) ->
+    foldl(fun (E, St) -> gbitstr(E, Def, St) end, St0, Es).
 
-gbin_seg(#c_bin_seg{val=V,size=S,unit=U,type=T,flags=Fs}, Def, St0) ->
+gbitstr(#c_bitstr{val=V,size=S,unit=U,type=T,flags=Fs}, Def, St0) ->
     St1 = bit_type(U, T, Fs, St0),
     gexpr_list([V,S], Def, St1).
 
@@ -285,8 +286,8 @@ expr(#c_cons{hd=H,tl=T}, Def, _Rt, St) ->
     expr_list([H,T], Def, St);
 expr(#c_tuple{es=Es}, Def, _Rt, St) ->
     expr_list(Es, Def, St);
-expr(#c_binary{segs=Ss}, Def, _Rt, St) ->
-    bin_seg_list(Ss, Def, St);
+expr(#c_binary{segments=Ss}, Def, _Rt, St) ->
+    bitstr_list(Ss, Def, St);
 expr(#c_fname{id=I,arity=A}, Def, _Rt, St) ->
     expr_fname({I,A}, Def, St);
 expr(#c_fun{vars=Vs,body=B}, Def, Rt, St0) ->
@@ -341,12 +342,12 @@ expr(_, _, _, St) ->
 expr_list(Es, Def, St0) ->
     foldl(fun (E, St) -> expr(E, Def, 1, St) end, St0, Es).
 
-%% bin_seg_list([Elem], Defined, State) -> State.
+%% bitstr_list([Elem], Defined, State) -> State.
 
-bin_seg_list(Es, Def, St0) ->
-    foldl(fun (E, St) -> bin_seg(E, Def, St) end, St0, Es).
+bitstr_list(Es, Def, St0) ->
+    foldl(fun (E, St) -> bitstr(E, Def, St) end, St0, Es).
 
-bin_seg(#c_bin_seg{val=V,size=S,unit=U,type=T,flags=Fs}, Def, St0) ->
+bitstr(#c_bitstr{val=V,size=S,unit=U,type=T,flags=Fs}, Def, St0) ->
     St1 = bit_type(U, T, Fs, St0),
     expr_list([V,S], Def, St1).
 
@@ -438,7 +439,7 @@ pattern(#c_cons{hd=H,tl=T}, Def, Ps, St) ->
     pattern_list([H,T], Def, Ps, St);
 pattern(#c_tuple{es=Es}, Def, Ps, St) ->
     pattern_list(Es, Def, Ps, St);
-pattern(#c_binary{segs=Ss}, Def, Ps, St) ->
+pattern(#c_binary{segments=Ss}, Def, Ps, St) ->
     pat_bin(Ss, Def, Ps, St);
 pattern(#c_alias{var=V,pat=P}, Def, Ps, St0) ->
     {Vvs,St1} = variable(V, Ps, St0),
@@ -456,7 +457,7 @@ pat_var(N, _Def, Ps, St) ->
 pat_bin(Es, Def, Ps0, St0) ->
     foldl(fun (E, {Ps,St}) -> pat_segment(E, Def, Ps, St) end, {Ps0,St0}, Es).
 
-pat_segment(#c_bin_seg{val=V,size=S,unit=U,type=T,flags=Fs}, Def, Ps, St0) ->
+pat_segment(#c_bitstr{val=V,size=S,unit=U,type=T,flags=Fs}, Def, Ps, St0) ->
     St1 = bit_type(U, T, Fs, St0),
     St2 = pat_bit_expr(S, T, Def, St1),
     pattern(V, Def, Ps, St2);
@@ -474,7 +475,10 @@ pat_bit_expr(_, _, _, St) ->
     add_error({illegal_expr,St#lint.func}, St).
 
 bit_type(Unit, Type, Flags, St) ->
-    case erl_bits:set_bit_type(default, [Type,{unit,Unit}|Flags]) of
+    U = core_lib:literal_value(Unit),
+    T = core_lib:literal_value(Type),
+    Fs = core_lib:literal_value(Flags),
+    case erl_bits:set_bit_type(default, [T,{unit,U}|Fs]) of
 	{ok,_,_} -> St;
 	{error,E} -> add_error({E,St#lint.func}, St)
     end.

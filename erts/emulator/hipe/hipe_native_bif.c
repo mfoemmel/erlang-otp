@@ -14,7 +14,7 @@
 #include "erl_binary.h"
 #include "hipe_mode_switch.h"
 #include "hipe_native_bif.h"
-#include "hipe_bif0.h"
+#include "hipe_arch.h"
 #include "hipe_stack.h"
 
 /*
@@ -25,13 +25,9 @@
  */
 void hipe_gc(Process *p, Eterm need)
 {
-#ifdef __i386__
-    p->hipe.narity = 1;
-#endif
+    hipe_set_narity(p, 1);
     p->fcalls -= erts_garbage_collect(p, unsigned_val(need), NULL, 0);
-#ifdef __i386__
-    p->hipe.narity = 0;
-#endif
+    hipe_set_narity(p, 0);
 }
 
 /* This is like the OP_setTimeout JAM instruction.
@@ -41,7 +37,9 @@ void hipe_gc(Process *p, Eterm need)
  */
 Eterm hipe_set_timeout(Process *p, Eterm timeout_value)
 {
+#if !defined(ARCH_64)
     Uint time_val;
+#endif
     /* XXX: This should be converted to follow BEAM conventions,
      * but that requires some compiler changes.
      *
@@ -83,60 +81,24 @@ Eterm hipe_set_timeout(Process *p, Eterm timeout_value)
     if( p->flags & (F_INSLPQUEUE | F_TIMO) ) {
 	return NIL;	/* caller had better call nbif_suspend ASAP! */
     }
-    if( is_small(timeout_value) && signed_val(timeout_value) > 0 ) {
-	time_val = unsigned_val(timeout_value);
-	set_timer(p, time_val);
+    if( is_small(timeout_value) && signed_val(timeout_value) >= 0 &&
+#if defined(ARCH_64)
+	(unsigned_val(timeout_value) >> 32) == 0
+#else
+	1
+#endif
+	) {
+	set_timer(p, unsigned_val(timeout_value));
     } else if( timeout_value == am_infinity ) {
 	/* p->flags |= F_TIMO; */	/* XXX: nbif_suspend_msg_timeout */
+#if !defined(ARCH_64)
     } else if( term_to_Uint(timeout_value, &time_val) ) {
 	set_timer(p, time_val);
+#endif
     } else {
 	BIF_ERROR(p, EXC_TIMEOUT_VALUE);
     }
     return NIL;	/* caller had better call nbif_suspend ASAP! */
-}
-
-/*
- * This is like the timeout BEAM instruction.
- */
-Eterm hipe_clear_timeout(Process *p)
-{
-    /*
-     * A timeout has occurred.  Reset the save pointer so that the next
-     * receive statement will examine the first message first.
-     */
-    if (IS_TRACED_FL(p, F_TRACE_RECEIVE)) {
-	trace_receive(p, am_timeout);
-    }
-    p->flags &= ~F_TIMO;
-    JOIN_MESSAGE(p);
-    return NIL;
-}
-
-int hipe_mbox_empty(Process *p)
-{
-    return PEEK_MESSAGE(p) == NULL;
-}
-
-Eterm hipe_get_msg(Process *p)
-{
-    ErlMessage *mp = PEEK_MESSAGE(p);
-    if (!mp) {
-	printf("Getting message from empty message queue (1)!");
-	exit(1);
-    }
-    return ERL_MESSAGE_TERM(mp);
-}
-
-/* This is like the loop_rec_end BEAM instruction.
- */
-void hipe_next_msg(Process *p)
-{
-    if (PEEK_MESSAGE(p) == NULL) {
-	printf("Getting message from empty message queue (2)!");
-	exit(1);
-    }
-    SAVE_MESSAGE(p);
 }
 
 /* This is like the remove_message BEAM instruction
@@ -146,13 +108,9 @@ void hipe_select_msg(Process *p)
     ErlMessage *msgp;
 
     msgp = PEEK_MESSAGE(p);
-    if (!msgp) {
-	printf("Getting message from empty message queue (3)!");
-	exit(1);
-    }
-    UNLINK_MESSAGE(p, msgp);
+    UNLINK_MESSAGE(p, msgp);	/* decrements global 'erts_proc_tot_mem' variable */
     JOIN_MESSAGE(p);
-    CANCEL_TIMER(p);
+    CANCEL_TIMER(p);		/* calls erl_cancel_timer() */
     free_message(msgp);
 }
 
@@ -163,19 +121,32 @@ void hipe_select_msg(Process *p)
  */
 void hipe_handle_exception(Process *c_p)
 {
+#if 0 /* NEW_EXCEPTIONS */ 
+    Eterm Value = c_p->fvalue;
+#else
     Eterm* hp;
     Eterm Value;
     Uint r;
+#endif
 
     ASSERT(c_p->freason != TRAP); /* Should have been handled earlier. */
     ASSERT(c_p->freason != RESCHEDULE); /* Should have been handled earlier. */
+#if 0 /* NEW_EXCEPTIONS */ 
+    /* Get the fully expanded error term */
+    Value = expand_error_value(c_p, Value);
+
+    /* Save final error term and stabilize the exception flags so no
+       further expansion is done. */
+    c_p->fvalue = Value;
+    c_p->freason = PRIMARY_EXCEPTION(c_p->freason);
+#else
     r = GET_EXC_INDEX(c_p->freason);
     ASSERT(r < NUMBER_EXIT_CODES); /* range check */
     if (r < NUMBER_EXIT_CODES) {
-	Value = error_atom[r];
+       Value = error_atom[r];
     } else {
-	Value = am_internal_error;
-	c_p->freason = EXC_INTERNAL_ERROR;
+       Value = am_internal_error;
+       c_p->freason = EXC_INTERNAL_ERROR;
     }
 
     r = c_p->freason;
@@ -188,38 +159,32 @@ void hipe_handle_exception(Process *c_p)
     case (GET_EXC_INDEX(EXC_BADMATCH)):
     case (GET_EXC_INDEX(EXC_CASE_CLAUSE)):
     case (GET_EXC_INDEX(EXC_BADFUN)):
-	ASSERT(is_value(c_p->fvalue));
-	hp = HAlloc(c_p, 3);
-	Value = TUPLE2(hp, Value, c_p->fvalue);
-	break;
+       ASSERT(is_value(c_p->fvalue));
+       hp = HAlloc(c_p, 3);
+       Value = TUPLE2(hp, Value, c_p->fvalue);
+       break;
     default:
-	hp = HAlloc(c_p, 3);
-	Value = TUPLE2(hp, Value, NIL);
-	break;
+       hp = HAlloc(c_p, 3);
+       Value = TUPLE2(hp, Value, NIL);
+       break;
     }
 
     r = PRIMARY_EXCEPTION(r);    /* make the exception stable */
     c_p->freason = r;
     c_p->fvalue = Value;
+#endif
 
     hipe_find_handler(c_p);
 }
 
-#if 0 /* commented out as it's currently unused */
 Eterm hipe_get_exit_tag(Process *c_p)
 {
     return exception_tag[GET_EXC_CLASS(c_p->freason)];
 }
-#endif
 
 /*
  * Support for compiled binary syntax operations.
  */
-
-void *hipe_bs_get_matchbuffer(void)
-{
-    return &erts_mb.orig;
-}
 
 char *hipe_bs_allocate(int len)
 { 

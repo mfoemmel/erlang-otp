@@ -24,41 +24,43 @@
 
 do(Info) ->
     ?DEBUG("do -> entry",[]),
-    case httpd_util:key1search(Info#mod.data,status) of
+    case httpd_util:key1search(Info#mod.data, status) of
 	%% A status code has been generated!
-	{StatusCode,PhraseArgs,Reason} ->
+	{_StatusCode, _PhraseArgs, _Reason} ->
 	    {proceed,Info#mod.data};
 	%% No status code has been generated!
 	undefined ->
-	    case httpd_util:key1search(Info#mod.data,response) of
+	    case httpd_util:key1search(Info#mod.data, response) of
 		%% No response has been generated!
 		undefined ->
 		    do_alias(Info);
 		%% A response has been generated or sent!
-		Response ->
-		    {proceed,Info#mod.data}
+		_Response ->
+		    {proceed, Info#mod.data}
 	    end
     end.
 
 do_alias(Info) ->
     ?DEBUG("do_alias -> Request URI: ~p",[Info#mod.request_uri]),
-    {ShortPath,Path,AfterPath} =
-	real_name(Info#mod.config_db,Info#mod.request_uri,
+    {ShortPath, Path, AfterPath} =
+	real_name(Info#mod.config_db, Info#mod.request_uri,
 		  httpd_util:multi_lookup(Info#mod.config_db,alias)),
     %% Relocate if a trailing slash is missing else proceed!
     LastChar = lists:last(ShortPath),
     case file:read_file_info(ShortPath) of 
-	{ok,FileInfo} when FileInfo#file_info.type == directory,LastChar /= $/ ->
+	{ok,FileInfo} when FileInfo#file_info.type == directory, 
+	LastChar /= $/ ->
 	    ?LOG("do_alias -> ~n"
 		 "      ShortPath: ~p~n"
 		 "      LastChar:  ~p~n"
 		 "      FileInfo:  ~p",
 		 [ShortPath,LastChar,FileInfo]),
-	    ServerName = httpd_util:lookup(Info#mod.config_db,server_name),
-	    Port = port_string(httpd_util:lookup(Info#mod.config_db,port,80)),
-	    URL = "http://"++ServerName++Port++Info#mod.request_uri++"/",
+	    ServerName = httpd_util:lookup(Info#mod.config_db, server_name),
+	    Port = port_string(httpd_util:lookup(Info#mod.config_db,port, 80)),
+	    URL = "http://" ++ ServerName ++ Port ++ 
+		Info#mod.request_uri ++ "/",
 	    ReasonPhrase = httpd_util:reason_phrase(301),
-	    Message = httpd_util:message(301,URL,Info#mod.config_db),
+	    Message = httpd_util:message(301, URL, Info#mod.config_db),
 	    {proceed,
 	     [{response,
 	       {301, ["Location: ", URL, "\r\n"
@@ -69,9 +71,9 @@ do_alias(Info) ->
 		      "<BODY>\n<H1>",ReasonPhrase,
 		      "</H1>\n", Message, 
 		      "\n</BODY>\n</HTML>\n"]}}|
-	      [{real_name,{Path,AfterPath}}|Info#mod.data]]};
-	NoFile ->
-	    {proceed,[{real_name,{Path,AfterPath}}|Info#mod.data]}
+	      [{real_name, {Path, AfterPath}} | Info#mod.data]]};
+	_NoFile ->
+	    {proceed,[{real_name, {Path, AfterPath}} | Info#mod.data]}
     end.
 
 port_string(80) ->
@@ -83,28 +85,29 @@ port_string(Port) ->
 
 real_name(ConfigDB, RequestURI,[]) ->
     DocumentRoot = httpd_util:lookup(ConfigDB, document_root, ""),
-    RealName = DocumentRoot++RequestURI,
+    RealName = DocumentRoot ++ RequestURI,
     {ShortPath, _AfterPath} = httpd_util:split_path(RealName),
-    {Path, AfterPath}=httpd_util:split_path(default_index(ConfigDB,RealName)),
+    {Path, AfterPath} =httpd_util:split_path(default_index(ConfigDB, 
+							   RealName)),
     {ShortPath, Path, AfterPath};
 real_name(ConfigDB, RequestURI, [{FakeName,RealName}|Rest]) ->
-    case regexp:match(RequestURI, "^"++FakeName) of
+    case regexp:match(RequestURI, "^" ++ FakeName) of
 	{match, _, _} ->
 	    {ok, ActualName, _} = regexp:sub(RequestURI,
-					     "^"++FakeName, RealName),
-	    {ShortPath, _AfterPath} = httpd_util:split_path(ActualName),
-	    {Path, AfterPath} =
-		httpd_util:split_path(default_index(ConfigDB, ActualName)),
-	    {ShortPath, Path, AfterPath};
+					     "^" ++ FakeName, RealName),
+	{ShortPath, _AfterPath} = httpd_util:split_path(ActualName),
+	{Path, AfterPath} =
+	httpd_util:split_path(default_index(ConfigDB, ActualName)),
+	{ShortPath, Path, AfterPath};
 	nomatch ->
 	    real_name(ConfigDB,RequestURI,Rest)
     end.
 
 %% real_script_name
 
-real_script_name(ConfigDB,RequestURI,[]) ->
+real_script_name(_ConfigDB, _RequestURI, []) ->
     not_a_script;
-real_script_name(ConfigDB,RequestURI,[{FakeName,RealName}|Rest]) ->
+real_script_name(ConfigDB, RequestURI, [{FakeName,RealName} | Rest]) ->
     case regexp:match(RequestURI,"^"++FakeName) of
 	{match,_,_} ->
 	    {ok,ActualName,_}=regexp:sub(RequestURI,"^"++FakeName,RealName),
@@ -126,24 +129,24 @@ default_index(ConfigDB, Path) ->
 
 append_index(RealName, []) ->
     RealName;
-append_index(RealName, [Index|Rest]) ->
+append_index(RealName, [Index | Rest]) ->
     case file:read_file_info(filename:join(RealName, Index)) of
-	{error,Reason} ->
+	{error, _Reason} ->
 	    append_index(RealName, Rest);
 	_ ->
-	    filename:join(RealName,Index)
+	    filename:join(RealName, Index)
     end.
 
 %% path
 
 path(Data, ConfigDB, RequestURI) ->
-    case httpd_util:key1search(Data,real_name) of
+    case httpd_util:key1search(Data, real_name) of
 	undefined ->
 	    DocumentRoot = httpd_util:lookup(ConfigDB, document_root, ""),
-	    {Path,AfterPath} = 
+	    {Path, _AfterPath} = 
 		httpd_util:split_path(DocumentRoot++RequestURI),
 	    Path;
-	{Path,AfterPath} ->
+	{Path, _AfterPath} ->
 	    Path
     end.
 
@@ -153,22 +156,22 @@ path(Data, ConfigDB, RequestURI) ->
 
 %% load
 
-load([$D,$i,$r,$e,$c,$t,$o,$r,$y,$I,$n,$d,$e,$x,$ |DirectoryIndex],[]) ->
+load("DirectoryIndex " ++ DirectoryIndex, []) ->
     {ok, DirectoryIndexes} = regexp:split(DirectoryIndex," "),
     {ok,[], {directory_index, DirectoryIndexes}};
-load([$A,$l,$i,$a,$s,$ |Alias],[]) ->
+load("Alias " ++ Alias,[]) ->
     case regexp:split(Alias," ") of
 	{ok, [FakeName, RealName]} ->
 	    {ok,[],{alias,{FakeName,RealName}}};
 	{ok, _} ->
 	    {error,?NICE(httpd_conf:clean(Alias)++" is an invalid Alias")}
     end;
-load([$S,$c,$r,$i,$p,$t,$A,$l,$i,$a,$s,$ |ScriptAlias],[]) ->
-    case regexp:split(ScriptAlias," ") of
+load("ScriptAlias " ++ ScriptAlias, []) ->
+    case regexp:split(ScriptAlias, " ") of
 	{ok, [FakeName, RealName]} ->
 	    %% Make sure the path always has a trailing slash..
 	    RealName1 = filename:join(filename:split(RealName)),
-	    {ok, [], {script_alias,{FakeName, RealName1++"/"}}};
+	    {ok, [], {script_alias, {FakeName, RealName1++"/"}}};
 	{ok, _} ->
 	    {error, ?NICE(httpd_conf:clean(ScriptAlias)++
 			  " is an invalid ScriptAlias")}

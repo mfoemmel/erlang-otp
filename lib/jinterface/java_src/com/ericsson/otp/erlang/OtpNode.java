@@ -176,9 +176,9 @@ public class OtpNode extends OtpLocalNode {
   }
 
   /**
-   * Close the specified mailbox.
+   * Close the specified mailbox with reason 'normal'.
    *
-   * @param the mailbox to close.
+   * @param mbox the mailbox to close.
    *
    * <p> After this operation, the mailbox will no longer be able to
    * receive messages. Any delivered but as yet unretrieved messages
@@ -186,16 +186,36 @@ public class OtpNode extends OtpLocalNode {
    *
    * <p> If there are links from the mailbox to other {@link
    * OtpErlangPid pids}, they will be broken when this method is
-   * called and exit signals will be sent. </p>
+   * called and exit signals with reason 'normal' will be sent. </p>
    *
    **/
   public void closeMbox(OtpMbox mbox) {
+    closeMbox(mbox,new OtpErlangAtom("normal"));
+  }
+
+  /**
+   * Close the specified mailbox with the given reason.
+   *
+   * @param mbox the mailbox to close.
+   * @param reason an Erlang term describing the reason for the termination.
+   *
+   * <p> After this operation, the mailbox will no longer be able to
+   * receive messages. Any delivered but as yet unretrieved messages
+   * can still be retrieved however. </p>
+   *
+   * <p> If there are links from the mailbox to other {@link
+   * OtpErlangPid pids}, they will be broken when this method is
+   * called and exit signals with the given reason will be sent. </p>
+   *
+   **/
+  public void closeMbox(OtpMbox mbox, OtpErlangObject reason) {
     if (mbox != null) {
       mboxes.remove(mbox);
       mbox.name = null;
-      mbox.breakLinks("normal");
+      mbox.breakLinks(reason);
     }
-  }
+  }	
+
   
   /**
    * Create an named mailbox that can be used to send and receive
@@ -307,8 +327,13 @@ public class OtpNode extends OtpLocalNode {
    *  {#Ref<bingo@aule.2>,yes}
    */
   public boolean ping(String node, long timeout) {
-    if (node.equals(this.node)) return true;
+    if (node.equals(this.node)) 
+      return true;
+    else if (node.indexOf('@',0)<0 && 
+	     node.equals(this.node.substring(0,this.node.indexOf('@',0))))
+      return true;
     
+    // other node
     OtpMbox mbox = null;
     try {
       mbox = createMbox();
@@ -634,6 +659,7 @@ public class OtpNode extends OtpLocalNode {
       unPublishPort();
       done = true;
       closeSock(sock);
+      localStatus(node,false,null);
     }
 
 
@@ -669,7 +695,11 @@ public class OtpNode extends OtpLocalNode {
 	  newsock = sock.accept();
 	}
 	catch (Exception e) {
-	  localStatus(node,false,e);
+	  // Problem in java1.2.2: accept throws SocketException
+	  // when socket is closed. This will happen when acceptor.quit()
+	  // is called. acceptor.quit() will call localStatus(...), so
+	  // we have to check if that's where we come from.
+	  if (!done) localStatus(node,false,e);
 	  break accept_loop;
 	}
 

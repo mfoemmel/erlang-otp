@@ -1266,21 +1266,20 @@ trace_proc_spawn(Process *p, Eterm pid,
     }
 }
 
-void save_calls(p, e)
-Process *p; Export *e;
+void save_calls(Process *p, Export *e)
 {
-   Export **ct;
+   if (p->ct) {
+     Export **ct = &p->ct->ct[0];
+     int len = p->ct->len;
 
-   if (p->ct == NULL)
-      return;
-   ct = &p->ct->ct[0];
-
-   ct[p->ct->cur] = e;
-   if (++p->ct->cur >= p->ct->len) {
-      p->ct->cur = 0;
+     ct[p->ct->cur] = e;
+     if (++p->ct->cur >= len) {
+       p->ct->cur = 0;
+     }
+     if (p->ct->n < len) {
+       p->ct->n++;
+     }
    }
-   if (p->ct->n < p->ct->len)
-      p->ct->n++;
 }
 
 /* 
@@ -1425,14 +1424,22 @@ trace_gc(Process *p, Eterm what)
     }
 
     CONS_PAIR(am_heap_size, make_small(HEAP_TOP(p) - HEAP_START(p)));
+#if (defined(NOMOVE) && defined(SHARED_HEAP))
+    CONS_PAIR(am_old_heap_size, make_small(0));
+#else
     CONS_PAIR(am_old_heap_size, make_small(OLD_HTOP(p) - OLD_HEAP(p)));
+#endif
     CONS_PAIR(am_stack_size, make_small(STACK_START(p) - p->stop));
     CONS_PAIR(am_recent_size, make_small(HIGH_WATER(p) - HEAP_START(p)));
     CONS_PAIR(am_mbuf_size, make_small(MBUF_SIZE(p)));
     CONS_PAIR(am_heap_block_size, make_small(HEAP_SIZE(p)));
+#if (defined(NOMOVE) && defined(SHARED_HEAP))
+    CONS_PAIR(am_old_heap_block_size, make_small(0));
+#else
     CONS_PAIR(am_old_heap_block_size, make_small(OLD_HEAP(p)
 						 ? OLD_HEND(p) - OLD_HEAP(p)
 						 : 0));
+#endif
 
     msg = TUPLE4(hp, am_trace, p->id/* Local pid */, what, msg);
     hp += 5;
@@ -1451,29 +1458,27 @@ trace_gc(Process *p, Eterm what)
 
 void
 monitor_long_gc(Process *p, Uint time) {
-    Process *monitor_p, *mp;
+    Process *monitor_p;
     Eterm *hp, timeout, tuple, list, msg;
-    
-#define CONS_PAIR(key, val) \
-    tuple = TUPLE2(hp, (key), (val)); hp += 3; \
-    list = CONS(hp, tuple, list); hp += 2
-    
+
     ASSERT(is_internal_pid(erts_system_monitor)
 	   && internal_pid_index(erts_system_monitor) < erts_max_processes);
     monitor_p = process_tab[internal_pid_index(erts_system_monitor)];
-    if (INVALID_PID(monitor_p, erts_system_monitor)
-	|| (monitor_p->flags & F_TRACER) == 0) {
+    if (INVALID_PID(monitor_p, erts_system_monitor) || p == monitor_p) {
 	return;
     }
+#define CONS_PAIR(key, val) \
+    tuple = TUPLE2(hp, (key), (val)); hp += 3; \
+    list = CONS(hp, tuple, list); hp += 2
 #ifdef SHARED_HEAP
-    /* The running process has the updated heap pointers! */
-    mp = monitor_p;
+    /* Not very interesting to trace long_gc for shared heap.
+     * Furthermore all allocations are scary since the GC is not done yet. 
+     */
+    return;
 #else
-    mp = monitor_p;
-#endif
-    timeout = make_small_or_big(time, mp);
     /* XXX Multi-thread note: Perhaps allocating on another process's heap. */
-    hp = HAlloc(mp, 30);
+    timeout = make_small_or_big(time, monitor_p); /* Hidden ArithAlloc() */
+    hp = HAlloc(monitor_p, 30);
     list = NIL;
     CONS_PAIR(am_heap_size, make_small(HEAP_TOP(p) - HEAP_START(p)));
     CONS_PAIR(am_stack_size, make_small(STACK_START(p) - p->stop));
@@ -1483,33 +1488,32 @@ monitor_long_gc(Process *p, Uint time) {
     msg = TUPLE4(hp, am_monitor, p->id/* Local pid */, am_long_gc, list); 
     hp += 5;
     queue_message_tt(monitor_p, NULL, msg, NIL);
+#endif
 #undef CONS_PAIR
 }
 
 void
 monitor_large_heap(Process *p) {
-    Process *monitor_p, *mp;
+    Process *monitor_p;
     Eterm *hp, tuple, list, msg;
-    
-#define CONS_PAIR(key, val) \
-    tuple = TUPLE2(hp, (key), (val)); hp += 3; \
-    list = CONS(hp, tuple, list); hp += 2
     
     ASSERT(is_internal_pid(erts_system_monitor)
 	   && internal_pid_index(erts_system_monitor) < erts_max_processes);
     monitor_p = process_tab[internal_pid_index(erts_system_monitor)];
-    if (INVALID_PID(monitor_p, erts_system_monitor)
-	|| (monitor_p->flags & F_TRACER) == 0) {
+    if (INVALID_PID(monitor_p, erts_system_monitor) || p == monitor_p) {
 	return;
     }
+#define CONS_PAIR(key, val) \
+    tuple = TUPLE2(hp, (key), (val)); hp += 3; \
+    list = CONS(hp, tuple, list); hp += 2
 #ifdef SHARED_HEAP
-    /* The running process has the updated heap pointers! */
-    mp = monitor_p;
+    /* Not very interesting to trace large_heap for shared heap.
+     * Furthermore all allocations are scary since the GC is not done yet. 
+     */
+    return;
 #else
-    mp = monitor_p;
-#endif
     /* XXX Multi-thread note: Perhaps allocating on another process's heap. */
-    hp = HAlloc(mp, 25);
+    hp = HAlloc(monitor_p, 25);
     list = NIL;
     CONS_PAIR(am_heap_size, make_small(HEAP_TOP(p) - HEAP_START(p)));
     CONS_PAIR(am_stack_size, make_small(STACK_START(p) - p->stop));
@@ -1518,29 +1522,28 @@ monitor_large_heap(Process *p) {
     msg = TUPLE4(hp, am_monitor, p->id/* Local pid */, am_large_heap, list); 
     hp += 5;
     queue_message_tt(monitor_p, NULL, msg, NIL);
+#endif
 #undef CONS_PAIR
 }
 
 void
 monitor_generic(Process *p, Eterm type, Eterm spec) {
-    Process *monitor_p, *mp;
+    Process *monitor_p;
     Eterm *hp, msg;
     
     ASSERT(is_internal_pid(erts_system_monitor)
 	   && internal_pid_index(erts_system_monitor) < erts_max_processes);
     monitor_p = process_tab[internal_pid_index(erts_system_monitor)];
-    if (INVALID_PID(monitor_p, erts_system_monitor)
-	|| (monitor_p->flags & F_TRACER) == 0) {
+    if (INVALID_PID(monitor_p, erts_system_monitor) || p == monitor_p) {
 	return;
     }
 #ifdef SHARED_HEAP
     /* The running process has the updated heap pointers! */
-    mp = monitor_p;
+    hp = HAlloc(p, 5);
 #else
-    mp = monitor_p;
-#endif
     /* XXX Multi-thread note: Perhaps allocating on another process's heap. */
-    hp = HAlloc(mp, 5);
+    hp = HAlloc(monitor_p, 5);
+#endif
     msg = TUPLE4(hp, am_monitor, p->id/* Local pid */, type, spec); 
     hp += 5;
     queue_message_tt(monitor_p, NULL, msg, NIL);

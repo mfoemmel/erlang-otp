@@ -31,10 +31,10 @@
 -export([analyze/1, annotate/1]).
 
 -import(cerl, [ann_c_apply/3, ann_c_fun/3, ann_c_var/2, apply_args/1,
-	       apply_op/1, atom_val/1, bin_seg_size/1, bin_seg_val/1,
-	       binary_segs/1, c_letrec/2, c_seq/2, c_tuple/1, c_nil/0,
-	       call_args/1, call_module/1, call_name/1, case_arg/1,
-	       case_clauses/1, catch_body/1, clause_body/1,
+	       apply_op/1, atom_val/1, bitstr_size/1, bitstr_val/1,
+	       binary_segments/1, c_letrec/2, c_seq/2, c_tuple/1,
+	       c_nil/0, call_args/1, call_module/1, call_name/1,
+	       case_arg/1, case_clauses/1, catch_body/1, clause_body/1,
 	       clause_guard/1, clause_pats/1, cons_hd/1, cons_tl/1,
 	       fun_body/1, fun_vars/1, get_ann/1, is_c_atom/1,
 	       let_arg/1, let_body/1, let_vars/1, letrec_body/1,
@@ -384,12 +384,12 @@ visit(T, L, St) ->
 	    {_, St1} = visit(catch_body(T), L, St),
 	    {[singleton(external)], St1};
 	binary ->
-	    {_, St1} = visit_list(binary_segs(T), L, St),
+	    {_, St1} = visit_list(binary_segments(T), L, St),
 	    {[empty()], St1};
-	bin_seg ->
+	bitstr ->
 	    %% The other fields are constant literals.
-	    {_, St1} = visit(bin_seg_val(T), L, St),
-	    {_, St2} = visit(bin_seg_size(T), L, St1),
+	    {_, St1} = visit(bitstr_val(T), L, St),
+	    {_, St2} = visit(bitstr_size(T), L, St1),
 	    {none, St2};
 	letrec ->
 	    %% All the bound funs should be revisited, because the
@@ -626,11 +626,12 @@ set_parent([], _L1, D) ->
 
 primop_call(F, A, Xs, St0) ->
     case is_pure_op(F, A) of
-	true ->
-	    case is_literal_op(F, A) of
-		true -> {[empty()], St0};
-		false -> {[join_single_list(Xs)], St0}
-	    end;
+	%% XXX: this case is currently not possible -- commented out.
+	%% true ->
+	%%    case is_literal_op(F, A) of
+	%%	true -> {[empty()], St0};
+	%%	false -> {[join_single_list(Xs)], St0}
+	%%    end;
 	false ->
 	    St1 = case is_escape_op(F, A) of
 		      true -> escape([join_single_list(Xs)], St0);
@@ -745,8 +746,10 @@ queue__new() -> {[], []}.
 queue__put(X, {In, Out}) -> {[X | In], Out}.
 
 queue__get({In, [X | Out]}) -> {ok, X, {In, Out}};
-queue__get({[], []}) -> empty;
-queue__get({[X | In], _}) -> {ok, X, {[], lists:reverse(In)}}.
+queue__get({[], _}) -> empty;
+queue__get({In, _}) ->
+    [X | In1] = lists:reverse(In),
+    {ok, X, {[], In1}}.
 
 %% The work list - a queue without repeated elements.
 
@@ -792,6 +795,8 @@ get_label(T) ->
 is_escape_op(match_fail, 1) -> false; 
 is_escape_op(_F, _A) -> true.
 
+is_escape_op(erlang, error, 1) -> false;
+is_escape_op(erlang, error, 2) -> false;
 is_escape_op(erlang, fault, 1) -> false;
 is_escape_op(erlang, fault, 2) -> false;
 is_escape_op(_M, _F, _A) -> true.
@@ -829,6 +834,8 @@ is_literal_op(erlang, throw, 1) -> true;
 is_literal_op(erlang, exit, 1) -> true;
 is_literal_op(erlang, fault, 1) -> true;
 is_literal_op(erlang, fault, 2) -> true;
+is_literal_op(erlang, error, 1) -> true;
+is_literal_op(erlang, error, 2) -> true;
 is_literal_op(_, _, _) -> false.
 
 %% Pure functions neither affect the state, nor depend on it.

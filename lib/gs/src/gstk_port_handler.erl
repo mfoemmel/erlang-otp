@@ -428,19 +428,12 @@ join_cmd_reverse(Cmd, [Cmd1 | Cmds], DeepStr) ->
 
 handle_input(State,[Type | Data]) ->
     GstkPid = State#state.gstk,
-    Mode = xxxx,
     case Type of
 	1 ->
 	    handle_event(GstkPid,Data);
 
-	2 when Mode =:= idle ->
-	    gs:error("gstk_port_handler: unexpected reply: ~s~n",[Data]);
-
 	2 ->
 	    GstkPid ! {result, Data};
-
-	3 when Mode =:= idle ->
-	    gs:error("gstk_port_handler: unexpected error reply: ~s~n",[Data]);
 
 	3 ->
 	    GstkPid ! {bad_result, Data};

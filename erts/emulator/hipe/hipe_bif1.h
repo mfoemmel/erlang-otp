@@ -11,4 +11,6 @@ struct hipe_call_count {
     Uint opcode;
 };
 
+extern unsigned int hipe_trap_count;
+
 #endif /* HIPE_BIF1_H */

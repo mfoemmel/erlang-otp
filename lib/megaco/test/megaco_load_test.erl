@@ -36,6 +36,9 @@
 -define(MGC_START(Pid, Mid, ET, Verb), 
         megaco_test_mgc:start(Pid, Mid, ET, Verb)).
 -define(MGC_STOP(Pid), megaco_test_mgc:stop(Pid)).
+-define(MGC_USER_INFO(Pid,Tag), megaco_test_mgc:user_info(Pid,Tag)).
+-define(MGC_CONN_INFO(Pid,Tag), megaco_test_mgc:conn_info(Pid,Tag)).
+-define(MGC_SET_VERBOSITY(Pid, V), megaco_test_mgc:verbosity(Pid, V)).
 
 -define(MG_START(Pid, Mid, Enc, Transp, Conf, Verb), 
         megaco_test_mg:start(Pid, Mid, Enc, Transp, Conf, Verb)).
@@ -46,6 +49,7 @@
 -define(MG_MLOAD(Pid, NL, NR), 
 	timer:tc(megaco_test_mg, apply_multi_load, [Pid, NL, NR])).
 -define(MG_LOAD(Pid, NL, NR), megaco_test_mg:apply_multi_load(Pid, NL, NR)).
+-define(MG_SET_VERBOSITY(Pid, V), megaco_test_mg:verbosity(Pid, V)).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -77,14 +81,14 @@ fin_per_testcase(Case, Config) ->
 all(suite) ->
     Cases = 
 	[
-	 single_user_light_load,
-	 single_user_medium_load,
-	 single_user_heavy_load,
-	 single_user_extreme_load,
-	 multi_user_light_load,
-	 multi_user_medium_load,
-	 multi_user_heavy_load,
-	 multi_user_extreme_load
+ 	 single_user_light_load,
+ 	 single_user_medium_load,
+ 	 single_user_heavy_load,
+ 	 single_user_extreme_load,
+ 	 multi_user_light_load,
+ 	 multi_user_medium_load,
+ 	 multi_user_heavy_load,
+ 	 multi_user_extreme_load
 	].
 
 
@@ -259,6 +263,9 @@ single_user_load(NumLoaders) ->
     ServChRes = ?MG_SERV_CHANGE(Mg),
     d("service change result: ~p", [ServChRes]),
 
+    megaco_test_mg:update_conn_info(Mg,reply_timer,1000),
+    megaco_test_mgc:update_conn_info(Mgc,reply_timer,1000),
+
     d("MG conn info: ~p", [?MG_CONN_INFO(Mg, all)]),
 
     d("apply the load"),
@@ -277,13 +284,24 @@ single_user_load(NumLoaders) ->
 		      [Error, Time])
     end,
 
+    i("flush the message queue: ~p", [megaco_test_lib:flush()]),
+    
+    i("verbosity to trace"),
+    ?MGC_SET_VERBOSITY(Mgc, debug),
+    ?MG_SET_VERBOSITY(Mg, debug),
+
     %% Tell MG to stop
     i("[MG] stop"),
     ?MG_STOP(Mg),
 
+    i("flush the message queue: ~p", [megaco_test_lib:flush()]),
+
     %% Tell Mgc to stop
     i("[MGC] stop"),
     ?MGC_STOP(Mgc),
+
+    i("flush the message queue: ~p", [megaco_test_lib:flush()]),
+    
     ok.
 
 
@@ -306,14 +324,24 @@ multi_user_load(NumUsers, NumLoaders)
     ET     = [{text,tcp}],
     {ok, Mgc} = ?MGC_START(MgcNode, MgcMid, ET, ?MGC_VERBOSITY),
 
+    megaco_test_mgc:update_user_info(Mgc,reply_timer,1000),
+    d("MGC user info: ~p", [?MGC_USER_INFO(Mgc, all)]),
+
     MgUsers = make_mids(MgNodes),
 
     d("start MGs, apply the load and stop MGs"),
     ok = multi_load(MgUsers, NumLoaders, ?MULTI_USER_LOAD_NUM_REQUESTS),
 
+    i("flush the message queue: ~p", [megaco_test_lib:flush()]),
+
+    ?MGC_SET_VERBOSITY(Mgc, debug),
+
     %% Tell Mgc to stop
     i("[MGC] stop"),
     ?MGC_STOP(Mgc),
+
+    i("flush the message queue: ~p", [megaco_test_lib:flush()]),
+
     ok.
 
 
@@ -342,17 +370,29 @@ do_multi_load(Pids, NumLoaders, NumReqs) ->
 multi_load_collector_start([], _NumLoaders, _NumReqs, Pids) ->
     Pids;
 multi_load_collector_start([{Mid, Node}|MGs], NumLoaders, NumReqs, Pids) ->
+    Env = get(),
     Pid = spawn_link(?MODULE, multi_load_collector, 
-		     [self(), Node, Mid, NumLoaders, NumReqs]),
+		     [self(), Node, Mid, NumLoaders, NumReqs, Env]),
     multi_load_collector_start(MGs, NumLoaders, NumReqs, [Pid|Pids]).
 
+get_env(Key, Env) ->
+    case lists:keysearch(Key, 1, Env) of
+	{value, {Key, Val}} ->
+	    Val;
+	_ ->
+	    undefined
+    end.
 
-multi_load_collector(Parent, Node, Mid, NumLoaders, NumReqs) ->
+multi_load_collector(Parent, Node, Mid, NumLoaders, NumReqs, Env) ->
+    put(verbosity, get_env(verbosity, Env)),
+    put(tc, get_env(tc, Env)),
+    put(sname, get_env(sname, Env) ++ "-loader"),
     case ?MG_START(Node, Mid, text, tcp, [], ?MG_VERBOSITY) of
 	{ok, Pid} ->
 	    d("MG ~p user info: ~n~p", [Mid, ?MG_USER_INFO(Pid,all)]),
 	    ServChRes = ?MG_SERV_CHANGE(Pid),
 	    d("service change result: ~p", [ServChRes]),
+	    megaco_test_mg:update_conn_info(Pid,reply_timer,1000),
 	    d("MG ~p conn info: ~p", [Mid, ?MG_CONN_INFO(Pid,all)]),
 	    multi_load_collector_loop(Parent, Pid, Mid, NumLoaders, NumReqs);
 	Else ->
@@ -364,6 +404,7 @@ multi_load_collector_loop(Perent, Pid, Mid, NumLoaders, NumReqs) ->
 	{apply_multi_load, Parent} ->
 	    Res = ?MG_LOAD(Pid, NumLoaders, NumReqs),
 	    Parent ! {load_complete, self(), Mid, Res},
+	    ?MG_SET_VERBOSITY(Pid, debug),
 	    ?MG_STOP(Pid),
 	    exit(normal)
     end.    

@@ -59,8 +59,6 @@
 %%%               ?MIN_MD5_TERM, a logged item looks like
 %%%               <<Size:32, ?BIGMAGICHEAD:32, MD5:128, Term/binary>>,
 %%%               otherwise <<Size:32, ?BIGMAGICHEAD:32, Term/binary>>.
-%%% This version of disk_log_1 uses Version 1 for written terms and
-%%% recognizes Version 2(a) when reading terms.
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -82,7 +80,14 @@ logl(X) ->
 
 logl([X | T], Bs, Size) ->
     Sz = size(X),
-    NBs = [Bs, <<Sz:?SIZESZ/unit:8>>, ?MAGICHEAD | X],
+    BSz = <<Sz:?SIZESZ/unit:8>>,
+    NBs = case Sz < ?MIN_MD5_TERM of
+              true ->
+                  [Bs, BSz, ?BIGMAGICHEAD | X];
+              false ->
+                  MD5 = erlang:md5(BSz),
+                  [Bs, BSz, ?BIGMAGICHEAD, MD5 | X]
+              end,
     logl(T, NBs, Size + ?HEADERSZ + Sz);
 logl([], Bs, Size) ->
     {Bs, Size}.
@@ -476,18 +481,18 @@ lh({M, F, A}, Format) when list(A) ->
 	Error ->
 	    {error, {invalid_header, {{M,F,A}, Error}}}
     end;
-lh({M, F, A}, _Format) ->
+lh({M, F, A}, _Format) -> % cannot happen
     {error, {invalid_header, {M, F, A}}};
 lh(none, _Format) ->
     none;
-lh(H, _F) ->
+lh(H, _F) -> % cannot happen
     {error, {invalid_header, H}}.
 
 repair(In, File) ->
+    FSz = file_size(File),
     error_logger:info_msg("disk_log: repairing ~p ...\n", [File]),
     Tmp = add_ext(File, "TMP"),
     {ok, {_Alloc, Out, {0, _}, _FileSize}} = new_int_file(Tmp, none),
-    FSz = file_size(File),
     scan_f_read(<<>>, In, Out, File, FSz, Tmp, ?MAX_CHUNK_SIZE, 0, 0).
 
 scan_f_read(B, In, Out, File, FSz, Tmp, MaxBytes, No, Bad) ->
@@ -500,8 +505,7 @@ scan_f_read(B, In, Out, File, FSz, Tmp, MaxBytes, No, Bad) ->
                 scan_f(NewBin, FSz, [], No, Bad),
             case log(Out, Tmp, lists:reverse(Ack)) of
                 {ok, _Size, NewOut} ->
-                    scan_f_read(NB, In, NewOut, File, FSz, Tmp, 
-                                NMax, NNo, NBad);
+                    scan_f_read(NB, In, NewOut, File, FSz, Tmp, NMax,NNo,NBad);
                 {{error, {file_error, _Filename, Error}}, NewOut} ->
                     repair_err(In, NewOut, Tmp, File, {error, Error})
             end;
@@ -559,24 +563,24 @@ scan_f2(B, FSz, Ack, No, Bad, Size, Tail) ->
 done_scan(In, Out, OutName, FName, RecoveredTerms, BadChars) ->
     file:close(In),
     case catch fclose(Out, OutName) of
-	ok ->
-	    case file:rename(OutName, FName) of
-		ok ->
-		    case open_update(FName) of
-			{ok, New} ->
-			    {ok, P} = position_close2(New, FName, eof),
+        ok ->
+            case file:rename(OutName, FName) of
+                ok ->
+                    case open_update(FName) of
+                        {ok, New} ->
+                            {ok, P} = position_close2(New, FName, eof),
                             FdC = #cache{fd = New},
-			    {repaired, FdC, RecoveredTerms, BadChars, P};
-			Error ->
-			    file_error(FName, Error)
-		    end;
-		Error ->
-		    file:delete(OutName),
-		    file_error(FName, Error)
-	    end;
-	Error ->
-	    file:delete(OutName),
-	    throw(Error)
+                            {repaired, FdC, RecoveredTerms, BadChars, P};
+                        Error ->
+                            file_error(FName, Error)
+                    end;
+                Error ->
+                    file:delete(OutName),
+                    file_error(FName, Error)
+            end;
+        Error ->
+            file:delete(OutName),
+            throw(Error)
     end.
    
 repair_err(In, Out, OutName, ErrFileName, Error) ->
@@ -1089,7 +1093,7 @@ write_index_file(read_write, FName, NewFile, OldFile, OldCnt) ->
 				position_close2(Fd, FileName, bof),
 				Bin = <<0, 0:32, ?VERSION, NewFile:32>>,
 				fwrite_close2(Fd, FileName, Bin),
-				NewTail = to_8_bytes(Tail, []),
+				NewTail = to_8_bytes(Tail, [], FileName, Fd),
 				fwrite_close2(Fd, FileName, NewTail),
 				{10, 8};
 			    Error ->
@@ -1109,7 +1113,8 @@ write_index_file(read_write, FName, NewFile, OldFile, OldCnt) ->
 		    file:close(Fd),
 		    case R of
 			{ok, <<Lost:SzSz/unit:8>>} -> Lost;
-			{ok, _} -> 0; % Should be reported?
+			{ok, _} -> 
+                            throw({error, {invalid_index_file, FileName}});
 			eof    -> 0;
 			Error2 -> file_error(FileName, Error2)
 		    end;
@@ -1122,10 +1127,13 @@ write_index_file(read_write, FName, NewFile, OldFile, OldCnt) ->
 	    file_error(FileName, E)
     end.
 
-to_8_bytes(B, NT) when size(B) == 0 ->
+to_8_bytes(<<N:32,T/binary>>, NT, FileName, Fd) ->
+    to_8_bytes(T, [NT | <<N:64>>], FileName, Fd);
+to_8_bytes(B, NT, _FileName, _Fd) when size(B) == 0 ->
     NT;
-to_8_bytes(<<N:32,T/binary>>, NT) ->
-    to_8_bytes(T, [NT | <<N:64>>]).
+to_8_bytes(_B, _NT, FileName, Fd) ->
+    file:close(Fd),
+    throw({error, {invalid_index_file, FileName}}).
 
 %% -> ok | throw(FileError)
 index_file_trunc(FName, N) ->
@@ -1276,7 +1284,14 @@ int_split_bins(CurB, MaxB, FirstPos, Bins) ->
 int_split_bins(MaxBs, IsFirst, First, [X | Last], Bs, N) ->
     Sz = size(X),
     NBs = Bs + Sz + ?HEADERSZ,
-    XB = [<<Sz:?SIZESZ/unit:8>>, ?MAGICHEAD | X],
+    BSz = <<Sz:?SIZESZ/unit:8>>,
+    XB = case Sz < ?MIN_MD5_TERM of
+             true ->
+                 [BSz, ?BIGMAGICHEAD | X];
+             false ->
+                 MD5 = erlang:md5(BSz),
+                 [BSz, ?BIGMAGICHEAD, MD5 | X]
+         end,
     if
         NBs =< MaxBs ->
 	    int_split_bins(MaxBs, IsFirst, [First | XB], Last, NBs, N+1);

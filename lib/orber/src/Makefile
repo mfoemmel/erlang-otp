@@ -17,10 +17,6 @@
 #
 include $(ERL_TOP)/make/target.mk
 
-ifeq ($(TYPE),debug)
-ERL_COMPILE_FLAGS += -Ddebug -W
-endif
-
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 # ----------------------------------------------------
@@ -99,7 +95,10 @@ MODULES= \
 	orber_iiop_tracer_silent \
 	fixed \
 	orber_exceptions \
-	orber_diagnostics
+	orber_diagnostics \
+	orber_acl \
+	orber_env \
+	orber_tb
 
 
 EXTERNAL_HRL_FILES= ../include/corba.hrl \

@@ -9,10 +9,6 @@
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
 #     $Id$
 #
 
@@ -47,9 +43,12 @@ MODULES = hipe_degree hipe_ig hipe_ig_moves hipe_moves \
 	  hipe_temp_map \
 	  hipe_coalescing_regalloc \
 	  hipe_graph_coloring_regalloc \
+	  hipe_regalloc_loop \
 	  hipe_ls_regalloc \
 	  hipe_sparc_specific hipe_sparc_specific_fp \
-	  hipe_x86_specific hipe_x86_specific_fp
+	  hipe_ppc_specific \
+	  hipe_x86_specific hipe_x86_specific_fp \
+	  hipe_amd64_specific hipe_amd64_specific_sse2 hipe_amd64_specific_x87
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
@@ -83,7 +82,7 @@ clean:
 	rm -f core
 
 $(DOCS)/%.html:%.erl
-	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s erlang halt
+	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s init stop
 
 # ----------------------------------------------------
 # Special Build Targets
@@ -103,6 +102,8 @@ release_spec: opt
 release_docs_spec:
 
 $(EBIN)/hipe_coalescing_regalloc.beam: ../main/hipe.hrl
-$(EBIN)/hipe_ls_regalloc.beam: ../main/hipe.hrl ../util/hipe_vector.hrl
-$(EBIN)/hipe_ls_uc_regalloc.beam: ../main/hipe.hrl ../util/hipe_vector.hrl
-$(EBIN)/hipe_temp_map: ../main/hipe.hrl
+$(EBIN)/hipe_graph_coloring_regalloc.beam: ../main/hipe.hrl
+$(EBIN)/hipe_ls_regalloc.beam: ../main/hipe.hrl
+$(EBIN)/hipe_ls_uc_regalloc.beam: ../main/hipe.hrl
+$(EBIN)/hipe_temp_map.beam: ../main/hipe.hrl
+$(EBIN)/hipe_regalloc_loop.beam: ../main/hipe.hrl

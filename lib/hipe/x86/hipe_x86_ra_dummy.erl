@@ -11,24 +11,21 @@
 ra(X86Defun, Coloring_fp, Options) ->
     #defun{code=Code0} = X86Defun,
     Code1 = do_insns(Code0),
-    %% Record all pseudos as spilled.
-    %%     ?add_spills(Options, hipe_gensym:get_var() -
-    %% 		hipe_x86_registers:first_virtual()),
     NofSpilledFloats = count_non_float_spills(Coloring_fp),
     NofFloats = length(Coloring_fp),
-    ?add_spills(Options, hipe_gensym:get_var() -
+    ?add_spills(Options, hipe_gensym:get_var(x86) -
 		hipe_x86_registers:first_virtual()-
 		NofSpilledFloats -
 		NofFloats),
     TempMap = [],
     {X86Defun#defun{code=Code1,
-		    var_range={0, hipe_gensym:get_var()}},
+		    var_range={0, hipe_gensym:get_var(x86)}},
      TempMap}.
 
 count_non_float_spills(Coloring_fp)->
     count_non_float_spills(Coloring_fp,0).
 count_non_float_spills([{_,To}|Tail], Num)->
-    case hipe_x86_specific_fp:is_precolored(To) of
+    case hipe_x86_specific_fp:is_precoloured(To) of
 	true ->
 	    count_non_float_spills(Tail, Num);
 	_ ->
@@ -58,8 +55,8 @@ do_insn(I) ->	% Insn -> Insn list
 	    do_movx(I);
 	#movsx{} ->
 	    do_movx(I);
-	#fmov{} ->
- 	    do_fmov(I);
+	#fmove{} ->
+ 	    do_fmove(I);
 % 	#fp_unop{} ->
 % 	    do_fp_unop(I);
 % 	#fp_binop{} ->
@@ -152,12 +149,12 @@ do_movx(I) ->
 
 
 
-%%% Fix a fmov op.
+%%% Fix a fmove op.
 
-do_fmov(I) ->
-    #fmov{src=Src0,dst=Dst0} = I,
+do_fmove(I) ->
+    #fmove{src=Src0,dst=Dst0} = I,
     {FixSrc, Src, FixDst, Dst} = do_binary(Src0, Dst0),
-    FixSrc ++ FixDst ++ [I#fmov{src=Src,dst=Dst}].
+    FixSrc ++ FixDst ++ [I#fmove{src=Src,dst=Dst}].
 
 do_shift(I) ->
     #shift{src=Src0,dst=Dst0} = I,

@@ -1,58 +1,102 @@
 %%% -*- Erlang -*-
 %%% -*- erlang-indent-level: 2 -*-
 %%%-------------------------------------------------------------------
-%%% File    : hipe_ssa_copy_prop.inc
-%%% Author  : Tobias Lindahl <tobiasl@fan.it.uu.se>
-%%% Description : Copy propagation on ssa form.
+%%% File        : hipe_ssa_copy_prop.inc
+%%% Author      : Tobias Lindahl <tobiasl@it.uu.se>
+%%% Description : Copy propagation on SSA form.
 %%%
-%%% Created :  4 Apr 2003 by Tobias Lindahl <tobiasl@fan.it.uu.se>
+%%% Created     :  4 Apr 2003 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%-------------------------------------------------------------------
 
 -export([cfg/1]).
 
 %%--------------------------------------------------------------------
-%% Two passes through the code choosing the blocks in reverse
+%% Two passes through the code visiting the blocks in reverse
 %% postorder. The first pass binds all destinations of copying moves
-%% to the sources and propagates the copies, the second propagates the
-%% copies and removes the copying moves. 
+%% to the sources, and the second propagates the copies and removes 
+%% the copying moves. 
 %%
-%% Copies must not be propagated across the point of redefinition of
-%% the source variable. If the original value is used after the
-%% redefinition we must use this value and cannot remove the copying
-%% move.
-%% %%--------------------------------------------------------------------
+%% Problem:
+%% Since phi-nodes are implemented as instructions they are not
+%% atomic. If we are not careful we can get the situation (after propagation):
+%%
+%% v0 = phi(v0, v2)
+%% v1 = phi(v0, v3)
+%%          ^^
+%% where the underlined v0 really corresponds to the v0 before the first 
+%% phi-instruction.
+%%
+%% Solution: 
+%% * Find all dependencies between the uses of a
+%%   phi-instruction to the destination of any earlier phi-instruction
+%%   in the same phi-node; 
+%% * Keep the copying move/fmove that defines the variable used in the 
+%%   latter phi-instruction; and 
+%% * Do not propagate the copy into the phi-instruction
+%%
+%%--------------------------------------------------------------------
 
-cfg(Cfg)->
+cfg(Cfg) ->
   Labels = ?cfg:reverse_postorder(Cfg),
-  {Info, NewCfg1} = propagate(Labels, Cfg, gb_trees:empty(), fun first_pass/3),
-  {_, NewCfg2} = propagate(Labels, NewCfg1, Info, fun second_pass/3),
-  NewCfg2.
+  {Info,PhiDep} = analyse(Labels, Cfg, gb_trees:empty(), gb_sets:empty()),
+  rewrite(Labels, Cfg, Info, PhiDep).
 
-propagate([Label|Left], Cfg, Info, Fun)->
+analyse([Label|Left], Cfg, Info, PhiDep) ->
   BB = ?cfg:bb(Cfg, Label),
   Code = hipe_bb:code(BB),
-  {NewInfo, NewCode} = Fun(Code, Info, []),
-  NewBB = hipe_bb:code_update(BB, NewCode),
-  propagate(Left, ?cfg:bb_update(Cfg, Label, NewBB), NewInfo, Fun);
-propagate([], Cfg, Info, _Fun) ->
-  {Info, Cfg}.
+  NewPhiDep = get_phi_dep(Code, gb_sets:empty(), PhiDep),
+  NewInfo = analyse_code(Code, Info),
+  analyse(Left, Cfg, NewInfo, NewPhiDep);
+analyse([], _Cfg, Info, PhiDep) ->
+  {Info,PhiDep}.
 
-first_pass([I|Left], Info, Acc)->
+get_phi_dep([I|Left], Defined, Dep) ->
   case ?code:type(I) of
-    mov ->
-      NewInfo = get_info_mov_or_fmov(I, Info),
-      first_pass(Left, NewInfo, [I|Acc]);
-    fmov ->
-      NewInfo = get_info_mov_or_fmov(I, Info),
-      first_pass(Left, NewInfo, [I|Acc]);
+    phi ->
+      Use = ?code:uses(I),
+      [Def] = ?code:defines(I),
+      NewDep = add_dep(Use, Defined, Dep),
+      get_phi_dep(Left, gb_sets:insert(Def, Defined), NewDep);
     _ ->
-      {_, NewI} = propagate_instr(I, Info),
-      first_pass(Left, Info, [NewI|Acc])
+      Dep
   end;
-first_pass([], Info, Acc) ->
-  {Info, lists:reverse(Acc)}.
+get_phi_dep([], _Defined, Dep) ->
+  Dep.
 
-get_info_mov_or_fmov(I, Info)->
+add_dep([Use|Left], Defined, Dep) ->
+  case gb_trees:lookup(Use, Dep) of
+    none ->
+      add_dep(Left, Defined, gb_trees:insert(Use, Defined, Dep));
+    {value, Set} ->
+      NewSet = gb_sets:union(Defined, Set),
+      add_dep(Left, Defined, gb_trees:enter(Use, NewSet, Dep))
+  end;
+add_dep([], _Defined, Dep) ->
+  Dep.
+
+has_dep(Use, Def, Dep) ->
+  case gb_trees:lookup(Use, Dep) of
+    none ->
+      false;
+    {value, Set} ->
+      gb_sets:is_member(Def, Set)
+  end.
+
+analyse_code([I|Left], Info) ->
+  case ?code:type(I) of
+    move ->
+      NewInfo = get_info_move_or_fmove(I, Info),
+      analyse_code(Left, NewInfo);
+    fmove ->
+      NewInfo = get_info_move_or_fmove(I, Info),
+      analyse_code(Left, NewInfo);
+    _ ->
+      analyse_code(Left, Info)
+  end;
+analyse_code([], Info) ->
+  Info.
+
+get_info_move_or_fmove(I, Info) ->
   case ?code:uses(I) of
     [] -> %% Constant.
       Info;
@@ -60,57 +104,76 @@ get_info_mov_or_fmov(I, Info)->
       add_binding(?code:defines(I), Src, Info)
   end.
 
-second_pass([I|Left], Info, Acc)->
-  case ?code:type(I) of
-    mov ->
-      NewI = propagate_mov_or_fmov(I, Info),
-      second_pass(Left, Info, NewI++Acc);
-    fmov ->
-      NewI = propagate_mov_or_fmov(I, Info),
-      second_pass(Left, Info, NewI++Acc);
-    _ ->      
-      {NewInfo1, NewI} = propagate_instr(I, Info),
-      NewInfo2 = add_binding(?code:defines(I), 'redefined', NewInfo1),
-      second_pass(Left, NewInfo2, [NewI|Acc])
-  end;
-second_pass([], Info, Acc) ->
-  {Info, lists:reverse(Acc)}.
+rewrite([Label|Left], Cfg, Info, PhiDep) ->
+  BB = ?cfg:bb(Cfg, Label),
+  Code = hipe_bb:code(BB),
+  NewCode = rewrite_code(Code, Info, PhiDep, []),
+  NewBB = hipe_bb:code_update(BB, NewCode),
+  rewrite(Left, ?cfg:bb_add(Cfg, Label, NewBB), Info, PhiDep);
+rewrite([], Cfg, _Info, _PhiDep) ->
+  Cfg.
 
-propagate_mov_or_fmov(I, Info)->
+rewrite_code([I|Left], Info, PhiDep, Acc) ->
+  case ?code:type(I) of
+    move ->
+      Fun = fun(X, Y) -> ?code:mk_move(X, Y)end,
+      NewI = rewrite_move_or_fmove(I, Fun, Info, PhiDep),
+      rewrite_code(Left, Info, PhiDep, NewI++Acc);
+    fmove ->
+      Fun = fun(X, Y) -> ?code:mk_fmove(X, Y)end,
+      NewI = rewrite_move_or_fmove(I, Fun, Info, PhiDep),
+      rewrite_code(Left, Info, PhiDep, NewI++Acc);
+    _ ->      
+      NewI = rewrite_instr(I, Info, PhiDep),
+      rewrite_code(Left, Info, PhiDep, [NewI|Acc])
+  end;
+rewrite_code([], _Info, _PhiDep, Acc) ->
+  lists:reverse(Acc).
+
+rewrite_move_or_fmove(I, Fun, Info, PhiDep) ->
   case ?code:uses(I) of
-    [] ->%% Constant
+    [] ->%% Constant move. Keep it!
       [I];
     _ ->
-      case gb_trees:lookup(hd(?code:defines(I)), Info) of
-	none -> %% We must keep this instruction.
-	  [I];
-	_ ->
+      Dst = hd(?code:defines(I)),
+      case gb_trees:lookup(Dst, Info) of
+	{value, Root} -> 
+	  case has_dep(Dst, Root, PhiDep) of
+	    true -> %% Must keep the copying move!
+	      [Fun(Dst, Root)];
+	    false -> 
+	      []
+	  end;
+	none -> 
 	  []
       end
   end.
 
-propagate_instr(I, Info)->
-  propagate_instr0(I, ?code:uses(I), Info, []).
 
-propagate_instr0(I, [Key|Left], Info, UpdateInfo)->
+rewrite_instr(I, Info, PhiDep) ->
+  rewrite_instr0(I, ?code:uses(I), Info, PhiDep, []).
+
+rewrite_instr0(I, [Key|Left], Info, PhiDep, UpdateInfo) ->
   case gb_trees:lookup(Key, Info) of
-    {value, 'redefined'} ->
-      propagate_instr0(I, Left, Info, UpdateInfo);
-    {value, Val} ->
-      case  gb_trees:lookup(Val, Info) of
-	{value, 'redefined'} ->
-	  %%Remove the binding to show that the copying move cannot be removed.
-	  propagate_instr0(I, Left, gb_trees:delete(Key, Info), UpdateInfo);
+    none ->
+      rewrite_instr0(I, Left, Info, PhiDep, UpdateInfo);
+    {value, Root} -> 
+      case gb_trees:lookup(Key, Info) of
+	{value, Root} -> 
+	  case has_dep(Key, Root, PhiDep) of
+	    true -> %% Must keep Key!
+	      rewrite_instr0(I, Left, Info, PhiDep, UpdateInfo);
+	    false ->
+	      rewrite_instr0(I, Left, Info, PhiDep, [{Key, Root}|UpdateInfo])
+	  end;
 	_ ->
-	  propagate_instr0(I, Left, Info, [{Key, Val}|UpdateInfo])
-      end;
-    _ ->
-      propagate_instr0(I, Left, Info, UpdateInfo)
+	  rewrite_instr0(I, Left, Info, PhiDep, UpdateInfo)
+      end
   end;
-propagate_instr0(I, [], Info, UpdateInfo)->
-  {Info, ?code:subst(UpdateInfo, I)}.
+rewrite_instr0(I, [], _Info, _PhiDep, UpdateInfo) ->
+  ?code:subst(UpdateInfo, I).
 
-add_binding([Key|Left], Val, Info)->
+add_binding([Key|Left], Val, Info) ->
   %% Make sure the key is bound to the end of any copy-chains.
   NewInfo = 
     case gb_trees:lookup(Val, Info) of
@@ -122,3 +185,17 @@ add_binding([Key|Left], Val, Info)->
   add_binding(Left, Val, NewInfo);
 add_binding([], _, Info) ->
   Info.
+
+%% Returns the root of a 
+%lookup_binding(Key, Info)->
+%  case gb_trees:lookup(Key, Info) of
+%    {value, Val} ->
+%      case  gb_trees:lookup(Val, Info) of
+%	{value, Root} ->
+%	  {value, Root};
+%	none ->
+%	  {value, Val}
+%      end;
+%    none ->
+%      none
+%  end.

@@ -50,7 +50,7 @@ start(LogName) ->
         {error, Reason} ->
 	    ?tr_error_msg("Initiating internal log failed: ~p", [Reason]),
 	    exit({error, Reason});
-	{repaired, LogName, {recovered, Rec}, {badbytes, Bad}} ->
+	{repaired, LogName, {recovered, _Rec}, {badbytes, _Bad}} ->
             ok;
 	Other ->
 	    ?tr_error_msg("Initiating internal log failed: ~p", [Other]),
@@ -138,7 +138,7 @@ write_safe(LogName, LogRecord) ->
 %% Effect   : Writes a logrecord. The record may be lost.
 %%------------------------------------------------------------
 
-log_lazy(dummy, LogRecord) ->
+log_lazy(dummy, _LogRecord) ->
     ok;
 log_lazy(LogName, LogRecord) ->
     case write_lazy(LogName, LogRecord) of
@@ -192,7 +192,7 @@ get_next(LogName, Cursor) ->
 	    ?tr_error_msg("Internal log '~p' read failed: ~p",
 		      [LogName, Reason]),
 	    exit({error, Reason});
-	Other ->
+	_Other ->
 	    ?tr_error_msg("Internal log '~p' read failed: 'log_corrupt'", [LogName]),
 	    exit({error, "log_corrupt"})
     end.

@@ -45,7 +45,7 @@ pretty_print(List, Col, Ll, D) when list(List) ->
 		     $]]
 	    end
     end;
-pretty_print(Fun, Col, Ll, D) when function(Fun) ->
+pretty_print(Fun, _Col, _Ll, _D) when function(Fun) ->
     tv_io_lib:write(Fun);
 pretty_print(Tuple, Col, Ll, D) when tuple(Tuple) ->
     Len = write_length(Tuple, D, 0, Ll - Col),
@@ -61,7 +61,7 @@ pretty_print(Tuple, Col, Ll, D) when tuple(Tuple) ->
 	      pretty_print_tail(tl(tuple_to_list(Tuple)), Col + 1, Ll, D - 1)],
 	     $}]
     end;
-pretty_print(Term, Col, Ll, D) -> tv_io_lib:write(Term, D).
+pretty_print(Term, _Col, _Ll, D) -> tv_io_lib:write(Term, D).
 
 %% print_tag_tuple(Tuple, Column, LineLength, Depth) -> [Char]
 %%  Print a tagged tuple by indenting the rest of the elements differently
@@ -87,8 +87,8 @@ print_tag_tuple(Tuple, Col, Ll, D) ->
 %% pretty_print_tail([Element], Column, LineLength, D) -> [Char]
 %%  Pretty print the elements of a list or tuple.
 
-pretty_print_tail([], Col, Ll, D) -> "";
-pretty_print_tail(Es, Col, Ll, 1) -> "|...";
+pretty_print_tail([], _Col, _Ll, _D) -> "";
+pretty_print_tail(_Es, _Col, _Ll, 1) -> "|...";
 pretty_print_tail([E|Es], Col, Ll, D) ->
     [$,,nl_indent(Col-1),
      pretty_print(E, Col, Ll, D-1)|
@@ -116,7 +116,7 @@ write(List, D) when list(List) ->
 		     $]]
 	    end
     end;
-write(Fun, D) when function(Fun) -> tv_io_lib:write(Fun); %Must catch this first
+write(Fun, _D) when function(Fun) -> tv_io_lib:write(Fun); %Must catch this first
 write(T, D) when tuple(T) ->
     if
 	D == 1 -> "{...}";
@@ -127,8 +127,8 @@ write(T, D) when tuple(T) ->
     end;
 write(Term, D) -> tv_io_lib:write(Term, D).
 
-write_tail([], D) -> "";
-write_tail(Es, 1) -> "|...";
+write_tail([], _D) -> "";
+write_tail(_Es, 1) -> "|...";
 write_tail([E|Es], D) ->
     [$,,write(E, D - 1)|write_tail(Es, D - 1)];
 write_tail(E, D) ->
@@ -138,8 +138,8 @@ write_tail(E, D) ->
 %%  Calculate the print length of a term, but exit when length becomes
 %%  greater than MaxLength.
 
-write_length(T, D, Acc, Max) when Acc > Max -> Acc;
-write_length(T, 0, Acc, Max) -> Acc + 3;
+write_length(_T, _D, Acc, Max) when Acc > Max -> Acc;
+write_length(_T, 0, Acc, _Max) -> Acc + 3;
 write_length([], _, Acc, _) -> Acc + 2;
 write_length({}, _, Acc, _) -> Acc + 2;
 write_length(List, D, Acc, Max) when list(List) ->
@@ -149,16 +149,16 @@ write_length(List, D, Acc, Max) when list(List) ->
 	false ->
 	    write_length_list(List, D, Acc, Max)
     end;
-write_length(Fun, D, Acc, Max) when function(Fun) ->
+write_length(Fun, _D, Acc, _Max) when function(Fun) ->
     Acc + length(tv_io_lib:write(Fun));
 write_length(Tuple, D, Acc, Max) when tuple(Tuple) ->
     write_length_list(tuple_to_list(Tuple), D, Acc, Max);
-write_length(Term, D, Acc, Max) ->
+write_length(Term, _D, Acc, _Max) ->
     Acc + length(tv_io_lib:write(Term)).
 
 write_length_list(_, _, Acc, Max) when Acc > Max -> Acc;
 write_length_list([], _, Acc, _) -> Acc + 1;	%]
-write_length_list(Es, 1, Acc, _) -> Acc + 5;	%|...]
+write_length_list(_Es, 1, Acc, _) -> Acc + 5;	%|...]
 write_length_list([E|Es], D, Acc, Max) ->
     write_length_list(Es,
 		      D - 1,
@@ -169,4 +169,4 @@ write_length_list(E, D, Acc, Max) ->
 
 
 
-nl_indent(N) -> "".
+nl_indent(_) -> "".

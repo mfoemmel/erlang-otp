@@ -85,9 +85,9 @@ bif 'erl.lang.proc':group_leader/0	ebif_group_leader_0
 bif erlang:group_leader/2
 bif 'erl.lang.proc':set_group_leader/2	ebif_group_leader_2
 bif erlang:halt/0
-bif 'erl.lang.node':halt/0		ebif_halt_0
+bif 'erl.lang.system':halt/0		ebif_halt_0
 bif erlang:halt/1
-bif 'erl.lang.node':halt/1		ebif_halt_1
+bif 'erl.lang.system':halt/1		ebif_halt_1
 bif erlang:phash/2
 bif erlang:phash2/1
 bif erlang:phash2/2
@@ -124,7 +124,7 @@ bif 'erl.util.date':local/0		ebif_localtime_0
 bif erlang:localtime_to_universaltime/2
 bif 'erl.util.date':local_to_utc/2	ebif_localtime_to_universaltime_2
 bif erlang:make_ref/0
-bif 'erl.lang.ref':make/0		ebif_make_ref_0
+bif 'erl.lang.ref':new/0		ebif_make_ref_0
 bif erlang:md5/1
 bif 'erl.util.crypt.md5':digest/1	ebif_md5_1
 bif erlang:md5_init/0
@@ -134,9 +134,9 @@ bif 'erl.util.crypt.md5':update/2	ebif_md5_update_2
 bif erlang:md5_final/1
 bif 'erl.util.crypt.md5':final/1	ebif_md5_final_1
 bif erlang:module_loaded/1
-bif 'erl.system.code':is_loaded/1	ebif_module_loaded_1
+bif 'erl.system.code':is_loaded/1	ebif_is_loaded_1 module_loaded_1
 bif erlang:function_exported/3
-bif 'erl.system.code':is_loaded_function/3 ebif_is_loaded_function_3 function_exported_3
+bif 'erl.system.code':is_loaded/3	ebif_is_loaded_3 function_exported_3
 bif erlang:monitor_node/2
 bif 'erl.lang.node':monitor/2		ebif_monitor_node_2
 ubif erlang:node/1
@@ -146,9 +146,10 @@ ubif 'erl.lang.node':node/0		ebif_node_0
 bif erlang:nodes/1
 bif 'erl.lang.node':nodes/1		ebif_nodes_1
 bif erlang:now/0
-bif 'erl.util.time':now/0		ebif_now_0
+bif 'erl.system':now/0		ebif_now_0
 
 bif erlang:open_port/2
+bif 'erl.lang.port':open/2		ebif_open_port_2 open_port_2
 
 bif erlang:pid_to_list/1
 bif 'erl.lang.proc':pid_to_string/1	ebif_pid_to_string_1 pid_to_list_1
@@ -353,10 +354,16 @@ bif 'erl.lang.proc':demonitor/1		ebif_demonitor_1
 bif erlang:is_process_alive/1
 bif 'erl.lang.proc':is_alive/1		ebif_proc_is_alive_1 is_process_alive_1
 
-bif erlang:fault/1
-bif 'erl.lang':error/1		ebif_error_1 fault_1
-bif erlang:fault/2
-bif 'erl.lang':error/2		ebif_error_2 fault_2
+bif erlang:error/1		error_1
+bif erlang:fault/1		fault_1
+bif 'erl.lang':error/1		ebif_error_1 error_1
+bif erlang:error/2		error_2
+bif erlang:fault/2		fault_2
+bif 'erl.lang':error/2		ebif_error_2 error_2
+#bif erlang:raise/3		raise_3
+#bif 'erl.lang':raise/3		ebif_raise_3 raise_3
+bif erlang:get_stacktrace/0
+bif 'erl.lang.proc':get_stacktrace/0	ebif_get_stacktrace_0
 
 bif erlang:is_builtin/3
 bif 'erl.system.code':is_builtin/3	ebif_is_builtin_3
@@ -456,6 +463,8 @@ ubif erlang:is_binary/1
 ubif 'erl.lang.term':is_binary/1	ebif_is_binary_1
 ubif erlang:is_function/1
 ubif 'erl.lang.term':is_function/1	ebif_is_function_1
+ubif erlang:is_record/2
+ubif 'erl.lang.term':is_record/2	ebif_is_record_2
 ubif erlang:is_record/3
 ubif 'erl.lang.term':is_record/3	ebif_is_record_3
 
@@ -487,7 +496,9 @@ bif 'erl.lang.ets':delete_object/2	ebif_ets_delete_object_2
 bif ets:first/1
 bif 'erl.lang.ets':first/1		ebif_ets_first_1
 bif ets:fixtable/2
-bif 'erl.lang.ets':fixtable/2		ebif_ets_fixtable_2
+bif 'erl.lang.ets':old_fixtable/2	ebif_ets_fixtable_2
+bif ets:is_compiled_ms/1
+bif 'erl.lang.ets':is_compiled_ms/1	ebif_ets_is_compiled_ms_1
 bif ets:lookup/2
 bif 'erl.lang.ets':lookup/2		ebif_ets_lookup_2
 bif ets:lookup_element/3
@@ -521,7 +532,7 @@ bif 'erl.lang.ets':insert_new/2		ebif_ets_insert_new_2
 bif ets:rename/2
 bif 'erl.lang.ets':rename/2		ebif_ets_rename_2
 bif ets:safe_fixtable/2
-bif 'erl.lang.ets':safe_fixtable/2	ebif_ets_safe_fixtable_2
+bif 'erl.lang.ets':fixtable/2		ebif_ets_safe_fixtable_2
 bif ets:slot/2
 bif 'erl.lang.ets':slot/2		ebif_ets_slot_2
 bif ets:update_counter/3
@@ -544,23 +555,21 @@ bif ets:select_delete/2
 bif 'erl.lang.ets':select_delete/2	ebif_ets_select_delete_2
 bif ets:match_spec_compile/1
 bif 'erl.lang.ets':match_spec_compile/1	ebif_ets_match_spec_compile_1
-bif ets:match_spec_run/2
-bif 'erl.lang.ets':match_spec_run/2	ebif_ets_match_spec_run_2
-bif ets:match_spec_run/3
-bif 'erl.lang.ets':match_spec_run/3	ebif_ets_match_spec_run_3
+bif ets:match_spec_run_r/3
+bif 'erl.lang.ets':match_spec_run_r/3	ebif_ets_match_spec_run_r_3
 
 #
 # Bifs in os module.
 #
 
 bif os:putenv/2
-bif 'erl.system.os':putenv/2	ebif_os_putenv_2
+bif 'erl.system.os':setenv/2	ebif_os_setenv_2 os_putenv_2
 bif os:getenv/0
 bif 'erl.system.os':getenv/0	ebif_os_getenv_0
 bif os:getenv/1
 bif 'erl.system.os':getenv/1	ebif_os_getenv_1
 bif os:getpid/0
-bif 'erl.system.os':getpid/0	ebif_os_getpid_0
+bif 'erl.system.os':pid/0	ebif_os_pid_0 os_getpid_0
 
 
 #
@@ -577,28 +586,11 @@ bif lists:keysearch/3
 bif 'erl.lang.list.keylist':search/3	ebif_keylist_search_3 lists_keysearch_3
 
 #
-# Vector bifs.
-#
-
-bif vector:new/2
-bif 'erl.lang.vector':new/2		ebif_vector_new_2
-bif vector:from_list/1
-bif 'erl.lang.vector':from_list/1	ebif_vector_from_list_1
-bif vector:to_list/2
-bif 'erl.lang.vector':to_list/2		ebif_vector_to_list_2
-bif vector:get/2
-bif 'erl.lang.vector':get/2		ebif_vector_get_2
-bif vector:set/3
-bif 'erl.lang.vector':set/3		ebif_vector_set_3
-
-#
 # Bifs for debugging.
 #
 
 bif erts_debug:disassemble/1
 bif 'erl.system.debug':disassemble/1	ebif_erts_debug_disassemble_1
-bif erts_debug:make_fun/1
-bif 'erl.system.debug':make_fun/1	ebif_erts_debug_make_fun_1
 bif erts_debug:breakpoint/2
 bif 'erl.system.debug':breakpoint/2	ebif_erts_debug_breakpoint_2
 bif erts_debug:same/2
@@ -608,17 +600,23 @@ bif 'erl.system.debug':flat_size/1	ebif_erts_debug_flat_size_1
 # There is also a pseudo-BIF named erts_debug:apply/4.
 
 #
+# Monitor testing bif's...
+#
+bif erts_debug:dump_monitors/1
+bif erts_debug:dump_links/1
+
+#
 # New Bifs in R8.
 #
 
 bif code:get_chunk/2
-bif 'erl.lang.code':get_chunk/2		ebif_code_get_chunk_2
+bif 'erl.system.code':get_chunk/2	ebif_code_get_chunk_2
 bif code:module_md5/1
-bif 'erl.lang.code':module_md5/1	ebif_code_module_md5_1
+bif 'erl.system.code':module_md5/1	ebif_code_module_md5_1
 bif code:make_stub_module/3
-bif 'erl.lang.code':make_stub_module/3	ebif_code_make_stub_module_3
+bif 'erl.system.code':make_stub_module/3	ebif_code_make_stub_module_3
 bif code:is_module_native/1
-bif 'erl.lang.code':is_native_module/1	ebif_code_is_native_module_1 code_is_module_native_1
+bif 'erl.system.code':is_native/1	ebif_code_is_native_1 code_is_module_native_1
 
 bif erlang:blocking_read_file/1
 
@@ -628,6 +626,15 @@ bif erlang:blocking_read_file/1
 
 bif erlang:hibernate/3
 bif error_logger:warning_map/0
+
+#
+# New Bifs in R10B.
+#
+bif erlang:get_module_info/1
+bif erlang:get_module_info/2
+ubif erlang:is_boolean/1
+bif string:to_integer/1
+bif string:to_float/1
 
 #
 # Obsolete

@@ -132,8 +132,8 @@ empty_neighbour(Pos,Board,[H|T]) ->
     end.
 
 is_empty(_,false,_) -> false;
-is_empty(X,_,Board) when X<0  -> false;
-is_empty(X,_,Board) when X>63 -> false;
+is_empty(X,_,_Board) when X<0  -> false;
+is_empty(X,_,_Board) when X>63 -> false;
 is_empty(X,_,Board) ->
     case element(X+1,Board) of
 	grey -> true;   % Empty 
@@ -144,14 +144,14 @@ is_empty(X,_,Board) ->
 %% get(Pos,Board) - returns the contents in Pos
 %%-------------------------------------------------------
 
-get(Pos,{Bset,Board}) -> element(Pos+1,Board).
+get(Pos,{_Bset,Board}) -> element(Pos+1,Board).
 
 %%-------------------------------------------------------
 %% pieces(Colour,Board) - returns the number of Colour
 %%                        pieces.
 %%-------------------------------------------------------
 
-pieces(Colour,{Bset,Board}) ->
+pieces(Colour,{_Bset,Board}) ->
     pieces(Colour,Board,0,0).
 
 pieces(Colour,Board,Pos,Count) when Pos < 64 ->
@@ -194,7 +194,7 @@ possible_draws_0(Colour,[H|T],Board) ->
 %%                                point of view.
 %%-------------------------------------------------------
 
-evaluate_board(Colour,{Bset,Board}) ->
+evaluate_board(Colour,{_Bset,Board}) ->
     Score = get(score),   % Initialized (zeroed) score board !!
     Colour1 = swap(Colour),
     Score1 = eval_board(Colour,Colour1,Score,Board,0),
@@ -532,5 +532,5 @@ dir(Pos,7) when (Pos band 7) == 7 -> 7;
 dir(Pos,8) when (Pos band 7) == 7 -> 8;       
 dir(Pos,_) when (Pos band 7) == 7 -> false;       
 
-dir(Pos,Dir) -> Dir.
+dir(_Pos,Dir) -> Dir.
 

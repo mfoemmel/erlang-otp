@@ -22,6 +22,7 @@
 #include "erl_message.h"
 #include "erl_process_dict.h"
 #include "erl_node_tables.h"
+#include "erl_monitors.h"
 
 #ifdef HIPE
 #include "hipe_process.h"
@@ -31,7 +32,6 @@
 
 
 extern Uint erts_tot_proc_mem;
-
 
 #define ERTS_PROC_MORE_MEM(Size) (erts_tot_proc_mem += (Size))
 
@@ -97,45 +97,22 @@ struct saved_calls {
    Export *ct[1];
 };
 
-#ifndef HEAP_FRAG_ELIM_TEST
-# define ERTS_SSB_PUT(p, a) do { } while(0)
-#else
-/*
- * Sequentical Store Buffer used to implement a write barrier for vector
- * operations.
- */
-typedef struct erl_ssb {
-    Eterm** next;
-    Eterm** end;
-    Eterm* buf[1];
-} ErlSSB;
-
-#define ERTS_SSB_PUT(p, a)			\
-  if ((p)->ssb->next < (p)->ssb->end) {		\
-    *(p)->ssb->next++ = (a);			\
-  } else {					\
-    erts_ssb_expand_put((p), (a));		\
-  }
-#endif
-
 extern Export exp_send, exp_receive, exp_timeout;
 
 typedef struct process {
+    /* All fields in the PCB that differs between different heap
+     * architectures, have been moved to the end of this struct to
+     * make sure that as few offsets as possible differ. Different
+     * offsets between memory architectures in this struct, means that
+     * native code have to use functions instead of constants.
+     */
+
     Eterm* htop;		/* Heap top */
     Eterm* stop;		/* Stack top */
     Eterm* heap;		/* Heap start */
     Eterm* hend;		/* Heap end */
     Uint heap_sz;		/* Size of heap in words */
     Uint min_heap_size;         /* Minimum size of heap (in words). */
-#ifdef SHARED_HEAP
-    Eterm* stack;               /* Stack start */
-    Eterm* send;                /* Stack end */
-    Uint stack_sz;              /* Size of stack in words */
-    Uint active;                /* Active since last fullsweep? */
-#else
-    Uint16 gen_gcs;		/* Number of (minor) generational GCs. */
-    Uint16 max_gen_gcs;		/* Max minor gen GCs before fullsweep. */
-#endif
 
 #ifdef HIPE
     /* HiPE-specific process fields. Put it early in struct process,
@@ -143,26 +120,33 @@ typedef struct process {
     struct hipe_process_state hipe;
 #endif
 
-    /* XXX: It would be highly advantageous for HiPE/x86 to also have
-       the arity, def_arg_reg, i, and fcalls fields here at low offsets. */
-
-#ifndef SHARED_HEAP
     /*
-     * Heap pointers for generational GC.
+     * Saved x registers.
      */
-
-    Eterm *high_water;
-    Eterm *old_hend;
-    Eterm *old_htop;
-    Eterm *old_heap;
+    Uint arity;			/* Number of live argument registers (only valid
+				 * when process is *not* running).
+				 */
+    Eterm* arg_reg;		/* Pointer to argument registers. */
+    unsigned max_arg_reg;	/* Maximum number of argument registers available. */
+#if defined(HIPE) && defined(__sparc__)
+    Eterm def_arg_reg[16];	/* Default array for argument registers. */
+#else
+    Eterm def_arg_reg[6];	/* Default array for argument registers. */
 #endif
 
+    Eterm* cp;			/* Continuation pointer (for threaded code). */
+    Eterm* i;			/* Program counter for threaded code. */
+    Sint catches;		/* Number of catches on stack */
+    Sint fcalls;		/* 
+				 * Number of reductions left to execute.
+				 * Only valid for the current process.
+				 */
     Uint32 status;		/* process STATE */
     Uint32 rstatus;		/* process resume STATE */
     int rcount;			/* suspend count */
-
     Eterm id;			/* The pid of this process */
-    int    prio;		/* Priority of process */
+    int  prio;			/* Priority of process */
+    int  skipped;		/* Times a low prio process has been rescheduled */
     Uint reds;			/* No of reductions for this process  */
     Eterm error_handler;	/* Module atom for the error handler */
     Eterm tracer_proc;		/* If proc is traced, this is the tracer
@@ -172,27 +156,18 @@ typedef struct process {
     Uint flags;			/* Trap exit, trace  flags etc */
     Eterm fvalue;		/* Exit & Throw value (failure reason) */
     Uint freason;		/* Reason for detected failure */
-    Sint fcalls;		/* 
-				 * Number of reductions left to execute.
-				 * Only valid for the current process.
-				 */
+    Eterm ftrace;		/* Latest exception stack trace dump */
     DistEntry *dist_entry;	/* Distribution slot to use if F_DISTRIBUTION */
 
     ErlTimer tm;		/* Timer entry */
 
     struct process *next;	/* Pointer to next process in list */
-#ifndef SHARED_HEAP
-    ErlOffHeap off_heap;	/* Off-heap data updated by copy_struct(). */
-#endif
+
     struct reg_proc *reg;	/* NULL iff not registered */
-    struct erl_link* links;	/* List of links */
+    ErtsLink *nlinks;
+    ErtsMonitor *monitors;      /* The process monitors, both ends */
 
     ErlMessageQueue msg;	/* Message queue */
-#ifndef SHARED_HEAP
-    ErlHeapFragment* mbuf;	/* Pointer to message buffer list */
-    ErlHeapFragment* halloc_mbuf; /* Pointer to first HAlloc() mbuf */
-    Uint mbuf_sz;		/* Size of all message buffers */
-#endif
 
     ProcDict  *dictionary;       /* Process dictionary, may be NULL */
     ProcDict  *debug_dictionary; /* Process dictionary-like debugging 
@@ -210,62 +185,71 @@ typedef struct process {
 				 * arity an untagged integer).
 				 */
 
-    Eterm* cp;			/* Continuation pointer (for threaded code). */
-    Eterm* i;			/* Program counter for threaded code. */
-    Sint catches;		/* Number of catches on stack */
-
-    /*
-     * Secondary heap for arithmetic operations.
-     */
-#ifndef HEAP_FRAG_ELIM_TEST
-    Eterm* saved_htop;		/* Saved HTOP. */
-#endif
-
-#ifndef SHARED_HEAP
-    Eterm* arith_heap;		/* Current heap pointer. */
-    Uint arith_avail;		/* Available space on arithmetic heap. */
-    Eterm* arith_lowest_htop;
-#endif
-#if (defined(DEBUG) || defined(PURIFY)) && !defined(SHARED_HEAP)
-    char* arith_file;
-    int arith_line;
-    Eterm* arith_check_me;	/* Address to check for overwrite. */
-#endif
-
-    /*
-     * Saved x registers.
-     */
-    Uint arity;			/* Number of live argument registers (only valid
-				 * when process is *not* running).
-				 */
-    Eterm* arg_reg;		/* Pointer to argument registers. */
-    unsigned max_arg_reg;	/* Maximum number of argument registers available. */
-#if defined(HIPE) && defined(__sparc__)
-    Eterm def_arg_reg[16];	/* Default array for argument registers. */
-#else
-    Eterm def_arg_reg[6];	/* Default array for argument registers. */
-#endif
-
-#ifdef HEAP_FRAG_ELIM_TEST
-    ErlSSB* ssb;		/*
-				 * Sequential store buffer. NULL if no vectors
-				 * in this process.
-				 */
-#endif
-
     /*
      * Information mainly for post-mortem use (erl crash dump).
      */
     Eterm parent;		/* Pid of process that created this process. */
     long started;		/* Time when started. */
-} Process;
+
+
+    /* This is the place, where all fields that differs between memory
+     * architectures, have gone to.
+     */
+
+#ifdef SHARED_HEAP
+    Eterm* stack;               /* Stack start */
+    Eterm* send;                /* Stack end */
+    Uint stack_sz;              /* Size of stack in words */
+#else
+    Eterm *high_water;
+    Eterm *old_hend;            /* Heap pointers for generational GC. */
+    Eterm *old_htop;
+    Eterm *old_heap;
+    Uint16 gen_gcs;		/* Number of (minor) generational GCs. */
+    Uint16 max_gen_gcs;		/* Max minor gen GCs before fullsweep. */
+    ErlOffHeap off_heap;	/* Off-heap data updated by copy_struct(). */
+    ErlHeapFragment* mbuf;	/* Pointer to message buffer list */
+    Uint mbuf_sz;		/* Size of all message buffers */
+
+    /*
+     * Secondary heap for arithmetic operations.
+     */
+
+    Eterm* arith_heap;		/* Current heap pointer. */
+    Uint arith_avail;		/* Available space on arithmetic heap. */
+
+#if (defined(DEBUG) || defined(PURIFY))
+    char* arith_file;
+    int arith_line;
+    Eterm* arith_check_me;	/* Address to check for overwrite. */
+#endif
 
 #ifdef HEAP_FRAG_ELIM_TEST
-void erts_ensure_ssb(Process* p);
-void erts_ssb_expand_put(Process* p, Eterm* addr);
-#else
-# define erts_ensure_ssb(p) (FLAGS(p) |= F_NEED_FULLSWEEP)
+    Eterm* arith_lowest_htop;
+    Eterm* saved_htop;		/* Saved HTOP. */
+    ErlHeapFragment* halloc_mbuf; /* Pointer to first HAlloc() mbuf */
 #endif
+
+#endif /* SHARED_HEAP */
+
+#ifdef HYBRID
+    Eterm *rrma;                /* Remembered roots to Message Area */
+    Eterm **rrsrc;              /* The source of the root */
+    Uint nrr;                   /* Number of remembered roots */
+    Uint rrsz;                  /* Size of array */
+#endif
+
+#if defined(SHARED_HEAP) || defined(HYBRID)
+    Uint active;                /* Active since last major collection? */
+    Uint active_index;          /* Index in the active process array */
+#endif
+ 
+#ifdef INCREMENTAL_GC
+    struct process *active_next; /* Active processes to scan for roots */
+    struct process *active_prev; /* in collection of the message area  */
+    Eterm *scan_top;
+#endif
+} Process;
 
 /*
  * The MBUF_GC_FACTOR decides how easily a process is subject to GC 
@@ -346,12 +330,24 @@ typedef struct {
 
 Eterm* erts_arith_alloc(Process* p, Eterm* htop, Uint need);
 Eterm* erts_heap_alloc(Process* p, Uint need);
+void erts_arith_shrink(Process* p, Eterm* hp);
 #ifdef SHARED_HEAP
 Eterm* erts_global_alloc(Uint need);
 #endif
 
+#ifdef INCREMENTAL_GC
+/*
+ * I refuse to place the declaration of erts_inc_alloc here (as has
+ * been done with erts_heap_alloc), it is in erl_nmgc.h where it
+ * belongs. This is no good either, but at least it is better. Ideally
+ * this include should be in erl_vm.h where the macro that uses the
+ * function is, but I'm not sure I can put it there.
+ */
+#include "erl_nmgc.h"
+#endif
+
 extern Process** process_tab;
-#ifdef SHARED_HEAP
+#if defined(SHARED_HEAP) || defined(HYBRID)
 extern Uint erts_num_active_procs;
 extern Process** erts_active_procs;
 #endif
@@ -400,6 +396,9 @@ extern struct erts_system_monitor_flags_t erts_system_monitor_flags;
 #define PRIORITY_NORMAL       2
 #define PRIORITY_LOW          3
 #define NPRIORITY_LEVELS      4
+
+/* times to reschedule low prio process before running */
+#define RESCHEDULE_LOW        8
 
 /* process flags */
 #define F_TRAPEXIT           (1 << 0)
@@ -473,5 +472,7 @@ void erts_stack_dump(Process *, CIO);
 void erts_program_counter_info(Process *, CIO);
 
 void erts_deep_process_dump(CIO);
+
+Sint erts_test_next_pid(int, Uint);
 
 #endif

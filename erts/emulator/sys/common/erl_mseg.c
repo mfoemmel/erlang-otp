@@ -32,6 +32,7 @@
 #include "sys.h"
 #include "erl_mseg.h"
 #include "global.h"
+#include "erl_threads.h"
 
 #if HAVE_ERTS_MSEG
 
@@ -67,6 +68,7 @@ static int atoms_initialized;
 static Uint cache_check_interval;
 
 static void check_cache(void *unused);
+static void mseg_clear_cache(void);
 static int is_cache_check_scheduled;
 
 #if HAVE_MMAP
@@ -163,118 +165,87 @@ static Sint no_of_segments_watermark;
 		       calls.CC.no = ONE_GIGA - 1)			\
 		    : calls.CC.no--)
 
+
+static ethr_mutex mseg_mutex; /* Also needed when !USE_THREADS */
+
 #ifdef USE_THREADS
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
  * Multi-threaded case                                                     *
 \*                                                                         */
 
-#define ERL_THREADS_EMU_INTERNAL__
-#include "erl_threads.h"
-
-#undef LOCK
-#undef UNLOCK
-#undef WAIT
-#undef TIMED_WAIT
-#undef SIGNAL
-
-#define MSEG_MUTEX_NO 5
-
-#if defined(DEBUG) && defined(POSIX_THREADS)
-#define LOCK(M) ASSERT(0 == erts_mutex_lock((M)))
-#define UNLOCK(M) ASSERT(0 == erts_mutex_unlock((M)))
-#define WAIT(C, M) ASSERT(0 == erts_cond_wait((C),(M)))
-#define TIMED_WAIT(C, M, T)						\
-do {									\
-    int res__ = erts_cond_timedwait((C),(M),(T));			\
-    ASSERT(res__ == 0 || res__ == ETIMEDOUT);				\
-} while (0)
-#define SIGNAL(C) ASSERT(0 == erts_cond_signal((C)))
-#else
-#define LOCK(M) ((void) erts_mutex_lock((M)))
-#define UNLOCK(M) ((void) erts_mutex_unlock((M)))
-#define WAIT(C, M) ((void) erts_cond_wait((C),(M)))
-#define TIMED_WAIT(C, M, T) ((void) erts_cond_timedwait((C),(M),(T)))
-#define SIGNAL(C) ((void) erts_cond_signal((C)))
-#endif
-
-static erts_mutex_t mseg_mutex;
-static erts_cond_t mseg_cond;
+static ethr_cond mseg_cond;
+static int do_shutdown;
 
 static void thread_safe_init(void)
 {
-    mseg_mutex = erts_mutex_sys(ERTS_MUTEX_SYS_MSEG);
-    if(!mseg_mutex || erts_mutex_set_default_atfork(mseg_mutex))
-	erl_exit(1, "Failed to initialize mseg mutex\n");
-
+    do_shutdown = 0;
+    erts_mtx_init(&mseg_mutex);
+    erts_mtx_set_forksafe(&mseg_mutex);
+    erts_cnd_init(&mseg_cond);
 }
 
-static SysTimeval check_time;
-static erts_thread_t mseg_cc_tid;
+static ethr_timeval check_time;
+static ethr_tid mseg_cc_tid;
 
 static void *
 mseg_cache_cleaner(void *unused)
 {
-    LOCK(mseg_mutex);
+    int res;
+    erts_mtx_lock(&mseg_mutex);
 
-    while (1) {
+    while (!do_shutdown) {
 
-	while (!is_cache_check_scheduled)
-	    WAIT(mseg_cond, mseg_mutex);
+	while (!is_cache_check_scheduled && !do_shutdown)
+	    erts_cnd_wait(&mseg_cond, &mseg_mutex);
 
-	while (1) {
-	    SysTimeval time;
-	    long wait_time;
-	    sys_gettimeofday(&time);
+	res = 0;
+	while (res != ETIMEDOUT && !do_shutdown)
+	    res = erts_cnd_timedwait(&mseg_cond, &mseg_mutex, &check_time);
 
-	    if (time.tv_sec == check_time.tv_sec
-		&& time.tv_usec >= check_time.tv_usec)
-		break;
-
-	    if (time.tv_sec > check_time.tv_sec)
-		break;
-
-	    wait_time = (check_time.tv_sec - time.tv_sec)*1000;
-	    wait_time += (check_time.tv_usec - time.tv_usec)/1000;
-	    wait_time++;
-
-	    TIMED_WAIT(mseg_cond, mseg_mutex, wait_time);
-	}
-
-	check_cache(NULL);
+	if (do_shutdown)
+	    mseg_clear_cache();
+	else
+	    check_cache(NULL);
     }
 
-    UNLOCK(mseg_mutex); /* Actually not needed */
+    erts_mtx_unlock(&mseg_mutex);
     return NULL;
+}
+
+static void
+mseg_shutdown(void)
+{
+    erts_mtx_lock(&mseg_mutex);
+    do_shutdown = 1;
+    erts_cnd_signal(&mseg_cond);
+    erts_mtx_unlock(&mseg_mutex);
+    erts_thr_join(mseg_cc_tid, NULL);
+    erts_mtx_destroy(&mseg_mutex);
+    erts_cnd_destroy(&mseg_cond);
 }
 
 static ERTS_INLINE void
 schedule_cache_check(void)
 {
     if (!is_cache_check_scheduled && is_init_done) {
-	sys_gettimeofday(&check_time);
+	erts_thr_time_now(&check_time);
 	check_time.tv_sec += cache_check_interval / 1000;
-	check_time.tv_usec += (cache_check_interval % 1000)*1000;
-	if (check_time.tv_usec >= 1000000) {
+	check_time.tv_nsec += (cache_check_interval % 1000)*1000000;
+	if (check_time.tv_nsec >= 1000000000) {
 	    check_time.tv_sec++;
-	    check_time.tv_usec -= 1000000;
+	    check_time.tv_nsec -= 1000000000;
 	}
+	ASSERT(check_time.tv_nsec < 1000000000);
 	is_cache_check_scheduled = 1;
-	SIGNAL(mseg_cond);
+	erts_cnd_signal(&mseg_cond);
     }
 }
 
 static void
 mseg_late_init(void)
 {
-    int res;
-    mseg_cond = erts_cond_create();
-    if (!mseg_cond)
-	erl_exit(1, "Failed to create mseg_cond!\n");
-
-    res = erts_thread_create(&mseg_cc_tid, mseg_cache_cleaner, NULL, 1);
-    if (res < 0)
-	erl_exit(1, "Failed to create mseg_cache_cleaner thread!\n");
+    erts_thr_create(&mseg_cc_tid, mseg_cache_cleaner, NULL, 0);
 }
 
 #else  /* #ifdef USE_THREADS */
@@ -304,10 +275,11 @@ mseg_late_init(void)
 {
 }
 
-#undef LOCK
-#undef UNLOCK
-#define LOCK(M)
-#define UNLOCK(M)
+static void
+mseg_shutdown(void)
+{
+    mseg_clear_cache();
+}
 
 #endif  /* #ifdef USE_THREADS */
 
@@ -1073,11 +1045,11 @@ erts_mseg_info_options(CIO *ciop, Uint **hpp, Uint *szp)
 {
     Eterm res;
 
-    LOCK(mseg_mutex);
+    erts_mtx_lock(&mseg_mutex);
 
     res = info_options("option ", ciop, hpp, szp);
 
-    UNLOCK(mseg_mutex);
+    erts_mtx_unlock(&mseg_mutex);
 
     return res;
 }
@@ -1089,7 +1061,7 @@ erts_mseg_info(CIO *ciop, Uint **hpp, Uint *szp)
     Eterm atoms[4];
     Eterm values[4];
 
-    LOCK(mseg_mutex);
+    erts_mtx_lock(&mseg_mutex);
 
     if (hpp || szp) {
 	
@@ -1110,7 +1082,7 @@ erts_mseg_info(CIO *ciop, Uint **hpp, Uint *szp)
     if (hpp || szp)
 	res = bld_2tup_list(hpp, szp, 4, atoms, values);
 
-    UNLOCK(mseg_mutex);
+    erts_mtx_unlock(&mseg_mutex);
 
     return res;
 }
@@ -1119,9 +1091,9 @@ void *
 erts_mseg_alloc_opt(Uint *size_p, const ErtsMsegOpt_t *opt)
 {
     void *seg;
-    LOCK(mseg_mutex);
+    erts_mtx_lock(&mseg_mutex);
     seg = mseg_alloc(size_p, opt);
-    UNLOCK(mseg_mutex);
+    erts_mtx_unlock(&mseg_mutex);
     return seg;
 }
 
@@ -1134,9 +1106,9 @@ erts_mseg_alloc(Uint *size_p)
 void
 erts_mseg_dealloc_opt(void *seg, Uint size, const ErtsMsegOpt_t *opt)
 {
-    LOCK(mseg_mutex);
+    erts_mtx_lock(&mseg_mutex);
     mseg_dealloc(seg, size, opt);
-    UNLOCK(mseg_mutex);
+    erts_mtx_unlock(&mseg_mutex);
 }
 
 void
@@ -1150,9 +1122,9 @@ erts_mseg_realloc_opt(void *seg, Uint old_size, Uint *new_size_p,
 		      const ErtsMsegOpt_t *opt)
 {
     void *new_seg;
-    LOCK(mseg_mutex);
+    erts_mtx_lock(&mseg_mutex);
     new_seg = mseg_realloc(seg, old_size, new_size_p, opt);
-    UNLOCK(mseg_mutex);
+    erts_mtx_unlock(&mseg_mutex);
     return new_seg;
 }
 
@@ -1165,18 +1137,18 @@ erts_mseg_realloc(void *seg, Uint old_size, Uint *new_size_p)
 void
 erts_mseg_clear_cache(void)
 {
-    LOCK(mseg_mutex);
+    erts_mtx_lock(&mseg_mutex);
     mseg_clear_cache();
-    UNLOCK(mseg_mutex);
+    erts_mtx_unlock(&mseg_mutex);
 }
 
 Uint
 erts_mseg_no(void)
 {
     Uint n;
-    LOCK(mseg_mutex);
+    erts_mtx_lock(&mseg_mutex);
     n = no_of_segments;
-    UNLOCK(mseg_mutex);
+    erts_mtx_unlock(&mseg_mutex);
     return n;
 }
 
@@ -1259,12 +1231,18 @@ erts_mseg_init(ErtsMsegInit_t *init)
 void
 erts_mseg_late_init(void)
 {
-    LOCK(mseg_mutex);
+    erts_mtx_lock(&mseg_mutex);
     mseg_late_init();
     is_init_done = 1;
     if (cache_size)
 	schedule_cache_check();
-    UNLOCK(mseg_mutex);
+    erts_mtx_unlock(&mseg_mutex);
+}
+
+void
+erts_mseg_exit(void)
+{
+    mseg_shutdown();
 }
 
 #endif /* #if HAVE_ERTS_MSEG */

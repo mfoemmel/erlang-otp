@@ -1,20 +1,20 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2000 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <02/10/07 15:41:49 happi>
+%% Time-stamp: <2004-01-19 20:54:05 richardc>
 %% ====================================================================
 %%  Filename : 	sparc_memory_regalloc.erl
 %%  Module   :	sparc_memory_regalloc
-%%  Purpose  :  To do a silly register allocation to be used as
-%%               baseline for benchmarking register allocators.
+%%  Purpose  :  Implements a silly register allocation to be used as
+%%              baseline for benchmarking register allocators.
 %%  Notes    : 
 %%  History  :	* 2000-08-21 Erik Johansson (happi@csd.uu.se): 
-%%               Created.
+%%                Created.
 %%              * 2002-05-09 Niklas Andersson, Andreas Lundin
-%%                Added support for stack fram minimizarion
+%%                Added support for stack frame minimization
 %%  CVS      :
-%%              $Author: happi $
-%%              $Date: 2002/10/10 06:18:30 $
-%%              $Revision: 1.11 $
+%%              $Author: kostis $
+%%              $Date: 2004/06/22 22:00:58 $
+%%              $Revision: 1.17 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -26,11 +26,11 @@
 -include("../main/hipe.hrl").
 
 alloc(SparcCfg, Options) ->
-  {Map, SpillPos} = spill(SparcCfg),
+  {Map, _SpillPos} = spill(SparcCfg),
   %% io:format("ListMap:~w\n",[Map]),
   %% hipe_sparc_cfg:pp(SparcCfg),
   TempMap = hipe_temp_map:cols2tuple(Map, hipe_sparc_specific),
-  %%  io:format("Map:~w\n",[TempMap]),
+  %% io:format("Map:~w\n",[TempMap]),
 
   %% Code to minimize stack size by allocation of temps to spillpositions
   ?opt_start_timer("Minimize"),
@@ -42,35 +42,31 @@ alloc(SparcCfg, Options) ->
   TempMap3 = hipe_spill_minimize:mapmerge(hipe_temp_map:to_substlist(TempMap), 
 					  TempMap2),
   TempMap4 = hipe_temp_map:cols2tuple( TempMap3, hipe_sparc_specific),
-  ?opt_stop_timer("MINIMIZE DONE"),    
+  ?opt_stop_timer("Minimize"),    
 
-
-  NewCfg =
-    hipe_sparc_ra_post_ls:rewrite(SparcCfg, TempMap4, Options),
-  %%  hipe_sparc_cfg:pp(NewCfg),
+  NewCfg = hipe_sparc_ra_post_ls:rewrite(SparcCfg, TempMap4, Options),
+%%  hipe_sparc_cfg:pp(NewCfg),
 %%  {SparcCfg2, NextPos} = hipe_sparc_caller_saves:rewrite(
 %%			   NewCfg, TempMap,  
 %%			   SpillPos+1,
 %%			   Options),
   ?add_spills(Options, NewSpillPos+1),
  
-  %% hipe_sparc_cfg:pp(SparcCfg2),
+%%  hipe_sparc_cfg:pp(SparcCfg2),
 %%  {SparcCfg2, TempMap, NextPos}.
   {NewCfg, TempMap4, NewSpillPos+1}.
 
 
 spill(Cfg) ->
-  {_,Last} = hipe_sparc_cfg:var_range(Cfg),
-  Map = hipe_vectors:empty(Last+1,undef),
+  Last = hipe_gensym:get_var(sparc),
+  Map = hipe_vectors:new(Last+1,undef),
   Code = hipe_sparc:sparc_code(hipe_sparc_cfg:linearize(Cfg)),
   {NewMap, SpillPos} = traverse(Code,Map),
-  {[{T-1,Pos} || {T,Pos} <- hipe_vectors:list(NewMap),
-	 Pos =/= undef],
+  {[{T-1,Pos} || {T,Pos} <- hipe_vectors:list(NewMap), Pos =/= undef],
    SpillPos}.
 
 traverse(Code, Map) ->
   lists:foldl(fun map/2, {Map,0}, Code).
-
 
 map(I,Map) ->
   {Def,Use} = hipe_sparc:def_use(I),
@@ -79,19 +75,16 @@ map(I,Map) ->
 map_temp(T,{Map,SpillPos}) ->
   RealTemp = hipe_sparc:reg_nr(T),
   Temp = RealTemp+1,
-
   case hipe_vectors:get(Map,Temp) of
     undef ->
-      case hipe_sparc_registers:is_precolored(RealTemp) of
+      case hipe_sparc_registers:is_precoloured(RealTemp) of
 	true ->
-	  {
-	  hipe_vectors:set(Map,Temp,
-			   {reg, hipe_sparc_registers:physical_name(RealTemp)}),
+	  {hipe_vectors:set(Map, Temp,
+			    {reg,hipe_sparc_registers:physical_name(RealTemp)}),
 	  SpillPos};
 	false ->
-	  {hipe_vectors:set(Map,Temp,
-			    {spill,SpillPos}),
-	   SpillPos +1}
+	  {hipe_vectors:set(Map, Temp, {spill,SpillPos}),
+	   SpillPos+1}
       end;
     _ ->
       {Map,SpillPos}
@@ -105,7 +98,6 @@ split_constants(CFG) ->
    Labels = hipe_sparc_cfg:labels(CFG),
    split_bbs(Labels, CFG).
 
-
 split_bbs([], CFG) ->
   CFG;
 split_bbs([Lbl|Lbls], CFG) ->
@@ -115,8 +107,7 @@ split_bbs([Lbl|Lbls], CFG) ->
     unchanged ->
       split_bbs(Lbls, CFG);
     NewCode ->
-      NewCFG = 
-	hipe_sparc_cfg:bb_update(CFG, Lbl, hipe_bb:code_update(BB, NewCode)),
+      NewCFG = hipe_sparc_cfg:bb_add(CFG, Lbl, hipe_bb:code_update(BB, NewCode)),
       split_bbs(Lbls, NewCFG)
   end.
 
@@ -135,7 +126,7 @@ split_instrs([I|Is], RevCode, Status) ->
 split_instr(I) ->
   Uses = hipe_sparc:imm_uses(I),
   case big_constants(Uses) of
-    [] -> unchanged;
+    {[], []} -> unchanged;
     {Code, Subst} -> [hipe_sparc:subst(I, Subst) | Code]
   end.
 
@@ -143,7 +134,6 @@ big_constants([]) ->
   {[], []};
 big_constants([V|Vs]) ->
   C = hipe_sparc:imm_value(V),
-
   %% Since this is the naive allocator any allocatable register should
   %% do as a temp reg.
   TempReg = hipe_sparc:mk_reg(hd(hipe_sparc_registers:allocatable())), 
@@ -152,13 +142,10 @@ big_constants([V|Vs]) ->
       Low = low10(C),
       Code =
 	if Low =:= 0 ->
-	    [hipe_sparc:sethi_create(
-	       TempReg,
-	       hipe_sparc:mk_imm(high22(C)),[])];
+	    [hipe_sparc:sethi_create(TempReg, hipe_sparc:mk_imm(high22(C)))];
 	   true ->	     
-	    [hipe_sparc:alu_create(TempReg, TempReg, 'or', 
-				   hipe_sparc:mk_imm(Low), []),
-	     hipe_sparc:sethi_create(TempReg,hipe_sparc:mk_imm(high22(C)),[])]
+	    [hipe_sparc:alu_create(TempReg, TempReg, 'or', hipe_sparc:mk_imm(Low)),
+	     hipe_sparc:sethi_create(TempReg, hipe_sparc:mk_imm(high22(C)))]
 	end,
       {MoreCode, MoreSubst} = big_constants(Vs),
       {Code++MoreCode, [{V, TempReg} | MoreSubst]};
@@ -177,4 +164,3 @@ is_big(X) ->
 
 high22(X) -> X bsr 10.
 low10(X) -> X band 16#3ff.
-

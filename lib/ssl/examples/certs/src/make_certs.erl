@@ -184,7 +184,7 @@ req_cnf(DN) ->
      "RANDFILE		= $ROOTDIR/RAND\n"
      "encrypt_key	= no\n"
      "default_md	= sha1\n"
-     "string_mask	= pkix\n"
+     "#string_mask	= pkix\n"
      "x509_extensions	= ca_ext\n"
      "prompt		= no\n"
      "distinguished_name= name\n"

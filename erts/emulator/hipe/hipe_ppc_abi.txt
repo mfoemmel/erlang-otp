@@ -1,0 +1,85 @@
+$Id$
+
+HiPE PowerPC ABI
+================
+This document describes aspects of HiPE's runtime system
+that are specific for the PowerPC architecture.
+
+Register Usage
+--------------
+r1, r2, and r13 are reserved for the C runtime system.
+
+r29-r31 are fixed (unallocatable).
+r29 (aka HP) is the current process' heap pointer.
+r30 (aka NSP) is the current process' native stack pointer.
+r31 (aka P) is the current process' "Process" pointer.
+
+r28 (aka TEMP_LR) is used to preserve LR around BIF calls.
+
+r0, r3-r12, and r14-r28 are caller-save. They are used as temporary
+scratch registers and for function call parameters and results.
+
+LR and CTR are caller-save.
+
+Calling Convention
+------------------
+The first NR_ARG_REGS parameters (a tunable parameter between 0 and 7,
+inclusive) are passed in r4-r10.
+
+r3 is not used for parameter passing. This allows the BIF wrappers to
+simply move P to r3 without shifting the remaining parameter registers.
+
+r0/r11/r12 are not used for parameter passing since they may be modified
+during function linkage.
+
+The return value from a function is placed in r3.
+
+Stack Frame Layout
+------------------
+[From top to bottom: formals in left-to-right order, incoming return
+address, fixed-size chunk for locals & spills, variable-size area
+for actuals, outgoing return address. NSP normally points at the
+bottom of the fixed-size chunk, except during a recursive call.
+The callee pops the actuals, so no NSP adjustment at return.]
+
+Stack Descriptors
+-----------------
+sdesc_fsize() is the frame size excluding the return address word.
+
+Exceptions
+----------
+The exception handler receives the exception value in r3.
+
+Standard Linux PowerPC Calling Conventions
+==========================================
+
+Reg		Status		Role
+---		------		----
+r0		calleR-save	volatile
+				may be modified during function linkage
+				r0 cannot be base reg in load/store insns
+r1		calleE-save	stack pointer, 16-byte aligned, must point
+				to valid frame with link to previous frame
+r2		reserved	thread register
+				(TOC in AIX, GOT in 64-bit)
+r3-r4		calleR-save	volatile, parameters, return values
+r5-r10		calleR-save	volatile, parameters
+r11		calleR-save	volatile,
+				may be modified during function linkage
+				(calls by pointer & environment pointer in AIX)
+r12		calleR-save	volatile,
+				may be modified during function linkage
+r13		reserved	small data area pointer
+				(callee-save in AIX, thread reg in 64-bit)
+r14-r30		calleE-save	local variables
+r31		calleE-save	local variable or "environment pointer"
+f0		calleR-save	volatile
+f1		calleR-save	volatile, parameters, return values
+f2-f8		calleR-save	volatile, parameters
+f9-f13		calleR-save	volatile
+f14-f31		calleE-save	local variables
+CR0/1/5/6/7	calleR-save	condition codes, CR1 used in stdarg calls
+CR2/3/4		calleE-save	condition codes
+LR		calleR-save	return address
+CTR		calleR-save	counter, indirect jump address
+XER		calleR-save	fixed-point exception register

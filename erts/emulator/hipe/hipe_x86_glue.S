@@ -7,6 +7,24 @@
 #define ASM
 #include "hipe_mode_switch.h"
 
+/*
+ * Set up frame on C stack,
+ * save C callee-save registers,
+ * retrieve the process pointer from the parameters from C,
+ * SWITCH_C_TO_ERLANG.
+ */
+#define ENTER_FROM_C		\
+	/* save C callee-save registers on the C stack */ \
+	subl	$16, %esp;	\
+	movl	%ebp, 12(%esp);	\
+	movl	%ebx, 8(%esp);	\
+	movl	%esi, 4(%esp);	\
+	movl	%edi, (%esp);	\
+	/* get the process pointer */	\
+	movl	20(%esp), P;	\
+	/* switch to native stack */	\
+	SWITCH_C_TO_ERLANG
+
 	.section ".text"
 
 /*
@@ -17,16 +35,7 @@
 	.global	x86_call_to_native
 	.global	nbif_return
 x86_call_to_native:
-	/* save callee-save registers on the C stack */
-	subl	$16, %esp
-	movl	%ebp, 12(%esp)
-	movl	%ebx, 8(%esp)
-	movl	%esi, 4(%esp)
-	movl	%edi, (%esp)
-	/* get the process pointer */
-	movl	20(%esp), P
-	/* switch to native stack */
-	SWITCH_C_TO_ERLANG
+	ENTER_FROM_C
 	/* get argument registers */
 	LOAD_ARG_REGS
 	/* call the target */
@@ -40,14 +49,23 @@ x86_call_to_native:
 nbif_return:
 	movl	%eax, P_ARG0(P)			# save retval
 	movl	$HIPE_MODE_SWITCH_RES_RETURN, %eax
-/* FALLTHROUGH
+/* FALLTHROUGH to .flush_exit
  *
  * Return to the calling C function with result token in %eax.
+ *
+ * .nosave_exit saves no state
+ * .flush_exit saves cached P state
+ * .suspend_exit also saves RA
  */
-.exit:
+.suspend_exit:
+	/* save RA, no-op on x86 */
+.flush_exit:
+	/* flush cached P state */
+	SAVE_HP
+.nosave_exit:
 	/* switch to C stack */
-	SWITCH_ERLANG_TO_C
-	/* restore callee-save registers, drop frame, return */
+	SWITCH_ERLANG_TO_C_QUICK
+	/* restore C callee-save registers, drop frame, return */
 	movl	(%esp), %edi
 	movl	4(%esp), %esi	# kills HP, if HP_IN_ESI is true
 	movl	8(%esp), %ebx
@@ -71,7 +89,17 @@ nbif_return:
 nbif_callemu:
 	STORE_ARG_REGS
 	movl	$HIPE_MODE_SWITCH_RES_CALL, %eax
-	jmp	.exit
+	jmp	.suspend_exit
+
+/*
+ * nbif_apply
+ */
+	.align	4
+	.global	nbif_apply
+nbif_apply:
+	STORE_ARG_REGS
+	movl	$HIPE_MODE_SWITCH_RES_APPLY, %eax
+	jmp	.suspend_exit
 
 /*
  * Native code calls an emulated-mode closure via a stub defined below.
@@ -151,7 +179,7 @@ nbif_ccallemu0:
 #endif
 	movl	%eax, P_CLOSURE(P)
 	movl	$HIPE_MODE_SWITCH_RES_CALL_CLOSURE, %eax
-	jmp	.exit
+	jmp	.suspend_exit
 
 /*
  * This is where native code suspends.
@@ -160,7 +188,7 @@ nbif_ccallemu0:
 	.global	nbif_suspend_0
 nbif_suspend_0:
 	movl	$HIPE_MODE_SWITCH_RES_SUSPEND, %eax
-	jmp	.exit
+	jmp	.suspend_exit
 
 /*
  * Suspend from a receive (waiting for a message)
@@ -169,7 +197,7 @@ nbif_suspend_0:
 	.global	nbif_suspend_msg
 nbif_suspend_msg:
 	movl	$HIPE_MODE_SWITCH_RES_WAIT, %eax
-	jmp	.exit
+	jmp	.suspend_exit
 
 /*
  * Suspend from a receive with a timeout (waiting for a message)
@@ -184,13 +212,15 @@ nbif_suspend_msg_timeout:
 	testb	$F_TIMO, %al			# F_TIMO set?
 	jz	.no_timeout			# if not set, suspend
 	/* timeout has occurred */
+	/* XXX: The process will immediately execute 'clear_timeout',
+	   repeating this statement. Remove it? */
 	xorb	$F_TIMO, %al			# F_TIMO was set, clear it
 	movl	%eax, P_FLAGS(P)
 	xorl	%eax, %eax			# return 0 to signal timeout
 	NSP_RET0
 .no_timeout:
 	movl	$HIPE_MODE_SWITCH_RES_WAIT_TIMEOUT, %eax
-	jmp	.exit
+	jmp	.suspend_exit
 
 /*
  * int x86_return_to_native(Process *p);
@@ -199,16 +229,7 @@ nbif_suspend_msg_timeout:
 	.align	4
 	.global	x86_return_to_native
 x86_return_to_native:
-	/* save callee-save registers on the C stack */
-	subl	$16, %esp
-	movl	%ebp, 12(%esp)
-	movl	%ebx, 8(%esp)
-	movl	%esi, 4(%esp)
-	movl	%edi, (%esp)
-	/* get the process pointer */
-	movl	20(%esp), P
-	/* switch to native stack */
-	SWITCH_C_TO_ERLANG
+	ENTER_FROM_C
 	/* get return value */
 	movl	P_ARG0(P), %eax
 	/*
@@ -225,16 +246,7 @@ x86_return_to_native:
 	.align	4
 	.global	x86_tailcall_to_native
 x86_tailcall_to_native:
-	/* save callee-save registers on the C stack */
-	subl	$16, %esp
-	movl	%ebp, 12(%esp)
-	movl	%ebx, 8(%esp)
-	movl	%esi, 4(%esp)
-	movl	%edi, (%esp)
-	/* get the process pointer */
-	movl	20(%esp), P
-	/* switch to native stack */
-	SWITCH_C_TO_ERLANG
+	ENTER_FROM_C
 	/* get argument registers */
 	LOAD_ARG_REGS
 	/* jump to the target label */
@@ -247,16 +259,7 @@ x86_tailcall_to_native:
 	.align	4
 	.global	x86_throw_to_native
 x86_throw_to_native:
-	/* save callee-save registers on the C stack */
-	subl	$16, %esp
-	movl	%ebp, 12(%esp)
-	movl	%ebx, 8(%esp)
-	movl	%esi, 4(%esp)
-	movl	%edi, (%esp)
-	/* get the process pointer */
-	movl	20(%esp), P
-	/* switch to native stack */
-	SWITCH_C_TO_ERLANG
+	ENTER_FROM_C
 	/* find and invoke the handler */
 	xorl	%eax, %eax	# p->narity == 0
 	/*FALLTHROUGH*/
@@ -286,12 +289,12 @@ x86_throw_to_native:
 	.global	nbif_fail
 nbif_fail:
 	movl	$HIPE_MODE_SWITCH_RES_THROW, %eax
-	jmp	.exit
+	jmp	.flush_exit
 	
 /*
  * We end up here when a BIF called from native signals an
  * exceptional condition, and RESCHEDULE cannot occur.
- * The stack/heap registers were just read from P. (XXX: useless knowledge?)
+ * The stack/heap registers were just read from P.
  */
 	.global	nbif_0_simple_exception
 	.global	nbif_1_simple_exception
@@ -322,10 +325,11 @@ nbif_3_simple_exception:
 	 * - the BIF stored the callee's Export* in p->def_arg_reg[0]
 	 * - the BIF stored the actual parameters in p->def_arg_reg[1..]
 	 * - the BIF's arity is in %eax
+	 * - the native heap/stack/reds registers are saved in P
 	 */
 	movl	%eax, P_ARITY(P)
 	movl	$HIPE_MODE_SWITCH_RES_TRAP, %eax
-	jmp	.exit
+	jmp	.nosave_exit
 
 /*
  * We end up here when a BIF called from native signals an
@@ -358,7 +362,7 @@ nbif_2_hairy_exception:
 	movl	%eax, P_ARITY(P)	# 1 or 2
 #endif
 	movl	$HIPE_MODE_SWITCH_RES_RESCHEDULE, %eax
-	jmp	.exit
+	jmp	.nosave_exit
 
 /*
  * nbif_stack_trap_ra: trap return address for maintaining
@@ -378,3 +382,17 @@ nbif_stack_trap_ra:			# a return address, not a function
 	SWITCH_C_TO_ERLANG_QUICK
 	movl	TEMP_RV, %eax		# restore retval
 	jmp	*%edx			# resume at original RA
+
+/*
+ * nbif_inc_stack_0
+ */
+	.align	4
+	.global	nbif_inc_stack_0
+nbif_inc_stack_0:
+	SWITCH_ERLANG_TO_C
+	NBIF_SAVE_CALLER_SAVE
+	pushl	P
+	call	hipe_inc_nstack
+	NBIF_RESTORE_CALLER_SAVE_1
+	SWITCH_C_TO_ERLANG
+	NSP_RET0

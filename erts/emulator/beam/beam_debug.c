@@ -36,6 +36,12 @@
 #include "beam_bp.h"
 #include "erl_binary.h"
 
+#ifdef ARCH_64
+# define HEXF "%016lX"
+#else
+# define HEXF "%08X"
+#endif
+
 void dbg_bt(Process* p, Eterm* sp);
 void dbg_where(Eterm* addr, Eterm x0, Eterm* reg);
 
@@ -102,83 +108,6 @@ erts_debug_breakpoint_2(Process* p, Eterm MFA, Eterm bool)
 }
 
 Eterm
-erts_debug_make_fun_1(Process* p, Eterm tuple)
-{
-    Eterm* tp;
-    Eterm creator;
-    Eterm module;
-    Eterm index;
-    Eterm uniq;
-    Eterm env;
-    byte* uniq_p;
-    int num_free;
-    unsigned needed;
-    ErlFunThing* funp;
-    int i;
-
-    /*
-     * Retrieve and validate input tuple.
-     */
-
-    if (!is_tuple(tuple)) {
-    error:
-	BIF_ERROR(p, BADARG);
-    }
-    tp = tuple_val(tuple);
-    if (tp[0] != make_arityval(5)) {
-	goto error;
-    }
-
-    creator = tp[1];
-    module = tp[2];
-    index = tp[3];
-    uniq = tp[4];
-    env = tp[5];
-
-    if (is_not_pid(creator)) {
-	goto error;
-    }
-    if (is_not_atom(module)) {
-	goto error;
-    }
-    if (is_not_small(index)) {	/* Index */
-	goto error;
-    }
-    if (is_not_binary(uniq) || binary_size(uniq) != 16) { /* Uniq */
-	goto error;
-    }
-
-    if ((num_free = list_length(env)) < 0) {
-	goto error;
-    }
-
-    /*
-     * Create the fun struct and fill it in.
-     */
-
-    needed = ERL_FUN_SIZE + num_free;
-    funp = (ErlFunThing *) HAlloc(p, needed);
-    funp->thing_word = HEADER_FUN;
-#ifndef SHARED_HEAP
-    funp->next = MSO(p).funs;
-    MSO(p).funs = funp;
-#endif
-    funp->num_free = num_free;
-    funp->creator = creator;	/* const or within process */
-    GET_BINARY_BYTES(uniq, uniq_p);
-    funp->fe = erts_put_debug_fun_entry(module, uniq_p, signed_val(index));
-    if (funp->fe == NULL) {
-	goto error;
-    }
-    for (i = 0; i < num_free; i++) {
-	Eterm* ep = list_val(env);
-	funp->env[i] = CAR(ep);
-	env = CDR(ep);
-    }
-    return make_fun(funp);
-}
-
-Eterm
 erts_debug_disassemble_1(Process* p, Eterm addr)
 {
     Eterm* hp;
@@ -202,7 +131,7 @@ erts_debug_disassemble_1(Process* p, Eterm addr)
 	Eterm mod;
 	Eterm name;
 	Export* ep;
-	int arity;
+	Sint arity;
 	int n;
 
 	tp = tuple_val(addr);
@@ -254,7 +183,7 @@ erts_debug_disassemble_1(Process* p, Eterm addr)
     }
 
     cerr_pos = 0;
-    erl_printf(CBUF, "%08X: ", code_ptr);
+    erl_printf(CBUF, HEXF ": ", code_ptr);
     instr = (Uint) code_ptr[0];
     for (i = 0; i < NUM_SPECIFIC_OPS; i++) {
 	if (instr == (Uint) BeamOp(i) && opc[i].name[0] != '\0') {
@@ -263,7 +192,7 @@ erts_debug_disassemble_1(Process* p, Eterm addr)
 	}
     }
     if (i >= NUM_SPECIFIC_OPS) {
-	erl_printf(CBUF, "unknown %d\n", instr);
+	erl_printf(CBUF, "unknown " HEXF "\n", instr);
 	code_ptr++;
     }
     addr = make_small_or_big((Uint) code_ptr, p);
@@ -294,7 +223,7 @@ dbg_bt(Process* p, Eterm* sp)
 	if (is_CP(*sp)) {
 	    Eterm* addr = find_function_from_pc(cp_val(*sp));
 	    if (addr) {
-		sys_printf(CERR, "%08X: ", addr);
+		sys_printf(CERR, HEXF ": ", addr);
 		display(addr[0], CERR);
 		sys_printf(CERR, ":");
 		display(addr[1], CERR);
@@ -320,7 +249,7 @@ dbg_where(Eterm* addr, Eterm x0, Eterm* reg)
 
 	addr = f;
 	arity = addr[2];
-	sys_printf(CERR, "%08X: ", addr);
+	sys_printf(CERR, HEXF ": ", addr);
 	display(addr[0], CERR);
 	sys_printf(CERR, ":");
 	display(addr[1], CERR);
@@ -382,13 +311,9 @@ print_op(CIO to, int op, int size, Eterm* addr)
 	    *ap++ = packed & 0x3ff;
 	    packed >>= 10;
 	    break;
-	case '0':	/* Shift 10 steps */
-	    *ap++ = packed & 0x3ff;
-	    packed >>= 10;
-	    break;
-	case '2':	/* Shift 12 steps */
-	    *ap++ = packed & 0xfff;
-	    packed >>= 12;
+	case '0':	/* Tight shift */
+	    *ap++ = packed & (BEAM_TIGHT_MASK / sizeof(Eterm));
+	    packed >>= BEAM_TIGHT_SHIFT;
 	    break;
 	case '6':	/* Shift 16 steps */
 	    *ap++ = packed & 0xffff;
@@ -431,11 +356,11 @@ print_op(CIO to, int op, int size, Eterm* addr)
 	case 's':		/* Any source (tagged constant or register) */
 	    tag = beam_reg_tag(*ap);
 	    if (tag == X_REG_DEF) {
-		erl_printf(to, "x(%d)", x_reg_index(*ap));
+		erl_printf(to, "x(%d)", reg_index(*ap));
 		ap++;
 		break;
 	    } else if (tag == Y_REG_DEF) {
-		erl_printf(to, "y(%d)", y_reg_index(*ap) - CP_SIZE);
+		erl_printf(to, "y(%d)", reg_index(*ap) - CP_SIZE);
 		ap++;
 		break;
 	    } else if (tag == R_REG_DEF) {
@@ -457,10 +382,10 @@ print_op(CIO to, int op, int size, Eterm* addr)
 	case 'd':		/* Destination (x(0), x(N), y(N)) */
 	    switch (beam_reg_tag(*ap)) {
 	    case X_REG_DEF:
-		erl_printf(to, "x(%d)", x_reg_index(*ap));
+		erl_printf(to, "x(%d)", reg_index(*ap));
 		break;
 	    case Y_REG_DEF:
-		erl_printf(to, "y(%d)", y_reg_index(*ap) - CP_SIZE);
+		erl_printf(to, "y(%d)", reg_index(*ap) - CP_SIZE);
 		break;
 	    case R_REG_DEF:
 		erl_printf(to, "x(0)");
@@ -540,10 +465,16 @@ print_op(CIO to, int op, int size, Eterm* addr)
 	case 'o':
 	    {
 		FloatDef f;
-
+#ifdef ARCH_64
+		ap++;
+		f.fdw = *ap++;
+#else
+		ap++;
 		f.fw[0] = *ap++;
 		f.fw[1] = *ap++;
+#endif
 		erl_printf(to, "%g", f.fd);
+		size++;
 	    }
 	    break;
 	case 'l':		/* fr(N) */

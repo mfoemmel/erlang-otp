@@ -9,9 +9,9 @@
 %%  History  :	* 2001-11-01 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: mikpe $
-%%              $Date: 2002/08/22 12:19:17 $
-%%              $Revision: 1.4 $
+%%              $Author: richardc $
+%%              $Date: 2004/01/19 17:45:03 $
+%%              $Revision: 1.6 $
 %% ====================================================================
 %%  Exports  :
 %%hipe:c({test13,test,0},[late_frames,{regalloc,lfls},pp_sparc]).
@@ -20,7 +20,6 @@
 -module(hipe_sparc_ra_post_cs).
 -export([rewrite/4]).
 -include("../main/hipe.hrl").
--include("../util/hipe_vector.hrl").
 
 
 rewrite(Cfg, TempMaps, DontSpill, _Options) ->
@@ -39,7 +38,7 @@ rewrite_instrs([I|Is], TempMaps, AccIs, DontSpill, CurrentMap) ->
   NewMap = 
     case hipe_sparc:is_label(I) of
       true ->
-	?vector_get(hipe_sparc:label_name(I),TempMaps);
+	hipe_vectors:get(TempMaps,hipe_sparc:label_name(I));
       false ->
 	CurrentMap
     end,

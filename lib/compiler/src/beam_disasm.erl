@@ -2,7 +2,7 @@
 %%=======================================================================
 %% File        : beam_disasm.erl
 %% Author      : Kostis Sagonas
-%% Description : Disassembles an R5-R8 .beam file into symbolic BEAM code
+%% Description : Disassembles an R5-R10 .beam file into symbolic BEAM code
 %%=======================================================================
 %% $Id$
 %%=======================================================================
@@ -255,7 +255,7 @@ get_funs(PrevI,[I|Is],RevF,RevFs) ->
 	{func_info,_Info} ->
 	    [H|T] = RevF,
 	    {Last,Fun,TrailingLabels} = split_head_labels(H,T,[]),
-	    get_funs(I, Is, [PrevI|TrailingLabels], add_fun([Last|Fun],RevFs));
+	    get_funs(I, Is, [PrevI|TrailingLabels], add_funs([Last|Fun],RevFs));
 	_ ->
 	    get_funs(I, Is, [PrevI|RevF], RevFs)
     end;
@@ -265,7 +265,7 @@ get_funs(PrevI,[],RevF,RevFs) ->
 	    emit_funs(add_fun(RevF,RevFs));
 	_ ->
 	    ?DEBUG('warning: code segment did not end with int_code_end~n',[]),
-	    emit_funs(add_fun([PrevI|RevF],RevFs))
+            emit_funs(add_funs([PrevI|RevF],RevFs))
     end.
 
 split_head_labels({label,L},[I|Code],Labs) ->
@@ -276,6 +276,9 @@ split_head_labels(I,Code,Labs) ->
 add_fun([],Fs) ->
     Fs;
 add_fun(F,Fs) ->
+    add_funs(F,Fs).
+
+add_funs(F,Fs) ->
     [ lists:reverse(F) | Fs ].
 
 emit_funs(Fs) ->
@@ -358,7 +361,7 @@ decode_arg([B|Bs]) ->
     ?NO_DEBUG('Tag = ~p, B = ~p, Bs = ~p~n',[Tag,B,Bs]),
     case Tag of
 	z ->
-	    decode_z_tagged(Tag,B,Bs);
+	    decode_z_tagged(Tag, B, Bs);
 	_ ->
 	    %% all other cases are handled as if they were integers
 	    decode_int(Tag,B,Bs)
@@ -398,9 +401,7 @@ decode_int(Tag,B,Bs) ->
 	     true -> N
 	  end,
     ?NO_DEBUG('Len = ~p, IntBs = ~p, Num = ~p~n', [Len,IntBs,Num]),
-    {{Tag,Num},RemBs};
-decode_int(_,B,_) ->
-    ?exit({decode_int,B}).
+    {{Tag,Num},RemBs}.
 
 decode_int_length(B,Bs) ->
     %% The following imitates get_erlang_integer() in beam_load.c
@@ -434,6 +435,8 @@ decode_z_tagged(Tag,B,Bs) when (B band 16#08) == 0 ->
 	    {{Tag,N},Bs};
 	2 -> % fr
 	    decode_fr(Bs);
+	3 -> % allocation list
+	    decode_alloc_list(Bs);
 	_ ->
 	    ?exit({decode_z_tagged,{invalid_extended_tag,N}})
     end;
@@ -448,6 +451,22 @@ decode_float(Bs) ->
 decode_fr(Bs) ->
     {{u,Fr},RestBs} = decode_arg(Bs),
     {{fr,Fr},RestBs}.
+
+decode_alloc_list(Bs) ->
+    {{u,N},RestBs} = decode_arg(Bs),
+    decode_alloc_list_1(N, RestBs, []).
+
+decode_alloc_list_1(0, RestBs, Acc) ->
+    {{u,{alloc,lists:reverse(Acc)}},RestBs};
+decode_alloc_list_1(N, Bs0, Acc) ->
+    {{u,Type},Bs1} = decode_arg(Bs0),
+    {{u,Val},Bs} = decode_arg(Bs1),
+    case Type of
+	0 ->
+	    decode_alloc_list_1(N-1, Bs, [{words,Val}|Acc]);
+	1 ->
+	    decode_alloc_list_1(N-1, Bs, [{floats,Val}|Acc])
+    end.
 
 %%-----------------------------------------------------------------------
 %% take N bytes from a stream, return { Taken_bytes, Remaining_bytes }
@@ -666,8 +685,9 @@ resolve_inst({is_atom,Args},Atoms,_,_,_) ->
 resolve_inst({is_pid,Args},Atoms,_,_,_) ->
     [L,Src] = resolve_args(Args,Atoms),
     {is_pid,L,Src};
-resolve_inst({is_ref,Args},Atoms,_,_,_) ->
+resolve_inst({is_reference,Args},Atoms,_,_,_) ->
     [L,Src] = resolve_args(Args,Atoms),
+    %% Keep the old name is_ref for backwards compatibility.
     {is_ref,L,Src};
 resolve_inst({is_port,Args},Atoms,_,_,_) ->
     [L,Src] = resolve_args(Args,Atoms),
@@ -727,8 +747,8 @@ resolve_inst({put_tuple,[{u,Arity},Dst]},_,_,_,_) ->
     {put_tuple,Arity,Dst};
 resolve_inst({put,[Src]},Atoms,_,_,_) ->
     {put,resolve_arg(Src,Atoms)};
-resolve_inst({badmatch,[X]},_,_,_,_) ->
-    {badmatch,X};
+resolve_inst({badmatch,[X]},Atoms,_,_,_) ->
+    {badmatch,resolve_arg(X,Atoms)};
 resolve_inst({if_end,[]},_,_,_,_) ->
     if_end;
 resolve_inst({case_end,[X]},Atoms,_,_,_) ->
@@ -738,8 +758,9 @@ resolve_inst({call_fun,[{u,N}]},_,_,_,_) ->
 resolve_inst({make_fun,Args},Atoms,_,_,Lbls) ->
     [{f,L},Magic,FreeVars] = resolve_args(Args,Atoms),
     {make_fun,catch lookup_key(L,Lbls),Magic,FreeVars};
-resolve_inst({is_function,[F,X]},_,_,_,_) ->
-    {is_function,F,X};
+resolve_inst({is_function,Args},Atoms,_,_,_) ->
+    [L,Src] = resolve_args(Args,Atoms),
+    {is_function,L,Src};
 resolve_inst({call_ext_only,[{u,N},{u,MFAix}]},_,Imports,_,_) ->
     {call_ext_only,N,catch lists:nth(MFAix+1,Imports)};
 %%
@@ -822,6 +843,50 @@ resolve_inst({fdiv,Args},Atoms,_,_,_) ->
 resolve_inst({fnegate,Args},Atoms,_,_,_) ->
     [F,Arg,Reg] = resolve_args(Args,Atoms),
     {fnegate,F,[Arg],Reg};
+
+%%
+%% Instructions for try expressions added in January 2003 (R10).
+%%
+
+resolve_inst({'try',[Reg,Lbl]},_,_,_,_) -> % analogous to 'catch'
+    {'try',Reg,Lbl};
+resolve_inst({try_end,[Reg]},_,_,_,_) ->   % analogous to 'catch_end'
+    {try_end,Reg};
+resolve_inst({try_case,[Reg]},_,_,_,_) ->   % analogous to 'catch_end'
+    {try_case,Reg};
+resolve_inst({try_case_end,[Reg]},_,_,_,_) ->
+    {try_case_end,Reg};
+resolve_inst({raise,[Reg1,Reg2]},_,_,_,_) ->
+    {raise,Reg1,Reg2};
+
+%%
+%% New bit syntax instructions added in February 2004 (R10B).
+%%
+
+resolve_inst({bs_init2,[Lbl,Arg2,{u,W},{u,R},{u,F},Arg6]},Atoms,_,_,_) ->
+    [A2,A6] = resolve_args([Arg2,Arg6],Atoms),
+    {bs_init2,Lbl,A2,W,R,decode_field_flags(F),A6};
+resolve_inst({bs_bits_to_bytes,[Lbl,Arg2,Arg3]},Atoms,_,_,_) ->
+    [A2,A3] = resolve_args([Arg2,Arg3],Atoms),
+    {bs_bits_to_bytes,Lbl,A2,A3};
+resolve_inst({bs_add,[Lbl,Arg2,Arg3,Arg4,Arg5]},Atoms,_,_,_) ->
+    [A2,A3,A4,A5] = resolve_args([Arg2,Arg3,Arg4,Arg5],Atoms),
+    {bs_add,Lbl,A2,A3,A4,A5};
+
+%%
+%% New apply instructions added in April 2004 (R10B).
+%%
+resolve_inst({apply,[{u,Arity}]},_,_,_,_) ->
+    {apply,Arity};
+resolve_inst({apply_last,[{u,Arity},{u,D}]},_,_,_,_) ->
+    {apply_last,Arity,D};
+
+%%
+%% New test instruction added in April 2004 (R10B).
+%%
+resolve_inst({is_boolean,Args},Atoms,_,_,_) ->
+    [L,Src] = resolve_args(Args,Atoms),
+    {is_boolean,L,Src};
 
 %%
 %% Catches instructions that are not yet handled.

@@ -138,17 +138,21 @@ start_it("efile", Id, Pid, _Hosts) ->
 init_ack(Pid) ->
     Pid ! {self(),ok}.
 
+%% -> ok
 set_path(Paths) when list(Paths) ->
     request({set_path,Paths}).
 
+%% -> {ok,Paths}
 get_path() ->
     request({get_path,[]}).
 
+%% -> {ok,BinFile,File} | error
 get_file(File) when atom(File) ->
     get_file(atom_to_list(File));
 get_file(File) ->
     check_file_result(get_file, request({get_file,File})).
 
+%% -> ok | {error,Module} | {error,Reason,Module}
 get_files(ModFiles, Fun) ->
     case request({get_files,{ModFiles,Fun}}) of
 	E = {error,_M} ->
@@ -160,15 +164,19 @@ get_files(ModFiles, Fun) ->
 	    ok
     end.
 
+%% -> {ok,List} | error
 list_dir(Dir) ->
     check_file_result(list_dir, request({list_dir,Dir})).
 
+%% -> {ok,Info} | error
 read_file_info(Elem) ->
     check_file_result(read_file_info, request({read_file_info,Elem})).
 
+%% -> {ok,Cwd} | error
 get_cwd() ->
     check_file_result(get_cwd, request({get_cwd,[]})).
 
+%% -> {ok,Cwd} | error
 get_cwd(Drive) ->
     check_file_result(get_cwd, request({get_cwd,[Drive]})).
 
@@ -186,7 +194,7 @@ check_file_result(_, {error,enoent}) ->
     error;
 check_file_result(_, {error,enotdir}) ->
     error;
-check_file_result(Func, {error,Reason}) ->    
+check_file_result(Func, {error,Reason}) ->   
     case (catch atom_to_list(Reason)) of
 	{'EXIT',_} ->				% exit trapped
 	    error;
@@ -198,7 +206,7 @@ check_file_result(Func, {error,Reason}) ->
 			      ""
 		      end,
 	    Report = "File operation error: " ++ Errno ++ ". " ++
-	       	     "Function: " ++ atom_to_list(Func) ++ ". " ++ Process,
+	       	     "Function: " ++ atom_to_list(Func) ++ ". " ++ Process, 
 	    %% this is equal to calling error_logger:error_report/1 which
 	    %% we don't want to do from code_server during system boot
 	    error_logger ! {notify,{error_report,group_leader(),
@@ -333,7 +341,7 @@ handle_timeout(State = #state{loader = inet}, Pid) ->
 %%% Reading many files in parallel is an optimization. 
 %%% See also comment in init.erl.
 
-%% -> ok | {error,module()}
+%% -> {ok,State} | {{error,Module},State} | {{error,Reason,Module},State}
 multi_get_from_port_efile(State, ModFiles, Paths, Fun) ->
     Ref = make_ref(),
     %% More than 200 processes is no gain.
@@ -378,6 +386,7 @@ par_get_file(Ref, State, {Mod,File} = MF, Paths, Pid, Fun) ->
             Pid ! {Ref,MF,{error,Error,State}}
     end.
 
+%% -> {{ok,BinFile,File},State} | {{error,Reason},State}
 get_from_port_efile(State, File, Paths) ->
     case get_from_port_efile1(State, File, Paths) of
 	{error,Reason,State1} ->
@@ -388,11 +397,11 @@ get_from_port_efile(State, File, Paths) ->
 
 get_from_port_efile1(State, File, Paths) ->
     case absolute_filename(File) of
-	true ->               %% Get absolute file name.
+	true ->					% get absolute file name.
 	    get_from_port_efile(File, State);
-	false when Paths == [] -> %% Get plain file name.
+	false when Paths == [] ->		% get plain file name.
 	    get_from_port_efile(File, State);
-	false ->                  %% Use Paths.
+	false ->				% use paths.
 	    get_from_port_efile2(File, Paths, State)
     end.
 
@@ -420,12 +429,15 @@ get_from_port_efile(File, #state{data = Port} = State) ->
 	    {{ok,BinFile,File},State}
     end.
 
+%% -> {{ok,List},State} | {{error,Reason},State}
 efile_list_dir(State, Dir) ->
     {prim_file:list_dir(Dir),State}.
 
+%% -> {{ok,Info},State} | {{error,Reason},State}
 efile_read_file_info(State, Elem) ->
     {prim_file:read_file_info(Elem),State}.
 
+%% -> {{ok,Cwd},State} | {{error,Reason},State}
 efile_get_cwd(State, []) ->
     {prim_file:get_cwd(),State};
 efile_get_cwd(State, [Drive]) ->
@@ -552,14 +564,14 @@ inet_timeout_handler(State, _Pid) ->
     end,
     State#state { timeout = infinity, data = noport }.
 
-
+%% -> {{ok,BinFile,Tag},State} | {{error,Reason},State}
 get_from_port_inet(State, File, Paths) ->
     case absolute_filename(File) of
-	true ->               %% Get absolute file name.
+	true ->					% get absolute file name.
 	    inet_send_and_rcv({get,File}, File, State);
-	false when Paths == [] -> %% Get plain file name.
+	false when Paths == [] ->		% get plain file name.
 	    inet_send_and_rcv({get,File}, File, State);
-	false ->                  %% Use Paths.
+	false ->				% use paths.
 	    get_from_port_inet1(File, Paths, State)
     end.
 
@@ -612,12 +624,15 @@ inet_send_and_rcv(Msg, Tag, #state{data=Tcp,timeout=Timeout}=State) ->
 	    inet_send_and_rcv(Msg, Tag, inet_stop_port(State))
     end.
 
+%% -> {{ok,List},State} | {{error,Reason},State}
 inet_list_dir(State, Dir) ->
     inet_send_and_rcv({list_dir,Dir}, list_dir, State).
 
+%% -> {{ok,Info},State} | {{error,Reason},State}
 inet_read_file_info(State, Elem) ->
     inet_send_and_rcv({read_file_info,Elem}, read_file_info, State).
 
+%% -> {{ok,Cwd},State} | {{error,Reason},State}
 inet_get_cwd(State, []) ->
     inet_send_and_rcv(get_cwd, get_cwd, State);
 inet_get_cwd(State, [Drive]) ->

@@ -1,10 +1,21 @@
 -module(hipe_sparc_cfg).
 
--export([function/1,
-	 params/1,
-	 linearize/1,
+-export([bb/2, bb_add/3,
+	 function/1,
 	 init/1,
-	 predictionorder/1]).
+         labels/1, start_label/1,
+	 linearize/1,
+	 is_leaf/1,
+         data/1,
+         succ/2, succ_map/1,
+         pred/2, pred_map/1,
+	 predictionorder/1,
+         remove_trivial_bbs/1
+	]).
+-export([postorder/1, reverse_postorder/1]).
+%%-export([depth_first_ordering/1]).	% needed for hipe_finalize
+
+-define(SPARC_CFG,true).		% needed for cfg.inc
 
 -include("../main/hipe.hrl"). 
 -include("../flow/cfg.inc").
@@ -20,8 +31,6 @@ init(Sparc) ->
 
    CFG = mk_empty_cfg(hipe_sparc:sparc_fun(Sparc),
 		      StartLabel,
-		      hipe_sparc:sparc_var_range(Sparc),
-		      hipe_sparc:sparc_label_range(Sparc),
 		      hipe_sparc:sparc_data(Sparc),
 		      hipe_sparc:sparc_is_closure(Sparc),
 		      hipe_sparc:sparc_is_leaf(Sparc),
@@ -43,19 +52,16 @@ is_label(Instr) ->
 label_name(Instr) ->
    hipe_sparc:label_name(Instr).
 
-label_annot(Lbl) ->
-   hipe_sparc:info(Lbl).
-
-mk_label(Name, Annot) ->
-   hipe_sparc:label_create(Name, Annot).
+mk_label(Name) ->
+   hipe_sparc:label_create(Name).
 
 mk_goto(Name) ->
-    hipe_sparc:goto_create(Name, []).
+    hipe_sparc:goto_create(Name).
 
 branch_successors(Instr) ->
   case hipe_sparc:type(Instr) of
     b -> [hipe_sparc:b_false_label(Instr),hipe_sparc:b_true_label(Instr)];
-    br -> [hipe_sparc:br_false_label(Instr),hipe_sparc:br_true_label(Instr)];
+%%     br -> [hipe_sparc:br_false_label(Instr),hipe_sparc:br_true_label(Instr)];
     call_link -> 
       case hipe_sparc:call_link_fail(Instr) of
 	[] -> [hipe_sparc:call_link_continuation(Instr)];
@@ -98,7 +104,7 @@ redirect_ops([Label|Labels], CFG, Map) ->
   BB = bb(CFG, Label),
   Code = hipe_bb:code(BB),
   NewCode = [rewrite(I,Map) || I <- Code],
-  NewCFG = bb_update(CFG, Label,hipe_bb:code_update(BB, NewCode)),
+  NewCFG = bb_add(CFG, Label,hipe_bb:code_update(BB, NewCode)),
   redirect_ops(Labels, NewCFG, Map);
 redirect_ops([],CFG,_) -> CFG.
 
@@ -115,10 +121,8 @@ rewrite(I,Map) ->
     _ -> I
   end.
 
-
-pp(CFG) ->
-   hipe_sparc_pp:pp(linearize(CFG)).
-
+%% pp(CFG) ->
+%%    hipe_sparc_pp:pp(linearize(CFG)).
 
 linearize(CFG) ->
   Code = linearize_cfg(CFG),
@@ -128,15 +132,15 @@ linearize(CFG) ->
 		      is_leaf(CFG),
 		      Code,
 		      data(CFG),
-		      var_range(CFG),
-		      label_range(CFG)).
+		      [], %var_range(CFG),
+		      []).%label_range(CFG)).
 
 
 predictionorder(CFG) ->
-  Start = start(CFG),
+  Start = start_label(CFG),
   Succ = succ_map(CFG),
   {_Vis, PO1} = prediction_list([Start], none_visited(), Succ, [], CFG),
- lists:reverse(PO1).
+  lists:reverse(PO1).
 
 
 prediction_list([X|Xs], Vis, Succ, PO, CFG) ->
@@ -207,21 +211,36 @@ is_cond(I) ->
 
 cond_pred(I) ->
    case hipe_sparc:type(I) of
-      br -> hipe_sparc:br_pred(I);
+%%      br -> hipe_sparc:br_pred(I);
       b -> hipe_sparc:b_pred(I)
    end.
    
 
 cond_true_label(B) ->
    case hipe_sparc:type(B) of
-      br -> hipe_sparc:br_true_label(B);
+%%      br -> hipe_sparc:br_true_label(B);
       b -> hipe_sparc:b_true_label(B)
    end.
 
 
 cond_false_label(B) ->
    case hipe_sparc:type(B) of
-      br -> hipe_sparc:br_false_label(B);
+%%       br -> hipe_sparc:br_false_label(B);
       b -> hipe_sparc:b_false_label(B)
    end.
 
+%% init_gensym(CFG)->
+%%   HighestVar = find_highest_var(CFG),
+%%   HighestLabel = find_highest_label(CFG),
+%%   hipe_gensym:init(),
+%%   hipe_gensym:set_var(sparc, HighestVar),
+%%   hipe_gensym:set_label(sparc, HighestLabel).
+%% 
+%% highest_var(Code)->
+%%   hipe_sparc:highest_reg(Code).
+
+is_phi(_I)->
+  false. %% We have no phi-nodes on this level.
+
+phi_remove_pred(I, _Pred)->
+  I. %% We have no phi-nodes on this level.

@@ -1,3 +1,3 @@
 
-EMACS_VSN = 2.4.12
+EMACS_VSN = 2.4.13
 

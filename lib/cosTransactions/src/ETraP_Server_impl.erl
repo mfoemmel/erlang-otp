@@ -197,7 +197,7 @@ init(Env) ->
 
 
 
-terminate(Reason, {Env, Local}) ->
+terminate(Reason, {Env, _Local}) ->
     ?debug_print("STOP ~p   ~p~n", [?tr_get_etrap(Env), Reason]),
     case Reason of
 	normal -> 
@@ -218,7 +218,7 @@ terminate(Reason, {Env, Local}) ->
 %% Effect   : Functions demanded by the gen_server module. 
 %%------------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 handle_call(_,_, State) ->
@@ -291,7 +291,7 @@ get_coordinator(Self, State) ->
 %%            the resource.
 %%------------------------------------------------------------
 
-replay_completion(Self, {Env, Local}, Resource) ->
+replay_completion(_Self, {Env, Local}, Resource) ->
     type_check(?tr_get_typeCheck(Env), ?tr_Resource,
 	       "RecoveryCoordinator:replay_completion", Resource),
     case ?etr_get_status(Local) of
@@ -315,7 +315,7 @@ replay_completion(Self, {Env, Local}, Resource) ->
 %%            resource.
 %%------------------------------------------------------------
 
-prepare(Self, {Env, Local}) ->    
+prepare(_Self, {Env, Local}) ->    
     %% Set status as prepared. No new Resources are allowed to register.
     NewL = ?etr_set_status(Local, 'StatusPrepared'),
 
@@ -443,7 +443,7 @@ rollback(Self, {Env, Local}) ->
 %%            NotPrepared
 %%------------------------------------------------------------
 
-commit(Self, {Env, Local}) ->
+commit(_Self, {Env, Local}) ->
     case ?etr_get_status(Local) of
 	'StatusPrepared' -> 
 	    ?eval_debug_fun({?tr_get_etrap(Env), commit}, Env),
@@ -480,7 +480,7 @@ commit(Self, {Env, Local}) ->
 %%            TRANSACTION_ROLLEDBACK
 %%------------------------------------------------------------
 
-commit_one_phase(Self, {Env, Local}) ->
+commit_one_phase(_Self, {Env, Local}) ->
     case ?etr_get_members(Local) of
 	[Resource] ->
 	    case ?etr_get_status(Local) of
@@ -571,7 +571,7 @@ commit_one_phase(Self, {Env, Local}) ->
 %%            transaction. Terminate this server.
 %%------------------------------------------------------------
 
-forget(Self, {Env, Local}) ->
+forget(_Self, {Env, Local}) ->
     ?etr_log(?tr_get_etrap(Env), forget_phase),
     send_forget(?etr_get_raisedH(Local), ?tr_get_etrap(Env)),
     {stop, normal, ok, {Env, ?etr_set_exc(Local, void)}}.
@@ -594,7 +594,7 @@ forget(Self, {Env, Local}) ->
 %%            with the target object.
 %%------------------------------------------------------------
 
-get_status(Self, {Env, Local}) ->
+get_status(_Self, {Env, Local}) ->
     {reply, ?etr_get_status(Local), {Env, Local}}.
 
 
@@ -608,13 +608,13 @@ get_status(Self, {Env, Local}) ->
 %%            transaction equal to get_status.
 %%------------------------------------------------------------
 
-get_parent_status(Self, {Env, Local}) ->
+get_parent_status(_Self, {Env, Local}) ->
     case catch ?tr_get_parents(Env) of
 	[] ->
 	    {reply, ?etr_get_status(Local), {Env, Local}};
 	[Parent|_] ->
 	    case catch 'CosTransactions_Coordinator':get_status(Parent) of
-		{'EXCEPTION', E} -> 
+		{'EXCEPTION', _E} -> 
 		    corba:raise(?tr_unavailable);
 		{'EXIT', _} -> 
 		    corba:raise(?tr_unavailable);
@@ -634,13 +634,13 @@ get_parent_status(Self, {Env, Local}) ->
 %%            transaction equal to get_status.
 %%------------------------------------------------------------
 
-get_top_level_status(Self, {Env, Local}) ->
+get_top_level_status(_Self, {Env, Local}) ->
     case catch ?tr_get_parents(Env) of
 	[] ->
 	    {reply, ?etr_get_status(Local), {Env, Local}};
 	Ancestrors ->
 	    case catch 'CosTransactions_Coordinator':get_status(lists:last(Ancestrors)) of
-		{'EXCEPTION', E} ->
+		{'EXCEPTION', _E} ->
 		    corba:raise(?tr_unavailable);
 		{'EXIT', _} ->
 		    corba:raise(?tr_unavailable);
@@ -673,7 +673,7 @@ is_same_transaction(Self, {Env, Local}, Coordinator) ->
 %% Effect   :
 %%------------------------------------------------------------
 
-is_related_transaction(Self, {Env, Local}, Coordinator) ->
+is_related_transaction(_Self, {_Env, _Local}, _Coordinator) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_YES}).
 %    type_check(?tr_get_typeCheck(Env), ?tr_Coordinator,
 %	       "Coordinator:is_related_transaction", Coordinator),
@@ -687,7 +687,7 @@ is_related_transaction(Self, {Env, Local}, Coordinator) ->
 %% Effect   :
 %%------------------------------------------------------------
 
-is_ancestor_transaction(Self, {Env, Local}, Coordinator) ->
+is_ancestor_transaction(_Self, {_Env, _Local}, _Coordinator) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_YES}).
 %    type_check(?tr_get_typeCheck(Env), ?tr_Coordinator,
 %	       "Coordinator:is_ancestor_transaction", Coordinator),
@@ -718,7 +718,7 @@ is_descendant_transaction(Self, {Env, Local}, Coordinator) ->
 %% Effect   :
 %%------------------------------------------------------------
 
-is_top_level_transaction(Self, {Env, Local}) ->
+is_top_level_transaction(_Self, {Env, Local}) ->
      case catch ?tr_get_parents(Env) of
 	[] ->
 	     {reply, true, {Env, Local}};
@@ -758,7 +758,7 @@ hash_top_level_tran(Self, {Env, Local}) ->
 	Ancestrors ->
 	    case catch corba_object:hash(lists:last(Ancestrors), 
 					 ?tr_get_hashMax(Env)) of
-		{'EXCEPTION', E} -> 
+		{'EXCEPTION', _E} -> 
 		    corba:raise(?tr_unavailable);
 		Hash ->
 		    {reply, Hash, {Env, Local}}
@@ -824,7 +824,7 @@ register_subtran_aware(Self, {Env, Local}, SubTrAwareResource) ->
 %% Effect   : 
 %%------------------------------------------------------------
 
-register_synchronization(Self, {Env, Local}, _Synchronization) ->
+register_synchronization(_Self, {_Env, _Local}, _Synchronization) ->
     corba:raise(#'CosTransactions_SynchronizationUnavailable'{}).
 
 %register_synchronization(Self, {Env, Local}, Synchronization) ->
@@ -889,7 +889,7 @@ rollback_only(Self, {Env, Local}) ->
 %% Effect   : Intended for debugging.
 %%------------------------------------------------------------
 
-get_transaction_name(Self, {Env, Local}) ->
+get_transaction_name(_Self, {Env, Local}) ->
     {reply, ?tr_get_etrap(Env), {Env, Local}}.
 
 %%-----------------------------------------------------------%
@@ -948,7 +948,7 @@ create_subtransaction(Self, {Env, Local}) ->
 %% Effect   : 
 %%------------------------------------------------------------
 
-get_txcontext(Self, {Env, Local}) ->
+get_txcontext(_Self, {_Env, _Local}) ->
     corba:raise(#'CosTransactions_Unavailable'{}).
 
 %get_txcontext(Self, {Env, Local}) ->
@@ -1082,8 +1082,8 @@ send_prepare([Rhead|Rtail], VC, Alarm) ->
 	'VoteCommit' ->
 	    case catch try_timeout(Alarm) of
 		false -> 
-		    Env = ?get_debug_data(self),
-		    ?eval_debug_fun({?tr_get_etrap(Env), send_prepare}, Env),
+		    _Env = ?get_debug_data(self),
+		    ?eval_debug_fun({?tr_get_etrap(_Env), send_prepare}, _Env),
 		    send_prepare(Rtail, VC++[Rhead], Alarm);
 		_-> 
 		    %% Timeout, rollback. However, the resource did vote 
@@ -1219,19 +1219,19 @@ set_exception(Exc, _)            -> Exc.
 send_forget([], _) -> ok;
 send_forget([Rhead|Rtail], LogName) ->
     ?debug_print("send_forget()~n",[]),
-    Env = ?get_debug_data(self),
+    _Env = ?get_debug_data(self),
     case catch 'CosTransactions_Resource':forget(Rhead) of
 	ok ->
-	    ?eval_debug_fun({?tr_get_etrap(Env), send_forget1}, Env),
+	    ?eval_debug_fun({?tr_get_etrap(_Env), send_forget1}, _Env),
 	    ?etr_log(LogName, {forgotten, Rhead}),
-	    ?eval_debug_fun({?tr_get_etrap(Env), send_forget2}, Env),
+	    ?eval_debug_fun({?tr_get_etrap(_Env), send_forget2}, _Env),
 	    send_forget(Rtail, LogName);
 	Other ->
 	    ?tr_error_msg("CosTransactions_Coordinator failed sending forget to  ~p~nREASON: ~p~n",
 			  [Rhead, Other]),
-	    ?eval_debug_fun({?tr_get_etrap(Env), send_forget3}, Env),
+	    ?eval_debug_fun({?tr_get_etrap(_Env), send_forget3}, _Env),
 	    ?etr_log(LogName, {not_forgotten, Rhead}),
-	    ?eval_debug_fun({?tr_get_etrap(Env), send_forget4}, Env),
+	    ?eval_debug_fun({?tr_get_etrap(_Env), send_forget4}, _Env),
 	    send_forget(Rtail, LogName)
     end.
 
@@ -1398,11 +1398,11 @@ send_info([Rhead|Rtail], M, F) ->
 %% Effect   : Check what kind of exception we received.
 %%------------------------------------------------------------
 
-evaluate_answer(E, Rhead, Vote, Exc, Log, Local) 
+evaluate_answer(E, Rhead, _Vote, Exc, Log, Local) 
   when record(E, 'CosTransactions_HeuristicMixed') ->
     ?etr_log(Log, {heuristic, {Rhead, E}}),
     {Exc#exc{mixed = true}, ?etr_add_raisedH(Local, Rhead), []};
-evaluate_answer(E, Rhead, Vote, Exc, Log, Local)
+evaluate_answer(E, Rhead, _Vote, Exc, Log, Local)
   when record(E, 'CosTransactions_HeuristicHazard') ->
     ?etr_log(Log, {heuristic, {Rhead, E}}),
     {Exc#exc{hazard = true}, ?etr_add_raisedH(Local, Rhead), []};
@@ -1473,7 +1473,7 @@ evaluate_answer(E, Rhead, Vote, Exc, Log, Local)when record(E, 'OBJECT_NOT_EXIST
     %% assume rollback if this server do not exist any more.
     ?etr_log(Log, {heuristic, {Rhead, ?tr_hazard}}),
     {Exc#exc{hazard = true}, Local, []};
-evaluate_answer(Unknown, Rhead, Vote, Exc, Log, Local)->
+evaluate_answer(Unknown, Rhead, Vote, Exc, _Log, Local)->
     ?tr_error_msg("Coordinator:~p( ~p ). Unknown reply: ~p.~n", 
 		  [Vote, Rhead, Unknown]),
     {Exc, Local, []}.
@@ -1566,8 +1566,8 @@ prepare_restart(State, eof) ->
     self() ! {suicide, self()},
     {ok, State};
 %% Collected all necessary votes. Do commit_restart.
-prepare_restart({Env, _}, {{pre_vote, Vote, Data}, Cursor}) ->
-    ?debug_print("prepare_restart: pre_vote( ~p )~n",[Vote]),
+prepare_restart({Env, _}, {{pre_vote, _Vote, Data}, Cursor}) ->
+    ?debug_print("prepare_restart: pre_vote( ~p )~n",[_Vote]),
     if
 	?tr_is_root(Env) ->
 	    commit_restart({Env, Data}, 
@@ -1578,7 +1578,7 @@ prepare_restart({Env, _}, {{pre_vote, Vote, Data}, Cursor}) ->
     end;
 %% 'rollback' called without 'prepare'. This case occurs if the Coordinator
 %% crashes when send_info or notify_subtrAware.
-prepare_restart({Env, _}, {{rollback, NewL}, Cursor}) ->
+prepare_restart({Env, _}, {{rollback, NewL}, _Cursor}) ->
     ?debug_print("prepare_restart: pre_vote( rollback )~n",[]),
     send_info(?etr_get_members(NewL), 'CosTransactions_Resource', rollback),
     notify_subtrAware(rollback, ?etr_get_subAw(NewL), ?etr_get_self(NewL)),
@@ -1673,11 +1673,11 @@ commit_restart({Env, Local}, eof, Vote, Exc) ->
     end;
 
 %% Decision made, i.e. rollback or commit.
-commit_restart({Env, Local}, {rollback, Cursor}, Phase, Exc) ->
+commit_restart({Env, Local}, {rollback, Cursor}, _Phase, Exc) ->
     ?debug_print("commit_restart: decided rollback~n",[]),
     commit_restart({Env, ?etr_set_status(Local, 'StatusRolledBack')}, 
 		   ?etr_read(?tr_get_etrap(Env), Cursor), rollback, Exc);
-commit_restart({Env, Local}, {commit, Cursor}, Phase, Exc) ->
+commit_restart({Env, Local}, {commit, Cursor}, _Phase, Exc) ->
     ?debug_print("commit_restart: decided commit~n",[]),
     commit_restart({Env, ?etr_set_status(Local, 'StatusCommitted')}, 
 		   ?etr_read(?tr_get_etrap(Env), Cursor), commit, Exc);
@@ -1685,8 +1685,8 @@ commit_restart({Env, Local}, {forget_phase, Cursor}, _, _) ->
     ?debug_print("commit_restart: start sending forget~n",[]),
     forget_restart({Env, Local}, ?etr_read(?tr_get_etrap(Env), Cursor));
 
-commit_restart({Env, Local}, R, _, _) ->
-    ?debug_print("RESTART FAIL: ~p~n",[R]),
+commit_restart({_Env, _Local}, _R, _, _) ->
+    ?debug_print("RESTART FAIL: ~p~n",[_R]),
     ?tr_error_msg("Internal log read failed:~n", []),
     exit("restart failed").
 
@@ -1727,11 +1727,11 @@ forget_restart({Env, Local}, eof) ->
 forget_restart({Env, Local}, {{forgotten, Obj}, Cursor}) ->
     ?debug_print("forget_restart: forgotten  heuristic~n",[]),
     NewL = ?etr_remove_raisedH(Local, Obj),
-    forget_restart({Env, Local}, ?etr_read(?tr_get_etrap(Env), Cursor));
+    forget_restart({Env, NewL}, ?etr_read(?tr_get_etrap(Env), Cursor));
 forget_restart({Env, Local}, {{not_forgotten, Obj}, Cursor}) ->
     ?debug_print("forget_restart: not_forgotten~n",[]),
     NewL = ?etr_remove_raisedH(Local, Obj),
     send_forget([Obj], dummy),
-    forget_restart({Env, Local}, ?etr_read(?tr_get_etrap(Env), Cursor)).
+    forget_restart({Env, NewL}, ?etr_read(?tr_get_etrap(Env), Cursor)).
 
 %%--------------- END OF MODULE ------------------------------

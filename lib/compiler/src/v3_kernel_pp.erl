@@ -160,21 +160,6 @@ format_1(#k_guard_clause{guard=G,body=B}, Ctxt) ->
      nl_indent(Ctxt1)
      | format(B, Ctxt1)
     ];
-format_1(#k_guard_and{args=As}, Ctxt) ->
-    Ctxt1 = ctxt_bump_indent(Ctxt, 2),
-    ["guard_and",nl_indent(Ctxt1),
-     format_vseq(As, "", "", Ctxt1, fun format/2)];
-format_1(#k_guard_or{args=As}, Ctxt) ->
-    Ctxt1 = ctxt_bump_indent(Ctxt, 2),
-    ["guard_or",nl_indent(Ctxt1),
-     format_vseq(As, "", "", Ctxt1, fun format/2)];
-format_1(#k_guard_not{arg=A}, Ctxt) ->
-    Ctxt1 = ctxt_bump_indent(Ctxt, 2),
-    ["guard_not",nl_indent(Ctxt1),format(A, Ctxt1)];
-format_1(#k_protected{body=B,ret=Rs}, Ctxt) ->
-    Ctxt1 = ctxt_bump_indent(Ctxt, 2),
-    ["protected",nl_indent(Ctxt1),format(B, Ctxt1),
-    nl_indent(Ctxt),format_ret(Rs, Ctxt)];
 format_1(#k_call{op=Op,args=As,ret=Rs}, Ctxt) ->
     Txt = ["call (",format(Op, ctxt_bump_indent(Ctxt, 6)),$)],
     Ctxt1 = ctxt_bump_indent(Ctxt, 2),
@@ -244,7 +229,6 @@ format_1(#k_receive{var=V,body=B,timeout=T,action=A,ret=Rs}, Ctxt) ->
      format_ret(Rs, Ctxt1)
     ];
 format_1(#k_receive_accept{}, _Ctxt) -> "receive_accept";
-format_1(#k_receive_reject{}, _Ctxt) -> "receive_reject";
 format_1(#k_receive_next{}, _Ctxt) -> "receive_next";
 format_1(#k_break{args=As}, Ctxt) ->
     ["<",

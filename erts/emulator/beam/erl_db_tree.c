@@ -38,6 +38,7 @@
 #include "global.h"
 #include "erl_process.h"
 #include "error.h"
+#define ERTS_WANT_DB_INTERNAL__
 #include "erl_db.h"
 #include "bif.h"
 #include "big.h"
@@ -201,15 +202,16 @@ struct select_delete_context {
 static TreeDbTerm *linkout_tree(DbTableTree *tb, Eterm key);
 static TreeDbTerm *linkout_object_tree(DbTableTree *tb, 
 				       Eterm object);
-static void do_free_tree(TreeDbTerm *root);
-static TreeDbTerm* get_term(TreeDbTerm* old, 
+static void do_free_tree(DbTableTree *tb, TreeDbTerm *root);
+static TreeDbTerm* get_term(DbTableTree *tb,
+			    TreeDbTerm* old, 
 			    Eterm obj);
-static void free_term(TreeDbTerm* p);
+static void free_term(DbTableTree *tb, TreeDbTerm* p);
 static int balance_left(TreeDbTerm **this); 
 static int balance_right(TreeDbTerm **this); 
 static int delsub(TreeDbTerm **this); 
 static TreeDbTerm *slot_search(Process *p, DbTableTree *tb, Sint slot);
-static int realloc_counter(TreeDbTerm** bp, Uint sz, 
+static int realloc_counter(DbTableCommon *tb, TreeDbTerm** bp, Uint sz, 
 			   Eterm new_counter, int counterpos);
 static TreeDbTerm *find_node(DbTableTree *tb, Eterm key);
 static TreeDbTerm **find_node2(DbTableTree *tb, Eterm key);
@@ -219,23 +221,41 @@ static TreeDbTerm *find_next_from_pb_key(DbTableTree *tb, Eterm key);
 static TreeDbTerm *find_prev_from_pb_key(DbTableTree *tb, Eterm key);
 static void traverse_backwards(DbTableTree *tb,
 			       Eterm lastkey,
-			       int (*doit)(TreeDbTerm *, void *, int),
+			       int (*doit)(DbTableTree *tb,
+					   TreeDbTerm *,
+					   void *,
+					   int),
 			       void *context); 
 static void traverse_forward(DbTableTree *tb,
 			     Eterm lastkey,
-			     int (*doit)(TreeDbTerm *, void *, int),
+			     int (*doit)(DbTableTree *tb,
+					 TreeDbTerm *,
+					 void *,
+					 int),
 			     void *context); 
 static int key_given(DbTableTree *tb, Eterm pattern, TreeDbTerm **ret,
 		     Eterm *partly_bound_key);
-static int cmp_partly_bound(Eterm partly_bound_key, Eterm bound_key);
-static int do_cmp_partly_bound(Eterm a, Eterm b, int *done);
+static Sint cmp_partly_bound(Eterm partly_bound_key, Eterm bound_key);
+static Sint do_cmp_partly_bound(Eterm a, Eterm b, int *done);
 
 static int analyze_pattern(DbTableTree *tb, Eterm pattern, 
 			   struct mp_info *mpi);
-static int doit_select(TreeDbTerm *this, void *ptr, int forward);
-static int doit_select_count(TreeDbTerm *this, void *ptr, int forward);
-static int doit_select_chunk(TreeDbTerm *this, void *ptr, int forward);
-static int doit_select_delete(TreeDbTerm *this, void *ptr, int forward);
+static int doit_select(DbTableTree *tb,
+		       TreeDbTerm *this,
+		       void *ptr,
+		       int forward);
+static int doit_select_count(DbTableTree *tb,
+			     TreeDbTerm *this,
+			     void *ptr,
+			     int forward);
+static int doit_select_chunk(DbTableTree *tb,
+			     TreeDbTerm *this,
+			     void *ptr,
+			     int forward);
+static int doit_select_delete(DbTableTree *tb,
+			      TreeDbTerm *this,
+			      void *ptr,
+			      int forward);
 static void do_dump_tree(CIO fd, int show, TreeDbTerm *t);
 
 static int partly_bound_can_match_lesser(Eterm partly_bound_1, 
@@ -280,13 +300,11 @@ void db_initialize_tree(void)
 int db_create_tree(Process *p, DbTableTree *tb)
 {
     tb->root = NULL;
-    tb->stack = erts_alloc(ERTS_ALC_T_DB_STK,
-			   sizeof(TreeDbTerm *) * STACK_NEED);
+    tb->stack = erts_db_alloc(ERTS_ALC_T_DB_STK,
+			      (DbTable *) tb,
+			      sizeof(TreeDbTerm *) * STACK_NEED);
     tb->stack_pos = 0;
     tb->slot_pos = 0;
-    ERTS_DB_TAB_MORE_MEM(tb,
-			 sizeof(TreeDbTerm *) * STACK_NEED / sizeof(Uint)
-			 + sizeof(DbTable) / sizeof(Eterm));
     return DB_ERROR_NONE;
 }
 
@@ -414,9 +432,14 @@ int db_update_counter_tree(Process *p, DbTableTree *tb,
     b = *bp;
     if (counterpos <= 0)
 	counterpos = tb->keypos + 1;
-    res = db_do_update_counter(p, (void *) bp, (*bp)->dbterm.tpl,
+    res = db_do_update_counter(p, (DbTableCommon *) tb, 
+			       (void *) bp, (*bp)->dbterm.tpl,
 			       counterpos, 
-			       (int (*)(void *, Uint, Eterm, int))
+			       (int (*)(DbTableCommon *,
+					void *,
+					Uint,
+					Eterm,
+					int))
 			       &realloc_counter, incr, warp, ret);
     if (*bp != b) /* May be reallocated in which case 
 		     the saved stack is messed up, clear stck if so. */
@@ -434,7 +457,7 @@ int db_put_tree(Process *proc, DbTableTree *tb,
     int dpos = 0;
     int state = 0;
     TreeDbTerm **this = &tb->root;
-    int c;
+    Sint c;
     Eterm key;
     int dir;
     TreeDbTerm *p1, *p2, *p;
@@ -451,8 +474,7 @@ int db_put_tree(Process *proc, DbTableTree *tb,
 		tb->nitems++;
 	    else
 		return DB_ERROR_SYSRES;
-	    *this = get_term(NULL, obj);
-	    ERTS_DB_TAB_MORE_MEM(tb, SIZ_DBTERM(*this));
+	    *this = get_term(tb, NULL, obj);
 	    (*this)->balance = 0;
 	    (*this)->left = (*this)->right = NULL;
 	    break;
@@ -466,9 +488,7 @@ int db_put_tree(Process *proc, DbTableTree *tb,
 	    tstack[tpos++] = this;
 	    this = &((*this)->right);
 	} else { /* Equal key and this is a set, replace. */
-	    ERTS_DB_TAB_LESS_MEM(tb, (*this)->dbterm.size);
-	    *this = get_term(*this, obj);
-	    ERTS_DB_TAB_MORE_MEM(tb, (*this)->dbterm.size);
+	    *this = get_term(tb, *this, obj);
 	    break;
 	}
     while (state && ( dir = dstack[--dpos] ) != DIR_END) {
@@ -631,7 +651,7 @@ int db_erase_tree(Process *p, DbTableTree *tb,
     *ret = am_true;
 
     if ((res = linkout_tree(tb, key)) != NULL) {
-	free_term(res);
+	free_term(tb, res);
     }
     return DB_ERROR_NONE;
 }
@@ -644,7 +664,7 @@ int db_erase_object_tree(Process *p, DbTableTree *tb,
     *ret = am_true;
 
     if ((res = linkout_object_tree(tb, object)) != NULL) {
-	free_term(res);
+	free_term(tb, res);
     }
     return DB_ERROR_NONE;
 }
@@ -721,7 +741,7 @@ static BIF_RETTYPE ets_select_reverse(Process *p, Eterm a1, Eterm a2, Eterm a3)
 	Eterm* pair = list_val(list);
 	if (--max_iter == 0) {
 	    BUMP_ALL_REDS(p);
-	    HRelease(p, hp);
+	    HRelease(p, hend, hp);
 	    BIF_TRAP3(&ets_select_reverse_exp, p, list, result, a3);
 	}
 	if (hp == hend) {
@@ -735,7 +755,7 @@ static BIF_RETTYPE ets_select_reverse(Process *p, Eterm a1, Eterm a2, Eterm a3)
     if (is_not_nil(list))  {
 	goto error;
     }
-    HRelease(p, hp);
+    HRelease(p, hend, hp);
     BUMP_REDS(p,CONTEXT_REDS - max_iter / 10);
     hp = HAlloc(p,3);
     BIF_RET(TUPLE2(hp, result, a3));
@@ -777,7 +797,7 @@ int db_select_tree_continue(Process *p,
     Eterm key;
     Eterm *tptr;
     Sint chunk_size;
-    int reverse;
+    Sint reverse;
 
 
 #define RET_TO_BIF(Term, State) do { *ret = (Term); return State; } while(0);
@@ -797,6 +817,8 @@ int db_select_tree_continue(Process *p,
     
     lastkey = tptr[2];
     end_condition = tptr[3];
+    if (!(thing_subtag(*binary_val(tptr[5])) == REFC_BINARY_SUBTAG))
+	RET_TO_BIF(NIL,DB_ERROR_BADPARAM);
     mp = ((ProcBin *) binary_val(tptr[5]))->val;
     if (!(mp->flags & BIN_FLAG_MATCH_PROG))
 	RET_TO_BIF(NIL,DB_ERROR_BADPARAM);
@@ -961,7 +983,7 @@ int db_select_tree(Process *p, DbTableTree *tb,
 
     if (!mpi.got_partial && mpi.some_limitation && 
 	cmp(mpi.least,mpi.most) == 0) {
-	doit_select(mpi.save_term,&sc,0 /* direction doesn't matter */);
+	doit_select(tb,mpi.save_term,&sc,0 /* direction doesn't matter */);
 	RET_TO_BIF(sc.accum,DB_ERROR_NONE);
     }
 
@@ -1059,6 +1081,8 @@ int db_select_count_tree_continue(Process *p,
     
     lastkey = tptr[2];
     end_condition = tptr[3];
+    if (!(thing_subtag(*binary_val(tptr[4])) == REFC_BINARY_SUBTAG))
+	RET_TO_BIF(NIL,DB_ERROR_BADPARAM);
     mp = ((ProcBin *) binary_val(tptr[4]))->val;
     if (!(mp->flags & BIN_FLAG_MATCH_PROG))
 	RET_TO_BIF(NIL,DB_ERROR_BADPARAM);
@@ -1154,7 +1178,7 @@ int db_select_count_tree(Process *p, DbTableTree *tb,
 
     if (!mpi.got_partial && mpi.some_limitation && 
 	cmp(mpi.least,mpi.most) == 0) {
-	doit_select_count(mpi.save_term,&sc,0 /* dummy */);
+	doit_select_count(tb,mpi.save_term,&sc,0 /* dummy */);
 	RET_TO_BIF(make_small_or_big(sc.got,p),DB_ERROR_NONE);
     }
 
@@ -1246,7 +1270,7 @@ int db_select_chunk_tree(Process *p, DbTableTree *tb,
 
     if (!mpi.got_partial && mpi.some_limitation && 
 	cmp(mpi.least,mpi.most) == 0) {
-	doit_select(mpi.save_term,&sc, 0 /* direction doesn't matter */);
+	doit_select(tb,mpi.save_term,&sc, 0 /* direction doesn't matter */);
 	if (sc.accum != NIL) {
 	    hp=HAlloc(p, 3);
 	    RET_TO_BIF(TUPLE2(hp,sc.accum,am_EOT),DB_ERROR_NONE);
@@ -1366,7 +1390,7 @@ int db_select_delete_continue_tree(Process *p,
 
 #define RET_TO_BIF(Term, State) do { 		\
 	if (sc.erase_lastterm) {		\
-	    free_term(sc.lastterm);		\
+	    free_term(tb, sc.lastterm);		\
 	}					\
 	*ret = (Term); 				\
 	return State; 				\
@@ -1444,7 +1468,7 @@ int db_select_delete_tree(Process *p, DbTableTree *tb,
 	    erts_match_set_free(mpi.mp);       	\
 	}					\
 	if (sc.erase_lastterm) {                \
-	    free_term(sc.lastterm);             \
+	    free_term(tb, sc.lastterm);         \
 	}                                       \
 	*ret = (Term); 				\
 	return RetVal; 			        \
@@ -1474,8 +1498,8 @@ int db_select_delete_tree(Process *p, DbTableTree *tb,
 
     if (!mpi.got_partial && mpi.some_limitation && 
 	cmp(mpi.least,mpi.most) == 0) {
-	doit_select_delete(mpi.save_term,&sc, 0 /* direction doesn't 
-						   matter */);
+	doit_select_delete(tb,mpi.save_term,&sc, 0 /* direction doesn't 
+						      matter */);
 	RET_TO_BIF(make_small_or_big(sc.accum,p),DB_ERROR_NONE);
     }
 
@@ -1509,7 +1533,7 @@ int db_select_delete_tree(Process *p, DbTableTree *tb,
 
     /* Don't free mpi.mp, so don't use macro */
     if (sc.erase_lastterm) {
-	free_term(sc.lastterm);
+	free_term(tb, sc.lastterm);
     }
     *ret = bif_trap1(&ets_select_delete_continue_exp, p, continuation); 
     return DB_ERROR_NONE;
@@ -1544,10 +1568,13 @@ void db_print_tree(CIO fd,
 /* release all memory occupied by a single table */
 void free_tree_table(DbTableTree *tb)
 {
-    do_free_tree(tb->root);
+    do_free_tree(tb, tb->root);
     if (tb->stack)
-	erts_free(ERTS_ALC_T_DB_STK, tb->stack);
-    ERTS_DB_TAB_LESS_MEM(tb, tb->memory);
+	erts_db_free(ERTS_ALC_T_DB_STK,
+		     (DbTable *) tb,
+		     (void *) tb->stack,
+		     sizeof(TreeDbTerm *) * STACK_NEED);
+    ASSERT(tb->memory_size == sizeof(DbTable));
 }
 
 
@@ -1590,7 +1617,7 @@ static TreeDbTerm *linkout_tree(DbTableTree *tb,
     int dpos = 0;
     int state = 0;
     TreeDbTerm **this = &tb->root;
-    int c;
+    Sint c;
     int dir;
     TreeDbTerm *q = NULL;
 
@@ -1627,7 +1654,6 @@ static TreeDbTerm *linkout_tree(DbTableTree *tb,
 		state = delsub(this);
 	    }
 	    --(tb->nitems);
-	    ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(q));
 	    break;
 	}
     }
@@ -1651,7 +1677,7 @@ static TreeDbTerm *linkout_object_tree(DbTableTree *tb,
     int dpos = 0;
     int state = 0;
     TreeDbTerm **this = &tb->root;
-    int c;
+    Sint c;
     int dir;
     TreeDbTerm *q = NULL;
     Eterm key;
@@ -1695,7 +1721,6 @@ static TreeDbTerm *linkout_object_tree(DbTableTree *tb,
 		state = delsub(this);
 	    }
 	    --(tb->nitems);
-	    ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(q));
 	    break;
 	}
     }
@@ -1841,26 +1866,31 @@ static void do_dump_tree(CIO fd, int show, TreeDbTerm *t)
     return;
 }
 
-static void free_term(TreeDbTerm* p)
+static void free_term(DbTableTree *tb, TreeDbTerm* p)
 {
 
     db_free_term_data(&(p->dbterm));
-    erts_free(ERTS_ALC_T_DB_TERM, p);
+    erts_db_free(ERTS_ALC_T_DB_TERM,
+		 (DbTable *) tb,
+		 (void *) p,
+		 SIZ_DBTERM(p)*sizeof(Uint));
 }
 
-static void do_free_tree(TreeDbTerm *root) 
+static void do_free_tree(DbTableTree *tb, TreeDbTerm *root) 
 {
     if (!root)
 	return;
-    do_free_tree(root->left);
-    do_free_tree(root->right);
-    free_term(root);
+    do_free_tree(tb, root->left);
+    do_free_tree(tb, root->right);
+    free_term(tb, root);
 }
 
-static TreeDbTerm* get_term(TreeDbTerm* old, 
+static TreeDbTerm* get_term(DbTableTree *tb,
+			    TreeDbTerm* old, 
 			    Eterm obj) 
 {
-    TreeDbTerm* p = db_get_term((old != NULL) ? &(old->dbterm) : NULL, 
+    TreeDbTerm* p = db_get_term((DbTableCommon *) tb,
+				(old != NULL) ? &(old->dbterm) : NULL, 
 				((char *) &(old->dbterm)) - ((char *) old),
 				obj);
     return p;
@@ -2069,7 +2099,7 @@ static TreeDbTerm *find_next(DbTableTree *tb, Eterm key)
 {
     TreeDbTerm *this;
     TreeDbTerm *tmp;
-    int c;
+    Sint c;
 
     if(( this = TOP_NODE(tb)) != NULL) {
 	if (!CMP_EQ(GETKEY(tb, this->dbterm.tpl),key)) {
@@ -2126,7 +2156,7 @@ static TreeDbTerm *find_prev(DbTableTree *tb, Eterm key)
 {
     TreeDbTerm *this;
     TreeDbTerm *tmp;
-    int c;
+    Sint c;
 
     if(( this = TOP_NODE(tb)) != NULL) {
 	if (!CMP_EQ(GETKEY(tb, this->dbterm.tpl),key)) {
@@ -2183,7 +2213,7 @@ static TreeDbTerm *find_next_from_pb_key(DbTableTree *tb, Eterm key)
 {
     TreeDbTerm *this;
     TreeDbTerm *tmp;
-    int c;
+    Sint c;
 
     /* spool the stack, we have to "re-search" */
     tb->stack_pos = tb->slot_pos = 0;
@@ -2215,7 +2245,7 @@ static TreeDbTerm *find_prev_from_pb_key(DbTableTree *tb, Eterm key)
 {
     TreeDbTerm *this;
     TreeDbTerm *tmp;
-    int c;
+    Sint c;
 
     /* spool the stack, we have to "re-search" */
     tb->stack_pos = tb->slot_pos = 0;
@@ -2250,7 +2280,7 @@ static TreeDbTerm *find_prev_from_pb_key(DbTableTree *tb, Eterm key)
 static TreeDbTerm *find_node(DbTableTree *tb, Eterm key)
 {
     TreeDbTerm *this;
-    int res;
+    Sint res;
 
     if(!EMPTY_NODE(tb) && 
        CMP_EQ(GETKEY(tb, ( this = TOP_NODE(tb) )->dbterm.tpl), key))
@@ -2272,7 +2302,7 @@ static TreeDbTerm *find_node(DbTableTree *tb, Eterm key)
 static TreeDbTerm **find_node2(DbTableTree *tb, Eterm key)
 {
     TreeDbTerm **this;
-    int res;
+    Sint res;
 
     this = &tb->root;
     while ((*this) != NULL && 
@@ -2290,11 +2320,11 @@ static TreeDbTerm **find_node2(DbTableTree *tb, Eterm key)
 /*
  * Callback function for db_do_update_counter
  */
-static int realloc_counter(TreeDbTerm** bp, Uint sz, 
+static int realloc_counter(DbTableCommon *tb, TreeDbTerm** bp, Uint sz, 
 			   Eterm new_counter, int counterpos)
 {
     TreeDbTerm* b = *bp;
-    return db_realloc_counter((void **) bp, &(b->dbterm),
+    return db_realloc_counter(tb, (void **) bp, &(b->dbterm),
 			      ((char *) &(b->dbterm)) - ((char *) b),
 			      sz, new_counter, counterpos);
 }
@@ -2304,7 +2334,10 @@ static int realloc_counter(TreeDbTerm** bp, Uint sz,
  */
 static void traverse_backwards(DbTableTree *tb,
 			       Eterm lastkey,
-			       int (*doit)(TreeDbTerm *, void *, int),
+			       int (*doit)(DbTableTree *,
+					   TreeDbTerm *,
+					   void *,
+					   int),
 			       void *context) 
 {
     TreeDbTerm *this, *next;
@@ -2320,7 +2353,7 @@ static void traverse_backwards(DbTableTree *tb,
 	}
 	this = TOP_NODE(tb);
 	next = find_prev(tb, GETKEY(tb, this->dbterm.tpl));
-	if (!((*doit)(this, context, 0)))
+	if (!((*doit)(tb, this, context, 0)))
 	    return;
     } else {
 	next = find_prev(tb, lastkey);
@@ -2328,7 +2361,7 @@ static void traverse_backwards(DbTableTree *tb,
 
     while ((this = next) != NULL) {
 	next = find_prev(tb, GETKEY(tb, this->dbterm.tpl));
-	if (!((*doit)(this, context, 0)))
+	if (!((*doit)(tb, this, context, 0)))
 	    return;
     }
 }
@@ -2338,7 +2371,10 @@ static void traverse_backwards(DbTableTree *tb,
  */
 static void traverse_forward(DbTableTree *tb,
 			     Eterm lastkey,
-			     int (*doit)(TreeDbTerm *, void *, int),
+			     int (*doit)(DbTableTree *,
+					 TreeDbTerm *,
+					 void *,
+					 int),
 			     void *context) 
 {
     TreeDbTerm *this, *next;
@@ -2354,7 +2390,7 @@ static void traverse_forward(DbTableTree *tb,
 	}
 	this = TOP_NODE(tb);
 	next = find_next(tb, GETKEY(tb, this->dbterm.tpl));
-	if (!((*doit)(this, context, 1)))
+	if (!((*doit)(tb, this, context, 1)))
 	    return;
     } else {
 	next = find_next(tb, lastkey);
@@ -2362,7 +2398,7 @@ static void traverse_forward(DbTableTree *tb,
 
     while ((this = next) != NULL) {
 	next = find_next(tb, GETKEY(tb, this->dbterm.tpl));
-	if (!((*doit)(this, context, 1)))
+	if (!((*doit)(tb, this, context, 1)))
 	    return;
     }
 }
@@ -2398,14 +2434,14 @@ static int key_given(DbTableTree *tb, Eterm pattern, TreeDbTerm **ret,
 
 
 
-static int do_cmp_partly_bound(Eterm a, Eterm b, int *done)
+static Sint do_cmp_partly_bound(Eterm a, Eterm b, int *done)
 {
     Eterm* aa;
     Eterm* bb;
     Eterm a_hdr;
     Eterm b_hdr;
     int i;
-    int j;
+    Sint j;
 
     /* A variable matches anything */
     if (is_atom(a) && (a == am_Underscore || (db_is_variable(a) >= 0))) {
@@ -2461,10 +2497,10 @@ static int do_cmp_partly_bound(Eterm a, Eterm b, int *done)
     }
 }
 
-static int cmp_partly_bound(Eterm partly_bound_key, Eterm bound_key) 
+static Sint cmp_partly_bound(Eterm partly_bound_key, Eterm bound_key) 
 {
     int done = 0;
-    int ret = do_cmp_partly_bound(partly_bound_key, bound_key, &done);
+    Sint ret = do_cmp_partly_bound(partly_bound_key, bound_key, &done);
 #ifdef HARDDEBUG
     erl_printf(CERR,"\r\ncmp_partly_bound: ");
     display(partly_bound_key,CERR);
@@ -2543,7 +2579,7 @@ static int do_partly_bound_can_match_lesser(Eterm a, Eterm b,
 {
     Eterm* aa;
     Eterm* bb;
-    int i;
+    Sint i;
     int j;
 
     if (is_atom(a) && (a == am_Underscore || 
@@ -2614,7 +2650,7 @@ static int do_partly_bound_can_match_greater(Eterm a, Eterm b,
 {
     Eterm* aa;
     Eterm* bb;
-    int i;
+    Sint i;
     int j;
 
     if (is_atom(a) && (a == am_Underscore || 
@@ -2684,7 +2720,8 @@ static int do_partly_bound_can_match_greater(Eterm a, Eterm b,
  * Callback functions for the different match functions
  */
 
-static int doit_select(TreeDbTerm *this, void *ptr, int forward)
+static int doit_select(DbTableTree *tb, TreeDbTerm *this, void *ptr,
+		       int forward)
 {
     struct select_context *sc = (struct select_context *) ptr;
     Eterm ret;
@@ -2729,7 +2766,8 @@ static int doit_select(TreeDbTerm *this, void *ptr, int forward)
     return 1;
 }
 
-static int doit_select_count(TreeDbTerm *this, void *ptr, int forward)
+static int doit_select_count(DbTableTree *tb, TreeDbTerm *this, void *ptr,
+			     int forward)
 {
     struct select_count_context *sc = (struct select_count_context *) ptr;
     Eterm ret;
@@ -2756,7 +2794,8 @@ static int doit_select_count(TreeDbTerm *this, void *ptr, int forward)
     return 1;
 }
 
-static int doit_select_chunk(TreeDbTerm *this, void *ptr, int forward)
+static int doit_select_chunk(DbTableTree *tb, TreeDbTerm *this, void *ptr,
+			     int forward)
 {
     struct select_context *sc = (struct select_context *) ptr;
     Eterm ret;
@@ -2804,7 +2843,8 @@ static int doit_select_chunk(TreeDbTerm *this, void *ptr, int forward)
 }
 
 
-static int doit_select_delete(TreeDbTerm *this, void *ptr, int forward)
+static int doit_select_delete(DbTableTree *tb, TreeDbTerm *this, void *ptr,
+			      int forward)
 {
     struct select_delete_context *sc = (struct select_delete_context *) ptr;
     Eterm ret;
@@ -2812,7 +2852,7 @@ static int doit_select_delete(TreeDbTerm *this, void *ptr, int forward)
     Eterm key;
 
     if (sc->erase_lastterm)
-	free_term(sc->lastterm);
+	free_term(tb, sc->lastterm);
     sc->erase_lastterm = 0;
     sc->lastterm = this;
     

@@ -330,6 +330,8 @@ handle_call({recv, Client, Length, Timeout}, _From, St)
 	    case gen_tcp:recv(St#st.proxysock, Length, Timeout) of
 		{ok, Data} ->
 		    {reply, {ok, Data}, St};
+		{error, timeout} ->
+		    {reply, {error, timeout}, St};
 		{error, Reason} ->
 		    {reply, {error, Reason}, St#st{status = closing}}
 	    end

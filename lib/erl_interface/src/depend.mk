@@ -27,9 +27,7 @@ $(ST_OBJDIR)/decode_atom.o: decode/decode_atom.c misc/eidef.h \
 $(ST_OBJDIR)/decode_big.o: decode/decode_big.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(ST_OBJDIR)/decode_bignum.o: decode/decode_bignum.c $(TARGET)/config.h \
-  misc/eidef.h ../include/ei.h misc/eiext.h \
-  misc/putget.h
+$(ST_OBJDIR)/decode_bignum.o: decode/decode_bignum.c $(TARGET)/config.h
 $(ST_OBJDIR)/decode_binary.o: decode/decode_binary.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
@@ -52,9 +50,6 @@ $(ST_OBJDIR)/decode_list_header.o: decode/decode_list_header.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
 $(ST_OBJDIR)/decode_long.o: decode/decode_long.c misc/eidef.h \
-  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
-  misc/putget.h
-$(ST_OBJDIR)/decode_longlong.o: decode/decode_longlong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
 $(ST_OBJDIR)/decode_pid.o: decode/decode_pid.c misc/eidef.h \
@@ -80,18 +75,19 @@ $(ST_OBJDIR)/decode_tuple_header.o: decode/decode_tuple_header.c misc/eidef.h \
 $(ST_OBJDIR)/decode_ulong.o: decode/decode_ulong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(ST_OBJDIR)/decode_ulonglong.o: decode/decode_ulonglong.c misc/eidef.h \
+$(ST_OBJDIR)/decode_version.o: decode/decode_version.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(ST_OBJDIR)/decode_version.o: decode/decode_version.c misc/eidef.h \
+$(ST_OBJDIR)/decode_longlong.o: decode/decode_longlong.c misc/eidef.h \
+  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
+  misc/putget.h
+$(ST_OBJDIR)/decode_ulonglong.o: decode/decode_ulonglong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
 $(ST_OBJDIR)/encode_atom.o: encode/encode_atom.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(ST_OBJDIR)/encode_bignum.o: encode/encode_bignum.c $(TARGET)/config.h \
-  misc/eidef.h ../include/ei.h misc/eiext.h \
-  misc/putget.h misc/ei_x_encode.h
+$(ST_OBJDIR)/encode_bignum.o: encode/encode_bignum.c $(TARGET)/config.h
 $(ST_OBJDIR)/encode_binary.o: encode/encode_binary.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
@@ -113,9 +109,6 @@ $(ST_OBJDIR)/encode_list_header.o: encode/encode_list_header.c misc/eidef.h \
 $(ST_OBJDIR)/encode_long.o: encode/encode_long.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(ST_OBJDIR)/encode_longlong.o: encode/encode_longlong.c misc/eidef.h \
-  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
-  misc/putget.h misc/ei_x_encode.h
 $(ST_OBJDIR)/encode_pid.o: encode/encode_pid.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
@@ -136,12 +129,15 @@ $(ST_OBJDIR)/encode_tuple_header.o: encode/encode_tuple_header.c misc/eidef.h \
 $(ST_OBJDIR)/encode_ulong.o: encode/encode_ulong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(ST_OBJDIR)/encode_ulonglong.o: encode/encode_ulonglong.c misc/eidef.h \
-  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
-  misc/putget.h misc/ei_x_encode.h
 $(ST_OBJDIR)/encode_version.o: encode/encode_version.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
+$(ST_OBJDIR)/encode_longlong.o: encode/encode_longlong.c misc/eidef.h \
+  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
+  misc/putget.h misc/ei_x_encode.h
+$(ST_OBJDIR)/encode_ulonglong.o: encode/encode_ulonglong.c misc/eidef.h \
+  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
+  misc/putget.h misc/ei_x_encode.h
 $(ST_OBJDIR)/epmd_port.o: epmd/epmd_port.c misc/ei_internal.h epmd/ei_epmd.h \
   misc/putget.h
 $(ST_OBJDIR)/epmd_publish.o: epmd/epmd_publish.c misc/eidef.h \
@@ -175,6 +171,7 @@ $(ST_OBJDIR)/get_type.o: misc/get_type.c misc/eidef.h $(TARGET)/config.h \
 $(ST_OBJDIR)/show_msg.o: misc/show_msg.c misc/eidef.h $(TARGET)/config.h \
   ../include/ei.h misc/eiext.h misc/putget.h misc/ei_printterm.h \
   misc/ei_internal.h misc/show_msg.h
+$(ST_OBJDIR)/ei_compat.o: misc/ei_compat.c ../include/ei.h misc/ei_internal.h
 $(ST_OBJDIR)/hash_dohash.o: registry/hash_dohash.c registry/hash.h ../include/ei.h
 $(ST_OBJDIR)/hash_foreach.o: registry/hash_foreach.c registry/hash.h ../include/ei.h
 $(ST_OBJDIR)/hash_freetab.o: registry/hash_freetab.c registry/hash.h ../include/ei.h
@@ -251,7 +248,7 @@ $(ST_OBJDIR)/erl_eterm.o: legacy/erl_eterm.c misc/ei_locking.h \
   $(TARGET)/config.h connect/ei_resolve.h \
   ../include/erl_interface.h ../include/ei.h legacy/erl_eterm.h \
   legacy/portability.h legacy/erl_malloc.h legacy/erl_marshal.h \
-  legacy/erl_error.h legacy/erl_internal.h
+  legacy/erl_error.h legacy/erl_internal.h misc/ei_internal.h
 $(ST_OBJDIR)/erl_fix_alloc.o: legacy/erl_fix_alloc.c $(TARGET)/config.h \
   misc/ei_locking.h ../include/erl_interface.h ../include/ei.h \
   legacy/erl_error.h legacy/erl_malloc.h legacy/erl_fix_alloc.h \
@@ -313,9 +310,7 @@ $(MT_OBJDIR)/decode_atom.o: decode/decode_atom.c misc/eidef.h \
 $(MT_OBJDIR)/decode_big.o: decode/decode_big.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MT_OBJDIR)/decode_bignum.o: decode/decode_bignum.c $(TARGET)/config.h \
-  misc/eidef.h ../include/ei.h misc/eiext.h \
-  misc/putget.h
+$(MT_OBJDIR)/decode_bignum.o: decode/decode_bignum.c $(TARGET)/config.h
 $(MT_OBJDIR)/decode_binary.o: decode/decode_binary.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
@@ -338,9 +333,6 @@ $(MT_OBJDIR)/decode_list_header.o: decode/decode_list_header.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
 $(MT_OBJDIR)/decode_long.o: decode/decode_long.c misc/eidef.h \
-  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
-  misc/putget.h
-$(MT_OBJDIR)/decode_longlong.o: decode/decode_longlong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
 $(MT_OBJDIR)/decode_pid.o: decode/decode_pid.c misc/eidef.h \
@@ -366,18 +358,19 @@ $(MT_OBJDIR)/decode_tuple_header.o: decode/decode_tuple_header.c misc/eidef.h \
 $(MT_OBJDIR)/decode_ulong.o: decode/decode_ulong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MT_OBJDIR)/decode_ulonglong.o: decode/decode_ulonglong.c misc/eidef.h \
+$(MT_OBJDIR)/decode_version.o: decode/decode_version.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MT_OBJDIR)/decode_version.o: decode/decode_version.c misc/eidef.h \
+$(MT_OBJDIR)/decode_longlong.o: decode/decode_longlong.c misc/eidef.h \
+  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
+  misc/putget.h
+$(MT_OBJDIR)/decode_ulonglong.o: decode/decode_ulonglong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
 $(MT_OBJDIR)/encode_atom.o: encode/encode_atom.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MT_OBJDIR)/encode_bignum.o: encode/encode_bignum.c $(TARGET)/config.h \
-  misc/eidef.h ../include/ei.h misc/eiext.h \
-  misc/putget.h misc/ei_x_encode.h
+$(MT_OBJDIR)/encode_bignum.o: encode/encode_bignum.c $(TARGET)/config.h
 $(MT_OBJDIR)/encode_binary.o: encode/encode_binary.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
@@ -399,9 +392,6 @@ $(MT_OBJDIR)/encode_list_header.o: encode/encode_list_header.c misc/eidef.h \
 $(MT_OBJDIR)/encode_long.o: encode/encode_long.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MT_OBJDIR)/encode_longlong.o: encode/encode_longlong.c misc/eidef.h \
-  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
-  misc/putget.h misc/ei_x_encode.h
 $(MT_OBJDIR)/encode_pid.o: encode/encode_pid.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
@@ -422,12 +412,15 @@ $(MT_OBJDIR)/encode_tuple_header.o: encode/encode_tuple_header.c misc/eidef.h \
 $(MT_OBJDIR)/encode_ulong.o: encode/encode_ulong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MT_OBJDIR)/encode_ulonglong.o: encode/encode_ulonglong.c misc/eidef.h \
-  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
-  misc/putget.h misc/ei_x_encode.h
 $(MT_OBJDIR)/encode_version.o: encode/encode_version.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
+$(MT_OBJDIR)/encode_longlong.o: encode/encode_longlong.c misc/eidef.h \
+  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
+  misc/putget.h misc/ei_x_encode.h
+$(MT_OBJDIR)/encode_ulonglong.o: encode/encode_ulonglong.c misc/eidef.h \
+  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
+  misc/putget.h misc/ei_x_encode.h
 $(MT_OBJDIR)/epmd_port.o: epmd/epmd_port.c misc/ei_internal.h epmd/ei_epmd.h \
   misc/putget.h
 $(MT_OBJDIR)/epmd_publish.o: epmd/epmd_publish.c misc/eidef.h \
@@ -461,6 +454,7 @@ $(MT_OBJDIR)/get_type.o: misc/get_type.c misc/eidef.h $(TARGET)/config.h \
 $(MT_OBJDIR)/show_msg.o: misc/show_msg.c misc/eidef.h $(TARGET)/config.h \
   ../include/ei.h misc/eiext.h misc/putget.h misc/ei_printterm.h \
   misc/ei_internal.h misc/show_msg.h
+$(MT_OBJDIR)/ei_compat.o: misc/ei_compat.c ../include/ei.h misc/ei_internal.h
 $(MT_OBJDIR)/hash_dohash.o: registry/hash_dohash.c registry/hash.h ../include/ei.h
 $(MT_OBJDIR)/hash_foreach.o: registry/hash_foreach.c registry/hash.h ../include/ei.h
 $(MT_OBJDIR)/hash_freetab.o: registry/hash_freetab.c registry/hash.h ../include/ei.h
@@ -537,7 +531,7 @@ $(MT_OBJDIR)/erl_eterm.o: legacy/erl_eterm.c misc/ei_locking.h \
   $(TARGET)/config.h connect/ei_resolve.h \
   ../include/erl_interface.h ../include/ei.h legacy/erl_eterm.h \
   legacy/portability.h legacy/erl_malloc.h legacy/erl_marshal.h \
-  legacy/erl_error.h legacy/erl_internal.h
+  legacy/erl_error.h legacy/erl_internal.h misc/ei_internal.h
 $(MT_OBJDIR)/erl_fix_alloc.o: legacy/erl_fix_alloc.c $(TARGET)/config.h \
   misc/ei_locking.h ../include/erl_interface.h ../include/ei.h \
   legacy/erl_error.h legacy/erl_malloc.h legacy/erl_fix_alloc.h \
@@ -599,9 +593,7 @@ $(MD_OBJDIR)/decode_atom.o: decode/decode_atom.c misc/eidef.h \
 $(MD_OBJDIR)/decode_big.o: decode/decode_big.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MD_OBJDIR)/decode_bignum.o: decode/decode_bignum.c $(TARGET)/config.h \
-  misc/eidef.h ../include/ei.h misc/eiext.h \
-  misc/putget.h
+$(MD_OBJDIR)/decode_bignum.o: decode/decode_bignum.c $(TARGET)/config.h
 $(MD_OBJDIR)/decode_binary.o: decode/decode_binary.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
@@ -624,9 +616,6 @@ $(MD_OBJDIR)/decode_list_header.o: decode/decode_list_header.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
 $(MD_OBJDIR)/decode_long.o: decode/decode_long.c misc/eidef.h \
-  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
-  misc/putget.h
-$(MD_OBJDIR)/decode_longlong.o: decode/decode_longlong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
 $(MD_OBJDIR)/decode_pid.o: decode/decode_pid.c misc/eidef.h \
@@ -652,18 +641,19 @@ $(MD_OBJDIR)/decode_tuple_header.o: decode/decode_tuple_header.c misc/eidef.h \
 $(MD_OBJDIR)/decode_ulong.o: decode/decode_ulong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MD_OBJDIR)/decode_ulonglong.o: decode/decode_ulonglong.c misc/eidef.h \
+$(MD_OBJDIR)/decode_version.o: decode/decode_version.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MD_OBJDIR)/decode_version.o: decode/decode_version.c misc/eidef.h \
+$(MD_OBJDIR)/decode_longlong.o: decode/decode_longlong.c misc/eidef.h \
+  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
+  misc/putget.h
+$(MD_OBJDIR)/decode_ulonglong.o: decode/decode_ulonglong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
 $(MD_OBJDIR)/encode_atom.o: encode/encode_atom.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MD_OBJDIR)/encode_bignum.o: encode/encode_bignum.c $(TARGET)/config.h \
-  misc/eidef.h ../include/ei.h misc/eiext.h \
-  misc/putget.h misc/ei_x_encode.h
+$(MD_OBJDIR)/encode_bignum.o: encode/encode_bignum.c $(TARGET)/config.h
 $(MD_OBJDIR)/encode_binary.o: encode/encode_binary.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
@@ -685,9 +675,6 @@ $(MD_OBJDIR)/encode_list_header.o: encode/encode_list_header.c misc/eidef.h \
 $(MD_OBJDIR)/encode_long.o: encode/encode_long.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MD_OBJDIR)/encode_longlong.o: encode/encode_longlong.c misc/eidef.h \
-  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
-  misc/putget.h misc/ei_x_encode.h
 $(MD_OBJDIR)/encode_pid.o: encode/encode_pid.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
@@ -708,12 +695,15 @@ $(MD_OBJDIR)/encode_tuple_header.o: encode/encode_tuple_header.c misc/eidef.h \
 $(MD_OBJDIR)/encode_ulong.o: encode/encode_ulong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MD_OBJDIR)/encode_ulonglong.o: encode/encode_ulonglong.c misc/eidef.h \
-  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
-  misc/putget.h misc/ei_x_encode.h
 $(MD_OBJDIR)/encode_version.o: encode/encode_version.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
+$(MD_OBJDIR)/encode_longlong.o: encode/encode_longlong.c misc/eidef.h \
+  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
+  misc/putget.h misc/ei_x_encode.h
+$(MD_OBJDIR)/encode_ulonglong.o: encode/encode_ulonglong.c misc/eidef.h \
+  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
+  misc/putget.h misc/ei_x_encode.h
 $(MD_OBJDIR)/epmd_port.o: epmd/epmd_port.c misc/ei_internal.h epmd/ei_epmd.h \
   misc/putget.h
 $(MD_OBJDIR)/epmd_publish.o: epmd/epmd_publish.c misc/eidef.h \
@@ -747,6 +737,7 @@ $(MD_OBJDIR)/get_type.o: misc/get_type.c misc/eidef.h $(TARGET)/config.h \
 $(MD_OBJDIR)/show_msg.o: misc/show_msg.c misc/eidef.h $(TARGET)/config.h \
   ../include/ei.h misc/eiext.h misc/putget.h misc/ei_printterm.h \
   misc/ei_internal.h misc/show_msg.h
+$(MD_OBJDIR)/ei_compat.o: misc/ei_compat.c ../include/ei.h misc/ei_internal.h
 $(MD_OBJDIR)/hash_dohash.o: registry/hash_dohash.c registry/hash.h ../include/ei.h
 $(MD_OBJDIR)/hash_foreach.o: registry/hash_foreach.c registry/hash.h ../include/ei.h
 $(MD_OBJDIR)/hash_freetab.o: registry/hash_freetab.c registry/hash.h ../include/ei.h
@@ -823,7 +814,7 @@ $(MD_OBJDIR)/erl_eterm.o: legacy/erl_eterm.c misc/ei_locking.h \
   $(TARGET)/config.h connect/ei_resolve.h \
   ../include/erl_interface.h ../include/ei.h legacy/erl_eterm.h \
   legacy/portability.h legacy/erl_malloc.h legacy/erl_marshal.h \
-  legacy/erl_error.h legacy/erl_internal.h
+  legacy/erl_error.h legacy/erl_internal.h misc/ei_internal.h
 $(MD_OBJDIR)/erl_fix_alloc.o: legacy/erl_fix_alloc.c $(TARGET)/config.h \
   misc/ei_locking.h ../include/erl_interface.h ../include/ei.h \
   legacy/erl_error.h legacy/erl_malloc.h legacy/erl_fix_alloc.h \
@@ -885,9 +876,7 @@ $(MDD_OBJDIR)/decode_atom.o: decode/decode_atom.c misc/eidef.h \
 $(MDD_OBJDIR)/decode_big.o: decode/decode_big.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MDD_OBJDIR)/decode_bignum.o: decode/decode_bignum.c $(TARGET)/config.h \
-  misc/eidef.h ../include/ei.h misc/eiext.h \
-  misc/putget.h
+$(MDD_OBJDIR)/decode_bignum.o: decode/decode_bignum.c $(TARGET)/config.h
 $(MDD_OBJDIR)/decode_binary.o: decode/decode_binary.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
@@ -910,9 +899,6 @@ $(MDD_OBJDIR)/decode_list_header.o: decode/decode_list_header.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
 $(MDD_OBJDIR)/decode_long.o: decode/decode_long.c misc/eidef.h \
-  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
-  misc/putget.h
-$(MDD_OBJDIR)/decode_longlong.o: decode/decode_longlong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
 $(MDD_OBJDIR)/decode_pid.o: decode/decode_pid.c misc/eidef.h \
@@ -938,18 +924,19 @@ $(MDD_OBJDIR)/decode_tuple_header.o: decode/decode_tuple_header.c misc/eidef.h \
 $(MDD_OBJDIR)/decode_ulong.o: decode/decode_ulong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MDD_OBJDIR)/decode_ulonglong.o: decode/decode_ulonglong.c misc/eidef.h \
+$(MDD_OBJDIR)/decode_version.o: decode/decode_version.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MDD_OBJDIR)/decode_version.o: decode/decode_version.c misc/eidef.h \
+$(MDD_OBJDIR)/decode_longlong.o: decode/decode_longlong.c misc/eidef.h \
+  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
+  misc/putget.h
+$(MDD_OBJDIR)/decode_ulonglong.o: decode/decode_ulonglong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
 $(MDD_OBJDIR)/encode_atom.o: encode/encode_atom.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MDD_OBJDIR)/encode_bignum.o: encode/encode_bignum.c $(TARGET)/config.h \
-  misc/eidef.h ../include/ei.h misc/eiext.h \
-  misc/putget.h misc/ei_x_encode.h
+$(MDD_OBJDIR)/encode_bignum.o: encode/encode_bignum.c $(TARGET)/config.h
 $(MDD_OBJDIR)/encode_binary.o: encode/encode_binary.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
@@ -971,9 +958,6 @@ $(MDD_OBJDIR)/encode_list_header.o: encode/encode_list_header.c misc/eidef.h \
 $(MDD_OBJDIR)/encode_long.o: encode/encode_long.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MDD_OBJDIR)/encode_longlong.o: encode/encode_longlong.c misc/eidef.h \
-  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
-  misc/putget.h misc/ei_x_encode.h
 $(MDD_OBJDIR)/encode_pid.o: encode/encode_pid.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
@@ -994,12 +978,15 @@ $(MDD_OBJDIR)/encode_tuple_header.o: encode/encode_tuple_header.c misc/eidef.h \
 $(MDD_OBJDIR)/encode_ulong.o: encode/encode_ulong.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
-$(MDD_OBJDIR)/encode_ulonglong.o: encode/encode_ulonglong.c misc/eidef.h \
-  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
-  misc/putget.h misc/ei_x_encode.h
 $(MDD_OBJDIR)/encode_version.o: encode/encode_version.c misc/eidef.h \
   $(TARGET)/config.h ../include/ei.h misc/eiext.h \
   misc/putget.h
+$(MDD_OBJDIR)/encode_longlong.o: encode/encode_longlong.c misc/eidef.h \
+  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
+  misc/putget.h misc/ei_x_encode.h
+$(MDD_OBJDIR)/encode_ulonglong.o: encode/encode_ulonglong.c misc/eidef.h \
+  $(TARGET)/config.h ../include/ei.h misc/eiext.h \
+  misc/putget.h misc/ei_x_encode.h
 $(MDD_OBJDIR)/epmd_port.o: epmd/epmd_port.c misc/ei_internal.h epmd/ei_epmd.h \
   misc/putget.h
 $(MDD_OBJDIR)/epmd_publish.o: epmd/epmd_publish.c misc/eidef.h \
@@ -1033,6 +1020,7 @@ $(MDD_OBJDIR)/get_type.o: misc/get_type.c misc/eidef.h $(TARGET)/config.h \
 $(MDD_OBJDIR)/show_msg.o: misc/show_msg.c misc/eidef.h $(TARGET)/config.h \
   ../include/ei.h misc/eiext.h misc/putget.h misc/ei_printterm.h \
   misc/ei_internal.h misc/show_msg.h
+$(MDD_OBJDIR)/ei_compat.o: misc/ei_compat.c ../include/ei.h misc/ei_internal.h
 $(MDD_OBJDIR)/hash_dohash.o: registry/hash_dohash.c registry/hash.h ../include/ei.h
 $(MDD_OBJDIR)/hash_foreach.o: registry/hash_foreach.c registry/hash.h ../include/ei.h
 $(MDD_OBJDIR)/hash_freetab.o: registry/hash_freetab.c registry/hash.h ../include/ei.h
@@ -1109,7 +1097,7 @@ $(MDD_OBJDIR)/erl_eterm.o: legacy/erl_eterm.c misc/ei_locking.h \
   $(TARGET)/config.h connect/ei_resolve.h \
   ../include/erl_interface.h ../include/ei.h legacy/erl_eterm.h \
   legacy/portability.h legacy/erl_malloc.h legacy/erl_marshal.h \
-  legacy/erl_error.h legacy/erl_internal.h
+  legacy/erl_error.h legacy/erl_internal.h misc/ei_internal.h
 $(MDD_OBJDIR)/erl_fix_alloc.o: legacy/erl_fix_alloc.c $(TARGET)/config.h \
   misc/ei_locking.h ../include/erl_interface.h ../include/ei.h \
   legacy/erl_error.h legacy/erl_malloc.h legacy/erl_fix_alloc.h \

@@ -36,7 +36,6 @@
 #include "big.h"
 #include "dist.h"
 #include "erl_binary.h"
-#include "erl_vector.h"
 #include "zlib.h"
 
 #ifdef HIPE
@@ -49,6 +48,12 @@
   (((nodename) == erts_this_node->sysname && (creat) == ORIG_CREATION)	\
    ? erts_this_node->creation						\
    : (creat))
+
+/*
+ * For backward compatibility reasons, only encode integers that
+ * fit in 28 bits (signed) using INTEGER_EXT.
+ */
+#define IS_SSMALL28(x) (((Uint) (((x) >> (28-1)) + 1)) < 2)
 
 /*
  *   Valid creations for nodes are 1, 2, or 3. 0 can also be sent
@@ -165,7 +170,7 @@ BIF_RETTYPE binary_to_term_1(BIF_ALIST_1)
 	erl_exit(1, ":%s, line %d: heap overrun by %d words(s)\n",
 		 __FILE__, __LINE__, hp-endp);
     }
-    HRelease(BIF_P, hp);
+    HRelease(BIF_P, endp, hp);
     return res;
 }
 
@@ -471,7 +476,6 @@ dec_pid(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* objp
 static byte*
 enc_term(DistEntry *dep, Eterm obj, byte* ep, Uint32 dflags)
 {
-    int val;
     Uint n;
     Uint i;
     Uint j;
@@ -488,18 +492,29 @@ enc_term(DistEntry *dep, Eterm obj, byte* ep, Uint32 dflags)
 	return enc_atom(dep,obj,ep);
 
     case SMALL_DEF:
-	if (is_byte(obj)) {
-	    val = unsigned_val(obj);
-	    *ep++ = SMALL_INTEGER_EXT;
-	    put_int8(val, ep);
-	    return ep + 1;
-	}
-	else {
-	    val = signed_val(obj);
-	    *ep++ = INTEGER_EXT;
-	    put_int32(val, ep);
-	    return ep + 4;
-	}
+      {
+	  Sint val = signed_val(obj);
+
+	  if ((Uint)val < 256) {
+	      *ep++ = SMALL_INTEGER_EXT;
+	      put_int8(val, ep);
+	      return ep + 1;
+	  } else if (sizeof(Sint) == 4 || IS_SSMALL28(val)) {
+	      *ep++ = INTEGER_EXT;
+	      put_int32(val, ep);
+	      return ep + 4;
+	  } else {
+	      Eterm tmp_big[2];
+	      Eterm big = small_to_big(val, tmp_big);
+	      *ep++ = SMALL_BIG_EXT;
+	      n = big_bytes(big);
+	      ASSERT(n < 256);
+	      put_int8(n, ep);
+	      ep += 1;
+	      *ep++ = big_sign(big);
+	      return big_to_bytes(big, ep);
+	  }
+      }
 
     case BIG_DEF:
 	if ((n = big_bytes(obj)) < 256) {
@@ -593,25 +608,6 @@ enc_term(DistEntry *dep, Eterm obj, byte* ep, Uint32 dflags)
 	while(i--) {
 	    if ((ep = enc_term(dep, *ptr++, ep, dflags)) == NULL)
 		return NULL;
-	}
-	return ep;
-
-    case VECTOR_DEF:
-	n = VECTOR_SIZE(obj);
-	if (n <= 0xff) {
-	    *ep++ = SMALL_TUPLE_EXT;
-	    put_int8(n, ep);
-	    ep += 1;
-	} else  {
-	    *ep++ = LARGE_TUPLE_EXT;
-	    put_int32(n, ep);
-	    ep += 4;
-	}
-	for (i = 1; i <= n; i++) {
-	    Eterm tmp = erts_unchecked_vector_get(i, obj);
-	    if ((ep = enc_term(dep, tmp, ep, dflags)) == NULL) {
-		return NULL;
-	    }
 	}
 	return ep;
 
@@ -844,8 +840,8 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		if (MY_IS_SSMALL(sn)) {
 		    *objp = make_small(sn);
 		} else {
-		    *objp = uint_to_big(sn, hp);
-		    hp += 2;
+		    *objp = small_to_big(sn, hp);
+		    hp += BIG_UINT_HEAP_SIZE;
 		}
 		break;
 	    }
@@ -864,15 +860,33 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 	big_loop:
 	    {
 		Eterm big;
+		byte* first;
+		byte* last;
+		Uint neg;
 
-		Uint k = get_int8(ep);
+		neg = get_int8(ep); /* Sign bit */
 		ep++;
-		big = bytes_to_big(ep, n, k, hp);
-		if (is_big(big)) {
-		    hp += (big_arity(big)+1);
+
+		/*
+		 * Strip away leading zeroes to avoid creating illegal bignums.
+		 */
+		first = ep;
+		last = ep + n;
+		ep += n;
+		do {
+		    --last;
+		} while (first <= last && *last == 0);
+
+		if ((n = last - first + 1) == 0) {
+		    /* Zero width bignum defaults to zero */
+		    big = make_small(0);
+		} else {
+		    big = bytes_to_big(first, n, neg, hp);
+		    if (is_big(big)) {
+			hp += big_arity(big) + 1;
+		    }
 		}
 		*objp = big;
-		ep += n;
 		break;
 	    }
 	case NEW_CACHE:
@@ -966,7 +980,7 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		ep += 31;
 		*objp = make_float(hp);
 		PUT_DOUBLE(ff, hp);
-		hp += 3;
+		hp += FLOAT_SIZE_OBJECT;
 		break;
 	    }
 	case PID_EXT:
@@ -1049,7 +1063,7 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 
 		r0 = get_int32(ep);
 		ep += 4;
-		if(r0 > MAX_REFERENCE)
+		if(r0 >= MAX_REFERENCE)
 		    return NULL;
 
 	    ref_ext_common:
@@ -1139,8 +1153,8 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		ErlFunThing* funp = (ErlFunThing *) hp;
 		Uint arity;
 		Eterm module;
-		int old_uniq;
-		int old_index;
+		Sint old_uniq;
+		Sint old_index;
 		unsigned num_free;
 		int i;
 		Eterm* temp_hp;
@@ -1157,8 +1171,10 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		*hpp = hp;
 		funp->thing_word = HEADER_FUN;
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
 		funp->next = off_heap->funs;
 		off_heap->funs = funp;
+#endif
 #endif
 		funp->num_free = num_free;
 		*objp = make_fun(funp);
@@ -1212,8 +1228,8 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 	    {
 		ErlFunThing* funp = (ErlFunThing *) hp;
 		Eterm module;
-		int old_uniq;
-		int old_index;
+		Sint old_uniq;
+		Sint old_index;
 		unsigned num_free;
 		int i;
 		Eterm* temp_hp;
@@ -1226,8 +1242,10 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		*hpp = hp;
 		funp->thing_word = HEADER_FUN;
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
 		funp->next = off_heap->funs;
 		off_heap->funs = funp;
+#endif
 #endif
 		funp->num_free = num_free;
 		*objp = make_fun(funp);
@@ -1313,10 +1331,19 @@ encode_size_struct2(Eterm obj, unsigned dflags)
 	/* Make sure NEW_CACHE ix l1 l0 a1 a2 .. an fits */
 	return (1 + 1 + 2 + atom_tab(atom_val(obj))->len);
     case SMALL_DEF:
-	if (unsigned_val(obj) < 256 ) 
-	    return(1 + 1);
-	else 
-	    return(1 + 4);
+      {
+	  Sint val = signed_val(obj);
+
+	  if ((Uint)val < 256)
+	      return 1 + 1;		/* SMALL_INTEGER_EXT */
+	  else if (sizeof(Sint) == 4 || IS_SSMALL28(val))
+	      return 1 + 4;		/* INTEGER_EXT */
+	  else {
+	      Eterm tmp_big[2];
+	      i = big_bytes(small_to_big(val, tmp_big));
+	      return 1 + 1 + 1 + i;	/* SMALL_BIG_EXT */
+	  }
+      }
     case BIG_DEF:
 	if ((i = big_bytes(obj)) < 256)
 	    return 1 + 1 + 1 + i;  /* tag,size,sign,digits */
@@ -1358,17 +1385,6 @@ encode_size_struct2(Eterm obj, unsigned dflags)
 	    sum = 1 + 4;
 	for (i = 0; i < arity; i++)
 	    sum += encode_size_struct2(*(tuple_val(obj) + i + 1), dflags);
-	return sum;
-    case VECTOR_DEF:
-	arity = VECTOR_SIZE(obj);
-	if (arity <= 0xff) 
-	    sum = 1 + 1;
-	else
-	    sum = 1 + 4;
-	for (i = 1; i <= arity; i++) {
-	    Eterm tmp = erts_unchecked_vector_get(i, obj);
-	    sum += encode_size_struct2(tmp, dflags);
-	}
 	return sum;
     case FLOAT_DEF:
 	return 32;   /* Yes, including the tag */
@@ -1453,7 +1469,7 @@ decode_size2(byte *ep, byte* endp)
 	    switch (tag) {
 	    case INTEGER_EXT:
 		SKIP(4);
-		heap_size += 2;
+		heap_size += BIG_UINT_HEAP_SIZE;
 		break;
 	    case SMALL_INTEGER_EXT:
 		SKIP(1);
@@ -1462,13 +1478,13 @@ decode_size2(byte *ep, byte* endp)
 		CHKSIZE(1);
 		n = ep[0];		/* number of bytes */
 		SKIP(1+1+n);		/* skip size,sign,digits */
-		heap_size += 1+1+(n+3)/4;
+		heap_size += 1+(n+sizeof(Eterm)-1)/sizeof(Eterm); /* XXX: 1 too much? */
 		break;
 	    case LARGE_BIG_EXT:
 		CHKSIZE(4);
 		n = (ep[0] << 24) | (ep[1] << 16) | (ep[2] << 8) | ep[3];
 		SKIP(4+1+n);		/* skip, size,sign,digits */
-		heap_size += 1+1+(n+3)/4;
+		heap_size += 1+1+(n+sizeof(Eterm)-1)/sizeof(Eterm); /* XXX: 1 too much? */
 		break;
 	    case ATOM_EXT:
 		CHKSIZE(2);
@@ -1556,16 +1572,16 @@ decode_size2(byte *ep, byte* endp)
 		break;
 	    case FLOAT_EXT:
 		SKIP(31);
-		heap_size += 3;
+		heap_size += FLOAT_SIZE_OBJECT;
 		break;
 	    case BINARY_EXT:
 		CHKSIZE(4);
 		n = (ep[0] << 24) | (ep[1] << 16) | (ep[2] << 8) | ep[3];
 		SKIP(4+n);
 		if (n <= ERL_ONHEAP_BIN_LIMIT) {
-		    heap_size += 1+heap_bin_size(n);
+		    heap_size += heap_bin_size(n);
 		} else {
-		    heap_size += 1+PROC_BIN_SIZE;
+		    heap_size += PROC_BIN_SIZE;
 		}
 		break;
 	    case NEW_FUN_EXT:

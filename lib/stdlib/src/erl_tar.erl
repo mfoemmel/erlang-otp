@@ -213,16 +213,14 @@ month(10) -> "Oct";
 month(11) -> "Nov";
 month(12) -> "Dec".
 
-%% Converts short error reason to a descriptive string.
+%% Converts the short error reason to a descriptive string.
 
 format_error(bad_header) -> "Bad directory header";
 format_error(eof) -> "Unexpected end of file";
-format_error(unsupported_file_type) -> "File type not supported";
-format_error({symbolic_link_too_long, Name}) ->
-    lists:flatten(io_lib:format("~s: ~s", [Name, symbolic_link_too_long]));
-format_error({Name, Reason}) ->
-    lists:flatten(io_lib:format("~s: ~s", [Name, format_error(Reason)]));
-format_error(Atom) when atom(Atom) ->
+format_error(symbolic_link_too_long) -> "Symbolic link too long";
+format_error({Name,Reason}) ->
+    lists:flatten(io_lib:format("~s: ~s", [Name,format_error(Reason)]));
+format_error(Atom) when is_atom(Atom) ->
     file:format_error(Atom);
 format_error(Term) ->
     lists:flatten(io_lib:format("~p", [Term])).
@@ -298,7 +296,7 @@ add1(TarFile, Name, NameInArchive, Opts) ->
 	{ok, PointsTo, Info} when Info#file_info.type == symlink ->
 	    if
 		length(PointsTo) > 100 ->
-		    {error, {symbolic_link_too_long, PointsTo}};
+		    {error,{PointsTo,symbolic_link_too_long}};
 		true ->
 		    Info2 = Info#file_info{size=0},
 		    Header = create_header(NameInArchive, Info2, PointsTo),
@@ -309,9 +307,7 @@ add1(TarFile, Name, NameInArchive, Opts) ->
 	{ok, _, #file_info{type=Type}} ->
 	    {error, {bad_file_type, Name, Type}};
 	{error, Reason} ->
-	    {error, {Name, Reason}};
-	Error ->				% XXX: Case maybe not needed
-	    Error
+	    {error, {Name, Reason}}
     end.
 
 add1(Tar, Name, Header, Bin, Options) ->
@@ -498,11 +494,11 @@ table1(eof, _, _, Result) ->
 table1(Header, File, #read_opts{verbose=true}, Result) when record(Header, tar_header) ->
     #tar_header{name=Name, size=Size, mtime=Mtime, typeflag=Type,
 		mode=Mode, uid=Uid, gid=Gid} = Header,
-    ok = skip(File, Size),
+    skip(File, Size),
     {ok, [{Name, Type, Size, posix_to_erlang_time(Mtime), Mode, Uid, Gid}|Result]};
 table1(Header, File, _, Result) when record(Header, tar_header) ->
     Name = Header#tar_header.name,
-    ok = skip(File, Header#tar_header.size),
+    skip(File, Header#tar_header.size),
     {ok, [Name|Result]}.
 
 extract1(eof, _, _, []) -> ok;
@@ -696,7 +692,7 @@ write_extracted_element(Header, Bin, Opts) ->
 	    directory ->
 		create_extracted_dir(Name, Opts);
 	    symlink ->
-		create_symlink(Name, Header);
+		create_symlink(Name, Header, Opts);
 	    Other ->				% Ignore.
 		read_verbose(Opts, "x ~s - unsupported type ~p~n",
 			     [Name, Other]),
@@ -707,25 +703,25 @@ write_extracted_element(Header, Bin, Opts) ->
 	not_written -> ok
     end.
 
-create_extracted_dir(Name, Opts) ->
+create_extracted_dir(Name, _Opts) ->
     case file:make_dir(Name) of
 	ok -> ok;
-	{error,enotsup} ->
-	    read_verbose(Opts, "x ~s - symbolic links not supported~n", [Name]),
-	    not_written;
+	{error,enotsup} -> not_written;
 	{error,eexist} -> not_written;
 	{error,enoent} -> make_dirs(Name, dir);
 	{error,Reason} -> throw({error, Reason})
     end.
 
-create_symlink(Name, #tar_header{linkname=Linkname}=Header) ->
+create_symlink(Name, #tar_header{linkname=Linkname}=Header, Opts) ->
     case file:make_symlink(Linkname, Name) of
 	ok -> ok;
 	{error,enoent} ->
 	    ok = make_dirs(Name, file),
-	    create_symlink(Name, Header);
+	    create_symlink(Name, Header, Opts);
 	{error,eexist} -> not_written;
-	{error,enotsup} -> not_written;
+	{error,enotsup} ->
+	    read_verbose(Opts, "x ~s - symbolic links not supported~n", [Name]),
+	    not_written;
 	{error,Reason} -> throw({error, Reason})
     end.
 
@@ -842,11 +838,11 @@ zeroes(Number) ->
 %% Skips the given number of bytes rounded up to an even record.
 
 skip(File, Size) ->
+    %% Note: There is no point in handling failure to get the current position
+    %% in the file.  If it doesn't work, something serious is wrong.
     Amount = ((Size + ?record_size - 1) div ?record_size) * ?record_size,
-    case file:position(File, {cur, Amount}) of
-	{ok, _} -> ok;
-	Other -> Other
-    end.
+    {ok,_} = file:position(File, {cur, Amount}),
+    ok.
 
 %% Skips to the next record in the file.
 
@@ -855,10 +851,8 @@ skip_to_next(File) ->
     %% in the file.  If it doesn't work, something serious is wrong.
     {ok, Position} = file:position(File, {cur, 0}),
     NewPosition = ((Position + ?record_size - 1) div ?record_size) * ?record_size,
-    case file:position(File, NewPosition) of
-	{ok, NewPosition} -> ok
-%%	Other -> Other
-    end.
+    {ok,NewPosition} = file:position(File, NewPosition),
+    ok.
 
 %% Prints the message on if the verbose option is given.
 

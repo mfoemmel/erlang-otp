@@ -141,8 +141,7 @@ blocked(ProcVars) ->
 deblock(Msg, ProcVars) ->
     #pd_deblock{win        = WindowId, 
 		win_width  = WindowWidth,
-		win_height = WindowHeight, 
-		scale      = Scale}          = Msg,
+		win_height = WindowHeight}          = Msg,
 
     NewProcVars = ?DISP_FUNC_FILE:init_display(WindowId, WindowWidth, WindowHeight,
 					       ProcVars),
@@ -322,7 +321,6 @@ open_rec_edit(Msg, ProcVars) ->
 		       table_name       = TabName,
 		       record_name      = RecordName,
 		       lists_as_strings = ListsAsStr,
-		       data_list        = DataList,
 		       mark_params      = MarkP}  = ProcVars,
     
     #mark_params{marked_object = MarkedObject}  = MarkP,
@@ -388,10 +386,6 @@ gs_messages(Msg, ProcVars) ->
 	    ProcVars;
 
 
-	{_Id, buttonpress, _Data, [3 | _Rest]} ->
-	    ProcVars;
-
-
 	{_Id, buttonpress, vscale, [MouseBtn | _Tail]} ->
 	    WinId = ProcVars#process_variables.window_id,
 	    mark_busy(WinId),
@@ -433,7 +427,7 @@ gs_messages(Msg, ProcVars) ->
 	    NewProcVars;
 	
 
-	{Id, click, {toolbar, poll_table, _Str}, Arg} ->
+	{_Id, click, {toolbar, poll_table, _Str}, _Arg} ->
 	    WinId = ProcVars#process_variables.window_id,
 	    mark_busy(WinId),
 	    PcPid = ProcVars#process_variables.master_pid,
@@ -442,20 +436,20 @@ gs_messages(Msg, ProcVars) ->
 	    ProcVars;
 
 
-	{Id, click, {toolbar, select_browser, _Str}, Arg} ->
+	{_Id, click, {toolbar, select_browser, _Str}, _Arg} ->
 	    PcPid = ProcVars#process_variables.master_pid,
 	    PcPid ! #pc_select{sender = self()},
 	    ProcVars;
 
 
-	{Id, click, {toolbar, help_button, _Str}, Arg} ->
+	{_Id, click, {toolbar, help_button, _Str}, _Arg} ->
 	    PcPid = ProcVars#process_variables.master_pid,
 	    PcPid ! #pc_help{sender = self()},
 	    ProcVars;
 
 
 
-	{Id, click, {toolbar, insert_object, _Str}, Arg} ->
+	{_Id, click, {toolbar, insert_object, _Str}, _Arg} ->
 	    WinId = ProcVars#process_variables.window_id,
 	    mark_busy(WinId),
 	    PcPid = ProcVars#process_variables.master_pid,
@@ -464,7 +458,7 @@ gs_messages(Msg, ProcVars) ->
 	    ProcVars;
 
 
-	{Id, click, {toolbar, search_object, _Str}, Arg} ->
+	{_Id, click, {toolbar, search_object, _Str}, _Arg} ->
 	    WinId = ProcVars#process_variables.window_id,
 	    mark_busy(WinId),
 	    PcPid = ProcVars#process_variables.master_pid,
@@ -473,7 +467,7 @@ gs_messages(Msg, ProcVars) ->
 	    ProcVars;
 
 
-	{Id, click, {toolbar, sort_rising_order, _Str}, Arg} ->
+	{_Id, click, {toolbar, sort_rising_order, _Str}, _Arg} ->
 	    WinId = ProcVars#process_variables.window_id,
 	    mark_busy(WinId),
 	    NewProcVars = case send_sort_info_signal(true, false, ProcVars) of
@@ -486,7 +480,7 @@ gs_messages(Msg, ProcVars) ->
 	    NewProcVars;
 
 
-	{Id, click, {toolbar, sort_falling_order, _Str}, Arg} ->
+	{_Id, click, {toolbar, sort_falling_order, _Str}, _Arg} ->
 	    WinId = ProcVars#process_variables.window_id,
 	    mark_busy(WinId),
 	    NewProcVars = case send_sort_info_signal(true, true, ProcVars) of
@@ -499,7 +493,7 @@ gs_messages(Msg, ProcVars) ->
 	    NewProcVars;
 
 
-	{Id, click, {toolbar, no_sorting, _Str}, Arg} ->
+	{_Id, click, {toolbar, no_sorting, _Str}, _Arg} ->
 	    NewProcVars = case send_sort_info_signal(false, false, ProcVars) of
 			      ignore ->
 				  ProcVars;
@@ -509,7 +503,7 @@ gs_messages(Msg, ProcVars) ->
 	    NewProcVars;
 	
 
-	{Id, click, {toolbar, table_info, _Str}, Arg} ->
+	{Id, click, {toolbar, table_info, _Str}, _Arg} ->
 	    ToolP = ProcVars#process_variables.toolbar_params,
 	    F     = ToolP#toolbar_params.pop_up_frame_id,
 	    gs:config(F, [{y, -30}]),
@@ -519,13 +513,13 @@ gs_messages(Msg, ProcVars) ->
 	    ProcVars;
 	
 
-	{Id, click, {labelbtn, pop_up}, Arg} ->
+	{Id, click, {labelbtn, pop_up}, _Arg} ->
 	    gs:config(Id, [{data, {labelbtn, pop_down}}]),
 	    NewProcVars = ?DISP_FUNC_FILE:show_toolbar_editor(ProcVars),
 	    NewProcVars;
 
 
-	{Id, click, {labelbtn, pop_down}, Arg} ->
+	{Id, click, {labelbtn, pop_down}, _Arg} ->
 	    gs:config(Id, [{data, {labelbtn, pop_up}}]),
 	    NewProcVars = ?DISP_FUNC_FILE:hide_toolbar_editor(ProcVars),
 	    NewProcVars;
@@ -543,7 +537,7 @@ gs_messages(Msg, ProcVars) ->
 get_updated_elem(ProcVars) ->
     EditedStr = gs:read(editentry, text),
     case tv_db_search:string_to_term(EditedStr) of
-	{error, {Reason, Msg}} ->
+	{error, {_Reason, Msg}} ->
 	    gs:config(editentry, [beep]),
 	    gs:window(pdwin, gs:start(), []),
 	    tv_utils:notify(pdwin, "TV Notification", Msg),
@@ -654,7 +648,7 @@ new_object_ok(mnesia, RecordName, NewTerm) when tuple(NewTerm) ->
 		  end,
 	    {false, Msg}
     end;
-new_object_ok(mnesia, _RecordName, NewTerm) ->
+new_object_ok(mnesia, _RecordName, _NewTerm) ->
     Msg = case get(error_msg_mode) of
 	      normal ->
 		  ["Object is not a record!"];
@@ -702,12 +696,12 @@ handle_toolbar_buttons(Id, Btn, Str, LabelShown, X, Y, ProcVars) ->
 	    get_updated_elem(ProcVars),
 	    handle_toolbar_buttons(Id, Btn, Str, LabelShown, X, Y, ProcVars);
 
-	{gs, Id, leave, {toolbar, Btn, Str}, Arg} ->
+	{gs, Id, leave, {toolbar, Btn, Str}, _Arg} ->
 	    gs:config(F, [{y, -30}]),
 	    gs:config(Id, [{motion, false}]),
 	    ProcVars;
 	
-	{gs, Id, click, {toolbar, poll_table, _Str}, Arg} ->
+	{gs, Id, click, {toolbar, poll_table, _Str}, _Arg} ->
 	    mark_busy(WinId),
 	    gs:config(F, [{y, -30}]),
 	    gs:config(Id, [{motion, false}]),
@@ -716,21 +710,21 @@ handle_toolbar_buttons(Id, Btn, Str, LabelShown, X, Y, ProcVars) ->
 	    mark_nonbusy(WinId),
 	    ProcVars;
 
-	{gs, Id, click, {toolbar, select_browser, _Str}, Arg} ->
+	{gs, Id, click, {toolbar, select_browser, _Str}, _Arg} ->
 	    gs:config(F, [{y, -30}]),
 	    gs:config(Id, [{motion, false}]),
 	    PcPid = ProcVars#process_variables.master_pid,
 	    PcPid ! #pc_select{sender = self()},
 	    ProcVars;
 
-	{gs, Id, click, {toolbar, help_button, _Str}, Arg} ->
+	{gs, Id, click, {toolbar, help_button, _Str}, _Arg} ->
 	    gs:config(F, [{y, -30}]),
 	    gs:config(Id, [{motion, false}]),
 	    PcPid = ProcVars#process_variables.master_pid,
 	    PcPid ! #pc_help{sender = self()},
 	    ProcVars;
 
-	{gs, Id, click, {toolbar, insert_object, _Str}, Arg} ->
+	{gs, Id, click, {toolbar, insert_object, _Str}, _Arg} ->
 	    mark_busy(WinId),
 	    gs:config(F, [{y, -30}]),
 	    gs:config(Id, [{motion, false}]),
@@ -740,7 +734,7 @@ handle_toolbar_buttons(Id, Btn, Str, LabelShown, X, Y, ProcVars) ->
 	    ProcVars;
 
 
-	{gs, Id, click, {toolbar, search_object, _Str}, Arg} ->
+	{gs, Id, click, {toolbar, search_object, _Str}, _Arg} ->
 	    mark_busy(WinId),
 	    gs:config(F, [{y, -30}]),
 	    gs:config(Id, [{motion, false}]),
@@ -749,7 +743,7 @@ handle_toolbar_buttons(Id, Btn, Str, LabelShown, X, Y, ProcVars) ->
 	    mark_nonbusy(WinId),
 	    ProcVars;
 
-	{gs, Id, click, {toolbar, sort_rising_order, _Str}, Arg} ->
+	{gs, Id, click, {toolbar, sort_rising_order, _Str}, _Arg} ->
 	    mark_busy(WinId),
 	    gs:config(F, [{y, -30}]),
 	    gs:config(Id, [{motion, false}]),
@@ -763,7 +757,7 @@ handle_toolbar_buttons(Id, Btn, Str, LabelShown, X, Y, ProcVars) ->
 	    mark_nonbusy(WinId),
 	    NewProcVars;
 
-	{gs, Id, click, {toolbar, sort_falling_order, _Str}, Arg} ->
+	{gs, Id, click, {toolbar, sort_falling_order, _Str}, _Arg} ->
 	    mark_busy(WinId),
 	    gs:config(F, [{y, -30}]),
 	    gs:config(Id, [{motion, false}]),
@@ -777,7 +771,7 @@ handle_toolbar_buttons(Id, Btn, Str, LabelShown, X, Y, ProcVars) ->
 	    mark_nonbusy(WinId),
 	    NewProcVars;
 
-	{gs, Id, click, {toolbar, no_sorting, _Str}, Arg} ->
+	{gs, Id, click, {toolbar, no_sorting, _Str}, _Arg} ->
 	    gs:config(F, [{y, -30}]),
 	    gs:config(Id, [{motion, false}]),
 	    NewProcVars =
@@ -789,7 +783,7 @@ handle_toolbar_buttons(Id, Btn, Str, LabelShown, X, Y, ProcVars) ->
 		end,
 	    NewProcVars;
 
-	{gs, Id, click, {toolbar, table_info, _Str}, Arg} ->
+	{gs, Id, click, {toolbar, table_info, _Str}, _Arg} ->
 	    gs:config(F, [{y, -30}]),
 	    gs:config(Id, [{motion, false}]),
 	    PcPid = ProcVars#process_variables.master_pid,
@@ -855,7 +849,6 @@ handle_toolbar_buttons(Id, Btn, Str, LabelShown, X, Y, ProcVars) ->
 
 set_sort_col(SortingOn, ProcVars) ->
     #process_variables{pb_pid      = PbPid,
-		       pg_pid      = PgPid,
 		       mark_params = MarkP} = ProcVars,
     
     SortCol = case SortingOn of
@@ -978,12 +971,9 @@ handle_col_marked(Msg, ProcVars) ->
 
 remove_all_marks(SortCol, ProcVars) ->
     #process_variables{master_pid     = MasterPid,
-		       rec_pid        = RecPid,
 		       pb_pid         = PbPid,
 		       pg_pid         = PgPid,
-		       writable       = Writable,
-		       toolbar_params = ToolP,
-		       mark_params    = MarkP}  = ProcVars,
+		       toolbar_params = ToolP}  = ProcVars,
     
     PgPid ! #pg_remove_marks{sender = self()},
     PbPid ! #pb_remove_marks{sender = self()},

@@ -33,8 +33,8 @@
 	 set_env/3, unset_env/2]).
 
 %% Internal exports
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
-	 init_starter/4, get_loaded/1]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, 
+	 code_change/3, init_starter/4, get_loaded/1]).
 
 %% Test exports, only to be used from the test suites
 -export([test_change_apps/2]).
@@ -438,7 +438,7 @@ get_application_module(Module, [[AppName, Modules]|AppModules]) ->
 	false ->
 	    get_application_module(Module, AppModules)
     end;
-get_application_module(Module, []) ->
+get_application_module(_Module, []) ->
     undefined.
 
 %% 'modules' key in .app is a list of Module or {Module,Vsn}
@@ -1167,6 +1167,11 @@ terminate(Reason, S) ->
 	    S#state.running),
     ets:delete(ac_tab).
 
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+
 %%%-----------------------------------------------------------------
 %%% Internal functions
 %%%-----------------------------------------------------------------
@@ -1391,9 +1396,16 @@ get_appl_name(Appl) -> throw({error, {bad_application, Appl}}).
 
 make_appl(Name) when atom(Name) ->
     FName = atom_to_list(Name) ++ ".app",
-    case file:path_consult(code:get_path(), FName) of
-	{ok, [Application], _} -> {ok, make_appl_i(Application)};
-	{error, Reason} -> {error, {file:format_error(Reason), FName}}
+    case code:where_is_file(FName) of
+	non_existing ->
+	    {error, {file:format_error({error,enoent}), FName}};
+	FullName ->
+	    case file:consult(FullName) of
+		{ok, [Application]} ->
+		    {ok, make_appl_i(Application)};
+		{error, Reason} -> 
+		    {error, {file:format_error(Reason), FName}}
+	    end
     end;
 make_appl(Application) ->
     {ok, make_appl_i(Application)}.
@@ -1433,15 +1445,32 @@ make_appl_i(Appl) -> throw({error, {bad_application, Appl}}).
 
 %% do_change_apps(Applications, Config, OldAppls) -> NewAppls
 %%   Applications = [{application, AppName, [{Key,Value}]}]
-%%   Config = [{AppName,[{Par,Value}]}]
+%%   Config = [{AppName,[{Par,Value}]} | File]
 %%   OldAppls = NewAppls = [#appl{}]
 do_change_apps(Applications, Config, OldAppls) ->
+
+    %% OTP-4867
+    %% Config = contents of sys.config file
+    %% May now contain names of other .config files as well as
+    %% configuration parameters.
+    %% Therefore read and merge contents.
+    {ok, SysConfig, Errors} = check_conf_sys(Config),
+
+    %% Report errors, but do not terminate
+    %% (backwards compatible behaviour)
+    lists:foreach(fun({error, {SysFName, Line, Str}}) ->
+			  Str2 = lists:flatten(io_lib:format("~p: ~w: ~s~n",
+							     [SysFName, Line, Str])),
+			  error_logger:format(Str2, [])
+		  end,
+		  Errors),
+
     map(fun(Appl) ->
 		AppName = Appl#appl.name,
 		case is_loaded_app(AppName, Applications) of
 		    {true, Application} ->
 			do_change_appl(make_appl(Application),
-				       Appl, Config);
+				       Appl, SysConfig);
 
 		    %% ignored removed apps - handled elsewhere
 		    false ->
@@ -1702,7 +1731,32 @@ check_conf() ->
 						 BFName ++ ".config"),
 			   case load_file(FName) of
 			       {ok, NewEnv} ->
-				   merge_env(Env, NewEnv);
+				   %% OTP-4867
+				   %% sys.config may now contain names of
+				   %% other .config files as well as
+				   %% configuration parameters.
+				   %% Therefore read and merge contents.
+				   if
+				       BFName=="sys" ->
+					   {ok, SysEnv, Errors} =
+					       check_conf_sys(NewEnv),
+
+					   %% Report first error, if any, and
+					   %% terminate
+					   %% (backwards compatible behaviour)
+					   case Errors of
+					       [] ->
+						   merge_env(Env, SysEnv);
+					       [{error, {SysFName, Line, Str}}|_] ->
+						   Str2 = lists:flatten(
+							    io_lib:format("~p: ~w: ~s~n",
+									  [SysFName, Line, Str])),
+						   error_logger:format(Str2, []),
+						   throw({error, config_error})
+					   end;
+				       true ->
+					   merge_env(Env, NewEnv)
+				   end;
 			       {error, {Line, _Mod, Str}} ->
 				   Str2 = lists:flatten(
 					    io_lib:format("~p: ~w: ~s~n",
@@ -1713,7 +1767,24 @@ check_conf() ->
 		   end, [], Files)};
 	_ -> {ok, []}
     end.
-	    
+
+check_conf_sys(Env) ->
+    check_conf_sys(Env, [], []).
+
+check_conf_sys([File|T], SysEnv, Errors) when is_list(File) ->
+    BFName = filename:basename(File, ".config"),
+    FName = filename:join(filename:dirname(File), BFName ++ ".config"),
+    case load_file(FName) of
+	{ok, NewEnv} ->
+	    check_conf_sys(T, merge_env(SysEnv, NewEnv), Errors);
+	{error, {Line, _Mod, Str}} ->
+	    check_conf_sys(T, SysEnv, [{error, {FName, Line, Str}}|Errors])
+    end;
+check_conf_sys([Tuple|T], SysEnv, Errors) ->
+    check_conf_sys(T, merge_env(SysEnv, [Tuple]), Errors);
+check_conf_sys([], SysEnv, Errors) ->
+    {ok, SysEnv, lists:reverse(Errors)}.
+
 load_file(File) ->
     case erl_prim_loader:get_file(File) of
 	{ok, Bin, _FileName} ->

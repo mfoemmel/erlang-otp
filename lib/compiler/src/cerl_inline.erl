@@ -14,7 +14,7 @@
 %% Portions created by Ericsson are Copyright 2001, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id: cerl_inline.erl,v 1.41 2002/11/07 10:00:55 richardc Exp $
+%%     $Id$
 %%
 %% Core Erlang inliner.
 
@@ -37,10 +37,10 @@
 -export([core_transform/2, transform/1, transform/2]).
 
 -import(cerl, [abstract/1, alias_pat/1, alias_var/1, apply_args/1,
-	       apply_op/1, atom_name/1, atom_val/1, bin_seg_val/1,
-	       bin_seg_size/1, bin_seg_unit/1, bin_seg_type/1,
-	       bin_seg_flags/1, binary_segs/1, update_c_alias/3,
-	       update_c_apply/3, update_c_binary/2, update_c_bin_seg/6,
+	       apply_op/1, atom_name/1, atom_val/1, bitstr_val/1,
+	       bitstr_size/1, bitstr_unit/1, bitstr_type/1,
+	       bitstr_flags/1, binary_segments/1, update_c_alias/3,
+	       update_c_apply/3, update_c_binary/2, update_c_bitstr/6,
 	       update_c_call/4, update_c_case/3, update_c_catch/2,
 	       update_c_clause/4, c_fun/2, c_int/1, c_let/3,
 	       update_c_let/4, update_c_letrec/3, update_c_module/5,
@@ -126,7 +126,7 @@ weight(apply) -> 3;     % Average base cost: call/return.
 weight(call) -> 3;      % Assume remote-calls as efficient as `apply'.
 weight(primop) -> 2;    % Assume more efficient than `apply'.
 weight(binary) -> 4;    % Initialisation base cost.
-weight(bin_seg) -> 3;   % Coding/decoding a value; like a primop.
+weight(bitstr) -> 3;   % Coding/decoding a value; like a primop.
 weight(module) -> 1.    % Like a letrec with a constant body
 
 %% These "reference" structures are used for variables and function
@@ -1276,22 +1276,22 @@ i_module(E, Ctxt, Ren, Env, S) ->
 i_binary(E, Ren, Env, S) ->
     %% Visit the segments for value.
     {Es, S1} = mapfoldl(fun (E, S) ->
-				i_bin_seg(E, Ren, Env, S)
+				i_bitstr(E, Ren, Env, S)
 			end,
-			S, binary_segs(E)),
+			S, binary_segments(E)),
     S2 = count_size(weight(binary), S1),
     {update_c_binary(E, Es), S2}.
 
-i_bin_seg(E, Ren, Env, S) ->
+i_bitstr(E, Ren, Env, S) ->
     %% It is not necessary to visit the Unit, Type and Flags fields,
     %% since these are always literals.
-    {Val, S1} = i(bin_seg_val(E), value, Ren, Env, S),
-    {Size, S2} = i(bin_seg_size(E), value, Ren, Env, S1),
-    Unit = bin_seg_unit(E),
-    Type = bin_seg_type(E),
-    Flags = bin_seg_flags(E),
-    S3 = count_size(weight(bin_seg), S2),
-    {update_c_bin_seg(E, Val, Size, Unit, Type, Flags), S3}.
+    {Val, S1} = i(bitstr_val(E), value, Ren, Env, S),
+    {Size, S2} = i(bitstr_size(E), value, Ren, Env, S1),
+    Unit = bitstr_unit(E),
+    Type = bitstr_type(E),
+    Flags = bitstr_flags(E),
+    S3 = count_size(weight(bitstr), S2),
+    {update_c_bitstr(E, Val, Size, Unit, Type, Flags), S3}.
 
 %% This is a simplified version of `i_pattern', for lists of parameter
 %% variables only. It does not modify the state.
@@ -1346,10 +1346,10 @@ i_pattern(E, Ren, Env, Ren0, Env0, S) ->
 	    end;
 	binary ->
 	    {Es, S1} = mapfoldl(fun (E, S) ->
-					i_bin_seg_pattern(E, Ren, Env,
+					i_bitstr_pattern(E, Ren, Env,
 							  Ren0, Env0, S)
 				end,
-				S, binary_segs(E)),
+				S, binary_segments(E)),
 	    S2 = count_size(weight(binary), S1),
 	    {update_c_binary(E, Es), S2};
 	_ ->
@@ -1371,19 +1371,19 @@ i_pattern(E, Ren, Env, Ren0, Env0, S) ->
 	    end
     end.
 
-i_bin_seg_pattern(E, Ren, Env, Ren0, Env0, S) ->
+i_bitstr_pattern(E, Ren, Env, Ren0, Env0, S) ->
     %% It is not necessary to visit the Unit, Type and Flags fields,
     %% since these are always literals. The Value field is a limited
     %% pattern - either a literal or an unbound variable. The Size field
     %% is a limited expression - either a literal or a variable bound in
     %% the environment of the containing expression.
-    {Val, S1} = i_pattern(bin_seg_val(E), Ren, Env, Ren0, Env0, S),
-    {Size, S2} = i(bin_seg_size(E), value, Ren0, Env0, S1),
-    Unit = bin_seg_unit(E),
-    Type = bin_seg_type(E),
-    Flags = bin_seg_flags(E),
-    S3 = count_size(weight(bin_seg), S2),
-    {update_c_bin_seg(E, Val, Size, Unit, Type, Flags), S3}.
+    {Val, S1} = i_pattern(bitstr_val(E), Ren, Env, Ren0, Env0, S),
+    {Size, S2} = i(bitstr_size(E), value, Ren0, Env0, S1),
+    Unit = bitstr_unit(E),
+    Type = bitstr_type(E),
+    Flags = bitstr_flags(E),
+    S3 = count_size(weight(bitstr), S2),
+    {update_c_bitstr(E, Val, Size, Unit, Type, Flags), S3}.
 
 
 %% ---------------------------------------------------------------------
@@ -1417,6 +1417,7 @@ inline(E, #app{opnds = Opnds, ctxt = Ctxt, loc = L}, Ren, Env, S) ->
     if length(Opnds) /= length(Vs) ->
             report_error("function called with wrong number "
 			 "of arguments!\n"),
+	    %% TODO: should really just residualise the call...
 	    exit(error);
        true ->
             ok
@@ -2496,13 +2497,11 @@ env__new_vname(Env) ->
     rec_env:new_key(Env).
 
 env__new_fname(A, N, Env) ->
-    rec_env:new_custom_key(fun (X) ->
-				   S = integer_to_list(X),
-				   {list_to_atom(atom_to_list(A) ++ "_"
-						 ++ S),
-				    N}
-			   end,
-			   Env).
+    rec_env:new_key(fun (X) ->
+			S = integer_to_list(X),
+			{list_to_atom(atom_to_list(A) ++ "_" ++ S),
+			 N}
+		    end, Env).
 
 
 %% =====================================================================
@@ -2756,8 +2755,6 @@ format({F, L, D}, Vs) when integer(L), L > 0 ->
     [io_lib:fwrite("~s:~w: ", [filename(F), L]), format(D, Vs)];
 format({F, _L, D}, Vs) ->
     [io_lib:fwrite("~s: ", [filename(F)]), format(D, Vs)];
-format({_F, _L, D}, Vs) ->
-    format(D, Vs);
 format(S, Vs) when list(S) ->
     [io_lib:fwrite(S, Vs), $\n].
 

@@ -24,6 +24,7 @@
 
 -export([welcome/0,
 	 read_file_frame/0,
+	 redirect/1,
 	 get_translated_filename_frame/1,
 	 start_page/0,
 	 filename_frame/1,
@@ -35,6 +36,7 @@
 	 proc_details/4,
 	 expanded_memory/2,
 	 expanded_binary/1,
+	 next/2,
 	 ports/3,
 	 timers/3,
 	 ets_tables/4,
@@ -42,7 +44,7 @@
 	 loaded_mods/2,
 	 loaded_mod_details/2,
 	 funs/2,
-	 atoms/2,
+	 atoms/3,
 	 memory/2,
 	 allocated_areas/2,
 	 allocator_info/2,
@@ -122,6 +124,12 @@ get_translated_filename_frame_body(File) ->
        tr("VALIGN=middle",
 	  td("ALIGN=center",Form))]).
 
+
+%%%-----------------------------------------------------------------
+%%% Display "Please wait..." while crashdump is being read
+redirect(Status) ->
+    Head = ["<META HTTP-EQUIV=\"refresh\" CONTENT=\"3; URL=./redirect\">"],
+    header("Please wait...",Head,body([Status,br(),"Please wait..."])).
 
 %%%-----------------------------------------------------------------
 %%% Frameset containing "filename", "menu", and "main" frames
@@ -333,8 +341,7 @@ procs_summary_body(Heading,ProcsSummary,TW,Sorted,SharedHeap) ->
        "BORDER=4 CELLPADDING=4",
        [tr(
 	  [summary_table_head("pid","Pid",Sorted),
-	   summary_table_head("name","Name",Sorted),
-	   summary_table_head("init_func","Spawned as",Sorted),
+	   summary_table_head("name_func","Name/Spawned as",Sorted),
 	   summary_table_head("state","State",Sorted), 
 	   summary_table_head("reds","Reductions",Sorted), 
 	   summary_table_head("mem",MemHeading,Sorted),
@@ -348,7 +355,7 @@ summary_table_head(SortOn,Text,_Sorted) ->
     th(href("./sort_procs?sort="++SortOn,Text)).
 
 procs_summary_table(Proc) ->
-    #proc{pid=Pid,name=Name,init_func=InitFunc,state=State,
+    #proc{pid=Pid,name=Name,state=State,
 	  reds=Reds,stack_heap=Mem0,msg_q_len=MsgQLen}=Proc,
     Mem = case Mem0 of
 	      -1 -> "unknown";
@@ -357,7 +364,6 @@ procs_summary_table(Proc) ->
     tr(
       [td(href(["./proc_details?pid=",Pid],Pid)),
        td(Name),
-       td(InitFunc),
        td(State),
        td("ALIGN=right",integer_to_list(Reds)),
        td("ALIGN=right",Mem),
@@ -378,6 +384,9 @@ proc_details(Pid,Proc,TW,SharedHeap) ->
 
 proc_details_body(Heading,Proc,TW,SharedHeap) ->
     Pid = Proc#proc.pid,
+    Name = if Proc#proc.name==Proc#proc.init_func -> ?space;
+	      true -> Proc#proc.name
+	   end,
     [help("processes"),
      warn(TW),
      table(
@@ -387,7 +396,7 @@ proc_details_body(Heading,Proc,TW,SharedHeap) ->
 	  [td("COLSPAN=4 ALIGN=center",Heading)]),
 	tr(
 	  [td("NOWRAP=true",b("Name")),
-	   td("COLSPAN=1",Proc#proc.name),
+	   td("COLSPAN=1",Name),
 	   td("NOWRAP=true",b("Spawned as")),
 	   td("COLSPAN=1",Proc#proc.init_func)]),
 	tr(
@@ -489,6 +498,12 @@ display_or_link_to_expand(Heading,Data,Pid) ->
     case Data of
 	expand ->
 	    link_to_read_memory(Heading,Pid);	    
+ 	truncated -> 
+ 	    Text = font("COLOR=\"#FF0000\"",
+			"The dump is truncated, no data available"),
+ 	    tr(
+ 	      [td("NOWRAP=true VALIGN=top",b(Heading)),
+ 	       td("COLSPAN=3",Text)]);
 	?space -> 
 	    "";
 	{size,Truncated,Size,Pos} ->
@@ -924,21 +939,71 @@ funs_table(Fu) ->
     
 %%%-----------------------------------------------------------------
 %%% Print atoms
-atoms(Atoms,TW) ->
+atoms(Atoms,Num,TW) ->
     Heading = "Atoms",
-    header(Heading,body(atoms_body(Heading,Atoms,TW))).
+    header(Heading,body(atoms_body(Heading,Atoms,Num,TW))).
 
-atoms_body(Heading,[],TW) ->
+atoms_body(Heading,[],Num,TW) ->
     [h1(Heading),
      warn(TW),
-     "No atoms were found\n"];    
-atoms_body(Heading,Atoms,TW) ->
-    ReversedInfo = "The last created atom is shown first",
+     "No atoms were found in log",br(),
+     "Total number of atoms in node was ", Num, br()];    
+atoms_body(Heading,Atoms,Num,TW) ->
     [heading(Heading,"atoms"),
      warn(TW),
-     ReversedInfo,
-     br(),br(),
-     pre(Atoms)].
+     "Total number of atoms in node was ", Num, 
+     br(),
+     "The last created atom is shown first",
+     br(),br() |
+     n_first(Atoms)].
+
+n_first({n_lines,Start,N,What,Lines,Pos}) ->
+    NextHref = next_href(N,What,Pos,Start),
+    [What," number ",integer_to_list(Start),"-",integer_to_list(Start+N-1),
+     br(),
+     NextHref, 
+     pre(Lines),
+     NextHref];
+n_first({n_lines,_Start,_N,_What,Lines}) ->
+    [pre(Lines)].
+
+%%%-----------------------------------------------------------------
+%%% Print next N lines of "something"
+next(NLines,TW) ->
+    header(element(4,NLines),body(next_body(NLines,TW))).
+
+next_body({n_lines,Start,N,What,Lines,Pos},TW) ->
+    PrefHref = prev_href(),
+    NextHref = next_href(N,What,Pos,Start),
+    [warn(TW),
+     What," number ",integer_to_list(Start),"-",integer_to_list(Start+N-1),
+     br(),
+     PrefHref,
+     ?space,
+     NextHref, 
+     pre(Lines),
+     PrefHref,
+     ?space,
+     NextHref];
+next_body({n_lines,Start,N,What,Lines},TW) ->
+    PrefHref = prev_href(),
+    [warn(TW),
+     What," number ",integer_to_list(Start),"-",integer_to_list(Start+N-1),
+     br(),
+     PrefHref,
+     pre(Lines),
+     PrefHref].
+    
+
+prev_href() ->
+    href("javascript:history.back()",["Previous"]).
+
+next_href(N,What,Pos,Start) ->
+    href(["./next?pos=",integer_to_list(Pos),
+	  "&num=",integer_to_list(N),
+	  "&start=",integer_to_list(Start+N),
+	  "&what=",What],
+	 "Next").
 
 %%%-----------------------------------------------------------------
 %%% Print memory information

@@ -81,6 +81,7 @@ Uint  erts_mseg_unit_size(void);
 void  erts_mseg_init(ErtsMsegInit_t *init);
 void  erts_mseg_late_init(void); /* Have to be called after all allocators,
 				   threads and timers have been initialized. */
+void  erts_mseg_exit(void);
 Eterm erts_mseg_info_options(CIO *ciop, Uint **hpp, Uint *szp);
 Eterm erts_mseg_info(CIO *ciop, Uint **hpp, Uint *szp);
 

@@ -1,6 +1,6 @@
+%% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2000 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <02/05/13 14:57:10 happi>
 %% ====================================================================
 %%  Filename : 	hipe_icode_heap_test.erl
 %%  Module   :	hipe_icode_heap_test
@@ -8,32 +8,28 @@
 %%  Notes    : 
 %%  History  :	* 2000-11-07 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
-%%  CVS      :
-%%              $Author: tobiasl $
-%%              $Date: 2003/03/21 16:21:28 $
-%%              $Revision: 1.9 $
-%% ====================================================================
-%%  Exports  :
 %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% $Id$
+%%
 
 -module(hipe_icode_heap_test).
+
 -export([cfg/1]).
 
 %-ifndef(DEBUG).
 %-define(DEBUG,1).
 %-endif.
 -define(DO_ASSERT,true).
+
 -include("../main/hipe.hrl").
+
 %-------------------------------------------------------------------------
 -include("../rtl/hipe_literals.hrl").
 %-------------------------------------------------------------------------
 
 
 cfg(CFG) ->
-  Icode = hipe_icode_cfg:linearize(CFG),
-  CFG2 = hipe_icode_cfg:init(Icode),
-
+  Icode = hipe_icode_cfg:cfg_to_linear(CFG),
   Code = hipe_icode:icode_code(Icode),
   ActualVmax = hipe_icode:highest_var(Code),
   ActualLmax = hipe_icode:highest_label(Code),
@@ -41,12 +37,12 @@ cfg(CFG) ->
   hipe_gensym:set_label(icode,ActualLmax+1),
   hipe_gensym:set_var(icode,ActualVmax+1),
 
-  EBBs = hipe_icode_ebb:cfg(CFG2),
-  {EBBcode,_Visited} = ebbs(EBBs,[], CFG2),
+  EBBs = hipe_icode_ebb:cfg(CFG),
+  {EBBcode,_Visited} = ebbs(EBBs,[], CFG),
   NewCode = add_gc_tests(EBBcode),
   NewIcode = hipe_icode:icode_code_update(Icode,NewCode),
-  
-  NewCFG = hipe_icode_cfg:init(NewIcode),
+
+  NewCFG = hipe_icode_cfg:linear_to_cfg(NewIcode),
   %% hipe_icode_cfg:pp(NewCFG),
   NewCFG.
 
@@ -132,7 +128,6 @@ need(I) ->
 	      
 primop_need(I) ->
   case hipe_icode:call_fun(I) of
-
     cons ->
       2;
     mktuple ->
@@ -155,11 +150,37 @@ gc_test(Need) ->
 
 split(I) ->
   case hipe_icode:type(I) of
-    call -> split_primop(hipe_icode:call_fun(I));
-    enter -> split_primop(hipe_icode:enter_fun(I));
+    call -> not known_heap_need(hipe_icode:call_fun(I));
+    enter -> not known_heap_need(hipe_icode:enter_fun(I));
     _ -> false
   end.
 
-split_primop(Primop) ->
-  not hipe_bif:known_heap_need(Primop).
+known_heap_need(Name) ->
+  case Name of
+    %% Primops
+    cons -> true;
+    fcheckerror -> true;
+    fclearerror -> true;
+    fnegate -> true;
+    fp_add -> true;
+    fp_div -> true;
+    fp_mul -> true;
+    fp_sub -> true;
+    mktuple -> true;
+    unsafe_element -> true;
+    unsafe_hd -> true;
+    unsafe_tag_float -> true;
+    unsafe_tl -> true;
+    unsafe_untag_float -> true;
+    {element, _TypeInfo} -> true;
+    {unsafe_element,_N} -> true;
+    {unsafe_update_element,_N}  -> true;
 
+    %% MFAs
+    {erlang, element, 2} -> true;
+    {erlang, length, 1} -> true;
+    {erlang, self, 0} -> true;
+    {erlang, size, 1} -> true;
+
+    _ -> false
+  end.

@@ -51,6 +51,7 @@
          open_file/1,
          open_file/2,
          pid2name/1,
+         repair_continuation/2,
          safe_fixtable/2,
          select/1,
          select/2,
@@ -58,6 +59,8 @@
          select_delete/2,
          slot/2,
          sync/1,
+         table/1,
+         table/2,
          to_ets/2,
          traverse/2,
          update_counter/3]).
@@ -69,7 +72,8 @@
 -export([fixtable/2]).
 
 %% Internal exports.
--export([istart_link/1, init/2, internal_open/2,
+-export([istart_link/1, init/2, internal_open/3, add_user/3, 
+         internal_close/1, remove_user/2,
 	 system_continue/3, system_terminate/4, system_code_change/4]).
 
 %% Debug.
@@ -87,7 +91,8 @@
 -export([lookup_keys/2]).
 
 
--compile({inline, [{einval,2},{badarg,2},{badarg_exit,2},{lookup_reply,2}]}).
+-compile({inline, [{einval,2},{badarg,2},{undefined,1},
+                   {badarg_exit,2},{lookup_reply,2}]}).
 
 -include_lib("kernel/include/file.hrl").
 
@@ -173,6 +178,9 @@
 %%% API
 %%%----------------------------------------------------------------------
 
+add_user(Pid, Tab, Args) ->
+    req(Pid, {add_user, Tab, Args}).
+    
 all() ->
     dets_server:all().
 
@@ -186,7 +194,12 @@ bchunk(Tab, Term) ->
     erlang:fault(badarg, [Tab, Term]).
 
 close(Tab) ->  
-    dets_server:close(Tab).
+    case dets_server:close(Tab) of
+        badarg -> % Should not happen.
+             {error, not_owner}; % Backwards compatibility...
+        Reply ->
+            Reply
+    end.
 
 delete(Tab, Key) ->
     badarg(treq(Tab, {delete_key, [Key]}), [Tab, Key]).
@@ -264,7 +277,7 @@ info(Tab) ->
 	{'EXIT', _Reason} ->
 	    undefined;
 	Pid ->
-	    req(Pid, info)
+	    undefined(req(Pid, info))
     end.
 
 info(Tab, owner) ->
@@ -286,7 +299,7 @@ info(Tab, Tag) ->
 	{'EXIT', _Reason} ->
 	    undefined;
 	Pid ->
-	    req(Pid, {info, Tag})
+	    undefined(req(Pid, {info, Tag}))
     end.
 
 init_table(Tab, InitFun) ->
@@ -315,8 +328,11 @@ insert_new(Tab, Objs) when list(Objs) ->
 insert_new(Tab, Obj) ->
     badarg(treq(Tab, {insert_new, [Obj]}), [Tab, Obj]).
 
-internal_open(Pid, Args) ->
-    req(Pid, {internal_open, Args}).
+internal_close(Pid) ->
+    req(Pid, close).
+
+internal_open(Pid, Ref, Args) ->
+    req(Pid, {internal_open, Ref, Args}).
 
 is_compatible_bchunk_format(Tab, Term) ->
     badarg(treq(Tab, {is_compatible_bchunk_format, Term}), [Tab, Term]).
@@ -404,12 +420,22 @@ next(Tab, Key) ->
 %% parameters as already specified in the file itself.
 %% Return a ref leading to the file.
 open_file(File) ->
-    einval(dets_server:open_file(to_list(File)), [File]).
+    case dets_server:open_file(to_list(File)) of
+        badarg -> % Should not happen.
+            erlang:fault(dets_process_died, [File]);
+        Reply -> 
+            einval(Reply, [File])
+    end.
 
 open_file(Tab, Args) when list(Args) ->
     case catch defaults(Tab, Args) of
         OpenArgs when record(OpenArgs, open_args) ->
-            einval(dets_server:open_file(Tab, OpenArgs), [Tab, Args]);
+            case dets_server:open_file(Tab, OpenArgs) of
+                badarg -> % Should not happen.
+                    erlang:fault(dets_process_died, [Tab, Args]);
+                Reply -> 
+                    einval(Reply, [Tab, Args])
+            end;
 	_ ->
 	    erlang:fault(badarg, [Tab, Args])
     end;
@@ -418,6 +444,22 @@ open_file(Tab, Arg) ->
 
 pid2name(Pid) ->
     dets_server:pid2name(Pid).
+
+remove_user(Pid, From) ->
+    req(Pid, {close, From}).
+
+repair_continuation(#dets_cont{match_program = B}=Cont, MS) 
+    when is_binary(B) ->
+    case ets:is_compiled_ms(B) of
+	true ->
+	    Cont;
+	false ->
+            Cont#dets_cont{match_program = ets:match_spec_compile(MS)}
+    end;
+repair_continuation(#dets_cont{}=Cont, _MS) ->
+    Cont;
+repair_continuation(T, MS) ->
+    erlang:fault(badarg, [T, MS]).
 
 safe_fixtable(Tab, Bool) when Bool == true; Bool == false ->
     badarg(treq(Tab, {safe_fixtable, Bool}), [Tab, Bool]);
@@ -454,6 +496,79 @@ istart_link(Server) ->
 
 sync(Tab) ->
     badarg(treq(Tab, sync), [Tab]).
+
+table(Tab) ->
+    table(Tab, []).
+
+table(Tab, Opts) ->
+    case options(Opts, [traverse, n_objects]) of
+        {badarg,_} ->
+            erlang:fault(badarg, [Tab, Opts]);
+        [Traverse, NObjs] ->
+            TF = case Traverse of
+                     first_next -> 
+                         fun() -> qlc_next(Tab, first(Tab)) end;
+                     select -> 
+                         fun(MS) -> qlc_select(select(Tab, MS, NObjs)) end;
+                     {select, MS} ->
+                         fun() -> qlc_select(select(Tab, MS, NObjs)) end
+                 end,
+            PreFun = fun(_) -> safe_fixtable(Tab, true) end,
+            PostFun = fun() -> safe_fixtable(Tab, false) end,
+            InfoFun = fun(Tag) -> table_info(Tab, Tag) end,
+            %% lookup_keys is not public, but convenient
+            LookupFun = 
+                case Traverse of
+                    {select, _MS} -> 
+                        undefined;
+                    _ -> 
+                        fun(_KeyPos, [K]) -> lookup(Tab, K);
+                           (_KeyPos, Ks) -> lookup_keys(Tab, Ks) 
+                        end
+                end,
+            FormatFun = 
+                fun(all) ->
+                        As = case Opts of
+                                 [] -> [Tab];
+                                 _ -> [Tab, Opts]
+                             end,
+                        {?MODULE, table, As};
+                   ({match_spec, MS}) ->
+                        {?MODULE, table, [Tab, [{traverse, {select, MS}} | 
+                                                listify(Opts)]]};
+                   ({lookup, _KeyPos, [Value]}) ->
+                        io_lib:format("~w:lookup(~w, ~w)", 
+                                      [?MODULE, Tab, Value]);
+                   ({lookup, _KeyPos, Values}) ->
+                        io_lib:format("lists:flatmap(fun(V) -> "
+                                      "~w:lookup(~w, V) end, ~w)", 
+                                      [?MODULE, Tab, Values])
+                end,
+            qlc:table(TF, [{pre_fun, PreFun}, {post_fun, PostFun}, 
+                           {info_fun, InfoFun}, {format_fun, FormatFun},
+                           {lookup_fun, LookupFun}])
+    end.
+         
+qlc_next(_Tab, '$end_of_table') ->
+    [];
+qlc_next(Tab, Key) ->
+    lookup(Tab, Key) ++ fun() -> qlc_next(Tab, next(Tab, Key)) end.
+
+qlc_select('$end_of_table') -> 
+    [];
+qlc_select({Objects, Cont}) -> 
+    Objects ++ fun() -> qlc_select(select(Cont)) end.
+
+table_info(Tab, num_of_objects) ->
+    info(Tab, size);
+table_info(Tab, keypos) ->
+    info(Tab, keypos);
+table_info(Tab, is_unique_objects) ->
+    info(Tab, type) =/= duplicate_bag;
+table_info(_Tab, _) ->
+    undefined.
+
+%% End of table/2.
 
 to_ets(DTab, ETab) ->
     case ets:info(ETab, protection) of
@@ -592,7 +707,12 @@ chunk_match(State) ->
 		    MP = NewState#dets_cont.match_program,
 		    case catch do_foldl_bins(Bins, MP) of
 			{'EXIT', _} ->
-			    req(Proc, {corrupt, bad_object});
+                            case ets:is_compiled_ms(MP) of
+                                true ->
+                                    req(Proc, {corrupt, bad_object});
+                                false ->
+                                    badarg
+                            end;
 			Terms ->
 			    {Terms, NewState}
 		    end;
@@ -746,6 +866,17 @@ options(Options, [Key | Keys], L) when list(Options) ->
 		    {'EXIT', _} -> badarg;
 		    MinNoSlots -> {ok, MinNoSlots}
 		end;
+            {value, {n_objects, default}} ->
+                {ok, default_option(Key)};
+            {value, {n_objects, NObjs}} when is_integer(NObjs),
+                                             NObjs >= 1 ->
+                {ok, NObjs};
+            {value, {traverse, select}} ->
+                {ok, select};
+            {value, {traverse, {select, MS}}} ->
+                {ok, {select, MS}};
+            {value, {traverse, first_next}} ->
+                {ok, first_next};
 	    {value, {Key, _}} ->
 		badarg;
 	    false ->
@@ -765,7 +896,14 @@ options(Options, _, _L) ->
     {badarg,Options}.
 
 default_option(format) -> term;
-default_option(min_no_slots) -> default.
+default_option(min_no_slots) -> default;
+default_option(traverse) -> select;
+default_option(n_objects) -> default.
+
+listify(L) when is_list(L) ->
+    L;
+listify(T) ->
+    [T].
 
 treq(Tab, R) ->
     case catch dets_server:get_pid(Tab) of
@@ -775,13 +913,20 @@ treq(Tab, R) ->
 	    badarg
     end.
 
-req(Proc, R) -> 
+req(Proc, R) ->
+    Ref = erlang:monitor(process, Proc),
     Proc ! ?DETS_CALL(self(), R),
     receive 
-	{Proc, Reply} -> 
-	    Reply;
-	{'EXIT', Proc, Reason} ->
-	    exit(Reason)
+	{'DOWN', Ref, process, Proc, _Info} ->
+            badarg;
+	{Proc, Reply} ->
+	    erlang:demonitor(Ref),
+	    receive 
+		{'DOWN', Ref, process, Proc, _Reason} ->
+                    Reply
+	    after 0 ->
+                    Reply
+	    end
     end.
 
 %% Inlined.
@@ -794,6 +939,12 @@ einval(Reply, _A) ->
 badarg(badarg, A) ->
     erlang:fault(badarg, A);
 badarg(Reply, _A) ->
+    Reply.
+
+%% Inlined.
+undefined(badarg) ->
+    undefined;
+undefined(Reply) ->
     Reply.
 
 %% Inlined.
@@ -922,7 +1073,7 @@ apply_op(Op, From, Head, N) ->
 		      Head#head.access == Access,
 		      VersionOK == true,
 		      Fname == Head#head.filename ->
-			  {ok, Tab};
+			  ok;
 		      true ->
 			  err({error, incompatible_arguments})
 		  end,
@@ -947,7 +1098,7 @@ apply_op(Op, From, Head, N) ->
 		    {0, Head}
 	    end;
 	close  ->
-	    From ! {self(), {closed, fclose(Head)}},
+	    From ! {self(), fclose(Head)},
 	    _NewHead = unlink_fixing_procs(Head),
 	    ?PROFILE(ep:done()),
 	    exit(normal);
@@ -955,7 +1106,7 @@ apply_op(Op, From, Head, N) ->
 	    %% Used from dets_server when Pid has closed the table,
 	    %% but the table is still opened by some process.
 	    NewHead = remove_fix(Head, Pid, close),
-	    From ! {self(), {closed, status(NewHead)}},
+	    From ! {self(), status(NewHead)},
 	    NewHead;
 	{corrupt, Reason} ->
 	    {H2, Error} = dets_utils:corrupt_reason(Head, Reason),
@@ -975,11 +1126,11 @@ apply_op(Op, From, Head, N) ->
             Res = test_bchunk_format(Head, Term),
             From ! {self(), Res},
             ok;
-	{internal_open, Args} ->
+	{internal_open, Ref, Args} ->
 	    ?PROFILE(ep:do()),
-	    case do_open_file(Args, Head#head.parent, Head#head.server) of
-		{ok, Tab, H2} -> 
-		    From ! {self(), {ok, Tab}},
+	    case do_open_file(Args, Head#head.parent, Head#head.server,Ref) of
+		{ok, H2} -> 
+		    From ! {self(), ok},
 		    H2;
 		Error -> 
 		    From ! {self(), Error},
@@ -1080,8 +1231,8 @@ apply_op(Op, From, Head, N) ->
 	    {H2, Res} = fmatch_init(Head, State),
 	    From ! {self(), Res},
 	    H2;
-	{match, MP, Spec, Limit} ->
-	    {H2, Res} = fmatch(Head, MP, Spec, Limit),
+	{match, MP, Spec, NObjs} ->
+	    {H2, Res} = fmatch(Head, MP, Spec, NObjs),
 	    From ! {self(), Res},
 	    H2;
 	{member, Key} when Head#head.version == 8 ->
@@ -1614,13 +1765,13 @@ test_bchunk_format(Head, _Term) when Head#head.version == 8 ->
 test_bchunk_format(Head, Term) ->
     dets_v9:try_bchunk_header(Term, Head) =/= not_ok.
 
-do_open_file([Fname, Verbose], Parent, Server) ->
-    case catch fopen(Fname) of
+do_open_file([Fname, Verbose], Parent, Server, Ref) ->
+    case catch fopen2(Fname, Ref) of
 	{error, _Reason} = Error ->
 	    err(Error);
 	{ok, Head} ->
 	    maybe_put(verbose, Verbose),
-	    {ok, Head#head.name, Head#head{parent = Parent, server = Server}};
+	    {ok, Head#head{parent = Parent, server = Server}};
 	{'EXIT', _Reason} = Error ->
 	    Error;
 	Bad ->
@@ -1629,16 +1780,16 @@ do_open_file([Fname, Verbose], Parent, Server) ->
 	       [Bad]),
 	    {error, {dets_bug, Fname, Bad}}
     end;
-do_open_file([Tab, OpenArgs, Verb], Parent, Server) ->
-    case catch fopen(Tab, OpenArgs) of
+do_open_file([Tab, OpenArgs, Verb], Parent, Server, Ref) ->
+    case catch fopen3(Tab, OpenArgs) of
 	{error, {tooshort, _}} ->
 	    file:delete(OpenArgs#open_args.file),
-	    do_open_file([Tab, OpenArgs, Verb], Parent, Server);
+	    do_open_file([Tab, OpenArgs, Verb], Parent, Server, Ref);
 	{error, _Reason} = Error ->
 	    err(Error);
 	{ok, Head} ->
 	    maybe_put(verbose, Verb),
-	    {ok, Tab, Head#head{parent = Parent, server = Server}};
+	    {ok, Head#head{parent = Parent, server = Server}};
 	{'EXIT', _Reason} = Error ->
 	    Error;
 	Bad ->
@@ -1967,10 +2118,9 @@ beyond_key2(_K, _Kp, L) ->
 
 %% Open an already existing file, no arguments
 %% -> {ok, head()} | throw(Error)
-fopen(Fname) ->
+fopen2(Fname, Tab) ->
     case file:read_file_info(Fname) of
 	{ok, _} ->
-	    Tab = make_ref(),
 	    Acc = read_write,
 	    Ram = false, 
 	    %% Fd is not always closed upon error, but exit is soon called.
@@ -1983,7 +2133,7 @@ fopen(Fname) ->
                     Version = default,
                     case fsck(Fd, Tab, Fname, FH, default, default, Version) of
                         ok ->
-                            fopen(Fname);
+                            fopen2(Fname, Tab);
                         Error ->
                             throw(Error)
                     end;
@@ -1999,7 +2149,7 @@ fopen(Fname) ->
 
 %% Open and possibly create and initialize a file
 %% -> {ok, head()} | throw(Error)
-fopen(Tab, OpenArgs) ->
+fopen3(Tab, OpenArgs) ->
     FileName = OpenArgs#open_args.file,
     case file:read_file_info(FileName) of
 	{ok, _} ->
@@ -2068,7 +2218,7 @@ fopen_existing_file(Tab, OpenArgs) ->
 	    case catch compact(NewSourceHead) of
 		ok ->
 		    erlang:garbage_collect(),
-		    fopen(Tab, OpenArgs#open_args{repair = false});
+		    fopen3(Tab, OpenArgs#open_args{repair = false});
 		_Err ->
                     _ = file:close(Fd),
 		    io:format(user, "dets: compaction of file ~p failed, "
@@ -2093,7 +2243,7 @@ do_repair(Fd, Tab, Fname, FH, MinSlots, MaxSlots, Version, OpenArgs) ->
 	ok ->
 	    %% No need to update 'version'.
 	    erlang:garbage_collect(),
-	    fopen(Tab, OpenArgs#open_args{repair = false});
+	    fopen3(Tab, OpenArgs#open_args{repair = false});
 	Error ->
 	    throw(Error)
     end.
@@ -2264,7 +2414,7 @@ fsck_try(Fd, Tab, FH, Fname, SlotNumbers, Version) ->
                           ram_file = false, delayed_write = ?DEFAULT_CACHE,
                           auto_save = infinity, access = read_write,
                           version = Version},
-    case catch fopen(Tab, OpenArgs) of
+    case catch fopen3(Tab, OpenArgs) of
 	{ok, Head} ->
             case fsck_try_est(Head, Fd, Fname, SlotNumbers, FH) of
                 {ok, NewHead} ->

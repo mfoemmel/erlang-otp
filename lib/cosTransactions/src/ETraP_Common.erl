@@ -141,7 +141,7 @@ send_stubborn(M, F, A, MaxR, Wait) when list(A) ->
     send_stubborn(M, F, A, MaxR, Wait, 0);
 send_stubborn(M, F, A, MaxR, Wait) ->
     send_stubborn(M, F, [A], MaxR, Wait, 0).
-send_stubborn(M, F, A, MaxR, Wait, MaxR) ->
+send_stubborn(M, F, A, MaxR, _Wait, MaxR) ->
     ?tr_error_msg("~p:~p( ~p ) failed!! Tried ~p times.~n", [M,F,A,MaxR]),
     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO});
 send_stubborn(M, F, A, MaxR, Wait, Times) ->

@@ -19,56 +19,15 @@ include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 # ----------------------------------------------------
-# Application version
-# ----------------------------------------------------
-include ../vsn.mk
-VSN=$(SNMPEA_VSN)
-
-# ----------------------------------------------------
-# FLAGS
+# Common Macros
 # ----------------------------------------------------
 
-ifneq ($(MIBS_VERBOSITY),) 
-SNMP_FLAGS += +'{verbosity,$(MIBS_VERBOSITY)}'
-endif
+include subdirs.mk
 
-ERL_FLAGS += 
-ERL_COMPILE_FLAGS += -I../include \
-                     -I$(ERL_TOP)/lib/stdlib \
-                     $(SNMP_FLAGS)
+SPECIAL_TARGETS = 
 
 # ----------------------------------------------------
-# Release directory specification
+# Default Subdir Targets
 # ----------------------------------------------------
-RELSYSDIR = $(RELEASE_PATH)/lib/snmp-$(VSN)
+include $(ERL_TOP)/make/otp_subdir.mk
 
-# ----------------------------------------------------
-# Common macros
-# ----------------------------------------------------
-BUILD_MIBS = EX1-MIB
-TARGET_FILES= $(BUILD_MIBS:%=%.bin)
-
-EXAMPLE_FILES = EX1-MIB.funcs snmp_mgr_tests.erl EX1-MIB.mib ex1.erl
-
-# ----------------------------------------------------
-# Targets
-# ----------------------------------------------------
-
-debug opt:
-
-clean:
-
-docs:
-
-build: $(TARGET_FILES)
-
-# ----------------------------------------------------
-# Release Target
-# ---------------------------------------------------- 
-include $(ERL_TOP)/make/otp_release_targets.mk
-
-release_spec: opt
-	$(INSTALL_DIR) $(RELSYSDIR)/examples
-	$(INSTALL_DATA) $(EXAMPLE_FILES) $(RELSYSDIR)/examples
-
-release_docs_spec:

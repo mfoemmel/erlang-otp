@@ -15,15 +15,6 @@
  * 
  *     $Id$
  */
-/*
-**
-** Math bifs
-**
-** Map trigonmetric functions to this one if 
-** it it's not in them system
-** i.e SYSFLAGS=-Dlgamma=undef_math_func_1 ...
-**
-*/
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -37,29 +28,12 @@
 #include "bif.h"
 #include "big.h"
 
-static double
-undef_math_func_1(double x)
-{
-    return x;
-}
-
-static double
-undef_math_func_2(double x, double y)
-{
-    return x+y;
-}
-
 static Eterm
 math_call_1(Process* p, double (*func)(double), Eterm arg1)
 {
     FloatDef a1;
     Eterm res;
     Eterm* hp;
-
-    if (func == undef_math_func_1) {
-	p->freason = EXC_UNDEF;
-	return THE_NON_VALUE;
-    }
 
     ERTS_FP_CHECK_INIT();
     if (is_float(arg1)) {
@@ -78,7 +52,7 @@ math_call_1(Process* p, double (*func)(double), Eterm arg1)
     }
     a1.fd = (*func)(a1.fd);
     ERTS_FP_ERROR(a1.fd, goto badarith);
-    hp = HAlloc(p, 3);
+    hp = HAlloc(p, FLOAT_SIZE_OBJECT);
     res = make_float(hp);
     PUT_DOUBLE(a1, hp);
     return res;
@@ -92,11 +66,6 @@ math_call_2(Process* p, double (*func)(double, double), Eterm arg1, Eterm arg2)
     FloatDef a2;
     Eterm res;
     Eterm* hp;
-
-    if (func == undef_math_func_2) {
-	p->freason = EXC_UNDEF;
-	return THE_NON_VALUE;
-    }
 
     ERTS_FP_CHECK_INIT();
     if (is_float(arg1)) {
@@ -129,7 +98,7 @@ math_call_2(Process* p, double (*func)(double, double), Eterm arg1, Eterm arg2)
 
     a1.fd = (*func)(a1.fd, a2.fd);
     ERTS_FP_ERROR(a1.fd, goto badarith);
-    hp = HAlloc(p, 3);
+    hp = HAlloc(p, FLOAT_SIZE_OBJECT);
     res = make_float(hp);
     PUT_DOUBLE(a1, hp);
     return res;
@@ -174,7 +143,11 @@ BIF_RETTYPE math_acos_1(BIF_ALIST_1)
 
 BIF_RETTYPE math_acosh_1(BIF_ALIST_1)
 {
+#ifdef NO_ACOSH
+    BIF_ERROR(BIF_P, EXC_UNDEF);
+#else
     return math_call_1(BIF_P, acosh, BIF_ARG_1);
+#endif
 }
 
 BIF_RETTYPE math_asin_1(BIF_ALIST_1)
@@ -184,7 +157,11 @@ BIF_RETTYPE math_asin_1(BIF_ALIST_1)
 
 BIF_RETTYPE math_asinh_1(BIF_ALIST_1)
 {
+#ifdef NO_ASINH
+    BIF_ERROR(BIF_P, EXC_UNDEF);
+#else
     return math_call_1(BIF_P, asinh, BIF_ARG_1);
+#endif
 }
 
 BIF_RETTYPE math_atan_1(BIF_ALIST_1)
@@ -194,17 +171,29 @@ BIF_RETTYPE math_atan_1(BIF_ALIST_1)
 
 BIF_RETTYPE math_atanh_1(BIF_ALIST_1)
 {
+#ifdef NO_ATANH
+    BIF_ERROR(BIF_P, EXC_UNDEF);
+#else
     return math_call_1(BIF_P, atanh, BIF_ARG_1);
+#endif
 }
 
 BIF_RETTYPE math_erf_1(BIF_ALIST_1)
 {
+#ifdef NO_ERF
+    BIF_ERROR(BIF_P, EXC_UNDEF);
+#else
     return math_call_1(BIF_P, erf, BIF_ARG_1);
+#endif
 }
 
 BIF_RETTYPE math_erfc_1(BIF_ALIST_1)
 {
+#ifdef NO_ERFC
+    BIF_ERROR(BIF_P, EXC_UNDEF);
+#else
     return math_call_1(BIF_P, erfc, BIF_ARG_1);
+#endif
 }
 
 BIF_RETTYPE math_exp_1(BIF_ALIST_1)

@@ -56,11 +56,11 @@ open(Modes) ->
     case os:type() of
 	{win32, _} ->
 	    case open_mode(Modes, []) of
+		{error, Reason} ->
+		    {error, Reason};
 		ModeStr ->
 		    P = open_port({spawn, "registry__drv__ " ++ ModeStr}, []),
-		    {ok, {win32reg, P}};
-		{error, Reason} ->
-		    {error, Reason}
+		    {ok, {win32reg, P}}
 	    end;
 	_ ->
 	    {error, enotsup}

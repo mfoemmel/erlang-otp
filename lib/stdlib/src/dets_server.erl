@@ -32,8 +32,11 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
         code_change/3]).
 
+%% record for not yet handled reqeusts to open or close files
+-record(pending, {tab, ref, pid, from, reqtype, clients}). % [{From,Args}]
+
 %% state for the dets server
--record(state, {store, parent}).
+-record(state, {store, parent, pending}). % [pending()]
 
 -include("dets.hrl").
 
@@ -107,7 +110,7 @@ call(Message) ->
 %%----------------------------------------------------------------------
 init(Parent) ->
     Store = init(),
-    {ok, #state{store=Store, parent=Parent}}.
+    {ok, #state{store=Store, parent=Parent, pending = []}}.
 
 %%----------------------------------------------------------------------
 %% Func: handle_call/3
@@ -121,30 +124,12 @@ init(Parent) ->
 handle_call(all, _From, State) ->
     F = fun(X, A) -> [element(1, X) | A] end,
     {reply, ets:foldl(F, [], ?REGISTRY), State};
-handle_call({close, Tab}, {From, _Tag}, State) ->
-    Res = handle_close(State, From, Tab, normal),
-    {reply, Res, State};
-handle_call({open, File}, {From, _Tag}, State) ->
-    Reply = do_open(State, From, [File, get(verbose)]),
-    {reply, Reply, State};
-handle_call({open, Tab, OpenArgs}, {From, _Tag}, State) ->
-    Store = State#state.store,
-    case ets:lookup(?REGISTRY, Tab) of
-        [] -> 
-	    Reply = do_open(State, From, [Tab, OpenArgs, get(verbose)]),
-	    {reply, Reply, State};
-        [{Tab, _Counter, Pid}] ->
-            Pid ! ?DETS_CALL(self(), {add_user, Tab, OpenArgs}),
-            receive
-                {Pid, {ok, Result}} ->
-                    do_link(Store, From),
-                    true = ets:insert(Store, {From, Tab}),
-                    ets:update_counter(?REGISTRY, Tab, 1),
-                    {reply, {ok, Result}, State};
-                {Pid, Error} ->
-                    {reply, Error, State}
-	    end
-    end;
+handle_call({close, Tab}, From, State) ->
+    request([{{close, Tab}, From}], State);
+handle_call({open, File}, From, State) ->
+    request([{{open, File}, From}], State);
+handle_call({open, Tab, OpenArgs}, From, State) ->
+    request([{{open, Tab, OpenArgs}, From}], State);
 handle_call(stop, _From, State) ->
     {stop, normal, stopped, State};
 handle_call({set_verbose, What}, _From, State) ->
@@ -169,6 +154,32 @@ handle_cast(_Msg, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
+handle_info({pending_reply, {Ref, Result0}}, State) ->
+    {value, #pending{tab = Tab, pid = Pid, from = {FromPid,_Tag}=From, 
+                     reqtype = ReqT, clients = Clients}} =
+        lists:keysearch(Ref, #pending.ref, State#state.pending),
+    Store = State#state.store,
+    Result = 
+	case {Result0, ReqT} of
+	    {ok, add_user} ->
+		do_link(Store, FromPid),
+		true = ets:insert(Store, {FromPid, Tab}),
+		ets:update_counter(?REGISTRY, Tab, 1),
+		{ok, Tab};
+	    {ok, internal_open} ->
+		link(Pid),
+		do_link(Store, FromPid),
+		true = ets:insert(Store, {FromPid, Tab}),
+		true = ets:insert(?REGISTRY, {Tab, 1, Pid}),
+		true = ets:insert(?OWNERS, {Pid, Tab}),
+		{ok, Tab};
+	    {Reply, _} -> % ok or Error
+		Reply
+	end,
+    gen_server:reply(From, Result),
+    NP = lists:keydelete(Pid, #pending.pid, State#state.pending),
+    State1 = State#state{pending = NP},
+    request(Clients, State1);
 handle_info({'EXIT', Pid, _Reason}, State) ->
     Store = State#state.store,
     case pid2name_1(Pid) of
@@ -178,13 +189,18 @@ handle_info({'EXIT', Pid, _Reason}, State) ->
             true = ets:delete(?OWNERS, Pid),
             Users = ets:select(State#state.store, [{{'$1', Tab}, [], ['$1']}]),
             true = ets:match_delete(Store, {'_', Tab}),
-            lists:foreach(fun(User) -> do_unlink(Store, User) end, Users);
+            lists:foreach(fun(User) -> do_unlink(Store, User) end, Users),
+            {noreply, State};
 	undefined ->
-	    %% First we need to figure out which tables that Pid are using.
-	    All = ets:lookup(Store, Pid),
-	    handle_all(State, All)
-    end,
-    {noreply, State};
+	    %% Close all tables used by Pid.
+            F = fun({FromPid, Tab}, S) ->
+                        {_, S1} = handle_close(S, {close, Tab}, 
+                                               {FromPid, notag}, Tab),
+                        S1
+                end,
+            State1 = lists:foldl(F, State, ets:lookup(Store, Pid)),
+            {noreply, State1}
+    end;
 handle_info(_Message, State) ->
     {noreply, State}.
 
@@ -193,8 +209,8 @@ handle_info(_Message, State) ->
 %% Purpose: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
-    stop_all(Reason, State).
+terminate(_Reason, _State) ->
+    ok.
 
 %%----------------------------------------------------------------------
 %% Func: code_change/3
@@ -248,73 +264,85 @@ pid2name_1(Pid) ->
         [{_Pid,Tab}] -> {ok, Tab}
     end.
 
-do_open(State, From, Args) ->
-    case supervisor:start_child(dets_sup, [self()]) of 
-	{ok, Pid} ->
-	    case dets:internal_open(Pid, Args) of
-		{ok, Tab} = R ->
-		    link(Pid),
-		    Store = State#state.store,
-		    do_link(Store, From),
-		    true = ets:insert(Store, {From, Tab}),
-		    true = ets:insert(?REGISTRY, {Tab, 1, Pid}),
-		    true = ets:insert(?OWNERS, {Pid, Tab}),
-		    R;
-		Error ->
-		    Error
-	    end;
-	Error ->
-	    Error
+request([{Req, From} | L], State) ->
+    Res = case Req of
+              {close, Tab} -> 
+                  handle_close(State, Req, From, Tab);
+              {open, File} ->
+                  do_internal_open(State, From, [File, get(verbose)]);
+              {open, Tab, OpenArgs} ->
+                  do_open(State, Req, From, OpenArgs, Tab)
+          end,
+    State2 = case Res of
+                 {pending, State1} -> 
+                     State1;
+                 {Reply, State1} ->
+		     gen_server:reply(From, Reply),
+                     State1
+             end,
+    request(L, State2);
+request([], State) ->
+    {noreply, State}.
+
+%% -> {pending, NewState} | {Reply, NewState}
+do_open(State, Req, From, Args, Tab) ->
+    case check_pending(Tab, From, State, Req) of
+        {pending, NewState} -> {pending, NewState};
+        false ->
+            case ets:lookup(?REGISTRY, Tab) of
+                [] -> 
+                    A = [Tab, Args, get(verbose)],
+                    do_internal_open(State, From, A);
+                [{Tab, _Counter, Pid}] ->
+                    pending_call(Tab, Pid, make_ref(), From, Args, 
+                                 add_user, State)
+            end
     end.
 
-stop_all(How, S) ->
-    F = fun({{links, _}, _}, _) -> 
-                ignore;
-           ({Pid, Tab}, _) -> 
-                handle_close(S, Pid, Tab, How)
-        end,
-    Store = S#state.store,
-    ets:foldl(F, foo, Store),
-    0 = ets:info(Store, size). %% assertion
+%% -> {pending, NewState} | {Reply, NewState}
+do_internal_open(State, From, Args) ->
+    case supervisor:start_child(dets_sup, [self()]) of 
+        {ok, Pid} ->
+            Ref = make_ref(),
+            Tab = case Args of
+                      [T, _, _] -> T;
+                      [_, _] -> Ref
+                  end,
+            pending_call(Tab, Pid, Ref, From, Args, internal_open, State);
+        Error ->
+            {Error, State}
+    end.
 
-handle_all(_S, []) ->
-    done;
-handle_all(S, [{From, Tab} | Tail]) ->
-    handle_close(S, From, Tab, normal),
-    handle_all(S, Tail).
-
-handle_close(S, From, Tab, How) ->
-    Store = S#state.store,
-    case ets:match_object(Store, {From, Tab}) of
-	[] -> 
-	    ?DEBUGF("DETS: Table ~w close attempt by non-owner~w~n",
-		    [Tab, From]),
-	    {error, not_owner};
-	[_ | Keep] ->
-	    case ets:lookup(?REGISTRY, Tab) of
-		[] -> 
-		    {error, not_open};
-		[{Tab, 1, Pid}] ->
-		    do_unlink(Store, From),
-		    true = ets:delete(?REGISTRY, Tab),
-		    true = ets:delete(?OWNERS, Pid),
-		    true = ets:match_delete(Store, {From, Tab}),
-		    unlink(Pid),
-		    Pid ! ?DETS_CALL(self(), close),
-		    receive {Pid, {closed, Res}} -> Res end;
-		[{Tab, _Counter, Pid}] ->
-		    do_unlink(Store, From),
-		    true = ets:match_delete(Store, {From, Tab}),
-		    [true = ets:insert(Store, K) || K <- Keep],
-		    ets:update_counter(?REGISTRY, Tab, -1),
-		    if 
-			How == shutdown ->
-			    ok;
-			true ->
-			    Pid ! ?DETS_CALL(self(), {close, From}),
-			    receive {Pid, {closed, Res}} -> Res end
-		    end
-	    end
+%% -> {pending, NewState} | {Reply, NewState}
+handle_close(State, Req, {FromPid,_Tag}=From, Tab) ->
+    case check_pending(Tab, From, State, Req) of
+        {pending, NewState} -> {pending, NewState};
+        false ->
+            Store = State#state.store,
+            case ets:match_object(Store, {FromPid, Tab}) of
+                [] -> 
+                    ?DEBUGF("DETS: Table ~w close attempt by non-owner~w~n",
+                            [Tab, FromPid]),
+                    {{error, not_owner}, State};
+                [_ | Keep] ->
+                    case ets:lookup(?REGISTRY, Tab) of
+                        [{Tab, 1, Pid}] ->
+                            do_unlink(Store, FromPid),
+                            true = ets:delete(?REGISTRY, Tab),
+                            true = ets:delete(?OWNERS, Pid),
+                            true = ets:match_delete(Store, {FromPid, Tab}),
+                            unlink(Pid),
+                            pending_call(Tab, Pid, make_ref(), From, [], 
+                                         internal_close, State);
+                        [{Tab, _Counter, Pid}] ->
+			    do_unlink(Store, FromPid),
+			    true = ets:match_delete(Store, {FromPid, Tab}),
+			    [true = ets:insert(Store, K) || K <- Keep],
+			    ets:update_counter(?REGISTRY, Tab, -1),
+                            pending_call(Tab, Pid, make_ref(), From, [],
+                                         remove_user, State)
+                    end
+            end
     end.
 
 %% Links with counters
@@ -341,3 +369,33 @@ do_unlink(Store, Pid) ->
 
     end.
 
+pending_call(Tab, Pid, Ref, {FromPid, _Tag}=From, Args, ReqT, State) ->
+    Server = self(),
+    F = fun() -> 
+                Res = case ReqT of 
+                          add_user -> 
+                              dets:add_user(Pid, Tab, Args);
+                          internal_open -> 
+                              dets:internal_open(Pid, Ref, Args);
+                          internal_close ->
+                              dets:internal_close(Pid);
+                          remove_user ->
+                              dets:remove_user(Pid, FromPid)
+                      end,
+                Server ! {pending_reply, {Ref, Res}}
+        end,
+    _ = spawn(F),
+    PD = #pending{tab = Tab, ref = Ref, pid = Pid, reqtype = ReqT,
+                  from = From, clients = []},
+    P = [PD | State#state.pending],
+    {pending, State#state{pending = P}}.
+
+check_pending(Tab, From, State, Req) ->
+    case lists:keysearch(Tab, #pending.tab, State#state.pending) of
+        {value, #pending{tab = Tab, clients = Clients}=P} ->
+            NP = lists:keyreplace(Tab, #pending.tab, State#state.pending, 
+                                  P#pending{clients = Clients++[{Req,From}]}),
+            {pending, State#state{pending = NP}};
+        false ->
+            false
+    end.

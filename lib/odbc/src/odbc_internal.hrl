@@ -84,13 +84,13 @@
 -define(EXIT_SOCKET_SEND_HEADER, 13).
 -define(EXIT_SOCKET_SEND_BODY,	 14).
 -define(EXIT_SOCKET_RECV_MSGSIZE,15).
--define(EXIT_SOCKET_RECV_HEADER, 16).
--define(EXIT_SOCKET_RECV_BODY,   17).
--define(EXIT_COLS,		 18).
--define(EXIT_ROWS,		 19).
--define(EXIT_DESC,		 20).
--define(EXIT_BIND,		 21).
--define(EXIT_MORE_RESULTS,	 22).
+-define(EXIT_SOCKET_SEND_MSGSIZE,16).
+-define(EXIT_SOCKET_RECV_HEADER, 17).
+-define(EXIT_SOCKET_RECV_BODY,   18).
+-define(EXIT_COLS,		 19).
+-define(EXIT_ROWS,		 20).
+-define(EXIT_DESC,		 21).
+-define(EXIT_BIND,		 22).
 -define(EXIT_DRIVER_INFO,        23).
 
 %% Misc constants
@@ -102,7 +102,7 @@
 -define(ENCODE_EXIT_FUN, 
 	(fun(?EXIT_SUCCESS) ->
 		 normal_exit;
-	   (?EXIT_FAILURE) ->
+	    (?EXIT_FAILURE) ->
 		 abnormal_exit;
 	    (?EXIT_ALLOC) ->
 		 memory_allocation_failed;
@@ -132,20 +132,20 @@
 		 socket_send_message_body_failed;
 	    (?EXIT_SOCKET_RECV_MSGSIZE) ->
 		 socket_received_too_large_message;
+	    (?EXIT_SOCKET_SEND_MSGSIZE) ->
+		 too_large_message_in_socket_send;
 	    (?EXIT_SOCKET_RECV_HEADER) ->
 		 socket_receive_message_header_failed;
 	    (?EXIT_SOCKET_RECV_BODY) ->
 		 socket_receive_message_body_failed;
 	    (?EXIT_COLS) ->
-		 could_not_acess_column_count;
+		 could_not_access_column_count;
 	    (?EXIT_ROWS) ->
-		 could_not_acess_row_count;
+		 could_not_access_row_count;
 	    (?EXIT_DESC) ->
-		 could_not_acess_table_description;
+		 could_not_access_table_description;
 	    (?EXIT_BIND) ->
 		 could_not_bind_data_buffers;
-	    (?EXIT_MORE_RESULTS) ->
-		 check_for_more_result_sets_failed;
 	    (?EXIT_DRIVER_INFO) ->
 		 collecting_of_driver_information_faild;
 	    (_) ->

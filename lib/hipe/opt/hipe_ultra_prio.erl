@@ -15,7 +15,7 @@
 -module(hipe_ultra_prio).
 -export([init_ready/2,
 	 init_instr_prio/2,
-	 initial_ready_set/4,
+	 %% initial_ready_set/4,
 	 next_ready/7,
 	 add_ready_nodes/2,
 	 insert_node/3
@@ -29,8 +29,8 @@
 %% Returns   : An array with list of ready-nodes for each cycle.
 
 init_ready(Size,Preds) ->
-    P = hipe_vectors:vsize(Preds),
-    Ready = hipe_vectors:init(Size,[]),
+    P = hipe_vectors:size(Preds),
+    Ready = hipe_vectors:new(Size,[]),
     R = initial_ready_set(1,P,Preds,[]),
     hipe_vectors:set(Ready,1,R).
 
@@ -227,7 +227,7 @@ insert_node(C,I,Ready) ->
 %% for all nodes.  Returns an array of priorities for all nodes.
 %%
 critical_path(N,DAG) ->
-    critical_path(1,N,DAG,hipe_vectors:init(N,-1)).
+    critical_path(1,N,DAG,hipe_vectors:new(N,-1)).
 
 critical_path(M,N,DAG,Prio) ->
     if

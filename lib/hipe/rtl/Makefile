@@ -9,10 +9,6 @@
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
 #     $Id$
 #
 
@@ -40,12 +36,12 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 MODULES = hipe_rtl hipe_rtl_cfg hipe_rtl_cse hipe_rtl_ebb \
 	  hipe_rtl_liveness hipe_rtl_prop \
 	  hipe_icode2rtl hipe_tagscheme hipe_rtl_mk_switch \
-	  hipe_rtl_primops hipe_rtl_gctests hipe_rtl_arch \
-	  hipe_rtl_varmap hipe_rtl_exceptions hipe_rtl_guardops \
-	  hipe_rtl_bs_ops hipe_rtl_inline_bs_ops \
-	  hipe_rtl_arith hipe_rtl_arith_32 \
-	  hipe_rtl_ssa_check
-
+	  hipe_rtl_primops hipe_rtl_arch \
+	  hipe_rtl_varmap hipe_rtl_exceptions \
+	  hipe_rtl_bs_ops hipe_rtl_cerl_bs_ops hipe_rtl_inline_bs_ops\
+	  hipe_rtl_arith_32 hipe_rtl_arith_64 \
+	  hipe_rtl_ssa hipe_rtl_ssa_const_prop hipe_rtl_bin_util \
+	  hipe_rtl_cleanup_const hipe_rtl_symbolic
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
@@ -60,10 +56,11 @@ TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 # APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 
 # ----------------------------------------------------
-# FLAGS
+# FLAGS: Please keep +inline below
 # ----------------------------------------------------
+
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += 
+ERL_COMPILE_FLAGS += +inline
 
 # ----------------------------------------------------
 # Targets
@@ -97,22 +94,27 @@ release_docs_spec:
 
 HIPE_MKLITERALS=$(ERL_TOP)/bin/$(TARGET)/hipe_mkliterals
 
-$(HIPE_MKLITERALS):
-	cd $(ERL_TOP)/erts/emulator \
-	  && $(MAKE) generate ERL_TOP=$(ERL_TOP) TYPE=$(TYPE)
-
 hipe_literals.hrl:	$(HIPE_MKLITERALS)
 	$(HIPE_MKLITERALS) -e > hipe_literals.hrl
 
-$(EBIN)/hipe_rtl.beam: hipe_rtl.hrl
+$(EBIN)/hipe_rtl.beam: ../main/hipe.hrl
 $(EBIN)/hipe_rtl_arch.beam: hipe_literals.hrl
 $(EBIN)/hipe_rtl_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl
 $(EBIN)/hipe_rtl_ebb.beam: ../flow/ebb.inc
-$(EBIN)/hipe_rtl_liveness.beam: ../util/hipe_vector.hrl ../flow/liveness.inc
+$(EBIN)/hipe_rtl_liveness.beam: ../flow/liveness.inc
 $(EBIN)/hipe_icode2rtl.beam: hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_tagscheme.beam: hipe_literals.hrl
-$(EBIN)/hipe_rtl_primops.beam: hipe_literals.hrl
-$(EBIN)/hipe_rtl_guardops.beam: hipe_literals.hrl
+$(EBIN)/hipe_rtl_primops.beam: hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_prop.beam: ../main/hipe.hrl
-$(EBIN)/hipe_rtl_arith_32.beam: ../main/hipe.hrl
-$(EBIN)/hipe_rtl_ssa_check.beam: ../ssa/hipe_ssa_checker.inc
+$(EBIN)/hipe_rtl_arith_32.beam: ../main/hipe.hrl hipe_rtl_arith.inc
+$(EBIN)/hipe_rtl_arith_64.beam: ../main/hipe.hrl hipe_rtl_arith.inc
+$(EBIN)/hipe_rtl_bs_ops.beam: hipe_literals.hrl ../main/hipe.hrl
+$(EBIN)/hipe_rtl_cerl_bs_ops.beam: hipe_literals.hrl ../main/hipe.hrl
+$(EBIN)/hipe_rtl_exceptions.beam: hipe_literals.hrl ../main/hipe.hrl
+$(EBIN)/hipe_rtl_inline_bs_ops.beam: hipe_literals.hrl ../main/hipe.hrl
+$(EBIN)/hipe_rtl_mk_switch.beam: ../main/hipe.hrl
+$(EBIN)/hipe_rtl_prop.beam: ../main/hipe.hrl
+$(EBIN)/hipe_rtl_varmap.beam: ../main/hipe.hrl
+
+$(EBIN)/hipe_rtl_ssa.beam: ../ssa/hipe_ssa.inc ../main/hipe.hrl ../ssa/hipe_ssa_liveness.inc
+$(EBIN)/hipe_rtl_ssa_const_prop.beam: ../main/hipe.hrl ../ssa/hipe_ssa_const_prop.inc

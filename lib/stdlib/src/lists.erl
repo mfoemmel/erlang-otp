@@ -20,7 +20,9 @@
 -export([append/2, append/1, subtract/2, reverse/1,
 	 nth/2, nthtail/2, prefix/2, suffix/2, last/1, 
 	 seq/2, seq/3, sum/1, duplicate/2, min/1, max/1, sublist/2, sublist/3,
-	 delete/2, sort/1, merge/1, merge/2, rmerge/2, merge3/3, rmerge3/3,
+	 delete/2,
+	 unzip/1, unzip3/1, zip/2, zip3/3, zipwith/3, zipwith3/4,
+	 sort/1, merge/1, merge/2, rmerge/2, merge3/3, rmerge3/3,
 	 usort/1, umerge/1, umerge3/3, umerge/2, rumerge3/3, rumerge/2,
 	 concat/1, flatten/1, flatten/2, flat_length/1, flatlength/1,
 	 keydelete/3, keyreplace/4,
@@ -32,7 +34,8 @@
 
 -export([merge/3, rmerge/3, sort/2, umerge/3, rumerge/3, usort/2]).
 
--export([all/2,any/2,map/2,flatmap/2,foldl/3,foldr/3,filter/2,zf/2,
+-export([all/2,any/2,map/2,flatmap/2,foldl/3,foldr/3,filter/2,
+	 partition/2,zf/2,
 	 mapfoldl/3,mapfoldr/3,foreach/2,takewhile/2,dropwhile/2,splitwith/2,
 	 split/2]).
 -export([all/3,any/3,map/3,flatmap/3,foldl/4,foldr/4,filter/3,zf/3,
@@ -185,6 +188,50 @@ delete(Item, [Item|Rest]) -> Rest;
 delete(Item, [H|Rest]) ->
     [H|delete(Item, Rest)];
 delete(_, []) -> [].
+
+%% Return [{X0, Y0}, {X1, Y1}, ..., {Xn, Yn}] for lists [X0, X1, ...,
+%% Xn] and [Y0, Y1, ..., Yn].
+
+zip([X | Xs], [Y | Ys]) -> [{X, Y} | zip(Xs, Ys)];
+zip([], []) -> [].
+
+%% Return {[X0, X1, ..., Xn], [Y0, Y1, ..., Yn]}, for a list [{X0, Y0},
+%% {X1, Y1}, ..., {Xn, Yn}].
+
+unzip(Ts) -> unzip(Ts, [], []).
+
+unzip([{X, Y} | Ts], Xs, Ys) -> unzip(Ts, [X | Xs], [Y | Ys]);
+unzip([], Xs, Ys) -> {reverse(Xs), reverse(Ys)}.
+
+%% Return [{X0, Y0, Z0}, {X1, Y1, Z1}, ..., {Xn, Yn, Zn}] for lists [X0,
+%% X1, ..., Xn], [Y0, Y1, ..., Yn] and [Z0, Z1, ..., Zn].
+
+zip3([X | Xs], [Y | Ys], [Z | Zs]) -> [{X, Y, Z} | zip3(Xs, Ys, Zs)];
+zip3([], [], []) -> [].
+
+%% Return {[X0, X1, ..., Xn], [Y0, Y1, ..., Yn], [Z0, Z1, ..., Zn]}, for
+%% a list [{X0, Y0, Z0}, {X1, Y1, Z1}, ..., {Xn, Yn, Zn}].
+
+unzip3(Ts) -> unzip3(Ts, [], [], []).
+
+unzip3([{X, Y, Z} | Ts], Xs, Ys, Zs) ->
+    unzip3(Ts, [X | Xs], [Y | Ys], [Z | Zs]);
+unzip3([], Xs, Ys, Zs) ->
+    {reverse(Xs), reverse(Ys), reverse(Zs)}.
+
+%% Return [F(X0, Y0), F(X1, Y1), ..., F(Xn, Yn)] for lists [X0, X1, ...,
+%% Xn] and [Y0, Y1, ..., Yn].
+
+zipwith(F, [X | Xs], [Y | Ys]) -> [F(X, Y) | zipwith(F, Xs, Ys)];
+zipwith(_, [], []) -> [].
+
+%% Return [F(X0, Y0, Z0), F(X1, Y1, Z1), ..., F(Xn, Yn, Zn)] for lists
+%% [X0, X1, ..., Xn], [Y0, Y1, ..., Yn] and [Z0, Z1, ..., Zn].
+
+zipwith3(F, [X | Xs], [Y | Ys], [Z | Zs]) ->
+    [F(X, Y, Z) | zipwith3(F, Xs, Ys, Zs)];
+zipwith3(_, [], [], []) -> [].
+
 
 %% sort(List) -> L
 %%  sorts the list L
@@ -747,6 +794,19 @@ foldr(_, Accu, []) -> Accu.
 
 filter(Pred, List) -> [ E || E <- List, Pred(E) ].
 
+%% Equivalent to {filter(F, L), filter(NotF, L)}, if NotF = 'fun(X) ->
+%% not F(X) end'.
+
+partition(Pred, L) -> partition(Pred, L, [], []).
+
+partition(Pred, [H | T], As, Bs) ->
+    case Pred(H) of
+	true -> partition(Pred, T, [H | As], Bs);
+	false -> partition(Pred, T, As, [H | Bs])
+    end;
+partition(_, [], As, Bs) ->
+    {reverse(As), reverse(Bs)}.
+
 zf(F, [Hd|Tail]) ->
     case F(Hd) of
 	true ->
@@ -782,10 +842,10 @@ takewhile(Pred, [Hd|Tail]) ->
     end;
 takewhile(_, []) -> [].
 
-dropwhile(Pred, [Hd|Tail]) ->
+dropwhile(Pred, [Hd|Tail]=Rest) ->
     case Pred(Hd) of
 	true -> dropwhile(Pred, Tail);
-	false -> [Hd|Tail]
+	false -> Rest
     end;
 dropwhile(_, []) -> [].
 

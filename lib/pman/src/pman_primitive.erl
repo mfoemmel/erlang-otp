@@ -42,7 +42,7 @@ remove_mod(Seemods,Mod) ->
 
 %% add_mod/2 
 
-add_mod(allmods,Mod) ->
+add_mod(allmods,_Mod) ->
     false;
 add_mod(Seemods,Mod) ->
     case lists:member(Mod,Seemods) of

@@ -18,11 +18,11 @@
 -module(appmon).
 -behaviour(gen_server).
 
-%%%----------------------------------------------------------------------
+%%%---------------------------------------------------------------------
 %%% Appmon main module.
 %%% Creates the main window and receives load and application
 %%% information from all connected nodes.
-%%%----------------------------------------------------------------------
+%%%---------------------------------------------------------------------
 
 %% External exports
 -export([start/0, stop/0]).
@@ -38,7 +38,7 @@
 -record(options, {single, many, time, queue, prog, linear}).
 
 %% Main window data
--record(win, {name,                             % atom() Monitored node name
+-record(win, {name,                             % atom() Monitored node
 	      window,                           % gsobj()
 	      wwindow,                          % int() Window width
 	      hwindow,                          % int() Window height
@@ -46,14 +46,14 @@
 	      canvas,                           % gsobj()
 	      wcanvas,                          % int() Canvas width
 	      hcanvas,                          % int() Canvas height
-	      l1, l2,                           % gsobj() Lines on canvas
+	      l1, l2,                           % gsobj() Canvas lines
 	      leds,                             % [gsobj()] Load meter
 	      nodelabel,                        % {gsobj(),gsobj()}
-	      appobjs=[],                       % [gsobj()] App. buttons etc.
+	      appobjs=[],                       % [gsobj()] Buttons etc.
 	      nodemenu}).                       % gsobj() Node menu
 
 %% Node data
--record(mnode, {name,                           % atom() Monitored node name
+-record(mnode, {name,                           % atom() Node name
 		status,                         % alive | dead
 		pid,                            % pid()
 		apps,                           % [{Pid,App,Descr}]
@@ -68,9 +68,9 @@
 		lbpid,                          % pid()
 		mnodes=[]}).                    % [#mnode{}] 
 
-%%%----------------------------------------------------------------------
+%%%---------------------------------------------------------------------
 %%% External exports
-%%%----------------------------------------------------------------------
+%%%---------------------------------------------------------------------
 
 start() ->
      gen_server:start({local, appmon}, ?MODULE, [], []).
@@ -79,9 +79,9 @@ stop() ->
     gen_server:cast(appmon, stop).
 
 
-%%%----------------------------------------------------------------------
+%%%---------------------------------------------------------------------
 %%% gen_server callbacks
-%%%----------------------------------------------------------------------
+%%%---------------------------------------------------------------------
 
 %%----------------------------------------------------------------------
 %% Func: init/1
@@ -98,8 +98,12 @@ init([]) ->
     
     LbPid = appmon_lb:start(self ()),
 
+    %% Check which remote nodes have appmon code available (OTP-4887)
+    NodesOk = lists:filter(fun(Node) -> check_node(Node) end, nodes()),
+    Nodes = [node()|NodesOk],
+
     %% Start monitoring the existing nodes
-    MNodes = mk_mnodes([node()|nodes()], LbPid),
+    MNodes = mk_mnodes(Nodes, LbPid),
 
     %% Draw the main window
     GS = gs:start([{kernel,true}]),
@@ -109,7 +113,7 @@ init([]) ->
     lists:foreach(fun(Node) ->
 			  display_addnode(GUI, Node)
 		  end,
-		  [node()|nodes()]),
+		  Nodes),
 
     %% Mark the default options as selected in the Options menu
     display_setopt(GUI, single),
@@ -120,6 +124,14 @@ init([]) ->
 		window_mode=single, load_mode1=time, load_mode2=prog,
 		lbpid=LbPid, mnodes=MNodes}}.
 
+check_node(Node) ->
+    case rpc:call(Node, code, which, [appmon]) of
+	File when is_list(File) ->
+	    true;
+	_ -> % non_existing (| cover_compiled)
+	    false
+    end.
+
 %%----------------------------------------------------------------------
 %% Func: handle_call/3
 %% Returns: {reply, Reply, State}          |
@@ -129,7 +141,7 @@ init([]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
-handle_call(norequest, From, State) ->
+handle_call(norequest, _From, State) ->
     {reply, null, State}.
 
 %%----------------------------------------------------------------------
@@ -148,7 +160,7 @@ handle_cast(stop, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 %% Load information from a node
-handle_info({delivery, Serv, load, Node, Load}, State) ->
+handle_info({delivery, _Serv, load, Node, Load}, State) ->
     
     %% Update node information
     MNode = get_mnode(Node, State#state.mnodes),
@@ -166,7 +178,7 @@ handle_info({delivery, Serv, load, Node, Load}, State) ->
     {noreply, State#state{mnodes=MNodes}};
 
 %% Application information from a node
-handle_info({delivery, Serv, app_ctrl, Node, Apps}, State) ->
+handle_info({delivery, _Serv, app_ctrl, Node, Apps}, State) ->
     
     %% Update node information
     MNode = get_mnode(Node, State#state.mnodes),
@@ -190,8 +202,8 @@ handle_info({nodeup, Node}, State) ->
 
     %% First, make sure appmon code is available at remode node,
     %% or the node should be ignored (OTP-3591)
-    case rpc:call(Node, code, which, [appmon]) of
-	File when is_list(File) ->
+    case check_node(Node) of
+	true ->
 
 	    %% If this is a previously unknown node, update window's
 	    %% 'Nodes' menu
@@ -218,7 +230,7 @@ handle_info({nodeup, Node}, State) ->
 	    appmon_lb:update_status(State#state.lbpid, Node, alive),
 	    {noreply, State#state{mnodes=MNodes}};
 
-	_Other -> % non_existing (| cover_compiled)
+	false ->
 	    {noreply, State}
     end;
 
@@ -305,7 +317,7 @@ handle_info({gs, _Button, click, Data, _Arg}, State) ->
 			ping ->
 			    %% Ignore - makes no sense to ping yourself
 			    ignore;
-			Other -> % reboot | restart | stop
+			_ -> % reboot | restart | stop
 			    apply(init, Action, [])
 		    end;
 
@@ -313,7 +325,7 @@ handle_info({gs, _Button, click, Data, _Arg}, State) ->
 		    case Action of
 			ping ->
 			    net_adm:ping(Node);
-			Other -> % reboot | restart | stop
+			_ -> % reboot | restart | stop
 			    rpc:cast(Node, init, Action, [])
 		    end
 	    end,
@@ -374,13 +386,14 @@ handle_info({gs, _Button, click, Data, _Arg}, State) ->
 		    case State#state.window_mode of
 
 			single ->
-			    {ok, GUI} = get_win2(WinObj, State#state.wins),
+			    {ok, GUI} =
+				get_win2(WinObj, State#state.wins),
 			    	    
-			    %% Clear the window and correct the node name
+			    %% Clear window and correct the node name
 			    draw_clear(GUI),
 			    GUI1 = draw_nodename(GUI, Node),
 
-			    %% Update the window with the correct node name
+			    %% Update window with the correct node name
 			    %% and the applications running at the node
 			    MNode = get_mnode(Node, State#state.mnodes),
 			    GUI2 = case MNode#mnode.status of
@@ -389,7 +402,8 @@ handle_info({gs, _Button, click, Data, _Arg}, State) ->
 					   GUI1;
 				       alive ->
 					   display_nodeup(GUI1, Node),
-					   draw_apps(GUI1, MNode#mnode.apps)
+					   draw_apps(GUI1,
+						     MNode#mnode.apps)
 				   end,
 			    Wins = replace_win(GUI#win.name, GUI2,
 					       State#state.wins),
@@ -399,15 +413,17 @@ handle_info({gs, _Button, click, Data, _Arg}, State) ->
 			many ->
 			    GUI = draw_win(State#state.gs, Node),
 
-			    %% Update the Nodes menu with all known nodes -
-			    %% use the MNodes to get them in the right order
+			    %% Update Nodes menu with all known nodes -
+			    %% use MNodes to get them in the right order
 			    lists:foreach(fun(MNode) ->
-						  Name = MNode#mnode.name,
-						  display_addnode(GUI, Name)
+						  Name =
+						      MNode#mnode.name,
+						  display_addnode(GUI,
+								  Name)
 					  end,
 					  State#state.mnodes),
 
-			    %% Mark the selected options in the Options menu
+			    %% Mark selected options in the Options menu
 			    display_setopt(GUI, many),
 			    display_setopt(GUI, State#state.load_mode1),
 			    display_setopt(GUI, State#state.load_mode2),
@@ -421,7 +437,8 @@ handle_info({gs, _Button, click, Data, _Arg}, State) ->
 					   GUI;
 				       alive ->
 					   display_nodeup(GUI, Node),
-					   draw_apps(GUI, MNode#mnode.apps)
+					   draw_apps(GUI,
+						     MNode#mnode.apps)
 				   end,
 			    Wins = [GUI1|State#state.wins],
 			    
@@ -431,15 +448,15 @@ handle_info({gs, _Button, click, Data, _Arg}, State) ->
 
         %% Help menu = Help button
 	help ->
-	    HelpFile = filename:join(code:priv_dir(appmon),
-				     "../doc/index.html"),
+	    HelpFile = filename:join([code:lib_dir(appmon),
+				     "doc", "html", "part_frame.html"]),
 	    tool_utils:open_help(State#state.gs, HelpFile),
 	    {noreply, State};
 		
-	Other ->
+	_Other ->
 	    {noreply, State}
     end;
-handle_info({gs, WinObj, configure, _Data, [WWindow, HWindow|_]}, State) ->
+handle_info({gs, WinObj, configure, _, [WWindow, HWindow|_]}, State) ->
     {ok, GUI} = get_win2(WinObj, State#state.wins),
     GUI1 = draw_resize(GUI, WWindow, HWindow),
     display_scrollbar(GUI1),
@@ -474,7 +491,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 		    {noreply, State}
 	    end
     end;
-handle_info(Info, State) ->
+handle_info(_Info, State) ->
     {noreply, State}.
 	
 %%----------------------------------------------------------------------
@@ -482,7 +499,7 @@ handle_info(Info, State) ->
 %% Purpose: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%----------------------------------------------------------------------
-terminate(A1, State) ->
+terminate(_Reason, State) ->
     bcast(State#state.mnodes, {kill}),
     appmon_lb:stop(State#state.lbpid),
     ok.
@@ -492,13 +509,13 @@ terminate(A1, State) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
     
 
-%%%----------------------------------------------------------------------
+%%%---------------------------------------------------------------------
 %%% Internal functions
-%%%----------------------------------------------------------------------
+%%%---------------------------------------------------------------------
 
 %%----------------------------------------------------------------------
 %% MNode manipulating functions
@@ -540,13 +557,13 @@ get_mnode(Node, MNodes) ->
 %%   Node -> atom()
 %%   MNode -> #mnode{}
 %%   MNodes1 -> MNodes2 -> [#mnode{}]
-%% Replaces, or adds if previously not included, the mnode with name Node
-%% in MNodes1 with MNode.
+%% Replaces, or adds if previously not included, the mnode with name
+%% Node in MNodes1 with MNode.
 replace_mnode(Node, MNode, [#mnode{name=Node} | MNodes]) ->
     [MNode | MNodes];
 replace_mnode(Node, MNode, [MNode2 | MNodes]) ->
     [MNode2 | replace_mnode(Node, MNode, MNodes)];
-replace_mnode(Node, MNode, []) ->
+replace_mnode(_Node, MNode, []) ->
     [MNode].
 	
 
@@ -597,30 +614,30 @@ remove_win(Node, Wins) ->
 %%----------------------------------------------------------------------
 %% GUI manipulating functions
 %%----------------------------------------------------------------------
--define(PAD, 10).                               % Pad between objects
--define(PAD2, 4*?PAD).                          % Pad betw. node lbl and app
+-define(PAD, 10).                         % Pad between objects
+-define(PAD2, 4*?PAD).                    % Pad betw. node lbl and app
 
--define(hMENUBAR, 25).                          % Note: Hardwired in Tcl/Tk
+-define(hMENUBAR, 25).                    % Note: Hardwired in Tcl/Tk
 
--define(xNODELBL, 60).                          % Node label
+-define(xNODELBL, 60).                    % Node label
 -define(yNODELBL, 35).
 -define(hNODELBL, 20).
 
--define(xMETER, 5).                             % Meter
+-define(xMETER, 5).                       % Meter
 -define(yMETER, ?yNODELBL).
 -define(wMETER, 20).
 -define(hMETER, ?hNODELBL + ?PAD + ?PAD2 + ?hBTN).
 -define(LEDCOUNT, 16).
 
--define(xBTN, ?xNODELBL).                       % Application buttons
+-define(xBTN, ?xNODELBL).                 % Application buttons
 -define(yBTN, ?yNODELBL + ?hNODELBL + ?PAD + ?PAD2).
--define(wBTN, 70). % min width
+-define(wBTN, 70).                        % min width
 -define(hBTN, 20).
 
--define(wCANVAS, 470 + ?wMETER + 3*?PAD).       % Canvas
+-define(wCANVAS, 470 + ?wMETER + 3*?PAD). % Canvas
 -define(hCANVAS, ?yNODELBL + ?hNODELBL + ?PAD + ?PAD2 + ?hBTN +	2*?PAD).
 
--define(wWIN, ?wCANVAS).                        % Window
+-define(wWIN, ?wCANVAS).                  % Window
 -define(hWIN, ?hMENUBAR + ?hCANVAS).
 
 %%--Main window---------------------------------------------------------
@@ -629,20 +646,25 @@ draw_win(GS, Node) ->
 
     %% Main window
     NodeStr = atom_to_list(Node),
-    Win = gs:create(window, GS, [{title, "APPMON: Overview on " ++ NodeStr},
+    Win = gs:create(window, GS, [{title,
+				  "APPMON: Overview on " ++ NodeStr},
 				 {width, ?wWIN}, {height, ?hWIN},
 				 {configure, true}]),
     Canvas = gs:create(canvas, Win, [{x, 0}, {y, ?hMENUBAR},
-				     {width, ?wCANVAS}, {height, ?hCANVAS}]),
-    L1 = gs:create(line, Canvas, [{coords, [{0,?yNODELBL-?PAD},
-					    {?wCANVAS,?yNODELBL-?PAD}]}]),
-    L2 = gs:create(line, Canvas, [{coords, [{0,?hCANVAS-?PAD},
-					    {?wCANVAS,?hCANVAS-?PAD}]}]),
+				     {width, ?wCANVAS},
+				     {height, ?hCANVAS}]),
+    L1 = gs:create(line, Canvas, [{coords,
+				   [{0,?yNODELBL-?PAD},
+				    {?wCANVAS,?yNODELBL-?PAD}]}]),
+    L2 = gs:create(line, Canvas, [{coords,
+				   [{0,?hCANVAS-?PAD},
+				    {?wCANVAS,?hCANVAS-?PAD}]}]),
     
     %% Standard buttons
     MenuBar = gs:create(menubar, Win, [{height, ?hMENUBAR}]),
 
-    FileMenuBtn = gs:create(menubutton, MenuBar, [{label, {text,"File"}}]),
+    FileMenuBtn = gs:create(menubutton, MenuBar,
+			    [{label, {text,"File"}}]),
     FileMenu = gs:create(menu, FileMenuBtn, []),
     gs:create(menuitem, FileMenu, [{label, {text,"Show List Box..."}},
 				   {data, listbox}]),
@@ -652,7 +674,8 @@ draw_win(GS, Node) ->
     gs:create(menuitem, FileMenu, [{label, {text, "Exit"}},
 				   {data, exit}]),
 
-    ActionMenuBtn = gs:create(menubutton,MenuBar,[{label,{text,"Actions"}}]),
+    ActionMenuBtn = gs:create(menubutton, MenuBar,
+			      [{label,{text,"Actions"}}]),
     ActionMenu = gs:create(menu, ActionMenuBtn, []),
     gs:create(menuitem, ActionMenu, [{label, {text,"Reboot"}},
 				     {data, {action, reboot, Win}}]),
@@ -663,7 +686,8 @@ draw_win(GS, Node) ->
     gs:create(menuitem, ActionMenu, [{label, {text,"Ping"}},
 				     {data, {action, ping, Win}}]),
 
-    OptMenuBtn = gs:create(menubutton, MenuBar, [{label, {text,"Options"}}]),
+    OptMenuBtn = gs:create(menubutton, MenuBar,
+			   [{label, {text,"Options"}}]),
     OptMenu = gs:create(menu, OptMenuBtn, []),
     G0 = now(), % Group identity unique per window!
     SMI = gs:create(menuitem, OptMenu, [{label, {text,"One window"}},
@@ -676,35 +700,41 @@ draw_win(GS, Node) ->
     G1 = now(),
     TMI = gs:create(menuitem, OptMenu, [{label, {text,"Load: time"}},
 					{itemtype, radio}, {group, G1},
-					{data, {option, time,
-						[{load_method,time}]}}]),
+					{data,
+					 {option, time,
+					  [{load_method,time}]}}]),
     QMI = gs:create(menuitem, OptMenu, [{label, {text,"Load: queue"}},
 					{itemtype, radio}, {group, G1},
-					{data, {option, queue,
-						[{load_method,queue}]}}]),
+					{data,
+					 {option, queue,
+					  [{load_method,queue}]}}]),
     G2 = now(),
-    PMI = gs:create(menuitem, OptMenu, [{label, {text,"Load: progressive"}},
-					{itemtype, radio}, {group, G2},
-					{data, {option, prog,
-						[{load_scale,prog}]}}]),
+    PMI = gs:create(menuitem, OptMenu,
+		    [{label, {text,"Load: progressive"}},
+		     {itemtype, radio}, {group, G2},
+		     {data, {option, prog, [{load_scale,prog}]}}]),
     LMI = gs:create(menuitem, OptMenu, [{label, {text,"Load: linear"}},
 					{itemtype, radio}, {group, G2},
-					{data, {option, linear,
-						[{load_scale,linear}]}}]),
+					{data,
+					 {option, linear,
+					  [{load_scale,linear}]}}]),
 
-    NodeMenuBtn = gs:create(menubutton, MenuBar, [{label, {text,"Nodes"}}]),
+    NodeMenuBtn = gs:create(menubutton, MenuBar,
+			    [{label, {text,"Nodes"}}]),
     NodeMenu = gs:create(menu, NodeMenuBtn, []),
 
-    HelpMenuBtn = gs:create(menubutton, MenuBar, [{label, {text,"Help"}},
-						  {side, right}]),
+    HelpMenuBtn = gs:create(menubutton, MenuBar,
+			    [{label, {text,"Help"}}, {side, right}]),
     HelpMenu = gs:create(menu, HelpMenuBtn, []),
-    gs:create(menuitem, HelpMenu, [{label, {text,"Help"}}, {data, help}]),
+    gs:create(menuitem, HelpMenu, [{label, {text,"Help"}},
+				   {data, help}]),
 
     %% Meter
     HLed = trunc((?hMETER)/(?LEDCOUNT)),
     Leds = draw_leds(?LEDCOUNT, Canvas, ?yMETER, HLed, []),
     leds_down(Leds, ?LEDCOUNT, 0),
-    gs:create(text, Canvas, [{coords, [{?xMETER, ?yMETER+HLed*?LEDCOUNT}]},
+    gs:create(text, Canvas, [{coords,
+			      [{?xMETER, ?yMETER+HLed*?LEDCOUNT}]},
 			     {anchor, nw},
 			     {font, {screen,8}},
 			     {text, "Load"}]),
@@ -720,14 +750,17 @@ draw_win(GS, Node) ->
 
     %% Node label
     WNodeLbl = 8*length(NodeStr)+10,
-    NLRect = gs:create(rectangle, Canvas, [{coords, [{?xNODELBL,?yNODELBL},
-						     {?xNODELBL+WNodeLbl,
-						      ?yNODELBL+?hNODELBL}]},
-					   {fill, black}]),
+    NLRect = gs:create(rectangle, Canvas,
+		       [{coords, [{?xNODELBL,?yNODELBL},
+				  {?xNODELBL+WNodeLbl,
+				   ?yNODELBL+?hNODELBL}]},
+			{fill, black}]),
     Xc = ?xNODELBL + round(WNodeLbl/2),
     Yc = ?yNODELBL + round(?hNODELBL/2),
-    NLText = gs:create(text, Canvas, [{text, NodeStr}, {fg, {250,235,215}},
-				      {coords, [{Xc,Yc}]}, {anchor, c}]),
+    NLText = gs:create(text, Canvas, [{text, NodeStr},
+				      {fg, {250,235,215}},
+				      {coords, [{Xc,Yc}]},
+				      {anchor, c}]),
     NodeLbl = {NLRect, NLText},
     
     gs:config(Win, {map, true}),
@@ -739,9 +772,9 @@ draw_win(GS, Node) ->
 	 l1=L1, l2=L2, leds=Leds, nodelabel=NodeLbl, nodemenu=NodeMenu}.
 
 draw_leds(N, Canvas, Y, HLed, Leds) when N>0 ->
-    Top = ?yNODELBL + (?LEDCOUNT-N)*HLed,
     Led = gs:create(rectangle, Canvas,
-		    [{coords, [{?xMETER,Y}, {?xMETER+?wMETER,Y+HLed}]}]),
+		    [{coords,
+		      [{?xMETER,Y}, {?xMETER+?wMETER,Y+HLed}]}]),
     draw_leds(N-1, Canvas, Y+HLed, HLed, [Led | Leds]);
 draw_leds(0, _Canvas, _Y, _HLed, Leds) ->
     Leds.
@@ -754,7 +787,8 @@ draw_leds(0, _Canvas, _Y, _HLed, Leds) ->
 %% Used when a changing the node to display
 draw_nodename(GUI, Node) ->
     NodeStr = atom_to_list(Node),
-    gs:config(GUI#win.window, {title, "APPMON: Overview on " ++ NodeStr}),
+    gs:config(GUI#win.window,
+	      {title, "APPMON: Overview on " ++ NodeStr}),
     GUI#win{name=Node}.
 
 %% Resize the canvas (when the window has been resized)
@@ -797,7 +831,7 @@ draw_apps(GUI, Apps) ->
 draw_apps(GUI, [App | Apps], X, Lx0, N, GSObjs) ->
 
     %% Some necessary data
-    {Pid, AppName, _Descr} = App,
+    {_Pid, AppName, _Descr} = App,
     Text = atom_to_list(AppName),
     Width = max(8*length(Text)+10, ?wBTN),
 
@@ -811,8 +845,8 @@ draw_apps(GUI, [App | Apps], X, Lx0, N, GSObjs) ->
 	       0 ->
 		   Ly1 = ?yNODELBL + ?hNODELBL +?PAD,
 		   Ly2 = Ly1 + ?PAD2,
-		   gs:create(line, GUI#win.canvas, [{coords, [{Lx, Ly1},
-							      {Lx, Ly2}]}]);
+		   gs:create(line, GUI#win.canvas,
+			     [{coords, [{Lx, Ly1}, {Lx, Ly2}]}]);
 	       %% Nth application, N>1 - draw a horizontal line from
 	       %% line connecting to the previous application button,
 	       %% to above this application button, then vertically down
@@ -820,9 +854,9 @@ draw_apps(GUI, [App | Apps], X, Lx0, N, GSObjs) ->
 	       _ ->
 		   Ly1 = ?yNODELBL + ?hNODELBL + ?PAD + ?PAD2/2,
 		   Ly2 = Ly1 + ?PAD2/2,
-		   gs:create(line, GUI#win.canvas, [{coords, [{Lx0, Ly1},
-							      {Lx, Ly1},
-							      {Lx, Ly2}]}])
+		   gs:create(line, GUI#win.canvas,
+			     [{coords, [{Lx0, Ly1}, {Lx, Ly1},
+					{Lx, Ly2}]}])
 	   end,
     
     %% The application is represented using a 'canvasbutton'
@@ -830,7 +864,7 @@ draw_apps(GUI, [App | Apps], X, Lx0, N, GSObjs) ->
     AppBtn = canvasbutton(GUI#win.canvas, Text, X, ?yBTN, Width, ?hBTN,
 			  Data),
 
-    draw_apps(GUI, Apps, X+Width+?PAD, Lx, N+1, [AppBtn, Line | GSObjs]);
+    draw_apps(GUI, Apps, X+Width+?PAD, Lx, N+1, [AppBtn, Line|GSObjs]);
 draw_apps(_GUI, [], X, _N, _Lx0, GSObjs) ->
     {GSObjs, X}.
 
@@ -842,31 +876,33 @@ draw_apps(_GUI, [], X, _N, _Lx0, GSObjs) ->
 display_addnode([GUI|GUIs], Node) ->
     display_addnode(GUI, Node),
     display_addnode(GUIs, Node);
-display_addnode([], Node) ->
+display_addnode([], _Node) ->
     ignore;
 display_addnode(GUI, Node) ->
     Txt = "Show " ++ atom_to_list(Node),
     gs:create(menuitem, GUI#win.nodemenu,
-	      [{label, {text,Txt}}, {data, {node, Node, GUI#win.window}}]).
+	      [{label, {text,Txt}},
+	       {data, {node, Node, GUI#win.window}}]).
 
 %% Show that a node has come back up
 display_nodeup(GUI, Node) ->
     {Rect, Text} = GUI#win.nodelabel,
 
     %% Check coordinates for the rectangle and compute the new width
-    [{L, T}, {R, B}] = gs:read(Rect, coords),
+    [{L, T}, {_R, B}] = gs:read(Rect, coords),
     NodeStr = atom_to_list(Node),
     W = 8*length(NodeStr)+10,
     
     gs:config(Rect, [{coords, [{L, T}, {L+W, B}]}, {fill, black}]),
     gs:config(Text, [{text, NodeStr}, {fg, {250,235,215}},
-		     {coords, [{L+round(W/2), T+round((?hNODELBL)/2)}]}]).
+		     {coords,
+		      [{L+round(W/2), T+round((?hNODELBL)/2)}]}]).
 
 %% Show that a node has gone down
 display_nodedown(GUI) ->
     {Rect, Text} = GUI#win.nodelabel,
     
-    [{L, T}, {R, B}] = gs:read(Rect, coords),
+    [{L, T}, {_R, B}] = gs:read(Rect, coords),
     gs:config(Rect, [{coords, [{L, T}, {L+114, B}]}, {fill, gray}]),
     gs:config(Text, [{text, "No connection"}, {fg, black},
 		     {coords, [{L+57, T+round((?hNODELBL)/2)}]}]).
@@ -880,15 +916,17 @@ display_scrollbar(GUI) ->
     HCanvas = GUI#win.hcanvas,
     if
 	WCanvas>WWindow ->
-	    gs:config(GUI#win.canvas,[{hscroll, bottom},
-				      {scrollregion,{0,0,WCanvas,HCanvas}}]);
+	    gs:config(GUI#win.canvas,
+		      [{hscroll, bottom},
+		       {scrollregion,{0,0,WCanvas,HCanvas}}]);
 	true ->
 	    gs:config(GUI#win.canvas, [{hscroll, false}])
     end,
     if
 	HCanvas>HWindow ->
-	    gs:config(GUI#win.canvas,[{vscroll, left},
-				      {scrollregion,{0,0,WCanvas,HCanvas}}]);
+	    gs:config(GUI#win.canvas,
+		      [{vscroll, left},
+		       {scrollregion,{0,0,WCanvas,HCanvas}}]);
 					
 	true ->
 	    gs:config(GUI#win.canvas, [{vscroll, false}])
@@ -924,12 +962,12 @@ display_load(GUI, {Old, New}) ->
 	    leds_up(GUI#win.leds, Old, New)
     end.
 
-leds_down(Leds, Old, New) when Old == New -> 
+leds_down(_Leds, Old, New) when Old == New -> 
     done;
 leds_down(Leds, Old, New) when Old > New -> 
     reset_led(Leds, Old),
     leds_down(Leds, Old-1, New).
-leds_up(Leds, Old, New) when Old == New -> 
+leds_up(_Leds, Old, New) when Old == New -> 
     done;
 leds_up(Leds, Old, New) when Old < New -> 
     set_led(Leds, Old),
@@ -937,17 +975,17 @@ leds_up(Leds, Old, New) when Old < New ->
 
 led_on_col(N) when N > 13 -> ?highloadfg;
 led_on_col(N) when N > 9 -> ?midloadfg;
-led_on_col(N) -> ?lowloadfg.
+led_on_col(_) -> ?lowloadfg.
 
 led_off_col(N) when N > 13 -> ?highloadbg;
 led_off_col(N) when N > 9 -> ?midloadbg;
-led_off_col(N) -> ?lowloadbg.
+led_off_col(_) -> ?lowloadbg.
 
-reset_led(Leds, 0) -> ok;
+reset_led(_Leds, 0) -> ok;
 reset_led(Leds, N) ->
     gs:config(lists:nth(N, Leds), [{fill, led_off_col(N)}]).
 
-set_led(Leds, 0) -> ok;
+set_led(_Leds, 0) -> ok;
 set_led(Leds, N) ->
     gs:config(lists:nth(N, Leds), [{fill, led_on_col(N)}]).
 
@@ -967,7 +1005,7 @@ bcast(MNodes, Msg) ->
 		  MNodes).
 
 max(X, Y) when X>Y -> X;
-max(X, Y) -> Y.
+max(_, Y) -> Y.
 
 %% parse_nodes(MNodes) -> NodeApps
 %%   MNodes -> [#mnode{}]
@@ -982,7 +1020,7 @@ parse_nodes(MNodes) ->
 parse_nodes([MNode|MNodes], NodeApps) ->
     Apps = parse_apps(MNode#mnode.apps, []),
     parse_nodes(MNodes,
-		[{MNode#mnode.name, MNode#mnode.status, Apps}|NodeApps]);
+		[{MNode#mnode.name,MNode#mnode.status,Apps}|NodeApps]);
 parse_nodes([], NodeApps) ->
     NodeApps.
     

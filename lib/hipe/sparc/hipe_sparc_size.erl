@@ -7,26 +7,26 @@
 %%  Notes    : 
 %%  History  :	* 1997-11-06 Erik Johansson (happi@csd.uu.se): Created.
 %% CVS:
-%%    $Author: happi $
-%%    $Date: 2002/05/12 13:48:32 $
-%%    $Revision: 1.2 $
+%%    $Author: kostis $
+%%    $Date: 2003/12/07 23:18:48 $
+%%    $Revision: 1.3 $
 %% ====================================================================
 %% Exported functions (short description):
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_sparc_size).
--export([code_size/1,byte_instruction_size/1,
-	count_instrs_cfg/1,count_instrs/1]).
+-export([count_instrs_cfg/1]).
+%% -export([code_size/1, byte_instruction_size/1, count_instrs/1]).
 
-%% Size in 4-byte words.
-code_size(Code) -> code_size(Code,0).
-
-code_size([],Size) -> Size;
-code_size([Instr|Rest],Size) ->
-  code_size(Rest,(icount(Instr))+Size).
-
-byte_instruction_size(Instr) ->
-  icount(Instr) * 4.
+%% %% Size in 4-byte words.
+%% code_size(Code) -> code_size(Code,0).
+%% 
+%% code_size([],Size) -> Size;
+%% code_size([Instr|Rest],Size) ->
+%%   code_size(Rest,(icount(Instr))+Size).
+%% 
+%% byte_instruction_size(Instr) ->
+%%   icount(Instr) * 4.
 
 count_instrs_cfg(CFG) ->
   count_instrs(hipe_sparc:sparc_code(hipe_sparc_cfg:linearize(CFG))).
@@ -37,7 +37,6 @@ count_instrs(Code) ->
 count_instrs([Instr|Is], Acc) ->
   count_instrs(Is, Acc + icount(Instr));
 count_instrs([],Acc) -> Acc.
-
 
 icount(I) ->
   case hipe_sparc:type(I) of

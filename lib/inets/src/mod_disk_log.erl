@@ -34,7 +34,7 @@ do(Info) ->
     LogFormat = get_log_format(Info#mod.config_db),
     case httpd_util:key1search(Info#mod.data,status) of
 	%% A status code has been generated!
-	{StatusCode,PhraseArgs,Reason} ->
+	{StatusCode, _PhraseArgs, Reason} ->
 	    transfer_log(Info, "-", AuthUser, Date, StatusCode, 0, LogFormat),
 	    if
 		StatusCode >= 400 ->
@@ -51,14 +51,14 @@ do(Info) ->
 				 Size, LogFormat),
 		    {proceed,Info#mod.data};
 
-		{response, Head, Body} ->
+		{response, Head, _Body} ->
 		    Size = httpd_util:key1search(Head, content_length, 0),
 		    Code = httpd_util:key1search(Head, code, 200),
 		    transfer_log(Info, "-", AuthUser, Date, Code, 
 				 Size, LogFormat),
 		    {proceed,Info#mod.data};	
 		
-		{StatusCode,Response} ->
+		{_StatusCode, Response} ->
 		    transfer_log(Info, "-", AuthUser, Date, 200,
 				 httpd_util:flatlength(Response), LogFormat),
 		    {proceed,Info#mod.data};
@@ -86,7 +86,7 @@ diff_in_minutes(L,U) ->
 
 sign(Minutes) when Minutes > 0 ->
     $+;
-sign(Minutes) ->
+sign(_Minutes) ->
     $-.
 
 auth_user(Data) ->
@@ -99,7 +99,7 @@ auth_user(Data) ->
 
 %% log_internal_info
 
-log_internal_info(Info,Date,[]) ->
+log_internal_info(_, _,[]) ->
     ok;
 log_internal_info(Info,Date,[{internal_info,Reason}|Rest]) ->
     Format = get_log_format(Info#mod.config_db),
@@ -116,10 +116,10 @@ transfer_log(Info,RFC931,AuthUser,Date,StatusCode,Bytes,Format) ->
 	undefined ->
 	    no_transfer_log;
 	TransferDiskLog ->
-	    {PortNumber,RemoteHost}=(Info#mod.init_data)#init_data.peername,
+	    {_PortNumber, RemoteHost}=(Info#mod.init_data)#init_data.peername,
 	    Entry = io_lib:format("~s ~s ~s [~s] \"~s\" ~w ~w~n",
-				  [RemoteHost,RFC931,AuthUser,Date,
-				   Info#mod.request_line,StatusCode,Bytes]),
+				  [RemoteHost, RFC931, AuthUser, Date,
+				   Info#mod.request_line, StatusCode, Bytes]),
 	    write(TransferDiskLog, Entry, Format)
     end.
 
@@ -132,7 +132,7 @@ error_log(Info, Date, Reason, Format) ->
 	undefined ->
 	    no_error_log;
 	ErrorDiskLog ->
-	    {PortNumber,RemoteHost}=(Info#mod.init_data)#init_data.peername,
+	    {_PortNumber, RemoteHost}=(Info#mod.init_data)#init_data.peername,
 	    Entry = 
 		io_lib:format("[~s] access to ~s failed for ~s, reason: ~p~n",
 			      [Date, Info#mod.request_uri, 
@@ -140,7 +140,7 @@ error_log(Info, Date, Reason, Format) ->
 	    write(ErrorDiskLog, Entry, Format)
     end.
 
-error_log(SocketType, Socket, ConfigDB, {PortNumber, RemoteHost}, Reason) ->
+error_log(_SocketType, _Socket, ConfigDB, {_PortNumber, RemoteHost}, Reason) ->
     Format = get_log_format(ConfigDB),
     case httpd_util:lookup(ConfigDB,error_disk_log) of
 	undefined ->

@@ -9,10 +9,6 @@
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
 #     $Id$
 #
 
@@ -41,27 +37,40 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-DOC_MODULES = hipe_finalize hipe_hot_cold hipe_rtl2sparc \
-	  hipe_sparc hipe_sparc_assemble hipe_sparc_assert hipe_sparc_cfg \
-	  hipe_sparc_liveness hipe_sparc_op hipe_sparc_registers \
-	  hipe_sparc_size hipe_sparc_multimove \
-	  hipe_sparc_saver hipe_sparc_linker \
-	  hipe_sparc_ra_coalescing hipe_sparc_ra_post_ls \
-	  hipe_sparc_ra_cs hipe_sparc_ra_post_cs \
-	  hipe_sparc_ra_graph_color \
-	  hipe_sparc_ra_ls hipe_sparc_ra_postconditions \
-	  hipe_sparc_ra_memory hipe_sparc_frame\
-	  hipe_sparc_caller_saves hipe_sparc_stack_descriptors\
-	  hipe_sparc_ra hipe_sparc_pp hipe_sparc_prop_env\
-	  hipe_sparc_prop hipe_sparc_opt_frame \
-	  hipe_sparc_ra_fp_naive hipe_sparc_ra_fp_ls \
-	  hipe_sparc_ra_post_ls_fp
-MODULES = $(DOC_MODULES) hipe_sparc_ebb
+MODULES=hipe_finalize \
+	hipe_rtl2sparc \
+	hipe_sparc \
+	hipe_sparc_assemble \
+	hipe_sparc_assert \
+	hipe_sparc_caller_saves \
+	hipe_sparc_cfg \
+	hipe_sparc_finalize \
+	hipe_sparc_frame \
+	hipe_sparc_liveness \
+	hipe_sparc_main \
+	hipe_sparc_multimove \
+	hipe_sparc_op \
+	hipe_sparc_opt_frame \
+	hipe_sparc_peephole \
+	hipe_sparc_pp \
+	hipe_sparc_prop \
+	hipe_sparc_prop_env \
+	hipe_sparc_ra \
+	hipe_sparc_ra_coalescing \
+	hipe_sparc_ra_fp_ls \
+	hipe_sparc_ra_graph_color \
+	hipe_sparc_ra_ls \
+	hipe_sparc_ra_memory \
+	hipe_sparc_ra_post_ls \
+	hipe_sparc_ra_post_ls_fp \
+	hipe_sparc_ra_postconditions \
+	hipe_sparc_registers \
+	hipe_sparc_size
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
-DOC_FILES= $(DOC_MODULES:%=$(DOCS)/%.html)
+DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
 
 # APP_FILE= 
 # APP_SRC= $(APP_FILE).src
@@ -75,7 +84,7 @@ DOC_FILES= $(DOC_MODULES:%=$(DOCS)/%.html)
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += +inline
+ERL_COMPILE_FLAGS +=
 
 # ----------------------------------------------------
 # Targets
@@ -90,7 +99,7 @@ clean:
 	rm -f core
 
 $(DOCS)/%.html:%.erl
-	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s erlang halt
+	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s init stop
 
 # ----------------------------------------------------
 # Special Build Targets
@@ -108,29 +117,23 @@ release_spec: opt
 
 release_docs_spec:
 
-$(EBIN)/hipe_sparc_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl
-$(EBIN)/hipe_sparc_ebb.beam: ../flow/ebb.inc
-$(EBIN)/hipe_sparc_liveness.beam: ../util/hipe_vector.hrl ../flow/liveness.inc
-
-$(EBIN)/hipe_sparc_registers.beam: ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_finalize.beam: ../main/hipe.hrl
 $(EBIN)/hipe_rtl2sparc.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_linker.beam: ../main/hipe.hrl
+$(EBIN)/hipe_sparc.beam: ../main/hipe.hrl hipe_sparc.hrl hipe_sparc_sdesc.hrl
+$(EBIN)/hipe_sparc_assemble.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl ../../kernel/src/hipe_ext_format.hrl
+$(EBIN)/hipe_sparc_caller_saves.beam: ../main/hipe.hrl
+$(EBIN)/hipe_sparc_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl
+$(EBIN)/hipe_sparc_frame.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl
+$(EBIN)/hipe_sparc_liveness.beam: ../flow/liveness.inc
+$(EBIN)/hipe_sparc_main.beam: ../main/hipe.hrl
 $(EBIN)/hipe_sparc_multimove.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_ra_coalescing.beam: ../main/hipe.hrl
+$(EBIN)/hipe_sparc_pp.beam: ../main/hipe.hrl
+$(EBIN)/hipe_sparc_prop.beam: ../main/hipe.hrl
+$(EBIN)/hipe_sparc_prop_env.beam: ../main/hipe.hrl
 $(EBIN)/hipe_sparc_ra.beam: ../main/hipe.hrl
+$(EBIN)/hipe_sparc_ra_coalescing.beam: ../main/hipe.hrl
 $(EBIN)/hipe_sparc_ra_graph_color.beam: ../main/hipe.hrl
 $(EBIN)/hipe_sparc_ra_ls.beam: ../main/hipe.hrl
 $(EBIN)/hipe_sparc_ra_memory.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_saver.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl
-$(EBIN)/hipe_sparc_pp.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_caller_saves.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_prop.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_prop_env.beam: ../main/hipe.hrl
 $(EBIN)/hipe_sparc_ra_post_ls.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_assemble.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_ra_fp_naive.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_frame.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl ../util/hipe_vector.hrl
-$(EBIN)/hipe_sparc_ra_cs.beam: ../main/hipe.hrl ../util/hipe_vector.hrl
-$(EBIN)/hipe_sparc_ra_post_cs.beam: ../main/hipe.hrl ../util/hipe_vector.hrl
+$(EBIN)/hipe_sparc_registers.beam: ../rtl/hipe_literals.hrl

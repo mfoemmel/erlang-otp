@@ -83,11 +83,11 @@ init([AdminPid, TypeCheck]) ->
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, #state{client = undefined}) ->
-    ?DBG("Terminating ~p; no client connected.~n", [Reason]),
+terminate(_Reason, #state{client = undefined}) ->
+    ?DBG("Terminating ~p; no client connected.~n", [_Reason]),
     ok;
-terminate(Reason, #state{client = Client} = State) ->
-    ?DBG("Terminating ~p~n", [Reason]),
+terminate(_Reason, #state{client = Client} = _State) ->
+    ?DBG("Terminating ~p~n", [_Reason]),
     cosEventApp:disconnect('CosEventComm_PushConsumer', 
 			   disconnect_push_consumer, Client),
     ok.
@@ -97,7 +97,7 @@ terminate(Reason, #state{client = Client} = State) ->
 %% Returns    : {ok, NewState}
 %% Description: Convert process state when code is changed
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%---------------------------------------------------------------------%
@@ -109,11 +109,12 @@ code_change(OldVsn, State, Extra) ->
 %%----------------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, #state{admin_pid = Pid} = State) ->
     ?DBG("Parent Admin terminated ~p~n", [Reason]),
-    orber:debug_level_print("[~p] oe_CosEventComm_PusherS_impl:handle_info(~p); 
-My Admin terminated and so will I.", [?LINE, Reason], ?DEBUG_LEVEL),
+    orber:dbg("[~p] oe_CosEventComm_PusherS_impl:handle_info(~p);~n"
+	      "My Admin terminated and so will I.", 
+	      [?LINE, Reason], ?DEBUG_LEVEL),
     {stop, Reason, State};
-handle_info(Info, State) ->
-    ?DBG("Unknown Info ~p~n", [Info]),
+handle_info(_Info, State) ->
+    ?DBG("Unknown Info ~p~n", [_Info]),
     {noreply, State}.
 
 %%---------------------------------------------------------------------%
@@ -122,13 +123,13 @@ handle_info(Info, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-connect_push_consumer(OE_This, _, #state{client = undefined, 
-				      typecheck = TypeCheck} = State, NewClient) ->
+connect_push_consumer(_OE_This, _, #state{client = undefined, 
+					  typecheck = TypeCheck} = State, NewClient) ->
     case corba_object:is_nil(NewClient) of
 	true ->
-	    ?DBG("A NIL client supplied.~n", []),
-	    orber:debug_level_print("[~p] oe_CosEventComm_PusherS_impl:connect_push_consumer(..); 
-Supplied a NIL reference which is not allowed.", [?LINE], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] oe_CosEventComm_PusherS_impl:connect_push_consumer(..);~n"
+		      "Supplied a NIL reference which is not allowed.", 
+		      [?LINE], ?DEBUG_LEVEL),
 	    corba:raise(#'BAD_PARAM'{completion_status = ?COMPLETED_NO});
 	false ->
 	    cosEventApp:type_check(NewClient, 'CosEventComm_PushConsumer', TypeCheck),
@@ -145,7 +146,7 @@ connect_push_consumer(_, _, _, _) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-disconnect_push_supplier(OE_This, _, State) ->
+disconnect_push_supplier(_OE_This, _, State) ->
     ?DBG("Disconnect invoked ~p ~n", [State]),
     {stop, normal, ok, State#state{client = undefined}}.
 
@@ -158,11 +159,11 @@ disconnect_push_supplier(OE_This, _, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-send(OE_This, #state{client = undefined} = State, Any) ->
+send(_OE_This, #state{client = undefined} = State, _Any) ->
     %% No consumer connected.
-    ?DBG("Received event ~p but have no client.~n", [Any]),
+    ?DBG("Received event ~p but have no client.~n", [_Any]),
     {noreply, State};
-send(OE_This, #state{client = Client} = State, Any) ->
+send(_OE_This, #state{client = Client} = State, Any) ->
     %% Push Data
     case catch 'CosEventComm_PushConsumer':push(Client, Any) of
 	ok ->
@@ -173,9 +174,9 @@ send(OE_This, #state{client = Client} = State, Any) ->
 	    {stop, normal, State#state{client = undefined}};
 	Other ->
 	    ?DBG("Received event ~p but failed to deliver it to client.~n", [Any]),
-	    orber:debug_level_print("[~p] oe_CosEventComm_PusherS_impl:send(~p); 
-My Client behaves badly, returned ~p, so I will terminate.", 
-				    [?LINE, Any, Other], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] oe_CosEventComm_PusherS_impl:send(~p);~n"
+		      "My Client behaves badly, returned ~p, so I will terminate.", 
+		      [?LINE, Any, Other], ?DEBUG_LEVEL),
 	    {stop, normal, State}
     end.
 
@@ -186,11 +187,11 @@ My Client behaves badly, returned ~p, so I will terminate.",
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-send_sync(OE_This, OE_From, #state{client = undefined} = State, Any) ->
+send_sync(_OE_This, _OE_From, #state{client = undefined} = State, _Any) ->
     %% No consumer connected.
-    ?DBG("Received event ~p but have no client.~n", [Any]),
+    ?DBG("Received event ~p but have no client.~n", [_Any]),
     {reply, ok, State};
-send_sync(OE_This, OE_From, #state{client = Client} = State, Any) ->
+send_sync(_OE_This, OE_From, #state{client = Client} = State, Any) ->
     corba:reply(OE_From, ok),
     %% Push Data
     case catch 'CosEventComm_PushConsumer':push(Client, Any) of
@@ -202,9 +203,9 @@ send_sync(OE_This, OE_From, #state{client = Client} = State, Any) ->
 	    {stop, normal, State#state{client = undefined}};
 	Other ->
 	    ?DBG("Received event ~p but failed to deliver (sync) it to client.~n", [Any]),
-	    orber:debug_level_print("[~p] oe_CosEventComm_PusherS_impl:send_sync(~p); 
-My Client behaves badly, returned ~p, so I will terminate.", 
-				    [?LINE, Any, Other], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] oe_CosEventComm_PusherS_impl:send_sync(~p);~n"
+		      "My Client behaves badly, returned ~p, so I will terminate.", 
+		      [?LINE, Any, Other], ?DEBUG_LEVEL),
 	    {stop, normal, State}
     end.
 

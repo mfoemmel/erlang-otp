@@ -1,3 +1,4 @@
+%%% -*- erlang-indent-level: 2 -*-
 %%% $Id$
 %%% compute def/use sets for x86 insns
 %%%
@@ -6,7 +7,7 @@
 %%% - should push use/def %esp?
 
 -module(hipe_x86_defuse).
--export([insn_def/1, insn_use/1, src_use/1]).
+-export([insn_def/1, insn_use/1]). %% src_use/1]).
 -include("hipe_x86.hrl").
 
 %%%
@@ -18,7 +19,7 @@ insn_def(I) ->
     #alu{dst=Dst} -> dst_def(Dst);
     #cmovcc{dst=Dst} -> dst_def(Dst);
     #dec{dst=Dst} -> dst_def(Dst);
-    #fmov{dst=Dst} -> dst_def(Dst);
+    #fmove{dst=Dst} -> dst_def(Dst);
     #fp_binop{dst=Dst} -> dst_def(Dst);
     #fp_unop{arg=Arg} -> dst_def(Arg);
     #inc{dst=Dst} -> dst_def(Dst);
@@ -66,7 +67,7 @@ insn_use(I) ->
     #cmovcc{src=Src, dst=Dst} -> addtemp(Src, dst_use(Dst));
     #cmp{src=Src, dst=Dst} -> addtemp(Src, addtemp(Dst, []));
     #dec{dst=Dst} -> addtemp(Dst, []);
-    #fmov{src=Src,dst=Dst} -> addtemp(Src, dst_use(Dst));
+    #fmove{src=Src,dst=Dst} -> addtemp(Src, dst_use(Dst));
     #fp_unop{arg=Arg} -> addtemp(Arg, []);
     #fp_binop{src=Src,dst=Dst} -> addtemp(Src, addtemp(Dst, []));
     #inc{dst=Dst} -> addtemp(Dst, []);
@@ -76,7 +77,8 @@ insn_use(I) ->
     #move{src=Src,dst=Dst} -> addtemp(Src, dst_use(Dst));
     #movsx{src=Src,dst=Dst} -> addtemp(Src, dst_use(Dst));
     #movzx{src=Src,dst=Dst} -> addtemp(Src, dst_use(Dst));
-    #pseudo_call{'fun'=Fun,arity=Arity} -> addtemp(Fun, arity_use(Arity));
+    #pseudo_call{'fun'=Fun,sdesc=#x86_sdesc{arity=Arity}} ->
+      addtemp(Fun, arity_use(Arity));
     #pseudo_tailcall{'fun'=Fun,arity=Arity,stkargs=StkArgs} ->
       addtemp(Fun, addtemps(StkArgs, addtemps(tailcall_clobbered(), arity_use(Arity))));
     #push{src=Src} -> addtemp(Src, []);
@@ -100,8 +102,8 @@ dst_use(Dst) ->
 %%% src_use(Src) -- Return set of temps used by a source operand.
 %%%
 
-src_use(Src) ->
-  addtemp(Src, []).
+%% src_use(Src) ->
+%%   addtemp(Src, []).
 
 %%%
 %%% Auxiliary operations on sets of temps

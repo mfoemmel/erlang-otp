@@ -216,9 +216,9 @@ fix_placement(Attr, Value, Gstkid, _TkW, DB) ->
 	
 fix_anchor(How, Gstkid, TkW, DB) ->
     Pgstkid = gstk_db:lookup_gstkid(DB, Gstkid#gstkid.parent),
-    case {Pgstkid#gstkid.objtype, How} of
+    case Pgstkid#gstkid.objtype of
 	menubar -> {c, ["pack ", TkW, " -an ", gstk:to_ascii(How)]};
-	_       -> {p,   [" -anch ", atom_to_list(How)]}
+	_       -> {p,   [" -anch ", gstk:to_ascii(How)]}
     end.
 
 

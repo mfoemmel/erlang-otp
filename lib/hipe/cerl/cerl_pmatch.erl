@@ -1,11 +1,5 @@
 %% =====================================================================
-%% @doc Core Erlang pattern matching compiler.
-%%
-%% <p>For reference, see Simon L. Peyton Jones "The Implementation of
-%% Functional Programming Languages", chapter 5 (by Phil Wadler).</p>
-%% @end
-%%
-%% Copyright (C) 1999-2002 Richard Carlsson
+%% Copyright (C) 1999-2004 Richard Carlsson
 %%
 %% This library is free software; you can redistribute it and/or modify
 %% it under the terms of the GNU Lesser General Public License as
@@ -22,40 +16,60 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@csd.uu.se
-%%
 %% $Id$
+%%
+%% @author Richard Carlsson <richardc@csd.uu.se>
+%% @copyright 2000-2004 Richard Carlsson
+%%
+%% @doc Core Erlang pattern matching compiler.
+%%
+%% <p>For reference, see Simon L. Peyton Jones "The Implementation of
+%% Functional Programming Languages", chapter 5 (by Phil Wadler).</p>
 %%
 %% @type cerl() = cerl:cerl().
 %%     Abstract Core Erlang syntax trees.
 %% @type cerl_records() = cerl:cerl_records().
 %%     An explicit record representation of Core Erlang syntax trees.
 
-%% TODO: Binary-patterns
-
 -module(cerl_pmatch).
 
--export([clauses/2, module/2, expr/2, core_transform/2]).
+-define(NO_UNUSED, true).
+
+-export([clauses/2]).
+-ifndef(NO_UNUSED).
+-export([transform/2, core_transform/2, expr/2]).
+-endif.
 
 -import(lists, [all/2, splitwith/2, foldr/3, keysort/2, foldl/3,
 		mapfoldl/3]).
+
+-define(AVOID_CODE_DUPLICATION, true).
+
+-define(binary_id, {binary}).
+-define(cons_id, {cons}).
+-define(tuple_id, {tuple}).
+-define(literal_id(V), V).
+
 
 %% @spec core_transform(Module::cerl_records(), Options::[term()]) ->
 %%           cerl_records()
 %%
 %% @doc Transforms a module represented by records. See
-%% <code>module/2</code> for details.
+%% <code>transform/2</code> for details.
 %%
 %% <p>Use the compiler option <code>{core_transform, cerl_pmatch}</code>
 %% to insert this function as a compilation pass.</p>
 %%
-%% @see module/2
+%% @see transform/2
 
+-ifndef(NO_UNUSED).
 core_transform(M, Opts) ->
-    cerl:to_records(module(cerl:from_records(M), Opts)).
+    cerl:to_records(transform(cerl:from_records(M), Opts)).
+-endif.	% NO_UNUSED
+%% @clear
 
 
-%% @spec module(Module::cerl(), Options::[term()]) -> cerl()
+%% @spec transform(Module::cerl(), Options::[term()]) -> cerl()
 %%
 %% @doc Rewrites all <code>case</code>-clauses in <code>Module</code>.
 %% <code>receive</code>-clauses are not affected. Currently, no options
@@ -65,8 +79,11 @@ core_transform(M, Opts) ->
 %% @see expr/2
 %% @see core_transform/2
 
-module(M, _Opts) ->
-    expr(M, env__empty()).
+-ifndef(NO_UNUSED).
+transform(M, _Opts) ->
+  expr(M, env__empty()).
+-endif.	% NO_UNUSED
+%% @clear
 
 
 %% @spec clauses(Clauses::[Clause], Env) -> {Expr, Vars}
@@ -94,7 +111,7 @@ module(M, _Opts) ->
 %% 
 %% @see rec_env
 %% @see expr/2
-%% @see module/2
+%% @see transform/2
 
 clauses(Cs, Env) ->
     clauses(Cs, none, Env).
@@ -136,8 +153,6 @@ group([], _F) ->
 group([X | _] = Xs, F) ->
     group(Xs, F, F(X)).
 
-group([], _F, _P) ->
-    [];
 group(Xs, F, P) ->
     {First, Rest} = splitwith(fun (X) -> F(X) == P end, Xs),
     [First | group(Rest, F)].
@@ -189,34 +204,37 @@ match_var([V | Vs], Cs, Else, Env) ->
 %% body of a final catch-all clause.
 
 match_con([V | Vs], Cs, Else, Env) ->
-
-    case group_con(Cs) of
- 	[{_, _, Gs}] ->
+    case group_con(Cs) of 
+      [{_, _, Gs}] ->
  	    %% Don't create a group type switch if there is only one
- 	    %% such group.
-
+ 	    %% such group
 	    make_switch(V, [match_congroup(D, Vs, Cs, Else, Env)
- 			    ||  {_, D, Cs} <- Gs],
+ 			    ||  {D, _, Cs} <- Gs],
  			Else, Env);
 	Ts ->
 	    Cs1 = [match_typegroup(T, V, Vs, Gs, Else, Env)
-		   || {_, T, Gs} <- Ts],
+		   || {T, _, Gs} <- Ts],
 	    make_switch(V, Cs1, Else, Env)
     end.
 
-match_typegroup(_T, _V, Vs, [{_, D, Cs}], Else, Env) ->
+
+match_typegroup(_T, _V, Vs, [{D, _, Cs}], Else, Env) when element(1, D) /= ?binary_id ->
     %% Don't create a group type switch if there is only one constructor
-    %% in the group. (Note that this always happens for the empty list.)
+    %% in the group. (Note that this always happens for '[]'.)  
+    %% Special case for binaries which always get a group switch
     match_congroup(D, Vs, Cs, Else, Env);
 match_typegroup(T, V, Vs, Gs, Else, Env) ->
     Body = make_switch(V, [match_congroup(D, Vs, Cs, Else, Env)
-			   ||  {_, D, Cs} <- Gs],
+			 ||  {D, _, Cs} <- Gs],
 		       Else, Env),
     typetest_clause(T, V, Body, Env).
 
-match_congroup({<<0>>, Segs}, Vs, Cs, Else, Env) ->
-    Body = match(Vs, Cs, Else, Env),
-    cerl:c_clause([make_pat(<<0>>, Segs)], Body);
+match_congroup({?binary_id, Segs}, Vs, Cs, _Else, Env) -> 
+    Ref = make_ref(),
+    Guard = cerl:c_primop(cerl:c_atom(set_label), [cerl:c_int(Ref)]),
+    NewElse = cerl:c_primop(cerl:c_atom(goto_label), [cerl:c_int(Ref)]),
+    Body = match(Vs, Cs, NewElse, Env),
+    cerl:c_clause([make_pat(?binary_id, Segs)], Guard, Body);
 
 match_congroup({D, A}, Vs, Cs, Else, Env) ->
     Vs1 = new_vars(A, Env),
@@ -229,13 +247,8 @@ make_switch(V, Cs, Else, Env) ->
 						   Else)]
 		   end).
 
-%% We preserve the relative order of different constructors as they were
-%% originally listed. This is done by including the clause number in the
-%% key used for sorting the clauses by type (this stage does not
-%% distingush between different value instances of atoms, integers and
-%% floats). The clauses are then grouped by type. After grouping by
-%% constructor (this separates value instances), the groups are then
-%% sorted again by the clause number of the first clause of each group.
+%% We preserve the relative order of different-type constructors as they
+%% were originally listed. This is done by tracking the clause numbers.
 
 group_con(Cs) ->
     {Cs1, _} = mapfoldl(fun (C, N) ->
@@ -243,20 +256,30 @@ group_con(Cs) ->
 				Ps1 = sub_pats(P) ++ Ps,
 				G = cerl:clause_guard(C),
 				B = cerl:clause_body(C),
-				{{{con_type(P), N}, con_desc(P),
-				  cerl:update_c_clause(C, Ps1, G, B)},
-				 N + 1}
+				C1 = cerl:update_c_clause(C, Ps1, G, B),
+				D = con_desc(P),
+				{{D, N, C1}, N + 1}
 			end,
 			0, Cs),
-    %% Group by descriptor (separates different integers, atoms, etc.)
-    %% Constructors that have the same descriptor have the same type.
-    Css = group(keysort(1, Cs1), fun ({_,D,_}) -> D end),
-    Gs = [{T, D, [C || {_,_,C} <- Cs]} || Cs=[{T,D,_}|_] <- Css],
-    %% Group by type class (groups different-arity tuples together).
-    Css1 = group(Gs, fun ({{T,_},_,_}) -> typeclass(T) end),
-    Gs1 = [{N, T, Cs} || Cs=[{{T,N},_,_}|_] <- Css1],
-    %% Sort type-groups by original clause order
-    keysort(1, Gs1).
+    %% Sort and group constructors.
+    Css = group(keysort(1, Cs1), fun ({D,_,_}) -> D end),
+    %% Sort each group "back" by line number, and move the descriptor
+    %% and line number to the wrapper for the group.
+    Gs = [finalize_congroup(Cs) || Cs <- Css],
+    %% Group by type only (put e.g. different-arity tuples together).
+    Gss = group(Gs, fun ({D,_,_}) -> con_desc_type(D) end),
+    %% Sort and wrap the type groups.
+    Ts = [finalize_typegroup(Gs) || Gs <- Gss],
+    %% Sort type-groups by first clause order
+    keysort(2, Ts).
+
+finalize_congroup(Cs) ->
+    [{D,N,_}|_] = Cs1 = keysort(2, Cs),
+    {D, N, [C || {_,_,C} <- Cs1]}.
+
+finalize_typegroup(Gs) ->
+    [{D,N,_}|_] = Gs1 = keysort(2, Gs),
+    {con_desc_type(D), N, Gs1}.
 
 %% Since Erlang clause patterns can contain "alias patterns", we must
 %% eliminate these, by turning them into let-definitions in the guards
@@ -265,50 +288,24 @@ group_con(Cs) ->
 unalias(C, V) -> 
     [P | Ps] = cerl:clause_pats(C),
     B = cerl:clause_body(C),
-    unalias(P, V, Ps, B, C).
+    G = cerl:clause_guard(C),
+    unalias(P, V, Ps, B, G, C).
 
-unalias(P, V, Ps, B, C) ->
+unalias(P, V, Ps, B, G, C) ->
     case cerl:type(P) of
 	alias ->
-	    B1 = make_let([cerl:alias_var(P)], V, B),
-	    unalias(cerl:alias_pat(P), V, Ps, B1, C);
+	    V1 = cerl:alias_var(P),
+	    B1 = make_let([V1], V, B),
+	    G1 = make_let([V1], V, G),
+	    unalias(cerl:alias_pat(P), V, Ps, B1, G1, C);
 	_ ->
-	    cerl:update_c_clause(C, [P | Ps], cerl:clause_guard(C), B)
+	    cerl:update_c_clause(C, [P | Ps], G, B)
     end.
-
-%% This returns a constructor type, for sorting of clauses. It does not
-%% distinguish between value instances of atoms, integers and floats.
-
-con_type(E) ->
-    case cerl:type(E) of
-	cons ->
-	    cons;
-	tuple ->
-	    {tuple, cerl:tuple_arity(E)};
-	binary ->
-	    binary;
-	literal ->
-	    case cerl:concrete(E) of
-		V when is_atom(V) -> atom;
-		V when is_integer(V) -> integer;
-		V when is_float(V) -> float;
-		T when is_tuple(T) -> {tuple, size(T)};
-		[_|_] -> cons;
-		[] -> []
-	    end;
-	_ ->
-	    throw({bad_constructor, E})
-    end.
-
-%% Getting the generic class for type grouping.
-
-typeclass({tuple, _}) -> tuple;
-typeclass(X) -> X.
 
 %% Generating a type-switch clause
 
-typetest_clause({tuple, _}, V, E, _Env) ->
-    typetest_clause_1(is_tuple, V, E);
+typetest_clause([], _V, E, _Env) ->
+    cerl:c_clause([cerl:c_nil()], E);
 typetest_clause(atom, V, E, _Env) ->
     typetest_clause_1(is_atom, V, E);
 typetest_clause(integer, V, E, _Env) ->
@@ -318,8 +315,8 @@ typetest_clause(float, V, E, _Env) ->
 typetest_clause(cons, _V, E, Env) ->
     [V1, V2] = new_vars(2, Env),
     cerl:c_clause([cerl:c_cons(V1, V2)], E);  % there is no 'is cons'
-typetest_clause([], _V, E, _Env) ->
-    cerl:c_clause([cerl:c_nil()], E);
+typetest_clause(tuple, V, E, _Env) ->
+    typetest_clause_1(is_tuple, V, E);
 typetest_clause(binary, V, E, _Env) ->
     typetest_clause_1(is_binary, V, E).
 
@@ -330,16 +327,13 @@ typetest_clause_1(T, V, E) ->
 %% This returns a constructor descriptor, to be used for grouping and
 %% pattern generation. It consists of an identifier term and the arity.
 
--define(cons_id, [0]).
--define(tuple_id, {0}).
--define(binary_id, <<0>>).
--define(literal_id(V), V).
+
 
 con_desc(E) ->
     case cerl:type(E) of
 	cons -> {?cons_id, 2};
 	tuple -> {?tuple_id, cerl:tuple_arity(E)};
-	binary -> {?binary_id, cerl:binary_segs(E)};
+	binary -> {?binary_id, cerl:binary_segments(E)};
 	literal ->
 	    case cerl:concrete(E) of
 		[_|_] -> {?cons_id, 2};
@@ -349,6 +343,19 @@ con_desc(E) ->
 	_ ->
 	    throw({bad_constructor, E})
     end.
+
+%% This returns the type class for a constructor descriptor, for 
+%% grouping of clauses. It does not distinguish between tuples of
+%% different arity, nor between different values of atoms, integers and
+%% floats.
+
+con_desc_type({?literal_id([]), _}) -> [];
+con_desc_type({?literal_id(V), _}) when is_atom(V) -> atom;
+con_desc_type({?literal_id(V), _}) when is_integer(V) -> integer;
+con_desc_type({?literal_id(V), _}) when is_float(V) -> float;
+con_desc_type({?cons_id, 2}) -> cons;
+con_desc_type({?tuple_id, _}) -> tuple;
+con_desc_type({?binary_id, _}) -> binary.
 
 %% This creates a new constructor pattern from a type descriptor and a
 %% list of variables.
@@ -392,7 +399,7 @@ make_let(Vs, A, B) ->
 	_ -> cerl:c_let(Vs, A, B)
     end.
 
-%% ------------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %% Rewriting a module or other expression:
 
 %% @spec expr(Expression::cerl(), Env) -> cerl()
@@ -408,6 +415,7 @@ make_let(Vs, A, B) ->
 %% @see clauses/2
 %% @see rec_env
 
+-ifndef(NO_UNUSED).
 expr(E, Env) ->
     case cerl:type(E) of
  	literal ->
@@ -463,7 +471,9 @@ expr(E, Env) ->
 	    B = expr(cerl:fun_body(E), Env1),
 	    cerl:update_c_fun(E, Vs, B);
  	'receive' ->
-	    %% NOTE: No pattern matching compilation done here!
+	    %% NOTE: No pattern matching compilation is done here! The
+	    %% receive-clauses and patterns cannot be staged as long as
+	    %% we are working with "normal" Core Erlang.
 	    Cs = expr_list(cerl:receive_clauses(E), Env),
 	    T = expr(cerl:receive_timeout(E), Env),
 	    A = expr(cerl:receive_action(E), Env),
@@ -498,9 +508,10 @@ expr_list(Es, Env) ->
 
 defs(Ds, Env) ->
     [{V, expr(F, Env)} || {V, F} <- Ds].
+-endif.	% NO_UNUSED
+%% @clear
 
-
-%% ------------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %%	Support functions
 
 new_var(Env) ->
@@ -518,39 +529,49 @@ add_vars(Vs, Env) ->
     foldl(fun (V, Env) -> env__bind(cerl:var_name(V), [], Env) end,
 	  Env, Vs).
 
+-ifndef(NO_UNUSED).
 add_defs(Ds, Env) ->
     foldl(fun ({V, _F}, Env) ->
 		  env__bind(cerl:var_name(V), [], Env)
 	  end, Env, Ds).
+-endif.	% NO_UNUSED
 
-%% For now, we duplicate code without limitations, as long as lifting
-%% out the code always results in a full local function call even when
-%% the code is in last call context, since this causes notable slowdown
-%% in tight loops.
+%% This decides whether an expression is worth lifting out to a separate
+%% function instead of duplicating the code. In other words, whether its
+%% cost is about the same or smaller than that of a local function call.
 
-is_lightweight(_) -> true.
+-ifdef(AVOID_CODE_DUPLICATION).
+is_lightweight(E) ->
+    case cerl:type(E) of
+	var -> true;
+   	literal -> true;
+   	'fun' -> true;
+   	values -> all(fun is_simple/1, cerl:values_es(E));
+   	cons -> is_simple(cerl:cons_hd(E))
+   		    andalso is_simple(cerl:cons_tl(E));
+   	tuple -> all(fun is_simple/1, cerl:tuple_es(E));
+   	'let' -> (is_simple(cerl:let_arg(E)) andalso
+   		  is_lightweight(cerl:let_body(E)));
+   	seq -> (is_simple(cerl:seq_arg(E)) andalso
+   		is_lightweight(cerl:seq_body(E)));
+   	primop ->
+   	    all(fun is_simple/1, cerl:primop_args(E));
+   	apply ->
+   	    is_simple(cerl:apply_op(E))
+   		andalso all(fun is_simple/1, cerl:apply_args(E));
+   	call ->
+   	    is_simple(cerl:call_module(E))
+   		andalso is_simple(cerl:call_name(E))
+   		andalso all(fun is_simple/1, cerl:call_args(E));    
+   	_ ->
+	    %% The default is to lift the code to a new function.
+	    false
+    end.
+-else.
+is_lightweight(_) -> true.  % Never lift code to new functions.
+-endif.	% AVOID_CODE_DUPLICATION
 
-%% is_lightweight(E) ->
-%%     case cerl:type(E) of
-%%    	var -> true;
-%%    	literal -> true;
-%%    	values -> all(fun is_simple/1, cerl:values_es(E));
-%%    	cons -> is_simple(cerl:cons_hd(E))
-%%    		    andalso is_simple(cerl:cons_tl(E));
-%%    	tuple -> all(fun is_simple/1, cerl:tuple_es(E));
-%%    	'let' -> (is_simple(cerl:let_arg(E)) andalso
-%%    		  is_lightweight(cerl:let_body(E)));
-%%    	seq -> (is_simple(cerl:seq_arg(E)) andalso
-%%    		is_lightweight(cerl:seq_body(E)));
-%%    	apply ->
-%%    	    is_simple(cerl:apply_op(E))
-%%    		andalso all(fun is_simple/1, cerl:apply_args(E));
-%%    	call ->
-%%    	    is_simple(cerl:call_module(E))
-%%    		andalso is_simple(cerl:call_name(E))
-%%    		andalso all(fun is_simple/1, cerl:call_args(E));    
-%%    	_ -> false
-%%     end.
+%% "Simple" things have no (or negligible) runtime cost.
 
 is_simple(E) ->
     case cerl:type(E) of
@@ -561,20 +582,13 @@ is_simple(E) ->
     end.
 
 
-%% ------------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 %% Abstract datatype: environment()
-
-env__empty() ->
-    rec_env:empty().
 
 env__bind(Key, Val, Env) ->
     rec_env:bind(Key, Val, Env).
 
-%% `Es' should have type `[{Key, Val}]', and `Fun' should have type
-%% `(Val, Env) -> T', mapping a value together with the recursive
-%% environment itself to some term `T' to be returned when the entry is
-%% looked up.
-
+-ifndef(NO_UNUSED).
 %% env__bind_recursive(Ks, Vs, F, Env) ->
 %%     rec_env:bind_recursive(Ks, Vs, F, Env).
 
@@ -587,6 +601,10 @@ env__bind(Key, Val, Env) ->
 %% env__is_defined(Key, Env) ->
 %%     rec_env:is_defined(Key, Env).
 
+env__empty() ->
+    rec_env:empty().
+-endif.	% NO_UNUSED
+
 env__new_vname(Env) ->
     rec_env:new_key(Env).
 
@@ -594,8 +612,8 @@ env__new_vnames(N, Env) ->
     rec_env:new_keys(N, Env).
 
 env__new_fname(F, A, Env) ->
-    rec_env:new_custom_key(fun (X) ->
-				   S = integer_to_list(X),
-				   {list_to_atom(F ++ S), A}
-			   end,
-			   Env).
+    rec_env:new_key(fun (X) ->
+			    S = integer_to_list(X),
+			    {list_to_atom(F ++ S), A}
+		    end,
+		    Env).

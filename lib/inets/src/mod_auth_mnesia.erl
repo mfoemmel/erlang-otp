@@ -42,9 +42,10 @@
 
 
 
-store_directory_data(Directory, DirData) ->
-    %% We don't need to do anything here, we could ofcourse check that the appropriate
-    %% mnesia tables has been created prior to starting the http server.
+store_directory_data(_Directory, _DirData) ->
+    %% We don't need to do anything here, we could of course check that
+    %% the appropriate mnesia tables has been created prior to
+    %% starting the http server.
     ok.
 
 
@@ -54,26 +55,25 @@ store_directory_data(Directory, DirData) ->
 
 %% Compability API
 
-
-store_user(UserName, Password, Port, Dir, AccessPassword) ->
+store_user(UserName, Password, Port, Dir, _AccessPassword) ->
    %% AccessPassword is ignored - was not used in previous version
    DirData = [{path,Dir},{port,Port}],
    UStruct = #httpd_user{username = UserName,
 			 password = Password},
    add_user(DirData, UStruct).
 
-store_user(UserName, Password, Addr, Port, Dir, AccessPassword) ->
+store_user(UserName, Password, Addr, Port, Dir, _AccessPassword) ->
    %% AccessPassword is ignored - was not used in previous version
    DirData = [{path,Dir},{bind_address,Addr},{port,Port}],
    UStruct = #httpd_user{username = UserName,
 			 password = Password},
    add_user(DirData, UStruct).
 
-store_group_member(GroupName, UserName, Port, Dir, AccessPassword) ->
+store_group_member(GroupName, UserName, Port, Dir, _AccessPassword) ->
    DirData = [{path,Dir},{port,Port}],
    add_group_member(DirData, GroupName, UserName).
 
-store_group_member(GroupName, UserName, Addr, Port, Dir, AccessPassword) ->
+store_group_member(GroupName, UserName, Addr, Port, Dir, _AccessPassword) ->
    DirData = [{path,Dir},{bind_address,Addr},{port,Port}],
    add_group_member(DirData, GroupName, UserName).
 
@@ -157,7 +157,7 @@ get_user(DirData, UserName) ->
 	    {error, no_such_user};
 	{atomic, [Record]} when record(Record, httpd_user) ->
 	    {ok, Record#httpd_user{username=UserName}};
-	Other ->
+	_ ->
 	    {error, no_such_user}
     end.
 
@@ -171,8 +171,9 @@ list_users(DirData) ->
 	    {error,Reason};
 	{atomic,Users} ->
 	    {ok, 
-	     lists:foldr(fun({httpd_user, {UserName, AnyAddr, AnyPort, AnyDir}, 
-			      Password, Data}, Acc) ->
+	     lists:foldr(fun({httpd_user, 
+			      {UserName, _AnyAddr, _AnyPort, _AnyDir}, 
+			      _Password, _Data}, Acc) ->
 				 [UserName|Acc]
 			 end,
 			 [], Users)}
@@ -214,23 +215,28 @@ list_group_members(DirData, GroupName) ->
 	{aborted, Reason} ->
 	    {error,Reason};
 	{atomic, Members} ->
-	    {ok,[UserName || {httpd_group,{AnyGroupName,AnyAddr,AnyPort,AnyDir},UserName} <- Members,
+	    {ok,[UserName || {httpd_group,{AnyGroupName,AnyAddr,
+					   AnyPort,AnyDir},UserName} 
+				 <- Members,
 			     AnyGroupName == GroupName, AnyAddr == Addr,
 			     AnyPort == Port, AnyDir == Dir]}
-  end.
+    end.
 
 list_groups(DirData) -> 
     {Addr, Port, Dir} = lookup_common(DirData),
     case mnesia:transaction(fun() ->
 				    mnesia:match_object({httpd_group,
-							 {'_',Addr,Port,Dir},'_'}) 
+							 {'_',Addr,Port,Dir},
+							 '_'}) 
 			    end) of
 	{aborted, Reason} ->
 	    {error, Reason};
 	{atomic, Groups} ->
 	    GroupNames=
-		[GroupName || {httpd_group,{GroupName,AnyAddr,AnyPort,AnyDir}, UserName} <- Groups,
-			      AnyAddr == Addr, AnyPort == AnyPort, AnyDir == Dir],
+		[GroupName || {httpd_group,{GroupName,AnyAddr,AnyPort,AnyDir},
+			       _UserName} <- Groups,
+			      AnyAddr == Addr, AnyPort == AnyPort, 
+			      AnyDir == Dir],
 	    {ok, httpd_util:uniq(lists:sort(GroupNames))}
     end.
 

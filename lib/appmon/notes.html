@@ -1,6 +1,6 @@
-<HTML>
-<HEAD>
-  <TITLE>Appmon Release Notes</TITLE>
+<html>
+<head>
+  <title>Appmon Release Notes</title>
   <style type="text/css">
 <!--
     body          { background: white; margin: 3em }
@@ -11,37 +11,44 @@
     p li          { font-family: Verdana, Arial, Helvetica, sans-serif }
 -->
   </style>
-</HEAD>
+</head>
 
-<BODY BGCOLOR="#FFFFFF">
+<body bgcolor=white>
 
-<CENTER><H1>Appmon Release Notes</H1></CENTER>
+<center><h1>Appmon Release Notes</h1></center>
 
-<H2>Appmon 2.1.2</H2>
-  <H3>Known Problems</H3>
-  <UL>
-    <LI>Appmon sometimes crashes if the application controller is heavily
-      loaded, for example during a node startup.<BR>
-      Own Id: OTP-3616
-    </LI>
-  </UL>
 
-  <H3>Fixed Errors and Malfunctions</H3>
-  <UL>
-    <LI>Appmon assumed all connected nodes had the appmon code available.
-      Now nodes where the appmon code is not available, for example
-      embedded nodes, are ignored by Appmon.<BR>
-      Own Id: OTP-3591
-    </LI>
+<!--- ############################################################# --->
 
-    <LI>Child processes were shown in reversed order (compared to order of
-      creation) when viewing an application tree in process mode.<BR>
-      Own Id: OTP-4082
-    </LI>
-  </UL>
+<h2>Appmon 2.1.3</h2>
 
-<P>There are also release notes for <A HREF="notes_history.html">older
-  versions</A>.</P>
 
-</BODY>
-</HTML>
+<!--- ------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    There were still problems with Appmon assuming all
+    connected nodes had access to the Appmon code, which
+    sometimes caused a crash during start-up.<br>
+    (Own Id: OTP-4887)<br>
+    (Aux Id: OTP-3591)<p>
+  </li>
+
+  <li>
+    File name for where to find documentation ('Help'
+    button) is now correct.<br>
+    (Own Id: OTP-4889)<p>
+  </li>
+
+</ul>
+
+
+
+There are also release notes for
+<a href="notes_history.html">older versions</a>.
+
+</body>
+</html>

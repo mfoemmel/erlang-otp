@@ -98,7 +98,10 @@ esac
 
 AC_PROG_INSTALL
 if test X"${INSTALL}" = "X${ac_aux_dir}/install-sh -c" && test -f /usr/ucb/install ; then
-    INSTALL="/usr/ucb/install -c"
+   case $host_os in
+      osf*) ;;
+      *) INSTALL="/usr/ucb/install -c" ;;
+   esac
 fi
 
 AC_PROG_LN_S

@@ -1,0 +1,201 @@
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+# 
+#     $Id$
+#
+include $(ERL_TOP)/make/target.mk
+include $(ERL_TOP)/make/$(TARGET)/otp.mk
+
+# ----------------------------------------------------
+# Application version
+# ----------------------------------------------------
+include ../vsn.mk
+VSN=$(XMERL_VSN)
+
+# ----------------------------------------------------
+# Release directory specification
+# ----------------------------------------------------
+RELSYSDIR = $(RELEASE_PATH)/lib/xmerl-$(VSN)
+
+# ----------------------------------------------------
+# Documentation directory specification
+# ----------------------------------------------------
+
+DOCDIR = ../doc
+
+
+### XMERL use EDOC for documentation, to regenerate update paths as needed!
+XMERL_APP = ..
+
+EDOC_APP = ../../edoc
+
+SYNTAX_TOOLS_APP = ../../syntax_tools
+
+
+
+# ----------------------------------------------------
+# Target Specs
+# ----------------------------------------------------
+
+EDOC_MODULES = \
+	xmerl_scan \
+	xmerl \
+	xmerl_xs \
+	xmerl_eventp \
+	xmerl_xpath
+
+
+MODULES = $(EDOC_MODULES) \
+	xmerl_lib \
+	xmerl_xlate \
+	xmerl_xml \
+	xmerl_html \
+	xmerl_otpsgml \
+	xmerl_text \
+	xmerl_sgml \
+	xmerl_simple \
+	xmerl_validate \
+	xmerl_xpath_parse \
+	xmerl_xpath_pred \
+	xmerl_xpath_scan \
+	ucs
+
+
+HRL_FILES = ../include/xmerl.hrl ../include/xmerl_xlink.hrl ../include/xmerl_xpath.hrl
+INCLUDE_DIR = ../include
+
+INTERNAL_HRL_FILES  = 
+
+ERL_FILES= $(MODULES:%=%.erl)
+
+APP_FILE= xmerl.app
+APP_SRC= $(APP_FILE).src
+APP_TARGET= $(EBIN)/$(APP_FILE)
+
+APPUP_FILE= xmerl.appup
+APPUP_SRC= $(APPUP_FILE).src
+APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
+
+DOC_TARGET_FILES = $(EDOC_MODULES:%=$(DOCDIR)/%.html)
+TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
+
+# ----------------------------------------------------
+# FLAGS
+# ----------------------------------------------------
+ERL_FLAGS +=
+ERL_COMPILE_FLAGS += \
+		$(DEBUG) \
+		-I ../include \
+		+warn_unused_vars
+
+
+# ----------------------------------------------------
+# Targets
+# ----------------------------------------------------
+debug opt: $(TARGET_FILES) 
+
+docs:
+#docs:	$(DOC_TARGET_FILES)
+
+
+clean:
+	$(RM) $(TARGET_FILES)
+	$(RM) xmerl_xpath_parse.erl
+	$(RM) core *~
+
+info:
+	@echo "MODULES: $(MODULES)"
+	@echo "EBIN: $(EBIN)"
+	@echo "EMULATOR: $(EMULATOR)"
+	@echo "APP_TARGET: $(APP_TARGET)"
+	@echo "TARGET_FILES: $(TARGET_FILES)"
+	@echo "DOC_TARGET_FILES: $(DOC_TARGET_FILES)"
+	@echo "DOCDIR/%html: $(DOCDIR)/%.html"
+
+realclean: clean
+	$(RM) $(DOC_TARGET_FILES)
+
+# ----------------------------------------------------
+# Special Build Targets
+# ----------------------------------------------------
+EDOC_PATHS = \
+	-pa $(EDOC_APP)/ebin -pa $(XMERL_APP)/ebin -pa $(SYNTAX_TOOLS_APP)/ebin
+
+$(APP_TARGET): $(APP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
+
+$(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
+
+xmerl_xpath_parse.erl:	xmerl_xpath_parse.yrl
+	$(ERLC) $(ERL_FLAGS) -o  $(ESRC) $<
+
+
+$(EBIN)/%.beam:	%.erl
+	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o $(EBIN) $<
+
+$(DOCDIR)/%.html:	%.erl
+	$(ERL) -noshell $(EDOC_PATHS) \
+		-run edoc_run file '"$<"' '[{dir,"$(DOCDIR)"}]' -s erlang halt
+
+
+#$(DOCDIR)/%.html:	%.erl
+#	$(ERL) $(EDOC_PATHS) -s edoc file $< ['{dir,"$(DOCDIR)"}'] 
+
+# ----------------------------------------------------
+# Release Target
+# ---------------------------------------------------- 
+#ifeq "${MA_TOP}" ""
+#MA_TOP = ../../..
+#endif
+#include $(MA_TOP)/config/make.release
+include $(ERL_TOP)/make/otp_release_targets.mk
+
+release_src:
+	$(INSTALL_DATA) $(MODULES:%=%.erl) $(RELSYSDIR)/src
+	rm -f $(RELSYSDIR)/src/xmerl_xpath_parse.erl
+	$(INSTALL_DATA) Makefile $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(APP_SRC) $(APPUP_SRC) $(RELSYSDIR)/src
+	$(INSTALL_DATA) xmerl_xpath_parse.yrl $(RELSYSDIR)/src
+
+
+release_spec: opt
+	$(INSTALL_DIR) $(RELSYSDIR)/ebin
+	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
+	$(INSTALL_DIR) $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(ERL_FILES) $(APP_SRC) $(APPUP_SRC) $(RELSYSDIR)/src
+	$(INSTALL_DIR) $(RELSYSDIR)/include
+	$(INSTALL_DATA) $(HRL_FILES) $(RELSYSDIR)/include
+
+release_docs_spec:
+
+
+
+#------------------------------------------------------------
+# .hrl dependencies
+$(EBIN)/xmerl.beam:../include/xmerl.hrl
+$(EBIN)/xmerl_lib.beam:../include/xmerl.hrl
+$(EBIN)/xmerl_scan.beam:../include/xmerl.hrl
+$(EBIN)/xmerl_xlate.beam:../include/xmerl.hrl
+$(EBIN)/xmerl_xml.beam:../include/xmerl.hrl
+$(EBIN)/xmerl_html.beam:../include/xmerl.hrl
+$(EBIN)/xmerl_text.beam:../include/xmerl.hrl
+$(EBIN)/xmerl_eventp.beam:../include/xmerl.hrl
+$(EBIN)/xmerl_simple.beam:../include/xmerl.hrl
+$(EBIN)/xmerl_xpath.beam:../include/xmerl.hrl
+$(EBIN)/xmerl_xpath_pred.beam:../include/xmerl.hrl
+$(EBIN)/xmerl_xpath_scan.beam:../include/xmerl.hrl
+
+

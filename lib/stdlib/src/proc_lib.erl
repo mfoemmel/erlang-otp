@@ -407,16 +407,8 @@ get_process_info(Pid, Tag) ->
 
 translate_process_info(registered_name, []) ->
   {registered_name, []};
-translate_process_info(priority, {'EXIT', _}) ->
-  {priority, undefined};
-translate_process_info(group_leader, {'EXIT', _}) ->
-  {group_leader, undefined};
 translate_process_info(_ , {'EXIT', _}) ->
   undefined;
-translate_process_info(priority, undefined) ->
-  {priority, undefined};
-translate_process_info(group_leader, undefined) ->
-  {group_leader, undefined};
 translate_process_info(_, Result) ->
   Result.
 

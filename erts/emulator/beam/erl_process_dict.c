@@ -16,9 +16,9 @@
  *     $Id$
  */
 /*
-** Code for process dictionaries.
-**
-*/
+ * Code for process dictionaries.
+ *
+ */
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
@@ -83,13 +83,10 @@
 				 (PDict)->data[Index] : NIL)
 
 /*
-** Forward decalarations
-*/
+ * Forward decalarations
+ */
 static int pd_hash_erase(Process *p, Eterm id, Eterm *ret);
 static int pd_hash_erase_all(Process *p);
-/* NB, this interface is different from other bif implementations,
-   this is for speed and the fact that get cannot fail. */
-static Eterm pd_hash_get(Process *p, Eterm id); 
 static int pd_hash_get_keys(Process *p, Eterm value, Eterm *ret) ;
 static Eterm pd_hash_get_all(Process *p, ProcDict *pd);
 static int pd_hash_put(Process *p, Eterm id, Eterm value, Eterm *ret);
@@ -239,9 +236,9 @@ erts_erase_dicts(Process *p)
 }
 
 /* 
-** Called from process_info
-*/
-Eterm dictionary_copy(Process *p, ProcDict *pd) 
+ * Called from process_info
+ */
+Eterm erts_dictionary_copy(Process *p, ProcDict *pd) 
 {
     PD_CHECK(pd);
     return copy_object(pd_hash_get_all(p, pd), p);
@@ -264,9 +261,7 @@ BIF_RETTYPE get_1(BIF_ALIST_1)
 {
     Eterm ret;
     PD_CHECK(BIF_P->dictionary);
-    /* The pd_hash_get function can never ever fail, so 
-       a simple optimization is to use a simpler interface */
-    ret = pd_hash_get(BIF_P, BIF_ARG_1);
+    ret = erts_pd_hash_get(BIF_P, BIF_ARG_1);
     PD_CHECK(BIF_P->dictionary);
     BIF_RET(ret);
 }
@@ -409,7 +404,7 @@ static int pd_hash_erase(Process *p, Eterm id, Eterm *ret)
     old = ARRAY_GET(p->dictionary, hval);
     if (is_boxed(old)) {	/* Tuple */
 	ASSERT(is_tuple(old));
-	if (eq(tuple_val(old)[1], id)) {
+	if (EQ(tuple_val(old)[1], id)) {
 	    array_put(&(p->dictionary), hval, NIL);
 	    --(p->dictionary->numElements);
 	    *ret = tuple_val(old)[2];
@@ -417,7 +412,7 @@ static int pd_hash_erase(Process *p, Eterm id, Eterm *ret)
     } else if (is_list(old)) {
 	/* Find cons cell for identical value */
 	i = 0;
-	for (tmp = old; tmp != NIL && !eq(tuple_val(TCAR(tmp))[1], id); 
+	for (tmp = old; tmp != NIL && !EQ(tuple_val(TCAR(tmp))[1], id); 
 	     tmp = TCDR(tmp))
 	    ++i;
 	if (tmp != NIL) {
@@ -459,7 +454,7 @@ static int pd_hash_erase_all(Process *p)
     return PDICT_OK;
 }
 
-static Eterm pd_hash_get(Process *p, Eterm id) 
+Eterm erts_pd_hash_get(Process *p, Eterm id) 
 {
     unsigned int hval;
     Eterm tmp;
@@ -471,14 +466,16 @@ static Eterm pd_hash_get(Process *p, Eterm id)
     tmp = ARRAY_GET(pd, hval);
     if (is_boxed(tmp)) {	/* Tuple */
 	ASSERT(is_tuple(tmp));
-	if (eq(tuple_val(tmp)[1], id)) {
+	if (EQ(tuple_val(tmp)[1], id)) {
 	    return tuple_val(tmp)[2];
 	}
     } else if (is_list(tmp)) {
-	for (; tmp != NIL && !eq(tuple_val(TCAR(tmp))[1], id); tmp = TCDR(tmp))
+	for (; tmp != NIL && !EQ(tuple_val(TCAR(tmp))[1], id); tmp = TCDR(tmp)) {
 	    ;
-	if (tmp != NIL)
+	}
+	if (tmp != NIL) {
 	    return tuple_val(TCAR(tmp))[2];
+	}
     } else if (is_not_nil(tmp)) {
 #ifdef DEBUG
 	erl_printf(CERR,"Process dictionary for process %s is broken, "
@@ -487,7 +484,7 @@ static Eterm pd_hash_get(Process *p, Eterm id)
 	display(tmp,CERR);
 	erl_printf(CERR,"\n");
 #endif
-	erl_exit(1, "Damaged process dictionary foung during get/1.");
+	erl_exit(1, "Damaged process dictionary found during get/1.");
     }
     return am_undefined;
 }
@@ -510,14 +507,14 @@ static int pd_hash_get_keys(Process *p, Eterm value, Eterm *ret)
 	tmp = ARRAY_GET(pd, i);
 	if (is_boxed(tmp)) {
 	    ASSERT(is_tuple(tmp));
-	    if (eq(tuple_val(tmp)[2], value)) {
+	    if (EQ(tuple_val(tmp)[2], value)) {
 		hp = HAlloc(p, 2);
 		res = CONS(hp, tuple_val(tmp)[1], res);
 	    }
 	} else if (is_list(tmp)) {
 	    while (tmp != NIL) {
 		tmp2 = TCAR(tmp);
-		if (eq(tuple_val(tmp2)[2], value)) {
+		if (EQ(tuple_val(tmp2)[2], value)) {
 		    hp = HAlloc(p, 2);
 		    res = CONS(hp, tuple_val(tmp2)[1], res);
 		}
@@ -589,7 +586,7 @@ static int pd_hash_put(Process *p, Eterm id, Eterm value, Eterm *ret)
 	++(p->dictionary->numElements);
     } else if (is_boxed(old)) {
 	ASSERT(is_tuple(old));
-	if (eq(tuple_val(old)[1],id)) {
+	if (EQ(tuple_val(old)[1],id)) {
 	    array_put(&(p->dictionary), hval, tpl);
 	    *ret = tuple_val(old)[2];
 	} else {
@@ -602,7 +599,7 @@ static int pd_hash_put(Process *p, Eterm id, Eterm value, Eterm *ret)
     } else if (is_list(old)) {
 	/* Find cons cell for identical value */
 	i = 0;
-	for (tmp = old; tmp != NIL && !eq(tuple_val(TCAR(tmp))[1], id); 
+	for (tmp = old; tmp != NIL && !EQ(tuple_val(TCAR(tmp))[1], id); 
 	     tmp = TCDR(tmp))
 	    ++i;
 	if (is_nil(tmp)) {

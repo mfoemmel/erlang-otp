@@ -6,7 +6,7 @@
 #ifndef HIPE_SIGNAL_H
 #define HIPE_SIGNAL_H
 
-#ifdef __i386__
+#if defined(__i386__) || defined(__x86_64__)
 extern void hipe_signal_init(void);
 #else
 static __inline__ void hipe_signal_init(void) { }

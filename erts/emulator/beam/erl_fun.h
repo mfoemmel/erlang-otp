@@ -53,7 +53,9 @@ typedef struct erl_fun_entry {
 typedef struct erl_fun_thing {
     Eterm thing_word;		/* Subtag FUN_SUBTAG. */
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
     struct erl_fun_thing* next;	/* Next fun in mso list. */
+#endif
 #endif
     ErlFunEntry* fe;		/* Pointer to fun entry. */
 #ifdef HIPE
@@ -74,7 +76,6 @@ void erts_fun_info(CIO to);
 
 ErlFunEntry* erts_put_fun_entry(Eterm mod, int uniq, int index);
 ErlFunEntry* erts_get_fun_entry(Eterm mod, int uniq, int index);
-ErlFunEntry* erts_put_debug_fun_entry(Eterm mod, byte* uniq, int index);
 
 ErlFunEntry* erts_put_fun_entry2(Eterm mod, int old_uniq, int old_index,
 				byte* uniq, int index, int arity);
@@ -83,7 +84,9 @@ ErlFunEntry* erts_get_fun_entry2(Eterm mod, int old_uniq, int old_index,
 
 void erts_erase_fun_entry(ErlFunEntry* fe);
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
 void erts_cleanup_funs(ErlFunThing* funp);
+#endif
 #endif
 void erts_cleanup_funs_on_purge(Eterm* start, Eterm* end);
 void erts_dump_fun_entries(CIO fd);

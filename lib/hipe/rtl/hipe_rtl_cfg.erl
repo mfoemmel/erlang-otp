@@ -1,19 +1,28 @@
 -module(hipe_rtl_cfg).
 
--export([function/1,
-	 params/1, 
-	 params_update/2,
-	 arity/1,
+-export([init/1,
+         labels/1,
+	 params/1, params_update/2,
+         start_label/1,
+         succ/2, succ_map/1,
+         pred/2, pred_map/1,
+         bb/2,
+         bb_add/3,
+	 redirect/4,
+         remove_trivial_bbs/1,
+         remove_unreachable_code/1,
 	 linearize/1,
-	 is_branch/1,
-	 pp/2]).
+	 pp/1, pp/2]).
+-export([postorder/1, reverse_postorder/1]).
+
+-define(RTL_CFG,true).	% needed for cfg.inc below
 
 -include("../main/hipe.hrl").
 -include("../flow/cfg.inc").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
-%% CFG interface to rtl
+%% CFG interface to RTL.
 %%
 
 init(Rtl) ->
@@ -23,8 +32,6 @@ init(Rtl) ->
   Extra = [],
   CFG0 = mk_empty_cfg(hipe_rtl:rtl_fun(Rtl), 
 		      StartLabel, 
-		      hipe_rtl:rtl_var_range(Rtl),
-		      hipe_rtl:rtl_label_range(Rtl),
 		      hipe_rtl:rtl_data(Rtl),
 		      hipe_rtl:rtl_is_closure(Rtl),
 		      hipe_rtl:rtl_is_leaf(Rtl),
@@ -33,15 +40,15 @@ init(Rtl) ->
   CFG = hipe_rtl_cfg:info_update(CFG0, hipe_rtl:rtl_info(Rtl)),
   take_bbs(Code, CFG).
 
-
-%% True if instr has no effect.
+%% @spec is_comment(hipe_rtl:rtl_instruction()) -> bool()
+%% @doc  Succeeds if Instr has no effect.
 is_comment(Instr) ->
   hipe_rtl:is_comment(Instr).
 
-%% True if instr is just a jump (no sideeffects).
+%% @spec is_goto(hipe_rtl:rtl_instruction()) -> bool()
+%% @doc  Succeeds if Instr is just a jump (no side-effects).
 is_goto(Instr) ->
   hipe_rtl:is_goto(Instr).
-
 
 is_label(Instr) ->
   hipe_rtl:is_label(Instr).
@@ -49,11 +56,8 @@ is_label(Instr) ->
 label_name(Instr) ->
   hipe_rtl:label_name(Instr).
 
-label_annot(Lbl) ->
-  hipe_rtl:info(Lbl).
-
-mk_label(Name, Annot) ->
-  hipe_rtl:info_update(hipe_rtl:mk_label(Name), Annot).
+mk_label(Name) ->
+  hipe_rtl:mk_label(Name).
 
 mk_goto(Name) ->
   hipe_rtl:mk_goto(Name).
@@ -67,7 +71,7 @@ branch_successors(Instr) ->
     switch -> hipe_rtl:switch_labels(Instr);
     call -> 
       case hipe_rtl:call_fail(Instr) of
-	[] ->  [hipe_rtl:call_continuation(Instr)];
+	[] -> [hipe_rtl:call_continuation(Instr)];
 	Fail -> [hipe_rtl:call_continuation(Instr),Fail]
       end;
     goto -> [hipe_rtl:goto_label(Instr)];
@@ -110,7 +114,7 @@ redirect_ops([Label|Labels], CFG, Map) ->
   BB = bb(CFG, Label),
   Code = hipe_bb:code(BB),
   NewCode = [rewrite(I,Map) || I <- Code],
-  NewCFG = bb_update(CFG, Label,hipe_bb:code_update(BB, NewCode)),
+  NewCFG = bb_add(CFG, Label,hipe_bb:code_update(BB, NewCode)),
   redirect_ops(Labels, NewCFG, Map);
 redirect_ops([],CFG,_) -> CFG.
 
@@ -136,20 +140,34 @@ pp(Dev, CFG) ->
 
 linearize(CFG) ->
   Code = linearize_cfg(CFG),
-  Rtl = hipe_rtl:mk_rtl(
-	  function(CFG),
-	  params(CFG),
-	  is_closure(CFG),
-	  is_leaf(CFG),
-	  Code, 
-	  data(CFG),	 
-	  var_range(CFG), 
-	  label_range(CFG)),
+  Rtl = hipe_rtl:mk_rtl(function(CFG),
+			params(CFG),
+			is_closure(CFG),
+			is_leaf(CFG),
+			Code, 
+			data(CFG),	 
+			hipe_gensym:var_range(rtl), 
+			hipe_gensym:label_range(rtl)),
   hipe_rtl:rtl_info_update(Rtl, info(CFG)).
 
-
 %% XXX: Warning this arity might not be the true arity.
-%%      The true arity of a closure usually differ.
-arity(CFG) ->
-   {_M,_F,A} = function(CFG),
-   A.
+%%      The true arity of a closure usually differs.
+%% arity(CFG) ->
+%%    {_M,_F,A} = function(CFG),
+%%    A.
+
+%% init_gensym(CFG)->
+%%   HighestVar = find_highest_var(CFG),
+%%   HighestLabel = find_highest_label(CFG),
+%%   hipe_gensym:init(),
+%%   hipe_gensym:set_var(rtl, HighestVar),
+%%   hipe_gensym:set_label(rtl, HighestLabel).
+%% 
+%% highest_var(Code)->
+%%   hipe_rtl:highest_var(Code).
+
+is_phi(I) ->
+  hipe_rtl:is_phi(I).
+
+phi_remove_pred(I, _Pred) ->
+  I. %%hipe_rtl:phi_remove_pred(I, Pred).NYI

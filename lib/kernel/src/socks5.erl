@@ -52,8 +52,7 @@ do_open(Opts, TimeOut) ->
 		   Opts ++ [{active,false},{mode, list}], TimeOut) of
 		{ok, S} -> auth(S);
 		Error -> Error
-	    end;
-	Error -> Error
+	    end
     end.
 
 close(S) ->

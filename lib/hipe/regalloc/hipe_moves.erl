@@ -1,86 +1,64 @@
 %%%----------------------------------------------------------------------
-%%% File    : hipe_moves.erl
-%%% Author  : Thorild Selén <d95ths@zeppo.it.uu.se>
-%%%           Andreas Wallin <d96awa@zeppo.it.uu.se>
-%%%           Ingemar Åberg <d95ina@zeppo.it.uu.se>
-%%% Purpose : Keep track of 'copy' (move) instructions and place them
-%%%           in one of the move sets depending of their state. 
-%%% Created:  11 Mar 2000 by Thorild Selén <d95ths@zeppo.it.uu.se>
+%% File    : hipe_moves.erl
+%% Author  : Thorild Selén <d95ths@it.uu.se>
+%%           Andreas Wallin <d96awa@it.uu.se>
+%%           Ingemar Åberg <d95ina@it.uu.se>
+%% Purpose : Keep track of 'copy' (move) instructions and place them
+%%           in one of the move sets depending of their state. 
+%% Created:  11 Mar 2000 by Thorild Selén <d95ths@it.uu.se>
 %%%----------------------------------------------------------------------
 
 -module(hipe_moves).
 -author({"Thorild Selén", "Andreas Wallin", "Ingemar Åberg"}).
 -export([new/1,
-	 set_coalesced/2,
-	 set_constrained/2,
-	 set_frozen/2,
-	 set_worklist/2,
-	 set_active/2,
 	 set_movelist/2,
 	 movelist/1,
-	 coalesced/1,
-	 constrained/1,
-	 frozen/1,
 	 worklist/1,
-	 active/1,
 	 node_moves/2,
 	 move_related/2,
-	 is_empty/2,
-	 remove/3,
-	 add/3,
-	 member/3
-	]	 
-       ).
+	 is_empty_worklist/1,
+	 remove_worklist/2,
+	 remove_active/2,
+	 add_worklist/2,
+	 add_active/2,
+	 member_active/2
+	]).
 
--record(moves, {coalesced,   % Moves that are considered for coalescaing
-		constrained, % Moves whose source and target interference
-		frozen,      % Moves that will no longer we considered for coalescing
-		worklist,    % Moves enabled for possible coalescing
+-record(moves, {worklist,    % Moves enabled for possible coalescing
 		active,      % Moves not yet ready for coalescing
 		movelist     % Mapping from node to list of moves it's associated with
 	       }).
 
 %%%----------------------------------------------------------------------
-% Function:    coalesced,constrained,frozen,worklist,active,movelist
-%
-% Description: Selectors for moves structure
-%
-% Parameters:
-%   Moves          -- Moves structure
-%   
-% Returns:
-%   Selected set from the moves structure.
-%
+%% Function:    worklist,active,movelist
+%%
+%% Description: Selectors for moves structure
+%%
+%% Parameters:
+%%   Moves          -- Moves structure
+%%   
+%% Returns:
+%%   Selected set from the moves structure.
+%%
 %%%----------------------------------------------------------------------
 
-coalesced(Moves)   -> Moves#moves.coalesced.
-constrained(Moves) -> Moves#moves.constrained.
-frozen(Moves)      -> Moves#moves.frozen.
 worklist(Moves)    -> Moves#moves.worklist.
 active(Moves)      -> Moves#moves.active.
 movelist(Moves)    -> Moves#moves.movelist.
 
 
 %%%----------------------------------------------------------------------
-% Function:    set_coalesced, set_constrained, set_frozen, set_worklist, set_active, set_movelist
-%
-% Description: Modifiers for moves structure
-%
-% Parameters:
-%   Data-structure -- A data-structure you want to update the Moves 
-%                      structure with. Coalesced for example.
-%   Moves          -- Moves structure
-%   
-% Returns:
-%   Updated moves data-structure
-%
+%% Function:    set_worklist, set_active, set_movelist
+%%
+%% Description: Modifiers for moves structure
+%%
+%% Parameters:
+%%   Moves          -- Moves structure
+%%   
+%% Returns:
+%%   Updated moves data-structure
+%%
 %%%----------------------------------------------------------------------
-set_coalesced(New_coalesced, Moves) ->
-    Moves#moves{coalesced = New_coalesced}.
-set_constrained(New_constrained, Moves) ->
-    Moves#moves{constrained = New_constrained}.
-set_frozen(New_frozen, Moves) ->
-    Moves#moves{frozen = New_frozen}.
 set_worklist(New_worklist, Moves) ->
     Moves#moves{worklist = New_worklist}.
 set_active(New_active, Moves) ->
@@ -105,10 +83,7 @@ set_movelist(New_movelist, Moves) ->
 %%%----------------------------------------------------------------------
 
 new(IG) ->
-    #moves{coalesced   = gb_sets:new(),
-	   constrained = gb_sets:new(),
-	   frozen      = gb_sets:new(),
-	   worklist    = hipe_ig_moves:worklist_moves(hipe_ig:ig_moves(IG)),
+    #moves{worklist    = hipe_ig_moves:worklist_moves(hipe_ig:ig_moves(IG)),
 	   active      = gb_sets:new(),
 	   movelist    = hipe_ig_moves:movelist(hipe_ig:ig_moves(IG))}.
 
@@ -119,9 +94,6 @@ new(IG) ->
 % Description: Removes Element from one of the sets.
 %
 % Parameters:
-%    moveset       --  The set you want to remove Element from. Can be
-%                       one of the these atoms coalesced, constrained,
-%                       frozen, worklist, active, movelist
 %    Element       --  The element you want to remove from selected set
 %    Moves         --  A moves data structure
 %   
@@ -130,19 +102,11 @@ new(IG) ->
 %    selected set.
 %
 %%%----------------------------------------------------------------------
-remove(coalesced, Element, Moves) ->
-    set_coalesced(gb_sets:del_element(Element, coalesced(Moves)), Moves);
-remove(constrained, Element, Moves) ->
-    set_constrained(gb_sets:del_element(Element, constrained(Moves)), Moves);
-remove(frozen, Element, Moves) ->
-    set_frozen(gb_sets:del_element(Element, frozen(Moves)), Moves);
-remove(worklist, Element, Moves) ->
-    set_worklist(ordsets:del_element(Element, worklist(Moves)), Moves);
-remove(active, Element, Moves) ->
-    set_active(gb_sets:del_element(Element, active(Moves)), Moves);
-remove(movelist, Element, Moves) -> 
-    set_movelist(ordsets:del_element(Element, movelist(Moves)), Moves).
+remove_worklist(Element, Moves) ->
+    set_worklist(ordsets:del_element(Element, worklist(Moves)), Moves).
 
+remove_active(Element, Moves) ->
+    set_active(gb_sets:del_element(Element, active(Moves)), Moves).
 
 %%%----------------------------------------------------------------------
 % Function:    add
@@ -150,9 +114,6 @@ remove(movelist, Element, Moves) ->
 % Description: Adds Element to one of the sets.
 %
 % Parameters:
-%    moveset       --  The set you want to add Element to. Can be
-%                       one of the these atoms coalesced, constrained,
-%                       frozen, worklist, active, movelist
 %    Element       --  The element you want to add to selected set
 %    Moves         --  A moves data structure
 %   
@@ -161,19 +122,11 @@ remove(movelist, Element, Moves) ->
 %    selected set.
 %
 %%%----------------------------------------------------------------------
-add(coalesced, Element, Moves) ->
-    set_coalesced(gb_sets:add_element(Element, coalesced(Moves)), Moves);
-add(constrained, Element, Moves) ->
-    set_constrained(gb_sets:add_element(Element, constrained(Moves)), Moves);
-add(frozen, Element, Moves) ->
-    set_frozen(gb_sets:add_element(Element, frozen(Moves)), Moves);
-add(worklist, Element, Moves) ->
-    set_worklist(ordsets:add_element(Element, worklist(Moves)), Moves);
-add(active, Element, Moves) ->
-    set_active(gb_sets:add_element(Element, active(Moves)), Moves);
-add(movelist, Element, Moves) ->
-    set_movelist(gb_sets:add_element(Element, movelist(Moves)), Moves).
+add_worklist(Element, Moves) ->
+    set_worklist(ordsets:add_element(Element, worklist(Moves)), Moves).
 
+add_active(Element, Moves) ->
+    set_active(gb_sets:add_element(Element, active(Moves)), Moves).
 
 %%%----------------------------------------------------------------------
 % Function:    member
@@ -181,9 +134,6 @@ add(movelist, Element, Moves) ->
 % Description: Finds out if Element is a member of a selected set
 %
 % Parameters:
-%    moveset       --  The set you want to know if Element if part of. 
-%                       Can be one of the these atoms coalesced, 
-%                       constrained, frozen, worklist, active, movelist
 %    Element       --  The element you want to add to selected set
 %    Moves         --  A moves data structure
 %   
@@ -192,19 +142,8 @@ add(movelist, Element, Moves) ->
 %   false --  Otherwise
 %
 %%%----------------------------------------------------------------------
-member(coalesced, Element, Moves) -> 
-   gb_sets:is_element(Element, coalesced(Moves));
-member(constrained, Element, Moves) ->
-    gb_sets:is_element(Element, constrained(Moves));
-member(frozen, Element, Moves) ->
-    gb_sets:is_element(Element, frozen(Moves));
-member(worklist, Element, Moves) ->
-    ordsets:is_element(Element, worklist(Moves));
-member(active, Element, Moves) ->
-    gb_sets:is_element(Element, active(Moves));
-member(movelist, Element, Moves) ->
-    ordsets:is_element(Element, movelist(Moves)).
-
+member_active(Element, Moves) ->
+    gb_sets:is_element(Element, active(Moves)).
 
 %%%----------------------------------------------------------------------
 % Function:    is_empty
@@ -212,9 +151,6 @@ member(movelist, Element, Moves) ->
 % Description: Checks if a set is empty or not.
 %
 % Parameters:
-%    moveset       --  The set you want to know if it's empty. 
-%                       Can be one of the these atoms coalesced, 
-%                       constrained, frozen, worklist, active, movelist
 %    Moves         --  A moves data structure
 %   
 % Returns:
@@ -222,19 +158,8 @@ member(movelist, Element, Moves) ->
 %   false --  Otherwise
 %
 %%%----------------------------------------------------------------------
-is_empty(coalesced, Moves) ->
-    gb_sets:is_empty(coalesced(Moves));
-is_empty(constrained, Moves) ->
-    gb_sets:is_empty(constrained(Moves));
-is_empty(frozen, Moves) ->
-    gb_sets:is_empty(frozen(Moves));
-is_empty(worklist, Moves) ->
-    worklist(Moves) == [];
-is_empty(active, Moves) ->
-    gb_sets:is_empty(active(Moves));
-is_empty(movelist, Moves) ->
-    movelist(Moves) == [].
-
+is_empty_worklist(Moves) ->
+    worklist(Moves) == [].
 
 %%%----------------------------------------------------------------------
 %% Function:    node_moves

@@ -16,7 +16,7 @@
 %%     $Id$
 %%
 -module(systools_rc).
--export([translate_scripts/2, translate_scripts/3, format_error/1]).
+-export([translate_scripts/3, translate_scripts/4, format_error/1]).
 
 -include("systools.hrl").
 
@@ -52,7 +52,6 @@
 %% {sync_nodes, Id, {M, F, A}}
 %% {sync_nodes, Id, Nodes}
 %% {apply, {M, F, A}}
-%% application_remove
 %% restart_new_emulator
 %%-----------------------------------------------------------------
 
@@ -61,26 +60,69 @@
 -define(DEP_INSTRS, [update, load_module, add_module, remove_module]).
 
 %%-----------------------------------------------------------------
-%% translate_scripts(Scripts, Appls) -> {ok, LowLevelScript} | 
-%%					{error, ?MODULE, Reason}
-%% translate_scripts(Mode, Scripts, Appls) ->
+%% translate_scripts(Scripts, Appls, PreAppls) -> Res
 %% Mode = up | dn
 %% Scripts = [AppupScript]
-%% Appls = [#application]
+%% Appls = PreAppls = [#application]
+%% Res = {ok, LowLevelScript} | {error, ?MODULE, Reason}
 %%-----------------------------------------------------------------
-translate_scripts(Scripts, Appls) ->
-    translate_scripts(up, Scripts, Appls).
+translate_scripts(Scripts, Appls, PreAppls) ->
+    translate_scripts(up, Scripts, Appls, PreAppls).
 
-translate_scripts(Mode, Scripts, Appls) ->
-    case catch do_translate_scripts(Mode, Scripts, Appls) of
+translate_scripts(Mode, Scripts, Appls, PreAppls) ->
+    Scripts2 = expand_scripts(Scripts),
+    case catch do_translate_scripts(Mode, Scripts2, Appls, PreAppls) of
 	{ok, NewScript} -> {ok, NewScript};
 	{error, Reason} -> {error, ?MODULE, Reason};
 	{'EXIT', Reason} -> {error, ?MODULE, Reason}
     end.
 
-do_translate_scripts(Mode, Scripts, Appls) ->
+expand_scripts([Script|Scripts]) ->
+    [expand_script(Script)|expand_scripts(Scripts)];
+expand_scripts([]) ->
+    [].
+
+expand_script([I|Script]) ->
+    I2 = case I of
+	     {load_module, Mod} ->
+		 {load_module, Mod, brutal_purge, brutal_purge, []};
+	     {load_module, Mod, Mods} when is_list(Mods) ->
+		 {load_module, Mod, brutal_purge, brutal_purge, Mods};
+	     {update, Mod} ->
+		 {update, Mod, soft, brutal_purge, brutal_purge, []};
+	     {update, Mod, supervisor} ->
+		 {update, Mod, static, default, {advanced,[]},
+		  brutal_purge, brutal_purge, []};
+	     {update, Mod, Change} when is_tuple(Change) ->
+		 {update, Mod, Change, brutal_purge, brutal_purge, []};
+	     {update, Mod, Change} when Change==soft ->
+		 {update, Mod, Change, brutal_purge, brutal_purge, []};
+	     {update, Mod, Mods} when is_list(Mods) ->
+		 {update, Mod, soft, brutal_purge, brutal_purge, Mods};
+	     {update, Mod, Change, Mods} when is_tuple(Change),
+					      is_list(Mods) ->
+		 {update, Mod, Change, brutal_purge,brutal_purge, Mods};
+	     {update, Mod, Change, Mods} when Change==soft,
+					      is_list(Mods) ->
+		 {update, Mod, Change, brutal_purge,brutal_purge, Mods};
+	     {delete_module, Mod} ->
+		 [{remove, {Mod, brutal_purge, brutal_purge}},
+		  {purge, [Mod]}];
+	     _ ->
+		 I
+	 end,
+    if
+	is_list(I2) ->
+	    I2 ++ expand_script(Script);
+	true ->
+	    [I2|expand_script(Script)]
+    end;
+expand_script([]) ->
+    [].
+
+do_translate_scripts(Mode, Scripts, Appls, PreAppls) ->
     MergedScript = merge_scripts(Scripts),
-    translate_merged_script(Mode, MergedScript, Appls).
+    translate_merged_script(Mode, MergedScript, Appls, PreAppls).
 
 %%-----------------------------------------------------------------
 %% All check_ functions performs checks, and throws {error, Reason}
@@ -89,13 +131,13 @@ do_translate_scripts(Mode, Scripts, Appls) ->
 %% point_of_no_return.  In Before, only load_object_code and apply are
 %% allowed.
 %% %%-----------------------------------------------------------------
-translate_merged_script(Mode, Script, Appls) ->
+translate_merged_script(Mode, Script, Appls, PreAppls) ->
     check_syntax(Script),
     Script1 = normalize_instrs(Script),
     {Before, After} = split_script(Script1),
     check_script(Before, After),
 
-    {Before1, After1} = translate_independent_instrs(Before, After, Appls),
+    {Before1, After1} = translate_independent_instrs(Before, After, Appls, PreAppls),
     {Before2, After2} = translate_dependent_instrs(Mode, Before1, After1, 
 						  Appls),
     Before3 = merge_load_object_code(Before2),
@@ -191,7 +233,7 @@ find_object_code(Mod, [{load_object_code, {_, _, Mods}} | T]) ->
     end;
 find_object_code(Mod, [_|T]) ->
     find_object_code(Mod, T);
-find_object_code(Mod, []) ->
+find_object_code(_Mod, []) ->
     false.
 
 %%-----------------------------------------------------------------
@@ -260,18 +302,18 @@ normalize_instrs(Script) ->
 %% TRANSLATION OF INDEPENDENT INSTRUCTIONS
 %%-----------------------------------------------------------------
 
-%% translate_independent_instrs(Before, After, Appls) -> 
+%% translate_independent_instrs(Before, After, Appls, PreAppls) -> 
 %%						{NBefore, NAfter}
 %%
-translate_independent_instrs(Before, After, Appls) -> 
-    After1 = translate_application_instrs(After, Appls),
-    translate_add_module_instrs(Before, After1, Appls).
+translate_independent_instrs(Before, After, Appls, PreAppls) -> 
+    After1 = translate_application_instrs(After, Appls, PreAppls),
+    translate_add_module_instrs(Before, After1).
 
 %%-----------------------------------------------------------------
 %% Translates add_application, remove_application  and restart_application
-%% into add_module, application_remove and apply.
+%% into add_module, remove, purge and apply.
 %%-----------------------------------------------------------------
-translate_application_instrs(Script, Appls) ->
+translate_application_instrs(Script, Appls, PreAppls) ->
     %% io:format("Appls ~n~p~n",[Appls]),
     L = lists:map(
 	  fun({add_application, Appl}) ->
@@ -279,10 +321,8 @@ translate_application_instrs(Script, Appls) ->
 		      {value, Application} ->
 			  Mods =
 			      remove_vsn(Application#application.modules),
-			  App = systools_make:pack_app(Application),
 			  [{add_module, M, []} || M <- Mods] ++
-			      [{apply, {application, load, [App]}},
-			       {apply, {application, start,
+			      [{apply, {application, start,
 					[Appl, permanent]}}];
 		      false ->
 			  throw({error, {no_such_application, Appl}})
@@ -294,23 +334,39 @@ translate_application_instrs(Script, Appls) ->
 			  throw({error, {removed_application_present,
 					 Appl}});
 		      false ->
-			  [{apply, {application, stop, [Appl]}},
-			   {application_remove, Appl},
-			   {apply, {application, unload, [Appl]}}]
+			  ignore
+		  end,
+		  case lists:keysearch(Appl, #application.name, PreAppls) of
+		      {value, RemApplication} ->
+			  Mods = remove_vsn(RemApplication#application.modules),
+			  [{apply, {application, stop, [Appl]}}] ++
+			      [{remove, {M, brutal_purge, brutal_purge}} || M <- Mods] ++
+			      [{purge, Mods},
+			       {apply, {application, unload, [Appl]}}];
+		      false ->
+			  throw({error, {no_such_application, Appl}})
 		  end;
 	     ({restart_application, Appl}) ->
-		  case lists:keysearch(Appl, #application.name, Appls) of
-		      {value, Application} ->
-			  Mods =
-			      remove_vsn(Application#application.modules),
-			  App = systools_make:pack_app(Application),
-			  [{apply, {application, stop, [Appl]}},
-			   {application_remove, Appl},
-			   {apply, {application, unload, [Appl]}}] ++
-			      [{add_module, M, []} || M <- Mods] ++
-			      [{apply, {application, load, [App]}},
-			       {apply, {application, start,
-					[Appl, permanent]}}];
+		  case lists:keysearch(Appl, #application.name, PreAppls) of
+		      {value, PreApplication} ->
+			  PreMods =
+			      remove_vsn(PreApplication#application.modules),
+
+			  case lists:keysearch(Appl, #application.name, Appls) of
+			      {value, PostApplication} ->
+				  PostMods =
+				      remove_vsn(PostApplication#application.modules),
+				  
+				  [{apply, {application, stop, [Appl]}}] ++
+				      [{remove, {M, brutal_purge, brutal_purge}} || M <- PreMods] ++
+				      [{purge, PreMods}] ++
+				      [{add_module, M, []} || M <- PostMods] ++
+				      [{apply, {application, start,
+						[Appl, permanent]}}];
+			      false ->
+				  throw({error, {no_such_application, Appl}})
+			  end;
+
 		      false ->
 			  throw({error, {no_such_application, Appl}})
 		  end;
@@ -319,14 +375,14 @@ translate_application_instrs(Script, Appls) ->
     lists:flatten(L).
 
 remove_vsn(Mods) ->
-    lists:map(fun({Mod, Vsn}) -> Mod;
+    lists:map(fun({Mod, _Vsn}) -> Mod;
 		 (Mod) -> Mod
 	      end, Mods).
 
 %%-----------------------------------------------------------------
 %% Translates add_module into load_module (high-level transformation)
 %%-----------------------------------------------------------------
-translate_add_module_instrs(Before, After, Appls) ->
+translate_add_module_instrs(Before, After) ->
     NAfter = lists:map(
 	       fun({add_module, Mod, Mods}) -> 
 		       %% Purge method really doesn't matter. Module
@@ -374,7 +430,7 @@ translate_dep_loop(G, WCs, [I| Is], Appls, Before, After, Mode)
     end;
 translate_dep_loop(G, WCs, [I| Is], Appls, Before, After, Mode) ->
     translate_dep_loop(G, WCs, Is, Appls, Before, After ++ [I], Mode);  % hmm
-translate_dep_loop(G, WCs, [], Appls, Before, After, Mode) ->
+translate_dep_loop(_G, _WCs, [], _Appls, Before, After, _Mode) ->
     {Before, After}.
 
 
@@ -417,7 +473,7 @@ make_dependency_graph(Instructions) ->
 	      lists:foreach(
 		fun(M) ->
 			case digraph:add_edge(G, Mod, M) of
-			    {error, Reason} ->
+			    {error, _Reason} ->
 				throw({error, {undef_module, M}});
 			    _ ->
 				ok
@@ -614,9 +670,9 @@ merge_load_object_code(Before) ->
     mlo(Found) ++ Rest.
 
 mlo([{load_object_code, {Lib, LibVsn, Mods}} | T]) ->
-    {Same, Other} = split(fun({load_object_code, {Lib2, LibVsn2, Mods2}})
+    {Same, Other} = split(fun({load_object_code, {Lib2, LibVsn2, _Mods2}})
 			       when Lib == Lib2, LibVsn == LibVsn2 -> true;
-			     ({load_object_code, {Lib2, LibVsn2, Mods2}})
+			     ({load_object_code, {Lib2, LibVsn2, _Mods2}})
 			       when Lib == Lib2 ->
 				  throw({error, {conflicting_versions,
 						 Lib, LibVsn, LibVsn2}});
@@ -726,13 +782,13 @@ check_op({resume, Mods}) ->
     lists:foreach(fun(M) -> check_mod(M) end, Mods);
 check_op({code_change, Mods}) ->
     check_list(Mods),
-    lists:foreach(fun({M, Extra}) -> check_mod(M);
+    lists:foreach(fun({M, _Extra}) -> check_mod(M);
 		     (X) -> throw({error, {bad_code_change, X}})
 		  end, Mods);
 check_op({code_change, Mode, Mods}) ->
     check_list(Mods),
     check_mode(Mode),
-    lists:foreach(fun({M, Extra}) -> check_mod(M);
+    lists:foreach(fun({M, _Extra}) -> check_mod(M);
 		     (X) -> throw({error, {bad_code_change, X}})
 		  end, Mods);
 check_op({stop, Mods}) ->
@@ -741,11 +797,11 @@ check_op({stop, Mods}) ->
 check_op({start, Mods}) ->
     check_list(Mods),
     lists:foreach(fun(M) -> check_mod(M) end, Mods);
-check_op({sync_nodes, Id, {M, F, A}}) ->
+check_op({sync_nodes, _Id, {M, F, A}}) ->
     check_mod(M),
     check_func(F),
     check_args(A);
-check_op({sync_nodes, Id, Nodes}) ->
+check_op({sync_nodes, _Id, Nodes}) ->
     check_list(Nodes),
     lists:foreach(fun(Node) -> check_node(Node) end, Nodes);
 check_op({apply, {M, F, A}}) ->
@@ -753,7 +809,6 @@ check_op({apply, {M, F, A}}) ->
     check_func(F),
     check_args(A);
 check_op(restart_new_emulator) -> ok;
-check_op({application_remove,Appl}) -> ok;
 check_op(X) -> throw({error, {bad_instruction, X}}).
 
 check_mod(Mod) when atom(Mod) -> ok;
@@ -891,7 +946,7 @@ split(Fun, [H | T]) ->
 	true -> {[H | Found], Rest};
 	false -> {Found, [H | Rest]}
     end;
-split(Fun, []) ->
+split(_Fun, []) ->
     {[], []}.
 
 union([H|T], L) ->

@@ -223,8 +223,7 @@ set_new_sort_col(SortCol, ProcVars) ->
 		       col_mark_params = ColMarkP} = ProcVars,
     
     #col_mark_params{col_btn_id         = MarkedColBtnId,
-		     sort_btn_id        = OldSortBtnId,
-		     virtual_col_marked = ColMarked}  = ColMarkP,
+		     sort_btn_id        = OldSortBtnId}  = ColMarkP,
     
        % Set the new color of the sort btn, and remove the mark, if it is the same
        % column!
@@ -331,7 +330,7 @@ update_keys(KeyList, ProcVars) ->
 
 unmark_sort_col(undefined, _ColMarked, _SortCol) ->
     done;
-unmark_sort_col(SortBtnId, ColMarked, SortCol) ->
+unmark_sort_col(SortBtnId, _ColMarked, _SortCol) ->
     gs:config(SortBtnId, [{bg, ?DEFAULT_BG_COLOR},
 			  {fg, {0, 0, 0}}
 			 ]).
@@ -353,7 +352,7 @@ unmark_sort_col(SortBtnId, ColMarked, SortCol) ->
 %%======================================================================
 
 
-mark_marked_col(HbtnsShown, FirstColShown, ColMarkP) ->
+mark_marked_col(HbtnsShown, _FirstColShown, ColMarkP) ->
     #col_mark_params{virtual_col_marked = VirtualCol,
 		     virtual_sort_col   = SortCol} = ColMarkP,
 
@@ -412,7 +411,7 @@ mark_marked_col(HbtnsShown, FirstColShown, ColMarkP) ->
 
 unmark_marked_col(undefined, _ColMarked, _SortCol) ->
     done;
-unmark_marked_col(BtnId, ColMarked, SortCol) ->
+unmark_marked_col(BtnId, _ColMarked, _SortCol) ->
     gs:config(BtnId, [{bg, ?DEFAULT_BG_COLOR},
 		      {fg, {0,0,0}}
 		     ]).
@@ -435,8 +434,7 @@ unmark_marked_col(BtnId, ColMarked, SortCol) ->
 
 
 update_sort_btn_mark(ProcVars) ->
-    #process_variables{first_col_shown = FirstColShown,
-		       hbtns_shown     = HbtnsShown,
+    #process_variables{hbtns_shown     = HbtnsShown,
 		       col_mark_params = ColMarkP}  = ProcVars,
 
     #col_mark_params{col_btn_id         = MarkedColBtnId,
@@ -515,11 +513,11 @@ set_sort_btn_color(undefined, SortCol, HbtnsShown) ->
 	    gs:config(BtnId, [{bg, ?SORT_MARK_COLOR}]),
 	    BtnId
     end;
-set_sort_btn_color(BtnId, undefined, HbtnsShown) ->
+set_sort_btn_color(BtnId, undefined, _HbtnsShown) ->
     gs:config(BtnId, [{bg, ?DEFAULT_BG_COLOR}]);
 set_sort_btn_color(OldSortBtnId, SortCol, HbtnsShown) ->
     case gs:read(OldSortBtnId, bg) of 
-	SortBtnColor ->
+	SortCol ->
 	       % Btn is already marked!
 	    OldSortBtnId;
 	_OtherColor ->
@@ -554,12 +552,12 @@ set_sort_btn_color(OldSortBtnId, SortCol, HbtnsShown) ->
 %%======================================================================
 
 
-update_vbtns(N, NofRowsShown, VirtualRowNo,
-	     Vbtns, Colors, BlinkEnabled, BlinkList) when N > NofRowsShown ->
+update_vbtns(N, NofRowsShown, _VirtualRowNo,
+	     _Vbtns, _Colors, _BlinkEnabled, _BlinkList) when N > NofRowsShown ->
     done;
-update_vbtns(N, _NofRowsShown, VirtualRowNo, [], [], BlinkEnabled, BlinkList) ->
+update_vbtns(_N, _NofRowsShown, _VirtualRowNo, [], [], _BlinkEnabled, _BlinkList) ->
     done;
-update_vbtns(N, _NofRowsShown, VirtualRowNo, [], Colors, BlinkEnabled, BlinkList) ->
+update_vbtns(_N, _NofRowsShown, _VirtualRowNo, [], _Colors, _BlinkEnabled, _BlinkList) ->
        % Right now we don't bother with dynamically creating row buttons:
        % we ought too know in advance the maximum number of rows that can
        % be visible.
@@ -691,12 +689,12 @@ create_vbtns(ParentId, Ypos, NofRows, RowHeight, VbtnW, HbtnH) ->
 %%======================================================================
 
 
-create_vbtns(N, NofRows, RowHeight, _ParId, VbtnW, _Ypos, VAcc) when N > NofRows ->
+create_vbtns(N, NofRows, _RowHeight, _ParId, _VbtnW, _Ypos, VAcc) when N > NofRows ->
     lists:reverse(VAcc);
 create_vbtns(N, NofRows, RowHeight, ParId, VbtnW, Ypos, VAcc) ->
     VHeight = RowHeight + 1,
-    VInfo   = create_one_vbtn(ParId, RowHeight + 1, VbtnW, Ypos, N),
-    create_vbtns(N + 1, NofRows, RowHeight, ParId, VbtnW, Ypos + RowHeight + 1, 
+    VInfo   = create_one_vbtn(ParId, VHeight, VbtnW, Ypos, N),
+    create_vbtns(N + 1, NofRows, RowHeight, ParId, VbtnW, Ypos + VHeight,
 		 [VInfo | VAcc]).
     
 
@@ -752,8 +750,8 @@ create_one_vbtn(ParentId, Height, VbtnW, Ypos, N) ->
 %%======================================================================
 
 
-update_hbtns([], HBtnsShown, 
-	     ResBtns, VirtualColNo, FrId, Ypos, HbtnH, ResBtnW, VbtnW) ->
+update_hbtns([], _HBtnsShown, 
+	     _ResBtns, _VirtualColNo, _FrId, _Ypos, _HbtnH, _ResBtnW, _VbtnW) ->
     {[], []};
 update_hbtns(ColsShown, HBtns, 
 	     ResBtns, VirtualColNo, FrId, Ypos, HbtnH, ResBtnW, VbtnW) ->
@@ -778,8 +776,8 @@ update_hbtns(ColsShown, HBtns,
 %%======================================================================
 
 
-update_hbtns(N, [], 
-	     [], [], HbtnH, ResBtnW, VbtnW, ColNo, FrId, Xpos, Ypos, HAcc, RAcc) ->
+update_hbtns(_N, [], 
+	     [], [], _HbtnH, _ResBtnW, _VbtnW, _ColNo, _FrId, _Xpos, _Ypos, HAcc, RAcc) ->
     {lists:reverse(HAcc), lists:reverse(RAcc)};
 
 update_hbtns(N, [], [HInfo | HT], [RInfo | RT],  
@@ -792,7 +790,7 @@ update_hbtns(N, [], [HInfo | HT], [RInfo | RT],
 		 Xpos, Ypos, HAcc, RAcc);
 
 update_hbtns(1, [ColW | T], [], [],  
-	     HbtnH, ResBtnW, VbtnW, ColNo, FrId, Xpos, Ypos, HAcc, RAcc) ->
+	     HbtnH, ResBtnW, VbtnW, ColNo, FrId, _Xpos, Ypos, HAcc, RAcc) ->
        % The first button has to be bigger than the others.
     {HInfo, RInfo} = create_one_hbtn_and_resbtn(FrId, ColW - 2, 
 						HbtnH, VbtnW - 1, 
@@ -811,7 +809,7 @@ update_hbtns(N, [ColW | T], [], [],
 		 [RInfo | RAcc]);
 
 update_hbtns(1, [ColW | T], [HInfo | HT], [RInfo | RT], 
-	     HbtnH, ResBtnW, VbtnW, ColNo, FrId, Xpos, Ypos, HAcc, RAcc) ->
+	     HbtnH, ResBtnW, VbtnW, ColNo, FrId, _Xpos, Ypos, HAcc, RAcc) ->
     {NewHInfo, NewRInfo} = config_one_hbtn_and_resbtn(HInfo, RInfo, 
 						      ColW - 2, 
 						      VbtnW - 1, 
@@ -942,7 +940,7 @@ config_one_hbtn_and_resbtn(HInfo, RInfo, HWidth, HXpos, N, ColNo) ->
 %%======================================================================
 
 
-update_keys([], [], FirstCol, LastCol, HBtns, ParentId, KeyIdsAcc) ->
+update_keys([], [], _FirstCol, _LastCol, _HBtns, _ParentId, KeyIdsAcc) ->
     lists:reverse(KeyIdsAcc);
 
 update_keys([], [KeyId | IdT], FirstCol, LastCol, HBtns, ParentId, KeyIdsAcc) ->
@@ -952,12 +950,12 @@ update_keys([], [KeyId | IdT], FirstCol, LastCol, HBtns, ParentId, KeyIdsAcc) ->
 
 update_keys([KeyNo | KT], [], FirstCol, LastCol, 
 	    HBtns,ParentId,  KeyIdsAcc) when KeyNo >= FirstCol, KeyNo =< LastCol ->
-    {Width, Xpos} = get_keywidth_and_pos(KeyNo, FirstCol, HBtns),
+    {_Width, Xpos} = get_keywidth_and_pos(KeyNo, FirstCol, HBtns),
     NewKeyId = create_key(ParentId, Xpos, 1),
     update_keys(KT, [], FirstCol, LastCol, HBtns, ParentId, 
 		[NewKeyId | KeyIdsAcc]);
 
-update_keys([KeyNo | KT], [], FirstCol, LastCol, HBtns, ParentId, KeyIdsAcc) ->
+update_keys([_KeyNo | KT], [], FirstCol, LastCol, HBtns, ParentId, KeyIdsAcc) ->
     update_keys(KT, [], FirstCol, LastCol, HBtns, ParentId, 
 		KeyIdsAcc);
 
@@ -970,7 +968,7 @@ update_keys([KeyNo | KT], [KeyId | IdT], FirstCol, LastCol,
     update_keys(KT, IdT, FirstCol, LastCol, HBtns, ParentId, 
 		[KeyId | KeyIdsAcc]);
 
-update_keys([KeyNo | KT], 
+update_keys([_KeyNo | KT], 
 	    [KeyId | IdT], FirstCol, LastCol, HBtns, ParentId, KeyIdsAcc) ->
     update_keys(KT, [KeyId | IdT], FirstCol, LastCol, HBtns, ParentId, 
 		KeyIdsAcc).
@@ -997,8 +995,7 @@ update_keys([KeyNo | KT],
 get_keywidth_and_pos(VirtualCol, FirstCol, HBtns) ->
     RealColNo = VirtualCol - FirstCol + 1,
     HBtnR = lists:nth(RealColNo, HBtns),
-    #hbtn{real_col = RealCol,
-	  width = Width,
+    #hbtn{width = Width,
 	  xpos  = Xpos}  = HBtnR,
     KeyWidth = 10,
        % Compute the x position for the key!
@@ -1024,7 +1021,6 @@ get_keywidth_and_pos(VirtualCol, FirstCol, HBtns) ->
 
 create_key(ParentId, Xpos, Ypos) ->
     PicDir = code:priv_dir(tv),
-    KeyColor = ?BLACK,
     C = gs:canvas(ParentId, [{width, 10},
 			     {height, 18},
 			     {x, Xpos},

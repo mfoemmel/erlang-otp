@@ -39,7 +39,7 @@ typedef struct db_table_hash {
     int slot;                 /* slot in db_tables */
     int keypos;               /* defaults to 1 */
     int nitems;               /* Total number of items */
-    Uint memory;               /* Total memory size */
+    Uint memory_size;         /* Total memory size. NOTE: in bytes! */
     int kept_items;           /* Number of kept elements due to fixation */
     Uint megasec,sec,microsec; /* Last fixation time */
     DbFixation *fixations;     /* List of processes who have fixed 

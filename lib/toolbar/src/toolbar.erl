@@ -58,7 +58,7 @@ start() ->
 	    PidInit = spawn (toolbar, init, [self ()]),
 	    init_ok (PidInit);
 
-	Pid ->
+	_Pid ->
 	    already_started
     end.
 
@@ -335,7 +335,7 @@ add_tools2(Window,[ToolFile|Rest]) ->
     case add_tool(Window,ToolFile) of
 	{ok,NewWindow} ->
 	    add_tools2(NewWindow,Rest);
-	{error,Reason} ->
+	{error,_Reason} ->
 	    add_tools2(Window,Rest)
     end;
 add_tools2(Window,[]) ->
@@ -480,7 +480,7 @@ tool_info2(Dir,[{icon,Icon}|Rest],TI) ->
 	    case toolbar_lib:legal_file(File) of
 		ok ->
 		    tool_info2(Dir,Rest,TI#toolinfo{icon=File});
-		Error ->
+		_Error ->
 		    %% LOG File does not exist or cannot be read
 		    tool_info2(Dir,Rest,TI)
 	    end;
@@ -518,7 +518,7 @@ tool_info2(Dir,[{html,Html}|Rest],TI) ->
     end;
 
 %%% Info has been traversed
-tool_info2(Dir,[],ToolInfo) ->
+tool_info2(_Dir,[],ToolInfo) ->
     {ok,ToolInfo}.
 		       
 %----------------------------------------

@@ -57,13 +57,13 @@ is_literal(#c_cons{hd=H,tl=T}) ->
 	false -> false
     end;
 is_literal(#c_tuple{es=Es}) -> is_literal_list(Es);
-is_literal(#c_binary{segs=Es}) -> is_lit_bin(Es);
+is_literal(#c_binary{segments=Es}) -> is_lit_bin(Es);
 is_literal(E) -> is_atomic(E).
 
 is_literal_list(Es) -> lists:all(fun is_literal/1, Es).
 
 is_lit_bin(Es) ->
-    lists:all(fun (#c_bin_seg{val=E,size=S}) ->
+    lists:all(fun (#c_bitstr{val=E,size=S}) ->
 		      is_literal(E) and is_literal(S)
 	      end, Es).
 
@@ -76,13 +76,13 @@ is_simple(#c_cons{hd=H,tl=T}) ->
 	false -> false
     end;
 is_simple(#c_tuple{es=Es}) -> is_simple_list(Es);
-is_simple(#c_binary{segs=Es}) -> is_simp_bin(Es);
+is_simple(#c_binary{segments=Es}) -> is_simp_bin(Es);
 is_simple(E) -> is_atomic(E).
 
 is_simple_list(Es) -> lists:all(fun is_simple/1, Es).
 
 is_simp_bin(Es) ->
-    lists:all(fun (#c_bin_seg{val=E,size=S}) ->
+    lists:all(fun (#c_bitstr{val=E,size=S}) ->
 		      is_simple(E) and is_simple(S)
 	      end, Es).
 
@@ -130,7 +130,8 @@ make_literal_list(Vals) -> lists:map(fun make_literal/1, Vals).
 %%  Expr.
 
 make_values([E]) -> E;
-make_values(Es) when list(Es) -> #c_values{es=Es};
+make_values([H|_]=Es) -> #c_values{anno=get_anno(H),es=Es};
+make_values([]) -> #c_values{es=[]};
 make_values(E) -> E.
 
 %% map(MapFun, CoreExpr) -> CoreExpr.
@@ -366,7 +367,7 @@ vu_expr(V, #c_cons{hd=H,tl=T}) ->
     end;
 vu_expr(V, #c_tuple{es=Es}) ->
     vu_expr_list(V, Es);
-vu_expr(V, #c_binary{segs=Ss}) ->
+vu_expr(V, #c_binary{segments=Ss}) ->
     vu_seg_list(V, Ss);
 vu_expr(V, #c_fun{vars=Vs,body=B}) ->
     %% Variables in fun shadow previous variables
@@ -439,7 +440,7 @@ vu_expr_list(V, Es) ->
     lists:any(fun(E) -> vu_expr(V, E) end, Es).
 
 vu_seg_list(V, Ss) ->
-    lists:any(fun (#c_bin_seg{val=Val,size=Size}) ->
+    lists:any(fun (#c_bitstr{val=Val,size=Size}) ->
 		      case vu_expr(V, Val) of
 			  true -> true;
 			  false -> vu_expr(V, Size)
@@ -480,7 +481,7 @@ vu_pattern(V, #c_cons{hd=H,tl=T}, St0) ->
     end;
 vu_pattern(V, #c_tuple{es=Es}, St) ->
     vu_pattern_list(V, Es, St);
-vu_pattern(V, #c_binary{segs=Ss}, St) ->
+vu_pattern(V, #c_binary{segments=Ss}, St) ->
     vu_pat_seg_list(V, Ss, St);
 vu_pattern(V, #c_alias{var=Var,pat=P}, St0) ->
     case vu_pattern(V, Var, St0) of
@@ -495,7 +496,7 @@ vu_pattern_list(V, Ps, St0) ->
     lists:foldl(fun(P, St) -> vu_pattern(V, P, St) end, St0, Ps).
 
 vu_pat_seg_list(V, Ss, St) ->
-    lists:foldl(fun (#c_bin_seg{val=Val,size=Size}, St0) ->
+    lists:foldl(fun (#c_bitstr{val=Val,size=Size}, St0) ->
 			case vu_pattern(V, Val, St0) of
 			    {true,true}=St1 -> St1;
 			    {_Used,Shad} -> {vu_expr(V, Size),Shad}

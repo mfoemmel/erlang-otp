@@ -1,9 +1,11 @@
 /* $Id$
  * hipe_sparc_glue.h
  */
+#ifndef HIPE_SPARC_GLUE_H
+#define HIPE_SPARC_GLUE_H
 
-#include "hipe_bif0.h"	/* for stack descriptor stuff */
-
+/* tell hipe_mode_switch.c how many argument registers we use */
+#define NR_ARG_REGS	HIPE_SPARC_ARGS_IN_REGS
 
 extern unsigned sparc_call_to_native(Process*);
 extern unsigned sparc_large_call_to_native(Process*);
@@ -140,6 +142,16 @@ hipe_call_from_native_is_recursive(Process *p, Eterm reg[])
     return 0;
 }
 
+/* Native makes a call which needs to unload the parameters.
+   This differs from hipe_call_from_native_is_recursive() in
+   that it doesn't check for or pop the native-to-BEAM trap frame.
+   It's currently only used in the implementation of apply. */
+static __inline__ void
+hipe_pop_params(Process *p, unsigned int arity, Eterm reg[])
+{
+    hipe_pop_sparc_params(p, arity, reg);
+}
+
 /* Native called BEAM, which now returns back to native. */
 static __inline__ unsigned hipe_return_to_native(Process *p)
 {
@@ -194,3 +206,5 @@ static __inline__ void *hipe_closure_stub_address(unsigned arity)
       default:	return nbif_ccallemu16;
     }
 }
+
+#endif /* HIPE_SPARC_GLUE_H */

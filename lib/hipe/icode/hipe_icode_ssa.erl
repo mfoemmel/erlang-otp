@@ -2,36 +2,74 @@
 %%----------------------------------------------------------------------
 %% File    : hipe_icode_ssa.erl
 %% Author  : 
-%% Purpose : 
 %% Created : 
+%% Purpose : Provides interface functions for converting Icode into
+%%	     SSA form and back using the generic SSA converter.
 %%----------------------------------------------------------------------
 
 -module(hipe_icode_ssa).
+
+%% The following defines are needed by the included file below
+-define(CODE, hipe_icode).
+-define(CFG,  hipe_icode_cfg).
+-define(LIVENESS, hipe_icode_liveness).
+-define(LIVENESS_NEEDED, true).
+
 -include("../ssa/hipe_ssa.inc").
-     
-place_phi(CFG, DominanceFrontier) ->
-  hipe_icode_ssa_phi:place(CFG, DominanceFrontier).
 
-rename(CFG, DominatorTree) ->
-  hipe_icode_ssa_rename:rename(CFG, DominatorTree).
+%%----------------------------------------------------------------------
+%% Auxiliary operations which seriously differ between Icode and RTL.
+%%----------------------------------------------------------------------
 
-label_range(CFG) ->
-  hipe_icode_cfg:label_range(CFG).
+defs_to_rename(Statement) ->
+  hipe_icode:defines(Statement).
 
-start_label(CFG) ->
-  hipe_icode_cfg:start_label(CFG).
+uses_to_rename(Statement) ->
+  hipe_icode:uses(Statement).
 
-mk_goto(L) ->
-  hipe_icode:mk_goto(L).
+liveout_no_succ() ->
+  [].
 
-bb_add(CFG, Label, BB) ->
-  hipe_icode_cfg:bb_add(CFG, Label, BB).
+%%----------------------------------------------------------------------
 
-start_label_update(CFG, NewStartLabel) ->
-  hipe_icode_cfg:start_label_update(CFG, NewStartLabel).
+reset_var_indx() ->
+  hipe_gensym:set_var(icode, 0).
 
-label_range_update(CFG, Range) ->
-  hipe_icode_cfg:label_range_update(CFG, Range).
+%%----------------------------------------------------------------------
 
-succ_map(CFG) ->
-  hipe_icode_cfg:succ_map(CFG).
+is_fp_temp(Temp) ->
+  hipe_icode:is_fvar(Temp).
+
+mk_new_fp_temp() ->
+  hipe_icode:mk_new_fvar().
+
+%%----------------------------------------------------------------------
+%% Procedure : makePhiMove 
+%% Purpose   : Create an ICode-specific version of a move instruction
+%%             depending on the type of the arguments.
+%% Arguments : Dst, Src - the arguments of a Phi instruction that is
+%%                        to be moved up the predecessor block as part
+%%                        of the SSA un-convert phase.
+%% Returns   : Code
+%% Note      : ?CODE here is hipe_icode
+%%----------------------------------------------------------------------
+
+makePhiMove(Dst, Src) ->
+  case hipe_icode:is_fvar(Dst) of
+    false ->
+      case hipe_icode:is_fvar(Src) of
+	false ->
+	  hipe_icode:mk_move(Dst, Src);
+	true ->
+	  hipe_icode:mk_primop([Dst],unsafe_tag_float,[Src])
+      end;
+    true ->
+      case hipe_icode:is_fvar(Src) of
+	true ->
+	  hipe_icode:mk_fmove(Dst, Src);
+	false ->
+	  hipe_icode:mk_primop([Dst],conv_to_float,[Src])
+      end
+  end.
+
+%%----------------------------------------------------------------------

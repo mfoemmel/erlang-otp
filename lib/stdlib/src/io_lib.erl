@@ -124,13 +124,13 @@ write(Term, D, false) ->
     write(Term, D).
 
 write(_Term, 0) -> "...";
-write(Term, _D) when integer(Term) -> integer_to_list(Term);
-write(Term, _D) when float(Term) -> io_lib_format:fwrite_g(Term);
-write(Atom, _D) when atom(Atom) -> write_atom(Atom);
-write(Term, _D) when port(Term) -> write_port(Term);
-write(Term, _D) when pid(Term) -> pid_to_list(Term);
-write(Term, _D) when reference(Term) -> write_ref(Term);
-write(Term, D) when binary(Term) -> write_binary(Term, D);
+write(Term, _D) when is_integer(Term) -> integer_to_list(Term);
+write(Term, _D) when is_float(Term) -> io_lib_format:fwrite_g(Term);
+write(Atom, _D) when is_atom(Atom) -> write_atom(Atom);
+write(Term, _D) when is_port(Term) -> write_port(Term);
+write(Term, _D) when is_pid(Term) -> pid_to_list(Term);
+write(Term, _D) when is_reference(Term) -> write_ref(Term);
+write(Term, D) when is_binary(Term) -> write_binary(Term, D);
 write([], _D) -> "[]";
 write({}, _D) -> "{}";
 write([H|T], D) ->
@@ -139,23 +139,16 @@ write([H|T], D) ->
 	true ->
 	    [$[,[write(H, D-1)|write_tail(T, D-1)],$]]
     end;
-write(F, _D) when function(F) ->
+write(F, _D) when is_function(F) ->
     erlang:fun_to_list(F);
-write(T, D) when tuple(T) ->
+write(T, D) when is_tuple(T) ->
     if
 	D == 1 -> "{...}";
 	true ->
 	    [${,
 	     [write(element(1, T), D-1)|write_tail(tl(tuple_to_list(T)), D-1)],
 	     $}]
-    end;
-write(T, D) ->
-     case catch write_vector(T, D) of
- 	{'EXIT',_}=Bad ->
-	     write(Bad, D);
- 	Other -> Other
-     end.
-	    
+    end.
 
 %% write_tail(List, Depth)
 %%  Test the terminating case first as this looks better with depth.
@@ -198,28 +191,6 @@ bin_to_list_max(B, Max) ->
 	{'EXIT',_} -> binary_to_list(B);
 	Other -> Other
     end.
-
-write_vector(V, D) ->
-    case size(V) of
-	0 -> "#Vector<>";
-        1 -> ["#Vector<", write(vector:get(1, V), D), ">"];
-	L when D == 1 ->
-            ["#Vector<... ", integer_to_list(L), " elements>"];
-        L ->
-	    ["#Vector<",write_vector_contents(V, L, D)|">"]
-    end.
-
-write_vector_contents(Vec, Sz, D) when Sz =< D ->
-    write_vector_contents(Vec, Sz, D, []);
-write_vector_contents(Vec, Sz, D) ->
-    [write_vector_contents(Vec, D, D, []),
-     "... ",integer_to_list(Sz)," elements"].
-
-write_vector_contents(Vec, I, D, []) when I >= 1 ->
-    write_vector_contents(Vec, I-1, D, [write(vector:get(I, Vec), D)]);
-write_vector_contents(Vec, I, D, Acc) when I >= 1 ->
-    write_vector_contents(Vec, I-1, D, [write(vector:get(I, Vec), D),$,|Acc]);
-write_vector_contents(_Vec, _I, _D, Acc) -> Acc.
 
 %% write_atom(Atom) -> [Char]
 %%  Generate the list of characters needed to print an atom.

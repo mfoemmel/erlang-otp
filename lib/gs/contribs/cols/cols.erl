@@ -159,7 +159,7 @@ update(fall_timeout, State) ->
 	    S1#state{ticks=update_timer(Ticks)}
     end;
 
-update({gs,_,destroy,_,_}, State) ->
+update({gs,_,destroy,_,_}, _State) ->
     exit(normal);
 
 update({gs,help,buttonpress,_,_}, State) ->
@@ -178,7 +178,7 @@ is_board_empty(Board, X, Y) ->
 	  color_at(Board, X, Y + 1),
 	  color_at(Board, X, Y + 2)} of
 	{black, black, black} -> true;
-	Q -> false
+	_ -> false
     end.
 
 %%----------------------------------------------------------------------
@@ -270,7 +270,7 @@ set_size([{GsObj,[{X1,Y1},{_X2,_Y2}]}|T],Size) ->
 %% cols:fall_column([a,b,black,black,c,f,black,d,black], 3, 15, [], []).
 %% should return: {[a,b,c,f,d],[{3,11},{3,12},{3,13}]}
 %%----------------------------------------------------------------------
-fall_column([], X, Y, ColumnAcc, ChecksAcc) ->
+fall_column([], _X, _Y, ColumnAcc, ChecksAcc) ->
     {ColumnAcc, ChecksAcc};
 fall_column([black|Colors], X, Y, ColumnAcc, ChecksAcc) ->
     case find_box(Colors) of
@@ -321,7 +321,7 @@ new_column_list(NewColumn, ColumnTuple) ->
 new_column_list([H|T], N, Tuple) ->
     {GsObj, Color} = element(N, Tuple),
     [update_screen_element({GsObj, Color},H) | new_column_list(T, N+1, Tuple)];
-new_column_list([], A, B) -> [].
+new_column_list([], _, _) -> [].
     
 
 %%----------------------------------------------------------------------
@@ -331,7 +331,7 @@ columntuple_to_list(ColumnTuple) when tuple(ColumnTuple) ->
     columntuple_to_list(tuple_to_list(ColumnTuple),[]).
 
 columntuple_to_list([],Acc) -> Acc;
-columntuple_to_list([{GsObj, Color}|T],Acc) ->
+columntuple_to_list([{_GsObj, Color}|T],Acc) ->
     columntuple_to_list(T,[Color|Acc]).
 
 %%======================================================================
@@ -406,18 +406,18 @@ draw_borders() ->
 
 update_screen_element(ScrBoard, X, Y, Color) ->
     case board_element(ScrBoard,X,Y) of
-	{GsObj, Color} ->
+	{_GsObj, Color} ->
 	    ScrBoard; % don't have to update screen
-	{GsObj, ScreenColor} ->
+	{GsObj, _ScreenColor} ->
 	    gs:config(GsObj, color_args(Color)),
 	    set_board_element(ScrBoard, X, Y, {GsObj, Color})
     end.
 
 update_screen_element(ScrElem, Color) ->
     case ScrElem of
-	{GsObj, Color} ->
+	{_GsObj, Color} ->
 	    ScrElem; % don't have to update screen
-	{GsObj, ScreenColor} ->
+	{GsObj, _ScreenColor} ->
 	    gs:config(GsObj, color_args(Color)),
 	    {GsObj, Color}
     end.
@@ -433,7 +433,7 @@ color_args(Color) -> [{fg,white},{fill,Color}].
 xy_loop(Fun, Acc,  XMax, YMax) ->
     xy_loop(Fun, Acc, 0, 0, XMax, YMax).
 
-xy_loop(Fun, Acc, X, YMax, XMax, YMax) -> Acc;
+xy_loop(_Fun, Acc, _X, YMax, _XMax, YMax) -> Acc;
 xy_loop(Fun, Acc, XMax, Y, XMax, YMax) ->
     xy_loop(Fun, Acc, 0, Y+1, XMax, YMax);
 xy_loop(Fun, Acc, X, Y, XMax, YMax) ->
@@ -447,7 +447,7 @@ erase_bits_at(Board, PrevDelElems, X,Y) ->
     C = color_at(Board, X, Y),
     erase_bits_at([vert, horiz, slash, backslash],X,Y,C,Board,PrevDelElems).
     
-erase_bits_at([], X,Y,C,Board, Elems2Del) -> Elems2Del;
+erase_bits_at([], _X,_Y,_C,_Board, Elems2Del) -> Elems2Del;
 erase_bits_at([Dir|Ds],X,Y,C,Board, Elems2DelAcc) ->
     Dx = dx(Dir),
     Dy = dy(Dir),
@@ -479,10 +479,10 @@ check_dir(Board, X, Y, Dx, Dy, Color)
     case color_at(Board, X, Y) of
 	Color ->
 	    [{X,Y} | check_dir(Board, X+Dx, Y+Dy, Dx, Dy, Color)];
-	OtherColor ->
+	_OtherColor ->
             []
     end;
-check_dir(Board, X, Y, Dx, Dy, Color) -> [].
+check_dir(_Board, _X, _Y, _Dx, _Dy, _Color) -> [].
   
 make_box(X, Y, Color) ->
     make_box(X, Y, 1, 1, Color).
@@ -497,16 +497,16 @@ make_box(X, Y, Height, Width, Color) ->
 					 {?LEFT + X * ?SIZE + (?SIZE*Width)-1,
 					 Y * ?SIZE + (?SIZE*Height)-1}]}|Opts]).
 
-is_fall_ok(Board, NewX, NewY) when NewY+2 >= ?HEIGHT -> false;
+is_fall_ok(_Board, _NewX, NewY) when NewY+2 >= ?HEIGHT -> false;
 is_fall_ok(Board, NewX, NewY) ->
     case color_at(Board, NewX, NewY+2) of
 	black ->
 	    true;
-	X -> false
+	_ -> false
     end.
 
 color_at(Board, X, Y) ->
-    {GsObj, Color} = board_element(Board, X, Y),
+    {_GsObj, Color} = board_element(Board, X, Y),
     Color.
 
 
@@ -527,7 +527,7 @@ set_board_element(Board, X, Y, NewValue) ->
 make_column() ->
     list_to_tuple(make_list(black, ?HEIGHT)).
 
-make_list(Elem, 0) -> [];
+make_list(_Elem, 0) -> [];
 make_list(Elem, N) -> [Elem|make_list(Elem,N-1)].
 
 boardcolumn_to_tuple(Board, X) ->
@@ -563,7 +563,7 @@ drop(X,Y,Score,Board) ->
 	false -> {X,Y, Score}
     end.
 
-elems2del([], Board,Elems2DelAcc) -> Elems2DelAcc;
+elems2del([], _Board,Elems2DelAcc) -> Elems2DelAcc;
 elems2del([{X,Y}|Checks],Board,Elems2DelAcc) ->
     NewElems2DelAcc = ordsets:union(erase_bits_at(Board,Elems2DelAcc,X,Y),
 				    Elems2DelAcc),
@@ -573,10 +573,10 @@ collect_bottom_bits(?WIDTH,_Board) -> [];
 collect_bottom_bits(X,Board) ->
     case color_at(Board, X, ?HEIGHT-1) of
 	black -> collect_bottom_bits(X+1,Board);
-	AcolorHere -> [X|collect_bottom_bits(X+1,Board)]
+	_AcolorHere -> [X|collect_bottom_bits(X+1,Board)]
     end.
 
-update_check(Check,[]) -> [];
+update_check(_Check,[]) -> [];
 update_check(Check,[X|Xs]) ->
     case lists:member({X, ?HEIGHT-1}, Check) of
 	true -> update_check(Check,Xs);
@@ -585,7 +585,7 @@ update_check(Check,[X|Xs]) ->
 
 org_objs([],_Board) -> [];
 org_objs([{X,Y}|XYs],Board) ->
-    {GsObj, Color} = board_element(Board, X, Y),
+    {GsObj, _Color} = board_element(Board, X, Y),
     [{GsObj, lists:sort(gs:read(GsObj, coords))}|org_objs(XYs,Board)].
 
 update_board([],Board) -> Board;
@@ -598,7 +598,7 @@ put_back([{GsObj, Coords}|Objs]) ->
     put_back(Objs).
 
 updated_cols([], UpdColsAcc) -> UpdColsAcc;
-updated_cols([{X,Y}|XYs], UpdColsAcc) ->
+updated_cols([{X,_Y}|XYs], UpdColsAcc) ->
     case lists:member(X,UpdColsAcc) of
 	true -> updated_cols(XYs,UpdColsAcc);
 	false -> updated_cols(XYs,[X|UpdColsAcc])

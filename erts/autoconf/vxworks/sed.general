@@ -23,6 +23,13 @@ s|@DEXPORT@||
 s|@DCFLAGS@||
 s|@THR_DEFS@||
 s|@THR_LIBS@||
+s|@THR_LIB_NAME@||
+s|@THR_X_LIBS@||
+s|@ETHR_X_LIBS@||
+s|@ETHR_LIBS@||
+s|@ETHR_LIB_NAME@||
+s|@ETHR_DEFS@||
+s|@ETHR_THR_LIB_BASE@||
 s|@cc_root@|/clearcase/otp/|
 # Define VxWorks even though cross-compiling. 
 s|@HCFLAGS@|-DVXWORKS|
@@ -32,11 +39,13 @@ s|@ENABLE_ALLOC_TYPE_VARS@||
 # HiPE
 s|@HIPE_ENABLED@||
 s|@PERFCTR_PATH@||
+s|@USE_PERFCTR@||
 
 # Conditional inclusion of applications
 s|@HIPE_APP@||
 s|@SSL_APP@|ssl|
 s|@CRYPTO_APP@|crypto|
+s|@SSH_APP@|ssh|
 
 # The target tools prefix, prepended to all cc,ld,as etc commands
 s|@TTPREFIX@|GCC_EXEC_PREFIX=@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/ @WIND_BASE@/host/@HOST_TYPE@/bin/|
@@ -48,6 +57,8 @@ s|@INSTALL_PROGRAM@|${INSTALL}|
 s|@INSTALL_SCRIPT@|${INSTALL}|
 s|@INSTALL_DATA@|${INSTALL} -m 644|
 s|@INSTALL_DIR@|$(INSTALL) -d|
+s|@RM@|/bin/rm|
+s|@MKDIR@|/bin/mkdir|
 s|@ERLANG_OSTYPE@|vxworks|
 s|@vxworks_reclaim@|reclaim.h|
 s|@os_mon_programs@||

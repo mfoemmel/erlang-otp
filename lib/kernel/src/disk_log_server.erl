@@ -13,7 +13,7 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id $
 %%
 -module(disk_log_server).
 -behaviour(gen_server).
@@ -31,6 +31,10 @@
 
 -compile({inline,[{do_get_log_pids,1}]}).
 
+-record(pending, {log, pid, req, from, attach, clients}). % [{Request,From}]
+
+-record(state, {pending = []}). % [pending()]
+
 %%%-----------------------------------------------------------------
 %%% This module implements the disk_log server.  Its primary purpose
 %%% is to keep the ets table 'disk_log_names' updated and to handle
@@ -47,31 +51,17 @@ start() ->
 
 open({ok, A}) ->
     ensure_started(),
-    case gen_server:call(disk_log_server, {open, A}, infinity) of
-	{waiting, Pid, From} ->
-	    receive {Pid, From, Reply} ->
-		    Reply
-	    end;
-	Reply ->
-	    Reply
-    end;
+    gen_server:call(disk_log_server, {open, local, A}, infinity);
 open(Other) ->
     Other.
 
 %% To be used from this module only.
 dist_open(A) ->
     ensure_started(),
-    gen_server:call(disk_log_server, {dist_open, A}, infinity).
+    gen_server:call(disk_log_server, {open, distr, A}, infinity).
 
 close(Pid) ->
-    case catch gen_server:call(disk_log_server, {close, Pid}) of
-        {'EXIT', {timeout, _Reason}} ->
-            %% The server is trying to open the log. 
-            %% do_internal_open will return try_again.
-            timeout;
-        Reply ->
-             Reply
-    end.
+    gen_server:call(disk_log_server, {close, Pid}, infinity).
 
 get_log_pids(LogName) ->
     do_get_log_pids(LogName).
@@ -90,19 +80,48 @@ init([]) ->
     process_flag(trap_exit, true),
     ets:new(?DISK_LOG_NAME_TABLE, [named_table, set]),
     ets:new(?DISK_LOG_PID_TABLE, [named_table, set]),
-    {ok, []}.
+    {ok, #state{}}.
 
-handle_call({open, A}, From, State) ->
-    Reply = do_open(A, From),
-    {reply, Reply, State};
-handle_call({dist_open, A}, _From, State) ->
-    Reply = do_dist_open(A),
-    {reply, {node(), Reply}, State};
+handle_call({open, W, A}, From, State) ->
+    open([{{open, W, A}, From}], State);
 handle_call({close, Pid}, _From, State) ->
     Reply = do_close(Pid),
     {reply, Reply, State}.
 
+handle_info({pending_reply, Pid, Result0}, State) ->
+    {value, #pending{log = Name, pid = Pid, from = From, 
+                     req = Request, attach = Attach,
+                     clients = Clients}} = 
+        lists:keysearch(Pid, #pending.pid, State#state.pending),
+    NP = lists:keydelete(Pid, #pending.pid, State#state.pending),
+    State1 = State#state{pending = NP},
+    if 
+        Attach and (Result0 == {error, no_such_log}) ->
+            %% The disk_log process has terminated. Try again.
+            open([{Request,From} | Clients], State1);
+        true -> 
+            case Result0 of
+                _ when Attach -> 
+                    ok;
+                {error, _} -> 
+                    ok;
+                _ ->
+                    put(Pid, Name),
+                    link(Pid),
+                    case Request of
+                        {_, local, _} -> 
+                            ets:insert(?DISK_LOG_NAME_TABLE, {Name, Pid}),
+                            ets:insert(?DISK_LOG_PID_TABLE, {Pid, Name});
+                        {_, distr, _} -> 
+                            ok = pg2:join(?group(Name), Pid)
+                    end
+            end,
+            gen_server:reply(From, result(Request, Result0)),
+            open(Clients, State1)
+    end;
 handle_info({'EXIT', Pid, _Reason}, State) ->
+    %% If there are clients waiting to be attached to this log, info
+    %% {pending_reply,Pid,{error,no_such_log}} will soon arrive.
     case get(Pid) of
         undefined ->
             ok;
@@ -134,97 +153,123 @@ ensure_started() ->
 	_ -> ok
     end.
 
-do_open(A, From) ->
-    Name = A#arg.name,
-    {IsDistributed, MyNode} = init_distributed(A),
-    case IsDistributed of
-	true ->
-	    Local = case MyNode of 
-			true ->
-			    [{node(), do_dist_open(A)}];
-			false ->
-			    []
-		    end,
-	    open_distributed(A, Local, From);
-	false ->
-	    case get_local_pid(Name) of
-		{local, Pid} ->
-                    case do_internal_open(Name, Pid, A) of
-                        try_again ->
-                            do_open(A, From);
-                        Reply ->
-                            Reply
-                    end;
-		{distributed, _Pid} ->
-		    {error, {node_already_open, Name}};
-		undefined ->
-		    case start_log(Name, A) of
-			{ok, Pid, R} ->
-			    ets:insert(?DISK_LOG_NAME_TABLE, {Name, Pid}),
-			    ets:insert(?DISK_LOG_PID_TABLE, {Pid, Name}),
-			    R;
-			Error ->
-			    Error
-		    end
-	    end
-    end.    
+open([{Req, From} | L], State) ->
+    State2 = case do_open(Req, From, State) of
+                 {pending, State1} -> 
+                     State1;
+                 {Reply, State1} ->
+                     gen_server:reply(From, Reply),
+                     State1
+             end,
+    open(L, State2);
+open([], State) ->
+    {noreply, State}.
 
-% -> OpenRet
-do_dist_open(A) ->
-    Name = A#arg.name,
-    ok = pg2:create(?group(Name)),
-    case get_local_pid(Name) of
-	undefined ->
-	    case start_log(Name, A) of
-		{ok, Pid, R} ->
-		    ok = pg2:join(?group(Name), Pid),
-		    R;
-		Error ->
-		    Error
-	    end;
-	{local, _Pid} ->
-	    {error, {node_already_open, Name}};
-	{distributed, Pid} ->
-            case do_internal_open(Name, Pid, A) of
-                try_again ->
-                    do_dist_open(A);
-                Reply ->
-                    Reply
+%% -> {OpenRet, NewState} | {{node(),OpenRet}, NewState} |
+%%    {pending, NewState}
+do_open({open, W, #arg{name = Name}=A}=Req, From, State) ->
+    case check_pending(Name, From, State, Req) of
+        {pending, NewState} -> 
+            {pending, NewState};
+        false when W == local ->
+            case A#arg.distributed of
+                {true, Nodes} ->
+                    Fun = fun() -> open_distr_rpc(Nodes, A, From) end,
+                    _Pid = spawn(Fun),
+                    %% No pending reply is expected, but don't reply yet.
+                    {pending, State};
+                false ->
+                    case get_local_pid(Name) of
+                        {local, Pid} ->
+                            do_internal_open(Name, Pid, From, Req, true,State);
+                        {distributed, _Pid} ->
+                            {{error, {node_already_open, Name}}, State};
+                        undefined ->
+                            start_log(Name, Req, From, State)
+                    end
+            end;
+        false when W == distr  ->
+            ok = pg2:create(?group(Name)),
+            case get_local_pid(Name) of
+                undefined ->
+                    start_log(Name, Req, From, State);
+                {local, _Pid} ->
+                    {{node(),{error, {node_already_open, Name}}}, State};
+                {distributed, Pid} ->
+                    do_internal_open(Name, Pid, From, Req, true, State)
             end
     end.
 
-do_internal_open(Name, Pid, A) ->
-    case disk_log:internal_open(Pid, A) of
-        {error, no_such_log} ->
-            %% The disk_log process has terminated. 
-            receive 
-                {'EXIT', Pid, _Reason} ->
-                    ok
-            after 1000 ->
-                    %% Should never happen.
-                    ok
-            end,
-            erase_log(Name, Pid),
-            try_again;
-        Reply ->
-            Reply
-    end.
+%% Spawning a process is a means to avoid deadlock when
+%% disk_log_servers mutually open disk_logs.
+open_distr_rpc(Nodes, A, From) ->
+    {AllReplies, BadNodes} =
+	rpc:multicall(Nodes, disk_log_server, dist_open, [A]),
+    {Ok, Bad} = cr(AllReplies, [], []),
+    Old = find_old_nodes(Nodes, AllReplies, BadNodes),
+    NotOk = lists:map(fun(BadNode) -> {BadNode, {error, nodedown}} end, 
+		      BadNodes ++ Old),
+    Reply = {Ok, Bad ++ NotOk},
+    %% Send the reply to the waiting client:
+    gen_server:reply(From, Reply),
+    exit(normal).
 
-start_log(Name, A) ->
-    case supervisor:start_child(disk_log_sup, [self()]) of 
+cr([{badrpc, {'EXIT', _}} | T], Nodes, Bad) ->
+    %% This clause can be removed in next release.
+    cr(T, Nodes, Bad);
+cr([R={_Node, {error, _}} | T], Nodes, Bad) ->  
+    cr(T, Nodes, [R | Bad]);
+cr([Reply | T], Nodes, Bad) ->  
+    cr(T, [Reply | Nodes], Bad);
+cr([], Nodes, Bad) -> 
+    {Nodes, Bad}.
+
+%% If a "new" node (one that calls dist_open/1) tries to open a log
+%% on an old node (one that does not have dist_open/1), then the old
+%% node is considered 'down'. In next release, this test will not be
+%% needed since all nodes can be assumed to be "new" by then.
+%% One more thing: if an old node tries to open a log on a new node,
+%% the new node is also considered 'down'.
+find_old_nodes(Nodes, Replies, BadNodes) ->
+    R = [X || {X, _} <- Replies],
+    ordsets:subtract(lists:sort(Nodes), lists:sort(R ++ BadNodes)).
+
+start_log(Name, Req, From, State) ->
+    Server = self(),
+    case supervisor:start_child(disk_log_sup, [Server]) of 
 	{ok, Pid} ->
-	    case disk_log:internal_open(Pid, A) of
-		Error = {error, _} ->
-		    Error;
-		R ->
-                    put(Pid, Name),
-                    link(Pid),
-		    {ok, Pid, R}
-	    end;
+            do_internal_open(Name, Pid, From, Req, false, State);
 	Error ->
-	    Error
+	    {result(Req, Error), State}
     end.
     
+do_internal_open(Name, Pid, From, {open, _W, A}=Req, Attach, State) ->
+    Server = self(), 
+    F = fun() -> 
+                Res = disk_log:internal_open(Pid, A),
+                Server ! {pending_reply, Pid, Res}
+        end,
+    _ = spawn(F),
+    PD = #pending{log = Name, pid = Pid, req = Req, 
+                  from = From, attach = Attach, clients = []},
+    P = [PD | State#state.pending],
+    {pending, State#state{pending = P}}.
+
+check_pending(Name, From, State, Req) ->
+    case lists:keysearch(Name, #pending.log, State#state.pending) of
+        {value, #pending{log = Name, clients = Clients}=P} ->
+            NP = lists:keyreplace(Name, #pending.log, State#state.pending, 
+                               P#pending{clients = Clients++[{Req,From}]}),
+            {pending, State#state{pending = NP}};
+        false ->
+            false
+    end.
+
+result({_, distr, _}, R) ->
+    {node(), R};
+result({_, local, _}, R) ->
+    R.
+
 do_close(Pid) ->
     case get(Pid) of
 	undefined ->
@@ -258,9 +303,7 @@ non_empty_group(?group(G), Gs) ->
     case dist_pids(G) of
 	[] -> Gs;
 	_ -> [G | Gs]
-    end;
-non_empty_group(_, Gs) ->
-    Gs.
+    end.
 
 get_local_pid(LogName) ->
     case ets:lookup(?DISK_LOG_NAME_TABLE, LogName) of
@@ -295,49 +338,3 @@ dist_pids(LogName) ->
 	_Error -> []
     end.
 
-init_distributed(#arg{distributed = {true, Nodes}}) ->
-    {true, lists:member(node(), Nodes)};
-init_distributed(_) ->
-    {false, false}.
-
-open_distributed(A, Res, From) ->
-    {true, N1} = A#arg.distributed,
-    Nodes = N1 -- [node()],
-    Fun = fun() -> open_distr_rpc(Nodes, A, Res, From) end,
-    Pid = spawn(Fun),
-    {waiting, Pid, From}.
-
-%% Spawning a process is a means to avoid deadlock when
-%% disk_log_servers mutually open disk_logs.
-open_distr_rpc(Nodes, A, Res, {FromPid,_Tag} = From) ->
-    {Replies, BadNodes} =
-	rpc:multicall(Nodes, disk_log_server, dist_open, [A]),
-    AllReplies = Res ++ Replies,
-    {Ok, Bad} = cr(AllReplies, [], []),
-    Old = find_old_nodes(Nodes, AllReplies, BadNodes),
-    NotOk = lists:map(fun(BadNode) -> {BadNode, {error, nodedown}} end, 
-		      BadNodes ++ Old),
-    Reply = {Ok, Bad ++ NotOk},
-    %% Send the reply to the waiting client:
-    FromPid ! {self(), From, Reply},
-    exit(normal).
-
-cr([{badrpc, {'EXIT', _}} | T], Nodes, Bad) ->
-    %% This clause can be removed in next release.
-    cr(T, Nodes, Bad);
-cr([R={_Node, {error, _}} | T], Nodes, Bad) ->  
-    cr(T, Nodes, [R | Bad]);
-cr([Reply | T], Nodes, Bad) ->  
-    cr(T, [Reply | Nodes], Bad);
-cr([], Nodes, Bad) -> 
-    {Nodes, Bad}.
-
-%% If a "new" node (one that calls dist_open/1) tries to open a log
-%% on an old node (one that does not have dist_open/1), then the old
-%% node is considered 'down'. In next release, this test will not be
-%% needed since all nodes can be assumed to be "new" by then.
-%% One more thing: if an old node tries to open a log on a new node,
-%% the new node is also considered 'down'.
-find_old_nodes(Nodes, Replies, BadNodes) ->
-    R = [X || {X, _} <- Replies],
-    ordsets:subtract(lists:sort(Nodes), lists:sort(R ++ BadNodes)).

@@ -50,7 +50,7 @@
 %%------------------------------------------------------------
 
 -import(lists, [foreach/2, foldl/3, foldr/3]).
--import(ic_codegen, [emit/2, emit/3]).
+-import(ic_codegen, [emit/2, emit/3, emit/4, emit_c_enc_rpt/4, emit_c_dec_rpt/4]).
 
 -include("icforms.hrl").
 -include("ic.hrl").
@@ -60,6 +60,7 @@
 -define(ERL_INTERFACEHEADER, "erl_interface.h").
 -define(EICONVHEADER, "ei.h").
 -define(ERLANGATOMLENGTH, "256").
+
 
 %%------------------------------------------------------------
 %% ENTRY POINT
@@ -82,8 +83,9 @@ remove_ext(File) ->
 %% - each module definition results in a separate file.
 %% - each interface definition results in a separate file.
 %%
-%% XXX Constructed types get their own files. True? 
-%%
+%%  G = record(genobj) (see ic.hrl)
+%%  N = scoped names in reverse
+%%  X = current form to consider. 
 %%------------------------------------------------------------
 
 gen(G, N, [X| Xs]) when record(X, preproc) ->
@@ -132,10 +134,11 @@ gen(G, N, [X| Xs]) when record(X, const) ->
     gen(G, N, Xs);
 
 gen(G, N, [X| Xs]) when record(X, op) ->
-    {Name, ArgNames, RetParTypes} = ic_cbe:extract_info(G, N, X), 
-    gen_operation(G, N, X, Name, ArgNames, RetParTypes), 
-    gen_encoder(G, N, X, Name, ArgNames, RetParTypes), 
-    gen_decoder(G, N, X, Name, ArgNames, RetParTypes), 
+    {OpName, ArgNames, RetParTypes} = ic_cbe:extract_info(G, N, X), 
+    %% XXX Note: N is the list of scoped ids of the *interface*.
+    gen_operation(G, N, X, OpName, ArgNames, RetParTypes), 
+    gen_encoder(G, N, X, OpName, ArgNames, RetParTypes), 
+    gen_decoder(G, N, X, OpName, ArgNames, RetParTypes), 
     gen(G, N, Xs);
 
 gen(G, N, [X| Xs]) when record(X, attr) ->
@@ -214,27 +217,27 @@ gen_headers(G, N, X) when record(X, interface) ->
 	    emit(HFd, "#include \"~s\"\n", [filename:basename(Filename)]), 
 	    ic_code:gen_includes(HFd, G, X, c_client), 
 
-	    IName = ic_util:to_undersc(N), 
-	    INameUC = ic_util:to_uppercase(IName), 
-	    emit(HFd, "\n#ifndef __~s__\n", [INameUC]), 
-	    emit(HFd, "#define __~s__\n", [INameUC]), 
-	    LCmt = io_lib:format("Interface object definition: ~s", [IName]), 
+	    IfName = ic_util:to_undersc(N), 
+	    IfNameUC = ic_util:to_uppercase(IfName), 
+	    emit(HFd, "\n#ifndef __~s__\n", [IfNameUC]), 
+	    emit(HFd, "#define __~s__\n", [IfNameUC]), 
+	    LCmt = io_lib:format("Interface object definition: ~s", [IfName]), 
 	    ic_codegen:mcomment_light(HFd, [LCmt], c), 
 	    case get_c_timeout(G, "") of
 		"" ->
 		    ok;
 		{SendTmo, RecvTmo} ->
 		    emit(HFd, "#define OE_~s_SEND_TIMEOUT  ~s\n", 
-			 [INameUC, SendTmo]), 
+			 [IfNameUC, SendTmo]), 
 		    emit(HFd, "#define OE_~s_RECV_TIMEOUT  ~s\n", 
-			 [INameUC, RecvTmo]), 
+			 [IfNameUC, RecvTmo]), 
 		    emit(HFd, "#ifndef EI_HAVE_TIMEOUT\n"),
 		    emit(HFd, "#error Functions for send and receive with "
 			 "timeout not defined in erl_interface\n"),
 		    emit(HFd, "#endif\n\n")
 	    end,
 
-	    emit(HFd, "typedef CORBA_Object ~s;\n", [IName]), 
+	    emit(HFd, "typedef CORBA_Object ~s;\n", [IfName]), 
 	    emit(HFd, "#endif\n\n");
 
 	false -> ok
@@ -245,6 +248,15 @@ gen_headers(G, N, X) when record(X, interface) ->
 	    ic_codegen:nl(Fd), 
 	    emit(Fd, "#include <stdlib.h>\n"), 
 	    emit(Fd, "#include <string.h>\n"), 
+	    case ic_options:get_opt(G, c_report) of 
+		true ->
+		    emit(Fd, "#ifndef OE_C_REPORT\n"), 
+		    emit(Fd, "#define OE_C_REPORT\n"), 
+		    emit(Fd, "#include <stdio.h>\n"), 
+		    emit(Fd, "#endif\n");
+		_  ->
+		    ok
+	    end,
 	    emit(Fd, "#include \"~s\"\n", [?IC_HEADER]), 
 	    emit(Fd, "#include \"~s\"\n", [?ERL_INTERFACEHEADER]), 
 	    emit(Fd, "#include \"~s\"\n", [?EICONVHEADER]), 
@@ -271,6 +283,15 @@ gen_headers(G, [], _X) ->
     case ic_genobj:is_hrlfile_open(G) of
 	true ->
 	    HFd = ic_genobj:hrlfiled(G), 
+	    case ic_options:get_opt(G, c_report) of 
+		true ->
+		    emit(HFd, "#ifndef OE_C_REPORT\n"), 
+		    emit(HFd, "#define OE_C_REPORT\n"), 
+		    emit(HFd, "#include <stdio.h>\n"), 
+		    emit(HFd, "#endif\n");
+		_  ->
+		    ok
+	    end,
 	    emit(HFd, "#include \"~s\"\n", [?IC_HEADER]), 
 	    emit(HFd, "#include \"~s\"\n", [?ERL_INTERFACEHEADER]), 
 	    emit(HFd, "#include \"~s\"\n", [?EICONVHEADER]), 
@@ -290,7 +311,7 @@ gen_prototypes(G, N, X) ->
 	    ok;
 	true ->
 	    HFd = ic_genobj:hrlfiled(G), 
-	    IName = ic_util:to_undersc(N), 
+	    IfName = ic_util:to_undersc(N), 
 
 	    %% Emit generated function prototypes
 	    emit(HFd, "\n/* Operation functions  */\n"), 
@@ -326,7 +347,7 @@ gen_prototypes(G, N, X) ->
 	    %% Emit generic function prototypes
 	    emit(HFd, "\n/* Generic decoders */\n"), 
 	    emit(HFd, "int ~s__receive_info(~s, CORBA_Environment*);\n", 
-		 [IName, IName]), 
+		 [IfName, IfName]), 
 
 	    case UserProto of
 		false ->
@@ -378,7 +399,7 @@ gen_receive_info(G, N, _X) ->
 	    ok;
 	true ->
 	    Fd = ic_genobj:stubfiled(G), 
-	    IName = ic_util:to_undersc(N), 
+	    IfName = ic_util:to_undersc(N), 
 	    UserProto = get_user_proto(G, oe),
 	    Code = 
 		"
@@ -391,7 +412,7 @@ int ~s__receive_info(~s oe_obj, CORBA_Environment *oe_env)
 {
   return  ~s_prepare_reply_decoding(oe_env);
 }\n", 
-        emit(Fd, Code, [IName, IName, UserProto])
+        emit(Fd, Code, [IfName, IfName, UserProto])
 end.
 
 %%------------------------------------------------------------
@@ -427,18 +448,20 @@ emit_constant(G, N, ConstRecord) ->
 %% Generate operation (for interface)
 %%------------------------------------------------------------
 
-gen_operation(G, N, X, Name, ArgNames, RetParTypes) ->
+%% N is the list of scoped ids of the *interface*. 
+%% X is the operation
+gen_operation(G, N, X, OpName, ArgNames, RetParTypes) ->
     case ic_genobj:is_stubfile_open(G) of
 	true ->
-	    do_gen_operation(G, N, X, Name, ArgNames, RetParTypes);
+	    do_gen_operation(G, N, X, OpName, ArgNames, RetParTypes);
 	false ->
 	    ok
     end.
 
-do_gen_operation(G, N, X, Name, ArgNames, RetParTypes) ->
+do_gen_operation(G, N, X, OpName, ArgNames, RetParTypes) ->
     Fd = ic_genobj:stubfiled(G), 
-    IName = ic_util:to_undersc(N), 
-    INameUC = ic_util:to_uppercase(IName), 
+    IfName = ic_util:to_undersc(N), 
+    IfNameUC = ic_util:to_uppercase(IfName), 
 
     {R, ParTypes, _} = RetParTypes, 
 
@@ -448,7 +471,7 @@ do_gen_operation(G, N, X, Name, ArgNames, RetParTypes) ->
 	 "/***\n"
 	 " ***  Operation function \"~s\" ~s\n"
 	 " ***/\n\n", 
-	 [Name, ifelse(IsOneway, "(oneway)", "")]),
+	 [OpName, ifelse(IsOneway, "(oneway)", "")]),
 
     RV = element(1, R), 
     Ret = case IsOneway of
@@ -466,7 +489,7 @@ do_gen_operation(G, N, X, Name, ArgNames, RetParTypes) ->
 						ParTypes, ArgNames), ", "),
     emit(Fd, 
 	 "~s ~s(~s, ~sCORBA_Environment *oe_env)\n{\n",
-	 [Ret, Name, [IName, " ", "oe_obj"], ParListStr]), 
+	 [Ret, OpName, [IfName, " ", "oe_obj"], ParListStr]), 
 
     case IsOneway of
 	true ->
@@ -504,12 +527,13 @@ do_gen_operation(G, N, X, Name, ArgNames, RetParTypes) ->
 				  ", "),
     emit(Fd, 
 	 "  if (~s__client_enc(oe_obj, ~s""oe_env) < 0) {\n", 
-	 [Name, EncParListStr]),
+	 [OpName, EncParListStr]),
     emit(Fd, 
 	 "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
-	 "MARSHAL, \"Cannot encode message\");\n"), 
+	 "DATA_CONVERSION, \"Cannot encode message\");\n"), 
 
     RetVar = ifelse(RV /= void, " oe_return", ""),
+    emit_c_enc_rpt(Fd, "    ", "client operation ~s\\n====\\n", [OpName]),
 
     emit(Fd, "    return~s;\n  }\n", [RetVar]),
 
@@ -522,8 +546,8 @@ do_gen_operation(G, N, X, Name, ArgNames, RetParTypes) ->
 				      {"", "", ""};
 				  _ ->
 				      {"_tmo", 
-				       [", OE_", INameUC, "_SEND_TIMEOUT"], 
-				       [", OE_", INameUC, "_RECV_TIMEOUT"]} 
+				       [", OE_", IfNameUC, "_SEND_TIMEOUT"], 
+				       [", OE_", IfNameUC, "_RECV_TIMEOUT"]} 
 			      end,
 
     case IsOneway of
@@ -551,11 +575,13 @@ do_gen_operation(G, N, X, Name, ArgNames, RetParTypes) ->
 	    emit(Fd, 
 		 "  /* Extracting result value(s) */ \n" 
 		 "  if (~s__client_dec(oe_obj, ~s""oe_env) < 0) {\n", 
-		 [Name, DecParListStr]), 
+		 [OpName, DecParListStr]), 
 	    emit(Fd, 
 		 "    CORBA_exc_set(oe_env, "
 		 "CORBA_SYSTEM_EXCEPTION, DATA_CONVERSION, "
-		 "\"Bad result value(s)\");\n" 
+		 "\"Bad result value(s)\");\n"),
+	    emit_c_dec_rpt(Fd, "    ", "client operation ~s\\n=====\\n", [OpName]),
+	    emit(Fd, 
 		 "    return~s;\n"
 		 "  }\n", [RetVar])
     end,
@@ -565,22 +591,24 @@ do_gen_operation(G, N, X, Name, ArgNames, RetParTypes) ->
 %%------------------------------------------------------------
 %% Generate encoder 
 %%------------------------------------------------------------
-gen_encoder(G, N, X, Name, ArgNames, RetParTypes)->
+%% N is the list of scoped ids of the *interface*. 
+%% X is the operation
+gen_encoder(G, N, X, OpName, ArgNames, RetParTypes)->
     case ic_genobj:is_stubfile_open(G) of
 	true ->
 	    Fd = ic_genobj:stubfiled(G), 
-	    IName = ic_util:to_undersc(N), 
+	    IfName = ic_util:to_undersc(N), 
 	    {_R, ParTypes, _} = RetParTypes, 
 	    TypeAttrArgs = mk_type_attr_arg_list(ParTypes, ArgNames), 
 	    emit(Fd, "/*\n *  Encode operation input for \"~s\"\n */\n\n", 
-		 [Name]), 
+		 [OpName]), 
 	    ParList = ic_util:chain(
 			mk_par_type_list(G, N, X, [in], [types, args], 
 					 ParTypes, ArgNames), ", "), 
 	    emit(Fd, 
 		 "int ~s__client_enc(~s oe_obj, ~s"
 		 "CORBA_Environment *oe_env)\n{\n", 
-		 [Name, IName, ParList]),
+		 [OpName, IfName, ParList]),
 
 	    InTypeAttrArgs = lists:filter(fun({_, in, _}) -> true;
 					     ({_, _, _}) -> false
@@ -605,7 +633,9 @@ gen_encoder(G, N, X, Name, ArgNames, RetParTypes)->
 %%------------------------------------------------------------
 %% Generate decoder
 %%------------------------------------------------------------
-gen_decoder(G, N, X, Name, ArgNames, RetParTypes)->
+%% N is the list of scoped ids of the *interface*. 
+%% X is the operation
+gen_decoder(G, N, X, OpName, ArgNames, RetParTypes)->
     case ic_forms:is_oneway(X) of
 	true ->
 	    ok;
@@ -613,11 +643,11 @@ gen_decoder(G, N, X, Name, ArgNames, RetParTypes)->
 	    case ic_genobj:is_stubfile_open(G) of
 		true ->
 		    Fd = ic_genobj:stubfiled(G), 
-		    IName = ic_util:to_undersc(N), 
+		    IfName = ic_util:to_undersc(N), 
 		    {R, ParTypes, _} = RetParTypes, 
 		    TypeAttrArgs = mk_type_attr_arg_list(ParTypes, ArgNames), 
 		    emit(Fd, "/*\n *  Decode operation results for "
-			 "\"~s\"\n */\n\n", [Name]), 
+			 "\"~s\"\n */\n\n", [OpName]), 
 		    ParList0 = mk_par_type_list(G, N, X, [out],
 						[types, args], 
 						ParTypes, ArgNames),
@@ -631,7 +661,7 @@ gen_decoder(G, N, X, Name, ArgNames, RetParTypes)->
 		    emit(Fd, 
 			 "int ~s__client_dec(~s oe_obj, ~s"
 			 "CORBA_Environment *oe_env)\n{\n", 
-			 [Name, IName, PLFCD]),
+			 [OpName, IfName, PLFCD]),
 		    emit(Fd, "  int oe_error_code = 0;\n"), 
 		    OutTypeAttrArgs = lists:filter(fun({_, out, _}) -> true;
 						      ({_, _, _}) -> false
@@ -651,6 +681,8 @@ gen_decoder(G, N, X, Name, ArgNames, RetParTypes)->
 %%------------------------------------------------------------
 %% Emit encodings
 %%------------------------------------------------------------
+%% N is the list of scoped ids of the *interface*. 
+%% X is the operation
 %% emit_encodings(G, N, Fd, X, TypeAttrArgs, IsOneWay) 
 %%
 emit_encodings(G, N, Fd, X, TypeAttrArgs, true) ->
@@ -678,12 +710,16 @@ emit_encodings_1(G, N, Fd, X, TypeAttrArgs) ->
 	   end, 
     if 
 	TypeAttrArgs /= [] -> 
-	    emit(Fd, "  oe_ei_encode_tuple_header(oe_env, ~p);\n", 
-		 [length(TypeAttrArgs) + 1]); 
+	    emit(Fd, "  if (oe_ei_encode_tuple_header(oe_env, ~p) < 0) {\n", 
+		 [length(TypeAttrArgs) + 1]), 
+	    emit_c_enc_rpt(Fd, "    ", "ei_encode_tuple_header", []),
+	    emit(Fd, "    return -1;\n  }\n");
 	true ->
 	    ok
     end,
-    emit(Fd, "  oe_ei_encode_atom(oe_env, ~p);\n", [Name]), 
+    emit(Fd, "  if (oe_ei_encode_atom(oe_env, ~p) < 0) {\n", [Name]), 
+    emit_c_dec_rpt(Fd, "    ", "ei_decode_tuple_header", []),
+    emit(Fd, "    return -1;\n  }\n"),
 
     foreach(fun({{'void', _}, _, _}) ->
 		    ok;
@@ -702,25 +738,27 @@ emit_encodings_1(G, N, Fd, X, TypeAttrArgs) ->
 %% XXX Unfortunately we have to retain the silly `oe_first' variable,
 %% since its name is hardcoded in other modules (icstruct, icunion,
 %% etc).
-%%
+%% N is the list of scoped ids of the *interface*. 
+%% X is the operation
 emit_decodings(G, N, Fd, RetType, TypeAttrArgs) ->
     if 
 	TypeAttrArgs /= [] ->
 	    %% Only if there are out parameters
 	    emit(Fd, "  if ((oe_error_code = ei_decode_tuple_header("
 		 "oe_env->_inbuf, &oe_env->_iin, "
-		 "&oe_env->_received)) < 0)\n"), 
-	    emit(Fd, "    return oe_error_code;\n"), 
-	    emit(Fd, "  if (oe_env->_received != ~p)\n", 
-		 [length(TypeAttrArgs) + 1]), 
-	    emit(Fd, "    return -1;\n"); 
+		 "&oe_env->_received)) < 0) {\n"), 
+	    emit_c_dec_rpt(Fd, "    ", "ei_decode_tuple_header", []),
+	    emit(Fd, "    return oe_error_code;\n    }\n"), 
+	    Len = length(TypeAttrArgs) + 1, 
+	    emit(Fd, "  if (oe_env->_received != ~p) {\n", [Len]),
+	    emit_c_dec_rpt(Fd, "    ", "tuple header size != ~p", [Len]),
+	    emit(Fd, "    return -1;\n    }\n"); 
 	true  ->
 	    ok
     end,
 
     %% Fetch the return value
-    emit(Fd, "  /* Decode return value: ~s *oe_return */\n", 
-	 [ic_cbe:mk_c_type(G, N, RetType)]), 
+    emit_coding_comment(G, N, Fd, "Decode return value", "*", RetType, "oe_return"), 
     APars =
 	case ic_cbe:is_variable_size(G, N, RetType) of
 	    true ->
@@ -883,7 +921,7 @@ emit_operation_prototypes(G, Fd, N, Xs) ->
 	      {ScopedName, ArgNames, RetParTypes} = 
 		  ic_cbe:extract_info(G, N, X), 
 	      {R, ParTypes, _} = RetParTypes, 
-	      IName = ic_util:to_undersc(N), 
+	      IfName = ic_util:to_undersc(N), 
 	      RT = mk_ret_type(G, N, R), 
 	      ParList = 
 		  ic_util:chain(
@@ -891,7 +929,7 @@ emit_operation_prototypes(G, Fd, N, Xs) ->
 				     ParTypes, ArgNames), 
 		    ", "), 
 	      emit(Fd, "~s ~s(~s, ~sCORBA_Environment*);\n", 
-		   [RT, ScopedName, IName, ParList]);
+		   [RT, ScopedName, IfName, ParList]);
 	 (_) ->
 	      ok
       end, Xs).
@@ -905,13 +943,13 @@ emit_encoder_prototypes(G, Fd, N, Xs) ->
 	      {ScopedName, ArgNames, RetParTypes} = 
 		  ic_cbe:extract_info(G, N, X), 
 	      {_R, ParTypes, _} = RetParTypes, 
-	      IName = ic_util:to_undersc(N), 
+	      IfName = ic_util:to_undersc(N), 
 	      ParList = ic_util:chain(
 			  mk_par_type_list(G, N, X, [in], [types], 
 					   ParTypes, ArgNames), 
 			  ", "),
 	    emit(Fd, "int ~s__client_enc(~s, ~sCORBA_Environment*);\n", 
-		 [ScopedName, IName, ParList]);
+		 [ScopedName, IfName, ParList]);
 	 (_) ->
 	      ok
       end, Xs).
@@ -926,7 +964,7 @@ emit_decoder_prototypes(G, Fd, N, Xs) ->
 		  true ->
 		      true;
 		  false ->
-		      IName = ic_util:to_undersc(N), 
+		      IfName = ic_util:to_undersc(N), 
 		      {ScopedName, ArgNames, RetParTypes} = 
 			  ic_cbe:extract_info(G, N, X), 
 		      {R, ParTypes, _} = RetParTypes, 
@@ -942,7 +980,7 @@ emit_decoder_prototypes(G, Fd, N, Xs) ->
 		      ParList = ic_util:chain(PARLIST, ", "),
 		      emit(Fd, "int ~s__client_dec(~s, ~s"
 			   "CORBA_Environment*);\n", 
-			   [ScopedName, IName, ParList])
+			   [ScopedName, IfName, ParList])
 	      end;
 	 (_) ->
 	      ok
@@ -1125,8 +1163,8 @@ mk_ind_op(out) ->
 %%------------------------------------------------------------
 %% Emit encoding/decoding comment
 %%------------------------------------------------------------
-emit_coding_comment(G, N, F, String, RefOrVal, Type, Name) ->
-    emit(F, "  /* ~s parameter: ~s~s ~s */\n", 
+emit_coding_comment(G, N, Fd, String, RefOrVal, Type, Name) ->
+    emit(Fd, "  /* ~s parameter: ~s~s ~s */\n", 
 	 [String, ic_cbe:mk_c_type(G, N, Type), RefOrVal, Name]).
 
 %%------------------------------------------------------------

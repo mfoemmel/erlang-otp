@@ -10,8 +10,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: pergu $
-%%              $Date: 2003/04/10 15:40:39 $
-%%              $Revision: 1.19 $
+%%              $Date: 2004/02/09 15:06:02 $
+%%              $Revision: 1.23 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -32,7 +32,7 @@ check_and_rewrite(X86Defun, Coloring, DontSpill, _Options) ->
   #defun{code=Code0} = X86Defun,
   {Code1, NewDontSpill} = do_insns(Code0, TempMap, [], DontSpill),
   {X86Defun#defun{code=Code1,
-		  var_range={0, hipe_gensym:get_var()}}, 
+		  var_range={0, hipe_gensym:get_var(x86)}}, 
    Coloring, NewDontSpill}.
 
 do_insns([I|Insns], TempMap, Is, DontSpill) ->
@@ -63,8 +63,8 @@ do_insn(I, TempMap, DontSpill) ->	% Insn -> Insn list
       do_movx(I, TempMap, DontSpill);
     #movzx{} ->
       do_movx(I, TempMap, DontSpill);
-    #fmov{} ->
-      do_fmov(I, TempMap, DontSpill);
+    #fmove{} ->
+      do_fmove(I, TempMap, DontSpill);
     #shift{} ->
       do_shift(I, TempMap, DontSpill);
     _ ->
@@ -166,15 +166,16 @@ do_movx(I, TempMap, DontSpill) ->
    DontSpill3 ++ DontSpill2 ++
    DontSpill1 ++ DontSpill}.
 
-%%% Fix a fmov op.
+%%% Fix a fmove op.
 
-do_fmov(I, TempMap, DontSpill) ->
-  #fmov{src=Src0,dst=Dst0} = I,
-  {FixSrc, Src, FixDst, Dst, NewDontSpill} = 
-    do_binary(Src0, Dst0,
-	      TempMap, DontSpill),
-  {FixSrc ++ FixDst ++ [I#fmov{src=Src,dst=Dst}],
-   NewDontSpill}.
+do_fmove(I, TempMap, DontSpill) ->
+  #fmove{src=Src0,dst=Dst0} = I,
+  {FixSrc, Src, DontSpill1} = fix_src_operand(Src0, TempMap),
+  {FixDst, Dst, DontSpill2} = fix_dst_operand(Dst0, TempMap),
+  %% fmoves from memory position to memory position is handled
+  %% by hipe_x86_float.erl
+  {FixSrc ++ FixDst ++ [I#fmove{src=Src,dst=Dst}], 
+   DontSpill1 ++ DontSpill2 ++ DontSpill}.
 
 %%% Fix a shift operation
 %%% 1. remove pseudos from any explicit memory operands
@@ -200,23 +201,18 @@ do_shift(I, TempMap, DontSpill) ->
 do_byte_move(Src0, Dst0,TempMap, DontSpill) ->
   {FixSrc, Src, DontSpill1} = fix_src_operand(Src0, TempMap),
   {FixDst, Dst, DontSpill2} = fix_dst_operand(Dst0, TempMap),
+  Reg =  hipe_x86_registers:eax(),
   {FixSrc3, Src3, DontSpill3} =
     case Src of
       #x86_imm{} ->
 	{FixSrc, Src, []};
-      #x86_temp{reg=Reg} ->
-	case Reg < 4 of
-	  true ->
-	    {FixSrc, Src, []};
-	  false ->        %hardcode a move to eax for all temps not in the four low regs
-	    Src2 = hipe_x86:mk_temp(hipe_x86_registers:eax(), untagged),
-	    FixSrc2 = FixSrc ++ [hipe_x86:mk_move(Src, Src2)],
-	    {FixSrc2, Src2, [Src2]}
-	end
+      #x86_temp{reg=Reg} ->   %%Small moves must start from reg 1->4
+	{FixSrc, Src, []}   %%Therefore variable sources are always put in eax 
     end,
   {FixSrc3, Src3, FixDst, Dst, 
    DontSpill3 ++ DontSpill2 ++
    DontSpill1 ++ DontSpill}.
+
 
 do_binary(Src0, Dst0, TempMap, DontSpill) ->
   {FixSrc, Src, DontSpill1} = fix_src_operand(Src0, TempMap),

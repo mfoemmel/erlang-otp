@@ -12,6 +12,10 @@
 #include "beam_load.h"	/* which includes beam_opcodes.h */
 #include "beam_catches.h"
 #include "hipe_mode_switch.h"
+#include "bif.h"
+#include "error.h"
+#include "hipe_stack.h"
+#include "hipe_bif0.h"	/* hipe_mfa_info_table_init() */
 
 /*
  * Internal debug support.
@@ -119,6 +123,10 @@ static void hipe_check_nstack(Process *p, unsigned nwords);
 #include "hipe_sparc_glue.h"
 #elif defined(__i386__)
 #include "hipe_x86_glue.h"
+#elif defined(__x86_64__)
+#include "hipe_amd64_glue.h"
+#elif defined(__powerpc__)
+#include "hipe_ppc_glue.h"
 #endif
 
 #define BeamOpCode(Op)		((Uint)BeamOp(Op))
@@ -140,6 +148,8 @@ void hipe_mode_switch_init(void)
 
     hipe_beam_catch_throw =
 	make_catch(beam_catches_cons(hipe_beam_pc_throw, BEAM_CATCHES_NIL));
+
+    hipe_mfa_info_table_init();
 }
 
 void hipe_set_call_trap(Uint *bfun, void *nfun, int is_closure)
@@ -193,12 +203,6 @@ static __inline__ void hipe_pop_beam_trap_frame(Process *p)
     --p->catches;
     p->stop += 2;
 }
-
-#if defined(__i386__)
-#define NR_ARG_REGS	X86_NR_ARG_REGS
-#elif defined(__sparc__)
-#define NR_ARG_REGS	HIPE_SPARC_ARGS_IN_REGS
-#endif
 
 Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 {
@@ -290,6 +294,8 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  /* BEAM just executed hipe_beam_pc_resume[] */
 	  /* BEAM called native, which suspended. */
 	  if( p->flags & F_TIMO ) {
+	      /* XXX: The process will immediately execute 'clear_timeout',
+		 repeating these two statements. Remove them? */
 	      p->flags &= ~F_TIMO;
 	      JOIN_MESSAGE(p);
 	      p->def_arg_reg[0] = 0;	/* make_small(0)? */
@@ -303,12 +309,14 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  /* BEAM just executed hipe_beam_pc_reschedule[] */
 	  /* Native called a BIF which failed with RESCHEDULE. Resume it. */
 	  /* XXX: this ought to be the same as 'resume' */
+	  DPRINTF("rescheduling to 0x%#lx/%u", p->hipe.ncallee, p->arity);
 	  result = hipe_reschedule_to_native(p, p->arity, reg);
 	  break;
       }
       default:
 	erl_exit(1, "hipe_mode_switch: cmd %#x\r\n", cmd);
     }
+ do_return_from_native:
     DPRINTF("result == %#x (%s)", result, code_str(result));
     HIPE_CHECK_PCB(p);
     switch( result ) {
@@ -414,6 +422,7 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  break;
       }
       case HIPE_MODE_SWITCH_RES_RESCHEDULE: {
+	  DPRINTF("native reschedules 0x%#lx/%u\r\n", p->hipe.ncallee, p->arity);
 	  hipe_reschedule_from_native(p);
 	  p->i = hipe_beam_pc_reschedule;
 	  goto do_schedule;
@@ -473,6 +482,38 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  p->def_arg_reg[3] = result;
 	  return p;
       }
+      case HIPE_MODE_SWITCH_RES_APPLY: {
+	  Eterm mfa[3], args;
+	  unsigned int arity;
+	  void *address;
+
+	  hipe_pop_params(p, 3, &mfa[0]);
+
+	  /* Unroll the arglist onto reg[]. */
+	  args = mfa[2];
+	  arity = 0;
+	  while( is_list(args) ) {
+	      if( arity < 255 ) {
+		  reg[arity++] = CAR(list_val(args));
+		  args = CDR(list_val(args));
+	      } else
+		  goto do_apply_fail;
+	  }
+	  if( is_not_nil(args) )
+	      goto do_apply_fail;
+
+	  /* find a native code entry point for {M,F,A} for a remote call */
+	  address = hipe_get_remote_na(mfa[0], mfa[1], arity);
+	  if (!address)
+		  goto do_apply_fail;
+	  p->hipe.ncallee = (void(*)(void)) address;
+	  result = hipe_tailcall_to_native(p, arity, reg);
+	  goto do_return_from_native;
+      do_apply_fail:
+	  p->freason = BADARG;
+	  result = hipe_throw_to_native(p);
+	  goto do_return_from_native;
+      }
       default:
 	erl_exit(1, "hipe_mode_switch: result %#x\r\n", result);
     }
@@ -497,7 +538,7 @@ static unsigned hipe_next_nstack_size(unsigned size)
 
 #ifdef HIPE_NSTACK_GROWS_UP
 #define hipe_nstack_avail(p)	((p)->hipe.nstend - (p)->hipe.nsp)
-Eterm *hipe_inc_nstack(Process *p)
+void hipe_inc_nstack(Process *p)
 {
     Eterm *old_nstack = p->hipe.nstack;
     unsigned old_size = p->hipe.nstend - old_nstack;
@@ -505,36 +546,23 @@ Eterm *hipe_inc_nstack(Process *p)
     Eterm *new_nstack = erts_realloc(ERTS_ALC_T_HIPE,
 				     (char *) old_nstack,
 				     new_size*sizeof(Eterm));
-    /*
-      printf("nstack 0x%08x nsp 0x%08x nstend 0x%08x \n\r",
-      p->hipe.nstack,  p->hipe.nsp, p->hipe.nstend);
-    */
-
     p->hipe.nstend = new_nstack + new_size;
     if( new_nstack != old_nstack ) {
 	p->hipe.nsp = new_nstack + (p->hipe.nsp - old_nstack);
 	p->hipe.nstack = new_nstack;
-	/* Adjust greay and black markers. */
 	if( p->hipe.nstgraylim )
-	  p->hipe.nstgraylim = 
-	    new_nstack + (p->hipe.nstgraylim - old_nstack);
+	    p->hipe.nstgraylim = 
+		new_nstack + (p->hipe.nstgraylim - old_nstack);
 	if( p->hipe.nstblacklim )
-	  p->hipe.nstblacklim = 
-	    new_nstack + (p->hipe.nstblacklim - old_nstack);
-
+	    p->hipe.nstblacklim = 
+		new_nstack + (p->hipe.nstblacklim - old_nstack);
     }
-    /*
-      printf("New\n\rnstack 0x%08x nsp 0x%08x nstend 0x%08x \n\r",
-      p->hipe.nstack,  p->hipe.nsp, p->hipe.nstend);
-    */
-
-    return p->hipe.nsp;
 }
 #endif
 
 #ifdef HIPE_NSTACK_GROWS_DOWN
 #define hipe_nstack_avail(p)	((unsigned)((p)->hipe.nsp - (p)->hipe.nstack))
-Eterm *hipe_inc_nstack(Process *p)
+void hipe_inc_nstack(Process *p)
 {
     unsigned old_size = p->hipe.nstend - p->hipe.nstack;
     unsigned new_size = hipe_next_nstack_size(old_size);
@@ -551,8 +579,6 @@ Eterm *hipe_inc_nstack(Process *p)
     p->hipe.nstack = new_nstack;
     p->hipe.nstend = new_nstack + new_size;
     p->hipe.nsp = new_nstack + new_size - used_size;
-
-    return p->hipe.nsp;
 }
 #endif
 

@@ -18,7 +18,7 @@
 -module(packages).
 
 -export([to_string/1, concat/1, concat/2, is_valid/1, is_segmented/1,
-	 split/1, last/1, strip_last/1, find_modules/1,
+	 split/1, last/1, first/1, strip_last/1, find_modules/1,
 	 find_modules/2]).
 
 %% A package name (or a package-qualified module name) may be an atom or
@@ -102,18 +102,19 @@ is_segmented_1(_) ->
     erlang:fault(badarg).
 
 last(Name) ->
-    Ss = split(Name),
-    last_1(Ss).
+    last_1(split(Name)).
 
 last_1([H]) -> H;
 last_1([_ | T]) -> last_1(T).
 
-strip_last(Name) ->
-    Ss = split(Name),
-    concat(strip_last_1(Ss)).
+first(Name) ->
+    first_1(split(Name)).
 
-strip_last_1([H | T]) when T /= [] -> [H | strip_last_1(T)];
-strip_last_1(_) -> [].
+first_1([H | T]) when T /= [] -> [H | first_1(T)];
+first_1(_) -> [].
+
+strip_last(Name) ->
+    concat(first(Name)).
 
 %% This finds all modules available for a given package, using the
 %% current code server search path. (There is no guarantee that the

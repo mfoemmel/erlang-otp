@@ -50,7 +50,7 @@ calc() ->
     calc_loop(Ids,0,0,'+').
 
 calc_loop(Ids,M,V,Op) ->
-    [Label,B0,B1,B2,B3,B4,B5,B6,B7,B8,B9,Minus,Plus,Times,C,AC] = Ids,
+    [_Label,B0,B1,B2,B3,B4,B5,B6,B7,B8,B9,Minus,Plus,Times,C,AC] = Ids,
     receive
 	{gs,B0,click,_,_} -> digit_press(Ids,M,V*10+0,Op);
 	{gs,B1,click,_,_} -> digit_press(Ids,M,V*10+1,Op);
@@ -68,7 +68,7 @@ calc_loop(Ids,M,V,Op) ->
 	{gs,AC,click,_,_} -> ac(Ids,M,V,Op);
 	{gs,C,click,_,_} -> c(Ids,M,V,Op);
 	{gs,_,destroy,_,_} -> exit(normal);
-	Other -> calc_loop(Ids,M,V,Op)
+	_Other -> calc_loop(Ids,M,V,Op)
     end.
 
 digit_press(Ids,M,V,Op) ->
@@ -92,12 +92,12 @@ calc(Ids,'*',M,V,Op) ->
     gs:config(Label,[{label,{text,NewM}}]),
     calc_loop(Ids,NewM,0,Op).
 
-c(Ids,M,V,Op) ->
+c(Ids,M,_V,Op) ->
     [Label|_]=Ids,
     gs:config(Label,[{label,{text,0}}]),
     calc_loop(Ids,M,0,Op).
 
-ac(Ids,M,V,Op) ->
+ac(Ids,_M,_V,_Op) ->
     [Label|_]=Ids,
     gs:config(Label,[{label,{text,0}}]),
     calc_loop(Ids,0,0,'+').

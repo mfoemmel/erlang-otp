@@ -74,7 +74,7 @@ struct erl_node_; /* Declared in erl_node_tables.h */
  * HEADER tags:
  *
  *	0000	ARITYVAL
- *      0001    VECTOR
+ *      0001    Not used (was vector)
  *	001x	BIGNUM with sign bit		|
  *	0100	REF				|
  *	0101	FUN				| THINGS
@@ -94,7 +94,6 @@ struct erl_node_; /* Declared in erl_node_tables.h */
  * XXX: globally replace XXX_SUBTAG with TAG_HEADER_XXX
  */
 #define ARITYVAL_SUBTAG		(0x0 << _TAG_PRIMARY_SIZE) /* TUPLE */
-#define VECTOR_SUBTAG		(0x1 << _TAG_PRIMARY_SIZE) /* VECTOR */
 #define POS_BIG_SUBTAG		(0x2 << _TAG_PRIMARY_SIZE) /* BIG: tags 2&3 */
 #define NEG_BIG_SUBTAG		(0x3 << _TAG_PRIMARY_SIZE) /* BIG: tags 2&3 */
 #define _BIG_SIGN_BIT		(0x1 << _TAG_PRIMARY_SIZE)
@@ -110,7 +109,6 @@ struct erl_node_; /* Declared in erl_node_tables.h */
 #define EXTERNAL_REF_SUBTAG	(0xE << _TAG_PRIMARY_SIZE) /* EXTERNAL_REF */
 
 #define _TAG_HEADER_ARITYVAL	(TAG_PRIMARY_HEADER|ARITYVAL_SUBTAG)
-#define _TAG_HEADER_VECTOR	(TAG_PRIMARY_HEADER|VECTOR_SUBTAG)
 #define _TAG_HEADER_FUN		(TAG_PRIMARY_HEADER|FUN_SUBTAG)
 #define _TAG_HEADER_POS_BIG	(TAG_PRIMARY_HEADER|POS_BIG_SUBTAG)
 #define _TAG_HEADER_NEG_BIG	(TAG_PRIMARY_HEADER|NEG_BIG_SUBTAG)
@@ -128,7 +126,7 @@ struct erl_node_; /* Declared in erl_node_tables.h */
 #define _HEADER_ARITY_OFFS	6
 
 #define header_is_transparent(x) \
- (((x) & (_HEADER_SUBTAG_MASK-VECTOR_SUBTAG)) == ARITYVAL_SUBTAG)
+ (((x) & (_HEADER_SUBTAG_MASK-0x1)) == ARITYVAL_SUBTAG)
 #define header_is_arityval(x)	(((x) & _HEADER_SUBTAG_MASK) == ARITYVAL_SUBTAG)
 #define header_is_thing(x)	(!header_is_transparent((x)))
 
@@ -189,14 +187,21 @@ _ET_DECLARE_CHECKED(Eterm*,list_val,Eterm);
 #define offset_ptr(x,offs)	_unchecked_offset_ptr(x,offs)	/*XXX*/
 
 /* fixnum ("small") access methods */
+#if defined(ARCH_64)
+#define SMALL_BITS	(64-4)
+#define SMALL_DIGITS	(17)
+#else
 #define SMALL_BITS	(28)
 #define SMALL_DIGITS	(8)
-#define MAX_SMALL	((1 << (SMALL_BITS-1))-1)
-#define MIN_SMALL	(-(1 << (SMALL_BITS-1)))
-#define make_small(x)	(((x) << _TAG_IMMED1_SIZE) + _TAG_IMMED1_SMALL)
+#endif
+#define MAX_SMALL	((1L << (SMALL_BITS-1))-1)
+#define MIN_SMALL	(-(1L << (SMALL_BITS-1)))
+#define make_small(x)	(((Uint)(x) << _TAG_IMMED1_SIZE) + _TAG_IMMED1_SMALL)
 #define is_small(x)	(((x) & _TAG_IMMED1_MASK) == _TAG_IMMED1_SMALL)
 #define is_not_small(x)	(!is_small((x)))
-#define is_byte(x)	(((x) & 0xFFFFF00F) == _TAG_IMMED1_SMALL)
+#define is_byte(x)	(((x) & ((~(Uint)0 << (_TAG_IMMED1_SIZE+8)) + _TAG_IMMED1_MASK)) == _TAG_IMMED1_SMALL)
+#define is_valid_bit_size(x) (((Sint)(x)) >= 0 && ((x) & 0x7F) == _TAG_IMMED1_SMALL)
+#define is_not_valid_bit_size(x) (!is_valid_bit_size((x)))
 #define MY_IS_SSMALL(x) (((Uint) (((x) >> (SMALL_BITS-1)) + 1)) < 2)
 #define _unchecked_unsigned_val(x)	((x) >> _TAG_IMMED1_SIZE)
 _ET_DECLARE_CHECKED(Uint,unsigned_val,Eterm);
@@ -467,7 +472,7 @@ _ET_DECLARE_CHECKED(Eterm*,tuple_val,Eterm);
  *   |1 0 9 8 7 6 5 4|3 2 1 0 9 8 7 6|5 4 3 2 1 0 9 8|7 6 5 4 3 2 1 0|
  *   |               |               |               |               |
  *   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- *   |0 0 0 0 0 0 0 0 0 0|n n n n n n n n n n n n n n n n n n|0 0|1 1|
+ *   |n n n n n n n n n n n n n n n n n n n n n n n n n n n n|0 0|1 1|
  *   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  *
  *  n : number
@@ -488,7 +493,8 @@ _ET_DECLARE_CHECKED(Eterm*,tuple_val,Eterm);
  *
  */
 
-#define _PID_SER_SIZE		3
+#define _PID_R9_SER_SIZE	3
+#define _PID_SER_SIZE		(_PID_DATA_SIZE - _PID_NUM_SIZE)
 #define _PID_NUM_SIZE 		15
 
 #define _PID_DATA_SIZE		28
@@ -527,7 +533,7 @@ _ET_DECLARE_CHECKED(struct erl_node_*,internal_pid_node,Eterm);
  *  |1 0 9 8 7 6 5 4|3 2 1 0 9 8 7 6|5 4 3 2 1 0 9 8|7 6 5 4 3 2 1 0|
  *  |               |               |               |               |
  *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- *  |0 0 0 0 0 0 0 0 0 0|n n n n n n n n n n n n n n n n n n|0 1|1 1|
+ *  |n n n n n n n n n n n n n n n n n n n n n n n n n n n n|0 1|1 1|
  *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  *
  *  n : number
@@ -547,7 +553,8 @@ _ET_DECLARE_CHECKED(struct erl_node_*,internal_pid_node,Eterm);
  *  N : node number
  *
  */
-#define _PORT_NUM_SIZE		18
+#define _PORT_R9_NUM_SIZE	18
+#define _PORT_NUM_SIZE		_PORT_DATA_SIZE
 
 #define _PORT_DATA_SIZE		28
 #define _PORT_DATA_SHIFT	(_TAG_IMMED1_SIZE)
@@ -915,20 +922,6 @@ _ET_DECLARE_CHECKED(Uint,catch_val,Eterm);
 
 #define make_blank(X)	((X) = NIL)
 
-
-/* vector object access methods */
-#define HEADER_VECTOR		_make_header(4,_TAG_HEADER_VECTOR)
-#define make_vector(x)		make_boxed((Eterm*)(x))
-#define is_vector_header(x) (((x) & _TAG_HEADER_MASK) == _TAG_HEADER_VECTOR)
-#define is_vector(x) (is_boxed((x)) && is_vector_header(*boxed_val((x))))
-#define is_not_vector(x) (!is_vector((x)))
-#define _unchecked_vector_val(x)   _unchecked_boxed_val((x))
-_ET_DECLARE_CHECKED(Eterm*,vector_val,Eterm);
-#define vector_val(x)		_ET_APPLY(vector_val,(x))
-#define _unchecked_vector_arity(x)   _unchecked_header_arity((x))
-_ET_DECLARE_CHECKED(Uint,vector_arity,Eterm);
-#define vector_arity(x)		_ET_APPLY(vector_arity,(x))
-
 /*
  * Overloaded tags.
  *
@@ -983,19 +976,18 @@ _ET_DECLARE_CHECKED(Uint,y_reg_index,Uint);
 #define BINARY_DEF		0x0
 #define LIST_DEF		0x1
 #define NIL_DEF			0x2
-#define VECTOR_DEF      	0x3
-#define TUPLE_DEF		0x4
-#define PID_DEF			0x5
-#define EXTERNAL_PID_DEF	0x6
-#define PORT_DEF		0x7
-#define EXTERNAL_PORT_DEF	0x8
-#define FUN_DEF			0x9
-#define REF_DEF			0xa
-#define EXTERNAL_REF_DEF	0xb
-#define ATOM_DEF		0xc
-#define FLOAT_DEF		0xd
-#define BIG_DEF			0xe
-#define SMALL_DEF		0xf
+#define TUPLE_DEF		0x3
+#define PID_DEF			0x4
+#define EXTERNAL_PID_DEF	0x5
+#define PORT_DEF		0x6
+#define EXTERNAL_PORT_DEF	0x7
+#define FUN_DEF			0x8
+#define REF_DEF			0x9
+#define EXTERNAL_REF_DEF	0xa
+#define ATOM_DEF		0xb
+#define FLOAT_DEF		0xc
+#define BIG_DEF			0xd
+#define SMALL_DEF		0xe
 
 #if ET_DEBUG
 extern unsigned tag_val_def_debug(Eterm, const char*, unsigned);

@@ -55,7 +55,7 @@ resides in the $ERL_TOP/erts/emulator/sys/win32 and $ERL_etc/win32
 directories mostly. The  $ERL_TOP/erts/emulator/beam directory is for
 common code.
 
-In prior to the R9C release of Erlang/OTP, the Windows release was
+Before the R9C release of Erlang/OTP, the Windows release was
 built partly on a Unix (Solaris) box and partly on a Windows box,
 using Perl hacks to communicate and sync between the two
 machines. R9C is the first release ever built solely on Windows, where
@@ -190,13 +190,13 @@ Q: Which version of Cygwin and other tools do you use then?
 
 A: For Cygwin we try to use the latest releases available when
 building. What versions you use shouldn't really matter, I try to
-include workarounds for the bug's I've found in different Cygwin
+include workarounds for the bugs I've found in different Cygwin
 releases, please help me to add workarounds for new Cygwin-related
 bugs as soon as you encounter them. Also please do submit bug reports
 to the appropriate Cygwin developers. The Cygwin GCC we used for R9C was 
-version 3.2. We used VC++ 6.0, Sun's JDK 1.2.2, NSIS 2.0 Beta 3 and
-Win32 OpenSSL 0.9.7b. Please reed the next section for details on what
-you need. 
+version 3.3.1. We used VC++ 6.0, Sun's JDK 1.2.2, NSIS 2.01, and
+Win32 OpenSSL 0.9.7b. Please reed the next section for details
+on what you need.
 
 Q: Can you help me setup X in Cygwin?
 
@@ -388,13 +388,13 @@ archives (.a, not .lib).
 
 * The Erlang source distribution. The same as for Unix
 platforms. Preferably use tar from within Cygwin to unpack the source
-tar.gz (tar zxf otp_src_R9C-0.tar.gz). 
+tar.gz (tar zxf otp_src_R10B-0.tar.gz). 
 
 set the environment ERL_TOP to point to the root directory of the
 source distribution. Let's say I stood in $HOME/src and unpacked 
-otp_src_R9C-0.tar.gz, I then add the following to .profile:
+otp_src_R10B-0.tar.gz, I then add the following to .profile:
 --------------------------------------------------------
-ERL_TOP=$HOME/src/otp_src_R9C-0
+ERL_TOP=$HOME/src/otp_src_R10B-0
 export $ERL_TOP
 --------------------------------------------------------
 

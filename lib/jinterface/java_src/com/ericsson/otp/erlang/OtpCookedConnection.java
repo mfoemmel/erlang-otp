@@ -111,7 +111,8 @@ public class OtpCookedConnection extends AbstractConnection {
       }
       else try {
 	// no such pid - send exit to sender
-	super.sendExit(msg.getRecipientPid(),msg.getSenderPid(),"noproc");
+	super.sendExit(msg.getRecipientPid(),msg.getSenderPid(),
+		       new OtpErlangAtom("noproc"));
       }
       catch (IOException e) {}
       break;
@@ -161,7 +162,7 @@ public class OtpCookedConnection extends AbstractConnection {
   /*
    * this one called by dying/killed process
    */
-  void exit(OtpErlangPid from, OtpErlangPid to, String reason) {
+  void exit(OtpErlangPid from, OtpErlangPid to, OtpErlangObject reason) {
     try {
       super.sendExit(from,to,reason);
     } catch (Exception e) {}
@@ -170,7 +171,7 @@ public class OtpCookedConnection extends AbstractConnection {
   /*
    * this one called explicitely by user code => use exit2
    */
-  void exit2(OtpErlangPid from, OtpErlangPid to, String reason) {
+  void exit2(OtpErlangPid from, OtpErlangPid to, OtpErlangObject reason) {
     try {
       super.sendExit2(from,to,reason);
     } catch (Exception e) {}
@@ -213,7 +214,8 @@ public class OtpCookedConnection extends AbstractConnection {
 
 	for (int i=0; i<len; i++) {
 	  // send exit "from" remote pids to local ones
-	  self.deliver(new OtpMsg(OtpMsg.exitTag,l[i].remote(),l[i].local(),"noconnection"));
+	  self.deliver(new OtpMsg(OtpMsg.exitTag,l[i].remote(),l[i].local(),
+				  new OtpErlangAtom("noconnection")));
 	}
       }
     }

@@ -603,6 +603,7 @@ insert_op(Tid, _, {op, create_table, TabDef}, InPlace, InitBy) ->
 
 	    case Storage of
 		unknown ->
+		    mnesia_lib:unset({Tab, create_table}),
 		    case Cs#cstruct.local_content of
 			true ->
 			    ignore;
@@ -624,9 +625,10 @@ insert_op(Tid, _, {op, create_table, TabDef}, InPlace, InitBy) ->
 			    disc_delete_indecies(Tab, Cs, Storage)
 			    %% disc_delete_table(Tab, Storage)
 		    end,
-
+		    
 		    %% Update whereabouts and create table
-		    mnesia_controller:create_table(Tab)
+		    mnesia_controller:create_table(Tab),
+		    mnesia_lib:unset({Tab, create_table})
 	    end
     end;
 

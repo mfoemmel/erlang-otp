@@ -117,7 +117,7 @@ init([Type, Content, Host, Port, Options]) ->
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%----------------------------------------------------------------------
@@ -125,7 +125,7 @@ terminate(Reason, State) ->
 %% Returns    : {ok, NewState}
 %% Description: Convert process state when code is changed
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%---------------------------------------------------------------------%
@@ -134,7 +134,7 @@ code_change(OldVsn, State, Extra) ->
 %% Returns  : 
 %% Effect   : 
 %%----------------------------------------------------------------------
-handle_info(Info, State) ->
+handle_info(_Info, State) ->
     {noreply, State}.
 
 %%======================================================================
@@ -147,7 +147,7 @@ handle_info(Info, State) ->
 %%              or 'NATIVE'. Currently only 'FTP' is allowed.
 %% Description: 
 %%----------------------------------------------------------------------
-'_get_file_system_type'(OE_This, State) ->
+'_get_file_system_type'(_OE_This, State) ->
     {reply, ?get_Type(State), State}.
 
 %%---------------------------------------------------------------------%
@@ -156,7 +156,7 @@ handle_info(Info, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-'_get_supported_content_types'(OE_This, State) ->
+'_get_supported_content_types'(_OE_This, State) ->
     {reply, ?get_Content(State), State}.
 
 %%----------------------------------------------------------------------
@@ -167,12 +167,12 @@ handle_info(Info, State) ->
 %% Returns    : FileTransferSession object and Directory object (out-type).
 %% Description: 
 %%----------------------------------------------------------------------
-login(OE_This, State, User, Password, Account) when ?is_FTP(State) ->
+login(_OE_This, State, User, Password, Account) when ?is_FTP(State) ->
     case catch 'CosFileTransfer_FileTransferSession':
 	oe_create(['FTP', ?get_Host(State), ?get_Port(State), User, Password, Account,
 		  ?get_Protocol(State), ?get_Timeout(State)],
 		  [{sup_child, true}]) of
-	{ok, Pid, FTS} ->
+	{ok, _Pid, FTS} ->
 	    Dir = 'CosFileTransfer_FileTransferSession':
 		oe_orber_create_directory_current(FTS),
 	    {reply, {FTS, Dir}, State};
@@ -184,13 +184,13 @@ Unable to create a FileTransferSession: ~p",
 				    ?DEBUG_LEVEL),
 	    corba:raise(#'CosFileTransfer_SessionException'{reason="Failed creating a FTS"})
     end;
-login(OE_This, State, User, Password, Account) when ?is_NATIVE(State) ->
+login(_OE_This, State, User, Password, Account) when ?is_NATIVE(State) ->
     case catch 'CosFileTransfer_FileTransferSession':
 	oe_create([{'NATIVE', ?get_Module(State)}, ?get_Host(State), 
 		   ?get_Port(State), User, Password, Account,
 		   ?get_Protocol(State), ?get_Timeout(State)],
 		  [{sup_child, true}]) of
-	{ok, Pid, FTS} ->
+	{ok, _Pid, FTS} ->
 	    Dir = 'CosFileTransfer_FileTransferSession':
 		oe_orber_create_directory_current(FTS),
 	    {reply, {FTS, Dir}, State};

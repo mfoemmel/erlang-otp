@@ -79,7 +79,7 @@ fargs([A|Args]) -> [tuple_space(A),", "|fargs(Args)].
 tuple_space(X) when tuple(X) -> print(size(X), X, "}");
 tuple_space(X)               -> io_lib:format("~p",[X]).
 
-print(0  , X, Buff) -> ["{"|Buff];
+print(0  , _X, Buff) -> ["{"|Buff];
 print(1  , X, Buff) -> 
     Str =  tuple_space(element(1, X)),
     ["{",Str|Buff];

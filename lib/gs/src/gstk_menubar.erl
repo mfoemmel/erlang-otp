@@ -145,7 +145,7 @@ when Cgstkid#gstkid.objtype==menubutton ->
 %%		  TkW     - The  tk-widget
 %% Return 	: A tuple {OptionType, OptionCmd}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-option(Option, Gstkid, TkW, DB,_) ->
+option(Option,_Gstkid,_TkW,_DB,_) ->
     case Option of
 	{bg,          Color} -> {s, [" -bg ", gstk:to_color(Color)]};
 	{height,     Height} -> {s, [" -height ", gstk:to_ascii(Height)]};
@@ -159,7 +159,7 @@ option(Option, Gstkid, TkW, DB,_) ->
 %% Return 	: The value of the option or invalid_option
 %%		  [OptionValue | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-read_option(Option,GstkId,TkW,DB,_) ->
+read_option(Option,GstkId,TkW,_DB,_) ->
     case Option of
 	bg            -> tcl2erl:ret_color([TkW," cg -bg"]);
 	height        -> tcl2erl:ret_int(["update idletasks;winfo he ",TkW]);

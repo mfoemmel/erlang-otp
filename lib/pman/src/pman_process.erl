@@ -34,7 +34,7 @@
 	 current_module/1,
 	 psize/1,
 	 is_running/1,
-	 is_pid/1,
+	 is_pid_or_shell/1,
 	 get_pid/1,
 	 is_system_process/1,
 	 is_hidden_by_module/2,
@@ -294,7 +294,7 @@ pinfo(P, Item) ->				%On different node
 
 
 pinfo_notag(Pid, Item) ->
-    {Tag, Data} = pinfo(Pid, Item),
+    {_Tag, Data} = pinfo(Pid, Item),
     Data.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -350,7 +350,6 @@ psize(P) ->
     Heap = pinfo(P, heap_size),
     case {Heap,Stack} of
 	{undefined, undefined} -> 0;
-	{undefined, undefined} -> 0;
 	{undefined, {_,Sz}} -> Sz;
 	{{_,Sz}, undefined} -> Sz;
 	{{_,Sz0}, {_,Sz1}}  -> Sz0 + Sz1
@@ -368,7 +367,7 @@ psize(P) ->
 %% ---------------------------------------------------------------
 
 r_processes(Node) ->
-    ordsets:list_to_set(r_processes1(Node)).
+    ordsets:from_list(r_processes1(Node)).
 
 
 r_processes1(N) ->
@@ -402,14 +401,14 @@ is_running({link,Pid,_}) ->
     is_running(Pid);
 
 is_running(Pid) ->
-    case is_pid(Pid) of
+    case is_pid_or_shell(Pid) of
 	true ->
 	    case (catch pinfo(Pid)) of
 		{'EXIT', badrpc} ->
 		    false;
 		{'EXIT', dead} ->
 		    false;
-		Other ->
+		_Other ->
 		    {true,Pid}
 	    end;
 	false ->
@@ -419,7 +418,7 @@ is_running(Pid) ->
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% is_pid/1 - Checks if the argument is an (internal) process
+%% is_pid_or_shell/1 - Checks if the argument is an (internal) process
 %%   identifier, i.e. a Pid, or a tuple {shell, Pid}
 %%
 %% Arguments:
@@ -430,13 +429,13 @@ is_running(Pid) ->
 %%  false	if it is not a process specifier.
 %%
 
-is_pid({shell,_Spec}) ->			%(???) Check the Pid ?
+is_pid_or_shell({shell,_Spec}) ->			%(???) Check the Pid ?
     true;
 
-is_pid(P) when pid(P) ->
+is_pid_or_shell(P) when pid(P) ->
     true;
 
-is_pid(_) ->
+is_pid_or_shell(_) ->
     false.
 
 
@@ -589,7 +588,7 @@ is_hidden_by_module(Pid, OSModuleExcluded) ->
 	    true;
 	{Module, _Function, _Arity} ->
 	    ordsets:is_element(Module, OSModuleExcluded);
-	Otherwise ->
+	_Otherwise ->
 	    true
     end.
 
@@ -664,7 +663,7 @@ mk_procname_pairs([Pid|PidRest], Pairs) ->
     case (catch mk_proc_selection_entry(Pid)) of
 	
 	%% Process is dead or process info otherwise unavailable
-	{'EXIT', Reason} ->
+	{'EXIT', _Reason} ->
 	    mk_procname_pairs(PidRest, Pairs);
 
 	{Pid, Value} ->

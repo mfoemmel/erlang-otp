@@ -30,7 +30,7 @@
 	 lock/4,
 	 write/5, delete/5, delete_object/5,
 	 read/5, match_object/5, all_keys/4,
-	 select/5,
+	 select/5,select/6,select_cont/3,
 	 index_match_object/6, index_read/6,
 	 foldl/6, foldr/6,
 	 table_info/4
@@ -106,6 +106,11 @@ match_object(ActivityId, Opaque, Tab, HeadPat, LockKind) ->
 
 select(ActivityId, Opaque, Tab, MatchSpec, LockKind) ->
     do_select(ActivityId, Opaque, Tab, MatchSpec, LockKind).
+
+
+select(ActivityId, Opaque, Tab, MatchSpec, Limit, LockKind) ->
+    init_select(ActivityId, Opaque, Tab, MatchSpec, Limit, LockKind).
+
 
 all_keys(ActivityId, Opaque, Tab, LockKind) ->
     Match = [mnesia:all_keys(ActivityId, Opaque, Frag, LockKind)
@@ -199,59 +204,105 @@ remote_table_info(ActivityId, Opaque, Tab, Item) ->
 	    Info
     end.
 
+init_select(Tid,Opaque,Tab,Pat,Limit,LockKind) ->
+    case ?catch_val({Tab, frag_hash}) of
+	{'EXIT', _} ->
+	    mnesia:select(Tid, Opaque, Tab, Pat, Limit,LockKind);
+	FH ->
+	    FragNumbers = verify_numbers(FH,Pat), 
+	    Fun = fun(Num) ->
+			  Name = n_to_frag_name(Tab, Num),
+			  Node = val({Name, where_to_read}),
+			  Storage = mnesia_lib:storage_type_at_node(Node, Name),
+			  mnesia:lock(Tid, Opaque, {table, Name}, LockKind),
+			  {Name, Node, Storage}
+		  end,
+	    [{Tab,Node,Type}|NameNodes] = lists:map(Fun, FragNumbers),
+	    InitFun = fun(FixedSpec) -> mnesia:dirty_sel_init(Node,Tab,FixedSpec,Limit,Type) end,
+	    Res = mnesia:fun_select(Tid,Opaque,Tab,Pat,LockKind,Tab,InitFun,Limit,Node,Type),
+	    frag_sel_cont(Res, NameNodes, {Pat,LockKind,Limit})
+    end.
+
+select_cont(_Tid,_,{frag_cont, '$end_of_table', [],_}) -> '$end_of_table';
+select_cont(Tid,Ts,{frag_cont, '$end_of_table', [{Tab,Node,Type}|Rest],Args}) -> 
+    {Spec,LockKind,Limit} = Args,
+    InitFun = fun(FixedSpec) -> mnesia:dirty_sel_init(Node,Tab,FixedSpec,Limit,Type) end,
+    Res = mnesia:fun_select(Tid,Ts,Tab,Spec,LockKind,Tab,InitFun,Limit,Node,Type),
+    frag_sel_cont(Res, Rest, Args);
+select_cont(Tid,Ts,{frag_cont, Cont, TabL, Args}) -> 
+    frag_sel_cont(mnesia:select_cont(Tid,Ts,Cont),TabL,Args);
+select_cont(Tid,Ts,Else) ->  %% Not a fragmented table
+    mnesia:select_cont(Tid,Ts,Else).
+
+frag_sel_cont('$end_of_table', [],_) ->
+    '$end_of_table';
+frag_sel_cont('$end_of_table', TabL,Args) -> 
+    {[], {frag_cont, '$end_of_table', TabL,Args}};
+frag_sel_cont({Recs,Cont}, TabL,Args) ->
+    {Recs, {frag_cont, Cont, TabL,Args}}.
+
 do_select(ActivityId, Opaque, Tab, MatchSpec, LockKind) ->
     case ?catch_val({Tab, frag_hash}) of
 	{'EXIT', _} ->
 	    mnesia:select(ActivityId, Opaque, Tab, MatchSpec, LockKind);
 	FH ->
-	    HashState = FH#frag_state.hash_state,
-	    FragNumbers = 
-		case FH#frag_state.hash_module of
-		    HashMod when HashMod == ?DEFAULT_HASH_MOD ->
-			?DEFAULT_HASH_MOD:match_spec_to_frag_numbers(HashState, MatchSpec);
-		    HashMod ->
-			HashMod:match_spec_to_frag_numbers(HashState, MatchSpec)
+	    FragNumbers = verify_numbers(FH,MatchSpec), 
+	    Fun = fun(Num) ->
+			  Name = n_to_frag_name(Tab, Num),
+			  Node = val({Name, where_to_read}),
+			  mnesia:lock(ActivityId, Opaque, {table, Name}, LockKind),
+			  {Name, Node}
+		  end,
+	    NameNodes = lists:map(Fun, FragNumbers),
+	    SelectAllFun =
+		fun(PatchedMatchSpec) ->
+			Match = [mnesia:dirty_select(Name, PatchedMatchSpec)
+				 || {Name, _Node} <- NameNodes],
+			lists:append(Match)
 		end,
-	    N = FH#frag_state.n_fragments,
-	    VerifyFun = fun(F) when integer(F), F >= 1, F =< N -> false;
-			   (_F) -> true
-			end,
-	    case catch lists:filter(VerifyFun, FragNumbers) of
+	    case [{Name, Node} || {Name, Node} <- NameNodes, Node /= node()] of
 		[] ->
-		    Fun = fun(Num) ->
-				  Name = n_to_frag_name(Tab, Num),
-				  Node = val({Name, where_to_read}),
-				  mnesia:lock(ActivityId, Opaque, {table, Name}, LockKind),
-				  {Name, Node}
-			  end,
-		    NameNodes = lists:map(Fun, FragNumbers),
-		    SelectAllFun =
+		    %% All fragments are local
+		    mnesia:fun_select(ActivityId, Opaque, Tab, MatchSpec, none, '_', SelectAllFun);
+		RemoteNameNodes ->
+		    Type = val({Tab,setorbag}),
+		    SelectFun =
 			fun(PatchedMatchSpec) ->
-				Match = [mnesia:dirty_select(Name, PatchedMatchSpec)
-					 || {Name, _Node} <- NameNodes],
-				lists:append(Match)
+				Ref = make_ref(),
+				Args = [self(), Ref, RemoteNameNodes, PatchedMatchSpec],
+				Pid = spawn_link(?MODULE, local_select, Args),
+				LocalMatch0 = [mnesia:dirty_select(Name, PatchedMatchSpec)
+					       || {Name, Node} <- NameNodes, Node == node()],
+				LocalMatch = case Type of
+						 ordered_set -> lists:merge(LocalMatch0);
+						 _ -> lists:append(LocalMatch0)
+					     end,
+				OldSelectFun = fun() -> SelectAllFun(PatchedMatchSpec) end,
+				local_collect(Ref, Pid, Type, LocalMatch, OldSelectFun)
 			end,
-		    case [{Name, Node} || {Name, Node} <- NameNodes, Node /= node()] of
-			[] ->
-			    %% All fragments are local
-			    mnesia:fun_select(ActivityId, Opaque, Tab, MatchSpec, none, '_', SelectAllFun);
-			RemoteNameNodes ->
-			    SelectFun =
-				fun(PatchedMatchSpec) ->
-					Ref = make_ref(),
-					Args = [self(), Ref, RemoteNameNodes, PatchedMatchSpec],
-					Pid = spawn_link(?MODULE, local_select, Args),
-					LocalMatch = [mnesia:dirty_select(Name, PatchedMatchSpec)
-						      || {Name, Node} <- NameNodes, Node == node()],
-					OldSelectFun = fun() -> SelectAllFun(PatchedMatchSpec) end,
-					local_collect(Ref, Pid, lists:append(LocalMatch), OldSelectFun)
-				end,
-			    mnesia:fun_select(ActivityId, Opaque, Tab, MatchSpec, none, '_', SelectFun)
-		    end;
-		BadFrags ->
-		    mnesia:abort({"match_spec_to_frag_numbers: Fragment numbers out of range",
-				  BadFrags, {range, 1, N}})
+		    mnesia:fun_select(ActivityId, Opaque, Tab, MatchSpec, none, '_', SelectFun)
 	    end
+    end.
+
+verify_numbers(FH,MatchSpec) ->
+    HashState = FH#frag_state.hash_state,
+    FragNumbers = 
+	case FH#frag_state.hash_module of
+	    HashMod when HashMod == ?DEFAULT_HASH_MOD ->
+		?DEFAULT_HASH_MOD:match_spec_to_frag_numbers(HashState, MatchSpec);
+	    HashMod ->
+		HashMod:match_spec_to_frag_numbers(HashState, MatchSpec)
+	end,
+    N = FH#frag_state.n_fragments,
+    VerifyFun = fun(F) when integer(F), F >= 1, F =< N -> false;
+		   (_F) -> true
+		end,
+    case catch lists:filter(VerifyFun, FragNumbers) of
+	[] ->
+	    FragNumbers;
+	BadFrags ->
+	    mnesia:abort({"match_spec_to_frag_numbers: Fragment numbers out of range",
+			  BadFrags, {range, 1, N}})
     end.
 
 local_select(ReplyTo, Ref, RemoteNameNodes, MatchSpec) ->
@@ -286,30 +337,34 @@ do_remote_select(ReplyTo, Ref, [{Name, Node} | NameNodes], MatchSpec) ->
 do_remote_select(_ReplyTo, _Ref, [], _MatchSpec) ->
     ok.
 
-local_collect(Ref, Pid, LocalMatch, OldSelectFun) ->
+local_collect(Ref, Pid, Type, LocalMatch, OldSelectFun) ->
     receive
 	{local_select, Ref, LocalRes} ->
-	    remote_collect(Ref, LocalRes, LocalMatch, OldSelectFun);
+	    remote_collect(Ref, Type, LocalRes, LocalMatch, OldSelectFun);
 	{'EXIT', Pid, Reason} ->
-	    remote_collect(Ref, {error, Reason}, [], OldSelectFun)
+	    remote_collect(Ref, Type, {error, Reason}, [], OldSelectFun)
     end.
     
-remote_collect(Ref, LocalRes = ok, Acc, OldSelectFun) ->
+remote_collect(Ref, Type, LocalRes = ok, Acc, OldSelectFun) ->
     receive
 	{remote_select, Ref, Node, RemoteRes} ->
 	    case RemoteRes of
 		{ok, RemoteMatch} ->
-		    remote_collect(Ref, LocalRes, RemoteMatch ++ Acc, OldSelectFun);
+		    Matches = case Type of
+				  ordered_set -> lists:merge(RemoteMatch, Acc);
+				  _ -> RemoteMatch ++ Acc
+			      end,
+		    remote_collect(Ref, Type, LocalRes, Matches, OldSelectFun);
 		_ ->
-		    remote_collect(Ref, {error, {node_not_running, Node}}, [], OldSelectFun)
+		    remote_collect(Ref, Type, {error, {node_not_running, Node}}, [], OldSelectFun)
 	    end
     after 0 ->
 	    Acc
     end;
-remote_collect(Ref, LocalRes = {error, Reason}, _Acc, OldSelectFun) ->
+remote_collect(Ref, Type, LocalRes = {error, Reason}, _Acc, OldSelectFun) ->
     receive
 	{remote_select, Ref, _Node, _RemoteRes} ->
-	    remote_collect(Ref, LocalRes, [], OldSelectFun)
+	    remote_collect(Ref, Type, LocalRes, [], OldSelectFun)
     after 0 ->
 	    mnesia:abort(Reason)
     end.

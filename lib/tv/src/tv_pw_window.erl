@@ -127,8 +127,7 @@ create_window(Msg, WinP) ->
     #pw_deblock{win_title      = Title, 
 		win_width      = Width, 
 		win_height     = Height,
-		min_win_width  = MinWidth,
-		min_win_height = MinHeight} = Msg,
+		min_win_width  = MinWidth} = Msg,
 
     
     S = gs:start(),
@@ -181,7 +180,7 @@ resize_window(WindowId, NewWidth, NewHeight) ->
 
 
 
-create_menulist([], Menu) ->
+create_menulist([], _Menu) ->
     [];
 create_menulist(List, Menu) ->
     MaxLength = get_length_of_longest_menu_text(List, 0),
@@ -190,7 +189,7 @@ create_menulist(List, Menu) ->
 
 
 
-create_menulist([], Menu, MaxLength) ->
+create_menulist([], _Menu, _MaxLength) ->
     [];
 create_menulist([{Text, Type, Data, AccCharPos, ShortcutChar} | Rest], Menu, MaxLength) ->
     ShortcutCapitalChar = 

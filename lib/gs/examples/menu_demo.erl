@@ -51,11 +51,11 @@ init() ->
 
 loop(Exit, Win) ->
     receive
-	{gs, save, click, _Data, [Txt, Index | Rest]} ->
+	{gs, save, click, _Data, [_Txt, _Index | _Rest]} ->
 	    io:format("Save~n");
-	{gs, load, click, _Data, [Txt, Index | Rest]} ->
+	{gs, load, click, _Data, [_Txt, _Index | _Rest]} ->
 	    io:format("Load~n");
-	{gs, Exit, click, _Data, [Txt, Index | Rest]} ->
+	{gs, Exit, click, _Data, [_Txt, _Index | _Rest]} ->
 	    io:format("Exit~n"),
 	    exit(normal);
 	{gs, _MnuItem, click, {new_color, Color}, Args} ->

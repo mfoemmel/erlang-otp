@@ -126,7 +126,7 @@
 #        endif
 #    endif
 #else /* Win32 */
-#    define FLAG_READ FD_READ | FD_CONNECT | FD_ACCEPT
+#    define FLAG_READ (FD_READ | FD_CONNECT | FD_ACCEPT)
 #    define FLAG_WRITE FD_WRITE
 #    define ERRNO WSAGetLastError()
 #    define ERRNO_BLOCK WSAEWOULDBLOCK
@@ -305,7 +305,11 @@ static ErlDrvData trace_ip_start(ErlDrvPort port, char *buff)
     }
 
     if (portno == 0) {
-	size_t sinlen = sizeof(sin);
+#ifdef HAVE_SOCKLEN_T
+	socklen_t sinlen = sizeof(sin);
+#else
+	int  sinlen = (int) sizeof(sin);
+#endif
 	if (getsockname(s, (struct sockaddr *)&sin, &sinlen) != 0) {
 	    closesocket(s);
 	    return ERL_DRV_ERROR_GENERAL;
@@ -432,7 +436,16 @@ static void trace_ip_event(ErlDrvData handle, ErlDrvEvent event)
 {
    TraceIpData *data = (TraceIpData *) handle;
    if ((HANDLE)event == data->event) {
-       trace_ip_ready_output(handle, (ErlDrvEvent)data->fd);
+       WSANETWORKEVENTS netEv;
+       if (WSAEnumNetworkEvents(data->fd, data->event, &netEv) != 0) {
+	   return;
+       }
+       if (netEv.lNetworkEvents & FLAG_WRITE) {
+	   trace_ip_ready_output(handle, (ErlDrvEvent)data->fd);
+       }
+       if (netEv.lNetworkEvents & FLAG_READ) {
+	   trace_ip_ready_input(handle, (ErlDrvEvent)data->fd);
+       }
    } else if ((HANDLE)event == data->listen_event) {
        trace_ip_ready_input(handle, (ErlDrvEvent)data->listenfd);
    }

@@ -66,7 +66,7 @@
 -compile({inline, 
           [{unify_types,2}, {match_types,2},
            {test_rel,3}, {symdiff,3}, 
-           {subst,4}]}).
+           {subst,3}]}).
 
 -compile({inline, [{fam_binop,3}]}).
 

@@ -23,7 +23,8 @@
 %% External exports
 -export([start_link/0,
 	 create_RELEASES/1, create_RELEASES/2, create_RELEASES/4,
-	 unpack_release/1, check_install_release/1, install_release/1, install_release/2,
+	 unpack_release/1,
+	 check_install_release/1, install_release/1, install_release/2,
 	 remove_release/1, 
 	 which_releases/0, make_permanent/1, reboot_old_release/1,
 	 set_unpacked/2, set_removed/1, install_file/2]).
@@ -379,10 +380,10 @@ handle_call({unpack_release, ReleaseName}, _From, S)
 	{'EXIT', Reason} ->
 	    {reply, {error, Reason}, S}
     end;
-handle_call({unpack_release, ReleaseName}, _From, S) ->
+handle_call({unpack_release, _ReleaseName}, _From, S) ->
     {reply, {error, client_node}, S};
 
-handle_call({check_install_release, Vsn}, From, S) ->
+handle_call({check_install_release, Vsn}, _From, S) ->
     case catch do_check_install_release(S#state.rel_dir,
 					Vsn,
 					S#state.releases,
@@ -464,7 +465,7 @@ handle_call({remove_release, Vsn}, _From, S)
 	{'EXIT', Reason} ->
 	    {reply, {error, Reason}, S}
     end;
-handle_call({remove_release, Vsn}, _From, S) ->
+handle_call({remove_release, _Vsn}, _From, S) ->
     {reply, {error, client_node}, S};
 
 handle_call({set_unpacked, RelFile, LibDirs}, _From, S) ->
@@ -481,8 +482,7 @@ handle_call({set_unpacked, RelFile, LibDirs}, _From, S) ->
     end;
 
 handle_call({set_removed, Vsn}, _From, S) ->
-    Root = S#state.root,
-    case catch do_set_removed(Root, S#state.rel_dir, Vsn,
+    case catch do_set_removed(S#state.rel_dir, Vsn,
 			      S#state.releases,
 			      S#state.masters) of
 	{ok, NewReleases} ->
@@ -528,16 +528,16 @@ handle_info({sync_nodes, Id, Node}, S) ->
     PSN = S#state.pre_sync_nodes,
     {noreply, S#state{pre_sync_nodes = [{sync_nodes, Id, Node} | PSN]}};
 
-handle_info(Msg, S) ->
+handle_info(Msg, State) ->
     error_logger:info_msg("release_handler: got unknown message: ~p~n", [Msg]),
-    {noreply, S}.
+    {noreply, State}.
 
-terminate(_Reason, S) ->
+terminate(_Reason, _State) ->
     ok.
 
-handle_cast(Msg, State) ->
+handle_cast(_Msg, State) ->
     {noreply, State}.
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%%-----------------------------------------------------------------
@@ -614,7 +614,7 @@ do_unpack_release(Root, RelDir, ReleaseName, Releases) ->
     extract_rel_file(filename:join("releases", Rel), Tar, Root),
     RelFile = filename:join(RelDir, Rel),
     Release = check_rel(Root, RelFile, false),
-    #release{vsn = Vsn, erts_vsn = EVsn} = Release,
+    #release{vsn = Vsn} = Release,
     case lists:keysearch(Vsn, #release.vsn, Releases) of
 	{value, _} -> throw({error, {existing_release, Vsn}});
 	_          -> ok
@@ -642,7 +642,7 @@ check_rel(Root, RelFile, LibDirs, Masters) ->
 	    check_rel_data(RelData, Root, LibDirs);
 	{ok, _} ->
 	    throw({error, {bad_rel_file, RelFile}});
-	{error, {LineNo, Mod, Reason}} ->
+	{error, Reason} when is_tuple(Reason) ->
 	    throw({error, {bad_rel_file, RelFile}});
 	{error, FileError} -> % FileError is posix atom | no_master
 	    throw({error, {FileError, RelFile}})
@@ -678,8 +678,8 @@ do_check_install_release(RelDir, Vsn, Releases, Masters) ->
 	    LatestRelease = get_latest_release(Releases),
 	    VsnDir = filename:join([RelDir, Vsn]),
 	    check_file(filename:join(VsnDir, "start.boot"), regular, Masters),
-%	    check_file(filename:join(VsnDir, "relup"), regular, Masters),
-	    check_file(filename:join(VsnDir, "sys.config"), regular, Masters),
+	    IsRelup = check_opt_file(filename:join(VsnDir, "relup"), regular, Masters),
+	    check_opt_file(filename:join(VsnDir, "sys.config"), regular, Masters),
 
 	    %% Check that all required libs are present
 	    Libs = Release#release.libs,
@@ -689,22 +689,28 @@ do_check_install_release(RelDir, Vsn, Releases, Masters) ->
 				  check_file(Ebin, directory, Masters)
 			  end,
 			  Libs),
-	    case get_rh_script(LatestRelease, Release, RelDir, Masters) of
-		{ok, {CurrentVsn, Descr, Script}} ->
-		    case catch check_script(Script, Libs) of
-			ok ->
-			    {ok, CurrentVsn, Descr};
-			Else ->
-			    Else
+
+	    if
+		IsRelup ->
+		    case get_rh_script(LatestRelease, Release, RelDir, Masters) of
+			{ok, {CurrentVsn, Descr, Script}} ->
+			    case catch check_script(Script, Libs) of
+				ok ->
+				    {ok, CurrentVsn, Descr};
+				Else ->
+				    Else
+			    end;
+			Error ->
+			    Error
 		    end;
-		Error ->
-		    Error
+		true ->
+		    {ok, Vsn, ""}
 	    end;
 	_ ->
 	    {error, {no_such_release, Vsn}}
     end.
 	    
-do_install_release(#state{start_prg = StartPrg, root = Root,
+do_install_release(#state{start_prg = StartPrg,
 			  rel_dir = RelDir, releases = Releases,
 			  masters = Masters,
 			  static_emulator = Static},
@@ -769,7 +775,7 @@ do_make_services_permanent(PermanentVsn,Vsn, PermanentEVsn, EVsn) ->
     Name = hd(string:tokens(atom_to_list(node()),"@")) 
 	++ "_" ++ Vsn,
     case erlsrv:get_service(EVsn,Name) of
-	{error, Error} ->
+	{error, _Error} ->
 	    %% We probably do not need to replace services, just 
 	    %% rename.
 	    case os:getenv("ERLSRV_SERVICE_NAME") == PermName of
@@ -779,7 +785,7 @@ do_make_services_permanent(PermanentVsn,Vsn, PermanentEVsn, EVsn) ->
 			    case erlsrv:get_service(EVsn,Name) of
 				{error,Error2} ->
 				    throw({error,Error2});
-				Data2 ->
+				_Data2 ->
 				    %% The interfaces for doing this are
 				    %% NOT published and may be subject to
 				    %% change. Do NOT do this anywhere else!
@@ -813,9 +819,9 @@ do_make_services_permanent(PermanentVsn,Vsn, PermanentEVsn, EVsn) ->
 	    end
     end.
 	    
-do_make_permanent(#state{root = Root, releases = Releases,
+do_make_permanent(#state{releases = Releases,
 			 rel_dir = RelDir, unpurged = Unpurged,
-			 masters = Masters, client_dir = CliDir,
+			 masters = Masters,
 			 static_emulator = Static},
 		  Vsn) ->
     case lists:keysearch(Vsn, #release.vsn, Releases) of
@@ -830,7 +836,7 @@ do_make_permanent(#state{root = Root, releases = Releases,
 		end,
 	    Boot = filename:join(Dir, "start.boot"),
 	    check_file(Boot, regular, Masters),
-	    set_permanent_files(RelDir, EVsn, Vsn, Masters, CliDir, Static),
+	    set_permanent_files(RelDir, EVsn, Vsn, Masters, Static),
 	    NewReleases = set_status(Vsn, permanent, Releases),
 	    write_releases(RelDir, NewReleases, Masters),
 	    case os:type() of
@@ -890,9 +896,9 @@ do_back_service(OldVersion, CurrentVersion,OldEVsn,CurrentEVsn) ->
 	    throw({error, {'heart:set_cmd() error', Error3}})
     end.
 
-do_reboot_old_release(#state{root = Root, releases = Releases,
+do_reboot_old_release(#state{releases = Releases,
 			     rel_dir = RelDir, masters = Masters,
-			     client_dir = CliDir, static_emulator = Static},
+			     static_emulator = Static},
 		      Vsn) ->
     case lists:keysearch(Vsn, #release.vsn, Releases) of
 	{value, #release{erts_vsn = EVsn, status = old}} ->
@@ -912,7 +918,7 @@ do_reboot_old_release(#state{root = Root, releases = Releases,
 				 _ ->
 				     false
 			     end,
-	    set_permanent_files(RelDir, EVsn, Vsn, Masters, CliDir, Static),
+	    set_permanent_files(RelDir, EVsn, Vsn, Masters, Static),
 	    NewReleases = set_status(Vsn, permanent, Releases),
 	    write_releases(RelDir, NewReleases, Masters),
 	    case os:type() of
@@ -936,15 +942,15 @@ do_reboot_old_release(#state{root = Root, releases = Releases,
 %% client with static emulator the new system version is made permanent
 %% in different ways.
 %%-----------------------------------------------------------------
-set_permanent_files(RelDir, EVsn, Vsn, false, _, _) ->
+set_permanent_files(RelDir, EVsn, Vsn, false, _) ->
     write_start(filename:join([RelDir, "start_erl.data"]),
 		EVsn ++ " " ++ Vsn,
 		false);
-set_permanent_files(RelDir, EVsn, Vsn, Masters, CliDir, false) ->
+set_permanent_files(RelDir, EVsn, Vsn, Masters, false) ->
     write_start(filename:join([RelDir, "start_erl.data"]),
 		EVsn ++ " " ++ Vsn,
 		Masters);
-set_permanent_files(RelDir, EVsn, Vsn, Masters, CliDir, Static) ->
+set_permanent_files(RelDir, _EVsn, Vsn, Masters, _Static) ->
     VsnDir = filename:join([RelDir, Vsn]),
     set_static_files(VsnDir, RelDir, Masters).
 
@@ -970,7 +976,7 @@ do_remove_release(Root, RelDir, Vsn, Releases) ->
 
 	    NewReleases = lists:keydelete(Vsn, #release.vsn, Releases),
 	    RemoveThese =
-		lists:foldl(fun(#release{libs = Libs, vsn = Vsn2}, Remove) ->
+		lists:foldl(fun(#release{libs = Libs}, Remove) ->
 				    diff_dir(Remove, Libs)
 			    end, RemoveLibs, NewReleases),
 	    lists:foreach(fun({_Lib, _LVsn, LDir}) ->
@@ -990,7 +996,7 @@ do_remove_release(Root, RelDir, Vsn, Releases) ->
 
 do_set_unpacked(Root, RelDir, RelFile, LibDirs, Releases, Masters) ->
     Release = check_rel(Root, RelFile, LibDirs, Masters),
-    #release{vsn = Vsn, erts_vsn = EVsn, name = Name} = Release,
+    #release{vsn = Vsn} = Release,
     case lists:keysearch(Vsn, #release.vsn, Releases) of
 	{value, _} -> throw({error, {existing_release, Vsn}});
 	false -> ok
@@ -1001,7 +1007,7 @@ do_set_unpacked(Root, RelDir, RelFile, LibDirs, Releases, Masters) ->
     write_releases(RelDir, NewReleases, Masters),
     {ok, NewReleases, Vsn}.
 
-do_set_removed(Root, RelDir, Vsn, Releases, Masters) ->
+do_set_removed(RelDir, Vsn, Releases, Masters) ->
     case lists:keysearch(Vsn, #release.vsn, Releases) of
 	{value, #release{status = permanent}} ->
 	    {error, {permanent, Vsn}};
@@ -1052,7 +1058,7 @@ get_rh_script(#release{vsn = CurrentVsn},
 
 try_upgrade(ToVsn, CurrentVsn, Relup, Masters) ->
     case consult(Relup, Masters) of
-	{ok, [{Vsn, ListOfRhScripts, _}]} ->
+	{ok, [{ToVsn, ListOfRhScripts, _}]} ->
 	    case lists:keysearch(CurrentVsn, 1, ListOfRhScripts) of
 		{value, RhScript} -> 
 		    {ok, RhScript};
@@ -1061,7 +1067,7 @@ try_upgrade(ToVsn, CurrentVsn, Relup, Masters) ->
 	    end;
 	{ok, _} ->
 	    throw({error, {bad_relup_file, Relup}});
-	{error, {LineNo, Mod, Reason}} ->
+	{error, Reason} when is_tuple(Reason) ->
 	    throw({error, {bad_relup_file, Relup}});
 	{error, enoent} ->
 	    error;
@@ -1080,7 +1086,7 @@ try_downgrade(ToVsn, CurrentVsn, Relup, Masters) ->
 	    end;
 	{ok, _} ->
 	    throw({error, {bad_relup_file, Relup}});
-	{error, {LineNo, Mod, Reason}} ->
+	{error, Reason} when is_tuple(Reason) ->
 	    throw({error, {bad_relup_file, Relup}});
 	{error, FileError} -> % FileError is posix atom | no_master
 	    throw({error, {FileError, Relup}})
@@ -1121,9 +1127,9 @@ diff_dir([H | T], L) ->
     end;
 diff_dir([], _) -> [].
 
-memlib({Lib, Vsn, _Dir}, [{Lib, Vsn, _Dir2} | T]) -> true;
-memlib(Lib, [H | T]) -> memlib(Lib, T);
-memlib(Lib, []) -> false.
+memlib({Lib, Vsn, _Dir}, [{Lib, Vsn, _Dir2} | _T]) -> true;
+memlib(Lib, [_H | T]) -> memlib(Lib, T);
+memlib(_Lib, []) -> false.
 			 
 %% recursively remove file or directory
 remove_file(File) ->
@@ -1184,7 +1190,7 @@ change_appl_data(RelDir, #release{vsn = Vsn}, Masters) ->
 		ok -> Appls;
 		{error, Reason} -> exit({change_appl_data, Reason})
 	    end;
-	{error, Reason} ->
+	{error, _Reason} ->
 	    throw({error, {no_such_file, BootFile}})
     end.
 
@@ -1330,7 +1336,7 @@ transform_release(ReleaseDir, Releases, Masters) ->
 	    write_releases(ReleaseDir, DReleases, Masters),
 	    F1 = fun(Release) when Release#release.status == tmp_current ->
 			 case init:script_id() of
-			     {Name, Vsn} when Release#release.vsn == Vsn ->
+			     {_Name, Vsn} when Release#release.vsn == Vsn ->
 				 Release#release{status = current};
 			     _ ->
 				 Release#release{status = unpacked}
@@ -1347,6 +1353,15 @@ transform_release(ReleaseDir, Releases, Masters) ->
 %% none (in case of failure).
 %%-----------------------------------------------------------------
 
+check_opt_file(FileName, Type, Masters) ->
+    case catch check_file(FileName, Type, Masters) of
+	ok ->
+	    true;
+	_Error ->
+	    io:format("Warning: ~p missing (optional)~n", [FileName]),
+	    false
+    end.
+
 check_file(FileName, Type, false) ->
     do_check_file(FileName, Type);
 check_file(FileName, Type, Masters) ->
@@ -1356,7 +1371,7 @@ check_file(FileName, Type, Masters) ->
 check_file_masters(FileName, Type, [Master|Masters]) ->
     do_check_file(Master, FileName, Type),
     check_file_masters(FileName, Type, Masters);
-check_file_masters(FileName, Type, []) ->
+check_file_masters(_FileName, _Type, []) ->
     ok.
 
 %% Type == regular | directory
@@ -1479,7 +1494,7 @@ copy_file_m(File, Dir, [Master|Masters]) ->
 	{error, {Reason, F}} -> throw({error, {Master, Reason, F}});
 	Other                -> throw({error, {Master, Other, File}})
     end;
-copy_file_m(File, Dir, []) ->
+copy_file_m(_File, _Dir, []) ->
     ok.
 
 do_copy_file(File, Dir) ->
@@ -1608,7 +1623,7 @@ consult_master([Master|Ms], File) ->
 	{badrpc, _} -> consult_master(Ms, File);
 	Res         -> Res
     end;
-consult_master([], File) ->
+consult_master([], _File) ->
     {error, no_master}.
 
 read_file(File, false) ->
@@ -1630,7 +1645,7 @@ read_master([Master|Ms], File) ->
 	{badrpc, _} -> read_master(Ms, File);
 	Res         -> Res
     end;
-read_master([], File) ->
+read_master([], _File) ->
     {error, no_master}.
 
 %%-----------------------------------------------------------------

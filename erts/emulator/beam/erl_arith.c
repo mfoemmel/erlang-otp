@@ -15,11 +15,12 @@
  * 
  *     $Id$
  */
+
 /*
-** Arithmetic functions formerly found in beam_emu.c
-** now available as bifs as erl_db_util and db_match_compile needs
-** them.
-*/
+ * Arithmetic functions formerly found in beam_emu.c
+ * now available as bifs as erl_db_util and db_match_compile needs
+ * them.
+ */
 
 
 #ifdef HAVE_CONFIG_H
@@ -36,10 +37,23 @@
 #include "atom.h"
 
 #ifndef MAX
-#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#  define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #endif
 
 static Eterm shift(Process* p, Eterm arg1, Eterm arg2, int right);
+
+static ERTS_INLINE void maybe_shrink(Process* p, Eterm* hp, Eterm res, Uint alloc)
+{
+#ifndef SHARED_HEAP
+    Uint actual;
+
+    if (is_small(res)) {
+	erts_arith_shrink(p, hp);
+    } else if ((actual = bignum_header_arity(*hp)+1) < alloc) {
+	erts_arith_shrink(p, hp+actual);
+    }
+#endif
+}
 
 /*
  ** Bif interfaces
@@ -47,7 +61,11 @@ static Eterm shift(Process* p, Eterm arg1, Eterm arg2, int right);
 
 BIF_RETTYPE splus_1(BIF_ALIST_1)
 {
-    BIF_RET(BIF_ARG_1);
+    if (is_number(BIF_ARG_1)) {
+	BIF_RET(BIF_ARG_1);
+    } else {
+	BIF_ERROR(BIF_P, BADARITH);
+    }
 } 
 
 BIF_RETTYPE splus_2(BIF_ALIST_2)
@@ -137,11 +155,12 @@ BIF_RETTYPE bsr_2(Process* p, Eterm arg1, Eterm arg2)
 static Eterm
 shift(Process* p, Eterm arg1, Eterm arg2, int right)
 {
-    int i;
-    int ires;
+    Sint i;
+    Sint ires;
     Eterm tmp_big1[2];
     Eterm* bigp;
-    
+    Uint need;
+
     if (right) {
 	if (is_small(arg2)) {
 	    i = -signed_val(arg2);
@@ -173,8 +192,8 @@ shift(Process* p, Eterm arg1, Eterm arg2, int right)
 		    }
 		    BIF_RET(arg1);
 		} else if (i < SMALL_BITS-1) { /* Left shift */
-		    if ((ires > 0 && ((-1 << ((SMALL_BITS-1)-i)) & ires) == 0) ||
-			((-1 << ((SMALL_BITS-1)-i)) & ~ires) == 0) {
+		    if ((ires > 0 && ((~(Uint)0 << ((SMALL_BITS-1)-i)) & ires) == 0) ||
+			((~(Uint)0 << ((SMALL_BITS-1)-i)) & ~ires) == 0) {
 			arg1 = make_small(ires << i);
 			BIF_RET(arg1);
 		    }
@@ -191,13 +210,14 @@ shift(Process* p, Eterm arg1, Eterm arg2, int right)
 		    else
 			ires -= (-i / D_EXP);
 		}
-		bigp = ArithAlloc(p, BIG_NEED_SIZE(ires+1));
-
+		need = BIG_NEED_SIZE(ires+1);
+		bigp = ArithAlloc(p, need);
 		arg1 = big_lshift(arg1, i, bigp);
-		ArithCheck(p);
 		if (is_nil(arg1)) {
 		    BIF_ERROR(p, SYSTEM_LIMIT);
 		}
+		maybe_shrink(p, bigp, arg1, need);
+		ArithCheck(p);
 		BIF_RET(arg1);
 	    } else if (is_big(arg1)) {
 		if (i == 0) {
@@ -210,40 +230,36 @@ shift(Process* p, Eterm arg1, Eterm arg2, int right)
     BIF_ERROR(p, BADARITH);
 }
 
-
-
-/*
-** bnot is "inlined" in bif, no other part of
-** the runtime need's it, it's too simple....
-*/
- 
 BIF_RETTYPE bnot_1(BIF_ALIST_1)
 {
     Eterm ret;
+
     if (is_small(BIF_ARG_1)) {
 	ret = make_small(~signed_val(BIF_ARG_1));
     } else if (is_big(BIF_ARG_1)) {
-	Eterm* bigp = ArithAlloc(BIF_P, 
-				 BIG_NEED_SIZE(big_size(BIF_ARG_1)+1));
+	Uint need = BIG_NEED_SIZE(big_size(BIF_ARG_1)+1);
+	Eterm* bigp = ArithAlloc(BIF_P, need);
+
 	ret = big_bnot(BIF_ARG_1, bigp);
-	ArithCheck(BIF_P);
 	if (is_nil(ret)) {
-	    BIF_ERROR(BIF_P,SYSTEM_LIMIT);
+	    BIF_ERROR(BIF_P, SYSTEM_LIMIT);
 	}
+	maybe_shrink(BIF_P, bigp, ret, need);
+	ArithCheck(BIF_P);
     } else {
-	BIF_ERROR(BIF_P,BADARITH);
+	BIF_ERROR(BIF_P, BADARITH);
     }
     BIF_RET(ret);
 } 
 
 /*
-** Implementation and interfaces for the rest of the runtime system.
-**
-** NB:
-** The global functions named erts_XXX are used by the beam
-** emulator loop, do NOT fiddle with these without considering
-** that fact, please...
-*/
+ * Implementation and interfaces for the rest of the runtime system.
+ *
+ * Note:
+ * The global functions named erts_XXX are used by the beam
+ * emulator loop, do NOT fiddle with these without considering
+ * that fact, please...
+ */
 Eterm
 erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
 {
@@ -255,7 +271,7 @@ erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
     dsize_t sz1, sz2, sz;
     int need_heap;
     Eterm* hp;
-    int ires;
+    Sint ires;
 
     ERTS_FP_CHECK_INIT();
     switch (arg1 & _TAG_PRIMARY_MASK) {
@@ -331,11 +347,12 @@ erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
 		    need_heap = BIG_NEED_SIZE(sz);
 		    hp = ArithAlloc(p, need_heap);
 		    res = big_plus(arg1, arg2, hp);
-		    ArithCheck(p);
 		    if (is_nil(res)) {
 			p->freason = SYSTEM_LIMIT;
 			return THE_NON_VALUE;
 		    }
+		    maybe_shrink(p, hp, res, need_heap);
+		    ArithCheck(p);
 		    return res;
 		case (_TAG_HEADER_FLOAT >> _TAG_PRIMARY_SIZE):
 		    if (big_to_double(arg1, &f1.fd) < 0) {
@@ -375,7 +392,7 @@ erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
 		do_float:
 		    f1.fd = f1.fd + f2.fd;
 		    ERTS_FP_ERROR(f1.fd, goto badarith);
-		    hp = ArithAlloc(p, 3);
+		    hp = ArithAlloc(p, FLOAT_SIZE_OBJECT);
 		    res = make_float(hp);
 		    ArithCheck(p);
 		    PUT_DOUBLE(f1, hp);
@@ -403,7 +420,7 @@ erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2)
     dsize_t sz1, sz2, sz;
     int need_heap;
     Eterm* hp;
-    int ires;
+    Sint ires;
 
     ERTS_FP_CHECK_INIT();
     switch (arg1 & _TAG_PRIMARY_MASK) {
@@ -468,11 +485,12 @@ erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2)
 		    need_heap = BIG_NEED_SIZE(sz);
 		    hp = ArithAlloc(p, need_heap);
 		    res = big_minus(arg1, arg2, hp);
-		    ArithCheck(p);
 		    if (is_nil(res)) {
 			p->freason = SYSTEM_LIMIT;
 			return THE_NON_VALUE;
 		    }
+                    maybe_shrink(p, hp, res, need_heap);
+		    ArithCheck(p);
 		    return res;
 		default:
 		    goto badarith;
@@ -521,7 +539,7 @@ erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2)
 		do_float:
 		    f1.fd = f1.fd - f2.fd;
 		    ERTS_FP_ERROR(f1.fd, goto badarith);
-		    hp = ArithAlloc(p, 3);
+		    hp = ArithAlloc(p, FLOAT_SIZE_OBJECT);
 		    res = make_float(hp);
 		    ArithCheck(p);
 		    PUT_DOUBLE(f1, hp);
@@ -561,14 +579,48 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 		case (_TAG_IMMED1_SMALL >> _TAG_PRIMARY_SIZE):
 		    if ((arg1 == SMALL_ZERO) || (arg2 == SMALL_ZERO)) {
 			return(SMALL_ZERO);
-		    }
-		    if (arg1 == SMALL_ONE)
+		    } else if (arg1 == SMALL_ONE) {
 			return(arg2);
-		    if (arg2 == SMALL_ONE)
+		    } else if (arg2 == SMALL_ONE) {
 			return(arg1);
-		    arg1 = small_to_big(signed_val(arg1), tmp_big1);
-		    arg2 = small_to_big(signed_val(arg2), tmp_big2);
-		    goto do_big;
+		    } else {
+			Eterm big_res[3];
+
+			/*
+			 * The following code is optimized for the case that
+			 * result is small (which should be the most common case
+			 * in practice).
+			 */
+			arg1 = small_to_big(signed_val(arg1), tmp_big1);
+			arg2 = small_to_big(signed_val(arg2), tmp_big2);
+			res = big_times(arg1, arg2, big_res);
+			if (is_small(res)) {
+			    return res;
+			} else if (is_nil(res)) {
+			    goto system_limit;
+			} else {
+			    /*
+			     * The result is a a big number.
+			     * Allocate a heap fragment and copy the result.
+			     * Be careful to allocate exactly what we need
+			     * to not leave any holes.
+			     */
+			    Uint arity;
+			    
+			    ASSERT(is_big(res));
+			    hdr = big_res[0];
+			    arity = bignum_header_arity(hdr);
+			    ASSERT(arity == 1 || arity == 2);
+			    hp = ArithAlloc(p, arity+1);
+			    res = make_big(hp);
+			    *hp++ = hdr;
+			    *hp++ = big_res[1];
+			    if (arity > 1) {
+				*hp = big_res[2];
+			    }
+			    return res;
+			}
+		    }
 		default:
 		badarith:
 		    p->freason = BADARITH;
@@ -584,6 +636,7 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 		    if (arg1 == SMALL_ONE)
 			return(arg2);
 		    arg1 = small_to_big(signed_val(arg1), tmp_big1);
+		    sz = 2 + big_size(arg2);
 		    goto do_big;
 		case (_TAG_HEADER_FLOAT >> _TAG_PRIMARY_SIZE):
 		    f1.fd = signed_val(arg1);
@@ -610,6 +663,7 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 		    if (arg2 == SMALL_ONE)
 			return(arg1);
 		    arg2 = small_to_big(signed_val(arg2), tmp_big2);
+		    sz = 2 + big_size(arg1);
 		    goto do_big;
 		default:
 		    goto badarith;
@@ -619,16 +673,24 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 		switch ((hdr & _TAG_HEADER_MASK) >> _TAG_PRIMARY_SIZE) {
 		case (_TAG_HEADER_POS_BIG >> _TAG_PRIMARY_SIZE):
 		case (_TAG_HEADER_NEG_BIG >> _TAG_PRIMARY_SIZE):
-
-		do_big:
 		    sz1 = big_size(arg1);
 		    sz2 = big_size(arg2);
 		    sz = sz1 + sz2;
+
+		do_big:
 		    need_heap = BIG_NEED_SIZE(sz);
-		    hp = ArithAlloc(p, need_heap);
+                    hp = ArithAlloc(p, need_heap);
 		    res = big_times(arg1, arg2, hp);
-		    ArithCheck(p);
+                    ArithCheck(p);
+
+		    /*
+		     * Note that the result must be big in this case, since
+		     * at least one operand was big to begin with, and
+		     * the absolute value of the other is > 1.
+		     */
+
 		    if (is_nil(res)) {
+		    system_limit:
 			p->freason = SYSTEM_LIMIT;
 			return THE_NON_VALUE;
 		    }
@@ -671,7 +733,7 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 		do_float:
 		    f1.fd = f1.fd * f2.fd;
 		    ERTS_FP_ERROR(f1.fd, goto badarith);
-		    hp = ArithAlloc(p, 3);
+		    hp = ArithAlloc(p, FLOAT_SIZE_OBJECT);
 		    res = make_float(hp);
 		    ArithCheck(p);
 		    PUT_DOUBLE(f1, hp);
@@ -798,7 +860,7 @@ erts_mixed_div(Process* p, Eterm arg1, Eterm arg2)
 		do_float:
 		    f1.fd = f1.fd / f2.fd;
 		    ERTS_FP_ERROR(f1.fd, goto badarith);
-		    hp = ArithAlloc(p, 3);
+		    hp = ArithAlloc(p, FLOAT_SIZE_OBJECT);
 		    PUT_DOUBLE(f1, hp);
 		    ArithCheck(p);
 		    return make_float(hp);
@@ -837,15 +899,18 @@ erts_int_div(Process* p, Eterm arg1, Eterm arg2)
 	} else {
 	    Eterm* hp;
 	    int i = big_size(arg1);
+	    Uint need;
 
 	    ires = big_size(arg2);
-	    hp = ArithAlloc(p, BIG_NEED_SIZE(i-ires+1) + BIG_NEED_SIZE(i));
+	    need = BIG_NEED_SIZE(i-ires+1) + BIG_NEED_SIZE(i);
+	    hp = ArithAlloc(p, need);
 	    arg1 = big_div(arg1, arg2, hp);
-	    ArithCheck(p);
 	    if (is_nil(arg1)) {
 		p->freason = SYSTEM_LIMIT;
 		return THE_NON_VALUE;
 	    }
+	    maybe_shrink(p, hp, arg1, need);
+	    ArithCheck(p);
 	}
 	return arg1;
     default:
@@ -872,13 +937,16 @@ erts_int_rem(Process* p, Eterm arg1, Eterm arg2)
 	if (ires == 0) {
 	    arg1 = SMALL_ZERO;
 	} else if (ires > 0) {
-	    Eterm* hp = ArithAlloc(p, BIG_NEED_SIZE(big_size(arg1)));
+	    Uint need = BIG_NEED_SIZE(big_size(arg1));
+	    Eterm* hp = ArithAlloc(p, need);
+
 	    arg1 = big_rem(arg1, arg2, hp);
-	    ArithCheck(p);
 	    if (is_nil(arg1)) {
 		p->freason = SYSTEM_LIMIT;
 		return THE_NON_VALUE;
 	    }
+	    maybe_shrink(p, hp, arg1, need);
+	    ArithCheck(p);
 	}
 	return arg1;
     default:
@@ -892,7 +960,7 @@ Eterm erts_band(Process* p, Eterm arg1, Eterm arg2)
     Eterm tmp_big1[2];
     Eterm tmp_big2[2];
     Eterm* hp;
-    int ires;
+    int need;
 
     switch (NUMBER_CODE(arg1, arg2)) {
     case SMALL_BIG:
@@ -907,11 +975,12 @@ Eterm erts_band(Process* p, Eterm arg1, Eterm arg2)
 	p->freason = BADARITH;
 	return THE_NON_VALUE;
     }
-    ires = BIG_NEED_SIZE(MAX(big_size(arg1), big_size(arg2)) + 1);
-    hp = ArithAlloc(p, ires);
+    need = BIG_NEED_SIZE(MAX(big_size(arg1), big_size(arg2)) + 1);
+    hp = ArithAlloc(p, need);
     arg1 = big_band(arg1, arg2, hp);
-    ArithCheck(p);
     ASSERT(is_not_nil(arg1));
+    maybe_shrink(p, hp, arg1, need);
+    ArithCheck(p);
     return arg1;
 }
 
@@ -920,7 +989,7 @@ Eterm erts_bor(Process* p, Eterm arg1, Eterm arg2)
     Eterm tmp_big1[2];
     Eterm tmp_big2[2];
     Eterm* hp;
-    int ires;
+    int need;
 
     switch (NUMBER_CODE(arg1, arg2)) {
     case SMALL_BIG:
@@ -935,11 +1004,12 @@ Eterm erts_bor(Process* p, Eterm arg1, Eterm arg2)
 	p->freason = BADARITH;
 	return THE_NON_VALUE;
     }
-    ires = BIG_NEED_SIZE(MAX(big_size(arg1), big_size(arg2)) + 1);
-    hp = ArithAlloc(p, ires);
+    need = BIG_NEED_SIZE(MAX(big_size(arg1), big_size(arg2)) + 1);
+    hp = ArithAlloc(p, need);
     arg1 = big_bor(arg1, arg2, hp);
-    ArithCheck(p);
     ASSERT(is_not_nil(arg1));
+    maybe_shrink(p, hp, arg1, need);
+    ArithCheck(p);
     return arg1;
 }
 
@@ -948,7 +1018,7 @@ Eterm erts_bxor(Process* p, Eterm arg1, Eterm arg2)
     Eterm tmp_big1[2];
     Eterm tmp_big2[2];
     Eterm* hp;
-    int ires;
+    int need;
 
     switch (NUMBER_CODE(arg1, arg2)) {
     case SMALL_BIG:
@@ -963,10 +1033,11 @@ Eterm erts_bxor(Process* p, Eterm arg1, Eterm arg2)
 	p->freason = BADARITH;
 	return THE_NON_VALUE;
     }
-    ires = BIG_NEED_SIZE(MAX(big_size(arg1), big_size(arg2)) + 1);
-    hp = ArithAlloc(p, ires);
+    need = BIG_NEED_SIZE(MAX(big_size(arg1), big_size(arg2)) + 1);
+    hp = ArithAlloc(p, need);
     arg1 = big_bxor(arg1, arg2, hp);
-    ArithCheck(p);
     ASSERT(is_not_nil(arg1));
+    maybe_shrink(p, hp, arg1, need);
+    ArithCheck(p);
     return arg1;
 }

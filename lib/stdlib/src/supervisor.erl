@@ -109,7 +109,7 @@ check_childspecs(X) -> {error, {badarg, X}}.
 %%% ---------------------------------------------------
 init({SupName, Mod, Args}) ->
     process_flag(trap_exit, true),
-    case apply(Mod, init, [Args]) of
+    case Mod:init(Args) of
 	{ok, {SupFlags, StartSpec}} ->
 	    case init_state(SupName, SupFlags, Mod, Args) of
 		{ok, State} when ?is_simple(State) ->

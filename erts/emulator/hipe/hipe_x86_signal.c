@@ -19,7 +19,7 @@
  * Our solution is to override the C library's signal handler setup
  * procedure with our own which enforces the SA_ONSTACK flag.
  *
- * XXX: The current code only supports Linux with glibc 2.2 or 2.1,
+ * XXX: This code only supports Linux with glibc-2.1 or above,
  * and Solaris 8.
  */
 #include <signal.h>
@@ -27,7 +27,26 @@
 #include <stdlib.h>
 #include "hipe_signal.h"
 
-#if __GLIBC__ == 2 && (__GLIBC_MINOR__ == 2 || __GLIBC_MINOR__ == 3)
+#if __GLIBC__ == 2 && __GLIBC_MINOR__ == 3
+/* See comment below for glibc 2.2. */
+#define __USE_GNU		/* to un-hide RTLD_NEXT */
+#include <dlfcn.h>
+static int (*__next_sigaction)(int, const struct sigaction*, struct sigaction*);
+#define init_done()	(__next_sigaction != 0)
+extern int __sigaction(int, const struct sigaction*, struct sigaction*);
+#define __SIGACTION __sigaction
+static void do_init(void)
+{
+    __next_sigaction = dlsym(RTLD_NEXT, "__sigaction");
+    if( __next_sigaction != 0 )
+	return;
+    perror("dlsym");
+    abort();
+}
+#define INIT()	do { if( !init_done() ) do_init(); } while(0)
+#endif	/* glibc 2.3 */
+
+#if __GLIBC__ == 2 && (__GLIBC_MINOR__ == 2 /*|| __GLIBC_MINOR__ == 3*/)
 /*
  * __libc_sigaction() is the core routine.
  * Without libpthread, sigaction() and __sigaction() are both aliases

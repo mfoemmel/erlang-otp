@@ -100,25 +100,23 @@
 	 receive_timeout/1, seq_arg/1, seq_body/1, set_ann/2,
 	 string_lit/1, string_val/1, subtrees/1, to_records/1,
 	 try_arg/1, try_body/1, try_vars/1, try_evars/1, try_handler/1,
-	 tuple_arity/1, tuple_es/1, type/1, update_c_alias/3,
-	 update_c_apply/3, update_c_call/4, update_c_case/3,
-	 update_c_catch/2, update_c_clause/4, update_c_cons/3,
-	 update_c_cons_skel/3, update_c_fname/2, update_c_fname/3,
-	 update_c_fun/3, update_c_let/4, update_c_letrec/3,
-	 update_c_module/5, update_c_primop/3, update_c_receive/4,
-	 update_c_seq/3, update_c_try/6, update_c_tuple/2,
-	 update_c_tuple_skel/2, update_c_values/2, update_c_var/2,
-	 update_data/3, update_list/2, update_list/3,
+	 tuple_arity/1, tuple_es/1, type/1, unfold_literal/1,
+	 update_c_alias/3, update_c_apply/3, update_c_call/4,
+	 update_c_case/3, update_c_catch/2, update_c_clause/4,
+	 update_c_cons/3, update_c_cons_skel/3, update_c_fname/2,
+	 update_c_fname/3, update_c_fun/3, update_c_let/4,
+	 update_c_letrec/3, update_c_module/5, update_c_primop/3,
+	 update_c_receive/4, update_c_seq/3, update_c_try/6,
+	 update_c_tuple/2, update_c_tuple_skel/2, update_c_values/2,
+	 update_c_var/2, update_data/3, update_list/2, update_list/3,
 	 update_data_skel/3, update_tree/2, update_tree/3,
-	 values_arity/1, values_es/1, var_name/1]).
-
-
-%% Binary-syntax support. This is still experimental.
-
--export([c_binary/1, update_c_binary/2, ann_c_binary/2, is_c_binary/1,
-	 binary_segs/1, c_bin_seg/5, update_c_bin_seg/6,
-	 ann_c_bin_seg/6, is_c_bin_seg/1, bin_seg_val/1, bin_seg_size/1,
-	 bin_seg_unit/1, bin_seg_type/1, bin_seg_flags/1]).
+	 values_arity/1, values_es/1, var_name/1, c_binary/1,
+	 update_c_binary/2, ann_c_binary/2, is_c_binary/1,
+	 binary_segments/1, c_bitstr/3, c_bitstr/4, c_bitstr/5,
+	 update_c_bitstr/5, update_c_bitstr/6, ann_c_bitstr/5,
+	 ann_c_bitstr/6, is_c_bitstr/1, bitstr_val/1, bitstr_size/1,
+	 bitstr_bitsize/1, bitstr_unit/1, bitstr_type/1,
+	 bitstr_flags/1]).
 
 -include("core_parse.hrl").
 
@@ -154,6 +152,8 @@
 %%  <tr>
 %%    <td>alias</td>
 %%    <td>apply</td>
+%%    <td>binary</td>
+%%    <td>bitstr</td>
 %%    <td>call</td>
 %%    <td>case</td>
 %%    <td>catch</td>
@@ -163,13 +163,12 @@
 %%    <td>fun</td>
 %%    <td>let</td>
 %%    <td>letrec</td>
-%%  </tr><tr>
 %%    <td>literal</td>
 %%    <td>module</td>
+%%  </tr><tr>
 %%    <td>primop</td>
 %%    <td>receive</td>
 %%    <td>seq</td>
-%%  </tr><tr>
 %%    <td>try</td>
 %%    <td>tuple</td>
 %%    <td>values</td>
@@ -190,6 +189,8 @@
 %% @see abstract/1
 %% @see c_alias/2
 %% @see c_apply/2
+%% @see c_binary/1
+%% @see c_bitstr/5
 %% @see c_call/3
 %% @see c_case/2
 %% @see c_catch/1
@@ -395,21 +396,22 @@ is_literal(_) ->
 
 %% @spec fold_literal(Node::cerl()) -> cerl()
 %%
-%% @doc Assures that literals have a normal-form representation. This
-%% is occasionally useful if <code>c_cons_skel/2</code> or
-%% <code>c_tuple_skel/1</code> were used in the construction of
-%% <code>Node</code>, and you want to revert to the normal "folded"
-%% representation of literals. If <code>Node</code> represents a tuple
-%% or list constructor, its elements are rewritten recursively, and
-%% the node is reconstructed using <code>c_cons/2</code> or
-%% <code>c_tuple/1</code>, respectively; otherwise, <code>Node</code>
-%% is not changed.
+%% @doc Assures that literals have a compact representation. This is
+%% occasionally useful if <code>c_cons_skel/2</code>,
+%% <code>c_tuple_skel/1</code> or <code>unfold_literal/1</code> were
+%% used in the construction of <code>Node</code>, and you want to revert
+%% to the normal "folded" representation of literals. If
+%% <code>Node</code> represents a tuple or list constructor, its
+%% elements are rewritten recursively, and the node is reconstructed
+%% using <code>c_cons/2</code> or <code>c_tuple/1</code>, respectively;
+%% otherwise, <code>Node</code> is not changed.
 %%
 %% @see is_literal/1
 %% @see c_cons_skel/2
 %% @see c_tuple_skel/1
 %% @see c_cons/2
 %% @see c_tuple/1
+%% @see unfold_literal/1
 
 fold_literal(Node) ->
     case type(Node) of
@@ -418,13 +420,54 @@ fold_literal(Node) ->
 	cons ->
 	    update_c_cons(Node, fold_literal(cons_hd(Node)),
 			  fold_literal(cons_tl(Node)));
-	Node ->
+	_ ->
 	    Node    
     end.
 
 fold_literal_list([E | Es]) ->
     [fold_literal(E) | fold_literal_list(Es)];
 fold_literal_list([]) ->
+    [].
+
+
+%% @spec unfold_literal(Node::cerl()) -> cerl()
+%%
+%% @doc Assures that literals have a fully expanded representation. If
+%% <code>Node</code> represents a literal tuple or list constructor, its
+%% elements are rewritten recursively, and the node is reconstructed
+%% using <code>c_cons_skel/2</code> or <code>c_tuple_skel/1</code>,
+%% respectively; otherwise, <code>Node</code> is not changed. The {@link
+%% fold_literal/1} can be used to revert to the normal compact
+%% representation.
+%%
+%% @see is_literal/1
+%% @see c_cons_skel/2
+%% @see c_tuple_skel/1
+%% @see c_cons/2
+%% @see c_tuple/1
+%% @see fold_literal/1
+
+unfold_literal(Node) ->
+    case type(Node) of
+	literal ->
+	    copy_ann(Node, unfold_concrete(concrete(Node)));
+	_ ->
+	    Node
+    end.
+
+unfold_concrete(Val) ->
+    case Val of
+	_ when tuple(Val) ->
+	    c_tuple_skel(unfold_concrete_list(tuple_to_list(Val)));
+	[H|T] ->
+	    c_cons_skel(unfold_concrete(H), unfold_concrete(T));
+	_ ->
+	    abstract(Val)
+    end.
+
+unfold_concrete_list([E | Es]) ->
+    [unfold_concrete(E) | unfold_concrete_list(Es)];
+unfold_concrete_list([]) ->
     [].
 
 
@@ -466,10 +509,10 @@ c_module(Name, Exports, Es) ->
 %% and <code>Definitions</code> = <code>[{V1, F1}, ..., {Vn,
 %% Fn}]</code>.
 %%
-%% <p><code>Name</code> and all the <code>Ki</code> must have type
-%% <code>atom</code>, and all the <code>Ti</code> must represent
-%% constant literals. All the <code>Vi</code> and <code>Ei</code> must
-%% have type <code>var</code> and represent function names. All the
+%% <p><code>Name</code> and all the <code>Ki</code> must be atom
+%% literals, and all the <code>Ti</code> must be constant literals. All
+%% the <code>Vi</code> and <code>Ei</code> must have type
+%% <code>var</code> and represent function names. All the
 %% <code>Fi</code> must have type <code>'fun'</code>.</p>
 %%
 %% @see c_module/3
@@ -1703,95 +1746,236 @@ values_arity(Node) ->
 
 %% ---------------------------------------------------------------------
 
-%% TODO: Finish specification of binary-syntax.
-
-%% @doc Note: Binary-syntax support is still experimental! The syntax
-%% is not fixed.
+%% @spec c_binary(Segments::[cerl()]) -> cerl()
+%%
+%% @doc Creates an abstract binary-template. A binary object is a
+%% sequence of 8-bit bytes. It is specified by zero or more bit-string
+%% template <em>segments</em> of arbitrary lengths (in number of bits),
+%% such that the sum of the lengths is evenly divisible by 8. If
+%% <code>Segments</code> is <code>[S1, ..., Sn]</code>, the result
+%% represents "<code>#{<em>S1</em>, ..., <em>Sn</em>}#</code>". All the
+%% <code>Si</code> must have type <code>bitstr</code>.
+%%
 %% @see ann_c_binary/2
 %% @see update_c_binary/2
 %% @see is_c_binary/1
-%% @see binary_segs/1
+%% @see binary_segments/1
+%% @see c_bitstr/5
 
--record(binary, {ann = [], segs}).
+-record(binary, {ann = [], segments}).
 
 c_binary(Segments) ->
-    #binary{segs = Segments}.
+    #binary{segments = Segments}.
 
 
+%% @spec ann_c_binary(As::[term()], Segments::[cerl()]) -> cerl()
 %% @see c_binary/1
+
 ann_c_binary(As, Segments) ->
-    #binary{segs = Segments, ann = As}.
+    #binary{segments = Segments, ann = As}.
 
 
+%% @spec update_c_binary(Old::cerl(), Segments::[cerl()]) -> cerl()
 %% @see c_binary/1
+
 update_c_binary(Node, Segments) ->
-    #binary{segs = Segments, ann = get_ann(Node)}.
+    #binary{segments = Segments, ann = get_ann(Node)}.
 
 
+%% @spec is_c_binary(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% binary-template; otherwise <code>false</code>.
+%%
 %% @see c_binary/1
+
 is_c_binary(#binary{}) ->
     true;
 is_c_binary(_) ->
     false.
 
 
+%% @spec binary_segments(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of segment subtrees of an abstract
+%% binary-template.
+%%
 %% @see c_binary/1
-binary_segs(Node) ->
-    Node#binary.segs.
+%% @see c_bitstr/5
+
+binary_segments(Node) ->
+    Node#binary.segments.
 
 
-%% @doc Note: Binary-syntax support is still experimental! The syntax
-%% is not fixed.
+%% @spec c_bitstr(Value::cerl(), Size::cerl(), Unit::cerl(),
+%%                Type::cerl(), Flags::cerl()) -> cerl()
+%%
+%% @doc Creates an abstract bit-string template. These can only occur as
+%% components of an abstract binary-template (see {@link c_binary/1}).
+%% The result represents "<code>#&lt;<em>Value</em>&gt;(<em>Size</em>,
+%% <em>Unit</em>, <em>Type</em>, <em>Flags</em>)</code>", where
+%% <code>Unit</code> must represent a positive integer constant,
+%% <code>Type</code> must represent a constant atom (one of
+%% <code>'integer'</code>, <code>'float'</code>, or
+%% <code>'binary'</code>), and <code>Flags</code> must represent a
+%% constant list <code>"[<em>F1</em>, ..., <em>Fn</em>]"</code> where
+%% all the <code>Fi</code> are atoms.
+%% 
 %% @see c_binary/1
-%% @see ann_c_bin_seg/6
-%% @see update_c_bin_seg/6
-%% @see bin_seg_val/5
-%% @see bin_seg_size/5
-%% @see bin_seg_unit/5
-%% @see bin_seg_type/5
-%% @see bin_seg_flags/5
+%% @see ann_c_bitstr/6
+%% @see update_c_bitstr/6
+%% @see is_c_bitstr/1
+%% @see bitstr_val/1
+%% @see bitstr_size/1
+%% @see bitstr_unit/1
+%% @see bitstr_type/1
+%% @see bitstr_flags/1
 
--record(bin_seg, {ann = [], val, size, unit, type, flags}).
+-record(bitstr, {ann = [], val, size, unit, type, flags}).
 
-c_bin_seg(Val, Size, Unit, Type, Flags) ->
-    #bin_seg{val = Val, size = Size, unit = Unit, type = Type,
-	     flags = Flags}.
+c_bitstr(Val, Size, Unit, Type, Flags) ->
+    #bitstr{val = Val, size = Size, unit = Unit, type = Type,
+	    flags = Flags}.
 
-%% @see c_bin_seg/5
-ann_c_bin_seg(As, Val, Size, Unit, Type, Flags) ->
-    #bin_seg{val = Val, size = Size, unit = Unit, type = Type,
+
+%% @spec c_bitstr(Value::cerl(), Size::cerl(), Type::cerl(),
+%%                Flags::cerl()) -> cerl()
+%% @equiv c_bitstr(Value, Size, abstract(1), Type, Flags)
+
+c_bitstr(Val, Size, Type, Flags) ->
+    c_bitstr(Val, Size, abstract(1), Type, Flags).
+
+
+%% @spec c_bitstr(Value::cerl(), Type::cerl(),
+%%                Flags::cerl()) -> cerl()
+%% @equiv c_bitstr(Value, abstract(all), abstract(1), Type, Flags)
+
+c_bitstr(Val, Type, Flags) ->
+    c_bitstr(Val, abstract(all), abstract(1), Type, Flags).
+
+
+%% @spec ann_c_bitstr(As::[term()], Value::cerl(), Size::cerl(),
+%%           Unit::cerl(), Type::cerl(), Flags::cerl()) -> cerl()
+%% @see c_bitstr/5
+%% @see ann_c_bitstr/5
+
+ann_c_bitstr(As, Val, Size, Unit, Type, Flags) ->
+    #bitstr{val = Val, size = Size, unit = Unit, type = Type,
 	     flags = Flags, ann = As}.
 
-%% @see c_bin_seg/5
-update_c_bin_seg(Node, Val, Size, Unit, Type, Flags) ->
-    #bin_seg{val = Val, size = Size, unit = Unit, type = Type,
+%% @spec ann_c_bitstr(As::[term()], Value::cerl(), Size::cerl(),
+%%                    Type::cerl(), Flags::cerl()) -> cerl()
+%% @equiv ann_c_bitstr(As, Value, Size, abstract(1), Type, Flags)
+
+ann_c_bitstr(As, Value, Size, Type, Flags) ->
+    ann_c_bitstr(As, Value, Size, abstract(1), Type, Flags).
+
+
+%% @spec update_c_bitstr(Old::cerl(), Value::cerl(), Size::cerl(),
+%%           Unit::cerl(), Type::cerl(), Flags::cerl()) -> cerl()
+%% @see c_bitstr/5
+%% @see update_c_bitstr/5
+
+update_c_bitstr(Node, Val, Size, Unit, Type, Flags) ->
+    #bitstr{val = Val, size = Size, unit = Unit, type = Type,
 	     flags = Flags, ann = get_ann(Node)}.
 
-%% @see c_bin_seg/5
-is_c_bin_seg(#bin_seg{}) ->
+
+%% @spec update_c_bitstr(Old::cerl(), Value::cerl(), Size::cerl(),
+%%                       Type::cerl(), Flags::cerl()) -> cerl()
+%% @equiv update_c_bitstr(Node, Value, Size, abstract(1), Type, Flags)
+
+update_c_bitstr(Node, Value, Size, Type, Flags) ->
+    update_c_bitstr(Node, Value, Size, abstract(1), Type, Flags).
+
+%% @spec is_c_bitstr(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% bit-string template; otherwise <code>false</code>.
+%%
+%% @see c_bitstr/5
+
+is_c_bitstr(#bitstr{}) ->
     true;
-is_c_bin_seg(_) ->
+is_c_bitstr(_) ->
     false.
 
-%% @see c_bin_seg/5
-bin_seg_val(Node) ->
-    Node#bin_seg.val.
 
-%% @see c_bin_seg/5
-bin_seg_size(Node) ->
-    Node#bin_seg.size.
+%% @spec bitstr_val(cerl()) -> cerl()
+%%
+%% @doc Returns the value subtree of an abstract bit-string template.
+%%
+%% @see c_bitstr/5
 
-%% @see c_bin_seg/5
-bin_seg_unit(Node) ->
-    Node#bin_seg.unit.
+bitstr_val(Node) ->
+    Node#bitstr.val.
 
-%% @see c_bin_seg/5
-bin_seg_type(Node) ->
-    Node#bin_seg.type.
 
-%% @see c_bin_seg/5
-bin_seg_flags(Node) ->
-    Node#bin_seg.flags.
+%% @spec bitstr_size(cerl()) -> cerl()
+%%
+%% @doc Returns the size subtree of an abstract bit-string template.
+%%
+%% @see c_bitstr/5
+
+bitstr_size(Node) ->
+    Node#bitstr.size.
+
+
+%% @spec bitstr_bitsize(cerl()) -> integer() | any | all
+%%
+%% @doc Returns the total size in bits of an abstract bit-string
+%% template. If the size field is an integer literal, the result is the
+%% product of the size and unit values; if the size field is the atom
+%% literal <code>all</code>, the atom <code>all</code> is returned; in
+%% all other cases, the atom <code>any</code> is returned.
+%%
+%% @see c_bitstr/5
+
+bitstr_bitsize(Node) ->
+    Size = Node#bitstr.size,
+    case is_literal(Size) of
+	true ->
+	    case concrete(Size) of
+		all ->
+		    all;
+		S when integer(S) ->
+		    S*concrete(Node#bitstr.unit);
+		true ->
+		    any
+	    end;
+	false ->
+	    any
+    end.
+
+
+%% @spec bitstr_unit(cerl()) -> cerl()
+%%
+%% @doc Returns the unit subtree of an abstract bit-string template.
+%%
+%% @see c_bitstr/5
+
+bitstr_unit(Node) ->
+    Node#bitstr.unit.
+
+
+%% @spec bitstr_type(cerl()) -> cerl()
+%%
+%% @doc Returns the type subtree of an abstract bit-string template.
+%%
+%% @see c_bitstr/5
+
+bitstr_type(Node) ->
+    Node#bitstr.type.
+
+
+%% @spec bitstr_flags(cerl()) -> cerl()
+%%
+%% @doc Returns the flags subtree of an abstract bit-string template.
+%%
+%% @see c_bitstr/5
+
+bitstr_flags(Node) ->
+    Node#bitstr.flags.
 
 
 %% ---------------------------------------------------------------------
@@ -2392,9 +2576,9 @@ pat_vars(Node, Vs) ->
 	tuple ->
 	    pat_list_vars(tuple_es(Node), Vs);
 	binary ->
-	    pat_list_vars(binary_segs(Node), Vs);
-	bin_seg ->
-	    pat_vars(bin_seg_val(Node), Vs);
+	    pat_list_vars(binary_segments(Node), Vs);
+	bitstr ->
+	    pat_vars(bitstr_val(Node), Vs);
 	alias ->
 	    pat_vars(alias_pat(Node), [alias_var(Node) | Vs])
     end.
@@ -2795,8 +2979,7 @@ call_arity(Node) ->
 %% @doc Creates an abstract primitive operation call. If
 %% <code>Arguments</code> is <code>[A1, ..., An]</code>, the result
 %% represents "<code>primop <em>Name</em>(<em>A1</em>, ...,
-%% <em>An</em>)</code>". <code>Name</code> must have type
-%% <code>atom</code>.
+%% <em>An</em>)</code>". <code>Name</code> must be an atom literal.
 %%
 %% @see ann_c_primop/3
 %% @see update_c_primop/3
@@ -2910,7 +3093,8 @@ c_try(Expr, Vs, Body, Evs, Handler) ->
 
 
 %% @spec ann_c_try(As::[term()], Expression::cerl(),
-%%                 Variables::[cerl()], Body::cerl()) -> cerl()
+%%                 Variables::[cerl()], Body::cerl(),
+%%                 EVars::[cerl()], EBody::[cerl()]) -> cerl()
 %% @see c_try/3
 
 ann_c_try(As, Expr, Vs, Body, Evs, Handler) ->
@@ -2919,7 +3103,8 @@ ann_c_try(As, Expr, Vs, Body, Evs, Handler) ->
 
 
 %% @spec update_c_try(Old::cerl(), Expression::cerl(),
-%%                    Variables::[cerl()], Body::cerl()) -> cerl()
+%%                    Variables::[cerl()], Body::cerl(),
+%%                    EVars::[cerl()], EBody::[cerl()]) -> cerl()
 %% @see c_try/3
 
 update_c_try(Node, Expr, Vs, Body, Evs, Handler) ->
@@ -3073,15 +3258,15 @@ to_records(Node) ->
 	    lit_to_records(concrete(Node), A);
 	binary ->
 	    #c_binary{anno = A,
-		      segs = list_to_records(binary_segs(Node))};
-	bin_seg ->
-	    #c_bin_seg{anno = A,
-		       val = to_records(bin_seg_val(Node)),
-		       size = to_records(bin_seg_size(Node)),
-		       unit = concrete(bin_seg_unit(Node)),
-		       type = concrete(bin_seg_type(Node)),
-		       flags = [concrete(F)
-				|| F <- bin_seg_flags(Node)]};
+		      segments =
+		      list_to_records(binary_segments(Node))};
+	bitstr ->
+	    #c_bitstr{anno = A,
+		      val = to_records(bitstr_val(Node)),
+		      size = to_records(bitstr_size(Node)),
+		      unit = to_records(bitstr_unit(Node)),
+		      type = to_records(bitstr_type(Node)),
+		      flags = to_records(bitstr_flags(Node))};
 	cons ->
 	    #c_cons{anno = A,
 		    hd = to_records(cons_hd(Node)),
@@ -3241,12 +3426,12 @@ from_records(#c_string{val = V, anno = As}) ->
     ann_c_string(As, V);
 from_records(#c_nil{anno = As}) ->
     ann_c_nil(As);
-from_records(#c_binary{segs = Ss, anno = As}) ->
+from_records(#c_binary{segments = Ss, anno = As}) ->
     ann_c_binary(As, from_records_list(Ss));
-from_records(#c_bin_seg{val = V, size = S, unit = U, type = T,
-			flags = Fs, anno = As}) ->
-    ann_c_bin_seg(As, from_records(V), from_records(S), abstract(U),
-		  abstract(T), [abstract(F) || F <- Fs]);
+from_records(#c_bitstr{val = V, size = S, unit = U, type = T,
+		       flags = Fs, anno = As}) ->
+    ann_c_bitstr(As, from_records(V), from_records(S), from_records(U),
+		 from_records(T), from_records(Fs));
 from_records(#c_cons{hd = H, tl = T, anno = As}) ->
     ann_c_cons(As, from_records(H), from_records(T));
 from_records(#c_tuple{es = Es, anno = As}) ->
@@ -3558,11 +3743,11 @@ subtrees(T) ->
 		values ->
 		    [values_es(T)];
 		binary ->
-		    [binary_segs(T)];
-		bin_seg ->
-		    [[bin_seg_val(T)], [bin_seg_size(T)],
-		     [bin_seg_unit(T)], [bin_seg_type(T)],
-		     bin_seg_flags(T)];
+		    [binary_segments(T)];
+		bitstr ->
+		    [[bitstr_val(T)], [bitstr_size(T)],
+		     [bitstr_unit(T)], [bitstr_type(T)],
+		     [bitstr_flags(T)]];
 		cons ->
 		    [[cons_hd(T)], [cons_tl(T)]];
 		tuple ->
@@ -3676,8 +3861,8 @@ make_tree(Type, Gs) ->
 
 ann_make_tree(As, values, [Es]) -> ann_c_values(As, Es);
 ann_make_tree(As, binary, [Ss]) -> ann_c_binary(As, Ss);
-ann_make_tree(As, bin_seg, [[V],[S],[U],[T],Fs]) ->
-    ann_c_bin_seg(As, V, S, U, T, Fs);
+ann_make_tree(As, bitstr, [[V],[S],[U],[T],[Fs]]) ->
+    ann_c_bitstr(As, V, S, U, T, Fs);
 ann_make_tree(As, cons, [[H], [T]]) -> ann_c_cons(As, H, T);
 ann_make_tree(As, tuple, [Es]) -> ann_c_tuple(As, Es);
 ann_make_tree(As, 'let', [Vs, [A], [B]]) -> ann_c_let(As, Vs, A, B);
@@ -3794,14 +3979,14 @@ meta_1(values, Node) ->
 	      [make_list(meta_list(values_es(Node)))]);
 meta_1(binary, Node) ->
     meta_call(c_binary,
-	      [make_list(meta_list(binary_segs(Node)))]);
-meta_1(bin_seg, Node) ->
-    meta_call(c_bin_seg,
-	      [meta(bin_seg_val(Node)),
-	       meta(bin_seg_size(Node)),
-	       meta(bin_seg_unit(Node)),
-	       meta(bin_seg_type(Node)),
-	       make_list(meta_list(bin_seg_flags(Node)))]);
+	      [make_list(meta_list(binary_segments(Node)))]);
+meta_1(bitstr, Node) ->
+    meta_call(c_bitstr,
+	      [meta(bitstr_val(Node)),
+	       meta(bitstr_size(Node)),
+	       meta(bitstr_unit(Node)),
+	       meta(bitstr_type(Node)),
+	       meta(bitstr_flags(Node))]);
 meta_1(cons, Node) ->
     %% The list is split up if some sublist has annotatations. If
     %% we get exactly one element, we generate a 'c_cons' call

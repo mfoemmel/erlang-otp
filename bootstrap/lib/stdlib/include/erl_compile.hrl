@@ -28,8 +28,9 @@
 						% element is an atom (the name to
 						% define), or a {Name, Value}
 						% tuple.
-	  warning=0,				% Warning level (0 - no
-						% warnings).
+	  warning=1,				% Warning level (0 - no
+						% warnings, 1 - standard level,
+						% 2, 3, ... - more warnings).
 	  verbose=false,			% Verbose (true/false).
 	  optimize=999,				% Optimize options.
 	  specific=[],				% Compiler specific options.

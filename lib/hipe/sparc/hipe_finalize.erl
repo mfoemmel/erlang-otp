@@ -9,7 +9,7 @@
 
 -module(hipe_finalize).
 
--export([straighten/2,
+-export([%% straighten/1,
 	 split_constants/1]).
 
 %-ifndef(DEBUG).
@@ -26,134 +26,119 @@
 %% Basic blocks are merged when possible.
 %%
 
-straighten(CFG, _Options) ->
-  %% hipe_sparc_cfg:pp(CFG),
-  {Low, High} = hipe_sparc_cfg:label_range(CFG),
-  hipe_gensym:set_label(sparc,High),
-  ?TIME_STMNT(Lbls = hipe_sparc_cfg:depth_first_ordering(CFG),
-	      "Ordering took: ",
-	      Otime),
-  ?TIME_STMNT(CFG1 = straighten(Lbls,CFG,CFG,none_visited()),
-	      "Straigthtening took: ",
-	      STime),
-  ?IF_DEBUG(hipe_sparc_cfg:pp(CFG1),true),
-  NewHigh = hipe_gensym:get_label(sparc),
-  hipe_sparc_cfg:label_range_update(CFG1,{Low, NewHigh}).
-
-
-straighten([Lbl|Ls],CFG,NewCFG,Visited) ->
-  ?debug_msg("Visiting ~w~n",[Lbl]),
-  Vis0 = visit(Lbl, Visited),
-  BB = hipe_sparc_cfg:bb(CFG, Lbl),
-  Jmp = hipe_bb:last(BB),
-  case is_cond(Jmp) of
-    true ->
-      %% Switch the jump so the common case is not taken
-      Pred = cond_pred(Jmp),
-      Jmp0 =
-	if Pred >= 0.5 ->
-	    %% io:format("Switching ~w~n", [Jmp]),
-	    switch_cond(Jmp);
-	   true ->
-	    Jmp
-	end,
-      FallTrough = cond_false_label(Jmp0),
-	  %% We have to insert a goto (the falltrough is
-	  %% somewhere else (or duplicate the code))
-	  ?debug_msg("Need goto to ~w~n", [FallTrough]),
-	  NewFT = hipe_sparc:label_create_new(),
-	  NewFTName = hipe_sparc:label_name(NewFT),
-	  Jmp1 = cond_false_label_update(Jmp0, NewFTName),
-	  Goto = hipe_sparc:goto_create(FallTrough, []),
-	  GotoBB = hipe_bb:mk_bb([Goto]),
-	  CFG0 = hipe_sparc_cfg:bb_add(NewCFG, NewFTName, GotoBB),
-      NewBBCode = hipe_bb:butlast(BB) ++ [Jmp1],
-      NewBB = hipe_bb:code_update(BB, NewBBCode),
-      CFG1 = hipe_sparc_cfg:bb_update(CFG0, Lbl, NewBB),
-
-      straighten(Ls, CFG, CFG1, Vis0);
-
-    false ->
-      case hipe_sparc:type(Jmp) of 
-	jmp ->
-	  straighten(Ls++hipe_sparc:jmp_destinations(Jmp), CFG, NewCFG, Vis0);
-	_ ->
-	  straighten(Ls, CFG, NewCFG, Vis0)
-      end
-
-  end;
-straighten([],_,CFG,_) -> CFG.
-
+%% straighten(CFG) ->
+%%   %% hipe_sparc_cfg:pp(CFG),
+%%   ?TIME_STMNT(Lbls = hipe_sparc_cfg:depth_first_ordering(CFG),
+%% 	      "Ordering took: ", Otime),
+%%   ?TIME_STMNT(CFG1 = straighten(Lbls,CFG,CFG,none_visited()),
+%% 	      "Straigthtening took: ", STime),
+%%   ?IF_DEBUG(hipe_sparc_cfg:pp(CFG1),true),
+%%   CFG1.
+%% 
+%% straighten([Lbl|Ls],CFG,NewCFG,Visited) ->
+%%   ?debug_msg("Visiting ~w~n",[Lbl]),
+%%   Vis0 = visit(Lbl, Visited),
+%%   BB = hipe_sparc_cfg:bb(CFG, Lbl),
+%%   Jmp = hipe_bb:last(BB),
+%%   case is_cond(Jmp) of
+%%     true ->
+%%       %% Switch the jump so the common case is not taken
+%%       Pred = cond_pred(Jmp),
+%%       Jmp0 =
+%% 	if Pred >= 0.5 ->
+%% 	    %% io:format("Switching ~w~n", [Jmp]),
+%% 	    switch_cond(Jmp);
+%% 	   true ->
+%% 	    Jmp
+%% 	end,
+%%       FallTrough = cond_false_label(Jmp0),
+%% 	  %% We have to insert a goto (the falltrough is
+%% 	  %% somewhere else (or duplicate the code))
+%% 	  ?debug_msg("Need goto to ~w~n", [FallTrough]),
+%% 	  NewFT = hipe_sparc:label_create_new(),
+%% 	  NewFTName = hipe_sparc:label_name(NewFT),
+%% 	  Jmp1 = cond_false_label_update(Jmp0, NewFTName),
+%% 	  Goto = hipe_sparc:goto_create(FallTrough, []),
+%% 	  GotoBB = hipe_bb:mk_bb([Goto]),
+%% 	  CFG0 = hipe_sparc_cfg:bb_add(NewCFG, NewFTName, GotoBB),
+%%       NewBBCode = hipe_bb:butlast(BB) ++ [Jmp1],
+%%       NewBB = hipe_bb:code_update(BB, NewBBCode),
+%%       CFG1 = hipe_sparc_cfg:bb_add(CFG0, Lbl, NewBB),
+%% 
+%%       straighten(Ls, CFG, CFG1, Vis0);
+%%     false ->
+%%       case hipe_sparc:type(Jmp) of 
+%% 	jmp ->
+%% 	  straighten(Ls++hipe_sparc:jmp_destinations(Jmp), CFG, NewCFG, Vis0);
+%% 	_ ->
+%% 	  straighten(Ls, CFG, NewCFG, Vis0)
+%%       end
+%%   end;
+%% straighten([],_,CFG,_) -> CFG.
 
 %% -------------------------------------------------------------------
 %% A couple of functions that provide a common interface to both b-
 %% and br- branches
 %% -------------------------------------------------------------------
 
-is_cond(I) ->
-   case hipe_sparc:type(I) of
-      br -> true;
-      b -> true;
-      _ -> false
-   end.
-
-
-cond_pred(I) ->
-   case hipe_sparc:type(I) of
-      br -> hipe_sparc:br_pred(I);
-      b -> hipe_sparc:b_pred(I)
-   end.
-   
-
-cond_false_label(B) ->
-   case hipe_sparc:type(B) of
-      br -> hipe_sparc:br_false_label(B);
-      b -> hipe_sparc:b_false_label(B)
-   end.
-
-
-cond_false_label_update(B, NewTrue) ->
-   case hipe_sparc:type(B) of
-      br -> hipe_sparc:br_false_label_update(B, NewTrue);
-      b -> hipe_sparc:b_false_label_update(B, NewTrue)
-   end.
-  
-
-switch_cond(B) ->
-   case hipe_sparc:type(B) of
-      br -> switch_br(B);
-      b -> switch_b(B)
-   end.
-
+%% is_cond(I) ->
+%%   case hipe_sparc:type(I) of
+%%     br -> true;
+%%     b -> true;
+%%     _ -> false
+%%   end.
+%% 
+%% cond_pred(I) ->
+%%   case hipe_sparc:type(I) of
+%%     br -> hipe_sparc:br_pred(I);
+%%     b -> hipe_sparc:b_pred(I)
+%%   end.
+%% 
+%% cond_false_label(B) ->
+%%   case hipe_sparc:type(B) of
+%%     br -> hipe_sparc:br_false_label(B);
+%%     b -> hipe_sparc:b_false_label(B)
+%%   end.
+%% 
+%% cond_false_label_update(B, NewTrue) ->
+%%   case hipe_sparc:type(B) of
+%%     br -> hipe_sparc:br_false_label_update(B, NewTrue);
+%%     b -> hipe_sparc:b_false_label_update(B, NewTrue)
+%%   end.
+%% 
+%% switch_cond(B) ->
+%%   case hipe_sparc:type(B) of
+%%     br -> switch_br(B);
+%%     b -> switch_b(B)
+%%   end.
 
 %%
 %% Negate the cc and change the labels of a register branch
 %%
 
-switch_br(B) ->
-   CC = hipe_sparc:cc_negate(hipe_sparc:br_regcond(B)),
-   True = hipe_sparc:br_true_label(B),
-   False = hipe_sparc:br_false_label(B),
-   Pred = 1 - hipe_sparc:br_pred(B),
-   B0 = hipe_sparc:br_regcond_update(B, CC),
-   B1 = hipe_sparc:br_true_label_update(B0, False),
-   B2 = hipe_sparc:br_false_label_update(B1, True),
-   hipe_sparc:br_pred_update(B2, Pred).
-
+%% switch_br(B) ->
+%%   CC = hipe_sparc:cc_negate(hipe_sparc:br_regcond(B)),
+%%   True = hipe_sparc:br_true_label(B),
+%%   False = hipe_sparc:br_false_label(B),
+%%   Pred = 1 - hipe_sparc:br_pred(B),
+%%   B0 = hipe_sparc:br_regcond_update(B, CC),
+%%   B1 = hipe_sparc:br_true_label_update(B0, False),
+%%   B2 = hipe_sparc:br_false_label_update(B1, True),
+%%   hipe_sparc:br_pred_update(B2, Pred).
 
 %%
 %% Negate the cc and change the labels of a branch
 %%
 
-switch_b(B) ->
-   CC = hipe_sparc:cc_negate(hipe_sparc:b_cond(B)),
-   True = hipe_sparc:b_true_label(B),
-   False = hipe_sparc:b_false_label(B),
-   Pred = 1 - hipe_sparc:b_pred(B),
-   B0 = hipe_sparc:b_cond_update(B, CC),
-   B1 = hipe_sparc:b_true_label_update(B0, False),
-   B2 = hipe_sparc:b_false_label_update(B1, True),
-   hipe_sparc:b_pred_update(B2, Pred).
+%% switch_b(B) ->
+%%   CC = hipe_sparc:cc_negate(hipe_sparc:b_cond(B)),
+%%   True = hipe_sparc:b_true_label(B),
+%%   False = hipe_sparc:b_false_label(B),
+%%   Pred = 1 - hipe_sparc:b_pred(B),
+%%   B0 = hipe_sparc:b_cond_update(B, CC),
+%%   B1 = hipe_sparc:b_true_label_update(B0, False),
+%%   B2 = hipe_sparc:b_false_label_update(B1, True),
+%%   hipe_sparc:b_pred_update(B2, Pred).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -331,16 +316,13 @@ switch_b(B) ->
 %	 [I | peephole(Is)]
 %   end.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-
-none_visited() ->
-   hipe_hash:empty().
-
-visit(X, Vis) -> 
-   hipe_hash:update(X, visited, Vis).
-
+%% none_visited() ->
+%%   sets:new().
+%% 
+%% visit(X, Vis) -> 
+%%   sets:add_element(X, Vis).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -357,35 +339,26 @@ visit(X, Vis) ->
 
 split_constants(CFG) ->
   Labels = hipe_sparc_cfg:labels(CFG),
-  {Low, High} = hipe_sparc_cfg:var_range(CFG),
-  ?ASSERT(begin
-	    Code = hipe_sparc:sparc_code(hipe_sparc_cfg:linearize(CFG)),
-	    RMax = hipe_sparc:highest_reg(Code),
-	    RMax =< High
-	  end),
-  hipe_gensym:set_var(sparc,High+1),
-  NewCFG = split_bbs(Labels, CFG),
-  hipe_sparc_cfg:var_range_update(NewCFG, {Low, hipe_gensym:get_var(sparc)}).
-
+  split_bbs(Labels, CFG).
 
 split_bbs([], CFG) ->
-   CFG;
+  CFG;
 split_bbs([Lbl|Lbls], CFG) ->
-   BB = hipe_sparc_cfg:bb(CFG, Lbl),
-   Code = hipe_bb:code(BB),
-   case split_instrs(Code, [], unchanged) of
-      unchanged ->
-	 split_bbs(Lbls, CFG);
-      NewCode ->
-	 NewCFG = hipe_sparc_cfg:bb_update(CFG, Lbl, hipe_bb:code_update(BB,NewCode)),
-	 split_bbs(Lbls, NewCFG)
-   end.
+  BB = hipe_sparc_cfg:bb(CFG, Lbl),
+  Code = hipe_bb:code(BB),
+  case split_instrs(Code, [], unchanged) of
+    unchanged ->
+      split_bbs(Lbls, CFG);
+    NewCode ->
+      NewCFG = hipe_sparc_cfg:bb_add(CFG, Lbl, hipe_bb:code_update(BB,NewCode)),
+      split_bbs(Lbls, NewCFG)
+  end.
 
 
 split_instrs([], _RevCode, unchanged) ->
-   unchanged;
+  unchanged;
 split_instrs([], RevCode, changed) ->
-   lists:reverse(RevCode);
+  lists:reverse(RevCode);
 split_instrs([I0|Is], RevCode, Status) ->
   case fix_addressing_mode(I0) of
       unchanged ->
@@ -415,7 +388,7 @@ fix_addressing_mode(I) ->
 	  [hipe_sparc:alu_src2_update(I0, Src1)];
 	{true,_,_} ->
 	  Tmp = hipe_sparc:mk_new_reg(),
-	  Mov = hipe_sparc:move_create(Tmp, Src1, []),
+	  Mov = hipe_sparc:move_create(Tmp, Src1),
 	  NewI = hipe_sparc:alu_src1_update(I, Tmp),
 	  [Mov, NewI];
 	_ ->
@@ -431,7 +404,7 @@ fix_addressing_mode(I) ->
 	     [hipe_sparc:alu_cc_src2_update(I0, Src1)];
 	   {true,_,_} ->
 	     Tmp = hipe_sparc:mk_new_reg(),
-	     Mov = hipe_sparc:move_create(Tmp, Src1, []),
+	     Mov = hipe_sparc:move_create(Tmp, Src1),
 	     NewI = hipe_sparc:alu_cc_src1_update(I, Tmp),
 	     [Mov, NewI];
 	   _ ->
@@ -462,7 +435,7 @@ fix_addressing_mode(I) ->
          case hipe_sparc:is_imm(Src1) of
 	   true ->
 	       Tmp = hipe_sparc:mk_new_reg(),
-	       Mov = hipe_sparc:move_create(Tmp, Src1, []),
+	       Mov = hipe_sparc:move_create(Tmp, Src1),
 	       NewI = hipe_sparc:store_src_update(I1,Tmp),
 	       [Mov, NewI];
 	   false ->
@@ -504,7 +477,7 @@ is_commutative(Op) ->
 split_instr(I) ->
    Uses = hipe_sparc:imm_uses(I),
    case big_constants(Uses) of
-      [] -> unchanged;
+      {[], []} -> unchanged;
       {Code, Subst} -> [hipe_sparc:subst(I, Subst) | Code]
    end.
 
@@ -518,19 +491,19 @@ big_constants([V|Vs]) ->
 	 Low = low10(C),
          Code = 
 	  if Low =:= 0 ->
-	      [hipe_sparc:sethi_create(NewVar, hipe_sparc:mk_imm(high22(C)), [])];
+	      [hipe_sparc:sethi_create(NewVar,
+				       hipe_sparc:mk_imm(high22(C)))];
 	    true ->	     
 	      [hipe_sparc:alu_create(NewVar, NewVar, 'or', 
-				     hipe_sparc:mk_imm(Low), []),
-	       hipe_sparc:sethi_create(NewVar, hipe_sparc:mk_imm(high22(C)), 
-				       [])]
+				     hipe_sparc:mk_imm(Low)),
+	       hipe_sparc:sethi_create(NewVar,
+				       hipe_sparc:mk_imm(high22(C)))]
 	  end,
 	 {MoreCode, MoreSubst} = big_constants(Vs),
 	 {Code++MoreCode, [{V, NewVar} | MoreSubst]};
       false ->
 	 big_constants(Vs)
    end.
-
 
 is_big(X) ->
    if X > 4095 ->
@@ -540,7 +513,6 @@ is_big(X) ->
       true ->
 	 false
    end.
-
 
 high22(X) -> X bsr 10.
 low10(X) -> X band 16#3ff.

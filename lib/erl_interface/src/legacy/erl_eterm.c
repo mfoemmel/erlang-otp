@@ -34,6 +34,7 @@
 #include "erl_marshal.h"
 #include "erl_error.h"
 #include "erl_internal.h"
+#include "ei_internal.h"
 
 #define ERL_IS_BYTE(x) (ERL_IS_INTEGER(x) && (ERL_INT_VALUE(x) & ~0xFF) == 0)
 
@@ -61,6 +62,10 @@ void erl_init(void *hp,long heap_size)
     ei_init_resolve();
 }
 
+void erl_set_compat_rel(unsigned rel)
+{
+    ei_set_compat_rel(rel);
+}
 
 /*
  * Create an INTEGER. Depending on its value it 
@@ -188,7 +193,12 @@ ETERM *erl_mk_pid(const char *node,
 	return NULL;
     }
     ERL_PID_NUMBER(ep)   = number & 0x7fff; /* 15 bits */
-    ERL_PID_SERIAL(ep)   = serial & 0x07;  /* 3 bits */
+    if (ei_internal_use_r9_pids_ports()) {
+	ERL_PID_SERIAL(ep)   = serial & 0x07;  /* 3 bits */
+    }
+    else {
+	ERL_PID_SERIAL(ep)   = serial & 0x1fff;  /* 13 bits */
+    }
     ERL_PID_CREATION(ep) = creation & 0x03; /* 2 bits */
     return ep;
 }
@@ -213,7 +223,12 @@ ETERM *erl_mk_port(const char *node,
 	erl_errno = ENOMEM;
 	return NULL;
     }
-    ERL_PORT_NUMBER(ep)   = number & 0x3ffff; /* 18 bits */
+    if (ei_internal_use_r9_pids_ports()) {
+	ERL_PORT_NUMBER(ep)   = number & 0x3ffff; /* 18 bits */
+    }
+    else {
+	ERL_PORT_NUMBER(ep)   = number & 0x0fffffff; /* 18 bits */
+    }
     ERL_PORT_CREATION(ep) = creation & 0x03; /* 2 bits */
     return ep;
 }

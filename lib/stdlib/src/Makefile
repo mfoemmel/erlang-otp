@@ -88,6 +88,8 @@ MODULES= \
 	pool \
 	proc_lib \
 	proplists \
+	qlc \
+	qlc_pt \
 	queue \
 	random \
 	regexp \
@@ -101,13 +103,13 @@ MODULES= \
 	supervisor_bridge \
 	sys \
 	timer \
-	vector \
 	win32reg
 
 HRL_FILES= \
 	../include/erl_compile.hrl \
 	../include/erl_bits.hrl \
-	../include/ms_transform.hrl
+	../include/ms_transform.hrl \
+	../include/qlc.hrl
 
 INTERNAL_HRL_FILES= dets.hrl
 
@@ -129,7 +131,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS +=
-ERL_COMPILE_FLAGS += -I../include -I../../kernel/include +warn_unused_vars
+ERL_COMPILE_FLAGS += -I../include -I../../kernel/include
 
 # ----------------------------------------------------
 # Targets

@@ -87,8 +87,8 @@ init(Options) ->
 %%            terminate a gen_server.
 %%------------------------------------------------------------
 
-terminate(Reason, State) ->
-    ?debug_print("Factory:terminate(~p)~n", [Reason]),
+terminate(_Reason, _State) ->
+    ?debug_print("Factory:terminate(~p)~n", [_Reason]),
     ok.
 
 %%------------------------------------------------------------
@@ -98,7 +98,7 @@ terminate(Reason, State) ->
 %% Effect   : Functions demanded by the module ic. 
 %%------------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 handle_call(_,_, State) ->
@@ -112,8 +112,8 @@ handle_cast(_, State) ->
 handle_info({'EXIT',_From,shutdown}, State) ->
     ?debug_print("Factory:handle_info(~p)~n", [shutdown]),
     {stop, shutdown, State};
-handle_info(Info, State) ->
-    ?debug_print("Factory:handle_info(~p)~n", [Info]),
+handle_info(_Info, State) ->
+    ?debug_print("Factory:handle_info(~p)~n", [_Info]),
     {noreply, State}.
 
 %%------------------------------------------------------------
@@ -127,7 +127,7 @@ handle_info(Info, State) ->
 %%            management.
 %%------------------------------------------------------------
 
-create(Self, State, TimeOut) when integer(TimeOut) ->
+create(_Self, State, TimeOut) when integer(TimeOut) ->
     %% Generate objectnames.
     ETraPName    = 'ETraP_Common':create_name("root"),
     TermName     = 'ETraP_Common':create_name("term"),
@@ -156,7 +156,7 @@ create(Self, State, TimeOut) when integer(TimeOut) ->
 	    end
     end;
 
-create(Self, State, TimeOut) ->
+create(_Self, _State, _TimeOut) ->
     ?tr_error_msg("TransactionFactory:create( Integer >= 0 )~nBad argument. Not an integer.~n", []),
     corba:raise(?tr_badparam).
 
@@ -168,7 +168,7 @@ create(Self, State, TimeOut) ->
 %% Effect   : 
 %%------------------------------------------------------------
 
-recreate(Self, State, #'CosTransactions_PropagationContext'{current = C}) ->
+recreate(_Self, _State, #'CosTransactions_PropagationContext'{current = _C}) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_YES}).
 %recreate(Self, State, #'CosTransactions_PropagationContext'{current = C}) ->
 %    {reply, C#'CosTransactions_TransIdentity'.coord, State}.

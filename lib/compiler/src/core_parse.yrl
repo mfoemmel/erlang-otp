@@ -1,3 +1,4 @@
+%% -*-Erlang-*-
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -29,12 +30,12 @@ function_definition function_definitions
 
 constant constants atomic_constant tuple_constant cons_constant tail_constant
 pattern other_pattern atomic_pattern tuple_pattern cons_pattern tail_pattern
-binary_pattern segment_patterns segment_pattern seg_size_pattern
+binary_pattern segment_patterns segment_pattern
 
 expression single_expression
 literal literals atomic_literal tuple_literal cons_literal tail_literal
 nil tuple cons tail
-binary segments segment seg_size_unit seg_type seg_flags
+binary segments segment
 
 let_expr let_vars letrec_expr case_expr fun_expr
 function_name
@@ -52,7 +53,8 @@ Terminals
 
 %% Separators
 
-'(' ')' '{' '}' '[' ']' '|' ',' '->' '=' '/' '<' '>' ':' '-|' '#<' '>#' '*' '-'
+'(' ')' '{' '}' '[' ']' '|' ',' '->' '=' '/' '<' '>' ':' '-|' '#{' '}#'
+'#<'
 
 %% Keywords (atoms are assumed to always be single-quoted).
 
@@ -186,19 +188,20 @@ tail_pattern -> '|' anno_pattern ']' : '$2'.
 tail_pattern -> ',' anno_pattern tail_pattern :
 		    #c_cons{hd='$2',tl='$3'}.
 
-binary_pattern -> '#<' '>#' : #c_binary{segs=[]}.
-binary_pattern -> '#<' segment_patterns '>#' : #c_binary{segs='$2'}.
+binary_pattern -> '#{' '}#' : #c_binary{segments=[]}.
+binary_pattern -> '#{' segment_patterns '}#' : #c_binary{segments='$2'}.
 
 segment_patterns -> segment_pattern ',' segment_patterns : ['$1' | '$3'].
 segment_patterns -> segment_pattern : ['$1'].
 
-segment_pattern -> pattern ':' seg_size_pattern ':' seg_type seg_flags :
-	{Size,Unit} = '$3',
-	#c_bin_seg{val='$1',size=Size,unit=Unit,type='$5',flags='$6'}.
-
-seg_size_pattern -> pattern '*' integer : 
-	{'$1',tok_val('$3')}.
-seg_size_pattern -> pattern : {'$1',1}.
+segment_pattern -> '#<' anno_pattern '>' '(' anno_patterns ')':
+	case '$5' of
+	    [S,U,T,Fs] ->
+		#c_bitstr{val='$2',size=S,unit=U,type=T,flags=Fs};
+	    true ->
+		return_error(tok_line('$1'),
+			     "expected 4 arguments in binary segment")
+	end.
 
 variable -> var : #c_var{name=tok_val('$1')}.
 
@@ -274,24 +277,20 @@ tail -> ']' : #c_nil{}.
 tail -> '|' anno_expression ']' : '$2'.
 tail -> ',' anno_expression tail : #c_cons{hd='$2',tl='$3'}.
 
-binary -> '#<' '>#' : #c_binary{segs=[]}.
-binary -> '#<' segments '>#' : #c_binary{segs='$2'}.
+binary -> '#{' '}#' : #c_binary{segments=[]}.
+binary -> '#{' segments '}#' : #c_binary{segments='$2'}.
 
 segments -> segment ',' segments : ['$1' | '$3'].
 segments -> segment : ['$1'].
 
-segment -> single_expression ':' seg_size_unit ':' seg_type seg_flags :
-	{Size,Unit} = '$3',
-	#c_bin_seg{val='$1',size=Size,unit=Unit,type='$5',flags='$6'}.
-
-seg_size_unit -> single_expression '*' integer: 
-	{'$1',tok_val('$3')}.
-seg_size_unit -> single_expression : {'$1',1}.
-
-seg_type -> atom : tok_val('$1').
-
-seg_flags -> '-' atom seg_flags : [tok_val('$2') | '$3'].
-seg_flags -> '$empty' : [].
+segment -> '#<' anno_expression '>' '(' anno_expressions ')':
+	case '$5' of
+	    [S,U,T,Fs] ->
+		#c_bitstr{val='$2',size=S,unit=U,type=T,flags=Fs};
+	    true ->
+		return_error(tok_line('$1'),
+			     "expected 4 arguments in binary segment")
+	end.
 
 function_name -> atom '/' integer :
 	#c_fname{id=tok_val('$1'),arity=tok_val('$3')}.
@@ -355,7 +354,8 @@ try_expr ->
 	if length('$8') == 2 ->
 		#c_try{arg='$2',vars='$4',body='$6',evars='$8',handler='$10'};
 	   true ->
-		return_error(tok_line('$7'), "syntax error after catch")
+		return_error(tok_line('$7'),
+			     "expected 2 exception variables in 'try'")
 	end.
 
 catch_expr -> 'catch' anno_expression : #c_catch{body='$2'}.
@@ -376,6 +376,10 @@ timeout ->
 Erlang code.
 
 -export([abstract/1,abstract/2,normalise/1]).
+
+%% The following directive is needed for (significantly) faster compilation
+%% of the generated .erl file by the HiPE compiler.  Please do not remove.
+-compile([{hipe,[{regalloc,linear_scan}]}]).
 
 -include("core_parse.hrl").
 

@@ -83,8 +83,6 @@ visit(Env0, #c_cons{hd=H0,tl=T0}=R) ->
 visit(Env0, #c_values{es=Es0}=R) ->
     {Es1,Env1} = visit_list(Env0, Es0),
     {R#c_values{es=Es1}, Env1};
-visit(Env, #c_values{es=[E]}) ->
-    visit(Env, E);
 visit(Env0, #c_def{val=V0}=R) ->
     {V1,Env1} = visit(Env0, V0),
     {R#c_def{val=V1}, Env1};

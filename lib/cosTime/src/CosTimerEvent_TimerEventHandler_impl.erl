@@ -97,14 +97,14 @@
 %% Effect   : Functions demanded by the gen_server module. 
 %%------------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 handle_info(Info, State) ->
     ?debug_print("INFO: ~p~n", [Info]),
     case Info of
-        {'EXIT', Pid, Reason} when Pid == ?get_ParentPid(State) ->
-            ?debug_print("PARENT TERMINATED with reason: ~p~n",[Reason]),
+        {'EXIT', Pid, _Reason} when Pid == ?get_ParentPid(State) ->
+            ?debug_print("PARENT TERMINATED with reason: ~p~n",[_Reason]),
             {noreply, State};
         oe_event when ?not_Cancelled(State) ->
 	    %% Push event
@@ -113,8 +113,8 @@ handle_info(Info, State) ->
 		ok ->
 		    ?debug_print("PUSHED: ~p~n", [?get_Event(State)]),
 		    {noreply, ?set_Status(State, 'ESTriggered')};
-		Other->
-		    ?debug_print("FAILED PUSH: ~p   ~p~n", [?get_Event(State), Other]),
+		_Other->
+		    ?debug_print("FAILED PUSH: ~p   ~p~n", [?get_Event(State), _Other]),
 		    {noreply, ?set_Status(State, 'ESFailedTrigger')}
 	    end;
         oe_periodic_event when ?not_Cancelled(State) ->
@@ -135,7 +135,7 @@ init([Parent, ParentPid, PushConsumer, Event, TimeObj]) ->
     process_flag(trap_exit, true),
     {ok, ?get_InitState(Parent, ParentPid, Event, PushConsumer, TimeObj)}.
 
-terminate(Reason, State) ->
+terminate(_Reason, State) ->
     clear_timer(State),
     ok.
 
@@ -148,7 +148,7 @@ terminate(Reason, State) ->
 %% Returns  : 'ESTimeSet' | 'ESTimeCleared' | 'ESTriggered' |
 %%            'ESFailedTrigger'
 %%-----------------------------------------------------------
-'_get_status'(OE_THIS, State) ->
+'_get_status'(_OE_THIS, State) ->
     {reply, ?get_Status(State), State}.
 
 %%-----------------------------------------------------------
@@ -159,9 +159,9 @@ terminate(Reason, State) ->
 %% Arguments: -
 %% Returns  : {boolean(), CosTime::UTO}
 %%-----------------------------------------------------------
-time_set(OE_THIS, State) when ?is_UtoSet(State) ->
+time_set(_OE_THIS, State) when ?is_UtoSet(State) ->
     {reply, {?is_TimeSet(State), ?get_Uto(State)}, State};
-time_set(OE_THIS, State) ->
+time_set(_OE_THIS, State) ->
     Utc = #'TimeBase_UtcT'{time=0, inacclo = 0,inacchi = 0, tdf = 0},
     {reply, 
      {?is_TimeSet(State), 
@@ -175,7 +175,7 @@ time_set(OE_THIS, State) ->
 %%            TriggerTime - CosTime::UTO
 %% Returns  : ok
 %%-----------------------------------------------------------
-set_timer(OE_THIS, State, 'TTAbsolute', TriggerTime) ->
+set_timer(_OE_THIS, State, 'TTAbsolute', TriggerTime) ->
     NewState = clear_timer(State),
     ?time_TypeCheck(TriggerTime, 'CosTime_UTO'),
      case catch {'CosTime_UTO':'_get_time'(TriggerTime), 
@@ -198,7 +198,7 @@ set_timer(OE_THIS, State, 'TTAbsolute', TriggerTime) ->
 	 _->
 	     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
      end;
-set_timer(OE_THIS, State, 'TTRelative', TriggerTime) ->
+set_timer(_OE_THIS, State, 'TTRelative', TriggerTime) ->
     NewState = clear_timer(State),
     ?time_TypeCheck(TriggerTime, 'CosTime_UTO'),
     case catch {'CosTime_UTO':'_get_time'(TriggerTime), ?get_Time(State)} of
@@ -230,7 +230,7 @@ set_timer(OE_THIS, State, 'TTRelative', TriggerTime) ->
 	_->
 	    {reply, {'EXCEPTION', #'BAD_PARAM'{completion_status=?COMPLETED_NO}}, NewState}
     end;
-set_timer(OE_THIS, State, 'TTPeriodic', TriggerTime) ->
+set_timer(_OE_THIS, State, 'TTPeriodic', TriggerTime) ->
     NewState = clear_timer(State),
     ?time_TypeCheck(TriggerTime, 'CosTime_UTO'),
     case catch {'CosTime_UTO':'_get_time'(TriggerTime), ?get_Time(State)} of
@@ -262,7 +262,7 @@ set_timer(OE_THIS, State, 'TTPeriodic', TriggerTime) ->
 	_->
 	    {reply, {'EXCEPTION', #'BAD_PARAM'{completion_status=?COMPLETED_NO}}, NewState}
     end;
-set_timer(OE_THIS, State, _, _) ->
+set_timer(_OE_THIS, _State, _, _) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
@@ -270,7 +270,7 @@ set_timer(OE_THIS, State, _, _) ->
 %% Arguments: -
 %% Returns  : boolean()
 %%-----------------------------------------------------------
-cancel_timer(OE_THIS, State) ->
+cancel_timer(_OE_THIS, State) ->
     NewState=clear_timer(State),
     case ?get_Status(NewState) of
 	'ESTriggered' ->
@@ -286,9 +286,9 @@ cancel_timer(OE_THIS, State) ->
 %% Arguments: EventData - any#
 %% Returns  : ok
 %%-----------------------------------------------------------
-set_data(OE_THIS, State, EventData) when record(EventData, any) ->
+set_data(_OE_THIS, State, EventData) when record(EventData, any) ->
     {reply, ok, ?set_Event(State, EventData)};
-set_data(OE_THIS, State, EventData) ->
+set_data(_OE_THIS, _State, _EventData) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 

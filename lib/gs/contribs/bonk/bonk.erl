@@ -63,16 +63,16 @@ bonk_dir() ->
 
 idle(SoundPid, SqrPids, Bmps, Colors) ->
     receive
-	{gs, newButton, click, Data, Args} ->
+	{gs, newButton, click, _Data, _Args} ->
 	    init(SoundPid, SqrPids, Bmps, Colors);
-	{gs, aboutButton, click, Data, Args} ->
+	{gs, aboutButton, click, _Data, _Args} ->
 	    display_about(),
 	    idle(SoundPid, SqrPids, Bmps, Colors);
-	{gs, quitButton, click, Data, Args} ->
+	{gs, quitButton, click, _Data, _Args} ->
 	    SoundPid ! quit,
 	    send_to_all(SqrPids, quit);
-	Other ->
-	    %%io:format("Got ~w in idle~n", [Other]),
+	_Other ->
+	    %%io:format("Got ~w in idle~n", [_Other]),
 	    idle(SoundPid, SqrPids, Bmps, Colors)
     end.
 
@@ -93,10 +93,10 @@ init(SoundPid, SqrPids, Bmps, Colors) ->
 
 game(SoundPid, SqrPids, Bmps, Colors, Scores) ->
     receive
-  	{gs, Square, buttonpress, SqrPid, [1 | Rest]} when pid(SqrPid) ->
+  	{gs, _Square, buttonpress, SqrPid, [1 | _Rest]} when pid(SqrPid) ->
 	    SqrPid ! bonk,
 	    game(SoundPid, SqrPids, Bmps, Colors, Scores);
-	{gs, _Id, buttonpress, _Data, [Butt | Rest]} when Butt =/= 1 ->
+	{gs, _Id, buttonpress, _Data, [Butt | _Rest]} when Butt =/= 1 ->
 	    NewScores = bomb(SoundPid, SqrPids, Scores),
 	    game(SoundPid, SqrPids, Bmps, Colors, NewScores);
 	{show, Square, Rect} ->
@@ -118,11 +118,11 @@ game(SoundPid, SqrPids, Bmps, Colors, Scores) ->
 	{bombed, Square, Rect} ->
 	    NewScores = bombed(SoundPid, SqrPids, Square, Rect, Scores, Colors),
 	    game(SoundPid, SqrPids, Bmps, Colors, NewScores);
-	{gs, endButton, click, Data, Args} ->
+	{gs, endButton, click, _Data, _Args} ->
 	    game_over(SoundPid, SqrPids, Bmps, Colors, Scores);
-	{gs, quitButton, click, Data, Args} ->
+	{gs, quitButton, click, _Data, _Args} ->
 	    quit(SoundPid, SqrPids, Bmps, Colors, Scores);
-	Other ->
+	_Other ->
 	    game(SoundPid, SqrPids, Bmps, Colors, Scores)
     end.
 	    
@@ -140,7 +140,7 @@ game_over(SoundPid, SqrPids, Bmps, Colors, Scores) ->
     idle(SoundPid, SqrPids, Bmps, Colors).
 
 
-quit(SoundPid, SqrPids, Bmps, Colors, Scores) ->
+quit(SoundPid, SqrPids, _Bmps, _Colors, _Scores) ->
     SoundPid ! quit,
     send_to_all(SqrPids, quit),
     true.
@@ -154,7 +154,7 @@ bomb(SoundPid, SqrPids, Scores) ->
 	    SoundPid ! bomb,
 	    gs:config(bombOut,[{text,integer_to_list(Bombs-1)}]),
 	    Scores#scores{bombs=Bombs-1};
-	Other ->
+	_Other ->
 	    Scores
     end.
 
@@ -171,13 +171,13 @@ show_face(Square, Rect, Colors, Scores) ->
 	    Scores#scores{showed=Showed+1}
     end.
     
-hide_face(Square, Rect, Colors, Scores) ->
+hide_face(_Square, Rect, _Colors, Scores) ->
     Showed = Scores#scores.showed,
     gs:config(Rect, [{bitmap,lists:append(bonk_dir(),"bitmaps/bonktom")}]),
     Scores#scores{showed=Showed-1}.
 
 
-miss_face(SoundPid, Square, Rect, Colors, Scores) ->
+miss_face(SoundPid, _Square, Rect, Colors, Scores) ->
     SoundPid ! missed,
     gs:config(Rect, [{bitmap,lists:append(bonk_dir(),"bitmaps/bonkmiss")}, {fg, Colors#colors.miss}]),
     Bonus = Scores#scores.bonus,
@@ -190,12 +190,12 @@ miss_face(SoundPid, Square, Rect, Colors, Scores) ->
 	    {game_over, Scores}
     end.
 
-bonked(SoundPid, SqrPids, Square, Rect, Scores, Colors) ->
+bonked(SoundPid, SqrPids, _Square, Rect, Scores, Colors) ->
     gs:config(Rect, [{bitmap,lists:append(bonk_dir(),"bitmaps/bonkx")}, {fg, Colors#colors.x}]),
     SoundPid ! bonk,
     update_score(SoundPid, SqrPids, Scores).
 
-bombed(SoundPid, SqrPids, Square, Rect, Scores, Colors) ->
+bombed(SoundPid, SqrPids, _Square, Rect, Scores, Colors) ->
     gs:config(Rect, [{bitmap,lists:append(bonk_dir(),"bitmaps/bonkbomb")}, {fg, Colors#colors.bomb}]),
     update_score(SoundPid, SqrPids, Scores).
 
@@ -219,14 +219,14 @@ update_score(SoundPid, SqrPids, Scores) ->
     end.
 	    
 
-send_to_all([],Msg) ->
+send_to_all([], _Msg) ->
     true;
 
 send_to_all([Pid|Rest],Msg) when pid(Pid) ->
     Pid ! Msg,
     send_to_all(Rest,Msg);
 
-send_to_all([Else|Rest],Msg) ->
+send_to_all([_Else|Rest],Msg) ->
     send_to_all(Rest,Msg).
 
 
@@ -268,7 +268,7 @@ create_board(GS, ColorMode) ->
     DSX = TextWidth+94,	       % pixels between status items
     SY = SLineY+2,   	       % y-pos status items
     HiWidth = 100,             % width of high score field
-    HiHeight = 180,            % height of the same
+    _HiHeight = 180,            % height of the same
     HiX = Width-HiWidth,       % high score text position
     HiY = BLineY+10,
     DHY = 20,                  % space between title & scores
@@ -389,7 +389,7 @@ create_squares(X, Y, Size, Color, Spc) ->
     create_squares(X, Y, Size, Color, Spc, 1, 1, [], []).
 
 
-create_squares(X, Y, Size, Color, Spc, 4, 5, Pids, Bmps) ->
+create_squares(_X, _Y, _Size, _Color, _Spc, 4, 5, Pids, Bmps) ->
     {Pids, Bmps};
 
 create_squares(X, Y, Size, Color, Spc, Row, 5, Pids, Bmps) ->
@@ -467,10 +467,10 @@ update_scorelist(SoundPid, Scores) ->
     end.
 
 
-update_scorelist_2([], Score, N, SoundPid) when N < 10 ->
+update_scorelist_2([], Score, N, _SoundPid) when N < 10 ->
     [[integer_to_list(Score),getuser()]];
 
-update_scorelist_2(_, _, N, SoundPid) when N >= 10 ->
+update_scorelist_2(_, _, N, _SoundPid) when N >= 10 ->
     [];
 
 update_scorelist_2([[Sc, Name] | Rest], Score, N, SoundPid) ->
@@ -482,7 +482,7 @@ update_scorelist_2([[Sc, Name] | Rest], Score, N, SoundPid) ->
 	    end,
 	    lists:append([[integer_to_list(Score),getuser()]],
 			 update_scorelist_3([[Sc,Name]|Rest],N+1));
-	Other ->
+	_Other ->
 	    lists:append([[Sc,Name]],update_scorelist_2(Rest, Score, N+1, SoundPid))
     end.
 
@@ -521,7 +521,7 @@ clear_scores(Scores) ->
 
 flush() ->
     receive
-	X ->
+	_X ->
 	    flush()
 	after
 	    0 ->
@@ -560,7 +560,7 @@ display_about() ->
 	{ok, Fd} ->
 	    write_text(Fd, "", io:get_line(Fd, "")),
 	    file:close(Fd);
-	{error, Reason} ->
+	{error, _Reason} ->
 	    gs:config(aboutText, {text, "Error: could not read the about file"})
     end,
 
@@ -570,7 +570,7 @@ display_about() ->
 	    gs:destroy(aboutWin)
     end.
 
-write_text(Fd, Text, eof) ->
+write_text(_Fd, Text, eof) ->
     gs:config(aboutText, {text, Text});
 write_text(Fd, Text, More) ->
     write_text(Fd, lists:append(Text, More), io:get_line(Fd, "")).

@@ -9,10 +9,6 @@
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
 #     $Id$
 #
 
@@ -38,7 +34,6 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 MODULES = 
-#MODULES = hipe_hot
 
 
 
@@ -88,5 +83,3 @@ release_spec: opt
 #	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 
 release_docs_spec:
-
-

@@ -44,7 +44,7 @@ test1(Env, []) ->
      "</html>"].
 
 
-get(Env,[]) ->
+get(_Env,[]) ->
   [header(),
    top("GET Example"),
    "<FORM ACTION=\"/cgi-bin/erl/httpd_example:get\" METHOD=GET>	
@@ -57,7 +57,7 @@ get(Env,[]) ->
 get(Env,Input) ->
   default(Env,Input).
 
-post(Env,[]) ->
+post(_Env,[]) ->
   [header(),
    top("POST Example"),
    "<FORM ACTION=\"/cgi-bin/erl/httpd_example:post\" METHOD=POST>	
@@ -70,7 +70,7 @@ post(Env,[]) ->
 post(Env,Input) ->
   default(Env,Input).
 
-yahoo(Env,Input) ->
+yahoo(_Env,_Input) ->
   "Location: http://www.yahoo.com\r\n\r\n".
 
 default(Env,Input) ->
@@ -99,13 +99,13 @@ footer() ->
 </HTML>\n".
 
     
-newformat(SessionID,Env,Input)->
-    mod_esi:deliver(SessionID,"Content-Type:text/html\r\n\r\n"),
-    mod_esi:deliver(SessionID,top("new esi format test")),
-    mod_esi:deliver(SessionID,"This new format is nice<BR>"),
-    mod_esi:deliver(SessionID,"This new format is nice<BR>"),
-    mod_esi:deliver(SessionID,"This new format is nice<BR>"),
-    mod_esi:deliver(SessionID,footer()).
+newformat(SessionID, _Env, _Input)->
+    mod_esi:deliver(SessionID, "Content-Type:text/html\r\n\r\n"),
+    mod_esi:deliver(SessionID, top("new esi format test")),
+    mod_esi:deliver(SessionID, "This new format is nice<BR>"),
+    mod_esi:deliver(SessionID, "This new format is nice<BR>"),
+    mod_esi:deliver(SessionID, "This new format is nice<BR>"),
+    mod_esi:deliver(SessionID, footer()).
     
 %% ------------------------------------------------------
 

@@ -1,3 +1,4 @@
+%%% -*- erlang-indent-level: 2 -*-
 %%% $Id$
 %%% x86 pretty-printer
 
@@ -38,12 +39,12 @@ pp_insn(Dev, I, Pre) ->
       io:format(Dev, ", ", []),
       pp_dst(Dev, Dst),
       io:format(Dev, "\n", []);
-    #call{'fun'=Fun, sdesc=SDesc} ->
+    #call{'fun'=Fun, sdesc=SDesc, linkage=Linkage} ->
       io:format(Dev, "\tcall ", []),
       pp_fun(Dev, Fun),
       io:format(Dev, " #", []),
       pp_sdesc(Dev, Pre, SDesc),
-      io:format(Dev, "\n", []);
+      io:format(Dev, " ~w\n", [Linkage]);
     #cmovcc{cc=Cc, src=Src, dst=Dst} ->
       io:format(Dev, "\tcmov~s ", [cc_name(Cc)]),
       pp_src(Dev, Src),
@@ -68,10 +69,10 @@ pp_insn(Dev, I, Pre) ->
       io:format(Dev, "\n", []);
     #jcc{cc=Cc, label=Label} ->
       io:format(Dev, "\tj~s .~s_~w\n", [cc_name(Cc), Pre, Label]);
-    #jmp_fun{'fun'=Fun} ->
+    #jmp_fun{'fun'=Fun, linkage=Linkage} ->
       io:format(Dev, "\tjmp ", []),
       pp_fun(Dev, Fun),
-      io:format(Dev, "\n", []);
+      io:format(Dev, " ~w\n", [Linkage]);
     #jmp_label{label=Label} ->
       io:format(Dev, "\tjmp .~s_~w\n", [Pre, Label]);
     #jmp_switch{temp=Temp, jtab=JTab, labels=Labels} ->
@@ -110,28 +111,22 @@ pp_insn(Dev, I, Pre) ->
       io:format(Dev, "\tnop\n", []);
     #prefix_fs{} ->
       io:format(Dev, "\t.byte 0x64 ! FS segment override prefix\n", []);
-    #pseudo_call{dsts=Dsts, 'fun'=Fun, arity=Arity, contlab=ContLab, exnlab=ExnLab} ->
+    #pseudo_call{'fun'=Fun, sdesc=SDesc, contlab=ContLab, linkage=Linkage} ->
       io:format(Dev, "\tpseudo_call ", []),
       pp_fun(Dev, Fun),
-      io:format(Dev, " # ~w (", [Arity]),
-      pp_args(Dev, Dsts),
-      io:format(Dev, ")", []),
-      io:format(Dev, " contlab .~s_~w", [Pre, ContLab]),
-      case ExnLab of
-	[] -> [];
-	_ -> io:format(Dev, " exnlab .~s_~w", [Pre, ExnLab])
-      end,
-      io:format(Dev, "\n", []);
+      io:format(Dev, " # contlab .~s_~w", [Pre, ContLab]),
+      pp_sdesc(Dev, Pre, SDesc),
+      io:format(Dev, " ~w\n", [Linkage]);
     #pseudo_jcc{cc=Cc, true_label=TrueLab, false_label=FalseLab, pred=Pred} ->
       io:format(Dev, "\tpseudo_j~s ", [cc_name(Cc)]),
       io:format(Dev, ".~s_~w # .~s_~w ~.2f\n",
 		[Pre, TrueLab, Pre, FalseLab, Pred]);
-    #pseudo_tailcall{'fun'=Fun, arity=Arity, stkargs=StkArgs} ->
+    #pseudo_tailcall{'fun'=Fun, arity=Arity, stkargs=StkArgs, linkage=Linkage} ->
       io:format(Dev, "\tpseudo_tailcall ", []),
       pp_fun(Dev, Fun),
       io:format(Dev, "~w (", [Arity]),
       pp_args(Dev, StkArgs),
-      io:format(Dev, ")\n", []);
+      io:format(Dev, ") ~w\n", [Linkage]);
     #pseudo_tailcall_prepare{} ->
       io:format(Dev, "\tpseudo_tailcall_prepare\n", []);
     #push{src=Src} ->
@@ -146,8 +141,6 @@ pp_insn(Dev, I, Pre) ->
       io:format(Dev, ", ", []),
       pp_dst(Dev, Dst),
       io:format(Dev, "\n", []);
-    #finit{} ->
-      io:format(Dev, "\tfinit\n ", []);
     #fp_binop{src=Src, dst=Dst, op=Op} ->
       io:format(Dev, "\t~s ", [Op]),
       pp_dst(Dev, Dst),
@@ -163,21 +156,18 @@ pp_insn(Dev, I, Pre) ->
 	  pp_args(Dev, [Arg]),
 	  io:format(Dev, "\n", [])
       end;
-    #fmov{src=Src, dst=Dst} ->
-      io:format(Dev, "\tfmov ", []),
+    #fmove{src=Src, dst=Dst} ->
+      io:format(Dev, "\tfmove ", []),
       pp_src(Dev, Src),
       io:format(Dev, ", ", []),
       pp_dst(Dev, Dst),
       io:format(Dev, "\n", []);
     _ ->
-      exit({?MODULE, pp_insn, {"unknown instruction", I}})
+      exit({?MODULE, pp_insn, {"unknown x86 instruction", I}})
   end.
 
 to_hex(N) ->
-  case hipe_converters:int_to_hex(N) of
-    [$- | Digits] -> [$-, $0, $x | Digits];
-    Digits -> [$0, $x | Digits]
-  end.
+  io_lib:format("~.16x", [N, "0x"]).
 
 pp_sdesc(Dev, Pre, #x86_sdesc{exnlab=ExnLab,fsize=FSize,arity=Arity,live=Live}) ->
   pp_sdesc_exnlab(Dev, Pre, ExnLab),

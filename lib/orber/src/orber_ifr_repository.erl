@@ -216,7 +216,7 @@ create_array({ObjType,_ObjID}, Length, Element_type)
 %%%----------------------------------------------------------------------
 %%% Extra interfaces (not in the IDL-spec for the IFR).
 
-create_idltype(#orber_light_ifr_ref{} = LRef, Typecode) ->
+create_idltype(#orber_light_ifr_ref{} = LRef, _Typecode) ->
     LRef;
 create_idltype({ObjType,_ObjID}, Typecode) ?tcheck(ir_Repository, ObjType) ->
     New_idltype = #ir_IDLType{ir_Internal_ID = unique(),

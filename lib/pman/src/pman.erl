@@ -73,7 +73,7 @@ start_notimeout(LIModuleExcluded) ->
 
 start(LIModuleExcluded, Timeout) ->
 
-    OSModuleExcluded = ordsets:list_to_set(LIModuleExcluded),
+    OSModuleExcluded = ordsets:from_list(LIModuleExcluded),
 
     PidInit = spawn(pman_main, init, [self(), OSModuleExcluded]),
 

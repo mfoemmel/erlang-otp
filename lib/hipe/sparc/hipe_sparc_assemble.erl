@@ -1,137 +1,220 @@
+%% -*- erlang-indent-level: 2 -*-
 %% ====================================================================
 %%  Filename : 	hipe_sparc_assemble.erl
 %%  Module   :	hipe_sparc_assemble
-%%  Purpose  :  To write SPARC-code to memory. 
+%%  Purpose  :  Writes SPARC-code to memory. 
 %%  Notes    :  Not all SPARC instructions are handled.
 %%  History  :	* 1998-06-18 Erik Johansson (happi@csd.uu.se): Created.
 %% CVS:
-%%    $Author: happi $
-%%    $Date: 2002/05/13 10:13:07 $
-%%    $Revision: 1.19 $
+%%    $Author: mikpe $
+%%    $Date: 2004/09/22 07:39:42 $
+%%    $Revision: 1.32 $
 %% ====================================================================
-%% Exported functions (short description):
-%%  
+%% @doc
+%%
+%% Module that assembles SPARC code and returns it in the form of
+%% HiPE's external format.
+%%
+%% The external format for SPARC code is a binary representation of an
+%% Erlang list of the form:
+%% <pre>
+%%    [Version::version(),
+%%     ConstSize::size(), ConstMap::constmap(), LabelMap::labelmap(),
+%%     ExportMap::exportmap(),
+%%     HotSize::size(),   HotCode::code(),   HotRefs::refs(),
+%%     ColdSize::size(),  ColdCode::code(),  ColdRefs::refs()
+%%    ]
+%% </pre>
+%% where
+%% <ul>
+%%   <li><code> version():   {{Major::integer(),
+%%                             Minor::integer(),
+%%                             Increment::integer()},
+%%                            SYSTEM-CHECKSUM} </code></li>
+%%   <li><code> size():      integer() </code></li>
+%%   <li><code> constmap():  [ConstNo::integer(), Offset::integer(),
+%%                            Need::integer(), Type::consttype(),
+%%                            Exported::bool(), Data::term()
+%%                            | constmap] </code></li>
+%%   <li><code> labelmap():  [{DataOffset:integer, CodeOffset:integer}
+%%                            | labelmap] </code></li>
+%%   <li><code> exportmap(): [Offset::integer(), Module::atom(),
+%%                            Function::atom(), Arity::integer()
+%%                            | exportmap()] </code>
+%%                                A list sorted on <code>Offset</code>. </li>
+%%   <li><code> code():      [B4::byte(), B3::byte(), B2::byte(), B1::byte()
+%%                            | code()] </code></li>
+%%   <li><code> refs():      [{RefType:integer, Reflist:reflist}
+%%                            | refs()] </code></li>
+%%
+%%   <li><code> reflist():   [{Data::term(),Offsets::offests()}
+%%                            | reflist()] </code></li>
+%%   <li><code> offsets():   [Offset::integer() | offsets()] </code></li>
+%%
+%%   <li><code> constype():  0 | 1 </code> (0 -> term (arbitrary erlang term), 
+%%                                          1 -> block (a list of bytes)) </li>
+%%   <li><code> bool():      0 | 1 </code> (false, true) </li>
+%%   <li><code> mode():      hot | cold</code></li>
+%% </ul>
+%%
+%% @end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_sparc_assemble).
--export([assemble_and_write/1,assemble/2, assemble_instr/2]).
--export([assemble_move/1,
-	 assemble_alu/1,
-	 assemble_alu_cc/1,
-	 assemble_store/1,
-	 assemble_load/1,
-	 assemble_goto/1,
-	 assemble_b/1,
-	 assemble_br/1,
-	 assemble_call_link/1,
-	 assemble_jmp_link/1,
-	 assemble_jmp/1,
-	 assemble_sethi/1,
-	 assemble_store_fp/1,
-	 assemble_load_fp/1,
-	 assemble_fb/1,
-	 assemble_fop/1,
-	 assemble_fmov/1,
-	 assemble_fcmp/1,
-	 assemble_conv_fp/1,
-	 assemble_nop/1]).
+-export([assemble/4]).
 
+%-ifndef(DEBUG).
+%-define(DEBUG,true).
+%-endif.
 -define(DO_ASSERT,true).
+
+-include("../../kernel/src/hipe_ext_format.hrl").
 -include("../main/hipe.hrl").
+-include("../rtl/hipe_literals.hrl").
+
+%%---------------------------------------------------------------------
+%% @spec assemble(term(), term(), [Option]) -> binary()
+%%     Option = term()
+%% @doc  Assembles the compiled code in a SPARC-specific way and
+%%       returns a binary according to HiPE's external format.
+%% @end
+%%---------------------------------------------------------------------
+ 
+assemble(CompiledCode, Closures, Exports, Options) ->
+  ?when_option(time, Options, ?start_timer("SPARC assembler")),
+  {ConstAlign,ConstSize,ConstMap,RefsFromConsts} =
+    hipe_pack_constants:pack_constants(CompiledCode,
+				       hipe_sparc_registers:alignment()),
+  %% io:format("Const Size ~w\n",[ConstSize]),
+  {CodeSize,ExportMap,Code} = get_code(CompiledCode),
+  {AccHCode,AccHRefs} = linker(Code,ExportMap,ConstMap),
+  CodeBinary = mk_code_binary(AccHCode),
+  Bin = term_to_binary([{?VERSION(),?HIPE_SYSTEM_CRC},
+			ConstAlign, ConstSize,
+			hipe_pack_constants:slim_constmap(ConstMap),
+			mk_labelmap(RefsFromConsts, ExportMap),
+			slim_exportmap(ExportMap, Closures, Exports),
+			CodeSize,CodeBinary,
+			hipe_pack_constants:slim_refs(AccHRefs),
+			0,[] % ColdCodeSize, SlimColdRefs
+		       ]),
+  ?when_option(time, Options, ?stop_timer("SPARC assembler")),
+  Bin.
+
+mk_code_binary(AccHCode) ->
+  list_to_binary(words32towords8(AccHCode)).
+
+words32towords8(List) ->
+  lists:foldr(fun word32towords8/2, [], List).
+
+word32towords8(X1, Acc) ->
+  X2 = X1 bsr 8,
+  X3 = X2 bsr 8, 
+  X4 = X3 bsr 8,
+  [X4, (X3 band 16#ff), X2 band 16#ff, X1 band 16#ff | Acc].
+
+mk_labelmap(Map, ExportMap) ->
+  %% msg("Map: ~w Map\n",[Map]),
+  LblMap = lists:flatten(mk_labelmap(Map, ExportMap, [])),
+  %% msg("LblMap: ~w Map\n",[LblMap]),
+  LblMap.
+
+mk_labelmap([{MFA, Labels}| Rest], ExportMap, Acc) ->
+  Map = 
+    lists:map(
+      fun 
+	({L,Pos}) ->
+	  {Pos,find_offset({MFA,L}, ExportMap)};
+	({sorted,Base,OrderedLabels}) ->
+	  {sorted, Base, [{Order, find_offset({MFA,L}, ExportMap)}
+			  || {L,Order} <- OrderedLabels]
+	  }
+      end,
+      Labels),
+  %% msg("Map: ~w Map\n",[Map]),
+  mk_labelmap(Rest, ExportMap, [Map,Acc]);
+mk_labelmap([],_,Acc) -> Acc.
+
+find_offset({MFA,L},[{{MFA,L},hot,Adr}|_Rest]) ->
+  Adr;
+find_offset(L,[_|Rest]) ->
+  find_offset(L,Rest);
+find_offset(L,[]) ->
+  ?EXIT({label_not_found,L}).
 
 
-%% ____________________________________________________________________
-%%  assemble_and_write(CodeList)    
-%% Returns: 	true
-%%              (Or exits...)
-%% Arguments:	CodeList - a list of tuples {Code,Address}
-%%              where Code is pure sparc-code and Address
-%%              is the memory address to write the code to.
-%% Description:	 
-%% ____________________________________________________________________
-assemble_and_write([{Code,Address}|Rest]) ->
-  assemble(Code,Address),
-  assemble_and_write(Rest);
-assemble_and_write([]) -> true.
+slim_exportmap(Map, Closures, Exports) ->
+  SortedMap = lists:sort(slim_exportmap1(Map, [])),
+  slim_sorted_exportmap(SortedMap, Closures, Exports).
 
-assemble([Instr|Rest],Address) -> 
+slim_exportmap1([{{{M,F,A},entry},hot,Adr}|Rest], Acc) ->
+  slim_exportmap1(Rest, [{Adr,M,F,A}|Acc]);
+slim_exportmap1([_|Rest], Acc) ->
+  slim_exportmap1(Rest, Acc);
+slim_exportmap1([], Acc) ->
+  Acc.
 
-  case hipe_sparc:type(Instr) of
-    % Comments and labels generates no code.
-    comment -> 
-      %% io:format("          ",[]),
-      %% pp_instr(Instr,Address),
-      assemble(Rest,Address);
-    label ->   
-      assemble(Rest,Address);
-    Type ->   
-      % Assemble the instruction and write it to memory.
-      write(Address,
-	    case catch(assemble_instr(Type,Instr)) of
-	      {'EXIT',R} ->
-	       io:format("I: ~w\n",[Instr]),
-	       exit(R);
-	      O -> O
-	    end),
-      assemble(Rest,Address+4) % Each instruction is 4 bytes.
-  end;
-assemble([],_) -> true.
+slim_sorted_exportmap([{Addr,M,F,A}|Rest], Closures, Exports) ->
+  IsClosure = lists:member({M,F,A}, Closures),
+  IsExported = is_exported(F, A, Exports),
+  [Addr,M,F,A,IsClosure,IsExported | slim_sorted_exportmap(Rest, Closures, Exports)];
+slim_sorted_exportmap([],_,_) -> [].
 
+is_exported(_F, _A, []) -> true; % XXX: kill this clause when Core is fixed
+is_exported(F, A, Exports) -> lists:member({F,A}, Exports).
 
-
-%% ____________________________________________________________________
-%%  assemble_instr(Type,Instr)    
-%% Returns: 	
-%% Arguments:	Type - The type of the instruction.
+%%---------------------------------------------------------------------
+%% assemble_instr(Type, Instr)
+%%     Returns: 	
+%%   Arguments:	Type - The type of the instruction.
 %%              Instr - The complete instruction.
-%% Description:	Returns the 32-bit sparccode for the instruction Instr. 
-%% ____________________________________________________________________
+%% Description:	Returns the 32-bit SPARC code for the instruction Instr. 
+%%---------------------------------------------------------------------
 
 assemble_instr(Type, I) ->
   case Type of 
-    move ->
-      assemble_move(I);
+%%    move ->
+%%      assemble_move(I);
     alu ->     
       assemble_alu(I);
-    alu_cc ->
-      assemble_alu_cc(I);
-    store ->
-      assemble_store(I);
-    load ->
-      assemble_load(I);
+%%    alu_cc ->
+%%      assemble_alu_cc(I);
+%%    store ->
+%%      assemble_store(I);
+%%    load ->
+%%      assemble_load(I);
     goto ->
       assemble_goto(I);
     b ->
       assemble_b(I);
-    br ->
-      assemble_br(I);
+%%     br ->
+%%       assemble_br(I);
     call_link ->
       assemble_call_link(I);
     jmp_link ->
       assemble_jmp_link(I);
-    jmp ->
-      assemble_jmp(I);
+%%    jmp ->
+%%      assemble_jmp(I);
     sethi ->
       assemble_sethi(I);
-    load_fp ->
-      assemble_load_fp(I);
-    store_fp ->
-      assemble_store_fp(I);
-    fb ->
-      assemble_fb(I);
-    fop ->
-      assemble_fop(I);
-    fcmp ->
-      assemble_fcmp(I);
-    fmov ->
-      assemble_fmov(I);
-    conv_fp ->
-      assemble_conv_fp(I);
-    nop ->
-      assemble_nop(I);
-
+%%    load_fp ->
+%%      assemble_load_fp(I);
+%%    store_fp ->
+%%      assemble_store_fp(I);
+%%    fb ->
+%%      assemble_fb(I);
+%%    fop ->
+%%      assemble_fop(I);
+%%    fcmp ->
+%%      assemble_fcmp(I);
+%%    fmove ->
+%%      assemble_fmove(I);
+%%    conv_fp ->
+%%      assemble_conv_fp(I);
+%%    nop ->
+%%      assemble_nop(I);
     T ->
-      exit([{problem,{not_handled,instruction, T}},{at,I}])
+      exit([{problem,{not_handled,instruction,T}},{at,I}])
   end.
 	 
 check_simm13(Val,I) ->
@@ -140,9 +223,9 @@ check_simm13(Val,I) ->
       V = hipe_sparc:imm_value(Val),
       if 
 	V > 4095 -> %% 12 bits
-	  exit([{problem,{to_big_imm,Val}},{at,I}]);
+	  exit([{problem,{too_big_imm,Val}},{at,I}]);
 	V < -4096 ->
-	  exit([{problem,{to_small_imm,Val}},{at,I}]);
+	  exit([{problem,{too_small_imm,Val}},{at,I}]);
 	true ->
 	  true
       end;
@@ -155,15 +238,14 @@ check_imm22(Val,I) ->
       V = hipe_sparc:imm_value(Val),
       if 
 	V > 4194303 ->  %% 22 bits
-	  exit([{problem,{to_big_imm,Val}},{at,I}]);
+	  exit([{problem,{too_big_imm,Val}},{at,I}]);
 	V < -4194303 ->
-	  exit([{problem,{to_small_imm,Val}},{at,I}]);
+	  exit([{problem,{too_small_imm,Val}},{at,I}]);
 	true ->
 	  true
       end;
     _ -> true
   end.
-
 
 %%     Src Dst
 %% mov reg reg  
@@ -173,10 +255,10 @@ assemble_move(Instr) ->
   Dst = hipe_sparc:reg_nr(hipe_sparc:move_dest(Instr)),
   Src = hipe_sparc:move_src(Instr),
 
-  %% Check if the sorce is a register.
+  %% Check if the source is a register.
   case hipe_sparc:is_reg(Src) of
     false ->
-      %% Check if source is an imm.
+      %% Check if source is an immediate.
       case hipe_sparc:is_imm(Src) of
 	true -> 
 	  check_simm13(Src,Instr), %% Throws exception...
@@ -217,12 +299,10 @@ assemble_alu(Instr) ->
 	    '>>?64' -> hipe_sparc_op:sraix(Src1,Src2,Dst);
 	    '<<' -> hipe_sparc_op:slli(Src1,Src2,Dst);
 	    '<<64' -> hipe_sparc_op:sllix(Src1,Src2,Dst);
-	    _ -> exit([{problem,{not_handled,{aluop,AluOp}}},
-		       {at,Instr}])
+	    _ -> exit([{problem,{not_handled,{aluop,AluOp}}},{at,Instr}])
 	  end;
 	false -> %% Not reg or imm
-	  exit([{problem,{not_handled_operand,SymSrc2}},
-		{at,Instr}])
+	  exit([{problem,{not_handled_operand,SymSrc2}},{at,Instr}])
       end;
 	      
     true -> %% Reg2
@@ -272,8 +352,7 @@ assemble_alu_cc(Instr) ->
 		       {at,Instr}])
 	  end;
 	false -> %% Not reg or imm
-	  exit([{problem,{not_handled_operand,SymSrc2}},
-		{at,Instr}])
+	  exit([{problem,{not_handled_operand,SymSrc2}},{at,Instr}])
       end;
 
     true ->
@@ -285,8 +364,7 @@ assemble_alu_cc(Instr) ->
 	'andn' -> hipe_sparc_op:andncc(Src1,Src2,Dst);
 	'or' -> hipe_sparc_op:orcc(Src1,Src2,Dst);
 	'xor' -> hipe_sparc_op:xorcc(Src1,Src2,Dst);
-	_ -> exit([{problem,{not_handled,{aluccop,AluOp}}},
-		   {at,Instr}])
+	_ -> exit([{problem,{not_handled,{aluccop,AluOp}}},{at,Instr}])
       end
   end.
 
@@ -310,10 +388,8 @@ assemble_store(Store) ->
 	    h -> hipe_sparc_op:sthi(Src,Dst,ImmOff);
 	    x -> hipe_sparc_op:stxi(Src,Dst,ImmOff)
 	  end;
-	    
-	false -> %% Not reg or imm
-	  exit([{problem,{not_handled_offset,Off}},
-		{at,Store}])
+	false -> %% Not register or immediate
+	  exit([{problem,{not_handled_offset,Off}},{at,Store}])
       end;
     true -> 
       case Type of
@@ -322,7 +398,6 @@ assemble_store(Store) ->
 	h -> hipe_sparc_op:sth(Src,Dst,hipe_sparc:reg_nr(Off));
 	x -> hipe_sparc_op:stx(Src,Dst,hipe_sparc:reg_nr(Off))
       end
-
   end.
 
 %%       Src Off Dst
@@ -352,9 +427,8 @@ assemble_load(Load) ->
 		    uh -> hipe_sparc_op:lduhi(Src,ImmOff,Dst);
 		    x -> hipe_sparc_op:ldxi(Src,ImmOff,Dst)
 		  end;
-		false -> %% Not reg or imm
-		  exit([{problem,{not_handled_offset,Off}},
-			{at,Load}])
+		false -> %% Not register or immediate
+		  exit([{problem,{not_handled_offset,Off}},{at,Load}])
 	      end;
 	    true -> 
 	      OffReg = hipe_sparc:reg_nr(Off),
@@ -375,8 +449,6 @@ assemble_load(Load) ->
       exit([{problem,load_dst_not_reg},{at,Load}])
   end.
 
-
-
 %% goto is a synthetic instruction implemented with ba
 %% we're only doing SPARC V9 now, so replace "ba" with "ba,pt"
 assemble_goto(Goto) ->
@@ -389,30 +461,29 @@ assemble_goto(Goto) ->
 %%
 %%
 assemble_b(B) ->
-   Disp = hipe_sparc:b_label(B),
-   Cond = hipe_sparc_op:cc_bits(hipe_sparc:b_cond(B)),
-   Pred = hipe_sparc_op:predicate_bit(hipe_sparc:b_taken(B)),
-   Annul = hipe_sparc_op:annul_bit(hipe_sparc:b_annul(B)),
-   hipe_sparc_op:bpcc(Cond, Annul, Pred, Disp).
+  Disp = hipe_sparc:b_label(B),
+  Cond = hipe_sparc_op:cc_bits(hipe_sparc:b_cond(B)),
+  Pred = hipe_sparc_op:predicate_bit(hipe_sparc:b_taken(B)),
+  Annul = hipe_sparc_op:annul_bit(hipe_sparc:b_annul(B)),
+  hipe_sparc_op:bpcc(Cond, Annul, Pred, Disp).
 
-assemble_br(BR) -> 
-  Disp = hipe_sparc:br_label(BR),
-  Reg = hipe_sparc:reg_nr(hipe_sparc:br_reg(BR)),
-  RCond = hipe_sparc_op:rcc_bits(hipe_sparc:br_regcond(BR)),
-  Pred = hipe_sparc_op:predicate_bit(hipe_sparc:br_taken(BR)),
-  Annul = hipe_sparc_op:annul_bit(hipe_sparc:br_annul(BR)),
-  hipe_sparc_op:bpr(RCond, Annul, Pred, Reg, Disp).
+%% assemble_br(BR) -> 
+%%   Disp = hipe_sparc:br_label(BR),
+%%   Reg = hipe_sparc:reg_nr(hipe_sparc:br_reg(BR)),
+%%   RCond = hipe_sparc_op:rcc_bits(hipe_sparc:br_regcond(BR)),
+%%   Pred = hipe_sparc_op:predicate_bit(hipe_sparc:br_taken(BR)),
+%%   Annul = hipe_sparc_op:annul_bit(hipe_sparc:br_annul(BR)),
+%%   hipe_sparc_op:bpr(RCond, Annul, Pred, Reg, Disp).
 
 assemble_call_link(Call_link) ->
   case 
     hipe_sparc:reg_nr(hipe_sparc:call_link_link(Call_link)) =/= 
     hipe_sparc_registers:return_address() of
-    true -> exit([{problem,{call_link_not_to_CP}},
-		  {at,Call_link}]);
+    true ->
+      exit([{problem,{call_link_not_to_CP}},{at,Call_link}]);
     false ->
       hipe_sparc_op:call(hipe_sparc:call_link_target(Call_link))
   end.
-
 
 assemble_jmp_link(Jmp_link) ->
   Target = hipe_sparc:reg_nr(hipe_sparc:jmp_link_target(Jmp_link)),
@@ -423,8 +494,7 @@ assemble_jmp_link(Jmp_link) ->
 assemble_jlink(I, Target, Off, Link) ->
   case hipe_sparc:is_reg(Off) of 
     true -> 
-      exit([{problem,{not_handled,{jmp_link,reg_reg_reg}}},
-	    {at,I}]);
+      exit([{problem,{not_handled,{jmp_link,reg_reg_reg}}},{at,I}]);
     false -> 
       case hipe_sparc:is_imm(Off) of
 	true -> 
@@ -432,8 +502,7 @@ assemble_jlink(I, Target, Off, Link) ->
 	  ImmOff = hipe_sparc:imm_value(Off),
 	  hipe_sparc_op:jumpli(Target,ImmOff,Link);
 	false -> %% Not reg or imm
-	  exit([{problem,{not_handled_offset,Off}},
-		{at,I}])
+	  exit([{problem,{not_handled_offset,Off}},{at,I}])
       end
   end.  
 
@@ -443,11 +512,9 @@ assemble_jmp(Jmp)->
   Off = hipe_sparc:jmp_off(Jmp),
   assemble_jlink(Jmp, Target, Off, Link).
 
-
 assemble_sethi(Instr)->
   Dest = hipe_sparc:reg_nr(hipe_sparc:sethi_dest(Instr)),
   Val = hipe_sparc:sethi_const(Instr),
-
   case hipe_sparc:is_imm(Val) of
     true -> 
       check_imm22(Val,Instr), %% Throws exception...
@@ -460,10 +527,9 @@ assemble_sethi(Instr)->
 assemble_nop(_Instr) ->
   hipe_sparc_op:nop().
 
-
-%% ____________________________________________________________________
+%%---------------------------------------------------------------------
 %% FP - ops
-%%
+%%---------------------------------------------------------------------
 
 %%          Src Off Dst
 %% load_fp  reg reg fpreg
@@ -494,9 +560,9 @@ assemble_load_fp(Load) ->
 	      end;
 	    true ->
 	      case Type of
-		    single ->  hipe_sparc_op:ldf(Dst,Src,hipe_sparc:reg_nr(Off));
-		    double ->  hipe_sparc_op:lddf(Dst,Src,hipe_sparc:reg_nr(Off));
-		    quad ->  hipe_sparc_op:ldqf(Dst,Src,hipe_sparc:reg_nr(Off))
+		single -> hipe_sparc_op:ldf(Dst,Src,hipe_sparc:reg_nr(Off));
+		double -> hipe_sparc_op:lddf(Dst,Src,hipe_sparc:reg_nr(Off));
+		  quad -> hipe_sparc_op:ldqf(Dst,Src,hipe_sparc:reg_nr(Off))
 	      end
 	  end;
 	false ->
@@ -513,9 +579,8 @@ assemble_store_fp(Store) ->
   Dst = hipe_sparc:reg_nr(hipe_sparc:store_fp_dest(Store)),
   Off = hipe_sparc:store_fp_off(Store),
   Type = hipe_sparc:store_fp_type(Store),
-  Src =
-    encode_5bit_fpreg(hipe_sparc:fpreg_nr(hipe_sparc:store_fp_src(Store)), 
-		      Type),
+  Src = encode_5bit_fpreg(hipe_sparc:fpreg_nr(hipe_sparc:store_fp_src(Store)), 
+			  Type),
   case hipe_sparc:is_reg(Off) of 
     false -> 
       case hipe_sparc:is_imm(Off) of
@@ -523,33 +588,30 @@ assemble_store_fp(Store) ->
 	  check_simm13(Off,Store), %% Throws exception...
 	  ImmOff = hipe_sparc:imm_value(Off),
 	  case Type of
-	    single ->  hipe_sparc_op:stfi(Src,Dst,ImmOff);
-	    double ->  hipe_sparc_op:stdfi(Src,Dst,ImmOff);
-	    quad ->    hipe_sparc_op:stqfi(Src,Dst,ImmOff)
+	    single -> hipe_sparc_op:stfi(Src,Dst,ImmOff);
+	    double -> hipe_sparc_op:stdfi(Src,Dst,ImmOff);
+	    quad ->   hipe_sparc_op:stqfi(Src,Dst,ImmOff)
 	  end;
 	false -> %% Not reg or imm
-	  exit([{problem,{not_handled_offset,Off}},
-		{at,Store}])
+	  exit([{problem,{not_handled_offset,Off}},{at,Store}])
       end;
     true -> 
       case Type of
-	single ->  hipe_sparc_op:stf(Src,Dst,hipe_sparc:reg_nr(Off));
-	double ->  hipe_sparc_op:stdf(Src,Dst,hipe_sparc:reg_nr(Off));
-	quad ->    hipe_sparc_op:stqf(Src,Dst,hipe_sparc:reg_nr(Off))
+	single -> hipe_sparc_op:stf(Src,Dst,hipe_sparc:reg_nr(Off));
+	double -> hipe_sparc_op:stdf(Src,Dst,hipe_sparc:reg_nr(Off));
+	quad ->   hipe_sparc_op:stqf(Src,Dst,hipe_sparc:reg_nr(Off))
       end
   end.
 
-
-%% fb<Cond>[,a][,pt] <%fccN>,<L>
-%%
-assemble_fb(B) ->
-  Disp = hipe_sparc:fb_label(B),
-  Cond = hipe_sparc_op:fcc_bits(hipe_sparc:fb_cond(B)),
-  Pred = hipe_sparc_op:predicate_bit(hipe_sparc:fb_taken(B)),
-  Annul = hipe_sparc_op:annul_bit(hipe_sparc:fb_annul(B)),
-  Fcc = hipe_sparc:fb_fcc_reg(B),
-  hipe_sparc_op:fbpfcc(Fcc, Cond, Annul, Pred, Disp).
-
+%% %% fb<Cond>[,a][,pt] <%fccN>,<L>
+%% %%
+%% assemble_fb(B) ->
+%%   Disp = hipe_sparc:fb_label(B),
+%%   Cond = hipe_sparc_op:fcc_bits(hipe_sparc:fb_cond(B)),
+%%   Pred = hipe_sparc_op:predicate_bit(hipe_sparc:fb_taken(B)),
+%%   Annul = hipe_sparc_op:annul_bit(hipe_sparc:fb_annul(B)),
+%%   Fcc = hipe_sparc:fb_fcc_reg(B),
+%%   hipe_sparc_op:fbpfcc(Fcc, Cond, Annul, Pred, Disp).
 
 
 %%     Dst   Src1   FOp Src2
@@ -595,43 +657,43 @@ assemble_fop(Instr) ->
       end
   end.
       
-%%     Dst   Src1   Src2
-%%     fccN  fpreg  fpreg
-assemble_fcmp(Instr) ->
-  Fcc = hipe_sparc:fcmp_fcc_reg(Instr),
-  Src1 = hipe_sparc:fpreg_nr(hipe_sparc:fcmp_src1(Instr)),
-  Src2 = hipe_sparc:fpreg_nr(hipe_sparc:fcmp_src2(Instr)),
-  Exception = hipe_sparc:fcmp_exception(Instr),
-  Type = hipe_sparc:fcmp_type(Instr),
-  %% XXX: Is this the right way to code the regs?
-  RS1 = encode_5bit_fpreg(Src1, Type),
-  RS2 = encode_5bit_fpreg(Src2, Type),
-  case Type of
-    double ->
-      case Exception of
-	true -> hipe_sparc_op:fcmped(Fcc,RS1,RS2);
-	false -> hipe_sparc_op:fcmpd(Fcc,RS1,RS2)
-      end;
-    single ->
-      case Exception of
-	true -> hipe_sparc_op:fcmpes(Fcc,RS1,RS2);
-	false -> hipe_sparc_op:fcmps(Fcc,RS1,RS2)
-      end;
-    quad ->
-      case Exception of
-	true -> hipe_sparc_op:fcmpeq(Fcc,RS1,RS2);
-	false -> hipe_sparc_op:fcmpq(Fcc,RS1,RS2)
-      end
-  end.
+%% %%     Dst   Src1   Src2
+%% %%     fccN  fpreg  fpreg
+%% assemble_fcmp(Instr) ->
+%%   Fcc = hipe_sparc:fcmp_fcc_reg(Instr),
+%%   Src1 = hipe_sparc:fpreg_nr(hipe_sparc:fcmp_src1(Instr)),
+%%   Src2 = hipe_sparc:fpreg_nr(hipe_sparc:fcmp_src2(Instr)),
+%%   Exception = hipe_sparc:fcmp_exception(Instr),
+%%   Type = hipe_sparc:fcmp_type(Instr),
+%%   %% XXX: Is this the right way to code the regs?
+%%   RS1 = encode_5bit_fpreg(Src1, Type),
+%%   RS2 = encode_5bit_fpreg(Src2, Type),
+%%   case Type of
+%%     double ->
+%%       case Exception of
+%% 	true -> hipe_sparc_op:fcmped(Fcc,RS1,RS2);
+%% 	false -> hipe_sparc_op:fcmpd(Fcc,RS1,RS2)
+%%       end;
+%%     single ->
+%%       case Exception of
+%% 	true -> hipe_sparc_op:fcmpes(Fcc,RS1,RS2);
+%% 	false -> hipe_sparc_op:fcmps(Fcc,RS1,RS2)
+%%       end;
+%%     quad ->
+%%       case Exception of
+%% 	true -> hipe_sparc_op:fcmpeq(Fcc,RS1,RS2);
+%% 	false -> hipe_sparc_op:fcmpq(Fcc,RS1,RS2)
+%%       end
+%%   end.
 
 %%     Dst   Src
 %%     fpreg fpreg
-assemble_fmov(Instr) ->
-  D = hipe_sparc:fpreg_nr(hipe_sparc:fmov_dest(Instr)),
-  S = hipe_sparc:fpreg_nr(hipe_sparc:fmov_src(Instr)),
-  Type = hipe_sparc:fmov_type(Instr),
-  Neg = hipe_sparc:fmov_negate(Instr),
-  Abs = hipe_sparc:fmov_abs(Instr),
+assemble_fmove(Instr) ->
+  D = hipe_sparc:fpreg_nr(hipe_sparc:fmove_dest(Instr)),
+  S = hipe_sparc:fpreg_nr(hipe_sparc:fmove_src(Instr)),
+  Type = hipe_sparc:fmove_type(Instr),
+  Neg = hipe_sparc:fmove_negate(Instr),
+  Abs = hipe_sparc:fmove_abs(Instr),
   Src = encode_5bit_fpreg(S, Type),
   Dst = encode_5bit_fpreg(D, Type),
   
@@ -680,11 +742,9 @@ assemble_conv_fp(Instr) ->
       hipe_sparc_op:fitoq(Src, Dst)
   end.
 
-      
-%% ____________________________________________________________________
+%%---------------------------------------------------------------------
 %% 
 encode_5bit_fpreg(Reg, Type) ->
-
   case Type of
     single -> 
       ?ASSERT(Reg < 32),
@@ -701,10 +761,40 @@ encode_5bit_fpreg(Reg, Type) ->
 
 %% TODO: implement if needed:
 %% encode_6bit_fpreg(Reg, Type)
-      
-   
 
-
+%%---------------------------------------------------------------------
+%%  assemble_and_write(CodeList)    
+%% Returns: 	true
+%%              (Or exits...)
+%% Arguments:	CodeList - a list of tuples {Code,Address}
+%%              where Code is pure sparc-code and Address
+%%              is the memory address to write the code to.
+%% Description:	 
+%% ____________________________________________________________________
+%% assemble_and_write([{Code,Address}|Rest]) ->
+%%   assemble(Code,Address),
+%%   assemble_and_write(Rest);
+%% assemble_and_write([]) -> true.
+%%
+%% assemble([Instr|Rest],Address) -> 
+%%   case hipe_sparc:type(Instr) of
+%%     % Comments and labels generates no code.
+%%     comment -> 
+%%       assemble(Rest,Address);
+%%     label ->
+%%       assemble(Rest,Address);
+%%     Type ->   
+%%       % Assemble the instruction and write it to memory.
+%%       write(Address,
+%% 	    case catch(assemble_instr(Type,Instr)) of
+%% 	      {'EXIT',R} ->
+%% 	       io:format("I: ~w\n",[Instr]),
+%% 	       exit(R);
+%% 	      O -> O
+%% 	    end),
+%%       assemble(Rest,Address+4) % Each instruction is 4 bytes.
+%%   end;
+%% assemble([],_) -> true.
 
 %% ____________________________________________________________________
 %%  write(Address,Op)    
@@ -713,5 +803,269 @@ encode_5bit_fpreg(Reg, Type) ->
 %%              Op - A 32-bit opcode
 %% Description:	Writes Op to memory at Address. 
 %% ____________________________________________________________________
-write(Address,Op) ->
-  hipe_bifs:write_u32(Address,Op).
+%% write(Address,Op) ->
+%%   hipe_bifs:write_u32(Address,Op).
+
+
+%%=====================================================================
+%% A linker for SPARC code appears below
+%%=====================================================================
+
+linker(Code, Map, ConstMap) ->
+  link9(Code,0,
+	init_export_map(Map),      %% Convert to more efficient
+	init_const_map(ConstMap),  %% data structures.
+	[],[]).
+
+link9([{MFA,Hot}|Rest], HAddr, Map, ConstMap,
+      AccHCode, AccHRefs) ->
+  %% io:format("Assembling ~w\n",[MFA]),
+  {HCode,NewHAddr,HRefs} =
+    link8(Hot , MFA, HAddr, local_labels(MFA,Map), ConstMap, AccHRefs, []),
+  link9(Rest, NewHAddr, Map, ConstMap, AccHCode++HCode, HRefs);
+link9([],_HAddr,_Map,_ConstMap,AccHCode,AccHRefs) ->
+  {AccHCode,AccHRefs}.
+
+link8([I|Is],MFA,Addr,Map,ConstMap,Refs,Code) ->
+  Type = hipe_sparc:type(I),
+  case  
+    case Type of
+      call_link -> resolve_call_link(I,Addr,Refs,Map);
+      b -> resolve_b(I,Addr,Refs,Map);
+      goto -> resolve_goto(I,Addr,Refs,Map);
+      load_address -> resolve_load_address(I,Addr,Refs,MFA,Map,ConstMap);
+      load_atom -> resolve_load_atom(I,Addr,Refs);
+      %%load_word_index -> resolve_load_word_index(I,Addr,Refs,MFA,Map,ConstMap);
+      alu -> {assemble_alu(I),Addr+4,Refs};
+      alu_cc -> {assemble_alu_cc(I),Addr+4,Refs};
+      store -> {assemble_store(I),Addr+4,Refs};
+      move -> {assemble_move(I),Addr+4,Refs};
+      load -> {assemble_load(I),Addr+4,Refs};
+      store_fp -> {assemble_store_fp(I),Addr+4,Refs};
+      load_fp -> {assemble_load_fp(I),Addr+4,Refs};
+%%      fb -> {assemble_fb(I),Addr+4,Refs};
+      fop -> {assemble_fop(I),Addr+4,Refs};
+%%       fcmp -> {assemble_fcmp(I),Addr+4,Refs};
+      fmove -> {assemble_fmove(I),Addr+4,Refs};
+      conv_fp -> {assemble_conv_fp(I),Addr+4,Refs};
+      jmp -> {assemble_jmp(I),Addr+4,Refs};
+      nop -> {assemble_nop(I),Addr+4,Refs};
+      sethi -> {assemble_sethi(I),Addr+4,Refs};
+      Other -> exit({bad_type,Other})
+    end of
+    {[I1,I2],NewAddr,NewRefs} ->
+      link8(Is,MFA,NewAddr,Map,ConstMap,NewRefs,[I1,I2|Code]);
+    {C,NewAddr,NewRefs}  ->
+      link8(Is,MFA,NewAddr,Map,ConstMap,NewRefs,[C|Code])
+  end;
+link8([],_MFA,Addr,_Map,_ConstMap,Refs,Code) ->
+  {lists:reverse(Code),Addr,Refs}.
+
+resolve_load_address(Instr,Addr,Refs,MFA,_Map,ConstMap)->
+  Dest = hipe_sparc:load_address_dest(Instr),
+  Address = hipe_sparc:load_address_address(Instr),
+  Ref = 
+    case hipe_sparc:load_address_type(Instr) of
+%%      label ->
+%%	{hot,Offset} = find(Address, Map),
+%%	[{?PATCH_TYPE2EXT(load_address),Addr,{label,Offset}}];
+      local_function -> 
+	[{?PATCH_TYPE2EXT(load_address),Addr,{local_function,Address}}];
+      remote_function -> 
+	[{?PATCH_TYPE2EXT(load_address),Addr,{remote_function,Address}}];
+      constant ->
+	ConstNo = find_const({MFA,Address},ConstMap),
+	[{?PATCH_TYPE2EXT(load_address),Addr,{constant,ConstNo}}];
+      closure ->
+	[{?PATCH_TYPE2EXT(load_address),Addr,{closure,Address}}];
+      c_const ->
+	[{?PATCH_TYPE2EXT(load_address),Addr,{c_const,Address}}];
+      Type ->     
+	exit([{problem,{not_handled,{address,Type}}},{at,Instr}])
+    end,
+  Hi = hipe_sparc:mk_imm(0),
+  Lo = hipe_sparc:mk_imm(0),
+  I1 = hipe_sparc:sethi_create(Dest,Hi),
+  I2 = hipe_sparc:alu_create(Dest,Dest,'or',Lo),
+  {[assemble_instr(alu,I2),assemble_instr(sethi,I1)],Addr+8,Ref++Refs}.
+
+resolve_goto(I,Addr,Refs,Map) ->
+  Dest = hipe_sparc:goto_label(I),
+  {hot,Address} = find(Dest,Map),
+  RelDest = (Address - Addr) div 4,
+  case catch hipe_sparc_assert:check_branch_length(RelDest) of
+    true -> true;
+    {'EXIT',{too_long_branch,Length}} ->
+      exit([{problem,too_long_branch},{address,Addr},{length,Length}])
+  end,
+  NewI = hipe_sparc:goto_label_update(I,RelDest),
+  Code = assemble_instr(goto,NewI),
+  {Code,Addr+4,Refs}.
+
+resolve_b(I,Addr,Refs,Map) ->
+  Dest = hipe_sparc:b_label(I),
+  {hot,Address} = find(Dest,Map),
+  RelDest = (Address - Addr) div 4,
+  case catch hipe_sparc_assert:check_branch_length(RelDest) of
+    true -> true;
+    {'EXIT',{too_long_branch,Length}} ->
+      exit([{problem,too_long_branch},{address,Addr},{length,Length}])
+  end,
+  NewI = hipe_sparc:b_label_update(I,RelDest),
+  Code = assemble_instr(b,NewI),
+  {Code,Addr+4,Refs}.
+
+resolve_load_atom(Instr,Addr,Refs)->
+  Atom = hipe_sparc:load_atom_atom(Instr),
+  Dest = hipe_sparc:load_atom_dest(Instr),
+  I1 = hipe_sparc:sethi_create(Dest, hipe_sparc:mk_imm(0)),
+  I2 = hipe_sparc:alu_create(Dest,Dest, 'or', hipe_sparc:mk_imm(0)),
+  {[assemble_instr(alu,I2),assemble_instr(sethi,I1)],
+   Addr+8,[{?PATCH_TYPE2EXT(load_atom),Addr, Atom}|Refs]}.
+
+%%resolve_load_word_index(_Instr,_Addr,_Refs,_MFA,_Map,_ConstMap) ->
+%%  ?EXIT({nyi,resolve_load_word_index}).
+%%  Index =hipe_sparc:load_word_index_index(Instr),
+%%  Block =hipe_sparc:load_word_index_block(Instr),
+%%  Dest = hipe_sparc:load_word_index_dest(Instr),
+%%  ConstNo = find_const({MFA,Block},ConstMap),
+%%  I1 = hipe_sparc:sethi_create(Dest, hipe_sparc:mk_imm(0)),
+%%  I2 = hipe_sparc:alu_create(Dest,Dest, 'or', hipe_sparc:mk_imm(0)),
+%%  {[assemble_instr(alu,I2),assemble_instr(sethi,I1)],
+%%   Addr+8,[{?PATCH_TYPE2EXT(load_word_index),Addr, {word_index, ConstNo, Index}}|Refs]}.
+
+resolve_call_link(Instr,Addr,OldRefs,Map)->
+  Target = hipe_sparc:call_link_target(Instr),
+  ExnLab = hipe_sparc:call_link_fail(Instr),
+  %% Get the stack descriptor information
+  SD = hipe_sparc:call_link_stack_desc(Instr),
+  FSize = hipe_sparc:sdesc_size(SD),
+  Live =  list_to_tuple(hipe_sparc:sdesc_live_slots(SD)),
+  Arity = case hipe_sparc:sdesc_arity(SD) of
+	    N when N > ?SPARC_ARGS_IN_REGS -> N - ?SPARC_ARGS_IN_REGS;
+	    _ -> 0
+	  end,
+  ExnRA = case ExnLab of
+	    [] -> [];	% don't cons up a new one
+	    _ -> {hot,V} = find(ExnLab,Map), V
+	  end,
+  %% The stack descriptor needs to be inserted into the system at load-time.
+  Refs = [{?PATCH_TYPE2EXT(sdesc),
+	   Addr,
+	   ?STACK_DESC(ExnRA, FSize, Arity, Live)} | OldRefs],
+  case hipe_sparc:call_link_is_known(Instr) of
+    false -> 
+      NewI = hipe_sparc:jmp_link_create(
+	       hipe_sparc:call_link_target(Instr),
+	       hipe_sparc:mk_imm(0), 
+	       hipe_sparc:mk_reg(hipe_sparc_registers:return_address()),
+	       hipe_sparc:call_link_args(Instr)),
+      Code = assemble_instr(jmp_link,NewI),
+      {Code,Addr+4, Refs};
+    true -> 
+      Patch =
+	case hipe_sparc:call_link_type(Instr) of
+	  remote -> ?PATCH_TYPE2EXT(call_remote);
+	  not_remote -> ?PATCH_TYPE2EXT(call_local)
+	end,
+      NewRefs = [{Patch,Addr,Target} | Refs],
+      NewI = hipe_sparc:call_link_target_update(Instr,0),
+      Code = assemble_instr(call_link,NewI),
+      {Code,Addr+4,NewRefs}
+  end.
+
+%% ------------------------------------------------------------------
+  
+get_code(CompiledCode) -> % -> {CodeSize,ExportMap,NewCode}
+  get_code(CompiledCode, 0, [], []).
+
+get_code([{MFA,Insns,_Data}|Rest], Address, Map, AccCode) ->
+  {NewInsns,NewAddress,NewMap} = preprocess(Insns,MFA,Address,Map),
+  get_code(Rest, NewAddress, NewMap, [{MFA,NewInsns}|AccCode]);
+get_code([], Address, Map, AccCode) ->
+  {Address,Map,lists:reverse(AccCode)}.
+
+preprocess(Entry, MFA, Address, Map) ->
+  %% io:format("~w at ~w ~w\n",[MFA,Address]),
+  process_instr(Entry, Address,
+		[{{MFA,entry},hot,Address}|Map],
+		MFA, []).
+
+process_instr([I|Is], Address, Map, MFA, AccCode) ->
+  case hipe_sparc:type(I) of
+    label ->
+      process_instr(Is, Address,
+		    [{{MFA,hipe_sparc:label_name(I)},hot,Address}|Map],
+		    MFA, AccCode);
+    comment ->
+      process_instr(Is, Address, Map, MFA, AccCode);
+    load_address ->
+      process_instr(Is, Address+8, Map, MFA, [I|AccCode]);
+    load_atom ->
+      process_instr(Is, Address+8, Map, MFA, [I|AccCode]);
+    load_word_index ->
+      process_instr(Is, Address+8, Map, MFA, [I|AccCode]);
+    _Other ->
+      process_instr(Is, Address+4, Map, MFA, [I|AccCode])
+  end;
+process_instr([], Address, Map, _MFA, AccCode) ->
+  {lists:reverse(AccCode),Address,Map}.
+
+%% ------------------------------------------------------------------
+%%
+%% Constant map
+%%
+
+find_const(Name, Tree) ->
+  case gb_trees:lookup(Name,Tree) of
+    {value,V} -> V;
+    none -> ?EXIT({could_not_find_constant, Name, Tree})
+  end.
+
+init_const_map(List) ->
+  init_const_map(List, gb_trees:empty()).
+init_const_map([{pcm_entry,MFA,Label,ConstNo,_,_,_} | List], Tree) ->
+  init_const_map(List,gb_trees:insert({MFA,Label}, ConstNo ,Tree));
+init_const_map([], Tree) ->
+  Tree.
+
+
+%% ------------------------------------------------------------------
+%%
+%% Label map: represented with double gbtrees.
+%%
+
+local_labels(MFA, Map) ->
+  case gb_trees:lookup(MFA, Map) of
+    {value,T} -> T;
+    none -> ?EXIT({mfa_not_in_map,MFA,Map})
+  end.
+  
+find(L, Tree) ->
+  case gb_trees:lookup(L, Tree) of
+    {value,V} -> V;
+    none -> ?EXIT({label_not_in_map,L,Tree})
+  end.
+
+init_export_map(List) ->
+  init_export_map(List, gb_trees:empty()).
+
+init_export_map([{{M,L},Seg,Addr}|List], Tree) ->
+  init_export_map(List, init_m(M, L, {Seg,Addr}, Tree));
+init_export_map([], Tree) -> Tree.
+
+init_m(M, L, Data, Tree) ->
+  case gb_trees:lookup(M, Tree) of
+    {value,T2} ->
+      gb_trees:update(M, gb_trees:insert(L, Data, T2), Tree);
+    none ->
+      gb_trees:insert(M, gb_trees:insert(L, Data, gb_trees:empty()), Tree)
+  end.
+
+
+
+		      
+
+
+
+

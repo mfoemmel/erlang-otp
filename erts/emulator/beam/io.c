@@ -101,33 +101,80 @@ typedef struct line_buf_context {
    'port_number' returns the whole number field.
 */
 
-static int port_extra_shift;
-static int port_extra_limit;
-static int port_extra_n;
-static int last_port;
+static Sint port_extra_shift;
+static Sint port_extra_limit;
+static Sint port_extra_n;
+static Sint last_port;
 
 static int
 get_free_port(void)
 {
-    int i;
+    Sint i, xn;
 
+    xn = port_extra_n;
     i = last_port + 1;
     while(1) {
 	if (i == erts_max_ports) {
 	    i = 0;
-	    if (++port_extra_n >= port_extra_limit)
-	       port_extra_n = 0;
+	    if (++xn >= port_extra_limit)
+	       xn = 0;
 	    continue;
 	}
 	if (i == last_port)
 	    return -1;
 	if (erts_port[i].status == FREE) {
+	    port_extra_n = xn;
 	    last_port = i;
 	    return(i);
 	}
 	i++;
     }
 }
+
+/*
+ * erts_test_next_port() is only used for testing.
+ */
+Sint
+erts_test_next_port(int set, Uint next)
+{
+    Sint res;
+
+    if (set) {
+	last_port = (Sint) (next & erts_port_tab_index_mask);
+	port_extra_n = (Sint) (next >> port_extra_shift);
+
+	if (port_extra_n > port_extra_limit)
+	    port_extra_n = 0;
+
+	/* prepare for get_free_port() call */
+	if (last_port == 0) {
+	    last_port = erts_max_ports - 1;
+	    if (port_extra_n == 0)
+		port_extra_n = port_extra_limit - 1;
+	}
+	else {
+	    last_port--;
+	}
+    }
+
+    res = get_free_port();
+    if (res >= 0) {
+	res |= (port_extra_n << port_extra_shift);
+
+	/* restore */
+	if (last_port == 0) {
+	    last_port = erts_max_ports - 1;
+	    if (port_extra_n == 0)
+		port_extra_n = port_extra_limit - 1;
+	}
+	else {
+	    last_port--;
+	}
+    }
+
+    return res;
+}
+
 
 /*
 ** Initialize v_start to point to the small fixed vector.
@@ -188,7 +235,7 @@ setup_port(int port_num, Eterm pid, ErlDrvEntry *driver, long ret, char *name)
     prt->name = (char*) erts_alloc(ERTS_ALC_T_PORT_NAME, sys_strlen(name)+1);
     prt->suspended  = NULL;
     sys_strcpy(prt->name, name);
-    prt->links = NULL;
+    prt->nlinks = NULL;
     prt->linebuf = NULL;
     prt->bp = NULL;
     prt->data = am_undefined;    
@@ -684,6 +731,7 @@ void init_io(void)
     ErlDrvEntry** dp;
     ErlDrvEntry* drv;
     char *maxports;
+    Uint ports_bits = ERTS_PORTS_BITS;
 
     maxports = getenv("ERL_MAX_PORTS");
     if (maxports != NULL) 
@@ -694,11 +742,17 @@ void init_io(void)
     last_port = 0;
     if (erts_max_ports > ERTS_MAX_PORTS)
 	erts_max_ports = ERTS_MAX_PORTS;
-    else if (erts_max_ports < 1024)
+    if (erts_max_ports < 1024)
 	erts_max_ports = 1024;
 
+    if (erts_use_r9_pids_ports) {
+	ports_bits = ERTS_R9_PORTS_BITS;
+	if (erts_max_ports > ERTS_MAX_R9_PORTS)
+	    erts_max_ports = ERTS_MAX_R9_PORTS;
+    }
+
     port_extra_shift = erts_fit_in_bits(erts_max_ports - 1);
-    port_extra_limit = 1 << (ERTS_PORTS_BITS - port_extra_shift);
+    port_extra_limit = 1 << (ports_bits - port_extra_shift);
     port_extra_n = 0;
 
     erts_port_tab_index_mask = ~(~((Uint) 0) << port_extra_shift);
@@ -720,7 +774,7 @@ void init_io(void)
     for (i = 0; i < erts_max_ports; i++) {
 	erts_port[i].status = FREE;
 	erts_port[i].name = NULL;
-	erts_port[i].links = NULL;
+	erts_port[i].nlinks = NULL;
 	erts_port[i].linebuf = NULL;
     }
 
@@ -927,14 +981,14 @@ static void deliver_read_message(Port* prt, Eterm to,
     Process* rp;
     Eterm* hp;
 
-    need = 3 + 3;
+    need = 3 + 3 + 2*hlen;
     if (prt->status & LINEBUF_IO) {
 	need += 3;
     }
-    if (prt->status & BINARY_IO) {
-	need += hlen*2 + PROC_BIN_SIZE;
+    if (prt->status & BINARY_IO && buf != NULL) {
+	need += PROC_BIN_SIZE;
     } else {
-	need += (hlen + len)*2;
+	need += 2*len;
     }
     if (is_not_internal_pid(to))
 	return;
@@ -1059,21 +1113,28 @@ deliver_vec_message(
     Process* rp;
     Eterm* hp;
 
-    need = 12;
+    /*
+     * Check arguments for validity.
+     */
+
+    if (is_not_internal_pid(to) || internal_pid_index(to) >= erts_max_processes) {
+	return;
+    }
+    rp = process_tab[internal_pid_index(to)];
+    if (INVALID_PID(rp, to)) {
+	return;
+    }
+
+    /*
+     * Calculate the exact number of heap words needed.
+     */
+
+    need = 3 + 3;		/* Heap space for two tuples */
     if (prt->status & BINARY_IO) {
-	need += (2+PROC_BIN_SIZE)*vsize + hlen*2;
+	need += (2+PROC_BIN_SIZE)*vsize - 2 + hlen*2;
     } else {
 	need += (hlen+csize)*2;
     }
-
-    if (is_not_internal_pid(to))
-	return;
-
-    if (internal_pid_index(to) >= erts_max_processes)
-	return;
-    rp = process_tab[internal_pid_index(to)];
-    if (INVALID_PID(rp, to))
-	return;
 
 #ifdef SHARED_HEAP
     if(rp->status != P_RUNNING) {
@@ -1089,17 +1150,24 @@ deliver_vec_message(
 #endif
 
     listp = NIL;
-    iov += (vsize-1);  /* start from end (for concat) */
-    binv += (vsize-1); /* - || - */
+    iov += vsize;
 
-    while (vsize--) {
-	if ((prt->status & BINARY_IO) == 0) {
-	    listp = buf_to_intlist(&hp, iov->iov_base, iov->iov_len, listp);
-	} else {
+    if ((prt->status & BINARY_IO) == 0) {
+	Eterm* thp = hp;
+	while (vsize--) {
+	    iov--;
+	    listp = buf_to_intlist(&thp, iov->iov_base, iov->iov_len, listp);
+	}
+	hp = thp;
+    } else {
+	binv += vsize;
+	while (vsize--) {
 	    ErlDrvBinary* b;
 	    ProcBin* pb = (ProcBin*) hp;
 	    byte* base;
 
+	    iov--;
+	    binv--;
 	    if ((b = *binv) == NULL) {
 		b = driver_alloc_binary(iov->iov_len);
 		sys_memcpy(b->orig_bytes, iov->iov_base, iov->iov_len);
@@ -1120,19 +1188,19 @@ deliver_vec_message(
 	    MSO(rp).overhead += iov->iov_len / BINARY_OVERHEAD_FACTOR /
 		sizeof(Eterm);
 
-	    if (listp == NIL)  /* compatible with deliver_bin_message */
+	    if (listp == NIL) {  /* compatible with deliver_bin_message */
 		listp = make_binary(pb);
-	    else {
+	    } else {
 		listp = CONS(hp, make_binary(pb), listp);
 		hp += 2;
 	    }
 	}
-	iov--;
-	binv--;
     }
 
     if (hlen > 0) {		/* Prepend the header */
-	listp = buf_to_intlist(&hp, hbuf, hlen, listp);
+	Eterm* thp = hp;
+	listp = buf_to_intlist(&thp, hbuf, hlen, listp);
+	hp = thp;
     }
 
     tuple = TUPLE2(hp, am_data, listp);
@@ -1145,7 +1213,7 @@ deliver_vec_message(
 
 
 static void deliver_bin_message(Port*  prt,         /* port */
-				Eterm to,           /* receivng pid */
+				Eterm to,           /* receiving pid */
 				char* hbuf,         /* "header" buffer */
 				int hlen,           /* and it's length */
 				ErlDrvBinary* bin,  /* binary data */
@@ -1218,7 +1286,7 @@ terminate_port(int ix)
 
 /*
    Does schedule_exit, and also if we are to exit ourselves, stashes
-   away the reason, so we can do a BIF_ERROR(USER_EXIT, ...) later.
+   away the reason, so we can do a BIF_ERROR(EXC_EXIT, ...) later.
 */
 
 static void
@@ -1230,6 +1298,44 @@ schedule_exit2(Process *rp, Eterm reason)
    } else {
        schedule_exit(rp, reason);
    }
+}
+
+typedef struct {
+    Eterm port;
+    Eterm reason;
+} SweepContext;
+
+static void sweep_one_link(ErtsLink *lnk, void *vpsc)
+{
+    SweepContext *psc = vpsc;
+    DistEntry *dep;
+    Process *rp;
+    
+
+    ASSERT(lnk->type == LINK_PID);
+    
+    if (is_external_pid(lnk->pid)) {
+	dep = external_pid_dist_entry(lnk->pid);
+	if(dep != erts_this_dist_entry) {
+	    dist_exit(dep, psc->port, lnk->pid, psc->reason);
+	}
+    } else {
+	ASSERT(is_internal_pid(lnk->pid));
+	if ((rp = pid2proc(lnk->pid)) != NULL) {
+	    ErtsLink *rlnk = erts_remove_link(&(rp->nlinks), 
+					      psc->port);
+
+	    if (rlnk != NULL) {
+		if (rp->flags & F_TRAPEXIT) {
+		    deliver_exit_message(psc->port, rp, psc->reason);
+		} else if (psc->reason != am_normal) {
+		    schedule_exit2(rp, psc->reason);
+		}
+		erts_destroy_link(rlnk);
+	    }
+	}
+    }
+    erts_destroy_link(lnk);
 }
 
 /* 'from' is sending 'this_port' an exit signal, (this_port must be internal).
@@ -1244,12 +1350,9 @@ schedule_exit2(Process *rp, Eterm reason)
 void
 do_exit_port(Eterm this_port, Eterm from, Eterm reason)
 {
-   Eterm item;
-   Process *rp;
    int ix;
-   DistEntry *dep;
    Port* p;
-   ErlLink* lnk;
+   ErtsLink *lnk;
    Eterm rreason;
 
    ASSERT(is_internal_port(this_port));
@@ -1279,51 +1382,13 @@ do_exit_port(Eterm this_port, Eterm from, Eterm reason)
       unregister_name(NULL, p->reg->name);
 
    p->status |= EXITING;
-   lnk = p->links;
-   p->links = NULL;
 
-   while(lnk != NULL) {
-      item = lnk->item;
-      switch(lnk->type) {
-       case LNK_LINK:
-	   if (is_external_pid(item)) {
-	       dep = external_pid_dist_entry(item);
-	       if(dep != erts_this_dist_entry)
-		   dist_exit(dep, this_port, item, rreason);
-	   }
-	   else if (is_internal_pid(item)) {
-	       if ((rp = pid2proc(item)) != NULL) {
-		  del_link(find_link(&rp->links,LNK_LINK,this_port,NIL));
-		  if (rp->flags & F_TRAPEXIT)
-		      deliver_exit_message(this_port, rp, rreason);
-		  else if (rreason != am_normal)
-		      schedule_exit2(rp, rreason);
-	       }
-	    }
-	   break;
 
-/* Arndt's comment: how can this case arise? A port can't have a link
-   to a node, can it? */
-       case LNK_NODE:
-	   ASSERT(is_node_name_atom(item));
-	   dep = erts_sysname_to_connected_dist_entry(item);
-	   if(dep)
-	       del_link(find_link(&dep->links,LNK_NODE,this_port,NIL));
-	   else {
-	       /* XXX Is this possible? Shouldn't this link
-		  previously have been removed if the node
-		  had previously been disconnected. */
-	       ASSERT(0);
-	   }
-	   break;
-
-       case LNK_OMON:
-       case LNK_TMON:	    
-       default:
-	 erl_exit(1, "bad type in link list\n");
-	 break;
-      }
-      del_link(&lnk);
+   {
+       SweepContext sc = {this_port, rreason};
+       lnk = p->nlinks;
+       p->nlinks = NULL;
+       erts_sweep_links(lnk, &sweep_one_link, &sc);
    }
 
    if ((p->status & DISTRIBUTION) && p->dist_entry) {
@@ -1415,8 +1480,8 @@ void port_command(Eterm caller_id, Eterm port_id, Eterm command)
  * Control a port synchronously. 
  * Returns either a list or a binary.
  */
-int
-port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
+Eterm
+erts_port_control(Process* p, Port* prt, Uint command, Eterm iolist)
 {
     byte* to_port = NULL;	/* Buffer to write to port. */
 				/* Initialization is for shutting up
@@ -1425,17 +1490,13 @@ port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
     int must_free = 0;		/* True if the buffer should be freed. */
     char port_result[64];	/* Buffer for result from port. */
     char* port_resp;		/* Pointer to result buffer. */
-    int ret = 1;		/* Return value (default ok) */
-    ErlDrvEntry* drv;
     int n;
+    int (*control)(ErlDrvData, unsigned, char*, int, char**, int);
 
-    prt->caller = p->id; /* Internal pid */
-    drv = prt->drv_ptr;
-
-    if (drv->control == NULL) {
-	DEBUGF(("No control routine\n"));
-	return 0;
+    if ((control = prt->drv_ptr->control) == NULL) {
+	return THE_NON_VALUE;
     }
+    prt->caller = p->id;	/* Internal pid */
 
     /*
      * Convert the iolist to a buffer, pointed to by to_port,
@@ -1446,40 +1507,64 @@ port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
 	to_len = binary_size(iolist);
     } else {
 	int r;
-	/* XXX Random amounts of extra memory allocated/reserved.
-	   The + 5 and + 20 should be removed in R8. */
-	r = io_list_to_buf(iolist, (char*) tmp_buf, TMP_BUF_SIZE - 5);
+
+	/*
+	 * In versions before R10B, we used to reserve random
+	 * amounts of extra memory. From R10B, we allocate the
+	 * exact amount.
+	 */
+	r = io_list_to_buf(iolist, (char*) tmp_buf, TMP_BUF_SIZE);
 	if (r >= 0) {
 	    to_port = tmp_buf;
-	    to_len = TMP_BUF_SIZE - 5 - r;
-	} else if (r == -2) {
-	    return 0;
+	    to_len = TMP_BUF_SIZE - r;
+	} else if (r == -2) {	/* Type error */
+	    return THE_NON_VALUE;
 	} else if (r == -1) {	/* Overflow */
-	    if ((to_len = io_list_len(iolist)) < 0) {
-		return 0;
+	    if ((to_len = io_list_len(iolist)) < 0) { /* Type error */
+		return THE_NON_VALUE;
 	    }
 	    must_free = 1;
-	    to_port = erts_alloc(ERTS_ALC_T_TMP, to_len + 20);
-	    r = io_list_to_buf(iolist, to_port, to_len+20);
-	    ASSERT(r == 20);
+	    to_port = erts_alloc(ERTS_ALC_T_TMP, to_len);
+	    r = io_list_to_buf(iolist, to_port, to_len);
+	    ASSERT(r == 0);
 	}
     }
 
     /*
      * Call the port's control routine.
      */
+
     port_resp = port_result;
-    n = drv->control((ErlDrvData)prt->drv_data, command, to_port, to_len,
-		     &port_resp, sizeof(port_result));
-    if (must_free)
+    n = control((ErlDrvData)prt->drv_data, command, to_port, to_len,
+		&port_resp, sizeof(port_result));
+    if (must_free) {
 	erts_free(ERTS_ALC_T_TMP, (void *) to_port);
+    }
 
-    if ((n >= 0) && (prt->control_flags & PORT_CONTROL_FLAG_BINARY)) {
-	ErlDrvBinary *b = (ErlDrvBinary*)port_resp;
+    /*
+     * Handle the result.
+     */
 
-	if (b == NULL) {
-	    *resp = NIL;
-	    return ret;
+    if ((prt->control_flags & PORT_CONTROL_FLAG_BINARY) == 0) {	/* List result */
+	Eterm ret;
+	
+	if (n < 0) {
+	    ret = THE_NON_VALUE;
+	} else {
+	    Eterm* hp = HAlloc(p, 2*n);
+	    ret = buf_to_intlist(&hp, port_resp, n, NIL);
+	}
+	if (port_resp != port_result) {
+	    driver_free(port_resp);
+	}
+	return ret;
+    } else {			/* Binary result */
+	ErlDrvBinary *b = (ErlDrvBinary *) port_resp;
+
+	if (n < 0) {
+	    return THE_NON_VALUE;
+	} else if (b == NULL) {
+	    return NIL;
 	} else {
 	    Eterm* hp;
 	    ProcBin* pb;
@@ -1494,27 +1579,21 @@ port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
 	    pb->val = ErlDrvBinary2Binary(b);
 	    pb->bytes = b->orig_bytes;
 	    MSO(p).overhead += b->orig_size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
-	    *resp = make_binary(pb);
-	    return ret;
+	    return make_binary(pb);
 	}
     }
-    if (n < 0) {
-	ret = 0;
-    } else {
-	Eterm* hp = HAlloc(p, 2*n);
-	*resp = buf_to_intlist(&hp, port_resp, n, NIL);
-    }
-    if (port_resp != port_result)
-	driver_free(port_resp);
-    return ret;
+}
+
+static void prt_one_lnk(ErtsLink *lnk, void *vpfp)
+{
+    CIO *pfp = vpfp;
+    display(lnk->pid, *pfp);
 }
 
 void
 print_port_info(int i, CIO fp)
 {
     Port* p = &erts_port[i];
-    ErlLink* lnk;
-    int k = 0;
 
     if (p->status == FREE)
 	return;
@@ -1527,20 +1606,10 @@ print_port_info(int i, CIO fp)
 	display(p->connected, fp);
 	erl_printf(fp,"\n");
     }
-    lnk = p->links;
-    while(lnk != NULL) {
-	if (is_pid(lnk->item)) 
-	    k++;
-	lnk = lnk->next;
-    }
-    if (k > 0) {
+
+    if (p->nlinks != NULL) {
 	erl_printf(fp,"Links: ");
-	lnk = p->links;
-	while(lnk != NULL) {
-	    if (is_pid(lnk->item))
-		display(lnk->item, fp);
-	    lnk = lnk->next;
-	}
+	erts_doforall_links(p->nlinks,&prt_one_lnk,&fp);
 	erl_printf(fp,"\n");
     }
 
@@ -1826,7 +1895,7 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 	case ERL_DRV_INT:  /* signed int argument */
 	    if (ptr >= ptr_end) return -1;
 	    /* check for bignum */
-	    if (!IS_SSMALL((int)ptr[0]))
+	    if (!IS_SSMALL((Sint)ptr[0]))
 		need += 2;  /* use small_to_big */
 	    ptr++;
 	    depth++;
@@ -1910,10 +1979,10 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 	    break;
 
 	case ERL_DRV_INT:  /* signed int argument */
-	    if (IS_SSMALL((int)ptr[0]))
-		mess = make_small((int)ptr[0]);
+	    if (IS_SSMALL((Sint)ptr[0]))
+		mess = make_small((Sint)ptr[0]);
 	    else {
-		mess = small_to_big((int)ptr[0], hp);
+		mess = small_to_big((Sint)ptr[0], hp);
 		hp += 2;
 	    }
 	    ptr++;
@@ -1994,6 +2063,10 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
     mess = ESTACK_POP(stack);  /* get resulting value */
 
     DESTROY_ESTACK(stack);
+
+    /* XXX HOLE_IN_HEAP
+     * There are (several) cases where the allocated area is not filled here!
+     */
 
     queue_message_tt(rp, NULL, mess, am_undefined);  /* send message */
     return 1;
@@ -2717,16 +2790,24 @@ int driver_exit(ErlDrvPort ix, int err)
 {
     Port* prt = NUM2PORT(ix);
     Process* rp;
+    ErtsLink *lnk, *rlnk;
+
   
     if (prt == NULL)
         return -1;
 
-    /* unlink connected */
-    del_link(find_link(&prt->links, LNK_LINK, prt->connected, NIL));
+    lnk = erts_remove_link(&(prt->nlinks),prt->connected);
+    
+    if (lnk != NULL) {
+	erts_destroy_link(lnk);
+    }
 
-    /* unlink port from connected */
-    if ((rp = pid2proc(prt->connected)) != NULL)
-        del_link(find_link(&rp->links, LNK_LINK, prt->id, NIL));
+    if ((rp = pid2proc(prt->connected)) != NULL) {
+	rlnk = erts_remove_link(&(rp->nlinks),prt->id);
+	if (rlnk != NULL) {
+	    erts_destroy_link(rlnk);
+	}
+    }
 
     if (err == 0)
         return driver_failure_term(ix, am_normal, 0);

@@ -35,7 +35,9 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/1, connect/3, connections/0]).
+-export([start/1, connect/3, connections/0, 
+	 sockname2peername/2, peername2sockname/2,
+	 add_connection/4]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -49,7 +51,7 @@
 
 -record(state, {ports=[], max_connections, db, counter = 1, queue}).
 
--record(connection, {pid, socket, type, peerdata}).
+-record(connection, {pid, socket, type, peerdata, localdata}).
 
 -record(listen, {pid, socket, port, type}).
 
@@ -66,15 +68,43 @@ connect(Type, S, AcceptPid) ->
     gen_server:call(orber_iiop_net, {connect, Type, S, AcceptPid}, infinity).
 
 connections() ->
-    case catch ets:select(?CONNECTION_DB, 
-			  [{#connection{peerdata = '$1', _='_'}, [], ['$1']}]) of
+    do_select([{#connection{peerdata = '$1', _='_'}, [], ['$1']}]).
+
+sockname2peername(SockHost, SockPort) ->
+    do_select([{#connection{peerdata = '$1',
+			    localdata = {match_type(SockHost), 
+					 match_type(SockPort)}, 
+			    _='_'}, [], ['$1']}]).
+
+
+peername2sockname(PeerHost, PeerPort) ->
+    do_select([{#connection{peerdata = {match_type(PeerHost), 
+					match_type(PeerPort)},
+			    localdata = '$1', 
+			    _='_'}, [], ['$1']}]).
+
+do_select(Pattern) ->   
+    case catch ets:select(?CONNECTION_DB, Pattern) of
 	{'EXIT', _What} ->
 	    [];
 	Result ->
 	    Result
     end.
 
-
+match_type(0) -> 
+    %% Wildcard port number
+    '_';
+match_type("") -> 
+    %% Wildcard host
+    '_';
+match_type(Key) -> 
+    %% Wildcard not used.
+    Key.
+    
+add_connection(Socket, Type, PeerData, LocalData) ->
+    ets:insert(?CONNECTION_DB, #connection{pid = self(), socket = Socket, 
+					   type = Type, peerdata = PeerData,
+					   localdata = LocalData}).
 
 %%-----------------------------------------------------------------
 %% Server functions
@@ -86,7 +116,7 @@ init(Options) ->
     process_flag(trap_exit, true),
     {ok, parse_options(Options, 
 		       #state{max_connections = orber:iiop_max_in_connections(),
-			      db = ets:new(?CONNECTION_DB, [set, protected, 
+			      db = ets:new(?CONNECTION_DB, [set, public, 
 							    named_table,
 							    {keypos, 2}]), 
 			      queue = queue:new()})}.
@@ -138,30 +168,61 @@ ssl_server_extra_options([{Type, Value}|T], Acc) ->
 %%-----------------------------------------------------------------
 %% Func: handle_call/3
 %%-----------------------------------------------------------------
-handle_call({connect, Type, Socket, _AcceptPid}, From, State) 
+handle_call({connect, Type, Socket, _AcceptPid}, _From, State) 
   when State#state.max_connections == infinity;
        State#state.max_connections > State#state.counter ->
-    {ok, Pid} = orber_iiop_insup:start_connection(Type, Socket),
-    link(Pid),
-    %% We want to change the controlling as soon as possible. Hence, reply
-    %% at once, before we lookup peer data etc.
-    gen_server:reply(From, {ok, Pid, true}),
-    PeerData = orber_socket:peername(Type, Socket),
-    ets:insert(?CONNECTION_DB, #connection{pid = Pid, socket = Socket, 
-					   type = Type, peerdata = PeerData}),
-    {noreply, update_counter(State, 1)};
-handle_call({connect, Type, Socket, AcceptPid}, From, #state{queue = Q} = State) ->
-    {ok, Pid} = orber_iiop_insup:start_connection(Type, Socket),
-    link(Pid),
-    Ref = erlang:make_ref(),
-    gen_server:reply(From, {ok, Pid, Ref}),
-    PeerData = orber_socket:peername(Type, Socket),
-    ets:insert(?CONNECTION_DB, #connection{pid = Pid, socket = Socket, 
-					   type = Type, peerdata = PeerData}),
-    {noreply, update_counter(State#state{queue = 
-					 queue:in({AcceptPid, Ref}, Q)}, 1)};
+    case access_allowed(Type, Socket, Type) of
+	true ->
+	    {ok, Pid} = orber_iiop_insup:start_connection(Type, Socket),
+	    link(Pid),
+	    {reply, {ok, Pid, true}, update_counter(State, 1)};
+	false ->
+	    {H, P} = orber_socket:peerdata(Type, Socket),
+	    orber_tb:info("Blocked connect attempt from ~s - ~p", [H, P]),
+	    {reply, denied, State}
+    end;
+handle_call({connect, Type, Socket, AcceptPid}, _From, #state{queue = Q} = State) ->
+    case access_allowed(Type, Socket, Type) of
+	true ->
+	    {ok, Pid} = orber_iiop_insup:start_connection(Type, Socket),
+	    link(Pid),
+	    Ref = erlang:make_ref(),
+	    {reply, {ok, Pid, Ref}, 
+	     update_counter(State#state{queue = 
+					queue:in({AcceptPid, Ref}, Q)}, 1)};
+	false ->
+	    {H, P} = orber_socket:peerdata(Type, Socket),
+	    orber_tb:info("Blocked connect attempt from ~s - ~p", [H, P]),
+	    {reply, denied, State}
+    end;
 handle_call(_, _, State) ->
     {noreply, State}.
+
+access_allowed(Type, Socket, Type) ->
+    Flags = orber:get_flags(),
+    case ?ORB_FLAG_TEST(Flags, ?ORB_ENV_USE_ACL_INCOMING) of
+	false ->
+	    true;
+	true ->
+	    SearchFor = 
+		case Type of
+		    normal ->
+			tcp_in;
+		    ssl ->
+			ssl_in
+		end,	    
+	    {ok, {Host, Port}} = orber_socket:peername(Type, Socket),
+	    case orber_acl:match(Host, SearchFor, true) of
+		{true, _, 0} ->
+		    true;
+		{true, _, Port} ->
+		    true;
+		{true, _, {Min, Max}} when Port >= Min, Port =< Max ->
+		    true;
+		_ ->
+		    false
+	    end
+    end.
 
 %%------------------------------------------------------------
 %% Standard gen_server cast handle
@@ -184,7 +245,7 @@ handle_info({'EXIT', Pid, _Reason}, State) when pid(Pid) ->
 	    %% Remove the connection if it's in the queue.
 	    {noreply, 
 	     State#state{queue = 
-			 queue:from_list(
+			 from_list(
 			   lists:keydelete(Pid, 1, 
 					   queue:to_list(State#state.queue)))}};
 	[#connection{pid = Pid}] ->
@@ -202,6 +263,15 @@ handle_info({'EXIT', Pid, _Reason}, State) when pid(Pid) ->
     end;
 handle_info(_, State) ->
     {noreply,  State}.
+
+from_list(List) ->
+    from_list(List, queue:new()).
+
+from_list([], Q) ->
+    Q;
+from_list([H|T], Q) ->
+    NewQ = queue:in(H, Q),
+    from_list(T, NewQ).
 
 
 %%-----------------------------------------------------------------

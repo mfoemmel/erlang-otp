@@ -28,6 +28,8 @@
   </header>
   <description>
     <p>The Jinterface application allows Java and Erlang to communicate.
+    <p>There are also release notes for
+      <seealso marker="notes_history">older versions</seealso>.
   </description>
   <include file="notes">
 </part>

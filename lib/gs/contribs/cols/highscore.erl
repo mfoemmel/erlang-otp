@@ -52,17 +52,17 @@ new_highscore(Scores, Pos, NScore) ->
 read_scores(File) ->
     case file:read_file(File) of
 	{ok, Bin} -> binary_to_term(Bin);
-	{error, Reason} ->
+	{error, _Reason} ->
 	    mk_empty_high(10)
     end.
 
 mk_empty_high(0) -> [];
 mk_empty_high(N) -> [{N,"Erlang"}|mk_empty_high(N-1)].
 
-find_pos(NScore, N, []) -> false;
-find_pos(NScore, N, [{Score, Name} | Scores]) when Score > NScore ->
+find_pos(_NScore, _N, []) -> false;
+find_pos(NScore, N, [{Score, _Name} | Scores]) when Score > NScore ->
     find_pos(NScore, N+1, Scores);
-find_pos(NScore, N, _) -> N.
+find_pos(_NScore, N, _) -> N.
 
 write_scores(Scores,File) ->
     file:write_file(File, term_to_binary(Scores)).
@@ -81,7 +81,7 @@ display(Scores) ->
 				ok
     end.
 
-insert_scores(Grid,N,[]) ->
+insert_scores(Grid,_N,[]) ->
     gs:create(gridline,Grid,[{row,1},{font,{screen,bold,12}},
 			     {text,{1,"SCORE"}},{text,{2,"NAME"}}]);
 

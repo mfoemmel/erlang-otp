@@ -83,14 +83,13 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                called=orddict:new(),            %Called functions
                calls=orddict:new(),             %Who calls who
                imported=[],                     %Actually imported functions
+	       clashes=[],			%Exported functions named as BIFs
                func=[],                         %Current function
                warn_format=0,                   %Warn format calls
-               warn_shadow=true,                %     shadowed variables
-               warn_export=false,               %     all exported variables
-               warn_unused=false,               %     unused variables
-               warn_import=false,               %     unused imports
+	       enabled_warnings=[],		%All enabled warnings (ordset).
                errors=[],                       %Current errors
-               warnings=[]                      %Current warnings
+               warnings=[],                     %Current warnings
+	       global_vt=[]                     %The global VarTable
               }).
 
 %% format_error(Error)
@@ -113,7 +112,6 @@ format_error(invalid_record) ->
 
 format_error(no_generator) ->
     "list comprehension has no generator (perhaps \"|\" mistyped as \"||\"?)";
-
 format_error({attribute,A}) ->
     io_lib:format("attribute '~w' after function definitions", [A]);
 format_error({redefine_import,{bif,{F,A},M}}) ->
@@ -121,6 +119,8 @@ format_error({redefine_import,{bif,{F,A},M}}) ->
                   [F,A,M]);
 format_error({redefine_import,{{F,A},M}}) ->
     io_lib:format("function ~w/~w already imported from ~w", [F,A,M]);
+format_error({bad_inline,{F,A}}) ->
+    io_lib:format("inlined function ~w/~w undefined", [F,A]);
 
 format_error(export_all) ->
     "non-recommended option 'export_all' used";
@@ -137,7 +137,11 @@ format_error({unused_function,{F,A}}) ->
     io_lib:format("function ~w/~w is unused", [F,A]);
 format_error({redefine_bif,{F,A}}) ->
     io_lib:format("defining BIF ~w/~w", [F,A]);
-format_error(asm) -> "illegal asm";
+format_error({call_to_redefined_bif,{F,A}}) ->
+    io_lib:format("call to ~w/~w will call erlang:~w/~w; "
+		  "not ~w/~w in this module \n"
+		  "  (add an explicit module name to the call to avoid this warning)",
+		  [F,A,F,A,F,A]);
 
 format_error({obsolete, {M1, F1, A1}, {M2, F2, A2}}) ->
     io_lib:format("~p:~p/~p obsolete; use ~p:~p/~p", [M1, F1, A1, M2, F2, A2]);
@@ -180,6 +184,8 @@ format_error({undefined_bittype,Type}) ->
     io_lib:format("bit type ~w undefined", [Type]);
 format_error({bittype_mismatch,T1,T2,What}) ->
     io_lib:format("bit type mismatch (~s) between ~p and ~p", [What,T1,T2]);
+format_error(bittype_unit) ->
+    "a bit unit size must not be specified unless a size is specified too";
 format_error(illegal_bitsize) ->
     "illegal bit size";
 format_error({bad_bitsize,Type}) ->
@@ -215,13 +221,19 @@ pseudolocals() ->
 %% 
 
 exprs(Exprs, BindingsList) ->
-    Vs = map(fun({V,_Val}) -> {V,{bound,used}} end, BindingsList),
+    {St0,Vs} = foldl(fun({{record,_Name},Attr}, {St1,Vs1}) -> 
+			     {attribute_state(Attr, St1),Vs1};
+                        ({V,_}, {St1,Vs1}) -> 
+			     {St1,[{V,{bound,{unused,[]}}} | Vs1]}
+		     end, {start(),[]}, BindingsList),
     Vt = orddict:from_list(Vs),
-    {_Evt,St} = exprs(Exprs, Vt, start()),
+    {_Evt,St} = exprs(Exprs, Vt, St0),
     return_status(St).
 
 used_vars(Exprs, BindingsList) ->
-    Vs = map(fun({V,_Val}) -> {V,{bound,{unused,[]}}} end, BindingsList),
+    Vs = foldl(fun({{record,_Name},_Attr}, Vs0) -> Vs0;
+		  ({V,_Val}, Vs0) -> [{V,{bound,{unused,[]}}} | Vs0]
+	       end, [], BindingsList),
     Vt = orddict:from_list(Vs),
     {Evt,_St} = exprs(Exprs, Vt, start()),
     {ok, foldl(fun({V,{_,used}}, L) -> [V | L];
@@ -236,28 +248,62 @@ used_vars(Exprs, BindingsList) ->
 %%  really all ordsets!
 
 module(Forms) ->
-    St = forms(Forms, start()),
+    Opts = compiler_options(Forms),
+    St = forms(Forms, start("nofile", Opts)),
     return_status(St).
     
 module(Forms, FileName) ->
-    St = forms(Forms, start(FileName)),
-    return_status(St).
-
-module(Forms, FileName, Opts) ->
+    Opts = compiler_options(Forms),
     St = forms(Forms, start(FileName, Opts)),
     return_status(St).
 
+module(Forms, FileName, Opts0) ->
+    %% We want the options given on the command line to take
+    %% precedence over options in the module.
+    Opts = compiler_options(Forms) ++ Opts0,
+    St = forms(Forms, start(FileName, Opts)),
+    return_status(St).
+
+compiler_options(Forms) ->
+    compiler_options(Forms, []).
+    
+compiler_options([{attribute,_La,compile,C}|T], Opts) when is_list(C) ->
+    compiler_options(T, Opts ++ C);
+compiler_options([{attribute,_La,compile,C}|T], Opts) ->
+    compiler_options(T, Opts ++ [C]);
+compiler_options([_|T], Opts) ->
+    compiler_options(T, Opts);
+compiler_options([], Opts) -> Opts.
+
 %% start() -> State
-%% start(FileName) -> State
 %% start(FileName, [Option]) -> State
 
 start() ->
     start("nofile", []).
 
-start(File) ->
-    start(File, []).
-
 start(File, Opts) ->
+    Enabled0 =
+	[{unused_vars,
+	  bool_option(warn_unused_vars, nowarn_unused_vars,
+		      true, Opts)},
+	 {export_vars,
+	  bool_option(warn_export_vars, nowarn_export_vars,
+		      false, Opts)},
+	 {shadow_vars,
+	  bool_option(warn_shadow_vars, nowarn_shadow_vars,
+		      true, Opts)},
+	 {unused_import,
+	  bool_option(warn_unused_import, nowarn_unused_import,
+		      false, Opts)},
+	 {unused_function,
+	  bool_option(warn_unused_function, nowarn_unused_function,
+		      true, Opts)},
+	 {bif_clash,
+	  bool_option(warn_bif_clash, nowarn_bif_clash,
+		      true, Opts)}
+	],
+    Enabled1 = [Category || {Category,true} <- Enabled0],
+    Enabled = ordsets:from_list(Enabled1),
     #lint{state=start,
           exports=ordsets:from_list([{module_info,0},
                                      {module_info,1}]),
@@ -269,17 +315,15 @@ start(File, Opts) ->
           calls=orddict:from_list([{{module_info,1}, pseudolocals()}]),
           warn_format=value_option(warn_format, 1, warn_format, 1,
                                    nowarn_format, 0, Opts),
-          warn_shadow = bool_option(warn_shadow_vars, nowarn_shadow_vars,
-                                    true, Opts),
-          warn_export = bool_option(warn_export_vars, nowarn_export_vars,
-                                    false, Opts),
-          warn_unused = bool_option(warn_unused_vars, nowarn_unused_vars,
-                                    false, Opts),
-          warn_import = bool_option(warn_unused_import, nowarn_unused_import,
-                                    false, Opts),
+	  enabled_warnings = Enabled,
           errors=[{file,File}],
           warnings=[{file,File}]
          }.
+
+%% is_warn_enabled(Category, St) -> true|false.
+%%  Check whether a warning of category Category is enabled.
+is_warn_enabled(Type, #lint{enabled_warnings=Enabled}) ->
+    ordsets:is_element(Type, Enabled).
 
 %% return_status(State) ->
 %%      {ok,[Warning]} | {error,[Error],[Warning]}
@@ -323,7 +367,9 @@ add_warning(false, _L, _W, St) -> St.
 
 %% forms([Form], State) -> State'
 
-forms(Forms, St) ->
+forms(Forms, St0) ->
+    St1 = bif_clashes(Forms, St0),
+    St = check_inlines(Forms, St1),
     foldl(fun form/2, St, Forms).
 
 %% form(Form, State) -> State'
@@ -334,28 +380,39 @@ form({warning,W}, St) -> add_warning(W, St);
 form({attribute,_L,file,{File,_Line}}, St) ->
     St#lint{errors=[{file,File}|St#lint.errors],
             warnings=[{file,File}|St#lint.warnings]};
-form(Form, St) when St#lint.state == start ->
-    start_state(Form, St);
-form(Form, St) when St#lint.state == attribute ->
-    attribute_state(Form, St);
-form(Form, St) when St#lint.state == function ->
-    function_state(Form, St).
+form(Form, #lint{state=State}=St) ->
+    case State of
+	start -> start_state(Form, St);
+	attribute -> attribute_state(Form, St);
+	function -> function_state(Form, St)
+    end.
 
 %% start_state(Form, State) -> State'
 
+start_state({attribute,L,module,{M,Ps}}, St) ->
+    St1 = set_module(M, L, St),
+    F = {new, length(Ps)},
+    Vt = orddict:from_list([{V, {bound, used}} || V <- ['THIS' | Ps]]),
+    St1#lint{state = attribute,
+	     exports = ordsets:add_element(F, St#lint.exports),
+	     defined = ordsets:add_element(F, St#lint.defined),
+	     global_vt = Vt};
 start_state({attribute,L,module,M}, St) ->
+    St1 = set_module(M, L, St),
+    St1#lint{state = attribute};
+start_state(Form, St) ->
+    St1 = add_error(element(2, Form), undefined_module, St),
+    attribute_state(Form, St1#lint{state=attribute}).
+
+set_module(M, L, St) ->
     M1 = package_to_string(M),
     case packages:is_valid(M1) of
-        true ->
-            St#lint{state=attribute, module=list_to_atom(M1),
-                    package=packages:strip_last(M1)};
-        false ->
-            St1 = add_error(L, {bad_module_name, M1}, St),
-            St1#lint{state=attribute}
-    end;
-start_state(Form, St0) ->
-    St1 = add_error(element(2, Form), undefined_module, St0),
-    attribute_state(Form, St1#lint{state=attribute}).
+	true ->
+	    St#lint{module=list_to_atom(M1),
+		    package=packages:strip_last(M1)};
+	false ->
+	    add_error(L, {bad_module_name, M1}, St)
+    end.
 
 %% attribute_state(Form, State) ->
 %%      State'
@@ -368,12 +425,6 @@ attribute_state({attribute,L,import,Is}, St) ->
     import(L, Is, St);
 attribute_state({attribute,L,record,{Name,Fields}}, St) ->
     record_def(L, Name, Fields, St);
-attribute_state({attribute,_La,compile,C}, St) when list(C) ->
-    St#lint{compile=St#lint.compile ++ C};
-attribute_state({attribute,_La,compile,C}, St) ->
-    St#lint{compile=St#lint.compile ++ [C]};
-attribute_state({attribute,La,asm,Func}, St) ->
-    asm(La, Func, St);
 attribute_state({attribute,La,behaviour,Behaviour}, St) ->
     St#lint{behaviour=St#lint.behaviour ++ [{La,Behaviour}]};
 attribute_state({attribute,La,behavior,Behaviour}, St) ->
@@ -389,8 +440,6 @@ attribute_state(Form, St) ->
 
 function_state({attribute,L,record,{Name,Fields}}, St) ->
     record_def(L, Name, Fields, St);
-function_state({attribute,La,asm,Func}, St) ->
-    asm(La, Func, St);
 function_state({attribute,La,Attr,_Val}, St) ->
     add_error(La, {attribute,Attr}, St);
 function_state({function,L,N,A,Cs}, St) ->
@@ -405,18 +454,21 @@ function_state({eof,L}, St) -> eof(L, St).
 eof(Line, St0) ->
     %% Check that the behaviour attribute is valid.
     St1 = behaviour_check(St0#lint.behaviour, St0),
+
     %% Check for unreachable/unused functions.
     St2 = case member(export_all, St1#lint.compile) of
               true -> St1;
               false ->
                   %% Generate warnings.
                   Used = reached_functions(St1#lint.exports, St1#lint.calls),
-                  func_warning(Line, unused_function,
+                  func_warning(is_warn_enabled(unused_function, St1),
+			       Line, unused_function,
                                ordsets:subtract(St1#lint.defined, Used),
                                St1)
           end,
     %% Check for unused imports.
-    St3 = func_warning(St2#lint.warn_import, Line, unused_import,
+    St3 = func_warning(is_warn_enabled(unused_import, St2),
+		       Line, unused_import,
                        ordsets:subtract(St2#lint.imports, St2#lint.imported),
                        St2),
     %% Check for undefined functions.
@@ -481,13 +533,6 @@ behaviour_callbacks(Line, B, St0) ->
             St1 = add_warning(Line, {ill_defined_behaviour_callbacks,B}, St0),
             {[], St1}
     end.
-
-%% asm(Line, Function, State) -> State'
-
-asm(Line, {function,Name,Arity,_Code}, St) ->
-    define_function(Line, Name, Arity, St);
-asm(Line, _Func, St) ->
-    add_error(Line, asm, St).
 
 %% For storing the import list we use the orddict module. 
 %% We know an empty set is [].
@@ -594,11 +639,50 @@ reached_functions([R|Rs], Ref, Reached) ->
     end;
 reached_functions([], _Ref, Reached) -> Reached.
 
+%% bif_clashes(Forms, State0) -> State.
+
+bif_clashes(Forms, St) ->
+    Clashes = bif_clashes_1(Forms, []),
+    St#lint{clashes=ordsets:from_list(Clashes)}.
+
+bif_clashes_1([{function,_L,Name,Arity,_Cs}|T], Acc) ->
+    case erl_internal:bif(Name, Arity) of
+	false ->
+	    bif_clashes_1(T, Acc);
+	true ->
+	    bif_clashes_1(T, [{Name,Arity}|Acc])
+    end;
+bif_clashes_1([_|T], Acc) ->
+    bif_clashes_1(T, Acc);
+bif_clashes_1([], Acc) -> Acc.
+
+%% is_bif_clash(Name, Arity, State) -> false|true.
+
+is_bif_clash(_Name, _Arity, #lint{clashes=[]}) ->
+    false;
+is_bif_clash(Name, Arity, #lint{clashes=Clashes}) ->
+    ordsets:is_element({Name,Arity}, Clashes).
+
+check_inlines(Forms, St0) ->
+    Functions = [{Name,Arity} || {function,_L,Name,Arity,_Cs} <- Forms],
+    Bad = [{FA,L} || {attribute, L, compile, {inline, FAs0}} <- Forms,
+                     FA <- lists:flatten([FAs0]),
+                     not member(FA, Functions)],
+    foldl(fun ({FA,L}, St1) -> 
+                  add_error(L, {bad_inline, FA}, St1)
+          end, St0, Bad).
+
+%% is_function_exported(Name, Arity, State) -> false|true.
+
+is_function_exported(Name, Arity, #lint{exports=Exports,compile=Compile}) ->
+    ordsets:is_element({Name,Arity}, Exports) orelse
+        member(export_all, Compile).
+    
 %% function(Line, Name, Arity, Clauses, State) -> State.
 
 function(Line, Name, Arity, Cs, St0) ->
     St1 = define_function(Line, Name, Arity, St0#lint{func={Name,Arity}}),
-    clauses(Cs, [], St1).
+    clauses(Cs, St1#lint.global_vt, St1).
 
 %% define_function(Line, Name, Arity, State) -> State.
 
@@ -610,9 +694,9 @@ define_function(Line, Name, Arity, St0) ->
             add_error(Line, {redefine_function,NA}, St1);
         false ->
             St2 = St1#lint{defined=ordsets:add_element(NA, St1#lint.defined)},
-            St = case erl_internal:bif(Name, Arity) of
-                      true ->
-                         add_warning(Line, {redefine_bif,NA}, St2);
+            St = case erl_internal:bif(Name, Arity) andalso
+		     not is_function_exported(Name, Arity, St2) of
+		     true -> add_warning(Line, {redefine_bif,NA}, St2);
                      false -> St2
                   end,
             case imported(Name, Arity, St) of
@@ -630,10 +714,9 @@ clauses(Cs, Vt, St) ->
           end, St, Cs).
 
 clause({clause,_Line,H,G,B}, Vt0, St0) ->
-    {Hvt,_Binvt,St1} = head(H, Vt0, St0),
-    %% Ignored Binvt since there are no really global variables
-    %% that could have been used.
-    Vt1 = vtupdate(Hvt, Vt0),
+    {Hvt,Binvt,St1} = head(H, Vt0, St0),
+    %% Cannot ignore BinVt since "binsize variables" may have been used.
+    Vt1 = vtupdate(Hvt, vtupdate(Binvt, Vt0)),
     {Gvt,St2} = guard(G, Vt1, St1),
     Vt2 = vtupdate(Gvt, Vt1),
     {Bvt,St3} = exprs(B, Vt2, St2),
@@ -1053,17 +1136,25 @@ gexpr_list(Es, Vt, St) ->
 %% is_guard_test(Expression) -> true | false.
 %%  Test if a general expression is a guard test.
 is_guard_test(E) ->
-    is_guard_test(E, []).
+    is_guard_test2(E, []).
 
-%% is_guard_test(Expression, RecordDefs) -> true | false.
-is_guard_test({call,Line,{atom,Lr,record},[E,A]}, RDs) ->
+%% is_guard_test(Expression, Forms) -> bool()
+is_guard_test(Expression, Forms) ->
+    RecordAttributes = [A || A = {attribute, _, record, _D} <- Forms],
+    St0 = foldl(fun(Attr, St1) -> 
+                        attribute_state(Attr, St1)
+                end, start(), RecordAttributes),
+    is_guard_test2(Expression, St0#lint.records).
+
+%% is_guard_test2(Expression, RecordDefs) -> true | false.
+is_guard_test2({call,Line,{atom,Lr,record},[E,A]}, RDs) ->
     is_gexpr({call,Line,{atom,Lr,is_record},[E,A]}, RDs);
-is_guard_test({call,_Line,{atom,_La,Test},As}=Call, RDs) ->
+is_guard_test2({call,_Line,{atom,_La,Test},As}=Call, RDs) ->
     case erl_internal:type_test(Test, length(As)) of
         true -> is_gexpr_list(As, RDs);
         false -> is_gexpr(Call, RDs)
     end;
-is_guard_test(G, RDs) ->
+is_guard_test2(G, RDs) ->
     %%Everything else is a guard expression.
     is_gexpr(G, RDs).
 
@@ -1124,6 +1215,9 @@ is_gexpr({op,_L,Op,A1,A2}, RDs) ->
     end;
 is_gexpr(_Other, _RDs) -> false.
 
+%% Not yet.
+%% is_gexpr_op('andalso', 2) -> true;
+%% is_gexpr_op('orelse', 2) -> true;
 is_gexpr_op(Op, A) ->
     case catch erl_internal:op_type(Op, A) of
         arith -> true;
@@ -1251,6 +1345,14 @@ expr({'fun',Line,Body}, Vt, St) ->
                 false -> {[],call_function(Line, F, A, St)}
             end
     end;
+expr({call,_Line,{atom,_Lr,is_record},[E,{atom,Ln,Name}]}, Vt, St0) ->
+    {Rvt,St1} = expr(E, Vt, St0),
+    {Rvt,exist_record(Ln, Name, St1)};
+expr({call,Line,{remote,_Lr,{atom,_Lm,erlang},{atom,Lf,is_record}},[E,A]}, 
+      Vt, St0) ->
+    expr({call,Line,{atom,Lf,is_record},[E,A]}, Vt, St0);
+expr({call,L,{tuple,Lt,[{atom,Lm,erlang},{atom,Lf,is_record}]},As}, Vt, St) ->
+    expr({call,L,{remote,Lt,{atom,Lm,erlang},{atom,Lf,is_record}},As}, Vt, St);
 expr({call,Line,{remote,_Lr,M,F},As}, Vt, St0) ->
     case expand_package(M, St0) of
         {error, _} ->
@@ -1270,7 +1372,18 @@ expr({call,Line,{atom,La,F},As}, Vt, St0) ->
     {Asvt,St2} = expr_list(As, Vt, St1),
     A = length(As),
     case erl_internal:bif(F, A) of
-        true -> {Asvt,St2};
+        true ->
+	    {Asvt,case is_bif_clash(F, A, St2) of
+		      false ->
+			  St2;
+		      true ->
+			  case is_warn_enabled(bif_clash, St2) of
+			      false ->
+				  St2;
+			      true ->
+				  add_warning(Line, {call_to_redefined_bif,{F,A}}, St2)
+			  end
+		  end};
         false ->
             {Asvt,case imported(F, A, St2) of
                       {yes,M} ->
@@ -1296,16 +1409,21 @@ expr({call,Line,{record_field,_,_,_}=F,As}, Vt, St0) ->
 expr({call,Line,F,As}, Vt, St0) ->
     St = warn_invalid_call(Line,F,St0),
     expr_list([F|As], Vt, St);                  %They see the same variables
-expr({'try',Line,Es,Scs,Ccs}, Vt, St0) ->
-    %% No new variables are added in exprs, flag new variables as unsafe.
+expr({'try',Line,Es,Scs,Ccs,As}, Vt, St0) ->
+    %% Currently, we don't allow any exports because later
+    %% passes cannot handle exports in combination with 'after'.
     {Evt0,St1} = exprs(Es, Vt, St0),
-    Uvt = vtunsafe(vtnames(vtnew(Evt0, Vt)), {'try',Line}, []),
+    TryLine = {'try',Line},
+    Uvt = vtunsafe(vtnames(vtnew(Evt0, Vt)), TryLine, []),
     Evt1 = vtupdate(Uvt, vtupdate(Evt0, Vt)),
-    %% However, these clauses can export!
-    {Svt,St2} = icrt_clauses(Scs, Evt1, St1),
-    {Cvt,St3} = icrt_clauses(Ccs, Evt1, St2),
-    {Rvt,St4} = icrt_export(Svt ++ Cvt, Vt, {'try',Line}, St3),
-    {vtmerge(Evt1, Rvt),St4};
+    {Sccs,St2} = icrt_clauses(Scs++Ccs, TryLine, Evt1, St1),
+    Rvt0 = Sccs,
+    Rvt1 = vtupdate(vtunsafe(vtnames(vtnew(Rvt0, Vt)), TryLine, []), Rvt0),
+    Evt2 = vtmerge(Evt1, Rvt1),
+    {Avt0,St} = exprs(As, Evt2, St2),
+    Avt1 = vtupdate(vtunsafe(vtnames(vtnew(Avt0, Vt)), TryLine, []), Avt0),
+    Avt = vtmerge(Evt2, Avt1),
+    {Avt,St};
 expr({'catch',Line,E}, Vt, St0) ->
     %% No new variables added, flag new variables as unsafe.
     {Evt,St1} = expr(E, Vt, St0),
@@ -1584,19 +1702,6 @@ icrt_clauses(Cs, In, Vt, St0) ->
     {Csvt,St1} = icrt_clauses(Cs, Vt, St0),
     icrt_export(Csvt, Vt, In, St1).
 
-icrt_export(Csvt, Vt, In, St) ->
-    Vt1 = vtmerge(Csvt),
-    All = ordsets:subtract(vintersection(Csvt), vtnames(Vt)),
-    Some = ordsets:subtract(vtnames(Vt1), vtnames(Vt)),
-    Xvt = vtexport(All, In, []),
-    Evt = vtunsafe(ordsets:subtract(Some, All), In, Xvt),
-    Unused = vtmerge(map(fun (Vt0) -> unused_vars(Vt0, Vt, St) end, Csvt)),
-    %% Exported and unsafe variables may be unused:
-    Uvt = vtmerge(Evt, Unused),
-    %% Make exported and unsafe unused variables unused in subsequent code:
-    Vt2 = vtmerge(Uvt, vtsubtract(Vt1, Uvt)),
-    {Vt2,St}.
-    
 %% icrt_clauses(Clauses, ImportVarTable, State) ->
 %%      {NewVts,State}.
 
@@ -1610,6 +1715,19 @@ icrt_clause({clause,_Line,H,G,B}, Vt0, St0) ->
     Vt2 = vtupdate(Gvt, Vt1),
     {Bvt,St3} = exprs(B, Vt2, St2),
     {vtupdate(Bvt, Vt2),St3}.
+
+icrt_export(Csvt, Vt, In, St) ->
+    Vt1 = vtmerge(Csvt),
+    All = ordsets:subtract(vintersection(Csvt), vtnames(Vt)),
+    Some = ordsets:subtract(vtnames(Vt1), vtnames(Vt)),
+    Xvt = vtexport(All, In, []),
+    Evt = vtunsafe(ordsets:subtract(Some, All), In, Xvt),
+    Unused = vtmerge(map(fun (Vt0) -> unused_vars(Vt0, Vt, St) end, Csvt)),
+    %% Exported and unsafe variables may be unused:
+    Uvt = vtmerge(Evt, Unused),
+    %% Make exported and unsafe unused variables unused in subsequent code:
+    Vt2 = vtmerge(Uvt, vtsubtract(Vt1, Uvt)),
+    {Vt2,St}.
 
 %% lc_quals(Qualifiers, ImportVarTable, State) ->
 %%      {VarTable,ShadowedVarTable,State}
@@ -1642,7 +1760,7 @@ lc_quals([{generate,Line,P,E} | Qs], Vt, Uvt, St0) ->
     Vt3 = vtupdate(Pvt, vtsubtract(Vt2, Pvt)),
     lc_quals(Qs, Vt3, NUvt, St5);
 lc_quals([F|Qs], Vt, Uvt, St0) ->
-    {Fvt,St1} = case is_guard_test(F, St0#lint.records) of
+    {Fvt,St1} = case is_guard_test2(F, St0#lint.records) of
                     true -> guard_test(F, Vt, St0);
                     false -> expr(F, Vt, St0)
                 end,
@@ -1762,14 +1880,14 @@ expr_var(V, Line, Vt, St0) ->
           end,
     {[{V,{bound,used}}],St1}.
 
-exported_var(Line, V, From, St0) ->
-    case St0#lint.warn_export of
-        true -> add_warning(Line, {exported_var,V,From}, St0);
-        false -> St0
+exported_var(Line, V, From, St) ->
+    case is_warn_enabled(export_vars, St) of
+        true -> add_warning(Line, {exported_var,V,From}, St);
+        false -> St
     end.
 
 shadow_vars(Line, Vt, Vt0, In, St0) ->
-    case St0#lint.warn_shadow of
+    case is_warn_enabled(shadow_vars, St0) of
         true ->
             Vs = vtnames(vtold(Vt, vt_no_unsafe(Vt0))),
             foldl(fun (V, St) ->
@@ -1800,16 +1918,16 @@ unused_vars(Vt, Vt0, _St0) ->
 warn_unused_vars([], Vt, St0) ->
     {Vt,St0};
 warn_unused_vars(U, Vt, St0) ->
-    St1 = 
-        if
-            St0#lint.warn_unused == false -> St0;
-            true -> foldl(fun ({V,{_,{unused,Ls}}}, St) ->
-                                  foldl(fun (L, St2) -> 
-                                               add_warning(L, {unused_var,V},
-                                                           St2)
-                                        end, St, Ls)
-                          end, St0, U)
-          end,
+    St1 = case is_warn_enabled(unused_vars, St0) of
+	      false -> St0;
+	      true ->
+		  foldl(fun ({V,{_,{unused,Ls}}}, St) ->
+				foldl(fun (L, St2) -> 
+					      add_warning(L, {unused_var,V},
+							  St2)
+				      end, St, Ls)
+			end, St0, U)
+	  end,
     %% Return all variables as bound so warnings are only reported once.
     UVt = map(fun ({V,{State,_}}) -> {V,{State,used}} end, U),
     {vtmerge(Vt, UVt), St1}.

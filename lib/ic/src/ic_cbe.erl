@@ -40,384 +40,153 @@
 %%
 %%------------------------------------------------------------
 
--import(ic_codegen, [emit/2, emit/3]).
+-import(ic_codegen, [emit/2, emit/3, emit/4, emit_c_enc_rpt/4, emit_c_dec_rpt/4]).
 
 -include("icforms.hrl").
-
-%%------------------------------------------------------------ 
-%% Emit statements calculating the malloc size for 
-%% different types.
-%%------------------------------------------------------------
-
-emit_malloc_size_stmt(G, N, Fd, T, InBuffer, 
-		      Align, CalcType) when element(1, T) == scoped_id ->
-    case mk_c_type(G, N, T, evaluate_not) of
-	"erlang_pid" ->
-	    emit(Fd, "  oe_malloc_size += sizeof(erlang_pid);\n\n"),
-	    emit(Fd, "  if ((oe_error_code = ei_decode_pid(~s, "
-		 "oe_size_count_index, NULL)) < 0)\n", [InBuffer]),
-	    emit(Fd, "    return oe_error_code;\n\n");
-	"erlang_port" ->
-	    emit(Fd, "  oe_malloc_size += sizeof(erlang_port);\n\n"),
-	    emit(Fd, "  if ((oe_error_code = ei_decode_port(~s, "
-		 "oe_size_count_index, NULL)) < 0)\n", [InBuffer]),
-	    emit(Fd, "    return oe_error_code;\n\n");
-	"erlang_ref" ->
-	    emit(Fd, "  oe_malloc_size += sizeof(erlang_ref);\n\n"),
-	    emit(Fd, "  if ((oe_error_code = ei_decode_ref(~s, "
-		 "oe_size_count_index, NULL)) < 0)\n", [InBuffer]),
-	    emit(Fd, "    return oe_error_code;\n\n");
-	"ETERM*" ->
-	    emit(Fd, "  oe_malloc_size += sizeof(char*);\n\n"),
-	    emit(Fd, "  if ((oe_error_code = ei_decode_term(~s, "
-		 "oe_size_count_index, NULL)) < 0)\n", [InBuffer]),
-	    emit(Fd, "    return oe_error_code;\n\n");
-	{enum, FSN} ->
-	    emit_malloc_size_stmt(G, N, Fd, FSN, InBuffer, Align, CalcType);
-	FSN ->
-	    %% io:format("emit_malloc_size_stmt: ~p ~p~n",[FSN, 
-	    %% CalcType]),
-	    emit_malloc_size_stmt(G, N, Fd, FSN, InBuffer, Align, CalcType)
-    end;
-emit_malloc_size_stmt(G, _N, Fd, T, InBuffer, 
-		      _Align, CalcType)  when list(T) -> 
-    %% Already a fullscoped name
-    Type = ictype:name2type(G,T),
-    case ictype:isBasicType(Type) of
-	true ->
-	    emit_malloc_size_stmt_for_basic_type(Fd, Type, InBuffer);
-	false ->
-	    case CalcType of
-		generator ->
-		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
-			 "oe_size_count_index, &oe_malloc_size)) < 0)\n",
-			 [ic_util:mk_oe_name(G, "sizecalc_"), T]),
-		    emit(Fd, "      return oe_error_code;\n\n");
-		_ ->
-		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
-			 "&oe_size_count_index, &oe_malloc_size)) < 0)\n",
-			 [ic_util:mk_oe_name(G, "sizecalc_"), T]),
-		    emit(Fd, "      return oe_error_code;\n\n")
-	    end
-    end;
-emit_malloc_size_stmt(G, N, Fd, T, InBuffer, _Align, 
-		      CalcType) when record(T, string) ->
-    Tname = mk_variable_name(op_variable_count),
-    store_tmp_decl("    int ~s = 0;\n",[Tname]),
-    case CalcType of
-	generator ->
-	    emit(Fd, "    if ((oe_error_code = ei_get_type(~s, "
-		 "oe_size_count_index, &oe_type, &~s)) < 0)\n",
-		 [InBuffer, Tname]);
-	_ ->
-	    emit(Fd, "    int oe_type = 0;\n"),
-	    emit(Fd, "    int oe_temp = 0;\n\n"),
-	    emit(Fd, "    if ((oe_error_code = ei_get_type(~s, "
-		 "&oe_size_count_index, &oe_type, &oe_temp)) < 0)\n",
-		 [InBuffer])
-    end,
-    emit(Fd, "      return oe_error_code;\n\n"),
-    if
-	T#string.length == 0 ->
-	    ok;
-	true ->
-	    Length = ic_util:eval_c(G, N, T#string.length), 
-	    case CalcType of
-		generator ->
-		    emit(Fd, "  if (~s > ~s)\n",[Tname, Length]),
-		    emit(Fd, "    return -1;\n\n");
-		_ ->
-		    emit(Fd, "  if (oe_temp > ~s)\n",[Length]),
-		    emit(Fd, "    return -1;\n\n")
-	    end		    
-    end,
-    case CalcType of
-	generator ->
-	    emit(Fd, "    if ((oe_error_code = ei_decode_string(~s, "
-		 "oe_size_count_index, NULL)) < 0)\n", [InBuffer]);
-	_ ->
-	    emit(Fd, "    if ((oe_error_code = ei_decode_string(~s, "
-		 "&oe_size_count_index, NULL)) < 0)\n", [InBuffer])
-    end,
-    emit(Fd, "      return oe_error_code;\n\n"),
-    case CalcType of
-	generator ->
-	    emit(Fd, "    oe_malloc_size = ~s;\n\n", 
-		 [ic_util:mk_align("oe_malloc_size + " ++ Tname ++"+1")]);
-	_ ->
-	    emit(Fd, "    oe_malloc_size = ~s;\n\n", 
-		 [ic_util:mk_align("oe_malloc_size + oe_temp+1")])
-    end;
-emit_malloc_size_stmt(G, N, Fd, T, InBuffer, _Align, 
-		      CalcType) when record(T, wstring) ->
-    Tname = mk_variable_name(op_variable_count),
-    store_tmp_decl("    int ~s = 0;\n",[Tname]),
-    case CalcType of
-	generator ->
-	    emit(Fd, "    if ((oe_error_code = ei_get_type(~s, "
-		 "oe_size_count_index, &oe_type, &~s)) < 0)\n",
-		 [InBuffer, Tname]);
-	_ ->
-	    emit(Fd, "    int oe_type = 0;\n"),
-	    emit(Fd, "    int oe_temp = 0;\n\n"),
-	    emit(Fd, "    if ((oe_error_code = ei_get_type(~s, "
-		 "&oe_size_count_index, &oe_type, &oe_temp)) < 0)\n",
-		 [InBuffer])
-    end,
-    emit(Fd, "      return oe_error_code;\n\n"),
-    if
-	T#wstring.length == 0 ->
-	    ok;
-	true ->
-	    Length = ic_util:eval_c(G, N, T#wstring.length), 
-	    case CalcType of
-		generator ->
-		    emit(Fd, "  if (~s > ~s)\n",[Tname, Length]),
-		    emit(Fd, "    return -1;\n\n");
-		_ ->
-		    emit(Fd, "  if (oe_temp > ~s)\n",[Length]),
-		    emit(Fd, "    return -1;\n\n")
-	    end		    
-    end,
-    case CalcType of
-	generator ->
-	    %% Note prefix: oe_ei 
-	    emit(Fd, "    if ((oe_error_code = oe_ei_decode_wstring(~s, "
-		 "oe_size_count_index, NULL)) < 0)\n", [InBuffer]);
-	_ ->
-	    %% Note prefix: oe_ei 
-	    emit(Fd, "    if ((oe_error_code = oe_ei_decode_wstring(~s, "
-		 "&oe_size_count_index, NULL)) < 0)\n", [InBuffer])
-    end,
-    emit(Fd, "      return oe_error_code;\n\n"),
-    case CalcType of
-	generator ->
-	    emit(Fd, "    oe_malloc_size =\n      ~s;\n\n", 
-		 [ic_util:mk_align("oe_malloc_size + ((" 
-				   ++ Tname 
-				   ++"+ 1) * __OE_WCHAR_SIZE_OF__)")]);
-	_ ->
-	    emit(Fd, "    oe_malloc_size =\n      ~s;\n\n", 
-		 [ic_util:mk_align("oe_malloc_size + (("
-				   "oe_temp + 1) * __OE_WCHAR_SIZE_OF__)")])
-    end;
-emit_malloc_size_stmt(G, N, Fd, T, InBuffer, Align, CalcType) ->
-    case Align of
-	0 ->
-	    emit(Fd, "  oe_malloc_size += sizeof(~s);\n\n", 
-		 [mk_c_type(G, N, T)]);
-	_ -> 
-	    ok
-    end,
-    case normalize_type(T) of
-	{basic, Type} ->
-	    emit_malloc_size_stmt_for_basic_type(Fd, Type, InBuffer);
-	{void, _} ->
-	    ok;
-	{sequence, _, _} ->
-	    ok;
-	{_, {array, SId, _}} ->
-	    case CalcType of
-		generator ->
-		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
-			 "oe_size_count_index, &oe_malloc_size)) < 0)\n",
-			 [ic_util:mk_oe_name(G, "sizecalc_"), 
-			  ic_forms:get_id2(SId)]),
-		    emit(Fd, "      return oe_error_code;\n\n");
-		_ ->
-		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
-			 "&oe_size_count_index, &oe_malloc_size)) < 0)\n",
-			 [ic_util:mk_oe_name(G, "sizecalc_"), 
-			  ic_forms:get_id2(SId)]),
-		    emit(Fd, "      return oe_error_code;\n\n")
-	    end;
-	{union, UId, _, _, _} ->
-	    case CalcType of
-		generator ->
-		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
-			 "oe_size_count_index, &oe_malloc_size)) < 0)\n",
-			 [ic_util:mk_oe_name(G, "sizecalc_"), 
-			  ic_forms:get_id2(UId)]),
-		    emit(Fd, "      return oe_error_code;\n\n");
-		_ ->
-		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
-			 "&oe_size_count_index, &oe_malloc_size)) < 0)\n",
-			 [ic_util:mk_oe_name(G, "sizecalc_"), 
-			  ic_forms:get_id2(UId)]),
-		    emit(Fd, "      return oe_error_code;\n\n")
-	    end;
-	{struct, UId, _, _} -> %% Struct as a member in struct !
-	    case CalcType of
-		generator ->
-		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
-			 "oe_size_count_index, &oe_malloc_size)) < 0)\n",
-			 [ic_util:mk_oe_name(G, "sizecalc_"), 
-			  ic_forms:get_id2(UId)]),
-		    emit(Fd, "      return oe_error_code;\n\n");
-		_ ->
-		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
-			 "&oe_size_count_index, &oe_malloc_size)) < 0)\n",
-			 [ic_util:mk_oe_name(G, "sizecalc_"), 
-			  ic_forms:get_id2(UId)]),
-		    emit(Fd, "      return oe_error_code;\n\n")
-	    end;
-	{any, _} ->   %% Fix for any type
-	    emit(Fd, "    if ((oe_error_code = ei_decode_long(~s, "
-		 "oe_size_count_index, NULL)) < 0)\n",
-		 [InBuffer]),
-	    emit(Fd, "      return oe_error_code;\n\n");
-	_ ->
-	    ic_error:fatal_error(G, {illegal_typecode_for_c, T, N})
-    end.
+-include ("ic.hrl").
 
 %%------------------------------------------------------------
-
-emit_malloc_size_stmt_for_basic_type(Fd, Type, InBuffer) ->
-    Fmt = 
-	"    if ((oe_error_code = ~sei_decode_~s(~s, oe_size_count_index, "
-	"NULL)) < 0)\n"
-	"      return oe_error_code;\n\n",
-    {Pre, DecType} = 
-	case Type of
-	    ushort ->		{"", "ulong"};
-	    ulong ->		{"", "ulong"};
-	    ulonglong ->	{"oe_", "ulonglong"};
-	    short ->		{"", "long"};
-	    long ->		{"", "long"};
-	    longlong ->		{"oe_", "longlong"};
-	    float ->		{"", "double"};
-	    double ->		{"", "double"};
-	    boolean ->		{"", "atom"};
-	    char ->		{"", "char"};
-	    wchar ->		{"oe_", "wchar"};
-	    octet ->		{"", "char"};
-	    any ->		{"", "long"}
-	end,
-    emit(Fd, Fmt, [Pre, DecType, InBuffer]).
-
-%%------------------------------------------------------------
-%%    C to erlang type conversion
+%%    ENCODING
 %%------------------------------------------------------------
 
-%% Used for malloc_size_calc
-emit_encoding_stmt(G, N, Fd, T, LName, OutBuffer) 
-  when element(1, T) == scoped_id ->
+emit_encoding_stmt(G, N, Fd, T, LName, OutBuffer) when element(1, T) == scoped_id ->
     case mk_c_type(G, N, T, evaluate_not) of
 	"erlang_pid" ->
 	    %% Note prefix: oe_ei 
 	    emit(Fd, "  if ((oe_error_code = "
-		 "oe_ei_encode_pid(oe_env, ~s)) < 0)\n",
+		 "oe_ei_encode_pid(oe_env, ~s)) < 0) {\n",
 		 [LName]),
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"erlang_port" ->
 	    %% Note prefix: oe_ei 
 	    emit(Fd, "  if ((oe_error_code = "
-		 "oe_ei_encode_port(oe_env, ~s)) < 0)\n",
+		 "oe_ei_encode_port(oe_env, ~s)) < 0) {\n",
 		 [LName]),
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n}  \n");
 	"erlang_ref" ->
 	    %% Note prefix: oe_ei 
 	    emit(Fd, "  if ((oe_error_code = "
-		 "oe_ei_encode_ref(oe_env, ~s)) < 0)\n",
+		 "oe_ei_encode_ref(oe_env, ~s)) < 0) {\n",
 		 [LName]),
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"ETERM*" ->
 	    %% Note prefix: oe_ei 
 	    emit(Fd, "  if ((oe_error_code = "
-		 "oe_ei_encode_term(oe_env, ~s)) < 0)\n",
+		 "oe_ei_encode_term(oe_env, ~s)) < 0) {\n",
 		 [LName]),
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	{enum, FSN} ->
 	    emit_encoding_stmt(G, N, Fd, FSN, LName, OutBuffer);
 	FSN ->
 	    emit_encoding_stmt(G, N, Fd, FSN, LName, OutBuffer)
     end;
-emit_encoding_stmt(G, _N, Fd, T, LName, _OutBuffer)  when list(T) -> 
+
+%% XXX T is a string
+emit_encoding_stmt(G, N, Fd, T, LName, _OutBuffer)  when list(T) -> 
     %% Already a fullscoped name
     Type = ictype:name2type(G,T),
     case ictype:isBasicType(Type) of
 	true ->
-	    emit_encoding_stmt_for_basic_type(Fd, Type, LName);
+	    emit_encoding_stmt_for_basic_type(G, N, T, Fd, Type, LName);
 	false ->
 	    emit(Fd, "  if ((oe_error_code = ~s~s(oe_env, ~s))"
-		 " < 0)\n",
+		 " < 0) {\n",
 		 [ic_util:mk_oe_name(G, "encode_"), T, LName]),
-	    emit(Fd, "    return oe_error_code;\n\n")
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]), % XXX list
+	    emit(Fd, "    return oe_error_code;\n  }\n")
     end;
-emit_encoding_stmt(_G, _N, Fd, T, LName, _OutBuffer)  when record(T, string) ->
+emit_encoding_stmt(G, N, Fd, T, LName, _OutBuffer)  when record(T, string) ->
     %% Note prefix: oe_ei 
     emit(Fd, "  if ((oe_error_code = oe_ei_encode_string(oe_env, "
-	 " ~s)) < 0)\n", 
+	 " ~s)) < 0) {\n", 
 	 [LName]),
-    emit(Fd, "    return oe_error_code;\n\n");
-emit_encoding_stmt(_G, _N, Fd, T, LName, _OutBuffer)  when record(T, wstring) ->
+    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+    emit(Fd, "    return oe_error_code;\n  }\n");
+emit_encoding_stmt(G, N, Fd, T, LName, _OutBuffer) when record(T, wstring) ->
     %% Note prefix: oe_ei 
     emit(Fd, "  if ((oe_error_code = oe_ei_encode_wstring(oe_env, "
-	 "~s)) < 0)\n", 
+	 "~s)) < 0) {\n", 
 	 [LName]),
-    emit(Fd, "    return oe_error_code;\n\n");
+    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+    emit(Fd, "    return oe_error_code;\n  }\n");
 emit_encoding_stmt(G, N, Fd, T, LName, _OutBuffer) ->
     case normalize_type(T) of
 	{basic, Type} ->
-	    emit_encoding_stmt_for_basic_type(Fd, Type, LName);
+	    emit_encoding_stmt_for_basic_type(G, N, T, Fd, Type, LName);
+	%% XXX Why only returns?
 	{void, _} ->
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	{sequence, _, _} ->
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	{_ArrayType, {array, _, _}} ->
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	{union, _, _, _, _} -> 
 	    %% Union as a member in struct !  
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	{struct, _, _, _} -> 
 	    %% Struct as a member in struct !  
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	_ ->  
 	    ic_error:fatal_error(G, {illegal_typecode_for_c, T, N})
     end.
 
-%% /7: Used for encoding (jahaja) XXX
+%% Arity = 7. 
 %%
-emit_encoding_stmt(G, N, X, Fd, T, LName, OutBuffer) 
-  when element(1, T) == scoped_id ->
+emit_encoding_stmt(G, N, X, Fd, T, LName, OutBuffer) when element(1, T) == scoped_id ->
     case mk_c_type(G, N, T, evaluate_not) of
 	"erlang_pid" ->
 	    %% Note prefix: oe_ei 
 	    emit(Fd, "  if ((oe_error_code = "
-		 "oe_ei_encode_pid(oe_env, ~s)) < 0)\n",
+		 "oe_ei_encode_pid(oe_env, ~s)) < 0) {\n",
 		 [LName]),
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"erlang_port" ->
 	    %% Note prefix: oe_ei 
 	    emit(Fd, "  if ((oe_error_code = "
-		 "oe_ei_encode_port(oe_env, ~s)) < 0)\n",
+		 "oe_ei_encode_port(oe_env, ~s)) < 0) {\n",
 		 [LName]),
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"erlang_ref" ->
 	    %% Note prefix: oe_ei 
 	    emit(Fd, "  if ((oe_error_code = "
-		 "oe_ei_encode_ref(oe_env, ~s)) < 0)\n",
+		 "oe_ei_encode_ref(oe_env, ~s)) < 0) {\n",
 		 [LName]),
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"ETERM*" ->
 	    %% Note prefix: oe_ei 
 	    emit(Fd, "  if ((oe_error_code = "
-		 "oe_ei_encode_term(oe_env, ~s)) < 0)\n",
+		 "oe_ei_encode_term(oe_env, ~s)) < 0) {\n",
 		 [LName]),
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	{enum, FSN} ->
 	    emit_encoding_stmt(G, N, X, Fd, FSN, LName, OutBuffer);
 	FSN ->
 	    emit_encoding_stmt(G, N, X, Fd, FSN, LName, OutBuffer)
     end;
-emit_encoding_stmt(G, _N, X, Fd, T, LName, _OutBuffer) when list(T) -> 
+
+%% XXX T is a string
+emit_encoding_stmt(G, N, X, Fd, T, LName, _OutBuffer) when list(T) -> 
     %% Already a fullscoped name
     case get_param_tk(LName,X) of
 	error ->
 	    emit(Fd, "  if ((oe_error_code = "
-		 "~s~s(oe_env, ~s)) < 0)\n",
+		 "~s~s(oe_env, ~s)) < 0) {\n",
 		 [ic_util:mk_oe_name(G, "encode_"), T, LName]),
-	    emit(Fd, "    return oe_error_code;\n\n");
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	ParamTK ->
 	    case is_variable_size(ParamTK) of
 		true ->
@@ -427,106 +196,120 @@ emit_encoding_stmt(G, _N, X, Fd, T, LName, _OutBuffer) when list(T) ->
 				    %% Array of dynamic data
 				    emit(Fd, 
 					 "  if ((oe_error_code = "
-					 "~s~s(oe_env, ~s)) < 0)\n",
+					 "~s~s(oe_env, ~s)) < 0) {\n",
 					 [ic_util:mk_oe_name(G, 
 							     "encode_"), 
 					  T, LName]),
+				    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
 				    emit(Fd, 
 					 "    return "
-					 "oe_error_code;\n\n");
+					 "oe_error_code;\n  }\n");
 				_ ->
 				    emit(Fd, 
 					 "  if ((oe_error_code = "
-					 "~s~s(oe_env, ~s)) < 0)\n",
+					 "~s~s(oe_env, ~s)) < 0) {\n",
 					 [ic_util:mk_oe_name(G, 
 							     "encode_"), 
 					  T, LName]),
+				    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
 				    emit(Fd, "    return "
-					 "oe_error_code;\n\n")
+					 "oe_error_code;\n  }\n")
 			    end;
 		       true ->
 			    emit(Fd, 
 				 "  if ((oe_error_code = "
-				 "~s~s(oe_env, ~s)) < 0)\n",
+				 "~s~s(oe_env, ~s)) < 0) {\n",
 				 [ic_util:mk_oe_name(G, "encode_"),
 				  T, LName]),
-			    emit(Fd, 
-				 "    return oe_error_code;\n\n")
+			    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+			    emit(Fd, "    return oe_error_code;\n  }\n")
 		    end;
 		false ->
 		    if atom(ParamTK) ->
 			    case normalize_type(ParamTK) of
 				{basic, Type} ->
-				    emit_encoding_stmt_for_basic_type(Fd,
+				    emit_encoding_stmt_for_basic_type(G, N, T, Fd,
 								      Type, 
 								      LName);
 				_ ->
 				    %% Why only return?
-				    emit(Fd, "    return oe_error_code;\n\n"),
+				    ?emit_c_enc_rpt(Fd, "    ", "~/slist/~s", [T, LName]),
+				    emit(Fd, "    return oe_error_code;\n  }\n"),
 				    ok
 			    end;
 		       true ->
 			    case element(1,ParamTK) of
 				tk_enum ->
 				    emit(Fd, "  if ((oe_error_code = "
-					 "~s~s(oe_env, ~s)) < 0)\n",
+					 "~s~s(oe_env, ~s)) < 0) {\n",
 					 [ic_util:mk_oe_name(G, "encode_"), 
 					  T, LName]),
-				    emit(Fd, "    return oe_error_code;\n\n");
+				    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+				    emit(Fd, "    return oe_error_code;\n  }\n");
 				tk_array ->
 				    emit(Fd, "  if ((oe_error_code = "
-					 "~s~s(oe_env, ~s)) < 0)\n",
+					 "~s~s(oe_env, ~s)) < 0) {\n",
 					 [ic_util:mk_oe_name(G, "encode_"), 
 					  T, LName]),
-				    emit(Fd, "    return oe_error_code;\n\n");
+				    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+				    emit(Fd, "    return oe_error_code;\n  }\n");
 				tk_struct ->
 				    emit(Fd, "  if ((oe_error_code = "
-					 "~s~s(oe_env, ~s)) < 0)\n",
+					 "~s~s(oe_env, ~s)) < 0) {\n",
 					 [ic_util:mk_oe_name(G, "encode_"),
 					  T, LName]),
-				    emit(Fd, "    return oe_error_code;\n\n");
+				    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+				    emit(Fd, "    return oe_error_code;\n  }\n");
 				tk_union ->
 				    emit(Fd, "  if ((oe_error_code = "
-					 "~s~s(oe_env, ~s)) < 0)\n",
+					 "~s~s(oe_env, ~s)) < 0) {\n",
 					 [ic_util:mk_oe_name(G, "encode_"),
 					  T, LName]),
-				    emit(Fd, "    return oe_error_code;\n\n");
+				    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+				    emit(Fd, "    return oe_error_code;\n  }\n");
 				_ ->
 				    emit(Fd, "  if ((oe_error_code = "
-					 "~s~s(oe_env, &~s)) < 0)\n",
+					 "~s~s(oe_env, &~s)) < 0) {\n",
 					 [ic_util:mk_oe_name(G, "encode_"),
 					  T, LName]),
-				    emit(Fd, "    return oe_error_code;\n\n")
+				    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+				    emit(Fd, "    return oe_error_code;\n  }\n")
 			    end
 		    end
 	    end
     end;
-emit_encoding_stmt(_G, _N, _X, Fd, T, LName, _OutBuffer)  when record(T, string) ->
+emit_encoding_stmt(G, N, _X, Fd, T, LName, _OutBuffer)  when record(T, string) ->
     %% Note prefix: oe_ei 
-    emit(Fd, "  if ((oe_error_code = oe_ei_encode_string(oe_env, ~s)) < 0)\n", 
+    emit(Fd, "  if ((oe_error_code = oe_ei_encode_string(oe_env, ~s)) < 0) {\n", 
 	 [LName]),
-    emit(Fd, "    return oe_error_code;\n\n");
-emit_encoding_stmt(_G, _N, _X, Fd, T, LName, _OutBuffer) when record(T, wstring) ->
+    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+    emit(Fd, "    return oe_error_code;\n  }\n");
+emit_encoding_stmt(G, N, _X, Fd, T, LName, _OutBuffer) when record(T, wstring) ->
     %% Note prefix: oe_ei 
     emit(Fd, "  if ((oe_error_code = "
-	 "oe_ei_encode_wstring(oe_env, ~s)) < 0)\n", 
+	 "oe_ei_encode_wstring(oe_env, ~s)) < 0) {\n", 
 	 [LName]),
-    emit(Fd, "    return oe_error_code;\n\n");
+    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+    emit(Fd, "    return oe_error_code;\n  }\n");
 emit_encoding_stmt(G, N, _X, Fd, T, LName, _OutBuffer) ->
     case normalize_type(T) of
 	{basic, Type} ->
-	    emit_encoding_stmt_for_basic_type(Fd, Type, LName);
+	    emit_encoding_stmt_for_basic_type(G, N, T, Fd, Type, LName);
 	{void, _} ->
-	    emit(Fd, "    return oe_error_code;\n\n"),
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n"),
 	    ok;
 	{sequence, _, _} ->
-	    emit(Fd, "    return oe_error_code;\n\n"),
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n"),
 	    ok;
 	{_ArrayType, {array, _, _}} ->
-	    emit(Fd, "    return oe_error_code;\n\n"),
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n"),
 	    ok;
 	{struct, _, _, _} -> %% Struct as a member in struct !  
-	    emit(Fd, "    return oe_error_code;\n\n"),
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n"),
 	    ok;
 	_ ->
 	    %%io:format("2 ------------> ~p~n", [T]),
@@ -534,10 +317,7 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName, _OutBuffer) ->
     end.
 
 %%------------------------------------------------------------
-emit_encoding_stmt_for_basic_type(Fd, Type, LName) ->
-    Fmt = 
-	"  if ((oe_error_code = oe_ei_encode_~s(oe_env, ~s~s)) < 0)\n" 
-	"    return oe_error_code;\n\n",
+emit_encoding_stmt_for_basic_type(G, N, T, Fd, Type, LName) ->
     {Cast, DecType} = 
 	case Type of
  	    ushort ->		{"(unsigned long) ", "ulong"};
@@ -561,24 +341,301 @@ emit_encoding_stmt_for_basic_type(Fd, Type, LName) ->
 	    emit(Fd, "    case 0 :\n"),
 	    emit(Fd, "      if ((oe_error_code = "
 		 "oe_ei_encode_atom(oe_env, "
-		 "\"false\")) < 0)\n"),
-	    emit(Fd, "        return oe_error_code;\n"),
+		 "\"false\")) < 0) {\n"),
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n    }\n"),
 	    emit(Fd, "      break;\n"),
 	    emit(Fd, "    case 1 :\n"),
 	    emit(Fd, "      if ((oe_error_code = "
 		 "oe_ei_encode_atom(oe_env, "
-		 "\"true\")) < 0)\n"),
-	    emit(Fd, "        return oe_error_code;\n"),
+		 "\"true\")) < 0) {\n"),
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n    }\n"),
 	    emit(Fd, "      break;\n"),
 	    emit(Fd, "    default :\n"),
 	    emit(Fd, "      return -1;\n"),
 	    emit(Fd, "  }\n\n");
 	_ ->
-	    emit(Fd, Fmt, [DecType, Cast, LName])
+	    Fmt =
+		"  if ((oe_error_code = oe_ei_encode_~s(oe_env, ~s~s)) < 0) {\n",
+	    emit(Fd, Fmt, [DecType, Cast, LName]),
+	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
+	    emit(Fd, "    return oe_error_code;\n  }\n")
+    end.
+
+
+%%------------------------------------------------------------ 
+%% MALLOC SIZE (for Decode)
+%%------------------------------------------------------------
+
+emit_malloc_size_stmt(G, N, Fd, T, InBuffer, 
+		      Align, CalcType) when element(1, T) == scoped_id ->
+    case mk_c_type(G, N, T, evaluate_not) of
+	"erlang_pid" ->
+	    emit(Fd, "  oe_malloc_size += sizeof(erlang_pid);\n\n"),
+	    emit(Fd, "  if ((oe_error_code = ei_decode_pid(~s, "
+		 "oe_size_count_index, NULL)) < 0) {\n", [InBuffer]),
+	    ?emit_c_dec_rpt(Fd, "    ", "erlang_pid", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
+	"erlang_port" ->
+	    emit(Fd, "  oe_malloc_size += sizeof(erlang_port);\n\n"),
+	    emit(Fd, "  if ((oe_error_code = ei_decode_port(~s, "
+		 "oe_size_count_index, NULL)) < 0) {\n", [InBuffer]),
+	    ?emit_c_dec_rpt(Fd, "    ", "erlang_port", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
+	"erlang_ref" ->
+	    emit(Fd, "  oe_malloc_size += sizeof(erlang_ref);\n\n"),
+	    emit(Fd, "  if ((oe_error_code = ei_decode_ref(~s, "
+		 "oe_size_count_index, NULL)) < 0) {\n", [InBuffer]),
+	    ?emit_c_dec_rpt(Fd, "    ", "erlang_ref", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
+	"ETERM*" ->
+	    emit(Fd, "  oe_malloc_size += sizeof(char*);\n\n"),
+	    emit(Fd, "  if ((oe_error_code = ei_decode_term(~s, "
+		 "oe_size_count_index, NULL)) < 0) {\n", [InBuffer]),
+	    ?emit_c_dec_rpt(Fd, "    ", "ETERM*", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
+	{enum, FSN} ->
+	    emit_malloc_size_stmt(G, N, Fd, FSN, InBuffer, Align, CalcType);
+	FSN ->
+	    %% io:format("emit_malloc_size_stmt: ~p ~p~n",[FSN, 
+	    %% CalcType]),
+	    emit_malloc_size_stmt(G, N, Fd, FSN, InBuffer, Align, CalcType)
+    end;
+
+%% XXX T is a string
+emit_malloc_size_stmt(G, N, Fd, T, InBuffer, 
+		      _Align, CalcType)  when list(T) -> 
+    %% Already a fullscoped name
+    Type = ictype:name2type(G,T),
+    case ictype:isBasicType(Type) of
+	true ->
+	    emit_malloc_size_stmt_for_basic_type(G, N, T, Fd, Type, InBuffer);
+	false ->
+	    case CalcType of
+		generator ->
+		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
+			 "oe_size_count_index, &oe_malloc_size)) < 0) {\n",
+			 [ic_util:mk_oe_name(G, "sizecalc_"), T]),
+		    ?emit_c_dec_rpt(Fd, "    ", "~s", [T]),
+		    emit(Fd, "    return oe_error_code;\n    }\n");
+		_ ->
+		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
+			 "&oe_size_count_index, &oe_malloc_size)) < 0) {\n",
+			 [ic_util:mk_oe_name(G, "sizecalc_"), T]),
+		    ?emit_c_dec_rpt(Fd, "    ", "~s", [T]),
+		    emit(Fd, "    return oe_error_code;\n    }\n")
+	    end
+    end;
+emit_malloc_size_stmt(G, N, Fd, T, InBuffer, _Align, 
+		      CalcType) when record(T, string) ->
+    Tname = mk_variable_name(op_variable_count),
+    store_tmp_decl("    int ~s = 0;\n",[Tname]),
+    case CalcType of
+	generator ->
+	    emit(Fd, "    if ((oe_error_code = ei_get_type(~s, "
+		 "oe_size_count_index, &oe_type, &~s)) < 0) {\n",
+		 [InBuffer, Tname]);
+	_ ->
+	    emit(Fd, "    int oe_type = 0;\n"),
+	    emit(Fd, "    int oe_temp = 0;\n\n"),
+	    emit(Fd, "    if ((oe_error_code = ei_get_type(~s, "
+		 "&oe_size_count_index, &oe_type, &oe_temp)) < 0) {\n",
+		 [InBuffer])
+    end,
+    ?emit_c_dec_rpt(Fd, "      ", "ei_get_type", []),
+    emit(Fd, "      return oe_error_code;\n    }\n"),
+    if
+	T#string.length == 0 ->
+	    ok;
+	true ->
+	    Length = ic_util:eval_c(G, N, T#string.length), 
+	    case CalcType of
+		generator ->
+		    emit(Fd, "  if (~s > ~s)\n",[Tname, Length]),
+		    emit(Fd, "    return -1;\n\n");
+		_ ->
+		    emit(Fd, "  if (oe_temp > ~s)\n",[Length]),
+		    emit(Fd, "    return -1;\n\n")
+	    end		    
+    end,
+    case CalcType of
+	generator ->
+	    emit(Fd, "    if ((oe_error_code = ei_decode_string(~s, "
+		 "oe_size_count_index, NULL)) < 0) {\n", [InBuffer]);
+	_ ->
+	    emit(Fd, "    if ((oe_error_code = ei_decode_string(~s, "
+		 "&oe_size_count_index, NULL)) < 0) {\n", [InBuffer])
+    end,
+    ?emit_c_dec_rpt(Fd, "      ", "ei_decode_string", []),
+    emit(Fd, "      return oe_error_code;\n    }\n"),
+    case CalcType of
+	generator ->
+	    emit(Fd, "    oe_malloc_size = ~s;\n\n", 
+		 [ic_util:mk_align("oe_malloc_size + " ++ Tname ++"+1")]);
+	_ ->
+	    emit(Fd, "    oe_malloc_size = ~s;\n\n", 
+		 [ic_util:mk_align("oe_malloc_size + oe_temp+1")])
+    end;
+emit_malloc_size_stmt(G, N, Fd, T, InBuffer, _Align, 
+		      CalcType) when record(T, wstring) ->
+    Tname = mk_variable_name(op_variable_count),
+    store_tmp_decl("    int ~s = 0;\n",[Tname]),
+    case CalcType of
+	generator ->
+	    emit(Fd, "    if ((oe_error_code = ei_get_type(~s, "
+		 "oe_size_count_index, &oe_type, &~s)) < 0) {\n",
+		 [InBuffer, Tname]);
+	_ ->
+	    emit(Fd, "    int oe_type = 0;\n"),
+	    emit(Fd, "    int oe_temp = 0;\n\n"),
+	    emit(Fd, "    if ((oe_error_code = ei_get_type(~s, "
+		 "&oe_size_count_index, &oe_type, &oe_temp)) < 0) {\n",
+		 [InBuffer])
+    end,
+    ?emit_c_dec_rpt(Fd, "    ", "ei_get_type", []),
+    emit(Fd, "    return oe_error_code;\n    }\n"),
+    if
+	T#wstring.length == 0 ->
+	    ok;
+	true ->
+	    Length = ic_util:eval_c(G, N, T#wstring.length), 
+	    case CalcType of
+		generator ->
+		    emit(Fd, "  if (~s > ~s)\n",[Tname, Length]),
+		    emit(Fd, "    return -1;\n\n");
+		_ ->
+		    emit(Fd, "  if (oe_temp > ~s)\n",[Length]),
+		    emit(Fd, "    return -1;\n\n")
+	    end		    
+    end,
+    case CalcType of
+	generator ->
+	    %% Note prefix: oe_ei 
+	    emit(Fd, "    if ((oe_error_code = oe_ei_decode_wstring(~s, "
+		 "oe_size_count_index, NULL)) < 0) {\n", [InBuffer]);
+	_ ->
+	    %% Note prefix: oe_ei 
+	    emit(Fd, "    if ((oe_error_code = oe_ei_decode_wstring(~s, "
+		 "&oe_size_count_index, NULL)) < 0) {\n", [InBuffer])
+    end,
+    ?emit_c_dec_rpt(Fd, "    ", "oe_ei_decode_wstring", []),
+    emit(Fd, "    return oe_error_code;\n    }\n"),
+    case CalcType of
+	generator ->
+	    emit(Fd, "    oe_malloc_size =\n      ~s;\n\n", 
+		 [ic_util:mk_align("oe_malloc_size + ((" 
+				   ++ Tname 
+				   ++"+ 1) * __OE_WCHAR_SIZE_OF__)")]);
+	_ ->
+	    emit(Fd, "    oe_malloc_size =\n      ~s;\n\n", 
+		 [ic_util:mk_align("oe_malloc_size + (("
+				   "oe_temp + 1) * __OE_WCHAR_SIZE_OF__)")])
+    end;
+emit_malloc_size_stmt(G, N, Fd, T, InBuffer, Align, CalcType) ->
+    case Align of
+	0 ->
+	    emit(Fd, "  oe_malloc_size += sizeof(~s);\n\n", 
+		 [mk_c_type(G, N, T)]);
+	_ -> 
+	    ok
+    end,
+    case normalize_type(T) of
+	{basic, Type} ->
+	    emit_malloc_size_stmt_for_basic_type(G, N, T, Fd, Type, InBuffer);
+	{void, _} ->
+	    ok;
+	{sequence, _, _} ->
+	    ok;
+	{_, {array, SId, _}} ->
+	    case CalcType of
+		generator ->
+		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
+			 "oe_size_count_index, &oe_malloc_size)) < 0) {\n",
+			 [ic_util:mk_oe_name(G, "sizecalc_"), 
+			  ic_forms:get_id2(SId)]),
+		    ?emit_c_dec_rpt(Fd, "    ", "array1", []),
+		    emit(Fd, "    return oe_error_code;\n\n");
+		_ ->
+		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
+			 "&oe_size_count_index, &oe_malloc_size)) < 0) {\n",
+			 [ic_util:mk_oe_name(G, "sizecalc_"), 
+			  ic_forms:get_id2(SId)]),
+		    ?emit_c_dec_rpt(Fd, "    ", "array2", []),
+		    emit(Fd, "    return oe_error_code;\n\n")
+	    end;
+	{union, UId, _, _, _} ->
+	    case CalcType of
+		generator ->
+		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
+			 "oe_size_count_index, &oe_malloc_size)) < 0) {\n",
+			 [ic_util:mk_oe_name(G, "sizecalc_"), 
+			  ic_forms:get_id2(UId)]),
+		    ?emit_c_dec_rpt(Fd, "    ", "union1", []),
+		    emit(Fd, "    return oe_error_code;\n\n");
+		_ ->
+		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
+			 "&oe_size_count_index, &oe_malloc_size)) < 0) {\n",
+			 [ic_util:mk_oe_name(G, "sizecalc_"), 
+			  ic_forms:get_id2(UId)]),
+		    ?emit_c_dec_rpt(Fd, "    ", "union2", []),
+		    emit(Fd, "    return oe_error_code;\n\n")
+	    end;
+	{struct, UId, _, _} -> %% Struct as a member in struct !
+	    case CalcType of
+		generator ->
+		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
+			 "oe_size_count_index, &oe_malloc_size)) < 0) {\n",
+			 [ic_util:mk_oe_name(G, "sizecalc_"), 
+			  ic_forms:get_id2(UId)]),
+		    ?emit_c_dec_rpt(Fd, "    ", "struct1", []),
+		    emit(Fd, "    return oe_error_code;\n\n");
+		_ ->
+		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, "
+			 "&oe_size_count_index, &oe_malloc_size)) < 0) {\n",
+			 [ic_util:mk_oe_name(G, "sizecalc_"), 
+			  ic_forms:get_id2(UId)]),
+		    ?emit_c_dec_rpt(Fd, "    ", "struct2", []),
+		    emit(Fd, "    return oe_error_code;\n\n")
+	    end;
+	{any, _} ->   %% Fix for any type
+	    emit(Fd, "    if ((oe_error_code = ei_decode_long(~s, "
+		 "oe_size_count_index, NULL)) < 0) {\n",
+		 [InBuffer]),
+	    ?emit_c_dec_rpt(Fd, "    ", "any", []),
+	    emit(Fd, "    return oe_error_code;\n    }\n");
+	_ ->
+	    ic_error:fatal_error(G, {illegal_typecode_for_c, T, N})
     end.
 
 %%------------------------------------------------------------
-%%    Emit decoding statement
+
+emit_malloc_size_stmt_for_basic_type(G, N, T, Fd, Type, InBuffer) ->
+    {Pre, DecType} = 
+	case Type of
+	    ushort ->		{"", "ulong"};
+	    ulong ->		{"", "ulong"};
+	    ulonglong ->	{"oe_", "ulonglong"};
+	    short ->		{"", "long"};
+	    long ->		{"", "long"};
+	    longlong ->		{"oe_", "longlong"};
+	    float ->		{"", "double"};
+	    double ->		{"", "double"};
+	    boolean ->		{"", "atom"};
+	    char ->		{"", "char"};
+	    wchar ->		{"oe_", "wchar"};
+	    octet ->		{"", "char"};
+	    any ->		{"", "long"}
+	end,
+    Fmt = 
+	"    if ((oe_error_code = ~sei_decode_~s(~s, oe_size_count_index, "
+	"NULL)) < 0) {\n",
+    emit(Fd, Fmt, [Pre, DecType, InBuffer]),
+    ?emit_c_dec_rpt(Fd, "      ", "~s", [DecType]),
+    emit(Fd, "      return oe_error_code;\n    }\n").
+
+%%------------------------------------------------------------
+%%    DECODING
 %%------------------------------------------------------------
 
 emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, 
@@ -594,6 +651,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos,
     Emit = fun(Type) ->
 		   emit(Fd, Fmt, [Type, InBuffer, IndOp, LName]),
 		   emit_dealloc_stmts(Fd, "    ", AllocedPars),
+		   ?emit_c_dec_rpt(Fd, "    ", "~s", [LName]),
 		   emit(Fd, "    return oe_error_code;\n"),
 		   emit(Fd, "  }\n")
 	   end,
@@ -608,29 +666,30 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos,
 	    Emit("term");
 	{enum, FSN} ->
 	    emit_decoding_stmt(G, N, Fd, FSN, LName, IndOp, InBuffer,
-			     Align, NextPos, DecType, AllocedPars);
+			       Align, NextPos, DecType, AllocedPars);
 	FSN ->
 	    emit_decoding_stmt(G, N, Fd, FSN, LName, IndOp, InBuffer,
-			     Align, NextPos, DecType, AllocedPars) 
+			       Align, NextPos, DecType, AllocedPars) 
     end;
 
-emit_decoding_stmt(G, _N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
+%% XXX T is a string
+emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
 		   DecType, AllocedPars)  when list(T) -> 
-    %% XXX What does it mean that T (type) is a list?
     %% Already a fullscoped name
     Type = ictype:name2type(G,T),
     case ictype:isBasicType(Type) of
 	true ->
-	    emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp, 
+	    emit_decoding_stmt_for_basic_type(G, N, T, Fd, Type, InBuffer, IndOp, 
 					      LName, AllocedPars);
 	false ->
 	    case DecType of
 		generator ->
 		    emit(Fd, "  if ((oe_error_code = ~s~s(oe_env, oe_first, "
-			 "~s, ~s)) < 0){\n",
+			 "~s, ~s)) < 0) {\n",
 			 [ic_util:mk_oe_name(G, "decode_"),
 			  T, NextPos, LName]),
 		    emit_dealloc_stmts(Fd, "    ", AllocedPars),
+		    ?emit_c_dec_rpt(Fd, "    ", "~s", [LName]),
 		    emit(Fd, "    return oe_error_code;\n"),
 		    emit(Fd, "  }\n");
 		caller -> %% No malloc used, define oe_first
@@ -642,6 +701,7 @@ emit_decoding_stmt(G, _N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
 			 [ic_util:mk_oe_name(G, "decode_"),
 			  T, NextPos, LName]),
 		    emit_dealloc_stmts(Fd, "      ", AllocedPars),
+		    ?emit_c_dec_rpt(Fd, "         ", "~s", [LName]),
 		    emit(Fd, "        return oe_error_code;\n"),
 		    emit(Fd, "      }\n"),
 		    emit(Fd, "    }\n");
@@ -653,6 +713,7 @@ emit_decoding_stmt(G, _N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
 			 [ic_util:mk_oe_name(G, "decode_"),
 			  T, NextPos, LName]),
 		    emit_dealloc_stmts(Fd, "        ", AllocedPars),
+		    ?emit_c_dec_rpt(Fd, "        ", "~s", [LName]),
 		    emit(Fd, "        return oe_error_code;\n"),
 		    emit(Fd, "      }\n"),
 		    emit(Fd, "    }\n");
@@ -664,6 +725,7 @@ emit_decoding_stmt(G, _N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
 			 [ic_util:mk_oe_name(G, "decode_"),
 			  T, NextPos, LName]),
 		    emit_dealloc_stmts(Fd, "    ", AllocedPars),
+		    ?emit_c_dec_rpt(Fd, "        ", "~s", [LName]),
 		    emit(Fd, "        return oe_error_code;\n"),
 		    emit(Fd, "      }\n"),
 		    emit(Fd, "    }\n");
@@ -675,6 +737,7 @@ emit_decoding_stmt(G, _N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
 			 [ic_util:mk_oe_name(G, "decode_"),
 			  T, NextPos, LName]),
 		    emit_dealloc_stmts(Fd, "        ", AllocedPars),
+		    ?emit_c_dec_rpt(Fd, "         ", "~s", [LName]),
 		    emit(Fd, "        return oe_error_code;\n"),
 		    emit(Fd, "      }\n"),
 		    emit(Fd, "    }\n");
@@ -686,13 +749,14 @@ emit_decoding_stmt(G, _N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
 			 "oe_first, ~s, ~s)) < 0) {\n",
 			 [ic_util:mk_oe_name(G, "decode_"),
 			  T, NextPos, LName]),
-		   emit_dealloc_stmts(Fd, "        ", AllocedPars),
+		    emit_dealloc_stmts(Fd, "        ", AllocedPars),
+		    ?emit_c_dec_rpt(Fd, "        ", "~s", [LName]),
 		    emit(Fd, "        return oe_error_code;\n"),
 		    emit(Fd, "      }\n"),
 		    emit(Fd, "    }\n")
 	    end
     end;
-emit_decoding_stmt(_G, _N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
+emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
 		   DecType, AllocedPars)  when record(T, string) ->
     case DecType of
 	caller_dyn ->
@@ -700,6 +764,7 @@ emit_decoding_stmt(_G, _N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
 		 "&oe_env->_iin, ~s~s)) < 0) {\n", 
 		 [InBuffer, IndOp, LName]),
 	    emit_dealloc_stmts(Fd, "    ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "    ", "~s", [LName]),
 	    emit(Fd, "    return oe_error_code;\n"),
 	    emit(Fd, "  }\n");
 	_ ->
@@ -717,13 +782,14 @@ emit_decoding_stmt(_G, _N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
 		 "&oe_env->_iin, ~s~s)) < 0) {\n", 
 		 [InBuffer, IndOp, LName]),
 	    emit_dealloc_stmts(Fd, "      ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "      ", "~s", [LName]),
 	    emit(Fd, "      return oe_error_code;\n"),
 	    emit(Fd, "    }\n"),
 	    emit(Fd, "  *oe_outindex = ~s;\n",
 		 [ic_util:mk_align("*oe_outindex+oe_string_ctr+1")]),
 	    emit(Fd, "  }\n\n")	
     end;
-emit_decoding_stmt(_G, _N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
+emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
 		   DecType, AllocedPars)  when record(T, wstring) ->  
     case DecType of
 	caller_dyn ->
@@ -732,8 +798,9 @@ emit_decoding_stmt(_G, _N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
 		 "&oe_env->_iin, ~s~s)) < 0) {\n", 
 		 [InBuffer, IndOp, LName]),
 	    emit_dealloc_stmts(Fd, "    ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "    ", "~s", [LName]),
 	    emit(Fd, "    return oe_error_code;\n"),
-	    emit(Fd, "  }\n");
+	    emit(Fd, "  }/* --- */\n");		% XXX
 	_ ->
 	    emit(Fd, "  ~s~s = oe_first + *oe_outindex;\n\n", 
 		 [IndOp, LName]),
@@ -749,6 +816,7 @@ emit_decoding_stmt(_G, _N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
 		 "&oe_env->_iin, ~s~s)) < 0) {\n", 
 		 [InBuffer, IndOp, LName]),
 	    emit_dealloc_stmts(Fd, "      ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "      ", "~s", [LName]),
 	    emit(Fd, "      return oe_error_code;\n"),
 	    emit(Fd, "    }\n"),
 	    emit(Fd, "  *oe_outindex = ~s;\n",
@@ -759,13 +827,14 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
 		   _DecType, AllocedPars) ->
     case normalize_type(T) of
 	{basic, Type} ->
-	    emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp, 
+	    emit_decoding_stmt_for_basic_type(G, N, T, Fd, Type, InBuffer, IndOp, 
 					      LName, AllocedPars);
 	{void, _} ->
 	    emit(Fd, "  if ((oe_error_code = ei_decode_atom(~s, "
 		 "&oe_env->_iin, NULL)) < 0) {\n", 
 		 [InBuffer]),
 	    emit_dealloc_stmts(Fd, "    ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "    ", "~s", [LName]),
 	    emit(Fd, "    return oe_error_code;\n"),
 	    emit(Fd, "  }\n");
 	{sequence, _, _} ->
@@ -779,6 +848,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
 		  ic_forms:get_id2(SId), 
 		  NextPos, Ptr]),
 	    emit_dealloc_stmts(Fd, "    ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "    ", "~s", [LName]),
 	    emit(Fd, "    return oe_error_code;\n"),
 	    emit(Fd, "  }\n");
 	{struct, _, _, _} -> %% Struct as a member in struct !  
@@ -789,11 +859,11 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
     end.
 
 %% XXX DecType used in two senses in this file. 
-emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp, 
+emit_decoding_stmt_for_basic_type(G, N, T, Fd, Type, InBuffer, IndOp, 
 				  LName, AllocedPars) ->
     Fmt = 
 	"  if ((oe_error_code = ~sei_decode_~s(~s, &oe_env->_iin, "
-	"~s~s)) < 0){\n", 
+	"~s~s)) < 0) {\n", 
     Ret = 
 	"    return oe_error_code;\n"
 	"}\n",
@@ -819,9 +889,10 @@ emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp,
 	    emit(Fd, "  {\n"),
 	    emit(Fd, "    unsigned long oe_ulong;\n"),
 	    emit(Fd, "    if ((oe_error_code = ei_decode_ulong(~s, "
-		 "&oe_env->_iin, &oe_ulong)) < 0){\n",
+		 "&oe_env->_iin, &oe_ulong)) < 0) {\n",
 		 [InBuffer]),
 	    emit_dealloc_stmts(Fd, "    ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "      ", "~s", [LName]),
 	    emit(Fd, "      return oe_error_code;\n"),
 	    emit(Fd, "}\n"),
 	    emit(Fd, "    *(~s) = (unsigned short) oe_ulong;\n\n",
@@ -829,6 +900,7 @@ emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp,
 	    emit(Fd, "    if (*(~s) !=  oe_ulong){\n",
 		 [LName]),
 	    emit_dealloc_stmts(Fd, "      ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "      ", "~s", [LName]),
 	    emit(Fd, "      return -1;\n"),
 	    emit(Fd, "    }\n"),
 	    emit(Fd, "  }\n\n");
@@ -839,12 +911,14 @@ emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp,
 		 "&oe_env->_iin, &oe_long)) < 0){\n",
 		 [InBuffer]),
 	    emit_dealloc_stmts(Fd, "    ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "      ", "~s", [LName]),
 	    emit(Fd, "      return oe_error_code;\n\n"),
 	    emit(Fd, "}\n"),
 	    emit(Fd, "    *(~s) = (short) oe_long;\n\n",[LName]),
 	    emit(Fd, "    if (*(~s) !=  oe_long){\n", [LName]),
 	    emit_dealloc_stmts(Fd, "      ", AllocedPars),
-	    emit(Fd,               "      return -1;\n"),
+	    ?emit_c_dec_rpt(Fd, "      ", "~s", [LName]),
+	    emit(Fd, "      return -1;\n"),
 	    emit(Fd, "    }\n"),
 	    emit(Fd, "  }\n");
 	float ->
@@ -854,6 +928,7 @@ emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp,
 		 "&oe_env->_iin, &oe_double)) < 0){\n",
 		 [InBuffer]),
 	    emit_dealloc_stmts(Fd, "      ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "      ", "~s", [LName]),
 	    emit(Fd, "      return oe_error_code;\n\n"),
 	    emit(Fd,      "}\n"),
 	    emit(Fd, "    *(~s) = (float) oe_double;\n",[LName]),
@@ -864,6 +939,7 @@ emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp,
 	    emit(Fd, "    if ((oe_error_code = ei_decode_atom(~s, "
 		 "&oe_env->_iin, oe_bool)) < 0){\n",[InBuffer]),
 	    emit_dealloc_stmts(Fd, "      ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "      ", "~s", [LName]),
 	    emit(Fd, "      return oe_error_code;\n"),
 	    emit(Fd,      "}\n"),
 	    emit(Fd, "    if (strcmp(oe_bool, \"false\") == 0) {\n"),
@@ -875,11 +951,13 @@ emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp,
 	    emit(Fd, "    }\n"),
 	    emit(Fd, "    else {\n"),
 	    emit_dealloc_stmts(Fd, "      ", AllocedPars),
+	    ?emit_c_dec_rpt(Fd, "      ", "~s", [LName]),
 	    emit(Fd, "      return -1;\n"),
 	    emit(Fd, "    }\n"),
 	    emit(Fd, "  }\n");
 	_ ->
 	    emit(Fd, Fmt, [Pre, DecType, InBuffer, IndOp, LName]),
+	    ?emit_c_dec_rpt(Fd, "    ", "~s", [LName]),
 	    emit_dealloc_stmts(Fd, "    ", AllocedPars),
 	    emit(Fd, Ret)
     end.

@@ -122,7 +122,7 @@ Nonterminals
     indAudeventsDescriptor
     indAudlocalControlDescriptor
     indAudlocalParm
-    %% indAudlocalParmList
+    indAudlocalParmList
     indAudmediaDescriptor
     indAudmediaParm
     %% indAudmediaParmList
@@ -625,7 +625,6 @@ terminationAudit     -> auditReturnParameter auditReturnParameterList :
 auditReturnParameterList -> 'COMMA' auditReturnParameter auditReturnParameterList : ['$2' | '$3'] .
 auditReturnParameterList -> '$empty' : [] .
 
-%% at-most-once except errorDescriptor
 auditReturnParameter -> mediaDescriptor           : {mediaDescriptor, '$1'} .
 auditReturnParameter -> modemDescriptor           : {modemDescriptor, '$1'} .
 auditReturnParameter -> muxDescriptor             : {muxDescriptor, '$1'} .
@@ -731,9 +730,12 @@ indAudstreamDescriptor -> 'StreamToken' 'EQUAL' streamID
  
 
 indAudlocalControlDescriptor -> 'LocalControlToken' 
-                                'LBRKT' indAudlocalParm 'RBRKT' :
-                                merge_indAudLocalControlDescriptor('$3') .
+                                'LBRKT' indAudlocalParm indAudlocalParmList 'RBRKT' :
+                                merge_indAudLocalControlDescriptor(['$3'| '$4']) .
  
+indAudlocalParmList -> 'COMMA' indAudlocalParm indAudlocalParmList : ['$2'| '$3'] .
+indAudlocalParmList -> '$empty' : [] .
+
 %% at-most-once per item
 %%  
 indAudlocalParm -> safeToken : ensure_indAudLocalParm('$1') . 

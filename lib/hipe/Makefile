@@ -19,18 +19,25 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # which is needed by many other HiPE files is built first
 #
 
-SUB_DIRECTORIES = rtl main icode sparc regalloc ssa flow opt misc util app \
-		  x86 tools cerl
-
+SUB_DIRECTORIES = rtl main cerl icode flow regalloc sparc ppc x86 amd64 \
+		  opt misc util tools
 
 #
 # Default Subdir Targets
 #
 include $(ERL_TOP)/make/otp_subdir.mk
 
+# This overrides the default recursive-make edocs target in otp_subdir.mk
+# It is not pretty, but it will have to do for now.
+docs:
+	@if [ -d $(ERL_TOP)/lib/edoc/ebin ]; then \
+	  erl -noshell -pa $(ERL_TOP)/lib/edoc/ebin $(ERL_TOP)/lib/syntax_tools/ebin $(ERL_TOP)/lib/xmerl/ebin -run edoc_run application 'hipe' '"."' '[{title,"The HiPE Compiler"},new,no_packages,preprocess]' -s init stop ; \
+	fi
+
+edocs: docs
 
 all-subdirs: 
-	-for dir in $(SUB_DIRECTORIES ); do \
+	-for dir in $(SUB_DIRECTORIES); do \
 		(cd $$dir; $(MAKE) $(MAKETARGET) EBIN=../ebin; cd ..); \
 	done
 

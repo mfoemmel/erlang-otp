@@ -26,9 +26,11 @@ HIPE_ENABLED=@HIPE_ENABLED@
 # Different versions of the emulator for different uses. The default
 # is "debug". For a normal version use "opt".
 #
+THR_LIB_SFX=
 ifeq ($(TYPE),debug)
 PURIFY =
 TYPEMARKER = .debug
+THR_LIB_SFX = .debug
 TYPE_FLAGS = @DEBUG_CFLAGS@ -DDEBUG
 ENABLE_ALLOC_TYPE_VARS += debug
 ifeq ($(TARGET),win32)
@@ -42,15 +44,23 @@ TYPEMARKER = .shared
 TYPE_FLAGS = @CFLAGS@ -DSHARED_HEAP
 ENABLE_ALLOC_TYPE_VARS += shared_heap
 else
+ifeq ($(TYPE),hybrid)
+PURIFY =
+TYPEMARKER = .hybrid
+TYPE_FLAGS = @CFLAGS@ -DHYBRID
+ENABLE_ALLOC_TYPE_VARS += hybrid
+else
 ifeq ($(TYPE),purify)
 PURIFY = purify $(PURIFY_BUILD_OPTIONS)
 TYPEMARKER = .purify
+THR_LIB_SFX = .purify
 TYPE_FLAGS = @CFLAGS@ -DPURIFY -DNO_JUMP_TABLE -DERTS_MSEG_FAKE_SEGMENTS
 ENABLE_ALLOC_TYPE_VARS += purify
 else
 ifeq ($(TYPE),quantify)
 PURIFY = quantify $(QUANTIFY_BUILD_OPTIONS)
 TYPEMARKER = .quantify
+THR_LIB_SFX = .quantify
 ENABLE_ALLOC_TYPE_VARS += quantify
 ifeq ($(findstring ose,$(TARGET)),ose)
   TYPE_FLAGS = @CFLAGS@ -DQUANTIFY
@@ -61,6 +71,7 @@ else
 ifeq ($(TYPE),purecov)
 PURIFY = purecov --follow-child-processes=yes $(PURECOV_BUILD_OPTIONS)
 TYPEMARKER = .purecov
+THR_LIB_SFX = .purecov
 TYPE_FLAGS = @DEBUG_CFLAGS@ -DPURECOV -DNO_JUMP_TABLE
 ENABLE_ALLOC_TYPE_VARS += purecov
 else
@@ -72,12 +83,20 @@ endif
 endif
 endif
 endif
+endif
 
 ARCH=@ARCH@
 ultrasparcCFLAGS=-Wa,-xarch=v8plusa
 x86CFLAGS=
+amd64CFLAGS=
+ppcCFLAGS=
 noarchCFLAGS=
 ARCHCFLAGS=$($(ARCH)CFLAGS)
+
+ifdef HIPE_ENABLED
+ppcBEAMLDFLAGS=-Wl,-m,elf32ppc
+HIPEBEAMLDFLAGS=$($(ARCH)BEAMLDFLAGS)
+endif
 
 #
 #
@@ -95,8 +114,7 @@ else
 EMU_CC  = @EMU_CC@
 endif
 WFLAGS  = @WFLAGS@
-CFLAGS  = $(TYPE_FLAGS) @DEFS@ $(WFLAGS) @THR_DEFS@ \
- -DHIPE_ARCHITECTURE=$(ARCH) $(ARCHCFLAGS)
+CFLAGS  = $(TYPE_FLAGS) @DEFS@ $(WFLAGS) @THR_DEFS@ $(ARCHCFLAGS)
 HCC     = @HCC@
 LD      = @LD@
 DEXPORT = @DEXPORT@
@@ -135,17 +153,32 @@ else
 CS_CFLAGS = $(CS_CFLAGS_)
 endif
 
+LIBS	= @LIBS@
 ifeq ($(TARGET),win32)
-LIBS    = @LIBS@ @THR_LIBS@ -L$(ERL_TOP)/erts/obj$(TYPEMARKER)/$(TARGET) -lz
+LIBS    += -L$(ERL_TOP)/erts/obj$(TYPEMARKER)/$(TARGET) -lz
 else
-LIBS    = $(ERL_TOP)/erts/obj/$(TARGET)/libz.a @LIBS@ @THR_LIBS@
+# Build on darwin fails if -lz is used
+LIBS    += $(ERL_TOP)/erts/obj/$(TARGET)/libz.a
 endif
+
 ELIB_FLAGS = -DENABLE_ELIB_MALLOC -DELIB_ALLOC_IS_CLIB -DELIB_HEAP_SBRK
 
 PERFCTR_PATH=@PERFCTR_PATH@
+USE_PERFCTR=@USE_PERFCTR@
 ifdef PERFCTR_PATH
 LIBS += $(PERFCTR_PATH)/usr.lib/libperfctr.a
+else
+ifdef USE_PERFCTR
+LIBS += -lperfctr
 endif
+endif
+
+ORG_THR_LIBS=@THR_LIBS@
+THR_LIB_NAME=@THR_LIB_NAME@
+
+THR_LIBS=$(subst -l$(THR_LIB_NAME),-l$(THR_LIB_NAME)$(THR_LIB_SFX),$(ORG_THR_LIBS))
+
+LIBS += $(THR_LIBS)
 
 TARGET_TYPE_DIR=$(TARGET)/$(TYPE)
 ifeq ($(TARGET_TYPE_DIR),$(TARGET)/)
@@ -172,17 +205,18 @@ CS_EXECUTABLE = child_setup$(TYPEMARKER)
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 ifeq ($(ERLANG_OSTYPE), unix)
-UNIX_ONLY_BUILDS =	$(BINDIR)/$(CS_EXECUTABLE) \
-			$(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB) \
-			$(BINDIR)/$(EMULATOR_EXECUTABLE_SAE)
+UNIX_ONLY_BUILDS =	$(BINDIR)/$(CS_EXECUTABLE)
 else
 UNIX_ONLY_BUILDS =
 endif
 
-all: generate zlib $(BINDIR)/$(EMULATOR_EXECUTABLE) $(UNIX_ONLY_BUILDS)
+all: generate erts_lib zlib $(BINDIR)/$(EMULATOR_EXECUTABLE) $(UNIX_ONLY_BUILDS)
 
 zlib:
 	@set -e ; cd zlib && $(MAKE) $(TYPE)
+
+erts_lib:
+	cd $(ERL_TOP)/erts/lib_src && $(MAKE) $(TYPE)
 
 clean:
 	rm -f $(TARGET)/*/*.c $(TARGET)/*/*.h
@@ -212,15 +246,15 @@ endif
 release_spec: all
 	$(INSTALL_DIR) $(RELSYSDIR)
 	$(INSTALL_DIR) $(RELSYSDIR)/src
+	$(INSTALL_DIR) $(RELSYSDIR)/include
 	$(INSTALL_DIR) $(RELSYSDIR)/man
 	$(INSTALL_DIR) $(RELSYSDIR)/doc
 	$(INSTALL_DIR) $(RELSYSDIR)/bin
 	$(INSTALL_DIR) $(RELEASE_PATH)/usr/include
 	$(INSTALL_DATA) $(RELEASE_INCLUDES) $(RELEASE_PATH)/usr/include
-	$(INSTALL_DATA) $(RELEASE_INCLUDES) $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(RELEASE_INCLUDES) $(RELSYSDIR)/include
 	$(INSTALL_PROGRAM) $(BINDIR)/$(EMULATOR_EXECUTABLE) $(RELSYSDIR)/bin
 ifeq ($(ERLANG_OSTYPE), unix)
-	$(INSTALL_PROGRAM) $(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB) $(RELSYSDIR)/bin
 	$(INSTALL_PROGRAM) $(BINDIR)/$(CS_EXECUTABLE) $(RELSYSDIR)/bin
 endif
 	$(INSTALL_DIR) $(RELEASE_PATH)/usr/include/obsolete
@@ -253,6 +287,8 @@ endif
 
 ifdef HIPE_ENABLED
 generate: $(TARGET)/hipe_x86_asm.h
+generate: $(TARGET)/hipe_amd64_asm.h
+generate: $(TARGET)/hipe_ppc_asm.h
 generate: $(TARGET_TYPE_DIR)/hipe_literals.h
 endif
 
@@ -271,7 +307,15 @@ $(TARGET)/beam_opcodes.h $(TARGET)/beam_opcodes.c: $(OPCODE_TABLES)
 ATOMS=	beam/atom.names
 BIFS =	beam/bif.tab
 ifdef HIPE_ENABLED
-BIFS += hipe/hipe_bif0.tab hipe/hipe_bif1.tab hipe/hipe_bif2.tab
+HIPE_ultrasparc_TAB=hipe/hipe_sparc.tab
+HIPE_x86_TAB=hipe/hipe_x86.tab
+HIPE_amd64_TAB=hipe/hipe_amd64.tab
+HIPE_ppc_TAB=hipe/hipe_ppc.tab
+HIPE_ARCH_TAB=$(HIPE_$(ARCH)_TAB)
+BIFS += hipe/hipe_bif0.tab hipe/hipe_bif1.tab hipe/hipe_bif2.tab $(HIPE_ARCH_TAB)
+ifdef USE_PERFCTR
+BIFS += hipe/hipe_perfctr.tab
+endif
 endif
 
 TABLES=	$(TARGET)/erl_bif_table.c $(TARGET)/erl_bif_table.h	\
@@ -287,7 +331,7 @@ $(TARGET_TYPE_DIR)/erl_alloc_types.h: beam/erl_alloc.types utils/make_alloc_type
 
 # version include file
 $(TARGET)/erl_version.h: ../vsn.mk
-	LANG=C $(PERL) utils/make_version -o $@ $(VSN)$(SERIALNO) $(TARGET)
+	LANG=C $(PERL) utils/make_version -o $@ $(SYSTEM_VSN) $(VSN)$(SERIALNO) $(TARGET)
 
 # driver table
 $(TARGET)/driver_tab.c:	Makefile.in
@@ -357,8 +401,7 @@ else
 
 VXCC=@VXCC@
 VXCFLAGS=@VXCFLAGS@
-CFLAGS_NOOPT=@CFLAGS_NOOPT@ @DEFS@ $(WFLAGS) @THR_DEFS@ \
- -DHIPE_ARCHITECTURE=$(ARCH) $(ARCHCFLAGS)
+CFLAGS_NOOPT=@CFLAGS_NOOPT@ @DEFS@ $(WFLAGS) @THR_DEFS@ $(ARCHCFLAGS)
 
 # we want to use jump table
 $(OBJDIR)/beam_emu.o: beam/beam_emu.c
@@ -418,6 +461,10 @@ $(OBJDIR)/sys_sae.o: sys/$(ERLANG_OSTYPE)/sys.c
 	$(CC) -DDISABLE_VFORK=1 $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 ifeq ($(CC), gcc)
+
+$(OBJDIR)/erl_obsolete.o: beam/erl_obsolete.c
+	$(CC) $(subst -Wstrict-prototypes, , $(subst -O2, $(GEN_OPT_FLGS), $(CFLAGS))) $(INCLUDES) -c $< -o $@
+
 $(OBJDIR)/erl_goodfit_alloc.o: beam/erl_goodfit_alloc.c
 	$(CC) $(subst -O2, $(GEN_OPT_FLGS) $(UNROLL_FLG), $(CFLAGS)) $(INCLUDES) -c $< -o $@
 endif
@@ -427,7 +474,7 @@ endif
 # rebuilding (is this a good idea?) add a dummy dependency to this target.
 #
 
-$(ERL_TOP)/lib/%.beam $(ERL_TOP)/erts/sae/ebin/%.beam:
+$(ERL_TOP)/lib/%.beam:
 	cd $(@D)/../src && $(MAKE) ../ebin/$(@F)
 
 
@@ -479,14 +526,14 @@ RUN_OBJS = \
 	$(OBJDIR)/index.o		$(OBJDIR)/atom.o \
 	$(OBJDIR)/module.o		$(OBJDIR)/export.o \
 	$(OBJDIR)/register.o		$(OBJDIR)/break.o \
-	$(OBJDIR)/erl_async.o		$(OBJDIR)/sys_threads.o \
+	$(OBJDIR)/erl_async.o \
 	$(OBJDIR)/ggc.o 		$(OBJDIR)/erl_gc.o \
-	$(OBJDIR)/erl_posix_str.o \
+	$(OBJDIR)/erl_nmgc.o		$(OBJDIR)/erl_posix_str.o \
 	$(OBJDIR)/erl_bits.o 		$(OBJDIR)/erl_math.o \
-	$(OBJDIR)/erl_vector.o		$(OBJDIR)/erl_term.o \
 	$(OBJDIR)/erl_fun.o             $(OBJDIR)/erl_bif_port.o \
-	$(OBJDIR)/erl_node_tables.o \
-	$(OBJDIR)/erl_process_dump.o
+	$(OBJDIR)/erl_term.o 		$(OBJDIR)/erl_node_tables.o \
+	$(OBJDIR)/erl_monitors.o	$(OBJDIR)/erl_process_dump.o \
+	$(OBJDIR)/erl_obsolete.o 
 
 ifeq ($(TARGET),win32)
 DRV_OBJS = \
@@ -508,7 +555,7 @@ OS_OBJS = \
 	$(OBJDIR)/sys_select.o \
 	$(OBJDIR)/sys_env.o \
 	$(OBJDIR)/dosmap.o \
-	$(OBJDIR)/elib_malloc.o 
+	$(OBJDIR)/elib_malloc.o
 
 else
 OS_OBJS = \
@@ -550,17 +597,25 @@ ifneq ($(findstring vxworks,$(TARGET)),vxworks)
   endif
 endif
 
-HIPE_ultrasparc_OBJS=$(OBJDIR)/hipe_sparc_glue.o $(OBJDIR)/hipe_sparc_bifs.o $(OBJDIR)/hipe_sparc_stack.o
-HIPE_x86_OBJS=$(OBJDIR)/hipe_x86_glue.o $(OBJDIR)/hipe_x86_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o
+HIPE_ultrasparc_OBJS=$(OBJDIR)/hipe_sparc.o $(OBJDIR)/hipe_sparc_glue.o $(OBJDIR)/hipe_sparc_bifs.o $(OBJDIR)/hipe_sparc_stack.o
+HIPE_x86_OBJS=$(OBJDIR)/hipe_x86.o $(OBJDIR)/hipe_x86_glue.o $(OBJDIR)/hipe_x86_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o
+HIPE_amd64_OBJS=$(OBJDIR)/hipe_amd64.o $(OBJDIR)/hipe_amd64_glue.o $(OBJDIR)/hipe_amd64_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o
+HIPE_ppc_OBJS=$(OBJDIR)/hipe_ppc.o $(OBJDIR)/hipe_ppc_glue.o $(OBJDIR)/hipe_ppc_bifs.o $(OBJDIR)/hipe_ppc_stack.o
 HIPE_noarch_OBJS=
 HIPE_ARCH_OBJS=$(HIPE_$(ARCH)_OBJS)
 
 HIPE_OBJS= \
 	$(OBJDIR)/hipe_bif0.o \
 	$(OBJDIR)/hipe_bif1.o \
-	$(OBJDIR)/hipe_bif2.o $(OBJDIR)/hipe_debug.o \
+	$(OBJDIR)/hipe_bif2.o \
+	$(OBJDIR)/hipe_debug.o \
+	$(OBJDIR)/hipe_gc.o \
 	$(OBJDIR)/hipe_mode_switch.o \
-	$(OBJDIR)/hipe_native_bif.o $(HIPE_ARCH_OBJS)
+	$(OBJDIR)/hipe_native_bif.o \
+	$(OBJDIR)/hipe_stack.o $(HIPE_ARCH_OBJS)
+ifdef USE_PERFCTR
+HIPE_OBJS += $(OBJDIR)/hipe_perfctr.o
+endif
 ifdef HIPE_ENABLED
 EXTRA_BASE_OBJS += $(HIPE_OBJS)
 endif
@@ -601,18 +656,26 @@ $(OBJDIR)/%.o: hipe/%.c
 $(BINDIR)/hipe_mkliterals$(TYPEMARKER):	$(OBJDIR)/hipe_mkliterals.o
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $<
 
-$(OBJDIR)/hipe_mkliterals.o:	$(TARGET)/hipe_x86_asm.h
+$(OBJDIR)/hipe_mkliterals.o:	$(TARGET)/hipe_x86_asm.h $(TARGET)/hipe_ppc_asm.h
 
 $(TARGET_TYPE_DIR)/hipe_literals.h:	$(BINDIR)/hipe_mkliterals$(TYPEMARKER)
 	$(BINDIR)/hipe_mkliterals$(TYPEMARKER) -c > $@
 
 $(OBJDIR)/hipe_sparc_glue.o:	hipe/hipe_sparc_glue.S hipe/hipe_sparc_asm.h hipe/hipe_mode_switch.h $(TARGET_TYPE_DIR)/hipe_literals.h
-$(TARGET)/hipe_sparc_bifs.S:	hipe/hipe_sparc_bifs.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
+$(TARGET)/hipe_sparc_bifs.S:	hipe/hipe_sparc_bifs.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
 $(OBJDIR)/hipe_sparc_bifs.o:	$(TARGET)/hipe_sparc_bifs.S hipe/hipe_sparc_asm.h hipe/hipe_mode_switch.h $(TARGET_TYPE_DIR)/hipe_literals.h
 
 $(OBJDIR)/hipe_x86_glue.o:	hipe/hipe_x86_glue.S $(TARGET)/hipe_x86_asm.h $(TARGET_TYPE_DIR)/hipe_literals.h hipe/hipe_mode_switch.h
-$(TARGET)/hipe_x86_bifs.S:	hipe/hipe_x86_bifs.m4 hipe/hipe_x86_asm.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
+$(TARGET)/hipe_x86_bifs.S:	hipe/hipe_x86_bifs.m4 hipe/hipe_x86_asm.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
 $(OBJDIR)/hipe_x86_bifs.o:	$(TARGET)/hipe_x86_bifs.S $(TARGET_TYPE_DIR)/hipe_literals.h
+
+$(OBJDIR)/hipe_amd64_glue.o:	hipe/hipe_amd64_glue.S $(TARGET)/hipe_amd64_asm.h $(TARGET_TYPE_DIR)/hipe_literals.h hipe/hipe_mode_switch.h
+$(TARGET)/hipe_amd64_bifs.S:	hipe/hipe_amd64_bifs.m4 hipe/hipe_amd64_asm.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
+$(OBJDIR)/hipe_amd64_bifs.o:	$(TARGET)/hipe_amd64_bifs.S $(TARGET_TYPE_DIR)/hipe_literals.h
+
+$(OBJDIR)/hipe_ppc_glue.o:	hipe/hipe_ppc_glue.S $(TARGET)/hipe_ppc_asm.h hipe/hipe_mode_switch.h $(TARGET_TYPE_DIR)/hipe_literals.h
+$(TARGET)/hipe_ppc_bifs.S:	hipe/hipe_ppc_bifs.m4 hipe/hipe_ppc_asm.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
+$(OBJDIR)/hipe_ppc_bifs.o:	$(TARGET)/hipe_ppc_bifs.S $(TARGET_TYPE_DIR)/hipe_literals.h
 
 # end of HiPE section
 ########################################
@@ -682,7 +745,7 @@ else
 
 $(BINDIR)/$(EMULATOR_EXECUTABLE): $(INIT_OBJS) $(OBJS)
 	$(PURIFY) $(LD) -o $(BINDIR)/$(EMULATOR_EXECUTABLE) \
-	$(LDFLAGS) $(DEXPORT) $(INIT_OBJS) $(OBJS) $(LIBS)
+	$(HIPEBEAMLDFLAGS) $(LDFLAGS) $(DEXPORT) $(INIT_OBJS) $(OBJS) $(LIBS)
 
 $(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB): $(INIT_OBJS) $(OBJS_ELIB)
 	$(PURIFY) $(LD) -o $(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB) \
@@ -709,6 +772,12 @@ SED_REPL_TT_DIR=s|$(TARGET_TYPE_DIR)/|$$(TARGET_TYPE_DIR)/|g
 SED_DEPEND=sed '$(SED_REPL_O);$(SED_REPL_TT_DIR)'
 SED_ELIB_DEPEND=sed '$(SED_REPL_ELIB_O);$(SED_REPL_TT_DIR)'
 
+ifdef HIPE_ENABLED
+HIPE_SRC=hipe/*.c
+else
+HIPE_SRC=
+endif
+
 # I do not want the -MG flag on windows, it does not work properly for a 
 # windows build.
 ifeq ($(TARGET),win32)
@@ -716,13 +785,13 @@ DEP_CFLAGS = $(subst -O2,,$(CFLAGS))
 depend:
 	$(EMU_CC) -MM $(DEP_CFLAGS) $(INCLUDES) -I../etc/win32 -Idrivers/common \
 		  beam/*.c drivers/common/*.c drivers/$(ERLANG_OSTYPE)/*.c \
-		  sys/$(ERLANG_OSTYPE)/*.c sys/common/*.c hipe/*.c | \
+		  sys/$(ERLANG_OSTYPE)/*.c sys/common/*.c $(HIPE_SRC) | \
 		  $(SED_DEPEND) > $(TARGET)/depend.mk
 else
 depend:
 	$(CC) -MM -MG $(CFLAGS) $(INCLUDES) -Idrivers/common \
 		  beam/*.c drivers/common/*.c drivers/$(ERLANG_OSTYPE)/*.c \
-		  sys/$(ERLANG_OSTYPE)/*.c sys/common/*.c hipe/*.c | \
+		  sys/$(ERLANG_OSTYPE)/*.c sys/common/*.c $(HIPE_SRC) | \
 		  $(SED_DEPEND) > $(TARGET)/depend.mk
 	$(CC) -MM -MG $(ELIB_FLAGS) $(CFLAGS) $(INCLUDES) -Idrivers/common \
 		  $(ELIB_C_FILES) | $(SED_ELIB_DEPEND) >> $(TARGET)/depend.mk

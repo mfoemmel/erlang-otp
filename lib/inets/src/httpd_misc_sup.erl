@@ -40,7 +40,7 @@ start(Addr, Port, MiscSupVerbosity) ->
     SupName = make_name(Addr, Port),
     supervisor:start_link({local, SupName}, ?MODULE, [MiscSupVerbosity]).
 
-stop(StartArgs) ->
+stop(_StartArgs) ->
     ok.
 
 init([Verbosity]) -> % Supervisor
@@ -53,7 +53,8 @@ do_init(Verbosity) ->
     put(sname,misc_sup),
     ?vlog("starting", []),
     Flags     = {one_for_one, 0, 1},
-    KillAfter = timer:seconds(1),
+    %% FIXME: This code was not used, should it be?
+    %%KillAfter = timer:seconds(1),
     Workers   = [],
     {ok, {Flags, Workers}}.
 

@@ -123,7 +123,7 @@
 %%              {stop, Reason}
 %% Description: Initiates the server
 %%----------------------------------------------------------------------
-init([ParentPid, MyId, QoS, Admin]) ->
+init([ParentPid, MyId, QoS, _Admin]) ->
     process_flag(trap_exit, true),
     Diamonds = case lists:keysearch(?DiamondDetection, 1, QoS) of
 		   false ->
@@ -147,7 +147,7 @@ init([ParentPid, MyId, QoS, Admin]) ->
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, #state{graph = DG} = State) ->
+terminate(_Reason, #state{graph = DG} = _State) ->
     Connections = digraph:edges(DG),
     close_connections(DG, Connections),
     digraph:delete(DG),
@@ -158,7 +158,7 @@ terminate(Reason, #state{graph = DG} = State) ->
 %% Returns    : {ok, NewState}
 %% Description: Convert process state when code is changed
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%----------------------------------------------------------------------
@@ -169,7 +169,7 @@ code_change(OldVsn, State, Extra) ->
 %%----------------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, #state{parent_pid = Pid} = State) ->
     {stop, Reason, State};
-handle_info(Info, State) ->
+handle_info(_Info, State) ->
     {noreply, State}.
 
 %%----------------------------------------------------------------------
@@ -180,7 +180,7 @@ handle_info(Info, State) ->
 %% Returns    : MemberId - long()
 %% Description: 
 %%----------------------------------------------------------------------
-add_channel(OE_This, #state{ch_counter=C, graph = DG} = State, Channel) ->
+add_channel(_OE_This, #state{ch_counter=C, graph = DG} = State, Channel) ->
     type_check(Channel, 'CosNotifyChannelAdmin_EventChannel'),
     Id = cosEventDomainApp:create_id(C),
     digraph:add_vertex(DG, Id, Channel),
@@ -192,7 +192,7 @@ add_channel(OE_This, #state{ch_counter=C, graph = DG} = State, Channel) ->
 %% Returns    : CosEventDomainAdmin::MemberIDSeq ([long()])
 %% Description: 
 %%----------------------------------------------------------------------
-get_all_channels(OE_This, #state{graph = DG} = State) ->
+get_all_channels(_OE_This, #state{graph = DG} = State) ->
     {reply, digraph:vertices(DG), State}.
 
 %%---------------------------------------------------------------------%
@@ -202,7 +202,7 @@ get_all_channels(OE_This, #state{graph = DG} = State) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}}
 %% Description: 
 %%----------------------------------------------------------------------
-get_channel(OE_This, #state{graph = DG} = State, Id) ->
+get_channel(_OE_This, #state{graph = DG} = State, Id) ->
     {reply, lookup_channel(DG, Id), State}.
 
 %%---------------------------------------------------------------------%
@@ -212,7 +212,7 @@ get_channel(OE_This, #state{graph = DG} = State, Id) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}}
 %% Description: 
 %%----------------------------------------------------------------------
-remove_channel(OE_This, #state{graph = DG} = State, Id) ->
+remove_channel(_OE_This, #state{graph = DG} = State, Id) ->
     lookup_channel(DG, Id),
     close_connections(DG, digraph:edges(DG, Id)),
     digraph:del_vertex(DG, Id),
@@ -229,7 +229,7 @@ remove_channel(OE_This, #state{graph = DG} = State, Id) ->
 %%              {'EXCEPTION', #'CosEventDomainAdmin_DiamondCreationForbidden'{diam}}
 %% Description: 
 %%----------------------------------------------------------------------
-add_connection(OE_This, #state{graph = DG, co_counter = C} = State, 
+add_connection(_OE_This, #state{graph = DG, co_counter = C} = State, 
 	       Connection) when record(Connection, 
 				       'CosEventDomainAdmin_Connection') ->
     SId = Connection#'CosEventDomainAdmin_Connection'.supplier_id,
@@ -257,8 +257,10 @@ add_connection(OE_This, #state{graph = DG, co_counter = C} = State,
 			    corba:raise(E);
 			What ->
 			    digraph:del_edge(DG, Id),
-			    orber:debug_level_print("[~p] CosEventDomainAdmin_EventDomain:add_connection(~p);
-Failed setting up connection due to: ~p", [?LINE, Connection, What], ?DEBUG_LEVEL),
+			    orber:dbg("[~p] CosEventDomainAdmin_EventDomain:"
+				      "add_connection(~p);~nFailed setting up"
+				      " connection due to: ~p", 
+				      [?LINE, Connection, What], ?DEBUG_LEVEL),
 			    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_MAYBE})
 		    end;
 		Id ->
@@ -276,8 +278,11 @@ Failed setting up connection due to: ~p", [?LINE, Connection, What], ?DEBUG_LEVE
 				    corba:raise(E);
 				What ->
 				    digraph:del_edge(DG, Id),
-				    orber:debug_level_print("[~p] CosEventDomainAdmin_EventDomain:add_connection(~p);
-Failed setting up connection due to: ~p", [?LINE, Connection, What], ?DEBUG_LEVEL),
+				    orber:dbg("[~p] CosEventDomainAdmin_EventDomain:"
+					      "add_connection(~p);~nFailed setting"
+					      " up connection due to: ~p", 
+					      [?LINE, Connection, What], 
+					      ?DEBUG_LEVEL),
 				    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_MAYBE})
 			    end;
 			Diamond ->
@@ -299,7 +304,7 @@ Failed setting up connection due to: ~p", [?LINE, Connection, What], ?DEBUG_LEVE
 %% Returns    : CosEventDomainAdmin::ConnectionIDSeq - [long()]
 %% Description: 
 %%----------------------------------------------------------------------
-get_all_connections(OE_This, #state{graph = DG} = State) ->
+get_all_connections(_OE_This, #state{graph = DG} = State) ->
     {reply, digraph:edges(DG), State}.
 
 %%---------------------------------------------------------------------%
@@ -309,7 +314,7 @@ get_all_connections(OE_This, #state{graph = DG} = State) ->
 %%              {'EXCEPTION', #'CosEventDomainAdmin_ConnectionNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-get_connection(OE_This, #state{graph = DG} = State, Id) ->
+get_connection(_OE_This, #state{graph = DG} = State, Id) ->
     {reply, lookup_connection_data(DG, Id), State}.
 
 %%---------------------------------------------------------------------%
@@ -319,7 +324,7 @@ get_connection(OE_This, #state{graph = DG} = State, Id) ->
 %%              {'EXCEPTION', #'CosEventDomainAdmin_ConnectionNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-remove_connection(OE_This, #state{graph = DG} = State, Id) ->
+remove_connection(_OE_This, #state{graph = DG} = State, Id) ->
     #connection{supplier=S, consumer=C, data=Connection} = 
 	lookup_connection(DG, Id),
     close_connection(Connection, S, C),
@@ -334,12 +339,12 @@ remove_connection(OE_This, #state{graph = DG} = State, Id) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-get_offer_channels(OE_This, #state{graph = DG, cyclic = Cyclic} = State, Id) ->
+get_offer_channels(_OE_This, #state{graph = DG, cyclic = Cyclic} = State, Id) ->
     lookup_channel(DG, Id),
     case digraph:vertex(DG, Id) of
-	{Id, Channel} when Cyclic == ?ForbidCycles ->
+	{Id, _Channel} when Cyclic == ?ForbidCycles ->
 	    {reply, digraph_utils:reaching_neighbours([Id], DG), State};
-	{Id, Channel} ->
+	{Id, _Channel} ->
 	    %% If cyclic graphs is allowed 'Id' will appear in the returned list.
 	    %% Hence, we must delete it.
 	    {reply,lists:delete(Id, digraph_utils:reaching_neighbours([Id], DG)), 
@@ -355,12 +360,12 @@ get_offer_channels(OE_This, #state{graph = DG, cyclic = Cyclic} = State, Id) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-get_subscription_channels(OE_This, #state{graph = DG, cyclic = Cyclic} = State, Id) ->
+get_subscription_channels(_OE_This, #state{graph = DG, cyclic = Cyclic} = State, Id) ->
     lookup_channel(DG, Id),
     case digraph:vertex(DG, Id) of
-	{Id, Channel} when Cyclic == ?ForbidCycles ->
+	{Id, _Channel} when Cyclic == ?ForbidCycles ->
 	    {reply, digraph_utils:reachable_neighbours([Id], DG), State};
-	{Id, Channel} ->
+	{Id, _Channel} ->
 	    %% If cyclic graphs is allowed 'Id' will appear in the returned list.
 	    %% Hence, we must delete it.
 	    {reply, lists:delete(Id, digraph_utils:reachable_neighbours([Id], DG)), 
@@ -375,7 +380,7 @@ get_subscription_channels(OE_This, #state{graph = DG, cyclic = Cyclic} = State, 
 %% Returns    : ok
 %% Description: 
 %%----------------------------------------------------------------------
-destroy(OE_This, #state{graph = DG} = State) ->
+destroy(_OE_This, #state{graph = _DG} = State) ->
     {stop, normal, ok, State}.
 
 %%---------------------------------------------------------------------%
@@ -384,9 +389,9 @@ destroy(OE_This, #state{graph = DG} = State) ->
 %% Returns    : CosEventDomainAdmin::CycleSeq
 %% Description: 
 %%----------------------------------------------------------------------
-get_cycles(OE_This, #state{cyclic = ?ForbidCycles} = State) ->
+get_cycles(_OE_This, #state{cyclic = ?ForbidCycles} = State) ->
     {reply, [], State};
-get_cycles(OE_This, #state{graph = DG} = State) ->
+get_cycles(_OE_This, #state{graph = DG} = State) ->
     {reply, digraph_utils:cyclic_strong_components(DG), State}.
 
 %%----------------------------------------------------------------------
@@ -395,12 +400,12 @@ get_cycles(OE_This, #state{graph = DG} = State) ->
 %% Returns    : CosEventDomainAdmin::DiamondSeq
 %% Description: 
 %%----------------------------------------------------------------------
-get_diamonds(OE_This, #state{diamonds = ?ForbidDiamonds} = State) ->
+get_diamonds(_OE_This, #state{diamonds = ?ForbidDiamonds} = State) ->
     {reply, [], State};
-get_diamonds(OE_This, State) ->
+get_diamonds(_OE_This, State) ->
     {reply, get_diamonds_helper(State, true), State}.
 
-get_diamonds_helper(#state{graph = DG} = State, FindAll) ->
+get_diamonds_helper(#state{graph = DG} = _State, FindAll) ->
      case find_candidates(DG) of
 	{[], _, _} ->
 	    [];
@@ -412,7 +417,7 @@ get_diamonds_helper(#state{graph = DG} = State, FindAll) ->
 	    evaluate_candidates(DG, COut, CIn, [], Max, FindAll)
     end.
 
-get_diamonds_helper(#state{graph = DG} = State, FindAll, Vertex) ->
+get_diamonds_helper(#state{graph = DG} = _State, FindAll, Vertex) ->
     case find_candidates(DG, Vertex) of
 	{[], _, _} ->
 	    [];
@@ -431,7 +436,7 @@ get_diamonds_helper(#state{graph = DG} = State, FindAll, Vertex) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-set_default_consumer_channel(OE_This, #state{graph = DG} = State, Id) ->
+set_default_consumer_channel(_OE_This, #state{graph = DG} = State, Id) ->
     lookup_channel(DG, Id),
     {reply, ok, State#state{def_consumer=Id}}.
 
@@ -442,7 +447,7 @@ set_default_consumer_channel(OE_This, #state{graph = DG} = State, Id) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-set_default_supplier_channel(OE_This, #state{graph = DG} = State, Id) ->
+set_default_supplier_channel(_OE_This, #state{graph = DG} = State, Id) ->
     lookup_channel(DG, Id),
     {reply, ok, State#state{def_supplier=Id}}.
 
@@ -453,7 +458,7 @@ set_default_supplier_channel(OE_This, #state{graph = DG} = State, Id) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_push_consumer(OE_This, #state{def_supplier = Ch} = State, PC) ->
+connect_push_consumer(_OE_This, #state{def_supplier = Ch} = State, PC) ->
     type_check(PC, 'CosEventComm_PushConsumer'),
     Proxy = connect_a_push_consumer(Ch, PC, 'ANY_EVENT'),
     {reply, Proxy, State}.
@@ -465,7 +470,7 @@ connect_push_consumer(OE_This, #state{def_supplier = Ch} = State, PC) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_pull_consumer(OE_This, #state{def_consumer = Ch} = State, PC) ->
+connect_pull_consumer(_OE_This, #state{def_consumer = Ch} = State, PC) ->
     Proxy = connect_a_pull_consumer(Ch, PC, 'ANY_EVENT'),
     {reply, Proxy, State}.
 
@@ -476,7 +481,7 @@ connect_pull_consumer(OE_This, #state{def_consumer = Ch} = State, PC) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_push_supplier(OE_This, #state{def_supplier = Ch} = State, PS) ->
+connect_push_supplier(_OE_This, #state{def_supplier = Ch} = State, PS) ->
     Proxy = connect_a_push_supplier(Ch, PS, 'ANY_EVENT'),
     {reply, Proxy, State}.
 
@@ -487,7 +492,7 @@ connect_push_supplier(OE_This, #state{def_supplier = Ch} = State, PS) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_pull_supplier(OE_This, #state{def_consumer = Ch} = State, PS) ->
+connect_pull_supplier(_OE_This, #state{def_consumer = Ch} = State, PS) ->
     type_check(PS, 'CosEventComm_PullSupplier'),
     Proxy = connect_a_pull_supplier(Ch, PS, 'ANY_EVENT'),
     {reply, Proxy, State}.
@@ -499,7 +504,7 @@ connect_pull_supplier(OE_This, #state{def_consumer = Ch} = State, PS) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_structured_push_consumer(OE_This, #state{def_supplier = Ch} = State, PC) ->
+connect_structured_push_consumer(_OE_This, #state{def_supplier = Ch} = State, PC) ->
     type_check(PC, 'CosNotifyComm_StructuredPushConsumer'),
     Proxy = connect_a_push_consumer(Ch, PC, 'STRUCTURED_EVENT'),
     {reply, Proxy, State}.
@@ -511,7 +516,7 @@ connect_structured_push_consumer(OE_This, #state{def_supplier = Ch} = State, PC)
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_structured_pull_consumer(OE_This, #state{def_supplier = Ch} = State, PC) ->
+connect_structured_pull_consumer(_OE_This, #state{def_supplier = Ch} = State, PC) ->
     Proxy = connect_a_pull_consumer(Ch, PC, 'STRUCTURED_EVENT'),
     {reply, Proxy, State}.
 
@@ -522,7 +527,7 @@ connect_structured_pull_consumer(OE_This, #state{def_supplier = Ch} = State, PC)
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_structured_push_supplier(OE_This, #state{def_consumer = Ch} = State, PS) ->
+connect_structured_push_supplier(_OE_This, #state{def_consumer = Ch} = State, PS) ->
     Proxy = connect_a_push_supplier(Ch, PS, 'STRUCTURED_EVENT'),
     {reply, Proxy, State}.
 
@@ -533,7 +538,7 @@ connect_structured_push_supplier(OE_This, #state{def_consumer = Ch} = State, PS)
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_structured_pull_supplier(OE_This, #state{def_consumer = Ch} = State, PS) ->
+connect_structured_pull_supplier(_OE_This, #state{def_consumer = Ch} = State, PS) ->
     type_check(PS, 'CosNotifyComm_StructuredPullSupplier'),
     Proxy = connect_a_pull_supplier(Ch, PS, 'STRUCTURED_EVENT'),
     {reply, Proxy, State}.
@@ -545,7 +550,7 @@ connect_structured_pull_supplier(OE_This, #state{def_consumer = Ch} = State, PS)
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_sequence_push_consumer(OE_This, #state{def_supplier = Ch} = State, PC) ->
+connect_sequence_push_consumer(_OE_This, #state{def_supplier = Ch} = State, PC) ->
     type_check(PC, 'CosNotifyComm_SequencePushConsumer'),
     Proxy = connect_a_push_consumer(Ch, PC, 'SEQUENCE_EVENT'),
     {reply, Proxy, State}.
@@ -557,7 +562,7 @@ connect_sequence_push_consumer(OE_This, #state{def_supplier = Ch} = State, PC) -
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_sequence_pull_consumer(OE_This, #state{def_supplier = Ch} = State, PC) ->
+connect_sequence_pull_consumer(_OE_This, #state{def_supplier = Ch} = State, PC) ->
     Proxy = connect_a_pull_consumer(Ch, PC, 'SEQUENCE_EVENT'),
     {reply, Proxy, State}.
 
@@ -568,7 +573,7 @@ connect_sequence_pull_consumer(OE_This, #state{def_supplier = Ch} = State, PC) -
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_sequence_push_supplier(OE_This, #state{def_consumer = Ch} = State, PS) ->
+connect_sequence_push_supplier(_OE_This, #state{def_consumer = Ch} = State, PS) ->
     Proxy = connect_a_push_supplier(Ch, PS, 'SEQUENCE_EVENT'),
     {reply, Proxy, State}.
 
@@ -579,7 +584,7 @@ connect_sequence_push_supplier(OE_This, #state{def_consumer = Ch} = State, PS) -
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_sequence_pull_supplier(OE_This, #state{def_consumer = Ch} = State, PS) ->
+connect_sequence_pull_supplier(_OE_This, #state{def_consumer = Ch} = State, PS) ->
     type_check(PS, 'CosNotifyComm_SequencePullSupplier'),
     Proxy = connect_a_pull_supplier(Ch, PS, 'SEQUENCE_EVENT'),
     {reply, Proxy, State}.
@@ -592,7 +597,7 @@ connect_sequence_pull_supplier(OE_This, #state{def_consumer = Ch} = State, PS) -
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_push_consumer_with_id(OE_This, #state{graph = DG} = State, PC, Id) ->
+connect_push_consumer_with_id(_OE_This, #state{graph = DG} = State, PC, Id) ->
     type_check(PC, 'CosEventComm_PushConsumer'),
     Channel = lookup_channel(DG, Id),
     Proxy = connect_a_push_consumer(Channel, PC, 'ANY_EVENT'),
@@ -606,7 +611,7 @@ connect_push_consumer_with_id(OE_This, #state{graph = DG} = State, PC, Id) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_pull_consumer_with_id(OE_This, #state{graph = DG} = State, PC, Id) ->
+connect_pull_consumer_with_id(_OE_This, #state{graph = DG} = State, PC, Id) ->
     Channel = lookup_channel(DG, Id),
     Proxy = connect_a_pull_consumer(Channel, PC, 'ANY_EVENT'),
     {reply, Proxy, State}.
@@ -619,7 +624,7 @@ connect_pull_consumer_with_id(OE_This, #state{graph = DG} = State, PC, Id) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_push_supplier_with_id(OE_This, #state{graph = DG} = State, PS, Id) ->
+connect_push_supplier_with_id(_OE_This, #state{graph = DG} = State, PS, Id) ->
     Channel = lookup_channel(DG, Id),
     Proxy = connect_a_push_supplier(Channel, PS, 'ANY_EVENT'),
     {reply, Proxy, State}.
@@ -632,7 +637,7 @@ connect_push_supplier_with_id(OE_This, #state{graph = DG} = State, PS, Id) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_pull_supplier_with_id(OE_This, #state{graph = DG} = State, PS, Id) ->
+connect_pull_supplier_with_id(_OE_This, #state{graph = DG} = State, PS, Id) ->
     type_check(PS, 'CosEventComm_PullSupplier'),
     Channel = lookup_channel(DG, Id),
     Proxy = connect_a_pull_supplier(Channel, PS, 'ANY_EVENT'),
@@ -646,7 +651,7 @@ connect_pull_supplier_with_id(OE_This, #state{graph = DG} = State, PS, Id) ->
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_structured_push_consumer_with_id(OE_This, #state{graph = DG} = State, PC, Id) ->
+connect_structured_push_consumer_with_id(_OE_This, #state{graph = DG} = State, PC, Id) ->
     type_check(PC, 'CosNotifyComm_StructuredPushConsumer'),
     Channel = lookup_channel(DG, Id),
     Proxy = connect_a_push_consumer(Channel, PC, 'STRUCTURED_EVENT'),
@@ -660,7 +665,7 @@ connect_structured_push_consumer_with_id(OE_This, #state{graph = DG} = State, PC
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_structured_pull_consumer_with_id(OE_This, #state{graph = DG} = State, PC, Id) ->
+connect_structured_pull_consumer_with_id(_OE_This, #state{graph = DG} = State, PC, Id) ->
     Channel = lookup_channel(DG, Id),
     Proxy = connect_a_pull_consumer(Channel, PC, 'STRUCTURED_EVENT'),
     {reply, Proxy, State}.
@@ -673,7 +678,7 @@ connect_structured_pull_consumer_with_id(OE_This, #state{graph = DG} = State, PC
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_structured_push_supplier_with_id(OE_This, #state{graph = DG} = State, PS, Id) ->
+connect_structured_push_supplier_with_id(_OE_This, #state{graph = DG} = State, PS, Id) ->
     Channel = lookup_channel(DG, Id),
     Proxy = connect_a_push_supplier(Channel, PS, 'STRUCTURED_EVENT'),
     {reply, Proxy, State}.
@@ -686,7 +691,7 @@ connect_structured_push_supplier_with_id(OE_This, #state{graph = DG} = State, PS
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_structured_pull_supplier_with_id(OE_This, #state{graph = DG} = State, PS, Id) ->
+connect_structured_pull_supplier_with_id(_OE_This, #state{graph = DG} = State, PS, Id) ->
     type_check(PS, 'CosNotifyComm_StructuredPullSupplier'),
     Channel = lookup_channel(DG, Id),
     Proxy = connect_a_pull_supplier(Channel, PS, 'STRUCTURED_EVENT'),
@@ -700,7 +705,7 @@ connect_structured_pull_supplier_with_id(OE_This, #state{graph = DG} = State, PS
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_sequence_push_consumer_with_id(OE_This, #state{graph = DG} = State, PC, Id) ->
+connect_sequence_push_consumer_with_id(_OE_This, #state{graph = DG} = State, PC, Id) ->
     type_check(PC, 'CosNotifyComm_SequencePushConsumer'),
     Channel = lookup_channel(DG, Id),
     Proxy = connect_a_push_consumer(Channel, PC, 'SEQUENCE_EVENT'),
@@ -714,7 +719,7 @@ connect_sequence_push_consumer_with_id(OE_This, #state{graph = DG} = State, PC, 
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_sequence_pull_consumer_with_id(OE_This, #state{graph = DG} = State, PC, Id) ->
+connect_sequence_pull_consumer_with_id(_OE_This, #state{graph = DG} = State, PC, Id) ->
     Channel = lookup_channel(DG, Id),
     Proxy = connect_a_pull_consumer(Channel, PC, 'SEQUENCE_EVENT'),
     {reply, Proxy, State}.
@@ -727,7 +732,7 @@ connect_sequence_pull_consumer_with_id(OE_This, #state{graph = DG} = State, PC, 
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_sequence_push_supplier_with_id(OE_This, #state{graph = DG} = State, PS, Id) ->
+connect_sequence_push_supplier_with_id(_OE_This, #state{graph = DG} = State, PS, Id) ->
     Channel = lookup_channel(DG, Id),
     Proxy = connect_a_push_supplier(Channel, PS, 'SEQUENCE_EVENT'),
     {reply, Proxy, State}.
@@ -740,7 +745,7 @@ connect_sequence_push_supplier_with_id(OE_This, #state{graph = DG} = State, PS, 
 %%              {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}} |
 %% Description: 
 %%----------------------------------------------------------------------
-connect_sequence_pull_supplier_with_id(OE_This, #state{graph = DG} = State, PS, Id) ->
+connect_sequence_pull_supplier_with_id(_OE_This, #state{graph = DG} = State, PS, Id) ->
     type_check(PS, 'CosNotifyComm_SequencePullSupplier'),
     Channel = lookup_channel(DG, Id),
     Proxy = connect_a_pull_supplier(Channel, PS, 'SEQUENCE_EVENT'),
@@ -755,7 +760,7 @@ connect_sequence_pull_supplier_with_id(OE_This, #state{graph = DG} = State, PS, 
 %% Returns    : CosNotification::QoSProperties
 %% Description: 
 %%----------------------------------------------------------------------
-get_qos(OE_This, #state{cyclic = Cyclic, diamonds = Diamonds} = State) ->
+get_qos(_OE_This, #state{cyclic = Cyclic, diamonds = Diamonds} = State) ->
     {reply, [#'CosNotification_Property'
 	     {name = ?DiamondDetection, 
 	      value = any:create(orber_tc:short(), Diamonds)}, 
@@ -770,7 +775,7 @@ get_qos(OE_This, #state{cyclic = Cyclic, diamonds = Diamonds} = State) ->
 %%              {'EXCEPTION', #'CosNotification_UnsupportedQoS{}}
 %% Description: 
 %%----------------------------------------------------------------------
-set_qos(OE_This, State, NewQoS) ->
+set_qos(_OE_This, State, NewQoS) ->
     QoS = cosEventDomainApp:get_qos(NewQoS),
     set_qos_helper(QoS, State, []).
     
@@ -820,7 +825,7 @@ set_qos_helper([{?CycleDetection, _}|T], #state{cyclic = Cyclic} = State, Errors
 %%              {'EXCEPTION', #'CosNotification_UnsupportedQoS{}}
 %% Description: NamedPropertyRangeSeq is of out-type
 %%----------------------------------------------------------------------
-validate_qos(OE_This, State, WantedQoS) ->
+validate_qos(_OE_This, State, WantedQoS) ->
     QoS = cosEventDomainApp:get_qos(WantedQoS),
     {reply, {ok, validate_qos_helper(QoS, State, [], [])}, State}.
 
@@ -881,7 +886,7 @@ validate_qos_helper([{?CycleDetection, _}|T], #state{cyclic = Cyclic} = State,
 %% Returns    : CosNotification::AdminProperties
 %% Description: No Admins currently supported
 %%----------------------------------------------------------------------
-get_admin(OE_This, State) ->
+get_admin(_OE_This, State) ->
     {reply, [], State}.
 
 %%---------------------------------------------------------------------%
@@ -891,7 +896,7 @@ get_admin(OE_This, State) ->
 %%              {'EXCEPTION', #'CosNotification_UnsupportedAdmin{}}
 %% Description: No Admins currently supported
 %%----------------------------------------------------------------------
-set_admin(OE_This, State, NewAdmins) ->
+set_admin(_OE_This, State, NewAdmins) ->
     cosEventDomainApp:get_admin(NewAdmins),
     {reply, ok, State}.
 
@@ -927,7 +932,7 @@ find_candidates(DG) ->
     {filter_candidates(COut), filter_candidates(CIn), Max}.
 
 
-find_candidates(DG, Vertex) ->
+find_candidates(DG, _Vertex) ->
     %% We should use the fact that we know one of the vertices.
     Edges = digraph:edges(DG),
     {COut, CIn, Max} = find_candidates_helper(Edges, [], [], DG, 0),
@@ -936,14 +941,14 @@ find_candidates(DG, Vertex) ->
 find_candidates_helper([], AccOut, AccIn, _, Counter) ->
     {lists:sort(AccOut), lists:sort(AccIn), Counter};
 find_candidates_helper([H|T], AccOut, AccIn, DG, Counter) ->
-    {H, V1, V2, Label} = digraph:edge(DG, H),
+    {H, V1, V2, _Label} = digraph:edge(DG, H),
     find_candidates_helper(T, [{V1, V2}|AccOut], [{V2,V1}|AccIn], DG, Counter+1).
 
 filter_candidates([]) ->
     [];
 filter_candidates([{V1, V2}|T]) ->
     filter_candidates([{V1, V2}|T], V1, [], []).
-filter_candidates([], V, [Acc1], Acc2) ->
+filter_candidates([], _V, [_Acc1], Acc2) ->
     %% Only one in/out connection. Hence, cannot be start- or end-point
     %% of a diamond.
     lists:reverse(Acc2);
@@ -951,7 +956,7 @@ filter_candidates([], V, Acc1, Acc2) ->
     lists:reverse([{V, lists:reverse(Acc1)}|Acc2]);
 filter_candidates([{V1, V2}|T], V1, Acc1, Acc2) ->
     filter_candidates(T, V1, [V2|Acc1], Acc2);
-filter_candidates([{V1, V2}|T], V, [Acc1], Acc2) ->
+filter_candidates([{V1, V2}|T], _V, [_Acc1], Acc2) ->
     %% Only one in/out connection. Hence, cannot be start- or end-point
     %% of a diamond.
     filter_candidates(T, V1, [V2], Acc2);
@@ -975,7 +980,7 @@ filter_candidates([{V1, V2}|T], V, Acc1, Acc2) ->
 %%              duplicates may be generated. For example, #2/#3 is a sub-set of #1
 %%              but they are as well diamonds.
 %%----------------------------------------------------------------------
-evaluate_candidates(DG, [], _, Acc, Max, _) ->
+evaluate_candidates(_DG, [], _, Acc, _Max, _) ->
     Acc;
 evaluate_candidates(DG, [{V, OutV}|T], CIn, Acc, Max, FindAll) ->
     case evaluate_candidates_helper(DG, V, OutV, CIn, [], FindAll) of
@@ -992,7 +997,7 @@ evaluate_candidates_helper(_, _, _, _, [Diamond], false) ->
     Diamond;
 evaluate_candidates_helper(_, _, _, [], Diamonds, _) ->
     Diamonds;
-evaluate_candidates_helper(DG, V1, OutV, [{V1, InV}|T], Diamonds, FindAll) ->
+evaluate_candidates_helper(DG, V1, OutV, [{V1, _InV}|T], Diamonds, FindAll) ->
     evaluate_candidates_helper(DG, V1, OutV, T, Diamonds, FindAll);
 evaluate_candidates_helper(DG, V1, OutV, [{V2, InV}|T], Diamonds, FindAll) ->
     case double_match(OutV, InV, [], V1, V2) of
@@ -1057,11 +1062,11 @@ is_member([H|_], H2) when H > H2 ->
 is_member([_|T], H) ->
     is_member(T, H).
 
-double_match([], _, [Matched], _, _) ->
+double_match([], _, [_Matched], _, _) ->
     [];
 double_match([], _, Matched, _, _) ->
     Matched;
-double_match(_, [], [Matched], _, _) ->
+double_match(_, [], [_Matched], _, _) ->
     [];
 double_match(_, [], Matched, _, _) ->
     Matched;
@@ -1069,7 +1074,7 @@ double_match([H|T1], [H|T2], Matched, V1, V2) ->
     double_match(T1, T2, [[V1,H,V2] | Matched], V1, V2);
 double_match([H1|T1], [H2|T2], Matched, V1, V2) when H1 > H2 ->
     double_match([H1|T1], T2, Matched, V1, V2);
-double_match([H1|T1], [H2|T2], Matched, V1, V2) ->
+double_match([_H1|T1], [H2|T2], Matched, V1, V2) ->
     double_match(T1, [H2|T2], Matched, V1, V2).
 
 double_match_exclude([], _, Matched, _, _) ->
@@ -1087,7 +1092,7 @@ double_match_exclude([H|T1], [H|T2], Matched, V1, V2) ->
     double_match_exclude(T1, T2, [[V1,H,V2] | Matched], V1, V2);
 double_match_exclude([H1|T1], [H2|T2], Matched, V1, V2) when H1 > H2 ->
     double_match_exclude([H1|T1], T2, Matched, V1, V2);
-double_match_exclude([H1|T1], [H2|T2], Matched, V1, V2) ->
+double_match_exclude([_H1|T1], [H2|T2], Matched, V1, V2) ->
     double_match_exclude(T1, [H2|T2], Matched, V1, V2).
 
 
@@ -1116,11 +1121,11 @@ digraph_match([H|T], Vin, Vout, DG, Acc, Counter) ->
 get_path(G, V1, V2, E1, E2) ->
     one_path(digraph:out_neighbours(G, V1), V2, [], [V1], [V1], G, E1, E2).
 
-one_path([E1|Vs], W, Cont, Xs, Ps, G, E1, E2) ->
+one_path([E1|_Vs], W, Cont, Xs, Ps, G, E1, E2) ->
     one_path([], W, Cont, Xs, Ps, G, E1, E2);
-one_path([E2|Vs], W, Cont, Xs, Ps, G, E1, E2) ->
+one_path([E2|_Vs], W, Cont, Xs, Ps, G, E1, E2) ->
     one_path([], W, Cont, Xs, Ps, G, E1, E2);
-one_path([W|Ws], W, Cont, Xs, Ps, G, E1, E2) ->
+one_path([W|_Ws], W, _Cont, _Xs, Ps, _G, _E1, _E2) ->
     [W|Ps];
 one_path([V|Vs], W, Cont, Xs, Ps, G, E1, E2) ->
     case lists:member(V, Xs) of
@@ -1144,9 +1149,9 @@ type_check(Obj, Mod) ->
         true ->
             ok;
         What ->
-	    orber:debug_level_print("[~p] CosEventDomainAdmin:type_check(); 
-Object of incorrect type supplied; should be: ~p
-Failed due to: ~p", [?LINE, Mod, What], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosEventDomainAdmin:type_check();~n"
+		      "Object of incorrect type supplied; should be: ~p~n"
+		      "Failed due to: ~p", [?LINE, Mod, What], ?DEBUG_LEVEL),
             corba:raise(#'BAD_PARAM'{minor=507, completion_status=?COMPLETED_NO})
     end.
 
@@ -1177,7 +1182,7 @@ lookup_channel(DG, Id) ->
 %%----------------------------------------------------------------------
 lookup_connection(DG, Id) ->
     case digraph:edge(DG, Id) of
-	{Id, SId, CId, Connection} ->
+	{Id, _SId, _CId, Connection} ->
 	    Connection;
 	false ->
 	    corba:raise(#'CosEventDomainAdmin_ConnectionNotFound'{})
@@ -1193,7 +1198,7 @@ lookup_connection(DG, Id) ->
 %%----------------------------------------------------------------------
 lookup_connection_data(DG, Id) ->
     case digraph:edge(DG, Id) of
-	{Id, SId, CId, #connection{data = Connection}} ->
+	{Id, _SId, _CId, #connection{data = Connection}} ->
 	    Connection;
 	false ->
 	    corba:raise(#'CosEventDomainAdmin_ConnectionNotFound'{})
@@ -1206,7 +1211,7 @@ lookup_connection_data(DG, Id) ->
 %% Returns  : ok
 %% Effect   : 
 %%----------------------------------------------------------------------
-close_connections(DG, []) ->
+close_connections(_DG, []) ->
     ok;
 close_connections(DG, [H|T]) ->
     #connection{supplier=S, consumer=C, data=Connection} = 
@@ -1263,7 +1268,7 @@ setup_connection(#'CosEventDomainAdmin_Connection'{ctype=Type,
 	'CosNotifyChannelAdmin_EventChannel':'_get_default_consumer_admin'(S),
     case Style of
 	'Push' ->
-	    {Proxy, Id} = 
+	    {Proxy, _Id} = 
 		'CosNotifyChannelAdmin_ConsumerAdmin':
 		obtain_notification_push_supplier(Admin, Type),
 	    CProxy = connect_a_push_supplier(C, Proxy, Type),
@@ -1280,7 +1285,7 @@ setup_connection(#'CosEventDomainAdmin_Connection'{ctype=Type,
 	    end,
 	    {ok, Proxy, CProxy};
 	'Pull' ->
-	    {Proxy, Id} = 
+	    {Proxy, _Id} = 
 		'CosNotifyChannelAdmin_ConsumerAdmin':
 		obtain_notification_pull_supplier(Admin, Type),
 	    CProxy = connect_a_pull_supplier(C, Proxy, Type),
@@ -1311,7 +1316,7 @@ connect_a_pull_consumer(undefined, _, _) ->
 connect_a_pull_consumer(Channel, PC, Type) ->
     Admin = 
 	'CosNotifyChannelAdmin_EventChannel':'_get_default_consumer_admin'(Channel),
-    {Proxy, Id} = 
+    {Proxy, _Id} = 
 	'CosNotifyChannelAdmin_ConsumerAdmin':obtain_notification_pull_supplier(Admin, 
 										Type),
     case Type of
@@ -1337,7 +1342,7 @@ connect_a_push_consumer(undefined, _, _) ->
 connect_a_push_consumer(Channel, PC, Type) ->
     Admin = 
 	'CosNotifyChannelAdmin_EventChannel':'_get_default_consumer_admin'(Channel),
-    {Proxy, Id} = 
+    {Proxy, _Id} = 
 	'CosNotifyChannelAdmin_ConsumerAdmin':obtain_notification_push_supplier(Admin, 
 										Type),
     case Type of
@@ -1363,7 +1368,7 @@ connect_a_pull_supplier(undefined, _, _) ->
 connect_a_pull_supplier(Channel, PS, Type) ->
     Admin = 
 	'CosNotifyChannelAdmin_EventChannel':'_get_default_supplier_admin'(Channel),
-    {Proxy, Id} = 
+    {Proxy, _Id} = 
 	'CosNotifyChannelAdmin_SupplierAdmin':obtain_notification_pull_consumer(Admin, 
 										Type),
     case Type of
@@ -1389,7 +1394,7 @@ connect_a_push_supplier(undefined, _, _) ->
 connect_a_push_supplier(Channel, PS, Type) ->
     Admin = 
 	'CosNotifyChannelAdmin_EventChannel':'_get_default_supplier_admin'(Channel),
-    {Proxy, Id} = 
+    {Proxy, _Id} = 
 	'CosNotifyChannelAdmin_SupplierAdmin':obtain_notification_push_consumer(Admin, 
 										Type),
     case Type of

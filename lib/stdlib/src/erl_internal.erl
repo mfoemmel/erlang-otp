@@ -69,6 +69,7 @@ guard_bif(node,0) -> true;
 guard_bif(node,1) -> true;
 guard_bif(is_atom, 1) -> true;
 guard_bif(is_binary, 1) -> true;
+guard_bif(is_boolean, 1) -> true;
 guard_bif(is_constant, 1) -> true;
 guard_bif(is_float, 1) -> true;
 guard_bif(is_function, 1) -> true;
@@ -94,6 +95,7 @@ type_test(Name, Arity) ->
 %%  Erlang new-style type tests.
 
 new_type_test(is_atom, 1) -> true;
+new_type_test(is_boolean, 1) -> true;
 new_type_test(is_binary, 1) -> true;
 new_type_test(is_constant, 1) -> true;
 new_type_test(is_float, 1) -> true;
@@ -255,6 +257,7 @@ bif(integer_to_list, 1) -> true;
 bif(is_alive, 0) -> true;
 bif(is_process_alive, 1) -> true;
 bif(is_atom, 1) -> true;
+bif(is_boolean, 1) -> true;
 bif(is_binary, 1) -> true;
 bif(is_constant, 1) -> true;
 bif(is_float, 1) -> true;

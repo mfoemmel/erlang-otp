@@ -3,8 +3,7 @@
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved via the world wide web at http://www.erlang.org/.
-%% 
-%% Software distributed under the License is distributed on an "AS IS"
+%%%% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
@@ -32,9 +31,8 @@
 % Public method called by the webbserver to insert the data about
 % Names on accessfiles
 %----------------------------------------------------------------------
-load([$A,$c,$c,$e,$s,$s,$F,$i,$l,$e,$N,$a,$m,$e|FileNames],Context)->
+load("AccessFileName" ++ FileNames, _Context)->
     CleanFileNames=httpd_conf:clean(FileNames),
-    %%io:format("\n The filenames is:" ++ FileNames ++ "\n"),
     {ok,[],{access_files,string:tokens(CleanFileNames," ")}}.
 
 
@@ -43,7 +41,7 @@ load([$A,$c,$c,$e,$s,$s,$F,$i,$l,$e,$N,$a,$m,$e|FileNames],Context)->
 %----------------------------------------------------------------------
 do(Info)->
     case httpd_util:key1search(Info#mod.data,status) of
-	{Status_code,PhraseArgs,Reason}->
+	{_Status_code, _PhraseArgs, _Reason}->
 	    {proceed,Info#mod.data};
 	undefined ->
 	    control_path(Info)
@@ -75,8 +73,8 @@ control_path(Info) ->
 		{ok,public}->
 		    %%There was no restrictions on the page continue
 		    {proceed,Info#mod.data};
-		{error,Reason} ->
-		    %Something got wrong continue or quit??????????????????/
+		{error, _Reason} ->
+		    %%Something got wrong continue or quit??????????????????/
                    {proceed,Info#mod.data};
 		{accessData,AccessData}->
 		    controlAllowedMethod(Info,AccessData)
@@ -171,7 +169,8 @@ authenticateUser2(Info,AccessData)->
 		_NoAuthName->
 		    ets:delete(AccessData),
 		    {break,[{status,{500,none,
-				     ?NICE("mod_htaccess:AuthName directive not specified")}}]}
+				     ?NICE("mod_htaccess:AuthName directive " 
+					   "not specified")}}]}
 	    end;
 	[] ->
 	    %%No special user is required the network is ok so let
@@ -190,7 +189,7 @@ authenticateUser2(Info,AccessData,Realm,AllowedUsers)->
     case authenticateUser(Info,AccessData,AllowedUsers) of
 	allow ->
 	    ets:delete(AccessData),
-	    {user,Name,Pwd}=getAuthenticatingDataFromHeader(Info),
+	    {user,Name, _Pwd} = getAuthenticatingDataFromHeader(Info),
 	    {proceed, [{remote_user_name,Name}|Info#mod.data]};
 	challenge->  
 	    ets:delete(AccessData),
@@ -208,7 +207,8 @@ authenticateUser2(Info,AccessData,Realm,AllowedUsers)->
 	deny->
 	    ets:delete(AccessData),
 	    {break,[{status,{500,none,
-			     ?NICE("mod_htaccess:Bad path to user or group file")}}]}
+			     ?NICE("mod_htaccess:Bad path to user " 
+				   "or group file")}}]}
     end.
 
                                                                       
@@ -276,12 +276,12 @@ controlIfAllowed(AllowedNetworks,UserNetwork,IfAllowed,IfDenied)->
 %The Denycontrol isn't neccessary to preform since the allow control  %
 %override the deny control                                            %
 %---------------------------------------------------------------------% 
-controlDenyAllow(DeniedNetworks,AllowedNetworks,UserNetwork)->
+controlDenyAllow(_DeniedNetworks, AllowedNetworks, UserNetwork)->
     case AllowedNetworks of
-	[{allow,all}]->
+	[{allow, all}]->
 	    allow;
-	[{allow,Networks}]->
-	  case memberNetwork(Networks,UserNetwork) of
+	[{allow, Networks}]->
+	  case memberNetwork(Networks, UserNetwork) of
 	      true->
 		  allow;
 	      false->
@@ -330,7 +330,7 @@ memberNetwork(Networks,UserNetwork)->
 		      end,Networks) of
 	[]->
 	    false;
-	MemberNetWork ->
+	_MemberNetWork ->
 	    true
     end.
 
@@ -350,7 +350,6 @@ formatRegexp(Net)->
 	_->
 	    NetRegexp++".*"
     end.
-
 
 %----------------------------------------------------------------------
 %If the user has specified if the allow or deny check shall be preformed
@@ -385,7 +384,7 @@ authenticateUser(Info,AccessData,AllowedUsers)->
 			     {user,User,PassWord});
 	{error,nouser}->
 	    challenge; 
-	{error,BadData}->
+	{error, _BadData}->
 	    challenge 
     end.
 
@@ -399,7 +398,7 @@ getAuthenticatingDataFromHeader(Info)->
 	undefined->
 	    {error,nouser};
 	[$B,$a,$s,$i,$c,$\ |EncodedString]->
-	    UnCodedString=httpd_util:decode_base64(EncodedString),
+	    UnCodedString = http_base_64:decode(EncodedString),
 	    case httpd_util:split(UnCodedString,":",2) of
 		{ok,[User,PassWord]}->
 		    {user,User,PassWord};
@@ -453,14 +452,10 @@ authenticateUser(Info,AccessData,{{users,Users},{groups,Groups}},User)->
 authenticateUser(Info,AccessData,{groups,AllowedGroups},{user,User,PassWord})->
     case getUsers(AccessData,group_file) of
 	{group_data,Groups}->
-	    case  getGroupMembers(Groups,AllowedGroups) of
-	       {ok,Members}->
-		    authenticateUser(Info,AccessData,{users,Members},
-				     {user,User,PassWord});
-		{error,BadData}->
-		    deny
-	    end;
-	{error,BadData}->
+	    {ok, Members } = getGroupMembers(Groups,AllowedGroups),
+	    authenticateUser(Info,AccessData,{users,Members},
+			     {user,User,PassWord});
+	{error, _BadData}->
 	    deny
     end;
 
@@ -468,12 +463,12 @@ authenticateUser(Info,AccessData,{groups,AllowedGroups},{user,User,PassWord})->
 %----------------------------------------------------------------------
 %Control that the user is one of the allowed users and that the passwd is ok
 %----------------------------------------------------------------------
-authenticateUser(Info,AccessData,{users,AllowedUsers},{user,User,PassWord})->
+authenticateUser(_Info,AccessData,{users,AllowedUsers},{user,User,PassWord})->
     case lists:member(User,AllowedUsers) of
        true->
 	    %Get the usernames and passwords from the file
 	    case getUsers(AccessData,user_file) of
-		{error,BadData}->
+		{error, _BadData}->
 		    deny;
 		{user_data,Users}-> 
 		    %Users is a list of the users in
@@ -544,7 +539,7 @@ getUsers({stream,File},FileData,UserOrGroup)->
 %----------------------------------------------------------------------
 %If the line is a comment remove it
 %----------------------------------------------------------------------
-formatUser([$#|UserDataComment],FileData,_UserOrgroup)->
+formatUser([$#|_UserDataComment],FileData,_UserOrgroup)->
     FileData;
 
 
@@ -555,7 +550,7 @@ formatUser([$#|UserDataComment],FileData,_UserOrgroup)->
 %----------------------------------------------------------------------
 formatUser(UserData,FileData,UserOrGroup)->
     case string:tokens(UserData," \r\n")of
-	[User|Whitespace] when UserOrGroup==user_file->
+	[User| _Whitespace] when UserOrGroup==user_file->
 	    case string:tokens(User,":") of
 		[Name,PassWord]->
 		    [{user,Name,PassWord}|FileData];
@@ -594,7 +589,7 @@ formatGroupName(GroupName)->
 %Control that the asset is a real file and not a request for an virtual
 %asset
 %----------------------------------------------------------------------
-isErlScriptOrNotAccessibleFile(Path,Info)->
+isErlScriptOrNotAccessibleFile(Path, _Info)->
     case file:read_file_info(Path) of
 	{ok,_fileInfo}->
 	    false;
@@ -661,7 +656,7 @@ getData2(HtAccessFileNames,SplittedPath,Info)->
 %rest of splitted path is a list of the parts of the path
 %Info is the mod recod from the server  
 %----------------------------------------------------------------------
-getData2(HtAccessFileNames,StartPath,RestOfSplittedPath,Info)->
+getData2(HtAccessFileNames, StartPath, RestOfSplittedPath, _Info)->
     case getHtAccessFiles(HtAccessFileNames,StartPath,RestOfSplittedPath) of
 	[]->
 	    %No accessfile qiut its a public directory
@@ -694,7 +689,7 @@ contextToValues(AccessData)->
     end.
 
 
-insertContext(AccessData,[])->
+insertContext(_AccessData, [])->
     ok;
 
 insertContext(AccessData,[{allow,From}|Values])->
@@ -732,9 +727,9 @@ insertContext(AccessData,[Elem|Values])->
 
 insertDenyAllowContext(AccessData,{AllowDeny,From})->
     case From of
-	all->
+	all ->
 	    ets:insert(AccessData,{AllowDeny,all});
-	AllowedSubnets->
+	_AllowedSubnets ->
 	    case ets:lookup(AccessData,AllowDeny) of
 		[]->
 		    ets:insert(AccessData,{AllowDeny,From});
@@ -772,7 +767,7 @@ loadAccessFileData({file,FileName},AccessData)->
     case file:open(FileName,[read]) of
         {ok,AccessFileHandle}->
 	    loadAccessFileData({stream,AccessFileHandle},AccessData,[]);
-        {error,Reason} ->
+        {error, _Reason} ->
 	    overRide
     end.
 
@@ -796,7 +791,7 @@ loadAccessFileData({stream,File},AccessData,FileData)->
 			_NoOverride->
 			    noOverRide
 		    end;
-		Errors->
+		_ ->
 		    error
 	    end;
 	Line ->
@@ -843,52 +838,47 @@ insertData(AccessData,FileData)->
 %----------------------------------------------------------------------      
 %%%Here is the alternatives that resides inside the limit context
 
-insertLine([$o,$r,$d,$e,$r|Order],{{context,Values},FileData})->
+insertLine("order"++ Order, {{context, Values}, FileData})->
     {{context,[{order,getOrder(Order)}|Values]},FileData};
 %%Let the user place a tab in the beginning
 insertLine([$\t,$o,$r,$d,$e,$r|Order],{{context,Values},FileData})->
-    {{context,[{order,getOrder(Order)}|Values]},FileData};
+     {{context,[{order,getOrder(Order)}|Values]},FileData};
 
-insertLine([$a,$l,$l,$o,$w|Allow],{{context,Values},FileData})->
+insertLine("allow" ++ Allow, {{context, Values}, FileData})->
     {{context,[{allow,getAllowDenyData(Allow)}|Values]},FileData};
 insertLine([$\t,$a,$l,$l,$o,$w|Allow],{{context,Values},FileData})->
     {{context,[{allow,getAllowDenyData(Allow)}|Values]},FileData};
 
-insertLine([$d,$e,$n,$y|Deny],{{context,Values},FileData})->
+insertLine("deny" ++ Deny, {{context,Values}, FileData})->
     {{context,[{deny,getAllowDenyData(Deny)}|Values]},FileData};
-insertLine([$\t,$d,$e,$n,$y|Deny],{{context,Values},FileData})->
+insertLine([$\t, $d,$e,$n,$y|Deny],{{context,Values},FileData})->
     {{context,[{deny,getAllowDenyData(Deny)}|Values]},FileData};
 
-
-insertLine([$r,$e,$q,$u,$i,$r,$e|Require],{{context,Values},FileData})->
+insertLine("require" ++ Require, {{context, Values}, FileData})->
     {{context,[{require,getRequireData(Require)}|Values]},FileData};
 insertLine([$\t,$r,$e,$q,$u,$i,$r,$e|Require],{{context,Values},FileData})->
     {{context,[{require,getRequireData(Require)}|Values]},FileData};
 
-
-insertLine([$<,$/,$L,$i,$m,$i,$t|EndLimit],{Context,FileData})->
-    [Context|FileData];
-
-insertLine([$<,$L,$i,$m,$i,$t|Limit],FileData)->
+insertLine("</Limit" ++ _EndLimit, {Context,FileData})->
+    [Context | FileData];
+insertLine("<Limit" ++ Limit, FileData)->
     {{context,[{limit,getLimits(Limit)}]}, FileData};
-
-
 
 insertLine([$A,$u,$t,$h,$U,$s,$e,$r,$F,$i,$l,$e,$\ |AuthUserFile],FileData)->
     [{user_file,string:strip(AuthUserFile,right,$\n)}|FileData];
 
 insertLine([$A,$u,$t,$h,$G,$r,$o,$u,$p,$F,$i,$l,$e,$\ |AuthGroupFile],
-	   FileData)->
+           FileData)->
     [{group_file,string:strip(AuthGroupFile,right,$\n)}|FileData];
 
-insertLine([$A,$l,$l,$o,$w,$O,$v,$e,$r,$R,$i,$d,$e|AllowOverRide],FileData)->
+insertLine("AllowOverRide" ++ AllowOverRide, FileData)->
     [{allow_over_ride,getAllowOverRideData(AllowOverRide)}
-     |FileData];
+     | FileData];
 
 insertLine([$A,$u,$t,$h,$N,$a,$m,$e,$\ |AuthName],FileData)->
     [{auth_name,string:strip(AuthName,right,$\n)}|FileData];
 
-insertLine([$A,$u,$t,$h,$T,$y,$p,$e|AuthType],FileData)->
+insertLine("AuthType" ++ AuthType,FileData)->
     [{auth_type,getAuthorizationType(AuthType)}|FileData];
 
 insertLine(_BadDirectiveOrComment,FileData)->
@@ -902,9 +892,9 @@ insertLine(_BadDirectiveOrComment,FileData)->
 
 getAllowOverRideData(OverRideData)->
    case string:tokens(OverRideData," \r\n") of
-       [[$a,$l,$l]|_]->
+       "all" ++ _ ->
 	   all;
-        [[$n,$o,$n,$e]|_]->
+       "none" ++ _->
 	   none;
        Directives ->
 	   getOverRideDirectives(Directives)
@@ -914,13 +904,13 @@ getOverRideDirectives(Directives)->
     lists:map(fun(Directive)->
 		      transformDirective(Directive)
 	      end,Directives).
-transformDirective([$A,$u,$t,$h,$U,$s,$e,$r,$F,$i,$l,$e|_])->
+transformDirective("AuthUserFile" ++  _)->
     user_file;
-transformDirective([$A,$u,$t,$h,$G,$r,$o,$u,$p,$F,$i,$l,$e|_]) ->
+transformDirective("AuthGroupFile" ++ _) ->
     group_file;
-transformDirective([$A,$u,$t,$h,$N,$a,$m,$e|_])->
+transformDirective("AuthName" ++ _)->
     auth_name;
-transformDirective([$A,$u,$t,$h,$T,$y,$p,$e|_])-> 
+transformDirective("AuthType" ++ _)-> 
     auth_type;
 transformDirective(_UnAllowedOverRideDirective) ->
     unallowed.
@@ -929,11 +919,11 @@ transformDirective(_UnAllowedOverRideDirective) ->
 %and replace it with the atom for easier mathing
 %----------------------------------------------------------------------   
 getAuthorizationType(AuthType)->
-    [Arg|Crap]=string:tokens(AuthType,"\n\r\ "),
+    [Arg | _Crap] = string:tokens(AuthType,"\n\r\ "),
     case Arg of
-	[$B,$a,$s,$i,$c]->
+	"Basic"->
 	    basic;
-	[$M,$D,$5] ->
+	"MD5" ->
 	    md5;
 	_What ->
 	    error
@@ -945,13 +935,13 @@ getLimits(Limits)->
     case regexp:split(Limits,">")of
 	{ok,[_NoEndOnLimit]}->
 	    error;
-	{ok,[Methods|Crap]}->
+	{ok, [Methods | _Crap]}->
 	    case regexp:split(Methods," ")of
 		{ok,[]}->
 		    all;
 		{ok,SplittedMethods}->
 		    SplittedMethods;
-		{error,Error}->
+		{error, _Error}->
 		    error
 	    end;
 	{error,_Error}->
@@ -963,7 +953,7 @@ getLimits(Limits)->
 % Transform the order to prefrom deny allow control to a tuple of atoms
 %----------------------------------------------------------------------
 getOrder(Order)->
-    [First|Rest]=lists:map(fun(Part)->
+    [First | _Rest]=lists:map(fun(Part)->
 		      list_to_atom(Part)
 	      end,string:tokens(Order," \n\r")),
     case First of
@@ -982,13 +972,13 @@ getAllowDenyData(AllowDeny)->
     case string:tokens(AllowDeny," \n\r") of
 	[_From|AllowDenyData] when length(AllowDenyData)>=1->
 	    case lists:nth(1,AllowDenyData) of
-		[$a,$l,$l]->
+		"all" ->
 		    all;
-		Hosts->
+		_Hosts->
 		    AllowDenyData
 	    end;
-	Error->
-	    errror
+	_ ->
+	    error
     end.
 %----------------------------------------------------------------------
 % Fix the string that describes who is allowed to se the page
@@ -996,9 +986,9 @@ getAllowDenyData(AllowDeny)->
 getRequireData(Require)->
     [UserOrGroup|UserData]=string:tokens(Require," \n\r"),
     case UserOrGroup of
-	[$u,$s,$e,$r]->
+	"user"->
 	    {users,UserData};
-	[$g,$r,$o,$u,$p] ->
+	"group" ->
 	    {groups,UserData};
 	_Whatever ->
 	    error
@@ -1020,7 +1010,7 @@ getHtAccessFiles(HtAccessFileNames,Path,RestOfSplittedPath)->
 getHtAccessFiles(HtAccessFileNames,Path,[[]],HtAccessFiles)->
     HtAccessFiles ++ accessFilesOfPath(HtAccessFileNames,Path++"/");   
     
-getHtAccessFiles(HtAccessFileNames,Path,[],HtAccessFiles)->
+getHtAccessFiles(_HtAccessFileNames, _Path, [], HtAccessFiles)->
     HtAccessFiles;
 getHtAccessFiles(HtAccessFileNames,Path,[NextDir|RestOfSplittedPath],
 		 AccessFiles)->   
@@ -1035,7 +1025,7 @@ getHtAccessFiles(HtAccessFileNames,Path,[NextDir|RestOfSplittedPath],
 accessFilesOfPath(HtAccessFileNames,Path)->
     lists:foldl(fun(HtAccessFileName,Files)->
 			case file:read_file_info(Path++HtAccessFileName) of
-			    {ok,FileInfo}->
+			    {ok, _}->
 				[Path++HtAccessFileName|Files];
 			    {error,_Error} ->
 				Files
@@ -1048,10 +1038,10 @@ accessFilesOfPath(HtAccessFileNames,Path)->
 %that match first
 %----------------------------------------------------------------------
 
-getRootPath(SplittedPath,Info)->
+getRootPath(SplittedPath, Info)->
     DocRoot=httpd_util:lookup(Info#mod.config_db,document_root,"/"),
     PresumtiveRootPath=
-	[DocRoot|lists:map(fun({Alias,RealPath})->
+	[DocRoot|lists:map(fun({_Alias,RealPath})->
 				   RealPath
 			   end,
 		 httpd_util:multi_lookup(Info#mod.config_db,alias))],
@@ -1071,7 +1061,7 @@ getRootPath(PresumtiveRootPath,[Part,NextPart|SplittedPath],Info)->
 			[Part++"/"++NextPart|SplittedPath],Info)
     end;
 
-getRootPath(PresumtiveRootPath,[Part],Info)->
+getRootPath(PresumtiveRootPath, [Part], _Info)->
     case lists:member(Part,PresumtiveRootPath)of
 	true->
 	    {ok,Part,[]};
@@ -1103,7 +1093,7 @@ debug()->
 %Add authenticate data to the fake http-request header
 %----------------------------------------------------------------------
 headerparts()->
-    [{"authorization","Basic " ++ httpd_util:encode_base64("lotta:potta")}].
+    [{"authorization","Basic " ++ http_base_64:encode("lotta:potta")}].
 
 getDataFromAlias(Conf,Uri)->
     mod_alias:do(#mod{config_db=Conf,request_uri=Uri}).
@@ -1134,17 +1124,3 @@ getConfigData()->
 		     ,"/home/gandalf/marting/exjobb/webcover-1.0/priv"}}),
     ets:insert(Tab,{access_file,[".htaccess","kalle","pelle"]}),
     Tab.
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -33,7 +33,11 @@
 	 init_table/2,
 	 test_ms/2,
 	 tab2list/1,
-	 fun2ms/1]).
+         table/1,
+         table/2,
+	 fun2ms/1,
+	 match_spec_run/2,
+	 repair_continuation/2]).
 
 -export([i/0, i/1, i/2, i/3]).
 
@@ -50,6 +54,7 @@
 %% lookup/2
 %% lookup_element/3
 %% insert/2
+%% is_compiled_ms/1
 %% last/1
 %% next/2
 %% prev/2
@@ -61,6 +66,8 @@
 %% match_object/1
 %% match_object/2
 %% match_object/3
+%% match_spec_compile/1
+%% match_spec_run_r/3
 %% select/1
 %% select/2
 %% select/3
@@ -70,6 +77,46 @@
 %% select_delete/2
 %% update_counter/3
 %%
+
+
+match_spec_run(List,CompiledMS) ->
+    lists:reverse(ets:match_spec_run_r(List,CompiledMS,[])).
+
+% $end_of_table is an allowed continuation in ets...
+repair_continuation('$end_of_table',_) ->
+    '$end_of_table';
+% ordered_set
+repair_continuation(Untouched = {Table,Lastkey,L1,N2,Bin,L2,N3,N4}, MS) when
+(is_atom(Table) or is_integer(Table)),
+is_list(L1),
+is_integer(N2),
+is_binary(Bin),
+size(Bin) =:= 0,
+is_list(L2),
+is_integer(N3),
+is_integer(N4) ->
+    case ets:is_compiled_ms(Bin) of
+	true ->
+	    Untouched;
+	false ->
+	    {Table,Lastkey,L1,N2,ets:match_spec_compile(MS),L2,N3,N4}
+    end;
+
+% set/bag/duplicate_bag
+repair_continuation(Untouched = {Table,N1,N2,Bin,L,N3}, MS) when
+(is_atom(Table) or is_integer(Table)),
+is_integer(N1),
+is_integer(N2),
+is_binary(Bin),
+size(Bin) =:= 0,
+is_list(L),
+is_integer(N3) ->
+    case ets:is_compiled_ms(Bin) of
+	true ->
+	    Untouched;
+	false ->
+	    {Table,N1,N2,ets:match_spec_compile(MS),L,N3}
+    end.
 
 fun2ms(ShellFun) when is_function(ShellFun) ->
     % Check that this is really a shell fun...
@@ -403,6 +450,132 @@ insert_all(Tab, [Val|T]) ->
     insert_all(Tab,T);
 insert_all(Tab,[]) -> Tab.
 
+table(Tab) ->
+    table(Tab, []).
+
+table(Tab, Opts) ->
+    case options(Opts, [traverse, n_objects]) of
+        {badarg,_} ->
+            erlang:fault(badarg, [Tab, Opts]);
+        [[Traverse, NObjs], QlcOptions] ->
+            TF = case Traverse of
+                     first_next -> 
+                         fun() -> qlc_next(Tab, ets:first(Tab)) end;
+                     last_prev -> 
+                         fun() -> qlc_prev(Tab, ets:last(Tab)) end;
+                     select -> 
+                         fun(MS) -> qlc_select(ets:select(Tab, MS, NObjs)) end;
+                     {select, MS} ->
+                         fun() -> qlc_select(ets:select(Tab, MS, NObjs)) end
+                 end,
+            PreFun = fun(_) -> ets:safe_fixtable(Tab, true) end,
+            PostFun = fun() -> ets:safe_fixtable(Tab, false) end,
+            InfoFun = fun(Tag) -> table_info(Tab, Tag) end,
+            LookupFun = 
+                case Traverse of 
+                    {select, _MS} ->
+                        undefined;
+                    _ -> 
+                        fun(_Pos, [K]) ->
+                                ets:lookup(Tab, K);
+                           (_Pos, Ks) -> 
+                                lists:flatmap(fun(K) -> ets:lookup(Tab, K) 
+                                              end, Ks) 
+                        end
+                end,
+            FormatFun = 
+                fun(all) ->
+                        As = case Opts of
+                                 [] -> [Tab];
+                                 _ -> [Tab, Opts]
+                             end,
+                        {?MODULE, table, As};
+                   ({match_spec, MS}) ->
+                        {?MODULE, table, 
+                         [Tab, [{traverse, {select, MS}} | 
+                                listify(Opts)]]};
+                   ({lookup, _KeyPos, [Value]}) ->
+                        io_lib:format("~w:lookup(~w, ~w)", 
+                                      [?MODULE, Tab, Value]);
+                   ({lookup, _KeyPos, Values}) ->
+                        io_lib:format("lists:flatmap(fun(V) -> "
+                                      "~w:lookup(~w, V) end, ~w)", 
+                                      [?MODULE, Tab, Values])
+                end,
+            qlc:table(TF, [{pre_fun, PreFun}, {post_fun, PostFun}, 
+                           {info_fun, InfoFun}, {format_fun, FormatFun},
+                           {lookup_fun, LookupFun}] ++ QlcOptions)
+    end.
+         
+table_info(Tab, num_of_objects) ->
+    info(Tab, size);
+table_info(Tab, keypos) ->
+    info(Tab, keypos);
+table_info(Tab, is_unique_objects) ->
+    info(Tab, type) =/= duplicate_bag;
+table_info(_Tab, _) ->
+    undefined.
+
+qlc_next(_Tab, '$end_of_table') ->
+    [];
+qlc_next(Tab, Key) ->
+    ets:lookup(Tab, Key) ++ fun() -> qlc_next(Tab, ets:next(Tab, Key)) end.
+
+qlc_prev(_Tab, '$end_of_table') ->
+    [];
+qlc_prev(Tab, Key) ->
+    ets:lookup(Tab, Key) ++ fun() -> qlc_prev(Tab, ets:prev(Tab, Key)) end.
+
+qlc_select('$end_of_table') -> 
+    [];
+qlc_select({Objects, Cont}) -> 
+    Objects ++ fun() -> qlc_select(ets:select(Cont)) end.
+
+options(Options, Keys) when is_list(Options) ->
+    options(Options, Keys, []);
+options(Option, Keys) ->
+    options([Option], Keys, []).
+
+options(Options, [Key | Keys], L) when is_list(Options) ->
+    V = case lists:keysearch(Key, 1, Options) of
+            {value, {n_objects, default}} ->
+                {ok, default_option(Key)};
+            {value, {n_objects, NObjs}} when is_integer(NObjs),
+                                             NObjs >= 1 ->
+                {ok, NObjs};
+            {value, {traverse, select}} ->
+                {ok, select};
+            {value, {traverse, {select, MS}}} ->
+                {ok, {select, MS}};
+            {value, {traverse, first_next}} ->
+                {ok, first_next};
+            {value, {traverse, last_prev}} ->
+                {ok, last_prev};
+	    {value, {Key, _}} ->
+		badarg;
+	    false ->
+		Default = default_option(Key),
+		{ok, Default}
+	end,
+    case V of
+	badarg ->
+	    {badarg, Key};
+	{ok,Value} ->
+	    NewOptions = lists:keydelete(Key, 1, Options),
+	    options(NewOptions, Keys, [Value | L])
+    end;
+options(Options, [], L) ->
+    [lists:reverse(L), Options].
+
+default_option(traverse) -> select;
+default_option(n_objects) -> 100.
+
+listify(L) when is_list(L) ->
+    L;
+listify(T) ->
+    [T].
+
+%% End of table/2.
 
 %% Print info about all tabs on the tty
 i() ->

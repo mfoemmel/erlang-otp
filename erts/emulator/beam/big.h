@@ -32,11 +32,20 @@
 
 /* #define DEBUG_OP */		/* Count arithmetic operations */
 
+#if defined(ARCH_64)
+#define D_EXP      32
+#else
 #define D_EXP      16
-#define D_BASE     (1<<D_EXP)
+#endif
+#define D_BASE     (1L<<D_EXP)
 
+#if defined(ARCH_64)
+#define D_DECIMAL_EXP	9
+#define D_DECIMAL_BASE	1000000000
+#else
 #define D_DECIMAL_EXP   4           /* 10^4 == 10000 */
 #define D_DECIMAL_BASE  10000       /* Max decimal exponent in a digit */
+#endif
 
 /* macros for bignum objects */
 #define big_v(x)       BIG_V(big_val(x))
@@ -55,39 +64,31 @@
 #define BIG_DIGITS_PER_WORD (sizeof(Uint)/sizeof(digit_t))
 
 /* FIXME: */
-#ifdef ARCH_64
-#define BIG_SIZE(xp) \
-( 4*BIG_ARITY(xp) -  \
- ((BIG_DIGIT(xp, 4*BIG_ARITY(xp)-1) == 0) ? \
-  ((BIG_DIGIT(xp, 4*BIG_ARITY(xp)-2) == 0) ? \
-   ((BIG_DIGIT(xp, 4*BIG_ARITY(xp)-3) == 0) ? 3 : 2) : 1) : 0))
-#else
 #define BIG_SIZE(xp) \
 ( 2*BIG_ARITY(xp)  -  ((BIG_DIGIT(xp, 2*BIG_ARITY(xp)-1) == 0) ? 1 : 0))
-#endif
 
 /* Check for small */
 #define IS_USMALL(sgn,x)  ((sgn) ? ((x) <= MAX_SMALL+1) : ((x) <= MAX_SMALL))
 #define IS_SSMALL(x)      (((x) >= MIN_SMALL) && ((x) <= MAX_SMALL))
 
 /* The heap size needed for a bignum is
-** Number of digits 'x' in words = (x+1)/2 plus 
-** The thing word
-**
-** FIXME: 
-** Replace with: ( ((x)+sizeof(Uint)-1) / sizeof(Uint) ) + 1
-*/
-#ifdef ARCH_64
-#define BIG_NEED_SIZE(x) ((((x)+3) >> 2) + 1)
-#else
+ * Number of digits 'x' in words = (x+1)/2 plus 
+ * The thing word
+ *
+ */
 #define BIG_NEED_SIZE(x)  ((((x)+1) >> 1) + 1)
-#endif
 
+#define BIG_UINT_HEAP_SIZE (1 + 1)	/* always, since sizeof(Uint) <= sizeof(Eterm) */
 
 /* sizeof(digit_t) <= sizeof(D_BASE-1) */
 
+#if defined(ARCH_64)
+typedef Uint32 digit_t;
+typedef Uint64   reg_t;
+#else
 typedef Uint32   reg_t;    /* register type 32 bit */
 typedef Uint16 digit_t;  /* digit type    16 bit */
+#endif
 typedef Uint  dsize_t;	 /* Vector size type */
 
 
@@ -138,30 +139,30 @@ typedef Uint  dsize_t;	 /* Vector size type */
 ** DREM
 */
 #define DSUM(a,b,c1,c0) do { \
-     reg_t _t = (a)+(b); \
+     reg_t _t = ((reg_t)(a))+(b); \
      c0 = DLOW(_t); \
      c1 = DHIGH(_t); \
      } while(0)
 #define DSUMc(a,b,c,s) do { \
-       reg_t _t = (a)+(b); \
+       reg_t _t = ((reg_t)(a))+(b); \
        if (c) _t += (c); \
        s = DLOW(_t); \
        c = DHIGH(_t); \
      }  while(0)
 #define DMULc(a,b,c,p) do { \
-        reg_t _t = (a)*(b); \
+        reg_t _t = ((reg_t)(a))*(b); \
 	if (c) _t += (c); \
 	p = DLOW(_t); \
 	c = DHIGH(_t); \
      } while(0)
 #define DMUL(a,b,c1,c0) do { \
-	reg_t _t = (a)*(b); \
+	reg_t _t = ((reg_t)(a))*(b); \
 	c0 = DLOW(_t); \
 	c1 = DHIGH(_t); \
      } while(0)
 
 #define DSUBb(a,b,r,d) do { \
-	 reg_t _t = (b)+(r); \
+	 reg_t _t = ((reg_t)(b))+(r); \
 	 if ((a) < _t) { \
 	    d = (D_BASE-_t)+(a); r = 1; \
 	 } \
@@ -180,24 +181,24 @@ typedef Uint  dsize_t;	 /* Vector size type */
      } while(0)
 
 #define DDIV(a0,a1,b,q) do { \
-	reg_t _t = (a0)*D_BASE+(a1); \
+	reg_t _t = ((reg_t)(a0))*D_BASE+(a1); \
 	q = _t / (b); \
      } while(0)
 
 #define DDIV2(a0,a1,b0,b1,q) do { \
-	reg_t _t = (a0)*D_BASE+(a1); \
-	q = _t / ((b0)*D_BASE+(b1)); \
+	reg_t _t = ((reg_t)(a0))*D_BASE+(a1); \
+	q = _t / (((reg_t)(b0))*D_BASE+(b1)); \
      } while(0)
 
 #define DREM(a0,a1,b,r) do { \
-	reg_t _t = (a0)*D_BASE+(a1); \
+	reg_t _t = ((reg_t)(a0))*D_BASE+(a1); \
 	r = _t % (b); \
      } while(0)
 
-#define BIG_UINT_HEAP_SIZE (BIG_NEED_SIZE(2))
-
 int big_decimal_estimate(Eterm);
+#if 0	/* XXX: unused */
 char* big_to_decimal(Eterm, char*, int);
+#endif
 Eterm big_to_list(Eterm, Eterm**);
 
 Eterm big_plus(Eterm, Eterm, Eterm*);
@@ -225,14 +226,17 @@ Eterm uint_to_big(Uint, Eterm*);
 Eterm make_small_or_big(Uint, Process*);
 
 dsize_t big_bytes(Eterm);
+#if 0	/* XXX: unused */
 int bytes_eq_big(byte*, dsize_t, int, Eterm);
+#endif
 Eterm bytes_to_big(byte*, dsize_t, int, Eterm*);
 byte* big_to_bytes(Eterm, byte*);
 
-int big_fits_in_sint32(Eterm b);
-int big_fits_in_uint32(Eterm b);
+int term_to_Uint(Eterm, Uint*);
+int term_to_Sint(Eterm, Sint*);
+
 Uint32 big_to_uint32(Eterm b);
-Sint32 big_to_sint32(Eterm b);
+int term_equals_2pow32(Eterm);
 
 #endif
 

@@ -413,6 +413,14 @@ extern "C" {
     oe_map_t* oe_merge_maps(oe_map_t*, int); 
 /* For backward compatibility */
     oe_map_t* ___merge___(oe_map_t*, int); 
+
+/* Macro for error reporting */
+
+#ifdef OE_C_REPORT
+#define OE_RPT_ERR(x)  fprintf(stderr, (x))
+#else
+#define OE_RPT_ERR(x)  
+#endif
        
 #ifdef __cplusplus
 }

@@ -87,7 +87,9 @@ new_message_buffer(Uint size)
     bp->size = size;
     bp->off_heap.mso = NULL;
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
     bp->off_heap.funs = NULL;
+#endif
 #endif
     bp->off_heap.externals = NULL;
     bp->off_heap.overhead = 0;
@@ -101,9 +103,11 @@ erts_cleanup_offheap(ErlOffHeap *offheap)
 	erts_cleanup_mso(offheap->mso);
     }
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
     if (offheap->funs) {
 	erts_cleanup_funs(offheap->funs);
     }
+#endif
 #endif
     if (offheap->externals) {
 	erts_cleanup_externals(offheap->externals);
@@ -132,10 +136,7 @@ queue_message_tt(Process* receiver, ErlHeapFragment* bp,
     ERL_MESSAGE_TOKEN(mp) = seq_trace_token;
     mp->next = NULL;
     LINK_MESSAGE(receiver, mp);
-
-#ifdef SHARED_HEAP
-    receiver->active = 1;
-#endif
+    ACTIVATE(receiver);
 
     if (bp != NULL) {
 	/* Link the message buffer */
@@ -144,9 +145,11 @@ queue_message_tt(Process* receiver, ErlHeapFragment* bp,
         MBUF_SIZE(receiver) += bp->size;
 	MSO(receiver).overhead +=
 	    (sizeof(ErlHeapFragment) / sizeof(Eterm) - 1);
+#ifdef HEAP_FRAG_ELIM_TEST
 	if (ARITH_LOWEST_HTOP(receiver) == NULL) {
 	    ARITH_LOWEST_HTOP(receiver) = receiver->htop;
 	}
+#endif
 
 	/* Move any binaries into the process */
 	if (bp->off_heap.mso != NULL) {
@@ -162,6 +165,7 @@ queue_message_tt(Process* receiver, ErlHeapFragment* bp,
 
 	/* Move any funs into the process */
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
 	if (bp->off_heap.funs != NULL) {
 	    ErlFunThing** next_p = &bp->off_heap.funs;
 	    while (*next_p != NULL) {
@@ -171,6 +175,7 @@ queue_message_tt(Process* receiver, ErlHeapFragment* bp,
 	    MSO(receiver).funs = bp->off_heap.funs;
 	    bp->off_heap.funs = NULL;
 	}
+#endif
 #endif
 
 	/* Move any external things into the process */
@@ -209,6 +214,7 @@ send_message(Process* sender, Process* receiver, Eterm message)
     BM_STOP_TIMER(system);
     BM_MESSAGE(message,sender,receiver);
     BM_START_TIMER(send);
+
     if (SEQ_TRACE_TOKEN(sender) != NIL) {
         Uint msize;
         Eterm* hp;
@@ -226,20 +232,27 @@ send_message(Process* sender, Process* receiver, Eterm message)
         BM_SWAP_TIMER(send,copy);
 	token = copy_struct(SEQ_TRACE_TOKEN(sender), 6 /* TUPLE5 */, 
 			    &hp, &MSO(receiver));
+
 	message = copy_struct(message, msize, &hp, &MSO(receiver));
         BM_MESSAGE_COPIED(msize);
         BM_SWAP_TIMER(copy,send);
 
         queue_message_tt(receiver, bp, message, token);
         BM_SWAP_TIMER(send,system);
-#ifdef SHARED_HEAP
+#if defined(SHARED_HEAP) || defined(HYBRID)
     } else {
         ErlMessage* mp = alloc_message();
+#ifdef HYBRID
+        BM_SWAP_TIMER(send,copy);
+        LAZY_COPY(sender,message);
+        BM_SWAP_TIMER(copy,send);
+        INC_ACTIVATE(receiver);
+#endif
         ERL_MESSAGE_TERM(mp) = message;
         ERL_MESSAGE_TOKEN(mp) = NIL;
         mp->next = NULL;
         LINK_MESSAGE(receiver, mp);
-        receiver->active = 1;
+        ACTIVATE(receiver);
 
         if (receiver->status == P_WAITING) {
             add_to_schedule_q(receiver);
@@ -299,7 +312,7 @@ send_message(Process* sender, Process* receiver, Eterm message)
 	}
         BM_SWAP_TIMER(send,system);
 	return;
-#endif /* SHARED_HEAP */
+#endif /* SHARED_HEAP || HYBRID */
     }
 }
 

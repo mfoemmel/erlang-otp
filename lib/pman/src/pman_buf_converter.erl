@@ -103,7 +103,7 @@ converter_data(Trace,Buffer_Pid,Raw,Size,State,Last) ->
 		case Rest of
 		    [] ->
 			{lists:append(Raw,New_Trace),Last};
-		    [I|L] ->
+		    [_|_] ->
 			case Last of
 			    [] ->
 				{lists:append(Raw,New_Trace),Rest};
@@ -116,7 +116,6 @@ converter_data(Trace,Buffer_Pid,Raw,Size,State,Last) ->
 								  ?PRINT_LEN,
 								  0,[]),
 		    Buffer_Pid!{raw,Print,Length},
-		    New_Size = Size-Length+Len,
 		    {Cut_Raw,Size-Length,false,New_Last};
 		_ ->
 		    {New_Raw,Size+Len,false,New_Last}
@@ -141,7 +140,7 @@ init_file(Raw,FileName, Name,Buffer_Pid) ->
 	     save_loop_init(File,Raw)
      end.
 
-open_file(FileName, Shell) ->
+open_file(FileName, _Shell) ->
 %%    L = "pman_trace." ++ Shell,
     case file:open(FileName, read_write) of
 	{error, _} -> 

@@ -26,14 +26,13 @@
 /* Define to enable HiPE. */
 #undef HIPE
 
-/*
- * Do we want the shared heap model?
- */
-
 /* Define to enable shared heap model. */
 #undef SHARED_HEAP
 
-/* Define to enable hrvtime() on Linux/x86 systems with perfctr extension. */
+/* Define to enable hybrid heap model. */
+#undef HYBRID
+
+/* Define to enable hrvtime() on Linux systems with perfctr extension. */
 #undef USE_PERFCTR
 
 /*
@@ -55,6 +54,9 @@
  */
 /* Define if netdb.h needs struct sockaddr_in ans in.h CAN be included before*/
 #undef NETDB_H_NEEDS_IN_H
+
+/* Define if we have socklen_t */
+#undef HAVE_SOCKLEN_T
 
 /* Define if you have the <sys/uio.h> header file. */
 #undef HAVE_UIO_H
@@ -139,26 +141,11 @@
  *  Thread support.
  */
 
-/* Define if you have the <pthread.h> header file. */
-#undef HAVE_PTHREAD_H
-
-/* Define if you have the <thread.h> header file. */
-#undef HAVE_THREAD_H
-
 /* Define the pthread.h header file is in pthread/mit directory. */
 #undef HAVE_MIT_PTHREAD_H
 
 /* Define if you want to enable child waiter thread */
 #undef ENABLE_CHILD_WAITER_THREAD
-
-/* Define if you have pthread_atfork() (and use pthreads) */
-#undef HAVE_PTHREAD_ATFORK
-
-/* Define if you have pthread_mutexattr_settype() (and use pthreads) */
-#undef HAVE_PTHREAD_MUTEXATTR_SETTYPE
-
-/* Define if you have pthread_mutexattr_setkind_np() (and use pthreads) */
-#undef HAVE_PTHREAD_MUTEXATTR_SETKIND_NP
 
 /* Define if malloc should use a recursive mutex */
 #undef  USE_RECURSIVE_MALLOC_MUTEX
@@ -166,9 +153,6 @@
 /* Define if mutexes should be reinitialized (instead of unlocked)
    in child at fork. */
 #undef INIT_MUTEX_IN_CHILD_AT_FORK
-
-/* Define if SIGUSR1 and SIGUSR2 cannot be used. */
-#undef UNUSABLE_SIGUSRX
 
 /*
  *  Math definitions.

@@ -4,11 +4,8 @@
 #include "config.h"
 #endif
 #include "global.h"
-#include "beam_catches.h"
-#include "hipe_bif0.h"		/* for hipe_find_sdesc() */
 #include "hipe_stack.h"
 #include "hipe_process.h"
-
 
 #define SLOT_TYPE_VAL 0
 #define SLOT_TYPE_RA  1
@@ -256,5 +253,3 @@ void hipe_find_handler(Process *p)
     hipe_print_nstack(p);
     abort();
 }
-
-

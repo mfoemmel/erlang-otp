@@ -163,5 +163,5 @@ test() ->
 		  lists:append(si_sasl_supp:process_abbrevs(),
 			       process_abbrevs())).
 
-test_all_registered({Al, Ful}) ->
+test_all_registered({Al, _Ful}) ->
     si:pi(all, Al).

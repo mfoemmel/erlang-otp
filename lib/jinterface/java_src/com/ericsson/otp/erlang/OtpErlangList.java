@@ -120,7 +120,17 @@ public class OtpErlangList extends OtpErlangObject implements Serializable, Clon
       }
 
       /* discard the terminating nil (empty list) */
-      buf.read_nil();
+      try {
+	  buf.read_nil();
+      }
+      catch (OtpErlangDecodeException e) {
+	  if (e.getMessage().startsWith("Not valid nil tag:")) {
+	      throw new OtpErlangDecodeException("Non proper list");
+	  }
+	  else {
+	      throw e;
+	  }
+      }
     }
   }
 

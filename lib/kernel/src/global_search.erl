@@ -186,9 +186,9 @@ end_loop() ->
 %%%====================================================================================
 %%% Search for the globally registered name in the whole known world.
 %%%====================================================================================
-whereis_any_loop([], Name) ->
+whereis_any_loop([], _Name) ->
     undefined;
-whereis_any_loop([{Group_name, Nodes}|T], Name) ->
+whereis_any_loop([{_Group_name, Nodes}|T], Name) ->
     case whereis_group_loop(Nodes, Name) of
 	group_down ->
 	    whereis_any_loop(T, Name);
@@ -200,7 +200,7 @@ whereis_any_loop([{Group_name, Nodes}|T], Name) ->
 %%%====================================================================================
 %%% Search for the globally registered name in a specified global group.
 %%%====================================================================================
-whereis_group_loop([], Name) ->
+whereis_group_loop([], _Name) ->
     group_down;
 whereis_group_loop([Node|T], Name) ->
     case whereis_check_node(Node, Name) of
@@ -270,15 +270,15 @@ names_check_node(Node) ->
 %%%====================================================================================
 %%% Test what happens when this process exits.
 %%%====================================================================================
-send_test(Args) ->
+send_test(_Args) ->
     timer:sleep(5000),
     exit(testing_exit).
 
-whereis_test(Args) ->
+whereis_test(_Args) ->
     timer:sleep(5000),
     exit(testing_exit).
 
-names_test(Args) ->
+names_test(_Args) ->
     timer:sleep(5000),
     exit(testing_exit).
 

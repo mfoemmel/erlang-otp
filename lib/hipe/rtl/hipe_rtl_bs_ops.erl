@@ -1,7 +1,7 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <02/05/13 14:53:23 happi>
+%% Time-stamp: <2004-01-14 14:02:12 richardc>
 %% ====================================================================
 %%  Filename : 	hipe_rtl_bs_ops.erl
 %%  Module   :	hipe_rtl_bs_ops
@@ -10,9 +10,9 @@
 %%  History  :	* 2001-06-14 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: pergu $
-%%              $Date: 2003/04/14 08:49:20 $
-%%              $Revision: 1.11 $
+%%              $Author: mikpe $
+%%              $Date: 2004/06/17 21:35:17 $
+%%              $Revision: 1.18 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -20,10 +20,10 @@
 
 -module(hipe_rtl_bs_ops).
 -export([gen_rtl/6]).
+
 %%-------------------------------------------------------------------------
 
 -include("../main/hipe.hrl").
--include("hipe_icode2rtl.hrl").
 -include("hipe_literals.hrl").
 
 %% -------------------------------------------------------------------------
@@ -36,8 +36,8 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
     {bs_put_string, String, SizeInBytes} ->
       Tmp1 = hipe_rtl:mk_new_reg(),
       Tmp2 = hipe_rtl:mk_new_reg(),
-      {NewTab, Label} = 
-	hipe_consttab:insert_block(ConstTab, 4, byte, String),
+      {NewTab, Label} =
+        hipe_consttab:insert_block(ConstTab, byte, String),
 
       {[hipe_rtl:mk_load_address(Tmp1, Label, constant),
 	hipe_rtl:mk_move(Tmp2, hipe_rtl:mk_imm(SizeInBytes)),
@@ -48,8 +48,8 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
     _ -> 
       Code = 
 	case BsOP of
-	  bs_init ->
-	    [hipe_rtl:mk_call([], bs_init, [], c, TrueLblName, [])];
+	  {bs_init, _Size, _Flags} ->
+	    [hipe_rtl:mk_call([], bs_init, [], TrueLblName, [], not_remote)];
 	  bs_start_match ->
 	    gen_test_sideffect_bs_call(bs_start_match,
 				       Args, TrueLblName, FalseLblName);
@@ -72,41 +72,40 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
 					     TrueLblName,FalseLblName)
 
 	    end;
-
+	  
 	  {bs_put_float, Size, Flags, ConstInfo} ->    
 	    SizeReg = hipe_rtl:mk_new_reg(),
 	    FlagsReg = hipe_rtl:mk_new_reg(),
-	    case ConstInfo of
-	      fail ->
-		[hipe_rtl:mk_goto(FalseLblName)];
-	      _ ->
-		case Args of
-		  [Src] -> 
-		    case ConstInfo of
-		      pass ->
-			[hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size)),
-			 hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
-			 hipe_rtl:mk_call([],bs_put_float,
-					  [Src, SizeReg, FlagsReg], c,
-					  TrueLblName,[])];
-		      var ->
-			[hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size)),
-			 hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
-			 gen_test_sideffect_bs_call(bs_put_float,
+	    case Args of
+	      [Src] -> 
+		case ConstInfo of
+		  pass ->
+		    [hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size)),
+		     hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
+		     hipe_rtl:mk_call([],bs_put_float,
+				      [Src, SizeReg, FlagsReg],
+				      TrueLblName,[],not_remote)];
+		  var ->
+		    [hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size)),
+		     hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
+		     gen_test_sideffect_bs_call(bs_put_float,
+						[Src,SizeReg,FlagsReg],
+						TrueLblName,FalseLblName)];
+		  fail ->
+		    [hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size)),
+		     hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
+		     gen_test_sideffect_bs_call(bs_put_float,
+						[Src,SizeReg,FlagsReg],
+						TrueLblName,FalseLblName)]
+		end;
+	      [Src, Bits] -> 
+		[gen_make_size(SizeReg, Size, Bits, FalseLblName),
+		 hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
+		 gen_test_sideffect_bs_call( bs_put_float,
 					     [Src,SizeReg,FlagsReg],
 					     TrueLblName,FalseLblName)]
-		    end;
-		  [Src, Bits] -> 
-		    [gen_make_size(SizeReg, Size, Bits, FalseLblName),
-		     hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
-		     gen_test_sideffect_bs_call( bs_put_float,
-						 [Src,SizeReg,FlagsReg],
-						 TrueLblName,FalseLblName)]
-		end
 	    end;
-
-	 
-
+    
 	  {bs_put_integer, Size, Flags, ConstInfo} ->
 	    SizeReg = hipe_rtl:mk_new_reg(),
 	    FlagsReg = hipe_rtl:mk_new_reg(),
@@ -121,8 +120,8 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
 			[hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size)),
 			 hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
 			 hipe_rtl:mk_call([],bs_put_integer,
-					  [Src, SizeReg, FlagsReg], c,
-					  TrueLblName,[])];
+					  [Src, SizeReg, FlagsReg],
+					  TrueLblName,[],not_remote)];
 		      var ->
 			[hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size)),
 			 hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
@@ -139,13 +138,11 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
 		end
 	    end;
     
-
-
 	  {bs_skip_bits_all, Flags} ->
 	    case (Flags band ?BSF_ALIGNED) of
 	      1 -> %% This can't fail.
-		[hipe_rtl:mk_call([], bs_skip_bits_all, [], c,
-				  TrueLblName,[])];
+		[hipe_rtl:mk_call([], bs_skip_bits_all, [],
+				  TrueLblName,[],not_remote)];
 	      _ -> 
 		gen_test_sideffect_bs_call(bs_skip_bits_all,
 					   [], 
@@ -166,8 +163,8 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
 		  gen_test_sideffect_bs_call(bs_skip_bits,
 					     [Tmp1], 
 					     TrueLblName,FalseLblName)
-
 	    end;
+
 	  {bs_get_integer,Size,Flag} ->
 	    Tmp1 = hipe_rtl:mk_new_reg(),
 	    Tmp2 = hipe_rtl:mk_new_reg(),
@@ -210,8 +207,6 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
 			     TrueLblName,FalseLblName)]
 	    end;
 
-
-
 	  {bs_get_binary_all, _Flags} -> 
 	    [Dst1] = Dst, 
 	    gen_bs_call(bs_get_binary_all,
@@ -245,13 +240,12 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
 	  {bs_restore, Index} ->
 	    Tmp1 = hipe_rtl:mk_new_reg(),
 	    [hipe_rtl:mk_move(Tmp1, hipe_rtl:mk_imm(Index)),
-	     hipe_rtl:mk_call([],bs_restore,[Tmp1],c, TrueLblName,[])];
+	     hipe_rtl:mk_call([],bs_restore,[Tmp1],TrueLblName,[],not_remote)];
 
 	  {bs_save, Index} ->
 	    Tmp1 = hipe_rtl:mk_new_reg(),
 	    [hipe_rtl:mk_move(Tmp1, hipe_rtl:mk_imm(Index)),
-	     hipe_rtl:mk_call([],bs_save,[Tmp1],c, TrueLblName,[])];
-
+	     hipe_rtl:mk_call([],bs_save,[Tmp1],TrueLblName,[],not_remote)];
 
 	  bs_final ->
 	    [hipe_rtl_arch:call_bif(Dst, bs_final, [],
@@ -261,11 +255,6 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
 	end,
       {Code, ConstTab}
   end.
-
-
-
-
-
 
 
 %% ____________________________________________________________________
@@ -288,8 +277,8 @@ gen_test_sideffect_bs_call(Name,Args,TrueLblName,FalseLblName) ->
   Tmp1 = hipe_rtl:mk_new_reg(),
   RetLabel =  hipe_rtl:mk_new_label(),
 
-  [hipe_rtl:mk_call([Tmp1], Name, Args,  c,
-		    hipe_rtl:label_name(RetLabel),[]),
+  [hipe_rtl:mk_call([Tmp1], Name, Args,
+		    hipe_rtl:label_name(RetLabel),[],not_remote),
    RetLabel,
    hipe_rtl:mk_branch(Tmp1, eq, hipe_rtl:mk_imm(0), 
 		      FalseLblName, TrueLblName, 0.01)].
@@ -305,9 +294,9 @@ gen_make_size(DstReg, UnitImm, BitsVar, FalseLblName) ->
   ZeroConst = hipe_rtl:mk_imm(hipe_tagscheme:mk_fixnum(0)),
   UnitConst = hipe_rtl:mk_imm(hipe_tagscheme:mk_fixnum(UnitImm)),
   [hipe_rtl:mk_move(UnitVar, UnitConst),  
-   hipe_rtl:mk_call([TmpVar], '*', [BitsVar, UnitVar], c,
+   hipe_rtl:mk_call([TmpVar], '*', [BitsVar, UnitVar],
 			 hipe_rtl:label_name(MulDoneLabel),
-			 FalseLblName),
+			 FalseLblName, not_remote),
    MulDoneLabel,
    hipe_tagscheme:test_fixnum(TmpVar, hipe_rtl:label_name(MulOkLabel), 
 			      FalseLblName, 0.99),
@@ -316,5 +305,4 @@ gen_make_size(DstReg, UnitImm, BitsVar, FalseLblName) ->
    hipe_tagscheme:fixnum_ge(TmpVar, ZeroVar, hipe_rtl:label_name(PosNumOkLabel), FalseLblName, 0.99), 
    PosNumOkLabel,
    hipe_tagscheme:untag_fixnum(DstReg, TmpVar)].
-
 

@@ -1,17 +1,14 @@
 %% hipe_x86_ext_format.hrl
 %% Definitions for unified external object format
-%% Currently: x86, sparc
+%% Currently: sparc, x86, amd64
 %% Authors: Erik Johansson, Ulf Magnusson
 
 -define(LOAD_ATOM,0).
--define(CALL_BIF,1).
--define(LOAD_ADDRESS,2).
--define(MFA,3).
--define(CALL_REMOTE,4).
--define(CALL_LOCAL_COLD,5).
--define(CALL_LOCAL,6).
--define(CALL_LOCAL_HOT,7).
--define(SDESC,8).
+-define(LOAD_ADDRESS,1).
+-define(CALL_REMOTE,2).
+-define(CALL_LOCAL,3).
+-define(SDESC,4).
+-define(X86ABSPCREL,5).
 
 -define(TERM,0).
 -define(BLOCK,1).
@@ -50,50 +47,21 @@
 -define(PATCH_TYPE2EXT(A),
 	case A of
 	    load_atom -> ?LOAD_ATOM;
-	    mfa -> ?MFA;
 	    load_address -> ?LOAD_ADDRESS;
 	    sdesc -> ?SDESC;
-	    call_local ->  ?CALL_LOCAL;
-	    call_remote ->  ?CALL_REMOTE
+	    x86_abs_pcrel -> ?X86ABSPCREL;
+	    call_local -> ?CALL_LOCAL;
+	    call_remote -> ?CALL_REMOTE
         end).
 
 -define(EXT2PATCH_TYPE(E),
 	case E of
 	    ?LOAD_ATOM -> load_atom;
-	    ?MFA -> mfa;
 	    ?LOAD_ADDRESS -> load_address;
 	    ?SDESC -> sdesc;
+	    ?X86ABSPCREL -> x86_abs_pcrel;
 	    ?CALL_REMOTE -> call_remote;
 	    ?CALL_LOCAL -> call_local
 	end).
 
 -define(STACK_DESC(ExnRA, FSize, Arity, Live), {ExnRA, FSize, Arity, Live}).
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

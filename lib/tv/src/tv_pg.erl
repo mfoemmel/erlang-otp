@@ -179,7 +179,7 @@ loop(ProcVars) ->
 %%======================================================================
 
 
-exit_signals(ExitInfo, ParentPid, ProcVars) ->
+exit_signals(ExitInfo, ParentPid, _ProcVars) ->
     case ExitInfo of
 	{ParentPid, _Reason} ->
 	    exit(normal);
@@ -210,7 +210,7 @@ gs_messages(Msg, ProcVars) ->
 
     case Msg of
 
-	{Id, buttonpress, {gridcell, RealCol, RealRow, FrameId}, [1 | _]} ->
+	{Id, buttonpress, {gridcell, RealCol, RealRow, _FrameId}, [1 | _]} ->
 	    NewProcVars = tv_pg_gridfcns:mark_cell_and_notify(Id, RealCol, 
 							       RealRow, ProcVars),
 	    NewProcVars;

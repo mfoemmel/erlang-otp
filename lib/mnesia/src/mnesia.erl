@@ -46,10 +46,11 @@
 	 %% Access within an activity - Reads
 	 read/1, wread/1, read/3, read/5,
 	 match_object/1, match_object/3, match_object/5,
-	 select/2, select/3, select/5,
+	 select/1,select/2,select/3,select/4,select/5,select/6,
 	 all_keys/1, all_keys/4,
 	 index_match_object/2, index_match_object/4, index_match_object/6,
 	 index_read/3, index_read/6,
+	 first/1, next/2, last/1, prev/2,
 
 	 %% Iterators within an activity 
 	 foldl/3, foldl/4, foldr/3, foldr/4,
@@ -106,15 +107,19 @@
 	 %% Textfile access
 	 load_textfile/1, dump_to_textfile/1,
 	 
+	 %% QLC functions
+	 table/1, table/2,
+
 	 %% Mnemosyne exclusive
 	 get_activity_id/0, put_activity_id/1, % Not for public use
 
 	 %% Mnesia internal functions
 	 dirty_rpc/4,                          % Not for public use
-	 has_var/1, fun_select/7,
+	 has_var/1, fun_select/7, fun_select/10, select_cont/3, dirty_sel_init/5,
 	 foldl/6, foldr/6,
 
 	 %% Module internal callback functions
+	 raw_table_info/2,                      % Not for public use
 	 remote_dirty_match_object/2,           % Not for public use
 	 remote_dirty_select/2                  % Not for public use
 	]).
@@ -693,7 +698,7 @@ delete_object(Tid, Ts, Tab, Val, LockKind)
 	      ok;
 	Protocol ->
 	      do_dirty_delete_object(Protocol, Tab, Val)
-    end; 
+    end;
 delete_object(_Tid, _Ts, Tab, _Key, _LockKind) ->
     abort({bad_type, Tab}).
 
@@ -722,29 +727,241 @@ read(Tab, Key, LockKind) ->
 
 read(Tid, Ts, Tab, Key, LockKind)
   when atom(Tab), Tab /= schema ->
-      case element(1, Tid) of
-	  ets ->
-	      ?ets_lookup(Tab, Key);
-	  tid ->
-	      Store = Ts#tidstore.store,
-	      Oid = {Tab, Key},
-	      Objs =
-		  case LockKind of
-		      read ->
-			  mnesia_locker:rlock(Tid, Store, Oid);
-		      write ->
-			  mnesia_locker:rwlock(Tid, Store, Oid);
-		      sticky_write ->
-			  mnesia_locker:sticky_rwlock(Tid, Store, Oid);
-		      _ ->
-			  abort({bad_type, Tab, LockKind})
-		  end,
-	      add_written(?ets_lookup(Store, Oid), Tab, Objs);
-	  _Protocol ->
-	      dirty_read(Tab, Key)
+    case element(1, Tid) of
+	ets ->
+	    ?ets_lookup(Tab, Key);
+	tid ->
+	    Store = Ts#tidstore.store,
+	    Oid = {Tab, Key},
+	    Objs =
+		case LockKind of
+		    read ->
+			mnesia_locker:rlock(Tid, Store, Oid);
+		    write ->
+			mnesia_locker:rwlock(Tid, Store, Oid);
+		    sticky_write ->
+			mnesia_locker:sticky_rwlock(Tid, Store, Oid);
+		    _ ->
+			abort({bad_type, Tab, LockKind})
+		end,
+	    add_written(?ets_lookup(Store, Oid), Tab, Objs);
+	_Protocol ->
+	    dirty_read(Tab, Key)
     end; 
 read(_Tid, _Ts, Tab, _Key, _LockKind) ->
     abort({bad_type, Tab}).
+
+first(Tab) ->
+    case get(mnesia_activity_state) of
+	{?DEFAULT_ACCESS, Tid, Ts} ->
+	    first(Tid, Ts, Tab);
+	{Mod, Tid, Ts} ->
+	    Mod:first(Tid, Ts, Tab);
+	_ ->
+	    abort(no_transaction)
+    end.
+    
+first(Tid, Ts, Tab)
+  when atom(Tab), Tab /= schema ->
+    case element(1, Tid) of
+	ets ->
+	    ?ets_first(Tab);
+	tid ->
+	    lock_table(Tid, Ts, Tab, read),
+	    do_fixtable(Tab,Ts),
+	    Key = dirty_first(Tab),
+	    stored_keys(Tab,Key,'$end_of_table',Ts,next,
+			val({Tab, setorbag}));
+	_Protocol ->
+	    dirty_first(Tab)
+    end;
+first(_Tid, _Ts,Tab) ->
+    abort({bad_type, Tab}).
+
+last(Tab) ->
+    case get(mnesia_activity_state) of
+	{?DEFAULT_ACCESS, Tid, Ts} ->
+	    last(Tid, Ts, Tab);
+	{Mod, Tid, Ts} ->
+	    Mod:last(Tid, Ts, Tab);
+	_ ->
+	    abort(no_transaction)
+    end.
+
+last(Tid, Ts, Tab)
+  when atom(Tab), Tab /= schema ->
+    case element(1, Tid) of
+	ets ->
+	    ?ets_last(Tab);
+	tid ->
+	    lock_table(Tid, Ts, Tab, read),
+	    do_fixtable(Tab,Ts),
+	    Key = dirty_last(Tab),
+	    stored_keys(Tab,Key,'$end_of_table',Ts,prev,
+			val({Tab, setorbag}));
+	_Protocol ->
+	    dirty_last(Tab)
+    end;
+last(_Tid, _Ts,Tab) ->
+    abort({bad_type, Tab}).
+
+next(Tab,Key) ->
+    case get(mnesia_activity_state) of
+	{?DEFAULT_ACCESS,Tid,Ts} ->
+	    next(Tid,Ts,Tab,Key);
+	{Mod,Tid,Ts} ->
+	    Mod:next(Tid,Ts,Tab);
+	_ ->
+	    abort(no_transaction)
+    end.
+next(Tid,Ts,Tab,Key)
+  when atom(Tab), Tab /= schema ->
+    case element(1, Tid) of
+	ets ->
+	    ?ets_next(Tab,Key);
+	tid ->
+	    lock_table(Tid, Ts, Tab, read),
+	    do_fixtable(Tab,Ts),
+	    New = (catch dirty_next(Tab,Key)),
+	    stored_keys(Tab,New,Key,Ts,next,
+			val({Tab, setorbag}));
+	_Protocol ->
+	    dirty_next(Tab,Key)
+    end;
+next(_Tid, _Ts,Tab,_) ->
+    abort({bad_type, Tab}).
+
+prev(Tab,Key) ->
+    case get(mnesia_activity_state) of
+	{?DEFAULT_ACCESS,Tid,Ts} ->
+	    prev(Tid,Ts,Tab,Key);
+	{Mod,Tid,Ts} ->
+	    Mod:prev(Tid,Ts,Tab);
+	_ ->
+	    abort(no_transaction)
+    end.
+prev(Tid,Ts,Tab,Key)
+  when atom(Tab), Tab /= schema ->
+    case element(1, Tid) of
+	ets ->
+	    ?ets_prev(Tab,Key);
+	tid ->
+	    lock_table(Tid, Ts, Tab, read),
+	    do_fixtable(Tab,Ts),
+	    New = (catch dirty_prev(Tab,Key)),
+	    stored_keys(Tab,New,Key,Ts,prev,
+			val({Tab, setorbag}));
+	_Protocol ->
+	    dirty_prev(Tab,Key)
+    end;
+prev(_Tid, _Ts,Tab,_) ->
+    abort({bad_type, Tab}).
+
+%% Compensate for transaction written and/or deleted records
+stored_keys(Tab,'$end_of_table',Prev,Ts,Op,Type) ->
+    case ts_keys(Ts#tidstore.store,Tab,Op,Type,[]) of
+	[] -> '$end_of_table';
+	Keys when Type == ordered_set-> 
+	    get_ordered_tskey(Prev,Keys,Op);
+	Keys -> 
+	    get_next_tskey(Prev,Keys,Tab)
+    end;
+stored_keys(Tab,{'EXIT',{aborted,R={badarg,[Tab,Key]}}},
+	    Key,#tidstore{store=Store},Op,Type) ->
+    %% Had to match on error, ouch..
+    case ?ets_match(Store, {{Tab, Key}, '_', '$1'}) of
+	[] ->  abort(R);
+	Ops ->
+	    case lists:last(Ops) of
+		[delete] -> abort(R);
+		_ -> 
+		    case ts_keys(Store,Tab,Op,Type,[]) of
+			[] -> '$end_of_table';
+			Keys -> get_next_tskey(Key,Keys,Tab)
+		    end
+	    end
+    end;
+stored_keys(_,{'EXIT',{aborted,R}},_,_,_,_) ->
+    abort(R);
+stored_keys(Tab,Key,Prev,#tidstore{store=Store},Op,ordered_set) ->
+    case ?ets_match(Store, {{Tab, Key}, '_', '$1'}) of
+	[] -> 
+	    Keys = ts_keys(Store,Tab,Op,ordered_set,[Key]),
+	    get_ordered_tskey(Prev,Keys,Op);
+ 	Ops ->
+	    case lists:last(Ops) of
+		[delete] ->
+	 	    mnesia:Op(Tab,Key);
+		_ -> 
+		    Keys = ts_keys(Store,Tab,Op,ordered_set,[Key]),
+		    get_ordered_tskey(Prev,Keys,Op)
+	    end
+    end;
+stored_keys(Tab,Key,_,#tidstore{store=Store},Op,_) ->
+    case ?ets_match(Store, {{Tab, Key}, '_', '$1'}) of
+	[] ->  Key;
+ 	Ops ->
+	    case lists:last(Ops) of
+		[delete] -> mnesia:Op(Tab,Key);
+		_ ->      Key
+	    end
+    end.
+
+get_ordered_tskey('$end_of_table', [First|_],_) ->    First;
+get_ordered_tskey(Prev, [First|_], next) when Prev < First -> First;
+get_ordered_tskey(Prev, [First|_], prev) when Prev > First -> First;
+get_ordered_tskey(Prev, [_|R],Op) ->  get_ordered_tskey(Prev,R,Op);
+get_ordered_tskey(_, [],_) ->    '$end_of_table'.
+
+get_next_tskey(_, [],_) -> '$end_of_table';
+get_next_tskey(Key,Keys,Tab) ->
+    Next = 
+	if Key == '$end_of_table' -> hd(Keys);
+	   true ->
+		case lists:dropwhile(fun(A) -> A /= Key end, Keys) of
+		    [] -> hd(Keys); %% First stored key
+		    [Key] -> '$end_of_table';
+		    [Key,Next2|_] -> Next2
+		end
+	end,
+    case Next of
+	'$end_of_table' -> '$end_of_table';
+	_ -> %% Really slow anybody got another solution??
+	    case dirty_read(Tab, Next) of
+		[] -> Next;
+		_ ->  
+		    %% Updated value we already returned this key
+		    get_next_tskey(Next,Keys,Tab)
+	    end
+    end.
+
+ts_keys(Store, Tab, Op, Type, Def) ->
+    All = ?ets_match(Store, {{Tab,'$1'},'_','$2'}),
+    Keys = ts_keys_1(All, Def),
+    if 
+	Type == ordered_set, Op == prev ->
+	    lists:reverse(lists:sort(Keys));
+	Type == ordered_set ->
+	    lists:sort(Keys);
+	Op == next ->
+	    lists:reverse(Keys);
+	true ->
+	    Keys
+    end.
+
+ts_keys_1([[Key, write]|R], []) ->
+    ts_keys_1(R, [Key]);
+ts_keys_1([[Key, write]|R], Acc=[Key|_]) ->
+    ts_keys_1(R, Acc);
+ts_keys_1([[Key, write]|R], Acc) ->
+    ts_keys_1(R, [Key|Acc]);
+ts_keys_1([[Key, delete]|R], [Key|Acc]) ->
+    ts_keys_1(R, Acc);
+ts_keys_1([_|R], Acc) ->
+    ts_keys_1(R, Acc);
+ts_keys_1([], Acc) ->
+    Acc.
+
 
 %%%%%%%%%%%%%%%%%%%%%
 %% Iterators 
@@ -980,6 +1197,80 @@ add_ordered_match([{_, _, delete_object}|Rest], Objs, Acc) ->
 add_ordered_match([], Objs, Acc) ->
     lists:reverse(Acc, Objs).
 
+%% For select chunk
+add_sel_match(Sorted, Objs, ordered_set) ->
+    add_sel_ordered_match(Sorted, Objs, []);
+add_sel_match(Written, Objs, Type) ->
+    add_sel_match(Written, Objs, Type, []).
+
+add_sel_match([], Objs, _Type, Acc) ->
+    {Objs,lists:reverse(Acc)};
+add_sel_match([Op={Oid, _, delete}|R], Objs, Type, Acc) ->
+    case deloid(Oid, Objs) of
+	Objs ->
+	    add_sel_match(R, Objs, Type, [Op|Acc]);
+	NewObjs when Type == set ->
+	    add_sel_match(R, NewObjs, Type, Acc);
+	NewObjs ->  %% If bag we may get more in next chunk
+	    add_sel_match(R, NewObjs, Type, [Op|Acc])
+    end;
+add_sel_match([Op = {_Oid, Val, delete_object}|R], Objs, Type, Acc) ->
+    case lists:delete(Val, Objs) of
+	Objs -> 
+	    add_sel_match(R, Objs, Type, [Op|Acc]);
+	NewObjs when Type == set ->
+	    add_sel_match(R, NewObjs, Type, Acc);
+	NewObjs ->
+	    add_sel_match(R, NewObjs, Type, [Op|Acc])
+    end;
+add_sel_match([Op={Oid={_,Key}, Val, write}|R], Objs, bag, Acc) ->
+    case lists:keymember(Key, 2, Objs) of
+	true ->
+	    add_sel_match(R,[Val|lists:delete(Val,Objs)],bag,
+			  [{Oid,Val,delete_object}|Acc]);
+	false ->
+	    add_sel_match(R,Objs,bag,[Op|Acc])
+    end;
+add_sel_match([Op={Oid, Val, write}|R], Objs, set, Acc) ->
+    case deloid(Oid,Objs) of
+	Objs -> 
+	    add_sel_match(R, Objs,set, [Op|Acc]);
+	NewObjs ->
+	    add_sel_match(R, [Val | NewObjs],set, Acc)
+    end.
+
+%% For ordered_set only !!
+add_sel_ordered_match(Written = [{{_, Key}, _, _}|_], [Obj|Objs],Acc) 
+  when Key > element(2, Obj) ->
+    add_sel_ordered_match(Written, Objs, [Obj|Acc]);
+add_sel_ordered_match([{{_, Key}, Val, write}|Rest], Objs =[Obj|_],Acc) 
+  when Key < element(2, Obj) ->
+    add_sel_ordered_match(Rest,[Val|Objs],Acc);
+add_sel_ordered_match([{{_, Key}, _, _DelOP}|Rest], Objs =[Obj|_], Acc) 
+  when Key < element(2, Obj) ->
+    add_sel_ordered_match(Rest,Objs,Acc);
+%% Greater than last object
+add_sel_ordered_match(Ops1, [], Acc) ->
+    {lists:reverse(Acc), Ops1};
+%% Keys are equal from here 
+add_sel_ordered_match([{_, Val, write}|Rest], [_Obj|Objs], Acc) ->
+    add_sel_ordered_match(Rest, [Val|Objs], Acc);
+add_sel_ordered_match([{_, _Val, delete}|Rest], [_Obj|Objs], Acc) ->
+    add_sel_ordered_match(Rest, Objs, Acc);
+add_sel_ordered_match([{_, Val, delete_object}|Rest], [Val|Objs], Acc) ->
+    add_sel_ordered_match(Rest, Objs, Acc);
+add_sel_ordered_match([{_, _, delete_object}|Rest], Objs, Acc) ->
+    add_sel_ordered_match(Rest, Objs, Acc);
+add_sel_ordered_match([], Objs, Acc) ->
+    {lists:reverse(Acc, Objs),[]}.
+
+
+deloid(_Oid, []) ->
+    [];
+deloid({Tab, Key}, [H | T]) when element(2, H) == Key ->
+    deloid({Tab, Key}, T);
+deloid(Oid, [H | T]) ->
+    [H | deloid(Oid, T)].
 
 %%%%%%%%%%%%%%%%%%
 % select 
@@ -1007,20 +1298,10 @@ fun_select(Tid, Ts, Tab, Spec, LockKind, TabPat, SelectFun) ->
     case element(1, Tid) of
 	ets ->
 	    mnesia_lib:db_select(ram_copies, Tab, Spec);
-	tid ->    
+	tid ->
+	    select_lock(Tid,Ts,LockKind,Spec,Tab),
 	    Store = Ts#tidstore.store,
-	    Written = ?ets_match_object(Store, {{TabPat, '_'}, '_', '_'}),	    
-	    %% Avoid table lock if possible
-	    case Spec of
-		[{HeadPat,_, _}] when tuple(HeadPat), size(HeadPat) > 2 ->
-		    Key = element(2, HeadPat),
-		    case has_var(Key) of
-			false -> lock_record(Tid, Ts, Tab, Key, LockKind);
-			true  -> lock_table(Tid, Ts, Tab, LockKind)
-		    end;
-		_ ->
-		    lock_table(Tid, Ts, Tab, LockKind)
-	    end,
+	    Written = ?ets_match_object(Store, {{TabPat, '_'}, '_', '_'}),
 	    case Written of 
 		[] ->  
 		    %% Nothing changed in the table during this transaction,
@@ -1034,29 +1315,124 @@ fun_select(Tid, Ts, Tab, Spec, LockKind, TabPat, SelectFun) ->
 		    TabRecs = SelectFun(FixedSpec),
 		    FixedRes = add_match(Written, TabRecs, Type),
 		    CMS = ets:match_spec_compile(Spec),
-% 		    case Type of 
-% 			ordered_set -> 
-% 			    ets:match_spec_run(lists:sort(FixedRes), CMS);
-% 			_ ->
-% 			    ets:match_spec_run(FixedRes, CMS)
-% 		    end
 		    ets:match_spec_run(FixedRes, CMS)
 	    end;
 	_Protocol ->
 	    SelectFun(Spec)
-    end. 
+    end.
 
-get_record_pattern([]) ->
-    [];
+select_lock(Tid,Ts,LockKind,Spec,Tab) ->
+    %% Avoid table lock if possible
+    case Spec of
+	[{HeadPat,_, _}] when tuple(HeadPat), size(HeadPat) > 2 ->
+	    Key = element(2, HeadPat),
+	    case has_var(Key) of
+		false -> lock_record(Tid, Ts, Tab, Key, LockKind);
+		true  -> lock_table(Tid, Ts, Tab, LockKind)
+	    end;
+	_ ->
+	    lock_table(Tid, Ts, Tab, LockKind)
+    end.
+
+%% Breakable Select
+select(Tab, Pat, NObjects, LockKind) 
+  when atom(Tab), Tab /= schema, list(Pat), number(NObjects) ->
+    case get(mnesia_activity_state) of
+	{?DEFAULT_ACCESS, Tid, Ts} ->
+	    select(Tid, Ts, Tab, Pat, NObjects, LockKind);
+	{Mod, Tid, Ts} ->
+	    Mod:select(Tid, Ts, Tab, Pat, NObjects, LockKind);
+	_ ->
+	    abort(no_transaction)
+    end;
+select(Tab, Pat, NObjects, _Lock) ->
+    abort({badarg, Tab, Pat, NObjects}).
+
+select(Tid, Ts, Tab, Spec, NObjects, LockKind) ->
+    Where = val({Tab,where_to_read}),
+    Type = mnesia_lib:storage_type_at_node(Where,Tab),
+    InitFun = fun(FixedSpec) -> dirty_sel_init(Where,Tab,FixedSpec,NObjects,Type) end,
+    fun_select(Tid,Ts,Tab,Spec,LockKind,Tab,InitFun,NObjects,Where,Type).
+
+-record(mnesia_select, {tab,tid,node,storage,cont,written=[],spec,type,orig}).
+
+fun_select(Tid, Ts, Tab, Spec, LockKind, TabPat, Init, NObjects, Node, Storage) ->
+    Def = #mnesia_select{tid=Tid,node=Node,storage=Storage,tab=Tab,orig=Spec},
+    case element(1, Tid) of
+	ets ->
+	    select_state(mnesia_lib:db_select_init(ram_copies,Tab,Spec,NObjects),Def);
+	tid ->
+	    select_lock(Tid,Ts,LockKind,Spec,Tab),
+	    Store = Ts#tidstore.store,
+	    do_fixtable(Tab, Store),
+	    
+	    Written0 = ?ets_match_object(Store, {{TabPat, '_'}, '_', '_'}),	    
+	    case Written0 of 
+		[] ->  
+		    %% Nothing changed in the table during this transaction,
+		    %% Simple case get results from [d]ets
+		    select_state(Init(Spec),Def);
+		_ ->   
+		    %% Hard (slow case) records added or deleted earlier 
+		    %% in the transaction, have to cope with that.
+		    Type = val({Tab, setorbag}),
+		    Written = 
+			if Type == ordered_set -> %% Sort stable
+				lists:keysort(1,Written0);
+			   true -> 
+				Written0
+			end,
+		    FixedSpec = get_record_pattern(Spec),
+		    CMS = ets:match_spec_compile(Spec),
+		    trans_select(Init(FixedSpec), 
+				 Def#mnesia_select{written=Written,spec=CMS,type=Type})
+	    end;
+	_Protocol ->
+	    select_state(Init(Spec),Def)
+    end.
+
+select(Cont) ->
+    case get(mnesia_activity_state) of
+	{?DEFAULT_ACCESS, Tid, Ts} ->
+	    select_cont(Tid,Ts,Cont);
+	{Mod, Tid, Ts} ->
+	    Mod:select_cont(Tid,Ts,Cont);
+	_ ->
+	    abort(no_transaction)
+    end.
+
+select_cont(_Tid,_Ts,'$end_of_table') ->
+    '$end_of_table';
+select_cont(Tid,_Ts,State=#mnesia_select{tid=Tid,cont=Cont, orig=Ms}) 
+  when element(1,Tid) == ets ->
+    case Cont of
+	'$end_of_table' -> '$end_of_table';
+	_ -> select_state(mnesia_lib:db_select_cont(ram_copies,Cont,Ms),State)
+    end;
+select_cont(Tid,_,State=#mnesia_select{tid=Tid,written=[]}) ->
+    select_state(dirty_sel_cont(State),State);
+select_cont(Tid,_Ts,State=#mnesia_select{tid=Tid})  ->
+    trans_select(dirty_sel_cont(State), State);
+select_cont(_Tid2,_,#mnesia_select{tid=_Tid1}) ->  % Missmatching tids
+    abort(wrong_transaction);
+select_cont(_,_,Cont) ->
+    abort({badarg, Cont}).
+
+trans_select('$end_of_table', #mnesia_select{written=Written0,spec=CMS,type=Type}) ->
+    Written = add_match(Written0, [], Type),
+    {ets:match_spec_run(Written, CMS), '$end_of_table'};
+trans_select({TabRecs,Cont}, State = #mnesia_select{written=Written0,spec=CMS,type=Type}) ->
+    {FixedRes,Written} = add_sel_match(Written0, TabRecs, Type),
+    select_state({ets:match_spec_run(FixedRes, CMS),Cont},
+		 State#mnesia_select{written=Written}). 
+
+select_state({Matches, Cont}, MS) ->
+    {Matches, MS#mnesia_select{cont=Cont}};
+select_state('$end_of_table',_) -> '$end_of_table'.
+
+get_record_pattern([]) ->    [];
 get_record_pattern([{M,C,_B}|R]) ->
     [{M,C,['$_']} | get_record_pattern(R)].
-
-deloid(_Oid, []) ->
-    [];
-deloid({Tab, Key}, [H | T]) when element(2, H) == Key ->
-    deloid({Tab, Key}, T);
-deloid(Oid, [H | T]) ->
-    [H | deloid(Oid, T)].
 
 all_keys(Tab) ->
     case get(mnesia_activity_state) of
@@ -1132,7 +1508,7 @@ index_read(Tab, Key, Attr) ->
 	    Mod:index_read(Tid, Ts, Tab, Key, Attr, read);
 	_ ->
 	    abort(no_transaction)
-    end.    
+    end.
 
 index_read(Tid, Ts, Tab, Key, Attr, LockKind) 
   when atom(Tab), Tab /= schema ->
@@ -1336,6 +1712,13 @@ remote_dirty_select(Tab, [{HeadPat,_, _}] = Spec, [Pos | Tail])
 remote_dirty_select(Tab, Spec, _) ->
     mnesia_lib:db_select(Tab, Spec).
 
+dirty_sel_init(Node,Tab,Spec,NObjects,Type) ->
+    do_dirty_rpc(Tab,Node,mnesia_lib,db_select_init,[Type,Tab,Spec,NObjects]).
+
+dirty_sel_cont(#mnesia_select{cont='$end_of_table'}) -> '$end_of_table';
+dirty_sel_cont(#mnesia_select{node=Node,tab=Tab,storage=Type,cont=Cont,orig=Ms}) ->
+    do_dirty_rpc(Tab,Node,mnesia_lib,db_select_cont,[Type,Cont,Ms]).
+
 dirty_all_keys(Tab) when atom(Tab), Tab /= schema ->
     case ?catch_val({Tab, wild_pattern}) of
 	{'EXIT', _} ->
@@ -1425,12 +1808,6 @@ do_dirty_rpc(_Tab, nowhere, _, _, Args) ->
     mnesia:abort({no_exists, Args});
 do_dirty_rpc(Tab, Node, M, F, Args) ->
     case rpc:call(Node, M, F, Args) of
-	{badrpc,{'EXIT', {undef, [{ M, F, _} | _]}}}
-	  when M == ?MODULE, F == remote_dirty_select ->
-	    %% Oops, the other node has not been upgraded
-	    %% to 4.0.3 yet. Lets do it the old way.
-	    %% Remove this in next release.
-	    do_dirty_rpc(Tab, Node, mnesia_lib, db_select, Args);
 	{badrpc, Reason} ->
 	    erlang:yield(), %% Do not be too eager
 	    case mnesia_controller:call({check_w2r, Node, Tab}) of % Sync
@@ -2180,6 +2557,167 @@ dump_to_textfile(F) ->
     mnesia_text:dump_to_textfile(F).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% QLC Handles
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+table(Tab) ->
+    table(Tab, []).
+table(Tab,Opts) ->
+    {[Trav,Lock,NObjects],QlcOptions0} = 
+	qlc_opts(Opts,[{traverse,select},{lock,read},{n_objects,100}]),
+    TF = case Trav of
+	     {select,Ms} ->
+		 fun() -> qlc_select(select(Tab,Ms,NObjects,Lock)) end;
+	     select ->
+		 fun(Ms) -> qlc_select(select(Tab,Ms,NObjects,Lock)) end;
+	     _ ->
+		 erlang:fault({badarg, {Trav,[Tab, Opts]}})
+	 end,
+    Pre  = fun(Arg) -> pre_qlc(Arg, Tab) end,
+    Post = fun()  -> post_qlc(Tab) end,
+    Info = fun(Tag) -> qlc_info(Tab, Tag) end,
+    ParentFun = fun() -> 
+			{mnesia_activity, mnesia:get_activity_id()} 
+		end,
+    Lookup = 
+	case Trav of
+	    {select, _} -> [];
+	    _ ->
+		LFun = fun(2, Keys) ->
+			       Read = fun(Key) -> read(Tab,Key,Lock) end,
+			       lists:flatmap(Read, Keys);
+			  (Index,Keys) ->
+			       IdxRead = fun(Key) -> index_read(Tab,Key,Index) end,
+			       lists:flatmap(IdxRead, Keys)
+		       end,
+		[{lookup_fun, LFun}]
+	end,
+    MFA  = fun(Type) -> qlc_format(Type, Tab, NObjects, Lock, Opts) end,
+    QlcOptions = [{pre_fun, Pre}, {post_fun, Post}, 
+		  {info_fun, Info}, {parent_fun, ParentFun}, 
+		  {format_fun, MFA}|Lookup] ++ QlcOptions0,
+    qlc:table(TF, QlcOptions).
+
+pre_qlc(Opts, Tab) ->
+    {_,Tid,_} = 
+	case get(mnesia_activity_state) of
+	    undefined ->
+		case lists:keysearch(parent_value, 1, Opts) of
+		    {value, {parent_value,{mnesia_activity,undefined}}} ->
+			abort(no_transaction);
+		    {value, {parent_value,{mnesia_activity,Aid}}} ->
+			{value,{stop_fun,Stop}} = 
+			    lists:keysearch(stop_fun,1,Opts),
+			put_activity_id(Aid,Stop),
+			Aid;
+		    _ ->
+			abort(no_transaction)
+		end;
+	    Else -> 
+		Else
+	end,
+    case element(1,Tid) of
+	tid -> ok;
+	_ ->
+	    case ?catch_val({Tab, setorbag}) of
+		ordered_set ->   ok;
+		_ -> 
+		    dirty_rpc(Tab, mnesia_tm, fixtable, [Tab,true,self()]),
+		    ok	    
+	    end
+    end.
+
+post_qlc(Tab) ->
+    case catch get(mnesia_activity_state) of
+	{_,#tid{},_} -> ok;
+	_ ->
+	    case ?catch_val({Tab, setorbag}) of
+		ordered_set ->
+		    ok;
+		_ ->
+		    dirty_rpc(Tab, mnesia_tm, fixtable, [Tab,false,self()]),
+		    ok
+	    end
+    end.
+
+qlc_select('$end_of_table') ->     [];
+qlc_select({Objects, Cont}) -> 
+    Objects ++ fun() -> qlc_select(select(Cont)) end.
+
+qlc_opts(Opts, Keys) when is_list(Opts) ->
+    qlc_opts(Opts, Keys, []);
+qlc_opts(Option, Keys) ->
+    qlc_opts([Option], Keys, []).
+
+qlc_opts(Opts, [{Key,Def}|Keys], Acc) ->
+    Opt = case lists:keysearch(Key,1, Opts) of
+	      {value, {Key,Value}} ->
+		  Value;
+	      false ->
+		  Def
+	  end,
+    qlc_opts(lists:keydelete(Key,1,Opts),Keys,[Opt|Acc]);
+qlc_opts(Opts,[],Acc) -> {lists:reverse(Acc),Opts}.
+
+qlc_info(Tab, num_of_objects) ->
+    dirty_rpc(Tab, ?MODULE, raw_table_info, [Tab, size]);
+qlc_info(_, keypos) ->    2;         
+qlc_info(_, is_unique_objects) ->    true;
+qlc_info(Tab, is_unique_keys) ->
+    case val({Tab, type}) of
+	set -> true;
+	ordered_set -> true;
+	_ -> false
+    end;
+qlc_info(Tab, is_sorted_objects) ->
+    case val({Tab, type}) of
+	ordered_set -> 
+	    case ?catch_val({Tab, frag_hash}) of
+		{'EXIT', _} -> 
+		    ascending;
+		_ ->  %% Fragmented tables are not ordered
+		    no
+	    end;
+	_ -> no
+    end;
+qlc_info(Tab, indices) ->
+    val({Tab,index});
+qlc_info(_Tab, _) ->
+    undefined.
+
+qlc_format(all, Tab, NObjects, Lock, Opts) ->
+    {?MODULE, table, [Tab,[{n_objects, NObjects}, {lock,Lock}|Opts]]};
+qlc_format({match_spec, Ms}, Tab, NObjects, Lock, Opts) ->
+    {?MODULE, table, [Tab,[{traverse,{select,Ms}},{n_objects, NObjects}, {lock,Lock}|Opts]]};
+qlc_format({lookup, 2, Keys}, Tab, _, Lock, _) ->
+    io_lib:format("lists:flatmap(fun(V) -> "
+		  "~w:read(~w, V, ~w) end, ~w)", 
+		  [?MODULE, Tab, Lock, Keys]);
+qlc_format({lookup, Index,Keys}, Tab, _, _, _) ->
+    io_lib:format("lists:flatmap(fun(V) -> "
+		  "~w:index_read(~w, V, ~w) end, ~w)", 
+		  [?MODULE, Tab, Index, Keys]).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+do_fixtable(Tab, #tidstore{store=Store}) ->
+    do_fixtable(Tab,Store);
+do_fixtable(Tab, Store) ->
+    case ?catch_val({Tab, setorbag}) of
+	ordered_set ->
+	    ok;
+	_ ->
+	    case ?ets_match_object(Store, {fixtable, {Tab, '_'}}) of
+		[] -> 
+		    Node = dirty_rpc(Tab, mnesia_tm, fixtable, [Tab,true,self()]),
+		    ?ets_insert(Store, {fixtable, {Tab, Node}});
+		_ ->
+		    ignore
+	    end,
+	    ok
+    end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Mnemosyne exclusive
 
 get_activity_id() -> 
@@ -2187,3 +2725,5 @@ get_activity_id() ->
 
 put_activity_id(Activity) -> 
     mnesia_tm:put_activity_id(Activity).
+put_activity_id(Activity,Fun) -> 
+    mnesia_tm:put_activity_id(Activity,Fun).

@@ -19,6 +19,18 @@
 #include "hipe_mode_switch.h"
 #include "hipe_debug.h"
 
+static const char dashes[2*sizeof(long)+5] = {
+    [0 ... 2*sizeof(long)+3] = '-'
+};
+
+static const char dots[2*sizeof(long)+5] = {
+    [0 ... 2*sizeof(long)+3] = '.'
+};
+
+static const char stars[2*sizeof(long)+5] = {
+    [0 ... 2*sizeof(long)+3] = '*'
+};
+
 extern Uint beam_apply[];
 
 static void print_beam_pc(Uint *pc)
@@ -36,164 +48,119 @@ static void print_beam_pc(Uint *pc)
 	    printf(":");
 	    display(mfa[1], COUT);
 	    printf("/%ld", mfa[2]);
-	    printf(" + 0x%x", pc - &mfa[3]);
+	    printf(" + 0x%x", (int)(pc - &mfa[3]));
 	} else {
 	    printf("?");
 	}
     }
 }
 
-static void print_native_pc(void *pc)
-{
-    printf("?");
-}
-
-#if 0
-static void raw_slot(Eterm *pos, Eterm val, const char *type)
-{
-    printf(" | 0x%08x | 0x%08x | %s\r\n",
-	   (unsigned int)pos,
-	   (unsigned int)val,
-	   type);
-}
-#endif
-
-static void catch_slot(Eterm *pos, Eterm val, int is_native)
+static void catch_slot(Eterm *pos, Eterm val)
 {
     Uint *pc = catch_pc(val);
-    printf(" | 0x%08x | 0x%08x | CATCH 0x%08x (%s ",
-	   (unsigned int)pos,
-	   (unsigned int)val,
-	   (unsigned int)pc,
-	   is_native ? "NATIVE" : "BEAM");
-    if( is_native )
-	print_native_pc(pc);
-    else
-	print_beam_pc(pc);
+    printf(" | 0x%0*lx | 0x%0*lx | CATCH 0x%0*lx (BEAM ",
+	   2*(int)sizeof(long), (unsigned long)pos,
+	   2*(int)sizeof(long), (unsigned long)val,
+	   2*(int)sizeof(long), (unsigned long)pc);
+    print_beam_pc(pc);
     printf(")\r\n");
-}
-
-static void print_native_cp(Eterm *pos, Eterm val)
-{
-    printf(" | 0x%08x | 0x%08x | NATIVE PC ",
-	   (unsigned int)pos,
-	   (unsigned int)val);
-    print_native_pc(cp_val(val));
-    printf("\r\n");
 }
 
 static void print_beam_cp(Eterm *pos, Eterm val)
 {
-    printf(" |------------|------------| BEAM ACTIVATION RECORD\r\n");
-    printf(" | 0x%08x | 0x%08x | BEAM PC ",
-	   (unsigned int)pos,
-	   (unsigned int)val);
+    printf(" |%s|%s| BEAM ACTIVATION RECORD\r\n", dashes, dashes);
+    printf(" | 0x%0*lx | 0x%0*lx | BEAM PC ",
+	   2*(int)sizeof(long), (unsigned long)pos,
+	   2*(int)sizeof(long), (unsigned long)val);
     print_beam_pc(cp_val(val));
     printf("\r\n");
 }
 
-static void print_catch(Eterm *pos, Eterm val, int is_native)
+static void print_catch(Eterm *pos, Eterm val)
 {
-    printf(" |............|............| %s CATCH FRAME\r\n",
-	   is_native ? "NATIVE" : "BEAM");
-    catch_slot(pos, val, is_native);
-    printf(" |************|************|\r\n");
+    printf(" |%s|%s| BEAM CATCH FRAME\r\n", dots, dots);
+    catch_slot(pos, val);
+    printf(" |%s|%s|\r\n", stars, stars);
 }
 
-static void print_stack(Eterm *sp, Eterm *end, int is_native)
+static void print_stack(Eterm *sp, Eterm *end)
 {
-    printf(" | Address    | Contents   |\r\n");
+    printf(" | %*s | %*s |\r\n",
+	   2+2*(int)sizeof(long), "Address",
+	   2+2*(int)sizeof(long), "Contents");
     while( sp < end ) {
 	Eterm val = sp[0];
 	if( is_CP(val) ) {
-	    if( is_native ) {
-		print_native_cp(sp, val);
-		sp += 1;
-	    } else {
-		print_beam_cp(sp, val);
-		sp += 1;
-	    }
+	    print_beam_cp(sp, val);
 	} else if( is_catch(val) ) {
-	    print_catch(sp, val, is_native);
-	    sp += 1;
+	    print_catch(sp, val);
 	} else {
-	    printf(" | 0x%08x | 0x%08lx | ", (unsigned int)sp, val);
+	    printf(" | 0x%0*lx | 0x%0*lx | ",
+		   2*(int)sizeof(long), (unsigned long)sp,
+		   2*(int)sizeof(long), (unsigned long)val);
 	    ldisplay(val, COUT, 30);
 	    printf("\r\n");
-	    sp += 1;
 	}
+	sp += 1;
     }
-    printf(" |------------|------------|\r\n");
+    printf(" |%s|%s|\r\n", dashes, dashes);
 }
 
 void hipe_print_estack(Process *p)
 {
     printf(" |       BEAM  STACK       |\r\n");
-    print_stack(p->stop, STACK_START(p), 0);
+    print_stack(p->stop, STACK_START(p));
 }
 
-void hipe_print_heap(Process *p)
+static void print_heap(Eterm *pos, Eterm *end)
 {
-    Eterm *pos = p->heap;
-    Eterm *end = p->htop;
-
-    printf("From: 0x%08x  to  0x%08x\n\r",(unsigned int)pos,(unsigned int)end);
+    printf("From: 0x%0*lx to 0x%0*lx\n\r",
+	   2*(int)sizeof(long), (unsigned long)pos,
+	   2*(int)sizeof(long), (unsigned long)end);
     printf(" |         H E A P         |\r\n");
-    printf(" | Address    | Contents   |\r\n");
-    printf(" |------------|------------|\r\n");
+    printf(" | %*s | %*s |\r\n",
+	   2+2*(int)sizeof(long), "Address",
+	   2+2*(int)sizeof(long), "Contents");
+    printf(" |%s|%s|\r\n", dashes, dashes);
     while( pos < end ) {
 	Eterm val = pos[0];
-	printf(" | 0x%08x | 0x%08x | ", (unsigned int)pos, (unsigned int)val);
+	printf(" | 0x%0*lx | 0x%0*lx | ",
+	       2*(int)sizeof(long), (unsigned long)pos,
+	       2*(int)sizeof(long), (unsigned long)val);
 	++pos;
 	if( is_arity_value(val) ) {
 	    printf("Arity(%lu)", arityval(val));
 	} else if( is_thing(val) ) {
-	    val = thing_arityval(val);
-	    printf("Thing Arity(%lu) Tag(%lu)", val, thing_subtag(val));
-	    while( val ) {
-		printf("\r\n | 0x%08x | 0x%08lx | THING",
-		       (unsigned int)pos, *pos);
+	    unsigned int ari = thing_arityval(val);
+	    printf("Thing Arity(%u) Tag(%lu)", ari, thing_subtag(val));
+	    while( ari ) {
+		printf("\r\n | 0x%0*lx | 0x%0*lx | THING",
+		       2*(int)sizeof(long), (unsigned long)pos,
+		       2*(int)sizeof(long), (unsigned long)*pos);
 		++pos;
-		--val;
+		--ari;
 	    }
 	} else
 	    ldisplay(val, COUT, 30);
 	printf("\r\n");
     }
-    printf(" |------------|------------|\r\n");
+    printf(" |%s|%s|\r\n", dashes, dashes);
 }
 
-void hipe_check_heap(Process *p)
+void hipe_print_heap(Process *p)
 {
-    Eterm *pos = p->heap;
-    Eterm *end = p->htop;
-
-    printf("Check heap from: 0x%08x  to:  0x%08x\n\r",(unsigned int)pos,
-                                                      (unsigned int)end);
-    while( pos < end ) {
-	Eterm val = pos[0];
-	++pos;
-	if( is_thing(val) ) {
-	    val = thing_arityval(val);
-	    while( val ) {
-		(void) *(volatile Eterm*)pos;
-		++pos;
-		--val;
-	    }
-	}
-    }
-    printf("Heap OK.\r\n");
+    print_heap(p->heap, p->htop);
 }
 
 void hipe_print_pcb(Process *p)
 {
-    printf("P: 0x%08lx\r\n", (unsigned long)p);
+    printf("P: 0x%0*lx\r\n", 2*(int)sizeof(long), (unsigned long)p);
     printf("-----------------------------------------------\r\n");
     printf("Offset| Name        | Value      | *Value     |\r\n");
 #define U(n,x) \
-    printf(" % 4d | %s | 0x%08x |            |\r\n", offsetof(Process,x), n, (unsigned)p->x)
+    printf(" % 4d | %s | 0x%0*lx |            |\r\n", (int)offsetof(Process,x), n, 2*(int)sizeof(long), (unsigned long)p->x)
 #define P(n,x) \
-    printf(" % 4d | %s | 0x%08x | 0x%08x |\r\n", offsetof(Process,x), n, (unsigned)p->x, p->x ? (unsigned)*(p->x) : -1U)
+    printf(" % 4d | %s | 0x%0*lx | 0x%0*lx |\r\n", (int)offsetof(Process,x), n, 2*(int)sizeof(long), (unsigned long)p->x, 2*(int)sizeof(long), p->x ? (unsigned long)*(p->x) : -1UL)
     
     U("htop       ", htop);
     U("hend       ", hend);
@@ -229,7 +196,7 @@ void hipe_print_pcb(Process *p)
     U("next       ", next);
     /*XXX: ErlOffHeap off_heap; */
     U("reg        ", reg);
-    U("links      ", links);
+    /*U("links      ", links);*/
 #ifndef SHARED_HEAP
     /*XXX: ErlMessageQueue msg; */
     U("mbuf       ", mbuf);
@@ -251,11 +218,11 @@ void hipe_print_pcb(Process *p)
 #ifndef SHARED_HEAP
     U("arith_heap ", arith_heap);
     U("arith_avail", arith_avail);
-#endif
 #ifdef DEBUG
     U("arith_file ", arith_file);
     U("arith_line ", arith_line);
     P("arith_che..", arith_check_me);
+#endif
 #endif
     U("arity      ", arity);
     P("arg_reg    ", arg_reg);
@@ -271,14 +238,7 @@ void hipe_print_pcb(Process *p)
     U("nstack     ", hipe.nstack);
     U("nstend     ", hipe.nstend);
     U("ncallee    ", hipe.ncallee);
-#if defined(__sparc__)
-    U("nra        ", hipe.nra);
-    U("ncra       ", hipe.ncra);
-#endif
-#if defined(__i386__)
-    U("ncsp       ", hipe.ncsp);
-    U("narity     ", hipe.narity);
-#endif
+    hipe_arch_print_pcb(&p->hipe);
 #endif	/* HIPE */
 #undef U
 #undef P

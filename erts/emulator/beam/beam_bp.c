@@ -560,7 +560,7 @@ static int set_function_break(Module *modp, Uint *pc,
 		
 	bdc->count = 0;
     }
-    ++((Uint) code_base[MI_NUM_BREAKPOINTS]);
+    ++(*(Uint*)&code_base[MI_NUM_BREAKPOINTS]);
     return 1;
 }
 
@@ -675,7 +675,7 @@ static int clear_function_break(Module *m, Uint *pc, Uint break_op) {
 	}
 	Free(bd);
 	ASSERT(((Uint) code_base[MI_NUM_BREAKPOINTS]) > 0);
-	--((Uint) code_base[MI_NUM_BREAKPOINTS]);
+	--(*(Uint*)&code_base[MI_NUM_BREAKPOINTS]);
     }
     return 1;
 }

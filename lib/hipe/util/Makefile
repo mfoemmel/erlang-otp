@@ -9,10 +9,6 @@
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
 #     $Id$
 #
 
@@ -41,13 +37,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-MODULES = hipe_hash hipe_internal \
-	hipe_beam_vectors \
-	hipe_pure_hash hipe_pure_ufind hipe_pure_vectors \
-	hipe_timing hipe_ufind hipe_vector_ufind \
-	hipe_vectors \
-	hipe_vector \
-	hipe_gb_hash hipe_dict_hash hipe_vhash
+MODULES = hipe_timing hipe_vectors
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
@@ -81,7 +71,7 @@ clean:
 	rm -f core
 
 $(DOCS)/%.html:%.erl
-	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s erlang halt
+	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s init stop
 
 # ----------------------------------------------------
 # Special Build Targets
@@ -102,4 +92,3 @@ release_docs_spec:
 
 
 $(EBIN)/hipe_timing.beam: ../main/hipe.hrl
-$(EBIN)/hipe_vector.beam: hipe_vector.hrl

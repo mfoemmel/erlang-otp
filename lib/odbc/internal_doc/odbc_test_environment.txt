@@ -1,0 +1,154 @@
+This file contains information on how to setup the test environment
+for odbc in the OTP-lab and should not be distributed.
+	
+****************************************************************************
+- Creating odbc test environment on Windows -
+****************************************************************************
+	
+ODBC and SQL server is part of a ordinary windows installation. 
+
+* Starting the database server on the server machine.
+----------------------------------------------------
+
+Start the SQL Server Service Manager. You should have a icon that
+looks similar to a computer tower box in the right corner of the
+Windows task bar that you can right click and then choose the open
+alternative in the menu. (sqlmangr.exe)
+
+Choose to run the service: SQL Server. Start it and check the box
+to auto-start service when OS starts.
+
+
+* Configure the data source - You need to do this first on the
+  server machine and then on the client machine(s).
+------------------------------------------------------------
+
+Start -> Settings -> Control Panel -> Administrative Tools -> Data
+Sources (ODBC)
+	
+User DSN -> Add   % Visible only to the current user on the machine.
+
+or
+
+System DSN -> Add % Visible to all users on the machine.
+
+%% Will be used as DSN (Database Server Name) in the connection
+%% string, sql-server is the name used in the erlang odbc test-suits.
+Name: sql-server 
+
+Description: Erlang ODBC Test Environment % Optional to set this value
+
+Server: EOMER % Server machine hostname ex EOMER
+
+Choose SQL Server authentication using login and password entered by user,
+and enter the desired user-login and password. The values used by
+the ODBC test suites are UID=odbctest and PWD=gurka.
+
+For the remaining options default values may be used.
+
+Push the "Test Data Source"-button to verify your setup. When it is verified
+also verify that you can reach the database from the  erlang shell by calling
+{ok, Ref} = odbc:connect("DSN=sql-server;UID=odbctest;PWD=gurka", []).
+
+To make absolutely sure you might want to run some queries using
+odbc:sql_query/2. Ex:
+
+odbc:sql_query(Ref, "CREATE TABLE FOO (ID integer, DATA varchar(10), PRIMARY KEY(ID))").
+
+odbc:sql_query(Pid, "INSERT INTO FOO VALUES(1,'bar')").
+
+{selected, ["ID", "DATA"], [{1, "bar"}]} = odbc:sql_query(Pid, "SELECT * FROM FOO").
+
+odbc:sql_query(Pid, "DROP TABLE FOO").	
+
+
+****************************************************************************
+ - Creating odbc test environment on Solaris -
+****************************************************************************
+
+* Starting the database server on the server machine.
+------------------------------------------------------
+
+Currently the Oracle 8.0.5 is installed in /opt/local/pgm/oracle
+and running on gandalf.
+
+This installation was done a long time ago, and alas necessary
+details have to be totally regathered when there is a need.
+Maybe then some interesting pointers can be documented here.
+
+A good place to start gathering information:
+file:///opt/local/pgm/oracle/app/oracle/doc/index.htm
+file:///opt/local/pgm/oracle/app/oracle/product/8.5.0/doc/index.htm
+
+* Configure the data source - On the server machine.
+  ------------------------------------------------------------
+
+The program svrmgrl can be used to setup data sources. There should
+be a user guide for this program in the oracle documentation.
+
+There is a data source Oracle8 configured on gandalf with the
+UID=odbctest and PWD=gurka.
+
+The test suite uses the following connection string:
+"DSN=Oracle8;DBQ=gandalf;UID=odbctest;PWD=gurka".
+
+You can test Oracle by running sqlplus:
+
+$> sqlplus odbctest/gurka@gandalf 
+
+QL*Plus: Release 8.0.5.0.0 - Production on Tue Apr 13 13:36:56 2004
+
+(c) Copyright 1998 Oracle Corporation.  All rights reserved.
+
+
+Connected to:
+Oracle8 Enterprise Edition Release 8.0.5.0.0 - Production
+PL/SQL Release 8.0.5.0.0 - Production
+
+SQL> CREATE TABLE FOO (ID integer, DATA varchar(10), PRIMARY KEY(ID));
+
+Table created.
+
+SQL> INSERT INTO FOO VALUES(1,'bar');
+
+1 row created.
+
+SQL>  SELECT * FROM FOO;
+
+        ID DATA
+---------- ----------
+         1 bar
+
+SQL> DROP TABLE FOO;
+
+Table dropped.
+
+SQL> quit
+Disconnected from Oracle8 Enterprise Edition Release 8.0.5.0.0 - Production
+PL/SQL Release 8.0.5.0.0 - Production
+
+$>  
+
+* Environment variables needed on the client machine.
+----------------------------------------------------
+
+At the client side (at least as long as you are on the same network) the
+only thing you need to do is to define some environment variables, you
+can find them in the file:
+
+/opt/local/pgm/oracle/app/oracle/product/8.0.5/setup.csh 
+
+
+* Additional information
+-------------------------
+
+There is a unix user oracle with passwd syslomma that runs the oracle
+database server.
+
+Oracle support: 08-477 36 10
+Ericsson customer number 287 090 36 00 
+
+Gandalf oracle users:
+system/lomma
+sys/syslomma
+odbctest/gurka@gandalf

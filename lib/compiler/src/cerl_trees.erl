@@ -29,14 +29,15 @@
 	 mapfold/3, size/1, variables/1]).
 
 -import(cerl, [alias_pat/1, alias_var/1, ann_c_alias/3, ann_c_apply/3,
-	       ann_c_binary/2, ann_c_bin_seg/6, ann_c_call/4,
+	       ann_c_binary/2, ann_c_bitstr/6, ann_c_call/4,
 	       ann_c_case/3, ann_c_catch/2, ann_c_clause/4,
-	       ann_c_cons/3, ann_c_fun/3, ann_c_let/4, ann_c_letrec/3,
-	       ann_c_module/5, ann_c_primop/3, ann_c_receive/4,
-	       ann_c_seq/3, ann_c_try/6, ann_c_tuple/2, ann_c_values/2,
-	       apply_args/1, apply_op/1, binary_segs/1, bin_seg_val/1,
-	       bin_seg_size/1, bin_seg_unit/1, bin_seg_type/1,
-	       bin_seg_flags/1, call_args/1, call_module/1, call_name/1,
+	       ann_c_cons_skel/3, ann_c_fun/3, ann_c_let/4,
+	       ann_c_letrec/3, ann_c_module/5, ann_c_primop/3,
+	       ann_c_receive/4, ann_c_seq/3, ann_c_try/6,
+	       ann_c_tuple_skel/2, ann_c_values/2, apply_args/1,
+	       apply_op/1, binary_segments/1, bitstr_val/1,
+	       bitstr_size/1, bitstr_unit/1, bitstr_type/1,
+	       bitstr_flags/1, call_args/1, call_module/1, call_name/1,
 	       case_arg/1, case_clauses/1, catch_body/1, clause_body/1,
 	       clause_guard/1, clause_pats/1, clause_vars/1, concrete/1,
 	       cons_hd/1, cons_tl/1, fun_body/1, fun_vars/1, get_ann/1,
@@ -48,13 +49,13 @@
 	       seq_arg/1, seq_body/1, set_ann/2, subtrees/1, try_arg/1,
 	       try_body/1, try_vars/1, try_evars/1, try_handler/1,
 	       tuple_es/1, type/1, update_c_alias/3, update_c_apply/3,
-	       update_c_binary/2, update_c_bin_seg/6, update_c_call/4,
+	       update_c_binary/2, update_c_bitstr/6, update_c_call/4,
 	       update_c_case/3, update_c_catch/2, update_c_clause/4,
-	       update_c_cons/3, update_c_fun/3, update_c_let/4,
-	       update_c_letrec/3, update_c_module/5, update_c_primop/3,
-	       update_c_receive/4, update_c_seq/3, update_c_try/6,
-	       update_c_tuple/2, update_c_values/2, values_es/1,
-	       var_name/1]).
+	       update_c_cons/3, update_c_cons_skel/3, update_c_fun/3,
+	       update_c_let/4, update_c_letrec/3, update_c_module/5,
+	       update_c_primop/3, update_c_receive/4, update_c_seq/3,
+	       update_c_try/6, update_c_tuple/2, update_c_tuple_skel/2,
+	       update_c_values/2, values_es/1, var_name/1]).
 
 
 %% ---------------------------------------------------------------------
@@ -120,10 +121,10 @@ map_1(F, T) ->
 	values ->
  	    update_c_values(T, map_list(F, values_es(T)));
 	cons ->
-	    update_c_cons(T, map(F, cons_hd(T)),
-			  map(F, cons_tl(T)));
+	    update_c_cons_skel(T, map(F, cons_hd(T)),
+			       map(F, cons_tl(T)));
  	tuple ->
-	    update_c_tuple(T, map_list(F, tuple_es(T)));
+	    update_c_tuple_skel(T, map_list(F, tuple_es(T)));
  	'let' ->
 	    update_c_let(T, map_list(F, let_vars(T)),
 			 map(F, let_arg(T)),
@@ -167,13 +168,13 @@ map_1(F, T) ->
  	'catch' ->
 	    update_c_catch(T, map(F, catch_body(T)));
 	binary ->
-	    update_c_binary(T, map_list(F, binary_segs(T)));
-	bin_seg ->
-	    update_c_bin_seg(T, map(F, bin_seg_val(T)),
-			     map(F, bin_seg_size(T)),
-			     map(F, bin_seg_unit(T)),
-			     map(F, bin_seg_type(T)),
-			     map_list(F, bin_seg_flags(T)));
+	    update_c_binary(T, map_list(F, binary_segments(T)));
+	bitstr ->
+	    update_c_bitstr(T, map(F, bitstr_val(T)),
+			    map(F, bitstr_size(T)),
+			    map(F, bitstr_unit(T)),
+			    map(F, bitstr_type(T)),
+			    map(F, bitstr_flags(T)));
 	letrec ->
 	    update_c_letrec(T, map_pairs(F, letrec_defs(T)),
 			    map(F, letrec_body(T)));
@@ -265,17 +266,17 @@ fold_1(F, S, T) ->
  	'catch' ->
 	    fold(F, S, catch_body(T));
 	binary ->
-	    fold_list(F, S, binary_segs(T));
-	bin_seg ->
-	    fold_list(F,
+	    fold_list(F, S, binary_segments(T));
+	bitstr ->
+	    fold(F,
+		 fold(F,
 		      fold(F,
 			   fold(F,
-				fold(F,
-				     fold(F, S, bin_seg_val(T)),
-				     bin_seg_size(T)),
-				bin_seg_unit(T)),
-			   bin_seg_type(T)),
-		      bin_seg_flags(T));
+				fold(F, S, bitstr_val(T)),
+				bitstr_size(T)),
+			   bitstr_unit(T)),
+		      bitstr_type(T)),
+		 bitstr_flags(T));
 	letrec ->
 	    fold(F, fold_pairs(F, S, letrec_defs(T)), letrec_body(T));
 	module ->
@@ -335,10 +336,10 @@ mapfold(F, S0, T) ->
 	cons ->
 	    {T1, S1} = mapfold(F, S0, cons_hd(T)),
 	    {T2, S2} = mapfold(F, S1, cons_tl(T)),
-	    F(update_c_cons(T, T1, T2), S2);
+	    F(update_c_cons_skel(T, T1, T2), S2);
  	tuple ->
 	    {Ts, S1} = mapfold_list(F, S0, tuple_es(T)),
-	    F(update_c_tuple(T, Ts), S1);
+	    F(update_c_tuple_skel(T, Ts), S1);
  	'let' ->
 	    {Vs, S1} = mapfold_list(F, S0, let_vars(T)),
 	    {A, S2} = mapfold(F, S1, let_arg(T)),
@@ -394,15 +395,15 @@ mapfold(F, S0, T) ->
 	    {B, S1} = mapfold(F, S0, catch_body(T)),
 	    F(update_c_catch(T, B), S1);
 	binary ->
-	    {Ds, S1} = mapfold_list(F, S0, binary_segs(T)),
+	    {Ds, S1} = mapfold_list(F, S0, binary_segments(T)),
 	    F(update_c_binary(T, Ds), S1);
-	bin_seg ->
-	    {Val, S1} = mapfold(F, S0, bin_seg_val(T)),
-	    {Size, S2} = mapfold(F, S1, bin_seg_size(T)),
-	    {Unit, S3} = mapfold(F, S2, bin_seg_unit(T)),
-	    {Type, S4} = mapfold(F, S3, bin_seg_type(T)),
-	    {Fs, S5} = mapfold_list(F, S4, bin_seg_flags(T)),
-	    F(update_c_bin_seg(T, Val, Size, Unit, Type, Fs), S5);
+	bitstr ->
+	    {Val, S1} = mapfold(F, S0, bitstr_val(T)),
+	    {Size, S2} = mapfold(F, S1, bitstr_size(T)),
+	    {Unit, S3} = mapfold(F, S2, bitstr_unit(T)),
+	    {Type, S4} = mapfold(F, S3, bitstr_type(T)),
+	    {Flags, S5} = mapfold(F, S4, bitstr_flags(T)),
+	    F(update_c_bitstr(T, Val, Size, Unit, Type, Flags), S5);
 	letrec ->
 	    {Ds, S1} = mapfold_pairs(F, S0, letrec_defs(T)),
 	    {B, S2} = mapfold(F, S1, letrec_body(T)),
@@ -550,10 +551,10 @@ variables(T, S) ->
 	'catch' ->
 	    variables(catch_body(T), S);
 	binary ->
-	    vars_in_list(binary_segs(T), S);
-	bin_seg ->
-	    ordsets:union(variables(bin_seg_val(T), S),
-			  variables(bin_seg_size(T), S));
+	    vars_in_list(binary_segments(T), S);
+	bitstr ->
+	    ordsets:union(variables(bitstr_val(T), S),
+			  variables(bitstr_size(T), S));
 	letrec ->
 	    Vs = vars_in_defs(letrec_defs(T), S),
 	    Vs1 = ordsets:union(variables(letrec_body(T), S), Vs),
@@ -665,11 +666,11 @@ label(T, N, Env) ->
 	    {T1, N1} = label(cons_hd(T), N, Env),
 	    {T2, N2} = label(cons_tl(T), N1, Env),
 	    {As, N3} = label_ann(T, N2),
-	    {ann_c_cons(As, T1, T2), N3};
+	    {ann_c_cons_skel(As, T1, T2), N3};
  	tuple ->
 	    {Ts, N1} = label_list(tuple_es(T), N, Env),
 	    {As, N2} = label_ann(T, N1),
-	    {ann_c_tuple(As, Ts), N2};
+	    {ann_c_tuple_skel(As, Ts), N2};
  	'let' ->
 	    {A, N1} = label(let_arg(T), N, Env),
 	    {Vs, N2, Env1} = label_vars(let_vars(T), N1, Env),
@@ -738,17 +739,17 @@ label(T, N, Env) ->
 	    {As, N2} = label_ann(T, N1),
 	    {ann_c_catch(As, B), N2};
 	binary ->
-	    {Ds, N1} = label_list(binary_segs(T), N, Env),
+	    {Ds, N1} = label_list(binary_segments(T), N, Env),
 	    {As, N2} = label_ann(T, N1),
 	    {ann_c_binary(As, Ds), N2};
-	bin_seg ->
-	    {Val, N1} = label(bin_seg_val(T), N, Env),
-	    {Size, N2} = label(bin_seg_size(T), N1, Env),
-	    {Unit, N3} = label(bin_seg_unit(T), N2, Env),
-	    {Type, N4} = label(bin_seg_type(T), N3, Env),
-	    {Fs, N5} = label_list(bin_seg_flags(T), N4, Env),
+	bitstr ->
+	    {Val, N1} = label(bitstr_val(T), N, Env),
+	    {Size, N2} = label(bitstr_size(T), N1, Env),
+	    {Unit, N3} = label(bitstr_unit(T), N2, Env),
+	    {Type, N4} = label(bitstr_type(T), N3, Env),
+	    {Flags, N5} = label(bitstr_flags(T), N4, Env),
 	    {As, N6} = label_ann(T, N5),
-	    {ann_c_bin_seg(As, Val, Size, Unit, Type, Fs), N6};
+	    {ann_c_bitstr(As, Val, Size, Unit, Type, Flags), N6};
 	letrec ->
 	    {_, N1, Env1} = label_vars(letrec_vars(T), N, Env),
 	    {Ds, N2} = label_defs(letrec_defs(T), N1, Env1),
@@ -756,13 +757,13 @@ label(T, N, Env) ->
 	    {As, N4} = label_ann(T, N3),
 	    {ann_c_letrec(As, Ds, B), N4};
 	module ->
-	    %% The module name and attributes are not labeled.
+	    %% The module name is not labeled.
 	    {_, N1, Env1} = label_vars(module_vars(T), N, Env),
-	    {Ds, N2} = label_defs(module_defs(T), N1, Env1),
-	    {Es, N3} = label_list(module_exports(T), N2, Env1),
-	    {As, N4} = label_ann(T, N3),
-	    {ann_c_module(As, module_name(T), Es, module_attrs(T), Ds),
-	     N4}
+	    {Ts, N2} = label_defs(module_attrs(T), N1, Env1),
+	    {Ds, N3} = label_defs(module_defs(T), N2, Env1),
+	    {Es, N4} = label_list(module_exports(T), N3, Env1),
+	    {As, N5} = label_ann(T, N4),
+	    {ann_c_module(As, module_name(T), Es, Ts, Ds), N5}
     end.
 
 label_list([T | Ts], N, Env) ->

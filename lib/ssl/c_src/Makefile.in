@@ -94,6 +94,11 @@ SKIP_BUILDING_BINARIES := true
 endif
 endif
 
+ifneq ($(findstring darwin,$(TARGET)),darwin)
+LD_R_OPT = -Wl,-R$(SSL_LIBDIR)
+endif
+
+
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
@@ -118,7 +123,7 @@ $(OBJDIR)/%$(obj): %.c
 
 # Unix
 $(BINDIR)/ssl_esock: $(OBJS)
-	$(CC) -L$(SSL_LIBDIR) -Wl,-R$(SSL_LIBDIR) -o $@ $^ \
+	$(CC) -L$(SSL_LIBDIR) $(LD_R_OPT) -o $@ $^ \
 		$(LIBS) -lssl -lcrypto
 
 # Win32/Cygwin

@@ -1,37 +1,36 @@
-%% ``The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
-%% 
-%% The Initial Developer of the Original Code is Richard Carlsson.
-%% Copyright (C) 1999-2001 Richard Carlsson.
-%% Portions created by Ericsson are Copyright 2001, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
-%%
-
 %% =====================================================================
-%% Abstract environments based on stdlib dictionaries, supporting
-%% self-referential bindings and automatic new-key generation.
+%% This library is free software; you can redistribute it and/or modify
+%% it under the terms of the GNU Lesser General Public License as
+%% published by the Free Software Foundation; either version 2 of the
+%% License, or (at your option) any later version.
 %%
-%% Note: Stored values may not have the form `{'$letrec', ...}'; this is
-%% reserved for internal purposes.
-%% =====================================================================
+%% This library is distributed in the hope that it will be useful, but
+%% WITHOUT ANY WARRANTY; without even the implied warranty of
+%% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+%% Lesser General Public License for more details.
+%%
+%% You should have received a copy of the GNU Lesser General Public
+%% License along with this library; if not, write to the Free Software
+%% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+%% USA
+%%
+%% $Id$
+%%
+%% @author Richard Carlsson <richardc@csd.uu.se>
+%% @copyright 1999-2004 Richard Carlsson
+%% @doc Abstract environments, supporting self-referential bindings and
+%% automatic new-key generation.
 
-%%%-define(DEBUG, true).
+%% The current implementation is based on Erlang standard library
+%% dictionaries.
+
+%%% -define(DEBUG, true).
 
 -module(rec_env).
 
--export([bind/3, bind_list/3, bind_recursive/4, empty/0, get/2,
-	 is_defined/2, is_empty/1, keys/1, lookup/2, new_custom_key/2,
-	 new_custom_keys/3, new_key/1, new_keys/2, size/1, to_list/1]).
+-export([bind/3, bind_list/3, bind_recursive/4, delete/2, empty/0,
+	 get/2, is_defined/2, is_empty/1, keys/1, lookup/2, new_key/1,
+	 new_key/2, new_keys/2, new_keys/3, size/1, to_list/1]).
 
 -ifdef(DEBUG).
 -export([test/1, test_custom/1, test_custom/2]).
@@ -39,14 +38,16 @@
 
 -ifdef(DEBUG).
 %% Code for testing:
-
+%%@hidden
 test(N) ->
     test_0(integer, N).
 
+%%@hidden
 test_custom(N) ->
     F = fun (X) -> list_to_atom("X"++integer_to_list(X)) end,
     test_custom(F, N).
 
+%%@hidden
 test_custom(F, N) ->
     test_0({custom, F}, N).
 
@@ -64,7 +65,7 @@ test_1(integer = Type, N, Env) when integer(N), N > 0 ->
     Key = new_key(Env),
     test_1(Type, N - 1, bind(Key, value, Env));
 test_1({custom, F} = Type, N, Env) when integer(N), N > 0 ->
-    Key = new_custom_key(F, Env),
+    Key = new_key(F, Env),
     test_1(Type, N - 1, bind(Key, value, Env));
 test_1(_,0, Env) ->
     Env.
@@ -73,278 +74,374 @@ test_1(_,0, Env) ->
 
 %% Representation:
 %%
-%%	{Dictionary, {Counter, ColdStore}}
+%%	environment() = [Mapping]
 %%
-%% Each environment contains one main dictionary structure for the
-%% entries (for recursive bindings, entries have the special form
-%% `{'$letrec', V, N, F}'). In addition, each environment contains a
-%% "cold store", which consists of a dictionary for "frozen"
-%% environments together with an index counter.
+%%      Mapping = {map, Dict} | {rec, Dict, Dict}
+%%	Dict = dict:dictionary()
+%%
+%% An empty environment is a list containing a single `{map, Dict}'
+%% element - empty lists are not valid environments. To find a key in an
+%% environment, it is searched for in each mapping in the list, in
+%% order, until it the key is found in some mapping, or the end of the
+%% list is reached. In a 'rec' mapping, we keep the original dictionary
+%% together with a version where entries may have been deleted - this
+%% makes it possible to garbage collect the entire 'rec' mapping when
+%% all its entries are unused (for example, by being shadowed by later
+%% definitions).
+
 
 
 %% =====================================================================
-%% empty() -> environment()
+%% @type environment(). An abstract environment.
+
+
+%% =====================================================================
+%% @spec empty() -> environment()
 %%
-%%	Returns an empty environment.
+%% @doc Returns an empty environment.
 
 empty() ->
-    Empty = dict:new(),
-    {Empty, {0, Empty}}.
+    [{map, dict:new()}].
 
 
 %% =====================================================================
-%% is_empty() -> bool()
+%% @spec is_empty(Env::environment()) -> bool()
 %%
-%%	Returns `true' if the environment is empty, otherwise `false'.
+%% @doc Returns <code>true</code> if the environment is empty, otherwise
+%% <code>false</code>.
 
-is_empty({Dict, _}) ->
-    dict:size(Dict) == 0.
-
-
-%% =====================================================================
-%% size() -> integer()
-%%
-%%	Returns the number of entries in the environment. This function
-%%	could be useful for writing your own new-key generation
-%%	function; cf `new_key' below.
-
-size({Dict, _}) ->
-    dict:size(Dict).
-
-
-%% =====================================================================
-%% is_defined(Key, Env) -> bool()
-%%
-%%	    Key = term()
-%%	    Env = environment()
-%%
-%%	Returns `true' if `Key' is bound to some value in `Env',
-%%	otherwise `false'.
-
-is_defined(Key, {Dict, _}) ->
-    dict:is_key(Key, Dict).
-
-
-%% =====================================================================
-%% keys(Env) -> [term()]
-%%
-%%	    Env = environment()
-%%
-%%	Returns an ordered list of all keys in the environment `Env'.
-
-keys({Dict, _}) ->
-    dict:fetch_keys(Dict).
-
-
-%% =====================================================================
-%% to_list(Env) -> [term()]
-%%
-%%	    Key = term()
-%%	    Env = environment()
-%%
-%%	Returns an ordered list of `{Key, Value}' pairs for all keys in
-%%	`Env'. For recursive entries (cf. `bind_recursive'), `Value' is
-%%	computed as for `lookup'.
-
-to_list({Dict, {_, S}}) ->
-    L = dict:to_list(Dict),
-    case dict:size(S) == 0 of
-	true ->
-	    L;    % don't waste time
-	false ->
-	    expand_entries(L, S)
+is_empty([{map, Dict} | Es]) ->
+    N = dict:size(Dict),
+    if N /= 0 -> false;
+       Es == [] -> true;
+       true -> is_empty(Es)
+    end;
+is_empty([{rec, Dict, _} | Es]) ->
+    N = dict:size(Dict),
+    if N /= 0 -> false;
+       Es == [] -> true;
+       true -> is_empty(Es)
     end.
 
-expand_entries([{Key, Value} | Es], S) ->
-    Value1 = case Value of
-		 {'$letrec', N, Value, F} ->
-		     recursive_value(S, N, Value, F);
-		 _ ->
-		     Value
-	     end,
-    [{Key, Value1} | expand_entries(Es, S)];		 
-expand_entries([], _) ->
-    [].
+
+%% =====================================================================
+%% @spec size(Env::environment()) -> integer()
+%%
+%% @doc Returns the number of entries in an environment.
+
+%% (The name 'size' cannot be used in local calls, since there exists a
+%% built-in function with the same name.)
+
+size(Env) ->
+    env_size(Env).
+
+env_size([{map, Dict}]) ->
+    dict:size(Dict);
+env_size([{map, Dict} | Env]) ->
+    dict:size(Dict) + env_size(Env);
+env_size([{rec, Dict, _Dict0} | Env]) ->
+    dict:size(Dict) + env_size(Env).
 
 
 %% =====================================================================
-%% bind(Key, Value, Env) -> Env1
+%% @spec is_defined(Key, Env) -> bool()
 %%
-%%	    Key = Value = term()
-%%	    Env = Env1 = environment()
+%%	Key = term()
+%%	Env = environment()
 %%
-%%	Make a nonrecursive entry, binding `Key' to `Value'. If the key
-%%	already existed in `Env', the old entry is replaced.
-%%
-%% bind_list(Keys, Values, Env) -> Env1
-%%
-%%	    Keys = Values = [term()]
-%%	    Env = Env1 = environment()
-%%
-%%	Make N nonrecursive entries, binding each key in `Keys' to the
-%%	corresponding value in `Values'. If some key already existed in
-%%	`Env', the old entry is replaced. If `Keys' does not have the
-%%	same length as `Values', an exception is generated.
+%% @doc Returns <code>true</code> if <code>Key</code> is bound in the
+%% environment, otherwise <code>false</code>.
 
-bind(Key, Value, {Dict, Store}) ->
-    {dict:store(Key, Value, Dict), Store}.
+is_defined(Key, [{map, Dict} | Env]) ->
+    case dict:is_key(Key, Dict) of
+	true ->
+	    true;
+	false when Env == [] ->
+	    false;
+	false ->
+	    is_defined(Key, Env)
+    end;
+is_defined(Key, [{rec, Dict, _Dict0} | Env]) ->
+    case dict:is_key(Key, Dict) of
+	true ->
+	    true;
+	false ->
+	    is_defined(Key, Env)
+    end.
 
-bind_list([_ | _] = Keys, Vs, {Dict, Store}) ->
-    Dict1 = bind_list_1(Keys, Vs, Dict),
-    {Dict1, Store};
-bind_list([], [], Env) ->
-    Env.
 
-bind_list_1([Key | Ks], [V | Vs], Dict) ->
-    bind_list_1(Ks, Vs, dict:store(Key, V, Dict));
-bind_list_1([], _, Dict) ->
+%% =====================================================================
+%% @spec keys(Env::environment()) -> [term()]
+%%
+%% @doc Returns the ordered list of all keys in the environment.
+
+keys(Env) ->
+    lists:sort(keys(Env, [])).
+
+keys([{map, Dict}], S) ->
+    dict:fetch_keys(Dict) ++ S;
+keys([{map, Dict} | Env], S) ->
+    keys(Env, dict:fetch_keys(Dict) ++ S);
+keys([{rec, Dict, _Dict0} | Env], S) ->
+    keys(Env, dict:fetch_keys(Dict) ++ S).
+
+
+%% =====================================================================
+%% @spec to_list(Env) -> [{Key, Value}]
+%%
+%%	Env = environment()
+%%	Key = term()
+%%	Value = term()
+%%
+%% @doc Returns an ordered list of <code>{Key, Value}</code> pairs for
+%% all keys in <code>Env</code>. <code>Value</code> is the same as that
+%% returned by {@link get/2}.
+
+to_list(Env) ->
+    lists:sort(to_list(Env, [])).
+
+to_list([{map, Dict}], S) ->
+    dict:to_list(Dict) ++ S;
+to_list([{map, Dict} | Env], S) ->
+    to_list(Env, dict:to_list(Dict) ++ S);
+to_list([{rec, Dict, _Dict0} | Env], S) ->
+    to_list(Env, dict:to_list(Dict) ++ S).
+
+
+%% =====================================================================
+%% @spec bind(Key, Value, Env) -> environment()
+%%
+%%	Key = term()
+%%	Value = term()
+%%	Env = environment()
+%%
+%% @doc Make a nonrecursive entry. This binds <code>Key</code> to
+%% <code>Value</code>. If the key already existed in the environment,
+%% the old entry is replaced.
+
+%% Note that deletion is done to free old bindings so they can be
+%% garbage collected.
+
+bind(Key, Value, [{map, Dict}]) ->
+    [{map, dict:store(Key, Value, Dict)}];
+bind(Key, Value, [{map, Dict} | Env]) ->
+    [{map, dict:store(Key, Value, Dict)} | delete_any(Key, Env)];
+bind(Key, Value, Env) ->
+    [{map, dict:store(Key, Value, dict:new())} | delete_any(Key, Env)].
+
+
+%% =====================================================================
+%% @spec bind_list(Keys, Values, Env) -> environment()
+%%
+%%	Keys = [term()]
+%%	Values = [term()]
+%%	Env = environment()
+%%
+%% @doc Make N nonrecursive entries. This binds each key in
+%% <code>Keys</code> to the corresponding value in
+%% <code>Values</code>. If some key already existed in the environment,
+%% the previous entry is replaced. If <code>Keys</code> does not have
+%% the same length as <code>Values</code>, an exception is generated.
+
+bind_list(Ks, Vs, [{map, Dict}]) ->
+    [{map, store_list(Ks, Vs, Dict)}];
+bind_list(Ks, Vs, [{map, Dict} | Env]) ->
+    [{map, store_list(Ks, Vs, Dict)} | delete_list(Ks, Env)];
+bind_list(Ks, Vs, Env) ->
+    [{map, store_list(Ks, Vs, dict:new())} | delete_list(Ks, Env)].
+
+store_list([K | Ks], [V | Vs], Dict) ->
+    store_list(Ks, Vs, dict:store(K, V, Dict));
+store_list([], _, Dict) ->
     Dict.
 
+delete_list([K | Ks], Env) ->
+    delete_list(Ks, delete_any(K, Env));
+delete_list([], Env) ->
+    Env.
+
+%% By not calling `delete' unless we have to, we avoid unnecessary
+%% rewriting of the data.
+
+delete_any(Key, Env) ->
+    case is_defined(Key, Env) of
+	true ->
+	    delete(Key, Env);
+	false ->
+	    Env
+    end.
 
 %% =====================================================================
-%% bind_recursive(Keys, Values, Fun, Env) -> Env1
+%% @spec delete(Key, Env) -> environment()
 %%
-%%	    Keys = Values = [term()]
-%%	    Env = Env1 = environment()
-%%	    Fun = (Value, Env) -> term()
+%%	Key = term()
+%%	Env = environment()
 %%
-%%	Make N recursive entries, binding each `Key' to the value of
-%%	`Fun(Value, Env1)' for the corresponding `Value'. If `Keys' does
-%%	not have the same length as `Values', an exception is generated.
-%%	If some key already existed in `Env', the old entry is replaced.
-%%
-%%	Note: the function `Fun' is evaluated each time one of the
-%%	stored keys is looked up, but only then.
-%%
-%%	Examples:
-%%
-%%	    Env1 = bind_recursive([foo, bar], [1, 2],
-%%	                          fun (V, E) -> V end,
-%%	                          Env)
-%%
-%%	        This does nothing interesting; `get(foo, Env1)' yields
-%%	        `1' and `get(bar, Env1)' yields `2', but the overhead is
-%%	        larger than if the `bind' function had been used.
-%%
-%%	    Env1 = bind_recursive([foo, bar], [1, 2],
-%%	                          fun (V, E) -> {V, E} end,
-%%	                          Env)
-%%
-%%	        Here, however, `get(foo, Env1)' will yield `{1, Env1}'
-%%	        and `get(bar, Env1)' will yield `{2, Env1}', i.e., the
-%%	        environment `Env1' contains recursive bindings.
+%% @doc Delete an entry. This removes <code>Key</code> from the
+%% environment.
 
-%% Special entries for all the keys are inserted into the dictionary,
-%% which is then placed in the "store" together with the previous store;
-%% then the index is incremented. This minimizes the amount of work done
-%% at lookup.
+delete(Key, [{map, Dict} = E | Env]) ->
+    case dict:is_key(Key, Dict) of
+	true ->
+	    [{map, dict:erase(Key, Dict)} | Env];
+	false ->
+	    delete_1(Key, Env, E)
+    end;
+delete(Key, [{rec, Dict, Dict0} = E | Env]) ->
+    case dict:is_key(Key, Dict) of
+	true ->
+	    %% The Dict0 component must be preserved as it is until all
+	    %% keys in Dict have been deleted.
+	    Dict1 = dict:erase(Key, Dict),
+	    case dict:size(Dict1) of
+		0 ->
+		    Env;    % the whole {rec,...} is now garbage
+		_ ->
+		    [{rec, Dict1, Dict0} | Env]
+	    end;
+	false ->
+	    [E | delete(Key, Env)]
+    end.
+
+%% This is just like above, except we pass on the preceding 'map'
+%% mapping in the list to enable merging when removing 'rec' mappings.
+
+delete_1(Key, [{rec, Dict, Dict0} = E | Env], E1) ->
+    case dict:is_key(Key, Dict) of
+	true ->
+	    Dict1 = dict:erase(Key, Dict),
+	    case dict:size(Dict1) of
+		0 ->
+		    concat(E1, Env);
+		_ ->
+		    [E1, {rec, Dict1, Dict0} | Env]
+	    end;
+	false ->
+	    [E1, E | delete(Key, Env)]
+    end.
+
+concat({map, D1}, [{map, D2} | Env]) ->
+    [dict:merge(fun (_K, V1, _V2) -> V1 end, D1, D2) | Env];
+concat(E1, Env) ->
+    [E1 | Env].
+
+
+%% =====================================================================
+%% @spec bind_recursive(Keys, Values, Fun, Env) -> NewEnv
+%%
+%%	Keys = [term()]
+%%	Values = [term()]
+%%	Fun = (Value, Env) -> term()
+%%	Env = environment()
+%%	NewEnv = environment()
+%%
+%% @doc Make N recursive entries. This binds each key in
+%% <code>Keys</code> to the value of <code>Fun(Value, NewEnv)</code> for
+%% the corresponding <code>Value</code>. If <code>Keys</code> does not
+%% have the same length as <code>Values</code>, an exception is
+%% generated. If some key already existed in the environment, the old
+%% entry is replaced.
+%%
+%% <p>Note: the function <code>Fun</code> is evaluated each time one of
+%% the stored keys is looked up, but only then.</p>
+%%
+%% <p>Examples:
+%%<pre>
+%%    NewEnv = bind_recursive([foo, bar], [1, 2],
+%%	                      fun (V, E) -> V end,
+%%	                      Env)</pre>
+%%
+%% This does nothing interesting; <code>get(foo, NewEnv)</code> yields
+%% <code>1</code> and <code>get(bar, NewEnv)</code> yields
+%% <code>2</code>, but there is more overhead than if the {@link
+%% bind_list/3} function had been used.
+%%
+%% <pre>
+%%    NewEnv = bind_recursive([foo, bar], [1, 2],
+%%                            fun (V, E) -> {V, E} end,
+%%                            Env)</pre>
+%%
+%% Here, however, <code>get(foo, NewEnv)</code> will yield <code>{1,
+%% NewEnv}</code> and <code>get(bar, NewEnv)</code> will yield <code>{2,
+%% NewEnv}</code>, i.e., the environment <code>NewEnv</code> contains
+%% recursive bindings.</p>
 
 bind_recursive([], [], _, Env) ->
     Env;
-bind_recursive(Ks, Vs, F, {Dict, {N, Store}}) ->
-    Dict1 = bind_recursive_1(Ks, Vs, F, N, Dict),
-    finalize_env(Dict1, N, Store).
+bind_recursive(Ks, Vs, F, Env) ->
+    F1 = fun (V) ->
+		 fun (Dict) -> F(V, [{rec, Dict, Dict} | Env]) end
+	 end,
+    Dict = bind_recursive_1(Ks, Vs, F1, dict:new()),
+    [{rec, Dict, Dict} | Env].
 
-bind_recursive_1([K | Ks], [V | Vs], F, N, Dict) ->
-    Dict1 = dict:store(K, {'$letrec', N, V, F}, Dict),
-    bind_recursive_1(Ks, Vs, F, N, Dict1);
-bind_recursive_1([], [], _, _, Dict) ->
+bind_recursive_1([K | Ks], [V | Vs], F, Dict) ->
+    bind_recursive_1(Ks, Vs, F, dict:store(K, F(V), Dict));
+bind_recursive_1([], [], _, Dict) ->
     Dict.
 
-%% This gets the updated `Dict', the old `N' and the old `Store',
-%% and creates the final environment.
-
-finalize_env(Dict, N, Store) ->
-    Frozen = {Dict, Store},    % no need to store N
-    Store1 = dict:store(N, Frozen, Store),
-    {Dict, {N + 1, Store1}}.
-
 
 %% =====================================================================
-%% lookup(Key, Env) -> none | {value, Value}
+%% @spec lookup(Key, Env) -> error | {ok, Value}
 %%
-%%	    Key = Value = term()
-%%	    Env = environment()
+%%	Key = term()
+%%	Env = environment()
+%%	Value = term()
 %%
-%%	Returns `{ok, Value}' if `Key' is bound to `Value' in `Env', and
-%%	`error' otherwise.
+%% @doc Returns <code>{ok, Value}</code> if <code>Key</code> is bound to
+%% <code>Value</code> in <code>Env</code>, and <code>error</code>
+%% otherwise.
 
-lookup(Key, {Dict, Store}) ->
+lookup(Key, [{map, Dict} | Env]) ->
     case dict:find(Key, Dict) of
-	{ok, {'$letrec', N, Value, F}} ->
-	    {_, S} = Store,
-	    {ok, recursive_value(S, N, Value, F)};
-	Other ->
-	    Other
-    end.
-
-%% This fetches the corresponding frozen environment,
-%% finalizes it and forms the result.
-
-recursive_value(Store, N, Value, F) ->
-    {Dict, Store1} = dict:fetch(N, Store),
-    Env = finalize_env(Dict, N, Store1),
-    F(Value, Env).
-
-
-%% =====================================================================
-%% get(Key, Env) -> Value
-%%
-%%	    Key = Value = term()
-%%	    Env = environment()
-%%
-%%	Returns the value that `Key' is bound to in `Env'. If the key
-%%	does not exist in `Env', an exception is generated.
-
-get(Key, {Dict, Store}) ->
-    case dict:fetch(Key, Dict) of
-	{'$letrec', N, Value, F} ->
-	    {_, S} = Store,
-	    recursive_value(S, N, Value, F);
-	Other ->
-	    Other
+	{ok, _}=Value ->
+	    Value;
+	error when Env == [] ->
+	    error;
+	error ->
+	    lookup(Key, Env)
+    end;
+lookup(Key, [{rec, Dict, Dict0} | Env]) ->
+    case dict:find(Key, Dict) of
+	{ok, F} ->
+	    {ok, F(Dict0)};
+	error ->
+	    lookup(Key, Env)
     end.
 
 
 %% =====================================================================
-%% new_key(Env) -> integer()
+%% @spec get(Key, Env) -> Value
 %%
-%%	    Env = environment()
+%%	Key = term()
+%%	Env = environment()
+%%	Value = term()
 %%
-%%	Returns an integer which is not already used as key in `Env'.
-%%	New integers are generated using an algorithm which tries to
-%%	keep the values randomly distributed within a reasonably small
-%%	range relative to the number of entries in the environment.
-%%
-%%	This function uses the module `random' to generate new keys. The
-%%	seed it uses must be initialized by calling `random:seed/0' or
-%%	`random:seed/3' before this function is first called.
-%%
-%%	Note that only the new key is returned; the given environment
-%%	itself is not updated by this function.
-%%
-%% new_keys(N, Env) -> [integer()]
-%%
-%%	    N = integer()
-%%	    Env = environment()
-%%
-%%	Returns a list of `N' distinct integers that are not already
-%%	used as keys in `Env'. See `new_key' for details.
+%% @doc Returns the value that <code>Key</code> is bound to in
+%% <code>Env</code>. Throws <code>{undefined, Key}</code> if the key
+%% does not exist in <code>Env</code>.
 
-%% This function could possibly be improved. The important thing to keep
-%% in mind is, that when we need a new key, we are generally in
-%% mid-traversal of a syntax tree, and existing names in the tree may be
-%% closely grouped and evenly distributed or even forming a compact
-%% range. This means that if we generate an identifier whose value is
-%% too close to those already seen (i.e., which are in the environment),
-%% it is very probable that we will shadow a not-yet-seen identifier
-%% further down in the tree, the result being that we induce another
-%% later renaming, ending up renaming most of all identifiers,
-%% completely contrary to our intention. We need to generate new
-%% identifiers in a way that avoids such systematic collisions.
-%%
-%% The current limit of at most 2 retries before enlarging the range
-%% seems to bee a good choice, according to my experiments.
+get(Key, Env) ->
+    case lookup(Key, Env) of
+	{ok, Value} -> Value;
+	error -> throw({undefined, Key})
+    end.
+
+
+%% =====================================================================
+%% The key-generating algorithm could possibly be further improved. The
+%% important thing to keep in mind is, that when we need a new key, we
+%% are generally in mid-traversal of a syntax tree, and existing names
+%% in the tree may be closely grouped and evenly distributed or even
+%% forming a compact range (often having been generated by a "gensym",
+%% or by this very algorithm itself). This means that if we generate an
+%% identifier whose value is too close to those already seen (i.e.,
+%% which are in the environment), it is very probable that we will
+%% shadow a not-yet-seen identifier further down in the tree, the result
+%% being that we induce another later renaming, and end up renaming most
+%% of the identifiers, completely contrary to our intention. We need to
+%% generate new identifiers in a way that avoids such systematic
+%% collisions.
 %%
 %% One way of getting a new key to try when the previous attempt failed
 %% is of course to e.g. add one to the last tried value. However, in
@@ -353,17 +450,26 @@ get(Key, {Dict, Store}) ->
 %% extra lookups while gaining only a little from the quicker
 %% computation.
 %%
-%% We want an initial range that is large enough for many typical cases.
-%% Often, the smallest environment contains a hundred or more entries
-%% (due to top-level definitions).
+%% We want an initial range that is large enough for most typical cases.
+%% If we start with, say, a range of 10, we might quickly use up most of
+%% the values in the range 1-10 (or 1-100) for new top-level variables -
+%% but as we start traversing the syntax tree, it is quite likely that
+%% exactly those variables will be encountered again (this depends on
+%% how the names in the tree were created), and will then need to be
+%% renamed. If we instead begin with a larger range, it is less likely
+%% that any top-level names that we introduce will shadow names that we
+%% will find in the tree. Of course we cannot know how large is large
+%% enough: for any initial range, there is some syntax tree that uses
+%% all the values in that range, and thus any top-level names introduced
+%% will shadow names in the tree. The point is to avoid this happening
+%% all the time - a range of about 1000 seems enough for most programs.
 %%
 %% The following values have been shown to work well:
 
--define(MINIMUM_RANGE, 100).
--define(START_RANGE_FACTOR, 100).
--define(MAX_RETRIES, 3).    % retries before enlarging range
--define(ENLARGE_ENUM, 8).   % range enlargment enumerator
--define(ENLARGE_DENOM, 1).  % range enlargment denominator
+-define(MINIMUM_RANGE, 1000).
+-define(START_RANGE_FACTOR, 50).
+-define(MAX_RETRIES, 2).      % retries before enlarging range
+-define(ENLARGE_FACTOR, 10).  % range enlargment factor
 
 -ifdef(DEBUG).
 %% If you want to use these process dictionary counters, make sure to
@@ -391,47 +497,68 @@ get(Key, {Dict, Store}) ->
 -define(measure_retries(N), ok).
 -endif.
 
-new_key({Dict, _}) ->
+
+%% =====================================================================
+%% @spec new_key(Env::environment()) -> integer()
+%%
+%% @doc Returns an integer which is not already used as key in the
+%% environment. New integers are generated using an algorithm which
+%% tries to keep the values randomly distributed within a reasonably
+%% small range relative to the number of entries in the environment.
+%%
+%% <p>This function uses the Erlang standard library module
+%% <code>random</code> to generate new keys.</p>
+%%
+%% <p>Note that only the new key is returned; the environment itself is
+%% not updated by this function.</p>
+
+new_key(Env) ->
+    new_key(fun (X) -> X end, Env).
+
+
+%% =====================================================================
+%% @spec new_key(Function, Env) -> term()
+%%
+%%	Function = (integer()) -> term()
+%%	Env = environment()
+%%
+%% @doc Returns a term which is not already used as key in the
+%% environment. The term is generated by applying <code>Function</code>
+%% to an integer generated as in {@link new_key/1}.
+%%
+%% <p>Note that only the generated term is returned; the environment
+%% itself is not updated by this function.</p>
+
+new_key(F, Env) ->
     ?measure_calls(),
-    R = start_range(Dict),
-%%%    io:fwrite("Start range: ~w.\n", [R]),
-    new_key(R, Dict).
+    R = start_range(Env),
+%%%     io:fwrite("Start range: ~w.\n", [R]),
+    new_key(R, F, Env).
 
-new_key(R, Dict) ->
-    new_key(generate(R, R), R, 0, Dict).
+new_key(R, F, Env) ->
+    new_key(generate(R, R), R, 0, F, Env).
 
-new_key(N, R, T, Dict) when T < ?MAX_RETRIES ->
-    case dict:is_key(N, Dict) of
+new_key(N, R, T, F, Env) when T < ?MAX_RETRIES ->
+    A = F(N),
+    case is_defined(A, Env) of
 	true ->
-%%%	    io:fwrite("CLASH: ~w.\n", [N]),
-	    new_key(generate(N, R), R, T + 1, Dict);
+%%% 	    io:fwrite("CLASH: ~w.\n", [A]),
+	    new_key(generate(N, R), R, T + 1, F, Env);
 	false ->
 	    ?measure_max_key(N),
 	    ?measure_retries(T),
-%%%	    io:fwrite("New: ~w.\n", [N]),
-	    N
+%%% 	    io:fwrite("New: ~w.\n", [N]),
+	    A
     end;
-new_key(N, R, _, Dict) ->
+new_key(N, R, _T, F, Env) ->
     %% Too many retries - enlarge the range and start over.
-    ?measure_retries((T + 1)),
-    R1 = (R * ?ENLARGE_ENUM) div ?ENLARGE_DENOM,
-%%%    io:fwrite("NEW RANGE: ~w.\n", [R1]),
-    new_key(generate(N, R1), R1, 0, Dict).
+    ?measure_retries((_T + 1)),
+    R1 = trunc(R * ?ENLARGE_FACTOR),
+%%%     io:fwrite("**NEW RANGE**: ~w.\n", [R1]),
+    new_key(generate(N, R1), R1, 0, F, Env).
 
-new_keys(N, {Dict, _}) when integer(N) ->
-    R = start_range(Dict),
-    new_keys(N, [], R, Dict).
-
-new_keys(N, Ks, R, Dict) when N > 0 ->
-    Key = new_key(R, Dict),
-    Dict1 = dict:store(Key, true, Dict),
-    new_keys(N - 1, [Key | Ks], R, Dict1);
-new_keys(0, Ks, _, _) ->
-    Ks.
-
-start_range(Dict) ->
-    max(dict:size(Dict) * ?START_RANGE_FACTOR,
-	?MINIMUM_RANGE).
+start_range(Env) ->
+    max(env_size(Env) * ?START_RANGE_FACTOR, ?MINIMUM_RANGE).
 
 max(X, Y) when X > Y -> X;
 max(_, Y) -> Y.
@@ -443,75 +570,42 @@ max(_, Y) -> Y.
 %% this function does not generate values in order, but
 %% (pseudo-)randomly distributed over the range.
 
-generate(_, Range) ->
+generate(_N, Range) ->
     random:uniform(Range).    % works well
 
 
 %% =====================================================================
-%% new_custom_key(Function, Env) -> term()
+%% @spec new_keys(N, Env) -> [integer()]
 %%
-%%	    Function = (integer()) -> term()
-%%	    Env = environment()
+%%	N = integer()
+%%	Env = environment()
 %%
-%%	Returns a term which is not already used as key in `Env'. The
-%%	term is generated by applying `Function' to a generated integer.
-%%	Integers are generated using an algorithm which tries to keep
-%%	the names randomly distributed within a reasonably small range
-%%	relative to the number of entries in the environment (cf.
-%%	`new_key').
-%%
-%%	This function uses the module `random' to generate new keys. The
-%%	seed it uses must be initialized by calling `random:seed/0' or
-%%	`random:seed/3' before this function is first called.
-%%
-%%	Note that only the identifier is returned; the given environment
-%%	itself is not updated by this function.
-%%
-%% new_custom_keys(N, Function, Env) -> [term()]
+%% @doc Returns a list of <code>N</code> distinct integers that are not
+%% already used as keys in the environment. See {@link new_key/1} for
+%% details.
+
+new_keys(N, Env) when integer(N) ->
+    new_keys(N, fun (X) -> X end, Env).
+
+    
+%% =====================================================================
+%% @spec new_keys(N, Function, Env) -> [term()]
 %%
 %%	    N = integer()
 %%	    Function = (integer()) -> term()
 %%	    Env = environment()
 %%
-%%	Returns a list of `N' distinct terms that are not already used
-%%	as keys in `Env'. See `new_custom_key' for details.
+%% @doc Returns a list of <code>N</code> distinct terms that are not
+%% already used as keys in the environment. See {@link new_key/3} for
+%% details.
 
-%% The algorithm is the same as for `new_key':
+new_keys(N, F, Env) when integer(N) ->
+    R = start_range(Env),
+    new_keys(N, [], R, F, Env).
 
-new_custom_key(F, {Dict, _}) ->
-    ?measure_calls(),
-    R = start_range(Dict),
-    new_custom_key(R, F, Dict).
-
-new_custom_key(R, F, Dict) ->
-    new_custom_key(generate(R, R), R, 0, F, Dict).
-
-new_custom_key(N, R, T, F, Dict) when T < ?MAX_RETRIES ->
-    A = F(N),
-    case dict:is_key(A, Dict) of
-	true ->
-	    new_custom_key(generate(N, R), R, T + 1, F, Dict);
-	false ->
-	    ?measure_max_key(N),
-	    ?measure_retries(T),
-	    A
-    end;
-new_custom_key(N, R, _, F, Dict) ->
-    %% Too many retries - enlarge the range and start over.
-    ?measure_retries((T + 1)),
-    R1 = (R * ?ENLARGE_ENUM) div ?ENLARGE_DENOM,
-    new_custom_key(generate(N, R1), R1, 0, F, Dict).
-
-new_custom_keys(N, F, {Dict, _}) when integer(N) ->
-    R = start_range(Dict),
-    new_custom_keys(N, [], R, F, Dict).
-
-new_custom_keys(N, Ks, R, F, Dict) when N > 0 ->
-    Key = new_custom_key(R, F, Dict),
-    Dict1 = dict:store(Key, true, Dict),
-    new_custom_keys(N - 1, [Key | Ks], R, F, Dict1);
-new_custom_keys(0, Ks, _, _, _) ->
+new_keys(N, Ks, R, F, Env) when N > 0 ->
+    Key = new_key(R, F, Env),
+    Env1 = bind(Key, true, Env),    % dummy binding
+    new_keys(N - 1, [Key | Ks], R, F, Env1);
+new_keys(0, Ks, _, _, _) ->
     Ks.
-
-
-%% =====================================================================

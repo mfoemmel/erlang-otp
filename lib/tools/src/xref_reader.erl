@@ -170,10 +170,11 @@ expr({'receive', _Line, Cs, To, ToEs}, S) ->
     S1 = expr(To, S),
     S2 = expr_list(ToEs, S1),
     clauses(Cs, S2);
-expr({'try',_Line,Es,Scs,Ccs}, S) ->
+expr({'try',_Line,Es,Scs,Ccs,As}, S) ->
     S1 = expr_list(Es, S),
     S2 = clauses(Scs, S1),
-    clauses(Ccs, S2);
+    S3 = clauses(Ccs, S2),
+    expr_list(As, S3);
 expr({'fun', Line, {function, Name, Arity}, _Extra}, S) ->
     %% Added in R8.
     handle_call(local, S#xrefr.module, Name, Arity, Line, S);

@@ -529,8 +529,6 @@ get_universaltime(int *year, int *month, int *day,
 /* days in month = 1, 2, ..., 12 */
 static const int mdays[14] = {0, 31, 28, 31, 30, 31, 30,
                                  31, 31, 30, 31, 30, 31};
-static const int check[14] = {0, 31, 28, 31, 30, 31, 30,
-                                 31, 31, 30, 31, 30, 31};
 
 #define  IN_RANGE(a,x,b)  (((a) <= (x)) && ((x) <= (b)))
 #define  is_leap_year(y)  (((((y) % 4) == 0) && \
@@ -570,8 +568,8 @@ static int long gregday(int year, int month, int day)
 
 
 int 
-local_to_univ(int *year, int *month, int *day, 
-	      int *hour, int *minute, int *second, int isdst)
+local_to_univ(Sint *year, Sint *month, Sint *day, 
+	      Sint *hour, Sint *minute, Sint *second, int isdst)
 {
     time_t the_clock;
     struct tm *tm, t;
@@ -614,8 +612,8 @@ local_to_univ(int *year, int *month, int *day,
 }
 
 int 
-univ_to_local(int *year, int *month, int *day, 
-	      int *hour, int *minute, int *second)
+univ_to_local(Sint *year, Sint *month, Sint *day, 
+	      Sint *hour, Sint *minute, Sint *second)
 {
     time_t the_clock;
     struct tm *tm;

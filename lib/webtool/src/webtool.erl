@@ -43,7 +43,7 @@
 
 %%Debug export 
 -export([get_tools1/1]).
--export([debug/1,stop_debug/0]).
+-export([debug/1,stop_debug/0,debug_app/1]).
 
 
 %%Export the callback functions for the webTool
@@ -56,7 +56,8 @@
 -behaviour(gen_server).
 -record(state,{priv_dir,app_data,supvis,web_data,started=[]}).
 
--define(DEFAULT_PORT,8888).
+-define(MAX_NUMBER_OF_WEBTOOLS,256).
+-define(DEFAULT_PORT,8888).% must be >1024 or the user must be root on unix
 -define(DEFAULT_ADDR,{127,0,0,1}).
 
 -define(WEBTOOL_ALIAS,{webtool,[{alias,{erl_alias,"/webtool",[webtool]}}]}).
@@ -79,7 +80,8 @@
 %% debug(Functions).
 %% Functions = local | global | FunctionList
 %% FunctionList = [Function]
-%% Function = {FunctionName,Arity} | FunctionName
+%% Function = {FunctionName,Arity} | FunctionName |
+%%            {Module, FunctionName, Arity} | {Module,FunctionName}
 debug(F) -> 
     ttb:tracer(all,[{file,"webtool.trc"}]), % tracing all nodes
     ttb:p(all,[call,timestamp]),
@@ -91,6 +93,12 @@ tp(local,MS) -> % all functions
     ttb:tpl(?MODULE,MS);
 tp(global,MS) -> % all exported functions
     ttb:tp(?MODULE,MS);
+tp([{M,F,A}|T],MS) -> % Other module
+    ttb:tpl(M,F,A,MS),
+    tp(T,MS);
+tp([{M,F}|T],MS) when is_atom(F) -> % Other module
+    ttb:tpl(M,F,MS),
+    tp(T,MS);
 tp([{F,A}|T],MS) -> % function/arity
     ttb:tpl(?MODULE,F,A,MS),
     tp(T,MS);
@@ -102,6 +110,22 @@ tp([],_MS) ->
 stop_debug() ->
     ttb:stop([format]).
 
+debug_app(Mod) ->
+    ttb:tracer(all,[{file,"webtool_app.trc"},{handler,{fun out/4,true}}]),
+    ttb:p(all,[call,timestamp]),
+    MS = [{'_',[],[{return_trace},{message,{caller}}]}],
+    ttb:tp(Mod,MS),
+    ok.
+   
+out(_,{trace_ts,Pid,call,MFA={M,F,A},{W,_,_},TS},_,S) 
+  when W==webtool;W==mod_esi-> 
+    io:format("~w: (~p)~ncall ~s~n", [TS,Pid,ffunc(MFA)]),
+    [{M,F,length(A)}|S];
+out(_,{trace_ts,Pid,return_from,MFA,R,TS},_,[MFA|S]) ->
+    io:format("~w: (~p)~nreturned from ~s -> ~p~n", [TS,Pid,ffunc(MFA),R]),
+    S;
+out(_,_,_,_) ->
+    ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                  %%
@@ -127,9 +151,12 @@ script_start([App,Browser]) ->
 	{value,{App,StartPage}} ->
 	    io:format("Starting ~w...\n",[App]),
 	    start_tools([],"app=" ++ atom_to_list(App)),
+	    PortStr = integer_to_list(get_port()),
 	    Url = case StartPage of
-		      "/" ++ Page -> "http://localhost:8888/" ++ Page;
-		      _ -> "http://localhost:8888/" ++ StartPage
+		      "/" ++ Page -> 
+			  "http://localhost:" ++ PortStr ++ "/" ++ Page;
+		      _ -> 
+			  "http://localhost:" ++ PortStr ++ "/" ++ StartPage
 		  end,
 	    case Browser of 
                 iexplore when OSType == win32->
@@ -190,6 +217,9 @@ usage() ->
 get_applications() ->
     gen_server:call(web_tool,get_applications).
     
+get_port() ->
+    gen_server:call(web_tool,get_port).
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                  %%
@@ -201,33 +231,23 @@ get_applications() ->
 %----------------------------------------------------------------------
 
 start()->
-    start(get_path(),get_standard_data()).
-	  
+    start(standard_path,standard_data).
 
 start(Path,standard_data)->
-    Data=get_standard_data(),
-    start(Path,Data);
-    
-start(standard_path,Port) when integer(Port)->
-    Path=get_path(),
-    case get_standard_data(Port)of
-	{error,Error}->
-	    {error,{"unable to get ipaddress",Error}};
+    case get_standard_data() of
+	{error,Reason} ->
+	    {error,Reason};
 	Data ->
 	    start(Path,Data)
     end;
-
+    
 start(standard_path,Data)->
     Path=get_path(),
     start(Path,Data);
     
 start(Path,Port) when integer(Port)->
-    case get_standard_data(Port)of
-	{error,Error}->
-	    {error,{"unable to get ipaddress",Error}};
-	Data ->
-	    start(Path,Data)
-    end;
+    Data = get_standard_data(Port),
+    start(Path,Data);
 	
 start(Path,Data0)->
     Data = Data0 ++ rest_of_standard_data(),
@@ -266,6 +286,10 @@ handle_call(get_applications,_,State)->
     MS = ets:fun2ms(fun({Tool,{web_data,{_,Start}}}) -> {Tool,Start} end),
     Tools = ets:select(State#state.app_data,MS),
     {reply,Tools,State};
+
+handle_call(get_port,_,State)->
+    {value,{port,Port}}=lists:keysearch(port,1,State#state.web_data),
+    {reply,Port,State};
 
 handle_call({started_tools,_Env,_Input},_,State)->
     {reply,started_tools_page(State),State};
@@ -530,24 +554,33 @@ get_aliases(Data)->
 %%                                                                  %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 get_standard_data(Port)->
-    {ok,HostName}=inet:gethostname(),
-    case inet:getaddr(HostName,inet) of
-	{ok,IpNum} ->
-	    [{port,Port},
-	     {bind_address,IpNum},
-	     {server_name,HostName}];
-	Error ->
-	    Error
-    end.
-
-get_standard_data()->
     [
-     %% 'port' must be over 1024 or the user that starts the server 
-     %% must be root on unix
-     {port,?DEFAULT_PORT},
+     {port,Port},
      {bind_address,?DEFAULT_ADDR},
      {server_name,"localhost"}
     ].
+
+get_standard_data()->
+    case get_free_port(?DEFAULT_PORT,?MAX_NUMBER_OF_WEBTOOLS) of
+	{error,Reason} -> {error,Reason};
+	Port ->
+	    [
+	     {port,Port},
+	     {bind_address,?DEFAULT_ADDR},
+	     {server_name,"localhost"}
+	    ]
+    end.
+
+get_free_port(_Port,0) ->
+    {error,no_free_port_found};
+get_free_port(Port,N) ->
+    case gen_tcp:connect("localhost",Port,[]) of
+	{error, _Reason} ->
+	    Port;
+	{ok,Sock} ->
+	    gen_tcp:close(Sock),
+	    get_free_port(Port+1,N-1)
+    end.
 
 rest_of_standard_data() ->
     [
@@ -829,8 +862,13 @@ handle_app({Name,{start,{func,Start,Stop}}},Data,_Pid,Cmd)->
     case Action of
 	{M,F,A} ->
 	    case catch apply(M,F,A) of
-		{'EXIT',_}->
+		{'EXIT',_} = Exit->
 		    %%! Here the tool disappears from the webtool interface!!
+		    io:format("\n=======ERROR (webtool, line ~w) =======\n"
+			      "Could not start application \'~p\'\n\n"
+			      "~w:~w(~s) ->\n"
+			      "~p\n\n",
+			      [?LINE,Name,M,F,format_args(A),Exit]),
 		    ets:delete(Data,Name);
 		_OK->
 		    ok
@@ -848,11 +886,21 @@ handle_app({Name,{start,{child,ChildSpec}}},Data,Pid,Cmd)->
 		    ok;
 		{ok,_,_}->
 		    ok;
-		{error,_Reason}->
+		{error,Reason}->
 		    %%! Here the tool disappears from the webtool interface!!
+		    io:format("\n=======ERROR (webtool, line ~w) =======\n"
+			      "Could not start application \'~p\'\n\n"
+			      "supervisor:start_child(~p,~p) ->\n"
+			      "~p\n\n",
+			      [?LINE,Name,Pid,ChildSpec,{error,Reason}]),
 		    ets:delete(Data,Name);
-		_ ->
+		Error ->
 		    %%! Here the tool disappears from the webtool interface!!
+		    io:format("\n=======ERROR (webtool, line ~w) =======\n"
+			      "Could not start application \'~p\'\n\n"
+			      "supervisor:start_child(~p,~p) ->\n"
+			      "~p\n\n",
+			      [?LINE,Name,Pid,ChildSpec,Error]),
 		    ets:delete(Data,Name)
 	    end;
 	stop ->
@@ -878,8 +926,13 @@ handle_app({Name,{start,{app,Real_name}}},Data,_Pid,Cmd)->
 		    %% anything already started
 		    ets:match_delete(Data,{Name,{start,{app,Real_name}}}),
 		    ok;
-		{error,_Reason}->
+		{error,_Reason}=Error->
 		    %%! Here the tool disappears from the webtool interface!!
+		    io:format("\n=======ERROR (webtool, line ~w) =======\n"
+			      "Could not start application \'~p\'\n\n"
+			      "application:start(~p,~p) ->\n"
+			      "~p\n\n",
+			      [?LINE,Name,Real_name,temporary,Error]),
 		    ets:delete(Data,Name)
 	    end;
 	
@@ -890,8 +943,12 @@ handle_app({Name,{start,{app,Real_name}}},Data,_Pid,Cmd)->
 %----------------------------------------------------------------------
 % If the data is incorrect delete the app
 %----------------------------------------------------------------------
-handle_app({Name,_},Data,_Pid,_Cmd)->
+handle_app({Name,Incorrect},Data,_Pid,Cmd)->
     %%! Here the tool disappears from the webtool interface!!
+    io:format("\n=======ERROR (webtool, line ~w) =======\n"
+	      "Could not ~w application \'~p\'\n\n"
+	      "Incorrect data: ~p\n\n",
+	      [?LINE,Cmd,Name,Incorrect]),
     ets:delete(Data,Name).
 
 
@@ -1148,3 +1205,16 @@ filter_tool_files(Dir,[File|Rest]) ->
 	    filter_tool_files(Dir,Rest)
     end.
 
+
+%%%-----------------------------------------------------------------
+%%% format functions
+ffunc({M,F,A}) when is_list(A) ->
+    io_lib:format("~w:~w(~s)\n",[M,F,format_args(A)]);
+ffunc({M,F,A}) when is_integer(A) ->
+    io_lib:format("~w:~w/~w\n",[M,F,A]).
+
+format_args([]) ->
+    "";
+format_args(Args) ->
+    Str = lists:append(["~p"|lists:duplicate(length(Args)-1,",~p")]),
+    io_lib:format(Str,Args).

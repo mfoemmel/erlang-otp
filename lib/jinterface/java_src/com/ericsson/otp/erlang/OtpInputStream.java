@@ -757,7 +757,7 @@ public class OtpInputStream extends ByteArrayInputStream {
 
     node = this.read_atom();
     id = this.read4BE() & 0x7fff; // 15 bits
-    serial = this.read4BE() & 0x07; // 3 bits
+    serial = this.read4BE() & 0x1fff; // 13 bits
     creation = this.read1() & 0x03; // 2 bits
     
     return new OtpErlangPid(node, id, serial, creation);
@@ -789,7 +789,7 @@ public class OtpInputStream extends ByteArrayInputStream {
     }
 
     node = this.read_atom();
-    id = this.read4BE() & 0x3ffff; // 18 bits
+    id = this.read4BE() & 0xfffffff; // 28 bits
     creation = this.read1() & 0x03; // 2 bits
     
     return new OtpErlangPort(node, id, creation);

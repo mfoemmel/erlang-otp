@@ -2,6 +2,8 @@ changecom(`/*', `*/')dnl
 /*
  * $Id$
  */
+`#ifndef HIPE_X86_ASM_H
+#define HIPE_X86_ASM_H'
 
 /*
  * Tunables.
@@ -28,6 +30,8 @@ define(SIMULATE_NSP,0)dnl change to 1 to simulate call/ret insns
 #define SAVE_CSP	movl %esp, P_CSP(P)
 #define RESTORE_CSP	movl P_CSP(P), %esp'
 
+`#define X86_SIMULATE_NSP	'SIMULATE_NSP
+
 /*
  * Context switching macros.
  */
@@ -51,6 +55,7 @@ define(SIMULATE_NSP,0)dnl change to 1 to simulate call/ret insns
  * Argument (parameter) registers.
  */
 `#define X86_NR_ARG_REGS	'NR_ARG_REGS
+`#define NR_ARG_REGS	'NR_ARG_REGS
 
 ifelse(eval(NR_ARG_REGS >= 1),0,,
 ``#define ARG0	%eax
@@ -212,5 +217,7 @@ define(NBIF_RCS_N,`ifelse(eval($1 >= 0),0,,
 `NBIF_RCS_N(eval($1-1),$2)NBIF_RCS_1($1,$2)')')dnl
 define(NBIF_RESTORE_CALLER_SAVE,
 `NBIF_RCS_N(eval(NR_CALLER_SAVE-1),$1)addl `$'eval(4*($1+NR_CALLER_SAVE))`, %esp'')dnl
-`/* #define NBIF_SAVE_CALLER_SAVE	'NBIF_SAVE_CALLER_SAVE` */'
-`/* #define NBIF_RESTORE_CALLER_SAVE_1	'NBIF_RESTORE_CALLER_SAVE(1)` */'
+`#define NBIF_SAVE_CALLER_SAVE	'NBIF_SAVE_CALLER_SAVE
+`#define NBIF_RESTORE_CALLER_SAVE_1	'NBIF_RESTORE_CALLER_SAVE(1)
+
+`#endif /* HIPE_X86_ASM_H */'

@@ -34,9 +34,9 @@
 %% For backward compatibility.
 -export([sz2pos/1]).
 
--compile({inline, [{sz2pos,1},{scan_skip,8}]}).
+-compile({inline, [{sz2pos,1},{scan_skip,7}]}).
 -compile({inline, [{skip_bytes,5}, {get_segp,1}]}).
--compile({inline, [{wl_lookup,4}]}).
+-compile({inline, [{wl_lookup,5}]}).
 -compile({inline, [{actual_seg_size,0}]}).
 
 -include("dets.hrl").

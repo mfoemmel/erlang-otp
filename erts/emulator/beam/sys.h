@@ -50,6 +50,10 @@
 #  endif
 #endif
 
+#ifndef ERTS_EXIT_AFTER_DUMP
+#  define ERTS_EXIT_AFTER_DUMP exit
+#endif
+
 #ifdef DEBUG
 #  define ASSERT(e) \
   if (e) { \
@@ -223,10 +227,9 @@ typedef unsigned char byte;
 
 #ifdef ISC32			/* Too much for the Makefile... */
 #  define signal	sigset
-#  define lgamma	undef_math_func_1
-#  define asinh	undef_math_func_1
-#  define acosh	undef_math_func_1
-#  define atanh	undef_math_func_1
+#  define NO_ASINH
+#  define NO_ACOSH
+#  define NO_ATANH
 #  define NO_FTRUNCATE
 #  define SIG_SIGHOLD
 #  define _POSIX_SOURCE 
@@ -235,9 +238,8 @@ typedef unsigned char byte;
 
 #ifdef QNX			/* Too much for the Makefile... */
 #  define SYS_SELECT_H
-#  define erf	undef_math_func_1
-#  define erfc	undef_math_func_1
-#  define lgamma	undef_math_func_1
+#  define NO_ERF
+#  define NO_ERFC
 /* This definition doesn't take NaN into account, but matherr() gets those */
 #  define finite(x) (fabs(x) != HUGE_VAL)
 #  define USE_MATHERR
@@ -373,6 +375,8 @@ extern void erts_sys_init_float(void);
 /*
  * System interfaces for startup/sae code (functions found in respective sys.c)
  */
+
+extern void erts_sys_pre_init(void);
 extern void erl_sys_init(void);
 extern void erl_sys_args(int *argc, char **argv);
 extern void erl_sys_schedule(int);
@@ -399,10 +403,10 @@ void get_localtime(int *year, int *month, int *day,
 		   int *hour, int *minute, int *second);
 void get_universaltime(int *year, int *month, int *day, 
 		       int *hour, int *minute, int *second);
-int univ_to_local(int *year, int *month, int *day, 
-		  int *hour, int *minute, int *second);
-int local_to_univ(int *year, int *month, int *day, 
-		  int *hour, int *minute, int *second, int isdst);
+int univ_to_local(Sint *year, Sint *month, Sint *day, 
+		  Sint *hour, Sint *minute, Sint *second);
+int local_to_univ(Sint *year, Sint *month, Sint *day, 
+		  Sint *hour, Sint *minute, Sint *second, int isdst);
 void get_now(Uint*, Uint*, Uint*);
 EXTERN_FUNCTION(void, set_break_quit, (void (*)(void), void (*)(void)));
 

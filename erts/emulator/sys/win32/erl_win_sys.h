@@ -80,12 +80,11 @@
  * Various configuration options, used to be in the Makefile.
  */
 
-#define asinh undef_math_func_1
-#define acosh undef_math_func_1
-#define atanh undef_math_func_1
-#define erf   undef_math_func_1
-#define erfc  undef_math_func_1
-#define lgamma undef_math_func_1
+#define NO_ASINH
+#define NO_ACOSH
+#define NO_ATANH
+#define NO_ERF
+#define NO_ERFC
 
 #define NO_SYSLOG
 #define NO_SYSCONF

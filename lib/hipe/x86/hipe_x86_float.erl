@@ -14,8 +14,7 @@ map(Defun) ->
   SuccMap = hipe_x86_cfg:succ_map(CFG0),
   {CFG1, _} = do_blocks([],[StartLabel], CFG0, Liveness, [], SuccMap, 
 			gb_trees:empty()),
-  CFG2 = hipe_x86_cfg:var_range_update(CFG1, []),
-  hipe_x86_cfg:linearise(CFG2).
+  hipe_x86_cfg:linearise(CFG1).
 
 
 do_blocks(Pred,[Lbl|Lbls], CFG, Liveness, Map, SuccMap, BlockMap) ->
@@ -35,7 +34,7 @@ do_blocks(Pred,[Lbl|Lbls], CFG, Liveness, Map, SuccMap, BlockMap) ->
 	case Dirty of
 	  true ->
 	    NewBlock = hipe_bb:code_update(Block, NewCode0),
-	    {hipe_x86_cfg:bb_update(CFG, Lbl, NewBlock), SuccMap};
+	    {hipe_x86_cfg:bb_add(CFG, Lbl, NewBlock), SuccMap};
 	  _ ->
 	    {CFG, SuccMap}
 	end,
@@ -130,17 +129,13 @@ do_shuffle(Pred,Lbl,CFG, OldMap, NewMap)->
 
   %% Update the CFG.
   NewLabel = hipe_gensym:get_next_label(x86),
-  {LLo,_} = hipe_x86_cfg:label_range(CFG),
-  LHi = hipe_gensym:get_label(x86),
-  NewCFG0 = hipe_x86_cfg:label_range_update(CFG, {LLo, LHi}),
-  NewCFG1 = hipe_x86_cfg:bb_add(NewCFG0, NewLabel, 
-				hipe_bb:mk_bb(Code,false)),
+  NewCFG1 = hipe_x86_cfg:bb_add(CFG, NewLabel, hipe_bb:mk_bb(Code)),
   OldPred = hipe_x86_cfg:bb(NewCFG1, Pred),
   PredCode = hipe_bb:code(OldPred),
   NewLast = redirect(lists:last(PredCode), Lbl,NewLabel),
   NewPredCode = butlast(PredCode)++[NewLast],
   NewPredBB = hipe_bb:code_update(OldPred, NewPredCode),
-  hipe_x86_cfg:bb_update(NewCFG1, Pred, NewPredBB).
+  hipe_x86_cfg:bb_add(NewCFG1, Pred, NewPredBB).
 
 
 find_swap_cycles(OldMap, NewMap)->
@@ -204,11 +199,12 @@ do_switching([],Insns) ->
 
 redirect(Insn, OldLbl, NewLbl)->
   case Insn of
-    #pseudo_call{contlab=ContLab, exnlab=ExnLab}->
+    #pseudo_call{contlab=ContLab, sdesc=SDesc} ->
+      #x86_sdesc{exnlab=ExnLab} = SDesc,
       if ContLab =:= OldLbl -> 
 	  Insn#pseudo_call{contlab=NewLbl};
 	 ExnLab =:= OldLbl ->
-	  Insn#pseudo_call{exnlab=NewLbl}
+	  Insn#pseudo_call{sdesc=SDesc#x86_sdesc{exnlab=NewLbl}}
       end;
     _ -> 
       hipe_x86_cfg:redirect_jmp(Insn, OldLbl, NewLbl)
@@ -216,16 +212,6 @@ redirect(Insn, OldLbl, NewLbl)->
 
 do_insn(I, LiveOut, Map, BlockMap) ->
   case I of
-    #move{src=#x86_imm{value=Value}}->
-      case Value of
-	{'erl_fp_check_exception', Type} ->
-	  Store = pseudo_pop(Map),
-	  {Store ++ [hipe_x86:mk_fp_unop('fwait', []),
-	    I#move{src=#x86_imm{value={'erl_fp_exception',Type}}}],
-	   Map, BlockMap};
-	_ ->
-	  {[I], Map, BlockMap}
-      end;
     #pseudo_call{'fun'=Fun, contlab = ContLab}->
       case Fun of
 	%% We don't want to spill anything if an exception has been thrown.
@@ -243,13 +229,16 @@ do_insn(I, LiveOut, Map, BlockMap) ->
 	_ ->
 	  {pop_all(Map)++[I],[],BlockMap}
       end;
+    #fp_unop{op='fwait'} ->
+      Store = pseudo_pop(Map),
+      {Store ++ [I], Map, BlockMap};
     #fp_unop{}->
       {NewI, NewMap} = do_fp_unop(I, LiveOut, Map),
       {NewI, NewMap, BlockMap};
     #fp_binop{}->
       {NewI, NewMap} = do_fp_binop(I, LiveOut, Map),
       {NewI, NewMap, BlockMap};
-    #fmov{src=Src, dst=Dst}->
+    #fmove{src=Src, dst=Dst}->
       if Src=:=Dst->
 	  %% Don't need to keep this instruction!
 	  %% However, we may need to pop from the stack.
@@ -262,14 +251,14 @@ do_insn(I, LiveOut, Map, BlockMap) ->
 	      {SwitchInsn++pop_insn(), NewMap, BlockMap}
 	  end;
 	 true -> 
-	  {NewI, NewMap} = do_fmov(Src, Dst, LiveOut, Map),
+	  {NewI, NewMap} = do_fmove(Src, Dst, LiveOut, Map),
 	  {NewI, NewMap, BlockMap}
       end;
     _ ->
       {[I], Map, BlockMap}
   end.
 
-do_fmov(Src, Dst=#x86_mem{},LiveOut, Map) ->
+do_fmove(Src, Dst=#x86_mem{},LiveOut, Map) ->
 %%% Storing a float from the stack into memory.
   {SwitchInsn, NewMap0} = switch_first(Src, Map),
   case is_liveOut(Src, LiveOut) of
@@ -279,8 +268,7 @@ do_fmov(Src, Dst=#x86_mem{},LiveOut, Map) ->
       NewMap1 = pop(NewMap0),
       {SwitchInsn ++[hipe_x86:mk_fp_unop(fstp, Dst)], NewMap1}
   end;
-
-do_fmov(Src=#x86_mem{}, Dst, _LiveOut, Map) ->
+do_fmove(Src=#x86_mem{}, Dst, _LiveOut, Map) ->
 %%% Pushing a float into the stack.
   case in_map(Dst, Map) of
     true -> ?EXIT({loadingExistingFpVariable,{Src,Dst}});
@@ -290,8 +278,7 @@ do_fmov(Src=#x86_mem{}, Dst, _LiveOut, Map) ->
   %% We want Dst in the map rather than Src.
   NewMap = [Dst|NewMap0],
   {PushOp, NewMap};
-
-do_fmov(Src, Dst, LiveOut, Map) ->
+do_fmove(Src, Dst, LiveOut, Map) ->
 %%% Copying a float that either is spilled or is on the fp stack,
 %%% or converting a fixnum in a temp to a float on the fp stack.
   case in_map(Dst, Map) of
@@ -575,8 +562,7 @@ is_fp(#x86_temp{type=Type}) ->
 
 handle_insn(I) ->
   case I of
-    #move{src=#x86_imm{}} -> true;
-    #fmov{} -> true;
+    #fmove{} -> true;
     #fp_unop{} -> true;
     #fp_binop{} -> true;
     #pseudo_call{}->true;

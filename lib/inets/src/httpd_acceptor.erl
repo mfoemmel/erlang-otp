@@ -59,7 +59,7 @@ do_init(SocketType, Addr, Port) ->
 
 
 do_socket_start(SocketType) ->
-    case httpd_socket:start(SocketType) of
+    case http_transport:start(SocketType) of
 	ok ->
 	    ok;
 	{error, Reason} ->
@@ -69,7 +69,7 @@ do_socket_start(SocketType) ->
 
 
 do_socket_listen(SocketType, Addr, Port) ->
-    case httpd_socket:listen(SocketType, Addr, Port) of
+    case http_transport:listen(SocketType, Addr, Port) of
 	{error, Reason} ->
 	    ?vinfo("failed socket listen operation: ~p", [Reason]),
 	    throw({error, {listen, Reason}});
@@ -82,7 +82,7 @@ do_socket_listen(SocketType, Addr, Port) ->
 
 acceptor(Manager, SocketType, ListenSocket, ConfigDb) ->
     ?vdebug("await connection",[]),
-    case (catch httpd_socket:accept(SocketType, ListenSocket, 30000)) of
+    case (catch http_transport:accept(SocketType, ListenSocket, 50000)) of
 	{error, Reason} ->
 	    handle_error(Reason, ConfigDb, SocketType),
 	    ?MODULE:acceptor(Manager, SocketType, ListenSocket, ConfigDb);
@@ -98,22 +98,9 @@ acceptor(Manager, SocketType, ListenSocket, ConfigDb) ->
 
 
 handle_connection(Manager, ConfigDb, SocketType, Socket) ->
-    case httpd_request_handler:start_link(Manager, ConfigDb) of
-	{ok, Pid} ->
-	    httpd_socket:controlling_process(SocketType, Socket, Pid),
-	    httpd_request_handler:synchronize(Pid, SocketType, Socket);
-	{error, Reason} ->
-	    handle_connection_err(SocketType, Socket, ConfigDb, Reason)
-    end.
-
-
-handle_connection_err(SocketType, Socket, ConfigDb, Reason) ->
-    String = 
-	lists:flatten(
-	  io_lib:format("failed starting request handler:~n   ~p", [Reason])),
-    report_error(ConfigDb, String),
-    httpd_socket:close(SocketType, Socket).
-
+    {ok, Pid} = httpd_request_handler:start_link(Manager, ConfigDb),
+    http_transport:controlling_process(SocketType, Socket, Pid),
+    httpd_request_handler:synchronize(Pid, SocketType, Socket).
 
 handle_error(timeout, _, _) ->
     ?vtrace("Accept timeout",[]),
@@ -162,14 +149,7 @@ accept_failed(SocketType, ConfigDb, String) ->
 		      {0, "unknown"}, String),
     mod_disk_log:error_log(SocketType, undefined, ConfigDb, 
 			   {0, "unknown"}, String),
-    exit({accept_failed, String}).
-
-
-report_error(Db, String) ->
-    error_logger:error_report(String),
-    mod_log:report_error(Db, String),
-    mod_disk_log:report_error(Db, String).
-    
+    exit({accept_failed, String}).    
 
 sleep(T) -> receive after T -> ok end.
 

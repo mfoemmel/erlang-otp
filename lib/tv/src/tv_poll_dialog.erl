@@ -261,7 +261,7 @@ receive_answer(ProcPid, DataReqMsg, WinConfMsg, MarkedRowMsg, SubsetMsg) ->
 		    ProcPid ! raise_and_beep,
 		    receive_answer(ProcPid, DataReqMsg, WinConfMsg, MarkedRowMsg, SubsetMsg);
 
-		{'EXIT', Sender, Reason} ->
+		{'EXIT', _Sender, _Reason} ->
 		    self() ! Msg,
 		    cancel;
 
@@ -344,7 +344,7 @@ browser_loop(Pid, Win, NoPollBtn, PollBtn, Lbl, Scale, OkBtn, CancelBtn, Poll, P
 			 CancelBtn, Poll, Pos);
 
 
-	{'EXIT', Sender, Reason} ->
+	{'EXIT', _Sender, _Reason} ->
 	    Pid ! {browser, self(), cancel};
 
 

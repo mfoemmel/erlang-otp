@@ -25,6 +25,7 @@
 %% External exports
 %%-----------------------------------------------------------------
 -export([emit/2, emit/3]).
+-export([emit_c_enc_rpt/4, emit_c_dec_rpt/4]).
 -export([comment/2, comment/3, comment/4, comment_inlined/5, comment_prefixed/4]).
 -export([mcomment/2, mcomment/3, mcomment_inlined/5, mcomment_prefixed/3]).
 -export([mcomment_light/2, mcomment_light/3, mcomment_light_inlined/5, mcomment_light_prefixed/3]).
@@ -43,12 +44,18 @@
 %% Emit output as a formatted string, (old emit)
 %%--------------------------------------------------------------------
 emit(nil, _) -> ok;
-emit(F, Str) ->
-    file:write(F, Str).
+emit(Fd, Str) ->
+    file:write(Fd, Str).
 
 emit(nil, _, _) -> ok;
-emit(F, Format, Args) ->
-    file:write(F, io_lib:format(Format, Args)).
+emit(Fd, Fmt, Args) ->
+    file:write(Fd, io_lib:format(Fmt, Args)).
+
+emit_c_enc_rpt(Fd, Prefix, Fmt, Args) ->
+    emit(Fd, Prefix ++ "OE_RPT_ERR(\"Encode error: " ++ Fmt ++ "\");\n", Args).
+
+emit_c_dec_rpt(Fd, Prefix, Fmt, Args) ->
+    emit(Fd, Prefix ++ "OE_RPT_ERR(\"Decode error: " ++ Fmt ++ "\");\n", Args).
 
 %%--------------------------------------------------------------------
 %% Emit comments

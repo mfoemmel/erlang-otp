@@ -77,7 +77,7 @@ init([FileList]) ->
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%----------------------------------------------------------------------
@@ -85,7 +85,7 @@ terminate(Reason, State) ->
 %% Returns    : {ok, NewState}
 %% Description: Convert process state when code is changed
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%---------------------------------------------------------------------%
@@ -96,9 +96,9 @@ code_change(OldVsn, State, Extra) ->
 %%----------------------------------------------------------------------
 handle_info(Info, State) ->
     case Info of
-        {'EXIT', Pid, Reason} ->
+        {'EXIT', _Pid, Reason} ->
             {stop, Reason, State};
-        Other ->
+        _Other ->
             {noreply, State}
     end.
 
@@ -111,13 +111,13 @@ handle_info(Info, State) ->
 %% Returns    : {boolean(), FileWrapper}
 %% Description: 
 %%----------------------------------------------------------------------
-next_one(OE_This, []) ->
+next_one(_OE_This, []) ->
     {reply, {false, 
 	     #'CosFileTransfer_FileWrapper'{the_file = corba:create_nil_objref(),
 					    file_type = nfile}}, []};
-next_one(OE_This, [FileWrapper]) ->
+next_one(_OE_This, [FileWrapper]) ->
     {reply, {true, FileWrapper}, []};
-next_one(OE_This, [FileWrapper|Rest]) ->
+next_one(_OE_This, [FileWrapper|Rest]) ->
     {reply, {true, FileWrapper}, Rest}.
 
 %%---------------------------------------------------------------------%
@@ -126,11 +126,11 @@ next_one(OE_This, [FileWrapper|Rest]) ->
 %% Returns    : {boolean(), FileWrapperList}
 %% Description: 
 %%----------------------------------------------------------------------
-next_n(OE_This, [], _) ->
+next_n(_OE_This, [], _) ->
     {reply, {false, []}, []};
-next_n(OE_This, FileWrapperList, HowMany) when HowMany > length(FileWrapperList) ->
+next_n(_OE_This, FileWrapperList, HowMany) when HowMany > length(FileWrapperList) ->
     {reply, {true, FileWrapperList}, []};
-next_n(OE_This, FileWrapperList, HowMany) ->
+next_n(_OE_This, FileWrapperList, HowMany) ->
     {reply, {true, lists:sublist(FileWrapperList, HowMany)}, 
      lists:nthtail(HowMany, FileWrapperList)}.
 
@@ -140,7 +140,7 @@ next_n(OE_This, FileWrapperList, HowMany) ->
 %% Returns    : -
 %% Description: 
 %%----------------------------------------------------------------------
-destroy(OE_This, State) ->
+destroy(_OE_This, State) ->
     {stop, normal, ok, State}.
 
 

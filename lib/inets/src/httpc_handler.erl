@@ -1,4 +1,4 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
@@ -9,731 +9,420 @@
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Mobile Arts AB
-%% Portions created by Mobile Arts are Copyright 2002, Mobile Arts AB
-%% All Rights Reserved.''
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
 %% 
-%%
-
-%%% TODO:
-%%% - If an error is returned when sending a request, don't use this
-%%%   session anymore.
-%%% - Closing of sessions not properly implemented for some cases
-
-%%% File    : httpc_handler.erl
-%%% Author  : Johan Blom <johan.blom@mobilearts.se>
-%%% Description : Handles HTTP client responses, for a single TCP session
-%%% Created :  4 Mar 2002 by Johan Blom
+%%     $Id$
 
 -module(httpc_handler).
 
+-behaviour(gen_server).
+
 -include("http.hrl").
--include("jnets_httpd.hrl").
 
--export([init_connection/2,http_request/2]).
+%%--------------------------------------------------------------------
+%% Application API
+-export([start/2, send/2, cancel/2]).
 
-%%% ==========================================================================
-%%% "Main" function in the spawned process for the session.
-init_connection(Req,Session) when record(Req,request) ->
-    case catch http_lib:connect(Req) of
-	{ok,Socket} ->
-	    case catch http_request(Req,Socket) of
-		ok ->
-		    case Session#tcp_session.clientclose of
-			true ->
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+	 terminate/2, code_change/3]).
+
+-record(state, {request,        % #request{}
+                session,        % #tcp_session{} 
+                status_line,    % {Version, StatusCode, ReasonPharse}
+                headers,        % #http_response_h{}
+                body,           % binary()
+                mfa,            % {Moduel, Function, Args}
+                pipeline = queue:new(),  % queue() 
+                busy = true,             % true | false
+		canceled = [],	         % [RequestId]
+                max_header_size = nolimit, % noimit | integer() 
+                max_body_size = nolimit    % noimit | integer() 
+               }).
+
+%%====================================================================
+%% External functions
+%%====================================================================
+%%--------------------------------------------------------------------
+%% Function: start() -> {ok, Pid}
+%%
+%% Description: Starts a http-request handler process. Intended to be
+%% called by the httpc manager process.
+%% %%--------------------------------------------------------------------
+start(Request, ProxyOptions) ->
+    %% Note will be monitored by the httpc_manager process
+    %% The link functionality is not desired in this case.
+    gen_server:start(?MODULE, [Request, ProxyOptions], []).
+
+%%--------------------------------------------------------------------
+%% Function: send(Request, Pid) -> ok 
+%%	Request = #request{}
+%%      Pid = pid() - the pid of the http-request handler process.
+%%
+%% Description: Uses this handlers session to send a request. Intended
+%% to be called by the httpc manager process.
+%%--------------------------------------------------------------------
+send(Request, Pid) ->
+    call(Request, Pid, 5000).
+
+%%--------------------------------------------------------------------
+%% Function: cancel(RequestId, Pid) -> ok
+%%	RequestId = ref()
+%%      Pid = pid() -  the pid of the http-request handler process.
+%%
+%% Description: Cancels a request. Intended to be called by the httpc
+%% manager process.
+%%--------------------------------------------------------------------
+cancel(RequestId, Pid) ->
+    cast({cancel, RequestId}, Pid).
+
+%%====================================================================
+%% Server functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: init([Request, Session]) -> {ok, State} | 
+%%                       {ok, State, Timeout} | ignore |{stop, Reason}
+%%
+%% Description: Initiates the httpc_handler process 
+%%
+%% Note: The init function may not fail, that will kill the
+%% httpc_manager process. We could make the httpc_manager more comlex
+%% but we do not want that so errors will be handled by the process
+%% sending an init_error message to itself.
+%% 
+%%--------------------------------------------------------------------
+init([Request, ProxyOptions]) ->
+    case http_transport:connect(Request, ProxyOptions) of
+        {ok, Socket} ->
+            case http_request:send(Request, Socket) of
+                ok ->
+		    ClientClose = client_close_value(Request),
+		    Session = 
+			#tcp_session{id = {Request#request.address, self()},
+				     scheme = Request#request.scheme,
+				     socket = Socket,
+				     client_close = ClientClose},
+                    State = #state{request = Request, 
+				   session = Session},
+		    NewState = State#state{mfa = 
+					   {http_response, parse,
+					    [State#state.max_header_size]}},
+                    case ClientClose of
+			true -> %% Not a presistent connection
 			    ok;
-			false ->
-			    httpc_manager:register_socket(Req#request.address,
-							  Session#tcp_session.id,
-							  Socket)
+			false  ->
+			    httpc_manager:insert_session(Session)
 		    end,
-		    next_response_with_request(Req,
-					       Session#tcp_session{socket=Socket});
-		{error,Reason} -> % Not possible to use new session
-		    http_error_response(Req,Reason),
-		    exit_session_ok(Req#request.address,
-				    Session#tcp_session{socket=Socket})
+		    http_transport:setopts(Session#tcp_session.scheme, 
+					   Socket, [{active, once}]),
+                    activate_request_timeout(Request),
+                    {ok, NewState};
+                {error, Reason} -> 
+		    self() ! {init_error, error_sending, 
+			      http_response:error(Request, Reason)},
+		    {ok, #state{request = Request,
+				session = #tcp_session{socket = Socket}}}
+            end;
+        {error, Reason} -> 
+            self() ! {init_error, error_connecting,
+		      http_response:error(Request, Reason)},
+            {ok, #state{request = Request}}
+    end.
+
+%%--------------------------------------------------------------------
+%% Function: handle_call(Request, From, State) -> {reply, Reply, State} |
+%%          {reply, Reply, State, Timeout} |
+%%          {noreply, State}               |
+%%          {noreply, State, Timeout}      |
+%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
+%%          {stop, Reason, State}            (terminate/2 is called)
+%% Description: Handling call messages
+%%--------------------------------------------------------------------
+handle_call(Request, _, State = #state{session = Session =
+					   #tcp_session{socket = Socket}}) ->
+    case http_request:send(Request, Socket) of
+        ok ->
+            case State#state.busy of
+                true ->
+                    NewPipeline = queue:in(Request, State#state.pipeline),
+		    NewSession = 
+			Session#tcp_session{pipeline_length = 
+					    queue:len(NewPipeline)},
+		    httpc_manager:insert_session(NewSession),
+                    {reply, {ok, NewSession}, 
+		     State#state{pipeline = NewPipeline,
+				 session = NewSession}};
+		false ->
+		    activate_request_timeout(Request),
+		    http_transport:setopts(Session#tcp_session.scheme, 
+					   Session#tcp_session.socket, 
+                                           [{active, once}]),
+		    NewSession = Session#tcp_session{pipeline_length = 1},
+		    NewState = 
+			#state{request = Request, 
+			       mfa = {http_response, parse, 
+				      [State#state.max_header_size]},
+			       session = NewSession},
+		    httpc_manager:insert_session(NewSession),
+		    {reply, ok, NewState}
 	    end;
-	{error,Reason} -> % Not possible to set up new session
-	    http_error_response(Req,Reason),
-	    exit_session_ok2(Req#request.address,
-			     Session#tcp_session.clientclose,
-			     Session#tcp_session.id)
-    end.
-
-next_response_with_request(Req,Session) ->
-    Timeout=(Req#request.settings)#client_settings.timeout,
-    case catch read(Timeout,Session#tcp_session.scheme,
-		    Session#tcp_session.socket) of
-	{Status,Headers,Body} ->
-	    NewReq=handle_response({Status,Headers,Body},Timeout,Req,Session),
-	    next_response_with_request(NewReq,Session);
-	{error,Reason} ->
-	    http_error_response(Req,Reason),
-	    exit_session(Req#request.address,Session,aborted_request);
-	{'EXIT',Reason} ->
-	    http_error_response(Req,Reason),
-	    exit_session(Req#request.address,Session,aborted_request)
-    end.
-
-handle_response(Response,Timeout,Req,Session) ->
-    case http_response(Response,Req,Session) of
-	ok ->
-	    next_response(Timeout,Req#request.address,Session);
-	stop ->
-	    exit(normal);
-	{error,Reason} ->
-	    http_error_response(Req,Reason),
-	    exit_session(Req#request.address,Session,aborted_request)
-    end.
-
-
-
-%%% Wait for the next respond until
-%%% - session is closed by the other side
-%%%      => set up a new a session, if there are pending requests in the que
-%%% - "Connection:close" header is received
-%%%      => close the connection (release socket) then
-%%%         set up a new a session, if there are pending requests in the que
-%%% 
-%%% Note:
-%%% - When invoked there are no pending responses on received requests.
-%%% - Never close the session explicitly, let it timeout instead!
-next_response(Timeout,Address,Session) ->
-    case httpc_manager:next_request(Address,Session#tcp_session.id) of
-	no_more_requests ->
-	    %% There are no more pending responses, now just wait for
-	    %% timeout or a new response.
-	    case catch read(Timeout,
-			    Session#tcp_session.scheme,
-			    Session#tcp_session.socket) of
-		{error,Reason} when Reason==session_remotely_closed;
-				    Reason==session_local_timeout ->
-		    exit_session_ok(Address,Session);
-		{error,Reason} ->
-		    exit_session(Address,Session,aborted_request);
-		{'EXIT',Reason} ->
-		    exit_session(Address,Session,aborted_request);
-		{Status2,Headers2,Body2} ->
-		    case httpc_manager:next_request(Address,
-						    Session#tcp_session.id) of
-			no_more_requests -> % Should not happen!
-			    exit_session(Address,Session,aborted_request);
-			{error,Reason} -> % Should not happen!
-			    exit_session(Address,Session,aborted_request);
-			NewReq ->
-			    handle_response({Status2,Headers2,Body2},
-					    Timeout,NewReq,Session)
-		    end
-	    end;
-	{error,Reason} -> % The connection has been closed by httpc_manager
-	    exit_session(Address,Session,aborted_request);
-	NewReq ->
-	    NewReq
-    end.
-
-%% ===========================================================================
-%% Internals
-
-%%% Read in and parse response data from the socket
-read(Timeout,SockType,Socket) ->
-    Info=#response{scheme=SockType,socket=Socket},
-    http_lib:setopts(SockType,Socket,[{packet, http}]),
-    Info1=read_response(SockType,Socket,Info,Timeout),
-    http_lib:setopts(SockType,Socket,[binary,{packet, raw}]),
-    case (Info1#response.headers)#res_headers.content_type of
-	"multipart/byteranges"++Param ->
-	    range_response_body(Info1,Timeout,Param);
-	_ ->
-	    #response{status=Status2,headers=Headers2,body=Body2}=
-		http_lib:read_client_body(Info1,Timeout),
-	    {Status2,Headers2,Body2}
-    end.
-
-
-%%% From RFC 2616:
-%%%      Status-Line = HTTP-Version SP Status-Code SP Reason-Phrase CRLF
-%%%      HTTP-Version   = "HTTP" "/" 1*DIGIT "." 1*DIGIT
-%%%      Status-Code    = 3DIGIT
-%%%      Reason-Phrase  = *<TEXT, excluding CR, LF>
-read_response(SockType,Socket,Info,Timeout) ->
-    case http_lib:recv0(SockType,Socket,Timeout) of
-	{ok,{http_response,{1,VerMin}, Status, _Phrase}} when VerMin==0;
-							      VerMin==1 ->
-	    Info1=Info#response{status=Status,version=VerMin},
-	    http_lib:read_client_headers(Info1,Timeout);
-	{ok,{http_response,_Version, _Status, _Phrase}} ->
-	    throw({error,bad_status_line});
-    	{error, timeout} ->
-	    throw({error,session_local_timeout});
-	{error, Reason} when Reason==closed;Reason==enotconn ->
-	    throw({error,session_remotely_closed});
 	{error, Reason} ->
-	    throw({error,Reason})
+	    http_response:send(Request#request.from, 
+			       http_response:error(Request,Reason)), 
+	    {stop, normal, State}
     end.
+%%--------------------------------------------------------------------
+%% Function: handle_cast(Msg, State) -> {noreply, State} |
+%%          {noreply, State, Timeout} |
+%%          {stop, Reason, State}            (terminate/2 is called)
+%% Description: Handling cast messages
+%%--------------------------------------------------------------------
+handle_cast({cancel, RequestId}, State) ->
+    httpc_manager:request_canceled(RequestId),
+    {noreply, State#state{canceled = [RequestId | State#state.canceled]}}.
 
-%%% From RFC 2616, Section 4.4, Page 34
-%% 4.If the message uses the media type "multipart/byteranges", and the
-%%   transfer-length is not otherwise specified, then this self-
-%%   delimiting media type defines the transfer-length. This media type
-%%   MUST NOT be used unless the sender knows that the recipient can parse
-%%   it; the presence in a request of a Range header with multiple byte-
-%%   range specifiers from a 1.1 client implies that the client can parse
-%%   multipart/byteranges responses.
-range_response_body(Info,Timeout,Param) ->
-    Headers=Info#response.headers,
-    case {Headers#res_headers.content_length,
-	  Headers#res_headers.transfer_encoding} of
-	{undefined,undefined} ->
-	    #response{status=Status2,headers=Headers2,body=Body2}=
-		http_lib:read_client_multipartrange_body(Info,Param,Timeout),
-	    {Status2,Headers2,Body2};
-	_ ->
-	    #response{status=Status2,headers=Headers2,body=Body2}=
-		http_lib:read_client_body(Info,Timeout),
-	    {Status2,Headers2,Body2}
-    end.
+%%--------------------------------------------------------------------
+%% Function: handle_info(Info, State) -> {noreply, State} |
+%%          {noreply, State, Timeout} |
+%%          {stop, Reason, State}            (terminate/2 is called)
+%% Description: Handling all non call/cast messages
+%%--------------------------------------------------------------------
+handle_info({Proto, _Socket, Data}, State = 
+	    #state{mfa = {Module, Function, Args}, 
+		   request = #request{method = Method}, session = Session}) 
+  when Proto == tcp; Proto == ssl ->
     
-
-%%% ----------------------------------------------------------------------------
-%%% Host: field is required when addressing multi-homed sites ...
-%%% It must not be present when the request is being made to a proxy.
-http_request(#request{method=Method,id=Id,
-		      scheme=Scheme,address={Host,Port},pathquery=PathQuery,
-		      headers=Headers, content={ContentType,Body},
-		      settings=Settings},
-	     Socket) ->
-    PostData=
-	if
-	    Method==post;Method==put -> 
-		case Headers#req_headers.expect of
-		    "100-continue" ->
-			content_type_header(ContentType) ++
-			    content_length_header(length(Body)) ++ 
-			    "\r\n";
-		    _ ->
-			content_type_header(ContentType) ++
-			    content_length_header(length(Body)) ++ 
-			    "\r\n" ++ Body
-		end;
-	    true ->
-		"\r\n"
-	end,
-    Message=
-	case useProxy(Settings#client_settings.useproxy,
-		      {Scheme,Host,Port,PathQuery}) of
-	    false ->
-		method(Method)++" "++PathQuery++" HTTP/1.1\r\n"++
-		    host_header(Host)++te_header()++
-		    headers(Headers) ++ PostData;
-	    AbsURI ->
-		method(Method)++" "++AbsURI++" HTTP/1.1\r\n"++
-		    te_header()++
-		    headers(Headers)++PostData
-	end,
-    http_lib:send(Scheme,Socket,Message).
-
-useProxy(false,_) ->
-    false;
-useProxy(true,{Scheme,Host,Port,PathQuery}) ->
-    [atom_to_list(Scheme),"://",Host,":",integer_to_list(Port),PathQuery].
-
-
-
-headers(#req_headers{expect=Expect,
-		     other=Other}) ->
-    H1=case Expect of
-	   undefined ->[];
-	   _ -> "Expect: "++Expect++"\r\n"
-       end,
-    H1++headers_other(Other).
-
-
-headers_other([]) ->
-    [];
-headers_other([{Key,Value}|Rest]) when atom(Key) ->
-    Head = atom_to_list(Key)++": "++Value++"\r\n",
-    Head ++ headers_other(Rest);
-headers_other([{Key,Value}|Rest]) ->
-    Head = Key++": "++Value++"\r\n",
-    Head ++ headers_other(Rest).
-
-host_header(Host) ->
-    "Host: "++lists:concat([Host])++"\r\n".
-content_type_header(ContentType) ->
-    "Content-Type: " ++ ContentType ++ "\r\n".
-content_length_header(ContentLength) ->
-    "Content-Length: "++integer_to_list(ContentLength) ++ "\r\n".
-te_header() ->
-    "TE: \r\n".
-    
-method(Method) ->
-    httpd_util:to_upper(atom_to_list(Method)).
-
-
-%%% --------------------------------------------------------------------------
-http_error_response(#request{from=From,ref=Ref,id=Id},Reason) ->
-    gen_server:cast(From,{Ref,Id,{error,Reason}}).
-
-http_response({Status,Headers,Body},Req,Session) ->
-    case Status of
-	100 ->
-	    status_continue(Req,Session);
-	200 ->
-	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-					      {Status,Headers,Body}}),
-	    ServerClose=http_lib:connection_close(Headers),
-	    handle_connection(Session#tcp_session.clientclose,ServerClose,
-			      Req,Session);
-	300 -> status_multiple_choices(Headers,Body,Req,Session);
-	301 -> status_moved_permanently(Req#request.method,
-					Headers,Body,Req,Session);
-	302 -> status_found(Headers,Body,Req,Session);
-	303 -> status_see_other(Headers,Body,Req,Session);
-	304 -> status_not_modified(Headers,Body,Req,Session);
-	305 -> status_use_proxy(Headers,Body,Req,Session);
-	%% 306 This Status code is not used in HTTP 1.1
-	307 -> status_temporary_redirect(Headers,Body,Req,Session);
-	503 -> status_service_unavailable({Status,Headers,Body},Req,Session);
-	Status50x when Status50x==500;Status50x==501;Status50x==502;
-		       Status50x==504;Status50x==505 ->
-	    status_server_error_50x({Status,Headers,Body},Req,Session);
-	_ -> % FIXME May want to take some action on other Status codes as well
-	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-					      {Status,Headers,Body}}),
-	    ServerClose=http_lib:connection_close(Headers),
-	    handle_connection(Session#tcp_session.clientclose,ServerClose,
-			      Req,Session)
-    end.
-
-
-%%% Status code dependent functions.
-
-%%% Received a 100 Status code ("Continue")
-%%% From RFC2616
-%%% The client SHOULD continue with its request. This interim response is
-%%% used to inform the client that the initial part of the request has
-%%% been received and has not yet been rejected by the server. The client
-%%% SHOULD continue by sending the remainder of the request or, if the
-%%% request has already been completed, ignore this response. The server
-%%% MUST send a final response after the request has been completed. See
-%%% section 8.2.3 for detailed discussion of the use and handling of this
-%%% status code.
-status_continue(Req,Session) ->
-    {_,Body}=Req#request.content,
-    http_lib:send(Session#tcp_session.scheme,Session#tcp_session.socket,Body),
-    next_response_with_request(Req,Session).
-
-
-%%% Received a 300 Status code ("Multiple Choices")
-%%% The resource is located in any one of a set of locations
-%%% - If a 'Location' header is present (preserved server choice), use that
-%%%   to automatically redirect to the given URL
-%%% - else if the Content-Type/Body both are non-empty let the user agent make
-%%%   the choice and thus return a response with status 300
-%%% Note:
-%%% - If response to a HEAD request, the Content-Type/Body both should be empty.
-%%% - The behaviour on an empty Content-Type or Body is unspecified.
-%%%   However, e.g. "Apache/1.3" servers returns both empty if the header
-%%%   'if-modified-since: Date' was sent in the request and the content is
-%%%   "not modified" (instead of 304). Thus implicitly giving the cache as the
-%%%   only choice.
-status_multiple_choices(Headers,Body,Req,Session)
-  when ((Req#request.settings)#client_settings.autoredirect)==true ->
-    ServerClose=http_lib:connection_close(Headers),
-    case Headers#res_headers.location of
-	undefined ->
-	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-					      {300,Headers,Body}}),
-	    handle_connection(Session#tcp_session.clientclose,ServerClose,
-			      Req,Session);
-	RedirUrl ->
-	    Scheme=Session#tcp_session.scheme,
-	    case uri:parse(RedirUrl) of
-		{error,Reason} ->
-		    {error,Reason};
-		{Scheme,Host,Port,PathQuery} -> % Automatic redirection
-		    NewReq=Req#request{redircount=Req#request.redircount+1,
-				       address={Host,Port},pathquery=PathQuery},
-		    handle_redirect(Session#tcp_session.clientclose,ServerClose,
-				    NewReq,Session)
-	    end
+    case Module:Function([Data | Args]) of
+        {ok, Result} ->
+            handle_http_msg(Result, State); 
+        {_, whole_body, _} when Method == head ->
+	    handle_response(State#state{body = <<>>}); 
+	NewMFA ->
+	    http_transport:setopts(Session#tcp_session.scheme, 
+                                   Session#tcp_session.socket, 
+				   [{active, once}]),
+            {noreply, State#state{mfa = NewMFA}}
     end;
-status_multiple_choices(Headers,Body,Req,Session) ->
-    ServerClose=http_lib:connection_close(Headers),
-    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-				      {300,Headers,Body}}),
-    handle_connection(Session#tcp_session.clientclose,ServerClose,Req,Session).
+%% The Server may close the connection too indicate that the
+%% whole body is now sent instead of sending an lengh
+%% indicator.
+handle_info({tcp_closed, _}, State = #state{mfa = {_, whole_body, Args}}) ->
+    handle_response(State#state{body = hd(Args)}); 
+handle_info({ssl_closed, _}, State = #state{mfa = {_, whole_body, Args}}) ->
+    handle_response(State#state{body = hd(Args)}); 
+%% Error cases
+handle_info({tcp_closed, _}, State = #state{request = Request}) ->
+    http_response:send(Request#request.from, 
+		       http_response:error(Request, session_remotly_closed)),
+    {stop, error_connection_closed, State};
+handle_info({ssl_closed, _}, State = #state{request = Request}) ->
+    http_response:send(Request#request.from, 
+		        http_response:error(Request, seesion_remotly_closed)),
+    {stop, error_connection_closed, State};
+handle_info({tcp_error, _, Reason}, State = #state{request = Request}) ->
+    http_response:send(Request#request.from, 
+		       http_response:error(Request, Reason)),
+    {stop, error_tcp, State};
+handle_info({ssl_error, _, Reason}, State = #state{request = Request}) ->
+    http_response:send(Request#request.from, 
+		       http_response:error(Request, Reason)),
+    {stop, error_ssl, State};
+%% Timeouts
+handle_info({timeout, Id}, State =  #state{request = Request = 
+					   #request{id = Id}}) ->
+    http_response:send(Request#request.from, 
+		       http_response:error(Request, session_local_timeout)),
+    {stop, normal, State};
+handle_info({timeout, _}, State) -> %% Response has been received so ignore
+    {noreply, State};
 
+%% Setting up the connection to the server somehow failed. 
+handle_info({init_error, _, ClientErrMsg},
+	    State = #state{request = Request}) ->
+    http_response:send(Request#request.from, ClientErrMsg),
+    {stop, normal, State}.
 
-%%% Received a 301 Status code ("Moved Permanently")
-%%% The resource has been assigned a new permanent URI
-%%% - If a 'Location' header is present, use that to automatically redirect to
-%%%   the given URL if GET or HEAD request
-%%% - else return 
-%%% Note:
-%%% - The Body should contain a short hypertext note with a hyperlink to the
-%%%   new URI. Return this if Content-Type acceptable (some HTTP servers doesn't
-%%%   deal properly with Accept headers) 
-status_moved_permanently(Method,Headers,Body,Req,Session)
-  when (((Req#request.settings)#client_settings.autoredirect)==true) and
-       (Method==get) or (Method==head) ->
-    ServerClose=http_lib:connection_close(Headers),
-    case Headers#res_headers.location of
-	undefined ->
-	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-					      {301,Headers,Body}}),
-	    handle_connection(Session#tcp_session.clientclose,ServerClose,
-			      Req,Session);
-	RedirUrl ->
-	    Scheme=Session#tcp_session.scheme,
-	    case uri:parse(RedirUrl) of
-		{error,Reason} ->
-		    {error,Reason};
-		{Scheme,Host,Port,PathQuery} -> % Automatic redirection
-		    NewReq=Req#request{redircount=Req#request.redircount+1,
-				       address={Host,Port},pathquery=PathQuery},
-		    handle_redirect(Session#tcp_session.clientclose,ServerClose,
-				    NewReq,Session)
-	    end
-    end;
-status_moved_permanently(_Method,Headers,Body,Req,Session) ->
-    ServerClose=http_lib:connection_close(Headers),
-    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-				      {301,Headers,Body}}),
-    handle_connection(Session#tcp_session.clientclose,ServerClose,Req,Session).
+%%--------------------------------------------------------------------
+%% Function: terminate(Reason, State) -> _  (ignored by gen_server)
+%% Description: Shutdown the httpc_handler
+%%--------------------------------------------------------------------
+terminate(_, #state{session = undefined}) ->
+    ok;  %% Init error there is no socket to be closed.
+terminate(_, #state{request = Request, 
+		    session = #tcp_session{id = undefined,
+					   socket = Socket}}) ->  
+    %% Init error sending, no session information has been setup but
+    %% there is a socket that needs closing.
+    http_transport:close(Request#request.scheme, Socket);
 
-
-%%% Received a 302 Status code ("Found")
-%%% The requested resource resides temporarily under a different URI.
-%%% Note:
-%%% - Only cacheable if indicated by a Cache-Control or Expires header
-status_found(Headers,Body,Req,Session)
-  when ((Req#request.settings)#client_settings.autoredirect)==true ->
-    ServerClose=http_lib:connection_close(Headers),
-    case Headers#res_headers.location of
-	undefined ->
-	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-					      {302,Headers,Body}}),
-	    handle_connection(Session#tcp_session.clientclose,ServerClose,
-			      Req,Session);
-	RedirUrl ->
-	    case uri:parse(RedirUrl) of
-		{error,no_scheme} when
-		      (Req#request.settings)#client_settings.relaxed ->
-		    NewLocation=fix_relative_uri(Req,RedirUrl),
-		    status_found(Headers#res_headers{location=NewLocation},
-				 Body,Req,Session);
-		{error,Reason} ->
-		    {error,Reason};
-		{Scheme,Host,Port,PathQuery} -> % Automatic redirection
-		    NewReq=Req#request{redircount=Req#request.redircount+1,
-				       address={Host,Port},pathquery=PathQuery},
-		    handle_redirect(Session#tcp_session.clientclose,ServerClose,
-				    NewReq,Session)
-	    end
-    end;
-status_found(Headers,Body,Req,Session) ->
-    ServerClose=http_lib:connection_close(Headers),
-    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-				      {302,Headers,Body}}),
-    handle_connection(Session#tcp_session.clientclose,ServerClose,Req,Session).
-
-%%% Received a 303 Status code ("See Other")
-%%% The request found under a different URI and should be retrieved using GET
-%%% Note:
-%%% - Must not be cached
-status_see_other(Headers,Body,Req,Session)
-  when ((Req#request.settings)#client_settings.autoredirect)==true ->
-    ServerClose=http_lib:connection_close(Headers),
-    case Headers#res_headers.location of
-	undefined ->
-	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-					      {303,Headers,Body}}),
-	    handle_connection(Session#tcp_session.clientclose,ServerClose,
-			      Req,Session);
-	RedirUrl ->
-	    Scheme=Session#tcp_session.scheme,
-	    case uri:parse(RedirUrl) of
-		{error,Reason} ->
-		    {error,Reason};
-		{Scheme,Host,Port,PathQuery} -> % Automatic redirection
-		    NewReq=Req#request{redircount=Req#request.redircount+1,
-				       method=get,
-				       address={Host,Port},pathquery=PathQuery},
-		    handle_redirect(Session#tcp_session.clientclose,ServerClose,
-				    NewReq,Session)
-	    end
-    end;
-status_see_other(Headers,Body,Req,Session) ->
-    ServerClose=http_lib:connection_close(Headers),
-    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-				      {303,Headers,Body}}),
-    handle_connection(Session#tcp_session.clientclose,ServerClose,Req,Session).
-
-
-%%% Received a 304 Status code ("Not Modified")
-%%% Note:
-%%% - The response MUST NOT contain a body.
-%%% - The response MUST include the following header fields:
-%%%   - Date, unless its omission is required
-%%%   - ETag and/or Content-Location, if the header would have been sent
-%%%        in a 200 response to the same request
-%%%   - Expires, Cache-Control, and/or Vary, if the field-value might
-%%%        differ from that sent in any previous response for the same
-%%%        variant
-status_not_modified(Headers,Body,Req,Session)
-  when ((Req#request.settings)#client_settings.autoredirect)==true ->
-    ServerClose=http_lib:connection_close(Headers),
-    case Headers#res_headers.location of
-	undefined ->
-	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-					      {304,Headers,Body}}),
-	    handle_connection(Session#tcp_session.clientclose,ServerClose,
-			      Req,Session);
-	RedirUrl ->
-	    Scheme=Session#tcp_session.scheme,
-	    case uri:parse(RedirUrl) of
-		{error,Reason} ->
-		    {error,Reason};
-		{Scheme,Host,Port,PathQuery} -> % Automatic redirection
-		    NewReq=Req#request{redircount=Req#request.redircount+1,
-				       address={Host,Port},pathquery=PathQuery},
-		    handle_redirect(Session#tcp_session.clientclose,ServerClose,
-				    NewReq,Session)
-	    end
-    end;
-status_not_modified(Headers,Body,Req,Session) ->
-    ServerClose=http_lib:connection_close(Headers),
-    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-				      {304,Headers,Body}}),
-    handle_connection(Session#tcp_session.clientclose,ServerClose,Req,Session).
-
-
-
-%%% Received a 305 Status code ("Use Proxy")
-%%% The requested resource MUST be accessed through the proxy given by the
-%%% Location field
-status_use_proxy(Headers,Body,Req,Session)
-  when ((Req#request.settings)#client_settings.autoredirect)==true ->
-    ServerClose=http_lib:connection_close(Headers),
-    case Headers#res_headers.location of
-	undefined ->
-	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-					      {305,Headers,Body}}),
-	    handle_connection(Session#tcp_session.clientclose,ServerClose,
-			      Req,Session);
-	RedirUrl ->
-	    Scheme=Session#tcp_session.scheme,
-	    case uri:parse(RedirUrl) of
-		{error,Reason} ->
-		    {error,Reason};
-		{Scheme,Host,Port,PathQuery} -> % Automatic redirection
-		    NewReq=Req#request{redircount=Req#request.redircount+1,
-				       address={Host,Port},pathquery=PathQuery},
-		    handle_redirect(Session#tcp_session.clientclose,ServerClose,
-				    NewReq,Session)
-	    end
-    end;
-status_use_proxy(Headers,Body,Req,Session) ->
-    ServerClose=http_lib:connection_close(Headers),
-    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-				      {305,Headers,Body}}),
-    handle_connection(Session#tcp_session.clientclose,ServerClose,Req,Session).
-
-
-%%% Received a 307 Status code ("Temporary Redirect")
-status_temporary_redirect(Headers,Body,Req,Session)
-  when ((Req#request.settings)#client_settings.autoredirect)==true ->
-    ServerClose=http_lib:connection_close(Headers),
-    case Headers#res_headers.location of
-	undefined ->
-	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-					      {307,Headers,Body}}),
-	    handle_connection(Session#tcp_session.clientclose,ServerClose,
-			      Req,Session);
-	RedirUrl ->
-	    Scheme=Session#tcp_session.scheme,
-	    case uri:parse(RedirUrl) of
-		{error,Reason} ->
-		    {error,Reason};
-		{Scheme,Host,Port,PathQuery} -> % Automatic redirection
-		    NewReq=Req#request{redircount=Req#request.redircount+1,
-				       address={Host,Port},pathquery=PathQuery},
-		    handle_redirect(Session#tcp_session.clientclose,ServerClose,
-				    NewReq,Session)
-	    end
-    end;
-status_temporary_redirect(Headers,Body,Req,Session) ->
-    ServerClose=http_lib:connection_close(Headers),
-    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-				      {307,Headers,Body}}),
-    handle_connection(Session#tcp_session.clientclose,ServerClose,Req,Session).
-
-
-%%% Guessing that we received a relative URI, fix it to become an absoluteURI
-fix_relative_uri(Req,RedirUrl) ->
-    {Server,Port}=Req#request.address,
-    Path=case uri:scan_abspath(Req#request.pathquery) of
-	     {error,Reason} -> throw({error,bad_requestpath});
-	     {[],[]} -> "/";
-	     {_,ReqPath} -> ReqPath
-	 end,
-    atom_to_list(Req#request.scheme)++"://"++Server++Path++RedirUrl.
-
-
-
-%%% Received a 503 Status code ("Service Unavailable")
-%%%    The server is currently unable to handle the request due to a
-%%%    temporary overloading or maintenance of the server. The implication
-%%%    is that this is a temporary condition which will be alleviated after
-%%%    some delay. If known, the length of the delay MAY be indicated in a
-%%%    Retry-After header. If no Retry-After is given, the client SHOULD
-%%%    handle the response as it would for a 500 response.
-%% Note:
-%% - This session is now considered busy, thus cancel any requests in the
-%%   pipeline and close the session.
-%% FIXME! Implement a user option to automatically retry if the 'Retry-After'
-%%        header is given.
-status_service_unavailable(Resp,Req,Session) ->
-%    RetryAfter=Headers#res_headers.retry_after,    
-    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,Resp}),
-    close_session(server_connection_close,Req,Session).    
-
-
-%%% Received a 50x Status code (~ "Service Error")
-%%%   Response status codes beginning with the digit "5" indicate cases in
-%%%   which the server is aware that it has erred or is incapable of
-%%%   performing the request.
-status_server_error_50x(Resp,Req,Session) ->
-    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,Resp}),
-    close_session(server_connection_close,Req,Session).    
-    
-
-%%% Handles requests for redirects
-%%% The redirected request might be:
-%%% - FIXME! on another TCP session, another scheme
-%%% - on the same TCP session, same scheme
-%%% - on another TCP session , same scheme
-%%% However, in all cases treat it as a new request, with redircount updated.
-%%%
-%%% The redirect may fail, but this not a reason to close this session.
-%%% Instead return a error for this request, and continue as ok.
-handle_redirect(ClientClose,ServerClose,Req,Session) ->
-    case httpc_manager:request(Req) of
-	{ok,_ReqId} -> % FIXME Should I perhaps reuse the Reqid?
-	    handle_connection(ClientClose,ServerClose,Req,Session);
-	{error,Reason} ->
-	    http_error_response(Req,Reason),
-	    handle_connection(ClientClose,ServerClose,Req,Session)
-    end.
-
-%%% Check if the persistent connection flag is false (ie client request
-%%% non-persistive connection), or if the server requires a closed connection
-%%% (by sending a "Connection: close" header). If the connection required
-%%% non-persistent, we may close the connection immediately.
-handle_connection(ClientClose,ServerClose,Req,Session) ->
-    case {ClientClose,ServerClose} of
-	{false,false} ->
-	    ok;
-	{false,true} -> % The server requests this session to be closed.
-	    close_session(server_connection_close,Req,Session);
-	{true,_} -> % The client requested a non-persistent connection
-	    close_session(client_connection_close,Req,Session)
-    end.
-
-
-%%% Close the session.
-%%% We now have three cases:
-%%% - Client request a non-persistent connection when initiating the request.
-%%%   Session info not stored in httpc_manager
-%%% - Server requests a non-persistent connection when answering a request.
-%%%   No need to resend request, but there might be a pipeline.
-%%% - Some kind of error
-%%%   Close the session, we may then try resending all requests in the pipeline
-%%%   including the current depending on the error.
-%%% FIXME! Should not always abort the session (see close_session in
-%%%     httpc_manager for more details)
-close_session(client_connection_close,_Req,Session) ->
-    http_lib:close(Session#tcp_session.scheme,Session#tcp_session.socket),
-    stop;
-close_session(server_connection_close,Req,Session) ->
-    http_lib:close(Session#tcp_session.scheme,Session#tcp_session.socket),
-    httpc_manager:abort_session(Req#request.address,Session#tcp_session.id,
-			       aborted_request),
-    stop.
-
-exit_session(Address,Session,Reason) ->
-    http_lib:close(Session#tcp_session.scheme,Session#tcp_session.socket),
-    httpc_manager:abort_session(Address,Session#tcp_session.id,Reason),
-    exit(normal).
-
-%%% This is the "normal" case to close a persistent connection. I.e., there are
-%%% no more requests waiting and the session was closed by the client, or
-%%% server because of a timeout or user request.
-exit_session_ok(Address,Session) ->
-    http_lib:close(Session#tcp_session.scheme,Session#tcp_session.socket),
-    exit_session_ok2(Address,Session#tcp_session.clientclose,
-		     Session#tcp_session.id).
-
-exit_session_ok2(Address,ClientClose,Sid) ->
-    case ClientClose of
+terminate(_, State = #state{session = Session}) ->  
+    catch httpc_manager:delete_session(Session#tcp_session.id),
+    case queue:is_empty(State#state.pipeline) of 
 	false ->
-	    httpc_manager:close_session(Address,Sid);
+	    lists:foreach(fun(NewRequest) ->
+				  httpc_manager:retry_request(NewRequest)
+			  end, queue:to_list(State#state.pipeline));
 	true ->
 	    ok
     end,
-    exit(normal).
+    http_transport:close(Session#tcp_session.scheme, 
+			 Session#tcp_session.socket).
 
-%%% ============================================================================
-%%% This is deprecated code, to be removed
+%%--------------------------------------------------------------------
+%% Func: code_change(_OldVsn, State, Extra) -> {ok, NewState}
+%% Purpose: Convert process state when code is changed
+%%--------------------------------------------------------------------
+code_change(_, State, _Extra) ->
+    {ok, State}.
 
-format_time() ->
-    {_,_,MicroSecs}=TS=now(),
-    {{Y,Mon,D},{H,M,S}}=calendar:now_to_universal_time(TS),
-    lists:flatten(io_lib:format("~4.4.0w-~2.2.0w-~2.2.0w,~2.2.0w:~2.2.0w:~6.3.0f",
-				[Y,Mon,D,H,M,S+(MicroSecs/1000000)])).
+%%--------------------------------------------------------------------
+%%% Internal functions
+%%--------------------------------------------------------------------
+handle_http_msg({Version, StatusCode, ReasonPharse, Headers, Body}, 
+		State) ->
+    
+    case Headers#http_response_h.content_type of
+        "multipart/byteranges" ++ _Param ->
+            exit(not_yet_implemented);
+        _ ->
+            handle_http_body(Body, 
+			     State#state{status_line = {Version, 
+							StatusCode,
+							ReasonPharse},
+					 headers = Headers})
+    end;
+handle_http_msg({ChunkedHeaders, Body}, 
+		State = #state{headers = Headers}) ->
+    NewHeaders = http_chunk:handle_headers(Headers, ChunkedHeaders),
+    handle_response(State#state{headers = NewHeaders, body = Body});
+handle_http_msg(Body, State) ->
+    handle_response(State#state{body = Body}).
 
-%%% Read more data from the open socket.
-%%% Two different read functions is used because for the {active, once} socket
-%%% option is (currently) not available for SSL... 
-%%% FIXME 
-% read_more_data(http,Socket,Timeout) ->
-%     io:format("read_more_data(ip_comm) -> "
-% 	"~n   set active = 'once' and "
-% 	"await a chunk data", []),
-%     http_lib:setopts(Socket, [{active,once}]),
-%     read_more_data_ipcomm(Socket,Timeout);
-% read_more_data(https,Socket,Timeout) ->
-%     case ssl:recv(Socket,0,Timeout) of
-% 	{ok,MoreData} ->
-% 	    MoreData;
-% 	{error,closed} ->
-% 	    throw({error, session_remotely_closed});
-% 	{error,etimedout} ->
-% 	    throw({error, session_local_timeout});
-% 	{error,Reason} ->
-% 	    throw({error, Reason});
-% 	Other ->
-% 	    throw({error, Other})
-%     end.
+handle_http_body(<<>>, State = #state{request = #request{method = head}}) ->
+    handle_response(State#state{body = <<>>});
 
-% %%% Send any incoming requests on the open session immediately
-% read_more_data_ipcomm(Socket,Timeout) ->
-%     receive
-% 	{tcp,Socket,MoreData} ->
-% %	    ?vtrace("read_more_data(ip_comm) -> got some data:~p",
-% %		[MoreData]),
-% 	    MoreData;
-% 	{tcp_closed,Socket} ->
-% %	    ?vtrace("read_more_data(ip_comm) -> socket closed",[]),
-% 	    throw({error,session_remotely_closed});
-% 	{tcp_error,Socket,Reason} ->
-% %	    ?vtrace("read_more_data(ip_comm) -> ~p socket error: ~p",
-% %		[self(),Reason]),
-% 	    throw({error, Reason});
-% 	stop ->
-% 	    throw({error, user_req})
-%     after Timeout ->
-% 	    throw({error, session_local_timeout})
-%     end.
+handle_http_body(Body, State = #state{headers = Headers, session = Session,
+				      max_body_size = MaxBodySize,
+				      request = Request}) ->
+    case Headers#http_response_h.transfer_encoding of
+        "chunked" ->
+            {ok, {ChunkedHeaders, NewBody}} =
+                case http_chunk:decode(Body, State#state.max_body_size, 
+                                       State#state.max_header_size) of
+                    {Module, Function, Args} ->
+                        http_transport:setopts(Session#tcp_session.scheme, 
+					       Session#tcp_session.socket, 
+					       [{active, once}]),
+                        {noreply, State#state{mfa = 
+					      {Module, Function, Args}}};
+                    Decoded ->
+                        Decoded
+                end,
+            NewHeaders = http_chunk:handle_headers(Headers, ChunkedHeaders),
+            handle_response(State#state{headers = NewHeaders, 
+					body = NewBody});
+        Encoding when list(Encoding) ->
+	    http_response:send(Request#request.from, 
+			       http_response:error(Request, unknown_encoding)),
+	    {stop, normal, State};
+        _ ->
+            Length =
+                list_to_integer(Headers#http_response_h.content_length),
+            case ((Length =< MaxBodySize) or (MaxBodySize == nolimit)) of
+                true ->
+                    case http_response:whole_body(Body, Length) of
+                        {ok, Body} ->
+			    handle_response(State#state{body = Body});
+                        MFA ->
+                            http_transport:setopts(
+			      Session#tcp_session.scheme, 
+			      Session#tcp_session.socket, 
+			      [{active, once}]),
+			    {noreply, State#state{mfa = MFA}}
+		    end;
+                false ->
+		    http_response:send(Request#request.from,
+				       http_response:error(Request, 
+							   body_too_big)),
+                    {stop, normal, State}
+            end
+    end.
+
+handle_response(State = #state{request = Request = #request{id = ID,
+							    from = Client},
+			       session = Session, 
+			       status_line = StatusLine,
+			       headers = Headers, body = Body}) ->
+    
+    case lists:member(ID, State#state.canceled) of
+	true ->
+	    handle_pipeline(
+	      State#state{canceled = lists:delete(ID, 
+						  State#state.canceled)});
+	false ->
+	    case http_response:result({StatusLine, Headers, Body}, 
+				       Request, Session) of
+		{ok, ""} -> % redirect
+		    handle_pipeline(State);
+		{ok, Msg} ->
+		    http_response:send(Client, Msg),
+		    handle_pipeline(State);
+		{stop, Msg} ->
+		    http_response:send(Client, Msg),
+		    {stop, normal, State}
+	    end
+    end.
+
+handle_pipeline(State = #state{session = Session}) ->
+    case queue:out(State#state.pipeline) of
+	{empty, _} ->
+	    {noreply, 
+	     State#state{busy = false, 
+			 mfa = {http_response, parse,
+				[State#state.max_header_size]}}};
+	{{value, NextRequest}, Pipeline} ->
+	    case lists:member(NextRequest#request.id, 
+			      State#state.canceled) of
+		true ->
+		    handle_pipeline(
+		      State#state{canceled = 
+				  lists:delete(NextRequest#request.id, 
+					       State#state.canceled),
+				  pipeline = Pipeline}); 
+		false ->
+		    http_transport:setopts(Session#tcp_session.scheme, 
+					   Session#tcp_session.socket, 
+                                           [{active, once}]),
+		    {noreply, 
+		     State#state{pipeline = Pipeline,
+				 request = NextRequest,
+				 mfa = {http_response, parse,
+					[State#state.max_header_size]}}}
+	    end
+    end.
+
+call(Msg, Pid, Timeout) ->
+    gen_server:call(Pid, Msg, Timeout).
+
+cast(Msg, Pid) ->
+    gen_server:cast(Pid, Msg).
+
+activate_request_timeout(Request) ->
+    Time = (Request#request.settings)#http_options.timeout,
+    case Time of
+	infinity ->
+	    no_timer;
+	_ ->
+	    erlang:send_after(Time, self(), {timeout, Request#request.id})
+    end.
+
+client_close_value(Request) ->
+    case (Request#request.headers)#http_request_h.connection of
+	"close" ->
+	    true;
+	 _ ->
+	    false
+    end.

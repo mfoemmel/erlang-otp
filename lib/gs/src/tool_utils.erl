@@ -45,35 +45,61 @@
 open_help(S, nofile) ->
     notify(S, "Sorry, no help information exists");
 open_help(S, File) ->
-    case file_type(File) of
+    case application:get_env(kernel, browser_cmd) of
+	undefined ->
+	    open_help_default(S, File);
+	{ok, Cmd} when is_list(Cmd) ->
+	    spawn(os, cmd, [Cmd ++ " " ++ File]);
+	{ok, {M, F, A}} ->
+	    apply(M, F, [File|A]);
+	_Other ->
+	    Str = ["Bad Kernel configuration parameter browser_cmd",
+		   "Do not know how to display help file"],
+	    notify(S, Str)
+    end.
 
-	%% Local file
-	local ->
-	    Cmd = case os:type() of
+open_help_default(S, File) ->
+    Cmd = case file_type(File) of
+
+	      %% Local file
+	      local ->
+		  case os:type() of
 		      {unix,_AnyType} ->
 			  "netscape -remote \"openURL(file:" ++ File ++ ")\"";
-
 		      {win32,_AnyType} ->
-			  "start " ++ filename:nativename(File)
-		  end,
-	    spawn(os,cmd,[Cmd]);
+			  "start " ++ filename:nativename(File);
 
-	%% URL
-	remote ->
-	    Cmd = case os:type() of
+		      _Other ->
+			  unknown
+		  end;
+
+	      %% URL
+	      remote ->
+		  case os:type() of
 		      {unix,_AnyType} ->
 			  "netscape -remote \"openURL(" ++ File ++ ")\"";
 
 		      {win32,_AnyType} ->
-			  "netscape.exe -h " ++ regexp:gsub(File,"\\\\","/")
-		  end,
-	    spawn(os,cmd,[Cmd]);
+			  "netscape.exe -h " ++ regexp:gsub(File,"\\\\","/");
+		      _Other ->
+			  unknown
+		  end;
 
+	      Error -> % {error,Reason}
+		  Error
+	  end,
 
-	%% Otherwise, issue message window
-	{error, Reason} ->
+    if
+	is_list(Cmd) ->
+	    spawn(os, cmd, [Cmd]);
+	Cmd==unknown ->
+	    Str = ["Sorry, do not know how to",
+		   "display HTML files at this platform"],
+	    notify(S, Str);
+	true ->
+	    {error, Reason} = Cmd,
 	    Str = file:format_error(Reason),
-	    notify(S,[File,Str])
+	    notify(S, [File,Str])
     end.
 
 %% file_type(File) -> local | remote | {error,Reason}
@@ -127,7 +153,8 @@ file_dialog(Options) ->
 %% until the user confirms the message.
 %% A 'notify' window contains an 'Ok' button.
 %% A 'confirm' window contains an 'Ok' and a 'Cancel' button.
-%% A 'confirm_yesno' window contains a 'Yes', a 'No', and a 'Cancel' button.
+%% A 'confirm_yesno' window contains a 'Yes', a 'No', and a 'Cancel'
+%% button.
 %% A 'request' window contains an entry, an 'Ok' and a 'Cancel' button.
 %%----------------------------------------------------------------------
 -define(Wlbl, 130).
@@ -148,31 +175,32 @@ request(S, Strings) ->
 
 help_win(Type, S, Strings) ->
     GenOpts = [{data,Type}, {keypress,true}],
+    GenOpts2 = [{font,{screen,12}} | GenOpts],
     Buttons = buttons(Type),
     Nbtn = length(Buttons),
 
     %% Create the window and its contents
     Win = gs:create(window, S, [{title,title(Type)} | GenOpts]),
     Top = gs:create(frame, Win, GenOpts),
-    Lbl = gs:create(label, Top, [{align,c}, {justify,center} | GenOpts]),
+    Lbl = gs:create(label, Top, [{align,c}, {justify,center} |GenOpts2]),
     Mid = if
 	      Type==request -> gs:create(frame, Win, GenOpts);
 	      true -> ignore
 	  end,
     Ent = if
-	      Type==request -> gs:create(entry, Mid, GenOpts);
+	      Type==request -> gs:create(entry, Mid, GenOpts2);
 	      true -> ignore
 	  end,
     Bot = gs:create(frame, Win, GenOpts),
 
-    %% Find out the minimum size required for the label, entry and buttons
+    %% Find out minimum size required for label, entry and buttons
     Font = gs:read(S, {choose_font, {screen,12}}),
     Text = insert_newlines(Strings),
     {Wlbl0,Hlbl0} = gs:read(Lbl, {font_wh,{Font,Text}}),
     {_Went0,Hent0} = gs:read(Lbl, {font_wh,{Font,"Entry"}}),
     {Wbtn0,Hbtn0} = gs:read(Lbl, {font_wh,{Font,"Cancel"}}),
     
-    %% Compute the size of the objects and adjust the graphics accordingly
+    %% Compute size of the objects and adjust the graphics accordingly
     Wbtn = max(Wbtn0+10, ?Wbtn),
     Hbtn = max(Hbtn0+10, ?Hbtn),
     Hent = max(Hent0+10, ?Hent),
@@ -186,15 +214,15 @@ help_win(Type, S, Strings) ->
     Hbot = ?PAD+Hbtn+?PAD,
     Hwin = Htop+Hmid+Hbot,
 
-    gs:config(Win, [                        {width,Wwin}, {height,Hwin}]),
+    gs:config(Win, [                        {width,Wwin},{height,Hwin}]),
 
-    gs:config(Top, [{x,0},   {y,0},         {width,Wwin}, {height,Htop}]),
-    gs:config(Lbl, [{x,?PAD},{y,?PAD},      {width,Wlbl}, {height,Hlbl}]),
+    gs:config(Top, [{x,0},   {y,0},         {width,Wwin},{height,Htop}]),
+    gs:config(Lbl, [{x,?PAD},{y,?PAD},      {width,Wlbl},{height,Hlbl}]),
 
-    gs:config(Mid, [{x,0},   {y,Htop},      {width,Wwin}, {height,Hmid}]),
-    gs:config(Ent, [{x,?PAD},{y,?PAD},      {width,Wlbl}, {height,Hent}]),
+    gs:config(Mid, [{x,0},   {y,Htop},      {width,Wwin},{height,Hmid}]),
+    gs:config(Ent, [{x,?PAD},{y,?PAD},      {width,Wlbl},{height,Hent}]),
 
-    gs:config(Bot, [{x,0},   {y,Htop+Hmid}, {width,Wwin}, {height,Hbot}]),
+    gs:config(Bot, [{x,0},   {y,Htop+Hmid}, {width,Wwin},{height,Hbot}]),
 
     %% Insert the label text
     gs:config(Lbl, {label,{text,Text}}),
@@ -204,7 +232,8 @@ help_win(Type, S, Strings) ->
     foreach2(fun(Button, X) ->
 		     gs:create(button, Bot, [{x,X}, {y,?PAD},
 					     {width,Wbtn}, {height,Hbtn},
-					     {label,{text,Button}} |GenOpts])
+					     {label,{text,Button}}
+					     | GenOpts2])
 	     end,
 	     Buttons,
 	     Xbtns),
@@ -299,8 +328,9 @@ event_loop(Win,Entry) ->
 
 %% insert_newlines(Strings) => string()
 %%   Strings - string() | [string()]
-%% If Strings is a list of strings, return a string where all these strings
-%% are concatenated with newlines in between,otherwise return Strings.
+%% If Strings is a list of strings, return a string where all these
+%% strings are concatenated with newlines in between,otherwise return
+%% Strings.
 insert_newlines([String|Rest]) when list(String),Rest/=[]->
     String ++ "\n" ++ insert_newlines(Rest);
 insert_newlines([Last]) ->

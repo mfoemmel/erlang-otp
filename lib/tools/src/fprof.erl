@@ -1572,11 +1572,6 @@ trace_handler({trace_ts, Pid, spawn, Child, MFArgs, TS} = Trace,
     dump_stack(Dump, get(Pid), Trace),
     trace_spawn(Table, Child, MFArgs, TS, Pid),
     TS;
-trace_handler({trace_ts, Pid, spawn, Child, TS} = Trace,
-	      Table, _, Dump) ->
-    dump_stack(Dump, get(Pid), Trace),
-    trace_spawn(Table, Child, undefined, TS, Pid),
-    TS;
 %%
 %% exit
 trace_handler({trace_ts, Pid, exit, _Reason, TS} = Trace,
@@ -1743,9 +1738,16 @@ trace_call(Table, Pid, Func, TS, CP) ->
     Stack = get_stack(Pid),
     ?dbg(0, "trace_call(~p, ~p, ~p, ~p)~n~p~n", 
 	 [Pid, Func, TS, CP, Stack]),
+    {Proc,InitCnt} = 
+	case ets:lookup(Table, Pid) of
+	    [#proc{init_cnt = N} = P] ->
+		{P,N};
+	    [] ->
+		{undefined,0}
+	end,
     case Stack of
 	[] ->
-	    init_log(Table, Pid, Func),
+	    init_log(Table, Proc, Func),
 	    OldStack = 
 		if CP == undefined ->
 			Stack;
@@ -1753,6 +1755,17 @@ trace_call(Table, Pid, Func, TS, CP) ->
 			[[{CP, TS}]]
 		end,
 	    put(Pid, trace_call_push(Table, Pid, Func, TS, OldStack));
+	[[{Func, FirstInTS}]] when InitCnt==2 ->
+	    %% First call on this process. Take the timestamp for first
+	    %% time the process was scheduled in.
+	    init_log(Table, Proc, Func),
+	    OldStack = 
+		if CP == undefined ->
+			[];
+		   true ->
+			[[{CP, FirstInTS}]]
+		end,
+	    put(Pid, trace_call_push(Table, Pid, Func, FirstInTS, OldStack));
 	[[{suspend, _} | _] | _] ->
 	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
 		  [Pid, Func, TS, CP, Stack]});
@@ -1769,15 +1782,15 @@ trace_call(Table, Pid, Func, TS, CP) ->
 	    %%
 	    %% This can be viewed as collapsing a very short stack
 	    %% recursive stack cykle.
-	    init_log(Table, Pid, Func),
+	    init_log(Table, Proc, Func),
 	    put(Pid, trace_call_shove(Table, Pid, Func, TS, Stack));
 	[[{CP, _} | _] | _] ->
 	    %% Current function becomes new stack top -> stack push
-	    init_log(Table, Pid, Func),
+	    init_log(Table, Proc, Func),
 	    put(Pid, trace_call_push(Table, Pid, Func, TS, Stack));
 	[_, [{CP, _} | _] | _] ->
 	    %% Stack top unchanged -> no push == tail recursive call
-	    init_log(Table, Pid, Func),
+	    init_log(Table, Proc, Func),
 	    put(Pid, trace_call_shove(Table, Pid, Func, TS, Stack));
 	[[{Func0, _} | _], [{Func0, _} | _], [{CP, _} | _] | _] ->
 	    %% Artificial case that only should happen when 
@@ -1785,7 +1798,7 @@ trace_call(Table, Pid, Func, TS, CP) ->
 	    %% otherwise CP should not occur so far from the stack front.
 	    %%
 	    %% It is a tail recursive call but fix the stack first.
-	    init_log(Table, Pid, Func),
+	    init_log(Table, Proc, Func),
 	    put(Pid, 
 		trace_call_shove(Table, Pid, Func, TS,
 				 trace_return_to_int(Table, Pid, Func0, TS,
@@ -1793,7 +1806,7 @@ trace_call(Table, Pid, Func, TS, CP) ->
 	[[{_, TS0} | _] = Level0] ->
 	    %% Current function known, but not stack top
 	    %% -> assume tail recursive call
-	    init_log(Table, Pid, Func),
+	    init_log(Table, Proc, Func),
 	    OldStack =
 		if CP == undefined ->
 			Stack;
@@ -1816,11 +1829,11 @@ trace_call(Table, Pid, Func, TS, CP) ->
 			%% call stack cykle too many. Introduce CP in
 			%% the current tail recursive level so it at least
 			%% gets charged for something.
-			init_log(Table, Pid, CP),
+			init_log(Table, Proc, CP),
 			trace_call_shove(Table, Pid, CP, TS, Stack)
 		end,
 	    %% Regard this call as a stack push.
-	    init_log(Table, Pid, Func),
+	    init_log(Table, Pid, Func), % will lookup Pid in Table
 	    put(Pid, trace_call_push(Table, Pid, Func, TS, OldStack));
 	_ ->
 	    %% Should not happen since all cases are covered above. (?)
@@ -1922,14 +1935,16 @@ trace_return_to(Table, Pid, Func, TS) ->
     ok.
 
 trace_return_to_int(Table, Pid, Func, TS, Stack) ->
+    %% The old stack must be sent to trace_clock, so
+    %% the function we just returned from is charged with
+    %% own time.
+    trace_clock(Table, Pid, TS, Stack, #clocks.own),
     case trace_return_to_2(Table, Pid, Func, TS, Stack) of
 	{undefined, _} ->
 	    [[{Func, TS}] | Stack];
-	{[[{Func, _} | Level0] | Stack1] = NewStack, _} ->
-	    trace_clock(Table, Pid, TS, NewStack, #clocks.own),
+	{[[{Func, _} | Level0] | Stack1], _} ->
 	    [[{Func, TS} | Level0] | Stack1];
 	{NewStack, _} ->
-	    trace_clock(Table, Pid, TS, NewStack, #clocks.own),
 	    NewStack
     end.
 
@@ -1999,7 +2014,9 @@ trace_spawn(Table, Pid, MFArgs, TS, Parent) ->
 	 [Pid, MFArgs, TS, Parent, Stack]),
     case Stack of
 	undefined ->
-	    put(Pid, trace_call_push(Table, Pid, suspend, TS, [])),
+	    {M,F,Args} = MFArgs,
+	    OldStack = [[{{M,F,length(Args)},TS}]],
+	    put(Pid, trace_call_push(Table, Pid, suspend, TS, OldStack)),
 	    ets:insert(Table, #proc{id = Pid, parent = Parent,
 				    spawned_as = MFArgs});
 	_ ->
@@ -2061,12 +2078,17 @@ trace_in(Table, Pid, Func, TS) ->
     ?dbg(0, "trace_in(~p, ~p, ~p)~n~p~n", [Pid, Func, TS, Stack]),
     case Stack of
 	undefined ->
-	    put(Pid, []);
-	[] ->
-	    ok;
+	    %% First activity on a process which existed at the time
+	    %% the fprof trace was started.
+	    put(Pid, [[{Func,TS}]]);
+%	[] ->
+%	    ok;
 	[[{suspend, _}]] ->
 	    put(Pid, trace_return_to_int(Table, Pid, undefined, TS, Stack));
 	[[{suspend, _}] | [[{Func1, _} | _] | _]] ->
+	    %% This is a new process (suspend and Func1 was inserted
+	    %% by trace_spawn) or any process that has just been
+	    %% scheduled out and now back in.
 	    put(Pid, trace_return_to_int(Table, Pid, Func1, TS, Stack));
 	_ ->
 	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
@@ -2130,20 +2152,23 @@ mfarity(MFA) ->
 
 
 
-init_log(_Table, _Id, suspend) ->
+init_log(_Table, _Proc, suspend) ->
     ok;
-init_log(_Table, _Id, void) ->
+init_log(_Table, _Proc, void) ->
     ok;
+init_log(_Table, undefined, _Entry) ->
+    ok;
+init_log(_Table, #proc{init_cnt = 0}, _Entry) ->
+    ok;
+init_log(Table, #proc{init_cnt = N, init_log = L} = Proc, Entry) ->
+    ets:insert(Table, Proc#proc{init_cnt = N-1, init_log = [Entry | L]});
 init_log(Table, Id, Entry) ->
-    case ets:lookup(Table, Id) of
-	[#proc{init_cnt = 0}] ->
-	    ok;
-	[#proc{init_cnt = N, init_log = L} = Proc] ->
-	    ets:insert(Table, 
-		       Proc#proc{init_cnt = N-1, init_log = [Entry | L]});
-	[] ->
-	    ok
-    end.
+    Proc = 
+	case ets:lookup(Table, Id) of
+	    [P] -> P;
+	    [] -> undefined
+	end,
+    init_log(Table,Proc,Entry).
 
 
 trace_clock(Table, Pid, T, 

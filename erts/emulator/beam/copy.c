@@ -26,11 +26,42 @@
 #include "erl_process.h"
 #include "big.h"
 #include "erl_binary.h"
-#include "erl_vector.h"
+
+
+#ifdef HYBRID
+Eterm *copy_src_stack;
+Uint   copy_src_top;
+Uint   copy_src_size;
+Eterm *copy_dst_stack;
+Uint   copy_dst_top;
+Uint   copy_dst_size;
+
+Eterm *copy_offset_stack;
+Uint   copy_offset_top;
+Uint   copy_offset_size;
+#endif
 
 void
 init_copy(void)
 {
+#ifdef HYBRID
+    copy_src_top = 0;
+    copy_src_size = 512;
+    copy_src_stack = (Eterm *)erts_alloc(ERTS_ALC_T_OBJECT_STACK,
+                                         sizeof(Eterm) * copy_src_size);
+    ERTS_PROC_MORE_MEM(sizeof(Eterm) * copy_src_size);
+    copy_dst_top = 0;
+    copy_dst_size = 512;
+    copy_dst_stack = (Eterm *)erts_alloc(ERTS_ALC_T_OBJECT_STACK,
+                                         sizeof(Eterm) * copy_dst_size);
+    ERTS_PROC_MORE_MEM(sizeof(Eterm) * copy_dst_size);
+
+    copy_offset_top = 0;
+    copy_offset_size = 512;
+    copy_offset_stack = (Eterm *)erts_alloc(ERTS_ALC_T_OBJECT_STACK,
+                                            sizeof(Eterm) * copy_offset_size);
+    ERTS_PROC_MORE_MEM(sizeof(Eterm) * copy_offset_size);
+#endif
 }
 
 /*
@@ -99,25 +130,6 @@ size_object(Eterm obj)
 		    }
 		    obj = *++ptr;
 		    break;
-		case VECTOR_SUBTAG:
-		    {
-			int i;
-			int real_n = VECTOR_ARRAY_SIZE(obj);
-			Eterm* vec = erts_alloc(ERTS_ALC_T_TMP,
-						(real_n+1)*sizeof(Eterm));
-
-			arity = vector_arity(hdr);
-			sum += arity + 1 + real_n + 1;
-			erts_flatten_vector(vec, obj);
-			for (i = 1; i <= real_n; i++) {
-			    Eterm tmp = vec[i];
-			    if (!IS_CONST(tmp)) {
-				ESTACK_PUSH(s, tmp);
-			    }
-			}
-			erts_free(ERTS_ALC_T_TMP, (void *) vec);
-			goto size_common;
-		    }
 		case FUN_SUBTAG:
 		    {
 			Eterm* bptr = fun_val(obj);
@@ -293,9 +305,6 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 		    }
 		}
 		break;
-	    case VECTOR_SUBTAG:
-		htop = erts_copy_vector(obj, htop, argp);
-		break;
 	    case REFC_BINARY_SUBTAG:
 		{
 		    ProcBin* pb;
@@ -363,10 +372,12 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 			*htop++ = *objp++;
 		    }
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
 		    funp = (ErlFunThing *) tp;
 		    funp->next = off_heap->funs;
 		    off_heap->funs = funp;
 		    funp->fe->refc++;
+#endif
 #endif
 		    *argp = make_fun(tp);
 		}
@@ -420,6 +431,773 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 #undef in_area
 }
 
+#ifdef HYBRID
+#ifdef BM_MESSAGE_SIZES
+#define BM_ADD(var,val) (var) += (val);
+#else
+#define BM_ADD(var,val)
+#endif
+
+#ifdef INCREMENTAL_GC
+
+#ifdef NON_RECURSIVE_COPY
+#define GlobalAlloc(p, need, hp)                                             \
+do {                                                                         \
+    Uint n = (need);                                                         \
+    BM_ADD(words_copied,n);                                                  \
+    (hp) = IncAlloc((p),n,NULL,0);                                           \
+    if ((hp) == global_heap && obj != orig) {                                \
+        global_htop = global_heap;                                           \
+        copy_src_top = 0;                                                    \
+        copy_dst_top = 0;                                                    \
+        copy_offset_top = 0;                                                 \
+        goto copy_start;                                                     \
+    } else                                                                   \
+        while (n-- > 0) *((hp) + n) = NIL;                                   \
+} while(0)
+
+#else
+
+#define GlobalAlloc(p, need, hp)                                             \
+do {                                                                         \
+    Uint n = (need);                                                         \
+    BM_ADD(words_copied,n);                                                  \
+    (hp) = IncAlloc((p),n,NULL,0);                                           \
+    while (n-- > 0) *((hp) + n) = NIL;                                       \
+} while(0)
+
+#endif
+
+#else
+
+#define GlobalAlloc(p, need, hp)                                             \
+do {                                                                         \
+    Uint n = (need);                                                         \
+    BM_ADD(words_copied,(need));                                             \
+    if (global_hend - (need) < global_htop) {                                \
+        BM_SWAP_TIMER(copy,system);                                          \
+        erts_global_garbage_collect((p),(need),copy_src_stack,copy_src_top); \
+        BM_SWAP_TIMER(system,copy);                                          \
+    }                                                                        \
+    (hp) = global_htop;                                                      \
+    while (n-- > 0) *global_htop++ = NIL;                                    \
+} while(0)
+#endif
+
+#if 0
+Uint local_size_object(Eterm obj)
+{
+    Uint sum = 0;
+    Eterm* ptr;
+    int arity;
+
+    DECLARE_ESTACK(s);
+    for (;;) {
+	switch (primary_tag(obj)) {
+	case TAG_PRIMARY_LIST:
+	    sum += 2;
+	    ptr = list_val(obj);
+	    obj = *ptr++;
+	    if (!NO_COPY(obj)) {
+		ESTACK_PUSH(s, obj);
+	    }
+	    obj = *ptr;
+	    break;
+	case TAG_PRIMARY_BOXED:
+	    {
+		Eterm hdr = *boxed_val(obj);
+		ASSERT(is_header(hdr));
+		switch (hdr & _TAG_HEADER_MASK) {
+		case ARITYVAL_SUBTAG:
+		    ptr = tuple_val(obj);
+		    arity = header_arity(hdr);
+		    sum += arity + 1;
+		    if (arity == 0) { /* Empty tuple -- unusual. */
+			goto size_common;
+		    }
+		    while (arity-- > 1) {
+			obj = *++ptr;
+			if (!NO_COPY(obj)) {
+			    ESTACK_PUSH(s, obj);
+			}
+		    }
+		    obj = *++ptr;
+		    break;
+		case FUN_SUBTAG:
+		    {
+			Eterm* bptr = fun_val(obj);
+			ErlFunThing* funp = (ErlFunThing *) bptr;
+			unsigned eterms = 1 /* creator */ + funp->num_free;
+			unsigned sz = thing_arityval(hdr);
+
+			sum += 1 /* header */ + sz + eterms;
+			bptr += 1 /* header */ + sz;
+			while (eterms-- > 1) {
+			  obj = *bptr++;
+			  if (!NO_COPY(obj)) {
+			    ESTACK_PUSH(s, obj);
+			  }
+			}
+			obj = *bptr;
+			break;
+		    }
+		case SUB_BINARY_SUBTAG:
+		    {
+			Eterm real_bin;
+			Uint offset; /* Not used. */
+			Eterm hdr;
+			GET_REAL_BIN(obj, real_bin, offset);
+			hdr = *binary_val(real_bin);
+
+			if (thing_subtag(hdr) == REFC_BINARY_SUBTAG) {
+			    sum += PROC_BIN_SIZE;
+			} else {
+			    sum += heap_bin_size(binary_size(obj));
+			}
+			goto size_common;
+		    }
+		    break;
+		default:
+		    sum += thing_arityval(hdr) + 1;
+		    /* Fall through */
+		size_common:
+		    if (ESTACK_ISEMPTY(s)) {
+			DESTROY_ESTACK(s);
+			return sum;
+		    }
+		    obj = ESTACK_POP(s);
+		    break;
+		}
+	    }
+	    break;
+	case TAG_PRIMARY_IMMED1:
+	    if (ESTACK_ISEMPTY(s)) {
+		DESTROY_ESTACK(s);
+		return sum;
+	    }
+	    obj = ESTACK_POP(s);
+	    break;
+	default:
+	    erl_exit(1, "size_object: bad tag for %#x\n", obj);
+	}
+    }
+}
+#endif
+
+/*
+ * To be able to debug message copying, enable below.
+ */
+#if 0
+#define COPY_STRUCT_LAZY(Args) copy_struct_lazy_debug Args
+
+void COPY_STRUCT_LAZY((Process *from, Eterm obj, Uint offset));
+
+void copy_struct_lazy(Process *from, Eterm obj, Uint offset)
+{
+#if 1
+    /*
+     * Print messages before they are sent
+     */
+    printf("%d Copy  (0x%08x): ",messages_sent,(int)obj);
+    display(obj,COUT);
+    printf("\n\r");
+#endif
+
+#if 0
+    /*
+     * Make sure there is enough space on the heap before the copying
+     * starts. This forces garbage collection to appear before
+     * starting the accual copy.
+     */
+    {
+        int sz = local_size_object(obj);
+
+#ifdef INCREMENTAL_GC
+        //ROOT_PUSH(src,obj);
+        //copy_hp = IncAlloc(from,sz,copy_src_stack,copy_src_top);
+        //sta = copy_hp = IncAlloc(from,sz,NULL,0);
+        //ROOT_POP(src);
+#if 0
+        printf("After GC: ");
+        display(obj,COUT);
+        printf("\n\r");
+#endif
+#else
+        if (global_hend - global_htop <= sz)
+        {
+            ROOT_PUSH(src,obj);
+            erts_global_garbage_collect(from,sz,copy_src_stack,copy_src_top);
+            ROOT_POP(src);
+        }
+#endif
+    }
+#endif
+
+    COPY_STRUCT_LAZY((from,obj,offset));
+
+#if 0
+    /*
+     * Force garbage collection after copying is done to make sure the
+     * rootset is updated properly.
+     */
+    if (is_internal_pid(from->id))
+    {
+        erts_global_garbage_collect(from,0,(Eterm*)copy_dst_stack[0],1);
+        erts_garbage_collect(from,0,NULL,0);
+    }
+#endif
+
+#if 1
+    /* Print the message from its destination */
+    printf("After (0x%08x): ",(int)*(Eterm*)copy_dst_stack[0]);
+    display(*(Eterm*)copy_dst_stack[0],COUT);
+    printf("\n\r");
+#endif
+
+    /* Somehow it would be nice with an assertion here... */
+    /*
+    ASSERT(strcmp(display(obj,?),display(*(Eterm*)copy_dst_stack[0],?) == 0);
+    */
+    //return result;
+}
+#else /* No debuging */
+#ifndef NON_RECURSIVE_COPY
+#  define COPY_STRUCT_LAZY(Args) copy_struct_lazy Args
+#endif
+#endif
+
+#ifdef NON_RECURSIVE_COPY
+Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
+{
+    Eterm obj = orig;
+    Eterm dest;
+
+    //printf("Loop-Copy #%d from %s: ",messages_sent,print_pid(from));
+    //display(orig,COUT);
+    //printf("\n\r");
+
+ copy_start:
+
+    ROOT_PUSH(src,orig);
+    ROOT_PUSH(dst,(Eterm)&dest);
+    ROOT_PUSH(offset,offs);
+
+    while (copy_src_top > 0) {
+
+        obj = ROOT_POP(src);
+
+        if (NO_COPY(obj)) {
+            ROOT_UPDATE(dst,ROOT_POP(offset),obj);
+            ROOT_POP(dst);
+            continue;
+        }
+
+        switch (primary_tag(obj)) {
+        case TAG_PRIMARY_LIST: {
+            Eterm *hp;
+            Eterm *objp = list_val(obj);
+
+            GlobalAlloc(from,2,hp);
+            ROOT_UPDATE(dst,ROOT_POP(offset),make_list(hp));
+            ROOT_POP(dst);
+
+            if (NO_COPY(*objp))
+                hp[0] = *objp;
+            else {
+                ROOT_PUSH(src,*objp);
+                ROOT_PUSH(dst,make_list(hp));
+                ROOT_PUSH(offset,0);
+            }
+
+            objp++;
+            if (NO_COPY(*objp))
+                hp[1] = *objp;
+            else {
+                ROOT_PUSH(src,*objp);
+                ROOT_PUSH(dst,make_list(hp));
+                ROOT_PUSH(offset,1);
+            }
+            continue;
+        }
+
+        case TAG_PRIMARY_BOXED: {
+            Eterm *objp = boxed_val(obj);
+            Eterm hdr = *objp;
+
+            switch (hdr & _TAG_HEADER_MASK) {
+            case ARITYVAL_SUBTAG: {
+                Uint ari = arityval(hdr);
+                Uint i;
+                Eterm *hp;
+                GlobalAlloc(from,ari + 1,hp);
+                ROOT_UPDATE(dst,ROOT_POP(offset),make_tuple(hp));
+                ROOT_POP(dst);
+                *hp = *objp++;
+                for (i = 1; i <= ari; i++) {
+                    switch (primary_tag(*objp)) {
+                    case TAG_PRIMARY_LIST:
+                    case TAG_PRIMARY_BOXED:
+                        if (NO_COPY(*objp))
+                            hp[i] = *objp++;
+                        else {
+                            ROOT_PUSH(src,*objp++);
+                            ROOT_PUSH(dst,make_tuple(hp));
+                            ROOT_PUSH(offset,i);
+                        }
+                        break;
+                    default:
+                        hp[i] = *objp++;
+                    }
+                }
+                continue;
+            }
+
+            case REFC_BINARY_SUBTAG: {
+                ProcBin *pb;
+                Uint i = thing_arityval(*objp) + 1;
+                Eterm *hp;
+                GlobalAlloc(from,i,hp);
+                ROOT_UPDATE(dst,ROOT_POP(offset),make_binary(hp));
+                ROOT_POP(dst);
+                pb = (ProcBin*) hp;
+                while (i--) {
+                    *hp++ = *objp++;
+                }
+                pb->val->refc++;
+                pb->next = erts_global_offheap.mso;
+                erts_global_offheap.mso = pb;
+                erts_global_offheap.overhead += pb->size /
+                    BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
+                continue;
+            }
+
+            case FUN_SUBTAG: {
+                ErlFunThing *funp = (ErlFunThing*) objp;
+                Uint i = thing_arityval(*objp) + 2;
+                Uint j = i + funp->num_free;
+                Uint k = i;
+                Eterm *hp, *hp_start;
+                GlobalAlloc(from,j,hp);
+                hp_start = hp;
+                ROOT_UPDATE(dst,ROOT_POP(offset),make_fun(hp));
+                ROOT_POP(dst);
+                funp = (ErlFunThing*) hp;
+                while (i--) {
+                    *hp++ = *objp++;
+                }
+#ifndef HYBRID // FIND ME!
+                funp->next = erts_global_offheap.funs;
+                erts_global_offheap.funs = funp;
+                funp->fe->refc++;
+#endif
+                for (i = k; i < j; i++) {
+                    switch (primary_tag(*objp)) {
+                    case TAG_PRIMARY_LIST:
+                    case TAG_PRIMARY_BOXED:
+                        if (NO_COPY(*objp))
+                            *hp++ = *objp++;
+                        else {
+                            ROOT_PUSH(src,*objp++);
+                            ROOT_PUSH(dst,make_fun(hp_start));
+                            ROOT_PUSH(offset,i);
+                            hp++;
+                        }
+                        break;
+                    default:
+                        *hp++ = *objp++;
+                    }
+                }
+                continue;
+            }
+
+            case EXTERNAL_PID_SUBTAG:
+            case EXTERNAL_PORT_SUBTAG:
+            case EXTERNAL_REF_SUBTAG: {
+                ExternalThing *etp;
+                Uint i =  thing_arityval(*objp) + 1;
+                Eterm *hp;
+                GlobalAlloc(from,i,hp);
+                ROOT_UPDATE(dst,ROOT_POP(offset),make_external(hp));
+                ROOT_POP(dst);
+                etp = (ExternalThing*) hp;
+                while (i--)  {
+                    *hp++ = *objp++;
+                }
+
+                etp->next = erts_global_offheap.externals;
+                erts_global_offheap.externals = etp;
+                etp->node->refc++;
+                continue;
+            }
+
+            case SUB_BINARY_SUBTAG: {
+                ErlSubBin *sb = (ErlSubBin *) objp;
+                Eterm real_bin = sb->orig;
+                Uint sub_offset = sb->offs;
+                size_t size = sb->size;
+
+                objp = binary_val(real_bin);
+                if (thing_subtag(*objp) == HEAP_BINARY_SUBTAG) {
+                    ErlHeapBin *from_bin;
+                    ErlHeapBin *to_bin;
+                    Uint i = heap_bin_size(size);
+                    Eterm *hp;
+                    GlobalAlloc(from,i,hp);
+                    ROOT_UPDATE(dst,ROOT_POP(offset),make_binary(hp));
+                    ROOT_POP(dst);
+                    from_bin = (ErlHeapBin *) objp;
+                    to_bin = (ErlHeapBin *) hp;
+                    to_bin->thing_word = header_heap_bin(size);
+                    to_bin->size = size;
+                    sys_memcpy(to_bin->data, ((byte *)from_bin->data) +
+                               sub_offset, size);
+                } else {
+                    ProcBin *from_bin;
+                    ProcBin *to_bin;
+                    Eterm *hp;
+
+                    ASSERT(thing_subtag(*objp) == REFC_BINARY_SUBTAG);
+                    GlobalAlloc(from,PROC_BIN_SIZE,hp);
+                    ROOT_UPDATE(dst,ROOT_POP(offset),make_binary(hp));
+                    ROOT_POP(dst);
+                    from_bin = (ProcBin *) objp;
+                    to_bin = (ProcBin *) hp;
+                    to_bin->thing_word = HEADER_PROC_BIN;
+                    to_bin->size = size;
+                    to_bin->val = from_bin->val;
+                    to_bin->val->refc++;
+                    to_bin->bytes = from_bin->bytes + sub_offset;
+                    to_bin->next = erts_global_offheap.mso;
+                    erts_global_offheap.mso = to_bin;
+                    erts_global_offheap.overhead += to_bin->size /
+                        BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
+                }
+                continue;
+            }
+
+            default: {
+                Uint size = thing_arityval(hdr) + 1;
+                Eterm *hp;
+                GlobalAlloc(from,size,hp);
+                ROOT_UPDATE(dst,ROOT_POP(offset),make_boxed(hp));
+                ROOT_POP(dst);
+                while (size--) {
+                    *hp++ = *objp++;
+                }
+                continue;
+            }
+            }
+            continue;
+        }
+
+        case TAG_PRIMARY_HEADER:
+        ASSERT((obj & _TAG_HEADER_MASK) == ARITYVAL_SUBTAG);
+        {
+            Eterm *objp = &obj;
+            Uint ari = arityval(obj);
+            Uint i;
+            Eterm *hp;
+            GlobalAlloc(from,ari + 1,hp);
+            ROOT_UPDATE(dst,ROOT_POP(offset),make_tuple(hp));
+            ROOT_POP(dst);
+            *hp = *objp++;
+            for (i = 1; i <= ari; i++) {
+                switch (primary_tag(*objp)) {
+                case TAG_PRIMARY_LIST:
+                case TAG_PRIMARY_BOXED:
+                    if (NO_COPY(*objp))
+                        hp[i] = *objp++;
+                    else {
+                        ROOT_PUSH(src,*objp++);
+                        ROOT_PUSH(dst,make_tuple(hp));
+                        ROOT_PUSH(offset,i);
+                    }
+                    break;
+                default:
+                    hp[i] = *objp++;
+                }
+            }
+            continue;
+        }
+
+        default:
+            erl_exit(1, "%s, line %d: Internal error in copy_struct_lazy: 0x%08x\n",
+                     __FILE__, __LINE__,obj);
+        }
+    }
+
+    //printf("After: ");
+    //display(dest,COUT);
+    //printf("\n\r");
+
+    //print_tagged_memory(global_heap,global_htop);
+
+    return dest;
+}
+
+#else
+
+void copy_struct_lazy(Process *from, Eterm obj, Uint offset)
+{
+    if (NO_COPY(obj))
+    {
+        ROOT_UPDATE(dst,offset,obj);
+        return;
+    }
+
+    ROOT_PUSH(src,obj);
+    switch (primary_tag(obj)) {
+    case TAG_PRIMARY_LIST:
+      {
+        Eterm *hp;
+        Eterm *objp = list_val(ROOT_TOP(src));
+
+        GlobalAlloc(from,2,hp);
+        ROOT_UPDATE(dst,offset,make_list(hp));
+
+        if (NO_COPY(*objp) && NO_COPY(*(objp + 1)))
+        {
+            hp[0] = *objp;
+            hp[1] = *(objp + 1);
+        }
+        else
+        {
+            ROOT_PUSH(dst,make_list(hp));
+            if (NO_COPY(*objp))
+                hp[0] = *objp;
+            else
+            {
+                COPY_STRUCT_LAZY((from,*objp,0));
+                objp = list_val(ROOT_TOP(src));
+                hp = ptr_val(ROOT_TOP(dst));
+            }
+            if (NO_COPY(*(objp + 1)))
+                hp[1] = *(objp + 1);
+            else
+                COPY_STRUCT_LAZY((from,*(objp+1),1));
+            ROOT_POP(dst);
+        }
+        break;
+      }
+
+    case TAG_PRIMARY_BOXED:
+      {
+        Eterm *objp = boxed_val(obj);
+        Eterm hdr = *objp;
+        switch (hdr & _TAG_HEADER_MASK) {
+        case ARITYVAL_SUBTAG:
+          {
+            Uint ari = arityval(hdr);
+            Uint i;
+            Eterm *hp;
+            GlobalAlloc(from,ari + 1,hp);
+            objp = boxed_val(ROOT_TOP(src));
+            ROOT_UPDATE(dst,offset,make_tuple(hp));
+            ROOT_PUSH(dst,make_tuple(hp));
+            *hp++ = *objp++;
+            for (i = 1; i <= ari; i++)
+            {
+              switch (primary_tag(*objp)) {
+              case TAG_PRIMARY_LIST:
+              case TAG_PRIMARY_BOXED:
+                COPY_STRUCT_LAZY((from,*objp,i));
+                objp = boxed_val(ROOT_TOP(src)) + i + 1;
+                hp = ptr_val(ROOT_TOP(dst)) + i + 1;
+                break;
+              default:
+                *hp++ = *objp++;
+              }
+            }
+            ROOT_POP(dst);
+            break;
+          }
+
+        case REFC_BINARY_SUBTAG:
+          {
+            ProcBin *pb;
+            Uint i = thing_arityval(*objp) + 1;
+            Eterm *hp;
+            GlobalAlloc(from,i,hp);
+            objp = boxed_val(ROOT_TOP(src));
+            ROOT_UPDATE(dst,offset,make_binary(hp));
+            pb = (ProcBin*) hp;
+            while (i--)
+            {
+                *hp++ = *objp++;
+            }
+            pb->val->refc++;
+            pb->next = erts_global_offheap.mso;
+            erts_global_offheap.mso = pb;
+            erts_global_offheap.overhead += pb->size /
+              BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
+            break;
+          }
+
+        case FUN_SUBTAG:
+          {
+            ErlFunThing *funp = (ErlFunThing*) objp;
+            Uint i = thing_arityval(*objp) + 2;
+            Uint j = i + funp->num_free;
+            Uint k = i;
+            Eterm *hp;
+            GlobalAlloc(from,j,hp);
+            objp = boxed_val(ROOT_TOP(src));
+            ROOT_UPDATE(dst,offset,make_fun(hp));
+            ROOT_PUSH(dst,make_fun(hp));
+            funp = (ErlFunThing*) hp;
+            while (i--)
+            {
+                *hp++ = *objp++;
+            }
+#ifndef HYBRID // FIND ME!
+            funp->next = erts_global_offheap.funs;
+            erts_global_offheap.funs = funp;
+            funp->fe->refc++;
+#endif
+            for (i = k; i < j; i++)
+            {
+              switch (primary_tag(*objp)) {
+              case TAG_PRIMARY_LIST:
+              case TAG_PRIMARY_BOXED:
+                COPY_STRUCT_LAZY((from,*objp,i));
+                objp = boxed_val(ROOT_TOP(src)) + i + 1;
+                hp = ptr_val(ROOT_TOP(dst)) + i + 1;
+                break;
+              default:
+                *hp++ = *objp++;
+              }
+            }
+            ROOT_POP(dst);
+            break;
+          }
+
+        case EXTERNAL_PID_SUBTAG:
+        case EXTERNAL_PORT_SUBTAG:
+        case EXTERNAL_REF_SUBTAG:
+          {
+            ExternalThing *etp;
+            Uint i =  thing_arityval(*objp) + 1;
+            Eterm *hp;
+            GlobalAlloc(from,i,hp);
+            objp = boxed_val(ROOT_TOP(src));
+            ROOT_UPDATE(dst,offset,make_external(hp));
+            etp = (ExternalThing*) hp;
+            while (i--)  {
+              *hp++ = *objp++;
+            }
+
+            etp->next = erts_global_offheap.externals;
+            erts_global_offheap.externals = etp;
+            etp->node->refc++;
+            break;
+          }
+
+        case SUB_BINARY_SUBTAG:
+          {
+            ErlSubBin *sb = (ErlSubBin *) objp;
+            Eterm real_bin = sb->orig;
+            Uint sub_offset = sb->offs;
+            size_t size = sb->size;
+
+            ROOT_POP(src);
+            ROOT_PUSH(src,real_bin);
+            objp = binary_val(real_bin);
+            if (thing_subtag(*objp) == HEAP_BINARY_SUBTAG)
+            {
+              ErlHeapBin *from_bin;
+              ErlHeapBin *to_bin;
+              Uint i = heap_bin_size(size);
+              Eterm *hp;
+              GlobalAlloc(from,i,hp);
+              objp = binary_val(ROOT_TOP(src));
+              ROOT_UPDATE(dst,offset,make_binary(hp));
+              from_bin = (ErlHeapBin *) objp;
+              to_bin = (ErlHeapBin *) hp;
+              to_bin->thing_word = header_heap_bin(size);
+              to_bin->size = size;
+              sys_memcpy(to_bin->data, ((byte *)from_bin->data) +
+                         sub_offset, size);
+            } else {
+              ProcBin *from_bin;
+              ProcBin *to_bin;
+              Eterm *hp;
+
+              ASSERT(thing_subtag(*objp) == REFC_BINARY_SUBTAG);
+              GlobalAlloc(from,PROC_BIN_SIZE,hp);
+              objp = binary_val(ROOT_TOP(src));
+              ROOT_UPDATE(dst,offset,make_binary(hp));
+              from_bin = (ProcBin *) objp;
+              to_bin = (ProcBin *) hp;
+              to_bin->thing_word = HEADER_PROC_BIN;
+              to_bin->size = size;
+              to_bin->val = from_bin->val;
+              to_bin->val->refc++;
+              to_bin->bytes = from_bin->bytes + sub_offset;
+              to_bin->next = erts_global_offheap.mso;
+              erts_global_offheap.mso = to_bin;
+              erts_global_offheap.overhead += to_bin->size /
+                BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
+            }
+            break;
+          }
+
+        default:
+          {
+            Uint size = thing_arityval(hdr) + 1;
+            Eterm *hp;
+            GlobalAlloc(from,size,hp);
+            objp = boxed_val(ROOT_TOP(src));
+            ROOT_UPDATE(dst,offset,make_boxed(hp));
+            while (size--)
+            {
+                *hp++ = *objp++;
+            }
+          }
+        }
+        break;
+      }
+
+    case TAG_PRIMARY_HEADER:
+      ASSERT((obj & _TAG_HEADER_MASK) == ARITYVAL_SUBTAG);
+      {
+        Eterm *objp = &obj;
+        Uint ari = arityval(obj);
+        Uint i;
+        Eterm *hp;
+        GlobalAlloc(from,ari + 1,hp);
+        objp = boxed_val(ROOT_TOP(src));
+        ROOT_UPDATE(dst,offset,make_tuple(hp));
+        ROOT_PUSH(dst,make_tuple(hp));
+        *hp++ = *objp++;
+        for (i = 1; i <= ari; i++)
+        {
+            switch (primary_tag(*objp)) {
+            case TAG_PRIMARY_LIST:
+            case TAG_PRIMARY_BOXED:
+              COPY_STRUCT_LAZY((from,*objp,i));
+              objp = boxed_val(ROOT_TOP(src)) + i;
+              hp = ptr_val(ROOT_TOP(dst)) + i;
+              break;
+            default:
+              *hp++ = *objp++;
+            }
+        }
+        ROOT_POP(dst);
+        break;
+      }
+
+    default:
+      erl_exit(1, "%s, line %d: Internal error in copy_struct_lazy: 0x%08x\n",
+               __FILE__, __LINE__,obj);
+    }
+    ROOT_POP(src);
+}
+
+#endif /* NON_RECURSIVE_COPY */
+
+#undef NO_COPY
+#endif /* HYBRID */
+
 /*
  * Copy a term that is guaranteed to be contained in a single
  * heap block. The heap block is copied word by word, and any
@@ -449,7 +1227,6 @@ copy_shallow(Eterm* ptr, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 	    *hp++ = val;
 	    switch (val & _HEADER_SUBTAG_MASK) {
 	    case ARITYVAL_SUBTAG:
-	    case VECTOR_SUBTAG:
 		break;
 	    case REFC_BINARY_SUBTAG:
 		{
@@ -468,7 +1245,9 @@ copy_shallow(Eterm* ptr, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 	    case FUN_SUBTAG:
 		{
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
 		    ErlFunThing* funp = (ErlFunThing *) (hp-1);
+#endif
 #endif
 		    int tari = thing_arityval(val);
 
@@ -476,10 +1255,12 @@ copy_shallow(Eterm* ptr, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 		    while (tari--) {
 			*hp++ = *tp++;
 		    }
+#ifndef HYBRID /* FIND ME! */
 #ifndef SHARED_HEAP
 		    funp->next = off_heap->funs;
 		    off_heap->funs = funp;
 		    funp->fe->refc++;
+#endif
 #endif
 		}
 		break;

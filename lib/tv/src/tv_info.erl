@@ -183,7 +183,7 @@ init(Master, Node, LocalNode, TabId, TabType, WinId) ->
 
     CardIds = print_cards(TabType, TableIdCard, BasicSettingsCard, SizeCard, StorageCard),
 
-    {CardId, FirstMaskXpos} = gs:read(TableIdFlap, data),
+    {_CardId, FirstMaskXpos} = gs:read(TableIdFlap, data),
     Mask = gs:label(WinFrame, [{width, gs:read(TableIdFlap, width) - 2 * gs:read(TableIdFlap, bw) + 1},
 			       {height, gs:read(TableIdCard, bw)},
 			       {x, FirstMaskXpos},
@@ -699,7 +699,7 @@ set_flap_label(ParentId, Text) ->
 
 
 
-create_flap(N, Text, ParentId) ->
+create_flap(N, _Text, ParentId) ->
     Width       = 120,
     Height      = 40,
     Spacing     = 2,
@@ -708,16 +708,16 @@ create_flap(N, Text, ParentId) ->
     Ypos        = 5,
     BorderWidth = 2,
     
-    FlapId = gs:frame(ParentId, [{width, Width},
-				 {height, Height},
-				 {x, Xpos},
-				 {y, Ypos},
-				 {bg, ?DEFAULT_BG_COLOR},
-				 {bw, BorderWidth},
-				 {cursor, hand},
-				 {buttonpress, true},
-				 {data, Xpos + BorderWidth}
-				]).
+    gs:frame(ParentId, [{width, Width},
+			{height, Height},
+			{x, Xpos},
+			{y, Ypos},
+			{bg, ?DEFAULT_BG_COLOR},
+			{bw, BorderWidth},
+			{cursor, hand},
+			{buttonpress, true},
+			{data, Xpos + BorderWidth}
+		       ]).
 				   
 
 
@@ -785,7 +785,7 @@ loop(CardIds, MaskLabel, Node, LocalNode, TabId, TabType) ->
 	#info_quit{} ->
 	    exit(normal);
 
-	{gs, FlapId, buttonpress, {CardId, Xpos}, [1 | _]} ->
+	{gs, _FlapId, buttonpress, {CardId, Xpos}, [1 | _]} ->
 	    gs:config(CardId, [raise
 			      ]),
 	    gs:config(MaskLabel, [raise,
@@ -793,10 +793,10 @@ loop(CardIds, MaskLabel, Node, LocalNode, TabId, TabType) ->
 				 ]),
 	    loop(CardIds, MaskLabel, Node, LocalNode, TabId, TabType);
 
-	{gs, _Id, buttonpress, {CardId, Xpos}, _Args} ->
+	{gs, _Id, buttonpress, {_CardId, _Xpos}, _Args} ->
 	    loop(CardIds, MaskLabel, Node, LocalNode, TabId, TabType);
 
-	{gs, LblId, enter, _Data, _Args} ->
+	{gs, _LblId, enter, _Data, _Args} ->
 	    loop(CardIds, MaskLabel, Node, LocalNode, TabId, TabType);
 	
 	{gs, WinId, configure, _Data, _Args} ->
@@ -843,7 +843,7 @@ loop(CardIds, MaskLabel, Node, LocalNode, TabId, TabType) ->
 	{gs, _Id, destroy, _Data, _Args} ->
 	    exit(normal);
 
-	{'EXIT', Pid, Reaon} ->
+	{'EXIT', _Pid, _Reason} ->
 	    exit(normal);
 
 	{error_msg_mode, Mode} ->

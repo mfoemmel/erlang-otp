@@ -578,18 +578,18 @@ read_mfile({ok,Fd}) ->
 read_mfile(Error) ->
     Error.
 
-read_mfile(eof,_Fd,SoFar) ->
+read_mfile(eof, _Fd, SoFar) ->
     {ok,lists:reverse(SoFar)};
-read_mfile({error,Reason},_Fd,SoFar) ->
+read_mfile({error,Reason} ,_Fd, _SoFar) ->
     {error,Reason};
-read_mfile([$#|Comment],Fd,SoFar) ->
-    read_mfile(read_line(Fd),Fd,SoFar);
-read_mfile([],Fd,SoFar) ->
-    read_mfile(read_line(Fd),Fd,SoFar);
-read_mfile(Line,Fd,SoFar) ->
-    read_mfile(read_line(Fd),Fd,[Line|SoFar]).
+read_mfile([$# | _Comment], Fd, SoFar) ->
+    read_mfile(read_line(Fd), Fd, SoFar);
+read_mfile([], Fd, SoFar) ->
+    read_mfile(read_line(Fd), Fd, SoFar);
+read_mfile(Line, Fd, SoFar) ->
+    read_mfile(read_line(Fd), Fd, [Line | SoFar]).
 
-read_line(Fd)      -> read_line1(io:get_line(Fd,[])).
+read_line(Fd)      -> read_line1(io:get_line(Fd, [])).
 read_line1(eof)    -> eof;
 read_line1(String) -> httpd_conf:clean(String).
 

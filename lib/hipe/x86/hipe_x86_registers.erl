@@ -13,22 +13,25 @@
 	 ecx/0,
 	 temp0/0,
 	 temp1/0,
-	 esp/0,
+	 sp/0,
 	 proc_pointer/0,
 	 heap_limit/0,
 	 fcalls/0,
 	 proc_offset/1,
-	 esp_limit_offset/0,
+	 sp_limit_offset/0,
 	 is_fixed/1,
-	 fixed/0,
+	 %% fixed/0,
 	 allocatable/0,
 	 nr_args/0,
 	 arg/1,
 	 is_arg/1,
 	 args/1,
+	 nr_rets/0,
+	 ret/1,
 	 call_clobbered/0,
 	 tailcall_clobbered/0,
-	 live_at_return/0]).
+	 live_at_return/0,
+	 alignment/0]).
 
 -include("../rtl/hipe_literals.hrl").
 
@@ -53,6 +56,12 @@
 -define(ARG2, ?ECX).
 -define(ARG3, ?EBX).
 -define(ARG4, ?EDI).
+
+-define(RET0, ?EAX).
+-define(RET1, ?EDX).
+-define(RET2, ?ECX).
+-define(RET3, ?EBX).
+-define(RET4, ?EDI).
 
 -define(TEMP0, ?EBX).	% XXX: was EAX
 -define(TEMP1, ?EDI).	% XXX: was EDX then EDI
@@ -94,7 +103,7 @@ eax() -> ?EAX.
 ecx() -> ?ECX.
 temp0() -> ?TEMP0.
 temp1() -> ?TEMP1.
-esp() -> ?ESP.
+sp() -> ?ESP.
 proc_pointer() -> ?PROC_POINTER.
 fcalls() -> ?FCALLS.
 heap_limit() -> ?HEAP_LIMIT.
@@ -125,7 +134,7 @@ proc_offset(?FCALLS) -> ?P_FCALLS;
 proc_offset(?HEAP_LIMIT) -> ?P_HP_LIMIT;
 proc_offset(_) -> false.
 
-esp_limit_offset() -> ?P_NSP_LIMIT.
+sp_limit_offset() -> ?P_NSP_LIMIT.
 
 is_fixed(?ESP) -> true;
 is_fixed(?PROC_POINTER) -> true;
@@ -133,8 +142,8 @@ is_fixed(?FCALLS) -> true;
 is_fixed(?HEAP_LIMIT) -> true;
 is_fixed(R) -> is_heap_pointer(R).
 
-fixed() ->
-    [?ESP, ?PROC_POINTER, ?FCALLS, ?HEAP_LIMIT | ?LIST_HP_FIXED].
+%% fixed() ->
+%%     [?ESP, ?PROC_POINTER, ?FCALLS, ?HEAP_LIMIT | ?LIST_HP_FIXED].
 
 allocatable() ->
     [?EDX, ?ECX, ?EBX, ?EAX, ?EDI| ?LIST_ESI_ALLOCATABLE].
@@ -174,6 +183,23 @@ args(Arity) ->
 args(I, Rest) when I < 0 -> Rest;
 args(I, Rest) -> args(I-1, [arg(I) | Rest]).
 
+nr_rets() -> ?X86_NR_RET_REGS.
+
+ret(N) ->
+    if N < ?X86_NR_RET_REGS ->
+	    case N of
+		0 -> ?RET0;
+		1 -> ?RET1;
+		2 -> ?RET2;
+		3 -> ?RET3;
+		4 -> ?RET4;
+		_ -> exit({?MODULE, ret, N})
+	    end;
+       true ->
+	    exit({?MODULE, ret, N})
+    end.
+
+
 call_clobbered() ->
     [{?EAX,tagged},{?EAX,untagged},	% does the RA strip the type or not?
      {?EDX,tagged},{?EDX,untagged},
@@ -192,10 +218,12 @@ live_at_return() ->
      ,{?ESP,untagged}
      ,{?PROC_POINTER,untagged}
      %% Lets try not!
-     %% If these are included they will interfere with other 
+     %% If these are included they will interfere with other
      %% temps during regalloc, but regs FCALLS and HEAP_LIMIT
      %% don't even exist at regalloc.
      ,{?FCALLS,untagged}
      ,{?HEAP_LIMIT,untagged}
      | ?LIST_HP_LIVE_AT_RETURN
     ].
+
+alignment() -> 4.

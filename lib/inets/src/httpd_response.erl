@@ -361,14 +361,6 @@ transform(content_language, Value, _Disable) ->
     ["Content-Language:",Value,"\r\n"];
 transform(retry_after, Value, _Disable) ->
     ["Retry-After:",Value,"\r\n"];
-transform(server, Value, _Disable) ->
-    ["Server:",Value,"\r\n"];
-transform(allow, Value, _Disable) ->
-    ["Allow:",Value,"\r\n"];
-transform(content_encoding, Value, _Disable) ->
-    ["Content-Encoding:",Value,"\r\n"];
-transform(content_language, Value, _Disable) ->
-    ["Content-Language:",Value,"\r\n"];
 transform(content_location, Value, _Disable) ->
     ["Content-Location:",Value,"\r\n"];
 transform(content_length, Value, _Disable) ->

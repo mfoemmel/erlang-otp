@@ -60,7 +60,6 @@ unsigned tag_val_def(Eterm x)
 	  ET_ASSERT(is_header(hdr),file,line);
 	  switch ((hdr & _TAG_HEADER_MASK) >> _TAG_PRIMARY_SIZE) {
 	    case (_TAG_HEADER_ARITYVAL >> _TAG_PRIMARY_SIZE):	return TUPLE_DEF;
-	    case (_TAG_HEADER_VECTOR >> _TAG_PRIMARY_SIZE):	return VECTOR_DEF;
 	    case (_TAG_HEADER_POS_BIG >> _TAG_PRIMARY_SIZE):	return BIG_DEF;
 	    case (_TAG_HEADER_NEG_BIG >> _TAG_PRIMARY_SIZE):	return BIG_DEF;
 	    case (_TAG_HEADER_REF >> _TAG_PRIMARY_SIZE):	return REF_DEF;
@@ -118,8 +117,6 @@ ET_DEFINE_CHECKED(Sint,signed_val,Eterm,is_small);
 ET_DEFINE_CHECKED(Uint,atom_val,Eterm,is_atom);
 ET_DEFINE_CHECKED(Uint,header_arity,Eterm,is_header);
 ET_DEFINE_CHECKED(Uint,arityval,Eterm,is_arity_value);
-ET_DEFINE_CHECKED(Eterm*,vector_val,Eterm,is_vector);
-ET_DEFINE_CHECKED(Uint,vector_arity,Eterm,is_vector_header);
 ET_DEFINE_CHECKED(Uint,thing_arityval,Eterm,is_thing);
 ET_DEFINE_CHECKED(Uint,thing_subtag,Eterm,is_thing);
 ET_DEFINE_CHECKED(Eterm*,binary_val,Eterm,is_binary);

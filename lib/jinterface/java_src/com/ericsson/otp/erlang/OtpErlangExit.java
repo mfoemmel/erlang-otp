@@ -31,6 +31,7 @@ package com.ericsson.otp.erlang;
  **/
 
 public class OtpErlangExit extends OtpErlangException {
+  OtpErlangObject reason = null;
   OtpErlangPid pid = null;
   
   /**
@@ -38,27 +39,56 @@ public class OtpErlangExit extends OtpErlangException {
    *
    * @param reason the reason this exit signal has been sent.
    **/
-  public OtpErlangExit(String reason) {
-    super(reason);
+  public OtpErlangExit(OtpErlangObject reason) {
+    super(reason.toString());
+    this.reason = reason;
   }
 
   /**
-   * Create an OtpErlangExit exception with the given reason and sender pid.
+   * <p> Equivalent to <code>OtpErlangExit(new
+   * OtpErlangAtom(reason)</code>. </p>
+   *
+   * @param reason the reason this exit signal has been sent.
+   *
+   * @see #OtpErlangExit(OtpErlangObject)
+   **/
+  public OtpErlangExit(String reason) {
+    this(new OtpErlangAtom(reason));
+  }
+
+  /**
+   * Create an OtpErlangExit exception with the given reason and
+   * sender pid.
    *
    * @param reason the reason this exit signal has been sent.
    *
    * @param pid the pid that sent this exit.
    **/
-  public OtpErlangExit(String reason, OtpErlangPid pid) {
-    super(reason);
+  public OtpErlangExit(OtpErlangObject reason, OtpErlangPid pid) {
+    super(reason.toString());
+    this.reason = reason;
     this.pid = pid;
+  }
+
+  /**
+   * <p> Equivalent to <code>OtpErlangExit(new OtpErlangAtom(reason),
+   * pid)</code>. </p>
+   *
+   * @param reason the reason this exit signal has been sent.
+   *
+   * @param pid the pid that sent this exit.
+   *
+   * @see #OtpErlangExit(OtpErlangObject, OtpErlangPid)
+   **/
+  public OtpErlangExit(String reason, OtpErlangPid pid) {
+    this(new OtpErlangAtom(reason), pid);
   }
 
   /**
    * Get the reason associated with this exit signal.
    **/
-  public String reason() {
-    return getMessage();
+  public OtpErlangObject reason() {
+    return this.reason;
   }
 
   /**

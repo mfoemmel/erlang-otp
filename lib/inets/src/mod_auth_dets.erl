@@ -35,11 +35,11 @@
 -include("httpd.hrl").
 -include("mod_auth.hrl").
 
-store_directory_data(Directory, DirData) ->
+store_directory_data(_Directory, DirData) ->
     ?CDEBUG("store_directory_data -> ~n"
 	    "     Directory: ~p~n"
 	    "     DirData:   ~p",
-	    [Directory, DirData]),
+	    [_Directory, DirData]),
 
     PWFile = httpd_util:key1search(DirData, auth_user_file),
     GroupFile = httpd_util:key1search(DirData, auth_group_file),
@@ -89,7 +89,7 @@ get_user(DirData, UserName) ->
     case dets:lookup(PWDB, User) of
 	[{User, Password, UserData}] ->
 	    {ok, #httpd_user{username=UserName, password=Password, user_data=UserData}};
-	Other ->
+	_ ->
 	    {error, no_such_user}
     end.
 
@@ -102,11 +102,13 @@ list_users(DirData) ->
 	Records when list(Records) ->
 	    ?DEBUG("list_users -> ~n"
 		   "     Records: ~p", [Records]),
-	    {ok, [UserName || {{UserName, AnyAddr, AnyPort, AnyDir}, Password, _Data} <- Records,
-			      AnyAddr == Addr, AnyPort == Port, AnyDir == Dir]};
-	O ->
+	    {ok, [UserName || {{UserName, AnyAddr, AnyPort, AnyDir}, 
+			       _Password, _Data} <- Records,
+			      AnyAddr == Addr, AnyPort == Port, 
+			      AnyDir == Dir]};
+	_O ->
 	    ?DEBUG("list_users -> ~n"
-		   "     O: ~p", [O]),
+		   "     O: ~p", [_O]),
 	    {ok, []}
     end.
 
@@ -115,10 +117,13 @@ delete_user(DirData, UserName) ->
     PWDB = httpd_util:key1search(DirData, auth_user_file),
     User = {UserName, Addr, Port, Dir},
     case dets:lookup(PWDB, User) of
-	[{User, SomePassword, UserData}] ->
+	[{User, _SomePassword, _UserData}] ->
 	    dets:delete(PWDB, User),
-	    lists:foreach(fun(Group) -> delete_group_member(DirData, Group, UserName) end, 
-			  list_groups(DirData)),
+	    {ok, Groups} = list_groups(DirData),
+	    lists:foreach(fun(Group) -> 
+				  delete_group_member(DirData, 
+						      Group, UserName) end, 
+			  Groups),
 	    true;
 	_ ->
 	    {error, no_such_user}
@@ -155,7 +160,7 @@ list_group_members(DirData, GroupName) ->
     case dets:lookup(GDB, Group) of
 	[{Group, Users}] ->
 	    {ok, Users};
-	Other ->
+	_ ->
 	    {error, no_such_group}
     end.
 
@@ -167,8 +172,9 @@ list_groups(DirData) ->
 	    {ok, []};
 	List when list(List) ->
 	    Groups = lists:flatten(List),
-	    {ok, [GroupName || {GroupName, AnyAddr, AnyPort, AnyDir} <- Groups,
-			   AnyAddr == Addr, AnyPort == Port, AnyDir == Dir]};
+	    {ok, [GroupName || 
+		     {GroupName, AnyAddr, AnyPort, AnyDir} <- Groups,
+		     AnyAddr == Addr, AnyPort == Port, AnyDir == Dir]};
 	_ ->
 	    {ok, []}
     end.
@@ -197,7 +203,7 @@ delete_group(DirData, GroupName) ->
     GDB = httpd_util:key1search(DirData, auth_group_file),
     Group = {GroupName, Addr, Port, Dir},
     case dets:lookup(GDB, Group) of
-	[{Group, Users}] ->
+	[{Group, _Users}] ->
 	    dets:delete(GDB, Group),
 	    true;
 	_ ->

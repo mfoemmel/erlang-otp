@@ -306,14 +306,14 @@ handle_call({verbosity,Verbosity},_From,State)->
     ?vlog("set verbosity:  ~p -> ~p",[Verbosity,OldVerbosity]),
     {reply,OldVerbosity,State}.
 
-handle_info(Info,State)->
-    {noreply,State}.
+handle_info(_Info, State)->
+    {noreply, State}.
 
-handle_cast(Request,State)->
-    {noreply,State}.
+handle_cast(_Request, State)->
+    {noreply, State}.
     
 
-terminate(Reason,State) ->
+terminate(_Reason,State) ->
     ets:delete(State#state.tab),
     ok.
 
@@ -352,15 +352,15 @@ api_call(Addr, Port, Dir, Func, Args,Password,State) ->
 		    Ret = (catch apply(AuthMod, Func, [DirData|Args])),
 		    ?DEBUG("api_call -> Ret: ~p",[ret]),
 		    Ret;
-		O ->
-		    ?DEBUG("api_call -> O: ~p",[O]),
+		_O ->
+		    ?DEBUG("api_call -> O: ~p",[_O]),
 		    {error, no_such_directory}
 	    end;
 	bad_password ->
 	    {error,bad_password}
     end.
 
-controlPassword(Password,State,Dir)when Password=:="DummyPassword"->
+controlPassword(Password, _State, _Dir) when Password=:="DummyPassword"->
     bad_password;
 
 controlPassword(Password,State,Dir)->

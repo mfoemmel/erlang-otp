@@ -16,7 +16,10 @@
 # ODBCLIBS = "C:\Program Files\Microsoft Visual Studio\VC98\lib\Odbc32.lib"
 # ODBCINCLUDE = "C:\Program Files\Microsoft Visual Studio\VC98\include"
 ODBCLIBS = Odbc32.lib
-ODBCINCLUDE = 
+ODBCINCLUDE =
+
+SOCKETLIBS = Ws2_32.lib
+
 # EIROOT - root directory of the erl_interface
 #
 EIROOT = ..\..\..\lib\%EI%
@@ -29,7 +32,7 @@ OBJDIR = $(PRIVDIR)\obj
 
 EIINCLUDE = $(EIROOT)\include
 INCLUDES = /I$(EIINCLUDE)
-CFLAGS = /MD /nologo $(INCLUDES) -DWIN32 -DMULTITHREAD_WIN32
+CFLAGS = /MD /nologo $(INCLUDES) -DWIN32 -D__WIN32__ -DMULTITHREAD_WIN32
 
 EILIB1 = $(EIROOT)\lib\erl_interface_md.lib
 EILIB2 = $(EIROOT)\lib\ei_md.lib
@@ -53,7 +56,7 @@ clean:
 
 $(BINDIR)\odbcserver.exe: $(OBJDIR)\odbcserver.obj
 	link $(LINKFLAGS) /OUT:$@ $(OBJDIR)\odbcserver.obj \
-		$(EILIBS) $(ODBCLIBS)
+		$(EILIBS) $(ODBCLIBS) $(SOCKETLIBS)
 
 {.}.c{$(OBJDIR)}.obj:
 	$(CC) /c $(CFLAGS) /Fo$@ $(*B).c

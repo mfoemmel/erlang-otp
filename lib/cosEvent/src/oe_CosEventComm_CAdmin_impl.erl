@@ -81,8 +81,8 @@ init([ChannelPid, TypeCheck, MaxEvents, ServerOpts]) ->
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
-    ?DBG("Terminating ~p~n", [Reason]),
+terminate(_Reason, _State) ->
+    ?DBG("Terminating ~p~n", [_Reason]),
     ok.
 
 %%----------------------------------------------------------------------
@@ -90,7 +90,7 @@ terminate(Reason, State) ->
 %% Returns    : {ok, NewState}
 %% Description: Convert process state when code is changed
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%---------------------------------------------------------------------%
@@ -102,16 +102,17 @@ code_change(OldVsn, State, Extra) ->
 %%----------------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, #state{channel_pid = Pid} = State) ->
     ?DBG("Parent Channel terminated ~p~n", [Reason]),
-    orber:debug_level_print("[~p] oe_CosEventComm_PullerS_impl:handle_info(~p); 
-My Channel terminated and so will I which will cause my children to do the same thing.", 
-			    [?LINE, Reason], ?DEBUG_LEVEL),
+    orber:dbg("[~p] oe_CosEventComm_PullerS_impl:handle_info(~p);~n"
+	      "My Channel terminated and so will I which will cause"
+	      " my children to do the same thing.", 
+	      [?LINE, Reason], ?DEBUG_LEVEL),
     {stop, Reason, State};
-handle_info({'EXIT', Pid, Reason}, #state{proxies = Proxies} = State) ->
+handle_info({'EXIT', Pid, _Reason}, #state{proxies = Proxies} = State) ->
     %% A child terminated which is normal. Hence, no logging.
-    ?DBG("Probably a child terminated ~p~n", [Reason]),
+    ?DBG("Probably a child terminated ~p~n", [_Reason]),
     {noreply, State#state{proxies = lists:keydelete(Pid, 2, Proxies)}};
-handle_info(Info, State) ->
-    ?DBG("Unknown Info ~p~n", [Info]),
+handle_info(_Info, State) ->
+    ?DBG("Unknown Info ~p~n", [_Info]),
     {noreply, State}.
 
 %%----------------------------------------------------------------------
@@ -128,8 +129,8 @@ obtain_push_supplier(_, _, #state{server_options = ServerOpts} = State) ->
 	    ?DBG("Started a new oe_CosEventComm_PusherS.~n", []),
 	    {reply, Proxy, State#state{proxies = [{Proxy, Pid}|State#state.proxies]}};
 	Other ->
-	    orber:debug_level_print("[~p] oe_CosEventComm_CAdmin:obtain_push_supplier(); Error: ~p", 
-				    [?LINE, Other], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] oe_CosEventComm_CAdmin:obtain_push_supplier();~nError: ~p", 
+		      [?LINE, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -148,8 +149,8 @@ obtain_pull_supplier(_, _, #state{server_options = ServerOpts} = State) ->
 	    ?DBG("Started a new oe_CosEventComm_PullerS.~n", []),
 	    {reply, Proxy, State#state{proxies = [{Proxy, Pid}|State#state.proxies]}};
 	Other ->
-	    orber:debug_level_print("[~p] oe_CosEventComm_CAdmin:obtain_pull_supplier(); Error: ~p", 
-				    [?LINE, Other], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] oe_CosEventComm_CAdmin:obtain_pull_supplier();~nError: ~p", 
+		      [?LINE, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -204,9 +205,9 @@ send_helper([{ObjRef, Pid}|T], Event, Dropped, false) ->
 	ok ->
 	    send_helper(T, Event, Dropped, false);
 	What ->
-	    orber:debug_level_print("[~p] oe_CosEventComm_CAdmin:send_helper(~p, ~p); 
-Bad return value ~p. Closing connection.", 
-				    [?LINE, ObjRef, Event, What], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] oe_CosEventComm_CAdmin:send_helper(~p, ~p);~n"
+		      "Bad return value ~p. Closing connection.", 
+		      [?LINE, ObjRef, Event, What], ?DEBUG_LEVEL),
 	    send_helper(T, Event, [{ObjRef, Pid}|Dropped], false)
     end;
 send_helper([{ObjRef, Pid}|T], Event, Dropped, Sync) ->
@@ -214,9 +215,9 @@ send_helper([{ObjRef, Pid}|T], Event, Dropped, Sync) ->
 	ok ->
 	    send_helper(T, Event, Dropped, Sync);
 	What ->
-	    orber:debug_level_print("[~p] oe_CosEventComm_CAdmin:send_helper(~p, ~p); 
-Bad return value ~p. Closing connection.", 
-				    [?LINE, ObjRef, Event, What], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] oe_CosEventComm_CAdmin:send_helper(~p, ~p);~n"
+		      "Bad return value ~p. Closing connection.", 
+		      [?LINE, ObjRef, Event, What], ?DEBUG_LEVEL),
 	    send_helper(T, Event, [{ObjRef, Pid}|Dropped], Sync)
     end.
 

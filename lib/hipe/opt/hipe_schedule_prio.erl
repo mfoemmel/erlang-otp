@@ -15,7 +15,7 @@
 -module(hipe_schedule_prio).
 -export([init_ready/2,
 	 init_instr_prio/2,
-	 initial_ready_set/4,
+	 %% initial_ready_set/4,
 	 next_ready/7,
 	 add_ready_nodes/2,
 	 insert_node/3
@@ -27,8 +27,8 @@ init_ready(Size,Preds) ->
 init_instr_prio(N,DAG) ->
   hipe_ultra_prio:init_instr_prio(N,DAG).
 
-initial_ready_set(M,N,Preds,Ready) ->
-  hipe_ultra_prio:initial_ready_set(M,N,Preds,Ready).
+%% initial_ready_set(M,N,Preds,Ready) ->
+%%   hipe_ultra_prio:initial_ready_set(M,N,Preds,Ready).
 
 next_ready(C,Ready,Prio,Nodes,DAG,Preds,Earl) ->
   hipe_ultra_prio:next_ready(C,Ready,Prio,Nodes,DAG,Preds,Earl).

@@ -86,11 +86,17 @@ while test -n "$1" ; do
 	-md|-MD)
 	    MD="-MD";
 	    MD_FORCED=true;;
+	-ml|-ML)
+	    MD="-ML";
+	    MD_FORCED=true;;
 	-mdd|-MDD|-MDd)
 	    MD="-MDd";
 	    MD_FORCED=true;;
 	-mtd|-MTD|-MTd)
 	    MD="-MTd";
+	    MD_FORCED=true;;
+	-mld|-MLD|-MLd)
+	    MD="-MLd";
 	    MD_FORCED=true;;
 	-o)
 	    shift;
@@ -229,6 +235,10 @@ if [ $LINKING = true ]; then
     esac
     # Descide which standard library to link against
     case $MD in
+	-ML)
+	    stdlib="-lLIBC";;
+	-MLd)
+	    stdlib="-lLIBCD";;
 	-MD)
 	    stdlib="-lMSVCRT";;
 	-MDd)

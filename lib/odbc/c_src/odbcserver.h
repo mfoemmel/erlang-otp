@@ -75,13 +75,13 @@
 #define EXIT_SOCKET_SEND_HEADER	 13
 #define EXIT_SOCKET_SEND_BODY	 14
 #define EXIT_SOCKET_RECV_MSGSIZE 15
-#define EXIT_SOCKET_RECV_HEADER	 16
-#define EXIT_SOCKET_RECV_BODY    17
-#define EXIT_COLS		 18
-#define EXIT_ROWS		 19
-#define EXIT_DESC		 20
-#define EXIT_BIND		 21
-#define EXIT_MORE_RESULTS	 22
+#define EXIT_SOCKET_SEND_MSGSIZE 16
+#define EXIT_SOCKET_RECV_HEADER	 17
+#define EXIT_SOCKET_RECV_BODY    18
+#define EXIT_COLS		 19
+#define EXIT_ROWS		 20
+#define EXIT_DESC		 21
+#define EXIT_BIND		 22
 #define EXIT_DRIVER_INFO         23
 
 /* COL_SIZE */
@@ -161,6 +161,7 @@ typedef struct {
     Boolean associated_result_set;
     Boolean use_srollable_cursors;
     Boolean tuple_row;
+    Boolean exists_more_result_sets;
 } db_state;
 
 #define connection_handle(db_state) (db_state -> connection_handle)
@@ -172,5 +173,5 @@ typedef struct {
 #define associated_result_set(db_state) (db_state -> associated_result_set)
 #define use_srollable_cursors(db_state) (db_state -> use_srollable_cursors)
 #define tuple_row(db_state) (db_state -> tuple_row)
-
+#define exists_more_result_sets(db_state) (db_state -> exists_more_result_sets)
 

@@ -695,15 +695,15 @@ handle({From, {reopen, NewFile, Head, F, A}}, S) ->
 	L ->
 	    reply(From, {error, {blocked_log, L#log.name}}, S)
     end;
-handle({From, {internal_open, A}}, S) ->
+handle({Server, {internal_open, A}}, S) ->
     case get(log) of
 	undefined ->
 	    case do_open(A) of % does the put
 		{ok, Res, L, Cnt} ->
 		    put(log, opening_pid(A#arg.linkto, A#arg.notify, L)),
-		    reply(From, Res, S#state{args=A, cnt=Cnt});
+		    reply(Server, Res, S#state{args=A, cnt=Cnt});
 		Res ->
-		    do_fast_exit(S, From, Res, ?failure(Res, open, 1))
+		    do_fast_exit(S, Server, Res, ?failure(Res, open, 1))
 	    end;
 	L ->
 	    TestH = mk_head(A#arg.head, A#arg.format),
@@ -712,12 +712,12 @@ handle({From, {internal_open, A}}, S) ->
 		    case add_pid(A#arg.linkto, A#arg.notify, L) of
 			{ok, L1} ->
 			    put(log, L1),
-			    reply(From, {ok, L#log.name}, S);
+			    reply(Server, {ok, L#log.name}, S);
 			Error ->
-			    reply(From, Error, S)
+			    reply(Server, Error, S)
 		    end;
 		Error ->
-		    reply(From, Error, S)
+		    reply(Server, Error, S)
 	    end
     end;
 handle({From, close}, S) ->
@@ -903,14 +903,14 @@ do_exit(S, From, Message0, Reason) ->
 		  _ when Message0 == ok -> R;
 		  _ -> Message0
 	      end,
-    disk_log_server:close(self()),
+    _ = disk_log_server:close(self()),
     replies(From, Message),
     ?PROFILE(ep:done()),
     exit(Reason).
 
-do_fast_exit(S, From, Message, Reason) ->
+do_fast_exit(S, Server, Message, Reason) ->
     _ = do_stop(S),
-    From ! {disk_log, self(), Message},
+    Server ! {disk_log, self(), Message},
     exit(Reason).
 
 %% -> closed | Error

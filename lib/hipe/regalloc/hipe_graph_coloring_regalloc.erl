@@ -32,7 +32,7 @@
 %% 
 
 -module(hipe_graph_coloring_regalloc).
--export([regalloc/4]).
+-export([regalloc/5]).
 
 %-ifndef(DO_ASSERT).
 %-define(DO_ASSERT, true).
@@ -58,7 +58,7 @@
 % that the coloring agrees with the interference graph (that is, that
 % no neighbors have the same register or spill location).
 
-regalloc(CFG, SpillIndex, SpillLimit, Target) ->
+regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   
    PhysRegs = Target:allocatable(),
    ?report2("building IG~n", []),
@@ -226,7 +226,7 @@ color_0(IG, Spill, PhysRegs, SpillIx, SpillLimit, NumNodes, Target,
 
    ?report(" starting with low degree nodes ~p~n",[Low]),
    EmptyStk = [],
-   Precolored = Target:all_precolored(),
+   Precolored = Target:all_precoloured(),
    {Stk, NewSpillIx} = 
       simplify(Low, NumNodes, Precolored,
 	       IG, Spill, K, SpillIx, EmptyStk,
@@ -423,7 +423,7 @@ spill_costs([{N,Info}|Ns], IG, Vis, Spill, SpillLimit, Target) ->
 		  spill_costs(Ns, IG, Vis, Spill, SpillLimit, Target);
 		 true ->
 		  [{spill_cost_of(N,Spill)/Deg,N} | 
-		   spill_costs(Ns,IG,Vis,Spill, SpillLimit, Target)]
+		   spill_costs(Ns,IG, Vis, Spill, SpillLimit, Target)]
 	      end
 	  end
       end
@@ -446,7 +446,7 @@ spill_costs([{N,Info}|Ns], IG, Vis, Spill, SpillLimit, Target) ->
 %select_actual_costs([{C,N}|Xs]) when number(C) ->
 %   [{C,N}|select_actual_costs(Xs)];
 %select_actual_costs([X|Xs]) ->
-%   warning(select_actual_costs,'undefined spill cost type ~p',[X]),
+%   ?WARNING_MSG(select_actual_costs,'undefined spill cost type ~p',[X]),
 %   select_actual_costs(Xs).
 
 %%%%%%%%%%%%%%%%%%%%
@@ -622,7 +622,7 @@ add_arc(X, Y, IG) ->
 
 
 normalize_ig(IG) ->
-   Size = hipe_vectors_wrapper:vsize(IG),
+   Size = hipe_vectors_wrapper:size(IG),
    normalize_ig(Size-1, IG).
 
 normalize_ig(-1, IG) ->
@@ -737,7 +737,7 @@ visit_all([X|Xs],Vis) ->
 %       D == NumNs ->
 % 	 ok;
 %       true ->
-% 	 warning('node ~p has degree ~p but ~p neighbors~n',[N,D,NumNs])
+% 	 ?WARNING_MSG('node ~p has degree ~p but ~p neighbors~n',[N,D,NumNs])
 %    end,
 %    check_neighbors(N,Ns,IG),
 %    check_ig(Xs,IG).
@@ -750,7 +750,7 @@ visit_all([X|Xs],Vis) ->
 %       true ->
 % 	 ok;
 %       true ->
-% 	 warning('node ~p should have ~p as neighbor (has ~p)~n',[M,N,Ns])
+% 	 ?WARNING_MSG('node ~p should have ~p as neighbor (has ~p)~n',[M,N,Ns])
 %    end,
 %    check_neighbors(N,Ms,IG).
 
@@ -768,12 +768,12 @@ init_coloring(Xs, Target) ->
 
 check_color_of(X,Cols) ->
 %%    if
-%%	is_precolored(X) ->
+%%	is_precoloured(X) ->
 %%	    phys_reg_color(X,Cols);
 %%	true ->
    case hipe_temp_map:find(X,Cols) of
      unknown ->
-	 ?warning_msg("node ~p: color not found~n",[X]),
+	 ?WARNING_MSG("node ~p: color not found~n",[X]),
 	 uncolored;
      C ->
 	 C
@@ -789,7 +789,7 @@ check_cols([{X,Info}|Xs],Cols) ->
        yes ->
  	 check_cols(Xs,Cols);
        {no,Invalids} ->
- 	 ?warning_msg("node ~p has same color (~p) as ~p~n",
+ 	 ?WARNING_MSG("node ~p has same color (~p) as ~p~n",
  		 [X,C,Invalids]),
  	 check_cols(Xs,Cols)
     end.
@@ -837,13 +837,10 @@ reg_names(Rs, Target) ->
     end,
   [Target:reg_nr(X) || X <- Regs].
 
-
-
-%%%%%%%%%%%%%%%%%%%%
-%
-% Precoloring: use this version when a proper implementation of
-%  physical_name(X) is available!
-%
+%%
+%% Precoloring: use this version when a proper implementation of
+%%  physical_name(X) is available!
+%%
 
 precolor(Xs, Cols, Target) ->
    ?report("precoloring ~p~n",[Xs]),
@@ -857,7 +854,6 @@ precolor0([R|Rs], Cols, Target) ->
    {Cs, Cols1} = precolor0(Rs, Cols, Target),
    {[{R,{reg,physical_name(R, Target)}}|Cs], 
     set_color(R,physical_name(R, Target),Cols1)}.
-
 
 physical_name(X, Target) ->
    Target:physical_name(X).

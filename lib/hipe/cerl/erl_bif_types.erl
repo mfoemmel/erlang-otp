@@ -1,3 +1,4 @@
+%% -*- erlang-indent-level: 4 -*-
 %% =====================================================================
 %% Type information for Erlang Built-in functions
 %%
@@ -29,15 +30,16 @@
 -export([type/3, type/4]).
 
 -import(erl_types, [t_any/0, t_atom/0, t_atom/1, t_binary/0, t_bool/0,
-		    t_byte/0, t_cons/0, t_cons/2, t_cons_hd/1,
+		    t_byte/0, t_cons/0, t_char/0, t_cons/2, t_cons_hd/1,
 		    t_cons_tl/1, t_float/0, t_fun/0, t_fun/2,
 		    t_fun_range/1, t_integer/0, t_is_float/1,
-		    t_is_any/1, t_is_integer/1, t_is_nil/1,
-		    t_is_undefined/1, t_list/0, t_list/1,
+		    t_is_any/1, t_is_byte/1, t_is_integer/1, t_is_nil/1,
+		    t_is_none/1, t_list/0, t_list/1,
 		    t_list_elements/1, t_number/0, t_number_vals/1,
 		    t_pid/0, t_port/0, t_ref/0, t_string/0, t_tuple/0,
 		    t_tuple/1, t_tuple_args/1, t_tuple_arity/1, t_sup/1,
-		    t_sup/2, t_inf/2, t_subtract/2, t_undefined/0,
+		    t_tuple_subtypes/1,
+		    t_sup/2, t_inf/2, t_subtract/2, t_none/0,
 		    t_identifier/0]).
 
 type(M, F, A) ->
@@ -46,11 +48,13 @@ type(M, F, A) ->
 %% Arguments should be checked for undefinedness, so we do not make
 %% unnecessary overapproximations.
 
-type(erlang, halt, 0, _) -> t_undefined();
-type(erlang, exit, 1, _) -> t_undefined();
-type(erlang, fault, 1, _) -> t_undefined();
-type(erlang, fault, 2, _) -> t_undefined();
-type(erlang, throw, 1, _) -> t_undefined();
+type(erlang, halt, 0, _) -> t_none();
+type(erlang, exit, 1, _) -> t_none();
+type(erlang, fault, 1, _) -> t_none();
+type(erlang, fault, 2, _) -> t_none();
+type(erlang, error, 1, _) -> t_none();
+type(erlang, error, 2, _) -> t_none();
+type(erlang, throw, 1, _) -> t_none();
 type(erlang, '==', 2, Xs) -> strict(Xs, t_bool());
 type(erlang, '/=', 2, Xs) -> strict(Xs, t_bool());
 type(erlang, '=:=', 2, Xs) -> strict(Xs, t_bool());
@@ -69,13 +73,18 @@ type(erlang, '!', 2, Xs) ->
 type(erlang, '+', 2, Xs) ->
     strict([t_number(), t_number()], Xs,
 	   fun ([X1, X2]) ->
-		   case t_is_integer(X1) andalso t_is_integer(X2) of
+		   case t_is_byte(X1) andalso t_is_byte(X2) of
 		       true ->
-			   t_integer();
+			   t_char();
 		       false ->
-			   case t_is_float(X1) orelse t_is_float(X2) of
-			       true -> t_float();
-			       false -> t_number()
+			   case t_is_integer(X1) andalso t_is_integer(X2) of
+			       true ->
+		       t_integer();
+			       false ->
+				   case t_is_float(X1) orelse t_is_float(X2) of
+				       true -> t_float();
+				       false -> t_number()
+				   end
 			   end
 		   end
 	   end);
@@ -113,11 +122,16 @@ type(erlang, 'rem', 2, Xs) ->
     strict([t_integer(), t_integer()], Xs,
 	   fun (_) -> t_integer() end);
 type(erlang, '++', 2, Xs) ->
-    strict([t_list(), t_list()], Xs,
+    strict([t_list(), t_any()], Xs,
 	   fun ([X1, X2]) -> t_sup(X1, X2) end);
 type(erlang, '--', 2, Xs) ->
+    %% We don't know which elements (if any) in X2 will be found and
+    %% removed from X1, even if they would have the same type. Thus, we
+    %% must assume that X1 can remain unchanged. However, if we succeed,
+    %% we know that X1 must be a proper list, but the result could
+    %% possibly be empty even if X1 is nonempty.
     strict([t_list(), t_list()], Xs,
-	   fun ([X1, _]) -> X1 end);  % the only safe approximation
+	   fun ([X1, _]) -> t_list(t_list_elements(X1)) end);
 type(erlang, 'and', 2, Xs) ->
     strict([t_bool(), t_bool()], Xs, fun (_) -> t_bool() end);
 type(erlang, 'or', 2, Xs) ->
@@ -193,9 +207,10 @@ type(erlang, date, 0, _) ->
 type(erlang, element, 2, Xs) ->
     strict([t_integer(), t_tuple()], Xs,
 	   fun ([X1, X2]) ->
-		   case t_tuple_arity(X2) of
+		   case t_tuple_subtypes(X2) of
 		       any -> t_any();
-		       A ->
+		       [_] ->
+			   A = t_tuple_arity(X2),
 			   As = t_tuple_args(X2),
 			   case t_number_vals(X1) of
 			       Ns when is_list(Ns) ->
@@ -205,10 +220,13 @@ type(erlang, element, 2, Xs) ->
 					 (_, X) ->
 					     X
 				     end,
-				     t_undefined(), Ns);
+				     t_none(), Ns);
 			       _ ->
 				   t_sup(t_tuple_args(X2))
-			   end
+			   end;
+		       Ts when is_list(Ts) ->
+			   t_sup([type(erlang, element, 2, [X1, Y]) || 
+				     Y <- Ts])
 		   end
 	   end);
 type(erlang, float, 1, Xs) ->
@@ -269,17 +287,18 @@ type(erlang, send_after, 3, Xs) ->
 type(erlang, setelement, 3, Xs) ->
     strict([t_integer(), t_tuple(), t_any()], Xs,
 	   fun ([X1, X2, X3]) ->
-		   case t_tuple_arity(X2) of
+		   case t_tuple_subtypes(X2) of
 		       any -> t_tuple();
-		       A ->
+		       [_] ->
+			   A = t_tuple_arity(X2),
 			   As = t_tuple_args(X2),
 			   case t_number_vals(X1) of
 			       any ->
 				   t_tuple([t_sup(X, X3) || X <- As]);
 			       [N] when N >= 1, N =< A ->
 				   t_tuple(list_replace(N, X3, As));
-			       [N] when N < 0; N > A ->
-				   t_undefined();
+			       [N] when N < 1; N > A ->
+				   t_none();
 			       Ns ->
 				   t_tuple(
 				     lists:foldl(
@@ -291,7 +310,10 @@ type(erlang, setelement, 3, Xs) ->
 					       Xs
 				       end,
 				       As, Ns))
-			   end
+			   end;
+		       Ts when is_list(Ts) ->
+			   t_sup([type(erlang, setelement, 3, [X1, Y, X3]) ||
+				     Y <- Ts])
 		   end
 	   end);
 type(erlang, size, 1, Xs) ->
@@ -390,7 +412,7 @@ type(lists, mapfoldl, 3, Xs) ->
 	    t_any(), t_list()], Xs,
 	   fun ([X, _, _]) ->
 		   R = t_fun_range(X),
-		   case t_is_undefined(R) of
+		   case t_is_none(R) of
 		       true -> R;
 		       false ->
 			   case t_tuple_args(R) of
@@ -462,14 +484,14 @@ type(_, _, _, Xs) ->
 
 strict(Xs, Ts, F) ->
     Xs1 = inf_lists(Xs, Ts),
-    case any_is_undefined(Xs1) of
-	true -> t_undefined();
+    case any_is_none(Xs1) of
+	true -> t_none();
 	false -> F(Xs1)
     end.
 
 strict(Xs, X) ->
-    case any_is_undefined(Xs) of
- 	true -> t_undefined();
+    case any_is_none(Xs) of
+ 	true -> t_none();
  	false -> X
     end.
 
@@ -490,14 +512,14 @@ list_replace(N, E, [X | Xs]) when N > 1 ->
 list_replace(1, E, [_X | Xs]) ->
     [E | Xs].
 
-any_is_undefined([X | Xs]) ->
-    case t_is_undefined(X) of
+any_is_none([X | Xs]) ->
+    case t_is_none(X) of
 	true ->
 	    true;
 	false ->
-	    any_is_undefined(Xs)
+	    any_is_none(Xs)
     end;
-any_is_undefined([]) -> false.
+any_is_none([]) -> false.
 
 
 %% =====================================================================

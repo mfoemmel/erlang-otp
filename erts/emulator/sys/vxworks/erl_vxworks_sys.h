@@ -63,12 +63,11 @@
 
 
 /* Unimplemented math functions */
-#define acosh	undef_math_func_1
-#define asinh	undef_math_func_1
-#define atanh	undef_math_func_1
-#define erf	undef_math_func_1
-#define erfc	undef_math_func_1
-#define lgamma	undef_math_func_1
+#define NO_ASINH
+#define NO_ACOSH
+#define NO_ATANH
+#define NO_ERF
+#define NO_ERFC
 
 /* Stuff that is useful for port programs, drivers, etc */
 #ifndef VXWORKS

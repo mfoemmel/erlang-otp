@@ -112,9 +112,11 @@ type	ATOM		FIXED_SIZE	ATOM		atom_entry
 type	EXPORT		FIXED_SIZE	CODE		export_entry
 type	MODULE		FIXED_SIZE	CODE		module_entry
 type	REG_PROC	FIXED_SIZE	PROCESSES	reg_proc
-type	LINK		FIXED_SIZE	PROCESSES	link_nh
-type	LINK_SH		FIXED_SIZE	PROCESSES	link_sh
 type	LINK_LH		STANDARD	PROCESSES	link_lh
+type	MONITOR_SH	FIXED_SIZE	PROCESSES	monitor_sh
+type	MONITOR_LH	STANDARD	PROCESSES	monitor_lh
+type	NLINK_SH	FIXED_SIZE	PROCESSES	nlink_sh
+type	NLINK_LH	STANDARD	PROCESSES	nlink_lh
 type	PROC_LIST	FIXED_SIZE	PROCESSES	proc_list
 type	FUN_ENTRY	FIXED_SIZE	CODE		fun_entry
 type	ATOM_TXT	LONG_LIVED	ATOM		atom_text
@@ -194,6 +196,13 @@ type	ACTIVE_PROCS	STANDARD	PROCESSES	active_procs
 
 +endif
 
++if hybrid
+
+type	OBJECT_STACK	STANDARD	PROCESSES	object_stack
+type	ACTIVE_PROCS	STANDARD	PROCESSES	active_procs
+
++endif
+
 +if hipe
 
 # Currently most hipe code use this type.
@@ -211,15 +220,6 @@ type	SSB		SHORT_LIVED	PROCESSES	ssb
 #
 # Types used by system specific code
 #
-
-# sys_threads.c
-+if threads
-
-type	THREAD_REF	SYSTEM		SYSTEM		thread_ref
-type	MUTEX		SYSTEM		SYSTEM		mutex
-type	COND_VAR	SYSTEM		SYSTEM		cond_var
-
-+endif
 
 type	DRV_TAB		LONG_LIVED	SYSTEM		drv_tab
 

@@ -39,6 +39,7 @@
 
 #include "hash.h"
 #include "erl_process.h"
+#include "erl_monitors.h"
 
 #define ERST_INTERNAL_CHANNEL_NO 0
 
@@ -53,7 +54,15 @@ typedef struct dist_entry_ {
     Eterm sysname;		/* name@host atom for efficiency */
     Uint32 creation;		/* creation of connected node */
     Eterm cid;			/* connection handler (pid or port), NIL == free */
-    struct erl_link* links;	/* external link/monitors/node links */
+    ErtsLink *node_links;       /* In a dist entry, node links are kept 
+				   in a separate tree, while they are 
+				   colocted with the ordinary link tree
+				   for processes. It's not due to confusion,
+				   it's because the link tree for the dist 
+				   entry is in two levels, see erl_monitors.h 
+				*/
+    ErtsLink *nlinks;           /* Link tree with subtrees */
+    ErtsMonitor *monitors;      /* Monitor tree */
     Uint32 status;		/* Slot status, like exiting reserved etc */
     Uint32 flags;		/* Distribution flags, like hidden, 
 				   atom cache etc. */

@@ -33,10 +33,12 @@
 	 prepare_checkpoint/2,
 	 prepare_checkpoint/1, % Internal
 	 prepare_snmp/3,
-	 do_snmp/2,
+	 do_snmp/2,	 
 	 put_activity_id/1,
+	 put_activity_id/2,
 	 block_tab/1,
-	 unblock_tab/1
+	 unblock_tab/1,
+	 fixtable/3
 	]).
 
 %% sys callback functions
@@ -50,7 +52,7 @@
 -import(mnesia_lib, [fatal/2, verbose/2, dbg_out/2]).
 
 -record(state, {coordinators = [], participants = [], supervisor,
-		blocked_tabs = [], dirty_queue = []}).
+		blocked_tabs = [], dirty_queue = [], fixed_tabs = []}).
 %% Format on coordinators is [{Tid, EtsTabList} .....
 
 -record(prep, {protocol = sym_trans,
@@ -368,6 +370,7 @@ doit_loop(#state{coordinators = Coordinators, participants = Participants, super
 				  [Tid]),
 			    doit_loop(State);
 			{{_Tid, Etabs}, A2} ->
+			    clear_fixtable(Etabs),
 			    erase_ets_tabs(Etabs),
 			    transaction_terminated(Tid),
 			    doit_loop(State#state{coordinators = A2})
@@ -392,8 +395,9 @@ doit_loop(#state{coordinators = Coordinators, participants = Participants, super
 
 	    Tids = [P#participant.tid || P <- Participants],
 	    reconfigure_participants(N, Participants),
+	    NewState = clear_fixtable(N, State),
 	    mnesia_monitor:mnesia_down(?MODULE, {N, Tids}),
-	    doit_loop(State);
+	    doit_loop(NewState);
 
 	{From, {unblock_me, Tab}} ->
 	    case lists:member(Tab, State#state.blocked_tabs) of
@@ -436,6 +440,15 @@ doit_loop(#state{coordinators = Coordinators, participants = Participants, super
 		    ignore
 	    end,
 	    reply(From, Res, State);
+	{From, {fixtable, [Tab,Lock,Requester]}} ->
+	    case ?catch_val({Tab, storage_type}) of
+		{'EXIT', _} -> 
+		    reply(From, error, State);
+		Storage ->
+		    mnesia_lib:db_fixtable(Storage,Tab,Lock),
+		    NewState = manage_fixtable(Tab,Lock,Requester,State),
+		    reply(From, node(), NewState)
+	    end;
 	
 	{system, From, Msg} ->
 	    dbg_out("~p got {system, ~p, ~p}~n", [?MODULE, From, Msg]),
@@ -456,6 +469,7 @@ do_async_dirty(Tid, Commit, _Tab) ->
     ?eval_debug_fun({?MODULE, async_dirty, pre}, [{tid, Tid}]),
     catch do_dirty(Tid, Commit),
     ?eval_debug_fun({?MODULE, async_dirty, post}, [{tid, Tid}]).
+
 
 %% Process items in fifo order
 process_dirty_queue(Tab, [Item | Queue]) ->
@@ -550,7 +564,7 @@ recover_coordinator(Tid, Etabs) ->
     verbose("Coordinator ~p in transaction ~p died.~n", [Tid#tid.pid, Tid]),
 
     Store = hd(Etabs),
-    CheckNodes = get_nodes(Store),
+    CheckNodes = get_elements(nodes,Store),
     TellNodes = CheckNodes -- [node()],
     case catch arrange(Tid, Store, async) of
 	{'EXIT', Reason} ->
@@ -631,6 +645,50 @@ erase_ets_tabs([H | T]) ->
     erase_ets_tabs(T);
 erase_ets_tabs([]) -> 
     ok.
+
+%% Clear one transactions all fixtables
+clear_fixtable([Store|_]) ->
+    Fixed = get_elements(fixtable, Store),
+    lists:foreach(fun({Tab,Node}) ->
+			  rpc:cast(Node, ?MODULE, fixtable, [Tab,false,self()]) 
+		  end, Fixed).
+
+%% Clear all fixtable Node have done
+clear_fixtable(Node, State=#state{fixed_tabs = FT0}) ->
+    case mnesia_lib:key_search_delete(Node, 1, FT0) of
+	{none, _Ft} ->
+	    State;
+	{{Node,Tabs},FT} ->
+	    lists:foreach(
+	      fun(Tab) ->
+		      case ?catch_val({Tab, storage_type}) of
+			  {'EXIT', _} -> 
+			      ignore;
+			  Storage ->
+			      mnesia_lib:db_fixtable(Storage,Tab,false)
+		      end
+	      end, Tabs),
+	    State#state{fixed_tabs=FT}
+    end.
+
+manage_fixtable(Tab,true,Requester,State=#state{fixed_tabs = FT0}) ->
+    Node = node(Requester),
+    case mnesia_lib:key_search_delete(Node, 1, FT0) of
+	{none, FT}->
+	    State#state{fixed_tabs=[{Node, [Tab]}|FT]};
+	{{Node,Tabs},FT} ->
+	    State#state{fixed_tabs=[{Node, [Tab|Tabs]}|FT]}
+    end;
+manage_fixtable(Tab,false,Requester,State = #state{fixed_tabs = FT0}) ->
+    Node = node(Requester),
+    case mnesia_lib:key_search_delete(Node, 1, FT0) of 
+	{none,_FT} -> State; % Hmm? Safeguard
+	{{Node, Tabs0},FT} -> 
+	    case lists:delete(Tab, Tabs0) of
+		[] -> State#state{fixed_tabs=FT};
+		Tabs -> State#state{fixed_tabs=[{Node,Tabs}|FT]}
+	    end
+    end.
 
 %% Deletes a pid from a list of participants
 %% or from a list of coordinators and returns
@@ -845,7 +903,7 @@ restart(Mod, Tid, Ts, Fun, Args, Factor0, Retries0, Type, Why) ->
 	    end,
 	    intercept_friends(Tid, Ts),
 	    Store = Ts#tidstore.store,
-	    Nodes = get_nodes(Store),
+	    Nodes = get_elements(nodes,Store),
 	    ?MODULE ! {self(), {restart, Tid, Store}},
 	    mnesia_locker:send_release_tid(Nodes, Tid),
 	    timer:sleep(SleepTime),
@@ -876,7 +934,7 @@ decr(_X) -> 0.
 return_abort(Fun, Args, Reason)  ->
     {_Mod, Tid, Ts} = get(mnesia_activity_state),
     OldStore = Ts#tidstore.store,
-    Nodes = get_nodes(OldStore),
+    Nodes = get_elements(nodes, OldStore),
     intercept_friends(Tid, Ts),
     catch mnesia_lib:incr_counter(trans_failures),
     Level = Ts#tidstore.level,
@@ -917,38 +975,42 @@ flush_downs() ->
     after 0 -> flushed
     end.
 
-put_activity_id(undefined) ->
+
+put_activity_id(MTT) ->
+    put_activity_id(MTT, undefined).
+put_activity_id(undefined,_) ->
     erase_activity_id();
-put_activity_id({Mod, Tid, Ts}) when record(Tid, tid), record(Ts, tidstore) ->
+put_activity_id({Mod, Tid, Ts},Fun) 
+  when record(Tid, tid), record(Ts, tidstore) ->
     flush_downs(),
     Store = Ts#tidstore.store,
-    ?ets_insert(Store, {friends, self()}),
+    if 
+	is_function(Fun) ->
+	    ?ets_insert(Store, {friends, {stop,Fun}});
+	true ->
+	    ?ets_insert(Store, {friends, self()})
+    end,
     NewTidTs = {Mod, Tid, Ts},
     put(mnesia_activity_state, NewTidTs);
-put_activity_id(SimpleState) ->
+put_activity_id(SimpleState,_) ->
     put(mnesia_activity_state, SimpleState).
 
 erase_activity_id() ->
     flush_downs(),
     erase(mnesia_activity_state).
 
-get_nodes(Store) ->    
-    case catch ?ets_lookup_element(Store, nodes, 2) of
-	{'EXIT', _} -> [node()];
-	Nodes -> Nodes
-    end.	     
-    
-get_friends(Store) ->    
-    case catch ?ets_lookup_element(Store, friends, 2) of
+get_elements(Type,Store) ->    
+    case catch ?ets_lookup_element(Store, Type, 2) of
 	{'EXIT', _} -> [];
-	Friends -> Friends
+	Vals -> Vals
     end.	     
     
 opt_propagate_store(_Current, _Obsolete, false) ->
     ok;
 opt_propagate_store(Current, Obsolete, true) ->
-    propagate_store(Current, nodes, get_nodes(Obsolete)),
-    propagate_store(Current, friends, get_friends(Obsolete)).
+    propagate_store(Current, nodes, get_elements(nodes,Obsolete)),
+    propagate_store(Current, fixtable, get_elements(fixtable,Obsolete)),
+    propagate_store(Current, friends, get_elements(friends, Obsolete)).
 
 propagate_store(Store, Var, [Val | Vals]) ->
     ?ets_insert(Store, {Var, Val}),
@@ -958,15 +1020,19 @@ propagate_store(_Store, _Var, []) ->
 
 %% Tell all processes that are cooperating with the current transaction
 intercept_friends(_Tid, Ts) ->
-    Friends = get_friends(Ts#tidstore.store),
-    Message = {activity_ended, undefined, self()},
-    intercept_best_friend(Friends, Message).
+    Friends = get_elements(friends,Ts#tidstore.store),
+    intercept_best_friend(Friends, false).
 
-intercept_best_friend([], _Message) ->
-    ok;
-intercept_best_friend([Pid | _], Message) ->
-    Pid ! Message, 
-    wait_for_best_friend(Pid, 0).
+intercept_best_friend([],_) ->    ok;
+intercept_best_friend([{stop,Fun} | R],Ignore) ->
+    catch Fun(),
+    intercept_best_friend(R,Ignore);
+intercept_best_friend([Pid | R],false) ->    
+    Pid ! {activity_ended, undefined, self()}, 
+    wait_for_best_friend(Pid, 0),
+    intercept_best_friend(R,true);
+intercept_best_friend([_|R],true) ->
+    intercept_best_friend(R,true).
 
 wait_for_best_friend(Pid, Timeout) ->
     receive
@@ -1055,7 +1121,7 @@ t_commit(Type) ->
 
 arrange(Tid, Store, Type) ->
     %% The local node is always included
-    Nodes = get_nodes(Store),
+    Nodes = get_elements(nodes,Store),
     Recs = prep_recs(Nodes, []),
     Key = ?ets_first(Store),
     N = 0,
@@ -1215,7 +1281,7 @@ pick_node(Tid, Node, [Rec | Rest], Done) ->
     end;
 pick_node({dirty,_}, Node, [], Done) ->
     {#commit{decision = presume_commit, node = Node}, Done};
-pick_node(_Tid, Node, [], Done) ->
+pick_node(_Tid, Node, [], _Done) ->
     mnesia:abort({bad_commit, {missing_lock, Node}}).
 
 prepare_node(Node, Storage, [Item | Items], Rec, Kind) when Kind == snmp ->
@@ -2115,7 +2181,7 @@ reconfigure_coordinators(_N, []) ->
 
 send_mnesia_down(Tid, Store, Node) ->
     Msg = {mnesia_down, Node},
-    send_to_pids([Tid#tid.pid | get_friends(Store)], Msg).
+    send_to_pids([Tid#tid.pid | get_elements(friends,Store)], Msg).
 
 send_to_pids([Pid | Pids], Msg) ->
     Pid ! Msg,
@@ -2179,6 +2245,14 @@ do_stop(#state{coordinators = Coordinators}) ->
     mnesia_checkpoint:stop(),
     mnesia_log:stop(),
     exit(shutdown).
+
+fixtable(Tab, Lock, Me) ->
+    case req({fixtable, [Tab,Lock,Me]}) of
+	error ->
+	    exit({no_exists, Tab});
+	Else ->
+	    Else
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% System upgrade

@@ -1,6 +1,5 @@
 %%% $Id$
-%%% hipe_x86_encode.erl
-%%% Copyright (C) 2000-2001 Mikael Pettersson
+%%% Copyright (C) 2000-2004 Mikael Pettersson
 %%%
 %%% This is the syntax of x86 r/m operands:
 %%%
@@ -42,19 +41,24 @@
 -export([% condition codes
 	 cc/1,
 	 % 8-bit registers
-	 al/0, cl/0, dl/0, bl/0, ah/0, ch/0, dh/0, bh/0,
+	 %% al/0, cl/0, dl/0, bl/0, ah/0, ch/0, dh/0, bh/0,
 	 % 32-bit registers
-	 eax/0, ecx/0, edx/0, ebx/0, esp/0, ebp/0, esi/0, edi/0,
+	 %% eax/0, ecx/0, edx/0, ebx/0, esp/0, ebp/0, esi/0, edi/0,
 	 % operands
-	 sindex/2, sib/1, sib/2,
+	 sindex/2, sib/1, %% sib/2,
 	 ea_disp32_base/2, ea_disp32_sib/2,
 	 ea_disp8_base/2, ea_disp8_sib/2,
-	 ea_base/1, ea_disp32_sindex/1, ea_disp32_sindex/2, ea_sib/1, ea_disp32/1,
+	 ea_base/1,
+	 %% ea_disp32_sindex/1,
+	 ea_disp32_sindex/2, ea_sib/1, ea_disp32/1,
 	 rm_reg/1, rm_mem/1,
 	 % instructions
-	 insn_encode/1, insn_sizeof/1,
-	 insn_encode/2, insn_sizeof/2]).
+	 insn_encode/3, insn_sizeof/2]).
+
+%%-define(DO_HIPE_X86_ENCODE_TEST,true).
+-ifdef(DO_HIPE_X86_ENCODE_TEST).
 -export([dotest/0, dotest/1]).	% for testing, don't use
+-endif.
 
 -define(ASSERT(F,G), if G -> [] ; true -> exit({?MODULE,F}) end).
 %-define(ASSERT(F,G), []).
@@ -106,14 +110,14 @@ cc(g) -> ?CC_G.
 -define(DH, 2#110).
 -define(BH, 2#111).
 
-al() -> ?AL.
-cl() -> ?CL.
-dl() -> ?DL.
-bl() -> ?BL.
-ah() -> ?AH.
-ch() -> ?CH.
-dh() -> ?DH.
-bh() -> ?BH.
+%% al() -> ?AL.
+%% cl() -> ?CL.
+%% dl() -> ?DL.
+%% bl() -> ?BL.
+%% ah() -> ?AH.
+%% ch() -> ?CH.
+%% dh() -> ?DH.
+%% bh() -> ?BH.
 
 %%% 32-bit registers
 
@@ -126,14 +130,14 @@ bh() -> ?BH.
 -define(ESI, 2#110).
 -define(EDI, 2#111).
 
-eax() -> ?EAX.
-ecx() -> ?ECX.
-edx() -> ?EDX.
-ebx() -> ?EBX.
-esp() -> ?ESP.
-ebp() -> ?EBP.
-esi() -> ?ESI.
-edi() -> ?EDI.
+%% eax() -> ?EAX.
+%% ecx() -> ?ECX.
+%% edx() -> ?EDX.
+%% ebx() -> ?EBX.
+%% esp() -> ?ESP.
+%% ebp() -> ?EBP.
+%% esi() -> ?ESI.
+%% edi() -> ?EDI.
 
 %%% r/m operands
 
@@ -145,7 +149,7 @@ sindex(Scale, Index) ->
 
 -record(sib, {sindex_opt, base}).
 sib(Base) -> #sib{sindex_opt=none, base=Base}.
-sib(Base, Sindex) -> #sib{sindex_opt=Sindex, base=Base}.
+%% sib(Base, Sindex) -> #sib{sindex_opt=Sindex, base=Base}.
 
 ea_disp32_base(Disp32, Base) ->
     ?ASSERT(ea_disp32_base, Base =/= ?ESP),
@@ -159,7 +163,7 @@ ea_base(Base) ->
     ?ASSERT(ea_base, Base =/= ?ESP),
     ?ASSERT(ea_base, Base =/= ?EBP),
     {ea_base, Base}.
-ea_disp32_sindex(Disp32) -> {ea_disp32_sindex, Disp32, none}.
+%% ea_disp32_sindex(Disp32) -> {ea_disp32_sindex, Disp32, none}.
 ea_disp32_sindex(Disp32, Sindex) -> {ea_disp32_sindex, Disp32, Sindex}.
 ea_sib(SIB) ->
     ?ASSERT(ea_sib, SIB#sib.base =/= ?EBP),
@@ -178,9 +182,11 @@ mk_sib(Scale, Index, Base) ->
 le16(Word, Tail) ->
     [Word band 16#FF, (Word bsr 8) band 16#FF | Tail].
 
-le32(Word, Tail) ->
+le32(Word, Tail) when integer(Word) ->
     [Word band 16#FF, (Word bsr 8) band 16#FF,
-     (Word bsr 16) band 16#FF, (Word bsr 24) band 16#FF | Tail].
+     (Word bsr 16) band 16#FF, (Word bsr 24) band 16#FF | Tail];
+le32({Tag,Val}, Tail) ->	% a relocatable datum
+    [{le32,Tag,Val} | Tail].
 
 enc_sindex_opt({sindex,Scale,Index}) -> {Scale, Index};
 enc_sindex_opt(none) -> {2#00, 2#100}.
@@ -606,14 +612,16 @@ push_sizeof(Opnds) ->
 	    1 + 4
     end.
 
-shift_op_encode(SubOpcode, Opnds) ->	% rol, ror, rcl, rcr, shl, shr, sar
+shift_op_encode(SubOpcode, Opnds) ->	% rcl, rcr, rol, ror, sar, shl, shr
     case Opnds of
 	{{rm32,RM32}, 1} ->
 	    [16#D1 | encode_rm(RM32, SubOpcode, [])];
 	{{rm32,RM32}, cl} ->
 	    [16#D3 | encode_rm(RM32, SubOpcode, [])];
 	{{rm32,RM32}, {imm8,Imm8}} ->
-	    [16#C1 | encode_rm(RM32, SubOpcode, [Imm8])]
+	    [16#C1 | encode_rm(RM32, SubOpcode, [Imm8])];
+	{{rm16,RM16}, {imm8,Imm8}} ->
+	    [?PFX_OPND, 16#C1 | encode_rm(RM16, SubOpcode, [Imm8])]
     end.
 
 shift_op_sizeof(Opnds) ->		% rcl, rcr, rol, ror, sar, shl, shr
@@ -623,7 +631,9 @@ shift_op_sizeof(Opnds) ->		% rcl, rcr, rol, ror, sar, shl, shr
 	{{rm32,RM32}, cl} ->
 	    1 + sizeof_rm(RM32);
 	{{rm32,RM32}, {imm8,_Imm8}} ->
-	    1 + sizeof_rm(RM32) + 1
+	    1 + sizeof_rm(RM32) + 1;
+	{{rm16,RM16}, {imm8,_Imm8}} ->
+	    1 + 1 + sizeof_rm(RM16) + 1
     end.
 
 ret_encode(Opnds) ->
@@ -826,10 +836,29 @@ fxch_encode(Opnds) ->
 fxch_sizeof() ->
     2.
 
-insn_encode({Op, Opnds}) ->
-    insn_encode(Op, Opnds).
+insn_encode(Op, Opnds, Offset) ->
+    Bytes = insn_encode_internal(Op, Opnds),
+    case has_relocs(Bytes) of
+	false ->	% the common case
+	    {Bytes, []};
+	_ ->
+	    fix_relocs(Bytes, Offset, [], [])
+    end.
 
-insn_encode(Op, Opnds) ->
+has_relocs([{le32,_,_}|_]) -> true;
+has_relocs([_|Bytes]) -> has_relocs(Bytes);
+has_relocs([]) -> false.
+
+fix_relocs([{le32,Tag,Val}|Bytes], Offset, Code, Relocs) ->
+    fix_relocs(Bytes, Offset+4,
+	       [16#00, 16#00, 16#00, 16#00 | Code],
+	       [{Tag,Offset,Val}|Relocs]);
+fix_relocs([Byte|Bytes], Offset, Code, Relocs) ->
+    fix_relocs(Bytes, Offset+1, [Byte|Code], Relocs);
+fix_relocs([], _Offset, Code, Relocs) ->
+    {lists:reverse(Code), lists:reverse(Relocs)}.
+
+insn_encode_internal(Op, Opnds) ->
     case Op of
 	'adc' -> arith_binop_encode(2#010, Opnds);
 	'add' -> arith_binop_encode(2#000, Opnds);
@@ -915,9 +944,6 @@ insn_encode(Op, Opnds) ->
 	'xor' -> arith_binop_encode(2#110, Opnds);
 	_ -> exit({?MODULE,insn_encode,Op})
     end.
-
-insn_sizeof({Op, Opnds}) ->
-    insn_sizeof(Op, Opnds).
 
 insn_sizeof(Op, Opnds) ->
     case Op of
@@ -1006,7 +1032,11 @@ insn_sizeof(Op, Opnds) ->
 	_ -> exit({?MODULE,insn_sizeof,Op})
     end.
 
-%%% testing interface
+%%=====================================================================
+%% testing interface
+%%=====================================================================
+
+-ifdef(DO_HIPE_X86_ENCODE_TEST).
 
 say(OS, Str) ->
     file:write(OS, Str).
@@ -1037,7 +1067,7 @@ say_bytes(OS, Byte0, Bytes0) ->
 
 t(OS, Op, Opnds) ->
     insn_sizeof(Op, Opnds),
-    [Byte|Bytes] = insn_encode(Op, Opnds),
+    {[Byte|Bytes],[]} = insn_encode(Op, Opnds, 0),
     say(OS, "\t.byte "),
     say_bytes(OS, Byte, Bytes).
 
@@ -1185,20 +1215,25 @@ dotest1(OS) ->
     t(OS,'rcl',{RM32,1}),
     t(OS,'rcl',{RM32,cl}),
     t(OS,'rcl',{RM32,Imm8}),
+    t(OS,'rcl',{RM16,Imm8}),
     t(OS,'rcr',{RM32,1}),
     t(OS,'rcr',{RM32,cl}),
     t(OS,'rcr',{RM32,Imm8}),
+    t(OS,'rcr',{RM16,Imm8}),
     t(OS,'ret',{}),
     t(OS,'ret',{Imm16}),
     t(OS,'rol',{RM32,1}),
     t(OS,'rol',{RM32,cl}),
     t(OS,'rol',{RM32,Imm8}),
+    t(OS,'rol',{RM16,Imm8}),
     t(OS,'ror',{RM32,1}),
     t(OS,'ror',{RM32,cl}),
     t(OS,'ror',{RM32,Imm8}),
+    t(OS,'ror',{RM16,Imm8}),
     t(OS,'sar',{RM32,1}),
     t(OS,'sar',{RM32,cl}),
     t(OS,'sar',{RM32,Imm8}),
+    t(OS,'sar',{RM16,Imm8}),
     t(OS,'sbb',{eax,Imm32}),
     t(OS,'sbb',{RM32,Imm32}),
     t(OS,'sbb',{RM32,Imm8}),
@@ -1208,11 +1243,13 @@ dotest1(OS) ->
     t(OS,'shl',{RM32,1}),
     t(OS,'shl',{RM32,cl}),
     t(OS,'shl',{RM32,Imm8}),
+    t(OS,'shl',{RM16,Imm8}),
     t(OS,'shld',{RM32,Reg32,Imm8}),
     t(OS,'shld',{RM32,Reg32,cl}),
     t(OS,'shr',{RM32,1}),
     t(OS,'shr',{RM32,cl}),
     t(OS,'shr',{RM32,Imm8}),
+    t(OS,'shr',{RM16,Imm8}),
     t(OS,'shrd',{RM32,Reg32,Imm8}),
     t(OS,'shrd',{RM32,Reg32,cl}),
     t(OS,'stc',{}),
@@ -1239,3 +1276,4 @@ dotest(File) ->
     {ok,OS} = file:open(File, [write]),
     dotest1(OS),
     file:close(OS).
+-endif.

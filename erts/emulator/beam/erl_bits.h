@@ -68,9 +68,26 @@ Eterm erts_bs_get_binary_all(Process *p);
  * Binary construction.
  */
 
+extern unsigned erts_bin_offset;
+
+/*
+ * Binary construction, new instruction set.
+ */
+
+extern byte* erts_current_bin;
+
+int erts_new_bs_put_integer(Eterm Integer, Uint num_bits, unsigned flags);
+int erts_new_bs_put_binary(Eterm Bin, Uint num_bits);
+int erts_new_bs_put_binary_all(Eterm Bin);
+int erts_new_bs_put_float(Eterm Float, Uint num_bits, int flags);
+void erts_new_bs_put_string(byte* iptr, Uint num_bytes);
+
+/*
+ * Binary construction, old instruction set.
+ */
+
 extern byte* erts_bin_buf;
 extern unsigned erts_bin_buf_len;
-extern unsigned erts_bin_offset;
 
 void erts_bs_init(void);
 Eterm erts_bs_final(Process* p);
@@ -82,7 +99,7 @@ int erts_bs_put_float(Eterm Float, Uint num_bits, int flags);
 void erts_bs_put_string(byte* iptr, Uint num_bytes);
 
 /*
- * Flags for bs_get_* instructions.
+ * Flags for bs_get_* / bs_put_* / bs_init* instructions.
  */
 
 #define BSF_ALIGNED 1		/* Field is guaranteed to be byte-aligned. */
@@ -90,3 +107,4 @@ void erts_bs_put_string(byte* iptr, Uint num_bytes);
 #define BSF_SIGNED 4		/* Field is signed (otherwise unsigned). */
 #define BSF_EXACT 8		/* Size in bs_init is exact. */
 #define BSF_NATIVE 16		/* Native endian. */
+

@@ -214,8 +214,10 @@ check_process_code(Process* rp, Module* modp)
     Eterm* end;
     Eterm* sp;
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
     ErlFunThing* funp;
     int done_gc = 0;
+#endif
 #endif
 
 #define INSIDE(a) (start <= (a) && (a) < end)
@@ -252,6 +254,7 @@ check_process_code(Process* rp, Module* modp)
      */
 
 #ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
  rescan:
     for (funp = MSO(rp).funs; funp; funp = funp->next) {
 	Eterm* fun_code;
@@ -264,7 +267,11 @@ check_process_code(Process* rp, Module* modp)
 	    } else {
 		/*
 		 * Try to get rid of this fun by garbage collecting.
+		 * Clear both fvalue and ftrace to make sure they
+		 * don't hold any funs.
 		 */
+		rp->fvalue = NIL;
+		rp->ftrace = NIL;
 		done_gc = 1;
                 FLAGS(rp) |= F_NEED_FULLSWEEP;
 		(void) erts_garbage_collect(rp, 0, rp->arg_reg, rp->arity);
@@ -272,6 +279,7 @@ check_process_code(Process* rp, Module* modp)
 	    }
 	}
     }
+#endif
 #endif
     return am_false;
 #undef INSIDE

@@ -1,9 +1,9 @@
 %% -*- erlang-indent-level: 2 -*-
 %%----------------------------------------------------------------------
 %% File    : hipe_ig.erl
-%% Author  : Andreas Wallin <d96awa@ida.dis.uu.se>
+%% Author  : Andreas Wallin <d96awa@csd.uu.se>
 %% Purpose : Creates an interference graph that tells what temporaries
-%%            interfere with each other.
+%%           interfere with each other.
 %% Created : 5 Feb 2000
 %%----------------------------------------------------------------------
 
@@ -15,12 +15,12 @@
 	 adj_list/1,      
 	 ig_moves/1,
 	 degree/1,
-	 number_of_temps/1,
+	 %% number_of_temps/1,
 	 spill_costs/1,
 	 add_edge/4,
-	 set_adj_set/2,
-	 set_adj_list/2,
-	 set_ig_moves/2,
+	 %% set_adj_set/2,
+	 %% set_adj_list/2,
+	 %% set_ig_moves/2,
 	 set_degree/2,
 	 set_spill_costs/2
 	]).
@@ -46,7 +46,7 @@ adj_list(IG)    -> IG#igraph.adj_list.
 ig_moves(IG)    -> IG#igraph.ig_moves.    
 degree(IG)      -> IG#igraph.degree.
 spill_costs(IG) -> IG#igraph.spill_costs.
-number_of_temps(IG) -> IG#igraph.no_temps.
+%% number_of_temps(IG) -> IG#igraph.no_temps.
 
 %%----------------------------------------------------------------------
 %% Function:    set_adj_set, set_adj_list, set_degree, set_spill_costs
@@ -234,7 +234,8 @@ analyze_move_instruction(Instruction, Live, Def_numbers, Use_numbers, IG,
 	    IG_moves0 = move_relate(Def_numbers, Copy_instruction, IG_moves),
 	    IG_moves1 = move_relate(Use_numbers, Copy_instruction, IG_moves0),
 	    IG_moves2 = 
-		hipe_ig_moves:add(worklist_moves, Copy_instruction, IG_moves1),	    	    New_IG = set_ig_moves(IG_moves2, IG),
+		hipe_ig_moves:add_worklist_moves(Copy_instruction, IG_moves1),
+	    New_IG = set_ig_moves(IG_moves2, IG),
 	    {New_live, New_IG};
 	false -> 
 	    {Live, IG}
@@ -302,7 +303,7 @@ create_copy_instruction([Dest], [Source])->
 
 move_relate([], _, IG_moves) -> IG_moves;
 move_relate([Temporary|Temporarys], Instruction, IG_moves) ->
-  New_IG_moves = hipe_ig_moves:add(movelist, Instruction, Temporary, IG_moves),
+  New_IG_moves = hipe_ig_moves:add_movelist(Instruction, Temporary, IG_moves),
   move_relate(Temporarys, Instruction, New_IG_moves).
 
 %%----------------------------------------------------------------------
@@ -352,8 +353,8 @@ interfere_with_living(Define, [Live|Living], IG, Target) ->
 %% Function:    add_edge
 %%
 %% Description: Adds an edge to the adj_set data-structure if it's
-%%               not already a part of it and if U is not precolored
-%%               we add V to it's adj_list. If V is not precolored
+%%               not already a part of it and if U is not precoloured
+%%               we add V to it's adj_list. If V is not precoloured
 %%               we add U ti it's adj_list.
 %%
 %% Parameters:
@@ -384,14 +385,14 @@ add_edge(U, V, IG, Target) ->
 %%----------------------------------------------------------------------
 %% Function:    interfere_if_uncolored
 %%
-%% Description: Let a not precolored temporary interfere with another.
+%% Description: Let a not precoloured temporary interfere with another.
 %%
 %% Parameters:
 %%   Temporary            --  A temporary that is added to the adjacent 
-%%                             list if it's not precolored.
+%%                             list if it's not precoloured.
 %%   Interfere_temporary  --  Temporary will interfere with 
 %%                             Interfere_temporary if temporary is not
-%%                             precolored.
+%%                             precoloured.
 %%   Adj_list             --  An adj_list
 %%   Degree               --  The degree that all nodes currently have
 %%   Target               --  The module containing the target-specific 
@@ -404,7 +405,7 @@ add_edge(U, V, IG, Target) ->
 
 interfere_if_uncolored(Temporary, Interfere_temporary, Adj_list, Degree, 
 		       Target) ->
-  case Target:is_precolored(Temporary) of
+  case Target:is_precoloured(Temporary) of
     false ->
       New_adj_list = hipe_adj_list:add_edge(Temporary, Interfere_temporary, 
 					    Adj_list),

@@ -8,8 +8,8 @@
 %%  Notes    : 
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2002/05/07 13:58:06 $
-%%              $Revision: 1.3 $
+%%              $Date: 2004/02/04 00:57:35 $
+%%              $Revision: 1.4 $
 %% ====================================================================
 %%  Exports  :
 %%hipe:c({test13,test,0},[late_frames,{regalloc,lfls},pp_sparc]).
@@ -37,7 +37,7 @@ rewrite_instrs([],_, Is) ->
   Is.  
 
 rewrite_instr(I, FpMap) ->
-  case hipe_sparc:is_fmov(I) of
+  case hipe_sparc:is_fmove(I) of
     true -> [I];
     false ->
       Defs = hipe_sparc:fp_reg_defines(I),
@@ -50,7 +50,7 @@ rewrite_instr(I, FpMap) ->
 	    rewrite_uses(hipe_sparc:subst_defines(I, NewTemps),
 			 FpMap),
 	  
-	  NewIs = NewI ++ [hipe_sparc:fmov_create(SpillR,NewTemp) ||
+	  NewIs = NewI ++ [hipe_sparc:fmove_create(SpillR,NewTemp) ||
 		    {SpillR,NewTemp} <- NewTemps],
 	  NewIs
       end
@@ -64,16 +64,16 @@ rewrite_uses(I, FpMap) ->
       
       NewTemps  = [{Spill1,hipe_sparc:mk_fpreg(0)},
 		   {Spill2,hipe_sparc:mk_fpreg(2)}],
-      [hipe_sparc:fmov_create(NewTemp, Spill) ||
+      [hipe_sparc:fmove_create(NewTemp, Spill) ||
 	{Spill,NewTemp} <- NewTemps] ++ 
 	[remap(I, NewTemps)];
 
     [Spill1] ->
       NewTemps  = [{Spill1,hipe_sparc:mk_fpreg(0)}],
-      [hipe_sparc:fmov_create(NewTemp, Spill) ||
+      [hipe_sparc:fmove_create(NewTemp, Spill) ||
 	{Spill,NewTemp} <- NewTemps] ++ 
 	[remap(I, NewTemps)];
-    _ -> %% This must be a psudocall... not a problem?
+    _ -> %% This must be a pseudocall... not a problem?
       [I]
   end.
 

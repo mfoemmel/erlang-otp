@@ -31,13 +31,13 @@ crock() ->
 
 %% start
 
-start(Type, State) ->
+start(_Type, _State) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 
 %% stop
 
-stop(State) ->
+stop(_State) ->
     ok.
 
 
@@ -87,7 +87,7 @@ get_services() ->
 
 
 child_spec([], Acc) ->
-    Acc;
+    [httpc_child_spec() | Acc];
 child_spec([{httpd, ConfigFile, Verbosity}|Rest], Acc) ->
     case httpd_child_spec(ConfigFile, Verbosity) of
 	{ok, Spec} ->
@@ -122,37 +122,17 @@ httpd_child_spec(ConfigFile, Verbosity) ->
 httpd_child_spec(ConfigFile, Addr, Port, Verbosity) ->
     {{httpd_sup, Addr, Port},{httpd_sup, start_link,[ConfigFile, Verbosity]},
      permanent, 20000, supervisor,
-     [ftp,
-      httpd,
-      httpd_conf,
-      httpd_example,
-      httpd_manager,
-      httpd_misc_sup,
-      httpd_listener,
-      httpd_parse,
-      httpd_request,
-      httpd_response,
-      httpd_socket,
-      httpd_sup,
-      httpd_util,
-      httpd_verbosity,
-      inets_sup,
-      mod_actions,
-      mod_alias,
-      mod_auth,
-      mod_cgi,
-      mod_dir,
-      mod_disk_log,
-      mod_esi,
-      mod_get,
-      mod_head,
-      mod_include,
-      mod_log,
-      mod_auth_mnesia,
-      mod_auth_plain,
-      mod_auth_dets,
-      mod_security]}.
+     [httpd_sup]}.
 
 
 error_msg(F, A) ->
     error_logger:error_msg(F ++ "~n", A).
+
+httpc_child_spec() ->
+    Name = httpc_manager,
+    StartFunc = {httpc_manager, start_link, []},
+    Restart = permanent, 
+    Shutdown = 20000,
+    Modules = [httpc_manager],
+    Type = worker,
+    {Name, StartFunc, Restart, Shutdown, Type, Modules}.

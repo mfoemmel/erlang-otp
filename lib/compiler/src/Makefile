@@ -36,13 +36,12 @@ MODULES =  \
 	compile \
 	sys_pre_attributes \
 	sys_pre_expand \
+	sys_expand_pmod \
 	v3_core \
-	v3_core_opt \
 	sys_core_fold \
 	sys_core_inline \
 	sys_core_dsetel \
 	core_lib \
-	corec \
 	core_scan \
 	core_parse \
 	core_lint \
@@ -51,8 +50,8 @@ MODULES =  \
 	v3_kernel_pp \
 	v3_life \
 	v3_codegen \
-	beam_bs \
 	beam_block \
+	beam_bool \
 	beam_dead \
 	beam_jump \
 	beam_type \
@@ -94,7 +93,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += +warn_unused_vars +inline +'{inline_size,24}'
+ERL_FLAGS += +warn_unused_vars +inline
 ERL_COMPILE_FLAGS += -I../../stdlib/include -W
 
 # ----------------------------------------------------

@@ -100,7 +100,7 @@ deblock(Msg, MasterPid) ->
     PollInterval = case PollInt of 
 		       infinity ->
 			   PollInt;
-		       Other ->
+		       _Other ->
 			   PollInt * 1000
 		   end,
        %% Get table info!
@@ -117,7 +117,7 @@ deblock(Msg, MasterPid) ->
 	    MasterPid ! #pc_dead_table{sender = self(),
 				       automatic_polling = false},
 	    blocked(MasterPid);
-	{unexpected_error,Reason} ->
+	{unexpected_error,_Reason} ->
 	    MasterPid ! #pc_dead_table{sender = self(),
 				       automatic_polling = false},
 	    blocked(MasterPid);
@@ -142,7 +142,7 @@ deblock(Msg, MasterPid) ->
 		    MasterPid ! #pc_dead_table{sender = self(),
 					       automatic_polling = false},
 		    blocked(MasterPid);
-		{unexpected_error,Reason} ->
+		{unexpected_error,_Reason} ->
 		    MasterPid ! #pc_dead_table{sender = self(),
 					       automatic_polling = false},
 		    blocked(MasterPid);
@@ -196,7 +196,7 @@ deblocked_loop(MasterPid,DbsPid,Node,LocalNode,TableId,KindOfTable,PollInterval)
 			mnesia_not_started ->
 			    MasterPid ! #pc_dead_table{sender = self(),
 						       automatic_polling = false};
-			{unexpected_error,Reason} ->
+			{unexpected_error,_Reason} ->
 			    MasterPid ! #pc_dead_table{sender = self(),
 						       automatic_polling = false};
 			_ElapsedTime ->
@@ -210,7 +210,7 @@ deblocked_loop(MasterPid,DbsPid,Node,LocalNode,TableId,KindOfTable,PollInterval)
 		    NewPollInterval = case PollInt of 
 					  infinity ->
 					      PollInt;
-					  Other ->
+					  _Other ->
 					      PollInt * 1000
 				      end,
 		    deblocked_loop(MasterPid, DbsPid, Node, LocalNode,
@@ -297,7 +297,7 @@ deblocked_loop(MasterPid,DbsPid,Node,LocalNode,TableId,KindOfTable,PollInterval)
 			MasterPid ! #pc_dead_table{sender = self(),
 						   automatic_polling = true},
 			infinity;
-		    {unexpected_error,Reason} ->
+		    {unexpected_error,_Reason} ->
 			MasterPid ! #pc_dead_table{sender = self(),
 						   automatic_polling = true},
 			infinity;
@@ -364,7 +364,7 @@ update_object(KindOfTable, Node, LocalNode, TableId, DbsPid, KeyNo, Obj, OldObj,
 					       automatic_polling = AutoPoll};
 		
 		
-		{unexpected_error,Reason} ->
+		{unexpected_error,_Reason} ->
 		    DbsPid ! #etsread_update_object_cfm{sender   = self(),
 							success  = false},
 		    MasterPid ! #pc_dead_table{sender            = self(),
@@ -380,7 +380,7 @@ update_object(KindOfTable, Node, LocalNode, TableId, DbsPid, KeyNo, Obj, OldObj,
 
 
 
-update_object2(ets, Node, LocalNode, Tab, DbsPid, KeyNo, Obj, OldObj) ->
+update_object2(ets, Node, LocalNode, Tab, _DbsPid, KeyNo, Obj, OldObj) ->
        %% We shall update a specific object! If the table is a 'set' table,
        %% it is just to insert the altered object. However, if the table
        %% is a 'bag', or a 'duplicate_bag', we first have to remove the
@@ -411,7 +411,7 @@ update_object2(ets, Node, LocalNode, Tab, DbsPid, KeyNo, Obj, OldObj) ->
 		    lists:foldl(
 		      fun(Data, {Replaced,Acc}) when Data /= OldObj ->
 			      {Replaced, [Data | Acc]};
-			 (Data, {Replaced,Acc}) when Replaced /= true ->
+			 (_Data, {Replaced,Acc}) when Replaced /= true ->
 			      {true, [Obj | Acc]};
 			 (Data, {Replaced,Acc}) ->
 			      {Replaced, [Data | Acc]}
@@ -425,7 +425,7 @@ update_object2(ets, Node, LocalNode, Tab, DbsPid, KeyNo, Obj, OldObj) ->
 		  end,
 		  InsertList),
     ok;
-update_object2(mnesia, Node, LocalNode, Tab, DbsPid, KeyNo, Obj, OldObj) ->
+update_object2(mnesia, Node, LocalNode, Tab, _DbsPid, KeyNo, Obj, OldObj) ->
     OldKey = element(KeyNo, OldObj),
     InsertList = 
 	case tv_mnesia_rpc:table_info(Node, LocalNode, Tab, type) of
@@ -516,7 +516,7 @@ delete_object(KindOfTable, Node, LocalNode, TableId, DbsPid, Obj, MasterPid, Pol
 	    MasterPid ! #pc_dead_table{sender            = self(),
 				       automatic_polling = AutoPoll};
 
-	{unexpected_error,Reason} ->
+	{unexpected_error,_Reason} ->
 	    DbsPid ! #etsread_delete_object_cfm{sender   = self(),
 						success  = false},
 	    MasterPid ! #pc_dead_table{sender            = self(),
@@ -530,7 +530,7 @@ delete_object(KindOfTable, Node, LocalNode, TableId, DbsPid, Obj, MasterPid, Pol
 
 
 
-delete_object2(ets, Node, LocalNode, Tab, DbsPid, Obj) ->
+delete_object2(ets, Node, LocalNode, Tab, _DbsPid, Obj) ->
     KeyNo = tv_ets_rpc:info(Node, LocalNode, Tab, keypos),
     Key   = element(KeyNo, Obj),
     InsertList = 
@@ -554,7 +554,7 @@ delete_object2(ets, Node, LocalNode, Tab, DbsPid, Obj) ->
 		  end,
 		  InsertList),
     ok;
-delete_object2(mnesia, Node, LocalNode, Tab, DbsPid, Obj) ->
+delete_object2(mnesia, Node, LocalNode, Tab, _DbsPid, Obj) ->
     tv_mnesia_rpc:transaction(
       Node, 
       LocalNode,
@@ -604,7 +604,7 @@ new_object(KindOfTable, Node, LocalNode, TableId, DbsPid, Obj, MasterPid, PollIn
 		    MasterPid ! #pc_dead_table{sender            = self(),
 					       automatic_polling = AutoPoll};
 		
-		{unexpected_error,Reason} ->
+		{unexpected_error,_Reason} ->
 		    DbsPid ! #etsread_new_object_cfm{sender   = self(),
 						     success  = false},
 		    MasterPid ! #pc_dead_table{sender            = self(),
@@ -620,10 +620,10 @@ new_object(KindOfTable, Node, LocalNode, TableId, DbsPid, Obj, MasterPid, PollIn
 
 
 
-new_object2(ets, Node, LocalNode, Tab, DbsPid, Obj) ->
+new_object2(ets, Node, LocalNode, Tab, _DbsPid, Obj) ->
     tv_ets_rpc:insert(Node, LocalNode, Tab, Obj),
     ok;
-new_object2(mnesia, Node, LocalNode, Tab, DbsPid, Obj) ->
+new_object2(mnesia, Node, LocalNode, Tab, _DbsPid, Obj) ->
     tv_mnesia_rpc:transaction(
       Node, 
       LocalNode,
@@ -660,7 +660,7 @@ check_record_format(mnesia, Node, LocalNode, Tab, Obj) ->
 	    gs:destroy(etsreadwin),
 	    bad_format
     end;
-check_record_format(ets, _Node, LocalNode, _Tab, _Obj) ->
+check_record_format(ets, _Node, _LocalNode, _Tab, _Obj) ->
     ok.
 	    
 	    
@@ -751,7 +751,7 @@ compute_elapsed_seconds({H1, M1, S1}, {H2, M2, S2}) ->
     ElapsedHours   = get_time_diff(hours, H1, H2),
     ElapsedMinutes = get_time_diff(minutes, M1, M2),
     ElapsedSeconds = get_time_diff(seconds, S1, S2),
-    (ElapsedHours * 3600) + (ElapsedHours * 60) + ElapsedSeconds + 1.
+    (ElapsedHours * 3600) + (ElapsedMinutes * 60) + ElapsedSeconds + 1.
 
 
 

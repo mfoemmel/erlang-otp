@@ -48,7 +48,7 @@
 check_script(Script, LibDirs) ->
     case catch check_old_processes(Script) of
 	ok ->
-	    {Before, After} = split_instructions(Script),
+	    {Before, _After} = split_instructions(Script),
 	    case catch lists:foldl(fun(Instruction, EvalState1) ->
 					   eval(Instruction, EvalState1)
 				   end,
@@ -216,14 +216,13 @@ eval({load_object_code, {Lib, LibVsn, Modules}}, EvalState) ->
 	{value, {Lib, LibVsn, LibDir}} ->
 	    Ebin = filename:join(LibDir, "ebin"),
 	    Ext = code:objfile_extension(),
-	    ModVsns = get_mod_vsns(Lib, EvalState#eval_state.apps),
 	    {NewBins, NewVsns} = 
 		lists:foldl(fun(Mod, {Bins, Vsns}) ->
 				    File = lists:concat([Mod, Ext]),
 				    FName = filename:join(Ebin, File),
-				    NVsns = add_new_vsn(Mod, ModVsns, Vsns),
 				    case erl_prim_loader:get_file(FName) of
 					{ok, Bin, FName2} ->
+					    NVsns = add_new_vsn(Mod, FName2, Vsns),
 					    {[{Mod, Bin, FName2} | Bins],NVsns};
 					error ->
 					    throw({error, {no_such_file,FName}})
@@ -271,20 +270,9 @@ eval({remove, {Mod, _PrePurgeMethod, PostPurgeMethod}}, EvalState) ->
 	    true -> EvalState#eval_state.unpurged;
 	    false -> [{Mod, PostPurgeMethod} | EvalState#eval_state.unpurged]
 	end,
-    Bins = EvalState#eval_state.bins,
-    EvalState#eval_state{bins = lists:keydelete(Mod, 1, Bins),
-			 unpurged = Unpurged,
-			 vsns = NewVsns};
-eval({application_remove, Appl}, EvalState) ->
-    case application:get_key(Appl, modules) of
-	{ok, ModsT} ->
-	    Mods = remove_vsn(ModsT),
-	    lists:foreach(fun(Mod) -> code:purge(Mod) end, Mods),
-	    lists:foreach(fun(Mod) -> code:delete(Mod) end, Mods);
-	_ ->
-	    ok
-    end,
-    EvalState;
+%%    Bins = EvalState#eval_state.bins,
+%%    EvalState#eval_state{bins = lists:keydelete(Mod, 1, Bins),
+    EvalState#eval_state{unpurged = Unpurged, vsns = NewVsns};
 eval({purge, Modules}, EvalState) ->
     % Now, if there are any processes still executing old code, OR
     % if some new processes started after suspend but before load,
@@ -297,7 +285,7 @@ eval({suspend, Modules}, EvalState) ->
 	lists:foldl(fun(ModSpec, Suspended) ->
 			    {Module, Def} = case ModSpec of 
 						{Mod, ModTimeout} ->
-						    ModSpec;
+						    {Mod, ModTimeout};
 						Mod ->
 						    {Mod, default}
 					    end,
@@ -331,9 +319,9 @@ eval({code_change, Mode, Modules}, EvalState) ->
     lists:foreach(fun({Mod, Extra}) ->
 			  Vsn =
 			      case lists:keysearch(Mod, 1, Vsns) of
-				  {value, {Mod, OldVsn, NewVsn}}
+				  {value, {Mod, OldVsn, _NewVsn}}
 				    when Mode == up -> OldVsn;
-				  {value, {Mod, OldVsn, NewVsn}}
+				  {value, {Mod, _OldVsn, NewVsn}}
 				    when Mode == down -> {down, NewVsn};
 				  _ when Mode == up -> undefined;
 				  _ -> {down, undefined}
@@ -379,7 +367,7 @@ eval({sync_nodes, Id, Nodes}, EvalState) ->
 eval({apply, {M, F, A}}, EvalState) ->
     apply(M, F, A),
     EvalState;
-eval(restart_new_emulator, EvalState) ->
+eval(restart_new_emulator, _EvalState) ->
     throw(restart_new_emulator).
 
 get_opt(Tag, EvalState, Default) ->
@@ -436,7 +424,7 @@ change_code(Pids, Mod, Vsn, Extra, Timeout) ->
 stop(Mod, Procs) ->
     lists:zf(fun({undefined, _Name, _Pid, _Mods}) ->
 		     false;
-		({Sup, Name, Pid, Mods}) -> 
+		({Sup, Name, _Pid, Mods}) -> 
 		     case lists:member(Mod, Mods) of
 			 true ->
 			     case catch supervisor:terminate_child(
@@ -553,7 +541,7 @@ get_supervisor_module(SupPid) ->
     end.
 
 get_supervisor_module1(SupPid) ->
-    {status, Pid, {module, Mod}, 
+    {status, _Pid, {module, _Mod}, 
      [_PDict, _SysState, _Parent, _Dbg, Misc]} = sys:get_status(SupPid),
     [_Name, State, _Type, _Time] = Misc,
     %% Cannot use #supervisor_state{module = Module} = State.
@@ -604,93 +592,45 @@ sync_nodes(Id, Nodes) ->
 add_old_vsn(Mod, Vsns) ->
     case lists:keysearch(Mod, 1, Vsns) of
 	{value, {Mod, undefined, NewVsn}} ->
-	    OldVsn = get_vsn(Mod),
+	    OldVsn = get_vsn(code:which(Mod)),
 	    lists:keyreplace(Mod, 1, Vsns, {Mod, OldVsn, NewVsn});
-	{value, {Mod, OldVsn, NewVsn}} ->
+	{value, {Mod, _OldVsn, _NewVsn}} ->
 	    Vsns;
 	false ->
-	    OldVsn = get_vsn(Mod),
+	    OldVsn = get_vsn(code:which(Mod)),
 	    [{Mod, OldVsn, undefined} | Vsns]
     end.
 
-add_new_vsn(Mod, ModVsns, Vsns) ->
+add_new_vsn(Mod, File, Vsns) ->
+    NewVsn = get_vsn(File),
     case lists:keysearch(Mod, 1, Vsns) of
-	{value, {Mod, OldVsn, _}} ->
-	    NewVsn = get_new_vsn(Mod, ModVsns),
+	{value, {Mod, OldVsn, undefined}} ->
 	    lists:keyreplace(Mod, 1, Vsns, {Mod, OldVsn, NewVsn});
 	false ->
-	    NewVsn = get_new_vsn(Mod, ModVsns),
 	    [{Mod, undefined, NewVsn} | Vsns]
-    end.
-
-get_new_vsn(Mod, [{Mod, Vsn} | _]) ->
-    Vsn;
-get_new_vsn(Mod, [H | T]) ->
-    get_new_vsn(Mod, T);
-get_new_vsn(Mod, []) ->
-    undefined.
-
-get_mod_vsns(Lib, Apps) ->
-    case lists:keysearch(Lib, 2, Apps) of
-	{value, {application, _Lib, Attributes}} ->
-	    case lists:keysearch(modules, 1, Attributes) of
-		{value, {modules, Modules}} ->
-		    Modules;
-		false ->
-		    []
-	    end;
-	_ ->
-	    []
     end.
 
 
 
 %%-----------------------------------------------------------------
 %% Func: get_vsn/1
-%% Args: Mod = atom()
-%% Purpose: Finds the version attribute of the current version of
-%%          the module.
-%% Returns: Vsn | undefined
+%% Args: File = string()
+%% Purpose: Finds the version attribute of a module.
+%% Returns: Vsn
 %%          Vsn = term()
 %%-----------------------------------------------------------------
-get_vsn(Mod) ->
-    case code:is_loaded(Mod) of
-	{file, _} ->
-	    case lists:keysearch(attributes, 1, Mod:module_info()) of
-		{value, {attributes, Attributes}} ->
-		    case lists:keysearch(vsn, 1, Attributes) of
-			{value, {vsn, Vsn}} -> 
-			    %% OTP-2740.  
-			    %% If vsn is a string module_info returns: "the string", but if
-			    %% vsn is something else it returns: [atom | tuple | numeric | list ...]
-			    case catch [V] = Vsn of
-				{'EXIT', {{badmatch, _}, _}} -> Vsn;
-				_ -> 
-				    [Vsn2] = Vsn,
-				    Vsn2
-			    end;
-			_ -> undefined
-		    end;
-		_ -> undefined
-	    end;
+get_vsn(File) ->
+    {ok, {_Mod, Vsn}} = beam_lib:version(File),
+    case misc_supp:is_string(Vsn) of
+	true ->
+	    Vsn;
 	false ->
-	    undefined
+	    %% If -vsn(Vsn) defines a term which is not a
+	    %% string, the value is returned here as [Vsn].
+	    case Vsn of
+		[VsnTerm] ->
+		    VsnTerm;
+		_ ->
+		    Vsn
+	    end
     end.
-
-
-remove_vsn(Mods) ->
-    remove_vsn(Mods, []).
-remove_vsn([], Res) ->
-    Res;
-remove_vsn([H|Mods], Res) ->
-    case H of
-	{Mod, Vsn} ->
-	    remove_vsn(Mods, [Mod | Res]);
-	Mod ->
-	    remove_vsn(Mods, [Mod | Res])
-    end.
-
-
-
-
-

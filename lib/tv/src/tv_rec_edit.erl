@@ -258,7 +258,7 @@ loop(TabType, TabName, Frames, AttrList, AttrVals, MPid, ListsAsStr) ->
 	    exit(normal);
 
 
-	Other ->
+	_Other ->
 	    loop(TabType, TabName, Frames, AttrList,AttrVals, MPid, ListsAsStr)
     end.
 
@@ -305,7 +305,7 @@ resize_window(TabType, WinWidth, Frames, AttrList) ->
 check_entry_content(EntryId, AttributeList, Frames, Direction) ->
     EditedStr = gs:read(EntryId, text),
     case tv_db_search:string_to_term(EditedStr) of
-	{error, {Reason, Msg}} ->
+	{error, {_Reason, Msg}} ->
 	    gs:config(EntryId, [beep]),
 	    tv_utils:notify(gs:start(), "TV Notification", Msg),
 	    {error, {EntryId, no_matter}};
@@ -387,9 +387,9 @@ get_pos(Elem, L) ->
     get_pos(Elem, L, 1).
 
 
-get_pos(Elem, [Elem | T], N) ->
+get_pos(Elem, [Elem | _T], N) ->
     N;
-get_pos(Elem, [H | T], N) ->
+get_pos(Elem, [_H | T], N) ->
     get_pos(Elem, T, N + 1).
 
 
@@ -401,7 +401,7 @@ create_window(mnesia, TableName, AttrList, AttrValues, ListsAsStr, Insert) ->
 	case NofAttr rem 5 of
 	    0 ->
 		NofAttr div 5;
-	    Rem ->
+	    _Rem ->
 		(NofAttr div 5) + 1
 	end,
 
@@ -513,13 +513,13 @@ create_insert_and_cancel_btns(Insert, WinHeight, FrameHeight) ->
 		{"Change", change}
 	end,
 
-    F = gs:frame(btnframe, win, [{width, ?FRAME_WIDTH},
-				 {height, LowerFrameHeight},
-				 {x, 0},
-				 {y, FrameHeight},
-				 {bg, ?DEFAULT_BG_COLOR},
-				 {bw,2}
-				]),
+    gs:frame(btnframe, win, [{width, ?FRAME_WIDTH},
+			     {height, LowerFrameHeight},
+			     {x, 0},
+			     {y, FrameHeight},
+			     {bg, ?DEFAULT_BG_COLOR},
+			     {bw,2}
+			    ]),
     gs:button(insert, btnframe, [{width, ?INSERT_BTN_WIDTH},
 				 {height, ?INSERT_BTN_HEIGHT},
 				 {x, XInsert},
@@ -699,7 +699,7 @@ get_longest_attribute_name([H | T], Max, Attr) ->
 	true ->
 	    get_longest_attribute_name(T, Max, Attr)
     end;
-get_longest_attribute_name([], Max, Attr) ->
+get_longest_attribute_name([], _Max, Attr) ->
     Attr.
 
 
@@ -741,5 +741,5 @@ set_entry_values(TabType, [H | T], [VH | VT], ListsAsStr) ->
 	end,
     gs:config(H, [{text, EntryText}]),
     set_entry_values(TabType, T, VT, ListsAsStr);
-set_entry_values(TabType, [], [], _ListsAsStr) ->
+set_entry_values(_TabType, [], [], _ListsAsStr) ->
     done.

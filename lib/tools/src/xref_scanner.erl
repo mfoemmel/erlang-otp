@@ -23,10 +23,17 @@
 scan(Chars) ->
     case erl_scan:string(Chars) of
 	{ok, Tokens, _Line}  ->
-	    {ok, lex(Tokens)};
+	    {ok, lex(a1(Tokens))};
 	{error, {Line,Module,Info}, _EndLine} ->
 	    {error, apply(Module, format_error, [Info]), Line}
     end.
+
+a1([{'-',N},{integer,N,1} | L]) ->
+    [{integer,N,-1} | a1(L)];
+a1([T | L]) ->
+    [T | a1(L)];
+a1([]) ->
+    [].
 
 -define(MFA(M,F,A,N), {atom,N,M}, {':',N}, {atom,N,F}, {'/',N}, {integer,N,A}).
 -define(MFA2(M,F,A,N), 

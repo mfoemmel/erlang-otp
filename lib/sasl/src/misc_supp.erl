@@ -17,17 +17,17 @@
 %%
 -module(misc_supp).
 
-%%%--------------------------------------------------------------------------
+%%%---------------------------------------------------------------------
 %%% Description:
 %%% This module contains MISCellaneous routines for the SUPPort tools.
-%%% 1) The function format_pdict/3 is called by every process that wants to
-%%%    format its process dictionary.  
+%%% 1) The function format_pdict/3 is called by every process that
+%%%    wants to format its process dictionary.  
 %%% 2) Very generic functions such as, multi_map, is_string...
 %%%
-%%% This module is a part of the BOS.  (format_pdict is called from init,
-%%% memsup, disksup, overload (but not the fileserver since it formats its pdict
-%%% its own way).)
-%%%--------------------------------------------------------------------------
+%%% This module is a part of the BOS.  (format_pdict is called from
+%%% init, memsup, disksup, overload (but not the fileserver since it
+%%% formats its pdict its own way).)
+%%%---------------------------------------------------------------------
 
 -export([format_pdict/3, format_tuples/2, assq/2, passq/2, is_string/1, 
 	 multi_map/2]).
@@ -38,9 +38,10 @@
 %% that want to format its process dictionary.
 %% Args: Exclude is: list of atoms to exclude
 %%-----------------------------------------------------------------
-format_pdict(normal, PDict, Exclude) -> [];
+format_pdict(normal, _PDict, _Exclude) ->
+    [];
 format_pdict(all, PDict, Exclude) ->
-    case FormatPDict = format_tuples(PDict, ['$sys_dict$' | Exclude]) of
+    case format_tuples(PDict, ['$sys_dict$' | Exclude]) of
         [] -> [];
         Data -> [{newline, 1} | Data]
     end.
@@ -55,7 +56,7 @@ format_tuples(KeyValues, Exclude) ->
 	[] -> [];
 	Data -> [{data, Data}]
     end.
-format_tuples([], Exclude, Res) -> Res;
+format_tuples([], _Exclude, Res) -> Res;
 format_tuples([{Key, Value} | T], Exclude, Res) ->
     case lists:member(Key, Exclude) of
 	true ->
@@ -65,7 +66,7 @@ format_tuples([{Key, Value} | T], Exclude, Res) ->
     end.
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% "Very" generic misc stuff:
 %%--------------------------------------------------
 
@@ -97,7 +98,8 @@ is_string_2(_) -> false.
 %% Returns: A list of length M where element Y is the result of
 %%          applying Func on [Elem(Y, List1), ..., Elem(Y, ListN)].
 %%-----------------------------------------------------------------
-multi_map(Func, [[] | ListOfLists]) -> [];
+multi_map(_Func, [[] | _ListOfLists]) -> [];
 multi_map(Func, ListOfLists) ->
     [apply(Func, lists:map(fun(List) -> hd(List) end, ListOfLists)) |
-     multi_map(Func, lists:map(fun(List) -> tl(List) end, ListOfLists))].
+     multi_map(Func,
+	       lists:map(fun(List) -> tl(List) end, ListOfLists))].

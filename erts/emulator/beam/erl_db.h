@@ -33,21 +33,7 @@
 /*TT*/
 
 
-#define ERTS_DB_MORE_MEM(Sz) 					\
-  (erts_tot_ets_memory_words += (Sz))
-#define ERTS_DB_LESS_MEM(Sz) 					\
-  (ASSERT_EXPR(erts_tot_ets_memory_words >= (Sz)),		\
-   erts_tot_ets_memory_words -= (Sz))
-
-#define ERTS_DB_TAB_MORE_MEM(Tab, Sz)				\
-  (ERTS_DB_MORE_MEM((Sz)),					\
-   ((DbTableCommon *) (Tab))->memory += (Sz))
-#define ERTS_DB_TAB_LESS_MEM(Tab, Sz)				\
-  (ERTS_DB_LESS_MEM((Sz)),					\
-   ASSERT_EXPR(((DbTableCommon *) (Tab))->memory >= (Sz)),	\
-   ((DbTableCommon *) (Tab))->memory -= (Sz))
-
-extern Uint erts_tot_ets_memory_words;
+extern Uint erts_tot_ets_memory_size; /* NOTE: Memory size in bytes! */
 
 /*
  * So, the structure for a database table, NB this is only
@@ -80,5 +66,174 @@ extern int erts_ets_realloc_always_moves;  /* set in erl_init */
 extern Export ets_select_delete_continue_exp;
 extern Export ets_select_count_continue_exp;
 extern Export ets_select_continue_exp;
+
+
 #endif
+
+#if defined(ERTS_WANT_DB_INTERNAL__) && !defined(ERTS_HAVE_DB_INTERNAL__)
+#define ERTS_HAVE_DB_INTERNAL__
+
+#include "erl_alloc.h"
+
+/*
+ * _fnf : Failure Not Fatal (same as for erts_alloc/erts_realloc/erts_free)
+ * _nt  : No Table (i.e. memory not associated with a specific table)
+ */
+
+#define ERTS_DB_ALLOC_MEM_UPDATE_NT_(SZ)				\
+do {									\
+    erts_tot_ets_memory_size += (SZ);					\
+} while (0)
+
+#define ERTS_DB_ALLOC_MEM_UPDATE_(TAB, SZ)				\
+do {									\
+    ERTS_DB_ALLOC_MEM_UPDATE_NT_((SZ));					\
+    ASSERT((TAB));							\
+    (TAB)->common.memory_size += (SZ);					\
+} while (0)
+
+static ERTS_INLINE void *
+erts_db_alloc(ErtsAlcType_t type, DbTable *tab, Uint size)
+{
+    void *res = erts_alloc(type, size);
+    ERTS_DB_ALLOC_MEM_UPDATE_(tab, size);
+    return res;
+}
+
+static ERTS_INLINE void *
+erts_db_alloc_fnf(ErtsAlcType_t type, DbTable *tab, Uint size)
+{
+    void *res = erts_alloc_fnf(type, size);
+    if (!res)
+	return NULL;
+    ERTS_DB_ALLOC_MEM_UPDATE_(tab, size);
+    return res;
+}
+
+static ERTS_INLINE void *
+erts_db_alloc_nt(ErtsAlcType_t type, Uint size)
+{
+    void *res = erts_alloc(type, size);
+    ERTS_DB_ALLOC_MEM_UPDATE_NT_(size);
+    return res;
+}
+
+static ERTS_INLINE void *
+erts_db_alloc_fnf_nt(ErtsAlcType_t type, Uint size)
+{
+    void *res = erts_alloc_fnf(type, size);
+    if (!res)
+	return NULL;
+    ERTS_DB_ALLOC_MEM_UPDATE_NT_(size);
+    return res;
+}
+
+#undef ERTS_DB_ALLOC_MEM_UPDATE_NT_
+#undef ERTS_DB_ALLOC_MEM_UPDATE_
+
+#define ERTS_DB_REALLOC_MEM_UPDATE_NT_(OLD_SZ, NEW_SZ)			\
+do {									\
+    ASSERT(erts_tot_ets_memory_size >= (OLD_SZ));			\
+    erts_tot_ets_memory_size -= (OLD_SZ);				\
+    erts_tot_ets_memory_size += (NEW_SZ);				\
+} while (0)
+
+#define ERTS_DB_REALLOC_MEM_UPDATE_(TAB, OLD_SZ, NEW_SZ)		\
+do {									\
+    ERTS_DB_REALLOC_MEM_UPDATE_NT_((OLD_SZ), (NEW_SZ));			\
+    ASSERT((TAB)); 							\
+    ASSERT((TAB)->common.memory_size >= (OLD_SZ)); 			\
+    (TAB)->common.memory_size -= (OLD_SZ);				\
+    (TAB)->common.memory_size += (NEW_SZ);				\
+} while (0)
+
+static ERTS_INLINE void *
+erts_db_realloc(ErtsAlcType_t type, DbTable *tab, void *ptr,
+		Uint old_size, Uint size)
+{
+    void *res;
+    ASSERT(!ptr || old_size == ERTS_ALC_DBG_BLK_SZ(ptr));
+    res = erts_realloc(type, ptr, size);
+    ERTS_DB_REALLOC_MEM_UPDATE_(tab, old_size, size);
+    return res;
+}
+
+static ERTS_INLINE void *
+erts_db_realloc_fnf(ErtsAlcType_t type, DbTable *tab, void *ptr,
+		    Uint old_size, Uint size)
+{
+    void *res;
+    ASSERT(!ptr || old_size == ERTS_ALC_DBG_BLK_SZ(ptr));
+    res = erts_realloc_fnf(type, ptr, size);
+    if (!res)
+	return NULL;
+    ERTS_DB_REALLOC_MEM_UPDATE_(tab, old_size, size);
+    return res;
+}
+
+static ERTS_INLINE void *
+erts_db_realloc_nt(ErtsAlcType_t type, void *ptr,
+		   Uint old_size, Uint size)
+{
+    void *res;
+    ASSERT(!ptr || old_size == ERTS_ALC_DBG_BLK_SZ(ptr));
+    res = erts_realloc(type, ptr, size);
+    ERTS_DB_REALLOC_MEM_UPDATE_NT_(old_size, size);
+    return res;
+}
+
+static ERTS_INLINE void *
+erts_db_realloc_fnf_nt(ErtsAlcType_t type, void *ptr,
+		       Uint old_size, Uint size)
+{
+    void *res;
+    ASSERT(!ptr || old_size == ERTS_ALC_DBG_BLK_SZ(ptr));
+    res = erts_realloc_fnf(type, ptr, size);
+    if (!res)
+	return NULL;
+    ERTS_DB_REALLOC_MEM_UPDATE_NT_(old_size, size);
+    return res;
+}
+
+#undef ERTS_DB_REALLOC_MEM_UPDATE_NT_
+#undef ERTS_DB_REALLOC_MEM_UPDATE_
+
+#define ERTS_DB_FREE_MEM_UPDATE_NT_(SZ)					\
+do {									\
+    ASSERT(erts_tot_ets_memory_size >= (SZ));				\
+    erts_tot_ets_memory_size -= (SZ);					\
+} while (0)
+
+#define ERTS_DB_FREE_MEM_UPDATE_(TAB, SZ)				\
+do {									\
+    ERTS_DB_FREE_MEM_UPDATE_NT_((SZ));					\
+    ASSERT((TAB));							\
+    ASSERT((TAB)->common.memory_size >= (SZ));				\
+    (TAB)->common.memory_size -= (SZ);					\
+} while (0)
+
+static ERTS_INLINE void
+erts_db_free(ErtsAlcType_t type, DbTable *tab, void *ptr, Uint size)
+{
+    ASSERT(!ptr || size == ERTS_ALC_DBG_BLK_SZ(ptr));
+    ERTS_DB_FREE_MEM_UPDATE_(tab, size);
+
+    ASSERT(((void *) tab) != ptr || tab->common.memory_size == 0);
+
+    erts_free(type, ptr);
+}
+
+static ERTS_INLINE void
+erts_db_free_nt(ErtsAlcType_t type, void *ptr, Uint size)
+{
+    ASSERT(!ptr || size == ERTS_ALC_DBG_BLK_SZ(ptr));
+    ERTS_DB_FREE_MEM_UPDATE_NT_(size);
+
+    erts_free(type, ptr);
+}
+
+#undef ERTS_DB_FREE_MEM_UPDATE_NT_
+#undef ERTS_DB_FREE_MEM_UPDATE_
+
+#endif /* #if defined(ERTS_WANT_DB_INTERNAL__) && !defined(ERTS_HAVE_DB_INTERNAL__) */
 

@@ -178,11 +178,11 @@ start_time_service(Tdf, Inaccuracy) when integer(Tdf), integer(Inaccuracy) ->
 				?SUP_TIMESERVICE_SPEC(Tdf, Inaccuracy)) of
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
-	Other->
-	    corba:raise(#'INTERNAL'{minor=700, completion_status=?COMPLETED_NO})
+	_Other->
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
-start_time_service(Tdf, Inaccuracy) ->
-    corba:raise(#'BAD_PARAM'{minor=700, completion_status=?COMPLETED_NO}).
+start_time_service(_Tdf, _Inaccuracy) ->
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
     
 %%------------------------------------------------------------
@@ -205,8 +205,8 @@ start_timerevent_service(Timer) ->
 				?SUP_TIMEREVENTSERVICE_SPEC([Timer])) of
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
-	Other->
-	    corba:raise(#'INTERNAL'{minor=700, completion_status=?COMPLETED_NO})
+	_Other->
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
 %%-----------------------------------------------------------%
@@ -260,8 +260,8 @@ start_event_handler(Args) ->
     case supervisor:start_child(?SUPERVISOR_NAME, ?SUP_TIMEREVENTHANDLER_SPEC(Name,Args)) of
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
-	Other->
-	    corba:raise(#'INTERNAL'{minor=700, completion_status=?COMPLETED_NO})
+	_Other->
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
    
 
@@ -299,7 +299,7 @@ type_check(Obj, Mod) ->
         true ->
             ok;
         _ ->
-	    corba:raise(#'BAD_PARAM'{minor=700, completion_status=?COMPLETED_NO})
+	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end.
 
 

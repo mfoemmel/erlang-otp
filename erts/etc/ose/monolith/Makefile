@@ -388,6 +388,7 @@ ERL_OBJ_DIR	= $(RELDIR)/erts-$(ERTS_VER)/bin
 ERL_UTILS_SRC	= $(BUILD_DIR)/erl_utils
 ERL_PORT_SRC	= $(BUILD_DIR)/port_progs
 ERL_DRV_SRC	= $(BUILD_DIR)/drivers
+BEAM_DIR	= /clearcase/otp/erts/bin/ose_ppc750
 
 ERL_PORT_OBJS	= $(OBJDIR)/erl_user_pgm.o \
                   $(OBJDIR)/erl_stat_port_ex.o \
@@ -523,7 +524,7 @@ $(OBJDIR)/$(ERL_DBG_TARGET).elf:	$(OBJS) $(ERL_DBG_OBJS) $(LCF)
 	$(OBJDIR)/epmd.o $(LIBDIRS) $(LIBS)  > $(OBJDIR)/$(ERL_DBG_TARGET).map
 
 $(OBJDIR)/$(ERL_TARGET).elf:	$(OBJS) $(ERL_OBJS) $(LCF)
-	cp /clearcase/otp/erts/bin/ose_ppc750/beam $(OBJDIR)/beam.o
+	cp $(BEAM_DIR)/beam $(OBJDIR)/beam.o
 	cp $(ERL_OBJ_DIR)/epmd $(OBJDIR)/epmd.o
 	$(LD) $(LDFLAGS) -o $@ $(CRT) $(OBJS) $(ERL_OBJS) $(OBJDIR)/beam.o \
 	$(OBJDIR)/epmd.o $(LIBDIRS) $(LIBS)  > $(OBJDIR)/$(ERL_TARGET).map

@@ -41,7 +41,6 @@ typedef struct {
     Uint lmbcs;
     Uint smbcs;
     Uint mbcgs;
-    int smn;
 } AllctrInit_t;
 
 #ifndef SMALL_MEMORY
@@ -63,8 +62,7 @@ typedef struct {
     10,			/* (amount) mmmbc:  max mseg mbcs                */\
     5*1024*1024,	/* (bytes)  lmbcs:  largest mbc size             */\
     1024*1024,		/* (bytes)  smbcs:  smallest mbc size            */\
-    10,			/* (amount) mbcgs:  mbc growth stages            */\
-    -1			/* sys mutex no                                  */\
+    10			/* (amount) mbcgs:  mbc growth stages            */\
 }
 
 #else /* if SMALL_MEMORY */
@@ -90,8 +88,6 @@ typedef struct {
 }
 
 #endif
-
-#define ERTS_ALCU_SYS_MUTEXES (ERTS_ALC_A_MAX - ERTS_ALC_A_MIN + 1)
 
 void *	erts_alcu_alloc(ErtsAlcType_t, void *, Uint);
 void *	erts_alcu_realloc(ErtsAlcType_t, void *, void *, Uint);
@@ -251,8 +247,7 @@ struct Allctr_t_ {
 
 #ifdef USE_THREADS
     /* Mutex for this allocator */
-    erts_mutex_t	mutex;
-    int			sys_mutex_no;
+    ethr_mutex		mutex;
     int			thread_safe;
     struct {
 	Allctr_t	*prev;

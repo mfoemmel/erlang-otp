@@ -24,41 +24,42 @@
 -import(lists, [map/2,foldl/3,reverse/1,reverse/2,filter/2,member/2]).
 
 module({Mod,Exp,Attr,Fs0,Lc}, Opt) ->
-    Rs = case member(no_float_opt, Opt) of
-	     true -> no_float_opt;
-	     false -> []
-	 end,
-    Fs = map(fun(F) -> function(F, Rs) end, Fs0),
+    AllowFloatOpts = not member(no_float_opt, Opt),
+    Fs = map(fun(F) -> function(F, AllowFloatOpts) end, Fs0),
     {ok,{Mod,Exp,Attr,Fs,Lc}}.
 
-function({function,Name,Arity,CLabel,Asm0}=Func, Rs) ->
-    case opt(Asm0, Rs, [], tdb_new()) of
-	Asm0 -> Func;
-	Asm ->
-	    %% Some labels may no longer be referenced.
-	    beam_jump:function({function,Name,Arity,CLabel,Asm})
-    end.
+function({function,Name,Arity,CLabel,Asm0}, AllowFloatOpts) ->
+    Asm = opt(Asm0, AllowFloatOpts, [], tdb_new()),
+    {function,Name,Arity,CLabel,Asm}.
 
-%% opt([Instruction], Accumulator, TypeDb) -> {[Instruction'],TypeDb'}
+%% opt([Instruction], AllowFloatOpts, Accumulator, TypeDb) -> {[Instruction'],TypeDb'}
 %%  Keep track of type information; try to simplify.
 
-opt([{block,Body1}|Is], Rs, [{block,Body0}|Acc], Ts0) ->
-    {Body2,Ts} = simplify(Body1, Ts0, Rs, []),
+opt([{block,Body1}|Is], AllowFloatOpts, [{block,Body0}|Acc], Ts0) ->
+    {Body2,Ts} = simplify(Body1, Ts0, AllowFloatOpts),
     Body = beam_block:merge_blocks(Body0, Body2),
-    opt(Is, Rs, [{block,Body}|Acc], Ts);
-opt([{block,Body0}|Is], Rs, Acc, Ts0) ->
-    {Body,Ts} = simplify(Body0, Ts0, Rs, []),
-    opt(Is, Rs, [{block,Body}|Acc], Ts);
-opt([I0|Is], Rs, Acc, Ts0) ->
-    case simplify([I0], Ts0, Rs, []) of
-	{[],Ts} -> opt(Is, Rs, Acc, Ts);
-	{[I],Ts} -> opt(Is, Rs, [I|Acc], Ts)
+    opt(Is, AllowFloatOpts, [{block,Body}|Acc], Ts);
+opt([{block,Body0}|Is], AllowFloatOpts, Acc, Ts0) ->
+    {Body,Ts} = simplify(Body0, Ts0, AllowFloatOpts),
+    opt(Is, AllowFloatOpts, [{block,Body}|Acc], Ts);
+opt([I0|Is], AllowFloatOpts, Acc, Ts0) ->
+    case simplify([I0], Ts0, AllowFloatOpts) of
+	{[],Ts} -> opt(Is, AllowFloatOpts, Acc, Ts);
+	{[I],Ts} -> opt(Is, AllowFloatOpts, [I|Acc], Ts)
     end;
 opt([], _, Acc, _) -> reverse(Acc).
 
-%% simplify(Instruction, TypeDb) -> NewInstruction
+%% simplify(Instruction, TypeDb, AllowFloatOpts) -> NewInstruction
 %%  Simplify an instruction using type information (this is
 %%  technically a "strength reduction").
+
+simplify(Is, TypeDb, false) ->
+    simplify(Is, TypeDb, no_float_opt, []);
+simplify(Is, TypeDb, true) ->
+    case are_live_regs_determinable(Is) of
+	false -> simplify(Is, TypeDb, no_float_opt, []);
+	true -> simplify(Is, TypeDb, [], [])
+    end.
 
 simplify([{set,[D],[{integer,Index},Reg],{bif,element,_}}=I0|Is]=Is0, Ts0, Rs0, Acc0) ->
     I = case max_tuple_size(Reg, Ts0) of
@@ -68,7 +69,7 @@ simplify([{set,[D],[{integer,Index},Reg],{bif,element,_}}=I0|Is]=Is0, Ts0, Rs0, 
     end,
     Ts = update(I, Ts0),
     {Rs,Acc} = flush(Rs0, Is0, Acc0),
-    simplify(Is, Ts, Rs, [I|Acc]);
+    simplify(Is, Ts, Rs, [I|checkerror(Acc)]);
 simplify([{set,[D0],[A],{bif,'-',{f,0}}}=I|Is]=Is0, Ts0, Rs0, Acc0)
   when Rs0 =/= no_float_opt ->
     case tdb_find(A, Ts0) of
@@ -82,15 +83,19 @@ simplify([{set,[D0],[A],{bif,'-',{f,0}}}=I|Is]=Is0, Ts0, Rs0, Acc0)
 	_Other ->
 	    Ts = update(I, Ts0),
 	    {Rs,Acc} = flush(Rs0, Is0, Acc0),
-	    simplify(Is, Ts, Rs, [I|Acc])
+	    simplify(Is, Ts, Rs, [I|checkerror(Acc)])
     end;
+simplify([{set,[_],[_],{bif,_,{f,0}}}=I|Is]=Is0, Ts0, Rs0, Acc0) ->
+    Ts = update(I, Ts0),
+    {Rs,Acc} = flush(Rs0, Is0, Acc0),
+    simplify(Is, Ts, Rs, [I|checkerror(Acc)]);
 simplify([{set,[D0],[A,B],{bif,Op0,{f,0}}}=I|Is]=Is0, Ts0, Rs0, Acc0)
   when Rs0 =/= no_float_opt ->
     case float_op(Op0, A, B, Ts0) of
 	no ->
 	    Ts = update(I, Ts0),
 	    {Rs,Acc} = flush(Rs0, Is0, Acc0),
-	    simplify(Is, Ts, Rs, [I|Acc]);
+	    simplify(Is, Ts, Rs, [I|checkerror(Acc)]);
 	{yes,Op} ->
 	    {Rs1,Acc1} = load_reg(A, Ts0, Rs0, Acc0),
 	    {Rs2,Acc2} = load_reg(B, Ts0, Rs1, Acc1),
@@ -110,8 +115,11 @@ simplify([{set,[D],[TupleReg],{get_tuple_element,0}}=I|Is0], Ts0, Rs0, Acc0) ->
 	_ ->
 	    Ts = update(I, Ts0),
 	    {Rs,Acc} = flush(Rs0, Is0, Acc0),
-	    simplify(Is0, Ts, Rs, [I|Acc])
+	    simplify(Is0, Ts, Rs, [I|checkerror(Acc)])
     end;
+simplify([{set,_,_,{'catch',_}}=I|Is]=Is0, _Ts, Rs0, Acc0) ->
+    Acc = flush_all(Rs0, Is0, Acc0),
+    simplify(Is, tdb_new(), Rs0, [I|Acc]);
 simplify([{test,is_tuple,_,[R]}=I|Is], Ts, Rs, Acc) ->
     case tdb_find(R, Ts) of
 	{tuple,_,_} -> simplify(Is, Ts, Rs, Acc);
@@ -140,7 +148,20 @@ simplify([I|Is]=Is0, Ts0, Rs0, Acc0) ->
     {Rs,Acc} = flush(Rs0, Is0, Acc0),
     simplify(Is, Ts, Rs, [I|Acc]);
 simplify([], Ts, Rs, Acc) ->
-    {reverse(flush_all(Rs, [], Acc)),Ts}.
+    Is0 = reverse(flush_all(Rs, [], Acc)),
+    Is1 = opt_fmoves(Is0, []),
+    Is = add_ftest_heap(Is1),
+    {Is,Ts}.
+
+opt_fmoves([{set,[{x,_}=R],[{fr,_}]=Src,fmove}=I1,
+	    {set,[{y,_}]=Dst,[{x,_}=R],move}=I2|Is], Acc) ->
+    case beam_block:is_killed(R, Is) of
+	false -> opt_fmoves(Is, [I2,I1|Acc]);
+	true -> opt_fmoves(Is, [{set,Dst,Src,fmove}|Acc])
+    end;
+opt_fmoves([I|Is], Acc) ->
+    opt_fmoves(Is, [I|Acc]);
+opt_fmoves([], Acc) -> reverse(Acc).
 
 clearerror(Is) ->
     clearerror(Is, Is).
@@ -260,6 +281,7 @@ is_math_bif(log10, 1) -> true;
 is_math_bif(sqrt, 1) -> true;
 is_math_bif(atan2, 2) -> true;
 is_math_bif(pow, 2) -> true;
+is_math_bif(pi, 0) -> true;
 is_math_bif(_, _) -> false.
 
 %% Reject non-numeric literals.
@@ -352,7 +374,7 @@ flush_all([{_,{float,_},_}|Rs], Is, Acc) ->
     flush_all(Rs, Is, Acc);
 flush_all([{I,V,dirty}|Rs], Is, Acc0) ->
     Acc = checkerror(Acc0),
-    case is_killed(V, Is) of
+    case beam_block:is_killed(V, Is) of
 	true  -> flush_all(Rs, Is, Acc);
 	false -> flush_all(Rs, Is, [{set,[V],[{fr,I}],fmove}|Acc])
     end;
@@ -380,11 +402,6 @@ kill_reg({_,V,_}=R, Kill) ->
     end;
 kill_reg(R, _) -> R.
 
-is_killed(R, [{set,Ds,Ss,_Op}|Is]) ->
-    not member(R, Ss) andalso (member(R, Ds) orelse is_killed(R, Is));
-is_killed({x,R}, [{'%live',Live}|_]) when R >= Live -> true;
-is_killed(_, _) -> false.
-
 mark(V, [{I,V,_}|Rs], Mark) -> [{I,V,Mark}|Rs];
 mark(V, [R|Rs], Mark) -> [R|mark(V, Rs, Mark)];
 mark(_, [], _) -> [].
@@ -406,18 +423,38 @@ checkerror(Is) ->
     checkerror_1(Is, Is).
 
 checkerror_1([{set,[],[],fcheckerror}|_], OrigIs) -> OrigIs;
-checkerror_1([{set,_,_,{bif,fadd,_}}|T], OrigIs) -> checkerror_2(T, OrigIs);
-checkerror_1([{set,_,_,{bif,fsub,_}}|T], OrigIs) -> checkerror_2(T, OrigIs);
-checkerror_1([{set,_,_,{bif,fmul,_}}|T], OrigIs) -> checkerror_2(T, OrigIs);
-checkerror_1([{set,_,_,{bif,fdiv,_}}|T], OrigIs) -> checkerror_2(T, OrigIs);
-checkerror_1([{set,_,_,{bif,fnegate,_}}|T], OrigIs) -> checkerror_2(T, OrigIs);
+checkerror_1([{set,[],[],fclearerror}|_], OrigIs) -> OrigIs;
+checkerror_1([{set,_,_,{bif,fadd,_}}|_], OrigIs) -> checkerror_2(OrigIs);
+checkerror_1([{set,_,_,{bif,fsub,_}}|_], OrigIs) -> checkerror_2(OrigIs);
+checkerror_1([{set,_,_,{bif,fmul,_}}|_], OrigIs) -> checkerror_2(OrigIs);
+checkerror_1([{set,_,_,{bif,fdiv,_}}|_], OrigIs) -> checkerror_2(OrigIs);
+checkerror_1([{set,_,_,{bif,fnegate,_}}|_], OrigIs) -> checkerror_2(OrigIs);
 checkerror_1([_|Is], OrigIs) -> checkerror_1(Is, OrigIs);
-checkerror_1([], OrigIs) -> [{set,[],[],fcheckerror}|OrigIs].
+checkerror_1([], OrigIs) -> OrigIs.
 
-checkerror_2([{set,[],[],fcheckerror}|_], OrigIs) -> OrigIs;
-checkerror_2([{set,[],[],fclearerror}|_], OrigIs) -> checkerror_2([], OrigIs);
-checkerror_2([_|Is], OrigIs) -> checkerror_2(Is, OrigIs);
-checkerror_2([], OrigIs) -> [{set,[],[],fcheckerror}|OrigIs].
+checkerror_2(OrigIs) -> [{set,[],[],fcheckerror}|OrigIs].
+
+add_ftest_heap(Is) ->
+    add_ftest_heap_1(reverse(Is), 0, []).
+
+add_ftest_heap_1([{set,_,[{fr,_}],fmove}=I|Is], Floats, Acc) ->
+    add_ftest_heap_1(Is, Floats+1, [I|Acc]);
+add_ftest_heap_1([{allocate,_,_}=I|Is], 0, Acc) ->
+    reverse(Is, [I|Acc]);
+add_ftest_heap_1([{allocate,Regs,{Z,Stk,Heap,Inits}}|Is], Floats, Acc) ->
+    reverse(Is, [{allocate,Regs,{Z,Stk,Heap,Floats,Inits}}|Acc]);
+add_ftest_heap_1([I|Is], Floats, Acc) ->
+    add_ftest_heap_1(Is, Floats, [I|Acc]);
+add_ftest_heap_1([], 0, Acc) ->
+    Acc;
+add_ftest_heap_1([], Floats, Is) ->
+    Regs = beam_block:live_at_entry(Is),
+    [{allocate,Regs,{nozero,nostack,0,Floats,[]}}|Is].
+
+are_live_regs_determinable([{allocate,_,_}|_]) -> true;
+are_live_regs_determinable([{'%live',_}|_]) -> true;
+are_live_regs_determinable([_|Is]) -> are_live_regs_determinable(Is);
+are_live_regs_determinable([]) -> false.
     
 
 %%% Routines for maintaining a type database.  The type database 

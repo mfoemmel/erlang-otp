@@ -7,7 +7,6 @@ rtl_to_x86:
 
 x86:
 * Use separate constructors for real regs (x86_reg) and pseudos (x86_temp).
-* separate constructor for shift ops? (now alu + special treatment)
 
 Frame:
 * drop tailcall rewrite
@@ -30,4 +29,3 @@ Loader:
 Assembler:
 
 Encode:
-* allow symbolic literals and export backpatch info; then simplify assembler

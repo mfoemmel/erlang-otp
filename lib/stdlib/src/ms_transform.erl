@@ -31,12 +31,17 @@
 -define(ERR_HEADBADREC,7).
 -define(ERR_HEADBADFIELD,8).
 -define(ERR_HEADMULTIFIELD,9).
+-define(ERR_HEADDOLLARATOM,10).
+-define(ERR_HEADBINMATCH,11).
 -define(ERR_GENMATCH,16).
 -define(ERR_GENLOCALCALL,17).
 -define(ERR_GENELEMENT,18).
 -define(ERR_GENBADFIELD,19).
 -define(ERR_GENBADREC,20).
 -define(ERR_GENMULTIFIELD,21).
+-define(ERR_GENREMOTECALL,22).
+-define(ERR_GENBINCONSTRUCT,23).
+-define(ERR_GENDISALLOWEDOP,24).
 -define(ERR_GUARDMATCH,?ERR_GENMATCH+?ERROR_BASE_GUARD).
 -define(ERR_BODYMATCH,?ERR_GENMATCH+?ERROR_BASE_BODY).
 -define(ERR_GUARDLOCALCALL,?ERR_GENLOCALCALL+?ERROR_BASE_GUARD).
@@ -49,6 +54,12 @@
 -define(ERR_BODYBADREC,?ERR_GENBADREC+?ERROR_BASE_BODY).
 -define(ERR_GUARDMULTIFIELD,?ERR_GENMULTIFIELD+?ERROR_BASE_GUARD).
 -define(ERR_BODYMULTIFIELD,?ERR_GENMULTIFIELD+?ERROR_BASE_BODY).
+-define(ERR_GUARDREMOTECALL,?ERR_GENREMOTECALL+?ERROR_BASE_GUARD).
+-define(ERR_BODYREMOTECALL,?ERR_GENREMOTECALL+?ERROR_BASE_BODY).
+-define(ERR_GUARDBINCONSTRUCT,?ERR_GENBINCONSTRUCT+?ERROR_BASE_GUARD).
+-define(ERR_BODYBINCONSTRUCT,?ERR_GENBINCONSTRUCT+?ERROR_BASE_BODY).
+-define(ERR_GUARDDISALLOWEDOP,?ERR_GENDISALLOWEDOP+?ERROR_BASE_GUARD).
+-define(ERR_BODYDISALLOWEDOP,?ERR_GENDISALLOWEDOP+?ERROR_BASE_BODY).
 
 %%
 %% Called by compiler or ets/dbg:fun2ms when errors occur
@@ -65,26 +76,56 @@ format_error(?ERR_SEMI_GUARD) ->
     "fun with semicolon (;) in guard cannot be translated into match_spec";
 format_error(?ERR_GUARDMATCH) ->	    
     "fun with guard matching ('=' in guard) is illegal as match_spec as well";
-format_error({?ERR_GUARDLOCALCALL, Name}) ->	    
-    lists:flatten(io_lib:format("fun containing local erlang function calls "
-				"('~w' called in guard) "
+format_error({?ERR_GUARDLOCALCALL, Name, Arithy}) ->	    
+    lists:flatten(io_lib:format("fun containing the local function call "
+				"'~w/~w' (called in guard) "
 				"cannot be translated into match_spec",
-				[Name]));
+				[Name, Arithy]));
+format_error({?ERR_GUARDREMOTECALL, Module, Name, Arithy}) ->	    
+    lists:flatten(io_lib:format("fun containing the remote function call "
+				"'~w:~w/~w' (called in guard) "
+				"cannot be translated into match_spec",
+				[Module,Name,Arithy]));
 format_error({?ERR_GUARDELEMENT, Str}) ->
     lists:flatten(
       io_lib:format("the language element ~s (in guard) cannot be translated "
 		    "into match_spec", [Str]));
+format_error({?ERR_GUARDBINCONSTRUCT, Var}) ->
+    lists:flatten(
+      io_lib:format("bit syntax construction with variable ~w (in guard) "
+		    "cannot be translated "
+		    "into match_spec", [Var]));
+format_error({?ERR_GUARDDISALLOWEDOP, Operator}) ->
+    lists:flatten(
+      io_lib:format("the operator ~w is not allowed in guards", [Operator]));
 format_error(?ERR_BODYMATCH) ->	    
     "fun with body matching ('=' in body) is illegal as match_spec";
-format_error({?ERR_BODYLOCALCALL, Name}) ->	    
-    lists:flatten(io_lib:format("fun containing local erlang function calls "
-				"('~w' called in body) "
+format_error({?ERR_BODYLOCALCALL, Name, Arithy}) ->	    
+    lists:flatten(io_lib:format("fun containing the local function "
+				"call '~w/~w' (called in body) "
 				"cannot be translated into match_spec",
-				[Name]));
+				[Name,Arithy]));
+format_error({?ERR_BODYREMOTECALL, Module, Name, Arithy}) ->	    
+    lists:flatten(io_lib:format("fun containing the remote function call "
+				"'~w:~w/~w' (called in body) "
+				"cannot be translated into match_spec",
+				[Module,Name,Arithy]));
 format_error({?ERR_BODYELEMENT, Str}) ->
     lists:flatten(
       io_lib:format("the language element ~s (in body) cannot be translated "
 		    "into match_spec", [Str]));
+format_error({?ERR_BODYBINCONSTRUCT, Var}) ->
+    lists:flatten(
+      io_lib:format("bit syntax construction with variable ~w (in body) "
+		    "cannot be translated "
+		    "into match_spec", [Var]));
+format_error({?ERR_BODYDISALLOWEDOP, Operator}) -> 
+    %% This will probably never happen, Are there op's that are allowed in 
+    %% guards but not in bodies? Not at time of writing anyway...
+    lists:flatten(
+      io_lib:format("the operator ~w is not allowed in function bodies", 
+		    [Operator]));
+
 format_error({?ERR_UNBOUND_VARIABLE, Str}) ->
     lists:flatten(
       io_lib:format("the variable ~s is unbound, cannot translate "
@@ -100,6 +141,14 @@ format_error({?ERR_HEADMULTIFIELD,RName,FName}) ->
     lists:flatten(
       io_lib:format("fun head contains already defined field ~w in "
 		    "record type ~w",[FName, RName]));
+format_error({?ERR_HEADDOLLARATOM,Atom}) ->	    
+    lists:flatten(
+      io_lib:format("fun head contains atom ~w, which conflics with reserved "
+		    "atoms in match_spec heads",[Atom]));
+format_error({?ERR_HEADBINMATCH,Atom}) ->	    
+    lists:flatten(
+      io_lib:format("fun head contains bit syntax matching of variable ~w, "
+		    "which cannot be translated into match_spec", [Atom]));
 format_error({?ERR_GUARDBADREC,Name}) ->	    
     lists:flatten(
       io_lib:format("fun guard contains unknown record type ~w",[Name]));
@@ -155,7 +204,6 @@ transform_from_shell(Dialect, Clauses, BoundEnvironment) ->
 %%
 parse_transform(Forms, _Options) ->
     SaveFilename = setup_filename(),
-    %erlang:display(Forms),
     case catch forms(Forms) of
 	{'EXIT',Reason} ->
 	    cleanup_filename(SaveFilename),
@@ -267,8 +315,19 @@ transform_call(Type,_Line,[{'fun',Line2,{clauses, ClauseList}}]) ->
 transform_call(_Type,Line,_NoAbstractFun) ->
     throw({error,Line,?ERR_NOFUN}).
 
+% Fixup semicolons in guards
+ms_clause_expand({clause, Line, Parameters, Guard = [_,_|_], Body}) ->
+    [ {clause, Line, Parameters, [X], Body} || X <- Guard ];
+ms_clause_expand(_Other) ->
+    false.
+
 ms_clause_list(Line,[H|T],Type) ->
-    {cons, Line, ms_clause(H,Type), ms_clause_list(Line, T,Type)};
+    case ms_clause_expand(H) of
+	NewHead when is_list(NewHead) ->
+	    ms_clause_list(Line,NewHead ++ T, Type);
+	false ->
+	    {cons, Line, ms_clause(H,Type), ms_clause_list(Line, T,Type)}
+    end;
 ms_clause_list(Line,[],_) ->
     {nil,Line}.
 ms_clause({clause, Line, Parameters, Guards, Body},Type) ->
@@ -314,8 +373,21 @@ transform_body(Line,Body,Bindings) ->
     tg0(Line,Body,B).
     
 
+guard_top_trans({call,Line0,{atom,Line1,OldTest},Params}) ->
+    case old_bool_test(OldTest,length(Params)) of
+	undefined ->
+	    {call,Line0,{atom,Line1,OldTest},Params};
+	Trans ->
+	    {call,Line0,{atom,Line1,Trans},Params}
+    end;
+guard_top_trans(Else) ->
+    Else.
+
 tg0(Line,[],_) ->
     {nil,Line};
+tg0(Line,[H0|T],B) when B#tgd.p =:= guard ->
+    H = guard_top_trans(H0),
+    {cons,Line, tg(H,B), tg0(Line,T,B)};
 tg0(Line,[H|T],B) ->
     {cons,Line, tg(H,B), tg0(Line,T,B)}.
     
@@ -323,7 +395,12 @@ tg0(Line,[H|T],B) ->
 tg({match,Line,_,_},B) -> 
     throw({error,Line,?ERR_GENMATCH+B#tgd.eb});
 tg({op, Line, Operator, O1, O2}, B) ->
-    {tuple, Line, [{atom, Line, Operator}, tg(O1,B), tg(O2,B)]};
+    case {B#tgd.p,disallowed_in_guard(Operator,2)} of
+	{guard, true} ->
+	   throw({error,Line,{?ERR_GUARDDISALLOWEDOP,Operator}});
+	_ ->
+	    {tuple, Line, [{atom, Line, Operator}, tg(O1,B), tg(O2,B)]}
+    end;
 tg({op, Line, Operator, O1}, B) ->
     {tuple, Line, [{atom, Line, Operator}, tg(O1,B)]};
 tg({call, _Line, {atom, Line2, bindings},[]},_B) ->
@@ -341,13 +418,32 @@ tg({call, Line, {atom, _, is_record}=Call,[Object, {atom,Line3,RName}=R]},B) ->
 	    throw({error,Line3,{?ERR_GENBADREC+B#tgd.eb,RName}})
     end;
 tg({call, Line, {atom, Line2, FunName},ParaList},B) ->
-    case is_ms_function(FunName,B#tgd.p) of
+    case is_ms_function(FunName,length(ParaList), B#tgd.p) of
 	true ->
 	    {tuple, Line, [{atom, Line2, FunName} | 
 			   lists:map(fun(X) -> tg(X,B) end, ParaList)]};
 	_ ->
-	    throw({error,Line,{?ERR_GENLOCALCALL+B#tgd.eb,FunName}}) 
+	    throw({error,Line,{?ERR_GENLOCALCALL+B#tgd.eb,
+			       FunName,length(ParaList)}}) 
     end;
+tg({call, Line, {remote,_,{atom,_,erlang},{atom, Line2, FunName}},ParaList},
+   B) ->
+    L = length(ParaList),
+    case is_imported_from_erlang(FunName,L,B#tgd.p) of
+	true ->
+	    case is_operator(FunName,L,B#tgd.p) of
+		false ->
+		    tg({call, Line, {atom, Line2, FunName},ParaList},B);
+		true ->
+		    tg(list_to_tuple([op,Line2,FunName | ParaList]),B)
+		end;
+	_ ->
+	    throw({error,Line,{?ERR_GENREMOTECALL+B#tgd.eb,erlang,
+			       FunName,length(ParaList)}}) 
+    end;
+tg({call, Line, {remote,_,{atom,_,ModuleName},
+		 {atom, _, FunName}},_ParaList},B) ->
+    throw({error,Line,{?ERR_GENREMOTECALL+B#tgd.eb,ModuleName,FunName}});
 tg({cons,Line, H, T},B) -> 
     {cons, Line, tg(H,B), tg(T,B)};
 tg({nil, Line},_B) ->
@@ -361,7 +457,12 @@ tg({char,Line,C},_) ->
 tg({float, Line,F},_) ->
     {float,Line,F};
 tg({atom,Line,A},_) ->
-    {atom,Line,A};
+    case atom_to_list(A) of
+	[$$|_] ->
+	   {tuple, Line,[{atom, Line, 'const'},{atom,Line,A}]};
+	_ ->
+	    {atom,Line,A}
+    end;
 tg({string,Line,S},_) ->
     {string,Line,S};
 tg({var,Line,VarName},B) ->
@@ -390,15 +491,34 @@ tg({record_field,Line,Object,RName,{atom,_Line1,KeyName}},B) ->
 
 tg({record,Line,RName,RFields},B) ->
     RDefs = get_records(),
-    KeyList = lists:foldl(fun({record_field,_,{atom,_,Key},Value},
+    KeyList0 = lists:foldl(fun({record_field,_,{atom,_,Key},Value},
 				     L) ->
 					 NV = tg(Value,B),
 					 [{Key,NV}|L];
+				    ({record_field,_,{var,_,'_'},Value},
+				     L) ->
+					 NV = tg(Value,B),
+					 [{{default},NV}|L];
 				    (_,_) ->
-					 throw({error,Line,?ERR_HEADBADREC})
+					 throw({error,Line,
+						{?ERR_GENBADREC+B#tgd.eb,
+						 RName}})
 				 end,
 				 [],
 				 RFields),
+    DefValue = case lists:keysearch({default},1,KeyList0) of
+		   {value,{{default},OverriddenDefValue}} ->
+		       {true,OverriddenDefValue};
+		   _ ->
+		       false
+	       end,
+    KeyList = lists:keydelete({default},1,KeyList0),
+    case lists:keysearch({default},1,KeyList) of
+	{value,{{default},_}} ->
+	    throw({error,Line,{?ERR_GENMULTIFIELD+B#tgd.eb,RName,'_'}});
+	_ ->
+	    ok
+    end,
     case lists:keysearch(RName,1,RDefs) of
 	{value, {RName, FieldList0}} ->
 	    FieldList1 = lists:foldl(
@@ -407,7 +527,12 @@ tg({record,Line,RName,RFields},B) ->
 					    {value, {FN, X0}} ->
 						X0;
 					    _ ->
-						Def
+						case DefValue of 
+						    {true,Overridden} ->
+							Overridden;
+						    false ->
+							Def
+						end
 					end,
 				   [El | Acc]
 			   end,
@@ -474,6 +599,21 @@ tg({record,Line,{var,Line2,_VName}=AVName, RName,RFields},B) ->
 	_ ->
 	    throw({error,Line,{?ERR_GENBADREC+B#tgd.eb,RName}})
     end;
+
+tg({bin_element,_Line0,{var, Line, A},_,_} = Whole,B) ->
+    case lkup_bind(A, B#tgd.b) of
+	undefined ->
+	    Whole; % exists in environment hopefully
+	_AtomName ->
+	    throw({error,Line,{?ERR_GENBINCONSTRUCT+B#tgd.eb,A}})
+    end;    
+tg(default,_B) ->
+    default;
+tg({bin_element,Line,X,Y,Z},B) ->
+    {bin_element, Line, tg(X,B), tg(Y,B), Z};
+
+tg({bin,Line,List},B) ->
+    {bin,Line,[tg(X,B) || X <- List]};
     
 tg(T,B) when is_tuple(T), size(T) >= 2 ->
     Element = element(1,T),
@@ -500,16 +640,33 @@ toplevel_head_match(Other,B) ->
 th({record,Line,RName,RFields},B) ->
     % youch...
     RDefs = get_records(),
-    {KeyList,NewB} = lists:foldl(fun({record_field,_,{atom,_,Key},Value},
+    {KeyList0,NewB} = lists:foldl(fun({record_field,_,{atom,_,Key},Value},
 				     {L,B0}) ->
 					 {NV,B1} = th(Value,B0),
 					 {[{Key,NV}|L],B1};
+				    ({record_field,_,{var,_,'_'},Value},
+				     {L,B0}) ->
+					 {NV,B1} = th(Value,B0),
+					 {[{{default},NV}|L],B1};
 				    (_,_) ->
 					 throw({error,Line,{?ERR_HEADBADREC,
 							    RName}})
 				 end,
 				 {[],B},
 				 RFields),
+    DefValue = case lists:keysearch({default},1,KeyList0) of
+		   {value,{{default},OverriddenDefValue}} ->
+		       OverriddenDefValue;
+		   _ ->
+		       {atom,Line,'_'}
+	       end,
+    KeyList = lists:keydelete({default},1,KeyList0),
+    case lists:keysearch({default},1,KeyList) of
+	{value,{{default},_}} ->
+	    throw({error,Line,{?ERR_HEADMULTIFIELD,RName,'_'}});
+	_ ->
+	    ok
+    end,
     case lists:keysearch(RName,1,RDefs) of
 	{value, {RName, FieldList0}} ->
 	    FieldList1 = lists:foldl(
@@ -518,7 +675,7 @@ th({record,Line,RName,RFields},B) ->
 					    {value, {FN, X0}} ->
 						X0;
 					    _ ->
-						{atom,Line,'_'}
+						DefValue
 					end,
 				   [El | Acc]
 			   end,
@@ -535,6 +692,21 @@ th({record,Line,RName,RFields},B) ->
 
 th({match,Line,_,_},_) -> 
     throw({error,Line,?ERR_HEADMATCH});
+th({atom,Line,A},B) ->
+    case atom_to_list(A) of
+	[$$|NL] ->
+	    case (catch list_to_integer(NL)) of
+		N when is_integer(N) ->
+		    throw({error,Line,{?ERR_HEADDOLLARATOM,A}});
+		_ ->
+		    {{atom,Line,A},B}
+	    end;
+	_ ->
+	    {{atom,Line,A},B}
+    end;
+th({bin_element,_Line0,{var, Line, A},_,_},_) ->
+    throw({error,Line,{?ERR_HEADBINMATCH,A}});
+
 th({var,Line,Name},B) ->
     case lkup_bind(Name,B) of
 	undefined ->
@@ -606,61 +778,155 @@ translate_language_element(Atom) ->
 	    atom_to_list(Atom)
     end.
 
-guard_function() ->
-    BoolTest = [
-		is_atom, 
-		is_constant, 
-		is_float, 
-		is_integer, 
-		is_list, 
-		is_number, 
-		is_pid, 
-		is_port, 
-		is_reference, 
-		is_tuple, 
-		is_binary, 
-		is_function, 
-		is_record, 
-		is_seq_trace
-	       ],
-    BoolFunction = ['xor' | BoolTest], 
-    GuardFunction = [
-		     abs, 
-		     element, 
-		     hd, 
-		     length, 
-		     node, 
-		     round, 
-		     size, 
-		     tl, 
-		     trunc, 
-		     self, 
-		     get_tcw |
-		     BoolFunction
-		    ],
-    GuardFunction.
-		 
-is_ms_function(X,body) ->
-    ActionFunction = [
-		      set_seq_token,
-		      get_seq_token,
-		      message,
-		      return_trace,
-		      process_dump,
-		      enable_trace,
-		      disable_trace,
-		      display,
-		      caller,
-		      set_tcw,
-		      silent |
-		      guard_function()
-		      ],
-    lists:member(X,ActionFunction);
+old_bool_test(atom,1) -> is_atom;
+old_bool_test(constant,1) -> is_constant;
+old_bool_test(float,1) -> is_float;
+old_bool_test(integer,1) -> is_integer;
+old_bool_test(list,1) -> is_list;
+old_bool_test(number,1) -> is_number;
+old_bool_test(pid,1) -> is_pid;
+old_bool_test(port,1) -> is_port;
+old_bool_test(reference,1) -> is_reference;
+old_bool_test(tuple,1) -> is_tuple;
+old_bool_test(binary,1) -> is_binary;
+old_bool_test(function,1) -> is_function;
+old_bool_test(record,2) -> is_record;
+old_bool_test(_,_) -> undefined.
 
-is_ms_function(X,guard) ->
-    lists:member(X,guard_function()).
+bool_test(is_atom,1) -> true;
+bool_test(is_constant,1) -> true;
+bool_test(is_float,1) -> true;
+bool_test(is_integer,1) -> true;
+bool_test(is_list,1) -> true;
+bool_test(is_number,1) -> true;
+bool_test(is_pid,1) -> true;
+bool_test(is_port,1) -> true;
+bool_test(is_reference,1) -> true;
+bool_test(is_tuple,1) -> true;
+bool_test(is_binary,1) -> true;
+bool_test(is_function,1) -> true;
+bool_test(is_record,2) -> true;
+bool_test(is_seq_trace,0) -> true;
+bool_test(_,_) -> false.
 
+real_guard_function(abs,1) -> true;
+real_guard_function(element,2) -> true;
+real_guard_function(hd,1) -> true;
+real_guard_function(length,1) -> true;
+real_guard_function(node,0) -> true;
+real_guard_function(node,1) -> true;
+real_guard_function(round,1) -> true;
+real_guard_function(size,1) -> true;
+real_guard_function(tl,1) -> true;
+real_guard_function(trunc,1) -> true;
+real_guard_function(self,0) -> true;
+real_guard_function(_,_) -> false.
 
+pseudo_guard_function(get_tcw,0) -> true;
+pseudo_guard_function(_,_) -> false.
+
+guard_function(X,A) ->
+    real_guard_function(X,A) or pseudo_guard_function(X,A).
+
+action_function(set_seq_token,2) -> true;
+action_function(get_seq_token,0) -> true;
+action_function(message,1) -> true;
+action_function(return_trace,0) -> true;
+action_function(process_dump,0) -> true;
+action_function(enable_trace,1) -> true;
+action_function(enable_trace,2) -> true;
+action_function(disable_trace,1) -> true;
+action_function(disable_trace,2) -> true;
+action_function(display,1) -> true;
+action_function(caller,0) -> true;
+action_function(set_tcw,1) -> true;
+action_function(silent,1) -> true;
+action_function(_,_) -> false.
+
+bool_operator('and',2) ->
+    true;
+bool_operator('or',2) ->
+    true;
+bool_operator('xor',2) ->
+    true;
+bool_operator('not',1) ->
+    true;
+bool_operator('andalso',2) ->
+    true;
+bool_operator('orelse',2) ->
+    true;
+bool_operator(_,_) ->
+    false.
+
+disallowed_in_guard('andalso',2) ->
+    true;
+disallowed_in_guard('orelse',2) ->
+    true;
+disallowed_in_guard(_,_) ->
+    false.
+
+arith_operator('+',1) ->
+    true;
+arith_operator('+',2) ->
+    true;
+arith_operator('-',1) ->
+    true;
+arith_operator('-',2) ->
+    true;
+arith_operator('*',2) ->
+    true;
+arith_operator('/',2) ->
+    true;
+arith_operator('div',2) ->
+    true;
+arith_operator('rem',2) ->
+    true;
+arith_operator('band',2) ->
+    true;
+arith_operator('bor',2) ->
+    true;
+arith_operator('bxor',2) ->
+    true;
+arith_operator('bnot',1) ->
+    true;
+arith_operator('bsl',2) ->
+    true;
+arith_operator('bsr',2) ->
+    true;
+arith_operator(_,_) ->
+    false.
+
+cmp_operator('>',2) ->
+    true;
+cmp_operator('>=',2) ->
+    true;
+cmp_operator('<',2) ->
+    true;
+cmp_operator('=<',2) ->
+    true;
+cmp_operator('==',2) ->
+    true;
+cmp_operator('=:=',2) ->
+    true;
+cmp_operator('/=',2) -> 
+    true;
+cmp_operator('=/=',2) ->
+    true;
+cmp_operator(_,_) ->
+    false.
+
+is_operator(X,A,_) ->
+    bool_operator(X,A) or arith_operator(X,A) or cmp_operator(X,A).
+
+is_imported_from_erlang(X,A,_) ->
+    real_guard_function(X,A) or bool_test(X,A) or bool_operator(X,A) or
+    arith_operator(X,A) or cmp_operator(X,A).
+
+is_ms_function(X,A,body) ->
+    action_function(X,A) or guard_function(X,A) or bool_test(X,A);
+
+is_ms_function(X,A,guard) ->
+    guard_function(X,A) or bool_test(X,A).
 
 fixup_environment(L,B) when is_list(L) ->    
     lists:map(fun(X) ->

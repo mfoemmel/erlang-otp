@@ -97,7 +97,7 @@ BEAM_FORMAT_NUMBER=0
 47: is_number/2
 48: is_atom/2
 49: is_pid/2
-50: is_ref/2
+50: is_reference/2
 51: is_port/2
 52: is_nil/2
 53: is_binary/2
@@ -204,3 +204,11 @@ BEAM_FORMAT_NUMBER=0
 106: try_case/1
 107: try_case_end/1
 108: raise/2
+
+# New instructions in R10B.
+109: bs_init2/6
+110: bs_bits_to_bytes/3
+111: bs_add/5
+112: apply/1
+113: apply_last/2
+114: is_boolean/2

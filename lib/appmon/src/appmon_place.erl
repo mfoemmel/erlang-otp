@@ -65,12 +65,12 @@
 
 
 place(DG, Root) ->
-    LastX = case appmon_dg:get(data, DG, Root) of
-		false -> [0];
-		Other -> 
-		    placey(DG, Root, 1),
-		    placex(DG, Root, [])
-	    end.
+    case appmon_dg:get(data, DG, Root) of
+	false -> [0];
+	_Other -> 
+	    placey(DG, Root, 1),
+	    placex(DG, Root, [])
+    end.
 
 
 %%------------------------------------------------------------
@@ -116,7 +116,9 @@ placey(DG, V, Y) ->
 
 placex(DG, V, LastX) ->
     Ch = appmon_dg:get(out, DG, V),
-    ChLX = foldl(fun(C, Accu) -> placex(DG, C, Accu) end, tll(LastX), Ch),
+    ChLX = foldl(fun(C, Accu) -> placex(DG, C, Accu) end,
+		 tll(LastX),
+		 Ch),
     
     Width	= appmon_dg:get(w, DG, V),
     MyX		= calc_mid(DG, Width, Ch),
@@ -144,18 +146,19 @@ placex(DG, V, LastX) ->
 %%	one optimisation clause (unneccessary perhaps) for DeltaX==0
 %%
 
-move(DG, L, LastX, 0) -> LastX;
+move(_DG, _L, LastX, 0) -> LastX;
 move(DG, V, LastX, DeltaX) -> move2(DG, V, LastX, DeltaX).
 
 move2(DG, V, LastX, DeltaX) ->
     NewX = appmon_dg:get(x, DG, V)+DeltaX,
     appmon_dg:set(x, DG, V, NewX),
-    ChLX = foldl(fun(C, LX) -> move2(DG, C, LX, DeltaX) end, tll(LastX), 
+    ChLX = foldl(fun(C, LX) -> move2(DG, C, LX, DeltaX) end,
+		 tll(LastX), 
 		 appmon_dg:get(out, DG, V)),
     [max(NewX+appmon_dg:get(w, DG, V), hdd(LastX)) | ChLX].
 
 max(A, B) when A>B -> A;
-max(A, B) -> B.
+max(_, B) -> B.
 
 %%------------------------------------------------------------
 %%
@@ -167,7 +170,7 @@ max(A, B) -> B.
 %%	position is later compared to the position dictated by LastX
 %%	in calc_delta.
 
-calc_mid(DG, Width, []) -> 0;
+calc_mid(_DG, _Width, []) -> 0;
 calc_mid(DG, Width, ChList) ->
     LeftMostX = appmon_dg:get(x, DG, hd(ChList)),
     Z2 = lists:last(ChList),
@@ -184,12 +187,8 @@ calc_delta(Mid, Right) ->
 %% Special head and tail
 %% Handles empty list in a non-standard way
 tll([]) -> [];
-tll([H|T]) -> T.
+tll([_|T]) -> T.
 hdd([]) -> 0;
-hdd([H|T]) -> H.
+hdd([H|_]) -> H.
 
 spacex() -> 20.					% Should be macro??
-
-
-
-

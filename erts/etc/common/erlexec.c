@@ -112,8 +112,17 @@ static char *plusM_other_switches[] = {
 #define sleep(seconds) Sleep(seconds*1000)
 #endif
 
-#define ELIB_SUFFIX	".elib"
-#define SHARED_SUFFIX	".shared"
+#define SHARED_SUFFIX	  ".shared"
+#define HYBRID_SUFFIX	  ".hybrid"
+
+/* The length of the longest memory architecture suffix. */
+#define MA_SUFFIX_LENGTH  strlen(SHARED_SUFFIX)
+
+/*
+ * Define flags for different memory architectures.
+ */
+#define MA_SHARED    0x0001
+#define MA_HYBRID    0x0002
 
 void usage(const char *switchname);
 void start_epmd(char *epmd);
@@ -168,8 +177,8 @@ static int verbose = 0;		/* If non-zero, print some extra information. */
 static int start_detached = 0;	/* If non-zero, the emulator should be
 				 * started detached (in the background).
 				 */
-static int shared = 0;		/* If non-zero, start beam.shared or beam.shared.exe
-				 * instead of beam or beam.exe. */
+static int mem_arch = 0;	/* If non-zero, start beam.ARCH or beam.ARCH.exe
+				 * instead of beam or beam.exe, where ARCH is defined by flags. */
 
 #ifdef __WIN32__
 static char* key_val_name = ERLANG_VERSION; /* Used by the registry
@@ -195,11 +204,11 @@ static char* progname;		/* Name of this program. */
 static char* home;		/* Path of user's home directory. */
 
 /*
- * Add the elib and shared suffixes to the program name if needed,
+ * Add the arcitecture suffix to the program name if needed,
  * except on Windows, where we insert it just before ".EXE".
  */
 static char*
-add_extra_suffixes(char *prog, int elib, int shared)
+add_extra_suffixes(char *prog, int memarch)
 {
    char *res;
    char *p;
@@ -209,12 +218,7 @@ add_extra_suffixes(char *prog, int elib, int shared)
    int exe = 0;
 #endif
 
-#ifdef VXWORKS
-   elib = 0; /* elib_malloc is default on vxworks;
-		don't need an extra suffix for it */
-#endif
-
-   if (!elib && !shared) {
+   if (!memarch) {
        return prog;
    }
 
@@ -222,8 +226,7 @@ add_extra_suffixes(char *prog, int elib, int shared)
 
    /* Worst-case allocation */
    p = emalloc(len +
-	       strlen(ELIB_SUFFIX) +
-	       strlen(SHARED_SUFFIX) +
+	       MA_SUFFIX_LENGTH +
 	       + 1);
    res = p;
    p = write_str(p, prog);
@@ -241,11 +244,11 @@ add_extra_suffixes(char *prog, int elib, int shared)
    }
 #endif
 
-   if (elib) {
-       p = write_str(p, ELIB_SUFFIX);
-   }
-   if (shared) {
+   if (memarch == MA_SHARED) {
        p = write_str(p, SHARED_SUFFIX);
+   }
+   else if (memarch == MA_HYBRID) {
+       p = write_str(p, HYBRID_SUFFIX);
    }
 #ifdef __WIN32__
    if (exe) {
@@ -270,7 +273,6 @@ int main(int argc, char **argv)
     char* s;
     char *epmd_prog = NULL;
     char *malloc_lib;
-    int use_elib;
     int process_args = 1;
     int print_args_exit = 0;
 
@@ -307,11 +309,6 @@ int main(int argc, char **argv)
      */
 
     /* We need to do this before the ordinary processing. */
-#ifdef VXWORKS
-    use_elib = 1;
-#else
-    use_elib = 0;
-#endif
     malloc_lib = getenv("ERL_MALLOC_LIB");
     while (i < argc) {
 	if (argv[i][0] == '+') {
@@ -328,28 +325,21 @@ int main(int argc, char **argv)
 	}
 	else if (argv[i][0] == '-') {
 	    if (strcmp(argv[i], "-shared") == 0) {
-		shared = 1;
+		mem_arch = MA_SHARED;
+	    }
+	    else if (strcmp(argv[i], "-hybrid") == 0) {
+		mem_arch = MA_HYBRID;
 	    }
 	}
 	i++;
     }
 
     if (malloc_lib) {
-	if (0)
-	    ;
-#ifndef VXWORKS
-	else if (strcmp(malloc_lib, "libc") == 0)
-	    use_elib = 0;
-#endif
-#if defined(UNIX) || defined(VXWORKS)
-	else if (strcmp(malloc_lib, "elib") == 0)
-	    use_elib = 1;
-#endif
-	else
+	if (strcmp(malloc_lib, "libc") != 0)
 	    usage("+MYm");
     }
 #if !defined(__WIN32__)
-    emu = add_extra_suffixes(emu, use_elib, shared);
+    emu = add_extra_suffixes(emu, mem_arch);
     sprintf(tmpStr, "%s" DIRSEP "%s" BINARY_EXT, bindir, emu);
     emu = strsave(tmpStr);
 #endif
@@ -568,6 +558,7 @@ int main(int argc, char **argv)
 		  case 'h':
 		  case '#':
 		  case 'P':
+		  case 'R':
 		  case 'A':
 		  case 'W':
 		  case 'K':
@@ -763,7 +754,8 @@ usage(const char *switchname)
 	  "[-make] [-man [manopts] MANPAGE] [-x] [-emu_args] "
 	  "[+i BOOT_MODULE] [+b BOOT_FUN] [+s STACK_SIZE] "
 	  "[+h HEAP_SIZE] [+# ITEMS] [+P MAX_PROCS] [+A THREADS] "
-	  "[+M<SUBSWITCH> <ARGUMENT>] [+K BOOLEAN] [args ...]\n");
+	  "[+R COMPAT_REL] [+K BOOLEAN]"
+	  "[+M<SUBSWITCH> <ARGUMENT>] [args ...]\n");
   exit(1);
 }
 

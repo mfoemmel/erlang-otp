@@ -50,7 +50,7 @@
 
 max(X, Y) when X > Y ->
     X;
-max(X, Y) ->
+max(_X, Y) ->
     Y.
 
 
@@ -71,7 +71,7 @@ max(X, Y) ->
 
 min(X, Y) when X < Y ->
     X;
-min(X, Y) ->
+min(_X, Y) ->
     Y.
 
 

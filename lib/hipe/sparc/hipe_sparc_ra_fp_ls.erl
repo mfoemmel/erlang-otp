@@ -15,7 +15,7 @@ alloc1(SparcCfg, SpillIndex, SpillLimit, Options) ->
   {Map, NewSpillIndex} = 
     hipe_ls_regalloc:regalloc(SparcCfg,
 			      hipe_sparc_specific_fp:allocatable(),
-			      [hipe_sparc_cfg:start(SparcCfg)],
+			      [hipe_sparc_cfg:start_label(SparcCfg)],
 			      SpillIndex,
 			      SpillLimit,
 			      Options,

@@ -26,24 +26,16 @@
 #define HIPE_MODE_SWITCH_CMD_CALL_CLOSURE	13 /* BEAM -> mode_switch */
 #define HIPE_MODE_SWITCH_RES_CALL_CLOSURE	14 /* mode_switch <- native */
 
-#ifndef ASM
+#define HIPE_MODE_SWITCH_RES_APPLY		15 /* mode_switch <- native */
 
-#if defined(__sparc__)
-#define HIPE_NSTACK_GROWS_UP
-#define hipe_nstack_start(p)	((p)->hipe.nstack)
-#define hipe_nstack_used(p)	((p)->hipe.nsp - (p)->hipe.nstack)
-#elif defined(__i386__)
-#define HIPE_NSTACK_GROWS_DOWN
-#define hipe_nstack_start(p)	((p)->hipe.nsp)
-#define hipe_nstack_used(p)	((p)->hipe.nstend - (p)->hipe.nsp)
-#endif
+#ifndef ASM
 
 int hipe_modeswitch_debug;
 
 void hipe_mode_switch_init(void);
 void hipe_set_call_trap(Uint *bfun, void *nfun, int is_closure);
 Process *hipe_mode_switch(Process*, unsigned, Eterm*);
-Eterm *hipe_inc_nstack(Process *p);
+void hipe_inc_nstack(Process *p);
 void hipe_set_closure_stub(ErlFunEntry *fe, unsigned num_free);
 
 extern Uint hipe_beam_pc_return[];

@@ -185,7 +185,7 @@ do_call(Process, Label, Request, Timeout) ->
 	       _ when pid(Process) ->
 		   node(Process);
 	       _ ->
-		   self()
+		   node()
 	   end,
     case catch erlang:monitor(process, Process) of
 	Mref when reference(Mref) ->

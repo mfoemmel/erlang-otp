@@ -348,6 +348,8 @@ const char *ei_thisalivename(const ei_cnode* ec);
 
 erlang_pid *ei_self(ei_cnode* ec);
 
+void ei_set_compat_rel(unsigned rel);
+
 /* 
  * We have erl_gethost*() so we include ei versions as well.
  */

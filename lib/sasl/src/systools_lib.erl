@@ -55,16 +55,16 @@ read_term(File) ->
 read_term_from_stream(Stream, File) ->
     R = io:request(Stream, {get_until,'',erl_scan,tokens,[1]}),
     case R of
-	{ok,Toks,EndLine} ->
+	{ok,Toks,_EndLine} ->
 	    case erl_parse:parse_term(Toks) of
 		{ok, Term} ->
 		    {ok, Term};
 		{error, Error} ->
 		    {error, {parse, File, Error}}
 	    end;
-	{error,E,EndLine} ->
+	{error,_E,_EndLine} ->
 	    {error,{read,File}};
-	{eof,EndLine} ->
+	{eof,_EndLine} ->
 	    {error, {read,File}}
     end.
 
@@ -145,7 +145,7 @@ add_dir(Name, [], true) -> %% root
 	true -> [Name];
 	_    -> []
     end;
-add_dir(Name, Dirs, Root) ->
+add_dir(Name, Dirs, _Root) ->
     lists:zf(fun(D0) ->
 		     D = filename:join(D0, Name),
 		     case dir_p(D) of
@@ -154,7 +154,7 @@ add_dir(Name, Dirs, Root) ->
 		     end
 	     end, Dirs).
 
-add_dirs(RegName, Dirs, true) ->
+add_dirs(RegName, _Dirs, true) ->
     case regexp_match(RegName, ".", true) of
 	{true, AddDirs} -> AddDirs;
 	_               -> []

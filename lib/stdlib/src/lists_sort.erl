@@ -854,6 +854,9 @@ ukeysplit_2(_I, Y, _EY, [], R) ->
     [Y | R].
 
 ukeymergel(I, [T1, [H2 | T2], [H3 | T3] | L], Acc) ->
+    %% The fourth argument, [H2 | H3] (=HdM), may confuse type
+    %% checkers. Its purpose is to ensure that the tests H2 == HdM
+    %% and H3 == HdM in ukeymerge3_1 will always fail as long as M == [].
     M = ukeymerge3_1(I, T1, Acc, [H2 | H3], element(I, H2), H2, T2, [],
                      element(I, H3), H3, T3),
     ukeymergel(I, L, [M | Acc]);

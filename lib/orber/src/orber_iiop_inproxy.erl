@@ -84,12 +84,15 @@ stop() ->
 %%-----------------------------------------------------------------
 init({connect, Type, Socket}) ->
     process_flag(trap_exit, true),
+    Flags = orber:get_flags(),
     SSLPort = orber:iiop_ssl_port(),
     Timeout = orber:iiop_in_connection_timeout(),
     PartialSec = orber:partial_security(),
-    Flags = orber:get_flags(),
     MaxFrags = orber:iiop_max_fragments(),
     MaxRequests = orber:iiop_max_in_requests(),
+    {Address, Port} = PeerData = orber_socket:peerdata(Type, Socket),
+    LocalData = orber_socket:sockdata(Type, Socket),
+    orber_iiop_net:add_connection(Socket, Type, PeerData, LocalData),
     case orber:get_interceptors() of
 	false ->
 	    {ok, #state{stype = Type, 
@@ -103,7 +106,6 @@ init({connect, Type, Socket}) ->
 			max_fragments = MaxFrags,
 			max_requests = MaxRequests}, Timeout};
 	{native, PIs} ->
-	    {Address, Port} = orber_socket:peername(Type, Socket),
 	    {ok, #state{stype = Type, 
 			socket = Socket, 
 			db =  ets:new(orber_incoming_requests, [set]), 
@@ -130,6 +132,8 @@ init({connect, Type, Socket}) ->
 			max_fragments = MaxFrags,
 			max_requests = MaxRequests}, Timeout}
     end.
+
+
 
 %%-----------------------------------------------------------------
 %% Func: terminate/2
@@ -176,11 +180,11 @@ handle_info({ssl, Socket, Bytes}, State) ->
 %% Errors, closed connection
 handle_info({tcp_closed, _Socket}, State) ->
     {stop, normal, State};
-handle_info({tcp_error, _Socket}, State) ->
+handle_info({tcp_error, _Socket, _Reason}, State) ->
     {stop, normal, State};
 handle_info({ssl_closed, _Socket}, State) ->
     {stop, normal, State};
-handle_info({ssl_error, _Socket}, State) ->
+handle_info({ssl_error, _Socket, _Reason}, State) ->
     {stop, normal, State};
 %% Servant termination.
 handle_info({'EXIT', Pid, normal}, State) ->

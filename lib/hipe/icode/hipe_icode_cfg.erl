@@ -3,14 +3,22 @@
 
 -module(hipe_icode_cfg).
 
--export([function/1,
-	 params/1,
-	 params_update/2,
-	 pp/2,
-	 linearize/1]).
+-export([bb/2, bb_add/3,
+	 cfg_to_linear/1,
+	 function/1,
+         info/1, linear_to_cfg/1,
+         labels/1, start_label/1,
+	 params/1, params_update/2,
+	 pp/1, pp/2,	 
+         pred/2, pred_map/1,
+         redirect/4,
+	 remove_trivial_bbs/1, remove_unreachable_code/1,
+         succ/2, succ_map/1,
+	 visit/2, visited/2, none_visited/0
+	]).
+-export([postorder/1, reverse_postorder/1]).
 
-%% To avoid warnings...
--export([find_new_label/2,remove_blocks/2]).
+-define(ICODE_CFG,true).	% needed by cfg.inc below
 
 %%-define(DO_ASSERT, true).
 -include("../main/hipe.hrl").
@@ -18,67 +26,48 @@
 -include("../rtl/hipe_literals.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% Interface to icode
-%
+%%
+%% Interface to Icode
+%%
 
-init(Icode) ->
+linear_to_cfg(LinearIcode) ->
   %% hipe_icode_pp:pp(Icode),
-  Code = hipe_icode:icode_code(Icode),
+  Code = hipe_icode:icode_code(LinearIcode),
   StartLabel = hipe_icode:label_name(hd(Code)),
-  {MinV,MaxV} = hipe_icode:icode_var_range(Icode),
-  %% ?ASSERT(hipe_icode:highest_var(hipe_icode:icode_code(Icode1)) =< MaxV),
-  ?opt_start_timer("highest var"),
-  ?ASSERT(MaxV >= hipe_icode:highest_var(Code)),
-  ?opt_stop_timer("highest var"),
-
-  CFG0 = 
-    mk_empty_cfg(
-      hipe_icode:icode_fun(Icode),
-      StartLabel,
-      {MinV,MaxV},
-      hipe_icode:icode_label_range(Icode),
-      hipe_icode:icode_data(Icode),
-      hipe_icode:icode_is_closure(Icode),
-      hipe_icode:icode_is_leaf(Icode),
-      hipe_icode:icode_params(Icode),
-      []),
-
-  CFG = hipe_icode_cfg:info_update(CFG0, hipe_icode:icode_info(Icode)),
+  CFG0 = mk_empty_cfg(hipe_icode:icode_fun(LinearIcode),
+		      StartLabel,
+		      hipe_icode:icode_data(LinearIcode),
+		      hipe_icode:icode_is_closure(LinearIcode),
+		      hipe_icode:icode_is_leaf(LinearIcode),
+		      hipe_icode:icode_params(LinearIcode),
+		      []),
+  CFG = hipe_icode_cfg:info_update(CFG0, hipe_icode:icode_info(LinearIcode)),
   ?opt_start_timer("Get BBs icode"),
   FullCFG = take_bbs(Code, CFG),
   ?opt_stop_timer("Get BBs icode"),
   FullCFG.
   
 
-
-
-remove_blocks(CFG, []) ->
-   CFG;
-remove_blocks(CFG, [Lbl|Lbls]) ->
-   remove_blocks(bb_remove(CFG, Lbl), Lbls).
+%% remove_blocks(CFG, []) ->
+%%   CFG;
+%% remove_blocks(CFG, [Lbl|Lbls]) ->
+%%   remove_blocks(bb_remove(CFG, Lbl), Lbls).
 
 
 is_label(Instr) ->
-   hipe_icode:is_label(Instr).
-
+  hipe_icode:is_label(Instr).
 
 label_name(Instr) ->
-   hipe_icode:label_name(Instr).
+  hipe_icode:label_name(Instr).
 
-
-label_annot(Lbl) ->
-   hipe_icode:info(Lbl).
-
-
-mk_label(Name, Annot) ->
-   hipe_icode:info_update(hipe_icode:mk_label(Name), Annot).
+mk_label(Name) ->
+  hipe_icode:mk_label(Name).
 
 mk_goto(Name) ->
-   hipe_icode:mk_goto(Name).
+  hipe_icode:mk_goto(Name).
 
 branch_successors(Instr) ->
-   hipe_icode:successors(Instr).
+  hipe_icode:successors(Instr).
 
 %% True if instr has no effect.
 is_comment(Instr) ->
@@ -86,37 +75,47 @@ is_comment(Instr) ->
 
 %% True if instr is just a jump (no sideeffects).
 is_goto(Instr) ->
-   hipe_icode:is_goto(Instr).
+  hipe_icode:is_goto(Instr).
 
 is_branch(Instr) ->
-   hipe_icode:is_branch(Instr).
+  hipe_icode:is_branch(Instr).
 
+is_phi(I)->
+  hipe_icode:is_phi(I).
+
+phi_remove_pred(I, Pred)->
+  hipe_icode:phi_remove_pred(I, Pred).
 
 redirect_jmp(Jmp, ToOld, ToNew) ->
-  I =  hipe_icode:redirect_jmp(Jmp, ToOld, ToNew),
-  I.
+  hipe_icode:redirect_jmp(Jmp, ToOld, ToNew).
 
 redirect_ops(_,CFG,_) -> %% We do not refer to labels in Icode ops.
   CFG.
 
 pp(CFG) ->
-   hipe_icode_pp:pp(linearize(CFG)).
+  hipe_icode_pp:pp(cfg_to_linear(CFG)).
 
 pp(Dev, CFG) ->
-   hipe_icode_pp:pp(Dev, linearize(CFG)).
+  hipe_icode_pp:pp(Dev, cfg_to_linear(CFG)).
 
-linearize(CFG) ->
+cfg_to_linear(CFG) ->
   Code = linearize_cfg(CFG),
-  Icode = 
-    hipe_icode:mk_icode(
-      function(CFG), 
-      params(CFG),
-      is_closure(CFG),
-      is_leaf(CFG),
-      Code,
-      data(CFG),     
-      var_range(CFG), 
-      label_range(CFG)),
+  Icode = hipe_icode:mk_icode(function(CFG), 
+			      params(CFG),
+			      is_closure(CFG),
+			      is_leaf(CFG),
+			      Code,
+			      data(CFG),
+			      hipe_gensym:var_range(icode), 
+			      hipe_gensym:label_range(icode)),
   hipe_icode:icode_info_update(Icode, info(CFG)).
 
-
+%% init_gensym(CFG) ->
+%%   HighestVar = find_highest_var(CFG),
+%%   HighestLabel = find_highest_label(CFG),
+%%   hipe_gensym:init(),
+%%   hipe_gensym:set_var(icode, HighestVar),
+%%   hipe_gensym:set_label(icode, HighestLabel).
+%% 
+%% highest_var(Code) ->
+%%   hipe_icode:highest_var(Code).

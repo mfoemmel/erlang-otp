@@ -72,10 +72,7 @@
 /* Define to enable HiPE. */
 #undef HIPE
 
-/* Define to enable shared heap model. */
-#undef SHARED_HEAP
-
-/* Define to enable hrvtime() on Linux/x86 systems with perfctr extension. */
+/* Define to enable hrvtime() on Linux systems with perfctr extension. */
 #undef USE_PERFCTR
 
 /* Define to enable use of elib_malloc (a malloc() replacement). */
@@ -92,6 +89,9 @@
  */
 /* Define if netdb.h needs struct sockaddr_in ans in.h CAN be included before*/
 #undef NETDB_H_NEEDS_IN_H
+
+/* Define if we have socklen_t */
+#undef HAVE_SOCKLEN_T
 
 /* */
 #undef NO_PRAGMA_WEAK
@@ -153,30 +153,11 @@
 /* Define if you have a decl of fread that conflicts with int fread() */
 #undef HAVE_CONFLICTING_FREAD_DECLARATION
 
-/* Define the pthread.h header file is in pthread/mit directory. */
-#undef HAVE_MIT_PTHREAD_H
-
 /* Define if you want to enable child waiter thread */
 #undef ENABLE_CHILD_WAITER_THREAD
 
-/* Define if you have pthread_atfork() (and use pthreads) */
-#undef HAVE_PTHREAD_ATFORK
-
-/* Define if you have pthread_mutexattr_settype() (and use pthreads) */
-#undef HAVE_PTHREAD_MUTEXATTR_SETTYPE
-
-/* Define if you have pthread_mutexattr_setkind_np() (and use pthreads) */
-#undef HAVE_PTHREAD_MUTEXATTR_SETKIND_NP
-
 /* Define if malloc should use a recursive mutex */
 #undef  USE_RECURSIVE_MALLOC_MUTEX
-
-/* Define if mutexes should be reinitialized (instead of unlocked)
-   in child at fork. */
-#undef INIT_MUTEX_IN_CHILD_AT_FORK
-
-/* Define if SIGUSR1 and SIGUSR2 cannot be used. */
-#undef UNUSABLE_SIGUSRX
 
 /* Define if you have matherr() function and struct exception type. */
 #undef USE_MATHERR
@@ -194,6 +175,9 @@
  
 /* Define if you have the <sys/event.h> header file. */
 #undef HAVE_SYS_EVENT_H
+
+/* The number of bytes in a char.  */
+#undef SIZEOF_CHAR
 
 /* The number of bytes in a int.  */
 #undef SIZEOF_INT
@@ -315,9 +299,6 @@
 /* Define if you have the <poll.h> header file.  */
 #undef HAVE_POLL_H
 
-/* Define if you have the <pthread.h> header file.  */
-#undef HAVE_PTHREAD_H
-
 /* Define if you have the <sys/dir.h> header file.  */
 #undef HAVE_SYS_DIR_H
 
@@ -345,9 +326,6 @@
 /* Define if you have the <syslog.h> header file.  */
 #undef HAVE_SYSLOG_H
 
-/* Define if you have the <thread.h> header file.  */
-#undef HAVE_THREAD_H
-
 /* Define if you have the <unistd.h> header file.  */
 #undef HAVE_UNISTD_H
 
@@ -366,14 +344,51 @@
 /* Define if you have the ncurses library (-lncurses).  */
 #undef HAVE_LIBNCURSES
 
-/* Define if you have the resolv library (-lresolv).  */
-#undef HAVE_LIBRESOLV
-
 /* Define if you have the termcap library (-ltermcap).  */
 #undef HAVE_LIBTERMCAP
 
 /* Define if you have the termlib library (-ltermlib).  */
 #undef HAVE_LIBTERMLIB
+
+/* Define if you want to turn on some gnu features. */
+#undef _GNU_SOURCE
+
+/* Define if you have win32 threads */
+#undef ETHR_WIN32_THREADS
+
+/* Define if you have pthreads */
+#undef ETHR_PTHREADS
+
+/* Define if mutexes should be reinitialized (instead of unlocked) in child at fork. */
+#undef ETHR_INIT_MUTEX_IN_CHILD_AT_FORK
+
+/* Define if you have the <pthread.h> header file. */
+#undef ETHR_HAVE_PTHREAD_H
+
+/* Define if the pthread.h header file is in pthread/mit directory. */
+#undef ETHR_HAVE_MIT_PTHREAD_H
+
+/* Define if you have the <sys/time.h> header file. */
+#undef ETHR_HAVE_SYS_TIME_H
+
+/* Define if you can safely include both <sys/time.h> and <time.h>. */
+#undef ETHR_TIME_WITH_SYS_TIME
+
+/* Define if you have the pthread_atfork function. */
+#undef ETHR_HAVE_PTHREAD_ATFORK
+
+/* Define if you have the pthread_mutexattr_settype function. */
+#undef ETHR_HAVE_PTHREAD_MUTEXATTR_SETTYPE
+
+/* Define if you have the pthread_mutexattr_setkind_np function. */
+#undef ETHR_HAVE_PTHREAD_MUTEXATTR_SETKIND_NP
+
+/* Define if you have all ethread defines */
+#undef ETHR_HAVE_ETHREAD_DEFINES
+
+/* Define if you want to disable vfork. */
+#undef DISABLE_VFORK
+
 
 /* Redefine in6_addr. XXX this should be moved to the files where it's used? */
 #ifdef HAVE_IN_ADDR6_STRUCT

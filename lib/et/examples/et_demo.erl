@@ -125,9 +125,9 @@ filters() ->
 %module_as_actor
 module_as_actor(E) when record(E, event) ->
     case lists:keysearch(mfa, 1, E#event.contents) of
-        {value, {mfa, {M, F, A}}} ->
+        {value, {mfa, {M, F, _A}}} ->
             case lists:keysearch(pam_result, 1, E#event.contents) of
-                {value, {pam_result, {M2, F2, A2}}} ->
+                {value, {pam_result, {M2, _F2, _A2}}} ->
                     {true, E#event{label = F, from = M2, to = M}};
                 _ ->
                     {true, E#event{label = F, from = M, to = M}}
@@ -150,10 +150,10 @@ plain_process_info(E) when record(E, event) ->
         link                          -> true;
         unlink                        -> true;
         getting_linked                -> true;
-        {seq_send, Label}             -> true;
-        {seq_receive, Label}          -> true;
-        {seq_print, Label}            -> true;
-        {drop, N}                     -> true;
+        {seq_send, _Label}            -> true;
+        {seq_receive, _Label}         -> true;
+        {seq_print, _Label}           -> true;
+        {drop, _N}                    -> true;
         _                             -> false
     end.
 %plain_process_info
@@ -269,9 +269,9 @@ mnesia_msg_to_label(Msg, Label) ->
                 {mnesia_tm, _Node, {'EXIT', _Reason}}   -> 'EXIT';
                 {mnesia_tm, _Node, {dirty_res, _Reply}} -> dirty_res;
                 {new_store, _Etab}                 -> new_store;
-                {new_tid, Tid, _Etab}              -> new_tid;
+                {new_tid, _Tid, _Etab}             -> new_tid;
                 {ok, _Name, _IgnoreNew, _Node}     -> ok;
-                {restarted, Tid}                   -> restarted;
+                {restarted, _Tid}                  -> restarted;
                 {vote_yes, _Tid, _Self}            -> vote_yes;
                 {vote_yes, _Tid}                   -> vote_yes;
                 {acc_pre_commit, _Tid, _Self, _Expect} -> acc_pre_commit;
@@ -308,14 +308,10 @@ mnesia_msg_to_label(Msg, Label) ->
         {_From, {unblock_me, _Tab}}                -> unblock_me;
         {_From, {unblock_tab, _Tab}}               -> unblock_tab;
         {_From, {write, _Tid, _Oid}}               -> try_write_lock;
-        {_Pid, {async_dirty, _Tid, _Head, _Tab}}   -> async_dirty;
-        {_From, {restart, _Tid, _Store}}           -> restart;
-        {_From, {sync_dirty, _Tid, _Head, _Tab}}   -> sync_dirty;
         {_Tid, committed}                          -> committed;
         {_Tid, do_commit}                          -> do_commit;
         {_Tid, pre_commit}                         -> pre_commit;
         {_Tid, simple_commit}                      -> simple_commit;
-        {_Tid, {do_abort, _Reason}}                -> do_abort;
         {_Tid, {do_abort, _Reason}}                -> do_abort;
         {activity_ended, _, _Pid}                  -> activity_ended;
         {ask_commit, _Protocol, _Tid, _Bin, _DiscNs, _RamNs} -> ask_commit;

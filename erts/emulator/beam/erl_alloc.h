@@ -203,6 +203,9 @@ void *erts_realloc_fnf(ErtsAlcType_t type, void *ptr, Uint size)
 
 #endif
 
+#ifdef DEBUG
+#define ERTS_ALC_DBG_BLK_SZ(PTR) (*(((Uint *) (PTR)) - 2))
+#endif /* #ifdef DEBUG */
 
 #undef ERTS_ALC_INLINE
 #undef ERTS_ALC_ATTRIBUTES

@@ -10,8 +10,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: richardc $
-%%              $Date: 2002/10/01 12:30:33 $
-%%              $Revision: 1.3 $
+%%              $Date: 2004/01/15 16:48:24 $
+%%              $Revision: 1.9 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -110,9 +110,6 @@ loop(State) ->
 
       {'EXIT', _Pid, _Reason} ->
 	exit(normal);
-
-      {'EXIT', _OtherPid, _Reason} ->
-	hipe_tool:loop(State);
 
       _Other ->
 	io:format("HiPE window received message ~p ~n", [_Other]),
@@ -430,7 +427,8 @@ get_version(Comp) ->
   end.
 get_cwd(Options) ->
   case lists:keysearch(cwd,1,Options) of
-    {value,{_,V}} -> atom_to_list(V);
+    {value,{_,V}} when atom(V) -> atom_to_list(V);
+    {value,{_,V}} -> V; 
     _ -> ""
   end.
 get_options(Comp) ->
@@ -476,10 +474,10 @@ get_edoc(Mod) ->
       "" ->  atom_to_list(Mod) ++ ".erl";
       _ -> Dir ++"/" ++ atom_to_list(Mod) ++ ".erl"
     end,
-  %%io:format("Get ~s\n",[File]),
+  % io:format("Get ~s\n",[File]),
   Text = case catch edoc(File,[{xml_export,
 				xmerl_text},no_output]) of
-	   {'EXIT',_} -> "";
+	   {'EXIT',_} -> "error";
 	   T -> T
 	 end,
   
@@ -489,8 +487,10 @@ get_edoc(Mod) ->
   gs:config(edoc,{enable, false}).
 
 
-edoc(Name, Opts) ->
-  Forms = edoc:read_module(Name, Opts),
-  Comments = edoc:read_comments(Name, Opts),
-  Text = edoc:forms(Forms, Comments, Name, Opts),
-  Text.
+edoc(Name, Opts) -> 
+  %% Hide the calls to EDoc from xref, for now.
+  M = edoc,
+  Doc = apply(M, get_doc, [Name, Opts]),
+%  Comments = edoc:read_comments(Name, Opts),
+%  Text = edoc:forms(Forms, Comments, Name, Opts),
+  apply(M, layout, [Doc, Opts]).

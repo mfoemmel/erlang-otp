@@ -1,40 +1,6 @@
 {"%VSN%",
  [
-  {"4.1.11", 
-   [
-    {update, mnesia_controller, {advanced,upgrade_from_3_11_1},
-     soft_purge, soft_purge, []}
-   ]
-  },
-  {"4.1.10", 
-   [
-    {update, mnesia_schema, soft, soft_purge, soft_purge, []},
-    {update, mnesia_locker, soft, soft_purge, soft_purge, []},
-    {update, mnesia, soft, soft_purge, soft_purge, []},
-    {update, mnesia_lib, soft, soft_purge, soft_purge, []},
-    {update, mnesia_tm, soft, soft_purge, soft_purge, []},
-    {update, mnesia_controller, {advanced,upgrade_from_3_11_1}, 
-     soft_purge, soft_purge, []}
-   ]
-  } 
  ],
  [
-  {"4.1.11", 
-   [
-    {update, mnesia_controller, {advanced,downgrade_to_3_11_1},
-     soft_purge, soft_purge, []}
-   ]
-  },
-  {"4.1.10", 
-   [
-    {update, mnesia_schema, soft, soft_purge, soft_purge, []},
-    {update, mnesia_locker, soft, soft_purge, soft_purge, []},
-    {update, mnesia, soft, soft_purge, soft_purge, []},
-    {update, mnesia_lib, soft, soft_purge, soft_purge, []},
-    {update, mnesia_tm, soft, soft_purge, soft_purge, []},
-    {update, mnesia_controller,{advanced,downgrade_to_3_11_1}, 
-     soft_purge, soft_purge, []}
-   ]
-  }
  ] 
 }.

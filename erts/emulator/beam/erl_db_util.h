@@ -83,7 +83,7 @@ typedef struct db_table_common {
     int slot;                 /* slot in db_tables */
     int keypos;               /* defaults to 1 */
     int nitems;               /* Total number of items */
-    Uint memory;              /* Total memory size */
+    Uint memory_size;         /* Total memory size. NOTE: in bytes! */
     int kept_items;           /* Number of kept elements due to fixation */
     Uint megasec,sec,microsec; /* Last fixation time */
     DbFixation *fixations;   /* List of processes who have fixed 
@@ -135,17 +135,23 @@ Eterm db_set_trace_control_word_1(Process *p, Eterm val);
 
 void db_initialize_util(void);
 Eterm db_getkey(int keypos, Eterm obj);
-int db_realloc_counter(void** bp, DbTerm *b, Uint offset, Uint sz, 
+int db_realloc_counter(DbTableCommon *tb,
+		       void** bp, DbTerm *b, Uint offset, Uint sz, 
 		       Eterm new_counter, int counterpos);
 void db_free_term_data(DbTerm* p);
-void* db_get_term(DbTerm* old, Uint offset, Eterm obj);
+void* db_get_term(DbTableCommon *tb, DbTerm* old, Uint offset, Eterm obj);
 int db_has_variable(Eterm obj);
 int db_is_variable(Eterm obj);
-int db_do_update_counter(Process *p, 
+int db_do_update_counter(Process *p,
+			 DbTableCommon *tb,
 			 void *bp /* {Tree|Hash|XXX}DbTerm **bp */, 
 			 Eterm *tpl, 
 			 int counterpos,
-			 int (*realloc_fun)(void *, Uint, Eterm, int),
+			 int (*realloc_fun)(DbTableCommon *,
+					    void *,
+					    Uint,
+					    Eterm,
+					    int),
 			 Eterm incr,
 			 int warp,
 			 Eterm *ret);
@@ -238,6 +244,7 @@ void db_free_dmc_err_info(DMCErrInfo *ei);
 Eterm db_make_mp_binary(Process *p, Binary *mp, Eterm **hpp);
 /* Convert a match program to a erlang "magic" binary to be returned to userspace,
    increments the reference counter. */
+int erts_db_is_compiled_ms(Eterm term);
 
 /*
 ** Convenience when compiling into Binary structures

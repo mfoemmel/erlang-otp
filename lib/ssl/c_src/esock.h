@@ -46,6 +46,7 @@
 #define ERRNO_ADDRNOTAVAIL		WSAEADDRNOTAVAIL
 #define ERRNO_NOTSOCK			WSAENOTSOCK
 #define ERRNO_OPNOTSUPP			WSAEOPNOTSUPP
+#define ERRNO_MFILE			WSAEMFILE
 #define SET_BLOCKING(fd)	    do { \
     					unsigned long zeroval = 0; \
     					ioctlsocket((fd), FIONBIO, &zeroval); \
@@ -72,6 +73,7 @@
 #define ERRNO_ADDRNOTAVAIL		EADDRNOTAVAIL
 #define ERRNO_NOTSOCK			ENOTSOCK
 #define ERRNO_OPNOTSUPP			EOPNOTSUPP
+#define ERRNO_MFILE			EMFILE
 #define SET_BLOCKING(fd)        	fcntl((fd), F_SETFL, \
                                       	fcntl((fd), F_GETFL, 0) & ~O_NONBLOCK)
 #define SET_NONBLOCKING(fd)     	fcntl((fd), F_SETFL, \

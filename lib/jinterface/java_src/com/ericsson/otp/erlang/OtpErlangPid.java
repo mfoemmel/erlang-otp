@@ -76,7 +76,7 @@ public class OtpErlangPid extends OtpErlangObject implements Serializable, Clone
    * @param id an arbitrary number. Only the low order 15 bits will
    * be used.
    *
-   * @param serial another arbitrary number. Only the low order 3 bits
+   * @param serial another arbitrary number. Only the low order 13 bits
    * will be used.
    *
    * @param creation yet another arbitrary number. Only the low order
@@ -85,7 +85,7 @@ public class OtpErlangPid extends OtpErlangObject implements Serializable, Clone
   public OtpErlangPid(String node, int id, int serial, int creation) {
     this.node = node;
     this.id = id & 0x7fff; // 15 bits
-    this.serial = serial & 0x07 ;  // 3 bits
+    this.serial = serial & 0x1fff ;  // 13 bits
     this.creation = creation & 0x03 ; // 2 bits
   }
   

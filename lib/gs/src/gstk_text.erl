@@ -77,7 +77,7 @@ create(DB, Gstkid, Opts) ->
 	    {bad_result, Error};
 	{Coords, NewOpts} ->
 	    Ngstkid=gstk_canvas:upd_gstkid(DB, Gstkid, Opts),
-	    #gstkid{id=Id,widget=CanvasTkW}=Ngstkid,
+	    #gstkid{widget=CanvasTkW}=Ngstkid,
 	    MCmd = [CanvasTkW, " create te ", Coords],
 	    gstk_canvas:mk_cmd_and_call(NewOpts,Ngstkid,CanvasTkW, MCmd, DB)
     end.
@@ -127,7 +127,7 @@ delete(DB, Gstkid) ->
 %%
 %% Return 	: [true | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-destroy(DB, Canvas, Item) ->
+destroy(_DB, Canvas, Item) ->
     gstk:exec([Canvas, " delete ", gstk:to_ascii(Item)]).
 
 
@@ -146,7 +146,7 @@ event(DB, Gstkid, Etype, Edata, Args) ->
 %%
 %% Return 	: A tuple {OptionType, OptionCmd}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-option(Option, Gstkid, Canvas, DB, AItem) ->
+option(Option, Gstkid, _Canvas, DB, _AItem) ->
     case Option of
 	{anchor,         How} -> {s, [" -anchor ", gstk:to_ascii(How)]};
 	{fg,          Color} -> {s, [" -fi ", gstk:to_color(Color)]};

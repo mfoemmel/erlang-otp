@@ -288,6 +288,7 @@ typedef unsigned char Erl_Heap;
 /* -------------------------------------------------------------------- */
 
 void   erl_init(void *x, long y);
+void   erl_set_compat_rel(unsigned);
 int    erl_connect_init(int, char*,short);
 int    erl_connect_xinit(char*,char*,char*,struct in_addr*,char*,short);
 int    erl_connect(char*); 

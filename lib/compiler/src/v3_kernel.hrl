@@ -58,7 +58,6 @@
 -record(k_enter, {anno=[],op,args}).
 -record(k_receive, {anno=[],var,body,timeout,action,ret=[]}).
 -record(k_receive_accept, {anno=[]}).
--record(k_receive_reject, {anno=[]}).
 -record(k_receive_next, {anno=[]}).
 -record(k_try, {anno=[],arg,vars,body,evars,handler,ret=[]}).
 -record(k_catch, {anno=[],body,ret=[]}).
@@ -70,10 +69,6 @@
 -record(k_val_clause, {anno=[],val,body}).
 -record(k_guard, {anno=[],clauses}).
 -record(k_guard_clause, {anno=[],guard,body}).
--record(k_guard_and, {anno=[],args}).
--record(k_guard_or, {anno=[],args}).
--record(k_guard_not, {anno=[],arg}).
--record(k_protected, {anno=[],body,ret=[]}).
 
 -record(k_break, {anno=[],args=[]}).
 -record(k_return, {anno=[],args=[]}).

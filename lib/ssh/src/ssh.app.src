@@ -1,0 +1,20 @@
+{application, ssh,
+   [{description, "SSH-2 for Erlang/OTP"},
+    {vsn, "0.2"},
+    {modules, [
+	       ssh,
+	       ssh_connection,
+               ssh_crypto,
+	       ssh_app,
+	       ssh_crypto_sup,
+	       ssh_crypto_server,
+               ssh_ftp,
+               ssh_transport,
+               ssh_userauth
+	      ]},
+    {registered, [ssh_crypto_sup, ssh_crypto_server]},
+    {applications, [kernel, stdlib, crypto]},
+    {env, []},
+    {mod, {ssh_app, []}}]}.
+
+

@@ -569,7 +569,7 @@ public class OtpOutputStream {
    * @param id an arbitrary number. Only the low order 15 bits will
    * be used.
    *
-   * @param serial another arbitrary number. Only the low order 3 bits
+   * @param serial another arbitrary number. Only the low order 13 bits
    * will be used.
    *
    * @param creation yet another arbitrary number. Only the low order
@@ -580,7 +580,7 @@ public class OtpOutputStream {
     this.write1(OtpExternal.pidTag);
     this.write_atom(node);
     this.write4BE(id & 0x7fff);  // 15 bits
-    this.write4BE(serial & 0x7); // 3 bits
+    this.write4BE(serial & 0x1fff); // 13 bits
     this.write1(creation & 0x3); // 2 bits
   }
 
@@ -589,7 +589,7 @@ public class OtpOutputStream {
    *
    * @param node the nodename.
    *
-   * @param id an arbitrary number. Only the low order 18 bits will
+   * @param id an arbitrary number. Only the low order 28 bits will
    * be used.
    *
    * @param creation another arbitrary number. Only the low order 2
@@ -599,7 +599,7 @@ public class OtpOutputStream {
   public void write_port(String node, int id, int creation) {
     this.write1(OtpExternal.portTag);
     this.write_atom(node);
-    this.write4BE(id & 0x3ffff); // 18 bits
+    this.write4BE(id & 0xfffffff); // 28 bits
     this.write1(creation & 0x3); // 2 bits
   }
 
@@ -681,8 +681,9 @@ public class OtpOutputStream {
 
       /* switch to se if the length of
 	 the byte array is equal to the 
-	 length of the list */
-      if (bytebuf.length == len) { /* Usual */
+	 length of the list, or if the string is too long
+	 for the stream protocol */
+      if ((bytebuf.length == len) && (len <= 65535)) { /* Usual */
 	this.write1(OtpExternal.stringTag);
 	this.write2BE(len);
 	this.writeN(bytebuf);

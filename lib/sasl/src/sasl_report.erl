@@ -83,7 +83,14 @@ sup_get(Tag, Report) ->
 maybe_utc(Time) ->
     case application:get_env(sasl,utc_log) of
 	{ok,true} ->
-	    {utc,calendar:local_time_to_universal_time(Time)};
+	    case calendar:local_time_to_universal_time_dst(Time) of
+		[UTC] ->
+		    {utc,UTC};
+		[UTC1,_UTC2] ->
+		    {utc,UTC1};
+		[] -> % should not happen
+		    Time
+	    end;
 	_ ->
 	    Time
     end.

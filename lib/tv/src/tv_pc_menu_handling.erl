@@ -395,7 +395,7 @@ get_window_title(ets, Node, TableId, TableName) ->
     
     WinTitleSuffix = "      Node:  " ++ atom_to_list(Node),
     "ETS:  " ++ TableStr ++ WinTitleSuffix;
-get_window_title(mnesia, Node, TableId, TableName) ->
+get_window_title(mnesia, Node, _TableId, TableName) ->
     TableNameStr   = lists:flatten(io_lib:write(TableName)),
     WinTitleSuffix = "      Node:  " ++ atom_to_list(Node),
     "Mnesia:  " ++ TableNameStr ++ WinTitleSuffix.

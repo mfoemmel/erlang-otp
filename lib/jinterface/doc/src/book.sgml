@@ -31,7 +31,6 @@
   <contents>
     <parts>
       <include file="part">
-	  <include file="part_notes">
     </parts>
     <applications>
       <include file="application">

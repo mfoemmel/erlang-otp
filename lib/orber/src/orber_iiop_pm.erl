@@ -31,6 +31,7 @@
 
 -include_lib("orber/src/orber_iiop.hrl").
 -include_lib("orber/include/corba.hrl").
+-include_lib("kernel/include/inet.hrl").
 
 %%-----------------------------------------------------------------
 %% External exports
@@ -54,6 +55,8 @@
 
 -record(state, {connections, queue}).
 
+-record(connection, {hp, child, interceptors, slave, flags = 0, alias = 0}).
+
 %%-----------------------------------------------------------------
 %% External interface functions
 %%-----------------------------------------------------------------
@@ -65,19 +68,19 @@ start(Opts) ->
 
 connect(Host, Port, SocketType, Timeout, Chars, Wchars) when SocketType == normal ->
     case ets:lookup(?PM_CONNECTION_DB, {Host, Port}) of
-	[{_, connecting, _, _}] ->
+	[#connection{child = connecting}] ->
 	    gen_server:call(orber_iiop_pm, {connect, Host, Port, SocketType, 
 					    [], Chars, Wchars}, Timeout);
 	[] ->
 	    gen_server:call(orber_iiop_pm, {connect, Host, Port, SocketType, 
 					    [], Chars, Wchars}, Timeout);
-	[{_, P, I, _}] ->
+	[#connection{child = P, interceptors = I}] ->
 	    {P, [], I}
     end;
 connect(Host, Port, SocketType, Timeout, Chars, Wchars) 
   when SocketType == ssl ->
     case ets:lookup(?PM_CONNECTION_DB, {Host, Port}) of
-	[{_, connecting, _, _}] ->
+	[#connection{child = connecting}] ->
 	    SocketOptions = get_ssl_socket_options(),
 	    gen_server:call(orber_iiop_pm, {connect, Host, Port, SocketType, 
 					    SocketOptions, Chars, Wchars}, Timeout);
@@ -85,7 +88,7 @@ connect(Host, Port, SocketType, Timeout, Chars, Wchars)
 	    SocketOptions = get_ssl_socket_options(),
 	    gen_server:call(orber_iiop_pm, {connect, Host, Port, SocketType, 
 					    SocketOptions, Chars, Wchars}, Timeout);
-	[{_, P, I, _}] ->
+	[#connection{child = P, interceptors = I}] ->
 	    {P, [], I}
     end.
 
@@ -113,21 +116,22 @@ disconnect(Host, Port) ->
     gen_server:call(orber_iiop_pm, {disconnect, Host, Port}).
 
 list_existing_connections() ->
-    filter_connections(ets:match(?PM_CONNECTION_DB, {'$2', '$1', '_', '_'}), []).
+    do_select([{#connection{hp = '$2', child = '$1', _='_'}, 
+		[{is_pid, '$1'}], ['$2']}]).
 
 list_setup_connections() ->
-    lists:append(ets:match(?PM_CONNECTION_DB, {'$1', connecting, '_', '_'})).
+    do_select([{#connection{hp = '$1', child = connecting, _='_'}, [], ['$1']}]).
 
 list_all_connections() ->
-    lists:append(ets:match(?PM_CONNECTION_DB, {'$1', '_', '_', '_'})).
+    do_select([{#connection{hp = '$1', _='_'}, [], ['$1']}]).
 
-filter_connections([], Acc) ->
-    Acc;
-filter_connections([[Pid, Data]|T], Acc) when pid(Pid) ->
-    filter_connections(T, [Data|Acc]);
-filter_connections([_|T], Acc) ->
-    filter_connections(T, Acc).
-
+do_select(Pattern) ->   
+    case catch ets:select(?PM_CONNECTION_DB, Pattern) of
+	{'EXIT', _What} ->
+	    [];
+	Result ->
+	    Result
+    end.
 
 %%-----------------------------------------------------------------
 %% Internal interface functions
@@ -147,7 +151,7 @@ stop() ->
 init(_Opts) ->
     process_flag(trap_exit, true),
     {ok, #state{connections = ets:new(orber_iiop_pm_db, 
-				      [set, protected, named_table]),
+				      [{keypos, 2}, set, protected, named_table]),
 		queue = ets:new(orber_iiop_pm_queue, [bag])}}.
 
 %%-----------------------------------------------------------------
@@ -166,9 +170,9 @@ stop_all_proxies(Key) ->
     case ets:lookup(?PM_CONNECTION_DB, Key) of
 	[] ->
 	    ok;
-	[{_, connecting, I, _}] ->
+	[#connection{child = connecting, interceptors = I}] ->
 	    catch invoke_connection_closed(I);
-	[{_, P, I, _}] ->
+	[#connection{child = P, interceptors = I}] ->
 	    catch invoke_connection_closed(I),
 	    catch orber_iiop_outproxy:stop(P)
     end,
@@ -179,12 +183,12 @@ stop_all_proxies(Key) ->
 %%-----------------------------------------------------------------
 handle_call({connect, Host, Port, SocketType, SocketOptions, Chars, Wchars}, From, State) ->
     case ets:lookup(?PM_CONNECTION_DB, {Host, Port}) of
-	[{_, connecting, _, _}] ->
+	[#connection{child = connecting}] ->
 	    %% Another client already requested a connection to the given host/port. 
 	    %% Just add this client to the queue.
 	    ets:insert(State#state.queue, {{Host, Port}, From}),
 	    {noreply, State};
-	[{_, P, I, _}] ->
+	[#connection{child = P, interceptors = I}] ->
 	    %% This case will occur if the PortMapper completed a connection
 	    %% between the client's ets:lookup and receiving this request.
 	    {reply, {P, [], I}, State};
@@ -194,8 +198,9 @@ handle_call({connect, Host, Port, SocketType, SocketOptions, Chars, Wchars}, Fro
 				  [self(), Host, Port, SocketType, 
 				   SocketOptions, Chars, Wchars]) of
 		Slave when pid(Slave) ->
-		    ets:insert(?PM_CONNECTION_DB, {{Host, Port}, connecting, 
-						   false, Slave}),
+		    ets:insert(?PM_CONNECTION_DB, 
+			       #connection{hp = {Host, Port}, child = connecting, 
+					   interceptors = false, slave = Slave}),
 		    ets:insert(State#state.queue, {{Host, Port}, From}),
 		    {noreply, State};
 		What ->
@@ -211,13 +216,13 @@ handle_call({disconnect, Host, Port}, _From, State) ->
     case ets:lookup(?PM_CONNECTION_DB, {Host, Port}) of
 	[] ->
 	    ok;
-	[{_, connecting, I, _}] ->
+	[#connection{child = connecting, interceptors = I}] ->
 	    ets:delete(?PM_CONNECTION_DB, {Host, Port}),
 	    Exc = {'EXCEPTION',#'INTERNAL'{completion_status = ?COMPLETED_NO}},
 	    send_reply_to_queue(ets:lookup(State#state.queue, {Host, Port}), Exc),
 	    ets:delete(State#state.queue, {Host, Port}),
 	    catch invoke_connection_closed(I);
-	[{_, P, I, _}] ->
+	[#connection{child = P, interceptors = I}] ->
 	    unlink(P),
 	    catch orber_iiop_outproxy:stop(P),
 	    ets:delete(?PM_CONNECTION_DB, {Host, Port}),
@@ -243,8 +248,8 @@ handle_cast(_, State) ->
 %% Trapping exits 
 handle_info({'EXIT', Pid, Reason}, State) ->
     %% Check the most common scenario first, i.e., a proxy terminates.
-    case ets:match_object(?PM_CONNECTION_DB, {'_', Pid, '_', '_'}) of
-	[{K, _, I, _}] ->
+    case ets:match_object(?PM_CONNECTION_DB, #connection{child = Pid, _='_'}) of
+	[#connection{hp = K, interceptors = I}] ->
 	    ets:delete(?PM_CONNECTION_DB, K),
 	    invoke_connection_closed(I),
 	    {noreply, State};
@@ -255,8 +260,8 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 	[] ->
 	    %% Wasn't a proxy. Hence, we must test if it was a spawned
 	    %% 'setup_connection' that failed.
-	    case ets:match_object(?PM_CONNECTION_DB, {'_', '_', '_', Pid}) of
-		[{K, connecting, I, _}] ->
+	    case ets:match_object(?PM_CONNECTION_DB, #connection{slave = Pid, _='_'}) of
+		[#connection{hp = K, child = connecting, interceptors = I}] ->
 		    ets:delete(?PM_CONNECTION_DB, K),
 		    invoke_connection_closed(I),
 		    Exc = {'EXCEPTION',#'INTERNAL'{completion_status = ?COMPLETED_NO}},
@@ -284,7 +289,9 @@ handle_info({setup_failed, {Host, Port}, Exc}, State) ->
 handle_info({setup_successfull, {Host, Port}, {Child, Ctx, Int}}, State) ->
     %% Create a link to the proxy and store it in the connection DB.
     link(Child),
-    ets:insert(?PM_CONNECTION_DB, {{Host, Port}, Child, Int, undefined}),
+    ets:insert(?PM_CONNECTION_DB, #connection{hp = {Host, Port}, child = Child, 
+					      interceptors = Int, 
+					      slave = undefined}),
     %% Send the Proxy reference to all waiting clients.
     send_reply_to_queue(ets:lookup(State#state.queue, {Host, Port}),{Child, Ctx, Int}),
     %% Reset the queue.
@@ -310,6 +317,22 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal functions
 %%-----------------------------------------------------------------
 setup_connection(PMPid, Host, Port, SocketType, SocketOptions, Chars, Wchars) ->
+    case catch access_allowed(Host, Port, SocketType) of
+	ok ->
+	    do_setup_connection(PMPid, Host, Port, SocketType, SocketOptions, 
+				Chars, Wchars);
+	{ok, Interface} ->
+	    do_setup_connection(PMPid, Host, Port, SocketType, 
+				[{ip, Interface}|SocketOptions], 
+				Chars, Wchars);
+	_ ->
+	    orber_tb:info("Blocked connect attempt to ~s - ~p", [Host, Port]),
+	    PMPid ! {setup_failed, {Host, Port}, 
+		     {'EXCEPTION', #'NO_PERMISSION'{completion_status=?COMPLETED_NO}}},
+	    ok
+    end.
+
+do_setup_connection(PMPid, Host, Port, SocketType, SocketOptions, Chars, Wchars) ->
     case init_interceptors(Host, Port) of
 	{'EXCEPTION', E} ->
 	    PMPid ! {setup_failed, {Host, Port}, {'EXCEPTION', E}},
@@ -354,6 +377,39 @@ setup_connection(PMPid, Host, Port, SocketType, SocketOptions, Chars, Wchars) ->
 			  end,
 		    PMPid ! {setup_successfull, {Host, Port}, {Child, Ctx, Interceptors}},
 		    ok
+	    end
+    end.
+
+access_allowed(Host, Port, Type) ->
+    Flags = orber:get_flags(),
+    case ?ORB_FLAG_TEST(Flags, ?ORB_ENV_USE_ACL_OUTGOING) of
+	false ->
+	    ok;
+	true ->
+	    SearchFor = 
+		case Type of
+		    normal ->
+			tcp_out;
+		    ssl ->
+			ssl_out
+		end,
+	    Family = orber_env:ip_version(),
+	    {ok, Ip} = inet:getaddr(Host, Family),
+	    case orber_acl:match(Ip, SearchFor, true) of
+		{true, [], 0} ->
+		    ok;
+		{true, [], Port} ->
+		    ok;
+		{true, [], {Min, Max}} when Port >= Min, Port =< Max ->
+		    ok;
+		{true, [Interface], 0} ->
+		    inet:getaddr(Interface, Family);
+		{true, [Interface], Port} ->
+		    inet:getaddr(Interface, Family);
+		{true, [Interface], {Min, Max}} when Port >= Min, Port =< Max ->
+		    inet:getaddr(Interface, Family);
+		_ ->
+		    false
 	    end
     end.
 

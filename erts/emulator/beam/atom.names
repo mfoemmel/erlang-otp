@@ -88,12 +88,15 @@ atom close
 atom closed
 atom code
 atom command
+atom compat_rel
 atom compile
 atom compressed
 atom connect
 atom connected
+atom cons
 atom const
 atom context_switches
+atom copy
 atom cpu_timestamp
 atom creation
 atom current_function
@@ -166,6 +169,7 @@ atom hidden
 atom hide
 atom high
 atom hipe_architecture
+atom hybrid
 atom id
 atom if_clause
 atom imports
@@ -213,6 +217,7 @@ atom min_heap_size
 atom Minus='-'
 atom module
 atom module_info
+atom monitor_list
 atom monitored_by
 atom monitor
 atom monitors
@@ -226,6 +231,7 @@ atom net_kernel
 atom new
 atom new_index
 atom new_uniq
+atom next
 atom nocatch
 atom noconnect
 atom noconnection
@@ -237,7 +243,10 @@ atom nofile
 atom noproc
 atom normal
 atom nosuspend
+atom no_float
+atom no_integer
 atom not
+atom not_a_list
 atom not_purged
 atom notalive
 atom nouse_stdio
@@ -345,6 +354,7 @@ atom tracer
 atom trap_exit
 atom try_clause
 atom true
+atom tuple
 atom type
 atom undef
 atom undefined

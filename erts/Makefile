@@ -21,27 +21,32 @@ include vsn.mk
 # ----------------------------------------------------------------------
 
 ERTSDIRS = emulator doc/src
-ERTSDIRS += etc epmd
+ERTSDIRS += etc epmd lib_src
 ifeq ($(NO_START_SCRIPTS),)
 ERTSDIRS += start_scripts
 endif
 
 BUILD_SHARED_EMU=true
+BUILD_HYBRID_EMU=true
 ifeq ($(TARGET),win32)
 	BUILD_SHARED_EMU=false
+	BUILD_HYBRID_EMU=false
 else
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 	BUILD_SHARED_EMU=false
+	BUILD_HYBRID_EMU=false
 else
 ifeq ($(findstring ose,$(TARGET)),ose)
 	BUILD_SHARED_EMU=false
+	BUILD_HYBRID_EMU=false
 else
 	BUILD_SHARED_EMU=true
+	BUILD_HYBRID_EMU=true
 endif
 endif
 endif
 
-all: shared opt
+all: shared hybrid opt
 
 debug opt docs clean:
 	@for d in $(ERTSDIRS); do \
@@ -58,6 +63,14 @@ ifeq ($(BUILD_SHARED_EMU),true)
 	( cd emulator && $(MAKE) $@ )
 else
 	@echo '*** Omitted build of shared heap emulator'
+	@echo '*** since target is $(TARGET)'
+endif
+
+hybrid:
+ifeq ($(BUILD_HYBRID_EMU),true)
+	( cd emulator && $(MAKE) $@ )
+else
+	@echo '*** Omitted build of hybrid heap emulator'
 	@echo '*** since target is $(TARGET)'
 endif
 
@@ -95,7 +108,8 @@ local_setup:
 			$(ERL_TOP)/bin/cerl; \
 	fi
 	@cd start_scripts && $(MAKE) $(ERL_TOP)/bin/start.script \
-		$(ERL_TOP)/bin/start_sasl.script
+		$(ERL_TOP)/bin/start_sasl.script \
+		$(ERL_TOP)/bin/start_clean.script
 
 # Run the configure script
 configure:

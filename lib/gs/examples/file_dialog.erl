@@ -77,7 +77,7 @@ fs_loop(Dir,Owner) ->
 	    Owner ! {file_dialog,self(),cancel};
 	{gs,entry,keypress,_,['Return'|_]} ->
 	    entered_name(Dir,Owner);
-	{gs,entry,keypress,_,[Keysym|_]} ->
+	{gs,entry,keypress,_,[_Keysym|_]} ->
 	    fs_loop(Dir,Owner);
 	{gs,lb,click,_,_} ->
 	    clicked(Dir,Owner);
@@ -173,7 +173,7 @@ check_file(Dir,File) ->
 		{ok,_} -> {dir,NewDir};
 		_      -> {error,bad_dir}
 	    end;
-	{'EXIT',Why} -> {error,no_file};
+	{'EXIT',_Why} -> {error,no_file};
 	_ ->
 	    Words=string:tokens(File,[$/,$\\]),
 	    NewFile=lists:last(Words),
@@ -230,18 +230,18 @@ add_slash(Dir,[H|T]) ->
 index_member(Item,List) ->
     i_m(0,Item,List).
 
-i_m(N,Item,[Item|List]) ->
+i_m(N,Item,[Item|_List]) ->
     {ok,N};
 i_m(N,Item,[_|List]) ->
     i_m(N+1,Item,List);
-i_m(N,Item,[]) ->
+i_m(_N,_Item,[]) ->
     false.
 
 up_one_dir(Dir) ->
     L =string:tokens(Dir,[$/,$\\]),
     lists:flatten(rem_last(L)).
 
-rem_last([Last]) ->
+rem_last([_Last]) ->
     [$/];
 rem_last([Head|Tail]) ->
     [$/,Head|rem_last(Tail)];

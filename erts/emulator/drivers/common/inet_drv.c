@@ -460,6 +460,7 @@ static int my_strncasecmp(const char *s1, const char *s2, size_t n)
 #define INET_LOPT_BIT8             29  /* set 8 bit detection */
 #define INET_LOPT_TCP_SEND_TIMEOUT 30      /* set send timeout */
 #define INET_LOPT_TCP_DELAY_SEND   31      /* Delay sends until next poll */
+#define INET_LOPT_PACKET_SIZE      32      /* Max packet size */
 
 #define INET_IFOPT_ADDR       1
 #define INET_IFOPT_BROADADDR  2
@@ -592,6 +593,7 @@ typedef struct {
     int   stype;                /* socket type SOCK_STREAM/SOCK_DGRAM */
     int   sfamily;              /* address family */
     int   htype;                /* header type (tcp only?) */
+    unsigned int psize;         /* max packet size (tcp only?) */
     int   ix;                   /* descriptor index */
     int   bit8;                 /* set if bit8f==true and data some data
 				   seen had the 7th bit set */
@@ -3624,6 +3626,12 @@ static int inet_set_opts(inet_descriptor* desc, char* ptr, int len)
 	    desc->htype = ival;
 	    continue;
 
+	case INET_LOPT_PACKET_SIZE:
+	    DEBUGF(("inet_set_opts(%ld): s=%d, PACKET_SIZE=%d\r\n",
+		    (long)desc->port, desc->s, ival));
+	    desc->psize = (unsigned int)ival;
+	    continue;
+
 	case INET_LOPT_EXITONCLOSE:
 	    DEBUGF(("inet_set_opts(%ld): s=%d, EXITONCLOSE=%d\r\n",
 		    (long)desc->port, desc->s, ival));
@@ -3897,6 +3905,11 @@ static int inet_fill_opts(inet_descriptor* desc,
 	    put_int32(desc->htype, ptr);
 	    ptr += 4;
 	    continue;
+	case INET_LOPT_PACKET_SIZE:
+	    *ptr++ = opt;
+	    put_int32(desc->psize, ptr);
+	    ptr += 4;
+	    continue;
 	case INET_LOPT_EXITONCLOSE:
 	    *ptr++ = opt;
 	    put_int32(desc->exitf, ptr);
@@ -4167,6 +4180,7 @@ static ErlDrvData inet_start(ErlDrvPort port, int size)
     desc->bufsz = INET_DEF_BUFFER; 
     desc->hsz = 0;                     /* list header size */
     desc->htype = TCP_PB_RAW;          /* default packet type */
+    desc->psize = 0;                   /* no size check */
     desc->stype = -1;                  /* bad stype */
     desc->sfamily = -1;
     desc->mode    = INET_MODE_LIST;    /* list mode */
@@ -4937,6 +4951,7 @@ static int tcp_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 	desc->inet.bit8f   = l_desc->inet.bit8f;
 	desc->inet.deliver = l_desc->inet.deliver;
 	desc->inet.htype   = l_desc->inet.htype; 
+	desc->inet.psize   = l_desc->inet.psize; 
 	desc->inet.stype   = l_desc->inet.stype;
 	desc->inet.sfamily = l_desc->inet.sfamily;
 	desc->inet.hsz     = l_desc->inet.hsz;
@@ -5310,6 +5325,7 @@ static int tcp_remain(tcp_descriptor* desc, int* len)
 	    nn--;
 	    if (nn < length) goto more;
 	    switch(length) {
+	    case 0: plen = 0; break;
 	    case 1: plen = get_int8(tptr);  tptr += 1; break;
 	    case 2: plen = get_int16(tptr); tptr += 2; break;
 	    case 3: plen = get_int24(tptr); tptr += 3; break;
@@ -5421,14 +5437,18 @@ static int tcp_remain(tcp_descriptor* desc, int* len)
     }
 
  remain: {
-     int remain = (plen+hlen) - n;
+     int tlen, remain;
+     if (desc->inet.psize != 0 && 
+	 ((unsigned int)plen) > desc->inet.psize) goto error;
+     tlen = plen + hlen;
+     remain = tlen - n;
      if (remain <= 0) {
-	 *len = plen + hlen;
-	 DEBUGF((" => nothing remain packet=%d\r\n", plen+hlen));
+	 *len = tlen;
+	 DEBUGF((" => nothing remain packet=%d\r\n", tlen));
 	 return 0;
      }
      else {
-	 if (tcp_expand_buffer(desc, plen+hlen) < 0)
+	 if (tcp_expand_buffer(desc, tlen) < 0)
 	     return -1;
 	 DEBUGF((" => remain=%d\r\n", remain));
 	 *len = remain;

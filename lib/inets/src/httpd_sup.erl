@@ -78,22 +78,11 @@ start2(ConfigList, Verbosity) ->
 
     
 start_link2(ConfigList, Verbosity) ->
-    case get_addr_and_port2(ConfigList) of
-	{ok, Addr, Port} ->
-	    Name    = make_name(Addr, Port),
-	    SupName = {local, Name},
-	    supervisor:start_link(SupName, ?MODULE, 
-				  [undefined, ConfigList, Verbosity, Addr, Port]);
-
-	{error, Reason} ->
-	    error_logger:error_report(Reason),
-	    {stop, Reason};
-
-	Else ->
-	    error_logger:error_report(Else),
-	    {stop, Else}
-    end.
-
+    {ok, Addr, Port} = get_addr_and_port2(ConfigList),
+    Name    = make_name(Addr, Port),
+    SupName = {local, Name},
+    supervisor:start_link(SupName, ?MODULE, 
+			  [undefined, ConfigList, Verbosity, Addr, Port]).
     
 
 stop(Pid) when pid(Pid) ->
@@ -106,7 +95,7 @@ stop(ConfigFile) when list(ConfigFile) ->
 	Error ->
 	    Error
     end;
-stop(StartArgs) ->
+stop(_StartArgs) ->
     ok.
 
 
@@ -141,19 +130,19 @@ init(ConfigFile, ConfigList, Verbosity, Addr, Port) ->
     Sups  = [sup_spec(httpd_acceptor_sup, Addr, Port, AccSupVerbosity), 
 	     sup_spec(httpd_misc_sup, Addr, Port, MiscSupVerbosity), 
 	     worker_spec(httpd_manager, Addr, Port, ConfigFile, ConfigList, 
-			 Verbosity, [gen_server])],
+			 Verbosity)],
     {ok, {Flags, Sups}}.
 
 
 sup_spec(Name, Addr, Port, Verbosity) ->
     {{Name, Addr, Port}, 
      {Name, start, [Addr, Port, Verbosity]}, 
-     permanent, 2000, supervisor, [Name, supervisor]}.
+     permanent, 2000, supervisor, [Name]}.
     
-worker_spec(Name, Addr, Port, ConfigFile, ConfigList, Verbosity, Modules) ->
+worker_spec(Name, Addr, Port, ConfigFile, ConfigList, Verbosity) ->
     {{Name, Addr, Port}, 
      {Name, start_link, [ConfigFile, ConfigList, Verbosity]}, 
-     permanent, 2000, worker, [Name] ++ Modules}.
+     permanent, 2000, worker, [Name]}.
 
 
 make_name(Addr,Port) ->

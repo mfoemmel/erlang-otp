@@ -277,16 +277,38 @@ merge_indAudMediaDescriptor({streamParm, Val}) ->
 merge_indAudMediaDescriptor({streamDescr, Val}) ->
     #'IndAudMediaDescriptor'{streams = {multiStream, Val}}.
 
-
-merge_indAudLocalControlDescriptor(modeToken) ->
-    #'IndAudLocalControlDescriptor'{streamMode = 'NULL'};
-merge_indAudLocalControlDescriptor(reservedGroupToken) ->
-    #'IndAudLocalControlDescriptor'{reserveGroup = 'NULL'};
-merge_indAudLocalControlDescriptor(reservedValueToken) ->
-    #'IndAudLocalControlDescriptor'{reserveValue = 'NULL'};
-merge_indAudLocalControlDescriptor({pkgdName,Val}) ->
-    PropParm = #'IndAudPropertyParm'{name = Val},
-    #'IndAudLocalControlDescriptor'{propertyParms = [PropParm]}.
+merge_indAudLocalControlDescriptor(Parms) ->
+    do_merge_indAudLocalControlDescriptor(Parms, #'IndAudLocalControlDescriptor'{}).
+					  
+do_merge_indAudLocalControlDescriptor([Parm | Parms], Desc) ->
+    case Parm of
+	modeToken when Desc#'IndAudLocalControlDescriptor'.streamMode == asn1_NOVALUE ->
+	    Desc2 = Desc#'IndAudLocalControlDescriptor'{streamMode = 'NULL'},
+	    do_merge_indAudLocalControlDescriptor(Parms, Desc2);
+	reservedGroupToken when Desc#'IndAudLocalControlDescriptor'.reserveGroup == asn1_NOVALUE ->
+	    Desc2 = Desc#'IndAudLocalControlDescriptor'{reserveGroup = 'NULL'},
+	    do_merge_indAudLocalControlDescriptor(Parms, Desc2);
+	reservedValueToken when Desc#'IndAudLocalControlDescriptor'.reserveValue == asn1_NOVALUE ->
+	    Desc2 = Desc#'IndAudLocalControlDescriptor'{reserveValue = 'NULL'},
+	    do_merge_indAudLocalControlDescriptor(Parms, Desc2);
+	{pkgdName, Val} when Desc#'IndAudLocalControlDescriptor'.propertyParms == asn1_NOVALUE ->
+	    PropParms = [#'IndAudPropertyParm'{name = Val}],
+	    Desc2 = Desc#'IndAudLocalControlDescriptor'{propertyParms = PropParms},
+	    do_merge_indAudLocalControlDescriptor(Parms, Desc2);
+	{pkgdName, Val} when list(Desc#'IndAudLocalControlDescriptor'.propertyParms) ->
+	    PropParms = Desc#'IndAudLocalControlDescriptor'.propertyParms,
+	    PropParms2 = [#'IndAudPropertyParm'{name = Val} | PropParms],
+	    Desc2 = Desc#'IndAudLocalControlDescriptor'{propertyParms = PropParms2},
+	    do_merge_indAudLocalControlDescriptor(Parms, Desc2)
+    end;
+do_merge_indAudLocalControlDescriptor([], Desc) ->
+    case Desc#'IndAudLocalControlDescriptor'.propertyParms of
+	[_ | _] = PropParms -> % List has more then one element
+	    PropParms2= lists:reverse(PropParms),
+	    Desc#'IndAudLocalControlDescriptor'{propertyParms = PropParms2};
+	_ ->
+	    Desc
+    end.
 
 ensure_indAudLocalParm(Token) ->
     case Token of

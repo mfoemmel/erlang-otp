@@ -37,7 +37,7 @@
 -compile({inline, [{sz2pos,1},{adjsz,1}]}).
 -compile({inline, [{skip_bytes,6},{make_object,4}]}).
 -compile({inline, [{segp_cache,2},{get_segp,1},{get_arrpart,1}]}).
--compile({inline, [{h,1}]}).
+-compile({inline, [{h,2}]}).
 
 -include("dets.hrl").
 
@@ -507,12 +507,12 @@ check_file_header(FH, Fd) ->
                 {error, not_a_dets_file}; % harsh but fair
 	    FH#fileheader.trailer /= FH#fileheader.eof ->
 		{error, not_closed};
+	    HashBif == undefined ->
+		{error, bad_hash_bif};
 	    FH#fileheader.closed_properly == ?CLOSED_PROPERLY ->
 		{ok, true};
 	    FH#fileheader.closed_properly == ?NOT_PROPERLY_CLOSED ->
 		{error, not_closed};
-	    HashBif == undefined ->
-		{error, bad_hash_bif};
 	    true ->
 		{error, not_a_dets_file}
 	end,

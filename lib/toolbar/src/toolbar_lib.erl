@@ -101,7 +101,7 @@ legal_file(File) ->
 	    directory;
 	
 	%% File does not exist
-	Error ->
+	_Error ->
 	    {error,nofile}
     end.
 
@@ -140,7 +140,7 @@ tool_info_syntax("0.1",_) ->
     {error,format};
 tool_info_syntax("1.2",ToolInfo) when list(ToolInfo)->
     syntax01(ToolInfo,false,false,[]);
-tool_info_syntax(Vsn,_) ->
+tool_info_syntax(_Vsn,_) ->
     {error,version}.
 
 

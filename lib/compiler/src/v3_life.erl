@@ -54,8 +54,10 @@
 get_kanno(Kthing) -> element(2, Kthing).
 %%set_kanno(Kthing, Anno) -> setelement(2, Kthing, Anno).
 
-module(#k_mdef{name=M,exports=Es,attributes=As,body=Fs0}, _Opts) ->
+module(#k_mdef{name=M,exports=Es,attributes=As,body=Fs0}, Opts) ->
+    put(?MODULE, Opts),
     Fs1 = map(fun function/1, Fs0),
+    erase(?MODULE),
     {ok,{M,Es,As,Fs1}}.
 
 %% function(Kfunc) -> Func.
@@ -105,19 +107,10 @@ body(Ke, I, Vdb0) ->
 
 %% guard(Kguard, I, Vdb) -> Guard.
 
-guard(#k_guard_not{anno=A,arg=Not}, I, Vdb0) ->
-    Vdb = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
-    Gnot = guard(Not, I+1, Vdb0),
-    #l{ke={guard_not,Gnot},i=I,a=A#k.a,vdb=Vdb};
-guard(#k_guard_and{anno=A,args=As}, I, Vdb0) ->
-    {Es,_,Vdb1} = guard_and_list(As, I+1, Vdb0),
-    #l{ke={guard_and,Es},i=I,a=A#k.a,vdb=Vdb1};
-guard(#k_guard_or{anno=A,args=As}, I, Vdb0) ->
-    {Es,_,Vdb1} = guard_or_list(As, I+1, Vdb0),
-    #l{ke={guard_or,Es},i=I,a=A#k.a,vdb=Vdb1};
-guard(#k_protected{anno=A,body=Ts,ret=Rs}, I, Vdb) ->
-    %% Lock variables that are alive before the protect and used afterwards.
-    %% Don't lock variables that are only used inside the protect.
+guard(#k_try{anno=A,arg=Ts,vars=[#k_var{name=X}],body=#k_var{name=X},
+	     handler=#k_atom{val=false},ret=Rs}, I, Vdb) ->
+    %% Lock variables that are alive before try and used afterwards.
+    %% Don't lock variables that are only used inside the try expression.
     Pdb0 = vdb_sub(I, I+1, Vdb),
     {T,MaxI,Pdb1} = guard_body(Ts, I+1, Pdb0),
     Pdb2 = use_vars(A#k.ns, MaxI+1, Pdb1),	%Save "return" values
@@ -141,47 +134,6 @@ guard_body(Ke, I, Vdb0) ->
     E = guard_expr(Ke, I, Vdb1),
     {[E],I,Vdb1}.
 
-guard_and_list([G], I, Vdb0) ->
-    A = get_kanno(G),
-    Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
-    E = guard(G, I, Vdb1),
-    {[E],I+1,Vdb1};
-guard_and_list([G|Gs], I, Vdb0) ->
-    A = get_kanno(G),
-    Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
-    {Es,MaxI,Vdb2} = guard_and_list(Gs, I+1, Vdb1),
-    E = guard(G, I, Vdb2),
-    {[E|Es],MaxI,Vdb2}.
-
-guard_or_list([G], I, Vdb0) ->
-    A = get_kanno(G),
-    Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
-    E = guard(G, I, Vdb1),
-    {[E],I,Vdb1};
-guard_or_list([G|Gs], I, Vdb0) ->
-    A = get_kanno(G),
-    Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
-    {Es,MaxI,Vdb2} = guard_or_list(Gs, I, Vdb1),
-    E = guard(G, I, Vdb2),
-    {[E|Es],MaxI,Vdb2}.
-
-% %% protected(KguardTest, I, Vdb) -> {[Expr],MaxI,Vdb}.
-% %%  A guard test is like a body but much more specialised.
-
-% protected(#k_seq{arg=Ke,body=Kb}, I, Vdb0) ->
-%     %% ok = io:fwrite("life ~w:~p~n", [?LINE,{Ke,I,Vdb0}]),
-%     A = get_kanno(Ke),
-%     Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
-%     {Es,MaxI,Vdb2} = protected(Kb, I+1, Vdb1),
-%     E = guard_expr(Ke, I, Vdb2),
-%     {[E|Es],MaxI,Vdb2};
-% protected(Ke, I, Vdb0) ->
-%     %% ok = io:fwrite("life ~w:~p~n", [?LINE,{Ke,I,Vdb0}]),
-%     A = get_kanno(Ke),
-%     Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
-%     E = guard_expr(Ke, I, Vdb1),
-%     {[E],I+1,Vdb1}.
-
 %% guard_expr(Call, I, Vdb) -> Expr
 
 guard_expr(#k_test{anno=A,op=Op,args=As}, I, _Vdb) ->
@@ -190,6 +142,12 @@ guard_expr(#k_bif{anno=A,op=Op,args=As,ret=Rs}, I, _Vdb) ->
     #l{ke={bif,bif_op(Op),atomic_list(As),var_list(Rs)},i=I,a=A#k.a};
 guard_expr(#k_put{anno=A,arg=Arg,ret=Rs}, I, _Vdb) ->
     #l{ke={set,var_list(Rs),literal(Arg)},i=I,a=A#k.a};
+guard_expr(#k_match{anno=A,body=Kb,ret=Rs}, I, Vdb) ->
+    %% Experimental support for andalso/orelse in guards.
+    %% Work out imported variables which need to be locked.
+    Mdb = vdb_sub(I, I+1, Vdb),
+    M = match(Kb, A#k.us, I+1, Mdb),
+    #l{ke={match,M,var_list(Rs)},i=I,vdb=use_vars(A#k.us, I+1, Mdb),a=A#k.a};
 guard_expr(G, I, Vdb) -> guard(G, I, Vdb).
 
 %% expr(Kexpr, I, Vdb) -> Expr.
@@ -217,7 +175,7 @@ expr(#k_try{anno=A,arg=Ka,vars=Vs,body=Kb,evars=Evs,handler=Kh,ret=Rs}, I, Vdb) 
     Tdb1 = use_vars(Ab#k.us, I+3, use_vars(Ah#k.us, I+3, Tdb0)),
     Tdb2 = vdb_sub(I, I+2, Tdb1),
     Vnames = fun (Kvar) -> Kvar#k_var.name end,	%Get the variable names
-    {Aes,_,Adb} = body(Ka, I+2, add_var({try_tag,I+1}, I+1, 1000000, Tdb2)),
+    {Aes,_,Adb} = body(Ka, I+2, add_var({catch_tag,I+1}, I+1, 1000000, Tdb2)),
     {Bes,_,Bdb} = body(Kb, I+4, new_vars(map(Vnames, Vs), I+3, Tdb2)),
     {Hes,_,Hdb} = body(Kh, I+4, new_vars(map(Vnames, Evs), I+3, Tdb2)),
     #l{ke={'try',#l{ke={block,Aes},i=I+1,vdb=Adb,a=[]},
@@ -243,8 +201,6 @@ expr(#k_receive{anno=A,var=V,body=Kb,timeout=T,action=Ka,ret=Rs}, I, Vdb) ->
        i=I,vdb=use_vars(A#k.us, I+1, Vdb),a=A#k.a};
 expr(#k_receive_accept{anno=A}, I, _Vdb) ->
     #l{ke=receive_accept,i=I,a=A#k.a};
-expr(#k_receive_reject{anno=A}, I, _Vdb) ->
-    #l{ke=receive_reject,i=I,a=A#k.a};
 expr(#k_receive_next{anno=A}, I, _Vdb) ->
     #l{ke=receive_next,i=I,a=A#k.a};
 expr(#k_put{anno=A,arg=Arg,ret=Rs}, I, _Vdb) ->
@@ -329,13 +285,6 @@ guard_clause(#k_guard_clause{anno=A,guard=Kg,body=Kb}, Ls, I, Vdb0) ->
        i=I,vdb=use_vars((get_kanno(Kg))#k.us, I+2, Vdb1),
        a=A#k.a}.
 
-%     {G,AfterG,Vdb1} = guard(Kg, I+1, Vdb0),
-%     Vdb2 = use_vars(union(A#k.us, Ls), AfterG, Vdb1),
-%     B = match(Kb, Ls, AfterG, Vdb2),
-%     #l{ke={guard_clause,G,B},
-%        i=I,vdb=use_vars((get_kanno(Kg))#k.us, AfterG, Vdb2),
-%        a=A#k.a}.
-
 %% match_fail(FailValue, I, Anno) -> Expr.
 %%  Generate the correct match_fail instruction.  N.B. there is no
 %%  generic case for when the fail value has been created elsewhere.
@@ -397,7 +346,12 @@ literal(#k_nil{}) -> nil;
 literal(#k_cons{hd=H,tl=T}) ->
     {cons,[literal(H),literal(T)]};
 literal(#k_binary{segs=V}) ->
-    {binary,literal(V)};
+    case proplists:get_bool(no_new_binaries, get(?MODULE)) of
+	true ->
+	    {old_binary,literal(V)};
+	false ->
+	    {binary,literal(V)}
+    end;
 literal(#k_bin_seg{size=S,unit=U,type=T,flags=Fs,seg=Seg,next=N}) ->
     {bin_seg,literal(S),U,T,Fs,[literal(Seg),literal(N)]};
 literal(#k_bin_end{}) -> bin_end;

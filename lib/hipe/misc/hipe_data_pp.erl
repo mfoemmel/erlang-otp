@@ -9,9 +9,9 @@
 %%  History  :	* 2001-02-25 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2002/10/01 12:30:04 $
-%%              $Revision: 1.4 $
+%%              $Author: mikpe $
+%%              $Date: 2004/03/12 10:10:36 $
+%%              $Revision: 1.5 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -121,18 +121,7 @@ pp_block(Dev, {byte, Data}, CodeType, _Prefix) ->
     rtl ->
       io:format(Dev, "      ;; ~s\n   ",[Data]);
     _ -> ok
-  end;
-pp_block(Dev, {dword, Data}, CodeType, _Prefix) ->
-  case CodeType of 
-    rtl ->
-      io:format(Dev, ".dword\n",[]);
-    sparc ->
-      io:format(Dev, ".dword\n",[]);
-    _ -> 
-      ok
-  end,
-  pp_dwordlist(Dev, Data, CodeType).
-
+  end.
   
 pp_wordlist(Dev, [{label,L}|Rest], CodeType, Prefix) ->
   case CodeType of 
@@ -173,14 +162,3 @@ pp_bytelist(Dev, [D|Rest], CodeType) ->
   pp_bytelist(Dev, Rest, CodeType);
 pp_bytelist(Dev, [], _CodeType) ->
   io:format(Dev, "\n",[]).
-
-pp_dwordlist(Dev, [D|Rest], CodeType) ->
-  case CodeType of 
-    rtl ->
-      io:format(Dev, "      ~w\n",[D]);
-    _ -> 
-      io:format(Dev, "      ~w\n",[D])
-  end,
-  pp_dwordlist(Dev, Rest, CodeType);
-pp_dwordlist(_Dev, [], _CodeType) ->
-  ok.

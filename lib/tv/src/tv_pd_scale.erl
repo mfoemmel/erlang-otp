@@ -234,11 +234,11 @@ create_scale(ScaleName, FrameId, FrameWidth, FrameHeight) ->
     {Width, Height, Xpos, Ypos} = get_scale_coords(ScaleName, 
 						   FrameWidth, 
 						   FrameHeight),
-    {Orientation, Range, Text}  = case ScaleName of 
+    {Orientation, Range}  = case ScaleName of 
 				vscale ->
-				    {vertical, {1, 1}, "Row"};
+				    {vertical, {1, 1}};
 				hscale ->
-				    {horizontal, {1, 1}, "Column"}
+				    {horizontal, {1, 1}}
 			    end,
     gs:scale(FrameId, [{data, ScaleName},
 		       {orient, Orientation},

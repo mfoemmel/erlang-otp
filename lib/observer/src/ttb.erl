@@ -321,7 +321,7 @@ p(Procs0,Flags0) ->
     store(p,[Procs0,Flags0]),
     no_store_p(Procs0,Flags0).
 no_store_p(Procs0,Flags0) ->
-    case dbg:transform_flags(to_list(Flags0)) of
+    case transform_flags(to_list(Flags0)) of
 	{error,Reason} -> 
 	    {error,Reason};
 	Flags ->
@@ -340,6 +340,11 @@ no_store_p(Procs0,Flags0) ->
 		    {ok,SuccMatched}
 	    end
     end.
+
+transform_flags([clear]) ->
+    [clear];
+transform_flags(Flags) ->
+    dbg:transform_flags(Flags).
 
 
 procs(Procs) when list(Procs) ->
@@ -897,6 +902,11 @@ get_procinfo(Name) when atom(Name) ->
     case ets:match_object(?MODULE,{'_',Name,node()}) of
 	[PI] -> PI;
 	[] -> Name
+    end;
+get_procinfo({Name,Node}) when atom(Name) ->
+    case ets:match_object(?MODULE,{'_',Name,Node}) of
+	[PI] -> PI;
+	[] -> {Name,Node}
     end.	 
 
 get_first([Client|Clients]) ->

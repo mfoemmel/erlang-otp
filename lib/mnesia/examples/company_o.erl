@@ -17,12 +17,11 @@
 %%
 -module(company_o).
 -compile(export_all).
--compile({parse_transform,mnemosyne_lc}).
 
--import(mnemosyne, [eval/1]).
 -import(mnesia, [transaction/1]).
 
 %0
+-include_lib("stdlib/include/qlc.hrl").
 -include("company_o.hrl").
 
 
@@ -44,7 +43,6 @@ init() ->
 %1
 
 insert_emp(Emp, DeptId, ProjNames) ->
-    Ename = Emp#employee.name,
     Fun = fun() ->
                   mnesia:write(Emp#employee{dept = DeptId, 
 					    projects = ProjNames})
@@ -57,23 +55,22 @@ insert_emp(Emp, DeptId, ProjNames) ->
 %2
 females() ->
     F = fun() ->
-                mnemosyne:eval(query [E.name || E <- table(employee),
-                                                E.sex = female]
-                               end)
-        end,
+		Q = qlc:q([E#employee.name || E <- mnesia:table(employee),
+					      E#employee.sex == female]),
+		qlc:e(Q)
+	end,
     mnesia:transaction(F).
 %2
 
 %3
 female_bosses() ->
-    F = fun() -> mnemosyne:eval(query 
-				     [{E.name, Boss.name} ||
-                                      E <- table(employee),
-				      BossNo = E.manager,
-				      Boss <- table(employee),
-				      Boss.emp_no = BossNo,
-				      E.sex = female] 
-				end)
+    F = fun() -> qlc:e(qlc:q( 
+			 [{E#employee.name, Boss#employee.name} ||
+			     E <- mnesia:table(employee),
+			     Boss <- mnesia:table(employee),
+			     Boss#employee.emp_no == E#employee.manager,
+			     E#employee.sex == female]
+			))
         end,
     mnesia:transaction(F).
 
@@ -81,9 +78,9 @@ female_bosses() ->
 %4
 raise_females(Amount) ->
     F = fun() ->
-                Fs = mnemosyne:eval(query [E || E <-table(employee),
-                                                E.sex = female]
-                                    end),
+		Q = qlc:q([E || E <- mnesia:table(employee),
+                                E#employee.sex == female]),
+		Fs = qlc:e(Q),
                 over_write(Fs, Amount)
         end,
     mnesia:transaction(F).
@@ -120,39 +117,17 @@ bad_raise(Eno, Raise) ->
         end,
     mnesia:transaction(F).
 %6
-
-
-%7
-f1() ->
-    transaction(fun() ->
-                        eval(query [E || E <- table(employee), 
-                                         E.sex = female]
-                             end)
-                end).
-%7
-
-%8
-f2() ->
-    Pat0 = mnesia:table_info(employee, wild_pattern),
-    Pat = Pat0#employee{sex = female},
-    mnesia:transaction(fun() ->
-                               mnesia:match_object(Pat)
-                       end).
-%8
-
                        
 %9
 get_emps(Salary, Dep) ->
-    F = fun() -> eval(query
-                      [E || E <- table(employee),
-                            E.dept = Dept,
-                            E.salary > Salary]
-                      end)
-        end,
+    Q = qlc:q( 
+          [E || E <- mnesia:table(employee),
+                E#employee.salary > Salary,
+                E#employee.dept == Dep]
+	 ),
+    F = fun() -> qlc:e(Q) end,
     transaction(F).
 %9
-
-
 
 %10
 get_emps2(Salary, Dep) ->

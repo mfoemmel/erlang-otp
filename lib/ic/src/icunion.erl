@@ -18,6 +18,8 @@
 
 -module(icunion).
 
+-import(ic_codegen, [emit/2, emit/3, emit/4, emit_c_enc_rpt/4, emit_c_dec_rpt/4]).
+-import(ic_cbe, [mk_c_type/4]).
 
 -include("icforms.hrl").
 -include("ic.hrl").
@@ -53,33 +55,33 @@ emit_c_union(G, N, X) ->
 	    UnionScope = [ic_forms:get_id2(NewX) | N],
 
 	    case ic_pragma:is_local(G,UnionScope) of
-		
+
 		true ->
 
 		    HFd = ic_genobj:hrlfiled(G),
 		    emit_c_union_values(G, N, NewX, HFd),
 		    UnionName = ic_util:to_undersc(UnionScope),
 
-		    ic_codegen:emit(HFd, "\n#ifndef __~s__\n",[ictype:to_uppercase(UnionName)]),	
-		    ic_codegen:emit(HFd, "#define __~s__\n",[ictype:to_uppercase(UnionName)]),
+		    emit(HFd, "\n#ifndef __~s__\n",[ictype:to_uppercase(UnionName)]),	
+		    emit(HFd, "#define __~s__\n",[ictype:to_uppercase(UnionName)]),
 		    ic_codegen:mcomment_light(HFd,
-					 [io_lib:format("Union definition: ~s",
-							[UnionName])],
-					 c),
-		    ic_codegen:emit(HFd, "typedef struct {\n"),
-		    ic_codegen:emit(HFd, "  ~s _d;\n", [get_c_union_discriminator(G, N, NewX)]),
-		    ic_codegen:emit(HFd, "  union {\n"),
+					      [io_lib:format("Union definition: ~s",
+							     [UnionName])],
+					      c),
+		    emit(HFd, "typedef struct {\n"),
+		    emit(HFd, "  ~s _d;\n", [get_c_union_discriminator(G, N, NewX)]),
+		    emit(HFd, "  union {\n"),
 		    emit_c_union_values_decl(G, N, NewX, HFd),
-		    ic_codegen:emit(HFd, "  } _u;\n"),
-		    ic_codegen:emit(HFd, "} ~s;\n\n", [UnionName]),
-		    
-		    ic_codegen:emit(HFd, "int ~s~s(CORBA_Environment *oe_env, int*, int*);\n",
-			       [ic_util:mk_oe_name(G, "sizecalc_"), UnionName]),
-		    ic_codegen:emit(HFd, "int ~s~s(CORBA_Environment *oe_env, ~s*);\n",
-			       [ic_util:mk_oe_name(G, "encode_"), UnionName, UnionName]),
-		    ic_codegen:emit(HFd, "int ~s~s(CORBA_Environment *oe_env, char *, int*, ~s*);\n",
-			       [ic_util:mk_oe_name(G, "decode_"), UnionName, UnionName]),
-		    ic_codegen:emit(HFd, "\n#endif\n\n"),
+		    emit(HFd, "  } _u;\n"),
+		    emit(HFd, "} ~s;\n\n", [UnionName]),
+
+		    emit(HFd, "int ~s~s(CORBA_Environment *oe_env, int*, int*);\n",
+			 [ic_util:mk_oe_name(G, "sizecalc_"), UnionName]),
+		    emit(HFd, "int ~s~s(CORBA_Environment *oe_env, ~s*);\n",
+			 [ic_util:mk_oe_name(G, "encode_"), UnionName, UnionName]),
+		    emit(HFd, "int ~s~s(CORBA_Environment *oe_env, char *, int*, ~s*);\n",
+			 [ic_util:mk_oe_name(G, "decode_"), UnionName, UnionName]),
+		    emit(HFd, "\n#endif\n\n"),
 		    create_c_union_file(G, N, NewX, UnionName);
 
 		false -> %% Do not generate included types att all.
@@ -156,9 +158,9 @@ emit_c_union_values_decl_loop(G, N, X, Fd, [CU |CUs]) ->
 
 %% Makes the declaration for the array in union
 mk_array_decl(G,N,X,Id,Type,Fd) ->
-    ic_codegen:emit(Fd, "    ~s ~s;\n", 
-	       [getCaseTypeStr(G,N,X,Id,Type), 
-		mk_array_name(Id)]).
+    emit(Fd, "    ~s ~s;\n", 
+	 [getCaseTypeStr(G,N,X,Id,Type), 
+	  mk_array_name(Id)]).
 
 mk_array_name({array,Id,D}) ->
     ic_forms:get_id2(Id) ++ mk_array_dim(D).
@@ -173,14 +175,14 @@ mk_array_dim([{_,_,Dim}|Dims]) ->
 mk_array_file(G,N,X,{array,AID,SZ},Type,HFd) ->
     ArrayName = ic_util:to_undersc([ic_forms:get_id2(AID),ic_forms:get_id2(X) | N]),
     ArrayDim =  extract_array_dim(SZ),
-    ic_codegen:emit(HFd, "\n#ifndef __~s__\n",[ictype:to_uppercase(ArrayName)]),	
-    ic_codegen:emit(HFd, "#define __~s__\n\n",[ictype:to_uppercase(ArrayName)]),
+    emit(HFd, "\n#ifndef __~s__\n",[ictype:to_uppercase(ArrayName)]),	
+    emit(HFd, "#define __~s__\n\n",[ictype:to_uppercase(ArrayName)]),
     icstruct:create_c_array_coding_file(G,
 					N,
 					{ArrayName,ArrayDim},
 					Type,
 					no_typedef),
-    ic_codegen:emit(HFd, "\n#endif\n\n").
+    emit(HFd, "\n#endif\n\n").
 
 extract_array_dim([{_,_,Dim}]) ->
     [Dim];
@@ -190,11 +192,11 @@ extract_array_dim([{_,_,Dim}|Dims]) ->
 
 %% Makes the declaration for the member in union
 mk_union_member_decl(G,N,X,Id,Type,Fd) ->
-    ic_codegen:emit(Fd, "    ~s ~s;\n", 
-	       [getCaseTypeStr(G,N,X,Id,Type), 
-		ic_forms:get_id2(Id)]).
+    emit(Fd, "    ~s ~s;\n", 
+	 [getCaseTypeStr(G,N,X,Id,Type), 
+	  ic_forms:get_id2(Id)]).
 
-    
+
 
 
 %% File utilities
@@ -204,15 +206,15 @@ create_c_union_file(G, N, X, UnionName) ->
     _HFd = ic_genobj:hrlfiled(G), %% Write on stubfile header
     HrlFName = filename:basename(ic_genobj:include_file(G)),
     ic_codegen:emit_stub_head(G, Fd, SName, c),
-    ic_codegen:emit(Fd, "#include \"~s\"\n\n",[HrlFName]),
+    emit(Fd, "#include \"~s\"\n\n",[HrlFName]),
 
     %%  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %%  Fd = ic_genobj:stubfiled(G), %% Write on stubfile
     %%  HFd = ic_genobj:hrlfiled(G), %% Write on stubfile header
     %%  HrlFName = filename:basename(ic_genobj:include_file(G)),
-    %%  ic_codegen:emit(Fd, "#include \"~s\"\n\n",[HrlFName]),
+    %%  emit(Fd, "#include \"~s\"\n\n",[HrlFName]),
     %%  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-   
+
     put(op_variable_count, 0),
     put(tmp_declarations, []),
 
@@ -221,7 +223,7 @@ create_c_union_file(G, N, X, UnionName) ->
     emit_union_encode(G, N, X, Fd, UnionName),
     emit_union_decode(G, N, X, Fd, UnionName),
     file:close(Fd).
- 
+
 open_c_coding_file(G, Name) ->
     SName = string:concat(ic_util:mk_oe_name(G, "code_"), Name),
     FName =  
@@ -392,118 +394,128 @@ isList(L) when list(L) ->
     true;
 isList(_) ->
     false.
-	    
+
 %%
 %%  Sizecount facilities
 %%
 emit_union_sizecount(G, N, X, Fd, UnionName) ->
-    ic_codegen:emit(Fd, "int ~s~s(CORBA_Environment *oe_env, int* oe_size_count_index, int* oe_size) {\n\n",
-	       [ic_util:mk_oe_name(G, "sizecalc_"), UnionName]),
-   
-    ic_codegen:emit(Fd, "  int oe_malloc_size = 0;\n"),
-    ic_codegen:emit(Fd, "  int oe_error_code = 0;\n"),
-    ic_codegen:emit(Fd, "  int oe_type = 0;\n"),
-    ic_codegen:emit(Fd, "  int oe_tmp = 0;\n"),
+    emit(Fd, "int ~s~s(CORBA_Environment *oe_env, int* oe_size_count_index, int* oe_size) {\n\n",
+	 [ic_util:mk_oe_name(G, "sizecalc_"), UnionName]),
+
+    emit(Fd, "  int oe_malloc_size = 0;\n"),
+    emit(Fd, "  int oe_error_code = 0;\n"),
+    emit(Fd, "  int oe_type = 0;\n"),
+    emit(Fd, "  int oe_tmp = 0;\n"),
     emit_union_discr_var_decl(G, N, X, Fd),
-    
+
     ic_codegen:nl(Fd),
-    ic_codegen:emit(Fd, "  if(*oe_size == 0)\n",[]),
+    emit(Fd, "  if(*oe_size == 0)\n",[]),
     AlignName = lists:concat(["*oe_size + sizeof(",UnionName,")"]),
-    ic_codegen:emit(Fd, "    *oe_size = ~s;\n\n", [ic_util:mk_align(AlignName)]),
+    emit(Fd, "    *oe_size = ~s;\n\n", [ic_util:mk_align(AlignName)]),
 
-    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_get_type(oe_env->_inbuf, oe_size_count_index, &oe_type, &oe_tmp)) < 0)\n"),
-    ic_codegen:emit(Fd, "    return oe_error_code;\n\n"),
+    emit(Fd, "  if ((oe_error_code = ei_get_type(oe_env->_inbuf, oe_size_count_index, &oe_type, &oe_tmp)) < 0) {\n"),
+    emit_c_dec_rpt(Fd, "    ", "ei_get_type", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
 
-    %%ic_codegen:emit(Fd, "  if (oe_tmp != 3)\n"),
-    %%ic_codegen:emit(Fd, "    return -1;\n\n"),
+    %%emit(Fd, "  if (oe_tmp != 3)\n"),
+    %%emit(Fd, "    return -1;\n\n"),
 
-    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_tuple_header(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-    ic_codegen:emit(Fd, "    return oe_error_code;\n\n"),
-    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n", []),
-    ic_codegen:emit(Fd, "    return oe_error_code;\n\n"),
+    emit(Fd, "  if ((oe_error_code = ei_decode_tuple_header(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+    emit_c_dec_rpt(Fd, "    ", "ei_decode_tuple_header", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
+    emit(Fd, "  if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n", []),
+    emit_c_dec_rpt(Fd, "    ", "ei_decode_atom", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
 
     emit_c_union_discr_sizecount(G, N, X, Fd),
-    ic_codegen:emit(Fd, "  /* Calculate union size */\n"),
-    ic_codegen:emit(Fd, "  switch(oe_discr) {\n"),
- 
-    emit_c_union_loop(G, N, X, Fd, X#union.body, sizecalc),
-    ic_codegen:emit(Fd, "  }\n\n"),
+    emit(Fd, "  /* Calculate union size */\n"),
+    emit(Fd, "  switch(oe_discr) {\n"),
 
-    ic_codegen:emit(Fd, "  *oe_size = ~s;\n",[ic_util:mk_align("*oe_size+oe_malloc_size")]),
-    ic_codegen:emit(Fd, "  return 0;\n"),
-    ic_codegen:emit(Fd, "}\n\n\n").
+    emit_c_union_loop(G, N, X, Fd, X#union.body, sizecalc),
+    emit(Fd, "  }\n\n"),
+
+    emit(Fd, "  *oe_size = ~s;\n",[ic_util:mk_align("*oe_size+oe_malloc_size")]),
+    emit(Fd, "  return 0;\n"),
+    emit(Fd, "}\n\n\n").
 
 
 emit_union_discr_var_decl(G, N, X, Fd) ->
     UD = get_c_union_discriminator(G, N, X),
     case UD of
 	"CORBA_short" ->
-	    ic_codegen:emit(Fd, "  long oe_discr = 0;\n");
+	    emit(Fd, "  long oe_discr = 0;\n");
 	"CORBA_unsigned_short" ->
-	    ic_codegen:emit(Fd, "  unsigned long oe_discr = 0;\n");
+	    emit(Fd, "  unsigned long oe_discr = 0;\n");
 	"CORBA_long" ->
-	    ic_codegen:emit(Fd, "  long oe_discr = 0;\n");
+	    emit(Fd, "  long oe_discr = 0;\n");
 	"CORBA_unsigned_long" ->
-	    ic_codegen:emit(Fd, "  unsigned long oe_discr = 0;\n");
+	    emit(Fd, "  unsigned long oe_discr = 0;\n");
 	"CORBA_boolean" ->
-	    ic_codegen:emit(Fd, "  int oe_discr = 0;\n"),
-	    ic_codegen:emit(Fd, "  char oe_bool[256];\n");
+	    emit(Fd, "  int oe_discr = 0;\n"),
+	    emit(Fd, "  char oe_bool[256];\n");
 	"CORBA_char" ->
-	    ic_codegen:emit(Fd, "  char oe_discr = 0;\n");
+	    emit(Fd, "  char oe_discr = 0;\n");
 	_T ->
-	    ic_codegen:emit(Fd, "  int oe_dummy = 0;\n"),
-	    ic_codegen:emit(Fd, "  ~s oe_discr = 0;\n",[UD])
+	    emit(Fd, "  int oe_dummy = 0;\n"),
+	    emit(Fd, "  ~s oe_discr = 0;\n",[UD])
     end.
 
 
 emit_c_union_discr_sizecount(G, N, X, Fd) ->
-    ic_codegen:emit(Fd, "  /* Calculate discriminator size */\n"),
+    emit(Fd, "  /* Calculate discriminator size */\n"),
     UD = get_c_union_discriminator(G, N, X),
     case UD of
 	"CORBA_short" ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, &oe_discr)) < 0)\n"),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+	    emit(Fd, "  if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, &oe_discr)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "    ", "ei_decode_long", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"CORBA_unsigned_short" ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, oe_size_count_index, &oe_discr)) < 0)\n"),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+	    emit(Fd, "  if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, oe_size_count_index, &oe_discr)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "    ", "ei_decode_ulong", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"CORBA_long" ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, &oe_discr)) < 0)\n"),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+	    emit(Fd, "  if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, &oe_discr)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "    ", "ei_decode_long", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"CORBA_unsigned_long" ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, oe_size_count_index, &oe_discr)) < 0)\n"),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+	    emit(Fd, "  if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, oe_size_count_index, &oe_discr)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "    ", "ei_decode_ulong", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"CORBA_boolean" ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, oe_size_count_index, oe_bool)) < 0)\n"),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n"),
-	    ic_codegen:emit(Fd, "  if (strcmp(oe_bool, \"false\") == 0) {\n"),
-	    ic_codegen:emit(Fd, "    oe_discr = 0;\n"), 
-	    ic_codegen:emit(Fd, "  }\n"),
-	    ic_codegen:emit(Fd, "  else if (strcmp(oe_bool, \"true\") == 0) {\n"),
-	    ic_codegen:emit(Fd, "    oe_discr = 1;\n"), 
-	    ic_codegen:emit(Fd, "  }\n"),
-	    ic_codegen:emit(Fd, "  else\n"),
-	    ic_codegen:emit(Fd, "    return -1;\n\n");
+	    emit(Fd, "  if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, oe_size_count_index, oe_bool)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "    ", "ei_decode_atom", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n"),
+	    emit(Fd, "  if (strcmp(oe_bool, \"false\") == 0) {\n"),
+	    emit(Fd, "    oe_discr = 0;\n"), 
+	    emit(Fd, "  }\n"),
+	    emit(Fd, "  else if (strcmp(oe_bool, \"true\") == 0) {\n"),
+	    emit(Fd, "    oe_discr = 1;\n"), 
+	    emit(Fd, "  }\n"),
+	    emit(Fd, "  else {\n"),
+	    emit_c_dec_rpt(Fd, "    ", "not boolean", []),
+	    emit(Fd, "    return -1;\n  }\n");
 
 	"CORBA_char" ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_char(oe_env->_inbuf, oe_size_count_index, &oe_discr)) < 0)\n"),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+	    emit(Fd, "  if ((oe_error_code = ei_decode_char(oe_env->_inbuf, oe_size_count_index, &oe_discr)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "    ", "ei_decode_char", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	T ->
-	    ic_codegen:emit(Fd, "  oe_tmp = *oe_size_count_index;\n"),
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0)\n",
-		       [T]),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n"),
+	    emit(Fd, "  oe_tmp = *oe_size_count_index;\n"),
+	    emit(Fd, "  if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0) {\n", [T]),
+	    ?emit_c_dec_rpt(Fd, "    ", "oe_size_calc_~s", [T]),
+	    emit(Fd, "    return oe_error_code;\n  }\n"),
 
-	    ic_codegen:emit(Fd, "  *oe_size_count_index = oe_tmp;\n"),
-	    ic_codegen:emit(Fd, "  oe_tmp = oe_env->_iin;\n"),
-	    ic_codegen:emit(Fd, "  oe_env->_iin = *oe_size_count_index;\n"),
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_decode_~s(oe_env, NULL, &oe_dummy, &oe_discr)) < 0)\n",
-                       [T]),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n"),
+	    emit(Fd, "  *oe_size_count_index = oe_tmp;\n"),
+	    emit(Fd, "  oe_tmp = oe_env->_iin;\n"),
+	    emit(Fd, "  oe_env->_iin = *oe_size_count_index;\n"),
+	    emit(Fd, "  if ((oe_error_code = oe_decode_~s(oe_env, NULL, &oe_dummy, &oe_discr)) < 0) {\n", [T]),
+	    ?emit_c_dec_rpt(Fd, "    ", "oe_decode_~s", [T]),
+	    emit(Fd, "    return oe_error_code;\n  }\n"),
 
-	    ic_codegen:emit(Fd, "  *oe_size_count_index = oe_env->_iin;\n"),
-	    ic_codegen:emit(Fd, "  oe_env->_iin = oe_tmp;\n\n")
+	    emit(Fd, "  *oe_size_count_index = oe_env->_iin;\n"),
+	    emit(Fd, "  oe_env->_iin = oe_tmp;\n\n")
     end.
-				 
+
 
 
 emit_c_union_loop(G, N, X, Fd, CaseList, Case) ->
@@ -526,33 +538,37 @@ emit_c_union_loop(G, N, X, Fd, [CU|CUs], GotDefaultCase, Case) ->
     end.
 
 emit_c_union_valueless_discriminator(_G, _N, _X, Fd, Case) ->  
-    ic_codegen:emit(Fd, "  default:\n"),
+    emit(Fd, "  default:\n"),
     case Case of
 	sizecalc ->
-	    ic_codegen:emit(Fd, "    {\n"),
-	    ic_codegen:emit(Fd, "      char oe_undefined[15];\n\n"),
-	    ic_codegen:emit(Fd, "      if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, "
-		       "oe_size_count_index, oe_undefined)) < 0)\n"),
-	    ic_codegen:emit(Fd, "        return oe_error_code;\n\n"),
-	    ic_codegen:emit(Fd, "    }\n");
+	    emit(Fd, "    {\n"),
+	    emit(Fd, "      char oe_undefined[15];\n\n"),
+	    emit(Fd, "      if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, "
+		 "oe_size_count_index, oe_undefined)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "        ", "ei_decode_atom", []),
+	    emit(Fd, "        return oe_error_code;\n      }\n"),
+	    emit(Fd, "    }\n");
 	encode ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_atom(oe_env, \"undefined\")) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n"),
-	    ic_codegen:emit(Fd, "    break;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_ei_encode_atom(oe_env, \"undefined\")) < 0) {\n"),
+	    emit_c_enc_rpt(Fd, "      ", "oe_ei_encode_atom", []),
+	    emit(Fd, "      return oe_error_code;\n      }\n"),
+	    emit(Fd, "    break;\n");
 	decode ->
-	    ic_codegen:emit(Fd, "    {\n"),
-	    ic_codegen:emit(Fd, "      char oe_undefined[15];\n\n"),
-	    ic_codegen:emit(Fd, "      if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, "
-		       "oe_undefined)) < 0)\n"),
-	    ic_codegen:emit(Fd, "        return oe_error_code;\n\n"),
-	    ic_codegen:emit(Fd, "      if (strcmp(oe_undefined, \"undefined\") != 0)\n"),
-	    ic_codegen:emit(Fd, "        return -1;\n"),
-	    ic_codegen:emit(Fd, "    }\n")
+	    emit(Fd, "    {\n"),
+	    emit(Fd, "      char oe_undefined[15];\n\n"),
+	    emit(Fd, "      if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, "
+		 "oe_undefined)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "        ", "ei_decode_atom", []),
+	    emit(Fd, "        return oe_error_code;\n      }\n"),
+	    emit(Fd, "      if (strcmp(oe_undefined, \"undefined\") != 0) {\n"),
+	    emit_c_dec_rpt(Fd, "        ", "undefined", []),
+	    emit(Fd, "        return -1;\n      }\n"),
+	    emit(Fd, "    }\n")
     end.
 
 
 emit_c_union_case(G, N, X, Fd, I, T, [{default,_}], Case) -> 
-    ic_codegen:emit(Fd, "  default:\n"),
+    emit(Fd, "  default:\n"),
     case Case of
 	sizecalc ->
 	    getCaseTypeSizecalc(G, N, X, Fd, I, T);
@@ -565,9 +581,9 @@ emit_c_union_case(G, N, X, Fd, I, T, [{default,_}], Case) ->
 emit_c_union_case(G, N, X, Fd, I, T, [{Bool,_}], Case) -> %% Boolean discriminator
     case Bool of
 	'TRUE' ->
-	    ic_codegen:emit(Fd, "  case 1:\n");
+	    emit(Fd, "  case 1:\n");
 	'FALSE' ->
-	    ic_codegen:emit(Fd, "  case 0:\n")
+	    emit(Fd, "  case 0:\n")
     end,
     case Case of
 	sizecalc ->
@@ -577,23 +593,23 @@ emit_c_union_case(G, N, X, Fd, I, T, [{Bool,_}], Case) -> %% Boolean discriminat
 	decode ->
 	    getCaseTypeDecode(G, N, X, Fd, I, T)
     end,
-    ic_codegen:emit(Fd, "    break;\n\n"),
+    emit(Fd, "    break;\n\n"),
     false;
 emit_c_union_case(G, N, X, Fd, I, T, [{Bool,_}|Rest], Case) -> %% Boolean discriminator
     case Bool of
 	'TRUE' ->
-	    ic_codegen:emit(Fd, "  case 1:\n");
+	    emit(Fd, "  case 1:\n");
 	'FALSE' ->
-	    ic_codegen:emit(Fd, "  case 0:\n")
+	    emit(Fd, "  case 0:\n")
     end,
     emit_c_union_case(G, N, X, Fd, I, T, Rest, Case),
     false;
 emit_c_union_case(G, N, X, Fd, I, T, [{_,_,NrStr}], Case) -> %% Integer type discriminator
     case get_c_union_discriminator(G, N, X) of
 	"CORBA_char" ->
-	    ic_codegen:emit(Fd, "  case \'~s\':\n",[NrStr]);
+	    emit(Fd, "  case \'~s\':\n",[NrStr]);
 	_ ->
-	    ic_codegen:emit(Fd, "  case ~s:\n",[NrStr])
+	    emit(Fd, "  case ~s:\n",[NrStr])
     end,
     case Case of
 	sizecalc ->
@@ -603,16 +619,16 @@ emit_c_union_case(G, N, X, Fd, I, T, [{_,_,NrStr}], Case) -> %% Integer type dis
 	decode ->
 	    getCaseTypeDecode(G, N, X, Fd, I, T)
     end,
-    ic_codegen:emit(Fd, "    break;\n\n"),
+    emit(Fd, "    break;\n\n"),
     false;
 emit_c_union_case(G, N, X, Fd, I, T, [{_,_,NrStr}|Rest], Case) -> %% Integer type discriminator
-    ic_codegen:emit(Fd, "  case ~s:\n",[NrStr]),
+    emit(Fd, "  case ~s:\n",[NrStr]),
     emit_c_union_case(G, N, X, Fd, I, T, Rest, Case),
     false;
 emit_c_union_case(G, N, X, Fd, I, T, [{scoped_id,_,_,[EID]}], Case) -> %% Enumerant type discriminator
     SID = ic_util:to_undersc([EID|get_c_union_discriminator_scope(G, N, X)]),
     %%io:format("SID = ~p~n",[SID]),
-    ic_codegen:emit(Fd, "  case ~s:\n",[SID]),
+    emit(Fd, "  case ~s:\n",[SID]),
     case Case of
 	sizecalc ->
 	    getCaseTypeSizecalc(G, N, X, Fd, I, T);
@@ -621,12 +637,12 @@ emit_c_union_case(G, N, X, Fd, I, T, [{scoped_id,_,_,[EID]}], Case) -> %% Enumer
 	decode ->
 	    getCaseTypeDecode(G, N, X, Fd, I, T)
     end,
-    ic_codegen:emit(Fd, "    break;\n\n"),
+    emit(Fd, "    break;\n\n"),
     false;
 emit_c_union_case(G, N, X, Fd, I, T, [{scoped_id,_,_,[EID]}|Rest], Case) -> %% Enumerant type discriminator
     SID = ic_util:to_undersc([EID|get_c_union_discriminator_scope(G, N, X)]),
     %%io:format("SID = ~p~n",[SID]),
-    ic_codegen:emit(Fd, "  case ~s:\n",[SID]),
+    emit(Fd, "  case ~s:\n",[SID]),
     emit_c_union_case(G, N, X, Fd, I, T, Rest, Case),
     false.
 
@@ -651,129 +667,161 @@ get_c_union_discriminator_scope(G, N, X) ->
 getCaseTypeSizecalc(G, N, X, Fd, I, T) when element(1, T) == scoped_id ->
     case ic_fetch:member2type(G,X,I) of
 	ushort ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "      ", "ushort:ei_decode_ulong", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	ulong -> 
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "      ", "ulong:ei_decode_ulong", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	short ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n"); 	
+	    emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "      ", "short:ei_decode_long", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n"); 	
 	long ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "      ", "long:ei_decode_long", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	float ->
-	    ic_codegen:emit(Fd, "   if ((oe_error_code = ei_decode_double(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");     
+	    emit(Fd, "   if ((oe_error_code = ei_decode_double(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "      ", "float:ei_decode_double", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");     
 	double ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_double(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");       
+	    emit(Fd, "    if ((oe_error_code = ei_decode_double(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "      ", "double:ei_decode_double", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");       
 	boolean ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "      ", "boolean:ei_decode_atom", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	char ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "      ", "char:ei_decode_char", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	octet ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "      ", "octet:ei_decode_char", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	string ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_get_type(oe_env->_inbuf, oe_size_count_index, &oe_type, &oe_tmp)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n\n"),
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_string(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n\n"),
-	    ic_codegen:emit(Fd, "    oe_malloc_size = ~s;\n",[ic_util:mk_align("oe_malloc_size+oe_tmp+1")]);
+	    emit(Fd, "    if ((oe_error_code = ei_get_type(oe_env->_inbuf, oe_size_count_index, &oe_type, &oe_tmp)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "      ", "ei_get_type", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n"),
+	    emit(Fd, "    if ((oe_error_code = ei_decode_string(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "      ", "ei_decode_string", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n"),
+	    emit(Fd, "    oe_malloc_size = ~s;\n",[ic_util:mk_align("oe_malloc_size+oe_tmp+1")]);
 	any -> %% Fix for any type
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "      ", "ei_decode_long", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 
 	_ ->
 	    case getCaseTypeStr(G, N, X, I, T) of
 		"erlang_pid" ->
-		    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_pid(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n",
-			       []),
-		    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+		    emit(Fd, "  if ((oe_error_code = ei_decode_pid(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n",
+			 []),
+		    ?emit_c_dec_rpt(Fd, "    ", "ei_decode_pid", []),
+		    emit(Fd, "    return oe_error_code;\n    }\n");
 		"erlang_port" ->
-		    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_port(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n",
-			       []),
-		    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+		    emit(Fd, "  if ((oe_error_code = ei_decode_port(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n",
+			 []),
+		    ?emit_c_dec_rpt(Fd, "    ", "ei_decode_port", []),
+		    emit(Fd, "    return oe_error_code;\n    }\n");
 		"erlang_ref" ->
-		    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_ref(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n",
-			       []),
-		    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+		    emit(Fd, "  if ((oe_error_code = ei_decode_ref(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n",
+			 []),
+		    ?emit_c_dec_rpt(Fd, "    ", "ei_decode_ref", []),
+		    emit(Fd, "    return oe_error_code;\n    }\n");
 		"erlang_term" ->
-		    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_term(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n",
-			       []),
-		    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
-		
+		    emit(Fd, "  if ((oe_error_code = ei_decode_term(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n",
+			 []),
+		    ?emit_c_dec_rpt(Fd, "    ", "ei_deoce_term", []),
+		    emit(Fd, "    return oe_error_code;\n    }\n");
+
 		Other ->
 
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0)\n",
-			       [Other]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n")
+		    emit(Fd, "    if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0) {\n",
+			 [Other]),
+		    ?emit_c_dec_rpt(Fd, "      ", "oe_sizecalc_~s", [Other]),
+		    emit(Fd, "      return oe_error_code;\n    }\n")
 	    end
     end;
 getCaseTypeSizecalc(G, N, X, Fd, I, T) ->
     case I of 
 	{array,_,_}  ->
 	    ArrayName = ic_util:to_undersc([ic_forms:get_id2(I),ic_forms:get_id2(X) | N]),
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0)\n",
-		       [ArrayName]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0) {\n",
+		 [ArrayName]),
+	    ?emit_c_dec_rpt(Fd, "      ", "oe_sizecalc_~s", [ArrayName]),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	_ ->
 	    case T of
 		{short,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "      ", "short:ei_decode_long", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{unsigned,{short,_}} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "      ", "ushort:ei_decode_ulong", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{long, _} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "      ", "long:ei_decode_long", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{unsigned,{long,_}} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "      ", "ulong:ei_decode_ulong", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{float,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_double(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_double(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "      ", "float:ei_decode_double", []),
+		    emit(Fd, "      return oe_error_code;\n    }");
 		{double,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_double(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_double(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "      ", "dobule:ei_decode_double", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{boolean,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "      ", "boolean:ei_decode_atom", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{char,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "      ", "char:ei_decode_char", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{octet,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "      ", "octet:ei_decode_char", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{string,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_get_type(oe_env->_inbuf, oe_size_count_index, &oe_type, &oe_tmp)) < 0)\n"),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n\n"),
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_string(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n\n"),
-		    ic_codegen:emit(Fd, "    oe_malloc_size = ~s;\n",[ic_util:mk_align("oe_malloc_size+oe_tmp+1")]);
+		    emit(Fd, "    if ((oe_error_code = ei_get_type(oe_env->_inbuf, oe_size_count_index, &oe_type, &oe_tmp)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "      ", "ei_get_type", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n"),
+		    emit(Fd, "    if ((oe_error_code = ei_decode_string(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "      ", "ei_decode_string", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n"),
+		    emit(Fd, "    oe_malloc_size = ~s;\n",[ic_util:mk_align("oe_malloc_size+oe_tmp+1")]);
 		{sequence,_,_} ->
 		    SeqName = ic_util:to_undersc([ic_forms:get_id2(I), ic_forms:get_id2(X) | N]),
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0)\n",
-			       [SeqName]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0) {\n",
+			 [SeqName]),
+		    ?emit_c_dec_rpt(Fd, "      ", "sequence:oe_sizecalc_~s", [SeqName]),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{struct,SID,_,_} ->
 		    StructName = ic_util:to_undersc([ic_forms:get_id2(SID), ic_forms:get_id2(X) | N]),
-			    
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0)\n",
-			       [StructName]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0) {\n",
+			 [StructName]),
+		    ?emit_c_dec_rpt(Fd, "      ", "struct:oe_sizecalc_~s", [StructName]),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{union,UID,_,_,_} ->
 		    UnionName = ic_util:to_undersc([ic_forms:get_id2(UID), ic_forms:get_id2(X) | N]),
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0)\n",
-			       [UnionName]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0) {\n",
+			 [UnionName]),
+		    ?emit_c_dec_rpt(Fd, "      ", "union:oe_sizecalce_~s", [UnionName]),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{any, _} -> %% Fix for any type
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "      ", "any:ei_decode_long", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		_ ->
 		    ic_error:fatal_error(G, {illegal_typecode_for_c, T, N})
 	    end
@@ -787,160 +835,197 @@ getCaseTypeSizecalc(G, N, X, Fd, I, T) ->
 %% Encode facilities
 %%
 emit_union_encode(G, N, X, Fd, UnionName) ->
-    ic_codegen:emit(Fd, "int ~s~s(CORBA_Environment *oe_env, ~s* oe_rec) {\n\n",
-	       [ic_util:mk_oe_name(G, "encode_"), UnionName, UnionName]),
-    
-    ic_codegen:emit(Fd, "  int oe_error_code = 0;\n\n"),
+    emit(Fd, "int ~s~s(CORBA_Environment *oe_env, ~s* oe_rec) {\n\n",
+	 [ic_util:mk_oe_name(G, "encode_"), UnionName, UnionName]),
 
-    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_tuple_header(oe_env, 3)) < 0)\n"),
-    ic_codegen:emit(Fd, "    return oe_error_code;\n\n"),
-    
-    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_atom(oe_env, \"~s\")) < 0)\n", 
-	       [UnionName]),
-    ic_codegen:emit(Fd, "    return oe_error_code;\n\n"),
-    
+    emit(Fd, "  int oe_error_code = 0;\n\n"),
+
+    emit(Fd, "  if ((oe_error_code = oe_ei_encode_tuple_header(oe_env, 3)) < 0) {\n"),
+    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_tuple_header", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
+
+    emit(Fd, "  if ((oe_error_code = oe_ei_encode_atom(oe_env, \"~s\")) < 0) {\n", 
+	 [UnionName]),
+    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_atom", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
+
     emit_c_union_discr_encode(G, N, X, Fd),  
-    ic_codegen:emit(Fd, "  /* Encode union */\n"),
-    ic_codegen:emit(Fd, "  switch(oe_rec->_d) {\n"),
+    emit(Fd, "  /* Encode union */\n"),
+    emit(Fd, "  switch(oe_rec->_d) {\n"),
     emit_c_union_loop(G, N, X, Fd, X#union.body, encode),
-    ic_codegen:emit(Fd, "  }\n\n"),
-    ic_codegen:emit(Fd, "  return 0;\n"),
-    ic_codegen:emit(Fd, "}\n\n\n").
+    emit(Fd, "  }\n\n"),
+    emit(Fd, "  return 0;\n"),
+    emit(Fd, "}\n\n\n").
 
 
 emit_c_union_discr_encode(G, N, X, Fd) ->
-    ic_codegen:emit(Fd, "  /* Encode descriminator */\n"),
+    emit(Fd, "  /* Encode descriminator */\n"),
     UD = get_c_union_discriminator(G, N, X),
     case UD of
 	"CORBA_short" ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_d)) < 0)\n"),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_d)) < 0) {\n"),
+	    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_long", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"CORBA_unsigned_short" ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_ulong(oe_env, oe_rec->_d)) < 0)\n"),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_ulong(oe_env, oe_rec->_d)) < 0) {\n"),
+	    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_ulong", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"CORBA_long" ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_d)) < 0)\n"),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_d)) < 0) {\n"),
+	    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_long", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"CORBA_unsigned_long" ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_ulong(oe_env, oe_rec->_d)) < 0)\n"),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_ulong(oe_env, oe_rec->_d)) < 0) {\n"),
+	    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_ulong", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"CORBA_boolean" ->
-	    ic_codegen:emit(Fd, "  switch(oe_rec->_d) {\n"),
-	    ic_codegen:emit(Fd, "  case 0:\n"),
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_atom(oe_env, \"false\")) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n"),
-	    ic_codegen:emit(Fd, "    break;\n"),
-	    ic_codegen:emit(Fd, "  case 1:\n"),
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_atom(oe_env, \"true\")) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n"),
-	    ic_codegen:emit(Fd, "    break;\n"),
-	    ic_codegen:emit(Fd, "  default:\n"),
-	    ic_codegen:emit(Fd, "    return -1;\n"),
-	    ic_codegen:emit(Fd, "  }\n\n");
+	    emit(Fd, "  switch(oe_rec->_d) {\n"),
+	    emit(Fd, "  case 0:\n"),
+	    emit(Fd, "    if ((oe_error_code = oe_ei_encode_atom(oe_env, \"false\")) < 0) {\n"),
+	    emit_c_enc_rpt(Fd, "      ", "oe_ei_encode_atom", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n"),
+	    emit(Fd, "    break;\n"),
+	    emit(Fd, "  case 1:\n"),
+	    emit(Fd, "    if ((oe_error_code = oe_ei_encode_atom(oe_env, \"true\")) < 0) {\n"),
+	    emit_c_enc_rpt(Fd, "      ", "oe_ei_encode_atom", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n"),
+	    emit(Fd, "    break;\n"),
+	    emit(Fd, "  default:\n"),
+	    emit_c_enc_rpt(Fd, "    ", "boolean failure", []),
+	    emit(Fd, "    return -1;\n"),
+	    emit(Fd, "  }\n\n");
 	"CORBA_char" ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_char(oe_env, oe_rec->_d)) < 0)\n"),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_char(oe_env, oe_rec->_d)) < 0) {\n"),
+	    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_char", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	T ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_encode_~s(oe_env, oe_rec->_d)) < 0)\n",
-		       [T]),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n")
+	    emit(Fd, "  if ((oe_error_code = oe_encode_~s(oe_env, oe_rec->_d)) < 0) {\n", [T]),
+	    ?emit_c_enc_rpt(Fd, "    ", "oe_encode_~s", [T]),
+	    emit(Fd, "    return oe_error_code;\n  }\n")
     end.
 
 
 getCaseTypeEncode(G, N, X, Fd, I, T) when element(1, T) == scoped_id -> 
     case ic_fetch:member2type(G,X,I) of
 	ushort ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_ulong(oe_env, oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_ei_encode_ulong(oe_env, oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "ushort:oe_ei_encode_ulong", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	ulong -> 
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_ulong(oe_env, oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_ei_encode_ulong(oe_env, oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "ulong:oe_ei_encode_ulong", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	short ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n"); 	
+	    emit(Fd, "    if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "short:oe_ei_encode_long", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n"); 	
 	long ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "long:oe_ei_encode_long", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	float ->
-	    ic_codegen:emit(Fd, "   if ((oe_error_code = oe_ei_encode_double(oe_env, oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");     
+	    emit(Fd, "   if ((oe_error_code = oe_ei_encode_double(oe_env, oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "float:oe_ei_encode_double", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");     
 	double ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_double(oe_env, oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");       
+	    emit(Fd, "    if ((oe_error_code = oe_ei_encode_double(oe_env, oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "double:oe_ei_encode_double", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");       
 	boolean ->
-	    ic_codegen:emit(Fd, "    switch(oe_rec->_u.~s) {\n",[ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "    case 0:\n"),
-	    ic_codegen:emit(Fd, "      if ((oe_error_code = oe_ei_encode_atom(oe_env, \"false\")) < 0)\n"),
-	    ic_codegen:emit(Fd, "        return oe_error_code;\n"),
-	    ic_codegen:emit(Fd, "      break;\n"),
-	    ic_codegen:emit(Fd, "    case 1:\n"),
-	    ic_codegen:emit(Fd, "      if ((oe_error_code = oe_ei_encode_atom(oe_env, \"true\")) < 0)\n"),
-	    ic_codegen:emit(Fd, "        return oe_error_code;\n"),
-	    ic_codegen:emit(Fd, "      break;\n"),
-	    ic_codegen:emit(Fd, "    default:\n"),
-	    ic_codegen:emit(Fd, "      return -1;\n"),
-	    ic_codegen:emit(Fd, "    }\n");
+	    emit(Fd, "    switch(oe_rec->_u.~s) {\n",[ic_forms:get_id2(I)]),
+	    emit(Fd, "    case 0:\n"),
+	    emit(Fd, "      if ((oe_error_code = oe_ei_encode_atom(oe_env, \"false\")) < 0) {\n"),
+	    ?emit_c_enc_rpt(Fd, "        ", "boolean:oe_ei_encode_atom", []),
+	    emit(Fd, "        return oe_error_code;\n      }\n"),
+	    emit(Fd, "      break;\n"),
+	    emit(Fd, "    case 1:\n"),
+	    emit(Fd, "      if ((oe_error_code = oe_ei_encode_atom(oe_env, \"true\")) < 0) {\n"),
+	    ?emit_c_enc_rpt(Fd, "        ", "boolean:oe_ei_encode_atom", []),
+	    emit(Fd, "        return oe_error_code;\n      }\n"),
+	    emit(Fd, "      break;\n"),
+	    emit(Fd, "    default:\n"),
+	    ?emit_c_enc_rpt(Fd, "      ", "boolean failure", []),
+	    emit(Fd, "      return -1;\n"),
+	    emit(Fd, "    }\n");
 	char ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_char(oe_env, oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_ei_encode_char(oe_env, oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "char:oe_ei_encode_char", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	octet ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_char(oe_env, oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_ei_encode_char(oe_env, oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "octet:oe_ei_encode_char", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	string ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_string(oe_env, oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_ei_encode_string(oe_env, oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "oe_ei_encode_string", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	struct ->
 	    case ic_cbe:mk_c_type(G, N, T, evaluate_not) of
 		"erlang_pid" ->
-		    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_pid(oe_env, &oe_rec->_u.~s)) < 0)\n",
+		    emit(Fd, "  if ((oe_error_code = oe_ei_encode_pid(oe_env, &oe_rec->_u.~s)) < 0) {\n",
 			 [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "    return oe_error_code;\n");
+		    ?emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_pid", []),
+		    emit(Fd, "    return oe_error_code;\n  }\n");
 		"erlang_port" ->
-		    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_port(oe_env, &oe_rec->_u.~s)) < 0)\n",
+		    emit(Fd, "  if ((oe_error_code = oe_ei_encode_port(oe_env, &oe_rec->_u.~s)) < 0) {\n",
 			 [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "    return oe_error_code;\n");
+		    ?emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_port", []),
+		    emit(Fd, "    return oe_error_code;\n  }\n");
 		"erlang_ref" ->
-		    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_ref(oe_env, &oe_rec->_u.~s)) < 0)\n",
+		    emit(Fd, "  if ((oe_error_code = oe_ei_encode_ref(oe_env, &oe_rec->_u.~s)) < 0) {\n",
 			 [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "    return oe_error_code;\n");
+		    ?emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_ref", []),
+		    emit(Fd, "    return oe_error_code;\n  }\n");
 		"ETERM*" ->
-		    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_term(oe_env, &oe_rec->_u.~s)) < 0)\n",
+		    emit(Fd, "  if ((oe_error_code = oe_ei_encode_term(oe_env, &oe_rec->_u.~s)) < 0) {\n",
 			 [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "    return oe_error_code;\n");
+		    ?emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_term", []),
+		    emit(Fd, "    return oe_error_code;\n  }\n");
 		_ ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0)\n",
-			       [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n")
+		    emit(Fd, "  if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0) {\n",
+			 [getCaseTypeStr(G, N, X, I, T), ic_forms:get_id2(I)]),
+		    ?emit_c_enc_rpt(Fd, "    ", "oe_encode_~s", 
+				    [getCaseTypeStr(G, N, X, I, T)]),
+		    emit(Fd, "    return oe_error_code;\n  }\n")
 	    end;
 	sequence ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0)\n",
-		       [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0) {\n",
+		 [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "sequence:oe_encode_~s", 
+			    [getCaseTypeStr(G, N, X, I, T)]),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	array ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, oe_rec->_u.~s)) < 0)\n",
-		       [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, oe_rec->_u.~s)) < 0) {\n",
+		 [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "array:oe_encode_~s", 
+			    [getCaseTypeStr(G, N, X, I, T)]),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	union ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0)\n",
-		       [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0) {\n",
+		 [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "union:oe_encode_~s", 
+			    [getCaseTypeStr(G, N, X, I, T)]),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	enum ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, oe_rec->_u.~s)) < 0)\n",
-		       [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, oe_rec->_u.~s)) < 0) {\n",
+		 [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "enum:oe_encode_~", 
+			    [getCaseTypeStr(G, N, X, I, T)]),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	any -> %% Fix for any type
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "enum:oe_ei_encodelong", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	_ ->
 	    ic_error:fatal_error(G, {illegal_typecode_for_c, T, N})
     end;
@@ -948,75 +1033,91 @@ getCaseTypeEncode(G, N, X, Fd, I, T) ->
     case I of
 	{array,AID,_} ->
 	    ArrayName = ic_util:to_undersc([ic_forms:get_id2(AID),ic_forms:get_id2(X) | N]),
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, oe_rec->_u.~s)) < 0)\n",
-		       [ArrayName,ic_forms:get_id2(AID)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, oe_rec->_u.~s)) < 0) {\n",
+		 [ArrayName,ic_forms:get_id2(AID)]),
+	    ?emit_c_enc_rpt(Fd, "      ", "array:oe_encode_~s", [ArrayName]),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	_ ->
 	    case T of
 		{short,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_enc_rpt(Fd, "      ", "short:oe_ei_encode_long", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{unsigned,{short,_}} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_ulong(oe_env, oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_ei_encode_ulong(oe_env, oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_enc_rpt(Fd, "      ", "ushort:oe_ei_encode_ulong", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{long, _} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_enc_rpt(Fd, "      ", "long:oe_ei_encode_long", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{unsigned,{long,_}} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_ulong(oe_env, oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_ei_encode_ulong(oe_env, oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_enc_rpt(Fd, "      ", "ulong:oe_ei_encode_ulong", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{float,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_double(oe_env, oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_ei_encode_double(oe_env, oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_enc_rpt(Fd, "      ", "float:oe_ei_encode_double", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{double,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_double(oe_env, oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_ei_encode_double(oe_env, oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_enc_rpt(Fd, "      ", "double:oe_ei_encode_double", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{boolean,_} ->
-		    ic_codegen:emit(Fd, "    switch(oe_rec->_u.~s) {\n",[ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "    case 0:\n"),
-		    ic_codegen:emit(Fd, "      if ((oe_error_code = oe_ei_encode_atom(oe_env, \"false\")) < 0)\n"),
-		    ic_codegen:emit(Fd, "        return oe_error_code;\n"),
-		    ic_codegen:emit(Fd, "      break;\n"),
-		    ic_codegen:emit(Fd, "    case 1:\n"),
-		    ic_codegen:emit(Fd, "      if ((oe_error_code = oe_ei_encode_atom(oe_env, \"true\")) < 0)\n"),
-		    ic_codegen:emit(Fd, "        return oe_error_code;\n"),
-		    ic_codegen:emit(Fd, "      break;\n"),
-		    ic_codegen:emit(Fd, "    default:\n"),
-		    ic_codegen:emit(Fd, "      return -1;\n"),
-		    ic_codegen:emit(Fd, "    }\n");
+		    emit(Fd, "    switch(oe_rec->_u.~s) {\n",[ic_forms:get_id2(I)]),
+		    emit(Fd, "    case 0:\n"),
+		    emit(Fd, "      if ((oe_error_code = oe_ei_encode_atom(oe_env, \"false\")) < 0) {\n"),
+		    ?emit_c_enc_rpt(Fd, "        ", "boolean:oe_ei_encode_atom", []),
+		    emit(Fd, "        return oe_error_code;\n      }\n"),
+		    emit(Fd, "      break;\n"),
+		    emit(Fd, "    case 1:\n"),
+		    emit(Fd, "      if ((oe_error_code = oe_ei_encode_atom(oe_env, \"true\")) < 0) {\n"),
+		    ?emit_c_enc_rpt(Fd, "        ", "boolean:oe_ei_encode_atom", []),
+		    emit(Fd, "        return oe_error_code;\n      }\n"),
+		    emit(Fd, "      break;\n"),
+		    emit(Fd, "    default:\n"),
+		    ?emit_c_enc_rpt(Fd, "      ", "boolean failure", []),
+		    emit(Fd, "      return -1;\n"),
+		    emit(Fd, "    }\n");
 		{char,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_char(oe_env, oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_ei_encode_char(oe_env, oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_enc_rpt(Fd, "      ", "char:oe_ei_encode_char", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{octet,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_char(oe_env, oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_ei_encode_char(oe_env, oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_enc_rpt(Fd, "      ", "octet:oe_ei_encode_char", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{string,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_string(oe_env, oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_ei_encode_string(oe_env, oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_enc_rpt(Fd, "      ", "oe_ei_encode_string", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{sequence,_,_} ->
 		    SeqName = ic_util:to_undersc([ic_forms:get_id2(I), ic_forms:get_id2(X) | N]),
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0)\n",
-			       [SeqName,ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0) {\n",
+			 [SeqName,ic_forms:get_id2(I)]),
+		    ?emit_c_enc_rpt(Fd, "      ", "sequence:oe_encode_~s", [SeqName]),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{struct,SID,_,_} ->
 		    StructName = ic_util:to_undersc([ic_forms:get_id2(SID), ic_forms:get_id2(X) | N]),
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0)\n",
-			       [StructName,ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0) {\n",
+			 [StructName,ic_forms:get_id2(I)]),
+		    ?emit_c_enc_rpt(Fd, "      ", "struct:oe_encode_~s", [StructName]),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{union,UID,_,_,_} ->
 		    UnionName = ic_util:to_undersc([ic_forms:get_id2(UID), ic_forms:get_id2(X) | N]),
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0)\n",
-			       [UnionName,ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0) {\n",
+			 [UnionName,ic_forms:get_id2(I)]),
+		    ?emit_c_enc_rpt(Fd, "      ", "union:oe_encode_~s", [UnionName]),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		_ ->
 		    ic_error:fatal_error(G, {illegal_typecode_for_c, T, N})
 	    end
@@ -1029,81 +1130,89 @@ getCaseTypeEncode(G, N, X, Fd, I, T) ->
 %% Decode facilities
 %%
 emit_union_decode(G, N, X, Fd, UnionName) ->
-    ic_codegen:emit(Fd, "int ~s~s(CORBA_Environment *oe_env, char *oe_first, int* oe_index, ~s* oe_rec) {\n\n",
-	       [ic_util:mk_oe_name(G, "decode_"), UnionName, UnionName]),
-    
-    ic_codegen:emit(Fd, "  int oe_error_code = 0;\n"),
-    ic_codegen:emit(Fd, "  int oe_tmp = 0;\n"),
-    ic_codegen:emit(Fd, "  char oe_union_name[256];\n\n"),
+    emit(Fd, "int ~s~s(CORBA_Environment *oe_env, char *oe_first, int* oe_index, ~s* oe_rec) {\n\n",
+	 [ic_util:mk_oe_name(G, "decode_"), UnionName, UnionName]),
 
-    ic_codegen:emit(Fd, "  if((char*) oe_rec == oe_first)\n",[]),
+    emit(Fd, "  int oe_error_code = 0;\n"),
+    emit(Fd, "  int oe_tmp = 0;\n"),
+    emit(Fd, "  char oe_union_name[256];\n\n"),
+
+    emit(Fd, "  if((char*) oe_rec == oe_first)\n",[]),
     AlignName = lists:concat(["*oe_index + sizeof(",UnionName,")"]),
-    ic_codegen:emit(Fd, "    *oe_index = ~s;\n\n", [ic_util:mk_align(AlignName)]),
+    emit(Fd, "    *oe_index = ~s;\n\n", [ic_util:mk_align(AlignName)]),
 
-    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_tuple_header(oe_env->_inbuf, &oe_env->_iin, &oe_tmp)) < 0)\n"),
-    ic_codegen:emit(Fd, "    return oe_error_code;\n\n"),
-    
-    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, oe_union_name)) < 0)\n"),
-    ic_codegen:emit(Fd, "    return oe_error_code;\n\n"),
-    
+    emit(Fd, "  if ((oe_error_code = ei_decode_tuple_header(oe_env->_inbuf, &oe_env->_iin, &oe_tmp)) < 0) {\n"),
+    emit_c_dec_rpt(Fd, "    ", "ei_decode_tuple_header", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
+
+    emit(Fd, "  if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, oe_union_name)) < 0) {\n"),
+    emit_c_dec_rpt(Fd, "    ", "ei_decode_atom", []),
+    emit(Fd, "    return oe_error_code;\n  }\n"),
+
     emit_c_union_discr_decode(G, N, X, Fd),
-    ic_codegen:emit(Fd, "  /* Decode union */\n"),
-    ic_codegen:emit(Fd, "  switch(oe_rec->_d) {\n"),
+    emit(Fd, "  /* Decode union */\n"),
+    emit(Fd, "  switch(oe_rec->_d) {\n"),
     emit_c_union_loop(G, N, X, Fd, X#union.body, decode),
-    ic_codegen:emit(Fd, "  }\n\n"),
+    emit(Fd, "  }\n\n"),
 
-    ic_codegen:emit(Fd, "  *oe_index = ~s;\n", [ic_util:mk_align("*oe_index")]),
-    ic_codegen:emit(Fd, "  return 0;\n"),
-    ic_codegen:emit(Fd, "}\n\n\n").
+    emit(Fd, "  *oe_index = ~s;\n", [ic_util:mk_align("*oe_index")]),
+    emit(Fd, "  return 0;\n"),
+    emit(Fd, "}\n\n\n").
 
 
 emit_c_union_discr_decode(G, N, X, Fd) ->
-    ic_codegen:emit(Fd, "  /* Decode descriminator */\n"),
+    emit(Fd, "  /* Decode descriminator */\n"),
     UD = get_c_union_discriminator(G, N, X),
     case UD of
 	"CORBA_short" ->
-	    ic_codegen:emit(Fd, "  {\n"),
-	    ic_codegen:emit(Fd, "    long oe_long;\n"),
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_long)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n\n"),
-	    ic_codegen:emit(Fd, "    oe_rec->_d = (short) oe_long;\n\n"),
-	    ic_codegen:emit(Fd, "    if (oe_rec->_d !=  oe_long)\n      return -1;\n"),
-	    ic_codegen:emit(Fd, "  }\n\n");
+	    emit(Fd, "  {\n"),
+	    emit(Fd, "    long oe_long;\n"),
+	    emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_long)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "      ", "short:ei_decode_long", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n"),
+	    emit(Fd, "    oe_rec->_d = (short) oe_long;\n\n"),
+	    emit(Fd, "    if (oe_rec->_d !=  oe_long)\n      return -1;\n"),
+	    emit(Fd, "  }\n\n");
 	"CORBA_unsigned_short" ->
-	    ic_codegen:emit(Fd, "  {\n"),
-	    ic_codegen:emit(Fd, "    unsigned long oe_ulong;\n"),
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, &oe_env->_iin, &oe_ulong)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n\n"),
-	    ic_codegen:emit(Fd, "    oe_rec->_d = (unsigned short) oe_ulong;\n\n"),
-	    ic_codegen:emit(Fd, "    if (oe_rec->_d !=  oe_ulong)\n      return -1;\n"),
-	    ic_codegen:emit(Fd, "  }\n\n");
+	    emit(Fd, "  {\n"),
+	    emit(Fd, "    unsigned long oe_ulong;\n"),
+	    emit(Fd, "    if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, &oe_env->_iin, &oe_ulong)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "      ", "unshort:ei_decode_ulong", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n"),
+	    emit(Fd, "    oe_rec->_d = (unsigned short) oe_ulong;\n\n"),
+	    emit(Fd, "    if (oe_rec->_d !=  oe_ulong)\n      return -1;\n"),
+	    emit(Fd, "  }\n\n");
 	"CORBA_long" ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_d)) < 0)\n"),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+	    emit(Fd, "  if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_d)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "    ", "long:ei_decode_long", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"CORBA_unsigned_long" ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_d)) < 0)\n"),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+	    emit(Fd, "  if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_d)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "    ", "ulong:ei_decode_ulong", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	"CORBA_boolean" ->
-	    ic_codegen:emit(Fd, "  {\n"),
-	    ic_codegen:emit(Fd, "    char oe_bool[25];\n\n"),
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, oe_bool)) < 0)\n"),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n\n"),
-	    ic_codegen:emit(Fd, "    if (strcmp(oe_bool, \"false\") == 0) {\n"),
-	    ic_codegen:emit(Fd, "      oe_rec->_d = 0;\n"), 
-	    ic_codegen:emit(Fd, "    }\n"),
-	    ic_codegen:emit(Fd, "    else if (strcmp(oe_bool, \"true\") == 0) {\n"),
-	    ic_codegen:emit(Fd, "      oe_rec->_d = 1;\n"), 
-	    ic_codegen:emit(Fd, "    }\n"),
-	    ic_codegen:emit(Fd, "    else\n"),
-	    ic_codegen:emit(Fd, "      return -1;\n"),
-	    ic_codegen:emit(Fd, "  }\n\n");
+	    emit(Fd, "  {\n"),
+	    emit(Fd, "    char oe_bool[25];\n\n"),
+	    emit(Fd, "    if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, oe_bool)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "      ", "boolean:ei_decode_atom", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n"),
+	    emit(Fd, "    if (strcmp(oe_bool, \"false\") == 0) {\n"),
+	    emit(Fd, "      oe_rec->_d = 0;\n"), 
+	    emit(Fd, "    }else if (strcmp(oe_bool, \"true\") == 0) {\n"),
+	    emit(Fd, "      oe_rec->_d = 1;\n"), 
+	    emit(Fd, "    } else {\n"),
+	    emit_c_dec_rpt(Fd, "      ", "boolean failure", []),
+	    emit(Fd, "      return -1;\n    }\n"),
+	    emit(Fd, "  }\n\n");
 	"CORBA_char" ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_char(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_d)) < 0)\n"),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+	    emit(Fd, "  if ((oe_error_code = ei_decode_char(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_d)) < 0) {\n"),
+	    emit_c_dec_rpt(Fd, "    ", "char:ei_decode_char", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	T ->
-	    ic_codegen:emit(Fd, "  if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_d)) < 0)\n",
-		       [T]),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n\n")
+	    emit(Fd, "  if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_d)) < 0) {\n",
+		 [T]),
+	    ?emit_c_dec_rpt(Fd, "    ", "oe_decode_~s", [T]),
+	    emit(Fd, "    return oe_error_code;\n  }\n")
     end.
 
 
@@ -1111,121 +1220,142 @@ emit_c_union_discr_decode(G, N, X, Fd) ->
 getCaseTypeDecode(G, N, X, Fd, I, T) when element(1, T) == scoped_id -> 
     case ic_fetch:member2type(G,X,I) of
 	ushort ->
-	    ic_codegen:emit(Fd, "    {\n"),
-	    ic_codegen:emit(Fd, "      unsigned long oe_ulong;\n"),
-	    ic_codegen:emit(Fd, "      if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, &oe_env->_iin, &oe_ulong)) < 0)\n"),
-	    ic_codegen:emit(Fd, "        return oe_error_code;\n\n"),
-	    ic_codegen:emit(Fd, "      oe_rec->_u.~s = (unsigned short) oe_ulong;\n\n",[ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      if (oe_rec->_u.~s !=  oe_ulong)\n        return -1;\n",[ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "    }\n");
+	    emit(Fd, "    {\n"),
+	    emit(Fd, "      unsigned long oe_ulong;\n"),
+	    emit(Fd, "      if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, &oe_env->_iin, &oe_ulong)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "        ", "ushort:ei_decode_ulong", []),
+	    emit(Fd, "        return oe_error_code;\n      }\n"),
+	    emit(Fd, "      oe_rec->_u.~s = (unsigned short) oe_ulong;\n\n",[ic_forms:get_id2(I)]),
+	    emit(Fd, "      if (oe_rec->_u.~s !=  oe_ulong)\n        return -1;\n",[ic_forms:get_id2(I)]),
+	    emit(Fd, "    }\n");
 	ulong -> 
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_dec_rpt(Fd, "      ", "ulong:ei_decode_ulong", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	short ->
-	    ic_codegen:emit(Fd, "    {\n"),
-	    ic_codegen:emit(Fd, "      long oe_long;\n"),
-	    ic_codegen:emit(Fd, "      if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_long)) < 0)\n"),
-	    ic_codegen:emit(Fd, "        return oe_error_code;\n\n"),
-	    ic_codegen:emit(Fd, "      oe_rec->_u.~s = (short) oe_long;\n\n",[ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "      if (oe_rec->_u.~s !=  oe_long)\n        return -1;\n",[ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "    }\n");
+	    emit(Fd, "    {\n"),
+	    emit(Fd, "      long oe_long;\n"),
+	    emit(Fd, "      if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_long)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "        ", "short:ei_decode_long", []),
+	    emit(Fd, "        return oe_error_code;\n      }\n"),
+	    emit(Fd, "      oe_rec->_u.~s = (short) oe_long;\n\n",[ic_forms:get_id2(I)]),
+	    emit(Fd, "      if (oe_rec->_u.~s !=  oe_long)\n        return -1;\n",[ic_forms:get_id2(I)]),
+	    emit(Fd, "    }\n");
 	long ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_dec_rpt(Fd, "    ", "long:ei_decode_long", []),
+	    emit(Fd, "    return oe_error_code;\n    }\n");
 	float ->
-	    ic_codegen:emit(Fd, "    {\n"),
-	    ic_codegen:emit(Fd, "      double oe_double;\n"),
-	    ic_codegen:emit(Fd, "      if ((oe_error_code = ei_decode_double(oe_env->_inbuf, &oe_env->_iin, &oe_double)) < 0)\n"),
-	    ic_codegen:emit(Fd, "        return oe_error_code;\n\n"),
-	    ic_codegen:emit(Fd, "      oe_rec->_u.~s = (float) oe_double;\n",[ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "    }\n");
+	    emit(Fd, "    {\n"),
+	    emit(Fd, "      double oe_double;\n"),
+	    emit(Fd, "      if ((oe_error_code = ei_decode_double(oe_env->_inbuf, &oe_env->_iin, &oe_double)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "        ", "float:ei_decode_double", []),
+	    emit(Fd, "        return oe_error_code;\n      }\n"),
+	    emit(Fd, "      oe_rec->_u.~s = (float) oe_double;\n",[ic_forms:get_id2(I)]),
+	    emit(Fd, "    }\n");
 	double ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_double(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n");       
+	    emit(Fd, "    if ((oe_error_code = ei_decode_double(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_dec_rpt(Fd, "      ", "double:ei_decode_double", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	boolean ->
-	    ic_codegen:emit(Fd, "    {\n"),
-	    ic_codegen:emit(Fd, "      char oe_bool[25];\n\n"),
-	    ic_codegen:emit(Fd, "      if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, oe_bool)) < 0)\n"),
-	    ic_codegen:emit(Fd, "        return oe_error_code;\n\n"),
-	    ic_codegen:emit(Fd, "      if (strcmp(oe_bool, \"false\") == 0) {\n"),
-	    ic_codegen:emit(Fd, "        oe_rec->_u.~s = 0;\n",[ic_forms:get_id2(I)]), 
-	    ic_codegen:emit(Fd, "      }\n"),
-	    ic_codegen:emit(Fd, "      else if (strcmp(oe_bool, \"true\") == 0) {\n"),
-	    ic_codegen:emit(Fd, "        oe_rec->_u.~s = 1;\n",[ic_forms:get_id2(I)]), 
-	    ic_codegen:emit(Fd, "      }\n"),
-	    ic_codegen:emit(Fd, "      else\n"),
-	    ic_codegen:emit(Fd, "        return -1;\n"),
-	    ic_codegen:emit(Fd, "    }\n");
+	    emit(Fd, "    {\n"),
+	    emit(Fd, "      char oe_bool[25];\n\n"),
+	    emit(Fd, "      if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, oe_bool)) < 0) {\n"),
+	    ?emit_c_dec_rpt(Fd, "        ", "boolean:ei_decode_atom", []),
+	    emit(Fd, "        return oe_error_code;\n      }\n"),
+	    emit(Fd, "      if (strcmp(oe_bool, \"false\") == 0) {\n"),
+	    emit(Fd, "        oe_rec->_u.~s = 0;\n",[ic_forms:get_id2(I)]), 
+	    emit(Fd, "      } else if (strcmp(oe_bool, \"true\") == 0) {\n"),
+	    emit(Fd, "        oe_rec->_u.~s = 1;\n",[ic_forms:get_id2(I)]), 
+	    emit(Fd, "      } else {\n"),
+	    ?emit_c_dec_rpt(Fd, "        ", "boolean failure", []),
+	    emit(Fd, "        return -1;\n        }\n"),
+	    emit(Fd, "    }\n");
 	char ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_dec_rpt(Fd, "      ", "char:ei_decode_char", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	octet ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_dec_rpt(Fd, "      ", "octet:ei_decode_char", []),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	string ->
-	    ic_codegen:emit(Fd, "    {\n"),
-	    ic_codegen:emit(Fd, "      int oe_type = 0;\n"),
-	    ic_codegen:emit(Fd, "      int oe_string_ctr = 0;\n\n"),
-	    
-	    ic_codegen:emit(Fd, "      (int) ei_get_type(oe_env->_inbuf, &oe_env->_iin, &oe_type, &oe_string_ctr);\n\n"),
+	    emit(Fd, "    {\n"),
+	    emit(Fd, "      int oe_type = 0;\n"),
+	    emit(Fd, "      int oe_string_ctr = 0;\n\n"),
 
-	    ic_codegen:emit(Fd, "      oe_rec->_u.~s = (void *) (oe_first + *oe_index);\n\n",[ic_forms:get_id2(I)]),
-	    
-	    ic_codegen:emit(Fd, "      if ((oe_error_code = ei_decode_string(oe_env->_inbuf, &oe_env->_iin, oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "        return oe_error_code;\n\n"),
+	    emit(Fd, "      (int) ei_get_type(oe_env->_inbuf, &oe_env->_iin, &oe_type, &oe_string_ctr);\n\n"),
 
-	    ic_codegen:emit(Fd, "      *oe_index = ~s;\n",[ic_util:mk_align("*oe_index+oe_string_ctr+1")]),
-	    ic_codegen:emit(Fd, "    }\n");
+	    emit(Fd, "      oe_rec->_u.~s = (void *) (oe_first + *oe_index);\n\n",[ic_forms:get_id2(I)]),
+
+	    emit(Fd, "      if ((oe_error_code = ei_decode_string(oe_env->_inbuf, &oe_env->_iin, oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_dec_rpt(Fd, "        ", "ei_decode_string", []),
+	    emit(Fd, "        return oe_error_code;\n      }\n"),
+
+	    emit(Fd, "      *oe_index = ~s;\n",[ic_util:mk_align("*oe_index+oe_string_ctr+1")]),
+	    emit(Fd, "    }\n");
 	struct ->
 	    case ic_cbe:mk_c_type(G, N, T, evaluate_not) of
 		"erlang_pid" ->
-		    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_pid(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+		    emit(Fd, "  if ((oe_error_code = ei_decode_pid(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_dec_rpt(Fd, "    ", "ei_decode_pid", []),
+		    emit(Fd, "    return oe_error_code;\n  }\n");
 		"erlang_port" ->
-		    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_port(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+		    emit(Fd, "  if ((oe_error_code = ei_decode_port(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_dec_rpt(Fd, "    ", "ei_decode_port", []),
+		    emit(Fd, "    return oe_error_code;\n  }\n");
 		"erlang_ref" ->
-		    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_ref(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+		    emit(Fd, "  if ((oe_error_code = ei_decode_ref(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_dec_rpt(Fd, "    ", "ei_decode_ref", []),
+		    emit(Fd, "    return oe_error_code;\n  }\n");
 		"ETERM*" ->
-		    ic_codegen:emit(Fd, "  if ((oe_error_code = ei_decode_term(oe_env->_inbuf, &oe_env->_iin, (void **)&oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "    return oe_error_code;\n\n");
+		    emit(Fd, "  if ((oe_error_code = ei_decode_term(oe_env->_inbuf, &oe_env->_iin, (void **)&oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_dec_rpt(Fd, "    ", "ei_decode_term", []),
+		    emit(Fd, "    return oe_error_code;\n  }\n");
 
 		_ ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0)\n",
-			       [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "    return oe_error_code;\n")
+		    emit(Fd, "  if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0) {\n",
+			 [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
+		    ?emit_c_dec_rpt(Fd, "    ", "oe_decode_~s", 
+				    [getCaseTypeStr(G, N, X, I, T)]),
+		    emit(Fd, "    return oe_error_code;\n  }\n")
 	    end;
 	sequence ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0)\n",
-		       [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n");
+	    emit(Fd, "  if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0) {\n",
+		 [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
+	    ?emit_c_dec_rpt(Fd, "    ", "sequence:oe_decode_~s", 
+			    [getCaseTypeStr(G, N, X, I, T)]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	array ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, oe_rec->_u.~s)) < 0)\n",
-		       [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n");
+	    emit(Fd, "  if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, oe_rec->_u.~s)) < 0) {\n",
+		 [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
+	    ?emit_c_dec_rpt(Fd, "    ", "array:oe_decode_~s", [getCaseTypeStr(G, N, X, I, T)]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	union ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0)\n",
-		       [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n");
+	    emit(Fd, "  if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0) {\n",
+		 [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
+	    ?emit_c_dec_rpt(Fd, "    ", "union:oe_decode_~s", [getCaseTypeStr(G, N, X, I, T)]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	enum ->
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0)\n",
-		       [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n");
+	    emit(Fd, "  if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0) {\n",
+		 [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
+	    ?emit_c_dec_rpt(Fd, "    ", "enum:oe_decode_~s", [getCaseTypeStr(G, N, X, I, T)]),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	any -> %% Fix for any type
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
-		       [ic_forms:get_id2(I)]),
-	    ic_codegen:emit(Fd, "    return oe_error_code;\n");
+	    emit(Fd, "  if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0) {\n",
+		 [ic_forms:get_id2(I)]),
+	    ?emit_c_dec_rpt(Fd, "    ", "any:ei_decodelong", []),
+	    emit(Fd, "    return oe_error_code;\n  }\n");
 	_ ->
 	    ic_error:fatal_error(G, {illegal_typecode_for_c, T, N})
     end;
@@ -1233,111 +1363,118 @@ getCaseTypeDecode(G, N, X, Fd, I, T) ->
     case I of
 	{array,AID,_} ->
 	    ArrayName = ic_util:to_undersc([ic_forms:get_id2(AID),ic_forms:get_id2(X) | N]),
-	    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, oe_rec->_u.~s)) < 0)\n",
-		       [ArrayName,ic_forms:get_id2(AID)]),
-	    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+	    emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, oe_rec->_u.~s)) < 0) {\n",
+		 [ArrayName,ic_forms:get_id2(AID)]),
+	    ?emit_c_dec_rpt(Fd, "      ", "array:oe_decode_~s", [ArrayName]),
+	    emit(Fd, "      return oe_error_code;\n    }\n");
 	_ ->
 	    case T of
 		{short,_} ->
-		    ic_codegen:emit(Fd, "    {\n"),
-		    ic_codegen:emit(Fd, "      long oe_long;\n"),
-		    ic_codegen:emit(Fd, "      if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_long)) < 0)\n"),
-		    ic_codegen:emit(Fd, "        return oe_error_code;\n\n"),
-		    ic_codegen:emit(Fd, "      oe_rec->_u.~s = (short) oe_long;\n\n",[ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      if (oe_rec->_u.~s !=  oe_long)\n        return -1;\n",[ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "    }\n");
+		    emit(Fd, "    {\n"),
+		    emit(Fd, "      long oe_long;\n"),
+		    emit(Fd, "      if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_long)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "        ", "short:ei_decode_long", []),
+		    emit(Fd, "        return oe_error_code;\n      }\n"),
+		    emit(Fd, "      oe_rec->_u.~s = (short) oe_long;\n\n",[ic_forms:get_id2(I)]),
+		    emit(Fd, "      if (oe_rec->_u.~s !=  oe_long)\n        return -1;\n",[ic_forms:get_id2(I)]),
+		    emit(Fd, "    }\n");
 		{unsigned,{short,_}} ->
-		    ic_codegen:emit(Fd, "    {\n"),
-		    ic_codegen:emit(Fd, "      unsigned long oe_ulong;\n"),
-		    ic_codegen:emit(Fd, "      if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, &oe_env->_iin, &oe_ulong)) < 0)\n"),
-		    ic_codegen:emit(Fd, "        return oe_error_code;\n\n"),
-		    ic_codegen:emit(Fd, "      oe_rec->_u.~s = (unsigned short) oe_ulong;\n\n",[ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      if (oe_rec->_u.~s !=  oe_ulong)\n        return -1;\n",[ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "    }\n");
+		    emit(Fd, "    {\n"),
+		    emit(Fd, "      unsigned long oe_ulong;\n"),
+		    emit(Fd, "      if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, &oe_env->_iin, &oe_ulong)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "        ", "ushort:ei_decode_ulong", []),
+		    emit(Fd, "        return oe_error_code;\n      }\n"),
+		    emit(Fd, "      oe_rec->_u.~s = (unsigned short) oe_ulong;\n\n",[ic_forms:get_id2(I)]),
+		    emit(Fd, "      if (oe_rec->_u.~s !=  oe_ulong)\n        return -1;\n",[ic_forms:get_id2(I)]),
+		    emit(Fd, "    }\n");
 		{long, _} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_dec_rpt(Fd, "      ", "long:ei_decode_long", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{unsigned,{long,_}} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_ulong(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_dec_rpt(Fd, "      ", "ulong:ei_decode_ulong", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{float,_} ->
-		    ic_codegen:emit(Fd, "    {\n"),
-		    ic_codegen:emit(Fd, "      double oe_double;\n"),
-		    ic_codegen:emit(Fd, "      if ((oe_error_code = ei_decode_double(oe_env->_inbuf, &oe_env->_iin, &oe_double)) < 0)\n"),
-		    ic_codegen:emit(Fd, "        return oe_error_code;\n\n"),
-		    ic_codegen:emit(Fd, "      oe_rec->_u.~s = (float) oe_double;\n",[ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "    }\n");
+		    emit(Fd, "    {\n"),
+		    emit(Fd, "      double oe_double;\n"),
+		    emit(Fd, "      if ((oe_error_code = ei_decode_double(oe_env->_inbuf, &oe_env->_iin, &oe_double)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "        ", "float:ei_decode_double", []),
+		    emit(Fd, "        return oe_error_code;\n      }\n"),
+		    emit(Fd, "      oe_rec->_u.~s = (float) oe_double;\n",[ic_forms:get_id2(I)]),
+		    emit(Fd, "    }\n");
 		{double,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_double(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_double(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_dec_rpt(Fd, "      ", "dobule:ei_decode_double", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{boolean,_} ->
-		    ic_codegen:emit(Fd, "    {\n"),
-		    ic_codegen:emit(Fd, "      char oe_bool[25];\n\n"),
-		    ic_codegen:emit(Fd, "      if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, oe_bool)) < 0)\n"),
-		    ic_codegen:emit(Fd, "        return oe_error_code;\n\n"),
-		    ic_codegen:emit(Fd, "      if (strcmp(oe_bool, \"false\") == 0) {\n"),
-		    ic_codegen:emit(Fd, "        oe_rec->_u.~s = 0;\n",[ic_forms:get_id2(I)]), 
-		    ic_codegen:emit(Fd, "      }\n"),
-		    ic_codegen:emit(Fd, "      else if (strcmp(oe_bool, \"true\") == 0) {\n"),
-		    ic_codegen:emit(Fd, "        oe_rec->_u.~s = 1;\n",[ic_forms:get_id2(I)]), 
-		    ic_codegen:emit(Fd, "      }\n"),
-		    ic_codegen:emit(Fd, "      else\n"),
-		    ic_codegen:emit(Fd, "        return -1;\n"),
-		    ic_codegen:emit(Fd, "    }\n");
+		    emit(Fd, "    {\n"),
+		    emit(Fd, "      char oe_bool[25];\n\n"),
+		    emit(Fd, "      if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, oe_bool)) < 0) {\n"),
+		    ?emit_c_dec_rpt(Fd, "        ", "boolean:ei_decode_atom", []),
+		    emit(Fd, "        return oe_error_code;\n      }\n"),
+		    emit(Fd, "      if (strcmp(oe_bool, \"false\") == 0) {\n"),
+		    emit(Fd, "        oe_rec->_u.~s = 0;\n",[ic_forms:get_id2(I)]), 
+		    emit(Fd, "      } else if (strcmp(oe_bool, \"true\") == 0) {\n"),
+		    emit(Fd, "        oe_rec->_u.~s = 1;\n",[ic_forms:get_id2(I)]), 
+		    emit(Fd, "      } else {\n"),
+		    ?emit_c_dec_rpt(Fd, "        ", "boolean failure", []),
+		    emit(Fd, "        return -1;\n  }\n"),
+		    emit(Fd, "    }\n");
 		{char,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_dec_rpt(Fd, "      ", "char:ei_decode_char", []),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{octet,_} ->
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = ei_decode_char(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{string,_} ->
-		    ic_codegen:emit(Fd, "    {\n"),
-		    ic_codegen:emit(Fd, "      int oe_type = 0;\n"),
-		    ic_codegen:emit(Fd, "      int oe_string_ctr = 0;\n\n"),
-		    
-		    ic_codegen:emit(Fd, "      (int) ei_get_type(oe_env->_inbuf, &oe_env->_iin, &oe_type, &oe_string_ctr);\n\n"),
+		    emit(Fd, "    {\n"),
+		    emit(Fd, "      int oe_type = 0;\n"),
+		    emit(Fd, "      int oe_string_ctr = 0;\n\n"),
 
-		    ic_codegen:emit(Fd, "      oe_rec->_u.~s = (void *) (oe_first + *oe_index);\n\n",[ic_forms:get_id2(I)]),
-		    
-		    ic_codegen:emit(Fd, "      if ((oe_error_code = ei_decode_string(oe_env->_inbuf, &oe_env->_iin, oe_rec->_u.~s)) < 0)\n",
-			       [ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "        return oe_error_code;\n\n"),
-		    
-		    ic_codegen:emit(Fd, "      *oe_index = ~s;\n",[ic_util:mk_align("*oe_index+oe_string_ctr+1")]),
-		    ic_codegen:emit(Fd, "    }\n");
+		    emit(Fd, "      (int) ei_get_type(oe_env->_inbuf, &oe_env->_iin, &oe_type, &oe_string_ctr);\n\n"),
+
+		    emit(Fd, "      oe_rec->_u.~s = (void *) (oe_first + *oe_index);\n\n",[ic_forms:get_id2(I)]),
+
+		    emit(Fd, "      if ((oe_error_code = ei_decode_string(oe_env->_inbuf, &oe_env->_iin, oe_rec->_u.~s)) < 0) {\n",
+			 [ic_forms:get_id2(I)]),
+		    ?emit_c_dec_rpt(Fd, "        ", "ei_decode_string", []),
+		    emit(Fd, "        return oe_error_code;\n      }\n"),
+
+		    emit(Fd, "      *oe_index = ~s;\n",[ic_util:mk_align("*oe_index+oe_string_ctr+1")]),
+		    emit(Fd, "    }\n");
 		{sequence,_,_} ->
 		    SeqName = ic_util:to_undersc([ic_forms:get_id2(I), ic_forms:get_id2(X) | N]),
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0)\n",
-			       [SeqName,ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0) {\n",
+			 [SeqName,ic_forms:get_id2(I)]),
+		    ?emit_c_dec_rpt(Fd, "      ", "sequence:oe_decode_~s", [SeqName]),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{struct,SID,_,_} ->
 		    StructName = ic_util:to_undersc([ic_forms:get_id2(SID), ic_forms:get_id2(X) | N]),
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0)\n",
-			       [StructName,ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0) {\n",
+			 [StructName,ic_forms:get_id2(I)]),
+		    ?emit_c_dec_rpt(Fd, "      ", "struct:oe_decode_~s", [StructName]),
+		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{union,UID,_,_,_} ->
 		    UnionName = ic_util:to_undersc([ic_forms:get_id2(UID), ic_forms:get_id2(X) | N]),
-		    ic_codegen:emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0)\n",
-			       [UnionName,ic_forms:get_id2(I)]),
-		    ic_codegen:emit(Fd, "      return oe_error_code;\n");
+		    emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0) {\n",
+			 [UnionName,ic_forms:get_id2(I)]),
+		    ?emit_c_dec_rpt(Fd, "      ", "union:oe_decode_~s", [UnionName]),
+		    emit(Fd, "      return oe_error_code;\n    }");
 		_ ->
 		    ic_error:fatal_error(G, {illegal_typecode_for_c, T, N})
 	    end
     end.
 
-
-
-
-
-
 mvDefaultToTail(CDclL) ->
     mvDefaultToTail(CDclL,[],[]).
-    
+
 
 mvDefaultToTail([], F, FD) ->
     lists:reverse(F) ++ FD;
@@ -1349,22 +1486,5 @@ mvDefaultToTail([{case_dcl,CaseList,I,T}|Rest], Found, FoundDefault) ->
 	false ->
 	    mvDefaultToTail(Rest, [{case_dcl,CaseList,I,T}|Found], FoundDefault)
     end.
-
-
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
