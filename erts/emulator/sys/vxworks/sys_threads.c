@@ -37,6 +37,13 @@ erl_mutex_t erts_mutex_sys(int mno)
     return NULL;
 }
 
+int erts_atfork_sys(void (*prepare)(void),
+		    void (*parent)(void),
+		    void (*child)(void))
+{
+    return -1;
+}
+
 int erts_mutex_destroy(erl_mutex_t mtx)
 {
     return -1;

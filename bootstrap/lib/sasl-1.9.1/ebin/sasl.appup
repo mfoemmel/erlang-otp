@@ -1,9 +1,0 @@
-{"1.9.1",
- [{"1.9",
-   [{load_module, release_handler, soft_purge, soft_purge, []}]
-  }
- ],
- [{"1.9",
-   [{load_module, release_handler, soft_purge, soft_purge, []}]
-  }
- ]}.

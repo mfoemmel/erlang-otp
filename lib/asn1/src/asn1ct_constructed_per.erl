@@ -270,7 +270,13 @@ gen_encode_sof(Erules,Typename,SeqOrSetOf,D) when record(D,type) ->
     emit({indent(3),"'enc_",asn1ct_gen:list2name(Typename),
 	      "_components'(Val",ObjFun,", [])"}),
     emit({nl,"].",nl}),
-    gen_encode_sof_components(Typename,SeqOrSetOf,ComponentType).
+    NewComponentType =
+	case ComponentType#type.def of
+	    {'ENUMERATED',_,Component}->
+		ComponentType#type{def={'ENUMERATED',Component}};
+	    _ -> ComponentType
+	end,
+    gen_encode_sof_components(Typename,SeqOrSetOf,NewComponentType).
 
 gen_decode_sof(Erules,Typename,SeqOrSetOf,D) when record(D,type) ->
     asn1ct_name:start(),
@@ -293,7 +299,13 @@ gen_decode_sof(Erules,Typename,SeqOrSetOf,D) when record(D,type) ->
     emit({nl,"{Num,Bytes1} = ?RT_PER:decode_length(Bytes,",{asis,SizeConstraint},"),",nl}),
     emit({"'dec_",asn1ct_gen:list2name(Typename),
 	      "_components'(Num, Bytes1, Telltype",ObjFun,", []).",nl}),
-    gen_decode_sof_components(Typename,SeqOrSetOf,ComponentType).
+    NewComponentType =
+	case ComponentType#type.def of
+	    {'ENUMERATED',_,Component}->
+		ComponentType#type{def={'ENUMERATED',Component}};
+	    _ -> ComponentType
+	end,
+    gen_decode_sof_components(Typename,SeqOrSetOf,NewComponentType).
 
 gen_encode_sof_components(Typename,SeqOrSetOf,Cont) ->
     ObjFun =

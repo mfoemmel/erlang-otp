@@ -36,7 +36,8 @@
 #include "beam_bp.h"
 
 static void new_seq_trace_token(Process* p); /* help func for seq_trace_2*/
-static Eterm check_tracee(Process* p, Eterm tracer, Eterm tracee);
+static int already_traced(Process *tracee_p, Eterm tracer);
+static Eterm check_tracee(Process *p, Eterm tracer, Eterm tracee);
 static Eterm trace_info_pid(Process* p, Eterm pid_spec, Eterm key);
 static Eterm trace_info_func(Process* p, Eterm pid_spec, Eterm key);
 static Eterm trace_info_on_load(Process* p, Eterm key);
@@ -181,6 +182,7 @@ Uint
 erts_trace_flag2bit(Eterm flag) 
 {
     switch (flag) {
+    case am_all: return TRACE_FLAGS;
     case am_send: return F_TRACE_SEND;
     case am_receive: return F_TRACE_RECEIVE;
     case am_set_on_spawn: return F_TRACE_SOS;
@@ -204,15 +206,24 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 {
     Eterm item;
     int on;
-    Eterm tracer = p->id;
+    Process *tracer_p = NULL;
+    Port *tracer_port = NULL;
+    Eterm tracer = NIL;
     int matches = 0;
     Uint mask = 0;
     Uint res;
 
     switch (how) {
-    case am_false: on = 0; break;
-    case am_true: on = 1; break;
-    default: goto error;
+    case am_false: 
+	on = 0; 
+	break;
+    case am_true: 
+	on = 1; 
+	tracer_p = p;
+	tracer = p->id;
+	break;
+    default: 
+	goto error;
     }
 
     while (is_list(list)) {
@@ -221,75 +232,95 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 	    mask |= res;
 	} else if (is_tuple(item)) {
 	    Eterm* tp = tuple_val(item);
-
-	    if (arityval(tp[0]) != 2 || tp[1] != am_tracer) {
+	    
+	    if (arityval(tp[0]) != 2 || tp[1] != am_tracer)
 		goto error;
-	    }
 	    tracer = tp[2];
-	    if (!is_pid(tracer) && !is_port(tracer)) {
+	    if (is_pid(tracer)) {
+		if (pid_number(tracer) >= max_process)
+		    goto error;
+		tracer_p = process_tab[pid_number(tracer)];
+		if (INVALID_PID(tracer_p, tracer))
+		    goto error;
+		tracer_port = NULL;
+	    } else if (is_port(tracer)) {
+		if (port_index(tracer) >= erl_max_ports)
+		    goto error;
+		tracer_port = &erts_port[port_index(tracer)];
+		if (INVALID_TRACER_PORT(tracer_port, tracer))
+		    goto error;
+		tracer_p = NULL;
+	    } else
 		goto error;
-	    }
-	} else {
+	} else
 	    goto error;
-	}
 	list = CDR(list_val(list));
     }
-    if (is_not_nil(list)) {
+    if (is_not_nil(list))
 	goto error;
-    }
 
     /*
      * Set/reset the call trace flag for the given Pids.
      */
 
     if (is_pid(pid_spec)) {
-	Process* tracee = process_tab[pid_number(pid_spec)];
+	Process *tracee_p;
 
-	if (is_non_value(check_tracee(p, tracer, pid_spec))) {
+	/* Check that the tracee is not dead, not tracing 
+	 * and not about to be tracing.
+	 */
+	if (pid_node(pid_spec) != THIS_NODE
+	    || pid_number(pid_spec) >= max_process)
 	    goto error;
+	tracee_p = process_tab[pid_number(pid_spec)];
+	if (INVALID_PID(tracee_p, pid_spec))
+	    goto error;
+	if (tracer != NIL) {
+	    ASSERT((tracer_p != NULL && tracer_port == NULL)
+		   || (tracer_p == NULL && tracer_port != NULL));
+	    if (pid_spec == tracer)
+		goto error;
+	    if (already_traced(tracee_p, tracer))
+		goto already_traced;
 	}
 	if (on) {
-	    tracee->flags |= mask;
+	    tracee_p->flags |= mask;
 	} else {
-	    tracee->flags &= ~mask;
+	    tracee_p->flags &= ~mask;
 	}
-	if(!(tracee->flags & TRACE_FLAGS)) {
-	    tracee->tracer_proc = NIL;
-	} else {
-	    tracee->tracer_proc = tracer;
+	if(!(tracee_p->flags & TRACE_FLAGS)) {
+	    tracee_p->tracer_proc = NIL;
+	} else if (tracer != NIL) {
+	    tracee_p->tracer_proc = tracer;
 	}
 	matches = 1;
     } else {
 	int ok = 0;
-
+	
 	if (pid_spec == am_all || pid_spec == am_existing) {
 	    int i;
-
+	    
 	    ok = 1;
 	    for (i = 0; i < max_process; i++) {
-		Process* proc = process_tab[i];
-
-		if (proc == NULL || proc->status == P_EXITING ||
-		    proc->id == tracer) {
+		Process* tracee_p = process_tab[i];
+		
+		if (INVALID_PID(tracee_p, tracee_p->id))
 		    continue;
-		}
-		if (proc->flags & TRACE_FLAGS && proc->tracer_proc != tracer) {
-		    Process* tracer_p = process_tab[pid_number(proc->tracer_proc)];
-		    if (!INVALID_PID(tracer_p, proc->tracer_proc)) {
+		if (tracer != NIL) {
+		    if (tracee_p->id == tracer)
 			continue;
-		    } else {
-			proc->flags &= ~TRACE_FLAGS;
-		    }
+		    if (already_traced(tracee_p, tracer))
+			continue;
 		}
 		if (on) {
-		    proc->flags |= mask;
+		    tracee_p->flags |= mask;
 		} else {
-		    proc->flags &= ~mask;
+		    tracee_p->flags &= ~mask;
 		}
-		if(!(proc->flags & TRACE_FLAGS)) {
-		    proc->tracer_proc = NIL;
-		} else {
-		    proc->tracer_proc = tracer;
+		if(!(tracee_p->flags & TRACE_FLAGS)) {
+		    tracee_p->tracer_proc = NIL;
+		} else if (tracer != NIL) {
+		    tracee_p->tracer_proc = tracer;
 		}
 		matches++;
 	    }
@@ -303,18 +334,60 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 	    }
 	    if(!(erts_default_process_flags & TRACE_FLAGS)) {
 		erts_default_tracer = NIL;
-	    } else {
+	    } else if (tracer != NIL) {
+		if (tracer_p) {
+		    tracer_p->flags |= F_DEFAULT_TRACER;
+		}
 		erts_default_tracer = tracer;
 	    }
 	}
-	if (!ok) {
+	if (!ok)
 	    goto error;
-	}
     }
     BIF_RET(make_small(matches));
 
  error:
     BIF_ERROR(p, BADARG);
+
+ already_traced:
+    cerr_pos = 0;
+    erl_printf(CBUF, "** can only have one tracer per process\n");
+    send_error_to_logger(p->group_leader);
+    goto error;
+}
+
+/* Check that the process to be traced is not already traced
+ * by a valid other tracer than the tracer to be.
+ */
+static int already_traced(Process *tracee_p, Eterm tracer) {
+    if (tracee_p->flags & TRACE_FLAGS
+	&& tracee_p->tracer_proc != tracer) {
+	/* This tracee is already being traced, and not by the 
+	 * tracer to be */
+	if (is_port(tracee_p->tracer_proc)) {
+	    Port *tracer_port = &erts_port[port_index(tracee_p->tracer_proc)];
+	    if (INVALID_TRACER_PORT(tracer_port, tracee_p->tracer_proc)) {
+		/* Current trace port now invalid 
+		 * - discard it and approve the new. */
+		tracee_p->flags &= ~TRACE_FLAGS;
+		tracee_p->tracer_proc = NIL;
+	    } else
+		return 1;
+	} else {
+	    Process *tracer_p;
+	    
+	    ASSERT(is_pid(tracee_p->tracer_proc));
+	    tracer_p = process_tab[pid_number(tracee_p->tracer_proc)];
+	    if (INVALID_PID(tracer_p, tracee_p->tracer_proc)) {
+		/* Current trace process now invalid
+		 * - discard it and approve the new. */
+		tracee_p->flags &= ~TRACE_FLAGS;
+		tracee_p->tracer_proc = NIL;
+	    } else
+		return 1;
+	}
+    }
+    return 0;
 }
 
 /*
@@ -333,49 +406,16 @@ check_tracee(Process* p, Eterm tracer, Eterm tracee)
 	BIF_ERROR(p, BADARG);
     }
 
-    if (pid_number(tracee) >= max_process) {
+    if (pid_number(tracee) >= max_process)
 	goto error;
-    }
 
     tracee_ptr = process_tab[pid_number(tracee)];
-    if (INVALID_PID(tracee_ptr, tracee) || tracee_ptr->id == tracer) {
+    if (INVALID_PID(tracee_ptr, tracee) || tracee_ptr->id == tracer)
 	goto error;
-    }
 
-    if (tracee_ptr->flags & TRACE_FLAGS 
-	&& tracee_ptr->tracer_proc != tracer) {
-	/* This tracee is already being traced, and not by the 
-	 * tracer to be */
-	if (is_port(tracee_ptr->tracer_proc)) {
-	    Port *tracer_port = 
-		&erts_port[port_index(tracee_ptr->tracer_proc)];
-	    /* 
-	     * XXX Complicated test for invalid trace port. 
-	     * See erl_trace.c:send_to_port.
-	     */
-	    if (tracer_port == NULL 
-		|| tracer_port->id != tracee_ptr->tracer_proc
-		|| tracer_port->status == FREE
-		|| (tracer_port->status
-		    & (EXITING | CLOSING 
-		       | PORT_BUSY | DISTRIBUTION)) != 0) {
-		/* Invalid current tracer port -> discard and approve */
-		tracee_ptr->flags &= ~TRACE_FLAGS;
-		tracee_ptr->tracer_proc = NIL;
-	    } else 
-		goto already_traced;
-	} else {
-	    Process *tracer_p = 
-		process_tab[pid_number(tracee_ptr->tracer_proc)];
-	    
-	    if (INVALID_PID(tracer_p, tracee_ptr->tracer_proc)) {
-		/* Invalid current tracer process -> discard and approve */
-		tracee_ptr->flags &= ~TRACE_FLAGS;
-		tracee_ptr->tracer_proc = NIL;
-	    } else
-		goto already_traced;
-	}
-    }
+    if (already_traced(tracee_ptr, tracer))
+	goto already_traced;
+
     return tracee;
 
  already_traced:
@@ -384,6 +424,7 @@ check_tracee(Process* p, Eterm tracer, Eterm tracee)
     send_error_to_logger(p->group_leader);
     goto error;
 }
+
 
 /*
  * Return information about a process or an external function being traced.
@@ -1065,7 +1106,7 @@ BIF_ADECL_1
 	BIF_RET(am_false);
     seq_trace_update_send(BIF_P);
     seq_trace_output(SEQ_TRACE_TOKEN(BIF_P), BIF_ARG_1, 
-		     SEQ_TRACE_PRINT, NIL);
+		     SEQ_TRACE_PRINT, NIL, BIF_P);
     BIF_RET(am_true);
 }
 
@@ -1089,6 +1130,6 @@ BIF_ADECL_2
 	BIF_RET(am_false);
     seq_trace_update_send(BIF_P);
     seq_trace_output(SEQ_TRACE_TOKEN(BIF_P), BIF_ARG_2, 
-		     SEQ_TRACE_PRINT, NIL);
+		     SEQ_TRACE_PRINT, NIL, BIF_P);
     BIF_RET(am_true);
 }

@@ -76,24 +76,29 @@ query_result({atomic, Qres}) ->
 	[Hres] ->
 	    Hres#orber_CosNaming.nameindex;
 	[Hres | Tres] ->
-	    orber:debug_level_print("[~p] orber_cosnaming_utils:query_result(~p); Multiple Hits.",
+	    orber:debug_level_print("[~p] orber_cosnaming_utils:query_result(~p); 
+Multiple Hits.",
 				    [?LINE, Qres], ?DEBUG_LEVEL),
 	    error;
 	[] ->
-	    orber:debug_level_print("[~p] orber_cosnaming_utils:query_result(); No hit", 
+	    orber:debug_level_print("[~p] orber_cosnaming_utils:query_result(); 
+No hit", 
 				    [?LINE], ?DEBUG_LEVEL),
 	    error;
 	Other ->
-	    orber:debug_level_print("[~p] orber_cosnaming_utils:query_result(~p); Mnesia Access Failed", 
+	    orber:debug_level_print("[~p] orber_cosnaming_utils:query_result(~p); 
+Mnesia Access Failed", 
 				    [?LINE, Qres], ?DEBUG_LEVEL),
 	    error
     end;
 query_result({aborted, Qres}) -> 
-    orber:debug_level_print("[~p] orber_cosnaming_utils:query_result(~p); Mnesia Access Aborted", 
+    orber:debug_level_print("[~p] orber_cosnaming_utils:query_result(~p); 
+Mnesia Access Aborted", 
 			    [?LINE, Qres], ?DEBUG_LEVEL),
     error;
 query_result(What) -> 
-    orber:debug_level_print("[~p] orber_cosnaming_utils:query_result(~p); Mnesia Access Failed", 
+    orber:debug_level_print("[~p] orber_cosnaming_utils:query_result(~p); 
+Mnesia Access Failed", 
 			    [?LINE, What], ?DEBUG_LEVEL),
     error.
 
@@ -110,8 +115,8 @@ check_addresses(Str) ->
 	{_, []} ->
 	    ok;
 	What ->
-	    orber:debug_level_print("[~p] orber_cosnaming_utils:check_addresses(~p); Key ~p", 
-				    [?LINE, Str, What], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] orber_cosnaming_utils:check_addresses(~p); 
+Key ~p", [?LINE, Str, What], ?DEBUG_LEVEL),
 	    corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{})
     end.
 
@@ -137,8 +142,8 @@ select_type([$c, $o, $r, $b, $a, $l, $o, $c, $:|Rest1]) ->
 	{Key, []} ->
 	    {corbaloc, Addresses, Key};
 	What ->
-	    orber:debug_level_print("[~p] orber_cosnaming_utils:select_type(~p); Key ~p", 
-				    [?LINE, Rest1, What], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] orber_cosnaming_utils:select_type(~p); 
+Key ~p", [?LINE, Rest1, What], ?DEBUG_LEVEL),
 	    corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{})
     end;
 select_type([$c, $o, $r, $b, $a, $n, $a, $m, $e, $:|Rest1]) ->
@@ -147,16 +152,16 @@ select_type([$c, $o, $r, $b, $a, $n, $a, $m, $e, $:|Rest1]) ->
     Name = name(Rest3),
     {corbaname, Addresses, Key, string2name(Name)};
 
-select_type([$f, $i, $l, $e, $:|Rest]) ->
+select_type([$f, $i, $l, $e, $:, $/ |Rest]) ->
     file(Rest);
-select_type([$f, $t, $p, $:, $/, $/|Rest]) ->
+select_type([$f, $t, $p, $:, $/, $/ |Rest]) ->
     ftp(Rest);
-select_type([$h, $t, $t, $p, $:, $/, $/|Rest]) ->
+select_type([$h, $t, $t, $p, $:, $/, $/ |Rest]) ->
     http(Rest);
 
 select_type(What) ->
-    orber:debug_level_print("[~p] orber_cosnaming_utils:select_type(~p); Malformed or unsupported type.", 
-			    [?LINE, What], ?DEBUG_LEVEL),
+    orber:debug_level_print("[~p] orber_cosnaming_utils:select_type(~p);
+Malformed or unsupported type.", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{}).
 
 
@@ -185,8 +190,8 @@ address(protocol, [$i, $i, $o, $p, $:|T], [], []) ->
 address(protocol, [$r, $i, $r, $:|T], [], []) ->
     {false, rir, T};
 address(protocol, What, _, _) ->
-    orber:debug_level_print("[~p] orber_cosnaming_utils:address(~p); Malformed or unsupported protocol.", 
-			    [?LINE, What], ?DEBUG_LEVEL),
+    orber:debug_level_print("[~p] orber_cosnaming_utils:address(~p);
+Malformed or unsupported protocol.", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{});
 
 %% Parsed one address, no version found or port found.
@@ -200,8 +205,8 @@ address(version, [$@|T], Acc, Previous) ->
 	[Minor, $., Major] ->
 	    address(address, T, [], [{Major-$0, Minor-$0}|Previous]);
 	What ->
-	    orber:debug_level_print("[~p] orber_cosnaming_utils:address(~p); Malformed or unsupported version.", 
-				    [?LINE, What], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] orber_cosnaming_utils:address(~p);
+Malformed or unsupported version.", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{})
     end;
 %% Found no iiop version, switch to port
@@ -220,8 +225,8 @@ address(port, [$/|T], Acc, Previous) ->
 	Port when integer(Port) ->
 	    {false, lists:reverse([Port|Previous]), T};
 	What ->
-	    orber:debug_level_print("[~p] orber_cosnaming_utils:address(~p); Malformed port.", 
-				    [?LINE, What], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] orber_cosnaming_utils:address(~p);
+Malformed port.", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{})
     end;
 address(port, [$,|T], Acc, Previous) ->
@@ -229,8 +234,8 @@ address(port, [$,|T], Acc, Previous) ->
 	Port when integer(Port) ->
 	    {true, lists:reverse([Port|Previous]), T};
 	What ->
-	    orber:debug_level_print("[~p] orber_cosnaming_utils:address(~p); Malformed port.", 
-				    [?LINE, What], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] orber_cosnaming_utils:address(~p);
+Malformed port.", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{})
     end;
 
@@ -242,8 +247,8 @@ address(port, [], Acc, Previous) ->
 	Port when integer(Port) ->
 	    {false, lists:reverse([Port|Previous]), []};
 	What ->
-	    orber:debug_level_print("[~p] orber_cosnaming_utils:address(~p); Malformed port.", 
-				    [?LINE, What], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] orber_cosnaming_utils:address(~p);
+Malformed port.", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{})
     end;
 address(address, [], Acc, Previous) ->
@@ -307,7 +312,6 @@ name([H|T], Acc) ->
 %% Returns    : A tuple consisting of data extracted from the given string.
 %%----------------------------------------------------------------------
 file(File) ->
-    %% Perhaps we should run some checks here?
     {file, File}.
 
 %%----------------------------------------------------------------------
@@ -327,19 +331,38 @@ ftp(Address) ->
 %% Returns    : A tuple consisting of data extracted from the given string.
 %%----------------------------------------------------------------------
 http(Address) ->
-    case catch address(address, Address, [], []) of
-	{false, [Host, _], Rest} ->
-	    case key(Rest) of
-		{Key, []} ->
-		    {http, Host, ?HTTP_DEF_PORT, Key};
-		What ->
-		    orber:debug_level_print("[~p] orber_cosnaming_utils:http(~p); Malformed key ~p.", 
-					    [?LINE, Rest, What], ?DEBUG_LEVEL),
+    case string:tokens(Address, ":") of
+	[Host, Rest] ->
+	    %% At his stage we know that address contains a Port number.
+	    {Port, Key} = split_to_slash(Rest, []),
+	    case catch list_to_integer(Port) of
+		PortInt when integer(PortInt) ->
+		    {http, Host, PortInt, Key};
+		_ ->
+		    orber:debug_level_print("[~p] orber_cosnaming_utils:http(~p); 
+Malformed key; should be http://Host:Port/path/name.html or http://Host/path/name.html", 
+					    [?LINE, Address], ?DEBUG_LEVEL),
 		    corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{})
 	    end;
-	_->
+	[Address] ->
+	    %% Use default port
+	    {Host, Key} = split_to_slash(Address, []),
+	    {http, Host, ?HTTP_DEF_PORT, Key};
+	What ->
+	    orber:debug_level_print("[~p] orber_cosnaming_utils:http(~p);
+Malformed key; should be http://Host:Port/path/name.html or http://Host/path/name.html", 
+				    [?LINE, Address, What], ?DEBUG_LEVEL),
 	    corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{})
     end.
+
+split_to_slash([], Acc) ->
+    orber:debug_level_print("[~p] orber_cosnaming_utils:split_to_slash();
+No Key given Host:Port/Key.html", [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{});
+split_to_slash([$/|Rest], Acc) ->
+    {lists:reverse(Acc), [$/|Rest]};
+split_to_slash([H|T], Acc) ->
+    split_to_slash(T, [H|Acc]).
 
 %%----------------------------------------------------------------------
 %% Function   : lookup
@@ -405,27 +428,18 @@ lookup({file, File}) ->
 	    corba:raise(#'CosNaming_NamingContext_InvalidName'{})
     end;
 lookup({http, Host, Port, Key}) ->
-    {ok, Socket} = create_connection(Host,Port),
-    Request = "GET " ++ Key ++ " HTTP/1.0\r\n\r\n",
+    SetupTimeout = orber:iiop_setup_connection_timeout(),
+    SendTimeout = orber:iiop_timeout(),
+    {ok, Socket} = create_connection(Host, Port, SetupTimeout),
+    Request = "GET " ++ Key ++ " HTTP/1.0\r\n\r\n",   
     case gen_tcp:send(Socket, Request) of
 	ok ->
-	    receive 
-		{tcp_closed, Socket} ->
-		    corba:raise(#'COMM_FAILURE'{minor=99, 
-						completion_status=?COMPLETED_NO});
-		{tcp, Socket, Response} ->
-		    close_connection(Socket),
-		    Response;
-		_->
-		    close_connection(Socket),
-		    corba:raise(#'COMM_FAILURE'{minor=99, 
-						completion_status=?COMPLETED_NO})
-	    after 100000 ->
-		    %% FIX this timeout!!
-		    close_connection(Socket),
-		    corba:raise(#'COMM_FAILURE'{minor=99, 
-						completion_status=?COMPLETED_NO})
-	    end
+	    HdrMSG = receive_msg(Socket, false, SendTimeout),
+	    receive_msg(Socket, true, SendTimeout);
+	{error, Reason} ->
+	    orber:debug_level_print("[~p] orber_cosnaming_utils:lookup(); 
+Failed to send request: ~p.", [?LINE, Reason], ?DEBUG_LEVEL),
+	    corba:raise(#'COMM_FAILURE'{minor=99, completion_status=?COMPLETED_NO})
     end;
 lookup({ftp, Address}) ->
     corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{});
@@ -433,15 +447,37 @@ lookup(_) ->
     corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{}).
 
 
-create_connection(Host,Port) ->
-    case gen_tcp:connect(Host,Port,[{packet,0},{reuseaddr,true}]) of
+receive_msg(Socket, Close, Timeout) ->
+    receive 
+	{tcp_closed, Socket} ->
+	    orber:debug_level_print("[~p] orber_cosnaming_utils:receive_msg(~p); 
+HTTP-server closed connection.", [?LINE], ?DEBUG_LEVEL),
+	    corba:raise(#'COMM_FAILURE'{minor=99, completion_status=?COMPLETED_NO});
+	{tcp, Socket, Response} when Close == true ->
+	    gen_tcp:close(Socket),
+	    Response;
+	{tcp, Socket, Response} ->
+	    Response;
+	{tcp_error, Socket, Reason} ->
+	    orber:debug_level_print("[~p] orber_cosnaming_utils:receive_msg(); connection failed: ~p.", 
+				    [?LINE, Reason], ?DEBUG_LEVEL),
+	    gen_tcp:close(Socket),
+	    corba:raise(#'COMM_FAILURE'{minor=99, 
+					completion_status=?COMPLETED_NO})
+    after Timeout ->
+	    gen_tcp:close(Socket),
+	    corba:raise(#'COMM_FAILURE'{minor=99, 
+					completion_status=?COMPLETED_NO})
+    end.
+   
+
+create_connection(Host,Port, Timeout) ->
+    case gen_tcp:connect(Host,Port,[{packet,0},{reuseaddr,true}], Timeout) of
 	{ok,Socket} ->
 	    {ok,Socket};
 	Error ->
 	    corba:raise(#'COMM_FAILURE'{minor=99, completion_status=?COMPLETED_NO})
     end.
-close_connection(Socket) ->
-    gen_tcp:close(Socket).
 
 
 %%----------------------------------------------------------------------
@@ -467,8 +503,8 @@ name2string([#'CosNaming_NameComponent'{id=ID, kind=""}|T], Acc) ->
 name2string([#'CosNaming_NameComponent'{id=ID, kind=Kind}|T], Acc) ->
     name2string(T, [$/, convert_reserved(ID), $., convert_reserved(Kind)|Acc]);
 name2string(What, Acc) ->
-    orber:debug_level_print("[~p] orber_cosnaming_utils:name2string(~p); Malformed NC: ~p", 
-			    [?LINE, Acc, What], ?DEBUG_LEVEL),
+    orber:debug_level_print("[~p] orber_cosnaming_utils:name2string(~p); 
+Malformed NameComponent: ~p", [?LINE, Acc, What], ?DEBUG_LEVEL),
     corba:raise(#'CosNaming_NamingContext_InvalidName'{}).
 
 %% '/' and '.' are reserved as separators but can be overridden by using '\'.
@@ -502,8 +538,8 @@ get_NC(kind, [], ID, Kind) ->
     {#'CosNaming_NameComponent'{id=lists:reverse(ID), kind=lists:reverse(Kind)}, []};
 %% // is not allowed; must be /./
 get_NC(id, [$/|T], [], _) ->
-    orber:debug_level_print("[~p] orber_cosnaming_utils:get_NC(); '//' not allowed, use '/./'", 
-			    [?LINE], ?DEBUG_LEVEL),
+    orber:debug_level_print("[~p] orber_cosnaming_utils:get_NC(); 
+'//' not allowed, use '/./'", [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'CosNaming_NamingContext_InvalidName'{});
 get_NC(id, [$., $/|T], [], _) ->
     {#'CosNaming_NameComponent'{id="", kind=""}, T};
@@ -514,8 +550,8 @@ get_NC(kind, [$/|T], ID, Kind) ->
     {#'CosNaming_NameComponent'{id=lists:reverse(ID), kind=lists:reverse(Kind)}, T};
 %% ID exist but it's not allowed to write "id1./id2.kind2".
 get_NC(id, [$., $/|T], _, _) ->
-    orber:debug_level_print("[~p] orber_cosnaming_utils:get_NC(); 'id1./id2.kind2' not allowed, use 'id1/id2.kind2'", 
-			    [?LINE], ?DEBUG_LEVEL),
+    orber:debug_level_print("[~p] orber_cosnaming_utils:get_NC();
+'id1./id2.kind2' not allowed, use 'id1/id2.kind2'", [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'CosNaming_NamingContext_InvalidName'{});
 get_NC(id, [$\\, $., H|T], ID, Kind) ->
     get_NC(id, T, [H, $.|ID], Kind);
@@ -532,8 +568,8 @@ get_NC(id, [H|T], ID, Kind) ->
 get_NC(kind, [H|T], ID, Kind) ->
     get_NC(kind, T, ID, [H|Kind]);
 get_NC(Type, Data, ID, Kind) ->
-    orber:debug_level_print("[~p] orber_cosnaming_utils:get_NC(~p, ~p, ~p, ~p); Unknown", 
-			    [?LINE, Type, Data, ID, Kind], ?DEBUG_LEVEL),
+    orber:debug_level_print("[~p] orber_cosnaming_utils:get_NC(~p, ~p, ~p, ~p); 
+Unknown", [?LINE, Type, Data, ID, Kind], ?DEBUG_LEVEL),
     corba:raise(#'CosNaming_NamingContext_InvalidName'{}).
 
 

@@ -33,9 +33,11 @@
 #define CP_SIZE			1
 
 /* Allocate heap memory */
-#define HAlloc(p, sz) \
-    (((p)->stop <= ((p)->htop + (sz))) ? \
-        arith_alloc((p),(sz)) : ((p)->htop = (p)->htop + (sz), (p)->htop - (sz)))
+#define HAlloc(p, sz)                                   \
+  (ASSERT_EXPR((sz) >= 0),                              \
+   (((((p)->stop - (p)->htop) <= (sz)))                 \
+    ? arith_alloc((p),(sz))                             \
+    : ((p)->htop = (p)->htop + (sz), (p)->htop - (sz))))
 
 #define HRelease(p, ptr)				\
   if ((p)->heap <= (ptr) && (ptr) < (p)->htop) {	\
@@ -48,11 +50,12 @@
 #  define ArithCheck(p) \
       ASSERT(p->arith_check_me[0] == ARITH_MARKER);
 #  define ArithAlloc(p, need) \
+   (ASSERT_EXPR((need) >= 0), \
     (((p)->arith_avail < (need)) ? \
      arith_alloc((p), (need)) : \
      (((p)->arith_heap += (need)), ((p)->arith_avail -= (need)), \
       ((p)->arith_check_me = (p)->arith_heap), \
-      ((p)->arith_heap - (need))))
+      ((p)->arith_heap - (need)))))
 #else
 #  define ArithCheck(p)
 #  define ArithAlloc(p, need) \

@@ -35,34 +35,13 @@
    yield unique pointers of the correct type. */
 Export exp_send, exp_receive, exp_timeout;
 
-static void send_to_port(Process* p, Eterm message);
+static Eterm* patch_ts(Eterm tuple4, Eterm* hp);
 
 static void
-send_to_port(Process* p, Eterm message)
-{
-    byte* buffer;
-    byte* ptr;
+do_send_to_port(Port* trace_port, Eterm message) {
+    byte *buffer;
+    byte *ptr;
     unsigned size;
-    Port* trace_port;
-
-    ASSERT(is_port(p->tracer_proc));
-    trace_port = &erts_port[port_index(p->tracer_proc)];
-
-    /*
-     * XXX It is not clear how we should test for an invalid port.
-     * There doesn't seem to be any macro like INVALID_PORT().
-     *
-     * Therefore, we will remove tracing if we notice anything suspicious,
-     * for instance, that the port is an distribution port or it is busy.
-     */
-
-    if (trace_port == NULL || trace_port->id != p->tracer_proc ||
-	trace_port->status == FREE ||
-	(trace_port->status & (EXITING|CLOSING|PORT_BUSY|DISTRIBUTION)) != 0) {
-	p->flags &= ~TRACE_FLAGS;
-	p->tracer_proc = NIL;
-	return;
-    }
 
     buffer = tmp_buf;
     size = encode_size_struct(message, TERM_TO_BINARY_DFLAGS);
@@ -73,7 +52,7 @@ send_to_port(Process* p, Eterm message)
     ptr = buffer;
     to_external(-1, message, &ptr);
     if (!(ptr <= buffer+size)) {
-	erl_exit(1, "Internal error in send_to_port: %d\n", ptr-buffer);
+	erl_exit(1, "Internal error in do_send_to_port: %d\n", ptr-buffer);
     }
 
     dist_port_command(trace_port, buffer, ptr-buffer);
@@ -83,50 +62,161 @@ send_to_port(Process* p, Eterm message)
     }
 }
 
+/* Send        {trace_ts, Pid, out, 0, Timestamp}
+ * followed by {trace_ts, Pid, in, 0, NewTimestamp}
+ *
+ * 'NewTimestamp' is fetched from get_now() through patch_ts().
+ */
+static void 
+do_send_schedfix_to_port(Port *trace_port, Eterm pid, Eterm timestamp) {
+    Eterm local_heap[4+5+5];
+    Eterm message;
+    Eterm *hp;
+    Eterm mfarity;
+
+    ASSERT(is_pid(pid));
+    ASSERT(is_tuple(timestamp));
+    ASSERT(*tuple_val(timestamp) == make_arityval(3));
+    
+    hp = local_heap;
+    mfarity = make_small(0);
+    message = TUPLE5(hp, am_trace_ts, pid, am_out, mfarity, timestamp);
+    /* Note, hp is deliberately NOT incremented since it will be reused */
+
+    do_send_to_port(trace_port, message);
+
+    message = TUPLE4(hp, am_trace_ts, pid, am_in, mfarity);
+    hp += 5;
+    hp = patch_ts(message, hp);
+
+    do_send_to_port(trace_port, message);
+}
+
+/* If (c_p != NULL), a fake schedule out/in message pair will be sent,
+ * if the driver so requests. 
+ * It is assumed that 'message' is not an 'out' message.
+ *
+ * 'c_p' is the currently executing process, 't_p' is the traced process
+ * which 'message' concerns => if (t_p->flags & F_TIMESTAMP), 
+ * 'message' must contain a timestamp.
+ */
 static void
-seq_trace_send_to_port(Eterm message)
+send_to_port(Process *c_p, Process* t_p, Eterm message)
 {
-    byte* buffer;
-    byte* ptr;
-    unsigned size;
     Port* trace_port;
+    Eterm ts, local_heap[4], *hp;
+
+    ASSERT(is_port(t_p->tracer_proc));
+    trace_port = &erts_port[port_index(t_p->tracer_proc)];
+
+    if (INVALID_TRACER_PORT(trace_port, t_p->tracer_proc)) {
+	t_p->flags &= ~TRACE_FLAGS;
+	t_p->tracer_proc = NIL;
+	return;
+    }
+
+    if (c_p == NULL
+	|| (! IS_TRACED_FL(c_p, F_TRACE_SCHED | F_TIMESTAMP))) {
+	do_send_to_port(trace_port, message);
+	return;
+    }
+    /* Make a fake schedule only if the current process is traced
+     * with 'running' and 'timestamp'.
+     */
+
+    if (t_p->flags & F_TIMESTAMP) {
+	ASSERT(is_tuple(message));
+	hp = tuple_val(message);
+	ts = hp[arityval(hp[0])];
+    } else {
+	/* A fake schedule might be needed,
+	 * but this message does not contain a timestamp.
+	 * Create a dummy trace message with timestamp to be
+	 * passed to do_send_schedfix_to_port().
+	 */
+	Uint ms,s,us;
+	get_now(&ms, &s, &us);
+	hp = local_heap;
+	ts = TUPLE3(hp, make_small(ms), make_small(s), make_small(us));
+	hp += 4;
+    }
+
+    do_send_to_port(trace_port, message);
+
+    if (trace_port->control_flags & PORT_CONTROL_FLAG_HEAVY) {
+	/* The driver has just informed us that the last write took a 
+	 * non-neglectible amount of time.
+	 *
+	 * We need to fake some trace messages to compensate for the time the
+	 * current process had to sacrifice for the writing of the previous
+	 * trace message. We pretend that the process got scheduled out
+	 * just after writning the real trace message, and now gets scheduled
+	 * in again.
+	 */
+	do_send_schedfix_to_port(trace_port, c_p->id, ts);
+    }
+}
+
+/* A fake schedule out/in message pair will be sent,
+ * if the driver so requests.
+ * If (timestamp == NIL), one is fetched from get_now().
+ *
+ * 'c_p' is the currently executing process, may be NULL.
+ */
+static void
+seq_trace_send_to_port(Process *c_p, Eterm message, Eterm timestamp)
+{
+    Port* trace_port;
+    Eterm ts, local_heap[4], *hp;
 
     ASSERT(is_port(system_seq_tracer));
     trace_port = &erts_port[port_index(system_seq_tracer)];
 
-    /*
-     * XXX It is not clear how we should test for an invalid port.
-     * There doesn't seem to be any macro like INVALID_PORT().
-     *
-     * Therefore, we will remove tracing if we notice anything suspicious,
-     * for instance, that the port is an distribution port or it is busy.
-     */
-
-    if (trace_port == NULL || trace_port->status == FREE ||
-	(trace_port->status & (EXITING|CLOSING|PORT_BUSY|DISTRIBUTION)) != 0) {
+    if (INVALID_TRACER_PORT(trace_port, system_seq_tracer)) {
 	system_seq_tracer = NIL;
 	return;
     }
 
-    buffer = tmp_buf;
-    size = encode_size_struct(message, TERM_TO_BINARY_DFLAGS);
-    if (size >= TMP_BUF_SIZE) {
-	buffer = safe_alloc(size);
+    if (c_p == NULL
+	|| (! IS_TRACED_FL(c_p, F_TRACE_SCHED | F_TIMESTAMP))) {
+	do_send_to_port(trace_port, message);
+	return;
+    }
+    do_send_to_port(trace_port, message);
+    /* Make a fake schedule only if the current process is traced
+     * with 'running' and 'timestamp'.
+     */
+
+    if (timestamp != NIL) {
+	ts = timestamp;
+    } else {
+	/* A fake schedule might be needed,
+	 * but this message does not contain a timestamp.
+	 * Create a dummy trace message with timestamp to be
+	 * passed to do_send_schedfix_to_port().
+	 */
+	Uint ms,s,us;
+	get_now(&ms, &s, &us);
+	hp = local_heap;
+	ts = TUPLE3(hp, make_small(ms), make_small(s), make_small(us));
+	hp += 4;
     }
 
-    ptr = buffer;
-    to_external(-1, message, &ptr);
-    if (!(ptr <= buffer+size)) {
-	erl_exit(1, "Internal error in send_to_port: %d\n", ptr-buffer);
-    }
+    do_send_to_port(trace_port, message);
 
-    dist_port_command(trace_port, buffer, ptr-buffer);
-
-    if (buffer != tmp_buf) {
-	sys_free(buffer);
+    if (trace_port->control_flags & PORT_CONTROL_FLAG_HEAVY) {
+	/* The driver has just informed us that the last write took a 
+	 * non-neglectible amount of time.
+	 *
+	 * We need to fake some trace messages to compensate for the time the
+	 * current process had to sacrifice for the writing of the previous
+	 * trace message. We pretend that the process got scheduled out
+	 * just after writning the real trace message, and now gets scheduled
+	 * in again.
+	 */
+	do_send_schedfix_to_port(trace_port, c_p->id, ts);
     }
 }
-
 
 /*
 ** Suspend a process 
@@ -210,11 +300,11 @@ patch_ts(Eterm tuple, Eterm* hp)
     return hp+5;
 }
 
-/* Send 
- * {trace, Pid, running, Currentfunction, Timestamp}
- * {trace, Pid, running, Currentfunction}
+/* Send {trace_ts, Pid, What, {Mod, Func, Arity}, Timestamp}
+ * or   {trace, Pid, What, {Mod, Func, Arity}}
+ *
+ * where 'What' is supposed to be 'in' or 'out'.
  */
-
 void
 trace_sched(Process *p, Eterm what)
 {
@@ -241,7 +331,11 @@ trace_sched(Process *p, Eterm what)
 	if (p->flags & F_TIMESTAMP) {
 	    hp = patch_ts(mess, hp);
 	}
-	send_to_port(p, mess);
+	if (what != am_out) {
+	    send_to_port(p, p, mess);
+	} else {
+	    send_to_port(NULL, p, mess);
+	}
     } else {
 	tracer = process_tab[pid_number(p->tracer_proc)];
 	if (INVALID_PID(tracer, p->tracer_proc)) {
@@ -275,6 +369,11 @@ trace_sched(Process *p, Eterm what)
 }
 
 
+/* Send {trace_ts, Pid, Send, Msg, DestPid, Timestamp}
+ * or   {trace, Pid, Send, Msg, DestPid}
+ *
+ * where 'Send' is 'send' or 'send_to_non_existing_process'.
+ */
 void
 trace_send(Process *p, Eterm to, Eterm msg)
 {
@@ -306,7 +405,7 @@ trace_send(Process *p, Eterm to, Eterm msg)
 	if (p->flags & F_TIMESTAMP) {
 	    hp = patch_ts(mess, hp);
 	}
-	send_to_port(p, mess);
+	send_to_port(p, p, mess);
     } else {
 	Process *tracer;
 
@@ -336,6 +435,9 @@ trace_send(Process *p, Eterm to, Eterm msg)
     }
 }
 
+/* Send {trace_ts, Pid, receive, Msg, Timestamp}
+ * or   {trace, Pid, receive, Msg}
+ */
 void
 trace_receive(Process *rp, Eterm msg)
 {
@@ -352,7 +454,7 @@ trace_receive(Process *rp, Eterm msg)
 	if (rp->flags & F_TIMESTAMP) {
 	    hp = patch_ts(mess, hp);
 	}
-	send_to_port(rp, mess);
+	send_to_port(rp, rp, mess);
     } else {
 	tracer = process_tab[pid_number(rp->tracer_proc)];
 	if (INVALID_PID(tracer, rp->tracer_proc)) {
@@ -405,8 +507,8 @@ Process *p;
  *
  */
 void 
-seq_trace_output_exit(Eterm token, Eterm msg, uint32 type,
-		      Eterm receiver, Eterm exitfrom)
+seq_trace_output_generic(Eterm token, Eterm msg, Uint type,
+			 Eterm receiver, Process *process, Eterm exitfrom)
 {
     Eterm mess;
     ErlHeapFragment* bp;
@@ -425,7 +527,7 @@ seq_trace_output_exit(Eterm token, Eterm msg, uint32 type,
     case SEQ_TRACE_PRINT:   type_atom = am_print; break;
     case SEQ_TRACE_RECEIVE: type_atom = am_receive; break;
     default:
-	erl_exit(1, "invalid type in seq_trace_output_exit: %d:\n", type);
+	erl_exit(1, "invalid type in seq_trace_output_generic: %d:\n", type);
 	return;			/* To avoid warning */
     }
 
@@ -454,14 +556,15 @@ seq_trace_output_exit(Eterm token, Eterm msg, uint32 type,
 	hp += 6;
 	if ((unsigned_val(SEQ_TRACE_T_FLAGS(token)) & SEQ_TRACE_TIMESTAMP) == 0) {
 	    mess = TUPLE3(hp, am_seq_trace, label, mess);
+	    seq_trace_send_to_port(NULL, mess, NIL);
 	} else {
 	    uint32 ms,s,us,ts;
 	    get_now(&ms, &s, &us);
 	    ts = TUPLE3(hp, make_small(ms),make_small(s), make_small(us));
 	    hp += 4;
 	    mess = TUPLE4(hp, am_seq_trace, label, mess, ts);
+	    seq_trace_send_to_port(process, mess, ts);
 	}
-	seq_trace_send_to_port(mess);
     } else {
 	Process* tracer;
 	Eterm m2;
@@ -506,6 +609,9 @@ seq_trace_output_exit(Eterm token, Eterm msg, uint32 type,
     }
 }
 
+/* Send {trace_ts, Pid, return_to, {Mod, Func, Arity}, Timestamp}
+ * or   {trace, Pid, return_to, {Mod, Func, Arity}}
+ */
 void 
 erts_trace_return_to(Process *p, Uint *pc)
 {
@@ -533,7 +639,7 @@ erts_trace_return_to(Process *p, Uint *pc)
     }
 
     if (is_port(p->tracer_proc)) {
-	send_to_port(p, mess);
+	send_to_port(p, p, mess);
     } else {
 	Process *tracer;
 	unsigned size;
@@ -565,6 +671,9 @@ erts_trace_return_to(Process *p, Uint *pc)
 }
 
 
+/* Send {trace_ts, Pid, return_from, {Mod, Name, Arity}, Retval, Timestamp}
+ * or   {trace, Pid, return_from, {Mod, Name, Arity}, Retval}
+ */
 void
 erts_trace_return(Process* p, Eterm* fi, Eterm retval)
 {
@@ -588,7 +697,7 @@ erts_trace_return(Process* p, Eterm* fi, Eterm retval)
 	if (p->flags & F_TIMESTAMP) {
 	    hp = patch_ts(mess, hp);
 	}
-	send_to_port(p, mess);
+	send_to_port(p, p, mess);
     } else {
 	Process *tracer;
 	unsigned size;
@@ -631,8 +740,14 @@ erts_trace_return(Process* p, Eterm* fi, Eterm retval)
 
 /*
  * This function implements the new call trace.
+ *
+ * Send {trace_ts, Pid, call, {Mod, Func, A}, PamResult, Timestamp}
+ * or   {trace_ts, Pid, call, {Mod, Func, A}, Timestamp}
+ * or   {trace, Pid, call, {Mod, Func, A}, PamResult}
+ * or   {trace, Pid, call, {Mod, Func, A}
+ *
+ * where 'A' is arity or argument list depending on trace flag 'arity'.
  */
-
 Uint32
 erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec, 
 		Eterm* args, int local)
@@ -696,7 +811,7 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 	if (p->flags & F_TIMESTAMP) {
 	    hp = patch_ts(mess, hp);
 	}
-	send_to_port(p, mess);
+	send_to_port(p, p, mess);
 	return return_flags;
     } else {
 	Process *tracer;
@@ -797,30 +912,38 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
     }
 }
 
+/* Sends trace message:
+ *    {trace_ts, ProcessPid, What, Data, Timestamp}
+ * or {trace, ProcessPid, What, Data}
+ *
+ * 'what' must be atomic, 'data' may be a deep term.
+ * 'c_p' is the currently executing process, may be NULL.
+ * 't_p' is the traced process.
+ */
 void
-trace_proc(Process *p, Eterm what, Eterm data)
+trace_proc(Process *c_p, Process *t_p, Eterm what, Eterm data)
 {
     Eterm mess;
     Eterm* hp;
 
-    if (is_port(p->tracer_proc)) {
+    if (is_port(t_p->tracer_proc)) {
 	Eterm local_heap[5+5];
 	hp = local_heap;
-	mess = TUPLE4(hp, am_trace, p->id, what, data);
+	mess = TUPLE4(hp, am_trace, t_p->id, what, data);
 	hp += 5;
-	if (p->flags & F_TIMESTAMP) {
+	if (t_p->flags & F_TIMESTAMP) {
 	    hp = patch_ts(mess, hp);
 	}
-	send_to_port(p, mess);
+	send_to_port(c_p, t_p, mess);
     } else {
 	Eterm tmp;
 	Process *tracer;
 	size_t sz_data;
 
-	tracer = process_tab[pid_number(p->tracer_proc)];
-	if (INVALID_PID(tracer, p->tracer_proc)) {
-	    p->flags &= ~TRACE_FLAGS;
-	    p->tracer_proc = NIL;
+	tracer = process_tab[pid_number(t_p->tracer_proc)];
+	if (INVALID_PID(tracer, t_p->tracer_proc)) {
+	    t_p->flags &= ~TRACE_FLAGS;
+	    t_p->tracer_proc = NIL;
 	    return;
 	}
 	sz_data = size_object(data);
@@ -829,10 +952,67 @@ trace_proc(Process *p, Eterm what, Eterm data)
 	 * XXX Multi-thread note: Allocating on another process's heap.
 	 */
 
-	hp = HAlloc(tracer, sz_data + 5 + TS_SIZE(p));
+	hp = HAlloc(tracer, sz_data + 5 + TS_SIZE(t_p));
 	tmp = copy_struct(data, sz_data, &hp, &tracer->off_heap);
-	mess = TUPLE4(hp, am_trace, p->id, what, tmp);
+	mess = TUPLE4(hp, am_trace, t_p->id, what, tmp);
 	hp += 5;
+	if (t_p->flags & F_TIMESTAMP) {
+	    hp = patch_ts(mess, hp);
+	}
+	queue_message_tt(tracer, NULL, mess, NIL);
+    }
+}
+
+
+/* Sends trace message:
+ *    {trace_ts, ParentPid, spawn, ChildPid, {Mod, Func, Args}, Timestamp}
+ * or {trace, ParentPid, spawn, ChildPid, {Mod, Func, Args}}
+ *
+ * 'pid' is the ChildPid, 'mod' and 'func' must be atomic,
+ * and 'args' may be a deep term.
+ */
+void
+trace_proc_spawn(Process *p, Eterm pid, 
+		 Eterm mod, Eterm func, Eterm args)
+{
+    Eterm mfa;
+    Eterm mess;
+    Eterm* hp;
+
+    if (is_port(p->tracer_proc)) {
+	Eterm local_heap[4+6+5];
+	hp = local_heap;
+	mfa = TUPLE3(hp, mod, func, args);
+	hp += 4;
+	mess = TUPLE5(hp, am_trace, p->id, am_spawn, pid, mfa);
+	hp += 6;
+	if (p->flags & F_TIMESTAMP) {
+	    hp = patch_ts(mess, hp);
+	}
+	send_to_port(p, p, mess);
+    } else {
+	Eterm tmp;
+	Process *tracer;
+	size_t sz_args;
+
+	tracer = process_tab[pid_number(p->tracer_proc)];
+	if (INVALID_PID(tracer, p->tracer_proc)) {
+	    p->flags &= ~TRACE_FLAGS;
+	    p->tracer_proc = NIL;
+	    return;
+	}
+	sz_args = size_object(args);
+
+	/*
+	 * XXX Multi-thread note: Allocating on another process's heap.
+	 */
+
+	hp = HAlloc(tracer, sz_args + 4 + 6 + TS_SIZE(p));
+	tmp = copy_struct(args, sz_args, &hp, &tracer->off_heap);
+	mfa = TUPLE3(hp, mod, func, tmp);
+	hp += 4;
+	mess = TUPLE5(hp, am_trace, p->id, am_spawn, pid, mfa);
+	hp += 6;
 	if (p->flags & F_TIMESTAMP) {
 	    hp = patch_ts(mess, hp);
 	}
@@ -904,6 +1084,18 @@ erts_bif_trace(int bif_index, Process* p,
     }
 }
 
+/* Sends trace message:
+ *    {trace_ts, Pid, What, Msg, Timestamp}
+ * or {trace, Pid, What, Msg}
+ *
+ * where 'What' must be atomic and 'Msg' is: 
+ * [{heap_size, HeapSize}, {old_heap_size, OldHeapSize}, 
+ *  {stack_size, StackSize}, {recent_size, RecentSize}, 
+ *  {mbuf_size, MbufSize}]
+ *
+ * where 'HeapSize', 'OldHeapSize', 'StackSize', 'RecentSize and 'MbufSize'
+ * are all small (atomic) integers.
+ */
 void
 trace_gc(Process *p, Eterm what)
 {
@@ -945,7 +1137,7 @@ trace_gc(Process *p, Eterm what)
 	hp = patch_ts(msg, hp);
     }
     if (is_port(p->tracer_proc)) {
-	send_to_port(p, msg);
+	send_to_port(p, p, msg);
     } else {
 	queue_message_tt(tracer, NULL, msg, NIL);
     }

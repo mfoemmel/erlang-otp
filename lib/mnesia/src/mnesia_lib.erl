@@ -39,7 +39,11 @@
 	 create_counter/1,
 	 cs_to_nodes/1,
 	 cs_to_storage_type/2,
-	 dat_to_ets/6,
+	 dets_to_ets/6,
+	 db_chunk/2,
+	 db_init_chunk/1,
+	 db_init_chunk/2,
+	 db_init_chunk/3,
 	 db_erase/2,
 	 db_erase/3,
 	 db_erase_tab/1,
@@ -129,6 +133,8 @@
 	 tab2dat/1,
 	 tab2dmp/1,
 	 tab2tmp/1,
+	 tab2dcd/1,
+	 tab2dcl/1,
 	 to_list/1,
 	 union/2,
 	 uniq/1,
@@ -292,14 +298,20 @@ dir() -> mnesia_monitor:get_env(dir).
 dir(Fname) ->
     filename:join([dir(), to_list(Fname)]).
 
-tab2dat(Tab) ->
+tab2dat(Tab) ->  %% DETS files 
     dir(lists:concat([Tab, ".DAT"])).
 
 tab2tmp(Tab) ->
     dir(lists:concat([Tab, ".TMP"])).
 
-tab2dmp(Tab) ->
+tab2dmp(Tab) ->  %% Dumped ets tables
     dir(lists:concat([Tab, ".DMP"])).
+
+tab2dcd(Tab) ->  %% Disc copies data
+    dir(lists:concat([Tab, ".DCD"])).
+
+tab2dcl(Tab) ->  %% Disc copies log
+    dir(lists:concat([Tab, ".DCL"])).
 
 storage_type_at_node(Node, Tab) ->
     search_key(Node, [{disc_copies, val({Tab, disc_copies})},
@@ -536,6 +548,7 @@ core_file() ->
 mkcore(CrashInfo) ->
 %   dbg_out("Making a Mnesia core dump...~p~n", [CrashInfo]),
     Nodes = [node() |nodes()],
+    TidLocks = (catch ets:tab2list(mnesia_tid_locks)),
     Core = [
 	    CrashInfo,
 	    {time, {date(), time()}},
@@ -546,19 +559,23 @@ mkcore(CrashInfo) ->
 	    {code_path, catch code:get_path()},
 	    {code_loaded, catch lists:sort(code:all_loaded())},
 	    {etsinfo, catch ets_info(ets:all())},
+
+	    {version, catch mnesia:system_info(version)},
+	    {schema, catch ets:tab2list(schema)},
+	    {gvar, catch ets:tab2list(mnesia_gvar)},
+	    {master_nodes, catch mnesia_recover:get_master_node_info()},
+
 	    {processes, catch procs()},
 	    {relatives, catch relatives()},
 	    {workers, catch workers(mnesia_controller:get_workers(2000))},
-	    
-	    {version, catch mnesia:system_info(version)},
-	    {gvar, catch ets:tab2list(mnesia_gvar)},
-	    {master_nodes, catch mnesia_recover:get_master_node_info()},
-	    {schema, catch ets:tab2list(schema)},
+	    {locking_procs, catch locking_procs(TidLocks)},
+
 	    {held_locks, catch mnesia:system_info(held_locks)},
-	    {tid_locks, catch ets:tab2list(mnesia_tid_locks)},
+	    {tid_locks, TidLocks},
 	    {lock_queue, catch mnesia:system_info(lock_queue)},
 	    {load_info, catch mnesia_controller:get_info(2000)},
 	    {trans_info, catch mnesia_tm:get_info(2000)},
+	    	    
 	    {schema_file, catch file:read_file(tab2dat(schema))},
 	    {dir_info, catch dir_info()},
 	    {logfile, catch {ok, read_log_files()}}
@@ -614,6 +631,20 @@ workers({workers, Loader, Sender, Dumper}) ->
 		   end
 	   end,
     lists:zf(Info, [{loader, Loader}, {sender, Sender}, {dumper, Dumper}]).
+
+locking_procs(LockList) when list(LockList) ->
+    Tids = [element(1, Lock) || Lock <- LockList],
+    UT = uniq(Tids),    
+    Info = fun(Tid) ->
+		   Pid = Tid#tid.pid,
+		   case node(Pid) == node() of
+		       true -> 
+			   {true, {Pid, catch process_info(Pid)}};
+		       _ ->
+			   false
+		   end
+	   end,
+    lists:zf(Info, UT).
 
 view() ->
     Bin = mkcore({crashinfo, {"view only~n", []}}),
@@ -940,6 +971,48 @@ db_get(ram_copies, Tab, Key) -> ?ets_lookup(Tab, Key);
 db_get(disc_copies, Tab, Key) -> ?ets_lookup(Tab, Key);
 db_get(disc_only_copies, Tab, Key) -> dets:lookup(Tab, Key).
 
+db_init_chunk(Tab) ->
+    db_init_chunk(val({Tab, storage_type}), Tab, 1000).
+db_init_chunk(Tab, N) ->
+    db_init_chunk(val({Tab, storage_type}), Tab, N).
+%% FIX R8
+db_init_chunk(Storage, Tab, N) ->
+    State = {Tab, Storage, db_first(Storage, Tab), N, N},
+    get_records(State, []).
+
+db_chunk(_Type, State) ->
+    get_records(State, []).
+
+get_records({Tab, Storage, Key, KeysLeft, N}, AccRecs)
+  when KeysLeft > 0,  Key /= '$end_of_table'  ->
+    Recs = db_get(Storage, Tab, Key),
+    NextKey = db_next_key(Storage, Tab, Key),
+    get_records({Tab, Storage, NextKey, KeysLeft - 1, N}, Recs ++ AccRecs);
+get_records({Tab, Storage, Key, KeysLeft, N}, AccRecs) ->
+    if 
+	Key == '$end_of_table',	AccRecs == [] ->
+	    '$end_of_table';
+	true ->
+	    {AccRecs, {Tab, Storage, Key, N, N}}
+    end.
+
+
+%db_init_chunk(disc_only_copies, Tab, N) ->
+%    dets:select(Tab, [{'_', [], ['$_']}], N);
+%db_init_chunk(_, Tab, N) ->
+%     case ets:select(Tab, [{'_', [], ['$_']}], N) of
+% 	%% BUGBUG remove when ets fixed
+% 	[] ->
+% 	    '$end_of_table';
+% 	R ->
+% 	    R
+%     end.
+
+% db_chunk(disc_only_copies, State) ->
+%     dets:select(State);
+% db_chunk(_, State) ->
+%     ets:select(State).
+
 db_put(Tab, Val) ->
     db_put(val({Tab, storage_type}), Tab, Val).
 
@@ -1078,21 +1151,23 @@ db_erase_tab(disc_copies, Tab) -> ?ets_delete_table(Tab);
 db_erase_tab(disc_only_copies, Tab) -> ignore.
 
 %% assuming that Tab is a valid ets-table
-dat_to_ets(Tabname, Tab, File, Type, Rep, Lock) ->
-    Fun = fun(Obj) -> ?ets_insert(Tab, Obj), continue end,
+dets_to_ets(Tabname, Tab, File, Type, Rep, Lock) ->
     {Open, Close} = mkfuns(Lock),
-
+    Fun = fun(Obj) -> ?ets_insert(Tab, Obj), continue end,
     case Open(Tabname, [{file, File}, {type, disk_type(Tab, Type)},
 			{keypos, 2}, {repair, Rep}]) of
 	{ok, Tabname} ->
+	    %% Res = dets:to_ets(Tabname, Tab), FIX R8
 	    Res = dets:traverse(Tabname, Fun),
 	    Close(Tabname),
-	    trav_ret(Res);
+	    trav_ret(Res, Tab);
 	Other ->
 	    Other
     end.
-trav_ret([]) -> loaded;
-trav_ret(Other) -> Other.
+
+trav_ret([], Tab) -> loaded; %% FIX R8 remove
+trav_ret(Tabname, Tabname) -> loaded;
+trav_ret(Other, Tabname) -> Other.
 
 mkfuns(yes) ->
     {fun(Tab, Args) -> dets_sync_open(Tab, Args) end,

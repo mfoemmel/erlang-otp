@@ -70,13 +70,15 @@ next_one({SubObjectKey, Counter}) ->
 	TotalList ->
 	    if
 		length(TotalList) - Counter =< 0 ->
-		    {{false, null}, {SubObjectKey, Counter}};
+		    NoBinding = #'CosNaming_Binding'{binding_name=[],
+						     binding_type=nobject},
+		    {reply, {false, NoBinding}, {SubObjectKey, Counter}};
 		true ->
 		    NewCounter = Counter + 1,
 		    {N, T, O} = lists:nth(NewCounter, TotalList),
 		    Binding = #'CosNaming_Binding'{binding_name=[N],
 						   binding_type=T},
-		    {{true, Binding}, {SubObjectKey, NewCounter}}
+		    {reply, {true, Binding}, {SubObjectKey, NewCounter}}
 	    end
     end.
 
@@ -88,7 +90,7 @@ next_n({SubObjectKey, Counter}, How_many) ->
 	TotalList ->
 	    if
 		length(TotalList) - Counter =< 0 ->
-		    {{false, []}, {SubObjectKey, Counter}};
+		    {reply, {false, []}, {SubObjectKey, Counter}};
 		true ->
 		    List = lists:sublist(TotalList, Counter + 1, How_many),
 		    BList = lists:map(
@@ -97,7 +99,7 @@ next_n({SubObjectKey, Counter}, How_many) ->
 							   binding_type=T}
 			      end, List),
 		    NewCounter = length(TotalList) - Counter,
-		    {{true, BList}, {SubObjectKey, NewCounter}}
+		    {reply, {true, BList}, {SubObjectKey, NewCounter}}
 	    end
     end.
 		    

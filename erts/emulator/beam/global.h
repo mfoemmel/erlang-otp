@@ -446,7 +446,11 @@ EXTERN_FUNCTION(int, fix_info, (int));
 EXTERN_FUNCTION(int, fix_used, (int));
 EXTERN_FUNCTION(int, new_fix_size, (int));
 EXTERN_FUNCTION(void, fix_free, (int, uint32*));
+#ifdef INSTRUMENT
+EXTERN_FUNCTION(uint32*, fix_alloc_from, (int, int));
+#endif
 EXTERN_FUNCTION(uint32*, fix_alloc, (int));
+
 
 /* ggc.c */
 void init_gc(void);
@@ -508,8 +512,16 @@ extern Uint32 make_phash(Eterm, Uint32);
 extern Uint32 make_hash(Eterm, Uint32);
 
 EXTERN_FUNCTION(int, send_error_to_logger, (Eterm));
-EXTERN_FUNCTION(void*, safe_alloc, (uint32));
-EXTERN_FUNCTION(void*, safe_realloc, (char*,uint32));
+#ifdef INSTRUMENT
+EXTERN_FUNCTION(void*, safe_alloc_from, (int, unsigned int));
+EXTERN_FUNCTION(void*, safe_realloc_from, (int, void*,unsigned int));
+EXTERN_FUNCTION(void*, safe_sl_alloc_from, (int, unsigned int));
+EXTERN_FUNCTION(void*, safe_sl_realloc_from, (int, void*,unsigned int,unsigned int));
+#endif
+EXTERN_FUNCTION(void*, safe_alloc, (unsigned int));
+EXTERN_FUNCTION(void*, safe_realloc, (void*,unsigned int));
+EXTERN_FUNCTION(void*, safe_sl_alloc, (unsigned int));
+EXTERN_FUNCTION(void*, safe_sl_realloc, (void*,unsigned int,unsigned int));
 EXTERN_FUNCTION(Process*, pid2proc, (uint32));
 EXTERN_FUNCTION(void, display, (uint32, CIO));
 EXTERN_FUNCTION(void, ldisplay, (uint32, CIO, int));
@@ -540,7 +552,8 @@ Uint32 erts_call_trace(Process *p, Eterm mfa[], Binary *match_spec, Eterm* args,
 void erts_trace_return(Process* p, Eterm* fi, Eterm retval);
 void erts_trace_return_to(Process *p, Uint *pc);
 void trace_sched(Process*, Eterm);
-void trace_proc(Process*, Eterm, Eterm);
+void trace_proc(Process*, Process*, Eterm, Eterm);
+void trace_proc_spawn(Process*, Eterm pid, Eterm mod, Eterm func, Eterm args);
 void save_calls(Process *p, Export *);
 void trace_gc(Process *p, uint32 what);
 Uint erts_trace_flag2bit(Eterm flag);
@@ -585,11 +598,18 @@ EXTERN_FUNCTION(void, td, (uint32));
 EXTERN_FUNCTION(void, ps, (Process*, uint32*));
 #endif
 
-#define seq_trace_output(a,b,c,d) seq_trace_output_exit(a, b, c, d, NIL)
-EXTERN_FUNCTION(void, seq_trace_output_exit, (uint32, uint32, uint32, uint32, uint32));
-EXTERN_FUNCTION(int, seq_trace_update_send, (Process*));
+#define seq_trace_output(token, msg, type, receiver, process) \
+seq_trace_output_generic((token), (msg), (type), (receiver), (process), NIL)
+#define seq_trace_output_exit(token, msg, type, receiver, exitfrom) \
+seq_trace_output_generic((token), (msg), (type), (receiver), NULL, (exitfrom))
+void seq_trace_output_generic(Eterm token, Eterm msg, Uint type, 
+			      Eterm receiver, Process *process, Eterm exitfrom);
 
-EXTERN_FUNCTION(Eterm, erts_seq_trace, (Process *, Eterm, Eterm, int));
+int seq_trace_update_send(Process *process);
+
+Eterm erts_seq_trace(Process *process, 
+		     Eterm atom_type, Eterm atom_true_or_false, 
+		     int build_result);
 
 int erts_set_trace_pattern(Eterm* mfa, int specified, Binary* match_prog_set,
 			   int on, int is_local);

@@ -16,11 +16,19 @@
  *     $Id$
  */
 /*
-** Registerd processes
+** Registered processes
 */
 
 #ifndef __REGPROC_H__
 #define __REGPROC_H__
+
+#ifndef __SYS_H__
+#include "sys.h"
+#endif
+
+#ifndef __HASH_H__
+#include "hash.h"
+#endif
 
 #ifndef __PROCESS_H__
 #include "erl_process.h"
@@ -29,17 +37,18 @@
 typedef struct reg_proc
 {
     HashBucket bucket;  /* MUST BE LOCATED AT TOP OF STRUCT!!! */
-    Process *p;         /* The process registerd */
-    int name;           /* Atom index to name */
+    Process   *p;       /* The process registered */
+    Eterm      name;    /* Atom name */
 } RegProc;
 
 extern Hash process_reg;
 
-EXTERN_FUNCTION(void, init_register_table, (_VOID_));
-EXTERN_FUNCTION(void, register_info, (CIO));
-EXTERN_FUNCTION(Process*, register_process, (int, Process*));
-EXTERN_FUNCTION(Process*, whereis_process, (int));
-EXTERN_FUNCTION(Process*, unregister_process, (int));
+void init_register_table(void);
+void register_info(CIO to);
+Process *register_process(Process *c_p, Eterm name, Process *p);
+Process *whereis_process(Eterm name);
+Process *unregister_process(Process *c_p, Eterm name);
+
 
 
 #endif

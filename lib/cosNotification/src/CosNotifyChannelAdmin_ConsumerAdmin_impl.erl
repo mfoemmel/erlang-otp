@@ -179,15 +179,13 @@ code_change(OldVsn, State, Extra) ->
     {ok, State}.
 
 handle_info(Info, State) ->
-    ?debug_print("INFO: ~p~n", [Info]),
     case Info of
         {'EXIT', Pid, Reason} when ?get_MyChannelPid(State) == Pid ->
-            ?debug_print("PARENT CHANNEL: ~p  TERMINATED.~n",[Reason]),
+            ?DBG("PARENT CHANNEL: ~p  TERMINATED.~n",[Reason]),
 	    {stop, Reason, State};
         {'EXIT', Pid, normal} ->
             {noreply, ?del_SupplierPid(State, Pid)};
         Other ->
-            ?debug_print("TERMINATED: ~p~n",[Other]),
             {noreply, State}
     end.
 
@@ -297,6 +295,8 @@ obtain_notification_pull_supplier(OE_THIS, OE_FROM, State, Ctype) ->
 	    'SEQUENCE_EVENT' ->
 		{'CosNotifyChannelAdmin_SequenceProxyPullSupplier', 'PULL_SEQUENCE'};
 	    _ ->
+		orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_notification_pull_supplier(~p);
+Incorrect enumerant", [?LINE, Ctype], ?DEBUG_LEVEL),
 		corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
 	end,
     case Mod:oe_create_link([Type, OE_THIS, self(), ?get_GlobalQoS(State), 
@@ -307,7 +307,10 @@ obtain_notification_pull_supplier(OE_THIS, OE_FROM, State, Ctype) ->
 	    ProxyID = ?new_Id(State),
 	    NewState = ?add_PullSupplier(State, ProxyID, PrRef, Pid),
 	    {reply, {PrRef, ProxyID},  ?set_IdCounter(NewState, ProxyID)};
-	_ ->
+	What ->
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_notification_pull_supplier();
+Unable to create: ~p/~p
+Reason: ~p", [?LINE, Mod, Type, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -327,6 +330,8 @@ obtain_notification_push_supplier(OE_THIS, OE_FROM, State, Ctype) ->
 	    'SEQUENCE_EVENT' ->
 		{'CosNotifyChannelAdmin_SequenceProxyPushSupplier', 'PUSH_SEQUENCE'};
 	    _ ->
+		orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_notification_push_supplier(~p);
+Incorrect enumerant", [?LINE, Ctype], ?DEBUG_LEVEL),
 		corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
 	end,
     case Mod:oe_create_link([Type, OE_THIS, self(), ?get_GlobalQoS(State), 
@@ -337,7 +342,10 @@ obtain_notification_push_supplier(OE_THIS, OE_FROM, State, Ctype) ->
 	    ProxyID = ?new_Id(State),
 	    NewState = ?add_PushSupplier(State, ProxyID, PrRef, Pid),
 	    {reply, {PrRef, ProxyID}, ?set_IdCounter(NewState, ProxyID)};
-	_ ->
+	What ->
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_notification_push_supplier();
+Unable to create: ~p/~p
+Reason: ~p", [?LINE, Mod, Type, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
     
@@ -393,7 +401,7 @@ validate_qos(OE_THIS, OE_FROM, State, Required_qos) ->
 %%            {'EXCEPTION', #'CosNotifyComm_InvalidEventType'{type}}
 %%-----------------------------------------------------------
 subscription_change(OE_THIS, OE_FROM, State, Added, Removed) ->
-    ?debug_print("CALLBACK INFORMED:  ~p   ~p~n",[Added, Removed]),
+    ?DBG("CALLBACK INFORMED:  ~p   ~p~n",[Added, Removed]),
     {reply, ok, State}.
 
 %%----- Inherit from CosNotifyFilter::FilterAdmin -----------
@@ -403,7 +411,7 @@ subscription_change(OE_THIS, OE_FROM, State, Added, Removed) ->
 %% Returns  : FilterID - long
 %%-----------------------------------------------------------
 add_filter(OE_THIS, OE_FROM, State, Filter) ->
-    ?not_TypeCheck(Filter, 'CosNotifyFilter_Filter'),
+    'CosNotification_Common':type_check(Filter, 'CosNotifyFilter_Filter'),
     FilterID = ?new_Id(State),
     NewState = ?set_IdCounter(State, FilterID),
     {reply, FilterID, ?add_Filter(NewState, FilterID, Filter)}.
@@ -464,7 +472,10 @@ obtain_push_supplier(OE_THIS, OE_FROM, State) ->
 	    ProxyID = ?new_Id(State),
 	    NewState = ?add_PushSupplier(State, ProxyID, PrRef, Pid),
 	    {reply, PrRef, ?set_IdCounter(NewState, ProxyID)};
-	_ ->
+	What ->
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_push_supplier();
+Unable to create: CosNotifyChannelAdmin_ProxyPushSupplier
+Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -486,7 +497,10 @@ obtain_pull_supplier(OE_THIS, OE_FROM, State) ->
 	    ProxyID = ?new_Id(State),
 	    NewState = ?add_PullSupplier(State, ProxyID, PrRef, Pid),
 	    {reply, PrRef, ?set_IdCounter(NewState, ProxyID)};
-	_ ->
+	What ->
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_pull_supplier();
+Unable to create: CosNotifyChannelAdmin_ProxyPullSupplier
+Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -511,7 +525,9 @@ find_ids([{I,_,_,Type}|T], Acc, Type) ->
     find_ids(T, [I|Acc], Type);
 find_ids([{I,_,_,_}|T], Acc, Type) -> 
     find_ids(T, Acc, Type);
-find_ids(_, _, _) -> 
+find_ids(What, _, _) -> 
+    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:find_ids(); 
+Id corrupt: ~p", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
 find_refs(List) ->              
@@ -521,7 +537,9 @@ find_refs([], Acc) ->
     Acc;
 find_refs([{_,R,_,_}|T], Acc) -> 
     find_refs(T, [R|Acc]);
-find_refs(_, _) -> 
+find_refs(What, _) -> 
+    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:find_refs(); 
+Reference corrupt: ~p", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
 %% Delete a single filter.
@@ -590,34 +608,42 @@ forward(_, [], State, _, _) ->
 forward(any, [{_,H,_,_}|T], State, Event, Status) ->
     case catch oe_CosNotificationComm_Event:callAny(H, Event, Status) of
 	ok ->
-	    ?debug_print("CONSUMERADM FORWARD ANY: ~p~n",[Event]),
+	    ?DBG("CONSUMERADM FORWARD ANY: ~p~n",[Event]),
 	    forward(any, T, State, Event, Status);
 	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
-	    ?debug_print("PROXY NO LONGER EXIST; DROPPING: ~p~n", [Event]),
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward(); 
+Proxy no longer exists; dropping it: ~p", [?LINE, H], ?DEBUG_LEVEL),
 	    NewState = ?del_SupplierRef(State,H),
 	    forward(any, T, NewState, Event, Status);
 	R when ?is_PersistentConnection(State) ->
-	    ?debug_print("PROXY REPLIED INCORRECTLY: ~p~n", [R]),
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward(); 
+Proxy behaves badly: ~p/~p", [?LINE, R, H], ?DEBUG_LEVEL),
 	    forward(any, T, State, Event, Status);
 	R ->
-	    ?debug_print("PROXY REPLIED INCORRECTLY: ~p~n", [R]),
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward(); 
+Proxy behaves badly: ~p 
+Dropping it: ~p", [?LINE, R, H], ?DEBUG_LEVEL),
 	    NewState = ?del_SupplierRef(State, H),
 	    forward(any, T, NewState, Event, Status)
     end;
 forward(seq, [{_,H,_,_}|T], State, Event, Status) ->
     case catch oe_CosNotificationComm_Event:callSeq(H, Event, Status) of
 	ok ->
-	    ?debug_print("CONSUMERADM FORWARD SEQUENCE: ~p~n",[Event]),
+	    ?DBG("CONSUMERADM FORWARD SEQUENCE: ~p~n",[Event]),
 	    forward(seq, T, State, Event, Status);
 	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
-	    ?debug_print("PROXY NO LONGER EXIST; DROPPING: ~p~n", [Event]),
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward(); 
+Proxy no longer exists; dropping it: ~p", [?LINE, H], ?DEBUG_LEVEL),
 	    NewState = ?del_SupplierRef(State,H),
 	    forward(seq, T, NewState, Event, Status);
 	R when ?is_PersistentConnection(State) ->
-	    ?debug_print("PROXY REPLIED INCORRECTLY: ~p~n", [R]),
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward(); 
+Proxy behaves badly: ~p/~p", [?LINE, R, H], ?DEBUG_LEVEL),
 	    forward(seq, T, State, Event, Status);
 	R ->
-	    ?debug_print("PROXY REPLIED INCORRECTLY: ~p~n", [R]),
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward(); 
+Proxy behaves badly: ~p
+Dropping it: ~p", [?LINE, R, H], ?DEBUG_LEVEL),
 	    NewState = ?del_SupplierRef(State, H),
 	    forward(seq, T, NewState, Event, Status)
     end.

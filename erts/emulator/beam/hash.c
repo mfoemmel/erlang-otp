@@ -53,12 +53,12 @@ static const int h_size_table[] = {
 };
 
 /*
-** Display info about hash
+** Get info about hash
 **
 */
 
-void hash_info(to, h)
-CIO to; Hash* h;
+void hash_get_info(hi, h)
+HashInfo *hi; Hash *h;
 {
     int size = h->size;
     int i;
@@ -77,11 +77,32 @@ CIO to; Hash* h;
 	if (depth > max_depth)
 	    max_depth = depth;
     }
-    erl_printf(to, "Hash Table(%s), ", h->name);
-    erl_printf(to, "size(%d), ", h->size);
-    erl_printf(to, "used(%d), ", h->used);
-    erl_printf(to, "objs(%d), ", objects);
-    erl_printf(to, "depth(%d)\n", max_depth);
+
+    hi->name  = h->name;
+    hi->size  = h->size;
+    hi->used  = h->used;
+    hi->objs  = objects;
+    hi->depth = max_depth;
+    
+}
+
+/*
+** Display info about hash
+**
+*/
+
+void hash_info(to, h)
+CIO to; Hash* h;
+{
+    HashInfo hi;
+
+    hash_get_info(&hi, h);
+
+    erl_printf(to, "Hash Table(%s), ", hi.name);
+    erl_printf(to, "size(%d), ",       hi.size);
+    erl_printf(to, "used(%d), ",       hi.used);
+    erl_printf(to, "objs(%d), ",       hi.objs);
+    erl_printf(to, "depth(%d)\n",      hi.depth);
 }
 
 

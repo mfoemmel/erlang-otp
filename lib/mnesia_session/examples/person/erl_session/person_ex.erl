@@ -70,8 +70,9 @@ create_person_table(ObjKey) ->
 			      disc_only_copies = [],
 			      index_list = [4],  %% Index on married_to
 			      attributes = Attrs,
-			      %% OBSERVE that the record_name must be exactly 
-			      %% the same as the name of the structure/record 
+			      %% OBSERVE that the record_name must be 
+			      %% exactly the same as the name of the 
+			      %% structure/record  
 			      record_name = "persons_person"},
     
     Res = mnesia_session:create_table(ObjKey, "persons", TabDef),

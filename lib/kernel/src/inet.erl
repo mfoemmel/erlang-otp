@@ -787,22 +787,28 @@ tcp_controlling_process(S, NewOwner) when port(S), pid(NewOwner) ->
     case erlang:port_info(S, connected) of
 	{connected, Pid} when Pid /= self() ->
 	    {error, not_owner};
+	undefined ->
+	    {error, einval};
 	_ ->
-	    {ok,A0} = prim_inet:getopt(S, active),
-	    prim_inet:setopt(S, active, false),
-	    case tcp_sync_input(S, NewOwner, false) of
-		true ->
-		    %%  %% socket already closed, 
-		    ok;
-		false ->
-		    case catch erlang:port_connect(S, NewOwner) of
-			true -> 
-			    unlink(S), %% unlink from port
-			    prim_inet:setopt(S, active, A0),
+	    case prim_inet:getopt(S, active) of
+		{ok, A0} ->
+		    prim_inet:setopt(S, active, false),
+		    case tcp_sync_input(S, NewOwner, false) of
+			true ->
+			    %%  %% socket already closed, 
 			    ok;
-			{'EXIT', Reason} -> 
-			    {error, Reason}
-		    end
+			false ->
+			    case catch erlang:port_connect(S, NewOwner) of
+				true -> 
+				    unlink(S), %% unlink from port
+				    prim_inet:setopt(S, active, A0),
+				    ok;
+				{'EXIT', Reason} -> 
+				    {error, Reason}
+			    end
+		    end;
+		Error ->
+		    Error
 	    end
     end.
 

@@ -552,7 +552,7 @@ remap_tableinfo([{size, Sz}|R], S) ->
 remap_tableinfo([{storage_type, ST}|R], S) ->
     S1 = S#mnesia_TableInfo{storage_type = ST},
     remap_tableinfo(R, S1);
-remap_tableinfo([{setorbag, SoB}|R], S) ->
+remap_tableinfo([{type, SoB}|R], S) ->
     S1 = S#mnesia_TableInfo{type = SoB},
     remap_tableinfo(R, S1);
 remap_tableinfo([{where_to_read, Node}|R], S) ->

@@ -321,16 +321,21 @@ error_logger:error_msg("============ CosNotification ==============~n"
                        "===========================================~n",
                        Arg)).
 
+-define(DEBUG_LEVEL, 3).
 
 -ifdef(debug).
--define(debug_print(F,A),
-        io:format("[~p(~p)] "++F,[?MODULE, ?LINE]++A)).
--define(not_TypeCheck(O,M), 'CosNotification_Common':type_check(O,M)).
+
+-define(debug_print(F,A), io:format("[~p(~p)] "++F,[?MODULE, ?LINE]++A)).
+-define(DBG(F,A), io:format("[~p(~p)] "++F,[?MODULE, ?LINE]++A)).
+-define(not_TypeCheck(O,I), ok).
+%-define(not_TypeCheck(O,M), 'CosNotification_Common':type_check(O,M)).
+
 -else.
+
 -define(debug_print(F,A), ok).
-%% Use next definition if you only want to typecheck when debug compiled.
-%%-define(not_TypeCheck(O,I), ok).
--define(not_TypeCheck(O,M), 'CosNotification_Common':type_check(O,M)).
+-define(DBG(F,A), ok).
+-define(not_TypeCheck(O,I), ok).
+
 -endif.    
 
 

@@ -72,13 +72,10 @@ dnl Optional features.
 dnl ----------------------------------------------------------------------
 
 AC_ARG_ENABLE(elib-malloc,
-[  --enable-elib-malloc      use elib_malloc instead of normal malloc])
-
-AC_ARG_ENABLE(dlmalloc,
-[  --enable-dlmalloc      use dlmalloc instead of normal malloc])
+[  --enable-elib-malloc    use elib_malloc instead of normal malloc])
 
 AC_ARG_ENABLE(fixalloc,
-[  --disable-fixalloc        disable the use of fix_alloc])
+[  --disable-fixalloc      disable the use of fix_alloc])
 if test x${enable_fixalloc} = xno ; then
   AC_DEFINE(NO_FIX_ALLOC)
 fi
@@ -92,7 +89,7 @@ dnl    *)  enable_threads=threads-error ;;
 dnl  esac ], enable_threads=threads-ok)
 
 AC_ARG_ENABLE(threads,
-[  --enable-threads          do not try to use threads],
+[  --enable-threads        use threads],
 [ case "$enableval" in
     no) enable_threads=nothreads ;;
     *)  enable_threads=threads-error ;;
@@ -395,11 +392,6 @@ dnl for gzio
 LM_CHECK_FUNC_DECL(fread, [extern int fread();],,
                    AC_DEFINE(HAVE_CONFLICTING_FREAD_DECLARATION))
 
-dnl dlmalloc needs to know if we have a decl conflicting with "void *sbrk()"
-LM_CHECK_FUNC_DECL(sbrk, [extern void *sbrk();],[#include <unistd.h>],
-	           AC_DEFINE(HAVE_VOID_PTR_SBRK_CONFLICT))
-
-
 dnl ----------------------------------------------------------------------
 dnl Checks for features/quirks in the system that affects Erlang.
 dnl ----------------------------------------------------------------------
@@ -449,14 +441,6 @@ if test X${enable_elib_malloc} = Xyes; then
 fi
 
 #
-# Check if we should use dlmalloc.
-#
-
-if test X${enable_dlmalloc} = Xyes; then
- AC_DEFINE(ENABLE_DLMALLOC)
-fi
-
-#
 # Figure out if we should use threads. The default is set above in the
 # enable_threads variable. It can have the following values:
 #
@@ -484,24 +468,21 @@ case "$enable_threads" in
 #    fi
 
     # Check for POSIX threads
+    pthread_lib=""
     if test "$found_threads" = "0"; then
       AC_CHECK_LIB(pthread, pthread_create, [found_threads=1
            THR_LIBS="-lpthread"
-           THR_DEFS="$THR_DEFS -DPOSIX_THREADS -D_THREAD_SAFE"],
+           THR_DEFS="$THR_DEFS -DPOSIX_THREADS -D_THREAD_SAFE"
+           pthread_lib=pthread],
         found_threads=0)
-	if test "$found_threads" = "1"; then
-		case $host_os in
-			solaris*)
-				THR_DEFS="$THR_DEFS -D_POSIX_PTHREAD_SEMANTICS"
-		esac
-	fi
     fi
 
     # FreeBSD has pthreads in special c library, c_r
     if test "$found_threads" = "0"; then
       AC_CHECK_LIB(c_r, pthread_create, [found_threads=1
            THR_LIBS="-lc_r"
-           THR_DEFS="$THR_DEFS -DPOSIX_THREADS -D_THREAD_SAFE"],
+           THR_DEFS="$THR_DEFS -DPOSIX_THREADS -D_THREAD_SAFE"
+           pthread_lib=c_r],
         found_threads=0)
     fi
 
@@ -517,9 +498,18 @@ case "$enable_threads" in
         ;;
       *)
         # Threads found
+	if test "x$pthread_lib" != "x"; then
+	  AC_CHECK_LIB($pthread_lib, pthread_atfork,
+                       AC_DEFINE(HAVE_PTHREAD_ATFORK))
+	fi
 	case $host_os in
 		solaris*)
+			if test "x$pthread_lib" != "x"; then
+			  THR_DEFS="$THR_DEFS -D_POSIX_PTHREAD_SEMANTICS"
+			fi
 			AC_DEFINE(ENABLE_CHILD_WAITER_THREAD) ;;
+		linux*)
+			AC_DEFINE(INIT_MUTEX_IN_CHILD_AT_FORK) ;;
 	esac
 	;;
     esac
@@ -634,9 +624,9 @@ dnl use "PATH/include" and "PATH/lib".
 AC_SUBST(SSL_INCLUDE)
 AC_SUBST(SSLEAY_ROOT)
 AC_ARG_WITH(ssl,
-[  --with-ssl=PATH           specify location of openSSL/ssleay include and lib
-  --with-ssl                use SSL (default)
-  --without-ssl             don't use SSL])
+[  --with-ssl=PATH         specify location of openSSL/ssleay include and lib
+  --with-ssl              use SSL (default)
+  --without-ssl           don't use SSL])
 
 if test "x$with_ssl" = "xno"; then
     echo "configure --without-ssl disabled use of SSL" > $ERL_TOP/lib/ssl/SKIP
@@ -771,6 +761,7 @@ AC_OUTPUT(
   $srcdir/epmd/src/$host/Makefile:epmd/src/Makefile.in
   $srcdir/etc/common/$host/Makefile:etc/common/Makefile.in
   $srcdir/../make/$host/otp.mk:../make/otp.mk.in
+  $srcdir/etc/common/test_vars.mk:etc/common/test_vars.mk.in
 dnl
 dnl The ones below should be moved to their respective lib
 dnl

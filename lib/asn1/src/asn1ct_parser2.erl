@@ -2054,6 +2054,14 @@ parse_ComponentTypeLists(Tokens) ->
 		    _ ->
 			{Clist,Rest01}
 		end;
+	    [{'COMPONENTS',_},{'OF',_}|Rest] ->
+		{Clist,Rest01} = parse_ComponentTypeList(Tokens),
+		case Rest01 of
+		    [{',',_}|Rest02] -> 
+			parse_ComponentTypeLists(Rest02,Clist);
+		    _ ->
+			{Clist,Rest01}
+		end;
 	    _ ->
 		parse_ComponentTypeLists(Tokens,[])
 	end.
@@ -2101,6 +2109,8 @@ parse_ComponentTypeList(Tokens,Acc) ->
     case Rest of
 	[{',',_},Id = {identifier,_,_}|Rest2] ->
 	    parse_ComponentTypeList([Id|Rest2],[ComponentType|Acc]);
+	[{',',_},C1={'COMPONENTS',_},C2={'OF',_}|Rest2] ->
+	    parse_ComponentTypeList([C1,C2|Rest2],[ComponentType|Acc]);
 	_ ->
 	    {lists:reverse([ComponentType|Acc]),Rest}
     end.
@@ -2149,6 +2159,9 @@ parse_ExtensionAdditions(Tokens,_) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,identifier]}}).
 
+parse_ComponentType([{'COMPONENTS',_},{'OF',_}|Rest]) ->
+    {Type,Rest2} = parse_Type(Rest),
+    {{'COMPONENTS OF',Type},Rest2};
 parse_ComponentType(Tokens) ->
     {NamedType,Rest} = parse_NamedType(Tokens),
     case Rest of

@@ -3,7 +3,7 @@
 
 #pragma prefix "omg.org"
 
-#include<../../cosNotification/src/CosEvent.idl>
+#include"CosEventComm.idl"
 #include<CosTime.idl>
 #include<TimeBase.idl>
 

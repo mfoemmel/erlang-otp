@@ -39,6 +39,7 @@
 %% cosNotification API external
 -export([start/0, stop/0, 
 	 start_factory/1, start_factory/0, stop_factory/1,
+	 start_global_factory/0, start_global_factory/1,
 	 start_filter_factory/1, start_filter_factory/0, stop_filter_factory/1,
 	 install/0, install/1, uninstall/0, uninstall/1,
 	 install_event/0, install_event/1, uninstall_event/0, uninstall_event/1,
@@ -185,7 +186,6 @@ stop() ->
 %% Returns  : ObjectRef | {'EXCEPTION', _} | {'EXIT', Reason}
 %% Effect   : Starts a CosNotifyChannelAdmin_EventChannelFactory
 %%------------------------------------------------------------
- 
 start_factory() ->
     start_factory(?not_DEFAULT_SETTINGS).
     
@@ -197,12 +197,38 @@ start_factory(Args) when list(Args) ->
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
 	Other->
-	    ?not_errorMsg("cosNotificationApp:start( ~p ) failed. Bad parameters~n", 
+	    ?not_errorMsg("cosNotificationApp:start_factory( ~p ) failed. Bad parameters~n", 
 			  [Args]),
 	    corba:raise(#'BAD_PARAM'{minor=504, completion_status=?COMPLETED_NO})
     end;
 start_factory(Args) ->
-    ?not_errorMsg("cosNotificationApp:start( ~p ) failed. Bad parameters~n", [Args]),
+    ?not_errorMsg("cosNotificationApp:start_factory( ~p ) failed. Bad parameters~n", [Args]),
+    corba:raise(#'BAD_PARAM'{minor=505, completion_status=?COMPLETED_NO}).
+ 
+%%------------------------------------------------------------
+%% function : start_global_factory 
+%% Arguments: none or an argumentlist whith default values.
+%% Returns  : ObjectRef | {'EXCEPTION', _} | {'EXIT', Reason}
+%% Effect   : Starts a CosNotifyChannelAdmin_EventChannelFactory
+%%------------------------------------------------------------
+start_global_factory() ->
+    start_global_factory(?not_DEFAULT_SETTINGS).
+    
+start_global_factory(Args) when list(Args) ->
+    Name = create_name(),
+    SPEC = ['CosNotifyChannelAdmin_EventChannelFactory',Args,
+	    [{sup_child, true}, 
+	     {regname, {global, Name}}]],
+    case supervisor:start_child(?SUPERVISOR_NAME, SPEC) of
+	{ok, Pid, Obj} when pid(Pid) ->
+	    Obj;
+	Other->
+	    ?not_errorMsg("cosNotificationApp:start_global_factory( ~p ) failed. Bad parameters~n", 
+			  [Args]),
+	    corba:raise(#'BAD_PARAM'{minor=504, completion_status=?COMPLETED_NO})
+    end;
+start_global_factory(Args) ->
+    ?not_errorMsg("cosNotificationApp:start_global_factory( ~p ) failed. Bad parameters~n", [Args]),
     corba:raise(#'BAD_PARAM'{minor=505, completion_status=?COMPLETED_NO}).
  
  
@@ -298,5 +324,17 @@ init(app_init) ->
 	   ['CosNotifyChannelAdmin_EventChannel',
 	    'CosNotifyChannelAdmin_EventChannel_impl']}]}}.
 
- 
+
+
+%%------------------------------------------------------------
+%% function : create_name
+%% Arguments: 
+%% Returns  : 
+%% Effect   : Create a unique name to use when, for eaxmple, starting
+%%            a new server.
+%%------------------------------------------------------------
+create_name() ->
+    {MSec, Sec, USec} = erlang:now(),
+    lists:concat(['oe_',node(),'_',MSec, '_', Sec, '_', USec]).
+
 %%--------------- END OF MODULE ------------------------------

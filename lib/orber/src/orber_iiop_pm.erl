@@ -43,12 +43,16 @@
 %%-----------------------------------------------------------------
 -export([connect/5, disconnect/2, 
 	 init/1, handle_call/3, handle_cast/2, handle_info/2,
-	 code_change/3, terminate/2, stop/0]).
+	 code_change/3, terminate/2, stop/0, setup_connection/5]).
 
 %%-----------------------------------------------------------------
 %% Macros/Defines
 %%-----------------------------------------------------------------
 -define(DEBUG_LEVEL, 7).
+
+-define(PM_CONNECTION_DB, orber_iiop_pm_db).
+
+-record(state, {connections, queue}).
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -60,8 +64,22 @@ start(Opts) ->
 
 
 connect(Host, Data, SocketType, SocketOptions, Timeout) ->
-    gen_server:call(orber_iiop_pm, {connect, Host, Data, SocketType, SocketOptions}, 
-		    Timeout).
+    Port = case SocketType of
+	       normal -> 
+		   Data;
+	       ssl -> 
+		   Data#'SSLIOP_SSL'.port
+	   end,
+    case ets:lookup(?PM_CONNECTION_DB, {Host, Port}) of
+	[{_, connecting, I, _}] ->
+	    gen_server:call(orber_iiop_pm, {connect, Host, Port, SocketType, 
+					    SocketOptions}, Timeout);
+	[] ->
+	    gen_server:call(orber_iiop_pm, {connect, Host, Port, SocketType, 
+					    SocketOptions}, Timeout);
+	[{_, P, I, _}] ->
+	    {P, [], I}
+    end.
 
 disconnect(Host, Port) ->
     gen_server:call(orber_iiop_pm, {disconnect, Host, Port}).
@@ -85,86 +103,78 @@ stop() ->
 init(Opts) ->
     ?PRINTDEBUG2("orber_iiop_pm init: ~p ", [self()]),
     process_flag(trap_exit, true),
-    {ok, ets:new(orber_iiop_pm, [set])}.
+    {ok, #state{connections = ets:new(orber_iiop_pm_db, [set, protected, named_table]),
+		queue = ets:new(orber_iiop_pm_queue, [bag])}}.
 
 %%-----------------------------------------------------------------
 %% Func: terminate/2
 %%-----------------------------------------------------------------
-terminate(Reason, PM) ->
+terminate(Reason, #state{queue = Q}) ->
     %% Kill all proxies and close table before terminating
-    stop_all_proxies(PM, ets:first(PM)),
-    ets:delete(PM),
+    stop_all_proxies(ets:first(?PM_CONNECTION_DB)),
+    ets:delete(?PM_CONNECTION_DB),
+    ets:delete(Q),
     ok.
 
-stop_all_proxies(_, '$end_of_table') ->
+stop_all_proxies('$end_of_table') ->
     ok;
-stop_all_proxies(PM, Key) ->
-    case ets:lookup(PM, Key) of
+stop_all_proxies(Key) ->
+    case ets:lookup(?PM_CONNECTION_DB, Key) of
 	[] ->
 	    ok;
-	[{_, P, I}] ->
+	[{_, connecting, I, _}] ->
+	    catch invoke_connection_closed(I);
+	[{_, P, I, _}] ->
 	    catch invoke_connection_closed(I),
 	    catch orber_iiop_outproxy:stop(P)
     end,
-    stop_all_proxies(PM, ets:next(PM, Key)).
+    stop_all_proxies(ets:next(?PM_CONNECTION_DB, Key)).
 
 %%-----------------------------------------------------------------
 %% Func: handle_call/3
 %%-----------------------------------------------------------------
-handle_call({connect, Host, Data, SocketType, SocketOptions}, From, PM) ->
-    Port = 
-	case SocketType of
-	    normal -> Data;
-	    ssl -> Data#'SSLIOP_SSL'.port
-	end,
-    Proxy = 
-	case ets:lookup(PM, {Host, Port}) of
-	    [] ->
-		case init_interceptors(Host, Port) of
-		    {'EXCEPTION', E} ->
-			{'EXCEPTION', E};
-		    Interceptors ->
-			case catch orber_iiop_outsup:connect(Host, Port, SocketType, SocketOptions) of
-			    {'error', {'EXCEPTION', E}} ->
-				orber:debug_level_print("[~p] orber_iiop_pm:handle_call(connect ~p ~p); Raised Exc: ~p", 
-							[?LINE, Host, Port, E], ?DEBUG_LEVEL),
-				{'EXCEPTION', E};
-			    {'error', Reason} ->
-				orber:debug_level_print("[~p] orber_iiop_pm:handle_call(connect ~p ~p); Got EXIT: ~p", 
-							[?LINE, Host, Port, Reason], ?DEBUG_LEVEL),
-				{'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}};
-			    {ok, undefined} ->
-				orber:debug_level_print("[~p] orber_iiop_pm:handle_call(connect ~p ~p); Probably no listener on the given Node/Port or timedout.", 
-							[?LINE, Host, Port], ?DEBUG_LEVEL),
-				{'EXCEPTION', #'COMM_FAILURE'{minor=123, completion_status=?COMPLETED_NO}};
-			    {ok, Child} ->
-				link(Child),
-				ets:insert(PM, {{Host, Port}, Child, Interceptors}),
-				CodeSetCtx = 
-				    #'CONV_FRAME_CodeSetContext'
-				  {char_data =  ?ISO8859_1_ID, 
-				   wchar_data = ?ISO_10646_UCS_2_ID},
-				Ctx = [#'IOP_ServiceContext'
-				       {context_id=?IOP_CodeSets, 
-					context_data = CodeSetCtx}],
-				{Child, Ctx, Interceptors}
-			end
-		end;
-	    [{_, P, I}] ->
-		{P, [], I}
-	end,
-    {reply, Proxy, PM};
-handle_call({disconnect, Host, Port}, From, PM) ->
-    case ets:lookup(PM, {Host, Port}) of
+handle_call({connect, Host, Port, SocketType, SocketOptions}, From, State) ->
+    case ets:lookup(?PM_CONNECTION_DB, {Host, Port}) of
+	[{_, connecting, I, S}] ->
+	    %% Another client already requested a connection to the given host/port. 
+	    %% Just add this client to the queue.
+	    ets:insert(State#state.queue, {{Host, Port}, From}),
+	    {noreply, State};
+	[{_, P, I, _}] ->
+	    %% This case will occur if the PortMapper completed a connection
+	    %% between the client's ets:lookup and receiving this request.
+	    {reply, {P, [], I}, State};
+	[] ->
+	    %% The first time a connection is requested to the given host/port.
+	    case catch spawn_link(?MODULE, setup_connection, [self(), Host, Port, 
+							      SocketType, 
+							      SocketOptions]) of
+		Slave when pid(Slave) ->
+		    ets:insert(?PM_CONNECTION_DB, {{Host, Port}, connecting, 
+						   false, Slave}),
+		    ets:insert(State#state.queue, {{Host, Port}, From}),
+		    {noreply, State};
+		_->
+		    {reply, 
+		     {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}, 
+		     State}
+	    end
+    end;
+handle_call({disconnect, Host, Port}, From, State) ->
+    case ets:lookup(?PM_CONNECTION_DB, {Host, Port}) of
 	[] ->
 	    ok;
-	[{_, P, I}] ->
+	[{_, connecting, I, _}] ->
+	    %% FIX this!!
+	    ets:delete({Host, Port}),
+	    catch invoke_connection_closed(I);
+	[{_, P, I, _}] ->
 	    unlink(P),
 	    catch orber_iiop_outproxy:stop(P),
 	    ets:delete({Host, Port}),
 	    catch invoke_connection_closed(I)
     end,
-    {reply, ok, PM};
+    {reply, ok, State};
 handle_call(stop, From, State) ->
     {stop, normal, ok, State};
 handle_call(_, _, State) ->
@@ -182,30 +192,146 @@ handle_cast(_, State) ->
 %% Func: handle_info/2
 %%-----------------------------------------------------------------
 %% Trapping exits 
-handle_info({'EXIT', Pid, normal}, PM) ->
-    [{K, _, I}] = ets:match_object(PM, {'$1', Pid, '_'}),
-    ets:delete(PM, K),
-    invoke_connection_closed(I),
-    {noreply, PM};
-handle_info({'EXIT', Pid, Reason}, PM) ->
-    ?PRINTDEBUG2("proxy ~p finished with reason ~p", [Pid, Reason]),
-    [{K, _, I}] = ets:match_object(PM, {'$1', Pid, '_'}),
-    ets:delete(PM, K),
-    invoke_connection_closed(I),
-    {noreply, PM};
+handle_info({'EXIT', Pid, Reason}, State) ->
+    %% Check the most common scenario first, i.e., a proxy terminates.
+    case ets:match_object(?PM_CONNECTION_DB, {'_', Pid, '_', '_'}) of
+	[{K, _, I, _}] ->
+	    ets:delete(?PM_CONNECTION_DB, K),
+	    invoke_connection_closed(I),
+	    {noreply, State};
+	[] when Reason == normal ->
+	    %% This might have been a spawned 'setup_connection' which terminated
+	    %% after sucessfully setting up a new connection.
+	    {noreply, State};
+	[] ->
+	    %% Wasn't a proxy. Hence, we must test if it was a spawned
+	    %% 'setup_connection' that failed.
+	    case ets:match_object(?PM_CONNECTION_DB, {'_', '_', '_', Pid}) of
+		[{K, connecting, I, _}] ->
+		    ets:delete(?PM_CONNECTION_DB, K),
+		    invoke_connection_closed(I),
+		    Exc = {'EXCEPTION',#'INTERNAL'{minor = 123, 
+						   completion_status = ?COMPLETED_NO}},
+		    send_reply_to_queue(ets:lookup(State#state.queue, K), Exc),
+		    ets:delete(State#state.queue, K),
+		    orber:debug_level_print("[~p] orber_iiop_pm:handle_info(setup_failed ~p); 
+It was not possible to create a connection to the given host/port.", 
+			    [?LINE, K], ?DEBUG_LEVEL),
+		    {noreply, State};
+		_ ->
+		    {noreply, State}
+	    end
+    end;
+handle_info({setup_failed, {Host, Port}, Exc}, State) ->
+    %% Deletet the data from the connection DB first to avoid clients from
+    %% trying to access it again.
+    ets:delete(?PM_CONNECTION_DB, {Host, Port}),
+    %% Now we can send whatever exception received.
+    send_reply_to_queue(ets:lookup(State#state.queue, {Host, Port}), Exc),
+    ets:delete(State#state.queue, {Host, Port}),
+    orber:debug_level_print("[~p] orber_iiop_pm:handle_info(setup_failed ~p ~p); 
+It was not possible to create a connection to the given host/port.", 
+			    [?LINE, Host, Port], ?DEBUG_LEVEL),
+    {noreply, State};
+handle_info({setup_successfull, {Host, Port}, {Child, Ctx, Int}}, State) ->
+    %% Create a link to the proxy and store it in the connection DB.
+    link(Child),
+    ets:insert(?PM_CONNECTION_DB, {{Host, Port}, Child, Int, undefined}),
+    %% Send the Proxy reference to all waiting clients.
+    send_reply_to_queue(ets:lookup(State#state.queue, {Host, Port}),{Child, Ctx, Int}),
+    %% Reset the queue.
+    ets:delete(State#state.queue, {Host, Port}),
+    {noreply, State};
 handle_info(X, State) ->
     {noreply, State}.
 
 
+send_reply_to_queue([], _) ->
+    ok;
+send_reply_to_queue([{_, Client}|T], Reply) ->
+    gen_server:reply(Client, Reply),
+    send_reply_to_queue(T, Reply). 
+
 %%-----------------------------------------------------------------
 %% Func: code_change/3
 %%-----------------------------------------------------------------
+code_change({down, OldVsn}, State, async) ->
+    Elements = ets:tab2list(?PM_CONNECTION_DB),
+    PM = ets:new(orber_iiop_pm, [set]),
+    add_to_ets_down(Elements, PM),
+    ets:delete(?PM_CONNECTION_DB),
+    ets:delete(State#state.queue),
+    {ok, PM};
+code_change(OldVsn, PM, async) ->
+    Elements = ets:tab2list(PM),
+    State = #state{connections = ets:new(?PM_CONNECTION_DB, 
+					 [set, protected, named_table]),
+		   queue = ets:new(orber_iiop_pm_queue, [bag])},
+    Elements = ets:tab2list(PM),
+    add_to_ets_up(Elements),
+    ets:delete(PM),
+    {ok, State};
 code_change(OldVsn, State, Extra) ->
     {ok, State}.
+
+%% TEMPORARY HELP FUNCTIONS TO BE ABLE TO HANDLE UPGRADE!!
+%% Remove in next release.
+add_to_ets_down([], _) ->
+    ok;
+add_to_ets_down([{K,P,I,S}|T], PM) ->
+    true = ets:insert(PM, {K,P,I}),
+    add_to_ets_down(T, PM).
+add_to_ets_up([]) ->
+    ok;
+add_to_ets_up([{K,P,I}|T]) ->
+    true = ets:insert(?PM_CONNECTION_DB, {K,P,I,undefined}),
+    add_to_ets_up(T).
+
+
 
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
+setup_connection(PMPid, Host, Port, SocketType, SocketOptions) ->
+    case init_interceptors(Host, Port) of
+	{'EXCEPTION', E} ->
+	    PMPid ! {setup_failed, {Host, Port}, {'EXCEPTION', E}},
+	    ok;
+	Interceptors ->
+	    case catch orber_iiop_outsup:connect(Host, Port, SocketType, SocketOptions) of
+		{'error', {'EXCEPTION', E}} ->
+		    orber:debug_level_print("[~p] orber_iiop_pm:handle_call(connect ~p ~p); 
+Raised Exc: ~p", [?LINE, Host, Port, E], ?DEBUG_LEVEL),
+		    PMPid ! {setup_failed, {Host, Port}, {'EXCEPTION', E}},
+		    ok;
+		{'error', Reason} ->
+		    orber:debug_level_print("[~p] orber_iiop_pm:handle_call(connect ~p ~p); 
+Got EXIT: ~p", [?LINE, Host, Port, Reason], ?DEBUG_LEVEL),
+		    PMPid ! {setup_failed, {Host, Port}, 
+			     {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}},
+		    ok;
+		{ok, undefined} ->
+		    orber:debug_level_print("[~p] orber_iiop_pm:handle_call(connect ~p ~p); 
+Probably no listener on the given Node/Port or timedout.", 
+					    [?LINE, Host, Port], ?DEBUG_LEVEL),
+		    PMPid ! {setup_failed, {Host, Port}, 
+			     {'EXCEPTION', #'COMM_FAILURE'{minor=123, completion_status=?COMPLETED_NO}}},
+		    ok;
+		{ok, Child} ->
+		    CodeSetCtx = 
+			#'CONV_FRAME_CodeSetContext'
+		      {char_data =  ?ISO8859_1_ID, 
+		       wchar_data = ?ISO_10646_UCS_2_ID},
+		    Ctx = [#'IOP_ServiceContext'
+			   {context_id=?IOP_CodeSets, 
+			    context_data = CodeSetCtx}],
+		    PMPid ! {setup_successfull, {Host, Port}, {Child, Ctx, Interceptors}},
+		    ok
+	    end
+    end.
+
+
+
 invoke_connection_closed(false) ->
     ok;
 invoke_connection_closed({native, Ref, PIs}) ->

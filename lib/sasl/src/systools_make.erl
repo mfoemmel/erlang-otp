@@ -205,8 +205,9 @@ get_release1(File, Path, ModTestP, Machine) ->
     {ok, Release} = read_release(File, Path),
     {ok, Appls0} = collect_applications(Release, Path),
     {ok, Appls1} = check_applications(Appls0),
-    {ok, Warnings} = check_modules(Appls1, Path, ModTestP, Machine),
-    {ok, Appls} = sort_appls(Appls1),
+    {ok, Appls2} = sort_included_applications(Appls1, Release), % OTP-4121
+    {ok, Warnings} = check_modules(Appls2, Path, ModTestP, Machine),
+    {ok, Appls} = sort_appls(Appls2),
     {ok, Release, Appls, Warnings}.
 
 %%______________________________________________________________________    
@@ -669,6 +670,45 @@ undefined_applications(Appls) ->
     filter(fun(X) -> not member(X, Defined) end, Uses).
 
 %%______________________________________________________________________
+%% sort_included_applications(Applications, Release) -> Applications
+%%   Applications = [{{Name,Vsn},#application}]
+%%   Release = #release{}
+%%    
+%% Check that included applications are given in the same order as in
+%% the release resource file (.rel). Otherwise load instructions in the boot
+%% script, and consequently release upgrade instructions in relup, may end
+%% up in the wrong order.
+
+sort_included_applications(Applications, Release) when tuple(Release) ->
+    {ok,
+     sort_included_applications(Applications, Release#release.applications)};
+
+sort_included_applications([{Tuple,Appl}|Appls], OrderedAppls) ->
+    case Appl#application.includes of
+	Incls when length(Incls)>1 ->
+	    IndexedIncls = find_pos(Incls, OrderedAppls),
+	    SortedIndexedIncls = lists:keysort(1, IndexedIncls),
+	    Incls2 = lists:map(fun({Index,Name}) -> Name end,
+			       SortedIndexedIncls),
+	    Appl2 = Appl#application{includes=Incls2},
+	    [{Tuple,Appl2}|sort_included_applications(Appls, OrderedAppls)];
+	Incls ->
+	    [{Tuple,Appl}|sort_included_applications(Appls, OrderedAppls)]
+    end;
+sort_included_applications([], OrderedAppls) ->
+    [].
+
+find_pos([Name|Incs], OrderedAppls) ->
+    [find_pos(1, Name, OrderedAppls)|find_pos(Incs, OrderedAppls)];
+find_pos([], OrderedAppls) ->
+    [].
+
+find_pos(N, Name, [{Name,_Vsn,_Type}|OrderedAppls]) ->
+    {N, Name};
+find_pos(N, Name, [OtherAppl|OrderedAppls]) ->
+    find_pos(N+1, Name, OrderedAppls).
+
+%%______________________________________________________________________
 %% check_modules(Appls, Path, TestP, Machine) ->
 %%  {ok, Warnings} | throw({error, What})
 %%   where Appls = [{App,Vsn}, #application}]
@@ -1093,7 +1133,8 @@ sort_appls(Appls) -> {ok, sort_appls(Appls, [], [], [])}.
 sort_appls([{N, A}|T], Missing, Circular, Visited) ->
     {Name,_Vsn} = N,
     {Uses, T1, NotFnd1} = find_all(Name, A#application.uses, T, Visited, [], []),
-    {Incs, T2, NotFnd2} = find_all(Name, A#application.includes, T1, Visited, [], []),
+    {Incs, T2, NotFnd2} = find_all(Name, lists:reverse(A#application.includes),
+				   T1, Visited, [], []),
     Missing1 = NotFnd1 ++ NotFnd2 ++ Missing,
     case Uses ++ Incs of
 	[] -> 

@@ -89,6 +89,7 @@ atom current_function
 atom data
 atom debug_flags
 atom dexit
+atom depth
 atom dgroup_leader
 atom dictionary
 atom disable_trace
@@ -97,7 +98,6 @@ atom dist
 atom Div='/'
 atom div
 atom dlink
-atom dlmalloc
 atom dmonitor_node
 atom dmonitor_p
 atom DollarDollar='$$'
@@ -144,6 +144,8 @@ atom get_seq_token
 atom get_tcw
 atom getenv
 atom getting_linked
+atom getting_unlinked
+atom getting_unlinked
 atom glibc
 atom global
 atom Gt='>'
@@ -183,6 +185,7 @@ atom Lt='<'
 atom machine
 atom match_spec
 atom max
+atom maximum
 atom max_tables max_processes
 atom mbuf_size
 atom memory
@@ -193,7 +196,11 @@ atom messages
 atom min_heap_size
 atom Minus='-'
 atom mmap
+atom mmap_blocks_size
+atom mmap_chunks
+atom mmap_chunks_size
 atom mmap_max
+atom mmap_table
 atom mmap_threshold
 atom module
 atom module_desc
@@ -221,6 +228,7 @@ atom not
 atom not_purged
 atom notalive
 atom nouse_stdio
+atom objects
 atom old_heap_size
 atom on_load
 atom or
@@ -254,6 +262,7 @@ atom quantify
 atom receive
 atom recent_size
 atom reductions
+atom register
 atom register_table
 atom registered_name
 atom rem
@@ -277,6 +286,8 @@ atom set_on_spawn
 atom set_seq_token
 atom set_tcw
 atom silent
+atom size
+atom sl_alloc
 atom stack_size
 atom start
 atom static
@@ -298,6 +309,7 @@ atom timeout_value
 atom Times='*'
 atom timestamp
 atom top_pad
+atom total
 atom trace trace_ts traced 
 atom trace_control_word
 atom tracer
@@ -309,12 +321,15 @@ atom undef
 atom undefined
 atom undefined_function
 atom undefined_lambda
+atom unregister
 atom ultrasparc_read_pic1
 atom ultrasparc_read_tick1
 atom ultrasparc_read_pic2
 atom ultrasparc_read_tick2
 atom ultrasparc_set_pcr
+atom use_mmap_table
 atom use_stdio
+atom used
 atom uniq
 atom value
 atom version

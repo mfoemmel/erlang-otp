@@ -232,9 +232,13 @@ check_ssl([_ | Rest], Version) ->
 %%-----------------------------------------------------------------
 get_typeID(#'IOP_IOR'{type_id=TypeID}) ->
     TypeID;
+get_typeID({Id, _Type, _Key, _UserDef, _OrberDef, _Flags}) when atom(Id) ->
+    Id:typeID();
 get_typeID({Id, _Type, _Key, _UserDef, _OrberDef, _Flags}) ->
     binary_to_list(Id);
 %% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
+get_typeID({Id, _Type, _Key, _UserDef}) when atom(Id) ->
+    Id:typeID();
 get_typeID({Id, _Type, _Key, _UserDef}) ->
     binary_to_list(Id).
 
@@ -342,8 +346,8 @@ get_orbfield({_Id, _Type, _Key, _UserDef, OrberDef, _Flags}) ->
     OrberDef.
 
 get_orbfield_1([]) ->
-    orber:debug_level_print("[~p] iop_ior:get_orbfield_1([]); bad object key, profile not found.", 
-			    [?LINE], ?DEBUG_LEVEL),
+    orber:debug_level_print("[~p] iop_ior:get_orbfield_1([]); 
+bad object key, profile not found.", [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 get_orbfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P]) ->
     [_, _, Host, IIOP_port, ObjectKey | _] = tuple_to_list(PB),
@@ -351,8 +355,8 @@ get_orbfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P]
 	{_Id, _Type, _Key, _UserDef, OrberDef, _Flags} ->
 	    OrberDef;
 	_ ->
-	    orber:debug_level_print("[~p] iop_ior:get_orbfield_1(~p); bad object key.", 
-				    [?LINE, ObjectKey], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] iop_ior:get_orbfield_1(~p); 
+bad object key.", [?LINE, ObjectKey], ?DEBUG_LEVEL),
 	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
     end;
 get_orbfield_1([_| P]) ->
@@ -368,11 +372,11 @@ set_orbfield({Id, Type, Key, Priv, _, Flags}, OrberDef) ->
 %% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
 %% NOTE(!!): calling this function with ObjeRef/4 will return ObjRef/6!!!
 set_orbfield({Id, Type, Key, Priv}, OrberDef) ->
-	    {Id, Type, Key, Priv, OrberDef, term_to_binary(undefined)}.
+	    {Id, Type, Key, Priv, OrberDef, 0}.
 
 set_orbfield_1([], OrberDef) ->
-    orber:debug_level_print("[~p] iop_ior:set_orbfield_1([]); bad object key, profile not found or external object.", 
-			    [?LINE], ?DEBUG_LEVEL),
+    orber:debug_level_print("[~p] iop_ior:set_orbfield_1([]); 
+bad object key, profile not found or external object.", [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 set_orbfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P], OrberDef) ->
     [RecName, Version, Host, IIOP_port, ObjectKey | Rest] = tuple_to_list(PB),
@@ -392,7 +396,7 @@ set_orbfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P]
 				  profile_data=list_to_tuple([RecName,
 							      Version, Host,
 							      IIOP_port,
-							      {Id, Type, Key, Priv, OrberDef, term_to_binary(undefined)}|
+							      {Id, Type, Key, Priv, OrberDef, 0}|
 							      Rest])} |
 	     set_orbfield_1(P, OrberDef)];
 	_ ->
@@ -436,7 +440,7 @@ set_flagfield({Id, Type, Key, Priv, OrberDef, _}, Flags) ->
 %% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
 %% NOTE(!!): calling this function with ObjeRef/4 will return ObjRef/6!!!
 set_flagfield({Id, Type, Key, Priv}, Flags) ->
-	    {Id, Type, Key, Priv, term_to_binary(undefined), Flags}.
+	    {Id, Type, Key, Priv, 0, Flags}.
 
 set_flagfield_1([], Flags) ->
     orber:debug_level_print("[~p] iop_ior:set_flagfield_1([]); bad object key, profile not found or external object.", 
@@ -460,7 +464,7 @@ set_flagfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P
 				  profile_data=list_to_tuple([RecName,
 							      Version, Host,
 							      IIOP_port,
-							      {Id, Type, Key, Priv, term_to_binary(undefined), Flags}|
+							      {Id, Type, Key, Priv, 0, Flags}|
 							      Rest])} |
 	     set_flagfield_1(P, Flags)];
 	_ ->
@@ -474,6 +478,8 @@ set_flagfield_1([PB| P], Flags) ->
 %%-----------------------------------------------------------------
 check_nil(#'IOP_IOR'{type_id="", profiles=[]}) ->
     true;
+check_nil({Id, _, _, _, _, _}) when atom(Id) ->
+    false;
 check_nil({Id, _, _, _, _, _}) ->  
     case binary_to_list(Id) of
 	"" ->
@@ -512,6 +518,12 @@ code(Version, #'IOP_IOR'{type_id=TypeId, profiles=Profiles}, Bytes, Len) ->
 			Version, 
 			#'IOP_IOR'{type_id=TypeId, profiles=ProfileSeq},
 			Bytes, Len);
+code(Version, {Id, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) when atom(Id) ->
+    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+					 component_data=?DEFAULT_CODESETS},
+    IOR = create(Version, Id:typeID(), orber:host(), orber:iiop_port(),
+		 {Id, Type, Key, UserDef, OrberDef, Flags}, [CodeSetComp]),
+    code(Version, IOR, Bytes, Len);
 code(Version, {Id, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) ->
     CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
 					 component_data=?DEFAULT_CODESETS},
@@ -519,6 +531,12 @@ code(Version, {Id, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) ->
 		 {Id, Type, Key, UserDef, OrberDef, Flags}, [CodeSetComp]),
     code(Version, IOR, Bytes, Len);
 %% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
+code(Version, {Id, Type, Key, UserDef}, Bytes, Len) when atom(Id) ->
+    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+					 component_data=?DEFAULT_CODESETS},
+    IOR = create(Version, Id:typeID(), orber:host(), orber:iiop_port(),
+		 {Id, Type, Key, UserDef}, [CodeSetComp]),
+    code(Version, IOR, Bytes, Len);
 code(Version, {Id, Type, Key, UserDef}, Bytes, Len) ->
     CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
 					 component_data=?DEFAULT_CODESETS},
@@ -593,7 +611,11 @@ string_decode([$i,$o,$r,$: | IorHexSeq]) ->
     Version = orber:giop_version(),
     IorByteSeq = list_to_binary(hexstring_to_bytestring(IorHexSeq)),
     {ByteOrder, IorRest} = cdr_decode:dec_byte_order(IorByteSeq),
-    decode(Version, IorRest, 1, ByteOrder).
+    decode(Version, IorRest, 1, ByteOrder);
+string_decode(What) ->
+    orber:debug_level_print("[~p] iop_ior:string_decode(~p); Should be IOR:.. or ior:..", 
+			    [?LINE, What], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
 %% Func: decode/3

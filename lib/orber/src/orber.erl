@@ -27,6 +27,7 @@
 %%-----------------------------------------------------------------
 -module(orber).
 
+-include_lib("orber/include/corba.hrl").
 -include_lib("orber/src/orber_debug.hrl").
 -include_lib("orber/src/ifr_objects.hrl").
 %%-----------------------------------------------------------------
@@ -50,12 +51,7 @@
 %% Internal exports
 %%-----------------------------------------------------------------
 -export([host/0, ip_address_variable_defined/0, start/2, init/1, start_naming_service/1,
-	 messageInInterceptors/0, messageOutInterceptors/0,
-	 get_debug_level/0, debug_level_print/3, configure/2, add_table_index/0,
-	 del_table_index/0]).
-
-%% Temporary exports added to handle upgrade. Remove in next version.
--export([add_table_index_appup/0, del_table_index_appup/0]).
+	 get_debug_level/0, debug_level_print/3, configure/2, throw_helper/2]).
 
 %%-----------------------------------------------------------------
 %% Internal definitions
@@ -680,8 +676,17 @@ remove_tables([T1|Trest], Node, Failed) ->
 %%-----------------------------------------------------------------
 %% Internal interface functions
 %%-----------------------------------------------------------------
+%% This a function requested by IC.
+throw_helper('INTF_REPOS', 'COMPLETED_YES') ->
+    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_YES});
+throw_helper('INTF_REPOS', 'COMPLETED_NO') ->
+    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO});
+throw_helper('INTF_REPOS', 'COMPLETED_MAYBE') ->
+    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_MAYBE}).
 
-    
+
+
+
 is_loaded() ->
     is_running(application:loaded_applications()).
 is_running() ->
@@ -823,39 +828,6 @@ do_safe_configure(Key, Value) ->
 	    end
     end.
 
-%% Temporary function added to handle upgrade. Remove in next version.
-add_table_index_appup() ->
-    check_mnesia_result(mnesia:add_table_index(ir_ConstantDef, id),
-			"Unable to index ir_ConstantDef mnesia table."),
-    check_mnesia_result(mnesia:add_table_index(ir_EnumDef, id),
-			"Unable to index ir_EnumDef mnesia table."),
-    check_mnesia_result(mnesia:add_table_index(ir_AliasDef, id),
-			"Unable to index ir_AliasDef mnesia table."),
-    check_mnesia_result(mnesia:add_table_index(ir_AttributeDef, id),
-			"Unable to index ir_AttributeDef mnesia table."),
-    check_mnesia_result(mnesia:add_table_index(ir_OperationDef, id),
-			"Unable to index ir_OperationDef mnesia table."),
-    check_mnesia_result(mnesia:add_table_index(ir_Contained, id),
-			"Unable to index ir_Contained mnesia table."),
-    check_mnesia_result(mnesia:add_table_index(ir_TypedefDef, id),
-			"Unable to index ir_TypedefDef mnesia table.").
-
-%% Temporary function added to handle upgrade. Remove in next version.
-del_table_index_appup() ->
-    check_mnesia_result(mnesia:del_table_index(ir_ConstantDef, id),
-			"Unable to remove index for the mnesia table ir_ConstantDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_EnumDef, id),
-			"Unable to remove index for the mnesia table ir_EnumDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_AliasDef, id),
-			"Unable to remove index for the mnesia table ir_AliasDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_AttributeDef, id),
-			"Unable to remove index for the mnesia table ir_AttributeDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_OperationDef, id),
-			"Unable to remove index for the mnesia table ir_OperationDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_Contained, id),
-			"Unable to remove index for the mnesia table ir_Contained."),
-    check_mnesia_result(mnesia:del_table_index(ir_TypedefDef, id),
-			"Unable to remove index for the mnesia table ir_TypedefDef.").
 
 add_table_index() ->
     check_mnesia_result(mnesia:add_table_index(ir_ModuleDef, id),
@@ -868,7 +840,6 @@ add_table_index() ->
 			"Unable to index ir_UnionDef mnesia table."),
     check_mnesia_result(mnesia:add_table_index(ir_ExceptionDef, id),
 			"Unable to index ir_ExceptionDef mnesia table."),
-    %% New index tables
     check_mnesia_result(mnesia:add_table_index(ir_ConstantDef, id),
 			"Unable to index ir_ConstantDef mnesia table."),
     check_mnesia_result(mnesia:add_table_index(ir_EnumDef, id),
@@ -986,60 +957,4 @@ start_naming_service(_) ->
     end.
 
 
-
-create_default_contexts() ->
-    HostComponent = lname_component:set_id(lname_component:create(),
-					   "host"),
-    HostsComponent = lname_component:set_id(lname_component:create(),
-					    "hosts"),
-    ResourcesComponent = lname_component:set_id(lname_component:create(),
-						"resources"),
-    DevelopmentComponent = lname_component:set_id(lname_component:create(),
-					   "development"),
-    FactoriesComponent = lname_component:set_id(lname_component:create(),
-					   "factories"),
-    WGComponent = lname_component:set_id(lname_component:create(),
-					   "workgroup"),
-    %% Creation of Naming Context host and it's subcontexts
-    NS = corba:resolve_initial_references("NameService"),
-    H = 'CosNaming_NamingContext':bind_new_context(NS,
-		lname:insert_component(lname:create(), 1, HostComponent)),
-    HR = 'CosNaming_NamingContext':bind_new_context(H,
-		lname:insert_component(lname:create(), 1, ResourcesComponent)),
-    'CosNaming_NamingContext':bind_new_context(HR,
-		lname:insert_component(lname:create(), 1, FactoriesComponent)),
-    HD = 'CosNaming_NamingContext':bind_new_context(H,
-	lname:insert_component(lname:create(), 1, DevelopmentComponent)),
-    HDR = 'CosNaming_NamingContext':bind_new_context(HD,
-		lname:insert_component(lname:create(), 1, ResourcesComponent)),
-    'CosNaming_NamingContext':bind_new_context(HDR,
-		lname:insert_component(lname:create(), 1, FactoriesComponent)),
-      %% Creation of Naming Context workgroup and it's subcontexts
-    W = 'CosNaming_NamingContext':bind_new_context(NS,
-		lname:insert_component(lname:create(), 1, WGComponent)),
-    'CosNaming_NamingContext':bind_new_context(W,
-		lname:insert_component(lname:create(), 1, HostsComponent)),
-    WR = 'CosNaming_NamingContext':bind_new_context(W,
-		lname:insert_component(lname:create(), 1, ResourcesComponent)),
-    'CosNaming_NamingContext':bind_new_context(WR,
-		lname:insert_component(lname:create(), 1, FactoriesComponent)),
-    WD = 'CosNaming_NamingContext':bind_new_context(W,
-	lname:insert_component(lname:create(), 1, DevelopmentComponent)),
-    WDR = 'CosNaming_NamingContext':bind_new_context(WD,
-		lname:insert_component(lname:create(), 1, ResourcesComponent)),
-    'CosNaming_NamingContext':bind_new_context(WDR,
-		lname:insert_component(lname:create(), 1, FactoriesComponent)),
-    ok.
-
-
-
-
-
-
-messageInInterceptors() ->
-     [].
-
-
-messageOutInterceptors() ->
-     [].
 

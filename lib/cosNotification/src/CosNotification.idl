@@ -3,7 +3,8 @@
 
 #pragma prefix "omg.org"
 
-#include<CosEvent.idl>
+#include"CosEventChannelAdmin.idl"
+#include"CosEventComm.idl"
 
 module CosNotification {
   typedef string Istring;

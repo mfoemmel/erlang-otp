@@ -54,9 +54,8 @@ NORMAL_ERL_FILES= \
 	$(NORMAL_MODULES:%=%.erl)
 
 GEN_MODULES =  \
-	oe_person \
-	persons_data \
-	persons_person
+	oe_person 
+
 
 GEN_HRL_NAMES = \
 	oe_person \

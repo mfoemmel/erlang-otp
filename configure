@@ -14,7 +14,7 @@ ac_default_prefix=/usr/local
 ac_help="$ac_help
   --disable-erlang-mandir do not install Erlang man pages in a private directory"
 ac_help="$ac_help
-  --enable-dlmalloc       use dlmalloc instead of normal malloc"
+  --enable-threads        use threads"
 ac_help="$ac_help
   --with-ssl=PATH         specify location of openSSL/ssleay include and lib
   --with-ssl              use SSL (default)
@@ -777,22 +777,20 @@ fi
 
 
 
-
 #
-# dlmalloc option to pass to "erts/autoconf/configure"
+# threads option to pass to "erts/autoconf/configure"
 #
 #
-# Check whether --enable-dlmalloc or --disable-dlmalloc was given.
-if test "${enable_dlmalloc+set}" = set; then
-  enableval="$enable_dlmalloc"
+# Check whether --enable-threads or --disable-threads was given.
+if test "${enable_threads+set}" = set; then
+  enableval="$enable_threads"
    case "$enableval" in
-    no) dlmalloc_option="--disable-dlmalloc" ;;
-    *)  dlmalloc_option="--enable-dlmalloc" ;;
+    no) threads_option="--disable-threads" ;;
+    *)  threads_option="--enable-threads" ;;
   esac 
 else
-  dlmalloc_option=""
+  threads_option=""
 fi
-
 
 
 
@@ -807,18 +805,21 @@ fi
 
 
 
-echo "Running configure in erts/autoconf..."
+
 #
 # The parameters are basically the same as in erts/autoconf/Makefile
 #
-if test ! -d system; then
+if test ! -d system  \
+    || test x"$ssl_arg" != x"" \
+    || test x"$threads_option" != x""; then
+  echo "Running ${ERL_TOP}/erts/autoconf/configure $ssl_arg $threads_option --cache-file ${ERL_TOP}/erts/autoconf/${TARGET}/config.cache --srcdir=${ERL_TOP}/erts"
   (cd erts/autoconf && \
    if test ! -d ${TARGET}; then mkdir ${TARGET}; fi; \
    /bin/sh -c "ERL_TOP=${ERL_TOP} \
 	      CONFIG_STATUS=${ERL_TOP}/erts/autoconf/${TARGET}/config.status \
 	      ./configure \
 		$ssl_arg \
-		$dlmalloc_option \
+		$threads_option \
 		--cache-file ${ERL_TOP}/erts/autoconf/${TARGET}/config.cache \
 		--srcdir=${ERL_TOP}/erts" \
   )

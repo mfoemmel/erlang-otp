@@ -44,7 +44,17 @@ getaddrs(Address,Timer) -> inet:getaddrs_tm(Address,inet,Timer).
 %%
 %% Send data on a socket
 %%
-send(Socket, Packet) -> prim_inet:send(Socket, Packet).
+send(Socket, Packet) -> 
+    %% XXX This result mapping is a kludge, that should really be fixed
+    %% in prim_inet, but I do not want to make a patch on ERTS right 
+    %% now, which a change in prim_inet would imply. 
+    %% / raimo
+    case prim_inet:send(Socket, Packet) of
+	{error, _} ->
+	    {error, einval};
+	Result ->
+	    Result
+    end.
 
 %%
 %% Receive data from a socket (inactive only)

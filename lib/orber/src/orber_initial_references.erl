@@ -36,7 +36,7 @@
 %%-----------------------------------------------------------------
 -export([start/1, shutdown/1, init/1,
 	 terminate/2, handle_call/3, code_change/3, 
-	 get/2, list/1, add/3, remove/2]).
+	 get/2, list/1, add/3, remove/2, typeID/0]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -74,7 +74,8 @@ remove(EO_this, Id) ->
 				      [{"id", {'tk_string', 0}}],
 				      []}).
 
-
+typeID() ->
+    "IDL:Orber/InitialReferences:1.0".
 
 %%-----------------------------------------------------------------
 %% Internal interface functions
@@ -158,17 +159,6 @@ handle_info(_, State) ->
 %%-----------------------------------------------------------------
 %% Func: code_change/3
 %%-----------------------------------------------------------------
-code_change({down, OldVsn}, TableName, extension) ->
-    NSObjKey = corba:mk_light_objkey("IDL:omg.org/CosNaming/NamingContext:1.0",
-                                     'orber_nameservice'),
-    ets:insert(TableName, {"NameService", NSObjKey}),
-    oe_cos_naming_ext:oe_unregister(),
-    {ok, TableName};
-code_change(OldVsn, TableName, extension) ->
-    NSObjKey = 'CosNaming_NamingContextExt':oe_create([], [{pseudo, true}]),
-    ets:insert(TableName, {"NameService", NSObjKey}),
-    catch oe_cos_naming_ext:oe_register(),
-    {ok, TableName};
 code_change(OldVsn, State, Extra) ->
     {ok, State}.
 

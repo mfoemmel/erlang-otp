@@ -2140,15 +2140,45 @@ uint32 size;
 }
 */
 
-/* If we are not using elib then we may want to define the functions 
- * sys_alloc
- * sys_realloc
- * sys_free
- */
-#ifndef USE_ELIB
- 
-/* We do not define the functions if they are macros */
+#ifdef INSTRUMENT
+/* When instrumented sys_alloc and friends are implemented in utils.c */
+#define SYS_ALLOC_ELSEWHERE
+#endif
+
+/* A = alloc |realloc | free */
+#ifdef SYS_ALLOC_ELSEWHERE
+
+/* sys_A implemented elsewhere (calls sys_A2) ... */ 
 #ifndef sys_alloc2
+/* ... and sys_A2 makros not used; use this implementation as sys_A2 */
+#define SYS_ALLOC   sys_alloc2
+#define SYS_REALLOC sys_realloc2
+#define SYS_FREE    sys_free2
+#else  /* ifndef sys_alloc2 */
+/* ... and sys_A2 makros used; don't use this implementation as sys_A2 */
+#endif /* ifndef sys_alloc2 */
+
+#else /* #ifdef SYS_ALLOC_ELSEWHERE */
+
+/* sys_A not implemented elsewhere ... */
+#ifndef sys_alloc2
+/* ... and sys_A2 makros not used; skip sys_A2 and use
+   this implementation as sys_A */
+#define SYS_ALLOC   sys_alloc
+#define SYS_REALLOC sys_realloc
+#define SYS_FREE    sys_free
+
+#else /* ifndef sys_alloc2 */
+
+/* ... and sys_A2 makros used; need sys_A (symbols) */
+void* sys_alloc(unsigned int size)              {return sys_alloc2(size);}
+void* sys_realloc(void* ptr, unsigned int size) {return sys_realloc2(ptr,size);}
+void* sys_free(void* ptr)                       {return sys_free2(ptr);}
+#endif /* ifndef sys_alloc2 */
+
+#endif /* #ifdef SYS_ALLOC_ELSEWHERE */
+
+#ifdef SYS_ALLOC
  
 #ifdef DEBUG
 int tot_allocated = 0;
@@ -2156,7 +2186,7 @@ int alloc_calls = 0, realloc_calls = 0, free_calls = 0;
 #endif
 
 /* Allocate memory */
-void* sys_alloc2(size)
+void* SYS_ALLOC(size)
      unsigned int size;
 {
 #ifdef DEBUG
@@ -2176,12 +2206,12 @@ void* sys_alloc2(size)
 }
 
 /* Allocate memory */
-void* sys_realloc2(ptr, size)
+void* SYS_REALLOC(ptr, size)
 void* ptr; unsigned int size;
 {
 #ifdef DEBUG
     if (ptr == NULL)
-	return sys_alloc2(size);
+	return SYS_ALLOC(size);
     else {
 	uint32* p = (uint32*) ((char*)ptr - 2*sizeof(uint32));
 	realloc_calls++;
@@ -2200,7 +2230,7 @@ void* ptr; unsigned int size;
 }
 
 /* Deallocate memory */
-void sys_free2(ptr)
+void SYS_FREE(ptr)
 void* ptr;
 {
 #ifdef DEBUG
@@ -2213,9 +2243,8 @@ void* ptr;
 #endif
 }
 
-#endif /* ifndef sys_alloc */
+#endif /* #ifdef SYS_ALLOC */
 
-#endif /* ifndef USE_ELIB */
 /* XXX It isn't possible to do this safely without "*nsprintf"
    (i.e. something that puts a limit on the number of chars printed)
    - the below is probably the best we can do...    */

@@ -529,8 +529,15 @@ gen_record(TorPtype,Name,Type,Num) when record(Type,type) ->
 		      _ ->
 			  {record,Seq#'SEQUENCE'.components}
 		  end;
-	      {'SET',{_,_CompList}} -> 
-		  {record,_CompList}; 
+	      Set when record(Set,'SET') ->
+		  case Set#'SET'.pname of
+		      false ->
+			  {record,Set#'SET'.components};
+		      Pname when TorPtype == type ->
+			  false;
+		      _ ->
+			  {record,Set#'SET'.components}
+		  end;
 	      {'CHOICE',_CompList} -> {inner,Def};
 	      {'SEQUENCE OF',_CompList} -> {['SEQOF'|Name],Def};
 	      {'SET OF',_CompList} -> {['SETOF'|Name],Def};

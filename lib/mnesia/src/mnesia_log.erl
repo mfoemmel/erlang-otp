@@ -132,9 +132,11 @@
 	 chunk_decision_log/1,
 	 chunk_decision_tab/1,
 	 chunk_log/1,
+	 chunk_log/2,
 	 close_decision_log/0,
 	 close_decision_tab/0,
 	 close_log/1,
+	 unsafe_close_log/1,
 	 confirm_log_dump/1,
 	 confirm_decision_log_dump/0,
 	 previous_log_file/0,
@@ -144,14 +146,23 @@
 	 decision_log_file/0,
 	 decision_tab_file/0,
 	 decision_tab_version/0,
+	 dcl_version/0,
+	 dcd_version/0,
+	 ets2dcd/1,
+	 ets2dcd/2,
+	 dcd2ets/1,
+	 dcd2ets/2,
 	 init/0,
 	 init_log_dump/0,
 	 log/1,
+	 slog/1,
 	 log_decision/1,
 	 log_files/0,
 	 open_decision_log/0,
 	 trans_log_header/0,
 	 open_decision_tab/0,
+	 dcl_log_header/0,
+	 dcd_log_header/0,
 	 open_log/4,
 	 open_log/6,
 	 prepare_decision_log_dump/0,
@@ -176,6 +187,8 @@ trans_log_header() -> log_header(trans_log, version()).
 backup_log_header() -> log_header(backup_log, "1.2").
 decision_log_header() -> log_header(decision_log, decision_log_version()).
 decision_tab_header() -> log_header(decision_tab, decision_tab_version()).
+dcl_log_header() -> log_header(dcl_log, dcl_version()).
+dcd_log_header() -> log_header(dcd_log, dcd_version()).
 
 log_header(Kind, Version) ->
     #log_header{log_version=Version,
@@ -190,12 +203,19 @@ decision_log_version() -> "3.0".
 
 decision_tab_version() -> "1.0".
 
+dcl_version() -> "1.0".
+dcd_version() -> "1.0".
+     
 append(Log, Bin) when binary(Bin) ->
-    %% dbg_out("balog ~p ~p~n", [Log, binary_to_term(Bin)]),
     disk_log:balog(Log, Bin);
 append(Log, Term) ->
-    %% dbg_out("alog  ~p ~p~n", [Log, Term]),
     disk_log:alog(Log, Term).
+
+%% Synced append
+sappend(Log, Bin) when binary(Bin) ->
+    disk_log:blog(Log, Bin);  %% BUGBUG FIXR8 match error
+sappend(Log, Term) ->
+    disk_log:log(Log, Term).  %% BUGBUG FIXR8 match error
 
 %% Write commit records to the latest_log
 log(C) when  C#commit.disc_copies == [],
@@ -213,11 +233,35 @@ log(C) ->
 		    %% Either a commit record as binary
 		    %% or some decision related info
 		    append(latest_log, C)
-		end,
+	    end,
 	    mnesia_dumper:incr_log_writes();
 	false ->
 	    ignore
     end.
+
+%% Synced
+
+slog(C) when  C#commit.disc_copies == [],
+             C#commit.disc_only_copies  == [],
+             C#commit.schema_ops == [] ->
+    ignore;
+slog(C) ->
+    case mnesia_monitor:use_dir() of
+        true ->
+	    if
+		record(C, commit) ->
+		    C2 =  C#commit{ram_copies = [], snmp = []},
+		    sappend(latest_log, C2);
+		true ->
+		    %% Either a commit record as binary
+		    %% or some decision related info
+		    sappend(latest_log, C)
+	    end,
+	    mnesia_dumper:incr_log_writes();
+	false ->
+	    ignore
+    end.
+
 
 %% Stuff related to the file LOG
 
@@ -284,6 +328,7 @@ open_log(Name, Header, Fname, Exists, Repair) ->
 
 open_log(Name, Header, Fname, Exists, Repair, Mode) ->
     Args = [{file, Fname}, {name, Name}, {repair, Repair}, {mode, Mode}],
+%%    io:format("~p:open_log: ~p ~p~n", [?MODULE, Name, Fname]),
     case mnesia_monitor:open_log(Args) of
 	{ok, Log} when Exists == true ->
 	    Log;
@@ -301,8 +346,8 @@ open_log(Name, Header, Fname, Exists, Repair, Mode) ->
 	    Log;
 	{error, Reason} when Repair == true ->
 	    Res = file:delete(Fname),
-	    mnesia_lib:important("Data may be missing, Corrupt logfile deleted: ~p, ~p~n", 
-				 [Res, Reason]),
+	    mnesia_lib:important("Data may be missing, Corrupt logfile deleted: ~p, ~p ~n", 
+				 [Fname, Reason]),
 	    %% Create a new 
 	    open_log(Name, Header, Fname, false, false, read_write);
 	{error, Reason} ->
@@ -324,8 +369,21 @@ stop() ->
     end.
 
 close_log(Log) ->
-    disk_log:sync(Log),
+%%    io:format("mnesia_log:close_log ~p~n", [Log]),
+    case disk_log:sync(Log) of 
+	ok -> ok;
+	{error, {read_only_mode, Log}} -> 
+	    ok;
+	{error, Reason} -> 
+	    mnesia_lib:important("Failed syncing ~p to_disk reason ~p ~n", 
+				 [Log, Reason])
+    end,
     mnesia_monitor:close_log(Log).
+
+unsafe_close_log(Log) ->
+%%    io:format("mnesia_log:close_log ~p~n", [Log]),
+    mnesia_monitor:unsafe_close_log(Log).
+
 
 purge_some_logs() ->
     mnesia_monitor:unsafe_close_log(latest_log), 
@@ -389,16 +447,22 @@ init_log_dump() ->
     open_log(previous_log, trans_log_header(), Fname),
     start.
 
-chunk_log(eof) ->
-    eof;
+
 chunk_log(Cont) ->
-    case catch disk_log:chunk(previous_log, Cont) of
+    chunk_log(previous_log, Cont).
+
+chunk_log(Log, eof) ->
+    eof;
+chunk_log(Log, Cont) ->
+    case catch disk_log:chunk(Log, Cont) of
 	{error, Reason} ->
-	    fatal("Possibly truncated previous_log file: ~p~n",
-		  [Reason]);
+	    fatal("Possibly truncated ~p file: ~p~n",
+		  [Log, Reason]);
 	{C2, Chunk, _BadBytes} ->
 	    %% Read_only case, should we warn about the bad log file?
-	    mnesia_lib:important("PREVIOUS_LOG repaired, lost ~p bad bytes~n", [_BadBytes]),
+	    %% BUGBUG Should we crash if Repair == false ?? 
+	    %% We got to check this !!
+	    mnesia_lib:important("~p repaired, lost ~p bad bytes~n", [Log, _BadBytes]),
 	    {C2, Chunk}; 
 	Other ->
 	    Other
@@ -442,13 +506,7 @@ prepare_decision_log_dump(true, Prev) ->
 
 chunk_decision_log(Cont) ->
     %% dbg_out("chunk log ~p~n", [Cont]),
-    case disk_log:chunk(previous_decision_log, Cont) of
-	{error, Reason} ->
-	    fatal("Possibly truncated mnesia_decision log file: ~p~n",
-		  [Reason]);
-	Other ->
-	    Other
-    end.
+    chunk_log(previous_decision_log, Cont).
 
 %% Confirms dump of the decision log
 confirm_decision_log_dump() ->
@@ -480,13 +538,7 @@ close_decision_tab() ->
 
 chunk_decision_tab(Cont) ->
     %% dbg_out("chunk tab ~p~n", [Cont]),
-    case disk_log:chunk(decision_tab, Cont) of
-	{error, Reason} ->
-	    fatal("Possibly truncated mnesia_decision tab file: ~p~n",
-		  [Reason]);
-	Other ->
-	    Other
-    end.
+    chunk_log(decision_tab, Cont).
 
 close_decision_log() ->
     close_log(decision_log).
@@ -839,3 +891,121 @@ rec_filter(B, Tab, Tab, Recs) ->
 rec_filter(B, Tab, RecName, Recs) ->
     [setelement(1, Rec, Tab) || Rec <- Recs].
 
+ets2dcd(Tab) ->
+    ets2dcd(Tab, dcd).
+
+ets2dcd(Tab, Ftype) ->
+    Fname =
+	case Ftype of
+	    dcd -> mnesia_lib:tab2dcd(Tab);
+	    dmp -> mnesia_lib:tab2dmp(Tab)
+	end,    
+    TmpF = mnesia_lib:tab2tmp(Tab),
+    file:delete(TmpF),    
+    Log  = open_log({Tab, ets2dcd}, dcd_log_header(), TmpF, false),
+    mnesia_lib:db_fixtable(ram_copies, Tab, true),
+    ok   = ets2dcd(mnesia_lib:db_init_chunk(ram_copies, Tab, 1000), Tab, Log),
+    mnesia_lib:db_fixtable(ram_copies, Tab, false),
+    close_log(Log),
+    ok = file:rename(TmpF, Fname),
+    %% Remove old log data which is now in the new dcd.
+    %% No one else should be accessing this file!
+    file:delete(mnesia_lib:tab2dcl(Tab)),
+    ok.
+
+ets2dcd('$end_of_table', Tab, Log) ->
+    ok;
+ets2dcd({Recs, Cont}, Tab, Log) -> 
+    ok = disk_log:alog_terms(Log, Recs),     
+    ets2dcd(mnesia_lib:db_chunk(ram_copies, Cont), Tab, Log).
+
+dcd2ets(Tab) ->
+    dcd2ets(Tab, mnesia_monitor:get_env(auto_repair)).
+
+dcd2ets(Tab, Rep) ->
+    Dcd = mnesia_lib:tab2dcd(Tab),
+    case mnesia_lib:exists(Dcd) of
+	true ->
+	    Log = open_log({Tab, dcd2ets}, dcd_log_header(), Dcd, 
+			   true, Rep, read_only),
+	    Data = chunk_log(Log, start),
+	    ok = insert_dcdchunk(Data, Log, Tab),
+	    close_log(Log),
+	    load_dcl(Tab, Rep); 
+	false -> %% Handle old dets files, and conversion from disc_only to disc.
+	    Fname = mnesia_lib:tab2dat(Tab),
+	    Type = val({Tab, setorbag}),
+	    case mnesia_lib:dets_to_ets(Tab, Tab, Fname, Type, Rep, yes) of
+		loaded ->
+		    ets2dcd(Tab),
+		    file:delete(Fname),
+		    0;
+		{error, Error} ->
+		    erlang:fault({"Failed to load table from disc", [Tab, Error]})
+	    end
+    end.
+
+insert_dcdchunk({Cont, [LogH | Rest]}, Log, Tab) 
+  when record(LogH, log_header),  
+       LogH#log_header.log_kind == dcd_log, 
+       LogH#log_header.log_version >= "1.0" ->    
+    insert_dcdchunk({Cont, Rest}, Log, Tab);   %% BUGBUG Error handling repaired files
+insert_dcdchunk({Cont, Recs}, Log, Tab) ->     %% trashed data?? 
+    lists:foreach(fun(Rec) -> true = ets:insert(Tab, Rec) end, Recs), % FIX R8
+    insert_dcdchunk(chunk_log(Log, Cont), Log, Tab);
+insert_dcdchunk(eof, Log, Tab) ->
+    ok.
+
+load_dcl(Tab, Rep) ->
+    FName = mnesia_lib:tab2dcl(Tab),
+    case mnesia_lib:exists(FName) of
+	true -> 	    
+	    Tab = open_log(Tab, 
+			   dcl_log_header(), 
+			   FName, 
+			   true,
+			   Rep, 
+			   read_only),
+	    FirstChunk = chunk_log(Tab, start),
+            N = insert_logchunk(FirstChunk, Tab, 0),
+	    close_log(Tab),
+	    N;
+	false ->
+	    0
+    end.
+
+insert_logchunk({C2, Recs}, Tab, C) ->
+    N = add_recs(Recs, C),
+    insert_logchunk(chunk_log(Tab, C2), Tab, C+N);
+insert_logchunk(eof, Tab, C) ->
+    C.
+
+add_recs([{{Tab, Key}, Val, write} | Rest], N) ->
+    true = ets:insert(Tab, Val),
+    add_recs(Rest, N+1);
+add_recs([{{Tab, Key}, Val, delete} | Rest], N) ->
+    true = ets:delete(Tab, Key),
+    add_recs(Rest, N+1);
+add_recs([{{Tab, Key}, Val, delete_object} | Rest], N) ->
+    true = ets:match_delete(Tab, Val),
+    add_recs(Rest, N+1);
+add_recs([{{Tab, Key}, Val, update_counter} | Rest], N) ->
+    {RecName, Incr} = Val,
+    case catch ets:update_counter(Tab, Key, Incr) of
+	CounterVal when integer(CounterVal) ->
+	    ok;
+	_ ->
+	    Zero = {RecName, Key, 0},
+	    true = ets:insert(Tab, Zero)
+    end,
+    add_recs(Rest, N+1);
+add_recs([LogH|Rest], N) 
+  when record(LogH, log_header),  
+       LogH#log_header.log_kind == dcl_log, 
+       LogH#log_header.log_version >= "1.0" ->    
+    add_recs(Rest, N);
+add_recs([{{Tab, Key}, Val, clear_table} | Rest], N) ->
+    true = ets:match_delete(Tab, '_'),
+    add_recs(Rest, N+ets:info(Tab, size));  
+add_recs([], N) ->
+    N.

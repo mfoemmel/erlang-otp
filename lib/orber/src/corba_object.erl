@@ -195,21 +195,12 @@ is_remote(Obj) ->
     end.
 
 
-is_equivalent({I,T,K,P,O,F}, {I2,T2,K2,P2,O2,F2}) ->
-    case {I,T,K,P,O,F} of
-	{I2,T2,K2,P2,_,_} ->
-	    true;
-	_ ->
-	    false
-    end;
-%% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
-is_equivalent(Obj, Other_object) ->
-    case Obj of
-	Other_object ->
-	    true;
-	_ ->
-	    false
-    end.
+is_equivalent(Obj, Obj) ->
+    true;
+is_equivalent({I,T,K,P,_,_}, {I,T,K,P,_,_}) ->
+    true;
+is_equivalent(_, _) ->
+    false.
 
 hash(Obj, Maximum) ->
     erlang:hash(iop_ior:get_key(Obj), Maximum).

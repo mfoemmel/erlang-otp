@@ -96,8 +96,8 @@ typedef struct process {
 
     struct process *next;	/* Pointer to next process in list */
     ErlOffHeap off_heap;	/* Off-heap data updated by copy_struct(). */
-    struct reg_proc* reg;    /* NULL iff not registerd */
-    int reg_atom;		/* atom index for formerly registered name, */
+    struct reg_proc *reg;	/* NULL iff not registered */
+    Eterm reg_atom;		/* atom for formerly registered name, */
 				/* when exiting */
 
     struct erl_link* links;         /* List of links */
@@ -237,6 +237,15 @@ extern Eterm erts_default_tracer;
 			     p->id != pid || \
 			     p->status == P_EXITING)
 
+/* Invalidate trace port if anything suspicious, for instance
+ * that the port is a distribution port or it is busy.
+ */
+#define INVALID_TRACER_PORT(port, port_id) \
+(port == NULL || \
+ port->id != port_id || \
+ port->status == FREE || \
+ (port->status & (EXITING|CLOSING|PORT_BUSY|DISTRIBUTION)))
+ 
 #define IS_TRACED(p)        ( (p)->tracer_proc != NIL)
 #define IS_TRACED_FL(p,tf)  ( IS_TRACED(p) && ( ((p)->flags & (tf)) == (tf)) )
 
@@ -270,6 +279,7 @@ extern Eterm erts_default_tracer;
 #define F_TRACE_ARITY_ONLY   (1 << 19)
 #define F_TRACE_RETURN_TO    (1 << 20) /* Return_to trace when breakpoint tracing */
 #define F_TRACE_SILENT       (1 << 21) /* No call trace msg suppress */
+#define F_DEFAULT_TRACER     (1 << 22) /* May be (has been) default tracer */
 
 #define TRACE_FLAGS (  F_TRACE_PROCS | F_TRACE_CALLS \
 		     | F_TRACE_SOS |  F_TRACE_SOS1| F_TRACE_RECEIVE  \

@@ -138,7 +138,15 @@ handle_system_event({mnesia_down, Node}, State) ->
 		    Msg = "Warning: A fallback is installed and Mnesia got mnesia_down "
 			"from ~p. ~n",
 		    report_info(Msg, [Node]),
-		    apply(UserMod, UserFunc, []),
+		    case catch apply(UserMod, UserFunc, [Node]) of
+			{'EXIT', {undef, Reason}} ->
+			    %% Backward compatibility
+			    apply(UserMod, UserFunc, []);
+			{'EXIT', Reason} ->
+			    exit(Reason);
+			_ ->
+			    ok
+		    end,
 		    Nodes = lists:delete(Node, State#state.nodes),
 		    {ok, State#state{nodes = Nodes}}
 	    end;

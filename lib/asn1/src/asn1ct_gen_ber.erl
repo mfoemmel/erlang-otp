@@ -286,10 +286,12 @@ emit_enc_enumerated_cases(L, Tags) ->
     emit_enc_enumerated_cases(L, Tags, noext).
 
 emit_enc_enumerated_cases([{EnumName,EnumVal},H2|T], Tags, Ext) ->
-    emit(["'",EnumName,"' -> ?RT_BER:encode_enumerated(",EnumVal,",",Tags,");",nl]),
+    emit([{asis,EnumName}," -> ?RT_BER:encode_enumerated(",EnumVal,",",Tags,");",nl]),
+%%    emit(["'",{asis,EnumName},"' -> ?RT_BER:encode_enumerated(",EnumVal,",",Tags,");",nl]),
     emit_enc_enumerated_cases([H2|T], Tags, Ext);
 emit_enc_enumerated_cases([{EnumName,EnumVal}], Tags, Ext) ->
-    emit(["'",EnumName,"' -> ?RT_BER:encode_enumerated(",EnumVal,",",Tags,")"]),
+    emit([{asis,EnumName}," -> ?RT_BER:encode_enumerated(",EnumVal,",",Tags,")"]),
+%%    emit(["'",{asis,EnumName},"' -> ?RT_BER:encode_enumerated(",EnumVal,",",Tags,")"]),
     case Ext of
 	noext -> emit([";",nl]);
 	ext -> 

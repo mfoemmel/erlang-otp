@@ -338,7 +338,7 @@ handle_call({unsafe_close_dets, Tab}, From, State) ->
     {reply, ok, State};
 
 handle_call({open_log, Args}, From, State) ->
-    Res = disk_log:open(Args),
+    Res = disk_log:open([{notify, true}|Args]),
     {reply, Res, State};
 
 handle_call({reopen_log, Name, Fname, Head}, From, State) ->
@@ -534,6 +534,16 @@ handle_info({nodeup, Node}, State) ->
 
 handle_info({nodedown, _Node}, State) ->
     %% Ignore, we are only caring about nodeup's
+    {noreply, State};
+
+handle_info({disk_log, _Node, Log, Info}, State) ->
+    case Info of
+	{truncated, No} ->
+	    ok;
+	Else ->
+	    mnesia_lib:important("Warning Log file ~p error reason ~s~n", 
+				 [Log, disk_log:format_error(Info)])
+    end,
     {noreply, State};
 
 handle_info(Msg, State) ->

@@ -305,7 +305,9 @@ match(OE_THIS, State, Event) when record(Event,'any'), ?is_EmptyFilter(State) ->
     {reply, true, State};
 match(OE_THIS, State, Event) when record(Event,'any') ->
     match_any_event(State, Event, ?get_ConstraintAllData(State));
-match(_,_,_) ->
+match(_,_,What) ->
+    orber:debug_level_print("[~p] CosNotifyFilter_Filter:match(~p);
+Not an CORBA::Any", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{minor=602, completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
@@ -320,7 +322,9 @@ match_structured(OE_THIS, State, Event) when
 match_structured(OE_THIS, State, Event) when 
   record(Event,'CosNotification_StructuredEvent') ->
     match_str_event(State, Event, ?get_ConstraintAllData(State));
-match_structured(_,_,_) ->
+match_structured(_,_,What) ->
+    orber:debug_level_print("[~p] CosNotifyFilter_Filter:match_structured(~p);
+Not a StructuredEvent", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{minor=603, completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------*
@@ -338,7 +342,7 @@ match_typed(OE_THIS, State, Data) ->
 %% Returns  : ID - CosNotifyFilter::CallbackID
 %%-----------------------------------------------------------
 attach_callback(OE_THIS, State, CB) ->
-    ?not_TypeCheck(CB, 'CosNotifyComm_NotifySubscribe'),
+    'CosNotification_Common':type_check(CB, 'CosNotifyComm_NotifySubscribe'),
     CBID = ?new_Id(State),
     {reply, CBID, ?add_Callback(State, CBID, CB)}.
 
@@ -349,7 +353,9 @@ attach_callback(OE_THIS, State, CB) ->
 %%-----------------------------------------------------------
 detach_callback(OE_THIS, State, ID) when integer(ID) ->
     {reply, ok, ?del_Callback(State, ID)};
-detach_callback(_,_,_) ->
+detach_callback(_,_,What) ->
+    orber:debug_level_print("[~p] CosNotifyFilter_Filter:detach_callback(~p);
+Not an integer", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{minor=604, completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%

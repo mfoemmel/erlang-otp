@@ -79,6 +79,10 @@
 %%----- Inherit from CosNotifyComm::StructuredPullConsumer --
 -export([disconnect_structured_pull_consumer/3]).
 
+%%----- Inherit from CosEventChannelAdmin::ProxyPullConsumer
+-export([connect_pull_supplier/4]).
+
+
 %% Attributes (external) CosNotifyChannelAdmin::ProxySupplier
 -export(['_get_MyType'/3, 
 	 '_get_MyAdmin'/3]).
@@ -219,13 +223,13 @@ code_change(OldVsn, State, Extra) ->
     {ok, State}.
 
 handle_info(Info, State) ->
-    ?debug_print("INFO: ~p~n", [Info]),
+    ?DBG("INFO: ~p~n", [Info]),
     case Info of
         {'EXIT', Pid, Reason} when ?get_MyAdminPid(State) == Pid->
-            ?debug_print("PARENT ADMIN: ~p  TERMINATED.~n",[Reason]),
+            ?DBG("PARENT ADMIN: ~p  TERMINATED.~n",[Reason]),
 	    {stop, Reason, State};
         {'EXIT', Pid, Reason} ->
-            ?debug_print("PROXYPUSHSUPPLIER: ~p  TERMINATED.~n",[Reason]),
+            ?DBG("PROXYPUSHSUPPLIER: ~p  TERMINATED.~n",[Reason]),
             {noreply, State};
         pull ->
 	    try_pull_events(State);
@@ -254,9 +258,26 @@ init([MyType, MyAdmin, MyAdminPid, InitQoS, LQS, MyChannel, Options, Operator]) 
 			LQS, MyChannel, Secs, Operator, GCTime, 
 			GCLimit, TimeRef)}.
 
-terminate(Reason, State) ->
+terminate(Reason, State) when ?is_UnConnected(State) ->
+    %% We are currently not connected to a client. Hence, no need for sending
+    %% a disconnect request.
     stop_timer(State),
-    ok.
+    ok;
+terminate(Reason, State) when ?is_ANY(State) ->
+    stop_timer(State),
+    'CosNotification_Common':disconnect('CosEventComm_PullSupplier', 
+					disconnect_pull_supplier, 
+					?get_Client(State));
+terminate(Reason, State) when ?is_SEQUENCE(State) ->
+    stop_timer(State),
+    'CosNotification_Common':disconnect('CosNotifyComm_SequencePullSupplier',
+					disconnect_sequence_pull_supplier,
+					?get_Client(State));
+terminate(Reason, State) when ?is_STRUCTURED(State) ->
+    stop_timer(State),
+    'CosNotification_Common':disconnect('CosNotifyComm_StructuredPullSupplier', 
+					disconnect_structured_pull_supplier, 
+					?get_Client(State)).
 
 %%-----------------------------------------------------------
 %%----- CosNotifyChannelAdmin_ProxyConsumer attributes ------
@@ -280,6 +301,18 @@ terminate(Reason, State) ->
 %%-----------------------------------------------------------
 %%------- Exported external functions -----------------------
 %%-----------------------------------------------------------
+%%----- CosEventChannelAdmin::ProxyPullConsumer -------------
+%%----------------------------------------------------------%
+%% function : connect_pull_supplier
+%% Arguments: Client - CosEventComm::PullSupplier
+%% Returns  :  ok | {'EXCEPTION', #'AlreadyConnected'{}} |
+%%            {'EXCEPTION', #'TypeError'{}} |
+%%            {'EXCEPTION', #'BAD_OPERATION'{}}
+%%            Both exceptions from CosEventChannelAdmin!!!
+%%-----------------------------------------------------------
+connect_pull_supplier(OE_THIS, OE_FROM, State, Client) ->
+    connect_any_pull_supplier(OE_THIS, OE_FROM, State, Client).
+
 %%----- CosNotifyChannelAdmin::ProxyPullConsumer ------------
 %%----------------------------------------------------------%
 %% function : connect_any_pull_supplier
@@ -290,7 +323,7 @@ terminate(Reason, State) ->
 %%            Both exceptions from CosEventChannelAdmin!!!
 %%-----------------------------------------------------------
 connect_any_pull_supplier(OE_THIS, OE_FROM, State, Client) when ?is_ANY(State) ->
-    ?not_TypeCheck(Client, 'CosEventComm_PullSupplier'),
+    'CosNotification_Common':type_check(Client, 'CosEventComm_PullSupplier'),
     if
 	?is_Connected(State) ->
 	    corba:raise(#'CosEventChannelAdmin_AlreadyConnected'{});
@@ -310,7 +343,7 @@ connect_any_pull_supplier(_, _, _,_) ->
 %%            {'EXCEPTION', #'BAD_OPERATION'{}}
 %%-----------------------------------------------------------
 connect_sequence_pull_supplier(OE_THIS, OE_FROM, State, Client) when ?is_SEQUENCE(State) ->
-    ?not_TypeCheck(Client, 'CosNotifyComm_SequencePullSupplier'),
+    'CosNotification_Common':type_check(Client, 'CosNotifyComm_SequencePullSupplier'),
     if
 	?is_Connected(State) ->
 	    corba:raise(#'CosEventChannelAdmin_AlreadyConnected'{});
@@ -330,7 +363,7 @@ connect_sequence_pull_supplier(_, _, _, _) ->
 %%            {'EXCEPTION', #'BAD_OPERATION'{}}
 %%-----------------------------------------------------------
 connect_structured_pull_supplier(OE_THIS, OE_FROM, State, Client) when ?is_STRUCTURED(State) ->
-    ?not_TypeCheck(Client, 'CosNotifyComm_StructuredPullSupplier'),
+    'CosNotification_Common':type_check(Client, 'CosNotifyComm_StructuredPullSupplier'),
     if
 	?is_Connected(State) ->
 	    corba:raise(#'CosEventChannelAdmin_AlreadyConnected'{});
@@ -390,8 +423,10 @@ obtain_subscription_types(OE_THIS, OE_FROM, State, 'NONE_NOW_UPDATES_OFF') ->
     {reply, [], ?set_PublishType(State, false)};
 obtain_subscription_types(OE_THIS, OE_FROM, State, 'NONE_NOW_UPDATES_ON') ->
     {reply, [], ?set_PublishType(State, true)};
-obtain_subscription_types(_,_,_,_) ->
-    corba:raise(#'BAD_OPERATION'{minor=103, completion_status=?COMPLETED_NO}).
+obtain_subscription_types(_,_,_,What) ->
+    orber:debug_level_print("[~p] PullerConsumer:obtain_subscription_types(~p);
+Incorrect enumerant", [?LINE, What], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : validate_event_qos
@@ -490,7 +525,7 @@ update_publish(remove, State, [H|T]) ->
 %% Returns  : FilterID - long
 %%-----------------------------------------------------------
 add_filter(OE_THIS, OE_FROM, State, Filter) ->
-    ?not_TypeCheck(Filter, 'CosNotifyFilter_Filter'),
+    'CosNotification_Common':type_check(Filter, 'CosNotifyFilter_Filter'),
     FilterID = ?new_Id(State),
     NewState = ?set_IdCounter(State, FilterID),
     {reply, FilterID, ?add_Filter(NewState, FilterID, Filter)}.
@@ -502,7 +537,9 @@ add_filter(OE_THIS, OE_FROM, State, Filter) ->
 %%-----------------------------------------------------------
 remove_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
     {reply, ok, ?del_Filter(State, FilterID)};
-remove_filter(_,_,_,_) ->
+remove_filter(_,_,_,What) ->
+    orber:debug_level_print("[~p] PullerConsumer:remove_filter(~p); Not an integer", 
+			    [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
@@ -513,7 +550,9 @@ remove_filter(_,_,_,_) ->
 %%-----------------------------------------------------------
 get_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
     {reply, ?get_Filter(State, FilterID), State};
-get_filter(_,_,_,_) ->
+get_filter(_,_,_,What) ->
+    orber:debug_level_print("[~p] PullerConsumer:get_filter(~p); Not an integer", 
+			    [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{minor=101, completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
@@ -566,7 +605,10 @@ find_obj(_) -> {'EXCEPTION', #'CosNotifyFilter_FilterNotFound'{}}.
 find_ids(List) ->           find_ids(List, []).
 find_ids([], Acc) ->        Acc;
 find_ids([{I,_}|T], Acc) -> find_ids(T, [I|Acc]);
-find_ids(_, _) -> corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
+find_ids(What, _) -> 
+    orber:debug_level_print("[~p] PullerConsumer:find_ids(); 
+Id corrupt: ~p", [?LINE, What], ?DEBUG_LEVEL),
+    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
 %% Delete a single object.
 %% The list don not differ, i.e., no filter removed, raise exception.
@@ -577,14 +619,16 @@ delete_obj(List,_) -> List.
 start_timer(State) ->
     case catch timer:send_interval(?get_PullInterval(State), pull) of
 	{ok,PullTRef} ->
-	    ?debug_print("PULL CONSUMER STARTED PULL TIMER ~p~n",
+	    ?DBG("PULL CONSUMER STARTED PULL TIMER ~p~n",
 			 [?get_PullInterval(State)]),
 	    ?set_PullTimer(State, PullTRef);
-	_ ->
+	What ->
+	    orber:debug_level_print("[~p] PullerConsumer:start_timer(); 
+Unable to invoke timer:send_interval/2: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 stop_timer(State) ->
-    ?debug_print("PULL CONSUMER STOPPED TIMER~n",[]),
+    ?DBG("PULL CONSUMER STOPPED TIMER~n",[]),
     timer:cancel(?get_PullTimer(State)).
 
 %% Try pull event(s); which method is determined by which type this proxy is.
@@ -642,7 +686,7 @@ try_pull_events(State) when ?is_STRUCTURED(State) ->
 %% Forward events
 forward(_, State, {[], _}) when ?is_ANDOP(State) ->
     %% Did not pass filtering. Since AND no need to pass on.
-    ok;
+    {noreply, State};
 forward(Type, State, {[], Failed}) ->
     %% Did not pass filtering, but since OR it may pass Admin filters, hence, pass 
     %% on to Admin
@@ -663,35 +707,43 @@ forward(Type, State, {Passed, Failed}) ->
 forward(any, State, [Event], SendTo, Status) ->
     case catch oe_CosNotificationComm_Event:callAny(SendTo, Event, Status) of
 	ok ->
-	    ?debug_print("PROXY FORWARD ANY: ~p~n",[Event]),
+	    ?DBG("PROXY FORWARD ANY: ~p~n",[Event]),
 	    {noreply, State};
 	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
-	    ?debug_print("ADMIN/CHANNEL NO LONGER EXIST; DROPPING: ~p~n", [Event]),
+	    orber:debug_level_print("[~p] PullerConsumer:forward(); 
+Admin/Channel no longer exists; terminating and dropping: ~p", 
+				    [?LINE, Event], ?DEBUG_LEVEL),
 	    {stop, normal, State};
 	R when ?is_PersistentConnection(State) ->
-	    ?debug_print("ADMIN/CHANNEL REPLIED INCORRECTLY: ~p; DROPPING: ~p~n", 
-			 [R, Event]),
+	    orber:debug_level_print("[~p] PullerConsumer:forward(); 
+Admin/Channel respond incorrect: ~p
+Dropping: ~p", [?LINE, R, Event], ?DEBUG_LEVEL),
 	    {noreply, State};
 	R ->
-	    ?debug_print("ADMIN/CHANNEL REPLIED INCORRECTLY: ~p; DROPPING: ~p~n", 
-			 [R, Event]),
+	    orber:debug_level_print("[~p] PullerConsumer:forward(); 
+Admin/Channel respond incorrect: ~p
+Terminating and dropping: ~p", [?LINE, R, Event], ?DEBUG_LEVEL),
 	    {stop, normal, State}
     end;
 forward(seq, State, Event, SendTo, Status) ->
     case catch oe_CosNotificationComm_Event:callSeq(SendTo, Event, Status) of
 	ok ->
-	    ?debug_print("PROXY FORWARD SEQUENCE: ~p~n",[Event]),
+	    ?DBG("PROXY FORWARD SEQUENCE: ~p~n",[Event]),
 	    {noreply, State};
 	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
-	    ?debug_print("ADMIN/CHANNEL NO LONGER EXIST; DROPPING: ~p~n", [Event]),
+	    orber:debug_level_print("[~p] PullerConsumer:forward(); 
+Admin/Channel no longer exists; terminating and dropping: ~p", 
+				    [?LINE, Event], ?DEBUG_LEVEL),
 	    {stop, normal, State};
 	R when ?is_PersistentConnection(State) ->
-	    ?debug_print("ADMIN/CHANNEL REPLIED INCORRECTLY: ~p; DROPPING: ~p~n", 
-			 [R, Event]),
+	    orber:debug_level_print("[~p] PullerConsumer:forward(); 
+Admin/Channel respond incorrect: ~p
+Dropping: ~p", [?LINE, R, Event], ?DEBUG_LEVEL),
 	    {noreply, State};
 	R ->
-	    ?debug_print("ADMIN/CHANNEL REPLIED INCORRECTLY: ~p; DROPPING: ~p~n", 
-			 [R, Event]),
+	    orber:debug_level_print("[~p] PullerConsumer:forward(); 
+Admin/Channel respond incorrect: ~p
+Terminating and dropping: ~p", [?LINE, R, Event], ?DEBUG_LEVEL),
 	    {stop, normal, State}
     end.
 

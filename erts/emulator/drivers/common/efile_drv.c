@@ -222,7 +222,6 @@ file_descriptor* desc;
 	d->command = FILE_CLOSE;
 	DRIVER_ASYNC(2, desc, KEY, invoke_close, (void *) d,
 		     free_data);
-	return 0;
     }
 #endif
     }

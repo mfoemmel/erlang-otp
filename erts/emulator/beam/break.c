@@ -162,7 +162,7 @@ Process *p; CIO to;
      */
     if (p->reg != NULL) {
 	erl_printf(to," Registered as: ");
-	print_atom(p->reg->name, to);
+	print_atom(atom_val(p->reg->name), to);
     }
 
     /*
@@ -328,6 +328,7 @@ CIO to;
     module_info(to);
     export_info(to);
     register_info(to);
+    sys_sl_alloc_info(to);
     erl_printf(to,"Allocated binary %d\n",tot_bin_allocated);
     erl_printf(to,"Allocated by process_desc %d\n", fix_info(process_desc));
     erl_printf(to,"Allocated by table_desc %d\n",fix_info(table_desc));
@@ -336,9 +337,13 @@ CIO to;
     erl_printf(to,"Allocated by export_desc %d\n",fix_info(export_desc));
     erl_printf(to,"Allocated by module_desc %d\n",fix_info(module_desc));
     erl_printf(to,"Allocated by preg_desc %d\n",fix_info(preg_desc));
-
-#ifdef DEBUG
-    erl_printf(to,"Allocated by SYSTEM %d\n",tot_allocated);
+#ifdef INSTRUMENT
+    {
+      SysAllocStat sas;
+      sys_alloc_stat(&sas);
+      erl_printf(to,"Totally allocated %u\n", sas.total);
+      erl_printf(to,"Maximum allocated %u\n", sas.maximum);
+    }
 #endif
     erl_printf(to,"--------------------------------------------------\n");
 }

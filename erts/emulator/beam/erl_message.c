@@ -46,11 +46,8 @@ uint32 size;
 {
     ErlHeapFragment* bp;
 
-#ifdef INSTRUMENT
-    alloc_from(33);
-#endif
-
-    bp = (ErlHeapFragment*) safe_alloc(sizeof(ErlHeapFragment) +
+    bp = (ErlHeapFragment*) safe_alloc_from(33,
+					    sizeof(ErlHeapFragment) +
 					    ((size-1)*sizeof(Eterm)));
     bp->next = NULL;
     bp->size = size;
@@ -138,7 +135,8 @@ send_message(Process* sender, Process* receiver, Eterm message)
     msize = size_object(message);
     if (SEQ_TRACE_TOKEN(sender) != NIL) {
 	seq_trace_update_send(sender);
-	seq_trace_output(SEQ_TRACE_TOKEN(sender), message, SEQ_TRACE_SEND, receiver->id);
+	seq_trace_output(SEQ_TRACE_TOKEN(sender), message, SEQ_TRACE_SEND, 
+			 receiver->id, sender);
 	bp = new_message_buffer(msize + 6 /* TUPLE5 */);
 	hp = bp->mem;
 	token = copy_struct(SEQ_TRACE_TOKEN(sender), 6 /* TUPLE5 */, 
@@ -199,7 +197,7 @@ deliver_exit_message_tt(Eterm from, Process *to, Eterm reason, uint32 token)
 	save = TUPLE3(hp, am_EXIT, from, mess);
 	hp += 4;
 	/* the trace token must in this case be updated by the caller */
-	seq_trace_output(token, save, SEQ_TRACE_SEND, to->id);
+	seq_trace_output(token, save, SEQ_TRACE_SEND, to->id, NULL);
 	temptoken = copy_struct(token, sz_token, &hp, &to->off_heap);
 	queue_message_tt(to, bp, save, temptoken);
     } else {

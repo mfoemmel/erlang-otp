@@ -329,6 +329,8 @@ gen_base_type(G, N, S) when element(1, S) == scoped_id ->
     {FullScopedName, T, TK, _} = ic_symtab:get_full_scoped_name(G, N, S),
     BT = ic_code:get_basetype(G, ic_util:to_undersc(FullScopedName)),
     case BT of
+	"erlang_binary" ->
+	    "erlang_binary";
 	"erlang_pid" ->
 	    "erlang_pid";
 	"erlang_port" ->
@@ -923,6 +925,8 @@ emit_encode(sequence_head, G, N, Fd, StructName, ElType) ->
 			_ ->
 			    ic_cbe:gen_encoding_fun(G, N, Fd, ElType, "oe_rec->_buffer[" ++ Tname ++ "]", "oe_env->_outbuf") 
 		    end;
+		{_,enum,_,_} ->
+		    ic_cbe:gen_encoding_fun(G, N, Fd, ElType, "oe_rec->_buffer[" ++ Tname ++ "]", "oe_env->_outbuf");
 		_ ->
 		    ic_cbe:gen_encoding_fun(G, N, Fd, ElType, "&oe_rec->_buffer[" ++ Tname ++ "]", "oe_env->_outbuf")
 	    end;
@@ -1342,26 +1346,35 @@ emit_union(G, N, X, c) -> %% Not supported in c backend
 %% emit erlang modules for objects with record definitions
 %% (such as unions or structs), or sequences 
 %%
+%% The record files, other than headers are only generated
+%% for CORBA...... If wished an option could allows even
+%% for other backends ( not necessary anyway )
+%%
 %%------------------------------------------------------------
 mkFileRecObj(G,N,X,erlang) ->
-    SName = 
-	ic_util:to_undersc([ic_forms:get_id2(X) | N]),
-    FName =  
-	ic_file:join(ic_options:get_opt(G, stubdir),ic_file:add_dot_erl(SName)),
-    
-    case file:rawopen(FName, {binary, write}) of
-	{ok, Fd} ->
-	    HrlFName = filename:basename(ic_genobj:include_file(G)),
-
-	    ic_codegen:emit_stub_head(G, Fd, SName, erlang),
-	    ic_codegen:emit(Fd, "-include(~p).\n\n",[HrlFName]),
-	    emit_exports(G,Fd),
-	    emit_rec_methods(G,N,X,SName,Fd),  
-	    ic_codegen:nl(Fd),
-	    ic_codegen:nl(Fd),
-	    file:close(Fd);
-	Other -> 
-	    exit(Other)
+    case ic_options:get_opt(G, be) of
+	erl_corba ->
+	    SName = 
+		ic_util:to_undersc([ic_forms:get_id2(X) | N]),
+	    FName =  
+		ic_file:join(ic_options:get_opt(G, stubdir),ic_file:add_dot_erl(SName)),
+	    
+	    case file:rawopen(FName, {binary, write}) of
+		{ok, Fd} ->
+		    HrlFName = filename:basename(ic_genobj:include_file(G)),
+		    
+		    ic_codegen:emit_stub_head(G, Fd, SName, erlang),
+		    ic_codegen:emit(Fd, "-include(~p).\n\n",[HrlFName]),
+		    emit_exports(G,Fd),
+		    emit_rec_methods(G,N,X,SName,Fd),  
+		    ic_codegen:nl(Fd),
+		    ic_codegen:nl(Fd),
+		    file:close(Fd);
+		Other -> 
+		    exit(Other)
+	    end;
+	_ ->
+	    true
     end;
 mkFileRecObj(_,_,_,_) ->
     true.
@@ -1403,7 +1416,12 @@ mkFileArrObj(_,_,_,_) ->
 %%
 %%------------------------------------------------------------
 emit_exports(G,Fd) ->
-    ic_codegen:emit(Fd, "-export([tc/0,id/0,name/0]).\n\n\n\n",[]).
+    case ic_options:get_opt(G, be) of
+	erl_corba ->
+	    ic_codegen:emit(Fd, "-export([tc/0,id/0,name/0]).\n\n\n\n",[]);
+	_ ->
+	    ic_codegen:emit(Fd, "-export([id/0,name/0]).\n\n\n\n",[])
+    end.
 
 
 %%------------------------------------------------------------
@@ -1415,26 +1433,36 @@ emit_exports(G,Fd) ->
 emit_rec_methods(G,N,X,Name,Fd) ->
 
     IR_ID = ictk:get_IR_ID(G, N, X),
-    TK = ic_forms:get_tk(X),
 
-    case TK of
-	undefined ->
-	    STK = ic_forms:search_tk(G,ictk:get_IR_ID(G, N, X)),
-	    ic_codegen:emit(Fd, "%% returns type code\n",[]),
-	    ic_codegen:emit(Fd, "tc() -> ~p.\n\n",[STK]),
-	    ic_codegen:emit(Fd, "%% returns id\n",[]),
-	    ic_codegen:emit(Fd, "id() -> ~p.\n\n",[IR_ID]),
-	    ic_codegen:emit(Fd, "%% returns name\n",[]),
-	    ic_codegen:emit(Fd, "name() -> ~p.\n\n",[Name]);
+    case ic_options:get_opt(G, be) of
+
+	erl_corba ->
+	    TK = ic_forms:get_tk(X),
+	    
+	    case TK of
+		undefined ->
+		    STK = ic_forms:search_tk(G,ictk:get_IR_ID(G, N, X)),
+		    ic_codegen:emit(Fd, "%% returns type code\n",[]),
+		    ic_codegen:emit(Fd, "tc() -> ~p.\n\n",[STK]),
+		    ic_codegen:emit(Fd, "%% returns id\n",[]),
+		    ic_codegen:emit(Fd, "id() -> ~p.\n\n",[IR_ID]),
+		    ic_codegen:emit(Fd, "%% returns name\n",[]),
+		    ic_codegen:emit(Fd, "name() -> ~p.\n\n",[Name]);
+		_ ->
+		    ic_codegen:emit(Fd, "%% returns type code\n",[]),
+		    ic_codegen:emit(Fd, "tc() -> ~p.\n\n",[TK]),
+		    ic_codegen:emit(Fd, "%% returns id\n",[]),
+		    ic_codegen:emit(Fd, "id() -> ~p.\n\n",[IR_ID]),
+		    ic_codegen:emit(Fd, "%% returns name\n",[]),
+		    ic_codegen:emit(Fd, "name() -> ~p.\n\n",[Name])
+	    end;
+
 	_ ->
-	    ic_codegen:emit(Fd, "%% returns type code\n",[]),
-	    ic_codegen:emit(Fd, "tc() -> ~p.\n\n",[TK]),
 	    ic_codegen:emit(Fd, "%% returns id\n",[]),
 	    ic_codegen:emit(Fd, "id() -> ~p.\n\n",[IR_ID]),
 	    ic_codegen:emit(Fd, "%% returns name\n",[]),
 	    ic_codegen:emit(Fd, "name() -> ~p.\n\n",[Name])
     end.
-
 
 
 
@@ -1447,11 +1475,24 @@ emit_rec_methods(G,N,X,Name,Fd) ->
 emit_arr_methods(G,N,X,Name,Fd) ->
 
     IR_ID = ictk:get_IR_ID(G, N, X),
-    TK = ic_forms:get_type_code(G, N, X),
 
-    ic_codegen:emit(Fd, "%% returns type code\n",[]),
-    ic_codegen:emit(Fd, "tc() -> ~p.\n\n",[TK]),
-    ic_codegen:emit(Fd, "%% returns id\n",[]),
-    ic_codegen:emit(Fd, "id() -> ~p.\n\n",[IR_ID]),
-    ic_codegen:emit(Fd, "%% returns name\n",[]),
-    ic_codegen:emit(Fd, "name() -> ~p.\n\n",[Name]).
+    case ic_options:get_opt(G, be) of
+
+	erl_corba ->
+
+	    TK = ic_forms:get_type_code(G, N, X),
+	    
+	    ic_codegen:emit(Fd, "%% returns type code\n",[]),
+	    ic_codegen:emit(Fd, "tc() -> ~p.\n\n",[TK]),
+	    ic_codegen:emit(Fd, "%% returns id\n",[]),
+	    ic_codegen:emit(Fd, "id() -> ~p.\n\n",[IR_ID]),
+	    ic_codegen:emit(Fd, "%% returns name\n",[]),
+	    ic_codegen:emit(Fd, "name() -> ~p.\n\n",[Name]);
+	
+	_ ->
+	    
+	    ic_codegen:emit(Fd, "%% returns id\n",[]),
+	    ic_codegen:emit(Fd, "id() -> ~p.\n\n",[IR_ID]),
+	    ic_codegen:emit(Fd, "%% returns name\n",[]),
+	    ic_codegen:emit(Fd, "name() -> ~p.\n\n",[Name])
+    end. 

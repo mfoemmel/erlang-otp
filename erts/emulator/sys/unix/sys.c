@@ -689,6 +689,7 @@ int port_num, ifd, ofd, packet_bytes, read_write, exit_status, pid;
 	driver_data[ifd].report_exit = exit_status;
 	driver_data[ifd].pid = pid;
 	driver_data[ifd].alive = 1;
+	driver_data[ifd].status = 0;
 	if (read_write & DO_WRITE) {
 	    driver_data[ifd].ofd = ofd;
 	    if (ifd != ofd)
@@ -705,6 +706,7 @@ int port_num, ifd, ofd, packet_bytes, read_write, exit_status, pid;
 	driver_data[ofd].ofd = ofd;
 	driver_data[ofd].pid = pid;
 	driver_data[ofd].alive = 1;
+	driver_data[ofd].status = 0;
 	return(ofd);
     }
 }
@@ -2224,32 +2226,62 @@ char *buf;
 extern const char pre_loaded_code[];
 extern char* const pre_loaded[];
 
-/* If we are not using elib then we may want to defined
-** the functions 
-** sys_alloc
-** sys_realloc
-** sys_free
-*/
-#ifndef USE_ELIB
-
-/* We do not define the functions if they are
-** macros
-*/
-#ifndef sys_alloc2
-
-#ifdef DEBUG
-int tot_allocated = 0;
+#ifdef INSTRUMENT
+/* When instrumented sys_alloc and friends are implemented in utils.c */
+#define SYS_ALLOC_ELSEWHERE
 #endif
+
+/* A = alloc |realloc | free */
+#ifdef SYS_ALLOC_ELSEWHERE
+
+/* sys_A implemented elsewhere (calls sys_A2) ... */ 
+#ifndef sys_alloc2
+/* ... and sys_A2 makros not used; use this implementation as sys_A2 */
+#define SYS_ALLOC   sys_alloc2
+#define SYS_REALLOC sys_realloc2
+#define SYS_FREE    sys_free2
+#else  /* ifndef sys_alloc2 */
+/* ... and sys_A2 makros used; don't use this implementation as sys_A2 */
+#endif /* ifndef sys_alloc2 */
+
+#else /* #ifdef SYS_ALLOC_ELSEWHERE */
+
+/* sys_A not implemented elsewhere ... */
+#ifndef sys_alloc2
+/* ... and sys_A2 makros not used; skip sys_A2 and use
+   this implementation as sys_A */
+#define SYS_ALLOC   sys_alloc
+#define SYS_REALLOC sys_realloc
+#define SYS_FREE    sys_free
+
+#else /* ifndef sys_alloc2 */
+
+/* ... and sys_A2 makros used; need sys_A (symbols) */
+void* sys_alloc(unsigned int size)              {return sys_alloc2(size);}
+void* sys_realloc(void* ptr, unsigned int size) {return sys_realloc2(ptr,size);}
+void* sys_free(void* ptr)                       {return sys_free2(ptr);}
+#endif /* ifndef sys_alloc2 */
+
+#endif /* #ifdef SYS_ALLOC_ELSEWHERE */
+
+#ifdef SYS_ALLOC 
 
 /* 
  * !!!!!!!  Allocated blocks MUST be aligned correctly !!!!!!!!!
  */
-#define MEM_BEFORE 0xABCDEF97
+#define MEM_BEFORE  ((unsigned long) 0xABCDEF97)
 
-#define MEM_AFTER1  0xBA
-#define MEM_AFTER2  0xDC
-#define MEM_AFTER3  0xFE
-#define MEM_AFTER4  0x77
+#define MEM_AFTER1  ((unsigned char) 0xBA)
+#define MEM_AFTER2  ((unsigned char) 0xDC)
+#define MEM_AFTER3  ((unsigned char) 0xFE)
+#define MEM_AFTER4  ((unsigned char) 0x77)
+
+#define SL_MALLOC_MEM_BEFORE ((unsigned long) ~MEM_BEFORE)
+
+#define SL_MALLOC_MEM_AFTER1 ((unsigned char) ~MEM_AFTER1)
+#define SL_MALLOC_MEM_AFTER2 ((unsigned char) ~MEM_AFTER2)
+#define SL_MALLOC_MEM_AFTER3 ((unsigned char) ~MEM_AFTER3)
+#define SL_MALLOC_MEM_AFTER4 ((unsigned char) ~MEM_AFTER4)
 
 #define SIZEOF_AFTER 4
 
@@ -2271,18 +2303,20 @@ typedef union most_strict {
 } Most_strict;
 
 typedef struct memory_guard {
-    unsigned pattern;		/* Fence pattern. */
-    unsigned size;		/* Size of allocated memory block. */
-    Most_strict align;		/* Ensure proper alignment. */
+    unsigned long pattern;		/* Fence pattern. */
+    unsigned long size;		/* Size of allocated memory block. */
+    Most_strict block[1];		/* Ensure proper alignment. */
 } Memory_guard;
 
-void* sys_alloc2(size)
+#define MEM_GUARD_SZ (sizeof(Memory_guard) - sizeof(Most_strict))
+
+void* SYS_ALLOC(size)
 unsigned int size;
 {
     register unsigned char* p;
 
 #ifdef DEBUG
-    size += sizeof(Memory_guard) + SIZEOF_AFTER;
+    size += MEM_GUARD_SZ + SIZEOF_AFTER;
 #endif
 
     p = (unsigned char *) malloc(size);
@@ -2292,18 +2326,17 @@ unsigned int size;
 	Memory_guard* before = (Memory_guard *) p;
 	unsigned char* after;
 
-	p += sizeof(Memory_guard);
+	p += MEM_GUARD_SZ;
 	before->pattern = MEM_BEFORE;
-	before->size = size - sizeof(Memory_guard) - SIZEOF_AFTER;
+	before->size = size - MEM_GUARD_SZ - SIZEOF_AFTER;
 	after = p + before->size;
 	SET_AFTER(after);
-	tot_allocated += before->size;
     }
 #endif
     return p;
 }
 
-void* sys_realloc2(ptr, size)
+void* SYS_REALLOC(ptr, size)
 void* ptr; unsigned int size;
 {
     register unsigned char* p;
@@ -2314,8 +2347,19 @@ void* ptr; unsigned int size;
     unsigned char* after;
 
     p = (unsigned char *) ptr;
-    before = (Memory_guard *) (p-sizeof(Memory_guard));
+    before = (Memory_guard *) (p-MEM_GUARD_SZ);
     if (before->pattern != MEM_BEFORE) {
+      if(before->pattern == SL_MALLOC_MEM_BEFORE
+	 && ((unsigned char *)p+before->size)[0] == SL_MALLOC_MEM_AFTER1
+	 && ((unsigned char *)p+before->size)[1] == SL_MALLOC_MEM_AFTER2
+	 && ((unsigned char *)p+before->size)[2] == SL_MALLOC_MEM_AFTER3
+	 && ((unsigned char *)p+before->size)[3] == SL_MALLOC_MEM_AFTER4)
+	erl_exit(1,
+		 "sys_realloc on memory allocated by sl_malloc/sl_realloc at "
+		 "0x%p (size %d)\n",
+		 ptr,
+		 before->size);
+
 	erl_exit(1, "realloc: Fence before memory at 0x%p clobbered\n",
 		 ptr);
     }
@@ -2325,25 +2369,24 @@ void* ptr; unsigned int size;
 	erl_exit(1, "realloc: Fence after memory at 0x%p (size %d) clobbered\n",
 		 ptr, size);
     }
-    ptr = ((unsigned char*) ptr) - sizeof(Memory_guard);
-    size += sizeof(Memory_guard) + SIZEOF_AFTER;
+    ptr = ((unsigned char*) ptr) - MEM_GUARD_SZ;
+    size += MEM_GUARD_SZ + SIZEOF_AFTER;
 #endif
     p = realloc(ptr, size);
 #ifdef DEBUG
     if (p != NULL) {
 	before = (Memory_guard *) p;
-	before->size = size-sizeof(Memory_guard)-SIZEOF_AFTER;
-	p += sizeof(Memory_guard);
+	before->size = size-MEM_GUARD_SZ-SIZEOF_AFTER;
+	p += MEM_GUARD_SZ;
 	after = p + before->size;
 	SET_AFTER(after);
-	tot_allocated += (before->size - old_size);
     }
 #endif
 
     return p;
 }
 
-void sys_free2(ptr)
+void SYS_FREE(ptr)
 void* ptr;
 {
 #ifdef DEBUG
@@ -2354,9 +2397,19 @@ void* ptr;
 
     if (ptr) {
       p = (unsigned char *) ptr;
-      before = (Memory_guard *) (p-sizeof(Memory_guard));
+      before = (Memory_guard *) (p-MEM_GUARD_SZ);
     
       if (before->pattern != MEM_BEFORE) {
+	if(before->pattern == SL_MALLOC_MEM_BEFORE
+	   && ((unsigned char *)p+before->size)[0] == SL_MALLOC_MEM_AFTER1
+	   && ((unsigned char *)p+before->size)[1] == SL_MALLOC_MEM_AFTER2
+	   && ((unsigned char *)p+before->size)[2] == SL_MALLOC_MEM_AFTER3
+	   && ((unsigned char *)p+before->size)[3] == SL_MALLOC_MEM_AFTER4)
+	  erl_exit(1,
+		   "sys_free on memory allocated by sl_malloc/sl_realloc at "
+		   "0x%p (size %d)\n",
+		   ptr,
+		   before->size);
 	erl_exit(1, "free: Fence before %p clobbered\n", ptr);
       }
       size = before->size;
@@ -2368,15 +2421,12 @@ void* ptr;
       CLEAR_AFTER(after);
       before->pattern = 0;
       before->size = 0;
-      tot_allocated -= size;
-      ptr = ((unsigned char*) ptr) - sizeof(Memory_guard);
+      ptr = ((unsigned char*) ptr) - MEM_GUARD_SZ;
     }
 #endif
     free(ptr);
 }
-#endif
-
-#endif
+#endif /* #ifdef SYS_ALLOC */
 
 /* Float conversion */
 

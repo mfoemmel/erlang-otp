@@ -42,9 +42,12 @@
 -export([regulator_init/1]).
 	
 -include("mnesia.hrl").
+-include_lib("kernel/include/file.hrl").
+
 -import(mnesia_lib, [fatal/2, dbg_out/2]).
 
 -define(REGULATOR_NAME, mnesia_dumper_load_regulator).
+-define(DumpToEtsMultiplier, 4).
 
 -record(state, {initiated_by = nobody,
 		dumper = nopid,
@@ -187,7 +190,7 @@ do_perform_dump(Cont, InPlace, InitBy, Regulator, OldVersion) ->
 insert_recs([Rec | Recs], InPlace, InitBy, Regulator, LogV) ->
     regulate(Regulator),
     case insert_rec(Rec, InPlace, InitBy, LogV) of
-	LogH when record(LogH, log_header) ->	    
+ 	LogH when record(LogH, log_header) ->	    
 	    insert_recs(Recs, InPlace, InitBy, Regulator, LogH#log_header.log_version);
 	_ -> 
 	    insert_recs(Recs, InPlace, InitBy, Regulator, LogV)
@@ -288,21 +291,23 @@ perform_update(Tid, SchemaOps, DumperMode, UseDir) ->
 	{'EXIT', Reason} ->
 	    Error = {error, {"Schema update error", Reason}},
 	    close_files(InPlace, Error, InitBy),
-	    Error;
+            fatal("Schema update error ~p ~p", [Reason, SchemaOps]);
 	_ ->		    
 	    ?eval_debug_fun({?MODULE, post_dump}, [InitBy]),
 	    close_files(InPlace, ok, InitBy),
 	    ok
     end.
 
-insert_ops(Tid, Storage, [Op | Ops], InPlace, InitBy, Ver) when Ver < "4.3" ->
-    insert_ops(Tid, Storage, Ops, InPlace, InitBy, Ver),
-    insert_op(Tid, Storage, Op, InPlace, InitBy);
-insert_ops(Tid, Storage, [Op | Ops], InPlace, InitBy, Ver) ->
+insert_ops(Tid, Storage, [], InPlace, InitBy, _) ->    ok;
+insert_ops(Tid, Storage, [Op], InPlace, InitBy, Ver)  when Ver >= "4.3"->
+    insert_op(Tid, Storage, Op, InPlace, InitBy),
+    ok;
+insert_ops(Tid, Storage, [Op | Ops], InPlace, InitBy, Ver)  when Ver >= "4.3"->
     insert_op(Tid, Storage, Op, InPlace, InitBy),
     insert_ops(Tid, Storage, Ops, InPlace, InitBy, Ver);
-insert_ops(Tid, Storage, [], InPlace, InitBy, _) ->
-    ok.
+insert_ops(Tid, Storage, [Op | Ops], InPlace, InitBy, Ver) when Ver < "4.3" ->
+    insert_ops(Tid, Storage, Ops, InPlace, InitBy, Ver),
+    insert_op(Tid, Storage, Op, InPlace, InitBy).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Normal ops
@@ -310,24 +315,30 @@ insert_ops(Tid, Storage, [], InPlace, InitBy, _) ->
 disc_insert(Tid, Storage, Tab, Key, Val, Op, InPlace, InitBy) ->
     case open_files(Tab, Storage, InPlace, InitBy) of
 	true ->
-	    case Op of
-		write ->
-		    ok = dets:insert(Tab, Val);
-		delete ->
-		    ok = dets:delete(Tab, Key);
-		update_counter ->
-		    {RecName, Incr} = Val,
-		    case catch dets:update_counter(Tab, Key, Incr) of
-			CounterVal when integer(CounterVal) ->
-			    ok;
-			_ ->
-			    Zero = {RecName, Key, 0},
-			    ok = dets:insert(Tab, Zero)
-		    end;
-		delete_object ->
-		    ok = dets:delete_object(Tab, Val);
-		clear_table ->
-		    ok = dets:match_delete(Tab, '_')
+	    case Storage of 
+		disc_copies when Tab /= schema ->
+		    mnesia_log:append(Tab, {{Tab, Key}, Val, Op}),
+		    ok;
+		_ ->
+		    case Op of
+			write ->
+			    ok = dets:insert(Tab, Val);
+			delete ->
+			    ok = dets:delete(Tab, Key);
+			update_counter ->
+			    {RecName, Incr} = Val,
+			    case catch dets:update_counter(Tab, Key, Incr) of
+				CounterVal when integer(CounterVal) ->
+				    ok;
+				_ ->
+				    Zero = {RecName, Key, 0},
+				    ok = dets:insert(Tab, Zero)
+			    end;
+			delete_object ->
+			    ok = dets:delete_object(Tab, Val);
+			clear_table ->
+			    ok = dets:match_delete(Tab, '_')
+		    end
 	    end;
 	false ->
 	    ignore
@@ -369,9 +380,20 @@ insert(Tid, Storage, Tab, Key, Val, Op, InPlace, InitBy) ->
 disc_delete_table(Tab, Storage) ->
     case mnesia_monitor:use_dir() of
 	true ->
-	    mnesia_monitor:unsafe_close_dets(Tab),
-	    Dat = mnesia_lib:tab2dat(Tab),
-	    file:delete(Dat),
+	    if 		
+		Storage == disc_only_copies; Tab == schema ->  
+		    mnesia_monitor:unsafe_close_dets(Tab),
+		    Dat = mnesia_lib:tab2dat(Tab),
+		    file:delete(Dat);		
+		true -> 
+		    DclFile = mnesia_lib:tab2dcl(Tab),
+		    del_opened_tab(Tab),
+		    mnesia_log:unsafe_close_log(Tab),		    
+		    file:delete(DclFile),
+		    DcdFile = mnesia_lib:tab2dcd(Tab),
+		    file:delete(DcdFile),
+		    ok
+	    end,
 	    erase({?MODULE, Tab});
 	false ->
 	    ignore
@@ -417,15 +439,21 @@ insert_op(Tid, _, {op, change_table_copy_type, N, FromS, ToS, TabDef}, InPlace, 
 	N == node() ->
 	    Dmp  = mnesia_lib:tab2dmp(Tab),
 	    Dat  = mnesia_lib:tab2dat(Tab),
+	    Dcd  = mnesia_lib:tab2dcd(Tab),
+	    Dcl  = mnesia_lib:tab2dcl(Tab),
 	    case {FromS, ToS} of
-		{ram_copies, disc_copies} ->
+		{ram_copies, disc_copies} when Tab == schema ->
 		    ok = ensure_rename(Dmp, Dat);
+		{ram_copies, disc_copies} ->
+		    file:delete(Dcl),
+		    ok = ensure_rename(Dmp, Dcd);
 		{disc_copies, ram_copies} when Tab == schema ->
 		    mnesia_lib:set(use_dir, false),
 		    mnesia_monitor:unsafe_close_dets(Tab),
 		    file:delete(Dat);
 		{disc_copies, ram_copies} ->
-		    file:delete(Dat);
+		    file:delete(Dcl),
+		    file:delete(Dcd);
 		{ram_copies, disc_only_copies} ->
 		    ok = ensure_rename(Dmp, Dat),
 		    true = open_files(Tab, disc_only_copies, InPlace, InitBy),
@@ -448,10 +476,13 @@ insert_op(Tid, _, {op, change_table_copy_type, N, FromS, ToS, TabDef}, InPlace, 
 		    end,
 		    disc_delete_table(Tab, disc_only_copies);
 		{disc_copies, disc_only_copies} ->
+		    ok = ensure_rename(Dmp, Dat),
 		    true = open_files(Tab, disc_only_copies, InPlace, InitBy),
 		    mnesia_schema:ram_delete_table(Tab, FromS), 
 		    PosList = Cs#cstruct.index,
-		    mnesia_index:init_indecies(Tab, disc_only_copies, PosList);
+		    mnesia_index:init_indecies(Tab, disc_only_copies, PosList),
+		    file:delete(Dcl),
+		    file:delete(Dcd);
 		{disc_only_copies, disc_copies} ->
 		    mnesia_monitor:unsafe_close_dets(Tab),
 		    disc_delete_indecies(Tab, Cs, disc_only_copies),
@@ -539,7 +570,7 @@ insert_op(Tid, _, {op, dump_table, Size, TabDef}, InPlace, InitBy) ->
 	    Cs = mnesia_schema:list2cs(TabDef),
 	    Tab = Cs#cstruct.name,
 	    Dmp = mnesia_lib:tab2dmp(Tab),
-	    Dat = mnesia_lib:tab2dat(Tab),
+	    Dat = mnesia_lib:tab2dcd(Tab),
 	    case Size of
 		0 ->
 	    	    %% Assume that table files already are closed
@@ -703,20 +734,62 @@ open_files(Tab, Storage, UpdateInPlace, InitBy)
 		{'EXIT', _} ->
 		    false;
 		Type ->
-		    Fname = prepare_open(Tab, UpdateInPlace, InitBy),
-		    Args = [{file, Fname},
-			    {keypos, 2},
-			    {repair, mnesia_monitor:get_env(auto_repair)},
-			    {type, mnesia_lib:disk_type(Tab, Type)}],
-		    {ok, _} = mnesia_monitor:open_dets(Tab, Args),
-		    put({?MODULE, Tab}, opened_dumper),		    
-		    true
+		    case Storage of 
+			disc_copies when Tab /= schema ->
+			    {Bool, What} = open_disc_copies(Tab, InitBy),
+			    put({?MODULE, Tab}, What),		    
+			    Bool;
+			_ ->
+			    Fname = prepare_open(Tab, UpdateInPlace, InitBy),
+			    Args = [{file, Fname},
+				    {keypos, 2},
+				    {repair, mnesia_monitor:get_env(auto_repair)},
+				    {type, mnesia_lib:disk_type(Tab, Type)}],
+			    {ok, _} = mnesia_monitor:open_dets(Tab, Args),
+			    put({?MODULE, Tab}, opened_dumper),
+			    true
+		    end
 	    end;
+	already_dumped ->
+	    false;
 	opened_dumper ->
 	    true
     end;
 open_files(Tab, Storage, UpdateInPlace, InitBy) ->
     false.
+
+open_disc_copies(Tab, InitBy) ->
+    DclF = mnesia_lib:tab2dcl(Tab),
+    DumpEts = 
+	case file:read_file_info(DclF) of
+	    {error, enoent} ->
+		false;
+	    {ok, DclInfo} ->
+		DcdF =  mnesia_lib:tab2dcd(Tab),
+		case file:read_file_info(DcdF) of
+		    {error, Reason} ->
+			mnesia_lib:dbg_out("File ~p info_error ~p ~n",
+					   [DcdF, Reason]),
+			true;
+		    {ok, DcdInfo} -> 
+			DcdInfo#file_info.size =< 
+			    (DclInfo#file_info.size * 
+			     ?DumpToEtsMultiplier)
+		end
+	end,
+    if 
+	DumpEts == false; InitBy == startup ->	    
+	    Tab = mnesia_log:open_log(Tab, 
+				      mnesia_log:dcl_log_header(), 
+				      DclF, 
+				      mnesia_lib:exists(DclF), 
+				      mnesia_monitor:get_env(auto_repair),
+				      read_write),
+	    {true, opened_dumper};
+	true ->
+	    mnesia_log:ets2dcd(Tab),
+	    {false, already_dumped}
+    end. 
 
 prepare_open(Tab, UpdateInPlace, InitBy) ->
     Dat =  mnesia_lib:tab2dat(Tab),
@@ -734,14 +807,22 @@ prepare_open(Tab, UpdateInPlace, InitBy) ->
 	    end
 	end.
 
+del_opened_tab(Tab) ->
+    erase({?MODULE, Tab}).
+
 close_files(UpdateInPlace, Outcome, InitBy) -> % Update in place
     close_files(UpdateInPlace, Outcome, InitBy, get()).
 
+close_files(InPlace, Outcome, InitBy, [{{?MODULE, Tab}, already_dumped} | Tail]) ->
+    erase({?MODULE, Tab}),
+    close_files(InPlace, Outcome, InitBy, Tail);
 close_files(InPlace, Outcome, InitBy, [{{?MODULE, Tab}, _} | Tail]) ->
     erase({?MODULE, Tab}),
     case val({Tab, storage_type}) of
 	disc_only_copies when InitBy /= startup ->
 	    ignore;
+	disc_copies when Tab /= schema -> 
+	    mnesia_log:close_log(Tab);
 	_ ->
 	    do_close(InPlace, Outcome, Tab)
     end,
@@ -840,6 +921,9 @@ raw_named_dump_table(Tab, Ftype) ->
 	false ->
 	    exit({has_no_disc, node()})
     end.
+
+%raw_dump_table(DetsRef, EtsRef) ->  FIX R8
+%    ok = ets:foldl(fun(Rec, Acc) -> ok = dets:insert(DetsRef, Rec) end, ok, EtsRef).
 
 raw_dump_table(DetsRef, EtsRef) ->
     raw_dump_table(DetsRef, EtsRef, 0).

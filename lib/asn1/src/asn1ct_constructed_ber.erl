@@ -273,8 +273,20 @@ gen_encode_sof(Erules,Typename,InnerTypename,D) when record(D,type) ->
     emit(["'enc_",asn1ct_gen:list2name(Typename),"_components'([], AccBytes, AccLen) -> ",nl,
 	  indent(3),"{lists:reverse(AccBytes),AccLen};",nl,nl]),
     emit(["'enc_",asn1ct_gen:list2name(Typename),"_components'([H|T], AccBytes, AccLen) ->",nl]),
-    gen_enc_line(Erules,Typename,TypeNameSuffix,Cont,"H",0,
+    {NewCont,Element} = 
+	case Cont#type.def of
+	    {'ENUMERATED',RefName,Component} -> 
+		emit(["   Element2IfTuple = ",nl,"      fun(X)->case X of",nl,
+		     "         {",{asis,RefName},",V} -> V;",nl,
+		     "         _ -> X",nl,"      end",nl,"   end,",nl]),
+		{Cont#type{def={'ENUMERATED',Component}},
+		 "Element2IfTuple(H)"};
+	    _ -> {Cont,"H"}
+	end,
+    gen_enc_line(Erules,Typename,TypeNameSuffix,NewCont,Element,0,
 		 mandatory,"{EncBytes,EncLen} = "),
+%     gen_enc_line(Erules,Typename,TypeNameSuffix,Cont,"H",0,
+% 		 mandatory,"{EncBytes,EncLen} = "),
     emit([",",nl]),
     emit([indent(3),"'enc_",asn1ct_gen:list2name(Typename),"_components'(T,"]), 
     emit(["[EncBytes|AccBytes], AccLen + EncLen).",nl,nl]).
@@ -312,7 +324,13 @@ gen_decode_sof(Erules,Typename,InnerTypename,D) when record(D,type) ->
 		   _ -> TypeNameSuffix
 	       end,
     emit([", Len, ",{next,bytes},", "]),
-    gen_dec_line_sof(Erules,Typename,ContName,Cont),
+    NewCont = 
+	case Cont#type.def of
+	    {'ENUMERATED',_,Components}-> 
+		Cont#type{def={'ENUMERATED',Components}};
+	    _ -> Cont
+	end,
+    gen_dec_line_sof(Erules,Typename,ContName,NewCont),
     emit([", []).",nl,nl,nl]).
     
 

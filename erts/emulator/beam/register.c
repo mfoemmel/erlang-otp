@@ -33,42 +33,32 @@ Hash process_reg;
 
 #define PREG_HASH_SIZE 10
 
-void register_info(to)
-CIO to;
-{
+void register_info(CIO to) {
     hash_info(to, &process_reg);
 }
 
 
-static HashValue reg_hash(obj)
-RegProc* obj;
-{
-    return (HashValue) obj->name;
+static HashValue reg_hash(RegProc *obj) {
+    return (HashValue) atom_val(obj->name);
 }
 
-static int reg_cmp(tmpl, obj)
-RegProc* tmpl; RegProc* obj;
-{
+static int reg_cmp(RegProc *tmpl, RegProc *obj) {
     return (tmpl->name == obj->name) ? 0 : 1;
 }
 
-static RegProc* reg_alloc(tmpl)
-RegProc* tmpl;
-{
+static RegProc* reg_alloc(RegProc *tmpl) {
     RegProc* obj = (RegProc*) fix_alloc(preg_desc);
-
+    
     obj->name = tmpl->name;
     obj->p = tmpl->p;
     return obj;
 }
 
-static void reg_free(obj)
-RegProc* obj;
-{
+static void reg_free(RegProc *obj) {
     fix_free(preg_desc, (void*) obj);
 }
 
-void init_register_table()
+void init_register_table(void)
 {
     HashFunctions f;
 
@@ -81,33 +71,33 @@ void init_register_table()
 }
 
 /*
-** Register a process (cant be registerd twice)
+** Register a process (cant be registered twice)
 ** Returns 0 if process already registered
 ** Returns rp the processes registered (does not have to be p)
 */
-Process* register_process(name, p)
-int name; Process* p;
-{
+Process* register_process(Process *c_p, Eterm name, Process *p) {
     RegProc r, *rp;
 
-    if (p->reg != (RegProc*) 0)
-	return (Process*) 0;
+    if (p->reg != NULL)
+	return NULL;
 
     r.name = name;
     r.p = p;
     
     rp = (RegProc*) hash_put(&process_reg, (void*) &r);
-    if (rp->p == p)
+    if (rp->p == p) {
+	if (IS_TRACED(p) && (p->flags & F_TRACE_PROCS) != 0) {
+	    trace_proc(c_p, p, am_register, name);
+	}
 	p->reg = rp;
+    }
     return rp->p;
 }
 
 /*
 ** Find registered process (whereis)
 */
-Process* whereis_process(name)
-int name;
-{
+Process* whereis_process(Eterm name) {
     RegProc r, *rp;
 
     r.name = name;
@@ -119,11 +109,9 @@ int name;
 /*
 ** Unregister a process 
 ** Return 0 if not registered
-** Otherwise returns the process unregisterd
+** Otherwise returns the process unregistered
 */
-Process* unregister_process(name)
-int name;
-{
+Process* unregister_process(Process *c_p, Eterm name) {
     RegProc r, *rp;
 
     r.name = name;
@@ -133,6 +121,9 @@ int name;
 	   p->reg_atom = name;
 	p->reg = NULL;
 	hash_erase(&process_reg, (void*) &r);
+	if (IS_TRACED(p) && (p->flags & F_TRACE_PROCS) != 0) {
+	    trace_proc(c_p, p, am_unregister, name);
+	}
 	return p;
     }
     return (Process*) 0;

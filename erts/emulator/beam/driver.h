@@ -51,6 +51,7 @@
 
 /* Flags for set_port_control_flags() */
 #define PORT_CONTROL_FLAG_BINARY	1
+#define PORT_CONTROL_FLAG_HEAVY		2
 
 /* This macro is used to name a dynamic driver's init function in */
 /* a way that doesn't lead to conflicts. This is crucial when using */

@@ -2058,7 +2058,10 @@ concat_bit_binaries({U1,B1},{U2,B2}) ->
     S1 = (size(B1) * 8) - U1,
     S2 = (size(B2) * 8) - U2,
     PadBits = 8 - ((S1+S2) rem 8),
-    {PadBits, <<B1:S1/binary-unit:1,B2:S2/binary-unit:1,0:PadBits>>}.
+    {PadBits, <<B1:S1/binary-unit:1,B2:S2/binary-unit:1,0:PadBits>>};
+concat_bit_binaries(L1,L2) when list(L1),list(L2) ->
+    %% this case occur when decoding with NNL
+    L1 ++ L2.
 
     
 get_constraint(C,Key) ->

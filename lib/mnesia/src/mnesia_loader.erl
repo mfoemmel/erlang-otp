@@ -58,21 +58,28 @@ do_get_disc_copy2(Tab, Reason, Storage, Type) when Storage == disc_copies ->
     Repair = mnesia_monitor:get_env(auto_repair),
     Args = [{keypos, 2}, public, named_table, Type],
     mnesia_monitor:mktab(Tab, Args),
-    Fname = mnesia_lib:tab2dat(Tab),
-    case mnesia_lib:dat_to_ets(Tab, Tab, Fname, Type, Repair, yes) of
-	loaded ->
-	    mnesia_index:init_index(Tab, Storage),
-	    snmpify(Tab, Storage),
-	    set({Tab, load_node}, node()),
-	    set({Tab, load_reason}, Reason),
-	    {loaded, ok};
-	{error, Error} ->
-	    {not_loaded, {"Failed to load table from disc", [Tab, Error]}}
-    end;
+    case Reason of 
+	dumper_create_table ->
+	    ok = mnesia_log:ets2dcd(Tab);
+	_ ->
+	    Count = mnesia_log:dcd2ets(Tab, Repair),	    
+	    case ets:info(Tab, size) of
+		X when X < Count * 4 ->
+		    ok = mnesia_log:ets2dcd(Tab); 
+		_ ->
+		    ignore
+	    end
+    end, 
+    mnesia_index:init_index(Tab, Storage),
+    snmpify(Tab, Storage),
+    set({Tab, load_node}, node()),
+    set({Tab, load_reason}, Reason),
+    {loaded, ok};
+
 do_get_disc_copy2(Tab, Reason, Storage, Type) when Storage == ram_copies ->
     Args = [{keypos, 2}, public, named_table, Type],
     mnesia_monitor:mktab(Tab, Args),
-    Fname = mnesia_lib:tab2dat(Tab),
+    Fname = mnesia_lib:tab2dcd(Tab),
     DiscLoad =
 	case mnesia_monitor:use_dir() of
 	    true ->
@@ -84,18 +91,14 @@ do_get_disc_copy2(Tab, Reason, Storage, Type) when Storage == ram_copies ->
 		false
 	end,
     case DiscLoad of
-	true ->
+	true ->	    
 	    Repair = mnesia_monitor:get_env(auto_repair),
-	    case mnesia_lib:dat_to_ets(Tab, Tab, Fname, Type, Repair, yes) of
-		loaded ->
-		    mnesia_index:init_index(Tab, Storage),
-		    snmpify(Tab, Storage),
-		    set({Tab, load_node}, node()),
-		    set({Tab, load_reason}, Reason),
-		    {loaded, ok};
-		{error, Error} ->
-		    {not_loaded, {"Failed to load table from disc", [Tab, Error]}}
-	    end;
+	    mnesia_log:dcd2ets(Tab, Repair),
+	    mnesia_index:init_index(Tab, Storage),
+	    snmpify(Tab, Storage),
+	    set({Tab, load_node}, node()),
+	    set({Tab, load_reason}, Reason),
+	    {loaded, ok};
 	false ->
 	    mnesia_index:init_index(Tab, Storage),
 	    snmpify(Tab, Storage),
@@ -198,9 +201,9 @@ tab_receiver(Pid, Node, Tab, TabRef, Storage, Cs, RamLeft, State) ->
     receive
 	{SenderPid, {first, TabSize}} when State == first ->
 	    SenderPid ! {self(), more},
-	    TabRef2 = init_table(Tab, TabSize, Storage, Cs),
+	    CreatedTabs = init_table(Tab, TabSize, Storage, Cs),
 	    mnesia_tm:block_tab(Tab),
-	    tab_receiver(SenderPid, Node, Tab, TabRef2, Storage, Cs, RamLeft, more);
+	    tab_receiver(SenderPid, Node, Tab, CreatedTabs, Storage, Cs, RamLeft, more);
 	
 	{Pid, {more, Recs}} when State == more ->
 	    Pid ! {self(), more},
@@ -249,18 +252,18 @@ init_table(Tab, TabSize, Storage, Cs) ->
 	    file:delete(Tmp),
 	    case mnesia_lib:dets_sync_open(Tab, Args) of
 		{ok, _} ->
-		    {dets, Tab};
+		    {Storage, Tab};
 		Else ->
 		    fatal("do_get_network_copy open ~w Tab ~w cstruct ~w ~s ~n",
 			  [Else, Tab, Cs, Tmp])
 	    end;
-	_ ->
+	_ -> %% ram_copies or disc_copies
 	    Args = [{keypos, 2}, public, named_table, Cs#cstruct.type],
 	    mnesia_monitor:mktab(Tab, Args), % exits upon failure
-	    {ets, Tab}
+	    {Storage, Tab}
     end.
 
-opt_ram_to_disc(Tab, disc_only_copies, Cs, 0) ->
+opt_ram_to_disc(Tab, disc_only_copies, Cs, 0) -> 
     dets:close(Tab), % Flush dets table in ram to disc
     Tmp = mnesia_lib:tab2tmp(Tab),
     Args = [{file, Tmp},
@@ -274,8 +277,8 @@ opt_ram_to_disc(Tab, disc_only_copies, Cs, 0) ->
 	    fatal("do_get_network_copy reopen ~w Tab ~w cstruct ~w ~s ~n",
 		  [Else, Tab, Cs, Tmp])
     end;
-opt_ram_to_disc(Tab, Storage, Cs, RamLeft) ->
-    ignore.
+opt_ram_to_disc(_, _, _, _) ->  %% Disc table but not time to flush
+    ignore. 
 
 subscr_receiver(Tab, TabRef, Storage, RecName) ->
     receive
@@ -305,7 +308,16 @@ handle_event(TabRef, clear_table, {_Tab, _Key}) ->
     db_match_erase(TabRef, '_').
 
 handle_last(Tab, disc_copies, _Type, nobin) ->
-    mnesia_dumper:raw_named_dump_table(Tab, dat);
+    Ret = mnesia_log:ets2dcd(Tab),
+    Fname = mnesia_lib:tab2dat(Tab),  
+    case mnesia_lib:exists(Fname) of 
+	true ->  %% Remove old .DAT files.
+	    file:delete(Fname);
+	false ->
+	    ok
+    end,
+    Ret;
+
 handle_last(Tab, disc_only_copies, Type, nobin) ->
     case mnesia_lib:swap_tmp_files([Tab]) of
 	[] ->
@@ -327,7 +339,7 @@ handle_last(Tab, ram_copies, _Type, DatBin) ->
 	    mnesia_lib:lock_table(Tab),
 	    Tmp = mnesia_lib:tab2tmp(Tab),
 	    ok = file:write_file(Tmp, DatBin),
-	    ok = file:rename(Tmp, mnesia_lib:tab2dat(Tab)),
+	    ok = file:rename(Tmp, mnesia_lib:tab2dcd(Tab)),
 	    mnesia_lib:unlock_table(Tab),
 	    ok;
 	false ->
@@ -362,32 +374,32 @@ flush_subcrs() ->
 	    done
     end.
 
-insert_records(TabRef, [RecsWithSameKey | Tail]) ->
-    do_insert_records(TabRef, RecsWithSameKey),
+insert_records(TabRef, [Recs | Tail]) ->
+    lists:foreach(fun(Rec) -> db_put(TabRef, Rec) end, Recs), %% FIX R8
     insert_records(TabRef, Tail);
 insert_records(TabRef, []) ->
     ok.
 
-do_insert_records(TabRef, [Rec | Recs]) ->
-    db_put(TabRef, Rec),
-    do_insert_records(TabRef, Recs);
-do_insert_records(TabRef, []) ->
-    ok.
-    
-db_erase({dets, Tab}, Key) ->
-    ok = dets:delete(Tab, Key);
-db_erase({ets, Tab} , Key) ->
-    true = ?ets_delete(Tab, Key).
+db_erase({ram_copies, Tab}, Key) ->
+    true = ?ets_delete(Tab, Key);
+db_erase({disc_copies, Tab}, Key) ->
+    true = ?ets_delete(Tab, Key);
+db_erase({disc_only_copies, Tab}, Key) ->
+    ok = dets:delete(Tab, Key).
 
-db_match_erase({dets, Tab}, Pat) ->
-    ok = dets:match_delete(Tab, Pat);
-db_match_erase({ets, Tab} , Pat) ->
-    true = ?ets_match_delete(Tab, Pat).
+db_match_erase({ram_copies, Tab} , Pat) ->
+    true = ?ets_match_delete(Tab, Pat);
+db_match_erase({disc_copies, Tab} , Pat) ->
+    true = ?ets_match_delete(Tab, Pat);
+db_match_erase({disc_only_copies, Tab}, Pat) ->
+    ok = dets:match_delete(Tab, Pat).
 
-db_put({dets, Tab}, Val) ->
-    ok = dets:insert(Tab, Val);
-db_put({ets, Tab}, Val) ->
-    true = ?ets_insert(Tab, Val).
+db_put({ram_copies, Tab}, Val) ->
+    true = ?ets_insert(Tab, Val);
+db_put({disc_copies, Tab}, Val) ->
+    true = ?ets_insert(Tab, Val);
+db_put({disc_only_copies, Tab}, Val) ->
+    ok = dets:insert(Tab, Val).
 
 %% This code executes at the remote site where the data is
 %% executes in a special copier process.
@@ -412,8 +424,8 @@ send_table(Pid, Tab, RemoteS) ->
 	    SendIt = fun() ->
 			     prepare_copy(Pid, Tab, Storage),
 			     send_more(Pid, Tab, Storage, 
-				       mnesia_lib:db_first(Storage, Tab),
-				       KeysPerTransfer),
+				       mnesia_lib:db_init_chunk(Storage, Tab,
+								KeysPerTransfer)),
 			     finish_copy(Pid, Tab, Storage, RemoteS)
 		     end,
 
@@ -475,26 +487,21 @@ update_where_to_write([H|T], Tab, AddNode) ->
     end,
     update_where_to_write(T, Tab, AddNode).
 
-send_more(Pid, Tab, Storage, '$end_of_table', _KeysPerTransfer) ->
-    ok; 
-send_more(Pid, Tab, Storage, Key, KeysPerTransfer) ->
-    {NextKey, Recs} = get_records(Tab, Storage, Key, KeysPerTransfer, []),
+
+send_more(Pid, Tab, Storage, DataState) ->
     receive
 	{Pid, more} ->
-	    Pid ! {self(), {more, Recs}},
-	    send_more(Pid, Tab, Storage, NextKey, KeysPerTransfer);
+	    case DataState of 
+		{Recs, Cont} ->
+		    Pid ! {self(), {more, [Recs]}}, %% Build list to handle old mnesia nodes
+		    send_more(Pid, Tab, Storage, mnesia_lib:db_chunk(Storage, Cont));
+		'$end_of_table' -> 
+		    ok
+	    end;
 	{copier_done, Node} when Node == node(Pid)->
 	    verbose("Receiver of table ~p crashed on ~p (more)~n", [Tab, Node]),
 	    throw(receiver_died)
     end.
-
-get_records(Tab, Storage, Key, KeysLeft, AccRecs)
-  when KeysLeft > 0,  Key /= '$end_of_table'  ->
-    Recs = mnesia_lib:db_get(Storage, Tab, Key),
-    NextKey = mnesia_lib:db_next_key(Storage, Tab, Key),
-    get_records(Tab, Storage, NextKey, KeysLeft - 1, [Recs | AccRecs]);
-get_records(Tab, Storage, Key, KeysLeft, AccRecs) ->
-    {Key, AccRecs}.
 
 finish_copy(Pid, Tab, Storage, RemoteS) ->
     RecNode = node(Pid),
@@ -523,7 +530,7 @@ cleanup_tab_copier(Pid, Storage, Tab) ->
 
 dat2bin(Tab, ram_copies, ram_copies) ->
     mnesia_lib:lock_table(Tab),
-    Res = file:read_file(mnesia_lib:tab2dat(Tab)),
+    Res = file:read_file(mnesia_lib:tab2dcd(Tab)),
     mnesia_lib:unlock_table(Tab),
     case Res of
 	{ok, DatBin} -> DatBin;

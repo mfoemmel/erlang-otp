@@ -30,10 +30,9 @@
 -export([init/2,do_relay/1,tracer_init/2,tracer_loop/2]).
 
 %% Debug exports
--export([wrap_presort/2, wrap_postsort/1, 
+-export([wrap_presort/2, wrap_sort/2, wrap_postsort/1, wrap_sortfix/2,
 	 match_front/2, match_rear/2,
-	 match_a_Z/1, match_a_z/1, match_A_Z/1,
-	 next_wrap_cnt/1]).
+	 match_0_9/1]).
 
 %%% Client functions.
 
@@ -307,9 +306,15 @@ trace_port(file, {Filename, wrap, Tail}) ->
 trace_port(file, {Filename, wrap, Tail, WrapSize}) ->
     trace_port(file, {Filename, wrap, Tail, WrapSize, 8});
 trace_port(file, {Filename, wrap, Tail, WrapSize, WrapCnt})
-  when list(Tail), integer(WrapSize), WrapSize >= 0,
-       integer(WrapCnt), WrapCnt >= 1 ->
-    trace_port1(file, Filename, {wrap, Tail, WrapSize, WrapCnt});
+  when list(Tail), 
+       integer(WrapSize), WrapSize >= 0, WrapSize < (1 bsl 32),
+       integer(WrapCnt), WrapCnt >= 1, WrapCnt < (1 bsl 32) ->
+    trace_port1(file, Filename, {wrap, Tail, WrapSize, WrapCnt, 0});
+trace_port(file, {Filename, wrap, Tail, {time, WrapTime}, WrapCnt})
+  when list(Tail), 
+       integer(WrapTime), WrapTime >= 1, WrapTime < (1 bsl 32),
+       integer(WrapCnt), WrapCnt >= 1, WrapCnt < (1 bsl 32) ->
+    trace_port1(file, Filename, {wrap, Tail, 0, WrapCnt, WrapTime});
 trace_port(file, Filename) ->
     trace_port1(file, Filename, nowrap);
 
@@ -339,10 +344,10 @@ trace_port1(file, Filename, Options) ->
     %% on vxworks instead of a nice error code return.
     {Wrap, Tail} =
 	case Options of
-	    {wrap, T, WrapSize, WrapCnt} ->
+	    {wrap, T, WrapSize, WrapCnt, WrapTime} ->
 		{lists:flatten(
-		   io_lib:format("w ~p ~p ~p ", 
-				 [WrapSize, WrapCnt, length(Name)])),
+		   io_lib:format("w ~p ~p ~p ~p ", 
+				 [WrapSize, WrapCnt, WrapTime, length(Name)])),
 		 T};
 	    nowrap ->
 		{"", ""}
@@ -357,8 +362,7 @@ trace_port1(file, Filename, Options) ->
 	    case Options of
 		{wrap, _, _, _} ->
 		    %% Delete old files
-		    Files = wrap_postsort(
-			      wrap_presort(Name, Tail)),
+		    Files = wrap_postsort(wrap_presort(Name, Tail)),
 		    lists:foreach(
 		      fun(N) -> file:delete(N) end,
 		      Files);
@@ -378,13 +382,15 @@ trace_client(ip, Portno) when integer(Portno) ->
 trace_client(ip, {Host, Portno}) when integer(Portno) ->
     trace_client1(ip, {Host, Portno}, {fun dhandler/2,false}).
 
-trace_client(file, {Filename, wrap, Tail, _, _}, FD) ->
-    trace_client(file, {Filename, wrap, Tail}, FD);
-trace_client(file, {Filename, wrap, Tail, _}, FD) ->
-    trace_client(file, {Filename, wrap, Tail}, FD);
-trace_client(file, {Filename, wrap, Tail} = FwT, {Fun, Data} = FD) 
-  when list(Tail), function(Fun) ->
-    trace_client1(file, FwT, FD);
+trace_client(file, {Filename, wrap, Tail}, FD) ->
+    trace_client(file, {Filename, wrap, Tail, 128*1024}, FD);
+trace_client(file, {Filename, wrap, Tail, WrapSize}, FD) ->
+    trace_client(file, {Filename, wrap, Tail, WrapSize, 8}, FD);
+trace_client(file, 
+	     {Filename, wrap, Tail, _, WrapCnt} = WrapSpec, 
+	     {Fun, Data} = FD)
+  when list(Tail), function(Fun), integer(WrapCnt), WrapCnt >= 1 ->
+    trace_client1(file, WrapSpec, FD);
 trace_client(file, Filename, {Fun, Data} ) when function(Fun) ->
     trace_client1(file, Filename, {Fun, Data});
 trace_client(follow_file, Filename, {Fun, Data} ) when function(Fun) ->
@@ -762,14 +768,16 @@ do_relay_1(RelP) ->
 	    do_relay_1(RelP)
     end.
 
-dhandler(Trace, Data) when element(1, Trace) == trace, size(Trace) >= 3 ->
+dhandler(end_of_trace, _Data) ->
+    ok;
+dhandler(Trace, _Data) when element(1, Trace) == trace, size(Trace) >= 3 ->
     dhandler1(Trace, size(Trace));
-dhandler(Trace, Data) when element(1, Trace) == trace_ts, size(Trace) >= 4 ->
+dhandler(Trace, _Data) when element(1, Trace) == trace_ts, size(Trace) >= 4 ->
     dhandler1(Trace, size(Trace)-1);
-dhandler(Trace, Data) when element(1, Trace) == drop, size(Trace) == 2 ->
+dhandler(Trace, _Data) when element(1, Trace) == drop, size(Trace) == 2 ->
     io:format(user, "*** Dropped ~p messages.~n", [element(2,Trace)]),
     ok;
-dhandler(Trace, Data) when element(1, Trace) == seq_trace, size(Trace) >= 3 ->
+dhandler(Trace, _Data) when element(1, Trace) == seq_trace, size(Trace) >= 3 ->
     SeqTraceInfo = case Trace of
 		       {seq_trace, Lbl, STI, TS} ->
 			   io:format(user, "SeqTrace ~p [~p]: ",
@@ -794,8 +802,7 @@ dhandler(Trace, Data) when element(1, Trace) == seq_trace, size(Trace) >= 3 ->
 	    io:format(user, "~p~n", [Else])
     end,
     ok;
-
-dhandler(Trace, Data) ->
+dhandler(Trace, _Data) ->
     ok.
 
 dhandler1(Trace, Size) ->
@@ -836,21 +843,42 @@ dhandler1(Trace, Size) ->
 	return_to ->
 	    MFA = element(4, Trace),
 	    io:format(user, "(~p) returning to ~s~n", [From,ffunc(MFA)]);
+	spawn when Size == 5 ->
+	    Pid = element(4, Trace),
+	    MFA = element(5, Trace),
+	    io:format(user, "(~p) spawn ~p as ~s~n", [From,Pid,ffunc(MFA)]);
 	Op ->
-	    Data = element(4, Trace),
-	    io:format(user, "(~p) ~p ~p~n", [From,Op,Data])
+	    io:format(user, "(~p) ~p ~s~n", [From,Op,ftup(Trace,4,Size)])
     end.
 
-ffunc({M,F,Arity}) when integer(Arity) ->
-    io_lib:format("~p:~p/~p", [M,F,Arity]);
-ffunc({M,F, Argl}) ->
+
+
+%%% These f* functions returns non-flat strings
+
+%% {M,F,[A1, A2, ..., AN]} -> "M:F(A1, A2, ..., AN)"
+%% {M,F,A}                 -> "M:F/A"
+ffunc({M,F,Argl}) when list(Argl) ->
     io_lib:format("~p:~p(~s)", [M, F, fargs(Argl)]);
+ffunc({M,F,Arity}) ->
+    io_lib:format("~p:~p/~p", [M,F,Arity]);
 ffunc(X) -> io_lib:format("~p", [X]).
 
+%% Integer           -> "Integer"
+%% [A1, A2, ..., AN] -> "A1, A2, ..., AN"
 fargs(Arity) when integer(Arity) -> integer_to_list(Arity);
 fargs([]) -> [];
 fargs([A]) -> io_lib:format("~p", [A]);  %% last arg
-fargs([A|Args]) -> [io_lib:format("~p,", [A]) | fargs(Args)].
+fargs([A|Args]) -> [io_lib:format("~p,", [A]) | fargs(Args)];
+fargs(A) -> io_lib:format("~p", [A]). % last or only arg
+
+%% {A_1, A_2, ..., A_N} -> "A_Index A_Index+1 ... A_Size"
+ftup(Trace, Index, Index) -> 
+    io_lib:format("~p", [element(Index, Trace)]);
+ftup(Trace, Index, Size) -> 
+    [io_lib:format("~p ", [element(Index, Trace)]) 
+     | ftup(Trace, Index+1, Size)].
+
+
 
 trace_process(Tracer, {badpid,_}=Bad, Flags) ->
     {error,Bad};
@@ -967,7 +995,8 @@ check(X) -> X.
 %% is interpreted as end of trace.
 tc_loop(Reader, {Handler, HData}) when function(Reader) ->
     tc_loop(Reader(), {Handler, HData});
-tc_loop([], {_Handler, _HData}) ->
+tc_loop([], {Handler, HData}) ->
+    Handler(end_of_trace, HData),
     exit(normal);
 tc_loop([Term | Tail], {Handler, HData}) ->
     NewHData = Handler(Term, HData),
@@ -986,8 +1015,8 @@ gen_reader(ip, {Host, Portno}) ->
 	Error ->
 	    exit(Error)
     end;
-gen_reader(file, {Filename, wrap, Tail}) ->
-    mk_reader_wrap(lists:sort(wrap_presort(Filename, Tail)));
+gen_reader(file, {Filename, wrap, Tail, _, WrapCnt}) ->
+    mk_reader_wrap(wrap_sort(wrap_presort(Filename, Tail), WrapCnt));
 gen_reader(file, Filename) ->
     gen_reader_file(fun file_read/2, Filename);
 gen_reader(follow_file, Filename) ->
@@ -1009,7 +1038,7 @@ mk_reader(ReadFun, Source) ->
 		{ok, Term} ->
 		    [Term | mk_reader(ReadFun, Source)];
 		eof ->
-		    [] % eof
+		    [] % end_of_trace
 	    end
     end.
 
@@ -1034,20 +1063,11 @@ mk_reader_wrap([Hd | Tail] = WrapFiles, File) ->
 		    [Term | mk_reader_wrap(WrapFiles, File)];
 		eof ->
 		    file:close(File),
-		    %% Check if next file is the next
-		    %% in sequence
 		    case Tail of
-			[Hd2 | _] ->
-			    case is_wrap_succ(Hd, Hd2) of
-				true ->
-				    %% Next file
-				    mk_reader_wrap(Tail);
-				false ->
-				    exit({wrap_file_out_of_sequence,
-					  wrap_name(Hd2)})
-			    end;
+			[_|_] ->
+			    mk_reader_wrap(Tail);
 			[] ->
-			    [] % eof
+			    [] % end_of_trace
 		    end
 	    end
     end.
@@ -1105,24 +1125,20 @@ file_read(File, N) ->
     end.
 
 follow_read(File, N) ->
-    {ok, Pos} = file:position(File, cur),
-    case file:read(File, N) of
-	{ok, Bin} when binary(Bin), size(Bin) =:= N -> 
-	    Bin;
-	{ok, Bin} when binary(Bin) ->
-	    follow_read(File, N, Pos);
-	eof ->
-	    follow_read(File, N, Pos);
-	{error, Reason} ->
-	    exit({'file read error', Reason})
-    end.
+    follow_read(File, N, cur).
 
 follow_read(File, N, Pos) ->
-    case file:position(File,Pos) of
-	{ok, Pos} ->
-	    receive
-	    after 1000 ->
-		    follow_read(File,N)
+    case file:position(File, Pos) of
+	{ok, Offset} ->
+	    case file:read(File, N) of
+		{ok, Bin} when binary(Bin), size(Bin) =:= N -> 
+		    Bin;
+		{ok, Bin} when binary(Bin) ->
+		    follow_read(File, N, Offset);
+		eof ->
+		    follow_read(File, N, Offset);
+		{error, Reason} ->
+		    exit({'file read error', Reason})
 	    end;
 	{error, Reason} ->
 	    exit({'file position error', Reason})
@@ -1212,16 +1228,13 @@ check_list(T) ->
 	    {error, badfile}
     end.
 
+
+
 %% Find all possible wrap log files.
 %% Returns: a list of sort converted filenames.
 %%
 %% The sort conversion is done by extracting the wrap sequence counter
-%% from the filename. The counter is converted to a tuple of characters,
-%% and the converted result is a cons cell headed by the tuple.
-%%
-%% Tuples are sorted primarily by size, so "filename.z.log" 
-%% will be sorted before "filename.aa.log", since their conversions 
-%% are [{$z}]++"filename.z.log" and [{$a,$a}]++"filename.aa.log".
+%% from the filename, and calling wrap_encode/2.
 wrap_presort(Filename, Tail) ->
     Name = filename:basename(Filename),
     Dirname = filename:dirname(Filename),
@@ -1237,7 +1250,7 @@ wrap_presort(Filename, Tail) ->
 				  false ->
 				      false;
 				  C -> % Counter
-				      case match_a_Z(C) of
+				      case match_0_9(C) of
 					  true ->
 					      {true, 
 					       wrap_encode(
@@ -1254,20 +1267,72 @@ wrap_presort(Filename, Tail) ->
 	    []
     end.
 
+
+
+%% Sorts a list of sort converted files
+wrap_sort(Files, N) ->
+    wrap_sortfix(lists:sort(Files), N).
+
+%% Finish the sorting, since the lists:sort order is not the correct order.
+%% Cut the list of files at the gap (at least one file is supposed
+%% to be 'missing') and create a new list by cons'ing the two parts
+%% in the right order.
+wrap_sortfix([], N) when N >= 1 ->
+    [];
+wrap_sortfix([], _N) ->
+    exit(inconsistent_wrap_file_trace_set);
+%% file 0, gap 1..N
+wrap_sortfix([{0, _}] = Files, N) when N >= 1 ->
+    Files;
+wrap_sortfix([{0, _}] = Files, _N) ->
+    exit(inconsistent_wrap_file_trace_set);
+%% files 0, ...
+wrap_sortfix([{0, _} | _] = Files, N) when N >= 1->
+    wrap_sortfix_1(Files, N, [], Files);
+%% gap 0, files 1, ...
+wrap_sortfix([{1, _} | _] = Files, N) when N >= 1 ->
+    wrap_sortfix_2(Files, N, [], Files);
+wrap_sortfix([{_C, _} | _], _N) ->
+    exit(inconsistent_wrap_file_trace_set).
+
+%% files 0..C, gap C+1..N
+wrap_sortfix_1([{C, _}], N, _R, Files) 
+  when C < N ->
+    Files;
+%% files 0..C1, C1+1==C2, ...
+wrap_sortfix_1([{C1, _} = F1 | [{C2, _} | _] = Tail], N, R, Files) 
+  when C1+1 == C2, C2 < N ->
+    wrap_sortfix_1(Tail, N, [F1 | R], Files);
+%% files 0..C1, gap C1+1, files C1+2==C2, ...
+wrap_sortfix_1([{C1, _} = F1 | [{C2, _} | _] = Tail], N, R, _Files) 
+  when C1+2 == C2, C2 =< N ->
+    wrap_sortfix_2(Tail, N, lists:reverse([F1 | R]), Tail);
+wrap_sortfix_1([_F1 | [_F2 | _]], _N, _R, _Files) ->
+    exit(inconsistent_wrap_file_trace_set).
+
+%% M == length(R); files 0..M-1, gap M, files M+1..N
+wrap_sortfix_2([{N, _}], N, R, Files) ->
+    Files ++ R;
+wrap_sortfix_2([{_C, _}], _N, _R, _Files) ->
+    exit(inconsistent_wrap_file_trace_set);
+%% M == length(R); files 0..M-1, gap M, files M+1..C1, C1+1==C2, ...
+wrap_sortfix_2([{C1, _} | [{C2, _} | _] = Tail], N, R, Files)
+  when C1+1 == C2, C2 =< N ->
+    wrap_sortfix_2(Tail, N, R, Files);
+wrap_sortfix_2([{_C1, _} | [{_C2, _} | _]], _N, _R, _Files) ->
+    exit(inconsistent_wrap_file_trace_set).
+
+
+
 %% Extract the filenames from a list of sort converted ones.
 wrap_postsort(Files) ->    
     lists:map(fun wrap_name/1, Files).
 
 wrap_encode(N, C) ->
-    [list_to_tuple(C) | N].
+    {list_to_integer(C), N}.
 
-wrap_name([_C | N]) ->
+wrap_name({_C, N}) ->
     N.
-
-%% Checks if the converted filename in arg 2 is the next 
-%% in sequence after arg 1.
-is_wrap_succ([C1|_], [C2|_]) ->
-    C2 == next_wrap_cnt(C1).
 
 %% Returns what is left of ListA when removing all matching
 %% elements from ListB, or false if some element did not match,
@@ -1290,55 +1355,16 @@ match_rear(ListA, ListB) when list(ListA), list(ListB) ->
 	    lists:reverse(List)
     end.
 
-%% Returns (match_a_z(L) || match_A_Z(L)), but optimized.
-match_a_Z([]) ->
-    false;
-match_a_Z([H|_] = L) when integer(H), $a =< H, H =< $z ->
-    match_a_z(L);
-match_a_Z([H|_] = L) when integer(H), $A =< H, H =< $Z ->
-    match_A_Z(L);
-match_a_Z(L) when list(L) ->
-    false.
-			      
 %% Returns true if the non-empty list arguments contains all
-%% characters $a .. $z.
-match_a_z([]) ->
+%% characters $0 .. $9.
+match_0_9([]) ->
     false;
-match_a_z([H]) when integer(H), $a =< H, H =< $z ->
+match_0_9([H]) when integer(H), $0 =< H, H =< $9 ->
     true;
-match_a_z([H|T] = L) when integer(H), $A =< H, H =< $z ->
-    match_a_z(T);
-match_a_z(L) when list(L) ->
+match_0_9([H|T] = L) when integer(H), $0 =< H, H =< $9 ->
+    match_0_9(T);
+match_0_9(L) when list(L) ->
     false.
-
-%% Returns true if the non-empty list arguments contains all
-%% characters $A .. $Z.
-match_A_Z([]) ->
-    false;
-match_A_Z([H]) when integer(H), $A =< H, H =< $Z ->
-    true;
-match_A_Z([H|T] = L) when integer(H), $A =< H, H =< $Z ->
-    match_A_Z(T);
-match_A_Z(L) when list(L) ->
-    false.
-
-%% Counts {},{$a},{$b},..{$z},{$a,$a},{$a,$b},..{$z,$z},{$a,$a,$a},...
-%% The same for $A .. $Z, if not starting with {}.
-next_wrap_cnt(T) when tuple(T) ->
-    list_to_tuple(lists:reverse(
-		    next_wrap_cnt_r(
-		      lists:reverse(tuple_to_list(T)), $a))).
-
-next_wrap_cnt_r([], C) ->
-    [C];
-next_wrap_cnt_r([H|T], _) when $a =< H, H < $z ->
-    [H+1 | T];
-next_wrap_cnt_r([H|T], _) when $A =< H, H < $Z ->
-    [H+1 | T];
-next_wrap_cnt_r([$z|T], _) ->
-    [$a | next_wrap_cnt_r(T, $a)];
-next_wrap_cnt_r([$Z|T], _) ->
-    [$A | next_wrap_cnt_r(T, $A)].
 
 %%%%%%%%%%%%%%%%%%
 %% Help...

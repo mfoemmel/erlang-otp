@@ -339,6 +339,7 @@ purge_module(int module)
 		modules[i] = modules[i+1];
 		i++;
 	    }
+	    mid_module = &modules[num_loaded_modules/2];
 	    return 0;
 	}
     }

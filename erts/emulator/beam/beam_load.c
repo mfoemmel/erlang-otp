@@ -422,9 +422,10 @@ static int must_swap_floats;
  * each module.  It allows us to quickly find a function given an
  * instruction pointer.
  */
-Range* modules = NULL;	/* Sorted lists of module addresses. */
-int num_loaded_modules;	/* Number of loaded modules. */
-int allocated_modules;	/* Number of slots allocated. */
+Range* modules = NULL;	    /* Sorted lists of module addresses. */
+int num_loaded_modules;	    /* Number of loaded modules. */
+int allocated_modules;	    /* Number of slots allocated. */
+Range* mid_module = NULL;   /* Cached search start point */
 
 /**********************************************************************/
 
@@ -440,6 +441,7 @@ void init_load(void)
 
     allocated_modules = 128;
     modules = (Range *) sys_alloc(allocated_modules * sizeof(Range));
+    mid_module = modules;
     num_loaded_modules = 0;
 }
 
@@ -2693,7 +2695,8 @@ final_touch(LoaderState* stp)
 
     if (num_loaded_modules == allocated_modules) {
 	allocated_modules *= 2;
-	modules = (Range *) sys_realloc(modules, allocated_modules * sizeof(Range));
+	modules = (Range *) sys_realloc(modules, 
+					allocated_modules * sizeof(Range));
     }
     for (i = num_loaded_modules; i > 0; i--) {
 	if (stp->code > modules[i-1].start) {
@@ -2704,6 +2707,7 @@ final_touch(LoaderState* stp)
     modules[i].start = stp->code;
     modules[i].end = stp->code + stp->ci;
     num_loaded_modules++;
+    mid_module = &modules[num_loaded_modules/2];
 }
 
 
@@ -3462,10 +3466,9 @@ find_function_from_pc(Eterm* pc)
 {
     Range* low = modules;
     Range* high = low + num_loaded_modules;
-    Range* mid;
+    Range* mid = mid_module;
 
     while (low < high) {
-	mid = low + (high-low) / 2;
 	if (pc < mid->start) {
 	    high = mid;
 	} else if (pc > mid->end) {
@@ -3480,6 +3483,7 @@ find_function_from_pc(Eterm* pc)
 		if (pc < mid1[0]) {
 		    high1 = mid1;
 		} else if (pc < mid1[1]) {
+		    mid_module = mid;
 		    return mid1[0]+2;
 		} else {
 		    low1 = mid1 + 1;
@@ -3487,6 +3491,7 @@ find_function_from_pc(Eterm* pc)
 	    }
 	    return NULL;
 	}
+	mid = low + (high-low) / 2;
     }
     return NULL;
 }

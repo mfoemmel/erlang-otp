@@ -417,7 +417,7 @@ fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
     int n;
 
     /* Create new, empty heap */
-    n_heap = (uint32 *) safe_alloc_from(803, sizeof(uint32)*new_sz);
+    n_heap = (uint32 *) safe_sl_alloc_from(803, sizeof(uint32)*new_sz);
     n_hstart = n_htop = n_heap;
     p->flags &= ~F_NEED_FULLSWEEP;
 
@@ -538,7 +538,7 @@ fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
 #ifdef DEBUG
 	sys_memset(p->old_heap, 0xff, (p->old_hend - p->old_heap)*sizeof(Eterm));
 #endif    
-	sys_free(p->old_heap);
+	sys_sl_free(p->old_heap);
 	p->old_heap = p->old_htop = p->old_hend = NULL;
     }
 
@@ -550,7 +550,7 @@ fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
 #endif    
     p->hend = n_heap + new_sz;
     p->stop = p->hend - n;
-    sys_free(p->heap);
+    sys_sl_free(p->heap);
 
     p->heap = n_heap;
     p->htop = n_htop;
@@ -657,7 +657,9 @@ grow_new_heap(Process *p, uint32 new_sz, Eterm* objv, int nobj)
     sint32 offs;
 
     ASSERT(p->heap_sz < new_sz);
-    new_heap = (Eterm *) safe_realloc((void*)p->heap, sizeof(Eterm)*new_sz);
+    new_heap = (Eterm *) safe_sl_realloc((void*)p->heap,
+					 sizeof(Eterm)*(p->heap_sz),
+					 sizeof(Eterm)*new_sz);
 
 #ifdef GC_HEAP_TRACE
     fprintf(stderr, "grow_new_heap: GREW (%d) FROM %d UPTO %d (used %d)\n",
@@ -695,7 +697,9 @@ shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj)
 
     ASSERT(new_sz < p->heap_sz);
     sys_memmove(p->heap + new_sz - stack_size, p->stop, stack_size * sizeof(Eterm));
-    new_heap = (Eterm *) safe_realloc((void*)p->heap, sizeof(Eterm)*new_sz);
+    new_heap = (Eterm *) safe_sl_realloc((void*)p->heap,
+					 sizeof(Eterm)*(p->heap_sz),
+					 sizeof(Eterm)*new_sz);
     p->hend = new_heap + new_sz;
     p->stop = p->hend - stack_size;
 
@@ -795,6 +799,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 	p->flags |= F_NEED_FULLSWEEP;
     }
     p->arith_avail = 0;
+    p->arith_heap = NULL;
 #ifdef DEBUG
     p->arith_check_me = NULL;
 #endif
@@ -830,7 +835,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 	size_t new_sz = next_heap_size(p->high_water - p->heap, 1);
 
 	/* Create new, empty old_heap */
-	n_old = (uint32 *) safe_alloc_from(801, sizeof(Eterm)*new_sz);
+	n_old = (uint32 *) safe_sl_alloc_from(801, sizeof(Eterm)*new_sz);
 
 	p->old_hend = n_old + new_sz;
 	p->old_heap = p->old_htop = n_old;
@@ -1031,7 +1036,7 @@ gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
     /* new new_heap and copy all live objects to the new new_heap */
     /* that is to not tenure any objects at all */
 
-    n_hstart = (Eterm*) safe_alloc_from(805, sizeof(Eterm)*new_sz);
+    n_hstart = (Eterm*) safe_sl_alloc_from(805, sizeof(Eterm)*new_sz);
     n_htop = n_hstart;
     n = setup_rootset(p, objv, nobj, &rootset);
 
@@ -1126,7 +1131,7 @@ gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
 #ifdef DEBUG
     sys_memset(p->heap, 0xff, p->heap_sz*sizeof(Eterm));
 #endif
-    sys_free((void*)p->heap);
+    sys_sl_free((void*)p->heap);
 
     restore_rootset(p, &rootset);
     

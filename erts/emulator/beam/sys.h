@@ -35,9 +35,12 @@
   } else { \
      erl_assert_error(#e, __FILE__, __LINE__); \
   }
+#define ASSERT_EXPR(e) \
+  ((void) ((e) ? 1 : (erl_assert_error(#e, __FILE__, __LINE__), 0)))
 void erl_assert_error(char* expr, char* file, int line);
 #else
 #define ASSERT(e)
+#define ASSERT_EXPR(e) ((void) 1)
 #endif
 
 /*
@@ -340,9 +343,6 @@ typedef struct _SysDriverOpts {
     char *wd;			/* Working directory. */
 } SysDriverOpts;
 
-#ifdef DEBUG
-extern int tot_allocated;
-#endif
 
 extern int cerr_pos;
 
@@ -389,31 +389,83 @@ EXTERN_FUNCTION(void, sys_putc, (int, CIO));
 EXTERN_FUNCTION(void, sys_get_pid, (char *));
 EXTERN_FUNCTION(int, sys_putenv, (char *));
 
-#ifdef INSTRUMENT
-EXTERN_FUNCTION(void, alloc_from, (int));
-#define sys_alloc_from(Where,Size)	(alloc_from(Where),sys_alloc(Size))
-#define safe_alloc_from(Where,Size)	(alloc_from(Where),safe_alloc(Size))
-#define fix_alloc_from(Where,Desc)	(alloc_from(Where),fix_alloc(Desc))
-#else
-#define sys_alloc_from(Where,Size)	sys_alloc(Size)
-#define safe_alloc_from(Where,Size)	safe_alloc(Size)
-#define fix_alloc_from(Where,Desc)	fix_alloc(Desc)
-#endif
-
+/* Defined in sys.c (util.c when instrumented) */
 EXTERN_FUNCTION(void*, sys_alloc, (unsigned int));
 EXTERN_FUNCTION(void*, sys_realloc, (void*,unsigned int));
-EXTERN_FUNCTION(void, sys_free, (void*));
-/* an alternative to functions above is 
-#define sys_alloc(sz)           malloc(sz)
-#define sys_realloc(ptr,sz)     realloc(ptr,sz)
-#define sys_free(p)             free(p)
-*/
+EXTERN_FUNCTION(void,  sys_free, (void*));
+/* Defined in erts_sl_malloc.c (util.c when instrumented) */
+EXTERN_FUNCTION(void*, sys_sl_alloc, (unsigned int));
+EXTERN_FUNCTION(void*, sys_sl_realloc, (void*, unsigned int, unsigned int));
+EXTERN_FUNCTION(void,  sys_sl_free, (void*));
+
+#ifdef INSTRUMENT
+/* Defined in sys.c */
+#ifndef sys_alloc2 /* Declare if not macros */
+EXTERN_FUNCTION(void*, sys_alloc2, (unsigned int));
+EXTERN_FUNCTION(void*, sys_realloc2, (void*,unsigned int));
+EXTERN_FUNCTION(void,  sys_free2, (void*));
+#endif /* !sys_alloc2 */
+
+
+EXTERN_FUNCTION(void *,
+		instr_alloc,
+		(int, void *(*)(unsigned int), unsigned int));
+EXTERN_FUNCTION(void *,
+		instr_realloc,
+		(int,
+		 void *(*)(void *, unsigned int, unsigned int),
+		 void *,
+		 unsigned int,
+		 unsigned int));
+EXTERN_FUNCTION(void,
+		instr_free,
+		(void (*free_func)(void *), void *));
+
+/* Defined in erts_sl_malloc.c */
+#ifndef sys_sl_alloc2 /* Declare if not macros */
+EXTERN_FUNCTION(void*, sys_sl_alloc2, (unsigned int));
+EXTERN_FUNCTION(void*, sys_sl_realloc2, (void*, unsigned int, unsigned int));
+EXTERN_FUNCTION(void,  sys_sl_free2, (void*));
+#endif /* !sys_sl_alloc2 */
+
+EXTERN_FUNCTION(void*, sys_realloc3, (void*, unsigned int, unsigned int));
+
+#define sys_alloc_from(Where, Size) \
+  instr_alloc((Where), sys_alloc2, (Size))
+#define sys_realloc_from(Where, Ptr, Size) \
+  instr_realloc((Where), sys_realloc3, (Ptr), 0, (Size))
+#define sys_sl_alloc_from(Where, Size) \
+  instr_alloc((Where), sys_sl_alloc2, (Size))
+#define sys_sl_realloc_from(Where, Ptr, SaveSize, Size) \
+  instr_realloc((Where), sys_sl_realloc2, (Ptr), (SaveSize), (Size))
+
+#else /* #ifdef INSTRUMENT */
+
+#define sys_alloc_from(Where, Size) sys_alloc(Size)
+#define sys_realloc_from(Where,Ptr, Size) sys_realloc((Ptr),(Size))
+#define sys_sl_alloc_from(Where, Size) sys_sl_alloc((Size))
+#define sys_sl_realloc_from(Where, Ptr, SaveSize, Size) \
+ sys_sl_realloc((Ptr), (SaveSize), (Size))
+
+#define fix_alloc_from(Where, Desc) fix_alloc((Desc))
+#define safe_alloc_from(Where, Size) safe_alloc((Size))
+#define safe_realloc_from(Where, Ptr, Size) safe_realloc((Ptr), (Size))
+#define safe_sl_alloc_from(Where, Size) safe_sl_alloc((Size))
+#define safe_sl_realloc_from(Where, Ptr, SaveSize, Size) \
+  safe_sl_realloc((Ptr), (SaveSize), (Size))
+
+#endif /* #ifdef INSTRUMENT */
 
 /* Options to sys_alloc_opt */
 #define SYS_ALLOC_OPT_TRIM_THRESHOLD 0
 #define SYS_ALLOC_OPT_TOP_PAD        1
 #define SYS_ALLOC_OPT_MMAP_THRESHOLD 2
 #define SYS_ALLOC_OPT_MMAP_MAX       3
+
+/* Options to sys_sl_alloc_opt */
+#define SYS_SL_ALLOC_OPT_MMAP_THRESHOLD       SYS_ALLOC_OPT_MMAP_THRESHOLD
+#define SYS_SL_ALLOC_OPT_MMAP_MAX             SYS_ALLOC_OPT_MMAP_MAX
+#define SYS_SL_ALLOC_OPT_USE_MMAP_TABLE       4
 
 /* Default values to sys_alloc_opt options */
 #define ERTS_DEFAULT_TRIM_THRESHOLD  (128 * 1024)
@@ -422,6 +474,8 @@ EXTERN_FUNCTION(void, sys_free, (void*));
 #define ERTS_DEFAULT_MMAP_MAX        64
 
 EXTERN_FUNCTION(int, sys_alloc_opt, (int, int));
+EXTERN_FUNCTION(int, sys_sl_alloc_opt, (int, int));
+EXTERN_FUNCTION(void, sys_sl_alloc_init, (int));
 
 typedef struct {
   Sint trim_threshold;
@@ -434,14 +488,27 @@ typedef struct {
 #endif
 } SysAllocStat;
 
-EXTERN_FUNCTION(void, sys_alloc_stat, (SysAllocStat *));
+typedef struct {
+  Sint sl_alloc_enabled;
+  Sint mmap_threshold;
+  Sint mmap_max;
+  Sint mmapped_chunks;
+  Uint mmapped_chunks_size;
+  Uint mmapped_blocks_size;
+  struct {
+    Sint in_use;
+    Sint size;
+    Sint used;
+    Sint objs;
+    Sint depth;
+  } mmap_table;
+} SysSlAllocStat;
 
-/* Declare if not macros */
-#ifndef sys_alloc2
-EXTERN_FUNCTION(void*, sys_alloc2, (unsigned int));
-EXTERN_FUNCTION(void*, sys_realloc2, (void*, unsigned int));
-EXTERN_FUNCTION(void, sys_free2, (void*));
-#endif /* !sys_alloc2 */
+EXTERN_FUNCTION(void, sys_alloc_stat, (SysAllocStat *));
+EXTERN_FUNCTION(void, sys_sl_alloc_stat, (SysSlAllocStat *));
+
+EXTERN_FUNCTION(void, sys_sl_alloc_info, (CIO));
+
 #ifdef VXWORKS
 /* NOTE! sys_calloc2 does not exist on other 
    platforms than VxWorks */

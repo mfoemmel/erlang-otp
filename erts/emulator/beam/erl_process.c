@@ -373,11 +373,12 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 	sz = next_heap_size(heap_need, 0);
     }
 
-    p->heap = (Eterm *) safe_alloc_from(8, sizeof(Eterm)*sz);
+    p->heap = (Eterm *) safe_sl_alloc_from(8, sizeof(Eterm)*sz);
     p->old_hend = p->old_htop = p->old_heap = NULL;
     p->high_water = p->heap;
     p->gen_gcs = 0;
     p->arith_avail = 0;		/* No arithmetic heap. */
+    p->arith_heap = NULL;
 #ifdef DEBUG
     p->arith_check_me = NULL;
 #endif
@@ -405,7 +406,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     sys_memset(&p->tm, 0, sizeof(ErlTimer));
 
     p->reg = NULL;
-    p->reg_atom = -1;
+    p->reg_atom = THE_NON_VALUE;
     p->dslot = -1;
     p->error_handler = am_error_handler;    /* default */
     p->tracer_proc = erts_default_tracer;
@@ -432,7 +433,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 	    p->tracer_proc = parent->tracer_proc;
 	}
 	if (parent->flags & F_TRACE_PROCS) 
-	    trace_proc(parent, am_spawn, p->id);
+	    trace_proc_spawn(parent, p->id, mod, func, args);
 	if (parent->flags & F_TRACE_SOS1) { /* Overrides TRACE_CHILDREN */
 	    p->flags |= (parent->flags & TRACE_FLAGS);
 	    p->tracer_proc = parent->tracer_proc;
@@ -447,7 +448,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 
     if (so->flags & SPO_LINK) {
 	if (IS_TRACED(parent) && (parent->flags & F_TRACE_PROCS) != 0) {
-	    trace_proc(parent, am_link, p->id);
+	    trace_proc(parent, parent, am_link, p->id);
 	}
 	parent->links = new_link(parent->links, LNK_LINK, p->id, NIL);
 	p->links = new_link(p->links, LNK_LINK, parent->id, NIL);
@@ -514,7 +515,7 @@ void erts_init_empty_process(Process *p)
     p->off_heap.funs = NULL;
     p->off_heap.overhead = 0;
     p->reg = NULL;
-    p->reg_atom = -1;
+    p->reg_atom = THE_NON_VALUE;
     p->heap_sz = 0;
     p->high_water = NULL;
     p->old_hend = NULL;
@@ -607,12 +608,12 @@ int do_delete;
 #ifdef DEBUG
     sys_memset(p->heap, 0xfb, p->heap_sz*sizeof(Eterm));
 #endif
-    sys_free((void*) p->heap);
+    sys_sl_free((void*) p->heap);
     if (p->old_heap != NULL) {
 #ifdef DEBUG
 	sys_memset(p->old_heap, 0xfb, (p->old_hend-p->old_heap)*sizeof(Eterm));
 #endif
-	sys_free(p->old_heap);
+	sys_sl_free(p->old_heap);
     }
 
     /*
@@ -680,6 +681,8 @@ static int last_killed_no = 0;
 static int keep_killed = 0;
 #endif
 
+/* p is supposed to be the currently executing process 
+ */
 void delete_process(p)
 Process* p;
 {
@@ -690,7 +693,7 @@ Process* p;
 #endif
 
    if (p->reg != NULL)
-      unregister_process(p->reg->name);
+      unregister_process(p, p->reg->name);
 
    cancel_timer(p);		/* Always cancel timer just in case */
 
@@ -825,7 +828,14 @@ Process* p; uint32 reason;
    p->status = P_EXITING;
 
    if (IS_TRACED_FL(p,F_TRACE_PROCS))
-      trace_proc(p, am_exit, reason);
+      trace_proc(p, p, am_exit, reason);
+
+   if (p->flags & F_DEFAULT_TRACER) {
+       if (erts_default_tracer == p->id) {
+	   erts_default_tracer = NIL;
+	   erts_default_process_flags &= ~TRACE_FLAGS;
+       }
+   }
 
    lnk = p->links;
    p->links = NULL;
@@ -855,15 +865,25 @@ Process* p; uint32 reason;
 	    }
 	    else {
 	       if ((rp = pid2proc(item)) != NULL) {
-		   del_link(find_link(&rp->links,LNK_LINK,p->id,NIL));
+		   ErlLink **rlinkpp = 
+		       find_link(&rp->links, LNK_LINK, p->id, NIL);
+		   del_link(rlinkpp);
 		   if (rp->flags & F_TRAPEXIT) {
 		       if (SEQ_TRACE_TOKEN(p) != NIL ) {
 			   seq_trace_update_send(p);
 		       }
-		       deliver_exit_message_tt(p->id, rp, reason, SEQ_TRACE_TOKEN(p));
-		   }
-		   else if (reason != am_normal)
+		       deliver_exit_message_tt(p->id, rp, reason, 
+					       SEQ_TRACE_TOKEN(p));
+		       if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlinkpp != NULL) {
+			   trace_proc(p, rp, am_getting_unlinked, p->id);
+		       }
+		   } else if (reason == am_normal) {
+		       if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlinkpp != NULL) {
+			   trace_proc(p, rp, am_getting_unlinked, p->id);
+		       }
+		   } else {
 		       schedule_exit(rp, reason);
+		   } 
 	       }
 	   }
 	}
@@ -883,7 +903,10 @@ Process* p; uint32 reason;
 		  /* Force send, use the atom in dist slot 
 		   * link list as data for the message.
 		   */
-		  dist_demonitor(slot, item, (*lnkp)->data, ref, 1); 
+		  dist_demonitor(slot, item, (*lnkp)->data, ref, 1);
+		  /* dist_demonitor() may have removed the link;
+		     therefore, look it up again. */
+		  lnkp = find_link_by_ref(&dist_addrs[slot].links, ref);
 		  del_link(lnkp);
 	       }
 	    } else {

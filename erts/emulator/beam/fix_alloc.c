@@ -168,12 +168,23 @@ int desc; uint32 *ptr;
 #endif
 }
 
+
+
+#ifdef INSTRUMENT
 uint32 *fix_alloc(desc)
 int desc;
 {
-#ifdef INSTRUMENT
-    extern int alloc_who;
-#endif
+  return fix_alloc_from(-1, desc);
+}
+
+uint32 *fix_alloc_from(from, desc)
+int from; int desc;
+#else /* #ifdef INSTRUMENT */
+#define from (-1)
+uint32 *fix_alloc(desc)
+int desc;
+#endif /* #ifdef INSTRUMENT */
+{
     uint32 *ret;
     FixAlloc *f = &fa[desc];
 
@@ -188,7 +199,8 @@ int desc;
 	int n = f->item_size*(NOPERBLOCK) + sizeof(FixAllocBlock) -
 	    sizeof(uint32);
 
-	if ((bl = (FixAllocBlock*) sys_alloc_from(32,n)) == NULL)
+	if ((bl = (FixAllocBlock*) sys_alloc_from(from == -1 ? 32 : from,
+						  n)) == NULL)
 	    return(NULL);
 
 	bl->next = f->blocks;  /* link in first */
@@ -202,9 +214,7 @@ int desc;
 	    ptr += f->item_size;
 	}
     }
-#ifdef INSTRUMENT
-    alloc_who = -1;
-#endif
+
     ret = f->freelist;
     f->freelist = (uint32*) *f->freelist;
 #endif

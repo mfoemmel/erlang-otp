@@ -63,6 +63,7 @@ typedef struct {
 #define DO_WRITE (1 << 1)
 
 #define PORT_CONTROL_FLAG_BINARY	1
+#define PORT_CONTROL_FLAG_HEAVY		2
 
 /*
  * A binary as seen in a driver. Note that a binary should never be

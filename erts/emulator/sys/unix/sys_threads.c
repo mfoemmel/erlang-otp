@@ -80,6 +80,23 @@ erl_mutex_t erts_mutex_sys(int mno)
     return (erl_mutex_t) mp;
 }
 
+#ifndef HAVE_PTHREAD_ATFORK
+#define HAVE_PTHREAD_ATFORK 0
+#endif
+
+int erts_atfork_sys(void (*prepare)(void),
+		    void (*parent)(void),
+		    void (*child)(void))
+{
+#if HAVE_PTHREAD_ATFORK
+  return pthread_atfork(prepare, parent, child) == 0 ? 0 : -1;
+#else
+#warning "pthread_atfork() is missing! Cannot enforce fork safety"
+  return -1;
+#endif
+}
+
+
 int erts_mutex_destroy(erl_mutex_t mtx)
 {
     if (mtx != NULL) {
@@ -133,7 +150,11 @@ int erts_cond_broadcast (erl_cond_t cv)
 
 int erts_cond_wait(erl_cond_t cv, erl_mutex_t mtx)
 {
-    return pthread_cond_wait((pthread_cond_t*) cv, (pthread_mutex_t*) mtx);
+    int res;
+    do {
+      res = pthread_cond_wait((pthread_cond_t*) cv, (pthread_mutex_t*) mtx);
+    } while(res == EINTR);
+    return res;
 }
 
 int erts_cond_timedwait(erl_cond_t cv, erl_mutex_t mtx, long time)
@@ -142,6 +163,7 @@ int erts_cond_timedwait(erl_cond_t cv, erl_mutex_t mtx, long time)
     struct timespec ts;
     long us;
     long s;
+    int res;
     /* convert relative time to struct timespec *abstime */
     sys_gettimeofday(&tv);
     us = (tv.tv_usec + (time % 1000)*1000);
@@ -153,27 +175,30 @@ int erts_cond_timedwait(erl_cond_t cv, erl_mutex_t mtx, long time)
     else
 	ts.tv_sec = s;
     ts.tv_nsec = us*1000;
-    return pthread_cond_timedwait((pthread_cond_t*) cv, 
-				  (pthread_mutex_t*) mtx,
-				  &ts);
+    do {
+      res = pthread_cond_timedwait((pthread_cond_t*) cv, 
+				   (pthread_mutex_t*) mtx,
+				   &ts);
+    } while(res == EINTR);
+    return res;
 }
 
 static void* erl_thread_func_wrap(void* args)
 {
-    struct _thread_data* td = (struct _thread_data*) args;
-    void* res;
+    struct _thread_data td;
     sigset_t new;
 
+    td.func = ((struct _thread_data*) args)->func;
+    td.arg  = ((struct _thread_data*) args)->arg;
+    sys_free(args);
+    
     sigemptyset(&new);
     sigaddset(&new, SIGINT);   /* block interrupt */
     sigaddset(&new, SIGCHLD);  /* block child signals */
     sigaddset(&new, SIGUSR1);  /* block user defined signal */
     pthread_sigmask(SIG_BLOCK, &new, NULL);
 
-    /* FIXME handle cancelations !! */
-    res = (*td->func)(td->arg);
-    sys_free(td);
-    return res;
+    return (*td.func)(td.arg);
 }
 
 
@@ -202,6 +227,7 @@ int erts_thread_create(erl_thread_t* tpp,
 	*tpp = (erl_thread_t) thr;
     else
 	sys_free(td);
+    pthread_attr_destroy(&attr);
     return code;
 }
 
@@ -263,6 +289,14 @@ erl_mutex_t erts_mutex_sys(int mno)
     return (erl_mutex_t) mp;
 }
 
+int erts_atfork_sys(void (*prepare)(void),
+		    void (*parent)(void),
+		    void (*child)(void))
+{
+  /* Solaris threads use fork-all; no need for atfork */
+  return 0;
+}
+
 int erts_mutex_destroy(erl_mutex_t mtx)
 {
     if (mtx != NULL) {
@@ -316,7 +350,11 @@ int erts_cond_broadcast (erl_cond_t cv)
 
 int erts_cond_wait(erl_cond_t cv, erl_mutex_t mtx)
 {
-    return cond_wait((cond_t*) cv, (mutex_t*) mtx);
+    int res;
+    do {
+      res = cond_wait((cond_t*) cv, (mutex_t*) mtx);
+    } while(res == EINTR);
+    return res;
 }
 
 int erts_cond_timedwait(erl_cond_t cv, erl_mutex_t mtx, long time)
@@ -325,6 +363,7 @@ int erts_cond_timedwait(erl_cond_t cv, erl_mutex_t mtx, long time)
     struct timespec ts;
     long us;
     long s;
+    int res;
 
     /* convert relative time to struct timespec *abstime */
     sys_gettimeofday(&tv);
@@ -337,16 +376,20 @@ int erts_cond_timedwait(erl_cond_t cv, erl_mutex_t mtx, long time)
     else
 	ts.tv_sec = s;
     ts.tv_nsec = us*1000;
-    return cond_timedwait((cond_t*) cv, 
-			  (mutex_t*) mtx,
-			  &ts);
+    do {
+      res = cond_timedwait((cond_t*) cv, (mutex_t*) mtx, &ts);
+    } while(res == EINTR);
+    return res;
 }
 
 static void* erl_thread_func_wrap(void* args)
 {
-    struct _thread_data* td = (struct _thread_data*) args;
-    void* res;
+    struct _thread_data td;
     sigset_t new;
+
+    td.func = ((struct _thread_data*) args)->func;
+    td.arg  = ((struct _thread_data*) args)->arg;
+    sys_free(args);
 
     sigemptyset(&new);
     sigaddset(&new, SIGINT);   /* block interrupt */
@@ -354,10 +397,7 @@ static void* erl_thread_func_wrap(void* args)
     sigaddset(&new, SIGUSR1);  /* block user defined signal */
     thr_sigsetmask(SIG_BLOCK, &new, NULL);
 
-    /* FIXME handle cancelations !! */
-    res = (td->func)(td->arg);
-    sys_free(td);
-    return res;
+    return (td.func)(td.arg);
 }
 
 
@@ -376,7 +416,7 @@ int erts_thread_create(erl_thread_t* tpp,
     td->func = func;
     td->arg  = arg;
 
-    if ((code = thr_create(&thr, 0, 
+    if ((code = thr_create(NULL, 0, 
 			   erl_thread_func_wrap, (void*) td, 
 			   detached ? THR_DETACHED : 0, &thr)) == 0)
 	*tpp = (erl_thread_t) thr;
@@ -426,6 +466,13 @@ erl_mutex_t erts_mutex_create()
 erl_mutex_t erts_mutex_sys(int mno)
 {
     return NULL;
+}
+
+int erts_atfork_sys(void (*prepare)(void),
+		    void (*parent)(void),
+		    void (*child)(void))
+{
+    return -1;
 }
 
 int erts_mutex_destroy(erl_mutex_t mtx)

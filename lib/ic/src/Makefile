@@ -176,8 +176,8 @@ docs:
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
-../ebin/icparse.jam ../ebin/icparse.beam: icparse.erl
-	$(ERLC) -b$(EMULATOR) -o$(EBIN) +pj $<
+../ebin/icparse.beam: icparse.erl
+	$(ERLC) $(ERL_COMPILE_FLAGS) -o$(EBIN) +pj $<
 
 icparse.erl: icparse.yrl icyeccpre.hrl
 

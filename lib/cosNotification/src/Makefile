@@ -278,7 +278,8 @@ ERL_FLAGS += -pa $(ERL_TOP)/lib/cosNotification/ebin \
 	-pa $(ERL_TOP)/lib/ic/ebin\
 	-pa $(ERL_TOP)/lib/orber/ebin \
 	-pa $(ERL_TOP)/lib/cosEvent/ebin \
-	-pa $(ERL_TOP)/lib/cosTime/ebin
+	-pa $(ERL_TOP)/lib/cosTime/ebin \
+	-I$(ERL_TOP)/lib/cosEvent/src
 
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .

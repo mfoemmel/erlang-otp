@@ -46,7 +46,9 @@
          is_debug_compiled/0,
 	 type_check/2,
          send_stubborn/5,
-         create_link/3]).
+         create_link/3, 
+	 disconnect/3, 
+	 do_disconnect/3]).
 
 %% Internal AdminProperties
 -export([init_adm/1,
@@ -95,7 +97,6 @@ create_link(Module, Env, ArgList) ->
 %% Exception: 
 %% Effect   : 
 %%------------------------------------------------------------
-
 get_option(Key, OptionList, DefaultList) ->
     case lists:keysearch(Key, 1, OptionList) of
         {value,{Key,Value}} ->
@@ -115,7 +116,6 @@ get_option(Key, OptionList, DefaultList) ->
 %% Exception: 
 %% Effect   : 
 %%------------------------------------------------------------
- 
 create_name(Name,Type) ->
     {MSec, Sec, USec} = erlang:now(),
     lists:concat(['oe_',node(),'_',Type,'_',Name,'_',MSec, '_', Sec, '_', USec]).
@@ -126,8 +126,7 @@ create_name(Name,Type) ->
 %% Returns  : 
 %% Exception: 
 %% Effect   : 
-%%------------------------------------------------------------
- 
+%%------------------------------------------------------------ 
 create_name(Type) ->
     {MSec, Sec, USec} = erlang:now(),
     lists:concat(['oe_',node(),'_',Type,'_',MSec, '_', Sec, '_', USec]).
@@ -144,7 +143,6 @@ create_name(Type) ->
 %%            which must be "unique", to retrieve object references.
 %%            For example: CosNotifyChannelAdmin::ChannelId/AdminID.
 %%------------------------------------------------------------
- 
 create_id(-1) ->
     1;
 create_id( 2147483647) ->
@@ -163,12 +161,13 @@ create_id() ->
 %% Returns  : 'ok' or raises exception.
 %% Effect   : 
 %%------------------------------------------------------------
-
 type_check(Obj, Mod) ->
     case catch corba_object:is_a(Obj,Mod:typeID()) of
         true ->
             ok;
         _ ->
+	    orber:debug_level_print("[~p] CosNotification_Common:type_check(~p); 
+The supplied Object is not or does not inherrit from: ~p", [?LINE, Obj, Mod], ?DEBUG_LEVEL),
             corba:raise(#'BAD_PARAM'{minor=507, completion_status=?COMPLETED_NO})
     end.
 
@@ -206,6 +205,28 @@ send_stubborn(M, F, A, MaxR, Wait, Times) ->
         Other ->
             Other
     end.
+
+
+%%-----------------------------------------------------------%
+%% function : disconnect
+%% Arguments: Module - one of the interfaces defined in CosEventComm.
+%%            Function - the appropriate disconnect function.
+%%            Object - the client object reference.
+%% Returns  : ok
+%% Exception: 
+%% Effect   : If the process would try to diconnect itself it could
+%%            result in a deadlock. Hence, we spawn a new process to do it.
+%%------------------------------------------------------------
+disconnect(Module, Function, Object) ->
+    spawn(?MODULE, do_disconnect, [Module, Function, Object]),
+    ok.
+
+do_disconnect(Module, Function, Object) ->
+    catch Module:Function(Object),
+    ?DBG("Disconnect ~p:~p(..).~n", [Module, Function]),
+    ok.
+
+
  
 %%------------------------------------------------------------
 %% function : is_debug_compiled
@@ -950,8 +971,10 @@ v_e_q_helper([#'CosNotification_Property'{name=Name}|T], Curr, Unsupp) ->
 			   {code = 'BAD_PROPERTY', name = Name,
 			    available_range = 
 			    any:create(orber_tc:null(), null)}|Unsupp]);
-v_e_q_helper(_, _, _) ->
+v_e_q_helper(What, _, _) ->
     %% Not a Property struct.
+    orber:debug_level_print("[~p] CosNotification_Common:v_e_q_helper(~p);
+Not a CosNotification_Property struct.", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%-------------- QOS HELP FUNCTIONS --------------------------

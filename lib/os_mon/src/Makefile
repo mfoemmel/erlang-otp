@@ -33,7 +33,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/os_mon-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 MODULES= disksup memsup cpu_sup os_mon os_mon_mib os_sup os_mon_sysinfo \
-	nteventlog
+	nteventlog memsup_helper
 
 INCLUDE=../include
 CSRC=../c_src
@@ -47,7 +47,13 @@ APP_FILE= os_mon.app
 APP_SRC= $(APP_FILE).src
 APP_TARGET=$(EBIN)/$(APP_FILE)
 
-TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET)
+APPUP_FILE= os_mon.appup
+
+APPUP_SRC= $(APPUP_FILE).src
+APPUP_TARGET= ../ebin/$(APPUP_FILE)
+
+
+TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 
 # ----------------------------------------------------
 # FLAGS
@@ -72,6 +78,9 @@ docs:
 # ----------------------------------------------------
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
+
+$(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 #-------------------------------------------------------

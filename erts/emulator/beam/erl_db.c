@@ -1193,7 +1193,8 @@ static void meta_mark_free(int idx)
     int i;
     if (ISNOTUSED((idx + 1) % db_max_tabs)) {
 	db_tables[idx].id = DB_NOTUSED;
-	for (i = idx - 1; i != idx && db_tables[i].id == DB_USED; 
+	for (i = ((idx > 0) ? idx : db_max_tabs) - 1; 
+	     i != idx && db_tables[i].id == DB_USED; 
 	     i = ((i > 0) ? i : db_max_tabs) - 1) {
 	    db_tables[i].id = DB_NOTUSED;
 	}

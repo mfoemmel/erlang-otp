@@ -1,5 +1,10 @@
 {"%VSN%",
- [{"1.1.1",
+ [
+  {"1.1.4", 
+   [{update, mnesia_session_impl,soft, soft_purge, soft_purge, []}]},
+  {"1.1.3", []},
+  {"1.1.2", []},
+  {"1.1.1",
    [
     {update, mnesia_CheckpointDef,	soft, soft_purge, soft_purge, []},
     {update, mnesia_SystemInfo,soft, soft_purge, soft_purge, []},
@@ -17,7 +22,12 @@
     {update, mnesia_session_top_sup,soft, soft_purge, soft_purge, []},
     {update, oe_mnesia_corba_session,soft, soft_purge, soft_purge, []},
     {update, oe_mnesia_session, soft, soft_purge, soft_purge, []}]}],
- [{"1.1.1",
+ [
+  {"1.1.4", 
+   [{update, mnesia_session_impl,soft, soft_purge, soft_purge, []}]},
+  {"1.1.3", []},
+  {"1.1.2", []},
+  {"1.1.1",
    [
     {update, mnesia_CheckpointDef,	soft, soft_purge, soft_purge, []},
     {update, mnesia_SystemInfo,soft, soft_purge, soft_purge, []},

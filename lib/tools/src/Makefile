@@ -39,6 +39,7 @@ MODULES= coast               \
 	coast_compile_funcs  \
 	coast_server         \
 	eprof                \
+	fprof                \
 	instrument           \
 	exref                \
 	exref_analysis       \

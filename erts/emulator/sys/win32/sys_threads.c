@@ -30,6 +30,8 @@
 #include "driver.h"
 #include "sys.h"
 
+#define MAX_SYS_MUTEX 10
+
 typedef struct _erl_wait_t {
     HANDLE event;
     struct _erl_wait_t *next;
@@ -40,6 +42,7 @@ typedef struct _erl_cond_t {
     struct _erl_wait_t *waiters;
 } _erl_cond_t;
 
+static CRITICAL_SECTION sys_mutex[MAX_SYS_MUTEX];
 
 erl_mutex_t erts_mutex_create()
 {
@@ -48,6 +51,24 @@ erl_mutex_t erts_mutex_create()
     if (mp != NULL)
 	InitializeCriticalSection(mp);
     return (erl_mutex_t) mp;
+}
+
+erl_mutex_t erts_mutex_sys(int mno)
+{   
+    CRITICAL_SECTION* mp; 
+    if (mno >= MAX_SYS_MUTEX || mno < 0)
+	return NULL;
+    mp = &sys_mutex[mno];
+    InitializeCriticalSection(mp);
+    return (erl_mutex_t) mp;
+
+}
+
+int erts_atfork_sys(void (*prepare)(void),
+		    void (*parent)(void),
+		    void (*child)(void))
+{
+    return 0; /* -1 ? */
 }
 
 int erts_mutex_destroy(erl_mutex_t mtx)

@@ -493,8 +493,8 @@ do_read_disc_schema(Fname, Keep) ->
                 mnesia_monitor:mktab(schema, Args)
         end,
     Repair = mnesia_monitor:get_env(auto_repair),
-    Res =
-        case mnesia_lib:dat_to_ets(schema, T, Fname, set, Repair, no) of
+    Res =  % BUGBUG Fixa till dcl!
+        case mnesia_lib:dets_to_ets(schema, T, Fname, set, Repair, no) of
             loaded -> {ok, disc, ?ets_lookup_element(T, schema, 3)};
             Other -> {error, {"Cannot read schema", Fname, Other}}
         end,
@@ -650,8 +650,8 @@ list2cs(List) when list(List) ->
     Ix2 = [attr_to_pos(I, Attrs) || I <- Ix],
 
     Frag = pick(Name, frag_properties, List, []),
-    mnesia_schema:verify({alt, [nil, list]}, mnesia_lib:etype(Frag),
-			 {badarg, Name, {frag_properties, Frag}}), 
+    verify({alt, [nil, list]}, mnesia_lib:etype(Frag),
+	   {badarg, Name, {frag_properties, Frag}}), 
         
     Keys = check_keys(Name, List, record_info(fields, cstruct)),
     check_duplicates(Name, Keys),
@@ -1632,7 +1632,7 @@ prepare_op(Tid, {op, add_table_copy, Storage, Node, TabDef}, WaitFor) ->
 		Storage /= ram_copies ->
 		    case mnesia_lib:schema_cs_to_storage_type(node(), Cs) of
 			ram_copies ->
-			    Dat = mnesia_lib:tab2dat(Tab),
+			    Dat = mnesia_lib:tab2dcd(Tab),
 			    case mnesia_lib:exists(Dat) of
 				true ->
 				    mnesia:abort({combine_error, Tab, Storage,
@@ -1717,10 +1717,11 @@ prepare_op(_Tid, {op, change_table_copy_type,  N, FromS, ToS, TabDef}, WaitFor)
 		    mnesia:abort({combine_error, Tab, ToS})
 	    end;
 	
-	FromS == ram_copies ->
+	FromS == ram_copies ->	    
 	    case mnesia_monitor:use_dir() of
 		true -> 
-		    Dat = mnesia_lib:tab2dat(Tab),
+		    Dat = mnesia_lib:tab2dcd(Tab),
+		    Dmp = mnesia_lib:tab2dmp(Tab),
 		    case mnesia_lib:exists(Dat) of
 			true ->
 			    mnesia:abort({combine_error, Tab, node(),
@@ -1731,9 +1732,17 @@ prepare_op(_Tid, {op, change_table_copy_type,  N, FromS, ToS, TabDef}, WaitFor)
 		false ->
 		    ignore
 	    end,
-	    mnesia_dumper:raw_named_dump_table(Tab, dmp),
+	    case ToS of 
+		disc_copies -> 
+		    mnesia_log:ets2dcd(Tab, dmp);
+		disc_only_copies ->
+		    mnesia_dumper:raw_named_dump_table(Tab, dmp)
+	    end,
 	    mnesia_checkpoint:tm_change_table_copy_type(Tab, FromS, ToS);
 	
+	FromS == disc_copies, ToS == disc_only_copies ->
+	    Dat = mnesia_lib:tab2dmp(Tab),
+	    mnesia_dumper:raw_named_dump_table(Tab, dmp);
 	true ->
 	    ignore
     end,
@@ -1751,7 +1760,7 @@ prepare_op(_Tid, {op, dump_table, unknown, TabDef}, WaitFor) ->
     Tab = Cs#cstruct.name,
     case lists:member(node(), Cs#cstruct.ram_copies) of
         true ->
-            mnesia_dumper:raw_named_dump_table(Tab, dmp),
+            mnesia_log:ets2dcd(Tab, dmp),
 	    Size = mnesia:table_info(Tab, size),
 	    {true, [{op, dump_table, Size, TabDef}], optional};
         false ->
@@ -1953,9 +1962,13 @@ undo_prepare_op(Tid, {op, add_table_copy, Storage, Node, TabDef}) ->
 	Node == node() ->
 	    mnesia_checkpoint:tm_del_copy(Tab, Node),
 	    mnesia_controller:unannounce_add_table_copy(Tab, Node),
-	    mnesia_monitor:close_dets(Tab),
-	    mnesia_index:del_transient(Tab, Storage),
-	    file:delete(mnesia_lib:tab2dat(Tab)),
+	    if
+		Storage == disc_only_copies; Tab == schema ->
+		    mnesia_monitor:close_dets(Tab),
+		    file:delete(mnesia_lib:tab2dat(Tab));
+		true ->
+		    file:delete(mnesia_lib:tab2dcd(Tab))
+	    end,
 	    ram_delete_table(Tab, Storage),
 	    Cs2 = new_cs(Cs, Node, Storage, del),
 	    insert_cstruct(Tid, Cs2, true); % Don't care about the version
@@ -2103,7 +2116,7 @@ has_known_suffix(File, [], Bool) ->
 	    
 known_suffixes() -> real_suffixes() ++ tmp_suffixes().
 
-real_suffixes() ->  [".DAT", ".LOG", ".BUP"].
+real_suffixes() ->  [".DAT", ".LOG", ".BUP", ".DCL", ".DCD"].
 
 tmp_suffixes() -> [".TMP", ".BUPTMP", ".RET", ".DMP"].
 

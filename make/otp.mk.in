@@ -147,7 +147,7 @@ SGML_ROOT = $(SGML_DEBUG)
 endif
 
 ifndef SGML_ROOT
-SGML_ROOT = /home/gandalf/otp/sgml/sgml_v3
+SGML_ROOT = /home/otp/sgml/docbuilder
 endif
 
 

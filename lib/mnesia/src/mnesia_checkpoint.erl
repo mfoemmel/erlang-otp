@@ -709,35 +709,43 @@ retainer_create(Cp, R, Tab, Name, Storage) ->
 %% it should remain false even if we change storage type
 %% while the checkpoint is activated.
 prepare_ram_tab(Cp, Tab, T, ram_copies, true, false) ->
-    Fname = mnesia_lib:tab2dat(Tab),
+    Fname = mnesia_lib:tab2dcd(Tab),
     case mnesia_lib:exists(Fname) of
-	true ->
-	    case mnesia_lib:dets_sync_open(Tab, Tab, Fname) of
-		{ok, Ref} ->
-		    Fun = fun(Rec) ->
-				  Key = element(2, Rec),
-				  Recs =
-				      case ?ets_lookup(T, Key) of
-					  [] -> [];
-					  [{_, _, Old}] -> Old
-				      end,
-				  ?ets_insert(T, {Tab, Key, [Rec | Recs]}),
-				  continue
-			  end,
-		    Res = dets:traverse(Ref, Fun),
-		    mnesia_lib:dets_sync_close(Ref);
-
-		{error, Reason} ->
-		    do_stop(Cp),
-		    exit({error, {"Cannot open dumped ram_copies table",
-				  [Tab, Cp#checkpoint_args.name, Reason]}})
-	    end;
+	true -> 
+	    Log = mnesia_log:open_log(prepare_ram_tab, 
+				      mnesia_log:dcd_log_header(), 
+				      Fname, true, 
+				      mnesia_monitor:get_env(auto_repair), 
+				      read_only),
+	    Add = fun(Rec) ->
+			  Key = element(2, Rec),
+			  Recs =
+			      case ?ets_lookup(T, Key) of
+				  [] -> [];
+				  [{_, _, Old}] -> Old
+			      end,
+			  ?ets_insert(T, {Tab, Key, [Rec | Recs]}),
+			  continue
+		  end,
+	    traverse_dcd(mnesia_log:chunk_log(Log, start), Log, Add),
+	    mnesia_log:close_log(Log);
 	false ->
 	    ok
     end,
     false;
 prepare_ram_tab(_, _, _, _, ReallyRetain, _) ->
     ReallyRetain.
+
+traverse_dcd({Cont, [LogH | Rest]}, Log, Fun) 
+  when record(LogH, log_header),  
+       LogH#log_header.log_kind == dcd_log, 
+       LogH#log_header.log_version >= "1.0" ->    
+    traverse_dcd({Cont, Rest}, Log, Fun);   %% BUGBUG Error handling repaired files
+traverse_dcd({Cont, Recs}, Log, Fun) ->     %% trashed data?? 
+    lists:foreach(Fun, Recs), 
+    traverse_dcd(mnesia_log:chunk_log(Log, Cont), Log, Fun);
+traverse_dcd(eof, Log, Fun) ->
+    ok.
 
 retainer_get({ets, Store}, Key) -> ?ets_lookup(Store, Key);
 retainer_get({dets, Store}, Key) -> dets:lookup(Store, Key).
@@ -1037,7 +1045,7 @@ do_change_copy(Cp, Tab, FromType, ToType) ->
     if
 	FromType == disc_only_copies ->
 	    mnesia_lib:dets_sync_close(Old),
-	    loaded = mnesia_lib:dat_to_ets(Old, New, Fname, set, no, yes),
+	    loaded = mnesia_lib:dets_to_ets(Old, New, Fname, set, no, yes),
 	    ok = file:delete(Fname);
 	ToType == disc_only_copies ->
 	    TabSize = ?ets_info(Old, size),

@@ -81,7 +81,8 @@ void create_person_table(CORBA_Environment * env)
     tabdef.attributes._length = 4;
     tabdef.attributes._buffer = attrs;
    
-    tabdef.record_name = "persons_person"; /* The name of the stored type/struct */
+    tabdef.record_name = "persons_person"; /* The name of the stored 
+					      type/struct */
 
     result = mnesia_session_create_table(NULL, "persons", &tabdef, &reason, env);
 

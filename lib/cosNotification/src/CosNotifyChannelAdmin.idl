@@ -56,7 +56,8 @@ module CosNotifyChannelAdmin {
       raises (CosNotification::UnsupportedQoS);
   }; // ProxySupplier
 
-  interface ProxyPushConsumer : ProxyConsumer, CosNotifyComm::PushConsumer {
+  interface ProxyPushConsumer : ProxyConsumer, CosNotifyComm::PushConsumer,
+    CosEventChannelAdmin::ProxyPushConsumer {
     void connect_any_push_supplier (in CosEventComm::PushSupplier push_supplier)
       raises(CosEventChannelAdmin::AlreadyConnected);
   }; // ProxyPushConsumer
@@ -72,7 +73,7 @@ module CosNotifyChannelAdmin {
   }; // SequenceProxyPushConsumer
 
   interface ProxyPullSupplier : ProxySupplier, CosNotifyComm::PullSupplier,
-    oe_CosNotificationComm::Event {
+    CosEventChannelAdmin::ProxyPullSupplier, oe_CosNotificationComm::Event {
     void connect_any_pull_consumer (in CosEventComm::PullConsumer pull_consumer)
       raises(CosEventChannelAdmin::AlreadyConnected);
   }; // ProxyPullSupplier
@@ -89,7 +90,8 @@ module CosNotifyChannelAdmin {
       raises(CosEventChannelAdmin::AlreadyConnected);
   }; // SequenceProxyPullSupplier
 
-  interface ProxyPullConsumer : ProxyConsumer, CosNotifyComm::PullConsumer {
+  interface ProxyPullConsumer : ProxyConsumer, CosNotifyComm::PullConsumer,
+    CosEventChannelAdmin::ProxyPullConsumer {
     void connect_any_pull_supplier (in CosEventComm::PullSupplier pull_supplier)
       raises(CosEventChannelAdmin::AlreadyConnected, CosEventChannelAdmin::TypeError);
 
@@ -123,7 +125,7 @@ module CosNotifyChannelAdmin {
   }; // SequenceProxyPullConsumer
   
   interface ProxyPushSupplier : ProxySupplier, CosNotifyComm::PushSupplier,
-    oe_CosNotificationComm::Event {
+    CosEventChannelAdmin::ProxyPushSupplier, oe_CosNotificationComm::Event {
     void connect_any_push_consumer (in CosEventComm::PushConsumer push_consumer)
       raises(CosEventChannelAdmin::AlreadyConnected, CosEventChannelAdmin::TypeError);
 

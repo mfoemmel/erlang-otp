@@ -37,6 +37,9 @@
 %% To be used by wrap_log_reader only.
 -export([ichunk_end/2]).
 
+%% To be used for debugging only:
+-export([pid2name/1]).
+
 -record(state, {queue = [], parent, cnt = 0, args,
 		error_status = ok   %%  ok | {error, Reason}
 	       }).
@@ -46,13 +49,16 @@
 -define(failure(Error, Function, Arg), 
 	{{failed, Error}, [{?MODULE, Function, Arg}]}).
 
+%%-define(PROFILE(C), C).
+-define(PROFILE(C), void).
+
 %%%----------------------------------------------------------------------
 %%% API
 %%%----------------------------------------------------------------------
 
 %%-----------------------------------------------------------------
 %% This module implements the API, and the processes for each log.
-%% There is one process/log.
+%% There is one process per log.
 %%-----------------------------------------------------------------      
 
 open(A) ->
@@ -65,25 +71,25 @@ blog(Log, Bytes) ->
     req(Log, {blog, check_bytes(Bytes)}).
 
 log_terms(Log, Terms) ->
-    Bs = lists:map(fun term_to_binary/1, Terms),
+    Bs = terms2bins(Terms),
     req(Log, {log, Bs}).
 
 blog_terms(Log, Bytess) ->
-    Bs = lists:map(fun check_bytes/1, Bytess),
+    Bs = check_bytes_list(Bytess),
     req(Log, {blog, Bs}).
 
 alog(Log, Term) -> 
     notify(Log, {alog, term_to_binary(Term)}).
 
 alog_terms(Log, Terms) ->
-    Bs = lists:map(fun term_to_binary/1, Terms),
+    Bs = terms2bins(Terms),
     notify(Log, {alog, Bs}).
 
 balog(Log, Bytes) -> 
     notify(Log, {balog, check_bytes(Bytes)}).
 
 balog_terms(Log, Bytess) ->
-    Bs = lists:map(fun check_bytes/1, Bytess),
+    Bs = check_bytes_list(Bytess),
     notify(Log, {balog, Bs}).
 
 close(Log) -> 
@@ -143,6 +149,12 @@ format_error(Error) ->
 info(Log) -> 
     sreq(Log, info).
 	      
+pid2name(Pid) ->
+    disk_log_server:start(),
+    case ets:lookup(inv_disk_log_names, Pid) of
+        [] -> undefined;
+        [{_Pid, Log}] -> {ok, Log}
+    end.
 
 %% This function Takes 3 args, a Log, a Continuation and N.
 %% It retuns a {Cont2, ObjList} | eof | {error, Reason}
@@ -158,7 +170,7 @@ chunk(Log, Cont, N) when integer(N), N > 0 ->
     ichunk(Log, Cont, N).
 
 ichunk(Log, start, N) ->
-    R = sreq(Log, {chunk, 0, list_to_binary([]), N}),
+    R = sreq(Log, {chunk, 0, <<>>, N}),
     ichunk_end(R, Log);
 ichunk(Log, More, N) when record(More, continuation) ->
     R = req2(More#continuation.pid, 
@@ -333,6 +345,7 @@ check_arg(Arg, _) ->
 %%% Server functions
 %%%-----------------------------------------------------------------
 init(Parent) ->
+    ?PROFILE(ep:do()),
     process_flag(trap_exit, true),
     loop(#state{parent = Parent}).
 
@@ -342,6 +355,13 @@ loop(State) ->
 	    handle(Message, State)
     end.
 
+handle({From, write_cache}, S) when From == self() ->
+    case catch do_write_cache(get(log)) of
+        ok ->
+            loop(S);
+        Error ->
+            exit(?failure(Error, write_cache, 0))
+    end;
 handle({From, {log, B}}, S) ->
     case get(log) of
 	L when L#log.mode == read_only ->
@@ -475,7 +495,7 @@ handle({From, sync}, S) ->
 	L when L#log.mode == read_only ->
 	    reply(From, {error, {read_only_mode, L#log.name}}, S);
 	L when L#log.status == ok ->
-	    Res = do_sync(L),
+	    Res = (catch do_sync(L)),
 	    reply(From, Res, state_err(S, Res));
 	L when L#log.status == {blocked, false} ->
 	    reply(From, {error, {blocked_log, L#log.name}}, S);
@@ -519,7 +539,7 @@ handle({From, {chunk, Pos, B, N}},  S) ->
 	    reply(From, R, S);
 	L when L#log.status == {blocked, false} ->
 	    reply(From, {error, {blocked_log, L#log.name}}, S);
-	L ->
+	_L ->
 	    loop(S#state{queue = [{From, {chunk, Pos, B, N}} | S#state.queue]})
     end;
 
@@ -707,7 +727,7 @@ handle({From, {internal_open, A}}, S) ->
 handle({From, close}, S) ->
     case do_close(From, S) of
 	{stop, S1} ->
-	    do_exit(S, From, ok, normal);
+	    do_exit(S1, From, ok, normal);
 	{continue, S1} ->
 	    reply(From, ok, S1)
     end;
@@ -814,6 +834,7 @@ do_exit(S, From, Message, Reason) ->
     do_stop(S),    
     disk_log_server:close(self()),
     From ! {disk_log, self(), Message},
+    ?PROFILE(ep:done()),
     exit(Reason).
 
 do_fast_exit(S, From, Message, Reason) ->
@@ -935,6 +956,18 @@ mk_head({head, Term}, internal) -> {ok, term_to_binary(Term)};
 mk_head({head, Bytes}, external) -> {ok, check_bytes(Bytes)};
 mk_head(H, _) -> H.
 
+terms2bins([T | Ts]) ->
+    [term_to_binary(T) | terms2bins(Ts)];
+terms2bins([]) ->
+    [].
+
+check_bytes_list([B | Bs]) when binary(B) ->
+    [B | check_bytes_list(Bs)];
+check_bytes_list([B | Bs]) ->
+    [list_to_binary(B) | check_bytes_list(Bs)];
+check_bytes_list([]) ->
+    [].
+
 check_bytes(Binary) when binary(Binary) ->     
     Binary;
 check_bytes(Bytes) -> 
@@ -945,19 +978,20 @@ check_bytes(Bytes) ->
 %%-----------------------------------------------------------------
 %% -> ok | {big, CurSize} | throw(Error)
 do_change_size(L, NewSize) when L#log.type == halt ->
-    Fd = (L#log.extra)#halt.fd,
-    {ok, CurSize} = file:position(Fd, cur),
+    Halt = L#log.extra,
+    CurB = Halt#halt.curB,
+    NewLog = L#log{extra = Halt#halt{size = NewSize}},
     if
 	NewSize == infinity ->
 	    erase(is_full),
-	    put(log, L#log{extra = #halt{fd = Fd, size = NewSize}}),
+	    put(log, NewLog),
 	    ok;
-	CurSize =< NewSize ->
+	CurB =< NewSize ->
 	    erase(is_full),
-	    put(log, L#log{extra = #halt{fd = Fd, size = NewSize}}),
+	    put(log, NewLog),
 	    ok;
 	true ->
-	    {big, CurSize}
+	    {big, CurB}
     end;
 do_change_size(L, NewSize) when L#log.type == wrap ->
     {ok, Handle} = disk_log_1:change_size_wrap(L#log.extra, NewSize),
@@ -1025,13 +1059,14 @@ do_inc_wrap_file(L) ->
 do_open2(L, #arg{type = halt, format = internal, name = Name, 
 		 file = FName, repair = Repair, size = Size, mode = Mode}) ->
     case catch disk_log_1:int_open(FName, Repair, Mode, L#log.head) of
-	{ok, {_Alloc, Fd, {NoItems, _NoBytes}}} ->
-	    {ok, {ok, Name}, L#log{format_type = halt_int, 
-				   extra = #halt{fd = Fd, size =Size}}, 
+	{ok, {_Alloc, FdC, {NoItems, _NoBytes}, FileSize}} ->
+            Halt = #halt{fdc = FdC, curB = FileSize, size =Size},
+	    {ok, {ok, Name}, L#log{format_type = halt_int, extra = Halt}, 
 	     NoItems};
-	{repaired, Fd, Rec, Bad} ->
+	{repaired, FdC, Rec, Bad, FileSize} ->
+            Halt = #halt{fdc = FdC, curB = FileSize, size = Size},
 	    {ok, {repaired, Name, {recovered, Rec}, {badbytes, Bad}},
-	     L#log{format_type = halt_int, extra = #halt{fd = Fd, size =Size}},
+	     L#log{format_type = halt_int, extra = Halt},
 	     Rec};
 	Error ->
 	    Error
@@ -1053,10 +1088,10 @@ do_open2(L, #arg{type = wrap, format = internal, size = {MaxB, MaxF},
 do_open2(L, #arg{type = halt, format = external, file = FName, name = Name,
 		 size = Size, repair = Repair, mode = Mode}) ->
     case catch disk_log_1:ext_open(FName, Repair, Mode, L#log.head) of
-	{ok, {_Alloc, Fd, {NoItems, _NoBytes}}} ->
-	    {ok, {ok, Name}, L#log{format_type = halt_ext, 
-				   format = external,
-				   extra = #halt{fd = Fd, size =Size}}, 
+	{ok, {_Alloc, FdC, {NoItems, _NoBytes}, FileSize}} ->
+            Halt = #halt{fdc = FdC, curB = FileSize, size = Size},
+	    {ok, {ok, Name}, 
+             L#log{format_type = halt_ext, format = external, extra = Halt}, 
 	     NoItems};
 	Error ->
 	    Error
@@ -1089,12 +1124,12 @@ close_disk_log(L) ->
 %% -> closed | throw(Error)
 close_disk_log2(L) ->
     case L of
-	#log{format_type = halt_int, extra = Halt} ->
-	    disk_log_1:close(Halt#halt.fd, L#log.filename);
+	#log{format_type = halt_int, mode = Mode, extra = Halt} ->
+	    disk_log_1:close(Halt#halt.fdc, L#log.filename, Mode);
 	#log{format_type = wrap_int, mode = Mode, extra = Handle} ->
 	    disk_log_1:mf_int_close(Handle, Mode);
 	#log{format_type = halt_ext, extra = Halt} ->
-	    file:close(Halt#halt.fd);
+	    disk_log_1:fclose(Halt#halt.fdc, L#log.filename);
 	#log{format_type = wrap_ext, mode = Mode, extra = Handle} ->
 	    disk_log_1:mf_ext_close(Handle, Mode)
     end,
@@ -1280,28 +1315,43 @@ do_unblock(L, S) ->
 send_self(L) ->
     lists:foreach(fun(M) -> self() ! M end, lists:reverse(L)).
 
-%% -> integer() | {error, Error, integer()} | FatalError
-do_log(#log{format_type = halt_int, filename = FileName, extra = Halt}, B)
-  when Halt#halt.size == infinity ->
-    log_bin(Halt#halt.fd, FileName, B);
-do_log(L, B) when L#log.format_type == halt_int ->
-    #log{name = Name, filename = FileName, extra = Halt} = L,
-    #halt{fd = Fd, size = Sz} = Halt,
-    {ok, CurSize} = file:position(Fd, cur),
-    BSize = sz(B),
+%% -> integer() | {error, Error, integer()}
+do_log(L, B) when binary(B) ->
+    do_log1(L, [B]);
+do_log(L, B) ->
+    do_log1(L, B).
+
+do_log1(L, B) when L#log.type == halt ->
+    #log{format = Format, name = Name, filename = FileName, extra = Halt} = L,
+    #halt{fdc = FdC, curB = CurSize, size = Sz} = Halt,
+    {Bs, BSize} = 
+        case Format of
+            external ->
+                {B, xsz(B, 0)};
+            internal ->
+                disk_log_1:logl(B)
+        end,
     IsFull = get(is_full),
     if
-	IsFull == true ->
-	    {error, {error, {full, Name}}, 0};
-	CurSize + BSize =< Sz ->
-	    log_bin(Fd, FileName, B);
-	true ->
-	    put(is_full, true),
-	    notify_owners(full),
-	    {error, {error, {full, Name}}, 0}
+        IsFull == true ->
+            {error, {error, {full, Name}}, 0};
+        Sz == infinity; CurSize + BSize =< Sz ->
+            case catch disk_log_1:fwrite(FdC, FileName, Bs, BSize) of
+                {ok, NewFdC} ->
+                    NCurB = Halt#halt.curB + BSize,
+                    NewHalt = Halt#halt{fdc = NewFdC, curB = NCurB},
+                    put(log, L#log{extra = NewHalt}),
+                    length(B);
+                Error ->
+                    Error
+            end;
+        true ->
+            put(is_full, true),
+            notify_owners(full),
+            {error, {error, {full, Name}}, 0}
     end;
-do_log(L, B) when L#log.format_type == wrap_int ->
-    case catch disk_log_1:mf_int_log(L#log.extra, B, L#log.head) of
+do_log1(L, B) when L#log.format_type == wrap_int ->
+    case disk_log_1:mf_int_log(L#log.extra, B, L#log.head) of
 	{ok, Handle, Logged, Lost} ->
 	    notify_owners({wrap, Lost}),
 	    put(log, L#log{extra = Handle}),
@@ -1311,32 +1361,9 @@ do_log(L, B) when L#log.format_type == wrap_int ->
 	    Logged;
 	{error, Error, Handle, Logged, Lost} ->
 	    put(log, L#log{extra = Handle}),
-	    {error, Error, Logged - Lost};
-	FatalError ->
-	    FatalError
+	    {error, Error, Logged - Lost}
     end;
-do_log(L, B) when L#log.format_type == halt_ext ->
-    #log{filename = FName, extra = Halt} = L,
-    #halt{fd = Fd, size = Sz} = Halt,
-    {ok, CurSize} = file:position(Fd, cur),
-    BSize = xsz(B),
-    IsFull = get(is_full),
-    if
-	IsFull == true ->
-	    {error, {error, {full, L#log.name}}, 0};
-	CurSize + BSize =< Sz ->
-	    if
-		binary(B) ->
-		    write_bins([B], Fd, FName, 0);
-		true ->
-		    write_bins(B, Fd, FName, 0)
-	    end;
-	true ->
-	    put(is_full, true),
-	    notify_owners(full),
-	    {error, {error, {full, L#log.name}}, 0}
-    end;
-do_log(L, B) when L#log.format_type == wrap_ext ->
+do_log1(L, B) when L#log.format_type == wrap_ext ->
     case disk_log_1:mf_ext_log(L#log.extra, B, L#log.head) of
 	{ok, Handle, Logged, Lost} ->
 	    notify_owners({wrap, Lost}),
@@ -1350,54 +1377,50 @@ do_log(L, B) when L#log.format_type == wrap_ext ->
 	    {error, Error, Logged - Lost}
     end.
 
-log_bin(Fd, FileName, B) ->
-    case catch disk_log_1:log(Fd, FileName, B) of
-	N when integer(N) ->
-	    N;
-	Error ->
-	    {error, Error, 0}
-    end.
-
-write_bins([], _Fd, _FName, N) -> N;
-write_bins([B|Bs], Fd, FName, N) ->
-    case file:write(Fd, B) of
-	ok    -> write_bins(Bs, Fd, FName, N + 1);
-	{error, Error} -> {error, {file_error, FName, Error}}
-    end.
-
-sz(B) when binary(B) -> size(B) + ?HEADERSZ;
-sz([B|T]) when binary(B) -> size(B) + ?HEADERSZ + sz(T);
-sz([]) -> 0.
+xsz([B|T], Sz) -> xsz(T, size(B) + Sz);
+xsz([], Sz) -> Sz.
 	
-xsz(B) when binary(B) -> size(B);
-xsz([B|T]) when binary(B) -> size(B) + xsz(T);
-xsz([]) -> 0.
-	
-do_sync(#log{format_type = halt_int, extra = Halt}) ->
-    disk_log_1:sync(Halt#halt.fd);
-do_sync(#log{format_type = wrap_int, extra = Handle}) ->
-    disk_log_1:mf_int_sync(Handle);
-do_sync(#log{format_type = halt_ext, extra = Halt}) ->
-    file:sync(Halt#halt.fd);
-do_sync(#log{format_type = wrap_ext, extra = Handle}) ->
-    disk_log_1:mf_ext_sync(Handle).
+%% -> ok | throw(FileError)
+do_write_cache(#log{filename = FName, type = halt, extra = Halt} = Log) ->
+    {ok, NewFdC} = disk_log_1:write_cache(Halt#halt.fdc, FName),
+    put(log, Log#log{extra = Halt#halt{fdc = NewFdC}}),
+    ok;
+do_write_cache(#log{type = wrap, extra = Handle} = Log) ->
+    {ok, NewHandle} = disk_log_1:mf_write_cache(Handle),
+    put(log, Log#log{extra = NewHandle}),
+    ok.
+
+%% -> ok | throw(FileError)
+do_sync(#log{filename = FName, type = halt, extra = Halt} = Log) ->
+    {ok, NewFdC} = disk_log_1:sync(Halt#halt.fdc, FName),
+    put(log, Log#log{extra = Halt#halt{fdc = NewFdC}}),
+    ok;
+do_sync(#log{type = wrap, extra = Handle} = Log) ->
+    {ok, NewHandle} = disk_log_1:mf_sync(Handle),
+    put(log, Log#log{extra = NewHandle}),
+    ok.
 
 %% -> ok | Error | throw(Error)
-do_trunc(L, Head) when L#log.format_type == halt_int ->
-    Fd = (L#log.extra)#halt.fd,
-    disk_log_1:truncate(Fd, L#log.filename, Head);
-do_trunc(L, Head) when L#log.format_type == halt_ext ->
-    Fd = (L#log.extra)#halt.fd,
-    file:position(Fd, bof),
-    file:truncate(Fd),
-    case Head of
-	{ok, H} ->
-	    case file:write(Fd, H) of
-		ok -> ok;
-		{error, Error} -> {error, {file_error, L#log.filename, Error}}
-	    end;
-	none -> ok
-    end;
+do_trunc(L, Head) when L#log.type == halt ->
+    #log{filename = FName, extra = Halt} = L,
+    FdC = Halt#halt.fdc,
+    {ok, FdC2} = 
+        case L#log.format of
+            internal ->
+                disk_log_1:truncate(FdC, FName, Head);
+            external ->
+                {ok, NFdC} = disk_log_1:truncate_at(FdC, FName, bof),
+                case Head of
+                    {ok, H} ->
+                        disk_log_1:fwrite(NFdC, FName, H, size(H));
+                    none -> 
+                        {ok, NFdC}
+                end
+        end,
+    {NewFdC, FileSize} = disk_log_1:position(FdC2, FName, cur),
+    NewHalt = Halt#halt{fdc = NewFdC, curB = FileSize},
+    put(log, L#log{extra = NewHalt}),
+    ok;
 do_trunc(L, Head) when L#log.type == wrap ->
     Handle = L#log.extra,
     OldHead = L#log.head,
@@ -1414,23 +1437,30 @@ trunc_wrap(L) ->
     case do_inc_wrap_file(L) of
 	{ok, L2, _Lost} ->
 	    L2;
-	{error, Error, L2} ->
+	{error, Error, _L2} ->
 	    throw(Error)
     end.
 
-do_chunk(L, Pos, B, N) when L#log.format_type == halt_int ->
-    Fd = (L#log.extra)#halt.fd,
-    case L#log.mode of
-	read_only ->
-	    disk_log_1:chunk_read_only(Fd, L#log.filename, Pos, B, N);
-	read_write ->
-	    disk_log_1:chunk(Fd, L#log.filename, Pos, B, N)
-    end;
+do_chunk(#log{format_type = halt_int, extra = Halt} = L, Pos, B, N) ->
+    FdC = Halt#halt.fdc,
+    {NewFdC, Reply} = 
+        case L#log.mode of
+            read_only ->
+                disk_log_1:chunk_read_only(FdC, L#log.filename, Pos, B, N);
+            read_write ->
+                disk_log_1:chunk(FdC, L#log.filename, Pos, B, N)
+        end,
+    put(log, L#log{extra = Halt#halt{fdc = NewFdC}}),
+    Reply;
 do_chunk(#log{format_type = wrap_int, mode = read_only, 
-	      extra = Handle}, Pos, B, N) ->
-    disk_log_1:mf_int_chunk_read_only(Handle, Pos, B, N);
-do_chunk(#log{format_type = wrap_int, extra = Handle}, Pos, B, N) ->
-    disk_log_1:mf_int_chunk(Handle, Pos, B, N);
+	      extra = Handle} = Log, Pos, B, N) ->
+    {NewHandle, Reply} = disk_log_1:mf_int_chunk_read_only(Handle, Pos, B, N),
+    put(log, Log#log{extra = NewHandle}),
+    Reply;
+do_chunk(#log{format_type = wrap_int, extra = Handle} = Log, Pos, B, N) ->
+    {NewHandle, Reply} = disk_log_1:mf_int_chunk(Handle, Pos, B, N),
+    put(log, Log#log{extra = NewHandle}),
+    Reply;
 do_chunk(Log, _Pos, _B, _) ->
     {error, {format_external, Log#log.name}}.
 
@@ -1515,10 +1545,10 @@ monitor_request(Pid, Req) ->
 	{disk_log, Pid, Reply} ->
 	    erlang:demonitor(Ref),
 	    receive 
-		{'DOWN', Ref, process, Pid, normal} -> 
+		{'DOWN', Ref, process, Pid, _Reason} ->
 		    Reply
 	    after 0 ->
-		    Reply
+                    Reply
 	    end
     end.
 

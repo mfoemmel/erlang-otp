@@ -122,7 +122,9 @@ erl_init(void)
      for (j=0;j<INSTR_SEND_SIZES_MAX;j++) 
 	 instr_send_sizes[j]=0;
  }
+
 #endif
+
 }
 
 /*
@@ -280,6 +282,7 @@ static void usage()
     erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
     erl_printf(CERR, "-T number  set top pad\n");
     erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
+    erl_printf(CERR, "-S         disable sl_alloc\n");
     erl_printf(CERR, "\n\n");
     erl_exit(-1, "");
 }
@@ -296,8 +299,25 @@ erl_start(int argc, char **argv)
     int top_pad = ERTS_DEFAULT_TOP_PAD;
     int mmap_max = ERTS_DEFAULT_MMAP_MAX;
     int mmap_threshold = ERTS_DEFAULT_MMAP_THRESHOLD;
+    int use_sl_alloc = 1;
 
     program = argv[0];
+
+    /* First find out how to initialize sl_alloc. */
+    while (i < argc) {
+      if (strcmp(argv[i], "--") == 0)
+	break;
+      if(strcmp(argv[i], "-S") == 0)
+	use_sl_alloc = 0;
+      i++;
+    }
+
+    i = 1;
+
+    /* Observe that sys_sl_alloc_init() has to be called before any other
+       sl_alloc functions are called and before any threads other than the
+       initial thread have been started. */
+    sys_sl_alloc_init(use_sl_alloc);
 
     erl_sys_init();
     erl_sys_args(&argc, argv);
@@ -305,8 +325,7 @@ erl_start(int argc, char **argv)
     erts_init_utils();
     sys_alloc_opt(SYS_ALLOC_OPT_TRIM_THRESHOLD, trim_threshold);
     sys_alloc_opt(SYS_ALLOC_OPT_TOP_PAD, top_pad);
-    sys_alloc_opt(SYS_ALLOC_OPT_MMAP_THRESHOLD, mmap_threshold);
-    /* Temporarily disable use of mmap during initialization. */
+    /* Permanently disable use of mmap for sys_alloc (malloc). */
     sys_alloc_opt(SYS_ALLOC_OPT_MMAP_MAX, 0);
 
     tmpenvbuf = getenv(ERL_MAX_ETS_TABLES_ENV);
@@ -542,6 +561,10 @@ erl_start(int argc, char **argv)
 	  break;
         }
 
+	case 'S':
+	  /* Already handled (disable sl_alloc). */
+	  break;
+
 	case 'n':   /* XXX obsolete */
 	    break;
 	case 'c':
@@ -566,9 +589,8 @@ erl_start(int argc, char **argv)
     erl_init();
     sys_alloc_opt(SYS_ALLOC_OPT_TRIM_THRESHOLD, trim_threshold);
     sys_alloc_opt(SYS_ALLOC_OPT_TOP_PAD, top_pad);
-    sys_alloc_opt(SYS_ALLOC_OPT_MMAP_THRESHOLD, mmap_threshold);
-    if(!sys_alloc_opt(SYS_ALLOC_OPT_MMAP_MAX, mmap_max))
-      sys_alloc_opt(SYS_ALLOC_OPT_MMAP_MAX, ERTS_DEFAULT_MMAP_MAX);
+    sys_sl_alloc_opt(SYS_SL_ALLOC_OPT_MMAP_THRESHOLD, mmap_threshold);
+    sys_sl_alloc_opt(SYS_SL_ALLOC_OPT_MMAP_MAX, mmap_max);
     load_preloaded();
     erl_first_process("otp_ring0", NULL, 0, boot_argc, boot_argv);
     erl_sys_schedule_loop();

@@ -1,6 +1,23 @@
 {"%VSN%",
  [
+  {"1.0.3",
+   [
+        {update, 'CosNotifyChannelAdmin_EventChannel_impl', soft, soft_purge, soft_purge, []},
+        {update, 'CosNotifyChannelAdmin_SupplierAdmin_impl', soft, soft_purge, soft_purge, []},
+        {update, 'PusherSupplier_impl', soft, soft_purge, soft_purge, []},
+        {update, 'PullerSupplier_impl', soft, soft_purge, soft_purge, []}
+    ]
+  }
  ],
  [
+  {"1.0.3",
+   [
+        {update, 'CosNotifyChannelAdmin_EventChannel_impl', soft, soft_purge, soft_purge, []},
+        {update, 'CosNotifyChannelAdmin_SupplierAdmin_impl', soft, soft_purge, soft_purge, []},
+        {update, 'PusherSupplier_impl', soft, soft_purge, soft_purge, []},
+        {update, 'PullerSupplier_impl', soft, soft_purge, soft_purge, []}
+   ]
+  }
  ]
 }.
+

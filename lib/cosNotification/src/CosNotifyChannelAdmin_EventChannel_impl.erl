@@ -109,12 +109,12 @@
 %% Hence, we will store SupplierAdmins and ConsumerAdmins differently. SupplierAdmins
 %% we store in our ets-table while the ConsumerAdmins will be stored on the local
 %% State.
-
+ 
 %% Data structures selectors
--define(get_supplierAdmins(S),      [S#state.defConsumerAdmin|
+-define(get_supplierAdmins(S),      [S#state.defSupplierAdmin|
 				     lists:flatten(ets:match(S#state.etsR, 
 							     {'_','$1','_'}))]).
--define(get_consumerAdmins(S),      [{0, S#state.defSupplierAdmin,S#state.defSupplierAdminPid}
+-define(get_consumerAdmins(S),      [{0, S#state.defConsumerAdmin,S#state.defConsumerAdminPid}
 				     |S#state.myConsumers]).
 -define(get_allAdmins(S),           [S#state.defSupplierAdmin, 
 				     S#state.defConsumerAdmin|
@@ -175,7 +175,7 @@
 %% MISC
 -define(is_UndefDefConsAdm(S),      S#state.defConsumerAdmin == undefined).
 -define(is_UndefDefSuppAdm(S),      S#state.defSupplierAdmin == undefined).
--define(is_UndefDefFilterFac(S),    S#state.defSupplierAdmin == undefined).
+-define(is_UndefDefFilterFac(S),    S#state.defFilterFac == undefined).
 -define(is_PersistentConnection(S),
 	?not_GetConnectionReliability((S#state.qosLocal)) == ?not_Persistent).
 -define(is_PersistentEvent(S),
@@ -192,7 +192,7 @@ code_change(OldVsn, State, Extra) ->
     {ok, State}.
 
 handle_info(Info, State) ->
-    ?debug_print("INFO: ~p~n", [Info]),
+    ?DBG("INFO: ~p~n", [Info]),
     case Info of
         {'EXIT', Pid, Reason} when ?get_defConsumerAdmPid(State) == Pid ->
 	    {noreply, ?set_defConsumerAdm(State, undefined, undefined)};
@@ -203,7 +203,7 @@ handle_info(Info, State) ->
         {'EXIT', Pid, normal} ->
             {noreply, ?del_AdminPid(State, Pid)};
         Other ->
-            ?debug_print("TERMINATED: ~p~n",[Other]),
+            ?DBG("TERMINATED: ~p~n",[Other]),
             {noreply, State}
     end.
 
@@ -215,7 +215,7 @@ handle_info(Info, State) ->
 init([MyFac, InitQoS, InitAdmin, LocalQoS, [MaxQ, MaxC, MaxS|_], Options]) ->
     process_flag(trap_exit, true),
     
-    ?debug_print("CHANNEL INIT STATE:~n~p~n~p~n~p  ~p  ~p  ~p~n~p~n",
+    ?DBG("CHANNEL INIT STATE:~n~p~n~p~n~p  ~p  ~p  ~p~n~p~n",
 		 [InitQoS, InitAdmin, LocalQoS,MaxQ, MaxC, MaxS, Options]),
 
     %% Both default Admin:s have the unique id 0 (OMG spec, 98-11-01, 
@@ -256,15 +256,18 @@ terminate(Reason, State) ->
   when ?is_UndefDefConsAdm(State) ->
     Op = 'CosNotification_Common':get_option(filterOp, ?get_Options(State), 
 					     ?not_DEFAULT_SETTINGS),
-    case 'CosNotifyChannelAdmin_ConsumerAdmin':oe_create_link([0, OE_THIS,
-							       self(), Op, 
-							       ?get_GlobalQoS(State),
-							       ?get_LocalQoS(State),
-							       ?get_Options(State)],
-							      [{sup_child, true}]) of
+    case catch 'CosNotifyChannelAdmin_ConsumerAdmin':oe_create_link([0, OE_THIS,
+								     self(), Op, 
+								     ?get_GlobalQoS(State),
+								     ?get_LocalQoS(State),
+								     ?get_Options(State)],
+								    [{sup_child, true}]) of
 	{ok, Pid, DefConAdm} ->
 	    {reply, DefConAdm, ?set_defConsumerAdm(State, DefConAdm, Pid)};
-	_->
+	What ->
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:_get_default_consumer_admin();
+Unable to create: CosNotifyChannelAdmin_ConsumerAdmin
+Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 '_get_default_consumer_admin'(OE_THIS, OE_FROM, State) ->
@@ -279,15 +282,18 @@ terminate(Reason, State) ->
   when ?is_UndefDefSuppAdm(State) ->
     Op = 'CosNotification_Common':get_option(filterOp, ?get_Options(State), 
 					     ?not_DEFAULT_SETTINGS),
-    case 'CosNotifyChannelAdmin_SupplierAdmin':oe_create_link([0, OE_THIS,
-							       self(), Op, 
-							       ?get_GlobalQoS(State),
-							       ?get_LocalQoS(State),
-							       ?get_Options(State)],
-							      [{sup_child, true}]) of
+    case catch 'CosNotifyChannelAdmin_SupplierAdmin':oe_create_link([0, OE_THIS,
+								     self(), Op, 
+								     ?get_GlobalQoS(State),
+								     ?get_LocalQoS(State),
+								     ?get_Options(State)],
+								    [{sup_child, true}]) of
 	{ok, Pid, DefSupAdm} ->
 	    {reply, DefSupAdm, ?set_defSupplierAdm(State, DefSupAdm, Pid)};
-	_->
+	What ->
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:_get_default_supplier_admin();
+Unable to create: CosNotifyChannelAdmin_SupplierAdmin
+Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 '_get_default_supplier_admin'(OE_THIS, OE_FROM, State) ->
@@ -300,10 +306,13 @@ terminate(Reason, State) ->
 %%----------------------------------------------------------
 '_get_default_filter_factory'(OE_THIS, OE_FROM, State) 
   when ?is_UndefDefFilterFac(State) ->
-    case 'CosNotifyFilter_FilterFactory':oe_create_link([], [{sup_child, true}]) of
+    case catch 'CosNotifyFilter_FilterFactory':oe_create_link([], [{sup_child, true}]) of
 	{ok, Pid, DefFiFac} ->
 	    {reply, DefFiFac, ?set_defFilterFac(State, DefFiFac, Pid)};
-	_ ->
+	What ->
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:_get_default_filter_factory();
+Unable to create: CosNotifyChannelAdmin_FilterFactory
+Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 '_get_default_filter_factory'(OE_THIS, OE_FROM, State) ->
@@ -323,18 +332,21 @@ terminate(Reason, State) ->
 new_for_consumers(OE_THIS, OE_FROM, State, Op) ->
     is_admin_limit_reached(?get_MaxConsumers(State), ?get_consumerAmount(State)),
     AdminId = ?new_Id(State),
-    case 'CosNotifyChannelAdmin_ConsumerAdmin':oe_create_link([AdminId, OE_THIS, 
-							       self(), Op, 
-							       ?get_GlobalQoS(State),
-							       ?get_LocalQoS(State),
-							       ?get_Options(State)],
-							      [{sup_child, true}]) of
+    case catch 'CosNotifyChannelAdmin_ConsumerAdmin':oe_create_link([AdminId, OE_THIS, 
+								     self(), Op, 
+								     ?get_GlobalQoS(State),
+								     ?get_LocalQoS(State),
+								     ?get_Options(State)],
+								    [{sup_child, true}]) of
 	{ok, Pid, AdminCo} ->
 	    %% Due to different storage, adding a new consumer is NOT done in the
 	    %% same way as for suppliers.
 	    NewState = ?add_consumerAdmin(State, AdminId, AdminCo, Pid),
 	    {reply, {AdminCo, AdminId}, ?set_IdCounter(NewState, AdminId)};
-	_ ->
+	What ->
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:nef_for_consumers();
+Unable to create: CosNotifyChannelAdmin_ConsumerAdmin
+Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -349,18 +361,21 @@ new_for_consumers(OE_THIS, OE_FROM, State, Op) ->
 new_for_suppliers(OE_THIS, OE_FROM, State, Op) ->
     is_admin_limit_reached(?get_MaxSuppliers(State), ?get_supplierAmount(State)),
     AdminId = ?new_Id(State),
-    case 'CosNotifyChannelAdmin_SupplierAdmin':oe_create_link([AdminId, OE_THIS, 
-							       self(), Op, 
-							       ?get_GlobalQoS(State),
-							       ?get_LocalQoS(State),
-							       ?get_Options(State)],
-							      [{sup_child, true}]) of
+    case catch 'CosNotifyChannelAdmin_SupplierAdmin':oe_create_link([AdminId, OE_THIS, 
+								     self(), Op, 
+								     ?get_GlobalQoS(State),
+								     ?get_LocalQoS(State),
+								     ?get_Options(State)],
+								    [{sup_child, true}]) of
 	{ok, Pid, AdminSu} ->
 	    %% Due to different storage, adding a new supplier is NOT done in the
 	    %% same way as for consumers.
 	    ?add_supplierAdmin(State, AdminId, AdminSu, Pid),
 	    {reply, {AdminSu, AdminId}, ?set_IdCounter(State, AdminId)};
-	_ ->
+	What ->
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:new_for_suppliers();
+Unable to create: CosNotifyChannelAdmin_SupplierAdmin
+Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -372,22 +387,27 @@ new_for_suppliers(OE_THIS, OE_FROM, State, Op) ->
 get_consumeradmin(OE_THIS, OE_FROM, State, 0) when ?is_UndefDefConsAdm(State) ->
     Op = 'CosNotification_Common':get_option(filterOp, ?get_Options(State), 
 					     ?not_DEFAULT_SETTINGS),
-    case 'CosNotifyChannelAdmin_ConsumerAdmin':oe_create_link([0, OE_THIS,
-							       self(), Op, 
-							       ?get_GlobalQoS(State),
-							       ?get_LocalQoS(State),
-							       ?get_Options(State)],
-							      [{sup_child, true}]) of
+    case catch 'CosNotifyChannelAdmin_ConsumerAdmin':oe_create_link([0, OE_THIS,
+								     self(), Op, 
+								     ?get_GlobalQoS(State),
+								     ?get_LocalQoS(State),
+								     ?get_Options(State)],
+								    [{sup_child, true}]) of
 	{ok, Pid, DefConAdm} ->
 	    {reply, DefConAdm, ?set_defConsumerAdm(State, DefConAdm, Pid)};
-	_->
+	What ->
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:get_consumer_admin();
+Unable to create: CosNotifyChannelAdmin_ConsumerAdmin
+Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;	    
 get_consumeradmin(OE_THIS, OE_FROM, State, 0) ->
     {reply, ?get_defConsumerAdm(State), State};
 get_consumeradmin(OE_THIS, OE_FROM, State, AdminId) when integer(AdminId) ->
     {reply, ?get_consumerAdmin(State, AdminId), State};
-get_consumeradmin(_, _, _, _) ->
+get_consumeradmin(_, _, _, What) ->
+    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:get_consumeradmin(~p);
+Not an integer", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{minor=900, completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
@@ -398,22 +418,27 @@ get_consumeradmin(_, _, _, _) ->
 get_supplieradmin(OE_THIS, OE_FROM, State, 0) when ?is_UndefDefSuppAdm(State) ->
     Op = 'CosNotification_Common':get_option(filterOp, ?get_Options(State), 
 					     ?not_DEFAULT_SETTINGS),
-    case 'CosNotifyChannelAdmin_SupplierAdmin':oe_create_link([0, OE_THIS,
-							       self(), Op, 
-							       ?get_GlobalQoS(State),
-							       ?get_LocalQoS(State),
-							       ?get_Options(State)],
-							      [{sup_child, true}]) of
+    case catch 'CosNotifyChannelAdmin_SupplierAdmin':oe_create_link([0, OE_THIS,
+								     self(), Op, 
+								     ?get_GlobalQoS(State),
+								     ?get_LocalQoS(State),
+								     ?get_Options(State)],
+								    [{sup_child, true}]) of
 	{ok, Pid, DefSupAdm} ->
 	    {reply, DefSupAdm, ?set_defSupplierAdm(State, DefSupAdm, Pid)};
-	_->
+	What ->
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:get_supplieradmin();
+Unable to create: CosNotifyChannelAdmin_SupplierAdmin
+Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 get_supplieradmin(OE_THIS, OE_FROM, State, 0) ->
     {reply, ?get_defSupplierAdm(State), State};
 get_supplieradmin(OE_THIS, OE_FROM, State, AdminId) when integer(AdminId) ->
     {reply, ?get_supplierAdmin(State, AdminId), State};
-get_supplieradmin(_, _, _, _) ->
+get_supplieradmin(_, _, _, What) ->
+    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:get_supplieradmin(~p);
+Not an integer", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{minor=901, completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
@@ -499,18 +524,21 @@ set_admin(OE_THIS, OE_FROM, State, Admin) ->
 for_consumers(OE_THIS, OE_FROM, State) ->
     is_admin_limit_reached(?get_MaxConsumers(State), ?get_consumerAmount(State)),
     AdminId = ?new_Id(State),
-    case 'CosNotifyChannelAdmin_ConsumerAdmin':oe_create_link([AdminId, OE_THIS, 
-							       self(), 'AND_OP', 
-							       ?get_GlobalQoS(State),
-							       ?get_LocalQoS(State),
-							       ?get_Options(State)],
-							      [{sup_child, true}]) of
+    case catch 'CosNotifyChannelAdmin_ConsumerAdmin':oe_create_link([AdminId, OE_THIS, 
+								     self(), 'AND_OP', 
+								     ?get_GlobalQoS(State),
+								     ?get_LocalQoS(State),
+								     ?get_Options(State)],
+								    [{sup_child, true}]) of
 	{ok, Pid, AdminCo} ->
 	    %% Due to different storage, adding a new consumer is NOT done in the
 	    %% same way as for suppliers.
 	    NewState = ?add_consumerAdmin(State, AdminId, AdminCo, Pid),
 	    {reply, AdminCo, ?set_IdCounter(NewState, AdminId)};
-	_ ->
+	What ->
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:for_consumers();
+Unable to create: CosNotifyChannelAdmin_ConsumerAdmin
+Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -522,18 +550,21 @@ for_consumers(OE_THIS, OE_FROM, State) ->
 for_suppliers(OE_THIS, OE_FROM, State) ->
     is_admin_limit_reached(?get_MaxSuppliers(State), ?get_supplierAmount(State)),
     AdminId = ?new_Id(State),
-    case 'CosNotifyChannelAdmin_SupplierAdmin':oe_create_link([AdminId, OE_THIS, 
-							       self(), 'AND_OP', 
-							       ?get_GlobalQoS(State),
-							       ?get_LocalQoS(State),
-							       ?get_Options(State)],
-							      [{sup_child, true}]) of
+    case catch 'CosNotifyChannelAdmin_SupplierAdmin':oe_create_link([AdminId, OE_THIS, 
+								     self(), 'AND_OP', 
+								     ?get_GlobalQoS(State),
+								     ?get_LocalQoS(State),
+								     ?get_Options(State)],
+								    [{sup_child, true}]) of
 	{ok, Pid, AdminSu} ->
 	    %% Due to different storage, adding a new supplier is NOT done in the
 	    %% same way as for consumers.
 	    ?add_supplierAdmin(State, AdminId, AdminSu, Pid),
 	    {reply, AdminSu, ?set_IdCounter(State, AdminId)};
-	_ ->
+	What ->
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:for_suppliers();
+Unable to create: CosNotifyChannelAdmin_SupplierAdmin
+Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -563,7 +594,9 @@ find_field([{_,O,_}|T], 2, Acc) ->
     find_field(T, 2, [O|Acc]);
 find_field([{_,_,P}|T], 3, Acc) -> 
     find_field(T, 3, [P|Acc]);
-find_field(_, _, _) -> 
+find_field(What, _, _) -> 
+    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:find_field(); 
+Data corrupt: ~p", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
 delete_obj(State, Pid) ->
@@ -616,34 +649,42 @@ forward(Type, [{_,undefined,_}|T], State, Event, Status) ->
 forward(any, [{_,H,_}|T], State, Event, Status) ->
     case catch oe_CosNotificationComm_Event:callAny(H, Event, Status) of
 	ok ->
-	    ?debug_print("CHANNEL FORWARD ANY: ~p~n",[Event]),
+	    ?DBG("CHANNEL FORWARD ANY: ~p~n",[Event]),
 	    forward(any, T, State, Event, Status);
 	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
-	    ?debug_print("ADMIN NO LONGER EXIST; DROPPING: ~p~n", [Event]),
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:forward();
+Admin no longer exists; dropping it: ~p", [?LINE, H], ?DEBUG_LEVEL),
 	    NewState = ?del_consumerAdminRef(State,H),
 	    forward(any, T, NewState, Event, Status);
 	R when ?is_PersistentConnection(State) ->
-	    ?debug_print("ADMIN REPLIED INCORRECTLY: ~p~n", [R]),
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:forward();
+Admin behaves badly: ~p/~p", [?LINE, R, H], ?DEBUG_LEVEL),
 	    forward(any, T, State, Event, Status);
 	R ->
-	    ?debug_print("ADMIN REPLIED INCORRECTLY: ~p~n", [R]),
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:forward();
+Admin behaves badly: ~p
+Dropping it: ~p", [?LINE, R, H], ?DEBUG_LEVEL),
 	    NewState = ?del_consumerAdminRef(State, H),
 	    forward(any, T, NewState, Event, Status)
     end;
 forward(seq, [{_,H,_}|T], State, Event, Status) ->
     case catch oe_CosNotificationComm_Event:callSeq(H, Event, Status) of
 	ok ->
-	    ?debug_print("CHANNEL FORWARD SEQUENCE: ~p~n",[Event]),
+	    ?DBG("CHANNEL FORWARD SEQUENCE: ~p~n",[Event]),
 	    forward(seq, T, State, Event, Status);
 	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
-	    ?debug_print("ADMIN NO LONGER EXIST; DROPPING: ~p~n", [Event]),
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:forward();
+Admin no longer exists; dropping it: ~p", [?LINE, H], ?DEBUG_LEVEL),
 	    NewState = ?del_consumerAdminRef(State,H),
 	    forward(seq, T, NewState, Event, Status);
 	R when ?is_PersistentConnection(State) ->
-	    ?debug_print("ADMIN REPLIED INCORRECTLY: ~p~n", [R]),
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:forward();
+Admin behaves badly: ~p/~p", [?LINE, R, H], ?DEBUG_LEVEL),
 	    forward(seq, T, State, Event, Status);
 	R ->
-	    ?debug_print("ADMIN REPLIED INCORRECTLY: ~p~n", [R]),
+	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:forward();
+Admin behaves badly: ~p
+Dropping it: ~p", [?LINE, R, H], ?DEBUG_LEVEL),
 	    NewState = ?del_consumerAdminRef(State,H),
 	    forward(seq, T, NewState, Event, Status)
     end.

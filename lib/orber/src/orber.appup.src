@@ -1,33 +1,39 @@
 {"%VSN%",
  [
-  {"3.2.5",
+  {"3.2.7",
    [
-        {update, 'corba_object', soft, soft_purge, soft_purge, []},
+        {update, 'orber', soft, soft_purge, soft_purge, []}
+    ]
+  },
+  {"3.2.6",
+   [
         {update, 'orber', soft, soft_purge, soft_purge, []},
-	{apply, {orber, add_table_index_appup, []}},
-        {update, 'orber_ifr_container', soft, soft_purge, soft_purge, [orber]},
-        {update, 'orber_ifr_interfacedef', soft, soft_purge, soft_purge, [orber]},
-        {update, 'orber_ifr_utils', soft, soft_purge, soft_purge, [orber]},
-        {update, 'orber_ifr', soft, soft_purge, soft_purge, [orber_ifr_utils]},
         {update, 'iop_ior', soft, soft_purge, soft_purge, []},
-        {update, 'orber_iiop_pm', soft, soft_purge, soft_purge, [iop_ior]},
-        {update, 'cdr_decode', soft, soft_purge, soft_purge, [iop_ior]}
+        {update, 'orber_initial_references', soft, soft_purge, soft_purge, []},
+        {update, 'corba_object', soft, soft_purge, soft_purge, []},
+        {update, 'orber_cosnaming_utils', soft, soft_purge, soft_purge, []},
+        {update, 'corba', soft, soft_purge, soft_purge, []},
+        {update, 'CosNaming_BindingIterator_impl', soft, soft_purge, soft_purge, []},
+	{update, 'orber_iiop_pm', {advanced, async}, soft_purge, soft_purge, []}
     ]
   }
  ],
  [
-  {"3.2.5",
+  {"3.2.7",
    [
-	{apply, {orber, del_table_index_appup, []}},
+        {update, 'orber', soft, soft_purge, soft_purge, []}
+   ]
+  },
+  {"3.2.6",
+   [
+        {update, 'orber', soft, soft_purge, soft_purge, []},
+        {update, 'iop_ior', soft, soft_purge, soft_purge, []},
+        {update, 'orber_initial_references', soft, soft_purge, soft_purge, []},
         {update, 'corba_object', soft, soft_purge, soft_purge, []},
-        {update, 'orber_ifr', soft, soft_purge, soft_purge, [corba_object]},
-        {update, 'orber_ifr_container', soft, soft_purge, soft_purge, []},
-        {update, 'orber_ifr_interfacedef', soft, soft_purge, soft_purge, []},
-        {update, 'orber_ifr_utils', soft, soft_purge, soft_purge, []},
-        {update, 'orber', soft, soft_purge, soft_purge, [orber_ifr_container, orber_ifr_interfacedef, orber_ifr_utils]},
-        {update, 'orber_iiop_pm', soft, soft_purge, soft_purge, []},
-        {update, 'cdr_decode', soft, soft_purge, soft_purge, []},
-        {update, 'iop_ior', soft, soft_purge, soft_purge, [cdr_decode, orber_iiop_pm]}
+        {update, 'orber_cosnaming_utils', soft, soft_purge, soft_purge, []},
+        {update, 'corba', soft, soft_purge, soft_purge, []},
+        {update, 'CosNaming_BindingIterator_impl', soft, soft_purge, soft_purge, []},
+	{update, 'orber_iiop_pm', {advanced, async}, soft_purge, soft_purge, []}
    ]
   }
  ]

@@ -189,7 +189,8 @@ DLL_SYSOBJS = \
 	$(OBJDIR)\sys_time.obj \
 	$(OBJDIR)\sys_select.obj \
 	$(OBJDIR)\sys_threads.obj \
-	$(OBJDIR)\dosmap.obj
+	$(OBJDIR)\dosmap.obj \
+	$(OBJDIR)\erts_sl_alloc.obj
 
 SYSOBJS = \
 	$(OBJDIR)\sys.obj \
@@ -197,7 +198,8 @@ SYSOBJS = \
 	$(OBJDIR)\sys_time.obj \
 	$(OBJDIR)\sys_select.obj \
 	$(OBJDIR)\sys_threads.obj \
-	$(OBJDIR)\dosmap.obj
+	$(OBJDIR)\dosmap.obj \
+	$(OBJDIR)\erts_sl_alloc.obj
 # Comment in if linking with a DLL instead of LIB.
 
 BEAMOBJS = \

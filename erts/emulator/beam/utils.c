@@ -33,11 +33,7 @@
 #undef M_MMAP_THRESHOLD
 #undef M_MMAP_MAX
 
-#if defined(DLMALLOC_IS_CLIB)
-#include "dlmalloc.h"
-#elif !defined(ELIB_ALLOC_IS_CLIB) && \
-       defined(__GLIBC__) && \
-       defined(HAVE_MALLOC_H)
+#if !defined(ELIB_ALLOC_IS_CLIB) && defined(__GLIBC__) && defined(HAVE_MALLOC_H)
 #include <malloc.h>
 #endif
 
@@ -730,7 +726,7 @@ int send_error_to_logger(Eterm gleader)
     if ((i = cerr_pos) == 0)
 	return 0;
     name = am_error_logger;
-    if ((p = whereis_process(atom_val(name))) == NULL)  {
+    if ((p = whereis_process(name)) == NULL)  {
 	erl_printf(CERR,"%s",tmp_buf);
 	return(0);
     }
@@ -747,9 +743,68 @@ int send_error_to_logger(Eterm gleader)
     return 1;
 }
 
+#ifdef INSTRUMENT
 
-void *safe_alloc(len)
-uint32 len;
+void *safe_alloc_from(int from, unsigned int len)
+{
+    char *buf;
+
+    if ((buf = sys_alloc_from(from, len)) == NULL)
+	erl_exit(1, "Can't allocate %d bytes of memory\n", len);
+    return(buf);
+}
+
+void *safe_realloc_from(int from, void* ptr, unsigned int len)
+{
+    char *buf;
+
+    if ((buf = sys_realloc_from(from, ptr, len)) == NULL)
+	erl_exit(1, "Can't reallocate %d bytes of memory\n", len);
+    return(buf);
+}
+
+void *safe_sl_alloc_from(int from, unsigned int len)
+{
+    char *buf;
+
+    if ((buf = sys_sl_alloc_from(from, len)) == NULL)
+	erl_exit(1, "Can't allocate %d bytes of memory\n", len);
+    return(buf);
+}
+
+void *safe_sl_realloc_from(int from, void* ptr, unsigned int save_size, unsigned int size)
+{
+    char *buf;
+
+    if ((buf = sys_sl_realloc_from(from, ptr, save_size, size)) == NULL)
+	erl_exit(1, "Can't reallocate %d bytes of memory\n", size);
+    return(buf);
+}
+
+void *safe_alloc(unsigned int len)
+{
+  return safe_alloc_from(-1, len);
+}
+
+void *safe_realloc(void *ptr, unsigned int len)
+{
+  return safe_realloc_from(-1, ptr, len);
+}
+
+void *safe_sl_alloc(unsigned int len)
+{
+  return safe_sl_alloc_from(-1, len);
+}
+
+void *safe_sl_realloc(void* ptr, unsigned int save_size, unsigned int size)
+{
+  return safe_sl_realloc_from(-1, ptr, save_size, size);
+}
+
+#else
+
+
+void *safe_alloc(unsigned int len)
 {
     char *buf;
 
@@ -758,9 +813,7 @@ uint32 len;
     return(buf);
 }
 
-
-void *safe_realloc(ptr, len)
-char* ptr; uint32 len;
+void *safe_realloc(void *ptr, unsigned int len)
 {
     char *buf;
 
@@ -769,6 +822,25 @@ char* ptr; uint32 len;
     return(buf);
 }
 
+void *safe_sl_alloc(unsigned int len)
+{
+    char *buf;
+
+    if ((buf = sys_sl_alloc(len)) == NULL)
+	erl_exit(1, "Can't allocate %d bytes of memory\n", len);
+    return(buf);
+}
+
+void *safe_sl_realloc(void* ptr, unsigned int save_size, unsigned int size)
+{
+    char *buf;
+
+    if ((buf = sys_sl_realloc(ptr, save_size, size)) == NULL)
+	erl_exit(1, "Can't reallocate %d bytes of memory\n", size);
+    return(buf);
+}
+
+#endif
 
 /* eq and cmp are written as separate functions a eq is a little faster */
 
@@ -1848,10 +1920,11 @@ typedef struct mem_link
    Most_strict align;
 } mem_link;
 
-int alloc_who;
 static mem_link *mem_anchor;
 static int need_instr_init;
 static erl_mutex_t instr_lck;
+static Uint totally_allocated = 0;
+static Uint maximum_allocated = 0;
 
 static void instr_init(void);
 
@@ -1869,9 +1942,10 @@ void erts_init_utils(void)
     mmap_threshold = -1;
     mmap_max = -1;
 #ifdef INSTRUMENT
-    alloc_who = -1;
     mem_anchor = NULL;
     need_instr_init = 1;
+    totally_allocated = 0;
+    maximum_allocated = 0;
 #endif
 }
 
@@ -1937,14 +2011,26 @@ sys_alloc_stat(SysAllocStat *sasp)
    sasp->mmap_threshold = mmap_threshold;
    sasp->mmap_max       = mmap_max;
 
+#ifdef INSTRUMENT
+   if (need_instr_init)
+       instr_init();
+
+   erts_mutex_lock(instr_lck);
+
+   sasp->total          = totally_allocated;
+   sasp->maximum        = maximum_allocated;
+
+   erts_mutex_unlock(instr_lck);
+#endif
 }
 
 #ifdef INSTRUMENT
 extern Eterm current_process;
 
-static void link_in(l, size)
+static void link_in(l, size, from)
 mem_link *l;
 unsigned size;
+int from;
 {
    l->next = mem_anchor;
    if (mem_anchor != NULL)
@@ -1952,8 +2038,7 @@ unsigned size;
    l->prev = NULL;
    l->size = size;
    if (l->type == -1)
-      l->type = alloc_who;
-   alloc_who = -1;
+      l->type = from;
    mem_anchor = l;
 
    l->p = current_process;
@@ -1975,44 +2060,88 @@ mem_link *l;
       next->prev = prev;
 }
 
-static void instr_init(void)
+static void
+init_instr_lock(void)
 {
-    instr_lck = erts_mutex_sys(1);
-
-    need_instr_init = 0;
+  instr_lck = erts_mutex_sys(1);
 }
 
-void* sys_alloc(size)
-unsigned int size;
+static void
+lock_instr_lock(void)
+{
+  erts_mutex_lock(instr_lck);
+}
+
+static void
+unlock_instr_lock(void)
+{
+  erts_mutex_unlock(instr_lck);
+}
+
+int erts_atfork_sys(void (*prepare)(void),
+		    void (*parent)(void),
+		    void (*child)(void));
+
+#ifndef INIT_MUTEX_IN_CHILD_AT_FORK
+#define INIT_MUTEX_IN_CHILD_AT_FORK 0
+#endif
+
+static void instr_init(void)
+{
+    init_instr_lock();
+    erts_atfork_sys(lock_instr_lock,
+		    unlock_instr_lock,
+#if INIT_MUTEX_IN_CHILD_AT_FORK
+		    init_instr_lock
+#else
+		    unlock_instr_lock
+#endif
+		    );
+    totally_allocated = 0;
+    maximum_allocated = 0;
+    need_instr_init = 0;
+
+}
+
+
+void *
+instr_alloc(int from, void *(*alloc_func)(unsigned int), unsigned int size)
 {
    char *p;
    mem_link *l;
-
    if (need_instr_init)
        instr_init();
 
-   erts_mutex_lock(instr_lck);
-
-   p = sys_alloc2(size + sizeof(mem_link));
+   p = (*alloc_func)(size + sizeof(mem_link));
    if (p == NULL) {
-     erts_mutex_unlock(instr_lck);
      return NULL;
    }
 
+   erts_mutex_lock(instr_lck);
+ 
    l = (mem_link *) p;
    l->type = -1;
-   link_in(l, size);
+   link_in(l, size, from);
+
+   totally_allocated += size;
+   if(totally_allocated >= maximum_allocated)
+     maximum_allocated = totally_allocated;
 
    erts_mutex_unlock(instr_lck);
 
    return (void *) (p + sizeof(mem_link));
 }
 
-void* sys_realloc(ptr, size)
-void* ptr; unsigned int size;
+void *
+instr_realloc(int from,
+	      void *(*realloc_func)(void *, unsigned int, unsigned int),
+	      void *ptr,
+	      unsigned int save_size,
+	      unsigned int size)
 {
    char *p, *new_p;
    mem_link *l;
+   int old_type;
    unsigned old_size;
 
    if (need_instr_init)
@@ -2024,25 +2153,36 @@ void* ptr; unsigned int size;
 
    l = (mem_link *) p;
    old_size = l->size;
+   old_type = l->type;
    link_out(l);
+   erts_mutex_unlock(instr_lck);
 
-   new_p = sys_realloc2(p, size + sizeof(mem_link));
+   new_p = (realloc_func)(p, save_size, size + sizeof(mem_link));
    if (new_p == NULL) {
-     link_in(l, old_size); /* Old memory block is still allocated */
+     erts_mutex_lock(instr_lck);
+     link_in(l, old_size, old_type); /* Old memory block is still allocated */
      erts_mutex_unlock(instr_lck);
      return NULL;
    }
 
+   erts_mutex_lock(instr_lck);
+
    l = (mem_link *) new_p;
-   link_in(l, size);
+   link_in(l, size, from);
+
+   ASSERT(totally_allocated + size >= old_size);
+   totally_allocated += size;
+   totally_allocated -= old_size;
+   if(totally_allocated >= maximum_allocated)
+     maximum_allocated = totally_allocated;
 
    erts_mutex_unlock(instr_lck);
 
    return (void *) (new_p + sizeof(mem_link));
 }
 
-void sys_free(ptr)
-void* ptr;
+void
+instr_free(void (*free_func)(void *), void *ptr)
 {
    mem_link *l;
    char *p;
@@ -2055,11 +2195,58 @@ void* ptr;
    p = ((char *) ptr) - sizeof(mem_link);
 
    l = (mem_link *) p;
+
+   ASSERT(totally_allocated >= l->size);
+   totally_allocated -= l->size;
+
    link_out(l);
 
-   sys_free2(p);
-
    erts_mutex_unlock(instr_lck);
+
+   (*free_func)(p);
+
+}
+
+void *
+sys_alloc(unsigned int size)
+{
+  return instr_alloc(-1, sys_alloc2, size);
+}
+
+void *
+sys_realloc3(void* ptr, unsigned int unused, unsigned int size)
+{
+  return sys_realloc2(ptr, size);
+}
+
+void *
+sys_realloc(void* ptr, unsigned int size)
+{
+  return instr_realloc(-1, sys_realloc3, ptr, 0, size);
+}
+
+void
+sys_free(void* ptr)
+{
+  return instr_free(sys_free2, ptr);
+}
+
+void *
+sys_sl_alloc(unsigned int size)
+{
+  return instr_alloc(-1, sys_sl_alloc2, size);
+}
+
+void *
+sys_sl_realloc(void* ptr, unsigned int save_size, unsigned int size)
+{
+  return instr_realloc(-1, sys_sl_realloc2, ptr, save_size, size);
+}
+
+void
+sys_sl_free(void* ptr)
+{
+  return instr_free(sys_sl_free2, ptr);
 }
 
 static void dump_memory_to_stream(FILE *f)
@@ -2210,32 +2397,6 @@ Process *process;
    return list;
 }
 
-void alloc_from(from)
-int from;
-{
-   if (alloc_who == -1)
-      alloc_who = from;
-}
-
-#else
-
-void* sys_alloc(size)
-unsigned int size;
-{
-   return sys_alloc2(size);
-}
-
-void* sys_realloc(ptr, size)
-void* ptr; unsigned int size;
-{
-   return sys_realloc2(ptr, size);
-}
-
-void sys_free(ptr)
-void* ptr;
-{
-   sys_free2(ptr);
-}
 #endif
 
 #ifdef DEBUG
@@ -2300,3 +2461,4 @@ Process* p; uint32* stop;
     }
 }
 #endif
+

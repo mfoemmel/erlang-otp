@@ -26,9 +26,6 @@
 /* Define to enable the use of sorted blocks when using elib_malloc. */
 #undef ELIB_SORTED_BLOCKS
 
-/* Define to enable use of dlmalloc (a malloc() replacement). */
-#undef ENABLE_DLMALLOC
-
 
 /*
  *  Misc. system calls and include files.
@@ -100,9 +97,6 @@
 /* Define if you have a decl of fread that conflicts with int fread() */
 #undef HAVE_CONFLICTING_FREAD_DECLARATION
 
-/* Define if you have a decl of sbrk that conflicts with "void *sbrk()" */
-#undef HAVE_VOID_PTR_SBRK_CONFLICT
-
 /*
  *  Thread support.
  */
@@ -118,6 +112,13 @@
 
 /* Define if you want to enable child waiter thread */
 #undef ENABLE_CHILD_WAITER_THREAD
+
+/* Define if you have pthread_atfork() (and use pthreads) */
+#undef HAVE_PTHREAD_ATFORK
+
+/* Define if mutexes should be reinitialized (instead of unlocked)
+   in child at fork. */
+#undef INIT_MUTEX_IN_CHILD_AT_FORK
 
 /*
  *  Math definitions.
@@ -152,21 +153,12 @@
 #define INADDR_LOOPBACK (u_long)0x7F000001
 #endif
 
-#ifndef PURIFY /* Don't use elib_malloc or dlmalloc as clib
+#ifndef PURIFY /* Don't use elib_malloc as clib
 		  when purify is used */
 
 /* If elib_malloc is used then elib_alloc_is_clib */
 #ifdef ENABLE_ELIB_MALLOC
 #define ELIB_ALLOC_IS_CLIB
-#endif
-
-/* If dlmalloc is used then dlmalloc is clib */
-#ifdef ENABLE_DLMALLOC
-#define DLMALLOC_IS_CLIB
-#endif
-
-#if defined(ELIB_ALLOC_IS_CLIB) && defined(DLMALLOC_IS_CLIB)
-#error "Both elib_malloc and dlmalloc used as clib"
 #endif
 
 #endif

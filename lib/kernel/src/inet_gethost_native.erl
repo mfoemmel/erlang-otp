@@ -218,15 +218,13 @@ do_start(Sup,C) ->
     case supervisor:start_child(Sup,C) of
 	{ok,_} ->
 	    ok;
-	{error, already_started, _} ->
+	{error, {already_started, _}} ->
 	    ok;
 	{error, already_present} ->
 	    supervisor:terminate_child(Sup, Child),
 	    supervisor:delete_child(Sup, Child),
 	    supervisor:start_child(Sup,C),
-	    ok;
-	Else ->
-	    exit({unexpected_supervisor_response, Else})
+	    ok
     end.
 
 ensure_started() ->

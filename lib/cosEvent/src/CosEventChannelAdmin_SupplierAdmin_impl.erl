@@ -16,88 +16,137 @@
 %% 
 %%     $Id$
 %%
-%%------------------------------------------------------------------------
-%% Module:	CosEventChannelAdin_SupplierAdmin_impl
-%% Description: Implementation of the SupplierAdmin interface that defines
-%%			the first step for connecting suppliers to the event channel.
-%%			This interface used by clients to obtain proxy consumers	
-%% Created: 971001	
-%% Modified:	
-%%------------------------------------------------------------------------
-
+%%----------------------------------------------------------------------
+%% File        : CosEventChannelAdmin_SupplierAdmin_impl.erl
+%% Created     : 21 Mar 2001
+%% Description : 
+%%
+%%----------------------------------------------------------------------
 -module('CosEventChannelAdmin_SupplierAdmin_impl').
+ 
+ 
+%%----------------------------------------------------------------------
+%% Include files
+%%----------------------------------------------------------------------
+-include("cosEventApp.hrl").
 
--include("event_service.hrl").
+ 
+%%----------------------------------------------------------------------
+%% External exports
+%%----------------------------------------------------------------------
+%% Mandatory
+-export([init/1,
+         terminate/2,
+         code_change/3,
+         handle_info/2]).
+ 
+%% Exports from "CosEventChannelAdmin::SupplierAdmin"
+-export([obtain_push_consumer/2, 
+         obtain_pull_consumer/2]).
+ 
+%%----------------------------------------------------------------------
+%% Internal exports
+%%----------------------------------------------------------------------
+ 
+%%----------------------------------------------------------------------
+%% Records
+%%----------------------------------------------------------------------
+-record(state, {channel, channel_pid, typecheck, pull_interval}).
+ 
+%%----------------------------------------------------------------------
+%% Macros
+%%----------------------------------------------------------------------
 
--export([init/1, terminate/2, obtain_push_consumer/1, obtain_pull_consumer/1, handle_info/2]).
-
-init(EventChannel) ->
+%%======================================================================
+%% External functions
+%%======================================================================
+%%----------------------------------------------------------------------
+%% Function   : init/1
+%% Returns    : {ok, State}          |
+%%              {ok, State, Timeout} |
+%%              ignore               |
+%%              {stop, Reason}
+%% Description: Initiates the server
+%%----------------------------------------------------------------------
+init([Channel, ChannelPid, TypeCheck, PullInterval]) ->
     process_flag(trap_exit, true),
-    %% link Supplier Admin process to Event Channel process
-    {_, Key} = iop_ior:get_key(EventChannel),
-    Pid = orber_objectkeys:get_pid(Key),
-    link(Pid),
-
-    {ok, #supplier_admin{
-       event_channel_pid = Pid,
-       event_channel = EventChannel}}.
-
-terminate(From, Reason) ->
+    {ok, #state{channel = Channel, channel_pid = ChannelPid, typecheck = TypeCheck,
+		pull_interval = PullInterval}}.
+ 
+%%----------------------------------------------------------------------
+%% Function   : terminate/2
+%% Returns    : any (ignored by gen_server)
+%% Description: Shutdown the server
+%%----------------------------------------------------------------------
+terminate(Reason, State) ->
+    ?DBG("Terminating ~p~n", [Reason]),
     ok.
-
-%%------------------------------------------------------------------------
-%% Func:	obtain_push_consumer	/1
-%% Args:		
-%% Return:	Proxy Push Consumer object	
-%% Comments:	when an object created it is automatically linked to its
-%% 		creator.  Here we don't want Proxy to be connected to the Admin
-%%------------------------------------------------------------------------
-obtain_push_consumer(OE_State) ->
-    ProxyPushConsumer =
-	'OrberEventChannelAdmin_ProxyPushConsumer':
-	oe_create_link({OE_State#supplier_admin.event_channel,
-		OE_State#supplier_admin.event_channel_pid}),
-
-    {_, Key} = iop_ior:get_key(ProxyPushConsumer),
-    Pid = orber_objectkeys:get_pid(Key),
-    unlink(Pid),
-
-    'OrberEventChannelAdmin_EventChannel':add_proxy_push_consumer(OE_State#supplier_admin.event_channel, ProxyPushConsumer),
-    {ProxyPushConsumer, OE_State}.
-
-%%------------------------------------------------------------------------
-%% Func:	obtain_pull_consumer/1	
-%% Args:		
-%% Return:	
-%% Comments:	when an object created it is automatically linked to its
-%% 		creator.  Here we don't want Proxy to be connected to the Admin
-%%------------------------------------------------------------------------
-obtain_pull_consumer(OE_State) ->
-    ProxyPullConsumer =
-	'OrberEventChannelAdmin_ProxyPullConsumer':
-	oe_create_link({OE_State#supplier_admin.event_channel,
-		OE_State#supplier_admin.event_channel_pid}),
-
-    {_, Key} = iop_ior:get_key(ProxyPullConsumer),
-    Pid = orber_objectkeys:get_pid(Key),
-    unlink(Pid),
-
-    'OrberEventChannelAdmin_EventChannel':add_proxy_pull_consumer(OE_State#supplier_admin.event_channel, ProxyPullConsumer),
-    {ProxyPullConsumer, OE_State}.
-
-%%------------------------------------------------------------------------
-%% Func:		
-%% Args:		
-%% Return:	
-%% Comments:	Trap exit signals.  If Event Channel exits, so does the 
-%%		SupplierAdmin
-%%------------------------------------------------------------------------
-handle_info({'EXIT', Pid, Reason}, State) when pid(Pid) ->
-
-    case State#supplier_admin.event_channel_pid of 
-	Pid -> 
-	    {stop, normal, []};
-	_ ->
-	    {noreply, State}
-    end.
-
+ 
+%%----------------------------------------------------------------------
+%% Function   : code_change/3
+%% Returns    : {ok, NewState}
+%% Description: Convert process state when code is changed
+%%----------------------------------------------------------------------
+code_change(OldVsn, State, Extra) ->
+    {ok, State}.
+ 
+%%---------------------------------------------------------------------%
+%% function : handle_info
+%% Arguments: 
+%% Returns  : {noreply, State} | 
+%%            {stop, Reason, State}
+%% Effect   : Functions demanded by the gen_server module. 
+%%----------------------------------------------------------------------
+handle_info({'EXIT', Pid, Reason}, #state{channel_pid = Pid} = State) ->
+    ?DBG("Parent Channel terminated ~p~n", [Reason]),
+    orber:debug_level_print("[~p] CosEventChannelAdmin_SupplierAdmin:handle_info(~p); 
+My Channel terminated and so will I.", [?LINE, Reason], ?DEBUG_LEVEL),
+    {stop, Reason, State};
+handle_info(Info, State) ->
+    ?DBG("Unknown Info ~p~n", [Info]),
+    {noreply, State}.
+ 
+ 
+%%----------------------------------------------------------------------
+%% Function   : obtain_push_consumer
+%% Arguments  : 
+%% Returns    : 
+%% Description: 
+%%----------------------------------------------------------------------
+obtain_push_consumer(OE_This, #state{channel = Channel, 
+				     channel_pid = ChannelPid,
+				     typecheck = TypeCheck} = State) ->
+    ?DBG("Starting a new CosEventChannelAdmin_ProxyPushConsumer.~n", []),
+    {reply, 
+     'CosEventChannelAdmin_ProxyPushConsumer':oe_create_link([OE_This, 
+                                                              self(),
+                                                              Channel,
+							      TypeCheck]), 
+     State}.
+ 
+%%----------------------------------------------------------------------
+%% Function   : obtain_pull_consumer
+%% Arguments  : 
+%% Returns    : 
+%% Description: 
+%%----------------------------------------------------------------------
+obtain_pull_consumer(OE_This, #state{channel = Channel, 
+				     channel_pid = ChannelPid,
+				     typecheck = TypeCheck,
+				     pull_interval= PullInterval} = State) ->
+    ?DBG("Starting a new CosEventChannelAdmin_ProxyPullConsumer.~n", []),
+    {reply, 
+     'CosEventChannelAdmin_ProxyPullConsumer':oe_create_link([OE_This, 
+                                                              self(),
+                                                              Channel,
+							      TypeCheck,
+							      PullInterval]), 
+     State}.
+ 
+%%======================================================================
+%% Internal functions
+%%======================================================================
+ 
+%%======================================================================
+%% END OF MODULE
+%%======================================================================

@@ -145,20 +145,26 @@ typedef struct trace_file_name {
     unsigned suffix;         /* Index of suffix start */
     unsigned tail;           /* Index of tail start */
     unsigned len;            /* Total length (strlen) */
+    unsigned cnt;            /* Current file count 0 <= cnt <= n */
+    unsigned n;              /* Number of files */
 } TraceFileName;
 
 typedef struct trace_file_wrap_data {
     TraceFileName cur;  /* Current trace file */
     TraceFileName del;  /* Next file to delete when wrapping */
-    unsigned      cnt;  /* How many remains before starting to wrap */
     unsigned      size; /* File max size */
+    int           cnt;  /* How many remains before starting to wrap */
+    unsigned long time; /* Time to pass until starting to delete old files */
     unsigned      len;  /* Current file len */
 } TraceFileWrapData;
+
+enum e_heavy {heavy_set, heavy_clear, heavy_off};
 
 typedef struct trace_file_data {
     FILETYPE fd;
     ErlDrvPort port;
     struct trace_file_data *next, *prev;
+    enum e_heavy heavy;
     TraceFileWrapData *wrap; /* == NULL => no wrap */
     int buff_siz;
     int buff_pos;
@@ -177,16 +183,20 @@ static void trace_file_finish(void);
 static int trace_file_control(ErlDrvData handle, unsigned int command, 
 			      char* buff, int count, 
 			      char** res, int res_size);
+static void trace_file_timeout(ErlDrvData handle);
 
 /*
 ** Internal routines
 */
-static int next_name(TraceFileName *tfn);
+static unsigned digits(unsigned n);
+static void next_name(TraceFileName *tfn);
 static void *my_alloc(size_t size);
 static int my_write(TraceFileData *data, unsigned char *buff, int siz);
-static void my_flush(TraceFileData *data);
+static void my_flush(TraceFileData *data, enum e_heavy heavy);
 static void put_be(unsigned n, unsigned char *s);
 static void close_unlink_port(TraceFileData *data); 
+static void wrap_file(TraceFileData *data);
+
 /*
 ** The driver struct
 */
@@ -203,7 +213,7 @@ ErlDrvEntry trace_file_driver_entry = {
     trace_file_finish,     /* F_PTR finish, called when unloaded */
     NULL,                  /* void * that is not used (BC) */
     trace_file_control,    /* F_PTR control, port_control callback */
-    NULL,                  /* F_PTR timeout, reserved */
+    trace_file_timeout,    /* F_PTR timeout, driver_set_timer callback */
     NULL                   /* F_PTR outputv, reserved */
 };
 
@@ -225,24 +235,26 @@ DRIVER_INIT(trace_file_drv)
 */
 static ErlDrvData trace_file_start(ErlDrvPort port, char *buff)
 {
-    unsigned size, cnt, tail, len;
+    unsigned size, cnt, time, tail, len;
     char *p;
     TraceFileData     *data;
     TraceFileWrapData *wrap;
     FILETYPE fd;
     int n, w;
+    static const char name[] = "trace_file_drv";
 
 #ifdef HARDDEBUG
     fprintf(stderr,"hello (%s)\r\n", buff);
 #endif
     w = 0; /* Index of where sscanf gave up */
     size = 0; /* Warning elimination */
-    cnt = 0;  /* -"- */
-    tail = 0; /* -"- */
-    n = sscanf(buff, "trace_file_drv %n w %u %u %u %n",
-	       &w, &size, &cnt, &tail, &w);
+    cnt = 0;  /* -""- */
+    time = 0;  /* -""- */
+    tail = 0; /* -""- */
+    n = sscanf(buff, "trace_file_drv %n w %u %u %u %u %n",
+	       &w, &size, &cnt, &time, &tail, &w);
 
-    if (w == 0 || (n != 0 && n != 3))
+    if (w < sizeof(name) || (n != 0 && n != 4))
 	return ERL_DRV_ERROR_BADARG;
 
     /* Search for "n <Filename>" in the rest of the string */
@@ -264,21 +276,25 @@ static ErlDrvData trace_file_start(ErlDrvPort port, char *buff)
      * VxWorks since too long pathnames may cause bus errors
      * instead of error return from file operations.
      */
-    if (n == 3) {
+    if (n == 4) {
 	/* Size limited wrapping log */
-	if (len+1 /* Incl suffix "a" */ >= MAXPATHLEN) {
+	unsigned d = digits(cnt); /* Nof digits in filename counter */
+	if (len+d >= MAXPATHLEN) {
 	    errno = ENAMETOOLONG; 
 	    return ERL_DRV_ERROR_ERRNO;
 	}
 	wrap = my_alloc(sizeof(TraceFileWrapData));
 	wrap->size = size;
 	wrap->cnt = cnt;
+	wrap->time = time;
 	wrap->len = 0;
 	strcpy(wrap->cur.name, p);
 	wrap->cur.suffix = tail;
 	wrap->cur.tail = tail;
 	wrap->cur.len = len;
-	next_name(&wrap->cur); /* Incr to suffix "a" */
+	wrap->cur.cnt = cnt;
+	wrap->cur.n = cnt;
+	next_name(&wrap->cur); /* Incr to suffix "0" */
 	wrap->del = wrap->cur; /* Struct copy! */
 	p = wrap->cur.name; /* Use new name for open */
     } else {
@@ -303,6 +319,7 @@ static ErlDrvData trace_file_start(ErlDrvPort port, char *buff)
 
     data->fd = fd;
     data->port = port;
+    data->heavy = heavy_off;
     data->buff_siz = BUFFER_SIZE;
     data->buff_pos = 0;
     data->wrap = wrap;
@@ -314,6 +331,9 @@ static ErlDrvData trace_file_start(ErlDrvPort port, char *buff)
 	data->prev = NULL;
     data->next = first_data;
     first_data = data;
+
+    if (wrap && wrap->time > 0)
+	driver_set_timer(port, wrap->time);
 
     return (ErlDrvData) data;
 }
@@ -339,38 +359,23 @@ static void trace_file_output(ErlDrvData handle, char *buff, int bufflen)
 	my_write(data, buff, bufflen) < 0) {
 	driver_failure_atom(data->port, "write_error");
     } else if (data->wrap) {
+	TraceFileWrapData *wrap = data->wrap;
 	/* Size limited wrapping log files */
-	data->wrap->len += sizeof(b) + bufflen;
-	if (data->wrap->len >= data->wrap->size) {
-	    /* Wrap to new file */
-	    my_flush(data);
-	    close(data->fd);
-	    data->buff_pos = 0;
-	    data->wrap->len = 0;
-	    if (next_name(&data->wrap->cur))
-		driver_failure_posix(data->port, errno); /* XXX */
-	    else {
-		FILETYPE fd;
-		fd = open(data->wrap->cur.name, O_WRONLY | O_TRUNC | O_CREAT
-#ifdef O_BINARY
-			  | O_BINARY
-#endif
-			  , 0777);
-		if (fd < 0)
-		    driver_failure_posix(data->port, errno); /* XXX */
-		else {
-		    data->fd = fd;
-		    /* Count down before starting to remove old files */
-		    if (data->wrap->cnt > 0)
-			data->wrap->cnt--;
-		    if (data->wrap->cnt <= 0) {
-			/* Remove an old file */
-			unlink(data->wrap->del.name);
-			next_name(&data->wrap->del);
-		    }
-		}
-	    }
-	}
+	wrap->len += sizeof(b) + bufflen;
+	if (wrap->time == 0 && wrap->len >= wrap->size)
+	    wrap_file(data);
+    }
+    switch (data->heavy) {
+    case heavy_set:
+	set_port_control_flags(data->port, PORT_CONTROL_FLAG_HEAVY);
+	data->heavy = heavy_clear;
+	break;
+    case heavy_clear:
+	set_port_control_flags(data->port, 0);
+	data->heavy = heavy_off;
+	break;
+    case heavy_off:
+	break;
     }
 }
 
@@ -383,7 +388,7 @@ static int trace_file_control(ErlDrvData handle, unsigned int command,
 {
     if (command == 'f') {
 	TraceFileData *data = (TraceFileData *) handle;
-	my_flush(data);
+	my_flush(data, heavy_off);
 	if (res_size < 1) {
 	    *res = my_alloc(1);
 	}
@@ -392,6 +397,18 @@ static int trace_file_control(ErlDrvData handle, unsigned int command,
     } 
     return -1;
 }
+
+/*
+** Timeout from driver_set_timer.
+*/
+static void trace_file_timeout(ErlDrvData handle) {
+    TraceFileData *data = (TraceFileData *) handle;
+    if (data->wrap) {
+	wrap_file(data);
+	driver_set_timer(data->port, data->wrap->time);
+    }
+}
+
 /*
 ** Driver unloaded
 */
@@ -406,36 +423,52 @@ static void trace_file_finish(void)
 ** Internal helpers
 */
 
+/* Calculate needed number of digits in filename counter.
+**/
+static unsigned digits(unsigned n) {
+    unsigned m, i;
+    for (m = 10, i = 1;  n >= m;  i++, m *= 10) ;
+    return i;
+}
+
 /*
-** Increment filename
+** Increment filename.
+**
+** The filename counter counts "0"-"9","10"-"19"..."[n->n]","0"...,
+** but also "","0" which is used for initialization.
 */
-static int next_name(TraceFileName *n) {
-    if (n->suffix < n->tail) {
+static void next_name(TraceFileName *n) {
+    if (n->cnt >= n->n) {
+	n->cnt = 0;
+	/* Circular count from "[n->n]" to "0", or from "" to "0" */
+	memmove(&n->name[n->suffix+1], 
+		&n->name[n->tail], 
+		n->len+1 - n->tail); /* Including '\0' */
+	n->name[n->suffix] = '0';
+	n->len -= n->tail - n->suffix - 1;
+	n->tail = n->suffix + 1;
+    } else {
 	int i = n->tail;
+	n->cnt++;
 	do {
 	    i--;
 	    /* Increment from the end, 
-	     * 'a'..'z', carry propagate forward */
-	    if (n->name[i] < 'z') {
+	     * '0'..'1', carry propagate forward */
+	    if (n->name[i] < '9') {
 		n->name[i]++;
-		return 0;
+		return;
 	    } else
-		n->name[i] = 'a';
+		n->name[i] = '0';
 	} while (i > n->suffix);
-    }
-    /* Wrapped around from "zzzz" to "aaaa", 
-     * need one more character */
-    if (n->len+1 >= MAXPATHLEN) {
-	errno = ENAMETOOLONG;
-	return !0;
-    } else {
+	/* Wrapped around from "99..99" to "00..00", 
+	 * need one more character */
 	memmove(&n->name[n->tail+1],
-	       &n->name[n->tail],
-	       n->len+1 - n->tail); /* Incl '\0' */
-	n->name[n->tail++] = 'a';
+		&n->name[n->tail],
+		n->len+1 - n->tail); /* Incl '\0' */
+	n->name[n->tail++] = '0';
+	n->name[n->suffix] = '1';
 	n->len++;
     }
-    return 0;
 }
 
 /*
@@ -467,15 +500,19 @@ static int my_write(TraceFileData *data, unsigned char *buff, int siz)
     wrote = data->buff_siz - data->buff_pos;
     memcpy(data->buff + data->buff_pos, buff, wrote);
     if (write(data->fd, data->buff, data->buff_siz) != data->buff_siz) {
+	data->heavy = heavy_set;
 	return -1;
     }
+    data->heavy = heavy_set;
     data->buff_pos = 0;
     if (siz - wrote >= data->buff_siz) {
 	/* Write directly, no need to buffer... */
 	if (write(data->fd, buff + wrote, siz - wrote) != 
 	    siz - wrote) {
+	    data->heavy = heavy_set;
 	    return -1;
 	}
+	data->heavy = heavy_set;
 	return siz;
     } 
     memcpy(data->buff, buff + wrote, siz - wrote);
@@ -483,9 +520,11 @@ static int my_write(TraceFileData *data, unsigned char *buff, int siz)
     return siz;
 }
 
-static void my_flush(TraceFileData *data)
+static void my_flush(TraceFileData *data, enum e_heavy heavy)
 {
     write(data->fd, data->buff, data->buff_pos);
+    if (data->heavy == heavy_off)
+	data->heavy = heavy;
     data->buff_pos = 0;
 }
 
@@ -505,7 +544,7 @@ static void put_be(unsigned n, unsigned char *s)
 */
 static void close_unlink_port(TraceFileData *data) 
 {
-    my_flush(data);
+    my_flush(data, heavy_off);
     close(data->fd);
 
     if (data->next)
@@ -520,5 +559,33 @@ static void close_unlink_port(TraceFileData *data)
     driver_free(data);
 }
 
-
+/*
+** Wrap to new file - close the current, open a new and
+** perhaps delete a too old one
+*/
+static void wrap_file(TraceFileData *data) {
+    FILETYPE fd;
+    my_flush(data, heavy_set);
+    close(data->fd);
+    data->buff_pos = 0;
+    data->wrap->len = 0;
+    /* Count down before starting to remove old files */
+    if (data->wrap->cnt > 0)
+	data->wrap->cnt--;
+    if (data->wrap->cnt == 0) {
+	/* Remove an old file */
+	unlink(data->wrap->del.name);
+	next_name(&data->wrap->del);
+    }
+    next_name(&data->wrap->cur);
+    fd = open(data->wrap->cur.name, O_WRONLY | O_TRUNC | O_CREAT
+#ifdef O_BINARY
+	      | O_BINARY
+#endif
+	      , 0777);
+    if (fd < 0)
+	driver_failure_posix(data->port, errno); /* XXX */
+    else
+	data->fd = fd;
+}
 

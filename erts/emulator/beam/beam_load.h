@@ -63,6 +63,7 @@ typedef struct {
 extern Range* modules;
 extern int num_loaded_modules;
 extern int allocated_modules;
+extern Range* mid_module;
 
 /*
  * Index into start of code chunks which contains additional information

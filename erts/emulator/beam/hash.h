@@ -52,6 +52,13 @@ typedef struct hash_functions
     HFREE_FUN free;
 } HashFunctions;
 
+typedef struct {
+  char *name;
+  int   size;
+  int   used;
+  int   objs;
+  int   depth;
+} HashInfo;
 
 typedef struct hash
 {
@@ -67,6 +74,7 @@ typedef struct hash
 EXTERN_FUNCTION(Hash*, hash_new, (char*, int, HashFunctions));
 EXTERN_FUNCTION(Hash*, hash_init, (Hash*, char*, int, HashFunctions));
 EXTERN_FUNCTION(void,  hash_delete, (Hash*));
+EXTERN_FUNCTION(void,  hash_get_info, (HashInfo*, Hash*));
 EXTERN_FUNCTION(void,  hash_info, (CIO, Hash*));
 EXTERN_FUNCTION(int,   hash_table_sz, (Hash *));
 

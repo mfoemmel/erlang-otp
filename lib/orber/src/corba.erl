@@ -71,7 +71,6 @@
 	 get_pid/1,
 	 raise/1]).
 
-
 %%-----------------------------------------------------------------
 %% Internal (inside orber implementation) exports
 %%-----------------------------------------------------------------
@@ -156,8 +155,8 @@ get_prefixes(InitRef, Acc) when list(InitRef) ->
     [Key|_] = string:tokens(InitRef, "="),
     [Key];
 get_prefixes(What, _) ->
-    orber:debug_level_print("[~p] corba:get_prefixes(~p); Malformed argument?", 
-			    [?LINE, What], ?DEBUG_LEVEL),
+    orber:debug_level_print("[~p] corba:get_prefixes(~p); 
+Malformed argument?", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status = ?COMPLETED_NO}).
 
 
@@ -204,8 +203,8 @@ check_prefixes(InitRef, ObjectId) when list(InitRef) ->
 	    UseRef
     end;
 check_prefixes(What,_) -> 
-    orber:debug_level_print("[~p] corba:check_prefixes(~p); Malformed argument?", 
-			    [?LINE, What], ?DEBUG_LEVEL),
+    orber:debug_level_print("[~p] corba:check_prefixes(~p); 
+Malformed argument?", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status = ?COMPLETED_NO}).
 
 
@@ -263,17 +262,23 @@ object_to_string(Object) ->
 string_to_object(IORString) ->
     case lists:prefix("IOR", IORString) of
 	true ->
-	    {ObjRef, R, L} = iop_ior:string_decode(IORString),
+	    {ObjRef, _, _} = iop_ior:string_decode(IORString),
 	    ObjRef;
 	_ ->
 	    %% CORBA-2.4 allows both IOR and ior prefix.
 	    case lists:prefix("ior", IORString) of
 		true ->
-		    {ObjRef, R, L} = iop_ior:string_decode(IORString),
+		    {ObjRef, _, _} = iop_ior:string_decode(IORString),
 		    ObjRef;
 		_ ->
 		    Data = orber_cosnaming_utils:select_type(IORString),
-		    orber_cosnaming_utils:lookup(Data)
+		    case orber_cosnaming_utils:lookup(Data) of
+			String when list(String) ->
+			    {Obj, _, _} = iop_ior:string_decode(String),
+			    Obj;
+			ObjRef ->
+			    ObjRef
+		    end
 	    end
     end.
 
@@ -337,8 +342,8 @@ common_create_remote(Node, Module, TypeID, Env, Options, StartMethod) ->
 	true ->
 	    rpc:call(Node, corba, common_create, [Module, TypeID, Env, Options, StartMethod]);
 	_ ->
-	    orber:debug_level_print("[~p] corba:common_create_remote(~p); Node not in current domain.", 
-				    [?LINE, Node], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] corba:common_create_remote(~p); 
+Node not in current domain.", [?LINE, Node], ?DEBUG_LEVEL),
 	    corba:raise(#'OBJ_ADAPTER'{completion_status=?COMPLETED_NO})
     end.
 
@@ -356,8 +361,8 @@ common_create(Module, TypeID, Env, Options, StartMethod) when list(Options) ->
 	{'global', _} ->
 	    ok;
 	Why ->
-	    orber:debug_level_print("[~p] corba:common_create(~p, ~p); bad name type or combination(~p).", 
-				    [?LINE, Module, Options, Why], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] corba:common_create(~p, ~p); 
+bad name type or combination(~p).", [?LINE, Module, Options, Why], ?DEBUG_LEVEL),
 	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})   
     end,
     {pseudo, Pseudo} = get_option(pseudo, Options),
@@ -366,7 +371,7 @@ common_create(Module, TypeID, Env, Options, StartMethod) when list(Options) ->
 	    {sup_child, SupChild} = get_option(sup_child, Options),
 	    case apply(Module, StartMethod, [Env]) of
 		{ok, Pid} ->
-		    case catch mk_objkey(TypeID, Pid, RegName, Persistent) of
+		    case catch mk_objkey(Module, Pid, RegName, Persistent) of
 			{'EXCEPTION', E} ->
 			    %% This branch is only used if we couldn't register 
 			    %% our new objectkey due to an internal error in orber.
@@ -393,17 +398,17 @@ common_create(Module, TypeID, Env, Options, StartMethod) when list(Options) ->
 	    ModuleImpl = list_to_atom(lists:concat([Module, '_impl'])),
 	    case apply(ModuleImpl, init, [Env]) of
 		{ok, State} ->
-		    create_subobject_key(mk_pseudo_objkey(TypeID, ModuleImpl),State);
+		    create_subobject_key(mk_pseudo_objkey(Module, ModuleImpl),State);
 		{ok, State,_} ->
-		    create_subobject_key(mk_pseudo_objkey(TypeID, ModuleImpl),State);
+		    create_subobject_key(mk_pseudo_objkey(Module, ModuleImpl),State);
 		Reason ->
-		    orber:debug_level_print("[~p] corba:common_create(~p); 'init' function incorrect(~p).", 
-					    [?LINE, ModuleImpl, Reason], ?DEBUG_LEVEL),
+		    orber:debug_level_print("[~p] corba:common_create(~p);
+'init' function incorrect(~p).", [?LINE, ModuleImpl, Reason], ?DEBUG_LEVEL),
 		    corba:raise(#'INTERNAL'{minor=1100, completion_status=?COMPLETED_NO})
 	    end;
 	What ->
-	    orber:debug_level_print("[~p] corba:common_create(~p, ~p); not a boolean(~p).", 
-				    [?LINE, Module, Options, What], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] corba:common_create(~p, ~p); 
+not a boolean(~p).", [?LINE, Module, Options, What], ?DEBUG_LEVEL),
 	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})   
     end.
 
@@ -436,8 +441,8 @@ get_pid(Objkey) ->
 		     Pid
 	     end;
 	 R ->
-	     orber:debug_level_print("[~p] corba:get_pid(~p); Probably a pseudo- or external object(~p).", 
-				     [?LINE, Objkey, R], ?DEBUG_LEVEL),
+	     orber:debug_level_print("[~p] corba:get_pid(~p); 
+Probably a pseudo- or external object(~p).", [?LINE, Objkey, R], ?DEBUG_LEVEL),
 	     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
      end.
 
@@ -477,8 +482,8 @@ call_internal(Pid, {Obj, Func, Args, Types}, Timeout) when pid(Pid),
 	{'EXIT',{timeout, _}} ->
 	    corba:raise(#'COMM_FAILURE'{minor=108, completion_status=?COMPLETED_MAYBE});
 	{'EXIT',R} ->
-	    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); call exit(~p).", 
-				    [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); 
+call exit(~p).", [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
 	    exit(R);
 	Res ->
 	    Res
@@ -496,19 +501,19 @@ call_internal(Pid, {Obj, Func, Args, Types}, Timeout) when pid(Pid) ->
 		{'EXIT',{timeout, _}} ->
 		    corba:raise(#'COMM_FAILURE'{minor=108, completion_status=?COMPLETED_MAYBE});
 		{'EXIT',R} ->
-		    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); call exit(~p).", 
-					    [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
+		    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); 
+call exit(~p).", [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
 		    exit(R);
 		Res ->
 		    Res
 	    end;
 	{badrpc, {'EXIT',R}} ->
-	    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); call exit(~p).", 
-				    [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); 
+call exit(~p).", [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
 	    exit(R);
 	{badrpc,nodedown} ->
-	    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); Node ~p down.", 
-				    [?LINE, Func, Args, Types, node(Pid)], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); 
+Node ~p down.", [?LINE, Func, Args, Types, node(Pid)], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{minor=108, completion_status=?COMPLETED_MAYBE});
 	Res ->
 	    Res
@@ -533,11 +538,12 @@ call_internal({pseudo, Module}, {Obj, Func, Args, Types}, Timeout) ->
 	{'EXCEPTION', E} ->
 	    corba:raise(E);
 	{'EXIT', What} ->
-	    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); Pseudo object exit(~p).", 
-				    [?LINE, Func, Args, Types, What], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); 
+Pseudo object exit(~p).", [?LINE, Func, Args, Types, What], ?DEBUG_LEVEL),
 	    corba:raise(#'UNKNOWN'{completion_status=?COMPLETED_MAYBE});
 	Unknown ->
-	    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); Pseudo object failed(~p).", 
+	    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); 
+Pseudo object failed due to bad return value (~p).", 
 				    [?LINE, Func, Args, Types, Unknown], ?DEBUG_LEVEL),
 	    corba:raise(#'UNKNOWN'{completion_status=?COMPLETED_MAYBE})
     end;
@@ -559,8 +565,8 @@ call_internal(Registered, {Obj, Func, Args, Types}, Timeout)  when atom(Register
 		{'EXIT',{timeout, _}} ->
 		    corba:raise(#'COMM_FAILURE'{minor=109, completion_status=?COMPLETED_MAYBE});	
 		{'EXIT',R} ->
-		    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); call exit(~p).", 
-					    [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
+		    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); 
+call exit(~p).", [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
 		    exit(R);
 		Res ->
 		    Res
@@ -579,8 +585,8 @@ call_relay(Pid, {Obj, Func, Args}, Timeout) ->
 		{'EXIT',{timeout, _}} ->
 		    corba:raise(#'COMM_FAILURE'{minor=108, completion_status=?COMPLETED_MAYBE});
 		{'EXIT',R} ->
-		    orber:debug_level_print("[~p] corba:call_internal(~p, ~p); call exit(~p).", 
-					    [?LINE, Func, Args, R], ?DEBUG_LEVEL),
+		    orber:debug_level_print("[~p] corba:call_internal(~p, ~p); 
+call exit(~p).", [?LINE, Func, Args, R], ?DEBUG_LEVEL),
 		    exit(R);
 		Res ->
 		    Res
@@ -614,11 +620,12 @@ cast_internal(Pid, {Obj, Func, Args, Types}) when pid(Pid) ->
 	{badrpc, {'EXIT', R}} ->
 	    exit(R);
 	{badrpc,nodedown} ->
-	    orber:debug_level_print("[~p] corba:cast_internal(~p, ~p, ~p); Node ~p down.", 
-				    [?LINE, Func, Args, Types, node(Pid)], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] corba:cast_internal(~p, ~p, ~p); 
+Node ~p down.", [?LINE, Func, Args, Types, node(Pid)], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{minor=108, completion_status=?COMPLETED_MAYBE});
 	Other ->
-	    orber:debug_level_print("[~p] corba:cast_internal(~p, ~p, ~p); Communication with node: ~p failed with reason: ~p.", 
+	    orber:debug_level_print("[~p] corba:cast_internal(~p, ~p, ~p);
+Communication with node: ~p failed with reason: ~p.", 
 				    [?LINE, Func, Args, Types, node(Pid), Other], ?DEBUG_LEVEL),
 	    exit(Other)
     end;
@@ -686,10 +693,17 @@ request_from_iiop(Obj, 'get_policy', [Arg], _, _) ->
 %% "Ordinary" operations.
 %% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
 request_from_iiop({Id, Type, Key, UserDef}, Func, Args, Types, ResponseExpected) ->
-    Undef = term_to_binary(undefined),
-    request_from_iiop({Id, Type, Key, UserDef, Undef, Undef}, Func, Args, Types, 
+    request_from_iiop({Id, Type, Key, UserDef, 0, 0}, Func, Args, Types, 
 		      ResponseExpected);
 
+request_from_iiop({Id, ObjType, Module, UserDef, OrberDef, Flags}, oe_get_interface, 
+		  Args, Types, _ResponseExpected) when atom(Id) ->
+    case Id:handle_call({false, oe_get_interface, []}, false, false) of
+	{reply, OpDef, _} ->
+	    OpDef;
+	_->
+	    []
+    end;
 %% This case handles if the reference is created as a Pseudo object. Just call apply/3.
 request_from_iiop({Id, pseudo, Module, UserDef, OrberDef, Flags}, oe_get_interface, 
 		  Args, Types, _ResponseExpected) ->
@@ -708,7 +722,6 @@ request_from_iiop({Id, pseudo, Module, UserDef, OrberDef, Flags}, Func, Args,
 	true ->
 	    case catch apply(Module, Func, [{Id, pseudo, Module, UserDef, OrberDef, 
 					     Flags}, State|Args]) of
-		
 		{noreply, _} ->
 		    ok;
 		{noreply, _, _} ->
@@ -724,11 +737,13 @@ request_from_iiop({Id, pseudo, Module, UserDef, OrberDef, Flags}, Func, Args,
 		{'EXCEPTION', E} ->
 		    {'EXCEPTION', E};
 		{'EXIT', What} ->
-		    orber:debug_level_print("[~p] corba:request_from_iiop(~p, ~p, ~p); Pseudo object exit(~p).", 
+		    orber:debug_level_print("[~p] corba:request_from_iiop(~p, ~p, ~p); 
+Pseudo object exit(~p). The call-back module probably contain an error.", 
 					    [?LINE, Func, Args, Types, What], ?DEBUG_LEVEL),
 		    {'EXCEPTION', #'UNKNOWN'{completion_status=?COMPLETED_MAYBE}};
 		Unknown ->
-		    orber:debug_level_print("[~p] corba:request_from_iiop(~p, ~p, ~p); Pseudo object failed(~p).", 
+		    orber:debug_level_print("[~p] corba:request_from_iiop(~p, ~p, ~p); 
+Pseudo object failed(~p); confirm that the return value is correct (e.g. {reply, Reply, State})", 
 					    [?LINE, Func, Args, Types, Unknown], ?DEBUG_LEVEL),
 		    {'EXCEPTION', #'UNKNOWN'{completion_status=?COMPLETED_MAYBE}}
 	    end;
@@ -773,22 +788,20 @@ mk_objkey(Id, Pid, [], _) when pid(Pid) ->
     Key = make_objkey(),
     case orber_objectkeys:register(Key, Pid, false) of
 	ok ->
-	    Undef = term_to_binary(undefined),
-	    {list_to_binary(Id), 'key', Key, Undef, Undef, Undef};
+	    {Id, 'key', Key, term_to_binary(undefined), 0, 0};
 	R ->
-	    orber:debug_level_print("[~p] corba:mk_objkey(~p); unable to store key(~p).", 
-				    [?LINE, Id, R], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] corba:mk_objkey(~p);
+unable to store key(~p).", [?LINE, Id, R], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{minor=1101, completion_status=?COMPLETED_NO})
     end;
 mk_objkey(Id, Pid, {'global', RegName}, Persitent) when pid(Pid) ->
     Key = term_to_binary(RegName),
     case orber_objectkeys:register(Key, Pid, Persitent) of
 	ok ->
-	    Undef = term_to_binary(undefined),
-	    {list_to_binary(Id), 'key', Key, Undef, Undef, Undef};
+	    {Id, 'key', Key, term_to_binary(undefined), 0, 0};
 	R ->
-	    orber:debug_level_print("[~p] corba:mk_objkey(~p, ~p); unable to store key(~p).", 
-				    [?LINE, Id, RegName, R], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] corba:mk_objkey(~p, ~p);
+unable to store key(~p).", [?LINE, Id, RegName, R], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{minor=1102, completion_status=?COMPLETED_NO})
     end;
 mk_objkey(Id, Pid, {'local', RegName}, Persistent) when pid(Pid), atom(RegName) ->
@@ -796,22 +809,19 @@ mk_objkey(Id, Pid, {'local', RegName}, Persistent) when pid(Pid), atom(RegName) 
     Key = make_objkey(),
     case orber_objectkeys:register(Key, Pid, Persistent) of
 	ok ->
-	    Undef = term_to_binary(undefined),
-	    {list_to_binary(Id), 'registered', RegName, Undef, Undef, Undef};
+	    {Id, 'registered', RegName, term_to_binary(undefined), 0, 0};
 	R ->
-	    orber:debug_level_print("[~p] corba:mk_objkey(~p, ~p); unable to store key(~p).", 
-				    [?LINE, Id, RegName, R], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] corba:mk_objkey(~p, ~p);
+unable to store key(~p).", [?LINE, Id, RegName, R], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{minor=1103, completion_status=?COMPLETED_NO})
     end.
 
 
 mk_light_objkey(Id, RegName) ->
-    Undef = term_to_binary(undefined),
-    {list_to_binary(Id), 'registered', RegName, Undef, Undef, Undef}.
+    {Id, 'registered', RegName, term_to_binary(undefined), 0, 0}.
 
 mk_pseudo_objkey(Id, Module) ->
-    Undef = term_to_binary(undefined),
-    {list_to_binary(Id), 'pseudo', Module, Undef, Undef, Undef}.
+    {Id, 'pseudo', Module, term_to_binary(undefined), 0, 0}.
 
 make_objkey() ->
     term_to_binary({now(), node()}).
@@ -824,8 +834,7 @@ objkey_to_string({Id, 'registered', 'orber_init', UserDef, OrberDef, Flags}) ->
 
 %% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
 objkey_to_string({Id, Type, Key, UserDef}) ->
-    Undef = term_to_binary(undefined),
-    objkey_to_string({Id, Type, Key, UserDef, Undef, Undef});
+    objkey_to_string({Id, Type, Key, UserDef, 0, 0});
 objkey_to_string({Id, Type, Key, UserDef, OrberDef, Flags}) ->
     orber:domain() ++ binary_to_list(term_to_binary({Id, Type, Key, UserDef, OrberDef, Flags}));
 objkey_to_string(External_object_key) ->
@@ -834,9 +843,8 @@ objkey_to_string(External_object_key) ->
 string_to_objkey("NameService") ->
     corba:resolve_initial_references("NameService");
 string_to_objkey("INIT") ->
-    Undef = term_to_binary(undefined),
-    {list_to_binary("IDL:Orber/InitialReferences:1.0"), 'registered', 
-     'orber_init', Undef, Undef, Undef};
+    {orber_initial_references, 'registered', 'orber_init', 
+     term_to_binary(undefined), 0, 0};
 string_to_objkey(String) -> 
     case prefix(orber:domain(), String) of
 	false ->

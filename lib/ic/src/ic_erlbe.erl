@@ -603,9 +603,9 @@ get_if_name(G) -> mk_oe_name(G, "get_interface").
 get_if_gen(G, N, X) ->
 %%    ?DBG("Get I/F gen~n", []),
 %%    S = icgen:tktab(G),
-    case icgen:is_stubfile_open(G) of
-	true ->
-	    Backend = get_opt(G, be),
+    Backend = get_opt(G, be),
+    case {icgen:is_stubfile_open(G), Backend} of
+	{true, erl_corba} ->
 	    B = 
 		foldr(fun({Name, Body}, Acc) ->
 			      get_if(G,N,Body,Backend)++Acc end,
@@ -621,7 +621,7 @@ get_if_gen(G, N, X) ->
 	    emit(Fd, "    {reply, ~p, State};~n", [B]),
 	    nl(Fd),
 	    ok;
-	false -> ok
+	_ -> ok
     end.
 
 

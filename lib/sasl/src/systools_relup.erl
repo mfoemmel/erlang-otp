@@ -219,16 +219,17 @@ foreach_baserel_up(TopRel, TopApps, [BaseRelDc|BaseRelDcs], Path, Opts,
 	    %% each removed applications.
 	    %%
 	    {RUs1, Ws1} = 
-		check_for_emulator_restart(TopRel, BaseRel, Ws, Opts),
-	    {RUs2, Ws2} = 
-		collect_appup_scripts(up, TopApps, BaseRel, Ws1, RUs1),
+		collect_appup_scripts(up, TopApps, BaseRel, Ws, []),
 
-	    {RUs3, Ws3} = create_add_app_scripts(BaseRel, TopRel, TopApps,
-						RUs2, Ws2),
+	    {RUs2, Ws2} = create_add_app_scripts(BaseRel, TopRel, TopApps,
+						 RUs1, Ws1),
 
-	    {RUs4, Ws4} = create_remove_app_scripts(BaseRel, TopRel, TopApps,
-						    RUs3, Ws3),
-	    
+	    {RUs3, Ws3} = create_remove_app_scripts(BaseRel, TopRel, TopApps,
+						    RUs2, Ws2),
+
+	    {RUs4, Ws4} = 
+		check_for_emulator_restart(TopRel, BaseRel, RUs3, Ws3, Opts),
+
 	    %% io:format("Scripts: ~p~n", [RUs4]),
 	    case systools_rc:translate_scripts(up, RUs4, TopApps) of
 		{ok, RUs} ->
@@ -258,13 +259,11 @@ foreach_baserel_dn(TopRel, TopApps, [BaseRelDc|BaseRelDcs], Path, Opts,
 
 	    %% RUs = (release upgrade scripts)
 	    %%
-	    {RUs1, Ws1} = 
-		check_for_emulator_restart(TopRel, BaseRel, Ws, Opts),
-	    {RUs2, Ws2} = 
-		collect_appup_scripts(dn, TopApps, BaseRel, Ws1, RUs1),
+	    {RUs1, Ws1} =
+		collect_appup_scripts(dn, TopApps, BaseRel, Ws, []),
 
 	    ModTest = false,
-	    {BaseApps, Ws3} =
+	    {BaseApps, Ws2} =
 		case systools_make:get_release(BaseRelFile, Path, ModTest) of
 		    %%
 		    %% NameVsnApps = [{{Name, Vsn}, #application}]
@@ -273,18 +272,21 @@ foreach_baserel_dn(TopRel, TopApps, [BaseRelDc|BaseRelDcs], Path, Opts,
 			%% NApps = [#application]
 			NApps = lists:map(fun({_, App}) -> App end, 
 					  NameVsnApps),
-			{NApps, Warns ++ Ws2};
+			{NApps, Warns ++ Ws1};
 		    Other -> 
 			throw(Other)
 		end,
 
-	    RUs3 = RUs2,
+	    RUs2 = RUs1,
 
-	    {RUs4, Ws4} = create_add_app_scripts(TopRel, BaseRel, BaseApps,
-						RUs3, Ws3),
+	    {RUs3, Ws3} = create_add_app_scripts(TopRel, BaseRel, BaseApps,
+						 RUs2, Ws2),
 
-	    {RUs5, Ws5} = create_remove_app_scripts(TopRel, BaseRel, BaseApps,
-						    RUs4, Ws4),
+	    {RUs4, Ws4} = create_remove_app_scripts(TopRel, BaseRel, BaseApps,
+						    RUs3, Ws3),
+
+	    {RUs5, Ws5} = check_for_emulator_restart(TopRel, BaseRel,
+						     RUs4, Ws4, Opts),
 
 	    %% io:format("Scripts: ~p~n", [RUs5]),
 	    case systools_rc:translate_scripts(dn, RUs5, BaseApps) of
@@ -302,18 +304,18 @@ foreach_baserel_dn( _, _, [], _, _, Ws, Acc) ->
     {Acc, Ws}.
 
 
-%% check_for_emulator_restart(Rel1, Rel2, Ws, Opts) -> {RUs, NWs}
+%% check_for_emulator_restart(Rel1, Rel2, RUs, Ws, Opts) -> {NRUs, NWs}
 %%
 %% Rel1 = Rel2 = #release
 %%
 check_for_emulator_restart(#release{erts_vsn = Vsn1, name = N1}, 
-                           #release{erts_vsn = Vsn2, name = N2}, Ws, 
+                           #release{erts_vsn = Vsn2, name = N2}, RUs, Ws, 
                            _Opts) when Vsn1 /= Vsn2 ->
-    {[[restart_new_emulator]], [{erts_vsn_changed, {N1, N2}} | Ws]};
-check_for_emulator_restart(_, _, Ws, Opts) ->
+    {RUs++[[restart_new_emulator]], [{erts_vsn_changed, {N1, N2}} | Ws]};
+check_for_emulator_restart(_, _, RUs, Ws, Opts) ->
     case get_opt(restart_emulator, Opts) of
-	true -> {[[restart_new_emulator]], Ws};
-	_ -> {[], Ws}
+	true -> {RUs++[[restart_new_emulator]], Ws};
+	_ -> {RUs, Ws}
     end.
 
 %% collect_appup_scripts(Mode, TopApps, BaseRel, Ws, RUs) -> {NRUs, NWs}
@@ -323,8 +325,6 @@ check_for_emulator_restart(_, _, Ws, Opts) ->
 %%
 %% Gets the script corresponding to Mode and BaseRel in the .appup file
 %% for each application.
-%%
-%% XXX RUs in reversed order of TopApps. Why?
 %%
 collect_appup_scripts(Mode, [TopApp|TopApps], BaseRel, Ws, RUs) ->
 
@@ -409,7 +409,7 @@ get_script_from_appup(Mode, TopApp, BaseVsn, Ws, RUs) ->
 	  end,
     case lists:keysearch(BaseVsn, 1, VsnRUs) of
 	{value, {_, RU}} ->
-	    {[RU| RUs], Ws1};
+	    {RUs ++ [RU], Ws1};
 	_ ->
 	    throw({error, ?MODULE, {no_relup, FName, TopApp, BaseVsn}})
     end.

@@ -146,7 +146,13 @@ unrecv(S, Data) when port(S) ->
 %% Set controlling process
 %%
 controlling_process(S, NewOwner) ->
-    inet:tcp_controlling_process(S, NewOwner).
+    case inet_db:lookup_socket(S) of
+	{ok, _Mod} -> % Just check that this is an open socket
+	    inet:tcp_controlling_process(S, NewOwner);
+	Error ->
+	    Error
+    end.
+
 
 
 %%

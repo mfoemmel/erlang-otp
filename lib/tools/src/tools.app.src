@@ -9,6 +9,7 @@
 	     exref_pp,
 	     exref_server,
 	     eprof,
+	     fprof,
 	     instrument,
 	     make,
 	     coast,

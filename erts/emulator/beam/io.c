@@ -1156,6 +1156,11 @@ uint32 reason;
 	((from != p->connected) && (from != this_port))))
       return;
 
+   if (p->id == erts_default_tracer) {
+       erts_default_tracer = NIL;
+       erts_default_process_flags &= ~TRACE_FLAGS;
+   }
+
    /*
     * Setting the port to not busy here, frees the list of pending
     * processes and makes them runnable.

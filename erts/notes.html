@@ -76,6 +76,23 @@ problem.
 <br>Own Id: OTP-3963<br>
 Aux Id: OTP-3906
 
+<LI>
+When the system limit on maximal number of nodes
+known to a node had been reached (the distribution
+table had been filled), pids, ports, and references
+belonging to previously connected nodes could change
+node belonging. This bug has now been fixed.
+<br>Own Id: OTP-4071<br>
+
+<LI>
+The <CODE>--enable-threads</CODE> flag was previously ignored
+by the <CODE>configure</CODE> script. This has now been
+corrected, and it is now possible to enable threads by
+passing the <CODE>--enable-threads</CODE> flag to the
+<CODE>configure</CODE> script when building the open source
+release.
+<br>Own Id: OTP-4019<br>
+
 </UL>
 <H3>Improvements and new features</H3>
 
@@ -171,6 +188,32 @@ See README file (in top directory) on how to enable dlmalloc
 when building an open source release.
 <br>Own Id: OTP-3997<br>
 Aux Id: OTP-3917
+
+<LI>
+<CODE>dlmalloc</CODE> was introduced in the Erlang emulator
+version 5.0.2.3 because it performed better than
+Solaris <CODE>malloc</CODE> when the emulator needed to allocate
+large short-lived memory blocks. It was later observed
+that it performed worse than Solaris <CODE>malloc</CODE> under some
+conditions. We have therefore now removed <CODE>dlmalloc</CODE>
+and replaced it with our own special treatment of
+short-lived memory blocks (called <CODE>sl_alloc</CODE>) and the
+standard <CODE>malloc</CODE> implementation for other blocks.
+<P>
+The current version of <CODE>sl_alloc</CODE> uses the system call
+<CODE>mmap()</CODE> (on platforms where <CODE>mmap()</CODE> exists)
+in order to
+allocate large blocks (just as <CODE>dlmalloc</CODE>) and uses the
+standard <CODE>malloc</CODE> implementation for small blocks.
+<P>
+Maximum number of mmapped blocks and the threshold
+which is used to determine if a block should be
+mmapped can be adjusted, see "System Flags" in <CODE>erl(1)</CODE>.
+<P>
+<CODE>sl_alloc</CODE> can be disabled. The standard <CODE>malloc</CODE>
+implementation will in this case be used instead, see
+"System Flags" in <CODE>erl(1)</CODE>.
+<br>Own Id: OTP-4075
 
 
 </UL>

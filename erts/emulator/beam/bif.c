@@ -64,7 +64,9 @@ BIF_ADECL_3
 
 /**********************************************************************/
 
-/* utility to add a new link between processes p and rp */
+/* Utility to add a new link between processes p and rp.
+ * Process p must be the currently executing process.
+ */
 
 static void insert_link(p, rp)
 Process* p; Process* rp;
@@ -85,7 +87,7 @@ Process* p; Process* rp;
 	}
     }
     if (IS_TRACED_FL(rp, F_TRACE_PROCS))
-	trace_proc(rp, am_getting_linked, p->id);
+	trace_proc(p, rp, am_getting_linked, p->id);
 }
 
 
@@ -100,7 +102,7 @@ BIF_ADECL_1
 
     if (IS_TRACED(BIF_P)) {
 	if (BIF_P->flags & F_TRACE_PROCS)
-	    trace_proc(BIF_P, am_link, BIF_ARG_1);
+	    trace_proc(BIF_P, BIF_P, am_link, BIF_ARG_1);
     }
     /* check that the pid which is our argument is OK */
 
@@ -353,7 +355,7 @@ BIF_ADECL_2
 	 if ((slot = find_or_insert_dist_slot(n)) < 0)
 	    goto error; /* BIF_ERROR(BIF_P, SYSTEM_LIMIT) ? */
 	 if (slot == THIS_NODE) {
-	    if ((rp = whereis_process(atom_val(item))) != NULL) {
+	    if ((rp = whereis_process(item)) != NULL) {
 	       if (rp == BIF_P) /* Monitor of own process */
 		  BIF_RET(new_ref(BIF_P));
 	       item  = rp->id;
@@ -361,7 +363,7 @@ BIF_ADECL_2
 	 }
       } else if (is_atom(item)) { /* (process, Name) */
 	 slot = THIS_NODE;
-	 if ((rp = whereis_process(atom_val(item))) != NULL) {
+	 if ((rp = whereis_process(item)) != NULL) {
 	    if (rp == BIF_P) /* Monitor of own process */
 	       BIF_RET(new_ref(BIF_P));
 	    item  = rp->id;
@@ -633,10 +635,11 @@ BIF_ADECL_1
     Process *rp;
     int slot;
     int ix;
+    ErlLink **rlinkpp;
 
     if (IS_TRACED(BIF_P)) {
 	if (BIF_P->flags & F_TRACE_PROCS) 
-	    trace_proc(BIF_P, am_unlink, BIF_ARG_1);
+	    trace_proc(BIF_P, BIF_P, am_unlink, BIF_ARG_1);
     }
 
     if (is_not_pid(BIF_ARG_1)) {
@@ -681,7 +684,11 @@ BIF_ADECL_1
 	BIF_RET(am_true);
 
     /* unlink and ignore errors */
-    del_link(find_link(&rp->links, LNK_LINK, BIF_P->id, NIL));
+    rlinkpp = find_link(&rp->links, LNK_LINK, BIF_P->id, NIL);
+    del_link(rlinkpp);
+    if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlinkpp != NULL) {
+	trace_proc(BIF_P, rp, am_getting_unlinked, BIF_P->id);
+    }
      
      BIF_RET(am_true);
 }
@@ -938,12 +945,12 @@ BIF_ADECL_2
 	 cerr_pos = 0;
 	 display(rp->id, CBUF);
 	 erl_printf(CBUF," already registered as ");
-	 print_atom(rp->reg->name, CBUF);
+	 print_atom(atom_val(rp->reg->name), CBUF);
 	 erl_printf(CBUF,"\n");
 	 send_error_to_logger(BIF_P->group_leader);
 	 BIF_ERROR(BIF_P, BADARG);
      }
-     if (register_process(atom_val(BIF_ARG_1), rp) != rp) {
+     if (register_process(BIF_P, BIF_ARG_1, rp) != rp) {
 	 cerr_pos = 0;
 	 print_atom(atom_val(BIF_ARG_1), CBUF);
 	 erl_printf(CBUF," already registered\n");
@@ -964,7 +971,7 @@ BIF_ADECL_1
     if (is_not_atom(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if ((unregister_process(atom_val(BIF_ARG_1))) == NULL) {
+    if ((unregister_process(BIF_P, BIF_ARG_1)) == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
     }
     BIF_RET(am_true);
@@ -983,7 +990,7 @@ BIF_ADECL_1
     if (is_not_atom(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if ((rp = whereis_process(atom_val(BIF_ARG_1))) == NULL) {
+    if ((rp = whereis_process(BIF_ARG_1)) == NULL) {
 	BIF_RET(am_undefined);
     }
     BIF_RET(rp->id);
@@ -1016,7 +1023,7 @@ BIF_ADECL_0
     res = NIL;
     for (i = 0; i < max_process; i++) {
 	if ((process_tab[i] != NULL) && (process_tab[i]->reg != NULL)) {
-	    res = CONS(hp, make_atom(process_tab[i]->reg->name), res);
+	    res = CONS(hp, process_tab[i]->reg->name, res);
 	    hp += 2;
 	}
     }
@@ -1081,7 +1088,7 @@ BIF_ADECL_2
 	if (BIF_P->ct != NULL)
 	   save_calls(BIF_P, &exp_send);
 
-	if ((rp = whereis_process(atom_val(BIF_ARG_1))) == NULL) {
+	if ((rp = whereis_process(BIF_ARG_1)) == NULL) {
 	    BIF_ERROR(BIF_P, BADARG);
 	}
 	if (rp->status == P_EXITING) {
@@ -1101,7 +1108,8 @@ BIF_ADECL_2
 
 	if (SEQ_TRACE_TOKEN(BIF_P) != NIL) {
 	    seq_trace_update_send(BIF_P);
-	    seq_trace_output(SEQ_TRACE_TOKEN(BIF_P), BIF_ARG_2, SEQ_TRACE_SEND, BIF_ARG_1);
+	    seq_trace_output(SEQ_TRACE_TOKEN(BIF_P), BIF_ARG_2, SEQ_TRACE_SEND,
+			     BIF_ARG_1, BIF_P);
 	}	    
 
 	/* XXX NO GC in port command */
@@ -1133,7 +1141,7 @@ BIF_ADECL_2
 		trace_send(BIF_P, BIF_ARG_1, BIF_ARG_2);
 	    if (BIF_P->ct != NULL)
 	       save_calls(BIF_P, &exp_send);
-	    if ((rp = whereis_process(atom_val(tp[1]))) == NULL) {
+	    if ((rp = whereis_process(tp[1])) == NULL) {
 		BIF_RET(BIF_ARG_2);
 	    }
 	    if (rp->status == P_EXITING) {
@@ -2960,6 +2968,14 @@ BIF_ADECL_2
 	}
 	BIF_RET(am_true);    
     }
+    else if (BIF_ARG_1 == am_sl_alloc) {
+      if (BIF_ARG_2 == am_use_mmap_table) {
+	if(sys_sl_alloc_opt(SYS_SL_ALLOC_OPT_USE_MMAP_TABLE, 1))
+	  BIF_RET(am_true);
+	else
+	  BIF_RET(am_false);
+      }
+    }
     BIF_ERROR(BIF_P, BADARG);
 }
 
@@ -3212,7 +3228,7 @@ BifTimerRec* btm;
 
     if (is_atom(btm->pid))
     {
-       rp = whereis_process(atom_val(btm->pid));
+       rp = whereis_process(btm->pid);
        invalid_pid = (rp == NULL);
     }
     else

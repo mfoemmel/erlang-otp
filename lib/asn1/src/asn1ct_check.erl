@@ -2106,7 +2106,18 @@ check_unique_sequence_tags1(S,[],Acc) ->
     check_unique_tags(S,lists:reverse(Acc)).
 
 check_sequenceof(S,Type,Component) when record(Component,type) ->
-    check_type(S,Type,Component).
+    case check_type(S,Type,Component) of
+	T = #type{def={'ENUMERATED',CheckedComponent}} ->
+	    case Component#type.def of
+		#'Externaltypereference'{type=RefName} ->
+		    T#type{def={'ENUMERATED',RefName,CheckedComponent}};
+		_ -> T
+	    end;
+	Other -> Other
+    end.
+
+% check_sequenceof(S,Type,Component) when record(Component,type) ->
+%     check_type(S,Type,Component).
 
 check_set(S,Type,Components) ->
     check_sequence(S,Type,Components).

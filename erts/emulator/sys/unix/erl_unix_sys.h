@@ -58,6 +58,14 @@
 #   include <unistd.h>
 #endif
 
+#ifndef HAVE_MMAP
+#   define HAVE_MMAP 0
+#endif
+
+#if HAVE_MMAP
+#   include <sys/mman.h>
+#endif
+
 #if TIME_WITH_SYS_TIME
 #   include <sys/time.h>
 #   include <time.h>

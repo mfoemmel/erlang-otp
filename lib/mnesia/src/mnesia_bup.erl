@@ -680,7 +680,7 @@ throw_bad_res(Expected, Expected) -> Expected;
 throw_bad_res(Expected, {error, Actual}) -> throw({error, Actual});
 throw_bad_res(Expected, Actual) -> throw({error, Actual}).
 
--record(local_tab, {name, storage_type, dets_args, record_name}).
+-record(local_tab, {name, storage_type, dets_args, open, close, add, record_name}).
 
 tm_fallback_start(IgnoreFallback) ->
     mnesia_schema:lock_schema(),
@@ -705,7 +705,13 @@ do_fallback_start(true, false) ->
     Ets = ?ets_new_table(mnesia_local_tables, [set, public, {keypos, 2}]),
     R = #restore{bup_module = Mod, bup_data = Fname},
     case catch iterate(Mod, fun restore_tables/4, Fname, {start, Ets}) of
-	{ok, _} ->
+	{ok, Res} ->
+	    case Res of 
+		{local, _, LT} ->  %% Close the last file
+		    (LT#local_tab.close)(LT);
+		_ ->
+		    ignore
+	    end,
 	    List = ?ets_match_object(Ets, '_'),
 	    Tabs = [L#local_tab.name || L <- List, L#local_tab.name /= schema],
 	    ?ets_delete_table(Ets),
@@ -742,45 +748,31 @@ restore_tables([Rec | Recs], Header, Schema, {new, LocalTabs}) ->
 	    State = {not_local, LocalTabs, Tab},
 	    restore_tables(Recs, Header, Schema, State);
 	[L] when record(L, local_tab) ->
-	    Args = L#local_tab.dets_args,
-	    case mnesia_lib:dets_sync_open(Tab, Args) of
-		{ok, _} ->
-		    State = {local, LocalTabs, L},
-		    restore_tables([Rec | Recs], Header, Schema, State);
-		{error, Reason} ->
-		    throw({error, {"Cannot open file", Tab, Args, Reason}})
-	    end
+	    (L#local_tab.open)(Tab, L),
+	    State = {local, LocalTabs, L},
+	    restore_tables([Rec | Recs], Header, Schema, State)
     end;
-restore_tables([Rec | Recs], Header, Schema, {not_local, LocalTabs, PrevTab}) ->
+restore_tables([Rec | Recs], Header, Schema, S = {not_local, LocalTabs, PrevTab}) ->
     Tab = element(1, Rec),
     if
 	Tab == PrevTab ->
-	    State = {not_local, LocalTabs, PrevTab},
-	    restore_tables(Recs, Header, Schema, State);
+	    restore_tables(Recs, Header, Schema, S);
 	true ->
 	    State = {new, LocalTabs},
 	    restore_tables([Rec | Recs], Header, Schema, State)
     end;
-restore_tables([Rec | Recs], Header, Schema, {local, LocalTabs, L}) ->
+restore_tables([Rec | Recs], Header, Schema, State = {local, LocalTabs, L}) ->
     Tab = element(1, Rec),
     if
 	Tab == L#local_tab.name ->
 	    RecName = L#local_tab.record_name,
-	    case Rec of
-		{Tab, Key} ->
-		    ok = dets:delete(Tab, Key);
-		(Rec) when Tab == RecName ->
-		    ok = dets:insert(Tab, Rec);
-		(Rec) ->
-		    Rec2 = setelement(1, Rec, RecName),
-		    ok = dets:insert(Tab, Rec2)
-	    end,
-	    State = {local, LocalTabs, L},
+	    Key = element(2, Rec),
+	    (L#local_tab.add)(Tab, Key, Rec, L),
 	    restore_tables(Recs, Header, Schema, State);
 	true ->
-	    mnesia_lib:dets_sync_close(L#local_tab.name),
-	    State = {new, LocalTabs},
-	    restore_tables([Rec | Recs], Header, Schema, State)
+	    (L#local_tab.close)(L),
+	    NState = {new, LocalTabs},
+	    restore_tables([Rec | Recs], Header, Schema, NState)
     end;
 restore_tables([], _Header, _Schema, State) ->
     State.
@@ -799,6 +791,9 @@ init_dat_files(Schema, LocalTabs) ->
 	    LocalTab = #local_tab{name = schema,
 				  storage_type = disc_copies,
 				  dets_args = Args,
+				  open   = fun open_media/2,
+				  close  = fun close_media/1,
+				  add    = fun add_to_media/4,
 				  record_name = schema},
 	    ?ets_insert(LocalTabs, LocalTab);
 	{error, Reason} ->
@@ -811,27 +806,46 @@ create_dat_files([{schema, schema, TabDef} | Tail], LocalTabs) ->
 create_dat_files([{schema, Tab, TabDef} | Tail], LocalTabs) ->
     Cs =  mnesia_schema:list2cs(TabDef),
     ok = dets:insert(schema, {schema, Tab, TabDef}),
+    RecName = Cs#cstruct.record_name,
     case mnesia_lib:cs_to_storage_type(node(), Cs) of
 	unknown ->
 	    cleanup_dat_file(Tab),
 	    create_dat_files(Tail, LocalTabs);
-	Storage ->
+	disc_only_copies ->
 	    Fname = mnesia_lib:tab2tmp(Tab),
 	    Args = [{file, Fname}, {keypos, 2}, 
 		    {type, mnesia_lib:disk_type(Tab, Cs#cstruct.type)}],
 	    case mnesia_lib:dets_sync_open(Tab, Args) of
 		{ok, _} ->
 		    mnesia_lib:dets_sync_close(Tab),
-		    RecName = Cs#cstruct.record_name,
 		    LocalTab = #local_tab{name = Tab,
-					  storage_type = Storage,
+					  storage_type = disc_only_copies,
 					  dets_args = Args,
-					  record_name = RecName},
+					  open   = fun open_media/2,
+					  close  = fun close_media/1,
+					  add    = fun add_to_media/4,
+					  record_name = RecName},		    
 		    ?ets_insert(LocalTabs, LocalTab),
 		    create_dat_files(Tail, LocalTabs);
 		{error, Reason} ->
 		    throw({error, {"Cannot open file", Tab, Args, Reason}})
-	    end
+	    end;
+	Storage ->
+	    %% Create DCD
+	    Fname = mnesia_lib:tab2dcd(Tab),
+	    file:delete(Fname),
+	    Log = mnesia_log:open_log(fallback_tab, mnesia_log:dcd_log_header(), 
+				      Fname, false),
+	    LocalTab = #local_tab{name = Tab,
+				  storage_type = Storage,
+				  dets_args = ignore,
+				  open   = fun open_media/2,
+				  close  = fun close_media/1,
+				  add    = fun add_to_media/4,
+				  record_name = RecName},
+	    mnesia_log:close_log(Log),
+	    ?ets_insert(LocalTabs, LocalTab),
+	    create_dat_files(Tail, LocalTabs)
     end;
 create_dat_files([{schema, Tab} | Tail], LocalTabs) ->
     cleanup_dat_file(Tab),
@@ -842,7 +856,58 @@ create_dat_files([], _LocalTabs) ->
 cleanup_dat_file(Tab) ->
     ok = dets:delete(schema, {schema, Tab}),
     mnesia_lib:cleanup_tmp_files([Tab]).
-	
+
+open_media(Tab, LT) ->
+    case LT#local_tab.storage_type of
+	disc_only_copies ->
+	    Args = LT#local_tab.dets_args,	    
+	    case mnesia_lib:dets_sync_open(Tab, Args) of
+		{ok, _} -> ok;
+		{error, Reason} ->
+		    throw({error, {"Cannot open file", Tab, Args, Reason}})
+	    end;
+	_ ->
+	    Fname = mnesia_lib:tab2dcl(Tab),
+	    file:delete(Fname),
+	    Tab = mnesia_log:open_log(Tab, 
+				      mnesia_log:dcl_log_header(), 
+				      Fname, false, false,
+				      read_write)
+    end.
+close_media(L) ->
+    Tab = L#local_tab.name,
+    case L#local_tab.storage_type of
+	disc_only_copies ->
+	    mnesia_lib:dets_sync_close(Tab);
+	_ ->		    
+	    mnesia_log:close_log(Tab)
+    end.
+
+add_to_media(Tab, Key, Rec, L) -> 
+    RecName = L#local_tab.record_name,
+    case L#local_tab.storage_type of
+	disc_only_copies ->
+	    case Rec of
+		{Tab, Key} ->
+		    ok = dets:delete(Tab, Key);
+		(Rec) when Tab == RecName ->
+		    ok = dets:insert(Tab, Rec);
+		(Rec) ->
+		    Rec2 = setelement(1, Rec, RecName),
+		    ok = dets:insert(Tab, Rec2)
+	    end;
+	_ ->		    
+	    case Rec of
+		{Tab, Key} ->
+		    mnesia_log:append(Tab, {{Tab, Key}, {Tab, Key}, delete});
+		(Rec) when Tab == RecName ->
+		    mnesia_log:append(Tab, {{Tab, Key}, Rec, write});
+		(Rec) ->
+		    Rec2 = setelement(1, Rec, RecName),
+		    mnesia_log:append(Tab, {{Tab, Key}, Rec2, write})
+	    end
+    end.
+
 uninstall_fallback() ->
     uninstall_fallback([{scope, global}]).    
 

@@ -30,7 +30,6 @@
 #include "dist.h"
 #include "erl_version.h"
 #include "erl_db_util.h"
-#include "dlmalloc.h"
 
 extern int fixed_deletion_desc;
 
@@ -59,6 +58,27 @@ make_bin_list(Process* p, ProcBin* pb)
 	pb = pb->next;
     }
     return res;
+}
+
+static Eterm
+make_atom_int_tuple_list(Process* p,
+			 Sint length,
+			 Eterm atoms[],
+			 Uint uints[])
+{
+  Eterm list = NIL;
+  Sint i;
+  Eterm *hp = HAlloc(p, length*(2+3));
+
+  for(i = length - 1; i >= 0; i--) {
+    list = CONS(hp,
+		TUPLE2(hp+2,
+		       atoms[i],
+		       make_small_or_big(uints[i], p)),
+		list);
+    hp += 2+3;
+  }
+  return list;
 }
 
 Eterm
@@ -178,11 +198,11 @@ BIF_ADECL_2
     if (item == am_registered_name) {
 	if (rp->reg != NULL) {
 	    hp = HAlloc(BIF_P, 3);
-	    res = make_atom(rp->reg->name);
+	    res = rp->reg->name;
 	}
-	else if (rp->reg_atom != -1 && rp->status == P_EXITING) {
+	else if (rp->reg_atom != THE_NON_VALUE && rp->status == P_EXITING) {
 	    hp = HAlloc(BIF_P, 3);
-	    res = make_atom(rp->reg_atom);
+	    res = rp->reg_atom;
 	}
 	else {
 	    BIF_RET(NIL);
@@ -412,7 +432,7 @@ BIF_ADECL_2
 	    size += (rp->old_hend - rp->old_heap) * sizeof(Eterm);
 	}
 	if (rp->reg) {
-	    size += sizeof(struct reg_proc);
+	    size += sizeof(RegProc);
 	}
 	size += rp->msg.len * sizeof(ErlMessage);
 	hp = HAlloc(BIF_P, 3);
@@ -709,14 +729,14 @@ BIF_ADECL_1
     }
 #endif
     else if (BIF_ARG_1 == am_allocated_areas) {
-#undef DEBUG_AA_2TUPS
-#ifdef DEBUG
-#define DEBUG_AA_2TUPS 1
+#undef INSTR_AA_2TUPS
+#ifdef INSTRUMENT
+#define INSTR_AA_2TUPS 2
 #else
-#define DEBUG_AA_2TUPS 0
+#define INSTR_AA_2TUPS 0
 #endif
 #undef  NO_AA_2TUPS
-#define NO_AA_2TUPS  (7 + DEBUG_AA_2TUPS)
+#define NO_AA_2TUPS  (7 + INSTR_AA_2TUPS)
 #undef  NO_AA_3TUPS
 #define NO_AA_3TUPS  11
 #undef  NO_AA_TUPS
@@ -724,11 +744,14 @@ BIF_ADECL_1
 #undef  AA_WORDS
 #define AA_WORDS     (2*NO_AA_TUPS+3*NO_AA_2TUPS+4*NO_AA_3TUPS)
 
-      uint32 tuples[NO_AA_TUPS];
+      Eterm tuples[NO_AA_TUPS];
       int i;
       int code_sz = 0;
+#ifdef INSTRUMENT
+      SysAllocStat sas;
+#endif
 #ifdef DEBUG
-      uint32 *endp;
+      Eterm *endp;
 #endif
 
       for (i = 0; i < module_code_size; i++) {
@@ -763,7 +786,7 @@ BIF_ADECL_1
                                              + TMP_BUF_SIZE * sizeof(byte)
                                              /* Tmp buffer */
 
-                                             + 14 /* XXX */ * sizeof(uint32)
+                                             + 14 /* XXX */ * sizeof(Eterm)
                                              /* Tmp buffer 
                                                 (dmem in dist.c) */
 
@@ -859,10 +882,15 @@ BIF_ADECL_1
                            make_small_or_big(fix_used(fixed_deletion_desc),
                                              BIF_P));
       hp += 4;
-#ifdef DEBUG
+#ifdef INSTRUMENT
+      sys_alloc_stat(&sas);
       tuples[i++] = TUPLE2(hp,
-                           am_SYSTEM,
-                           make_small_or_big(tot_allocated, BIF_P));
+                           am_total,
+                           make_small_or_big(sas.total, BIF_P));
+      hp += 3;
+      tuples[i++] = TUPLE2(hp,
+                           am_maximum,
+                           make_small_or_big(sas.maximum, BIF_P));
       hp += 3;
 #endif
 
@@ -877,7 +905,7 @@ BIF_ADECL_1
       ASSERT(endp == hp);
 #endif
       BIF_RET(res);
-#undef DEBUG_AA_2TUPS
+#undef INSTR_AA_2TUPS
 #undef NO_AA_2TUPS
 #undef NO_AA_3TUPS
 #undef NO_AA_TUPS
@@ -898,75 +926,51 @@ BIF_ADECL_1
 #ifndef HAVE_MMAP
 #define HAVE_MMAP 0
 #endif
-      Sint i;
       Eterm features = NIL;
       Eterm settings = NIL;
+      Eterm atoms[4];
+      Uint uints[4];
+      Uint length = 0;
+      SysAllocStat sas;
+      SysSlAllocStat ssas;
 
-      {
-#undef  MAX_SAS
-#define MAX_SAS 4
-	Sint no;
-	SysAllocStat sas;
-	Sint *datapv[MAX_SAS] = {&sas.trim_threshold,
-				 &sas.top_pad,
-				 &sas.mmap_threshold,
-				 &sas.mmap_max};
-	Eterm atomv[MAX_SAS] = {am_trim_threshold,
-				am_top_pad,
-				am_mmap_threshold,
-				am_mmap_max};
-
-	sys_alloc_stat(&sas);
+      sys_alloc_stat(&sas);
+      sys_sl_alloc_stat(&ssas);
 	
-	for(i = 0, no = 0; i < MAX_SAS; i++)
-	  if(*datapv[i] >= 0)
-	    no++;
-
-	if(no) {
-	  hp = HAlloc(BIF_P, no*(2+3));
-
-	  for(i = 0; i < MAX_SAS; i++)
-	    if(*datapv[i] >= 0) {
-	      settings = CONS(hp,
-			      TUPLE2(hp+2,
-				     atomv[i],
-				     make_small_or_big(*datapv[i], BIF_P)),
-			      settings);
-	      hp += 2+3;
-	    }
-	}
-#undef  MAX_SAS
+      if(sas.trim_threshold >= 0) {
+	atoms[length]   = am_trim_threshold;
+	uints[length++] = (Uint) sas.trim_threshold;
       }
+      if(sas.top_pad >= 0) {
+	atoms[length]   = am_top_pad;
+	uints[length++] = (Uint) sas.top_pad;
+      }
+      if(ssas.mmap_threshold >= 0) {
+	atoms[length]   = am_mmap_threshold;
+	uints[length++] = (Uint) ssas.mmap_threshold;
+      }
+      if(ssas.mmap_max >= 0) {
+	atoms[length]   = am_mmap_max;
+	uints[length++] = (Uint) ssas.mmap_max;
+      }
+      if(length)
+	settings = make_atom_int_tuple_list(BIF_P, length, atoms, uints);
 
 #if !defined(NO_FIX_ALLOC) && !defined(PURIFY)
       hp = HAlloc(BIF_P, 2);
       features = CONS(hp, am_fix_alloc, features);
 #endif
 
-#if defined(DLMALLOC_IS_CLIB)
-
+      if(ssas.sl_alloc_enabled) {
 #if HAVE_MMAP
-      hp = HAlloc(BIF_P, 5 + 4*2 + 2);
-      features = CONS(hp, am_mmap, features);
-      hp += 2;
-#else
-      hp = HAlloc(BIF_P, 5 + 4*2);
+	hp = HAlloc(BIF_P, 2);
+	features = CONS(hp, am_mmap, features);
 #endif
-      res = TUPLE4(hp,
-		   am_dlmalloc,
-		   CONS(hp+5,
-			make_small(DLMALLOC_MAJOR),
-			CONS(hp+7,
-			     make_small(DLMALLOC_MINOR),
-			     CONS(hp+9,
-				  make_small(DLMALLOC_BUILD),
-				  CONS(hp+11,
-				       make_small(DLMALLOC_ERTS),
-				       NIL)))),
-		   features,
-		   settings);
-		   
-#elif defined(ELIB_ALLOC_IS_CLIB)
+	hp = HAlloc(BIF_P, 2);
+	features = CONS(hp, am_sl_alloc, features);
+      }
+
+#if defined(ELIB_ALLOC_IS_CLIB)
       {
 	Eterm version;
 	int i;
@@ -993,9 +997,6 @@ BIF_ADECL_1
 #ifdef __GLIBC_MINOR__
 	  + 2
 #endif
-#if HAVE_MMAP
-	  + 2
-#endif
 	  ;
 	hp = HAlloc(BIF_P, words);
 
@@ -1006,11 +1007,6 @@ BIF_ADECL_1
 	hp += 4;
 #else
 	version = CONS(hp, make_small(__GLIBC__), NIL);
-	hp += 2;
-#endif
-
-#if HAVE_MMAP
-	features = CONS(hp, am_mmap, features);
 	hp += 2;
 #endif
 
@@ -1036,6 +1032,59 @@ BIF_ADECL_1
 	n = 0;
 #endif
 	BIF_RET(make_small(n));
+    }
+    else if (BIF_ARG_1 == am_sl_alloc) {
+      SysSlAllocStat ssas;
+      sys_sl_alloc_stat(&ssas);
+
+      if(!ssas.sl_alloc_enabled)
+	BIF_RET(am_false);
+
+      res = NIL;
+
+      {
+	Eterm atoms[5] = {am_mmap_chunks,
+			  am_mmap_chunks_size,
+			  am_mmap_blocks_size,
+			  0,
+			  0};
+	Uint uints[5] = {(Uint) ssas.mmapped_chunks,
+			 ssas.mmapped_chunks_size,
+			 ssas.mmapped_blocks_size,
+			 0,
+			 0};
+	Uint length = 3;
+
+	if(ssas.mmap_threshold >= 0) {
+	  atoms[length]   = am_mmap_threshold;
+	  uints[length++] = (Uint) ssas.mmap_threshold;
+	}
+	if(ssas.mmap_max >= 0) {
+	  atoms[length]   = am_mmap_max;
+	  uints[length++] = (Uint) ssas.mmap_max;
+	}
+	res = make_atom_int_tuple_list(BIF_P, length, atoms, uints);
+      }
+
+      if(ssas.mmap_table.in_use) {
+	Eterm *hp = HAlloc(BIF_P, 2+3);
+	Eterm tab_data;
+	Eterm atoms[] = {am_size,
+			 am_used,
+			 am_objects,
+			 am_depth};
+	Uint uints[] = {(Uint) ssas.mmap_table.size,
+			(Uint) ssas.mmap_table.used,
+			(Uint) ssas.mmap_table.objs,
+			(Uint) ssas.mmap_table.depth};
+	
+	tab_data = make_atom_int_tuple_list(BIF_P, 4, atoms, uints);
+	
+	res = CONS(hp, TUPLE2(hp+2, am_mmap_table, tab_data), res);
+      }
+
+      BIF_RET(res);
+      
     }
     else if (BIF_ARG_1 == am_os_version) {
        int major, minor, build;

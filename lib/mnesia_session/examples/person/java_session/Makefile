@@ -68,9 +68,7 @@ NORMAL_ERL_FILES = \
 
 
 GEN_MODULES =  \
-	oe_person \
-	persons_data \
-	persons_person
+	oe_person 
 
 
 GEN_HRL_NAMES = \

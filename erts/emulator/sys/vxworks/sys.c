@@ -1874,10 +1874,34 @@ static void initialize_allocation(void){
     alloc_flags &= ~(NEW_USER_POOL); /* It's never new after initialization*/
 }
 
+#ifdef INSTRUMENT
+/* When instrumented sys_alloc and friends are implemented in utils.c */
+#define SYS_ALLOC_ELSEWHERE
+#endif
+
+/* A = alloc |realloc | free */
+#ifdef SYS_ALLOC_ELSEWHERE
+
+/* sys_A implemented elsewhere (calls sys_A2); use this implementation
+   as sys_A2 */
+#define SYS_ALLOC   sys_alloc2
+#define SYS_REALLOC sys_realloc2
+#define SYS_FREE    sys_free2
+
+#else /* #ifdef SYS_ALLOC_ELSEWHERE */
+
+/* sys_A not implemented elsewhere; skip sys_A2 and use this implementation
+   as sys_A */
+#define SYS_ALLOC   sys_alloc
+#define SYS_REALLOC sys_realloc
+#define SYS_FREE    sys_free
+
+#endif /* #ifdef SYS_ALLOC_ELSEWHERE */
+
 /* This does not exist on other platforms, we just use it in sys.c 
    and the BSD resolver */
 void *sys_calloc2(size_t nelem, size_t elsize){
-    void *ptr = sys_alloc2(nelem*elsize);
+    void *ptr = SYS_ALLOC(nelem*elsize);
     if(ptr != NULL)
 	memset(ptr,0,nelem*elsize);
     return ptr;
@@ -1886,7 +1910,7 @@ void *sys_calloc2(size_t nelem, size_t elsize){
 /*
  * The malloc wrapper
  */
-void *sys_alloc2(size_t size){
+void *SYS_ALLOC(size_t size){
     register void *ret;
     ELIB_LOCK;
     if(USER_RECLAIM())
@@ -1901,7 +1925,7 @@ void *sys_alloc2(size_t size){
  * The realloc wrapper, may respond to the "realloc-always-moves" flag
  * if the area is initially allocated with elib_malloc.
  */
-void *sys_realloc2(void *ptr, size_t size){
+void *SYS_REALLOC(void *ptr, size_t size){
     register void *ret;
     if(use_save_free(ptr)){
 	if((alloc_flags & WARN_MALLOC_MIX) && 
@@ -1939,7 +1963,7 @@ void *sys_realloc2(void *ptr, size_t size){
 /*
  * Wrapped free().
  */
-void sys_free2(void *ptr){
+void SYS_FREE(void *ptr){
     if(use_save_free(ptr)){
 	/* 
 	 * This might happen when linked in drivers use save_malloc etc 

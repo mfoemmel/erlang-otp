@@ -1068,6 +1068,8 @@ emit_variable_defs(G, Fd, N, X, Name, R, ArgNames, ParameterTypes) ->
 				    emit(Fd,"~s    ~s oe_result;\n\n",[RestVars,RType]);
 				_ ->
 				    case RType of
+					"erlang_binary*" ->
+					    emit(Fd,"~s    erlang_binary oe_result;\n\n",[RestVars]);
 					"erlang_pid*" ->
 					    emit(Fd,"~s    erlang_pid oe_result;\n\n",[RestVars]);
 					"erlang_port*" ->
@@ -1642,6 +1644,8 @@ gen_cc_type(G, N, S, evaluate) when element(1, S) == scoped_id ->
     {FullScopedName, T, TK, _} = icgen:get_full_scoped_name(G, N, S),
     BT = icgen:get_basetype(G, icgen:to_undersc(FullScopedName)),
     case BT of
+	"erlang_binary" ->
+	    "erlang_binary";
 	"erlang_pid" ->
 	    "erlang_pid";
 	"erlang_port" ->
@@ -1659,6 +1663,8 @@ gen_cc_type(G, N, S, evaluate_not) when element(1, S) == scoped_id ->
     {FullScopedName, T, TK, _} = icgen:get_full_scoped_name(G, N, S),
     BT = icgen:get_basetype(G, icgen:to_undersc(FullScopedName)),
     case BT of
+	"erlang_binary" ->
+	    "erlang_binary";
 	"erlang_pid" ->
 	    "erlang_pid";
 	"erlang_port" ->

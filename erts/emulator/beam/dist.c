@@ -180,7 +180,9 @@ int slot;
 	       pid still works as expected. */
 	    dist_addrs[i].cid = NIL;
 	    dist_addrs[i].links = NULL;
-	    dist_addrs[i].status = 0;
+	    /* Keep the reserved flag so that slots aren't reused
+	       (OTP-4071) */
+	    dist_addrs[i].status &= D_RESERVED;
 	    dist_addrs[i].in_cookie = NIL;
 	    dist_addrs[i].out_cookie = NIL;
 	}
@@ -204,10 +206,15 @@ int slot;
 		    if ((rp = pid2proc(item)) == NULL)
 			break;
 		    if (rp->flags & F_TRAPEXIT) {
-			del_link(find_link(&rp->links,LNK_LINK,
-					   lnk->data,NIL));
-			deliver_exit_message(lnk->data, rp,
-					     am_noconnection);
+			ErlLink **rlinkpp = 
+			    find_link(&rp->links, LNK_LINK, lnk->data, NIL);
+			del_link(rlinkpp);
+			deliver_exit_message(lnk->data, rp, am_noconnection);
+			if (IS_TRACED_FL(rp, F_TRACE_PROCS) 
+			    && rlinkpp != NULL) {
+			    trace_proc(NULL, rp, 
+				       am_getting_unlinked, lnk->data);
+			}
 		    }
 		    else
 			schedule_exit(rp, am_noconnection);
@@ -333,7 +340,8 @@ int slot;
     clear_cache(slot);
     dist_addrs[slot].cid = NIL;
     dist_addrs[slot].links = NULL;
-    dist_addrs[slot].status = 0;
+    /* Keep the reserved flag so that slots aren't reused (OTP-4071) */
+    dist_addrs[slot].status &= D_RESERVED;
     /* In 4.5 distribution we do not clear cookies.
      * In next version the cookies should be cleared.
      */
@@ -444,7 +452,7 @@ dist_send(Process* sender, int slot, Eterm remote, Eterm message)
     if (SEQ_TRACE_TOKEN(sender) != NIL) {
 	seq_trace_update_send(sender);
 	token = SEQ_TRACE_TOKEN(sender);
-	seq_trace_output(token, message, SEQ_TRACE_SEND, remote);
+	seq_trace_output(token, message, SEQ_TRACE_SEND, remote, sender);
     }
 
     ASSERT(is_port(dist_addrs[slot].cid));
@@ -471,7 +479,7 @@ dist_reg_send(Process* sender, int slot, Eterm remote_name, Eterm message)
     if (SEQ_TRACE_TOKEN(sender) != NIL) {
 	seq_trace_update_send(sender);
 	token = SEQ_TRACE_TOKEN(sender);
-	seq_trace_output(token, message, SEQ_TRACE_SEND, remote_name);
+	seq_trace_output(token, message, SEQ_TRACE_SEND, remote_name, sender);
     }
 
     ASSERT(is_port(dist_addrs[slot].cid));
@@ -638,29 +646,33 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 					  to, from);
 	rp->links = new_link(rp->links, LNK_LINK, from, NIL);
 	if (IS_TRACED_FL(rp, F_TRACE_PROCS))
-	    trace_proc(rp, am_getting_linked, from);
+	    trace_proc(NULL, rp, am_getting_linked, from);
 	break;
 
-    case DOP_UNLINK:
+    case DOP_UNLINK: {
+	ErlLink **rlinkpp;
 	from = tuple[2];
 	to = tuple[3];
-
+	
 	if ((rp = pid2proc(to)) == NULL)
 	    break;
-	del_link(find_link(&rp->links, LNK_LINK, from, NIL));
+	rlinkpp = find_link(&rp->links, LNK_LINK, from, NIL);
+	del_link(rlinkpp);
 	del_link(find_link(&dist_addrs[slot].links, LNK_LINK, to, from));
-
-	if (IS_TRACED_FL(rp, F_TRACE_PROCS))
-	    trace_proc(rp, am_unlink, from);
+	
+	if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlinkpp != NULL) {
+	    trace_proc(NULL, rp, am_getting_unlinked, from);
+	}
 	break;
-
+    }
+    
     case DOP_MONITOR_P:
 	watcher = tuple[2];
 	watched = tuple[3];  /* local proc to monitor */
 	ref     = tuple[4];
 
 	if (is_atom(watched)) {
-	    rp = whereis_process(atom_val(watched));
+	    rp = whereis_process(watched);
 	    if ((rp == NULL) || (rp->status == P_EXITING)) {
 		dist_m_exit(slot, watcher, watched, ref_ptr(ref), am_noproc);
 		break;
@@ -687,6 +699,7 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 	watched = (*lnkp)->data;
 	if ((rp = pid2proc(watched)) == NULL)
 	   break;
+	del_link(lnkp);
 	del_link(find_link_by_ref(&rp->links, ref_ptr(ref)));
 	break;
 
@@ -723,7 +736,7 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 	    res = TUPLE4(hp, from, am_badcookie, to, message);
 	    dist_addrs[slot].out_cookie = am_badcookie;
 	    queue_message_tt(net_kernel, msg, res, token);
-	} else if ((rp = whereis_process(atom_val(to))) == NULL) {
+	} else if ((rp = whereis_process(to)) == NULL) {
 	    /* No receiver on this node -- silently ignore this message */
 	    free_message_buffer(msg);
 	} else {
@@ -810,10 +823,12 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 	del_link(find_link(&dist_addrs[slot].links, LNK_LINK, to, from));
 
 	if (is_pid(to)) {
+	    ErlLink **rlinkpp;
 	    rp = process_tab[pid_number(to)];
 	    if (INVALID_PID(rp, to))
 		break;
-	    del_link(find_link(&rp->links, LNK_LINK, from, NIL));
+	    rlinkpp = find_link(&rp->links, LNK_LINK, from, NIL);
+	    del_link(rlinkpp);
 #if 0
 	    /* Arndt: Maybe it should never be 'kill', but it can be,
 	       namely when a linked process does exit(kill). Until we know
@@ -821,11 +836,19 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 	       we leave the assertion out. */
 	    ASSERT(reason != am_kill); /* should never be kill (killed) */
 #endif
-	    if (rp->flags & F_TRAPEXIT)
+	    if (rp->flags & F_TRAPEXIT) {
 		/* token updated by remote node */
 		deliver_exit_message_tt(from, rp, reason, token); 
-	    else if (reason != am_normal)
+		if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlinkpp != NULL) {
+		    trace_proc(NULL, rp, am_getting_unlinked, from);
+		}
+	    } else if (reason == am_normal) {
+		if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlinkpp != NULL) {
+		    trace_proc(NULL, rp, am_getting_unlinked, from);
+		}
+	    } else {
 		schedule_exit(rp, reason);
+	    }
 	}
 	else if (is_port(to)) {
 	    int ix = port_index(to);
@@ -1235,7 +1258,7 @@ BIF_ADECL_2
 	dexit_trap->address == NULL)
 	goto error;
 
-    if ((net_kernel = whereis_process(atom_val(am_net_kernel))) == NULL)
+    if ((net_kernel = whereis_process(am_net_kernel)) == NULL)
 	goto error;
     /* By setting dslot==0 (this node slot) and DISTRIBUTION on
        net_kernel do_net_exist will be called when net_kernel
@@ -1470,7 +1493,7 @@ BIF_ADECL_2
     lp->links = new_link(lp->links,LNK_LINK,remote,NIL);
 
     if (IS_TRACED_FL(lp, F_TRACE_PROCS))
-        trace_proc(lp, am_getting_linked, remote);
+        trace_proc(BIF_P, lp, am_getting_linked, remote);
     BIF_RET(am_true);
 
  error:
@@ -1508,7 +1531,7 @@ BIF_ADECL_2
     del_link(find_link(&dist_addrs[slot].links, LNK_LINK,
 		       local, remote));
     if (IS_TRACED_FL(lp, F_TRACE_PROCS))
-        trace_proc(lp, am_unlink, remote);
+        trace_proc(BIF_P, lp, am_unlink, remote);
     BIF_RET(am_true);
 
  error:

@@ -222,7 +222,7 @@ extern int count_instructions;
      int needed; \
      ASSERT(c_p->htop <= E && E <= c_p->hend); \
      needed = (StackNeed) + CP_SIZE; \
-     if (E - (needed + (HeapNeed)) < HTOP) { \
+     if (E - HTOP < (needed + (HeapNeed))) { \
            SWAPOUT; \
            reg[0] = r(0); \
            FCALLS -= erts_garbage_collect(c_p, needed + (HeapNeed), reg, (M)); \
@@ -291,7 +291,7 @@ extern int count_instructions;
   do { \
     unsigned need = (Nh); \
     ASSERT(c_p->htop <= E && E <= c_p->hend); \
-    if (E < (HTOP + need)) { \
+    if (E - HTOP < need) { \
        SWAPOUT; \
        reg[0] = r(0); \
        FCALLS -= erts_garbage_collect(c_p, need, reg, (Live)); \
@@ -1202,7 +1202,8 @@ int process_main(c_p, reds)
 	     c_p->seq_trace_clock = unsigned_val(SEQ_TRACE_TOKEN_SERIAL(c_p));
 	 }
 	 msg = msgp->mesg;
-	 seq_trace_output(SEQ_TRACE_TOKEN(c_p), msg, SEQ_TRACE_RECEIVE, c_p->id);
+	 seq_trace_output(SEQ_TRACE_TOKEN(c_p), msg, SEQ_TRACE_RECEIVE, 
+			  c_p->id, c_p);
      }
      UNLINK_MESSAGE(c_p, msgp);
      JOIN_MESSAGE(c_p);

@@ -247,8 +247,8 @@ RUN_OBJS = \
 OS_OBJS =					\
 	$(OBJDIR)/sys.o \
 	$(OBJDIR)/driver_tab.o		$(OBJDIR)/unix_efile.o \
-	$(OBJDIR)/gzio.o		$(OBJDIR)/dlmalloc.o \
-	$(OBJDIR)/elib_malloc.o		$(OBJDIR)/elib_memmove.o
+	$(OBJDIR)/gzio.o		$(OBJDIR)/elib_malloc.o	\
+	$(OBJDIR)/elib_memmove.o	$(OBJDIR)/erts_sl_alloc.o
 
 # Until recently (ummm...not *that* recently), both these were named
 # `ddll_drv.o'.

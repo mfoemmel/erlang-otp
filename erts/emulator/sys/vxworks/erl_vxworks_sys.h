@@ -71,7 +71,7 @@
 #ifndef VXWORKS
 #define VXWORKS
 #endif
-/* #define USE_ELIB */ /* xxxP - io.c compiles */
+
 #define DONT_USE_MAIN
 #define NO_FSYNC
 #define NO_MKDIR_MODE

@@ -589,7 +589,7 @@ handle_call(disc_load_intents, From, State) ->
 handle_call({update_where_to_write, [add, Tab, AddNode], From}, Dummy, State) ->
     dbg_out("update_w3w ~p ~n", [[add, Tab, AddNode]]), %%% qqqq
     Res = 
-	case lists:member(node(From), val({current, db_nodes})) and 
+	case lists:member(AddNode, val({current, db_nodes})) and 
 	    State#state.schema_is_merged == false of
 	    true ->
 		mnesia_lib:add({Tab, where_to_write}, AddNode);
@@ -816,8 +816,21 @@ handle_cast({mnesia_down, Node}, State) ->
 	undefined -> ignore;
 	Pid2 when pid(Pid2) -> Pid2 ! {copier_done, Node}
     end,
+    NewSenders = 
+	case State#state.sender_queue of
+	    [OldSender | RestSenders] ->
+		Remove = fun(ST) ->
+				 node(ST#send_table.receiver_pid) /= Node
+			 end,
+		NewS = lists:filter(Remove, RestSenders),
+		%% Keep old sender it will be removed by sender_done
+		[OldSender | NewS];
+	    [] ->
+		[]
+	end,
+    Early = remove_early_messages(State2#state.early_msgs, Node),
     mnesia_monitor:mnesia_down(?SERVER_NAME, Node),
-    noreply(State2);
+    noreply(State2#state{sender_queue = NewSenders, early_msgs = Early});
 
 handle_cast({im_running, Node, NewFriends}, State) ->
     Tabs = mnesia_lib:local_active_tables() -- [schema],
@@ -845,8 +858,13 @@ handle_cast({sync_tabs, Tabs, From}, State) ->
     noreply(State);
 
 handle_cast({i_have_tab, Tab, Node}, State) ->
-    State2 = node_has_tabs([Tab], Node, State),
-    noreply(State2);
+    case lists:member(Node, val({current, db_nodes})) of
+	true -> 
+	    State2 = node_has_tabs([Tab], Node, State),
+	    noreply(State2);
+	false ->
+	    noreply(State)
+    end;
 
 handle_cast({force_load_updated, Tab}, State) ->
     case val({Tab, active_replicas}) of
@@ -882,6 +900,7 @@ handle_cast({master_nodes_updated, Tab, Masters}, State) ->
     end;
     
 handle_cast({adopt_orphans, Node, Tabs}, State) ->
+
     State2 = node_has_tabs(Tabs, Node, State),
     
     %% Register the other node as up and running
@@ -1383,6 +1402,21 @@ reconfigure_tables(N, State, [Tab |Tail]) ->
 
 reconfigure_tables(_, State, []) ->
     State.
+
+remove_early_messages([], Node) ->
+    [];
+remove_early_messages([{call, {add_active_replica, [_, Node, _, _], _}, _}|R], Node) ->
+    remove_early_messages(R, Node); %% Does a reply before queuing
+remove_early_messages([{call, {block_table, _, From}, ReplyTo}|R], Node) 
+  when node(From) == Node ->
+    reply(ReplyTo, ok),  %% Remove gen:server waits..
+    remove_early_messages(R, Node);
+remove_early_messages([{cast, {i_have_tab, Tab, Node}}|R], Node) ->
+    remove_early_messages(R, Node);
+remove_early_messages([{cast, {adopt_orphans, Node, Tabs}}|R], Node) ->
+    remove_early_messages(R, Node);
+remove_early_messages([M|R],Node) ->
+    [M|remove_early_messages(R,Node)].
 
 %% Drop loader from late load queue and possibly trigger a disc_load
 drop_loaders(Tab, Node, [H | T]) when H#late_load.table == Tab ->

@@ -28,7 +28,7 @@
 %%%  This module implements a server process that checks remaining 
 %%%  disk space.
 %%%-----------------------------------------------------------------
--record(state, {threshold, timeout, os, diskdata = []}).
+-record(state, {threshold, timeout, os, diskdata = [],port}).
 
 start_link() -> gen_server:start_link({local, disksup}, disksup, [], []).
 
@@ -45,12 +45,14 @@ get_almost_full_threshold() ->
     gen_server:call(disksup, get_almost_full_threshold).
 
 init([]) ->  
+    Port = new_port(),
     Timeout = get_timeout(),
     Threshold = get_threshold(),
     OS = get_os(),
     process_flag(trap_exit, true),
     process_flag(priority, low),
-    State = #state{threshold = Threshold, timeout = Timeout, os = OS},
+    State = #state{threshold = Threshold, timeout = Timeout, os = OS, 
+		   port = Port},
     self() ! timeout, % Check space first thing when we're started
     {ok, State}.
 
@@ -79,10 +81,10 @@ check_disk_space(State) when element(1,State#state.os) == win32 ->
     Result = os_mon_sysinfo:get_disk_info(),
     check_disks_win32(Result, State#state.threshold);
 check_disk_space(State) when State#state.os == {unix, solaris} ->
-    Result = os:cmd("/usr/bin/df -lk"),
+    Result = my_cmd("/usr/bin/df -lk",State#state.port),
     check_disks_solaris(skip_to_eol(Result), State#state.threshold);
 check_disk_space(State) when State#state.os == {unix, sunos4} ->
-    Result = os:cmd("df"),
+    Result = my_cmd("df",State#state.port),
     check_disks_solaris(skip_to_eol(Result), State#state.threshold).
 
 check_disks_solaris("", _Threshold) ->
@@ -185,8 +187,43 @@ format_status(Opt, [PDict, #state{os = OS, threshold = Threshold,
 	     {"Threshold", Threshold},
 	     {"DiskData", DiskData}]}].
 
+%%%---------------------------------------------
+%%% Pseudo os:cmd()
+%%%---------------------------------------------
+
+new_port () -> 
+     case catch open_port({spawn, "sh -s disksup 2>&1"}, [stream]) of
+         {'EXIT', R} -> exit({?MODULE, {open_port_failed, R}});
+         P -> P
+     end.
 
 
+my_cmd(Cmd,Port) ->
+    get_reply(send2port(mk_cmd(Cmd),Port), []).
+
+mk_cmd(Cmd) when list(Cmd) ->
+    %% We insert a new line after the command, in case the command
+    %% contains a comment character.
+    io_lib:format("(~s\n) </dev/null; echo  \"\^M\"\n", [Cmd]);
+mk_cmd(Cmd) ->
+    exit({?MODULE, {bad_command, Cmd}}).
+
+send2port(Cmd,P) ->
+    P ! {self(), {command, [Cmd, 10]}},
+    P.
+            
+get_reply(P, O) ->
+    receive 
+        {P, {data, N}} -> 
+            case newline(N, O) of
+                {ok, Str} -> Str;
+                {more, Acc} -> get_reply(P, Acc)
+            end;
+        {'EXIT', P, _} -> 0
+    end.
+newline([13|_], B) -> {ok, lists:reverse(B)};
+newline([H|T], B) -> newline(T, [H|B]);
+newline([], B) -> {more, B}.
 
 
 

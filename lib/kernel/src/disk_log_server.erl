@@ -29,6 +29,8 @@
 
 -include("disk_log.hrl").
 
+-compile({inline,[{do_get_log_pids,1}]}).
+
 %%%-----------------------------------------------------------------
 %%% This module implements the disk_log server.  Its primary purpose
 %%% is to keep the ets table 'disk_log_names' updated and to handle
@@ -73,6 +75,7 @@ accessible_logs() ->
 init([]) ->
     process_flag(trap_exit, true),
     ets:new(disk_log_names, [public, named_table, set]),
+    ets:new(inv_disk_log_names, [public, named_table, set]),
     {ok, []}.
 
 handle_call({open, A}, _From, State) ->
@@ -91,6 +94,7 @@ handle_info({'EXIT', Pid, _Reason}, State) ->
 	    {noreply, State};
 	Name ->
 	    ets:delete(disk_log_names, Name),
+	    ets:delete(inv_disk_log_names, Pid),
 	    erase(Pid),
 	    {noreply, State}
     end;
@@ -134,12 +138,13 @@ do_open(A) ->
 	    case get_local_pid(Name) of
 		{local, Pid} ->
 		    disk_log:internal_open(Pid, A);
-		{distributed, Pid} ->
+		{distributed, _Pid} ->
 		    {error, {node_already_open, Name}};
 		undefined ->
 		    case start_log(Name, A) of
 			{ok, Pid, R} ->
 			    ets:insert(disk_log_names, {Name, Pid}),
+			    ets:insert(inv_disk_log_names, {Pid, Name}),
 			    R;
 			Error ->
 			    Error
@@ -187,8 +192,9 @@ do_close(Pid) ->
 	    ok;
 	Name ->
 	    case get_local_pid(Name) of
-		{local, _Pid} ->
-		    ets:delete(disk_log_names, Name);
+		{local, Pid} ->
+		    ets:delete(disk_log_names, Name),
+		    ets:delete(inv_disk_log_names, Pid);
 		{distributed, _Pid} ->
 		    ok = pg2:leave(?group(Name), Pid)
 	    end,
@@ -226,6 +232,7 @@ own_pid([_ | T], Node) ->
 own_pid([], _) ->
     undefined.
 
+%% Inlined.
 do_get_log_pids(LogName) ->
     case catch ets:lookup(disk_log_names, LogName) of
 	[{_, Pid}] ->

@@ -16,19 +16,22 @@
 %%     $Id$
 %%
 
-%% HEADSZ is the size of the file header, HEADERSZ of the item header.
+%% HEADSZ is the size of the file header, 
+%% HEADERSZ is the size of the item header ( = ?SIZESZ + ?MAGICSZ).
 -define(HEADSZ, 8).
+-define(SIZESZ, 4).
+-define(MAGICSZ, 4).
 -define(HEADERSZ, 8).
--define(MAGICHEAD, [12,33,44,55]).
--define(MAGICINT, 203500599).  %% i32(?MAGICHEAD).
+-define(MAGICHEAD, <<12,33,44,55>>).
+-define(MAGICINT, 203500599).  %% ?MAGICHEAD = <<?MAGICINT:32>>
 
 -define(MAX_FILES, 65000).
 -define(MAX_CHUNK_SIZE, 8192).
 
 %% Object defines
--define(LOGMAGIC, [1,2,3,4]). 
--define(OPENED, [6,7,8,9]).
--define(CLOSED, [99,88,77,11]).
+-define(LOGMAGIC, <<1,2,3,4>>). 
+-define(OPENED, <<6,7,8,9>>).
+-define(CLOSED, <<99,88,77,11>>).
 
 %% record of args for open
 -record(arg, {name = 0,
@@ -58,11 +61,11 @@
 	                      %%  called when wraplog wraps
 	 mode,                %%  read_write | read_only
 	 size,                %%  value of open/1 option 'size' (never changed)
-	 extra}               %%  {Fd, CurrentSize} for halt logs,
+	 extra}               %%  record 'halt' for halt logs,
                               %%  record 'handle' for wrap logs.
 	).
 
--record(handle,               %% For wrap files.
+-record(handle,               %% For a wrap log.
 	{filename,            %% Same as log.filename
 	 maxB,                %% integer(). Max size of the files.
 	 maxF,                %% MaxF = integer() | 
@@ -76,7 +79,7 @@
                               %% Dir/Name.NewMaxF file.
 	 curB,                %% integer(). Number of bytes on current file.
 	 curF,                %% integer(). Current file number.
-	 cur_fd,              %% Current file descriptor.
+	 cur_fdc,             %% Current file descriptor. A cache record.
 	 cur_name,            %% Current file name. For error reports.
 	 cur_cnt,             %% integer(). Number of items on current file,
 	                      %% header inclusive.
@@ -90,8 +93,9 @@
 	                      %% the log was opened.
        ).
 
--record(halt,                 %% For halt files.
-	{fd,
+-record(halt,                 %% For a halt log.
+	{fdc,                 %% A cache record.
+	 curB,                %% integer(). Number of bytes on the file.
 	 size}
 	).
 
@@ -100,3 +104,9 @@
 	 pos,
 	 b}
 	).
+
+-record(cache,                %% Cache for logged terms (per file descriptor).
+        {fd,                  %% File descriptor.
+         sz = 0,              %% integer(). Number of bytes in the cache.
+         c = []}              %% iolist(). The cache.
+        ).

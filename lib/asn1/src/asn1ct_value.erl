@@ -171,7 +171,12 @@ get_type_prim(D) ->
 		_ ->
 		    lists:nth(random(length(NN)),NN)
 	    end;
-	{'ENUMERATED',NamedNumberList} ->
+	Enum when tuple(Enum),element(1,Enum)=='ENUMERATED' ->
+	    NamedNumberList =
+		case Enum of
+		    {_,_,NNL} -> NNL;
+		    {_,NNL} -> NNL
+		end,
 	    NNew=
 		case NamedNumberList of
 		    {N1,N2} ->

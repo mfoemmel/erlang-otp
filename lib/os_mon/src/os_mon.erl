@@ -83,7 +83,10 @@ start_disksup() ->
 start_memsup() ->
     case application:get_env(os_mon, start_memsup) of
 	{ok, true} ->
-	    [{memsup,
+	    [{memsup_helper_sup,
+	      {memsup_helper, start_link, []},
+	      permanent, 2000, worker, [memsup_helper]},
+	     {memsup,
 	      {memsup, start_link, []},
 	      permanent, 2000, worker, [memsup]}];
 	_ ->

@@ -82,6 +82,9 @@
 	 try_pull_structured_event/3, 
 	 disconnect_structured_pull_supplier/3]).
 
+%%----- Inherit from CosEventChannelAdmin::ProxyPullSupplier
+-export([connect_pull_consumer/4]).
+
 %% Attributes (external) CosNotifyChannelAdmin::ProxySupplier
 -export(['_get_MyType'/3, 
 	 '_get_MyAdmin'/3, 
@@ -231,18 +234,18 @@ code_change(OldVsn, State, Extra) ->
     {ok, State}.
 
 handle_info(Info, State) ->
-    ?debug_print("INFO: ~p~n", [Info]),
+    ?DBG("INFO: ~p~n", [Info]),
     case Info of
         {'EXIT', Pid, Reason} when ?get_MyAdminPid(State)==Pid->
-            ?debug_print("PARENT ADMIN: ~p  TERMINATED.~n",[Reason]),
+            ?DBG("PARENT ADMIN: ~p  TERMINATED.~n",[Reason]),
 	    {stop, Reason, State};
         {'EXIT', Pid, Reason} ->
-            ?debug_print("PROXYPUSHSUPPLIER: ~p  TERMINATED.~n",[Reason]),
+            ?DBG("PROXYPUSHSUPPLIER: ~p  TERMINATED.~n",[Reason]),
             {noreply, State};
 	{pacing, TS} when ?is_Waiting(State) ->
 	    case ?get_PacingTimer(State) of
 		{_, TS} ->
-		    ?debug_print("PULL SUPPLIER PACING LIMIT REACHED~n",[]),
+		    ?DBG("PULL SUPPLIER PACING LIMIT REACHED~n",[]),
 		    {RespondTo, Max} = ?get_RespondTo(State),
 		    {EventSeq, _} = ?get_Events(State, Max),
 		    corba:reply(RespondTo, EventSeq),
@@ -251,11 +254,11 @@ handle_info(Info, State) ->
 		    %% Must have been an old timer event, i.e., we reached the
 		    %% Batch Limit before Pace limit and we were not able
 		    %% to stop the timer before it triggered an event.
-		    ?debug_print("PULL SUPPLIER OLD PACING LIMIT REACHED~n",[]),
+		    ?DBG("PULL SUPPLIER OLD PACING LIMIT REACHED~n",[]),
 		    {noreply, State}
 	    end;
 	{pacing, _} ->
-	    ?debug_print("PULL SUPPLIER PACING LIMIT REACHED BUT NO CLIENT; IMPOSSIBLE!!!~n",[]),
+	    ?DBG("PULL SUPPLIER PACING LIMIT REACHED BUT NO CLIENT; IMPOSSIBLE!!!~n",[]),
 	    {noreply, State};
         _ ->
 	    {noreply, State}
@@ -279,8 +282,26 @@ init([MyType, MyAdmin, MyAdminPid, InitQoS, LQS, MyChannel, Options, Operator]) 
     {ok, ?get_InitState(MyType, MyAdmin, MyAdminPid, InitQoS, LQS, MyChannel, 
 			Operator, GCTime, GCLimit, TimeRef)}.
 
+terminate(Reason, State) when ?is_UnConnected(State) ->
+    ok;
 terminate(Reason, State) ->
-    ok.
+    Client = ?get_Client(State),
+    case catch corba_object:is_nil(Client) of
+	false when ?is_ANY(State) ->
+	    'CosNotification_Common':disconnect('CosEventComm_PullConsumer', 
+						disconnect_pull_consumer,
+						Client);
+	false when ?is_SEQUENCE(State) ->
+	    'CosNotification_Common':disconnect('CosNotifyComm_SequencePullConsumer',
+						disconnect_sequence_pull_consumer,
+						Client);
+	false when ?is_STRUCTURED(State) ->
+	    'CosNotification_Common':disconnect('CosNotifyComm_StructuredPullConsumer',
+						disconnect_structured_pull_consumer,
+						Client);
+	_ ->
+	    ok
+    end.
 
 %%-----------------------------------------------------------
 %%----- CosNotifyChannelAdmin_ProxySupplier attributes ------
@@ -325,6 +346,18 @@ terminate(Reason, State) ->
 %%-----------------------------------------------------------
 %%------- Exported external functions -----------------------
 %%-----------------------------------------------------------
+%%----- CosEventChannelAdmin::ProxyPullSupplier -------------
+%%----------------------------------------------------------%
+%% function : connect_pull_consumer
+%% Arguments: Client - CosEventComm::PullConsumer
+%% Returns  :  ok | {'EXCEPTION', #'AlreadyConnected'{}} |
+%%            {'EXCEPTION', #'TypeError'{}} |
+%%            {'EXCEPTION', #'BAD_OPERATION'{}}
+%%            Both exceptions from CosEventChannelAdmin!!!
+%%-----------------------------------------------------------
+connect_pull_consumer(OE_THIS, OE_FROM, State, Client) ->
+    connect_any_pull_consumer(OE_THIS, OE_FROM, State, Client).
+
 %%----- CosNotifyChannelAdmin::ProxyPullSupplier ------------
 %%----------------------------------------------------------%
 %% function : connect_any_pull_consumer
@@ -397,8 +430,10 @@ obtain_offered_types(OE_THIS, OE_FROM, State, 'NONE_NOW_UPDATES_OFF') ->
     {reply, [], ?set_SubscribeType(State, false)};
 obtain_offered_types(OE_THIS, OE_FROM, State, 'NONE_NOW_UPDATES_ON') ->
     {reply, [], ?set_SubscribeType(State, true)};
-obtain_offered_types(_,_,_,_) ->
-    corba:raise(#'BAD_OPERATION'{minor=203, completion_status=?COMPLETED_NO}).
+obtain_offered_types(_,_,_,What) ->
+    orber:debug_level_print("[~p] PullerSupplier:obtain_offered_types(~p);
+Incorrect enumerant", [?LINE, What], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : validate_event_qos
@@ -501,7 +536,7 @@ update_subscribe(remove, State, [H|T]) ->
 %% Returns  : FilterID - long
 %%-----------------------------------------------------------
 add_filter(OE_THIS, OE_FROM, State, Filter) ->
-    ?not_TypeCheck(Filter, 'CosNotifyFilter_Filter'),
+    'CosNotification_Common':type_check(Filter, 'CosNotifyFilter_Filter'),
     FilterID = ?new_Id(State),
     NewState = ?set_IdCounter(State, FilterID),
     {reply, FilterID, ?add_Filter(NewState, FilterID, Filter)}.
@@ -513,7 +548,9 @@ add_filter(OE_THIS, OE_FROM, State, Filter) ->
 %%-----------------------------------------------------------
 remove_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
     {reply, ok, ?del_Filter(State, FilterID)};
-remove_filter(_,_,_,_) ->
+remove_filter(_,_,_,What) ->
+    orber:debug_level_print("[~p] PullerSupplier:remove_filter(~p); Not an integer", 
+			    [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{minor=200, completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
@@ -524,7 +561,9 @@ remove_filter(_,_,_,_) ->
 %%-----------------------------------------------------------
 get_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
     {reply, ?get_Filter(State, FilterID), State};
-get_filter(_,_,_,_) ->
+get_filter(_,_,_,What) ->
+    orber:debug_level_print("[~p] PullerSupplier:get_filter(~p); Not an integer", 
+			    [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{minor=201, completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
@@ -691,31 +730,31 @@ delete_obj(List,_) -> List.
 %% Arguments: 
 %% Returns  : 
 %%-----------------------------------------------------------
-callSeq(OE_THIS, OE_FROM, State, Events, Status) ->
+callSeq(OE_THIS, OE_FROM, State, EventsIn, Status) ->
     %% We should do something here, i.e., see what QoS this Object offers and
     %% act accordingly.
     corba:reply(OE_FROM, ok),
-    case cosNotification_eventDB:validate_event(?get_SubscribeData(State), Events,
+    case cosNotification_eventDB:validate_event(?get_SubscribeData(State), EventsIn,
 						?get_AllFilter(State),
 						?get_SubscribeDB(State),
 						Status) of
 	{[], _} ->
-	    ?debug_print("PROXY NOSUBSCRIPTION SEQUENCE/STRUCTURED: ~p~n",[Events]),
+	    ?DBG("PROXY NOSUBSCRIPTION SEQUENCE/STRUCTURED: ~p~n",[EventsIn]),
 	    {noreply, State};
 	%% Just one event and we got a client waiting => there is no need to store
 	%% the event, just transform it and pass it on.
 	{[Event], _} when ?is_ANY(State), ?is_Waiting(State) ->
-	    ?debug_print("PROXY RECEIVED SEQUENCE[1]==>ANY: ~p~n",[Event]),
+	    ?DBG("PROXY RECEIVED SEQUENCE[1]==>ANY: ~p~n",[Event]),
 	    AnyEvent = any:create('CosNotification_StructuredEvent':tc(),Event),
 	    case ?addAndGet_Event(State, AnyEvent) of
 		{[], _} ->
-		    ?debug_print("PROXY RECEIVED UNDELIVERABLE SEQUENCE[1]: ~p~n",
+		    ?DBG("PROXY RECEIVED UNDELIVERABLE SEQUENCE[1]: ~p~n",
 				 [Event]),
 		    %% Cannot deliver the event at the moment; perhaps Starttime
 		    %% set or Deadline passed.
 		    {noreply, State};
 		{PossiblyOtherEvent, _} ->
-		    ?debug_print("PROXY RECEIVED SEQUENCE[1] ~p; DELIVER: ~p~n",
+		    ?DBG("PROXY RECEIVED SEQUENCE[1] ~p; DELIVER: ~p~n",
 				 [Event, PossiblyOtherEvent]),
 		    corba:reply(?get_RespondTo(State), PossiblyOtherEvent),
 		    {noreply, ?reset_RespondTo(State)}
@@ -723,13 +762,13 @@ callSeq(OE_THIS, OE_FROM, State, Events, Status) ->
 	{[Event],_} when ?is_STRUCTURED(State), ?is_Waiting(State) ->
 	    case ?addAndGet_Event(State, Event) of
 		{[], _} ->
-		    ?debug_print("PROXY RECEIVED UNDELIVERABLE SEQUENCE[1]: ~p~n",
+		    ?DBG("PROXY RECEIVED UNDELIVERABLE SEQUENCE[1]: ~p~n",
 				 [Event]),
 		    %% Cannot deliver the event at the moment; perhaps Starttime
 		    %% set or Deadline passed.
 		    {noreply, State};
 		{PossiblyOtherEvent, _} ->
-		    ?debug_print("PROXY RECEIVED SEQUENCE[1] ~p; DELIVER: ~p~n",
+		    ?DBG("PROXY RECEIVED SEQUENCE[1] ~p; DELIVER: ~p~n",
 				 [Event, PossiblyOtherEvent]),
 		    corba:reply(?get_RespondTo(State), PossiblyOtherEvent),
 		    {noreply, ?reset_RespondTo(State)}
@@ -737,7 +776,7 @@ callSeq(OE_THIS, OE_FROM, State, Events, Status) ->
 	%% A sequence of events => store them and extract the first (according to QoS)
 	%% event and forward it.
 	{Events,_} when ?is_ANY(State), ?is_Waiting(State) ->
-	    ?debug_print("PROXY RECEIVED SEQUENCE==>ANY: ~p~n",[Events]),
+	    ?DBG("PROXY RECEIVED SEQUENCE==>ANY: ~p~n",[Events]),
 	    store_events(State, Events),
 	    case ?get_Event(State) of
 		{[], _} ->
@@ -747,7 +786,7 @@ callSeq(OE_THIS, OE_FROM, State, Events, Status) ->
 		    {noreply, ?reset_RespondTo(State)}
 	    end;
 	{Events, _} when ?is_STRUCTURED(State), ?is_Waiting(State) ->
-	    ?debug_print("PROXY RECEIVED SEQUENCE: ~p~n",[Events]),
+	    ?DBG("PROXY RECEIVED SEQUENCE: ~p~n",[Events]),
 	    store_events(State, Events),
 	    case ?get_Event(State) of
 		{[], _} ->
@@ -757,7 +796,7 @@ callSeq(OE_THIS, OE_FROM, State, Events, Status) ->
 		    {noreply, ?reset_RespondTo(State)}
 	    end;
 	{Events, _} when ?is_SEQUENCE(State), ?is_Waiting(State) ->
-	    ?debug_print("PROXY RECEIVED SEQUENCE: ~p~n",[Events]),
+	    ?DBG("PROXY RECEIVED SEQUENCE: ~p~n",[Events]),
 	    %% Store them first and extract Max events in QoS order.
 	    store_events(State, Events),
 	    {RespondTo, Max} = ?get_RespondTo(State),
@@ -772,7 +811,7 @@ callSeq(OE_THIS, OE_FROM, State, Events, Status) ->
 	    end;
 	%% No client waiting. Store the event(s).
 	{Events, _} ->
-	    ?debug_print("PROXY RECEIVED SEQUENCE: ~p~n",[Events]),
+	    ?DBG("PROXY RECEIVED SEQUENCE: ~p~n",[Events]),
 	    store_events(State, Events),
 	    {noreply, State}
     end.
@@ -792,17 +831,17 @@ store_events(State, [Event|Rest]) ->
 %% Arguments: 
 %% Returns  : 
 %%-----------------------------------------------------------
-callAny(OE_THIS, OE_FROM, State, Event, Status) ->
+callAny(OE_THIS, OE_FROM, State, EventIn, Status) ->
     corba:reply(OE_FROM, ok),
-    case cosNotification_eventDB:validate_event(?get_SubscribeData(State), Event,
+    case cosNotification_eventDB:validate_event(?get_SubscribeData(State), EventIn,
 						?get_AllFilter(State),
 						?get_SubscribeDB(State),
 						Status) of
 	{[],_} ->
-	    ?debug_print("PROXY NOSUBSCRIPTION ANY: ~p~n",[Event]),
+	    ?DBG("PROXY NOSUBSCRIPTION ANY: ~p~n",[EventIn]),
 	    {noreply, State};
 	{Event,_} when ?is_ANY(State), ?is_Waiting(State) ->
-	    ?debug_print("PROXY RECEIVED ANY: ~p~n",[Event]),
+	    ?DBG("PROXY RECEIVED ANY: ~p~n",[Event]),
 	    case ?addAndGet_Event(State, Event) of
 		{[],_} ->
 		    %% Unable to deliver the event (Starttime, Deadline etc).
@@ -812,11 +851,11 @@ callAny(OE_THIS, OE_FROM, State, Event, Status) ->
 		    {noreply, ?reset_RespondTo(State)}
 	    end;
 	{Event,_} when ?is_ANY(State) ->
-	    ?debug_print("PROXY RECEIVED ANY: ~p~n",[Event]),
+	    ?DBG("PROXY RECEIVED ANY: ~p~n",[Event]),
 	    ?add_Event(State,Event),
 	    {noreply, State};
 	{Event,_} when ?is_STRUCTURED(State), ?is_Waiting(State) ->
-	    ?debug_print("PROXY RECEIVED ANY==>STRUCTURED: ~p~n",[Event]),
+	    ?DBG("PROXY RECEIVED ANY==>STRUCTURED: ~p~n",[Event]),
 	    case ?addAndGet_Event(State, ?not_CreateSE("","%ANY","",[],[],Event)) of
 		{[],_} ->
 		    %% Unable to deliver the event (Starttime, Deadline etc).
@@ -826,7 +865,7 @@ callAny(OE_THIS, OE_FROM, State, Event, Status) ->
 		    {noreply, ?reset_RespondTo(State)}
 	    end;
 	{Event,_} when ?is_SEQUENCE(State), ?is_Waiting(State) ->
-	    ?debug_print("PROXY RECEIVED ANY==>SEQUENCE[1]: ~p~n",[Event]),
+	    ?DBG("PROXY RECEIVED ANY==>SEQUENCE[1]: ~p~n",[Event]),
 	    ?add_Event(State,?not_CreateSE("","%ANY","",[],[],Event)),
 	    {RespondTo, Max} = ?get_RespondTo(State),
 	    case ?is_BatchLimitReached(State, Max) of
@@ -839,7 +878,7 @@ callAny(OE_THIS, OE_FROM, State, Event, Status) ->
 		    {noreply, State}
 	    end;
 	{Event,_} ->
-	    ?debug_print("PROXY RECEIVED ANY==>STRUCTURED/SEQUENCE: ~p~n",[Event]),
+	    ?DBG("PROXY RECEIVED ANY==>STRUCTURED/SEQUENCE: ~p~n",[Event]),
 	    ?add_Event(State,?not_CreateSE("","%ANY","",[],[],Event)),
 	    {noreply, State}
     end.
@@ -853,10 +892,12 @@ start_timer(State) ->
     case catch timer:send_after(timer:seconds(?get_PacingInterval(State)), 
 				{pacing, TS}) of
 	{ok,PacTRef} ->
-	    ?debug_print("PULL SUPPLIER STARTED TIMER, BATCH LIMIT: ~p~n",
+	    ?DBG("PULL SUPPLIER STARTED TIMER, BATCH LIMIT: ~p~n",
 			 [?get_BatchLimit(State)]),
 	    ?set_PacingTimer(State, {PacTRef, TS});
-	_ ->
+	What ->
+	    orber:debug_level_print("[~p] PullerSupplier:start_timer(); 
+Unable to invoke timer:send_interval/2: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -865,7 +906,7 @@ stop_timer(State) ->
 	undefined ->
 	    ok;
 	{Timer, _} ->
-	    ?debug_print("PULL SUPPLIER STOPPED TIMER~n",[]),
+	    ?DBG("PULL SUPPLIER STOPPED TIMER~n",[]),
 	    timer:cancel(Timer)
     end.
 

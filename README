@@ -95,6 +95,11 @@ Now cd into base directory
 Run the following commands
 
   3)    ./configure  [ options ]
+
+If you upgraded the source with the patch you may need to clean up
+from previous builds before the new build. Do a "make clean", see
+"Caveats" below.
+
   4)    make
   5)    make install
 
@@ -115,17 +120,6 @@ configuration information in lib, this warning can safely be ignored).
 
 You can also specify where the openSSL/ssleay include and library
 files are located or disable the use of SSL.
-
-Dlmalloc is an alternative malloc() implementation that has been
-included in the emulator. It was introduced in order to improve memory
-management on Solaris. Dlmalloc has only been thoroughly tested on
-Solaris 2.5.1 and Solaris 7, but it will probably work fine on other
-Unix flavors as well. Dlmalloc is not enabled by default. In order to
-enable it, give the configure script the argument "--enable-dlmalloc".
-The malloc() implementation used in late versions of the Gnu C library
-is based on dlmalloc. You are therefore not expected to get any
-improvements by enabling dlmalloc on operating systems that use the
-Gnu C library.
 
     Step 4 first builds the Erlang emulator, this will take
 approximately five minutes on a reasonably fast machine. It then

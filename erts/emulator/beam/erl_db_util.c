@@ -1768,8 +1768,7 @@ restart:
 			     pid_creation(esp[-1]) == 0) &&
 			    (tmpp = process_tab[pid_number(esp[-1])])) ||
 			   (is_atom(esp[-1]) &&
-			    (tmpp = 
-			     whereis_process(atom_val(esp[-1])))))) {
+			    (tmpp = whereis_process(esp[-1]))))) {
 		/* Always take over the tracer of the current process */
 		tmpp->tracer_proc = p->tracer_proc;
 		tmpp->flags |= n;
@@ -1800,8 +1799,7 @@ restart:
 			     pid_creation(esp[-1]) == 0) &&
 			    (tmpp = process_tab[pid_number(esp[-1])])) ||
 			   (is_atom(esp[-1]) &&
-			    (tmpp = 
-			     whereis_process(atom_val(esp[-1])))))) {
+			    (tmpp = whereis_process(esp[-1]))))) {
 		tmpp->flags &= ~n;
 		if (!(p->flags & TRACE_FLAGS)) {
 		    p->tracer_proc = NIL;
