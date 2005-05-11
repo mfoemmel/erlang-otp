@@ -33,6 +33,7 @@
 	     hipe_unified_loader,
 	     hipe_sparc_loader,
 	     hipe_ppc_loader,
+	     hipe_ppc64_loader,
 	     hipe_x86_loader,
              hipe_amd64_loader,
 	     inet6_tcp,

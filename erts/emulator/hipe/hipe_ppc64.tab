@@ -1,0 +1,5 @@
+# $Id: hipe_ppc64.tab,v 1.1 2005/02/17 17:46:54 mikpe Exp $
+# PPC64-specific atoms
+
+atom inc_stack_0
+atom ppc64

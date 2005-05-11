@@ -29,6 +29,8 @@ case $SYS:$REL in
 	                TARGET=sunos5 ;;
 	        Linux:*)
 	                TARGET=linux ;;
+                OpenBSD:3.*)
+                        TARGET=openbsd ;;
 	        *)
 	                TARGET="" ;;
 esac
@@ -106,6 +108,8 @@ then
 else
     if [ -f "/vmunix" ]; then 
 	CATMAN=/usr/etc/catman
+    elif [ "$TARGET" = "openbsd" ]; then
+        CATMAN=/usr/sbin/catman
     else
 	CATMAN=/usr/bin/catman
     fi

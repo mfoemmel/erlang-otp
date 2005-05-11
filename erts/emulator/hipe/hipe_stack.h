@@ -75,8 +75,7 @@ static __inline__ const struct sdesc *hipe_find_sdesc(unsigned long ra)
     return sdesc;
 }
 
-/* XXX: Shouldn't the following also start with hipe_ ??? */
-extern void nbif_stack_trap_ra(void);
+AEXTERN(void,nbif_stack_trap_ra,(void));
 
 extern void hipe_print_nstack(Process*);
 extern void hipe_find_handler(Process*);

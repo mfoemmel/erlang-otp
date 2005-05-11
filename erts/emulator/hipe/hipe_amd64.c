@@ -23,12 +23,12 @@ extern void nbif_handle_fp_exception(void);
 const Uint sse2_fnegate_mask[2] = {0x8000000000000000,0};
 
 /* called from hipe_bif0.c:hipe_bifs_primop_address_1() */
-void *hipe_arch_primop_address(Eterm key)
+const void *hipe_arch_primop_address(Eterm key)
 {
   switch( key ) {
     case am_inc_stack_0: return nbif_inc_stack_0;
     case am_handle_fp_exception: return nbif_handle_fp_exception;
-    case am_sse2_fnegate_mask: return (void*)sse2_fnegate_mask;
+    case am_sse2_fnegate_mask: return sse2_fnegate_mask;
     default: return NULL;
   }
 }

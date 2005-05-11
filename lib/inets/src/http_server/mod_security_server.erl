@@ -338,10 +338,14 @@ handle_call({check_blocked_user, [Info, User, SDirData]}, _From, Tables) ->
 handle_call(Request,From,Tables) ->
     ?vinfo("~n   unknown call '~p' from ~p",[Request,From]),
     {reply,ok,Tables}.
-  
+
 
 %% handle_cast
 
+handle_cast({store_failed_auth, [_, _, []]}, Tables) ->
+    %% Some other authentication scheme than mod_auth (example mod_htacess)
+    %% was the source for the authentication failure so we should ignor it!
+    {noreply, Tables};
 handle_cast({store_failed_auth, [Info, DecodedString, SDirData]}, Tables) ->
     ?vlog("store failed auth",[]),
     {ETS, DETS} = httpd_util:key1search(SDirData, data_file),
@@ -352,7 +356,6 @@ handle_cast({store_failed_auth, [Info, DecodedString, SDirData]}, Tables) ->
     ?vdebug("user '~p' and password '~p'",[User,Password]),
     Seconds = universal_time(),
     Key = {User, Dir, Addr, Port},
-
     %% Event
     CBModule = httpd_util:key1search(SDirData, callback_module, no_module_at_all),
     ?vtrace("call back module: ~p",[CBModule]),
@@ -720,4 +723,3 @@ cast(Name, Msg) ->
         Result ->
             Result
     end.
-

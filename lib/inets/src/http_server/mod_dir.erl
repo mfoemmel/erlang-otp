@@ -68,7 +68,7 @@ do_dir(Info) ->
 			case (catch httpd_util:rfc1123_date(
 				      FileInfo#file_info.mtime)) of
 			    Date when is_list(Date) ->
-				[{date, Date}];
+				[{"date", Date}];
 			    _ -> %% This will rarly happen, but could happen
 				%% if a computer is wrongly configured. 
 				[]
@@ -77,8 +77,8 @@ do_dir(Info) ->
 			  {content_length,
 			   integer_to_list(httpd_util:flatlength(Dir))},
 			  {code,200} | LastModified],
-		    {proceed,[{response,{response,Head,Dir}},
-			      {mime_type,"text/html"}|Info#mod.data]};
+		    {proceed,[{response,{response, Head, Dir}},
+			      {mime_type,"text/html"} | Info#mod.data]};
 		{error, Reason} ->
 		    ?ERROR("do_dir -> dir operation failed: ~p",[Reason]),
 		    {proceed,

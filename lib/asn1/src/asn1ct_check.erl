@@ -551,7 +551,8 @@ check_class(S,ClassName) ->
 		false ->
 		    Name=ClassName#'Externaltypereference'.type,
 		    store_class(S,idle,ClassDef,Name),
-		    NewS = S#state{mname=RefMod,type=Def,tname=Name},
+%		    NewS = S#state{mname=RefMod,type=Def,tname=Name},
+		    NewS = update_state(S#state{type=Def,tname=Name},RefMod),
 		    CheckedTS = check_class(NewS,ClassDef#classdef.typespec),
 		    store_class(S,true,ClassDef#classdef{typespec=CheckedTS},Name),
 		    CheckedTS
@@ -856,6 +857,11 @@ check_object(S,
 		NewSet = get_unique_valuelist(S,CheckedSet,UniqueFieldName),
 		ObjSet#'ObjectSet'{uniquefname=UniqueFieldName,
 				   set=extensionmark(NewSet)};
+	    ObjDef={object,definedsyntax,_ObjFields} ->
+		CheckedSet = check_object_list(S,NewClassRef,[ObjDef]),
+		NewSet = get_unique_valuelist(S,CheckedSet,UniqueFieldName),
+		ObjSet#'ObjectSet'{uniquefname=UniqueFieldName,
+				   set=extensionmark(NewSet)};
 	    {ObjDef=#type{},Ext} when list(Ext) ->
 		CheckedSet = check_object_list(S,NewClassRef,[ObjDef|Ext]),
 		NewSet = get_unique_valuelist(S,CheckedSet,UniqueFieldName),
@@ -971,14 +977,20 @@ object_set_from_objects2(S,_ClassDef,[{typefieldreference,OSName}|Rest],
 	    
     
 
-merge_sets(Set,Ext) when list(Set),list(Ext) ->
-    Set ++ Ext;
-merge_sets(Set,Ext) when list(Ext) ->
-    [Set|Ext];
-merge_sets(Set,{'SingleValue',Ext}) when list(Set) ->
-    Set ++ [Ext];
-merge_sets(Set,{'SingleValue',Ext}) ->
-    [Set] ++ [Ext].
+merge_sets(Root,{'SingleValue',Ext}) ->
+    merge_sets(Root,Ext);
+merge_sets(Root,Ext) when list(Root),list(Ext) ->
+    Root ++ Ext;
+merge_sets(Root,Ext) when list(Ext) ->
+    [Root|Ext];
+merge_sets(Root,Ext) when list(Root) ->
+    Root++[Ext];
+% merge_sets(Set,{'SingleValue',Ext}) when list(Set) ->
+%     Set ++ [Ext];
+% merge_sets(Set,{'SingleValue',Ext}) ->
+%     [Set] ++ [Ext];
+merge_sets(Root,Ext) ->
+    [Root]++[Ext].
 
 reduce_objectset(ObjectSet,Exclusion) ->
     case Exclusion of
@@ -1348,17 +1360,15 @@ check_defaultfields(S,[{FName,Spec}|Fields],ClassFields,Acc) ->
 convert_definedsyntax(_S,[],[],_ClassFields,Acc) ->
     lists:reverse(Acc);
 convert_definedsyntax(S,Fields,WithSyntax,ClassFields,Acc) ->
-    case match_field(S,Fields,WithSyntax,ClassFields) of
-	{MatchedField,RestFields,RestWS} ->
-	    if
-		list(MatchedField) ->
-		    convert_definedsyntax(S,RestFields,RestWS,ClassFields,
-					  lists:append(MatchedField,Acc));
-		true ->
-		    convert_definedsyntax(S,RestFields,RestWS,ClassFields,
-					  [MatchedField|Acc])
-	    end
-%%	    throw({error,{asn1,{'unvalid syntax in object',WorS}}})
+    {MatchedField,RestFields,RestWS} =
+	match_field(S,Fields,WithSyntax,ClassFields),
+    if
+	list(MatchedField) ->
+	    convert_definedsyntax(S,RestFields,RestWS,ClassFields,
+				  lists:append(MatchedField,Acc));
+	true ->
+	    convert_definedsyntax(S,RestFields,RestWS,ClassFields,
+				  [MatchedField|Acc])
     end.
 
 match_field(S,Fields,WithSyntax,ClassFields) ->
@@ -1838,40 +1848,40 @@ check_value(OldS=#state{recordtopname=TopName},V) when record(V,valuedef) ->
 		    'ANY' ->
 			throw({error,{asn1,{'cant check value of type',Def}}});
 		    'INTEGER' ->
-			validate_integer(S,Value,[],Constr),
+			ok=validate_integer(S,Value,[],Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    {'INTEGER',NamedNumberList} ->
-			validate_integer(S,Value,NamedNumberList,Constr),
+			ok=validate_integer(S,Value,NamedNumberList,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    {'BIT STRING',NamedNumberList} ->
-			validate_bitstring(S,Value,NamedNumberList,Constr),
+			ok=validate_bitstring(S,Value,NamedNumberList,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'NULL' ->
-			validate_null(S,Value,Constr),
+			ok=validate_null(S,Value,Constr),
 			#newv{};
 		    'OBJECT IDENTIFIER' ->
-			validate_objectidentifier(S,Value,Constr),
+			{ok,_}=validate_objectidentifier(S,Value,Constr),
 			#newv{value = normalize_value(S,Vtype,Value,[])};
 		    'ObjectDescriptor' ->
-			validate_objectdescriptor(S,Value,Constr),
+			ok=validate_objectdescriptor(S,Value,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    {'ENUMERATED',NamedNumberList} ->
-			validate_enumerated(S,Value,NamedNumberList,Constr),
+			ok=validate_enumerated(S,Value,NamedNumberList,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'BOOLEAN'->
-			validate_boolean(S,Value,Constr),
+			ok=validate_boolean(S,Value,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'OCTET STRING' ->
-			validate_octetstring(S,Value,Constr),
+			ok=validate_octetstring(S,Value,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'NumericString' ->
-			validate_restrictedstring(S,Value,Def,Constr),
+			ok=validate_restrictedstring(S,Value,Def,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'TeletexString' ->
-			validate_restrictedstring(S,Value,Def,Constr),
+			ok=validate_restrictedstring(S,Value,Def,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'VideotexString' ->
-			validate_restrictedstring(S,Value,Def,Constr),
+			ok=validate_restrictedstring(S,Value,Def,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'UTCTime' ->
 			#newv{value=normalize_value(S,Vtype,Value,[])};
@@ -1880,42 +1890,42 @@ check_value(OldS=#state{recordtopname=TopName},V) when record(V,valuedef) ->
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 %			exit({'cant check value of type' ,Def});
 		    'GraphicString' ->
-			validate_restrictedstring(S,Value,Def,Constr),
+			ok=validate_restrictedstring(S,Value,Def,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'VisibleString' ->
-			validate_restrictedstring(S,Value,Def,Constr),
+			ok=validate_restrictedstring(S,Value,Def,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'GeneralString' ->
-			validate_restrictedstring(S,Value,Def,Constr),
+			ok=validate_restrictedstring(S,Value,Def,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'PrintableString' ->
-			validate_restrictedstring(S,Value,Def,Constr),
+			ok=validate_restrictedstring(S,Value,Def,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'IA5String' ->
-			validate_restrictedstring(S,Value,Def,Constr),
+			ok=validate_restrictedstring(S,Value,Def,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'BMPString' ->
-			validate_restrictedstring(S,Value,Def,Constr),
+			ok=validate_restrictedstring(S,Value,Def,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,[])};
 %%		    'UniversalString' -> %added 6/12 -00
 %%			#newv{value=validate_restrictedstring(S,Value,Def,Constr)};
 		    Seq when record(Seq,'SEQUENCE') ->
-			SeqVal = validate_sequence(S,Value,
+			{ok,SeqVal} = validate_sequence(S,Value,
 						   Seq#'SEQUENCE'.components,
 						   Constr),
 			#newv{value=normalize_value(S,Vtype,SeqVal,TopName)};
 		    {'SEQUENCE OF',Components} ->
-			validate_sequenceof(S,Value,Components,Constr),
+			ok=validate_sequenceof(S,Value,Components,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,TopName)};
 		    {'CHOICE',Components} ->
-			validate_choice(S,Value,Components,Constr),
+			ok=validate_choice(S,Value,Components,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,TopName)};
 		    Set when record(Set,'SET') ->
-			validate_set(S,Value,Set#'SET'.components,
+			ok=validate_set(S,Value,Set#'SET'.components,
 					      Constr),
 			#newv{value=normalize_value(S,Vtype,Value,TopName)};
 		    {'SET OF',Components} ->
-			validate_setof(S,Value,Components,Constr),
+			ok=validate_setof(S,Value,Components,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,TopName)};
 		    {'SelectionType',SelName,SelT} ->
 			CheckedT = check_selectiontype(S,SelName,SelT),
@@ -1953,19 +1963,38 @@ is_contextswitchtype(_) ->
 %     end;
 %% This case occurs when there is a valuereference
 validate_integer(S=#state{mname=M},
-		 #'Externalvaluereference'{module=M,value=Id},
-		 NamedNumberList,_Constr) ->
+		 #'Externalvaluereference'{module=M,value=Id}=Ref,
+		 NamedNumberList,Constr) ->
     case lists:keysearch(Id,1,NamedNumberList) of
 	{value,_} -> ok;
-	false -> error({value,"unknown NamedNumber",S})
+	false -> validate_integer_ref(S,Ref,NamedNumberList,Constr)
+	    %%error({value,"unknown NamedNumber",S})
     end;
-validate_integer(S,Id,NamedNumberList,_Constr) when atom(Id) ->
+validate_integer(S,Id,NamedNumberList,Constr) when atom(Id) ->
     case lists:keysearch(Id,1,NamedNumberList) of
 	{value,_} -> ok;
-	false -> error({value,"unknown NamedNumber",S})
+	false -> validate_integer_ref(S,Id,NamedNumberList,Constr)
+		     %error({value,"unknown NamedNumber",S})
     end;
 validate_integer(_S,Value,_NamedNumberList,Constr) when integer(Value) ->
     check_integer_range(Value,Constr).
+
+validate_integer_ref(S,Id,_,_) when atom(Id) ->
+    error({value,"unknown integer referens",S});
+validate_integer_ref(S,Ref,NamedNumberList,Constr) ->
+    case get_referenced_type(S,Ref) of
+	{M,V} when record(V,valuedef) -> 
+	    NewS = update_state(S,M),
+	    case check_value(NewS,V) of
+		#valuedef{type=#type{def='INTEGER'},value=Value} ->
+		    validate_integer(NewS,Value,NamedNumberList,Constr);
+		_Err -> error({value,"unknown integer referens",S})
+	    end;
+	_ ->
+	    error({value,"unknown integer referens",S})
+    end.
+	    
+		
 
 check_integer_range(Int,Constr) when list(Constr) ->
     NewConstr = [X || #constraint{c=X} <- Constr],
@@ -2006,9 +2035,8 @@ validate_objectidentifier(S,L,_) ->
     case is_space_list(L,[]) of
 	NewL when list(NewL) ->
 	    case validate_objectidentifier1(S,NewL) of
-		NewL2 when list(NewL2) ->
-		    list_to_tuple(NewL2);
-		Other -> Other
+		NewL2 when list(NewL2) ->{ok,list_to_tuple(NewL2)};
+		Other -> {ok,Other}
 	    end;
 	{error,_} ->
 	    error({value, "illegal OBJECT IDENTIFIER", S})
@@ -2181,12 +2209,12 @@ validate_sequence(S=#state{type=Vtype},Value,_Components,_Constr) ->
 	    %% this is an 'EXTERNAL' (or INSTANCE OF)
 	    case Value of
 		[{identification,_}|_RestVal] ->
-		    to_EXTERNAL1990(S,Value);
+		    {ok,to_EXTERNAL1990(S,Value)};
 		_ ->
-		    Value
+		    {ok,Value}
 	    end;
 	_ ->
-	    Value
+	    {ok,Value}
     end.
 
 validate_sequenceof(_S,_Value,_Components,_Constr) ->
@@ -2438,7 +2466,8 @@ hstring_to_octetlist([],_,Acc) ->
     lists:reverse(Acc).
 
 normalize_objectidentifier(S,Value) ->
-    validate_objectidentifier(S,Value,[]).
+    {ok,Val}=validate_objectidentifier(S,Value,[]),
+    Val.
 
 normalize_objectdescriptor(Value) ->
     Value.
@@ -3292,7 +3321,8 @@ resolv_value1(S = #state{mname=M,inputmodules=InpMods},
 		true ->
 		    resolv_value2(S,M,Name,Pos);
 		false ->
-		    V
+		    %V
+		    resolv_value2(update_state(S,ExtM),ExtM,Name,Pos)
 	    end
     end;    
 resolv_value1(S,{gt,V}) ->
@@ -3431,7 +3461,9 @@ check_constraint(S,{'SingleValue', V}) ->
 
 check_constraint(S,{'ValueRange', {Lb, Ub}}) ->
     {'ValueRange',{resolv_value(S,Lb),resolv_value(S,Ub)}};
-
+%% In case of a constraint with extension marks like (1..Ub,...)
+check_constraint(S,{VR={'ValueRange', {_Lb, _Ub}},Rest}) ->
+    {check_constraint(S,VR),Rest};
 %%check_constraint(S,{'ContainedSubtype',Type}) ->
 %%    #typedef{typespec=TSpec} = 
 %%	check_type(S,S#state.tname,get_referenced_type(S,Type#type.def)),
@@ -3815,14 +3847,18 @@ intersection_sv_vr(_S,[C1={'SingleValue',SV}],[C2={'ValueRange',{_Lb,_Ub}}])
     case is_int_in_vr(SV,C2) of
 	true -> [C1];
 	_ -> %%error({type,{"asn1 illegal constraint",C1,C2},S})
-	    throw({error,{"asn1 illegal constraint",C1,C2}})
+	    %throw({error,{"asn1 illegal constraint",C1,C2}})
+	    %io:format("warning: could not analyze constraint ~p~n",[[C1,C2]]),
+	    [C1,C2]
     end;
 intersection_sv_vr(_S,[C1={'SingleValue',SV}],[C2]) 
   when list(SV) ->
     case lists:filter(fun(X)->is_int_in_vr(X,C2) end,SV) of
 	[] ->
 	    %%error({type,{"asn1 illegal constraint",C1,C2},S});
-	    throw({error,{"asn1 illegal constraint",C1,C2}});
+	    %throw({error,{"asn1 illegal constraint",C1,C2}});
+	    %io:format("warning: could not analyze constraint ~p~n",[[C1,C2]]),
+	    [C1,C2];
 	[V] -> [{'SingleValue',V}];
 	L -> [{'SingleValue',L}]
     end.
@@ -4180,6 +4216,8 @@ get_asn1db_uptodate(S) ->
 put_asn1db_uptodate(L) ->
     put(asn1db_uptodate,L).
 
+update_state(S=#state{mname=ModuleName},ModuleName) ->
+    S;
 update_state(S,ModuleName) ->
     case asn1_db:dbget(ModuleName,'MODULE') of
 	RefedMod when record(RefedMod,module) ->
@@ -4246,20 +4284,10 @@ match_parameters(_S,#'Externaltypereference'{type=Name},[{#'Externaltypereferenc
     NewName;
 match_parameters(_S,#'Externaltypereference'{type=Name},[{{_,#'Externaltypereference'{type=Name}},NewName}|_T]) ->
     NewName;
-% match_parameters(#'Externaltypereference'{type=Name},[{#typereference{val=Name},NewName}|T]) ->
-%     NewName;
-% match_parameters(#'Externaltypereference'{type=Name},[{{_,#typereference{val=Name}},NewName}|T]) ->
-%     NewName;
-%match_parameters(#typereference{val=Name},[{#typereference{val=Name},NewName}|T]) ->
-%    NewName;
 match_parameters(_S,#'Externalvaluereference'{value=Name},[{#'Externalvaluereference'{value=Name},NewName}|_T]) ->
     NewName;
 match_parameters(_S,#'Externalvaluereference'{value=Name},[{{_,#'Externalvaluereference'{value=Name}},NewName}|_T]) ->
     NewName;
-% match_parameters(#identifier{val=Name},[{#identifier{val=Name},NewName}|T]) ->
-%     NewName;
-% match_parameters(#identifier{val=Name},[{{_,#identifier{val=Name}},NewName}|T]) ->
-%     NewName;
 match_parameters(_S,{valueset,#type{def=#'Externaltypereference'{type=Name}}},
 		 [{{_,#'Externaltypereference'{type=Name}},{valueset,#type{def=NewName}}}|_T]) ->
     NewName;
@@ -4275,8 +4303,7 @@ match_parameters(_S,{valueset,#type{def=#'Externaltypereference'{type=Name}}},
 match_parameters(S,{valueset,T=#type{def={pt,_,_Args}}},_Parameters) ->
     case catch check_type(S,#typedef{name=S#state.tname,typespec=T},T) of
 	pobjectsetdef ->
-%%	    MatchedArgs = [match_parameters(S,TmpArg,Parameters)|| TmpArg <- Args],
-%%	    NewS = S#state{parameters=MatchedArgs},
+
  	    {_,ObjRef,_Params} = T#type.def,
  	    {_,ObjDef}=get_referenced_type(S,ObjRef),
 	    %%ObjDef is a pvaluesetdef where the type field holds the class
@@ -4305,14 +4332,6 @@ match_parameters(S,{valueset,T=#type{def={pt,_,_Args}}},_Parameters) ->
 %% same as previous, only depends on order of parsing
 match_parameters(S,{valueset,{pos,{objectset,_,POSref},Args}},Parameters) ->
     match_parameters(S,{valueset,#type{def={pt,POSref,Args}}},Parameters);
-    
-% match_parameters({valueset,#type{def=#'Externaltypereference'{type=Name}}},
-% 		 [{{_,#typereference{val=Name}},{valueset,#type{def=NewName}}}|T]) ->
-%     NewName;
-% match_parameters({valueset,#type{def=#'Externaltypereference'{type=Name}}},
-% 		 [{{_,#typereference{val=Name}},NewName}|T]) ->
-%     NewName;
-
 match_parameters(S,Name, [_H|T]) ->
     %%io:format("match_parameters(~p,~p)~n",[Name,[H|T]]),
     match_parameters(S,Name,T).

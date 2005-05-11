@@ -14,7 +14,7 @@
 
 
 %% NOTICE: This is just an excerpt of the original ucs application
--module(ucs).
+-module(xmerl_ucs).
 -vsn('0.3').
 -author('Lon.Willett@sse.ie').
 -modified_by('johan.blom@mobilearts.se').
@@ -41,16 +41,12 @@
 -export([to_ucs4le/1,from_ucs4le/1, from_ucs4le/2]).
 -export([to_utf16be/1, from_utf16be/1, from_utf16be/2]).
 -export([to_utf16le/1, from_utf16le/1, from_utf16le/2]).
--export([to_utf8/1, from_utf8/1, from_utf8/2]).
+-export([to_utf8/1, from_utf8/1]).
 
 %%% NB: Non-canonical UTF-8 encodings and incorrectly used
 %%% surrogate-pair codes are disallowed by this code.  There are
 %%% important security implications concerning them.  DO NOT REMOVE
-%%% THE VARIOUS GUARDS AND TESTS THAT ENFORCE THIS POLICY.  (Yes, I
-%%% know the idiots at the unicode consortium decided to allow
-%%% non-canonical UTF-8, but I'll refer you to RFC 2279 for my
-%%% justification).
-
+%%% THE VARIOUS GUARDS AND TESTS THAT ENFORCE THIS POLICY.
 
 %%% Test if Ch is a legitimate ISO-10646 character code
 is_iso10646(Ch) when integer(Ch), Ch >= 0 ->
@@ -179,92 +175,17 @@ from_utf16le(List,Tail) -> from_utf16le(list_to_binary(List),[],Tail).
 to_utf8(List) when list(List) -> lists:flatmap(fun to_utf8/1, List);
 to_utf8(Ch) -> char_to_utf8(Ch).
 
-from_utf8(Bin) when binary(Bin) -> from_utf8(Bin,[],[]);
-from_utf8(List) -> from_utf8(list_to_binary(List),[],[]).
-
-from_utf8(Bin,Tail) when binary(Bin) -> from_utf8(Bin,[],Tail);
-from_utf8(List,Tail) -> from_utf8(list_to_binary(List),[],Tail).
-
-
-
-% code_to_string(Ch) when integer(Ch), Ch >= 0 ->
-%     format_code(Ch,0,[]).
-
-% format_code(0,NDigits,Tail) ->
-%     if (NDigits band 3) =/= 0 -> format_code(0,NDigits+1,[$0|Tail]);
-%        NDigits =:= 0 -> "0000" ++ Tail;
-%        true -> Tail
-%     end;
-% format_code(Ch,NDigits,Tail) ->
-%     format_code(Ch bsr 4, NDigits+1, [digit(Ch band 15)|Tail]).
-
-% digit(N) when N < 10 -> $0 + N;
-% digit(N) -> ($A - 10) + N.
+from_utf8(Bin) when binary(Bin) -> from_utf8(binary_to_list(Bin));
+from_utf8(List) -> 
+    case expand_utf8(List) of
+	{Result,0} -> Result;
+	{_Res,_NumBadChar} ->
+	    exit({ucs,{bad_utf8_character_code}})
+    end.
 
 
-% from_mnemonic(List) ->
-%     from_mnemonic(List,[],[]).
 
-% from_mnemonic(List,Tail) ->
-%     from_mnemonic(List,[],Tail).
 
-% from_mnemonic([$&|Rest],Acc,Tail) ->
-%     from_mnemonic_escaped(Rest,Acc,Tail);
-% from_mnemonic([Ch|Rest],Acc,Tail) ->
-%     from_mnemonic(Rest,[Ch|Acc],Tail);
-% from_mnemonic([],Acc,Tail) ->
-%     lists:reverse(Acc,Tail).
-
-% from_mnemonic_escaped([$&|List],Acc,Tail) ->
-%     from_mnemonic(List,[$&|Acc],Tail);
-% from_mnemonic_escaped([$_|List],Acc,Tail) ->
-%     {Mnem,[$_|Rest]} = lists:splitwith(fun(X) -> X =/= $_ end, List),
-%     from_mnemonic(Rest,[long_mnemonic_to_char(Mnem)|Acc],Tail);
-% from_mnemonic_escaped([$/,$c|List],Acc,Tail) ->
-%     %% Special case: line continuation escape
-%     from_mnemonic(skipnl(List),Acc,Tail);
-% from_mnemonic_escaped([Ch1,Ch2|Rest],Acc,Tail) ->
-%     from_mnemonic(Rest,[mnemonic_to_char([Ch1,Ch2])|Acc],Tail).
-
-%%% skipnl(Str) -- drop a leading newline (possibly preceded by
-%%% spaces) from Str, if it has one, else just return Str.
-% skipnl(Str) ->
-%     skipnl(Str,Str).
-
-% skipnl([Ch|Str], Str0) when Ch =:= $\s; Ch =:= $\r ->
-%     skipnl(Str,Str0);
-% skipnl([$\n|Rest],_) ->
-%     Rest;
-% skipnl(_,Str0) ->
-%     Str0.
-
-% mnemonic_to_char(Mnem) ->
-%     case ucs_data:mnemonic_to_code(Mnem) of
-% 	%% undefined -> error;
-% 	Code when integer(Code) -> Code
-%     end.
-
-% long_mnemonic_to_char([$?,$u|Digits]) when Digits =/= [] ->
-%     Ch = hex_to_integer(Digits,0),
-%     case is_iso10646(Ch) of
-% 	%%false -> error
-% 	true -> Ch
-%     end;
-% long_mnemonic_to_char(Mnem) -> % Other charset encodings not implemented
-%     mnemonic_to_char(Mnem).
-
-% hex_to_integer([Digit|Digits],N) when integer(Digit) ->
-%     if Digit >= $0, Digit =< $9 ->
-% 	    hex_to_integer(Digits,(N bsl 4) + Digit - $0);
-%        Digit >= $A, Digit =< $F ->
-% 	    hex_to_integer(Digits,(N bsl 4) + Digit - ($A - 10));
-%        Digit >= $a, Digit =< $f ->
-% 	    hex_to_integer(Digits,(N bsl 4) + Digit - ($a - 10))
-%     end;
-% hex_to_integer([],N) ->
-%     N.
-
-%%% ............................................................................
 %%% UCS-4 support
 %%% Possible errors encoding UCS-4:
 %%%	- Non-character values (something other than 0 .. 2^31-1)
@@ -514,6 +435,61 @@ from_utf8(Bin,Acc,Tail) ->
     io:format("ucs Error: Bin=~p~n     Acc=~p~n     Tail=~p~n",[Bin,Acc,Tail]),
     {error,not_utf8}.
 
+
+
+%% expand_utf8([Byte]) -> {[UnicodeChar],NumberOfBadBytes}
+%%  Expand UTF8 byte sequences to ISO 10646/Unicode
+%%  charactes. Any illegal bytes are removed and the number of
+%%  bad bytes are returned.
+%%
+%%  Reference:
+%%     RFC 3629: "UTF-8, a transformation format of ISO 10646".
+
+expand_utf8(Str) ->
+    expand_utf8_1(Str, [], 0).
+
+expand_utf8_1([C|Cs], Acc, Bad) when C < 16#80 ->
+    %% Plain Ascii character.
+    expand_utf8_1(Cs, [C|Acc], Bad);
+expand_utf8_1([C1,C2|Cs], Acc, Bad) when C1 band 16#E0 =:= 16#C0,
+					 C2 band 16#C0 =:= 16#80 ->
+    case ((C1 band 16#1F) bsl 6) bor (C2 band 16#3F) of
+	C when 16#80 =< C ->
+	    expand_utf8_1(Cs, [C|Acc], Bad);
+	_ ->
+	    %% Bad range.
+	    expand_utf8_1(Cs, Acc, Bad+1)
+    end;
+expand_utf8_1([C1,C2,C3|Cs], Acc, Bad) when C1 band 16#F0 =:= 16#E0,
+					    C2 band 16#C0 =:= 16#80,
+					    C3 band 16#C0 =:= 16#80 ->
+    case ((((C1 band 16#0F) bsl 6) bor (C2 band 16#3F)) bsl 6) bor
+	(C3 band 16#3F) of
+	C when 16#800 =< C ->
+	    expand_utf8_1(Cs, [C|Acc], Bad);
+	_ ->
+	    %% Bad range.
+	    expand_utf8_1(Cs, Acc, Bad+1)
+    end;
+expand_utf8_1([C1,C2,C3,C4|Cs], Acc, Bad) when C1 band 16#F8 =:= 16#F0,
+					       C2 band 16#C0 =:= 16#80,
+					       C3 band 16#C0 =:= 16#80,
+					       C4 band 16#C0 =:= 16#80 ->
+    case ((((((C1 band 16#0F) bsl 6) bor (C2 band 16#3F)) bsl 6) bor
+	(C3 band 16#3F)) bsl 6) bor (C4 band 16#3F) of
+	C when 16#10000 =< C ->
+	    expand_utf8_1(Cs, [C|Acc], Bad);
+	_ ->
+	    %% Bad range.
+	    expand_utf8_1(Cs, Acc, Bad+1)
+    end;
+expand_utf8_1([_|Cs], Acc, Bad) ->
+    %% Ignore bad character.
+    expand_utf8_1(Cs, Acc, Bad+1);
+expand_utf8_1([], Acc, Bad) -> {lists:reverse(Acc),Bad}.
+
+
+
 %%% ----------------------------------------------------------------------------
 %%% Translation to/from any IANA defined character set, given that a mapping
 %%% exists. Don't care about validating valid subsets of Unicode
@@ -528,7 +504,8 @@ to_unicode(Input,Cs) when Cs=='iso_646.basic:1983';Cs=='ref';
 			  Cs=='csiso646basic1983' ->
     Input;
 to_unicode(Input,Cs) when Cs=='iso_8859-1:1987';Cs=='iso-ir-100';
-			  Cs=='iso_8859-1';Cs=='latin1';Cs=='l1';Cs=='ibm819';
+			  Cs=='iso_8859-1';Cs=='iso-8859-1';Cs=='latin1';
+			  Cs=='l1';Cs=='ibm819';
 			  Cs=='cp819';Cs=='csisolatin1' ->
     Input;
 % to_unicode(Input,Cs) when Cs=='mnemonic';Cs=='"mnemonic+ascii+38';
@@ -574,7 +551,8 @@ is_incharset(In,Cs) when Cs=='iso_646.basic:1983';Cs=='ref';
 	list(In) -> test_charset(fun is_iso646_basic/1, In)
     end;
 is_incharset(In,Cs) when Cs=='iso_8859-1:1987';Cs=='iso-ir-100';
-			 Cs=='iso_8859-1';Cs=='latin1';Cs=='l1';Cs=='ibm819';
+			 Cs=='iso_8859-1';Cs=='iso-8859-1';
+			 Cs=='latin1';Cs=='l1';Cs=='ibm819';
 			 Cs=='cp819';Cs=='csisolatin1' ->
     if
 	integer(In) -> is_latin1(In);

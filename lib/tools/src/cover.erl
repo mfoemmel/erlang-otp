@@ -1224,10 +1224,13 @@ do_compile_beam(Module,Beam) ->
     %% Extract the abstract format and insert calls to bump/6 at
     %% every executable line and, as a side effect, initiate
     %% the database
-    {ok, {Module, [{abstract_code, AbstractCode}]}} =
-	beam_lib:chunks(Beam, [abstract_code]),
-    case AbstractCode of
-	{Vsn, Code} ->
+    
+    case get_abstract_code(Module, Beam) of
+	no_abstract_code=E ->
+	    {error,E};
+	encrypted_abstract_code=E ->
+	    {error,E};
+	{Vsn,Code} ->
 	    {Forms,Vars} = transform(Vsn, Code, Module, Beam),
 
 	    %% Compile and load the result
@@ -1249,9 +1252,16 @@ do_compile_beam(Module,Beam) ->
 		_Error ->
 		    do_clear(Module),
 		    error
-	    end;
-	no_abstract_code ->
-	    {error,no_abstract_code}
+	    end
+    end.
+
+get_abstract_code(Module, Beam) ->
+    case beam_lib:chunks(Beam, [abstract_code]) of
+	{ok, {Module, [{abstract_code, AbstractCode}]}} ->
+	    AbstractCode;
+	{error,beam_lib,{key_missing_or_invalid,_,_}} ->
+	    encrypted_abstract_code;
+	Error -> Error
     end.
 
 transform(Vsn, Code, Module, Beam) when Vsn==abstract_v1; Vsn==abstract_v2 ->

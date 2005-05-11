@@ -184,7 +184,8 @@ export_simple_content(Data, Callback) when atom(Callback) ->
     export_content(xmerl_lib:expand_content(Data),
 		   callbacks(Callback));
 export_simple_content(Data, Callbacks) when list(Callbacks) ->
-    export_content(xmerl_lib:expand_element(Data), Callbacks).
+    export_content(xmerl_lib:expand_content(Data), Callbacks).
+
 
 %% @spec export_content(Content, Callbacks) -> term()
 %%	Content = [Element]

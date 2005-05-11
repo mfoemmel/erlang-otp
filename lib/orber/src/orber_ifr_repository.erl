@@ -45,15 +45,11 @@
 	 create_fixed/3,
 	 create_sequence/3,
 	 create_array/3,
-	 create_idltype/2,			%not in CORBA 2.0
-	 create_primitivedef/1			%not in CORBA 2.0
+	 create_idltype/2,		%not in CORBA 2.0
+	 create_primitivedef/1,		%not in CORBA 2.0
+	 create_primitivedef/2 		%not in CORBA 2.0
 	]).
 
--import(orber_ifr_utils,[set_object/1,
-		   get_field/2,
-		   makeref/1,
-		   unique/0
-		  ]).
 
 -include("orber_ifr.hrl").
 -include("ifr_objects.hrl").
@@ -156,7 +152,7 @@ lookup_id({ObjType,ObjID}, Search_id) ?tcheck(ir_Repository, ObjType) ->
     end.
 
 get_primitive({ObjType,ObjID}, Kind) ?tcheck(ir_Repository, ObjType) ->
-    Primitivedefs = get_field({ObjType,ObjID}, primitivedefs),
+    Primitivedefs = orber_ifr_utils:get_field({ObjType,ObjID}, primitivedefs),
     lists:filter(fun(X) -> orber_ifr_primitivedef:'_get_kind'(X) == Kind end,
 		 Primitivedefs).
 
@@ -170,48 +166,48 @@ get_primitive({ObjType,ObjID}, Kind) ?tcheck(ir_Repository, ObjType) ->
 %% anonymous typedef if it is not successfully used.
 
 create_string({ObjType,_ObjID}, Bound) ?tcheck(ir_Repository, ObjType) ->
-    New_string = #ir_StringDef{ir_Internal_ID = unique(),
+    New_string = #ir_StringDef{ir_Internal_ID = orber_ifr_utils:unique(),
 			       def_kind = dk_String,
 			       type = {tk_string, Bound},
 			       bound = Bound},
-    makeref(New_string).
+    orber_ifr_utils:makeref(New_string).
 
 create_wstring({ObjType,_ObjID}, Bound) ?tcheck(ir_Repository, ObjType) ->
-    NewWstring = #ir_WstringDef{ir_Internal_ID = unique(),
+    NewWstring = #ir_WstringDef{ir_Internal_ID = orber_ifr_utils:unique(),
 			       def_kind = dk_Wstring,
 			       type = {tk_wstring, Bound},
 			       bound = Bound},
-    makeref(NewWstring).
+    orber_ifr_utils:makeref(NewWstring).
 
 create_fixed({ObjType,_ObjID}, Digits, Scale) ?tcheck(ir_Repository, ObjType) ->
-    NewFixed = #ir_FixedDef{ir_Internal_ID = unique(),
+    NewFixed = #ir_FixedDef{ir_Internal_ID = orber_ifr_utils:unique(),
 			    def_kind = dk_Fixed,
 			    type = {tk_fixed, Digits, Scale},
 			    digits = Digits,
 			    scale = Scale},
-    makeref(NewFixed).
+    orber_ifr_utils:makeref(NewFixed).
 
 create_sequence({ObjType,_ObjID}, Bound, Element_type)
 			    ?tcheck(ir_Repository, ObjType) ->
-    Element_typecode = get_field(Element_type, type),
-    New_sequence = #ir_SequenceDef{ir_Internal_ID = unique(),
+    Element_typecode = orber_ifr_utils:get_field(Element_type, type),
+    New_sequence = #ir_SequenceDef{ir_Internal_ID = orber_ifr_utils:unique(),
 				   def_kind = dk_Sequence,
 				   type = {tk_sequence,Element_typecode,Bound},
 				   bound = Bound,
 				   element_type = Element_typecode,
 				   element_type_def = Element_type},
-    makeref(New_sequence).
+    orber_ifr_utils:makeref(New_sequence).
 
 create_array({ObjType,_ObjID}, Length, Element_type)
 			 ?tcheck(ir_Repository, ObjType) ->
-    Element_typecode = get_field(Element_type, type),
-    New_array = #ir_ArrayDef{ir_Internal_ID = unique(),
+    Element_typecode = orber_ifr_utils:get_field(Element_type, type),
+    New_array = #ir_ArrayDef{ir_Internal_ID = orber_ifr_utils:unique(),
 			     def_kind = dk_Array,
 			     type = {tk_array, Element_typecode, Length},
 			     length = Length,
 			     element_type = Element_typecode,
 			     element_type_def = Element_type},
-    makeref(New_array).
+    orber_ifr_utils:makeref(New_array).
 
 %%%----------------------------------------------------------------------
 %%% Extra interfaces (not in the IDL-spec for the IFR).
@@ -219,13 +215,15 @@ create_array({ObjType,_ObjID}, Length, Element_type)
 create_idltype(#orber_light_ifr_ref{} = LRef, _Typecode) ->
     LRef;
 create_idltype({ObjType,_ObjID}, Typecode) ?tcheck(ir_Repository, ObjType) ->
-    New_idltype = #ir_IDLType{ir_Internal_ID = unique(),
+    New_idltype = #ir_IDLType{ir_Internal_ID = orber_ifr_utils:unique(),
 			      def_kind = dk_none,
 			      type=Typecode},
-    set_object(New_idltype),
-    makeref(New_idltype).
+    orber_ifr_utils:set_object(New_idltype),
+    orber_ifr_utils:makeref(New_idltype).
 
 create_primitivedef(Pkind) ->
+    create_primitivedef(Pkind, true).
+create_primitivedef(Pkind, Transaction) ->
     Typecode = case Pkind of
 		   pk_void ->
 		       tk_void;
@@ -274,9 +272,14 @@ create_primitivedef(Pkind) ->
 				 [?LINE, ?MODULE, Pkind], ?DEBUG_LEVEL),
 		       corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO})
 	       end,
-    New_primitivedef = #ir_PrimitiveDef{ir_Internal_ID = unique(),
+    New_primitivedef = #ir_PrimitiveDef{ir_Internal_ID = orber_ifr_utils:unique(),
 					def_kind = dk_Primitive,
 					type = Typecode,
 					kind = Pkind},
-    set_object(New_primitivedef),
-    makeref(New_primitivedef).
+    case Transaction of 
+	true ->
+	    orber_ifr_utils:set_object(New_primitivedef);
+	false ->
+	    mnesia:write(New_primitivedef)
+    end,
+    orber_ifr_utils:makeref(New_primitivedef).

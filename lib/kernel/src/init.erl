@@ -474,7 +474,7 @@ stop_heart(State) ->
 	    %% As heart survives a restart the Parent of heart is init.
 	    BootPid = self(),
 	    %% ignore timeout
-	    shutdown_kernel_pid(Pid,BootPid,shutdown,self(),State) 
+	    shutdown_kernel_pid(Pid, BootPid, self(), State) 
     end.
 
 shutdown_pids(Heart,BootPid,State) ->
@@ -490,9 +490,9 @@ get_heart(_)                    -> false.
 
 
 shutdown([{heart,_Pid}|Kernel],BootPid,Timer,State) ->
-    shutdown(Kernel,BootPid,Timer,State);
+    shutdown(Kernel, BootPid, Timer, State);
 shutdown([{_Name,Pid}|Kernel],BootPid,Timer,State) ->
-    shutdown_kernel_pid(Pid,BootPid,shutdown,Timer,State),
+    shutdown_kernel_pid(Pid, BootPid, Timer, State),
     shutdown(Kernel,BootPid,Timer,State);
 shutdown(_,_,_,_) ->
     true.
@@ -501,17 +501,16 @@ shutdown(_,_,_,_) ->
 %%
 %% A kernel pid must handle the special case message
 %% {'EXIT',Parent,Reason} and terminate upon it!
-shutdown_kernel_pid(Pid,_BootPid,kill,_,_) ->
-    exit(Pid,kill);
-shutdown_kernel_pid(Pid,BootPid,Reason,Timer,State) ->
-    Pid ! {'EXIT',BootPid,Reason},
-    shutdown_loop(Pid,Timer,State,[]).
+%%
+shutdown_kernel_pid(Pid, BootPid, Timer, State) ->
+    Pid ! {'EXIT',BootPid,shutdown},
+    shutdown_loop(Pid, Timer, State, []).
 
 %%
 %% We have to handle init requests here in case a process
 %% performs such a request and cannot shutdown (deadlock).
-%% Keep all other exit messages in case it was another
-%% kernel process. Resend this messages and handle later.
+%% Keep all other EXIT messages in case it was another
+%% kernel process. Resend these messages and handle later.
 %%
 shutdown_loop(Pid,Timer,State,Exits) ->
     receive

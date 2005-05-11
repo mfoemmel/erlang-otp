@@ -69,7 +69,6 @@ atom load_fe
 # atoms used by hipe_bifs:primop_address/1
 atom erl_fp_exception
 atom erts_mb
-atom erts_save_mb
 atom erts_global_mso
 
 atom suspend_msg

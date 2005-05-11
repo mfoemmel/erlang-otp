@@ -1,4 +1,4 @@
-%%% $Id$
+%%% $Id: hipe_sparc_ra_ls.erl,v 1.16 2003/12/02 14:07:15 kostis Exp $
 %%% Linear Scan register allocator for sparc
 -module(hipe_sparc_ra_ls).
 -export([alloc/2]).

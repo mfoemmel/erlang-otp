@@ -1,5 +1,5 @@
 %% -*- erlang-indent-level: 2 -*-
-%% $Id$
+%% $Id: hipe_x86_specific.erl,v 1.28 2004/05/17 21:18:29 mikpe Exp $
 %% 
 %% File: hipe_x86_specific
 %% This module defines interface to the x86 backend

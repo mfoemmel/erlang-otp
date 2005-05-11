@@ -19,10 +19,11 @@
 %%%----------------------------------------------------------------------
 %%% #0.    BASIC INFORMATION
 %%%----------------------------------------------------------------------
-%%% File:       xmerl_html.erl
+%%% @private
+%%% File:       xmerl_otpsgml.erl
 %%% Author       : Ulf Wiger <ulf.wiger@ericsson.com>
 %%%                Richard Carlsson <richardc@csd.uu.se>
-%%% Description  : Callback module for exporting XHTML to HTML.
+%%% Description  : Callback module for exporting XHTML to OTP-SGML.
 %%% 
 %%% Modules used : xmerl_lib
 %%%----------------------------------------------------------------------
@@ -31,7 +32,7 @@
 
 -export(['#xml-inheritance#'/0]).
 
-%% Note: we assume XHTML data, so all tags are lowercase!
+%% Note: we assume XML data, so all tags are lowercase!
 
 -export(['#root#'/4,
 	 '#element#'/5,
@@ -39,12 +40,12 @@
 	 p/4]).
 
 -import(xmerl_lib, [markup/3, start_tag/2, is_empty_data/1,
-		    find_attribute/2, export_text/1]).
+		    export_text/1]).
 
 -include("xmerl.hrl").
 
 
-'#xml-inheritance#'() -> [].
+'#xml-inheritance#'() -> [xmerl_sgml].
 
 
 %% The '#text#' function is called for every text segment.
@@ -60,7 +61,7 @@
     ["<!doctype erlref PUBLIC \"-//Stork//DTD erlref//EN\">\n",Data].
 
 
-%% Note that HTML does not have the <Tag/> empty-element form.
+%% Note that SGML does not have the <Tag/> empty-element form.
 %% Furthermore, for some element types, the end tag is forbidden. (In
 %% all other cases, we always generate the end tag, to make sure that
 %% the scope of a markup is not extended by mistake.)
@@ -102,26 +103,56 @@ convert_tag(dd,Attrs) -> convert_tag(item,Attrs);
 convert_tag(ul,Attrs) -> convert_tag(list,Attrs);
 convert_tag(li,Attrs) -> convert_tag(item,Attrs);
 convert_tag(tt,Attrs) -> convert_tag(c,Attrs);
-convert_tag(a, Attrs) -> convert_tag(seealso,convert_seealso_attrs(Attrs));
+%convert_tag(a, Attrs) -> convert_tag(seealso,convert_seealso_attrs(Attrs));
+convert_tag(a, Attrs) -> convert_tag(convert_aref(Attrs),convert_aref_attrs(convert_aref(Attrs),Attrs));
 convert_tag(Tag,Attrs) -> {forbid_end(Tag),Tag,Attrs}.
 
-convert_seealso_attrs([#xmlAttribute{name = href, value = V} = A|Rest]) ->
-    [A#xmlAttribute{name=marker,value=normalize_web_ref(V)}|convert_seealso_attrs(Rest)];
-convert_seealso_attrs([#xmlAttribute{name = K}|Rest]) ->
+convert_aref([#xmlAttribute{name = href, value = V}|_Rest]) ->
+    %% search if it is a html link, thus make it a 'url' ref otherwise
+    %% a 'seealso'.
+    case html_content(V) of
+	true ->
+	    url;
+	_ ->
+	    seealso
+    end;
+convert_aref([#xmlAttribute{name = K}|Rest]) ->
     io:format("Warning: ignoring attribute \'~p\' for tag \'a\'\n",[K]),
-    convert_seealso_attrs(Rest);
-convert_seealso_attrs([]) ->
+    convert_aref(Rest).
+convert_aref_attrs(url,Attrs) ->
+    Attrs;
+convert_aref_attrs(SA,[#xmlAttribute{name = href, value = V}=A|Rest]) ->
+    [A#xmlAttribute{name=marker,value=V}|convert_aref_attrs(SA,Rest)];
+convert_aref_attrs(_,[])->
     [].
+html_content([]) ->
+    false;
+html_content([$.|Rest]) ->
+    case Rest of
+	"htm"++_EmaNfeR ->
+	    true;
+	_ -> html_content(Rest)
+    end;
+html_content([_H|T]) ->
+    html_content(T).
 
-normalize_web_ref(RefName) ->
-    normalize_web_ref1(lists:reverse(RefName)).
+% convert_seealso_attrs([#xmlAttribute{name = href, value = V} = A|Rest]) ->
+%     [A#xmlAttribute{name=marker,value=normalize_web_ref(V)}|convert_seealso_attrs(Rest)];
+% convert_seealso_attrs([#xmlAttribute{name = K}|Rest]) ->
+%     io:format("Warning: ignoring attribute \'~p\' for tag \'a\'\n",[K]),
+%     convert_seealso_attrs(Rest);
+% convert_seealso_attrs([]) ->
+%     [].
 
-normalize_web_ref1("lmth."++EmaNfeR) ->
-    lists:reverse(EmaNfeR);
-normalize_web_ref1("mth"++EmaNfeR) ->
-    lists:reverse(EmaNfeR);
-normalize_web_ref1(RefName) ->
-    RefName.
+% normalize_web_ref(RefName) ->
+%     normalize_web_ref1(lists:reverse(RefName)).
+
+% normalize_web_ref1("lmth."++EmaNfeR) ->
+%     lists:reverse(EmaNfeR);
+% normalize_web_ref1("mth"++EmaNfeR) ->
+%     lists:reverse(EmaNfeR);
+% normalize_web_ref1(RefName) ->
+%     RefName.
 
 forbid_end(area) -> true; 
 forbid_end(base) -> true; 

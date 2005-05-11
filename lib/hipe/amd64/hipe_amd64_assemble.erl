@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_amd64_assemble.erl,v 1.38 2005/01/26 14:14:27 mikpe Exp $
 
 -define(HIPE_X86_ASSEMBLE,  hipe_amd64_assemble).
 -define(HIPE_X86_ENCODE,    hipe_amd64_encode).

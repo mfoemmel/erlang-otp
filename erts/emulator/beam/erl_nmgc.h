@@ -27,6 +27,9 @@
 #  define NM_IS_FORWARDED(ptr) (fwdptrs[(ptr) - inc_n2] != 0)
 #  define NM_FORWARD_VALUE(ptr) fwdptrs[(ptr) - inc_n2]
 
+/* Note for BM_TIMER: Active timer should always be 'system' when IncAlloc
+ * is called!
+ */
 #define IncAlloc(p, sz, objv, nobj)                                     \
     (ASSERT_EXPR((sz) >= 0),                                            \
      (((inc_alloc_limit - global_htop) <= (sz)) ?                       \

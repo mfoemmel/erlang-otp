@@ -20,7 +20,7 @@
 -include("http.hrl").
 -include("httpd.hrl").
 
--export([parse/1, whole_body/2, validate/3, mod_data/10]).
+-export([parse/1, whole_body/2, validate/3, update_mod_data/5]).
 
 %% Callback API - used for example if the header/body is received a
 %% little at a time on a socket. 
@@ -62,6 +62,8 @@ whole_body([Bin, Body, Length])  ->
 %%------------------------------------------------------------------------- 
 validate("HEAD", Uri, "HTTP/1." ++ _N) ->
     validate_uri(Uri);
+validate("GET", Uri, []) -> %% Simple HTTP/0.9 
+    validate_uri(Uri);
 validate("GET", Uri, "HTTP/0.9") ->
     validate_uri(Uri);
 validate("GET", Uri, "HTTP/1." ++ _N) ->
@@ -77,23 +79,20 @@ validate(Method, Uri, Version) ->
 %% The request is passed through the server as a record of type mod 
 %% create it.
 %% ----------------------------------------------------------------------
-mod_data(Socket, SocketType, ConfigDB, Method, RequestURI,
-	 HTTPVersion, RequestLine, Headers, EntityBody,InitData)-> 
+update_mod_data(ModData, Method, RequestURI, HTTPVersion, Headers)-> 
     ParsedHeaders =  tagup_header(Headers),
-    PersistentConn = get_persistens(HTTPVersion, ParsedHeaders, ConfigDB),
-    {ok, #mod{init_data = InitData,
-	      data = [],
-	      socket_type = SocketType,
-	      socket = Socket,
-	      config_db = ConfigDB,
-	      method = Method,
-	      absolute_uri = format_absolute_uri(RequestURI, ParsedHeaders),
-	      request_uri = format_request_uri(RequestURI),
-	      http_version = HTTPVersion,
-	      request_line = RequestLine,
-	      parsed_header = ParsedHeaders,
-	      entity_body = maybe_remove_nl(ParsedHeaders, EntityBody),
-	      connection = PersistentConn}}.
+    PersistentConn = get_persistens(HTTPVersion, ParsedHeaders, 
+				    ModData#mod.config_db),
+    {ok, ModData#mod{data = [],
+		     method = Method,
+		     absolute_uri = format_absolute_uri(RequestURI, 
+							ParsedHeaders),
+		     request_uri = format_request_uri(RequestURI),
+		     http_version = HTTPVersion,
+		     request_line = Method ++ " " ++ RequestURI ++ 
+		     " " ++ HTTPVersion,
+		     parsed_header = ParsedHeaders,
+		     connection = PersistentConn}}.
 
 %%%========================================================================
 %%% Internal functions
@@ -137,8 +136,8 @@ parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, Header, Headers,
 			   0, HTTPHeaders),
     case ((Length > MaxHeaderSize) or (MaxHeaderSize == nolimit)) of
 	true ->
-	    throw({error, {header_too_long, MaxHeaderSize, 
-			   MaxHeaderSize-Length}});
+	    {error, {header_too_long, MaxHeaderSize, MaxHeaderSize-Length},
+	     lists:nth(3, lists:reverse(Result))};
 	false ->
 	    RequestHeaderRcord = 
 		http_request:headers(HTTPHeaders, #http_request_h{}),
@@ -289,24 +288,6 @@ get_persistens(HTTPVersion,ParsedHeader,ConfigDB)->
 	    false
     end.
 
-%%----------------------------------------------------------------------
-%% Control whether the last newline of the body is a part of the message or
-%%it is a part of the multipart message.
-%%----------------------------------------------------------------------
-maybe_remove_nl(Header,Rest) ->
-    case find_content_type(Header) of
-	false ->
-	    {ok,EntityBody,_}=regexp:sub(Rest,"\r\n\$",""),
-	    EntityBody;
-	{ok, Value} ->
-	    case string:str(Value, "multipart/form-data") of
-		0 ->
-		    {ok,EntityBody,_}=regexp:sub(Rest,"\r\n\$",""),
-		    EntityBody;
-		_ ->
-		    Rest
-	    end
-    end.
 
 %%----------------------------------------------------------------------
 %% tagup_header
@@ -331,12 +312,3 @@ tag([$:|Rest], Tag) ->
 tag([Chr|Rest], Tag) ->
     tag(Rest, [Chr|Tag]).
 
-find_content_type([]) ->
-    false;
-find_content_type([{Name,Value}|Tail]) ->
-    case httpd_util:to_lower(Name) of
-	"content-type" ->
-	    {ok, Value};
-	_ ->
-	    find_content_type(Tail)
-    end.

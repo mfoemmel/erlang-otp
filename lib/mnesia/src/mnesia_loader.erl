@@ -193,8 +193,6 @@ do_get_network_copy(Tab, Reason, Ns, Storage, Cs) ->
 	    ?eval_debug_fun({?MODULE, do_get_network_copy},
 			    [{tab, Tab}, {reason, Reason}, 
 			     {nodes, Ns}, {storage, Storage}]),
-	    mnesia_controller:start_remote_sender(Node, Tab, self(), Storage),
-	    put(mnesia_table_sender_node, {Tab, Node}),
 	    case init_receiver(Node, Tab, Storage, Cs, Reason) of
 		ok ->
 		    set({Tab, load_node}, Node),
@@ -223,22 +221,65 @@ do_snmpify(Tab, Us, Storage) ->
     set({Tab, {index, snmp}}, Snmp).
 
 %% Start the recieiver 
-%% Sender should be started first, so we don't have the schema-read
-%% lock to long (or get stuck in a deadlock)
-init_receiver(Node, Tab, Storage, Cs, Reason) ->
+init_receiver(Node, Tab, Storage, Cs, Reas={dumper,add_table_copy}) ->
+    case start_remote_sender(Node, Tab, Storage) of
+	{SenderPid, TabSize, DetsData} -> 
+	    start_receiver(Tab,Storage,Cs,SenderPid,TabSize,DetsData,Reas);
+	Else ->
+	    Else
+    end;
+init_receiver(Node, Tab,Storage,Cs,Reason) ->
+    %% Grab a schema lock to avoid deadlock between table_loader and schema_commit dumping.
+    %% Both may grab tables-locks in different order.
+    Load = 
+	fun() -> 
+		{_,Tid,Ts} = get(mnesia_activity_state), 
+		mnesia_locker:rlock(Tid, Ts#tidstore.store, {schema, Tab}),
+		%% Check that table still exists
+		Active = val({Tab, active_replicas}),
+		%% And that sender still got a copy 
+		%% (something might have happend while 
+		%% we where waiting for the lock)
+		true = lists:member(Node, Active),
+		{SenderPid, TabSize, DetsData} = 
+		    start_remote_sender(Node,Tab,Storage),
+		Init = table_init_fun(SenderPid),
+		Args = [self(),Tab,Storage,Cs,SenderPid,TabSize,DetsData,Init],
+		Pid = spawn_link(?MODULE, spawned_receiver, Args),
+		put(mnesia_real_loader, Pid),
+		wait_on_load_complete(Pid)
+	end,
+    Res = 
+	case mnesia:transaction(Load, 20) of
+	    {atomic, {error,Result}} when 
+		  element(1,Reason) == dumper -> 
+		{error,Result};
+	    {atomic, {error,Result}} -> 
+		fatal("Cannot create table ~p: ~p~n",
+		      [[Tab, Storage], Result]);
+	    {atomic,  Result} -> Result;
+	    {aborted, nomore} -> restart;
+	    {aborted, _Reas} -> 
+		verbose("Receiver failed on ~p from ~p:~nReason: ~p~n", 
+			[Tab,Node,_Reas]),
+		down  %% either this node or sender is dying
+	end,
+    unlink(whereis(mnesia_tm)),  %% Avoid late unlink from tm
+    Res.
+
+start_remote_sender(Node,Tab,Storage) ->
+    mnesia_controller:start_remote_sender(Node, Tab, self(), Storage),
+    put(mnesia_table_sender_node, {Tab, Node}),
     receive 
-	{SenderPid, {first, TabSize}} ->	    
-	    spawn_receiver(Tab,Storage,Cs,SenderPid,
-			   TabSize,false,Reason);
+	{SenderPid, {first, TabSize}} ->
+	    {SenderPid, TabSize, false};
 	{SenderPid, {first, TabSize, DetsData}} ->
-	    spawn_receiver(Tab,Storage,Cs,SenderPid,
-			   TabSize,DetsData,Reason);
+	    {SenderPid, TabSize, DetsData};
 	%% Protocol conversion hack
 	{copier_done, Node} ->
 	    dbg_out("Sender of table ~p crashed on node ~p ~n", [Tab, Node]),
 	    down(Tab, Storage)
     end.
-
 
 table_init_fun(SenderPid) ->
     PConv = mnesia_monitor:needs_protocol_conversion(node(SenderPid)),
@@ -255,9 +296,8 @@ table_init_fun(SenderPid) ->
 	    get_data(SenderPid, Receiver)
     end.
 
-
 %% Add_table_copy get's it's own locks.
-spawn_receiver(Tab,Storage,Cs,SenderPid,TabSize,DetsData,{dumper,add_table_copy}) ->    
+start_receiver(Tab,Storage,Cs,SenderPid,TabSize,DetsData,{dumper,add_table_copy}) ->    
     Init = table_init_fun(SenderPid),
     case do_init_table(Tab,Storage,Cs,SenderPid,TabSize,DetsData,self(), Init) of
 	Err = {error, _} ->
@@ -265,45 +305,9 @@ spawn_receiver(Tab,Storage,Cs,SenderPid,TabSize,DetsData,{dumper,add_table_copy}
 	    Err;
 	Else ->
 	    Else
-    end;
+    end.
 
-spawn_receiver(Tab,Storage,Cs,SenderPid,
-	       TabSize,DetsData,Reason) ->
-    %% Grab a schema lock to avoid deadlock between table_loader and schema_commit dumping.
-    %% Both may grab tables-locks in different order.
-    Load = fun() -> 
-		   {_,Tid,Ts} = get(mnesia_activity_state), 
-		   mnesia_locker:rlock(Tid, Ts#tidstore.store, 
-				       {schema, Tab}),
-		   Init = table_init_fun(SenderPid),
-		   Pid = spawn_link(?MODULE, spawned_receiver, 
-				    [self(),Tab,Storage,Cs,
-				     SenderPid,TabSize,DetsData,
-				     Init]),
-		   put(mnesia_real_loader, Pid),
-		   wait_on_load_complete(Pid)
-	   end,
-    Res = case mnesia:transaction(Load, 20) of
-	      {atomic, {error,Result}} when element(1,Reason) == dumper -> 
-		  SenderPid ! {copier_done, node()},
-		  {error,Result};
-	      {atomic, {error,Result}} -> 
-		  SenderPid ! {copier_done, node()},
-		  fatal("Cannot create table ~p: ~p~n",
-			[[Tab, Storage], Result]);
-	      {atomic, Result} -> Result;
-	      {aborted, nomore} -> 
-		  SenderPid ! {copier_done, node()},
-		  restart;
-	      {aborted, _ } -> 
-		  SenderPid ! {copier_done, node()},
-		  down  %% either this node or sender is dying
-	  end,
-    unlink(whereis(mnesia_tm)),  %% Avoid late unlink from tm
-    Res.
-
-spawned_receiver(ReplyTo,Tab,Storage,Cs,
-		 SenderPid,TabSize,DetsData, Init) ->
+spawned_receiver(ReplyTo,Tab,Storage,Cs, SenderPid,TabSize,DetsData, Init) ->
     process_flag(trap_exit, true), 
     Done = do_init_table(Tab,Storage,Cs, 
 			 SenderPid,TabSize,DetsData,
@@ -322,6 +326,59 @@ wait_on_load_complete(Pid) ->
 	Else -> 
 	    Pid ! Else,
 	    wait_on_load_complete(Pid)
+    end.
+
+do_init_table(Tab,Storage,Cs,SenderPid, 
+	      TabSize,DetsInfo,OrigTabRec,Init) ->
+    case create_table(Tab, TabSize, Storage, Cs) of
+	{Storage,Tab} ->
+	    %% Debug info
+	    Node = node(SenderPid),
+	    put(mnesia_table_receiver, {Tab, Node, SenderPid}),
+	    mnesia_tm:block_tab(Tab),
+	    PConv = mnesia_monitor:needs_protocol_conversion(Node),
+
+	    case init_table(Tab,Storage,Init,PConv,DetsInfo,SenderPid) of
+		ok -> 
+		    tab_receiver(Node,Tab,Storage,Cs,PConv,OrigTabRec);
+		Reason ->
+		    Msg = "[d]ets:init table failed",
+		    dbg_out("~s: ~p: ~p~n", [Msg, Tab, Reason]),
+		    down(Tab, Storage)
+	    end;
+	Error ->
+	    Error
+    end.
+
+create_table(Tab, TabSize, Storage, Cs) ->
+    if 
+	Storage == disc_only_copies ->
+	    mnesia_lib:lock_table(Tab),
+	    Tmp = mnesia_lib:tab2tmp(Tab),
+	    Size = lists:max([TabSize, 256]),
+	    Args = [{file, Tmp},
+		    {keypos, 2},
+%%		    {ram_file, true},
+		    {estimated_no_objects, Size},
+		    {repair, mnesia_monitor:get_env(auto_repair)},
+		    {type, mnesia_lib:disk_type(Tab, Cs#cstruct.type)}],
+	    file:delete(Tmp),
+	    case mnesia_lib:dets_sync_open(Tab, Args) of
+		{ok, _} ->
+		    mnesia_lib:unlock_table(Tab),
+		    {Storage, Tab};
+		Else ->
+		    mnesia_lib:unlock_table(Tab),
+		    Else
+	    end;
+	(Storage == ram_copies) or (Storage == disc_copies) ->
+	    Args = [{keypos, 2}, public, named_table, Cs#cstruct.type],
+	    case mnesia_monitor:unsafe_mktab(Tab, Args) of
+		Tab ->
+		    {Storage, Tab};
+		Else ->
+		    Else
+	    end
     end.
 
 tab_receiver(Node, Tab, Storage, Cs, PConv, OrigTabRec) ->
@@ -361,59 +418,6 @@ tab_receiver(Node, Tab, Storage, Cs, PConv, OrigTabRec) ->
 	{'EXIT', Pid, Reason} ->
 	    handle_exit(Pid, Reason),
 	    tab_receiver(Node, Tab, Storage, Cs, PConv,OrigTabRec)
-    end.
-
-create_table(Tab, TabSize, Storage, Cs) ->
-    if 
-	Storage == disc_only_copies ->
-	    mnesia_lib:lock_table(Tab),
-	    Tmp = mnesia_lib:tab2tmp(Tab),
-	    Size = lists:max([TabSize, 256]),
-	    Args = [{file, Tmp},
-		    {keypos, 2},
-%%		    {ram_file, true},
-		    {estimated_no_objects, Size},
-		    {repair, mnesia_monitor:get_env(auto_repair)},
-		    {type, mnesia_lib:disk_type(Tab, Cs#cstruct.type)}],
-	    file:delete(Tmp),
-	    case mnesia_lib:dets_sync_open(Tab, Args) of
-		{ok, _} ->
-		    mnesia_lib:unlock_table(Tab),
-		    {Storage, Tab};
-		Else ->
-		    mnesia_lib:unlock_table(Tab),
-		    Else
-	    end;
-	(Storage == ram_copies) or (Storage == disc_copies) ->
-	    Args = [{keypos, 2}, public, named_table, Cs#cstruct.type],
-	    case mnesia_monitor:unsafe_mktab(Tab, Args) of
-		Tab ->
-		    {Storage, Tab};
-		Else ->
-		    Else
-	    end
-    end.
-
-do_init_table(Tab,Storage,Cs,SenderPid, 
-	      TabSize,DetsInfo,OrigTabRec,Init) ->
-    case create_table(Tab, TabSize, Storage, Cs) of
-	{Storage,Tab} ->
-	    %% Debug info
-	    Node = node(SenderPid),
-	    put(mnesia_table_receiver, {Tab, Node, SenderPid}),
-	    mnesia_tm:block_tab(Tab),
-	    PConv = mnesia_monitor:needs_protocol_conversion(Node),
-	    
-	    case init_table(Tab,Storage,Init,PConv,DetsInfo,SenderPid) of
-		ok -> 
-		    tab_receiver(Node,Tab,Storage,Cs,PConv,OrigTabRec);
-		Reason ->
-		    Msg = "[d]ets:init table failed",
-		    dbg_out("~s: ~p: ~p~n", [Msg, Tab, Reason]),
-		    down(Tab, Storage)
-	    end;
-	Error ->
-	    Error
     end.
 
 make_table_fun(Pid, TabRec) ->

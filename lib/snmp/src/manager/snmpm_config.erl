@@ -1356,11 +1356,11 @@ check_usm_user_config({EngineId, Name,
 		       AuthP, AuthKey, 
 		       PrivP, PrivKey}) ->
     User = {EngineId, Name, Name, AuthP, AuthKey, PrivP, PrivKey},
-    {ok, verify_usm_user(User)};
+    verify_usm_user(User);
 check_usm_user_config({_EngineId, _Name, _SecName, 
 		       _AuthP, _AuthKey, 
 		       _PrivP, _PrivKey} = User) ->
-    {ok, verify_usm_user(User)};
+    verify_usm_user(User);
 check_usm_user_config(User) ->
     error({bad_usm_config, User}).
 
@@ -1376,7 +1376,10 @@ init_usm_user_config(User) when record(User, usm_user) ->
 	    ok;
 	Error ->
 	    throw(Error)
-    end.
+    end;
+init_usm_user_config(BadUser) ->
+    error({bad_usm_user, BadUser}).
+
 
 verify_usm_user({EngineID, Name, SecName, AuthP, AuthKey, PrivP, PrivKey}) ->
     ?d("verify_usm_user -> entry with"
@@ -1399,7 +1402,6 @@ verify_usm_user({EngineID, Name, SecName, AuthP, AuthKey, PrivP, PrivKey}) ->
 		     auth_key  = AuthKey,
 		     priv      = PrivP, 
 		     priv_key  = PrivKey},
-    
     {ok, User}.
 
 verify_usm_user_engine_id(EngineID) ->
@@ -2068,7 +2070,7 @@ verify_invalid(_, []) ->
 verify_invalid(Conf, [Inv|Invs]) ->
     case lists:member(Inv, Conf) of
 	false ->
-	    verify_mandatory(Conf, Invs);
+	    verify_invalid(Conf, Invs);
 	true ->
 	    {error, {illegal_config, Inv}}
     end.
@@ -2096,7 +2098,7 @@ verify_val(port, Port) ->
 	    Err
     end;
 verify_val(target_name, Name) ->
-    case (catch snmp_conf:check_string(Name,{gt,0})) of
+    case (catch snmp_conf:check_string(Name,{gt, 0})) of
 	ok ->
 	    {ok, Name};
 	Err ->

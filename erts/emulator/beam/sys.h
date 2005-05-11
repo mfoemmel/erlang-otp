@@ -33,6 +33,17 @@
 #endif
 #endif
 
+/*
+ * Make sure that ENOTSUP is defined.
+ */
+#ifndef ENOTSUP
+#  ifdef EOPNOTSUPP
+#    define ENOTSUP EOPNOTSUPP
+#else
+#    define ENOTSUP -1738659
+#  endif
+#endif
+
 #ifdef ERTS_INLINE
 #  ifndef ERTS_CAN_INLINE
 #    define ERTS_CAN_INLINE 1

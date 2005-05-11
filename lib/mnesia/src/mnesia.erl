@@ -990,17 +990,21 @@ do_foldl(A, O, Tab, '$end_of_table', Fun, RAcc, _Type, Stored) ->
 		end, RAcc, Stored);
 do_foldl(A, O, Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H == Key ->
     NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, Key, read)),
-    do_foldl(A, O, Tab, dirty_next(Tab, Key), Fun, NewAcc, ordered_set, Stored);
+    {_, Tid, Ts} = get(mnesia_activity_state),
+    do_foldl(Tid, Ts, Tab, dirty_next(Tab, Key), Fun, NewAcc, ordered_set, Stored);
 do_foldl(A, O, Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H < Key ->
     NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, H, read)),
-    do_foldl(A, O, Tab, Key, Fun, NewAcc, ordered_set, Stored);
+    {_, Tid, Ts} = get(mnesia_activity_state),
+    do_foldl(Tid, Ts, Tab, Key, Fun, NewAcc, ordered_set, Stored);
 do_foldl(A, O, Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H > Key ->
     NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, Key, read)),
-    do_foldl(A, O, Tab, dirty_next(Tab, Key), Fun, NewAcc, ordered_set, [H |Stored]);
+    {_, Tid, Ts} = get(mnesia_activity_state),
+    do_foldl(Tid, Ts, Tab, dirty_next(Tab, Key), Fun, NewAcc, ordered_set, [H |Stored]);
 do_foldl(A, O, Tab, Key, Fun, Acc, Type, Stored) ->  %% Type is set or bag 
     NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, Key, read)),
     NewStored = ordsets:del_element(Key, Stored),
-    do_foldl(A, O, Tab, dirty_next(Tab, Key), Fun, NewAcc, Type, NewStored).
+    {_, Tid, Ts} = get(mnesia_activity_state),
+    do_foldl(Tid, Ts, Tab, dirty_next(Tab, Key), Fun, NewAcc, Type, NewStored).
 
 foldr(Fun, Acc, Tab) ->
     foldr(Fun, Acc, Tab, read).
@@ -1032,17 +1036,21 @@ do_foldr(A, O, Tab, '$end_of_table', Fun, RAcc, _Type, Stored) ->
 		end, RAcc, Stored);
 do_foldr(A, O, Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H == Key ->
     NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, Key, read)),
-    do_foldr(A, O, Tab, dirty_prev(Tab, Key), Fun, NewAcc, ordered_set, Stored);
+    {_, Tid, Ts} = get(mnesia_activity_state),
+    do_foldr(Tid, Ts, Tab, dirty_prev(Tab, Key), Fun, NewAcc, ordered_set, Stored);
 do_foldr(A, O, Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H > Key ->
     NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, H, read)),
-    do_foldr(A, O, Tab, Key, Fun, NewAcc, ordered_set, Stored);
+    {_, Tid, Ts} = get(mnesia_activity_state),
+    do_foldr(Tid, Ts, Tab, Key, Fun, NewAcc, ordered_set, Stored);
 do_foldr(A, O, Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H < Key ->
     NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, Key, read)),
-    do_foldr(A, O, Tab, dirty_prev(Tab, Key), Fun, NewAcc, ordered_set, [H |Stored]);
+    {_, Tid, Ts} = get(mnesia_activity_state),
+    do_foldr(Tid, Ts, Tab, dirty_prev(Tab, Key), Fun, NewAcc, ordered_set, [H |Stored]);
 do_foldr(A, O, Tab, Key, Fun, Acc, Type, Stored) ->  %% Type is set or bag 
     NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, Key, read)),
     NewStored = ordsets:del_element(Key, Stored),
-    do_foldr(A, O, Tab, dirty_prev(Tab, Key), Fun, NewAcc, Type, NewStored).
+    {_, Tid, Ts} = get(mnesia_activity_state),
+    do_foldr(Tid, Ts, Tab, dirty_prev(Tab, Key), Fun, NewAcc, Type, NewStored).
 
 init_iteration(ActivityId, Opaque, Tab, LockKind) ->
     lock(ActivityId, Opaque, {table, Tab}, LockKind),

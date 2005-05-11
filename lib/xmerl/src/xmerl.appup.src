@@ -1,4 +1,103 @@
 {"%VSN%",
- [{add_application, xmerl}],
- [{remove_application, xmerl}]
+ [
+  {"1.0",
+    [
+	{remove, {ucs, soft_purge, soft_purge}},
+	{add_module, xmerl_ucs},
+	{add_module, xmerl_uri},
+	{load_module, xmerl, soft_purge, soft_purge, []},
+	{load_module, xmerl_eventp, soft_purge, soft_purge, []},
+	{load_module, xmerl_html, soft_purge, soft_purge, []},
+	{load_module, xmerl_lib, soft_purge, soft_purge, []},
+	{load_module, xmerl_otpsgml, soft_purge, soft_purge, []},
+	{load_module, xmerl_scan, soft_purge, soft_purge, []},
+	{load_module, xmerl_sgml, soft_purge, soft_purge, []},
+	{load_module, xmerl_simple, soft_purge, soft_purge, []},
+	{load_module, xmerl_text, soft_purge, soft_purge, []},
+	{load_module, xmerl_validate, soft_purge, soft_purge, []},
+	{load_module, xmerl_xlate, soft_purge, soft_purge, []},
+	{load_module, xmerl_xml, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath_parse, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath_pred, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath_scan, soft_purge, soft_purge, []},
+	{load_module, xmerl_xs, soft_purge, soft_purge, []}
+	
+    ]
+  },
+  {"1.0.1",
+    [
+	{remove, {ucs, soft_purge, soft_purge}},
+	{add_module,xmerl_ucs},
+	{add_module,xmerl_uri},
+	{load_module, xmerl, soft_purge, soft_purge, []},
+	{load_module, xmerl_eventp, soft_purge, soft_purge, []},
+	{load_module, xmerl_html, soft_purge, soft_purge, []},
+	{load_module, xmerl_lib, soft_purge, soft_purge, []},
+	{load_module, xmerl_otpsgml, soft_purge, soft_purge, []},
+	{load_module, xmerl_scan, soft_purge, soft_purge, []},
+	{load_module, xmerl_sgml, soft_purge, soft_purge, []},
+	{load_module, xmerl_simple, soft_purge, soft_purge, []},
+	{load_module, xmerl_text, soft_purge, soft_purge, []},
+	{load_module, xmerl_validate, soft_purge, soft_purge, []},
+	{load_module, xmerl_xlate, soft_purge, soft_purge, []},
+	{load_module, xmerl_xml, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath_parse, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath_pred, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath_scan, soft_purge, soft_purge, []},
+	{load_module, xmerl_xs, soft_purge, soft_purge, []}
+    ]
+  }
+ ],
+ [
+  {"1.0",
+    [
+	{add_module, ucs},
+	{remove, {xmerl_ucs, soft_purge, soft_purge}},
+	{remove, {xmerl_uri, soft_purge, soft_purge}},
+	{load_module, xmerl, soft_purge, soft_purge, []},
+	{load_module, xmerl_eventp, soft_purge, soft_purge, []},
+	{load_module, xmerl_html, soft_purge, soft_purge, []},
+	{load_module, xmerl_lib, soft_purge, soft_purge, []},
+	{load_module, xmerl_otpsgml, soft_purge, soft_purge, []},
+	{load_module, xmerl_scan, soft_purge, soft_purge, []},
+	{load_module, xmerl_sgml, soft_purge, soft_purge, []},
+	{load_module, xmerl_simple, soft_purge, soft_purge, []},
+	{load_module, xmerl_text, soft_purge, soft_purge, []},
+	{load_module, xmerl_validate, soft_purge, soft_purge, []},
+	{load_module, xmerl_xlate, soft_purge, soft_purge, []},
+	{load_module, xmerl_xml, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath_parse, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath_pred, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath_scan, soft_purge, soft_purge, []},
+	{load_module, xmerl_xs, soft_purge, soft_purge, []}
+    ]
+  },
+  {"1.0.1",
+    [
+	{add_module, ucs},
+	{remove, {xmerl_ucs, soft_purge, soft_purge}},
+	{remove, {xmerl_uri, soft_purge, soft_purge}},
+	{load_module, xmerl, soft_purge, soft_purge, []},
+	{load_module, xmerl_eventp, soft_purge, soft_purge, []},
+	{load_module, xmerl_html, soft_purge, soft_purge, []},
+	{load_module, xmerl_lib, soft_purge, soft_purge, []},
+	{load_module, xmerl_otpsgml, soft_purge, soft_purge, []},
+	{load_module, xmerl_scan, soft_purge, soft_purge, []},
+	{load_module, xmerl_sgml, soft_purge, soft_purge, []},
+	{load_module, xmerl_simple, soft_purge, soft_purge, []},
+	{load_module, xmerl_text, soft_purge, soft_purge, []},
+	{load_module, xmerl_validate, soft_purge, soft_purge, []},
+	{load_module, xmerl_xlate, soft_purge, soft_purge, []},
+	{load_module, xmerl_xml, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath_parse, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath_pred, soft_purge, soft_purge, []},
+	{load_module, xmerl_xpath_scan, soft_purge, soft_purge, []},
+	{load_module, xmerl_xs, soft_purge, soft_purge, []}
+    ]
+  }
+ ]
 }.

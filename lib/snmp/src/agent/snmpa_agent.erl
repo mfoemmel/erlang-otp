@@ -48,6 +48,12 @@
 
 -define(empty_pdu_size, 21).
 
+-ifdef(snmp_extended_verbosity).
+-define(vt(F,A), ?vtrace(F, A)).
+-else.
+-define(vt(_F, _A), ok).
+-endif.
+
 
 -ifdef(snmp_debug).
 -define(GS_START_LINK3(Prio, Parent, Ref, Opts),
@@ -1816,9 +1822,9 @@ oid_sort_varbindlist(Vbs) ->
 
 %% LAVb is Last Accessible Vb
 next_loop_varbinds([], [Vb | Vbs], MibView, Res, LAVb) ->
-%%     ?vtrace("next_loop_varbinds -> entry when"
-%% 	    "~n   Vb:      ~p"
-%% 	    "~n   MibView: ~p", [Vb, MibView]),
+    ?vt("next_loop_varbins -> entry when"
+ 	"~n   Vb:      ~p"
+ 	"~n   MibView: ~p", [Vb, MibView]),
     case varbind_next(Vb, MibView) of
 	endOfMibView ->
 	    RVb = if LAVb == [] -> Vb;
@@ -1860,9 +1866,9 @@ next_loop_varbinds([], [Vb | Vbs], MibView, Res, LAVb) ->
     end;
 next_loop_varbinds({table, TableOid, ME, TabOids},
 		   [Vb | Vbs], MibView, Res, _LAVb) ->
-%%     ?vtrace("next_loop_varbins(table) -> entry with"
-%% 	"~n   TableOid: ~p"
-%% 	"~n   Vb:       ~p", [TableOid, Vb]),
+    ?vt("next_loop_varbins(table) -> entry with"
+ 	"~n   TableOid: ~p"
+ 	"~n   Vb:       ~p", [TableOid, Vb]),
     case varbind_next(Vb, MibView) of
 	{table, TableOid, TableRestOid, _ME} ->
 	    next_loop_varbinds({table, TableOid, ME,
@@ -1884,13 +1890,13 @@ next_loop_varbinds({table, TableOid, ME, TabOids},
     end;
 next_loop_varbinds({table, TableOid, ME, TabOids},
 		   [], MibView, Res, _LAVb) ->
-%%     ?vtrace("next_loop_varbins(table) -> entry with"
-%% 	    "~n   TableOid: ~p", [TableOid]),
+    ?vt("next_loop_varbins(table) -> entry with"
+	"~n   TableOid: ~p", [TableOid]),
     case get_next_table(ME, TableOid, TabOids, MibView) of
 	{ok, TabRes, TabEndOfTabVbs} ->
-%% 	    ?vtrace("next_loop_varbins(table) -> get_next_table result:"
-%% 		"~n   TabRes:         ~p"
-%% 		"~n   TabEndOfTabVbs: ~p", [TabRes, TabEndOfTabVbs]),
+ 	    ?vt("next_loop_varbins(table) -> get_next_table result:"
+		"~n   TabRes:         ~p"
+		"~n   TabEndOfTabVbs: ~p", [TabRes, TabEndOfTabVbs]),
 	    NewRes = lists:append(TabRes, Res),
 	    next_loop_varbinds([], TabEndOfTabVbs, MibView, NewRes, []);
 	{ErrorStatus, OrgIndex} ->
@@ -1902,10 +1908,10 @@ next_loop_varbinds({table, TableOid, ME, TabOids},
     end;
 next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
 		   [Vb | Vbs], MibView, Res, _LAVb) ->
-%%     ?vtrace("next_loop_varbins(subagent) -> entry with"
-%% 	"~n   SAPid: ~p"
-%% 	"~n   SAOid: ~p"
-%% 	"~n   Vb:    ~p", [SAPid, SAOid, Vb]),
+    ?vt("next_loop_varbins(subagent) -> entry with"
+	"~n   SAPid: ~p"
+	"~n   SAOid: ~p"
+ 	"~n   Vb:    ~p", [SAPid, SAOid, Vb]),
     case varbind_next(Vb, MibView) of
 	{subagent, _SubAgentPid, SAOid} ->
 	    next_loop_varbinds({subagent, SAPid, SAOid,
@@ -1951,9 +1957,9 @@ next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
     end;
 next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
 		   [], MibView, Res, _LAVb) ->
-%%     ?vtrace("next_loop_varbins(subagent) -> entry with"
-%% 	"~n   SAPid: ~p"
-%% 	"~n   SAOid: ~p", [SAPid, SAOid]),
+     ?vt("next_loop_varbins(subagent) -> entry with"
+	 "~n   SAPid: ~p"
+	 "~n   SAOid: ~p", [SAPid, SAOid]),
     case get_next_sa(SAPid, SAOid, SAVbs, MibView) of
 	{ok, SARes, SAEndOfMibViewVbs} ->
 	    NewRes = lists:append(SARes, Res),
@@ -1986,7 +1992,7 @@ next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
  	    {ErrorStatus, OrgIndex, []}
     end;
 next_loop_varbinds([], [], _MibView, Res, _LAVb) ->
-%%     ?vtrace("next_loop_varbins -> entry when done", []),
+    ?vt("next_loop_varbins -> entry when done", []),
     {noError, 0, Res}.
 
 try_get_instance(_Vb, #me{mfa = {M, F, A}, asn1_type = ASN1Type}) ->
@@ -2008,10 +2014,10 @@ tab_oid(X) -> X.
 %% a subagent has returned endOfMibView.
 %%-----------------------------------------------------------------
 varbind_next(#varbind{value = Value, oid = Oid}, MibView) ->
-%%     ?vtrace("varbind_next -> entry with"
-%% 	"~n   Value:   ~p"
-%% 	"~n   Oid:     ~p"
-%% 	"~n   MibView: ~p", [Value, Oid, MibView]),
+    ?vt("varbind_next -> entry with"
+ 	"~n   Value:   ~p"
+ 	"~n   Oid:     ~p"
+ 	"~n   MibView: ~p", [Value, Oid, MibView]),
     case Value of
 	{endOfTable, NextOid} ->
 	    snmpa_mib:next(get(mibserver), NextOid, MibView);
@@ -2023,18 +2029,18 @@ varbind_next(#varbind{value = Value, oid = Oid}, MibView) ->
 
 get_next_table(#me{mfa = {M, F, A}}, TableOid, TableOids, MibView) ->
     % We know that all TableOids have at least a column number as oid
-%%     ?vtrace("get_next_table -> entry with"
-%% 	    "~n   M:         ~p"
-%% 	    "~n   F:         ~p"
-%% 	    "~n   A:         ~p"
-%% 	    "~n   TableOid:  ~p"
-%% 	    "~n   TableOids: ~p"
-%% 	    "~n   MibView:   ~p", [M, F, A, TableOid, TableOids, MibView]),
+    ?vt("get_next_table -> entry with"
+	"~n   M:         ~p"
+	"~n   F:         ~p"
+	"~n   A:         ~p"
+	"~n   TableOid:  ~p"
+	"~n   TableOids: ~p"
+	"~n   MibView:   ~p", [M, F, A, TableOid, TableOids, MibView]),
     Sorted = snmpa_svbl:sort_varbinds_rows(TableOids),
     case get_next_values_all_rows(Sorted, M,F,A, [], TableOid) of
 	NewVbs when list(NewVbs) ->
-%% 	    ?vtrace("get_next_table -> "
-%% 		"~n   NewVbs: ~p", [NewVbs]),
+ 	    ?vt("get_next_table -> "
+		"~n   NewVbs: ~p", [NewVbs]),
 	    % We must now check each Vb for endOfTable and that it is
 	    % in the MibView. If not, it becomes a endOfTable. We 
 	    % collect all of these together.
@@ -2046,15 +2052,15 @@ get_next_table(#me{mfa = {M, F, A}}, TableOid, TableOids, MibView) ->
 get_next_values_all_rows([Row | Rows], M, F, A, Res, TabOid) ->
     {RowIndex, TableOids} = Row,
     Cols = delete_index(TableOids),
-%%     ?vtrace("get_next_values_all_rows -> "
-%% 	    "~n   Cols: ~p", [Cols]),
+    ?vt("get_next_values_all_rows -> "
+	"~n   Cols: ~p", [Cols]),
     Result = (catch dbg_apply(M, F, [get_next, RowIndex, Cols | A])),
-%%     ?vtrace("get_next_values_all_rows -> "
-%% 	    "~n   Result: ~p", [Result]),
+    ?vt("get_next_values_all_rows -> "
+ 	"~n   Result: ~p", [Result]),
     case validate_tab_next_res(Result, TableOids, {M, F, A}, TabOid) of
 	Values when list(Values) -> 
-%% 	    ?vtrace("get_next_values_all_rows -> "
-%% 		"~n   Values: ~p", [Values]),
+ 	    ?vt("get_next_values_all_rows -> "
+ 		"~n   Values: ~p", [Values]),
 	    NewRes = lists:append(Values, Res),
 	    get_next_values_all_rows(Rows, M, F, A, NewRes, TabOid);
 	{ErrorStatus, OrgIndex} ->
@@ -2085,9 +2091,9 @@ transform_tab_next_result([Vb | Vbs], {Res, EndOfs}, MibView) ->
 	    end
     end;
 transform_tab_next_result([], {Res, EndOfs}, _MibView) ->
-%%     ?vtrace("transform_tab_next_result -> entry with: "
-%% 	"~n   Res:    ~p"
-%% 	"~n   EndIfs: ~p",[Res, EndOfs]),
+    ?vt("transform_tab_next_result -> entry with: "
+ 	"~n   Res:    ~p"
+ 	"~n   EndIfs: ~p",[Res, EndOfs]),
     {ok, Res, EndOfs}.
 
 %%-----------------------------------------------------------------
@@ -2104,40 +2110,40 @@ transform_tab_next_result([], {Res, EndOfs}, _MibView) ->
 %%          (In the NewVarbinds list, the value may be endOfTable)
 %%-----------------------------------------------------------------
 validate_tab_next_res(Values, TableOids, Mfa, TabOid) ->
-%%     ?vtrace("validate_tab_next_res -> entry with: "
-%% 	    "~n   Values:     ~p"
-%% 	    "~n   TableOids:  ~p"
-%% 	    "~n   Mfa:        ~p"
-%% 	    "~n   TabOid:     ~p", [Values, TableOids, Mfa, TabOid]),
+     ?vt("validate_tab_next_res -> entry with: "
+	 "~n   Values:     ~p"
+	 "~n   TableOids:  ~p"
+	 "~n   Mfa:        ~p"
+	 "~n   TabOid:     ~p", [Values, TableOids, Mfa, TabOid]),
     {_Col, _ASN1Type, OneIdx} = hd(TableOids),
     validate_tab_next_res(Values, TableOids, Mfa, [], TabOid,
 			  next_oid(TabOid), OneIdx).
 validate_tab_next_res([{NextOid, Value} | Values],
 		      [{_ColNo, OrgVb, _Index} | TableOids],
 		      Mfa, Res, TabOid, TabNextOid, I) ->
-%%     ?vtrace("validate_tab_next_res -> entry with: "
-%% 	    "~n   NextOid:    ~p"
-%% 	    "~n   Value:      ~p"
-%% 	    "~n   Values:     ~p"
-%% 	    "~n   TableOids:  ~p"
-%% 	    "~n   Mfa:        ~p"
-%% 	    "~n   TabOid:     ~p", 
-%% 	    [NextOid, Value, Values, TableOids, Mfa, TabOid]),
+    ?vt("validate_tab_next_res -> entry with: "
+ 	"~n   NextOid:    ~p"
+ 	"~n   Value:      ~p"
+ 	"~n   Values:     ~p"
+ 	"~n   TableOids:  ~p"
+ 	"~n   Mfa:        ~p"
+ 	"~n   TabOid:     ~p", 
+ 	[NextOid, Value, Values, TableOids, Mfa, TabOid]),
     #varbind{org_index = OrgIndex} = OrgVb,
-%%     ?vtrace("validate_tab_next_res -> OrgIndex: ~p", [OrgIndex]),
+    ?vt("validate_tab_next_res -> OrgIndex: ~p", [OrgIndex]),
     NextCompleteOid = lists:append(TabOid, NextOid),
     case snmpa_mib:lookup(get(mibserver), NextCompleteOid) of
 	{table_column, #me{asn1_type = ASN1Type}, _TableEntryOid} ->
-%% 	    ?vtrace("validate_tab_next_res -> ASN1Type: ~p", [ASN1Type]),
+  	    ?vt("validate_tab_next_res -> ASN1Type: ~p", [ASN1Type]),
 	    case make_value_a_correct_value({value, Value}, ASN1Type, Mfa) of
 		{error, ErrorStatus} ->
-%% 		    ?vtrace("validate_tab_next_res -> "
-%% 			"~n   ErrorStatus: ~p", [ErrorStatus]),
+ 		    ?vt("validate_tab_next_res -> "
+ 			"~n   ErrorStatus: ~p", [ErrorStatus]),
 		    {ErrorStatus, OrgIndex};
 		{value, Type, NValue} ->
-%% 		    ?vtrace("validate_tab_next_res -> "
-%% 			"~n   Type:   ~p"
-%% 			"~n   NValue: ~p", [Type, NValue]),
+ 		    ?vt("validate_tab_next_res -> "
+     			"~n   Type:   ~p"
+			"~n   NValue: ~p", [Type, NValue]),
 		    NewVb = OrgVb#varbind{oid = NextCompleteOid,
 					  variabletype = Type, value = NValue},
 		    validate_tab_next_res(Values, TableOids, Mfa,
@@ -2151,16 +2157,16 @@ validate_tab_next_res([{NextOid, Value} | Values],
 validate_tab_next_res([endOfTable | Values],
 		      [{_ColNo, OrgVb, _Index} | TableOids],
 		      Mfa, Res, TabOid, TabNextOid, I) ->
-%%     ?vtrace("validate_tab_next_res(endOfTable) -> entry with: "
-%% 	    "~n   Values:     ~p"
-%% 	    "~n   OrgVb:      ~p"
-%% 	    "~n   TableOids:  ~p"
-%% 	    "~n   Mfa:        ~p"
-%% 	    "~n   Res:        ~p"
-%% 	    "~n   TabOid:     ~p"
-%% 	    "~n   TabNextOid: ~p"
-%% 	    "~n   I:          ~p",
-%% 	    [Values, OrgVb, TableOids, Mfa, Res, TabOid, TabNextOid, I]),
+     ?vt("validate_tab_next_res(endOfTable) -> entry with: "
+	 "~n   Values:     ~p"
+	 "~n   OrgVb:      ~p"
+	 "~n   TableOids:  ~p"
+	 "~n   Mfa:        ~p"
+	 "~n   Res:        ~p"
+	 "~n   TabOid:     ~p"
+	 "~n   TabNextOid: ~p"
+	 "~n   I:          ~p",
+	 [Values, OrgVb, TableOids, Mfa, Res, TabOid, TabNextOid, I]),
     NewVb = OrgVb#varbind{value = {endOfTable, TabNextOid}},
     validate_tab_next_res(Values, TableOids, Mfa, [NewVb | Res],
 			  TabOid, TabNextOid, I);
@@ -2253,13 +2259,32 @@ do_get_bulk(MibView, NonRepeaters, MaxRepetitions, PduMS, Varbinds) ->
     case do_get_next(MibView, NonRepVbs) of
 	{noError, 0, UResNonRepVbs} -> 
 	    ResNonRepVbs = lists:keysort(#varbind.org_index, UResNonRepVbs),
-	    % Decode the first varbinds, produce a reversed list of
-	    % listOfBytes.
-	    case enc_vbs(PduMS - ?empty_pdu_size, ResNonRepVbs) of
-		{SizeLeft, Res} ->
-		    do_get_rep(SizeLeft, MibView, MaxRepetitions,
-			       RestVbs, Res);
-		Res ->
+	    %% Decode the first varbinds, produce a reversed list of
+	    %% listOfBytes.
+	    case (catch enc_vbs(PduMS - ?empty_pdu_size, ResNonRepVbs)) of
+ 		{error, Idx, Reason} ->
+		    user_err("failed encoding varbind ~w:~n~p", [Idx, Reason]),
+                    {genErr, Idx, []};
+                {SizeLeft, Res} when is_integer(SizeLeft) and is_list(Res) ->
+ 		    ?vtrace("do get bulk -> encoded: "
+			    "~n   SizeLeft: ~p"
+			    "~n   Res:      ~w", [SizeLeft, Res]),
+		    case (catch do_get_rep(SizeLeft, MibView, MaxRepetitions,
+					   RestVbs, Res)) of
+			{error, Idx, Reason} ->
+			    user_err("failed encoding varbind ~w:~n~p", 
+				     [Idx, Reason]),
+			    {genErr, Idx, []};
+			Res when is_list(Res) ->
+			    ?vtrace("do get bulk -> Res: "
+				    "~n   ~w", [Res]),
+			    {noError, 0, conv_res(Res)};
+			Else ->
+			    ?vtrace("do get bulk -> Else: "
+				    "~n   ~w", [Else]),
+			    Else
+		    end;
+		Res when is_list(Res) ->
 		    {noError, 0, conv_res(Res)}
 	    end;
 	{ErrorStatus, Index, _} ->
@@ -2278,24 +2303,41 @@ split_vbs(N, [H | T], Res) -> split_vbs(N-1, T, [H | Res]);
 split_vbs(_N, [], Res) -> {Res, []}.
      
 enc_vbs(SizeLeft, Vbs) ->
-    catch lists:foldl(fun(Vb, {Sz, Res}) when Sz > 0 ->
-			      X = snmp_pdus:enc_varbind(Vb),
-			      Lx = length(X),
-			      if
-				  Lx < Sz ->
-				      {Sz - length(X), [X | Res]};
-				  true ->
-				      throw(Res)
-			      end;
-			 (_Vb, {_Sz, [_H | T]}) ->
-			      throw(T);
-			 (_Vb, {_Sz, []}) ->
-			      throw([])
-		      end,
-		      {SizeLeft, []},
-		      Vbs).
+    ?vt("enc_vbs -> entry with"
+	"~n   SizeLeft: ~w", [SizeLeft]),
+    Fun = fun(Vb, {Sz, Res}) when Sz > 0 ->
+		  ?vt("enc_vbs -> (fun) entry with"
+		      "~n   Vb:  ~p"
+		      "~n   Sz:  ~p"
+		      "~n   Res: ~w", [Vb, Sz, Res]),
+		  case (catch snmp_pdus:enc_varbind(Vb)) of
+		      {'EXIT', Reason} ->
+			  ?vtrace("enc_vbs -> encode failed: "
+				  "~n   Reason: ~p", [Reason]),
+			  throw({error, Vb#varbind.org_index, Reason});
+		      X ->
+			  ?vt("enc_vbs -> X: ~w", [X]),
+			  Lx = length(X),
+			  ?vt("enc_vbs -> Lx: ~w", [Lx]),
+			  if
+			      Lx < Sz ->
+				  {Sz - length(X), [X | Res]};
+			      true ->
+				  throw(Res)
+			  end
+		  end;
+	     (_Vb, {_Sz, [_H | T]}) ->
+		  ?vt("enc_vbs -> (fun) entry with"
+		      "~n   T: ~p", [T]),
+		  throw(T);
+	     (_Vb, {_Sz, []}) ->
+		  ?vt("enc_vbs -> (fun) entry", []),
+		  throw([])
+	  end,
+    lists:foldl(Fun, {SizeLeft, []}, Vbs).
 
-do_get_rep(Sz, MibView, MaxRepetitions, Varbinds, Res) when MaxRepetitions>=0 ->
+do_get_rep(Sz, MibView, MaxRepetitions, Varbinds, Res) 
+  when MaxRepetitions >= 0 ->
     do_get_rep(Sz, MibView, 0, MaxRepetitions, Varbinds, Res);
 do_get_rep(Sz, MibView, _MaxRepetitions, Varbinds, Res) ->
     do_get_rep(Sz, MibView, 0, 0, Varbinds, Res).
@@ -2308,32 +2350,61 @@ conv_res([], Bytes) ->
     Bytes.
 
 do_get_rep(_Sz, _MibView, Max, Max, _, Res) ->
+    ?vt("do_get_rep -> done when: "
+	"~n   Res: ~p", [Res]),
     {noError, 0, conv_res(Res)};
 do_get_rep(Sz, MibView, Count, Max, Varbinds, Res) -> 
+    ?vt("do_get_rep -> entry when: "
+	"~n   Sz:    ~p"
+	"~n   Count: ~p"
+	"~n   Res:   ~w", [Sz, Count, Res]),
     case try_get_bulk(Sz, MibView, Varbinds) of
 	{noError, NextVarbinds, SizeLeft, Res2} -> 
+	    ?vt("do_get_rep -> noError: "
+		"~n   SizeLeft: ~p"
+		"~n   Res2:     ~p", [SizeLeft, Res2]),
 	    do_get_rep(SizeLeft, MibView, Count+1, Max, NextVarbinds,
 		       Res2 ++ Res);
 	{endOfMibView, _NextVarbinds, _SizeLeft, Res2} -> 
+	    ?vt("do_get_rep -> endOfMibView: "
+		"~n   Res2: ~p", [Res2]),
 	    {noError, 0, conv_res(Res2 ++ Res)};
 	{ErrorStatus, Index} ->
+	    ?vtrace("do_get_rep -> done when error: "
+		    "~n   ErrorStatus: ~p"
+		    "~n   Index:       ~p", [ErrorStatus, Index]),
 	    {ErrorStatus, Index, []}
     end.
 
 try_get_bulk(Sz, MibView, Varbinds) -> 
+    ?vt("try_get_bulk -> entry with"
+	"~n   Sz: ~w", [Sz]),
     case do_get_next(MibView, Varbinds) of
 	{noError, 0, UNextVarbinds} -> 
+	    ?vt("try_get_bulk -> noError", []),
 	    NextVarbinds = lists:keysort(#varbind.org_index, UNextVarbinds),
-	    case enc_vbs(Sz, NextVarbinds) of
-		{SizeLeft, Res} when list(Res) ->
+	    case (catch enc_vbs(Sz, NextVarbinds)) of
+		{error, Idx, Reason} ->
+		    user_err("failed encoding varbind ~w:~n~p", [Idx, Reason]),
+		    ?vtrace("try_get_bulk -> error: "
+			    "~n   Idx:    ~p"
+			    "~n   Reason: ~p", [Idx, Reason]),
+		    {genErr, Idx};
+		{SizeLeft, Res} when is_integer(SizeLeft) and is_list(Res) ->
+		    ?vt("try get bulk -> "
+			"~n   SizeLeft: ~w"
+			"~n   Res:      ~w", [SizeLeft, Res]),
 		    {check_end_of_mibview(NextVarbinds),
 		     NextVarbinds, SizeLeft, Res};
 		Res when list(Res) ->
-		    {endOfMibView, [], 0, Res};
-		Else ->
-		    exit(Else)
+		    ?vt("try get bulk -> Res: "
+			"~n   ~w", [Res]),
+		    {endOfMibView, [], 0, Res}
 	    end;
 	{ErrorStatus, Index, _} ->
+	    ?vt("try get bulk: "
+		"~n   ErrorStatus: ~p"
+		"~n   Index:       ~p",[ErrorStatus, Index]),
 	    {ErrorStatus, Index}
     end.
 
@@ -2705,7 +2776,8 @@ mapfoldl(_F, _Eas, Accu, []) -> {Accu,[]}.
 
 dbg_apply(M,F,A) ->
     case get(verbosity) of
-	silence -> apply(M,F,A);
+	silence -> 
+	    apply(M,F,A);
 	_ ->
 	    ?vlog("~n   apply: ~w,~w,~p~n", [M,F,A]),
 	    Res = (catch apply(M,F,A)),

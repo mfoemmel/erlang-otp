@@ -641,7 +641,7 @@ generate_msg('version-3', NoteStore, Pdu,
     ScopedPDU = #scopedPdu{contextEngineID = ContextEngineID,
 			   contextName = ContextName,
 			   data = Pdu},
-    case snmp_pdus:enc_scoped_pdu(ScopedPDU) of
+    case (catch snmp_pdus:enc_scoped_pdu(ScopedPDU)) of
 	{'EXIT', Reason} ->
 	    user_err("failed encoding scoped pdu "
 		     "(pdu: ~w, contextName: ~w): ~n~w",

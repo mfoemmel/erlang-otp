@@ -8,7 +8,7 @@
 %%% 
 %%% Created : 12 Jan 2005 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%
-%%% $Id$
+%%% $Id: cerl_typesig.erl,v 1.33 2005/05/04 15:17:37 tobiasl Exp $
 %%%-------------------------------------------------------------------
 
 -module(cerl_typesig).
@@ -25,6 +25,7 @@
 	 t_is_float/1, t_from_range/2, t_fun/0, t_fun/1, t_fun/2, t_fun_args/1,
 	 t_fun_range/1, t_is_fun/1, t_improper_list/0, t_inf/1,
 	 t_inf/2, t_inf_lists/2, t_integer/0, t_is_integer/1,
+	 t_integers/1,
 	 t_is_atom/1, t_atom_vals/1, t_is_cons/1, t_is_equal/2,
 	 t_is_improper_list/1, t_is_list/1, t_is_tuple/1, t_is_none/1,
 	 t_is_any/1, t_is_subtype/2, t_limit/2, t_list_elements/1,
@@ -60,8 +61,8 @@
 -record(fun_var, {'fun', deps}).
 
 %-define(DEBUG, true).
-%-define(DEBUG1, true).
-%-define(DEBUGMORE, true).
+%-define(DEBUG_CONSTRAINTS, true).
+%-define(DEBUG_PP, true).
 %-define(DEBUG_TIME, true).
 %-define(DOT, true).
 
@@ -71,7 +72,7 @@
 doit(Module) ->
   {ok, _, Code} = compile:file(Module,[to_core,binary]), 
   {Tree, Map} = analyze(Code),
-  debug_more(Tree, Map),
+  debug_pp(Tree, Map),
   pp_signatures(Tree, Map),
   ok.      
 
@@ -141,7 +142,7 @@ delete_ann(_, []) ->
 analyze(Code) ->
   {Tree, NextLabel} = cerl_trees:label(cerl:from_records(Code)),
   debug_make_fun_map(Tree),
-  debug_more(Tree, dict:new()),
+  debug_pp(Tree, dict:new()),
   T = debug_time_start(traverse),
   State = traverse(Tree, state__new(NextLabel)),
   debug_time_stop(T),
@@ -444,30 +445,67 @@ handle_call(Call, State) ->
 get_bif_constr({erlang, Op, 2}, Dst, [Arg1, Arg2]) when ((Op == '+') or 
 							 (Op == '-') or 
 							 (Op == '*')) ->
-  DstFun = mk_fun_var(fun(Map)->
-			  Arg1Type = lookup_type(Arg1, Map),
-			  Arg2Type = lookup_type(Arg2, Map),
-			  case t_is_subtype(Arg1Type, t_integer())
-			    andalso t_is_subtype(Arg2Type, t_integer()) of
-			    true -> t_integer();
-			    false ->
-			      case t_is_subtype(Arg1Type, t_float())
-				orelse t_is_subtype(Arg2Type, t_float()) of
-				true -> t_float();
-				false -> t_number()
-			      end
-			  end
-		      end,[Arg1, Arg2]),
-  ArgFun = mk_fun_var(fun(Map)->
-			  DstType = lookup_type(Dst, Map),
-			  case t_is_subtype(DstType, t_integer()) of
-			    true -> t_integer();
-			    false -> t_number()
-			  end
-		      end, [Dst]),
-  mk_conj_constraint_list([mk_constraint(Dst, sub, DstFun),
-			   mk_constraint(Arg1, sub, ArgFun),
-			   mk_constraint(Arg2, sub, ArgFun)]);
+  DstFun = 
+    fun(Map)->
+	Arg1Type = lookup_type(Arg1, Map),
+	Arg2Type = lookup_type(Arg2, Map),
+	case t_is_integer(Arg1Type) andalso t_is_integer(Arg2Type) of
+	  true ->
+	    Vals1 = t_number_vals(Arg1Type),
+	    Vals2 = t_number_vals(Arg2Type),
+	    case (Vals1 =:= any) orelse (Vals2 =:= any) of
+	      true -> t_integer();
+	      false ->
+		AllCombs = [{X, Y} || X <- Vals1, Y <- Vals2],
+		AllRes = [eval_arith(Op, X, Y) || {X, Y} <- AllCombs],
+		t_integers(AllRes)
+	    end;
+	  false ->
+	    case t_is_float(Arg1Type) orelse t_is_float(Arg2Type) of
+	      true -> t_float();
+	      false -> t_number()
+	    end
+	end
+    end,
+  DstFunVar = mk_fun_var(DstFun, [Arg1, Arg2]),
+  
+  ArgFun = 
+    fun(A, Pos) ->
+	F = 
+	  fun(Map)->
+	      DstType = lookup_type(Dst, Map),
+	      AType = lookup_type(A, Map),
+	      case t_is_integer(DstType) of
+		true ->
+		  case t_is_integer(AType) of
+		    true -> 
+		      DstVals = t_number_vals(DstType),
+		      AVals = t_number_vals(AType),
+		      case (DstVals =:= any) orelse (AVals =:= any) of
+			true -> t_integer();
+			false ->
+			  AllCombs = [{X, Y} || X <- DstVals, Y <- AVals],
+			  AllRes = [eval_inv_arith(Op, X, Y, Pos) 
+				    || {X, Y} <- AllCombs],
+			  t_integers(AllRes)
+		    end;
+		    false  ->
+		      t_integer()
+		  end;
+		false ->
+		  case t_is_integer(DstType) of
+		    true -> t_integer();
+		    false -> t_number()
+		  end
+	      end
+	  end,
+	mk_fun_var(F, [Dst, A])
+    end,
+  Arg1FunVar = ArgFun(Arg2, 2),
+  Arg2FunVar = ArgFun(Arg1, 1),
+  mk_conj_constraint_list([mk_constraint(Arg1, sub, Arg1FunVar),
+			   mk_constraint(Arg2, sub, Arg2FunVar),
+			   mk_constraint(Dst, sub, DstFunVar)]);
 get_bif_constr({M, F, A}, Dst, Args) ->
   GenType = erl_bif_types:type(M, F, A),
   case t_is_none(GenType) of
@@ -491,6 +529,15 @@ get_bif_constr({M, F, A}, Dst, Args) ->
 	  mk_conj_constraint_list([mk_constraint(Dst, sub, ReturnType)|Cs])
       end
   end.
+
+eval_arith('+', X, Y) -> X + Y;
+eval_arith('*', X, Y) -> X * Y;
+eval_arith('-', X, Y) -> X - Y.
+
+eval_inv_arith('+', Dst, A, _Pos) -> Dst - A;
+eval_inv_arith('*', Dst, A, _Pos) -> Dst div A;
+eval_inv_arith('-', Dst, A, 1) -> A - Dst;
+eval_inv_arith('-', Dst, A, 2) -> A + Dst.
 
 filter_match_fail([Clause]) ->
   Body = clause_body(Clause),
@@ -957,8 +1004,6 @@ join_maps(Maps) ->
 						%debug_time_stop(Time),
   Res.
 
-merge_maps([], _Fun, _Keys) ->
-  dict:new();
 merge_maps([Map], _Fun, _Keys) ->
   Map;
 merge_maps([Map1, Map2|Tail], Fun, Keys) ->
@@ -1359,7 +1404,9 @@ pp_signatures(Tree, Map) ->
 
 
 -ifdef(DEBUG).
--define(DEBUG_MORE, true).
+-ifndef(DEBUG_PP).
+-define(DEBUG_PP, true).
+-endif.
 -endif.
 
 -ifdef(DEBUG).
@@ -1374,7 +1421,7 @@ time_debug(_String, _Args) ->
   ok.
 -endif.
 
--ifdef(DEBUG1).
+-ifdef(DEBUG_CONSTRAINTS).
 pp_constrs_scc(Scc, State) ->
   [pp_constrs(Fun, state__fun_cs(Fun, State))||Fun <- Scc].
 
@@ -1428,8 +1475,8 @@ pp_constrs_scc(_Scc, _State) ->
 -endif.
 
 
--ifdef(DEBUGMORE).
-debug_more(Tree, Map) -> 
+-ifdef(DEBUG_PP).
+debug_pp(Tree, Map) -> 
   io:put_chars(cerl_prettypr:format(Tree)),
   io:nl(),
   [io:format("~w :: ~s\n", [Var, format_type(Type)])
@@ -1439,7 +1486,7 @@ debug_more(Tree, Map) ->
 
 
 -else.
-debug_more(_Tree, _Map) -> 
+debug_pp(_Tree, _Map) -> 
   ok.
 -endif.
 

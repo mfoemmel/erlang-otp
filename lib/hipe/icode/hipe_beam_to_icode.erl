@@ -4,7 +4,7 @@
 %% Author      : Kostis Sagonas
 %% Description : Translates symbolic BEAM code to Icode
 %%=======================================================================
-%% $Id$
+%% $Id: hipe_beam_to_icode.erl,v 1.117 2005/04/01 12:36:42 kostis Exp $
 %%=======================================================================
 %% @doc
 %%    This file translates symbolic BEAM code to Icode which is HiPE's
@@ -195,6 +195,7 @@ mk_redtest() -> hipe_icode:mk_primop([], redtest, []).
 
 leafness(Is) -> % -> true, self, or false
   leafness(Is, true).
+
 leafness([], Leafness) ->
   Leafness;
 leafness([I|Is], Leafness) ->
@@ -1207,7 +1208,7 @@ trans_bin([{bs_put_binary,{f,Lbl},Size,Unit,{field_flags,Flags},Source}|
 	{SrcVar,[I]}
     end,
   %% Get type of put_binary
-  {Name, Args,Env2} = 
+  {Name, Args, Env2} =
     case Size of
       {atom,all} -> %% put all bits
 	{{bs_put_binary_all, Flags},[Src,Base,Offset],Env};

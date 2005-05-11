@@ -21,7 +21,7 @@
 %%
 %% Author contact: richardc@csd.uu.se
 %%
-%% $Id$
+%% $Id: erl_types.erl,v 1.61 2005/03/30 07:57:23 tobiasl Exp $
 %%
 %% @doc Basic representation of Erlang types.
 %%
@@ -147,7 +147,7 @@
 	 t_fun_args/1,
 	 t_fun_range/1, t_identifier/0,
 	 t_inf/2, t_inf_lists/2,
-	 t_integer/0, t_integer/1,
+	 t_integer/0, t_integer/1, t_integers/1,
 	 t_improper_list/0,
 	 t_is_any/1, t_is_atom/1,
 	 t_is_binary/1, t_is_bool/1, t_is_byte/1,
@@ -213,7 +213,7 @@
 -define(value_set(S), #c{c = S, n = 0, as = []}).
 -define(singleton(V), ?value_set(#set{n = 1, s = [V]})).
 -define(booleans, ?value_set(#set{n = 2, s = [false,true]})).
--define(SET_LIMIT, 32).
+-define(SET_LIMIT, 8).
 
 %% Generic disjoint union macros. The list of subtypes is kept as an
 %% ordered list, sorted on constructor name and arity.
@@ -638,6 +638,15 @@ t_integer(V) when is_integer(V), V >= 0, V =< ?MAX_CHAR ->
 t_integer(V) when is_integer(V) ->
     ?integer(?singleton(V), ?any).
 
+%% @spec t_integers(L::[integer()]) -> type()
+%%
+%% @doc Returns a type that is in <code>integer()</code> and contains
+%% all the integers in the list <code>L</code>.
+%%
+%% @see t_integer/0
+
+t_integers(L) when is_list(L) ->
+    t_sup([t_integer(X) || X <- L]).
 
 %% @spec t_from_range(X::integer(), Y::integer()) -> type()
 %%

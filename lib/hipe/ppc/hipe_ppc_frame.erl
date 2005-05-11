@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_ppc_frame.erl,v 1.12 2005/04/11 15:19:27 mikpe Exp $
 
 -module(hipe_ppc_frame).
 -export([frame/1]).
@@ -160,10 +160,24 @@ do_pseudo_call(I, LiveOut, Context, FPoff0) ->
   ContLab = hipe_ppc:pseudo_call_contlab(I),
   Linkage = hipe_ppc:pseudo_call_linkage(I),
   CallCode = [hipe_ppc:mk_pseudo_call(FunC, SDesc, ContLab, Linkage)],
-  context_need_stack(Context, FPoff0),
   StkArity = max(0, OrigArity - hipe_ppc_registers:nr_args()),
+  context_need_stack(Context, stack_need(FPoff0, StkArity, FunC)),
   ArgsBytes = word_size() * StkArity,
   {CallCode, FPoff0 - ArgsBytes}.
+
+stack_need(FPoff, StkArity, FunC) ->
+  case FunC of
+    #ppc_prim{} -> FPoff;
+    #ppc_mfa{m=M,f=F,a=A} ->
+      case erlang:is_builtin(M, F, A) of
+	true -> FPoff;
+	false -> stack_need_general(FPoff, StkArity)
+      end;
+    'ctr' -> stack_need_general(FPoff, StkArity)
+  end.
+
+stack_need_general(FPoff, StkArity) ->
+  max(FPoff, FPoff + (?PPC_LEAF_WORDS - StkArity) * word_size()).
 
 %%%
 %%% Create stack descriptors for call sites.
@@ -201,8 +215,9 @@ do_pseudo_tailcall(I, Context) -> % always at FPoff=context_framesize(Context)
   Linkage = hipe_ppc:pseudo_tailcall_linkage(I),
   {Insns, FPoff1} = do_tailcall_args(Args, Context),
   context_need_stack(Context, FPoff1),
-  FPoff2 = FPoff1 + word_size()*Arity - word_size()*length(Args),
-  context_need_stack(Context, FPoff2),
+  StkArity = length(Args),
+  FPoff2 = FPoff1 + (Arity - StkArity) * word_size(),
+  context_need_stack(Context, stack_need(FPoff2, StkArity, FunC)),
   I2 =
     case FunC of
       'ctr' ->
@@ -399,44 +414,66 @@ do_prologue(CFG, Context) ->
       FrameSize = context_framesize(Context),
       OldStartLab = hipe_ppc_cfg:start_label(CFG),
       NewStartLab = hipe_gensym:get_next_label(ppc),
-      AllocFrameLab = hipe_gensym:get_next_label(ppc),
-      IncStackLab = hipe_gensym:get_next_label(ppc),
       %%
       P = hipe_ppc:mk_temp(hipe_ppc_registers:proc_pointer(), 'untagged'),
       Temp1 = mk_temp1(),
-      Temp2 = mk_temp2(),
       SP = mk_sp(),
       %%
-      NewStartCode =
-	[hipe_ppc:mk_load('lwz', Temp1, ?P_NSP_LIMIT, P) |
-	 hipe_ppc:mk_addi(Temp2, SP, -MaxStack,
-			  [hipe_ppc:mk_cmp('cmpl', Temp2, Temp1),
-			   hipe_ppc:mk_mfspr(Temp1, 'lr'), % hoisted
-			   hipe_ppc:mk_pseudo_bc('lt', IncStackLab,
-						 AllocFrameLab, 0.01)])],
+      AllocFrameCodeTail =
+	mk_store('stw', Temp1, FrameSize-word_size(), SP,
+		 [hipe_ppc:mk_b_label(OldStartLab)]),
       %%
-      %% XXX: In leaf functions, Temp2 already equals SP-FrameSize.
-      %% XXX: Replace this adjust_sp() with something cleverer.
-      AllocFrameCode =
-	adjust_sp(-FrameSize,
-		  mk_store('stw', Temp1, FrameSize-word_size(), SP,
-			   [hipe_ppc:mk_b_label(OldStartLab)])),
+      Arity = context_arity(Context),
+      Guaranteed = max(0, (?PPC_LEAF_WORDS - Arity) * word_size()),
       %%
-      IncStackCode =
-	[hipe_ppc:mk_bl(hipe_ppc:mk_prim('inc_stack_0'),
-			mk_minimal_sdesc(Context), not_remote),
-	 hipe_ppc:mk_mtspr('lr', Temp1),
-	 hipe_ppc:mk_b_label(NewStartLab)],
+      {CFG1,NewStartCode} =
+	if MaxStack =< Guaranteed ->
+	    %% io:format("~w: MaxStack ~w =< Guaranteed ~w :-)\n", [?MODULE,MaxStack,Guaranteed]),
+	    NewStartCode0 =
+	      [hipe_ppc:mk_mfspr(Temp1, 'lr') |
+	       adjust_sp(-FrameSize, AllocFrameCodeTail)],
+	    {CFG,NewStartCode0};
+	   true ->
+	    %% io:format("~w: MaxStack ~w > Guaranteed ~w :-(\n", [?MODULE,MaxStack,Guaranteed]),
+	    AllocFrameLab = hipe_gensym:get_next_label(ppc),
+	    IncStackLab = hipe_gensym:get_next_label(ppc),
+	    Temp2 = mk_temp2(),
+	    %%
+	    NewStartCode0 =
+	      [hipe_ppc:mk_load('lwz', Temp1, ?P_NSP_LIMIT, P) |
+	       hipe_ppc:mk_addi(Temp2, SP, -MaxStack,
+				[hipe_ppc:mk_cmp('cmpl', Temp2, Temp1),
+				 hipe_ppc:mk_mfspr(Temp1, 'lr'), % hoisted
+				 hipe_ppc:mk_pseudo_bc('lt', IncStackLab,
+						       AllocFrameLab, 0.01)])],
+	    %%
+	    AllocFrameCode =
+	      if MaxStack =:= FrameSize ->
+		  %% io:format("~w: MaxStack =:= FrameSize =:= ~w :-)\n", [?MODULE,MaxStack]),
+		  [hipe_ppc:mk_alu('or', SP, Temp2, Temp2) |
+		   AllocFrameCodeTail];
+		 true ->
+		  %% io:format("~w: MaxStack ~w =/= FrameSize ~w :-(\n", [?MODULE,MaxStack,FrameSize]),
+		  adjust_sp(-FrameSize, AllocFrameCodeTail)
+	      end,
+	    %%
+	    IncStackCode =
+	      [hipe_ppc:mk_bl(hipe_ppc:mk_prim('inc_stack_0'),
+			      mk_minimal_sdesc(Context), not_remote),
+	       hipe_ppc:mk_mtspr('lr', Temp1),
+	       hipe_ppc:mk_b_label(NewStartLab)],
+	    %%
+	    CFG0a = hipe_ppc_cfg:bb_add(CFG, AllocFrameLab,
+					hipe_bb:mk_bb(AllocFrameCode)),
+	    CFG0b = hipe_ppc_cfg:bb_add(CFG0a, IncStackLab,
+					hipe_bb:mk_bb(IncStackCode)),
+	    %%
+	    {CFG0b,NewStartCode0}
+	end,
       %%
-      CFG1 = hipe_ppc_cfg:bb_add(CFG, NewStartLab,
+      CFG2 = hipe_ppc_cfg:bb_add(CFG1, NewStartLab,
                                  hipe_bb:mk_bb(NewStartCode)),
-      CFG2 = hipe_ppc_cfg:bb_add(CFG1, AllocFrameLab,
-                                 hipe_bb:mk_bb(AllocFrameCode)),
-      CFG3 = hipe_ppc_cfg:bb_add(CFG2, IncStackLab,
-                                 hipe_bb:mk_bb(IncStackCode)),
-      CFG4 = hipe_ppc_cfg:start_label_update(CFG3, NewStartLab),
-      %%
-      CFG4;
+      hipe_ppc_cfg:start_label_update(CFG2, NewStartLab);
      true -> % XXX: this will never happen
       exit({?MODULE,do_prologue,MaxStack}),
       CFG

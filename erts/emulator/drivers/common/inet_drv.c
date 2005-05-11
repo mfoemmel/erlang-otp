@@ -1980,7 +1980,7 @@ static int http_message(tcp_descriptor* desc, char* buf, int len)
     int c;
     /* start-line = Request-Line | Status-Line */
     if (n == 0)
-      return 0;
+	return -1;
     h = 0;
     meth_ptr = ptr;
     while (n && !is_tspecial((unsigned char)*ptr)) {

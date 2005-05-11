@@ -428,7 +428,7 @@ void restore_this_rootset(Process *p, Rootset *rootset)
         int i;
         /*
          * If this was a collection of a private heap, make sure to
-         * strike out those pointers to the message area that was dead.
+         * strike out pointers to the message area that was dead.
          */
         for (i = 0; i < p->nrr; i++) {
             if (ptr_within(p->rrsrc[i],p->heap,p->hend)) {
@@ -901,6 +901,16 @@ offset_rootset(Process *p, Sint offs,
 	offset_heap(objv, nobj, offs, low, high);
     }
     offset_off_heap(p, low, high, offs);
+
+#ifdef HYBRID
+    if (p->nrr > 0)
+    {
+        int i;
+        for (i = 0; i < p->nrr; i++)
+            if (ptr_within(p->rrsrc[i],low,high))
+                p->rrsrc[i] += offs;
+    }
+#endif
 #endif
 }
 
@@ -2416,6 +2426,34 @@ static void print_roots(Rootset *rootset, int n) /* FIND ME! */
 
 static void ma_gen_gc(Process*, int, Eterm*, int);
 
+
+static void
+ma_offset_off_heap(Process* p, Eterm* low, Eterm* high, int offs)
+{
+    if (erts_global_offheap.mso &&
+        ptr_within((Eterm *)erts_global_offheap.mso, low, high)) {
+        Eterm** uptr = (Eterm**) &erts_global_offheap.mso;
+        *uptr += offs;
+    }
+
+#ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
+    if (erts_global_offheap.funs &&
+        ptr_within((Eterm *)erts_global_offheap.funs, low, high)) {
+        Eterm** uptr = (Eterm**) &erts_global_offheap.funs;
+        *uptr += offs;
+    }
+#endif
+#endif
+
+    if (erts_global_offheap.externals &&
+        ptr_within((Eterm *)erts_global_offheap.externals, low, high)) {
+        Eterm** uptr = (Eterm**) &erts_global_offheap.externals;
+        *uptr += offs;
+    }
+}
+
+
 static void
 ma_offset_rootset(Process *p, Sint offs, 
 	       Eterm* low, Eterm* high, 
@@ -2444,25 +2482,30 @@ ma_offset_rootset(Process *p, Sint offs,
         offset_mqueue(p, offs, low, high);
         offset_heap_ptr(p->stop, (STACK_START(p) - p->stop), offs, low, high);
         offset_heap(p->heap, p->htop - p->heap, offs, low, high);
+        offset_heap_ptr(p->rrma, p->nrr, offs, low, high);
         offset_nstack(p, offs, low, high);
 	offset_off_heap(p, low, high, offs);
 	if (p->old_heap)
             offset_heap(p->old_heap, p->old_htop - p->old_heap,
                         offs, low, high);
 	if (p != current ) {
-	    offset_heap(p->arg_reg, p->arity, offs, low, high);
+            if (p->arity > 0)
+                offset_heap_ptr(p->arg_reg, p->arity, offs, low, high);
 	} else if (nobj > 0) {
 	    offset_heap(objv, nobj, offs, low, high);
 	}
+
 #ifdef DEBUG
         if (p->nrr > 0) {
             int i;
             for (i = 0; i < p->nrr; i++) {
-                ASSERT(*(p->rrsrc[i]) == p->rrma[i]);
+                if (p->rrsrc[i] != NULL)
+                    ASSERT(*(p->rrsrc[i]) == p->rrma[i]);
             }
         }
 #endif
     }
+    ma_offset_off_heap(p, low, high, offs);
 }
 
 #if defined(HIPE)
@@ -2822,6 +2865,7 @@ static void ma_fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
 
     global_high_water = n_htop;
 
+#ifdef GC_IN_COPY
     /* Finally we have to rescue data from the copy_dst_stack. This
      * has to be done last since we want all this to be ABOVE the high
      * water mark on the new heap. (It has not been created yet, so
@@ -2863,6 +2907,7 @@ static void ma_fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
         n_htop = cheneyScan(start,n_htop,g_heap,g_hend);
         *(Eterm*)copy_dst_stack[0] = copy_dst_stack[1];
     }
+#endif /* GC_IN_COPY */
 
     restore_rootset(NULL,rootset);
     erts_free(ERTS_ALC_T_ROOTSET,(void*)rootset);
@@ -2929,17 +2974,21 @@ ma_grow_new_heap(Process *p, Uint new_sz, Eterm* objv, int nobj)
         global_hend = new_heap + new_sz;
     } else {
         VERBOSE_MESSAGE((VERBOSE_NOISY,
-			 "ma_grow_new_heap: HEAP HAD TO BE MOVED\n"));
+                         "ma_grow_new_heap: HEAP HAD TO BE MOVED\n"));
         offset_heap(new_heap, heap_size, offs, global_heap, global_htop);
         global_high_water = new_heap + (global_high_water - global_heap);
         global_hend = new_heap + new_sz;
         ma_offset_rootset(p, offs, global_heap, global_htop, objv, nobj);
+
+#ifdef GC_IN_COPY
         if (copy_dst_top > 1)
-	{
+        {
             offset_heap_ptr(copy_dst_stack + 1,copy_dst_top - 1,offs,
                             global_heap,global_htop);
-	    *(Eterm*)copy_dst_stack[0] = copy_dst_stack[1];
-	}
+            *(Eterm*)copy_dst_stack[0] = copy_dst_stack[1];
+        }
+#endif /* GC_IN_COPY */
+
         global_htop = new_heap + heap_size;
         global_heap = new_heap;
     }
@@ -2977,12 +3026,15 @@ ma_shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj)
         offset_heap(new_heap, heap_size, offs, global_heap, global_htop);
         global_high_water = new_heap + (global_high_water - global_heap);
         ma_offset_rootset(p, offs, global_heap, global_htop, objv, nobj);
+
+#ifdef GC_IN_COPY
         if (copy_dst_top > 1)
 	{
             offset_heap_ptr(copy_dst_stack + 1,copy_dst_top - 1,offs,
                             global_heap,global_htop);
 	    *(Eterm*)copy_dst_stack[0] = copy_dst_stack[1];
 	}
+#endif /* GC_IN_COPY */
 
         global_htop = new_heap + heap_size;
         global_heap = new_heap;
@@ -3777,6 +3829,7 @@ ma_gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
     /* FIND ME! global_high_water = (global_heap != global_high_water) ? n_hstart : n_htop; */
     global_high_water = n_htop;
 
+#ifdef GC_IN_COPY
     /* Finally we have to rescue data from the copy_dst_stack. This
      * has to be done last since we want all this to be ABOVE the high
      * water mark on the new heap. (It has not been created yet, so
@@ -3822,6 +3875,7 @@ ma_gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
         n_htop = cheneyScan(start, n_htop, global_heap, global_htop);
         *(Eterm*)copy_dst_stack[0] = copy_dst_stack[1];
     }
+#endif /* GC_IN_COPY */
 
 #ifdef NOMOVE
     NM_STORAGE_SWAP(build,root);

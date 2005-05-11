@@ -139,7 +139,8 @@ authenticate_incoming(Packet, UsmSecParams, UsmUser, SecLevel) ->
 			 MsgAuthEngineTime) of
 		true -> ok;
 		false -> error(usmStatsWrongDigests,
-			       ?usmStatsWrongDigests, SecName)
+			       ?usmStatsWrongDigests_instance, % OTP-5464
+			       SecName) 
 	    end;
 	false ->  % noAuth
 	    ok
@@ -147,7 +148,7 @@ authenticate_incoming(Packet, UsmSecParams, UsmUser, SecLevel) ->
 	    
 is_auth(?usmNoAuthProtocol, _, _, _, SecName, _, _, _) -> % 3.2.5
     error(usmStatsUnsupportedSecLevels,
-	  ?usmStatsUnsupportedSecLevels, SecName);
+	  ?usmStatsUnsupportedSecLevels_instance, SecName); % OTP-5464
 is_auth(AuthProtocol, AuthKey, AuthParams, Packet, SecName,
 	MsgAuthEngineID, MsgAuthEngineBoots, MsgAuthEngineTime) ->
     IsAuth = auth_in(AuthProtocol, AuthKey, AuthParams, Packet),
@@ -275,7 +276,7 @@ do_decrypt(Data, UsmUser,
 
 try_decrypt(?usmNoPrivProtocol, _, _, _, SecName) -> % 3.2.5
     error(usmStatsUnsupportedSecLevels, 
-	  ?usmStatsUnsupportedSecLevels, SecName);
+	  ?usmStatsUnsupportedSecLevels_instance, SecName); % OTP-5464
 try_decrypt(?usmDESPrivProtocol, 
 	    PrivKey, MsgPrivParams, EncryptedPDU, SecName) ->
     case (catch des_decrypt(PrivKey, MsgPrivParams, EncryptedPDU)) of
@@ -283,7 +284,8 @@ try_decrypt(?usmDESPrivProtocol,
 	    DecryptedData;
 	_ ->
 	    error(usmStatsDecryptionErrors, 
-		  ?usmStatsDecryptionErrors, SecName)
+		  ?usmStatsDecryptionErrors_instance, % OTP-5464
+		  SecName)
     end.
 
 

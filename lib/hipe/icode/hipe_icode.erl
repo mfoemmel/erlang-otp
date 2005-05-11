@@ -460,7 +460,7 @@
 	 type_true_label/1,
 	 type_false_label/1,
 	 type_pred/1,
-	 %% is_type/1,
+	 is_type/1,
 
 	 mk_guardop/5,     %% mk_guardop(Dst, Fun, Args, Continuation, Fail)
 	 mk_primop/3,      %% mk_primop(Dst, Fun, Args)
@@ -533,7 +533,7 @@
 
 -export([type/1,
 	 %% is_fail/1,
-	 %% is_return/1,
+	 is_return/1,
 	 is_move/1,
 	 %% is_begin_try/1,
 	 is_begin_handler/1,
@@ -745,6 +745,8 @@ type_args(#type{args=Args}) -> Args.
 type_true_label(#type{true_label=TrueLbl}) -> TrueLbl.
 type_false_label(#type{false_label=FalseLbl}) -> FalseLbl.
 type_pred(#type{p=P}) -> P.
+is_type(#type{}) -> true;
+is_type(_) -> false.
 
 %%
 %% goto
@@ -761,6 +763,9 @@ is_goto(_) -> false.
 
 mk_return(Vars) -> #return{vars=Vars}.
 return_vars(#return{vars=Vars}) -> Vars.
+is_return(#return{}) -> true;
+is_return(_) -> false.
+  
 
 %%
 %% fail

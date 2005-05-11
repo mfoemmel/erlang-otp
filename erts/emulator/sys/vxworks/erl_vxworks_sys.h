@@ -51,14 +51,6 @@
 #   endif
 #endif
 
-/*
- * Make sure that ENOTSUP is defined.
- */
-
-#ifndef ENOTSUP
-#define	ENOTSUP		-1738659
-#endif
-
 /* xxxP end */
 
 
@@ -118,6 +110,7 @@
 #define NO_FPE_SIGNALS
 #define ERTS_FP_CHECK_INIT() do {} while (0)
 #define ERTS_FP_ERROR(f, Action) if (isInf(f) || isNan(f)) { Action; } else {}
+#define ERTS_FP_ERROR_THOROUGH(f, Action) ERTS_FP_ERROR(f, Action)
 #define ERTS_SAVE_FP_EXCEPTION()
 #define ERTS_RESTORE_FP_EXCEPTION()
 

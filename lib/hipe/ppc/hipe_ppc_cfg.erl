@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_ppc_cfg.erl,v 1.8 2005/04/24 22:31:46 mikpe Exp $
 
 -module(hipe_ppc_cfg).
 
@@ -115,11 +115,3 @@ arity(CFG) ->
   #ppc_mfa{a=Arity} = function(CFG),
   Arity.
 -endif.
-
-%%% XXX: this phi-node crap should be conditional
-
-is_phi(_I) ->
-  false.
-
-phi_remove_pred(I, _Pred) ->
-  I.

@@ -1,4 +1,4 @@
-%%% $Id$
+%%% $Id: hipe_x86.erl,v 1.56 2004/12/07 18:59:40 kostis Exp $
 %%% representation of 2-address pseudo-amd64 code
 
 -module(hipe_x86).

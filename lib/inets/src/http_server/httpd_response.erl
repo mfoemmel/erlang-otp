@@ -16,47 +16,28 @@
 %%     $Id$
 %%
 -module(httpd_response).
--export([send/1, send_status/3, send_status/5]).
-
-%%code is the key for the statuscode ex: 200 404 ...
--define(HTTP_11_HEADER_FIELDS,
-	[content_length, accept_ranges, cache_control, date,
-	 pragma, trailer, transfer_encoding, etag, location,
-	 retry_after, server, allow, 
-	 content_encoding, content_language, 
-	 content_location, content_MD5, content_range,
-	 content_type, expires, last_modified]).
-
--define(HTTP_10_HEADER_FIELDS,
-	[content_length, date, 
-	 pragma, location, 
-	 server, allow, 
-	 content_encoding, 
-	 content_type, last_modified]).
-
--define(PROCEED_RESPONSE(StatusCode, Info), 
-	{proceed, 
-	 [{response,{already_sent, StatusCode, 
-		     httpd_util:key1search(Info#mod.data,
-					   content_length)}}]}).
-
+-export([generate_and_send_response/1, send_status/3, send_header/3, 
+	 send_chunk/3, send_final_chunk/2, split_header/2,
+	 is_disable_chunked_send/1, cache_headers/1]).
 
 -include("httpd.hrl").
+-include("http.hrl").
 
 -define(VMODULE,"RESPONSE").
 -include("httpd_verbosity.hrl").
 
 %% If peername does not exist the client already discarded the
 %% request so we do not need to send a reply.
-send(#mod{init_data = #init_data{peername = {_,"unknown"}}}) ->
+generate_and_send_response(#mod{init_data =
+				#init_data{peername = {_,"unknown"}}}) ->
     ok;
-send(#mod{config_db = ConfigDB} = Info) ->
-    ?vtrace("send -> Request line: ~p", [Info#mod.request_line]),
+generate_and_send_response(#mod{config_db = ConfigDB} = ModData) ->
+    ?vtrace("send -> Request line: ~p", [ModData#mod.request_line]),
     Modules = httpd_util:lookup(ConfigDB,modules,
 				[mod_get, mod_head, mod_log]),
-    case traverse_modules(Info, Modules) of
+    case traverse_modules(ModData, Modules) of
 	done ->
-	    Info;
+	    ok;
 	{proceed, Data} ->
 	    case httpd_util:key1search(Data, status) of
 		{StatusCode, PhraseArgs, Reason} ->
@@ -65,9 +46,8 @@ send(#mod{config_db = ConfigDB} = Info) ->
 			    "~n   PhraseArgs: ~p"
 			    "~n   Reason:     ~p",
 			    [StatusCode, PhraseArgs, Reason]),
-		    send_status(Info, StatusCode, PhraseArgs),
-		    Info;
-		
+		    send_status(ModData, StatusCode, PhraseArgs),
+		    ok;		
 		undefined ->
 		    case httpd_util:key1search(Data, response) of
 			{already_sent, StatusCode, Size} ->
@@ -75,17 +55,17 @@ send(#mod{config_db = ConfigDB} = Info) ->
 				    "~n   StatusCode: ~p"
 				    "~n   Size:       ~p", 
 				    [StatusCode, Size]),
-			    Info;
+			    ok;
 			{response, Header, Body} -> %% New way
-			    send_response(Info, Header, Body),
-			    Info;
+			    send_response(ModData, Header, Body),
+			    ok;
 			{StatusCode, Response} ->   %% Old way
-			    send_response_old(Info, StatusCode, Response),
-			    Info;
+			    send_response_old(ModData, StatusCode, Response),
+			    ok;
 			undefined ->
 			    ?vtrace("send -> undefined response", []),
-			    send_status(Info, 500, none),
-			    Info
+			    send_status(ModData, 500, none),
+			    ok
 		    end
 	    end
     end.
@@ -93,53 +73,44 @@ send(#mod{config_db = ConfigDB} = Info) ->
 
 %% traverse_modules
 
-traverse_modules(Info,[]) ->
-    {proceed,Info#mod.data};
-traverse_modules(Info,[Module|Rest]) ->
-    case (catch apply(Module,do,[Info])) of
+traverse_modules(ModData,[]) ->
+    {proceed,ModData#mod.data};
+traverse_modules(ModData,[Module|Rest]) ->
+    case (catch apply(Module,do,[ModData])) of
 	{'EXIT', Reason} ->
 	    ?vlog("traverse_modules -> exit reason: ~p",[Reason]),
 	    String = 
 		lists:flatten(
 		  io_lib:format("traverse exit from apply: ~p:do => ~n~p",
 				[Module, Reason])),
-	    report_error(mod_log, Info#mod.config_db, String),
-	    report_error(mod_disk_log, Info#mod.config_db, String),
+	    report_error(mod_log, ModData#mod.config_db, String),
+	    report_error(mod_disk_log, ModData#mod.config_db, String),
 	    done;
 	done ->
 	    done;
 	{break,NewData} ->
 	    {proceed,NewData};
 	{proceed,NewData} ->
-	    traverse_modules(Info#mod{data=NewData},Rest)
+	    traverse_modules(ModData#mod{data=NewData},Rest)
     end.
 
 %% send_status %%
 
 
-send_status(#mod{socket_type = SocketType, 
-		 socket      = Socket, 
-		 connection  = Conn} = _Info, 100, _PhraseArgs) ->
-    Header = httpd_util:header(100, Conn),
-    httpd_socket:deliver(SocketType, Socket,
-			 [Header, "Content-Length:0\r\n\r\n"]);
+send_status(ModData, 100, _PhraseArgs) ->
+    send_header(ModData, 100, [{content_length, "0"}]);
 
 send_status(#mod{socket_type = SocketType, 
 		 socket      = Socket, 
-		 config_db   = ConfigDB} = _Info, StatusCode, PhraseArgs) ->
-    send_status(SocketType, Socket, StatusCode, PhraseArgs, ConfigDB).
+		 config_db   = ConfigDB} = ModData, StatusCode, PhraseArgs) ->
 
-send_status(SocketType, Socket, StatusCode, PhraseArgs, ConfigDB) ->
-    Header       = httpd_util:header(StatusCode, "text/html", false),
     ReasonPhrase = httpd_util:reason_phrase(StatusCode),
     Message      = httpd_util:message(StatusCode, PhraseArgs, ConfigDB),
     Body         = get_body(ReasonPhrase, Message),
-    Header1 = 
-	Header ++ 
-	"Content-Length:" ++ 
-	integer_to_list(length(Body)) ++
-	"\r\n\r\n",
-    httpd_socket:deliver(SocketType, Socket, [Header1, Body]).
+
+    send_header(ModData, StatusCode, [{content_type, "text/html"},
+			    {content_length, integer_to_list(length(Body))}]),
+    httpd_socket:deliver(SocketType, Socket, Body).
 
 
 get_body(ReasonPhrase, Message)->
@@ -150,57 +121,9 @@ get_body(ReasonPhrase, Message)->
       <BODY>
       <H1>"++ReasonPhrase++"</H1>\n"++Message++"\n</BODY>
       </HTML>\n".
-
-
-%%% Create a response from the Key/Val tuples In the Head  List
-%%% Body is a tuple {body,Fun(),Args}
-
-%% send_response
-%% Allowed Fields 
-
-% HTTP-Version StatusCode Reason-Phrase
-% *((general-headers
-%   response-headers
-%    entity-headers)CRLF)
-%  CRLF
-% ?(BODY)
-
-% General Header fields
-% ======================
-% Cache-Control cache_control
-% Connection %%Is set dependiong on the request
-% Date
-% Pramga
-% Trailer
-% Transfer-Encoding
-
-% Response Header field
-% =====================
-% Accept-Ranges
-% (Age) Mostly for proxys
-% Etag
-% Location
-% (Proxy-Authenticate) Only for proxies
-% Retry-After
-% Server
-% Vary
-% WWW-Authenticate
-%
-% Entity Header Fields
-% ====================
-% Allow
-% Content-Encoding
-% Content-Language
-% Content-Length
-% Content-Location
-% Content-MD5
-% Content-Range
-% Content-Type
-% Expires
-% Last-Modified
  
 
-send_response(Info, Header, Body) ->
+send_response(ModData, Header, Body) ->
     ?vtrace("send_response -> (new) entry with"
 	    "~n   Header:       ~p", [Header]),
     case httpd_util:key1search(Header, code) of
@@ -208,37 +131,50 @@ send_response(Info, Header, Body) ->
 	    %% No status code 
 	    %% Ooops this must be very bad:
 	    %% generate a 404 content not availible
-	    send_status(Info, 404, "The file is not availible");
+	    send_status(ModData, 404, "The file is not availible");
 	StatusCode ->
-	    case send_header(Info, StatusCode, Header) of
+	    case send_header(ModData, StatusCode, lists:keydelete(code, 1,
+							       Header)) of
 		ok ->
-		    send_body(Info, StatusCode, Body);
+		    send_body(ModData, StatusCode, Body);
 		Error ->
 		    ?vlog("head delivery failure: ~p", [Error]),
 		    done   
 	    end
     end.
 
-
-send_header(#mod{config_db = Db,
-		 socket_type  = Type, socket     = Sock, 
-		 http_version = Ver,  connection = Conn} = _Info, 
-	    StatusCode, Head0) ->
+send_header(#mod{socket_type = Type, socket = Sock, 
+		 http_version = Ver,  connection = Conn} = _ModData, 
+	    StatusCode, KeyValueTupleHeaders) ->
     ?vtrace("send_header -> entry with"
 	    "~n   Ver:  ~p"
 	    "~n   Conn: ~p", [Ver, Conn]),
-    Head1 = create_header(Db, Ver, Head0),
-    StatusLine = [Ver, " ",
-		  io_lib:write(StatusCode), " ",
-		  httpd_util:reason_phrase(StatusCode), "\r\n"],
-    Connection = get_connection(Conn, Ver),
-    Head = list_to_binary([StatusLine, Head1, Connection,"\r\n"]),
+    Headers = create_header(lists:map(fun transform/1, KeyValueTupleHeaders)),
+    NewVer = case {Ver, StatusCode} of
+		 {[], _} ->
+		     %% May be implicit!
+		     "HTTP/0.9";
+		 {unknown, 408} ->
+		     %% This will proably never happen! It means the
+		     %% server has timed out the request without
+		     %% receiving a version for the request!  Send the
+		     %% lowest version so to ensure that the client
+		     %% will be able to handle it, probably the
+		     %% sensible thing to do!
+		     "HTTP/0.9";
+		 _ ->
+		     Ver
+	     end,
+    StatusLine = [NewVer, " ", io_lib:write(StatusCode), " ",
+		  httpd_util:reason_phrase(StatusCode), ?CRLF],
+    ConnectionHeader = get_connection(Conn, NewVer),
+    Head = list_to_binary([StatusLine, Headers, ConnectionHeader , ?CRLF]),
     ?vtrace("deliver head", []),
     httpd_socket:deliver(Type, Sock, Head).
 
-
-send_body(_, _, nobody) ->
+send_body(#mod{socket_type = Type, socket = Socket}, _, nobody) ->
     ?vtrace("send_body -> no body", []),
+    httpd_socket:close(Type, Socket),
     ok;
 
 send_body(#mod{socket_type = Type, socket = Sock}, 
@@ -246,7 +182,7 @@ send_body(#mod{socket_type = Type, socket = Sock},
     ?vtrace("deliver body of size ~p", [length(Body)]),
     httpd_socket:deliver(Type, Sock, Body);
 
-send_body(#mod{socket_type = Type, socket = Sock} = Info, 
+send_body(#mod{socket_type = Type, socket = Sock} = ModData, 
 	  StatusCode, {Fun, Args}) ->
     case (catch apply(Fun, Args)) of
 	close ->
@@ -254,13 +190,17 @@ send_body(#mod{socket_type = Type, socket = Sock} = Info,
 	    done;
 
 	sent ->
-	    ?PROCEED_RESPONSE(StatusCode, Info);
-	
+	    {proceed,[{response,{already_sent, StatusCode, 
+				 httpd_util:key1search(ModData#mod.data,
+						       content_length)}}]};
 	{ok, Body} ->
 	    ?vtrace("deliver body", []),
 	    case httpd_socket:deliver(Type, Sock, Body) of
 		ok ->
-		    ?PROCEED_RESPONSE(StatusCode, Info);
+		    {proceed,[{response,
+			       {already_sent, StatusCode, 
+				httpd_util:key1search(ModData#mod.data,
+						      content_length)}}]};
 		Error ->
 		    ?vlog("body delivery failure: ~p", [Error]),
 		    done
@@ -269,14 +209,36 @@ send_body(#mod{socket_type = Type, socket = Sock} = Info,
 	Error ->
 	    ?vlog("failure of apply(~p,~p): ~p", [Fun, Args, Error]),
 	    done
-    end;
-send_body(I, S, B) ->
-    ?vinfo("BAD ARGS: "
-	   "~n   I: ~p"
-	   "~n   S: ~p"
-	   "~n   B: ~p", [I, S, B]),
-    exit({bad_args, {I, S, B}}).
-    
+    end.
+
+split_header([$: | Value], AccName) ->
+    Name = httpd_util:to_lower(string:strip(AccName)),
+    {lists:reverse(Name), 
+     string:strip(string:strip(string:strip(Value, right, ?LF), right, ?CR))};
+split_header([Char | Rest], AccName) ->
+    split_header(Rest, [Char | AccName]).
+
+send_chunk(_, <<>>, _) ->
+    ok;
+send_chunk(_, [], _) ->
+    ok;
+
+send_chunk(#mod{http_version = "HTTP/1.1", 
+		socket_type = Type, socket = Sock}, Response0, false) ->
+    Response = http_chunk:encode(Response0),
+    httpd_socket:deliver(Type, Sock, Response);
+
+send_chunk(#mod{socket_type = Type, socket = Sock} = _ModData, Response, _) ->
+    httpd_socket:deliver(Type, Sock, Response).
+
+send_final_chunk(#mod{http_version = "HTTP/1.1", 
+		      socket_type = Type, socket = Sock}, false) ->
+    httpd_socket:deliver(Type, Sock, http_chunk:encode_last());
+send_final_chunk(#mod{socket_type = Type, socket = Sock}, _) ->
+    httpd_socket:close(Type, Sock).
+
+is_disable_chunked_send(Db) ->
+    httpd_util:lookup(Db, disable_chunked_transfer_encoding_send, false).
 
 %% Return a HTTP-header field that indicates that the 
 %% connection will be inpersistent
@@ -287,148 +249,109 @@ get_connection(false,"HTTP/1.1") ->
 get_connection(_,_) ->
     "".
 
-
-disable_chunked_send(Db) ->
-    httpd_util:lookup(Db, disable_chunked_transfer_encoding_send, false).
-
-create_header(Db, "HTTP/1.1", Data) ->
-    DisableChunkedSend = disable_chunked_send(Db),
-    Disable = [{transfer_encoding, DisableChunkedSend}],
-    create_header1(?HTTP_11_HEADER_FIELDS, Data, Disable);
-create_header(_, _, Data) ->
-    create_header1(?HTTP_10_HEADER_FIELDS, Data, []).
-
-create_header1(Fields, Data, Disable) ->
-    Fun = 
-	fun(Field) ->
-		transform(Field, 
-			  httpd_util:key1search(Data, Field),
-			  Disable)
-	end,
-    mapfilter(Fun, Fields, undefined).
-
-
-%% Do a map and removes the values that evaluates to RemoveVal
-mapfilter(Fun, List, RemoveVal) ->	
-    mapfilter(Fun,List,[],RemoveVal).
-
-mapfilter(_Fun,[],[RemoveVal|Acc],RemoveVal) ->
-    Acc;
-mapfilter(_Fun,[],Acc,_RemoveVal) ->
-    Acc;
-			     
-mapfilter(Fun, [Elem|Rest], [RemoveVal| Acc], RemoveVal) ->
-    mapfilter(Fun,Rest,[Fun(Elem)|Acc],RemoveVal);
-mapfilter(Fun,[Elem|Rest],Acc,RemoveVal)->
-    mapfilter(Fun,Rest,[Fun(Elem)|Acc],RemoveVal).
- 
-transform(content_type, undefined, _Disable) ->
-    ["Content-Type:text/plain\r\n"];
-
-transform(date, undefined, _Disable) ->
-    ["Date:",httpd_util:rfc1123_date(),"\r\n"];
-
-transform(date,RFCDate, _Disable) ->
-    ["Date:",RFCDate,"\r\n"];
-
-transform(_Key, undefined, _Disable) ->
-    undefined;
-transform(accept_ranges, Value, _Disable) ->
-    ["Accept-Ranges:",Value,"\r\n"];
-transform(cache_control, Value, _Disable) ->
-    ["Cache-Control:",Value,"\r\n"];
-transform(pragma, Value, _Disable) ->
-    ["Pragma:",Value,"\r\n"];
-transform(trailer, Value, _Disable) ->
-    ["Trailer:",Value,"\r\n"];
-transform(transfer_encoding, Value, Disable) ->
-    case httpd_util:key1search(Disable,
-			       disable_chunked_transfer_encoding_send) of
+cache_headers(#mod{config_db = Db}) ->
+    case httpd_util:lookup(Db, script_nocache, false) of
 	true ->
-	    "";
+	    Date = httpd_util:rfc1123_date(),
+	    [{"cache-control", "no-cache"},
+	     {"pragma", "no-cache"},
+	     {"expires", Date}];
+	false ->
+	    []
+    end.
+
+create_header(KeyValueTupleHeaders) ->
+    NewHeaders = add_default_headers([{"date", httpd_util:rfc1123_date()},
+				      {"content-type", "text/plain"},
+				      {"server", ?SERVER_SOFTWARE}], 
+				     KeyValueTupleHeaders),
+    lists:map(fun({Key, Value}) -> Key ++ ":" ++ Value ++ ?CRLF end,
+	      NewHeaders).
+
+add_default_headers([], Headers) ->
+    Headers;
+
+add_default_headers([Header = {Default, _} | Defaults], Headers) ->
+    case lists:keysearch(Default, 1, Headers) of
+	{value, _} ->
+	    add_default_headers(Defaults, Headers);
 	_ ->
-	    ["Transfer-encoding:",Value,"\r\n"]
-    end;
-transform(etag, Value, _Disable) ->
-    ["ETag:",Value,"\r\n"];
-transform(location, Value, _Disable) ->
-    ["Retry-After:",Value,"\r\n"];
-transform(server, Value, _Disable) ->
-    ["Server:",Value,"\r\n"];
-transform(allow, Value, _Disable) ->
-    ["Allow:",Value,"\r\n"];
-transform(content_encoding, Value, _Disable) ->
-    ["Content-Encoding:",Value,"\r\n"];
-transform(content_language, Value, _Disable) ->
-    ["Content-Language:",Value,"\r\n"];
-transform(retry_after, Value, _Disable) ->
-    ["Retry-After:",Value,"\r\n"];
-transform(content_location, Value, _Disable) ->
-    ["Content-Location:",Value,"\r\n"];
-transform(content_length, Value, _Disable) ->
-    ["Content-Length:",Value,"\r\n"];
-transform(content_MD5, Value, _Disable) ->
-    ["Content-MD5:",Value,"\r\n"];
-transform(content_range, Value, _Disable) ->
-    ["Content-Range:",Value,"\r\n"];
-transform(content_type, Value, _Disable) ->
-    ["Content-Type:",Value,"\r\n"];
-transform(expires, Value, _Disable) ->
-    ["Expires:",Value,"\r\n"];
-transform(last_modified, Value, _Disable) ->
-    ["Last-Modified:",Value,"\r\n"].
+	    add_default_headers(Defaults, [Header | Headers])
+    end.
+
+transform({content_type, Value}) ->
+    {"content-type", Value};
+transform({accept_ranges, Value}) ->
+     {"accept-ranges", Value};
+transform({cache_control, Value}) ->
+     {"cache-control",Value};
+transform({transfer_encoding, Value}) ->
+    {"transfer-encoding", Value};
+transform({content_encoding, Value}) ->
+    {"content-encoding", Value};
+transform({content_language, Value}) ->
+    {"content-language", Value};
+transform({retry_after, Value}) ->
+    {"retry-after", Value};
+transform({content_location, Value}) ->
+    {"Content-Location:", Value};
+transform({content_length, Value}) ->
+    {"content-length", Value};
+transform({content_MD5, Value}) ->
+    {"content-md5", Value};
+transform({content_range, Value}) ->
+    {"content-range", Value};
+transform({last_modified, Value}) ->
+    {"last-modified", Value};
+transform({Field, Value}) when is_atom(Field) ->
+    {atom_to_list(Field), Value};
+transform({Field, Value}) when is_list(Field) ->
+    {Field, Value}.
 
 %%----------------------------------------------------------------------
 %% This is the old way of sending data it is strongly encouraged to 
 %% Leave this method and go on to the newer form of response
 %% OTP-4408
 %%----------------------------------------------------------------------
-send_response_old(#mod{socket_type = Type, 
-		       socket      = Sock, 
-		       method      = "HEAD"} = Info,
+send_response_old(#mod{method      = "HEAD"} = ModData,
 		  StatusCode, Response) ->
     ?vtrace("send_response_old(HEAD) -> entry with"
 	    "~n   StatusCode: ~p"
 	    "~n   Response:   ~p",
 	    [StatusCode,Response]),
-    case httpd_util:split(lists:flatten(Response),"\r\n\r\n|\n\n",2) of
+    case httpd_util:split(lists:flatten(Response),  [?CR, ?LF, ?CR, ?LF],2) of
 	{ok, [Head, Body]} ->
-	    Header = 
-		httpd_util:header(StatusCode,Info#mod.connection) ++
-		"Content-Length:" ++ content_length(Body), 
-	    httpd_socket:deliver(Type, Sock, [Header,Head,"\r\n"]);
-
+	    NewHead = handle_headers(string:tokens(Head, [?CR,?LF]), []),
+	    send_header(ModData, StatusCode, [{content_length,
+					    content_length(Body)} | NewHead]);
 	_Error ->
-	    send_status(Info, 500, "Internal Server Error")
+	    send_status(ModData, 500, "Internal Server Error")
     end;
 
 send_response_old(#mod{socket_type = Type, 
-		       socket      = Sock} = Info,
+		       socket      = Sock} = ModData,
 		  StatusCode, Response) ->
     ?vtrace("send_response_old -> entry with"
 	    "~n   StatusCode: ~p"
 	    "~n   Response:   ~p",
 	    [StatusCode,Response]),
-    case httpd_util:split(lists:flatten(Response),"\r\n\r\n|\n\n",2) of
-	{ok, [_Head, Body]} ->
-	    Header = 
-		httpd_util:header(StatusCode,Info#mod.connection) ++
-		"Content-Length:" ++ content_length(Body), 
-	    httpd_socket:deliver(Type, Sock, [Header, Response]);
-
-	{ok, Body} ->
-	    Header = 
-		httpd_util:header(StatusCode,Info#mod.connection) ++
-		"Content-Length:" ++ content_length(Body) ++ "\r\n", 
-	    httpd_socket:deliver(Type, Sock, [Header, Response]);
+    case httpd_util:split(lists:flatten(Response), [?CR, ?LF, ?CR, ?LF], 2) of
+	{ok, [Head, Body]} ->
+	    {ok, NewHead} = handle_headers(string:tokens(Head, [?CR,?LF]), []),
+	    send_header(ModData, StatusCode, [{content_length,
+					    content_length(Body)} | NewHead]),
+	    httpd_socket:deliver(Type, Sock, Body);
+	{ok, Response} ->
+	    send_header(ModData, StatusCode, [{content_length,
+					    content_length(Response)}]),
+	    httpd_socket:deliver(Type, Sock, Response);
 
 	{error, _Reason} ->
-	    send_status(Info, 500, "Internal Server Error")
+	    send_status(ModData, 500, "Internal Server Error")
     end.
 
 content_length(Body)->
-    integer_to_list(httpd_util:flatlength(Body))++"\r\n".
-
+    integer_to_list(httpd_util:flatlength(Body)).
 
 report_error(Mod, ConfigDB, Error) ->
     Modules = httpd_util:lookup(ConfigDB, modules,
@@ -439,3 +362,12 @@ report_error(Mod, ConfigDB, Error) ->
 	_ ->
 	    ok
     end.
+
+handle_headers([], NewHeaders) ->
+    {ok, NewHeaders};
+
+handle_headers([Header | Headers], NewHeaders) -> 
+    {FieldName, FieldValue} = split_header(Header, []),
+    handle_headers(Headers, 
+		   [{FieldName, FieldValue}| NewHeaders]).
+    	

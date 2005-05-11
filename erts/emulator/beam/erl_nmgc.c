@@ -303,7 +303,7 @@ void erts_inc_gc(Process* p, int need, Eterm* objv_in, int nobj_in)
     int work_left_before = inc_words_to_go;
 #endif
 
-    BM_STOP_TIMER(copy);
+    BM_STOP_TIMER(system);
     //BM_MMU_READ();
     BM_COUNT(minor_global_garbage_cols);
     BM_RESET_TIMER(gc);
@@ -765,7 +765,7 @@ void erts_inc_gc(Process* p, int need, Eterm* objv_in, int nobj_in)
                  MAX_PAUSE_TIME - 1)]++;
 #endif
     //BM_MMU_INIT();
-    BM_START_TIMER(copy);
+    BM_START_TIMER(system);
     VERBOSE_MESSAGE((VERBOSE_NOISY,"Incremental GC END\n"));
 }
 #undef WORK_MORE

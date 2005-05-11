@@ -66,20 +66,33 @@ connect(#request{scheme = https, settings = Settings,
     Opts = [binary, {active, false}] ++ Settings#http_options.ssl,
     ssl:connect(Host, Port, Opts).
 
-listen(SocketType,Port) ->
-    listen(SocketType,undefined,Port).
-listen(ip_comm,Addr,Port) ->
-    Opt = sock_opt(Addr,[{backlog,128},{reuseaddr,true}]),
-    case gen_tcp:listen(Port,Opt) of
-	{ok,ListenSocket} ->
+listen(SocketType, Port) ->
+    listen(SocketType, undefined, Port).
+
+listen(ip_comm, Addr, Port) ->
+    FdName = list_to_atom("httpd_" ++ integer_to_list(Port)),
+    {NewPort, Opt} =
+	case init:get_argument(FdName) of
+	    {ok, [[FdStr]]} ->
+		Fd = list_to_integer(FdStr),
+                   {0,
+                    sock_opt(Addr, [{backlog,128},{reuseaddr,true},
+                                    {fd,Fd}])};
+	    error ->
+		{Port,
+		 sock_opt(Addr, [{backlog,128},{reuseaddr,true}])}
+	end,
+    case gen_tcp:listen(NewPort, Opt) of
+	{ok, ListenSocket} ->
 	    ListenSocket;
 	Error ->
 	    Error
     end;
-listen({ssl,SSLConfig},Addr,Port) ->
-    Opt = sock_opt(Addr,SSLConfig),
+
+listen({ssl, SSLConfig}, Addr, Port) ->
+    Opt = sock_opt(Addr, SSLConfig),
     case ssl:listen(Port, Opt) of
-	{ok,ListenSocket} ->
+	{ok, ListenSocket} ->
 	    ListenSocket;
 	Error ->
 	    Error
@@ -87,7 +100,7 @@ listen({ssl,SSLConfig},Addr,Port) ->
 
 accept(A, B) ->
     accept(A, B, infinity).
-accept(ip_comm,ListenSocket, T) ->
+accept(ip_comm, ListenSocket, T) ->
     case gen_tcp:accept(ListenSocket, T) of
 	{ok,Socket} ->
 	    Socket;
@@ -96,7 +109,7 @@ accept(ip_comm,ListenSocket, T) ->
 		    "~n   Error: ~p",[Error]),
 	    Error
     end;
-accept({ssl,_SSLConfig},ListenSocket, T) ->
+accept({ssl,_SSLConfig}, ListenSocket, T) ->
     case ssl:accept(ListenSocket, T) of
 	{ok,Socket} ->
 	    Socket;
@@ -105,7 +118,6 @@ accept({ssl,_SSLConfig},ListenSocket, T) ->
 		    "~n   Error: ~p",[Error]),
 	    Error
     end.
-
 
 controlling_process(ip_comm, Socket, Pid) ->
     gen_tcp:controlling_process(Socket, Pid);

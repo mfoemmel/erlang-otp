@@ -57,7 +57,7 @@ static void unmask_sse2(void)
 {
     unsigned int mxcsr;
     __asm__ __volatile__("stmxcsr %0" : "=m"(mxcsr));
-    mxcsr &= ~(0x003F|0x0780); /* clear exn flags, unmask exns (not PE, UE) */
+    mxcsr &= ~(0x003F|0x0680); /* clear exn flags, unmask exns (not PM, UM, DM) */
     __asm__ __volatile__("ldmxcsr %0" : : "m"(mxcsr));
 }
 #else
@@ -289,7 +289,7 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
        unmask them again later in erts_check_fpe(), but that
        relies too much on other code being cooperative. */
     if( fpstate->mxcsr & 0x000F ) {
-	fpstate->mxcsr &= ~(0x003F|0x0780);
+	fpstate->mxcsr &= ~(0x003F|0x0680);
 	skip_sse2_insn(mc);
     }
     fpstate->swd &= ~0xFF;
@@ -298,8 +298,13 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
     fpregset_t fpstate = mc->fpregs;
     fpstate->sw &= ~0xFF;
 #elif defined(__powerpc__)
+#if defined(__powerpc64__)
+    mcontext_t *mc = &uc->uc_mcontext;
+    unsigned long *regs = &mc->gp_regs[0];
+#else
     mcontext_t *mc = uc->uc_mcontext.uc_regs;
     unsigned long *regs = &mc->gregs[0];
+#endif
     regs[PT_NIP] += 4;
     regs[PT_FPSCR] = 0x80|0x40|0x10;	/* VE, OE, ZE; not UE or XE */
 #endif

@@ -52,6 +52,7 @@
 #undef SWITCH_C_TO_ERLANG
 #undef SWITCH_ERLANG_TO_C
 #undef NR_ARG_REGS
+#undef LEAF_WORDS
 #undef TEMP_RV
 #undef LOAD_ARG_REGS
 #undef STORE_ARG_REGS
@@ -74,6 +75,7 @@
 #undef SWITCH_C_TO_ERLANG_QUICK
 #undef SWITCH_ERLANG_TO_C_QUICK
 #undef NR_ARG_REGS
+#undef LEAF_WORDS
 #undef TEMP_RV
 #include "hipe_sparc_registers.h"
 #undef P
@@ -240,7 +242,7 @@ static const struct literal {
     { "P_NSP_LIMIT", offsetof(struct process, hipe.nstack) },
     { "P_CSP", offsetof(struct process, hipe.ncsp) },
     { "P_NARITY", offsetof(struct process, hipe.narity) },
-#elif defined(__powerpc__) || defined(__ppc__)
+#elif defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__)
     { "P_NSP_LIMIT", offsetof(struct process, hipe.nstack) },
     { "P_NRA", offsetof(struct process, hipe.nra) },
     { "P_NARITY", offsetof(struct process, hipe.narity) },
@@ -294,9 +296,11 @@ static const struct literal {
     { "MSG_MESSAGE", offsetof(struct erl_mesg, m[0]) },
 
     /* PowerPC */
+    { "PPC_LEAF_WORDS", PPC_LEAF_WORDS },
     { "PPC_NR_ARG_REGS", PPC_NR_ARG_REGS },
 
     /* Amd64 */
+    { "AMD64_LEAF_WORDS", AMD64_LEAF_WORDS },
     { "AMD64_NR_ARG_REGS", AMD64_NR_ARG_REGS },
 #if AMD64_HP_IN_REGISTER
     { "AMD64_HP_IN_REGISTER", 1 },
@@ -315,6 +319,7 @@ static const struct literal {
 #endif
 
     /* x86 */
+    { "X86_LEAF_WORDS", X86_LEAF_WORDS },
     { "X86_NR_ARG_REGS", X86_NR_ARG_REGS },
     /* Jag vet att detta suger.. temp dock. */
     { "X86_NR_RET_REGS", 3}, 
@@ -415,6 +420,17 @@ static const struct rts_param {
     { 9, "EFT_NUM_FREE", 1, offsetof(struct erl_fun_thing, num_free) },
     { 10, "EFT_ENV", 1, offsetof(struct erl_fun_thing, env[0]) },
     { 11, "ERL_FUN_SIZE", 1, ERL_FUN_SIZE },
+
+    { 12, "P_SCHED_DATA",
+#ifdef ERTS_SMP
+      1, offsetof(struct process, scheduler_data)
+#endif
+    },
+    { 13, "SCHED_DATA_ERTS_MB_OFFS",
+#ifdef ERTS_SMP
+      1, offsetof(ErtsSchedulerData, erl_bits_state.erts_mb_)
+#endif
+    },
 };
 
 #define NR_PARAMS	ARRAY_SIZE(rts_params)

@@ -399,29 +399,35 @@ create_repository() ->
 	false ->
 	    _R = fun() ->
 			 Pat = mnesia:table_info(ir_Repository, wild_pattern),
-			 [X#ir_Repository.ir_Internal_ID ||
-			     X <- mnesia:match_object(Pat)]
+			 case [X#ir_Repository.ir_Internal_ID ||
+				  X <- mnesia:match_object(Pat)] of
+			     [] ->
+				 PrimitiveDefs = create_primitivedefs(),
+				 New = #ir_Repository{ir_Internal_ID = unique(),
+						      def_kind = dk_Repository,
+						      contents = [],
+						      primitivedefs = PrimitiveDefs},
+				 mnesia:write(New), 
+				 {ir_Repository,New#ir_Repository.ir_Internal_ID};
+			     [Rep_ID] ->
+				 {ir_Repository,Rep_ID};
+			     Error ->
+				 mnesia:abort(Error)
+			 end
 		 end,
-	    case ifr_transaction_read(_R) of
-		{atomic,[]} ->
-		    PrimitiveDefs = create_primitivedefs(),
-		    New_repository = #ir_Repository{ir_Internal_ID = unique(),
-						    def_kind = dk_Repository,
-						    contents = [],
-						    primitivedefs = PrimitiveDefs},
-		    F = fun() -> mnesia:write(New_repository) end, 
-		    ifr_transaction_write(F),
-		    {ir_Repository,New_repository#ir_Repository.ir_Internal_ID};
-		{atomic,[Rep_ID]} ->
-		    {ir_Repository,Rep_ID};
-		_Err ->
+	    case mnesia:transaction(_R) of
+		{atomic, RepRef} ->
+		    RepRef;
+		{aborted, Error} ->
+		    orber:dbg("[~p] orber_ifr_utils:create_repository() failed;~n"
+			      "Reason: ~p", [?LINE, Error], ?DEBUG_LEVEL),
 		    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO})
 	    end
     end.
 
 create_primitivedefs() ->
     lists:map(fun(Pk) ->
-		      orber_ifr_repository:create_primitivedef(Pk)
+		      orber_ifr_repository:create_primitivedef(Pk, false)
 	      end,
 	      [pk_void,pk_short,pk_long,pk_longlong,pk_ulonglong,pk_ushort,pk_ulong,
 	       pk_float,pk_double,pk_boolean,pk_char,pk_wchar,pk_octet,pk_any,

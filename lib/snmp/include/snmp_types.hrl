@@ -217,7 +217,7 @@
 %%
 %% The constant SNMP_USE_V3 is used for compatibility reasons.  In earlier
 %% versions, the vsn_hdr field was called 'community'.  This only worked
-%% for v1 and v2c.  Thus, the filed is renamed to vsn_hdr, and the
+%% for v1 and v2c.  Thus, the field is renamed to vsn_hdr, and the
 %% content depend on the version as described above.  An application
 %% that handles not only v1 and v2c, but also v3, *must* define the
 %% constant SNMP_USE_V3 before including this header file.  This 

@@ -1,14 +1,20 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_x86_defuse.erl,v 1.22 2005/03/29 14:28:11 mikpe Exp $
 %%% compute def/use sets for x86 insns
 %%%
 %%% TODO:
 %%% - represent EFLAGS (condition codes) use/def by a virtual reg?
 %%% - should push use/def %esp?
 
--module(hipe_x86_defuse).
+-ifndef(HIPE_X86_DEFUSE).
+-define(HIPE_X86_DEFUSE,	hipe_x86_defuse).
+-define(HIPE_X86_REGISTERS,	hipe_x86_registers).
+-define(RV,			eax).
+-endif.
+
+-module(?HIPE_X86_DEFUSE).
 -export([insn_def/1, insn_use/1]). %% src_use/1]).
--include("hipe_x86.hrl").
+-include("../x86/hipe_x86.hrl").
 
 %%%
 %%% insn_def(Insn) -- Return set of temps defined by an instruction.
@@ -25,6 +31,7 @@ insn_def(I) ->
     #inc{dst=Dst} -> dst_def(Dst);
     #lea{temp=Temp} -> [Temp];
     #move{dst=Dst} -> dst_def(Dst);
+    #move64{dst=Dst} -> dst_def(Dst);
     #movsx{dst=Dst} -> dst_def(Dst);
     #movzx{dst=Dst} -> dst_def(Dst);
     #pseudo_call{} -> call_clobbered();
@@ -44,17 +51,11 @@ dst_def(Dst) ->
 
 call_clobbered() ->
   [hipe_x86:mk_temp(R, T)
-   || {R,T} <- hipe_x86_registers:call_clobbered() ++ all_fp_pseudos()].
-
-all_fp_pseudos()->
-  [{0,double}, {1,double}, {2,double}, {3,double},
-   {4,double}, {5,double}, {6,double}].
-
+   || {R,T} <- ?HIPE_X86_REGISTERS:call_clobbered()].
 
 tailcall_clobbered() ->
   [hipe_x86:mk_temp(R, T)
-   || {R,T} <- hipe_x86_registers:tailcall_clobbered()
-	++ all_fp_pseudos()].
+   || {R,T} <- ?HIPE_X86_REGISTERS:tailcall_clobbered()].
 
 %%%
 %%% insn_use(Insn) -- Return set of temps used by an instruction.
@@ -72,17 +73,19 @@ insn_use(I) ->
     #fp_binop{src=Src,dst=Dst} -> addtemp(Src, addtemp(Dst, []));
     #inc{dst=Dst} -> addtemp(Dst, []);
     #jmp_fun{'fun'=Fun} -> addtemp(Fun, []);
-    #jmp_switch{temp=Temp} -> [Temp];
+    #jmp_switch{temp=Temp, jtab=JTab} -> addtemp(Temp, addtemp(JTab, []));
     #lea{mem=Mem} -> addtemp(Mem, []);
     #move{src=Src,dst=Dst} -> addtemp(Src, dst_use(Dst));
+    #move64{} -> [];
     #movsx{src=Src,dst=Dst} -> addtemp(Src, dst_use(Dst));
     #movzx{src=Src,dst=Dst} -> addtemp(Src, dst_use(Dst));
     #pseudo_call{'fun'=Fun,sdesc=#x86_sdesc{arity=Arity}} ->
       addtemp(Fun, arity_use(Arity));
     #pseudo_tailcall{'fun'=Fun,arity=Arity,stkargs=StkArgs} ->
-      addtemp(Fun, addtemps(StkArgs, addtemps(tailcall_clobbered(), arity_use(Arity))));
+      addtemp(Fun, addtemps(StkArgs, addtemps(tailcall_clobbered(),
+					      arity_use(Arity))));
     #push{src=Src} -> addtemp(Src, []);
-    #ret{} -> [hipe_x86:mk_temp(hipe_x86_registers:eax(), 'tagged')];
+    #ret{} -> [hipe_x86:mk_temp(?HIPE_X86_REGISTERS:?RV(), 'tagged')];
     #shift{src=Src,dst=Dst} -> addtemp(Src, addtemp(Dst, []));
     %% comment, jcc, jmp_label, label, nop, pseudo_jcc, pseudo_tailcall_prepare
     _ -> []
@@ -90,7 +93,7 @@ insn_use(I) ->
 
 arity_use(Arity) ->
   [hipe_x86:mk_temp(R, 'tagged')
-   || R <- hipe_x86_registers:args(Arity)].
+   || R <- ?HIPE_X86_REGISTERS:args(Arity)].
 
 dst_use(Dst) ->
   case Dst of

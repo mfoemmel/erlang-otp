@@ -9,7 +9,7 @@
 %%  History  :	* 2000-11-07 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%
-%% $Id$
+%% $Id: hipe_icode_heap_test.erl,v 1.14 2004/11/04 14:37:46 richardc Exp $
 %%
 
 -module(hipe_icode_heap_test).

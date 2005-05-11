@@ -209,10 +209,8 @@ do_wait_for_tables(Tabs, Timeout) ->
     receive
 	{?SERVER_NAME, Pid, Res} ->
 	    Res;
-
 	{'EXIT', Pid, _} ->
 	    reply_wait(Tabs)
-
     after Timeout ->
 	    unlink(Pid),
 	    exit(Pid, timeout),
@@ -758,12 +756,13 @@ disc_load_intents([H | T]) when record(H, disc_load) ->
     [H#disc_load.table | disc_load_intents(T)];
 disc_load_intents([H | T]) when record(H, late_load) ->
     [H#late_load.table | disc_load_intents(T)];
-disc_load_intents( [H | T]) when record(H, net_load) ->
+disc_load_intents([H | T]) when record(H, net_load) ->
     disc_load_intents(T);
 disc_load_intents([]) ->
     [].
 
-late_disc_load(TabsR, Reason, RemoteLoaders, From, State) ->
+late_disc_load(TabsR, Reason, RemoteLoaders, From, 
+	       State = #state{loader_queue = LQ}) ->
     verbose("Intend to load tables: ~p~n", [TabsR]),
     ?eval_debug_fun({?MODULE, late_disc_load},
 		    [{tabs, TabsR}, 
@@ -773,28 +772,37 @@ late_disc_load(TabsR, Reason, RemoteLoaders, From, State) ->
     reply(From, queued),
     %% RemoteLoaders is a list of {ok, Node, Tabs} tuples
 
-    %% Remove deleted tabs
+    %% Remove deleted tabs and queued/loaded
     LocalTabs = mnesia_lib:val({schema, local_tables}),
-    Filter = fun({Tab, Reas}, Acc) -> 
+    Filter = fun(TabInfo0, Acc) -> 
+		     TabInfo = {Tab,_} = 
+			 case TabInfo0 of 
+			     {_,_} -> TabInfo0;
+			     TabN -> {TabN,Reason}
+			 end,
 		     case lists:member(Tab, LocalTabs) of
-			 true -> [{Tab, Reas} | Acc];
-		         false -> Acc
-		     end;
-		(Tab, Acc) ->
-		     case lists:member(Tab, LocalTabs) of
-			 true -> [Tab | Acc];
-		         false -> Acc
+			 true -> 
+			     case ?catch_val({Tab, where_to_read}) == node() of
+				 true -> Acc;
+				 false ->
+				     case lists:keymember(Tab, 2, LQ) of
+					 true -> Acc;
+					 false ->
+					     [TabInfo | Acc]
+				     end
+			     end;
+			 false -> Acc
 		     end
 	     end,
     
     Tabs = lists:foldl(Filter, [], TabsR),
     
     Nodes = val({current, db_nodes}),
-    LateLoaders = late_loaders(Tabs, Reason, RemoteLoaders, Nodes),
+    LateLoaders = late_loaders(Tabs, RemoteLoaders, Nodes),
     LateQueue = State#state.late_loader_queue ++ LateLoaders,
     State#state{late_loader_queue = LateQueue}.
 
-late_loaders([{Tab, Reason} | Tabs], DefaultReason, RemoteLoaders, Nodes) ->
+late_loaders([{Tab, Reason} | Tabs], RemoteLoaders, Nodes) ->
     LoadNodes = late_load_filter(RemoteLoaders, Tab, Nodes, []),
     case LoadNodes of
 	[] ->
@@ -803,19 +811,9 @@ late_loaders([{Tab, Reason} | Tabs], DefaultReason, RemoteLoaders, Nodes) ->
 	    ignore
     end,
     LateLoad = #late_load{table = Tab, loaders = LoadNodes, reason = Reason},
-    [LateLoad | late_loaders(Tabs, DefaultReason, RemoteLoaders, Nodes)];
+    [LateLoad | late_loaders(Tabs, RemoteLoaders, Nodes)];
 
-late_loaders([Tab | Tabs], Reason, RemoteLoaders, Nodes) ->
-    Loaders = late_load_filter(RemoteLoaders, Tab, Nodes, []),
-    case Loaders of
-	[] ->
-	    cast({disc_load, Tab, Reason});  % Ugly cast
-	_ ->
-	    ignore
-    end,
-    LateLoad = #late_load{table = Tab, loaders = Loaders, reason = Reason},
-    [LateLoad | late_loaders(Tabs, Reason, RemoteLoaders, Nodes)];
-late_loaders([], _Reason, _RemoteLoaders, _Nodes) ->
+late_loaders([], _RemoteLoaders, _Nodes) ->
     [].
 
 late_load_filter([{error, _} | RemoteLoaders], Tab, Nodes, Acc) ->
@@ -1113,13 +1111,6 @@ handle_info(Done, State) when record(Done, loader_done) ->
 	case Done#loader_done.is_loaded of
 	    true ->
 		Tab = Done#loader_done.table_name,
-		
-		%% Optional user sync
-		case Done#loader_done.needs_sync of
-		    true -> user_sync_tab(Tab);
-		    false -> ignore
-		end,
-		
 		%% Optional table announcement
 		if 
 		    Done#loader_done.needs_announce == true,
@@ -1146,7 +1137,12 @@ handle_info(Done, State) when record(Done, loader_done) ->
 			Ns = val({current, db_nodes}),
 			AlreadyKnows = val({Tab, active_replicas}),
 			abcast(Ns -- AlreadyKnows, {i_have_tab, Tab, node()})
-		end,		
+		end,
+		%% Optional user sync
+		case Done#loader_done.needs_sync of
+		    true -> user_sync_tab(Tab);
+		    false -> ignore
+		end,
 		{Rest, reply_late_load(Tab, LateQueue0)};
 	    false ->
 		case Done#loader_done.needs_reply of

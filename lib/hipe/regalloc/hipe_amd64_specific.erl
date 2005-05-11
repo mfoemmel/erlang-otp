@@ -1,5 +1,5 @@
 %% -*- erlang-indent-level: 2 -*-
-%% $Id$
+%% $Id: hipe_amd64_specific.erl,v 1.5 2005/03/29 11:46:30 mikpe Exp $
 %% 
 %% File: hipe_amd64_specific
 %% This module defines interface to the amd64 backend
@@ -43,7 +43,7 @@
 	 check_and_rewrite/2]).
 
 defun_to_cfg(Defun) ->
-  hipe_amd64_cfg:init(Defun).
+  hipe_x86_cfg:init(Defun).
 
 check_and_rewrite(Defun, Coloring) ->
   {NewDefun, _, NewSpillIndex} =
@@ -51,13 +51,13 @@ check_and_rewrite(Defun, Coloring) ->
   {NewDefun, NewSpillIndex}.
 
 reverse_postorder(CFG) ->
-  hipe_amd64_cfg:reverse_postorder(CFG).
+  hipe_x86_cfg:reverse_postorder(CFG).
 
 breadthorder(CFG) ->
-  hipe_amd64_cfg:breadthorder(CFG).
+  hipe_x86_cfg:breadthorder(CFG).
 
 postorder(CFG) ->
-  hipe_amd64_cfg:postorder(CFG).
+  hipe_x86_cfg:postorder(CFG).
 
 is_global(R) ->
   hipe_amd64_registers:is_fixed(R).
@@ -69,10 +69,10 @@ is_arg(R) ->
   hipe_amd64_registers:is_arg(R).
 
 args(CFG) ->
-  hipe_amd64_registers:args(hipe_amd64_cfg:arity(CFG)).
+  hipe_amd64_registers:args(hipe_x86_cfg:arity(CFG)).
  
 non_alloc(CFG) ->
-  non_alloc(hipe_amd64_registers:nr_args(), hipe_amd64_cfg:params(CFG)).
+  non_alloc(hipe_amd64_registers:nr_args(), hipe_x86_cfg:params(CFG)).
 
 non_alloc(N, [_|Rest]) when N > 0 -> non_alloc(N-1, Rest);
 non_alloc(_, Params) -> Params.
@@ -113,10 +113,10 @@ physical_name(Reg) ->
 %% CFG stuff
 
 succ_map(CFG) ->
-  hipe_amd64_cfg:succ_map(CFG).
+  hipe_x86_cfg:succ_map(CFG).
 
 labels(CFG) ->
-  hipe_amd64_cfg:labels(CFG).
+  hipe_x86_cfg:labels(CFG).
 
 var_range(_CFG) ->
   hipe_gensym:var_range(x86).
@@ -127,7 +127,7 @@ number_of_temporaries(_CFG) ->
   Highest_temporary + 1.
 
 bb(CFG,L) ->
-  hipe_amd64_cfg:bb(CFG,L).
+  hipe_x86_cfg:bb(CFG,L).
 
 %% AMD64 stuff
 

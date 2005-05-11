@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_sdi.erl,v 1.1 2004/04/13 00:08:19 mikpe Exp $
 %%%
 %%% An implementation of the algorithm described in:
 %%% "Assembling Code for Machines with Span-Dependent Instructions",

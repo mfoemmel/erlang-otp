@@ -1882,6 +1882,8 @@ write_cache(Head) ->
 %% -> {NewHead, ok} | {NewHead, Error}
 may_grow(Head, _N, _How) when Head#head.fixed =/= false ->
     {Head, ok};
+may_grow(#head{access = read}=Head, _N, _How) ->
+    {Head, ok};
 may_grow(Head, _N, _How) when Head#head.next >= Head#head.max_no_slots ->
     {Head, ok};
 may_grow(Head, N, How) ->

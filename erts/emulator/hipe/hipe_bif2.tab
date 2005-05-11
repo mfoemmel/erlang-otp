@@ -14,4 +14,3 @@ bif hipe_bifs:modeswitch_debug_on/0
 bif hipe_bifs:modeswitch_debug_off/0
 bif hipe_bifs:test_reschedule/1
 bif hipe_bifs:show_message_area/0
-bif hipe_bifs:ggc/0

@@ -571,47 +571,16 @@ extern Uint copy_offset_size;
                         (ptr_val(obj) < OLD_M_DATA_END))))
 #endif
 
-#ifdef INCREMENTAL_GC
-#define NON_RECURSIVE_COPY
-#endif
-
-#ifdef NON_RECURSIVE_COPY
-
 #define LAZY_COPY(from,obj) do {                     \
   if (!NO_COPY(obj)) {                               \
       BM_LAZY_COPY_START;                            \
       BM_COUNT(messages_copied);                     \
       obj = copy_struct_lazy(from,obj,0);            \
-      ASSERT(copy_src_top == 0);                     \
-      ASSERT(copy_dst_top == 0);                     \
-      ASSERT(copy_offset_top == 0);                  \
       BM_LAZY_COPY_STOP;                             \
   }                                                  \
 } while(0)
 
 Eterm copy_struct_lazy(Process*, Eterm, Uint);
-
-#else
-
-#define LAZY_COPY(from,obj) do {                     \
-  if (!NO_COPY(obj)) {                               \
-      Eterm dest = NIL;                              \
-      BM_LAZY_COPY_START;                            \
-      BM_COUNT(messages_copied);                     \
-      ROOT_PUSH(dst,(Eterm)&dest);                   \
-      copy_struct_lazy(from,obj,0);                  \
-      ROOT_POP(dst);                                 \
-      ASSERT(copy_src_top == 0);                     \
-      ASSERT(copy_dst_top == 0);                     \
-      ASSERT(copy_offset_top == 0);                  \
-      obj = dest;                                    \
-      BM_LAZY_COPY_STOP;                             \
-  }                                                  \
-} while(0)
-
-void copy_struct_lazy(Process*, Eterm, Uint);
-
-#endif /* NON_RECURSIVE_COPY */
 
 #endif /* HYBRID */
 

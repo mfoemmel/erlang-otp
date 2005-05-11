@@ -41,7 +41,7 @@ void hipe_flush_icache_range(void *address, unsigned int nbytes)
 }
 
 /* called from hipe_bif0.c:hipe_bifs_primop_address_1() */
-void *hipe_arch_primop_address(Eterm key)
+const void *hipe_arch_primop_address(Eterm key)
 {
     switch( key ) {
       case am_inc_stack_0args_0: return nbif_inc_stack_0args;

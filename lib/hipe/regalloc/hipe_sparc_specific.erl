@@ -120,8 +120,13 @@ arg_vars(N) ->
 arg_var(X) ->
   hipe_sparc_registers:arg(X).
 
-arity(CFG) ->
-  {_,_,_Arity} = hipe_sparc_cfg:function(CFG). 
+arity(_CFG) ->
+  %% XXX: This really should retrieve the arity from the MFA or
+  %% the CFG's arity field (extra), but both alternatives break
+  %% linear scan on SPARC due to some unknown bug. Using the
+  %% maximum number of argument registers is a kludge which
+  %% forces linear scan to behave exactly as it did before.
+  hipe_sparc_registers:register_args().
 
 labels(CFG) ->
   hipe_sparc_cfg:labels(CFG).

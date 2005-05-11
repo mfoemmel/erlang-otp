@@ -1,17 +1,23 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_x86_ra_finalise.erl,v 1.5 2005/04/01 13:56:18 mikpe Exp $
 %%%
 %%% - apply temp -> reg/spill map from RA
 
--module(hipe_x86_ra_finalise).
+-ifndef(HIPE_X86_RA_FINALISE).
+-define(HIPE_X86_RA_FINALISE,	hipe_x86_ra_finalise).
+-define(HIPE_X86_REGISTERS,	hipe_x86_registers).
+-define(HIPE_X86_X87,		hipe_x86_x87).
+-endif.
+
+-module(?HIPE_X86_RA_FINALISE).
 -export([finalise/4]).
--include("hipe_x86.hrl").
+-include("../x86/hipe_x86.hrl").
 
 finalise(Defun, TempMap, FpMap, Options) ->
-  Defun1 = finalise_ra(Defun, TempMap, FpMap),
+  Defun1 = finalise_ra(Defun, TempMap, FpMap, Options),
   case proplists:get_bool(x87, Options) of
     true ->
-      hipe_x86_x87:map(Defun1);
+      ?HIPE_X86_X87:map(Defun1);
     _ ->
       Defun1
   end.
@@ -22,13 +28,13 @@ finalise(Defun, TempMap, FpMap, Options) ->
 %%% but I just want this to work now)
 %%%
 
-finalise_ra(Defun, [], []) ->
+finalise_ra(Defun, [], [], _Options) ->
   Defun;
-finalise_ra(Defun, TempMap, FpMap) ->
+finalise_ra(Defun, TempMap, FpMap, Options) ->
   Code = hipe_x86:defun_code(Defun),
   {_, SpillLimit} = hipe_x86:defun_var_range(Defun),
   Map = mk_ra_map(TempMap, SpillLimit),
-  FpMap0 = mk_ra_map_fp(FpMap, SpillLimit),
+  FpMap0 = mk_ra_map_fp(FpMap, SpillLimit, Options),
   NewCode = ra_code(Code, Map, FpMap0),
   Defun#defun{code=NewCode}.
 
@@ -77,9 +83,10 @@ ra_insn(I, Map, FpMap) ->
       I#jmp_fun{'fun'=Fun};
     #jmp_label{} ->
       I;
-    #jmp_switch{temp=Temp0} ->
-      Temp = ra_temp(Temp0, Map),
-      I#jmp_switch{temp=Temp};
+    #jmp_switch{temp=Temp0,jtab=JTab0} ->
+      Temp = ra_opnd(Temp0, Map),
+      JTab = ra_opnd(JTab0, Map),      
+      I#jmp_switch{temp=Temp,jtab=JTab};
     #label{} ->
       I;
     #lea{mem=Mem0,temp=Temp0} ->
@@ -90,6 +97,9 @@ ra_insn(I, Map, FpMap) ->
       Src = ra_opnd(Src0, Map),
       Dst = ra_opnd(Dst0, Map),
       I#move{src=Src,dst=Dst};
+    #move64{dst=Dst0} ->
+      Dst = ra_opnd(Dst0, Map),
+      I#move64{dst=Dst};
     #movsx{src=Src0,dst=Dst0} ->
       Src = ra_opnd(Src0, Map),
       Dst = ra_opnd(Dst0, Map),
@@ -149,18 +159,9 @@ ra_temp(Temp, Map, FpMap) ->
   Reg = hipe_x86:temp_reg(Temp),
   case hipe_x86:temp_type(Temp) of
     double ->
-      case gb_trees:lookup(Reg, FpMap) of
-	{value,NewReg} ->
-	  case on_fpstack(NewReg) of
-	    true -> hipe_x86:mk_fpreg(NewReg);
-	    false ->
-	      Temp#x86_temp{reg=NewReg}
-	  end;
-	_ ->
-	  Temp
-      end;
+      ra_temp_double(Temp, Reg, FpMap);
     _->
-      case hipe_x86_registers:is_precoloured(Reg) of
+      case ?HIPE_X86_REGISTERS:is_precoloured(Reg) of
 	true ->
 	  Temp;
 	_ ->
@@ -171,24 +172,50 @@ ra_temp(Temp, Map, FpMap) ->
       end
   end.
 
+-ifdef(HIPE_AMD64).
+ra_temp_double(Temp, Reg, FpMap) ->
+  case hipe_amd64_registers:is_precoloured_sse2(Reg) of
+    true ->
+      Temp;
+    _ ->
+      case gb_trees:lookup(Reg, FpMap) of
+	{value,NewReg} -> Temp#x86_temp{reg=NewReg};
+	_ -> Temp
+      end
+  end.
+-else.
+ra_temp_double(Temp, Reg, FpMap) ->
+  case gb_trees:lookup(Reg, FpMap) of
+    {value,NewReg} ->
+      case hipe_x86_registers:is_precoloured_x87(NewReg) of
+	true -> hipe_x86:mk_fpreg(NewReg);
+	false ->
+	  Temp#x86_temp{reg=NewReg}
+      end;
+    _ ->
+      Temp
+  end.
+-endif.
+
 mk_ra_map(TempMap, SpillLimit) ->
   %% Build a partial map from pseudo to reg or spill.
   %% Spills are represented as pseudos with indices above SpillLimit.
   %% (I'd prefer to use negative indices, but that breaks
-  %% hipe_x86_registers:is_precoloured/1.)
+  %% ?HIPE_X86_REGISTERS:is_precoloured/1.)
   %% The frame mapping proper is unchanged, since spills look just like
   %% ordinary (un-allocated) pseudos.
   lists:foldl(fun(MapLet, Map) ->
-		  {Key,Val} = conv_ra_maplet(MapLet, SpillLimit),
+		  {Key,Val} = conv_ra_maplet(MapLet, SpillLimit,
+					     is_precoloured),
 		  gb_trees:insert(Key, Val, Map)
 	      end,
 	      gb_trees:empty(),
 	      TempMap).
 
-conv_ra_maplet(MapLet = {From,To}, SpillLimit) ->
+conv_ra_maplet(MapLet = {From,To}, SpillLimit, IsPrecoloured) ->
   %% From should be a pseudo, or a hard reg mapped to itself.
   if is_integer(From), From =< SpillLimit ->
-      case hipe_x86_registers:is_precoloured(From) of
+      case ?HIPE_X86_REGISTERS:IsPrecoloured(From) of
 	false -> [];
 	_ ->
 	  case To of
@@ -204,7 +231,7 @@ conv_ra_maplet(MapLet = {From,To}, SpillLimit) ->
       %% NewReg should be a hard reg, or a pseudo mapped
       %% to itself (formals are handled this way).
       if is_integer(NewReg) ->
-	  case hipe_x86_registers:is_precoloured(NewReg) of
+	  case ?HIPE_X86_REGISTERS:IsPrecoloured(NewReg) of
 	    true -> [];
 	    _ -> if From =:= NewReg -> [];
 		    true ->
@@ -230,14 +257,36 @@ conv_ra_maplet(MapLet = {From,To}, SpillLimit) ->
     _ -> exit({?MODULE,conv_ra_maplet,MapLet})
   end.
 
-mk_ra_map_fp(FpMap, SpillLimit) ->
+mk_ra_map_x87(FpMap, SpillLimit) ->
   lists:foldl(fun(MapLet, Map) ->
-		  {Key,Val} = conv_ra_maplet_fp(MapLet, SpillLimit),
+		  {Key,Val} = conv_ra_maplet(MapLet, SpillLimit,
+					     is_precoloured_x87),
 		  gb_trees:insert(Key, Val, Map)
 	      end,
 	      gb_trees:empty(),
 	      FpMap).
 
+-ifdef(HIPE_AMD64).
+mk_ra_map_sse2(FpMap, SpillLimit) ->
+  lists:foldl(fun(MapLet, Map) ->
+		  {Key,Val} = conv_ra_maplet(MapLet, SpillLimit,
+					     is_precoloured_sse2),
+		  gb_trees:insert(Key, Val, Map)
+	      end,
+	      gb_trees:empty(),
+	      FpMap).
+
+mk_ra_map_fp(FpMap, SpillLimit, Options) ->
+  case proplists:get_bool(x87, Options) of
+    true  -> mk_ra_map_x87(FpMap, SpillLimit);
+    false -> mk_ra_map_sse2(FpMap, SpillLimit)
+  end.
+-else.
+mk_ra_map_fp(FpMap, SpillLimit, _Options) ->
+  mk_ra_map_x87(FpMap, SpillLimit).
+-endif.
+
+-ifdef(notdef).
 conv_ra_maplet_fp(MapLet = {From,To}, SpillLimit) ->
   %% From should be a pseudo
   if is_integer(From), From =< SpillLimit -> [];
@@ -246,7 +295,7 @@ conv_ra_maplet_fp(MapLet = {From,To}, SpillLimit) ->
   %% end of From check
   case To of
     {reg, NewReg} ->
-      case on_fpstack(NewReg) of
+      case hipe_x86_registers:is_precoloured_x87(NewReg) of
 	true-> [];
 	false -> exit({?MODULE,conv_ra_maplet_fp,MapLet})
       end,
@@ -266,6 +315,4 @@ conv_ra_maplet_fp(MapLet = {From,To}, SpillLimit) ->
       {From, ToTempNum};
     _ -> exit({?MODULE,conv_ra_maplet_fp,MapLet})
   end.
-
-on_fpstack(S)->
-  hipe_x86_specific_fp:is_precoloured(S).
+-endif.

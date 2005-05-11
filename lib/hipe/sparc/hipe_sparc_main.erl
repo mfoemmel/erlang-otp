@@ -1,5 +1,5 @@
 %% -*- erlang-indent-level: 2 -*-
-%% $Id$
+%% $Id: hipe_sparc_main.erl,v 1.5 2005/01/19 10:14:06 kostis Exp $
 
 -module(hipe_sparc_main).
 -export([rtl_to_sparc/3]).

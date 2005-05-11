@@ -697,7 +697,7 @@ erts_get_node_and_dist_references(struct process *proc)
 	INIT_AM(node);
 	INIT_AM(dist_references);
 	INIT_AM(node_references);
-#ifdef SHARED_HEAP
+#if defined(SHARED_HEAP) || defined(HYBRID)
 	INIT_AM(processes);
 #endif
 	references_atoms_need_init = 0;
@@ -1221,7 +1221,7 @@ reference_table_term(Uint **hpp, Uint *szp)
 		ASSERT(!nrp->ets_ref && !nrp->bin_ref);
 		tup = MK_2TUP(AM_process, nrid);
 	    }
-#ifdef SHARED_HEAP
+#if defined(SHARED_HEAP) || defined(HYBRID)
 	    else if(nrid == AM_processes) {
 		ASSERT(!nrp->ets_ref && !nrp->bin_ref);
 		tup = MK_2TUP(AM_processes, am_undefined);

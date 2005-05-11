@@ -1,4 +1,4 @@
-%%% $Id$
+%%% $Id: hipe_x86_registers.erl,v 1.37 2005/04/20 12:42:15 chvi3471 Exp $
 %%%
 %%% TODO:
 %%% - Do we need a pseudo reg for the condition codes?
@@ -8,6 +8,7 @@
 -export([reg_name/1,
 	 first_virtual/0,
 	 is_precoloured/1,
+	 is_precoloured_x87/1,
 	 all_precoloured/0,
 	 eax/0,
 	 ecx/0,
@@ -22,6 +23,7 @@
 	 is_fixed/1,
 	 %% fixed/0,
 	 allocatable/0,
+	 allocatable_x87/0,
 	 nr_args/0,
 	 arg/1,
 	 is_arg/1,
@@ -89,6 +91,8 @@ first_virtual() -> ?LAST_PRECOLOURED + 1.
 
 is_precoloured(X) -> X =< ?LAST_PRECOLOURED.
 
+is_precoloured_x87(X) -> X =< 6.
+
 all_precoloured() ->
     [?EAX,
      ?ECX,
@@ -150,6 +154,8 @@ is_fixed(R) -> is_heap_pointer(R).
 allocatable() ->
     [?EDX, ?ECX, ?EBX, ?EAX, ?EDI| ?LIST_ESI_ALLOCATABLE].
 
+allocatable_x87() ->
+    [0,1,2,3,4,5,6].
 
 nr_args() -> ?X86_NR_ARG_REGS.
 
@@ -208,11 +214,15 @@ call_clobbered() ->
      {?ECX,tagged},{?ECX,untagged},
      {?EBX,tagged},{?EBX,untagged},
      {?EDI,tagged},{?EDI,untagged}
-     | ?LIST_ESI_CALL_CLOBBERED].
+     | ?LIST_ESI_CALL_CLOBBERED] ++ all_x87_pseudos().
 
 tailcall_clobbered() ->		% tailcall crapola needs two temps
     [{?TEMP0,tagged},{?TEMP0,untagged},
-     {?TEMP1,tagged},{?TEMP1,untagged}].
+     {?TEMP1,tagged},{?TEMP1,untagged}] ++ all_x87_pseudos().
+
+all_x87_pseudos() ->
+  [{0,double}, {1,double}, {2,double}, {3,double},
+   {4,double}, {5,double}, {6,double}].
 
 live_at_return() ->
     [{?EAX,tagged}

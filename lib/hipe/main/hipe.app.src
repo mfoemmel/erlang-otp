@@ -20,7 +20,6 @@
 	     hipe,
 	     hipe_adj_list,
 	     hipe_amd64_assemble,
-	     hipe_amd64_cfg,
 	     hipe_amd64_defuse,
 	     hipe_amd64_encode,
 	     hipe_amd64_frame,

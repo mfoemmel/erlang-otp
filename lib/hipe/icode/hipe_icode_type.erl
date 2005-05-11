@@ -7,7 +7,7 @@
 %%% Created : 25 Feb 2003 by Tobias Lindahl <Tobias.Lindahl@it.uu.se>
 %%%
 %%% CVS :
-%%%     $Id$
+%%%     $Id: hipe_icode_type.erl,v 1.134 2005/05/03 13:52:18 tobiasl Exp $
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_type).
@@ -209,9 +209,9 @@ do_call(I, Info)->
       PltType = find_plt_return(MFA, ArgTypes),
       BifType = erl_bif_types:type(M, F, A, ArgTypes),
       Type = t_inf(BifType, PltType),
-      %%io:format("The result of the call to ~p is ~w\n", 
-      %%		[hipe_icode:call_fun(I), Type]),
-      %%io:format("Argtypes: ~p\n", [[format_type(X)||X<-ArgTypes]]),
+      %%      io:format("The result of the call to ~p is ~s\n", 
+      %%      		[hipe_icode:call_fun(I), format_type(Type)]),
+      %%      io:format("Argtypes: ~p\n", [[format_type(X)||X<-ArgTypes]]),
       enter_defines(I, Type, Info);
     local ->
       AnnotatedType =
@@ -1213,12 +1213,7 @@ enter([Key], Value, Tree)->
 enter(Key, Value, Tree)->
   case hipe_icode:is_var(Key) of
     true ->
-      case t_is_none(Value) of
-	true ->
-	  Tree;
-	false ->
-	  enter_to_leaf(Key, Value, Tree)
-      end;
+      enter_to_leaf(Key, Value, Tree);
     false ->
       Tree
   end.
@@ -1232,10 +1227,20 @@ enter_to_leaf(Key, Value, Tree)->
 	true->
 	  enter_to_leaf(Val, Value, Tree);
 	false ->
-	  gb_trees:enter(Key, Value, Tree)
+	  case t_is_none(Value) of
+	    true ->
+	      gb_trees:delete(Key, Tree);
+	    false ->
+	      gb_trees:enter(Key, Value, Tree)
+	  end
       end;
     none ->
-      gb_trees:insert(Key, Value, Tree)
+      case t_is_none(Value) of
+	true ->
+	  Tree;
+	false ->
+	  gb_trees:insert(Key, Value, Tree)
+      end
   end.
 
 empty()->
@@ -1297,11 +1302,12 @@ do_updates(State, List)->
 do_updates(State, [{Label, Info}|Tail], Worklist)->
   case state__info_in_update(State, Label, Info) of
     fixpoint ->
+      %%io:format("Info in for ~w is: fixpoint\n", [Label]),
       do_updates(State, Tail, Worklist);
     NewState ->
       %%io:format("Info in for ~w is:\n", [Label]),
-      %%[io:format("~w: ~p\n", [X, format_type(Y)])|| {X, Y} <- gb_trees:to_list(state__info_in(State, Label))],
-
+      %%[io:format("~w: ~p\n", [X, format_type(Y)])
+      %%|| {X, Y} <- gb_trees:to_list(state__info_in(NewState, Label))],
       do_updates(NewState, Tail, [Label|Worklist])
   end;
 do_updates(State, [], Worklist) ->
@@ -1446,7 +1452,7 @@ state__info_in_update(S=#state{info_map=IM, liveness=Liveness}, Label, Info)->
       case join_info_in(LiveIn, OldInfo, Info) of
 	fixpoint -> 
 %	  io:format("Label: ~w\nLiveIn: ~p\nOldInfo: ~p\nInfo: ~p\nFixpoint\n", 
-%		    [LiveIn, Label, OldInfo, Info]),
+%		    [Label, LiveIn, OldInfo, Info]),
 	  fixpoint;
 	NewInfo ->
 %	  io:format("Label: ~w\nOldInfo: ~p\nNewInfo: ~p\n", 
@@ -1704,24 +1710,30 @@ warn_on_instr([], _Info, _IcodeFun) ->
 warn_on_control_flow([Label|Left], State, IcodeFun) ->
   I = hipe_bb:last(state__bb(State, Label)),
   Info = state__info_out(State, Label),
-  case hipe_icode:type(I) of
-    'if' ->
-      warn_on_if(I, Info, IcodeFun);
-    switch_tuple_arity ->      
-      warn_on_switch_tuple_arity(I, Info, IcodeFun);
-    switch_val ->
-      warn_on_switch_val(I, Info, IcodeFun);
-    type ->
-      warn_on_type(I, Info, IcodeFun, State);
-    call ->
-      case hipe_icode:call_in_guard(I) of
-	true ->
-	  warn_on_call(I, Info, IcodeFun);
-	false ->
+  case any_is_none(lookup_list(args(I), Info)) of
+    true -> 
+      %% Try to avoid follow-up warnings.
+      ok;
+    false ->
+      case hipe_icode:type(I) of
+	'if' ->
+	  warn_on_if(I, Info, IcodeFun);
+	switch_tuple_arity ->      
+	  warn_on_switch_tuple_arity(I, Info, IcodeFun);
+	switch_val ->
+	  warn_on_switch_val(I, Info, IcodeFun);
+	type ->
+	  warn_on_type(I, Info, IcodeFun, State);
+	call ->
+	  case hipe_icode:call_in_guard(I) of
+	    true ->
+	      warn_on_call(I, Info, IcodeFun);
+	    false ->
+	      ok
+	  end;
+	_ ->
 	  ok
-      end;
-    _ ->
-      ok
+      end
   end,
   warn_on_control_flow(Left, State, IcodeFun);
 warn_on_control_flow([], _State, _IcodeFun) ->
@@ -1968,7 +1980,8 @@ warn_on_call_1(I, Info, IcodeFun) ->
     false ->
       Fun = hipe_icode:call_fun(I),
       Args = safe_lookup_list(hipe_icode:call_args(I), Info),
-      case check_for_tuple_as_fun(Fun, Args) of
+      case (hipe_icode:call_type(I) =/= primop) andalso 
+	check_for_tuple_as_fun(Fun, Args) of
 	true -> 
 	  W = io_lib:format("~w: Unsafe use of tuple as a fun"
 			    " in call to ~w\n", [IcodeFun, Fun]),
@@ -1983,7 +1996,8 @@ warn_on_enter(I, Info, IcodeFun)->
     true ->
       Fun = hipe_icode:enter_fun(I),
       Args = safe_lookup_list(hipe_icode:enter_args(I), Info),
-      case check_for_tuple_as_fun(Fun, Args) of
+      case (hipe_icode:enter_type(I) =/= primop) andalso 
+	check_for_tuple_as_fun(Fun, Args) of
 	true -> 
 	  W = io_lib:format("~w: Unsafe use of tuple as a fun in call "
 			    "to ~w\n", [IcodeFun, Fun]),
@@ -2384,7 +2398,7 @@ find_plt_return(MFA, ArgTypes) ->
   SigArgTypes = t_fun_args(Sig),
   case t_is_any(SigArgTypes) of
     true ->
-      t_fun_range(PltSig);
+      t_fun_range(Sig);
     false ->
       case any_is_none(t_inf_lists(ArgTypes, SigArgTypes)) of
 	true -> t_none();

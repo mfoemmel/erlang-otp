@@ -443,7 +443,7 @@ read_file(Port, File) when port(Port) ->
 		    Result;
 		{error, enomem} ->
 		    %% It could possibly help to do a 
-		    %% gargabe collection here, 
+		    %% garbage collection here, 
 		    %% if the file server has some references
 		    %% to binaries read earlier.
 		    erlang:garbage_collect(),
@@ -459,11 +459,7 @@ read_file(Port, File) when port(Port) ->
 write_file(File, Bin) ->
     case open(File, [binary, write]) of
 	{ok, Handle} ->
-	    Result = 
-		case write(Handle, Bin) of
-		    {ok, _} -> ok;
-		    Error -> Error
-		end,
+	    Result = write(Handle, Bin),
 	    close(Handle),
 	    Result;
 	{error, _} = Error ->

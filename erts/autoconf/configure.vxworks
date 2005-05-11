@@ -36,12 +36,13 @@ target=$host
 
 # Find out the HOST and WIND_BASE environment
 HOST_TYPE=${HOST_TYPE:=sun4-solaris2}
-
 case $1 in
-vxworks_ppc750) WIND_BASE=/net/finwe/ldisk/Tornado2.2 ;;
-vxworks_simso) WIND_BASE=/net/finwe/ldisk/Tornado2.2 ;;
-*) WIND_BASE=${WIND_BASE:=`ypmatch tornado passwd | awk -F: '{print $6}'`/wind} ;;
+vxworks_ppc750) VXTOP=Tornado2.2 ;;
+vxworks_simso)  VXTOP=Tornado2.2 ;;
+*)              VXTOP=wind ;;
 esac
+
+WIND_BASE=${WIND_BASE:=`ypmatch tornado passwd | awk -F: '{print $6}'`/$VXTOP}
 
 # These are created by autoconf.
 MKDIRS="${ERL_TOP}/lib/os_mon/priv/bin/$target

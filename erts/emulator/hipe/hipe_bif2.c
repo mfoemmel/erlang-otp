@@ -159,15 +159,3 @@ BIF_RETTYPE hipe_bifs_show_message_area_0(BIF_ALIST_0)
     BIF_RET(am_false);
 #endif
 }
-
-BIF_RETTYPE hipe_bifs_ggc_0(BIF_ALIST_0)
-{
-#ifdef HYBRID
-#ifndef INCREMENTAL_GC
-    erts_global_garbage_collect(BIF_P,1,BIF_P->arg_reg,BIF_P->arity);
-#endif
-#else
-    erts_garbage_collect(BIF_P,0,BIF_P->arg_reg,BIF_P->arity);
-#endif
-    BIF_RET(am_true);
-}

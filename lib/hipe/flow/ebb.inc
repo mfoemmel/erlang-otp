@@ -1,5 +1,5 @@
 %% -*- Erlang -*-
-%% $Id$
+%% $Id: ebb.inc,v 1.10 2004/11/08 16:07:12 richardc Exp $
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% IDENTIFIES THE EXTENDED BASIC BLOCKS OF A CFG

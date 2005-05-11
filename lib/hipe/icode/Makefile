@@ -9,7 +9,7 @@
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-#     $Id$
+#     $Id: Makefile,v 1.53 2005/04/20 12:36:18 chvi3471 Exp $
 #
 
 ifndef EBIN
@@ -46,7 +46,7 @@ DOC_MODULES = hipe_icode hipe_icode_cfg hipe_icode_liveness \
 	hipe_icode_ssa_const_prop \
 	hipe_icode_split_arith hipe_icode_callgraph 
 
-MODULES = $(DOC_MODULES) hipe_icode_ebb 
+MODULES = $(DOC_MODULES) hipe_icode_ebb hipe_icode_mulret
 
 HRL_FILES=hipe_icode_type.hrl
 ERL_FILES= $(MODULES:%=%.erl)

@@ -1,4 +1,4 @@
-%%% $Id$
+%%% $Id: hipe_x86.hrl,v 1.44 2004/12/07 16:39:31 dalu7049 Exp $
 %%% concrete representation of 2-address pseudo-x86 code
 
 %%% x86 operands:

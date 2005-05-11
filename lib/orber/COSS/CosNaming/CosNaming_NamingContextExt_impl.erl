@@ -574,11 +574,11 @@ convert_list([{N, T, _O}|Rest], HowMany, Counter, Acc) ->
 %% Returns    : 
 %%----------------------------------------------------------------------
 destroy(OE_THIS, OE_State) ->
-    SubobjKey = corba:get_subobject_key(OE_THIS),
-    case term_to_binary(SubobjKey) of
-	'undefined' ->
+    case corba:get_subobject_key(OE_THIS) of
+	<<131,100,0,9,117,110,100,101,102,105,110,101,100>> ->
+	    %% undefined binary.
 	    corba:raise(#'NO_PERMISSION'{completion_status=?COMPLETED_NO});
-	_ ->
+	SubobjKey ->
 	    _DF = 
 		fun() ->
 			case mnesia:wread({orber_CosNaming, SubobjKey}) of

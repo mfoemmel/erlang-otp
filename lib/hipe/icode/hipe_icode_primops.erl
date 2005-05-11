@@ -9,7 +9,7 @@
 %%  History  :	* 2001-06-13 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%
-%% $Id$
+%% $Id: hipe_icode_primops.erl,v 1.42 2005/03/29 17:26:03 tobiasl Exp $
 %%
 
 -module(hipe_icode_primops).
@@ -387,6 +387,53 @@ type(Primop) ->
       erl_bif_types:type(erlang, 'bsl', 2);
     {element, _} ->
       erl_bif_types:type(erlang, element, 2);
+%%% -----------------------------------------------------
+%%% Lists
+    cons ->
+      erl_types:t_cons();
+%%% -----------------------------------------------------
+%%% Tuples
+    mktuple ->
+      erl_types:t_tuple();
+%%% -----------------------------------------------------
+%%% Floats
+    unsafe_tag_float ->
+      erl_types:t_float();
+%%% -----------------------------------------------------
+%%% Binaries    
+    {hipe_bs_primop, {bs_get_integer, _Size, _Flags}} ->
+      erl_types:t_integer();
+    {hipe_bs_primop, {bs_get_float, _, _}} ->
+      erl_types:t_float();
+    {hipe_bs_primop, {bs_get_binary, _, _}} ->
+      erl_types:t_binary();
+    {hipe_bs_primop, {bs_get_binary_all, _}} ->
+      erl_types:t_binary();
+    {hipe_bs_primop, bs_final} ->
+      erl_types:t_binary();
+    {hipe_bsi_primop, {bs_get_integer, _, _}} ->
+      erl_types:t_integer();
+    {hipe_bsi_primop, {bs_get_integer, _Size, _, _Flags}} ->
+      erl_types:t_integer();
+    {hipe_bsi_primop, {bs_get_float, _, _}} ->
+      erl_types:t_float();
+    {hipe_bsi_primop, {bs_get_float, _, _, _}} ->
+      erl_types:t_float();
+    {hipe_bsi_primop, {bs_get_binary, _, _}} ->
+	erl_types:t_binary();
+    {hipe_bsi_primop, {bs_get_binary, _, _, _}} ->
+      erl_types:t_binary();
+    {hipe_bsi_primop, {bs_get_binary_all, _, _}} ->
+      erl_types:t_binary();
+    {hipe_bs_primop, {bs_init2,_,_}} ->
+      erl_types:t_binary();
+    {hipe_bs_primop, {bs_init2,_}} ->
+      erl_types:t_binary();
+%%% -----------------------------------------------------
+%%% Funs
+    {mkfun, {_M, _F, _A}, _MagicNum, _Index} ->
+      %% Note that the arity includes the bound variables in args
+      erl_types:t_fun();
 %%% -----------------------------------------------------
 %%% Other
     {M, F, A} ->

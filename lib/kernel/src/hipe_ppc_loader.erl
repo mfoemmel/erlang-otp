@@ -15,7 +15,7 @@ patch_instr(Addr, Val, Type) ->
     constant -> patch_li(Addr, Val);
     atom -> patch_li(Addr, Val);
     c_const -> patch_li(Addr, Val);
-    load_mfa -> patch_li(Addr, Val);
+    %% load_mfa -> patch_li(Addr, Val);
     _ -> exit({?MODULE,patch_instr,Addr,Val,Type})
   end.
 

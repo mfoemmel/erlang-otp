@@ -121,7 +121,7 @@ OTP_MIBDIR = $(shell if test -d ../../otp_mibs; then echo otp_mibs; \
 debug opt: $(TARGET_FILES)
 
 $(ERL_TOP)/lib/snmp/bin/snmp-v2tov1: $(ERL_TOP)/lib/snmp/bin/snmp-v2tov1.src
-	$(PERL) -p -e 's/%PERL%/$(PERL)/ ' < $< > $@
+	$(PERL) -p -e 's?%PERL%?$(PERL)? ' < $< > $@
 	chmod 755 $@
 
 $(SNMP_BIN_TARGET_DIR)/OTP-REG.bin:	$(ERL_TOP)/lib/$(OTP_MIBDIR)/mibs/OTP-REG.mib

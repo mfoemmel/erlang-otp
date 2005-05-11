@@ -1,56 +1,66 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_x86_ra_ls.erl,v 1.29 2005/03/31 19:46:00 mikpe Exp $
 %%% Linear Scan register allocator for x86
 
--module(hipe_x86_ra_ls).
--export([ra/3,regalloc/7]).
+-ifndef(HIPE_X86_RA_LS).
+-define(HIPE_X86_RA_LS,			hipe_x86_ra_ls).
+-define(HIPE_X86_LIVENESS,		hipe_x86_liveness).
+-define(HIPE_X86_PP,			hipe_x86_pp).
+-define(HIPE_X86_RA_LS_POSTCONDITIONS,	hipe_x86_ra_ls_postconditions).
+-define(HIPE_X86_REGISTERS,		hipe_x86_registers).
+-define(HIPE_X86_SPECIFIC,		hipe_x86_specific).
+-define(HIPE_X86_SPECIFIC_FP,		hipe_x86_specific_fp).
+-endif.
+
+-module(?HIPE_X86_RA_LS).
+-export([ra/3, regalloc/7]).
 
 -define(HIPE_INSTRUMENT_COMPILER, true). %% Turn on instrumentation.
 -include("../main/hipe.hrl").
 
-ra(X86Defun, SpillIndex, Options) ->
+ra(Defun, SpillIndex, Options) ->
   ?inc_counter(ra_calls_counter,1), 
-  NewDefun = X86Defun, %% hipe_x86_ra_rename:rename(X86Defun,Options),
+  NewDefun = Defun, %% hipe_${ARCH}_ra_rename:rename(Defun,Options),
   CFG = hipe_x86_cfg:init(NewDefun),
   ?inc_counter(ra_caller_saves_counter,count_caller_saves(CFG)),
 
-  SpillLimit = hipe_x86_specific:number_of_temporaries(
+  SpillLimit = ?HIPE_X86_SPECIFIC:number_of_temporaries(
 		 CFG),
 
   ?inc_counter(bbs_counter, length(hipe_x86_cfg:labels(CFG))),
   alloc(NewDefun, SpillIndex, SpillLimit, Options).
 
 
-alloc(X86Defun, SpillIndex, SpillLimit, Options) ->
+alloc(Defun, SpillIndex, SpillLimit, Options) ->
   ?inc_counter(ra_iteration_counter,1), 
-  %% hipe_x86_pp:pp(X86Defun),	
-  X86Cfg = hipe_x86_cfg:init(X86Defun),
+  %% ?HIPE_X86_PP:pp(Defun),	
+  CFG = hipe_x86_cfg:init(Defun),
 
   {Coloring, NewSpillIndex} = 
     regalloc(
-      X86Cfg, 
-      hipe_x86_registers:allocatable()--
-      [hipe_x86_registers:temp1(),
-       hipe_x86_registers:temp0()],
-      [hipe_x86_cfg:start_label(X86Cfg)],
+      CFG, 
+      ?HIPE_X86_REGISTERS:allocatable()--
+      [?HIPE_X86_REGISTERS:temp1(),
+       ?HIPE_X86_REGISTERS:temp0()],
+      [hipe_x86_cfg:start_label(CFG)],
       SpillIndex, SpillLimit, Options,
-      hipe_x86_specific),
+      ?HIPE_X86_SPECIFIC),
 
-  {NewX86Defun, _, _DontSpill} =
-    hipe_x86_ra_ls_postconditions:check_and_rewrite(
-      X86Defun, Coloring, [], Options),
-  %% hipe_x86_pp:pp(NewX86Defun),
-  TempMap = hipe_temp_map:cols2tuple(Coloring, hipe_x86_specific),
+  {NewDefun, _, _DontSpill} =
+    ?HIPE_X86_RA_LS_POSTCONDITIONS:check_and_rewrite(
+      Defun, Coloring, [], Options),
+  %% ?HIPE_X86_PP:pp(NewDefun),
+  TempMap = hipe_temp_map:cols2tuple(Coloring, ?HIPE_X86_SPECIFIC),
   {TempMap2,_NewSpillIndex2} = 
-    hipe_spill_minimize:stackalloc(X86Cfg, [], 
+    hipe_spill_minimize:stackalloc(CFG, [], 
 				   SpillIndex, Options, 
-				   hipe_x86_specific, 
+				   ?HIPE_X86_SPECIFIC, 
 				   TempMap),
   Coloring2 = 
     hipe_spill_minimize:mapmerge(hipe_temp_map:to_substlist(TempMap), 
 				 TempMap2),
   ?add_spills(Options, NewSpillIndex),
-  {NewX86Defun, Coloring2}.
+  {NewDefun, Coloring2}.
 
 
 %%  Purpose  :  Perform a register allocation based on the 
@@ -704,11 +714,11 @@ defines(I, Target) ->
 is_precoloured(R, Target) ->
   Target:is_precoloured(R).
 
-is_global(_, hipe_x86_specific_fp) ->
+is_global(_, ?HIPE_X86_SPECIFIC_FP) ->
   false;
 is_global(R, Target) ->
-  hipe_x86_registers:temp1() =:= R orelse 
-  hipe_x86_registers:temp0() =:= R orelse
+  ?HIPE_X86_REGISTERS:temp1() =:= R orelse 
+  ?HIPE_X86_REGISTERS:temp0() =:= R orelse
   Target:is_global(R).
 
 physical_name(R, Target) ->
@@ -721,8 +731,8 @@ arg_vars(CFG, Target) ->
   Target:args(CFG).
 
 count_caller_saves(CFG) ->
-  Liveness = hipe_x86_liveness:analyze(CFG),
-  count_caller_saves(CFG, Liveness, hipe_x86_specific).
+  Liveness = ?HIPE_X86_LIVENESS:analyze(CFG),
+  count_caller_saves(CFG, Liveness, ?HIPE_X86_SPECIFIC).
 
 count_caller_saves(CFG,Liveness, T) ->
  Ls =

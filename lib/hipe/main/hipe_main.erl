@@ -1,6 +1,6 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% $Id$
+%% $Id: hipe_main.erl,v 1.150 2005/04/12 15:15:21 tobiasl Exp $
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% @doc	This is the HiPE compiler's main "loop".
@@ -95,14 +95,16 @@ compile_icode(MFA, LinearIcode0, Options, DebugState) ->
   %%hipe_icode_cfg:pp(IcodeCfg1),
   IcodeCfg2 = icode_handle_exceptions(IcodeCfg1, MFA, Options),
   icode_pp(IcodeCfg2, MFA, proplists:get_value(pp_icode, Options)),
-
-  {Fixpoint, IcodeCfg3} = icode_ssa(IcodeCfg2, MFA, Options),
-  %%hipe_icode_cfg:pp(IcodeCfg3),
-  case proplists:get_bool(type_only, Options) of
-    false ->
-      compile_icode_2(MFA, IcodeCfg3, Options, DebugState);
-    true ->
-      {type_only, Fixpoint}
+  
+  case icode_ssa(IcodeCfg2, MFA, Options) of
+    {dialyzer, IcodeSSA} -> {dialyzer, IcodeSSA};
+    {Fixpoint, IcodeCfg3} -> 
+      case proplists:get_bool(type_only, Options) of
+	false ->
+	  compile_icode_2(MFA, IcodeCfg3, Options, DebugState);
+	true ->
+	  {type_only, Fixpoint}
+      end
   end.
 
 compile_icode_2(MFA, IcodeCfg3, Options, DebugState) ->  
@@ -238,13 +240,18 @@ icode_ssa(IcodeCfg0, MFA, Options) ->
   IcodeSSA1 = icode_ssa_binary_pass(IcodeSSA0, Options),
   IcodeSSA2 = icode_ssa_const_prop(IcodeSSA1, Options),
   IcodeSSA3 = icode_ssa_copy_prop(IcodeSSA2, Options),
-  {Fixpoint, IcodeSSA4} = icode_ssa_type_info(IcodeSSA3, MFA, Options),
-  IcodeSSA5 = icode_ssa_dead_code_elimination(IcodeSSA4, Options),
-  icode_ssa_check(IcodeSSA5, Options), %% just for sanity
-  icode_pp(IcodeSSA5, MFA, proplists:get_value(pp_icode_ssa,Options)),
-  IcodeCfg = icode_ssa_unconvert(IcodeSSA5, Options),
-  ?opt_stop_timer("Icode SSA-passes"),
-  {Fixpoint, IcodeCfg}.
+  case proplists:get_bool(dialyzer, Options) of
+    true ->
+      {dialyzer, IcodeSSA3};
+    false ->
+      {Fixpoint, IcodeSSA4} = icode_ssa_type_info(IcodeSSA3, MFA, Options),
+      IcodeSSA5 = icode_ssa_dead_code_elimination(IcodeSSA4, Options),
+      icode_ssa_check(IcodeSSA5, Options), %% just for sanity
+      icode_pp(IcodeSSA5, MFA, proplists:get_value(pp_icode_ssa,Options)),
+      IcodeCfg = icode_ssa_unconvert(IcodeSSA5, Options),
+      ?opt_stop_timer("Icode SSA-passes"),
+      {Fixpoint, IcodeCfg}
+  end.
 
 icode_ssa_convert(IcodeCfg, Options) ->
   ?option_time(hipe_icode_ssa:convert(IcodeCfg),

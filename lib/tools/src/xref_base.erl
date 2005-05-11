@@ -54,7 +54,7 @@
          partition_family/2, projection/2, range/1, relation/1,
          relation_to_family/1, relative_product1/2, restriction/2,
          restriction/3, set/1, specification/2, substitution/2,
-         to_external/1, type/1, union/1, union/2, union_of_family/1]).
+         to_external/1, union/1, union/2, union_of_family/1]).
 
 -include("xref.hrl").
 
@@ -749,9 +749,9 @@ abst(File, Builtins, Mode) when Mode == functions ->
 	    xref_reader:module(M, Forms, Builtins, X, D);
 	{ok, {M, [{abstract_code, {raw_abstract_v1, Code}},
                   {exports,X0}, {attributes,A}]}} ->
-	    %% R9C.
+	    %% R9C-
 	    {_,_,Forms,_} = sys_pre_expand:module(Code, []),
-	    X = xref_utils:fa_to_mfa(X0, M),
+	    X = mfa_exports(X0, A, M),
             D = deprecated(A, X, M),
 	    xref_reader:module(M, Forms, Builtins, X, D);
 	Error when element(1, Error) == error ->
@@ -760,7 +760,7 @@ abst(File, Builtins, Mode) when Mode == functions ->
 abst(File, Builtins, Mode) when Mode == modules ->
     case beam_lib:chunks(File, [exports, imports, attributes]) of
 	{ok, {Mod, [{exports,X0}, {imports,I0}, {attributes,At}]}} ->
-	    X1 = xref_utils:fa_to_mfa(X0, Mod),
+	    X1 = mfa_exports(X0, At, Mod),
 	    X = filter(fun(MFA) -> not (predef_fun())(MFA) end, X1),
             D = deprecated(At, X, Mod),
 	    I = case Builtins of
@@ -775,6 +775,22 @@ abst(File, Builtins, Mode) when Mode == modules ->
 	    {ok, Mod, {X, I, D}, []};
 	Error when element(1, Error) == error ->
 	    Error
+    end.
+
+mfa_exports(X0, Attributes, M) ->
+    %% Adjust arities for abstract modules.
+    X1 = case member({abstract, true}, Attributes) of
+             true ->
+                 [{F,adjust_arity(F,A)} || {F,A} <- X0];
+             false ->
+                 X0
+         end,
+    xref_utils:fa_to_mfa(X1, M).
+
+adjust_arity(F, A) ->
+    case xref_utils:is_static_function(F, A) of 
+        true -> A;
+        false -> A - 1
     end.
 
 deprecated(A, X, M) ->
@@ -1436,7 +1452,7 @@ make_libs(XU, F, AM, LibPath, LibDict) ->
     Fun = fun(FileName, Deprs) -> 
 		  case beam_lib:chunks(FileName, [exports, attributes]) of
 		      {ok, {M, [{exports,X}, {attributes,A}]}} ->
-			  Exports = xref_utils:fa_to_mfa(X, M),
+			  Exports = mfa_exports(X, A, M),
                           %% No warnings for bad attributes...
                           {Deprecated,_Bad} = deprecated(A, Exports, M),
                           {{M,Exports}, [{M,Deprecated} | Deprs]};

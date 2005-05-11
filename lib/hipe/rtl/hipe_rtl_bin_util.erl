@@ -190,7 +190,7 @@ unsigned_bignum(Dst1, Src, TrueLblName) ->
 bs_call(Name, Args, DstVar, BinSize, Base, Offset, Orig, 
 	TrueLblName, FalseLblName) ->
   MatchBuf = hipe_rtl:mk_new_reg(),
-  [hipe_rtl:mk_load_address(MatchBuf, erts_mb, c_const)] ++
+  hipe_tagscheme:get_erts_mb(MatchBuf) ++
     save_matchbuffer(MatchBuf, BinSize, Base, Offset, Orig) ++
    [hipe_rtl_arch:call_bif([DstVar], Name, Args,
 			  TrueLblName, FalseLblName)].

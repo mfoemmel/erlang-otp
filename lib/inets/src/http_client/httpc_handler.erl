@@ -327,7 +327,7 @@ code_change(_, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 send_first_request(Address, Request, State) ->
-    case http_transport:connect(Request) of
+    case http_transport:connect(Request#request{address = Address}) of
 	{ok, Socket} ->
 	    case httpc_request:send(Address, Request, Socket) of
 		ok ->
@@ -672,9 +672,9 @@ try_to_enable_pipline(State = #state{session = Session,
 answer_request(Request, Msg, State = #state{timers = Timers}) ->    
     httpc_response:send(Request#request.from, Msg),
     RequestTimers = Timers#timers.request_timers,
-    Timer = {_, TimerRef} =
-	http_util:key1search(RequestTimers, Request#request.id, 
-			      {undefined, undefined}),
+    TimerRef =
+	http_util:key1search(RequestTimers, Request#request.id, undefined),
+    Timer = {Request#request.id, TimerRef},
     cancel_timer(TimerRef, {timeout, Request#request.id}),
     State#state{request = Request#request{from = answer_sent},
 		timers = 

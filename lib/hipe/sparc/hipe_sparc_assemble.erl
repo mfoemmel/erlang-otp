@@ -6,7 +6,7 @@
 %%  Notes    :  Not all SPARC instructions are handled.
 %%  History  :	* 1998-06-18 Erik Johansson (happi@csd.uu.se): Created.
 %% CVS:
-%%     $Id$
+%%     $Id: hipe_sparc_assemble.erl,v 1.38 2005/01/19 11:22:37 kostis Exp $
 %% ====================================================================
 %% @doc
 %%

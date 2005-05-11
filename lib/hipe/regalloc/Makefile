@@ -9,7 +9,7 @@
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-#     $Id$
+#     $Id: Makefile,v 1.30 2005/01/07 02:31:24 mikpe Exp $
 #
 
 ifndef EBIN

@@ -729,6 +729,19 @@ transaction_terminated(Tid)  ->
 	    mnesia_recover:sync_trans_tid_serial(Tid)
     end.
 
+%% If there are an surrounding transaction, we inherit it's context
+non_transaction(OldState={_,_,Trans}, Fun, Args, ActivityKind, Mod) 
+  when Trans /= non_transaction ->
+    Kind = case ActivityKind of 
+	       sync_dirty -> sync;
+	       _ -> async
+	   end,
+    case transaction(OldState, Fun, Args, infinity, Mod, Kind) of
+	{atomic, Res} -> 
+	    Res;
+	{aborted,Res} ->
+	    exit(Res)
+    end;
 non_transaction(OldState, Fun, Args, ActivityKind, Mod) ->
     Id = {ActivityKind, self()},
     NewState = {Mod, Id, non_transaction},
@@ -758,6 +771,10 @@ transaction(OldTidTs, Fun, Args, Retries, Mod, Type) ->
     case OldTidTs of
 	undefined -> % Outer
 	    execute_outer(Mod, Fun, Args, Factor, Retries, Type);
+	{_, _, non_transaction} -> % Transaction inside ?sync_dirty
+	    Res = execute_outer(Mod, Fun, Args, Factor, Retries, Type),
+	    put(mnesia_activity_state, OldTidTs),
+	    Res;
 	{OldMod, Tid, Ts} ->  % Nested
 	    execute_inner(Mod, Tid, OldMod, Ts, Fun, Args, Factor, Retries, Type);
 	_ -> % Bad nesting
@@ -933,6 +950,8 @@ decr(_X) -> 0.
 
 return_abort(Fun, Args, Reason)  ->
     {_Mod, Tid, Ts} = get(mnesia_activity_state),
+    dbg_out("Transaction ~p calling ~p with ~p failed: ~n ~p~n", 
+	    [Tid, Fun, Args, Reason]),
     OldStore = Ts#tidstore.store,
     Nodes = get_elements(nodes, OldStore),
     intercept_friends(Tid, Ts),
@@ -943,8 +962,6 @@ return_abort(Fun, Args, Reason)  ->
 	    mnesia_locker:async_release_tid(Nodes, Tid),
 	    ?MODULE ! {delete_transaction, Tid},
 	    erase(mnesia_activity_state),
-	    dbg_out("Transaction ~p calling ~p with ~p, failed ~p~n", 
-		    [Tid, Fun, Args, Reason]),
 	    flush_downs(),
 	    {aborted, mnesia_lib:fix_error(Reason)};
 	true ->
@@ -1766,10 +1783,14 @@ do_update_op(Tid, Storage, {{Tab, K}, {RecName, Incr}, update_counter}) ->
         case catch mnesia_lib:db_update_counter(Storage, Tab, K, Incr) of
             NewVal when integer(NewVal), NewVal >= 0 ->
                 {{RecName, K, NewVal}, [{RecName, K, NewVal - Incr}]};
-            _ ->
-                Zero = {RecName, K, 0},
-                mnesia_lib:db_put(Storage, Tab, Zero),
-                {Zero, []}
+            _ when Incr > 0 ->
+                New = {RecName, K, Incr},
+                mnesia_lib:db_put(Storage, Tab, New),
+                {New, []};
+	    _ -> 
+		Zero = {RecName, K, 0},
+		mnesia_lib:db_put(Storage, Tab, Zero),
+		{Zero, []}
         end,
     commit_update(?catch_val({Tab, commit_work}), Tid, Tab, 
 		  K, NewObj, OldObjs),

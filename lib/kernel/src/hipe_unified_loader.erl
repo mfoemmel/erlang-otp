@@ -50,6 +50,7 @@
 %% Currently, there is no need to expose these to the outside world.
 -define(HS8P_TAG,"HS8P").
 -define(HPPC_TAG,"HPPC").
+-define(HP64_TAG,"HP64").
 -define(HX86_TAG,"HX86").
 -define(HA64_TAG,"HA64").
 
@@ -63,6 +64,7 @@ chunk_name(Architecture) ->
   case Architecture of
     ultrasparc -> ?HS8P_TAG; %% HiPE, SPARC, V8+ (implicit: 32-bit)
     powerpc ->    ?HPPC_TAG; %% HiPE, PowerPC (implicit: 32-bit, Linux)
+    ppc64 ->	  ?HP64_TAG; %% HiPE, ppc64 (implicit: 64-bit, Linux)
     x86 ->        ?HX86_TAG; %% HiPE, x86, (implicit: Unix)
     amd64 ->      ?HA64_TAG  %% HiPE, x86_64, (implicit: 64-bit, Unix)
     %% Future:     HSV9      %% HiPE, SPARC, V9 (implicit: 64-bit)
@@ -83,6 +85,7 @@ load_hipe_modules() ->
   case erlang:system_info(hipe_architecture) of
     ultrasparc -> hipe_sparc_loader:module_info(module);
     powerpc -> hipe_ppc_loader:module_info(module);
+    ppc64 -> hipe_ppc64_loader:module_info(module);
     x86 -> hipe_x86_loader:module_info(module);
     amd64 -> hipe_amd64_loader:module_info(module);
     undefined -> ok
@@ -220,6 +223,7 @@ load_common(Mod, Bin, Beam, OldReferencesToPatch) ->
 find_callee_mfas(Patches) ->
   case erlang:system_info(hipe_architecture) of
     powerpc -> find_callee_mfas(Patches, gb_sets:empty());
+    ppc64 -> find_callee_mfas(Patches, gb_sets:empty());
     _ -> []
   end.
 
@@ -413,6 +417,8 @@ patch_call_insn(CallAddress, DestAddress, Trampoline) ->
   case erlang:system_info(hipe_architecture) of
     powerpc ->
       hipe_ppc_loader:patch_call(CallAddress, DestAddress, Trampoline);
+    ppc64 ->
+      hipe_ppc64_loader:patch_call(CallAddress, DestAddress, Trampoline);
     _ ->
       patch_instr(CallAddress, DestAddress, 'call')
   end.
@@ -556,6 +562,8 @@ patch_instr(Address, Value, Type) ->
       hipe_sparc_loader:patch_instr(Address, Value, Type);
     powerpc -> 
       hipe_ppc_loader:patch_instr(Address, Value, Type);
+    ppc64 -> 
+      hipe_ppc64_loader:patch_instr(Address, Value, Type);
     x86 -> 
       hipe_x86_loader:patch_instr(Address, Value, Type);
     amd64 ->
@@ -566,9 +574,15 @@ patch_instr(Address, Value, Type) ->
 %% Write a data word of the machine's natural word size.
 %% Returns the address of the next word.
 %%
+%% XXX: It appears this is used for inserting both code addresses
+%% and other data. In HiPE, code addresses are still 32-bit on
+%% 64-bit machines.
 write_word(DataAddress, DataWord) ->
   case erlang:system_info(hipe_architecture) of
     amd64 ->
+      hipe_bifs:write_u64(DataAddress, DataWord),
+      DataAddress+8;
+    ppc64 ->
       hipe_bifs:write_u64(DataAddress, DataWord),
       DataAddress+8;
     _ ->

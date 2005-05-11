@@ -65,13 +65,10 @@ else
         OTHER_SUB_DIRECTORIES += \
           snmp otp_mibs appmon erl_interface asn1 jinterface debugger gs inets \
           ic mnesia  mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools \
-          pman $(SSL_APP) toolbar tv observer \
+          pman $(SSL_APP) toolbar tv observer odbc \
           runtime_tools cosTransactions cosEvent cosTime cosNotification \
           cosProperty cosFileTransfer cosEventDomain et megaco webtool \
 	  syntax_tools xmerl edoc
-        ifeq ($(findstring sparc-sun-solaris,$(TARGET)),sparc-sun-solaris)
-          OTHER_SUB_DIRECTORIES += odbc
-        endif
         OTHER_SUB_DIRECTORIES += hipe $(TSP_APP)
       endif
     endif

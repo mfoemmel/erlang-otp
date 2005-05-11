@@ -55,7 +55,7 @@ string(Str, Title, Callback) ->
 
 hook(E = #xmlElement{parents = []}, S) ->
     {Title, Callback} = xmerl_scan:hook_state(S),
-    Data = xmerl:export(E, Callback, [{title, Title}]),
+    Data = xmerl:export([E], Callback, [{title, Title}]),
     {Data, S};
 hook(X, S) ->
     {X, S}.

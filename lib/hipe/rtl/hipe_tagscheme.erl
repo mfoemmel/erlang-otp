@@ -8,7 +8,7 @@
 %%  020904: Happi - added support for external pids and ports.
 %%     
 %%========================================================================
-%% $Id$
+%% $Id: hipe_tagscheme.erl,v 1.55 2005/04/15 08:48:58 mikpe Exp $
 %%========================================================================
 
 -module(hipe_tagscheme).
@@ -36,6 +36,7 @@
 -export([test_subbinary/3, test_heap_binary/3]).
 -export([finalize_bin/4, get_base/2]).
 -export([create_heap_binary/3, create_refc_binary/3]).
+-export([get_erts_mb/1]).
 
 -include("hipe_literals.hrl").
 
@@ -966,3 +967,13 @@ mk_var_header(Header, Size, Tag) ->
   Tmp = hipe_rtl:mk_new_reg(),
   [hipe_rtl:mk_alu(Tmp, Size, sll, hipe_rtl:mk_imm(?HEADER_ARITY_OFFS)),
    hipe_rtl:mk_alu(Header, Tmp, 'add', hipe_rtl:mk_imm(Tag))].
+
+get_erts_mb(MatchBuf) ->
+  case ?P_SCHED_DATA of
+    [] ->
+      [hipe_rtl:mk_load_address(MatchBuf, erts_mb, c_const)];
+    Offset ->
+      Tmp = hipe_rtl:mk_new_reg(),
+      [hipe_rtl_arch:pcb_load(Tmp, Offset),
+       hipe_rtl:mk_alu(MatchBuf, Tmp, 'add', hipe_rtl:mk_imm(?SCHED_DATA_ERTS_MB_OFFS))]
+  end.

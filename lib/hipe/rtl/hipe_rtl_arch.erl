@@ -5,9 +5,9 @@
 %%  Filename : 	hipe_rtl_arch.erl
 %%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
-%%              $Author: mikpe $
-%%              $Date: 2004/12/06 03:09:39 $
-%%              $Revision: 1.53 $
+%%              $Author: chvi3471 $
+%%              $Date: 2005/04/20 12:40:11 $
+%%              $Revision: 1.55 $
 %%=====================================================================
 %% @doc
 %%
@@ -44,7 +44,7 @@
 	 pcb_address/2,
 	 call_bif/5,
 %%         alignment/0,
-%% 	 nr_of_return_regs/0,
+	 nr_of_return_regs/0,
          log2_word_size/0,
          word_size/0
 	]).
@@ -569,48 +569,19 @@ proc_pointer() ->	% must not be exported
 %%
 
 call_bif(Dst, Name, Args, Cont, Fail) ->
-  NewArgs =
-    case prefix_pptr(Name) of
-      true ->
-	[proc_pointer() | Args];
-      false ->
-	Args
-    end,
-  hipe_rtl:mk_call(Dst, Name, NewArgs, Cont, Fail, not_remote).
+  hipe_rtl:mk_call(Dst, Name, Args, Cont, Fail, not_remote).
 
-prefix_pptr(Name) ->
+nr_of_return_regs() ->
   case get(hipe_target_arch) of
     ultrasparc ->
-      sparc_prefix_pptr(Name);
+      1;
+    %% hipe_sparc_registers:nr_rets();
     powerpc ->
-      false;
+      1;
+    %% hipe_ppc_registers:nr_rets();
     x86 ->
-      false;
+      hipe_x86_registers:nr_rets();
     amd64 ->
-      false
+      1
+    %% hipe_amd64_registers:nr_rets();
   end.
-
-%% sparc_prefix_pptr(select_msg)	-> false;
-%% sparc_prefix_pptr(bs_get_integer)	-> true;
-%% sparc_prefix_pptr(bs_get_float)	-> true;
-%% sparc_prefix_pptr(bs_get_binary_all)	-> true;
-%% sparc_prefix_pptr(bs_get_binary)	-> true;
-%% sparc_prefix_pptr(bs_final)		-> true;
-%% sparc_prefix_pptr(Name) -> exit({?MODULE,sparc_prefix_pptr,Name}).
-sparc_prefix_pptr(_) -> false.
-
-
-% nr_of_return_regs() ->
-%   case get(hipe_target_arch) of
-%     ultrasparc ->
-%       1;
-%     %% hipe_sparc_registers:nr_rets();
-%     powerpc ->
-%       1;
-%     %% hipe_ppc_registers:nr_rets();
-%     x86 ->
-%       hipe_x86_registers:nr_rets();
-%     amd64 ->
-%       1
-%     %% hipe_amd64_registers:nr_rets();
-%   end.

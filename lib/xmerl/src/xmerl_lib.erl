@@ -34,7 +34,7 @@
 	 export_attribute/1, markup/2, markup/3, simplify_element/1,
 	 simplify_content/1, start_tag/1, start_tag/2, end_tag/1,
 	 empty_tag/1, empty_tag/2,is_empty_data/1, find_attribute/2,
-	 remove_whitespace/1]).
+	 remove_whitespace/1,to_lower/1]).
 
 -export([is_letter/1,is_namechar/1,
 	 detect_charset/1,detect_charset/2,is_name/1,is_char/1]).
@@ -453,50 +453,50 @@ detect_charset(ExtCharset,Content) ->
 %% Check byte-order mark and transform to Unicode, Erlang integer
 %%% --- With byte-order mark
 autodetect(undefined,[0,0,16#fe,16#ff | Input]) ->
-    {auto, ucs:from_ucs4be(Input)};
+    {auto, xmerl_ucs:from_ucs4be(Input)};
 autodetect('iso-10646-utf-1',[0,0,16#fe,16#ff | Input]) ->
-    {external, ucs:from_ucs4be(Input)};
+    {external, xmerl_ucs:from_ucs4be(Input)};
 autodetect(undefined,[16#ff,16#fe,0,0 | Input]) ->
-    {auto, ucs:from_ucs4le(Input)};
+    {auto, xmerl_ucs:from_ucs4le(Input)};
 autodetect('iso-10646-utf-1',[16#ff,16#fe,0,0 | Input]) ->
-    {external, ucs:from_ucs4le(Input)};
+    {external, xmerl_ucs:from_ucs4le(Input)};
 
 autodetect(undefined,[16#fe,16#ff | Input]) ->
-    {auto, ucs:from_utf16be(Input)};
+    {auto, xmerl_ucs:from_utf16be(Input)};
 autodetect('utf-16be',[16#fe,16#ff | Input]) ->
-    {external, ucs:from_utf16be(Input)};
+    {external, xmerl_ucs:from_utf16be(Input)};
 autodetect(undefined,[16#ff,16#fe | Input]) ->
-    {auto, ucs:from_utf16le(Input)};
+    {auto, xmerl_ucs:from_utf16le(Input)};
 autodetect('utf-16le',[16#ff,16#fe | Input]) ->
-    {external, ucs:from_utf16le(Input)};
+    {external, xmerl_ucs:from_utf16le(Input)};
 
 autodetect(undefined,[16#ef,16#bb,16#bf | Input]) ->
-    {auto, ucs:from_utf8(Input)};
+    {auto, xmerl_ucs:expand_utf8(Input)};
 autodetect('utf-8',[16#ef,16#bb,16#bf | Input]) ->
-    {external, ucs:from_utf8(Input)};
+    {external, xmerl_ucs:expand_utf8(Input)};
 autodetect('utf-8',[16#ff,16#fe | Input]) ->
-    {external, ucs:from_utf16le(Input)};
+    {external, xmerl_ucs:from_utf16le(Input)};
 autodetect('utf-8',[16#fe,16#ff | Input]) ->
-    {external, ucs:from_utf16be(Input)};
+    {external, xmerl_ucs:from_utf16be(Input)};
 
 %%% --- Without byte-order mark
 autodetect(undefined,[0,0,0,16#3c|Input]) ->
-    {auto, ucs:from_ucs4be([0,0,0,16#3c|Input])};
+    {auto, xmerl_ucs:from_ucs4be([0,0,0,16#3c|Input])};
 autodetect('iso-10646-utf-1',[0,0,0,16#3c|Input]) ->
-    {external, ucs:from_ucs4be([0,0,0,16#3c|Input])};
+    {external, xmerl_ucs:from_ucs4be([0,0,0,16#3c|Input])};
 autodetect(undefined,[16#3c,0,0,0|Input]) ->
-    {auto, ucs:from_ucs4le([16#3c,0,0,0|Input])};
+    {auto, xmerl_ucs:from_ucs4le([16#3c,0,0,0|Input])};
 autodetect('iso-10646-utf-1',[16#3c,0,0,0|Input]) ->
-    {external, ucs:from_ucs4le([16#3c,0,0,0|Input])};
+    {external, xmerl_ucs:from_ucs4le([16#3c,0,0,0|Input])};
 
 autodetect(undefined,[0,16#3c,0,16#3f | Input]) ->
-    {auto, ucs:from_utf16be([0,16#3c,0,16#3f|Input])};
+    {auto, xmerl_ucs:from_utf16be([0,16#3c,0,16#3f|Input])};
 autodetect('utf-16be',[0,16#3c,0,16#3f | Input]) ->
-    {external, ucs:from_utf16be([0,16#3c,0,16#3f|Input])};
+    {external, xmerl_ucs:from_utf16be([0,16#3c,0,16#3f|Input])};
 autodetect(undefined,[16#3c,0,16#3f,0 | Input]) ->
-    {auto, ucs:from_utf16le([16#3c,0,16#3f,0|Input])};
+    {auto, xmerl_ucs:from_utf16le([16#3c,0,16#3f,0|Input])};
 autodetect('utf-16le',[16#3c,0,16#3f,0 | Input]) ->
-    {external, ucs:from_utf16le([16#3c,0,16#3f,0|Input])};
+    {external, xmerl_ucs:from_utf16le([16#3c,0,16#3f,0|Input])};
 
 autodetect(ExtCharset,Content) ->
     {ExtCharset, Content}.
@@ -911,3 +911,12 @@ is_extender(X) when X >= 16#3031, X =< 16#3035 -> true;
 is_extender(X) when X >= 16#309d, X =< 16#309e -> true;
 is_extender(X) when X >= 16#30fc, X =< 16#30fe -> true;
 is_extender(_) -> false.
+
+to_lower(Str) ->
+    to_lower(Str, []).
+to_lower([C|Cs], Acc) when C >= $A, C =< $Z ->
+    to_lower(Cs, [C+($a-$A)| Acc]);
+to_lower([C|Cs], Acc) ->
+    to_lower(Cs, [C| Acc]);
+to_lower([], Acc) ->
+    lists:reverse(Acc).

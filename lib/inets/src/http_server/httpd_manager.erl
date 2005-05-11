@@ -183,7 +183,7 @@ verbosity(ServerRef,auth,Verbosity) ->
 %% new_connection
 
 new_connection(Manager) ->
-    gen_server:call(Manager, {new_connection, self()}).
+    gen_server:call(Manager, {new_connection, self()}, infinity).
 
 %% done
 

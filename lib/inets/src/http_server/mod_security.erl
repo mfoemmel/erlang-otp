@@ -41,9 +41,9 @@ do(Info) ->
     case httpd_util:key1search(Info#mod.data,remote_user,not_defined_user) of
 	not_defined_user ->
 	    %% No user has been authorized.
-	    case httpd_util:key1search(Info#mod.data, status) of
+	    case httpd_util:key1search(Info#mod.data, response) of
 		%% A status code has been generated!
-		{401, _PhraseArgs, _Reason} ->
+		{401, _Response} ->
 		    case httpd_util:key1search(Info#mod.parsed_header,
 					       "authorization") of
 			undefined ->
@@ -113,7 +113,6 @@ secretp(Path, ConfigDB) ->
 				end, SDirs0),
 	    {Directory, lists:flatten(SDir)};
 	no ->
-	    error_report({internal_error_secretp, ?MODULE}),
 	    {[], []}
     end.
 
@@ -290,7 +289,3 @@ list_auth_users(Addr, Port) when integer(Port) ->
 
 list_auth_users(Addr, Port, Dir) ->
     mod_security_server:list_auth_users(Addr, Port, Dir).
-    
-
-error_report(M) ->
-    error_logger:error_report(M).

@@ -24,14 +24,17 @@ At Ericsson we have a "Daily Build and Test" that runs on:
     -----------------------------------------------------------
     Solaris/Sparc           2.8      (1)
     Linux/RedHat x86        9
-    Linux/RedHat x86        7.1
     Linux/Debian x86        2.2
     Linux/Sparc	    	    Kernel 2.4.19, libc 2.1.3
     Linux/Debian PowerPC    2.2      (2)
-    Linux/Suse x86          8.2              
-    FreeBSD x86             4.1.1
-    Mac OS X                10.3.5   (3)
-    Windows 		    2000, 2003, and XP
+    Linux/Suse x86          8.2
+    Linux/Suse x86	    9.2
+    Linux/Suse Amd64	    9.2
+    Linux/Montavista PPC    3.1
+    FreeBSD x86             5.0
+    OpenBSD x86		    3.6
+    Mac OS X                10.3.8   (3)
+    Windows 		    XP
 
 (1) Older versions of Solaris should work as well, but we don't test them 
     any longer.

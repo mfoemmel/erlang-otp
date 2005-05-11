@@ -239,7 +239,7 @@ id(C, [Arg]) ->
 				 end, C#xmlContext{nodeset = NS0}),
 	    ?nodeset(NewNodeSet);
 	_ ->
-	    StrVal = string_value(Arg),
+	    StrVal = string_value(Arg#xmlObj.value),
 	    IdTokens = id_tokens(StrVal),
 	    lists:foldl(
 	      fun(Tok, AccX) ->
@@ -314,8 +314,8 @@ string(C, []) ->
 string(C, [Arg]) ->
     string_value(mk_object(C, Arg)).
 
-ns_string([]) ->
-    ?string([]);
+% ns_string([]) ->
+%     ?string([]);
 ns_string([Obj|_]) ->
     string_value(Obj).
 
@@ -622,7 +622,7 @@ normalize(Str) ->
 
 
 normalize(Str = [H|_], S, Acc) when ?whitespace(H) ->
-    case xmerl_scan:accumulate_whitespace(Str, S, default, Acc) of
+    case xmerl_scan:accumulate_whitespace(Str, S, preserve, Acc) of
 	{" " ++ Acc1, [], _S1} ->
 	    lists:reverse(Acc1);
 	{Acc1, [], _S1} ->

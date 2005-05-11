@@ -306,7 +306,15 @@ ConThreadInit(LPVOID param)
 			       NULL,LoadMenu(beam_module,MAKEINTRESOURCE(1)),
 			       hInstance,NULL);
 
-    if (winPos.left == -1) {
+    /* XXX OTP-5522:
+       The window position is not saved correctly and if the window
+       is closed when minimized, it's not possible to start werl again
+       with the window open. Temporary fix so far is to ignore saved values
+       and always start with initial settings. */
+    /* Original:   if (winPos.left == -1) {  */
+    /* Temporary:  if (1) { */
+    if (1) {
+
 	/* initial window position */
 	x = 0;
 	y = 0;

@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_spillcost.erl,v 1.7 2004/12/09 11:51:11 mikpe Exp $
 
 -module(hipe_spillcost).
 

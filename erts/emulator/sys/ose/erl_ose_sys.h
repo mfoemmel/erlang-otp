@@ -108,14 +108,6 @@ void *memcpy(void *s1, const void *s2, size_t n);
 #   endif
 #endif
 
-/*
- * Make sure that ENOTSUP is defined.
- */
-
-#ifndef ENOTSUP
-#define	ENOTSUP		-1738659
-#endif
-
 /********************* useful definitions ********************/
 #ifndef _OSE_
 #define _OSE_
@@ -158,6 +150,7 @@ void *memcpy(void *s1, const void *s2, size_t n);
 #define ERTS_SAVE_FP_EXCEPTION()
 #define ERTS_RESTORE_FP_EXCEPTION()
 #define ERTS_FP_ERROR(f, Action) if (_isinf(f) || _isnan(f)) { Action; } else {}
+#define ERTS_FP_ERROR_THOROUGH(f, Action) ERTS_FP_ERROR(f, Action)
 
 #define NO_ASINH
 #define NO_ACOSH

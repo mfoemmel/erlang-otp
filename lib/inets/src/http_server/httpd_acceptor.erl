@@ -98,7 +98,7 @@ acceptor(Manager, SocketType, ListenSocket, ConfigDb) ->
 
 
 handle_connection(Manager, ConfigDb, SocketType, Socket) ->
-    {ok, Pid} = httpd_request_handler:start_link(Manager, ConfigDb),
+    {ok, Pid} = httpd_request_handler:start(Manager, ConfigDb),
     http_transport:controlling_process(SocketType, Socket, Pid),
     httpd_request_handler:synchronize(Pid, SocketType, Socket).
 
@@ -118,9 +118,14 @@ handle_error(emfile, _, _) ->
 
 handle_error(closed, _, _) ->
     ?vlog("Accept error: closed",[]),
-    %% This propably only means that the application is stopping, 
-    %% but just in case
-    exit(closed);
+    error_logger:info_report("The httpd accept socket was closed by" 
+			     "a third party. "
+			     "This will not have an impact on inets "
+			     "that will open a new accept socket and " 
+			     "go on as nothing happened. It does however "
+			     "indicate that some other software is behaving "
+			     "badly."),
+    exit(normal);
 
 handle_error(econnaborted, _, _) ->
     ?vlog("Accept aborted",[]),

@@ -7,150 +7,159 @@
 %%%-------------------------------------------------------------------
 -module(hipe_digraph).
 
--export([add_node/2, from_list/1, reverse_preorder_sccs/1]).
+-export([new/0, add_edge/3, add_node/2, from_list/1, to_list/1]).
 
--define(NO_UNUSED, true).
+-export([take_indep_scc/1, reverse_preorder_sccs/1]).
 
--ifndef(NO_UNUSED).
--export([new/0, add_edge/3, delete_edge/3, sccs/1]).
--endif.
+-record(digraph, {edges, rev_edges, leaves, nodes}).
 
--record(digraph, {edges, nodes}).
+new() ->
+  #digraph{edges=dict:new(), rev_edges=dict:new(), 
+	   leaves=[], nodes=sets:new()}.
 
 from_list(List) ->
-  Edges = ordsets:from_list(List),
-  Nodes = lists:foldl(fun({X, Y}, Acc) -> 
-			  ordsets:add_element(X, ordsets:add_element(Y, Acc))
-		      end, [], Edges),  
-  #digraph{edges=Edges, nodes=Nodes}.
+  Edges = lists:foldl(fun({From, To}, Dict) -> 
+			  Fun = fun(Set) -> ordsets:add_element(To, Set) end,
+			  dict:update(From, Fun, [To], Dict)
+		      end,
+		      dict:new(), List),
+  
+  RevEdges = lists:foldl(fun({From, To}, Dict) -> 
+			     Fun = fun(Set) -> 
+				       ordsets:add_element(From, Set) 
+				   end,
+			     dict:update(To, Fun, [From], Dict)
+			 end,
+			 dict:new(), List),
+  Keys1 = sets:from_list(dict:fetch_keys(Edges)),
+  Keys2 = sets:from_list(dict:fetch_keys(RevEdges)),
+  Nodes = sets:union(Keys1, Keys2),
+  #digraph{edges=Edges, leaves=[], rev_edges=RevEdges, nodes=Nodes}.
+
+to_list(#digraph{edges=Edges}) ->
+  List1 = dict:to_list(Edges),
+  List2 = lists:foldl(fun({From, ToList}, Acc) ->
+			  [[{From, To} || To <- ToList]|Acc]
+		      end, [], List1),
+  lists:flatten(List2).
 
 add_node(NewNode, DG) ->
   add_edge(NewNode, NewNode, DG).
 
-add_edge(From, To, DG = #digraph{edges=Edges, nodes=Nodes}) ->
-  DG#digraph{edges=ordsets:add_element({From, To}, Edges),
-	     nodes=ordsets:add_element(From, ordsets:add_element(To, Nodes))}.
+add_edge(From, To, #digraph{edges=Edges, rev_edges=RevEdges, 
+			    leaves=Leaves, nodes=Nodes}) ->
+  Fun1 = fun(Set) -> ordsets:add_element(To, Set) end,
+  NewEdges = dict:update(From, Fun1, [To], Edges),
+  Fun2 = fun(Set) -> ordsets:add_element(From, Set) end,
+  NewRevEdges = dict:update(To, Fun2, [From], RevEdges),
+  NewLeaves = ordsets:del_element(From, Leaves),
+  #digraph{edges=NewEdges,
+	   rev_edges=NewRevEdges,
+	   leaves=NewLeaves,
+	   nodes=sets:add_element(From, sets:add_element(To, Nodes))}.
 
--ifndef(NO_UNUSED).
-delete_edge(From, To, DG = #digraph{edges=Edges}) ->
-  NewEdges = ordsets:del_element({From, To}, Edges),
-  Nodes = lists:foldl(fun({X, Y}, Acc) -> 
-			  ordsets:add_element(X, ordsets:add_element(Y, Acc))
-		      end, NewEdges),  
-  DG#digraph{edges=NewEdges, nodes=Nodes}.
--endif.
+take_indep_scc(DG = #digraph{edges=Edges, rev_edges=RevEdges, 
+			     leaves=Leaves, nodes=Nodes}) ->
+  case sets:size(Nodes) =:= 0 of
+    true -> none;
+    false ->
+      {SCC, NewLeaves} =
+	case Leaves of
+	  [H|T] -> 
+	    {[H], T};
+	  [] ->
+	    case find_all_leaves(Edges) of
+	      [] ->
+		{[Node|_], _} = dfs(Nodes, RevEdges),
+		{SCC1, _} = dfs(Node, Edges),
+		{SCC1, []};
+	      [H|T] ->
+		{[H], T}
+	    end
+	end,
+      NewEdges = remove_edges(SCC, Edges, RevEdges),
+      NewRevEdges = remove_edges(SCC, RevEdges, Edges),
+      NewNodes = sets:subtract(Nodes, sets:from_list(SCC)),
+      {ok, reverse_preorder(SCC, Edges), 
+       DG#digraph{edges=NewEdges, rev_edges=NewRevEdges, 
+		  leaves=NewLeaves, nodes=NewNodes}}
+  end.
 
-%%---------------------------------------------------------------------
-%% Find the strongly connected components.
+find_all_leaves(Edges) ->
+  List = dict:fold(fun(Key, [Key], Acc) -> [Key|Acc];
+		      (_, _, Acc) -> Acc
+		   end, [], Edges),
+  ordsets:from_list(List).
 
--ifndef(NO_UNUSED).
-sccs(#digraph{edges=Edges, nodes=Nodes}) ->
-  sccs(Nodes, Edges).
--endif.
+remove_edges(Nodes0, Edges, RevEdges) ->
+  Nodes = ordsets:from_list(Nodes0),
+  Fun = fun(N, Dict) -> dict:erase(N, Dict)end,
+  Edges1 = lists:foldl(Fun, Edges, Nodes),
+  remove_edges_in(Nodes, Edges1, RevEdges).
 
-sccs(Nodes, Edges) ->
-  sccs(Nodes, Edges, []).
+remove_edges_in([Node|Left], Edges, RevEdges) ->
+  case dict:find(Node, RevEdges) of
+    error -> 
+      remove_edges_in(Left, Edges, RevEdges);
+    {ok, Set} ->
+      Fun = fun(Key, Dict) ->
+		case dict:find(Key, Dict) of
+		  error -> 
+		    Dict;
+		  {ok, OldTo} ->
+		    case ordsets:del_element(Node, OldTo) of
+		      [] -> dict:store(Key, [Key], Dict);
+		      NewSet -> dict:store(Key, NewSet, Dict)
+		    end
+		end
+	    end,
+      NewEdges = lists:foldl(Fun, Edges, Set),
+      remove_edges_in(Left, NewEdges, RevEdges)
+  end;
+remove_edges_in([], Edges, _RevEdges) ->
+  Edges.
 
-sccs([Node|Left], Edges, Acc) ->
-  {_PreOrder, VisitedDFS} = dfs(Node, Edges),
-  {_RDFS, VisitedRDFS} = rdfs(Node, Edges),
-  SCC = ordsets:intersection(VisitedDFS, VisitedRDFS),
-  sccs(ordsets:subtract(Left, SCC), Edges, [SCC|Acc]);
-sccs([], _Edges, Acc) ->
-  Acc.
+reverse_preorder([Node], _Edges) ->
+  [Node];
+reverse_preorder(Nodes0 = [H|_], Edges) ->
+  Nodes = sets:from_list(Nodes0),
+  {PreOrder, _} = dfs(H, Edges),
+  DFS = lists:filter(fun(X) -> sets:is_element(X, Nodes)end, PreOrder),
+  lists:reverse(DFS).
 
-get_scc_edges(Nodes, Edges) ->
-  Sccs = sccs(Nodes, Edges),
-  {_, OrderedSccs} = lists:foldl(fun(Scc, {Id, Acc})->
-				     {Id+1, [{Id, Scc}|Acc]}
-				 end, {0, []}, Sccs),
-  NodeToSccMap = lists:foldl(fun({Id, Ns}, Map)->
-				 lists:foldl(fun(N, M)->
-						 gb_trees:insert(N, Id, M)
-					     end, Map, Ns)
-			     end, gb_trees:empty(), OrderedSccs),
-  {get_scc_edges(Nodes, NodeToSccMap, Edges, []), lists:reverse(OrderedSccs)}.
+reverse_preorder_sccs(DG) ->
+  reverse_preorder_sccs(DG, []).
 
-get_scc_edges([Node|Left], NodeToSccMap, NodeEdges, Acc) ->
-  SccId = gb_trees:get(Node, NodeToSccMap),
-  EdgesOutNode = [Y|| {X, Y} <- NodeEdges, Node =:= X],
-  NewSccEdges = [{SccId, gb_trees:get(X, NodeToSccMap)} || X <- EdgesOutNode],
-  NewSccEdgeSet = ordsets:from_list(NewSccEdges),
-  NewSccEdgeSet1 = ordsets:del_element({SccId, SccId}, NewSccEdgeSet),
-  get_scc_edges(Left, NodeToSccMap, NodeEdges, 
-		ordsets:union(Acc, NewSccEdgeSet1));
-get_scc_edges([], _NodeToSccMap, _NodeEdges, Acc) ->
-  Acc.
-
-reverse_preorder_sccs(#digraph{edges=Edges, nodes=Nodes}) ->
-  {SccEdges, SccToNodesMap} = get_scc_edges(Nodes, Edges),
-  Order = reverse_preorder([X || {X, _} <- SccToNodesMap], SccEdges),
-  [reverse_preorder_scc(orddict:fetch(X, SccToNodesMap), Edges) || X <- Order].
-
-reverse_preorder(Nodes, Edges) ->
-  lists:flatten(reverse_preorder_1(Nodes, Edges, [])).
-
-reverse_preorder_1([Node|Left], Edges, Visited) ->
-  {PreOrder, DFSVisited} = dfs([Node], Edges, Visited, []),
-  NewLeft = ordsets:subtract(Left, Visited),
-  NewVisited = ordsets:union(DFSVisited, Visited),
-  [lists:reverse(PreOrder) | 
-   reverse_preorder_1(NewLeft, Edges, NewVisited)];
-reverse_preorder_1([], _Edges, _Visited) ->
-  [].
-
-reverse_preorder_scc([N], _AllEdges) ->
-  [N];
-reverse_preorder_scc([N1, N2], _AllEdges) ->
-  [N1, N2];
-reverse_preorder_scc(Nodes, AllEdges) ->
-  Set = ordsets:from_list(Nodes),
-  LocalEdges = lists:filter(fun({X, Y})->
-				ordsets:is_element(X, Set) andalso
-				  ordsets:is_element(Y, Set)
-			    end, AllEdges),
-  {Order, _} = dfs(hd(Nodes), LocalEdges),
-  lists:reverse(Order).
-				
+reverse_preorder_sccs(DG, Acc) ->
+  case take_indep_scc(DG) of
+    none -> lists:reverse(Acc);
+    {ok, SCC, DG1} -> reverse_preorder_sccs(DG1, [SCC|Acc])
+  end.
 
 %%---------------------------------------------------------------------
 %% dfs/2 returns a preordered depth first search and the nodes visited.
 
 dfs(Node, Edges) ->
-  dfs([Node], Edges, [], []).
+  case sets:is_set(Node) of
+    true ->
+      dfs(sets:to_list(Node), Edges, sets:new(), []);
+    false ->
+      dfs([Node], Edges, sets:new(), [])
+  end.
 
 dfs([Node|Left], Edges, Visited, Order)->
-  case ordsets:is_element(Node, Visited) of
+  case sets:is_element(Node, Visited) of
     true ->
       dfs(Left, Edges, Visited, Order);
     false ->
-      Filter = fun({F, _T}) -> Node =:= F end,
-      Succ = [X || {_, X} <- ordsets:filter(Filter, Edges)],
-      {NewOrder, NewVisited} = dfs(Succ, Edges, 
-				   ordsets:add_element(Node, Visited), Order),
-      dfs(Left, Edges, NewVisited, [Node|NewOrder])
+      NewVisited = sets:add_element(Node, Visited),
+      case dict:find(Node, Edges) of
+	error ->
+	  dfs(Left, Edges, NewVisited, [Node|Order]);
+	{ok, Succ} ->
+	  {NewOrder, NewVisited1} = dfs(Succ, Edges, NewVisited, Order),
+	  dfs(Left, Edges, NewVisited1, [Node|NewOrder])
+      end
   end;
 dfs([], _Edges, Visited, Order) ->
-  {Order, Visited}.
-
-
-%%---------------------------------------------------------------------
-%% rdfs/2 returns a preordered depth first search of the inverted graph,
-%% and the nodes visited.
-
-rdfs(Node, Edges) ->
-  rdfs([Node], Edges, [], []).
-
-rdfs([Node|Left], Edges, Visited, Order)->
-  case ordsets:is_element(Node, Visited) of
-    true ->
-      rdfs(Left, Edges, Visited, Order);
-    false ->
-      Filter = fun({_F, T}) -> Node =:= T end,
-      Succ = [X || {X, _} <- ordsets:filter(Filter, Edges)],
-      {NewOrder, NewVisited} = rdfs(Succ, Edges, 
-				    ordsets:add_element(Node, Visited), Order),
-      rdfs(Left, Edges, NewVisited, [Node|NewOrder])
-  end;
-rdfs([], _Edges, Visited, Order) ->
   {Order, Visited}.

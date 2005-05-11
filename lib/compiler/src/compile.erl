@@ -93,7 +93,15 @@ output_generated(Opts) ->
 	    (_Other) -> false
 	end, passes(file, expand_opts(Opts))).
 
-expand_opts(Opts) ->
+expand_opts(Opts0) ->
+    %% {debug_info_key,Key} implies debug_info.
+    Opts = case {proplists:get_value(debug_info_key, Opts0),
+		 proplists:get_value(encrypt_debug_info, Opts0),
+		 proplists:get_bool(debug_info, Opts0)} of
+	       {undefined,undefined,_} -> Opts0;
+	       {_,_,false} -> [debug_info|Opts0];
+	       {_,_,_} -> Opts0
+	   end,
     foldr(fun expand_opt/2, [], Opts).
 
 expand_opt(basic_validation, Os) ->
@@ -106,6 +114,8 @@ expand_opt(return, Os) ->
     [return_errors,return_warnings|Os];
 expand_opt(r7, Os) ->
     [no_float_opt,no_new_funs,no_new_binaries,no_new_apply|Os];
+expand_opt({debug_info_key,_}=O, Os) ->
+    [encrypt_debug_info,O|Os];
 expand_opt(O, Os) -> [O|Os].
 
 filter_opts(Opts0) ->
@@ -119,6 +129,12 @@ filter_opts(Opts0) ->
 
 format_error(no_native_support) ->
     "this system is not configured for native-code compilation.";
+format_error(no_crypto) ->
+    "this system is not configured with crypto support.";
+format_error(bad_crypto_key) ->
+    "invalid crypto key.";
+format_error(no_crypto_key) ->
+    "no crypto key supplied.";
 format_error({native, E}) ->
     io_lib:fwrite("native-code compilation failed with reason: ~P.",
 		  [E, 25]);
@@ -763,15 +779,80 @@ kernel_module(#compile{code=Code0,options=Opts,ifile=File}=St) ->
     {ok,Code,Ws} = v3_kernel:module(Code0, Opts),
     {ok,St#compile{code=Code,warnings=St#compile.warnings ++ [{File,Ws}]}}.
 
-save_abstract_code(St) ->
-    {ok,St#compile{abstract_code=abstract_code(St)}}.
-
-abstract_code(#compile{code=Code}) ->
-    Abstr = {raw_abstract_v1,Code},
-    case catch erlang:term_to_binary(Abstr, [compressed]) of
-	{'EXIT',_} -> term_to_binary(Abstr);
-	Other -> Other
+save_abstract_code(#compile{ifile=File}=St) ->
+    case abstract_code(St) of
+	{ok,Code} ->
+	    {ok,St#compile{abstract_code=Code}};
+	{error,Es} ->
+	    {error,St#compile{errors=St#compile.errors ++ [{File,Es}]}}
     end.
+
+abstract_code(#compile{code=Code,options=Opts,ofile=OFile}) ->
+    Abstr = erlang:term_to_binary({raw_abstract_v1,Code}, [compressed]),
+    case member(encrypt_debug_info, Opts) of
+	true ->
+	    case keysearch(debug_info_key, 1, Opts) of
+		{value,{_,Key}} ->
+		    encrypt_abs_code(Abstr, Key);
+		false ->
+		    %% Note: #compile.module have not been set yet.
+		    %% Here is an approximation that should work for
+		    %% all valid cases.
+		    Module = list_to_atom(filename:rootname(filename:basename(OFile))),
+		    Mode = proplists:get_value(crypto_mode, Opts, des3_cbc),
+		    case beam_lib:get_crypto_key({debug_info, Mode, Module, OFile}) of
+			error ->
+			    {error, [{none,?MODULE,no_crypto_key}]};
+			Key ->
+			    encrypt_abs_code(Abstr, {Mode, Key})
+		    end
+	    end;
+	false ->
+	    {ok, Abstr}
+    end.
+
+encrypt_abs_code(Abstr, Key0) ->
+    try
+	{Mode,RealKey} = generate_key(Key0),
+	case start_crypto() of
+	    ok -> {ok,encrypt(Mode, RealKey, Abstr)};
+	    {error,_}=E -> E
+	end
+    catch
+	error:_ ->
+	    {error,[{none,?MODULE,bad_crypto_key}]}
+    end.
+
+start_crypto() ->
+    try crypto:start() of
+	{error,{already_started,crypto}} -> ok;
+	ok -> ok
+    catch
+	error:_ ->
+	    {error,[{none,?MODULE,no_crypto}]}
+    end.
+
+generate_key({Mode,String}) when is_atom(Mode), is_list(String) ->
+    {Mode,beam_lib:make_crypto_key(Mode, String)};
+generate_key(String) when is_list(String) ->
+    generate_key({des3_cbc,String}).
+
+encrypt(des3_cbc=Mode, {K1,K2,K3, IVec}, Bin0) ->
+    Bin1 = case size(Bin0) rem 8 of
+	       0 -> Bin0;
+	       N -> list_to_binary([Bin0,random_bytes(8-N)])
+	   end,
+    Bin = crypto:des3_cbc_encrypt(K1, K2, K3, IVec, Bin1),
+    ModeString = atom_to_list(Mode),
+    list_to_binary([0,length(ModeString),ModeString,Bin]).
+
+random_bytes(N) ->
+    {A,B,C} = now(),
+    random:seed(A, B, C),
+    random_bytes_1(N, []).
+
+random_bytes_1(0, Acc) -> Acc;
+random_bytes_1(N, Acc) -> random_bytes_1(N-1, [random:uniform(255)|Acc]).
 
 save_core_code(St) ->
     {ok,St#compile{core_code=cerl:from_records(St#compile.code)}}.
@@ -782,8 +863,11 @@ beam_unused_labels(#compile{code=Code0}=St) ->
 
 beam_asm(#compile{ifile=File,code=Code0,abstract_code=Abst,options=Opts0}=St) ->
     Source = filename:absname(File),
-    Opts = filter(fun is_informative_option/1, Opts0),
-    case beam_asm:module(Code0, Abst, Source, Opts) of
+    Opts1 = lists:map(fun({debug_info_key,_}) -> {debug_info_key,'********'};
+			 (Other) -> Other
+		      end, Opts0),
+    Opts2 = filter(fun is_informative_option/1, Opts1),
+    case beam_asm:module(Code0, Abst, Source, Opts2) of
 	{ok,Code} -> {ok,St#compile{code=Code,abstract_code=[]}};
 	{error,Es} -> {error,St#compile{errors=St#compile.errors ++ Es}}
     end.

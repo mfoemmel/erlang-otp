@@ -8,9 +8,13 @@ changecom(`/*', `*/')dnl
 /*
  * Tunables.
  */
+define(LEAF_WORDS,24)dnl number of stack words for leaf functions
 define(NR_ARG_REGS,3)dnl admissible values are 0 to 5, inclusive
 define(HP_IN_ESI,1)dnl change to 0 to not reserve a global register for HP
 define(SIMULATE_NSP,0)dnl change to 1 to simulate call/ret insns
+
+`#define X86_LEAF_WORDS	'LEAF_WORDS
+`#define LEAF_WORDS	'LEAF_WORDS
 
 /*
  * Reserved registers.

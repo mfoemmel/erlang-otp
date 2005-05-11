@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_ppc_ra_naive.erl,v 1.1 2005/01/19 10:26:15 kostis Exp $
 
 -module(hipe_ppc_ra_naive).
 -export([ra/3]).

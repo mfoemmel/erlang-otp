@@ -16,7 +16,7 @@
 
 -export([file/1]). %% the main function and some utilities below
 -export([dfs/1, df/1, files/1, file/2, pp/1, pp/2, format_error/1]).
--export([function__code/1]).
+-export([function__arity/1, function__code/1, function__name/1]).
 
 -author("Kostis Sagonas").
 
@@ -36,8 +36,8 @@
 
 -record(function, {name, arity, entry, code}).
 
-%% function__name(#function{name=N}) -> N.
-%% function__arity(#function{arity=A}) -> A.
+function__name(#function{name=N}) -> N.
+function__arity(#function{arity=A}) -> A.
 %% function__entry(#function{entry=E}) -> E.
 function__code(#function{code=Code}) -> Code.
 %% function__code_update(Function, NewCode) ->

@@ -234,18 +234,22 @@ cond_false_label(B) ->
       b -> hipe_sparc:b_false_label(B)
    end.
 
-%% init_gensym(CFG)->
+%% init_gensym(CFG) ->
 %%   HighestVar = find_highest_var(CFG),
 %%   HighestLabel = find_highest_label(CFG),
 %%   hipe_gensym:init(),
 %%   hipe_gensym:set_var(sparc, HighestVar),
 %%   hipe_gensym:set_label(sparc, HighestLabel).
 %% 
-%% highest_var(Code)->
+%% highest_var(Code) ->
 %%   hipe_sparc:highest_reg(Code).
 
-is_phi(_I)->
-  false. %% We have no phi-nodes on this level.
 
-phi_remove_pred(I, _Pred)->
-  I. %% We have no phi-nodes on this level.
+-ifdef(CFG_CAN_HAVE_PHI_NODES).
+%% put appropriate code for these functions here...
+%% is_phi(_I) ->
+%%   ...
+%%
+%% phi_remove_pred(I, _Pred) ->
+%%   ...
+-endif.

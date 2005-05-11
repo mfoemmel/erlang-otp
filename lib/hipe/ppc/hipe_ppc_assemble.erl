@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_ppc_assemble.erl,v 1.20 2004/12/06 03:09:39 mikpe Exp $
 
 -module(hipe_ppc_assemble).
 -export([assemble/4]).

@@ -94,15 +94,12 @@ noopsysCFLAGS=
 OPSYSCFLAGS=$($(OPSYS)CFLAGS)
 ARCH=@ARCH@
 ultrasparcCFLAGS=-Wa,-xarch=v8plusa
-x86CFLAGS=
-amd64CFLAGS=
-ppcCFLAGS=
-noarchCFLAGS=
 ARCHCFLAGS=$($(ARCH)CFLAGS)
 
 ifdef HIPE_ENABLED
 ifeq ($(OPSYS),linux)
 ppcBEAMLDFLAGS=-Wl,-m,elf32ppc
+ppc64BEAMLDFLAGS=-Wl,-m,elf64ppc,-T,hipe/elf64ppc.x
 endif
 HIPEBEAMLDFLAGS=$($(ARCH)BEAMLDFLAGS)
 endif
@@ -324,6 +321,7 @@ HIPE_ultrasparc_TAB=hipe/hipe_sparc.tab
 HIPE_x86_TAB=hipe/hipe_x86.tab
 HIPE_amd64_TAB=hipe/hipe_amd64.tab
 HIPE_ppc_TAB=hipe/hipe_ppc.tab
+HIPE_ppc64_TAB=hipe/hipe_ppc64.tab
 HIPE_ARCH_TAB=$(HIPE_$(ARCH)_TAB)
 BIFS += hipe/hipe_bif0.tab hipe/hipe_bif1.tab hipe/hipe_bif2.tab $(HIPE_ARCH_TAB)
 ifdef USE_PERFCTR
@@ -615,6 +613,7 @@ HIPE_ultrasparc_OBJS=$(OBJDIR)/hipe_sparc.o $(OBJDIR)/hipe_sparc_glue.o $(OBJDIR
 HIPE_x86_OBJS=$(OBJDIR)/hipe_x86.o $(OBJDIR)/hipe_x86_glue.o $(OBJDIR)/hipe_x86_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o
 HIPE_amd64_OBJS=$(OBJDIR)/hipe_amd64.o $(OBJDIR)/hipe_amd64_glue.o $(OBJDIR)/hipe_amd64_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o
 HIPE_ppc_OBJS=$(OBJDIR)/hipe_ppc.o $(OBJDIR)/hipe_ppc_glue.o $(OBJDIR)/hipe_ppc_bifs.o $(OBJDIR)/hipe_ppc_stack.o
+HIPE_ppc64_OBJS=$(HIPE_ppc_OBJS)
 HIPE_noarch_OBJS=
 HIPE_ARCH_OBJS=$(HIPE_$(ARCH)_OBJS)
 
@@ -653,10 +652,10 @@ OBJS_ELIB = 	$(patsubst %.o,%.elib.o,$(MOD_OBJS_ELIB)) \
 # HiPE section
 
 $(TARGET)/%.S: hipe/%.m4
-	m4 -DTARGET=$(TARGET) -DOPSYS=$(OPSYS) $< > $@
+	m4 -DTARGET=$(TARGET) -DOPSYS=$(OPSYS) -DARCH=$(ARCH) $< > $@
 
 $(TARGET)/%.h: hipe/%.m4
-	m4 -DTARGET=$(TARGET) -DOPSYS=$(OPSYS) $< > $@
+	m4 -DTARGET=$(TARGET) -DOPSYS=$(OPSYS) -DARCH=$(ARCH) $< > $@
 
 $(OBJDIR)/%.o: $(TARGET)/%.S
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@

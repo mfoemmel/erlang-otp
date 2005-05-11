@@ -63,8 +63,8 @@ load_mod1(Mod, File, Binary, Db) ->
 %%====================================================================
 
 store_module(Mod, File, Binary, Db) ->
-    {interpreter_module, Exp, Abst, Src, MD5} = binary_to_term(Binary),
-    Forms = case abstr(Abst) of
+    {interpreter_module,Exp,Abst,Src,MD5} = binary_to_term(Binary),
+    Forms = case Abst of
 		{abstract_v1,Forms0} -> Forms0;
 		{abstract_v2,Forms0} -> Forms0;
 		{raw_abstract_v1,Code} ->
@@ -82,7 +82,6 @@ store_module(Mod, File, Binary, Db) ->
     Attr = store_forms(Forms, Mod, Db, Exp, []),
     erase(mod_md5),
     erase(current_function),
-%    store_funs(Db, Mod),
     erase(vcount),
     erase(funs),
     erase(fun_count),
@@ -91,18 +90,6 @@ store_module(Mod, File, Binary, Db) ->
     NewBinary = store_mod_line_no(Mod, Db, binary_to_list(Src)),
     dbg_idb:insert(Db, mod_bin, NewBinary),
     dbg_idb:insert(Db, module, Mod).
-
-abstr(Bin) when binary(Bin) -> binary_to_term(Bin);
-abstr(Term) -> Term.
-
-% store_funs(Db, Mod) ->
-%     store_funs_1(get(funs), Db, Mod).
-
-% store_funs_1([{Name,Index,Uniq,_,_,Arity,Cs}|Fs], Db, Mod) ->
-%     dbg_idb:insert(Db, {Mod,Name,Arity,false}, Cs),
-%     dbg_idb:insert(Db, {'fun',Mod,Index,Uniq}, {Name,Arity,Cs}),
-%     store_funs_1(Fs, Db, Mod);
-% store_funs_1([], _, _) -> ok.
 
 store_forms([{function,_,module_info,0,_}|Fs], Mod, Db, Exp, Attr) ->
     Cs = [{clause,0,[],[], [{module_info_0,0,Mod}]}],

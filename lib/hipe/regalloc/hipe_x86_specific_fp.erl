@@ -1,8 +1,5 @@
-%% $Id$
-%%
-%% File   : hipe_x86_specific_fp.erl
-%% Purpose: This module defines interface to the x86 backend
-%%
+%%% -*- erlang-indent-level: 2 -*-
+%%% $Id: hipe_x86_specific_fp.erl,v 1.8 2005/04/01 13:56:18 mikpe Exp $
 
 -module(hipe_x86_specific_fp).
 -export([allocatable/0,
@@ -74,13 +71,10 @@ liveout(BB_in_out_liveness,Label) ->
 %% Registers stuff
 
 allocatable() ->
-    [0,1,2,3,4,5,6].
+  hipe_x86_registers:allocatable_x87().
 
-all_precoloured() ->
-     allocatable().
-
-is_precoloured(X) ->
-    lists:member(X,all_precoloured()).
+is_precoloured(Reg) ->
+  hipe_x86_registers:is_precoloured_x87(Reg).
 
 physical_name(Reg) ->
   Reg.

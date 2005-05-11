@@ -32,8 +32,6 @@
 -define(debug(Term), ok).
 -endif.
 
--define(ENABLE_PENDING_NODEDOWN_BUG, true).
-
 %-define(mn_debug,1).
 %-define(mn_hard_debug,1).
 
@@ -854,7 +852,7 @@ nodedown(Conn, Owner, Node, Reason, Type, OldState) ->
     State = OldState#state{conn_owners = Owners},
     case Conn#connection.state of
 	pending when Conn#connection.owner == Owner ->
-	    pending_nodedown(Conn, Node, Reason, Type, State);
+	    pending_nodedown(Conn, Node, Type, State);
 	up when Conn#connection.owner == Owner ->
 	    up_nodedown(Conn, Node, Reason, Type, State);
 	up_pending when Conn#connection.owner == Owner ->
@@ -863,23 +861,14 @@ nodedown(Conn, Owner, Node, Reason, Type, OldState) ->
 	    OldState
     end.
 
-pending_nodedown(Conn, Node, Reason, Type, State) ->
+pending_nodedown(Conn, Node, Type, State) ->
     mark_sys_dist_nodedown(Node),
     reply_waiting(Conn#connection.waiting, false),
     case Type of
 	normal ->
 	    ?nodedown(Node, State);
-	    %% Tony says: 
-	    %% Do not send any nodedown to monitors in this case !
-	    %% But that affected application_SUITE:start_phases 
-	    %% and others, so I reinserted the send below.
-	    %% (uabrani)
 	_ ->
 	    ok
-    end,
-    case ?ENABLE_PENDING_NODEDOWN_BUG of
-	true -> ?send_nodedown(State#state.monitor, Node, Type, Reason);
-	false -> ok
     end,
     State.
 

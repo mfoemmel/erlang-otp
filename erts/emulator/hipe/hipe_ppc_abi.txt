@@ -3,7 +3,7 @@ $Id$
 HiPE PowerPC ABI
 ================
 This document describes aspects of HiPE's runtime system
-that are specific for the PowerPC architecture.
+that are specific for the 32 and 64-bit PowerPC architectures.
 
 Register Usage
 --------------
@@ -46,8 +46,8 @@ Stack Descriptors
 -----------------
 sdesc_fsize() is the frame size excluding the return address word.
 
-Standard Linux PowerPC Calling Conventions
-==========================================
+Standard Linux PowerPC Calling Conventions (32-bit)
+===================================================
 
 Reg		Status		Role
 ---		------		----
@@ -80,3 +80,44 @@ CR2/3/4		calleE-save	condition codes
 LR		calleR-save	return address
 CTR		calleR-save	counter, indirect jump address
 XER		calleR-save	fixed-point exception register
+
+Standard PPC64 ELF ABI Calling Conventions
+==========================================
+
+Reg		Status		Role
+---		------		----
+r0		calleR-save	volatile
+				may be modified during function linkage
+				r0 cannot be base reg in load/store insns
+r1		calleE-save	stack pointer, 16-byte aligned, must point
+				to valid frame with link to previous frame
+r2		reserved	TOC pointer
+r3		calleR-save	volatile, parameters, return values
+r4-r10		calleR-save	volatile, parameters
+r11		calleR-save	volatile,
+				may be modified during function linkage
+				(calls by pointer & environment pointer)
+r12		calleR-save	volatile,
+				may be modified during function linkage
+				(exception handling and glink code)
+r13		reserved	system thread ID
+r14-r31		calleE-save	local variables
+
+f0		calleR-save	volatile
+f1-f4		calleR-save	volatile, parameters, return values
+f5-f13		calleR-save	volatile, parameters
+f14-f31		calleE-save	local variables
+
+CR0/1/5/6/7	calleR-save	volatile condition codes
+CR2/3/4		calleE-save	non-volatile condition codes
+
+LR		calleR-save	return address, volatile
+CTR		calleR-save	counter, indirect jump address (volatile)
+XER		calleR-save	fixed-point exception register (volatile)
+FPSCR		calleR-save	floating-point status and control (volatile)
+
+v0-v1		calleR-save	volatile, scratch
+v2-v13		calleR-save	volatile, parameters
+v14-v19		calleR-save	volatile, scratch
+v20-v31		calleE-save	non-volatile local variables
+vrsave		calleE-save	non-volatile

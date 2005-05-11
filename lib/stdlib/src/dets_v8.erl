@@ -1073,6 +1073,8 @@ wl([], _Type, Del, Lookup, I, Objs) ->
 %% -> {NewHead, ok} | {NewHead, Error}
 may_grow(Head, _N, _How) when Head#head.fixed =/= false ->
     {Head, ok};
+may_grow(#head{access = read}=Head, _N, _How) ->
+    {Head, ok};
 may_grow(Head, _N, _How) when Head#head.next >= ?MAXOBJS ->
     {Head, ok};
 may_grow(Head, N, How) ->

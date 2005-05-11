@@ -66,7 +66,7 @@
 -define(match_oid_tid_locks(Tid),   {Tid, '_', '_'}).
 %% mnesia_sticky_locks: contain     {Oid, Node} entries and {Tab, Node} entries (set)
 -define(match_oid_sticky_locks(Oid),{Oid, '_'}).
-%% mnesia_lock_queue: contain       {queue, Oid, Tid, Op, ReplyTo, WaitForTid} entries (ordered_set)
+%% mnesia_lock_queue: contain       {queue, Oid, Tid, Op, ReplyTo, WaitForTid} entries (bag)
 -define(match_oid_lock_queue(Oid),  #queue{oid=Oid, tid='_', op = '_', pid = '_', lucky = '_'}). 
 %% mnesia_lock_counter:             {{write, Tab}, Number} &&
 %%                                  {{read, Tab}, Number} entries  (set)
@@ -369,14 +369,17 @@ check_lock(Tid, Oid, [], [], X, AlreadyQ, Type) ->
 	true ->
 	    %% If there is a queue on that object, read_lock shouldn't be granted
 	    ObjLocks = ets:lookup(mnesia_lock_queue, Oid),
-	    Greatest = max(ObjLocks),
-	    case Greatest of
+	    case max(ObjLocks) of
 		empty -> 
 		    check_queue(Tid, Tab, X, AlreadyQ);
-		ObjL when Tid > ObjL -> 
-		    {no, ObjL}; %% Starvation Preemption (write waits for read)
 		ObjL ->
-		    check_queue(Tid, Tab, {queue, ObjL}, AlreadyQ)
+		    case allowed_to_be_queued(ObjL,Tid) of
+			false ->
+			    %% Starvation Preemption (write waits for read)
+			    {no, ObjL};
+			true ->
+			    check_queue(Tid, Tab, {queue, ObjL}, AlreadyQ)
+		    end
 	    end
     end;
 
@@ -416,17 +419,25 @@ check_queue(Tid, Tab, X, AlreadyQ) ->
 	    end
     end.
 
+sort_queue(QL) ->
+    case get(pid_sort_order) of
+	r9b_plain -> 
+	    lists:sort(fun(#queue{tid=X},#queue{tid=Y}) -> 
+			       cmp_tid(true, X, Y) == 1
+		       end, QL);
+	standard  -> 
+	    lists:sort(fun(#queue{tid=X},#queue{tid=Y}) ->
+			       cmp_tid(false, X, Y) == 1
+		       end, QL);
+	_ -> 
+	    lists:reverse(lists:keysort(#queue.tid, QL))
+    end.
+
 max([]) ->
     empty;
-max([H|R]) ->
-    max(R, H#queue.tid).
-
-max([H|R], Tid) when H#queue.tid > Tid ->
-    max(R, H#queue.tid);
-max([_|R], Tid) ->
-    max(R, Tid);
-max([], Tid) ->
-    Tid.
+max(L) ->
+    [#queue{tid=Max}|_] = sort_queue(L),
+    Max.
 
 %% We can't queue the ixlock requests since it
 %% becomes to complivated for little me :-)
@@ -524,13 +535,13 @@ rearrange_queue([{_Tid, {Tab, Key}, _} | Locks]) ->
 		[] -> 
 		    ok;
 		_ ->
-		    Sorted = lists:reverse(lists:keysort(#queue.tid, Queue)),
+		    Sorted = sort_queue(Queue),
 		    try_waiters_obj(Sorted)
 	    end;	
 	true -> 
 	    Pat = ?match_oid_lock_queue({Tab, '_'}),
 	    Queue = ?ets_match_object(mnesia_lock_queue, Pat),	    
-	    Sorted = lists:reverse(lists:keysort(#queue.tid, Queue)),
+	    Sorted = sort_queue(Queue),
 	    try_waiters_tab(Sorted)
     end,
     ?dbg("RearrQ ~p~n", [Queue]),

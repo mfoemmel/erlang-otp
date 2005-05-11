@@ -225,6 +225,7 @@ i586)	ARCH=x86;;
 i686)	ARCH=x86;;
 x86_64) ARCH=amd64;;
 ppc)	ARCH=ppc;;
+ppc64)	ARCH=ppc64;;
 "Power Macintosh")	ARCH=ppc;;
 esac
 AC_SUBST(OPSYS)
@@ -408,7 +409,7 @@ LM_FIND_ETHR_LIB
 # Other applications should use ETHR_LIB_NAME, ETHR_LIBS, ETHR_X_LIBS,
 # and ETHR_DEFS.
 #
-AC_MSG_CHECKING(if the emulator should use threads)
+AC_MSG_CHECKING(whether the emulator should use threads)
 
 EMU_THR_LIB_NAME=
 EMU_THR_X_LIBS=
@@ -817,7 +818,7 @@ static void unmask_sse2(void)
 {
     unsigned int mxcsr;
     __asm__ __volatile__("stmxcsr %0" : "=m"(mxcsr));
-    mxcsr &= ~(0x003F|0x0780); /* clear exn flags, unmask exns (not PE, UE) */
+    mxcsr &= ~(0x003F|0x0680); /* clear exn flags, unmask exns (not PM, UM, DM) */
     __asm__ __volatile__("ldmxcsr %0" : : "m"(mxcsr));
 }
 #else
@@ -966,8 +967,13 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
     fpregset_t fpstate = mc->fpregs;
     fpstate->sw &= ~0xFF;
 #elif defined(__powerpc__)
+#if defined(__powerpc64__)
+    mcontext_t *mc = &uc->uc_mcontext;
+    unsigned long *regs = &mc->gp_regs[0];
+#else
     mcontext_t *mc = uc->uc_mcontext.uc_regs;
     unsigned long *regs = &mc->gregs[0];
+#endif
     regs[PT_NIP] += 4;
     regs[PT_FPSCR] = 0x80|0x40|0x10;	/* VE, OE, ZE; not UE or XE */
 #endif
@@ -1153,14 +1159,14 @@ if test X${enable_hipe} != Xno; then
       else
        enable_hipe=yes
       fi;;
-    x86-linux|amd64-linux|ppc-linux)
+    x86-linux|amd64-linux|ppc-linux|ppc-darwin)
       enable_hipe=yes
       ;;
   esac
 fi
 
 if test X${enable_hipe} = Xyes; then
-  if test X$ac_cv_sizeof_void_p != X4 -a X$ARCH != Xamd64; then
+  if test X$ac_cv_sizeof_void_p != X4 -a X$ARCH != Xamd64 -a X$ARCH != Xppc64; then
 	AC_MSG_WARN([HiPE is not supported in 64-bit builds])
   else
      HIPE_ENABLED=yes
@@ -1336,7 +1342,7 @@ if test "x$with_ssl" = "xno"; then
     CRYPTO_APP=
     SSH_APP=
 elif test "x$with_ssl" = "xyes" -o "x$with_ssl" = "x" ;then
-    # On windows, we could try to find tha installation
+    # On windows, we could try to find the installation
     # of Shining Light OpenSSL, which can be found by poking in
     # the uninstall section in the registry, it's worth a try...
     extra_dir=""
@@ -1416,6 +1422,25 @@ dnl 		Should one use EXEEXT or ac_exeext?
 		fi	
        fi
     done
+
+    if test "x$ssl_found" != "xyes" ; then
+	dnl 
+	dnl If no SSL found above, check whether we are running on OpenBSD.
+	dnl
+	case $host_os in
+	openbsd*)
+	       if test -f /usr/include/openssl/opensslv.h; then
+		  # Trust OpenBSD to have everything the in the correct locations.
+		  ssl_found=yes
+		  SSL_ROOT="/usr/sbin"
+	          AC_MSG_RESULT([$SSL_ROOT])
+		  SSL_LIB="/usr/lib"
+		  SSL_BINDIR="/usr/sbin"
+		  OPENSSL_CMD="$SSL_BINDIR/openssl"
+		fi
+		;;
+	esac
+    fi
 
     if test "x$ssl_found" != "xyes" ; then
        AC_MSG_RESULT([no])

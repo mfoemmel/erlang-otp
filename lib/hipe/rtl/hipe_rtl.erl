@@ -297,7 +297,6 @@
 
 	 %% FIXME _dst_update command. Ok to export these?
 	 alu_dst_update/2,
-	 call_dstlist_update/2,
 	 fconv_dst_update/2,
 	 fload_dst_update/2,
 	 %% fmove_dst_update/2,

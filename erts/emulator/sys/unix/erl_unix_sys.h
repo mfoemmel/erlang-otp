@@ -119,14 +119,6 @@
 #endif
 
 /*
- * Make sure that ENOTSUP is defined.
- */
-
-#ifndef ENOTSUP
-#define	ENOTSUP		-1738659
-#endif
-
-/*
 ** For the erl_timer_sup module.
 */
 
@@ -190,6 +182,7 @@ extern volatile int erl_fp_exception;
 #ifdef NO_FPE_SIGNALS
 #  define ERTS_FP_CHECK_INIT() do {} while (0)
 #  define ERTS_FP_ERROR(f, Action) if (!finite(f)) { Action; } else {}
+#  define ERTS_FP_ERROR_THOROUGH(f, Action) ERTS_FP_ERROR(f, Action)
 #  define ERTS_SAVE_FP_EXCEPTION()
 #  define ERTS_RESTORE_FP_EXCEPTION()
 #else
@@ -223,6 +216,14 @@ static __inline__ int erts_check_fpe(double f)
 #  define ERTS_SAVE_FP_EXCEPTION() int old_erl_fp_exception = erl_fp_exception
 #  define ERTS_RESTORE_FP_EXCEPTION() \
               do {erl_fp_exception = old_erl_fp_exception;} while (0)
+   /* This is for library calls where we don't trust the external
+      code to always throw floating-point exceptions on errors. */
+static __inline__ int erts_check_fpe_thorough(double f)
+{
+    return erts_check_fpe(f) || !finite(f);
+}
+#  define ERTS_FP_ERROR_THOROUGH(f, Action) \
+  do { if (erts_check_fpe_thorough((f))) { Action; } } while (0)
 #endif
 
 

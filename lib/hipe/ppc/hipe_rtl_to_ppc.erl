@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_rtl_to_ppc.erl,v 1.16 2004/12/06 03:09:39 mikpe Exp $
 %%%
 %%% The PowerPC instruction set is quite irregular.
 %%% The following quirks must be handled by the translation:

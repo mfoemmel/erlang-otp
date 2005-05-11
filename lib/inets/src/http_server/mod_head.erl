@@ -69,11 +69,13 @@ do_head(Info) ->
 					       Suffix,"text/plain"),
 	    Length = io_lib:write(FileInfo#file_info.size),
 	    Head = 
-		[{content_type,MimeType},{content_length,Length},{code,200}],
-	    {proceed,[{response,{response,Head,nobody}}|Info#mod.data]};
+		[{content_type, MimeType},
+		 {content_length, Length}, {code,200}],
+	    {proceed,[{response, {response, Head,  nobody}} | Info#mod.data]};
 	{error, Reason} ->
 	    {proceed,
-	     [{status,read_file_info_error(Reason,Info,Path)}|Info#mod.data]}
+	     [{status, read_file_info_error(Reason, Info, Path)} 
+	      | Info#mod.data]}
     end.
 
 %% read_file_info_error - Handle file info read failure

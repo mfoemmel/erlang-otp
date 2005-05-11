@@ -536,12 +536,13 @@ $1:
 #endif')
 
 /*
- * nocons_nofail_primop_interface_0(nbif_name, cbif_name)
+ * nocons_nofail_primop_interface_N(nbif_name, cbif_name)
  *
- * Generate native interface for a BIF with 0 parameters and
- * no failure mode. The BIF must not CONS or gc.
+ * Generate native interface for a primop with implicit P
+ * parameter, up to 5 ordinary parameters, and no failure mode.
+ * The primop cannot CONS or gc.
  */
-define(nocons_nofail_primop_interface_0,
+define(nocons_nofail_primop_interface_N,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
@@ -564,5 +565,15 @@ $1:
 	.size	$1,.-$1
 	.type	$1,#function
 #endif')
+
+/*
+ * Implement nocons_nofail_primop_interface_{0,1,2,3,5}
+ * as nocons_nofail_primop_interface_N.
+ */
+define(nocons_nofail_primop_interface_0,`nocons_nofail_primop_interface_N($1, $2)')
+define(nocons_nofail_primop_interface_1,`nocons_nofail_primop_interface_N($1, $2)')
+define(nocons_nofail_primop_interface_2,`nocons_nofail_primop_interface_N($1, $2)')
+define(nocons_nofail_primop_interface_3,`nocons_nofail_primop_interface_N($1, $2)')
+define(nocons_nofail_primop_interface_5,`nocons_nofail_primop_interface_N($1, $2)')
 
 include(`hipe/hipe_bif_list.m4')

@@ -47,10 +47,39 @@ relocationPreparation RANAP-ELEMENTARY-PROCEDURE ::= {
   CRITICALITY		notify
 }
 
+testObject RANAP-ELEMENTARY-PROCEDURE ::= {
+  INITIATING MESSAGE	Iu-ReleaseCommand
+  SUCCESSFUL OUTCOME	Iu-ReleaseComplete
+  PROCEDURE CODE	id-test
+  CRITICALITY		notify
+}
+
+testObject2 RANAP-ELEMENTARY-PROCEDURE ::= {
+  INITIATING MESSAGE	Iu-ReleaseCommand
+  SUCCESSFUL OUTCOME	Iu-ReleaseComplete
+  PROCEDURE CODE	id-test2
+  CRITICALITY		notify
+}
+
 RANAP-ELEMENTARY-PROCEDURES RANAP-ELEMENTARY-PROCEDURE ::= {
   iu-Release         |
   relocationPreparation ,
   ...
+}
+
+RANAP-ELEMENTARY-PROCEDURES2 RANAP-ELEMENTARY-PROCEDURE ::= {
+  {INITIATING MESSAGE	Iu-ReleaseCommand
+  SUCCESSFUL OUTCOME	Iu-ReleaseComplete
+  PROCEDURE CODE	id-test
+  CRITICALITY		notify}
+} 
+
+RANAP-ELEMENTARY-PROCEDURES3 RANAP-ELEMENTARY-PROCEDURE ::= {
+  iu-Release|
+  testObject,
+  ...,
+  relocationPreparation |
+  testObject2
 }
 
 Iu-ReleaseCommand  ::= SEQUENCE {
@@ -64,6 +93,8 @@ ProcedureCode      ::= INTEGER (0..255)
 Criticality        ::= ENUMERATED { reject, ignore, notify }
 id-Iu-Release		  INTEGER ::= 1
 id-relocationPreparation  INTEGER ::= 2
+id-test   INTEGER ::= 3
+id-test2   INTEGER ::= 4
 
 END
 

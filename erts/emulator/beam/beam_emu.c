@@ -3591,20 +3591,10 @@ void process_main(void)
          SWAPOUT;
          reg[0] = r(0);
          reg[1] = NIL;
-
-#ifdef NON_RECURSIVE_COPY
          r(0) = copy_struct_lazy(c_p,r(0),0);
          ASSERT(copy_src_top == 0);
          ASSERT(copy_dst_top == 0);
          ASSERT(copy_offset_top == 0);
-#else
-         ROOT_PUSH(dst,(Eterm)(reg + 1));
-         copy_struct_lazy(c_p,r(0),0);
-         ROOT_POP(dst);
-         ASSERT(copy_src_top == 0);
-         ASSERT(copy_dst_top == 0);
-         r(0) = reg[1];
-#endif
          SWAPIN;
          BM_SWAP_TIMER(copy,system);
      }

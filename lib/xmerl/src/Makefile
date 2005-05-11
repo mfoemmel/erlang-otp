@@ -70,7 +70,8 @@ MODULES = $(EDOC_MODULES) \
 	xmerl_xpath_parse \
 	xmerl_xpath_pred \
 	xmerl_xpath_scan \
-	ucs
+	xmerl_ucs \
+	xmerl_uri
 
 
 HRL_FILES = ../include/xmerl.hrl ../include/xmerl_xlink.hrl ../include/xmerl_xpath.hrl

@@ -485,14 +485,14 @@ eval(Mod, Func, Args) ->
 int_mod(AbsMod, Dist) ->
     case check(AbsMod) of
 	{ok, Res} -> load(Res, Dist);
-	_Error ->
+	{error,_} ->
 	    io:format("** Invalid beam file or no abstract code: ~p\n",
 		      [AbsMod]),
 	    error
     end.
 
-check(Mod) when atom(Mod) -> check_module(Mod);
-check(File) when list(File) -> check_file(File).
+check(Mod) when is_atom(Mod) -> check_module(Mod);
+check(File) when is_list(File) -> check_file(File).
 
 load({Mod, Src, Beam, Exp, Abst}, Dist) ->
     everywhere(Dist,
@@ -515,9 +515,9 @@ load({Mod, Src, Beam, Exp, Abst}, Dist) ->
 
 check_module(Mod) ->
     case code:which(Mod) of
-	Beam when list(Beam) ->
+	Beam when is_list(Beam) ->
 	    case find_src(Beam) of
-		Src when list(Src) ->
+		Src when is_list(Src) ->
 		    case check_beam(Beam) of
 			{ok, Exp, Abst} ->
 			    {ok, {Mod, Src, Beam, Exp, Abst}};
@@ -598,9 +598,11 @@ find_root_dir(Dir, []) ->
     filename:dirname(Dir).
 
 check_beam(Beam) ->
-    case beam_lib:chunks(Beam, [exports,"Abst"]) of
-	{ok, {_Mod, [{exports, Exp}, {"Abst", Abst}]}} when Abst/=<<>> ->
-	    {ok, Exp, Abst};
+    case beam_lib:chunks(Beam, [abstract_code,exports]) of
+	{ok,{_Mod,[{abstract_code,no_abstract_code}|_]}} ->
+	    error;
+	{ok,{_Mod,[{abstract_code,Abst},{exports,Exp}]}} ->
+	    {ok,Exp,Abst};
 	_ -> error
     end.
 

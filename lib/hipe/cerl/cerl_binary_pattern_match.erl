@@ -690,7 +690,7 @@ is_incompatible(_,_) ->
 %%-----------------------------------------------------------------------------
 
 remove_seg(BinSeg, BClause=#b_clause{segments=BinSegs, next_clause=Next}) ->
-  NewBinSegs = remove_same_seg(BinSegs, tag(BinSeg)),
+  NewBinSegs = remove_same_seg(BinSegs, read_seg_tag(BinSeg)),
   BClause#b_clause{segments=NewBinSegs, next_clause=remove_seg(BinSeg, Next)};
 remove_seg(_BinSeg, []) ->
   [].
@@ -963,7 +963,7 @@ get_largest_count([], _CountTree, {BinSeg, _Count}) ->
 -endif.
 
 -ifdef(USES_READ).
-get_largest_count([BinSeg|Rest], CountTree, "uses_read", Top={_,Count}) -> 
+get_largest_count([BinSeg|Rest], CountTree, Top={_,Count}) -> 
   NewTop =
     case BinSeg of
       #match{} ->
@@ -987,7 +987,7 @@ get_largest_count([BinSeg|Rest], CountTree, "uses_read", Top={_,Count}) ->
       case NewMC>Count of
 	true -> {BinSeg, NewMC};
 	false -> Top
-      end;
+      end
   end,
   get_largest_count(Rest, CountTree, NewTop);
 get_largest_count([], _CountTree, {BinSeg, _Count}) ->
@@ -1198,13 +1198,6 @@ subset([First|Rest], List) ->
 
 subset([], _List) ->
   true.
-
-tag(T=#read_seg{}) ->
-  read_seg_tag(T);
-tag(T=#match{}) ->
-  match_tag(T);
-tag(#size{}) -> 
-  [].
 
 %% @spec instr_type(instr()) -> atom()
 %% @doc returns the atom describing the instruction type

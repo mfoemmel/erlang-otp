@@ -65,7 +65,7 @@
 
 static int is_string(ETERM* term);
 #if defined(VXWORKS) && CPU == PPC860
-static int erl_fp_compare(unsigned *a, unsigned *b);
+int erl_fp_compare(unsigned *a, unsigned *b);
 static void erl_long_to_fp(long l, unsigned *d);
 #endif
 
@@ -1808,7 +1808,7 @@ int erl_compare_ext(unsigned char *e1, unsigned char *e2)
 
 #if defined(VXWORKS) && CPU == PPC860
 /* FIXME we have no floating point but don't we have emulation?! */
-static int erl_fp_compare(unsigned *a, unsigned *b) 
+int erl_fp_compare(unsigned *a, unsigned *b) 
 {
     /* Big endian mode of powerPC, IEEE floating point. */
     unsigned a_split[4] = {a[0] >> 31,             /* Sign bit */

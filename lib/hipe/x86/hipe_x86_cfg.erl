@@ -1,4 +1,4 @@
-%%% $Id$
+%%% $Id: hipe_x86_cfg.erl,v 1.35 2005/04/24 22:32:00 mikpe Exp $
 %%% x86 control-flow graph
 
 -module(hipe_x86_cfg).
@@ -102,9 +102,6 @@ mk_label(Name) ->
 %% is_goto(I) ->
 %%   hipe_x86:is_jmp_label(I).
 
-%% pp(CFG) ->
-%%   hipe_x86_pp:pp(linearise(CFG)).
-
 linearise(CFG) ->	% -> defun, not insn list
   Fun = function(CFG),
   Formals = params(CFG),
@@ -121,20 +118,12 @@ arity(CFG) ->
   #x86_mfa{a=Arity} = function(CFG),
   Arity.
 
-%% init_gensym(CFG)->
+%% init_gensym(CFG) ->
 %%   HighestVar = find_highest_var(CFG),
 %%   HighestLabel = find_highest_label(CFG),
 %%   hipe_gensym:init(),
 %%   hipe_gensym:set_var(x86, HighestVar),
 %%   hipe_gensym:set_label(x86, HighestLabel).
 %% 
-%% highest_var(Code)->
+%% highest_var(Code) ->
 %%   hipe_x86:highest_temp(Code).
-
-%%% XXX: this phi-node crap should be conditional
-
-is_phi(_I)->
-  false. %% We have no phi-nodes on this level.
-
-phi_remove_pred(I, _Pred)->
-  I. %% We have no phi-nodes on this level.

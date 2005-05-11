@@ -57,6 +57,7 @@ else
 HIPE_MODULES = \
 	hipe_amd64_loader \
 	hipe_ppc_loader \
+	hipe_ppc64_loader \
 	hipe_sparc_loader \
 	hipe_x86_loader \
 	hipe_unified_loader
@@ -206,6 +207,7 @@ ifdef HIPE_ENABLED
 $(EBIN)/hipe_unified_loader.beam: ../../hipe/main/hipe.hrl hipe_ext_format.hrl
 $(EBIN)/hipe_sparc_loader.beam: ../../hipe/main/hipe.hrl
 $(EBIN)/hipe_ppc_loader.beam: ../../hipe/main/hipe.hrl
+$(EBIN)/hipe_ppc64_loader.beam: ../../hipe/main/hipe.hrl
 $(EBIN)/hipe_x86_loader.beam: ../../hipe/main/hipe.hrl
 $(EBIN)/hipe_amd64_loader.beam: ../../hipe/main/hipe.hrl
 endif

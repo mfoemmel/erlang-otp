@@ -338,9 +338,13 @@ $1:
 
 /*
  * nocons_nofail_primop_interface_0(nbif_name, cbif_name)
+ * nocons_nofail_primop_interface_1(nbif_name, cbif_name)
+ * nocons_nofail_primop_interface_2(nbif_name, cbif_name)
+ * nocons_nofail_primop_interface_3(nbif_name, cbif_name)
+ * nocons_nofail_primop_interface_5(nbif_name, cbif_name)
  *
  * Generate native interface for a primop with implicit P
- * parameter, 0 ordinary parameters, and no failure mode.
+ * parameter, 0-3 or 5 ordinary parameters, and no failure mode.
  * The primop cannot CONS or gc.
  */
 define(nocons_nofail_primop_interface_0,
@@ -364,6 +368,129 @@ $1:
 
 	/* return */
 	NBIF_RET(0)
+	.size	$1,.-$1
+	.type	$1,@function
+#endif')
+
+define(nocons_nofail_primop_interface_1,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	.section ".text"
+	.align	4
+	.global	$1
+$1:
+	/* copy native stack pointer */
+	NBIF_COPY_NSP(1)
+
+	/* switch to C stack */
+	SWITCH_ERLANG_TO_C_QUICK
+
+	/* make the call on the C stack */
+	pushl	NBIF_ARG(1,0)
+	pushl	P
+	call	$2
+	addl	`$'8, %esp
+
+	/* switch to native stack */
+	SWITCH_C_TO_ERLANG_QUICK
+
+	/* return */
+	NBIF_RET(1)
+	.size	$1,.-$1
+	.type	$1,@function
+#endif')
+
+define(nocons_nofail_primop_interface_2,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	.section ".text"
+	.align	4
+	.global	$1
+$1:
+	/* copy native stack pointer */
+	NBIF_COPY_NSP(2)
+
+	/* switch to C stack */
+	SWITCH_ERLANG_TO_C_QUICK
+
+	/* make the call on the C stack */
+	pushl	NBIF_ARG(2,1)
+	pushl	NBIF_ARG(2,0)
+	pushl	P
+	call	$2
+	addl	`$'12, %esp
+
+	/* switch to native stack */
+	SWITCH_C_TO_ERLANG_QUICK
+
+	/* return */
+	NBIF_RET(2)
+	.size	$1,.-$1
+	.type	$1,@function
+#endif')
+
+define(nocons_nofail_primop_interface_3,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	.section ".text"
+	.align	4
+	.global	$1
+$1:
+	/* copy native stack pointer */
+	NBIF_COPY_NSP(3)
+
+	/* switch to C stack */
+	SWITCH_ERLANG_TO_C_QUICK
+
+	/* make the call on the C stack */
+	pushl	NBIF_ARG(3,2)
+	pushl	NBIF_ARG(3,1)
+	pushl	NBIF_ARG(3,0)
+	pushl	P
+	call	$2
+	addl	`$'16, %esp
+
+	/* switch to native stack */
+	SWITCH_C_TO_ERLANG_QUICK
+
+	/* return */
+	NBIF_RET(3)
+	.size	$1,.-$1
+	.type	$1,@function
+#endif')
+
+define(nocons_nofail_primop_interface_5,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	.section ".text"
+	.align	4
+	.global	$1
+$1:
+	/* copy native stack pointer */
+	NBIF_COPY_NSP(5)
+
+	/* switch to C stack */
+	SWITCH_ERLANG_TO_C_QUICK
+
+	/* make the call on the C stack */
+	pushl	NBIF_ARG(5,4)
+	pushl	NBIF_ARG(5,3)
+	pushl	NBIF_ARG(5,2)
+	pushl	NBIF_ARG(5,1)
+	pushl	NBIF_ARG(5,0)
+	pushl	P
+	call	$2
+	addl	`$'24, %esp
+
+	/* switch to native stack */
+	SWITCH_C_TO_ERLANG_QUICK
+
+	/* return */
+	NBIF_RET(5)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')

@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 4 -*-
-%%% $Id$
+%%% $Id: hipe_ppc_encode.erl,v 1.4 2005/02/23 16:26:27 mikpe Exp $
 %%% Encode symbolic PowerPC instructions to binary form.
 %%% Copyright (C) 2003-2005  Mikael Pettersson
 %%%

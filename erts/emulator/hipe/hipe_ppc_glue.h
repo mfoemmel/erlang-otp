@@ -9,19 +9,19 @@
    The return address is `nbif_return', which is exported so that
    tailcalls from native to emulated code can be identified. */
 extern unsigned int hipe_ppc_call_to_native(Process*);
-extern void nbif_return(void);
+AEXTERN(void,nbif_return,(void));
 
 /* Native-mode stubs for calling emulated-mode closures. */
-extern void nbif_ccallemu0(void);
-extern void nbif_ccallemu1(void);
-extern void nbif_ccallemu2(void);
-extern void nbif_ccallemu3(void);
-extern void nbif_ccallemu4(void);
-extern void nbif_ccallemu5(void);
-extern void nbif_ccallemu6(void);
+AEXTERN(void,nbif_ccallemu0,(void));
+AEXTERN(void,nbif_ccallemu1,(void));
+AEXTERN(void,nbif_ccallemu2,(void));
+AEXTERN(void,nbif_ccallemu3,(void));
+AEXTERN(void,nbif_ccallemu4,(void));
+AEXTERN(void,nbif_ccallemu5,(void));
+AEXTERN(void,nbif_ccallemu6,(void));
 
 /* Default exception handler for native code. */
-extern void nbif_fail(void);
+AEXTERN(void,nbif_fail,(void));
 
 /* Emulated code returns to its native code caller. */
 extern unsigned int hipe_ppc_return_to_native(Process*);
@@ -32,12 +32,17 @@ extern unsigned int hipe_ppc_tailcall_to_native(Process*);
 /* Emulated code throws an exception to its native code caller. */
 extern unsigned int hipe_ppc_throw_to_native(Process*);
 
+static __inline__ unsigned int max(unsigned int x, unsigned int y)
+{
+    return (x > y) ? x : y;
+}
+
 static __inline__ void hipe_arch_glue_init(void)
 {
     static struct sdesc_with_exnra nbif_return_sdesc = {
-	.exnra = (unsigned long)nbif_fail,
+	.exnra = (unsigned long)&nbif_fail,
 	.sdesc = {
-	    .bucket = { .hvalue = (unsigned long)nbif_return },
+	    .bucket = { .hvalue = (unsigned long)&nbif_return },
 	    .summary = (1<<8),
 	},
     };
@@ -123,7 +128,7 @@ hipe_call_to_native(Process *p, unsigned int arity, Eterm reg[])
 
     if( (nstkargs = arity - NR_ARG_REGS) < 0 )
 	nstkargs = 0;
-    hipe_check_nstack(p, nstkargs + 1);
+    hipe_check_nstack(p, max(nstkargs + 1, PPC_LEAF_WORDS));
     hipe_push_ppc_nra_frame(p);			/* needs 1 word */
     hipe_push_ppc_params(p, arity, reg);	/* needs nstkargs words */
     return hipe_ppc_call_to_native(p);
@@ -137,7 +142,7 @@ hipe_tailcall_to_native(Process *p, unsigned int arity, Eterm reg[])
 
     if( (nstkargs = arity - NR_ARG_REGS) < 0 )
 	nstkargs = 0;
-    hipe_check_nstack(p, nstkargs);
+    hipe_check_nstack(p, max(nstkargs, PPC_LEAF_WORDS));
     hipe_push_ppc_params(p, arity, reg);	/* needs nstkargs words */
     return hipe_ppc_tailcall_to_native(p);
 }
@@ -162,7 +167,7 @@ static __inline__ int
 hipe_call_from_native_is_recursive(Process *p, Eterm reg[])
 {
     hipe_pop_ppc_params(p, p->arity, reg);
-    if( p->hipe.nra != nbif_return )
+    if( p->hipe.nra != (void(*)(void))&nbif_return )
 	return 1;
     hipe_pop_ppc_nra_frame(p);
     return 0;
@@ -219,35 +224,35 @@ hipe_reschedule_to_native(Process *p, unsigned arity, Eterm reg[])
 }
 
 /* Return the address of a stub switching a native closure call to BEAM. */
-static __inline__ void *hipe_closure_stub_address(unsigned int arity)
+static __inline__ const void *hipe_closure_stub_address(unsigned int arity)
 {
 #if NR_ARG_REGS == 0
-    return nbif_ccallemu0;
+    return &nbif_ccallemu0;
 #else	/* > 0 */
     switch( arity ) {
-      case 0:	return nbif_ccallemu0;
+      case 0:	return &nbif_ccallemu0;
 #if NR_ARG_REGS == 1
-      default:	return nbif_ccallemu1;
+      default:	return &nbif_ccallemu1;
 #else	/* > 1 */
-      case 1:	return nbif_ccallemu1;
+      case 1:	return &nbif_ccallemu1;
 #if NR_ARG_REGS == 2
-      default:	return nbif_ccallemu2;
+      default:	return &nbif_ccallemu2;
 #else	/* > 2 */
-      case 2:	return nbif_ccallemu2;
+      case 2:	return &nbif_ccallemu2;
 #if NR_ARG_REGS == 3
-      default:	return nbif_ccallemu3;
+      default:	return &nbif_ccallemu3;
 #else	/* > 3 */
-      case 3:	return nbif_ccallemu3;
+      case 3:	return &nbif_ccallemu3;
 #if NR_ARG_REGS == 4
-      default:	return nbif_ccallemu4;
+      default:	return &nbif_ccallemu4;
 #else	/* > 4 */
-      case 4:	return nbif_ccallemu4;
+      case 4:	return &nbif_ccallemu4;
 #if NR_ARG_REGS == 5
-      default:	return nbif_ccallemu5;
+      default:	return &nbif_ccallemu5;
 #else	/* > 5 */
-      case 5:	return nbif_ccallemu5;
+      case 5:	return &nbif_ccallemu5;
 #if NR_ARG_REGS == 6
-      default:	return nbif_ccallemu6;
+      default:	return &nbif_ccallemu6;
 #else
 #error "NR_ARG_REGS > 6 NOT YET IMPLEMENTED"
 #endif	/* > 6 */

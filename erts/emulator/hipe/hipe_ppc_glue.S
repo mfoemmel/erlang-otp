@@ -8,6 +8,88 @@
 	.text
 	.p2align 2
 
+#if defined(__powerpc64__)
+/*
+ * Enter Erlang from C.
+ * Create a new frame on the C stack.
+ * Save C callee-save registers (r14-r31) in the frame.
+ * Save r0 (C return address) in the caller's LR save slot.
+ * Return to LR.
+ * Do not clobber the C argument registers (r3-r10).
+ *
+ * Usage: mflr r0 SEMI bl .enter
+ */
+.enter:
+	# Our PPC64 ELF ABI frame must include:
+	# - 48 (6*8) bytes for AIX-like linkage area
+	# - 64 (8*8) bytes for AIX-like parameter area for
+	#   recursive C calls with up to 8 parameter words
+	# - padding to make the frame a multiple of 16 bytes
+	# - 144 (18*8) bytes for saving r14-r31
+	# The final size is 256 bytes.
+	# stdu is required for atomic alloc+init
+	stdu	r1,-256(r1)	/* 0(r1) contains r1+256 */
+	std	r14, 112(r1)
+	std	r15, 120(r1)
+	std	r16, 128(r1)
+	std	r17, 136(r1)
+	std	r18, 144(r1)
+	std	r19, 152(r1)
+	std	r20, 160(r1)
+	std	r21, 168(r1)
+	std	r22, 176(r1)
+	std	r23, 184(r1)
+	std	r24, 192(r1)
+	std	r25, 200(r1)
+	std	r26, 208(r1)
+	std	r27, 216(r1)
+	std	r28, 224(r1)
+	std	r29, 232(r1)
+	std	r30, 240(r1)
+	std	r31, 248(r1)
+	std	r0,  256+16(r1)	/* caller saved LR in r0 */
+	blr
+
+/*
+ * Return to the calling C function.
+ * The return value is in r3.
+ *
+ * .nosave_exit saves no state
+ * .flush_exit saves NSP and other cached P state.
+ * .suspend_exit also saves RA.
+ */
+.suspend_exit:
+	/* save RA, so we can be resumed */
+	mflr	r0
+	std	r0, P_NRA(P)
+.flush_exit:
+	/* flush cached P state */
+	SAVE_CACHED_STATE
+.nosave_exit:
+	/* restore callee-save registers, drop frame, return */
+	ld	r0, 256+16(r1)
+	mtlr	r0
+	ld	r14, 112(r1)
+	ld	r15, 120(r1)
+	ld	r16, 128(r1)
+	ld	r17, 136(r1)
+	ld	r18, 144(r1)
+	ld	r19, 152(r1)
+	ld	r20, 160(r1)
+	ld	r21, 168(r1)
+	ld	r22, 176(r1)
+	ld	r23, 184(r1)
+	ld	r24, 192(r1)
+	ld	r25, 200(r1)
+	ld	r26, 208(r1)
+	ld	r27, 216(r1)
+	ld	r28, 224(r1)
+	ld	r29, 232(r1)	/* kills HP */
+	ld	r30, 240(r1)	/* kills NSP */
+	ld	r31, 248(r1)	/* kills P */
+	addi	r1, r1, 256
+	blr
+#else /* !__powerpc64__ */
 /*
  * Enter Erlang from C.
  * Create a new frame on the C stack.
@@ -88,12 +170,13 @@
 	lwz	r31, 120(r1)	/* kills P */
 	addi	r1, r1, 128
 	blr
+#endif /* !__powerpc64__ */
 
 /*
  * int hipe_ppc_call_to_native(Process *p);
  * Emulated code recursively calls native code.
  */
-	GLOBAL(hipe_ppc_call_to_native)
+	GLOBAL(CSYM(hipe_ppc_call_to_native))
 CSYM(hipe_ppc_call_to_native):
 	/* save C context */
 	mflr	r0
@@ -101,7 +184,7 @@ CSYM(hipe_ppc_call_to_native):
 	/* get the process pointer */
 	mr	P, r3
 	/* prepare to call the target */
-	lwz	r0, P_NCALLEE(P)
+	LOAD	r0, P_NCALLEE(P)
 	mtctr	r0
 	/* get argument registers */
 	LOAD_ARG_REGS
@@ -116,9 +199,9 @@ CSYM(hipe_ppc_call_to_native):
  *
  * This is where native code returns to emulated code.
  */
-	GLOBAL(nbif_return)
-CSYM(nbif_return):
-	stw	r3, P_ARG0(P)			/* save retval */
+	GLOBAL(ASYM(nbif_return))
+ASYM(nbif_return):
+	STORE	r3, P_ARG0(P)			/* save retval */
 	li	r3, HIPE_MODE_SWITCH_RES_RETURN
 	b	.flush_exit
 
@@ -126,7 +209,7 @@ CSYM(nbif_return):
  * int hipe_ppc_return_to_native(Process *p);
  * Emulated code returns to its native code caller.
  */
-	GLOBAL(hipe_ppc_return_to_native)
+	GLOBAL(CSYM(hipe_ppc_return_to_native))
 CSYM(hipe_ppc_return_to_native):
 	/* save C context */
 	mflr	r0
@@ -134,12 +217,12 @@ CSYM(hipe_ppc_return_to_native):
 	/* get the process pointer */
 	mr	P, r3
 	/* restore return address */
-	lwz	r0, P_NRA(P)
+	LOAD	r0, P_NRA(P)
 	mtlr	r0
 	/* cache some P state in registers */
 	RESTORE_CACHED_STATE
 	/* get return value */
-	lwz	r3, P_ARG0(P)
+	LOAD	r3, P_ARG0(P)
 	/*
 	 * Return using the current return address.
 	 * The parameters were popped at the original native-to-emulated
@@ -151,7 +234,7 @@ CSYM(hipe_ppc_return_to_native):
  * int hipe_ppc_tailcall_to_native(Process *p);
  * Emulated code tailcalls native code.
  */
-	GLOBAL(hipe_ppc_tailcall_to_native)
+	GLOBAL(CSYM(hipe_ppc_tailcall_to_native))
 CSYM(hipe_ppc_tailcall_to_native):
 	/* save C context */
 	mflr	r0
@@ -159,12 +242,12 @@ CSYM(hipe_ppc_tailcall_to_native):
 	/* get the process pointer */
 	mr	P, r3
 	/* prepare to call the target */
-	lwz	r0, P_NCALLEE(P)
+	LOAD	r0, P_NCALLEE(P)
 	mtctr	r0
 	/* get argument registers */
 	LOAD_ARG_REGS
 	/* restore return address */
-	lwz	r0, P_NRA(P)
+	LOAD	r0, P_NRA(P)
 	mtlr	r0
 	/* cache some P state in registers */
 	RESTORE_CACHED_STATE
@@ -175,7 +258,7 @@ CSYM(hipe_ppc_tailcall_to_native):
  * int hipe_ppc_throw_to_native(Process *p);
  * Emulated code throws an exception to its native code caller.
  */
-	GLOBAL(hipe_ppc_throw_to_native)
+	GLOBAL(CSYM(hipe_ppc_throw_to_native))
 CSYM(hipe_ppc_throw_to_native):
 	/* save C context */
 	mflr	r0
@@ -195,14 +278,14 @@ CSYM(hipe_ppc_throw_to_native):
  * r4 should contain the current call's arity.
  */
 .find_exn_handler:
-	stw	TEMP_LR, P_NRA(P)
+	STORE	TEMP_LR, P_NRA(P)
 .find_exn_handler_no_lr:
-	stw	r4, P_NARITY(P)
+	stw	r4, P_NARITY(P)	/* Note: narity is a 32-bit field */
 	/* find and prepare to invoke the handler */
 	mr	r3, P
 	bl	CSYM(hipe_handle_exception)	/* Note: hipe_handle_exception() conses */
 	/* prepare to invoke handler */
-	lwz	r0, P_NCALLEE(P)	/* set by hipe_find_handler() */
+	LOAD	r0, P_NCALLEE(P)	/* set by hipe_find_handler() */
 	mtctr	r0
 	RESTORE_CACHED_STATE		/* NSP updated by hipe_find_handler() */
 	/* now invoke the handler */
@@ -227,10 +310,10 @@ CSYM(hipe_ppc_throw_to_native):
  *
  * XXX: Different stubs for different number of register parameters?
  */
-	GLOBAL(nbif_callemu)
-CSYM(nbif_callemu):
-	stw	r12, P_BEAM_IP(P)
-	stw	r0, P_ARITY(P)
+	GLOBAL(ASYM(nbif_callemu))
+ASYM(nbif_callemu):
+	STORE	r12, P_BEAM_IP(P)
+	STORE	r0, P_ARITY(P)
 	STORE_ARG_REGS
 	li	r3, HIPE_MODE_SWITCH_RES_CALL
 	b	.suspend_exit
@@ -238,8 +321,8 @@ CSYM(nbif_callemu):
 /*
  * nbif_apply
  */
-	GLOBAL(nbif_apply)
-CSYM(nbif_apply):
+	GLOBAL(ASYM(nbif_apply))
+ASYM(nbif_apply):
 	STORE_ARG_REGS
 	li	r3, HIPE_MODE_SWITCH_RES_APPLY
 	b	.suspend_exit
@@ -254,99 +337,99 @@ CSYM(nbif_apply):
  * of parameters in registers, not the total number of parameters.
  */
 #if NR_ARG_REGS >= 6
-	GLOBAL(nbif_ccallemu6)
-CSYM(nbif_ccallemu6):
-	stw	ARG5, P_ARG5(P)
+	GLOBAL(ASYM(nbif_ccallemu6))
+ASYM(nbif_ccallemu6):
+	STORE	ARG5, P_ARG5(P)
 #if NR_ARG_REGS > 6
 	mr	ARG5, ARG6
 #else
-	lwz	ARG5, 0(NSP)
+	LOAD	ARG5, 0(NSP)
 #endif
 	/*FALLTHROUGH*/
 #endif
 
 #if NR_ARG_REGS >= 5
-	GLOBAL(nbif_ccallemu5)
-CSYM(nbif_ccallemu5):
-	stw	ARG4, P_ARG4(P)
+	GLOBAL(ASYM(nbif_ccallemu5))
+ASYM(nbif_ccallemu5):
+	STORE	ARG4, P_ARG4(P)
 #if NR_ARG_REGS > 5
 	mr	ARG4, ARG5
 #else
-	lwz	ARG4, 0(NSP)
+	LOAD	ARG4, 0(NSP)
 #endif
 	/*FALLTHROUGH*/
 #endif
 
 #if NR_ARG_REGS >= 4
-	GLOBAL(nbif_ccallemu4)
-CSYM(nbif_ccallemu4):
-	stw	ARG3, P_ARG3(P)
+	GLOBAL(ASYM(nbif_ccallemu4))
+ASYM(nbif_ccallemu4):
+	STORE	ARG3, P_ARG3(P)
 #if NR_ARG_REGS > 4
 	mr	ARG3, ARG4
 #else
-	lwz	ARG3, 0(NSP)
+	LOAD	ARG3, 0(NSP)
 #endif
 	/*FALLTHROUGH*/
 #endif
 
 #if NR_ARG_REGS >= 3
-	GLOBAL(nbif_ccallemu3)
-CSYM(nbif_ccallemu3):
-	stw	ARG2, P_ARG2(P)
+	GLOBAL(ASYM(nbif_ccallemu3))
+ASYM(nbif_ccallemu3):
+	STORE	ARG2, P_ARG2(P)
 #if NR_ARG_REGS > 3
 	mr	ARG2, ARG3
 #else
-	lwz	ARG2, 0(NSP)
+	LOAD	ARG2, 0(NSP)
 #endif
 	/*FALLTHROUGH*/
 #endif
 
 #if NR_ARG_REGS >= 2
-	GLOBAL(nbif_ccallemu2)
-CSYM(nbif_ccallemu2):
-	stw	ARG1, P_ARG1(P)
+	GLOBAL(ASYM(nbif_ccallemu2))
+ASYM(nbif_ccallemu2):
+	STORE	ARG1, P_ARG1(P)
 #if NR_ARG_REGS > 2
 	mr	ARG1, ARG2
 #else
-	lwz	ARG1, 0(NSP)
+	LOAD	ARG1, 0(NSP)
 #endif
 	/*FALLTHROUGH*/
 #endif
 
 #if NR_ARG_REGS >= 1
-	GLOBAL(nbif_ccallemu1)
-CSYM(nbif_ccallemu1):
-	stw	ARG0, P_ARG0(P)
+	GLOBAL(ASYM(nbif_ccallemu1))
+ASYM(nbif_ccallemu1):
+	STORE	ARG0, P_ARG0(P)
 #if NR_ARG_REGS > 1
 	mr	ARG0, ARG1
 #else
-	lwz	ARG0, 0(NSP)
+	LOAD	ARG0, 0(NSP)
 #endif
 	/*FALLTHROUGH*/
 #endif
 
-	GLOBAL(nbif_ccallemu0)
-CSYM(nbif_ccallemu0):
+	GLOBAL(ASYM(nbif_ccallemu0))
+ASYM(nbif_ccallemu0):
 #if NR_ARG_REGS == 0
-	lwz	r4, 0(NSP)		/* get the closure */
+	LOAD	r4, 0(NSP)		/* get the closure */
 #endif
-	stw	r4, P_CLOSURE(P)	/* save the closure */
+	STORE	r4, P_CLOSURE(P)	/* save the closure */
 	li	r3, HIPE_MODE_SWITCH_RES_CALL_CLOSURE
 	b	.suspend_exit
 
 /*
  * This is where native code suspends.
  */
-	GLOBAL(nbif_suspend_0)
-CSYM(nbif_suspend_0):
+	GLOBAL(ASYM(nbif_suspend_0))
+ASYM(nbif_suspend_0):
 	li	r3, HIPE_MODE_SWITCH_RES_SUSPEND
 	b	.suspend_exit
 
 /*
  * Suspend from a receive (waiting for a message)
  */
-	GLOBAL(nbif_suspend_msg)
-CSYM(nbif_suspend_msg):
+	GLOBAL(ASYM(nbif_suspend_msg))
+ASYM(nbif_suspend_msg):
 	li	r3, HIPE_MODE_SWITCH_RES_WAIT
 	b	.suspend_exit
 
@@ -355,9 +438,9 @@ CSYM(nbif_suspend_msg):
  *	if( !(p->flags & F_TIMO) ) { suspend }
  *	else { p->flags ^= F_TIMO; return 0; }
  */
-	GLOBAL(nbif_suspend_msg_timeout)
-CSYM(nbif_suspend_msg_timeout):
-	lwz	r4, P_FLAGS(P)
+	GLOBAL(ASYM(nbif_suspend_msg_timeout))
+ASYM(nbif_suspend_msg_timeout):
+	LOAD	r4, P_FLAGS(P)
 	li	r3, HIPE_MODE_SWITCH_RES_WAIT_TIMEOUT
 	/* this relies on F_TIMO (1<<2) fitting in a uimm16 */
 	andi.	r0, r4, F_TIMO
@@ -366,15 +449,15 @@ CSYM(nbif_suspend_msg_timeout):
 	xori	r4, r4, F_TIMO			/* F_TIMO was set, clear it */
 	beq-	.suspend_exit			/* sees the CR state from andi. above */
 	/* timeout has occurred */
-	stw	r4, P_FLAGS(P)
+	STORE	r4, P_FLAGS(P)
 	li	r3, 0
 	blr
 
 /*
  * This is the default exception handler for native code.
  */
-	GLOBAL(nbif_fail)
-CSYM(nbif_fail):
+	GLOBAL(ASYM(nbif_fail))
+ASYM(nbif_fail):
 	li	r3, HIPE_MODE_SWITCH_RES_THROW
 	b	.flush_exit	/* no need to save RA */
 
@@ -384,25 +467,25 @@ CSYM(nbif_fail):
  * The stack/heap registers were just read from P.
  * TEMP_LR contains a copy of LR
  */
-	GLOBAL(nbif_0_simple_exception)
+	GLOBAL(CSYM(nbif_0_simple_exception))
 CSYM(nbif_0_simple_exception):
 	li	r4, 0
 	b	.nbif_simple_exception
-	GLOBAL(nbif_1_simple_exception)
+	GLOBAL(CSYM(nbif_1_simple_exception))
 CSYM(nbif_1_simple_exception):
 	li	r4, 1
 	b	.nbif_simple_exception
-	GLOBAL(nbif_2_simple_exception)
+	GLOBAL(CSYM(nbif_2_simple_exception))
 CSYM(nbif_2_simple_exception):
 	li	r4, 2
 	b	.nbif_simple_exception
-	GLOBAL(nbif_3_simple_exception)
+	GLOBAL(CSYM(nbif_3_simple_exception))
 CSYM(nbif_3_simple_exception):
 	li	r4, 3
 	/*FALLTHROUGH*/
 .nbif_simple_exception:
-	lwz	r3, P_FREASON(P)
-	cmpwi	r3, FREASON_TRAP
+	LOAD	r3, P_FREASON(P)
+	CMPI	r3, FREASON_TRAP
 	bne+	.find_exn_handler
 	/*
 	 * A BIF failed with freason TRAP:
@@ -414,8 +497,8 @@ CSYM(nbif_3_simple_exception):
 	 */
 	li	r3, HIPE_MODE_SWITCH_RES_TRAP
 .bif_exit:
-	stw	r4, P_ARITY(P)
-	stw	TEMP_LR, P_NRA(P)
+	STORE	r4, P_ARITY(P)
+	STORE	TEMP_LR, P_NRA(P)
 	b	.nosave_exit
 
 /*
@@ -426,28 +509,28 @@ CSYM(nbif_3_simple_exception):
  * TEMP_ARG0 is the first actual parameter, if PPC_NR_ARG_REGS > 0.
  * TEMP_ARG1 is the second actual parameter (if defined), if PPC_NR_ARG_REGS > 1.
  */
-	GLOBAL(nbif_1_hairy_exception)
+	GLOBAL(CSYM(nbif_1_hairy_exception))
 CSYM(nbif_1_hairy_exception):
 	li	r4, 1
 	b	.nbif_hairy_exception
-	GLOBAL(nbif_2_hairy_exception)
+	GLOBAL(CSYM(nbif_2_hairy_exception))
 CSYM(nbif_2_hairy_exception):
 	li	r4, 2
 	/*FALLTHROUGH*/
 .nbif_hairy_exception:
-	lwz	r3, P_FREASON(P)
-	cmpwi	r3, FREASON_RESCHEDULE
+	LOAD	r3, P_FREASON(P)
+	CMPI	r3, FREASON_RESCHEDULE
 	bne+	.nbif_simple_exception
 	/* handle reschedule */
-	stw	r5, P_NCALLEE(P)
+	STORE	r5, P_NCALLEE(P)
 #if PPC_NR_ARG_REGS == 0
 	li	r4, 0		/* arity unused -- args on nstack */
 #elif PPC_NR_ARG_REGS == 1
 	li	r4, 1		/* 1 even if arity is 2 */
-	stw	TEMP_ARG0, P_ARG0(P)
+	STORE	TEMP_ARG0, P_ARG0(P)
 #else
-	stw	TEMP_ARG0, P_ARG0(P)
-	stw	TEMP_ARG1, P_ARG1(P)
+	STORE	TEMP_ARG0, P_ARG0(P)
+	STORE	TEMP_ARG1, P_ARG1(P)
 #endif
 	li	r3, HIPE_MODE_SWITCH_RES_RESCHEDULE
 	b	.bif_exit
@@ -456,31 +539,31 @@ CSYM(nbif_2_hairy_exception):
  * nbif_stack_trap_ra: trap return address for maintaining
  * the gray/white stack boundary
  */
-	GLOBAL(nbif_stack_trap_ra)
-CSYM(nbif_stack_trap_ra):		/* a return address, not a function */
+	GLOBAL(ASYM(nbif_stack_trap_ra))
+ASYM(nbif_stack_trap_ra):		/* a return address, not a function */
 	# This only handles a single return value.
 	# If we have more, we need to save them in the PCB.
-	stw	r3, P_ARG0(P)		/* save retval */
-	stw	NSP, P_NSP(P)
+	STORE	r3, P_ARG0(P)		/* save retval */
+	STORE	NSP, P_NSP(P)
 	mr	r3, P
 	bl	CSYM(hipe_handle_stack_trap)	/* must not cons */
 	mtctr	r3			/* original RA */
-	lwz	r3, P_ARG0(P)		/* restore retval */
+	LOAD	r3, P_ARG0(P)		/* restore retval */
 	bctr				/* resume at original RA */
 
 /*
  * hipe_ppc_inc_stack
  * Caller saved its LR in a C callee-save register before calling us.
  */
-	GLOBAL(hipe_ppc_inc_stack)
-CSYM(hipe_ppc_inc_stack):
+	GLOBAL(ASYM(hipe_ppc_inc_stack))
+ASYM(hipe_ppc_inc_stack):
 	STORE_ARG_REGS
 	mflr	r0
-	stw	r0, P_NRA(P)
+	STORE	r0, P_NRA(P)
 	SAVE_CACHED_STATE
 	mr	r3, P
 	bl	CSYM(hipe_inc_nstack)
-	lwz	r0, P_NRA(P)
+	LOAD	r0, P_NRA(P)
 	mtlr	r0
 	RESTORE_CACHED_STATE
 	LOAD_ARG_REGS

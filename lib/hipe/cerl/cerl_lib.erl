@@ -14,7 +14,7 @@
 %% Portions created by Ericsson are Copyright 2001, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id: cerl_lib.erl,v 1.3 2004/11/18 14:32:32 richardc Exp $
 
 %% @doc Utility functions for Core Erlang abstract syntax trees.
 %%

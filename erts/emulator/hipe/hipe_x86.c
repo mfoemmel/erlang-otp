@@ -18,7 +18,7 @@ extern void nbif_inc_stack_0(void);
 extern void nbif_handle_fp_exception(void);
 
 /* called from hipe_bif0.c:hipe_bifs_primop_address_1() */
-void *hipe_arch_primop_address(Eterm key)
+const void *hipe_arch_primop_address(Eterm key)
 {
     switch( key ) {
       case am_inc_stack_0: return nbif_inc_stack_0;

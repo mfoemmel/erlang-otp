@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_reg_worklists.erl,v 1.14 2005/01/26 10:05:40 kostis Exp $
 %%%----------------------------------------------------------------------
 %%% File    : hipe_reg_worklists.erl
 %%% Author  : Andreas Wallin <d96awa@csd.uu.se>

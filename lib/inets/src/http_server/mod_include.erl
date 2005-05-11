@@ -57,15 +57,14 @@ do_include(Info) ->
     Suffix = httpd_util:suffix(Path),
     case httpd_util:lookup_mime_default(Info#mod.config_db,Suffix) of
 	"text/x-server-parsed-html" ->
-	    HeaderStart = 
-		httpd_util:header(200, "text/html", Info#mod.connection),
+	    HeaderStart = [{content_type, "text/html"}], 
 	    ?vtrace("do_include -> send ~p", [Path]),
-	    case send_in(Info,Path,HeaderStart,file:read_file_info(Path)) of
+	    case send_in(Info, Path, HeaderStart, file:read_file_info(Path)) of
 		{ok, ErrorLog, Size} ->
 		    ?vtrace("do_include -> sent ~w bytes", [Size]),
-		    {proceed,[{response,{already_sent,200,Size}},
-			      {mime_type,"text/html"}|
-			      lists:append(ErrorLog,Info#mod.data)]};
+		    {proceed, [{response, {already_sent, 200, Size}},
+			       {mime_type, "text/html"} |
+			       lists:append(ErrorLog, Info#mod.data)]};
 		{error, Reason} ->
 		    ?vlog("send in failed:"
 			  "~n   Reason: ~p"
@@ -501,7 +500,7 @@ proxy(Port, ErrorLog, Result) ->
 %% in another is not handled).
 %%
 
-send_in(Info, Path,Head, {ok,FileInfo}) ->
+send_in(Info, Path, Head, {ok,FileInfo}) ->
     case file:read_file(Path) of
 	{ok, Bin} ->
 	    send_in1(Info, binary_to_list(Bin), Head, FileInfo);
@@ -517,69 +516,21 @@ send_in1(Info, Data, Head, FileInfo) ->
     {ok, _Context, Err, ParsedBody} = parse(Info,Data,?DEFAULT_CONTEXT,[],[]),
     Size = length(ParsedBody),
     ?vdebug("send_in1 -> Size: ~p",[Size]),
-
-    LastModified =
-	case (catch httpd_util:rfc1123_date(FileInfo#file_info.mtime)) of
-	    Date when is_list(Date) ->
-		"Last-Modified: " ++ Date;
-	    _ -> %% This will rarly happen, but could happen
-		 %% if a computer is wrongly configured. 
-		""
-	end,
-
+    Date = httpd_util:rfc1123_date(FileInfo#file_info.mtime),
     Head1 = case Info#mod.http_version of 
 		"HTTP/1.1"->
-		    Head ++ "Content-Length: " ++ integer_to_list(Size) ++ 
-			"\r\nEtag:" ++ httpd_util:create_etag(FileInfo,Size) 
-			++"\r\n" ++ LastModified ++ "\r\n\r\n";
+		    Head ++ [{content_length, integer_to_list(Size)},  
+			     {etag, httpd_util:create_etag(FileInfo,Size)},
+			     {last_modified, Date}];
 		_->
 		    %% i.e http/1.0 and http/0.9
-		    Head ++ "Content-Length: " ++ integer_to_list(Size) ++ 
-			"\r\n" ++ LastModified ++ "\r\n\r\n"
+		    Head ++  [{content_length, integer_to_list(Size)},  
+			      {last_modified, Date}]
 	    end,
-    httpd_socket:deliver(Info#mod.socket_type,Info#mod.socket, 
-			 [Head1,ParsedBody]),
+    httpd_response:send_header(Info, 200, Head1),
+    httpd_socket:deliver(Info#mod.socket_type,Info#mod.socket, ParsedBody),
     {ok, Err, Size}.
 
-
-
-%%
-%% Addition to "Fuzzy" HTML parser. This is actually a ugly hack to
-%% avoid putting to much data on the heap. To be rewritten...
-%%
-
-% -define(CHUNK_SIZE, 4096).
-
-% send_in_chunks(Info, Path) ->
-%     ?DEBUG("send_in_chunks -> Path: ~p",[Path]),
-%     case file:open(Path, [read, raw]) of
-% 	{ok, Stream} ->
-% 	    send_in_chunks(Info, Stream, ?DEFAULT_CONTEXT,[]);
-% 	{error, Reason} ->
-% 	    ?ERROR("Failed open file: ~p",[Reason]),
-% 	    {error, {open,Reason}}
-%     end.
-
-% send_in_chunks(Info, Stream, Context, ErrorLog) ->
-%     case file:read(Stream, ?CHUNK_SIZE) of
-% 	{ok, Data} ->
-% 	    ?DEBUG("send_in_chunks -> read ~p bytes",[length(Data)]),
-% 	    {ok, NewContext, NewErrorLog, ParsedBody}=
-% 		parse(Info, Data, Context, ErrorLog, []),
-% 	    httpd_socket:deliver(Info#mod.socket_type,
-% 				 Info#mod.socket, ParsedBody),
-% 	    send_in_chunks(Info,Stream,NewContext,NewErrorLog);
-% 	eof ->
-% 	    {ok, ErrorLog};
-% 	{error, Reason} ->
-% 	    ?ERROR("Failed read from file: ~p",[Reason]),
-% 	    {error, {read,Reason}}
-%     end.
-
-
-%%
-%% "Fuzzy" HTML parser
-%%
 
 parse(Info,Body) ->
   parse(Info, Body, ?DEFAULT_CONTEXT, [], []).

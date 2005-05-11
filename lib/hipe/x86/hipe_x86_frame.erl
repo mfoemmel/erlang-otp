@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_x86_frame.erl,v 1.67 2005/04/11 13:23:07 mikpe Exp $
 %%% x86 stack frame handling
 %%%
 %%% - map non-register temps to stack slots
@@ -14,23 +14,24 @@
 -ifndef(HIPE_X86_FRAME).
 -define(HIPE_X86_FRAME,     hipe_x86_frame).
 -define(HIPE_X86_REGISTERS, hipe_x86_registers).
--define(HIPE_X86_CFG,       hipe_x86_cfg).
 -define(HIPE_X86_LIVENESS,  hipe_x86_liveness).
+-define(LEAF_WORDS,	    ?X86_LEAF_WORDS).
 -endif.
 
 -module(?HIPE_X86_FRAME).
 -export([frame/2]).
 -include("../x86/hipe_x86.hrl").
+-include("../rtl/hipe_literals.hrl").
 
 frame(Defun, _Options) ->
   Formals = fix_formals(hipe_x86:defun_formals(Defun)),
   Temps0 = all_temps(hipe_x86:defun_code(Defun), Formals),
   MinFrame = defun_minframe(Defun),
   Temps = ensure_minframe(MinFrame, Temps0),
-  CFG0 = ?HIPE_X86_CFG:init(Defun),
+  CFG0 = hipe_x86_cfg:init(Defun),
   Liveness = ?HIPE_X86_LIVENESS:analyse(CFG0),
   CFG1 = do_body(CFG0, Liveness, Formals, Temps),
-  ?HIPE_X86_CFG:linearise(CFG1).
+  hipe_x86_cfg:linearise(CFG1).
 
 fix_formals(Formals) ->
   fix_formals(?HIPE_X86_REGISTERS:nr_args(), Formals).
@@ -43,17 +44,17 @@ do_body(CFG0, Liveness, Formals, Temps) ->
   do_prologue(CFG1, Context).
 
 do_blocks(CFG, Context) ->
-  Labels = ?HIPE_X86_CFG:labels(CFG),
+  Labels = hipe_x86_cfg:labels(CFG),
   do_blocks(Labels, CFG, Context).
 
 do_blocks([Label|Labels], CFG, Context) ->
   Liveness = context_liveness(Context),
   LiveOut = ?HIPE_X86_LIVENESS:liveout(Liveness, Label),
-  Block = ?HIPE_X86_CFG:bb(CFG, Label),
+  Block = hipe_x86_cfg:bb(CFG, Label),
   Code = hipe_bb:code(Block),
   NewCode = do_block(Code, LiveOut, Context),
   NewBlock = hipe_bb:code_update(Block, NewCode),
-  NewCFG = ?HIPE_X86_CFG:bb_add(CFG, Label, NewBlock),
+  NewCFG = hipe_x86_cfg:bb_add(CFG, Label, NewBlock),
   do_blocks(Labels, NewCFG, Context);
 do_blocks([], CFG, _) ->
   CFG.
@@ -211,11 +212,25 @@ do_pseudo_call(I, LiveOut, Context, FPoff0) ->
   CallCode = [hipe_x86:mk_pseudo_call(Fun1, SDesc, ContLab, Linkage)],
   %% +word_size() for our RA and +word_size() for callee's RA should
   %% it need to call inc_stack
-  context_need_stack(Context, FPoff0 + 2*word_size()),
   StkArity = max(0, OrigArity - ?HIPE_X86_REGISTERS:nr_args()),
+  context_need_stack(Context, stack_need(FPoff0 + 2*word_size(), StkArity, Fun1)),
   ArgsBytes = word_size() * StkArity,
   {CallCode, FPoff0 - ArgsBytes}.
 
+stack_need(FPoff, StkArity, Fun) ->
+  case Fun of
+    #x86_prim{} -> FPoff;
+    #x86_mfa{m=M,f=F,a=A} ->
+      case erlang:is_builtin(M, F, A) of
+	true -> FPoff;
+	false -> stack_need_general(FPoff, StkArity)
+      end;
+    #x86_temp{} -> stack_need_general(FPoff, StkArity);
+    #x86_mem{} -> stack_need_general(FPoff, StkArity)
+  end.
+
+stack_need_general(FPoff, StkArity) ->
+  max(FPoff, FPoff + (?LEAF_WORDS - 2 - StkArity) * word_size()).
 
 %%%
 %%% Create stack descriptors for call sites.
@@ -254,7 +269,8 @@ do_pseudo_tailcall(I, Context) ->	% always at FPoff=context_framesize(Context)
   context_need_stack(Context, FPoff1),
   FPoff2 = FPoff1 + word_size()+word_size()*Arity - word_size()*length(Args),
   %% +word_size() for callee's inc_stack RA
-  context_need_stack(Context, FPoff2 + word_size()),
+  StkArity = length(hipe_x86:pseudo_tailcall_stkargs(I)),
+  context_need_stack(Context, stack_need(FPoff2 + word_size(), StkArity, Fun1)),
   I2 = hipe_x86:mk_jmp_fun(Fun1, hipe_x86:pseudo_tailcall_linkage(I)),
   Insns ++ adjust_sp(FPoff2, [I2]).
 
@@ -452,12 +468,35 @@ tmap_lookup(Map, Key) ->
 %%%	goto NewStart
 
 do_prologue(CFG, Context) ->
-  MaxStack = context_maxstack(Context),
-  if MaxStack > 0 ->
-      FrameSize = context_framesize(Context),
-      OldStartLab = ?HIPE_X86_CFG:start_label(CFG),
-      NewStartLab = hipe_gensym:get_next_label(x86),
+  do_check_stack(do_alloc_frame(CFG, Context), Context).
+
+do_alloc_frame(CFG, Context) ->
+  case context_framesize(Context) of
+    0 ->
+      CFG;
+    FrameSize ->
+      OldStartLab = hipe_x86_cfg:start_label(CFG),
       AllocFrameLab = hipe_gensym:get_next_label(x86),
+      SP = mk_sp(),
+      AllocFrameCode =
+	[hipe_x86:mk_alu('sub', hipe_x86:mk_imm(FrameSize), SP),
+	 hipe_x86:mk_jmp_label(OldStartLab)],
+      CFG1 = hipe_x86_cfg:bb_add(CFG, AllocFrameLab,
+				 hipe_bb:mk_bb(AllocFrameCode)),
+      hipe_x86_cfg:start_label_update(CFG1, AllocFrameLab)
+  end.
+
+do_check_stack(CFG, Context) ->
+  MaxStack = context_maxstack(Context),
+  Arity = context_arity(Context),
+  Guaranteed = max(0, (?LEAF_WORDS - 1 - Arity) * word_size()),
+  if MaxStack =< Guaranteed ->
+      %% io:format("~w: MaxStack ~w =< Guaranteed ~w :-)\n", [?MODULE,MaxStack,Guaranteed]),
+      CFG;
+     true ->
+      %% io:format("~w: MaxStack ~w > Guaranteed ~w :-(\n", [?MODULE,MaxStack,Guaranteed]),
+      AllocFrameLab = hipe_x86_cfg:start_label(CFG),
+      NewStartLab = hipe_gensym:get_next_label(x86),
       IncStackLab = hipe_gensym:get_next_label(x86),
       %%
       Type = 'untagged',
@@ -475,34 +514,16 @@ do_prologue(CFG, Context) ->
 	 hipe_x86:mk_cmp(
            hipe_x86:mk_mem(Pbase, SP_LIMIT_OFF, Type), Temp0),
 	 hipe_x86:mk_pseudo_jcc('b', IncStackLab, AllocFrameLab, 0.01)],
-      %%
-      AllocFrameCode =
-	%% XXX: use adjust_sp instead?
-	case FrameSize of
-	  0 ->
-	    %% XXX: candidate for dummy block removal
-	    [hipe_x86:mk_jmp_label(OldStartLab)];
-	  _ ->
-	    [hipe_x86:mk_alu('sub', hipe_x86:mk_imm(FrameSize), SP),
-	     hipe_x86:mk_jmp_label(OldStartLab)]
-	end,
-      %%
       IncStackCode =
 	[hipe_x86:mk_call(hipe_x86:mk_prim('inc_stack_0'),
 			  mk_minimal_sdesc(Context), not_remote),
 	 hipe_x86:mk_jmp_label(NewStartLab)],
       %%
-      CFG1 = ?HIPE_X86_CFG:bb_add(CFG, NewStartLab,
+      CFG1 = hipe_x86_cfg:bb_add(CFG, NewStartLab,
                                  hipe_bb:mk_bb(NewStartCode)),
-      CFG2 = ?HIPE_X86_CFG:bb_add(CFG1, AllocFrameLab,
-                                 hipe_bb:mk_bb(AllocFrameCode)),
-      CFG3 = ?HIPE_X86_CFG:bb_add(CFG2, IncStackLab,
-                                 hipe_bb:mk_bb(IncStackCode)),
-      CFG4 = ?HIPE_X86_CFG:start_label_update(CFG3, NewStartLab),
-      %%
-      CFG4;
-     true ->
-      CFG
+      CFG2 = hipe_x86_cfg:bb_add(CFG1, IncStackLab,
+				 hipe_bb:mk_bb(IncStackCode)),
+      hipe_x86_cfg:start_label_update(CFG2, NewStartLab)
   end.
 
 %%% typeof_src -- what's src's type?

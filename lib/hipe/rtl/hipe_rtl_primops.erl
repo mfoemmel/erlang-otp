@@ -8,7 +8,7 @@
 %%  History  :	* 2001-03-15 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%
-%% $Id$
+%% $Id: hipe_rtl_primops.erl,v 1.96 2004/11/10 16:22:14 pergu Exp $
 %%
 
 -module(hipe_rtl_primops). 

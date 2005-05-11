@@ -113,9 +113,6 @@ do_auth(Info, Directory, DirectoryData, _AuthType) ->
 	    {proceed,Info#mod.data};
 	{authorized, User} ->
 	    {proceed, [{remote_user,User}|Info#mod.data]};
-	{authorization_failed, Reason} ->
-	    ?vtrace("do_auth -> authorization_failed: ~p",[Reason]),
-	    {proceed, [{status,{401,none,Reason}}|Info#mod.data]};
 	{authorization_required, Realm} ->
 	    ?vtrace("do_auth -> authorization_required: ~p",[Realm]),
 	    ReasonPhrase = httpd_util:reason_phrase(401),
@@ -134,7 +131,6 @@ do_auth(Info, Directory, DirectoryData, _AuthType) ->
 		       Info#mod.data]}
     end.
 
-
 %% require
 
 require(Info, Directory, DirectoryData) ->
@@ -148,16 +144,8 @@ require(Info, Directory, DirectoryData) ->
 	    authorized;
 	_ ->
 	    case httpd_util:key1search(ParsedHeader, "authorization") of
-		%% Authorization required!
 		undefined ->
-		    case httpd_util:key1search(DirectoryData, auth_name) of
-			undefined ->
-			    {status,{500, none,
-				     ?NICE("AuthName directive" 
-					   "not specified")}};
-			Realm ->
-			    {authorization_required, Realm}
-		    end;
+		    authorization_required(DirectoryData);
 		%% Check credentials!
 		"Basic" ++ EncodedString ->
 		    DecodedString = http_base_64:decode(EncodedString),
@@ -166,8 +154,8 @@ require(Info, Directory, DirectoryData) ->
 				      Directory, DirectoryData) of
 			{yes, User} ->
 			    {authorized, User};
-			{no, Reason} ->
-			    {authorization_failed, Reason};
+			{no, _Reason} ->
+			    authorization_required(DirectoryData);
 			{status, {StatusCode,PhraseArgs,Reason}} ->
 			    {status,{StatusCode,PhraseArgs,Reason}}
 		    end;
@@ -176,6 +164,14 @@ require(Info, Directory, DirectoryData) ->
 		    {status, {401, none, ?NICE("Bad credentials "++
 					       BadCredentials)}}
 	    end
+    end.
+
+authorization_required(DirectoryData) ->
+    case httpd_util:key1search(DirectoryData, auth_name) of
+	undefined ->
+	    {status,{500, none,?NICE("AuthName directive not specified")}};
+	Realm ->
+	    {authorization_required, Realm}
     end.
 
 a_valid_user(Info,DecodedString,ValidUsers,ValidGroups,Dir,DirData) ->
@@ -753,5 +749,3 @@ get_options(Opt, userData)->
 
 lookup(Db, Key) ->
     ets:lookup(Db, Key).
-
-

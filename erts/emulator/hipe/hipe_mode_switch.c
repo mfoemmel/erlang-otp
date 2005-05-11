@@ -125,7 +125,7 @@ static void hipe_check_nstack(Process *p, unsigned nwords);
 #include "hipe_x86_glue.h"
 #elif defined(__x86_64__)
 #include "hipe_amd64_glue.h"
-#elif defined(__powerpc__) || defined(__ppc__)
+#elif defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__)
 #include "hipe_ppc_glue.h"
 #endif
 
@@ -445,6 +445,9 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	      int reds_in = p->def_arg_reg[5];
 #endif
 	      p = schedule(p, reds_in - p->fcalls);
+#ifdef ERTS_SMP
+	      reg = p->scheduler_data->save_reg;
+#endif
 	  }
 	  {
 	      Eterm *argp;

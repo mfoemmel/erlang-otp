@@ -16,6 +16,7 @@
 %%     $Id $
 %%
 -module(beam_lib).
+-behaviour(gen_server).
 
 -export([info/1,
 	 cmp/2,
@@ -30,12 +31,20 @@
 	 version/1,
 	 format_error/1]).
 
+%% The following functions implement encrypted debug info.
+
+-export([crypto_key_fun/1, clear_crypto_key_fun/0]).
+-export([init/1,handle_call/3,handle_cast/2,handle_info/2,
+	 terminate/2,code_change/3]).
+-export([make_crypto_key/2, get_crypto_key/1]).	%Utilities used by compiler
+
 -import(lists,
 	[append/1, delete/2, foreach/2, keydelete/3, keymember/3, keysearch/3,
 	 keysort/2, map/2, member/2, nthtail/2, prefix/2, reverse/1, 
 	 sort/1, splitwith/2]).
 
 -include_lib("kernel/include/file.hrl").
+-include("erl_compile.hrl").
 
 %%
 %%  Exported functions
@@ -106,6 +115,21 @@ format_error({not_a_directory, Name}) ->
     io_lib:format("~p: Not a directory~n", [Name]);
 format_error(E) ->
     io_lib:format("~p~n", [E]).
+
+%% 
+%% Exported functions for encrypted debug info.
+%%
+
+crypto_key_fun(F) ->
+    call_crypto_server({crypto_key_fun, F}).
+
+clear_crypto_key_fun() ->
+    call_crypto_server(clear_crypto_key_fun).
+
+make_crypto_key(des3_cbc, String) ->
+    <<K1:8/binary,K2:8/binary>> = First = erlang:md5(String),
+    <<K3:8/binary,IVec:8/binary>> = erlang:md5([First|reverse(String)]),
+    {K1,K2,K3,IVec}.
 
 %%
 %%  Local functions
@@ -361,39 +385,55 @@ get_chunk(Id, Pos, Size, FD) ->
 
 chunks_to_data([{Id, Name} | CNs], Chunks, File, Cs, Module, Atoms, L) ->
     {value, {_Id, Chunk}} =  keysearch(Id, 1, Chunks),
-    {NewAtoms, Ret} = chunk_to_data(Name, Chunk, File, Cs, Atoms),
+    {NewAtoms, Ret} = chunk_to_data(Name, Chunk, File, Cs, Atoms, Module),
     chunks_to_data(CNs, Chunks, File, Cs, Module, NewAtoms, [Ret | L]);
 chunks_to_data([], _Chunks, _File, _Cs, Module, _Atoms, L) ->
     {ok, {Module, reverse(L)}}.
 
-chunk_to_data(Id, Chunk, File, _Cs, AtomTable) when Id == attributes ->
-    case catch binary_to_term(Chunk) of
-	{'EXIT', _} ->
-	    error({invalid_chunk, File, chunk_name_to_id(Id, File)});
-	Term ->
-	    {AtomTable, {Id, attributes(Term)}}
+chunk_to_data(Id, Chunk, File, _Cs, AtomTable, _Mod) when Id == attributes ->
+    try
+	Term = binary_to_term(Chunk),
+	{AtomTable, {Id, attributes(Term)}}
+    catch
+	error:badarg ->
+	    error({invalid_chunk, File, chunk_name_to_id(Id, File)})
     end;
-chunk_to_data(Id, Chunk, File, _Cs, AtomTable) when Id == abstract_code ->
-    case catch binary_to_term(Chunk) of
-	{'EXIT', _} when <<>> == Chunk ->
+chunk_to_data(Id, Chunk, File, _Cs, AtomTable, _Mod) when Id == compile_info ->
+    try
+	{AtomTable, {Id, binary_to_term(Chunk)}}
+    catch
+	error:badarg ->
+	    error({invalid_chunk, File, chunk_name_to_id(Id, File)})
+    end;
+chunk_to_data(Id, Chunk, File, _Cs, AtomTable, Mod) when Id == abstract_code ->
+    case Chunk of
+	<<>> ->
 	    {AtomTable, {Id, no_abstract_code}};
-	{'EXIT', _} ->
-	    error({invalid_chunk, File, chunk_name_to_id(Id, File)});
-	Term ->
-	    {AtomTable, {Id, Term}}
+	<<0:8,N:8,Mode0:N/binary,Rest/binary>> ->
+	    Mode = list_to_atom(binary_to_list(Mode0)),
+	    decrypt_abst(Mode, Mod, File, Id, AtomTable, Rest);
+	_ ->
+	    case catch binary_to_term(Chunk) of
+		{'EXIT', _} ->
+		    error({invalid_chunk, File, chunk_name_to_id(Id, File)});
+		Term ->
+		    {AtomTable, {Id, Term}}
+	    end
     end;
-chunk_to_data(Id, _Chunk, _File, Cs, AtomTable0) when Id == atoms ->
+chunk_to_data(Id, _Chunk, _File, Cs, AtomTable0, _Mod) when Id == atoms ->
     AtomTable = ensure_atoms(AtomTable0, Cs),
     Atoms = ets:tab2list(AtomTable),
     {AtomTable, {Id, lists:sort(Atoms)}};
-chunk_to_data(ChunkName, Chunk, File, Cs, AtomTable) when atom(ChunkName) ->
+chunk_to_data(ChunkName, Chunk, File,
+	      Cs, AtomTable, _Mod) when atom(ChunkName) ->
     case catch symbols(Chunk, AtomTable, Cs, ChunkName) of
 	{ok, NewAtomTable, S} ->
 	    {NewAtomTable, {ChunkName, S}};
 	{'EXIT', _} ->
 	    error({invalid_chunk, File, chunk_name_to_id(ChunkName, File)})
     end;
-chunk_to_data(ChunkId, Chunk, _File, _Cs, AtomTable) -> % when list(ChunkId)
+chunk_to_data(ChunkId, Chunk, _File, 
+	      _Cs, AtomTable, _Module) -> % when list(ChunkId)
     {AtomTable, {ChunkId, Chunk}}. % Chunk is a binary
 
 chunk_name_to_id(atoms, _)           -> "Atom";
@@ -405,6 +445,7 @@ chunk_name_to_id(locals, _)          -> "LocT";
 chunk_name_to_id(labeled_locals, _)  -> "LocT";
 chunk_name_to_id(attributes, _)      -> "Attr";
 chunk_name_to_id(abstract_code, _)   -> "Abst";
+chunk_name_to_id(compile_info, _)    -> "CInf";
 chunk_name_to_id(Other, File) -> 
     error({unknown_chunk, File, Other}).
 
@@ -522,6 +563,7 @@ beam_filename(Bin) when binary(Bin) ->
 beam_filename(File) ->
     filename:rootname(File, ".beam") ++ ".beam".
 
+
 uncompress(Binary0) ->
     {ok, Fd} = ram_file:open(Binary0, [write, binary]),
     {ok, _} = ram_file:uncompress(Fd),
@@ -550,3 +592,209 @@ file_error(FileName, {error, Error}) ->
 
 error(Reason) ->
     throw({error, ?MODULE, Reason}).
+
+%%% ====================================================================
+%%% The rest of the file handles encrypted debug info.
+%%%
+%%% Encrypting the debug info is only useful if you want to
+%%% have the debug info available all the time (maybe even in a live
+%%% system), but don't want to risk that anyone else but yourself
+%%% can use it.
+%%% ====================================================================
+
+-record(state, {crypto_key_f}).
+-define(CRYPTO_KEY_SERVER, beam_lib__crypto_key_server).
+
+decrypt_abst(Mode, Module, File, Id, AtomTable, Bin) ->
+    try
+	KeyString = get_crypto_key({debug_info, Mode, Module, File}),
+	Key = make_crypto_key(des3_cbc, KeyString),
+	Term = decrypt_abst_1(Mode, Key, Bin),
+	{AtomTable, {Id, Term}}
+    catch
+	_:_ ->
+	    error({key_missing_or_invalid, File, Id})
+    end.
+
+decrypt_abst_1(des3_cbc, {K1, K2, K3, IVec}, Bin) ->
+    ok = start_crypto(),
+    NewBin = crypto:des3_cbc_decrypt(K1, K2, K3, IVec, Bin),
+    binary_to_term(NewBin).
+
+start_crypto() ->
+    case crypto:start() of
+	{error, {already_started, _}} ->
+	    ok;
+	ok ->
+	    ok
+    end.
+
+get_crypto_key(What) ->
+    call_crypto_server({get_crypto_key, What}).
+
+call_crypto_server(Req) ->
+    try 
+	gen_server:call(?CRYPTO_KEY_SERVER, Req, infinity)
+    catch
+	exit:{noproc,_} ->
+	    start_crypto_server(),
+	    erlang:yield(),
+	    call_crypto_server(Req)
+    end.
+
+start_crypto_server() ->
+    gen_server:start({local,?CRYPTO_KEY_SERVER}, ?MODULE, [], []).
+
+init([]) ->
+    {ok,#state{}}.
+
+handle_call({get_crypto_key, _}=R, From, #state{crypto_key_f=undefined}=S) ->
+    case crypto_key_fun_from_file() of
+	error ->
+	    {reply, error, S};
+	F when is_function(F) ->
+	    %% The init function for the fun has already been called.
+	    handle_call(R, From, S#state{crypto_key_f=F})
+    end;
+handle_call({get_crypto_key, What}, From, #state{crypto_key_f=F}=S) ->
+    try
+	Result = F(What),
+	%% The result may hold information that we don't want 
+	%% lying around. Reply first, then GC, then noreply.
+	gen_server:reply(From, Result),
+	erlang:garbage_collect(),
+	{noreply, S}
+    catch
+	_:_ ->
+	    {reply, error, S}
+    end;
+handle_call({crypto_key_fun, F}, {_,_} = From, S) ->
+    case S#state.crypto_key_f of
+	undefined ->
+	    if is_function(F) ->
+		    case erlang:fun_info(F, arity) of
+			{arity, 1} ->
+			    {Result, Fun, Reply} = 
+				case catch F(init) of
+				    ok ->
+					{true, F, ok};
+				    {ok, F1} when is_function(F1) ->
+					case erlang:fun_info(F1, arity) of
+					    {arity, 1} ->
+						{true, F1, ok};
+					    {arity, _} ->
+						{false, undefined, 
+						 {error, badfun}}
+					end;
+				    {error, Reason} ->
+					{false, undefined, {error, Reason}};
+				    {'EXIT', Reason} ->
+					{false, undefined, {error, Reason}}
+				end,
+			    gen_server:reply(From, Reply),
+			    erlang:garbage_collect(),
+			    NewS = case Result of
+				       true ->
+					   S#state{crypto_key_f = Fun};
+				       false ->
+					   S
+				   end,
+			    {noreply, NewS};
+			{arity, _} ->
+			    {reply, {error, badfun}, S}
+		    end;
+	       true ->
+		    {reply, {error, badfun}, S}
+	    end;
+	OtherF when is_function(OtherF) ->
+	    {reply, {error, exists}, S}
+    end;
+handle_call(clear_crypto_key_fun, _From, S) ->
+    case S#state.crypto_key_f of
+	undefined ->
+	    {stop,normal,undefined,S};
+	F ->
+	    Result = (catch F(clear)),
+	    {stop,normal,{ok,Result},S}
+    end.
+
+handle_cast(_, State) ->
+    {noreply, State}.
+
+handle_info(_, State) ->
+    {noreply, State}.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+    
+terminate(_Reason, _State) ->
+    ok.
+
+crypto_key_fun_from_file() ->
+    case init:get_argument(home) of
+	{ok,[[Home]]} ->
+	    crypto_key_fun_from_file_1([".",Home]);
+	_ ->
+	    crypto_key_fun_from_file_1(["."])
+    end.
+
+crypto_key_fun_from_file_1(Path) ->
+    case f_p_s(Path, ".erlang.crypt") of
+	{ok, KeyInfo, _} ->
+	    try_load_crypto_fun(KeyInfo);
+	_ ->
+	    error
+    end.
+
+f_p_s(P, F) ->
+    case file:path_script(P, F) of
+	{error, enoent} ->
+	    {error, enoent};
+	{error, {Line, _Mod, _Term}=E} ->
+	    error("file:path_script(~p,~p): error on line ~p: ~s~n",
+		  [P, F, Line, file:format_error(E)]),
+	    ok;
+	{error, E} when is_atom(E) ->
+	    error("file:path_script(~p,~p): ~s~n",
+		  [P, F, file:format_error(E)]),
+	    ok;
+	Other ->
+	    Other
+    end.
+
+try_load_crypto_fun(KeyInfo) when is_list(KeyInfo) ->
+    T = ets:new(keys, [private, set]),
+    foreach(
+      fun({debug_info, Mode, M, Key}) when is_atom(M) ->
+	      ets:insert(T, {{debug_info,Mode,M,[]}, Key});
+	 ({debug_info, Mode, [], Key}) ->
+	      ets:insert(T, {{debug_info, Mode, [], []}, Key});
+	 (Other) ->
+	      error("unknown key: ~p~n", [Other])
+      end, KeyInfo),
+    fun({debug_info, Mode, M, F}) ->
+	    alt_lookup_key(
+	      [{debug_info,Mode,M,F},
+	       {debug_info,Mode,M,[]},
+	       {debug_info,Mode,[],[]}], T);
+       (clear) ->
+	    ets:delete(T);
+       (_) ->
+	    error
+    end;
+try_load_crypto_fun(KeyInfo) ->
+    error("unrecognized crypto key info: ~p\n", [KeyInfo]).
+
+alt_lookup_key([H|T], Tab) ->
+    case ets:lookup(Tab, H) of
+	[] ->
+	    alt_lookup_key(T, Tab);
+	[{_, Val}] ->
+	    Val
+    end;
+alt_lookup_key([], _) ->
+    error.
+
+error(Fmt, Args) ->
+    error_logger:error_msg(Fmt, Args),
+    error.

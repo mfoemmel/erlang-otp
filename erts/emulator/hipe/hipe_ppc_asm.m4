@@ -6,9 +6,33 @@ changecom(`/*', `*/')dnl
 #define HIPE_PPC_ASM_H'
 
 /*
+ * Handle 32 vs 64-bit.
+ */
+ifelse(ARCH,ppc64,`
+/* 64-bit PowerPC */
+define(LOAD,ld)dnl
+define(STORE,std)dnl
+define(CMPI,cmpdi)dnl
+define(WSIZE,8)dnl
+',`
+/* 32-bit PowerPC */
+define(LOAD,lwz)dnl
+define(STORE,stw)dnl
+define(CMPI,cmpwi)dnl
+define(WSIZE,4)dnl
+')dnl
+`#define LOAD	'LOAD
+`#define STORE	'STORE
+`#define CMPI	'CMPI
+`#define WSIZE	'WSIZE
+
+/*
  * Tunables.
  */
+define(LEAF_WORDS,16)dnl number of stack words for leaf functions
 define(NR_ARG_REGS,4)dnl admissible values are 0 to 6, inclusive
+
+`#define PPC_LEAF_WORDS	'LEAF_WORDS
 
 /*
  * Workarounds for Darwin.
@@ -17,13 +41,22 @@ ifelse(OPSYS,darwin,``
 /* Darwin */
 #define JOIN(X,Y)	X##Y
 #define CSYM(NAME)	JOIN(_,NAME)
-#define GLOBAL(NAME)	.globl CSYM(NAME)
+#define ASYM(NAME)	CSYM(NAME)
+#define GLOBAL(NAME)	.globl NAME
 #define SEMI		@
 #define SET_SIZE(NAME)	/*empty*/
 #define TYPE_FUNCTION(NAME)	/*empty*/
 '',``
-/* Not Darwin */
+/* Not Darwin */''
+`ifelse(ARCH,ppc64,``
+/* 64-bit */
+#define JOIN(X,Y)	X##Y
+#define CSYM(NAME)	JOIN(.,NAME)
+'',``
+/* 32-bit */
 #define CSYM(NAME)	NAME
+'')'
+``#define ASYM(NAME)	NAME
 #define GLOBAL(NAME)	.global NAME
 #define SEMI		;
 #define SET_SIZE(NAME)	.size NAME,.-NAME
@@ -89,16 +122,16 @@ ifelse(OPSYS,darwin,``
 	mtlr	TEMP_LR'
 
 `#define SAVE_CACHED_STATE	\
-	stw	HP, P_HP(P) SEMI\
-	stw	NSP, P_NSP(P)'
+	STORE	HP, P_HP(P) SEMI\
+	STORE	NSP, P_NSP(P)'
 
 `#define RESTORE_CACHED_STATE	\
-	lwz	HP, P_HP(P) SEMI\
-	lwz	NSP, P_NSP(P)'
+	LOAD	HP, P_HP(P) SEMI\
+	LOAD	NSP, P_NSP(P)'
 
 `#define SAVE_CONTEXT		\
 	mflr	TEMP_LR SEMI	\
-	stw	TEMP_LR, P_NRA(P) SEMI\
+	STORE	TEMP_LR, P_NRA(P) SEMI\
 	SAVE_CACHED_STATE'
 
 `#define RESTORE_CONTEXT	\
@@ -148,7 +181,7 @@ dnl XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 dnl
 dnl LOAD_ARG_REGS
 dnl
-define(LAR_1,`lwz ARG$1, P_ARG$1(P) SEMI ')dnl
+define(LAR_1,`LOAD ARG$1, P_ARG$1(P) SEMI ')dnl
 define(LAR_N,`ifelse(eval($1 >= 0),0,,`LAR_N(eval($1-1))LAR_1($1)')')dnl
 define(LOAD_ARG_REGS,`LAR_N(eval(NR_ARG_REGS-1))')dnl
 `#define LOAD_ARG_REGS	'LOAD_ARG_REGS
@@ -156,7 +189,7 @@ define(LOAD_ARG_REGS,`LAR_N(eval(NR_ARG_REGS-1))')dnl
 dnl
 dnl STORE_ARG_REGS
 dnl
-define(SAR_1,`stw ARG$1, P_ARG$1(P) SEMI ')dnl
+define(SAR_1,`STORE ARG$1, P_ARG$1(P) SEMI ')dnl
 define(SAR_N,`ifelse(eval($1 >= 0),0,,`SAR_N(eval($1-1))SAR_1($1)')')dnl
 define(STORE_ARG_REGS,`SAR_N(eval(NR_ARG_REGS-1))')dnl
 `#define STORE_ARG_REGS	'STORE_ARG_REGS
@@ -188,8 +221,8 @@ dnl the source and destination are the same, the move is suppressed.
 dnl
 define(NBIF_MOVE_REG,`ifelse($1,$2,`# mr $1, $2',`mr	$1, $2')')dnl
 define(NBIF_REG_ARG,`NBIF_MOVE_REG($1,ARG$2)')dnl
-define(NBIF_STK_LOAD,`lwz	$1, $2(NSP)')dnl
-define(NBIF_STK_ARG,`NBIF_STK_LOAD($1,eval(4*(($2-$3)-1)))')dnl
+define(NBIF_STK_LOAD,`LOAD	$1, $2(NSP)')dnl
+define(NBIF_STK_ARG,`NBIF_STK_LOAD($1,eval(WSIZE*(($2-$3)-1)))')dnl
 define(NBIF_ARG,`ifelse(eval($3 >= NR_ARG_REGS),0,`NBIF_REG_ARG($1,$3)',`NBIF_STK_ARG($1,$2,$3)')')dnl
 `/* #define NBIF_ARG_1_0	'NBIF_ARG(r3,1,0)` */'
 `/* #define NBIF_ARG_2_0	'NBIF_ARG(r3,2,0)` */'
@@ -208,7 +241,7 @@ dnl NBIF_RET(ARITY)
 dnl Generates a return from a native BIF, taking care to pop
 dnl any stacked formal parameters.
 dnl
-define(RET_POP,`ifelse(eval($1 > NR_ARG_REGS),0,0,eval(4*($1 - NR_ARG_REGS)))')dnl
+define(RET_POP,`ifelse(eval($1 > NR_ARG_REGS),0,0,eval(WSIZE*($1 - NR_ARG_REGS)))')dnl
 define(NBIF_RET_N,`ifelse(eval($1),0,`NSP_RET0',`NSP_RETN($1)')')dnl
 define(NBIF_RET,`NBIF_RET_N(eval(RET_POP($1)))')dnl
 `/* #define NBIF_RET_0	'NBIF_RET(0)` */'

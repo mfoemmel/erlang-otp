@@ -29,8 +29,12 @@
 #define FALSE 0
 #define WAIT_FOR_NEW_MSG 0
 #define NEW_MSG_ARRIVED  1
-#define TIME_OUT 10
 #define DEC_NUM_LENGTH 50
+
+/* 0 in this case (SQL_ATTR_CONNECTION_TIMEOUT) corresponds to erlang
+   infinity. Erlang will handle all timeouts so we do not want any in the
+   portprogram. */
+#define TIME_OUT 0  
 
 /* Constats defining the command protocol between the Erlang control process
    and the port program. These constants must also be defined in the same
@@ -174,4 +178,3 @@ typedef struct {
 #define use_srollable_cursors(db_state) (db_state -> use_srollable_cursors)
 #define tuple_row(db_state) (db_state -> tuple_row)
 #define exists_more_result_sets(db_state) (db_state -> exists_more_result_sets)
-

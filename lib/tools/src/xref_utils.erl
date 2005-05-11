@@ -31,6 +31,8 @@
 
 -export([predefined_functions/0, is_funfun/3, is_builtin/3]).
 
+-export([is_static_function/2]).
+
 -export([closure/1, components/1, condensation/1, path/2, use/2, call/2]).
 
 -export([regexpr/2]).
@@ -344,6 +346,17 @@ is_funfun(_, _, _) -> false.
 is_builtin(erts_debug, apply, 4) -> true;
 is_builtin(M, F, A) ->
     erlang:is_builtin(M, F, A).
+
+%% A "static function" is a function in an abstract module that may be
+%% called directly.
+is_static_function(module_info, 0) ->
+    true;
+is_static_function(module_info, 1) ->
+    true;
+is_static_function(new, _) ->
+    true;
+is_static_function(_F, _A) ->
+    false.
 
 %%% The following functions implement some of the operators recognized
 %%% in xref_compiler.erl.

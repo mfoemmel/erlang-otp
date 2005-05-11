@@ -298,6 +298,9 @@ void init_break_handler(void)
   sys_sigset(SIGQUIT, do_quit);
 }
 
+void erts_replace_intr(void) {
+}
+
 int sys_max_files(void) 
 {
   return(max_files);

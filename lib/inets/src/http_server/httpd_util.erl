@@ -19,15 +19,15 @@
 -export([key1search/2, key1search/3, lookup/2, lookup/3, multi_lookup/2,
 	 lookup_mime/2, lookup_mime/3, lookup_mime_default/2,
 	 lookup_mime_default/3, reason_phrase/1, message/3, rfc1123_date/0,
-	 rfc1123_date/1, day/1, month/1, decode_hex/1, decode_base64/1, encode_base64/1,
+	 rfc1123_date/1, day/1, month/1, decode_hex/1, decode_base64/1,
+	 encode_base64/1,
 	 flatlength/1, split_path/1, split_script_path/1, suffix/1, to_upper/1,
-	 to_lower/1, split/3, header/2, header/3, header/4, uniq/1,
+	 to_lower/1, split/3, uniq/1,
 	 make_name/2,make_name/3,make_name/4,strip/1,
 	 hexlist_to_integer/1,integer_to_hexlist/1,
-	 convert_request_date/1,create_etag/1,create_etag/2,getSize/1,
+	 convert_request_date/1,create_etag/1,create_etag/2,
 	 convert_netscapecookie_date/1]).
 
-%%Since hexlist_to_integer is a lousy name make a name convert
 -export([encode_hex/1]).
 -include_lib("kernel/include/file.hrl").
 
@@ -533,61 +533,61 @@ do_split(String,RegExp,Limit) ->
     end.
 
 %% header
-header(StatusCode,Date)when list(Date)->
-    header(StatusCode,"text/plain",false);
+% header(StatusCode,Date)when list(Date)->
+%     header(StatusCode,"text/plain",false);
 
-header(StatusCode, PersistentConnection) when integer(StatusCode)->
-    Date = rfc1123_date(),
-    Connection = 
-	case PersistentConnection of
-	    true ->
-		"";
-	    _ ->
-		"Connection: close \r\n"
-	end,
-    io_lib:format("HTTP/1.1 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n~s",
-		  [StatusCode, httpd_util:reason_phrase(StatusCode),
-		   Date, ?SERVER_SOFTWARE, Connection]).
+% header(StatusCode, PersistentConnection) when integer(StatusCode)->
+%     Date = rfc1123_date(),
+%     Connection = 
+% 	case PersistentConnection of
+% 	    true ->
+% 		"";
+% 	    _ ->
+% 		"Connection: close \r\n"
+% 	end,
+%     io_lib:format("HTTP/1.1 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n~s",
+% 		  [StatusCode, httpd_util:reason_phrase(StatusCode),
+% 		   Date, ?SERVER_SOFTWARE, Connection]).
 
-%%----------------------------------------------------------------------
+% %%----------------------------------------------------------------------
 
-header(StatusCode, MimeType, Date) when list(Date) ->
-    header(StatusCode, MimeType, false,rfc1123_date());
-
-
-header(StatusCode, MimeType, PersistentConnection) when integer(StatusCode) ->
-    header(StatusCode, MimeType, PersistentConnection,rfc1123_date()).
+% header(StatusCode, MimeType, Date) when list(Date) ->
+%     header(StatusCode, MimeType, false,rfc1123_date());
 
 
-%%----------------------------------------------------------------------
-
-header(416, MimeType,PersistentConnection,Date)-> 
-    Connection = 
-	case PersistentConnection of
-	    true ->
-		"";
-	    _ ->
-		"Connection: close \r\n"
-	end,
-    io_lib:format("HTTP/1.1 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n"
-		  "Content-Range:bytes *\r\n"
-		  "Content-Type: ~s\r\n~s",
-		  [416, httpd_util:reason_phrase(416),
-		   Date, ?SERVER_SOFTWARE, MimeType, Connection]);
+% header(StatusCode, MimeType, PersistentConnection) when integer(StatusCode) ->
+%     header(StatusCode, MimeType, PersistentConnection,rfc1123_date()).
 
 
-header(StatusCode, MimeType,PersistentConnection,Date) when integer(StatusCode)-> 
-    Connection = 
-	case PersistentConnection of
-	    true ->
-		"";
-	    _ ->
-		"Connection: close \r\n"
-	end,
-    io_lib:format("HTTP/1.1 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n"
-		  "Content-Type: ~s\r\n~s",
-		  [StatusCode, httpd_util:reason_phrase(StatusCode),
-		   Date, ?SERVER_SOFTWARE, MimeType, Connection]).
+% %%----------------------------------------------------------------------
+
+% header(416, MimeType,PersistentConnection,Date)-> 
+%     Connection = 
+% 	case PersistentConnection of
+% 	    true ->
+% 		"";
+% 	    _ ->
+% 		"Connection: close \r\n"
+% 	end,
+%     io_lib:format("HTTP/1.1 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n"
+% 		  "Content-Range:bytes *\r\n"
+% 		  "Content-Type: ~s\r\n~s",
+% 		  [416, httpd_util:reason_phrase(416),
+% 		   Date, ?SERVER_SOFTWARE, MimeType, Connection]);
+
+
+% header(StatusCode, MimeType,PersistentConnection,Date) when integer(StatusCode)-> 
+%     Connection = 
+% 	case PersistentConnection of
+% 	    true ->
+% 		"";
+% 	    _ ->
+% 		"Connection: close \r\n"
+% 	end,
+%     io_lib:format("HTTP/1.1 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n"
+% 		  "Content-Type: ~s\r\n~s",
+% 		  [StatusCode, httpd_util:reason_phrase(StatusCode),
+% 		   Date, ?SERVER_SOFTWARE, MimeType, Connection]).
 
 
 
@@ -661,38 +661,9 @@ hexlist_to_integer(List)->
 encode_hex(Num)->
     integer_to_hexlist(Num).
 
-
 integer_to_hexlist(Num)->
-    integer_to_hexlist(Num,getSize(Num),[]).
-
-integer_to_hexlist(Num,Pot,Res) when Pot<0 ->
-    convert_to_ascii([Num|Res]);
-
-integer_to_hexlist(Num,Pot,Res) ->
-    Position=(16 bsl (Pot*4)),
-    PosVal=Num div Position,
-    integer_to_hexlist(Num-(PosVal*Position),Pot-1,[PosVal|Res]).
-convert_to_ascii(RevesedNum)->
-    convert_to_ascii(RevesedNum,[]).
-
-convert_to_ascii([],Num)->
-    Num;
-convert_to_ascii([Num | Reversed], Number) when Num > -1, Num < 10 ->
-    convert_to_ascii(Reversed, [Num+48 | Number]);
-convert_to_ascii([Num | Reversed], Number) when Num > 9, Num < 16 ->
-    convert_to_ascii(Reversed, [Num+55 | Number]);
-convert_to_ascii(_NumReversed, _Number) ->
-    error.
-				    	      
-getSize(Num)->
-    getSize(Num,0).
-
-getSize(Num,Pot)when Num<(16 bsl(Pot *4))  ->
-    Pot-1;
-
-getSize(Num,Pot) ->
-    getSize(Num,Pot+1).
-
+    http_util:integer_to_hexlist(Num).
+	    	      
 create_etag(FileInfo)->
     create_etag(FileInfo#file_info.mtime,FileInfo#file_info.size).
 

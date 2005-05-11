@@ -1119,7 +1119,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 	return ERL_DRV_ERROR_GENERAL;
     }
 
-    /* make the string suitable for giving to "sh" (5 = strlen("exec")) */
+    /* make the string suitable for giving to "sh" (5 = strlen("exec ")) */
     len = strlen(name);
     if (len + 5 >= sys_tmp_buf_size) {
 	close_pipes(ifd, ofd, opts->read_write);
@@ -2375,7 +2375,7 @@ int do_wait;
     SysTimeval poll;
 
     int local_max_fd = max_fd;
-    int i;
+    int i, saved_errno;
     fd_set err_set;
 
     /* choose timeout value for select() */
@@ -2395,12 +2395,15 @@ int do_wait;
     read_fds = input_fds; 
     write_fds = output_fds;
     i = select(max_fd + 1, &read_fds, &write_fds, NULLFDS, sel_time);
+    saved_errno = errno; /* erts_deliver_time() and do_break_handling()
+			    might change errno... */
     erts_deliver_time(NULL); /* sync the machine's idea of time */
 
     /* break handling moved here, signal handler just sets flag */
     if (break_requested) 
 	do_break_handling();
 
+    errno = saved_errno;
     if (i <= 0) {
 	/* probably an interrupt or poll with no input */
 
@@ -2416,6 +2419,7 @@ int do_wait;
 		    FD_SET(i, &err_set);
 		    if (select(max_fd + 1, &err_set, NULL, NULL, sel_time) == -1){
 			/* bad read FD found */
+			cerr_pos = 0;
 			erl_printf(CBUF, "Bad input_fd in select! "
 				   "fd,port,driver,name: %d,%d,%s,%s\n", 
 				   i, fd_data[i].inport, 
@@ -2437,6 +2441,7 @@ int do_wait;
 		    if (select(max_fd + 1, NULL, &err_set, NULL, sel_time) 
 			== -1) {
 			/* bad write FD found */
+			cerr_pos = 0;
 			erl_printf(CBUF, "Bad output_fd in select! "
 				   "fd,port,driver,name: %d,%d,%s,%s\n", 
 				   i, fd_data[i].outport, 
@@ -2481,7 +2486,7 @@ int do_wait;
 CHECK_IO_P(int do_wait)
 {
     SysTimeval wait_time;
-    int r, i;
+    int r, i, saved_errno = 0;
     int max_fd_plus_one = max_fd + 1;
     int timeout;		/* In milliseconds */
     struct readyfd* rp;
@@ -2523,6 +2528,8 @@ CHECK_IO_P(int do_wait)
     } else {
 	nof_ready_fds = 0;
 	rp = NULL; /* avoid 'uninitialized' warning */
+	saved_errno = errno; /* erts_deliver_time() and do_break_handling()
+				might change errno... */
     }
 
     erts_deliver_time(NULL); /* sync the machine's idea of time */
@@ -2534,8 +2541,10 @@ CHECK_IO_P(int do_wait)
 	return;
 
     if (r < 0) {
+	errno = saved_errno;
 	if (errno == ERRNO_BLOCK || errno == EINTR)
 	    return;
+	cerr_pos = 0;
 	erl_printf(CBUF, "poll() error %d (%s)\n", errno, erl_errno_id(errno));
 	send_error_to_logger(NIL);
 	return;
@@ -2571,6 +2580,7 @@ CHECK_IO_P(int do_wait)
 		output_ready(qp->oport, fd);
 	}
 	else if (revents & POLLNVAL) {
+	    cerr_pos = 0;
 	    if (qp->pfd.events & POLL_INPUT) {
 		erl_printf(CBUF, "Bad input fd in poll()! fd,port,driver,name:"
 			   " %d,%d,%s,%s\n", fd,
@@ -2609,7 +2619,7 @@ CHECK_IO_P(int do_wait)
 static void check_io_kp(int do_wait)
 {
     SysTimeval wait_time;
-    int r, i;
+    int r, i, saved_errno = 0;
 #ifndef USE_KQUEUE
     int max_fd_plus_one = max_fd + 1;
 #endif
@@ -2709,6 +2719,8 @@ static void check_io_kp(int do_wait)
       } else {
 	nof_ready_fds = 0;
 	rp = NULL; /* avoid 'uninitialized' warning */
+	saved_errno = errno; /* erts_deliver_time() and do_break_handling()
+				might change errno... */
       }
     } else {
 #endif
@@ -2803,6 +2815,8 @@ static void check_io_kp(int do_wait)
     } else {
 	nof_ready_fds = 0;
 	rp = NULL; /* avoid 'uninitialized' warning */
+	saved_errno = errno; /* erts_deliver_time() and do_break_handling()
+				might change errno... */
     }
 #ifdef USE_DEVPOLL
     } 
@@ -2817,8 +2831,10 @@ static void check_io_kp(int do_wait)
 	return;
 
     if (r < 0) {
+	errno = saved_errno;
 	if (errno == ERRNO_BLOCK || errno == EINTR)
 	    return;
+	cerr_pos = 0;
 	erl_printf(CBUF, "poll() error %d (%s)\n", errno, erl_errno_id(errno));
 	send_error_to_logger(NIL);
 	return;
@@ -2871,6 +2887,7 @@ static void check_io_kp(int do_wait)
 		output_ready(qp->oport, fd);
 	}
 	else if (revents & POLLNVAL) {
+	    cerr_pos = 0;
 	    if (qp->pfd.events & POLL_INPUT) {
 		erl_printf(CBUF, "Bad input fd in poll()! fd,port,driver,name:"
 			   " %d,%d,%s,%s\n", fd,

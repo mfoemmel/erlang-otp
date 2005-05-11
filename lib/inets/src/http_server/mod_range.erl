@@ -66,19 +66,20 @@ do_get_range(Info,Ranges) ->
     ?DEBUG("do_get_range -> Request URI: ~p",[Info#mod.request_uri]), 
      Path = mod_alias:path(Info#mod.data, Info#mod.config_db, 
 			  Info#mod.request_uri),
-    {FileInfo, LastModified} =get_modification_date(Path),
-    send_range_response(Path,Info,Ranges,FileInfo,LastModified).
+    {FileInfo, LastModified} = get_modification_date(Path),
+    send_range_response(Path, Info, Ranges, FileInfo, LastModified).
 
 
-send_range_response(Path,Info,Ranges,FileInfo,LastModified)->
+send_range_response(Path, Info, Ranges, FileInfo, LastModified)->
     case parse_ranges(Ranges) of
 	error->
 	    ?ERROR("send_range_response-> Unparsable range request",[]),
 	    {proceed,Info#mod.data};
 	{multipart,RangeList}->
-	    send_multi_range_response(Path,Info,RangeList);
+	    send_multi_range_response(Path, Info, RangeList);
 	{Start,Stop}->
-	    send_range_response(Path,Info,Start,Stop,FileInfo,LastModified)
+	    send_range_response(Path, Info, Start, Stop, FileInfo, 
+				LastModified)
     end.
 %%More than one range specified
 %%Send a multipart reponse to the user
@@ -111,8 +112,7 @@ send_multi_range_response(Path,Info,RangeList)->
 	    Suffix = httpd_util:suffix(Path),
 	    PartMimeType = httpd_util:lookup_mime_default(Info#mod.config_db,
 							  Suffix,"text/plain"),
-	    Date = httpd_util:rfc1123_date(),
-	    {FileInfo,LastModified}=get_modification_date(Path),
+	    {FileInfo,  LastModified} = get_modification_date(Path),
 	    case valid_ranges(RangeList,Path,FileInfo) of
 		{ValidRanges,true}->
 		    ?DEBUG("send_multi_range_response ->Ranges are valid:",[]),
@@ -121,15 +121,15 @@ send_multi_range_response(Path,Info,RangeList)->
 		    Header = 
 			[{code,206},
 			 {content_type, "multipart/byteranges;boundary" 
-			  "=RangeBoundarySeparator"}, {last_modified, Date},
-			 {etag,httpd_util:create_etag(FileInfo)} | 
+			  "=RangeBoundarySeparator"}, 
+			 {etag, httpd_util:create_etag(FileInfo)} | 
 			 LastModified],
 		    ?DEBUG("send_multi_range_response -> Valid Ranges: ~p",
 			   [RagneList]),
 		    Body = {fun send_multiranges/4,
 			    [ValidRanges, Info, PartMimeType, Path]},
 		    {proceed,[{response,
-			       {response,Header,Body}} | Info#mod.data]};
+			       {response, Header, Body}} | Info#mod.data]};
 		_ ->
 		    {proceed, [{status, {416, "Range not valid",
 					 bad_range_boundaries }}]}
@@ -165,55 +165,54 @@ send_multipart_start({{Start,End},{StartByte,EndByte,Size}},Info,
                 "Content-Range:bytes=",integer_to_list(StartByte),"-",
 		integer_to_list(EndByte),"/",
 		integer_to_list(Size),"\r\n\r\n"],
-    send_part_start(Info#mod.socket_type,Info#mod.socket,PartHeader,
-		    FileDescriptor,Start,End);
+    send_part_start(Info#mod.socket_type, Info#mod.socket, PartHeader,
+		    FileDescriptor, Start, End);
 
 
-send_multipart_start({{Start,End},{StartByte,EndByte,Size}},Info,
-		     PartMimeType,FileDescriptor)->
+send_multipart_start({{Start,End},{StartByte,EndByte,Size}}, Info,
+		     PartMimeType, FileDescriptor)->
     PartHeader=["\r\n--RangeBoundarySeparator\r\n","Content-type: ",
 		PartMimeType,"\r\n",
                 "Content-Range:bytes=",integer_to_list(Size-(StartByte-Size)),
 		"-",integer_to_list(EndByte),"/",
 		integer_to_list(Size),"\r\n\r\n"],
-    send_part_start(Info#mod.socket_type,Info#mod.socket,PartHeader,
-		    FileDescriptor,Start,End).
+    send_part_start(Info#mod.socket_type, Info#mod.socket, PartHeader,
+		    FileDescriptor, Start, End).
 
-send_part_start(SocketType,Socket,PartHeader,FileDescriptor,Start,End)->
-    case httpd_socket:deliver(SocketType,Socket,PartHeader) of
+send_part_start(SocketType, Socket, PartHeader, FileDescriptor, Start, End)->
+    case httpd_socket:deliver(SocketType, Socket, PartHeader) of
 	ok ->
 	    send_part_start(SocketType,Socket,FileDescriptor,Start,End);
 	_ ->
 	    close
     end.    
 
-send_range_response(Path,Info,Start,Stop,FileInfo,LastModified)->
+send_range_response(Path, Info, Start, Stop, FileInfo, LastModified)->
     case file:open(Path, [raw,binary]) of
 	{ok, FileDescriptor} ->
 	    file:close(FileDescriptor),
-	    ?DEBUG("send_range_response -> FileDescriptor: ~p",[FileDescriptor]),
+	    ?DEBUG("send_range_response -> FileDescriptor: ~p",
+		   [FileDescriptor]),
 	    Suffix = httpd_util:suffix(Path),
 	    MimeType = httpd_util:lookup_mime_default(Info#mod.config_db,
 						      Suffix,"text/plain"),
-	    Date = httpd_util:rfc1123_date(),
 	    Size = get_range_size(Start,Stop,FileInfo),
 	    case valid_range(Start,Stop,FileInfo) of
 		{true,StartByte,EndByte,TotByte}->
 		    Head =[{code,206},{content_type, MimeType}, 
-			   {etag,httpd_util:create_etag(FileInfo)},
-			   {last_modified, Date},
+			   {etag, httpd_util:create_etag(FileInfo)},
 			   {content_range,["bytes=",
 					   integer_to_list(StartByte),"-",
 					   integer_to_list(EndByte),"/",
 					   integer_to_list(TotByte)]},
-			   {content_length,Size} | LastModified],
-		    BodyFunc=fun send_range_body/5,
-		    Arg=[Info#mod.socket_type, 
-			 Info#mod.socket,Path,Start,Stop], 
-		    {proceed,[{response,{response,Head,{BodyFunc,Arg}}}|
+			   {content_length, Size} | LastModified],
+		    BodyFunc = fun send_range_body/5,
+		    Arg = [Info#mod.socket_type, 
+			  Info#mod.socket, Path, Start, Stop], 
+		    {proceed,[{response,{response ,Head,  {BodyFunc,Arg}}}|
 			      Info#mod.data]};
 		{false,Reason} ->
-		    {proceed, [{status, {416,Reason,bad_range_boundaries }}]}
+		    {proceed, [{status, {416, Reason, bad_range_boundaries }}]}
 	    end;
 	{error, _Reason} ->
 	    ?ERROR("send_range_response -> failed open file: ~p",[_Reason]),

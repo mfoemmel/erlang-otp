@@ -4,7 +4,7 @@
 %% Author      : Henrik Nyman and Erik Cedheim
 %% Description : Performs Lazy Code Motion on RTL.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% $Id$
+%% $Id: hipe_rtl_lcm.erl,v 1.6 2005/01/19 21:10:54 kostis Exp $
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc
 %%

@@ -51,11 +51,11 @@ validate(#xmerl_scanner{doctype_name=DTName,doctype_DTD=OpProv},
 validate(#xmerl_scanner{rules=Rules}=S,
 	 XML=#xmlElement{name=Name})->
 %    io:format("XML:~n~p~n",[XML]),
-    case S#xmerl_scanner.doctype_DTD of
-	option_provided ->
-	    io:format("xmerl: WARNING! DTD provided by option \"doctype_DTD\"~n");
-	_ -> ok
-    end,
+%     case S#xmerl_scanner.doctype_DTD of
+% 	option_provided ->
+% 	    io:format("xmerl: WARNING! DTD provided by option \"doctype_DTD\"~n");
+% 	_ -> ok
+%     end,
     catch do_validation(read_rules(Rules,Name),XML,Rules,S);
 validate(_, XML) ->
     {error, {no_xml_element, XML}}.

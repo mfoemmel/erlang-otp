@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_ppc.hrl,v 1.11 2004/12/06 03:09:39 mikpe Exp $
 
 %%% Basic Values:
 %%%

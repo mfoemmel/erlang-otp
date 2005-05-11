@@ -127,8 +127,8 @@ int stype;
     len = strlen(sym);
     if (len > 254 && (symname = malloc(len+2)) == NULL)
 	return(ERROR);
-#ifdef _ARCH_PPC 
-    /* GCC for PPC doesn't add a leading _ to symbols */
+#if defined _ARCH_PPC || defined SIMSPARCSOLARIS
+    /* GCC for PPC or SIMSPARC doesn't add a leading _ to symbols */
     strcpy(symname, sym);
 #else
     sprintf(symname, "_%s", sym);

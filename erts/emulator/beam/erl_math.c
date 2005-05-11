@@ -51,7 +51,7 @@ math_call_1(Process* p, double (*func)(double), Eterm arg1)
 	return THE_NON_VALUE;
     }
     a1.fd = (*func)(a1.fd);
-    ERTS_FP_ERROR(a1.fd, goto badarith);
+    ERTS_FP_ERROR_THOROUGH(a1.fd, goto badarith);
     hp = HAlloc(p, FLOAT_SIZE_OBJECT);
     res = make_float(hp);
     PUT_DOUBLE(a1, hp);
@@ -97,7 +97,7 @@ math_call_2(Process* p, double (*func)(double, double), Eterm arg1, Eterm arg2)
     }
 
     a1.fd = (*func)(a1.fd, a2.fd);
-    ERTS_FP_ERROR(a1.fd, goto badarith);
+    ERTS_FP_ERROR_THOROUGH(a1.fd, goto badarith);
     hp = HAlloc(p, FLOAT_SIZE_OBJECT);
     res = make_float(hp);
     PUT_DOUBLE(a1, hp);

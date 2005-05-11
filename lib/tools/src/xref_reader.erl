@@ -32,6 +32,7 @@
 	 x=[],
          df,
 	 builtins_too=false,
+         is_abstr,            % abstract module?
 	 funvars=[],          % records variables bound to funs
 			      % (for coping with list comprehension)
 	 matches=[],          % records other bound variables
@@ -55,8 +56,9 @@
 %% Attrs = {ALC, AXC, Bad}
 %% ALC, AXC and Bad are extracted from the attribute 'xref'. An experiment.
 module(Module, Forms, CollectBuiltins, X, DF) ->
+    IsAbstract = [V || {attribute,_Line,abstract,V} <- Forms] =:= [true],
     S = #xrefr{module = Module, builtins_too = CollectBuiltins, 
-               x = X, df = DF},
+               is_abstr = IsAbstract, x = X, df = DF},
     forms(Forms, S).
 
 forms([F | Fs], S) ->
@@ -76,16 +78,23 @@ form({attribute, Line, xref, Calls}, S) -> % experimental
     attr(Calls, Line, M, Fun, L, X, B, S);
 form({attribute, _Line, _Attr, _Val}, S) ->
     S;
-form({function, Line, _Name, _Arity, _Clauses}, S) when Line =:= 0 ->
-    %% Skipping {'MNEMOSYNE RULE',1}, {'MNEMOSYNE QUERY', 2}, 
-    %% {'MNEMOSYNE RECFUNDEF',1}, module_info/0,1.
+form({function, 0, 'MNEMOSYNE RULE', 1, _Clauses}, S) ->
+    S;
+form({function, 0, 'MNEMOSYNE QUERY', 2, _Clauses}, S) ->
+    S;
+form({function, 0, 'MNEMOSYNE RECFUNDEF', 1, _Clauses}, S) ->
+    S;
+form({function, 0, module_info, 0, _Clauses}, S) ->
+    S;
+form({function, 0, module_info, 1, _Clauses}, S) ->
     S;
 form({function, Line, Name, Arity, Clauses}, S) ->
-    MFA = {S#xrefr.module, Name, Arity},
+    MFA0 = {S#xrefr.module, Name, Arity},
+    MFA = adjust_arity(S, MFA0),
     S1 = S#xrefr{function = MFA},
     S2 = S1#xrefr{def_at = [{MFA,Line} | S#xrefr.def_at]},
     S3 = clauses(Clauses, S2),
-    S3#xrefr{function = []}.    
+    S3#xrefr{function = []}.
 
 clauses(Cls, S) ->
     #xrefr{funvars = FunVars, matches = Matches} = S,
@@ -353,8 +362,9 @@ handle_call(Locality, Module, Name, Arity, Line, S) ->
 handle_call(_Locality, {_, 'MNEMOSYNE RULE',1}, _Line, S, _) -> S;
 handle_call(_Locality, {_, 'MNEMOSYNE QUERY', 2}, _Line, S, _) -> S;
 handle_call(_Locality, {_, 'MNEMOSYNE RECFUNDEF',1}, _Line, S, _) -> S;
-handle_call(Locality, To, Line, S, IsUnres) ->
+handle_call(Locality, To0, Line, S, IsUnres) ->
     From = S#xrefr.function,
+    To = adjust_arity(S, To0),
     Call = {From, To},
     CallAt = {Call, Line},
     S1 = if
@@ -371,3 +381,13 @@ handle_call(Locality, To, Line, S, IsUnres) ->
 	    S1#xrefr{ex = [Call | S1#xrefr.ex],
 		     x_call_at = [CallAt | S1#xrefr.x_call_at]}
     end.
+
+adjust_arity(#xrefr{is_abstr = true, module = M}, {M, F, A} = MFA) ->
+    case xref_utils:is_static_function(F, A) of
+        true ->
+            MFA;
+        false ->
+            {M,F,A-1}
+    end;
+adjust_arity(_S, MFA) ->
+    MFA.

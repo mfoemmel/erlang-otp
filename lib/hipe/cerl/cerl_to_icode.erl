@@ -2597,7 +2597,14 @@ get_arg_types(Fun) ->
     Type = get_typesig(Fun),
     case erl_types:t_is_fun(Type) of
 	true -> erl_types:t_fun_args(Type);
-	false -> get_type(cerl:fun_vars(Fun))
+	false -> 
+	    TL = get_type(cerl:fun_vars(Fun)),
+	    case lists:all(fun(X) -> X =:= placeholder end, TL) of
+		true -> none;
+		false -> lists:map(fun(placeholder) -> erl_types:t_any();
+				      (X) -> X
+				   end, TL)
+	    end
     end.
 
 get_typesig(E) ->
@@ -2617,7 +2624,7 @@ get_type(E) ->
 get_type_list([H|T], Acc)->
     case lists:keysearch(type, 1, cerl:get_ann(H)) of
 	{value, {type, Type}} -> get_type_list(T, [Type|Acc]);
-	false -> get_type_list(T, [erl_types:t_any()|Acc])
+	false -> get_type_list(T, [placeholder|Acc])
     end;
 get_type_list([], Acc) ->
     lists:reverse(Acc).
@@ -2628,7 +2635,11 @@ get_type_list([], Acc) ->
 
 icode_icode(M, {F, A}, Vs, Closure, C, V, L, T) ->
     MFA = {M, F, A},
-    hipe_icode:mk_typed_icode(MFA, Vs, Closure, false, C, V, L, T).
+    if T =:= none ->
+	    hipe_icode:mk_icode(MFA, Vs, Closure, false, C, V, L);
+       true ->
+	    hipe_icode:mk_typed_icode(MFA, Vs, Closure, false, C, V, L, T)
+    end.
 
 icode_icode_name(Icode) ->
     hipe_icode:icode_fun(Icode).

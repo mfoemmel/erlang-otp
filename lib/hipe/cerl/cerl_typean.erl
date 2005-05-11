@@ -21,7 +21,7 @@
 %%
 %% Author contact: richardc@csd.uu.se
 %%
-%% $Id$
+%% $Id: cerl_typean.erl,v 1.16 2005/03/07 10:39:42 tobiasl Exp $
 %%
 %% @doc Type analysis of Core Erlang programs.
 

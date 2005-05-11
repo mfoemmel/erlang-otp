@@ -1,5 +1,5 @@
 %% -*- erlang-indent-level: 2 -*-
-%% $Id$
+%% $Id: hipe_amd64_main.erl,v 1.9 2005/02/22 15:12:55 dalu7049 Exp $
 
 -module(hipe_amd64_main).
 -export([rtl_to_amd64/3]).

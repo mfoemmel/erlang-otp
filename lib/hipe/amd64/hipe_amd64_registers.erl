@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_amd64_registers.erl,v 1.29 2005/04/05 15:45:48 mikpe Exp $
 %%% ===========================================================================
 %%%  Filename :  hipe_amd64_registers.erl
 %%%  Author   :  Daniel Luna (luna@update.uu.se)
@@ -32,6 +32,7 @@
  	 proc_pointer/0,
  	 rax/0,
          rcx/0,
+	 ret/1,
          sp/0,
          sp_limit_offset/0,
 	 reg_name/1,
@@ -230,6 +231,12 @@ args(Arity) ->
 
 args(I, Rest) when I < 0 -> Rest;
 args(I, Rest) -> args(I-1, [arg(I) | Rest]).
+
+ret(N) ->
+  case N of
+    0 -> ?RAX;
+    _ -> exit({?MODULE, ret, N})
+  end.
 
 call_clobbered() ->
   [{?RAX,tagged},{?RAX,untagged},	% does the RA strip the type or not?

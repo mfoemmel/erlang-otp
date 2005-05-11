@@ -1,3 +1,6 @@
+define([AC_CACHE_LOAD], )dnl
+define([AC_CACHE_SAVE], )dnl
+
 dnl Process this file with autoconf to produce a configure script.
 AC_INIT(c_src/odbcserver.c)
 
@@ -64,7 +67,8 @@ AC_SUBST(TARGET_FLAGS)
 	       AC_CHECK_LIB(pthread, pthread_create)
 	       if test ! -d "$with_odbc"; then			
 	       AC_MSG_CHECKING([for odbc in standard locations])
-	         for dir in /opt/local/pgm/odbc /usr/local/odbc /usr/odbc
+	         for dir in /opt/local/pgm/odbc /usr/local/odbc /usr/odbc \
+		     /usr
 		 do   
 		    if test -f "$dir/include/sql.h"; then
 		      is_odbc_std_location=yes	   

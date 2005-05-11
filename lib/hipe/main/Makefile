@@ -9,7 +9,7 @@
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-#     $Id$
+#     $Id: Makefile,v 1.11 2005/04/14 12:32:59 tobiasl Exp $
 #
 
 ifndef EBIN
@@ -98,6 +98,7 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
+	$(INSTALL_DATA) ../vsn.mk $(RELSYSDIR)
 	$(INSTALL_DIR) $(RELSYSDIR)/main
 	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(RELSYSDIR)/main
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin

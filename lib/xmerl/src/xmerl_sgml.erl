@@ -19,6 +19,7 @@
 %%%----------------------------------------------------------------------
 %%% #0.    BASIC INFORMATION
 %%%----------------------------------------------------------------------
+%%% @private
 %%% File:       xmerl_sgml.erl
 %%% Author       : Ulf Wiger <ulf.wiger@ericsson.com>
 %%%                Richard Carlsson <richardc@csd.uu.se>

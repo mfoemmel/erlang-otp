@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_ppc_ra_postconditions_fp.erl,v 1.1 2004/12/06 03:10:13 mikpe Exp $
 
 -module(hipe_ppc_ra_postconditions_fp).
 -export([check_and_rewrite/4]).

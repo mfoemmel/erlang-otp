@@ -47,7 +47,7 @@ init() ->
 		{ok,[["ose_inet"]]} ->			
 		    %% port already started by prim_loader
 		    ok;
-		Other ->
+		_Other ->
 		    %% Setup reserved port for ose_inet driver (only OSE)
 		    case catch erlang:open_port({spawn,ose_inet}, [binary]) of
 			{'EXIT',Why} ->
@@ -193,7 +193,7 @@ do_load_resolv(vxworks, _) ->
 	    load_resolv(Resolv, resolv)
     end;
 
-do_load_resolv({ose,Type}, _) ->
+do_load_resolv({ose,_Type}, _) ->
     inet_db:set_lookup([file, dns]),
     case os:getenv("NAMESERVER") of
 	false ->
@@ -329,7 +329,7 @@ load_resolv(File, Func) ->
 		    error("parse error in file ~s: ~p", [File, Reason])
 	    end;
 	Error ->
-	    warning("file not found ~s~n", [File])
+	    warning("file not found ~s: ~p~n", [File, Error])
     end.
 
 %%
@@ -350,7 +350,7 @@ load_hosts(File,Os) ->
 	Error ->
 	    case Os of
 		unix ->
-		    error("file not found ~s~n", [File]);
+		    error("file not found ~s: ~p~n", [File, Error]);
 		_ -> 
 		    %% for windows or nt the hosts file is not always there
 		    %% and we don't require it
@@ -392,7 +392,7 @@ win32_load_from_registry(Type) ->
 	case win32reg:change_key(Reg,TcpIp) of
 	    ok ->
 		win32_load1(Reg,Type,HFileKey);
-	    {error, Reason} ->
+	    {error, _Reason} ->
 		error("Failed to locate TCP/IP parameters (is TCP/IP installed)?",
 		      [])
 	end,
@@ -404,7 +404,7 @@ win32_load1(Reg,Type,HFileKey) ->
 	     "EnableDNS", "NameServer", "SearchList"],
     case win32_get_strings(Reg, Names) of
 	[DBPath0, Domain, DhcpDomain, 
-	 EnableDNS, NameServers0, Search] ->
+	 _EnableDNS, NameServers0, Search] ->
 	    inet_db:set_domain(
 	      case Domain of "" -> DhcpDomain; _ -> Domain end),
 	    NameServers = win32_split_line(NameServers0,Type),
@@ -436,7 +436,7 @@ win32_load1(Reg,Type,HFileKey) ->
 %%		_  -> inet_db:set_lookup([dns, file, native])
 %%	    end;
 	    true;
-	{error, Resaon} ->
+	{error, _Reason} ->
 	    error("Failed to read TCP/IP parameters from registry", [])
     end.
 
@@ -450,9 +450,9 @@ win32_get_strings(Reg, [Name|Rest], Result) ->
     case win32reg:value(Reg, Name) of
 	{ok, Value} when list(Value) ->
 	    win32_get_strings(Reg, Rest, [Value|Result]);
-	{ok, NotString} ->
+	{ok, _NotString} ->
 	    {error, not_string};
-	{error, Reason} ->
+	{error, _Reason} ->
 	    win32_get_strings(Reg, Rest, [""|Result])
     end;
 win32_get_strings(_, [], Result) ->
@@ -476,7 +476,7 @@ vxworks_load_hosts() ->
 		{error,Reason} ->
 		    error("parser error VxWorks hostShow ~s", [Reason])
 	    end;
-	Error ->
+	_Error ->
 	    error("error in VxWorks hostShow~s~n", [HostShow])
     end.
 
@@ -504,7 +504,7 @@ next_line([]) ->
     [];
 next_line([$\n|Rest]) ->
     Rest;
-next_line([First|Rest]) ->
+next_line([_First|Rest]) ->
     next_line(Rest).
 
 read_rc() ->
@@ -548,13 +548,21 @@ valid_type(_) ->                 false.
 read_inetrc() ->
    case application:get_env(inetrc) of
        {ok,File} ->
-	   case get_rc(File) of
-		error -> {nofile,[]};
-		Ls ->    {File,Ls}
-	    end;	
+	   try_get_rc(File);
        _ ->
-	   {nofile,[]}
+	   case os:getenv("ERL_INETRC") of
+	       false ->
+		   {nofile,[]};
+	       File ->
+		   try_get_rc(File)
+	   end
    end.
+
+try_get_rc(File) ->
+    case get_rc(File) of
+	error -> {nofile,[]};
+	Ls ->    {File,Ls}
+    end.    
 
 get_rc(File) ->
     case get_file(File) of
@@ -599,7 +607,7 @@ parse_inetrc(Bin) ->
     Str = binary_to_list(Bin) ++ "\n", 
     parse_inetrc(Str, 1, []).
 
-parse_inetrc_skip_line([], Line, Ack) ->
+parse_inetrc_skip_line([], _Line, Ack) ->
     {ok, reverse(Ack)};
 parse_inetrc_skip_line([$\n|Str], Line, Ack) ->
     parse_inetrc(Str, Line+1, Ack);

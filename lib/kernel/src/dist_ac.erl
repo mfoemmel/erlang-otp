@@ -1315,8 +1315,12 @@ check_waiting([H | Reqs], S, Node, Appls, Res, SReqs) ->
 check_waiting([], _Node, _S, Appls, Res, SReqs) ->
     {Res, Appls, SReqs}.
 	    
-intersection(Nodes1, Nodes2) ->
-    Nodes1 -- (Nodes1 -- Nodes2).
+intersection([], _) -> 
+    [];
+intersection(_, []) -> 
+    [];
+intersection(L1, L2) ->
+    L1 -- (L1 -- L2).
     
 get_default_permission(AppName) ->
     case application:get_env(kernel, permissions) of
@@ -1467,10 +1471,10 @@ dist_get_runnable(Appls) ->
        end, Appls).
 	       
 dist_get_all_nodes(#appl{name = AppName, nodes = Nodes, run = Run}) ->
-    case check_nodes(Run, [], []) of
-	{Res, []} -> {ok, Nodes, Res};
-	{_Res, BadNodes} ->
-	    {error, {app_not_loaded, AppName, BadNodes}}
+    {Res, BadNodes} = check_nodes(Run, [], []),
+    case intersection(BadNodes, erlang:nodes(connected)) of
+        [] -> {ok, Nodes, Res};
+        _ -> {error, {app_not_loaded, AppName, BadNodes}}
     end.
 
 check_nodes([{Node, undefined} | T], Res, BadNodes) ->

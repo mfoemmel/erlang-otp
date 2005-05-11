@@ -27,7 +27,7 @@
 %%% Author       : Ulf Wiger <ulf.wiger@ericsson.com>
 %%% Description  : Simgle-pass XML scanner. See xmerl.hrl for data defs.
 %%% 
-%%% Modules used : ets, file, filename, io, lists, ucs, uri
+%%% Modules used : ets, file, filename, io, lists, xmerl_ucs, xmerl_uri
 %%% 
 %%%----------------------------------------------------------------------
 %% @doc This module is the interface to the XML parser, it handles XML 1.0.
@@ -98,14 +98,10 @@
 %%    <dd>XML Base directory. If using string/1 default is current directory.
 %%    If using file/1 default is directory of given file.</dd>
 %%  <dt><code>{encoding, Enc}</code></dt>
-%%    <dd>Set default character set used (default utf-8).
+%%    <dd>Set default character set used (default UTF-8).
 %%    This character set is used only if not explicitly given by the XML
-%%    declaration.
-%%    Note: If ucs is not available this MUST be set to a character set that is
-%%    a true subset of Unicode and where each character only require a single
-%%    byte. E.g., iso-8859-1 or equivalent</dd>
+%%    declaration. </dd>
 %% </dl>
-
 
 -module(xmerl_scan).
 -vsn('0.20').
@@ -278,8 +274,6 @@ string(Str, Options) ->
 	{Res, Tail, S=#xmerl_scanner{close_fun = Close}} ->
 	    Close(S),    % for side effects only - final state is dropped
 	    {Res,Tail};
-	{error, Reason} ->
-	    {error, Reason};  % (This can't happen, currently)
 	Other ->
 	    {error, Other}
     end.
@@ -296,9 +290,9 @@ int_string(Str, Options, XMLBase, FileName) ->
 	    scan_document(Str2, S#xmerl_scanner{encoding="iso-10646-utf-1"});
 	{external,'iso-10646-utf-1',Str2} ->
 	    scan_document(Str2, S#xmerl_scanner{encoding="iso-10646-utf-1"});
-	{undefined,undefined,Str2} ->
+	{undefined,undefined,Str2} -> %% no auto detection
 	    scan_document(Str2, S);
-	{external,ExtCharset,Str2} ->
+	{external,ExtCharset,Str2} -> %% no auto detection
 	    scan_document(Str2, S#xmerl_scanner{encoding=atom_to_list(ExtCharset)})
     end.
 
@@ -510,12 +504,15 @@ scan_document(Str0, S=#xmerl_scanner{event_fun = Event,
     %% attribute in a XML declaration that one will be used later
     Str=if
 	    Charset=/=undefined -> % Default character set is UTF-8
-		ucs:to_unicode(Str0,list_to_atom(Charset));
-	    true ->
+		xmerl_ucs:to_unicode(Str0,list_to_atom(Charset));
+	    true -> %% Charset is undefined if no external input is
+                    %% given, and no auto detection of character
+                    %% encoding was made.
 		Str0
 	end,
 
-    {"<"++T2, S2} = scan_prolog(Str, S1, _StartPos = 1),
+    {T1, S2} = scan_prolog(Str, S1, _StartPos = 1),
+    T2 = scan_mandatory("<",T1,S2,expected_element_start_tag),
     {Res, T3, S3} =scan_element(T2,S2,_StartPos = 1),
     {Tail, S4}=scan_misc(T3, S3, _StartPos = 1),
     
@@ -605,14 +602,29 @@ scan_prolog("<?xml"++T,S0=#xmerl_scanner{encoding=Charset0,col=Col,line=L},Pos)
 	true ->
 	    ?fatal({xml_declaration_must_be_first_in_doc,Col,L},S0)
     end,
+    %% Charset0 is either (1) 'iso-10646-utf-1' (transformation by
+    %% auto detection), (2) undefined (no auto detection and no
+    %% external encoding), (3) any other encoding format that must be
+    %% conformant to the internal explicitly given encoding. The two
+    %% former cases implies that the explicit internal encoding
+    %% (Charset) may be different from Charset0.
+
     %% Now transform to declared character set.
     if
 	Charset==Charset0 -> % Document already transformed to this charset!
 	    scan_prolog(T3, S3, Pos);
 	Charset0=/=undefined -> % Document transformed to other bad charset!
-	    ?fatal({xml_declaration_must_be_first_in_doc,Col,L},S3);
+	    %% Not at all. For example may an external entity
+	    %% have the BOM for utf-16 and the internal
+	    %% explicit encoding='utf-16', then it will be auto
+	    %% detected and transformed, Charset0 will be
+	    %% 'iso-10646-utf-1', and Charset will be 'utf-16', all
+	    %% legal.
+	    %%
+	    scan_prolog(T3,S3#xmerl_scanner{encoding=Charset0},Pos);
+%	    ?fatal({xml_declaration_must_be_first_in_doc,Col,L},S3);
 	Charset=/=undefined -> % Document not previously transformed
-	    T4=ucs:to_unicode(T3,list_to_atom(Charset)),
+	    T4=xmerl_ucs:to_unicode(T3,list_to_atom(Charset)),
 	    scan_prolog(T4, S3, Pos);
 	true -> % No encoding info given
 	    scan_prolog(T3, S3, Pos)
@@ -623,11 +635,13 @@ scan_prolog("<!DOCTYPE" ++ T, S0=#xmerl_scanner{environment=prolog,
     ?bump_col(9),
     %% If no known character set assume it is UTF-8
     T1=if
-	   Charset==undefined -> ucs:to_unicode(T,'utf-8');
+	   Charset==undefined -> xmerl_ucs:to_unicode(T,'utf-8');
 	   true -> T
        end,
     {T2, S1} = scan_doctype(T1, S),
     scan_misc(T2, S1, Pos);
+scan_prolog(Str="%"++_T,S=#xmerl_scanner{environment={external,_}},_Pos) ->
+    scan_ext_subset(Str,S);
 scan_prolog(Str, S0 = #xmerl_scanner{user_state=_US,encoding=Charset},Pos) ->
     ?dbg("prolog(\"<\")~n", []),
     
@@ -635,7 +649,7 @@ scan_prolog(Str, S0 = #xmerl_scanner{user_state=_US,encoding=Charset},Pos) ->
     ?bump_col(1),
     %% If no known character set assume it is UTF-8
     T=if
-	  Charset==undefined -> ucs:to_unicode(Str,'utf-8');
+	  Charset==undefined -> xmerl_ucs:to_unicode(Str,'utf-8');
 	  true -> Str
       end,
     {T1, S1}=scan_misc(T, S, Pos),
@@ -713,11 +727,12 @@ cleanup(S) ->
 %% [24] VersionInfo ::= S 'version' Eq ("'" VersionNum "'" | '"' VersionNum '"')
 scan_xml_decl(T, S) ->
     %% VersionInfo [24] is mandatory
-    {_,T1,S2} = mandatory_strip(T,S),
-    T2 =
+    {_,T1,S1} = mandatory_strip(T,S),
+    {T2,S2} =
 	case T1 of
-	    "version" ++ _T2 -> _T2;
-	    _ -> ?fatal(expected_version_attribute,S2)
+	    "version" ++ _T2 -> 
+		{_T2,S1#xmerl_scanner{col=S1#xmerl_scanner.col+7}};
+	    _ -> ?fatal(expected_version_attribute,S1)
 	end,
     {T3, S3} = scan_eq(T2, S2),
     {Vsn, T4, S4} = scan_xml_vsn(T3, S3),
@@ -748,7 +763,7 @@ scan_xml_decl2("encoding" ++ T, S0 = #xmerl_scanner{event_fun = Event},
     ?bump_col(8),
     {T1, S1} = scan_eq(T, S),
     {EncName, T2, S2} = scan_enc_name(T1, S1),
-    LowEncName=httpd_util:to_lower(EncName),
+    LowEncName=xmerl_lib:to_lower(EncName),
     Attr = #xmlAttribute{name = encoding,
 			 parents = [{xml, _XMLPos = 1}],
 			 value = LowEncName},
@@ -766,7 +781,11 @@ scan_xml_decl2("encoding" ++ T, S0 = #xmerl_scanner{event_fun = Event},
 	    scan_xml_decl3(T3, S4, Decl)
     end;
 scan_xml_decl2(T="standalone" ++ _T,S,Decl) ->
-    scan_xml_decl3(T,S,Decl).
+    scan_xml_decl3(T,S,Decl);
+scan_xml_decl2(BadString,S,_Decl) ->
+        ?fatal(preformat([expected,one,'of:'],['?>',standalone,encoding],","),S).
+%    ?fatal(lists:flatten(io_lib:format("~s ~s ~s: ~s, ~s, ~s",[expected,one,'of','?>',standalone,encoding])),S).
+%    ?fatal({expected_one_of,"?>",standalone,encoding},S).
 
 scan_xml_decl3("?>" ++ T, S0,Decl) ->
     ?bump_col(2),
@@ -832,7 +851,7 @@ scan_text_decl(T,S=#xmerl_scanner{event_fun = Event}) ->
     S2 = S1#xmerl_scanner{col = S1#xmerl_scanner.col + 8},
     {T3, S3} = scan_eq(T2, S2),
     {EncName, T4, S4} = scan_enc_name(T3, S3),
-    LowEncName=httpd_util:to_lower(EncName),
+    LowEncName=xmerl_lib:to_lower(EncName),
     ?strip5,
     Attr = #xmlAttribute{name = encoding,
 			 parents = [{xml,1}],
@@ -983,15 +1002,13 @@ scan_wellknown_pi("-stylesheet"++T, S0=#xmerl_scanner{line=L,col=C},Pos) ->
     scan_pi(T, S, "xml-stylesheet",L,C,Pos,[]);
 scan_wellknown_pi(Str,S,_Pos) ->
     ?fatal({invalid_target_name, lists:sublist(Str, 1, 10)}, S).
+% scan_wellknown_pi(Str,S=#xmerl_scanner{validation=true},_Pos) ->
+%     ?fatal({invalid_target_name, lists:sublist(Str, 1, 10)}, S).
+%     ?fatal({invalid_target_name, lists:sublist(Str, 1, 10)}, S);
+% scan_wellknown_pi(Str,S=#xmerl_scanner{line = L, col = C},Pos) ->
+%     {AddTarget,_NamespaceInfo,T1,S1} = scan_name(Str,S),
+%     scan_pi(T1,S1,"xml"++AddTarget,L,C,Pos,[]).
 
-
-% scan_pi(Str="?>"++_T,S,Target, L, C, Pos) ->
-%     scan_pi(Str,S,Target, L, C, Pos,[]);
-% scan_pi(Str=[],S,Target, L, C, Pos) ->
-%     scan_pi(Str,S,Target, L, C, Pos,[]);
-% scan_pi(T,S,Target, L, C, Pos) ->
-%     {_,T1,S1} = mandatory_strip(T,S),
-%     scan_pi(T1,S1,Target, L, C, Pos,[]).
 
 
 scan_pi([], S=#xmerl_scanner{continuation_fun = F}, Target,L, C, Pos, Acc) ->
@@ -1849,7 +1866,7 @@ scan_entity_def(Str, S, EName) ->
 		{Entity,_Tail,Sx} -> 
 			OldRef=S2#xmerl_scanner.entity_references,
 			NewRef=Sx#xmerl_scanner.entity_references,
-		    {Entity,T2,
+		    {Entity,external,T2,
 		     S2#xmerl_scanner{entity_references=OldRef++NewRef}};
 		{error,enoent} -> % this bad entity is declared,
                                        % but it may not be referenced,
@@ -2037,10 +2054,10 @@ get_att_type(S=#xmerl_scanner{rules_read_fun=Read},AttName,ElemName) ->
     end.
 
 resolve_relative_uri(NewBase="/"++_,CurrentBase) ->
-    case http_uri:parse(CurrentBase) of
-	{error,no_scheme} ->
+    case xmerl_uri:parse(CurrentBase) of
+	{error,Reason} ->
 	    NewBase;
-	{Scheme,Host,Port,_PathQuery} ->
+	{Scheme,Host,Port,_Path,_Query} ->
 	    atom_to_list(Scheme)++Host++":"++integer_to_list(Port)++NewBase
     end;
 resolve_relative_uri(NewBase,CurrentBase) ->
@@ -2326,7 +2343,7 @@ scan_content("</" ++ T, S0, _Pos, Name, _Attrs, _Space, _Lang,
     if ETagName == Name ->
             ok;
        true ->
-            ?fatal({endtag_does_not_match, {ETagName, Name}}, S1)
+            ?fatal({endtag_does_not_match, {was,ETagName,should_have_been, Name}}, S)
     end,
     ?strip2,
     case T2 of
@@ -2667,7 +2684,7 @@ scan_eq(T, S) ->
     ?strip1,
     case T1 of
  	[$=|T2] ->
-	    S2 = S1,
+	    S2 = S1#xmerl_scanner{col=S1#xmerl_scanner.col+1},
 	    ?strip3,
 	    {T3, S3};
 	_ ->
@@ -2765,6 +2782,12 @@ scan_nmtoken([], S=#xmerl_scanner{continuation_fun = F}) ->
     F(fun(MoreBytes, S1) -> scan_nmtoken(MoreBytes, S1) end,
       fun(S1) -> ?fatal(unexpected_end, S1) end,
       S);
+scan_nmtoken("%"++T, S0=#xmerl_scanner{environment={external,_}}) ->
+    ?bump_col(1),
+    {PERefName, T1, S1} = scan_pe_reference(T, S),
+    ExpRef = expand_pe_reference(PERefName, S1,as_PE),
+    {_,T2,S2}  = strip(ExpRef ++ T1,S1),
+    scan_nmtoken(T2,S2);
 scan_nmtoken(Str = [H|T], S) ->
     case xmerl_lib:is_namechar(H) of
 	true ->
@@ -2846,6 +2869,9 @@ scan_system_literal([], S=#xmerl_scanner{continuation_fun = F},
       S);
 scan_system_literal([H|T], S, H, Acc) ->
     {lists:reverse(Acc), T, S#xmerl_scanner{col = S#xmerl_scanner.col+1}};
+scan_system_literal("#"++_R, S, _H, _Acc) ->
+    %% actually not a fatal error
+    ?fatal(fragment_identifier_in_system_literal,S);
 scan_system_literal([H|T], S, Delimiter, Acc) ->
     scan_system_literal(T, S#xmerl_scanner{col = S#xmerl_scanner.col+1}, 
 			Delimiter, [H|Acc]).
@@ -3378,11 +3404,12 @@ scan_entity_value("&" ++ T, S0, Delim, Acc, PEName,Namespace,PENesting) ->
 	    end;
 	_ -> %% General Entity is bypassed, though must check for
              %% recursion: save referenced name now and check for
-             %% recursive reference after the hole entity definition is
+             %% recursive reference after the whole entity definition is
              %% completed.
 	    {Name, _NamespaceInfo, T1, S1} = scan_name(T,S),
+	    T2=scan_mandatory(";",T1,S1,expected_entity_reference_semicolon),
 	    S2=save_refed_entity_name(Name,PEName,S1),
-	    scan_entity_value(T1,S2,Delim,["&"|Acc],PEName,Namespace,PENesting)
+	    scan_entity_value(T2,S2,Delim,[";",atom_to_list(Name),"&"|Acc],PEName,Namespace,PENesting)
     end;
 %% The following clauses is for PE Nesting VC constraint
 %% Start delimeter for ConditionalSection
@@ -3618,7 +3645,7 @@ scan_markup_completion_gt(T,S) ->
 scan_mandatory(Pattern,T,S,ErrorMsg) ->
     case lists:prefix(Pattern,T) of
 	true ->
-	    lists:subtract(Pattern,T);
+	    lists:subtract(T,Pattern);
 	_ ->
 	    ?fatal(ErrorMsg,S)
     end.
@@ -3723,9 +3750,33 @@ expand_tab(Col) ->
 %%% Helper functions
 
 fatal(Reason, S) ->
-    exit({fatal, {Reason, S#xmerl_scanner.filename,
-		  S#xmerl_scanner.line, S#xmerl_scanner.col}}).
+    exit({fatal, {Reason,
+		  {file,S#xmerl_scanner.filename},
+		  {line,S#xmerl_scanner.line},
+		  {col,S#xmerl_scanner.col}}}).
 
+%% preformat formats tokens in L1 and L2, L2 separated by Sep into a
+%% list
+preformat(L1,L2,Sep) when list(L1),list(L2) ->
+    Format1=
+	case L1 of
+	    [] -> [];
+	    _ ->
+		lists:flatten(lists:duplicate(length(L1)-1,"~s ")++"~s")
+	end,
+    Separator=
+	if
+	    atom(Sep) -> atom_to_list(Sep);
+	    true -> Sep
+	end,
+    Format2 =
+	case L2 of
+	    [] -> [];
+	    _ ->
+		lists:flatten(lists:duplicate(length(L2)-1,
+					      " ~s"++Separator)++" ~s")
+	end,
+    lists:flatten(io_lib:format(Format1++Format2,L1++L2)).
 
 
 %% BUG when we are many <!ATTLIST ..> balise none attributes has save in rules

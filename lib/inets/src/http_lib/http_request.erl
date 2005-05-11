@@ -19,7 +19,7 @@
 
 -include("http.hrl").
 
--export([headers/2, http_headers/1]).
+-export([headers/2, http_headers/1, is_absolut_uri/1]).
 
 %%-------------------------------------------------------------------------
 %% headers(HeaderList, #http_request_h{}) -> #http_request_h{}
@@ -64,6 +64,17 @@ http_headers(Headers = #http_request_h{other = Other}) ->
 			    [], HeaderFields),
     
     lists:flatten([HeaderStr | headers_other(Other, [])]).
+
+%%-------------------------------------------------------------------------
+%% is_absolut_uri(URI) -> true | false
+%%   URI - string()	
+%%                                   
+%% Description: Checks if an URI is absolute or relative
+%%-------------------------------------------------------------------------
+is_absolut_uri("http://" ++ _) ->
+    true;
+is_absolut_uri(_) ->
+    false.
 
 %%%========================================================================
 %%% Internal functions

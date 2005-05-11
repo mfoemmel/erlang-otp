@@ -164,6 +164,7 @@ BIF_RETTYPE binary_to_term_1(BIF_ALIST_1)
 	erts_free(ERTS_ALC_T_TMP, dest_ptr);
     }
     if (ep == NULL) {
+	HRelease(BIF_P, endp, hp);
 	goto error;
     }
     if (hp > endp) {
@@ -412,24 +413,27 @@ dec_pid(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* objp
 	return NULL;
     num = get_int32(ep);
     ep += 4;
+    if (num > ERTS_MAX_PID_NUMBER)
+	return NULL;
     ser = get_int32(ep);
     ep += 4;
+    if (ser > ERTS_MAX_PID_SERIAL)
+	return NULL;
     if ((cre = get_int8(ep)) >= MAX_CREATION)
 	return NULL;
     ep += 1;
 
+    /*
+     * We are careful to create the node entry only after all
+     * validity tests are done.
+     */
     cre = dec_set_creation(sysname,cre);
     node = erts_find_or_insert_node(sysname,cre);
 
-    if (num > ERTS_MAX_PID_NUMBER)
-	return NULL;
-    if (ser > ERTS_MAX_PID_SERIAL)
-	return NULL;
     data = make_pid_data(ser, num);
     if(node == erts_this_node) {
 	*objp = make_internal_pid(data);
-    }
-    else {
+    } else {
 	ExternalThing *etp = (ExternalThing *) *hpp;
 	*hpp += EXTERNAL_THING_HEAD_SIZE + 1;
 
@@ -984,7 +988,9 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		break;
 	    }
 	case PID_EXT:
-	    ep = dec_pid(dep, &hp, ep, off_heap, objp);
+	    if ((ep = dec_pid(dep, &hp, ep, off_heap, objp)) == NULL) {
+		return NULL;
+	    }
 	    break;
 	case PORT_EXT:
 	    {
@@ -1170,12 +1176,6 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		hp += ERL_FUN_SIZE + num_free;
 		*hpp = hp;
 		funp->thing_word = HEADER_FUN;
-#ifndef SHARED_HEAP
-#ifndef HYBRID /* FIND ME! */
-		funp->next = off_heap->funs;
-		off_heap->funs = funp;
-#endif
-#endif
 		funp->num_free = num_free;
 		*objp = make_fun(funp);
 
@@ -1202,6 +1202,17 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		    return NULL;
 		}
 		old_uniq = unsigned_val(temp);
+
+#ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
+		/*
+		 * It is safe to link the fun into the fun list only when
+		 * no more validity tests can fail.
+		 */
+		funp->next = off_heap->funs;
+		off_heap->funs = funp;
+#endif
+#endif
 
 		funp->fe = erts_put_fun_entry(module, old_uniq, old_index);
 		funp->fe->arity = arity;
@@ -1241,12 +1252,6 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		hp += ERL_FUN_SIZE + num_free;
 		*hpp = hp;
 		funp->thing_word = HEADER_FUN;
-#ifndef SHARED_HEAP
-#ifndef HYBRID /* FIND ME! */
-		funp->next = off_heap->funs;
-		off_heap->funs = funp;
-#endif
-#endif
 		funp->num_free = num_free;
 		*objp = make_fun(funp);
 
@@ -1283,6 +1288,18 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		if (!is_small(temp)) {
 		    return NULL;
 		}
+		
+#ifndef SHARED_HEAP
+#ifndef HYBRID /* FIND ME! */
+		/*
+		 * It is safe to link the fun into the fun list only when
+		 * no more validity tests can fail.
+		 */
+		funp->next = off_heap->funs;
+		off_heap->funs = funp;
+#endif
+#endif
+
 		old_uniq = unsigned_val(temp);
 
 		funp->fe = erts_put_fun_entry(module, old_uniq, old_index);

@@ -1,4 +1,4 @@
-%%% $Id$
+%%% $Id: hipe_amd64_encode.erl,v 1.26 2005/01/21 14:26:09 dalu7049 Exp $
 %%% Copyright (C) 2000-2004 Mikael Pettersson
 %%% Copyright (C) 2004 Daniel Luna
 %%%

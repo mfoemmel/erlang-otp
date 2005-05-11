@@ -351,8 +351,8 @@ axis1(preceding, Tok, N, Acc, Context) ->
     match_preceding(Tok, N, Acc, Context);
 axis1(attribute, Tok, N, Acc, Context) ->
     match_attribute(Tok, N, Acc, Context);
-axis1(namespace, Tok, N, Acc, Context) ->
-    match_namespace(Tok, N, Acc, Context);
+%axis1(namespace, Tok, N, Acc, Context) ->
+%    match_namespace(Tok, N, Acc, Context);
 axis1(ancestor_or_self, Tok, N, Acc, Context) ->
     match_ancestor_or_self(Tok, N, Acc, Context);
 axis1(descendant_or_self, Tok, N, Acc, Context) ->
@@ -662,9 +662,9 @@ node_type(#xmlDocument{}) ->	root_node.
 
 %% "The namespace axis contains the namespace nodes of the context node;
 %% the axis will be empty unless the context node is an element."
-match_namespace(_Tok, _N, _Acc, _Context) ->
+%match_namespace(_Tok, _N, _Acc, _Context) ->
     %% TODO: IMPLEMENT NAMESPACE AXIS
-    erlang:fault(not_yet_implemented).
+%    erlang:fault(not_yet_implemented).
 
 
 update_nodeset(Context = #xmlContext{axis_type = reverse}, NodeSet) ->
@@ -742,7 +742,7 @@ node_test({name, {_Tag, Prefix, Local}},
     end;
 node_test({node_type, NT}, #xmlNode{node = N}, _Context) ->
     case {NT, N} of
-	{text, {_Data}} ->
+	{text, #xmlText{}} ->
 	    true;
 	{node, _} ->
 	    true;

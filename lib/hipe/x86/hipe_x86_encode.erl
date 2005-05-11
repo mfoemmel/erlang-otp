@@ -1,4 +1,4 @@
-%%% $Id$
+%%% $Id: hipe_x86_encode.erl,v 1.14 2005/01/26 14:14:27 mikpe Exp $
 %%% Copyright (C) 2000-2005 Mikael Pettersson
 %%%
 %%% This is the syntax of x86 r/m operands:

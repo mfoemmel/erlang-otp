@@ -1,5 +1,18 @@
 {"%VSN%",
  [
+  {"4.1.3", 
+   [
+    {update, snmpm_config, soft, soft_purge, soft_purge, []}
+   ]
+  },
+  {"4.1.2", 
+   [
+    {load_module, snmp_config, soft_purge, soft_purge, []},
+    {load_module, snmpa_usm, soft_purge, soft_purge, []},
+    {update, snmpa_agent, soft, soft_purge, soft_purge, []},
+    {update, snmpm_config, soft, soft_purge, soft_purge, []}
+   ]
+  },
   {"4.1.1", 
    [
     {load_module, snmp, soft_purge, soft_purge, []},
@@ -12,6 +25,7 @@
     {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
     {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
     {load_module, snmpa, soft_purge, soft_purge, []},
+    {load_module, snmpa_usm, soft_purge, soft_purge, []},
 
     {load_module, snmp_config, soft_purge, soft_purge, 
      [snmp_community_mib, snmp_framework_mib, snmp_notification_mib, 
@@ -41,6 +55,7 @@
     {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
     {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
     {load_module, snmpa, soft_purge, soft_purge, []},
+    {load_module, snmpa_usm, soft_purge, soft_purge, []},
 
     {load_module, snmp_config, soft_purge, soft_purge, 
      [snmp_community_mib, snmp_framework_mib, snmp_notification_mib, 
@@ -61,7 +76,22 @@
   }
  ], 
 
+%% ---------------------------------------------------------------------------
+
  [
+  {"4.1.3", 
+   [
+    {update, snmpm_config, soft, soft_purge, soft_purge, []}
+   ]
+  },
+  {"4.1.2", 
+   [
+    {load_module, snmp_config, soft_purge, soft_purge, []},
+    {load_module, snmpa_usm, soft_purge, soft_purge, []},
+    {update, snmpa_agent, soft, soft_purge, soft_purge, []},
+    {update, snmpm_config, soft, soft_purge, soft_purge, []}
+   ]
+  },
   {"4.1.1", 
    [
     {load_module, snmp, soft_purge, soft_purge, []},
@@ -74,6 +104,7 @@
     {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
     {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
     {load_module, snmpa, soft_purge, soft_purge, []},
+    {load_module, snmpa_usm, soft_purge, soft_purge, []},
 
     {load_module, snmp_config, soft_purge, soft_purge, 
      [snmp_community_mib, snmp_framework_mib, snmp_notification_mib, 
@@ -103,6 +134,7 @@
     {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
     {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
     {load_module, snmpa, soft_purge, soft_purge, []},
+    {load_module, snmpa_usm, soft_purge, soft_purge, []},
 
     {load_module, snmp_config, soft_purge, soft_purge, 
      [snmp_community_mib, snmp_framework_mib, snmp_notification_mib, 

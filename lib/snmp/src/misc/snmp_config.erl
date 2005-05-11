@@ -41,26 +41,21 @@
  	 
 	]).
 
--export([write_agent_config/3, 
-	 write_agent_context_config/3, 
-	 write_agent_community_config/3, 
-	 write_agent_standard_config/3, 
-	 write_agent_target_addr_config/3, 
-	 write_agent_target_params_config/3, 
-	 write_agent_notify_config/3, 
-	 write_agent_vacm_config/3, 
-	 write_agent_usm_config/3, 
+-export([write_agent_config/3, update_agent_config/2, 
+	 write_agent_context_config/3, update_agent_context_config/2, 
+	 write_agent_community_config/3, update_agent_community_config/2, 
+	 write_agent_standard_config/3, update_agent_standard_config/2, 
+	 write_agent_target_addr_config/3, update_agent_target_addr_config/2, 
+	 write_agent_target_params_config/3, update_agent_target_params_config/2, 
+	 write_agent_notify_config/3, update_agent_notify_config/2, 
+	 write_agent_vacm_config/3, update_agent_vacm_config/2, 
+	 write_agent_usm_config/3, update_agent_usm_config/2, 
 
-	 write_manager_config/3,
-	 write_manager_users_config/3,
-	 write_manager_agents_config/3,
-	 write_manager_usm_config/3
+	 write_manager_config/3, update_manager_config/2,
+	 write_manager_users_config/3, update_manager_users_config/2,
+	 write_manager_agents_config/3, update_manager_agents_config/2,
+	 write_manager_usm_config/3, update_manager_usm_config/2
 	]).
-
--export([write_manager_snmp_conf2/5,
-	 write_manager_snmp_agents_conf2/2,
-	 write_manager_snmp_users_conf2/2,
-	 write_manager_snmp_usm_conf2/2]).
 
 
 %%----------------------------------------------------------------------
@@ -1305,6 +1300,12 @@ write_agent_config(Dir, Hdr, Conf)
     Write  = fun(Fid) -> write_agent_conf(Fid, Hdr, Conf)  end,
     write_config_file(Dir, "agent.conf", Verify, Write).
     
+update_agent_config(Dir, Conf) 
+  when list(Dir), list(Conf) ->
+    Verify = fun()    -> verify_agent_conf(Conf)     end,
+    Write  = fun(Fid) -> write_agent_conf(Fid, Conf) end,
+    update_config_file(Dir, "agent.conf", Verify, Write).
+    
 verify_agent_conf([]) ->
     ok;
 verify_agent_conf([H|T]) ->
@@ -1364,6 +1365,12 @@ write_agent_context_config(Dir, Hdr, Conf)
     Write  = fun(Fid) -> write_agent_context_conf(Fid, Hdr, Conf)  end,
     write_config_file(Dir, "context.conf", Verify, Write).
 
+update_agent_context_config(Dir, Conf) 
+  when list(Dir), list(Conf) ->
+    Verify = fun()    -> verify_agent_context_conf(Conf)     end,
+    Write  = fun(Fid) -> write_agent_context_conf(Fid, Conf) end,
+    update_config_file(Dir, "context.conf", Verify, Write).
+
 verify_agent_context_conf([]) ->
     ok;
 verify_agent_context_conf([H|T]) ->
@@ -1414,6 +1421,12 @@ write_agent_community_config(Dir, Hdr, Conf)
     Verify = fun()    -> verify_agent_community_conf(Conf)           end,
     Write  = fun(Fid) -> write_agent_community_conf(Fid, Hdr, Conf)  end,
     write_config_file(Dir, "community.conf", Verify, Write).
+
+update_agent_community_config(Dir, Conf)
+  when list(Dir), list(Conf) ->
+    Verify = fun()    -> verify_agent_community_conf(Conf)     end,
+    Write  = fun(Fid) -> write_agent_community_conf(Fid, Conf) end,
+    update_config_file(Dir, "community.conf", Verify, Write).
 
 verify_agent_community_conf([]) ->
     ok;
@@ -1475,6 +1488,12 @@ write_agent_standard_config(Dir, Hdr, Conf)
     Write  = fun(Fid) -> write_agent_standard_conf(Fid, Hdr, Conf)  end,
     write_config_file(Dir, "standard.conf", Verify, Write).
 
+update_agent_standard_config(Dir, Conf) 
+  when list(Dir), list(Conf) ->
+    Verify = fun()    -> verify_agent_standard_conf(Conf)     end,
+    Write  = fun(Fid) -> write_agent_standard_conf(Fid, Conf) end,
+    update_config_file(Dir, "standard.conf", Verify, Write).
+
 verify_agent_standard_conf([]) ->
     ok;
 verify_agent_standard_conf([H|T]) ->
@@ -1535,20 +1554,46 @@ write_agent_snmp_target_addr_conf(Dir, ManagerIp, UDP, Vsns) ->
 "%%  [127,0,0,0],  2048}.\n"
 "%%\n\n",
     Hdr = header() ++ Comment,
-    Conf = [{mk_ip(ManagerIp, Vsn), ManagerIp, UDP, 
-	     1500, 3, "std_trap", 
-	     lists:flatten(io_lib:format("target_~w", [Vsn])), 
-	     "", [], 2048} || Vsn <- Vsns], 
+    F = fun(v1 = Vsn, Acc) ->
+		[{mk_ip(ManagerIp, Vsn), 
+		  ManagerIp, UDP, 1500, 3, 
+		  "std_trap", mk_param(Vsn), "", [], 2048}| Acc];
+	   (v2 = Vsn, Acc) ->
+		[{mk_ip(ManagerIp, Vsn), 
+		  ManagerIp, UDP, 1500, 3, 
+		  "std_trap", mk_param(Vsn), "", [], 2048},
+		 {lists:flatten(io_lib:format("~s.2",[mk_ip(ManagerIp, Vsn)])),
+		  ManagerIp, UDP, 1500, 3, 
+		  "std_inform", mk_param(Vsn), "", [], 2048}| Acc];
+	   (v3 = Vsn, Acc) ->
+		[{mk_ip(ManagerIp, Vsn), 
+		  ManagerIp, UDP, 1500, 3, 
+		  "std_trap", mk_param(Vsn), "", [], 2048},
+		 {lists:flatten(io_lib:format("~s.3",[mk_ip(ManagerIp, Vsn)])),
+		  ManagerIp, UDP, 1500, 3, 
+		  "std_inform", mk_param(Vsn), "mgrEngine", [], 2048}| Acc]
+	end,
+    Conf = lists:foldl(F, [], Vsns),
     write_agent_target_addr_config(Dir, Hdr, Conf).
+
+mk_param(Vsn) ->
+    lists:flatten(io_lib:format("target_~w", [Vsn])).
 
 mk_ip([A,B,C,D], Vsn) ->
     lists:flatten(io_lib:format("~w.~w.~w.~w ~w", [A,B,C,D,Vsn])).
+
 
 write_agent_target_addr_config(Dir, Hdr, Conf) 
   when list(Dir), list(Hdr), list(Conf) ->
     Verify = fun()    -> verify_agent_target_addr_conf(Conf)           end,
     Write  = fun(Fid) -> write_agent_target_addr_conf(Fid, Hdr, Conf)  end,
     write_config_file(Dir, "target_addr.conf", Verify, Write).
+
+update_agent_target_addr_config(Dir, Conf) 
+  when list(Dir), list(Conf) ->
+    Verify = fun()    -> verify_agent_target_addr_conf(Conf)     end,
+    Write  = fun(Fid) -> write_agent_target_addr_conf(Fid, Conf) end,
+    update_config_file(Dir, "target_addr.conf", Verify, Write).
 
 verify_agent_target_addr_conf([]) ->
     ok;
@@ -1575,7 +1620,8 @@ do_write_agent_target_addr_conf(Fid,
 				 Timeout, RetryCount, TagList, 
 				 ParamsName, EngineId,
 				 TMask, MaxMessageSize}) ->
-    io:format(Fid, "{\"~s\", ~w, ~w, ~w, ~w, ~w, \"~s\", \"~s\", ~w, ~w}.~n", 
+    io:format(Fid, "{\"~s\", ~w, ~w, ~w, ~w, \"~s\", \"~s\", \"~s\", "
+	      "~w, ~w}.~n", 
 	      [Name, Ip, Udp, Timeout, RetryCount, TagList, 
 	       ParamsName, EngineId, TMask, MaxMessageSize]).
 
@@ -1615,6 +1661,12 @@ write_agent_target_params_config(Dir, Hdr, Conf)
     Verify = fun()    -> verify_agent_target_params_conf(Conf)           end,
     Write  = fun(Fid) -> write_agent_target_params_conf(Fid, Hdr, Conf)  end,
     write_config_file(Dir, "target_params.conf", Verify, Write).
+
+update_agent_target_params_config(Dir, Conf) 
+  when list(Dir), list(Conf) ->
+    Verify = fun()    -> verify_agent_target_params_conf(Conf)     end,
+    Write  = fun(Fid) -> write_agent_target_params_conf(Fid, Conf) end,
+    update_config_file(Dir, "target_params.conf", Verify, Write).
 
 verify_agent_target_params_conf([]) ->
     ok;
@@ -1668,6 +1720,12 @@ write_agent_notify_config(Dir, Hdr, Conf)
     Verify = fun()    -> verify_agent_notify_conf(Conf)           end,
     Write  = fun(Fid) -> write_agent_notify_conf(Fid, Hdr, Conf)  end,
     write_config_file(Dir, "notify.conf", Verify, Write).
+
+update_agent_notify_config(Dir, Conf) 
+  when list(Dir), list(Conf) ->
+    Verify = fun()    -> verify_agent_notify_conf(Conf)     end,
+    Write  = fun(Fid) -> write_agent_notify_conf(Fid, Conf) end,
+    update_config_file(Dir, "notify.conf", Verify, Write).
 
 verify_agent_notify_conf([]) ->
     ok;
@@ -1757,6 +1815,13 @@ write_agent_usm_config(Dir, Hdr, UsmConf)
     Verify = fun()    -> verify_usm(UsmConf)          end, 
     Write  = fun(Fid) -> write_usm(Fid, Hdr, UsmConf) end, 
     write_config_file(Dir, "usm.conf", Verify, Write).
+
+update_agent_usm_config(Dir, UsmConf) 
+  when list(Dir), list(UsmConf) ->
+    ensure_started(crypto),
+    Verify = fun()    -> verify_usm(UsmConf)     end, 
+    Write  = fun(Fid) -> write_usm(Fid, UsmConf) end, 
+    update_config_file(Dir, "usm.conf", Verify, Write).
 
 verify_usm([]) ->
     ok;
@@ -1877,6 +1942,12 @@ write_agent_vacm_config(Dir, Hdr, VacmConf)
     Write  = fun(Fid) -> write_vacm(Fid, Hdr, VacmConf) end, 
     write_config_file(Dir, "vacm.conf", Verify, Write).
 
+update_agent_vacm_config(Dir, VacmConf) 
+  when list(Dir), list(VacmConf) ->
+    Verify = fun()    -> verify_vacm(VacmConf)     end, 
+    Write  = fun(Fid) -> write_vacm(Fid, VacmConf) end, 
+    update_config_file(Dir, "vacm.conf", Verify, Write).
+
 verify_vacm([]) ->
     ok;
 verify_vacm([H|T]) ->
@@ -1945,27 +2016,6 @@ write_manager_snmp_conf(Dir, IP, Port, MMS, EngineID) ->
 "%% For example\n"
 "%% {port,             5000}.\n"
 "%% {address,          [127,42,17,5]}.\n"
-"%% {engine_id,        \"agentEngine\"}.\n"
-"%% {max_message_size, 484}.\n"
-"%%\n\n",
-    {ok, Fid} = file:open(filename:join(Dir,"manager.conf"),write),
-    ok = io:format(Fid, 
-		   "~s~s\n"
-		   "{port,             ~w}.\n"
-		   "{address,          ~w}.\n"
-		   "{engine_id,        \"~s\"}.\n"
-		   "{max_message_size, ~w}.\n",
-		   [header(), Comment, Port, IP, EngineID, MMS]),
-    file:close(Fid).
-
-write_manager_snmp_conf2(Dir, IP, Port, MMS, EngineID) -> 
-    Comment = 
-"%% This file defines the Manager local configuration info\n"
-"%% Each row is a 2-tuple:\n"
-"%% {Variable, Value}.\n"
-"%% For example\n"
-"%% {port,             5000}.\n"
-"%% {address,          [127,42,17,5]}.\n"
 "%% {engine_id,        \"managerEngine\"}.\n"
 "%% {max_message_size, 484}.\n"
 "%%\n\n",
@@ -1981,6 +2031,12 @@ write_manager_config(Dir, Hdr, Conf)
     Verify = fun()    -> verify_manager_conf(Conf)           end,
     Write  = fun(Fid) -> write_manager_conf(Fid, Hdr, Conf)  end,
     write_config_file(Dir, "manager.conf", Verify, Write).
+    
+update_manager_config(Dir, Conf) 
+  when list(Dir), list(Conf) ->
+    Verify = fun()    -> verify_manager_conf(Conf)     end,
+    Write  = fun(Fid) -> write_manager_conf(Fid, Conf) end,
+    update_config_file(Dir, "manager.conf", Verify, Write).
     
 verify_manager_conf([]) ->
     ok;
@@ -2024,23 +2080,6 @@ write_manager_snmp_users_conf(Dir, Users) ->
 "%% For example\n"
 "%% {kalle, kalle_callback_user_mod, \"dummy\"}.\n"
 "%%\n\n",
-    {ok, Fid} = file:open(filename:join(Dir,"users.conf"),write),
-    ok = io:format(Fid, "~s~s", [header(),Comment]),
-    F = fun({UserId, UserMod, UserData}) ->
-		ok = io:format(Fid, "{~w, ~w, ~p}.~n", 
-			       [UserId, UserMod, UserData])
-	end,
-    lists:foreach(F, Users),
-    file:close(Fid).
-
-write_manager_snmp_users_conf2(Dir, Users) ->
-    Comment = 
-"%% This file defines the users the manager handles\n"
-"%% Each row is a 3-tuple:\n"
-"%% {UserId, UserMod, UserData}.\n"
-"%% For example\n"
-"%% {kalle, kalle_callback_user_mod, \"dummy\"}.\n"
-"%%\n\n",
     Hdr = header() ++ Comment,
     write_manager_users_config(Dir, Hdr, Users).
 
@@ -2049,6 +2088,12 @@ write_manager_users_config(Dir, Hdr, Users)
     Verify = fun()    -> verify_manager_users_conf(Users)          end,
     Write  = fun(Fid) -> write_manager_users_conf(Fid, Hdr, Users) end,
     write_config_file(Dir, "users.conf", Verify, Write).
+
+update_manager_users_config(Dir, Users) 
+  when list(Dir), list(Users) ->
+    Verify = fun()    -> verify_manager_users_conf(Users)     end,
+    Write  = fun(Fid) -> write_manager_users_conf(Fid, Users) end,
+    update_config_file(Dir, "users.conf", Verify, Write).
 
 verify_manager_users_conf([]) ->
     ok;
@@ -2086,32 +2131,6 @@ write_manager_snmp_agents_conf(Dir, Agents) ->
 "%%  TargetName, Comm, Ip, Port, EngineID, Timeout, \n"
 "%%  MaxMessageSize, Version, SecModel, SecName, SecLevel}\n"
 "%%\n\n",
-    {ok, Fid} = file:open(filename:join(Dir,"agents.conf"),write),
-    ok = io:format(Fid, "~s~s", [header(),Comment]),
-    F = fun({UserId,
-	     TargetName, Comm, Ip, Port, EngineID, Timeout, MMS,
-	     Version, SecModel, SecName, SecLevel}) ->
-		ok = io:format(Fid, 
-			       "{~w, ~n"
-			       " \"~s\", \"~s\", ~w, ~w, \"~s\", ~n"
-			       " ~w, ~w, ~n"
-			       " ~w, ~w, \"~s\", ~w}.~n", 
-			       [UserId, 
-				TargetName, Comm, Ip, Port, EngineID, 
-				Timeout, MMS, 
-				Version, SecModel, SecName, SecLevel])
-	end,
-    lists:foreach(F, Agents),
-    file:close(Fid).
-
-write_manager_snmp_agents_conf2(Dir, Agents) ->
-    Comment = 
-"%% This file defines the agents the manager handles\n"
-"%% Each row is a 12-tuple:\n"
-"%% {UserId, \n"
-"%%  TargetName, Comm, Ip, Port, EngineID, Timeout, \n"
-"%%  MaxMessageSize, Version, SecModel, SecName, SecLevel}\n"
-"%%\n\n",
     Hdr = header() ++ Comment, 
     write_manager_agents_config(Dir, Hdr, Agents).
 
@@ -2120,6 +2139,12 @@ write_manager_agents_config(Dir, Hdr, Agents)
     Verify = fun()    -> verify_manager_agents_conf(Agents)          end,
     Write  = fun(Fid) -> write_manager_agents_conf(Fid, Hdr, Agents) end,
     write_config_file(Dir, "agents.conf", Verify, Write).
+
+update_manager_agents_config(Dir, Agents) 
+  when list(Dir), list(Agents) ->
+    Verify = fun()    -> verify_manager_agents_conf(Agents)     end,
+    Write  = fun(Fid) -> write_manager_agents_conf(Fid, Agents) end,
+    update_config_file(Dir, "agents.conf", Verify, Write).
 
 verify_manager_agents_conf([]) ->
     ok;
@@ -2145,7 +2170,7 @@ do_write_manager_agent_conf(Fid,
 			    {UserId, 
 			     TargetName, Comm, Ip, Port, EngineID, 
 			     Timeout, MaxMessageSize, Version, 
-			     SecModel, SecName, SecLevel} = A) ->
+			     SecModel, SecName, SecLevel} = _A) ->
     io:format(Fid, "{~w, \"~s\", \"~s\", ~w, ~w, \"~s\", ~w, ~w, ~w, ~w, \"~s\", ~w}.~n", [UserId, TargetName, Comm, Ip, Port, EngineID, Timeout, MaxMessageSize, Version, SecModel, SecName, SecLevel]).
 
 
@@ -2160,26 +2185,6 @@ write_manager_snmp_usm_conf(Dir, Usms) ->
 "%% {EngineID, UserName, AuthP, AuthKey, PrivP, PrivKey}\n"
 "%% {EngineID, UserName, SecName, AuthP, AuthKey, PrivP, PrivKey}\n"
 "%%\n\n",
-    {ok, Fid} = file:open(filename:join(Dir,"usm.conf"),write),
-    ok = io:format(Fid, "~s~s", [header(),Comment]),
-    F = fun({EngineID, UserName, SecName, AuthP, AuthKey, PrivP, PrivKey}) ->
-		ok = io:format(Fid, 
-			       "{\"~s\", \"~s\", \"~s\", ~n"
-			       " ~w, ~w, ~n"
-			       " ~w, ~w}.~n", 
-			       [EngineID, UserName, SecName, 
-				AuthP, AuthKey, PrivP, PrivKey])
-	end,
-    lists:foreach(F, Usms),
-    file:close(Fid).
-
-write_manager_snmp_usm_conf2(Dir, Usms) ->
-    Comment = 
-"%% This file defines the usm users the manager handles\n"
-"%% Each row is a 6 or 7-tuple:\n"
-"%% {EngineID, UserName, AuthP, AuthKey, PrivP, PrivKey}\n"
-"%% {EngineID, UserName, SecName, AuthP, AuthKey, PrivP, PrivKey}\n"
-"%%\n\n",
     Hdr = header() ++ Comment,
     write_manager_usm_config(Dir, Hdr, Usms).
 
@@ -2188,6 +2193,12 @@ write_manager_usm_config(Dir, Hdr, Users)
     Verify = fun()    -> verify_manager_usm_conf(Users)          end,
     Write  = fun(Fid) -> write_manager_usm_conf(Fid, Hdr, Users) end,
     write_config_file(Dir, "usm.conf", Verify, Write).
+
+update_manager_usm_config(Dir, Users) 
+  when list(Dir), list(Users) ->
+    Verify = fun()    -> verify_manager_usm_conf(Users)     end,
+    Write  = fun(Fid) -> write_manager_usm_conf(Fid, Users) end,
+    update_config_file(Dir, "usm.conf", Verify, Write).
 
 verify_manager_usm_conf([]) ->
     ok;
@@ -2447,8 +2458,25 @@ write_config_file(Dir, FileName, Verify, Write)
 
 do_write_config_file(Dir, FileName, Verify, Write) ->
     Verify(),
-    case file:open(filename:join(Dir, FileName),write) of
+    case file:open(filename:join(Dir, FileName),[write]) of
 	{ok, Fid} ->
+	    Write(Fid),
+	    file:close(Fid),
+	    ok;
+	Error ->
+	    Error
+    end.
+
+
+update_config_file(Dir, FileName, Verify, Write) 
+  when list(Dir), list(FileName), function(Verify), function(Write) ->
+    (catch do_update_config_file(Dir, FileName, Verify, Write)).
+
+do_update_config_file(Dir, FileName, Verify, Write) ->
+    Verify(),
+    case file:open(filename:join(Dir, FileName),[read,write]) of
+	{ok, Fid} ->
+	    file:position(Fid, eof),
 	    Write(Fid),
 	    file:close(Fid),
 	    ok;

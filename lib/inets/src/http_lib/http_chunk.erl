@@ -21,7 +21,7 @@
 -include("http.hrl").
 
 %% API
--export([decode/3, handle_headers/2]).
+-export([decode/3, encode/1, encode_last/0, handle_headers/2]).
 %% Callback API - used for example if the chunkedbody is received a
 %% little at a time on a socket. 
 -export([decode_size/1, ignore_extensions/1, decode_data/1, decode_trailer/1]).
@@ -45,10 +45,33 @@
 %%-------------------------------------------------------------------------
 decode(ChunkedBody, MaxBodySize, MaxHeaderSize) ->
     %% Note decode_size will call decode_data.
-    decode_size([ChunkedBody, <<>>, [], {MaxBodySize, <<>>, 0, MaxHeaderSize}]).
+    decode_size([ChunkedBody, <<>>, [], 
+		 {MaxBodySize, <<>>, 0, MaxHeaderSize}]).
 
 %%-------------------------------------------------------------------------
-%% decode(HeaderRecord, ChunkedHeaders) -> NewHeaderRecord
+%% encode(Chunk) -> EncodedChunk
+%%     
+%%      Chunked = binary()
+%%      EncodedChunk = binary()
+%%                                    
+%% Description: Encodes a body part with the chunked transfer encoding. 
+%%              Chunks are returned as lists or binaries depending on the
+%%              input format. When sending the data on the both formats 
+%%              are accepted.
+%%-------------------------------------------------------------------------
+encode(Chunk) when is_binary(Chunk)->
+    HEXSize = list_to_binary(http_util:integer_to_hexlist(size(Chunk))),
+    <<HEXSize/binary, ?CR, ?LF, Chunk/binary, ?CR, ?LF>>;
+
+encode(Chunk) when is_list(Chunk)->
+    HEXSize = http_util:integer_to_hexlist(length(Chunk)),
+    [HEXSize,  ?CR, ?LF, Chunk, ?CR, ?LF].
+
+encode_last() ->
+    <<$0, ?CR, ?LF, ?CR, ?LF >>.
+
+%%-------------------------------------------------------------------------
+%% handle_headers(HeaderRecord, ChunkedHeaders) -> NewHeaderRecord
 %%
 %%	HeaderRecord = NewHeaderRecord = #http_request_h{} | #http_response_h{}
 %%      ChunkedHeaders = ["Header:Value"] as returnde by http_chunk:decode/3
@@ -90,7 +113,8 @@ ignore_extensions([Bin, Rest, NextFunction]) ->
 decode_data([Bin, ChunkSize, TotalChunk, Info]) ->
     decode_data(ChunkSize, <<TotalChunk/binary, Bin/binary>>, Info).
 
-decode_trailer([Bin, Rest, Header, Headers, MaxHeaderSize, Body, BodyLength]) ->
+decode_trailer([Bin, Rest, Header, Headers, MaxHeaderSize, Body, 
+		BodyLength]) ->
     decode_trailer(<<Rest/binary, Bin/binary>>, 
 		   Header, Headers, MaxHeaderSize, Body, BodyLength).
 

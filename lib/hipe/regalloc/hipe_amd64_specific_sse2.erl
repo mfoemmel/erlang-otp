@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_amd64_specific_sse2.erl,v 1.4 2005/03/29 11:46:30 mikpe Exp $
 
 -module(hipe_amd64_specific_sse2).
 
@@ -38,7 +38,7 @@
 	 check_and_rewrite/2]).
 
 defun_to_cfg(Defun) ->
-  hipe_amd64_cfg:init(Defun).
+  hipe_x86_cfg:init(Defun).
 
 check_and_rewrite(Defun, Coloring) ->
   {NewDefun, _, NewSpillIndex} =
@@ -46,13 +46,13 @@ check_and_rewrite(Defun, Coloring) ->
   {NewDefun, NewSpillIndex}.
 
 reverse_postorder(CFG) ->
-  hipe_amd64_cfg:reverse_postorder(CFG).
+  hipe_x86_cfg:reverse_postorder(CFG).
 
 breadthorder(CFG) ->
-  hipe_amd64_cfg:breadthorder(CFG).
+  hipe_x86_cfg:breadthorder(CFG).
 
 postorder(CFG) ->
-  hipe_amd64_cfg:postorder(CFG).
+  hipe_x86_cfg:postorder(CFG).
 
 is_global(_Reg) ->
   false.
@@ -101,10 +101,10 @@ physical_name(Reg) ->
 %% CFG stuff
 
 succ_map(CFG) ->
-  hipe_amd64_cfg:succ_map(CFG).
+  hipe_x86_cfg:succ_map(CFG).
 
 labels(CFG) ->
-  hipe_amd64_cfg:labels(CFG).
+  hipe_x86_cfg:labels(CFG).
 
 var_range(_CFG) ->
   hipe_gensym:var_range(x86).
@@ -115,7 +115,7 @@ number_of_temporaries(_CFG) ->
   Highest_temporary + 1.
 
 bb(CFG,L) ->
-  hipe_amd64_cfg:bb(CFG,L).
+  hipe_x86_cfg:bb(CFG,L).
 
 %% AMD64 stuff
 

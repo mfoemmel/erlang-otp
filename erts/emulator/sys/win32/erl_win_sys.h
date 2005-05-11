@@ -95,14 +95,6 @@
 #define strncasecmp _strnicmp
 
 /*
- * Make sure that ENOTSUP is defined.
- */
-
-#ifndef ENOTSUP
-#define	ENOTSUP		-1738659
-#endif
-
-/*
  * Practial Windows specific macros.
  */
 
@@ -182,6 +174,7 @@ int _finite(double x);
 /*#define NO_FPE_SIGNALS*/
 #define ERTS_FP_CHECK_INIT() do {} while (0)
 #define ERTS_FP_ERROR(f, Action) if (!_finite(f)) { Action; } else {}
+#define ERTS_FP_ERROR_THOROUGH(f, Action) ERTS_FP_ERROR(f, Action)
 #define ERTS_SAVE_FP_EXCEPTION()
 #define ERTS_RESTORE_FP_EXCEPTION()
 

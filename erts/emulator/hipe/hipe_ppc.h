@@ -36,7 +36,12 @@ static __inline__ void hipe_set_narity(Process *p, unsigned int arity)
 /* Native stack growth direction. */
 #define HIPE_NSTACK_GROWS_DOWN
 
+#if defined(__powerpc64__)
+#define hipe_arch_name	am_ppc64
+#define AEXTERN(RET,NAME,PROTO)	extern const int NAME
+#else
 #define hipe_arch_name	am_powerpc
+#endif
 
 /* for hipe_bifs_enter_code_2 */
 extern void *hipe_alloc_code(Uint nrbytes, Eterm callees, Eterm *trampolines, Process *p);

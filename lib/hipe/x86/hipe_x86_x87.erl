@@ -3,7 +3,6 @@
 
 -ifndef(HIPE_X86_X87).
 -define(HIPE_X86_X87,       hipe_x86_x87).
--define(HIPE_X86_CFG,       hipe_x86_cfg).
 -define(HIPE_X86_DEFUSE,    hipe_x86_defuse).
 -define(HIPE_X86_LIVENESS,  hipe_x86_liveness).
 -define(HIPE_X86_REGISTERS, hipe_x86_registers).
@@ -15,22 +14,22 @@
 -export([map/1]).
 
 map(Defun) ->
-  CFG0 = ?HIPE_X86_CFG:init(Defun),
-  %%?HIPE_X86_CFG:pp(CFG0),
+  CFG0 = hipe_x86_cfg:init(Defun),
+  %%hipe_x86_cfg:pp(CFG0),
   Liveness = ?HIPE_X86_LIVENESS:analyse(CFG0),
-  StartLabel = ?HIPE_X86_CFG:start_label(CFG0),
-  SuccMap = ?HIPE_X86_CFG:succ_map(CFG0),
+  StartLabel = hipe_x86_cfg:start_label(CFG0),
+  SuccMap = hipe_x86_cfg:succ_map(CFG0),
   {CFG1, _} = do_blocks([],[StartLabel], CFG0, Liveness, [], SuccMap, 
 			gb_trees:empty()),
-  ?HIPE_X86_CFG:linearise(CFG1).
+  hipe_x86_cfg:linearise(CFG1).
 
 
 do_blocks(Pred,[Lbl|Lbls], CFG, Liveness, Map, SuccMap, BlockMap) ->
   case gb_trees:lookup(Lbl, BlockMap) of
     none ->
       %% This block has not been visited.
-      Block = ?HIPE_X86_CFG:bb(CFG, Lbl),
-      Succ = ?HIPE_X86_CFG:succ(SuccMap, Lbl),
+      Block = hipe_x86_cfg:bb(CFG, Lbl),
+      Succ = hipe_x86_cfg:succ(SuccMap, Lbl),
       NewBlockMap = gb_trees:insert(Lbl, Map, BlockMap),
       LiveOut = [X || X <- ?HIPE_X86_LIVENESS:liveout(Liveness, Lbl),
 		      is_fp(X)],
@@ -42,7 +41,7 @@ do_blocks(Pred,[Lbl|Lbls], CFG, Liveness, Map, SuccMap, BlockMap) ->
 	case Dirty of
 	  true ->
 	    NewBlock = hipe_bb:code_update(Block, NewCode0),
-	    {?HIPE_X86_CFG:bb_add(CFG, Lbl, NewBlock), SuccMap};
+	    {hipe_x86_cfg:bb_add(CFG, Lbl, NewBlock), SuccMap};
 	  _ ->
 	    {CFG, SuccMap}
 	end,
@@ -65,7 +64,7 @@ do_blocks(Pred,[Lbl|Lbls], CFG, Liveness, Map, SuccMap, BlockMap) ->
 		    Map, SuccMap, BlockMap);
 	 true ->
 	  NewCFG = do_shuffle(Pred,Lbl,CFG, Map,ExistingMap),
-	  NewSuccMap = ?HIPE_X86_CFG:succ_map(NewCFG),
+	  NewSuccMap = hipe_x86_cfg:succ_map(NewCFG),
 	  do_blocks(Pred,Lbls, NewCFG, Liveness, Map, 
 		    NewSuccMap, BlockMap)
       end
@@ -137,13 +136,13 @@ do_shuffle(Pred,Lbl,CFG, OldMap, NewMap)->
 
   %% Update the CFG.
   NewLabel = hipe_gensym:get_next_label(x86),
-  NewCFG1 = ?HIPE_X86_CFG:bb_add(CFG, NewLabel, hipe_bb:mk_bb(Code)),
-  OldPred = ?HIPE_X86_CFG:bb(NewCFG1, Pred),
+  NewCFG1 = hipe_x86_cfg:bb_add(CFG, NewLabel, hipe_bb:mk_bb(Code)),
+  OldPred = hipe_x86_cfg:bb(NewCFG1, Pred),
   PredCode = hipe_bb:code(OldPred),
   NewLast = redirect(lists:last(PredCode), Lbl,NewLabel),
   NewPredCode = butlast(PredCode)++[NewLast],
   NewPredBB = hipe_bb:code_update(OldPred, NewPredCode),
-  ?HIPE_X86_CFG:bb_add(NewCFG1, Pred, NewPredBB).
+  hipe_x86_cfg:bb_add(NewCFG1, Pred, NewPredBB).
 
 
 find_swap_cycles(OldMap, NewMap)->
@@ -215,7 +214,7 @@ redirect(Insn, OldLbl, NewLbl)->
 	  Insn#pseudo_call{sdesc=SDesc#x86_sdesc{exnlab=NewLbl}}
       end;
     _ -> 
-      ?HIPE_X86_CFG:redirect_jmp(Insn, OldLbl, NewLbl)
+      hipe_x86_cfg:redirect_jmp(Insn, OldLbl, NewLbl)
   end.
 
 do_insn(I, LiveOut, Map, BlockMap) ->

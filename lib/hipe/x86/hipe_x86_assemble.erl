@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%%% $Id: hipe_x86_assemble.erl,v 1.147 2005/01/26 14:14:27 mikpe Exp $
 %%% HiPE/x86 assembler
 %%%
 %%% TODO:

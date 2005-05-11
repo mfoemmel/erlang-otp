@@ -2,7 +2,6 @@
  [{description,"XML parser"},
   {vsn,"%VSN%"},
   {modules,[
-	ucs,
 	xmerl,
 	xmerl_eventp,
 	xmerl_html,
@@ -13,6 +12,8 @@
 	xmerl_simple,
 	xmerl_text,
 	xmerl_validate,
+	xmerl_ucs,
+	xmerl_uri,
 	xmerl_xlate,
 	xmerl_xml,
 	xmerl_xpath,

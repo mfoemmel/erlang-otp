@@ -7,7 +7,7 @@
 %%  Purpose  :  
 %%  Notes    : 
 %%  History  : * 1998-01-28 Erik Johansson (happi@csd.uu.se): Created.
-%%  CVS      : $Id$
+%%  CVS      : $Id: hipe.erl,v 1.192 2005/05/03 13:51:15 tobiasl Exp $
 %% ====================================================================
 %% @doc This is the direct interface to the HiPE compiler.
 %%
@@ -329,8 +329,13 @@ c(Name, Options) ->
 
 c(Name, File, Opts) ->
   case compile(Name, File, user_compile_opts(Opts)) of
-    {ok, _} ->
-      {ok, Name};
+    {ok, Res} ->
+      case proplists:get_bool(dialyzer, Opts) of
+	true ->
+	  {ok, Res};
+	false ->
+	  {ok, Name}
+      end;
     Other ->
       Other
   end.
@@ -704,7 +709,8 @@ compile_finish({Mod, Exports, Icode}, WholeModule, Options) ->
 %% Icode}' pairs, and returns `{ok, Binary}' or `{error, Reason}'.
 
 %% TODO: make the Exports info accessible to the compilation passes.
-finalize(List, Mod, Exports, WholeModule, Opts) ->
+finalize(OrigList, Mod, Exports, WholeModule, Opts) ->
+  List = icode_multret(OrigList, Mod, Opts, Exports),
   {T1Compile,_} = erlang:statistics(runtime),
   CompiledCode =
     case proplists:get_value(use_callgraph, Opts) of
@@ -731,7 +737,8 @@ finalize(List, Mod, Exports, WholeModule, Opts) ->
     true ->
       {ok, Mod};
     false ->
-      case proplists:get_bool(to_rtl, Opts) of
+      case (proplists:get_bool(to_rtl, Opts) orelse 
+	    proplists:get_bool(dialyzer, Opts)) of
 	true ->
 	  {ok, CompiledCode};
 	false ->
@@ -773,6 +780,8 @@ finalize_fun({MFA, Icode}, Opts) ->
       {MFA, LinearRtl};
     {type_only, Fixpoint} ->
       {MFA, Fixpoint};
+    {dialyzer, IcodeSSA} ->
+      {MFA, IcodeSSA};
     {native, X} ->
       ?error_msg("ERROR: unknown native code format: ~P.\n",[X]),
       ?EXIT(unknown_format);
@@ -780,6 +789,14 @@ finalize_fun({MFA, Icode}, Opts) ->
       ?when_option(verbose, Opts,?debug_untagged_msg("\n",[])),
       ?error_msg("ERROR: ~p~n",[Error]),
       ?EXIT(Error)
+  end.
+
+icode_multret(List, Mod, Opts, Exports) ->
+  case proplists:get_bool(icode_multret, Opts) of
+    true ->
+      hipe_icode_mulret:mult_ret(List, Mod, Opts, Exports);
+    false ->
+      List
   end.
 
 finalize_fun_fixpoint(CallGraph, Opts) ->
@@ -993,7 +1010,7 @@ post(Res, Icode, Options) ->
 
 %% --------------------------------------------------------------------
 
-%% @spec version() -> string().
+%% @spec version() -> string()
 %% @doc Returns the current HiPE version as a string().
 version() ->
   ?VERSION_STRING().
@@ -1273,6 +1290,7 @@ opt_keys() ->
      count_instrs,
      count_spills,
      count_temps,
+     dialyzer,
      debug,
      fill_delayslot,
      frame_x86,
@@ -1283,6 +1301,7 @@ opt_keys() ->
      icode_ssa_copy_prop,
      icode_ssa_const_prop,
      icode_type,
+     icode_multret,
      inline_bs,
      inline_fp,
      ls_order,

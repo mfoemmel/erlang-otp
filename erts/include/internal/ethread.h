@@ -31,15 +31,6 @@
 
 #include <stdlib.h>
 #include <errno.h>
-#ifndef EWOULDBLOCK
-#define EWOULDBLOCK EAGAIN
-#endif
-#ifndef ETIMEDOUT
-#define ETIMEDOUT EAGAIN
-#endif
-#ifndef ENOTSUP
-#define ENOTSUP -1738659 /* Same as in erl_<ERLANG_OS_TYPE>_sys.h */
-#endif
 
 typedef struct {
     long tv_sec;
@@ -98,6 +89,13 @@ typedef pthread_cond_t ethr_cond;
 
 #include <windows.h>
 
+#ifndef EWOULDBLOCK
+#  define EWOULDBLOCK (10035) /* WSAEWOULDBLOCK */
+#endif
+#ifndef ETIMEDOUT
+#  define ETIMEDOUT (10060) /* WSAETIMEDOUT */
+#endif
+
 /* Types */
 typedef long ethr_tid; /* thread id type */
 typedef struct {
@@ -133,6 +131,21 @@ typedef struct {
 #error "No supported thread lib found"
 #endif
 
+#endif
+
+#ifndef EWOULDBLOCK
+#  define EWOULDBLOCK EAGAIN
+#endif
+#ifndef ETIMEDOUT
+#  define ETIMEDOUT EAGAIN
+#endif
+/* ENOTSUP: same as in sys.h */
+#ifndef ENOTSUP
+#  ifdef EOPNOTSUPP
+#    define ENOTSUP EOPNOTSUPP
+#  else
+#    define ENOTSUP -1738659
+#  endif
 #endif
 
 typedef struct {

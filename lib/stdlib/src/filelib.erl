@@ -25,14 +25,40 @@
 
 -include_lib("kernel/include/file.hrl").
 
-wildcard(Pattern) ->
-    {ok, Cwd} = file:get_cwd(),
-    wildcard(Pattern, Cwd).
+wildcard({compiled_wildcard,{exists,File}}) ->
+    case file:read_file_info(File) of
+	{ok,_} -> [File];
+	_ -> []
+    end;
+wildcard({compiled_wildcard,[Base|Rest]}) ->
+    wildcard_1([Base], Rest);
+wildcard(Pattern) when is_list(Pattern) ->
+    try
+	wildcard(compile_wildcard(Pattern))
+    catch
+	error:{badpattern,_}=Error ->
+	    %% Get the stack backtrace correct.
+	    erlang:error(Error)
+    end.
 
-wildcard({compiled_wildcard, [Base|Rest]}, _Cwd) ->
-    wildcard1([Base], Rest);
-wildcard(Pattern, Cwd) when list(Pattern), list(Cwd) ->
-    wildcard(compile_wildcard(Pattern), Cwd).
+wildcard({compiled_wildcard,{exists,File}}, Cwd) ->
+    case file:read_file_info(filename:absname(File, Cwd)) of
+	{ok,_} -> [File];
+	_ -> []
+    end;
+wildcard({compiled_wildcard,[current|Rest]}, Cwd) ->
+    PrefixLen = length(Cwd)+1,
+    [lists:nthtail(PrefixLen, N) || N <- wildcard_1([Cwd], Rest)];
+wildcard({compiled_wildcard,[Base|Rest]}, _Cwd) ->
+    wildcard_1([Base], Rest);
+wildcard(Pattern, Cwd) when is_list(Pattern), is_list(Cwd) ->
+    try
+	wildcard(compile_wildcard(Pattern), Cwd)
+    catch
+	error:{badpattern,_}=Error ->
+	    %% Get the stack backtrace correct.
+	    erlang:error(Error)
+    end.
 
 is_dir(Dir) ->
     case file:read_file_info(Dir) of
@@ -42,7 +68,7 @@ is_dir(Dir) ->
 	    false
     end.
 
-is_file(File) -> %% exists(File)
+is_file(File) ->
     case file:read_file_info(File) of
 	{ok, #file_info{type=regular}} ->
 	    true;
@@ -132,123 +158,119 @@ ensure_dir(F) ->
     end.
 
 
+%%%
 %%% Pattern matching using a compiled wildcard.
+%%%
 
-list_dir("") ->
-    file:list_dir(".");
-list_dir(Dir) ->
-    file:list_dir(Dir).
+wildcard_1(Files, Pattern) ->
+    wildcard_2(Files, Pattern, []).
 
-join("", File) ->
-    File;
-join(Base, File) ->
-    filename:join(Base, File).
-
-wildcard1(Files, Pattern) ->
-    wildcard1(Files, Pattern, []).
-
-wildcard1([File|Rest], Pattern, Result) ->
-    wildcard1(Rest, Pattern, wildcard2(File, Pattern, Result));
-wildcard1([], _, Result) ->
+wildcard_2([File|Rest], Pattern, Result) ->
+    wildcard_2(Rest, Pattern, wildcard_3(File, Pattern, Result));
+wildcard_2([], _, Result) ->
     Result.
 
-wildcard2(Base, [Pattern|Rest], Result) ->
+wildcard_3(Base, [Pattern|Rest], Result) ->
     case list_dir(Base) of
 	{ok, Files0} ->
 	    Files = lists:sort(Files0),
-	    Matches = wildcard3(Pattern, Files, Base, []),
-	    wildcard1(Matches, Rest, Result);
+	    Matches = wildcard_4(Pattern, Files, Base, []),
+	    wildcard_2(Matches, Rest, Result);
 	_ ->
 	    Result
     end;
-wildcard2(Base, [], Result) ->
+wildcard_3(Base, [], Result) ->
     [Base|Result].
 
-wildcard3(Pattern, [File|Rest], Base, Result) ->
-    case wildcard4(Pattern, File) of
+wildcard_4(Pattern, [File|Rest], Base, Result) ->
+    case wildcard_5(Pattern, File) of
 	true ->
-	    wildcard3(Pattern, Rest, Base, [join(Base, File)|Result]);
+	    wildcard_4(Pattern, Rest, Base, [join(Base, File)|Result]);
 	false ->
-	    wildcard3(Pattern, Rest, Base, Result)
+	    wildcard_4(Pattern, Rest, Base, Result)
     end;
-wildcard3(_Patt, [], _Base, Result) ->
+wildcard_4(_Patt, [], _Base, Result) ->
     Result.
 
-wildcard4([question|Rest1], [_|Rest2]) ->
-    wildcard4(Rest1, Rest2);
-wildcard4([accept], _) ->
+wildcard_5([question|Rest1], [_|Rest2]) ->
+    wildcard_5(Rest1, Rest2);
+wildcard_5([accept], _) ->
     true;
-wildcard4([star|Rest], File) ->
+wildcard_5([star|Rest], File) ->
     do_star(Rest, File);
-wildcard4([{one_of, Ordset}|Rest], [C|File]) ->
+wildcard_5([{one_of, Ordset}|Rest], [C|File]) ->
     case ordsets:is_element(C, Ordset) of
-	true  -> wildcard4(Rest, File);
+	true  -> wildcard_5(Rest, File);
 	false -> false
     end;
-wildcard4([{alt, Alts}], File) ->
+wildcard_5([{alt, Alts}], File) ->
     do_alt(Alts, File);
-wildcard4([C|Rest1], [C|Rest2]) when is_integer(C) ->
-    wildcard4(Rest1, Rest2);
-wildcard4([X|_], [Y|_]) when is_integer(X), is_integer(Y) ->
+wildcard_5([C|Rest1], [C|Rest2]) when is_integer(C) ->
+    wildcard_5(Rest1, Rest2);
+wildcard_5([X|_], [Y|_]) when is_integer(X), is_integer(Y) ->
     false;
-wildcard4([], []) ->
+wildcard_5([], []) ->
     true;
-wildcard4([], [_|_]) ->
+wildcard_5([], [_|_]) ->
     false;
-wildcard4([_|_], []) ->
+wildcard_5([_|_], []) ->
     false.
 
 do_star(Pattern, [X|Rest]) ->
-    case wildcard4(Pattern, [X|Rest]) of
+    case wildcard_5(Pattern, [X|Rest]) of
 	true  -> true;
 	false -> do_star(Pattern, Rest)
     end;
 do_star(Pattern, []) ->
-    wildcard4(Pattern, []).
+    wildcard_5(Pattern, []).
 
 do_alt([Alt|Rest], File) ->
-    case wildcard4(Alt, File) of
+    case wildcard_5(Alt, File) of
 	true  -> true;
 	false -> do_alt(Rest, File)
     end;
 do_alt([], _File) ->
     false.
 
+list_dir(current) -> file:list_dir(".");
+list_dir(Dir) ->     file:list_dir(Dir).
+
+join(current, File) -> File;
+join(Base, File) -> filename:join(Base, File).
+
 	    
 %%% Compiling a wildcard.
 
 compile_wildcard(Pattern) ->
-    case catch compile_wildcard0(Pattern) of
-	{error, Reason} ->
-	    {error, Reason};
-	{'EXIT', Reason} ->
-	    exit(Reason);
-	Wildcard ->
-	    {compiled_wildcard, Wildcard}
+    try 
+	{compiled_wildcard,compile_wildcard_1(Pattern)}
+    catch
+	error:{badpattern,_}=Error ->
+	    %% Get the stack backtrace correct.
+	    erlang:error(Error)
     end.
 
-compile_wildcard0(Pattern) ->
+compile_wildcard_1(Pattern) ->
     [Root|Rest] = filename:split(Pattern),
     case filename:pathtype(Root) of
 	relative ->
-	    compile_wildcard1([Root|Rest], []);
+	    compile_wildcard_2([Root|Rest], current);
 	_ ->
-	    compile_wildcard1(Rest, [Root])
+	    compile_wildcard_2(Rest, [Root])
     end.
 
-compile_wildcard1([Part|Rest], Root) ->
+compile_wildcard_2([Part|Rest], Root) ->
     case compile_part(Part) of
 	Part ->
-	    compile_wildcard1(Rest, join(Root, Part));
+	    compile_wildcard_2(Rest, join(Root, Part));
 	Pattern ->
-	    compile_wildcard2(Rest, [Pattern, Root])
+	    compile_wildcard_3(Rest, [Pattern,Root])
     end;
-compile_wildcard1([], Root) ->
-    [Root].
+compile_wildcard_2([], Root) -> {exists,Root}.
 
-compile_wildcard2([Part|Rest], Result) ->
-    compile_wildcard2(Rest, [compile_part(Part)|Result]);
-compile_wildcard2([], Result) ->
+compile_wildcard_3([Part|Rest], Result) ->
+    compile_wildcard_3(Rest, [compile_part(Part)|Result]);
+compile_wildcard_3([], Result) ->
     lists:reverse(Result).
 
 compile_part(Part) ->
@@ -327,4 +349,4 @@ compile_alt(Pattern, Result) ->
     end.
 
 error(Reason) ->
-    exit(Reason).
+    erlang:error({badpattern,Reason}).

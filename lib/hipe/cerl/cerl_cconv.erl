@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id$
+%% $Id: cerl_cconv.erl,v 1.19 2005/04/12 15:14:56 tobiasl Exp $
 %%
 %% @author Richard Carlsson <richardc@csd.uu.se>
 %% @copyright 2000-2004 Richard Carlsson
@@ -50,12 +50,8 @@
 
 -module(cerl_cconv).
 
--define(NO_UNUSED, true).
-
 -export([transform/2]).
--ifndef(NO_UNUSED).
 -export([core_transform/2]).
--endif.
 
 -include("cerl_hipe_primops.hrl").
 
@@ -82,11 +78,8 @@
 %%
 %% @see transform/2
 
--ifndef(NO_UNUSED).
 core_transform(M, Opts) ->
     cerl:to_records(transform(cerl:from_records(M), Opts)).
--endif.	% NO_UNUSED
-%% @clear
 
 
 %% @spec transform(Module::cerl(), Options::[term()]) -> cerl()

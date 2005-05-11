@@ -8,8 +8,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: pergu $
-%%              $Date: 2004/11/29 14:37:12 $
-%%              $Revision: 1.52 $
+%%              $Date: 2005/04/14 13:36:16 $
+%%              $Revision: 1.53 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -1037,7 +1037,7 @@ get_unknown_size_int(SizeReg, BinSize, Base, Offset, NewOffset, Dst1,
 
 check_size(Offset, Size, BinSize, Tmp1, ContLblName, FalseLblName) ->
   [hipe_rtl:mk_alu(Tmp1, Offset, add, Size),
-   hipe_rtl:mk_branch(Tmp1, le, BinSize, ContLblName, FalseLblName, 0.99)].
+   hipe_rtl:mk_branch(Tmp1, leu, BinSize, ContLblName, FalseLblName, 0.99)].
 
 expand_runtime(Shifts, Args, WordReg, Scratch) ->
   expand_runtime(Shifts, Args, WordReg, Scratch, []).

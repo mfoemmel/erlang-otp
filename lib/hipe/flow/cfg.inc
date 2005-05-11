@@ -1,7 +1,7 @@
 %% -*- Erlang -*-
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% $Id$
+%% $Id: cfg.inc,v 1.57 2005/04/15 13:35:19 kostis Exp $
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %%			 CONTROL FLOW GRAPHS
@@ -63,6 +63,7 @@
 -define(REMOVE_TRIVIAL_BBS_NEEDED,true).
 -define(REMOVE_UNREACHABLE_CODE,true).
 -define(START_LABEL_UPDATE_NEEDED,true).
+-define(CFG_CAN_HAVE_PHI_NODES,true).
 -endif.
 
 -ifdef(RTL_CFG).
@@ -74,6 +75,7 @@
 -define(REMOVE_TRIVIAL_BBS_NEEDED,true).
 -define(REMOVE_UNREACHABLE_CODE,true).
 -define(START_LABEL_UPDATE_NEEDED,true).
+-define(CFG_CAN_HAVE_PHI_NODES,true).
 -endif.
 
 -ifdef(SPARC_CFG).
@@ -83,12 +85,6 @@
 -define(INCLUDE_ALL_ORDERINGS,true).
 -define(PRED_MAP_NEEDED,true).
 -define(REMOVE_TRIVIAL_BBS_NEEDED,true).
--endif.
-
--ifdef(AMD64_CFG).
--define(BREADTH_ORDER,true).
--define(PARAMS_NEEDED,true).
--define(START_LABEL_UPDATE_NEEDED,true).
 -endif.
 
 %%=====================================================================
@@ -344,6 +340,7 @@ add_pred(HT, ToL, PredL) ->
 %%     false -> Y
 %%   end.
 
+-ifdef(CFG_CAN_HAVE_PHI_NODES).
 %% phi-instructions in a removed block's successors must be aware of
 %% the change.
 remove_pred_from_phis(List = [I|Left], Label, Acc) ->
@@ -356,6 +353,12 @@ remove_pred_from_phis(List = [I|Left], Label, Acc) ->
   end;
 remove_pred_from_phis([], _Label, Acc) ->
   lists:reverse(Acc).
+-else.
+%% this is used for code representations like those of back-ends which
+%% do not have phi-nodes.
+remove_pred_from_phis(Code, _Label, _Acc) ->
+  Code.
+-endif.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
