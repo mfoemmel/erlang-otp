@@ -624,6 +624,20 @@ static void my_do_break(int dummy1, int dummy2)
 
 BOOL WINAPI ctrl_handler_ignore_break(DWORD dwCtrlType)
 {
+    switch (dwCtrlType) {
+    case CTRL_C_EVENT:
+    case CTRL_BREAK_EVENT:
+	return TRUE;
+	break;
+    case CTRL_LOGOFF_EVENT:
+	if (nohup)
+	    return TRUE;
+	/* else pour through... */
+    case CTRL_CLOSE_EVENT:
+    case CTRL_SHUTDOWN_EVENT:
+	erl_exit(0, "");
+	break;
+    }
     return TRUE;
 }
 

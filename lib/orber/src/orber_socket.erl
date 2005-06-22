@@ -35,7 +35,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/0, connect/4, listen/3, accept/2, write/3,
+-export([start/0, connect/4, listen/3, listen/4, accept/2, write/3,
 	 controlling_process/3, close/2, peername/2, sockname/2, 
 	 peerdata/2, sockdata/2, setopts/3, clear/2, shutdown/3]).
 
@@ -137,17 +137,12 @@ multi_connect(CurrentPort, Max, ssl, Host, Port, Options, Timeout) ->
 %% Create a listen socket at Port in CDR mode for 
 %% data connection.
 %%
-listen(normal, Port, Options0) ->
-    Options = check_options(normal, Options0),
+listen(Type, Port, Options) ->
+    listen(Type, Port, Options, true).
+
+listen(normal, Port, Options, Exception) ->
+    Options1 = check_options(normal, Options),
     Backlog = orber:iiop_backlog(),
-    Options1 = case orber:ip_address_variable_defined() of
-		   false ->
-		       Options;
-		   Host ->
-		       IPVersion = orber:ip_version(),
-		       {ok, IP} = inet:getaddr(Host, IPVersion),
-		       [{ip, IP} | Options]
-	       end,
     Options2 = case orber:iiop_max_in_requests() of
 		   infinity ->
 		       Options1;
@@ -165,7 +160,9 @@ listen(normal, Port, Options0) ->
 				     Options3]) of
 	{ok, ListenSocket} ->
 	    {ok, ListenSocket, check_port(Port, normal, ListenSocket)};
-	{error, eaddrinuse} ->
+	{error, Reason} when Exception == false ->
+	    {error, Reason};
+ 	{error, eaddrinuse} ->
 	    AllOpts = [binary, {packet,cdr}, 
 		       {reuseaddr,true} | Options3],
 	    orber:dbg("[~p] orber_socket:listen(normal, ~p, ~p);~n"
@@ -183,17 +180,9 @@ listen(normal, Port, Options0) ->
 		      [?LINE, Port, AllOpts, Error], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end;
-listen(ssl, Port, Options0) ->
+listen(ssl, Port, Options, Exception) ->
     Backlog = orber:iiop_ssl_backlog(),
-    Options = check_options(ssl, Options0),
-    Options1 = case orber:ip_address_variable_defined() of
-		   false ->
-		       Options;
-		   Host ->
-		       IPVersion = orber:ip_version(),
-		       {ok, IP} = inet:getaddr(Host, IPVersion),
-		       [{ip, IP} | Options]
-	       end,
+    Options1 = check_options(ssl, Options),
     Options2 = case orber:iiop_max_in_requests() of
 		   infinity ->
 		       Options1;
@@ -210,6 +199,8 @@ listen(ssl, Port, Options0) ->
 				 {backlog, Backlog} | Options3]) of
 	{ok, ListenSocket} ->
 	    {ok, ListenSocket, check_port(Port, ssl, ListenSocket)};
+	{error, Reason} when Exception == false ->
+	    {error, Reason};
 	{error, eaddrinuse} ->	
 	    AllOpts = [binary, {packet,cdr} | Options3],
 	    orber:dbg("[~p] orber_socket:listen(ssl, ~p, ~p);~n"

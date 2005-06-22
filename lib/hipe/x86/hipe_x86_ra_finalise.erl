@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_x86_ra_finalise.erl,v 1.5 2005/04/01 13:56:18 mikpe Exp $
+%%% $Id$
 %%%
 %%% - apply temp -> reg/spill map from RA
 

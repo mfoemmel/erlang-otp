@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_x86_frame.erl,v 1.67 2005/04/11 13:23:07 mikpe Exp $
+%%% $Id$
 %%% x86 stack frame handling
 %%%
 %%% - map non-register temps to stack slots

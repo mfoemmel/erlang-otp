@@ -35,24 +35,31 @@ typedef struct db_table_hash {
     Eterm  owner;             /* Pid of the creator */
     Eterm  the_name;          /* an atom   */
     Eterm  id;                /* atom | integer */
-    Uint32 status;            /* bit masks defining type etc */
-    int slot;                 /* slot in db_tables */
-    int keypos;               /* defaults to 1 */
-    int nitems;               /* Total number of items */
+    Uint nitems;              /* Total number of items */
     Uint memory_size;         /* Total memory size. NOTE: in bytes! */
-    int kept_items;           /* Number of kept elements due to fixation */
     Uint megasec,sec,microsec; /* Last fixation time */
     DbFixation *fixations;     /* List of processes who have fixed 
 				  the table */
 
-    FixedDeletion *fixdel; /* List of slots where elements have
-			      been deleted while table is fixed. */
+    /* Common 32-bit fields */
+    Uint32 status;            /* bit masks defining type etc */
+    int slot;                 /* slot in db_tables */
+    int keypos;               /* defaults to 1 */
+    int kept_items;           /* always 0 for trees */
+
+    /* Hash-specific fields */
+    FixedDeletion *fixdel;	/*
+				 * List of slots where elements have
+				 * been deleted while table is fixed.
+				 */
+    HashDbTerm ***seg;		/* The actual table */
+
+    /* Hash-specific fields, 32-bit quantities */
     int szm;          /* current size mask */
     int nactive;      /* Number of "active" slots */
     int nslots;       /* Total number of slots */
     int p;            /* Split position */
     int nsegs;        /* Number of segments */
-    HashDbTerm ***seg; /* The actual table */
 } DbTableHash;
 
 /*
@@ -134,6 +141,9 @@ void db_print_hash(CIO fd /* [in] */,
 		   int show /* [in] */,
 		   DbTableHash *tb /* [in] */);
 void free_hash_table(DbTableHash *tb /* [in out] */);
+
+int erts_free_hash_table_cont(DbTableHash *tb, int first);
+
 
 void erts_db_hash_foreach_offheap(DbTableHash *,
 				  void (*)(ErlOffHeap *, void *),

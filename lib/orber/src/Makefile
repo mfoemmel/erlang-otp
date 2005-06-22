@@ -93,6 +93,7 @@ MODULES= \
 	orber_web_server \
 	orber_iiop_tracer \
 	orber_iiop_tracer_silent \
+	orber_iiop_tracer_stealth \
 	fixed \
 	orber_exceptions \
 	orber_diagnostics \
@@ -166,11 +167,10 @@ APP_TARGET = $(EBIN)/$(APP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin -pa $(ERL_TOP)/lib/ic/ebin
+ERL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/orber/include \
-	-pa $(ERL_TOP)/lib/ic/ebin \
 	+'{parse_transform,sys_pre_attributes}' \
 	+'{attribute,insert,app_vsn,"orber_$(ORBER_VSN)"}' \
 	-D'ORBVSN="$(VSN)"'

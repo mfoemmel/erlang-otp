@@ -1,4 +1,4 @@
-%%% $Id: hipe_amd64_encode.erl,v 1.26 2005/01/21 14:26:09 dalu7049 Exp $
+%%% $Id$
 %%% Copyright (C) 2000-2004 Mikael Pettersson
 %%% Copyright (C) 2004 Daniel Luna
 %%%
@@ -354,14 +354,17 @@ sse2_arith_binop_encode(Prefix, Opcode, {{xmm, XMM64}, {rm64fp, RM64}}) ->
     %% addpd, cmpsd, divsd, maxsd, minsd, mulsd, sqrtsd, subsd
     [Prefix, 16#0F, Opcode | encode_rm(RM64, XMM64, [])].
 
+sse2_cvtsi2sd_encode({{xmm,XMM64}, {rm64,RM64}}) ->
+    [rex([{w, 1}]), 16#F2, 16#0F, 16#2A | encode_rm(RM64, XMM64, [])].
+
 sse2_mov_encode(Opnds) ->
     case Opnds of
         {{xmm, XMM64}, {rm64fp, RM64}} -> % movsd
             [16#F2, 16#0F, 16#10 | encode_rm(RM64, XMM64, [])];
         {{rm64fp, RM64}, {xmm, XMM64}} -> % movsd
-            [16#F2, 16#0F, 16#11 | encode_rm(RM64, XMM64, [])];
-        {{xmm, XMM64}, {rm64, RM64}} -> % cvtsi2sd
-            [rex([{w, 1}]), 16#F2, 16#0F, 16#2A | encode_rm(RM64, XMM64, [])]
+            [16#F2, 16#0F, 16#11 | encode_rm(RM64, XMM64, [])]
+%        {{xmm, XMM64}, {rm64, RM64}} -> % cvtsi2sd
+%            [rex([{w, 1}]), 16#F2, 16#0F, 16#2A | encode_rm(RM64, XMM64, [])]
     end.
 
 %% arith_binop_sizeof(Opnds) ->
@@ -1084,6 +1087,7 @@ insn_encode_internal(Op, Opnds) ->
         'addsd'   -> sse2_arith_binop_encode(16#F2, 16#58, Opnds);
         'cmpsd'   -> sse2_arith_binop_encode(16#F2, 16#C2, Opnds);
         'comisd'  -> sse2_arith_binop_encode(16#66, 16#2F, Opnds);
+	'cvtsi2sd' -> sse2_cvtsi2sd_encode(Opnds);
         'divsd'   -> sse2_arith_binop_encode(16#F2, 16#5E, Opnds);
         'maxsd'   -> sse2_arith_binop_encode(16#F2, 16#5F, Opnds);
         'minsd'   -> sse2_arith_binop_encode(16#F2, 16#5D, Opnds);

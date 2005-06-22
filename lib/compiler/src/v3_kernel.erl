@@ -119,7 +119,7 @@ module(#c_module{anno=A,name=M,exports=Es,attrs=As,defs=Fs}, Options) ->
     Kas = map(fun (#c_def{name=#c_atom{val=N},val=V}) ->
 		      {N,core_lib:literal_value(V)} end, As),
     {ok,#k_mdef{anno=A,name=M#c_atom.val,exports=Kes,attributes=Kas,
-		body=Kfs ++ St#kern.funs},St#kern.ws}.
+		body=Kfs ++ St#kern.funs},lists:sort(St#kern.ws)}.
 
 function(#c_def{anno=Af,name=#c_fname{id=F,arity=Arity},val=Body}, St0) ->
     %%ok = io:fwrite("kern: ~p~n", [{F,Arity}]),
@@ -171,12 +171,6 @@ wrap_guard(Core, St0) ->
 %%  Must enter try blocks and isets and find the last Kexpr in them.
 %%  This must end in a recognised BEAM test!
 
-gexpr_test(#k_bif{anno=A,op=#k_remote{mod=#k_atom{val=erlang},
-				      name=#k_atom{val=is_boolean},arity=1}=Op,
-		  args=Kargs}, St) ->
-    %% XXX Remove this clause in R11. For bootstrap purposes, we must
-    %% recognize erlang:is_boolean/1 here.
-    {#k_test{anno=A,op=Op,args=Kargs},St};
 gexpr_test(#k_bif{anno=A,op=#k_remote{mod=#k_atom{val=erlang},
 				      name=#k_atom{val=internal_is_record},arity=3}=Op,
 		  args=Kargs}, St) ->
@@ -335,33 +329,41 @@ expr(#c_receive{anno=A,clauses=Ccs0,timeout=Ce,action=Ca}, Sub, St0) ->
      Pe,St5};
 expr(#c_apply{anno=A,op=Cop,args=Cargs}, Sub, St) ->
     c_apply(A, Cop, Cargs, Sub, St);
-expr(#c_call{anno=A,module=M0,name=F0,args=Cargs}, Sub, St0) ->
-    {[M1,F1|Kargs],Ap,St1} = atomic_list([M0,F0|Cargs], Sub, St0),
+expr(#c_call{anno=A,module=M0,name=F0,args=Cargs}, Sub, #kern{extinstr=NI}=St0) ->
     Ar = length(Cargs),
-    case {M1,F1} of
-	{#k_atom{val=Ma},#k_atom{val=Fa}} ->
-	    Call = case is_remote_bif(Ma, Fa, Ar) of
-		       true ->
-			   #k_bif{anno=A,
-				  op=#k_remote{mod=M1,name=F1,arity=Ar},
-				  args=Kargs};
-		       false ->
-			   #k_call{anno=A,
-				   op=#k_remote{mod=M1,name=F1,arity=Ar},
-				   args=Kargs}
-		   end,
-	    {Call,Ap,St1};
-	_Other when St0#kern.extinstr == false -> %Old explicit apply
+    {Type,St1} = case call_type(M0, F0, Ar) of
+		     error ->
+			 %% Invalid call (e.g. M:42/3). Issue a warning,
+			 %% and let the generated code use the old explict apply.
+			 {old_apply,add_warning(get_line(A), bad_call, St0)};
+		     apply when NI == false ->
+			 %% Requested compatibility with an earlier version.
+			 {old_apply,St0};
+		     Type0 ->
+			 {Type0,St0}
+		 end,
+
+    case Type of
+	old_apply ->
 	    Call = #c_call{anno=A,
 			   module=#c_atom{val=erlang},
 			   name=#c_atom{val=apply},
 			   args=[M0,F0,make_list(Cargs)]},
-	    expr(Call, Sub, St0);
-	_Other ->				%New instruction in R10.
-	    Call = #k_call{anno=A,
-			   op=#k_remote{mod=M1,name=F1,arity=Ar},
-			   args=Kargs},
-	    {Call,Ap,St1}
+	    expr(Call, Sub, St1);
+	_ ->
+	    {[M1,F1|Kargs],Ap,St} = atomic_list([M0,F0|Cargs], Sub, St1),
+	    Call = case Type of
+		       bif ->
+			   #k_bif{anno=A,op=#k_remote{mod=M1,name=F1,arity=Ar},
+				  args=Kargs};
+		       call ->
+			   #k_call{anno=A,op=#k_remote{mod=M1,name=F1,arity=Ar},
+				   args=Kargs};
+		       apply ->
+			   #k_call{anno=A,op=#k_remote{mod=M1,name=F1,arity=Ar},
+				   args=Kargs}
+		   end,
+	    {Call,Ap,St}
     end;
 expr(#c_primop{anno=A,name=#c_atom{val=match_fail},args=Cargs}, Sub, St0) ->
     %% This special case will disappear.
@@ -397,6 +399,18 @@ expr(#ireceive_accept{anno=A}, _Sub, St) -> {#k_receive_accept{anno=A},[],St}.
 % 		  {Ke,Ep,St1} = expr(Ce, Sub, St0),
 % 		  {[Ke|Kes],Ep ++ Esp,St1}
 % 	  end, {[],[],St}, Ces).
+
+%% call_type(Module, Function, Arity) -> call | bif | apply | error.
+%%  Classify the call.
+call_type(#c_atom{val=M}, #c_atom{val=F}, Ar) ->
+    case is_remote_bif(M, F, Ar) of
+	false -> call;
+	true -> bif
+    end;
+call_type(#c_var{}, #c_atom{}, _) -> apply;
+call_type(#c_atom{}, #c_var{}, _) -> apply;
+call_type(#c_var{}, #c_var{}, _) -> apply;
+call_type(_, _, _) -> error.
 
 %% match_vars(Kexpr, State) -> {[Kvar],[PreKexpr],State}.
 %%  Force return from body into a list of variables.
@@ -669,10 +683,6 @@ add_var_def(V, St) ->
 %% is_remote_bif(Mod, Name, Arity) -> true | false.
 %%  Test if function is really a BIF.
 
-is_remote_bif(erlang, is_boolean, 1) ->
-    %% XXX Remove this clause in R11. For bootstrap purposes, we must
-    %% recognize erlang:is_boolean/1 here.
-    true;
 is_remote_bif(erlang, internal_is_record, 3) -> true;
 is_remote_bif(erlang, get, 1) -> true;
 is_remote_bif(erlang, N, A) ->
@@ -1504,10 +1514,10 @@ lit_list_vars(Ps) ->
 
 pat_vars(#k_var{name=N}) -> {[],[N]};
 %%pat_vars(#k_char{}) -> {[],[]};
+%%pat_vars(#k_string{}) -> {[],[]};
 pat_vars(#k_int{}) -> {[],[]};
 pat_vars(#k_float{}) -> {[],[]};
 pat_vars(#k_atom{}) -> {[],[]};
-pat_vars(#k_string{}) -> {[],[]};
 pat_vars(#k_nil{}) -> {[],[]};
 pat_vars(#k_cons{hd=H,tl=T}) ->
     pat_list_vars([H,T]);
@@ -1559,11 +1569,12 @@ format_error({nomatch_shadow,Line}) ->
 		      "always matches", [Line]),
     lists:flatten(M);
 format_error(nomatch_shadow) ->
-    "this clause cannot match because a previous clause always matches".
+    "this clause cannot match because a previous clause always matches";
+format_error(bad_call) ->
+    "invalid module and/or function name; this call will always fail".
 
 add_warning(none, Term, #kern{ws=Ws}=St) ->
     St#kern{ws=[{?MODULE,Term}|Ws]};
 add_warning(Line, Term, #kern{ws=Ws}=St) when Line >= 0 ->
     St#kern{ws=[{Line,?MODULE,Term}|Ws]};
 add_warning(_, _, St) -> St.
-

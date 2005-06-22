@@ -214,12 +214,22 @@ struct _proxy {
 
 #define ESOCK_SET_SEED_CMD      41
 
+#define ESOCK_GETCONNINFO_CMD   42
+#define ESOCK_GETCONNINFO_REP   43
+#define ESOCK_GETCONNINFO_ERR   44
+
 /* Option codes  for ESOCK_SET_SOCKOPT_CMD */
 #define ESOCK_SET_TCP_NODELAY	1
 
 /* SSL want to read or write */
 #define ESOCK_SSL_WANT_READ	1
 #define ESOCK_SSL_WANT_WRITE	2
+
+/* Protocol version according to ssl_server */
+#define ESOCK_SSLv2		1
+#define ESOCK_SSLv3		2
+#define ESOCK_TLSv1		4
+
 
 #endif
 

@@ -45,8 +45,9 @@
 	 system_info/1, 
 	 get_engine_id/0, get_engine_max_message_size/0,
 
-	 register_usm_user/3, usm_user_info/3, update_usm_user_info/4, 
+	 register_usm_user/3, unregister_usm_user/2, 
 	 which_usm_users/0, which_usm_users/1, 
+	 usm_user_info/3, update_usm_user_info/4, 
 	 get_usm_user/2, get_usm_user_from_sec_name/2, 
 	 is_usm_engine_id_known/1,
 	 get_engine_boots/0, get_engine_time/0, 
@@ -266,10 +267,10 @@ update_agent_info(UserId, Addr0, Port, Item, Val0)
     end.
 
 get_agent_engine_id(Name) ->
-    Pat = {{'$1', '$2', name}, Name},
+    Pat = {{'$1', '$2', target_name}, Name},
     case ets:match(snmpm_agent_table, Pat) of
 	[[Addr, Port]|_] ->
-	    %% If the user has been dum enough to give several agents
+	    %% If the user has given several agents
 	    %% the same name, we pick the first we find...
 	    agent_info(Addr, Port, engine_id);
 	_ ->
@@ -400,6 +401,9 @@ register_usm_user(EngineID, Name, Config) when list(EngineID), list(Name) ->
 	    Error
     end.
 
+unregister_usm_user(EngineID, Name) when list(EngineID), list(Name) ->
+    call({unregister_usm_user, EngineID, Name}).
+
 verify_usm_user_config(EngineID, Name, Config) ->
     case verify_mandatory(Config, []) of
 	ok ->
@@ -470,7 +474,7 @@ update_usm_user_info(EngineID, UserName, Item, Val)
     call({update_usm_user_info, EngineID, UserName, Item, Val}).
 
 get_usm_user(EngineID, UserName) ->
-    Key = {EngineID, UserName},
+    Key = usm_key(EngineID, UserName),
     case ets:lookup(snmpm_usm_table, Key) of
 	[{_, User}] ->
 	    {ok, User};
@@ -492,7 +496,7 @@ get_usm_user_from_sec_name(EngineID, SecName) ->
     %% identity-function, we first try to use the SecName as UserName,
     %% and check the resulting row.  If it doesn't match, we'll have to
     %% loop through the entire table.
-    Key = {EngineID, SecName},
+    Key = usm_key(EngineID, SecName),
     case ets:lookup(snmpm_usm_table, Key) of
 	[{Key, #usm_user{sec_name = SecName} = User}] ->
 	    {ok, User};
@@ -501,7 +505,7 @@ get_usm_user_from_sec_name(EngineID, SecName) ->
 	    Pattern = {usm_key(EngineID, '_'), 
 		       #usm_user{sec_name = SecName, _ = '_'}},
 	    case ets:match_object(snmpm_usm_table, Pattern) of
-		[User|_] ->
+		[{_, User}|_] ->
 		    {ok, User};
 		_ ->
 		    {error, not_found}
@@ -602,7 +606,7 @@ oid_to_name(Oid) ->
 make_mini_mib() ->
     Pat = {{mini_mib, '$1'}, '$2', '$3', '_'},
     MiniElems = ets:match(snmpm_mib_table, Pat),
-    [list_to_tuple(MiniElem) || MiniElem <- MiniElems].
+    lists:keysort(1, [list_to_tuple(MiniElem) || MiniElem <- MiniElems]).
 
 
 verbosity(Verbosity) ->
@@ -1702,6 +1706,13 @@ handle_call({register_usm_user, User}, _From, State) ->
     Reply = handle_register_usm_user(User),
     {reply, Reply, State};
 
+handle_call({unregister_usm_user, EngineID, Name}, _From, State) ->
+    ?vlog("received register_usm_user request: "
+	  "~n   EngineID: ~p"
+	  "~n   Name:     ~p", [EngineID, Name]),
+    Reply = handle_unregister_usm_user(EngineID, Name),
+    {reply, Reply, State};
+
 handle_call({update_usm_user_info, EngineID, UserName, Item, Val}, 
 	    _From, State) ->
     ?vlog("received update_usm_user_info request: "
@@ -1825,11 +1836,18 @@ code_change(_Vsn, S, _Extra) ->
 %%% Internal functions
 %%%-------------------------------------------------------------------
 
-handle_register_user(User) ->
+handle_register_user(#user{id = Id} = User) ->
     ?vdebug("handle_register_user -> entry with"
 	    "~n   User: ~p", [User]),
-    ets:insert(snmpm_user_table, User),
-    ok.
+    case ets:lookup(snmpm_user_table, Id) of
+	[] ->
+	    ets:insert(snmpm_user_table, User),
+	    ok;
+	_ ->
+	    {error, {already_registered, User}}
+    end;
+handle_register_user(BadUser) ->
+    {error, {bad_user, BadUser}}.
 
 handle_unregister_user(UserId) ->
     ?vdebug("handle_unregister_user -> entry with"
@@ -1925,12 +1943,28 @@ do_update_agent_info(Addr, Port, Item, Val0) ->
     end.
 
 
-handle_register_usm_user(User) ->
+handle_register_usm_user(#usm_user{engine_id = EngineID, 
+				   name      = Name} = User) ->
     ?vdebug("handle_register_usm_user -> entry with"
 	    "~n   User: ~p", [User]),
-    #usm_user{engine_id = EngineID, name = Name} = User,
     Key = usm_key(EngineID, Name),
-    do_update_usm_user_info(Key, User).
+    case ets:lookup(snmpm_usm_table, Key) of
+	[] ->
+	    do_update_usm_user_info(Key, User);
+	_ ->
+	    {error, {already_registered, EngineID, Name}}
+    end;
+handle_register_usm_user(BadUsmUser) ->
+    {error, {bad_usm_user, BadUsmUser}}.
+	
+handle_unregister_usm_user(EngineID, Name) ->
+    ?vdebug("handle_unregister_usm_user -> entry with"
+	    "~n   EngineID: ~p"
+	    "~n   Name:     ~p", [EngineID, Name]),
+    Key = usm_key(EngineID, Name),
+    ets:delete(snmpm_usm_table, Key),
+    ok.
+	
 
 handle_update_usm_user_info(EngineID, Name, Item, Val) ->
     ?vdebug("handle_update_usm_user_info -> entry with"
@@ -1991,7 +2025,7 @@ do_update_usm_user_info(_Key,
 do_update_usm_user_info(Key, 
 			#usm_user{auth = usmHMACSHAAuthProtocol} = User, 
 			auth_key, Val) 
-  when length(Val) == 16 ->
+  when length(Val) == 20 ->
     case is_crypto_supported(sha_mac_96) of
 	true -> 
 	    do_update_usm_user_info(Key, User#usm_user{auth_key = Val});
@@ -2213,7 +2247,7 @@ update_mini_mib([{Oid, N, Type, MibName}|Elems]) ->
 handle_unload_mib(Mib) ->
     Key = {mib, Mib},
     case ets:lookup(snmpm_mib_table, Key) of
-	[{Key, MibName, MibFile}] ->
+	[{Key, MibName, _MibFile}] ->
 	    do_unload_mib(MibName),
 	    [{mibs, Mibs0}] = ets:lookup(snmpm_config_table, mibs),
 	    Mibs = lists:delete(Mib, Mibs0),

@@ -92,11 +92,13 @@ handle_info({Port, {data, Data}}, State) when State#state.port == Port ->
 	{'EXCEPTION', DecodeException} ->
 	    orber:dbg("[~p] orber_bootstrap:handle_info(~p); Decode exception(~p)", 
 		      [?LINE, Data, DecodeException], ?DEBUG_LEVEL),
-	    Reply = cdr_encode:enc_message_error(orber:giop_version());
+	    Reply = cdr_encode:enc_message_error(#giop_env{version = 
+							   orber:giop_version()});
 	{'EXIT', Why} ->
 	    orber:dbg("[~p] orber_bootstrap:handle_info(~p); Decode exit(~p)", 
 		      [?LINE, Data, Why], ?DEBUG_LEVEL),
-	    Reply = cdr_encode:enc_message_error(orber:giop_version());
+	    Reply = cdr_encode:enc_message_error(#giop_env{version = 
+							   orber:giop_version()});
 	{Version, Hdr, Par, TypeCodes} ->
 	    Result = corba:request_from_iiop(Hdr#request_header.object_key,
 					     list_to_atom(Hdr#request_header.operation),
@@ -106,26 +108,29 @@ handle_info({Port, {data, Data}}, State) when State#state.port == Port ->
 		[{'EXCEPTION', Exception} | _] ->
 		    {TypeOfException, ExceptionTypeCode, NewExc} =
 			orber_exceptions:get_def(Exception),
-		    Reply = cdr_encode:enc_reply(Version,
-						 Hdr#request_header.request_id,
-						 TypeOfException,
-						 {ExceptionTypeCode, [], []}, 
-						 NewExc, [], []);
+		    Reply = cdr_encode:enc_reply(
+			      #giop_env{version = Version,
+					request_id = Hdr#request_header.request_id,
+					reply_status = TypeOfException,
+					tc = {ExceptionTypeCode, [], []}, 
+					result = NewExc});
 		[Res |OutPar] ->
-		    Reply = cdr_encode:enc_reply(Version,
-			      Hdr#request_header.request_id,
-			      'no_exception',
-			      TypeCodes,
-			      Res, OutPar, []);
+		    Reply = cdr_encode:enc_reply(
+			      #giop_env{version = Version,
+					request_id = Hdr#request_header.request_id,
+					reply_status = 'no_exception',
+					tc = TypeCodes,
+					result = Res, parameters = OutPar});
 		_ ->
 		    E = #'INTERNAL'{completion_status=?COMPLETED_MAYBE},
 		    {TypeOfException, ExceptionTypeCode, NewExc} =
 			orber_exceptions:get_def(E),
-		    Reply = cdr_encode:enc_reply(Version,
-						 Hdr#request_header.request_id,
-						 TypeOfException,
-						 {ExceptionTypeCode, [], []}, 
-						 NewExc, [], [])
+		    Reply = cdr_encode:enc_reply(
+			      #giop_env{version = Version,
+					request_id = Hdr#request_header.request_id,
+					reply_status = TypeOfException,
+					tc = {ExceptionTypeCode, [], []}, 
+					result = NewExc})
 	    end
     end,
     Port ! {self(), {command, Reply}},

@@ -1,7 +1,9 @@
+%% -*- erlang-indent-level: 2 -*-
+%%============================================================================
+
 -module(hipe_sparc_cfg).
 
--export([bb/2, bb_add/3,
-	 function/1,
+-export([bb/2, bb_add/3, extra/1,
 	 init/1,
          labels/1, start_label/1,
 	 linearize/1,
@@ -24,19 +26,19 @@
 %%
 %% CFG interface to sparc
 %%
-
+ 
 init(Sparc) ->
-   Code = hipe_sparc:sparc_code(Sparc),
-   StartLabel = hipe_sparc:label_name(hd(Code)),
-
-   CFG = mk_empty_cfg(hipe_sparc:sparc_fun(Sparc),
-		      StartLabel,
-		      hipe_sparc:sparc_data(Sparc),
-		      hipe_sparc:sparc_is_closure(Sparc),
-		      hipe_sparc:sparc_is_leaf(Sparc),
-		      [], %% XXX: Params - do we need em?
-		      hipe_sparc:sparc_arity(Sparc)),
-   take_bbs(Code, CFG).
+  Code = hipe_sparc:sparc_code(Sparc),
+  StartLabel = hipe_sparc:label_name(hd(Code)),
+  
+  CFG = mk_empty_cfg(hipe_sparc:sparc_fun(Sparc),
+		     StartLabel,
+		     hipe_sparc:sparc_data(Sparc),
+		     hipe_sparc:sparc_is_closure(Sparc),
+		     hipe_sparc:sparc_is_leaf(Sparc),
+		     [], %% XXX: Params - do we need em?
+		     hipe_sparc:sparc_arity(Sparc)),
+  take_bbs(Code, CFG).
 
 %% True if instr has no effect.
 is_comment(Instr) ->
@@ -44,24 +46,24 @@ is_comment(Instr) ->
 
 %% True if instr is just a jump (no sideeffects).
 is_goto(Instr) ->
-   hipe_sparc:is_goto(Instr).
+  hipe_sparc:is_goto(Instr).
 
 is_label(Instr) ->
-   hipe_sparc:is_label(Instr).
+  hipe_sparc:is_label(Instr).
 
 label_name(Instr) ->
-   hipe_sparc:label_name(Instr).
+  hipe_sparc:label_name(Instr).
 
 mk_label(Name) ->
-   hipe_sparc:label_create(Name).
+  hipe_sparc:label_create(Name).
 
 mk_goto(Name) ->
-    hipe_sparc:goto_create(Name).
+  hipe_sparc:goto_create(Name).
 
 branch_successors(Instr) ->
   case hipe_sparc:type(Instr) of
     b -> [hipe_sparc:b_false_label(Instr),hipe_sparc:b_true_label(Instr)];
-%%     br -> [hipe_sparc:br_false_label(Instr),hipe_sparc:br_true_label(Instr)];
+%%  br -> [hipe_sparc:br_false_label(Instr),hipe_sparc:br_true_label(Instr)];
     call_link -> 
       case hipe_sparc:call_link_fail(Instr) of
 	[] -> [hipe_sparc:call_link_continuation(Instr)];
@@ -101,9 +103,8 @@ is_branch(Instr) ->
     _ -> false
   end.
 
-
 redirect_jmp(Jmp, ToOld, ToNew) ->
-   hipe_sparc:redirect_jmp(Jmp, ToOld, ToNew).
+  hipe_sparc:redirect_jmp(Jmp, ToOld, ToNew).
 
 redirect_ops([Label|Labels], CFG, Map) ->
   BB = bb(CFG, Label),
@@ -147,7 +148,6 @@ predictionorder(CFG) ->
   {_Vis, PO1} = prediction_list([Start], none_visited(), Succ, [], CFG),
   lists:reverse(PO1).
 
-
 prediction_list([X|Xs], Vis, Succ, PO, CFG) ->
   case visited(X,Vis) of 
     true ->
@@ -157,7 +157,7 @@ prediction_list([X|Xs], Vis, Succ, PO, CFG) ->
       NewVis = visit(X,Vis),
       NewPO = [X|PO],
       case Succs of
-	[] -> 
+	[] ->
 	  prediction_list(Xs, NewVis, Succ, NewPO, CFG);
 	[S] ->
 	  prediction_list([S|Xs], NewVis, Succ, NewPO, CFG);
@@ -169,13 +169,13 @@ prediction_list([X|Xs], Vis, Succ, PO, CFG) ->
 	      %% Switch the jump so the common case is not taken
 	      Pred = cond_pred(Jmp),	
 	      NewToDo =
-	      if Pred >= 0.5 ->
-		  [cond_true_label(Jmp),
-		   cond_false_label(Jmp)|Xs];
-		 true ->
-		  [cond_false_label(Jmp),
-		   cond_true_label(Jmp)|Xs]
-	      end,
+		if Pred >= 0.5 ->
+		    [cond_true_label(Jmp),
+		     cond_false_label(Jmp)|Xs];
+		   true ->
+		    [cond_false_label(Jmp),
+		     cond_true_label(Jmp)|Xs]
+		end,
 	      prediction_list(NewToDo,
 			      NewVis, 
 			      Succ, 
@@ -184,55 +184,50 @@ prediction_list([X|Xs], Vis, Succ, PO, CFG) ->
 	    _ -> %% Not a cond. 
 	      case hipe_sparc:is_call_link(Jmp) of
 		true ->
-		  prediction_list(
-		   [hipe_sparc:call_link_continuation(Jmp),
-		    hipe_sparc:call_link_fail(Jmp)|Xs],
-		    NewVis, 
-		    Succ, 
-		    NewPO, 
-		    CFG);
+		  prediction_list([hipe_sparc:call_link_continuation(Jmp),
+				   hipe_sparc:call_link_fail(Jmp)|Xs],
+				  NewVis, 
+				  Succ, 
+				  NewPO, 
+				  CFG);
 		false ->
-		  prediction_list(
-		    branch_successors(Jmp) ++ Xs,
-		    NewVis, 
-		    Succ, 
-		    NewPO, 
-		    CFG)
-
+		  prediction_list(branch_successors(Jmp) ++ Xs,
+				  NewVis, 
+				  Succ, 
+				  NewPO, 
+				  CFG)
+	      
 	      end
 	  end
       end
   end;
 prediction_list([], Vis, _, PO, _) ->
   {Vis, PO}.
-	    
-is_cond(I) ->
-   case hipe_sparc:type(I) of
-      br -> true;
-      b -> true;
-      _ -> false
-   end.
 
+is_cond(I) ->
+  case hipe_sparc:type(I) of
+    br -> true;
+    b -> true;
+    _ -> false
+  end.
 
 cond_pred(I) ->
    case hipe_sparc:type(I) of
-%%      br -> hipe_sparc:br_pred(I);
-      b -> hipe_sparc:b_pred(I)
+%%   br -> hipe_sparc:br_pred(I);
+     b -> hipe_sparc:b_pred(I)
    end.
-   
 
 cond_true_label(B) ->
    case hipe_sparc:type(B) of
-%%      br -> hipe_sparc:br_true_label(B);
-      b -> hipe_sparc:b_true_label(B)
+%%  br -> hipe_sparc:br_true_label(B);
+     b -> hipe_sparc:b_true_label(B)
    end.
-
 
 cond_false_label(B) ->
-   case hipe_sparc:type(B) of
-%%       br -> hipe_sparc:br_false_label(B);
-      b -> hipe_sparc:b_false_label(B)
-   end.
+  case hipe_sparc:type(B) of
+%%  br -> hipe_sparc:br_false_label(B);
+    b -> hipe_sparc:b_false_label(B)
+  end.
 
 %% init_gensym(CFG) ->
 %%   HighestVar = find_highest_var(CFG),

@@ -795,6 +795,18 @@ make_hash(Eterm term, Uint32 hash)
 	    return hash*FUNNY_NUMBER4 + sz;
 	}
 
+    case EXPORT_DEF:
+	{
+	    Export* ep = (Export *) (export_val(term))[1];
+
+	    hash = hash * FUNNY_NUMBER11 + ep->code[2];
+	    hash = hash*FUNNY_NUMBER1 + 
+		(atom_tab(atom_val(ep->code[0]))->slot.bucket.hvalue);
+	    hash = hash*FUNNY_NUMBER1 + 
+		(atom_tab(atom_val(ep->code[1]))->slot.bucket.hvalue);
+	    return hash;
+	}
+
     case FUN_DEF:
 	{
 	    ErlFunThing* funp = (ErlFunThing *) fun_val(term);
@@ -973,7 +985,7 @@ make_hash2(Eterm term)
     Uint32 hash;
     Eterm tmp_big[2];
 
-/* (HCONST * {2, ..., 13}) mod 2^32 */
+/* (HCONST * {2, ..., 14}) mod 2^32 */
 #define HCONST_2 0x3c6ef372UL
 #define HCONST_3 0xdaa66d2bUL
 #define HCONST_4 0x78dde6e4UL
@@ -986,6 +998,7 @@ make_hash2(Eterm term)
 #define HCONST_11 0xcc623af3UL
 #define HCONST_12 0x6a99b4acUL
 #define HCONST_13 0x08d12e65UL
+#define HCONST_14 0xa708a81eUL
 
 #define UINT32_HASH_2(Expr1, Expr2, AConst)       \
          do {                                     \
@@ -1087,6 +1100,20 @@ make_hash2(Eterm term)
 		term = elem[1];
 	    }
 	    break;
+	    case EXPORT_SUBTAG:
+	    {
+		Export* ep = (Export *) (export_val(term))[1];
+
+		UINT32_HASH_2
+		    (ep->code[2], 
+		     atom_tab(atom_val(ep->code[0]))->slot.bucket.hvalue,
+		     HCONST);
+		UINT32_HASH
+		    (atom_tab(atom_val(ep->code[1]))->slot.bucket.hvalue,
+		     HCONST_14);
+		goto hash2_common;
+	    }
+
 	    case FUN_SUBTAG:
 	    {
 		ErlFunThing* funp = (ErlFunThing *) fun_val(term);
@@ -1300,6 +1327,19 @@ make_broken_hash(Eterm term, Uint hash)
 	    }
 	    return hash*FUNNY_NUMBER4 + sz;
 	}
+
+    case EXPORT_DEF:
+	{
+	    Export* ep = (Export *) (export_val(term))[1];
+
+	    hash = hash * FUNNY_NUMBER11 + ep->code[2];
+	    hash = hash*FUNNY_NUMBER1 + 
+		(atom_tab(atom_val(ep->code[0]))->slot.bucket.hvalue);
+	    hash = hash*FUNNY_NUMBER1 + 
+		(atom_tab(atom_val(ep->code[1]))->slot.bucket.hvalue);
+	    return hash;
+	}
+
     case FUN_DEF:
 	{
 	    ErlFunThing* funp = (ErlFunThing *) fun_val(term);
@@ -1556,6 +1596,18 @@ eq(Eterm a, Eterm b)
 		    GET_BINARY_BYTES(a, a_ptr);
 		    GET_BINARY_BYTES(b, b_ptr);
 		    return sys_memcmp(a_ptr, b_ptr, size) == 0;
+		}
+	    case EXPORT_SUBTAG:
+		{
+		    Export* a_exp;
+		    Export* b_exp;
+
+		    if (is_not_export(b)) {
+			return 0;
+		    }
+		    a_exp = (Export *) (export_val(a))[1];
+		    b_exp = (Export *) (export_val(b))[1];
+		    return a_exp == b_exp;
 		}
 	    case FUN_SUBTAG:
 		{
@@ -1962,6 +2014,23 @@ cmp(Eterm a, Eterm b)
 		    goto mixed_types;
 		}
 		return big_comp(a, b);
+	    case (_TAG_HEADER_EXPORT >> _TAG_PRIMARY_SIZE):
+		if (is_not_export(b)) {
+		    a_tag = EXPORT_DEF;
+		    goto mixed_types;
+		} else {
+		    Export* a_exp = (Export *) (export_val(a))[1];
+		    Export* b_exp = (Export *) (export_val(b))[1];
+
+		    if ((j = cmp_atoms(a_exp->code[0], b_exp->code[0])) != 0) {
+			return j;
+		    }
+		    if ((j = cmp_atoms(a_exp->code[1], b_exp->code[1])) != 0) {
+			return j;
+		    }
+		    return (Sint) a_exp->code[2] - (Sint) b_exp->code[2];
+		}
+		break;
 	    case (_TAG_HEADER_FUN >> _TAG_PRIMARY_SIZE):
 		if (is_not_fun(b)) {
 		    a_tag = FUN_DEF;
@@ -2392,6 +2461,24 @@ display1(Eterm obj, CIO fd)
 	    ProcBin* pb = (ProcBin *) binary_val(obj);
 	    erl_printf(fd, pb->size == 1 ? "<<%lu byte>>" : "<<%lu bytes>>",
 		       (unsigned long) pb->size);
+	}
+	break;
+    case EXPORT_DEF:
+	{
+	    Export* ep = (Export *) (export_val(obj))[1];
+	    Atom* ap;
+
+	    erl_printf(fd, "#Fun<");
+	    ap = atom_tab(atom_val(ep->code[0]));
+	    for (i = 0; i < ap->len; i++) {
+		erl_putc(ap->name[i], fd);
+	    }
+	    erl_putc('.', fd);
+	    ap = atom_tab(atom_val(ep->code[1]));
+	    for (i = 0; i < ap->len; i++) {
+		erl_putc(ap->name[i], fd);
+	    }
+	    erl_printf(fd, ".%d>", (int) ep->code[2]);
 	}
 	break;
     case FUN_DEF:

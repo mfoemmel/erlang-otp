@@ -745,11 +745,18 @@ extern int count_instructions;
 #define IsArity(Pointer, Arity, Fail) \
     if (*(Eterm *)(tmp_arg1 = (Eterm)tuple_val(Pointer)) != (Arity)) { Fail; }
 
-#define IsFunction(X, Action)  \
-  do {                         \
-     if ( !(is_fun(X)) ) {     \
-          Action;              \
-     }                         \
+#define IsFunction(X, Action)			\
+  do {						\
+     if ( !(is_any_fun(X)) ) {			\
+          Action;				\
+     }						\
+  } while (0)
+
+#define IsFunction2(F, A, Action)		\
+  do {						\
+     if (is_function_2(c_p, F, A) != am_true ) {\
+          Action;				\
+     }						\
   } while (0)
 
 #define IsTupleOfArity(Src, Arity, Fail) \
@@ -4835,11 +4842,17 @@ call_fun(Process* p,		/* Current process. */
 	 Eterm args)		/* THE_NON_VALUE or pre-built list of arguments. */
 {
     Eterm fun = reg[arity];
+    Eterm hdr;
     int i;
     Eterm function;
     Eterm* hp;
 
-    if (is_fun(fun)) {
+    if (!is_boxed(fun)) {
+	goto badfun;
+    }
+    hdr = *boxed_val(fun);
+
+    if (is_fun_header(hdr)) {
 	ErlFunThing* funp = (ErlFunThing *) fun_val(fun);
 	ErlFunEntry* fe;
 	Eterm* code_ptr;
@@ -4851,14 +4864,21 @@ call_fun(Process* p,		/* Current process. */
 	num_free = funp->num_free;
 	code_ptr = fe->address;
 	actual_arity = (int) code_ptr[-1];
-	var_ptr = funp->env;
 
 	if (actual_arity == arity+num_free) {
-	    reg += arity;
-	    for (i = 0; i < num_free; i++) {
-		reg[i] = var_ptr[i];
+	    if (num_free == 0) {
+		return code_ptr;
+	    } else {
+		var_ptr = funp->env;
+		reg += arity;
+		i = 0;
+		do {
+		    reg[i] = var_ptr[i];
+		    i++;
+		} while (i < num_free);
+		reg[i] = fun;
+		return code_ptr;
 	    }
-	    reg[i] = fun;
 	    return code_ptr;
 	} else {
 	    /*
@@ -4921,49 +4941,68 @@ call_fun(Process* p,		/* Current process. */
 		return ep->address;
 	    }
 	}
-    } else if (is_tuple(fun)) {
-	Eterm* tp = tuple_val(fun);
-
-	if (*tp == make_arityval(2)) {
-	    Export* ep;
-	    Eterm module;
-
-	    module = tp[1];
-	    function = tp[2];
-	    if (!is_atom(module) || !is_atom(function)) {
-		goto badfun;
-	    }
-	    if ((ep = erts_find_export_entry(module, function, arity)) == NULL) {
-		ep = erts_find_export_entry(p->error_handler, am_undefined_function, 3);
-		if (ep == NULL) {
-		    p->freason = EXC_UNDEF;
-		    return 0;
-		}
-		if (is_non_value(args)) {
-		    hp = HAlloc(p, 2*arity);
-		    args = NIL;
-		    while (arity-- > 0) {
-			args = CONS(hp, reg[arity], args);
-			hp += 2;
-		    }
-		}
-
-		reg[0] = module;
-		reg[1] = function;
-		reg[2] = args;
-	    }
+    } else if (is_export_header(hdr)) {
+	Export* ep = (Export *) (export_val(fun))[1];
+	int actual_arity = (int) ep->code[2];
+	if (arity == actual_arity) {
 	    return ep->address;
-	}
-    }
+	} else {
+	    /*
+	     * Wrong arity. First build a list of the arguments.
+	     */  
 
-    /*
-     * Default error reason if the Fun argument is bad.
-     */
- badfun:
-    p->current = NULL;
-    p->freason = EXC_BADFUN;
-    p->fvalue = fun;
-    return NULL;
+	    if (is_non_value(args)) {
+		args = NIL;
+		hp = HAlloc(p, arity*2);
+		for (i = arity-1; i >= 0; i--) {
+		    args = CONS(hp, reg[i], args);
+		    hp += 2;
+		}
+	    }
+
+	    hp = HAlloc(p, 3);
+	    p->freason = EXC_BADARITY;
+	    p->fvalue = TUPLE2(hp, fun, args);
+	    return NULL;
+	}
+    } else if (hdr == make_arityval(2)) {
+	Eterm* tp;
+	Export* ep;
+	Eterm module;
+
+	tp = tuple_val(fun);
+	module = tp[1];
+	function = tp[2];
+	if (!is_atom(module) || !is_atom(function)) {
+	    goto badfun;
+	}
+	if ((ep = erts_find_export_entry(module, function, arity)) == NULL) {
+	    ep = erts_find_export_entry(p->error_handler, am_undefined_function, 3);
+	    if (ep == NULL) {
+		p->freason = EXC_UNDEF;
+		return 0;
+	    }
+	    if (is_non_value(args)) {
+		hp = HAlloc(p, 2*arity);
+		args = NIL;
+		while (arity-- > 0) {
+		    args = CONS(hp, reg[arity], args);
+		    hp += 2;
+		}
+	    }
+
+	    reg[0] = module;
+	    reg[1] = function;
+	    reg[2] = args;
+	}
+	return ep->address;
+    } else {
+    badfun:
+	p->current = NULL;
+	p->freason = EXC_BADFUN;
+	p->fvalue = fun;
+	return NULL;
+    }
 }
 
 static Eterm*

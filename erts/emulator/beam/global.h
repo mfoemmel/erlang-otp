@@ -203,12 +203,6 @@ extern Uint display_loads;	/* print info about loaded modules */
 extern Uint do_time;		/* set at clock interupt */
 extern Uint last_reds;		/* to calculate no of reds since last call */
 
-#define HS_FIBONACCI 0		/* Fibonacci */
-#define HS_FIBONACCI_SLOW 1	/* Fibonacci with slowdown for big heaps */
-#define HS_POWER_TWO 2		/* Powers of two */
-#define HS_POWER_TWO_MINUS_ONE 3 /* Powers of two minus one word */
-
-extern int heap_series;		/* Series to use for heap size. */
 extern int erts_backtrace_depth;
 extern Uint16 erts_max_gen_gcs;
 
@@ -700,11 +694,14 @@ Uint time_left(ErlTimer *);
 int next_time(_VOID_);
 
 Uint erts_timer_wheel_memory_size(void);
-#ifdef HAVE_GETHRVTIME
+
+#if (defined(HAVE_GETHRVTIME) || defined(HAVE_CLOCK_GETTIME))
 #  ifndef HAVE_ERTS_NOW_CPU
 #    define HAVE_ERTS_NOW_CPU
-#    define erts_start_now_cpu() sys_start_hrvtime()
-#    define erts_stop_now_cpu()  sys_stop_hrvtime()
+#    ifdef HAVE_GETHRVTIME
+#      define erts_start_now_cpu() sys_start_hrvtime()
+#      define erts_stop_now_cpu()  sys_stop_hrvtime()
+#    endif
 #  endif
 void erts_get_now_cpu(Uint* megasec, Uint* sec, Uint* microsec);
 #endif

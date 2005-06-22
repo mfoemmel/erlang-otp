@@ -25,6 +25,7 @@
 
 #define WM_CONTEXT      (0x0401)
 #define WM_CONBEEP      (0x0402)
+#define WM_SAVE_PREFS   (0x0403)
 
 #define USER_KEY "Software\\Ericsson\\Erlang\\"##ERLANG_VERSION
 
@@ -102,6 +103,7 @@ static DWORD bkgColor;
 static FILE *logfile = NULL;
 static RECT winPos;
 static BOOL toolbarVisible;
+static BOOL destroyed = FALSE;
 
 static int lines_to_save = 1000; /* Maximum number of screen lines to save. */
 
@@ -149,6 +151,19 @@ ConInit(void)
     console_input_event = CreateManualEvent(FALSE);
     console_thread = (HANDLE *) _beginthreadex(NULL, 0, ConThreadInit,
 					       0, 0, &tid);
+}
+
+/*
+  ConNormalExit() is called from erl_exit() when the emulator
+  is stopping. If the exit has not been initiated by this 
+  console thread (WM_DESTROY or ID_BREAK), the function must 
+  invoke the console thread to save the user preferences.
+*/
+void
+ConNormalExit(void)
+{
+  if (!destroyed)
+    SendMessage(hFrameWnd, WM_SAVE_PREFS, 0L, 0L);
 }
 
 void
@@ -347,6 +362,11 @@ ConThreadInit(LPVOID param)
             DispatchMessage (&msg);
         }
     }
+    /*
+       PostQuitMessage() results in WM_QUIT which makes GetMessage()
+       return 0 (which stops the main loop). Before we return from
+       the console thread, the ctrl_handler is called to do erl_exit. 
+    */
     (*ctrl_handler)(CTRL_CLOSE_EVENT);
     return msg.wParam;
 }
@@ -508,7 +528,9 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
             case CBN_SELENDCANCEL:
                 break;
             }
-	case ID_BREAK:
+	    break;
+	case ID_BREAK:		  /* CTRL+BRK */
+	    /* pass on break char if the ctrl_handler is disabled */
 	    if ((*ctrl_handler)(CTRL_C_EVENT) == FALSE) {
 		c = 0x03;
 		write_inbuf(&c,1);
@@ -544,7 +566,11 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 	break;
     case WM_DESTROY :
 	SaveUserPreferences();
+	destroyed = TRUE;
 	PostQuitMessage(0);
+	return 0;
+    case WM_SAVE_PREFS :
+	SaveUserPreferences();
 	return 0;
     }
     return DefWindowProc(hwnd, iMsg, wParam, lParam);
@@ -780,14 +806,20 @@ LoadUserPreferences(void)
 
 static void
 SaveUserPreferences(void)
-{
+{  
+    WINDOWPLACEMENT wndPlace;
+
     if (has_key == TRUE) {
         RegSetValueEx(key,"Font",0,REG_BINARY,(CONST BYTE *)&logfont,sizeof(LOGFONT));
         RegSetValueEx(key,"FgColor",0,REG_DWORD,(CONST BYTE *)&fgColor,sizeof(fgColor));
         RegSetValueEx(key,"BkColor",0,REG_DWORD,(CONST BYTE *)&bkgColor,sizeof(bkgColor));
         RegSetValueEx(key,"Toolbar",0,REG_DWORD,(CONST BYTE *)&toolbarVisible,sizeof(toolbarVisible));
 
-	GetWindowRect(hFrameWnd,&winPos);
+	wndPlace.length = sizeof(WINDOWPLACEMENT);
+	GetWindowPlacement(hFrameWnd,&wndPlace);
+	/* If wndPlace.showCmd == SW_MINIMIZE, then the window is minimized.
+	   We don't care, wndPlace.rcNormalPosition always holds the last known position. */
+	winPos = wndPlace.rcNormalPosition;
 	RegSetValueEx(key,"Pos",0,REG_BINARY,(CONST BYTE *)&winPos,sizeof(winPos));
     }
 }

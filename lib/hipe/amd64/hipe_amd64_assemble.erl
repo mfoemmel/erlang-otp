@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_amd64_assemble.erl,v 1.38 2005/01/26 14:14:27 mikpe Exp $
+%%% $Id$
 
 -define(HIPE_X86_ASSEMBLE,  hipe_amd64_assemble).
 -define(HIPE_X86_ENCODE,    hipe_amd64_encode).
@@ -26,7 +26,7 @@
 
 -define(RESOLVE_MOVE64_ARGS, %% mov reg,imm64
 	resolve_move64_args(Src=#x86_imm{}, Dst=#x86_temp{}, Context) ->
-	   {_,Imm} = resolve_arg(Src, Context),
+	   {_,Imm} = resolve_arg(Src, Context, false),
 	   {temp_to_reg64(Dst),{imm64,Imm}}).
 
 -define(TEMP_TO_REG64, temp_to_reg64(#x86_temp{reg=Reg}) ->
@@ -36,22 +36,18 @@
 	   {rm64, hipe_amd64_encode:rm_reg(Reg)}).
 
 -define(RESOLVE_JMP_SWITCH_ARG,
-	resolve_jmp_switch_arg(I, _) ->
-	   Base = hipe_x86:temp_reg(hipe_x86:jmp_switch_jtab(I)),
-	   %% FIXME: We are only saved by a fluke
-	   case Base of
-	     13 -> 
-	       exit({?MODULE, internal_compiler_error, r13});
-	     5 -> 
-	       exit({?MODULE, internal_compiler_error, r5});
-	     _ ->
-	       ok  
-	   end,
-	   SINDEX = hipe_amd64_encode:sindex(
-		      3, hipe_x86:temp_reg(hipe_x86:jmp_switch_temp(I))),
-	   SIB = hipe_amd64_encode:sib(Base, SINDEX),
-	   EA  = hipe_amd64_encode:ea_sib(SIB),
-	   {rm64,hipe_amd64_encode:rm_mem(EA)}).
+resolve_jmp_switch_arg(I, _) ->
+  Base = hipe_x86:temp_reg(hipe_x86:jmp_switch_jtab(I)),
+  Index = hipe_x86:temp_reg(hipe_x86:jmp_switch_temp(I)),
+  SINDEX = hipe_amd64_encode:sindex(3, Index),
+  SIB = hipe_amd64_encode:sib(Base, SINDEX),
+  EA =
+    if (Base =:= 5) or (Base =:= 13) ->
+	hipe_amd64_encode:ea_disp8_sib(0, SIB);
+       true ->
+	hipe_amd64_encode:ea_sib(SIB)
+    end,
+  {rm64,hipe_amd64_encode:rm_mem(EA)}).
 
 -ifdef(AMD64_SIMULATE_NSP).
 -define(TRANSLATE_CALL, %% Only used for simulate_nsp

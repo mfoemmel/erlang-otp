@@ -1,4 +1,5 @@
 %% -*- erlang-indent-level: 2 -*-
+%% $Id$
 %%----------------------------------------------------------------------
 %% File    : hipe_adj_list.erl
 %% Author  : Andreas Wallin <d96awa@it.uu.se>
@@ -11,7 +12,7 @@
 -export([new/1, 
 	 add_edge/3, 
 	 %% add_edges/3, 
-	 %% remove_edge/3, 
+	 remove_edge/3, 
 	 %% remove_edges/3, 
 	 edges/2]).
 
@@ -84,9 +85,9 @@ add_edge(U, V, Adj_list) -> % PRE: U =/= V, not V \in adjList[U]
 %%
 %%----------------------------------------------------------------------
 
-%% remove_edges(_, [], Adj_list) -> Adj_list;
-%% remove_edges(U, Vs, Adj_list) when is_list(Vs), is_integer(U) ->
-%%     hipe_vectors_wrapper:set(Adj_list, U, ordsets:subtract(hipe_vectors_wrapper:get(Adj_list, U), Vs)).
+remove_edges(_, [], Adj_list) -> Adj_list;
+remove_edges(U, Vs, Adj_list) when is_list(Vs), is_integer(U) ->
+  hipe_vectors_wrapper:set(Adj_list, U, lists:subtract(hipe_vectors_wrapper:get(Adj_list, U), Vs)).
 
 %%----------------------------------------------------------------------
 %% Function:    remove_edge
@@ -103,9 +104,9 @@ add_edge(U, V, Adj_list) -> % PRE: U =/= V, not V \in adjList[U]
 %%
 %%----------------------------------------------------------------------
 
-%% remove_edge(U, U, Adj_list) -> Adj_list;
-%% remove_edge(U, V, Adj_list) when is_integer(U), is_integer(V) ->
-%%     remove_edges(U,  [V], Adj_list).
+remove_edge(U, U, Adj_list) -> Adj_list;
+remove_edge(U, V, Adj_list) when is_integer(U), is_integer(V) ->
+    remove_edges(U,  [V], Adj_list).
 
 %%----------------------------------------------------------------------
 %% Function:    edges

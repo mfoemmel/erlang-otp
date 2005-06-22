@@ -33,7 +33,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/2,start_connection/2]).
+-export([start/2, start_connection/3]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -79,6 +79,6 @@ terminate(_Reason, _State) ->
 %%-----------------------------------------------------------------
 %% Func: start_connection/2
 %%-----------------------------------------------------------------
-start_connection(Type, Socket) ->
-    supervisor:start_child(orber_iiop_insup, [{connect, Type, Socket}]).
+start_connection(Type, Socket, Ref) ->
+    supervisor:start_child(orber_iiop_insup, [{connect, Type, Socket, Ref}]).
 

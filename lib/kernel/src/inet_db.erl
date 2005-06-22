@@ -501,24 +501,30 @@ make_hostent(Name, Datas, Aliases, Type) ->
 	      h_aliases = Aliases
 	     }.
 
-hostent_by_domain(Domain,Type) ->
+hostent_by_domain(Domain, Type) ->
     ?dbg("hostent_by_domain: ~p~n", [Domain]),
     hostent_by_domain(Domain, [], Type).
 
-hostent_by_domain(Domain, Aliases,Type) ->
-    case lookup_type(Domain,Type) of
+hostent_by_domain(Domain, Aliases, Type) ->
+    case lookup_type(Domain, Type) of
 	[] ->
 	    case lookup_cname(Domain) of
-		[] ->  {error, nxdomain};
+		[] ->  
+		    {error, nxdomain};
 		[CName | _] ->
-		    hostent_by_domain(CName, [Domain | Aliases], Type)
+		    case lists:member(CName, [Domain | Aliases]) of
+                        true -> 
+			    {error, nxdomain};
+                        false ->
+			    hostent_by_domain(CName, [Domain | Aliases], Type)
+		    end
 	    end;
 	Addrs ->
-	    {ok, make_hostent(Domain, Addrs, Aliases,Type)}
+	    {ok, make_hostent(Domain, Addrs, Aliases, Type)}
     end.
 
 %% lookup address record
-lookup_type(Domain,Type) ->
+lookup_type(Domain, Type) ->
     [R#dns_rr.data || R <- lookup_rr(Domain, in, Type) ].
 
 %% lookup canonical name
@@ -540,16 +546,23 @@ res_hostent_by_domain(Domain, Type, Rec) ->
     ?dbg("res_hostent_by_domain: ~p - ~p~n", [Domain, RRs]),
     res_hostent_by_domain(Domain, [], Type, RRs).
 
-res_hostent_by_domain(Domain, Aliases,Type,RRs) ->
-    case res_lookup_type(Domain,Type,RRs) of
+res_hostent_by_domain(Domain, Aliases, Type, RRs) ->
+    case res_lookup_type(Domain, Type, RRs) of
 	[] ->
-	    case res_lookup_type(Domain,?S_CNAME,RRs) of
-		[] ->  {error, nxdomain};
+	    case res_lookup_type(Domain, ?S_CNAME, RRs) of
+		[] ->  
+		    {error, nxdomain};
 		[CName | _] ->
-		    res_hostent_by_domain(CName, [Domain | Aliases], Type, RRs)
+		    case lists:member(CName, [Domain | Aliases]) of
+			true -> 
+			    {error, nxdomain};
+			false ->
+			    res_hostent_by_domain(CName, [Domain | Aliases],
+						  Type, RRs)
+		    end
 	    end;
 	Addrs ->
-	    {ok, make_hostent(Domain, Addrs, Aliases,Type)}
+	    {ok, make_hostent(Domain, Addrs, Aliases, Type)}
     end.
 
 %% newly resolved lookup address record

@@ -53,26 +53,28 @@ start_link() -> gen_server:start_link({local, memsup}, memsup, [], []).
 %% Returns: {TotalMemorySize, AllocatedBytes},
 %%           {LargestPid, AllocatedBytes}
 %%-----------------------------------------------------------------
-get_memory_data() -> gen_server:call(memsup, get_memory_data).
+get_memory_data() -> call(get_memory_data).
 
-get_system_memory_data() -> gen_server:call(memsup, get_system_memory_data).
+get_system_memory_data() -> call(get_system_memory_data).
 
-get_check_interval() -> gen_server:call(memsup, get_check_interval).
+get_check_interval() -> call(get_check_interval).
 
 get_sysmem_high_watermark() ->
-    gen_server:call(memsup, get_sysmem_high_watermark).
+    call(get_sysmem_high_watermark).
 
 get_procmem_high_watermark() ->
-    gen_server:call(memsup, get_procmem_high_watermark).
+    call(get_procmem_high_watermark).
 
 get_helper_timeout() ->
-    gen_server:call(memsup, get_helper_timeout).
+    call(get_helper_timeout).
 
 set_helper_timeout(I) when integer(I), I > 0 ->
-    gen_server:call(memsup, {set_helper_timeout, I});
+    call({set_helper_timeout, I});
 set_helper_timeout(I) ->
     erlang:fault(badarg, [I]).
 
+call(Req) ->
+    gen_server:call(memsup, Req, 30000).
 
 init([]) ->
     process_flag(trap_exit, true),
@@ -93,42 +95,25 @@ init([]) ->
 		  true ->
 		      get_process_memory_high_watermark()
 	      end,
-    %% Syncronous collection of memory data the first time
-    case catch 
-	begin
-	    case whereis(memsup_helper) of
-		Pid when pid(Pid) ->
-		    Ref = erlang:monitor(process,Pid),
-		    Worst = case ProcMem of
-				undefined ->
-				    undefined;
-				_ ->
-				    get_worst_sync(HelperTimeout)
-			    end,
-		    MemUsage = get_sys_sync(HelperTimeout),
-		    timer:send_after(Timeout, time_to_collect),
-		    erlang:demonitor(Ref), % Don't care any more
-		    {ok, 
-		     #state{timeout = Timeout,
-			    helper_timeout = HelperTimeout,
-			    mem_usage = MemUsage, 
-			    worst_mem_user = Worst,
-			    sys_mem_watermark = SysMem,
-			    proc_mem_watermark = ProcMem,
-			    collect_procmem = CollectProcmem}};
-		_ ->
-		    exit(helper_not_present)
-	    end
-	end of
-	{'EXIT', Reason} ->
-	    {stop, Reason};
-	Else ->
-	    Else
-    end.
+    timer:send_after(Timeout, time_to_collect),
+    {ok,#state{timeout = Timeout,
+	       helper_timeout = HelperTimeout,
+	       sys_mem_watermark = SysMem,
+	       proc_mem_watermark = ProcMem,
+	       collect_procmem = CollectProcmem}}.
 
 %%-----------------------------------------------------------------
 %% Callback functions from gen_server
 %%-----------------------------------------------------------------
+handle_call(get_memory_data, From, #state{mem_usage=undefined,
+					  helper_timeout=Timeout}=St) ->
+    MemUsage = get_synchronous_data(Timeout, collect_sys, collected_sys),
+    handle_call(get_memory_data, From, St#state{mem_usage=MemUsage});
+handle_call(get_memory_data, From, #state{collect_procmem=true,
+					  worst_mem_user=undefined,
+					  helper_timeout=Timeout}=St) ->
+    Worst = get_synchronous_data(Timeout, collect_proc, collected_proc),
+    handle_call(get_memory_data, From, St#state{worst_mem_user=Worst});
 handle_call(get_memory_data, _From, State) ->
     {Alloc, Total} = State#state.mem_usage,
     {reply, {Total, Alloc, State#state.worst_mem_user}, State};
@@ -150,11 +135,13 @@ handle_call(get_helper_timeout, _From, State) ->
 handle_call({set_helper_timeout, Secs}, _From, State) ->
     {reply, ok, State#state{helper_timeout = sec_to_ms(Secs)}};
 
-handle_call({set_sys_hw,HW}, _From, State) -> % test purposes only
+%% The following are only for test purposes (whitebox testing).
+handle_call({set_sys_hw,HW}, _From, State) ->
     {reply, ok, State#state{sys_mem_watermark=HW}};
-handle_call({set_pid_hw,HW}, _From, State) -> % test purposes only
-    {reply, ok, State#state{proc_mem_watermark=HW}}.
-
+handle_call({set_pid_hw,HW}, _From, State) ->
+    {reply, ok, State#state{proc_mem_watermark=HW}};
+handle_call({set_check_interval,Timeout}, _From, State) ->
+    {reply, ok, State#state{timeout=Timeout}}.
 
 handle_info(time_to_collect, State) ->
     LastTimeout = get_timestamp(),
@@ -172,20 +159,18 @@ handle_info(time_to_collect, State) ->
 handle_info(collection_timeout, State) ->
     {stop, {memsup_collection_error, helper_timeout}, State};
 
-handle_info({collected_proc,{Pid, PidAllocated} = Worst}, State) ->
+handle_info({collected_proc,{Pid,PidAllocated}=Worst},
+	    #state{mem_usage=Usage,proc_mem_watermark=MemWatermark}=State) ->
     memsup_helper ! {self(), collect_sys},
-    {_,Total} = State#state.mem_usage, % OK; its, the old total, but
-				       % system available memory does not 
-				       % change on a regular basis...
-    if
-	PidAllocated > State#state.proc_mem_watermark*Total ->
+    case Usage of
+	{_,Total} when PidAllocated > MemWatermark*Total ->
 	    set_alarm(process_memory_high_watermark, Pid);
-	true ->
+	_ ->
 	    reset_alarm(process_memory_high_watermark)
     end,
-    {noreply, State#state{worst_mem_user = Worst}};
+    {noreply,State#state{worst_mem_user=Worst}};
 
-handle_info({collected_sys,{Allocated, Total} = Sys}, State) ->
+handle_info({collected_sys,{Allocated,Total}=Sys}, State) ->
     timer:cancel(State#state.wd_timer),
     Diff = get_timestamp() - State#state.last_timeout,
     Timeout = case State#state.timeout - Diff of
@@ -284,44 +269,32 @@ get_process_memory_high_watermark() ->
 	_ -> 0.05
     end.
 
-get_worst_sync(Timeout) ->
-    get_worst_sync(10, Timeout).
-get_worst_sync(0, _) ->
-    exit({timeout, memsup_helper_not_alive});
-get_worst_sync(N, Timeout) ->
-    (catch memsup_helper ! {self(), collect_proc}),
+
+get_synchronous_data(Timeout, Tag, ResTag) ->
+    get_synchronous_data_1(50, Timeout, Tag, ResTag).
+
+get_synchronous_data_1(0, _, _, _) ->
+    exit({timeout,memsup_helper_not_alive});
+get_synchronous_data_1(N, Timeout, Tag, ResTag) ->
+    MonitorRef = erlang:monitor(process, memsup_helper),
+    catch memsup_helper ! {self(),Tag},
     receive
-	{'DOWN', _, _, _Info} -> % gotta be the helper here
-	    receive 
-	    after trunc(Timeout/30) ->
-		    ok
+	{ResTag,Result} ->
+	    erlang:demonitor(MonitorRef),
+	    receive
+		{'DOWN',MonitorRef,process,_,_} -> ok
+	    after 0 -> ok
 	    end,
-	    get_worst_sync(N - 1, Timeout);
-	{collected_proc, Worst} ->
-	    Worst
-    after Timeout ->
-	    exit({memsup_collection_error, helper_timeout})
-    end.
-	    
-get_sys_sync(Timeout) ->
-    get_sys_sync(10, Timeout).
-get_sys_sync(0, _) ->
-    exit({timeout, memsup_helper_not_alive});
-get_sys_sync(N, Timeout) ->
-    (catch memsup_helper ! {self(), collect_sys}),
-    receive
-	{'DOWN', _, _, _} -> % gotta be the helper here
+	    Result;
+	{'DOWN',MonitorRef,process,_,_} ->
 	    receive 
-	    after trunc(Timeout/30) ->
-		    ok
-	    end,
-	    get_sys_sync(N - 1, Timeout);
-	{collected_sys, Sys} ->
-	    Sys
+		after 500 ->
+			ok
+		end,
+	    get_synchronous_data_1(N-1, Timeout, Tag, ResTag)
     after Timeout ->
-	    exit({memsup_collection_error, helper_timeout})
+	    exit({memsup_collection_error,helper_timeout})
     end.
-	    
 
 format_status(_Opt, [_PDict, #state{timeout = Timeout, mem_usage = MemUsage,
 				  worst_mem_user = WorstMemUser}]) ->

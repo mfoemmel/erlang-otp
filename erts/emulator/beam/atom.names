@@ -42,9 +42,18 @@ atom EOT='$end_of_table'
 atom Cookie=''
 
 #
-# Used in Beam emulator loop.
+# Used in the Beam emulator loop. (Smaller literals usually means tighter code.)
 #
 atom fun infinity timeout normal call return
+atom throw error exit
+atom undefined
+
+#
+# Used in beam_emu.c.
+#
+atom nocatch
+atom undefined_function
+atom undefined_lambda
 
 #
 # All other atoms.  Try to keep the order alphabetic.
@@ -131,15 +140,14 @@ atom Eq='=:='
 atom Eqeq='=='
 atom erlang
 atom ERROR='ERROR'
-atom error
 atom error_handler
 atom error_logger
 atom ets
-atom exit
 atom exit_status
 atom existing
 atom exiting
 atom exports
+atom external
 atom false
 atom fd
 atom flags
@@ -233,7 +241,6 @@ atom new
 atom new_index
 atom new_uniq
 atom next
-atom nocatch
 atom noconnect
 atom noconnection
 atom nocookie
@@ -343,7 +350,6 @@ atom table
 atom this
 atom thread_pool_size
 atom threads
-atom throw
 atom timeout
 atom timeout_value
 atom Times='*'
@@ -358,9 +364,6 @@ atom true
 atom tuple
 atom type
 atom undef
-atom undefined
-atom undefined_function
-atom undefined_lambda
 atom unregister
 atom ultrasparc_read_pic1
 atom ultrasparc_read_tick1

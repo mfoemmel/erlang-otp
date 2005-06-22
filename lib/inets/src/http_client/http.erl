@@ -110,11 +110,13 @@ cancel_request(RequestId) ->
 %%   Options - [Option]
 %%   Option - {proxy, {Proxy, NoProxy}} | {max_sessions, MaxSessions} | 
 %%            {max_pipeline_length, MaxPipeline} | 
-%%            {pipeline_timeout, PipelineTimeout} | {cookies | CookieMode}
+%%            {pipeline_timeout, PipelineTimeout} | {cookies, CookieMode}
+%%            | {ipv6, Ipv6Mode}
 %%   Proxy - {Host, Port}
 %%   NoProxy - [Domain | HostName | IPAddress]   
 %%   MaxSessions, MaxPipeline, PipelineTimeout = integer()   
 %%   CookieMode - enabled | disabled | verify
+%%   Ipv6Mode - enabled | disabled
 %% Description: Informs the httpc_manager of the new settings. 
 %%-------------------------------------------------------------------------
 set_options(Options) ->

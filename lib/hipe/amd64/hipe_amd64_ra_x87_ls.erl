@@ -1,4 +1,4 @@
-%%% $Id: hipe_amd64_ra_x87_ls.erl,v 1.3 2005/03/29 11:46:30 mikpe Exp $
+%%% $Id$
 %%% Linear Scan register allocator for amd64/x87
 
 -module(hipe_amd64_ra_x87_ls).

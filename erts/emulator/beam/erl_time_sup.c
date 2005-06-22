@@ -752,11 +752,13 @@ erts_get_time(void)
 
 #ifdef HAVE_ERTS_NOW_CPU
 void erts_get_now_cpu(Uint* megasec, Uint* sec, Uint* microsec) {
-    SysHrTime t = sys_gethrvtime() / 1000;
-    *microsec = (Uint) (t % 1000000);
-    t /= ((Uint)1000000);
-    *sec = (Uint) (t % 1000000);
-    t /= ((Uint) 1000000);
-    *megasec = (Uint) (t % 1000000);
+  SysCpuTime t;
+  SysTimespec tp;
+
+  sys_get_proc_cputime(t, tp);
+  *microsec = (Uint)(tp.tv_nsec / 1000);
+  t = (tp.tv_sec / 1000000);
+  *megasec = (Uint)(t % 1000000);
+  *sec = (Uint)(tp.tv_sec % 1000000);
 }
 #endif

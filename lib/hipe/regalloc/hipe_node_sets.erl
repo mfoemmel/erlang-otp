@@ -1,5 +1,5 @@
 %% -*- erlang-indent-level: 2 -*-
-%% $Id: hipe_node_sets.erl,v 1.11 2004/12/23 09:37:20 mikpe Exp $
+%% $Id$
 
 -module(hipe_node_sets).
 

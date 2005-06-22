@@ -532,65 +532,6 @@ do_split(String,RegExp,Limit) ->
 	    [String]
     end.
 
-%% header
-% header(StatusCode,Date)when list(Date)->
-%     header(StatusCode,"text/plain",false);
-
-% header(StatusCode, PersistentConnection) when integer(StatusCode)->
-%     Date = rfc1123_date(),
-%     Connection = 
-% 	case PersistentConnection of
-% 	    true ->
-% 		"";
-% 	    _ ->
-% 		"Connection: close \r\n"
-% 	end,
-%     io_lib:format("HTTP/1.1 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n~s",
-% 		  [StatusCode, httpd_util:reason_phrase(StatusCode),
-% 		   Date, ?SERVER_SOFTWARE, Connection]).
-
-% %%----------------------------------------------------------------------
-
-% header(StatusCode, MimeType, Date) when list(Date) ->
-%     header(StatusCode, MimeType, false,rfc1123_date());
-
-
-% header(StatusCode, MimeType, PersistentConnection) when integer(StatusCode) ->
-%     header(StatusCode, MimeType, PersistentConnection,rfc1123_date()).
-
-
-% %%----------------------------------------------------------------------
-
-% header(416, MimeType,PersistentConnection,Date)-> 
-%     Connection = 
-% 	case PersistentConnection of
-% 	    true ->
-% 		"";
-% 	    _ ->
-% 		"Connection: close \r\n"
-% 	end,
-%     io_lib:format("HTTP/1.1 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n"
-% 		  "Content-Range:bytes *\r\n"
-% 		  "Content-Type: ~s\r\n~s",
-% 		  [416, httpd_util:reason_phrase(416),
-% 		   Date, ?SERVER_SOFTWARE, MimeType, Connection]);
-
-
-% header(StatusCode, MimeType,PersistentConnection,Date) when integer(StatusCode)-> 
-%     Connection = 
-% 	case PersistentConnection of
-% 	    true ->
-% 		"";
-% 	    _ ->
-% 		"Connection: close \r\n"
-% 	end,
-%     io_lib:format("HTTP/1.1 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n"
-% 		  "Content-Type: ~s\r\n~s",
-% 		  [StatusCode, httpd_util:reason_phrase(StatusCode),
-% 		   Date, ?SERVER_SOFTWARE, MimeType, Connection]).
-
-
-
 %% make_name/2, make_name/3
 %% Prefix  -> string()
 %%            First part of the name, e.g. "httpd"
@@ -633,6 +574,17 @@ make_name1(String) ->
 
 make_name2({A,B,C,D}) ->
     io_lib:format("~w_~w_~w_~w",[A,B,C,D]);
+
+make_name2({A, B, C, D, E, F, G, H}) ->
+    io_lib:format("~w_~w_~w_~w_~w_~w_~w_~w",[integer_to_hexlist(A),
+					     integer_to_hexlist(B),
+					     integer_to_hexlist(C),
+					     integer_to_hexlist(D),
+					     integer_to_hexlist(E),
+					     integer_to_hexlist(F),
+					     integer_to_hexlist(G),
+					     integer_to_hexlist(H)
+					    ]);
 make_name2(Addr) ->
     search_and_replace(Addr,$.,$_).
 

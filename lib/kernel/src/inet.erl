@@ -305,7 +305,7 @@ connect_options(Opts, Family) ->
 	    {ok,List} when is_list(List) ->
 		NList = [{active, true} | lists:keydelete(active,1,List)],     
 		#connect_opts{ opts = NList};
-	    {ok,{active,Bool}} -> 
+	    {ok,{active,_Bool}} -> 
 		#connect_opts{ opts = [{active,true}]};
 	    {ok,Option} -> 
 		#connect_opts{ opts = [{active,true}, Option]};
@@ -357,8 +357,9 @@ listen_options(Opts, Family) ->
     BaseOpts = 
 	case application:get_env(kernel, inet_default_listen_options) of
 	    {ok,List} when is_list(List) ->
-		NList = [{active, true} | lists:keydelete(active,1,List)],		       #listen_opts{ opts = NList};
-	    {ok,{active,Bool}} -> 
+		NList = [{active, true} | lists:keydelete(active,1,List)],		       
+		#listen_opts{ opts = NList};
+	    {ok,{active,_Bool}} -> 
 		#listen_opts{ opts = [{active,true}]};
 	    {ok,Option} -> 
 		#listen_opts{ opts = [{active,true}, Option]};
@@ -467,18 +468,29 @@ translate_ip(IP, _) -> IP.
 
 getaddrs_tm({A,B,C,D} = IP, inet, _) ->
     if 
-	?ip(A,B,C,D) -> {ok, [IP]};
-	true -> {error,einval}
+	?ip(A,B,C,D) -> {ok,[IP]};
+	true ->         {error,einval}
     end;
-getaddrs_tm({A,B,C,D}, inet6, _) ->
+getaddrs_tm({A,B,C,D} = IP, inet6, Timer) ->
+    %% We need to test this with the resolver. If the
+    %% resolver returns an inet6 formatted address, we may
+    %% assume ipv6 is working correctly on this host.
+    %% If the resolver fails, nxdomain must be returned.
     if 
-	?ip(A,B,C,D) -> {ok, [{0,0,0,0,0,16#ffff,?u16(A,B),?u16(C,D)}]};
-	true -> {error,einval}
+	?ip(A,B,C,D) -> 
+	    IPStr = inet_parse:ntoa(IP),
+	    case gethostbyname_tm(IPStr, inet6, Timer) of
+		{ok,Ent} -> {ok,Ent#hostent.h_addr_list};
+		Error -> Error
+	    end;
+	true ->         
+	    {error,einval}
     end;
+
 getaddrs_tm({A,B,C,D,E,F,G,H} = IP, inet6, _) ->
     if 
-	?ip6(A,B,C,D,E,F,G,H) -> {ok, [IP]};
-	true -> {error,einval}
+	?ip6(A,B,C,D,E,F,G,H) -> {ok,[IP]};
+	true ->                  {error,einval}
     end;
 getaddrs_tm(Address, Family, Timer) when atom(Address) ->
     getaddrs_tm(atom_to_list(Address), Family, Timer);
@@ -493,14 +505,13 @@ getaddrs_tm(Address, Family, Timer) ->
 	     end,
     case Result of
 	{ok,IP} -> {ok,[IP]};
-	false -> {error, einval};
+	false ->   {error, einval};
 	_ -> 
 	    case gethostbyname_tm(Address,Family,Timer) of
-		{ok, Ent} -> {ok, Ent#hostent.h_addr_list};
+		{ok,Ent} -> {ok,Ent#hostent.h_addr_list};
 		Error -> Error
 	    end
     end.
-
 
 %%
 %% gethostbyname with option search
@@ -530,16 +541,16 @@ gethostbyname_tm(Name, Type, Timer, [wins | Opts]) ->
 gethostbyname_tm(Name, Type, Timer, [native | Opts]) ->
     %% Fixme: add (global) timeout to gethost_native
     case inet_gethost_native:gethostbyname(Name, Type) of
-	{error,formerr} -> {error, einval};
-	{error,timeout} -> {error, timeout};
+	{error,formerr} -> {error,einval};
+	{error,timeout} -> {error,timeout};
 	{error,_} -> gethostbyname_tm(Name,Type,Timer,Opts);
 	Result -> Result
     end;
 gethostbyname_tm(Name, Type, Timer, [_ | Opts]) ->
     gethostbyname_tm(Name, Type, Timer, Opts);
-gethostbyname_tm(Name, _Type, _Timer, []) ->
+gethostbyname_tm(Name, inet, _Timer, []) ->
     case inet_parse:ipv4_address(Name) of
-	{ok, IP4} ->
+	{ok,IP4} ->
 	    {ok, 
 	     #hostent{
 	       h_name = Name,
@@ -549,17 +560,26 @@ gethostbyname_tm(Name, _Type, _Timer, []) ->
 	       h_addr_list = [IP4]}};
 	_ ->
 	    case inet_parse:ipv6_address(Name) of
-		{ok, IP6} ->
-		    {ok, 
-		     #hostent{
-		       h_name = Name,
-		       h_aliases = [],
-		       h_addrtype = inet6,
-		       h_length = 16,
-		       h_addr_list = [IP6]}};
-		_ ->
-		    {error, nxdomain}
+		{ok,_} -> {error,einval};
+		_ ->      {error,nxdomain}
 	    end
+    end;
+gethostbyname_tm(Name, inet6, _Timer, []) ->
+    case inet_parse:ipv6_address(Name) of
+	{ok,IP6} ->
+	    {ok, 
+	     #hostent{
+	       h_name = Name,
+	       h_aliases = [],
+	       h_addrtype = inet6,
+	       h_length = 16,
+	       h_addr_list = [IP6]}};
+	_ ->
+	    %% Even if Name is a valid IPv4 address, we can't
+	    %% assume it's correct to return it on a IPv6
+	    %% format ( {0,0,0,0,0,16#ffff,?u16(A,B),?u16(C,D)} ).
+	    %% This host might not support IPv6.
+	    {error,nxdomain}
     end.
 
 %%

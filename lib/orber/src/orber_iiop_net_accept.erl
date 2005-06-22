@@ -32,12 +32,12 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/2]).
+-export([start/3]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
--export([net_accept/3]).
+-export([net_accept/4]).
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -45,8 +45,8 @@
 %%-----------------------------------------------------------------
 %% Func: start/2
 %%-----------------------------------------------------------------
-start(Type, Listen) ->
-    Pid = proc_lib:spawn_link(?MODULE, net_accept, [Type, Listen, self()]),
+start(Type, Listen, Ref) ->
+    Pid = proc_lib:spawn_link(?MODULE, net_accept, [Type, Listen, self(), Ref]),
     {ok, Pid}.
 
 %%-----------------------------------------------------------------
@@ -56,9 +56,9 @@ start(Type, Listen) ->
 %%-----------------------------------------------------------------
 %% Func: net_accept/3
 %%-----------------------------------------------------------------
-net_accept(Type, ListenFd, Parent) ->
+net_accept(Type, ListenFd, Parent, Ref) ->
     S = orber_socket:accept(Type, ListenFd),
-    case orber_iiop_net:connect(Type, S, self()) of
+    case orber_iiop_net:connect(Type, S, self(), Ref) of
 	{ok, Pid, ReadyToGo} ->
 	    case orber_socket:controlling_process(Type, S, Pid) of
 		ok ->
@@ -76,7 +76,7 @@ net_accept(Type, ListenFd, Parent) ->
 	    orber_socket:close(Type, S),
 	    orber_socket:clear(Type, S)
     end,
-    net_accept(Type, ListenFd, Parent).
+    net_accept(Type, ListenFd, Parent, Ref).
 
 ready_to_go(true) ->
     ok;

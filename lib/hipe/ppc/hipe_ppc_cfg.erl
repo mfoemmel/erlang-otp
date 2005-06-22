@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_ppc_cfg.erl,v 1.8 2005/04/24 22:31:46 mikpe Exp $
+%%% $Id$
 
 -module(hipe_ppc_cfg).
 
@@ -9,10 +9,11 @@
          bb/2, bb_add/3]).
 -export([postorder/1]).
 -export([linearise/1, params/1, reverse_postorder/1]).
+-export([arity/1]).
 %%%-export([redirect_jmp/3, arity/1]).
 
 %%% these tell cfg.inc what to define (ugly as hell)
-%%%-define(BREADTH_ORDER,true).
+-define(BREADTH_ORDER,true).
 -define(PARAMS_NEEDED,true).
 -define(START_LABEL_UPDATE_NEEDED,true).
 -include("../flow/cfg.inc").
@@ -110,8 +111,6 @@ linearise(CFG) ->	% -> defun, not insn list
   hipe_ppc:mk_defun(Fun, Formals, IsClosure, IsLeaf,
 		    Code, Data, VarRange, LabelRange).
 
--ifdef(notdef).
 arity(CFG) ->
   #ppc_mfa{a=Arity} = function(CFG),
   Arity.
--endif.

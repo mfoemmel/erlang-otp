@@ -147,13 +147,16 @@ dnl AC_FUNC_SELECT_ARGTYPES
 dnl AC_TYPE_SIGNAL
 dnl AC_FUNC_STRERROR_R
 dnl AC_FUNC_VPRINTF
-AC_CHECK_FUNCS([clock_gettime dup2 gethostbyaddr gethostbyname \
+AC_CHECK_FUNCS([dup2 gethostbyaddr gethostbyname \
 	gethostbyaddr_r \
 	gethostbyname_r gethostname writev \
 	gethrtime gettimeofday inet_ntoa memchr memmove memset select \
 	socket strchr strerror strrchr strstr uname])
 AC_CHECK_FUNC(res_gethostbyname, [],
     AC_CHECK_LIB(resolv, res_gethostbyname)
+)
+AC_CHECK_FUNC(clock_gettime, [],
+    AC_CHECK_LIB(rt, clock_gettime)
 )
 
 # ---------------------------------------------------------------------------

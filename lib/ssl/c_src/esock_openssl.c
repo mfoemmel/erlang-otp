@@ -73,6 +73,7 @@
 
 int ephemeral_rsa = 0;
 int ephemeral_dh = 0;		/* XXX Not used yet */
+int protocol_version = 0;
 
 char *esock_ssl_errstr = "";
 
@@ -122,6 +123,7 @@ static void callback_data_free(void *parent, void *ptr,
 			       CRYPTO_EX_DATA *ad, 
 			       int idx, long arg1, void *argp);
 static RSA *tmp_rsa_callback(SSL *ssl, int is_export, int keylen);
+static void restrict_protocols(SSL_CTX *ctx);
 
 static err_entry errs[] = {    
     {SSL_ERROR_NONE, "SSL_ERROR_NONE"},
@@ -158,8 +160,11 @@ char *esock_ssl_ciphers(void)
 
     if (!(ctx = SSL_CTX_new(method)))
 	return NULL;
-    if (!(ssl = SSL_new(ctx)))
+    restrict_protocols(ctx);
+    if (!(ssl = SSL_new(ctx))) {
+	SSL_CTX_free(ctx);
 	return NULL;
+    }
 
     ciphers = esock_malloc(incr);
     len = incr;
@@ -200,8 +205,8 @@ void  esock_ssl_seed(void *buf, int len)
 
 int esock_ssl_init(void)
 {
-
-    method = SSLv23_method();	/* SSLv2, SSLv3 and TLSv1 */
+    method = SSLv23_method();	/* SSLv2, SSLv3 and TLSv1, may be restricted
+				 in listen and connect */
     SSL_load_error_strings();
     SSL_library_init();
     esock_ssl_seed(randvec, sizeof(randvec));
@@ -382,6 +387,7 @@ int esock_ssl_connect_init(Connection *cp)
 	SSL_CTX_free(ctx);
 	return -1;
     }
+    restrict_protocols(ctx);
     if (!(ssl = cp->opaque = SSL_new(ctx))) {
 	SSL_CTX_free(ctx);
 	return -1;
@@ -405,6 +411,8 @@ int esock_ssl_listen_init(Connection *cp)
 	SSL_CTX_free(ctx);
 	return -1;
     }
+    restrict_protocols(ctx);
+
     /* The allocation of ctx is for setting ssl parameters, so that
      * accepts can inherit them. We allocate ssl to be able to
      * refer to it via cp->opaque, but will not be used otherwise.
@@ -677,6 +685,35 @@ int esock_ssl_getpeercertchain(Connection *cp, unsigned char **buf)
     return totlen;
 }
 
+
+int esock_ssl_getprotocol_version(Connection *cp, char **buf)
+{
+    SSL *ssl = cp->opaque;
+
+    RESET_ERRSTR();
+    if (!ssl) {
+	MAYBE_SET_ERRSTR("enoent");
+	return -1;
+    }
+    *buf = SSL_get_version(ssl);
+
+    return 0;
+}
+
+
+int esock_ssl_getcipher(Connection *cp, char **buf)
+{
+    SSL *ssl = cp->opaque;
+
+    RESET_ERRSTR();
+    if (!ssl) {
+	MAYBE_SET_ERRSTR("enoent");
+	return -1;
+    }
+    *buf = SSL_get_cipher(ssl);
+
+    return 0;
+}
 
 /* Local functions */
 
@@ -1069,6 +1106,22 @@ static RSA *tmp_rsa_callback(SSL *ssl, int is_export, int keylen)
 	    return rsa512;
 	rsa512 = RSA_generate_key(keylen, RSA_F4, NULL, NULL);
 	return rsa512;
+    }
+}
+
+/* Restrict protocols (SSLv2, SSLv3, TLSv1) */
+static void restrict_protocols(SSL_CTX *ctx)
+{
+    long options = 0;
+
+    if (protocol_version) {
+	if ((protocol_version & ESOCK_SSLv2) == 0) 
+	    options |= SSL_OP_NO_SSLv2;
+	if ((protocol_version & ESOCK_SSLv3) == 0) 
+	    options |= SSL_OP_NO_SSLv3;
+	if ((protocol_version & ESOCK_TLSv1) == 0) 
+	    options |= SSL_OP_NO_TLSv1;
+	SSL_CTX_set_options(ctx, options);
     }
 }
 

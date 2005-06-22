@@ -1466,7 +1466,9 @@ expr({'fun',Line,Body}, Vt, St) ->
             case erl_internal:bif(F, A) of
                 true -> {[],St};
                 false -> {[],call_function(Line, F, A, St)}
-            end
+            end;
+	{function,_M,_F,_A} ->
+	    {[],St}
     end;
 expr({call,_Line,{atom,_Lr,is_record},[E,{atom,Ln,Name}]}, Vt, St0) ->
     {Rvt,St1} = expr(E, Vt, St0),

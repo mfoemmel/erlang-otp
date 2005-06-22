@@ -670,6 +670,12 @@ is_boolean f x
 is_boolean f y
 %hot
 
+is_function2 Fail=f acwo Arity => jump Fail
+is_function2 Fail=f Fun awo => jump Fail
+
+is_function2 f s s
+%macro: is_function2 IsFunction2 -fail_action
+
 # Allocating & initializing.
 allocate Need Regs | init Y => allocate_init Need Regs Y
 init Y1 | init Y2 => init2 Y1 Y2

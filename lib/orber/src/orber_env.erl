@@ -59,7 +59,8 @@
 	 ssl_server_cachetimeout/0, get_flags/0, typechecking/0,  
 	 exclude_codeset_ctx/0, exclude_codeset_component/0, partial_security/0,
 	 use_CSIv2/0, use_FT/0, ip_version/0, light_ifr/0, bidir_context/0,
-	 get_debug_level/0, getaddrstr/2, addr2str/1, iiop_packet_size/0]).
+	 get_debug_level/0, getaddrstr/2, addr2str/1, iiop_packet_size/0,
+	 iiop_ssl_ip_address_local/0, ip_address_local/0]).
 
 
 %%-----------------------------------------------------------------
@@ -84,7 +85,8 @@
 	 iiop_setup_connection_timeout, iiop_in_connection_timeout, iiop_acl,
 	 iiop_max_fragments, iiop_max_in_requests, iiop_max_in_connections, 
 	 iiop_backlog, objectkeys_gc_time, orbInitRef, orbDefaultInitRef,
-	 interceptors, local_interceptors, lightweight, secure, iiop_ssl_backlog, 
+	 interceptors, local_interceptors, lightweight, ip_address_local,
+	 secure, iiop_ssl_ip_address_local, iiop_ssl_backlog, 
 	 iiop_ssl_port, nat_iiop_ssl_port, ssl_server_certfile, 
 	 ssl_client_certfile, ssl_server_verify, ssl_client_verify, ssl_server_depth, 
 	 ssl_client_depth, ssl_server_cacertfile, ssl_client_cacertfile, 
@@ -193,8 +195,8 @@ info(IoDevice) ->
 		create_security_info(secure(), Info2);
 	    _ ->
 		lists:flatten(
-		  io_lib:format("=== Orber-~-9s System Information ===~n"
-				"       *** Orber is not running ***~n"
+		  io_lib:format("======= Orber Execution Environment ======~n"
+				"   *** Orber-~s is not running ***~n"
 				"==========================================~n",
 				[?ORBVSN]))
 	end,
@@ -213,12 +215,14 @@ info(IoDevice) ->
 
 create_main_info() ->
     {Major, Minor} = giop_version(),
-    [io_lib:format("=== Orber-~-9s System Information ===~n"
+    [io_lib:format("======= Orber Execution Environment ======~n"		   
+		   "Orber version.................: ~s~n"
 		   "Orber domain..................: ~s~n"
 		   "IIOP port number..............: ~p~n"
 		   "IIOP NAT port number..........: ~p~n"
 		   "Interface(s)..................: ~p~n"
 		   "Interface(s) NAT..............: ~p~n"
+		   "Local Interface (default).....: ~p~n"		   
 		   "Nodes in domain...............: ~p~n"
 		   "GIOP version (default)........: ~p.~p~n"
 		   "IIOP out timeout..............: ~p msec~n"
@@ -242,7 +246,8 @@ create_main_info() ->
 		   "orbInitRef....................: ~p~n"
 		   "orbDefaultInitRef.............: ~p~n",
 		   [?ORBVSN, domain(), iiop_port(), nat_iiop_port(), host(), 
-		    nat_host(), orber:orber_nodes(), Major, Minor,
+		    nat_host(), ip_address_local(),
+		    orber:orber_nodes(), Major, Minor,
 		    iiop_timeout(), iiop_connection_timeout(), 
 		    iiop_setup_connection_timeout(), iiop_out_ports(), 
 		    orber:iiop_connections(out), orber:iiop_connections_pending(), 
@@ -278,6 +283,7 @@ create_security_info(ssl, Info) ->
 				 "SSL IIOP port number..........: ~p~n"
 				 "SSL IIOP NAT port number......: ~p~n"
 				 "SSL IIOP backlog..............: ~p~n"
+				 "SSL IIOP Local Interface......: ~p~n"
 				 "SSL server certfile...........: ~p~n"
 				 "SSL server verification type..: ~p~n"
 				 "SSL server verification depth.: ~p~n"
@@ -296,7 +302,7 @@ create_security_info(ssl, Info) ->
 				 "SSL client cachetimeout.......: ~p~n"
 				 "=========================================~n",
 				 [iiop_ssl_port(), nat_iiop_ssl_port(), 
-				  iiop_ssl_backlog(), 
+				  iiop_ssl_backlog(), iiop_ssl_ip_address_local(),
 				  ssl_server_certfile(), ssl_server_verify(),
 				  ssl_server_depth(), ssl_server_cacertfile(), 
 				  ssl_server_keyfile(), ssl_server_password(), 
@@ -415,6 +421,15 @@ host() ->
 		    end
 	    end
     end.
+
+ip_address_local() ->
+    case application:get_env(orber, ip_address_local) of
+	{ok,I} when list(I) ->
+	    [I];
+	_ ->
+	    []
+    end.
+ 
 
 ip_address() ->
     ip_address(ip_version()).
@@ -740,6 +755,14 @@ secure() ->
 	    no
     end.
  
+iiop_ssl_ip_address_local() ->
+    case application:get_env(orber, iiop_ssl_ip_address_local) of
+	{ok,I} when list(I) ->
+	    [I];
+	_ ->
+	    []
+    end.
+
 iiop_ssl_backlog() ->
     case application:get_env(orber, iiop_ssl_backlog) of
 	{ok, Int} when integer(Int), Int >= 0 ->
@@ -1098,6 +1121,8 @@ configure(ip_address, Value, Status) when list(Value) ->
     do_safe_configure(ip_address, Value, Status);
 configure(ip_address, {multiple, Value}, Status) when list(Value) ->
     do_safe_configure(ip_address, {multiple, Value}, Status);
+configure(ip_address_local, Value, Status) when list(Value) ->
+    do_safe_configure(ip_address_local, Value, Status);
 %% Set the NAT IP-address we should use
 configure(nat_ip_address, Value, Status) when list(Value) ->
     do_safe_configure(nat_ip_address, Value, Status);
@@ -1119,6 +1144,8 @@ configure(iiop_acl, Value, Status) when list(Value) ->
 %% SSL settings
 configure(secure, ssl, Status) ->
     do_safe_configure(secure, ssl, Status);
+configure(iiop_ssl_ip_address_local, Value, Status) when list(Value) ->
+    do_safe_configure(iiop_ssl_ip_address_local, Value, Status);
 configure(iiop_ssl_backlog, Value, Status) when integer(Value), Value >= 0 ->
     do_safe_configure(iiop_ssl_backlog, Value, Status);
 configure(nat_iiop_ssl_port, Value, Status) when integer(Value), Value > 0 ->

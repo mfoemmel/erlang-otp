@@ -1,4 +1,4 @@
-%%% $Id: hipe_x86_ra_fp_ls.erl,v 1.3 2004/02/09 22:24:25 kostis Exp $
+%%% $Id$
 %%% Linear Scan register allocator for x86
 
 -module(hipe_x86_ra_fp_ls).

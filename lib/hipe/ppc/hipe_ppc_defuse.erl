@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_ppc_defuse.erl,v 1.8 2004/12/06 03:09:39 mikpe Exp $
+%%% $Id$
 
 -module(hipe_ppc_defuse).
 -export([insn_def_all/1, insn_use_all/1]).

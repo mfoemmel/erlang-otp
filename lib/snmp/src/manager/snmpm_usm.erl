@@ -142,7 +142,7 @@ authenticate_incoming(Packet, UsmSecParams, UsmUser, SecLevel) ->
 		    ok;
 		false -> 
 		    error(usmStatsWrongDigests,
-			  ?usmStatsWrongDigests, SecName)
+			  ?usmStatsWrongDigests_instance, SecName)
 	    end;
 	false ->  % noAuth
 	    ok
@@ -150,9 +150,9 @@ authenticate_incoming(Packet, UsmSecParams, UsmUser, SecLevel) ->
 
 
 	    
-is_auth(?usmNoAuthProtocol, _, _, _, SecName, _, _, _) -> % 3.2.5
+is_auth(usmNoAuthProtocol, _, _, _, SecName, _, _, _) -> % 3.2.5
     error(usmStatsUnsupportedSecLevels,
-	  ?usmStatsUnsupportedSecLevels, SecName);
+	  ?usmStatsUnsupportedSecLevels_instance, SecName);
 is_auth(AuthProtocol, AuthKey, AuthParams, Packet, SecName,
 	MsgAuthEngineID, MsgAuthEngineBoots, MsgAuthEngineTime) ->
     case auth_in(AuthProtocol, AuthKey, AuthParams, Packet) of
@@ -258,7 +258,7 @@ do_decrypt(Data, #usm_user{sec_name = SecName,
 
 try_decrypt(usmNoPrivProtocol, _, _, _, SecName) -> % 3.2.5
     error(usmStatsUnsupportedSecLevels, 
-	  ?usmStatsUnsupportedSecLevels, SecName);
+	  ?usmStatsUnsupportedSecLevels_instance, SecName);
 try_decrypt(usmDESPrivProtocol, 
 	    PrivKey, MsgPrivParams, EncryptedPDU, SecName) ->
     case (catch des_decrypt(PrivKey, MsgPrivParams, EncryptedPDU)) of
@@ -341,17 +341,19 @@ encrypt(Data, PrivProtocol, PrivKey, SecLevel) ->
 	false -> % 3.1.4b
 	    {Data, []};
 	true -> % 3.1.4a
-	    case (catch try_encrypt(PrivProtocol, PrivKey, Data)) of
+	    case try_encrypt(PrivProtocol, PrivKey, Data) of
 		{ok, ScopedPduData, MsgPrivParams} ->
 		    {snmp_pdus:enc_oct_str_tag(ScopedPduData), MsgPrivParams};
+		{error, Reason} ->
+		    error(Reason);
 		_ ->
 		    error(encryptionError)
 	    end
     end.
 
-try_encrypt(?usmNoPrivProtocol, _PrivKey, _Data) -> % 3.1.2
+try_encrypt(usmNoPrivProtocol, _PrivKey, _Data) -> % 3.1.2
     error(unsupportedSecurityLevel);
-try_encrypt(?usmDESPrivProtocol, PrivKey, Data) ->
+try_encrypt(usmDESPrivProtocol, PrivKey, Data) ->
     des_encrypt(PrivKey, Data).
 
 authenticate_outgoing(Message, UsmSecParams, 

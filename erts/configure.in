@@ -624,7 +624,7 @@ dnl Interactive UX needs <net/errno.h> for socket related error codes.
 dnl Some Linuxes needs <sys/socketio.h> instead of <sys/sockio.h>
 dnl
 AC_CHECK_HEADERS(fcntl.h limits.h unistd.h syslog.h dlfcn.h ieeefp.h \
-                 poll.h sys/stropts.h \
+                 sys/stropts.h \
                  sys/ioctl.h sys/time.h sys/uio.h sys/sockio.h sys/socketio.h \
                  net/errno.h malloc.h mach-o/dyld.h arpa/nameser.h)
 
@@ -743,7 +743,7 @@ dnl inet_gethost with ipv6 support.
 AC_CHECK_FUNCS([getipnodebyname getipnodebyaddr])
 
 AC_CHECK_FUNCS([ieee_handler fpsetmask finite isnan isinf res_gethostbyname dlopen \
-		poll pread pwrite writev memmove strerror strerror_r strncasecmp \
+		pread pwrite writev memmove strerror strerror_r strncasecmp \
 		gethrtime localtime_r gmtime_r mremap memcpy mallopt])
 AC_FUNC_SETVBUF_REVERSED
 
@@ -1101,6 +1101,51 @@ case $erl_gethrvtime in
 	;;
   *)
 	AC_MSG_RESULT(not working)
+
+	dnl
+	dnl Check if clock_gettime (linux) is working
+	dnl
+
+	AC_MSG_CHECKING([if clock_gettime works])
+	save_libs=$LIBS
+	LIBS="-lrt"
+	AC_TRY_RUN([
+	#include <stdlib.h>
+	#include <unistd.h>
+	#include <string.h>
+	#include <stdio.h>
+	#include <time.h>
+	int main() {
+	    long long start, stop;
+	    int i;
+	    struct timespec tp;
+
+	    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tp) < 0)
+	      exit(1);
+	    start = ((long long)tp.tv_sec * 1000000000LL) + (long long)tp.tv_nsec;
+	    for (i = 0; i < 100; i++)
+	      clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tp);
+	    stop = ((long long)tp.tv_sec * 1000000000LL) + (long long)tp.tv_nsec;
+	    if (start == 0)
+	      exit(4);
+	    if (start == stop)
+	      exit(5);
+	    exit(0); return 0;
+	  }
+	], erl_clock_gettime=true, erl_clock_gettime=false, erl_clock_gettime=false)
+	LIBS=$save_libs
+	case $erl_clock_gettime in
+	  true)
+		AC_DEFINE(HAVE_CLOCK_GETTIME)
+		AC_MSG_RESULT(using clock_gettime)
+		LIBRT=-lrt
+		;;
+	  *)
+		AC_MSG_RESULT(not working)
+		LIBRT=
+		;;
+	esac
+	AC_SUBST(LIBRT)
 	;;
 esac
 
@@ -1209,6 +1254,41 @@ if test X${enable_kernel_poll} = Xyes; then
   AC_DEFINE(ENABLE_KERNEL_POLL)
 fi
 
+#
+# Check for working poll().
+#
+AC_MSG_CHECKING([for working poll()])
+AC_TRY_RUN([
+#include <poll.h>
+main()
+{
+#ifdef _POLL_EMUL_H_
+  exit(1); /* Implemented using select() -- fail */
+#else
+  struct pollfd fds[1];
+  int fd;
+  fd = open("/dev/null", 1);
+  fds[0].fd = fd;
+  fds[0].events = POLLIN;
+  fds[0].revents = 0;
+  if (poll(fds, 1, 0) < 0 || (fds[0].revents & POLLNVAL) != 0) {
+    exit(1);  /* Does not work for devices -- fail */
+  }
+  exit(0);
+#endif
+}
+], poll_works=true, poll_works=false, poll_works=false)
+case $poll_works in
+true)
+	AC_MSG_RESULT(ok)
+	;;
+*)
+	AC_DEFINE(USE_SELECT)
+	AC_MSG_RESULT(broken or based on select())
+	;;
+esac
+
+
 dnl ----------------------------------------------------------------------
 dnl Stuff that should be moved into their respective application
 dnl ----------------------------------------------------------------------
@@ -1247,6 +1327,7 @@ fi
 
 DED_LD=ld
 DED_LD_FLAG_RUNTIME_LIBRARY_PATH="-R"
+STATIC_CFLAGS=""
 
 case $host_os in
 	win32)
@@ -1271,6 +1352,7 @@ case $host_os in
 		DED_CFLAGS="$DED_CFLAGS -fno-common"
 		DED_LD="$CC"
 		DED_LD_FLAG_RUNTIME_LIBRARY_PATH=
+		STATIC_CFLAGS="-mdynamic-no-pic"
 	;;
 	osf*)
 		# NOTE! Whitespace after -rpath is important.
@@ -1301,6 +1383,7 @@ AC_SUBST(DED_CFLAGS)
 AC_SUBST(DED_LD)
 AC_SUBST(DED_LDFLAGS)
 AC_SUBST(DED_LD_FLAG_RUNTIME_LIBRARY_PATH)
+AC_SUBST(STATIC_CFLAGS)
 
 dnl
 dnl We should look for a compiler that handles jump tables, for beam_emu 

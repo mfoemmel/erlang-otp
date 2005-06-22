@@ -209,17 +209,29 @@ load("Port " ++ Port, []) ->
     end;
 load("BindAddress " ++ Address, []) ->
     ?DEBUG("load -> Address:  ~p",[Address]),
-    case clean(Address) of
+    %% If an ipv6 address is provided in URL-syntax strip the
+    %% url specific part e.i. "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]"
+    %% -> "FEDC:BA98:7654:3210:FEDC:BA98:7654:3210"
+    NewAddress = string:strip(string:strip(clean(Address), 
+					   left, "["), 
+			      right, "]"),
+    case NewAddress of
 	"*" ->
 	    {ok, [], {bind_address,any}};
 	CAddress ->
 	    ?CDEBUG("load -> CAddress:  ~p",[CAddress]),
-	    case inet:getaddr(CAddress,inet) of
+	    case (catch inet:getaddr(CAddress,inet6)) of
 		{ok, IPAddr} ->
 		    ?CDEBUG("load -> IPAddr:  ~p",[IPAddr]),
-		    {ok, [], {bind_address,IPAddr}};
-		{error, _} ->
-		    {error, ?NICE(CAddress++" is an invalid address")}
+		    {ok, [], {bind_address, IPAddr}};
+		_ ->
+		    case inet:getaddr(CAddress, inet) of
+			{ok, IPAddr} ->
+			    ?CDEBUG("load -> IPAddr:  ~p",[IPAddr]),
+			    {ok, [], {bind_address,IPAddr}};
+			{error, _} ->
+			    {error, ?NICE(CAddress++" is an invalid address")}
+		    end
 	    end
     end;
 load("KeepAlive " ++ OnorOff, []) ->

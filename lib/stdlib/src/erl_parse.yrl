@@ -258,6 +258,8 @@ receive_expr -> 'receive' cr_clauses 'after' expr clause_body 'end' :
 
 fun_expr -> 'fun' atom '/' integer :
 	{'fun',line('$1'),{function,element(3, '$2'),element(3, '$4')}}.
+fun_expr -> 'fun' atom ':' atom '/' integer :
+	{'fun',line('$1'),{function,element(3, '$2'),element(3, '$4'),element(3,'$6')}}.
 fun_expr -> 'fun' fun_clauses 'end' :
 	build_fun(line('$1'), '$2').
 

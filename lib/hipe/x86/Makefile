@@ -9,7 +9,7 @@
 # the License for the specific language governing rights and limitations
 # under the License.
 #
-#     $Id: Makefile,v 1.44 2005/04/11 13:23:07 mikpe Exp $
+#     $Id$
 #
 
 ifndef EBIN
@@ -53,7 +53,6 @@ MODULES=hipe_rtl_to_x86 \
 	hipe_x86_ra_finalise \
 	hipe_x86_ra_fp_ls \
 	hipe_x86_ra_ls \
-	hipe_x86_ra_ls_postconditions \
 	hipe_x86_ra_naive \
 	hipe_x86_ra_postconditions \
 	hipe_x86_registers \
@@ -118,7 +117,6 @@ $(EBIN)/hipe_x86_ra: ../main/hipe.hrl
 $(EBIN)/hipe_x86_ra_dummy.beam: ../main/hipe.hrl
 $(EBIN)/hipe_x86_ra_fp_ls.beam: ../main/hipe.hrl
 $(EBIN)/hipe_x86_ra_ls.beam: ../main/hipe.hrl
-$(EBIN)/hipe_x86_ra_ls_postconditions.beam: ../main/hipe.hrl
 $(EBIN)/hipe_x86_ra_postconditions.beam: ../main/hipe.hrl
 $(EBIN)/hipe_x86_registers.beam: ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_x86_x87.beam: ../main/hipe.hrl

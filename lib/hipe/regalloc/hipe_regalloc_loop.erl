@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_regalloc_loop.erl,v 1.1 2004/05/17 21:17:47 mikpe Exp $
+%%% $Id$
 %%% Common wrapper for graph_coloring and coalescing regallocs.
 
 -module(hipe_regalloc_loop).

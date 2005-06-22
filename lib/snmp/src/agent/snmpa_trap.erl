@@ -336,9 +336,11 @@ make_varbind({VarOid, ASN1Type, Value}) ->
 	{value, Type, Val} ->
 	    #varbind{oid = VarOid, variabletype = Type, value = Val};
 	{error, Reason} -> 
-	    user_err("snmpa_trap: Invalid value: Oid ~w, Val:~w:"
-		     "~n   ~w",
-		     [VarOid, Value, Reason]),
+	    user_err("snmpa_trap: Invalid value: ~w"
+		     "~n   Oid:  ~w"
+		     "~n   Val:  ~w"
+		     "~n   Type: ~w",
+		     [Reason, VarOid, Value, ASN1Type]),
 	    throw(error)
     end.
 

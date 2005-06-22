@@ -20,7 +20,7 @@
 %%
 %% Author contact: richardc@csd.uu.se
 %%
-%% $Id: cerl_prettypr.erl,v 1.2 2004/08/13 14:27:14 richardc Exp $
+%% $Id$
 %%
 %% =====================================================================
 %%

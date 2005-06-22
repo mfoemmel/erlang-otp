@@ -1046,32 +1046,44 @@ define_cols([{#mc_object_type{name        = NameOfCol,
 		 [{'$no_name$', Int}|Fields], NameOfEntry, TableName,ColMEs) ;
 
 %% Ok. done. All fields are eaten.
-define_cols(Rest, _SubIndex,[], _NameOfEntry, _TableName,ColMEs) ->
+define_cols(Rest, _SubIndex, [], _NameOfEntry, _TableName, ColMEs) ->
     {ColMEs, Rest};
+
+
 %% Error Handling
 
 %% The name of the field and object is the same
 define_cols([{#mc_object_type{name        = NameOfCol,
 			      kind        = Kind,
 			      name_assign = SubIndex}, Oline}|Rest],
-	    SubIndex2,[{NameOfCol,_Type2}|Fields], 
-	    NameOfEntry,TableName,ColMEs) ->
+	    SubIndex2, [{NameOfCol, _Type2}|Fields], 
+	    NameOfEntry, TableName, ColMEs) ->
+    l("defcols -> object_type (name of field and object is the same):~n"
+      "   NameOfCol:   ~p~n"
+      "   Kind:        ~p~n"
+      "   SubIndex:    ~p~n"
+      "   Oline:       ~p n"
+      "   SubIndex2:   ~p~n"
+      "   NameOfEntry  ~p~n"
+      "   TableName    ~p~n",
+      [NameOfCol,Kind,SubIndex,Oline,SubIndex2,NameOfEntry,TableName]),    
     SIok = case SubIndex of
 	       {Parent,[_SI]} when Parent =/= NameOfEntry ->
 		   snmpc_lib:print_error(
 		     "Invalid parent ~p for table column ~p (should be ~p).",
 		     [Parent,NameOfCol,NameOfEntry],Oline),
-		   false;
-	       {NameOfEntry,[SI]} when SI =/= SubIndex ->
+		   error;
+	       {NameOfEntry,[SubIndex2]} ->
+		   ok;
+	       {NameOfEntry,[SI]} ->
 		   snmpc_lib:print_error(
 		     "Invalid column number ~p for column ~p.",
-		     [SI,NameOfCol],Oline),
-		   false;
-	       {NameOfEntry,[SubIndex]} ->
-		   ok;
+		     [SI, NameOfCol], Oline),
+		   error;
 	       _Q ->
 		   snmpc_lib:print_error(
-		     "Invalid parent for column ~p.",[NameOfCol],Oline)
+		     "Invalid parent for column ~p.",[NameOfCol],Oline),
+		   error
 	   end,
     Kok = case Kind of
 	      {variable,_} ->
@@ -1079,14 +1091,14 @@ define_cols([{#mc_object_type{name        = NameOfCol,
 	      _Q2 ->
 		  snmpc_lib:print_error(
 		    "Expected a table column.",[],Oline),
-		  false
+		  error
 	  end,
-    case {SIok,Kok} of
-	{ok,ok} ->
+    case {SIok, Kok} of
+	{ok, ok} ->
 	    snmpc_lib:print_error("Invalid table column definition for"
-					 " ~p.",[NameOfCol],Oline);
+				  " ~p.",[NameOfCol],Oline);
 	_Q4 ->
-	    done
+	    done % already reported
     end,
     define_cols(Rest,SubIndex2+1,Fields,NameOfEntry,TableName,ColMEs);
 

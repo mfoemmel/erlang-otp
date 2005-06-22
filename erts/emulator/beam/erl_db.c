@@ -108,6 +108,8 @@ static Eterm ms_delete_all_buff[8]; /* To compare with for deletion
 */
 static void meta_mark_free(int idx);
 static void free_table(DbTable *tb);
+static void free_fixations(DbTable *tb);
+static Eterm free_table_cont(Process *p, DbTable *tb, int first);
 static void print_table(CIO fd, int show,  DbTable* tb);
 static int next_prime(int n);
 static BIF_RETTYPE ets_select_delete_1(Process *p, Eterm a1);
@@ -1056,6 +1058,13 @@ BIF_RETTYPE ets_db_delete_1(BIF_ALIST_1)
 {
     DbTable* tb;
 
+    if (is_CP(BIF_ARG_1)) {
+	/*
+	 * We have been called through a trap.
+	 */
+	return free_table_cont(BIF_P, (DbTable *) BIF_ARG_1, 0);
+    }
+
 #ifdef HARDDEBUG
     erl_printf(CERR,"ets:delete(");
     display(BIF_ARG_1,CERR);
@@ -1073,15 +1082,34 @@ BIF_RETTYPE ets_db_delete_1(BIF_ALIST_1)
     if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE)) == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    meta_mark_free(tb->common.slot);
-    db_tables[tb->common.slot].t = NULL;
 
-    no_tabs--;
+    /*
+     * Clear all access bits to prevent any ets operation to access the
+     * table while it is being deleted.
+     */
+    tb->common.status &= ~(DB_PROTECTED|DB_PUBLIC|DB_PRIVATE);
+    if (tb->common.owner != BIF_P->id) {
+	Eterm dummy;
+	Eterm meta_tuple[3];
 
-    db_erase_bag_exact2(&(meta_pid_to_tab->hash),tb->common.owner,
-			make_small(tb->common.slot));
-    free_table(tb); /* Takes care of different table types */
-    BIF_RET(am_true);
+	/*
+	 * The process is being deleted by a process other than its owner.
+	 * To make sure that the table will be completely deleted if the
+	 * current process will be killed (e.g. by an EXIT signal), we will
+	 * now transfer the ownership to the current process.
+	 */
+	db_erase_bag_exact2(&(meta_pid_to_tab->hash), tb->common.owner,
+			    make_small(tb->common.slot));
+	BIF_P->flags |= F_USING_DB;
+	tb->common.owner = BIF_P->id;
+	db_put_hash(NULL,
+		    &(meta_pid_to_tab->hash),
+		    TUPLE2(meta_tuple,BIF_P->id,make_small(tb->common.slot)),
+		    &dummy);
+    }
+
+    free_fixations(tb);
+    return free_table_cont(BIF_P, tb, 1);
 }
 
 /* 
@@ -2335,21 +2363,27 @@ DbTable* db_get_table(Process *p, Eterm id, int what)
     return NULL;
 }
 
-static void free_table(DbTable *tb) {
-    /* First free fixation metadata */
+static void free_fixations(DbTable *tb)
+{
     DbFixation *fix;
+    DbFixation *next_fix;
 
-    for (fix = tb->common.fixations; fix != NULL; fix = fix->next) {
+    fix = tb->common.fixations;
+    while (fix != NULL) {
+	next_fix = fix->next;
 	db_erase_bag_exact2(&(meta_pid_to_fixed_tab->hash),
 			    fix->pid,
 			    make_small(tb->common.slot));
-    }
-    while (tb->common.fixations != NULL) {
-	fix = tb->common.fixations;
-	tb->common.fixations = fix->next;
 	erts_db_free(ERTS_ALC_T_DB_FIXATION,
 		     tb, (void *) fix, sizeof(DbFixation));
+	fix = next_fix;
     }
+    tb->common.fixations = NULL;
+}
+
+static void free_table(DbTable *tb)
+{
+    free_fixations(tb);
 
     if (IS_HASH_TABLE(tb->common.status))
 	free_hash_table(&(tb->hash));
@@ -2361,6 +2395,37 @@ static void free_table(DbTable *tb) {
 		 tb->common.status);
 
     erts_db_free(ERTS_ALC_T_DB_TABLE, tb, (void *) tb, sizeof(DbTable));
+}
+
+static BIF_RETTYPE free_table_cont(Process* p, DbTable *tb, int first)
+{
+    Eterm result;
+
+    if (IS_HASH_TABLE(tb->common.status)) {
+	result = erts_free_hash_table_cont(&(tb->hash), first);
+    } else if (IS_TREE_TABLE(tb->common.status)) {
+	result = erts_free_tree_table_cont(&(tb->tree), first);
+    } else {
+    /*TT*/
+	erl_exit(1,"Panic: Unknown table type (status word = 0x%08x)!",
+		 tb->common.status);
+    }
+
+    if (result == 0) {
+	/* More work to be done. Let other processes work and call us again. */
+	BUMP_ALL_REDS(p);
+	BIF_TRAP1(bif_export[BIF_ets_db_delete_1], p, (Eterm) tb);
+    } else {
+	/* Completely done - we will not get called again. */
+	meta_mark_free(tb->common.slot);
+	db_tables[tb->common.slot].t = NULL;
+	no_tabs--;
+	db_erase_bag_exact2(&(meta_pid_to_tab->hash),tb->common.owner,
+			    make_small(tb->common.slot));
+	erts_db_free(ERTS_ALC_T_DB_TABLE, tb, (void *) tb, sizeof(DbTable));
+	BUMP_REDS(p, tb->common.nitems/15);
+	return am_true;
+    }
 }
 
 static void print_table(CIO fd, int show,  DbTable* tb)

@@ -1,4 +1,4 @@
-%%% $Id: hipe_x86_cfg.erl,v 1.35 2005/04/24 22:32:00 mikpe Exp $
+%%% $Id$
 %%% x86 control-flow graph
 
 -module(hipe_x86_cfg).

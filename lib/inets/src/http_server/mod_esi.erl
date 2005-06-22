@@ -373,10 +373,10 @@ get_environment(Type,Input,Env,ModData)->
 		    mod_alias:real_name(ModData#mod.config_db,[$/|Input],
 					Aliases),
 		[{path_info,"/"++httpd_util:decode_hex(Input)},
-		 {"path-translated", PathTranslated} | Env];
+		 {path_translated, PathTranslated} | Env];
 
 	    entity_body ->
-		[{"content-length", httpd_util:flatlength(Input)} | Env];
+		[{content_length, httpd_util:flatlength(Input)} | Env];
 
 	    no_input ->
 		Env
@@ -388,7 +388,7 @@ get_environment(ModData, Env)->
 	undefined ->
 	    Env;
 	RemoteUser ->
-	    [{"remote-user",RemoteUser} | Env]
+	    [{remote_user, RemoteUser} | Env]
     end.
 
 
@@ -582,9 +582,9 @@ parse_headers([?CR, ?LF], Acc) ->
 parse_headers([?CR, ?LF, ?CR], Acc) ->
     {?MODULE, parse_headers, [?CR, ?LF, ?CR, Acc]};
 parse_headers([?CR, ?LF, ?CR, ?LF], Acc) ->
-    {lists:reverse(Acc) ++ [?CR, ?LF], []};
+    {lists:reverse(Acc) ++ [?CR, ?LF, ?CR, ?LF], []};
 parse_headers([?CR, ?LF, ?CR, ?LF | Rest], Acc) ->
-    {lists:reverse(Acc) ++ [?CR, ?LF], Rest};
+    {lists:reverse(Acc) ++ [?CR, ?LF, ?CR, ?LF], Rest};
 parse_headers([Char | Rest], Acc) ->
     parse_headers(Rest, [Char | Acc]).
 

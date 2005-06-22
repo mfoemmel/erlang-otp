@@ -1,6 +1,8 @@
 {"%VSN%",
- [{"1.1.3", [{restart_application, ssl}]}], 
- [{"1.1.3", [{restart_application, ssl}]}]
+ [{"1.2.3", [{restart_application, ssl}]},
+  {"1.1.3", [{restart_application, ssl}]}], 
+ [{"1.2.3", [{restart_application, ssl}]},
+  {"1.1.3", [{restart_application, ssl}]}]
 }.
 
 

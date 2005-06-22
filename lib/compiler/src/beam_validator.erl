@@ -327,21 +327,53 @@ valfun_1({deallocate,_}, #vst{current=#st{numy=NumY}}) ->
 %% Catch & try.
 valfun_1({'catch',Dst,{f,Fail}}, Vst0) when Fail /= none ->
     Vst = #vst{current=#st{ct=Fails}=St} = 
-	set_type_y({catchtag,Fail}, Dst, Vst0),
-    Vst#vst{current=St#st{ct=[Fail|Fails]}};
+	set_type_y({catchtag,[Fail]}, Dst, Vst0),
+    Vst#vst{current=St#st{ct=[[Fail]|Fails]}};
 valfun_1({'try',Dst,{f,Fail}}, Vst0) ->
     Vst = #vst{current=#st{ct=Fails}=St} = 
-	set_type_y({trytag,Fail}, Dst, Vst0),
-    Vst#vst{current=St#st{ct=[Fail|Fails]}};
+	set_type_y({trytag,[Fail]}, Dst, Vst0),
+    Vst#vst{current=St#st{ct=[[Fail]|Fails]}};
+valfun_1({catch_end,Reg}, #vst{current=#st{ct=[Fail|Fails]}=St0}=Vst0) ->
+    case get_special_y_type(Reg, Vst0) of
+	{catchtag,Fail} ->
+	    Vst = #vst{current=St} = 
+		set_type_y(initialized_ct, Reg, 
+			   Vst0#vst{current=St0#st{ct=Fails}}),
+	    Xs = gb_trees_from_list([{0,term}]),
+	    Vst#vst{current=St#st{x=Xs}};
+	Type ->
+	    error({bad_type,Type})
+    end;
+valfun_1({try_end,Reg}, #vst{current=#st{ct=[Fail|Fails]}=St}=Vst) ->
+    case get_special_y_type(Reg, Vst) of
+	{trytag,Fail} ->
+	    set_type_reg(initialized_ct, Reg, 
+			 Vst#vst{current=St#st{ct=Fails}});
+	Type ->
+	    error({bad_type,Type})
+    end;
+valfun_1({try_case,Reg}, #vst{current=#st{ct=[Fail|Fails]}=St0}=Vst0) ->
+    case get_special_y_type(Reg, Vst0) of
+	{trytag,Fail} ->
+	    Vst = #vst{current=St} = 
+		set_type_y(initialized_ct, Reg, 
+			   Vst0#vst{current=St0#st{ct=Fails}}),
+	    Xs = gb_trees_from_list([{0,{atom,[]}},{1,term},{2,term}]), %XXX
+	    Vst#vst{current=St#st{x=Xs}};
+	Type ->
+	    error({bad_type,Type})
+    end;
 valfun_1(I, Vst) ->
     valfun_2(I, Vst).
 
 %% Update branched state if necessary and try next set of instructions.
 valfun_2(I, #vst{current=#st{ct=[]}}=Vst) ->
     valfun_3(I, Vst);
-valfun_2(I, #vst{current=#st{ct=[Fail|_]}}=Vst) -> 
+valfun_2(I, #vst{current=#st{ct=[[Fail]|_]}}=Vst) when is_integer(Fail) ->
     %% Update branched state
-    valfun_3(I, branch_state(Fail, Vst)).
+    valfun_3(I, branch_state(Fail, Vst));
+valfun_2(_, _) ->
+    error(ambigous_catch_try_state).
 
 %% Handle the remaining floating point instructions here.
 %% Floating point.
@@ -450,37 +482,6 @@ valfun_4(timeout, #vst{current=St}=Vst) ->
     Vst#vst{current=St#st{x=init_regs(0, term)}};
 valfun_4(send, Vst) ->
     call(2, Vst);
-%% Catch & try.
-valfun_4({catch_end,Reg}, #vst{current=#st{ct=[Fail|Fails]}=St0}=Vst0) ->
-    case get_special_y_type(Reg, Vst0) of
-	{catchtag,Fail} ->
-	    Vst = #vst{current=St} = 
-		set_type_y(initialized_ct, Reg, 
-			   Vst0#vst{current=St0#st{ct=Fails}}),
-	    Xs = gb_trees_from_list([{0,term}]),
-	    Vst#vst{current=St#st{x=Xs}};
-	Type ->
-	    error({bad_type,Type})
-    end;
-valfun_4({try_end,Reg}, #vst{current=#st{ct=[Fail|Fails]}=St}=Vst) ->
-    case get_special_y_type(Reg, Vst) of
-	{trytag,Fail} ->
-	    set_type_reg(initialized_ct, Reg, 
-			 Vst#vst{current=St#st{ct=Fails}});
-	Type ->
-	    error({bad_type,Type})
-    end;
-valfun_4({try_case,Reg}, #vst{current=#st{ct=[Fail|Fails]}=St0}=Vst0) ->
-    case get_special_y_type(Reg, Vst0) of
-	{trytag,Fail} ->
-	    Vst = #vst{current=St} = 
-		set_type_y(initialized_ct, Reg, 
-			   Vst0#vst{current=St0#st{ct=Fails}}),
-	    Xs = gb_trees_from_list([{0,{atom,[]}},{1,term},{2,term}]),
-	    Vst#vst{current=St#st{x=Xs}};
-	Type ->
-	    error({bad_type,Type})
-    end;
 valfun_4({set_tuple_element,Src,Tuple,I}, Vst) ->
     assert_term(Src, Vst),
     assert_type({tuple_element,I+1}, Tuple, Vst);
@@ -786,11 +787,11 @@ assert_term(Src, Vst) ->
 %%			NOT safe to use in any other way (will not crash the
 %%			emulator, but clearly points to a bug in the compiler).
 %%
-%% {catchtag,Lbl}	A special term used within a catch. Must only be used
+%% {catchtag,[Lbl]}	A special term used within a catch. Must only be used
 %%			by the catch instructions; NOT safe to use in other
 %%			instructions.
 %%
-%% {trytag,Lbl}		A special term used within a try block. Must only be
+%% {trytag,[Lbl]}	A special term used within a try block. Must only be
 %%			used by the catch instructions; NOT safe to use in other
 %%			instructions.
 %%
@@ -946,12 +947,20 @@ merge_states_1(#st{x=Xs0,y=Ys0,numy=NumY0,h=H0,ct=Ct0,bsm=Bsm0}=St,
     NumY = merge_stk(NumY0, NumY1),
     Xs = merge_regs(Xs0, Xs1),
     Ys = merge_y_regs(Ys0, Ys1),
-    Ct = merge_stk(Ct0, Ct1),
+    Ct = merge_ct(Ct0, Ct1),
     Bsm = merge_bsm(Bsm0, Bsm1),
     St#st{x=Xs,y=Ys,numy=NumY,h=min(H0, H1),ct=Ct,bsm=Bsm}.
 
 merge_stk(S, S) -> S;
 merge_stk(_, _) -> undecided.
+
+merge_ct(S, S) -> S;
+merge_ct(Ct0, Ct1) -> merge_ct_1(Ct0, Ct1).
+
+merge_ct_1([C0|Ct0], [C1|Ct1]) ->
+    [ordsets:from_list(C0++C1)|merge_ct_1(Ct0, Ct1)];
+merge_ct_1([], []) -> [];
+merge_ct_1(_, _) -> undecided.
 
 merge_regs(Rs0, Rs1) ->
     Rs = merge_regs_1(gb_trees:to_list(Rs0), gb_trees:to_list(Rs1)),
@@ -992,6 +1001,10 @@ merge_types(uninitialized=I, _) -> I;
 merge_types(_, uninitialized=I) -> I;
 merge_types(initialized=I, _) -> I;
 merge_types(_, initialized=I) -> I;
+merge_types({catchtag,T0},{catchtag,T1}) ->
+    {catchtag,ordsets:from_list(T0++T1)};
+merge_types({trytag,T0},{trytag,T1}) ->
+    {trytag,ordsets:from_list(T0++T1)};
 merge_types({tuple,A}, {tuple,B}) ->
     {tuple,[min(tuple_sz(A), tuple_sz(B))]};
 merge_types({Type,A}, {Type,B}) 

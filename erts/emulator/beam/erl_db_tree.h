@@ -30,20 +30,24 @@ typedef struct db_table_tree {
     Eterm  owner;             /* Pid of the creator */
     Eterm  the_name;          /* an atom   */
     Eterm  id;                /* atom | integer */
-    Uint32 status;            /* bit masks defining type etc */
-    int slot;                 /* slot in db_tables */
-    int keypos;               /* defaults to 1 */
-    int nitems;               /* Total number of items */
+    Uint nitems;              /* Total number of items */
     Uint memory_size;         /* Total memory size. NOTE: in bytes! */
-    int kept_items;           /* Always empty for trees */
     Uint megasec,sec,microsec; /* Last fixation time */
     DbFixation *fixations;     /* List of processes who have fixed 
 				  the table */
 
+    /* Common 32-bit fields */
+    Uint32 status;            /* bit masks defining type etc */
+    int slot;                 /* slot in db_tables */
+    int keypos;               /* defaults to 1 */
+    int kept_items;           /* Always empty for trees */
+
+    /* Tree-specific fields */
     TreeDbTerm *root;         /* The tree root */
     TreeDbTerm **stack;       /* The first/next stack */
     Uint stack_pos;           /* Current position on stack */
     Uint slot_pos;            /* Current "slot" */
+    Uint deletion;		/* Being deleted */
 } DbTableTree;
 
 /*
@@ -121,6 +125,8 @@ void db_print_tree(CIO fd /* [in] */,
 		   int show /* [in] */,
 		   DbTableTree *tb /* [in] */);
 void free_tree_table(DbTableTree *tb /* [in out] */);
+
+int erts_free_tree_table_cont(DbTableTree *tb, int first);
 
 void erts_db_tree_foreach_offheap(DbTableTree *tab,
 				  void (*)(ErlOffHeap *, void *),

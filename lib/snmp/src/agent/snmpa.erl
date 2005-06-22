@@ -29,6 +29,8 @@
 	 
 	 get_symbolic_store_db/0,
 	 which_aliasnames/0, 
+	 which_tables/0, 
+	 which_variables/0, 
 	 name_to_oid/1, name_to_oid/2, 
 	 oid_to_name/1, oid_to_name/2,
 	 int_to_enum/2, int_to_enum/3, 
@@ -116,6 +118,12 @@ get_symbolic_store_db() ->
 
 which_aliasnames() ->
     snmpa_symbolic_store:which_aliasnames().
+
+which_tables() ->
+    snmpa_symbolic_store:which_tables().
+
+which_variables() ->
+    snmpa_symbolic_store:which_variables().
 
 
 %%-----------------------------------------------------------------

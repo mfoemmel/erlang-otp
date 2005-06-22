@@ -366,7 +366,9 @@ encrypt(Data, PrivProtocol, PrivKey, SecLevel) ->
 		{ok, ScopedPduData, MsgPrivParams} ->
 		    ?vtrace("encrypt -> encode tag",[]),
 		    {snmp_pdus:enc_oct_str_tag(ScopedPduData), MsgPrivParams};
-		_ ->
+                {error, Reason} ->
+                    error(Reason);
+ 		_ ->
 		    error(encryptionError)
 	    end
     end.

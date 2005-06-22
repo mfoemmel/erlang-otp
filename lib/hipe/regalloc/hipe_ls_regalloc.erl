@@ -21,9 +21,9 @@
 %%  History  :	* 2000-04-07 Erik Johansson (happi@csd.uu.se): Created.
 %%              * 2001-07-16 EJ: Made less sparc-specific.
 %% CVS:
-%%    $Author: kostis $
-%%    $Date: 2004/02/02 00:12:59 $
-%%    $Revision: 1.28 $
+%%    $Author: pergu $
+%%    $Date: 2005/05/11 10:40:12 $
+%%    $Revision: 1.30 $
 %% =====================================================================
 %% Exported functions (short description):
 %%   regalloc(CFG,PhysRegs,Entrypoints, Options) -> 
@@ -43,7 +43,7 @@
 
 -module(hipe_ls_regalloc).
 -export([regalloc/7]).
-%%-define(DEBUG,1).
+%-define(DEBUG,1).
 -define(HIPE_INSTRUMENT_COMPILER, true).
 -include("../main/hipe.hrl").
 
@@ -177,7 +177,9 @@ intervals([L|ToDO],Intervals,InstructionNr,CFG,Liveness,SuccMap, Target) ->
   intervals(ToDO, Intervals4, NewINr+1, CFG, Liveness, SuccMap, Target);
 intervals([],Intervals,_,_,_,_, _) -> 
   %% Return the calculated intervals
-  interval_to_list(Intervals).
+  LI =interval_to_list(Intervals),
+  %io:format("Intervals:~n~p~n", [LI]),
+  LI.
 
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 %% traverse_block(Code, InstructionNo, Intervals, Unchanged) 
@@ -223,7 +225,8 @@ traverse_block([], InstrNo, Intervals, _) ->
 allocate(Intervals, PhysRegs, SpillIndex, DontSpill, Target) ->
   ActiveRegisters =[],
   AllocatedRegisters = empty_allocation(),
-  allocate(Intervals, PhysRegs, ActiveRegisters,
+  AllFree = create_freeregs(PhysRegs),
+  allocate(Intervals, AllFree, ActiveRegisters,
 	   AllocatedRegisters, SpillIndex, DontSpill, Target).
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 %% allocate(Intervals, Free, Active, Allocated, SpillIndex, Target) 
@@ -237,12 +240,12 @@ allocate(Intervals, PhysRegs, SpillIndex, DontSpill, Target) ->
 %%   SpillIndex: The number of spilled registers. 
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 allocate([RegInt|RIS], Free, Active, Alloc, SpillIndex, DontSpill, Target) ->
-   ?debug_msg("Alloc interval: ~w, Free ~w\n",[RegInt, Free]),
+  %io:format("~nAlloc:~n~p", [Alloc]),
   %% Remove from the active list those registers who's intervals 
   %% ends before the start of the current interval.
   {NewActive, NewFree} = 
     expire_old_intervals(Active, startpoint(RegInt), Free, Target),
-  
+  ?debug_msg("Alloc interval: ~w, Free ~w\n",[RegInt, NewFree]),
   %% Get the name of the temp in the current interval.
   Temp = reg(RegInt), 
   case is_precoloured(Temp, Target) of
@@ -259,9 +262,10 @@ allocate([RegInt|RIS], Free, Active, Alloc, SpillIndex, DontSpill, Target) ->
 		   NewAlloc, SpillIndex, DontSpill, Target);
 	false ->
 	  case is_free(PhysName, NewFree) of
-	    true ->
-	      allocate(RIS, NewFree -- [PhysName], 
-		       add_active(endpoint(RegInt), PhysName, Temp, NewActive),
+	    {true,Rest} ->
+	      allocate(RIS, Rest, 
+		       add_active(endpoint(RegInt), startpoint(RegInt), 
+				  PhysName, Temp, NewActive),
 		       NewAlloc,
 		       SpillIndex, DontSpill, Target);
 	    false ->
@@ -270,16 +274,26 @@ allocate([RegInt|RIS], Free, Active, Alloc, SpillIndex, DontSpill, Target) ->
 	      {OtherActive, NewActive2} = deactivate(PhysName, NewActive),
 	      OtherTemp = active_name(OtherActive),
 	      OtherEnd = active_endpoint(OtherActive),
-
-	      NewSpillIndex = Target:new_spill_index(SpillIndex),
-	      {NewAlloc2, NewActive3} = 
-		spill(OtherTemp, OtherEnd, NewActive2, NewAlloc,
-		      SpillIndex, DontSpill, Target),
-	      allocate(RIS, 
-		       NewFree, 
-		       add_active(endpoint(RegInt), PhysName, Temp, NewActive3),
-		       NewAlloc2, NewSpillIndex, DontSpill, Target)
-	  
+	      OtherStart = active_startpoint(OtherActive),
+	      NewActive3 = add_active(endpoint(RegInt), startpoint(RegInt),
+					  PhysName, Temp, NewActive2),
+	      case exists_free_register(OtherStart, NewFree) of
+		{true, NewPhys, RestFree} ->
+		  allocate(RIS, RestFree, 
+			   add_active(OtherEnd, OtherStart, 
+				      NewPhys, OtherTemp, NewActive3),
+			   alloc(OtherTemp,NewPhys,NewAlloc,Target),
+			   SpillIndex, DontSpill, Target);
+		false ->
+		  NewSpillIndex = Target:new_spill_index(SpillIndex),
+		  {NewAlloc2, NewActive4} = 
+		    spill(OtherTemp, OtherEnd, OtherStart, NewActive3, 
+			  NewAlloc, SpillIndex, DontSpill, Target),
+		  allocate(RIS, 
+			   NewFree, 
+			   NewActive4,
+			   NewAlloc2, NewSpillIndex, DontSpill, Target)
+	      end
 	  end
       end;
     false -> 
@@ -289,16 +303,18 @@ allocate([RegInt|RIS], Free, Active, Alloc, SpillIndex, DontSpill, Target) ->
 	  %% No physical registers available, we have to spill.
 	  NewSpillIndex = Target:new_spill_index(SpillIndex),
 	  {NewAlloc, NewActive2} = 
-	    spill(Temp, endpoint(RegInt), Active, Alloc,
-		  SpillIndex, DontSpill, Target),
+	    spill(Temp, endpoint(RegInt), startpoint(RegInt),
+		  Active, Alloc, SpillIndex, DontSpill, Target),
 	  %% io:format("Spilled ~w\n",[NewAlloc]),
 	  allocate(RIS, NewFree, NewActive2, NewAlloc, NewSpillIndex,
 		   DontSpill, Target);
 
-	[FreeReg | Regs] -> 
+	[{FreeReg,_Start} | Regs] -> 
 	  %% The register FreeReg is available, let's use it.
+	  %%io:format("Allocating Reg:~p~n",[FreeReg]),
 	  allocate(RIS,Regs,
-		   add_active(endpoint(RegInt), FreeReg, Temp, NewActive),
+		   add_active(endpoint(RegInt), startpoint(RegInt),
+			      FreeReg, Temp, NewActive),
 		   alloc(Temp, FreeReg, Alloc,Target),
 		   SpillIndex, DontSpill, Target)
       end
@@ -306,6 +322,7 @@ allocate([RegInt|RIS], Free, Active, Alloc, SpillIndex, DontSpill, Target) ->
 allocate([],_,_,Alloc,SpillIndex, _, _) -> 
   %% No more register intervals to handle
   %%  return the result.
+  %%io:format("~nAlloc:~n~p", [Alloc]),
   {Alloc, SpillIndex}.
 %%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -332,9 +349,9 @@ expire_old_intervals([Active|Actives], CurrentPos, Free, Target) ->
       NewFree = 
 	case is_arg(Reg, Target) of
 	  true ->
-	    Free ++ [Reg];
+	    [{Reg,CurrentPos}|Free];
 	  false ->
-	    [active_reg(Active)|Free]
+	    [{Reg,CurrentPos}|Free]
 			   
 	    %% Here we could try appending the
 	    %% register to get a more widespread
@@ -375,7 +392,7 @@ deactivate(_,[]) -> {no,[]}.
 %%   Find the register with the longest live range and spill it to memory.
 %%
 %% ---------------------------------------------------------------------
-spill(CurrentReg, CurrentEndpoint, 
+spill(CurrentReg, CurrentEndpoint,CurrentStartpoint, 
       Active = [_|_],
       Alloc, SpillIndex,
       DontSpill, Target) ->
@@ -385,7 +402,8 @@ spill(CurrentReg, CurrentEndpoint,
   %% Find a spill candidate (one of the active): 
   %%  The register with the longest live-range.
   {NewActive, SpillCandidate} = butlast_last(Active),
-
+  
+  SpillStartpoint = active_startpoint(SpillCandidate) ,
   SpillEndpoint = active_endpoint(SpillCandidate) ,
   SpillName = active_name(SpillCandidate),
   SpillPhysName = active_reg(SpillCandidate), 
@@ -394,16 +412,17 @@ spill(CurrentReg, CurrentEndpoint,
     true -> 
       %% There is an already allocated register that has
       %% a longer live-range than the current register.
-      case can_spill(SpillName, DontSpill, Target) of
+      case can_spill(SpillName, DontSpill, Target) and 
+	(SpillStartpoint =< CurrentStartpoint) of
 	false ->
 	  {NewAlloc, NewActive2} = 
-	    spill(CurrentReg, CurrentEndpoint, NewActive, Alloc,
-		  SpillIndex, DontSpill, Target),
+	    spill(CurrentReg, CurrentEndpoint, CurrentStartpoint, 
+		  NewActive, Alloc, SpillIndex, DontSpill, Target),
 	  {NewAlloc, 
-	   add_active(SpillEndpoint, SpillPhysName, SpillName,
-		      NewActive2)};
+	   add_active(SpillEndpoint, SpillStartpoint, SpillPhysName, 
+		      SpillName, NewActive2)};
 	true ->
-	  %% It is not precoloured...
+	  %% It is not precoloured... or have too short liverange
 
 	  %% Allocate SpillCandidate to spill-slot SpillIndex
 	  SpillAlloc = 
@@ -416,8 +435,8 @@ spill(CurrentReg, CurrentEndpoint,
 	  
 	  %% Add the current register to the active registers
 	  NewActive2 = 
-	    add_active(CurrentEndpoint, SpillPhysName, CurrentReg, NewActive),
-	  
+	    add_active(CurrentEndpoint, CurrentStartpoint,
+		       SpillPhysName, CurrentReg, NewActive),
 	  {NewAlloc, NewActive2}
       end;
 	
@@ -428,10 +447,11 @@ spill(CurrentReg, CurrentEndpoint,
 	false ->
 	  %% Cannot spill a precoloured register
 	  {NewAlloc, NewActive2} = 
-	    spill(SpillName, SpillEndpoint, NewActive, Alloc,
-		  SpillIndex, DontSpill, Target),
+	    spill(SpillName, SpillEndpoint, SpillStartpoint,
+		  NewActive, Alloc, SpillIndex, DontSpill, Target),
 	  NewActive3 = 
-	    add_active(CurrentEndpoint, SpillPhysName, CurrentReg, NewActive2),
+	    add_active(CurrentEndpoint, CurrentStartpoint, 
+		       SpillPhysName, CurrentReg, NewActive2),
 	  {NewAlloc, NewActive3};
 	true ->
 	  %% It is not precoloured...
@@ -439,7 +459,7 @@ spill(CurrentReg, CurrentEndpoint,
 	  {spillalloc(CurrentReg, SpillIndex, Alloc), Active}
       end
   end;
-spill(CurrentReg, _CurrentEndpoint, [],
+spill(CurrentReg, _CurrentEndpoint, _CurrentStartpoint, [],
       Alloc, SpillIndex, DontSpill, Target) ->
   case can_spill(CurrentReg, DontSpill, Target) of 
     false -> %% Can't spill current!
@@ -516,12 +536,7 @@ butlast_last([X|Y]) ->
   {L,Last} = butlast_last(Y),
   {[X|L],Last}.
 
-%butlast([X]) ->
-%   [];
-% butlast([X|Y]) ->
-%  [X|butlast(Y)];
-%butlast([])->
-%  [].
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% 
@@ -530,16 +545,19 @@ butlast_last([X|Y]) ->
 %%   It is sorted on end points in the intervals
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-add_active(Endpoint, PhysReg, RegName, [{P1,R1,O1}|Active]) when P1 < Endpoint ->
-  [{P1,R1,O1}|add_active(Endpoint, PhysReg, RegName, Active)];
-add_active(Endpoint, PhysReg, RegName, Active) ->
-  [{Endpoint, PhysReg, RegName}|Active].
+add_active(Endpoint, StartPoint, PhysReg, RegName, 
+	   [{P1,R1,O1,S1}|Active]) when P1 < Endpoint ->
+  [{P1,R1,O1,S1}|add_active(Endpoint, StartPoint, PhysReg, RegName, Active)];
+add_active(Endpoint, StartPoint, PhysReg, RegName, Active) ->
+  [{Endpoint, PhysReg, RegName, StartPoint}|Active].
 
-active_reg({_,PhysReg,_}) ->
+active_reg({_,PhysReg,_,_}) ->
   PhysReg.
-active_endpoint({EndPoint,_,_}) ->
+active_endpoint({EndPoint,_,_,_}) ->
   EndPoint.
-active_name({_,_,RegName})->
+active_startpoint({_,_,_,StartPoint}) ->
+  StartPoint.
+active_name({_,_,RegName,_})->
   RegName.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -872,15 +890,36 @@ extend_interval(Pos, {Beginning, End}) ->
 %%
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 
-is_free(R, [R|_]) ->
-  true;
-is_free(R, [_|Rs]) ->
-  is_free(R, Rs);
-is_free(_, [] ) ->
+is_free(R, Free) ->
+  is_free(R, Free, []).
+
+is_free(R, [{R,_}|Rest], Acc) ->
+  {true,lists:reverse(Acc)++Rest};
+is_free(R, [X|Rs],Acc) ->
+  is_free(R, Rs, [X|Acc]);
+is_free(_, [], _) ->
   false.
 
 %%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+
+exists_free_register(Start, Regs) ->
+  exists_free_register(Start, Regs, []).
+
+exists_free_register(Start, [{Phys, Start0}|Rest], Acc) 
+  when Start > Start0 ->
+  {true, Phys, lists:reverse(Acc)++Rest};
+exists_free_register(Start, [Free|Rest], Acc) ->
+  exists_free_register(Start, Rest, [Free|Acc]);
+exists_free_register(_, [], _) ->
+  false.
+
+%%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+create_freeregs([Phys|Rest]) ->
+  [{Phys,-1}|create_freeregs(Rest)];
+create_freeregs([]) ->
+  [].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

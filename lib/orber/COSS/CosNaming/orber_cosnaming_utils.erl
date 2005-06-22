@@ -41,7 +41,7 @@
 %%-----------------------------------------------------------------
 -export([addresses/1, name/1, 
 	 check_addresses/1, check_name/1, 
-	 key/1, select_type/1, lookup/1,
+	 key/1, select_type/1, lookup/1, lookup/2,
 	 escape_string/1, unescape_string/1,
 	 name2string/1, string2name/1]).
 
@@ -439,38 +439,41 @@ split_to_slash([H|T], Acc) ->
 %% Returns    : Object |
 %%              {'EXCEPTION', E}
 %%----------------------------------------------------------------------
-lookup({corbaname, rir, _Key, []}) ->
+lookup(Data) ->
+    lookup(Data, []).
+
+lookup({corbaname, rir, _Key, []}, Ctx) ->
     %% If no object key supplied NameService is defined to be default.
-    corba:resolve_initial_references("NameService");
-lookup({corbaname, rir, Key, Name}) ->
-    NS = corba:resolve_initial_references(Key),
-    'CosNaming_NamingContext':resolve(NS, Name);
+    corba:resolve_initial_references("NameService", Ctx);
+lookup({corbaname, rir, Key, Name}, Ctx) ->
+    NS = corba:resolve_initial_references(Key, Ctx),
+    'CosNaming_NamingContext':resolve(NS, Ctx, Name);
 
-lookup({corbaloc, rir, Key}) ->
-     corba:resolve_initial_references(Key);
+lookup({corbaloc, rir, Key}, Ctx) ->
+     corba:resolve_initial_references(Key, Ctx);
 
-lookup({corbaname, [], _Key, _Name}) ->
+lookup({corbaname, [], _Key, _Name}, _Ctx) ->
     corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{});
-lookup({corbaname, Addresses, Key, ""}) ->
+lookup({corbaname, Addresses, Key, ""}, Ctx) ->
     %% Not Name-string defined, which is the same as corbaloc.
-    lookup({corbaloc, Addresses, Key});
-lookup({corbaname, [[iiop, Vers, Host, Port]|Addresses], Key, Name}) ->
+    lookup({corbaloc, Addresses, Key}, Ctx);
+lookup({corbaname, [[iiop, Vers, Host, Port]|Addresses], Key, Name}, Ctx) ->
     NS = iop_ior:create_external(Vers, key2id(Key), Host, Port, Key),
-    case catch 'CosNaming_NamingContext':resolve(NS, Name) of
+    case catch 'CosNaming_NamingContext':resolve(NS, Ctx, Name) of
 	{'EXCEPTION', _} ->
-	    lookup({corbaname, Addresses, Key, Name});
+	    lookup({corbaname, Addresses, Key, Name}, Ctx);
 	Obj ->
 	    Obj
     end;
-lookup({corbaname, [_|Addresses], Key, Name}) ->
-    lookup({corbaname, Addresses, Key, Name});
+lookup({corbaname, [_|Addresses], Key, Name}, Ctx) ->
+    lookup({corbaname, Addresses, Key, Name}, Ctx);
 
-lookup({corbaloc, [], _Key}) ->
+lookup({corbaloc, [], _Key}, _Ctx) ->
     corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{});
-lookup({corbaloc, [[iiop, Vers, Host, Port]|Addresses], Key}) ->
+lookup({corbaloc, [[iiop, Vers, Host, Port]|Addresses], Key}, Ctx) ->
     ObjRef = iop_ior:create_external(Vers, key2id(Key), Host, Port, Key),
     OldVal = put(orber_forward_notify, true),
-    case catch corba_object:non_existent(ObjRef) of
+    case catch corba_object:non_existent(ObjRef, Ctx) of
 	{location_forward, Result} ->
 	    put(orber_forward_notify, OldVal),
 	    Result;
@@ -479,11 +482,11 @@ lookup({corbaloc, [[iiop, Vers, Host, Port]|Addresses], Key}) ->
 	    ObjRef;
 	true ->
 	    put(orber_forward_notify, OldVal),
-	    lookup({corbaloc, Addresses, Key});
+	    lookup({corbaloc, Addresses, Key}, Ctx);
 	_ ->
 	    %% May be located on a version using '_not_existent'
             %% see CORBA2.3.1 page 15-34 try again.
-	    case catch corba_object:not_existent(ObjRef) of
+	    case catch corba_object:not_existent(ObjRef, Ctx) of
 		{location_forward, Result} ->
 		    put(orber_forward_notify, OldVal),
 		    Result;
@@ -492,15 +495,15 @@ lookup({corbaloc, [[iiop, Vers, Host, Port]|Addresses], Key}) ->
 		    ObjRef;
 		_ ->
 		    put(orber_forward_notify, OldVal),
-		    lookup({corbaloc, Addresses, Key})
+		    lookup({corbaloc, Addresses, Key}, Ctx)
 	    end
     end;
 		
-lookup({corbaloc, [_|Addresses], Key}) ->
-    lookup({corbaloc, Addresses, Key});
+lookup({corbaloc, [_|Addresses], Key}, Ctx) ->
+    lookup({corbaloc, Addresses, Key}, Ctx);
     
 
-lookup({file, File}) ->
+lookup({file, File}, _Ctx) ->
     case file:read_file(File) of
 	{ok, IOR} ->
 	    binary_to_list(IOR);
@@ -510,7 +513,7 @@ lookup({file, File}) ->
 		      [?LINE, File, Reason], ?DEBUG_LEVEL),
 	    corba:raise(#'CosNaming_NamingContext_InvalidName'{})
     end;
-lookup({http, Host, Port, Key}) ->
+lookup({http, Host, Port, Key}, _Ctx) ->
     SetupTimeout = orber:iiop_setup_connection_timeout(),
     SendTimeout = orber:iiop_timeout(),
     {ok, Socket} = create_connection(Host, Port, SetupTimeout),
@@ -525,9 +528,9 @@ lookup({http, Host, Port, Key}) ->
 		      [?LINE, Reason], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end;
-lookup({ftp, _Address}) ->
+lookup({ftp, _Address}, _Ctx) ->
     corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{});
-lookup(_) ->
+lookup(_, _Ctx) ->
     corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{}).
 
 

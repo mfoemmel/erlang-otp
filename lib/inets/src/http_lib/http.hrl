@@ -176,5 +176,6 @@
 	  pipeline_timeout = ?HTTP_PIPELINE_TIMEOUT,
 	  max_pipeline_length = ?HTTP_PIPELINE_LENGTH,
 	  max_sessions =  ?HTTP_MAX_TCP_SESSIONS,
-	  cookies = disabled % enabled | disabled | verify
+	  cookies = disabled, % enabled | disabled | verify
+	  ipv6 = enabled % enabled | disabled
 	 }).

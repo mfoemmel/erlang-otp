@@ -110,6 +110,10 @@ parse_uri(<<>>, URI, MaxHeaderSize, Result) ->
 parse_uri(<<?SP, Rest/binary>>, URI, MaxHeaderSize, Result) -> 
     parse_version(Rest, [], MaxHeaderSize, 
 		  [string:strip(lists:reverse(URI)) | Result]);
+%% Can happen if it is a simple HTTP/0.9 request e.i "GET /\r\n\r\n"
+parse_uri(<<?CR, _Rest/binary>> = Data, URI, MaxHeaderSize, Result) -> 
+    parse_version(Data, [], MaxHeaderSize, 
+		  [string:strip(lists:reverse(URI)) | Result]);
 parse_uri(<<Octet, Rest/binary>>, URI, MaxHeaderSize, Result) ->
     parse_uri(Rest, [Octet | URI], MaxHeaderSize, Result).
 
@@ -263,7 +267,7 @@ get_persistens(HTTPVersion,ParsedHeader,ConfigDB)->
 		%%If it is version prio to 1.1 kill the conneciton
 		"HTTP/1." ++ NList ->
 		    case httpd_util:key1search(ParsedHeader,
-					       "connection", "keep-alive") of       
+					       "connection", "keep-alive") of  
 			%%if the connection isnt ordered to go down
 			%%let it live The keep-alive value is the
 			%%older http/1.1 might be older Clients that

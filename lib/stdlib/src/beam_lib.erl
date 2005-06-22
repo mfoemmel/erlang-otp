@@ -86,6 +86,8 @@ version(File) ->
 	    Error
     end.
 
+format_error({error, Error}) ->
+    format_error(Error);
 format_error({error, Module, Error}) ->
     Module:format_error(Error);
 format_error({unknown_chunk, File, ChunkName}) ->
@@ -113,6 +115,13 @@ format_error({modules_different, Module1, Module2}) ->
 		  [Module1, Module2]);
 format_error({not_a_directory, Name}) ->
     io_lib:format("~p: Not a directory~n", [Name]);
+format_error({key_missing_or_invalid, File, abstract_code}) ->
+    io_lib:format("~p: Cannot decrypt abstract code because key is missing or invalid",
+		  [File]);
+format_error(badfun) ->
+    "not a fun or the fun has the wrong arity";
+format_error(exists) ->
+    "a fun has already been installed";
 format_error(E) ->
     io_lib:format("~p~n", [E]).
 

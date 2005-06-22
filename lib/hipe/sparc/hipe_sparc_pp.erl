@@ -7,9 +7,9 @@
 %%  History  :	* 2001-10-25 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2004/11/12 15:02:18 $
-%%              $Revision: 1.23 $
+%%              $Author: pergu $
+%%              $Date: 2005/05/10 14:55:54 $
+%%              $Revision: 1.24 $
 %% ====================================================================
 %%  Exports  :
 %%              pp/1,        Pretty prints linear SPARC code.
@@ -268,6 +268,57 @@ pp_instr(I, Dev, Pre) ->
 	      io:format(Dev, ", %lo(~w), ", [F]),
 	      pp_arg(Dev, hipe_sparc:load_address_dest(I))
 	  end;
+	remote_function ->
+	  case Address of
+	    {M, F, A} -> 
+	      io:format(Dev, "    sethi %hi(~w_~w_~w), ", [M, F, A]),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	      io:format(Dev, "~n    or  ", []),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	      io:format(Dev, ", %lo(~w_~w_~w), ", [M, F, A]),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I));
+	    {F, A} -> 
+	      io:format(Dev, "    sethi %hi(~w_~w), ", [F, A]),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	      io:format(Dev, "~n    or  ", []),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	      io:format(Dev, ", %lo(~w_~w), ", [F, A]),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I));
+	    F -> 
+	      io:format(Dev, "    sethi %hi( ", []),
+	      io:format(Dev, "~w), ", [F]),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	      io:format(Dev, "~n    or  ", []),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	      io:format(Dev, ", %lo(~w), ", [F]),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I))
+	  end;
+	local_function ->
+	  case Address of
+	    {M, F, A} -> 
+	      io:format(Dev, "    sethi %hi(~w_~w_~w), ", [M, F, A]),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	      io:format(Dev, "~n    or  ", []),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	      io:format(Dev, ", %lo(~w_~w_~w), ", [M, F, A]),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I));
+	    {F, A} -> 
+	      io:format(Dev, "    sethi %hi(~w_~w), ", [F, A]),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	      io:format(Dev, "~n    or  ", []),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	      io:format(Dev, ", %lo(~w_~w), ", [F, A]),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I));
+	    F -> 
+	      io:format(Dev, "    sethi %hi( ", []),
+	      io:format(Dev, "~w), ", [F]),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	      io:format(Dev, "~n    or  ", []),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	      io:format(Dev, ", %lo(~w), ", [F]),
+	      pp_arg(Dev, hipe_sparc:load_address_dest(I))
+	  end;
+
 	constant ->
 	  io:format(Dev, "    sethi %hi( ", []),
 	  io:format(Dev, "~s_dl_~w), ", [Pre, Address]),

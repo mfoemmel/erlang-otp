@@ -8,7 +8,7 @@
 %%% 
 %%% Created : 12 Jan 2005 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%
-%%% $Id: cerl_typesig.erl,v 1.33 2005/05/04 15:17:37 tobiasl Exp $
+%%% $Id$
 %%%-------------------------------------------------------------------
 
 -module(cerl_typesig).

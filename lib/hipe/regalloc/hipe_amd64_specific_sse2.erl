@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_amd64_specific_sse2.erl,v 1.4 2005/03/29 11:46:30 mikpe Exp $
+%%% $Id$
 
 -module(hipe_amd64_specific_sse2).
 

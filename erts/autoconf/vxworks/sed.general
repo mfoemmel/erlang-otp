@@ -86,6 +86,7 @@ s|@JAVAC@|javac|
 
 # Only variable substituted directly
 s|$(LDFLAGS)|-r -d|
+s|@LIBRT@||
 # XXX What is EFFLAGS? Not used in the emulator Makefile.in anyway.
 s|$(EFLAGS)|-DENABLE_ELIB_MALLOC -DELIB_HEAP_USER -DELIB_SORTED_BLOCKS|
 

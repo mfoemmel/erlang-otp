@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_x86_assemble.erl,v 1.147 2005/01/26 14:14:27 mikpe Exp $
+%%% $Id$
 %%% HiPE/x86 assembler
 %%%
 %%% TODO:
@@ -32,10 +32,9 @@
 -include("../rtl/hipe_literals.hrl").
 -include("../misc/hipe_sdi.hrl").
 
-assemble(CompiledCode, Closures, Exports, Flags) ->
-  ?when_option(time, Flags, ?start_timer("x86 assembler")),
-  put(hipe_x86_flags,Flags),
-  print("****************** Assembling *******************\n"),
+assemble(CompiledCode, Closures, Exports, Options) ->
+  ?when_option(time, Options, ?start_timer("x86 assembler")),
+  print("****************** Assembling *******************\n", [], Options),
   %%
   Code = [{MFA,
 	   hipe_x86:defun_code(Defun),
@@ -45,13 +44,12 @@ assemble(CompiledCode, Closures, Exports, Flags) ->
   {ConstAlign,ConstSize,ConstMap,RefsFromConsts} =
     hipe_pack_constants:pack_constants(Code, ?HIPE_X86_REGISTERS:alignment()),
   %%
-  {CodeSize,AccCode,AccRefs,LabelMap,ExportMap} =
-    encode(translate(Code, ConstMap)),
-  CodeBinary = mk_code_binary(AccCode),
-  print("Total num bytes=~w\n",[CodeSize]),
+  {CodeSize,CodeBinary,AccRefs,LabelMap,ExportMap} =
+    encode(translate(Code, ConstMap, Options), Options),
+  print("Total num bytes=~w\n", [CodeSize], Options),
   put(code_size, CodeSize),
   put(const_size, ConstSize),
-  ?when_option(verbose, Flags,
+  ?when_option(verbose, Options,
 	       ?debug_msg("Constants are ~w bytes\n",[ConstSize])),
   %%
   SC = hipe_pack_constants:slim_constmap(ConstMap),
@@ -67,24 +65,8 @@ assemble(CompiledCode, Closures, Exports, Flags) ->
 			0,[] % ColdCodeSize, SlimColdRefs
 		       ]),
   %%
-  ?when_option(time, Flags, ?stop_timer("x86 assembler")),
+  ?when_option(time, Options, ?stop_timer("x86 assembler")),
   Bin.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-mk_code_binary(AccCode) ->
-  Size = hipe_bifs:array_length(AccCode),
-  list_to_binary(array_to_bytes(AccCode, Size, [])).
-
-array_to_bytes(Array, I1, Bytes) ->
-  I2 = I1 - 1,
-  if I2 < 0 ->
-      Bytes;
-     true ->
-      %% 'band 255' to fix up negative bytes (from disp8 operands?)
-      Byte = hipe_bifs:array_sub(Array, I2) band 255,
-      array_to_bytes(Array, I2, [Byte|Bytes])
-  end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -100,24 +82,24 @@ array_to_bytes(Array, I1, Bytes) ->
 %%% Result is {MFA,NewCode,CodeSize,LabelMap} list.
 %%%
 
-translate(Code, ConstMap) ->
-  translate_mfas(Code, ConstMap, []).
+translate(Code, ConstMap, Options) ->
+  translate_mfas(Code, ConstMap, [], Options).
 
-translate_mfas([{MFA,Insns,_Data}|Code], ConstMap, NewCode) ->
+translate_mfas([{MFA,Insns,_Data}|Code], ConstMap, NewCode, Options) ->
   {NewInsns,CodeSize,LabelMap} =
-    translate_insns(Insns, MFA, ConstMap, hipe_sdi:pass1_init(), 0, []),
-  translate_mfas(Code, ConstMap, [{MFA,NewInsns,CodeSize,LabelMap}|NewCode]);
-translate_mfas([], _ConstMap, NewCode) ->
+    translate_insns(Insns, MFA, ConstMap, hipe_sdi:pass1_init(), 0, [], Options),
+  translate_mfas(Code, ConstMap, [{MFA,NewInsns,CodeSize,LabelMap}|NewCode], Options);
+translate_mfas([], _ConstMap, NewCode, _Options) ->
   lists:reverse(NewCode).
 
-translate_insns([I|Insns], MFA, ConstMap, SdiPass1, Address, NewInsns) ->
-  NewIs = translate_insn(I, MFA, ConstMap),
-  add_insns(NewIs, Insns, MFA, ConstMap, SdiPass1, Address, NewInsns);
-translate_insns([], _MFA, _ConstMap, SdiPass1, Address, NewInsns) ->
+translate_insns([I|Insns], MFA, ConstMap, SdiPass1, Address, NewInsns, Options) ->
+  NewIs = translate_insn(I, MFA, ConstMap, Options),
+  add_insns(NewIs, Insns, MFA, ConstMap, SdiPass1, Address, NewInsns, Options);
+translate_insns([], _MFA, _ConstMap, SdiPass1, Address, NewInsns, _Options) ->
   {LabelMap,CodeSizeIncr} = hipe_sdi:pass2(SdiPass1),
   {lists:reverse(NewInsns), Address+CodeSizeIncr, LabelMap}.
 
-add_insns([I|Is], Insns, MFA, ConstMap, SdiPass1, Address, NewInsns) ->
+add_insns([I|Is], Insns, MFA, ConstMap, SdiPass1, Address, NewInsns, Options) ->
   NewSdiPass1 =
     case I of
       {'.label',L,_} ->
@@ -132,9 +114,9 @@ add_insns([I|Is], Insns, MFA, ConstMap, SdiPass1, Address, NewInsns) ->
 	SdiPass1
     end,
   Address1 = Address + insn_size(I),
-  add_insns(Is, Insns, MFA, ConstMap, NewSdiPass1, Address1, [I|NewInsns]);
-add_insns([], Insns, MFA, ConstMap, SdiPass1, Address, NewInsns) ->
-  translate_insns(Insns, MFA, ConstMap, SdiPass1, Address, NewInsns).
+  add_insns(Is, Insns, MFA, ConstMap, NewSdiPass1, Address1, [I|NewInsns], Options);
+add_insns([], Insns, MFA, ConstMap, SdiPass1, Address, NewInsns, Options) ->
+  translate_insns(Insns, MFA, ConstMap, SdiPass1, Address, NewInsns, Options).
 
 insn_size(I) ->
   case I of
@@ -145,7 +127,7 @@ insn_size(I) ->
     {Op,Arg,_Orig} -> ?HIPE_X86_ENCODE:insn_sizeof(Op, Arg)
   end.
 
-translate_insn(I, MFA, ConstMap) ->
+translate_insn(I, MFA, ConstMap, Options) ->
   case I of
     #alu{} ->
       Arg = resolve_alu_args(hipe_x86:alu_src(I), hipe_x86:alu_dst(I)),
@@ -168,11 +150,11 @@ translate_insn(I, MFA, ConstMap) ->
       Arg = translate_dst(hipe_x86:dec_dst(I)),
       [{dec, {Arg}, I}];
     #fmove{} ->
-      Arg = resolve_sse2_binop_args(hipe_x86:fmove_src(I),
-				    hipe_x86:fmove_dst(I)),
-      [{movsd, Arg, I}];
+      {Op,Arg} = resolve_sse2_fmove_args(hipe_x86:fmove_src(I),
+					 hipe_x86:fmove_dst(I)),
+      [{Op, Arg, I}];
     #fp_binop{} ->
-      case proplists:get_bool(x87, get(hipe_x86_flags)) of
+      case proplists:get_bool(x87, Options) of
 	true -> %% x87	
 	  Arg = resolve_x87_binop_args(hipe_x86:fp_binop_src(I),
 				       hipe_x86:fp_binop_dst(I)),
@@ -183,15 +165,14 @@ translate_insn(I, MFA, ConstMap) ->
 	  [{resolve_sse2_op(hipe_x86:fp_binop_op(I)), Arg, I}]
       end;
     #fp_unop{} ->
-      case proplists:get_bool(x87, get(hipe_x86_flags)) of
-	true -> %% x87	
+      case proplists:get_bool(x87, Options) of
+	true -> % x87
 	  Arg = resolve_x87_unop_arg(hipe_x86:fp_unop_arg(I)),
 	  [{hipe_x86:fp_unop_op(I), Arg, I}];
-	false -> %% sse2
+	false -> % sse2
 	  case hipe_x86:fp_unop_op(I) of
 	    'fchs' ->
-	      Arg = resolve_sse2_binop_args(sse2_fnegate_mask,
-					    hipe_x86:fp_unop_arg(I)),
+	      Arg = resolve_sse2_fchs_arg(hipe_x86:fp_unop_arg(I)),
 	      [{'xorpd', Arg, I}];
 	    'fwait' -> % no op on sse2, magic on x87
 	      []
@@ -362,7 +343,7 @@ translate_src(Src, MFA, ConstMap) ->
 	 is_integer(Imm) ->
 	  case (Imm =< 127) and (Imm >= -128) of
 	    true ->
-	      {imm8,Imm};
+	      {imm8,Imm band 16#FF};
 	    false ->
 	      {imm32,Imm}
 	  end;
@@ -408,13 +389,14 @@ translate_dst(Dst) ->
 -undef(ASSERT).
 -define(ASSERT(G), if G -> [] ; true -> exit({assertion_failed,?MODULE,?LINE,??G}) end).
 
-encode(Code) ->
+encode(Code, Options) ->
   CodeSize = compute_code_size(Code, 0),
   ExportMap = build_export_map(Code, 0, []),
-  CodeArray = hipe_bifs:array(CodeSize, 0), % XXX: intarray, should have bytearray support!
-  Relocs = encode_mfas(Code, 0, CodeArray, []), % updates CodeArray via side-effects
+  {AccCode,Relocs} = encode_mfas(Code, 0, [], [], Options),
+  CodeBinary = list_to_binary(lists:reverse(AccCode)),
+  ?ASSERT(CodeSize =:= size(CodeBinary)),
   CombinedLabelMap = combine_label_maps(Code, 0, gb_trees:empty()),
-  {CodeSize,CodeArray,Relocs,CombinedLabelMap,ExportMap}.
+  {CodeSize,CodeBinary,Relocs,CombinedLabelMap,ExportMap}.
 
 nr_pad_bytes(Address) -> (4 - (Address rem 4)) rem 4. % XXX: 16 or 32 instead?
 
@@ -438,23 +420,25 @@ merge_label_map([{Label,Offset}|Rest], MFA, Address, CLM) ->
   merge_label_map(Rest, MFA, Address, NewCLM);
 merge_label_map([], _MFA, _Address, CLM) -> CLM.
 
-encode_mfas([{MFA,Insns,CodeSize,LabelMap}|Code], Address, CodeArray, Relocs) ->
-  print("Generating code for:~w\n", [MFA]),
-  print("Offset   | Opcode (hex)             | Instruction\n"),
-  {Address1,Relocs1} = encode_insns(Insns, Address, Address, LabelMap, Relocs, CodeArray),
+encode_mfas([{MFA,Insns,CodeSize,LabelMap}|Code], Address, AccCode, Relocs, Options) ->
+  print("Generating code for:~w\n", [MFA], Options),
+  print("Offset   | Opcode (hex)             | Instruction\n", [], Options),
+  {Address1,Relocs1,AccCode1} =
+    encode_insns(Insns, Address, Address, LabelMap, Relocs, AccCode, Options),
   ExpectedAddress = align_entry(Address + CodeSize),
   ?ASSERT(Address1 =:= ExpectedAddress),
-  print("Finished.\n\n"),
-  encode_mfas(Code, Address1, CodeArray, Relocs1);
-encode_mfas([], _Address, _CodeArray, Relocs) -> Relocs.
+  print("Finished.\n\n", [], Options),
+  encode_mfas(Code, Address1, AccCode1, Relocs1, Options);
+encode_mfas([], _Address, AccCode, Relocs, _Options) ->
+  {AccCode, Relocs}.
 
-encode_insns([I|Insns], Address, FunAddress, LabelMap, Relocs, CodeArray) ->
+encode_insns([I|Insns], Address, FunAddress, LabelMap, Relocs, AccCode, Options) ->
   case I of
     {'.label',L,_} ->
       LabelAddress = gb_trees:get(L, LabelMap) + FunAddress,
       ?ASSERT(Address =:= LabelAddress),	% sanity check
-      print_insn(Address, [], I),
-      encode_insns(Insns, Address, FunAddress, LabelMap, Relocs, CodeArray);
+      print_insn(Address, [], I, Options),
+      encode_insns(Insns, Address, FunAddress, LabelMap, Relocs, AccCode, Options);
     {'.sdesc',SDesc,_} ->
       #x86_sdesc{exnlab=ExnLab,fsize=FSize,arity=Arity,live=Live} = SDesc,
       ExnRA =
@@ -464,22 +448,23 @@ encode_insns([I|Insns], Address, FunAddress, LabelMap, Relocs, CodeArray) ->
 	end,
       Reloc = {?PATCH_TYPE2EXT(sdesc),Address,
 	       ?STACK_DESC(ExnRA, FSize, Arity, Live)},
-      encode_insns(Insns, Address, FunAddress, LabelMap, [Reloc|Relocs], CodeArray);
+      encode_insns(Insns, Address, FunAddress, LabelMap, [Reloc|Relocs], AccCode, Options);
     _ ->
       {Op,Arg,_} = fix_jumps(I, Address, FunAddress, LabelMap),
       {Bytes, NewRelocs} = ?HIPE_X86_ENCODE:insn_encode(Op, Arg, Address),
-      Size = length(Bytes),
-      print_insn(Address, Bytes, I),
-      list_to_array(Bytes, CodeArray, Address),
-      encode_insns(Insns, Address+Size, FunAddress, LabelMap, NewRelocs++Relocs, CodeArray)
+      print_insn(Address, Bytes, I, Options),
+      Segment = list_to_binary(Bytes),
+      Size = size(Segment),
+      NewAccCode = [Segment|AccCode],
+      encode_insns(Insns, Address+Size, FunAddress, LabelMap, NewRelocs++Relocs, NewAccCode, Options)
   end;
-encode_insns([], Address, FunAddress, LabelMap, Relocs, CodeArray) ->
+encode_insns([], Address, FunAddress, LabelMap, Relocs, AccCode, Options) ->
   case nr_pad_bytes(Address) of
     0 ->
-      {Address,Relocs};
+      {Address,Relocs,AccCode};
     NrPadBytes ->	% triggers at most once per function body
       Padding = lists:duplicate(NrPadBytes, {nop,{},#comment{term=padding}}),
-      encode_insns(Padding, Address, FunAddress, LabelMap, Relocs, CodeArray)
+      encode_insns(Padding, Address, FunAddress, LabelMap, Relocs, AccCode, Options)
   end.
 
 fix_jumps(I, InsnAddress, FunAddress, LabelMap) ->
@@ -488,7 +473,7 @@ fix_jumps(I, InsnAddress, FunAddress, LabelMap) ->
       LabelAddress = gb_trees:get(L, LabelMap) + FunAddress,
       ShortOffset = LabelAddress - (InsnAddress + 2),
       if ShortOffset >= -128, ShortOffset =< 127 ->
-	  {jcc,{CC,{rel8,ShortOffset}},OrigI};
+	  {jcc,{CC,{rel8,ShortOffset band 16#FF}},OrigI};
 	 true ->
 	  LongOffset = LabelAddress - (InsnAddress + 6),
 	  {jcc,{CC,{rel32,LongOffset}},OrigI}
@@ -497,7 +482,7 @@ fix_jumps(I, InsnAddress, FunAddress, LabelMap) ->
       LabelAddress = gb_trees:get(L, LabelMap) + FunAddress,
       ShortOffset = LabelAddress - (InsnAddress + 2),
       if ShortOffset >= -128, ShortOffset =< 127 ->
-	  {jmp,{{rel8,ShortOffset}},OrigI};
+	  {jmp,{{rel8,ShortOffset band 16#FF}},OrigI};
 	 true ->
 	  LongOffset = LabelAddress - (InsnAddress + 5),
 	  {jmp,{{rel32,LongOffset}},OrigI}
@@ -506,9 +491,6 @@ fix_jumps(I, InsnAddress, FunAddress, LabelMap) ->
   end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-list_to_array(List, Array, Addr) ->
-  lists:foldl(fun(X,I) -> hipe_bifs:array_update(Array,I,X), I+1 end, Addr, List).
 
 fpreg_to_stack(#x86_fpreg{reg=Reg}) ->
   {fpst, Reg}.
@@ -564,6 +546,24 @@ mem_to_rm16(Mem) ->
 
 mem_to_ea_common(#x86_mem{base=[], off=#x86_imm{value=Off}}) ->
   ?HIPE_X86_ENCODE:?EA_DISP32_ABSOLUTE(Off);
+mem_to_ea_common(#x86_mem{base=#x86_temp{reg=Base}, off=#x86_temp{reg=Index}}) ->
+  case Base band 2#111 of
+    5 -> % ebp/rbp or r13
+      case Index band 2#111 of
+	5 -> % ebp/rbp or r13
+	  SINDEX = ?HIPE_X86_ENCODE:sindex(0, Index),
+	  SIB = ?HIPE_X86_ENCODE:sib(Base, SINDEX),
+	  ?HIPE_X86_ENCODE:ea_disp8_sib(0, SIB);
+	_ ->
+	  SINDEX = ?HIPE_X86_ENCODE:sindex(0, Base),
+	  SIB = ?HIPE_X86_ENCODE:sib(Index, SINDEX),
+	  ?HIPE_X86_ENCODE:ea_sib(SIB)
+      end;
+    _ ->
+      SINDEX = ?HIPE_X86_ENCODE:sindex(0, Index),
+      SIB = ?HIPE_X86_ENCODE:sib(Base, SINDEX),
+      ?HIPE_X86_ENCODE:ea_sib(SIB)
+  end;
 mem_to_ea_common(#x86_mem{base=#x86_temp{reg=Base}, off=#x86_imm{value=Off}}) ->
   if
     Off =:= 0 ->
@@ -582,15 +582,16 @@ mem_to_ea_common(#x86_mem{base=#x86_temp{reg=Base}, off=#x86_imm{value=Off}}) ->
 	  ?HIPE_X86_ENCODE:ea_base(Base)
       end;
     Off >= -128, Off =< 127 ->
+      Disp8 = Off band 16#FF,
       case Base of
 	4 -> %esp, must use SIB
 	  SIB = ?HIPE_X86_ENCODE:sib(Base),
-	  ?HIPE_X86_ENCODE:ea_disp8_sib(Off, SIB);
+	  ?HIPE_X86_ENCODE:ea_disp8_sib(Disp8, SIB);
         12 -> %r12, must use SIB
 	  SIB = ?HIPE_X86_ENCODE:sib(Base),
-	  ?HIPE_X86_ENCODE:ea_disp8_sib(Off, SIB);
+	  ?HIPE_X86_ENCODE:ea_disp8_sib(Disp8, SIB);
 	_ -> %use disp8 w/o SIB
-	  ?HIPE_X86_ENCODE:ea_disp8_base(Off, Base)
+	  ?HIPE_X86_ENCODE:ea_disp8_base(Disp8, Base)
       end;
     true ->
       case Base of
@@ -648,14 +649,21 @@ resolve_sse2_binop_args(Src=#x86_temp{type=double},
 %% OP xmm, xmm
 resolve_sse2_binop_args(Src=#x86_temp{type=double},
 			Dst=#x86_temp{type=double}) ->
-  {temp_to_xmm(Dst),temp_to_rm64fp(Src)};
-%% cvtsi2sd xmm, reg
-resolve_sse2_binop_args(Src=#x86_temp{type=untagged},
-			Dst=#x86_temp{type=double}) ->
-  {temp_to_xmm(Dst),temp_to_rmArch(Src)};
-%% xorpd xmm, mem
-resolve_sse2_binop_args(sse2_fnegate_mask,
-			Dst=#x86_temp{type=double}) ->
+  {temp_to_xmm(Dst),temp_to_rm64fp(Src)}.
+
+%%% fmove -> cvtsi2sd or movsd
+resolve_sse2_fmove_args(Src, Dst) ->
+  case {Src,Dst} of
+    {#x86_temp{type=untagged}, #x86_temp{type=double}} -> % cvtsi2sd xmm, reg
+      {cvtsi2sd, {temp_to_xmm(Dst),temp_to_rmArch(Src)}};
+    {#x86_mem{type=untagged}, #x86_temp{type=double}} -> % cvtsi2sd xmm, mem
+      {cvtsi2sd, {temp_to_xmm(Dst),mem_to_rmArch(Src)}};
+    _ -> % movsd
+      {movsd, resolve_sse2_binop_args(Src, Dst)}
+  end.
+
+%%% xorpd xmm, mem
+resolve_sse2_fchs_arg(Dst=#x86_temp{type=double}) ->
   {temp_to_xmm(Dst),
    {rm64fp, {rm_mem, ?HIPE_X86_ENCODE:?EA_DISP32_ABSOLUTE(
 		       {?PATCH_TYPE2EXT(load_address),
@@ -669,7 +677,7 @@ resolve_move_args(#x86_imm{value=ImmSrc}, Dst=#x86_mem{type=Type}, Context) ->
       {mem_to_rm8(Dst),{imm8,ByteImm}};
     _ ->
       RMArch = mem_to_rmArch(Dst),
-      {_,Imm} = resolve_arg(#x86_imm{value=ImmSrc}, Context),
+      {_,Imm} = resolve_arg(#x86_imm{value=ImmSrc}, Context, false),
       {RMArch,{imm32,Imm}}
   end;
 
@@ -698,7 +706,7 @@ resolve_move_args(Src=#x86_temp{}, Dst=#x86_temp{}, _Context) ->
 
 %% mov reg,imm
 resolve_move_args(Src=#x86_imm{value=_ImmSrc}, Dst=#x86_temp{}, Context) ->
-  {_,Imm} = resolve_arg(Src, Context),
+  {_,Imm} = resolve_arg(Src, Context, false),
   ?IMM_MOVE_ARGS.
 
 -ifdef(RESOLVE_MOVE64_ARGS).
@@ -721,7 +729,7 @@ resolve_movx_args(Src=#x86_mem{type=Type}, Dst=#x86_temp{}) ->
 resolve_alu_args(Src, Dst) ->
   case {Src,Dst} of
     {#x86_imm{}, #x86_mem{}} ->
-      {mem_to_rmArch(Dst), resolve_arg(Src, [])};
+      {mem_to_rmArch(Dst), resolve_arg(Src, [], true)};
     {#x86_mem{}, #x86_temp{}} ->
       {temp_to_regArch(Dst), mem_to_rmArch(Src)};
     {#x86_temp{}, #x86_mem{}} ->
@@ -729,7 +737,7 @@ resolve_alu_args(Src, Dst) ->
     {#x86_temp{}, #x86_temp{}} ->
       {temp_to_regArch(Dst), temp_to_rmArch(Src)};
     {#x86_imm{}, #x86_temp{reg=0}} -> % eax,imm
-      NewSrc = resolve_arg(Src, []),
+      NewSrc = resolve_arg(Src, [], true),
       NewDst =
 	case NewSrc of
 	  {imm8,_} -> temp_to_rmArch(Dst);
@@ -737,14 +745,14 @@ resolve_alu_args(Src, Dst) ->
 	end,
       {NewDst, NewSrc};
     {#x86_imm{}, #x86_temp{}} ->
-      {temp_to_rmArch(Dst), resolve_arg(Src, [])}
+      {temp_to_rmArch(Dst), resolve_arg(Src, [], true)}
   end.
 
 %%% test
 resolve_test_args(Src, Dst) ->
   case Src of
     #x86_imm{} -> % imm8 not allowed
-      {_ImmSize,ImmValue} = resolve_arg(Src, []),
+      {_ImmSize,ImmValue} = resolve_arg(Src, [], false),
       NewDst =
 	case Dst of
 	  #x86_temp{reg=0} -> ?EAX;
@@ -771,7 +779,7 @@ resolve_shift_args(Src, Dst) ->
   Count =
     case Src of
       #x86_imm{value=1} -> 1;
-      #x86_imm{} -> resolve_arg(Src, []); % must be imm8
+      #x86_imm{} -> resolve_arg(Src, [], true); % must be imm8
       #x86_temp{reg=1} -> cl	% temp must be ecx
     end,
   {RM32, Count}.
@@ -798,7 +806,7 @@ resolve_x87_binop_args(Src=#x86_fpreg{}, Dst=#x86_fpreg{})->
 
 %% return arg for encoding
 %% Context=[] when no relocs are expected, {MFA,ConstMap} otherwise
-resolve_arg(Arg, Context) ->
+resolve_arg(Arg, Context, MayTrunc8) ->
   case Arg of
     {reg32,_Reg32} ->
       Arg;
@@ -810,7 +818,15 @@ resolve_arg(Arg, Context) ->
 	 is_integer(Imm) ->
 	  case (Imm =< 127) and (Imm >= -128) of
 	    true ->
-	      {imm8,Imm};
+	      %% XXX: A negative Imm8 should be truncated to 8 bits,
+	      %% except when it is to be converted to an Imm32/Imm64,
+	      %% since truncation + widening doesn't preserve the value.
+	      Imm8 =
+		case MayTrunc8 of
+		  true -> Imm band 16#FF;
+		  false -> Imm
+		end,
+	      {imm8,Imm8};
 	    false ->
 	      {imm32,Imm}
 	  end;
@@ -881,18 +897,12 @@ is_exported(F, A, Exports) -> lists:member({F,A}, Exports).
 %%% Assembly listing support (pp_asm option).
 %%%
 
-print(String) ->
-  Flags = get(hipe_x86_flags),
-  ?when_option(pp_asm, Flags,io:format(String,[])).
+print(String, Arglist, Options) ->
+  ?when_option(pp_asm, Options, io:format(String, Arglist)).
 
-print(String, Arglist) ->
-  Flags = get(hipe_x86_flags),
-  ?when_option(pp_asm, Flags,io:format(String,Arglist)).
-
-print_insn(Address, Bytes, I) ->
-  Flags = get(hipe_x86_flags),
-  ?when_option(pp_asm, Flags, print_insn_2(Address, Bytes, I)),
-  ?when_option(pp_cxmon, Flags, print_code_list_2(Bytes)).
+print_insn(Address, Bytes, I, Options) ->
+  ?when_option(pp_asm, Options, print_insn_2(Address, Bytes, I)),
+  ?when_option(pp_cxmon, Options, print_code_list_2(Bytes)).
 
 print_code_list_2([H | Tail]) ->
   print_byte(H),
@@ -902,7 +912,7 @@ print_code_list_2([]) ->
   io:format("").
 
 print_insn_2(Address, Bytes, {_,_,OrigI}) ->
-  print("~8.16b | ",[Address]),
+  io:format("~8.16b | ", [Address]),
   print_code_list(Bytes, 0),
   ?HIPE_X86_PP:pp_insn(OrigI).
 

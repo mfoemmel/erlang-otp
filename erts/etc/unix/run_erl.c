@@ -46,6 +46,15 @@
 #include <syslog.h>
 #endif
 
+#if defined(O_NONBLOCK)
+# define DONT_BLOCK_PLEASE O_NONBLOCK
+#else
+# define DONT_BLOCK_PLEASE O_NDELAY
+# if !defined(EAGAIN)
+#  define EAGAIN -3898734
+# endif
+#endif
+
 #define noDEBUG
 
 #define DEFAULT_LOG_GENERATIONS 5
@@ -95,6 +104,12 @@ static int open_log(int log_num, int flags);
 static void write_to_log(int* lfd, int* log_num, char* buf, int len);
 static void daemon_init(void);
 static char *simple_basename(char *path);
+static void init_outbuf(void);
+static int outbuf_size(void);
+static void clear_outbuf(void);
+static char* outbuf_first(void);
+static void outbuf_delete(int bytes);
+static void outbuf_append(char* bytes, int n);
 #ifdef DEBUG
 static void show_terminal_settings(struct termios *t);
 #endif
@@ -116,6 +131,15 @@ static char log_alive_format[ALIVE_BUFFSIZ+1];
 static int run_daemon = 0;
 static char *program_name;
 
+/*
+ * Output buffer.
+ *
+ * outbuf_base <= outbuf_out <= outbuf_in <= outbuf_base+outbuf_total
+ */
+static char* outbuf_base;
+static int outbuf_total;
+static char* outbuf_out;
+static char* outbuf_in;
 
 #if defined(NO_SYSCONF) || !defined(_SC_OPEN_MAX) 
 #    if defined(OPEN_MAX)
@@ -170,6 +194,8 @@ int main(int argc, char **argv)
     usage(argv[0]);
     exit(1);
   }
+
+  init_outbuf();
 
   if (!strcmp(argv[1],"-daemon")) {
       daemon_init();
@@ -279,7 +305,7 @@ int main(int argc, char **argv)
   strcpy(fifo2, pipename);
   strcat(fifo2, ".w");
   /* Check that nobody is running run_erl already */
-  if ((fd = open (fifo2, O_WRONLY|O_NDELAY, 0)) >= 0) {
+  if ((fd = open (fifo2, O_WRONLY|DONT_BLOCK_PLEASE, 0)) >= 0) {
     /* Open as client succeeded -- run_erl is already running! */
     fprintf(stderr, "Erlang already running on pipe %s.\n", pipename);
     close(fd);
@@ -377,190 +403,216 @@ int main(int argc, char **argv)
  */
 static void pass_on(pid_t childpid, int mfd)
 {
-  int len;
-  fd_set readfds;
-  struct timeval timeout;
-  time_t last_activity;
-  char buf[BUFSIZ];
-  char log_alive_buffer[ALIVE_BUFFSIZ+1];
-  int lognum;
-  int rfd, wfd=0, lfd=0;
-  int maxfd;
-  int ready;
-
-  /* Open the to_erl pipe for reading.
-   * We can't open the writing side because nobody is reading and 
-   * we'd either hang or get an error.
-   */
-  if ((rfd = open(fifo2, O_RDONLY|O_NDELAY, 0)) < 0) {
-    ERROR((LOG_ERR,"Could not open FIFO %s for reading.\n", fifo2));
-    exit(1);
-  }
-
-#ifdef DEBUG
-  status("run_erl: %s opened for reading\n", fifo2);
-#endif
-
-  /* Open the log file */
-
-  lognum = find_next_log_num();
-  lfd = open_log(lognum, O_RDWR|O_APPEND|O_CREAT|O_SYNC);
-
-  /* Enter the work loop */
-
-  while (1) {
-    maxfd = MAX(rfd, mfd);
-    FD_ZERO(&readfds);
-    FD_SET(rfd, &readfds);
-    FD_SET(mfd, &readfds);
-    time(&last_activity);
-    timeout.tv_sec  = log_alive_minutes*60; /* don't assume old BSD bug */
-    timeout.tv_usec = 0;
-    ready = select(maxfd + 1, &readfds, NULL, NULL, &timeout);
-    if (ready < 0) {
-      /* Some error occured */
-      ERROR((LOG_ERR,"Error in select."));
-      exit(1);
-    } else {
-      /* Check how long time we've been inactive */
-      time_t now;
-      time(&now);
-      if(!ready || now - last_activity > log_activity_minutes*60) {
-	/* Either a time out: 15 minutes without action, */
-	/* or something is coming in right now, but it's a long time */
-	/* since last time, so let's write a time stamp this message */
-	  struct tm *tmptr;
-	  if (log_alive_in_gmt) {
-	      tmptr = gmtime(&now);
-	  } else {
-	      tmptr = localtime(&now);
-	  }
-	  if (!strftime(log_alive_buffer, ALIVE_BUFFSIZ, log_alive_format,
-			tmptr)) {
-	      strcpy(log_alive_buffer,
-		     "(could not format time in 256 positions "
-		     "with current format string.)");
-	  }
-	  log_alive_buffer[ALIVE_BUFFSIZ] = '\0';
-
-	  sprintf(buf, "\n===== %s%s\n", ready?"":"ALIVE ", log_alive_buffer);
-	  write_to_log(&lfd, &lognum, buf, strlen(buf));
-      }
-    }
-  
-    /*
-     * Read master pty write to FIFO
+    int len;
+    fd_set readfds;
+    fd_set writefds;
+    fd_set* writefds_ptr;
+    struct timeval timeout;
+    time_t last_activity;
+    char buf[BUFSIZ];
+    char log_alive_buffer[ALIVE_BUFFSIZ+1];
+    int lognum;
+    int rfd, wfd=0, lfd=0;
+    int maxfd;
+    int ready;
+    
+    /* Open the to_erl pipe for reading.
+     * We can't open the writing side because nobody is reading and 
+     * we'd either hang or get an error.
      */
-    if (FD_ISSET(mfd, &readfds)) {
-#ifdef DEBUG
-      status("Pty master read; ");
-#endif
-      if ((len = read(mfd, buf, BUFSIZ)) <= 0) {
-	close(rfd);
-	if(wfd) close(wfd);
-	close(mfd);
-	unlink(fifo1);
-	unlink(fifo2);
-	if (len < 0) {
-	  if(errno == EIO)
-	    ERROR((LOG_ERR,"Erlang closed the connection.\n"));
-	  else
-	    ERROR((LOG_ERR,"Error in reading from terminal: errno=%d\n",errno));
-	  exit(1);
-	}
-	exit(0);
-      }
-
-      write_to_log(&lfd, &lognum, buf, len);
-
-      /* Write to to_erl operator, if any */
-
-      if (fifowrite) {
-#ifdef DEBUG
-	status("FIFO write; ");
-#endif
-	/* Ignore write errors - typically there is no one
-	 * reading at the other end of the FIFO.
-	 */
-	if(wfd) 
-	  if(write(wfd, buf, len) < 0) {
-	    close(wfd);
-	    wfd = 0;
-	  }
-      }
-#ifdef DEBUG
-      status("OK\n");
-#endif
-    }
-
-    /*
-     * Read from FIFO, write to master pty
-     */
-    if (FD_ISSET(rfd, &readfds)) {
-#ifdef DEBUG
-      status("FIFO read; ");
-#endif
-      fifowrite = 1;
-      if ((len = read(rfd, buf, BUFSIZ)) < 0) {
-	close(rfd);
-	if(wfd) close(wfd);
-	close(mfd);
-	unlink(fifo1);
-	unlink(fifo2);
-	ERROR((LOG_ERR,"Error in reading from FIFO.\n"));
+    if ((rfd = open(fifo2, O_RDONLY|DONT_BLOCK_PLEASE, 0)) < 0) {
+	ERROR((LOG_ERR,"Could not open FIFO %s for reading.\n", fifo2));
 	exit(1);
-      }
-
-      /* Try to open the write pipe to to_erl. Now that we got some data
-      * from to_erl, to_erl should already be reading this pipe - open
-      * should succeed. But in case of error, we just ignore it.
-      */
-
-      if(!len) {
-	close(rfd);
-	rfd = open(fifo2, O_RDONLY|O_NDELAY, 0);
-	if (rfd < 0) {
-	  ERROR((LOG_ERR,"Could not open FIFO %s for reading.\n", fifo2));
-	  exit(1);
-	}
-      } else {
-	if(!wfd) {
-	  if ((wfd = open(fifo1, O_WRONLY|O_NDELAY, 0)) < 0) {
-	    status("Client expected on FIFO %s, but can't open (len=%d)\n",
-		   fifo1, len);
-	    close(rfd);
-	    rfd = open(fifo2, O_RDONLY|O_NDELAY, 0);
-	    if (rfd < 0) {
-	      ERROR((LOG_ERR,"Could not open FIFO %s for reading.\n", fifo2));
-	      exit(1);
-	    }
-	    wfd = 0;
-	  } else {
+    }
+    
 #ifdef DEBUG
-	    status("run_erl: %s opened for writing\n", fifo1);
+    status("run_erl: %s opened for reading\n", fifo2);
 #endif
-	  }
+    
+    /* Open the log file */
+    
+    lognum = find_next_log_num();
+    lfd = open_log(lognum, O_RDWR|O_APPEND|O_CREAT|O_SYNC);
+    
+    /* Enter the work loop */
+    
+    while (1) {
+	maxfd = MAX(rfd, mfd);
+	maxfd = MAX(wfd, maxfd);
+	FD_ZERO(&readfds);
+	FD_SET(rfd, &readfds);
+	FD_SET(mfd, &readfds);
+	FD_ZERO(&writefds);
+	if (outbuf_size() == 0) {
+	    writefds_ptr = NULL;
+	} else {
+	    FD_SET(wfd, &writefds);
+	    writefds_ptr = &writefds;
+	}
+	time(&last_activity);
+	timeout.tv_sec  = log_alive_minutes*60; /* don't assume old BSD bug */
+	timeout.tv_usec = 0;
+	ready = select(maxfd + 1, &readfds, writefds_ptr, NULL, &timeout);
+	if (ready < 0) {
+	    /* Some error occured */
+	    ERROR((LOG_ERR,"Error in select."));
+	    exit(1);
+	} else {
+	    /* Check how long time we've been inactive */
+	    time_t now;
+	    time(&now);
+	    if(!ready || now - last_activity > log_activity_minutes*60) {
+		/* Either a time out: 15 minutes without action, */
+		/* or something is coming in right now, but it's a long time */
+		/* since last time, so let's write a time stamp this message */
+		struct tm *tmptr;
+		if (log_alive_in_gmt) {
+		    tmptr = gmtime(&now);
+		} else {
+		    tmptr = localtime(&now);
+		}
+		if (!strftime(log_alive_buffer, ALIVE_BUFFSIZ, log_alive_format,
+			      tmptr)) {
+		    strcpy(log_alive_buffer,
+			   "(could not format time in 256 positions "
+			   "with current format string.)");
+		}
+		log_alive_buffer[ALIVE_BUFFSIZ] = '\0';
+
+		sprintf(buf, "\n===== %s%s\n", ready?"":"ALIVE ", log_alive_buffer);
+		write_to_log(&lfd, &lognum, buf, strlen(buf));
+	    }
+	}
+
+	/*
+	 * Write any pending output first.
+	 */
+	if (FD_ISSET(wfd, &writefds)) {
+	    int written;
+	    char* buf = outbuf_first();
+
+	    len = outbuf_size();
+	    written = write(wfd, buf, len);
+	    if (written < 0 && errno == EAGAIN) {
+		/*
+		 * Nothing was written - this is really strange because
+		 * select() told us we could write. Ignore.
+		 */
+	    } else if (written < 0) {
+		/*
+		 * A write error. Assume that to_erl has terminated.
+		 */
+		clear_outbuf();
+		close(wfd);
+		wfd = 0;
+	    } else {
+		/* Delete the written part (or all) from the buffer. */
+		outbuf_delete(written);
+	    }
 	}
 	
-	/* Write the message */
+	/*
+	 * Read master pty and write to FIFO.
+	 */
+	if (FD_ISSET(mfd, &readfds)) {
 #ifdef DEBUG
-	status("Pty master write; ");
+	    status("Pty master read; ");
 #endif
-	if(len==1 && buf[0] == '\003') {
-	  kill(childpid,SIGINT);
-	} else if(write(mfd, buf, len) != len) {
-	  ERROR((LOG_ERR,"Error in writing to terminal.\n"));
-	  close(rfd);
-	  if(wfd) close(wfd);
-	  close(mfd);
-	  exit(1);
+	    if ((len = read(mfd, buf, BUFSIZ)) <= 0) {
+		close(rfd);
+		if(wfd) close(wfd);
+		close(mfd);
+		unlink(fifo1);
+		unlink(fifo2);
+		if (len < 0) {
+		    if(errno == EIO)
+			ERROR((LOG_ERR,"Erlang closed the connection.\n"));
+		    else
+			ERROR((LOG_ERR,"Error in reading from terminal: errno=%d\n",errno));
+		    exit(1);
+		}
+		exit(0);
+	    }
+
+	    write_to_log(&lfd, &lognum, buf, len);
+
+	    /*
+	     * Save in the output queue.
+	     */
+
+	    if (fifowrite && wfd) {
+		outbuf_append(buf, len);
+	    }
+	}	    
+
+	/*
+	 * Read from FIFO, write to master pty
+	 */
+	if (FD_ISSET(rfd, &readfds)) {
+#ifdef DEBUG
+	    status("FIFO read; ");
+#endif
+	    fifowrite = 1;
+	    if ((len = read(rfd, buf, BUFSIZ)) < 0) {
+		close(rfd);
+		if(wfd) close(wfd);
+		close(mfd);
+		unlink(fifo1);
+		unlink(fifo2);
+		ERROR((LOG_ERR,"Error in reading from FIFO.\n"));
+		exit(1);
+	    }
+
+	    /* Try to open the write pipe to to_erl. Now that we got some data
+	     * from to_erl, to_erl should already be reading this pipe - open
+	     * should succeed. But in case of error, we just ignore it.
+	     */
+
+	    if(!len) {
+		close(rfd);
+		rfd = open(fifo2, O_RDONLY|DONT_BLOCK_PLEASE, 0);
+		if (rfd < 0) {
+		    ERROR((LOG_ERR,"Could not open FIFO %s for reading.\n", fifo2));
+		    exit(1);
+		}
+	    } else {
+		if(!wfd) {
+		    if ((wfd = open(fifo1, O_WRONLY|DONT_BLOCK_PLEASE, 0)) < 0) {
+			status("Client expected on FIFO %s, but can't open (len=%d)\n",
+			       fifo1, len);
+			close(rfd);
+			rfd = open(fifo2, O_RDONLY|DONT_BLOCK_PLEASE, 0);
+			if (rfd < 0) {
+			    ERROR((LOG_ERR,"Could not open FIFO %s for reading.\n", fifo2));
+			    exit(1);
+			}
+			wfd = 0;
+		    } else {
+#ifdef DEBUG
+			status("run_erl: %s opened for writing\n", fifo1);
+#endif
+		    }
+		}
+	
+		/* Write the message */
+#ifdef DEBUG
+		status("Pty master write; ");
+#endif
+		if(len==1 && buf[0] == '\003') {
+		    kill(childpid,SIGINT);
+		} else if(write(mfd, buf, len) != len) {
+		    ERROR((LOG_ERR,"Error in writing to terminal.\n"));
+		    close(rfd);
+		    if(wfd) close(wfd);
+		    close(mfd);
+		    exit(1);
+		}
+	    }
+#ifdef DEBUG
+	    status("OK\n");
+#endif
 	}
-      }
-#ifdef DEBUG
-      status("OK\n");
-#endif
     }
-  }
 } /* pass_on() */
 
 /*
@@ -954,6 +1006,74 @@ static char *simple_basename(char *path)
 	}
     }
     return path;
+}
+
+static void init_outbuf(void)
+{
+    outbuf_total = 1;
+    outbuf_base = malloc(BUFSIZ);
+    clear_outbuf();
+}
+
+static void clear_outbuf(void)
+{
+    outbuf_in = outbuf_out = outbuf_base;
+}
+
+static int outbuf_size(void)
+{
+    return outbuf_in - outbuf_out;
+}
+
+static char* outbuf_first(void)
+{
+    return outbuf_out;
+}
+
+static void outbuf_delete(int bytes)
+{
+    outbuf_out += bytes;
+    if (outbuf_out >= outbuf_in) {
+	outbuf_in = outbuf_out = outbuf_base;
+    }
+}
+
+static void outbuf_append(char* buf, int n)
+{
+    if (outbuf_base+outbuf_total < outbuf_in+n) {
+	/*
+	 * The new data does not fit at the end of the buffer.
+	 * Slide down the data to the beginning of the buffer.
+	 */
+	if (outbuf_out > outbuf_base) {
+	    int size = outbuf_in - outbuf_out;
+	    char* p;
+
+	    outbuf_in -= outbuf_out - outbuf_base;
+	    p = outbuf_base;
+	    while (size-- > 0) {
+		*p++ = *outbuf_out++;
+	    }
+	    outbuf_out = outbuf_base;
+	}
+
+	/*
+	 * Allocate a larger buffer if we still cannot fit the data.
+	 */
+	if (outbuf_base+outbuf_total < outbuf_in+n) {
+	    int size = outbuf_in - outbuf_out;
+	    outbuf_total = size+n;
+	    outbuf_base = realloc(outbuf_base, outbuf_total);
+	    outbuf_out = outbuf_base;
+	    outbuf_in = outbuf_base + size;
+	}
+    }
+
+    /*
+     * Copy data to the end of the buffer.
+     */
+    memcpy(outbuf_in, buf, n);
+    outbuf_in += n;
 }
 
 #ifdef DEBUG

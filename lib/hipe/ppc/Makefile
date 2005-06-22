@@ -1,4 +1,4 @@
-# $Id: Makefile,v 1.11 2005/01/19 10:26:15 kostis Exp $
+# $Id$
 
 ifndef EBIN
 EBIN = ../ebin
@@ -40,6 +40,7 @@ MODULES=hipe_ppc \
 	hipe_ppc_pp \
 	hipe_ppc_ra \
 	hipe_ppc_ra_finalise \
+	hipe_ppc_ra_ls \
 	hipe_ppc_ra_naive \
 	hipe_ppc_ra_postconditions \
 	hipe_ppc_ra_postconditions_fp \

@@ -483,14 +483,17 @@ generate_response_msg(Vsn, RePdu, Type,
 		end,
 	    SecEngineID = snmp_framework_mib:get_engine_id(),
 	    ?vtrace("generate_response_msg -> SecEngineID: ~p", [SecEngineID]),
-	    case catch SecModule:generate_outgoing_msg(Message, 
-						       SecEngineID,
-						       SecName, SecData, 
-						       SecLevel) of
+	    case (catch SecModule:generate_outgoing_msg(Message, 
+							SecEngineID,
+							SecName, SecData, 
+							SecLevel)) of
 		{'EXIT', Reason} ->
 		    config_err("~p (message: ~p)", [Reason, Message]),
 		    {discarded, Reason};
-		OutMsg ->
+		{error, Reason} ->
+		    config_err("~p (message: ~p)", [Reason, Message]),
+		    {discarded, Reason};
+		OutMsg when list(OutMsg) ->
 		    %% Check the packet size.  Send the msg even
 		    %% if it's larger than the mgr can handle - it
 		    %% will be dropped.  Just check against the

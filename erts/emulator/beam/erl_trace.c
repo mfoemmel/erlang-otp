@@ -855,6 +855,9 @@ erts_trace_return(Process* p, Eterm* fi, Eterm retval, Eterm *tracer_pid)
 	Process *tracer;
 	unsigned size;
 	unsigned retval_size;
+#ifdef DEBUG
+	Eterm* limit;
+#endif
 
 	ASSERT(is_internal_pid(*tracer_pid)
 	       && internal_pid_index(*tracer_pid) < erts_max_processes);
@@ -869,7 +872,7 @@ erts_trace_return(Process* p, Eterm* fi, Eterm retval, Eterm *tracer_pid)
 	retval_size = size_object(retval);
 	size = 6 + 4 + retval_size;
 	if (*tracee_flags & F_TIMESTAMP) {
-	    size += 1+6;
+	    size += 1+4;
 	}
 
 #ifdef SHARED_HEAP
@@ -882,7 +885,10 @@ erts_trace_return(Process* p, Eterm* fi, Eterm retval, Eterm *tracer_pid)
 
 	hp = HAlloc(tracer, size);
 #endif
-	
+#ifdef DEBUG
+	limit = hp + size;
+#endif
+
 	/*
 	 * Build the trace tuple and put it into receive queue of the tracer process.
 	 */
@@ -895,6 +901,7 @@ erts_trace_return(Process* p, Eterm* fi, Eterm retval, Eterm *tracer_pid)
 	if (*tracee_flags & F_TIMESTAMP) {
 	    hp = patch_ts(mess, hp);
 	}
+	ASSERT(hp == limit);
 	queue_message_tt(tracer, NULL, mess, NIL);
     }
 }
@@ -1027,7 +1034,10 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 	unsigned size;
 	unsigned sizes[256];
 	unsigned pam_result_size = 0;
-	
+#ifdef DEBUG
+	Eterm* limit;
+#endif
+
 	ASSERT(is_internal_pid(*tracer_pid)
 	       && internal_pid_index(*tracer_pid) < erts_max_processes);
 	
@@ -1069,7 +1079,7 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 	    }
 	}
 	if (*tracee_flags & F_TIMESTAMP) {
-	    size += 1 + 5;
+	    size += 1 + 4;
 	    /* One element in trace tuple + timestamp tuple. */
 	}
 	if (pam_result != am_true) {
@@ -1087,7 +1097,10 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 	 */
 	hp = HAlloc(tracer, size);
 #endif
-	
+#ifdef DEBUG
+	limit = hp + size;
+#endif
+
 	/*
 	 * Build the the {M,F,A} tuple in the message buffer. 
 	 * (A is arguments or arity.)
@@ -1127,6 +1140,7 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 	if (*tracee_flags & F_TIMESTAMP) {
 	    hp = patch_ts(mess, hp);
 	}
+	ASSERT(hp == limit);
 	queue_message_tt(tracer, NULL, mess, NIL);
 	return return_flags;
     }
@@ -1388,17 +1402,24 @@ erts_bif_trace(int bif_index, Process* p,
 void
 trace_gc(Process *p, Eterm what)
 {
+#define HEAP_WORDS_NEEDED 40
     Process* tracer = NULL;	/* Initialized to eliminate compiler warning */
     Eterm* hp;
     Eterm msg = NIL;
     Eterm tuple;
+    Uint size = HEAP_WORDS_NEEDED + TS_SIZE(p);
+#ifdef DEBUG
+    Eterm* limit;
+#endif
+
 
 #define CONS_PAIR(key, val) \
     tuple = TUPLE2(hp, key, val); hp += 3; \
     msg = CONS(hp, tuple, msg); hp += 2
 
     if (is_internal_port(p->tracer_proc)) {
-	Eterm local_heap[74];
+	Eterm local_heap[HEAP_WORDS_NEEDED+5];
+	ASSERT(size <= sizeof(local_heap) / sizeof(local_heap[0]));
 	hp = local_heap;
     } else {
 	ASSERT(is_internal_pid(p->tracer_proc)
@@ -1414,14 +1435,18 @@ trace_gc(Process *p, Eterm what)
 
 #ifdef SHARED_HEAP
         /* The running process has the updated heap pointers! */
-	hp = HAlloc(p, 74);
+	hp = HAlloc(p, size);
 #else
 	/*
 	 * XXX Multi-thread note: Allocating on another process's heap.
 	 */
-	hp = HAlloc(tracer, 74);
+	hp = HAlloc(tracer, size);
 #endif
     }
+#undef HEAP_WORDS_NEEDED
+#ifdef DEBUG
+    limit = hp + size;
+#endif
 
     CONS_PAIR(am_heap_size, make_small(HEAP_TOP(p) - HEAP_START(p)));
 #if (defined(NOMOVE) && defined(SHARED_HEAP))
@@ -1446,6 +1471,7 @@ trace_gc(Process *p, Eterm what)
     if (p->flags & F_TIMESTAMP) {
 	hp = patch_ts(msg, hp);
     }
+    ASSERT(hp == limit);
     if (is_internal_port(p->tracer_proc)) {
 	send_to_port(p, msg, &p->tracer_proc, &p->flags);
     } else {

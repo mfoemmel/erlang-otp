@@ -25,7 +25,8 @@
 -export([
 	 start_link/2, 
 	 stop/1, 
-	 send_pdu/6,
+	 send_pdu/6, % Backward compatibillity
+	 send_pdu/7,
 
 	 note_store/2, 
 
@@ -78,7 +79,11 @@ start_link(Server, NoteStore) ->
 stop(Pid) ->
     call(Pid, stop).
 
-send_pdu(Pid, Pdu, Vsn, MsgData, Addr, Port) when record(Pdu, pdu) ->
+send_pdu(Pid, Pdu, Vsn, MsgData, Addr, Port) ->
+    send_pdu(Pid, Pdu, Vsn, MsgData, Addr, Port, undefined).
+
+send_pdu(Pid, Pdu, Vsn, MsgData, Addr, Port, ExtraInfo) 
+  when record(Pdu, pdu) ->
     ?d("send_pdu -> entry with"
        "~n   Pid:     ~p"
        "~n   Pdu:     ~p"
@@ -86,7 +91,7 @@ send_pdu(Pid, Pdu, Vsn, MsgData, Addr, Port) when record(Pdu, pdu) ->
        "~n   MsgData: ~p"
        "~n   Addr:    ~p"
        "~n   Port:    ~p", [Pid, Pdu, Vsn, MsgData, Addr, Port]),
-    cast(Pid, {send_pdu, Pdu, Vsn, MsgData, Addr, Port}).
+    cast(Pid, {send_pdu, Pdu, Vsn, MsgData, Addr, Port, ExtraInfo}).
 
 note_store(Pid, NoteStore) ->
     call(Pid, {note_store, NoteStore}).
@@ -254,7 +259,7 @@ handle_call(Req, From, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_cast({send_pdu, Pdu, Vsn, MsgData, Addr, Port}, State) ->
+handle_cast({send_pdu, Pdu, Vsn, MsgData, Addr, Port, _ExtraInfo}, State) ->
     ?vlog("received send_pdu message with"
 	  "~n   Pdu:     ~p"
 	  "~n   Vsn:     ~p"
@@ -333,9 +338,21 @@ handle_recv_msg(Addr, Port, Bytes,
 		    ok
 	    end;
 
-	{ok, _Vsn, #pdu{type = report} = Pdu, _MS, _ACM} ->
-	    ?vtrace("received report", []),
-	    Pid ! {snmp_report, Pdu, Addr, Port};
+%% 	{ok, _Vsn, #pdu{type = report} = Pdu, _MS, _ACM} ->
+%% 	    ?vtrace("received report", []),
+%% 	    Pid ! {snmp_report, Pdu, Addr, Port};
+
+ 	{ok, _Vsn, #pdu{type = report} = Pdu, _MS, ok} ->
+ 	    ?vtrace("received report - ok", []),
+ 	    Pid ! {snmp_report, {ok, Pdu}, Addr, Port};
+
+ 	{ok, _Vsn, #pdu{type = report} = Pdu, _MS, {error, ReqId, Reason}} ->
+ 	    ?vtrace("received report - error", []),
+ 	    Pid ! {snmp_report, {error, ReqId, Reason, Pdu}, Addr, Port};
+
+%%  	{ok, _Vsn, #pdu{type = report} = Pdu, _MS, {error, ReqId, Reason}} ->
+%%  	    ?vtrace("received report - error", []),
+%%  	    Pid ! {snmp_error, ReqId, Pdu, Reason, Addr, Port};
 
 	{ok, _Vsn, #pdu{type = 'snmpv2-trap'} = Pdu, _MS, _ACM} ->
 	    ?vtrace("received snmpv2-trap", []),
@@ -371,8 +388,11 @@ handle_send_pdu(Pdu, Vsn, MsgData, Addr, Port,
 	    ?vtrace("handle_send_pdu -> message generated", []),
 	    udp_send(Sock, Addr, Port, Msg);	    
 	{discarded, Reason} ->
-	    ?vlog("~n   PDU ~p not sent due to ~p", [Pdu, Reason]),
+	    ?vlog("PDU not sent: "
+		  "~n   PDU:    ~p"
+		  "~n   Reason: ~p", [Pdu, Reason]),
 	    Pid ! {snmp_error, Pdu, Reason},
+%% 	    Pid ! {snmp_error, Pdu, {send_failed, Reason}},
 	    ok
     end.
 

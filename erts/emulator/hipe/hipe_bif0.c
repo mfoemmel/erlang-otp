@@ -133,6 +133,57 @@ BIF_RETTYPE hipe_bifs_write_u32_2(BIF_ALIST_2)
 }
 
 /*
+ * BIFs for mutable bytearrays.
+ */
+BIF_RETTYPE hipe_bifs_bytearray_2(BIF_ALIST_2)
+{
+    Sint nelts;
+    Eterm bin;
+
+    if (is_not_small(BIF_ARG_1) ||
+	(nelts = signed_val(BIF_ARG_1)) < 0 ||
+	!is_byte(BIF_ARG_2))
+	BIF_ERROR(BIF_P, BADARG);
+    bin = new_binary(BIF_P, NULL, nelts);
+    memset(binary_bytes(bin), unsigned_val(BIF_ARG_2), nelts);
+    BIF_RET(bin);
+}
+
+static inline unsigned char *bytearray_lvalue(Eterm bin, Eterm idx)
+{
+    Sint i;
+    unsigned char *bytes;
+
+    if (is_not_binary(bin) ||
+	is_not_small(idx) ||
+	(i = unsigned_val(idx)) >= binary_size(bin))
+	return NULL;
+    GET_BINARY_BYTES(bin, bytes);
+    return bytes + i;
+}
+
+BIF_RETTYPE hipe_bifs_bytearray_sub_2(BIF_ALIST_2)
+{
+    unsigned char *bytep;
+
+    bytep = bytearray_lvalue(BIF_ARG_1, BIF_ARG_2);
+    if (!bytep)
+	BIF_ERROR(BIF_P, BADARG);
+    BIF_RET(make_small(*bytep));
+}
+
+BIF_RETTYPE hipe_bifs_bytearray_update_3(BIF_ALIST_3)
+{
+    unsigned char *bytep;
+
+    bytep = bytearray_lvalue(BIF_ARG_1, BIF_ARG_2);
+    if (!bytep || !is_byte(BIF_ARG_3))
+	BIF_ERROR(BIF_P, BADARG);
+    *bytep = unsigned_val(BIF_ARG_3);
+    BIF_RET(NIL);
+}
+
+/*
  * BIFs for SML-like mutable arrays and reference cells.
  * For now, limited to containing immediate data.
  */

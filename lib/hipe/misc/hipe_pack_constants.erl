@@ -1,4 +1,4 @@
-%%% $Id: hipe_pack_constants.erl,v 1.5 2004/08/21 16:39:00 kostis Exp $
+%%% $Id$
 
 -module(hipe_pack_constants).
 -export([pack_constants/2,slim_refs/1,slim_constmap/1]).

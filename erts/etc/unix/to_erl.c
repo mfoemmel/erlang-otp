@@ -40,6 +40,16 @@
 #include <termios.h>
 #include <dirent.h>
 #include <signal.h>
+#include <errno.h>
+
+#if defined(O_NONBLOCK)
+# define DONT_BLOCK_PLEASE O_NONBLOCK
+#else
+# define DONT_BLOCK_PLEASE O_NDELAY
+# if !defined(EAGAIN)
+#  define EAGAIN -3898734
+# endif
+#endif
 
 #define noDEBUG
 
@@ -78,297 +88,314 @@ static void usage(char *pname)
 
 int main(int argc, char **argv)
 {
-  char  FIFO1[FILENAME_MAX], FIFO2[FILENAME_MAX];
-  int i, len, wfd, rfd, result = 0;
-  fd_set readfds;
-  char buf[BUFSIZ];
-  char pipename[FILENAME_MAX];
-
-  if (argc < 1) {
-    usage(argv[0]);
-    exit(1);
-  }
-
-#ifdef DEBUG
-  fprintf(stderr, "%s: pid is : %d\n", argv[0], (int)getpid());
-#endif
-
-  if(argv[1])
-    strcpy(pipename,argv[1]);
-  else
-    strcpy(pipename,PIPE_DIR);
-
-  if(*pipename && pipename[strlen(pipename)-1] == '/') {
-    /* The user wishes us to find a unique pipe name in the specified */
-    /* directory */
-    int highest_pipe_num = 0;
-    DIR *dirp;
-    struct dirent *direntp;
-
-    dirp = opendir(pipename);
-    if(!dirp) {
-      fprintf(stderr, "Can't access pipe directory %s.\n", pipename);
-      exit(1);
-    }
-
-    /* Check the directory for existing pipes */
+    char  FIFO1[FILENAME_MAX], FIFO2[FILENAME_MAX];
+    int i, len, wfd, rfd, result = 0;
+    fd_set readfds;
+    char buf[BUFSIZ];
+    char pipename[FILENAME_MAX];
     
-    while((direntp=readdir(dirp)) != NULL) {
-      if(strncmp(direntp->d_name,PIPE_STUBNAME,PIPE_STUBLEN)==0) {
-	int num = atoi(direntp->d_name+PIPE_STUBLEN+1);
-	if(num > highest_pipe_num)
-	  highest_pipe_num = num;
-      }
-    }	
-    closedir(dirp);
-    sprintf(pipename+strlen(pipename),
-	    (highest_pipe_num?"%s.%d":"%s"),PIPE_STUBNAME,highest_pipe_num);
-  } /* if */
-
-  /* read FIFO */
-  strncpy(FIFO1, pipename, FILENAME_MAX);
-  strncat(FIFO1, ".r", FILENAME_MAX - strlen(FIFO1));
-  /* write FIFO */
-  strncpy(FIFO2, pipename, FILENAME_MAX);
-  strncat(FIFO2, ".w", FILENAME_MAX - strlen(FIFO2));
-
-  if ((rfd = open (FIFO1, O_RDONLY|O_NDELAY, 0)) < 0) {
+    if (argc < 1) {
+	usage(argv[0]);
+	exit(1);
+    }
+    
 #ifdef DEBUG
-    fprintf(stderr, "Could not open FIFO %s for reading.\n", FIFO1);
+    fprintf(stderr, "%s: pid is : %d\n", argv[0], (int)getpid());
 #endif
-    fprintf(stderr, "No running Erlang on pipe %s.\n", pipename);
-    exit(1);
-  }
+    
+    if(argv[1])
+	strcpy(pipename,argv[1]);
+    else
+	strcpy(pipename,PIPE_DIR);
+    
+    if(*pipename && pipename[strlen(pipename)-1] == '/') {
+	/* The user wishes us to find a unique pipe name in the specified */
+	/* directory */
+	int highest_pipe_num = 0;
+	DIR *dirp;
+	struct dirent *direntp;
+
+	dirp = opendir(pipename);
+	if(!dirp) {
+	    fprintf(stderr, "Can't access pipe directory %s.\n", pipename);
+	    exit(1);
+	}
+
+	/* Check the directory for existing pipes */
+    
+	while((direntp=readdir(dirp)) != NULL) {
+	    if(strncmp(direntp->d_name,PIPE_STUBNAME,PIPE_STUBLEN)==0) {
+		int num = atoi(direntp->d_name+PIPE_STUBLEN+1);
+		if(num > highest_pipe_num)
+		    highest_pipe_num = num;
+	    }
+	}	
+	closedir(dirp);
+	sprintf(pipename+strlen(pipename),
+		(highest_pipe_num?"%s.%d":"%s"),PIPE_STUBNAME,highest_pipe_num);
+    } /* if */
+    
+    /* read FIFO */
+    strncpy(FIFO1, pipename, FILENAME_MAX);
+    strncat(FIFO1, ".r", FILENAME_MAX - strlen(FIFO1));
+    /* write FIFO */
+    strncpy(FIFO2, pipename, FILENAME_MAX);
+    strncat(FIFO2, ".w", FILENAME_MAX - strlen(FIFO2));
+    
+    if ((rfd = open (FIFO1, O_RDONLY|DONT_BLOCK_PLEASE, 0)) < 0) {
 #ifdef DEBUG
-  fprintf(stderr, "to_erl: %s opened for reading\n", FIFO1);
+	fprintf(stderr, "Could not open FIFO %s for reading.\n", FIFO1);
 #endif
-
-  if ((wfd = open (FIFO2, O_WRONLY|O_NDELAY, 0)) < 0) {
+	fprintf(stderr, "No running Erlang on pipe %s.\n", pipename);
+	exit(1);
+    }
 #ifdef DEBUG
-    fprintf(stderr, "Could not open FIFO %s for writing.\n", FIFO2);
+    fprintf(stderr, "to_erl: %s opened for reading\n", FIFO1);
 #endif
-    fprintf(stderr, "No running Erlang on pipe %s.\n", pipename);
-    close(rfd);
-    exit(1);
-  }
+    
+    if ((wfd = open (FIFO2, O_WRONLY|DONT_BLOCK_PLEASE, 0)) < 0) {
 #ifdef DEBUG
-  fprintf(stderr, "to_erl: %s opened for writing\n", FIFO2);
+	fprintf(stderr, "Could not open FIFO %s for writing.\n", FIFO2);
 #endif
-
-  fprintf(stderr, "Attaching to %s (^D to exit)\n\n", pipename);
-
-  /* Set break handler to our handler */
-  signal(SIGINT,handle_ctrlc);
-
-  /* 
-   * Save the current state of the terminal, and set raw mode.
-   */
-  if (tcgetattr(0, &tty_rmode) , 0) {
-    fprintf(stderr, "Cannot get terminals current mode\n");
-    exit(-1);
-  }
-  tty_smode = tty_rmode;
-  tty_eof = '\004'; /* Ctrl+D to exit */
+	fprintf(stderr, "No running Erlang on pipe %s.\n", pipename);
+	close(rfd);
+	exit(1);
+    }
 #ifdef DEBUG
-  show_terminal_settings(&tty_rmode);
+    fprintf(stderr, "to_erl: %s opened for writing\n", FIFO2);
 #endif
-  tty_smode.c_iflag =
-    1*BRKINT |/*Signal interrupt on break.*/
-    1*IGNPAR |/*Ignore characters with parity errors.*/
-    1*ISTRIP |/*Strip character.*/
-    0;
-
+    
+    fprintf(stderr, "Attaching to %s (^D to exit)\n\n", pipename);
+    
+    /* Set break handler to our handler */
+    signal(SIGINT,handle_ctrlc);
+    
+    /* 
+     * Save the current state of the terminal, and set raw mode.
+     */
+    if (tcgetattr(0, &tty_rmode) , 0) {
+	fprintf(stderr, "Cannot get terminals current mode\n");
+	exit(-1);
+    }
+    tty_smode = tty_rmode;
+    tty_eof = '\004'; /* Ctrl+D to exit */
+#ifdef DEBUG
+    show_terminal_settings(&tty_rmode);
+#endif
+    tty_smode.c_iflag =
+	1*BRKINT |/*Signal interrupt on break.*/
+	    1*IGNPAR |/*Ignore characters with parity errors.*/
+		1*ISTRIP |/*Strip character.*/
+		    0;
+    
 #if 0
-    0*IGNBRK |/*Ignore break condition.*/
-    0*PARMRK |/*Mark parity errors.*/
-    0*INPCK  |/*Enable input parity check.*/
-    0*INLCR  |/*Map NL to CR on input.*/
-    0*IGNCR  |/*Ignore CR.*/
-    0*ICRNL  |/*Map CR to NL on input.*/
-    0*IUCLC  |/*Map upper-case to lower-case on input.*/
-    0*IXON   |/*Enable start/stop output control.*/
-    0*IXANY  |/*Enable any character to restart output.*/
-    0*IXOFF  |/*Enable start/stop input control.*/
-    0*IMAXBEL|/*Echo BEL on input line too long.*/
+0*IGNBRK |/*Ignore break condition.*/
+0*PARMRK |/*Mark parity errors.*/
+0*INPCK  |/*Enable input parity check.*/
+0*INLCR  |/*Map NL to CR on input.*/
+0*IGNCR  |/*Ignore CR.*/
+0*ICRNL  |/*Map CR to NL on input.*/
+0*IUCLC  |/*Map upper-case to lower-case on input.*/
+0*IXON   |/*Enable start/stop output control.*/
+0*IXANY  |/*Enable any character to restart output.*/
+0*IXOFF  |/*Enable start/stop input control.*/
+0*IMAXBEL|/*Echo BEL on input line too long.*/
 #endif
-
-  tty_smode.c_oflag =
-    1*OPOST  |/*Post-process output.*/
-    1*ONLCR  |/*Map NL to CR-NL on output.*/
+						
+    tty_smode.c_oflag =
+	1*OPOST  |/*Post-process output.*/
+	    1*ONLCR  |/*Map NL to CR-NL on output.*/
 #ifdef XTABS
-    1*XTABS  |/*Expand tabs to spaces. (Linux)*/
+		1*XTABS  |/*Expand tabs to spaces. (Linux)*/
 #endif
 #ifdef OXTABS
-    1*OXTABS  |/*Expand tabs to spaces. (FreeBSD)*/
+		    1*OXTABS  |/*Expand tabs to spaces. (FreeBSD)*/
 #endif
 #ifdef NL0
-    1*NL0    |/*Select newline delays*/
+			1*NL0    |/*Select newline delays*/
 #endif
 #ifdef CR0
-    1*CR0    |/*Select carriage-return delays*/
+			    1*CR0    |/*Select carriage-return delays*/
 #endif
 #ifdef TAB0
-    1*TAB0   |/*Select horizontal tab delays*/
+				1*TAB0   |/*Select horizontal tab delays*/
 #endif
 #ifdef BS0
-    1*BS0    |/*Select backspace delays*/
+				    1*BS0    |/*Select backspace delays*/
 #endif
 #ifdef VT0
-    1*VT0    |/*Select vertical tab delays*/
+					1*VT0    |/*Select vertical tab delays*/
 #endif
 #ifdef FF0
-    1*FF0    |/*Select form feed delays*/
+					    1*FF0    |/*Select form feed delays*/
 #endif
-    0;
-
+											    0;
+    
 #if 0
-    0*OLCUC  |/*Map lower case to upper on output.*/
-    0*OCRNL  |/*Map CR to NL on output.*/
-    0*ONOCR  |/*No CR output at column 0.*/
-    0*ONLRET |/*NL performs CR function.*/
-    0*OFILL  |/*Use fill characters for delay.*/
-    0*OFDEL  |/*Fill is DEL, else NULL.*/
-    0*NL1    |
-    0*CR1    |
-    0*CR2    |
-    0*CR3    |
-    0*TAB1   |
-    0*TAB2   |
-    0*TAB3   |/*Expand tabs to spaces.*/
-    0*BS1    |
-    0*VT1    |
-    0*FF1    |
+0*OLCUC  |/*Map lower case to upper on output.*/
+0*OCRNL  |/*Map CR to NL on output.*/
+0*ONOCR  |/*No CR output at column 0.*/
+0*ONLRET |/*NL performs CR function.*/
+0*OFILL  |/*Use fill characters for delay.*/
+0*OFDEL  |/*Fill is DEL, else NULL.*/
+0*NL1    |
+0*CR1    |
+0*CR2    |
+0*CR3    |
+0*TAB1   |
+0*TAB2   |
+0*TAB3   |/*Expand tabs to spaces.*/
+0*BS1    |
+0*VT1    |
+0*FF1    |
 #endif
-
-  /* JALI: removed setting the tty_smode.c_cflag flags, since this is not */
-  /* advisable if this is a *real* terminal, such as the console. In fact */
-  /* this may hang the entire machine, deep, deep down (signalling break */
-  /* or toggling the abort switch doesn't help) */
-
-  tty_smode.c_lflag =
-    0;
-
+								    
+    /* JALI: removed setting the tty_smode.c_cflag flags, since this is not */
+    /* advisable if this is a *real* terminal, such as the console. In fact */
+    /* this may hang the entire machine, deep, deep down (signalling break */
+    /* or toggling the abort switch doesn't help) */
+    
+    tty_smode.c_lflag =
+									0;
+    
 #if 0
-    0*ISIG   |/*Enable signals.*/
-    0*ICANON |/*Canonical input (erase and kill processing).*/
-    0*XCASE  |/*Canonical upper/lower presentation.*/
-    0*ECHO   |/*Enable echo.*/
-    0*ECHOE  |/*Echo erase character as BS-SP-BS.*/
-    0*ECHOK  |/*Echo NL after kill character.*/
-    0*ECHONL |/*Echo NL.*/
-    0*NOFLSH |/*Disable flush after interrupt or quit.*/
-    0*TOSTOP |/*Send SIGTTOU for background output.*/
-    0*ECHOCTL|/*Echo control characters as ^char, delete as ^?.*/
-    0*ECHOPRT|/*Echo erase character as character erased.*/
-    0*ECHOKE |/*BS-SP-BS erase entire line on line kill.*/
-    0*FLUSHO |/*Output is being flushed.*/
-    0*PENDIN |/*Retype pending input at next read or input character.*/
-    0*IEXTEN |/*Enable extended (implementation-defined) functions.*/
+0*ISIG   |/*Enable signals.*/
+0*ICANON |/*Canonical input (erase and kill processing).*/
+0*XCASE  |/*Canonical upper/lower presentation.*/
+0*ECHO   |/*Enable echo.*/
+0*ECHOE  |/*Echo erase character as BS-SP-BS.*/
+0*ECHOK  |/*Echo NL after kill character.*/
+0*ECHONL |/*Echo NL.*/
+0*NOFLSH |/*Disable flush after interrupt or quit.*/
+0*TOSTOP |/*Send SIGTTOU for background output.*/
+0*ECHOCTL|/*Echo control characters as ^char, delete as ^?.*/
+0*ECHOPRT|/*Echo erase character as character erased.*/
+0*ECHOKE |/*BS-SP-BS erase entire line on line kill.*/
+0*FLUSHO |/*Output is being flushed.*/
+0*PENDIN |/*Retype pending input at next read or input character.*/
+0*IEXTEN |/*Enable extended (implementation-defined) functions.*/
 #endif
-
-   tty_smode.c_cc[VMIN]      =0;/* Note that VMIN is the same as VEOF! */
-   tty_smode.c_cc[VTIME]     =0;/* Note that VTIME is the same as VEOL! */
-   tty_smode.c_cc[VINTR]     =3;
-
-   tcsetattr(0, TCSANOW, &tty_smode);
-
+								
+    tty_smode.c_cc[VMIN]      =0;/* Note that VMIN is the same as VEOF! */
+    tty_smode.c_cc[VTIME]     =0;/* Note that VTIME is the same as VEOL! */
+    tty_smode.c_cc[VINTR]     =3;
+    
+    tcsetattr(0, TCSANOW, &tty_smode);
+    
 #ifdef DEBUG
-   show_terminal_settings(&tty_smode);
+    show_terminal_settings(&tty_smode);
 #endif
-  /*
-   * Write a ^R to the FIFO which causes the other end to redisplay
-   * the input line.
-   */
-  write(wfd, "\022", 1);
-  /*
-   * read and write
-   */
-  while (1) {
-    FD_ZERO(&readfds);
-    FD_SET(0, &readfds);
-    FD_SET(rfd, &readfds);
-    if (select(rfd + 1, &readfds, NULL, NULL, NULL) < 0) {
-      if(ctrlc) {
+    /*
+     * Write a ^R to the FIFO which causes the other end to redisplay
+     * the input line.
+     */
+    write(wfd, "\022", 1);
+    /*
+     * read and write
+     */
+    while (1) {
 	FD_ZERO(&readfds);
-      } else {
-	fprintf(stderr, "Error in select.\n");
-	result = -1;
-	break;
-      }
-    }
-    /*
-     * Read from terminal, write to FIFO
-     */
-    if (ctrlc || FD_ISSET(0, &readfds)) {
-      STATUS("Terminal read; ");
-      if(ctrlc) {
-	ctrlc = 0;
-	fprintf(stderr, "[Break]\n\r");
-	buf[0] = '\003';
-	len = 1;
-      } else if ((len = read(0, buf, BUFSIZ)) <= 0) {
-	close(rfd);
-	close(wfd);
-	if (len < 0) {
-	  fprintf(stderr, "Error in reading from stdin.\n");
-	  result = -1;
-	} else {
-	  fprintf(stderr, "[EOF]\n\r");
+	FD_SET(0, &readfds);
+	FD_SET(rfd, &readfds);
+	if (select(rfd + 1, &readfds, NULL, NULL, NULL) < 0) {
+	    if(ctrlc) {
+		FD_ZERO(&readfds);
+	    } else {
+		fprintf(stderr, "Error in select.\n");
+		result = -1;
+		break;
+	    }
 	}
-	break;
-      }
-      /* check if there is an eof character in input */
-      for (i = 0; i < len && buf[i] != tty_eof; i++);
-      if (buf[i] == tty_eof) {
-	fprintf(stderr, "[Quit]\n\r");
-	break;
-      }
-      STATUS("FIFO write; \"");
+	/*
+	 * Read from terminal, write to FIFO
+	 */
+	if (ctrlc || FD_ISSET(0, &readfds)) {
+	    STATUS("Terminal read; ");
+	    if(ctrlc) {
+		ctrlc = 0;
+		fprintf(stderr, "[Break]\n\r");
+		buf[0] = '\003';
+		len = 1;
+	    } else if ((len = read(0, buf, BUFSIZ)) <= 0) {
+		close(rfd);
+		close(wfd);
+		if (len < 0) {
+		    fprintf(stderr, "Error in reading from stdin.\n");
+		    result = -1;
+		} else {
+		    fprintf(stderr, "[EOF]\n\r");
+		}
+		break;
+	    }
+	    /* check if there is an eof character in input */
+	    for (i = 0; i < len && buf[i] != tty_eof; i++);
+	    if (buf[i] == tty_eof) {
+		fprintf(stderr, "[Quit]\n\r");
+		break;
+	    }
+	    STATUS("FIFO write; \"");
 
 #ifdef DEBUG
-      write(1, buf, len);
+	    write(1, buf, len);
 #endif
-      if (write(wfd, buf, len) != len) {
-	fprintf(stderr, "Error in writing to FIFO.\n");
-	close(rfd);
-	close(wfd);
-	result = -1;
-	break;
-      }
-      STATUS("\" OK\r\n");
+	    if (write(wfd, buf, len) != len) {
+		fprintf(stderr, "Error in writing to FIFO.\n");
+		close(rfd);
+		close(wfd);
+		result = -1;
+		break;
+	    }
+	    STATUS("\" OK\r\n");
+	}
+
+	/*
+	 * Read from FIFO, write to terminal.
+	 */
+	if (FD_ISSET(rfd, &readfds)) {
+	    STATUS("FIFO read: ");
+	    len = read(rfd, buf, BUFSIZ);
+	    if (len < 0 && errno == EAGAIN) {
+		/*
+		 * No data this time, but the writing end of the FIFO is still open.
+		 * Do nothing.
+		 */
+		;
+	    } else if (len <= 0) {
+		/*
+		 * Either an error or end of file. In either case, break out
+		 * of the loop.
+		 */
+		close(rfd);
+		close(wfd);
+		if (len < 0) {
+		    fprintf(stderr, "Error in reading from FIFO.\n");
+		    result = -1;
+		} else
+		    fprintf(stderr, "[End]\n\r");
+		break;
+	    } else {
+		/*
+		 * We successfully read at least one character. Write what we got.
+		 */
+		STATUS("Terminal write: \"");
+		if (write(1, buf, len) != len) {
+		    fprintf(stderr, "Error in writing to terminal.\n");
+		    close(rfd);
+		    close(wfd);
+		    result = -1;
+		    break;
+		}
+		STATUS("\" OK\r\n");
+	    }
+	}
     }
-    /*
-     * Read from FIFO, write to terminal 
+
+    /* 
+     * Reset terminal characterstics 
+     * XXX
      */
-    if (FD_ISSET(rfd, &readfds)) {
-      STATUS("FIFO read: ");
-      if ((len = read(rfd, buf, BUFSIZ)) <= 0) {
-	close(rfd);
-	close(wfd);
-	if (len < 0) {
-	  fprintf(stderr, "Error in reading from FIFO.\n");
-	  result = -1;
-	} else
-	  fprintf(stderr, "[End]\n\r");
-	break;
-      }
-      STATUS("Terminal write: \"");
-      if (write(1, buf, len) != len) {
-	fprintf(stderr, "Error in writing to terminal.\n");
-	close(rfd);
-	close(wfd);
-	result = -1;
-	break;
-      }
-      STATUS("\" OK\r\n");
-    }
-  }
-  /* 
-   * Reset terminal characterstics 
-   * XXX
-   */
-  tcsetattr(0, TCSANOW, &tty_rmode);
-  return 0;
+    tcsetattr(0, TCSANOW, &tty_rmode);
+    return 0;
 }
 
 #ifdef DEBUG

@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_x86_ra_postconditions.erl,v 1.25 2005/04/01 08:40:18 mikpe Exp $
+%%% $Id$
 
 -ifndef(HIPE_X86_RA_POSTCONDITIONS).
 -define(HIPE_X86_RA_POSTCONDITIONS,	hipe_x86_ra_postconditions).
@@ -9,56 +9,51 @@
 -endif.
 
 -module(?HIPE_X86_RA_POSTCONDITIONS).
--export([check_and_rewrite/4]).
+-export([check_and_rewrite/5]).
+
 -include("../x86/hipe_x86.hrl").
 -define(HIPE_INSTRUMENT_COMPILER, true).
 -include("../main/hipe.hrl").
 -define(count_temp(T), ?cons_counter(counter_mfa_mem_temps, T)).
 
-check_and_rewrite(Defun, Coloring, DontSpill, _Options) ->
-  %%io:format("Converting\n"),
+check_and_rewrite(Defun, Coloring, Strategy, DontSpill, _Options) ->
+  %% io:format("Converting\n"),
   TempMap = hipe_temp_map:cols2tuple(Coloring, ?HIPE_X86_SPECIFIC),
-  %%io:format("Rewriting\n"),
+  %% io:format("Rewriting\n"),
   #defun{code=Code0} = Defun,
-  {Code1, NewDontSpill} = do_insns(Code0, TempMap, [], DontSpill),
-  {Defun#defun{code=Code1,
-		  var_range={0, hipe_gensym:get_var(x86)}},
+  {Code1, NewDontSpill} = do_insns(Code0, TempMap, Strategy, [], DontSpill),
+  {Defun#defun{code=Code1,var_range={0,hipe_gensym:get_var(x86)}},
    Coloring, NewDontSpill}.
 
-do_insns([I|Insns], TempMap, Is, DontSpill) ->
-  {NewIs, NewDontSpill} = do_insns(Insns, TempMap, Is, DontSpill),
-  {NewI, FinalDontSpill} = do_insn(I, TempMap, NewDontSpill),
-  %%  case [I] of
-  %%     NewI -> ok;
-  %%     _ ->
-  %%       io:format("\n~w ->\n ~w\n------------\n",[I,NewI])
-  %%   end,
+do_insns([I|Insns], TempMap, Strategy, Is, DontSpill) ->
+  {NewIs, NewDontSpill} = do_insns(Insns, TempMap, Strategy, Is, DontSpill),
+  {NewI, FinalDontSpill} = do_insn(I, TempMap, Strategy, NewDontSpill),
   {NewI ++ NewIs, FinalDontSpill};
-do_insns([],_, Is, DontSpill) ->
+do_insns([], _TempMap, _Strategy, Is, DontSpill) ->
   {Is, DontSpill}.
 
-do_insn(I, TempMap, DontSpill) ->	% Insn -> Insn list
+do_insn(I, TempMap, Strategy, DontSpill) ->	% Insn -> Insn list
   case I of
     #alu{} ->
-      do_alu(I, TempMap, DontSpill);
+      do_alu(I, TempMap, Strategy, DontSpill);
     #cmp{} ->
-      do_cmp(I, TempMap, DontSpill);
+      do_cmp(I, TempMap, Strategy, DontSpill);
     #jmp_switch{} ->
-      do_jmp_switch(I, TempMap, DontSpill);
+      do_jmp_switch(I, TempMap, Strategy, DontSpill);
     #lea{} ->
-      do_lea(I, TempMap, DontSpill);
+      do_lea(I, TempMap, Strategy, DontSpill);
     #move{} ->
-      do_move(I, TempMap, DontSpill);
+      do_move(I, TempMap, Strategy, DontSpill);
     #move64{} ->
-      do_move64(I, TempMap, DontSpill);
+      do_move64(I, TempMap, Strategy, DontSpill);
     #movsx{} ->
-      do_movx(I, TempMap, DontSpill);
+      do_movx(I, TempMap, Strategy, DontSpill);
     #movzx{} ->
-      do_movx(I, TempMap, DontSpill);
+      do_movx(I, TempMap, Strategy, DontSpill);
     #fmove{} ->
-      do_fmove(I, TempMap, DontSpill);
+      do_fmove(I, TempMap, Strategy, DontSpill);
     #shift{} ->
-      do_shift(I, TempMap, DontSpill);
+      do_shift(I, TempMap, Strategy, DontSpill);
     _ ->
       %% comment, jmp*, label, pseudo_call, pseudo_jcc, pseudo_tailcall,
       %% pseudo_tailcall_prepare, push, ret
@@ -67,22 +62,24 @@ do_insn(I, TempMap, DontSpill) ->	% Insn -> Insn list
 
 %%% Fix an alu op.
 
-do_alu(I, TempMap, DontSpill) ->
+do_alu(I, TempMap, Strategy, DontSpill) ->
   #alu{src=Src0,dst=Dst0} = I,
   {FixSrc,Src,FixDst,Dst,NewDontSpill} =
-    do_binary(Src0, Dst0, TempMap, DontSpill),
+    do_binary(Src0, Dst0, TempMap, Strategy, DontSpill),
   {FixSrc ++ FixDst ++ [I#alu{src=Src,dst=Dst}], NewDontSpill}.
 
-do_cmp(I, TempMap, DontSpill) ->
+%%% Fix a cmp op.
+
+do_cmp(I, TempMap, Strategy, DontSpill) ->
   #cmp{src=Src0,dst=Dst0} = I,
   {FixSrc, Src, FixDst, Dst, NewDontSpill} =
-    do_binary(Src0, Dst0, TempMap, DontSpill),
+    do_binary(Src0, Dst0, TempMap, Strategy, DontSpill),
   {FixSrc ++ FixDst ++ [I#cmp{src=Src,dst=Dst}], NewDontSpill}.
 
 %%% Fix a jmp_switch op.
 
 -ifdef(HIPE_AMD64).
-do_jmp_switch(I, TempMap, DontSpill) ->
+do_jmp_switch(I, TempMap, Strategy, DontSpill) ->
   #jmp_switch{temp=Temp, jtab=Tab} = I,
   case is_spilled(Temp, TempMap) of
     false ->
@@ -90,87 +87,87 @@ do_jmp_switch(I, TempMap, DontSpill) ->
         false ->
           {[I], DontSpill};
         true ->
-          NewTab = hipe_x86:mk_new_temp('untagged'),
+          NewTab = spill_temp('untagged', Strategy),
           {[hipe_x86:mk_move(Tab, NewTab), I#jmp_switch{jtab=Tab}],
           [NewTab|DontSpill]}
       end;
     true ->
       case is_spilled(Tab, TempMap) of
         false ->
-          NewTmp = hipe_x86:mk_new_temp('untagged'),
+          NewTmp = spill_temp('untagged', Strategy),
           {[hipe_x86:mk_move(Temp, NewTmp), I#jmp_switch{temp=NewTmp}],
            [NewTmp|DontSpill]};
         true ->
-          NewTmp = hipe_x86:mk_new_temp('untagged'),
-          NewTab = hipe_x86:mk_new_temp('untagged'),
+          NewTmp = spill_temp('untagged', Strategy),
+          NewTab = spill_temp0('untagged', Strategy),
           {[hipe_x86:mk_move(Temp, NewTmp),
             hipe_x86:mk_move(Tab, NewTab),
             I#jmp_switch{temp=NewTmp, jtab=NewTab}],
            [NewTmp,NewTab|DontSpill]}
       end
   end.
--else.
-do_jmp_switch(I, TempMap, DontSpill) ->
+-else.	% not AMD64
+do_jmp_switch(I, TempMap, Strategy, DontSpill) ->
   #jmp_switch{temp=Temp} = I,
   case is_spilled(Temp, TempMap) of
     false ->
       {[I], DontSpill};
     true ->
-      NewTmp = hipe_x86:mk_new_temp('untagged'),
+      NewTmp = spill_temp('untagged', Strategy),
       {[hipe_x86:mk_move(Temp, NewTmp), I#jmp_switch{temp=NewTmp}],
        [NewTmp|DontSpill]}
   end.
--endif.
+-endif.	% not AMD64
 
 %%% Fix a lea op.
 
-do_lea(I, TempMap, DontSpill) ->
+do_lea(I, TempMap, Strategy, DontSpill) ->
   #lea{temp=Temp} = I,
   case is_spilled(Temp, TempMap) of
     false ->
       {[I], DontSpill};
     true ->
-      NewTmp = hipe_x86:mk_new_temp('untagged'),
+      NewTmp = spill_temp('untagged', Strategy),
       {[I#lea{temp=NewTmp}, hipe_x86:mk_move(NewTmp, Temp)],
        [NewTmp| DontSpill]}
   end.
 
 %%% Fix a move op.
 
-do_move(I, TempMap, DontSpill) ->
+do_move(I, TempMap, Strategy, DontSpill) ->
   #move{src=Src0,dst=Dst0} = I,
   {FixSrc, Src, FixDst, Dst, NewDontSpill} =
-    do_check_byte_move(Src0, Dst0, TempMap, DontSpill),
+    do_check_byte_move(Src0, Dst0, TempMap, Strategy, DontSpill),
   {FixSrc ++ FixDst ++ [I#move{src=Src,dst=Dst}],
    NewDontSpill}.
 
 -ifdef(HIPE_AMD64).
 
 %%% AMD64 has no issues with byte moves.
-do_check_byte_move(Src0, Dst0, TempMap, DontSpill) ->
-  do_binary(Src0, Dst0, TempMap, DontSpill).
+do_check_byte_move(Src0, Dst0, TempMap, Strategy, DontSpill) ->
+  do_binary(Src0, Dst0, TempMap, Strategy, DontSpill).
 
 -else.	% not AMD64
 
 %%% x86 can only do byte moves to a subset of the integer registers.
-do_check_byte_move(Src0, Dst0, TempMap, DontSpill) ->
+do_check_byte_move(Src0, Dst0, TempMap, Strategy, DontSpill) ->
   case Dst0 of
     #x86_mem{type=byte} ->
-      do_byte_move(Src0, Dst0, TempMap, DontSpill);
+      do_byte_move(Src0, Dst0, TempMap, Strategy, DontSpill);
     _ ->
-      do_binary(Src0, Dst0, TempMap, DontSpill)
+      do_binary(Src0, Dst0, TempMap, Strategy, DontSpill)
   end.
 
-do_byte_move(Src0, Dst0,TempMap, DontSpill) ->
-  {FixSrc, Src, DontSpill1} = fix_src_operand(Src0, TempMap),
-  {FixDst, Dst, DontSpill2} = fix_dst_operand(Dst0, TempMap),
+do_byte_move(Src0, Dst0, TempMap, Strategy, DontSpill) ->
+  {FixSrc, Src, DontSpill1} = fix_src_operand(Src0, TempMap, Strategy),
+  {FixDst, Dst, DontSpill2} = fix_dst_operand(Dst0, TempMap, Strategy),
   Reg = hipe_x86_registers:eax(),
   {FixSrc3, Src3, DontSpill3} =
     case Src of
       #x86_imm{} ->
 	{FixSrc, Src, []};
-      #x86_temp{reg=Reg} ->   %%Small moves must start from reg 1->4
-	{FixSrc, Src, []}   %%Therefore variable sources are always put in eax
+      #x86_temp{reg=Reg} ->	% small moves must start from reg 1->4
+	{FixSrc, Src, []}	% so variable sources are always put in eax
     end,
   {FixSrc3, Src3, FixDst, Dst,
    DontSpill3 ++ DontSpill2 ++
@@ -178,29 +175,29 @@ do_byte_move(Src0, Dst0,TempMap, DontSpill) ->
 
 -endif.	% not AMD64
 
-%%% Fix a move64 op
+%%% Fix a move64 op.
 
-do_move64(I, TempMap, DontSpill) ->
+do_move64(I, TempMap, Strategy, DontSpill) ->
   #move64{dst=Dst} = I,
   case is_spilled(Dst, TempMap) of
     false ->
       {[I],DontSpill};
     true ->
-      Reg = clone(Dst),
+      Reg = clone(Dst, Strategy),
       {[I#move64{dst=Reg}, hipe_x86:mk_move(Reg, Dst)], [Reg| DontSpill]}
   end.
 
-%%% fix a movx op
+%%% Fix a movx op.
 
-do_movx(I, TempMap, DontSpill) ->
+do_movx(I, TempMap, Strategy, DontSpill) ->
   {FixSrc, Src, DontSpill1} =
     case I of
       #movsx{src=Src0,dst=Dst0} ->
-	fix_src_operand(Src0, TempMap);
+	fix_src_operand(Src0, TempMap, Strategy);
       #movzx{src=Src0,dst=Dst0} ->
-	fix_src_operand(Src0, TempMap)
+	fix_src_operand(Src0, TempMap, Strategy)
     end,
-  {FixDst, Dst, DontSpill2} = fix_dst_operand(Dst0, TempMap),
+  {FixDst, Dst, DontSpill2} = fix_dst_operand(Dst0, TempMap, Strategy),
   {I3, DontSpill3} =
     case is_spilled(Dst, TempMap) of
       false ->
@@ -212,7 +209,7 @@ do_movx(I, TempMap, DontSpill) ->
 	     end,
 	{I2, []};
       true ->
-	Dst2 = clone(Dst),
+	Dst2 = clone(Dst, Strategy),
 	I2 =
 	  case I of
 	    #movsx{} ->
@@ -226,24 +223,25 @@ do_movx(I, TempMap, DontSpill) ->
    DontSpill3 ++ DontSpill2 ++
    DontSpill1 ++ DontSpill}.
 
-%%% Fix a fmove op.
+%%% Fix an fmove op.
 
-do_fmove(I, TempMap, DontSpill) ->
+do_fmove(I, TempMap, Strategy, DontSpill) ->
   #fmove{src=Src0,dst=Dst0} = I,
-  {FixSrc, Src, DontSpill1} = fix_src_operand(Src0, TempMap),
-  {FixDst, Dst, DontSpill2} = fix_dst_operand(Dst0, TempMap),
+  {FixSrc, Src, DontSpill1} = fix_src_operand(Src0, TempMap, Strategy),
+  {FixDst, Dst, DontSpill2} = fix_dst_operand(Dst0, TempMap, Strategy),
   %% fmoves from memory position to memory position is handled
   %% by the f.p. register allocator.
   {FixSrc ++ FixDst ++ [I#fmove{src=Src,dst=Dst}],
    DontSpill1 ++ DontSpill2 ++ DontSpill}.
 
-%%% Fix a shift operation
+%%% Fix a shift operation.
 %%% 1. remove pseudos from any explicit memory operands
 %%% 2. if the source is a register or memory position
-%%% make sure to move it to %ecx
-do_shift(I, TempMap, DontSpill) ->
+%%%    make sure to move it to %ecx
+
+do_shift(I, TempMap, Strategy, DontSpill) ->
   #shift{src=Src0,dst=Dst0} = I,
-  {FixDst, Dst, DontSpill2} = fix_dst_operand(Dst0, TempMap),
+  {FixDst, Dst, DontSpill2} = fix_dst_operand(Dst0, TempMap, Strategy),
   DontSpill3 = DontSpill ++ DontSpill2,
   Reg = ?HIPE_X86_REGISTERS:?ECX(),
   case Src0 of
@@ -257,9 +255,10 @@ do_shift(I, TempMap, DontSpill) ->
 %%% 1. remove pseudos from any explicit memory operands
 %%% 2. if both operands are (implicit or explicit) memory operands,
 %%%    move src to a reg and use reg as src in the original insn
-do_binary(Src0, Dst0, TempMap, DontSpill) ->
-  {FixSrc, Src, DontSpill1} = fix_src_operand(Src0, TempMap),
-  {FixDst, Dst, DontSpill2} = fix_dst_operand(Dst0, TempMap),
+
+do_binary(Src0, Dst0, TempMap, Strategy, DontSpill) ->
+  {FixSrc, Src, DontSpill1} = fix_src_operand(Src0, TempMap, Strategy),
+  {FixDst, Dst, DontSpill2} = fix_dst_operand(Dst0, TempMap, Strategy),
   {FixSrc3, Src3, DontSpill3} =
     case is_mem_opnd(Src, TempMap) of
       false ->
@@ -269,7 +268,7 @@ do_binary(Src0, Dst0, TempMap, DontSpill) ->
 	  false ->
 	    {FixSrc, Src, []};
 	  true ->
-	    Src2 = clone(Src),
+	    Src2 = clone(Src, Strategy),
 	    FixSrc2 = FixSrc ++ [hipe_x86:mk_move(Src, Src2)],
 	    {FixSrc2, Src2, [Src2]}
 	end
@@ -280,36 +279,34 @@ do_binary(Src0, Dst0, TempMap, DontSpill) ->
 
 %%% Fix any x86_mem operand to not refer to any spilled temps.
 
-fix_src_operand(Opnd,TmpMap) ->
-  fix_mem_operand(Opnd, TmpMap).
+fix_src_operand(Opnd, TmpMap, Strategy) ->
+  fix_mem_operand(Opnd, TmpMap, temp1(Strategy)).
 
-fix_dst_operand(Opnd, TempMap) ->
-  fix_mem_operand(Opnd,TempMap).
+temp1('normal') -> [];
+temp1('linearscan') -> ?HIPE_X86_REGISTERS:temp1().
 
-fix_mem_operand(Opnd, TempMap) ->	% -> {[fixupcode], newop, DontSpill}
+fix_dst_operand(Opnd, TempMap, Strategy) ->
+  fix_mem_operand(Opnd, TempMap, temp0(Strategy)).
+
+temp0('normal') -> [];
+temp0('linearscan') -> ?HIPE_X86_REGISTERS:temp0().
+
+fix_mem_operand(Opnd, TempMap, RegOpt) ->	% -> {[fixupcode], newop, DontSpill}
   case Opnd of
     #x86_mem{base=Base,off=Off} ->
       case is_mem_opnd(Base, TempMap) of
 	false ->
-	  %% XXX: (Mikael) this test looks wrong to me, since it will
-	  %% falsely trigger for temps that are actual registers.
-	  %% The naive register allocator uses src_is_pseudo() here.
-          %%
-	  %% The assembler can't handle reg offsets, so at the moment
-          %% it is handled here. (Happi)
-	  case  hipe_x86:is_temp(Off) of
+	  case is_mem_opnd(Off, TempMap) of
 	    false ->
 	      {[], Opnd, []};
-	    true ->		% pseudo(pseudo)
-	      Temp = clone(Off),
-	      {[hipe_x86:mk_move(Base, Temp),
-		hipe_x86:mk_alu('add', Off, Temp)],
-	       Opnd#x86_mem{base=Temp, off=hipe_x86:mk_imm(0)},
+	    true ->
+	      Temp = clone2(Off, RegOpt),
+	      {[hipe_x86:mk_move(Off, Temp)],
+	       Opnd#x86_mem{off=Temp},
 	       [Temp]}
-
 	  end;
 	true ->
-	  Temp = clone(Base),
+	  Temp = clone2(Base, RegOpt),
 	  case is_mem_opnd(Off, TempMap) of
 	    false ->		% imm/reg(pseudo)
 	      {[hipe_x86:mk_move(Base, Temp)],
@@ -345,41 +342,19 @@ is_mem_opnd(Opnd, TempMap) ->
 		    true;
 		  false -> false
 		end;
-	      _ -> false
+	      _ ->
+		%% impossible, but was true in ls post and false in normal post
+		exit({?MODULE,is_mem_opnd,Reg}),
+		false
 	    end;
 	  false -> true
 	end;
       _ -> false
     end,
-  %%  io:format("Op ~w mem: ~w\n",[Opnd,R]),
+  %% io:format("Op ~w mem: ~w\n",[Opnd,R]),
   R.
 
 %%% Check if an operand is a spilled Temp.
-
--ifdef(notdef).
-src_is_spilled(Src, TempMap) ->
-  case hipe_x86:is_temp(Src) of
-    true ->
-      Reg = hipe_x86:temp_reg(Src),
-      case hipe_x86:temp_is_allocatable(Src) of
-	true ->
-	  case size(TempMap) > Reg of
-	    true ->
-	      case hipe_temp_map:is_spilled(Reg, TempMap) of
-		true ->
-		  ?count_temp(Reg),
-		  true;
-		false ->
-		  false
-	      end;
-	    false ->
-	      false
-	  end;
-	false -> true
-      end;
-    false -> false
-  end.
--endif.
 
 is_spilled(Temp, TempMap) ->
   case hipe_x86:temp_is_allocatable(Temp) of
@@ -402,22 +377,35 @@ is_spilled(Temp, TempMap) ->
 
 %%% Make Reg a clone of Dst (attach Dst's type to Reg).
 
-clone(Dst) ->
+clone(Dst, Strategy) ->
   Type =
     case Dst of
       #x86_mem{} -> hipe_x86:mem_type(Dst);
       #x86_temp{} -> hipe_x86:temp_type(Dst)
     end,
-  hipe_x86:mk_new_temp(Type).
+  spill_temp(Type, Strategy).
+
+-ifdef(HIPE_AMD64).
+spill_temp0(Type, 'normal') ->
+  hipe_x86:mk_new_temp(Type);
+spill_temp0(Type, 'linearscan') ->
+  hipe_x86:mk_temp(?HIPE_X86_REGISTERS:temp0(), Type).
+-endif.
+
+spill_temp(Type, 'normal') ->
+  hipe_x86:mk_new_temp(Type);
+spill_temp(Type, 'linearscan') ->
+  hipe_x86:mk_temp(?HIPE_X86_REGISTERS:temp1(), Type).
 
 %%% Make a certain reg into a clone of Dst
 
--ifdef(notdef).
-clone2(Dst, Reg) ->
+clone2(Dst, RegOpt) ->
   Type =
     case Dst of
       #x86_mem{} -> hipe_x86:mem_type(Dst);
       #x86_temp{} -> hipe_x86:temp_type(Dst)
     end,
-  hipe_x86:mk_temp(Reg, Type).
--endif.
+  case RegOpt of
+    [] -> hipe_x86:mk_new_temp(Type);
+    Reg -> hipe_x86:mk_temp(Reg, Type)
+  end.

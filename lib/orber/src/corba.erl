@@ -42,14 +42,19 @@
 	 %% get_default_context/1,
 	 %% 'BOA_init/2,
 	 resolve_initial_references/1,
+	 resolve_initial_references/2,
 	 resolve_initial_references_local/1,
 	 list_initial_services/0,
 	 add_initial_service/2,
 	 remove_initial_service/1,
 	 resolve_initial_references_remote/2,
+	 resolve_initial_references_remote/3,
 	 list_initial_services_remote/1,
-	 object_to_string/1,
-	 string_to_object/1]).
+	 list_initial_services_remote/2,
+	 object_to_string/1, object_to_string/2, 
+	 object_to_string/3, object_to_string/4,
+	 string_to_object/1,
+	 string_to_object/2]).
 
 %%-----------------------------------------------------------------
 %% External exports
@@ -81,7 +86,7 @@
 %% Internal (inside orber implementation) exports
 %%-----------------------------------------------------------------
 -export([call/4, call/5, reply/2,
-	 cast/4, cast/5, locate/1, locate/2,
+	 cast/4, cast/5, locate/1, locate/2, locate/3,
 	 request_from_iiop/6,
 	 common_create/5,
 	 mk_objkey/4,
@@ -98,7 +103,8 @@
 	 handle_call/7, 
 	 handle_call/10, 
 	 handle_cast/9,
-	 handle_cast/6]).
+	 handle_cast/6,
+	 get_implicit_context/1]).
 
 %%-----------------------------------------------------------------
 %% Internal definitions
@@ -198,11 +204,13 @@ orb_init(KeyValueList, _Name) ->
 %% Initial reference handling
 %%-----------------------------------------------------------------
 resolve_initial_references(ObjectId) ->   
+    resolve_initial_references(ObjectId, []).
+resolve_initial_references(ObjectId, Ctx) ->   
     case use_local_host(ObjectId) of
 	true ->
 	    orber_initial_references:get(ObjectId);
 	Ref ->
-	    corba:string_to_object(Ref)
+	    string_to_object(Ref, Ctx)
     end.
 
 resolve_initial_references_local(ObjectId) ->   
@@ -296,9 +304,12 @@ add_initial_service(ObjectId, ObjectRef) ->
 remove_initial_service(ObjectId) ->  
     orber_initial_references:remove(ObjectId).
 
-resolve_initial_references_remote(_ObjectId, []) ->
+resolve_initial_references_remote(ObjectId, Address) ->
+    resolve_initial_references_remote(ObjectId, Address, []).
+
+resolve_initial_references_remote(_ObjectId, [], _Ctx) ->
     raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO});
-resolve_initial_references_remote(ObjectId, [RemoteModifier| Rest]) 
+resolve_initial_references_remote(ObjectId, [RemoteModifier| Rest], Ctx) 
   when list(RemoteModifier) ->
     case lists:prefix("iiop://", RemoteModifier) of
        true ->
@@ -310,28 +321,31 @@ resolve_initial_references_remote(ObjectId, [RemoteModifier| Rest])
 	    orber_iiop:request(Key, 'get', [ObjectId], 
 			       {{'tk_objref', 12, "object"},
 				[{'tk_string', 0}],
-				[]}, 'true', infinity, IOR, []);
+				[]}, 'true', infinity, IOR, Ctx);
        false ->
-	    resolve_initial_references_remote(ObjectId, Rest)
+	    resolve_initial_references_remote(ObjectId, Rest, Ctx)
     end.
 
-list_initial_services_remote([]) ->
+list_initial_services_remote(Address) ->
+    list_initial_services_remote(Address, []).
+
+list_initial_services_remote([], _Ctx) ->
     raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO});
-list_initial_services_remote([RemoteModifier| Rest]) when list(RemoteModifier) ->
+list_initial_services_remote([RemoteModifier| Rest], Ctx) when list(RemoteModifier) ->
     case lists:prefix("iiop://", RemoteModifier) of
-       true ->
+	true ->
 	    [_, Host, Port] = string:tokens(RemoteModifier, ":/"),
 	    IOR = iop_ior:create_external(orber:giop_version(), "", 
-				 Host, list_to_integer(Port), "INIT"),
+					  Host, list_to_integer(Port), "INIT"),
 	    %% We know it's an external referens. Hence, no need to check.
 	    {_, Key} = iop_ior:get_key(IOR),
 	    orber_iiop:request(Key, 'list', [],
 			       {{'tk_sequence', {'tk_string',0},0},
-				[], []}, 'true', infinity, IOR, []);
+				[], []}, 'true', infinity, IOR, Ctx);
 	false -> 
-	    list_initial_services_remote(Rest)
+	    list_initial_services_remote(Rest, Ctx)
     end;
-list_initial_services_remote(_) ->
+list_initial_services_remote(_, _) ->
     raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 
@@ -342,7 +356,29 @@ list_initial_services_remote(_) ->
 object_to_string(Object) ->
     iop_ior:string_code(Object).
 
+object_to_string(Object, [H|_] = Hosts) when list(H) ->
+    iop_ior:string_code(Object, Hosts);
+object_to_string(_Object, _Hosts) ->
+    raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
+
+object_to_string(Object, [H|_] = Hosts, Port) when list(H), 
+						   integer(Port) ->
+    iop_ior:string_code(Object, Hosts, Port);
+object_to_string(_Object, _Hosts, _Port) ->
+    raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
+
+object_to_string(Object, [H|_] = Hosts, Port, SSLPort) when list(H), 
+							    integer(Port),
+							    integer(SSLPort)->
+    iop_ior:string_code(Object, Hosts, Port, SSLPort);
+object_to_string(_Object, _Hosts, _Port, _SSLPort) ->
+    raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
+
+
 string_to_object(IORString) ->
+    string_to_object(IORString, []).
+
+string_to_object(IORString, Ctx) ->
     case lists:prefix("IOR", IORString) of
 	true ->
 	    {ObjRef, _, _} = iop_ior:string_decode(IORString),
@@ -355,7 +391,7 @@ string_to_object(IORString) ->
 		    ObjRef;
 		_ ->
 		    Data = orber_cosnaming_utils:select_type(IORString),
-		    case orber_cosnaming_utils:lookup(Data) of
+		    case orber_cosnaming_utils:lookup(Data, Ctx) of
 			String when list(String) ->
 			    {Obj, _, _} = iop_ior:string_decode(String),
 			    Obj;
@@ -789,7 +825,7 @@ handle_call2(M, F, A, InternalState, State, []) ->
     end;
 handle_call2(M, F, A, InternalState, State, Ctx) ->
     %% Set the new Context.
-    put(oe_in_context, Ctx),
+    put(oe_server_in_context, Ctx),
     case catch apply(M, F, A) of
 	{reply, Reply, NewState} ->
 	    put(oe_server_in_context, undefined),
@@ -1063,7 +1099,8 @@ call(Obj, Func, Args, TypesOrMod, Extra) when list(Extra) ->
 call(Obj, Func, Args, TypesOrMod, Timeout) ->
     call_helper(Obj, Func, Args, TypesOrMod, Timeout, []).
 
-call_helper(Obj, Func, Args, TypesOrMod, Timeout, Ctx) ->
+call_helper(Obj, Func, Args, TypesOrMod, Timeout, InCtx) ->
+    Ctx = get_implicit_context(InCtx),
     case iop_ior:get_key(Obj) of
 	{'internal', Key, _, Flags, Mod} ->
 	    Pid = orber_objectkeys:get_pid(Key),
@@ -1092,6 +1129,47 @@ call_helper(Obj, Func, Args, TypesOrMod, Timeout, Ctx) ->
 	{'external', Key} ->		   
 	    orber_iiop:request(Key, Func, Args, TypesOrMod, 'true', Timeout, Obj, Ctx)
     end.
+
+get_implicit_context([]) ->
+    case get(oe_server_in_context) of
+	undefined ->
+	    [];
+	ImplCtx ->
+	    ImplCtx
+    end;
+get_implicit_context(Ctx) ->
+    case get(oe_server_in_context) of
+	undefined ->
+	    Ctx;
+	ImplCtx ->
+	    %% Both defined. An explicit interface context overrides
+	    %% an implicit.
+	    case check_for_interface_ctx(Ctx) of
+		false ->
+		    ImplCtx;
+		true ->
+		    remove_interface_ctx(ImplCtx, Ctx)
+	    end
+    end.
+
+check_for_interface_ctx([]) ->
+    false;
+check_for_interface_ctx([#'IOP_ServiceContext'
+			 {context_id=?ORBER_GENERIC_CTX_ID, 
+			  context_data = {interface, _I}}|_]) ->
+    true;
+check_for_interface_ctx([_|T]) ->
+    check_for_interface_ctx(T).
+
+remove_interface_ctx([], Acc) ->
+    Acc;
+remove_interface_ctx([#'IOP_ServiceContext'
+		      {context_id=?ORBER_GENERIC_CTX_ID, 
+		       context_data = {interface, _I}}|T], Acc) ->
+    remove_interface_ctx(T, Acc);
+remove_interface_ctx([H|T], Acc) ->
+    remove_interface_ctx(T, [H|Acc]).
+
 
 extract_extra_data([], ED) ->
     ED;
@@ -1166,33 +1244,42 @@ call_internal(Pid, Obj, Func, Args, Types, Check, PI,
 %% Just call apply/3.
 call_internal({pseudo, Module}, Obj, Func, Args, Types, Check, PI,
 	      _Mod, _Timeout, Ctx) ->
+    OldCtx = put(oe_server_in_context, Ctx),
     invoke_pi_request(PI, Obj, Ctx, Func, Args),
     typecheck_request(Check, Args, Types, Func),
     State = binary_to_term(get_subobject_key(Obj)),
     case catch apply(Module, Func, [Obj, State|Args]) of
 	{noreply, _} ->
+	    put(oe_server_in_context, OldCtx),
 	    ok;
 	{noreply, _, _} ->
+	    put(oe_server_in_context, OldCtx),
 	    ok;
 	{reply, Reply, _} ->
+	    put(oe_server_in_context, OldCtx),
 	    invoke_pi_reply(PI, Obj, Ctx, Func, Reply),
             typecheck_reply(Check, Reply, Types, Func),
 	    Reply;
 	{reply, Reply, _, _} ->
+	    put(oe_server_in_context, OldCtx),
 	    invoke_pi_reply(PI, Obj, Ctx, Func, Reply),
             typecheck_reply(Check, Reply, Types, Func),
 	    Reply;
 	{stop, _, Reply, _} ->
+	    put(oe_server_in_context, OldCtx),
 	    invoke_pi_reply(PI, Obj, Ctx, Func, Reply),
             typecheck_reply(Check, Reply, Types, Func),
 	    Reply;
 	{stop, _, _} ->
+	    put(oe_server_in_context, OldCtx),
 	    ok;
 	{'EXCEPTION', E} ->
+	    put(oe_server_in_context, OldCtx),
 	    invoke_pi_reply(PI, Obj, Ctx, Func, {'EXCEPTION', E}),
             typecheck_reply(Check, {'EXCEPTION', E}, Types, Func),
 	    raise(E);
 	{'EXIT', What} ->
+	    put(oe_server_in_context, OldCtx),
 	    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p);~n"
 		      "Pseudo object exit(~p).", 
 		      [?LINE, Func, Args, Types, What], ?DEBUG_LEVEL),
@@ -1201,6 +1288,7 @@ call_internal({pseudo, Module}, Obj, Func, Args, Types, Check, PI,
 	    invoke_pi_reply(PI, Obj, Ctx, Func, {'EXCEPTION', Exc}),
 	    raise(Exc);
 	Unknown ->
+	    put(oe_server_in_context, OldCtx),
 	    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p);~n"
 		      "Pseudo object failed due to bad return value (~p).", 
 		      [?LINE, Func, Args, Types, Unknown], ?DEBUG_LEVEL),
@@ -1353,7 +1441,13 @@ typecheck_request(true, Args, Types, Func) ->
     typecheck_request_helper(Types, Args, Types, Func).
 
 typecheck_request_helper(Types, Args, Mod, Func) ->
-    case catch cdr_encode:validate_request_body({1,2}, Types, Args) of
+    case catch cdr_encode:validate_request_body(
+		 #giop_env{version = {1,2}, tc = Types, parameters = Args, 
+			   host = orber:host(), iiop_port = orber:iiop_port(),
+			   iiop_ssl_port = orber:iiop_ssl_port(),
+			   domain = orber:domain(),
+			   partial_security = orber:partial_security(),
+			   flags = orber:get_flags()}) of
 	{'EXCEPTION', E} ->
 	    {_, TC, _} = Types, 
 	    error_logger:error_msg("========= Orber Typecheck Request =========~n"
@@ -1399,7 +1493,13 @@ typecheck_reply(_, _, _, _) ->
     ok.
 
 typecheck_reply_helper(Types, Args, Mod, Func) ->
-    case catch cdr_encode:validate_reply_body({1,2}, Types, Args) of
+    case catch cdr_encode:validate_reply_body(
+		 #giop_env{version = {1,2}, tc = Types, 
+			   host = orber:host(), iiop_port = orber:iiop_port(),
+			   iiop_ssl_port = orber:iiop_ssl_port(),
+			   domain = orber:domain(),
+			   partial_security = orber:partial_security(),
+			   flags = orber:get_flags()}, Args) of
 	{'tk_except', ExcType, ExcTC, {'EXCEPTION', E}} ->
 	    {_, TC, _} = Types, 
 	    error_logger:error_msg("========== Orber Typecheck Reply ==========~n"
@@ -1474,7 +1574,8 @@ cast(Obj, Func, Args, TypesOrMod) ->
 cast(Obj, Func, Args, TypesOrMod, [{context, Ctx}]) ->
     cast_helper(Obj, Func, Args, TypesOrMod, Ctx).
 
-cast_helper(Obj, Func, Args, TypesOrMod, Ctx) ->
+cast_helper(Obj, Func, Args, TypesOrMod, InCtx) ->
+    Ctx = get_implicit_context(InCtx),
     case iop_ior:get_key(Obj) of
 	{'internal', Key, _, Flags, Mod} ->
 	    Pid = orber_objectkeys:get_pid(Key),
@@ -1538,10 +1639,12 @@ cast_internal(Pid, Obj, Func, Args, Types, Check, PI, Mod, Ctx) when pid(Pid) ->
 %% This case handles if the reference is created as a Pseudo object.
 %% Just call apply/3.
 cast_internal({pseudo, Module}, Obj, Func, Args, Types, Check, PI, _Mod, Ctx) ->
+    OldCtx = put(oe_server_in_context, Ctx),
     invoke_pi_request(PI, Obj, Ctx, Func, Args),
     typecheck_request(Check, Args, Types, Func),
     State = binary_to_term(get_subobject_key(Obj)),
     catch apply(Module, Func, [Obj, State|Args]),
+    put(oe_server_in_context, OldCtx),
     ok;
 cast_internal(Registered, Obj, Func, Args, Types, Check, PI, _Mod, Ctx) ->
     invoke_pi_request(PI, Obj, Ctx, Func, Args),
@@ -1566,12 +1669,15 @@ cast_relay(Pid, Data) ->
 %% Corba:locate - this function is for the moment just used for tests
 %%-----------------------------------------------------------------
 locate(Obj) ->
-    locate(Obj, infinity).
+    locate(Obj, infinity, []).
 
 locate(Obj, Timeout) ->
+    locate(Obj, Timeout, []).
+
+locate(Obj, Timeout, Ctx) ->
     case iop_ior:get_key(Obj) of
 	{'external', Key} ->
-	    orber_iiop:locate(Key, Timeout, Obj);
+	    orber_iiop:locate(Key, Timeout, Obj, Ctx);
 	_ ->
 	    orber_objectkeys:check(iop_ior:get_objkey(Obj))
     end.
@@ -1687,8 +1793,8 @@ request_from_iiop({_Mod, passive, Module, _UserDef, _OrberDef, _Flags} = ObjRef,
 		[] ->
 		    {oe_location_forward_perm, IOGR};
 		_ ->
-		    #'TRANSIENT'{minor = 0,
-				 completion_status = ?COMPLETED_NO}
+		    {'EXCEPTION', #'TRANSIENT'{minor = 0,
+					       completion_status = ?COMPLETED_NO}}
 	    end;
 	{aborted, {throw, {'EXCEPTION', E}}} ->
 	    {'EXCEPTION', E};
@@ -1708,7 +1814,7 @@ request_from_iiop({_Mod, passive, Module, _UserDef, _OrberDef, _Flags} = ObjRef,
 request_from_iiop({_Mod, _Type, Key, _UserDef, _OrberDef, _Flags} = ObjRef, 
 		  Func, Args, Types, true, ServiceCtx) ->
     case catch gen_server:call(convert_key_to_pid(Key), 
-			       {ObjRef, ServiceCtx, Func, Args}, infinity) of
+			       {ObjRef, [], Func, Args}, infinity) of
 	{'EXIT', What} ->
 	    orber:dbg("[~p] corba:request_from_iiop(~p, ~p, ~p);~n"
 		      "gen_server:call exit: ~p", 
@@ -1721,7 +1827,7 @@ request_from_iiop({_Mod, _Type, Key, _UserDef, _OrberDef, _Flags} = ObjRef,
 request_from_iiop({_Mod, _Type, Key, _UserDef, _OrberDef, _Flags} = ObjRef, 
 		  Func, Args, Types, _, ServiceCtx) ->
     case catch gen_server:cast(convert_key_to_pid(Key), 
-			       {ObjRef, ServiceCtx, Func, Args}) of
+			       {ObjRef, [], Func, Args}) of
 	{'EXIT', What} ->
 	    orber:dbg("[~p] corba:request_from_iiop(~p, ~p, ~p);~n"
 		      "gen_server:cast exit: ~p", 

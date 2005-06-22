@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_macros.erl,v 1.8 2004/08/25 00:08:02 richardc Exp $
+%% $Id: edoc_macros.erl,v 1.9 2005/06/08 20:18:37 richardc Exp $
 %%
 %% @private
 %% @copyright 2001-2003 Richard Carlsson
@@ -70,11 +70,11 @@ date_macro(_S, _Line, _Env) ->
     {Y,M,D} = date(),
     Ms = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
 	  "Oct", "Nov", "Dec"],
-    io_lib:fwrite("~s ~w ~w",[lists:nth(M, Ms),D,Y]).
+    lists:flatten(io_lib:fwrite("~s ~w ~w",[lists:nth(M, Ms),D,Y])).
 
 time_macro(_S, _Line, _Env) ->
     {H,M,Sec} = time(),
-    io_lib:fwrite("~w:~w:~w",[H,M,Sec]).
+    lists:flatten(io_lib:fwrite("~w:~w:~w",[H,M,Sec])).
 
 link_macro(S, Line, Env) ->
     {S1, S2} = edoc_lib:split_at_stop(S),

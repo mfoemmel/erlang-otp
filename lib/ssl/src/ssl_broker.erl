@@ -90,8 +90,8 @@
 
 %% External exports 
 
--export([start_broker/1, start_broker/2, start_link/3,
-	 accept/3, close/1, connect/5, controlling_process/2,
+-export([start_broker/1, start_broker/2, start_link/3, accept/3,
+	 close/1, connect/5, connection_info/1, controlling_process/2,
 	 listen/3, recv/3, send/2, getopts/2, getopts/3, setopts/2,
 	 sockname/1, peername/1, peercert/1]).
 
@@ -181,6 +181,13 @@ connect(Pid, Address, Port, Opts, Timeout) when pid(Pid), list(Opts) ->
 	false  ->
 	    {error, eoptions}
     end.
+
+%%
+%% connection_info(Socket) -> {ok, {Protocol, Cipher} | {error, Reason}
+%%
+connection_info(Socket) when record(Socket, sslsocket) ->
+    Req = {connection_info, self()},
+    gen_server:call(Socket#sslsocket.pid, Req, infinity).
 
 %% controlling_process(Socket, NewOwner) -> ok | {error, Reason}
 
@@ -394,6 +401,14 @@ handle_call({connect, Client, Address, Port, Opts, Timeout}, _From, St) ->
 	    What = what(Reason),
 	    {stop, normal, {error, What}, NSt}
     end;
+
+%% connection_info
+%%
+handle_call({connection_info, Client}, _From, St) ->
+    debug(St, "connection_info: client = ~w~n", [Client]),
+    Reply = ssl_server:connection_info(St#st.fd),
+    {reply, Reply, St};
+
 
 
 %% close from client

@@ -1,12 +1,13 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_spillcost.erl,v 1.7 2004/12/09 11:51:11 mikpe Exp $
+%%% $Id$
 
 -module(hipe_spillcost).
 
 -export([new/1,
 	 inc_costs/2,
 	 ref_in_bb/2,
-	 spill_cost/2]).
+	 spill_cost/2,
+	 nr_of_use/2]). %% only for debugging
 
 -record(spill_cost,
 	{uses		% number of uses of each temp

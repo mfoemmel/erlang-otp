@@ -312,7 +312,8 @@ send(S, Data) when port(S) ->
 	    receive
 		{inet_reply, S, Status} -> Status
 	    end;
-	{'EXIT', _Reason} -> {error, einval}
+	{'EXIT', _Reason} -> 
+	    {error, einval}
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -329,7 +330,8 @@ sendto(S,IP,Port,Data) when port(S), Port >= 0, Port =< 65535 ->
 	    receive
 		{inet_reply, S, Reply} -> Reply
 	    end;
-	{'EXIT', _Reason} -> {error, einval}
+	{'EXIT', _Reason} -> 
+	    {error, einval}
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1290,7 +1292,7 @@ get_ip6([X1,X2,X3,X4,X5,X6,X7,X8,X9,X10,X11,X12,X13,X14,X15,X16 | T]) ->
 
 %% Control command
 ctl_cmd(Port, Cmd, Args) ->
-    case catch port_control(Port, Cmd, Args) of
+    case catch erlang:port_control(Port, Cmd, Args) of
 	[?INET_REP_OK | Reply]      -> {ok, Reply};
 	[?INET_REP_ERROR| Err] -> {error, list_to_atom(Err)};
 	{'EXIT', _} -> {error, einval};

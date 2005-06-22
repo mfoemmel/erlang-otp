@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_rtl_to_x86.erl,v 1.58 2005/04/24 22:32:33 mikpe Exp $
+%%% $Id$
 %%%
 %%% Translate 3-address RTL code to 2-address pseudo-x86 code.
 
@@ -577,9 +577,9 @@ conv_dst(Opnd, Map) ->
       end;
     false ->
       case vmap_lookup(Map, Opnd) of
-	{value, {_, NewTemp}} ->
+	{value, NewTemp} ->
 	  {NewTemp, Map};
-	false ->
+	_ ->
 	  NewTemp = hipe_x86:mk_new_temp(Type),
 	  {NewTemp, vmap_bind(Map, Opnd, NewTemp)}
       end
@@ -643,13 +643,13 @@ new_untagged_temp() ->
 %%% Map from RTL var/reg operands to x86 temps.
 
 vmap_empty() ->
-  [].
+  gb_trees:empty().
 
-vmap_lookup(VMap, Opnd) ->
-  lists:keysearch(Opnd, 1, VMap).
+vmap_lookup(Map, Key) ->
+  gb_trees:lookup(Key, Map).
 
-vmap_bind(VMap, Opnd, Temp) ->
-  [{Opnd, Temp} | VMap].
+vmap_bind(Map, Key, Val) ->
+  gb_trees:insert(Key, Val, Map).
 
 conv_fp_unop(Dst, Src, Op) ->
   case same_opnd(Dst, Src) of

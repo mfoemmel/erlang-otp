@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_rtl_cerl_bs_ops.erl,v 1.12 2004/08/30 07:44:41 pergu Exp $
+%%% $Id$
 %%%-------------------------------------------------------------------
 %%% File    : hipe_rtl_cerl_bs_ops.erl
 %%% Author  : Per Gustafsson <pergu@dhcp-12-245.it.uu.se>

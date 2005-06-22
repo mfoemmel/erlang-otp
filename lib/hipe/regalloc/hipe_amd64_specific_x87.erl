@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_amd64_specific_x87.erl,v 1.3 2005/03/29 11:46:30 mikpe Exp $
+%%% $Id$
 
 -module(hipe_amd64_specific_x87).
 -export([allocatable/0,
@@ -7,9 +7,9 @@
 	 %% var_range/1,
 	 %% def_use/1,
 	 %% is_fixed/1,
-	 %% is_arg/1,
+	 is_arg/1,
 	 %% non_alloc/1,
-	 %% new_spill_index/1,
+	 new_spill_index/1,
 	 number_of_temporaries/1
 	]).
 
@@ -41,17 +41,21 @@ reverse_postorder(CFG) ->
 is_global(_) ->
   false.
 
-%% is_fixed(_) ->
-%%   false.
-%% 
-%% is_arg(_) ->
-%%   false.
+-ifdef(notdef).
+is_fixed(_) ->
+   false.
+-endif.
+ 
+is_arg(_) ->
+   false.
 
 args(_) ->
   [].
 
-%% non_alloc(_) ->
-%%   [].
+-ifdef(notdef).
+non_alloc(_) ->
+   [].
+-endif.
 
 %% Liveness stuff
 
@@ -90,10 +94,12 @@ succ_map(CFG) ->
 labels(CFG) ->
   hipe_x86_cfg:labels(CFG).
 
-%% var_range(_CFG) ->
-%%   {Min,Max} = hipe_gensym:var_range(x86),
-%%   %% io:format("Var_range: ~w\n",[{Min,Max}]),
-%%   {Min,Max}.
+-ifdef(notdef).
+var_range(_CFG) ->
+  {Min,Max} = hipe_gensym:var_range(x86),
+  %% io:format("Var_range: ~w\n",[{Min,Max}]),
+  {Min,Max}.
+-endif.
 
 number_of_temporaries(_CFG) ->
   Highest_temporary = hipe_gensym:get_var(x86),
@@ -105,15 +111,17 @@ bb(CFG,L) ->
 
 %% AMD64 stuff
 
-%% def_use(Instruction) ->
-%%     {[X || X <- hipe_amd64_defuse:insn_def(Instruction), 
-%% 	   hipe_x86:temp_is_allocatable(X),
-%% 	   temp_is_double(X)],
-%%      [X || X <- hipe_amd64_defuse:insn_use(Instruction), 
-%% 	   hipe_x86:temp_is_allocatable(X),
-%% 	   temp_is_double(X)]
-%%     }.
-%% 
+-ifdef(notdef).
+def_use(Instruction) ->
+  {[X || X <- hipe_amd64_defuse:insn_def(Instruction), 
+	 hipe_x86:temp_is_allocatable(X),
+	 temp_is_double(X)],
+   [X || X <- hipe_amd64_defuse:insn_use(Instruction), 
+	 hipe_x86:temp_is_allocatable(X),
+	 temp_is_double(X)]
+  }.
+-endif.
+ 
 uses(I) ->
   [X || X <- hipe_amd64_defuse:insn_use(I),
  	     hipe_x86:temp_is_allocatable(X),
@@ -130,5 +138,5 @@ temp_is_double(Temp)->
 reg_nr(Reg) ->
   hipe_x86:temp_reg(Reg).
  
-%% new_spill_index(SpillIndex)->
-%%   SpillIndex+1.
+new_spill_index(SpillIndex)->
+  SpillIndex+1.

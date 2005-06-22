@@ -32,7 +32,8 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([code/4, decode/4, string_code/1, string_decode/1,
+-export([code/4, decode/4, string_decode/1,
+	 string_code/1, string_code/2, string_code/3, string_code/4, 
 	 get_key/1, get_key/2, get_typeID/1, create/9,
 	 get_objkey/1, check_nil/1, get_privfield/1, set_privfield/2, 
 	 get_orbfield/1, set_orbfield/2, 
@@ -1112,9 +1113,46 @@ match_tag(Tag) -> integer_to_list(Tag).
 %% Func: string_code/1
 %%-----------------------------------------------------------------
 string_code(IOR) ->
-    Version = orber:giop_version(),
-    {IorByteSeq0, Length0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
-    {IorByteSeq, _} = code(Version, IOR, IorByteSeq0, Length0),
+    Flags = orber:get_flags(),
+    case ?ORB_FLAG_TEST(Flags, ?ORB_ENV_ENABLE_NAT) of
+	false ->
+	    string_code(IOR, Flags, orber:host(), 
+			orber:iiop_port(), orber:iiop_ssl_port());
+	true ->
+	    string_code(IOR, Flags, orber:nat_host(), 
+			orber:nat_iiop_port(), orber:nat_iiop_ssl_port())
+    end.
+
+string_code(IOR, Host) ->
+    Flags = orber:get_flags(),
+    case ?ORB_FLAG_TEST(Flags, ?ORB_ENV_ENABLE_NAT) of
+	false ->
+	    string_code(IOR, Flags, Host, 
+			orber:iiop_port(), orber:iiop_ssl_port());
+	true ->
+	    string_code(IOR, Flags, Host, 
+			orber:nat_iiop_port(), orber:nat_iiop_ssl_port())
+    end.
+
+string_code(IOR, Host, Port) ->
+    Flags = orber:get_flags(),
+    case ?ORB_FLAG_TEST(Flags, ?ORB_ENV_ENABLE_NAT) of
+	false ->
+	    string_code(IOR, Flags, Host, Port, orber:iiop_ssl_port());
+	true ->
+	    string_code(IOR, Flags, Host, Port, orber:nat_iiop_ssl_port())
+    end.
+
+string_code(IOR, Host, Port, SSLPort) ->
+    string_code(IOR, orber:get_flags(), Host, Port, SSLPort).
+
+string_code(IOR, Flags, IP, Port, SSLPort) ->
+    Env = #giop_env{version = orber:giop_version(),
+		    flags = Flags, host = IP, iiop_port = Port, 
+		    iiop_ssl_port = SSLPort, domain = orber:domain(),
+		    partial_security = orber:partial_security()},
+    {IorByteSeq0, Length0} = cdr_encode:enc_type('tk_octet', Env, 0, [], 0),
+    {IorByteSeq, _} = code(Env, IOR, IorByteSeq0, Length0),
     IorByteSeq1 = binary_to_list(list_to_binary(lists:reverse(IorByteSeq))),
     IorHexSeq = bytestring_to_hexstring(IorByteSeq1),
     [$I,$O,$R,$: | IorHexSeq].
@@ -1122,15 +1160,16 @@ string_code(IOR) ->
 %%-----------------------------------------------------------------
 %% Func: code/3
 %%-----------------------------------------------------------------
-code(Version, #'IOP_IOR'{type_id=TypeId, profiles=Profiles}, Bytes, Len) ->
+code(#giop_env{version = Version} = Env, #'IOP_IOR'{type_id=TypeId, profiles=Profiles}, Bytes, Len) ->
     ProfileSeq =code_profile_datas(Version, Profiles),
     %% Byte order
     cdr_encode:enc_type(?IOR_TYPEDEF,
-			Version, 
+			Env, 
 			#'IOP_IOR'{type_id=TypeId, profiles=ProfileSeq},
 			Bytes, Len);
-code(Version, {Mod, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) ->
-    EnvFlags = orber:get_flags(),
+%% No Local Interface supplied. Use configuration parameters.
+code(#giop_env{version = Version, host = 0, flags = EnvFlags} = Env, 
+     {Mod, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) ->
     MC = case ?ORB_FLAG_TEST(EnvFlags, ?ORB_ENV_EXCLUDE_CODESET_COMPONENT) of
 	     true ->
 		 [];
@@ -1151,8 +1190,28 @@ code(Version, {Mod, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) ->
 			 MC, Flags, EnvFlags)
 	  
 	  end,
-    code(Version, IOR, Bytes, Len).
+    code(Env, IOR, Bytes, Len);
+code(#giop_env{version = Version, host = Host, iiop_port = IIOPort, 
+	       iiop_ssl_port = SSLPort, flags = EnvFlags} = Env, 
+     {Mod, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) ->
+    MC = case ?ORB_FLAG_TEST(EnvFlags, ?ORB_ENV_EXCLUDE_CODESET_COMPONENT) of
+	     true ->
+		 [];
+	     false ->
+		 [#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+					 component_data=?DEFAULT_CODESETS}]
+	 end,
+    IOR = create(Version, Mod:typeID(), Host, check_port(IIOPort, normal), 
+		 check_port(SSLPort, ssl), {Mod, Type, Key, UserDef, OrberDef, Flags}, 
+		 MC, Flags, EnvFlags),
+    code(Env, IOR, Bytes, Len).
 
+check_port(Port, _Type) when integer(Port) ->
+    Port;
+check_port(_, normal) ->
+    orber:iiop_port();
+check_port(_, ssl) ->
+    orber:iiop_ssl_port().
 
 code_profile_datas(_, []) ->
     [];

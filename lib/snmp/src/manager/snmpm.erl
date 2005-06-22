@@ -40,20 +40,23 @@
 	 which_agents/0, which_agents/1, 
 	 agent_info/3, update_agent_info/5, 
 	 
-	 register_usm_user/3, 
+	 register_usm_user/3, unregister_usm_user/2, 
 	 which_usm_users/0, which_usm_users/1, 
 	 usm_user_info/3, update_usm_user_info/4, 
 	 
 	 %% 
 	 %% Basic SNMP API
-	 g/3, g/4, g/5, g/6, ag/3, ag/4, ag/5, ag/6, 
-	 gn/3, gn/4, gn/5, gn/6, agn/3, agn/4, agn/5, agn/6, 
-	 gb/5, gb/6, gb/7, gb/8, 
-	 s/3, s/4, s/5, s/6, as/3, as/4, as/5, as/6, 
+	 g/3, g/4, g/5, g/6, g/7, 
+	 ag/3, ag/4, ag/5, ag/6, ag/7, 
+	 gn/3, gn/4, gn/5, gn/6, gn/7, 
+	 agn/3, agn/4, agn/5, agn/6, agn/7, 
+	 gb/5, gb/6, gb/7, gb/8, gb/9, 
+	 s/3, s/4, s/5, s/6, s/7, 
+	 as/3, as/4, as/5, as/6, as/7, 
 	 cancel_async_request/2, 
 	 
 	 %% Extended SNMP API
-	 discovery/2, discovery/3, discovery/4, discovery/5, 
+	 discovery/2, discovery/3, discovery/4, discovery/5, discovery/6, 
 
 	 %% Logging
 	 log_to_txt/2, log_to_txt/3, log_to_txt/4,
@@ -218,6 +221,10 @@ register_usm_user(EngineID, UserName, Conf)
   when list(EngineID), list(UserName), list(Conf) ->
     snmpm_config:register_usm_user(EngineID, UserName, Conf).
 
+unregister_usm_user(EngineID, UserName) 
+  when list(EngineID), list(UserName) ->
+    snmpm_config:unregister_usm_user(EngineID, UserName).
+
 usm_user_info(EngineID, UserName, Item) 
   when list(EngineID), list(UserName), atom(Item) ->
     snmpm_config:usm_user_info(EngineID, UserName, Item).
@@ -248,6 +255,9 @@ discovery(UserId, BAddr, Config, Expire) ->
 discovery(UserId, BAddr, Port, Config, Expire) ->
     snmpm_server:discovery(UserId, BAddr, Port, Config, Expire).
 
+discovery(UserId, BAddr, Port, Config, Expire, ExtraInfo) ->
+    snmpm_server:discovery(UserId, BAddr, Port, Config, Expire, ExtraInfo).
+
 
 %% -- Requests --
 
@@ -266,7 +276,7 @@ g(UserId, Addr, Oids, Timeout) when list(Oids), integer(Timeout) ->
 
 g(UserId, Addr, Port, CtxName, Oids) 
   when integer(Port), list(CtxName), list(Oids) ->
-    snmpm_server:sync_get(UserId, Addr, CtxName, Port, Oids);
+    snmpm_server:sync_get(UserId, Addr, Port, CtxName, Oids);
 g(UserId, Addr, Port, Oids, Timeout) 
   when integer(Port), list(Oids), integer(Timeout) ->
     g(UserId, Addr, Port, ?DEFAULT_CONTEXT, Oids, Timeout);
@@ -276,6 +286,10 @@ g(UserId, Addr, CtxName, Oids, Timeout)
 
 g(UserId, Addr, Port, CtxName, Oids, Timeout) ->
     snmpm_server:sync_get(UserId, Addr, Port, CtxName, Oids, Timeout).
+
+g(UserId, Addr, Port, CtxName, Oids, Timeout, ExtraInfo) ->
+    snmpm_server:sync_get(UserId, Addr, Port, CtxName, Oids, Timeout, 
+			  ExtraInfo).
 
 
 %% asynchroneous get-request
@@ -306,6 +320,10 @@ ag(UserId, Addr, CtxName, Oids, Expire)
 ag(UserId, Addr, Port, CtxName, Oids, Expire) ->
     snmpm_server:async_get(UserId, Addr, Port, CtxName, Oids, Expire).
 
+ag(UserId, Addr, Port, CtxName, Oids, Expire, ExtraInfo) ->
+    snmpm_server:async_get(UserId, Addr, Port, CtxName, Oids, Expire, 
+			   ExtraInfo).
+
 
 %% synchroneous get_next-request
 %% 
@@ -333,6 +351,10 @@ gn(UserId, Addr, CtxName, Oids, Timeout)
 
 gn(UserId, Addr, Port, CtxName, Oids, Timeout) ->
     snmpm_server:sync_get_next(UserId, Addr, Port, CtxName, Oids, Timeout).
+
+gn(UserId, Addr, Port, CtxName, Oids, Timeout, ExtraInfo) ->
+    snmpm_server:sync_get_next(UserId, Addr, Port, CtxName, Oids, Timeout, 
+			       ExtraInfo).
 
 
 %% asynchroneous get_next-request
@@ -362,6 +384,10 @@ agn(UserId, Addr, CtxName, Oids, Expire)
 
 agn(UserId, Addr, Port, CtxName, Oids, Expire) ->
     snmpm_server:async_get_next(UserId, Addr, Port, CtxName, Oids, Expire).
+
+agn(UserId, Addr, Port, CtxName, Oids, Expire, ExtraInfo) ->
+    snmpm_server:async_get_next(UserId, Addr, Port, CtxName, Oids, Expire, 
+			       ExtraInfo).
 
 
 %% synchroneous set-request
@@ -394,6 +420,10 @@ s(UserId, Addr, CtxName, VarsAndVals, Timeout)
 s(UserId, Addr, Port, CtxName, VarsAndVals, Timeout) ->
     snmpm_server:sync_set(UserId, Addr, Port, CtxName, VarsAndVals, Timeout).
 
+s(UserId, Addr, Port, CtxName, VarsAndVals, Timeout, ExtraInfo) ->
+    snmpm_server:sync_set(UserId, Addr, Port, CtxName, VarsAndVals, Timeout,
+			  ExtraInfo).
+
 
 %% asynchroneous set-request
 %% 
@@ -424,6 +454,10 @@ as(UserId, Addr, CtxName, VarsAndVals, Expire)
 
 as(UserId, Addr, Port, CtxName, VarsAndVals, Expire) ->
     snmpm_server:async_set(UserId, Addr, Port, CtxName, VarsAndVals, Expire).
+
+as(UserId, Addr, Port, CtxName, VarsAndVals, Expire, ExtraInfo) ->
+    snmpm_server:async_set(UserId, Addr, Port, CtxName, VarsAndVals, Expire,
+			   ExtraInfo).
 
 
 %% synchroneous get-bulk
@@ -465,6 +499,11 @@ gb(UserId, Addr, NonRep, MaxRep, CtxName, Oids, Timeout)
 gb(UserId, Addr, Port, NonRep, MaxRep, CtxName, Oids, Timeout) ->
     snmpm_server:sync_get_bulk(UserId, Addr, Port, 
 			       NonRep, MaxRep, CtxName, Oids, Timeout).
+
+gb(UserId, Addr, Port, NonRep, MaxRep, CtxName, Oids, Timeout, ExtraInfo) ->
+    snmpm_server:sync_get_bulk(UserId, Addr, Port, 
+			       NonRep, MaxRep, CtxName, Oids, Timeout,
+			       ExtraInfo).
 
 
 cancel_async_request(UserId, ReqId) ->

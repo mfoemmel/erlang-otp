@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: cerl_cconv.erl,v 1.19 2005/04/12 15:14:56 tobiasl Exp $
+%% $Id$
 %%
 %% @author Richard Carlsson <richardc@csd.uu.se>
 %% @copyright 2000-2004 Richard Carlsson

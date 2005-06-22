@@ -9,7 +9,7 @@
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-#     $Id: Makefile,v 1.30 2005/01/07 02:31:24 mikpe Exp $
+#     $Id$
 #
 
 ifndef EBIN
@@ -42,6 +42,7 @@ MODULES = hipe_ig hipe_ig_moves hipe_moves \
 	  hipe_adj_list hipe_vectors_wrapper \
 	  hipe_temp_map \
 	  hipe_coalescing_regalloc \
+	  hipe_optimistic_regalloc hipe_optimistic_worklists \
 	  hipe_graph_coloring_regalloc \
 	  hipe_regalloc_loop \
 	  hipe_ls_regalloc \

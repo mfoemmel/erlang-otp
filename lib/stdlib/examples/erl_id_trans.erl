@@ -422,7 +422,7 @@ expr({'fun',Line,Body}) ->
 	    {'fun',Line,{clauses,Cs1}};
 	{function,F,A} ->
 	    {'fun',Line,{function,F,A}};
-	{function,M,F,A} ->			%This is an error in lint!
+	{function,M,F,A} ->			%R10B-6: fun M:F/A.
 	    {'fun',Line,{function,M,F,A}}
     end;
 expr({call,Line,F0,As0}) ->

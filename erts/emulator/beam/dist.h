@@ -28,11 +28,13 @@
 #define DFLAG_HIDDEN_ATOM_CACHE   0x40
 #define DFLAG_NEW_FUN_TAGS        0x80
 #define DFLAG_EXTENDED_PIDS_PORTS 0x100
+#define DFLAG_EXPORT_PTR_TAG      0x200
 
 /* All flags that should be enabled when term_to_binary/1 is used. */
-#define TERM_TO_BINARY_DFLAGS (DFLAG_EXTENDED_REFERENCES \
-			       | DFLAG_NEW_FUN_TAGS \
-			       | DFLAG_EXTENDED_PIDS_PORTS)
+#define TERM_TO_BINARY_DFLAGS (DFLAG_EXTENDED_REFERENCES	\
+			       | DFLAG_NEW_FUN_TAGS		\
+			       | DFLAG_EXTENDED_PIDS_PORTS	\
+			       | DFLAG_EXPORT_PTR_TAG)
 
 /* opcodes used in distribution messages */
 #define DOP_LINK		1

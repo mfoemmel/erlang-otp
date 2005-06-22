@@ -501,7 +501,7 @@ gen_encode_sof_components(Erules,Typename,SeqOrSetOf,Cont)
 	  "_components'([]",Objfun_novar,", AccBytes, AccLen) -> ",nl]),
 
     case catch lists:member(der,get(encoding_options)) of
-	true ->
+	true when SeqOrSetOf=='SET OF'->
 	    emit([indent(3),
 		  "{asn1rt_check:dynamicsort_SETOF(AccBytes),AccLen};",nl,nl]);
 	_ ->

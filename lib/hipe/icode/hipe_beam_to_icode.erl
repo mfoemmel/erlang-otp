@@ -4,7 +4,7 @@
 %% Author      : Kostis Sagonas
 %% Description : Translates symbolic BEAM code to Icode
 %%=======================================================================
-%% $Id: hipe_beam_to_icode.erl,v 1.117 2005/04/01 12:36:42 kostis Exp $
+%% $Id$
 %%=======================================================================
 %% @doc
 %%    This file translates symbolic BEAM code to Icode which is HiPE's

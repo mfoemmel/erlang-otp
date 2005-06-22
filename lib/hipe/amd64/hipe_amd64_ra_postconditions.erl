@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_amd64_ra_postconditions.erl,v 1.5 2005/04/01 08:40:17 mikpe Exp $
+%%% $Id$
 
 -define(HIPE_AMD64,			true).
 -define(HIPE_X86_RA_POSTCONDITIONS,	hipe_amd64_ra_postconditions).

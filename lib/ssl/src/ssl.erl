@@ -20,10 +20,11 @@
 
 -module(ssl).
 
--export([start/0, stop/0, accept/1, accept/2, ciphers/0, close/1, connect/3,
-	 connect/4, controlling_process/2, listen/2, pid/1, port/1,
-	 peername/1, recv/2, recv/3, send/2, getopts/2, setopts/2,
-	 seed/1, sockname/1, peercert/1, peercert/2, version/0,
+-export([start/0, stop/0, accept/1, accept/2, ciphers/0, close/1,
+	 connect/3, connect/4, connection_info/1,
+	 controlling_process/2, listen/2, pid/1, port/1, peername/1,
+	 recv/2, recv/3, send/2, getopts/2, setopts/2, seed/1,
+	 sockname/1, peercert/1, peercert/2, version/0,
 	 format_error/1]).
 
 -include("ssl_int.hrl").
@@ -65,6 +66,12 @@ connect(Address, Port, Options) ->
 connect(Address, Port, Options, Timeout) ->
     {ok, Pid} = ssl_broker:start_broker(connector),
     ssl_broker:connect(Pid, Address, Port, Options, Timeout).
+
+%% connection_info(Socket) -> {ok, {Protocol, Cipher}} | {error, Reason}
+%%
+%% 
+connection_info(Socket) when record(Socket, sslsocket) ->
+    ssl_broker:connection_info(Socket).
 
 %% controlling_process(Socket, NewOwner) -> ok | {error, Reason}
 %%

@@ -212,15 +212,23 @@ get_memory_usage_win32(_Port) ->
 %% Returns {Allocated,Total}
 %%-----------------------------------------------------------------
 get_memory_usage_linux(_) ->
+    get_memory_usage_linux_1(100).
+
+get_memory_usage_linux_1(0) ->
+    exit(too_many_retries);
+get_memory_usage_linux_1(N) ->
     {ok,F} = file:open("/proc/meminfo", [read,read_ahead]),
     try
 	case get_memory_usage_linux_1(F, undefined, undefined) of
 	    {MemTotal,MemFree} when is_integer(MemTotal), is_integer(MemFree) ->
+		file:close(F),
 		{MemTotal-MemFree,MemTotal}
 	end
-	after
-	    file:close(F)
-	end.
+    catch
+	_:_ ->
+	    file:close(F),
+	    get_memory_usage_linux_1(N-1)
+    end.
 
 get_memory_usage_linux_1(_, Tot, Free) when is_integer(Tot), is_integer(Free) ->
     {Tot,Free};

@@ -344,31 +344,49 @@ dec_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_CodeSets,
     {ByteOrder, Rest} = dec_byte_order(list_to_binary(Bytes)),
     {CodeCtx, _, _} =  dec_type(?CONV_FRAME_CODESETCONTEXT, Version, 
 				Rest, 1, ByteOrder),
-    dec_used_contexts(Version, T, [CodeCtx|Ctxs]);
+    dec_used_contexts(Version, T, 
+		      [#'IOP_ServiceContext'{context_id=?IOP_CodeSets,
+					     context_data = CodeCtx}|Ctxs]);
 dec_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_BI_DIR_IIOP,
 						  context_data = Bytes}|T], Ctxs) ->
     {ByteOrder, Rest} = dec_byte_order(list_to_binary(Bytes)),
     {BiDirCtx, _, _} =  dec_type(?IIOP_BIDIRIIOPSERVICECONTEXT, Version, 
-				Rest, 1, ByteOrder),
-    dec_used_contexts(Version, T, [BiDirCtx|Ctxs]);
+				 Rest, 1, ByteOrder),
+    dec_used_contexts(Version, T, 
+		      [#'IOP_ServiceContext'{context_id=?IOP_BI_DIR_IIOP,
+					     context_data = BiDirCtx}|Ctxs]);
 dec_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_FT_REQUEST,
 						  context_data = Bytes}|T], Ctxs) ->
     {ByteOrder, Rest} = dec_byte_order(list_to_binary(Bytes)),
     {Ctx, _, _} =  dec_type(?FT_FTRequestServiceContext, Version, 
-				Rest, 1, ByteOrder),
-    dec_used_contexts(Version, T, [Ctx|Ctxs]);
+			    Rest, 1, ByteOrder),
+    dec_used_contexts(Version, T, 
+		      [#'IOP_ServiceContext'{context_id=?IOP_FT_REQUEST,
+					     context_data = Ctx}|Ctxs]);
 dec_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_FT_GROUP_VERSION,
 						  context_data = Bytes}|T], Ctxs) ->
     {ByteOrder, Rest} = dec_byte_order(list_to_binary(Bytes)),
     {Ctx, _, _} =  dec_type(?FT_FTGroupVersionServiceContext, Version, 
-				Rest, 1, ByteOrder),
-    dec_used_contexts(Version, T, [Ctx|Ctxs]);
+			    Rest, 1, ByteOrder),
+    dec_used_contexts(Version, T, 
+		      [#'IOP_ServiceContext'{context_id=?IOP_FT_GROUP_VERSION,
+					     context_data = Ctx}|Ctxs]);
 dec_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_SecurityAttributeService,
 						  context_data = Bytes}|T], Ctxs) ->
     {ByteOrder, Rest} = dec_byte_order(list_to_binary(Bytes)),
     {Ctx, _, _} =  dec_type(?CSI_SASContextBody, Version, 
-				Rest, 1, ByteOrder),
-    dec_used_contexts(Version, T, [Ctx|Ctxs]);
+			    Rest, 1, ByteOrder),
+    dec_used_contexts(Version, T, 
+		      [#'IOP_ServiceContext'{context_id=?IOP_SecurityAttributeService,
+					     context_data = Ctx}|Ctxs]);
+dec_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?ORBER_GENERIC_CTX_ID,
+						  context_data = Bytes}|T], Ctxs) ->
+    {ByteOrder, Rest} = dec_byte_order(list_to_binary(Bytes)),
+    {Ctx, _, _} =  dec_type(?ORBER_GENERIC_CTX, Version, 
+			    Rest, 1, ByteOrder),
+    dec_used_contexts(Version, T, 
+		      [#'IOP_ServiceContext'{context_id=?ORBER_GENERIC_CTX_ID,
+					     context_data = binary_to_term(list_to_binary(Ctx))}|Ctxs]);
 dec_used_contexts(Version, [H|T], Ctxs) ->
     dec_used_contexts(Version, T, [H|Ctxs]).
 

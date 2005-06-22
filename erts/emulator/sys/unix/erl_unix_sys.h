@@ -147,11 +147,24 @@ typedef hrtime_t SysHrTime;
 
 #endif /* HAVE_GETHRTIME */
 
-#ifdef HAVE_GETHRVTIME
-#  define sys_gethrvtime() gethrvtime()
+#if (defined(HAVE_GETHRVTIME) || defined(HAVE_CLOCK_GETTIME))
+typedef long long SysCpuTime;
+typedef struct timespec SysTimespec;
+
+#if defined(HAVE_GETHRVTIME)
+#define sys_gethrvtime() gethrvtime()
+#define sys_get_proc_cputime(t,tp) (t) = sys_gethrvtime(), \
+                                   (tp).tv_sec = (time_t)((t)/1000000000LL), \
+                                   (tp).tv_nsec = (long)((t)%1000000000LL)
 int sys_start_hrvtime(void);
 int sys_stop_hrvtime(void);
-#endif /* HAVE_GETHRVTIME */
+
+#elif defined(HAVE_CLOCK_GETTIME)
+#define sys_clock_gettime(cid,tp) clock_gettime((cid),&(tp))
+#define sys_get_proc_cputime(t,tp) sys_clock_gettime(CLOCK_PROCESS_CPUTIME_ID,(tp))
+
+#endif
+#endif
 
 /* No use in having other resolutions than 1 Ms. */
 #define SYS_CLOCK_RESOLUTION 1

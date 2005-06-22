@@ -303,7 +303,7 @@ match_fail(#k_tuple{es=[#k_atom{val=try_clause},Val]}, I, A) ->
 %% type(Ktype) -> Type.
 
 type(k_int) -> integer;
-type(k_char) -> integer;			%Hhhmmm???
+%%type(k_char) -> integer;			%Hhhmmm???
 type(k_float) -> float;
 type(k_atom) -> atom;
 type(k_nil) -> nil;
@@ -367,7 +367,7 @@ match_pat_vars(#k_int{}) -> {[],[]};
 match_pat_vars(#k_float{}) -> {[],[]};
 match_pat_vars(#k_atom{}) -> {[],[]};
 %%match_pat_vars(#k_char{}) -> {[],[]};
-match_pat_vars(#k_string{}) -> {[],[]};
+%%match_pat_vars(#k_string{}) -> {[],[]};
 match_pat_vars(#k_nil{}) -> {[],[]};
 match_pat_vars(#k_cons{hd=H,tl=T}) ->
     match_pat_list_vars([H,T]);
@@ -395,31 +395,27 @@ match_pat_list_vars(Ps) ->
 %% add_var(VarName, F, L, Vdb) -> Vdb.
 
 new_var(V, I, Vdb) ->
-    case vdb_find(V, Vdb) of
-	{V,F,L} when I < F -> vdb_store(V, I, L, Vdb);
-	{V,_,_} -> Vdb;
-	error -> vdb_store(V, I, I, Vdb)
-    end.
+    vdb_store_new(V, I, I, Vdb).
 
 new_vars(Vs, I, Vdb0) ->
     foldl(fun (V, Vdb) -> new_var(V, I, Vdb) end, Vdb0, Vs).
 
 use_var(V, I, Vdb) ->
     case vdb_find(V, Vdb) of
-	{V,F,L} when I > L -> vdb_store(V, F, I, Vdb);
+	{V,F,L} when I > L -> vdb_update(V, F, I, Vdb);
 	{V,_,_} -> Vdb;
-	error -> vdb_store(V, I, I, Vdb)
+	error -> vdb_store_new(V, I, I, Vdb)
     end.
 
 use_vars(Vs, I, Vdb0) ->
     foldl(fun (V, Vdb) -> use_var(V, I, Vdb) end, Vdb0, Vs).
 
 add_var(V, F, L, Vdb) ->
-    use_var(V, L, new_var(V, F, Vdb)).
+    vdb_store_new(V, F, L, Vdb).
 
 vdb_find(V, Vdb) ->
-    %% Peformance note: Profiling shows that this function accounts for
-    %% a lot of the execution time when huge constants terms are built.
+    %% Performance note: Profiling shows that this function accounts for
+    %% a lot of the execution time when huge constant terms are built.
     %% Using the BIF lists:keysearch/3 is a lot faster than the
     %% original Erlang version.
     case lists:keysearch(V, 1, Vdb) of
@@ -432,11 +428,15 @@ vdb_find(V, Vdb) ->
 %vdb_find(V, [{V1,F,L}=Vd|Vdb]) when V > V1 -> vdb_find(V, Vdb);
 %vdb_find(V, []) -> error.
 
-vdb_store(V, F, L, [{V1,_,_}=Vd|Vdb]) when V > V1 ->
-    [Vd|vdb_store(V, F, L, Vdb)];
-vdb_store(V, F, L, [{V1,_,_}=Vd|Vdb]) when V < V1 -> [{V,F,L},Vd|Vdb];
-vdb_store(V, F, L, [{_V1,_,_}|Vdb]) -> [{V,F,L}|Vdb]; %V == V1
-vdb_store(V, F, L, []) -> [{V,F,L}].
+vdb_update(V, F, L, [{V1,_,_}=Vd|Vdb]) when V > V1 ->
+    [Vd|vdb_update(V, F, L, Vdb)];
+vdb_update(V, F, L, [{V1,_,_}|Vdb]) when V == V1 ->
+    [{V,F,L}|Vdb].
+
+vdb_store_new(V, F, L, [{V1,_,_}=Vd|Vdb]) when V > V1 ->
+    [Vd|vdb_store_new(V, F, L, Vdb)];
+vdb_store_new(V, F, L, [{V1,_,_}|_]=Vdb) when V < V1 -> [{V,F,L}|Vdb];
+vdb_store_new(V, F, L, []) -> [{V,F,L}].
 
 %% vdb_sub(Min, Max, Vdb) -> Vdb.
 %%  Extract variables which are used before and after Min.  Lock

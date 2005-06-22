@@ -41,16 +41,15 @@
 %% Internal exports
 %%-----------------------------------------------------------------
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-	 code_change/3, terminate/2, stop/0]).
+	 code_change/3, terminate/2, stop/1]).
 
 %%-----------------------------------------------------------------
 %% Macros
 %%-----------------------------------------------------------------
 -define(DEBUG_LEVEL, 7).
 
--record(state, {stype, socket, db, interceptors, ssl_port, timeout,
-		partial_security, flags, max_fragments, max_requests,
-		request_counter = 1}).
+-record(state, {stype, socket, db, timeout, max_fragments, 
+		max_requests, request_counter = 1, giop_env, peer}).
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -71,10 +70,10 @@ start(Opts) ->
 %% Internal interface functions
 %%-----------------------------------------------------------------
 %%-----------------------------------------------------------------
-%% Func: stop/0 (Only used for test purpose !!!!!!)
+%% Func: stop/1
 %%-----------------------------------------------------------------
-stop() ->
-    gen_server:call(orber_iiop_inproxy, stop).
+stop(Pid) ->
+    gen_server:cast(Pid, stop).
 
 %%-----------------------------------------------------------------
 %% Server functions
@@ -82,56 +81,63 @@ stop() ->
 %%-----------------------------------------------------------------
 %% Func: init/1
 %%-----------------------------------------------------------------
-init({connect, Type, Socket}) ->
+init({connect, Type, Socket, Ref}) ->
     process_flag(trap_exit, true),
     Flags = orber:get_flags(),
-    SSLPort = orber:iiop_ssl_port(),
+    {Address, Port} = PeerData = orber_socket:peerdata(Type, Socket),
+    {LAddress, LPort} = LocalData = orber_socket:sockdata(Type, Socket),
+    orber_iiop_net:add_connection(Socket, Type, PeerData, LocalData, Ref),
+    Interceptors = 
+	case orber:get_interceptors() of
+	    {native, PIs} ->
+		{native, orber_pi:new_in_connection(PIs, Address, Port), PIs};
+	    Other ->
+		Other
+	end,
+    Env = 
+	case ?ORB_FLAG_TEST(Flags, ?ORB_ENV_LOCAL_INTERFACE) of
+	    true when Type == ssl ->
+		#giop_env{interceptors = Interceptors, 
+			  flags = Flags, host = [LAddress], 
+			  iiop_port = orber:iiop_port(),
+			  iiop_ssl_port = LPort,
+			  domain = orber:domain(),
+			  partial_security = orber:partial_security()};
+	    true ->
+		#giop_env{interceptors = Interceptors, 
+			  flags = Flags, host = [LAddress], 
+			  iiop_port = LPort,
+			  iiop_ssl_port = orber:iiop_ssl_port(),
+			  domain = orber:domain(),
+			  partial_security = orber:partial_security()};
+	    false ->
+		case ?ORB_FLAG_TEST(Flags, ?ORB_ENV_ENABLE_NAT) of
+		    false ->
+			#giop_env{interceptors = Interceptors, 
+				  flags = Flags, host = orber:host(), 
+				  iiop_port = orber:iiop_port(),
+				  iiop_ssl_port = orber:iiop_ssl_port(),
+				  domain = orber:domain(),
+				  partial_security = orber:partial_security()};
+		    true ->
+			#giop_env{interceptors = Interceptors, 
+				  flags = Flags, host = orber:nat_host(), 
+				  iiop_port = orber:nat_iiop_port(),
+				  iiop_ssl_port = orber:nat_iiop_ssl_port(),
+				  domain = orber:domain(),
+				  partial_security = orber:partial_security()}
+		end
+	end,
     Timeout = orber:iiop_in_connection_timeout(),
-    PartialSec = orber:partial_security(),
     MaxFrags = orber:iiop_max_fragments(),
     MaxRequests = orber:iiop_max_in_requests(),
-    {Address, Port} = PeerData = orber_socket:peerdata(Type, Socket),
-    LocalData = orber_socket:sockdata(Type, Socket),
-    orber_iiop_net:add_connection(Socket, Type, PeerData, LocalData),
-    case orber:get_interceptors() of
-	false ->
-	    {ok, #state{stype = Type, 
-			socket = Socket, 
-			db =  ets:new(orber_incoming_requests, [set]), 
-			interceptors = false,
-			ssl_port = SSLPort,
-			timeout = Timeout,
-			partial_security = PartialSec,
-			flags = Flags,
-			max_fragments = MaxFrags,
-			max_requests = MaxRequests}, Timeout};
-	{native, PIs} ->
-	    {ok, #state{stype = Type, 
-			socket = Socket, 
-			db =  ets:new(orber_incoming_requests, [set]), 
-			interceptors = {native, 
-					orber_pi:new_in_connection(PIs, 
-								   Address, 
-								   Port), 
-					PIs},
-			ssl_port = SSLPort,
-			timeout = Timeout,
-			partial_security = PartialSec,
-			flags = Flags,
-			max_fragments = MaxFrags,
-			max_requests = MaxRequests}, Timeout};
-	{Type, PIs} ->
-	    {ok, #state{stype = Type, 
-			socket = Socket, 
-			db =  ets:new(orber_incoming_requests, [set]), 
-			interceptors = {Type, PIs},
-			ssl_port = SSLPort,
-			timeout = Timeout,
-			partial_security = PartialSec,
-			flags = Flags,
-			max_fragments = MaxFrags,
-			max_requests = MaxRequests}, Timeout}
-    end.
+    {ok, #state{stype = Type, 
+		socket = Socket, 
+		db =  ets:new(orber_incoming_requests, [set]), 
+		timeout = Timeout,
+		max_fragments = MaxFrags,
+		max_requests = MaxRequests,
+		giop_env = Env, peer = PeerData}, Timeout}.
 
 
 
@@ -141,10 +147,9 @@ init({connect, Type, Socket}) ->
 %% We may want to kill all proxies before terminating, but the best
 %% option should be to let the requests complete (especially for one-way
 %% functions it's a better alternative.
-terminate(_Reason, #state{db = IncRequests,
-			 interceptors = Interceptors}) ->
+terminate(_Reason, #state{db = IncRequests, giop_env = Env}) ->
     ets:delete(IncRequests),
-    case Interceptors of 
+    case Env#giop_env.interceptors of 
 	false ->
 	    ok;
 	{native, Ref, PIs} ->
@@ -202,14 +207,13 @@ handle_info(timeout, State) ->
 	    %% Still pending request, cannot close the connection.
 	    {noreply, State, State#state.timeout}
     end;
+handle_info({reconfigure, Options}, State) ->
+    {noreply, update_state(State, Options), State#state.timeout};
 handle_info(_X,State) ->
     {noreply, State, State#state.timeout}.
 
-handle_msg(Type, Socket, Bytes, #state{stype = Type, 
-				       socket = Socket,
-				       interceptors = Interceptors,
-				       ssl_port = SSLPort,
-				       partial_security = PartialSec} = State) ->
+handle_msg(Type, Socket, Bytes, #state{stype = Type, socket = Socket, 
+				       giop_env = Env} = State) ->
     case catch cdr_decode:dec_giop_message_header(Bytes) of
 	%% Only when using IIOP-1.2 may the client send this message. 
 	%% Introduced in CORBA-2.6
@@ -226,7 +230,7 @@ handle_msg(Type, Socket, Bytes, #state{stype = Type,
 		    ets:delete(State#state.db, RId),
 		    PPid ! {self(), cancel_request_header};
 		[] ->
-		    send_msg_error(Type, Socket, Bytes, "No such request id")
+		    send_msg_error(Type, Socket, Bytes, Env, "No such request id")
 	    end,
 	    {noreply, State, State#state.timeout};
 	%% A fragment; we must have received a Request or LocateRequest
@@ -243,7 +247,7 @@ handle_msg(Type, Socket, Bytes, #state{stype = Type,
 		    ets:delete(State#state.db, RId),
 		    PPid ! {self(), GIOPHdr};
 		[] ->
-		    send_msg_error(Type, Socket, Bytes, "No such fragment id")
+		    send_msg_error(Type, Socket, Bytes, Env, "No such fragment id")
 	    end,
 	    {noreply, State, State#state.timeout};
 	%% Must be a Request or LocateRequest which have been fragmented.
@@ -252,25 +256,23 @@ handle_msg(Type, Socket, Bytes, #state{stype = Type,
 		      giop_version = {1,2}} = GIOPHdr ->
 	    ReqId = cdr_decode:peek_request_id(GIOPHdr#giop_message.byte_order,
 					       GIOPHdr#giop_message.message),
-	    Pid = orber_iiop_inrequest:start_fragment_collector(GIOPHdr, Bytes, 
-								Type, Socket, 
-								Interceptors, 
-								ReqId, self(),
-								SSLPort,
-								PartialSec, 
-								State#state.max_fragments,
-								State#state.flags),
+	    Pid = 
+		orber_iiop_inrequest:
+		start_fragment_collector(GIOPHdr, Bytes, 
+					 Type, Socket, 
+					 ReqId, self(),
+					 State#state.max_fragments,
+					 Env#giop_env{version = {1,2},
+						      request_id = ReqId}),
 	    ets:insert(State#state.db, {Pid, ReqId}),
 	    ets:insert(State#state.db, {ReqId, Pid}),
 	    {noreply, increase_counter(State), State#state.timeout};
 	GIOPHdr when record(GIOPHdr, giop_message) ->
-	    Pid = orber_iiop_inrequest:start(GIOPHdr, Bytes, Type, Socket,
-					     Interceptors, SSLPort, PartialSec,
-					     State#state.flags),
+	    Pid = orber_iiop_inrequest:start(GIOPHdr, Bytes, Type, Socket, Env),
 	    ets:insert(State#state.db, {Pid, undefined}),
 	    {noreply, increase_counter(State), State#state.timeout};
 	message_error ->
-	    send_msg_error(Type, Socket, Bytes, "Unable to decode the GIOP-header"),
+	    send_msg_error(Type, Socket, Bytes, Env, "Unable to decode the GIOP-header"),
 	    {noreply, State, State#state.timeout}
     end;
 handle_msg(Type, _, Bytes, State) ->
@@ -280,10 +282,10 @@ handle_msg(Type, _, Bytes, State) ->
 	      [?LINE, Bytes, State#state.stype, Type], ?DEBUG_LEVEL),
     {noreply, State, State#state.timeout}.
 
-send_msg_error(Type, Socket, Data, Msg) ->
+send_msg_error(Type, Socket, Data, Env, Msg) ->
     orber:dbg("[~p] orber_iiop_inproxy:handle_msg(~p); ~p.", 
 	      [?LINE, Data, Msg], ?DEBUG_LEVEL),
-    Reply = cdr_encode:enc_message_error(orber:giop_version()),
+    Reply = cdr_encode:enc_message_error(Env),
     orber_socket:write(Type, Socket, Reply).
 
 increase_counter(#state{max_requests = infinity} = State) ->
@@ -303,6 +305,20 @@ decrease_counter(#state{max_requests = Max,
     State#state{request_counter = Counter - 1};
 decrease_counter(State) ->
     State#state{request_counter = State#state.request_counter - 1}.
+
+update_state(#state{giop_env = Env} = State, 
+	     [{interceptors, false}|Options]) ->
+    update_state(State#state{giop_env = 
+			     Env#giop_env{interceptors = false}}, Options);
+update_state(#state{giop_env = Env, peer = PeerData} = State, 
+	     [{interceptors, {native, LPIs}}|Options]) ->
+    update_state(State#state{giop_env = 
+			     Env#giop_env{interceptors = {native, PeerData, LPIs}}},
+		 Options);
+update_state(State, [_|T]) ->
+    update_state(State, T);
+update_state(State, []) ->
+    State.
 
 %%-----------------------------------------------------------------
 %% Func: code_change/3

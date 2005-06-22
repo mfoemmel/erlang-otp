@@ -70,11 +70,11 @@ do_socket_start(SocketType) ->
 
 do_socket_listen(SocketType, Addr, Port) ->
     case http_transport:listen(SocketType, Addr, Port) of
+	{ok, ListenSocket} ->
+	    ListenSocket;
 	{error, Reason} ->
 	    ?vinfo("failed socket listen operation: ~p", [Reason]),
-	    throw({error, {listen, Reason}});
-	ListenSocket ->
-	    ListenSocket
+	    throw({error, {listen, Reason}})
     end.
 
 
@@ -83,16 +83,14 @@ do_socket_listen(SocketType, Addr, Port) ->
 acceptor(Manager, SocketType, ListenSocket, ConfigDb) ->
     ?vdebug("await connection",[]),
     case (catch http_transport:accept(SocketType, ListenSocket, 50000)) of
+	{ok, Socket} ->
+	    handle_connection(Manager, ConfigDb, SocketType, Socket),
+	    ?MODULE:acceptor(Manager, SocketType, ListenSocket, ConfigDb);
 	{error, Reason} ->
 	    handle_error(Reason, ConfigDb, SocketType),
 	    ?MODULE:acceptor(Manager, SocketType, ListenSocket, ConfigDb);
-
 	{'EXIT', Reason} ->
 	    handle_error({'EXIT', Reason}, ConfigDb, SocketType),
-	    ?MODULE:acceptor(Manager, SocketType, ListenSocket, ConfigDb);
-
-	Socket ->
-	    handle_connection(Manager, ConfigDb, SocketType, Socket),
 	    ?MODULE:acceptor(Manager, SocketType, ListenSocket, ConfigDb)
     end.
 

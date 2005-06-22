@@ -1,4 +1,4 @@
-%%% $Id: hipe_x86_encode.erl,v 1.14 2005/01/26 14:14:27 mikpe Exp $
+%%% $Id$
 %%% Copyright (C) 2000-2005 Mikael Pettersson
 %%%
 %%% This is the syntax of x86 r/m operands:
@@ -50,7 +50,7 @@
 	 % 32-bit registers
 	 %% eax/0, ecx/0, edx/0, ebx/0, esp/0, ebp/0, esi/0, edi/0,
 	 % operands
-	 sindex/2, sib/1, %% sib/2,
+	 sindex/2, sib/1, sib/2,
 	 ea_disp32_base/2, ea_disp32_sib/2,
 	 ea_disp8_base/2, ea_disp8_sib/2,
 	 ea_base/1,
@@ -155,7 +155,7 @@ sindex(Scale, Index) ->
 
 -record(sib, {sindex_opt, base}).
 sib(Base) -> #sib{sindex_opt=none, base=Base}.
-%% sib(Base, Sindex) -> #sib{sindex_opt=Sindex, base=Base}.
+sib(Base, Sindex) -> #sib{sindex_opt=Sindex, base=Base}.
 
 ea_disp32_base(Disp32, Base) ->
     ?ASSERT(ea_disp32_base, Base =/= ?ESP),

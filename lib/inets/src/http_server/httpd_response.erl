@@ -262,7 +262,7 @@ cache_headers(#mod{config_db = Db}) ->
 
 create_header(KeyValueTupleHeaders) ->
     NewHeaders = add_default_headers([{"date", httpd_util:rfc1123_date()},
-				      {"content-type", "text/plain"},
+				      {"content-type", "text/html"},
 				      {"server", ?SERVER_SOFTWARE}], 
 				     KeyValueTupleHeaders),
     lists:map(fun({Key, Value}) -> Key ++ ":" ++ Value ++ ?CRLF end,
@@ -319,11 +319,17 @@ send_response_old(#mod{method      = "HEAD"} = ModData,
 	    "~n   StatusCode: ~p"
 	    "~n   Response:   ~p",
 	    [StatusCode,Response]),
-    case httpd_util:split(lists:flatten(Response),  [?CR, ?LF, ?CR, ?LF],2) of
+
+    NewResponse = lists:flatten(Response),
+    
+    case httpd_util:split(NewResponse, [?CR, ?LF, ?CR, ?LF],2) of
 	{ok, [Head, Body]} ->
 	    NewHead = handle_headers(string:tokens(Head, [?CR,?LF]), []),
 	    send_header(ModData, StatusCode, [{content_length,
 					    content_length(Body)} | NewHead]);
+	{ok, [NewResponse]} ->
+	    send_header(ModData, StatusCode, [{content_length,
+					       content_length(NewResponse)}]);
 	_Error ->
 	    send_status(ModData, 500, "Internal Server Error")
     end;
@@ -335,16 +341,20 @@ send_response_old(#mod{socket_type = Type,
 	    "~n   StatusCode: ~p"
 	    "~n   Response:   ~p",
 	    [StatusCode,Response]),
-    case httpd_util:split(lists:flatten(Response), [?CR, ?LF, ?CR, ?LF], 2) of
+    
+    NewResponse = lists:flatten(Response),
+    
+    case httpd_util:split(NewResponse, [?CR, ?LF, ?CR, ?LF], 2) of
 	{ok, [Head, Body]} ->
 	    {ok, NewHead} = handle_headers(string:tokens(Head, [?CR,?LF]), []),
 	    send_header(ModData, StatusCode, [{content_length,
-					    content_length(Body)} | NewHead]),
+					       content_length(Body)} | 
+					      NewHead]),
 	    httpd_socket:deliver(Type, Sock, Body);
-	{ok, Response} ->
+	{ok, [NewResponse]} ->
 	    send_header(ModData, StatusCode, [{content_length,
-					    content_length(Response)}]),
-	    httpd_socket:deliver(Type, Sock, Response);
+					       content_length(NewResponse)}]),
+	    httpd_socket:deliver(Type, Sock, NewResponse);
 
 	{error, _Reason} ->
 	    send_status(ModData, 500, "Internal Server Error")

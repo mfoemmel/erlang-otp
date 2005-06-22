@@ -95,6 +95,7 @@ publish_flag(_, OtherNode) ->
 
 make_this_flags(RequestType, OtherNode) ->
     publish_flag(RequestType, OtherNode) bor
+	?DFLAG_EXPORT_PTR_TAG bor
 	?DFLAG_EXTENDED_PIDS_PORTS bor
 	?DFLAG_ATOM_CACHE bor
 	?DFLAG_EXTENDED_REFERENCES bor

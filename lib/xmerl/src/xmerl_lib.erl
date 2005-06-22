@@ -471,9 +471,9 @@ autodetect('utf-16le',[16#ff,16#fe | Input]) ->
     {external, xmerl_ucs:from_utf16le(Input)};
 
 autodetect(undefined,[16#ef,16#bb,16#bf | Input]) ->
-    {auto, xmerl_ucs:expand_utf8(Input)};
+    {auto, xmerl_ucs:from_utf8(Input)};
 autodetect('utf-8',[16#ef,16#bb,16#bf | Input]) ->
-    {external, xmerl_ucs:expand_utf8(Input)};
+    {external, xmerl_ucs:from_utf8(Input)};
 autodetect('utf-8',[16#ff,16#fe | Input]) ->
     {external, xmerl_ucs:from_utf16le(Input)};
 autodetect('utf-8',[16#fe,16#ff | Input]) ->

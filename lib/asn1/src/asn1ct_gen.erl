@@ -768,9 +768,9 @@ pgen_exports(Erules,_Module,{Types,Values,_,_,Objects,ObjectSets}) ->
 		ber_bin ->
 		    emit({"-export([",nl}),
 		    gen_exports1(Types,"dec_",3);
-		ber_bin_v2 ->
-		    emit({"-export([",nl}),
-		    gen_exports1(Types,"dec_",2);
+% 		ber_bin_v2 ->
+% 		    emit({"-export([",nl}),
+% 		    gen_exports1(Types,"dec_",2);
 		_ -> ok
 	    end
     end,

@@ -37,9 +37,12 @@
 -export([get_interface/1,
 	 is_nil/1, 
 	 is_a/2,
+	 is_a/3,
 	 is_remote/1,
 	 non_existent/1,
+	 non_existent/2,
 	 not_existent/1,
+	 not_existent/2,
 	 is_equivalent/2,
 	 hash/2,
 	 create_request/6]).
@@ -80,14 +83,17 @@ is_nil(Obj) ->
 			    [?LINE, Obj], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
 
-is_a(?ORBER_NIL_OBJREF, _) ->
-    false;
 is_a(Obj, Logical_type_id) ->
+    is_a(Obj, Logical_type_id, []).
+
+is_a(?ORBER_NIL_OBJREF, _, _Ctx) ->
+    false;
+is_a(Obj, Logical_type_id, Ctx) ->
     case catch iop_ior:get_key(Obj) of
 	{'external', Key} ->
 	    orber_iiop:request(Key, '_is_a', [Logical_type_id], 
 			       {orber_tc:boolean(),[orber_tc:string(0)],[]},
-			       true, infinity, Obj, []);
+			       true, infinity, Obj, corba:get_implicit_context(Ctx));
 	{_Local, _Key, _, _, Module} ->
 	    case catch Module:oe_is_a(Logical_type_id) of
 		{'EXIT', What} ->
@@ -104,17 +110,24 @@ is_a(Obj, Logical_type_id) ->
 	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
     end.
 
-non_existent(?ORBER_NIL_OBJREF) ->
-    true;
 non_existent(Obj) ->
-    existent_helper(Obj, '_non_existent').
+    non_existent(Obj, []).
 
-not_existent(?ORBER_NIL_OBJREF) ->
+non_existent(?ORBER_NIL_OBJREF, _Ctx) ->
     true;
-not_existent(Obj) ->
-    existent_helper(Obj, '_not_existent').
+non_existent(Obj, Ctx) ->
+    existent_helper(Obj, '_non_existent', Ctx).
 
-existent_helper(Obj, Op) ->
+not_existent(Obj) ->
+    not_existent(Obj, []).
+    
+not_existent(?ORBER_NIL_OBJREF, _Ctx) ->
+    true;
+not_existent(Obj, Ctx) ->
+    existent_helper(Obj, '_not_existent', Ctx).
+
+
+existent_helper(Obj, Op, Ctx) ->
     case catch iop_ior:get_key(Obj) of
 	{'internal', Key, _, _, _} ->
 	    case catch orber_objectkeys:get_pid(Key) of
@@ -143,7 +156,8 @@ existent_helper(Obj, Op) ->
 	    end;
 	{'external', Key} ->
 	    orber_iiop:request(Key, Op, [], 
-			       {orber_tc:boolean(), [],[]}, 'true', infinity, Obj, []);
+			       {orber_tc:boolean(), [],[]}, 'true', 
+			       infinity, Obj, corba:get_implicit_context(Ctx));
 	true -> 	
 	    false
     end.

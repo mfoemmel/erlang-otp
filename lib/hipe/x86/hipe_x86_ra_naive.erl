@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 4 -*-
-%%% $Id: hipe_x86_ra_naive.erl,v 1.2 2005/01/20 15:30:29 dalu7049 Exp $
+%%% $Id$
 %%% simple local x86 regalloc
 
 -ifndef(HIPE_X86_RA_NAIVE).

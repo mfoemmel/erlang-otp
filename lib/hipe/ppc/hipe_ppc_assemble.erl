@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_ppc_assemble.erl,v 1.20 2004/12/06 03:09:39 mikpe Exp $
+%%% $Id$
 
 -module(hipe_ppc_assemble).
 -export([assemble/4]).
@@ -23,9 +23,8 @@ assemble(CompiledCode, Closures, Exports, Options) ->
   {ConstAlign,ConstSize,ConstMap,RefsFromConsts} =
     hipe_pack_constants:pack_constants(Code, 4),
   %%
-  {CodeSize,AccCode,AccRefs,LabelMap,ExportMap} =
+  {CodeSize,CodeBinary,AccRefs,LabelMap,ExportMap} =
     encode(translate(Code, ConstMap), Options),
-  CodeBinary = list_to_binary(AccCode),
   print("Total num bytes=~w\n", [CodeSize], Options),
   %%
   SC = hipe_pack_constants:slim_constmap(ConstMap),
@@ -340,11 +339,11 @@ do_spr(SPR) ->
 encode(Code, Options) ->
   CodeSize = compute_code_size(Code, 0),
   ExportMap = build_export_map(Code, 0, []),
-  {BinaryCode,Relocs} = encode_mfas(Code, 0, [], [], Options),
-  CodeLength = length(BinaryCode),
-  ?ASSERT(CodeSize =:= CodeLength),
+  {AccCode,Relocs} = encode_mfas(Code, 0, [], [], Options),
+  CodeBinary = list_to_binary(lists:reverse(AccCode)),
+  ?ASSERT(CodeSize =:= size(CodeBinary)),
   CombinedLabelMap = combine_label_maps(Code, 0, gb_trees:empty()),
-  {CodeSize,BinaryCode,Relocs,CombinedLabelMap,ExportMap}.
+  {CodeSize,CodeBinary,Relocs,CombinedLabelMap,ExportMap}.
 
 compute_code_size([{_MFA,_Insns,CodeSize,_LabelMap}|Code], Size) ->
   compute_code_size(Code, Size+CodeSize);
@@ -364,48 +363,41 @@ merge_label_map([{Label,Offset}|Rest], MFA, Address, CLM) ->
   merge_label_map(Rest, MFA, Address, NewCLM);
 merge_label_map([], _MFA, _Address, CLM) -> CLM.
 
-encode_mfas([{MFA,Insns,CodeSize,LabelMap}|Code], Address, BinaryCode, Relocs, Options) ->
+encode_mfas([{MFA,Insns,CodeSize,LabelMap}|Code], Address, AccCode, Relocs, Options) ->
   print("Generating code for: ~w\n", [MFA], Options),
   print("Offset   | Opcode   | Instruction\n", [], Options),
-  {Address1,Relocs1,BinaryCode1} =
-    encode_insns(Insns, Address, Address, LabelMap, Relocs, BinaryCode, Options),
+  {Address1,Relocs1,AccCode1} =
+    encode_insns(Insns, Address, Address, LabelMap, Relocs, AccCode, Options),
   ExpectedAddress = Address + CodeSize,
   ?ASSERT(Address1 =:= ExpectedAddress),
   print("Finished.\n", [], Options),
-  encode_mfas(Code, Address1, BinaryCode1, Relocs1, Options);
-encode_mfas([], _Address, BinaryCode, Relocs, _Options) ->
-  {lists:reverse(BinaryCode),Relocs}.
+  encode_mfas(Code, Address1, AccCode1, Relocs1, Options);
+encode_mfas([], _Address, AccCode, Relocs, _Options) ->
+  {AccCode,Relocs}.
 
-encode_insns([I|Insns], Address, FunAddress, LabelMap, Relocs, BinaryCode, Options) ->
+encode_insns([I|Insns], Address, FunAddress, LabelMap, Relocs, AccCode, Options) ->
   case I of
     {'.label',L,_} ->
       LabelAddress = gb_trees:get(L, LabelMap) + FunAddress,
       ?ASSERT(Address =:= LabelAddress),	% sanity check
       print_insn(Address, [], I, Options),
-      encode_insns(Insns, Address, FunAddress, LabelMap, Relocs, BinaryCode, Options);
+      encode_insns(Insns, Address, FunAddress, LabelMap, Relocs, AccCode, Options);
     {'.reloc',Data,_} ->
       Reloc = encode_reloc(Data, Address, FunAddress, LabelMap),
-      encode_insns(Insns, Address, FunAddress, LabelMap, [Reloc|Relocs], BinaryCode, Options);
+      encode_insns(Insns, Address, FunAddress, LabelMap, [Reloc|Relocs], AccCode, Options);
     {bc_sdi,_,_} ->
       encode_insns(fix_bc_sdi(I, Insns, Address, FunAddress, LabelMap),
-		   Address, FunAddress, LabelMap, Relocs, BinaryCode, Options);
+		   Address, FunAddress, LabelMap, Relocs, AccCode, Options);
     _ ->
       {Op,Arg,_} = fix_jumps(I, Address, FunAddress, LabelMap),
       Word = hipe_ppc_encode:insn_encode(Op, Arg),
       print_insn(Address, Word, I, Options),
-      BinaryCode1 = add_code_word(Word, BinaryCode),
-      encode_insns(Insns, Address+4, FunAddress, LabelMap, Relocs, BinaryCode1, Options)
+      Segment = <<Word:32/integer-big>>,
+      NewAccCode = [Segment|AccCode],
+      encode_insns(Insns, Address+4, FunAddress, LabelMap, Relocs, NewAccCode, Options)
   end;
-encode_insns([], Address, _FunAddress, _LabelMap, Relocs, BinaryCode, _Options) ->
-  {Address,Relocs,BinaryCode}.
-
-add_code_word(Word, BinaryCode) ->
-  %% prepended, so the word is in little-endian byte order
-  [Word band 16#FF,
-   (Word bsr 8) band 16#FF,
-   (Word bsr 16) band 16#FF,
-   (Word bsr 24) band 16#FF |
-   BinaryCode].
+encode_insns([], Address, _FunAddress, _LabelMap, Relocs, AccCode, _Options) ->
+  {Address,Relocs,AccCode}.
 
 encode_reloc(Data, Address, FunAddress, LabelMap) ->
   case Data of

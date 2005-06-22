@@ -17,8 +17,11 @@
 	 get_moves/1,
 	 %% degree/1,
 	 %% number_of_temps/1,
-	 %% spill_costs/1,
+	 spill_costs/1,
+	 adj_list/1,
+	 %% adj_set/1,
 	 add_edge/4,
+	 remove_edge/4,
 	 %% set_adj_set/2,
 	 %% set_adj_list/2,
 	 %% set_ig_moves/2,
@@ -26,11 +29,19 @@
 	 %% set_degree/2
 	 get_node_degree/2,
 	 dec_node_degree/2,
-	 is_trivially_colourable/3
+	 is_trivially_colourable/3,
+	 print_spill_costs/1,
+	 print_adjacent/1,
+	 print_degrees/1
 	]).
 
 
 -record(igraph, {adj_set, adj_list, ig_moves, degree, spill_costs,no_temps}).
+
+%%-ifndef(DEBUG).
+%%-define(DEBUG,true).
+%%-endif.
+-include("../main/hipe.hrl").
 
 %%----------------------------------------------------------------------
 %% Degree: array mapping nodes to integer degrees.
@@ -69,20 +80,19 @@ degree_is_trivially_colourable(Node, K, Degree) ->
 %% Symmetry implies that when (U,V) is a member, then so is (V,U).
 %% Hence, only (U,V), where U<V, is actually stored.
 %% Supports queries and destructive updates, but not enumeration.
-%% Implemented as a bit array in an array of words, augmented by an
+%% Implemented as a bit array in an array of bytes, augmented by an
 %% index vector for fast address calculations.
 %%----------------------------------------------------------------------
 
 -record(adjset, {index, array}).
 
-%%% XXX: Should use byte-array here, but that's not yet implemented.
--define(BITS_PER_WORD, 16).
--define(LOG2_BITS_PER_WORD, 4).
+-define(BITS_PER_WORD, 8).
+-define(LOG2_BITS_PER_WORD, 3).
 
 adjset_new(NrTemps) ->
   ArrayBits = (NrTemps * (NrTemps - 1)) div 2,
   ArrayWords = (ArrayBits + (?BITS_PER_WORD - 1)) bsr ?LOG2_BITS_PER_WORD,
-  Array = hipe_bifs:array(ArrayWords, 0), % XXX: underutilised!
+  Array = hipe_bifs:bytearray(ArrayWords, 0),
   Index = adjset_mk_index(NrTemps, []),
   #adjset{index=Index,array=Array}.
 
@@ -101,8 +111,21 @@ adjset_add_edge(U0, V0, Set=#adjset{index=Index,array=Array}) -> % PRE: U0 =/= V
   BitNr = element(V+1, Index) + U,
   WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
   WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
-  Word = hipe_bifs:array_sub(Array, WordNr),
-  hipe_bifs:array_update(Array, WordNr, Word bor WordMask),
+  Word = hipe_bifs:bytearray_sub(Array, WordNr),
+  hipe_bifs:bytearray_update(Array, WordNr, Word bor WordMask),
+  Set.
+
+adjset_remove_edge(U0, V0, Set=#adjset{index=Index,array=Array}) -> % PRE: U0 =/= V0
+  {U,V} =
+    if U0 < V0 -> {U0,V0};
+       true -> {V0,U0}
+    end,
+  %% INV: U < V
+  BitNr = element(V+1, Index) + U,
+  WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
+  WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
+  Word = hipe_bifs:bytearray_sub(Array, WordNr),
+  hipe_bifs:bytearray_update(Array, WordNr, Word band (bnot WordMask)),
   Set.
 
 adjset_are_adjacent(U0, V0, #adjset{index=Index,array=Array}) ->
@@ -115,11 +138,33 @@ adjset_are_adjacent(U0, V0, #adjset{index=Index,array=Array}) ->
   BitNr = element(V+1, Index) + U,
   WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
   WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
-  Word = hipe_bifs:array_sub(Array, WordNr),
+  Word = hipe_bifs:bytearray_sub(Array, WordNr),
   case Word band WordMask of
     0 -> false;
     _ -> true
   end.
+
+print_adjacent(IG) ->
+  ?debug_msg("Adjacent nodes:\n", []),
+  adjset_print(number_of_temps(IG),IG).
+
+adjset_print(2, IG) ->
+  adjset_print(1, 0, IG);
+adjset_print(Ntemps, IG) ->
+  adjset_print(Ntemps - 1, Ntemps - 2, IG),
+  adjset_print(Ntemps - 1, IG).
+
+adjset_print(U, 0, IG) ->
+  case nodes_are_adjacent(U, 0, IG) of
+    true -> ?debug_msg("edge ~w ~w\n", [U, 0]);
+    _ -> true
+  end;
+adjset_print(U, V, IG) ->
+  case nodes_are_adjacent(U, V, IG) of
+    true -> ?debug_msg("edge ~w ~w\n", [U, V]);
+    _ -> true
+  end,
+  adjset_print(U, V - 1, IG).
 
 %% Selectors
 
@@ -139,7 +184,7 @@ adj_list(IG)    -> IG#igraph.adj_list.
 ig_moves(IG)    -> IG#igraph.ig_moves.    
 degree(IG)      -> IG#igraph.degree.
 spill_costs(IG) -> IG#igraph.spill_costs.
-%% number_of_temps(IG) -> IG#igraph.no_temps.
+number_of_temps(IG) -> IG#igraph.no_temps.
 
 %%----------------------------------------------------------------------
 %% Function:    set_adj_set, set_adj_list, set_degree, set_spill_costs
@@ -203,6 +248,8 @@ build(CFG, Target) ->
     %% How many temporaries exist?
     NumTemps = Target:number_of_temporaries(CFG),
     IG0 = initial_ig(NumTemps, Target),
+   %%?debug_msg("initial adjset: ~p\n",[element(2, IG0)]),
+   %%?debug_msg("initial adjset array: ~.16b\n",[element(3, element(2, IG0))]),
     IG = analyze_bbs(Labels, BBs_in_out_liveness, IG0, CFG, Target),
     IG.
 
@@ -414,7 +461,7 @@ nodes_are_adjacent(U, V, IG) ->
 
 %%
 %% node_adj_set(Node, IG)
-%% returns ordset of Node's adjacent nodes in interference graph IG
+%% returns list of Node's adjacent nodes in interference graph IG
 %%
 node_adj_list(Node, IG) ->
   hipe_adj_list:edges(Node, adj_list(IG)).
@@ -425,6 +472,22 @@ node_adj_list(Node, IG) ->
 %%
 node_spill_cost(Node, IG) ->
   hipe_spillcost:spill_cost(Node, spill_costs(IG)).
+
+print_spill_costs(IG) ->
+  ?debug_msg("Spill costs:\n", []),
+  print_spill_costs(number_of_temps(IG), IG).
+
+print_spill_costs(0, _) ->
+  true;
+print_spill_costs(Node, IG) ->
+  NextNode = Node - 1,
+  case hipe_spillcost:nr_of_use(NextNode, spill_costs(IG)) of
+    0 ->
+      ?debug_msg("node ~w not used\n", [NextNode]);
+    _ ->
+      ?debug_msg("node ~w sc ~p\n", [NextNode, node_spill_cost(NextNode, IG)])
+  end,
+  print_spill_costs(NextNode, IG).
 
 get_moves(IG) ->
   hipe_ig_moves:get_moves(ig_moves(IG)).
@@ -459,6 +522,71 @@ add_edge(U, V, IG, Target) ->
       Adj_list1 = interfere_if_uncolored(V, U, Adj_list0,
 					 Degree, Target),
       set_adj_list(Adj_list1, IG)
+  end.
+
+%%----------------------------------------------------------------------
+%% Function:    remove_edge
+%%
+%% Description: Removes an edge to the adj_set data-structure if it's
+%%               a part of it and if U is not precoloured
+%%               we remove V from it's adj_list. If V is not precoloured
+%%               we remove U from it's adj_list.
+%%
+%% Parameters:
+%%   U              --  A temporary number
+%%   V              --  A temporary number
+%%   Target         --  The module containing the target-specific
+%%                       functions
+%% Returns: 
+%%   An updated interference graph.
+%%----------------------------------------------------------------------
+
+remove_edge(U, U, IG, _) -> IG;
+remove_edge(U, V, IG, Target) ->
+  case nodes_are_adjacent(U, V, IG) of
+    false ->
+      IG;
+    true ->
+      adjset_remove_edge(U, V, adj_set(IG)),
+      Degree = degree(IG),
+      Adj_list0 = remove_if_uncolored(U, V, adj_list(IG),
+					 Degree, Target),
+      Adj_list1 = remove_if_uncolored(V, U, Adj_list0,
+					 Degree, Target),
+      set_adj_list(Adj_list1, IG)
+  end.
+
+%%----------------------------------------------------------------------
+%% Function:    interfere_if_uncolored
+%%
+%% Description: Let a not precoloured temporary interfere with another.
+%%
+%% Parameters:
+%%   Temporary            --  A temporary that is added to the adjacent 
+%%                             list if it's not precoloured.
+%%   Interfere_temporary  --  Temporary will interfere with 
+%%                             Interfere_temporary if temporary is not
+%%                             precoloured.
+%%   Adj_list             --  An adj_list
+%%   Degree               --  The degree that all nodes currently have
+%%   Target               --  The module containing the target-specific 
+%%                            functions
+%%
+%% Returns: 
+%%   Adj_list  --  An updated adj_list data-structure
+%%   Degree    --  An updated degree data-structure (via side-effects)
+%%----------------------------------------------------------------------
+
+remove_if_uncolored(Temporary, Interfere_temporary, Adj_list, Degree, 
+		       Target) ->
+  case Target:is_precoloured(Temporary) of
+    false ->
+      New_adj_list = hipe_adj_list:remove_edge(Temporary, Interfere_temporary, 
+					    Adj_list),
+      degree_inc(Temporary, Degree),
+      New_adj_list;
+    true ->
+      Adj_list
   end.
 
 %%----------------------------------------------------------------------
@@ -518,6 +646,17 @@ reg_numbers(Regs2, Target) ->
   [Target:reg_nr(X) || X <- Regs].
 
 %%----------------------------------------------------------------------
+
+print_degrees(IG) ->
+  ?debug_msg("The nodes degrees:\n", []),
+  print_node_degree(number_of_temps(IG), IG).
+
+print_node_degree(0, _) ->
+  true;
+print_node_degree(Node, IG) ->
+  NextNode = Node - 1,
+  ?debug_msg("node ~w ~w\n", [NextNode, get_node_degree(NextNode, IG)]),
+  print_node_degree(NextNode, IG).
 
 get_node_degree(Node, IG) ->
   degree_get(Node, degree(IG)).

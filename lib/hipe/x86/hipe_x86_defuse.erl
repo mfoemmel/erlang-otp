@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_x86_defuse.erl,v 1.22 2005/03/29 14:28:11 mikpe Exp $
+%%% $Id$
 %%% compute def/use sets for x86 insns
 %%%
 %%% TODO:

@@ -1,5 +1,5 @@
 %% -*- erlang-indent-level: 2 -*-
-%% $Id: hipe_moves.erl,v 1.10 2004/12/27 00:40:16 mikpe Exp $
+%% $Id$
 
 -module(hipe_moves).
 -export([new/1,
@@ -14,7 +14,8 @@
 	 remove_active/2,
 	 add_worklist/2,
 	 add_active/2,
-	 member_active/2
+	 member_active/2,
+	 print_memberships/1
 	]).
 
 -record(movesets,
@@ -23,6 +24,11 @@
 	 moveinsns,   % Maps move numbers to move insns ({Dst,Src}-tuples)
 	 movelist     % Mapping from node to list of moves it's associated with
 	}).
+
+%%-ifndef(DEBUG).
+%%-define(DEBUG,true).
+%%-endif.
+-include("../main/hipe.hrl").
 
 worklist(MoveSets) -> MoveSets#movesets.worklist.
 movelist(MoveSets) -> MoveSets#movesets.movelist.
@@ -119,3 +125,16 @@ node_movelist(Node, MoveSets) ->
 
 get_move(Move, MoveSets) ->
   element(Move+1, MoveSets#movesets.moveinsns).
+
+print_memberships(MoveSets) ->
+  ?debug_msg("Move memeberships:\n", []),
+  Membership = MoveSets#movesets.membership,
+  NrMoves = hipe_bifs:array_length(Membership),
+  print_membership(NrMoves, Membership).
+
+print_membership(0, _) ->
+  true;
+print_membership(Element, Membership) ->
+  NextElement = Element - 1,
+  ?debug_msg("move ~w ~w\n", [NextElement, hipe_bifs:array_sub(Membership, NextElement)]),
+  print_membership(NextElement, Membership).

@@ -3,7 +3,7 @@
 %% Author      : Eric Johansson, Kostis Sagonas
 %% Description : Generates unique symbols and fresh numbers.
 %%=======================================================================
-%% $Id: hipe_gensym.erl,v 1.4 2004/02/07 16:14:30 kostis Exp $
+%% $Id$
 %%=======================================================================
 %% Notes: Written while we were in Montreal, Canada for PPDP-2000 as an
 %%        exercise in Principles and Practice of Declarative Programming!

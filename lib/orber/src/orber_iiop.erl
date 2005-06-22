@@ -33,7 +33,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start_sup/1, request/8, locate/3]).
+-export([start_sup/1, request/8, locate/4]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -67,13 +67,17 @@ start_sup(Opts) ->
 %%%-----------------------------------------------------------------
 request({Host, Port, InitObjkey, Index, TaggedProfile, HostData}, 
 	Op, Parameters, TypeCodes, ResponseExpected, Timeout, IOR, UserCtx) ->
-    {{Proxy, SysCtx, Interceptors}, ObjKey, Version} =
+    {{Proxy, SysCtx, Interceptors, LocalInterface}, ObjKey, Version} =
 	connect(Host, Port, InitObjkey, Timeout, [Index], HostData,
-		TaggedProfile, IOR),
+		TaggedProfile, IOR, UserCtx),
     Ctx = add_user_context(SysCtx, UserCtx),
     RequestId = orber_request_number:get(),
-    Message = encode_request(Interceptors, Version, ObjKey, RequestId, 
-			     ResponseExpected, Op, Parameters, Ctx, TypeCodes),
+    Env = #giop_env{interceptors = Interceptors, type = out, 
+		    flags = orber_env:get_flags(), host = LocalInterface,
+		    version = Version, ctx = Ctx, request_id = RequestId, op = Op,
+		    parameters = Parameters, tc = TypeCodes, objkey = ObjKey, 
+		    response_expected = ResponseExpected},
+    Message = encode_request(Env),
     case catch orber_iiop_outproxy:request(Proxy, ResponseExpected, Timeout, 
 					   Message, RequestId) of 
 	{'EXCEPTION', MsgExc} ->
@@ -172,54 +176,49 @@ request({Host, Port, InitObjkey, Index, TaggedProfile, HostData},
     end.
 
 
-encode_request(false, Version, ObjKey, RequestId, ResponseExpected, Op, Parameters,
-	       Ctx, TypeCodes) ->
-    case catch cdr_encode:enc_request(Version, ObjKey, RequestId, ResponseExpected, 
-				      Op, Parameters, Ctx, TypeCodes) of
+encode_request(#giop_env{interceptors = false} = Env) ->
+    case catch cdr_encode:enc_request(Env) of
 	{'EXCEPTION', Exc} ->
-	    orber:dbg("[~p] orber_iiop:request( ~p, ~p, ~p)~n"
+	    orber:dbg("[~p] orber_iiop:request(~p)~n"
 		      "Got exception(~p)", 
-		      [?LINE, Op, Parameters, TypeCodes, Exc], ?DEBUG_LEVEL),
+		      [?LINE, Env, Exc], ?DEBUG_LEVEL),
 	    corba:raise(Exc);
 	{'EXIT', R} ->
-	    orber:dbg("[~p] orber_iiop:request:( ~p, ~p, ~p)~n"
+	    orber:dbg("[~p] orber_iiop:request:( ~p )~n"
 		      "Got exit(~p)", 
-		      [?LINE, Op, Parameters, TypeCodes, R], ?DEBUG_LEVEL),
+		      [?LINE, Env, R], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
 	Msg ->
 	    Msg
     end;
-encode_request({native, Ref, PIs}, Version, ObjKey, RequestId, ResponseExpected, Op, 
-	       Params, Ctx, TypeCodes) ->
+encode_request(#giop_env{interceptors = {native, Ref, PIs},
+			 objkey = ObjKey, ctx = Ctx, op = Op, 
+			 parameters = Params} = Env) ->
     Parameters = orber_pi:out_request(PIs, ObjKey, Ctx, Op, Ref, Params),
-    case catch cdr_encode:enc_request_split(Version, ObjKey, RequestId, 
-					    ResponseExpected, Op, Parameters,
-					    Ctx, TypeCodes) of
+    case catch cdr_encode:enc_request_split(Env) of
 	{'EXCEPTION', Exc} ->
-	    orber:dbg("[~p] orber_iiop:request( ~p, ~p, ~p); exception(~p)", 
-				    [?LINE, Op, Parameters, TypeCodes, Exc], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_iiop:request( ~p, ~p); exception(~p)", 
+		      [?LINE, Env, Parameters, Exc], ?DEBUG_LEVEL),
 	    corba:raise(Exc);
 	{'EXIT', R} ->
-	    orber:dbg("[~p] orber_iiop:request:( ~p, ~p, ~p); got exit(~p)", 
-				    [?LINE, Op, Parameters, TypeCodes, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_iiop:request:( ~p, ~p); got exit(~p)", 
+		      [?LINE, Env, Parameters, R], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
 	{Hdr, Body, HdrLen, _, Flags} ->
 	    NewBody = orber_pi:out_request_enc(PIs, ObjKey, Ctx, Op, Ref, Body),
-	    cdr_encode:enc_giop_message_header(Version, 'request', Flags, 
+	    cdr_encode:enc_giop_message_header(Env, 'request', Flags, 
 					       HdrLen+size(NewBody), 
 					       [Hdr|NewBody])
     end;
-encode_request({_Type, _PIs}, Version, ObjKey, RequestId, ResponseExpected, Op, 
-	       Parameters, Ctx, TypeCodes) ->
-    case catch cdr_encode:enc_request(Version, ObjKey, RequestId, ResponseExpected, 
-				      Op, Parameters, Ctx, TypeCodes) of
+encode_request(Env) ->
+    case catch cdr_encode:enc_request(Env) of
 	{'EXCEPTION', Exc} ->
-	    orber:dbg("[~p] orber_iiop:request( ~p, ~p, ~p); exception(~p)", 
-		      [?LINE, Op, Parameters, TypeCodes, Exc], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_iiop:request( ~p ); exception(~p)", 
+		      [?LINE, Env, Exc], ?DEBUG_LEVEL),
 	    corba:raise(Exc);
 	{'EXIT', R} ->
-	    orber:dbg("[~p] orber_iiop:request:( ~p, ~p, ~p); got exit(~p)", 
-		      [?LINE, Op, Parameters, TypeCodes, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_iiop:request:( ~p ); got exit(~p)", 
+		      [?LINE, Env, R], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
 	Msg ->
 	    Msg
@@ -229,13 +228,15 @@ encode_request({_Type, _PIs}, Version, ObjKey, RequestId, ResponseExpected, Op,
 %% Func: locate/1
 %%-----------------------------------------------------------------
 locate({Host, Port, InitObjkey, Index, TaggedProfile, HostData},
-       Timeout, IOR) ->
-    {{Proxy, _Ctx, _Interceptors}, ObjKey, Version} =
+       Timeout, IOR, UserCtx) ->
+    {{Proxy, _Ctx, _Interceptors, LocalInterface}, ObjKey, Version} =
 	connect(Host, Port, InitObjkey, Timeout, [Index], HostData,
-		TaggedProfile, IOR),
+		TaggedProfile, IOR, UserCtx),
     RequestId = orber_request_number:get(),
+    Env = #giop_env{version = Version, objkey = ObjKey, request_id = RequestId,
+		    flags = orber_env:get_flags(), host = LocalInterface},
     Result = 
-	case catch cdr_encode:enc_locate_request(Version, ObjKey,  RequestId) of
+	case catch cdr_encode:enc_locate_request(Env) of
 	    {'EXCEPTION', EncE} ->
 		orber:dbg("[~p] orber_iiop:locate(~p); exception(~p)", 
 			  [?LINE, ObjKey, EncE], ?DEBUG_LEVEL),
@@ -454,54 +455,55 @@ decode_reply_body(Interceptors, ObjKey, Op, ReplyHeader, Version, TypeCodes,
 %% "Plain" TCP/IP.
 connect(Host, Port, Objkey, Timeout, Index, 
 	#host_data{protocol = normal, csiv2_mech = undefined} = HostData, 
-	TaggedProfile, IOR) ->
+	TaggedProfile, IOR, Ctx) ->
     connect2([{Host, Port}], Objkey, Timeout, Index, HostData, 
-	     TaggedProfile, IOR, []);
+	     TaggedProfile, IOR, Ctx);
 %% "Plain" SSL
 connect(Host, _, Objkey, Timeout, Index, 
 	#host_data{protocol = ssl, 
 		   ssl_data = #'SSLIOP_SSL'{port = Port}, 
 		   csiv2_mech = undefined} = HostData,
-	TaggedProfile, IOR) ->
+	TaggedProfile, IOR, Ctx) ->
     connect2([{Host, Port}], Objkey, Timeout, Index, HostData, 
-	     TaggedProfile, IOR, []);
+	     TaggedProfile, IOR, Ctx);
 %% CSIv2 over SSL (TAG_TLS_SEC_TRANS) using the SAS protocol. Note port must equal 0.
 connect(_Host, 0, Objkey, Timeout, Index, 
 	#host_data{protocol = ssl, 
 		   csiv2_mech = 
 		   #'CSIIOP_CompoundSecMech'{target_requires = _TR} = _Mech,
 		   csiv2_addresses = Addresses} = HostData,
-	TaggedProfile, IOR) ->
-    Ctx = [#'IOP_ServiceContext'
-	   {context_id=?IOP_SecurityAttributeService,
-	    context_data = #'CSI_SASContextBody'
-	    {label = ?CSI_MsgType_MTEstablishContext, 
-	     value = #'CSI_EstablishContext'
-	    {client_context_id = 0, %% Always 0 when stateless.
-	     authorization_token = 
-	     [#'CSI_AuthorizationElement'{the_element = []}],
-	     identity_token = 
-	     #'CSI_IdentityToken'{label = ?CSI_IdentityTokenType_ITTAbsent, 
-				  value = true}, 
-	     client_authentication_token = []}}}],
+	TaggedProfile, IOR, Ctx) ->
+    NewCtx = [#'IOP_ServiceContext'
+	      {context_id=?IOP_SecurityAttributeService,
+	       context_data = #'CSI_SASContextBody'
+	       {label = ?CSI_MsgType_MTEstablishContext, 
+		value = #'CSI_EstablishContext'
+		{client_context_id = 0, %% Always 0 when stateless.
+		 authorization_token = 
+		 [#'CSI_AuthorizationElement'{the_element = []}],
+		 identity_token = 
+		 #'CSI_IdentityToken'{label = ?CSI_IdentityTokenType_ITTAbsent, 
+				      value = true}, 
+		 client_authentication_token = []}}}|Ctx],
     connect2(Addresses, Objkey, Timeout, Index, HostData, 
-	     TaggedProfile, IOR, Ctx);
+	     TaggedProfile, IOR, NewCtx);
 %% CSIv2 over SSL (TAG_NULL_TAG) using the SAS protocol.
 connect(Host, _, Objkey, Timeout, Index, 
 	#host_data{protocol = ssl, 
 		   ssl_data = #'SSLIOP_SSL'{port = Port}, 
 		   csiv2_mech = Mech} = HostData,
-	TaggedProfile, IOR) when record(Mech, 'CSIIOP_CompoundSecMech') ->
+	TaggedProfile, IOR, Ctx) when record(Mech, 'CSIIOP_CompoundSecMech') ->
     connect2([{Host, Port}], Objkey, Timeout, Index, HostData, 
-	     TaggedProfile, IOR, []);
+	     TaggedProfile, IOR, Ctx);
 %% CSIv2 over TCP (TAG_NULL_TAG) using the SAS protocol.
 connect(Host, Port, Objkey, Timeout, Index, 
 	#host_data{protocol = normal, 
 		   csiv2_mech = Mech} = HostData,
-	TaggedProfile, IOR) when record(Mech, 'CSIIOP_CompoundSecMech') ->
+	TaggedProfile, IOR, Ctx) when record(Mech, 'CSIIOP_CompoundSecMech') ->
     connect2([{Host, Port}], Objkey, Timeout, Index, HostData, 
-	     TaggedProfile, IOR, []);
-connect(_Host, _Port, _Objkey, _Timeout, _Index, HostData, _TaggedProfile, IOR) ->
+	     TaggedProfile, IOR, Ctx);
+connect(_Host, _Port, _Objkey, _Timeout, _Index, HostData, _TaggedProfile, 
+	IOR, _Ctx) ->
     orber:dbg("[~p] orber_iiop:connect(~p)~n"
 	      "Unable to use the supplied IOR.~n"
 	      "Connection Data: ~p", [?LINE, IOR, HostData], ?DEBUG_LEVEL),
@@ -521,7 +523,7 @@ connect2(HostPort, Objkey, Timeout, Index, HostData, TaggedProfile, IOR, Ctx) ->
 			{'external', {NewHost, NewPort, NewObjkey, NewIndex,
 				      NewTaggedProfile, NewHostData}} ->
 			    connect(NewHost, NewPort, NewObjkey, Timeout, [NewIndex|Index], 
-				    NewHostData, NewTaggedProfile, IOR);
+				    NewHostData, NewTaggedProfile, IOR, Ctx);
 			_What ->
 			    orber:dbg("[~p] orber_iiop:connect2(~p)~n"
 				      "Illegal IOR; contains a mixture of local and external profiles.", 
@@ -540,7 +542,13 @@ try_connect([], _, _, _, _) ->
 try_connect([{Host, Port}|T], SocketType, Timeout, HostData, Ctx) ->
     case catch orber_iiop_pm:connect(Host, Port, SocketType, Timeout,
 				     HostData#host_data.charset,
-				     HostData#host_data.wcharset) of
+				     HostData#host_data.wcharset, Ctx) of
+	{ok, P, Ctx2, Int, Interface} ->
+	    {P, Ctx2, Int, Interface};
+	{'EXCEPTION', #'BAD_CONTEXT'{} = CtxExc} ->
+	    orber:dbg("[~p] orber_iiop:try_connect(~p, ~p) failed~n", 
+		      [?LINE, Host, Port], ?DEBUG_LEVEL),
+	    corba:raise(CtxExc);
 	{'EXCEPTION', _PMExc} ->
 	    try_connect(T, SocketType, Timeout, HostData, Ctx);
 	{'EXIT',{timeout,_}} ->
@@ -552,12 +560,6 @@ try_connect([{Host, Port}|T], SocketType, Timeout, HostData, Ctx) ->
 	    orber:dbg("[~p] orber_iiop:try_connect(~p, ~p, ~p)~n"
 		      "Connect attempt resulted in: ~p", 
 		      [?LINE, Host, Port, Timeout, What], ?DEBUG_LEVEL),
-	    try_connect(T, SocketType, Timeout, HostData, Ctx);
-	{P, [], Int} ->
-	    {P, Ctx, Int};
-	{P, Ctx2, Int} when Ctx == [] ->
-	    {P, Ctx2, Int};
-	{P, Ctx2, Int} ->
-	    {P, Ctx++Ctx2, Int}
+	    try_connect(T, SocketType, Timeout, HostData, Ctx)
     end.
     

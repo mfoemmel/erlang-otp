@@ -79,15 +79,17 @@ typedef struct db_table_common {
     Eterm owner;              /* Pid of the creator */
     Eterm the_name;           /* an atom   */
     Eterm id;                 /* atom | integer | DB_USED | DB_NOTUSED */
-    Uint32 status;            /* bit masks defined  below */
-    int slot;                 /* slot in db_tables */
-    int keypos;               /* defaults to 1 */
-    int nitems;               /* Total number of items */
+    Uint nitems;               /* Total number of items */
     Uint memory_size;         /* Total memory size. NOTE: in bytes! */
-    int kept_items;           /* Number of kept elements due to fixation */
     Uint megasec,sec,microsec; /* Last fixation time */
     DbFixation *fixations;   /* List of processes who have fixed 
 				 the table */
+
+    /* All 32-bit fields */
+    Uint32 status;            /* bit masks defined  below */
+    int slot;                 /* slot in db_tables */
+    int keypos;               /* defaults to 1 */
+    int kept_items;           /* Number of kept elements due to fixation */
 } DbTableCommon;
 
 /* XXX: as long as NIL is atom, don't use NIL as USED marker */

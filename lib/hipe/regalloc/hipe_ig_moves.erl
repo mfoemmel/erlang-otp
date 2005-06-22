@@ -1,5 +1,5 @@
 %% -*- erlang-indent-level: 2 -*-
-%% $Id: hipe_ig_moves.erl,v 1.9 2004/12/30 00:54:34 mikpe Exp $
+%% $Id$
 
 -module(hipe_ig_moves).
 -export([new/1,

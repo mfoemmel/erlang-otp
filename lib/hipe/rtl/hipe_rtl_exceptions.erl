@@ -9,7 +9,7 @@
 %%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%      $Id: hipe_rtl_exceptions.erl,v 1.32 2004/11/02 14:29:50 mikpe Exp $
+%%      $Id$
 %% ====================================================================
 %%  Exports  :
 %%

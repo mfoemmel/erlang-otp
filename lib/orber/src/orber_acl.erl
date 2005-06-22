@@ -77,7 +77,7 @@ verify(IP, Filter, Family) ->
 	    {ok, Low, High} ->
 		{false, Low, High};
 	    What ->
-		?FORMAT("Uknown Error: ~p\n", [What])
+		{error, ?FORMAT("Uknown Error: ~p\n", [What])}
 	end,
     ets:delete(DB),
     Result.
@@ -114,11 +114,11 @@ range_safe(Filter, Family, Separator, Max, MaxStr, N, F1, F2, X) ->
 	{ok, Low, High} ->
 	    {ok, Low, High};
 	{'EXIT',{format,Why}} ->
-	    ?FORMAT("Unable to format string: ~p\n", [Why]);
+	    {error, ?FORMAT("Unable to format string: ~p\n", [Why])};
 	{'EXIT', E} ->
-	    ?FORMAT("Exit: ~p\n", [E]);
+	    {error, ?FORMAT("Exit: ~p\n", [E])};
 	What ->
-	    ?FORMAT("Unknown Error: ~p\n", [What])
+	    {error, ?FORMAT("Unknown Error: ~p\n", [What])}
     end.
 
 range_helper(Filter, Family, Separator, Max, MaxStr, N, F1, F2, X) ->

@@ -27,6 +27,7 @@
 #include "beam_catches.h"
 #include "erl_binary.h"
 #include "erl_nmgc.h"
+#include "big.h"
 
 /*
  * Returns number of elements in an array.
@@ -132,9 +133,9 @@ static int within(Eterm *ptr, Process *p);
 #endif /* HEAP_FRAG_ELIM_TEST */
 
 #ifdef ARCH_64
-# define MAX_HEAP_SIZES 150
+# define MAX_HEAP_SIZES 154
 #else
-# define MAX_HEAP_SIZES 50
+# define MAX_HEAP_SIZES 55
 #endif
 
 static Sint heap_sizes[MAX_HEAP_SIZES];	/* Suitable heap sizes. */
@@ -148,52 +149,28 @@ erts_init_gc(void)
 {
     int i = 0;
 
-    switch (heap_series) {
-    case HS_FIBONACCI:
-	heap_sizes[0] = 34;
-	heap_sizes[1] = 55;
-	for (i = 2; i < ALENGTH(heap_sizes) && heap_sizes[i-1] < MAX_SMALL; i++) {
-	    heap_sizes[i] = heap_sizes[i-1] + heap_sizes[i-2];
-	}
-	break;
- 
-    case HS_FIBONACCI_SLOW:
-	{
-	    /*
-	     * Fib growth is not really ok for really large heaps, for
-	     * example is fib(35) == 14meg, whereas fib(36) == 24meg;
-	     * we really don't want that growth when the heaps are that big.
-	     */
+    /*
+     * Heap sizes start growing in a Fibonacci sequence.
+     *
+     * Fib growth is not really ok for really large heaps, for
+     * example is fib(35) == 14meg, whereas fib(36) == 24meg;
+     * we really don't want that growth when the heaps are that big.
+     */
 	    
-	    heap_sizes[0] = 34;
-	    heap_sizes[1] = 55;
-	    for (i = 2; i < 23; i++) {
-		heap_sizes[i] = heap_sizes[i-1] + heap_sizes[i-2];
-	    }
-	    
-	    /* At 1.3 mega words heap, we start to slow down. */
-	    for (i = 23; i < ALENGTH(heap_sizes) && heap_sizes[i-1] < MAX_SMALL; i++) {
-		heap_sizes[i] = 5*heap_sizes[i-1]/4;
-		if (heap_sizes[i] < 0) {
-		    /* Size turned negative. Discard this last size. */
-		    i--;
-		    break;
-		}
-	    }
+    heap_sizes[0] = 34;
+    heap_sizes[1] = 55;
+    for (i = 2; i < 23; i++) {
+	heap_sizes[i] = heap_sizes[i-1] + heap_sizes[i-2];
+    }
+
+    /* At 1.3 mega words heap, we start to slow down. */
+    for (i = 23; i < ALENGTH(heap_sizes); i++) {
+	heap_sizes[i] = 5*(heap_sizes[i-1]/4);
+	if (heap_sizes[i] < 0) {
+	    /* Size turned negative. Discard this last size. */
+	    i--;
+	    break;
 	}
-	break;
-    case HS_POWER_TWO:
-	heap_sizes[0] = 32;
-	for (i = 1; i < ALENGTH(heap_sizes) && heap_sizes[i-1] < MAX_SMALL; i++) {
-	    heap_sizes[i] = 2 * heap_sizes[i-1];
-	}
-	break;
-    case HS_POWER_TWO_MINUS_ONE:
-	heap_sizes[0] = 31;
-	for (i = 1; i < ALENGTH(heap_sizes) && heap_sizes[i-1] < MAX_SMALL; i++) {
-	    heap_sizes[i] = 2 * (heap_sizes[i-1]+1) - 1;
-	}
-	break;
     }
     num_heap_sizes = i;
 }
@@ -237,11 +214,36 @@ Eterm
 erts_heap_sizes(Process* p)
 {
     int i;
+    int n = 0;
+    int big = 0;
     Eterm res = NIL;
-    Eterm* hp = HAlloc(p, num_heap_sizes * 2);
+    Eterm* hp;
+    Eterm* bigp;
 
     for (i = num_heap_sizes-1; i >= 0; i--) {
-        res = CONS(hp, make_small(heap_sizes[i]), res);
+	n += 2;
+	if (!MY_IS_SSMALL(heap_sizes[i])) {
+	    big += BIG_UINT_HEAP_SIZE;
+	}
+    }
+
+    /*
+     * We store all big numbers first on the heap, followed
+     * by all the cons cells.
+     */
+    bigp = HAlloc(p, n+big);
+    hp = bigp+big;
+    for (i = num_heap_sizes-1; i >= 0; i--) {
+	Eterm num;
+	Sint sz = heap_sizes[i];
+
+	if (MY_IS_SSMALL(sz)) {
+	    num = make_small(sz);
+	} else {
+	    num = uint_to_big(sz, bigp);
+	    bigp += BIG_UINT_HEAP_SIZE;
+	}
+        res = CONS(hp, num, res);
         hp += 2;
     }
     return res;

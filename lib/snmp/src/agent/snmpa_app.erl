@@ -16,10 +16,13 @@
 %%     $Id$
 %%
 %%-----------------------------------------------------------------
-%%  This module implements the old SNMP application start method
-%%  The purpose is to extract all agent app-env and convert to the 
-%%  new format
-%%
+%% This module implements the config convertion for the old SNMP 
+%% application start method
+%% The purpose is to extract all agent app-env and convert to the 
+%% new format
+%% 
+%% ---
+%% 
 %% What about the restart times for the children 
 %% note_store (snmpa_supervisor) and
 %% net_if and mib_server (snmpa_misc_sup)?
@@ -30,12 +33,14 @@
 
 -include("snmp_debug.hrl").
 
+-export([convert_config/0]).
+
+%% Internal (test)
 -export([start/1]).
 
 
-start(Type) ->
-    ?d("start -> entry with"
-	"~n   Type: ~p", [Type]),
+convert_config() ->
+    ?d("convert_config -> entry", []),
     Opts = application:get_all_env(snmp),
     ?d("start -> Opts: ~p", [Opts]),
     Prio           = get_priority(Opts),
@@ -51,63 +56,64 @@ start(Type) ->
     SupOpts        = get_supervisor_opts(Opts),
     ErrorReportMod = get_error_report_mod(Opts),
     AgentType      = get_agent_type(Opts),
-    NewOpts = 
-	case AgentType of
-	    sub ->
-		?d("start -> agent type: sub",[]),
-		SaVerb = get_sub_agent_verbosity(Opts),
-		[{agent_type,             AgentType}, 
-		 {agent_verbosity,        SaVerb}, 
-		 {set_mechanism,          SetModule},
-		 {authentication_service, AuthModule},
-		 {priority,               Prio},
-		 {versions,               Vsns},
-		 {db_dir,                 DbDir},
-		 {multi_threaded,         MultiT},
-		 {error_report_mod,       ErrorReportMod},
-		 {mib_storage,            MibStorage},
-		 {mib_server,             MibsOpts}, 
-		 {local_db,               LdbOpts}, 
-		 {supervisor,             SupOpts}, 
-		 {symbolic_store,         SymOpts}];
-
-	    master ->
-		?d("start -> agent type: master",[]),
-		MaVerb    = get_master_agent_verbosity(Opts),
-		NoteOpts  = get_note_store_opts(Opts),
-		NiOptions = get_net_if_options(Opts),
-		NiOpts    = [{options, NiOptions}|get_net_if_opts(Opts)],
-		AtlOpts   = get_audit_trail_log_opts(Opts),
-		Mibs      = get_master_agent_mibs(Opts),
-		ForceLoad = get_force_config_load(Opts),
-		ConfVerb  = get_opt(verbosity, SupOpts, silence),
-		ConfDir   = get_config_dir(Opts),
-		ConfOpts  = [{dir,        ConfDir}, 
-			     {force_load, ForceLoad},
-			     {verbosity,  ConfVerb}],
-		[{agent_type,             AgentType}, 
-		 {agent_verbosity,        MaVerb}, 
-		 {set_mechanism,          SetModule},
-		 {authentication_service, AuthModule},
-		 {db_dir,                 DbDir},
-		 {config,                 ConfOpts}, 
-		 {priority,               Prio},
-		 {versions,               Vsns},
-		 {multi_threaded,         MultiT},
-		 {error_report_mod,       ErrorReportMod},
-		 {supervisor,             SupOpts}, 
-		 {mibs,                   Mibs},
-		 {mib_storage,            MibStorage},
-		 {symbolic_store,         SymOpts}, 
-		 {note_store,             NoteOpts}, 
-		 {net_if,                 NiOpts}, 
-		 {mib_server,             MibsOpts}, 
-		 {local_db,               LdbOpts}] ++ AtlOpts
-	end,
-    ?d("start -> start the agent",[]),
-    snmp_app_sup:start_agent(Type, NewOpts).
+    case AgentType of
+	sub ->
+	    ?d("start -> agent type: sub",[]),
+	    SaVerb = get_sub_agent_verbosity(Opts),
+	    [{agent_type,             AgentType}, 
+	     {agent_verbosity,        SaVerb}, 
+	     {set_mechanism,          SetModule},
+	     {authentication_service, AuthModule},
+	     {priority,               Prio},
+	     {versions,               Vsns},
+	     {db_dir,                 DbDir},
+	     {multi_threaded,         MultiT},
+	     {error_report_mod,       ErrorReportMod},
+	     {mib_storage,            MibStorage},
+	     {mib_server,             MibsOpts}, 
+	     {local_db,               LdbOpts}, 
+	     {supervisor,             SupOpts}, 
+	     {symbolic_store,         SymOpts}];
+	
+	master ->
+	    ?d("start -> agent type: master",[]),
+	    MaVerb    = get_master_agent_verbosity(Opts),
+	    NoteOpts  = get_note_store_opts(Opts),
+	    NiOptions = get_net_if_options(Opts),
+	    NiOpts    = [{options, NiOptions}|get_net_if_opts(Opts)],
+	    AtlOpts   = get_audit_trail_log_opts(Opts),
+	    Mibs      = get_master_agent_mibs(Opts),
+	    ForceLoad = get_force_config_load(Opts),
+	    ConfVerb  = get_opt(verbosity, SupOpts, silence),
+	    ConfDir   = get_config_dir(Opts),
+	    ConfOpts  = [{dir,        ConfDir}, 
+			 {force_load, ForceLoad},
+			 {verbosity,  ConfVerb}],
+	    [{agent_type,             AgentType}, 
+	     {agent_verbosity,        MaVerb}, 
+	     {set_mechanism,          SetModule},
+	     {authentication_service, AuthModule},
+	     {db_dir,                 DbDir},
+	     {config,                 ConfOpts}, 
+	     {priority,               Prio},
+	     {versions,               Vsns},
+	     {multi_threaded,         MultiT},
+	     {error_report_mod,       ErrorReportMod},
+	     {supervisor,             SupOpts}, 
+	     {mibs,                   Mibs},
+	     {mib_storage,            MibStorage},
+	     {symbolic_store,         SymOpts}, 
+	     {note_store,             NoteOpts}, 
+	     {net_if,                 NiOpts}, 
+	     {mib_server,             MibsOpts}, 
+	     {local_db,               LdbOpts}] ++ AtlOpts
+    end.
 
 
+start(Type) ->
+    snmp_app_sup:start_agent(Type, convert_config()).
+
+    
 %% ------------------------------------------------------------------
 
 get_db_dir(Opts) ->

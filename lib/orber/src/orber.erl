@@ -58,7 +58,13 @@
 	 partial_security/0, nat_iiop_ssl_port/0, nat_iiop_port/0, ip_version/0,
 	 light_ifr/0, iiop_max_in_requests/0, iiop_max_in_connections/0, 
 	 iiop_max_fragments/0, iiop_backlog/0, iiop_ssl_backlog/0,
-	 find_sockname_by_peername/2, find_peername_by_sockname/2, iiop_acl/0]).
+	 find_sockname_by_peername/2, find_peername_by_sockname/2, iiop_acl/0,
+	 add_listen_interface/2, add_listen_interface/3, remove_listen_interface/1,
+	 reconfigure_out_connections/1, 
+	 reconfigure_out_connection/3, reconfigure_out_connection/4, 
+	 reconfigure_in_connections/1, reconfigure_in_connection/2,
+	 activate_audit_trail/0, activate_audit_trail/1, deactivate_audit_trail/0,
+	 iiop_ssl_ip_address_local/0, ip_address_local/0]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -343,6 +349,15 @@ find_peername_by_sockname(Host, Port) ->
 find_sockname_by_peername(Host, Port) ->
     orber_iiop_net:peername2sockname(Host, Port).
 
+%%----------------------------------------------------------------------
+%% Function   : iiop_connections
+%% Arguments  : Direction   - in | out | inout
+%% Returns    : Connections - [{Host, Port}]
+%%              Host        - string
+%%              Port        - integer
+%% Raises     : 
+%% Description: List existing in- and/or out-bound connections.
+%%----------------------------------------------------------------------
 iiop_connections() ->
     iiop_connections(inout).
 
@@ -353,8 +368,19 @@ iiop_connections(in) ->
 iiop_connections(out) ->
     orber_iiop_pm:list_existing_connections().
 
+%%----------------------------------------------------------------------
+%% Function   : iiop_connections_pending
+%% Arguments  : -
+%% Returns    : Connections - [{Host, Port}]
+%%              Host        - string
+%%              Port        - integer
+%% Raises     : 
+%% Description: List outbound connections that are being setup. Usefull
+%%              when suspecting firewall problems.
+%%----------------------------------------------------------------------
 iiop_connections_pending() ->
     orber_iiop_pm:list_setup_connections().
+
 
 iiop_max_fragments() ->
     orber_env:iiop_max_fragments().
@@ -371,6 +397,8 @@ iiop_backlog() ->
 iiop_acl() ->
     orber_env:iiop_acl().
 
+ip_address_local() ->
+    orber_env:ip_address_local().
 
 get_flags() ->
     orber_env:get_flags().
@@ -450,6 +478,9 @@ secure() ->
 iiop_ssl_backlog() ->
     orber_env:iiop_ssl_backlog().
 
+iiop_ssl_ip_address_local() ->
+    orber_env:iiop_ssl_ip_address_local().
+
 iiop_ssl_port() ->
     orber_env:iiop_ssl_port().
 
@@ -515,6 +546,142 @@ ssl_client_cachetimeout() ->
 
 ssl_server_cachetimeout() ->
     orber_env:ssl_server_cachetimeout().
+
+%%----------------------------------------------------------------------
+%% Function   : activate_audit_trail
+%% Arguments  : Verbosity - stealth | normal | verbose
+%% Returns    : -
+%% Raises     : 
+%% Description: Activate the appropriate interceptor for the requested direction(s).
+%%----------------------------------------------------------------------
+activate_audit_trail() ->
+    activate_audit_trail(normal).
+
+activate_audit_trail(stealth) ->
+    do_activate(orber_iiop_tracer_stealth);
+activate_audit_trail(verbose) ->
+    do_activate(orber_iiop_tracer);
+activate_audit_trail(_) ->
+    do_activate(orber_iiop_tracer_silent).
+
+do_activate(Interceptor) ->
+    Options =
+	case orber_env:get_interceptors() of
+	    {native, PIs} ->
+		[{interceptors, 
+		  {native, [Interceptor|remove_built_in_interceptors(PIs, [])]}}];
+	    _ ->
+		[{interceptors, {native, [Interceptor]}}]
+	end,
+    reconfigure_in_connections(Options),
+    reconfigure_out_connections(Options).
+
+remove_built_in_interceptors([orber_iiop_tracer_stealth|T], Acc) ->
+    remove_built_in_interceptors(T, Acc);
+remove_built_in_interceptors([orber_iiop_tracer|T], Acc) ->
+    remove_built_in_interceptors(T, Acc);
+remove_built_in_interceptors([orber_iiop_tracer_silent|T], Acc) ->
+    remove_built_in_interceptors(T, Acc);
+remove_built_in_interceptors([H|T], Acc) ->
+    remove_built_in_interceptors(T, [H|Acc]);
+remove_built_in_interceptors([], Acc) ->
+    %% We must use the same order as defined by the interceptors parameter
+    lists:reverse(Acc).
+
+%%----------------------------------------------------------------------
+%% Function   : deactivate_audit_trail
+%% Arguments  : -
+%% Returns    : -
+%% Raises     : 
+%% Description: Dectivate interceptors for the requested direction(s).
+%%----------------------------------------------------------------------
+deactivate_audit_trail() ->
+    Options 
+	= case orber_env:get_interceptors() of
+	      {native, PIs} ->
+		  [{interceptors, {native, PIs}}];
+	      _ ->
+		  [{interceptors, false}]
+	  end,
+    reconfigure_in_connections(Options),
+    reconfigure_out_connections(Options).
+
+%%----------------------------------------------------------------------
+%% Function   : add_listen_interface
+%% Arguments  : IP   - string
+%%              Type - normal | ssl
+%%              Port - integer > 0
+%% Returns    : #Ref
+%% Raises     : 
+%% Description: Add a new listen process, which will accept new incoming
+%%              connections.
+%%----------------------------------------------------------------------
+add_listen_interface(IP, Type) ->
+    orber_iiop_net:add(IP, Type).
+add_listen_interface(IP, Type, Port) when integer(Port), Port > 0 ->
+    orber_iiop_net:add(IP, Type, Port);
+add_listen_interface(IP, Type, Port)  ->
+    orber:dbg("[~p] orber:add_listen_interface(~p, ~p, ~p);~n"
+	      "The port number must be greater than 0.", 
+	      [?LINE, IP, Type, Port], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
+    
+%%----------------------------------------------------------------------
+%% Function   : remove_listen_interface
+%% Arguments  : Ref - #Ref
+%% Returns    : #Ref
+%% Raises     : 
+%% Description: Terminate the listen process and all related inproxies
+%%              associated with the supplied reference.
+%%----------------------------------------------------------------------
+remove_listen_interface(Ref) ->
+    orber_iiop_net:remove(Ref).
+
+%%----------------------------------------------------------------------
+%% Function   : reconfigure_out_connections
+%% Arguments  : Options - see corba:orb_init
+%% Returns    : ok | {error, Reason}
+%% Raises     : 
+%% Description: Reconfigure the behavior of all outgoing IIOP connections.
+%%----------------------------------------------------------------------
+reconfigure_out_connections(Options) ->
+    orber_iiop_pm:reconfigure(Options).
+
+%%----------------------------------------------------------------------
+%% Function   : reconfigure_out_connections
+%% Arguments  : Options - see corba:orb_init
+%%              Host      - string()
+%%              Port      - integer()
+%%              Interface - string
+%% Returns    : ok | {error, Reason}
+%% Raises     : 
+%% Description: Reconfigure the behavior of all outgoing connections.
+%%----------------------------------------------------------------------
+reconfigure_out_connection(Options, Host, Port) ->
+    orber_iiop_pm:reconfigure(Options, Host, Port).
+reconfigure_out_connection(Options, Host, Port, Interface) ->
+    orber_iiop_pm:reconfigure(Options, Host, Port, Interface).
+
+%%----------------------------------------------------------------------
+%% Function   : reconfigure_in_connections
+%% Arguments  : Options - see corba:orb_init
+%% Returns    : ok | {error, Reason}
+%% Raises     : 
+%% Description: Reconfigure the behavior of all incoming IIOP connections.
+%%----------------------------------------------------------------------
+reconfigure_in_connections(Options) ->
+    orber_iiop_net:reconfigure(Options).
+
+%%----------------------------------------------------------------------
+%% Function   : reconfigure_in_connections
+%% Arguments  : Options - see corba:orb_init
+%%              Ref       - The #Ref returned by add_listen_interface/2/3
+%% Returns    : ok | {error, Reason}
+%% Raises     : 
+%% Description: Reconfigure the behavior of all incoming IIOP connections.
+%%----------------------------------------------------------------------
+reconfigure_in_connection(Options, Ref) ->
+    orber_iiop_net:reconfigure(Options, Ref).
 
 
 %%-----------------------------------------------------------------

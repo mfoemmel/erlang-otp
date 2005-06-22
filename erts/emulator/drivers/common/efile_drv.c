@@ -78,6 +78,10 @@
 #define FILE_SEGMENT_READ  (256*1024)
 #define FILE_SEGMENT_WRITE (256*1024)
 
+/* Internal */
+
+/* Must not be possible to get from malloc()! */
+#define FILE_FD_INVALID ((Sint)(-1))
 
 #include <stdlib.h>
 #ifdef HAVE_CONFIG_H
@@ -540,7 +544,7 @@ file_start(ErlDrvPort port, char* command)
 
     if ((desc = (file_descriptor*) EF_ALLOC(sizeof(file_descriptor))) == NULL)
 	return ERL_DRV_ERROR_GENERAL;
-    desc->fd = -1;
+    desc->fd = FILE_FD_INVALID;
     desc->port = port;
     desc->key = (unsigned) (Uint) port;
     desc->flags = 0;
@@ -592,9 +596,9 @@ file_stop(ErlDrvData e)
 
     TRACE_C('p');
 
-    if (desc->fd >= 0) {
+    if (desc->fd != FILE_FD_INVALID) {
 	do_close(desc->flags, desc->fd);
-	desc->fd = -1;
+	desc->fd = FILE_FD_INVALID;
 	desc->flags = 0;
     }
     if (desc->read_binp) {
@@ -2092,7 +2096,7 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	    reply_posix_error(desc, EINVAL);
 	    goto done;
 	}
-	if (desc->fd >= 0) {
+	if (desc->fd != FILE_FD_INVALID) {
 	    struct t_data *d;
 	    if (! (d = EF_ALLOC(sizeof(struct t_data)))) {
 		reply_posix_error(desc, ENOMEM);
@@ -2105,7 +2109,7 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 		d->free = free_data;
 		d->level = 2;
 		cq_enq(desc, d);
-		desc->fd = -1;
+		desc->fd = FILE_FD_INVALID;
 		desc->flags = 0;
 	    }
 	} else {
@@ -2137,7 +2141,8 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 #else
 	size = ((size_t)sizeH << 32) | sizeL;
 #endif
-	if ((! (desc->flags & EFILE_MODE_READ)) || (desc->fd < 0)) {
+	if ((desc->fd == FILE_FD_INVALID)
+	    || (! (desc->flags & EFILE_MODE_READ)) ) {
 	    reply_posix_error(desc, EBADF);
 	    goto done;
 	}

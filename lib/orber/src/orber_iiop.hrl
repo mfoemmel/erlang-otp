@@ -32,9 +32,6 @@
 -define(FIXED_NEGATIVE, 13).
 -define(FIXED_POSITIVE, 12).
 
-%% Defines if the ip_comm application is used instead of sockets.
--define(IIOP_SOCKET_MOD, 'orber_socket').
-
 %% Used instead of IFR-id's in TypeCode definitions for internal data types.
 -define(SYSTEM_TYPE, 0).
 
@@ -193,24 +190,9 @@
 -define(ULONGLONGMIN, 0).
 -define(ULONGLONGMAX, 18446744073709551615).
 
-%% Orber OMG assigned TAG's
-%% Service Cxt IDs 0x45524904 - 0x45524907  ("ERI\x04" - "ERI\x07")
-%% Component IDs   0x45524904 - 0x45524907  ("ERI\x04" - "ERI\x07")
-%% ORB type IDs    0x45524904 - 0x45524907  ("ERI\x04" - "ERI\x07")
--define(ORBER_ORB_TYPE_1, 16#45524904).
--define(ORBER_ORB_TYPE_2, 16#45524905).
--define(ORBER_ORB_TYPE_3, 16#45524906).
--define(ORBER_ORB_TYPE_4, 16#45524907).
 
--define(ORBER_COMPONENT_1, 16#45524904).
--define(ORBER_COMPONENT_2, 16#45524905).
--define(ORBER_COMPONENT_3, 16#45524906).
--define(ORBER_COMPONENT_4, 16#45524907).
+-define(ORBER_GENERIC_CTX, {'tk_sequence', 'tk_octet', 0}).
 
--define(ORBER_SERVICE_CTX_1, 16#45524904).
--define(ORBER_SERVICE_CTX_2, 16#45524905).
--define(ORBER_SERVICE_CTX_3, 16#45524906).
--define(ORBER_SERVICE_CTX_4, 16#45524907).
 
 %%----------------------------------------------------------------------
 %% GIOP Message Header
@@ -357,10 +339,11 @@
 -define(ORB_ENV_SURVIVE_EXIT,              16#200). %% FIXED!!
 -define(ORB_ENV_USE_ACL_INCOMING,          16#400). %% FIXED!!
 -define(ORB_ENV_USE_ACL_OUTGOING,          16#800). %% FIXED!!
+-define(ORB_ENV_LOCAL_INTERFACE,           16#1000). %% FIXED!!
 
--define(ORB_ENV_EXCLUDE_CODESET_CTX,       16#1000). %% CAN BE CHANGED
 -define(ORB_ENV_USE_BI_DIR_IIOP,           16#2000). %% CAN BE CHANGED
 -define(ORB_ENV_USE_CSIV2,                 16#4000). %% CAN BE CHANGED
+-define(ORB_ENV_EXCLUDE_CODESET_CTX,       16#8000). %% CAN BE CHANGED
 
 
 -define(ORB_ENV_INIT_FLAGS,      16#00).
@@ -379,7 +362,8 @@
 	 {?ORB_ENV_LIGHT_IFR, "Light IFR"},
 	 {?ORB_ENV_USE_BI_DIR_IIOP, "Use BiDirIIOP"},
 	 {?ORB_ENV_USE_ACL_INCOMING, "Use ACL for Incoming Connections"},
-	 {?ORB_ENV_USE_ACL_OUTGOING, "Use ACL for Outgoing Connections"}]).
+	 {?ORB_ENV_USE_ACL_OUTGOING, "Use ACL for Outgoing Connections"},
+	 {?ORB_ENV_LOCAL_INTERFACE, "Use the Proxy Interface in Exported IOR:s"}]).
 
 
 %%----------------------------------------------------------------------
@@ -1004,9 +988,10 @@
 -define(IOP_ExceptionDetailMessage,   14).
 -define(IOP_SecurityAttributeService, 15).
 
+
+
 %%----------------------------------------------------------------------
 %% host_data
-%% 
 %%----------------------------------------------------------------------
 -record(host_data, {protocol = normal, ssl_data, version, csiv2_mech,
 		    csiv2_statefull = false, csiv2_addresses = [],
@@ -1014,5 +999,16 @@
 		    ft_heartbeat = false, ft_primary = false, ft_domain,
 		    ft_group, ft_ref_version}).
 
+%%----------------------------------------------------------------------
+%% giop_env
+%%----------------------------------------------------------------------
+-record(giop_env, {interceptors, type, version, bytes, ctx = [], 
+		   request_id, op, parameters = [], tc, response_expected, 
+		   objkey, reply_status, result, flags, host, iiop_port,
+		   iiop_ssl_port, domain, partial_security}).
 
 -endif.
+
+%%----------------------------------------------------------------------
+%% END OF MODULE
+%%----------------------------------------------------------------------

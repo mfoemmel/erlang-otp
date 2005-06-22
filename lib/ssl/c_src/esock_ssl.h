@@ -37,6 +37,9 @@ char *esock_ssl_errstr;
 /* Ephemeral RSA and DH */
 int ephemeral_rsa, ephemeral_dh;
 
+/* Protocol version (sslv2, sslv3, tlsv1) */
+int protocol_version;
+
 /* version info */
 esock_version *esock_ssl_version(void);
 
@@ -107,5 +110,9 @@ int esock_ssl_getpeercertchain(Connection *cp, unsigned char **buf);
 
 /* Sessions */
 int esock_ssl_session_reused(Connection *cp);
+
+/* Protocol version and cipher of established connection */
+int esock_ssl_getprotocol_version(Connection *cp, char **buf);
+int esock_ssl_getcipher(Connection *cp, char **buf);
 
 #endif

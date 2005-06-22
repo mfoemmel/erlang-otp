@@ -34,7 +34,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/2, start_accept/2]).
+-export([start/2, start_accept/3]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -80,6 +80,6 @@ terminate(_Reason, _State) ->
 %%-----------------------------------------------------------------
 %% Func: start_connection/1
 %%-----------------------------------------------------------------
-start_accept(Type, Listen) ->
-    supervisor:start_child(orber_iiop_socketsup, [Type, Listen]).
+start_accept(Type, Listen, Ref) ->
+    supervisor:start_child(orber_iiop_socketsup, [Type, Listen, Ref]).
 

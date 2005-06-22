@@ -132,11 +132,13 @@ handle_call(Request, _, State = #state{session = Session =
     Address = handle_proxy(Request#request.address, Options#options.proxy),
     case httpc_request:send(Address, Request, Socket) of
         ok ->
-	    NewState = activate_request_timeout(State),
+	    %% Activate the request time out for the new request
+	    NewState = activate_request_timeout(State#state{request =
+							     Request}),
 	    ClientClose = httpc_request:is_client_closing(
 			    Request#request.headers),
             case State#state.request of
-                #request{} ->
+                #request{} -> %% Old request no yet finished
                     NewPipeline = queue:in(Request, NewState#state.pipeline),
 		    NewSession = 
 			Session#tcp_session{pipeline_length = 
@@ -327,7 +329,8 @@ code_change(_, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 send_first_request(Address, Request, State) ->
-    case http_transport:connect(Request#request{address = Address}) of
+    Ipv6 = (State#state.options)#options.ipv6,
+    case http_transport:connect(Request#request{address = Address}, Ipv6) of
 	{ok, Socket} ->
 	    case httpc_request:send(Address, Request, Socket) of
 		ok ->
@@ -608,7 +611,8 @@ handle_pipeline(State = #state{status = pipeline, session = Session},
 			_ ->
 			    %% If we already received some bytes of
 			    %% the next response
-			    handle_info({httpc_handler, dummy, Data}, NewState)   
+			    handle_info({httpc_handler, dummy, Data}, 
+					NewState) 
 		    end
 	    end
     end.
@@ -652,8 +656,8 @@ is_pipeline_capable_server(_,_) ->
     false.
 
 is_keep_alive_connection(Headers, Session) ->
-    (not Session#tcp_session.client_close) and  
-	httpc_response:is_server_closing(Headers).
+    (not ((Session#tcp_session.client_close) or  
+	  httpc_response:is_server_closing(Headers))).
 
 try_to_enable_pipline(State = #state{session = Session, 
 				     request = #request{method = Method},
@@ -780,7 +784,8 @@ is_no_proxy_dest_address(Dest, AddressPart) ->
 %% 				  path = Host ++ ":",
 %% 				  pquery = integer_to_list(Port),
 %% 				  other = [{ "Proxy-Connection", "keep-alive"}]},
-%%     case http_transport:connect(SslTunnelRequest) of
+%%     Ipv6 = (State#state.options)#options.ipv6,
+%%     case http_transport:connect(SslTunnelRequest, Ipv6) of
 %% 	{ok, Socket} ->
 %% 	    case httpc_request:send(Address, SslTunnelRequest, Socket) of
 %% 		ok ->

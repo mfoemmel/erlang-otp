@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_rtl_to_ppc.erl,v 1.16 2004/12/06 03:09:39 mikpe Exp $
+%%% $Id$
 %%%
 %%% The PowerPC instruction set is quite irregular.
 %%% The following quirks must be handled by the translation:
@@ -1099,9 +1099,9 @@ conv_dst(Opnd, Map) ->
       {hipe_ppc:mk_temp(Name, Type), Map};
     false ->
       case vmap_lookup(Map, Opnd) of
-	{value, {_, NewTemp}} ->
+	{value, NewTemp} ->
 	  {NewTemp, Map};
-	false ->
+	_ ->
 	  NewTemp = hipe_ppc:mk_new_temp(Type),
 	  {NewTemp, vmap_bind(Map, Opnd, NewTemp)}
       end
@@ -1155,13 +1155,13 @@ new_tagged_temp() ->
 %%% Map from RTL var/reg operands to temps.
 
 vmap_empty() ->
-    [].
+  gb_trees:empty().
 
-vmap_lookup(VMap, Opnd) ->
-    lists:keysearch(Opnd, 1, VMap).
+vmap_lookup(Map, Key) ->
+  gb_trees:lookup(Key, Map).
 
-vmap_bind(VMap, Opnd, Temp) ->
-    [{Opnd, Temp} | VMap].
+vmap_bind(Map, Key, Val) ->
+  gb_trees:insert(Key, Val, Map).
 
 word_size() ->
   hipe_rtl_arch:word_size().

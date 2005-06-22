@@ -11,6 +11,9 @@ bif hipe_bifs:write_u32/2
 # bif hipe_bifs:write_s64/2
 # bif hipe_bifs:write_u64/2
 
+bif hipe_bifs:bytearray/2
+bif hipe_bifs:bytearray_sub/2
+bif hipe_bifs:bytearray_update/3
 bif hipe_bifs:array/2
 bif hipe_bifs:array_length/1
 bif hipe_bifs:array_sub/2

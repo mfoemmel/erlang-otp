@@ -1,23 +1,22 @@
 %%%----------------------------------------------------------------------
 %%% File    : hipe_icode_mulret.erl
-%%% Author  : Christoffer Vikström <chvi3471@fan.it.uu.se>
+%%% Author  : Christoffer Vikström <chvi3471@it.uu.se>
 %%% Purpose : 
-%%% Created : 23 Jun 2004 by Christoffer Vikström <chvi3471@fan.it.uu.se>
+%%% Created : 23 Jun 2004 by Christoffer Vikström <chvi3471@it.uu.se>
 %%%----------------------------------------------------------------------
 
 -module(hipe_icode_mulret).
--author('chvi3471@fan.it.uu.se').
+-author('chvi3471@it.uu.se').
 
 -include("hipe_icode.hrl").
-%%-export([mult_ret/4]).
--compile(export_all).
+-export([mult_ret/4]).
 
 %%>----------------------------------------------------------------------<
-%  Procedure : mult_ret/3
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : mult_ret/3
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 mult_ret(List, Mod, Opts, Exports) ->
     case length(List) > 1 of
@@ -31,15 +30,14 @@ mult_ret(List, Mod, Opts, Exports) ->
     end.
 
 
-
-%%>-----------------------< Analysation Steps >--------------------------<
+%%>-----------------------< Analysis Steps >-----------------------------<
 
 %%>----------------------------------------------------------------------<
-%  Procedure : analyse/3
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : analyse/3
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 analyse(List, _Mod, Exports) ->
     MaxRets = hipe_rtl_arch:nr_of_return_regs(),
@@ -49,13 +47,12 @@ analyse(List, _Mod, Exports) ->
     %% printTable(Mod, Exports, Table2),
     Table2.
 
-
 %%>----------------------------------------------------------------------<
-%  Procedure : mkTable/1
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : mkTable/1
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 mkTable(List) -> mkTable(List, {[], []}).
 
@@ -80,11 +77,11 @@ mkTable([], Table) -> Table.
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : isFunDef/1
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : isFunDef/1
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 isFunDef({_,F,_}) ->
     case hd(atom_to_list(F)) of
@@ -96,11 +93,11 @@ isFunDef({_,F,_}) ->
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : mkCallList/1
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : mkCallList/1
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 mkCallList(Mfa, Icode) ->
     Code = hipe_icode:icode_code(Icode),
@@ -113,11 +110,11 @@ mkCallList([], _, Res) -> Res.
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : lookForDef/1
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : lookForDef/1
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 lookForDef([#type{type={tuple,Size}, args=Var, true_label=L}|Code], Var) ->
     Code2 = skipToLabel(Code, L),
@@ -143,11 +140,11 @@ lookForDef([I|Code], Var) ->
 lookForDef([], Var) -> {1, [Var]}.
 
 %%>----------------------------------------------------------------------<
-%  Procedure : skipToLabel/2
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : skipToLabel/2
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 skipToLabel(Code, L) ->
     case skipToLabel2(Code,L) of
@@ -162,11 +159,11 @@ skipToLabel2([], _) -> noLabel.
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : lookForUnElems/2
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : lookForUnElems/2
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 lookForUnElems(Code, Var) -> lookForUnElems(Code, Var, []).
 lookForUnElems([#call{'fun'={unsafe_element,Nr}, args=Var, 
@@ -184,11 +181,11 @@ lookForUnElems([], _, Res) -> lists:flatten(Res).
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : fixDstLst/2
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : fixDstLst/2
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 fixDstLst(DstLst, Size) -> fixDstLst(DstLst, Size, 1, []).
 fixDstLst(DstLst, Size, Cnt, Res) when Cnt =< Size ->
@@ -203,11 +200,11 @@ fixDstLst(_,Size,Cnt,Res) when Cnt > Size -> lists:reverse(Res).
     
 
 %%>----------------------------------------------------------------------<
-%  Procedure : isInLst/2
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : isInLst/2
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 isInLst(Nr, [{Nr,Var}|_]) -> {true, Var};
 isInLst(Cnt, [_|DstLst]) -> isInLst(Cnt, DstLst);
@@ -215,11 +212,11 @@ isInLst(_, []) -> false.
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : isOptimizable/1
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : isOptimizable/1
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 isOptimizable(Icode) ->    
     %% Icode2 = hipe_icode:fixup_fallthroughs(Icode),
@@ -234,14 +231,12 @@ isOptimizable(Icode) ->
 	    processReturnBlocks(BlockList, PredMap, Cfg)
     end.
 
-
-
 %%>----------------------------------------------------------------------<
-%  Procedure : findReturnBlocks/2
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : findReturnBlocks/2
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 findReturnBlocks(IcodeCfg) ->
     Labels = hipe_icode_cfg:labels(IcodeCfg),
@@ -253,11 +248,11 @@ findReturnBlocks(IcodeCfg) ->
     end.
 
 %%>----------------------------------------------------------------------<
-%  Procedure : searchBlocks/2
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : searchBlocks/2
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 searchBlocks(Labels, IcodeCfg) -> searchBlocks(Labels, IcodeCfg, []).
 searchBlocks([Label|Labels], IcodeCfg, Res) ->
@@ -271,13 +266,12 @@ searchBlocks([Label|Labels], IcodeCfg, Res) ->
     end;
 searchBlocks([], _, Res) -> Res.
 
-
 %%>----------------------------------------------------------------------<
-%  Procedure : searchBlockCode/1
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : searchBlockCode/1
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 searchBlockCode([#return{vars=Vars}|_]) -> {hasReturn, Vars};
 searchBlockCode([_|Icode]) ->
@@ -286,11 +280,11 @@ searchBlockCode([]) -> noReturn.
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : processReturnBlock/2
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : processReturnBlock/2
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 processReturnBlocks(Blocks, PredMap, Cfg) -> 
     processReturnBlocks(Blocks, PredMap, Cfg, {true, -1}, []).
@@ -320,11 +314,11 @@ processReturnBlocks([], _, _, Res, TypeLst) ->
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : traverseCode/4
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : traverseCode/4
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 traverseCode(Label, Var, PredMap, IcodeCfg) -> 
     traverseCode(Label, Var, PredMap, IcodeCfg, []).
@@ -354,11 +348,11 @@ traverseCode(Label, Var, PredMap, IcodeCfg, LabLst) ->
     end.
 
 %%>----------------------------------------------------------------------<
-%  Procedure : findDefine/2
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : findDefine/2
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 findDefine([#call{dstlist=Var,'fun'=mktuple,args=Vs}|_], Var) ->
     case length(Vs) of
@@ -390,11 +384,11 @@ findDefine([], Var) -> {notFound, Var}.
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : addToTable/4
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : addToTable/4
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 addToTable(Mfa, Optimizable, CallList, {FunLst, CallLst}) ->
     NewFunLst = [{Mfa, Optimizable}|FunLst],
@@ -402,11 +396,11 @@ addToTable(Mfa, Optimizable, CallList, {FunLst, CallLst}) ->
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : filterTable/1
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : filterTable/1
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 filterTable({FunLst, CallLst}, MaxRets, Exports) -> 
     filterTable(FunLst, CallLst, MaxRets, Exports, {[],[]}).
@@ -449,11 +443,11 @@ containRecursiveCalls([Call|Calls], Fun) ->
 containRecursiveCalls([], _) -> false.
 
 %%>----------------------------------------------------------------------<
-%  Procedure : checkCalls/3
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : checkCalls/3
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 checkCalls(CallLst, Mfa, Rets) -> checkCalls(CallLst, Mfa, Rets, [], []).
 checkCalls([C = {callPair, _, {Mfa, {matchSize,Rets,_}}}|CallLst], 
@@ -468,11 +462,11 @@ checkCalls([], _, _, Res, Opt) -> {combineOpts(Opt), Res}.
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : combineOpts/1
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : combineOpts/1
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 combineOpts([]) -> false;
 combineOpts([Opt]) -> Opt;
@@ -480,11 +474,11 @@ combineOpts([Opt|Opts]) -> Opt and combineOpts(Opts).
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : checkCalls/2
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : checkCalls/2
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 checkExported({_,F,A}, [{F,A}|_]) -> false;
 checkExported(Mfa, [_|Exports]) -> checkExported(Mfa, Exports);
@@ -495,11 +489,11 @@ checkExported(_, []) -> true.
 %%>----------------------< Optimization Steps >--------------------------<
 
 %%>----------------------------------------------------------------------<
-%  Procedure : optimize/4
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : optimize/4
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 optimize(List, _Mod, Opts, Table) -> 
     {FunLst, CallLst} = Table,
@@ -509,11 +503,11 @@ optimize(List, _Mod, Opts, Table) ->
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : optimizeFuns/3
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : optimizeFuns/3
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 optimizeFuns([{Fun, _}|FunList], Opts, List) ->
     NewList = findFun(List, Fun),
@@ -646,11 +640,11 @@ resolveUpdateMap([], Cfg) -> Cfg.
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : updateReturnBlock/3
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : updateReturnBlock/3
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 updateReturnBlock(Label, Vars, IcodeCfg) -> 
     Block = hipe_icode_cfg:bb(IcodeCfg, Label),
@@ -670,13 +664,12 @@ updateReturnCode([I| Code], DstLst, Res) ->
 updateReturnCode([], _, Res) -> lists:reverse(Res).  
 
 
-
 %%>----------------------------------------------------------------------<
-%  Procedure : optimizeCalls/3
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : optimizeCalls/3
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 optimizeCalls([Call|CallLst], _Opts, List) ->
     {callPair, Caller, {Callee, {matchSize, _, DstLst}}} = Call,
@@ -686,11 +679,11 @@ optimizeCalls([], _Opts, List) -> List.
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : optimizeCall/4
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : optimizeCall/4
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 optimizeCall(List, Caller, Callee, DstLst) -> 
     optimizeCall(List, Caller, Callee, DstLst, []).
@@ -710,11 +703,11 @@ optimizeCall([],_,_,_,Res) -> lists:reverse(Res).
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : findAndUpdateCall/3
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : findAndUpdateCall/3
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 findAndUpdateCalls(Cfg, Callee, DstLst) ->
     Labels = hipe_icode_cfg:labels(Cfg), 
@@ -871,6 +864,7 @@ findType([],_,Rest, {TrueLab, FalseLab}) ->
 %% ------------------------------------------
 removeUnElems(Code, OldVar, DstLst) -> 
     removeUnElems(Code, OldVar, DstLst, [], false, none).
+
 removeUnElems([I|Code], OldVar, DstLst, Res, Def, Lab)  ->
     case isCallPrimop(I, unsafe_element) of
 	true ->
@@ -880,14 +874,16 @@ removeUnElems([I|Code], OldVar, DstLst, Res, Def, Lab)  ->
 		false ->
 		    case lists:member(OldVar, hipe_icode:call_args(I)) of
 			true ->
-			    case Def of
-				defined ->
+			    %% XXX: the following test seems mucho redundant,
+			    %% hence commented out -- KOSTIS
+			    %% case Def of
+			    %%	true ->
 				    removeUnElems(Code, OldVar, DstLst,  
 						  [I|Res], Def, Lab);
-				not_defined ->
-				    removeUnElems(Code, OldVar, DstLst, 
-						  [I|Res], Def, Lab)
-			    end;
+			    %%	false ->
+			    %%	    removeUnElems(Code, OldVar, DstLst, 
+			    %%			  [I|Res], Def, Lab)
+			    %% end;
 			false ->
 			    io:format("Borde aldrig kunna hamna här!", []),
 			    removeUnElems(Code, OldVar, DstLst, 
@@ -1070,13 +1066,14 @@ isCallPrimop(Instr, Fun) ->
 
 %% >-------------------------< Debug code >------------------------------<
 
+-ifdef(DEBUG_MULRET).
 
 %%>----------------------------------------------------------------------<
-%  Procedure : printTable/1
-%  Purpose   : 
-%  Arguments : 
-%  Return    : 
-%  Notes     : 
+%% Procedure : printTable/1
+%% Purpose   : 
+%% Arguments : 
+%% Return    : 
+%% Notes     : 
 %%>----------------------------------------------------------------------<
 printTable(Mod, Exports, {FunLst, CallLst}) ->
     {Y,Mo,D} = date(), {H,Mi,S} = time(),
@@ -1098,6 +1095,7 @@ printCallList([Call|CallLst]) ->
     printCallList(CallLst);
 printCallList([]) -> io:format("~n").
 
+-endif.
 
 %% >----------------------------< Old code >--------------------------------<
 
@@ -1261,12 +1259,6 @@ printCallList([]) -> io:format("~n").
 %% 	    {found, lists:reverse(NewCode), Vars}
 %%     end.
     
-
-
-
-    
-
-
 %% modifyCode(Code, Var) ->
 %%     [#return{vars=Var}|Code2] = lists:reverse(Code),
 %%     case (length(Var) =< hipe_rtl_arch:nr_of_return_regs()) of
@@ -1294,7 +1286,6 @@ printCallList([]) -> io:format("~n").
 %% scanInstr(#call{dstlist=Var, 'fun'=mktuple, args=Lst}, Var) ->
 %%     {mktuple, length(Lst), Lst};
 %% scanInstr(_,_) -> other.
-
 
 
 %% DomTree = hipe_dominators:domTree_create(IcodeCfg),
@@ -1333,8 +1324,6 @@ printCallList([]) -> io:format("~n").
 %%     printList2(File, Code),
 %%     printList(File, List);
 %% printList(_, []) -> ok.
-	   
-
 
 %% printList2(File, []) -> io:format(File, "~n~n", []);
 %% printList2(File, IList) when is_list(IList) ->  

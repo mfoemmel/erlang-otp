@@ -21,7 +21,7 @@
 %%
 %% Author contact: richardc@csd.uu.se
 %%
-%% $Id: erl_types.erl,v 1.61 2005/03/30 07:57:23 tobiasl Exp $
+%% $Id$
 %%
 %% @doc Basic representation of Erlang types.
 %%
@@ -139,7 +139,7 @@
 %-define(DEBUG, true).
 
 -export([t_any/0, t_atom/0, t_atom/1, t_atom_vals/1, t_binary/0,
-	 t_bool/0, t_byte/0, t_char/0,
+	 t_bool/0, t_byte/0, t_char/0, t_constant/0,
 	 t_components/1,
 	 t_cons/0, t_cons/2, t_cons_hd/1, t_cons_tl/1,
 	 t_float/0, t_from_term/1, t_from_range/2,
@@ -149,10 +149,10 @@
 	 t_inf/2, t_inf_lists/2,
 	 t_integer/0, t_integer/1, t_integers/1,
 	 t_improper_list/0,
-	 t_is_any/1, t_is_atom/1,
+	 t_is_any/1, t_is_atom/1, t_is_atom/2,
 	 t_is_binary/1, t_is_bool/1, t_is_byte/1,
 	 t_is_char/1,
-	 t_is_cons/1, t_is_improper_list/1,
+	 t_is_cons/1, t_is_constant/1, t_is_improper_list/1,
 	 t_is_equal/2,
 	 t_is_none/1,
 	 t_is_float/1, t_is_fun/1,
@@ -166,6 +166,7 @@
 	 t_limit/2,
 	 t_list/0, t_list/1, t_list_elements/1, t_nil/0,
 	 t_number/0, t_number/1, t_number_vals/1,
+	 t_nonempty_list/0,
 	 t_pid/0, t_port/0, t_product/1, t_ref/0, t_string/0,
 	 t_subst/2, t_subtract/2, t_sup/1, t_sup/2,
 	 t_to_string/1,
@@ -182,7 +183,7 @@
 	 t_is_identifier/1, t_is_number/2, t_is_string/1,
 	 t_is_n_tuple/2, t_is_nonempty_list/1,
 	 t_nonempty_improper_list/0, t_nonempty_improper_list/1,
-	 t_nonempty_list/0, t_nonempty_list/1, t_nonempty_string/0,
+	 t_nonempty_list/1, t_nonempty_string/0,
 	 t_tuple_max_arity/1, t_tuple_min_arity/1]).
 -endif.
 
@@ -740,6 +741,28 @@ t_char(V) when is_integer(V), V >= 0, V =< ?MAX_CHAR ->
 t_is_char(?is_char(_, _)) -> true;
 t_is_char(_) -> false.
 
+%% @spec t_constant() -> number() | identifier() | atom() | fun() | binary()
+%%
+%% @doc A constant is 
+%% <code>number() | identifier() | atom() | fun() | binary()</code>.
+%%
+%% @see t_constant/1
+
+t_constant() ->
+    t_sup([t_number(), t_identifier(), t_atom(), t_fun(), t_binary()]).
+
+%% @spec t_is_constant(T::type()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>T</code> is in
+%% <code>number() | identifier() | atom() | fun() | binary()</code>, 
+%% otherwise <code>false</code>.
+%%
+%% @see t_constant/1
+
+t_is_constant(X) ->
+    not t_is_none(t_inf(t_constant(), X)).
+
+
 
 %% @spec t_byte() -> type()
 %%
@@ -852,12 +875,8 @@ t_is_atom(_) -> false.
 %% @see t_is_atom/1
 %% @see t_atom/0
 
--ifndef(NO_UNUSED).
 t_is_atom(A, ?is_atom(?singleton(A), _)) -> true;
 t_is_atom(_, _) -> false.
--endif.
-%% @clear
-
 
 %% @spec t_atom_vals(T::type()) -> [atom()] | any
 %%
@@ -1480,10 +1499,7 @@ t_improper_list(T) -> ?improper_list(T, ?any).
 %% @see t_is_nonempty_list/1
 %% @see t_list/0
 
--ifndef(NO_UNUSED).
 t_nonempty_list() -> ?nonempty_proper_list(?any).
--endif.
-
 
 %% @spec t_nonempty_list(T::type()) -> type()
 %%

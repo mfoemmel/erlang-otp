@@ -27,6 +27,7 @@
 -export([des_cbc_encrypt/3, des_cbc_decrypt/3, des_cbc_ivec/1]).
 -export([des3_cbc_encrypt/5, des3_cbc_decrypt/5]).
 -export([des_ede3_cbc_encrypt/5, des_ede3_cbc_decrypt/5]).
+-export([aes_cfb_128_encrypt/3, aes_cfb_128_decrypt/3]).
 
 -define(INFO,		 0).
 -define(MD5,		 1).
@@ -45,6 +46,8 @@
 -define(DES_CBC_DECRYPT, 14).
 -define(DES_EDE3_CBC_ENCRYPT, 15).
 -define(DES_EDE3_CBC_DECRYPT, 16).
+-define(AES_CFB_128_ENCRYPT, 17).
+-define(AES_CFB_128_DECRYPT, 18).
 
 -define(FUNC_LIST, [md5,
 		    md5_init,
@@ -61,7 +64,9 @@
 		    des_cbc_encrypt,
 		    des_cbc_decrypt,
 		    des_ede3_cbc_encrypt,
-		    des_ede3_cbc_decrypt]).
+		    des_ede3_cbc_decrypt,
+		    aes_cfb_128_encrypt,
+		    aes_cfb_128_decrypt]).
 
 start() ->
     application:start(crypto).
@@ -169,6 +174,15 @@ des3_cbc_decrypt(Key1, Key2, Key3, IVec, Data) ->
     des_ede3_cbc_decrypt(Key1, Key2, Key3, IVec, Data).
 des_ede3_cbc_decrypt(Key1, Key2, Key3, IVec, Data) ->
     control(?DES_EDE3_CBC_DECRYPT, [Key1, Key2, Key3, IVec, Data]).
+
+%%
+%% AES in cipher feedback mode (CFB)
+%%
+aes_cfb_128_encrypt(Key, IVec, Data) ->
+    control(?AES_CFB_128_ENCRYPT, [Key, IVec, Data]).
+
+aes_cfb_128_decrypt(Key, IVec, Data) ->
+    control(?AES_CFB_128_DECRYPT, [Key, IVec, Data]).    
 
 
 %%

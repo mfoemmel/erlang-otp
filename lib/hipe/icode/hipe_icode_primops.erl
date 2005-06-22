@@ -9,7 +9,7 @@
 %%  History  :	* 2001-06-13 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%
-%% $Id: hipe_icode_primops.erl,v 1.42 2005/03/29 17:26:03 tobiasl Exp $
+%% $Id$
 %%
 
 -module(hipe_icode_primops).

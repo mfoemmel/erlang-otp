@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_ppc_specific_fp.erl,v 1.1 2004/12/06 03:09:39 mikpe Exp $
+%%% $Id$
 
 -module(hipe_ppc_specific_fp).
 

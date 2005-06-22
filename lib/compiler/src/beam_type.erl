@@ -143,11 +143,17 @@ simplify([{test,is_eq_exact,Fail,[R,{atom,_}=Atom]}=I|Is0], Ts0, Rs0, Acc0) ->
     Ts = update(I, Ts0),
     {Rs,Acc} = flush(Rs0, Is0, Acc1),
     simplify(Is0, Ts, Rs, Acc);
+simplify([{'%live',_}=I|Is]=Is0, Ts0, Rs0, Acc0) ->
+    Acc1 = checkerror(Acc0),
+    Ts = update(I, Ts0),
+    {Rs,Acc} = flush(Rs0, Is0, Acc1),
+    simplify(Is, Ts, Rs, [I|Acc]);
 simplify([I|Is]=Is0, Ts0, Rs0, Acc0) ->
     Ts = update(I, Ts0),
     {Rs,Acc} = flush(Rs0, Is0, Acc0),
     simplify(Is, Ts, Rs, [I|Acc]);
-simplify([], Ts, Rs, Acc) ->
+simplify([], Ts, Rs, Acc0) ->
+    Acc = checkerror(Acc0),
     Is0 = reverse(flush_all(Rs, [], Acc)),
     Is1 = opt_fmoves(Is0, []),
     Is = add_ftest_heap(Is1),

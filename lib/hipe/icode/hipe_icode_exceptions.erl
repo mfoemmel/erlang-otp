@@ -54,7 +54,7 @@
 %%              fail instruction that takes a fail-to label...
 %%
 %%  CVS:
-%%    $Id: hipe_icode_exceptions.erl,v 1.7 2004/10/29 15:42:13 richardc Exp $
+%%    $Id$
 %% ====================================================================
 
 -module(hipe_icode_exceptions).

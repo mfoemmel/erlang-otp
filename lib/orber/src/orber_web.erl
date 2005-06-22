@@ -592,7 +592,7 @@ convert_type(Data) when float(Data) ->
 convert_type(Data) when pid(Data) ->
     pid_to_list(Data);
 convert_type(Data) when port(Data) ->
-    pid_to_list(Data);
+    erlang:port_to_list(Data);
 convert_type(Data) when tuple(Data) ->
     io_lib:write(Data);
 convert_type([]) ->

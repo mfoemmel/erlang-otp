@@ -79,6 +79,7 @@ s|@OSE_DEFS@|-DPOWERPC -DOSE_DELTA -DBIG_ENDIAN -D_OSE_ -D_OSE_PPC750_|
 
 # Only variable substituted directly
 s|$(LDFLAGS)|-r|
+s|@LIBRT@||
 # XXX What is EFFLAGS? Not used in the emulator Makefile.in anyway.
 s|$(EFLAGS)|-DENABLE_ELIB_MALLOC -DELIB_HEAP_USER -DELIB_SORTED_BLOCKS -DSMALL_MEMORY|
 

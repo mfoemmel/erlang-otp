@@ -268,7 +268,9 @@ handle_cast({set_options, Options}, State = #state{options = OldOptions}) ->
 		 http_util:key1search(Options, max_sessions, 
 				       OldOptions#options.max_sessions),
 		 cookies = http_util:key1search(Options, cookies, 
-						 OldOptions#options.cookies)
+						 OldOptions#options.cookies),
+		 ipv6 = http_util:key1search(Options, ipv6, 
+					     OldOptions#options.ipv6)
 		}, 
     {noreply, State#state{options = NewOptions}};
 

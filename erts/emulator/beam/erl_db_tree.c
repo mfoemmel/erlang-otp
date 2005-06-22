@@ -87,6 +87,11 @@
  */
 #define BIN_FLAG_ALL_OBJECTS         BIN_FLAG_USR1
 
+/*
+ * Number of records to delete before trapping.
+ */
+#define DELETE_RECORD_LIMIT 12000
+
 /* 
 ** Debugging
 */
@@ -202,7 +207,8 @@ struct select_delete_context {
 static TreeDbTerm *linkout_tree(DbTableTree *tb, Eterm key);
 static TreeDbTerm *linkout_object_tree(DbTableTree *tb, 
 				       Eterm object);
-static void do_free_tree(DbTableTree *tb, TreeDbTerm *root);
+static void do_free_tree(DbTableTree *tb);
+static int do_free_tree_cont(DbTableTree *tb, int num_left);
 static TreeDbTerm* get_term(DbTableTree *tb,
 			    TreeDbTerm* old, 
 			    Eterm obj);
@@ -256,7 +262,7 @@ static int doit_select_delete(DbTableTree *tb,
 			      TreeDbTerm *this,
 			      void *ptr,
 			      int forward);
-static void do_dump_tree(CIO fd, int show, TreeDbTerm *t);
+static void do_dump_tree(CIO fd, TreeDbTerm *t);
 
 static int partly_bound_can_match_lesser(Eterm partly_bound_1, 
 					 Eterm partly_bound_2);
@@ -305,6 +311,7 @@ int db_create_tree(Process *p, DbTableTree *tb)
 			      sizeof(TreeDbTerm *) * STACK_NEED);
     tb->stack_pos = 0;
     tb->slot_pos = 0;
+    tb->deletion = 0;
     return DB_ERROR_NONE;
 }
 
@@ -1561,20 +1568,46 @@ void db_print_tree(CIO fd,
 		   "------------------------------------------------\r\n");
 #else
     erl_printf(fd,"Ordered set (AVL tree), Elements: %d\n", tb->nitems);
-    do_dump_tree(fd, show, tb->root);
+    if (show) {
+	do_dump_tree(fd, tb->root);
+    }
 #endif
 }
 
 /* release all memory occupied by a single table */
 void free_tree_table(DbTableTree *tb)
 {
-    do_free_tree(tb, tb->root);
-    if (tb->stack)
+    if (!tb->deletion) {
+	tb->stack_pos = 0;
+	tb->deletion = 1;
+	PUSH_NODE(tb, tb->root);
+    }
+    do_free_tree(tb);
+    erts_db_free(ERTS_ALC_T_DB_STK,
+		 (DbTable *) tb,
+		 (void *) tb->stack,
+		 sizeof(TreeDbTerm *) * STACK_NEED);
+    ASSERT(tb->memory_size == sizeof(DbTable));
+}
+
+int erts_free_tree_table_cont(DbTableTree *tb, int first)
+{
+    int result;
+
+    if (first) {
+	tb->stack_pos = 0;
+	tb->deletion = 1;
+	PUSH_NODE(tb, tb->root);
+    }
+    result = do_free_tree_cont(tb, DELETE_RECORD_LIMIT);
+    if (result) {		/* Completely done. */
 	erts_db_free(ERTS_ALC_T_DB_STK,
 		     (DbTable *) tb,
 		     (void *) tb->stack,
 		     sizeof(TreeDbTerm *) * STACK_NEED);
-    ASSERT(tb->memory_size == sizeof(DbTable));
+	ASSERT(tb->memory_size == sizeof(DbTable));
+    }
+    return result;
 }
 
 
@@ -1853,22 +1886,18 @@ static int analyze_pattern(DbTableTree *tb, Eterm pattern,
     return DB_ERROR_NONE;
 }
 
-static void do_dump_tree(CIO fd, int show, TreeDbTerm *t)
+static void do_dump_tree(CIO fd, TreeDbTerm *t)
 {
-    if (t == NULL)
-	return;
-    do_dump_tree(fd, show, t->left);
-    if (show) {
+    if (t != NULL) {
+	do_dump_tree(fd, t->left);
 	display(make_tuple(t->dbterm.tpl), fd);
 	erl_printf(fd, "\n");
+	do_dump_tree(fd, t->right);
     }
-    do_dump_tree(fd, show, t->right); 
-    return;
 }
 
 static void free_term(DbTableTree *tb, TreeDbTerm* p)
 {
-
     db_free_term_data(&(p->dbterm));
     erts_db_free(ERTS_ALC_T_DB_TERM,
 		 (DbTable *) tb,
@@ -1876,13 +1905,57 @@ static void free_term(DbTableTree *tb, TreeDbTerm* p)
 		 SIZ_DBTERM(p)*sizeof(Uint));
 }
 
-static void do_free_tree(DbTableTree *tb, TreeDbTerm *root) 
+static void do_free_tree(DbTableTree *tb)
 {
-    if (!root)
-	return;
-    do_free_tree(tb, root->left);
-    do_free_tree(tb, root->right);
-    free_term(tb, root);
+    TreeDbTerm *root;
+    TreeDbTerm *p;
+
+    root = POP_NODE(tb);
+    while (root != NULL) {
+	if ((p = root->left) != NULL) {
+	    root->left = NULL;
+	    PUSH_NODE(tb, root);
+	    root = p;
+	    continue;
+	} else if ((p = root->right) != NULL) {
+	    root->right = NULL;
+	    PUSH_NODE(tb, root);
+	    root = p;
+	    continue;
+	} else {
+	    free_term(tb, root);
+	    root = POP_NODE(tb);
+	}
+    }
+}
+
+static int do_free_tree_cont(DbTableTree *tb, int num_left)
+{
+    TreeDbTerm *root;
+    TreeDbTerm *p;
+
+    root = POP_NODE(tb);
+    while (root != NULL) {
+	if ((p = root->left) != NULL) {
+	    root->left = NULL;
+	    PUSH_NODE(tb, root);
+	    root = p;
+	    continue;
+	} else if ((p = root->right) != NULL) {
+	    root->right = NULL;
+	    PUSH_NODE(tb, root);
+	    root = p;
+	    continue;
+	} else {
+	    free_term(tb, root);
+	    if (--num_left > 0) {
+		root = POP_NODE(tb);
+	    } else {
+		return 0;	/* Done enough for now */
+	    }
+	}
+    }
+    return 1;
 }
 
 static TreeDbTerm* get_term(DbTableTree *tb,

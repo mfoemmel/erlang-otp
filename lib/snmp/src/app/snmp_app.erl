@@ -33,23 +33,19 @@ start(Type, []) ->
     %% This is the new snmp application config format
     %% First start the (new) central supervisor,
     {ok, Pid} = snmp_app_sup:start_link(),
-    case entities() of
-	{ok, Entities} ->
-	    %% and then the entities
-	    ok = start_entities(Type, Entities),
-	    {ok, Pid};
-	_ ->
-	    %% Assume old style snmp (agent) application config format
-	    old_start(Type)
-    end.
+    Entities = entities(),
+    ok = start_entities(Type, Entities),
+    {ok, Pid}.
 
 entities() ->
     entities([agent, manager], []).
 
 entities([], []) ->
-    error;
+    %% Assume old style snmp (agent) application config format
+    Conf = snmpa_app:convert_config(),
+    [{agent, Conf}];
 entities([], E) ->
-    {ok, lists:reverse(E)};
+    lists:reverse(E);
 entities([ET|ETs], E) ->
     case application:get_env(snmp, ET) of
 	{ok, Conf} ->
@@ -61,6 +57,7 @@ entities([ET|ETs], E) ->
 start_entities(_Type, []) ->
     ok;
 start_entities(Type, [{agent, Opts}|Entities]) ->
+    ?d("start_entities -> start agent", []),
     case snmp_app_sup:start_agent(Type, Opts) of
 	{ok, _} ->
 	    start_entities(Type, Entities);
@@ -68,19 +65,16 @@ start_entities(Type, [{agent, Opts}|Entities]) ->
 	    Error
     end;
 start_entities(Type, [{manager, Opts}|Entities]) ->
+    ?d("start_entities -> start agent", []),
     case snmp_app_sup:start_manager(Type, Opts) of
 	{ok, _} ->
 	    start_entities(Type, Entities);
 	Error ->
 	    Error
     end;
-start_entities(Type, [BadEntitie|Entities]) ->
-    error_msg("Bad snmp configuration: ~n: ~p", [BadEntitie]), 
+start_entities(Type, [BadEntity|Entities]) ->
+    error_msg("Bad snmp configuration: ~n: ~p", [BadEntity]), 
     start_entities(Type, Entities).
-
-
-old_start(Type) ->
-    snmpa_app:start(Type).
 
 
 stop(_) ->

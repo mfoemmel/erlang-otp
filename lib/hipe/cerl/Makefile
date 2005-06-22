@@ -9,7 +9,7 @@
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-#     $Id: Makefile,v 1.14 2004/12/22 14:42:23 tobiasl Exp $
+#     $Id$
 #
 
 ifndef EBIN
@@ -59,7 +59,7 @@ DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += +nowarn_shadow_vars
+ERL_COMPILE_FLAGS += +nowarn_shadow_vars +inline
 
 # ----------------------------------------------------
 # Targets

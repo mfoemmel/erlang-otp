@@ -8,7 +8,7 @@
 %%  History  :	* 2001-03-15 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%
-%% $Id: hipe_rtl_primops.erl,v 1.96 2004/11/10 16:22:14 pergu Exp $
+%% $Id$
 %%
 
 -module(hipe_rtl_primops). 
@@ -675,6 +675,7 @@ gen_fun_thing_skeleton(FunP, FunName={_Mod,_FunId,Arity}, NumFree,
 
    store_struct_field(FunP, ?EFT_ARITY, hipe_rtl:mk_imm(Arity-NumFree)),
 
+   %% XXX: atomic_inc?
    load_struct_field(RefcVar, FeVar, ?EFE_REFC, int32),
    hipe_rtl:mk_alu(RefcVar, RefcVar, add, hipe_rtl:mk_imm(1)),
    store_struct_field(FeVar, ?EFE_REFC, RefcVar, int32),

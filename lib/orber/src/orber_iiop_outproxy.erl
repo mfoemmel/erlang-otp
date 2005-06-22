@@ -259,6 +259,9 @@ handle_info({'EXIT', Parent, Reason}, #state{parent = Parent} = State) ->
     orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p);~nParent terminated.", 
 	      [?LINE, Reason], ?DEBUG_LEVEL),
     {stop, normal, State};
+handle_info({reconfigure, _Options}, State) ->
+    %% Currently there are no parameters that can be changed.
+    {noreply, State, State#state.timeout};
 handle_info(X, State) ->
     orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p);~nUn-recognized info.", 
 	      [?LINE, X], ?DEBUG_LEVEL),
@@ -331,7 +334,8 @@ handle_reply(Bytes, State) ->
 	{'EXIT', message_error} ->
 	    orber:dbg("[~p] orber_iiop_outproxy:handle_reply(~p); message error.", 
 		      [?LINE, Bytes], ?DEBUG_LEVEL),
-	    ME = cdr_encode:enc_message_error(orber:giop_version()),
+	    ME = cdr_encode:enc_message_error(#giop_env{version = 
+							orber:giop_version()}),
 	    orber_socket:write(State#state.stype, State#state.socket, ME),
 	    {noreply, State, State#state.timeout};
 	{'EXIT', R} ->

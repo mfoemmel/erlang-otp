@@ -232,9 +232,16 @@ nodes() -> erlang:nodes(visible).
 disconnect_node(Node) -> net_kernel:disconnect(Node).
 
 fun_info(Fun) when is_function(Fun) ->
-    [erlang:fun_info(Fun, Key) ||
-	Key <- [pid,module,new_index,new_uniq,index,uniq,env,name,arity]].
+    Keys = [type,env,arity,name,uniq,index,new_uniq,new_index,module,pid],
+    fun_info_1(Keys, Fun, []).
 
+fun_info_1([K|Ks], Fun, A) ->
+    case erlang:fun_info(Fun, K) of
+	{K,undefined} -> fun_info_1(Ks, Fun, A);
+	{K,_}=P -> fun_info_1(Ks, Fun, [P|A])
+    end;
+fun_info_1([], _, A) -> A.
+	
 send_nosuspend(Pid, Msg) ->
     send_nosuspend(Pid, Msg, []).
 

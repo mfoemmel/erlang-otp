@@ -22,7 +22,7 @@
 behaviour_info(callbacks) ->
     [{start_link, 2}, 
      {stop,       1},
-     {send_pdu,   6},
+     {send_pdu,   7},
      {note_store, 2},
      {verbosity,  2}];
 behaviour_info(_) ->

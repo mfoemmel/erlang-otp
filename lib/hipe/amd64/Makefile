@@ -1,4 +1,4 @@
-# $Id: Makefile,v 1.32 2005/04/11 13:23:07 mikpe Exp $
+# $Id$
 
 ifndef EBIN
 EBIN = ../ebin
@@ -36,7 +36,6 @@ MODULES=hipe_amd64_assemble \
 	hipe_amd64_pp \
 	hipe_amd64_ra \
 	hipe_amd64_ra_finalise \
-	hipe_amd64_ra_ls_postconditions \
 	hipe_amd64_ra_ls \
 	hipe_amd64_ra_naive \
 	hipe_amd64_ra_postconditions \
@@ -98,7 +97,6 @@ $(EBIN)/hipe_amd64_ra.beam: ../main/hipe.hrl
 $(EBIN)/hipe_amd64_ra_dummy.beam: ../main/hipe.hrl ../x86/hipe_x86.hrl
 $(EBIN)/hipe_amd64_ra_finalise.beam: ../x86/hipe_x86.hrl ../x86/hipe_x86_ra_finalise.erl
 $(EBIN)/hipe_amd64_ra_ls.beam: ../main/hipe.hrl ../x86/hipe_x86_ra_ls.erl
-$(EBIN)/hipe_amd64_ra_ls_postconditions.beam: ../main/hipe.hrl ../x86/hipe_x86.hrl ../x86/hipe_x86_ra_ls_postconditions.erl
 $(EBIN)/hipe_amd64_ra_naive.beam: ../main/hipe.hrl ../x86/hipe_x86.hrl ../x86/hipe_x86_ra_naive.erl
 $(EBIN)/hipe_amd64_ra_postconditions.beam: ../main/hipe.hrl ../x86/hipe_x86.hrl ../x86/hipe_x86_ra_postconditions.erl
 $(EBIN)/hipe_amd64_ra_sse2_postconditions.beam: ../main/hipe.hrl

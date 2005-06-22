@@ -44,7 +44,7 @@
 #include "erl_db_hash.h"
 
 /* 
- *The following symbols can be manipulated to "tune" the linear hash array 
+ * The following symbols can be manipulated to "tune" the linear hash array 
  */
 #define BASIC_SIZE 64               /* #words for empty array       */
 #define CHAIN_LEN 6                 /* Medium bucket chain len      */
@@ -59,6 +59,12 @@
 #define SEG_INCREAMENT  128   /* Number of segments to grow */
 
 #define BUCKET(tb, i) (tb)->seg[(i) >> SZEXP][(i) & SZMASK]
+
+/*
+ * When deleting a table, the number of records to delete.
+ * Approximate number, because we must delete entire buckets.
+ */
+#define DELETE_RECORD_LIMIT 10000
 
 /* ix is a NAME parameter :-) */
 #define HASH(tb, hval, ix) \
@@ -76,8 +82,8 @@
       make_hash2(term)) % MAX_HASH)
 
 /* 
- *tplp is an untagged pointer to a tuple we know is large enough 
- *and dth is a pointer to a DbTableHash.   
+ * tplp is an untagged pointer to a tuple we know is large enough 
+ * and dth is a pointer to a DbTableHash.   
  */
 #define GETKEY(dth, tplp)   (*((tplp) +  (dth)->keypos))
 
@@ -1635,24 +1641,22 @@ void db_print_hash(CIO fd, int show, DbTableHash *tb)
     erl_printf(fd, "Buckets: %d ", tb->nactive);
     erl_printf(fd, "\n");
 
-    for (i = 0; i < tb->nactive; i++) {
-	HashDbTerm* list = BUCKET(tb,i);
-	if (list == NULL)
-	   continue;
-	if (show)
+    if (show) {
+	for (i = 0; i < tb->nactive; i++) {
+	    HashDbTerm* list = BUCKET(tb,i);
+	    if (list == NULL)
+		continue;
 	    erl_printf(fd,"%d: [", i);
-	while(list != 0) {
-	    if (show) {
+	    while(list != 0) {
 		if (list->hvalue == INVALID_HASH)
 		    erl_printf(fd,"*");
 		display(make_tuple(list->dbterm.tpl), fd);
 		if (list->next != 0)
 		    erl_printf(fd, ",");
+		list = list->next;
 	    }
-	    list = list->next;
-	}
-	if (show) 
 	    erl_printf(fd, "]\n");
+	}
     }
 }    
 
@@ -1697,6 +1701,84 @@ void free_hash_table(DbTableHash *tb)
 		 sizeof(HashDbTerm**)*tb->nsegs);
 
     ASSERT(tb->memory_size == sizeof(DbTable));
+}
+
+int erts_free_hash_table_cont(DbTableHash *tb, int first)
+{
+    HashDbTerm*** sp = tb->seg;
+    int n = tb->nsegs;
+    int done;
+
+    /*
+     * Optimization: tb->p will hold the number of the next
+     * bucket to be deleted so that we quickly can skip deleted buckets.
+     */
+    if (first) {
+	tb->p = 0;		/* Initialize. */
+    } else {
+	/* Skip already deleted buckets. */
+	sp += tb->p;
+	n -= tb->p;
+    }
+
+    done = 0;
+    while (tb->fixdel != NULL) {
+	FixedDeletion *fx = tb->fixdel;
+
+	tb->fixdel = fx->next;
+	erts_db_free(ERTS_ALC_T_DB_FIX_DEL,
+		     (DbTable *) tb,
+		     (void *) fx,
+		     sizeof(FixedDeletion));
+	if (++done >= 2*DELETE_RECORD_LIMIT) {
+	    return 0;		/* Not done */
+	}
+    }
+
+    done = done / 2;
+    while(n--) {
+	HashDbTerm** bp = *sp;
+	if (bp != 0) {
+	    int m = SEGSZ;
+
+	    while(m--) {
+		HashDbTerm* p = *bp++;
+
+		while (p != 0) {
+		    HashDbTerm* nxt = p->next;
+		    free_term(tb, p);
+		    tb->nitems--; /* Needed for correct reduction counting */
+		    p = nxt;
+		}
+	    }
+	    erts_db_free(ERTS_ALC_T_DB_SEG,
+			 (DbTable *) tb,
+			 (void *) *sp,
+			 sizeof(HashDbTerm*)*SEGSZ);
+
+	    /*
+	     * Mark this segment done. (Necessary if the non-interruptible
+	     * delete function will be invoked if the process is killed.)
+	     */
+	    *sp = NULL;
+
+	    /*
+	     * If we have done enough work, get out here.
+	     */
+	    if (++done >= (DELETE_RECORD_LIMIT / CHAIN_LEN / SEGSZ)) {
+		tb->p = sp - tb->seg + 1; /* Remember where we stopped. */
+		return 0;	/* Not done */
+	    }
+	}
+	sp++;
+    }
+    erts_db_free(ERTS_ALC_T_DB_SEG_TAB,
+		 (DbTable *) tb,
+		 (void *) tb->seg,
+		 sizeof(HashDbTerm**)*tb->nsegs);
+
+    ASSERT(tb->memory_size == sizeof(DbTable));
+    return 1;			/* Done */
 }
 
 
@@ -1889,7 +1971,6 @@ static Eterm put_term_list(Process* p, HashDbTerm* ptr1, HashDbTerm* ptr2)
 
 static void free_term(DbTableHash *tb, HashDbTerm* p)
 {
-
     db_free_term_data(&(p->dbterm));
     erts_db_free(ERTS_ALC_T_DB_TERM,
 		 (DbTable *) tb,

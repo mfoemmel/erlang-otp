@@ -170,7 +170,7 @@ process_v1_v2c_msg(Vsn, _NoteStore, Msg, snmpUDPDomain,
 	    MsgData = {Community, sec_model(Vsn)},
 	    {ok, Vsn, Pdu, PduMS, MsgData};
 
-	Trap when record(Trap, trap) ->
+	Trap when record(Trap, trappdu) ->
 	    ?vtrace("process_v1_v2c_msg -> was a trap", []),
 	    Log(Msg),
 	    inc_snmp_in(Trap),
@@ -218,23 +218,26 @@ process_v3_msg(NoteStore, Msg, Hdr, Data, Addr, Port, Log) ->
 
     %% 7.2.4
     SecModule    = get_security_module(MsgSecModel),
-    ?vtrace("process_v3_msg -> SecModule: ~p", [SecModule]),
+    ?vtrace("process_v3_msg -> 7.2.4: "
+	    "~n   SecModule: ~p", [SecModule]),
 
     %% 7.2.5
     SecLevel     = check_sec_level(MsgFlags),
     IsReportable = is_reportable(MsgFlags),
-    ?vtrace("process_v3_msg -> SecLevel: ~p, IsReportable: ~p", 
-	    [SecModule, IsReportable]),
+    ?vtrace("process_v3_msg -> 7.2.5: "
+	    "~n   SecLevel:     ~p"
+	    "~n   IsReportable: ~p", [SecLevel, IsReportable]),
 
     %% 7.2.6
     SecRes = (catch SecModule:process_incoming_msg(Msg, Data,
 						   SecParams, SecLevel)),
-    ?vtrace("process_v3_msg -> message processing result: "
+    ?vtrace("process_v3_msg -> 7.2.6 - message processing result: "
 	    "~n   ~p",[SecRes]),
     {SecEngineID, SecName, ScopedPDUBytes, SecData} =
 	check_sec_module_result(SecRes, Hdr, Data, IsReportable, Log),
-    ?vtrace("process_v3_msg -> SecEngineID = ~p, SecName = ~p",
-	    [SecEngineID,SecName]),
+    ?vtrace("process_v3_msg -> 7.2.6 - check module result: "
+	    "~n   SecEngineID: ~p"
+	    "~n   SecName:     ~p",[SecEngineID, SecName]),
 
     %% 7.2.7
     #scopedPdu{contextEngineID = CtxEngineID,
@@ -250,7 +253,8 @@ process_v3_msg(NoteStore, Msg, Hdr, Data, Addr, Port, Log) ->
 		discard(Reason)
 	end,
 
-    ?vlog("~n   ContextEngineID: \"~s\" "
+    ?vlog("7.2.7"
+	  "~n   ContextEngineID: \"~s\" "
 	  "~n   context:         \"~s\" ",
 	  [CtxEngineID, CtxName]),
     if
@@ -284,13 +288,26 @@ process_v3_msg(NoteStore, Msg, Hdr, Data, Addr, Port, Log) ->
 	report ->
 	    %% 7.2.10 & 11
 	    %% BMK BMK BMK: discovery?
-	    case snmp_note_store:get_note(NoteStore, MsgID) of
+	    Note = snmp_note_store:get_note(NoteStore, MsgID), 
+	    case Note of
 		{SecEngineID, MsgSecModel, SecName, SecLevel,
-		 CtxEngineID, CtxName} ->
-		    ?vtrace("process_v3_msg -> 7.2.11", []),
-		    %% BMK BMK: Should we not discard the cached info??
-		    {ok, 'version-3', PDU, PduMMS, undefined};
-		_ ->
+		 CtxEngineID, CtxName, _ReqId} ->
+		    ?vtrace("process_v3_msg -> 7.2.11b: ok", []),
+		    %% BMK BMK: Should we not discard the cached info
+		    %% BMK BMK: or let the gc deal with it?
+ 		    {ok, 'version-3', PDU, PduMMS, ok};
+ 		_ when tuple(Note) ->
+ 		    ?vlog("process_v3_msg -> 7.2.11b: error"
+ 			  "~n   Note: ~p", [Note]),
+		    Recv  = {SecEngineID, MsgSecModel, SecName, SecLevel,
+			     CtxEngineID, CtxName, PDU#pdu.request_id}, 
+		    Err   = sec_error(Note, Recv), 
+ 		    ACM   = {invalid_sec_info, Err}, 
+		    ReqId = element(size(Note), Note), 
+ 		    {ok, 'version-3', PDU, PduMMS, {error, ReqId, ACM}};
+		_NoFound ->
+		    ?vtrace("process_v3_msg -> _NoFound: "
+			    "~p", [_NoFound]),
 		    inc(snmpUnknownPDUHandlers),
 		    discard({no_outstanding_req, MsgID})
 	    end;
@@ -299,7 +316,7 @@ process_v3_msg(NoteStore, Msg, Hdr, Data, Addr, Port, Log) ->
 	    %% 7.2.10 & 12 
 	    case snmp_note_store:get_note(NoteStore, MsgID) of
 		{SecEngineID, MsgSecModel, SecName, SecLevel,
-		 CtxEngineID, CtxName} ->
+		 CtxEngineID, CtxName, _} ->
 		    %% 7.2.12.d
 		    {ok, 'version-3', PDU, PduMMS, undefined};
 		_ ->
@@ -365,6 +382,25 @@ process_v3_msg(NoteStore, Msg, Hdr, Data, Addr, Port, Log) ->
     end.
 
 
+sec_error(T1, T2) 
+  when tuple(T1), tuple(T2), size(T1) == size(T2) ->
+    Tags = {sec_engine_id, msg_sec_model, sec_name, sec_level, 
+	    ctx_engine_id, ctx_name, request_id}, 
+    sec_error(size(T1), T1, T2, Tags, []);
+sec_error(T1, T2) ->
+    [{internal_error, T1, T2}].
+
+sec_error(0, _T1, _T2, _Tags, Acc) ->
+    Acc;
+sec_error(Idx, T1, T2, Tags, Acc) ->
+    case element(Idx, T1) == element(Idx, T2) of
+	true ->
+	    sec_error(Idx - 1, T1, T2, Tags, Acc);
+	false ->
+	    Elem = {element(Idx, Tags), element(Idx, T1), element(Idx, T2)},
+	    sec_error(Idx - 1, T1, T2, Tags, [Elem|Acc])
+    end.
+    
 tot_mms(MgrMMS, AgentMMS) when MgrMMS > AgentMMS -> AgentMMS;
 tot_mms(MgrMMS, _AgentMMS) -> MgrMMS.
     
@@ -483,8 +519,10 @@ generate_v3_msg(NoteStore,
 	    %% 7.1.9c
 	    %% Store in cache for 150 sec.
 	    ?vdebug("generate_v3_msg -> 7.1.9c", []),
+	    %% The request id is just in the case when we receive a 
+	    %% report with incorrect securityModel and/or securityLevel
 	    CacheVal = {SecEngineID, SecModel, SecName, SecLevel,
-			CtxEngineID, CtxName},
+			CtxEngineID, CtxName, Pdu#pdu.request_id},
 	    snmp_note_store:set_note(NoteStore, 1500, MsgID, CacheVal),
 	    Log(Packet),
 	    inc_snmp_out(Pdu),
@@ -637,7 +675,10 @@ generate_v3_outgoing_msg(Message,
 	{'EXIT', Reason} ->
 	    config_err("~p (message: ~p)", [Reason, Message]),
 	    {discarded, Reason};
-	OutMsg ->
+	{error, Reason} ->
+	    config_err("~p (message: ~p)", [Reason, Message]),
+	    {discarded, Reason};
+	OutMsg when list(OutMsg) ->
 	    {ok, list_to_binary(OutMsg)}
     end.
 
@@ -789,12 +830,7 @@ get_engine_id() ->
 
 %% The engine id of the agent
 get_agent_engine_id(Name) ->
-    case snmpm_config:get_agent_engine_id(Name) of
-	{ok, Id} ->
-	    Id;
-	_Error ->
-	    ""
-    end.
+    snmpm_config:get_agent_engine_id(Name).
 
 % get_agent_engine_id(Addr, Port) ->
 %     case snmpm_config:get_agent_engine_id(Addr, Port) of

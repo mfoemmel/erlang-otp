@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_reg_worklists.erl,v 1.14 2005/01/26 10:05:40 kostis Exp $
+%%% $Id$
 %%%----------------------------------------------------------------------
 %%% File    : hipe_reg_worklists.erl
 %%% Author  : Andreas Wallin <d96awa@csd.uu.se>
@@ -30,16 +30,22 @@
 	 member_stack_or_coalesced/2,
 	 non_stacked_or_coalesced_nodes/2,
 	 transfer_freeze_simplify/2,
-	 transfer_freeze_spill/2
+	 transfer_freeze_spill/2,
+	 print_memberships/1
 	]).
 
 -record(worklists, 
-	{simplify,	% Low-degree non move-related nodes
-	 stack,		% Stack of removed low-degree nodes, with adjacency lists
-	 membership,	% Mapping from temp to which set it is in
-	 spill,		% Significant-degree nodes
-	 freeze		% Low-degree move-related nodes
+	{simplify,   % Low-degree non move-related nodes
+	 stack,	     % Stack of removed low-degree nodes, with adjacency lists
+	 membership, % Mapping from temp to which set it is in
+	 spill,	     % Significant-degree nodes
+	 freeze      % Low-degree move-related nodes
 	}).
+
+%%-ifndef(DEBUG).
+%%-define(DEBUG,true).
+%%-endif.
+-include("../main/hipe.hrl").
 
 %%%----------------------------------------------------------------------
 %% Function:    new
@@ -280,3 +286,16 @@ non_stacked_or_coalesced_nodes(Nodes, Worklists) ->
   Membership = Worklists#worklists.membership,
   [Node || Node <- Nodes,
 	   hipe_bifs:array_sub(Membership, Node) =/= 'stack_or_coalesced'].
+
+print_memberships(Worklists) ->
+  ?debug_msg("Worklist memeberships:\n", []),
+  Membership = Worklists#worklists.membership,
+  NrElems = hipe_bifs:array_length(Membership),
+  print_membership(NrElems, Membership).
+
+print_membership(0, _) ->
+  true;
+print_membership(Element, Membership) ->
+  NextElement = Element - 1,
+  ?debug_msg("worklist ~w ~w\n", [NextElement, hipe_bifs:array_sub(Membership, NextElement)]),
+  print_membership(NextElement, Membership).

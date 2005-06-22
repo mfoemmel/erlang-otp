@@ -31,6 +31,7 @@
 #include "erl_driver.h"
 
 #include <openssl/des.h>
+#include <openssl/aes.h>
 #include <openssl/md5.h>
 #include <openssl/sha.h>
 
@@ -90,8 +91,10 @@ static ErlDrvData driver_data = (ErlDrvData) &erlang_port; /* Anything goes */
 #define DRV_CBC_DES_DECRYPT	14
 #define DRV_EDE3_CBC_DES_ENCRYPT 15
 #define DRV_EDE3_CBC_DES_DECRYPT 16
+#define DRV_AES_CFB_128_ENCRYPT 17
+#define DRV_AES_CFB_128_DECRYPT 18
 
-#define NUM_CRYPTO_FUNCS       	16
+#define NUM_CRYPTO_FUNCS       	18
 
 #define MD5_CTX_LEN	(sizeof(MD5_CTX))
 #define MD5_LEN		16
@@ -153,6 +156,8 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
     char hmacbuf[SHA_LEN];
     MD5_CTX md5_ctx;
     SHA_CTX sha_ctx;
+    int new_ivlen = 0;
+    AES_KEY aes_key;
 
     switch(command) {
 
@@ -289,6 +294,20 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
 	DES_ede3_cbc_encrypt(des_dbuf, bin->orig_bytes, dlen, &schedule,
 			     &schedule2, &schedule3, des_ivec, 
 			     (command == DRV_EDE3_CBC_DES_ENCRYPT));
+	return dlen;
+	break;
+
+    case DRV_AES_CFB_128_ENCRYPT:
+    case DRV_AES_CFB_128_DECRYPT:
+	/* buf = key[16] ivec[16] data */
+	dlen = len - 32;
+	if (dlen < 0)
+	    return -1;
+	*rbuf = (char *)(bin = driver_alloc_binary(dlen));
+	AES_set_encrypt_key(buf, 128, &aes_key);
+	AES_cfb128_encrypt(buf+32, bin->orig_bytes, dlen, &aes_key,
+			   buf+16, &new_ivlen,
+			   (command == DRV_AES_CFB_128_ENCRYPT));
 	return dlen;
 	break;
 

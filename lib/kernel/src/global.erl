@@ -43,6 +43,9 @@
 
 -export([info/0]).
 
+-include_lib("stdlib/include/ms_transform.hrl").
+
+-define(WARN_DUPLICATED_NAME, global_multi_name_action).
 
 %-define(PRINT(X), erlang:display(X)).
 -define(PRINT(X), true).
@@ -1064,7 +1067,7 @@ ins_name(Name, Pid, Method) ->
 	    ok
     end,
     dolink(Pid),
-    ets:insert(global_names, {Name, Pid, Method}).
+    insert_global_name_with_check(Name, Pid, Method).
 
 ins_name_ext(Name, Pid, RegNode) ->
     case ets:lookup(global_names_ext, Name) of
@@ -1129,7 +1132,8 @@ handle_del_lock({ResourceId, LockRequesterId}, Pid) ->
     end.
 
 do_ops(Ops) ->
-    lists:foreach(fun({insert, Item}) -> ets:insert(global_names, Item);
+    lists:foreach(fun({insert, {Name, Pid, Method}}) -> 
+                          insert_global_name_with_check(Name, Pid, Method);
 		     ({delete, Name}) ->
 			  case ets:lookup(global_names, Name) of
 			      [{Name, Pid, _}] ->
@@ -1154,6 +1158,29 @@ do_ops_ext(Ops, Names_ext) ->
 		     ({delete, Name}) ->
 			  ets:delete(global_names_ext, Name)
 		  end, Ops).
+
+insert_global_name_with_check(Name, Pid, Method) ->
+    ets:insert(global_names, {Name, Pid, Method}),
+    case application:get_env(kernel, ?WARN_DUPLICATED_NAME) of
+        {ok, How} ->
+            Spec = ets:fun2ms(fun({Name,Pid0,_}) when Pid0 =:= Pid -> Name 
+                              end),
+            case ets:select(global_names, Spec) of
+                Names when length(Names) > 1 -> dupname(How, Pid, Names);
+                _ -> ok
+            end;
+        _ -> ok
+    end.
+
+dupname(How, Pid, Names) ->
+    S = "global: ~w registered under several names: ~w~n",
+    As = [Pid, Names],
+    case How of
+        info -> error_logger:info_msg(S, As);
+        warning -> error_logger:warning_msg(S, As);
+        error -> error_logger:error_msg(S, As);
+        _ -> ok
+    end.
 
 %%-----------------------------------------------------------------
 %% A locker is a process spawned by global_name_server when a
@@ -1634,7 +1661,7 @@ exchange_names([{Name, Pid, Method} |Tail], Node, Ops, Res) ->
 			  [Method2, Name, Pid, Pid2]) of
 		Pid ->
 		    dounlink(Pid2),
-		    ets:insert(global_names, {Name, Pid, Method}),
+                    insert_global_name_with_check(Name, Pid, Method),
 		    Op = {insert, {Name, Pid, Method}},
 		    exchange_names(Tail, Node, [Op | Ops], [Op | Res]);
 		Pid2 ->
@@ -1651,7 +1678,7 @@ exchange_names([{Name, Pid, Method} |Tail], Node, Ops, Res) ->
 					  "conflicting name ~w was found",
 					  [Badrpc, Name]),
 		    dounlink(Pid2),
-		    ets:insert(global_names, {Name, Pid, Method}),
+                    insert_global_name_with_check(Name, Pid, Method),
 		    Op = {insert, {Name, Pid, Method}},
 		    exchange_names(Tail, Node, [Op | Ops], [Op | Res]);
 		Else ->
@@ -1668,7 +1695,7 @@ exchange_names([{Name, Pid, Method} |Tail], Node, Ops, Res) ->
 	    exchange_names(Tail, Node, Ops, Res);
 	_ ->
 	    %% Entirely new name.
-	    ets:insert(global_names, {Name, Pid, Method}),
+            insert_global_name_with_check(Name, Pid, Method),
 	    exchange_names(Tail, Node,
 			   [{insert, {Name, Pid, Method}} | Ops], Res)
     end;

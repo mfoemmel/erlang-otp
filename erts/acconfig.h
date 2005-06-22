@@ -79,6 +79,9 @@
 /* define if gethrvtime() works and uses ioctl() to /proc/self */
 #undef HAVE_GETHRVTIME_PROCFS_IOCTL
 
+/* define if clock_gettime() works */
+#undef HAVE_CLOCK_GETTIME
+
 /* The number of bytes in a size_t.  */
 #undef SIZEOF_SIZE_T
 
@@ -188,6 +191,10 @@
 /* Define if you have the <sys/event.h> header file. */
 #undef HAVE_SYS_EVENT_H
 
+/* Define if you don't have poll.h and a working poll() function. */
+#undef USE_SELECT
+
+
 /*
  * The lines below this marker is copied into the bottom of config.h.in
  */
@@ -213,10 +220,6 @@
 
 #ifdef REDEFINE_FD_SETSIZE
 #define FD_SETSIZE 1024
-#endif
-
-#if !defined(HAVE_POLL) || !defined(HAVE_POLL_H)
-#define USE_SELECT
 #endif
 
 #if !defined(USE_SELECT)

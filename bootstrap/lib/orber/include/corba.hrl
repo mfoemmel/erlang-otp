@@ -54,6 +54,24 @@
 %%
 -record('InvalidName', {'OE_ID'="IDL:omg.org/CORBA/ORB/InvalidName:1.0"}).
 
+%% Orber OMG assigned TAG's
+%% Service Context IDs 0x45524904 - 0x45524907  ("ERI\x04" - "ERI\x07")
+%% Component IDs   0x45524904 - 0x45524907  ("ERI\x04" - "ERI\x07")
+%% ORB type IDs    0x45524904 - 0x45524907  ("ERI\x04" - "ERI\x07")
+-define(ORBER_ORB_TYPE_1, 16#45524904).
+%-define(ORBER_ORB_TYPE_2, 16#45524905).
+%-define(ORBER_ORB_TYPE_3, 16#45524906).
+%-define(ORBER_ORB_TYPE_4, 16#45524907).
+
+%-define(ORBER_COMPONENT_1, 16#45524904).
+%-define(ORBER_COMPONENT_2, 16#45524905).
+%-define(ORBER_COMPONENT_3, 16#45524906).
+%-define(ORBER_COMPONENT_4, 16#45524907).
+
+-define(ORBER_GENERIC_CTX_ID, 16#45524904).
+%-define(ORBER_SERVICE_CTX_2, 16#45524905).
+%-define(ORBER_SERVICE_CTX_3, 16#45524906).
+%-define(ORBER_SERVICE_CTX_4, 16#45524907).
 
 %%
 %% System exceptions

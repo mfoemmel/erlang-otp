@@ -89,6 +89,7 @@
 	'orber_web_server',
 	'orber_iiop_tracer',
 	'orber_iiop_tracer_silent',
+	'orber_iiop_tracer_stealth',
 	'fixed',
 	'orber_exceptions',
 	'orber_diagnostics',

@@ -77,6 +77,7 @@ unsigned tag_val_def(Eterm x)
 	    case (_TAG_HEADER_NEG_BIG >> _TAG_PRIMARY_SIZE):	return BIG_DEF;
 	    case (_TAG_HEADER_REF >> _TAG_PRIMARY_SIZE):	return REF_DEF;
 	    case (_TAG_HEADER_FLOAT >> _TAG_PRIMARY_SIZE):	return FLOAT_DEF;
+	    case (_TAG_HEADER_EXPORT >> _TAG_PRIMARY_SIZE):     return EXPORT_DEF;
 	    case (_TAG_HEADER_FUN >> _TAG_PRIMARY_SIZE):	return FUN_DEF;
 	    case (_TAG_HEADER_EXTERNAL_PID >> _TAG_PRIMARY_SIZE):	return EXTERNAL_PID_DEF;
 	    case (_TAG_HEADER_EXTERNAL_PORT >> _TAG_PRIMARY_SIZE):	return EXTERNAL_PORT_DEF;
@@ -159,8 +160,8 @@ ET_DEFINE_CHECKED(struct erl_node_*,external_port_node,Eterm,is_external_port);
 ET_DEFINE_CHECKED(Uint,external_ref_data_words,Eterm,is_external_ref);
 ET_DEFINE_CHECKED(Uint*,external_ref_data,Eterm,is_external_ref);
 ET_DEFINE_CHECKED(struct erl_node_*,external_ref_node,Eterm,is_external_ref);
+ET_DEFINE_CHECKED(Eterm*,export_val,Eterm,is_export);
 
-#if BEAM
 ET_DEFINE_CHECKED(Eterm,make_cp,Uint*,_is_aligned);
 ET_DEFINE_CHECKED(Uint*,cp_val,Eterm,is_CP);
 ET_DEFINE_CHECKED(Uint,catch_val,Eterm,is_catch);
@@ -168,6 +169,5 @@ ET_DEFINE_CHECKED(Uint,x_reg_offset,Uint,_is_xreg);
 ET_DEFINE_CHECKED(Uint,y_reg_offset,Uint,_is_yreg);
 ET_DEFINE_CHECKED(Uint,x_reg_index,Uint,_is_xreg);
 ET_DEFINE_CHECKED(Uint,y_reg_index,Uint,_is_yreg);
-#endif
 
 #endif	/* ET_DEBUG */

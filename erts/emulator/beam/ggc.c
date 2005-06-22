@@ -3092,15 +3092,13 @@ ma_adjust_after_fullsweep(Process *p, int size_before, int need, Eterm *objv, in
 ** nobj: Number of objects in objv.
 */
 int
-erts_global_garbage_collect(Process* p, int need, Eterm* objv_in, int nobj_in)
+erts_global_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 {
     int size_before;
     int size_after;
     int need_after;
     Uint saved_status;
     int wanted;
-    int nobj;
-    Eterm* objv;
 #ifndef NOMOVE
     int sz;
 #ifdef __BENCHMARK__
@@ -3179,16 +3177,6 @@ erts_global_garbage_collect(Process* p, int need, Eterm* objv_in, int nobj_in)
 
     /* To prevent shrinking of the message area */
     global_heap_min_sz = global_heap_sz;
-
-    nobj = nobj_in + p->arity;
-    objv = erts_alloc(ERTS_ALC_T_ROOTSET,nobj * sizeof(Eterm));
-    {
-        int i;
-        for(i = 0; i < nobj_in; i++)
-            objv[i] = objv_in[i];
-        for(; i < nobj; i++)
-            objv[i] = p->arg_reg[i - nobj_in];
-    }
 
 #ifndef NOMOVE
     /*
@@ -3328,15 +3316,6 @@ erts_global_garbage_collect(Process* p, int need, Eterm* objv_in, int nobj_in)
 #endif /* NOMOVE */
 
  ma_done:
-
-    {
-        int i;
-        for(i = 0; i < nobj_in; i++)
-            objv_in[i] = objv[i];
-        for(; i < nobj; i++)
-            p->arg_reg[i - nobj_in] = objv[i];
-    }
-    erts_free(ERTS_ALC_T_ROOTSET,(void*)objv);
 
     CHECK(p);
     OverRunCheck();

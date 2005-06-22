@@ -1,5 +1,5 @@
 %% -*- erlang-indent-level: 2 -*-
-%% $Id: hipe_sparc_main.erl,v 1.5 2005/01/19 10:14:06 kostis Exp $
+%% $Id$
 
 -module(hipe_sparc_main).
 -export([rtl_to_sparc/3]).
@@ -24,16 +24,16 @@ rtl_to_sparc(MFA, Rtl, Options) ->
   Sparc0 = hipe_rtl_to_sparc:translate(Rtl, Options),
   ?when_option(time, Options, ?stop_timer("RTL-to-Sparc")),
   SparcCfg1 = hipe_sparc_cfg:init(Sparc0),
-  %% hipe_sparc_cfg:pp(SparcCfg1),
+  %% hipe_sparc_pp:pp(hipe_sparc_cfg:linearize(SparcCfg1)),
   %% hipe_sparc_cfg:linearize(SparcCfg1),
   SparcCfg2 = rtl_to_sparc1(MFA, SparcCfg1, Options),
-  %% hipe_sparc_cfg:pp(SparcCfg2),
+  %% hipe_sparc_pp:pp(hipe_sparc_cfg:linearize(SparcCfg2)),
   %% hipe_sparc_cfg:linearize(SparcCfg2),
   SparcCfg3 = rtl_to_sparc2(MFA, SparcCfg2, Options),
-  %% hipe_sparc_cfg:pp(SparcCfg3),
+  %% hipe_sparc_pp:pp(hipe_sparc_cfg:linearize(SparcCfg3)),
   %% hipe_sparc_cfg:linearize(SparcCfg3),
   SparcCfg4 = rtl_to_sparc3(MFA, SparcCfg3, Options),
-  %% hipe_sparc_cfg:pp(SparcCfg4),
+  %% hipe_sparc_pp:pp(hipe_sparc_cfg:linearize(SparcCfg4)),
   %% hipe_sparc_cfg:linearize(SparcCfg4),
   SparcCode = rtl_to_sparc4(MFA, SparcCfg4, Options),
   {native, ultrasparc, {unprofiled, SparcCode}}.

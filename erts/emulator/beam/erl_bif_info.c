@@ -683,11 +683,16 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
 	hp = HAlloc(BIF_P, 3);
 	res = rp->error_handler;
     } else if (item == am_heap_size) {
-	hp = HAlloc(BIF_P, 3);
-	res = make_small(HEAP_SIZE(rp));
+	Uint hsz = 3;
+	(void) erts_bld_uint(NULL, &hsz, HEAP_SIZE(rp));
+	hp = HAlloc(BIF_P, hsz);
+	res = erts_bld_uint(&hp, NULL, HEAP_SIZE(rp));
     } else if (item == am_stack_size) {
-	hp = HAlloc(BIF_P, 3);
-	res = make_small(STACK_START(rp) - rp->stop);
+	Uint stack_size = STACK_START(rp) - rp->stop;
+	Uint hsz = 3;
+	(void) erts_bld_uint(NULL, &hsz, stack_size);
+	hp = HAlloc(BIF_P, hsz);
+	res = erts_bld_uint(&hp, NULL, stack_size);
     } else if (item == am_memory) { /* Memory consumed in bytes */
 	Uint size = 0;
 	Uint hsz = 3;
@@ -778,9 +783,16 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
 	    hp = HAlloc(BIF_P, 3);
 	    res = am_false;
 	} else {
-	    hp = HAlloc(BIF_P, rp->ct->n*(2+4) + 3);
-	    /* one cons cell and a 3-struct,
-	       and the 2-tuple below */
+	    /*
+	     * One cons cell and a 3-struct, and a 2-tuple.
+	     * Might be less than that, if there are sends, receives or timeouts,
+	     * so we must do a HRelease() to avoid creating holes.
+	     */
+	    Uint needed = rp->ct->n*(2+4) + 3;
+	    Eterm* limit;
+
+	    hp = HAlloc(BIF_P, needed);
+	    limit = hp + needed;
 	    list = NIL;
 	    for (i = 0; i < rp->ct->n; i++) {
 		j = rp->ct->cur - i - 1;
@@ -803,6 +815,10 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
 		hp += 2;
 	    }
 	    res = list;
+	    res = TUPLE2(hp, item, res);
+	    hp += 3;
+	    HRelease(BIF_P,limit,hp);
+	    BIF_RET(res);
 	}
     } else {
 	BIF_ERROR(BIF_P, BADARG);
@@ -1560,12 +1576,17 @@ BIF_RETTYPE port_info_2(BIF_ALIST_2)
 Eterm
 fun_info_2(Process* p, Eterm fun, Eterm what)
 {
+    Eterm* hp;
+    Eterm val;
+
     if (is_fun(fun)) {
 	ErlFunThing* funp = (ErlFunThing *) fun_val(fun);
-	Eterm val;
-	Eterm* hp;
 
 	switch (what) {
+	case am_type:
+	    hp = HAlloc(p, 3);
+	    val = am_local;
+	    break;
 	case am_pid:
 	    hp = HAlloc(p, 3);
 	    val = funp->creator;
@@ -1618,11 +1639,61 @@ fun_info_2(Process* p, Eterm fun, Eterm what)
 	default:
 	    goto error;
 	}
-	return TUPLE2(hp, what, val);
+    } else if (is_export(fun)) {
+	Export* exp = (Export *) (export_val(fun))[1];
+	switch (what) {
+	case am_type:
+	    hp = HAlloc(p, 3);
+	    val = am_external;
+	    break;
+	case am_pid:
+	    hp = HAlloc(p, 3);
+	    val = am_undefined;
+	    break;
+	case am_module:
+	    hp = HAlloc(p, 3);
+	    val = exp->code[0];
+	    break;
+	case am_new_index:
+	    hp = HAlloc(p, 3);
+	    val = am_undefined;
+	    break;
+	case am_new_uniq:
+	    hp = HAlloc(p, 3);
+	    val = am_undefined;
+	    break;
+	case am_index:
+	    hp = HAlloc(p, 3);
+	    val = am_undefined;
+	    break;
+	case am_uniq:
+	    hp = HAlloc(p, 3);
+	    val = am_undefined;
+	    break;
+	case am_env:
+	    hp = HAlloc(p, 3);
+	    val = NIL;
+	    break;
+	case am_refc:
+	    hp = HAlloc(p, 3);
+	    val = am_undefined;
+	    break;
+	case am_arity:
+	    hp = HAlloc(p, 3);
+	    val = make_small(exp->code[2]);
+	    break;
+	case am_name:
+	    hp = HAlloc(p, 3);
+	    val = exp->code[1];
+	    break;
+	default:
+	    goto error;
+	}
+    } else {
+    error:
+	BIF_ERROR(p, BADARG);
     }
-
- error:
-    BIF_ERROR(p, BADARG);
+    return TUPLE2(hp, what, val);
 }
 
 

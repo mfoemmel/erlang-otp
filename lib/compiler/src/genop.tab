@@ -212,3 +212,6 @@ BEAM_FORMAT_NUMBER=0
 112: apply/1
 113: apply_last/2
 114: is_boolean/2
+
+# New instructions in R10B-6.
+115: is_function2/3

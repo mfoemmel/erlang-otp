@@ -122,7 +122,7 @@ init() ->
 	_  -> error("syntax error in ~s~n", [RcFile])
     end,
 
-    %% Now test if we can lookup our own hostname in the inet_hosts table.
+    %% Now test if we can lookup our own hostname.
     standalone_host().
 
 erl_dist_mode() ->
@@ -229,7 +229,7 @@ do_load_resolv(_, _) ->
 %% lookup our own hostname.
 standalone_host() ->
     Name = inet_db:gethostname(),
-    case inet_hosts:gethostbyname(Name) of
+    case inet:gethostbyname(Name) of
 	{ok, #hostent{}} ->
 	    ok;
 	_ -> 
@@ -239,7 +239,7 @@ standalone_host() ->
 		Domain ->
 		    FQName = lists:append([inet_db:gethostname(),
 					    ".", Domain]),
-		    case inet_hosts:gethostbyname(FQName) of
+		    case inet:gethostbyname(FQName) of
 			{ok, #hostent{
 			   h_name      = N,
 			   h_addr_list = [IP|_],

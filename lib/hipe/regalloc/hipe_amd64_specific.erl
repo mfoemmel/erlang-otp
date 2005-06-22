@@ -1,5 +1,5 @@
 %% -*- erlang-indent-level: 2 -*-
-%% $Id: hipe_amd64_specific.erl,v 1.5 2005/03/29 11:46:30 mikpe Exp $
+%% $Id$
 %% 
 %% File: hipe_amd64_specific
 %% This module defines interface to the amd64 backend
@@ -47,7 +47,7 @@ defun_to_cfg(Defun) ->
 
 check_and_rewrite(Defun, Coloring) ->
   {NewDefun, _, NewSpillIndex} =
-    hipe_amd64_ra_postconditions:check_and_rewrite(Defun, Coloring, [], []),
+    hipe_amd64_ra_postconditions:check_and_rewrite(Defun, Coloring, 'normal', [], []),
   {NewDefun, NewSpillIndex}.
 
 reverse_postorder(CFG) ->
@@ -59,7 +59,10 @@ breadthorder(CFG) ->
 postorder(CFG) ->
   hipe_x86_cfg:postorder(CFG).
 
+%% Globally defined registers for linear scan
 is_global(R) ->
+  hipe_amd64_registers:temp1() =:= R orelse 
+  hipe_amd64_registers:temp0() =:= R orelse
   hipe_amd64_registers:is_fixed(R).
  
 is_fixed(R) ->

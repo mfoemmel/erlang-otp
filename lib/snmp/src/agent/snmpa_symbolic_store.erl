@@ -32,6 +32,7 @@
 -include("snmp_types.hrl").
 -include("snmp_debug.hrl").
 -include("snmp_verbosity.hrl").
+-include("SNMPv2-MIB.hrl").
 
 
 %% API
@@ -40,7 +41,9 @@
 	 info/0, 
 	 aliasname_to_oid/1, oid_to_aliasname/1, 
 	 add_aliasnames/2, delete_aliasnames/1,
-	 which_aliasnames/0, 
+	 which_aliasnames/0,
+	 which_tables/0, 
+	 which_variables/0, 
 	 enum_to_int/2, int_to_enum/2, 
 	 table_info/1, add_table_infos/2, delete_table_infos/1,
 	 variable_info/1, add_variable_infos/2, delete_variable_infos/1,
@@ -130,12 +133,19 @@ delete_aliasnames(MibName) ->
 which_aliasnames() ->
     call(which_aliasnames).
 
+which_tables() ->
+    call(which_tables).
+
+which_variables() ->
+    call(which_variables).
+
 
 %%----------------------------------------------------------------------
 %% Returns: false|{value, Info}
 %%----------------------------------------------------------------------
 table_info(TableName) ->
     call({table_info, TableName}).
+
 
 %%----------------------------------------------------------------------
 %% Returns: false|{value, Info}
@@ -193,10 +203,18 @@ oid_to_aliasname(Db,Oid) ->
 
 which_aliasnames(Db) ->
     Pattern = #symbol{key = {alias, '_'}, _ = '_'},
-%%     Symbols = snmpa_general_db:match_object(Db, Pattern),
-%%     [Alias || #symbol{key = {alias, Alias}} <- Symbols, atom(Alias)].
     Symbols = snmpa_general_db:match_object(Db, Pattern),
     [Alias || #symbol{key = {alias, Alias}} <- Symbols].
+
+which_tables(Db) ->
+    Pattern = #symbol{key = {table_info, '_'}, _ = '_'},
+    Symbols = snmpa_general_db:match_object(Db, Pattern),
+    [Name || #symbol{key = {table_info, Name}} <- Symbols].
+
+which_variables(Db) ->
+    Pattern = #symbol{key = {variable_info, '_'}, _ = '_'},
+    Symbols = snmpa_general_db:match_object(Db, Pattern),
+    [Name || #symbol{key = {variable_info, Name}} <- Symbols].
 
 int_to_enum(Db,TypeOrObjName,Int) ->
     case snmpa_general_db:read(Db, {alias, TypeOrObjName}) of
@@ -322,6 +340,18 @@ handle_call(which_aliasnames, _From, #state{db = DB} = S) ->
     ?vdebug("which aliasnames: ~p",[Res]),
     {reply, Res, S};
 
+handle_call(which_tables, _From, #state{db = DB} = S) ->
+    ?vlog("which tables",[]),
+    Res = which_tables(DB),
+    ?vdebug("which tables: ~p",[Res]),
+    {reply, Res, S};
+
+handle_call(which_variables, _From, #state{db = DB} = S) ->
+    ?vlog("which variables",[]),
+    Res = which_variables(DB),
+    ?vdebug("which variables: ~p",[Res]),
+    {reply, Res, S};
+
 handle_call({enum_to_int, TypeOrObjName, Enum}, _From, #state{db = DB} = S) ->
     ?vlog("enum to int: ~p, ~p",[TypeOrObjName,Enum]),
     Res = enum_to_int(DB, TypeOrObjName, Enum),
@@ -401,16 +431,7 @@ handle_cast({add_aliasnames, MibName, MEs}, #state{db = DB} = S) ->
 			    end;
 			_ -> []
 		    end,
-		?vlog("add alias~n   ~p -> {~p,~p}",[AN, Oid, Enums]),
-		Rec1 = #symbol{key      = {alias, AN}, 
-			       mib_name = MibName, 
-			       info     = {Oid,Enums}},
-		snmpa_general_db:write(DB, Rec1),
-		?vlog("add oid~n   ~p -> ~p",[Oid, AN]),
-		Rec2 = #symbol{key      = {oid, Oid}, 
-			       mib_name = MibName, 
-			       info     = AN},
-		snmpa_general_db:write(DB, Rec2)
+		write_alias(AN, DB, Enums, MibName, Oid)
 	end,
     lists:foreach(F, MEs),
     {noreply, S};
@@ -543,18 +564,42 @@ get_notif(Db, Key) ->
     end.
 
 set_notif(Db, MibName, Trap) when record(Trap, trap) ->
-    #trap{trapname = Key} = Trap,
-    Rec = #symbol{key = {trap, Key}, mib_name = MibName, info = Trap},
+    #trap{trapname = Name} = Trap,
+    Rec = #symbol{key = {trap, Name}, mib_name = MibName, info = Trap},
+    %% convert old v1 trap to oid
+    Oid = case Trap#trap.enterpriseoid of
+	      ?snmp ->
+		  ?snmpTraps ++ [Trap#trap.specificcode + 1];
+	      Oid0 ->
+		  Oid0 ++ [0, Trap#trap.specificcode]
+	  end,
+    write_alias(Name, Db, MibName, Oid),
     snmpa_general_db:write(Db, Rec);
 set_notif(Db, MibName, Trap) ->
-    #notification{trapname = Key} = Trap,
-    Rec = #symbol{key = {trap, Key}, mib_name = MibName, info = Trap},
+    #notification{trapname = Name, oid = Oid} = Trap,
+    Rec = #symbol{key = {trap, Name}, mib_name = MibName, info = Trap},
+    write_alias(Name, Db, MibName, Oid),
     snmpa_general_db:write(Db, Rec).
 
 delete_notif(Db, MibName) ->
     Pattern = #symbol{key = {trap, '_'}, mib_name = MibName, info = '_'},
     snmpa_general_db:match_delete(Db, Pattern).
 
+
+write_alias(AN, DB, MibName, Oid) ->
+    write_alias(AN, DB, [], MibName, Oid).
+
+write_alias(AN, DB, Enums, MibName, Oid) ->
+    ?vlog("add alias~n   ~p -> {~p,~p}",[AN, Oid, Enums]),
+    Rec1 = #symbol{key      = {alias, AN}, 
+		   mib_name = MibName, 
+		   info     = {Oid,Enums}},
+    snmpa_general_db:write(DB, Rec1),
+    ?vlog("add oid~n   ~p -> ~p",[Oid, AN]),
+    Rec2 = #symbol{key      = {oid, Oid}, 
+		   mib_name = MibName, 
+		   info     = AN},
+    snmpa_general_db:write(DB, Rec2).
 
 %% -------------------------------------
 

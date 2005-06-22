@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_ppc_frame.erl,v 1.12 2005/04/11 15:19:27 mikpe Exp $
+%%% $Id$
 
 -module(hipe_ppc_frame).
 -export([frame/1]).

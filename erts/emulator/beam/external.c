@@ -640,6 +640,28 @@ enc_term(DistEntry *dep, Eterm obj, byte* ep, Uint32 dflags)
 	    sys_memcpy(ep, bytes, j);
 	    return ep + j;
 	}
+    case EXPORT_DEF:
+	{
+	    Export* exp = (Export *) (export_val(obj))[1];
+	    if ((dflags & DFLAG_EXPORT_PTR_TAG) != 0) {
+		*ep++ = EXPORT_EXT;
+		ep = enc_atom(dep, exp->code[0], ep);
+		ep = enc_atom(dep, exp->code[1], ep);
+		return enc_term(dep, make_small(exp->code[2]), ep, dflags);
+	    } else {
+		/* Tag, arity */
+		*ep++ = SMALL_TUPLE_EXT;
+		put_int8(2, ep);
+		ep += 1;
+
+		/* Module name */
+		ep = enc_atom(dep, exp->code[0], ep);
+
+		/* Function name */
+		return enc_atom(dep, exp->code[1], ep);
+	    }
+	}
+	break;
     case FUN_DEF:
 	if ((dflags & DFLAG_NEW_FUN_TAGS) != 0) {
 	    ErlFunThing* funp = (ErlFunThing *) fun_val(obj);
@@ -1154,6 +1176,31 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		ep += n;
 		break;
 	    }
+	case EXPORT_EXT:
+	    {
+		Eterm mod;
+		Eterm name;
+		Eterm temp;
+		Sint arity;
+
+		ep = dec_atom(dep, ep, &mod);
+		ep = dec_atom(dep, ep, &name);
+		if ((ep = dec_term(dep, &hp, ep, off_heap, &temp)) == NULL) {
+		    return NULL;
+		}
+		if (!is_small(temp)) {
+		    return NULL;
+		}
+		arity = signed_val(temp);
+		if (arity < 0) {
+		    return NULL;
+		}
+		*objp = make_export(hp);
+		*hp++ = HEADER_EXPORT;
+		*hp++ = (Eterm) erts_export_put(mod, name, arity);
+		break;
+	    }
+	    break;
 	case NEW_FUN_EXT:
 	    {
 		ErlFunThing* funp = (ErlFunThing *) hp;
@@ -1449,6 +1496,18 @@ encode_size_struct2(Eterm obj, unsigned dflags)
 	    }
 	    return sum;
 	} 
+
+    case EXPORT_DEF:
+	{
+	    Export* ep = (Export *) (export_val(obj))[1];
+	    sum = 1;
+	    sum += encode_size_struct2(ep->code[0], dflags);
+	    sum += encode_size_struct2(ep->code[1], dflags);
+	    sum += encode_size_struct2(make_small(ep->code[2]), dflags);
+	    return sum;
+	}
+	return 0;
+
     default:
 	erl_exit(1,"Internal data structure error (in encode_size_struct2)%x\n",
 		 obj);
@@ -1600,6 +1659,11 @@ decode_size2(byte *ep, byte* endp)
 		} else {
 		    heap_size += PROC_BIN_SIZE;
 		}
+		break;
+	    case EXPORT_EXT:
+		ESTACK_PUSH(s, terms);
+		terms = 3;
+		heap_size += 2;
 		break;
 	    case NEW_FUN_EXT:
 		{

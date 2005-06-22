@@ -1,12 +1,12 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_ppc_ra_naive.erl,v 1.1 2005/01/19 10:26:15 kostis Exp $
+%%% $Id$
 
 -module(hipe_ppc_ra_naive).
 -export([ra/3]).
 
 -include("hipe_ppc.hrl").
 
-ra(Defun, _Coloring_fp=[], _Options) ->	% -> {Defun, Coloring}
+ra(Defun, _Coloring_fp, _Options) ->	% -> {Defun, Coloring}
   #defun{code=Code0} = Defun,
   Code1 = do_insns(Code0),
   TempMap = [],
@@ -32,6 +32,10 @@ do_insn(I) ->	% Insn -> Insn list
     #store{} -> do_store(I);
     #storex{} -> do_storex(I);
     #unary{} -> do_unary(I);
+    #lfd{} -> do_lfd(I);
+    #lfdx{} -> do_lfdx(I);
+    #stfd{} -> do_stfd(I);
+    #stfdx{} -> do_stfdx(I);
     _ -> [I]
   end.
 
@@ -110,6 +114,28 @@ do_unary(I=#unary{dst=Dst,src=Src}) ->
   {FixSrc,NewSrc} = fix_src1(Src),
   NewI = I#unary{dst=NewDst,src=NewSrc},
   FixSrc ++ [NewI | FixDst].
+
+do_lfd(I=#lfd{base=Base}) ->
+  {FixBase,NewBase} = fix_src1(Base),
+  NewI = I#lfd{base=NewBase},
+  FixBase ++ [NewI].
+
+do_lfdx(I=#lfdx{base1=Base1,base2=Base2}) ->
+  {FixBase1,NewBase1} = fix_src1(Base1),
+  {FixBase2,NewBase2} = fix_src2(Base2),
+  NewI = I#lfdx{base1=NewBase1,base2=NewBase2},
+  FixBase1 ++ FixBase2 ++ [NewI].
+
+do_stfd(I=#stfd{base=Base}) ->
+  {FixBase,NewBase} = fix_src1(Base),
+  NewI = I#stfd{base=NewBase},
+  FixBase ++ [NewI].
+
+do_stfdx(I=#stfdx{base1=Base1,base2=Base2}) ->
+  {FixBase1,NewBase1} = fix_src1(Base1),
+  {FixBase2,NewBase2} = fix_src2(Base2),
+  NewI = I#stfdx{base1=NewBase1,base2=NewBase2},
+  FixBase1 ++ FixBase2 ++ [NewI].
 
 %%% Fix Dst and Src operands.
 

@@ -7,7 +7,7 @@
 %%% Created : 25 Feb 2003 by Tobias Lindahl <Tobias.Lindahl@it.uu.se>
 %%%
 %%% CVS :
-%%%     $Id: hipe_icode_type.erl,v 1.134 2005/05/03 13:52:18 tobiasl Exp $
+%%%     $Id$
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_type).
@@ -17,12 +17,13 @@
 -include("hipe_icode_type.hrl").
 
 -import(erl_types, [t_any/0, t_atom/1, t_atom/0, t_atom_vals/1,
-		    t_binary/0, t_bool/0, t_cons/0, t_improper_list/0,
+		    t_binary/0, t_bool/0, t_cons/0, t_constant/0,
+		    t_improper_list/0,
 		    t_float/0, t_from_term/1, t_fun/0, t_fun/1, t_fun/2,
 		    t_fun_args/1, t_fun_range/1,t_inf/2, t_inf_lists/2, 
 		    t_integer/0,
 		    t_integer/1, t_is_atom/1, t_is_any/1, t_is_binary/1,
-		    t_is_bool/1, t_is_char/1, t_is_cons/1,
+		    t_is_bool/1, t_is_char/1, t_is_cons/1, t_is_constant/1,
 		    t_is_improper_list/1, t_is_equal/2, t_is_float/1,
 		    t_is_fun/1, t_is_integer/1, t_is_number/1,
 		    t_is_list/1, t_is_nil/1, t_is_port/1, t_is_pid/1,
@@ -607,16 +608,8 @@ test_type0(cons, T) ->
   t_is_cons(T);
 test_type0(nil, T)->
   t_is_nil(T);
-%% CONS, NIL, and TUPLE are not constants, everything else is
 test_type0(constant, T) ->
-  case t_is_improper_list(T) of
-    true -> false;
-    false -> 
-      case t_is_tuple(T) of
-	true -> false;
-	false -> true
-      end
-  end;
+  t_is_constant(T);
 test_type0(T, _) ->
   exit({unknown_typetest, T}).
 
@@ -656,8 +649,7 @@ true_branch_info(nil) ->
 true_branch_info(boolean) ->
   t_bool();
 true_branch_info(constant) ->
-  %% Since we do not have negative types like "not tuple"
-  t_any();
+  t_constant();
 true_branch_info(T) ->
   exit({?MODULE,unknown_typetest,T}).
 
@@ -1003,7 +995,7 @@ transform_bs_put_integer(I, Primop, Info)->
   end.
 
 
-transform_arith(I, '+', Info)->
+transform_arith(I, Op = '+', Info)->
   Args = safe_lookup_list(args(I), Info),
   NewInfo = analyse_insn(I, Info),
   Dst = case hipe_icode:is_call(I) of
@@ -1016,7 +1008,7 @@ transform_arith(I, '+', Info)->
     false ->
       case all_fixnums(Args) of
 	true ->
-	  update_call_or_enter(I, unsafe_add);
+	  update_call_or_enter(I, arithop_to_unsafe(Op));
 	false ->
 	  I
       end
@@ -1516,12 +1508,15 @@ call_always_fails(I, Info)->
   case Fun of
     %% These can actually be calls too.
     {erlang, halt, 0} -> false;
+    {erlang, halt, 1} -> false;
     {erlang, exit, 1} -> false;
+    {erlang, exit, 2} -> false;
     {erlang, error, 1} -> false;
     {erlang, error, 2} -> false;
     {erlang, fault, 1} -> false;
     {erlang, fault, 2} -> false;
     {erlang, throw, 1} -> false;
+    {erlang, hibernate, 3} -> false;
     Fun ->
       case Type of
 	primop -> 
@@ -1650,16 +1645,9 @@ warn_on_args(IcodeFun, Cfg) ->
 warn_on_bb([Label|Left], State, IcodeFun) ->
   BB = state__bb(State, Label),
   Code = hipe_bb:code(BB),
-  InfoOut = state__info_out(State, Label),
-  case gb_trees:is_empty(InfoOut) of
-    true ->
-      %% This block is in a non-possible trace.
-      warn_on_bb(Left, State, IcodeFun);
-    false ->
-      InfoIn = state__info_in(State, Label),
-      warn_on_instr(Code, InfoIn, IcodeFun),
-      warn_on_bb(Left, State, IcodeFun)
-  end;
+  InfoIn = state__info_in(State, Label),
+  warn_on_instr(Code, InfoIn, IcodeFun),
+  warn_on_bb(Left, State, IcodeFun);
 warn_on_bb([], _State, _IcodeFun) ->
   ok.
 
@@ -1870,13 +1858,13 @@ pp_args(Args)->
 pp_args_1([Arg1, Arg2|Tail]) ->
   case t_is_any(Arg1) of
     true -> "_";
-    false -> format_type(Arg1)
+    false -> t_to_string(Arg1)
   end
     ++ "," ++ pp_args_1([Arg2|Tail]);
 pp_args_1([Arg]) ->
   case t_is_any(Arg) of
     true -> "_";
-    false -> format_type(Arg)
+    false -> t_to_string(Arg)
   end;
 pp_args_1([]) ->
   [].

@@ -35,9 +35,7 @@
 
 #if !defined(USE_SELECT)
 
-#  ifdef HAVE_POLL_H
-#    include <poll.h>
-#  endif
+#include <poll.h>
 #  ifdef HAVE_SYS_STROPTS_H
 #    include <sys/stropts.h>	/* some keep INFTIM here */
 #  endif
@@ -3479,6 +3477,7 @@ int sys_stop_hrvtime(void)
 }
 
 #endif /* HAVE_GETHRVTIME_PROCFS_IOCTL */
+
 
 #ifdef USE_KERNEL_POLL /* kernel poll support */
 

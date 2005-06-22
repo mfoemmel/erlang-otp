@@ -732,6 +732,7 @@ test_type(is_binary, 1)    -> {cond_op,is_binary};
 test_type(is_constant, 1)  -> {cond_op,is_constant};
 test_type(is_float, 1)     -> {cond_op,is_float};
 test_type(is_function, 1)  -> {cond_op,is_function};
+test_type(is_function, 2)  -> {cond_op,is_function2};
 test_type(is_integer, 1)   -> {cond_op,is_integer};
 test_type(is_list, 1)      -> {cond_op,is_list};
 test_type(is_number, 1)    -> {cond_op,is_number};

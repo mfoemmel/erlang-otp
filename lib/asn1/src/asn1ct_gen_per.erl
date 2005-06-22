@@ -142,10 +142,10 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
     case D#type.def of
 	'INTEGER' ->
 	    emit({"?RT_PER:encode_integer(", %fel
-		  {asis,Constraint},",",Value,")"});
+		  {asis,effective_constraint(integer,Constraint)},",",Value,")"});
 	{'INTEGER',NamedNumberList} ->
 	    emit({"?RT_PER:encode_integer(",
-		  {asis,Constraint},",",Value,",",
+		  {asis,effective_constraint(integer,Constraint)},",",Value,",",
 		  {asis,NamedNumberList},")"});
 	{'ENUMERATED',{Nlist1,Nlist2}} ->
 	    NewList = lists:concat([[{0,X}||{X,_} <- Nlist1],['EXT_MARK'],[{1,X}||{X,_} <- Nlist2]]),
@@ -257,6 +257,111 @@ emit_enc_enumerated_case(C, {0,EnumName}, Count) ->
 emit_enc_enumerated_case(C, EnumName, Count) ->
     emit(["'",EnumName,"' -> ?RT_PER:encode_integer(",{asis,C},", ",Count,")"]).
 
+%% effective_constraint(Type,C)
+%% Type = atom()
+%% C = [C1,...]
+%% C1 = {'SingleValue',SV} | {'ValueRange',VR} | {atom(),term()}
+%% SV = integer() | [integer(),...]
+%% VR = {Lb,Ub}
+%% Lb = 'MIN' | integer()
+%% Ub = 'MAX' | integer()
+%% Returns a single value if C only has a single value constraint, and no
+%% value range constraints, that constrains to a single value, otherwise 
+%% returns a value range that has the lower bound set to the lowest value 
+%% of all single values and lower bound values in C and the upper bound to
+%% the greatest value.
+effective_constraint(integer,[C={{_,_},_}|_Rest]) -> % extension
+    [C]; %% [C|effective_constraint(integer,Rest)]; XXX what is possible ???
+effective_constraint(integer,C) ->
+    SVs = get_constraints(C,'SingleValue'),
+    SV = effective_constr('SingleValue',SVs),
+    VRs = get_constraints(C,'ValueRange'),
+    VR = effective_constr('ValueRange',VRs),
+    greatest_common_range(SV,VR);
+% effective_constraint(bitstring,C) ->
+%     Constr=get_constraints(C,'SizeConstraint'),
+%     case Constr of
+% 	[] -> no;
+% 	[{'SizeConstraint',Val}] -> Val;
+% 	Other -> Other
+%     end;
+%     get_constraint(C,'SizeConstraint');
+effective_constraint(Type,C) ->
+    io:format("Effective constraint for ~p, not implemented yet.~n",[Type]),
+    C.
+
+effective_constr(_,[]) ->
+    [];
+effective_constr('SingleValue',List) ->
+    SVList = lists:flatten(lists:map(fun(X)->element(2,X)end,List)),
+    % sort and remove duplicates
+%    SortedSVList = lists:sort(SVList),
+    RemoveDup = fun([],_) ->[];
+		   ([H],_) -> [H];
+		   ([H,H|T],F) -> F([H|T],F);
+		   ([H|T],F) -> [H|F(T,F)]
+		end,
+    
+    case RemoveDup(SVList,RemoveDup) of
+	[N] ->
+	    [{'SingleValue',N}];
+	L when list(L) -> 
+	    [{'ValueRange',{hd(L),lists:last(L)}}]
+    end;
+effective_constr('ValueRange',List) ->
+    LBs = lists:map(fun({_,{Lb,_}})-> Lb end,List),
+    UBs = lists:map(fun({_,{_,Ub}})-> Ub end,List),
+    Lb = least_Lb(LBs),
+    [{'ValueRange',{Lb,lists:max(UBs)}}].
+
+greatest_common_range([],VR) ->
+    VR;
+greatest_common_range(SV,[]) ->
+    SV;
+greatest_common_range([{_,Int}],[{_,{'MIN',Ub}}]) when integer(Int),
+						       Int > Ub ->
+    [{'ValueRange',{'MIN',Int}}];
+greatest_common_range([{_,Int}],[{_,{Lb,Ub}}]) when integer(Int),
+						    Int < Lb ->
+    [{'ValueRange',{Int,Ub}}];
+greatest_common_range([{_,Int}],VR=[{_,{_Lb,_Ub}}]) when integer(Int) ->
+    VR;
+greatest_common_range([{_,L}],[{_,{Lb,Ub}}]) when list(L) ->
+    Min = least_Lb([Lb|L]),
+    Max = greatest_Ub([Ub|L]),
+    [{'ValueRange',{Min,Max}}].
+    
+
+least_Lb(L) ->
+    case lists:member('MIN',L) of
+	true -> 'MIN';
+	_ -> lists:min(L)
+    end.
+
+greatest_Ub(L) ->
+    case lists:member('MAX',L) of
+	true -> 'MAX';
+	_ -> lists:max(L)
+    end.
+
+
+get_constraints(L=[{Key,_}],Key) ->
+    L;
+get_constraints([],_) ->
+    [];
+get_constraints(C,Key) ->
+    {value,L} = keysearch_allwithkey(Key,1,C,[]),
+    L.
+
+keysearch_allwithkey(Key,Ix,C,Acc) ->
+    case lists:keysearch(Key,Ix,C) of
+	false ->
+	    {value,Acc};
+	{value,T} ->
+	    RestC = lists:delete(T,C),
+	    keysearch_allwithkey(Key,Ix,RestC,[T|Acc])
+    end.
+
 
 %% Object code generating for encoding and decoding
 %% ------------------------------------------------
@@ -338,7 +443,7 @@ gen_encode_objectfields(ClassName,[{objectfield,Name,_,_,OptOrMand}|Rest],
 			       ObjName}}});
 	{false,'OPTIONAL'} ->
 	    EmitFuncClause("_,_"),
-	    emit(["  exit({error,{'use of missing field in object', ",Name,
+	    emit(["  exit({error,{'use of missing field in object', ",{asis,Name},
 		  "}})"]);
 	{false,{'DEFAULT',_DefaultObject}} ->
 	    exit({error,{asn1,{"not implemented yet",Name}}});
@@ -549,7 +654,7 @@ gen_decode_objectfields(ClassName,[{objectfield,Name,_,_,OptOrMand}|Rest],
 			       ObjName}}});
 	{false,'OPTIONAL'} ->
 	    EmitFuncClause("_,_,_"),
-	    emit(["  exit({error,{'illegal use of missing field in object', ",Name,
+	    emit(["  exit({error,{'illegal use of missing field in object', ",{asis,Name},
 		  "}})"]);
 	{false,{'DEFAULT',_DefaultObject}} ->
 	    exit({error,{asn1,{"not implemented yet",Name}}});
@@ -1167,10 +1272,10 @@ gen_dec_prim(Erules,Att,BytesVar) ->
     case Typename of
 	'INTEGER' ->
 	    emit({"?RT_PER:decode_integer(",BytesVar,",",
-		  {asis,Constraint},")"});
+		  {asis,effective_constraint(integer,Constraint)},")"});
 	{'INTEGER',NamedNumberList} ->
 	    emit({"?RT_PER:decode_integer(",BytesVar,",",
-		  {asis,Constraint},",",
+		  {asis,effective_constraint(integer,Constraint)},",",
 		  {asis,NamedNumberList},")"});
 	{'BIT STRING',NamedNumberList} ->
 	    case get(compact_bit_string) of

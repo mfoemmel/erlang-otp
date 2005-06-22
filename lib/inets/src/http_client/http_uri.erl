@@ -1,3 +1,5 @@
+
+
 % ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -30,9 +32,7 @@
 
 -author('johan.blom@mobilearts.se').
 
--export([parse/1,resolve/2
-%	 scan_abspath/1
-	]).
+-export([parse/1, resolve/2, scan_host2/5]).
 
 
 %%% Parse URI and return {Scheme,Path}
@@ -335,22 +335,21 @@ scan_hostport(C0,Scheme) ->
 -define(HEX,   3).
 -define(ALPHA, 6).
 
-
 scan_host(C0) ->
     case scan_host2(C0,[],0,[],[]) of
-	{C1,IPv4address,[?DIGIT,?DIGIT,?DIGIT,?DIGIT]} ->
-	    {C1,lists:reverse(lists:append(IPv4address))};
-	{C1,IPv6address,[$[,Hex1,Hex2,Hex3,Hex4,$]]} when Hex1=<?HEX;
-							  Hex2=<?HEX;
-							  Hex3=<?HEX;
-							  Hex4=<?HEX ->
-	    {C1,lists:reverse(lists:append(IPv6address))};
-	{C1,Hostname,[Alpha|_HostF]} when Alpha==?ALPHA ->
-	    {C1,lists:reverse(lists:append(Hostname))};
-	_ ->
-	    {error,no_host}
+        {C1,IPv4address,[?DIGIT,?DIGIT,?DIGIT,?DIGIT]} ->
+            {C1,lists:reverse(lists:append(IPv4address))};
+        {C1,IPv6address,[$[,Hex1,Hex2,Hex3,Hex4,$]]} when Hex1=<?HEX;
+                                                          Hex2=<?HEX;
+                                                          Hex3=<?HEX;
+                                                          Hex4=<?HEX ->
+            {C1,lists:reverse(lists:append(IPv6address))};
+        {C1,Hostname,[Alpha|_HostF]} when Alpha==?ALPHA ->
+            {C1,lists:reverse(lists:append(Hostname))};
+        _ ->
+            {error,no_host}
     end.
-    
+
 scan_host2([H|C0],Acc,CurF,Host,HostF) when $0=<H,H=<$9 ->
     scan_host2(C0,[H|Acc],CurF bor ?BIT1,Host,HostF);
 scan_host2([H|C0],Acc,CurF,Host,HostF) when $a=<H,H=<$f; $A=<H,H=<$F ->
@@ -364,7 +363,6 @@ scan_host2([$.|C0],Acc,CurF,Host,HostF) when CurF=/=0 ->
 scan_host2(C0,Acc,CurF,Host,HostF) ->
     {C0,[Acc|Host],[CurF|HostF]}.
 
-
 %%%      port          = *digit
 scan_port([H|C0],Acc) when $0=<H,H=<$9 ->
     scan_port(C0,[H|Acc]);
@@ -376,7 +374,8 @@ scan_abspath([]) ->
     {[],[]};
 scan_abspath("/"++C0) ->
     scan_pathsegments(C0,["/"]);
-scan_abspath(_) ->
+scan_abspath(Foo) ->
+    io:format("foo: ~p~n", [Foo]),
     {error,no_abspath}.
 
 %%%      path_segments = segment *( "/" segment )

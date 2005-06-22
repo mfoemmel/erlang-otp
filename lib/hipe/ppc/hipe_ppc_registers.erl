@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_ppc_registers.erl,v 1.11 2004/12/06 03:09:39 mikpe Exp $
+%%% $Id$
 
 -module(hipe_ppc_registers).
 
@@ -23,8 +23,8 @@
 	 is_fixed/1,
 	 nr_args/0,
 	 arg/1,
-	 %%is_arg/1,
 	 args/1,
+	 is_arg/1,	% for linear scan
 	 call_clobbered/0,
 	 tailcall_clobbered/0,
 	 live_at_return/0
@@ -135,6 +135,14 @@ is_fixed(Reg) ->
     ?HEAP_POINTER -> true;
     ?STACK_POINTER -> true;
     ?PROC_POINTER -> true;
+    %% The following cases are required for linear scan:
+    %% it gets confused if it sees a register which is
+    %% neither allocatable nor global (fixed or one of
+    %% the scratch registers set aside for linear scan).
+    ?R0 -> true;
+    ?R1 -> true;
+    ?R2 -> true;
+    ?R13 -> true;
     _ -> false
   end.
 
@@ -162,6 +170,18 @@ arg(N) ->
       end;
      true ->
       exit({?MODULE, arg, N})
+  end.
+
+is_arg(R) ->
+  case R of
+    ?ARG0 -> ?PPC_NR_ARG_REGS > 0;
+    ?ARG1 -> ?PPC_NR_ARG_REGS > 1;
+    ?ARG2 -> ?PPC_NR_ARG_REGS > 2;
+    ?ARG3 -> ?PPC_NR_ARG_REGS > 3;
+    ?ARG4 -> ?PPC_NR_ARG_REGS > 4;
+    ?ARG5 -> ?PPC_NR_ARG_REGS > 5;
+    ?ARG6 -> ?PPC_NR_ARG_REGS > 6;
+    _ -> false
   end.
 
 call_clobbered() ->		% does the RA strip the type or not?

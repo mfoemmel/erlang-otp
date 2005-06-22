@@ -40,6 +40,7 @@
 #define SMALL_BIG_EXT     'n'
 #define LARGE_BIG_EXT     'o'
 #define NEW_FUN_EXT       'p'
+#define EXPORT_EXT        'q'
 #define FUN_EXT           'u'
 
 #define NEW_CACHE         'N'

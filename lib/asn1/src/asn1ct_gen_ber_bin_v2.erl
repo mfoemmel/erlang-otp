@@ -814,7 +814,7 @@ gen_encode_objectfields(ClassName,[{objectfield,Name,_,_,OptOrMand}|Rest],
 			       ObjName}}});
 	{false,'OPTIONAL'} ->
 	    EmitFuncClause("_,_"),
-	    emit(["  exit({error,{'use of missing field in object', ",Name,
+	    emit(["  exit({error,{'use of missing field in object', ",{asis,Name},
 		  "}})"]);
 	{false,{'DEFAULT',_DefaultObject}} ->
 	    exit({error,{asn1,{"not implemented yet",Name}}});
@@ -1047,7 +1047,7 @@ gen_decode_objectfields(ClassName,[{objectfield,Name,_,_,OptOrMand}|Rest],
 			       ObjName}}});
 	{false,'OPTIONAL'} ->
 	    EmitFuncClause("_,_"),
-	    emit(["  exit({error,{'illegal use of missing field in object', ",Name,
+	    emit(["  exit({error,{'illegal use of missing field in object', ",{asis,Name},
 		  "}})"]);
 	{false,{'DEFAULT',_DefaultObject}} ->
 	    exit({error,{asn1,{"not implemented yet",Name}}});

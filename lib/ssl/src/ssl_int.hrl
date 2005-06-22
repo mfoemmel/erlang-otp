@@ -66,6 +66,16 @@
 
 -define(SET_SEED, 41).
 
+-define(GETCONNINFO, 42).
+-define(GETCONNINFO_REP, 43).
+-define(GETCONNINFO_ERR, 44).
+
+%% --------------
+
+-define(SSLv2, 1).
+-define(SSLv3, 2).
+-define(TLSv1, 4).
+
 
 %% Set socket options codes  'SET_SOCK_OPT' 
 -define(SET_TCP_NODELAY, 1).

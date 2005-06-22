@@ -1,4 +1,4 @@
-%% $Id: hipe_sparc_ra_fp_ls.erl,v 1.5 2003/12/02 14:07:15 kostis Exp $
+%% $Id$
 %% Linear Scan register allocator for sparc
 
 -module(hipe_sparc_ra_fp_ls).

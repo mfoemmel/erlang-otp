@@ -1,5 +1,5 @@
 %% -*- erlang-indent-level: 2 -*-
-%% $Id: hipe_x86_specific.erl,v 1.28 2004/05/17 21:18:29 mikpe Exp $
+%% $Id$
 %% 
 %% File: hipe_x86_specific
 %% This module defines interface to the x86 backend
@@ -47,7 +47,7 @@ defun_to_cfg(Defun) ->
 
 check_and_rewrite(Defun, Coloring) ->
   {NewDefun, _, NewSpillIndex} =
-    hipe_x86_ra_postconditions:check_and_rewrite(Defun, Coloring, [], []),
+    hipe_x86_ra_postconditions:check_and_rewrite(Defun, Coloring, 'normal', [], []),
   {NewDefun, NewSpillIndex}.
 
 reverse_postorder(CFG) ->
@@ -59,7 +59,11 @@ breadthorder(CFG) ->
 postorder(CFG) ->
   hipe_x86_cfg:postorder(CFG).
 
+
+%% Globally defined registers for linear scan
 is_global(R) ->
+  hipe_x86_registers:temp1() =:= R orelse 
+  hipe_x86_registers:temp0() =:= R orelse
   hipe_x86_registers:is_fixed(R).
  
 is_fixed(R) ->

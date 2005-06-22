@@ -1,4 +1,4 @@
-%%% $Id: hipe_x86_registers.erl,v 1.37 2005/04/20 12:42:15 chvi3471 Exp $
+%%% $Id$
 %%%
 %%% TODO:
 %%% - Do we need a pseudo reg for the condition codes?

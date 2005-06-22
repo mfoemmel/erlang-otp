@@ -8,8 +8,8 @@
 %%%
 %%% CVS      :
 %%%              $Author: tobiasl $
-%%%              $Date: 2004/11/28 13:09:38 $
-%%%              $Revision: 1.27 $
+%%%              $Date: 2005/05/18 11:40:03 $
+%%%              $Revision: 1.28 $
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_fp).
@@ -675,7 +675,7 @@ join_maps([Pred|Left], BlockMap, Map) ->
 join_maps([], _, Map) ->
   Map.
 
-join_maps0([phi|Tail], Pred,  Map) ->
+join_maps0([{phi, _}|Tail], Pred,  Map) ->
   join_maps0(Tail, Pred, Map);
 join_maps0([{Var, FVar}|Tail], Pred,  Map) ->
   case gb_trees:lookup(Var, Map) of

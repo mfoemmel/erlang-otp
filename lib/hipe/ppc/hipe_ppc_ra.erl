@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_ppc_ra.erl,v 1.5 2005/01/19 10:26:15 kostis Exp $
+%%% $Id$
 
 -module(hipe_ppc_ra).
 -export([ra/2]).
@@ -20,12 +20,12 @@ ra(Defun0, Options) ->
     = case proplists:get_value(regalloc, Options, coalescing) of
 	coalescing ->
 	  ra(Defun1, SpillIndex, Options, hipe_coalescing_regalloc);
+	optimistic ->
+	  ra(Defun1, SpillIndex, Options, hipe_optimistic_regalloc);
 	graph_color ->
 	  ra(Defun1, SpillIndex, Options, hipe_graph_coloring_regalloc);
 	linear_scan ->
-	  io:format("{regalloc,linear_scan} NYI; using coalescing\n"),
-	  ra(Defun1, SpillIndex, Options, hipe_coalescing_regalloc);
-%%%	  hipe_ppc_ra_ls:ra(Defun1, SpillIndex, Options);
+	  hipe_ppc_ra_ls:ra(Defun1, SpillIndex, Options);
 	naive ->
 	  hipe_ppc_ra_naive:ra(Defun1, Coloring_fp, Options);
         _ ->

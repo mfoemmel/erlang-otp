@@ -1786,30 +1786,49 @@ check_conf_sys([], SysEnv, Errors) ->
     {ok, SysEnv, lists:reverse(Errors)}.
 
 load_file(File) ->
+    %% We can't use file:consult/1 here. Too bad.
     case erl_prim_loader:get_file(File) of
 	{ok, Bin, _FileName} ->
-	    Str = binary_to_list(Bin),
-	    case erl_scan:tokens([], Str, 1) of
-		{done, {ok, Tokens, _}, _} ->
-		    [First| _T] = Tokens,
-		    L = length(Tokens),
-		    Last = lists:nth(L-1, Tokens),
-		    case {First, Last} of
-			{{'[',_},{']',_}} ->
-			    erl_parse:parse_term(Tokens);
-			_ -> 
-			    {error, {none, load_file, 
-				     "configuration file must be a list ended "
-				     "by <dot><whitespace>"}}
-		    end;
-		{done, Result, _} ->
-		    {error, {none, parse_file, tuple_to_list(Result)}};
-		{more, _} ->
-		    {error, {none, load_file, "<dot><whitespace> not found"}}
-	    end;
+	    %% Make sure that there is some whitespace at the end of the string
+	    %% (so that reading a file with no NL following the "." will work).
+	    Str = binary_to_list(Bin) ++ " ",
+	    scan_file(Str);
 	error ->
 	    {error, {none, open_file, "configuration file not found"}}
     end.
+
+scan_file(Str) ->
+    case erl_scan:tokens([], Str, 1) of
+	{done, {ok, Tokens, _}, Left} ->
+	    case erl_parse:parse_term(Tokens) of
+		{ok,L}=Res when is_list(L) ->
+		    case only_ws(Left) of
+			true ->
+			    Res;
+			false ->
+			    %% There was trailing garbage found after the list.
+			    config_error()
+		    end;
+		{ok,_} ->
+		    %% Parsing succeeded but the result is not a list.
+		    config_error();
+		Error ->
+		    Error
+	    end;
+	{done, Result, _} ->
+	    {error, {none, parse_file, tuple_to_list(Result)}};
+	{more, _} ->
+	    {error, {none, load_file, "no ending <dot> found"}}
+    end.
+
+only_ws([C|Cs]) when C =< $\s -> only_ws(Cs);
+only_ws([_|_]) -> false;
+only_ws([]) -> true.
+    
+config_error() ->
+    {error,
+     {none, load_file,
+      "configuration file must contain ONE list ended by <dot>"}}.
 
 %%-----------------------------------------------------------------
 %% Info messages sent to error_logger

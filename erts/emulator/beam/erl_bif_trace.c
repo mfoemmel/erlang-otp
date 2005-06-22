@@ -462,9 +462,34 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 	    if (pid_spec == am_all) {
 		if (on) {
 		    if (!erts_cpu_timestamp) {
+#ifdef HAVE_CLOCK_GETTIME
+			/* 
+			   Perhaps clock_gettime was found during config
+			   on a different machine than this. We check
+			   if it works here and now, then don't bother 
+			   about checking return value for error later. 
+			*/
+			{
+			    SysCpuTime start, stop;
+			    SysTimespec tp;
+			    int i;
+			    
+			    if (sys_get_proc_cputime(start, tp) < 0)
+				goto error;
+			    start = ((SysCpuTime)tp.tv_sec * 1000000000LL) + 
+				    (SysCpuTime)tp.tv_nsec;
+			    for (i = 0; i < 100; i++)
+				sys_get_proc_cputime(stop, tp);
+			    stop = ((SysCpuTime)tp.tv_sec * 1000000000LL) + 
+				   (SysCpuTime)tp.tv_nsec;
+			    if (start == 0) goto error;
+			    if (start == stop) goto error;
+			}
+#else /* HAVE_GETHRVTIME */
 			if (erts_start_now_cpu() < 0) {
 			    goto error;
 			}
+#endif /* HAVE_CLOCK_GETTIME */
 			erts_cpu_timestamp = !0;
 		    }
 		}
@@ -524,7 +549,9 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 	    if (cpu_ts && !on) {
 		/* cpu_ts => pid_spec == am_all */
 		if (erts_cpu_timestamp) {
+#ifdef HAVE_GETHRVTIME
 		    erts_stop_now_cpu();
+#endif
 		    erts_cpu_timestamp = 0;
 		}
 	    }
@@ -682,9 +709,11 @@ trace_info_pid(Process* p, Eterm pid_spec, Eterm key)
     }
 
     if (key == am_flags) {
-	int num_flags = 14;
+	int num_flags = 14;	/* MAXIMUM number of flags. */
+	Uint needed = 3+2*num_flags;
 	Uint flags = *flagp;
 	Eterm flag_list = NIL;
+	Eterm* limit;
 
 #define FLAG0(flag_mask,flag) \
   if (flags & (flag_mask)) { flag_list = CONS(hp, flag, flag_list); hp += 2; } else {}
@@ -697,7 +726,8 @@ trace_info_pid(Process* p, Eterm pid_spec, Eterm key)
 #else
 #  define FLAG FLAG0
 #endif
-	hp = HAlloc(p, 3+2*num_flags);
+        hp = HAlloc(p, needed);
+	limit = hp+needed;
 	FLAG(F_TRACE_SEND, am_send);
 	FLAG(F_TRACE_RECEIVE, am_receive);
 	FLAG(F_TRACE_SOS, am_set_on_spawn);
@@ -714,6 +744,7 @@ trace_info_pid(Process* p, Eterm pid_spec, Eterm key)
 	FLAG(F_TRACE_SILENT, am_silent);
 #undef FLAG0
 #undef FLAG
+	HRelease(p,limit,hp+3);
 	return TUPLE2(hp, key, flag_list);
     } else if (key == am_tracer) {
 	hp = HAlloc(p, 3);

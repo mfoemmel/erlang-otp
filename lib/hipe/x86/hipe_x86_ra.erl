@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_x86_ra.erl,v 1.8 2005/01/21 14:27:28 dalu7049 Exp $
+%%% $Id$
 
 -module(hipe_x86_ra).
 -export([ra/2]).
@@ -24,6 +24,8 @@ ra(Defun0, Options) ->
     = case proplists:get_value(regalloc, Options, coalescing) of
 	coalescing ->
 	  ra(Defun1, SpillIndex, Options, hipe_coalescing_regalloc);
+	optimistic ->
+	  ra(Defun1, SpillIndex, Options, hipe_optimistic_regalloc);
 	graph_color ->
 	  ra(Defun1, SpillIndex, Options, hipe_graph_coloring_regalloc);
 	linear_scan ->

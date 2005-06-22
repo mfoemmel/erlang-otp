@@ -49,6 +49,7 @@
 
 extern void erl_crash_dump_v(char *, int, char *, va_list);
 #ifdef __WIN32__
+extern void ConNormalExit(void);
 extern void ConWaitForExit(void);
 #endif
 
@@ -68,7 +69,6 @@ Uint display_loads;		/* print info about loaded modules */
 int H_MIN_SIZE;			/* The minimum heap grain */
 
 Uint32 erts_debug_flags;	/* Debug flags. */
-int heap_series;		/* Series to use for heap size. */
 int count_instructions;
 int erts_backtrace_depth;	/* How many functions to show in a backtrace
 				 * in error codes.
@@ -586,7 +586,6 @@ erl_start(int argc, char **argv)
     erts_disable_tolerant_timeofday = 0;
     display_items = 200;
     display_loads = 0;
-    heap_series = HS_FIBONACCI_SLOW;
     erts_backtrace_depth = DEFAULT_BACKTRACE_SIZE;
     erts_async_max_threads = 0;
     erts_max_gen_gcs = (Uint16) -1;
@@ -713,18 +712,7 @@ erl_start(int argc, char **argv)
 	    break;
 
 	case 'H':		/* undocumented */
-	    if (argv[i][2] == 'f') {
-		heap_series = HS_FIBONACCI;
-	    } else if (argv[i][2] == 'F') {
-		heap_series = HS_FIBONACCI_SLOW;
-	    } else if (argv[i][2] == 'T') {
-		heap_series = HS_POWER_TWO;
-	    } else if (argv[i][2] == 't') {
-		heap_series = HS_POWER_TWO_MINUS_ONE;
-	    } else {
-		erl_printf(CERR, "bad heap series %s (use 'f', 'T', or 't')\n", arg);
-		erts_usage();
-	    }
+	    fprintf(stderr, "The undocumented +H option has been removed (R10B-6).\n\n");
 	    break;
 
 	case 'h':
@@ -843,10 +831,10 @@ erl_start(int argc, char **argv)
 	    break;
 	case 'n':   /* XXX obsolete */
 	    break;
-	case 'c':   /* undocumented */
-	    if (argv[i][2] == 0) {
+	case 'c':
+	    if (argv[i][2] == 0) { /* -c: documented option */
 		erts_disable_tolerant_timeofday = 1;
-	    } else if (argv[i][2] == 'i') {
+	    } else if (argv[i][2] == 'i') { /* -ci: undcoumented option */
 		count_instructions = 1;
 	    }
 	    break;
@@ -1023,6 +1011,7 @@ void erl_exit0(char *file, int line, int n, char *fmt,...)
     va_end(args);
 #ifdef __WIN32__
     if(n > 0) ConWaitForExit();
+    else ConNormalExit();
 #endif
 #if !defined(__WIN32__) && !defined(VXWORKS) && !defined(_OSE_)
     sys_tty_reset();
@@ -1063,6 +1052,7 @@ void erl_exit(int n, char *fmt,...)
     va_end(args);
 #ifdef __WIN32__
     if(n > 0) ConWaitForExit();
+    else ConNormalExit();
 #endif
 #if !defined(__WIN32__) && !defined(VXWORKS) && !defined(_OSE_)
     sys_tty_reset();

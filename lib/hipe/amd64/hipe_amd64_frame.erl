@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_amd64_frame.erl,v 1.20 2005/04/11 13:23:07 mikpe Exp $
+%%% $Id$
 
 -define(HIPE_X86_FRAME,     hipe_amd64_frame).
 -define(HIPE_X86_REGISTERS, hipe_amd64_registers).

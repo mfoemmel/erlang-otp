@@ -1,4 +1,4 @@
-%%% $Id: hipe_x86.erl,v 1.56 2004/12/07 18:59:40 kostis Exp $
+%%% $Id$
 %%% representation of 2-address pseudo-amd64 code
 
 -module(hipe_x86).
@@ -148,7 +148,7 @@
 	 %% is_nop/1,
 
 	 mk_pseudo_call/4,
- 	 is_pseudo_call/1,
+ 	 %% is_pseudo_call/1,
 	 pseudo_call_fun/1,
 	 pseudo_call_sdesc/1,
 	 pseudo_call_contlab/1,
@@ -381,7 +381,7 @@ movzx_dst(#movzx{dst=Dst}) -> Dst.
 mk_pseudo_call(Fun, SDesc, ContLab, Linkage) ->
     check_linkage(Linkage),
     #pseudo_call{'fun'=Fun, sdesc=SDesc, contlab=ContLab, linkage=Linkage}.
-is_pseudo_call(Insn) -> is_insn_type(Insn, pseudo_call).
+%% is_pseudo_call(Insn) -> is_insn_type(Insn, pseudo_call).
 pseudo_call_fun(#pseudo_call{'fun'=Fun}) -> Fun.
 pseudo_call_sdesc(#pseudo_call{sdesc=SDesc}) -> SDesc.
 pseudo_call_contlab(#pseudo_call{contlab=ContLab}) -> ContLab.

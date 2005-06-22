@@ -78,21 +78,29 @@ find_application([_ |As], Appl) ->
   
 %%----------------------------------------------------------------------
 %% function : wait_for_tables/1
-%% Arguments: 
+%% Arguments: Tables  - list of mnesia tables
+%%            Timeout - integer (no point in allowing infinity)
+%%            Attempts - integer > 0 How many times should we try
 %% Returns  : 
 %% Exception: 
 %% Effect   : 
 %%----------------------------------------------------------------------
 wait_for_tables(Tables) ->
-    wait_for_tables(Tables, 30000).
+    wait_for_tables(Tables, 30000, -1).
 wait_for_tables(Tables, Timeout) ->
+    wait_for_tables(Tables, Timeout, -1).
+wait_for_tables(Tables, _Timeout, 0) ->
+    error("Mnesia failed to load the some or all of the following"
+	  "tables:~n~p", [Tables]),
+    {error, "The requested Mnesia tables not yet available."};
+wait_for_tables(Tables, Timeout, Attempts) ->
     case mnesia:wait_for_tables(Tables, Timeout) of
 	ok ->
 	    ok;
 	{timeout,  BadTabList} ->
 	    info("Mnesia hasn't loaded the following tables (~p msec):~n~p",
 		 [Timeout, BadTabList]),
-	    mnesia:wait_for_tables(Tables, Timeout);
+	    wait_for_tables(BadTabList, Timeout, Attempts-1);
 	{error, Reason} ->
 	    error("Mnesia failed to load the some or all of the following"
 		  "tables:~n~p", [Tables]),

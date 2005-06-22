@@ -111,6 +111,9 @@
 /* define if gethrvtime() works and uses ioctl() to /proc/self */
 #undef HAVE_GETHRVTIME_PROCFS_IOCTL
 
+/* define if clock_gettime() works */
+#undef HAVE_CLOCK_GETTIME
+
 /* The number of bytes in a size_t.  */
 #undef SIZEOF_SIZE_T
 
@@ -175,6 +178,9 @@
  
 /* Define if you have the <sys/event.h> header file. */
 #undef HAVE_SYS_EVENT_H
+
+/* Define if you don't have poll.h and a working poll() function. */
+#undef USE_SELECT
 
 /* The number of bytes in a char.  */
 #undef SIZEOF_CHAR
@@ -242,9 +248,6 @@
 /* Define if you have the mremap function.  */
 #undef HAVE_MREMAP
 
-/* Define if you have the poll function.  */
-#undef HAVE_POLL
-
 /* Define if you have the pread function.  */
 #undef HAVE_PREAD
 
@@ -295,9 +298,6 @@
 
 /* Define if you have the <net/errno.h> header file.  */
 #undef HAVE_NET_ERRNO_H
-
-/* Define if you have the <poll.h> header file.  */
-#undef HAVE_POLL_H
 
 /* Define if you have the <sys/dir.h> header file.  */
 #undef HAVE_SYS_DIR_H
@@ -410,10 +410,6 @@
 
 #ifdef REDEFINE_FD_SETSIZE
 #define FD_SETSIZE 1024
-#endif
-
-#if !defined(HAVE_POLL) || !defined(HAVE_POLL_H)
-#define USE_SELECT
 #endif
 
 #if !defined(USE_SELECT)

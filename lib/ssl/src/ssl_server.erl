@@ -30,9 +30,10 @@
 %% External exports 
 -export([start_link/0]).  
 
--export([accept/2, accept/3, ciphers/0, connect/5, connect/6, close/1,
-	 listen/3, listen/4, peercert/1, peername/1, proxy_join/2,
-	 seed/1, setnodelay/2, sockname/1, version/0]).
+-export([accept/2, accept/3, ciphers/0, connect/5, connect/6,
+	 connection_info/1, close/1, listen/3, listen/4, peercert/1,
+	 peername/1, proxy_join/2, seed/1, setnodelay/2, sockname/1,
+	 version/0]).
 
 -export([start_link_prim/0]).
 -export([accept_prim/4, connect_prim/7, close_prim/2, 
@@ -114,6 +115,13 @@ connect(LIP, LPort, FIP, FPort, Flags, Timeout) ->
 connect_prim(ServerName, LIP, LPort, FIP, FPort, Flags, Timeout) ->
     Req = {connect, self(), LIP, LPort, FIP, FPort, Flags},
     gen_server:call(ServerName, Req, Timeout).
+
+%%
+%% connection_info(Fd) -> {ok, {Protocol, Cipher}} | {error, Reason}
+%%
+connection_info(Fd) ->
+    Req = {connection_info, self(), Fd},
+    gen_server:call(ssl_server, Req, infinity).
   
 %%
 %% listen(IP, LPort, Flags), 
@@ -281,6 +289,21 @@ handle_call({connect, Broker, LIP, LPort, FIP, FPort, Flags}, From, St) ->
     %% We reply when we have got CONNECT_SYNC_ERR, or CONNECT_WAIT 
     %% and CONNECT_REP, or CONNECT_ERR.
     {noreply, St#st{cons = Cons, intref = IntRef}};
+
+%%
+%% connection_info
+%%
+handle_call({connection_info, Broker, Fd}, From, St) ->
+    debug(St, "connection_info: broker = ~w, fd = ~w~n",
+	  [Broker, Fd]),
+    case replace_from_by_fd(Fd, St#st.cons, From) of 
+	{ok, _, Cons} ->
+	    send_cmd(St#st.port, ?GETCONNINFO, [int32(Fd)]),
+	    %% We reply when we get GETCONNINFO_REP or GETCONNINFO_ERR.
+	    {noreply, St#st{cons = Cons}};
+	_Other ->
+	    {reply, {error, ebadf}, St}
+    end;
 
 %%
 %% close
@@ -539,6 +562,34 @@ handle_info({Port, {data, Bin}}, St)
 		    {noreply, St}
 	    end;
 
+	%%
+	%% connection_info
+	%%
+	?GETCONNINFO_REP when size(Bin) >= 5 ->
+	    {Fd, Protocol, Cipher} = decode_msg(Bin, [int32, string, string]),
+	    debug(St, "connection_info_rep: fd = ~w, "
+		  "protcol = ~p, ip = ~p~n", [Fd, Protocol, Cipher]),
+	    case replace_from_by_fd(Fd, St#st.cons, []) of
+		{ok, {_, _, From}, Cons} ->
+		    gen_server:reply(From, {ok, {protocol_name(Protocol),
+						 Cipher}}),
+		    {noreply, St#st{cons = Cons}};
+		_Other ->
+		    %% Already closed
+		    {noreply, St}
+	    end;
+	?GETCONNINFO_ERR when size(Bin) >= 5 ->
+	    {Fd, Reason} = decode_msg(Bin, [int32, atom]),
+	    debug(St, "connection_info_err: fd = ~w, "
+		  "reason = ~w~n", [Fd, Reason]),
+	    case replace_from_by_fd(Fd, St#st.cons, []) of
+		{ok, {_, _, From}, Cons} ->
+		    gen_server:reply(From, {error, Reason}),
+		    {noreply, St#st{cons = Cons}};
+		_Other ->
+		    %% Already closed
+		    {noreply, St}
+	    end;
 
 	%%
 	%% listen
@@ -1014,8 +1065,9 @@ mk_cmd_line(Default) ->
     {port_program(Default), 
      lists:flatten([debug_flag(), " ", debugdir_flag(), " ", 
 		    msgdebug_flag(), " ", proxylsport_flag(), " ", 
-		    proxybacklog_flag(), ephemeral_rsa_flag(), " ",
-		    ephemeral_dh_flag()])}.
+		    proxybacklog_flag(), " ", ephemeral_rsa_flag(), " ",
+		    ephemeral_dh_flag(), " ",
+		    protocol_version_flag(), " "])}.
 
 port_program(Default) ->
     case application:get_env(ssl, port_program) of
@@ -1138,6 +1190,39 @@ ephemeral_dh_flag() ->
 	    ""
     end.
 
+protocol_version_flag() ->
+    case application:get_env(ssl, protocol_version) of
+	{ok, []} ->
+	    "";
+	{ok, Vsns} when list(Vsns) ->
+	    case transform_vsns(Vsns) of
+		N when (N > 0) ->
+		    "-pv " ++ integer_to_list(N);
+		_ ->
+		    ""
+	    end;
+	_Other ->
+	    ""
+    end.
+
+transform_vsns(Vsns) ->
+    transform_vsns(Vsns, 0).
+
+transform_vsns([sslv2| Vsns], I) ->
+    transform_vsns(Vsns, I bor ?SSLv2);
+transform_vsns([sslv3| Vsns], I) ->
+    transform_vsns(Vsns, I bor ?SSLv3);
+transform_vsns([tlsv1| Vsns], I) ->
+    transform_vsns(Vsns, I bor ?TLSv1);
+transform_vsns([_ | Vsns], I) ->
+    transform_vsns(Vsns, I);
+transform_vsns([], I) ->
+    I.
+
+protocol_name("SSLv2") -> sslv2;
+protocol_name("SSLv3") -> sslv3;
+protocol_name("TLSv1") -> tlsv1.
+
 get_env(Key, Val) ->
     case application:get_env(ssl, Key) of
 	{ok, true} ->
@@ -1157,4 +1242,3 @@ debug1(true, Format0, Args) ->
     io:format(Format, [Secs, MiSecs, self()| Args]);
 debug1(_, _, _) ->
     ok.
-

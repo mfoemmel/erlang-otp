@@ -113,15 +113,19 @@ mk_buf64(BufLen, Buf, Passwd, PasswdLen) ->
 %% Auth and priv algorithms
 %%-----------------------------------------------------------------
 
+auth_in(usmHMACMD5AuthProtocol, AuthKey, AuthParams, Packet) ->
+    md5_auth_in(AuthKey, AuthParams, Packet);
 auth_in(?usmHMACMD5AuthProtocol, AuthKey, AuthParams, Packet) ->
     md5_auth_in(AuthKey, AuthParams, Packet);
+auth_in(usmHMACSHAAuthProtocol, AuthKey, AuthParams, Packet) ->
+    sha_auth_in(AuthKey, AuthParams, Packet);
 auth_in(?usmHMACSHAAuthProtocol, AuthKey, AuthParams, Packet) ->
     sha_auth_in(AuthKey, AuthParams, Packet).
 
 auth_out(usmNoAuthProtocol, _AuthKey, _Message, _UsmSecParams) -> % 3.1.3
-    throw({error, unSupportedSecurityLevel});
+    error(unSupportedSecurityLevel);
 auth_out(?usmNoAuthProtocol, _AuthKey, _Message, _UsmSecParams) -> % 3.1.3
-    throw({error, unSupportedSecurityLevel});
+    error(unSupportedSecurityLevel);
 auth_out(usmHMACMD5AuthProtocol, AuthKey, Message, UsmSecParams) ->
     md5_auth_out(AuthKey, Message, UsmSecParams);
 auth_out(?usmHMACMD5AuthProtocol, AuthKey, Message, UsmSecParams) ->
@@ -150,6 +154,9 @@ md5_auth_in(AuthKey, AuthParams, Packet) when length(AuthParams) == 12 ->
     MAC == AuthParams;
 md5_auth_in(_AuthKey, _AuthParams, _Packet) ->
     %% 6.3.2.1
+    ?vtrace("md5_auth_in -> entry with"
+	    "~n   _AuthKey:    ~p"
+	    "~n   _AuthParams: ~p", [_AuthKey, _AuthParams]),
     false.
 
 
@@ -172,6 +179,9 @@ sha_auth_in(AuthKey, AuthParams, Packet) when length(AuthParams) == 12 ->
     MAC == AuthParams;
 sha_auth_in(_AuthKey, _AuthParams, _Packet) ->
     %% 7.3.2.1
+    ?vtrace("sha_auth_in -> entry with"
+	    "~n   _AuthKey:    ~p"
+	    "~n   _AuthParams: ~p", [_AuthKey, _AuthParams]),
     false.
 
 
@@ -322,4 +332,7 @@ set(Byte,8) ->
 set(Byte,Pos)  when Pos < 9 ->
     Mask = 1  bsl (Pos-1),
     Byte bor Mask.
+
+error(Reason) ->
+    throw({error, Reason}).
 

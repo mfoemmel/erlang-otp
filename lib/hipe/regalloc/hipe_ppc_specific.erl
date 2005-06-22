@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_ppc_specific.erl,v 1.4 2004/12/06 03:09:39 mikpe Exp $
+%%% $Id$
 
 -module(hipe_ppc_specific).
 
@@ -29,8 +29,8 @@
 -export([is_fixed/1]).
 
 %% for hipe_ls_regalloc:
-%%-export([args/1, is_arg/1, is_global, new_spill_index/1]).
-%%-export([breadthorder/1, postorder/1]).
+-export([args/1, is_arg/1, is_global/1, new_spill_index/1]).
+-export([breadthorder/1, postorder/1]).
 
 %% callbacks for hipe_regalloc_loop
 -export([defun_to_cfg/1,
@@ -41,7 +41,7 @@ defun_to_cfg(Defun) ->
 
 check_and_rewrite(Defun, Coloring) ->
   {NewDefun, _, NewSpillIndex} =
-    hipe_ppc_ra_postconditions:check_and_rewrite(Defun, Coloring, [], []),
+    hipe_ppc_ra_postconditions:check_and_rewrite(Defun, Coloring, 'normal', [], []),
   {NewDefun, NewSpillIndex}.
 
 reverse_postorder(CFG) ->
@@ -131,7 +131,8 @@ is_move(Instruction) ->
 reg_nr(Reg) ->
   hipe_ppc:temp_reg(Reg).
 
--ifdef(notdef).
+%%% Linear Scan stuff
+
 new_spill_index(SpillIndex)->
   SpillIndex+1.
 
@@ -142,6 +143,9 @@ postorder(CFG) ->
   hipe_ppc_cfg:postorder(CFG).
 
 is_global(R) ->
+  R =:= hipe_ppc_registers:temp1() orelse
+  R =:= hipe_ppc_registers:temp2() orelse
+  R =:= hipe_ppc_registers:temp3() orelse
   hipe_ppc_registers:is_fixed(R).
 
 is_arg(R) ->
@@ -149,4 +153,3 @@ is_arg(R) ->
 
 args(CFG) ->
   hipe_ppc_registers:args(hipe_ppc_cfg:arity(CFG)).
--endif.

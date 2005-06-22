@@ -7,7 +7,7 @@
 %%  Purpose  :  
 %%  Notes    : 
 %%  History  : * 1998-01-28 Erik Johansson (happi@csd.uu.se): Created.
-%%  CVS      : $Id: hipe.erl,v 1.192 2005/05/03 13:51:15 tobiasl Exp $
+%%  CVS      : $Id$
 %% ====================================================================
 %% @doc This is the direct interface to the HiPE compiler.
 %%
@@ -950,7 +950,6 @@ pre_init(Opts) ->
 %% accessed globally. Options have been fully expanded at ths point.
 
 init(_Options) ->
-  put(regalloctime,0),
   put(callersavetime,0),
   put(totalspill,{0,0}),
   put(spilledtemps,0),

@@ -1720,7 +1720,8 @@ print_lines(Module, InFd, OutFd, L, HTML) ->
  	"%"++_=Line ->				%Comment line - not executed.
  	    io:put_chars(OutFd, [tab(),Line]),
 	    print_lines(Module, InFd, OutFd, L+1, HTML);
-	Line ->
+	RawLine ->
+	    Line = escape_lt_and_gt(RawLine,HTML),
 	    Pattern = {#bump{module=Module,line=L},'$1'},
 	    case ets:match(?COLLECTION_TABLE, Pattern) of
 		[] ->
@@ -1890,3 +1891,17 @@ reverse([H|T],Acc) ->
     reverse(T,[H|Acc]);
 reverse([],Acc) ->
     Acc.
+
+
+escape_lt_and_gt(Rawline,HTML) when HTML =/= true ->
+    Rawline;
+escape_lt_and_gt(Rawline,HTML) ->
+    escape_lt_and_gt1(Rawline,[]).
+escape_lt_and_gt1([$<|T],Acc) ->
+    escape_lt_and_gt1(T,[$;,$t,$l,$&|Acc]);
+escape_lt_and_gt1([$>|T],Acc) ->
+    escape_lt_and_gt1(T,[$;,$t,$g,$&|Acc]);
+escape_lt_and_gt1([],Acc) ->
+    lists:reverse(Acc);
+escape_lt_and_gt1([H|T],Acc) ->
+    escape_lt_and_gt1(T,[H|Acc]).

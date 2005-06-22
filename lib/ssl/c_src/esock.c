@@ -138,7 +138,7 @@
 #define MAJOR_VERSION   2
 #define MINOR_VERSION   0
 #define MAXREPLYBUF	256
-#define RWBUFLEN	4096
+#define RWBUFLEN	(32*1024)
 #define IS_CLIENT       0
 #define IS_SERVER       1
 #define SELECT_TIMEOUT  2	/* seconds */
@@ -247,6 +247,10 @@ int main(int argc, char **argv)
 	    i++;
 	    proxy_backlog = atoi(argv[i]);
 	    i++;
+	} else if (strcmp(argv[i], "-pv") == 0) {
+	    i++;
+	    protocol_version = atoi(argv[i]);
+	    i++;
 	} else if (strcmp(argv[i], "-dd") == 0) {
 	    i++;
 	    logfile = esock_malloc(strlen(argv[i]) + 64);
@@ -350,6 +354,7 @@ static int loop(void)
     int value;
     char *lipstring, *fipstring;
     char *flags;
+    char *protocol_vsn, *cipher;
     unsigned char *cert, *bin;
     int certlen, binlen;
     struct sockaddr_in iserv_addr;
@@ -535,6 +540,32 @@ static int loop(void)
 			reply(ESOCK_GETSOCKNAME_REP, "42s", fd, 
 			      ntohs(iserv_addr.sin_port),
 			      inet_ntoa(iserv_addr.sin_addr));
+		    }
+		    break;
+
+		case ESOCK_GETCONNINFO_CMD:
+		    /* 
+		     * ebuf = {cmd(1), fd(4)}
+		     */
+		    input("4", &fd);
+		    DEBUGF(("[GETCONNINFO_CMD] fd = %d\n", fd)); 
+		    cp = get_connection(fd);
+		    if (!cp) {
+			sock_set_errno(ERRNO_NOTSOCK);
+			reply(ESOCK_GETCONNINFO_ERR, "4s", fd, psx_errstr());
+		    } else {
+			if (esock_ssl_getprotocol_version(cp,
+							  &protocol_vsn) < 0)
+			    reply(ESOCK_GETCONNINFO_ERR, "4s", fd, psx_errstr());
+			else if (esock_ssl_getcipher(cp, &cipher) < 0)
+			    reply(ESOCK_GETCONNINFO_ERR, "4s", fd, psx_errstr());
+			else
+			/*
+			 * reply  = {cmd(1), fd(4), protocol(N), 0(1),
+			 * 	    cipher(N), 0(1)}
+			 */
+			    reply(ESOCK_GETCONNINFO_REP, "4ss", fd, 
+				  protocol_vsn, cipher);
 		    }
 		    break;
 

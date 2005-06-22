@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_x86_pp.erl,v 1.42 2005/02/22 15:12:55 dalu7049 Exp $
+%%% $Id$
 %%% x86 pretty-printer
 
 -ifndef(HIPE_X86_PP).

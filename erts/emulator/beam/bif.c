@@ -2897,12 +2897,29 @@ BIF_RETTYPE ref_to_list_1(BIF_ALIST_1)
    BIF_RET(buf_to_intlist(&hp, tmp_buf, n, NIL));
 }
 
+BIF_RETTYPE make_fun_3(BIF_ALIST_3)
+{
+    Eterm* hp;
+    Sint arity;
+
+    if (is_not_atom(BIF_ARG_1) || is_not_atom(BIF_ARG_2) || is_not_small(BIF_ARG_3)) {
+    error:
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    arity = signed_val(BIF_ARG_3);
+    if (arity < 0) {
+	goto error;
+    }
+    hp = HAlloc(BIF_P, 2);
+    hp[0] = HEADER_EXPORT;
+    hp[1] = (Eterm) erts_export_put(BIF_ARG_1, BIF_ARG_2, (Uint) arity);
+    BIF_RET(make_export(hp));
+}
+
 Eterm
 fun_to_list_1(Process* p, Eterm fun)
 {
     Eterm mod;			/* Module that fun is defined in. */
-    int index;			/* Index for fun. */
-    int uniq;			/* Unique number for fun. */
     char* tmpp = (char *) tmp_buf;
     Atom* ap;
     Eterm* hp;
@@ -2910,6 +2927,8 @@ fun_to_list_1(Process* p, Eterm fun)
 
     if (is_fun(fun)) {
 	ErlFunThing* funp = (ErlFunThing *) fun_val(fun);
+	int index;			/* Index for fun. */
+	int uniq;			/* Unique number for fun. */
 
 	mod = funp->fe->module;
 	index = funp->fe->old_index;
@@ -2920,6 +2939,25 @@ fun_to_list_1(Process* p, Eterm fun)
 	sys_memcpy(tmpp, ap->name, ap->len);
 	tmpp += ap->len;
 	sprintf(tmpp, ".%d.%d>", index, uniq);
+	len = strlen(tmp_buf);
+	hp = HAlloc(p, 2*len);
+	return buf_to_intlist(&hp, tmp_buf, len, NIL);
+    } else if (is_export(fun)) {
+	Export* exp = (Export *) (export_val(fun))[1];
+	Eterm name;
+
+	mod = exp->code[0];
+	name = exp->code[1];
+	strcpy(tmpp, "#Fun<");
+	tmpp += strlen(tmpp);
+	ap = atom_tab(atom_val(mod));
+	sys_memcpy(tmpp, ap->name, ap->len);
+	tmpp += ap->len;
+	*tmpp++ = '.';
+	ap = atom_tab(atom_val(name));
+	sys_memcpy(tmpp, ap->name, ap->len);
+	tmpp += ap->len;
+	sprintf(tmpp, ".%d>", (int) exp->code[2]);
 	len = strlen(tmp_buf);
 	hp = HAlloc(p, 2*len);
 	return buf_to_intlist(&hp, tmp_buf, len, NIL);

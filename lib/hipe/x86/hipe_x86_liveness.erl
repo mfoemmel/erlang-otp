@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_x86_liveness.erl,v 1.8 2005/03/29 19:39:47 mikpe Exp $
+%%% $Id$
 %%% x86_liveness -- compute register liveness for x86 CFGs
 
 -ifndef(HIPE_X86_LIVENESS).

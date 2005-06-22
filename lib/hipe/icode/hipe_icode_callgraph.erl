@@ -7,7 +7,7 @@
 %%%
 %%% Created :  7 Jun 2004 by Tobias Lindahl <tobiasl@csd.uu.se>
 %%%
-%%% CVS: $Id: hipe_icode_callgraph.erl,v 1.8 2005/04/01 08:21:09 tobiasl Exp $
+%%% CVS: $Id$
 %%%-------------------------------------------------------------------
 -module(hipe_icode_callgraph).
 -define(NO_UNUSED, true).

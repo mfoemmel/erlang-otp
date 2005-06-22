@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_amd64_registers.erl,v 1.29 2005/04/05 15:45:48 mikpe Exp $
+%%% $Id$
 %%% ===========================================================================
 %%%  Filename :  hipe_amd64_registers.erl
 %%%  Author   :  Daniel Luna (luna@update.uu.se)

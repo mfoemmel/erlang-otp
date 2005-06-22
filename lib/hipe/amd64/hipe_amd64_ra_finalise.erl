@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_amd64_ra_finalise.erl,v 1.6 2005/04/01 13:56:18 mikpe Exp $
+%%% $Id$
 
 -define(HIPE_AMD64,		true).
 -define(HIPE_X86_RA_FINALISE,	hipe_amd64_ra_finalise).
