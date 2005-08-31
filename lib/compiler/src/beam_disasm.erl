@@ -851,8 +851,8 @@ resolve_inst({try_end,[Reg]},_,_,_) ->   % analogous to 'catch_end'
     {try_end,Reg};
 resolve_inst({try_case,[Reg]},_,_,_) ->   % analogous to 'catch_end'
     {try_case,Reg};
-resolve_inst({try_case_end,[Reg]},_,_,_) ->
-    {try_case_end,Reg};
+resolve_inst({try_case_end,[Arg]},_,_,_) ->
+    {try_case_end,resolve_arg(Arg)};
 resolve_inst({raise,[Reg1,Reg2]},_,_,_) ->
     {bif,raise,{f,0},[Reg1,Reg2],{x,0}};
 
@@ -882,6 +882,14 @@ resolve_inst({apply_last,[{u,Arity},{u,D}]},_,_,_) ->
 %% New test instruction added in April 2004 (R10B).
 %%
 resolve_inst({is_boolean=I,Args0},_,_,_) ->
+    [L|Args] = resolve_args(Args0),
+    {test,I,L,Args};
+
+
+%%
+%% New instruction added in June 2005.
+%%
+resolve_inst({is_function2=I,Args0},_,_,_) ->
     [L|Args] = resolve_args(Args0),
     {test,I,L,Args};
 

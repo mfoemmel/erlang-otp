@@ -658,6 +658,16 @@ handle_info({snmp_error, Pdu, Reason}, State) ->
     handle_snmp_error(Pdu, Reason, State),
     {noreply, State};
 
+handle_info({snmp_error, Reason, Addr, Port}, State) ->
+    ?vlog("received snmp_error message", []),
+    handle_snmp_error(Addr, Port, -1, Reason, State),
+    {noreply, State};
+
+handle_info({snmp_error, ReqId, Reason, Addr, Port}, State) ->
+    ?vlog("received snmp_error message", []),
+    handle_snmp_error(Addr, Port, ReqId, Reason, State),
+    {noreply, State};
+
 %% handle_info({snmp_error, ReqId, Pdu, Reason, Addr, Port}, State) ->
 %%     ?vlog("received snmp_error message", []),
 %%     handle_snmp_error(Pdu, ReqId, Reason, Addr, Port, State),
@@ -1211,7 +1221,7 @@ handle_snmp_error(#pdu{request_id = ReqId} = Pdu, Reason, _State) ->
 	    gen_server:reply(From, Reply),
 	    ets:delete(snmpm_request_table, ReqId),
 	    ok;
-		
+
 
 	%% A very old reply, see if this agent is handled by
 	%% a user. In that case send it there, else to the 
@@ -1235,6 +1245,45 @@ handle_snmp_error(CrapError, Reason, _State) ->
     error_msg("received crap (snmp) error =>"
 	      "~n~p~n~p", [CrapError, Reason]),
     ok.
+
+handle_snmp_error(Addr, Port, ReqId, Reason, _State) ->
+
+    ?vtrace("handle_snmp_error -> entry with"
+	    "~n   Addr:   ~p"
+	    "~n   Port:   ~p"
+	    "~n   ReqId:  ~p"
+	    "~n   Reason: ~p", [Addr, Port, ReqId, Reason]),
+
+    case snmpm_config:get_agent_user_id(Addr, Port) of
+	{ok, UserId} ->
+	    case snmpm_config:user_info(UserId) of
+		{ok, UserMod, UserData} ->
+		    handle_error(UserId, UserMod, Reason, ReqId, UserData);
+		_Error ->
+		    case snmpm_config:user_info() of
+			{ok, DefUserId, DefMod, DefData} ->
+			    handle_error(DefUserId, DefMod, ReqId, 
+					 Reason, DefData);
+			_Error ->
+			    error_msg("failed retreiving the default user "
+				      "info handling snmp error "
+				      "<~p,~p>: ~n~w~n~w",
+				      [Addr, Port, ReqId, Reason])
+		    end
+	    end;
+	_Error ->
+	    case snmpm_config:user_info() of
+		{ok, DefUserId, DefMod, DefData} ->
+		    handle_error(DefUserId, DefMod, ReqId, 
+				 Reason, DefData);
+		_Error ->
+		    error_msg("failed retreiving the default user "
+			      "info handling snmp error "
+			      "<~p,~p>: ~n~w~n~w",
+			      [Addr, Port, ReqId, Reason])
+	    end
+    end.
+
 
 %% handle_snmp_error(#pdu{error_status = EStatus, 
 %% 		       error_index  = EIndex, 

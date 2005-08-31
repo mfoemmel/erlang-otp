@@ -92,9 +92,9 @@
 	 mk_alu/4,
 	 alu_dst/1,
 	 alu_src1/1,
-	 %% alu_src1_update/2,
+	 alu_src1_update/2,
 	 alu_src2/1,
-	 %% alu_src2_update/2,
+	 alu_src2_update/2,
 	 alu_op/1,
 	 %% is_alu_op/1,
 	 is_shift_op/1,
@@ -308,7 +308,10 @@
 	 load_word_index_dst_update/2,
 	 %% move_dst_update/2,
 	 fixnumop_dst_update/2,
-	 pp_instr/2]).
+	 pp_instr/2,
+         %% pp_arg/2,
+         phi_arglist_update/2,
+         phi_redirect_pred/3]).
 
 -compile({inline, [{type,1}]}). 
 
@@ -428,6 +431,7 @@ phi_arg(Phi, Pred) ->
     {value,{_,Var}} -> Var
   end.
 phi_arglist(#phi{arglist=ArgList}) -> ArgList.
+phi_arglist_update(P,NewArgList) ->P#phi{arglist=NewArgList}.
 is_phi(#phi{}) -> true;
 is_phi(_) -> false.
 phi_enter_pred(Phi, Pred, Var) ->
@@ -437,10 +441,10 @@ phi_enter_pred(Phi, Pred, Var) ->
 phi_argvar_subst(Phi, Subst) ->
   NewArgList = [{Pred,subst1(Subst, Var)} || {Pred,Var} <- phi_arglist(Phi)],
   Phi#phi{arglist=NewArgList}.
-%% phi_redirect_pred(P, OldPred, NewPred)->
-%%   Subst = [{OldPred, NewPred}],
-%%   NewArgList = [{subst1(Subst, Pred), Var} || {Pred,Var} <- phi_arglist(P)],
-%%   P#phi{arglist=NewArgList}.
+phi_redirect_pred(P, OldPred, NewPred)->
+  Subst = [{OldPred, NewPred}],
+  NewArgList = [{subst1(Subst, Pred), Var} || {Pred,Var} <- phi_arglist(P)],
+  P#phi{arglist=NewArgList}.
 
 
 %%
@@ -1488,6 +1492,7 @@ pp_instr(Dev, I) ->
       pp_args(Dev, [binbase_orig(I), binbase_offset(I)]),
       io:format(Dev, ")~n", []);
     fixnumop ->
+      io:format(Dev, "    ", []),
       pp_arg(Dev, fixnumop_dst(I)),
       io:format(Dev, " <- ", []),
       case fixnumop_type(I) of

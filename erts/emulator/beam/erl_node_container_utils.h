@@ -170,8 +170,18 @@ extern int erts_use_r9_pids_ports;
 
 /* Minimum NUMBER of processes for a small system to start */
 #define ERTS_MIN_PROCESSES		16
+
 #define ERTS_MAX_R9_PROCESSES		(1 << ERTS_R9_PROC_BITS)
-#define ERTS_MAX_PROCESSES		(1 << ERTS_PROC_BITS)
+
+/*
+ * Maximum number of processes. We want the number to fit in a SMALL on
+ * 32-bit CPU.
+ */
+
+#define ERTS_MAX_PROCESSES ((1L << 27)-1)
+#if (ERTS_MAX_PROCESSES > MAX_SMALL)
+# error "The maximum number of processes must fit in a SMALL."
+#endif
 
 #define ERTS_MAX_PID_DATA		((1 << _PID_DATA_SIZE) - 1)
 #define ERTS_MAX_PID_NUMBER		((1 << _PID_NUM_SIZE) - 1)

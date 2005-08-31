@@ -35,7 +35,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/2, connect/5]).
+-export([start/2, connect/7]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -79,9 +79,10 @@ terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------------
-%% Func: connect/3
+%% Func: connect/6
 %%-----------------------------------------------------------------
-connect(Host, Port, SocketType, SocketOptions, Parent) ->
-    supervisor:start_child(orber_iiop_outsup, [{connect, Host, Port, SocketType, 
-						SocketOptions, Parent}]).
+connect(Host, Port, SocketType, SocketOptions, Parent, Key, NewKey) ->
+    supervisor:start_child(orber_iiop_outsup, 
+			   [{connect, Host, Port, SocketType, 
+			     SocketOptions, Parent, Key, NewKey}]).
 

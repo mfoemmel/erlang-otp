@@ -1069,6 +1069,13 @@ trans_fun([{test,is_boolean,{f,Lbl},[Arg]}|Instructions], Env) ->
   {Code,Env1} = trans_type_test(boolean,Lbl,Arg,Env),
   [Code | trans_fun(Instructions,Env1)];
 %%--------------------------------------------------------------------
+%% New test instruction added in June 2005 for R11
+%%--------------------------------------------------------------------
+%%--- is_function2 ---
+trans_fun([{test,is_function2,{f,Lbl},[Arg,Arity]}|Instructions], Env) ->
+  {Code,Env1} = trans_type_test2(function2,Lbl,Arg,Arity,Env),
+  [Code | trans_fun(Instructions,Env1)];
+%%--------------------------------------------------------------------
 %%--- ERROR HANDLING ---
 %%--------------------------------------------------------------------
 trans_fun([X|_], _) ->
@@ -1376,14 +1383,27 @@ make_guard(Dests,GuardOp,Args,ContLName,FailLName,Env) ->
 
 %%-----------------------------------------------------------------------
 %% trans_type_test(Test, Lbl, Arg, Env) -> { Icode, NewEnv }
-%%     Handles all type tests like is_integer etc. 
+%%     Handles all unary type tests like is_integer etc. 
 %%-----------------------------------------------------------------------
 
 trans_type_test(Test, Lbl, Arg, Env) ->
   True = mk_label(new),
   {Move,Var,Env1} = mk_move_and_var(Arg,Env),
-  I = hipe_icode:mk_type([Var],Test,
-			 hipe_icode:label_name(True),map_label(Lbl)),
+  I = hipe_icode:mk_type([Var], Test,
+			 hipe_icode:label_name(True), map_label(Lbl)),
+  {[Move,I,True],Env1}.
+
+%%
+%% This handles binary type tests. Currently, the only such is the new
+%% is_function/2 BIF.
+%%
+%% XXX: The translation is incomplete as the Arity is ignored.
+%%
+trans_type_test2(function2, Lbl, Arg, _Arity, Env) ->
+  True = mk_label(new),
+  {Move,Var,Env1} = mk_move_and_var(Arg,Env),
+  I = hipe_icode:mk_type([Var], function,
+			 hipe_icode:label_name(True), map_label(Lbl)),
   {[Move,I,True],Env1}.
 
 %%-----------------------------------------------------------------------

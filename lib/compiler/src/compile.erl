@@ -255,8 +255,11 @@ run_tc({Name,Fun}, St) ->
     After0 = statistics(runtime),
     {Before_c, _} = Before0,
     {After_c, _} = After0,
-    io:format(" ~-30s: ~10.3f s (~w k)\n",
-	      [Name, (After_c-Before_c) / 1000, os_process_size()]),
+    Mem0 = erts_debug:flat_size(Val)*erlang:system_info(wordsize),
+    Mem = lists:flatten(io_lib:format("~.1f Kb", [Mem0/1024])),
+    Sz = lists:flatten(io_lib:format("~.1f Mb", [os_process_size()/1024])),
+    io:format(" ~-30s: ~10.2f s ~12s ~10s\n",
+	      [Name,(After_c-Before_c) / 1000,Mem,Sz]),
     Val.
 
 comp_ret_ok(#compile{code=Code,warnings=Warn,module=Mod,options=Opts}=St) ->

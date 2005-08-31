@@ -25,10 +25,11 @@
 -module(http).
 
 %% API
--export([request/4, cancel_request/1, set_options/1, verify_cookies/2,
-	 cookie_header/1]).
+-export([request/1, request/4, cancel_request/1, set_options/1, 
+	 verify_cookies/2, cookie_header/1]).
 
--include("http.hrl").
+-include("http_internal.hrl").
+-include("httpc_internal.hrl").
 
 %%%=========================================================================
 %%%  API
@@ -67,6 +68,9 @@
 %% calling process on the format {http, {RequestId, {StatusLine,
 %% Headers, Body}}} or {http, {RequestId, {error, Reason}}}
 %% %%--------------------------------------------------------------------------
+request(Url) ->
+    request(get, {Url, []}, [], []).
+
 request(Method, {Url, Headers}, HTTPOptions, Options) 
   when Method==options;Method==get;Method==head;Method==delete;Method==trace ->
     case http_uri:parse(Url) of

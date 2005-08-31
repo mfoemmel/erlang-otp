@@ -508,13 +508,14 @@ opt_bs_puts(Is) ->
     opt_bs_1(Is, []).
 
 opt_bs_1([{bs_put_float,Fail,{integer,Sz},1,Flags0,Src}=I0|Is], Acc) ->
-    case catch eval_put_float(Src, Sz, Flags0) of
-	{'EXIT',_} ->
-	    opt_bs_1(Is, [I0|Acc]);
+    try eval_put_float(Src, Sz, Flags0) of
 	<<Int:Sz>> ->
 	    Flags = force_big(Flags0),
 	    I = {bs_put_integer,Fail,{integer,Sz},1,Flags,{integer,Int}},
 	    opt_bs_1([I|Is], Acc)
+    catch
+	error:_ ->
+	    opt_bs_1(Is, [I0|Acc])
     end;
 opt_bs_1([{bs_put_integer,_,{integer,8},1,_,{integer,_}}|_]=IsAll, Acc0) ->
     {Is,Acc} = bs_collect_string(IsAll, Acc0),
@@ -527,14 +528,15 @@ opt_bs_1([{bs_put_integer,Fail,{integer,Sz},1,F,{integer,N}}=I|Is0], Acc) when S
 		Is -> opt_bs_1(Is, Acc)
 	    end;
 	little ->
-	    case catch <<N:Sz/little>> of
-		{'EXIT',_} ->
-		    opt_bs_1(Is0, [I|Acc]);
+	    try <<N:Sz/little>> of
 		<<Int:Sz>> ->
 		    Flags = force_big(F),
 		    Is = [{bs_put_integer,Fail,{integer,Sz},1,
 			   Flags,{integer,Int}}|Is0],
 		    opt_bs_1(Is, Acc)
+	    catch
+		error:_ ->
+		    opt_bs_1(Is0, [I|Acc])
 	    end;
 	native -> opt_bs_1(Is0, [I|Acc])
     end;

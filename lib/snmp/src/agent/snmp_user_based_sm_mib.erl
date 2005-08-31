@@ -28,8 +28,8 @@
 %% Internal
 -export([check_usm/1]).
 
-
 -include("SNMP-USER-BASED-SM-MIB.hrl").
+-include("SNMP-USM-AES-MIB.hrl").
 -include("SNMPv2-TC.hrl").
 -include("snmp_types.hrl").
 
@@ -154,8 +154,9 @@ check_usm({EngineID, Name, SecName, Clone, AuthP, AuthKeyC, OwnAuthKeyC,
     {ok, AuthProto} = snmp_conf:check_atom(AuthP, AuthProtoAlt),
     snmp_conf:check_string(AuthKeyC),
     snmp_conf:check_string(OwnAuthKeyC),
-    PrivProtoAlt = [{usmNoPrivProtocol,  ?usmNoPrivProtocol},
-		    {usmDESPrivProtocol, ?usmDESPrivProtocol}],
+    PrivProtoAlt = [{usmNoPrivProtocol,    ?usmNoPrivProtocol},
+		    {usmDESPrivProtocol,   ?usmDESPrivProtocol},
+		    {usmAesCfb128Protocol, ?usmAesCfb128Protocol}],
     {ok, PrivProto} = snmp_conf:check_atom(PrivP, PrivProtoAlt),
     snmp_conf:check_string(PrivKeyC),
     snmp_conf:check_string(OwnPrivKeyC),
@@ -176,7 +177,8 @@ alen(usmHMACMD5AuthProtocol) -> 16;
 alen(usmHMACSHAAuthProtocol) -> 20.
 
 plen(usmNoPrivProtocol) -> any;
-plen(usmDESPrivProtocol) -> 16.
+plen(usmDESPrivProtocol) -> 16;
+plen(usmAesCfb128Protocol) -> 16.
 
 
 %%-----------------------------------------------------------------
@@ -212,6 +214,11 @@ check_user(User) ->
 	    case is_crypto_supported(des_cbc_decrypt) of
 		true -> ok;
 		false -> exit({unsupported_crypto, des_cbc_decrypt})
+	    end;
+	?usmAesCfb128Protocol ->
+	    case is_crypto_supported(aes_cfb_128_decrypt) of
+		true -> ok;
+		false -> exit({unsupported_crypto, aes_cfb_128_decrypt})
 	    end
     end.
     
@@ -500,10 +507,12 @@ verify_usmUserTable_col(?usmUserOwnAuthKeyChange, OAKC) ->
     end;
 verify_usmUserTable_col(?usmUserPrivProtocol, PrivP) ->
     case PrivP of
-	usmNoPrivProtocol   -> ?usmNoPrivProtocol;
-	usmDESPrivProtocol  -> ?usmDESPrivProtocol;
-	?usmNoPrivProtocol  -> ?usmNoPrivProtocol;
-	?usmDESPrivProtocol -> ?usmDESPrivProtocol;
+	usmNoPrivProtocol     -> ?usmNoPrivProtocol;
+	usmDESPrivProtocol    -> ?usmDESPrivProtocol;
+	usmAesCfb128Protocol  -> ?usmAesCfb128Protocol;
+	?usmNoPrivProtocol    -> ?usmNoPrivProtocol;
+	?usmDESPrivProtocol   -> ?usmDESPrivProtocol;
+	?usmAesCfb128Protocol -> ?usmAesCfb128Protocol;
 	_ ->
 	    wrongValue(?usmUserPrivProtocol)
     end;
@@ -775,6 +784,7 @@ validate_key_change(RowIndex, Cols, KeyChangeCol, Type) ->
 		    case get_priv_proto(RowIndex, Cols) of
 			?usmNoPrivProtocol -> ok;
 			?usmDESPrivProtocol when Len == 32 -> ok;
+			?usmAesCfb128Protocol when Len == 32 -> ok;
 			_ -> wrongValue(KeyChangeCol)
 		    end
 	    end;
@@ -801,6 +811,8 @@ validate_priv_protocol(RowIndex, Cols) ->
 			    ok;
 			?usmDESPrivProtocol ->
 			    inconsistentValue(?usmUserPrivProtocol);
+			?usmAesCfb128Protocol ->
+			    inconsistentValue(?usmUserPrivProtocol);
 			_ ->
 			    wrongValue(?usmUserPrivProtocol)
 		    end;
@@ -815,6 +827,20 @@ validate_priv_protocol(RowIndex, Cols) ->
 			    %% The 'catch' handles the case when 'crypto' is
 			    %% not present in the system.
 			    case is_crypto_supported(des_cbc_decrypt) of
+				true ->
+				    case get_auth_proto(RowIndex, Cols) of
+					?usmNoAuthProtocol ->
+					    inconsistentValue(?usmUserPrivProtocol);
+					_ ->
+					    ok
+				    end;
+				false -> 
+				    wrongValue(?usmUserPrivProtocol)
+			    end;
+			?usmAesCfb128Protocol ->
+			    %% The 'catch' handles the case when 'crypto' is
+			    %% not present in the system.
+			    case is_crypto_supported(aes_cfb_128_decrypt) of
 				true ->
 				    case get_auth_proto(RowIndex, Cols) of
 					?usmNoAuthProtocol ->

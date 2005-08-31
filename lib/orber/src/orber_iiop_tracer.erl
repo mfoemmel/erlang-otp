@@ -28,8 +28,8 @@
 
 
 %% Interceptor functions.
--export([new_out_connection/3,
-	 new_in_connection/3,
+-export([new_out_connection/5,
+	 new_in_connection/5,
 	 closed_in_connection/1,
 	 closed_out_connection/1,
 	 in_request_encoded/6,
@@ -48,40 +48,40 @@
 %% Arguments: 
 %% Returns  : 
 %%------------------------------------------------------------
-new_in_connection(_Arg, CHost, Port) ->
-    error_logger:info_msg("=============== new_in_connection ========
-Node      : ~p
-From Host : ~p
-From Port : ~p
-==========================================~n", 
-              [node(), CHost, Port]),
-    {CHost, Port}.
+new_in_connection(_Arg, PHost, PPort, SHost, SPort) ->
+    error_logger:info_msg("=============== new_in_connection ========~n"
+			  "Node      : ~p~n"
+			  "From      : ~s:~p~n"
+			  "To        : ~s:~p~n"
+			  "==========================================~n", 
+			  [node(), PHost, PPort, SHost, SPort]),
+    {PHost, PPort, SHost, SPort}.
  
 %%------------------------------------------------------------
 %% function : new_out_connection
 %% Arguments: 
 %% Returns  : 
 %%------------------------------------------------------------
-new_out_connection(_Arg, SHost, Port) ->
-    error_logger:info_msg("=============== new_out_connection =======
-Node      : ~p
-To Host   : ~p
-To Port   : ~p
-==========================================~n", 
-              [node(), SHost, Port]),
-    {SHost, Port}.
- 
+new_out_connection(_Arg, PHost, PPort, SHost, SPort) ->
+    error_logger:info_msg("=============== new_out_connection =======~n"
+			  "Node      : ~p~n"
+			  "From      : ~s:~p~n"
+			  "To        : ~s:~p~n"
+			  "==========================================~n", 
+			  [node(), SHost, SPort, PHost, PPort]),
+    {PHost, PPort, SHost, SPort}.
+
 %%------------------------------------------------------------
 %% function : closed_in_connection
 %% Arguments: 
 %% Returns  : 
 %%------------------------------------------------------------
 closed_in_connection(Arg) ->
-    error_logger:info_msg("=============== closed_in_connection =====
-Node      : ~p
-Connection: ~p
-==========================================~n", 
-              [node(), Arg]),
+    error_logger:info_msg("=============== closed_in_connection =====~n"
+			  "Node      : ~p~n"
+			  "Connection: ~p~n"
+			  "==========================================~n", 
+			  [node(), Arg]),
     Arg.
  
 %%------------------------------------------------------------
@@ -90,11 +90,11 @@ Connection: ~p
 %% Returns  : 
 %%------------------------------------------------------------
 closed_out_connection(Arg) ->
-    error_logger:info_msg("=============== closed_out_connection ====
-Node      : ~p
-Connection: ~p
-==========================================~n", 
-              [node(), Arg]),
+    error_logger:info_msg("=============== closed_out_connection ====~n"
+			  "Node      : ~p~n"
+			  "Connection: ~p~n"
+			  "==========================================~n", 
+			  [node(), Arg]),
     Arg.
  
 %%------------------------------------------------------------
@@ -103,13 +103,13 @@ Connection: ~p
 %% Returns  : 
 %%------------------------------------------------------------
 in_request_encoded(Ref, _ObjKey, Ctx, Op, Bin, Args) ->
-    error_logger:info_msg("=============== in_request_encoded =======
-Connection: ~p
-Operation : ~p
-Body      : ~p
-Context   : ~p
-==========================================~n", 
-              [Ref, Op, Bin, Ctx]),
+    error_logger:info_msg("=============== in_request_encoded =======~n"
+			  "Connection: ~p~n"
+			  "Operation : ~p~n"
+			  "Body      : ~p~n"
+			  "Context   : ~p~n"
+			  "==========================================~n", 
+			  [Ref, Op, Bin, Ctx]),
     {Bin, Args}.
  
 %%------------------------------------------------------------
@@ -118,13 +118,13 @@ Context   : ~p
 %% Returns  : 
 %%------------------------------------------------------------
 in_reply_encoded(Ref, _ObjKey, Ctx, Op, Bin, Args) ->
-    error_logger:info_msg("============== in_reply_encoded ==========
-Connection: ~p
-Operation : ~p
-Body      : ~p
-Context   : ~p
-==========================================~n", 
-              [Ref, Op, Bin, Ctx]),
+    error_logger:info_msg("============== in_reply_encoded ==========~n"
+			  "Connection: ~p~n"
+			  "Operation : ~p~n"
+			  "Body      : ~p~n"
+			  "Context   : ~p~n"
+			  "==========================================~n", 
+			  [Ref, Op, Bin, Ctx]),
     {Bin, Args}.
  
 %%------------------------------------------------------------
@@ -133,14 +133,14 @@ Context   : ~p
 %% Returns  : 
 %%------------------------------------------------------------
 out_reply_encoded(Ref, ObjKey, Ctx, Op, Bin, Args) ->
-    error_logger:info_msg("============== out_reply_encoded =========
-Connection: ~p
-Operation : ~p
-Body      : ~p
-Context   : ~p
-Object    : ~p
-==========================================~n", 
-              [Ref, Op, Bin, Ctx, ObjKey]),
+    error_logger:info_msg("============== out_reply_encoded =========~n"
+			  "Connection: ~p~n"
+			  "Operation : ~p~n"
+			  "Body      : ~p~n"
+			  "Context   : ~p~n"
+			  "Object    : ~p~n"
+			  "==========================================~n", 
+			  [Ref, Op, Bin, Ctx, ObjKey]),
     {Bin, Args}.
  
 %%------------------------------------------------------------
@@ -149,12 +149,12 @@ Object    : ~p
 %% Returns  : 
 %%------------------------------------------------------------
 out_request_encoded(Ref, _ObjKey, Ctx, Op, Bin, Args) ->
-    error_logger:info_msg("============== out_request_encoded =======
-Connection: ~p
-Operation : ~p
-Body      : ~p
-Context   : ~p
-==========================================~n", 
+    error_logger:info_msg("============== out_request_encoded =======~n"
+			  "Connection: ~p~n"
+			  "Operation : ~p~n"
+			  "Body      : ~p~n"
+			  "Context   : ~p~n"
+			  "==========================================~n", 
               [Ref, Op, Bin, Ctx]),
     {Bin, Args}.
  
@@ -164,14 +164,14 @@ Context   : ~p
 %% Returns  : 
 %%------------------------------------------------------------
 in_request(Ref, ObjKey, Ctx, Op, Params, Args) ->
-    error_logger:info_msg("=============== in_request ===============
-Connection: ~p
-Operation : ~p
-Parameters: ~p
-Context   : ~p
-Object    : ~p
-==========================================~n", 
-              [Ref, Op, Params, Ctx, ObjKey]),
+    error_logger:info_msg("=============== in_request ===============~n"
+			  "Connection: ~p~n"
+			  "Operation : ~p~n"
+			  "Parameters: ~p~n"
+			  "Context   : ~p~n"
+			  "Object    : ~p~n"
+			  "==========================================~n", 
+			  [Ref, Op, Params, Ctx, ObjKey]),
     {Params, Args}.
  
 %%------------------------------------------------------------
@@ -180,13 +180,13 @@ Object    : ~p
 %% Returns  : 
 %%------------------------------------------------------------
 in_reply(Ref, _ObjKey, Ctx, Op, Reply, Args) ->
-    error_logger:info_msg("=============== in_reply =================
-Connection: ~p
-Operation : ~p
-Reply     : ~p
-Context   : ~p
-==========================================~n", 
-              [Ref, Op, Reply, Ctx]),
+    error_logger:info_msg("=============== in_reply =================~n"
+			  "Connection: ~p~n"
+			  "Operation : ~p~n"
+			  "Reply     : ~p~n"
+			  "Context   : ~p~n"
+			  "==========================================~n", 
+			  [Ref, Op, Reply, Ctx]),
     {Reply, Args}.
  
 %%------------------------------------------------------------
@@ -195,14 +195,14 @@ Context   : ~p
 %% Returns  : 
 %%------------------------------------------------------------
 out_reply(Ref, ObjKey, Ctx, Op, Reply, Args) ->
-    error_logger:info_msg("=============== out_reply ================
-Connection: ~p
-Operation : ~p
-Reply     : ~p
-Context   : ~p
-Object    : ~p
-==========================================~n", 
-              [Ref, Op, Reply, Ctx, ObjKey]),
+    error_logger:info_msg("=============== out_reply ================~n"
+			  "Connection: ~p~n"
+			  "Operation : ~p~n"
+			  "Reply     : ~p~n"
+			  "Context   : ~p~n"
+			  "Object    : ~p~n"
+			  "==========================================~n", 
+			  [Ref, Op, Reply, Ctx, ObjKey]),
     {Reply, Args}.
  
 %%------------------------------------------------------------
@@ -211,13 +211,13 @@ Object    : ~p
 %% Returns  : 
 %%------------------------------------------------------------
 out_request(Ref, _ObjKey, Ctx, Op, Params, Args) ->
-    error_logger:info_msg("=============== out_request ==============
-Connection: ~p
-Operation : ~p
-Parameters: ~p
-Context   : ~p
-==========================================~n", 
-              [Ref, Op, Params, Ctx]),
+    error_logger:info_msg("=============== out_request ==============~n"
+			  "Connection: ~p~n"
+			  "Operation : ~p~n"
+			  "Parameters: ~p~n"
+			  "Context   : ~p~n"
+			  "==========================================~n", 
+			  [Ref, Op, Params, Ctx]),
     {Params, Args}.
 
 

@@ -348,6 +348,7 @@ erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
 		    hp = ArithAlloc(p, need_heap);
 		    res = big_plus(arg1, arg2, hp);
 		    if (is_nil(res)) {
+			erts_arith_shrink(p, hp);
 			p->freason = SYSTEM_LIMIT;
 			return THE_NON_VALUE;
 		    }
@@ -486,6 +487,7 @@ erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2)
 		    hp = ArithAlloc(p, need_heap);
 		    res = big_minus(arg1, arg2, hp);
 		    if (is_nil(res)) {
+			erts_arith_shrink(p, hp);
 			p->freason = SYSTEM_LIMIT;
 			return THE_NON_VALUE;
 		    }
@@ -596,8 +598,6 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 			res = big_times(arg1, arg2, big_res);
 			if (is_small(res)) {
 			    return res;
-			} else if (is_nil(res)) {
-			    goto system_limit;
 			} else {
 			    /*
 			     * The result is a a big number.
@@ -689,7 +689,7 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 		     */
 
 		    if (is_nil(res)) {
-		    system_limit:
+			erts_arith_shrink(p, hp);
 			p->freason = SYSTEM_LIMIT;
 			return THE_NON_VALUE;
 		    }
@@ -907,6 +907,7 @@ erts_int_div(Process* p, Eterm arg1, Eterm arg2)
 	    hp = ArithAlloc(p, need);
 	    arg1 = big_div(arg1, arg2, hp);
 	    if (is_nil(arg1)) {
+		erts_arith_shrink(p, hp);
 		p->freason = SYSTEM_LIMIT;
 		return THE_NON_VALUE;
 	    }
@@ -943,6 +944,7 @@ erts_int_rem(Process* p, Eterm arg1, Eterm arg2)
 
 	    arg1 = big_rem(arg1, arg2, hp);
 	    if (is_nil(arg1)) {
+		erts_arith_shrink(p, hp);
 		p->freason = SYSTEM_LIMIT;
 		return THE_NON_VALUE;
 	    }

@@ -35,7 +35,7 @@
 %%----------------------------------------------------------------------
 -export([wait_for_tables/1, wait_for_tables/2,
 	 is_loaded/0, is_loaded/1, is_running/0, is_running/1, 
-	 info/2, error/2]).
+	 info/2, error/2, unique/1]).
 
 %%----------------------------------------------------------------------
 %% Internal exports
@@ -106,6 +106,27 @@ wait_for_tables(Tables, Timeout, Attempts) ->
 		  "tables:~n~p", [Tables]),
 	    {error, Reason}
     end.
+
+%%----------------------------------------------------------------------
+%% function : unique/1
+%% Arguments: List - [term()]
+%% Returns  : [term()]
+%% Exception: 
+%% Effect   : Remove all duplicates from the list.
+%%----------------------------------------------------------------------
+unique([]) -> [];
+unique(List) ->
+    Sorted = lists:sort(List),
+    unique(hd(Sorted),
+	   tl(Sorted), []).
+
+unique(A, [A|R], Acc) ->
+    unique(A, R, Acc);
+unique(A, [B|R], Acc) ->
+    unique(B, R, [A|Acc]);
+unique(A, [], Acc) ->
+    lists:reverse([A|Acc]).
+
 
 %%----------------------------------------------------------------------
 %% function : info/2

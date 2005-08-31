@@ -283,7 +283,6 @@ is_safe(#c_int{}) -> true;
 is_safe(#c_float{}) -> true;
 is_safe(#c_atom{}) -> true;
 is_safe(#c_char{}) -> true;
-is_safe(#c_string{}) -> true;
 is_safe(#c_nil{}) -> true;
 is_safe(_) -> false.
 

@@ -271,7 +271,12 @@ mk_alu_ri(Dst, Src1, RtlAluOp, Src2) ->
     'add' ->	% 'addi' has a 16-bit simm operand
       mk_alu_ri_addi(Dst, Src1, Src2);
     'and' ->	% 'andi.' has a 16-bit uimm operand
-      mk_alu_ri_bitop(Dst, Src1, RtlAluOp, 'andi.', Src2);
+      case rlwinm_mask(Src2) of
+	{MB,ME} ->
+	  [hipe_ppc:mk_unary({'rlwinm',0,MB,ME}, Dst, Src1)];
+	_ ->
+	  mk_alu_ri_bitop(Dst, Src1, RtlAluOp, 'andi.', Src2)
+      end;
     'or' ->	% 'ori' has a 16-bit uimm operand
       mk_alu_ri_bitop(Dst, Src1, RtlAluOp, 'ori', Src2);
     'xor' ->	% 'xori' has a 16-bit uimm operand
@@ -279,6 +284,52 @@ mk_alu_ri(Dst, Src1, RtlAluOp, Src2) ->
     _ ->	% shift ops have 5-bit uimm operands
       mk_alu_ri_shift(Dst, Src1, RtlAluOp, Src2)
   end.
+
+rlwinm_mask(Imm) ->
+  Res1 = rlwinm_mask2(Imm),
+  case Res1 of
+    {_MB,_ME} -> Res1;
+    [] ->
+      case rlwinm_mask2(bnot Imm) of
+	{MB,ME} -> {ME+1,MB-1};
+	[] -> []
+      end
+  end.
+
+rlwinm_mask2(Imm) ->
+  case Imm band 16#ffffffff of
+    0 -> [];
+    Word ->
+      MB = lsb_log2(Word),	% first 1 bit
+      case bnot(Word bsr MB) band 16#ffffffff of
+	0 -> []; % Imm was all-bits-one XXX: we should handle this
+	Word1 ->
+	  ME1 = lsb_log2(Word1),% first 0 bit after the 1s
+	  case Word bsr (MB+ME1) of
+	    0 ->
+	      ME = MB+ME1-1,	% last 1 bit
+	      {31-ME, 31-MB};	% convert to PPC sick and twisted bit numbers
+	    _ ->
+	      []
+	  end
+      end
+  end.
+
+lsb_log2(Word) -> % PRE: Word =/= 0
+  bitN_log2(Word band -Word, 0).
+
+bitN_log2(BitN, ShiftN) ->
+  if BitN > 16#ffff ->
+      bitN_log2(BitN bsr 16, ShiftN + 16);
+     true ->
+      ShiftN + hweight16(BitN - 1)
+  end.
+
+hweight16(Word) -> % PRE: 0 <= Word <= 16#ffff
+  Res1 = (Word band 16#5555) + ((Word bsr 1) band 16#5555),
+  Res2 = (Res1 band 16#3333) + ((Res1 bsr 2) band 16#3333),
+  Res3 = (Res2 band 16#0F0F) + ((Res2 bsr 4) band 16#0F0F),
+         (Res3 band 16#00FF) + ((Res3 bsr 8) band 16#00FF).
 
 mk_alu_ri_addi(Dst, Src1, Src2) ->
   if Src2 < 32768, Src2 >= -32768 ->
@@ -422,7 +473,12 @@ mk_alub_ri_Rc(Dst, Src1, RtlAluOp, Src2) ->
     'xor' ->	% there is no 'xori.'
       mk_alub_ri_Rc_rr(Dst, Src1, 'xor.', Src2);
     'and' ->	% 'andi.' has a 16-bit uimm operand
-      mk_alub_ri_Rc_andi(Dst, Src1, Src2);
+      case rlwinm_mask(Src2) of
+	{MB,ME} ->
+	  [hipe_ppc:mk_unary({'rlwinm.',0,MB,ME}, Dst, Src1)];
+	_ ->
+	  mk_alub_ri_Rc_andi(Dst, Src1, Src2)
+      end;
     _ ->	% shift ops have 5-bit uimm operands
       mk_alub_ri_Rc_shift(Dst, Src1, RtlAluOp, Src2)
   end.

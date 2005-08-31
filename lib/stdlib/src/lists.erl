@@ -223,14 +223,14 @@ unzip3([], Xs, Ys, Zs) ->
 %% Xn] and [Y0, Y1, ..., Yn].
 
 zipwith(F, [X | Xs], [Y | Ys]) -> [F(X, Y) | zipwith(F, Xs, Ys)];
-zipwith(_, [], []) -> [].
+zipwith(F, [], []) when is_function(F, 2) -> [].
 
 %% Return [F(X0, Y0, Z0), F(X1, Y1, Z1), ..., F(Xn, Yn, Zn)] for lists
 %% [X0, X1, ..., Xn], [Y0, Y1, ..., Yn] and [Z0, Z1, ..., Zn].
 
 zipwith3(F, [X | Xs], [Y | Ys], [Z | Zs]) ->
     [F(X, Y, Z) | zipwith3(F, Xs, Ys, Zs)];
-zipwith3(_, [], [], []) -> [].
+zipwith3(F, [], [], []) when is_function(F, 3) -> [].
 
 
 %% sort(List) -> L
@@ -574,7 +574,7 @@ rukeymerge(Index, T1, L2) when integer(Index), Index > 0 ->
 
 keymap(Fun, Index, [Tup|Tail]) ->
    [setelement(Index, Tup, Fun(element(Index, Tup)))|keymap(Fun, Index, Tail)];
-keymap( _, _ , []) -> [].
+keymap(Fun, _, []) when is_function(Fun, 1) -> [].
 
 keymap(Fun, ExtraArgs, Index, [Tup|Tail]) ->
    [setelement(Index, Tup, apply(Fun, [element(Index, Tup)|ExtraArgs]))|
@@ -583,9 +583,9 @@ keymap( _, _ , _, []) -> [].
 
 
 %%% Suggestion from OTP-2948: sort and merge with Fun.
-sort(_Fun, []) ->
+sort(Fun, []) when is_function(Fun, 2) ->
     [];
-sort(_Fun, [_] = L) ->
+sort(Fun, [_] = L) when is_function(Fun, 2) ->
     L;
 sort(Fun, [X, Y | T]) ->
     case Fun(X, Y) of
@@ -597,13 +597,13 @@ sort(Fun, [X, Y | T]) ->
 
 merge(Fun, T1, [H2 | T2]) ->
     lists:reverse(lists_sort:fmerge2_1(T1, H2, Fun, T2, []), []);
-merge(_Fun, T1, []) ->
+merge(Fun, T1, []) when is_function(Fun, 2) ->
     T1.
 
 %% reverse(rmerge(F,reverse(A),reverse(B))) is equal to merge(F,A,B).
 rmerge(Fun, T1, [H2 | T2]) ->
     lists:reverse(lists_sort:rfmerge2_1(T1, H2, Fun, T2, []), []);
-rmerge(_Fun, T1, []) ->
+rmerge(Fun, T1, []) when is_function(Fun, 2) ->
     T1.
 
 usort(_Fun, [_] = L) ->
@@ -752,8 +752,10 @@ rumerge(T1, [H2 | T2]) ->
 %% takewhile(Predicate, List)
 %% dropwhile(Predicate, List)
 %% splitwith(Predicate, List)
-%%  for list programming. Function here is either a 'fun' or a tuple
-%%  {Module,Name} and we use apply/2 to evaluate. The name zf is a joke!
+%%  for list programming. Function here is a 'fun'. For backward compatibility,
+%%  {Module,Function} is still accepted.
+%% 
+%%  The name zf is a joke!
 %%
 %%  N.B. Unless where the functions actually needs it only foreach/2/3,
 %%  which is meant to be used for its side effects, has a defined order
@@ -767,44 +769,46 @@ all(Pred, [Hd|Tail]) ->
 	true -> all(Pred, Tail);
 	false -> false
     end;
-all(_, []) -> true. 
+all(Pred, []) when is_function(Pred, 1) -> true. 
 
 any(Pred, [Hd|Tail]) ->
     case Pred(Hd) of
 	true -> true;
 	false -> any(Pred, Tail)
     end;
-any(_, []) -> false. 
+any(Pred, []) when is_function(Pred, 1) -> false. 
 
 map(F, [H|T]) ->
     [F(H)|map(F, T)];
-map(_, []) -> [].
+map(F, []) when is_function(F, 1) -> [].
 
 flatmap(F, [Hd|Tail]) ->
     F(Hd) ++ flatmap(F, Tail);
-flatmap(_, []) -> [].
+flatmap(F, []) when is_function(F, 1) -> [].
 
 foldl(F, Accu, [Hd|Tail]) ->
     foldl(F, F(Hd, Accu), Tail);
-foldl(_, Accu, []) -> Accu.
+foldl(F, Accu, []) when is_function(F, 2) -> Accu.
 
 foldr(F, Accu, [Hd|Tail]) ->
     F(Hd, foldr(F, Accu, Tail));
-foldr(_, Accu, []) -> Accu.
+foldr(F, Accu, []) when is_function(F, 2) -> Accu.
 
-filter(Pred, List) -> [ E || E <- List, Pred(E) ].
+filter(Pred, List) when is_function(Pred, 1) ->
+    [ E || E <- List, Pred(E) ].
 
 %% Equivalent to {filter(F, L), filter(NotF, L)}, if NotF = 'fun(X) ->
 %% not F(X) end'.
 
-partition(Pred, L) -> partition(Pred, L, [], []).
+partition(Pred, L) when is_function(Pred, 1) ->
+    partition(Pred, L, [], []).
 
 partition(Pred, [H | T], As, Bs) ->
     case Pred(H) of
 	true -> partition(Pred, T, [H | As], Bs);
 	false -> partition(Pred, T, As, [H | Bs])
     end;
-partition(_, [], As, Bs) ->
+partition(_Pred, [], As, Bs) ->
     {reverse(As), reverse(Bs)}.
 
 zf(F, [Hd|Tail]) ->
@@ -816,40 +820,41 @@ zf(F, [Hd|Tail]) ->
 	false ->
 	    zf(F, Tail)
     end;
-zf(_, []) -> [].
+zf(F, []) when is_function(F, 1) -> [].
 
 foreach(F, [Hd|Tail]) ->
     F(Hd),
     foreach(F, Tail);
-foreach(_, []) -> ok.
+foreach(F, []) when is_function(F, 1) -> ok.
 
 mapfoldl(F, Accu0, [Hd|Tail]) ->
     {R,Accu1} = F(Hd, Accu0),
     {Rs,Accu2} = mapfoldl(F, Accu1, Tail),
     {[R|Rs],Accu2};
-mapfoldl(_, Accu, []) -> {[],Accu}.
+mapfoldl(F, Accu, []) when is_function(F, 2) -> {[],Accu}.
 
 mapfoldr(F, Accu0, [Hd|Tail]) ->
     {Rs,Accu1} = mapfoldr(F, Accu0, Tail),
     {R,Accu2} = F(Hd, Accu1),
     {[R|Rs],Accu2};
-mapfoldr(_, Accu, []) -> {[],Accu}.
+mapfoldr(F, Accu, []) when is_function(F, 2) -> {[],Accu}.
 
 takewhile(Pred, [Hd|Tail]) ->
     case Pred(Hd) of
 	true -> [Hd|takewhile(Pred, Tail)];
 	false -> []
     end;
-takewhile(_, []) -> [].
+takewhile(Pred, []) when is_function(Pred, 1) -> [].
 
 dropwhile(Pred, [Hd|Tail]=Rest) ->
     case Pred(Hd) of
 	true -> dropwhile(Pred, Tail);
 	false -> Rest
     end;
-dropwhile(_, []) -> [].
+dropwhile(Pred, []) when is_function(Pred, 1) -> [].
 
-splitwith(Pred, List) -> splitwith(Pred, List, []).
+splitwith(Pred, List) when is_function(Pred, 1) ->
+    splitwith(Pred, List, []).
 
 splitwith(Pred, [Hd|Tail], Taken) ->
     case Pred(Hd) of

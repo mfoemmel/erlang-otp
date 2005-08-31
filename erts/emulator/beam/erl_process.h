@@ -19,6 +19,7 @@
 #ifndef __PROCESS_H__
 #define __PROCESS_H__
 
+#include "erl_vm.h"
 #include "erl_message.h"
 #include "erl_process_dict.h"
 #include "erl_node_tables.h"
@@ -249,7 +250,26 @@ typedef struct process {
     struct process *active_prev; /* in collection of the message area  */
     Eterm *scan_top;
 #endif
+
+#ifdef CHECK_FOR_HOLES
+    Eterm* last_htop;		/* No need to scan the heap below this point. */
+    ErlHeapFragment* last_mbuf;	/* No need to scan beyond this mbuf. */
+#endif
 } Process;
+
+#ifdef CHECK_FOR_HOLES
+# define INIT_HOLE_CHECK(p)			\
+do {						\
+  (p)->last_htop = 0;				\
+  (p)->last_mbuf = 0;				\
+} while (0)
+
+# define ERTS_HOLE_CHECK(p) erts_check_for_holes((p))
+void erts_check_for_holes(Process* p);
+#else
+# define INIT_HOLE_CHECK(p)
+# define ERTS_HOLE_CHECK(p)
+#endif
 
 /*
  * The MBUF_GC_FACTOR decides how easily a process is subject to GC 
@@ -465,6 +485,7 @@ void schedule_exit(Process*, Eterm);
 void do_exit(Process*, Eterm);
 void set_timer(Process*, Uint);
 void cancel_timer(Process*);
+Uint erts_process_count(void);
 
 void erts_init_empty_process(Process *p);
 void erts_cleanup_empty_process(Process* p);

@@ -114,7 +114,7 @@ stop(Pid) ->
 %%-----------------------------------------------------------------
 %% Func: init/1
 %%-----------------------------------------------------------------
-init({connect, Host, Port, SocketType, SocketOptions, Parent}) ->
+init({connect, Host, Port, SocketType, SocketOptions, Parent, Key, NewKey}) ->
     process_flag(trap_exit, true), 
     case catch orber_socket:connect(SocketType, Host, Port, SocketOptions) of
 	{'EXCEPTION', _E} ->
@@ -124,6 +124,8 @@ init({connect, Host, Port, SocketType, SocketOptions, Parent}) ->
 	%% we did.
 	%% {stop, {'EXCEPTION', E}};
 	Socket ->
+	    SockData = orber_socket:sockdata(SocketType, Socket),
+	    orber_iiop_pm:add_connection(Key, NewKey, SockData),
 	    Timeout = orber:iiop_connection_timeout(),
 	    {ok, #state{stype = SocketType, socket = Socket,
 			db = ets:new(orber_outgoing_requests, [set]),

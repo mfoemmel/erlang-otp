@@ -271,7 +271,6 @@ wait_timeout Fail Src=o => i_put_float Src x | wait_timeout Fail x
 remove_message
 timeout
 loop_rec f r
-loop_rec f x
 loop_rec_end f
 wait f
 wait_timeout f I

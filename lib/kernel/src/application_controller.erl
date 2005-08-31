@@ -39,7 +39,6 @@
 %% Test exports, only to be used from the test suites
 -export([test_change_apps/2]).
 
-
 -import(lists, [zf/2, map/2, foreach/2, foldl/3,
 		keysearch/3, keydelete/3, keyreplace/4]).
 
@@ -144,7 +143,7 @@
 %%                 have been started (but may not run because
 %%                 permission = false)
 %% conf_data   = [{AppName, Env}]
-%% start_req   = [{AppName, From, Pid}] - list of all start requests
+%% start_req   = [{AppName, From}] - list of all start requests
 %% Id          = AMPid | undefined | {distributed, Node}
 %% Env         = [{Key, Value}]
 %%-----------------------------------------------------------------
@@ -637,19 +636,20 @@ handle_call({start_application, AppName, RestartType}, From, S) ->
 		    case {Cntrl, Perm} of
 			{true, _} ->
 			    {noreply, S#state{starting = [{AppName, RestartType, normal, From} |
-							  Starting]}};
+							  Starting],
+					      start_req = [{AppName, From} | Start_req]}};
 			{false, undefined} ->
-			    Pid = spawn_starter(From, Appl, S, normal),
+			    spawn_starter(From, Appl, S, normal),
 			    {noreply, S#state{starting = [{AppName, RestartType, normal, From} |
 							  Starting],
-					      start_req = [{AppName, From, Pid} | Start_req]}};
+					      start_req = [{AppName, From} | Start_req]}};
 			{false, {ok, Perms}} ->
 			    case lists:member({AppName, false}, Perms) of
 				false ->
-				    Pid = spawn_starter(From, Appl, S, normal),
+				    spawn_starter(From, Appl, S, normal),
 				    {noreply, S#state{starting = [{AppName, RestartType, normal, From} |
 								  Starting],
-						      start_req = [{AppName, From, Pid} | Start_req]}};
+						      start_req = [{AppName, From} | Start_req]}};
 				true ->
 				    SS = S#state{start_p_false = [{AppName, RestartType, normal, From} |
 								  SPF]},
@@ -659,9 +659,8 @@ handle_call({start_application, AppName, RestartType}, From, S) ->
 		{error, R} ->
 		    {reply, {error, R}, S}
 	    end;
-	{value, {AppName, _FromX, PidX}} ->
-	    SS = S#state{start_req = [{AppName, From, PidX} |
-				      Start_req]},
+	{value, {AppName, _FromX}} ->
+	    SS = S#state{start_req = [{AppName, From} | Start_req]},
 	    {noreply, SS}
 	    
     end;
@@ -685,7 +684,6 @@ handle_call({permit_application, AppName, Bool}, From, S) ->
 	%% distributed application
 	%%========================
 	{value, _} ->
-%            {reply, distributed_application, S};  %% otp-2729	    
 	    case {IsLoaded, IsStarting, IsStarted} of
 		%% not loaded
 		{false, _, _} ->
@@ -694,13 +692,6 @@ handle_call({permit_application, AppName, Bool}, From, S) ->
 		{{true, _Appl}, false, false} ->
 		    update_permissions(AppName, Bool),
 		    {reply, {distributed_application, only_loaded}, S};
-%		%% starting
-%		{{true, Appl}, {value, Tuple}, false} ->
-%		    {reply, distributed_application, S};
-%		%% started but not running
-%		{{true, Appl}, _, {value, {AppName, RestartType}}} ->
-%		    {reply, distributed_application, S};
-%		%% already running (can be a failover/takeover)
 		_ ->
 		    update_permissions(AppName, Bool),
 		    {reply, distributed_application, S}
@@ -731,18 +722,18 @@ handle_call({permit_application, AppName, Bool}, From, S) ->
 		{true, {true, Appl}, false, {value, Tuple}, false, false} ->
 		    update_permissions(AppName, Bool),
 		    {_AppName2, RestartType, normal, _From} = Tuple,
-		    Pid = spawn_starter(From, Appl, S, normal),
+		    spawn_starter(From, Appl, S, normal),
 		    SS = S#state{starting = [{AppName, RestartType, normal, From} | Starting], 
 				 start_p_false = keydelete(AppName, 1, SPF),
-				 start_req = [{AppName, From, Pid} | Start_req]},
+				 start_req = [{AppName, From} | Start_req]},
 		    {noreply, SS};
 		%% started but not running
 		{true, {true, Appl}, _, _, {value, {AppName, RestartType}}, false} ->
 		    update_permissions(AppName, Bool),
-		    Pid = spawn_starter(From, Appl, S, normal),
+		    spawn_starter(From, Appl, S, normal),
 		    SS = S#state{starting = [{AppName, RestartType, normal, From} | Starting], 
 				 started = keydelete(AppName, 1, Started),
-				 start_req = [{AppName, From, Pid} | Start_req]},
+				 start_req = [{AppName, From} | Start_req]},
 		    {noreply, SS};
 
 		%%==========================
@@ -999,33 +990,38 @@ handle_info({ac_start_application_reply, AppName, Res}, S) ->
 	    case Res of
 		start_it ->
 		    {true, Appl} = get_loaded(AppName),
-		     Pid = spawn_starter(From, Appl, S, Type),
-		    {noreply, S#state{start_req = [{AppName, From, Pid} | Start_req]}};
+		     spawn_starter(From, Appl, S, Type),
+		    {noreply, S};
 		{started, Node} ->
-		    reply(From, ok),
 		    handle_application_started(AppName, 
 					       {ok, {distributed, Node}}, 
 					       S);
 		not_started ->
 		    Started = S#state.started,
-		    reply(From, ok),
+		    Start_reqN =
+			reply_to_requester(AppName, Start_req, ok),
 		    {noreply, 
 		     S#state{starting = keydelete(AppName, 1, Starting),
-			     started = [{AppName, RestartType} | Started]}};
+			     started = [{AppName, RestartType} | Started],
+			     start_req = Start_reqN}};
 		{takeover, Node} ->
 		    {true, Appl} = get_loaded(AppName),
-		    Pid = spawn_starter(From, Appl, S, {takeover, Node}),
+		    spawn_starter(From, Appl, S, {takeover, Node}),
 		    NewStarting1 = keydelete(AppName, 1, Starting),
 		    NewStarting = [{AppName, RestartType, {takeover, Node}, From} | NewStarting1],
-		    {noreply, S#state{starting = NewStarting, 
-				      start_req = [{AppName, From, Pid} | Start_req]}};
+		    {noreply, S#state{starting = NewStarting}};
 		{error, Reason} when RestartType == permanent ->
-		    reply(From, {error, Reason}),
-		    {stop, Reason, S};
+		    Start_reqN =
+			reply_to_requester(AppName, Start_req,
+					   {error, Reason}),
+		    {stop, Reason, S#state{start_req = Start_reqN}};
 		{error, Reason} ->
-		    reply(From, {error, Reason}),
+		    Start_reqN =
+			reply_to_requester(AppName, Start_req,
+					   {error, Reason}),
 		    {noreply, S#state{starting =
-				      keydelete(AppName, 1, Starting)}}
+				      keydelete(AppName, 1, Starting),
+				      start_req = Start_reqN}}
 	    end;
 	false ->
 	    {noreply, S} % someone called stop before control got that
@@ -1290,7 +1286,7 @@ do_start(AppName, RT, Type, From, S) ->
 	false ->
 	    {true, Appl} = get_loaded(AppName),
 	    Start_req = S#state.start_req,
-	    Pid = spawn_starter(undefined, Appl, S, Type),
+	    spawn_starter(undefined, Appl, S, Type),
 	    Starting = case keysearch(AppName, 1, S#state.starting) of
 			   false ->
 			       %% UW: don't know if this is necessary
@@ -1300,7 +1296,7 @@ do_start(AppName, RT, Type, From, S) ->
 			       S#state.starting
 		       end,
 	    S#state{starting = Starting, 
-		    start_req = [{AppName, From, Pid} | Start_req]};
+		    start_req = [{AppName, From} | Start_req]};
 	{value, _} -> % otherwise we're already starting the app...
 	    S
     end.
@@ -1822,9 +1818,14 @@ scan_file(Str) ->
     end.
 
 only_ws([C|Cs]) when C =< $\s -> only_ws(Cs);
+only_ws([$%|Cs]) -> only_ws(strip_comment(Cs));   % handle comment
 only_ws([_|_]) -> false;
 only_ws([]) -> true.
     
+strip_comment([$\n|Cs]) -> Cs;
+strip_comment([_|Cs]) -> strip_comment(Cs);
+strip_comment([]) -> [].
+
 config_error() ->
     {error,
      {none, load_file,
@@ -1860,7 +1861,7 @@ reply_to_requester(AppName, Start_req, Res) ->
 
     lists:foldl(fun(Sp, AccIn) ->
 			case Sp of
-			    {AppName, From, _Pid} ->
+			    {AppName, From} ->
 				reply(From, R),
 				AccIn;
 			    _ ->

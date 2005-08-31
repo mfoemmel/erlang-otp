@@ -61,8 +61,8 @@
 	     break,				%Break label
 	     recv,				%Receive label
 	     is_top_block,			%Boolean: top block or not
-	     functable = [],			%Table of local functions:
-						%[{{Name, Arity}, Label}...]
+	     functable=gb_trees:empty(),	%Gb tree of local functions:
+						% {{Name,Arity},Label}
 	     in_catch=false,			%Inside a catch or not.
 	     need_frame,			%Need a stack frame.
 	     new_funs=true}).			%Generate new fun instructions.
@@ -74,7 +74,7 @@
 
 module({Mod,Exp,Attr,Forms}, Options) ->
     NewFunsFlag = not member(no_new_funs, Options),
-    {Fs,St} = functions(Forms, #cg{mod=Mod,new_funs=NewFunsFlag}),
+    {Fs,St} = functions(Forms, #cg{mod={atom,Mod},new_funs=NewFunsFlag}),
     {ok,{Mod,Exp,Attr,Fs,St#cg.lcount}}.
 
 functions(Forms, St0) ->
@@ -90,10 +90,10 @@ function({function,Name,Arity,As0,Vb,Vdb}, St0) ->
 
 %% cg_fun([Lkexpr], [HeadVar], Vdb, State) -> {[Ainstr],State}
 
-cg_fun(Les, Hvs, Vdb, St0) ->
-    {Name,Arity} = St0#cg.func,
+cg_fun(Les, Hvs, Vdb, #cg{mod=AtomMod,func=NameArity}=St0) ->
     {Fi,St1} = new_label(St0),			%FuncInfo label
-    {Fl,St2} = local_func_label(Name, Arity, St1),
+    {Fl,St2} = local_func_label(NameArity, St1),
+
     %% Create initial stack/register state, clear unused arguments.
     Bef = clear_dead(#sr{reg=foldl(fun ({var,V}, Reg) ->
 					   put_reg(V, Reg)
@@ -104,7 +104,8 @@ cg_fun(Les, Hvs, Vdb, St0) ->
 						    finfo=Fi,
 						    fcode=Fl,
 						    is_top_block=true}),
-    A = [{label,Fi},{func_info,{atom,St3#cg.mod},{atom,Name},Arity},
+    {Name,Arity} = NameArity,
+    A = [{label,Fi},{func_info,AtomMod,{atom,Name},Arity},
 	 {label,Fl}|B2],
     {A,St3}.
 
@@ -439,12 +440,12 @@ top_level_block(Keis, Bef, _MaxRegs, St0) when St0#cg.need_frame =:= false,
     %% This block need no stack frame.  However, we still need to turn the
     %% stack frame upside down.
     MaxY = length(Bef#sr.stk)-1,
-    Keis1 = flatmap(fun (Tuple) when tuple(Tuple) ->
+    Keis1 = flatmap(fun (Tuple) when is_tuple(Tuple) ->
 			    [turn_yregs(size(Tuple), Tuple, MaxY)];
 			(Other) ->
 			    [Other]
 		    end, Keis),
-    {Keis1, Bef, St0#cg{is_top_block=true}};
+    {Keis1,Bef,St0#cg{is_top_block=true}};
 top_level_block(Keis, Bef, MaxRegs, St0) ->
     %% This top block needs an allocate instruction before it, and a
     %% deallocate instruction before each return.
@@ -458,7 +459,7 @@ top_level_block(Keis, Bef, MaxRegs, St0) ->
 			    [{apply_last,Arity,FrameSz}];
 			(return) ->
 			    [{deallocate,FrameSz}, return];
-			(Tuple) when tuple(Tuple) ->
+			(Tuple) when is_tuple(Tuple) ->
 			    [turn_yregs(size(Tuple), Tuple, MaxY)];
 			(Other) ->
 			    [Other]
@@ -466,15 +467,15 @@ top_level_block(Keis, Bef, MaxRegs, St0) ->
     {[{allocate_zero,FrameSz,MaxRegs}|Keis1], Bef, St0#cg{is_top_block=true}}.
 
 %% turn_yregs(Size, Tuple, MaxY) -> Tuple'
-%%   Renumber y register so that {y, 0} becomes {y, FrameSize-1},
-%%   {y, FrameSize-1} becomes {y, 0} and so on.  This is to make nested
+%%   Renumber y register so that {y,0} becomes {y,FrameSize-1},
+%%   {y,FrameSize-1} becomes {y,0} and so on.  This is to make nested
 %%   catches work.  The code generation algorithm gives a lower register
 %%   number to the outer catch, which is wrong.
 
 turn_yregs(0, Tp, _) -> Tp;
 turn_yregs(El, Tp, MaxY) when element(1, element(El, Tp)) == yy ->
     turn_yregs(El-1, setelement(El, Tp, {y,MaxY-element(2, element(El, Tp))}), MaxY);
-turn_yregs(El, Tp, MaxY) when list(element(El, Tp)) ->
+turn_yregs(El, Tp, MaxY) when is_list(element(El, Tp)) ->
     New = map(fun ({yy,YY}) -> {y,MaxY-YY};
 		  (Other) -> Other end, element(El, Tp)),
     turn_yregs(El-1, setelement(El, Tp, New), MaxY);
@@ -877,16 +878,19 @@ build_enter(Name, Arity, St0) when is_atom(Name) ->
     {[{call_only,Arity,{f,Lbl}}],St1}.
 
 %% local_func_label(Name, Arity, State) -> {Label,State'}
+%% local_func_label({Name,Arity}, State) -> {Label,State'}
 %%  Get the function entry label for a local function.
 
-local_func_label(Name, Arity, St0) ->
-    Key = {Name,Arity},
-    case keysearch(Key, 1, St0#cg.functable) of
-  	{value,{Key,Label}} ->
+local_func_label(Name, Arity, St) ->
+    local_func_label({Name,Arity}, St).
+
+local_func_label(Key, #cg{functable=Tab}=St0) ->
+    case gb_trees:lookup(Key, Tab) of
+	{value,Label} ->
 	    {Label,St0};
-  	false ->
-  	    {Label,St1} = new_label(St0),
-	    {Label,St1#cg{functable=[{Key,Label}|St1#cg.functable]}}
+	none ->
+  	    {Label,St} = new_label(St0),
+	    {Label,St#cg{functable=gb_trees:insert(Key, Label, Tab)}}
     end.
 
 %% need_stack_frame(State) -> State'
@@ -1740,9 +1744,8 @@ bs_find_test_heap_1(_, _) -> none.
 
 %% new_label(St) -> {L,St}.
 
-new_label(St) ->
-    L = St#cg.lcount,
-    {L,St#cg{lcount=L+1}}.
+new_label(#cg{lcount=Next}=St) ->
+    {Next,St#cg{lcount=Next+1}}.
 
 flatmapfoldl(F, Accu0, [Hd|Tail]) ->
     {R,Accu1} = F(Hd, Accu0),

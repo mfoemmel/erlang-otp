@@ -1547,7 +1547,7 @@ aligned(B, S, U, Fs) ->
     {incr_bits(B, S, U),Fs}.
 
 incr_bits(B, #k_int{val=S}, U) when integer(B) -> B + S*U;
-incr_bits(_, #k_atom{val=all}, _) -> 0;		%Always aligned
+incr_bits(B, #k_atom{val=all}, _) -> B;		%Always aligned
 incr_bits(B, _, 8) -> B;
 incr_bits(_, _, _) -> unknown.
 

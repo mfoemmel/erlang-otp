@@ -351,6 +351,8 @@ typedef unsigned long ErlDrvTermData;
 #define ERL_DRV_STRING_CONS ((ErlDrvTermData) 9)  /* char*, int */
 #define ERL_DRV_PID         ((ErlDrvTermData) 10) /* driver_connected,... */
 
+#define ERL_DRV_FLOAT         ((ErlDrvTermData) 11) /* double * */
+
 #ifndef ERL_DRIVER_TYPES_ONLY
 
 /* make terms for driver_output_term and driver_send_term */

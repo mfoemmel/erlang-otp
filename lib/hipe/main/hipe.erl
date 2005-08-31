@@ -147,6 +147,9 @@
 %%   <dt><code>rtl_lcm</code></dt>
 %%     <dd>Lazy Code Motion on RTL.</dd>
 %%
+%%   <dt><code>rtl_ssapre</code></dt>
+%%     <dd>Lazy Partial Redundancy Elimination on RTL (SSA level).</dd>
+%%
 %%   <dt><code>sparc_estimate_block_times</code></dt>
 %%     <dd>Do not perform instruction scheduling, but annotate with cycle
 %%     estimates</dd>
@@ -1145,6 +1148,8 @@ option_text(pp_rtl) ->
   "Display the intermediate HiPE-RTL code.";
 option_text(pp_rtl_lcm) ->
   "Display the intermediate HiPE-RTL lazy code motion sets.";
+option_text(pp_rtl_ssapre) ->
+  "Display the intermediate HiPE-RTL A-SSAPRE sets.";
 option_text(pp_native) ->
   "Display the generated (back-end specific) native code.";
 option_text(regalloc) ->
@@ -1164,6 +1169,8 @@ option_text(rtl_prop) ->
   "Perform RTL-level constant propagation.";
 option_text(rtl_lcm) ->
   "Perform Lazy Code Motion on RTL.";
+option_text(rtl_ssapre) ->
+  "Perform A-SSAPRE on RTL.";
 option_text(sparc_peephole) ->
   "Perform Sparc peephole optimization.";
 option_text(sparc_prop) ->
@@ -1320,12 +1327,14 @@ opt_keys() ->
      pp_rtl_liveness,
      pp_rtl_ssa,
      pp_rtl_lcm,
+     pp_rtl_ssapre,
      regalloc,
      remove_comments,
      rtl_ssa,
      rtl_ssa_const_prop,
      rtl_prop,
      rtl_lcm,
+     rtl_ssapre,
      rtl_show_translation,
      sparc_estimate_block_time,
      sparc_peephole,
@@ -1378,6 +1387,7 @@ o2_opts() ->
       [rtl_lcm | Common];
     x86 ->
       [rtl_lcm | Common];
+      %%[rtl_ssapre | Common]; if we want A-SSAPRE as default
     amd64 ->
       [rtl_lcm | Common];
     Arch -> 
@@ -1426,11 +1436,13 @@ opt_negations() ->
    {no_pp_rtl, pp_rtl},
    {no_pp_native, pp_native},
    {no_pp_rtl_lcm, pp_rtl_lcm},
+   {no_pp_rtl_ssapre, pp_rtl_ssapre},
    {no_remove_comments, remove_comments},
    {no_rtl_ssa, rtl_ssa},
    {no_rtl_ssa_const_prop, rtl_ssa_const_prop},
    {no_rtl_prop, rtl_prop},
    {no_rtl_lcm, rtl_lcm},
+   {no_rtl_ssapre, rtl_ssapre},
    {no_rtl_show_translation, rtl_show_translation},
    {no_sparc_estimate_block_time, sparc_estimate_block_time},
    {no_sparc_peephole, sparc_peephole},

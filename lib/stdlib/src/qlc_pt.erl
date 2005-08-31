@@ -185,6 +185,7 @@ tag_lines(E, No) ->
 
 map_lines(F, {clauses,Cs}) -> {clauses,map_lines(F, Cs)};
 map_lines(_F, {function,Fun,A}) -> {function,Fun,A};
+map_lines(_F, {function,Mod,Fun,A}) -> {function,Mod,Fun,A};
 map_lines(F, {Tag,L}) -> {Tag,F(L)};
 map_lines(F, {Tag,L,E1}) ->
     {Tag,F(L),map_lines(F, E1)};

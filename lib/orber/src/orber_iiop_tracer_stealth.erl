@@ -25,8 +25,8 @@
 
 
 %% Interceptor functions.
--export([new_out_connection/3,
-	 new_in_connection/3,
+-export([new_out_connection/5,
+	 new_in_connection/5,
 	 closed_in_connection/1,
 	 closed_out_connection/1,
 	 in_request_encoded/6,
@@ -45,28 +45,28 @@
 %% Arguments: 
 %% Returns  : 
 %%------------------------------------------------------------
-new_in_connection(_Arg, CHost, Port) ->
+new_in_connection(_Arg, PHost, PPort, SHost, SPort) ->
     error_logger:info_msg("=============== new_in_connection ========~n"
 			  "Node      : ~p~n"
-			  "From Host : ~p~n"
-			  "From Port : ~p~n"
+			  "From      : ~s:~p~n"
+			  "To        : ~s:~p~n"
 			  "==========================================~n", 
-			  [node(), CHost, Port]),
-    {CHost, Port}.
+			  [node(), PHost, PPort, SHost, SPort]),
+    {PHost, PPort, SHost, SPort}.
  
 %%------------------------------------------------------------
 %% function : new_out_connection
 %% Arguments: 
 %% Returns  : 
 %%------------------------------------------------------------
-new_out_connection(_Arg, SHost, Port) ->
+new_out_connection(_Arg, PHost, PPort, SHost, SPort) ->
     error_logger:info_msg("=============== new_out_connection =======~n"
 			  "Node      : ~p~n"
-			  "To Host   : ~p~n"
-			  "To Port   : ~p~n"
+			  "From      : ~s:~p~n"
+			  "To        : ~s:~p~n"
 			  "==========================================~n", 
-			  [node(), SHost, Port]),
-    {SHost, Port}.
+			  [node(), SHost, SPort, PHost, PPort]),
+    {PHost, PPort, SHost, SPort}.
  
 %%------------------------------------------------------------
 %% function : closed_in_connection

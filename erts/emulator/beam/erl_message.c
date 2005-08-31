@@ -199,6 +199,8 @@ queue_message_tt(Process* receiver, ErlHeapFragment* bp,
     if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
 	trace_receive(receiver, message);
     }
+
+    ERTS_HOLE_CHECK(receiver);
 }
 
 /*

@@ -22,7 +22,7 @@
 %% Interface for compiler.
 -export([module/2,format_error/1]).
 
--import(lists, [reverse/1,foldl/3,foreach/2]).
+-import(lists, [reverse/1,foldl/3,foreach/2,member/2]).
 
 -define(MAXREG, 1024).
 
@@ -168,7 +168,9 @@ validate_error_1(Error, Module, Name, Ar) ->
 	 h=0,				%Available heap size.
 	 fls=undefined,			%Floating point state.
 	 ct=[],				%List of hot catch/try labels
-	 bsm=undefined			%Bit syntax matching state.
+	 bsm=undefined,			%Bit syntax matching state.
+	 bits=undefined,	        %Number of bits in bit syntax binary.
+	 setelem=false			%Previous instruction was setelement/3.
 	}).
 
 -record(vst,				%Validator state
@@ -230,10 +232,12 @@ init_regs(N, Type) ->
     gb_trees_from_list([{R,Type} || R <- lists:seq(0, N-1)]).
 
 valfun([], _MFA, _Offset, Vst) -> Vst;
-valfun([I|Is], MFA, Offset, Vst) ->
+valfun([I|Is], MFA, Offset, Vst0) ->
     ?DBG_FORMAT("    ~p.\n", [I]),
     valfun(Is, MFA, Offset+1,
-	   try valfun_1(I, Vst)
+	   try
+	       Vst = val_dsetel(I, Vst0),
+	       valfun_1(I, Vst)
 	   catch Error ->
 		   error({MFA,{I,Offset,Error}})
 	   end).
@@ -340,7 +344,7 @@ valfun_1({catch_end,Reg}, #vst{current=#st{ct=[Fail|Fails]}=St0}=Vst0) ->
 		set_type_y(initialized_ct, Reg, 
 			   Vst0#vst{current=St0#st{ct=Fails}}),
 	    Xs = gb_trees_from_list([{0,term}]),
-	    Vst#vst{current=St#st{x=Xs}};
+	    Vst#vst{current=St#st{x=Xs,fls=undefined}};
 	Type ->
 	    error({bad_type,Type})
     end;
@@ -348,7 +352,7 @@ valfun_1({try_end,Reg}, #vst{current=#st{ct=[Fail|Fails]}=St}=Vst) ->
     case get_special_y_type(Reg, Vst) of
 	{trytag,Fail} ->
 	    set_type_reg(initialized_ct, Reg, 
-			 Vst#vst{current=St#st{ct=Fails}});
+			 Vst#vst{current=St#st{ct=Fails,fls=undefined}});
 	Type ->
 	    error({bad_type,Type})
     end;
@@ -359,7 +363,7 @@ valfun_1({try_case,Reg}, #vst{current=#st{ct=[Fail|Fails]}=St0}=Vst0) ->
 		set_type_y(initialized_ct, Reg, 
 			   Vst0#vst{current=St0#st{ct=Fails}}),
 	    Xs = gb_trees_from_list([{0,{atom,[]}},{1,term},{2,term}]), %XXX
-	    Vst#vst{current=St#st{x=Xs}};
+	    Vst#vst{current=St#st{x=Xs,fls=undefined}};
 	Type ->
 	    error({bad_type,Type})
     end;
@@ -553,27 +557,52 @@ valfun_4({bs_init2,{f,Fail},_,Heap,Live,_,Dst}, Vst0) ->
     verify_live(Live, Vst0),
     Vst1 = heap_alloc(Heap, Vst0),
     Vst2 = branch_state(Fail, Vst1),
-    Vst = prune_x_regs(Live, Vst2),
+    Vst3 = prune_x_regs(Live, Vst2),
+    Vst = bs_zero_bits(Vst3),
     set_type_reg(binary, Dst, Vst);
 valfun_4({bs_put_string,Sz,_}, Vst) when is_integer(Sz) ->
     Vst;
-valfun_4({bs_put_binary,{f,Fail},_,_,_,Src}, Vst0) ->
+valfun_4({bs_put_binary,{f,Fail},_,_,_,Src}=I, Vst0) ->
     assert_term(Src, Vst0),
-    branch_state(Fail, Vst0);
-valfun_4({bs_put_float,{f,Fail},_,_,_,Src}, Vst0) ->
+    Vst = bs_align_check(I, Vst0),
+    branch_state(Fail, Vst);
+valfun_4({bs_put_float,{f,Fail},_,_,_,Src}=I, Vst0) ->
     assert_term(Src, Vst0),
-    branch_state(Fail, Vst0);
-valfun_4({bs_put_integer,{f,Fail},_,_,_,Src}, Vst0) ->
+    Vst = bs_align_check(I, Vst0),
+    branch_state(Fail, Vst);
+valfun_4({bs_put_integer,{f,Fail},_,_,_,Src}=I, Vst0) ->
     assert_term(Src, Vst0),
-    branch_state(Fail, Vst0);
+    Vst = bs_align_check(I, Vst0),
+    branch_state(Fail, Vst);
 %% Old bit syntax construction (before R10B).
-valfun_4({bs_init,_,_}, Vst) -> Vst;
+valfun_4({bs_init,_,_}, Vst) ->
+    bs_zero_bits(Vst);
 valfun_4({bs_need_buf,_}, Vst) -> Vst;
 valfun_4({bs_final,{f,Fail},Dst}, Vst0) ->
     Vst = branch_state(Fail, Vst0),
     set_type_reg(binary, Dst, Vst);
 valfun_4(_, _) ->
     error(unknown_instruction).
+
+%%
+%% Special state handling for setelement/3 and the set_tuple_element/3 instruction.
+%% A possibility for garbage collection must not occur between setelement/3 and
+%% set_tuple_element/3.
+%%
+val_dsetel({move,_,_}, Vst) ->
+    Vst;
+val_dsetel({put_string,0,{string,""},_}, Vst) ->
+    %% An empty string is OK since it doesn't build anything.
+    Vst;
+val_dsetel({call_ext,3,{extfunc,erlang,setelement,3}}, #vst{current=St}=Vst) ->
+    Vst#vst{current=St#st{setelem=true}};
+val_dsetel({set_tuple_element,_,_,_}, #vst{current=#st{setelem=false}}) ->
+    error(illegal_context_for_set_tuple_element);
+val_dsetel({set_tuple_element,_,_,_}, #vst{current=#st{setelem=true}}=Vst) ->
+    Vst;
+val_dsetel(_, #vst{current=#st{setelem=true}=St}=Vst) ->
+    Vst#vst{current=St#st{setelem=false}};
+val_dsetel(_, Vst) -> Vst.
 
 kill_state(Vst) ->
     Vst#vst{current=none}.
@@ -731,6 +760,44 @@ bs_assert_state(#vst{current=#st{bsm=undefined}}) ->
     error(no_bs_match_state);
 bs_assert_state(_) -> ok.
 
+%%%
+%%% Validation of alignment in the bit syntax. (Currently, construction only.)
+%%%
+%%% We make sure that the aligned flag is only set when we can be sure of the
+%%% aligment.
+%%%
+
+bs_zero_bits(#vst{current=St}=Vst) ->
+    Vst#vst{current=St#st{bits=0}}.
+
+bs_align_check({_,_,Sz,U,Flags,_}, #vst{current=#st{bits=Bits}=St}=Vst) ->
+    bs_verify_flags(Flags, St),
+    bs_update_bits(Bits, Sz, U, St, Vst).
+
+bs_update_bits(undefined, _, _, _, Vst) -> Vst;
+bs_update_bits(Bits0, {integer,Sz}, U, St, Vst) ->
+    Bits = Bits0 + U*Sz,
+    Vst#vst{current=St#st{bits=Bits}};
+bs_update_bits(_, {atom,all}, _, _, Vst) ->
+    %% A binary will not change the alignment.
+    Vst;
+bs_update_bits(_, _, U, _, Vst) when U rem 8 =:= 0 ->
+    %% Units of 8, 16, and so on will not change the aligment.
+    Vst;
+bs_update_bits(_, _, _, St, Vst) ->
+    %% We can no longer be sure about aligment.
+    Vst#vst{current=St#st{bits=undefined}}.
+
+bs_verify_flags({field_flags,Fl}, #st{bits=Bits}) ->
+    case bs_is_aligned(Fl) of
+	false -> ok;
+	true when is_integer(Bits), Bits rem 8 =:= 0 -> ok;
+	true -> error({aligned_flag_set,{bits,Bits}})
+    end.
+
+bs_is_aligned(Fl) when is_integer(Fl) -> Fl band 1 =:= 1;
+bs_is_aligned(Fl) when is_list(Fl) -> member(aligned, Fl).
+    
 %%%
 %%% Keeping track of types.
 %%%

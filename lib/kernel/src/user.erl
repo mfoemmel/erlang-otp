@@ -381,14 +381,10 @@ err_func(io_lib, get_until, {_,F,_}) ->
 err_func(_, F, _) ->
     F.
 
-%% Search for a character in a list or binary
-string_chr(Bin, Character) when binary(Bin), integer(Character) ->
-    string_chr_bin(0, Bin, [Character]);
-string_chr(List, Character) when list(List), integer(Character) ->
-    string_chr_list(1, List, [Character]);
-string_chr(Bin, Characters) when binary(Bin), list(Characters) ->
+%% Search for characters in a list or binary
+string_chr(Bin, Characters) when is_binary(Bin), is_list(Characters) ->
     string_chr_bin(0, Bin, Characters);
-string_chr(List, Characters) when list(List), list(Characters) ->
+string_chr(List, Characters) when is_list(List), is_list(Characters) ->
     string_chr_list(1, List, Characters).
 
 string_chr_bin(I, B, Cs) when I < size(B) ->

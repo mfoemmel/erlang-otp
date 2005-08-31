@@ -8,7 +8,6 @@
 %%----------------------------------------------------------------------
 
 -module(hipe_ig).
--author('Andreas Wallin').
 
 -export([build/2, 
 	 nodes_are_adjacent/3,
@@ -29,11 +28,14 @@
 	 %% set_degree/2
 	 get_node_degree/2,
 	 dec_node_degree/2,
-	 is_trivially_colourable/3,
-	 print_spill_costs/1,
+	 is_trivially_colourable/3
+	]).
+-ifdef(DEBUG_PRINTOUTS).
+-export([print_spill_costs/1,
 	 print_adjacent/1,
 	 print_degrees/1
 	]).
+-endif.
 
 
 -record(igraph, {adj_set, adj_list, ig_moves, degree, spill_costs,no_temps}).
@@ -144,6 +146,10 @@ adjset_are_adjacent(U0, V0, #adjset{index=Index,array=Array}) ->
     _ -> true
   end.
 
+%%---------------------------------------------------------------------
+%% Print functions - only used for debugging
+
+-ifdef(DEBUG_PRINTOUTS).
 print_adjacent(IG) ->
   ?debug_msg("Adjacent nodes:\n", []),
   adjset_print(number_of_temps(IG),IG).
@@ -165,8 +171,7 @@ adjset_print(U, V, IG) ->
     _ -> true
   end,
   adjset_print(U, V - 1, IG).
-
-%% Selectors
+-endif.
 
 %%----------------------------------------------------------------------
 %% Function:    adj_set, adj_list, degree, spill_costs
@@ -184,7 +189,9 @@ adj_list(IG)    -> IG#igraph.adj_list.
 ig_moves(IG)    -> IG#igraph.ig_moves.    
 degree(IG)      -> IG#igraph.degree.
 spill_costs(IG) -> IG#igraph.spill_costs.
+-ifdef(DEBUG_PRINTOUTS).
 number_of_temps(IG) -> IG#igraph.no_temps.
+-endif.
 
 %%----------------------------------------------------------------------
 %% Function:    set_adj_set, set_adj_list, set_degree, set_spill_costs
@@ -473,6 +480,10 @@ node_adj_list(Node, IG) ->
 node_spill_cost(Node, IG) ->
   hipe_spillcost:spill_cost(Node, spill_costs(IG)).
 
+%%----------------------------------------------------------------------
+%% Print functions - only used for debugging
+
+-ifdef(DEBUG_PRINTOUTS).
 print_spill_costs(IG) ->
   ?debug_msg("Spill costs:\n", []),
   print_spill_costs(number_of_temps(IG), IG).
@@ -488,6 +499,9 @@ print_spill_costs(Node, IG) ->
       ?debug_msg("node ~w sc ~p\n", [NextNode, node_spill_cost(NextNode, IG)])
   end,
   print_spill_costs(NextNode, IG).
+-endif.
+
+%%----------------------------------------------------------------------
 
 get_moves(IG) ->
   hipe_ig_moves:get_moves(ig_moves(IG)).
@@ -645,8 +659,10 @@ reg_numbers(Regs2, Target) ->
     end,
   [Target:reg_nr(X) || X <- Regs].
 
-%%----------------------------------------------------------------------
+%%---------------------------------------------------------------------
+%% Print functions - only used for debugging
 
+-ifdef(DEBUG_PRINTOUTS).
 print_degrees(IG) ->
   ?debug_msg("The nodes degrees:\n", []),
   print_node_degree(number_of_temps(IG), IG).
@@ -657,6 +673,9 @@ print_node_degree(Node, IG) ->
   NextNode = Node - 1,
   ?debug_msg("node ~w ~w\n", [NextNode, get_node_degree(NextNode, IG)]),
   print_node_degree(NextNode, IG).
+-endif.
+
+%%----------------------------------------------------------------------
 
 get_node_degree(Node, IG) ->
   degree_get(Node, degree(IG)).

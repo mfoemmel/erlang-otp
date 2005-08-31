@@ -36,7 +36,7 @@
 %%% ldxop	::= lbzx | lhax | lhzx | lwzx | lhbrx | lwbrx
 %%% stop	::= stb | stw	(HW has sth, but we don't use it)
 %%% stxop	::= stbx | stwx	(HW has sthx/sthbrx/stwbrx, but we don't use them)
-%%% unop	::= extsb | extsh
+%%% unop	::= extsb | extsh | {rlwinm,SH,MB,ME} | {rlwinm.,SH,MB,ME}
 %%%
 %%% immediate	::= int32 | atom | {label, label_type}
 %%% label_type	::= constant | closure | c_const

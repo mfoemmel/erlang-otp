@@ -90,7 +90,8 @@ init({connect, Type, Socket, Ref}) ->
     Interceptors = 
 	case orber:get_interceptors() of
 	    {native, PIs} ->
-		{native, orber_pi:new_in_connection(PIs, Address, Port), PIs};
+		{native, orber_pi:new_in_connection(PIs, Address, Port, 
+						    LAddress, LPort), PIs};
 	    Other ->
 		Other
 	end,
@@ -230,7 +231,10 @@ handle_msg(Type, Socket, Bytes, #state{stype = Type, socket = Socket,
 		    ets:delete(State#state.db, RId),
 		    PPid ! {self(), cancel_request_header};
 		[] ->
-		    send_msg_error(Type, Socket, Bytes, Env, "No such request id")
+		    send_msg_error(Type, Socket, Bytes, 
+				   Env#giop_env{version = 
+						GIOPHdr#giop_message.giop_version},
+				   "No such request id")
 	    end,
 	    {noreply, State, State#state.timeout};
 	%% A fragment; we must have received a Request or LocateRequest
@@ -247,7 +251,10 @@ handle_msg(Type, Socket, Bytes, #state{stype = Type, socket = Socket,
 		    ets:delete(State#state.db, RId),
 		    PPid ! {self(), GIOPHdr};
 		[] ->
-		    send_msg_error(Type, Socket, Bytes, Env, "No such fragment id")
+		    send_msg_error(Type, Socket, Bytes, 
+				   Env#giop_env{version = 
+						GIOPHdr#giop_message.giop_version},
+				   "No such fragment id")
 	    end,
 	    {noreply, State, State#state.timeout};
 	%% Must be a Request or LocateRequest which have been fragmented.
@@ -268,11 +275,15 @@ handle_msg(Type, Socket, Bytes, #state{stype = Type, socket = Socket,
 	    ets:insert(State#state.db, {ReqId, Pid}),
 	    {noreply, increase_counter(State), State#state.timeout};
 	GIOPHdr when record(GIOPHdr, giop_message) ->
-	    Pid = orber_iiop_inrequest:start(GIOPHdr, Bytes, Type, Socket, Env),
+	    Pid = orber_iiop_inrequest:start(GIOPHdr, Bytes, Type, Socket, 
+					     Env#giop_env{version = 
+							  GIOPHdr#giop_message.giop_version}),
 	    ets:insert(State#state.db, {Pid, undefined}),
 	    {noreply, increase_counter(State), State#state.timeout};
-	message_error ->
-	    send_msg_error(Type, Socket, Bytes, Env, "Unable to decode the GIOP-header"),
+	{'EXIT', message_error} ->
+	    send_msg_error(Type, Socket, Bytes, 
+			   Env#giop_env{version = orber_env:giop_version()},
+			   "Unable to decode the GIOP-header"),
 	    {noreply, State, State#state.timeout}
     end;
 handle_msg(Type, _, Bytes, State) ->
@@ -310,12 +321,35 @@ update_state(#state{giop_env = Env} = State,
 	     [{interceptors, false}|Options]) ->
     update_state(State#state{giop_env = 
 			     Env#giop_env{interceptors = false}}, Options);
-update_state(#state{giop_env = Env, peer = PeerData} = State, 
+update_state(#state{giop_env = #giop_env{interceptors = false, host = [SH], 
+					 iiop_port = SP} = Env, 
+		    peer = {PH, PP}, stype = normal} = State, 
 	     [{interceptors, {native, LPIs}}|Options]) ->
+    %% No Interceptor(s). Add the same Ref used by the built in interceptors.
     update_state(State#state{giop_env = 
-			     Env#giop_env{interceptors = {native, PeerData, LPIs}}},
+			     Env#giop_env{interceptors = 
+					  {native, {PH, PP, SH, SP}, LPIs}}},
 		 Options);
-update_state(State, [_|T]) ->
+update_state(#state{giop_env = #giop_env{interceptors = false, host = [SH], 
+					 iiop_ssl_port = SP} = Env, 
+		    peer = {PH, PP}, stype = ssl} = State, 
+	     [{interceptors, {native, LPIs}}|Options]) ->
+    %% No Interceptor(s). Add the same Ref used by the built in interceptors.
+    update_state(State#state{giop_env = 
+			     Env#giop_env{interceptors = 
+					  {native, {PH, PP, SH, SP}, LPIs}}},
+		 Options);
+update_state(#state{giop_env = #giop_env{interceptors = {native, Ref, _}} = Env} = 
+	     State, 
+	     [{interceptors, {native, LPIs}}|Options]) ->
+    %% Interceptor(s) already in use. We must use the same Ref as before.
+    update_state(State#state{giop_env = 
+			     Env#giop_env{interceptors = {native, Ref, LPIs}}},
+		 Options);
+update_state(State, [H|T]) ->
+    orber:dbg("[~p] orber_iiop_inproxy:update_state(~p, ~p)~n"
+	      "Couldn't change the state.", 
+	      [?LINE, H, State], ?DEBUG_LEVEL),
     update_state(State, T);
 update_state(State, []) ->
     State.

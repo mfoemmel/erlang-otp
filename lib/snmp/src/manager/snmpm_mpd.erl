@@ -429,9 +429,9 @@ is_reportable([MsgFlag]) ->
 
 check_sec_module_result({ok, X}, _, _, _, _) ->
     X;
-check_sec_module_result({error, Reason, []}, _, _, _, _) ->
+check_sec_module_result({error, Reason, Info}, _, _, _, _) when list(Info) ->
     %% case 7.2.6 b
-    discard({securityError, Reason});
+    discard({securityError, Reason, Info});
 check_sec_module_result({error, Reason, ErrorInfo}, V3Hdr, Data, true, Log) ->
     %% case 7.2.6 a
     ?vtrace("security module result:"

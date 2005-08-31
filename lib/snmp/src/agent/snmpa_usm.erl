@@ -22,6 +22,7 @@
 -define(SNMP_USE_V3, true).
 -include("snmp_types.hrl").
 -include("SNMP-USER-BASED-SM-MIB.hrl").
+-include("SNMP-USM-AES-MIB.hrl").
 -include("SNMPv2-TC.hrl").
 
 -define(VMODULE,"A-USM").
@@ -38,6 +39,7 @@
 -define(usmUserPrivKey, 15).
 
 -define(i32(Int), (Int bsr 24) band 255, (Int bsr 16) band 255, (Int bsr 8) band 255, Int band 255).
+-define(i64(Int), (Int bsr 56) band 255, (Int bsr 48) band 255, (Int bsr 40) band 255, (Int bsr 32) band 255, (Int bsr 24) band 255, (Int bsr 16) band 255, (Int bsr 8) band 255, Int band 255).
 
 
 %%-----------------------------------------------------------------
@@ -286,6 +288,16 @@ try_decrypt(?usmDESPrivProtocol,
 	    error(usmStatsDecryptionErrors, 
 		  ?usmStatsDecryptionErrors_instance, % OTP-5464
 		  SecName)
+    end;
+try_decrypt(?usmAesCfb128Protocol, 
+	    PrivKey, UsmSecParams,  EncryptedPDU, SecName) ->
+    case (catch aes_decrypt(PrivKey, UsmSecParams, EncryptedPDU)) of
+	{ok, DecryptedData} ->
+	    DecryptedData;
+	_ ->
+	    error(usmStatsDecryptionErrors, 
+		  ?usmStatsDecryptionErrors_instance, % OTP-5464
+		  SecName)
     end.
 
 
@@ -376,7 +388,9 @@ encrypt(Data, PrivProtocol, PrivKey, SecLevel) ->
 try_encrypt(?usmNoPrivProtocol, _PrivKey, _Data) -> % 3.1.2
     error(unsupportedSecurityLevel);
 try_encrypt(?usmDESPrivProtocol, PrivKey, Data) ->
-    des_encrypt(PrivKey, Data).
+    des_encrypt(PrivKey, Data);
+try_encrypt(?usmAesCfb128Protocol, PrivKey, Data) ->
+    aes_encrypt(PrivKey, Data).
 
 
 authenticate_outgoing(Message, UsmSecParams, 
@@ -406,22 +420,57 @@ set_msg_auth_params(Message, UsmSecParams) ->
     snmp_usm:set_msg_auth_params(Message, UsmSecParams, []).
 
 des_encrypt(PrivKey, Data) ->
-    snmp_usm:des_encrypt(PrivKey, Data, fun get_salt/0).
+    snmp_usm:des_encrypt(PrivKey, Data, fun get_des_salt/0).
 
 des_decrypt(PrivKey, MsgPrivParams, EncData) ->
     snmp_usm:des_decrypt(PrivKey, MsgPrivParams, EncData).
 
-get_salt() ->
+get_des_salt() ->
     SaltInt = 
-	case catch ets:update_counter(snmp_agent_table, usm_salt_int, 1) of
+	case catch ets:update_counter(snmp_agent_table, usm_des_salt, 1) of
 	    N when N =< 4294967295 ->
 		N;
-	    _ -> % it doesn't exist, or it's time to wrap
-		ets:insert(snmp_agent_table, {usm_salt_int, 0}),
-		0
+	    N when integer(N) -> % wrap
+		ets:insert(snmp_agent_table, {usm_des_salt, 0}),
+		0;
+	    _ -> % it doesn't exist, initialize
+		{A1,A2,A3} = erlang:now(),
+		random:seed(A1,A2,A3),
+		R = random:uniform(4294967295),
+		ets:insert(snmp_agent_table, {usm_des_salt, R}),
+		R
 	end,
     EngineBoots = snmp_framework_mib:get_engine_boots(),
     [?i32(EngineBoots), ?i32(SaltInt)].
+
+aes_encrypt(PrivKey, Data) ->
+    snmp_usm:aes_encrypt(PrivKey, Data, fun get_aes_salt/0).
+
+aes_decrypt(PrivKey, UsmSecParams, EncData) ->
+    #usmSecurityParameters{msgPrivacyParameters        = MsgPrivParams,
+			   msgAuthoritativeEngineTime  = EngineTime,
+			   msgAuthoritativeEngineBoots = EngineBoots} =
+	UsmSecParams,
+    snmp_usm:aes_decrypt(PrivKey, MsgPrivParams, EncData, 
+			 EngineBoots, EngineTime).
+
+get_aes_salt() ->
+    SaltInt = 
+	case catch ets:update_counter(snmp_agent_table, usm_aes_salt, 1) of
+	    N when N =< 36893488147419103231  ->
+		N;
+	    N when integer(N) -> % wrap
+		ets:insert(snmp_agent_table, {usm_aes_salt, 0}),
+		0;
+	    _ -> % it doesn't exist, initialize
+		{A1,A2,A3} = erlang:now(),
+		random:seed(A1,A2,A3),
+		R = random:uniform(36893488147419103231),
+		ets:insert(snmp_agent_table, {usm_aes_salt, R}),
+		R
+	end,
+    [?i64(SaltInt)].
+
 
 
 %%-----------------------------------------------------------------

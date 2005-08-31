@@ -20,11 +20,13 @@
 -export([passwd2localized_key/3, localize_key/3]).
 -export([auth_in/4, auth_out/4, set_msg_auth_params/3]).
 -export([des_encrypt/3, des_decrypt/3]).
+-export([aes_encrypt/3, aes_decrypt/5]).
 
 
 -define(SNMP_USE_V3, true).
 -include("snmp_types.hrl").
 -include("SNMP-USER-BASED-SM-MIB.hrl").
+-include("SNMP-USM-AES-MIB.hrl").
 
 -define(VMODULE,"USM").
 -include("snmp_verbosity.hrl").
@@ -202,6 +204,25 @@ des_decrypt(PrivKey, MsgPrivParams, EncData) when length(MsgPrivParams) == 8 ->
     IV = snmp_misc:str_xor(PreIV, Salt),
     %% Whatabout errors here???  E.g. not a mulitple of 8!
     Data = binary_to_list(crypto:des_cbc_decrypt(DesKey, IV, EncData)),
+    Data2 = snmp_pdus:strip_encrypted_scoped_pdu_data(Data),
+    {ok, Data2}.
+
+aes_encrypt(PrivKey, Data, SaltFun) ->
+    AesKey = PrivKey,
+    Salt = SaltFun(),
+    EngineBoots = snmp_framework_mib:get_engine_boots(),
+    EngineTime = snmp_framework_mib:get_engine_time(),
+    IV = [?i32(EngineBoots), ?i32(EngineTime) | Salt],
+    EncData = crypto:aes_cfb_128_encrypt(AesKey, IV, Data),
+    {ok, binary_to_list(EncData), Salt}.
+
+aes_decrypt(PrivKey, MsgPrivParams, EncData, EngineBoots, EngineTime)
+  when length(MsgPrivParams) == 8 ->
+    AesKey = PrivKey,
+    Salt = MsgPrivParams,
+    IV = [?i32(EngineBoots), ?i32(EngineTime) | Salt],
+    %% Whatabout errors here???  E.g. not a mulitple of 8!
+    Data = binary_to_list(crypto:aes_cfb_128_decrypt(AesKey, IV, EncData)),
     Data2 = snmp_pdus:strip_encrypted_scoped_pdu_data(Data),
     {ok, Data2}.
 

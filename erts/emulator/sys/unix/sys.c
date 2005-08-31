@@ -26,6 +26,7 @@
 #endif
 
 #include <sys/times.h>		/* ! */
+#include <time.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <sys/uio.h>
@@ -426,6 +427,7 @@ erl_sys_init(void)
     if (isatty(0)) {
 	tcgetattr(0,&initial_tty_mode);
     }
+    tzset(); /* Required at least for NetBSD with localtime_r() */
 }
 
 /* signal handling */

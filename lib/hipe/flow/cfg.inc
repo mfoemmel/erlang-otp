@@ -67,6 +67,7 @@
 -endif.
 
 -ifdef(RTL_CFG).
+-define(PREORDER,true).
 -define(FIND_NEW_LABEL_NEEDED,true).
 -define(INFO_NEEDED,true).
 -define(PARAMS_NEEDED,true).
@@ -79,6 +80,7 @@
 -endif.
 
 -ifdef(SPARC_CFG).
+-define(PREORDER,true).
 -define(BREADTH_ORDER,true).
 -define(EXTRA_NEEDED,true).
 -define(FIND_NEW_LABEL_NEEDED,true).
@@ -535,6 +537,9 @@ inorder_search([], Visited, _, Ordering) ->
 %% reverse_preorder(CFG) ->
 %%     postorder(CFG).
 
+-endif.	% INCLUDE_ORDERINGS
+
+-ifdef(PREORDER).
 preorder(CFG) ->
   Start = start_label(CFG),
   Succ = succ_map(CFG),
@@ -554,7 +559,7 @@ preorder_search([N|Ns], Visited, Succ, Acc) ->
   end;
 preorder_search([], Visited, _, Ordering) ->
   {Ordering,Visited}.
--endif.	% INCLUDE_ORDERINGS
+-endif.	% PREORDER
 
 -ifdef(BREADTH_ORDER).
 breadthorder(CFG) ->

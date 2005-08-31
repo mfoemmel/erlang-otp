@@ -47,7 +47,7 @@
 %%
 %% Service context record
 %%
--record('ServiceContext', {context_id, context_data}).
+-record('IOP_ServiceContext', {context_id, context_data}).
 
 %%
 %% Exception recod for the resolve initial reference functions

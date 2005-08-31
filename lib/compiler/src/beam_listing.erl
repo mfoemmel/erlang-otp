@@ -36,7 +36,7 @@ module(File, {Mod,Exp,Attr,Kern}) ->
     foreach(fun (F) -> function(File, F) end, Kern);
 module(Stream, {Mod,Exp,Attr,Code,NumLabels}) ->
     %% This is output from beam_codegen.
-    io:format(Stream, "{module, ~s}.  %% version = ~w\n", 
+    io:format(Stream, "{module, ~p}.  %% version = ~w\n", 
 	      [Mod, beam_opcodes:format_number()]),
     io:format(Stream, "\n{exports, ~p}.\n", [Exp]),
     io:format(Stream, "\n{attributes, ~p}.\n", [Attr]),
@@ -65,7 +65,8 @@ function(File, {function,Name,Arity,Args,Body,Vdb}) ->
     io:format(File, "function ~p/~p.\n", [Name,Arity]),
     io:format(File, " ~p.\n", [Args]),
     print_vdb(File, Vdb),
-    put(beam_listing_nl, true),
+    put(beam_listing_nl, false),
+    nl(File),
     foreach(fun(F) -> format(File, F, []) end, Body),
     nl(File),
     erase(beam_listing_nl).

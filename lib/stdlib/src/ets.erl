@@ -381,7 +381,7 @@ file2tab(File) ->
 	{repaired, Name, _,_} ->
 	    init_file2tab(Name);
 	_Other ->
-	    old_file2tab(File)  %% compatibilty
+	    {error, badfile}
     end.
 
 init_file2tab(Name) ->
@@ -419,21 +419,6 @@ file2tab_error(Name, Reason) ->
     disk_log:close(Name),
     {error, Reason}.
 
-old_file2tab(File) ->
-    case file:read_file(File) of
-	{ok, Bin} ->
-	    case catch binary_to_term(Bin) of
-		{'EXIT',_} -> 
-		    {error, badfile};
-		{I,S} ->
-		    {Tab, Pid} = mk_tab(tuple_to_list(I)),
-		    insert_all(Tab, S),
-		    {ok,{Tab, Pid}}
-	    end;
-	_ ->
-	    {error, nofile}
-    end.
-
 mk_tab(I) ->
     {value, {name, Name}} = lists:keysearch(name, 1, I),
     {value, {type, Type}} = lists:keysearch(type, 1, I),
@@ -444,11 +429,6 @@ mk_tab(I) ->
 
 named_table(true) -> [named_table];
 named_table(false) -> [].
-
-insert_all(Tab, [Val|T]) ->
-    ets:insert(Tab, Val),
-    insert_all(Tab,T);
-insert_all(Tab,[]) -> Tab.
 
 table(Tab) ->
     table(Tab, []).

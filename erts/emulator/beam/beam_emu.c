@@ -1556,25 +1556,6 @@ void process_main(void)
   *
   */
 
-
-    /*
-     * Pick up the next message and place it in a x register (not r(0)).
-     * If no message, jump to a wait or wait_timeout instruction.
-     */
- OpCase(loop_rec_fx):
- {
-     Eterm* next;
-     ErlMessage* msgp = PEEK_MESSAGE(c_p);
-
-     if (msgp == NULL) {
-	 SET_I((Eterm *) Arg(0));
-	 Goto(*I);		/* Jump to a wait or wait_timeout instruction */
-     }
-     PreFetch(2, next);
-     xb(Arg(1)) = ERL_MESSAGE_TERM(msgp);
-     NextPF(2, next);
- }
-
     /*
      * Pick up the next message and place it in x(0).
      * If no message, jump to a wait or wait_timeout instruction.
@@ -1833,6 +1814,7 @@ void process_main(void)
 	SAVE_HTOP;
 	c_p->fcalls = FCALLS;
 	result = (*bf)(c_p, arg);
+	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 	if (is_value(result)) {
 	    StoreBifResult(3, result);
@@ -1857,6 +1839,7 @@ void process_main(void)
 	SAVE_HTOP;
 	c_p->fcalls = FCALLS;
 	result = (*bf)(c_p, arg);
+	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 	if (is_value(result)) {
 	    StoreBifResult(2, result);
@@ -1880,6 +1863,7 @@ void process_main(void)
 	SAVE_HTOP;
 	c_p->fcalls = FCALLS;
 	result = (*bf)(c_p, tmp_arg1, tmp_arg2);
+	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 	if (is_value(result)) {
 	    StoreBifResult(2, result);
@@ -1899,6 +1883,7 @@ void process_main(void)
 	bf = (BifFunction) Arg(0);
 	SAVE_HTOP;
 	result = (*bf)(c_p, tmp_arg1, tmp_arg2);
+	ERTS_HOLE_CHECK(c_p);
 	if (is_value(result)) {
 	    ASSERT(!is_CP(result));
 	    StoreBifResult(1, result);
@@ -1929,6 +1914,7 @@ void process_main(void)
 	 * A BIF with no arguments cannot fail (especially not with badarg).
 	 */
 	r(0) = (*bf)(c_p, I);
+	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 #ifdef HYBRID
         SWAPIN;
@@ -1952,6 +1938,7 @@ void process_main(void)
 	}
 	PreFetch(1, next);
 	result = (*bf)(c_p, r(0), I);
+	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 #ifdef HYBRID
         SWAPIN;
@@ -1994,6 +1981,7 @@ void process_main(void)
 	CHECK_TERM(r(0));
 	CHECK_TERM(x(1));
 	result = (*bf)(c_p, r(0), x(1), I);
+	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 #ifdef HYBRID
         SWAPIN;
@@ -2034,6 +2022,7 @@ void process_main(void)
 	}
 	PreFetch(1, next);
 	result = (*bf)(c_p, r(0), x(1), x(2), I);
+	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 #ifdef HYBRID
         SWAPIN;
@@ -2268,6 +2257,7 @@ void process_main(void)
 		 tmp_arg1 = big_lshift(tmp_arg1, i, bigp);
 		 if (is_nil(tmp_arg1)) {
 		 system_limit:
+		     erts_arith_shrink(c_p, bigp);
 		     c_p->freason = SYSTEM_LIMIT;
 		     goto lb_Cl_error;
 		 }
@@ -2281,6 +2271,23 @@ void process_main(void)
 		 goto big_shift;
 	     }
 	 }
+
+     OpCase(int_bnot_jsd):
+	 GetArg1(1, tmp_arg1);
+     if (is_small(tmp_arg1)) {
+	 tmp_arg1 = make_small(~signed_val(tmp_arg1));
+     } else if (is_big(tmp_arg1)) {
+	 bigp = BeamArithAlloc(c_p, BIG_NEED_SIZE(big_size(tmp_arg1)+1));
+	 tmp_arg1 = big_bnot(tmp_arg1, bigp);
+	 if (is_nil(tmp_arg1)) {
+	     goto system_limit;
+	 }
+	 MAYBE_SHRINK(c_p,bigp,tmp_arg1,BIG_NEED_SIZE(big_size(tmp_arg1)+1));
+	 ArithCheck(c_p);
+     } else {
+	 goto badarith;
+     }
+     StoreBifResult(2, tmp_arg1);
  }
 
  badarith:
@@ -2778,23 +2785,6 @@ void process_main(void)
      NextPF(3, next);
  }
 
- OpCase(int_bnot_jsd):
-    GetArg1(1, tmp_arg1);
-    if (is_small(tmp_arg1)) {
-	tmp_arg1 = make_small(~signed_val(tmp_arg1));
-    } else if (is_big(tmp_arg1)) {
-	Eterm* bigp = BeamArithAlloc(c_p, BIG_NEED_SIZE(big_size(tmp_arg1)+1));
-	tmp_arg1 = big_bnot(tmp_arg1, bigp);
-        MAYBE_SHRINK(c_p,bigp,tmp_arg1,BIG_NEED_SIZE(big_size(tmp_arg1)+1));
-	ArithCheck(c_p);
-	if (is_nil(tmp_arg1)) {
-	    goto system_limit;
-	}
-    } else {
-	goto badarith;
-    }
-    StoreBifResult(2, tmp_arg1);
-
  OpCase(i_is_ne_exact_f):
     if (EQ(tmp_arg1, tmp_arg2)) {
 	ClauseFail();
@@ -2968,6 +2958,7 @@ void process_main(void)
 		break;
 	    }
 	}
+	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 	SWAPIN;			/* There might have been a garbage collection. */
 	if (is_value(tmp_arg1)) {

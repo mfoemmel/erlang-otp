@@ -787,7 +787,7 @@ erl_start(int argc, char **argv)
 	    /* set maximum number of processes */
 	    Parg = get_arg(argv[i]+2, argv[i+1], &i);
 	    erts_max_processes = atoi(Parg);
-	    /* Check of result is delayed until later. This because +p
+	    /* Check of result is delayed until later. This is because +R
 	       may be given after +P. */
 	    break;
 

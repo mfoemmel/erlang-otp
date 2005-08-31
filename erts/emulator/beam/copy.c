@@ -591,8 +591,8 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
 
             case FUN_SUBTAG: {
                 ErlFunThing *funp = (ErlFunThing*) objp;
-                Uint i = thing_arityval(*objp) + 2;
-                Uint j = i + funp->num_free;
+                Uint i = thing_arityval(*objp) + 1;
+                Uint j = i + 1 + funp->num_free;
                 Uint k = i;
                 Eterm *hp, *hp_start;
                 GlobalAlloc(from,j,hp);

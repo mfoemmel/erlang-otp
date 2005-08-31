@@ -264,7 +264,7 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
 	   display(to, CBUF);
 	   erl_printf(CBUF, " found\n");
 	   send_error_to_logger(BIF_P->group_leader);
-	   erts_destroy_monitor(dmon);
+	   erts_destroy_monitor(mon);
 	   BIF_RET(am_true);
        }
        /* Soft (no force) send, use ->data in dist slot 
@@ -277,11 +277,20 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
        if (code == 1) {
 	   ASSERT(is_internal_port(dep->cid));
 	   erl_suspend(BIF_P, dep->cid);
+	   /* Restore monitor... */
+	   erts_add_monitor(&(BIF_P->monitors),mon->type,mon->ref,
+			    mon->pid,mon->name);
+	   erts_add_monitor(&(dep->monitors),dmon->type,dmon->ref,
+			    dmon->pid,dmon->name);
+	   erts_destroy_monitor(mon);
+	   erts_destroy_monitor(dmon);
 	   BIF_ERROR(BIF_P, RESCHEDULE);
        } else if (code < 0) { /* XXX is this the correct behaviour ??? */
 	   /* Should rarely happen since this node must be 
 	    * distributed for us to start the monitor.
 	    */
+	   erts_destroy_monitor(mon);
+	   erts_destroy_monitor(dmon);
 	   BIF_ERROR(BIF_P, EXC_NOTALIVE);
        }
        erts_destroy_monitor(dmon);
@@ -2652,9 +2661,26 @@ BIF_RETTYPE garbage_collect_0(BIF_ALIST_0)
     int reds;
 
     FLAGS(BIF_P) |= F_NEED_FULLSWEEP;
-    reds = erts_garbage_collect(BIF_P, 0, BIF_P->arg_reg, BIF_P->arity);
+    reds = erts_garbage_collect(BIF_P, 0, NULL, 0);
     BIF_RET2(am_true, reds);
 }
+
+/**********************************************************************/
+/* Perform garbage collection of the message area */
+
+BIF_RETTYPE garbage_collect_message_area_0(BIF_ALIST_0)
+{
+#ifdef HYBRID
+    int reds = 0;
+
+    FLAGS(BIF_P) |= F_NEED_FULLSWEEP;
+    reds = erts_global_garbage_collect(BIF_P, 0, NULL, 0);
+    BIF_RET2(am_true, reds);
+#else
+    BIF_RET(am_false);
+#endif
+}
+
 
 /**********************************************************************/
 
@@ -2664,25 +2690,29 @@ BIF_RETTYPE garbage_collect_0(BIF_ALIST_0)
 BIF_RETTYPE processes_0(BIF_ALIST_0)
 {
     int i;
-    int need = 0;
-    Eterm res = NIL;
+    Uint need;
+    Eterm res;
     Eterm* hp;
     Process *p;
-     
-    /* first work out how many processes there are */
-    for (i = 0; i < erts_max_processes; i++)
-	if ((p = process_tab[i]) != NULL)
-	    need += 2;
-     
-    hp = HAlloc(BIF_P, need);     /* we need two heap words for each pid */
+#ifdef DEBUG
+    Eterm *hp_end;
+#endif
 
-    /* make the list by scanning again (bakward) */
+    res = NIL;
+    need = erts_process_count() * 2;
+    hp = HAlloc(BIF_P, need); /* we need two heap words for each pid */
+#ifdef DEBUG
+    hp_end = hp + need;
+#endif
+     
+    /* make the list by scanning bakward */
     for (i = erts_max_processes-1; i >= 0; i--) {
 	if ((p = process_tab[i]) != NULL) {
 	    res = CONS(hp, process_tab[i]->id, res);
 	    hp += 2;
 	}
     }
+    ASSERT(hp == hp_end);
     BIF_RET(res);
 }
 

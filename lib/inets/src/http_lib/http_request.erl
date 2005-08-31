@@ -17,7 +17,7 @@
 
 -module(http_request).
 
--include("http.hrl").
+-include("http_internal.hrl").
 
 -export([headers/2, http_headers/1, is_absolut_uri/1]).
 

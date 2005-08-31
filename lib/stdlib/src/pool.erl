@@ -59,7 +59,7 @@ start(Name,Args) when atom(Name) ->
     gen_server:start({global, pool_master}, pool, [], []),
     Hosts = net_adm:host_file(),
     Nodes = start_nodes(Hosts, Name, Args),
-    lists:map({pool,attach}, Nodes),
+    lists:map(fun ?MODULE:attach/1, Nodes),
     Nodes.
 
 %%

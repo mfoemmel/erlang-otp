@@ -375,15 +375,22 @@ tab2list({ets,Name}) ->
 %% ---------------------------------------------------------------
 info({mnesia,Name}) ->
     case (catch mnesia:table_info(Name, all)) of
+	Info when list(Info) ->
+	    Info;
 	{'EXIT', {aborted, Reason}} ->
 	    {error, Reason};
-	Info ->
-	    Info
+	Else ->
+	    {error, Else}
     end;
 info({dets,Name}) ->
     dets:info(Name);
 info({ets,Name}) ->
-    ets:info(Name).
+    case ets:info(Name) of
+	T when tuple(T) ->
+	    tuple_to_list(T);
+	L ->
+	    L
+    end.
 
 
 info({mnesia,Name}, Item) ->

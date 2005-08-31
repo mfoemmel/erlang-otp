@@ -115,7 +115,7 @@ bopt_block(Reg, Fail, OldIs, [{block,Bl0}|Acc0], St0) ->
 		    %% 2. Not possible to rewrite because we have not seen
 		    %%    the complete boolan expression (it is spread out
 		    %%    over several blocks with jumps and labels).
-		    %%    The 'or' and 'and' instructions need to that fully
+		    %%    The 'or' and 'and' instructions must have fully
 		    %%    known operands in order to be eliminated.
 		    %%
 		    %% 3. Other bug or limitation.
@@ -217,17 +217,26 @@ split_block(Is0, Dst, Fail) ->
 
 split_block_1(Is, Fail) ->
     case split_block_2(Is, Fail, []) of
+	failed -> failed;
 	{[],_} -> failed;
 	{_,_}=Res -> Res
     end.
 
-% split_block_2([{set,[_],_,{bif,_,{f,0}}}=I|Is], Fail, Acc) ->
-%     split_block_2(Is, Fail, [I|Acc]);
 split_block_2([{set,[_],_,{bif,_,{f,Fail}}}=I|Is], Fail, Acc) ->
     split_block_2(Is, Fail, [I|Acc]);
 split_block_2([{'%live',_}|Is], Fail, Acc) ->
     split_block_2(Is, Fail, Acc);
-split_block_2(Is, _, Acc) -> {Acc,reverse(Is)}.
+split_block_2(Is, Fail, Acc) ->
+    %% We are done, but we must make sure that the failure label
+    %% is not used in the pre-block (because the failure label
+    %% might be removed).
+    split_block_3(Is, Fail, {Acc,reverse(Is)}).
+
+split_block_3([{set,[_],_,{bif,_,{f,Fail}}}|_], Fail, _) ->
+    failed;
+split_block_3([_|Is], Fail, Res) ->
+    split_block_3(Is, Fail, Res);
+split_block_3([], _, Res) -> Res.
 
 dst_regs(Is) ->
     dst_regs(Is, []).

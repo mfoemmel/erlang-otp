@@ -749,12 +749,12 @@ delete_dead_proc(Tab,Key)->
 	    ok
     end.
 
-%%Key is either a pid in list form or  Pidname:Pid in listform
+%%Key is either a pid in list form or Pidname:Pid in listform
 get_pid(Key)->
-    case list_to_pid(string:substr(Key,string:rchr(Key,$<))) of
-	Pid when pid(Pid)->
+    case catch list_to_pid(string:substr(Key,string:rchr(Key,$<))) of
+	Pid when is_pid(Pid)->
 	    Pid;
-	_->
+	_ ->
 	    nopid
     end.
 

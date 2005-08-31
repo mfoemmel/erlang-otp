@@ -40,15 +40,18 @@ MODULES = \
 	httpd \
 	httpd_acceptor \
 	httpd_acceptor_sup \
+	httpd_cgi \
 	httpd_conf \
 	httpd_example \
+	httpd_esi \
 	httpd_instance_sup \
 	httpd_manager \
 	httpd_misc_sup \
 	httpd_request \
 	httpd_request_handler \
 	httpd_response \
-	httpd_socket \
+        httpd_script_env \
+        httpd_socket \
 	httpd_sup \
 	httpd_verbosity \
 	httpd_util \
@@ -111,7 +114,7 @@ endif
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -I ../http_lib	
+ERL_FLAGS += -I ../http_lib -I ../inets_app
 
 ERL_COMPILE_FLAGS += $(INETS_FLAGS) \
                      +'{parse_transform,sys_pre_attributes}' \

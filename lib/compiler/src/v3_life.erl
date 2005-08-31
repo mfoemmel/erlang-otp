@@ -44,7 +44,7 @@
 
 -export([vdb_find/2]).
 
--import(lists, [map/2,foldl/3]).
+-import(lists, [map/2,foldl/3,reverse/1,sort/1]).
 -import(ordsets, [add_element/2,intersection/2,union/2,union/1]).
 
 -include("v3_kernel.hrl").
@@ -56,9 +56,13 @@ get_kanno(Kthing) -> element(2, Kthing).
 
 module(#k_mdef{name=M,exports=Es,attributes=As,body=Fs0}, Opts) ->
     put(?MODULE, Opts),
-    Fs1 = map(fun function/1, Fs0),
+    Fs1 = functions(Fs0, []),
     erase(?MODULE),
     {ok,{M,Es,As,Fs1}}.
+
+functions([F|Fs], Acc) ->
+    functions(Fs, [function(F)|Acc]);
+functions([], Acc) -> reverse(Acc).
 
 %% function(Kfunc) -> Func.
 
@@ -407,8 +411,32 @@ use_var(V, I, Vdb) ->
 	error -> vdb_store_new(V, I, I, Vdb)
     end.
 
-use_vars(Vs, I, Vdb0) ->
-    foldl(fun (V, Vdb) -> use_var(V, I, Vdb) end, Vdb0, Vs).
+use_vars([], _, Vdb) -> Vdb;
+use_vars([V], I, Vdb) -> use_var(V, I, Vdb);
+use_vars(Vs, I, Vdb) ->
+    Res = use_vars_1(sort(Vs), Vdb, I),
+    %% The following line can be used as an assertion.
+    %%   Res = foldl(fun (V, Vdb) -> use_var(V, I, Vdb) end, Vdb, Vs),
+    Res.
+
+%% Measurements show that it is worthwhile having this special
+%% function that updates/inserts several variables at once.
+
+use_vars_1([V|_]=Vs, [{V1,_,_}=Vd|Vdb], I) when V > V1 ->
+    [Vd|use_vars_1(Vs, Vdb, I)];
+use_vars_1([V|Vs], [{V1,_,_}|_]=Vdb, I) when V < V1 ->
+    %% New variable.
+    [{V,I,I}|use_vars_1(Vs, Vdb, I)];
+use_vars_1([V|Vs], [{_,F,L}=Vd|Vdb], I) ->
+    %% Existing variable.
+    if
+	I > L ->[{V,F,I}|use_vars_1(Vs, Vdb, I)];
+	true -> [Vd|use_vars_1(Vs, Vdb, I)]
+    end;
+use_vars_1([V|Vs], [], I) ->
+    %% New variable.
+    [{V,I,I}|use_vars_1(Vs, [], I)];
+use_vars_1([], Vdb, _) -> Vdb.
 
 add_var(V, F, L, Vdb) ->
     vdb_store_new(V, F, L, Vdb).

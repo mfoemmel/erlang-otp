@@ -48,7 +48,8 @@
 	 list_all_connections/0,
 	 init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 code_change/3, terminate/2, stop/0, setup_connection/8,
-	 reconfigure/1, reconfigure/3, reconfigure/4]).
+	 reconfigure/1, reconfigure/3, reconfigure/4, add_connection/3,
+	 sockname2peername/2, peername2sockname/2]).
 
 %%-----------------------------------------------------------------
 %% Macros/Defines
@@ -59,7 +60,8 @@
 
 -record(state, {connections, queue}).
 
--record(connection, {hp, child, interceptors, slave, flags = 0, alias = 0}).
+-record(connection, {hp, child, interceptors, slave, 
+		     flags = 0, alias = 0, socketdata = {"Unavailable", 0}}).
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -123,6 +125,54 @@ ssl_client_extra_options([{_Type, infinity}|T], Acc) ->
     ssl_client_extra_options(T, Acc);
 ssl_client_extra_options([{Type, Value}|T], Acc) ->
     ssl_client_extra_options(T, [{Type, Value}|Acc]).
+
+add_connection(Key, Key, SockData) ->
+    case ets:lookup(?PM_CONNECTION_DB, Key) of
+	[Connection] ->
+	    ets:insert(?PM_CONNECTION_DB, 
+		       Connection#connection{socketdata = SockData});
+	[] ->
+	    ets:insert(?PM_CONNECTION_DB, 
+		       #connection{hp= Key, child = connecting,
+				   socketdata = SockData})
+    end;
+add_connection(Key, NewKey, SockData) ->
+    add_connection(Key, Key, SockData),
+    add_connection(NewKey, NewKey, SockData).
+
+get_socket_data(Key) ->
+    case ets:lookup(?PM_CONNECTION_DB, Key) of
+	[#connection{socketdata = SockData}] ->
+	    SockData;
+	_ ->
+	    {"Unable to extract socket information", 0}
+    end.
+
+sockname2peername(SockHost, SockPort) ->
+    orber_tb:unique(
+      do_select([{#connection{hp = {'$1', '$2', '_'},
+			      socketdata = {match_type(SockHost), 
+					    match_type(SockPort)}, 
+			      _='_'}, [], [{{'$1', '$2'}}]}])).
+
+
+peername2sockname(PeerHost, PeerPort) ->
+    orber_tb:unique(
+      do_select([{#connection{hp = {match_type(PeerHost), 
+				    match_type(PeerPort),
+				    '_'},
+			      socketdata = '$1', 
+			      _='_'}, [], ['$1']}])).
+
+match_type(0) -> 
+    %% Wildcard port number
+    '_';
+match_type("") -> 
+    %% Wildcard host
+    '_';
+match_type(Key) -> 
+    %% Wildcard not used.
+    Key.
 
 create_key(Host, Port, []) ->
     {Host, Port, 0};
@@ -201,21 +251,38 @@ disconnect(Host, Port, Interface) ->
     gen_server:call(orber_iiop_pm, {disconnect, Host, Port, Interface}).
 
 list_existing_connections() ->
-    transform(do_select([{#connection{hp = {'$2','$3','$4'}, child = '$1', _='_'}, 
-			  [{is_pid, '$1'}], [{{'$2','$3','$4'}}]}]), []).
+    transform(
+      lists:sort(
+	do_select([{#connection{hp = {'$2','$3','$4'}, child = '$1', _='_'}, 
+		    [{is_pid, '$1'}], [{{'$1', '$2','$3','$4'}}]}])), []).
 
 list_setup_connections() ->
-    transform(do_select([{#connection{hp = {'$1','$2','$3'}, child = connecting, _='_'}, [], 
-			  [{{'$1','$2','$3'}}]}]), []).
+    transform(
+      lists:sort(
+	do_select([{#connection{hp = {'$1','$2','$3'}, child = connecting, _='_'}, [], 
+			     [{{'$1','$2','$3'}}]}])), []).
 
 list_all_connections() ->
-    transform(do_select([{#connection{hp = {'$1','$2','$3'}, _='_'}, [], 
-			  [{{'$1','$2','$3'}}]}]), []).
+    transform(
+      lists:sort(
+	do_select([{#connection{hp = {'$2','$3','$4'}, child = '$1', _='_'}, [], 
+		    [{{'$1','$2','$3', '$4'}}]}])), []).
 
 %% Since the connections interface can be 0 or an ip-address we want to
 %% transform those containing 0.
+transform([{C, H, P, 0}, {C, H, P, I}|T], Acc) ->
+    %% ACL defined interface. Drop the anonymous one.
+    transform(T, [{H, P, I}|Acc]);
+transform([{_C, H, P, 0}|T], Acc) ->
+    %% No interface supplied. Drop the 0.
+    transform(T, [{H, P}|Acc]);
+transform([{_C, H, P, I}|T], Acc) ->
+    %% Interface supplied. Keep it.
+    transform(T, [{H, P, I}|Acc]);
 transform([{H,P,0}|T], Acc) ->
     transform(T, [{H,P}|Acc]);
+transform([{H,P,I}|T], Acc) ->
+    transform(T, [{H,P,I}|Acc]);
 transform([H|T], Acc) ->
     transform(T, [H|Acc]);
 transform([], Acc) ->
@@ -247,7 +314,7 @@ stop() ->
 init(_Opts) ->
     process_flag(trap_exit, true),
     {ok, #state{connections = ets:new(orber_iiop_pm_db, 
-				      [{keypos, 2}, set, protected, named_table]),
+				      [{keypos, 2}, set, public, named_table]),
 		queue = ets:new(orber_iiop_pm_queue, [bag])}}.
 
 %%-----------------------------------------------------------------
@@ -364,19 +431,24 @@ update_db(Key, Options) ->
 
 update_connection(Connection, [{interceptors, false}|Options]) ->
     update_connection(Connection#connection{interceptors = false}, Options);
-update_connection(Connection, [{interceptors, {native, LPIs}}|Options]) ->
-    case Connection#connection.hp of
-	{H, P, 0} ->
-	    update_connection(Connection#connection{interceptors = 
-						    {native, {H, P}, LPIs}},
-			      Options);
-	{H, P, Interface} ->
-	    update_connection(Connection#connection{interceptors = 
-						    {native, {H, P, Interface}, 
-						     LPIs}},
-			      Options)
-    end;
-update_connection(Connection, [_|T]) ->
+update_connection(#connection{interceptors = false,
+			      hp = {PH, PP, _},
+			      socketdata = {SH, SP}} = Connection, 
+		  [{interceptors, {native, LPIs}}|Options]) ->
+    %% No Interceptor(s). Add the same Ref used by the built in interceptors.
+    update_connection(Connection#connection{interceptors = 
+					    {native, {PH, PP, SH, SP}, LPIs}},
+		      Options);
+update_connection(#connection{interceptors = {native, Ref, _}} = Connection, 
+		  [{interceptors, {native, LPIs}}|Options]) ->
+    %% Interceptor(s) already in use. We must use the same Ref as before.
+    update_connection(Connection#connection{interceptors = 
+					    {native, Ref, LPIs}},
+		      Options);
+update_connection(Connection, [H|T]) ->
+    orber:dbg("[~p] orber_iiop_pm:update_connection(~p, ~p)~n"
+	      "Unable to update the connection.~n", 
+	      [?LINE, Connection, H], ?DEBUG_LEVEL),
     update_connection(Connection, T);
 update_connection(Connection, []) ->
     Connection.
@@ -400,6 +472,11 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 	    ets:delete(?PM_CONNECTION_DB, K),
 	    invoke_connection_closed(I),
 	    {noreply, State};
+	[#connection{hp = K, interceptors = I}, #connection{hp = K2}] ->
+	    ets:delete(?PM_CONNECTION_DB, K),
+	    ets:delete(?PM_CONNECTION_DB, K2),
+	    invoke_connection_closed(I),
+	    {noreply, State};
 	[] when Reason == normal ->
 	    %% This might have been a spawned 'setup_connection' which terminated
 	    %% after sucessfully setting up a new connection.
@@ -415,14 +492,28 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 		    send_reply_to_queue(ets:lookup(State#state.queue, K), Exc),
 		    ets:delete(State#state.queue, K),
 		    orber:dbg("[~p] orber_iiop_pm:handle_info(setup_failed ~p);~n"
-			      "It was not possible to create a connection to the given host/port.",
+			      "It was not possible to create a connection to the"
+			      " given host/port.",
+			      [?LINE, K], ?DEBUG_LEVEL),
+		    {noreply, State};
+		[#connection{hp = K, child = connecting, interceptors = I}, 
+		 #connection{hp = K2}] ->
+		    ets:delete(?PM_CONNECTION_DB, K),
+		    ets:delete(?PM_CONNECTION_DB, K2),
+		    invoke_connection_closed(I),
+		    Exc = {'EXCEPTION',#'INTERNAL'{completion_status = ?COMPLETED_NO}},
+		    send_reply_to_queue(ets:lookup(State#state.queue, K), Exc),
+		    ets:delete(State#state.queue, K),
+		    orber:dbg("[~p] orber_iiop_pm:handle_info(setup_failed ~p);~n"
+			      "It was not possible to create a connection to the"
+			      " given host/port.",
 			      [?LINE, K], ?DEBUG_LEVEL),
 		    {noreply, State};
 		_ ->
 		    {noreply, State}
 	    end
     end;
-handle_info({setup_failed, {Host, Port, _} = Key, Exc}, State) ->
+handle_info({setup_failed, {Host, Port, _} = Key, Key, Exc}, State) ->
     %% Deletet the data from the connection DB first to avoid clients from
     %% trying to access it again.
     ets:delete(?PM_CONNECTION_DB, Key),
@@ -433,12 +524,72 @@ handle_info({setup_failed, {Host, Port, _} = Key, Exc}, State) ->
 	      "It was not possible to create a connection to the given host/port.", 
 	      [?LINE, Host, Port], ?DEBUG_LEVEL),
     {noreply, State};
+handle_info({setup_failed, {Host, Port, _} = Key, NewKey, Exc}, State) ->
+    %% Deletet the data from the connection DB first to avoid clients from
+    %% trying to access it again.
+    ets:delete(?PM_CONNECTION_DB, Key),
+    ets:delete(?PM_CONNECTION_DB, NewKey),
+    %% Now we can send whatever exception received.
+    send_reply_to_queue(ets:lookup(State#state.queue, Key), Exc),
+    ets:delete(State#state.queue, Key),
+    orber:dbg("[~p] orber_iiop_pm:handle_info(setup_failed ~p ~p);~n"
+	      "It was not possible to create a connection to the given host/port.", 
+	      [?LINE, Host, Port], ?DEBUG_LEVEL),
+    {noreply, State};
+handle_info({setup_successfull, Key, Key, {Child, Ctx, Int}}, State) ->
+    %% Create a link to the proxy and store it in the connection DB.
+    link(Child),
+    case ets:lookup(?PM_CONNECTION_DB, Key) of
+	[Connection] ->
+	    ets:insert(?PM_CONNECTION_DB, 
+		       Connection#connection{hp = Key, child = Child, 
+					     interceptors = Int, 
+					     slave = undefined});
+	[] ->
+	    ets:insert(?PM_CONNECTION_DB, 
+		       #connection{hp = Key, child = Child, 
+				   interceptors = Int, 
+				   slave = undefined})
+    end,
+    %% Send the Proxy reference to all waiting clients.
+    case Key of
+	{_, _, 0} ->
+	    send_reply_to_queue(ets:lookup(State#state.queue, Key),
+				{ok, Child, Ctx, Int, 0});
+	{_, _, Interface} ->
+	    send_reply_to_queue(ets:lookup(State#state.queue, Key),
+				{ok, Child, Ctx, Int, [Interface]})
+    end,
+    %% Reset the queue.
+    ets:delete(State#state.queue, Key),
+    {noreply, State};
 handle_info({setup_successfull, Key, NewKey, {Child, Ctx, Int}}, State) ->
     %% Create a link to the proxy and store it in the connection DB.
     link(Child),
-    ets:insert(?PM_CONNECTION_DB, #connection{hp = NewKey, child = Child, 
-					      interceptors = Int, 
-					      slave = undefined}),
+    case ets:lookup(?PM_CONNECTION_DB, NewKey) of
+	[Connection] ->
+	    ets:insert(?PM_CONNECTION_DB, 
+		       Connection#connection{hp = NewKey, child = Child, 
+					     interceptors = Int, 
+					     slave = undefined});
+	[] ->
+	    ets:insert(?PM_CONNECTION_DB, 
+		       #connection{hp = NewKey, child = Child, 
+				   interceptors = Int, 
+				   slave = undefined})
+    end,
+    case ets:lookup(?PM_CONNECTION_DB, Key) of
+	[Connection2] ->
+	    ets:insert(?PM_CONNECTION_DB, 
+		       Connection2#connection{hp = Key, child = Child, 
+					     interceptors = Int, 
+					     slave = undefined});
+	[] ->
+	    ets:insert(?PM_CONNECTION_DB, 
+		       #connection{hp = Key, child = Child, 
+				   interceptors = Int, 
+				   slave = undefined})
+    end,
     %% Send the Proxy reference to all waiting clients.
     case NewKey of
 	{_, _, 0} ->
@@ -485,14 +636,14 @@ setup_connection(PMPid, Host, Port, SocketType, SocketOptions, Chars, Wchars, Ke
 				Chars, Wchars, Key, NewKey);
 	false ->
 	    orber_tb:info("Blocked connect attempt to ~s - ~p", [Host, Port]),
-	    PMPid ! {setup_failed, Key, 
+	    PMPid ! {setup_failed, Key, Key,
 		     {'EXCEPTION', #'NO_PERMISSION'{completion_status=?COMPLETED_NO}}},
 	    ok;
 	Reason ->
 	    orber:dbg("[~p] orber_iiop_pm:handle_call(connect ~p ~p); failed~n"
 		      "Reason: ~p", 
 		      [?LINE, Host, Port, Reason], ?DEBUG_LEVEL),
-	    PMPid ! {setup_failed, Key, 
+	    PMPid ! {setup_failed, Key, Key,
 		     {'EXCEPTION', #'COMM_FAILURE'{completion_status=?COMPLETED_NO}}},
 	    ok
     end.
@@ -500,35 +651,35 @@ setup_connection(PMPid, Host, Port, SocketType, SocketOptions, Chars, Wchars, Ke
 
 do_setup_connection(PMPid, Host, Port, SocketType, SocketOptions, Chars, 
 		    Wchars, Key, NewKey) ->
-    case init_interceptors(Host, Port) of
-	{'EXCEPTION', E} ->
-	    PMPid ! {setup_failed, Key, {'EXCEPTION', E}},
+    case catch orber_iiop_outsup:connect(Host, Port, SocketType, 
+					 SocketOptions, PMPid, Key, NewKey) of
+	{error, {'EXCEPTION', E}} ->
+	    orber:dbg("[~p] orber_iiop_pm:handle_call(connect ~p ~p);~n"
+		      "Raised Exc: ~p", 
+		      [?LINE, Host, Port, E], ?DEBUG_LEVEL),
+	    PMPid ! {setup_failed, Key, NewKey, {'EXCEPTION', E}},
 	    ok;
-	Interceptors ->
-	    case catch orber_iiop_outsup:connect(Host, Port, SocketType, 
-						 SocketOptions, PMPid) of
-		{'error', {'EXCEPTION', E}} ->
-		    orber:dbg("[~p] orber_iiop_pm:handle_call(connect ~p ~p);~n"
-			      "Raised Exc: ~p", 
-			      [?LINE, Host, Port, E], ?DEBUG_LEVEL),
-		    PMPid ! {setup_failed, Key, {'EXCEPTION', E}},
+	{error, Reason} ->
+	    orber:dbg("[~p] orber_iiop_pm:handle_call(connect ~p ~p);~n"
+		      "Got EXIT: ~p", 
+		      [?LINE, Host, Port, Reason], ?DEBUG_LEVEL),
+	    PMPid ! {setup_failed, Key, NewKey, 
+		     {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}},
+	    ok;
+	{ok, undefined} ->
+	    orber:dbg("[~p] orber_iiop_pm:handle_call(connect ~p ~p);~n"
+		      "Probably no listener on the given Node/Port or timedout.",
+		      [?LINE, Host, Port], ?DEBUG_LEVEL),
+	    PMPid ! {setup_failed, Key, NewKey, 
+		     {'EXCEPTION', #'COMM_FAILURE'{minor=(?ORBER_VMCID bor 1),
+						   completion_status=?COMPLETED_NO}}},
+	    ok;
+	{ok, Child} ->
+	    case init_interceptors(Host, Port, get_socket_data(Key)) of
+		{'EXCEPTION', E} ->
+		    PMPid ! {setup_failed, Key, NewKey, {'EXCEPTION', E}},
 		    ok;
-		{'error', Reason} ->
-		    orber:dbg("[~p] orber_iiop_pm:handle_call(connect ~p ~p);~n"
-			      "Got EXIT: ~p", 
-			      [?LINE, Host, Port, Reason], ?DEBUG_LEVEL),
-		    PMPid ! {setup_failed, Key, 
-			     {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}},
-		    ok;
-		{ok, undefined} ->
-		    orber:dbg("[~p] orber_iiop_pm:handle_call(connect ~p ~p);~n"
-			      "Probably no listener on the given Node/Port or timedout.",
-			      [?LINE, Host, Port], ?DEBUG_LEVEL),
-		    PMPid ! {setup_failed, Key, 
-			     {'EXCEPTION', #'COMM_FAILURE'{minor=(?ORBER_VMCID bor 1),
-							   completion_status=?COMPLETED_NO}}},
-		    ok;
-		{ok, Child} ->
+		Interceptors ->
 		    BiDirCtx = orber:bidir_context(),
 		    Ctx = case orber:exclude_codeset_ctx() of
 			      true ->
@@ -610,10 +761,10 @@ invoke_connection_closed({_Type, _PIs}) ->
     ok.
 
 
-init_interceptors(Host, Port) ->
+init_interceptors(Host, Port, {SHost, SPort}) ->
     case orber:get_interceptors() of
 	{native, PIs} ->
-	    case catch orber_pi:new_out_connection(PIs, Host, Port) of
+	    case catch orber_pi:new_out_connection(PIs, Host, Port, SHost, SPort) of
 		{'EXIT', R} ->
 		    orber:dbg("[~p] orber_iiop_pm:init_interceptors(~p); Got Exit: ~p.~n"
 			      "One or more Interceptor incorrect or undefined?", 

@@ -46,7 +46,7 @@ MODULES = \
 	httpc_request \
 	http_uri \
 
-HRL_FILES = 
+HRL_FILES = httpc_internal.hrl
 
 ERL_FILES = $(MODULES:%=%.erl)
 
@@ -60,7 +60,7 @@ INETS_FLAGS = -D'SERVER_SOFTWARE="inets/$(VSN)"' \
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -I ../http_lib
+ERL_FLAGS += -I ../http_lib -I ../inets_app
 
 ERL_COMPILE_FLAGS += $(INETS_FLAGS) \
                      +'{parse_transform,sys_pre_attributes}' \

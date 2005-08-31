@@ -7,6 +7,8 @@
 
             %% FTP
             ftp,
+	    ftp_progress,	
+	    ftp_response,		
             ftp_sup,
             
             %% HTTP client:
@@ -31,7 +33,9 @@
             httpd,
             httpd_acceptor,
             httpd_acceptor_sup,
+	    httpd_cgi,
             httpd_conf,
+	    httpd_esi,
             httpd_example,
             httpd_instance_sup,
             httpd_manager,
@@ -39,6 +43,7 @@
             httpd_request,
             httpd_request_handler,
             httpd_response,
+	    httpd_script_env,
             httpd_socket,
             httpd_sup,
             httpd_util,

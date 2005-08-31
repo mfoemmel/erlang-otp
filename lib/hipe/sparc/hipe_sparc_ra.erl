@@ -1,26 +1,18 @@
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <02/10/09 18:51:08 happi>
-%% ====================================================================
-%%  Filename : 	hipe_sparc_ra.erl
-%%  Module   :	hipe_sparc_ra
-%%  Purpose  :  
-%%  Notes    : 
-%%  History  :	* 2001-07-20 Erik Johansson (happi@csd.uu.se): 
-%%               Created.
-%%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2005/03/01 08:01:33 $
-%%              $Revision: 1.27 $
-%% ====================================================================
-%%  Exports  :
+%% -*- erlang-indent-level: 2 -*-
+%%=====================================================================
 %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Driver module for register allocation of SPARC code.
+%%
+%%=====================================================================
 
 -module(hipe_sparc_ra).
 -export([allocate/3]).
+
 -define(HIPE_INSTRUMENT_COMPILER, true). %% Turn on instrumentation.
+
 -include("../main/hipe.hrl").
+
+%%---------------------------------------------------------------------
 
 allocate(_Fun, SparcCfg0, Options) ->
   ?inc_counter(ra_caller_saves_counter,count_caller_saves(SparcCfg0)),
@@ -28,20 +20,20 @@ allocate(_Fun, SparcCfg0, Options) ->
   ?start_ra_instrumentation(Options, 
 			    count_instrs_cfg(SparcCfg0),
 			    hipe_gensym:get_var(sparc)),
-
+  
   SparcCfg = hipe_sparc_multimove:remove_multimoves(SparcCfg0),
   {NewCfg, TempMap, NextPos}  = 
     case proplists:get_value(regalloc,Options) of
       linear_scan ->
 	hipe_sparc_ra_ls:alloc(SparcCfg, Options);
       graph_color ->
-	hipe_sparc_ra_graph_color:lf_alloc(SparcCfg, Options);
+	ra(SparcCfg, Options, hipe_graph_coloring_regalloc);
       coalescing ->
-	hipe_sparc_ra_coalescing:lf_alloc(SparcCfg, Options);
+	ra(SparcCfg, Options, hipe_coalescing_regalloc);
+      optimistic ->
+	ra(SparcCfg, Options, hipe_optimistic_regalloc);
       naive ->
 	hipe_sparc_ra_naive:alloc(SparcCfg, Options);
-%%    newls ->
-%%	hipe_sparc_ra_new_ls:alloc(SparcCfg, Options);
       _ -> %% linear_scan made default register allocator
 	hipe_sparc_ra_ls:alloc(SparcCfg, Options)
     end,
@@ -65,9 +57,61 @@ allocate(_Fun, SparcCfg0, Options) ->
 
   {{NewCfg3,TempMap, NextPos3}, FpMap}.
 
+%%---------------------------------------------------------------------
+%%
+%% Generic interface for register allocating SPARC code via a coloring
+%% based scheme (graph_color, iterated or optimistic coalescing).
+%%
+%%---------------------------------------------------------------------
 
-%% This is only a info-gathering function used for benchmarking
-%% purposes. 
+ra(SparcCfg, Options, Method) ->
+  SpillLimit = hipe_gensym:get_var(sparc),
+  ra(SparcCfg, SpillLimit, Options, Method).
+
+ra(SparcCfg, SpillLimit, Options, Method) ->
+  ?inc_counter(ra_iteration_counter,1), 
+  {Map, _NewSpillIndex} = Method:regalloc(SparcCfg, 0, SpillLimit,
+					  hipe_sparc_specific, Options),
+  TempMap = cols2tuple(Map),
+  
+  {NewCfg, DontSpill} =
+    hipe_sparc_ra_postconditions:rewrite(SparcCfg, TempMap, [], Options),
+  
+  case DontSpill of
+    [] -> 
+      %% Code to minimize stack size by allocation of temps to spillpositions
+      {TempMap2, NewSpillIndex2} = 
+	hipe_spill_minimize:stackalloc(NewCfg, [], 
+				       0, Options, 
+				       hipe_sparc_specific, 
+				       TempMap),
+      TempMap3 =
+	hipe_spill_minimize:mapmerge(hipe_temp_map:to_substlist(TempMap), 
+				     TempMap2),
+      TempMap4 = cols2tuple(TempMap3),
+      ?add_spills(Options, NewSpillIndex2),
+      {NewCfg, TempMap4, NewSpillIndex2};
+    _ -> 
+      %% Since SpillLimit is used as a low-water mark
+      %% the list of temps not to spill is uninteresting.
+      ra(NewCfg, SpillLimit, Options, Method)
+  end.
+
+%%
+%% Converts a list of [{R1, C1}, {R2, C2}, ...} to a tuple {C17, C23, ...}.
+%%
+%% The N's must be unique but do not have to be sorted and they can be sparse.
+%%
+
+cols2tuple(Map) ->
+  hipe_temp_map:cols2tuple(Map, hipe_sparc_specific).
+
+
+%%---------------------------------------------------------------------
+%% This is only an info-gathering function used for benchmarking
+%% purposes
+%%---------------------------------------------------------------------
+
 count_caller_saves(CFG) ->
   Liveness = hipe_sparc_liveness:analyze(CFG),
   count_caller_saves(CFG, Liveness, hipe_sparc_specific).

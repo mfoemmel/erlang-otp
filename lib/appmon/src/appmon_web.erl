@@ -882,13 +882,13 @@ add_space([Char|Rest],Len,New) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Interpret the type of the data and make it to a list               %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-fix_type(Val)when atom(Val) ->
+fix_type(Val) when is_atom(Val) ->
     atom_to_list(Val);
-fix_type(Val)when float(Val) ->
+fix_type(Val) when is_float(Val) ->
     float_to_list(Val);
-fix_type(Val)when integer(Val) ->
+fix_type(Val) when is_integer(Val) ->
     integer_to_list(Val);
-fix_type(Val)when list(Val) ->
+fix_type(Val) when is_list(Val) ->
     case io_lib:printable_list(Val) of
 	true->
 	    case Val of
@@ -900,11 +900,11 @@ fix_type(Val)when list(Val) ->
 	_->
 	    io_lib:write(Val)
     end;
-fix_type(Val)when pid(Val) ->
+fix_type(Val) when is_pid(Val) ->
     pid_to_list(Val);
-fix_type(Val)when port(Val) ->
-    pid_to_list(Val);
-fix_type(Val)when tuple(Val) ->
+fix_type(Val) when is_port(Val) ->
+    erlang:port_to_list(Val);
+fix_type(Val) when is_tuple(Val) ->
     io_lib:write(Val);
 fix_type(_Val) ->
     [].

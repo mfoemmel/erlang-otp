@@ -17,6 +17,8 @@
 
 -define(RTL_CFG,true).	% needed for cfg.inc below
 
+-export([preorder/1]). %% Added Daz, 2005/08/09, to get the preorder too
+
 -include("../main/hipe.hrl").
 -include("../flow/cfg.inc").
 

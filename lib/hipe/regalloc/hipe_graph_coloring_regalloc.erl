@@ -389,7 +389,7 @@ spill(IG, Vis, Spill, K, SpillLimit, Target) ->
       ?EXIT('no node to spill');
     [{_Cost,N}|_] ->
       {Low, NewIG} = decrement_neighbors(N, [], IG, Vis, K),
-      ?report("spilled node ~p at cost ~p (~p now ready)~n",[N,Cost,Low]),
+      %?report("spilled node ~p at cost ~p (~p now ready)~n",[N,Cost,Low]),
       {N, Low, NewIG}
   end.
 

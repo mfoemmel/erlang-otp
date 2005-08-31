@@ -48,10 +48,7 @@
 %%-export([get_slot/2,get_bucket/2,on_bucket/3,fold_dict/3,
 %%	 maybe_expand/2,maybe_contract/2]).
 
-%-define(seg_size, 2).
-%-define(max_seg, 32).
-%-define(expand_load, 2).
-%-define(contract_load, 1).
+%% Note: mk_seg/1 must be changed too if you seg_size is changed.
 -define(seg_size, 16).
 -define(max_seg, 32).
 -define(expand_load, 5).
@@ -497,13 +494,7 @@ rehash([], _Slot1, _Slot2, _MaxN) -> [[]|[]].
 
 %% mk_seg(Size) -> Segment.
 
-mk_seg(4) -> {[],[],[],[]};
-mk_seg(8) -> {[],[],[],[],[],[],[],[]};
-mk_seg(16) -> {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]};
-mk_seg(32) ->
-    {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],
-     [],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]};
-mk_seg(Size) -> list_to_tuple(lists:duplicate(Size, [])).
+mk_seg(16) -> {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}.
 
 %% expand_segs(Segs, EmptySeg) -> NewSegs.
 %% contract_segs(Segs) -> NewSegs.

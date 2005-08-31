@@ -30,6 +30,7 @@
 -include("snmp_types.hrl").
 -include("snmpm_usm.hrl").
 -include("SNMP-USER-BASED-SM-MIB.hrl").
+-include("SNMP-USM-AES-MIB.hrl").
 % -include("SNMPv2-TC.hrl").
 
 -define(VMODULE,"M-USM").
@@ -39,6 +40,7 @@
 %%-----------------------------------------------------------------
 
 -define(i32(Int), (Int bsr 24) band 255, (Int bsr 16) band 255, (Int bsr 8) band 255, Int band 255).
+-define(i64(Int), (Int bsr 56) band 255, (Int bsr 48) band 255, (Int bsr 40) band 255, (Int bsr 32) band 255, (Int bsr 24) band 255, (Int bsr 16) band 255, (Int bsr 8) band 255, Int band 255).
 
 
 init() ->
@@ -220,17 +222,22 @@ is_auth(AuthProtocol, AuthKey, AuthParams, Packet, SecName,
 		    InTimeWindow =
 			if
 			    SnmpEngineBoots == 2147483647 ->
-				false;
+				{false, [{engine, SnmpEngineID}, 
+					 {boots,  at_max}]};
 			    MsgAuthEngineBoots < SnmpEngineBoots ->
-				false;
+				{false, [{engine, MsgAuthEngineID},
+					 {boots,  MsgAuthEngineBoots}]};
 			    MsgAuthEngineBoots == SnmpEngineBoots,
 			    MsgAuthEngineTime < (SnmpEngineTime - 150) ->
-				false;
+				{false, [{engine, MsgAuthEngineID},
+					 {time,   MsgAuthEngineTime}]};
 			    true -> true
 			end,
 		    case InTimeWindow of
-			false ->
-			    error(notInTimeWindow, []);
+			{false, Reason} ->
+			    ?vinfo("not in time window[3.2.7b2]: ~p", 
+				   [Reason]),
+			    error(notInTimeWindow, Reason);
 			true ->
 			    ok
 		    end,
@@ -262,6 +269,15 @@ try_decrypt(usmNoPrivProtocol, _, _, _, SecName) -> % 3.2.5
 try_decrypt(usmDESPrivProtocol, 
 	    PrivKey, MsgPrivParams, EncryptedPDU, SecName) ->
     case (catch des_decrypt(PrivKey, MsgPrivParams, EncryptedPDU)) of
+	{ok, DecryptedData} ->
+	    DecryptedData;
+	_ ->
+	    error(usmStatsDecryptionErrors, 
+		  ?usmStatsDecryptionErrors, SecName)
+    end;
+try_decrypt(usmAesCfb128Protocol, 
+	    PrivKey, UsmSecParams,  EncryptedPDU, SecName) ->
+    case (catch aes_decrypt(PrivKey, UsmSecParams, EncryptedPDU)) of
 	{ok, DecryptedData} ->
 	    DecryptedData;
 	_ ->
@@ -354,7 +370,9 @@ encrypt(Data, PrivProtocol, PrivKey, SecLevel) ->
 try_encrypt(usmNoPrivProtocol, _PrivKey, _Data) -> % 3.1.2
     error(unsupportedSecurityLevel);
 try_encrypt(usmDESPrivProtocol, PrivKey, Data) ->
-    des_encrypt(PrivKey, Data).
+    des_encrypt(PrivKey, Data);
+try_encrypt(usmAesCfb128Protocol, PrivKey, Data) ->
+    aes_encrypt(PrivKey, Data).
 
 authenticate_outgoing(Message, UsmSecParams, 
 		      AuthKey, AuthProtocol, SecLevel) ->
@@ -382,16 +400,30 @@ set_msg_auth_params(Message, UsmSecParams) ->
     snmp_usm:set_msg_auth_params(Message, UsmSecParams, []).
 
 des_encrypt(PrivKey, Data) ->
-    snmp_usm:des_encrypt(PrivKey, Data, fun get_salt/0).
+    snmp_usm:des_encrypt(PrivKey, Data, fun get_des_salt/0).
 
 des_decrypt(PrivKey, MsgPrivParams, EncData) ->
     snmp_usm:des_decrypt(PrivKey, MsgPrivParams, EncData).
 
-get_salt() ->
-    SaltInt     = snmpm_config:incr_counter(usm_salt, 1),
+get_des_salt() ->
+    SaltInt     = snmpm_config:incr_counter(usm_des_salt, 1),
     EngineBoots = get_engine_boots(),
     [?i32(EngineBoots), ?i32(SaltInt)].
 
+aes_encrypt(PrivKey, Data) ->
+    snmp_usm:aes_encrypt(PrivKey, Data, fun get_aes_salt/0).
+
+aes_decrypt(PrivKey, UsmSecParams, EncData) ->
+    #usmSecurityParameters{msgPrivacyParameters = MsgPrivParams,
+			   msgAuthoritativeEngineTime = EngineTime,
+			   msgAuthoritativeEngineBoots = EngineBoots} =
+	UsmSecParams,
+    snmp_usm:aes_decrypt(PrivKey, MsgPrivParams, EncData, 
+			 EngineBoots, EngineTime).
+
+get_aes_salt() ->
+    SaltInt     = snmpm_config:incr_counter(usm_aes_salt, 1),
+    [?i64(SaltInt)].
 
 %%-----------------------------------------------------------------
 

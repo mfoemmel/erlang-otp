@@ -57,8 +57,8 @@
 %%--------------- EXPORTS-------------------------------------
 %% API external
 -export([%% Native Intercepotors API
-	 new_out_connection/3,
-	 new_in_connection/3,
+	 new_out_connection/5,
+	 new_in_connection/5,
 	 closed_in_connection/2,
 	 closed_out_connection/2,
 	 in_request_enc/4,
@@ -185,8 +185,8 @@
 %% Exception: 
 %% Effect   : 
 %%------------------------------------------------------------
-new_in_connection(PIs, Host, Port) ->
-    case catch new_in_connection(PIs, undefined, Host, Port) of
+new_in_connection(PIs, Host, Port, SHost, SPort) ->
+    case catch new_in_connection(PIs, undefined, Host, Port, SHost, SPort) of
 	{'EXIT', R} ->
 	    orber:dbg("[~p] orber_pi:new_in_connection(~p); exit(~p)", 
 		      [?LINE, PIs, R], ?DEBUG_LEVEL),
@@ -199,11 +199,35 @@ new_in_connection(PIs, Host, Port) ->
 	    Ref
     end.
 
-new_in_connection([], Ref, _, _) ->
+new_in_connection([], Ref, _, _, _, _) ->
     Ref;
-new_in_connection([Mod|T], Ref, Host, Port) ->
-    NewRef = Mod:new_in_connection(Ref, Host, Port),
-    new_in_connection(T, NewRef, Host, Port).
+new_in_connection([Mod|T], Ref, Host, Port, SHost, SPort) ->
+    case get_arity(Mod, new_in_connection) of
+	5 ->
+	    NewRef = Mod:new_in_connection(Ref, Host, Port, SHost, SPort),
+	    new_in_connection(T, NewRef, Host, Port, SHost, SPort);
+	3 ->
+	    NewRef = Mod:new_in_connection(Ref, Host, Port),
+	    new_in_connection(T, NewRef, Host, Port, SHost, SPort)
+    end.
+
+get_arity(Mod, Func) ->
+    get_arity(Mod, Func, true).
+get_arity(Mod, Func, Retry) ->
+    case erlang:function_exported(Mod, Func, 5) of
+	true ->
+	    5;
+	false ->
+	    case erlang:function_exported(Mod, Func, 3) of
+		true ->
+		    3;
+		false when Retry == true ->
+		    {module, _} = code:ensure_loaded(Mod),
+		    get_arity(Mod, Func, false);
+		false ->
+		    exit("Unable to load interceptor")
+	    end
+    end.
 
 %%------------------------------------------------------------
 %% function : closed_in_connection
@@ -240,8 +264,8 @@ closed_in_connection_helper([Mod|T], Ref) ->
 %% Exception: 
 %% Effect   : 
 %%------------------------------------------------------------
-new_out_connection(PIs, Host, Port) ->
-    case catch new_out_connection(PIs, undefined, Host, Port) of
+new_out_connection(PIs, Host, Port, SHost, SPort) ->
+    case catch new_out_connection(PIs, undefined, Host, Port, SHost, SPort) of
 	{'EXIT', R} ->
 	    orber:dbg("[~p] orber_pi:new_out_connection(~p); exit(~p)", 
 		      [?LINE, PIs, R], ?DEBUG_LEVEL),
@@ -254,11 +278,17 @@ new_out_connection(PIs, Host, Port) ->
 	    Ref
     end.
 
-new_out_connection([], Ref, _, _) ->
+new_out_connection([], Ref, _, _, _, _) ->
     Ref;
-new_out_connection([Mod|T], Ref, Host, Port) ->
-    NewRef = Mod:new_out_connection(Ref, Host, Port),
-    new_out_connection(T, NewRef, Host, Port).
+new_out_connection([Mod|T], Ref, Host, Port, SHost, SPort) ->
+    case get_arity(Mod, new_out_connection) of
+	5 ->
+	    NewRef = Mod:new_out_connection(Ref, Host, Port, SHost, SPort),
+	    new_out_connection(T, NewRef, Host, Port, SHost, SPort);
+	3 ->
+	    NewRef = Mod:new_out_connection(Ref, Host, Port),
+	    new_out_connection(T, NewRef, Host, Port, SHost, SPort)
+    end.
 
 %%------------------------------------------------------------
 %% function : closed_out_connection
@@ -735,19 +765,19 @@ server_send(send_reply, SRI, [H|T], Acc, PIs) ->
     end.
 
 receive_request(SRI, Mod) ->
-    apply(Mod, receive_request, SRI).
+    apply(Mod, receive_request, [SRI]).
 
 send_other(SRI, Mod) ->
-    apply(Mod, send_other, SRI).
+    apply(Mod, send_other, [SRI]).
 
 receive_service_contexts(SRI, Mod) ->
-    apply(Mod, receive_service_contexts, SRI).
+    apply(Mod, receive_service_contexts, [SRI]).
 
 send_reply(SRI, Mod) ->
-    apply(Mod, send_reply, SRI).
+    apply(Mod, send_reply, [SRI]).
 
 send_exception(SRI, Mod) ->
-    apply(Mod, send_exception, SRI).
+    apply(Mod, send_exception, [SRI]).
 
 
 %%------------------------------------------------------------
@@ -857,16 +887,16 @@ client_receive(receive_other, CRI, [H|T], Acc, PIs) ->
 
 
 send_request(CRI, Mod) ->
-    apply(Mod, send_request, CRI).
+    apply(Mod, send_request, [CRI]).
 
 receive_reply(CRI, Mod) ->
-    apply(Mod, receive_reply, CRI).
+    apply(Mod, receive_reply, [CRI]).
 
 receive_other(CRI, Mod) ->
-    apply(Mod, receive_other, CRI).
+    apply(Mod, receive_other, [CRI]).
 
 receive_exception(CRI, Mod) ->
-    apply(Mod, receive_exception, CRI).
+    apply(Mod, receive_exception, [CRI]).
 
 %%------------------------------------------------------------
 %% Functions for retrieving info from RequestInfo

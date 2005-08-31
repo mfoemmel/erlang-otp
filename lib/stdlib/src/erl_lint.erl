@@ -74,14 +74,14 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                module=[],                       %Module
                package="",                      %Module package
                behaviour=[],                    %Behaviour
-               exports=[],                      %Exports
+               exports=gb_sets:empty(),		%Exports
                imports=[],                      %Imports
                mod_imports=dict:new(),          %Module Imports
                compile=[],                      %Compile flags
                records=orddict:new(),           %Record definitions
-               defined=[],                      %Defined fuctions
-               called=orddict:new(),            %Called functions
-               calls=orddict:new(),             %Who calls who
+               defined=gb_sets:empty(),		%Defined fuctions
+               called=dict:new(),		%Called functions
+               calls=dict:new(),		%Who calls who
                imported=[],                     %Actually imported functions
 	       clashes=[],			%Exported functions named as BIFs
                func=[],                         %Current function
@@ -312,14 +312,14 @@ start(File, Opts) ->
     Enabled1 = [Category || {Category,true} <- Enabled0],
     Enabled = ordsets:from_list(Enabled1),
     #lint{state=start,
-          exports=ordsets:from_list([{module_info,0},
+          exports=gb_sets:from_list([{module_info,0},
                                      {module_info,1}]),
           mod_imports=dict:from_list([{erlang,erlang}]),
           compile=Opts,
           %% Internal pseudo-functions must appear as defined/reached.
-          defined=ordsets:from_list(pseudolocals()),
-          called=orddict:from_list([{F, [0]} || F <- pseudolocals()]),
-          calls=orddict:from_list([{{module_info,1}, pseudolocals()}]),
+          defined=gb_sets:from_list(pseudolocals()),
+          called=dict:from_list([{F, [0]} || F <- pseudolocals()]),
+          calls=dict:from_list([{{module_info,1}, pseudolocals()}]),
           warn_format=value_option(warn_format, 1, warn_format, 1,
                                    nowarn_format, 0, Opts),
 	  enabled_warnings = Enabled,
@@ -402,8 +402,8 @@ start_state({attribute,L,module,{M,Ps}}, St) ->
     F = {new, length(Ps)},
     Vt = orddict:from_list([{V, {bound, used, []}} || V <- ['THIS' | Ps]]),
     St1#lint{state = attribute,
-	     exports = ordsets:add_element(F, St#lint.exports),
-	     defined = ordsets:add_element(F, St#lint.defined),
+	     exports = gb_sets:add_element(F, St#lint.exports),
+	     defined = gb_sets:add_element(F, St#lint.defined),
 	     global_vt = Vt};
 start_state({attribute,L,module,M}, St) ->
     St1 = set_module(M, L, St),
@@ -468,10 +468,12 @@ eof(Line, St0) ->
               true -> St1;
               false ->
                   %% Generate warnings.
-                  Used = reached_functions(St1#lint.exports, St1#lint.calls),
+                  Used = reached_functions(gb_sets:to_list(St1#lint.exports),
+					   St1#lint.calls),
                   func_warning(is_warn_enabled(unused_function, St1),
 			       Line, unused_function,
-                               ordsets:subtract(St1#lint.defined, Used),
+                               ordsets:subtract(gb_sets:to_list(St1#lint.defined),
+						Used),
                                St1)
           end,
     %% Check for unused imports.
@@ -480,13 +482,13 @@ eof(Line, St0) ->
                        ordsets:subtract(St2#lint.imports, St2#lint.imported),
                        St2),
     %% Check for undefined functions.
-    Undef = foldl(fun (NA, Called) -> orddict:erase(NA, Called) end,
-                  St3#lint.called, St3#lint.defined),
+    Undef = foldl(fun (NA, Called) -> dict:erase(NA, Called) end,
+		  St3#lint.called, gb_sets:to_list(St3#lint.defined)),
     orddict:fold(fun (NA, Ls, St) ->
-                    foldl(fun (L, Sta) ->
-                                  add_error(L, {undefined_function,NA}, Sta)
-                          end, St, Ls)
-            end, St3, Undef).
+			 foldl(fun (L, Sta) ->
+				       add_error(L, {undefined_function,NA}, Sta)
+			       end, St, Ls)
+		 end, St3, dict:to_list(Undef)).
 
 func_warning(true, Line, Type, Fs, St) -> func_warning(Line, Type, Fs, St);
 func_warning(false, _Line, _Type, _Fs, St) -> St.
@@ -503,7 +505,7 @@ behaviour_check(Bs, St) ->
                   St1 = add_warning(Mult, Line, {several_behaviours,B}, St0),
                   {Bfs, St2} = behaviour_callbacks(Line, B, St1),
                   Missing = ordsets:subtract(ordsets:from_list(Bfs),
-                                             St2#lint.exports),
+                                             gb_sets:to_list(St2#lint.exports)),
                   func_warning(Line, undefined_behaviour_func,
                                Missing, St2)
           end, St, Bs).
@@ -550,8 +552,8 @@ behaviour_callbacks(Line, B, St0) ->
 
 export(Line, Es, #lint{exports=Es0,called=C0}=St) ->
     {Es1,C1} = foldl(fun (NA, {E,C}) ->
-                             {ordsets:add_element(NA, E),
-                              orddict:append(NA, Line, C)}
+                             {gb_sets:add_element(NA, E),
+                              dict:append(NA, Line, C)}
                      end,
                      {Es0,C0}, Es),
     St#lint{exports=Es1,called=C1}.
@@ -627,25 +629,28 @@ imported(F, A, St) ->
 
 call_function(Line, F, A, #lint{called=Cd,calls=Cs,func=Func}=St) ->
     NA = {F,A},
-    St#lint{called=orddict:append(NA, Line, Cd),
-            calls=orddict:append(Func, NA, Cs)}.
+    St#lint{called=dict:append(NA, Line, Cd),
+            calls=dict:append(Func, NA, Cs)}.
 
 %% reached_functions(RootSet, CallRef) -> [ReachedFunc].
 %% reached_functions(RootSet, CallRef, [ReachedFunc]) -> [ReachedFunc].
 
-reached_functions(Root, Ref) -> reached_functions(Root, Ref, []).
+reached_functions(Root, Ref) ->
+    reached_functions(Root, [], Ref, gb_sets:empty()).
 
-reached_functions([R|Rs], Ref, Reached) ->
-    case ordsets:is_element(R, Reached) of
-        true -> reached_functions(Rs, Ref, Reached);
+reached_functions([R|Rs], More0, Ref, Reached0) ->
+    case gb_sets:is_element(R, Reached0) of
+        true -> reached_functions(Rs, More0, Ref, Reached0);
         false ->
-            Reached1 = ordsets:add_element(R, Reached), %It IS reached
-            case orddict:find(R, Ref) of
-                {ok,More} -> reached_functions(Rs ++ More, Ref, Reached1);
-                error -> reached_functions(Rs, Ref, Reached1)
+            Reached = gb_sets:add_element(R, Reached0), %It IS reached
+            case dict:find(R, Ref) of
+                {ok,More} -> reached_functions(Rs, [More|More0], Ref, Reached);
+                error -> reached_functions(Rs, More0, Ref, Reached)
             end
     end;
-reached_functions([], _Ref, Reached) -> Reached.
+reached_functions([], [_|_]=More, Ref, Reached) ->
+    reached_functions(lists:append(More), [], Ref, Reached);
+reached_functions([], [], _Ref, Reached) -> gb_sets:to_list(Reached).
 
 %% bif_clashes(Forms, State0) -> State.
 
@@ -685,7 +690,7 @@ check_deprecated(Forms, St0) ->
     #lint{module = Mod, exports = X} = St0,
     Bad = [{E,L} || {attribute, L, deprecated, Depr} <- Forms,
                     D <- lists:flatten([Depr]),
-                    E <- depr_cat(D, X, Mod)],
+                    E <- depr_cat(D, gb_sets:to_list(X), Mod)],
     foldl(fun ({E,L}, St1) -> 
                   add_error(L, E, St1)
           end, St0, Bad).
@@ -730,7 +735,7 @@ deprecated_flag(_) -> false.
 %% is_function_exported(Name, Arity, State) -> false|true.
 
 is_function_exported(Name, Arity, #lint{exports=Exports,compile=Compile}) ->
-    ordsets:is_element({Name,Arity}, Exports) orelse
+    gb_sets:is_element({Name,Arity}, Exports) orelse
         member(export_all, Compile).
     
 %% function(Line, Name, Arity, Clauses, State) -> State.
@@ -744,11 +749,11 @@ function(Line, Name, Arity, Cs, St0) ->
 define_function(Line, Name, Arity, St0) ->
     St1 = keyword_warning(Line, Name, St0),
     NA = {Name,Arity},
-    case member(NA, St1#lint.defined) of
+    case gb_sets:is_element(NA, St1#lint.defined) of
         true ->
             add_error(Line, {redefine_function,NA}, St1);
         false ->
-            St2 = St1#lint{defined=ordsets:add_element(NA, St1#lint.defined)},
+            St2 = St1#lint{defined=gb_sets:add_element(NA, St1#lint.defined)},
             St = case erl_internal:bif(Name, Arity) andalso
 		     not is_function_exported(Name, Arity, St2) of
 		     true -> add_warning(Line, {redefine_bif,NA}, St2);
@@ -2186,6 +2191,7 @@ vintersection([]) ->
 
 copy_expr({clauses,Cs}, Line) -> {clauses,copy_expr(Cs, Line)};
 copy_expr({function,F,A}, _Line) -> {function,F,A};
+copy_expr({function,M,F,A}, _Line) -> {function,M,F,A};
 copy_expr({Tag,_L}, Line) -> {Tag,Line};
 copy_expr({Tag,_L,E1}, Line) ->
     {Tag,Line,copy_expr(E1, Line)};

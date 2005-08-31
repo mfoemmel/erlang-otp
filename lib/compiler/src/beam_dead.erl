@@ -167,6 +167,12 @@ make_block(Bl, Acc) -> [{block,reverse(Bl)}|Acc].
 forward(Is) ->
     forward(Is, gb_trees:empty(), []).
 
+forward([{'%live',_}|Is], D, Acc) ->
+    %% Remove - prevents optimizations.
+    forward(Is, D, Acc);
+forward([{block,[{'%live',_}]}|Is], D, Acc) ->
+    %% Empty blocks can prevent optimizations.
+    forward(Is, D, Acc);
 forward([{select_val,Reg,_,{list,List}}=I|Is], D0, Acc) ->
     D = update_value_dict(List, Reg, D0),
     forward(Is, D, [I|Acc]);

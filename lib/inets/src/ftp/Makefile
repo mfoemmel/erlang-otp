@@ -39,9 +39,11 @@ RELSYSDIR = $(RELEASE_PATH)/lib/inets-$(VSN)
 # ----------------------------------------------------
 MODULES = \
 	ftp \
+	ftp_progress \
+	ftp_response \
 	ftp_sup 
 
-HRL_FILES = 
+HRL_FILES = ftp_internal.hrl
 
 ERL_FILES = $(MODULES:%=%.erl)
 
@@ -50,16 +52,21 @@ TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 # ----------------------------------------------------
 # INETS FLAGS
 # ----------------------------------------------------
-INETS_FLAGS = -D'SERVER_SOFTWARE="inets/$(VSN)"' \
+INETS_FLAGS = -D'SERVER_SOFTWARE="inets/$(VSN)"'
+
+ifeq ($(FTP_DEBUG),true)
+  INETS_FLAGS += -Dftp_debug
+endif
 
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
+ERL_FLAGS += -I ../inets_app
 
 ERL_COMPILE_FLAGS += $(INETS_FLAGS) \
                      +'{parse_transform,sys_pre_attributes}' \
                      +'{attribute,insert,app_vsn,$(APP_VSN)}'
+
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------

@@ -233,7 +233,6 @@ static Eterm *inc_rescueHeapNoBreak(Process *p,Eterm *start, Eterm *end, Eterm *
 {
     Eterm *hp = start;
 
-    CHECK_MEMORY(start,end);
     while (hp != end) {
         Eterm gval = *hp;
         switch (primary_tag(gval)) {

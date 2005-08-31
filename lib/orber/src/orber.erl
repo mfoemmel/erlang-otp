@@ -344,15 +344,17 @@ iiop_in_connection_timeout() ->
     orber_env:iiop_in_connection_timeout().
     
 find_peername_by_sockname(Host, Port) ->
-    orber_iiop_net:sockname2peername(Host, Port).
+    orber_iiop_net:sockname2peername(Host, Port) ++ 
+	orber_iiop_pm:sockname2peername(Host, Port).
 
 find_sockname_by_peername(Host, Port) ->
-    orber_iiop_net:peername2sockname(Host, Port).
+    orber_iiop_net:peername2sockname(Host, Port) ++
+	orber_iiop_pm:peername2sockname(Host, Port).
 
 %%----------------------------------------------------------------------
 %% Function   : iiop_connections
 %% Arguments  : Direction   - in | out | inout
-%% Returns    : Connections - [{Host, Port}]
+%% Returns    : Connections - [{Host, Port}] | [{Host, Port, Interface}] 
 %%              Host        - string
 %%              Port        - integer
 %% Raises     : 

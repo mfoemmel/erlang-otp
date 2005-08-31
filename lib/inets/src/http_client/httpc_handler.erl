@@ -19,7 +19,8 @@
 
 -behaviour(gen_server).
 
--include("http.hrl").
+-include("httpc_internal.hrl").
+-include("http_internal.hrl").
 
 %%--------------------------------------------------------------------
 %% Application API
@@ -214,7 +215,7 @@ handle_info({Proto, _Socket, Data}, State =
         {_, whole_body, _} when Method == head ->
 	    handle_response(State#state{body = <<>>}); 
 	NewMFA ->
-	    http_transport:setopts(Session#tcp_session.scheme, 
+	    http_transport:setopts(socket_type(Session#tcp_session.scheme), 
                                    Session#tcp_session.socket, 
 				   [{active, once}]),
             {noreply, State#state{mfa = NewMFA}}
@@ -290,7 +291,7 @@ terminate(normal, #state{request = Request,
 					   socket = Socket}}) ->  
     %% Init error sending, no session information has been setup but
     %% there is a socket that needs closing.
-    http_transport:close(Request#request.scheme, Socket);
+    http_transport:close(socket_type(Request), Socket);
 
 terminate(_, State = #state{session = Session, request = undefined,
 			   timers = Timers}) -> 
@@ -303,7 +304,7 @@ terminate(_, State = #state{session = Session, request = undefined,
 	    ok
     end,
     cancel_timer(Timers#timers.pipeline_timer, timeout_pipeline),
-    http_transport:close(Session#tcp_session.scheme,
+    http_transport:close(socket_type(Session#tcp_session.scheme),
 			 Session#tcp_session.socket);
 
 terminate(Reason, State = #state{request = Request})-> 
@@ -330,7 +331,8 @@ code_change(_, State, _Extra) ->
 %%--------------------------------------------------------------------
 send_first_request(Address, Request, State) ->
     Ipv6 = (State#state.options)#options.ipv6,
-    case http_transport:connect(Request#request{address = Address}, Ipv6) of
+    SocketType = socket_type(Request),
+    case http_transport:connect(SocketType, Address, Ipv6) of
 	{ok, Socket} ->
 	    case httpc_request:send(Address, Request, Socket) of
 		ok ->
@@ -351,7 +353,7 @@ send_first_request(Address, Request, State) ->
 					   headers = undefined,
 					   body = undefined,
 					   status = new},
-		    http_transport:setopts(Session#tcp_session.scheme, 
+		    http_transport:setopts(SocketType, 
 					   Socket, [{active, once}]),
 		    NewState = activate_request_timeout(TmpState),
 		    {ok, NewState};
@@ -419,7 +421,8 @@ handle_http_body(Body, State = #state{headers = Headers, session = Session,
 	    case http_chunk:decode(Body, State#state.max_body_size, 
 				   State#state.max_header_size) of
 		{Module, Function, Args} ->
-		    http_transport:setopts(Session#tcp_session.scheme, 
+		    http_transport:setopts(socket_type(
+					     Session#tcp_session.scheme), 
 					   Session#tcp_session.socket, 
 					   [{active, once}]),
 		    {noreply, State#state{mfa = 
@@ -446,7 +449,7 @@ handle_http_body(Body, State = #state{headers = Headers, session = Session,
 			    handle_response(State#state{body = Body});
                         MFA ->
                             http_transport:setopts(
-			      Session#tcp_session.scheme, 
+			      socket_type(Session#tcp_session.scheme), 
 			      Session#tcp_session.socket, 
 			      [{active, once}]),
 			    {noreply, State#state{mfa = MFA}}
@@ -497,11 +500,11 @@ handle_response(State = #state{request = Request,
 	continue -> 
 	    %% Send request body
 	    {_, RequestBody} = Request#request.content,
-	    http_transport:send(Session#tcp_session.scheme, 
+	    http_transport:send(socket_type(Session#tcp_session.scheme), 
 					    Session#tcp_session.socket, 
 				RequestBody),
 	    %% Wait for next response
-	    http_transport:setopts(Session#tcp_session.scheme, 
+	    http_transport:setopts(socket_type(Session#tcp_session.scheme), 
 				   Session#tcp_session.socket, 
 				   [{active, once}]),
 	    {noreply, 
@@ -562,7 +565,7 @@ handle_pipeline(State = #state{status = pipeline, session = Session},
 	    %% in this case we want to receive the close message
 	    %% at once and not when trying to pipline the next
 	    %% request.
-	    http_transport:setopts(Session#tcp_session.scheme, 
+	    http_transport:setopts(socket_type(Session#tcp_session.scheme), 
 				   Session#tcp_session.socket, 
 				   [{active, once}]),
 	    %% If a pipeline that has been idle for some time is not
@@ -604,7 +607,7 @@ handle_pipeline(State = #state{status = pipeline, session = Session},
 		    case Data of
 			<<>> ->
 			    http_transport:setopts(
-			      Session#tcp_session.scheme, 
+			      socket_type(Session#tcp_session.scheme), 
 			      Session#tcp_session.socket, 
 			      [{active, once}]),
 			    {noreply, NewState};
@@ -770,6 +773,15 @@ is_no_proxy_dest_address(Dest, Dest) ->
 is_no_proxy_dest_address(Dest, AddressPart) ->
     lists:prefix(AddressPart, Dest).
 
+socket_type(#request{scheme = http}) ->
+    ip_comm;
+socket_type(#request{scheme = https, settings = Settings}) ->
+    {ssl, Settings#http_options.ssl};
+socket_type(http) ->
+    ip_comm;
+socket_type(https) ->
+    {ssl, []}. %% Dummy value ok for ex setops that does not use this value
+
 %%% Normaly I do not comment out code, I throw it away. But this might
 %%% actually be used on day if ssl is improved.
 %% send_ssl_tunnel_request(Address, Request = #request{address = {Host, Port}}, 
@@ -785,7 +797,9 @@ is_no_proxy_dest_address(Dest, AddressPart) ->
 %% 				  pquery = integer_to_list(Port),
 %% 				  other = [{ "Proxy-Connection", "keep-alive"}]},
 %%     Ipv6 = (State#state.options)#options.ipv6,
-%%     case http_transport:connect(SslTunnelRequest, Ipv6) of
+%%     SocketType = socket_type(SslTunnelRequest),
+%%     case http_transport:connect(SocketType, 
+%%                                 SslTunnelRequest#request.address, Ipv6) of
 %% 	{ok, Socket} ->
 %% 	    case httpc_request:send(Address, SslTunnelRequest, Socket) of
 %% 		ok ->
@@ -800,7 +814,8 @@ is_no_proxy_dest_address(Dest, AddressPart) ->
 %% 					    [State#state.max_header_size]},
 %% 					   request = Request,
 %% 					   session = Session},
-%% 		    http_transport:setopts(SslTunnelRequest#request.scheme, 
+%% 		    http_transport:setopts(socket_type(
+%%                                           SslTunnelRequest#request.scheme), 
 %% 					   Socket, 
 %% 					   [{active, once}]),
 %% 		    {ok, NewState};

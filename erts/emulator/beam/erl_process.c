@@ -113,6 +113,8 @@ Uint erts_num_active_procs;
 Process** erts_active_procs;
 #endif
 
+static Uint process_count;
+
 /*
  * Local functions.
  */
@@ -126,6 +128,8 @@ init_scheduler(void)
 {
     int i;
     Uint proc_bits = ERTS_PROC_BITS;
+
+    process_count = 0;
 
     if (erts_use_r9_pids_ports) {
 	proc_bits = ERTS_R9_PROC_BITS;
@@ -519,6 +523,11 @@ erts_test_next_pid(int set, Uint next)
     return (p_serial << p_serial_shift | p_next);
 }
 
+Uint erts_process_count(void)
+{
+    return process_count;
+}
+
 /*
 ** Fix allocate a process
 */
@@ -534,6 +543,9 @@ alloc_process(void)
     p = (Process*) erts_alloc_fnf(ERTS_ALC_T_PROC, sizeof(Process));
     if (!p)
 	return NULL;
+
+    process_count++;
+
     ERTS_PROC_MORE_MEM(sizeof(Process));
     p->id = make_internal_pid(p_serial << p_serial_shift | p_next);
     ASSERT(internal_pid_serial(p->id) <= (erts_use_r9_pids_ports
@@ -777,6 +789,8 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->rrsz  = 0;
 #endif
 
+    INIT_HOLE_CHECK(p);
+
     process_tab[internal_pid_index(p->id)] = p;
 
     if (IS_TRACED(parent)) {
@@ -986,6 +1000,7 @@ void erts_init_empty_process(Process *p)
     p->nrr   = 0;
     p->rrsz  = 0;
 #endif
+    INIT_HOLE_CHECK(p);
 }    
 
 void
@@ -1110,6 +1125,10 @@ delete_process0(Process* p, int do_delete)
     i = internal_pid_index(p->id);
 
     process_tab[i] = NULL;
+    
+    ASSERT(process_count > 0);
+    process_count--;
+
     if (p_next == -1)
 	p_next = i;
 
@@ -1438,14 +1457,12 @@ void
 do_exit(Process* p, Eterm reason)
 {
     ErtsLink* lnk;
-    Eterm exit_tuple = NIL;
-    Uint exit_tuple_sz = 0;
     ErtsMonitor *mon;
 
     p->arity = 0;		/* No live registers */
     p->fvalue = reason;
     p->status = P_EXITING;
-    
+
     if (IS_TRACED_FL(p,F_TRACE_PROCS))
 	trace_proc(p, p, am_exit, reason);
     
@@ -1473,23 +1490,37 @@ do_exit(Process* p, Eterm reason)
     /*
      * Pre-build the EXIT tuple if there are any links.
      */
-    if (lnk != NULL) {
+    if (lnk) {
+#ifndef SHARED_HEAP
+	Eterm tmp_heap[4];
+#endif
+	Eterm exit_tuple;
+	Uint exit_tuple_sz;
 	Eterm* hp;
+
+#ifndef SHARED_HEAP
+	hp = &tmp_heap[0];
+#else
 	if (HEAP_LIMIT(p) - HEAP_TOP(p) <= 4) {
 	    (void) erts_garbage_collect(p, 4, NULL, 0);
 	    reason = p->fvalue;
 	}
 	hp = HEAP_TOP(p);
 	HEAP_TOP(p) += 4;
+#endif
+
 	exit_tuple = TUPLE3(hp, am_EXIT, p->id, reason);
+
 #ifndef SHARED_HEAP
 	exit_tuple_sz = size_object(exit_tuple);
+#else
+	exit_tuple_sz = 0; /* Not needed... */
 #endif
-    }
 
-    {
-	ExitLinkContext context = {p, reason, exit_tuple, exit_tuple_sz};
-	erts_sweep_links(lnk, &doit_exit_link, &context);
+	{
+	    ExitLinkContext context = {p, reason, exit_tuple, exit_tuple_sz};
+	    erts_sweep_links(lnk, &doit_exit_link, &context);
+	}
     }
 
     if ((p->flags & F_DISTRIBUTION) && p->dist_entry)

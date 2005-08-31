@@ -20,6 +20,7 @@
  
 -export([encode/1, decode/1]).
 
+
 %%%=========================================================================
 %%%  API
 %%%=========================================================================
@@ -33,6 +34,7 @@
 %%-------------------------------------------------------------------------
 encode(ASCII) when is_list(ASCII) ->
     encode_base64_list(ASCII).
+
 
 %%-------------------------------------------------------------------------
 %% decode(Base64) -> ASCII
@@ -75,14 +77,15 @@ int_to_b64(63) -> $/.
 %% This version works by consuming groups of 4 input characters to create
 %% a group of 3 output characters, with the three special-cases for
 %% end-of-input first:
-
+		      
+		      
 decode_base64_list({[],[]}, Acc) ->
     lists:reverse(Acc);
-decode_base64_list({[Sixtet1,Sixtet2,$=,$=], []}, Acc) ->
+decode_base64_list({[Sixtet1,Sixtet2,pad,pad], []}, Acc) ->
     Bits2x6 = (Sixtet1 bsl 18) bor (Sixtet2 bsl 12),
     Octet1 = Bits2x6 bsr 16,
     lists:reverse([Octet1 | Acc]);
-decode_base64_list({[Sixtet1,Sixtet2,Sixtet3,$=], []}, Acc) ->
+decode_base64_list({[Sixtet1,Sixtet2,Sixtet3,pad], []}, Acc) ->
     Bits3x6 = (Sixtet1 bsl 18) bor (Sixtet2 bsl 12) bor (Sixtet3 bsl 6),
     Octet1 = Bits3x6 bsr 16,
     Octet2 = (Bits3x6 bsr 8) band 16#ff,
@@ -100,8 +103,8 @@ b64_to_int(X) when X >= $a, X =< $z -> X - $a + 26;
 b64_to_int(X) when X >= $0, X =< $9 -> X - $0 + 52;
 b64_to_int($+) -> 62;
 b64_to_int($/) -> 63;
-b64_to_int($=) -> $=; % Padding will be removed by decode_base64_list/2
-b64_to_int(_) -> ignore. % Not in base 64 should be ignored 
+b64_to_int($=) -> pad; % Padding will be removed by decode_base64_list/2
+b64_to_int(_) -> ignore. % Not in base 64 should be ignored
 
 sixtets(Str) ->
     sixtets(Str, []).

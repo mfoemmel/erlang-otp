@@ -82,7 +82,7 @@ out_r(Q) ->
 
 %% Create queue from list
 from_list(L) when list(L) ->
-    balance([], L);
+    {[],L};
 from_list(L) ->
     erlang:fault(badarg, [L]).
 
@@ -255,22 +255,6 @@ split(N, Q) ->
 
 %%--------------------------------------------------------------------------
 %% Internal workers
-
-%% Balance for equal list length
-balance(R, F) ->
-    Lf = erlang:length(F),
-    Lr = erlang:length(R),
-    N = Lf+Lr,
-    M = N div 2,
-    if  M < Lf -> % Split F
-	    {F1,F2} = lists:split(M, F),
-	    {R++lists:reverse(F2, []),F1};
-	M > Lf -> % Split R
-	    {R1,R2} = lists:split(N-M, R),
-	    {R1,F++lists:reverse(R2, [])};
-	true ->
-	    {R,F}
-    end.
 
 %% Move all but two from R to F, if there are enough
 r2f([]) ->

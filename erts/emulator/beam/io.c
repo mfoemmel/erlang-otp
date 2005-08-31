@@ -1858,8 +1858,9 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 {
     int need = 0;
     int depth = 0;
-    int max_depth = 0;
+    int res;
     Eterm* hp;
+    Eterm* hp_end;
     ErlDrvTermData* ptr;
     ErlDrvTermData* ptr_end;
     DECLARE_ESTACK(stack); 
@@ -1888,7 +1889,7 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 	    depth++;
 	    break;
 	case ERL_DRV_ATOM: /* atom argument */
-	    if ((ptr >= ptr_end) || (!is_atom(ptr[0]))) return -1;
+	    if ((ptr >= ptr_end) || (is_not_atom(ptr[0]))) return -1;
 	    ptr++;
 	    depth++;
 	    break;
@@ -1896,12 +1897,12 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 	    if (ptr >= ptr_end) return -1;
 	    /* check for bignum */
 	    if (!IS_SSMALL((Sint)ptr[0]))
-		need += 2;  /* use small_to_big */
+		need += BIG_UINT_HEAP_SIZE;  /* use small_to_big */
 	    ptr++;
 	    depth++;
 	    break;
 	case ERL_DRV_PORT:  /* port argument */
-	    if ((ptr >= ptr_end) || (!is_port(ptr[0]))) return -1;
+	    if ((ptr >= ptr_end) || (is_not_internal_port(ptr[0]))) return -1;
 	    ptr++;
 	    depth++;
 	    break;
@@ -1920,16 +1921,14 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 	case ERL_DRV_STRING_CONS: /* char*, length */
 	    if ((ptr+1 >= ptr_end) || (ptr[0] == 0)) return -1;
 	    need += ptr[1] * 2;
-	    if (depth > max_depth) max_depth = depth;
-	    depth -= 1;
-	    if (depth < 0) return -1;
+	    if (depth < 1) return -1;
 	    ptr += 2;
-	    depth++;
 	    break;
 	case ERL_DRV_LIST: /* int */
-	    if ((ptr >= ptr_end) || (ptr[0] == 0)) return -1;
+	    if ((ptr >= ptr_end) || (ptr[0] == 0)) {
+		return -1;
+	    }
 	    need += (ptr[0]-1)*2;  /* list cells */
-	    if (depth > max_depth) max_depth = depth;
 	    depth -= ptr[0];
 	    if (depth < 0) return -1;
 	    ptr++;
@@ -1938,9 +1937,19 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 	case ERL_DRV_TUPLE: /* int */
 	    if (ptr >= ptr_end) return -1;
 	    need += ptr[0]+1;   /* vector positions + arityval */
-	    if (depth > max_depth) max_depth = depth;
 	    depth -= ptr[0];
 	    if (depth < 0) return -1;
+	    ptr++;
+	    depth++;
+	    break;
+	case ERL_DRV_PID: /* pid argument */
+	    if ((ptr >= ptr_end) || (is_not_internal_pid(ptr[0]))) return -1;
+	    ptr++;
+	    depth++;
+	    break;
+	case ERL_DRV_FLOAT: /* double * */
+	    if (ptr >= ptr_end) return -1;
+	    need += FLOAT_SIZE_OBJECT;
 	    ptr++;
 	    depth++;
 	    break;
@@ -1949,22 +1958,19 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 	}
     }
 
-    if ((depth != 1) || (ptr != ptr_end))
+    if ((depth != 1) || (ptr != ptr_end)) {
 	return -1;
+    }
 
     /* Create message buffer */
     hp = HAlloc(rp, need);
-
-    /* +1 needed for case basic type, then max_depth=0 is not set */
-    /* FIXME: since we know the depth we could add a macro ESTACK2 where 
-     * depth is known (max_depth+1)
-     */
+    hp_end = hp + need;
 
     /*
      * Interpret the instructions and build the term.
      */
+    res = 1;
     ptr = data;
-    ptr_end = ptr + len;
     while (ptr < ptr_end) {
 	ErlDrvTermData tag = *ptr++;
 
@@ -1996,16 +2002,24 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 	case ERL_DRV_BINARY: { /* ErlDrvBinary*, size, offs */
 	    ProcBin* pb;
 	    ErlDrvBinary* b = (ErlDrvBinary*) ptr[0];
+	    Uint size = ptr[1];
+	    Uint offset = ptr[2];
+
+	    if (size+offset > b->orig_size) {
+		/* Outside the binary */
+		res = -1;
+		goto done;
+	    }
 
 	    b->refc++;  /* caller must free binary !!! */
 
 	    pb = (ProcBin *) hp;
 	    pb->thing_word = HEADER_PROC_BIN;
-	    pb->size =  ptr[1];
+	    pb->size = size;
 	    pb->next = MSO(rp).mso;
 	    MSO(rp).mso = pb;
 	    pb->val = ErlDrvBinary2Binary(b);
-	    pb->bytes = ((byte*) b->orig_bytes) + ptr[2];
+	    pb->bytes = ((byte*) b->orig_bytes) + offset;
 	    mess =  make_binary(pb);
 	    hp += PROC_BIN_SIZE;
 	    MSO(rp).overhead += pb->size / 
@@ -2025,8 +2039,8 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 	    ptr += 2;
 	    break;
 
-	case ERL_DRV_LIST: { /* int */
-	    int i = (int) ptr[0];
+	case ERL_DRV_LIST: { /* unsigned */
+	    Uint i = (int) ptr[0]; /* i > 0 */
 
 	    mess = ESTACK_POP(stack);
 	    i--;
@@ -2057,19 +2071,34 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 	    ptr++;
 	    break;
 	}
+
+	case ERL_DRV_PID: /* pid argument */
+	    mess = ptr[0];
+	    ptr++;
+	    break;
+
+	case ERL_DRV_FLOAT: { /* double * */
+	    FloatDef f;
+
+	    mess = make_float(hp);
+	    f.fd = *((double *) ptr[0]);
+	    PUT_DOUBLE(f, hp);
+	    hp += FLOAT_SIZE_OBJECT;
+	    ptr++;
+	    break;
+	}
 	}
 	ESTACK_PUSH(stack, mess);
     }
-    mess = ESTACK_POP(stack);  /* get resulting value */
 
+ done:
+    HRelease(rp, hp_end, hp);
+    if (res > 0) {
+	mess = ESTACK_POP(stack);  /* get resulting value */
+	queue_message_tt(rp, NULL, mess, am_undefined);  /* send message */
+    }
     DESTROY_ESTACK(stack);
-
-    /* XXX HOLE_IN_HEAP
-     * There are (several) cases where the allocated area is not filled here!
-     */
-
-    queue_message_tt(rp, NULL, mess, am_undefined);  /* send message */
-    return 1;
+    return res;
 }
 
 

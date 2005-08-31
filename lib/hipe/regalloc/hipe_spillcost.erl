@@ -6,8 +6,11 @@
 -export([new/1,
 	 inc_costs/2,
 	 ref_in_bb/2,
-	 spill_cost/2,
-	 nr_of_use/2]). %% only for debugging
+	 spill_cost/2]).
+%% The following is exported only for debugging purposes.
+-ifdef(DEBUG_PRINTOUTS).
+-export([nr_of_use/2]).
+-endif.
 
 -record(spill_cost,
 	{uses		% number of uses of each temp

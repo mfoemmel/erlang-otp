@@ -18,7 +18,7 @@
 
 -module(http_cookie).
 
--include("http.hrl").
+-include("httpc_internal.hrl").
 
 -export([header/4, cookies/3, open_cookie_db/1, close_cookie_db/1, insert/2]). 
 

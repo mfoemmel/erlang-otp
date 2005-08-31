@@ -17,7 +17,8 @@
 
 -module(httpc_response).
 
--include("http.hrl").
+-include("http_internal.hrl").
+-include("httpc_internal.hrl").
 
 %% API
 -export([parse/1, result/2, send/2, error/2, is_server_closing/1]).

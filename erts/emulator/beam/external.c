@@ -178,7 +178,13 @@ BIF_RETTYPE binary_to_term_1(BIF_ALIST_1)
 Eterm
 external_size_1(Process* p, Eterm Term)
 {
-    return make_small_or_big(encode_size_struct(Term,TERM_TO_BINARY_DFLAGS), p);
+    Uint size = encode_size_struct(Term, TERM_TO_BINARY_DFLAGS);
+    if (IS_USMALL(0, size)) {
+	BIF_RET(make_small(size));
+    } else {
+	Eterm* hp = HAlloc(p, BIG_UINT_HEAP_SIZE);
+	BIF_RET(uint_to_big(size, hp));
+    }
 }
 
 static Eterm

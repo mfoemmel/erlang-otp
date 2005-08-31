@@ -220,7 +220,12 @@ bind(OE_THIS, OE_State, [H|T], Obj) ->
 		    corba:raise(#'CosNaming_NamingContext_CannotProceed'
 				{rest_of_name=[H|T], cxt=OE_THIS})
 	    end
-    end.
+    end;
+bind(_OE_THIS, _OE_State, [], _Obj) ->
+    orber:dbg("[~p] CosNaming_NamingContextExt:bind();~n"
+	      "Invoked this operation with an empty list", 
+	      [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_YES}).
 
 %%----------------------------------------------------------------------
 %% Function   : rebind
@@ -279,7 +284,12 @@ rebind(OE_THIS, OE_State, [H|T], Obj) ->
 		    corba:raise(#'CosNaming_NamingContext_CannotProceed'
 				{rest_of_name=[H|T], cxt=OE_THIS})
 	    end
-    end.
+    end;
+rebind(_OE_THIS, _OE_State, [], _Obj) ->
+    orber:dbg("[~p] CosNaming_NamingContextExt:rebind();~n"
+	      "Invoked this operation with an empty list", 
+	      [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_YES}).
 
 %%----------------------------------------------------------------------
 %% Function   : bind_context
@@ -338,7 +348,12 @@ bind_context(OE_THIS, OE_State, [H|T], Obj) ->
 		    corba:raise(#'CosNaming_NamingContext_CannotProceed'
 				{rest_of_name=[H|T], cxt=OE_THIS})
 	    end
-    end.
+    end;
+bind_context(_OE_THIS, _OE_State, [], _Obj) ->
+    orber:dbg("[~p] CosNaming_NamingContextExt:bind_context();~n"
+	      "Invoked this operation with an empty list", 
+	      [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_YES}).
 
 %%----------------------------------------------------------------------
 %% Function   : rebind_context
@@ -398,7 +413,12 @@ rebind_context(OE_THIS, OE_State, [H|T], Obj) ->
 		    corba:raise(#'CosNaming_NamingContext_CannotProceed'
 				{rest_of_name=[H|T], cxt=OE_THIS})
 	    end
-    end.
+    end;
+rebind_context(_OE_THIS, _OE_State, [], _Obj) ->
+    orber:dbg("[~p] CosNaming_NamingContextExt:rebind_context();~n"
+	      "Invoked this operation with an empty list", 
+	      [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_YES}).
 
 %%----------------------------------------------------------------------
 %% Function   : resolve
@@ -412,7 +432,7 @@ resolve(OE_THIS, OE_State, [N]) ->
     case orber_cosnaming_utils:query_result(mnesia:transaction(_RF)) of
 	error ->
 	    corba:raise(#'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
-								       cxt=OE_THIS});
+								 cxt=OE_THIS});
 	X ->
 	    case lists:keysearch(N, 1, X) of
 		{value, {N, _, Value}} ->
@@ -439,7 +459,12 @@ resolve(OE_THIS, OE_State, [H|T]) ->
 		    corba:raise(#'CosNaming_NamingContext_CannotProceed'
 				{rest_of_name=[H|T], cxt=OE_THIS})
 	    end
-    end.
+    end;
+resolve(_OE_THIS, _OE_State, []) ->
+    orber:dbg("[~p] CosNaming_NamingContextExt:resolve();~n"
+	      "Invoked this operation with an empty list", 
+	      [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_YES}).
 
 %%----------------------------------------------------------------------
 %% Function   : unbind
@@ -492,7 +517,12 @@ unbind(OE_THIS, OE_State, [H|T]) ->
 		    corba:raise(#'CosNaming_NamingContext_CannotProceed'
 				{rest_of_name=[H|T], cxt=OE_THIS})
 	    end
-    end.
+    end;
+unbind(_OE_THIS, _OE_State, []) ->
+    orber:dbg("[~p] CosNaming_NamingContextExt:unbind();~n"
+	      "Invoked this operation with an empty list", 
+	      [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_YES}).
 
 
 %%----------------------------------------------------------------------

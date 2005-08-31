@@ -25,7 +25,7 @@
 
 -include("httpd.hrl").
 -include("httpd_verbosity.hrl").
--include("http.hrl").
+-include("http_internal.hrl").
 
 %%--------------------------------------------------------------------
 %% Function: start() -> {ok, Pid}

@@ -18,11 +18,17 @@
 #ifndef __ERL_VM_H__
 #define __ERL_VM_H__
 
+#if defined(HYBRID)
+/* # define CHECK_FOR_HOLES */
+#endif
+
+#if defined(DEBUG) && !defined(CHECK_FOR_HOLES)
+# define CHECK_FOR_HOLES
+#endif
+
+
 /* #define HEAP_FRAG_ELIM_TEST 1 */
 
-/* Shared do not work with NOMOVE yet...
- * #if defined(SHARED_HEAP) || defined(HYBRID)
- */
 #if defined(HYBRID)
 /* #  define NOMOVE 1 */
 /* #  define INCREMENTAL_GC 1 */ /* Requires NOMOVE */
@@ -114,6 +120,11 @@ extern Eterm* erts_global_arith_check_me;
 #endif
 
 /* Allocate memory on secondary arithmetic heap. */
+
+#if defined(DEBUG) || defined(CHECK_FOR_HOLES)
+# define ERTS_HOLE_MARKER (((0xcafebabeUL << 24) << 8) | 0xaf5e78ccUL)
+#endif
+
 
 #if defined(DEBUG)
 #  define ARITH_MARKER (((0xcafebabeUL << 24) << 8) | 0xaf5e78ccUL)

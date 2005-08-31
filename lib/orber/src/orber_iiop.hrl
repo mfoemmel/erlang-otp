@@ -948,7 +948,8 @@
 %%	  sequence <octet> context_data; 
 %%	 };
 
--record('IOP_ServiceContext', {context_id, context_data}).
+%% The record is defined in include/corba.hrl.
+%%-record('IOP_ServiceContext', {context_id, context_data}).
 -define(IOP_SERVICECONTEXT, {'tk_sequence',
 			     {'tk_struct', ?SYSTEM_TYPE, 'IOP_ServiceContext',
 			      [{"context_id", 'tk_ulong'},

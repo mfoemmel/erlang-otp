@@ -54,6 +54,7 @@
 	 set_engine_boots/1, set_engine_time/1, 
 	 get_usm_eboots/1, get_usm_etime/1, get_usm_eltime/1, 
 	 set_usm_eboots/2, set_usm_etime/2, set_usm_eltime/2, 
+	 reset_usm_cache/1, 
 	 set_engine_time/1, 
 	 
 
@@ -389,7 +390,17 @@ set_usm_eltime(SnmpEngineID, Time) ->
 
 set_usm_cache(Key, Val) ->
     call({set_usm_cache, Key, Val}).
-    
+
+reset_usm_cache(SnmpEngineID) ->
+    case (whereis(?SERVER) == self()) of
+	false ->
+	    call({reset_usm_cache, SnmpEngineID});
+	true ->
+	    Pat = {{usm_cache, {'_', SnmpEngineID}}, '_'},
+	    ets:match_delete(snmpm_usm_table, Pat),
+	    ok
+    end.
+
 set_engine_time(Time) ->
     call({set_engine_time, Time}).
 
@@ -523,8 +534,12 @@ cre_counter(Counter, Initial) ->
 	    Initial
     end.
 
-incr_counter(usm_salt, Incr) ->
-    incr_counter(usm_salt, Incr, 4294967295);
+incr_counter(usm_salt, Incr) ->        % Backward compatibillity (upgrade)
+    incr_counter(usm_des_salt, Incr);  % Backward compatibillity (upgrade)
+incr_counter(usm_des_salt, Incr) ->
+    incr_counter(usm_des_salt, Incr, 4294967295);
+incr_counter(usm_aes_salt, Incr) ->
+    incr_counter(usm_aes_salt, Incr, 36893488147419103231);
 incr_counter(Counter, Incr) ->
     incr_counter(Counter, Incr, 2147483647).
 
@@ -1508,6 +1523,24 @@ verify_usm_user_priv(usmDESPrivProtocol, PrivKey) when list(PrivKey) ->
     error({invalid_priv_key, usmDESPrivProtocol, Len});
 verify_usm_user_priv(usmDESPrivProtocol, _PrivKey) ->
     error({invalid_priv_key, usmDESPrivProtocol});
+verify_usm_user_priv(usmAesCfb128Protocol, PrivKey) 
+  when length(PrivKey) == 16 ->
+    case is_crypto_supported(aes_cfb_128_decrypt) of
+	true -> 
+	    case snmp_conf:all_integer(PrivKey) of
+		true ->
+		    ok;
+		_ ->
+		    error({invalid_priv_key, usmAesCfb128Protocol})
+	    end;
+	false -> 
+	    error({unsupported_crypto, aes_cfb_128_decrypt})
+    end;
+verify_usm_user_priv(usmAesCfb128Protocol, PrivKey) when list(PrivKey) ->
+    Len = length(PrivKey),
+    error({invalid_priv_key, usmAesCfb128Protocol, Len});
+verify_usm_user_priv(usmAesCfb128Protocol, _PrivKey) ->
+    error({invalid_priv_key, usmAesCfb128Protocol});
 verify_usm_user_priv(PrivP, _PrivKey) ->
     error({invalid_priv_protocol, PrivP}).
     
@@ -1774,6 +1807,10 @@ handle_call({set_usm_cache, Key, Val}, _From, State) ->
     ets:insert(snmpm_usm_table, {{usm_cache, Key}, Val}),
     {reply, ok, State};
 
+handle_call({reset_usm_cache, EngineID}, _From, State) ->
+    ?vlog("received reset_usm_cache: ~p", [EngineID]),
+    reset_usm_cache(EngineID),
+    {reply, ok, State};
 
 handle_call({verbosity, Verbosity}, _From, State) ->
     ?vlog("received verbosity request", []),
@@ -1902,6 +1939,8 @@ handle_unregister_agent(UserId, Addr, Port) ->
 	    "~n   Port:   ~p", [UserId, Addr, Port]),
     case (catch agent_info(Addr, Port, user_id)) of
 	{ok, UserId} ->
+	    {ok, EngineID} = agent_info(Addr, Port, engine_id),
+	    reset_usm_cache(EngineID),
 	    ets:match_delete(snmpm_agent_table, {{Addr, Port, '_'}, '_'}),
 	    ok;
 	{ok, OtherUserId} ->
@@ -2043,7 +2082,8 @@ do_update_usm_user_info(_Key,
     {error, {invalid_auth_key, usmHMACSHAAuthProtocol, Val}};
 do_update_usm_user_info(Key, User, priv, Val) 
   when Val == usmNoPrivProtocol; 
-       Val == usmDESPrivProtocol ->
+       Val == usmDESPrivProtocol;
+       Val == usmAesCfb128Protocol ->
     do_update_usm_user_info(Key, User#usm_user{priv = Val});
 do_update_usm_user_info(_Key, _User, priv, Val) ->
     {error, {invalid_priv_protocol, Val}};
@@ -2065,6 +2105,16 @@ do_update_usm_user_info(Key,
 	    do_update_usm_user_info(Key, User#usm_user{priv_key = Val});
 	false -> 
 	    {error, {unsupported_crypto, des_cbc_decrypt}}
+    end;    
+do_update_usm_user_info(Key, 
+			#usm_user{priv = usmAesCfb128Protocoll} = User, 
+			priv_key, Val) 
+  when length(Val) == 16 ->
+    case is_crypto_supported(aes_cfb_128_decrypt) of
+	true -> 
+	    do_update_usm_user_info(Key, User#usm_user{priv_key = Val});
+	false -> 
+	    {error, {unsupported_crypto, aes_cfb_128_decrypt}}
     end;    
 do_update_usm_user_info(_Key, 
 			#usm_user{auth = usmHMACSHAAuthProtocol}, 

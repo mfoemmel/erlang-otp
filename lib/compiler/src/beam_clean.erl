@@ -26,7 +26,7 @@ module({Mod,Exp,Attr,Fs0,_}, _Opt) ->
     Order = [Lbl || {function,_,_,Lbl,_} <- Fs0],
     All = foldl(fun({function,_,_,Lbl,_}=Func,D) -> dict:store(Lbl, Func, D) end,
 		dict:new(), Fs0),
-    {WorkList,Used0} = exp_to_labels(Fs0, Exp),
+    {WorkList,Used0} = exp_to_labels(Fs0, gb_sets:from_list(Exp)),
     Used = find_all_used(WorkList, All, Used0),
     Fs1 = remove_unused(Order, Used, All),
     {Fs,Lc} = clean_labels(Fs1),
@@ -37,7 +37,7 @@ module({Mod,Exp,Attr,Fs0,_}, _Opt) ->
 exp_to_labels(Fs, Exp) -> exp_to_labels(Fs, Exp, [], sets:new()).
     
 exp_to_labels([{function,Name,Arity,Lbl,_}|Fs], Exp, Acc, Used) ->
-    case member({Name,Arity}, Exp) of
+    case gb_sets:is_member({Name,Arity}, Exp) of
 	true -> exp_to_labels(Fs, Exp, [Lbl|Acc], sets:add_element(Lbl, Used));
 	false -> exp_to_labels(Fs, Exp, Acc, Used)
     end;
@@ -97,13 +97,16 @@ add_to_work_list(F, {Fs,Used}=Sets) ->
 	     }).
 
 clean_labels(Fs0) ->
-    St0 = #st{lmap=dict:new(),lc=1},
-    {Fs1,#st{lmap=Lmap,lc=Lc}} = mapfoldl(fun function_renumber/2, St0, Fs0),
-    {map(fun(F) -> function_replace(F, Lmap) end, Fs1),Lc}.
-		
-function_renumber({function,Name,Arity,_Entry,Asm0}, St0) ->
+    St0 = #st{lmap=[],lc=1},
+    {Fs1,#st{lmap=Lmap0,lc=Lc}} = function_renumber(Fs0, St0, []),
+    Lmap = gb_trees:from_orddict(ordsets:from_list(Lmap0)),
+    Fs = function_replace(Fs1, Lmap, []),
+    {Fs,Lc}.
+
+function_renumber([{function,Name,Arity,_Entry,Asm0}|Fs], St0, Acc) ->
     {Asm,St} = renumber_labels(Asm0, [], St0),
-    {{function,Name,Arity,St#st.entry,Asm},St}.
+    function_renumber(Fs, St, [{function,Name,Arity,St#st.entry,Asm}|Acc]);
+function_renumber([], St, Acc) -> {Acc,St}.
 
 renumber_labels([{bif,internal_is_record,{f,_},
 		  [Term,Tag,{integer,Arity}],Dst}|Is], Acc, St) ->
@@ -133,29 +136,29 @@ renumber_labels([{test,internal_is_record,{f,_}=Fail,
 	    renumber_labels([{jump,Fail}|Is], Acc, St)
     end;
 renumber_labels([{label,Old}|Is], [{label,New}|_]=Acc, #st{lmap=D0}=St) ->
-    D = dict:store(Old, New, D0),
+    D = [{Old,New}|D0],
     renumber_labels(Is, Acc, St#st{lmap=D});
 renumber_labels([{label,Old}|Is], Acc, St0) ->
     New = St0#st.lc,
-    D = dict:store(Old, New, St0#st.lmap),
+    D = [{Old,New}|St0#st.lmap],
     renumber_labels(Is, [{label,New}|Acc], St0#st{lmap=D,lc=New+1});
 renumber_labels([{func_info,_,_,_}=Fi|Is], Acc, St0) ->
     renumber_labels(Is, [Fi|Acc], St0#st{entry=St0#st.lc});
 renumber_labels([I|Is], Acc, St0) ->
     renumber_labels(Is, [I|Acc], St0);
-renumber_labels([], Acc, St0) -> {Acc,St0}.
+renumber_labels([], Acc, St) -> {Acc,St}.
 
-function_replace({function,Name,Arity,Entry,Asm0}, Dict) ->
-    Asm = case catch replace(Asm0, [], Dict) of
-	      {'EXIT',_}=Reason ->
-		  exit(Reason);
-	      {error,{undefined_label,Lbl}=Reason} ->
+function_replace([{function,Name,Arity,Entry,Asm0}|Fs], Dict, Acc) ->
+    Asm = try
+	      replace(Asm0, [], Dict)
+	  catch
+	      throw:{error,{undefined_label,Lbl}=Reason} ->
 		  io:format("Function ~s/~w refers to undefined label ~w\n",
 			    [Name,Arity,Lbl]),
-		  exit(Reason);
-	      Asm1 when list(Asm1) -> Asm1
+		  exit(Reason)
 	  end,
-    {function,Name,Arity,Entry,Asm}.
+    function_replace(Fs, Dict, [{function,Name,Arity,Entry,Asm}|Acc]);
+function_replace([], _, Acc) -> Acc.
 
 replace([{test,Test,{f,Lbl},Ops}|Is], Acc, D) ->
     replace(Is, [{test,Test,{f,label(Lbl, D)},Ops}|Acc], D);
@@ -220,9 +223,9 @@ replace([I|Is], Acc, D) ->
 replace([], Acc, _) -> Acc.
 
 label(Old, D) ->
-    case dict:find(Old, D) of
-	{ok,Val} -> Val;
-	error -> throw({error,{undefined_label,Old}})
+    case gb_trees:lookup(Old, D) of
+	{value,Val} -> Val;
+	none -> throw({error,{undefined_label,Old}})
     end.
 	    
 redundant_values([_,{f,Fail}|Vls], Fail, Acc) ->

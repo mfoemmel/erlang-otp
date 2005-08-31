@@ -648,16 +648,24 @@ open_port(Process* p, Eterm name, Eterm settings)
 static byte* convert_environment(Process* p, Eterm env)
 {
     Eterm all;
+    Eterm* temp_heap;
     Eterm* hp;
     Uint heap_size;
-    byte* bytes;
     int n;
+    byte* bytes;
 
     if ((n = list_length(env)) < 0) {
 	return NULL;
     }
     heap_size = 2*(5*n+1);
-    hp = HAlloc(p, heap_size);	/* HAlloc(): Can't leak; fast enough */
+    temp_heap = hp = (Eterm *) erts_alloc(ERTS_ALC_T_TMP, heap_size*sizeof(Eterm));
+    bytes = NULL;		/* Indicating error */
+
+    /*
+     * All errors below are handled by jumping to 'done', to ensure that the memory
+     * gets deallocated. Do NOT return directly from this function.
+     */
+
     all = CONS(hp, make_small(0), NIL);
     hp += 2;
 
@@ -667,11 +675,11 @@ static byte* convert_environment(Process* p, Eterm env)
 
 	tmp = CAR(list_val(env));
 	if (is_not_tuple(tmp)) {
-	    return NULL;
+	    goto done;
 	}
 	tp = tuple_val(tmp);
 	if (tp[0] != make_arityval(2)) {
-	    return NULL;
+	    goto done;
 	}
 	tmp = CONS(hp, make_small(0), NIL);
 	hp += 2;
@@ -688,17 +696,19 @@ static byte* convert_environment(Process* p, Eterm env)
 	env = CDR(list_val(env));
     }
     if (is_not_nil(env)) {
-        return NULL;
+	goto done;
     }
-
     if ((n = io_list_len(all)) < 0) {
-	return NULL;
+	goto done;
     }
 
     /*
-     * Put the result in a binary (no risk for memory leak that way).
+     * Put the result in a binary (no risk for a memory leak that way).
      */
     (void) erts_new_heap_binary(p, NULL, n, &bytes);
     io_list_to_buf(all, bytes, n);
+
+ done:
+    erts_free(ERTS_ALC_T_TMP, temp_heap);
     return bytes;
 }

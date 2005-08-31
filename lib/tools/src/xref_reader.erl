@@ -184,6 +184,15 @@ expr({'try',_Line,Es,Scs,Ccs,As}, S) ->
     S2 = clauses(Scs, S1),
     S3 = clauses(Ccs, S2),
     expr_list(As, S3);
+expr({call, Line,
+      {remote, _, {atom,_,erlang}, {atom,_,make_fun}},
+      [{atom,_,Mod}, {atom,_,Fun}, {integer,_,Arity}]}, S) ->
+    %% Added in R10B-6. M:F/A.
+    expr({'fun', Line, {function, Mod, Fun, Arity}}, S);
+expr({'fun', Line, {function, Mod, Name, Arity}}, S) ->
+    %% Added in R10B-6. M:F/A. 
+    As = lists:duplicate(Arity, {atom, Line, foo}),
+    external_call(Mod, Name, As, Line, false, S);
 expr({'fun', Line, {function, Name, Arity}, _Extra}, S) ->
     %% Added in R8.
     handle_call(local, S#xrefr.module, Name, Arity, Line, S);
@@ -323,6 +332,9 @@ check_funarg(W, ArgsList, Line, S) ->
 
 funarg({'fun', _, _Clauses, _Extra}, _S) -> true;
 funarg({var, _, Var}, S) -> member(Var, S#xrefr.funvars);
+funarg({call,_,{remote,_,{atom,_,erlang},{atom,_,make_fun}},_MFA}, _S) ->
+    %% R10B-6. M:F/A.
+    true;
 funarg(_, _S) -> false.
 
 fun_args(apply2, [FunArg, Args]) -> {FunArg, Args};

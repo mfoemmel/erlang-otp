@@ -17,7 +17,7 @@
 
 -module(http_response).
 
--include("http.hrl").
+-include("http_internal.hrl").
 
 -export([headers/2, header_list/1]).
 

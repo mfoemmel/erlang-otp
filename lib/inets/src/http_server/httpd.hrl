@@ -25,6 +25,7 @@
 -define(SOCKET_CHUNK_SIZE,8192).
 -define(SOCKET_MAX_POLL,25).
 -define(FILE_CHUNK_SIZE,64*1024).
+-define(GATEWAY_INTERFACE,"CGI/1.1").
 -define(NICE(Reason),lists:flatten(atom_to_list(?MODULE)++": "++Reason)).
 -define(DEFAULT_CONTEXT,
 	[{errmsg,"[an error occurred while processing this directive]"},

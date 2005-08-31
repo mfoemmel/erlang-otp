@@ -561,7 +561,6 @@ static void fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
 
     /* Create new, empty heap */
     n_heap = (Eterm *) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP, sizeof(Eterm)*new_sz);
-
     n_hstart = n_htop = n_heap;
     FLAGS(p) &= ~F_NEED_FULLSWEEP;
 
@@ -1100,7 +1099,6 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 
     BM_STOP_TIMER(system);
     VERBOSE_MESSAGE((VERBOSE_NOISY,"Heap GC START Proc: %s\n", print_pid(p)));
-    CHECK_HEAP(p);
 
 #ifdef BM_HEAP_SIZES
     {
@@ -1235,7 +1233,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 
 #if defined(NOMOVE) && defined(SHARED_HEAP)
         /*
-         * There is allways space left in the old generation since it
+         * There is always space left in the old generation since it
          * has its own GC!
          */
 
@@ -1451,8 +1449,24 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 #ifdef DEBUG
     ARITH_CHECK_ME(p) = NULL;
 #endif
+
+#ifdef CHECK_FOR_HOLES
+    /*
+     * We intentionally do not rescan the areas copied by the GC.
+     * We trust the GC not to leave any holes.
+     */
+    {
+	Eterm* start = p->htop;
+	Eterm* stop = p->stop;
+	p->last_htop = p->htop;
+	p->last_mbuf = 0;
+	while (start < stop) {
+	    *start++ = ERTS_HOLE_MARKER;
+	}
+    }
+#endif    
+
     VERBOSE_MESSAGE((VERBOSE_NOISY,"Heap GC END\n"));
-    CHECK_HEAP(p);
 
     return ((int) (HEAP_TOP(p) - HEAP_START(p)) / 10);
 #undef OverRunCheck
@@ -1993,8 +2007,7 @@ sweep_proc_externals(Process *p, int fullsweep)
     Eterm* top;
 
 #ifdef HYBRID
-    if (ma_gc_flags & GC_GLOBAL)
-    {
+    if (ma_gc_flags & GC_GLOBAL) {
         bot = OLD_M_DATA_START;
         top = OLD_M_DATA_END;
         prev = &erts_global_offheap.externals;
@@ -2023,20 +2036,24 @@ sweep_proc_externals(Process *p, int fullsweep)
             *prev = ro;         /* Patch to moved pos */
             prev = &ro->next;
             ptr = ro->next;
-        } else if (fullsweep == 0 &&
-                   ( ptr_within(ppt, bot, top)
-#ifdef HYBRID
-                     || (!(ma_gc_flags & GC_GLOBAL) &&
-                         ( ptr_within(ppt, global_heap, global_hend) ||
-                           ptr_within(ppt, OLD_M_DATA_START, OLD_M_DATA_END)))
-#endif
-                     )) {
+        } else if (fullsweep == 0 && ptr_within(ppt, bot, top)) {
             /*
              * Object resides on old heap, and we just did a
              * generational collection - keep object in list.
              */
             prev = &ptr->next;
             ptr = ptr->next;
+#ifdef HYBRID
+	} else if (fullsweep == 0 &&
+		   (!(ma_gc_flags & GC_GLOBAL) &&
+		    (ptr_within(ppt, global_heap, global_hend) ||
+		     ptr_within(ppt, OLD_M_DATA_START, OLD_M_DATA_END)))) {
+	    /*
+	     * An entry in the list of externals for a PRIVATE heap points to
+	     * the shared message area. This is WRONG!
+	     */
+	    abort();
+#endif
         } else {                /* Object has not been moved - deref it */
 	    DEREF_ERL_NODE(ptr->node);
             *prev = ptr = ptr->next;
@@ -2157,20 +2174,24 @@ sweep_proc_bins(Process *p, int fullsweep)
             *prev = ro;         /* Patch to moved pos */
             prev = &ro->next;
             ptr = ro->next;
-        } else if (fullsweep == 0 &&
-                   ( ptr_within(ppt, bot, top)
-#ifdef HYBRID
-                     || (!(ma_gc_flags & GC_GLOBAL) &&
-                         ( ptr_within(ppt, global_heap, global_hend) ||
-                           ptr_within(ppt, OLD_M_DATA_START, OLD_M_DATA_END)))
-#endif
-                     )) {
+        } else if (fullsweep == 0 && ptr_within(ppt, bot, top)) {
             /*
-             * Object resides on old heap, and we just did a
+             * Object resides on the old heap, and we just did a
              * generational collection - keep object in list.
              */
             prev = &ptr->next;
             ptr = ptr->next;
+#ifdef HYBRID
+	} else if (fullsweep == 0 &&
+		   (!(ma_gc_flags & GC_GLOBAL) &&
+		    (ptr_within(ppt, global_heap, global_hend) ||
+		     ptr_within(ppt, OLD_M_DATA_START, OLD_M_DATA_END)))) {
+	    /*
+	     * An entry in the list of binaries for a PRIVATE heap points
+	     * to the shared message area. This is WRONG!
+	     */
+	    abort();
+#endif
         } else {                /* Object has not been moved - deref it */
             *prev = ptr->next;
             bptr = ptr->val;
@@ -2610,7 +2631,6 @@ static Eterm *rescueHeap(Eterm *start, Eterm *end, Eterm *top)
     Eterm *oh_end = global_old_hend;
     Eterm *hp = start;
 
-    CHECK_MEMORY(start,end);
     while (hp != end) {
         Eterm gval = *hp;
 
@@ -2778,7 +2798,6 @@ static void ma_fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
             Process *cp = erts_active_procs[i];
             ErlHeapFragment* bp = MBUF(cp);
 
-            CHECK_HEAP(cp);
             n_htop = rescueHeap(cp->high_water,cp->htop,n_htop);
 
             while (bp) {
@@ -3378,7 +3397,6 @@ erts_global_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 	for (i = 0; i < erts_num_active_procs; i++)
 	{
 	    Process *cp = erts_active_procs[i];
-            CHECK_HEAP(cp);
         }
     }
 #endif
@@ -3483,7 +3501,6 @@ static Eterm *rescueHeapGen(Process *p, Eterm *start, Eterm *end,
     Eterm *surface    = global_htop;
     Eterm *g_ptr      = start;
 
-    CHECK_MEMORY(start,end);
     while (g_ptr != end) {
         Eterm gval = *g_ptr;
 
@@ -3758,7 +3775,6 @@ ma_gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
             ErlHeapFragment* bp = MBUF(cp);
 
             if (cp->high_water != cp->htop) {
-                CHECK_HEAP(cp);
                 n_htop = rescueHeapGen(cp,cp->high_water,cp->htop,n_htop,&old_htop,objv,nobj);
             }
 

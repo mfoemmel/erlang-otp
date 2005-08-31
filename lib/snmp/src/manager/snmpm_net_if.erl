@@ -335,6 +335,9 @@ handle_recv_msg(Addr, Port, Bytes,
 		{discarded, Reason} ->
 		    ?vlog("failed generating response message:"
 			  "~n   Reason: ~p", [Reason]),
+		    ReqId = RePdu#pdu.request_id,
+		    ErrorInfo = {failed_generating_response, {RePdu, Reason}},
+		    Pid ! {snmp_error, ReqId, ErrorInfo, Addr, Port},
 		    ok
 	    end;
 
@@ -366,9 +369,12 @@ handle_recv_msg(Addr, Port, Bytes,
 	    ?vtrace("received pdu", []),
 	    Pid ! {snmp_pdu, Pdu, Addr, Port};
 
-	{discarded, _Reason} ->
-	    ?vtrace("discarded", []),
+	{discarded, Reason} ->
+	    ?vtrace("discarded: ~p", [Reason]),
+	    ErrorInfo = {failed_processing_message, Reason},
+	    Pid ! {snmp_error, ErrorInfo, Addr, Port},
 	    ok;
+
 	Error ->
 	    error_msg("processing of received message failed: "
 		      "~n   ~p", [Error]),
@@ -392,7 +398,6 @@ handle_send_pdu(Pdu, Vsn, MsgData, Addr, Port,
 		  "~n   PDU:    ~p"
 		  "~n   Reason: ~p", [Pdu, Reason]),
 	    Pid ! {snmp_error, Pdu, Reason},
-%% 	    Pid ! {snmp_error, Pdu, {send_failed, Reason}},
 	    ok
     end.
 

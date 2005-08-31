@@ -239,13 +239,8 @@ update({test,is_eq_exact,_,[Reg,{atom,_}=Atom]}, Ts) ->
 	    Ts
     end;
 update({test,_Test,_Fail,_Other}, Ts) -> Ts;
-update({call_ext,1,{extfunc,math,Math,1}}, Ts) ->
-    case is_math_bif(Math, 1) of
-	true -> tdb_update([{{x,0},float}], Ts);
-	false -> tdb_kill_xregs(Ts)
-    end;
-update({call_ext,2,{extfunc,math,Math,2}}, Ts) ->
-    case is_math_bif(Math, 2) of
+update({call_ext,Ar,{extfunc,math,Math,Ar}}, Ts) ->
+    case is_math_bif(Math, Ar) of
 	true -> tdb_update([{{x,0},float}], Ts);
 	false -> tdb_kill_xregs(Ts)
     end;

@@ -128,7 +128,7 @@ preProcess(CFG, AssMap) ->
 %%----------------------------------------------------------------------
 
 traverseLabels(CFG, [Label|T], AssMap) ->
-    Code = hipe_bb:code(?CFG:bb(CFG, Label)),
+    Code = get_code_from_label(CFG, Label),
     NewVarList = getAssignments(Code),
     traverseLabels(CFG, T, updateAssMap(NewVarList, Label, AssMap)); 
 traverseLabels(_, [], AssMap) -> AssMap. 
@@ -302,10 +302,10 @@ checkPhiNeeds(CFG, [], HasAlready, Work, _, WorkLst, _, _) ->
 %%----------------------------------------------------------------------
 
 insertPhiCode(CFG, Node, Var) ->
-   BB = ?CFG:bb(CFG, Node),
-   Phi = ?CODE:mk_phi(Var),
-   Code = [Phi | hipe_bb:code(BB)],
-   ?CFG:bb_add(CFG, Node, hipe_bb:code_update(BB, Code)).
+  BB = ?CFG:bb(CFG, Node),
+  Phi = ?CODE:mk_phi(Var),
+  Code = [Phi | hipe_bb:code(BB)],
+  ?CFG:bb_add(CFG, Node, hipe_bb:code_update(BB, Code)).
 
 
 %%======================================================================
@@ -640,8 +640,7 @@ traverse_labels(Labels, CFG) ->
   traverse_labels(Labels, VarTree, CFG).
 
 traverse_labels([Label|Rest], VarTree, CFG) ->
-  BB = ?CFG:bb(CFG,Label),
-  Code = hipe_bb:code(BB),
+  Code = get_code_from_label(CFG, Label),
   NewVarTree = traverse_code(Code, VarTree, Label),
   traverse_labels(Rest, NewVarTree, CFG);
 traverse_labels([], VarTree, _CFG) ->
@@ -703,8 +702,7 @@ add_args([], VarTree) ->
 %% This function is analogous to traverse_labels.
 %%
 test_uses([Label|Rest], VarTree, DomTree,CFG) ->
-  BB = ?CFG:bb(CFG,Label),
-  Code = hipe_bb:code(BB),
+  Code = get_code_from_label(CFG, Label),
   test_code(Code, VarTree, Label, DomTree, CFG, []),
   test_uses(Rest, VarTree, DomTree, CFG);
 test_uses([], _VarTree, _DomTree, _CFG) ->
@@ -718,7 +716,7 @@ test_code([Instr|Instrs], VarTree, Label, DomTree, CFG, Old) ->
     true ->
       ArgList = ?CODE:phi_arglist(Instr),
       [def_doms_use([Var], VarTree, Pred, DomTree,
-		    get_code_from_label(Pred,CFG)) || {Pred,Var} <- ArgList];
+		    get_code_from_label(CFG,Pred)) || {Pred,Var} <- ArgList];
     _ ->
       Uses = uses_to_rename(Instr),
       def_doms_use(Uses, VarTree, Label, DomTree, Old)
@@ -727,9 +725,14 @@ test_code([Instr|Instrs], VarTree, Label, DomTree, CFG, Old) ->
 test_code([], _VarTree, _Label, _DomTree, _CFG, _Old) ->
   ok.
 
-get_code_from_label(Label, CFG) ->
-  BB = ?CFG:bb(CFG,Label),
-  hipe_bb:code(BB).
+get_code_from_label(CFG, Label) ->
+  case ?CFG:bb(CFG,Label) of
+    not_found ->
+      ?error_msg("Basic block with label ~w was not found\n", [Label]);
+      %% ?EXIT('Detected serious problem in SSA form');
+    BB ->
+      hipe_bb:code(BB)
+  end.
 
 %%
 %% This function checks whether a use is dominated by a def.
@@ -766,13 +769,13 @@ def_doms_use([Var|Vars], VarTree, Label, DomTree, Old) ->
 	    true ->
 	      ok;
 	    false ->
-	      ?WARNING_MSG("Definition does not dominate use for variable: ~w\n"++
-			   "at label: ~w definition label: ~w\n", 
+	      ?WARNING_MSG("Definition does not dominate use for variable: ~w "++
+			   "at label: ~w (definition label: ~w)\n", 
 			   [Var, Label, DefLabel])
 	  end
       end;
     none ->
-      ?WARNING_MSG("Use with no definition of variable: ~w\n at label: ~w\n",
+      ?WARNING_MSG("Use with no definition of variable: ~w at label: ~w\n",
 		   [Var, Label])
   end,
   def_doms_use(Vars, VarTree, Label, DomTree, Old);

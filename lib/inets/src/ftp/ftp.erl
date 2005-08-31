@@ -33,7 +33,7 @@
 	 rename/3, rmdir/2, 
 	 send/2, send/3, send_bin/3, 
 	 send_chunk_start/2, send_chunk/2, send_chunk_end/1, 
-	 type/2, user/3,user/4,account/2,
+	 type/2, user/3, user/4, account/2,
 	 append/3, append/2, append_bin/3,
 	 append_chunk/2, append_chunk_end/1, append_chunk_start/2]).
 
@@ -44,8 +44,16 @@
 %% supervisor callbacks
 -export([start_link_sup/1]).
 
+-include("ftp_internal.hrl").
+
 %% Constante used in internal state definition
 -define(CONNECTION_TIMEOUT, 60*1000).
+-define(DEFAULT_MODE, passive).
+
+%% Internal Constants
+-define(FTP_PORT, 21).
+-define(FILE_BUFSIZE, 4096).
+
 %% Internal state
 -record(state, {
 	  csock = undefined, % socket() - Control connection socket 
@@ -54,7 +62,7 @@
 	  ldir = undefined,  % string() - Current local directory
 	  type = ftp_server_default,  % atom() - binary | ascci 
 	  chunk = false,     % boolean() - Receiving data chunks 
-	  mode = passive,    % passive | active
+	  mode = ?DEFAULT_MODE,    % passive | active
 	  timeout = ?CONNECTION_TIMEOUT, % integer()
 	  %% Data received so far on the data connection
 	  data = <<>>,   % binary()
@@ -64,38 +72,18 @@
 	  %% be able to detect if the next received byte is ?LF
 	  %% and hence the end of the response is reached!
 	  ctrl_data = {<<>>, [], start},  % {binary(), [bytes()], LineStatus}
-	  client = undefined,  % pid() - Client pid
+	  %% pid() - Client pid (note not the same as "From")
+	  owner = undefined,   
+	  client = undefined,  % "From" to be used in gen_server:reply/2
 	  %% Function that activated a connection and maybe some
 	  %% data needed further on.
 	  caller = undefined, % term()     
-	  ip_v6_disabled      % boolean()
+	  ip_v6_disabled,     % boolean()
+	  progress            % ignore | pid()	    
 	 }).
 
-%% Internal Constants
--define(BYTE_TIMEOUT, 1000).   % Timeout for _ONE_ byte to arrive. (ms)
--define(FTP_PORT, 21).
--define(DOUBLE_QUOTE, 34).
--define(LEFT_PAREN, $().
--define(RIGHT_PAREN, $)).
-%% First group of reply code digits
--define(POS_PREL, 1).
--define(POS_COMPL, 2).
--define(POS_INTERM, 3).
--define(TRANS_NEG_COMPL, 4).
--define(PERM_NEG_COMPL, 5).
-%% Second group of reply code digits
--define(SYNTAX,0).
--define(INFORMATION,1).
--define(CONNECTION,2).
--define(AUTH_ACC,3).
--define(UNSPEC,4).
--define(FILE_SYSTEM,5).
 
--define(FILE_BUFSIZE, 4096).
 
--define(CR, 13).
--define(LF, 10).
--define(WHITE_SPACE, 32).
 %%%=========================================================================
 %%%  API - CLIENT FUNCTIONS
 %%%=========================================================================
@@ -104,35 +92,37 @@
 %%	Host = string(), 
 %%      Port = integer(), 
 %%      Flags = [Flag], 
-%%      Flag = verbose | debug
+%%      Flag = verbose | debug | trace
 %%
 %% Description:  Start an ftp client and connect to a host.
 %%--------------------------------------------------------------------------
-%%The only option was the host in textual form
+%% The only option was the host in textual form
 open({option_list, Options})->
     ensure_started(),
     Flags = key_search(flags, Options, []),
-    {ok, Pid} =  ftp_sup:start_child([[[Flags], Options]]),
+    {ok, Pid} =  ftp_sup:start_child([[[{client, self()}, Flags], []]]),
     call(Pid, {open, ip_comm, Options}, pid);
 	 
-%%The only option was the tuple form of the ip-number
+%% The only option was the tuple form of the ip-number
 open(Host) when tuple(Host) ->
     open(Host, ?FTP_PORT, []);
 
-%%Host is the string form of the hostname 
+%% Host is the string form of the hostname 
 open(Host)->
-    open(Host,?FTP_PORT,[]).
+    open(Host, ?FTP_PORT, []).
 
 open(Host, Port) when integer(Port) ->
-    open(Host,Port,[]);
+    open(Host, Port, []);
 
 open(Host, Flags) when list(Flags) ->
-    open(Host,?FTP_PORT, Flags).
+    open(Host, ?FTP_PORT, Flags).
 
-open(Host,Port,Flags) when integer(Port), list(Flags) ->
+open(Host, Port, Flags) when integer(Port), list(Flags) ->
     ensure_started(),
-    {ok, Pid} = ftp_sup:start_child([[[Flags], []]]), 
-    call(Pid, {open, ip_comm, Host, Port}, pid).
+    {ok, Pid} = ftp_sup:start_child([[[{client, self()}, Flags], []]]), 
+    Opts = [{host, Host}, {port, Port}], 
+    call(Pid, {open, ip_comm, Opts}, pid).
+
 %%--------------------------------------------------------------------------
 %% user(Pid, User, Pass, <Acc>) -> ok | {error, euser} | {error, econn} 
 %%                                    | {error, eacct}
@@ -146,6 +136,7 @@ user(Pid, User, Pass) ->
 
 user(Pid, User, Pass, Acc) ->
     call(Pid, {user, User, Pass, Acc}, atom).
+
 %%--------------------------------------------------------------------------
 %% account(Pid, Acc)  -> ok | {error, eacct}
 %%	Pid = pid()
@@ -153,8 +144,9 @@ user(Pid, User, Pass, Acc) ->
 %%
 %% Description:  Set a user Account.
 %%--------------------------------------------------------------------------
-account(Pid,Acc) ->
+account(Pid, Acc) ->
     call(Pid, {account, Acc}, atom).
+
 %%--------------------------------------------------------------------------
 %% pwd(Pid) -> {ok, Dir} | {error, elogin} | {error, econn} 
 %%	Pid = pid()
@@ -164,6 +156,7 @@ account(Pid,Acc) ->
 %%--------------------------------------------------------------------------
 pwd(Pid) ->
     call(Pid, pwd, ctrl).
+
 %%--------------------------------------------------------------------------
 %% lpwd(Pid) ->  {ok, Dir} | {error, elogin} 
 %%	Pid = pid()
@@ -172,7 +165,8 @@ pwd(Pid) ->
 %% Description:  Get the current working directory at local server.
 %%--------------------------------------------------------------------------
 lpwd(Pid) ->
-    call(Pid, lpwd, local_string).
+    call(Pid, lpwd, string).
+
 %%--------------------------------------------------------------------------
 %% cd(Pid, Dir) ->  ok | {error, epath} | {error, elogin} | {error, econn}
 %%	Pid = pid()
@@ -182,6 +176,7 @@ lpwd(Pid) ->
 %%--------------------------------------------------------------------------
 cd(Pid, Dir) ->
     call(Pid, {cd, Dir}, atom).
+
 %%--------------------------------------------------------------------------
 %% lcd(Pid, Dir) ->  ok | {error, epath}
 %%	Pid = pid()
@@ -191,6 +186,7 @@ cd(Pid, Dir) ->
 %%--------------------------------------------------------------------------
 lcd(Pid, Dir) ->
     call(Pid, {lcd, Dir}, string).
+
 %%--------------------------------------------------------------------------
 %% ls(Pid, <Dir>) -> {ok, Listing} | {error, epath} | {error, elogin} | 
 %%                   {error, econn}
@@ -205,6 +201,7 @@ ls(Pid) ->
   ls(Pid, "").
 ls(Pid, Dir) ->
     call(Pid, {dir, long, Dir}, string).
+
 %%--------------------------------------------------------------------------
 %% nlist(Pid, <Dir>) -> {ok, Listing} | {error, epath} | {error, elogin} | 
 %%                      {error, econn}
@@ -230,6 +227,7 @@ nlist(Pid, Dir) ->
 %%--------------------------------------------------------------------------
 rename(Pid, CurrFile, NewFile) ->
     call(Pid, {rename, CurrFile, NewFile}, string).
+
 %%--------------------------------------------------------------------------
 %% delete(Pid, File) ->  ok | {error, epath} | {error, elogin} | 
 %%                       {error, econn}
@@ -240,6 +238,7 @@ rename(Pid, CurrFile, NewFile) ->
 %%--------------------------------------------------------------------------
 delete(Pid, File) ->
     call(Pid, {delete, File}, string).
+
 %%--------------------------------------------------------------------------
 %% mkdir(Pid, Dir) -> ok | {error, epath} | {error, elogin} | {error, econn}
 %%	Pid = pid(), 
@@ -249,6 +248,7 @@ delete(Pid, File) ->
 %%--------------------------------------------------------------------------
 mkdir(Pid, Dir) ->
     call(Pid, {mkdir, Dir}, atom).
+
 %%--------------------------------------------------------------------------
 %% rmdir(Pid, Dir) -> ok | {error, epath} | {error, elogin} | {error, econn}
 %%	Pid = pid(), 
@@ -258,6 +258,7 @@ mkdir(Pid, Dir) ->
 %%--------------------------------------------------------------------------
 rmdir(Pid, Dir) ->
     call(Pid, {rmdir, Dir}, atom).
+
 %%--------------------------------------------------------------------------
 %% type(Pid, Type) -> ok | {error, etype} | {error, elogin} | {error, econn}
 %%	Pid = pid() 
@@ -267,6 +268,7 @@ rmdir(Pid, Dir) ->
 %%--------------------------------------------------------------------------
 type(Pid, Type) ->
     call(Pid, {type, Type}, atom).
+
 %%--------------------------------------------------------------------------
 %% recv(Pid, RemoteFileName <LocalFileName>) -> ok | {error, epath} |
 %%                                          {error, elogin} | {error, econn}
@@ -280,38 +282,40 @@ recv(Pid, RemotFileName) ->
 
 recv(Pid, RemotFileName, LocalFileName) ->
     call(Pid, {recv, RemotFileName, LocalFileName}, atom).
-%%--------------------------------------------------------------------------
-%% recv_bin(Pid, RFile) -> {ok, Bin} | {error, epath} | {error, elogin} 
-%%			   | {error, econn}
-%%	Pid = pid()
-%%	RFile = string()
-%%      Bin = binary()
-%%
-%% Purpose:  Transfer file from remote server into binary.
-%%--------------------------------------------------------------------------
-recv_bin(Pid, RFile) ->
-    call(Pid, {recv_bin, RFile}, bin).
 
 %%--------------------------------------------------------------------------
-%% recv_chunk_start(Pid, RFile) -> ok | {error, elogin} | {error, epath} 
+%% recv_bin(Pid, RemoteFile) -> {ok, Bin} | {error, epath} | {error, elogin} 
+%%			   | {error, econn}
+%%	Pid = pid()
+%%	RemoteFile = string()
+%%      Bin = binary()
+%%
+%% Description:  Transfer file from remote server into binary.
+%%--------------------------------------------------------------------------
+recv_bin(Pid, RemoteFile) ->
+    call(Pid, {recv_bin, RemoteFile}, bin).
+
+%%--------------------------------------------------------------------------
+%% recv_chunk_start(Pid, RemoteFile) -> ok | {error, elogin} | {error, epath} 
 %%                                 | {error, econn}
 %%	Pid = pid()
-%%	RFile = string()
+%%	RemoteFile = string()
 %%
 %% Description:  Start receive of chunks of remote file.
 %%--------------------------------------------------------------------------
-recv_chunk_start(Pid, RFile) ->
-    call(Pid, {recv_chunk_start, RFile}, atom).
+recv_chunk_start(Pid, RemoteFile) ->
+    call(Pid, {recv_chunk_start, RemoteFile}, atom).
 
 %%--------------------------------------------------------------------------
-%% recv_chunk(Pid, RFile) ->  ok | {ok, Bin} | {error, Reason}
+%% recv_chunk(Pid, RemoteFile) ->  ok | {ok, Bin} | {error, Reason}
 %%	Pid = pid()
-%%	RFile = string()
+%%	RemoteFile = string()
 %%
 %% Description:  Transfer file from remote server into binary in chunks
 %%--------------------------------------------------------------------------
 recv_chunk(Pid) ->
     call(Pid, recv_chunk, atom).
+
 %%--------------------------------------------------------------------------
 %% send(Pid, LocalFileName <RemotFileName>) -> ok | {error, epath} 
 %%                                                | {error, elogin} 
@@ -326,40 +330,43 @@ send(Pid, LocalFileName) ->
 
 send(Pid, LocalFileName, RemotFileName) ->
     call(Pid, {send, LocalFileName, RemotFileName}, atom).
+
 %%--------------------------------------------------------------------------
-%% send_bin(Pid, Bin, RFile) -> ok | {error, epath} | {error, elogin} 
+%% send_bin(Pid, Bin, RemoteFile) -> ok | {error, epath} | {error, elogin} 
 %%                             | {error, enotbinary} | {error, econn}
 %%	Pid = pid()
 %%	Bin = binary()
-%%	RFile = string()
+%%	RemoteFile = string()
 %%
 %% Description:  Transfer a binary to a remote file.
 %%--------------------------------------------------------------------------
-send_bin(Pid, Bin, RFile) when binary(Bin) ->
-    call(Pid, {send_bin, Bin, RFile}, atom);
-send_bin(_Pid, _Bin, _RFile) ->
+send_bin(Pid, Bin, RemoteFile) when binary(Bin) ->
+    call(Pid, {send_bin, Bin, RemoteFile}, atom);
+send_bin(_Pid, _Bin, _RemoteFile) ->
   {error, enotbinary}.
 
 %%--------------------------------------------------------------------------
-%% send_chunk_start(Pid, RFile) -> ok | {error, elogin} | {error, epath} 
+%% send_chunk_start(Pid, RemoteFile) -> ok | {error, elogin} | {error, epath} 
 %%                                 | {error, econn}
 %%	Pid = pid()
-%%	RFile = string()
+%%	RemoteFile = string()
 %%
 %% Description:  Start transfer of chunks to remote file.
 %%--------------------------------------------------------------------------
-send_chunk_start(Pid, RFile) ->
-    call(Pid, {send_chunk_start, RFile}, atom).
+send_chunk_start(Pid, RemoteFile) ->
+    call(Pid, {send_chunk_start, RemoteFile}, atom).
+
 %%--------------------------------------------------------------------------
-%% append_chunk_start(Pid, RFile) -> ok | {error, elogin} | {error, epath} 
-%%				     | {error, econn}
+%% append_chunk_start(Pid, RemoteFile) -> ok | {error, elogin} | 
+%%                                        {error, epath} | {error, econn}
 %%	Pid = pid()
-%%	RFile = string()
+%%	RemoteFile = string()
 %%
 %% Description:  Start append chunks of data to remote file.
 %%--------------------------------------------------------------------------
-append_chunk_start(Pid, RFile) ->
-    call(Pid, {append_chunk_start, RFile}, atom).
+append_chunk_start(Pid, RemoteFile) ->
+    call(Pid, {append_chunk_start, RemoteFile}, atom).
+
 %%--------------------------------------------------------------------------
 %% send_chunk(Pid, Bin) -> ok | {error, elogin} | {error, enotbinary} 
 %%                       | {error, echunk} | {error, econn
@@ -372,6 +379,7 @@ send_chunk(Pid, Bin) when binary(Bin) ->
     call(Pid, {transfer_chunk, Bin}, atom);
 send_chunk(_Pid, _Bin) ->
   {error, enotbinary}.
+
 %%--------------------------------------------------------------------------
 %% append_chunk(Pid, Bin) -> ok | {error, elogin} | {error, enotbinary} 
 %%			     | {error, echunk} | {error, econn}
@@ -384,6 +392,7 @@ append_chunk(Pid, Bin) when binary(Bin) ->
     call(Pid, {transfer_chunk, Bin}, atom);
 append_chunk(_Pid, _Bin) ->
   {error, enotbinary}.
+
 %%--------------------------------------------------------------------------
 %% send_chunk_end(Pid) -> ok | {error, elogin} | {error, echunk} 
 %%			  | {error, econn}
@@ -393,6 +402,7 @@ append_chunk(_Pid, _Bin) ->
 %%--------------------------------------------------------------------------
 send_chunk_end(Pid) ->
     call(Pid, chunk_end, atom).
+
 %%--------------------------------------------------------------------------
 %% append_chunk_end(Pid) ->  ok | {error, elogin} | {error, echunk} 
 %%			     | {error, econn}
@@ -416,18 +426,19 @@ append(Pid, LocalFileName) ->
 
 append(Pid, LocalFileName, RemotFileName) ->
     call(Pid, {append, LocalFileName, RemotFileName}, atom).
+
 %%--------------------------------------------------------------------------
-%% append_bin(Pid, Bin, RFile) -> ok | {error, epath} | {error, elogin} 
+%% append_bin(Pid, Bin, RemoteFile) -> ok | {error, epath} | {error, elogin} 
 %%				  | {error, enotbinary} | {error, econn}
 %%	Pid = pid()
 %%	Bin = binary()
-%%	RFile = string()
+%%	RemoteFile = string()
 %%
 %% Purpose:  Append a binary to a remote file.
 %%--------------------------------------------------------------------------
-append_bin(Pid, Bin, RFile) when binary(Bin) ->
-    call(Pid, {append_bin, Bin, RFile}, atom);
-append_bin(_Pid, _Bin, _RFile) ->
+append_bin(Pid, Bin, RemoteFile) when binary(Bin) ->
+    call(Pid, {append_bin, Bin, RemoteFile}, atom);
+append_bin(_Pid, _Bin, _RemoteFile) ->
     {error, enotbinary}.
 
 %%--------------------------------------------------------------------------
@@ -457,6 +468,8 @@ close(Pid) ->
 %% Description: Force connection to use active mode. 
 %%--------------------------------------------------------------------------
 force_active(Pid) ->
+    error_logger:info_report("This function is deprecated use the mode flag "
+			     "to open/[1,2,3] instead", []),
     call(Pid, force_active, atom).
 
 %%--------------------------------------------------------------------------
@@ -466,7 +479,7 @@ force_active(Pid) ->
 %% Description:  Return diagnostics.
 %%--------------------------------------------------------------------------
 formaterror(Tag) ->
-  errstr(Tag).
+  ftp_response:error_string(Tag).
 
 %%%========================================================================
 %%% gen_server callback functions 
@@ -476,14 +489,21 @@ formaterror(Tag) ->
 %% init(Args) -> {ok, State} | {ok, State, Timeout} | {stop, Reason}
 %% Description: Initiates the erlang process that manages a ftp connection.
 %%-------------------------------------------------------------------------
-init([Flags]) ->
+init([{client, ClientPid}, Flags]) ->
+    process_flag(trap_exit, true),
+    erlang:monitor(process, ClientPid),
     inet_db:start(),
     {ok, LDir} = file:get_cwd(),
-    State = case is_debug(Flags) of
+    State = case is_debug(Flags) or is_trace(Flags) of
 		true ->
 		    dbg:tracer(),
 		    dbg:p(all, [call]),
-		    dbg:tpl(ftp, [{'_', [], [{return_trace}]}]),
+		    case  is_debug(Flags) of 
+			true ->
+			    dbg:tp(ftp, [{'_', [], [{return_trace}]}]);
+			false -> %trace
+			    dbg:tpl(ftp, [{'_', [], [{return_trace}]}])
+		    end,
 		    #state{ldir = LDir};
 		false ->
 		    case is_verbose(Flags) of
@@ -494,7 +514,9 @@ init([Flags]) ->
 		    end
 	    end,
     process_flag(priority, low), 
-    {ok, State#state{ip_v6_disabled = is_ipv6_disabled(Flags)}}.
+    {ok, State#state{owner = ClientPid,
+	   ip_v6_disabled = is_ipv6_disabled(Flags)}}.
+
 
 %%--------------------------------------------------------------------------
 %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -502,50 +524,73 @@ init([Flags]) ->
 %%                                      {noreply, State}               |
 %%                                      {noreply, State, Timeout}      |
 %%                                      {stop, Reason, Reply, State}   |
-%%                                      {stop, Reason, Reply, State}     
 %% Description: Handle incoming requests. 
 %%-------------------------------------------------------------------------
-handle_call({open, ip_comm, ConnectionData}, From, State) ->
-    case key_search(host, ConnectionData, undefined) of
+handle_call({Pid, _}, _, #state{owner = Owner} = State) when Owner =/= Pid ->
+    {reply, {error, not_connection_owner}, State};
+
+handle_call({_, {open, ip_comm, Opts}}, From, State) ->
+    case key_search(host, Opts, undefined) of
 	undefined ->
 	    {stop, normal, {error, ehost}, State};
 	Host ->
-	    Port = key_search(port, ConnectionData, ?FTP_PORT),
-	    Timeout = key_search(timeout, ConnectionData, ?CONNECTION_TIMEOUT),
+	    IsPosInt = fun(Int) when is_integer(Int), Int > 0 ->
+			       true;
+			  (_) -> 
+			       false
+		       end,
+	    
+	    IsModeAtom = fun(active) ->
+				 true;
+			    (passive) ->
+				 true;
+			    (_) ->
+				 false
+			 end,
+	    
+	    Mode = check_option(IsModeAtom,
+				key_search(mode, Opts, ?DEFAULT_MODE),
+				?DEFAULT_MODE),
+	    Port = check_option(IsPosInt, key_search(port, Opts, ?FTP_PORT), 
+				?FTP_PORT),
+	    Timeout = check_option(IsPosInt, key_search(timeout, Opts, 
+							?CONNECTION_TIMEOUT),
+				   ?CONNECTION_TIMEOUT),
+	    ProgressOptions = key_search(progress, Opts, ignore),
+	    
 	    setup_ctrl_connection(Host, Port, Timeout, 
-				  State#state{client = From})
+				  State#state{client = From, mode = Mode,
+					      progress = 
+					      progress(ProgressOptions)})
     end;	
-handle_call({open, ip_comm, Host, Port}, From, State) ->
-    setup_ctrl_connection(Host, Port, ?CONNECTION_TIMEOUT, 
-			  State#state{client = From}); 
 
-handle_call(force_active, _, State) ->
+handle_call({_, force_active}, _, State) ->
     {reply, ok, State#state{mode = active}};
 
-handle_call({user, User, Password}, From, State) ->
+handle_call({_, {user, User, Password}}, From, State) ->
     handle_user(User, Password, "", State#state{client = From});
 
-handle_call({user, User, Password, Acc}, From, State) ->
+handle_call({_, {user, User, Password, Acc}}, From, State) ->
     handle_user(User, Password, Acc, State#state{client = From});
    
-handle_call({account, Acc}, From, State)->
+handle_call({_, {account, Acc}}, From, State)->
     handle_user_account(Acc, State#state{client = From});
 
-handle_call(pwd, From, #state{chunk = false} = State) ->
+handle_call({_, pwd}, From, #state{chunk = false} = State) ->
     send_ctrl_message(State, mk_cmd("PWD", [])), 
     activate_ctrl_connection(State),
     {noreply, State#state{client = From, caller = pwd}};
 
-handle_call(lpwd, From,  #state{ldir = LDir} = State) ->
+handle_call({_, lpwd}, From,  #state{ldir = LDir} = State) ->
     {reply, {ok, LDir}, State#state{client = From}};
 
-handle_call({cd, Dir}, From,  #state{chunk = false} 
+handle_call({_, {cd, Dir}}, From,  #state{chunk = false} 
 	    = State) ->
     send_ctrl_message(State, mk_cmd("CWD ~s", [Dir])), 
     activate_ctrl_connection(State),
     {noreply, State#state{client = From, caller = cd}};
 
-handle_call({lcd, Dir}, _From, #state{ldir = LDir0} = State) ->
+handle_call({_,{lcd, Dir}}, _From, #state{ldir = LDir0} = State) ->
     LDir = filename:absname(Dir, LDir0),
     case file:read_file_info(LDir) of
 	{ok, _ } ->
@@ -554,37 +599,40 @@ handle_call({lcd, Dir}, _From, #state{ldir = LDir0} = State) ->
 	    {reply, {error, epath}, State}
     end;
 
-handle_call({dir, Len, Dir}, From, #state{chunk = false} = State) ->
+handle_call({_, {dir, Len, Dir}}, {_Pid, _} = From, 
+	    #state{chunk = false} = State) ->
     setup_data_connection(State#state{caller = {dir, Dir, Len},
 				      client = From});
-handle_call({rename, CurrFile, NewFile}, From,
+handle_call({_, {rename, CurrFile, NewFile}}, From,
 	    #state{chunk = false} = State) ->
     send_ctrl_message(State, mk_cmd("RNFR ~s", [CurrFile])),
     activate_ctrl_connection(State),
     {noreply, State#state{caller = {rename, NewFile}, client = From}};
 
-handle_call({delete, File}, From, #state{chunk = false} = State) ->
+handle_call({_, {delete, File}}, {_Pid, _} = From, 
+	    #state{chunk = false} = State) ->
     send_ctrl_message(State, mk_cmd("DELE ~s", [File])),
     activate_ctrl_connection(State),
     {noreply, State#state{client = From}};
 
-handle_call({mkdir, Dir}, From,  #state{chunk = false} = State) ->
+handle_call({_, {mkdir, Dir}}, From,  #state{chunk = false} = State) ->
     send_ctrl_message(State, mk_cmd("MKD ~s", [Dir])),
     activate_ctrl_connection(State),
     {noreply, State#state{client = From}};
 
-handle_call({rmdir, Dir}, From, #state{chunk = false} = State) ->
+handle_call({_,{rmdir, Dir}}, From, #state{chunk = false} = State) ->
     send_ctrl_message(State, mk_cmd("RMD ~s", [Dir])),
     activate_ctrl_connection(State),
     {noreply, State#state{client = From}};
 
-handle_call({type, Type}, From,  #state{chunk = false} 
+handle_call({_,{type, Type}}, From,  #state{chunk = false} 
 	    = State) ->  
     case Type of
 	ascii ->
 	    send_ctrl_message(State, mk_cmd("TYPE A", [])),
 	    activate_ctrl_connection(State),
-	    {noreply, State#state{caller = type, type = ascii, client = From}};
+	    {noreply, State#state{caller = type, type = ascii, 
+				  client = From}};
 	binary ->
 	    send_ctrl_message(State, mk_cmd("TYPE I", [])),
 	    activate_ctrl_connection(State),
@@ -594,10 +642,11 @@ handle_call({type, Type}, From,  #state{chunk = false}
 	    {reply, {error, etype}, State}
     end;
 
-handle_call({recv, RemoteFile, LocalFile}, From, 
+handle_call({_,{recv, RemoteFile, LocalFile}}, From, 
 	    #state{chunk = false, ldir = LocalDir} = State) ->
+    progress_report({remote_file, RemoteFile}, State),
     NewLocalFile = filename:absname(LocalFile, LocalDir),
-    
+
     case file_open(NewLocalFile, write) of
 	{ok, Fd} ->
 	    setup_data_connection(State#state{client = From,
@@ -607,67 +656,82 @@ handle_call({recv, RemoteFile, LocalFile}, From,
 	{error, _What} ->
 	    {reply, {error, epath}, State}
     end;
-    
-handle_call({recv_bin, RFile}, From, #state{chunk = false} = State) ->
-    setup_data_connection(State#state{caller = {recv_bin, RFile},
+
+handle_call({_, {recv_bin, RemoteFile}}, From, #state{chunk = false} = 
+	    State) ->
+    setup_data_connection(State#state{caller = {recv_bin, RemoteFile},
 				      client = From});
 
-handle_call({recv_chunk_start, RFile}, From, #state{chunk = false} 
+handle_call({_,{recv_chunk_start, RemoteFile}}, From, #state{chunk = false} 
 	    = State) ->
     setup_data_connection(State#state{caller = {start_chunk_transfer,
-						"RETR", RFile},
+						"RETR", RemoteFile},
 				      client = From});
 
-handle_call(recv_chunk, _, #state{chunk = false} = State) ->
+handle_call({_, recv_chunk}, _, #state{chunk = false} = State) ->
     {reply, {error, "ftp:recv_chunk_start/2 not called"}, State}; 
 
-handle_call(recv_chunk, From, #state{chunk = true} = State) ->
+handle_call({_, recv_chunk}, From, #state{chunk = true} = State) ->
     activate_data_connection(State),
     {noreply, State#state{client = From, caller = recv_chunk}};
     
-handle_call({send, LFile, RFile}, From, #state{chunk = false} = State) ->
+handle_call({_, {send, LocalFile, RemoteFile}}, From, 
+	    #state{chunk = false, ldir = LocalDir} = State) ->
+    progress_report({local_file, filename:absname(LocalFile, LocalDir)}, 
+		    State),
     setup_data_connection(State#state{caller = {transfer_file,
-						{"STOR", LFile, RFile}},
-				      client = From});
-handle_call({append, LFile, RFile}, From, #state{chunk = false} = State) ->
+						   {"STOR", 
+						    LocalFile, RemoteFile}},
+					 client = From});
+handle_call({_, {append, LocalFile, RemoteFile}}, From, 
+	    #state{chunk = false} = State) ->
     setup_data_connection(State#state{caller = {transfer_file,
-						{"APPE", LFile, RFile}},
+						{"APPE", 
+						 LocalFile, RemoteFile}},
 				      client = From});
-handle_call({send_bin, Bin, RFile}, From, #state{chunk = false} = State) ->
+handle_call({_, {send_bin, Bin, RemoteFile}}, From, 
+	    #state{chunk = false} = State) ->
     setup_data_connection(State#state{caller = {transfer_data,
-					       {"STOR", Bin, RFile}},
+					       {"STOR", Bin, RemoteFile}},
 				      client = From});
-handle_call({append_bin, Bin, RFile}, From, #state{chunk = false} = State) ->
+handle_call({_,{append_bin, Bin, RemoteFile}}, From, 
+	    #state{chunk = false} = State) ->
     setup_data_connection(State#state{caller = {transfer_data,
-						{"APPE", Bin, RFile}},
+						{"APPE", Bin, RemoteFile}},
 				      client = From});
-handle_call({send_chunk_start, RFile}, From, #state{chunk = false} 
+handle_call({_, {send_chunk_start, RemoteFile}}, From, #state{chunk = false} 
 	    = State) ->
     setup_data_connection(State#state{caller = {start_chunk_transfer,
-						"STOR", RFile},
+						"STOR", RemoteFile},
 				      client = From});
-handle_call({append_chunk_start, RFile}, From, #state{chunk = false} 
+handle_call({_, {append_chunk_start, RemoteFile}}, From, #state{chunk = false} 
 	    = State) ->
     setup_data_connection(State#state{caller = {start_chunk_transfer,
-						"APPE", RFile},
+						"APPE", RemoteFile},
 				      client = From});
-handle_call({transfer_chunk, Bin}, _, #state{chunk = true} = State) ->
+handle_call({_, {transfer_chunk, Bin}}, _, #state{chunk = true} = State) ->
     send_data_message(State, Bin),
     {reply, ok, State};
 
-handle_call(chunk_end, From, #state{chunk = true} = State) ->
+handle_call({_, chunk_end}, From, #state{chunk = true} = State) ->
     close_data_connection(State),
     activate_ctrl_connection(State),
     {noreply, State#state{client = From, dsock = undefined, 
 			  caller = end_chunk_transfer, chunk = false}};
 
-handle_call({quote, Cmd}, From, #state{chunk = false} = State) ->
+handle_call({_, {quote, Cmd}}, From, #state{chunk = false} = State) ->
     send_ctrl_message(State, mk_cmd(Cmd, [])),
     activate_ctrl_connection(State),
     {noreply, State#state{client = From, caller = quote}};
 
 handle_call(_, _, #state{chunk = true} = State) ->
-    {reply, {error, echunk}, State}.
+    {reply, {error, echunk}, State};
+
+%% Catch all -  This can oly happen if the application programmer writes 
+%% really bad code that violates the API.
+handle_call(Request, _Timeout, State) ->
+    {stop, {'API_violation_connection_colsed', Request},
+     {error, {connection_terminated, 'API_violation'}}, State}.
 
 %%--------------------------------------------------------------------------
 %% handle_cast(Request, State) -> {noreply, State} | 
@@ -675,11 +739,21 @@ handle_call(_, _, #state{chunk = true} = State) ->
 %%                                {stop, Reason, State} 
 %% Description: Handles cast messages.         
 %%-------------------------------------------------------------------------
-handle_cast(close, State) ->
+handle_cast({Pid, close}, #state{owner = Pid} = State) ->
     send_ctrl_message(State, mk_cmd("QUIT", [])),
     close_ctrl_connection(State),
     close_data_connection(State),
-    {stop, normal, State#state{csock = undefined, dsock = undefined}}.
+    {stop, normal, State#state{csock = undefined, dsock = undefined}};
+
+handle_cast({Pid, close}, State) ->
+    error_logger:info_report("A none owner process ~p tried to close an "
+			     "ftp connection: ~n", [Pid]),
+    {noreply, State};
+
+%% Catch all -  This can oly happen if the application programmer writes 
+%% really bad code that violates the API.
+handle_cast(Msg, State) ->
+  {stop, {'API_violation_connection_colsed', Msg}, State}.
 
 %%--------------------------------------------------------------------------
 %% handle_info(Msg, State) -> {noreply, State} | {noreply, State, Timeout} |
@@ -689,10 +763,11 @@ handle_cast(close, State) ->
 %%--------------------------------------------------------------------------
 
 %%% Data socket messages %%%
-handle_info({tcp, Socket, Data}, #state{dsock = Socket, 
-					caller = {recv_file, Fd}} 
-	    = State) ->    
+handle_info({tcp, Socket, Data}, 
+	    #state{dsock = Socket, 
+		   caller = {recv_file, Fd}} = State) ->    
     file_write(binary_to_list(Data), Fd),
+    progress_report({binary, Data}, State),
     activate_data_connection(State),
     {noreply, State};
 
@@ -707,13 +782,13 @@ handle_info({tcp, Socket, Data}, #state{dsock = Socket} = State) ->
     {noreply, State#state{data = <<(State#state.data)/binary,
 				  Data/binary>>}};
 
-handle_info({tcp_closed, Socket}, #state{dsock = Socket, client = From,
+handle_info({tcp_closed, Socket}, #state{dsock = Socket,
 					 caller = {recv_file, Fd}} 
 	    = State) ->
     file_close(Fd),
-    gen_server:reply(From, ok),
-    {noreply, State#state{dsock = undefined, client = undefined,
-			  data = <<>>, caller = undefined}};
+    progress_report({transfer_size, 0}, State),
+    activate_ctrl_connection(State),
+    {noreply, State#state{dsock = undefined, data = <<>>}};
 
 handle_info({tcp_closed, Socket}, #state{dsock = Socket, client = From,
 					 caller = recv_chunk} 
@@ -745,28 +820,30 @@ handle_info({tcp_error, Socket, Reason}, #state{dsock = Socket,
 			  data = <<>>, caller = undefined, chunk = false}};
 
 %%% Ctrl socket messages %%%
-%% Make sure we received the first 4 bytes so we know how to parse
-%% the FTP server response e.i. is the response composed of one
-%% or multiple lines.
 handle_info({tcp, Socket, Data}, #state{csock = Socket, 
-					ctrl_data = {<<>>, [], start}} 
-	    = State)
-  when size(Data) < 4 -> 
-    activate_ctrl_connection(State),
-    {noreply, State#state{ctrl_data =  {Data, [], start}}};
-
-handle_info({tcp, Socket, Data}, #state{csock = Socket, verbose = Verbose,
+					verbose = Verbose,
+					caller = Caller,
+					client = From,
 					ctrl_data = {CtrlData, AccLines, 
 						     LineStatus}} 
 	    = State) ->    
-    case parse_ftp_lines(<<CtrlData/binary, Data/binary>>, 
-			 AccLines, LineStatus) of
-	{ok, [ResCode1, ResCode2, ResCode3 | _] = Lines} ->
+    case ftp_response:parse_lines(<<CtrlData/binary, Data/binary>>, 
+				  AccLines, LineStatus) of
+	{ok, Lines, NextMsgData} ->
 	    verbose(Lines, Verbose),
-	    CtrlResult =  
-		result(ResCode1 ,ResCode2, ResCode3, Lines),
-	    handle_ctrl_result(CtrlResult,
-			       State#state{ctrl_data = {<<>>, [], start}});
+	    CtrlResult = ftp_response:interpret(Lines), 
+	    case Caller of
+		quote ->
+		    gen_server:reply(From, string:tokens(Lines, [?CR, ?LF])),
+		    {noreply, State#state{client = undefined, 
+					  caller = undefined,
+					  ctrl_data = {NextMsgData, [], 
+						       start}}};
+		_ ->
+		    handle_ctrl_result(CtrlResult,
+				       State#state{ctrl_data = 
+						   {NextMsgData, [], start}})
+	    end;
 	{continue, NewCtrlData} ->
 	    activate_ctrl_connection(State),
 	    {noreply, State#state{ctrl_data = NewCtrlData}}
@@ -780,19 +857,41 @@ handle_info({tcp_error, Socket, Reason}, _) ->
 			      [Socket, Reason]),
     exit(normal); %% User will get error message from terminate/2
 
-%%% Other messages %%%
+%% Monitor messages - if the process owning the ftp connection goes
+%% down there is no point in continuing.
+handle_info({'DOWN', _Ref, _Type, _Process, normal}, State) ->
+    {stop, normal, State#state{client = undefined}};
+    
+handle_info({'DOWN', _Ref, _Type, _Process, timeout}, State) ->
+    {stop, normal, State#state{client = undefined}};
+ 
+handle_info({'DOWN', _Ref, _Type, Process, Reason}, State) ->
+    {stop, {stopped, {'EXIT', Process, Reason}},
+     State#state{client = undefined}};
+
+handle_info({'EXIT', Pid, Reason}, #state{progress = Pid} = State) ->
+    error_logger:info_report("Progress reporting stopped for reason ~p~n",
+			     Reason),
+    {noreply, State#state{progress = ignore}};
+   
+%% Catch all - throws away unknown messages (This could happen by "accident"
+%% so we do not want to crash, but we make a log entry as it is an
+%% unwanted behaviour.) 
 handle_info(Info, State) ->
-    error_logger:info_msg("ftp : ~w : Unexpected message: ~w\n", 
-			  [self(),Info]),
+    error_logger:info_report("ftp : ~p : Unexpected message: ~p\n", 
+			     [self(), Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------------
 %% terminate/2 and code_change/3
 %%--------------------------------------------------------------------------
 terminate(normal, State) ->
+    %% If terminate reason =/= normal the progress reporting process will
+    %% be killed by the exit signal.
+    progress_report(stop, State), 
     do_termiante({error, econn}, State);
-terminate(Reason, State) ->
-    do_termiante({error, Reason}, State).
+terminate(Reason, State) -> 
+    do_termiante({error, {connection_terminated, Reason}}, State).
 
 do_termiante(ErrorMsg, State) ->
     close_data_connection(State),
@@ -805,14 +904,48 @@ do_termiante(ErrorMsg, State) ->
     end,
     ok. 
 
-code_change(_, _, []) ->
-    ok.
+code_change(_OldVsn, State, [{new, '4.5.3'}]) ->
+    NewState = {state,
+                State#state.csock,
+                State#state.dsock,
+                State#state.verbose,
+                State#state.ldir,
+                State#state.type,
+                State#state.chunk,
+                State#state.mode,
+		State#state.timeout,
+		State#state.data,
+		State#state.ctrl_data,
+		State#state.owner,
+		State#state.client,
+		State#state.caller,
+		State#state.ip_v6_disabled,
+                ignore},
+    {ok, NewState};
+
+code_change(_OldVsn, State, [{old, '4.5.2'}]) ->
+    NewState = {state,
+		State#state.csock,
+                State#state.dsock,
+                State#state.verbose,
+                State#state.ldir,
+                State#state.type,
+                State#state.chunk,
+                State#state.mode,
+		State#state.timeout,
+		State#state.data,
+		State#state.ctrl_data,
+		State#state.owner,
+		State#state.client,
+		State#state.caller,
+		State#state.ip_v6_disabled},
+    {ok, NewState}.
 
 %%%=========================================================================
 %% Start/stop
 %%%=========================================================================
 %%--------------------------------------------------------------------------
-%% start_link_sup(Args) -> {ok, Pid} | {error, Reason} 
+%% start_link_sup([Args, Options]) -> {ok, Pid} | {error, Reason} 
 %%                                    
 %% Description: Callback function for the ftp supervisor. It is called 
 %%            : when open/[1,3] calls ftp_sup:start_child/1 to start an 
@@ -826,60 +959,6 @@ start_link_sup([Args, Options]) ->
 %%%========================================================================
 %%% Internal functions
 %%%========================================================================
-%%--------------------------------------------------------------------------
-%%% Help function to handle_info
-%%--------------------------------------------------------------------------
-%%
-%%      "A reply is defined to contain the 3-digit code, followed by Space
-%%      <SP>, followed by one line of text (where some maximum line length
-%%      has been specified), and terminated by the Telnet end-of-line
-%%      code, or a so called multilined reply for example:
-%%
-%%                                123-First line
-%%                                Second line
-%%                                  234 A line beginning with numbers
-%%                                123 The last line
-%%
-%%         The user-process then simply needs to search for the second
-%%         occurrence of the same reply code, followed by <SP> (Space), at
-%%         the beginning of a line, and ignore all intermediary lines.  If
-%%         an intermediary line begins with a 3-digit number, the Server
-%%         will pad the front to avoid confusion.
-%% Multiple lines exist
-parse_ftp_lines(<<C1, C2, C3, $-, Rest/binary>>, Lines, start) ->
-    parse_ftp_lines(Rest, [$-, C3, C2, C1 | Lines], {C1, C2, C3});
-%% Only one line exists
-parse_ftp_lines(<<C1, C2, C3, ?WHITE_SPACE, Bin/binary>>, Lines, start) ->
-    parse_ftp_lines(Bin, [?WHITE_SPACE, C3, C2, C1 | Lines], finish);
-
-%% Last line found
-parse_ftp_lines(<<C1, C2, C3, Rest/binary>>, Lines, {C1, C2, C3}) ->
-    parse_ftp_lines(Rest, [C3, C2, C1 | Lines], finish);
-%% Potential last line wait for more data
-parse_ftp_lines(<<C1, C2>> = Data, Lines, {C1, C2, _} = StatusCode) ->
-    {continue, {Data, Lines, StatusCode}};
-parse_ftp_lines(<<C1>> = Data, Lines, {C1, _, _} = StatusCode) ->
-    {continue, {Data, Lines, StatusCode}};
-parse_ftp_lines(<<>> = Data, Lines, {_,_,_} = StatusCode) ->
-    {continue, {Data, Lines, StatusCode}};
-%% Part of the multiple lines
-parse_ftp_lines(<<Octet, Rest/binary>>, Lines, {_,_, _} = StatusCode) ->
-    parse_ftp_lines(Rest, [Octet | Lines], StatusCode);
-
-%% End of FTP server response found
-parse_ftp_lines(<<?CR, ?LF>>, Lines, finish) ->
-    {ok, lists:reverse([?LF, ?CR | Lines])}; 
-parse_ftp_lines(<<?CR, ?LF, Rest/binary>>, Lines, finish) ->
-    error_logger:error_report("Recevied unexpected data ~p~n", [Rest]),
-    {ok, lists:reverse([?LF, ?CR | Lines])}; 
-%% Potential end found  wait for more data 
-parse_ftp_lines(<<?CR>> = Data, Lines, finish) ->
-    {continue, {Data, Lines, finish}};
-parse_ftp_lines(<<>> = Data, Lines, finish) ->
-    {continue, {Data, Lines, finish}};
-%% Part of last line
-parse_ftp_lines(<<Octet, Rest/binary>>, Lines, finish) ->
-    parse_ftp_lines(Rest, [Octet | Lines], finish).
 
 %%--------------------------------------------------------------------------
 %%% Help functions to handle_call and/or handle_ctrl_result
@@ -916,14 +995,15 @@ handle_ctrl_result({_, Lines}, #state{caller = open} = State) ->
 
 %%--------------------------------------------------------------------------
 %% Data connection setup active mode 
-handle_ctrl_result({pos_compl, _}, #state{mode = active,
-					  caller = {setup_data_connection,
-						    {LSock, Caller}}} 
-		   = State) ->
+handle_ctrl_result({pos_compl, _Lines}, 
+		   #state{mode   = active,
+			  caller = {setup_data_connection, 
+				    {LSock, Caller}}} = State) ->
     handle_caller(State#state{caller = Caller, dsock = {lsock, LSock}});
 
-handle_ctrl_result({Status, Lines}, #state{mode = active, caller = 
-				  {setup_data_connection, {LSock, _}}} 
+handle_ctrl_result({Status, Lines}, 
+		   #state{mode   = active, 
+			  caller = {setup_data_connection, {LSock, _}}} 
 		   = State) ->
     close_connection(LSock),
     ctrl_result_response(Status, State, {error, Lines});
@@ -937,12 +1017,10 @@ handle_ctrl_result({pos_compl, Lines}, #state{mode = passive,
 					      csock = CSock,
 					      timeout = Timeout} 
 		   = State) ->
-    [_, PortStr | _] = lists:reverse(string:tokens(Lines, "|")),
+    [_, PortStr | _] =  lists:reverse(string:tokens(Lines, "|")),
     {ok, {IP, _}} = inet:peername(CSock),
-    {ok, Socket} = connect(IP, list_to_integer(PortStr),  
-				    Timeout, State),
+    {ok, Socket} = connect(IP, list_to_integer(PortStr), Timeout, State),
     handle_caller(State#state{caller = Caller, dsock = Socket});
-
 
 handle_ctrl_result({pos_compl, Lines}, 
 		   #state{mode = passive, ip_v6_disabled = true,
@@ -1026,7 +1104,8 @@ handle_ctrl_result({pos_compl, _}, #state{caller = {handle_dir_result, Dir,
     end;
 
 handle_ctrl_result({pos_compl, Lines}, 
-		   #state{caller = {handle_dir_data, Dir, DirData}} = State) ->
+		   #state{caller = {handle_dir_data, Dir, DirData}} = 
+		   State) ->
     OldDir = pwd_result(Lines),    
     send_ctrl_message(State, mk_cmd("CWD ~s", [Dir])),
     activate_ctrl_connection(State),
@@ -1078,8 +1157,13 @@ handle_ctrl_result({pos_prel, _}, #state{caller = recv_bin} = State) ->
 handle_ctrl_result({pos_compl, _}, #state{caller = {recv_bin, Data},
 					  client = From} = State) ->
     gen_server:reply(From, {ok, Data}),
+    close_data_connection(State),
     {noreply, State#state{client = undefined, caller = undefined}};
 
+handle_ctrl_result({Status, _}, #state{caller = {recv_bin, _}} = State) ->
+    close_data_connection(State),
+    ctrl_result_response(Status, State#state{dsock = undefined}, 
+			 {error, epath});
 %%--------------------------------------------------------------------------
 handle_ctrl_result({pos_prel, _}, #state{client = From,
 					 caller = start_chunk_transfer}
@@ -1114,13 +1198,6 @@ handle_ctrl_result({pos_prel, _}, #state{caller = {transfer_data, Bin}}
     activate_ctrl_connection(NewState),
     {noreply, NewState#state{caller = transfer_data_second_phase,
 			     dsock = undefined}};
-
-%%--------------------------------------------------------------------------
-handle_ctrl_result({_, Lines}, #state{caller = quote, client = From} =
-		   State) ->
-    gen_server:reply(From, string:tokens(Lines, [?CR, ?LF])),
-    {noreply, State#state{client = undefined, caller = undefined}};
-
 %%--------------------------------------------------------------------------
 handle_ctrl_result({Status, Lines}, #state{client = From} = State) 
   when From =/= undefined ->
@@ -1158,24 +1235,24 @@ handle_caller(#state{caller = {dir, Dir, Len}} = State) ->
     activate_ctrl_connection(State),
     {noreply, State#state{caller = {dir, Dir}}};
      
-handle_caller(#state{caller = {recv_bin, RFile}} = State) ->
-    send_ctrl_message(State, mk_cmd("RETR ~s", [RFile])),
+handle_caller(#state{caller = {recv_bin, RemoteFile}} = State) ->
+    send_ctrl_message(State, mk_cmd("RETR ~s", [RemoteFile])),
     activate_ctrl_connection(State),
     {noreply, State#state{caller = recv_bin}};
 
-handle_caller(#state{caller = {start_chunk_transfer, Cmd, RFile}} = State) ->
-    send_ctrl_message(State, mk_cmd("~s ~s", [Cmd, RFile])),
+handle_caller(#state{caller = {start_chunk_transfer, Cmd, RemoteFile}} = 
+	      State) ->
+    send_ctrl_message(State, mk_cmd("~s ~s", [Cmd, RemoteFile])),
     activate_ctrl_connection(State),
     {noreply, State#state{caller = start_chunk_transfer}};
 
-handle_caller(#state{caller = {recv_file, RFile, Fd}} = State) ->
-    send_ctrl_message(State, mk_cmd("RETR ~s", [RFile])), 
+handle_caller(#state{caller = {recv_file, RemoteFile, Fd}} = State) ->
+    send_ctrl_message(State, mk_cmd("RETR ~s", [RemoteFile])), 
     activate_ctrl_connection(State),
     {noreply, State#state{caller = {recv_file, Fd}}};
 
 handle_caller(#state{caller = {transfer_file, {Cmd, LocalFile, RemoteFile}},
 		     ldir = LocalDir, client = From} = State) ->
-
     case file_open(filename:absname(LocalFile, LocalDir), read) of
 	{ok, Fd} ->
 	    send_ctrl_message(State, mk_cmd("~s ~s", [Cmd, RemoteFile])),
@@ -1187,8 +1264,9 @@ handle_caller(#state{caller = {transfer_file, {Cmd, LocalFile, RemoteFile}},
 				  dsock = undefined}} 
     end;
 
-handle_caller(#state{caller = {transfer_data, {Cmd, Bin, RFile}}} = State) ->
-    send_ctrl_message(State, mk_cmd("~s ~s", [Cmd, RFile])),
+handle_caller(#state{caller = {transfer_data, {Cmd, Bin, RemoteFile}}} = 
+	      State) ->
+    send_ctrl_message(State, mk_cmd("~s ~s", [Cmd, RemoteFile])),
     activate_ctrl_connection(State),
     {noreply, State#state{caller = {transfer_data, Bin}}}.
 
@@ -1207,9 +1285,15 @@ setup_ctrl_connection(Host, Port, Timeout, State)->
 	    {stop, normal, State#state{client = undefined}}
     end.
 
-setup_data_connection(#state{mode = active, caller = Caller, csock = CSock}
-		      = State) ->    
-    
+
+%% Data connection already set up
+%%setup_data_connection(#state{dsock = DSock} = State) 
+%%  when DSock =/= undefined ->
+%%    handle_caller(State);
+
+setup_data_connection(#state{mode   = active, 
+			     caller = Caller, 
+			     csock  = CSock} = State) ->    
     IntToString = fun(Element) -> integer_to_list(Element) end,
     
     case (catch inet:sockname(CSock)) of
@@ -1227,7 +1311,7 @@ setup_data_connection(#state{mode = active, caller = Caller, csock = CSock}
 					    {LSock, Caller}}}};
 	{ok, {{_,_,_,_} = IP, _}} ->	    
 	    {ok, LSock} = gen_tcp:listen(0, [{ip, IP}, {active, false},
-                                     binary, {packet, 0}]),
+					     binary, {packet, 0}]),
 	    {ok, Port} = inet:port(LSock),
 	    {IP1, IP2, IP3, IP4} = IP,
 	    {Port1, Port2} = {Port div 256, Port rem 256},
@@ -1292,8 +1376,8 @@ send_message(Socket, Message) ->
 	ok ->
 	    ok;
 	{error, Reason} ->
-	    error_logger:error_report("gen_tcp:send/2 failed for reason ~p~n", 
-				      [Reason]),
+	    error_logger:error_report("gen_tcp:send/2 failed for "
+				      "reason ~p~n", [Reason]),
 	    exit(normal) %% User will get error message from terminate/2
     end.
 
@@ -1313,6 +1397,8 @@ close_ctrl_connection(#state{csock = Socket}) ->
 
 close_data_connection(#state{dsock = undefined}) ->
     ok;
+close_data_connection(#state{dsock = {lsock, Socket}}) ->
+    close_connection(Socket);
 close_data_connection(#state{dsock = Socket}) ->
     close_connection(Socket).
 
@@ -1325,10 +1411,12 @@ send_file(Fd, State) ->
     case file_read(Fd) of
 	{ok, N, Bin} when N > 0->
 	    send_data_message(State, Bin),
+	    progress_report({binary, Bin}, State),
 	    send_file(Fd, State);
 	{ok, _, _} ->
 	    file_close(Fd),
 	    close_data_connection(State),
+	    progress_report({transfer_size, 0}, State),
 	    activate_ctrl_connection(State),
 	    {noreply, State#state{caller = transfer_file_second_phase,
 				  dsock = undefined}};
@@ -1361,53 +1449,18 @@ file_write(Bytes, Fd) ->
 call(GenServer, Msg, Format) ->
     call(GenServer, Msg, Format, infinity).
 call(GenServer, Msg, Format, Timeout) ->
-    case gen_server:call(GenServer, Msg, Timeout) of
-	{ok, Bin} when Format == string ->
+    case gen_server:call(GenServer, {self(), Msg}, Timeout) of
+	{ok, Bin} when binary(Bin), Format == string ->
 	    {ok, binary_to_list(Bin)};
 	Result ->
 	    Result
     end.
 
 cast(GenServer, Msg) ->
-    gen_server:cast(GenServer, Msg).
-
-key_search(Key, List, Default)->	     
-    case lists:keysearch(Key, 1, List) of
-	{value, {_,Val}} ->
-	    Val;
-	false ->
-	    Default
-    end.
+    gen_server:cast(GenServer, {self(), Msg}).
 
 mk_cmd(Fmt, Args) ->
     [io_lib:format(Fmt, Args)| [?CR, ?LF]].		% Deep list ok.
-
-result(D1, _D2 ,_D3, Lines) when D1 - $0 > 10;  D1 - $0 < 0 ->
-    {error,{invalid_server_response,Lines}};
-result(D1, D2, D3, Lines) ->
-    Res1 = D1 - $0,
-    Res2 = D2 - $0,
-    Res3 = D3 - $0,
-    {rescode(Res1,Res2,Res3), Lines}.
-
-%% Positive Preleminary Reply
-rescode(?POS_PREL,_,_)                   -> pos_prel; 
-%% Positive Completion Reply
-rescode(?POS_COMPL,_,_)                  -> pos_compl;
-%% Positive Intermediate Reply nedd account
-rescode(?POS_INTERM,?AUTH_ACC,2)         -> pos_interm_acct;
-%% Positive Intermediate Reply
-rescode(?POS_INTERM,_,_)                 -> pos_interm; 
-%% No storage area no action taken
-rescode(?TRANS_NEG_COMPL,?FILE_SYSTEM,2) -> etnospc;
-%% Temporary Error, no action taken
-rescode(?TRANS_NEG_COMPL,_,_)            -> trans_neg_compl;
-%% Permanent disk space error, the user shall not try again
-rescode(?PERM_NEG_COMPL,?FILE_SYSTEM,2)  -> epnospc;
-rescode(?PERM_NEG_COMPL,?FILE_SYSTEM,3)  -> efnamena; 
-%%Directory was not empty
-rescode(?PERM_NEG_COMPL,?FILE_SYSTEM,0)  -> perm_dir_not_empty;
-rescode(?PERM_NEG_COMPL,_,_)             -> perm_neg_compl.
 
 pwd_result(Lines) ->
     {_, [?DOUBLE_QUOTE | Rest]} = 
@@ -1422,14 +1475,34 @@ is_verbose(Params) ->
 is_debug(Flags) -> 
     check_param(debug, Flags).
 
+is_trace(Flags) -> 
+    check_param(trace, Flags).
+
 is_ipv6_disabled(Flags) -> 
     check_param(ip_v6_disabled, Flags).
 
 check_param(Param, Params) -> 
     lists:member(Param, Params).
 
+key_search(Key, List, Default)->	     
+    case lists:keysearch(Key, 1, List) of
+	{value, {_,Val}} ->
+	    Val;
+	false ->
+	    Default
+    end.
+
+check_option(Pred, Value, Default) ->
+    case Pred(Value) of
+	true ->
+	    Value;
+	false ->
+	    Default
+    end.
+
 verbose(Lines, true) ->
-    erlang:display(string:strip(string:strip(Lines, right, ?LF), right, ?CR));
+    Str = string:strip(string:strip(Lines, right, ?LF), right, ?CR),
+    erlang:display(Str);
 verbose(_, false) ->
     ok.
 
@@ -1445,27 +1518,14 @@ ensure_started() ->
 				     " application.")
     end.
 
-%%  ------------ ERROR STRINGS -------------------------- 
+progress(Options) ->
+    ftp_progress:start_link(Options).
 
-errstr({error, Reason}) ->
-    errstr(Reason);
-
-errstr(echunk) -> "Synchronisation error during chunk sending.";
-errstr(eclosed) -> "Session has been closed.";
-errstr(econn) ->  "Connection to remote server prematurely closed.";
-errstr(eexists) ->"File or directory already exists.";
-errstr(ehost) ->  "Host not found, FTP server not found, "
-		      "or connection rejected.";
-errstr(elogin) -> "User not logged in.";
-errstr(enotbinary) -> "Term is not a binary.";
-errstr(epath) ->  "No such file or directory, already exists, "
-		      "or permission denied.";
-errstr(etype) ->  "No such type.";
-errstr(euser) ->  "User name or password not valid.";
-errstr(etnospc) -> "Insufficient storage space in system.";
-errstr(epnospc) -> "Exceeded storage allocation "
-		       "(for current directory or dataset).";
-errstr(efnamena) -> "File name not allowed.";
-errstr(edirnotempty) -> "Directory not empty.";
-errstr(Reason) -> 
-    lists:flatten(io_lib:format("Unknown error: ~w", [Reason])).
+progress_report(_, #state{progress = ignore}) ->
+    ok;
+progress_report(stop, #state{progress = ProgressPid}) ->
+    ftp_progress:stop(ProgressPid);
+progress_report({binary, Data}, #state{progress = ProgressPid}) ->
+    ftp_progress:report(ProgressPid, {transfer_size, size(Data)});
+progress_report(Report,  #state{progress = ProgressPid}) ->
+    ftp_progress:report(ProgressPid, Report).

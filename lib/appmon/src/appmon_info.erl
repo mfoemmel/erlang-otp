@@ -337,7 +337,7 @@ handle_info(_Other, State) ->
 
 do_work(Key, State) ->
     WorkStore = State#state.work,
-    {Cmd, Aux, From, _OldRef, Old, Opts} = retreive(WorkStore, Key),
+    {Cmd, Aux, From, _OldRef, Old, Opts} = retrieve(WorkStore, Key),
     {ok, Result} = do_work2(Cmd, Aux, From, Old, Opts),
     if  Result==Old -> ok;
 	true ->
@@ -371,7 +371,7 @@ do_work2(Cmd, Aux, _From, _Old, _Opts) ->
     {Cmd, Aux}.
 
 
-retreive(Tab, Key) ->
+retrieve(Tab, Key) ->
     case ets:lookup(Tab, Key) of
 	[{{Cmd, Aux, From}, Ref, Old, Opts}] ->
 	    {Cmd, Aux, From, Ref, Old, Opts};
@@ -419,7 +419,7 @@ del_work([], _Pid, _Work) -> ok.
 del_task(Cmd, Aux, From, WorkStore) ->
     del_task(?MK_KEY(Cmd, Aux, From, []), WorkStore).
 del_task(Key, WorkStore) ->
-    OldStuff = retreive(WorkStore, Key),
+    OldStuff = retrieve(WorkStore, Key),
     ets:delete(WorkStore, Key),
     case OldStuff of
 	{_Cmd, _Aux, _From, Ref, _Old, Opts} ->
@@ -512,12 +512,11 @@ do_find_proc(Mode, DB, GL, Avoid) ->
 	    {ok, DB2}
     end.
 
-do_find_proc2(X, Mode, DB, GL, Avoid) when port(X) ->
-    DB2 = case is_proc(DB, X) of
-	      [] -> add_port(DB, X);
-	      _ -> DB
-	  end,
-    do_find_proc(Mode, DB2, GL, Avoid);
+do_find_proc2(X, Mode, DB, GL, Avoid) when is_port(X) ->
+    %% There used to be a broken attempt here to handle ports,
+    %% but the rest of appmon can't handle ports, so now we
+    %% explicitly ignore ports.
+    do_find_proc(Mode, DB, GL, Avoid);
 do_find_proc2(X, Mode, DB, GL, Avoid) ->
     Xpid = get_pid(X),
     DB2 = case is_proc(DB, Xpid) of
@@ -672,8 +671,6 @@ new_db(Mode, Pid) ->
 get_next(DB) ->
     {X, Q} = queue:out(DB#db.q),
     {X, DB#db{q=Q}}.
-add_port(DB, P) ->
-    ets:insert(DB#db.p, {P}).
 add_proc(DB, P) ->
     ets:insert(DB#db.p, {P}).
 add_prim(C, Paren, DB) ->
@@ -685,18 +682,12 @@ add_foreign(C, Paren, DB) ->
 add_sec(C, Paren, DB) ->
     ?add_link(C, Paren, DB#db.links2),
     DB.
-is_proc(DB, P) ->
-    case ets:lookup(DB#db.p, P) of
-	[] -> false;
-	_ -> true
-    end.
-is_in_queue(DB, P) -> % Should really be in queue.erl
-    {L1, L2} = DB#db.q,
-    case lists:member(P, L1) of
-	true -> true;
-	false -> lists:member(P, L2)
-    end.
 
+is_proc(#db{p=Tab}, P) ->
+    ets:member(Tab, P).
+
+is_in_queue(#db{q={L1,L2}}, P) -> % Should really be in queue.erl
+    lists:member(P, L1) orelse lists:member(P, L2).
 
 %% Group leader handling. No processes or Links to processes must be
 %% added when group leaders differ. Note that catch all is needed
@@ -870,8 +861,6 @@ prog(T) ->
 
 
 get_sample(queue)  -> statistics(run_queue);
-get_sample(reds)  -> {Rt,Rd} = statistics(reductions), 
-		     delta(reds, Rt, Rd);
 get_sample(runtime)  -> {Rt,Rd} = statistics(runtime), 
 			delta(runtime, Rt, Rd);
 get_sample(tot_time)  -> {Rt,Rd} = statistics(wall_clock), 
@@ -993,8 +982,7 @@ default(load_average)	-> true;
 default(timeout)	-> 2000;
 default(info_type)	-> link;
 default(stay_resident)	-> false;
-default({avoid, _})	-> false;
-default(method)		-> poll.
+default({avoid, _})	-> false.
 
 ins_opts([Opt | Opts], Opts2) ->
     ins_opts(Opts, ins_opt(Opt, Opts2));

@@ -54,7 +54,7 @@ do_alloc(Process* p, Eterm* last_htop, Uint need)
 {
     ErlHeapFragment* bp;
     Uint n;
-#ifdef DEBUG
+#if defined(DEBUG) || defined(CHECK_FOR_HOLES)
     Uint i;
 #endif
 
@@ -81,7 +81,7 @@ do_alloc(Process* p, Eterm* last_htop, Uint need)
     n = need;
 
     if (ARITH_AVAIL(p) < 16 || n < 64) {
-#ifdef HYBRID
+#if defined(HYBRID) || defined(CHECK_FOR_HOLES)
         /*
          * Fill the rest of the current arith heap.
          */
@@ -89,15 +89,6 @@ do_alloc(Process* p, Eterm* last_htop, Uint need)
             *ARITH_HEAP(p)++ = NIL;
             ARITH_AVAIL(p)--;
         }
-        /*
-         * Fill the rest of the current arith heap with a tagged object
-         * to prevent holes in the arith heap.
-         */
-        /* FIND ME!
-           if (ARITH_HEAP(p) && ARITH_AVAIL(p) > 0)
-           *ARITH_HEAP(p) = ((ARITH_AVAIL(p) << _HEADER_ARITY_OFFS) |
-           _TAG_HEADER_HEAP_BIN);
-        */
 #endif
 	ARITH_AVAIL(p) = 0;
 	n = p->min_heap_size/2 + need;
@@ -123,11 +114,15 @@ do_alloc(Process* p, Eterm* last_htop, Uint need)
 	ARITH_HEAP(p) = bp->mem + need;
     }
 
-#ifdef DEBUG
+#if defined(DEBUG)
     for (i = 0; i <= n; i++) {
-	bp->mem[i] = ARITH_MARKER;
+	bp->mem[i] = ERTS_HOLE_MARKER;
     }
     ARITH_CHECK_ME(p) = ARITH_HEAP(p);
+#elif defined(CHECK_FOR_HOLES)
+    for (i = 0; i < n; i++) {
+	bp->mem[i] = ERTS_HOLE_MARKER;
+    }
 #endif
 
 #ifdef HEAP_FRAG_ELIM_TEST
@@ -255,7 +250,7 @@ void erts_arith_shrink(Process* p, Eterm* hp)
 {
     ErlHeapFragment* hf;
 
-#if !defined(HYBRID) && !defined(DEBUG)
+#if !defined(HYBRID) && !defined(DEBUG) && !defined(CHECK_FOR_HOLES)
     if (ARITH_AVAIL(p) == 0) {
 	/*
 	 * For a non-hybrid system, there is nothing to gain by
@@ -284,11 +279,11 @@ void erts_arith_shrink(Process* p, Eterm* hp)
 		ARITH_AVAIL(p) += diff;
 #ifdef DEBUG
 		while (diff != 0) {
-		    hp[--diff] = ARITH_MARKER;
+		    hp[--diff] = ERTS_HOLE_MARKER;
 		}
 		ARITH_CHECK_ME(p) = hp;
 #endif
-#if defined(HYBRID) || defined(DEBUG)
+#if defined(HYBRID) || defined(DEBUG) || defined(CHECK_FOR_HOLES)
 	    } else {
 		/*
 		 * We are not allowed to changed hf->size (because the
@@ -344,7 +339,7 @@ erts_global_alloc(Uint need)
         {
             int i;
             for (i = 0; i <= need; i++) {
-                bp->mem[i] = ARITH_MARKER;
+                bp->mem[i] = ERTS_HOLE_MARKER;
             }
             ARITH_CHECK_ME(p) = ARITH_HEAP(p);
         }
@@ -432,14 +427,14 @@ double_to_integer(Process* p, double x)
 	x /= D_BASE;         /* "shift" right */
 	ds++;
     }
-    sz = BIG_NEED_SIZE(ds);          /* number of words */
+    sz = BIG_NEED_SIZE(ds);          /* number of words including arity */
 
     /*
      * Beam note: This function is called from guard bifs (round/1 and trunc/1),
      * which are not allowed to build anything at all on the heap.
      * Therefore it is essential to use the ArithAlloc() macro instead of HAlloc().
      */
-    hp = ArithAlloc(p, sz+1);
+    hp = ArithAlloc(p, sz);
     res = make_big(hp);
     xp = (digit_t*) (hp + 1);
 

@@ -8,8 +8,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: pergu $
-%%              $Date: 2005/04/14 13:36:16 $
-%%              $Revision: 1.53 $
+%%              $Date: 2005/07/07 14:05:09 $
+%%              $Revision: 1.54 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -1557,6 +1557,7 @@ copy_offset_int_big(Base, Offset, NewOffset, Size, Tmp1) when integer(Size) ->
    hipe_rtl:mk_alu(Tmp4, NewOffset, 'and', hipe_rtl:mk_imm(?LOW_BITS)),
    hipe_rtl:mk_alu(Tmp6, hipe_rtl:mk_imm(?BYTE_SIZE), sub, Tmp4),
    hipe_rtl:mk_alu(Tmp6, Tmp6, 'and', hipe_rtl:mk_imm(?LOW_BITS)),
+   hipe_rtl:mk_alu(Tmp4, hipe_rtl:mk_imm(?BYTE_SIZE), sub, Tmp6),
    hipe_rtl:mk_move(Tmp5, Tmp1),
    hipe_rtl:mk_alu(Tmp1, Tmp1, sll, Tmp6), 
    hipe_rtl:mk_branch(TmpOffset, ne, Tmp3, hipe_rtl:label_name(NextLbl), 

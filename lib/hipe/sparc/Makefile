@@ -55,9 +55,7 @@ MODULES=hipe_finalize \
 	hipe_sparc_prop \
 	hipe_sparc_prop_env \
 	hipe_sparc_ra \
-	hipe_sparc_ra_coalescing \
 	hipe_sparc_ra_fp_ls \
-	hipe_sparc_ra_graph_color \
 	hipe_sparc_ra_ls \
 	hipe_sparc_ra_naive \
 	hipe_sparc_ra_post_ls \
@@ -129,8 +127,6 @@ $(EBIN)/hipe_sparc_pp.beam: ../main/hipe.hrl
 $(EBIN)/hipe_sparc_prop.beam: ../main/hipe.hrl
 $(EBIN)/hipe_sparc_prop_env.beam: ../main/hipe.hrl
 $(EBIN)/hipe_sparc_ra.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_ra_coalescing.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_ra_graph_color.beam: ../main/hipe.hrl
 $(EBIN)/hipe_sparc_ra_ls.beam: ../main/hipe.hrl
 $(EBIN)/hipe_sparc_ra_memory.beam: ../main/hipe.hrl
 $(EBIN)/hipe_sparc_ra_post_ls.beam: ../main/hipe.hrl

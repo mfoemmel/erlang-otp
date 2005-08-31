@@ -80,28 +80,12 @@ void pba(Process*, int);
 void td(Eterm);
 void ps(Process*, Eterm*);
 
-#if TEMPORARILLY_DISABLED
-#define CHECK_HEAP(p) do {                                          \
-    verbose_message(VERBOSE_SCREAMING,"Heap check of %s, %s:%d\n",  \
-                    print_pid(p),__FILE__,__LINE__);                \
-    check_heap(p);                                                  \
-    verbose_message(VERBOSE_SCREAMING,"Heap OK\n");                 \
-} while(0)
-
-#define CHECK_MEMORY(start,end) do {                                \
-    verbose_message(VERBOSE_SCREAMING,"Check memory @ %s:%d\n",     \
-                    __FILE__,__LINE__);                             \
-    check_memory(start,end);                                        \
-    verbose_message(VERBOSE_SCREAMING,"Memory OK\n");               \
-} while(0)
-
-#define VERBOSE_MESSAGE(Args) verbose_message Args
-#define VERBOSE_ERROR(Args) verbose_error Args
+#if 0
+# define VERBOSE_MESSAGE(Args) verbose_message Args
+# define VERBOSE_ERROR(Args) verbose_error Args
 #else
-#define CHECK_HEAP(p)
-#define CHECK_MEMORY(start, end)
-#define VERBOSE_MESSAGE(Args)
-#define VERBOSE_ERROR(Args)
+# define VERBOSE_MESSAGE(Args)
+# define VERBOSE_ERROR(Args)
 #endif
 void verbose_message(verbose_level level, char *message, ...);
 void verbose_error(verbose_level level, char *message, ...);
@@ -119,8 +103,6 @@ void verbose_error(verbose_level level, char *message, ...);
  * These functions can be handy when developing, and perhaps useful
  * even outside debugging.
  */
-extern void check_heap(Process *p);
-extern void check_memory(Eterm *start, Eterm *end);
 extern void print_tagged_memory(Eterm *start, Eterm *end);
 extern void print_untagged_memory(Eterm *start, Eterm *end);
 extern void print_memory_info(Process *p);

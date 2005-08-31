@@ -72,7 +72,7 @@ module(Fs, Opts) ->
 		  bittypes = erl_bits:system_bittypes()
 		 },
     %% Expand the functions.
-    {Tfs,St1} = forms(Fs, foldl(fun define_function/2, St0, Fs)),
+    {Tfs,St1} = forms(Fs, define_functions(Fs, St0)),
     {Efs,St2} = expand_pmod(Tfs, St1),
     %% Get the correct list of exported functions.
     Exports = case member(export_all, St2#expand.compile) of
@@ -105,11 +105,13 @@ expand_pmod(Fs0, St) ->
     end.
 
 %% -type define_function(Form, State) -> State.
-%%  Add function to defined if form a function.
+%%  Add function to defined if form is a function.
 
-define_function({function,_,N,A,_Cs}, St) ->
-    St#expand{defined=add_element({N,A}, St#expand.defined)};
-define_function(_, St) -> St.
+define_functions(Forms, #expand{defined=Predef}=St) ->
+    Fs = foldl(fun({function,_,N,A,_Cs}, Acc) -> [{N,A}|Acc];
+		  (_, Acc) -> Acc
+	       end, Predef, Forms),
+    St#expand{defined=ordsets:from_list(Fs)}.
 
 module_attrs(St) ->
     {[{attribute,0,Name,Val} || {Name,Val} <- St#expand.attributes],St}.

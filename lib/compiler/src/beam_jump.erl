@@ -239,6 +239,14 @@ opt([{label,Fc}|_]=Is, CLabel) ->
 
 opt([{test,Test0,{f,Lnum}=Lbl,Ops}=I|Is0], Acc, St) ->
     case Is0 of
+	[{jump,{f,Lnum}}|[{label,Lnum}|Is2]=Is1] ->
+	    %% The test and jump are redundant. Keep the label if it is used
+	    %% (from some other place).
+	    Is = case is_label_used(Lnum, St) of
+		     true -> Is1;
+		     false -> Is2
+		 end,
+	    opt(Is, Acc, St);
 	[{jump,To}|[{label,Lnum}|Is2]=Is1] ->
 	    case invert_test(Test0) of
 		not_possible ->

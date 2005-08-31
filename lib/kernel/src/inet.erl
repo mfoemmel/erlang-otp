@@ -487,10 +487,20 @@ getaddrs_tm({A,B,C,D} = IP, inet6, Timer) ->
 	    {error,einval}
     end;
 
-getaddrs_tm({A,B,C,D,E,F,G,H} = IP, inet6, _) ->
+getaddrs_tm({A,B,C,D,E,F,G,H} = IP, inet6, Timer) ->
+    %% We need to test this with the resolver. If the
+    %% resolver returns an inet6 formatted address, we may
+    %% assume ipv6 is working correctly on this host.
+    %% If the resolver fails, nxdomain must be returned.
     if 
-	?ip6(A,B,C,D,E,F,G,H) -> {ok,[IP]};
-	true ->                  {error,einval}
+	?ip6(A,B,C,D,E,F,G,H) ->
+	    IPStr = inet_parse:ntoa(IP),
+	    case gethostbyname_tm(IPStr, inet6, Timer) of
+		{ok,Ent} -> {ok,Ent#hostent.h_addr_list};
+		Error -> Error
+	    end;
+	true ->         
+	    {error,einval}
     end;
 getaddrs_tm(Address, Family, Timer) when atom(Address) ->
     getaddrs_tm(atom_to_list(Address), Family, Timer);
@@ -503,11 +513,12 @@ getaddrs_tm(Address, Family, Timer) ->
 		 false ->
 		     false
 	     end,
-    case Result of
-	{ok,IP} -> {ok,[IP]};
-	false ->   {error, einval};
-	_ -> 
-	    case gethostbyname_tm(Address,Family,Timer) of
+    if Result == false -> 
+	    {error,einval};
+       true ->
+	    %% Address is a host name or a valid IP address,
+	    %% either way check it with the resolver.
+	    case gethostbyname_tm(Address, Family, Timer) of
 		{ok,Ent} -> {ok,Ent#hostent.h_addr_list};
 		Error -> Error
 	    end
@@ -543,7 +554,7 @@ gethostbyname_tm(Name, Type, Timer, [native | Opts]) ->
     case inet_gethost_native:gethostbyname(Name, Type) of
 	{error,formerr} -> {error,einval};
 	{error,timeout} -> {error,timeout};
-	{error,_} -> gethostbyname_tm(Name,Type,Timer,Opts);
+	{error,_} -> gethostbyname_tm(Name, Type, Timer, Opts++no_default);
 	Result -> Result
     end;
 gethostbyname_tm(Name, Type, Timer, [_ | Opts]) ->
@@ -580,7 +591,18 @@ gethostbyname_tm(Name, inet6, _Timer, []) ->
 	    %% format ( {0,0,0,0,0,16#ffff,?u16(A,B),?u16(C,D)} ).
 	    %% This host might not support IPv6.
 	    {error,nxdomain}
-    end.
+    end;
+gethostbyname_tm(Name, inet, _, no_default) ->
+    %% If the native resolver has failed, we should not bother
+    %% to try to be smarter and parse the IP address here.
+    case inet_parse:ipv6_address(Name) of
+	{ok,_} -> {error,einval};
+	_ ->      {error,nxdomain}
+    end;
+gethostbyname_tm(_Name, inet6, _, no_default) ->
+    %% If the native resolver has failed, we should not bother
+    %% to try to be smarter and parse the IP address here.
+    {error,nxdomain}.
 
 %%
 %% gethostbyaddr with option search

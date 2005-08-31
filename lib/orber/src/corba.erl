@@ -378,7 +378,7 @@ object_to_string(_Object, _Hosts, _Port, _SSLPort) ->
 string_to_object(IORString) ->
     string_to_object(IORString, []).
 
-string_to_object(IORString, Ctx) ->
+string_to_object(IORString, Ctx) when list(Ctx) ->
     case lists:prefix("IOR", IORString) of
 	true ->
 	    {ObjRef, _, _} = iop_ior:string_decode(IORString),
@@ -399,8 +399,12 @@ string_to_object(IORString, Ctx) ->
 			    ObjRef
 		    end
 	    end
-    end.
-
+    end;
+string_to_object(IORString, Ctx) ->
+    orber:dbg("[~p] corba:string_to_object(~p, ~p);~n"
+	      "Failed to supply a context list.", 
+	      [?LINE, IORString, Ctx], ?DEBUG_LEVEL),
+    raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%------------------------------------------------------------
 %%

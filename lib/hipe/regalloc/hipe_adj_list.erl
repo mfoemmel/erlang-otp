@@ -85,7 +85,7 @@ add_edge(U, V, Adj_list) -> % PRE: U =/= V, not V \in adjList[U]
 %%
 %%----------------------------------------------------------------------
 
-remove_edges(_, [], Adj_list) -> Adj_list;
+%% remove_edges(_, [], Adj_list) -> Adj_list;
 remove_edges(U, Vs, Adj_list) when is_list(Vs), is_integer(U) ->
   hipe_vectors_wrapper:set(Adj_list, U, lists:subtract(hipe_vectors_wrapper:get(Adj_list, U), Vs)).
 

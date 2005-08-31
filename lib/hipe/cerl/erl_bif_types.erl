@@ -44,7 +44,8 @@
 		    t_is_any/1, t_is_byte/1, t_is_integer/1, t_is_nil/1,
 		    t_is_none/1, t_list/0, t_list/1,
 		    t_list_elements/1, t_number/0, t_number_vals/1,
-		    t_nil/0, t_nonempty_list/0, t_pid/0, t_port/0, 
+		    t_nil/0, t_nonempty_list/0, t_nonempty_list/1, 
+		    t_pid/0, t_port/0, 
 		    t_ref/0, t_string/0, t_tuple/0,
 		    t_tuple/1, t_tuple_args/1, t_tuple_arity/1, t_sup/1,
 		    t_tuple_subtypes/1,
@@ -149,13 +150,35 @@ type(erlang, '!', 2, Xs) ->
 type(erlang, '+', 2, Xs) ->
     strict(arg_types(erlang, '+', 2), Xs,
 	   fun ([X1, X2]) ->
-		   case t_is_byte(X1) andalso t_is_byte(X2) of
-		       true ->
-			   t_char();
-		       false ->
-			   case t_is_integer(X1) andalso t_is_integer(X2) of
+		   case arith('+', X1, X2) of
+		       {ok, T} -> T;
+		       error ->
+			   case t_is_byte(X1) andalso t_is_byte(X2) of
 			       true ->
-		       t_integer();
+				   t_char();
+			       false ->
+				   case (t_is_integer(X1) andalso 
+					 t_is_integer(X2)) of
+				       true ->
+					   t_integer();
+				       false ->
+					   case (t_is_float(X1) 
+						 orelse t_is_float(X2)) of
+					       true -> t_float();
+					       false -> t_number()
+					   end
+				   end
+			   end
+		   end
+	   end);
+type(erlang, '-', 2, Xs) ->
+    strict(arg_types(erlang, '-', 2), Xs,
+	   fun ([X1, X2]) ->
+		   case arith('-', X1, X2) of
+		       {ok, T} -> T;
+		       error ->
+			   case t_is_integer(X1) andalso t_is_integer(X2) of
+			       true -> t_integer();
 			       false ->
 				   case t_is_float(X1) orelse t_is_float(X2) of
 				       true -> t_float();
@@ -164,27 +187,19 @@ type(erlang, '+', 2, Xs) ->
 			   end
 		   end
 	   end);
-type(erlang, '-', 2, Xs) ->
-    strict(arg_types(erlang, '-', 2), Xs,
-	   fun ([X1, X2]) ->
-		   case t_is_integer(X1) andalso t_is_integer(X2) of
-		       true -> t_integer();
-		       false ->
-			   case t_is_float(X1) orelse t_is_float(X2) of
-			       true -> t_float();
-			       false -> t_number()
-			   end
-		   end
-	   end);
 type(erlang, '*', 2, Xs) ->
     strict(arg_types(erlang, '*', 2), Xs,
 	   fun ([X1, X2]) ->
-		   case t_is_integer(X1) andalso t_is_integer(X2) of
-		       true -> t_integer();
-		       false ->
-			   case t_is_float(X1) orelse t_is_float(X2) of
-			       true -> t_float();
-			       false -> t_number()
+		   case arith('*', X1, X2) of
+		       {ok, T} -> T;
+		       error ->
+			   case t_is_integer(X1) andalso t_is_integer(X2) of
+			       true -> t_integer();
+			       false ->
+				   case t_is_float(X1) orelse t_is_float(X2) of
+				       true -> t_float();
+				       false -> t_number()
+				   end
 			   end
 		   end
 	   end);
@@ -193,10 +208,20 @@ type(erlang, '/', 2, Xs) ->
 	   fun (_) -> t_float() end);
 type(erlang, 'div', 2, Xs) ->
     strict(arg_types(erlang, 'div', 2), Xs,
-	   fun (_) -> t_integer() end);
+	   fun ([X1, X2]) ->
+		   case arith('div', X1, X2) of
+		       error -> t_integer();
+		       {ok, T} -> T
+		   end
+	   end);
 type(erlang, 'rem', 2, Xs) ->
     strict(arg_types(erlang, 'rem', 2), Xs,
-	   fun (_) -> t_integer() end);
+	   fun ([X1, X2]) ->
+		   case arith('rem', X1, X2) of
+		       error -> t_integer();
+		       {ok, T} -> T
+		   end
+	   end);
 type(erlang, '++', 2, Xs) ->
     strict(arg_types(erlang, '++', 2), Xs,
 	   fun ([X1, X2]) ->
@@ -615,7 +640,10 @@ type(erlang, process_flag, 2, Xs) ->
 	   end);
 type(erlang, process_info, 1, Xs) ->
     strict(arg_types(erlang, process_info, 1), Xs,
-	   fun (_) -> t_list(t_tuple([t_atom(), t_any()])) end);
+	   fun (_) ->
+		   t_sup(t_list(t_tuple([t_atom(), t_any()])),
+			 t_atom('undefined'))
+	   end);
 type(erlang, process_info, 2, Xs) ->
     strict(arg_types(erlang, process_info, 2), Xs,
 	   fun ([_Pid,_InfoType]) -> t_any() end); %% TODO: Very underspecified
@@ -703,6 +731,9 @@ type(erlang, statistics, 1, Xs) ->
     strict(arg_types(erlang, statistics, 1), Xs,
 	   fun(_) -> t_sup([t_integer(),
 			    t_tuple([t_integer(), t_integer()]),
+			    %% When called with the argument 'io'.
+			    t_tuple([t_tuple([t_atom('input'), t_integer()]),
+				     t_tuple([t_atom('output'), t_integer()])]),
 			    t_tuple([t_integer(), t_integer(), t_integer()])])
 	   end);
 type(erlang, suspend_process, 1, Xs) ->
@@ -750,9 +781,12 @@ type(erlang, trunc, 1, Xs) ->
 type(erlang, tuple_to_list, 1, Xs) ->
     strict(arg_types(erlang, tuple_to_list, 1), Xs,
 	   fun ([X]) ->
-		   case t_tuple_args(X) of
+		   case t_tuple_subtypes(X) of
 		       any -> t_list();
-		       Ts -> t_list(t_sup(Ts))
+		       SubTypes -> 
+			   Args = lists:flatten([t_tuple_args(ST)
+						 || ST <-SubTypes]),
+			   t_nonempty_list(t_sup(Args))
 		   end
 	   end);
 type(erlang, universaltime, 0, _) ->
@@ -1113,6 +1147,24 @@ check_guard([X], Test, Type) ->
 	    end
     end.
 
+arith(Op, X1, X2) ->
+    case t_is_integer(X1) andalso t_is_integer(X2) of
+	false -> error;
+	true ->
+	    case {t_number_vals(X1), t_number_vals(X2)} of
+		{any, _} -> error;
+		{_, any} -> error;
+		{L1, L2} ->
+		    case Op of
+			'+' -> AllVals = [X + Y ||X <- L1, Y <- L2];
+			'-' -> AllVals = [X - Y ||X <- L1, Y <- L2];
+			'*' -> AllVals = [X * Y ||X <- L1, Y <- L2];
+			'div' -> AllVals = [X div Y ||X <- L1, Y <- L2];
+			'rem' -> AllVals = [X rem Y ||X <- L1, Y <- L2]
+		    end,
+		    {ok, t_integers(ordsets:from_list(AllVals))}
+	    end
+    end.
 
 %% =====================================================================
 %% arg_types returns a list of the demanded argument types for a bif
@@ -1475,7 +1527,10 @@ arg_types(erlang, suspend_process, 1) ->
   [t_pid()]; % intended for debugging only
 arg_types(erlang, system_flag, 2) ->
   [t_sup([t_atom('backtrace_depth'), t_atom('fullsweep_after'),
-	  t_atom('min_heap_size'), t_atom('trace_control_word')]),
+	  t_atom('min_heap_size'), t_atom('trace_control_word'),
+	  %% Undocumented; used to implement (the documented) seq_trace module.
+	  t_atom('sequential_tracer'),
+	  t_integer()]),
    t_integer()];
 arg_types(erlang, system_info, 1) ->
   [t_sup([t_atom(),                     % documented

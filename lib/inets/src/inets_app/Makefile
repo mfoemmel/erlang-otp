@@ -40,7 +40,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/inets-$(VSN)
 MODULES = \
 	inets_app \
 	inets_sup 
-HRL_FILES = 
+HRL_FILES = inets_internal.hrl
 
 ERL_FILES = $(MODULES:%=%.erl)
 

@@ -26,6 +26,8 @@
 	 erlangrc/0,erlangrc/1,bi/1, flush/0, regs/0,
 	 nregs/0,pwd/0,ls/0,ls/1,cd/1,memory/1,memory/0, xm/1]).
 
+-export([display_info/1]).
+
 -import(lists, [reverse/1,flatten/1,sublist/3,sort/1,keysearch/3,keysort/2,
 		concat/1,max/1,min/1,foreach/2,foldl/3,flatmap/2,map/2]).
 -import(io, [format/1, format/2]).
@@ -221,13 +223,67 @@ i() -> i(processes()).
 ni() -> i(all_procs()).
 
 i(Ps) ->
+    i(Ps, length(Ps)).
+
+i(Ps, N) when N =< 100 ->
     iformat("Pid", "Initial Call", "Heap", "Reds",
 	    "Msgs"),
     iformat("Registered", "Current Function", "Stack", "",
 	    ""),
-    {R,M,H,S} = foldl(fun display_info/2, {0,0,0,0}, Ps),
+    {R,M,H,S} = foldl(fun(Pid, {R0,M0,H0,S0}) ->
+			      {A,B,C,D} = display_info(Pid),
+			      {R0+A,M0+B,H0+C,S0+D}
+		      end, {0,0,0,0}, Ps),
     iformat("Total", "", w(H), w(R), w(M)),
-    iformat("", "", w(S), "", "").
+    iformat("", "", w(S), "", "");
+i(Ps, N) ->
+    iformat("Pid", "Initial Call", "Heap", "Reds",
+	    "Msgs"),
+    iformat("Registered", "Current Function", "Stack", "",
+	    ""),
+    paged_i(Ps, {0,0,0,0}, N, 50).
+
+paged_i([], {R,M,H,S}, _, _) ->
+    iformat("Total", "", w(H), w(R), w(M)),
+    iformat("", "", w(S), "", "");
+paged_i(Ps, Acc, N, Page) ->
+    {Pids, Rest, N1} =
+	if N > Page ->
+		{L1,L2} = lists:split(Page, Ps),
+		{L1,L2,N-Page};
+	   true ->
+		{Ps, [], 0}
+	end,
+    NewAcc = foldl(fun(Pid, {R,M,H,S}) ->
+			   {A,B,C,D} = display_info(Pid),
+			   {R+A,M+B,H+C,S+D}
+		   end, Acc, Pids),
+    case Rest of
+	[_|_] ->
+	    choice(fun() -> paged_i(Rest, NewAcc, N1, Page) end);
+	[] ->
+	    paged_i([], NewAcc, 0, Page)
+    end.
+
+
+choice(F) ->
+    case get_line('(c)ontinue (q)uit -->', "c\n") of
+	"c\n" ->
+	    F();
+	"q\n" ->
+	    quit;
+	_ ->
+	    choice(F)
+    end.
+    
+
+get_line(P, Default) ->
+    case io:get_line(P) of
+	"\n" ->
+	    Default;
+	L ->
+	    L
+    end.
 
 mfa_string(Fun) when is_function(Fun) ->
     {module,M} = erlang:fun_info(Fun, module),
@@ -239,9 +295,10 @@ mfa_string({M,F,A}) ->
 mfa_string(X) ->
     w(X).
 
-display_info(Pid, {R,M,H,S}) ->
+
+display_info(Pid) ->
     case pinfo(Pid) of
-	undefined -> {R,M,H,S};
+	undefined -> {0,0,0,0};
 	Info ->
 	    Call = initial_call(Info),
 	    Curr = case fetch(current_function, Info) of
@@ -265,7 +322,7 @@ display_info(Pid, {R,M,H,S}) ->
 		    w(SS),
 		    "",
 		    ""),
-	    {R+Reds, M+LM, H+HS, S+SS}
+	    {Reds, LM, HS, SS}
     end.
 
 %% We have to do some assumptions about the initial call.

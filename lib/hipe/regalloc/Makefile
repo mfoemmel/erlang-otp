@@ -41,8 +41,9 @@ MODULES = hipe_ig hipe_ig_moves hipe_moves \
 	  hipe_node_sets hipe_spillcost hipe_reg_worklists \
 	  hipe_adj_list hipe_vectors_wrapper \
 	  hipe_temp_map \
+	  hipe_optimistic_regalloc \
 	  hipe_coalescing_regalloc \
-	  hipe_optimistic_regalloc hipe_optimistic_worklists \
+	  hipe_optimistic_regalloc \
 	  hipe_graph_coloring_regalloc \
 	  hipe_regalloc_loop \
 	  hipe_ls_regalloc \
@@ -68,7 +69,8 @@ DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += 
+#ERL_COMPILE_FLAGS += -DDEBUG
+ERL_COMPILE_FLAGS +=
 
 # ----------------------------------------------------
 # Targets
@@ -102,6 +104,7 @@ release_spec: opt
 
 release_docs_spec:
 
+$(EBIN)/hipe_optimistic_regalloc.beam: ../main/hipe.hrl
 $(EBIN)/hipe_coalescing_regalloc.beam: ../main/hipe.hrl
 $(EBIN)/hipe_graph_coloring_regalloc.beam: ../main/hipe.hrl
 $(EBIN)/hipe_ls_regalloc.beam: ../main/hipe.hrl

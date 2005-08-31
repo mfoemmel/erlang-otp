@@ -355,19 +355,22 @@ icode_to_rtl(MFA, Icode, Options) ->
   RtlCfg1 = hipe_rtl_cfg:remove_trivial_bbs(RtlCfg0),
   %% hipe_rtl_cfg:pp(RtlCfg1),
 
-  RtlCfg3 = rtl_ssa(RtlCfg1, Options),
-  RtlCfg5 = rtl_symbolic(RtlCfg3, Options),
-  %% hipe_rtl_cfg:pp(RtlCfg4),
-  RtlCfg6 = rtl_prop(RtlCfg5, Options),
-  rtl_liveness_pp(MFA,RtlCfg6, Options),
+  %RtlCfg3 = rtl_ssa(RtlCfg1, Options),
+  {RtlCfg3,Options2} = rtl_ssa(RtlCfg1, Options),
+ 
+  RtlCfg5 = rtl_symbolic(RtlCfg3, Options2),
+  %% hipe_rtl_cfg:pp(RtlCfg5),
+ 
+  RtlCfg6 = rtl_prop(RtlCfg5, Options2),
+  rtl_liveness_pp(MFA,RtlCfg6, Options2),
 
-  rtl_pp(MFA, RtlCfg6, Options),	%% TAKE ME OUT
-  RtlCfg7 = rtl_lcm(RtlCfg6, Options),
+  rtl_pp(MFA, RtlCfg6, Options2),	%% TAKE ME OUT
+  RtlCfg7 = rtl_lcm(RtlCfg6, Options2),
 %  RtlCfg7 = RtlCfg6,
-  rtl_pp(MFA, RtlCfg7, Options),	%% TAKE ME OUT
+  rtl_pp(MFA, RtlCfg7, Options2),	%% TAKE ME OUT
 
   %% rtl_pp(MFA, RtlCfg6, Options),
-  debug("linearize: ~w, ~w~n", [MFA, hash(RtlCfg7)], Options),
+  debug("linearize: ~w, ~w~n", [MFA, hash(RtlCfg7)], Options2),
   LinearRTL1 = hipe_rtl_cfg:linearize(RtlCfg7),
   LinearRTL2 = hipe_rtl_cleanup_const:cleanup(LinearRTL1),
   %% hipe_rtl:pp(standard_io, LinearRTL2),
@@ -430,7 +433,9 @@ rtl_liveness_pp(MFA, RtlCfg, Options) ->
 %%    constant propagation in order to cleanup dead code that might
 %%    be created by that pass.
 %%
-%% 3. ssa_check could be put in between all passes to make sure that
+%% 3. rtl_ssapre performs A-SSAPRE and has to be done after all other optimizations.
+%%
+%% 4. ssa_check could be put in between all passes to make sure that
 %%    they preserve SSA-ness.
 %%
 %%----------------------------------------------------------------------
@@ -443,9 +448,11 @@ rtl_ssa(RtlCfg0, Options) ->
       RtlSSA1 = rtl_ssa_const_prop(RtlSSA0, Options),
       %% RtlSSA2 = rtl_ssa_copy_prop(RtlSSA1, Options),
       RtlSSA3 = rtl_ssa_dead_code_elimination(RtlSSA1, Options),
+      RtlSSA4 = rtl_ssapre(RtlSSA3, Options),
+      
       %% rtl_ssa_check(RtlSSA3, Options), %% just for sanity
       %% rtl_pp(IcodeSSA5, MFA, proplists:get_value(pp_rtl_ssa,Options)),
-      RtlCfg = rtl_ssa_unconvert(RtlSSA3, Options),
+      RtlCfg = rtl_ssa_unconvert(RtlSSA4, Options),
       case proplists:get_bool(pp_rtl_ssa, Options) of
 	true ->
 	  io:format("%%------------- After  SSA un-conversion -----------\n"),
@@ -454,9 +461,9 @@ rtl_ssa(RtlCfg0, Options) ->
 	  ok
       end,
       ?opt_stop_timer("RTL SSA-passes"),
-      RtlCfg;
+      {RtlCfg,Options};
     false ->
-      RtlCfg0
+      {RtlCfg0,Options}
   end.
 
 rtl_ssa_convert(RtlCfg, Options) ->
@@ -488,6 +495,21 @@ rtl_ssa_const_prop(RtlCfgSSA, Options) ->
 rtl_ssa_dead_code_elimination(RtlCfgSSA, Options) ->
   ?option_time(hipe_rtl_ssa:remove_dead_code(RtlCfgSSA),
 	       "RTL SSA dead code elimination", Options).
+
+%%---------------------------------------------------------------------
+
+rtl_ssapre(RtlCfg, Options) ->
+  case proplists:get_bool(rtl_ssapre, Options) of
+    true ->
+      ?opt_start_timer("Partial Redundancy Elimination (A-SSAPRE)"),
+      NewRtlCfg = hipe_rtl_ssapre:rtl_ssapre(RtlCfg,Options),
+      ?opt_stop_timer("Partial Redundancy Elimination (A-SSAPRE)"),
+      NewRtlCfg;
+    false ->
+      RtlCfg
+  end.
+
+%%---------------------------------------------------------------------
 
 rtl_ssa_unconvert(RtlCfgSSA, Options) ->
   ?option_time(hipe_rtl_ssa:unconvert(RtlCfgSSA),

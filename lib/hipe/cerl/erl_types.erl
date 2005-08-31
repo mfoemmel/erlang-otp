@@ -166,7 +166,7 @@
 	 t_limit/2,
 	 t_list/0, t_list/1, t_list_elements/1, t_nil/0,
 	 t_number/0, t_number/1, t_number_vals/1,
-	 t_nonempty_list/0,
+	 t_nonempty_list/0, t_nonempty_list/1,
 	 t_pid/0, t_port/0, t_product/1, t_ref/0, t_string/0,
 	 t_subst/2, t_subtract/2, t_sup/1, t_sup/2,
 	 t_to_string/1,
@@ -183,7 +183,7 @@
 	 t_is_identifier/1, t_is_number/2, t_is_string/1,
 	 t_is_n_tuple/2, t_is_nonempty_list/1,
 	 t_nonempty_improper_list/0, t_nonempty_improper_list/1,
-	 t_nonempty_list/1, t_nonempty_string/0,
+	 t_nonempty_string/0,
 	 t_tuple_max_arity/1, t_tuple_min_arity/1]).
 -endif.
 
@@ -1512,11 +1512,8 @@ t_nonempty_list() -> ?nonempty_proper_list(?any).
 %% @see t_is_nonempty_list/1
 %% @see t_list/0
 
--ifndef(NO_UNUSED).
 t_nonempty_list(?none) -> ?none;
 t_nonempty_list(T) -> ?nonempty_proper_list(T).
--endif.
-%% @clear
 
 
 %% @spec t_string() -> type()

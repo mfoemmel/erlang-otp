@@ -299,13 +299,8 @@ sockdata(ssl, Socket) ->
     create_data(ssl:sockname(Socket)).
 
 
-%% IPv4
-create_data({ok, {{N1,N2,N3,N4}, Port}}) ->
-    {lists:concat([N1, ".", N2, ".", N3, ".", N4]), Port};
-%% IPv6 
-create_data({ok, {{N1,N2,N3,N4,N5,N6,N7,N8}, Port}}) ->
-    {lists:concat([N1, ":", N2, ":", N3, ":", N4, ":",
-		   N5, ":", N6, ":", N7, ":", N8]), Port};
+create_data({ok, {Addr, Port}}) ->
+    {orber_env:addr2str(Addr), Port};
 create_data(What) ->
     orber:dbg("[~p] orber_socket:peername() or orber_socket:sockname();~n"
 	      "Failed with reason: ~p", [?LINE, What], ?DEBUG_LEVEL),

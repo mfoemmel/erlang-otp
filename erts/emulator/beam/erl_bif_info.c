@@ -563,32 +563,46 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
 	ErlMessage* mp;
 	Eterm* cons;
 	int n = rp->msg.len;
-	Uint size;
 
 	if (n == 0) {
 	    hp = HAlloc(BIF_P, 3);
 	    res = NIL;
 	} else {
-	    size = 0;
-	    if (rp != BIF_P) {
-		mp = rp->msg.first;
-		while(mp != NULL) {
-		    size += size_object(ERL_MESSAGE_TERM(mp));
-		    mp = mp->next;
-		}
-	    }
-	    hp = HAlloc(BIF_P, 3 + size + 2*n);
-	    hp += 2*n;		/* skip the list !!! */
+	    /*
+	     * XXX Notes for heap fragment elimination (private heap emulator):
+	     * Several heap fragments can get allocated, and the pointers could
+	     * be in the wrong order. (Because copy_object() implictly calls
+	     * HAlloc().)
+	     */
+
+	    hp = HAlloc(BIF_P, 3 + 2*n);
+	    hp += 2*n;		/* Point beyond the list. */
 	    cons = hp - 2;
 	    res = make_list(cons); /* first cons cell */
 	    /* Build with back-pointers (as cons whould have done) */
 	    mp = rp->msg.first;
-	    while(mp != NULL) {
+
+	    while (mp != NULL) {
+#ifdef HYBRID
+		/*
+		 * Hybrid: Almost all messages already are in the message area.
+		 */
+		if (NO_COPY(ERL_MESSAGE_TERM(mp)) || rp == BIF_P) {
+		    /* Constant, already in message area, or same process. */
+		    cons[0] = ERL_MESSAGE_TERM(mp);
+		} else {
+		    cons[0] = copy_object(ERL_MESSAGE_TERM(mp), BIF_P);
+		}
+#else
+		/*
+		 * We must copy the message if it belongs to another process.
+		 */
 		if (rp == BIF_P) {
 		    cons[0] = ERL_MESSAGE_TERM(mp);
 		} else {
 		    cons[0] = copy_object(ERL_MESSAGE_TERM(mp), BIF_P);
 		}
+#endif
 		cons -= 2;	/* next cell */
 		cons[3] = make_list(cons); /* write tail */
 		mp = mp->next;
@@ -738,11 +752,11 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
 	 */
 	res = STORE_NC(&hp, &MSO(BIF_P).externals, rp->group_leader);
     } else if (item == am_reductions) {
-	Uint reds;
-
-	hp = HAlloc(BIF_P, 3);
-	reds = rp->reds + erts_current_reductions(BIF_P, rp);
-	res = make_small_or_big(reds, BIF_P);
+	Uint reds = rp->reds + erts_current_reductions(BIF_P, rp);
+	Uint hsz = 3;
+	(void) erts_bld_uint(NULL, &hsz, reds);
+	hp = HAlloc(BIF_P, hsz);
+	res = erts_bld_uint(&hp, NULL, reds);
     } else if (item == am_priority) {
 	hp = HAlloc(BIF_P, 3);
 	switch(rp->prio) {
@@ -997,7 +1011,6 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
     Eterm res;
     Eterm* hp;
     Eterm val;
-    unsigned count;
     int i;
     DECL_AM(ets_realloc_moves);
     DECL_AM(dist_ctrl);
@@ -1050,13 +1063,7 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	res = TUPLE2(hp, am_fullsweep_after, make_small(erts_max_gen_gcs));
 	BIF_RET(res);
     } else if (BIF_ARG_1 == am_process_count) {
-	count = 0;
-	for (i = 0; i < erts_max_processes; i++) {
-	    if (process_tab[i] != NULL && process_tab[i]->status != P_EXITING) {
-		count++;
-	    }
-	}
-	BIF_RET(make_small(count));
+	BIF_RET(make_small(erts_process_count()));
     } else if (BIF_ARG_1 == am_process_limit) {
 	BIF_RET(make_small(erts_max_processes));
     } else if (BIF_ARG_1 == am_info) {
@@ -1277,7 +1284,7 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	sz += global_mbuf_sz;
 #ifdef NOMOVE
         /* The size of the old generation is a bit hard to define here...
-         * The ammount of live data in the last collection perhaps..? */
+         * The amount of live data in the last collection perhaps..? */
 #else
 	if (global_old_hend && global_old_heap)
 	    sz += global_old_hend - global_old_heap;
@@ -1403,8 +1410,9 @@ port_info_1(Process* p, Eterm pid)
     };
     Eterm items[ASIZE(keys)];
     Eterm result = NIL;
-    Eterm tmp;
+    Eterm reg_name;
     Eterm* hp;
+    Uint need;
     int i;
 
     /*
@@ -1423,24 +1431,23 @@ port_info_1(Process* p, Eterm pid)
 	}
 	items[i] = item;
     }
+    reg_name = port_info_2(p, pid, am_registered_name);
 
     /*
      * Build the resulting list.
      */
 
-    hp = HAlloc(p, 2*ASIZE(keys)+2);
+    need = 2*ASIZE(keys);
+    if (is_tuple(reg_name)) {
+	need += 2;
+    }
+    hp = HAlloc(p, need);
     for (i = ASIZE(keys) - 1; i >= 0; i--) {
 	result = CONS(hp, items[i], result);
 	hp += 2;
     }
-    
-    /*
-     * Registered name is special.
-     */
-    
-    tmp = port_info_2(p, pid, am_registered_name);
-    if (is_tuple(tmp)) {
-	result = CONS(hp, tmp, result);
+    if (is_tuple(reg_name)) {
+	result = CONS(hp, reg_name, result);
     }
 
     return result;
@@ -1523,21 +1530,28 @@ BIF_RETTYPE port_info_2(BIF_ALIST_2)
 	res = erts_port[portix].connected; /* internal pid */
     }
     else if (item == am_input) {
-	hp = HAlloc(BIF_P, 3);
-	res = make_small_or_big(erts_port[portix].bytes_in, BIF_P);
+	Uint hsz = 3;
+	Uint n = erts_port[portix].bytes_in;
+	(void) erts_bld_uint(NULL, &hsz, n);
+	hp = HAlloc(BIF_P, hsz);
+	res = erts_bld_uint(&hp, NULL, n);
     }
     else if (item == am_output) {
-	hp = HAlloc(BIF_P, 3);
-	res = make_small_or_big(erts_port[portix].bytes_out, BIF_P);
+	Uint hsz = 3;
+	Uint n = erts_port[portix].bytes_out;
+	(void) erts_bld_uint(NULL, &hsz, n);
+	hp = HAlloc(BIF_P, hsz);
+	res = erts_bld_uint(&hp, NULL, n);
     }
     else if (item == am_registered_name) {
 	RegProc *reg;
-	hp = HAlloc(BIF_P, 3);
 	reg = erts_port[portix].reg;
-	if (reg == NULL)
+	if (reg == NULL) {
 	    BIF_RET(NIL);
-	else
+	} else {
+	    hp = HAlloc(BIF_P, 3);
 	    res = reg->name;
+	}
     }
     else if (item == am_memory) {
 	/* All memory consumed in bytes (the Port struct should not be
@@ -1567,8 +1581,9 @@ BIF_RETTYPE port_info_2(BIF_ALIST_2)
 	hp = HAlloc(BIF_P, hsz);
 	res = erts_bld_uint(&hp, NULL, size);
     }
-    else
+    else {
 	BIF_ERROR(BIF_P, BADARG);
+    }
     BIF_RET(TUPLE2(hp, item, res));
 }
 
@@ -1704,34 +1719,38 @@ BIF_RETTYPE statistics_1(BIF_ALIST_1)
     Eterm res;
     Eterm* hp;
 
-    if (is_not_atom(BIF_ARG_1))
-	BIF_ERROR(BIF_P, BADARG);
-
     if (BIF_ARG_1 == am_context_switches) {
 	hp = HAlloc(BIF_P, 3);
 	res = TUPLE2(hp, make_small_or_big(context_switches, BIF_P), SMALL_ZERO);
 	BIF_RET(res);
-    }
-    else if (BIF_ARG_1 == am_garbage_collection) {
-	hp = HAlloc(BIF_P, 4);
-	res = TUPLE3(hp, make_small_or_big(garbage_cols, BIF_P),
-		     make_small_or_big(reclaimed, BIF_P),
-		     SMALL_ZERO);
+    } else if (BIF_ARG_1 == am_garbage_collection) {
+	Uint hsz = 4;
+	Eterm gcs;
+	Eterm recl;
+	(void) erts_bld_uint(NULL, &hsz, garbage_cols);
+	(void) erts_bld_uint(NULL, &hsz, reclaimed);
+	hp = HAlloc(BIF_P, hsz);
+	gcs = erts_bld_uint(&hp, NULL, garbage_cols);
+	recl = erts_bld_uint(&hp, NULL, reclaimed);
+	res = TUPLE3(hp, gcs, recl, SMALL_ZERO);
 	BIF_RET(res);
-    }
-    else if (BIF_ARG_1 == am_reductions) {
+    } else if (BIF_ARG_1 == am_reductions) {
 	Uint reds;
+	Uint diff;
+	Uint hsz = 3;
 	Eterm b1, b2;
 
 	reds = reductions + erts_current_reductions(BIF_P, BIF_P);
-	b1 = make_small_or_big(reds, BIF_P);
-	b2 = make_small_or_big(reds - last_reds, BIF_P);
-	hp = HAlloc(BIF_P,3);
+	diff = reds - last_reds;
+	(void) erts_bld_uint(NULL, &hsz, reds);
+	(void) erts_bld_uint(NULL, &hsz, diff);
+	hp = HAlloc(BIF_P, hsz);
+	b1 = erts_bld_uint(&hp, NULL, reds);
+	b2 = erts_bld_uint(&hp, NULL, diff);
 	res = TUPLE2(hp, b1, b2); 
 	last_reds  = reds;
 	BIF_RET(res);
-    }
-    else if (BIF_ARG_1 == am_runtime) {
+    } else if (BIF_ARG_1 == am_runtime) {
 	unsigned long u1, u2, dummy;
 	Eterm b1, b2;
 	elapsed_time_both(&u1,&dummy,&u2,&dummy);
@@ -1740,12 +1759,10 @@ BIF_RETTYPE statistics_1(BIF_ALIST_1)
 	hp = HAlloc(BIF_P,3);
 	res = TUPLE2(hp, b1, b2);
 	BIF_RET(res);
-    }
-    else if (BIF_ARG_1 ==  am_run_queue) {
+    } else if (BIF_ARG_1 ==  am_run_queue) {
 	res = sched_q_len();
 	BIF_RET(make_small(res));
-    }
-    else if (BIF_ARG_1 == am_wall_clock) {
+    } else if (BIF_ARG_1 == am_wall_clock) {
 	Uint w1, w2;
 	Eterm b1, b2;
 	wall_clock_elapsed_time_both(&w1, &w2);
@@ -1754,13 +1771,16 @@ BIF_RETTYPE statistics_1(BIF_ALIST_1)
 	hp = HAlloc(BIF_P,3);
 	res = TUPLE2(hp, b1, b2);
 	BIF_RET(res);
-    }
-    else if (BIF_ARG_1 == am_io) {
+    } else if (BIF_ARG_1 == am_io) {
 	Eterm r1, r2;
 	Eterm in, out;
-	in = make_small_or_big(bytes_in,BIF_P);
-	out = make_small_or_big(bytes_out,BIF_P); 
-	hp = HAlloc(BIF_P, 9);
+	Uint hsz = 9;
+
+	(void) erts_bld_uint(NULL, &hsz, bytes_in);
+	(void) erts_bld_uint(NULL, &hsz, bytes_out);
+	hp = HAlloc(BIF_P, hsz);
+	in = erts_bld_uint(&hp, NULL, bytes_in);
+	out = erts_bld_uint(&hp, NULL, bytes_out);
 	r1 = TUPLE2(hp,  am_input, in);
 	hp += 3;
 	r2 = TUPLE2(hp, am_output, out);

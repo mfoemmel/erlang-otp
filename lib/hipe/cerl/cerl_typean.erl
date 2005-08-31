@@ -455,7 +455,7 @@ visit(T, Env, St) ->
 	    {X, St1} = visit(try_arg(T), Env, St),
 	    Any = t_any(),
 	    Atom = t_atom(),
-	    Vars = bind_vars(try_vars(T), X, St1#state.vars),
+	    Vars = bind_vars(try_vars(T), t_components(X), St1#state.vars),
 	    {X1, St2} = visit(try_body(T), Env, St1#state{vars = Vars}),
 	    EVars = bind_vars(try_evars(T), [Atom, Any, Any], St2#state.vars),
 	    {X2, St3} = visit(try_handler(T), Env, St2#state{vars = EVars}),

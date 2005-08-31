@@ -17,11 +17,11 @@
 %%
 -module(httpd_response).
 -export([generate_and_send_response/1, send_status/3, send_header/3, 
-	 send_chunk/3, send_final_chunk/2, split_header/2,
+	 send_body/3, send_chunk/3, send_final_chunk/2, split_header/2,
 	 is_disable_chunked_send/1, cache_headers/1]).
 
 -include("httpd.hrl").
--include("http.hrl").
+-include("http_internal.hrl").
 
 -define(VMODULE,"RESPONSE").
 -include("httpd_verbosity.hrl").
@@ -265,8 +265,33 @@ create_header(KeyValueTupleHeaders) ->
 				      {"content-type", "text/html"},
 				      {"server", ?SERVER_SOFTWARE}], 
 				     KeyValueTupleHeaders),
-    lists:map(fun({Key, Value}) -> Key ++ ":" ++ Value ++ ?CRLF end,
-	      NewHeaders).
+    lists:map(fun fix_header/1, NewHeaders).
+
+fix_header({Key0, Value}) ->
+    %% make sure first letter is capital
+    Words1 = string:tokens(Key0, "-"),
+    Words2 = upify(Words1, []),
+    Key    = new_key(Words2),
+    Key ++ ": " ++ Value ++ ?CRLF .
+
+new_key([]) ->
+    "";
+new_key([W]) ->
+    W;
+new_key([W1,W2]) ->
+    W1 ++ "-" ++ W2;
+new_key([W|R]) ->
+    W ++ "-" ++ new_key(R).
+    
+upify([], Acc) ->
+    lists:reverse(Acc);
+upify([Key|Rest], Acc) ->
+    upify(Rest, [upify2(Key)|Acc]).
+
+upify2([C|Rest]) when C >= $a, C =< $z ->
+    [C-($a-$A)|Rest];
+upify2(Str) ->
+    Str.
 
 add_default_headers([], Headers) ->
     Headers;

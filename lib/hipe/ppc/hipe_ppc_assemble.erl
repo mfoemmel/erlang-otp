@@ -267,7 +267,12 @@ do_unary(I) ->
   #unary{unop=UnOp,dst=Dst,src=Src} = I,
   NewDst = do_reg(Dst),
   NewSrc = do_reg(Src),
-  [{UnOp, {NewDst,NewSrc}, I}].
+  {NewI,NewOpnds} =
+    case UnOp of
+      {RLWINM,SH,MB,ME} -> {RLWINM, {NewDst,NewSrc,{sh,SH},{mb,MB},{me,ME}}};
+      _ -> {UnOp, {NewDst,NewSrc}}
+    end,
+  [{NewI, NewOpnds, I}].
 
 do_lfd(I) ->
   #lfd{dst=Dst,disp=Disp,base=Base} = I,

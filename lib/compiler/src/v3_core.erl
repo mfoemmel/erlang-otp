@@ -322,6 +322,7 @@ expr({integer,L,I}, St) -> {#c_int{anno=[L],val=I},[],St};
 expr({float,L,F}, St) -> {#c_float{anno=[L],val=F},[],St};
 expr({atom,L,A}, St) -> {#c_atom{anno=[L],val=A},[],St};
 expr({nil,L}, St) -> {#c_nil{anno=[L]},[],St};
+expr({string,L,[]}, St) -> {#c_nil{anno=[L]},[],St};
 expr({string,L,S}, St) -> {#c_string{anno=[L],val=S},[],St};
 expr({cons,L,H0,T0}, St0) ->
     {H1,Hps,St1} = safe(H0, St0),

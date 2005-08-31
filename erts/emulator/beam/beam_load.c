@@ -3798,8 +3798,8 @@ functions_in_module(Process* p, /* Process whose heap to use. */
     Module* modp;
     Eterm* code;
     int i;
-    Eterm* hp = NULL;
-    Eterm* hend = NULL;
+    Uint num_functions;
+    Eterm* hp;
     Eterm result = NIL;
 
     if (is_not_atom(mod)) {
@@ -3811,18 +3811,15 @@ functions_in_module(Process* p, /* Process whose heap to use. */
 	return THE_NON_VALUE;
     }
     code = modp->code;
-    for (i = code[MI_NUM_FUNCTIONS]-1; i >= 0 ; i--) {
+    num_functions = code[MI_NUM_FUNCTIONS];
+    hp = HAlloc(p, 5*num_functions);
+    for (i = num_functions-1; i >= 0 ; i--) {
 	Eterm* func_info = (Eterm *) code[MI_FUNCTIONS+i];
 	Eterm name = func_info[3];
 	int arity = func_info[4];
 	Eterm tuple;
 
 	ASSERT(is_atom(name));
-	if (hp == hend) {
-	    int need = 10 * 5;
-	    hp = HAlloc(p, need);
-	    hend = hp + need;
-	}
 	tuple = TUPLE2(hp, name, make_small(arity));
 	hp += 3;
 	result = CONS(hp, tuple, result);
@@ -3844,8 +3841,10 @@ native_addresses(Process* p, Eterm mod)
     Module* modp;
     Eterm* code;
     int i;
-    Eterm* hp = NULL;
-    Eterm* hend = NULL;
+    Eterm* hp;
+    Uint num_functions;
+    Uint need;
+    Eterm* hp_end;
     Eterm result = NIL;
 
     if (is_not_atom(mod)) {
@@ -3856,8 +3855,13 @@ native_addresses(Process* p, Eterm mod)
     if (modp == NULL) {
 	return THE_NON_VALUE;
     }
+
     code = modp->code;
-    for (i = code[MI_NUM_FUNCTIONS]-1; i >= 0 ; i--) {
+    num_functions = code[MI_NUM_FUNCTIONS];
+    need = (6+BIG_UINT_HEAP_SIZE)*num_functions;
+    hp = HAlloc(p, need);
+    hp_end = hp + need;
+    for (i = num_functions-1; i >= 0 ; i--) {
 	Eterm* func_info = (Eterm *) code[MI_FUNCTIONS+i];
 	Eterm name = func_info[3];
 	int arity = func_info[4];
@@ -3865,19 +3869,12 @@ native_addresses(Process* p, Eterm mod)
 
 	ASSERT(is_atom(name));
 	if (func_info[1] != 0) {
-	    Eterm addr = make_small_or_big(func_info[1], p);
-
-	    if (hp == hend) {
-		int need = 10 * 6;
-		hp = HAlloc(p, need);
-		hend = hp + need;
-	    }
-	    tuple = TUPLE3(hp, name, make_small(arity), addr);
-	    hp += 4;
-	    result = CONS(hp, tuple, result);
-	    hp += 2;
+	    Eterm addr = erts_bld_uint(&hp, NULL, func_info[1]);
+	    tuple = erts_bld_tuple(&hp, NULL, 3, name, make_small(arity), addr);
+	    result = erts_bld_cons(&hp, NULL, tuple, result);
 	}
     }
+    HRelease(p, hp_end, hp);
     return result;
 }
 

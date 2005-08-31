@@ -18,7 +18,7 @@
 %% 3.6.1
 -module(http_chunk).
 
--include("http.hrl").
+-include("http_internal.hrl").
 
 %% API
 -export([decode/3, encode/1, encode_last/0, handle_headers/2]).

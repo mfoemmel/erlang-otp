@@ -14,9 +14,11 @@
 	 remove_active/2,
 	 add_worklist/2,
 	 add_active/2,
-	 member_active/2,
-	 print_memberships/1
+	 member_active/2
 	]).
+-ifdef(DEBUG_PRINTOUTS).
+-export([print_memberships/1]).
+-endif.
 
 -record(movesets,
 	{worklist,    % Moves enabled for possible coalescing
@@ -126,6 +128,10 @@ node_movelist(Node, MoveSets) ->
 get_move(Move, MoveSets) ->
   element(Move+1, MoveSets#movesets.moveinsns).
 
+%%----------------------------------------------------------------------
+%% Print functions - only used for debugging
+
+-ifdef(DEBUG_PRINTOUTS).
 print_memberships(MoveSets) ->
   ?debug_msg("Move memeberships:\n", []),
   Membership = MoveSets#movesets.membership,
@@ -138,3 +144,5 @@ print_membership(Element, Membership) ->
   NextElement = Element - 1,
   ?debug_msg("move ~w ~w\n", [NextElement, hipe_bifs:array_sub(Membership, NextElement)]),
   print_membership(NextElement, Membership).
+-endif.
+

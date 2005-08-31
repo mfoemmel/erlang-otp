@@ -248,19 +248,19 @@ handle_call({add, IP, Type, Port}, _From, State) ->
 handle_call({connect, Type, Socket, _AcceptPid, AccepRef}, _From, State) 
   when State#state.max_connections == infinity;
        State#state.max_connections > State#state.counter ->
-    case access_allowed(Type, Socket, Type) of
+    case catch access_allowed(Type, Socket, Type) of
 	true ->
 	    {ok, Pid} = orber_iiop_insup:start_connection(Type, Socket, AccepRef),
 	    link(Pid),
 	    {reply, {ok, Pid, true}, update_counter(State, 1)};
-	false ->
+	_ ->
 	    {H, P} = orber_socket:peerdata(Type, Socket),
 	    orber_tb:info("Blocked connect attempt from ~s - ~p", [H, P]),
 	    {reply, denied, State}
     end;
 handle_call({connect, Type, Socket, AcceptPid, AccepRef}, _From, 
 	    #state{queue = Q} = State) ->
-    case access_allowed(Type, Socket, Type) of
+    case catch access_allowed(Type, Socket, Type) of
 	true ->
 	    {ok, Pid} = orber_iiop_insup:start_connection(Type, Socket, AccepRef),
 	    link(Pid),
@@ -268,7 +268,7 @@ handle_call({connect, Type, Socket, AcceptPid, AccepRef}, _From,
 	    {reply, {ok, Pid, Ref}, 
 	     update_counter(State#state{queue = 
 					queue:in({AcceptPid, Ref}, Q)}, 1)};
-	false ->
+	_ ->
 	    {H, P} = orber_socket:peerdata(Type, Socket),
 	    orber_tb:info("Blocked connect attempt from ~s - ~p", [H, P]),
 	    {reply, denied, State}
@@ -297,17 +297,32 @@ access_allowed(Type, Socket, Type) ->
 		end,	    
 	    {ok, {Host, Port}} = orber_socket:peername(Type, Socket),
 	    case orber_acl:match(Host, SearchFor, true) of
-		{true, _, 0} ->
+		{true, [], 0} ->
 		    true;
-		{true, _, Port} ->
+		{true, [], Port} ->
 		    true;
-		{true, _, {Min, Max}} when Port >= Min, Port =< Max ->
+		{true, [], {Min, Max}} when Port >= Min, Port =< Max ->
 		    true;
+		{true, Interfaces, 0} ->
+		    get_sockethost(Type, Socket),
+		    lists:member(get_sockethost(Type, Socket), Interfaces);
+		{true, Interfaces, Port} ->
+		    lists:member(get_sockethost(Type, Socket), Interfaces);
+		{true, Interfaces, {Min, Max}} when Port >= Min, Port =< Max ->
+		    lists:member(get_sockethost(Type, Socket), Interfaces);
 		_ ->
 		    false
 	    end
     end.
 
+get_sockethost(Type, Socket) ->
+    case orber_socket:peername(Type, Socket) of
+	{ok, {Addr, _Port}} ->
+	    orber_env:addr2str(Addr);
+	_ ->
+	    false
+    end.
+   
 %%------------------------------------------------------------
 %% Standard gen_server cast handle
 %%------------------------------------------------------------

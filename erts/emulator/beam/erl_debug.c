@@ -69,7 +69,6 @@
 void pps(Process*, Eterm*);
 void ptd(Process*, Eterm);
 void paranoid_display(Process*, Eterm, CIO);
-
 static int dcount;
 
 static int pdisplay1(Process* p, Eterm obj, CIO fd);
@@ -232,77 +231,51 @@ pps(Process* p, Eterm* stop)
 
 #endif /* DEBUG */
 
-/*
- * check_heap and check_memory will run through the heap silently if
- * everything is ok.  If there are strange (untagged) data in the heap
- * this check will (most likely) fail and segfault (which is the
- * intended result..). I know it could be done in a nicer way with
- * assertions etc, but right now I only want this to find holes in the
- * heap.
- */
-void check_heap(Process *p)
+#if defined(CHECK_FOR_HOLES)
+static void check_memory(Eterm *start, Eterm *end);
+
+void erts_check_for_holes(Process* p)
 {
-    check_memory(HEAP_START(p),HEAP_TOP(p));
-#ifndef NOMOVE
-    if (OLD_HEAP(p) != NULL)
-        check_memory(OLD_HEAP(p),OLD_HTOP(p));
-#endif
+    ErlHeapFragment* hf;
+    Eterm* start;
+
+    start = p->last_htop ? p->last_htop : HEAP_START(p);
+    check_memory(start, HEAP_TOP(p));
+    p->last_htop = HEAP_TOP(p);
+
+    for (hf = MBUF(p); hf != 0; hf = hf->next) {
+	if (ARITH_HEAP(p) - hf->mem < (unsigned long)hf->size) {
+	    check_memory(hf->mem, ARITH_HEAP(p));
+	    if (hf == p->last_mbuf) {
+		break;
+	    }
+	} else {
+	    if (hf == p->last_mbuf) {
+		break;
+	    }
+	    check_memory(hf->mem, hf->mem+hf->size);
+	}
+    }
+    p->last_mbuf = MBUF(p);
 }
 
-void check_memory(Eterm *start, Eterm *end)
+static void check_memory(Eterm *start, Eterm *end)
 {
     Eterm *pos = start;
-    volatile Sint check;
 
-    /* printf("Scan 0x%08x - 0x%08x\r\n",start,end); */
     while (pos < end) {
         Eterm hval = *pos++;
 
-#ifdef DEBUG
-#ifdef SHARED_HEAP
-        if (hval == ARITH_MARKER || hval == 0x01010101) {
-            continue;
-        }
-#else
-        if (hval == ARITH_MARKER) {
-            erl_exit(1, "erl_debug, check_memory: ARITH_MARKER found in heap fragment @ 0x%08x!\n",
-		     (Sint)(pos-1));
-            break;
-        }
-        else if (hval == 0x01010101) {
-            print_untagged_memory(start, end);
-            erl_exit(1, "erl_debug, check_memory: Uninitialized HAlloc'ed memory found @ 0x%08x!\n",
-		     (Sint)(pos-1));
-            break;
-        }
-#endif
-#endif
-        switch (primary_tag(hval)) {
-
-        case TAG_PRIMARY_LIST: {
-            Eterm *ptr = list_val(hval);
-            check = (Sint)*ptr;
-            continue;
-        }
-
-        case TAG_PRIMARY_BOXED: {
-            Eterm *ptr = boxed_val(hval);
-            check = (Sint)*ptr;
-            continue;
-        }
-
-        case TAG_PRIMARY_HEADER: {
-            if (header_is_thing(hval))
-                pos += (thing_arityval(hval));
-            continue;
-        }
-
-        default:
-            /* Immediate value */
-            continue;
-        }
+        if (hval == ERTS_HOLE_MARKER) {
+            fprintf(stderr, "%s, line %d: ERTS_HOLE_MARKER found at 0x%08x\r\n",
+		    __FILE__, __LINE__, (Sint)(pos-1));
+	    abort();
+	} else if (is_thing(hval)) {
+	    pos += (thing_arityval(hval));
+	}
     }
 }
+#endif
 
 /*
  * print_untagged_memory will print the contents of given memory area.

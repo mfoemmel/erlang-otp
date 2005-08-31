@@ -707,6 +707,8 @@ fold_call_1(Call, erlang, internal_is_record, [_,_,_]=Args) ->
     catch
 	error:_ -> Call
     end;
+fold_call_1(Call, erlang, apply, [Mod,Func,Args]) ->
+    simplify_apply(Call, Mod, Func, Args);
 fold_call_1(Call, erlang, N, Args) ->
     eval_erlang_call(Call, N, Args);
 fold_call_1(Call, _Mod, _Name, _Args) -> Call.
@@ -808,6 +810,26 @@ eval_failure(Call, Reason) ->
     #c_call{module=#c_atom{val=erlang},
 	    name=#c_atom{val=error},
 	    args=[core_lib:make_literal(Reason)]}.
+
+%% simplify_apply(Call0, Mod, Func, Args) -> Call
+%%  Simplify an apply/3 to a call if the number of arguments
+%%  are known at compile time.
+
+simplify_apply(Call, Mod, Func, Args) ->
+    case is_atom_or_var(Mod) andalso is_atom_or_var(Func) of
+	true -> simplify_apply_1(Args, Call, Mod, Func, []);
+	false -> Call
+    end.
+
+simplify_apply_1(#c_nil{}, Call, Mod, Func, Args) ->
+    Call#c_call{module=Mod,name=Func,args=reverse(Args)};
+simplify_apply_1(#c_cons{hd=Arg,tl=T}, Call, Mod, Func, Args) ->
+    simplify_apply_1(T, Call, Mod, Func, [Arg|Args]);
+simplify_apply_1(_, Call, _, _, _) -> Call.
+
+is_atom_or_var(#c_atom{}) -> true;
+is_atom_or_var(#c_var{}) -> true;
+is_atom_or_var(_) -> false.
 
 %% clause(Clause, Sub) -> Clause.
 
@@ -937,6 +959,7 @@ pattern_list(Ps0, Isub, Osub0) ->
 
 is_subst(#c_tuple{es=[]}) -> true;		%The empty tuple
 is_subst(#c_fname{}) -> false;			%Fun implementaion needs this
+is_subst(#c_string{}) -> false;			%Better not.
 is_subst(#c_var{}) -> true;
 is_subst(E) -> core_lib:is_atomic(E).
 

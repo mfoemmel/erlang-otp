@@ -17,7 +17,7 @@
 
 -module(httpd_request).
 
--include("http.hrl").
+-include("http_internal.hrl").
 -include("httpd.hrl").
 
 -export([parse/1, whole_body/2, validate/3, update_mod_data/5]).

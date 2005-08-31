@@ -680,38 +680,35 @@ handle_call({get_crypto_key, What}, From, #state{crypto_key_f=F}=S) ->
 handle_call({crypto_key_fun, F}, {_,_} = From, S) ->
     case S#state.crypto_key_f of
 	undefined ->
-	    if is_function(F) ->
-		    case erlang:fun_info(F, arity) of
-			{arity, 1} ->
-			    {Result, Fun, Reply} = 
-				case catch F(init) of
-				    ok ->
-					{true, F, ok};
-				    {ok, F1} when is_function(F1) ->
-					case erlang:fun_info(F1, arity) of
-					    {arity, 1} ->
-						{true, F1, ok};
-					    {arity, _} ->
-						{false, undefined, 
-						 {error, badfun}}
-					end;
-				    {error, Reason} ->
-					{false, undefined, {error, Reason}};
-				    {'EXIT', Reason} ->
-					{false, undefined, {error, Reason}}
-				end,
-			    gen_server:reply(From, Reply),
-			    erlang:garbage_collect(),
-			    NewS = case Result of
-				       true ->
-					   S#state{crypto_key_f = Fun};
-				       false ->
-					   S
-				   end,
-			    {noreply, NewS};
-			{arity, _} ->
-			    {reply, {error, badfun}, S}
-		    end;
+	    %% Don't allow tuple funs here. (They weren't allowed before,
+	    %% so there is no reason to allow them now.)
+	    if is_function(F), is_function(F, 1) ->
+		    {Result, Fun, Reply} = 
+			case catch F(init) of
+			    ok ->
+				{true, F, ok};
+			    {ok, F1} when is_function(F1) ->
+				if
+				    is_function(F1, 1) ->
+					{true, F1, ok};
+				    true ->
+					{false, undefined, 
+					 {error, badfun}}
+				end;
+			    {error, Reason} ->
+				{false, undefined, {error, Reason}};
+			    {'EXIT', Reason} ->
+				{false, undefined, {error, Reason}}
+			end,
+		    gen_server:reply(From, Reply),
+		    erlang:garbage_collect(),
+		    NewS = case Result of
+			       true ->
+				   S#state{crypto_key_f = Fun};
+			       false ->
+				   S
+			   end,
+		    {noreply, NewS};
 	       true ->
 		    {reply, {error, badfun}, S}
 	    end;

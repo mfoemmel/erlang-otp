@@ -88,7 +88,7 @@ is_a(Obj, Logical_type_id) ->
 
 is_a(?ORBER_NIL_OBJREF, _, _Ctx) ->
     false;
-is_a(Obj, Logical_type_id, Ctx) ->
+is_a(Obj, Logical_type_id, Ctx) when list(Ctx) ->
     case catch iop_ior:get_key(Obj) of
 	{'external', Key} ->
 	    orber_iiop:request(Key, '_is_a', [Logical_type_id], 
@@ -108,7 +108,13 @@ is_a(Obj, Logical_type_id, Ctx) ->
 	    orber:dbg("[~p] corba_object:is_a(~p, ~p); Invalid object reference.", 
 		      [?LINE, Obj, Logical_type_id], ?DEBUG_LEVEL),
 	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
-    end.
+    end;
+is_a(Obj, Logical_type_id, Ctx) ->
+    orber:dbg("[~p] corba_object:is_a(~p, ~p, ~p);~n"
+	      "Failed to supply a context list.", 
+	      [?LINE, Obj, Logical_type_id, Ctx], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
+
 
 non_existent(Obj) ->
     non_existent(Obj, []).
@@ -127,7 +133,7 @@ not_existent(Obj, Ctx) ->
     existent_helper(Obj, '_not_existent', Ctx).
 
 
-existent_helper(Obj, Op, Ctx) ->
+existent_helper(Obj, Op, Ctx) when list(Ctx) ->
     case catch iop_ior:get_key(Obj) of
 	{'internal', Key, _, _, _} ->
 	    case catch orber_objectkeys:get_pid(Key) of
@@ -160,7 +166,13 @@ existent_helper(Obj, Op, Ctx) ->
 			       infinity, Obj, corba:get_implicit_context(Ctx));
 	true -> 	
 	    false
-    end.
+    end;
+existent_helper(Obj, Op, Ctx) ->
+    orber:dbg("[~p] corba_object:existent_helper(~p, ~p, ~p);~n"
+	      "Failed to supply a context list.", 
+	      [?LINE, Obj, Op, Ctx], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
+    
 
 is_remote(Obj) ->
     case catch iop_ior:get_key(Obj) of

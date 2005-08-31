@@ -19,7 +19,8 @@
 
 -behaviour(gen_server).
 
--include("http.hrl").
+-include("httpc_internal.hrl").
+-include("http_internal.hrl").
 
 %% Application API
 -export([start_link/1, request/1, cancel_request/1,

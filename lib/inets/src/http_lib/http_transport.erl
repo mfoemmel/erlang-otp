@@ -17,11 +17,9 @@
 %
 -module(http_transport).
 
--export([start/1, connect/2, listen/2, listen/3, accept/2, accept/3, close/2,
+-export([start/1, connect/3, listen/2, listen/3, accept/2, accept/3, close/2,
 	 send/3, controlling_process/3, setopts/3,
 	 peername/2, resolve/0]).
-
--include("http.hrl").
 
 %%%=========================================================================
 %%%  Internal application API
@@ -55,14 +53,15 @@ start({ssl, _}) ->
     end.
 
 %%-------------------------------------------------------------------------
-%% connect(HTTPRequest, IPV6) -> ok | {error, Reason}
-%%      HTTPRequest - #request{}
+%% connect(SocketType, Address, IPV6) -> ok | {error, Reason}
+%%      SocketType - ip_comm | {ssl, SslConfig}  
+%%      Address - {Host, Port}
 %%      IPV6 - disabled | enabled
 %%                                   
 %% Description: Connects to the Host and Port specified in HTTPRequest.
 %%		uses ipv6 if possible.
 %%-------------------------------------------------------------------------
-connect(#request{scheme = http, address = {Host, Port}}, enabled) ->
+connect(ip_comm, {Host, Port}, enabled) ->
     {Opts, NewHost} = 
 	case (catch inet:getaddr(Host, inet6)) of
 	    {ok, IPAddr} ->
@@ -74,13 +73,12 @@ connect(#request{scheme = http, address = {Host, Port}}, enabled) ->
 	end,
     gen_tcp:connect(NewHost, Port, Opts);
 
-connect(#request{scheme = http, address = {Host, Port}}, disabled) ->
+connect(ip_comm, {Host, Port}, disabled) ->
     Opts = [binary, {packet, 0}, {active, false}, {reuseaddr,true}],
     gen_tcp:connect(Host, Port, Opts);
 
-connect(#request{scheme = https, settings = Settings,
-		 address = {Host, Port}}, _) ->
-    Opts = [binary, {active, false}] ++ Settings#http_options.ssl,
+connect({ssl, SslConfig}, {Host, Port}, _) ->
+    Opts = [binary, {active, false}] ++ SslConfig,
     ssl:connect(Host, Port, Opts).
 
 %%-------------------------------------------------------------------------
@@ -148,69 +146,51 @@ controlling_process({ssl, _}, Socket, NewOwner) ->
     ssl:controlling_process(Socket, NewOwner).
 
 %%-------------------------------------------------------------------------
-%% setopts(RequestType, Socket, Options) -> ok | {error, Reason}
-%%     RequestType - http | https
+%% setopts(SocketType, Socket, Options) -> ok | {error, Reason}
+%%     SocketType - ip_comm | {ssl, _}
 %%     Socket - socket()
 %%     Options - list()                              
 %% Description: Sets one or more options for a socket, using either
-%% gen_tcl or ssl.
+%% gen_tcp or ssl.
 %%-------------------------------------------------------------------------
-setopts(http, Socket, Options) ->
-    inet:setopts(Socket,Options);
 setopts(ip_comm, Socket, Options) ->
-    setopts(http, Socket,Options);
-
+    inet:setopts(Socket,Options);
 setopts({ssl, _}, Socket, Options) ->
-    setopts(https, Socket, Options);
-setopts(https, Socket, Options) ->
     ssl:setopts(Socket, Options).
 
 %%-------------------------------------------------------------------------
 %% send(RequestOrSocketType, Socket, Message) -> ok | {error, Reason}
-%%     RequestOrSocketType - http | https | ip_comm | {ssl, _}
+%%     SocketType - ip_comm | {ssl, _}
 %%     Socket - socket()
 %%     Message - list() | binary()                           
 %% Description: Sends a packet on a socket, using either gen_tcp or ssl.
 %%-------------------------------------------------------------------------
-send(http, Socket, Message) ->
+send(ip_comm, Socket, Message) ->
     gen_tcp:send(Socket, Message);
-send(ip_comm, S, M) ->
-    send(http, S, M);
-
-send({ssl, _}, S, M) ->
-    send(https, S, M);
-send(https, Socket, Message) ->
+send({ssl, _}, Socket, Message) ->
     ssl:send(Socket, Message).
 
 %%-------------------------------------------------------------------------
-%% close(RequestOrSocketType, Socket) -> ok | {error, Reason}
-%%     RequestOrSocketType - http | https | ip_comm | {ssl, _}
+%% close(SocketType, Socket) -> ok | {error, Reason}
+%%     SocketType - ip_comm | {ssl, _}
 %%     Socket - socket()  
 %%                                   
 %% Description: Closes a socket, using either gen_tcp or ssl.
 %%-------------------------------------------------------------------------
-close(http, Socket) ->
+close(ip_comm, Socket) ->
     gen_tcp:close(Socket);
-close(ip_comm, S) ->
-    close(http, S);
-
-close({ssl, _}, S) ->
-    close(https, S);
-close(https,Socket) ->
+close({ssl, _}, Socket) ->
     ssl:close(Socket).
 
 %%-------------------------------------------------------------------------
 %% peername(RequestOrSocketType, Socket) -> ok | {error, Reason}
-%%     RequestOrSocketType - http | https | ip_comm | {ssl, _}
+%%     SocketType - ip_comm | {ssl, _}
 %%     Socket - socket() 
 %%                          
 %% Description: Returns the address and port for the other end of a connection,
 %% usning either gen_tcp or ssl.
 %%-------------------------------------------------------------------------
 peername(ip_comm, Socket) ->
-    peername(http, Socket);
-
-peername(http, Socket) ->
     case inet:peername(Socket) of
 	{ok,{{A, B, C, D}, Port}} ->
 	    PeerName = integer_to_list(A)++"."++integer_to_list(B)++"."++
@@ -230,10 +210,7 @@ peername(http, Socket) ->
 	    {-1, "unknown"}
     end;
 
-peername({ssl,_SSLConfig}, Socket) ->
-    peername(https, Socket);
-
-peername(https, Socket) ->
+peername({ssl, _}, Socket) ->
     case ssl:peername(Socket) of
 	{ok,{{A, B, C, D}, Port}} ->
 	    PeerName = integer_to_list(A)++"."++integer_to_list(B)++"."++
@@ -242,6 +219,7 @@ peername(https, Socket) ->
 	{error, _} ->
 	    {-1, "unknown"}
     end.
+
 %%-------------------------------------------------------------------------
 %% resolve() -> HostName
 %%     HostName - string()
@@ -249,24 +227,45 @@ peername(https, Socket) ->
 %% Description: Returns the local hostname. 
 %%-------------------------------------------------------------------------
 resolve() ->
-    {ok,Name} = inet:gethostname(),
+    {ok, Name} = inet:gethostname(),
     Name.
+
 
 %%%========================================================================
 %%% Internal functions
 %%%========================================================================
+
+%% Address any comes from directive: BindAddress "*"
+sock_opt(ip_comm, any = Addr, Opt) -> 
+    sock_opt1([{ip, Addr} | Opt]);
 sock_opt(ip_comm, undefined, Opt) -> 
-    case (catch inet:getaddr("localhost",inet6)) of
-	{ok, _} ->
-	    [inet6, {packet,0}, {active,false} | Opt];
-	_ ->
-	    [{packet,0}, {active,false} | Opt]
-    end;
+    sock_opt1(Opt);
+sock_opt(_, any = Addr, Opt) ->
+    sock_opt2([{ip, Addr} | Opt]);
 sock_opt(_, undefined, Opt) ->
-    [{packet,0}, {active,false} | Opt];
+    sock_opt2(Opt);
 sock_opt(_, Addr, Opt) when size(Addr) == 4 -> 
-    [{ip, Addr}, {packet,0}, {active,false} | Opt];
+    sock_opt2([{ip, Addr} | Opt]);
 sock_opt(ip_comm, Addr, Opt) -> 
-    [inet6, {ip, Addr}, {packet,0}, {active,false} | Opt];
+    sock_opt2([inet6, {ip, Addr} | Opt]);
 sock_opt(_, Addr, Opt) ->
-    [{ip, Addr}, {packet,0}, {active,false} | Opt].
+    sock_opt2([{ip, Addr} | Opt]).
+
+sock_opt1(Opt) ->
+    case has_inet6_supported() of
+	yes ->
+	    sock_opt2([inet6 | Opt]);
+	no ->
+	    sock_opt2(Opt)
+    end.
+
+sock_opt2(Opt) ->
+    [{packet, 0}, {active, false} | Opt].
+
+has_inet6_supported() ->
+    case (catch inet:getaddr("localhost", inet6)) of
+	{ok, _} ->
+	    yes;
+	_ ->
+	    no
+    end.

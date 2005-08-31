@@ -43,7 +43,7 @@ MODULES = \
 	http_request \
 	http_response
 
-HRL_FILES = http.hrl 
+HRL_FILES = http_internal.hrl
 
 ERL_FILES = $(MODULES:%=%.erl)
 
@@ -57,7 +57,7 @@ INETS_FLAGS = -D'SERVER_SOFTWARE="inets/$(VSN)"' \
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
+ERL_FLAGS +=  -I ../inets_app
 
 ifeq ($(WARN_UNUSED_WARS),true)
 ERL_COMPILE_FLAGS += +warn_unused_vars

@@ -1,32 +1,37 @@
 %% -*- erlang-indent-level: 2 -*-
 %%-----------------------------------------------------------------------
-%% File    : hipe_coalescing_regalloc.erl
-%% Authors : Andreas Wallin <d96awa@it.uu.se>
-%%           Thorild Selén <d95ths@.it.uu.se>
-%%           Ingemar Åberg <d95ina@it.uu.se>
+%% File    : hipe_optimistic_regalloc.erl
+%% Authors : NilsOla Linnermark <nilsola@abc.se>
+%%           Petter Holmberg <petter.holmberg@usa.net>
 %% Purpose : Play paintball with registers on a target machine.  We win
-%%           if they are all colored.  This is an iterated coalescing
+%%           if they are all colored.  This is an optimistic coalescing
 %%           register allocator.
-%% Created : 4 Mar 2000
+%% Created : Spring 2005
 %%-----------------------------------------------------------------------
 
 -module(hipe_optimistic_regalloc).
 -export([regalloc/5]).
 
-%%-ifndef(DEBUG).
+-ifndef(DEBUG).
 %%-define(DEBUG,true).
-%%-endif.
-%-ifndef(COMPARE_ITERATED_OPTIMISTIC).
-%-define(COMPARE_ITERATED_OPTIMISTIC, true).
-%-endif.
+-else.
+-ifndef(COMPARE_ITERATED_OPTIMISTIC).
+%% If this macro is turned on you can easily compare 
+%% each intermediate step in the iterated coalescing
+%% register allocator and the optimitsitc coalescing
+%% register allocator. This is useful for debugging -
+%% many small erlang functions should render the same
+%% register allocaton for both allocators.
+-define(COMPARE_ITERATED_OPTIMISTIC, true).
+-endif.
+-endif.
 -include("../main/hipe.hrl").
--ifdef(DEBUG).
+-ifdef(DEBUG_PRINTOUTS).
 -define(print_adjacent(IG), hipe_ig:print_adjacent(IG)).
 -define(print_degrees(IG), hipe_ig:print_degrees(IG)).
 -define(print_spill_costs(IG),  hipe_ig:print_spill_costs(IG)).
 -define(mov_print_memberships(MV),  hipe_moves:print_memberships(MV)).
 -define(reg_print_memberships(WL), hipe_reg_worklists:print_memberships(WL)).
--define(opt_print_memberships(WL), hipe_optimistic_worklists:print_memberships(WL)).
 -define(print_alias(A), printAlias(A)).
 -define(print_colors(T,C), printColors(T,C)).
 -else.
@@ -35,7 +40,6 @@
 -define(print_spill_costs(IG), no_print).
 -define(mov_print_memberships(MV), no_print).
 -define(reg_print_memberships(WL), no_print).
--define(opt_print_memberships(WL), no_print).
 -define(print_alias(A), no_print).
 -define(print_colors(T,C), no_print).
 -endif.
@@ -64,20 +68,15 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   %% Build interference graph
   ?debug_msg("Build IG\n",[]),
   IG_O = hipe_ig:build(CFG, Target),
-  IG_N = hipe_ig:build(CFG, Target),
-  %% ?debug_msg("adjset: ~p\n",[element(2, IG)]),
-  %% ?debug_msg("adjset: ~p\n",[hipe_ig:adj_set(IG_N)]),
-   ?debug_msg("adjlist: ~p\n",[hipe_ig:adj_list(IG_N)]),
-  %% ?debug_msg("adjset array: ~.16b\n",[element(3, hipe_ig:adj_set(IG_N))]),
-  ?debug_msg("IG_N:\n",[]),
-  %%?debug_msg("IG_N:\n ~p\n",[IG_N]),
-  ?print_adjacent(IG_N),
-  ?print_degrees(IG_N),
-  ?print_spill_costs(IG_N),
+  IG = hipe_ig:build(CFG, Target),
+  ?debug_msg("adjlist: ~p\n",[hipe_ig:adj_list(IG)]),
+  ?debug_msg("IG:\n",[]),
+  ?print_adjacent(IG),
+  ?print_degrees(IG),
+  ?print_spill_costs(IG),
 
-  SavedSpillCosts = hipe_ig:spill_costs(IG_N),
-  %%SavedAdjSet = hipe_ig:adj_set(IG_N),
-  SavedAdjList = hipe_ig:adj_list(IG_N),
+  SavedSpillCosts = hipe_ig:spill_costs(IG),
+  SavedAdjList = hipe_ig:adj_list(IG),
 
   ?debug_msg("Init\n",[]),
   No_temporaries = Target:number_of_temporaries(CFG),
@@ -90,29 +89,27 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   %% Add registers with their own coloring
   ?debug_msg("Moves\n",[]),
   Move_sets_O = hipe_moves:new(IG_O),
-  Move_sets_N = hipe_moves:new(IG_N),
-  ?debug_msg("Move_sets:\n ~p\n",[Move_sets_O]),
-  ?mov_print_memberships(Move_sets_O),
+  Move_sets = hipe_moves:new(IG),
+  ?debug_msg("Move_sets:\n ~p\n",[Move_sets]),
+  ?mov_print_memberships(Move_sets),
 
   ?debug_msg("Build Worklist\n",[]),
   Worklists_O = hipe_reg_worklists:new(IG_O, Target, CFG, Move_sets_O, K, No_temporaries),
   ?debug_msg("Worklists:\n ~p\n", [Worklists_O]),
   ?reg_print_memberships(Worklists_O),
 
-  Worklists_N = hipe_optimistic_worklists:new(IG_N, Target, CFG, K, No_temporaries),
-  ?debug_msg("New Worklists:\n ~p\n", [Worklists_N]),
-  ?opt_print_memberships(Worklists_N),
+  Worklists = hipe_reg_worklists:new(IG, Target, CFG, K, No_temporaries),
+  ?debug_msg("New Worklists:\n ~p\n", [Worklists]),
+  ?reg_print_memberships(Worklists),
 
   Alias_O = initAlias(No_temporaries),
-  Alias_N = initAlias(No_temporaries),
-  %% ?debug_msg("Alias: ~p\n",[Alias]),
-  ?print_alias(Alias_N),
+  Alias = initAlias(No_temporaries),
+  ?print_alias(Alias),
 
   ?debug_msg("Do coloring\n~p~n",[Worklists_O]),
   {IG0_O, Worklists0_O, Moves0_O, Alias0_O} = 
     do_coloring(IG_O, Worklists_O, Move_sets_O, Alias_O,
 		K, SpillLimit, Target),
-  %% ?debug_msg("SelStk0 ~w\n",[SelStk0]),
   ?debug_msg("IG_O after color:\n ~p\n",[IG0_O]),
   ?print_adjacent(IG0_O),
   ?print_degrees(IG0_O),
@@ -122,42 +119,40 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   ?debug_msg("Worklists after color:\n ~p\n", [Worklists0_O]),
   ?reg_print_memberships(Worklists0_O),
 
-  {IG0_N, Moves0_N, Alias0_N, Worklists0_N} = 
-    do_coalescing(IG_N, Worklists_N, Move_sets_N, Alias_N, K, Target),
-  ?debug_msg("IG_N after coalescing:\n",[]),
-  %%?debug_msg("IG_N after coalescing:\n ~p\n",[IG0_N]),
-  ?print_adjacent(IG0_N),
-  ?print_degrees(IG0_N),
-  ?print_spill_costs(IG0_N),
-  ?debug_msg("Move_sets after coalescing:\n ~p\n",[Moves0_N]),
-  ?mov_print_memberships(Moves0_N),
+  {IG0, Moves0, Alias0, Worklists0} = 
+    do_coalescing(IG, Worklists, Move_sets, Alias, K, Target),
+  ?debug_msg("IG after coalescing:\n",[]),
+  ?print_adjacent(IG0),
+  ?print_degrees(IG0),
+  ?print_spill_costs(IG0),
+  ?debug_msg("Move_sets after coalescing:\n ~p\n",[Moves0]),
+  ?mov_print_memberships(Moves0),
   ?debug_msg("New Worklists after coalescing:\n ~p\n",
-             [Worklists0_N]),
-  ?opt_print_memberships(Worklists0_N),
+             [Worklists0]),
+  ?reg_print_memberships(Worklists0),
 
-  {IG1_N, Worklists1_N, Moves1_N, Alias1_N} = 
-    do_simplify_or_spill(IG0_N, Worklists0_N, Moves0_N, Alias0_N, 
+  {IG1, Worklists1, Moves1, Alias1} = 
+    do_simplify_or_spill(IG0, Worklists0, Moves0, Alias0, 
                          K, SpillLimit, Target),
-  ?debug_msg("IG_N after simplify_or_spill:\n",[]),
-  %%?debug_msg("IG_N after simplify_or_spill:\n ~p\n",[IG1_N]),
-  ?print_adjacent(IG1_N),
-  ?print_degrees(IG1_N),
-  ?print_spill_costs(IG1_N),
+  ?debug_msg("IG after simplify_or_spill:\n",[]),
+  ?print_adjacent(IG1),
+  ?print_degrees(IG1),
+  ?print_spill_costs(IG1),
   ?debug_msg("Saved spill costs ~p~n", [SavedSpillCosts]),
-  ?debug_msg("Move_sets after simplify_or_spill:\n ~p\n",[Moves1_N]),
-  ?mov_print_memberships(Moves1_N),
+  ?debug_msg("Move_sets after simplify_or_spill:\n ~p\n",[Moves1]),
+  ?mov_print_memberships(Moves1),
   ?debug_msg("New Worklists after simplify_or_spill:\n ~p\n",
-             [Worklists1_N]),
-  ?opt_print_memberships(Worklists1_N),
-  ?print_alias(Alias1_N),
+             [Worklists1]),
+  ?reg_print_memberships(Worklists1),
+  ?print_alias(Alias1),
 
   %% only for testing undoCoalescing and member_coalesced_to
-  %test_undoCoalescing(No_temporaries, Alias1_N, Worklists1_N),
+  %test_undoCoalescing(No_temporaries, Alias1, Worklists1),
 
   %% only for testing fixAdj
-  %?debug_msg("adj_lists_before_fixAdj ~n~p~n", [hipe_ig:adj_list(IG1_N)]),
-  %IG2_N = test_fixAdj(No_temporaries, SavedAdjList, IG1_N, Target),
-  %?debug_msg("adj_lists__after_fixAdj ~n~p~n", [hipe_ig:adj_list(IG2_N)]),
+  %?debug_msg("adj_lists_before_fixAdj ~n~p~n", [hipe_ig:adj_list(IG1)]),
+  %IG2 = test_fixAdj(No_temporaries, SavedAdjList, IG1, Target),
+  %?debug_msg("adj_lists__after_fixAdj ~n~p~n", [hipe_ig:adj_list(IG2)]),
 
   ?debug_msg("Init node sets\n",[]),
   Node_sets = hipe_node_sets:new(),
@@ -171,59 +166,54 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
 
   ?debug_msg("----------------------Assign colors _N\n",[]),
 
-  Stack_N = hipe_optimistic_worklists:stack(Worklists1_N), 
-  ?debug_msg("The stack _N ~p~n", [Stack_N]), 
-  %SortedStack = sort_stack(Stack_N),
+  Stack = hipe_reg_worklists:stack(Worklists1), 
+  ?debug_msg("The stack _N ~p~n", [Stack]), 
+  %SortedStack = sort_stack(Stack),
   %?debug_msg("The stack _N ~p~n", [SortedStack]), 
 
   %?debug_msg("Nodes _N ~w~n", [Node_sets1]),
 
-  {Color1_N,Node_sets2_N,Alias2_N} =
-    assignColors_N(Worklists1_N, Stack_N, Node_sets1, Color0, 
-        	 No_temporaries, SavedAdjList, SavedSpillCosts, IG1_N, Alias1_N, All_colors, Target),
-  ?print_colors(No_temporaries, Color1_N),
-  ?debug_msg("Nodes:~w\nNodes2_N:~w\nNo_temporaries:~w\n",[Node_sets,Node_sets2_N,No_temporaries]),
-
-  ?debug_msg("Build mapping _N ~w\n",[Node_sets2_N]),
-  Coloring_N = build_namelist_N(Node_sets2_N,SpillIndex,Alias2_N,Color1_N),
-  ?debug_msg("Coloring_N ~p\n",[Coloring_N]),
-  SortedColoring_N = { sort_stack(element(1, Coloring_N)), element(2, Coloring_N)},
-  ?debug_msg("SortedColoring_N ~p\n",[SortedColoring_N]),
-  %%Coloring_N.
-  ?debug_msg("----------------------Assign colors _O\n",[]),
-  {Color1,Node_sets2} =
-    assignColors_O(hipe_reg_worklists:stack(Worklists0_O), Node_sets1, Color0, 
-		 Alias0_O, All_colors, Target),
+  {Color1,Node_sets2,Alias2} =
+    assignColors(Worklists1, Stack, Node_sets1, Color0, 
+        	 No_temporaries, SavedAdjList, SavedSpillCosts, IG1, Alias1, All_colors, Target),
   ?print_colors(No_temporaries, Color1),
   ?debug_msg("Nodes:~w\nNodes2:~w\nNo_temporaries:~w\n",[Node_sets,Node_sets2,No_temporaries]),
 
-  ?debug_msg("Build mapping ~w\n",[Node_sets2]),
-  Coloring = build_namelist(Node_sets2,SpillIndex,Alias0_O,Color1),
+  ?debug_msg("Build mapping _N ~w\n",[Node_sets2]),
+  Coloring = build_namelist(Node_sets2,SpillIndex,Alias2,Color1),
   ?debug_msg("Coloring ~p\n",[Coloring]),
   SortedColoring = { sort_stack(element(1, Coloring)), element(2, Coloring)},
   ?debug_msg("SortedColoring ~p\n",[SortedColoring]),
-  sanity_compare(SortedColoring, SortedColoring_N),
-  Coloring_N.
+  %%Coloring.
+  ?debug_msg("----------------------Assign colors _O\n",[]),
+  {Color1_O,Node_sets2_O} =
+    assignColors_O(hipe_reg_worklists:stack(Worklists0_O), Node_sets1, Color0, 
+		 Alias0_O, All_colors, Target),
+  ?print_colors(No_temporaries, Color1_O),
+  ?debug_msg("Nodes:~w\nNodes2:~w\nNo_temporaries:~w\n",[Node_sets,Node_sets2_O,No_temporaries]),
+
+  ?debug_msg("Build mapping ~w\n",[Node_sets2_O]),
+  Coloring_O = build_namelist_O(Node_sets2_O,SpillIndex,Alias0_O,Color1_O),
+  ?debug_msg("Coloring_O ~p\n",[Coloring_O]),
+  SortedColoring_O = { sort_stack(element(1, Coloring_O)), element(2, Coloring_O)},
+  ?debug_msg("SortedColoring_O ~p\n",[SortedColoring_O]),
+  sanity_compare(SortedColoring_O, SortedColoring),
+  Coloring.
 -else.
 regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   ?debug_msg("optimistic ~w\n",[Target]),
   ?debug_msg("CFG: ~p\n",[CFG]),
   %% Build interference graph
   ?debug_msg("Build IG\n",[]),
-  IG_N = hipe_ig:build(CFG, Target),
-  %% ?debug_msg("adjset: ~p\n",[element(2, IG)]),
-  %% ?debug_msg("adjset: ~p\n",[hipe_ig:adj_set(IG_N)]),
-   ?debug_msg("adjlist: ~p\n",[hipe_ig:adj_list(IG_N)]),
-  %% ?debug_msg("adjset array: ~.16b\n",[element(3, hipe_ig:adj_set(IG_N))]),
-  ?debug_msg("IG_N:\n",[]),
-  %%?debug_msg("IG_N:\n ~p\n",[IG_N]),
-  ?print_adjacent(IG_N),
-  ?print_degrees(IG_N),
-  ?print_spill_costs(IG_N),
+  IG = hipe_ig:build(CFG, Target),
+  ?debug_msg("adjlist: ~p\n",[hipe_ig:adj_list(IG)]),
+  ?debug_msg("IG:\n",[]),
+  ?print_adjacent(IG),
+  ?print_degrees(IG),
+  ?print_spill_costs(IG),
 
-  SavedSpillCosts = hipe_ig:spill_costs(IG_N),
-  %%SavedAdjSet = hipe_ig:adj_set(IG_N),
-  SavedAdjList = hipe_ig:adj_list(IG_N),
+  SavedSpillCosts = hipe_ig:spill_costs(IG),
+  SavedAdjList = hipe_ig:adj_list(IG),
 
   ?debug_msg("Init\n",[]),
   No_temporaries = Target:number_of_temporaries(CFG),
@@ -235,57 +225,51 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
 
   %% Add registers with their own coloring
   ?debug_msg("Moves\n",[]),
-  Move_sets_N = hipe_moves:new(IG_N),
-  ?debug_msg("Move_sets:\n ~p\n",[Move_sets_N]),
-  ?mov_print_memberships(Move_sets_N),
+  Move_sets = hipe_moves:new(IG),
+  ?debug_msg("Move_sets:\n ~p\n",[Move_sets]),
+  ?mov_print_memberships(Move_sets),
 
   ?debug_msg("Build Worklist\n",[]),
 
-  Worklists_N = hipe_optimistic_worklists:new(IG_N, Target, CFG, K, No_temporaries),
-  ?debug_msg("New Worklists:\n ~p\n", [Worklists_N]),
-  ?opt_print_memberships(Worklists_N),
+  Worklists = hipe_reg_worklists:new(IG, Target, CFG, K, No_temporaries),
+  ?debug_msg("New Worklists:\n ~p\n", [Worklists]),
+  ?reg_print_memberships(Worklists),
 
-  Alias_N = initAlias(No_temporaries),
-  %% ?debug_msg("Alias: ~p\n",[Alias]),
-  ?print_alias(Alias_N),
+  Alias = initAlias(No_temporaries),
+  ?print_alias(Alias),
 
-  {IG0_N, Moves0_N, Alias0_N, Worklists0_N} = 
-    do_coalescing(IG_N, Worklists_N, Move_sets_N, Alias_N, K, Target),
-  ?debug_msg("IG_N after coalescing:\n",[]),
-  %%?debug_msg("IG_N after coalescing:\n ~p\n",[IG0_N]),
-  ?print_adjacent(IG0_N),
-  ?print_degrees(IG0_N),
-  ?print_spill_costs(IG0_N),
-  ?debug_msg("Move_sets after coalescing:\n ~p\n",[Moves0_N]),
-  ?mov_print_memberships(Moves0_N),
+  {IG0, Moves0, Alias0, Worklists0} = 
+    do_coalescing(IG, Worklists, Move_sets, Alias, K, Target),
+  ?debug_msg("IG after coalescing:\n",[]),
+  ?print_adjacent(IG0),
+  ?print_degrees(IG0),
+  ?print_spill_costs(IG0),
+  ?debug_msg("Move_sets after coalescing:\n ~p\n",[Moves0]),
+  ?mov_print_memberships(Moves0),
   ?debug_msg("New Worklists after coalescing:\n ~p\n",
-             [Worklists0_N]),
-  ?opt_print_memberships(Worklists0_N),
+             [Worklists0]),
+  ?reg_print_memberships(Worklists0),
 
-  {IG1_N, Worklists1_N, _Moves1_N, Alias1_N} = 
-    do_simplify_or_spill(IG0_N, Worklists0_N, Moves0_N, Alias0_N, 
+  {IG1, Worklists1, _Moves1, Alias1} = 
+    do_simplify_or_spill(IG0, Worklists0, Moves0, Alias0, 
                          K, SpillLimit, Target),
-  ?debug_msg("IG_N after simplify_or_spill:\n",[]),
-  %%?debug_msg("IG_N after simplify_or_spill:\n ~p\n",[IG1_N]),
-  ?print_adjacent(IG1_N),
-  ?print_degrees(IG1_N),
-  ?print_spill_costs(IG1_N),
+  ?debug_msg("IG after simplify_or_spill:\n",[]),
+  ?print_adjacent(IG1),
+  ?print_degrees(IG1),
+  ?print_spill_costs(IG1),
   ?debug_msg("Saved spill costs ~p~n", [SavedSpillCosts]),
-  ?debug_msg("Move_sets after simplify_or_spill:\n not printed\n",[]),
-  %?debug_msg("Move_sets after simplify_or_spill:\n ~p\n",[Moves1_N]),
-  %?mov_print_memberships(_Moves1_N),
   ?debug_msg("New Worklists after simplify_or_spill:\n ~p\n",
-             [Worklists1_N]),
-  ?opt_print_memberships(Worklists1_N),
-  ?print_alias(Alias1_N),
+             [Worklists1]),
+  ?reg_print_memberships(Worklists1),
+  ?print_alias(Alias1),
 
   %% only for testing undoCoalescing and member_coalesced_to
-  %test_undoCoalescing(No_temporaries, Alias1_N, Worklists1_N),
+  %test_undoCoalescing(No_temporaries, Alias1, Worklists1),
 
   %% only for testing fixAdj
-  %?debug_msg("adj_lists_before_fixAdj ~n~p~n", [hipe_ig:adj_list(IG1_N)]),
-  %IG2_N = test_fixAdj(No_temporaries, SavedAdjList, IG1_N, Target),
-  %?debug_msg("adj_lists__after_fixAdj ~n~p~n", [hipe_ig:adj_list(IG2_N)]),
+  %?debug_msg("adj_lists_before_fixAdj ~n~p~n", [hipe_ig:adj_list(IG1)]),
+  %IG2 = test_fixAdj(No_temporaries, SavedAdjList, IG1, Target),
+  %?debug_msg("adj_lists__after_fixAdj ~n~p~n", [hipe_ig:adj_list(IG2)]),
 
   ?debug_msg("Init node sets\n",[]),
   Node_sets = hipe_node_sets:new(),
@@ -299,23 +283,23 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
 
   ?debug_msg("----------------------Assign colors _N\n",[]),
 
-  Stack_N = hipe_optimistic_worklists:stack(Worklists1_N), 
-  ?debug_msg("The stack _N ~p~n", [Stack_N]), 
-  %SortedStack = sort_stack(Stack_N),
+  Stack = hipe_reg_worklists:stack(Worklists1), 
+  ?debug_msg("The stack _N ~p~n", [Stack]), 
+  %SortedStack = sort_stack(Stack),
   %?debug_msg("The stack _N ~p~n", [SortedStack]), 
 
   %?debug_msg("Nodes _N ~w~n", [Node_sets1]),
 
-  {Color1_N,Node_sets2_N,Alias2_N} =
-    assignColors_N(Worklists1_N, Stack_N, Node_sets1, Color0, 
-        	 No_temporaries, SavedAdjList, SavedSpillCosts, IG1_N, Alias1_N, All_colors, Target),
-  ?print_colors(No_temporaries, Color1_N),
-  ?debug_msg("Nodes:~w\nNodes2_N:~w\nNo_temporaries:~w\n",[Node_sets,Node_sets2_N,No_temporaries]),
+  {Color1,Node_sets2,Alias2} =
+    assignColors(Worklists1, Stack, Node_sets1, Color0, 
+        	 No_temporaries, SavedAdjList, SavedSpillCosts, IG1, Alias1, All_colors, Target),
+  ?print_colors(No_temporaries, Color1),
+  ?debug_msg("Nodes:~w\nNodes2:~w\nNo_temporaries:~w\n",[Node_sets,Node_sets2,No_temporaries]),
 
-  ?debug_msg("Build mapping _N ~w\n",[Node_sets2_N]),
-  Coloring_N = build_namelist_N(Node_sets2_N,SpillIndex,Alias2_N,Color1_N),
-  ?debug_msg("Coloring_N ~p\n",[Coloring_N]),
-  Coloring_N.
+  ?debug_msg("Build mapping _N ~w\n",[Node_sets2]),
+  Coloring = build_namelist(Node_sets2,SpillIndex,Alias2,Color1),
+  ?debug_msg("Coloring ~p\n",[Coloring]),
+  Coloring.
 -endif.
 
 %%----------------------------------------------------------------------
@@ -348,7 +332,7 @@ do_coloring(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
   Spill    = not(hipe_reg_worklists:is_empty_spill(Worklists)),
   if Simplify == true ->
       {IG0, Worklists0, Moves0} = 
-	simplify(hipe_reg_worklists:simplify(Worklists),
+	simplify_O(hipe_reg_worklists:simplify(Worklists),
 		 IG, 
 		 Worklists, 
 		 Moves, 
@@ -367,7 +351,7 @@ do_coloring(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
 		  K, SpillLimit, Target);
      Spill == true ->
       {Worklists0, Moves0} = 
-	selectSpill(Worklists, Moves, IG, K, Alias, SpillLimit),
+	selectSpill_O(Worklists, Moves, IG, K, Alias, SpillLimit),
       do_coloring(IG, Worklists0, Moves0, Alias, 
 		  K, SpillLimit, Target);
      true -> % Catchall case
@@ -400,7 +384,7 @@ do_coalescing(IG, Worklists, Moves, Alias, K, Target) ->
       {IG, Moves, Alias, Worklists};
     _ ->
       {Moves0, IG0, Alias0, Worklists0} =
-	coalesce_N(Moves, IG, Worklists, Alias, K, Target),
+	coalesce(Moves, IG, Worklists, Alias, K, Target),
       do_coalescing(IG0, Worklists0, Moves0, Alias0, K, Target)
   end.
 
@@ -426,11 +410,11 @@ do_coalescing(IG, Worklists, Moves, Alias, K, Target) ->
 %%----------------------------------------------------------------------
 
 do_simplify_or_spill(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
-  Simplify = not(hipe_optimistic_worklists:is_empty_simplify(Worklists)),
-  Spill    = not(hipe_optimistic_worklists:is_empty_spill(Worklists)),
+  Simplify = not(hipe_reg_worklists:is_empty_simplify(Worklists)),
+  Spill    = not(hipe_reg_worklists:is_empty_spill(Worklists)),
   if Simplify == true ->
       {IG0, Worklists0, Moves0} = 
-	simplify_N(hipe_optimistic_worklists:simplify(Worklists),
+	simplify(hipe_reg_worklists:simplify(Worklists),
 		 IG, 
 		 Worklists, 
 		 Moves, 
@@ -439,7 +423,7 @@ do_simplify_or_spill(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
 		  K, SpillLimit, Target);
      Spill == true ->
       Worklists0 = 
-	selectSpill_N(Worklists, IG, SpillLimit),
+	selectSpill(Worklists, IG, SpillLimit),
       do_simplify_or_spill(IG, Worklists0, Moves, Alias, 
 		  K, SpillLimit, Target);
      true -> % Catchall case
@@ -461,8 +445,6 @@ do_simplify_or_spill(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
 %%----------------------------------------------------------------------
 
 adjacent(Node, IG, Worklists) ->
-  %% XXX ERROR: CALLED WITH 'Worklists' FROM BOTH hipe_optimistic_worklists
-  %% AND hipe_reg_worklists. THIS IS NOT GUARANTEED TO WORK.
   Adjacent_edges = hipe_ig:node_adj_list(Node, IG),
   hipe_reg_worklists:non_stacked_or_coalesced_nodes(Adjacent_edges, Worklists).
 
@@ -485,16 +467,16 @@ adjacent(Node, IG, Worklists) ->
 %%----------------------------------------------------------------------
 
 -ifdef(COMPARE_ITERATED_OPTIMISTIC).
-simplify([], IG, Worklists, Moves, _K) -> 
+simplify_O([], IG, Worklists, Moves, _K) -> 
   {IG, Worklists, Moves};
-simplify([Node|Nodes], IG, Worklists, Moves, K) ->
+simplify_O([Node|Nodes], IG, Worklists, Moves, K) ->
   Worklists0 = hipe_reg_worklists:remove_simplify(Node, Worklists),
   ?debug_msg("putting ~w on stack~n",[Node]),
   Adjacent = adjacent(Node, IG, Worklists0),
   Worklists01 = hipe_reg_worklists:push_stack(Node, Adjacent, Worklists0),
   {New_ig, Worklists1, New_moves} =
-    decrement_degree(Adjacent, IG, Worklists01, Moves, K),
-  simplify(Nodes, New_ig, Worklists1, New_moves, K).
+    decrement_degree_O(Adjacent, IG, Worklists01, Moves, K),
+  simplify_O(Nodes, New_ig, Worklists1, New_moves, K).
 -endif.
 
 %%----------------------------------------------------------------------
@@ -515,18 +497,18 @@ simplify([Node|Nodes], IG, Worklists, Moves, K) ->
 %%     Moves       --  An updated moves data-structure
 %%----------------------------------------------------------------------
 
-simplify_N([], IG, Worklists, Moves, _K) -> 
+simplify([], IG, Worklists, Moves, _K) -> 
   {IG, Worklists, Moves};
-simplify_N([Node|Nodes], IG, Worklists, Moves, K) ->
+simplify([Node|Nodes], IG, Worklists, Moves, K) ->
   Worklists0 = 
-    hipe_optimistic_worklists:remove_simplify(Node, Worklists),
+    hipe_reg_worklists:remove_simplify(Node, Worklists),
   ?debug_msg("putting ~w on stack~n",[Node]),
   Adjacent = adjacent(Node, IG, Worklists0),
   Worklists01 = 
-    hipe_optimistic_worklists:push_stack(Node, Adjacent, Worklists0),
+    hipe_reg_worklists:push_stack(Node, Adjacent, Worklists0),
   {New_ig, Worklists1} =
-    decrement_degree_N(Adjacent, IG, Worklists01, K),
-  simplify_N(Nodes, New_ig, Worklists1, Moves, K).
+    decrement_degree(Adjacent, IG, Worklists01, K),
+  simplify(Nodes, New_ig, Worklists1, Moves, K).
 
 %%----------------------------------------------------------------------
 %% Function:    decrement_degree
@@ -548,9 +530,9 @@ simplify_N([Node|Nodes], IG, Worklists, Moves, K) ->
 %%----------------------------------------------------------------------
 
 -ifdef(COMPARE_ITERATED_OPTIMISTIC).
-decrement_degree([], IG, Worklists, Moves, _K) -> 
+decrement_degree_O([], IG, Worklists, Moves, _K) -> 
   {IG, Worklists, Moves};
-decrement_degree([Node|Nodes], IG, Worklists, Moves, K) ->
+decrement_degree_O([Node|Nodes], IG, Worklists, Moves, K) ->
   PrevDegree = hipe_ig:get_node_degree(Node, IG),
   IG0 = hipe_ig:dec_node_degree(Node, IG),
   case PrevDegree =:= K of
@@ -564,13 +546,13 @@ decrement_degree([Node|Nodes], IG, Worklists, Moves, K) ->
       case hipe_moves:move_related(Node, Moves0) of
 	true ->
 	  Worklists1 = hipe_reg_worklists:add_freeze(Node, Worklists0),
-	  decrement_degree(Nodes, IG0, Worklists1, Moves0, K);
+	  decrement_degree_O(Nodes, IG0, Worklists1, Moves0, K);
 	_ ->
 	  Worklists1 = hipe_reg_worklists:add_simplify(Node, Worklists0),
-	  decrement_degree(Nodes, IG0, Worklists1, Moves0, K)
+	  decrement_degree_O(Nodes, IG0, Worklists1, Moves0, K)
       end;
      _ ->
-      decrement_degree(Nodes, IG0, Worklists, Moves, K)
+      decrement_degree_O(Nodes, IG0, Worklists, Moves, K)
   end.
 -endif.
 
@@ -593,20 +575,20 @@ decrement_degree([Node|Nodes], IG, Worklists, Moves, K) ->
 %%                     gets degree K.
 %%----------------------------------------------------------------------
 
-decrement_degree_N([], IG, Worklists, _K) -> 
+decrement_degree([], IG, Worklists, _K) -> 
   {IG, Worklists};
-decrement_degree_N([Node|Nodes], IG, Worklists, K) ->
+decrement_degree([Node|Nodes], IG, Worklists, K) ->
   PrevDegree = hipe_ig:get_node_degree(Node, IG),
   IG0 = hipe_ig:dec_node_degree(Node, IG),
   case PrevDegree =:= K of
     true ->
       Worklists0 = 
-        hipe_optimistic_worklists:remove_spill(Node, Worklists),
+        hipe_reg_worklists:remove_spill(Node, Worklists),
       Worklists1 = 
-	hipe_optimistic_worklists:add_simplify(Node, Worklists0),
-      decrement_degree_N(Nodes, IG0, Worklists1, K);
+	hipe_reg_worklists:add_simplify(Node, Worklists0),
+      decrement_degree(Nodes, IG0, Worklists1, K);
      _ ->
-      decrement_degree_N(Nodes, IG0, Worklists, K)
+      decrement_degree(Nodes, IG0, Worklists, K)
   end.
 	    
 %%----------------------------------------------------------------------
@@ -705,7 +687,7 @@ compare_sanity({[Color|Coloring_list], C}, {[Color_N|Coloring_list_N], C_N}) ->
 %% about data representation that they shouldn't know, bad abstraction.
 
 -ifdef(COMPARE_ITERATED_OPTIMISTIC).
-build_namelist(NodeSets,Index,Alias,Color) ->
+build_namelist_O(NodeSets,Index,Alias,Color) ->
   ?debug_msg("NodeSets ~w~n", [NodeSets]),
   ?debug_msg("Building mapping\n",[]),
   ?debug_msg("Vector to list\n",[]),
@@ -718,13 +700,13 @@ build_namelist(NodeSets,Index,Alias,Color) ->
   NL1 = build_coalescedlist(AliasList,Color,Alias,[]),
   ?debug_msg("Coalesced list:~p\n",[NL1]),
   ?debug_msg("Regs\n",[]),
-  NL2 = build_reglist(hipe_node_sets:colored(NodeSets),Color,NL1),
+  NL2 = build_reglist_O(hipe_node_sets:colored(NodeSets),Color,NL1),
   ?debug_msg("Regs list:~p\n",[NL2]),
   ?debug_msg("Spills\n",[]),
   build_spillist(hipe_node_sets:spilled(NodeSets),Index,NL2).
 -endif.
 
-build_namelist_N(NodeSets,Index,Alias,Color) ->
+build_namelist(NodeSets,Index,Alias,Color) ->
   ?debug_msg("NodeSets _N ~w~n", [NodeSets]),
   ?debug_msg("Building mapping _N\n",[]),
   ?debug_msg("Vector to list _N\n",[]),
@@ -740,8 +722,6 @@ build_namelist_N(NodeSets,Index,Alias,Color) ->
   ColoredNodes = hipe_node_sets:colored(NodeSets),
   ?debug_msg("ColoredNodes ~p~n", [ColoredNodes]),
   NL2 = build_reglist_N(ColoredNodes,Color,NL1,NL1),
-  %?debug_msg("Regs list ---test---:~p\n",[NLt]),
-  %NL2 = build_reglist(ColoredNodes,Color,[]),
   ?debug_msg("Regs list _N:~p\n",[NL2]),
   ?debug_msg("Spills _N\n",[]),
   build_spillist(hipe_node_sets:spilled(NodeSets),Index,NL2).
@@ -763,10 +743,10 @@ build_coalescedlist([_Node|Ns],Color,Alias,List) ->
   build_coalescedlist(Ns,Color,Alias,List).
 
 -ifdef(COMPARE_ITERATED_OPTIMISTIC).
-build_reglist([],_Color,List) -> 
+build_reglist_O([],_Color,List) -> 
   List;
-build_reglist([Node|Ns],Color,List) ->
-  build_reglist(Ns,Color,[{Node,{reg,getColor(Node,Color)}}|List]).
+build_reglist_O([Node|Ns],Color,List) ->
+  build_reglist_O(Ns,Color,[{Node,{reg,getColor(Node,Color)}}|List]).
 -endif.
 
 build_reglist_N([],_Color,List,_OrgList) -> 
@@ -857,7 +837,7 @@ sort_stack_split(Pivot, [H|T], Smaller, Bigger) ->
 %%   Alias          --  The updated aliases.
 %%----------------------------------------------------------------------
 
-assignColors_N(Worklists, Stack, NodeSets, Color, No_Temporaries, SavedAdjList, SavedSpillCosts, IG, Alias, AllColors, Target) ->
+assignColors(Worklists, Stack, NodeSets, Color, No_Temporaries, SavedAdjList, SavedSpillCosts, IG, Alias, AllColors, Target) ->
   case Stack of
     [] ->
       {Color,NodeSets,Alias};
@@ -874,23 +854,23 @@ assignColors_N(Worklists, Stack, NodeSets, Color, No_Temporaries, SavedAdjList, 
       OkColors = findOkColors(Edges, AllColors, Color, Alias),
       case colset_is_empty(OkColors) of
 	true -> % Spill case
-	  case hipe_optimistic_worklists:member_coalesced_to(Node, Worklists) of
+	  case hipe_reg_worklists:member_coalesced_to(Node, Worklists) of
 	    true ->
 	      ?debug_msg("Alias case. Undoing coalescing.~n", []),
               {Alias1, IG1, NodeSets1, Color1, Stack2} = tryPrimitiveNodes(Node, Stack1, NodeSets, AllColors, Color, No_Temporaries, SavedAdjList, SavedSpillCosts, IG, Alias, Target),
               %{Alias1, IG1, NodeSets1, Color1, Stack2} = {Alias, IG, NodeSets, Color, Stack1},
-	      assignColors_N(Worklists, Stack2, NodeSets1, Color1, No_Temporaries, SavedAdjList, SavedSpillCosts, IG1, Alias1, AllColors, Target);
+	      assignColors(Worklists, Stack2, NodeSets1, Color1, No_Temporaries, SavedAdjList, SavedSpillCosts, IG1, Alias1, AllColors, Target);
 	    false ->
 	      ?debug_msg("Spill case. Spilling node.~n", []),
 	      NodeSets1 = hipe_node_sets:add_spilled(Node, NodeSets),
-	      assignColors_N(Worklists, Stack1, NodeSets1, Color, No_Temporaries, SavedAdjList, SavedSpillCosts, IG, Alias, AllColors, Target)
+	      assignColors(Worklists, Stack1, NodeSets1, Color, No_Temporaries, SavedAdjList, SavedSpillCosts, IG, Alias, AllColors, Target)
 	  end;
 	false -> % Color case
 	  Col = colset_smallest(OkColors),
 	  NodeSets1 = hipe_node_sets:add_colored(Node, NodeSets),
 	  Color1 = setColor(Node, Target:physical_name(Col), Color),
 	  ?debug_msg("Color case. Assigning color ~p to node.~n", [Col]),
-	  assignColors_N(Worklists, Stack1, NodeSets1, Color1, No_Temporaries, SavedAdjList, SavedSpillCosts, IG, Alias, AllColors, Target)
+	  assignColors(Worklists, Stack1, NodeSets1, Color1, No_Temporaries, SavedAdjList, SavedSpillCosts, IG, Alias, AllColors, Target)
       end
   end.
 
@@ -929,7 +909,7 @@ assignColors_N(Worklists, Stack, NodeSets, Color, No_Temporaries, SavedAdjList, 
 
 tryPrimitiveNodes(Node, Stack, NodeSets, AllColors, Color, No_temporaries, SavedAdjList, SavedSpillCosts, IG, Alias, Target) ->
   ?debug_msg("Undoing coalescing of node ~p.~n", [Node]),
-  {PrimitiveNodes, Alias1, IG1} = undoCoalescing_N(Node, No_temporaries, Alias, SavedAdjList, IG, Target),
+  {PrimitiveNodes, Alias1, IG1} = undoCoalescing(Node, No_temporaries, Alias, SavedAdjList, IG, Target),
   ?debug_msg("Spilling non-colorable primitives.~n", []),
   {ColorableNodes, NodeSets1} = spillNonColorablePrimitives([], PrimitiveNodes, NodeSets, AllColors, Color, SavedAdjList, Alias1),
   ?debug_msg("Generating splits of colorable nodes.~n", []),
@@ -1205,7 +1185,7 @@ setColor(Node, Colour, {colmap,ColMap}) ->
   hipe_bifs:array_update(ColMap, Node, Colour),  
   {colmap,ColMap}.
 
--ifdef(DEBUG).
+-ifdef(DEBUG_PRINTOUTS).
 printColors(0, _) ->
   true;
 printColors(Node, {colmap, ColMap}) ->
@@ -1221,6 +1201,10 @@ printColors(Node, {colmap, ColMap}) ->
 initAlias(NrNodes) ->
   {alias, hipe_bifs:array(NrNodes, [])}.
 
+%% Get alias for a node. 
+%% Note that non-aliased nodes could be represented in
+%% two ways, either not aliased or aliased to itself. 
+%% Including the latter case prevents looping bugs.
 getAlias(Node, {alias,AliasMap}) ->
   case hipe_bifs:array_sub(AliasMap, Node) of
     [] ->
@@ -1231,7 +1215,7 @@ getAlias(Node, {alias,AliasMap}) ->
       getAlias(AliasNode, {alias,AliasMap})
   end.
 
--ifdef(DEBUG).
+-ifdef(DEBUG_PRINTOUTS).
 printAlias({alias, AliasMap}) ->
   ?debug_msg("Aliases:\n",[]),
   printAlias(hipe_bifs:array_length(AliasMap),{alias, AliasMap}).
@@ -1274,7 +1258,7 @@ aliasToList(AliasMap, I1, Tail) ->
 %%         (Updated versions of above structures, after coalescing)
 %%----------------------------------------------------------------------
 
-coalesce_N(Moves, IG, Worklists, Alias, K, Target) ->
+coalesce(Moves, IG, Worklists, Alias, K, Target) ->
   case hipe_moves:worklist_get_and_remove(Moves) of
     {[],Moves0} ->
       %% Moves marked for removal from worklistMoves by FreezeMoves()
@@ -1314,7 +1298,7 @@ coalesce_N(Moves, IG, Worklists, Alias, K, Target) ->
 		true ->
 		  %% drop coalesced move Move
 		  {IG1, Alias1, Worklists1} = 
-		    combine_N(U, V, IG, Alias, Worklists, K, Target),
+		    combine(U, V, IG, Alias, Worklists, K, Target),
 		  {Moves0, IG1, Alias1, Worklists1};
 		false ->
 		  Moves1 = hipe_moves:add_active(Move, Moves0),
@@ -1498,18 +1482,18 @@ combine_O(U, V, IG, Worklists, Moves, Alias, K, Target) ->
 %%   {IG, Worklists, Moves, Alias} (updated)
 %%----------------------------------------------------------------------
        
-combine_N(U, V, IG, Alias, Worklists, K, Target) ->
+combine(U, V, IG, Alias, Worklists, K, Target) ->
   
   ?debug_msg("N_Coalescing ~p and ~p to ~p~n",[V,U,U]),
 
-  Worklists1 = hipe_optimistic_worklists:add_coalesced(V, U, Worklists),
+  Worklists1 = hipe_reg_worklists:add_coalesced(V, U, Worklists),
   
   Alias1 = setAlias(V, U, Alias),
   
   AdjV = hipe_ig:node_adj_list(V, IG),
   
   IG1 =
-    combine_edges_N(AdjV, U, IG, Worklists1, K, Target),
+    combine_edges(AdjV, U, IG, Worklists1, K, Target),
 
   {IG1, Alias1, Worklists1}.
 
@@ -1533,18 +1517,18 @@ combine_N(U, V, IG, Alias, Worklists, K, Target) ->
 %%   {IG, Worklists, Moves} (updated)
 %%----------------------------------------------------------------------
 
-combine_edges_N([], _U, IG, _Worklists, _K, _Target) ->
+combine_edges([], _U, IG, _Worklists, _K, _Target) ->
   IG;
-combine_edges_N([T|Ts], U, IG, Worklists, K, Target) ->
-  case hipe_optimistic_worklists:member_stack_or_coalesced(T, Worklists) of
-    true -> combine_edges_N(Ts, U, IG, Worklists, K, Target);
+combine_edges([T|Ts], U, IG, Worklists, K, Target) ->
+  case hipe_reg_worklists:member_stack_or_coalesced(T, Worklists) of
+    true -> combine_edges(Ts, U, IG, Worklists, K, Target);
     _ ->
       IG1 = hipe_ig:add_edge(T, U, IG, Target),
       IG2 = case Target:is_precoloured(T) of
 		true -> IG1;
 		false -> hipe_ig:dec_node_degree(T, IG1)
 	      end,
-      combine_edges_N(Ts, U, IG2, Worklists, K, Target)
+      combine_edges(Ts, U, IG2, Worklists, K, Target)
   end.
 
 %%----------------------------------------------------------------------
@@ -1604,7 +1588,7 @@ combine_edges_O([T|Ts], U, IG, Worklists, Moves, K, Target) ->
 	    Worklists
 	end,
       {IG2, Worklists1, Moves1} =
-	decrement_degree([T], IG1, Worklists0, Moves, K),
+	decrement_degree_O([T], IG1, Worklists0, Moves, K),
       combine_edges_O(Ts, U, IG2, Worklists1, Moves1, K, Target)
   end.
 -endif.
@@ -1628,23 +1612,25 @@ combine_edges_O([T|Ts], U, IG, Worklists, Moves, K, Target) ->
 %%   updated alias vector
 %%   updated Interferece graph
 %%----------------------------------------------------------------------
-undoCoalescing_N(N, No_temporaries, Alias, SavedAdj, IG, Target) ->
+undoCoalescing(N, No_temporaries, Alias, SavedAdj, IG, Target) ->
   Primitives = findPrimitiveNodes(No_temporaries, N, Alias),
   Alias1 = restoreAliases(Primitives, Alias),
   IG1 = fixAdj(N, SavedAdj, IG, Target),
   {Primitives, Alias1, IG1}.
 
-%undoCoalescing(N, No_temporaries, Alias) ->
-%  Primitives = findPrimitiveNodes(No_temporaries, N, Alias),
-%  Alias1 = restoreAliases(Primitives, Alias),
-%  {Primitives, Alias1}.
-
+%% Restore aliasinfo for primitive nodes, that is 
+%% unalias the node sthat were aliased to the primitive
+%% nodes. Note that an unaliased node could be
+%% represented in two ways, either not aliased or aliased
+%% to itself. See also getAlias
 restoreAliases([], Alias) ->
   Alias;
 restoreAliases([Primitive|Primitives], Alias) ->
   Alias1 = setAlias(Primitive, Primitive, Alias),
   restoreAliases(Primitives, Alias1).
 
+%% find the primitive nodes to N, that is find all
+%% nodes that are aliased to N
 findPrimitiveNodes(No_temporaries, N, Alias) ->
   findPrimitiveNodes(No_temporaries, N, Alias, []).
 
@@ -1666,7 +1652,7 @@ findPrimitiveNodes(Node, N, Alias, PrimitiveNodes) ->
 %  %?debug_msg("++ the adj list: ~p~n", [SavedAdj]),
 %  %?debug_msg("Node ~p~n", [Node]),
 %  NextNode = Node - 1,
-%  Coalesced_to = hipe_optimistic_worklists:member_coalesced_to(NextNode, Worklists),
+%  Coalesced_to = hipe_reg_worklists:member_coalesced_to(NextNode, Worklists),
 %  ?debug_msg("³³-- member coalesced: ~p~n", [Coalesced_to]),
 %  {Primitives, Alias1} = undoCoalescing(NextNode, No_temporaries, Alias),
 %  ?debug_msg("½½-- primitivenodes ~w\n", [Primitives]),
@@ -1691,6 +1677,7 @@ findPrimitiveNodes(Node, N, Alias, PrimitiveNodes) ->
 %%   updated Interferece graph
 %%----------------------------------------------------------------------
 fixAdj(N, SavedAdj, IG, Target) ->
+  %Saved = hipe_vectors_wrapper:get(SavedAdj, N),
   Saved = hipe_adj_list:edges(N, SavedAdj),
   ?debug_msg("§§--adj to ~p: ~p~n", [N, Saved]),
   Adj = hipe_ig:node_adj_list(N, IG),
@@ -1698,19 +1685,15 @@ fixAdj(N, SavedAdj, IG, Target) ->
   New = findNew(Adj, Saved),
   ?debug_msg("++--new adj to ~p: ~p~n", [N, New]),
   removeAdj(New, N, IG, Target),
-  %% restore adj_list(N) 
-  %% XXX:
-  %% (a) THIS IS A NO-OP
-  %% (b) YOU ARE NOT ALLOWED TO MESS WITH OTHER ADT'S INTERNAL REPRESENTATION
-  hipe_vectors_wrapper:set(hipe_ig:adj_list(IG), N, Saved),
-  IG.
-  %% XXX the following lines seems to make double nodes in some adj_lists,
-  %% which is a bug, otherwise they don't seem to make ny difference at 
-  %% all (even hough they are in the pseudocode of "optimistic coalescing")
+  %% XXX the following lines seems to make double nodes in
+  %% some adj_lists, which is a bug, apart from that they
+  %% don't seem to make ny difference at all (even though
+  %% they are in the pseudocode of "optimistic coalescing")
   %% addedge for all in the restored adj_list
   %%RestoredAdj = hipe_ig:node_adj_list(N, IG),
   %%?debug_msg("adj_lists_before_restore_o ~n~p~n", [hipe_ig:adj_list(IG)]),
   %%restoreAdj(RestoredAdj, N, IG, Alias, Target).
+  IG.
 
 removeAdj([], _N, _IG, _Target) ->
   true;
@@ -1793,8 +1776,6 @@ ok(T, R, IG, K, Target) ->
 
 all_adjacent_ok([], _U, _Worklists, _IG, _K, _Target) -> true;
 all_adjacent_ok([T|Ts], U, Worklists, IG, K, Target) ->
-  %% XXX ERROR: CALLED WITH 'Worklists' FROM BOTH hipe_optimistic_worklists
-  %% AND hipe_reg_worklists. THIS IS NOT GUARANTEED TO WORK.
   case hipe_reg_worklists:member_stack_or_coalesced(T, Worklists) of
     true -> all_adjacent_ok(Ts, U, Worklists, IG, K, Target);
     _ ->
@@ -1841,8 +1822,6 @@ conservative(AdjU, AdjV, U, Worklists, IG, K) ->
 conservative_countU([], AdjV, U, Worklists, IG, K, Cnt) ->
   conservative_countV(AdjV, U, Worklists, IG, K, Cnt);
 conservative_countU([Node|AdjU], AdjV, U, Worklists, IG, K, Cnt) ->
-  %% XXX ERROR: CALLED WITH 'Worklists' FROM BOTH hipe_optimistic_worklists
-  %% AND hipe_reg_worklists. THIS IS NOT GUARANTEED TO WORK.
   case hipe_reg_worklists:member_stack_or_coalesced(Node, Worklists) of
     true -> conservative_countU(AdjU, AdjV, U, Worklists, IG, K, Cnt);
     _ ->
@@ -1858,8 +1837,6 @@ conservative_countU([Node|AdjU], AdjV, U, Worklists, IG, K, Cnt) ->
 
 conservative_countV([], _U, _Worklists, _IG, _K, _Cnt) -> true;
 conservative_countV([Node|AdjV], U, Worklists, IG, K, Cnt) ->
-  %% XXX ERROR: CALLED WITH 'Worklists' FROM BOTH hipe_optimistic_worklists
-  %% AND hipe_reg_worklists. THIS IS NOT GUARANTEED TO WORK.
   case hipe_reg_worklists:member_stack_or_coalesced(Node, Worklists) of
     true -> conservative_countV(AdjV, U, Worklists, IG, K, Cnt);
     _ ->
@@ -1892,14 +1869,14 @@ conservative_countV([Node|AdjV], U, Worklists, IG, K, Cnt) ->
 %%   WorkLists      -- The updated worklists
 %%---------------------------------------------------------------------
 
-selectSpill_N(WorkLists, IG, SpillLimit) ->
-  [CAR|CDR] = hipe_optimistic_worklists:spill(WorkLists),
+selectSpill(WorkLists, IG, SpillLimit) ->
+  [CAR|CDR] = hipe_reg_worklists:spill(WorkLists),
   
   SpillCost = getCost(CAR, IG,SpillLimit),
   M = findCheapest(CDR,IG,SpillCost,CAR, SpillLimit),
   
-  WorkLists1 = hipe_optimistic_worklists:remove_spill(M, WorkLists),
-  WorkLists2 = hipe_optimistic_worklists:add_simplify(M, WorkLists1),
+  WorkLists1 = hipe_reg_worklists:remove_spill(M, WorkLists),
+  WorkLists2 = hipe_reg_worklists:add_simplify(M, WorkLists1),
   WorkLists2.
 
 %%---------------------------------------------------------------------
@@ -1920,7 +1897,7 @@ selectSpill_N(WorkLists, IG, SpillLimit) ->
 %%---------------------------------------------------------------------
 
 -ifdef(COMPARE_ITERATED_OPTIMISTIC).
-selectSpill(WorkLists, Moves, IG, K, Alias, SpillLimit) ->
+selectSpill_O(WorkLists, Moves, IG, K, Alias, SpillLimit) ->
   [CAR|CDR] = hipe_reg_worklists:spill(WorkLists),
   
   SpillCost = getCost(CAR, IG,SpillLimit),

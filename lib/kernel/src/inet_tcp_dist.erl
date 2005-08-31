@@ -274,12 +274,8 @@ do_setup(Kernel, Node, Type, MyNode, LongOrShortNames,SetupTime) ->
 			      timer = Timer,
 			      this_flags = 0,
 			      other_version = Version,
-			      f_send = fun(S,D) -> 
-					       inet_tcp:send(S,D) 
-				       end,
-			      f_recv = fun(S,N,T) -> 
-					       inet_tcp:recv(S,N,T) 
-				       end,
+			      f_send = fun inet_tcp:send/2,
+			      f_recv = fun inet_tcp:recv/3,
 			      f_setopts_pre_nodeup = 
 			      fun(S) ->
 				      inet:setopts
@@ -297,9 +293,7 @@ do_setup(Kernel, Node, Type, MyNode, LongOrShortNames,SetupTime) ->
 					  {packet, 4},
 					  nodelay()])
 			      end,
-			      f_getll = fun(S) ->
-						inet:getll(S)
-					end,
+			      f_getll = fun inet:getll/1,
 			      f_address = 
 			      fun(_,_) ->
 				      #net_address {
@@ -308,8 +302,8 @@ do_setup(Kernel, Node, Type, MyNode, LongOrShortNames,SetupTime) ->
 				   protocol = tcp,
 				   family = inet}
 			      end,
-			      mf_tick = {?MODULE, tick},
-			      mf_getstat = {?MODULE,getstat},
+			      mf_tick = fun ?MODULE:tick/1,
+			      mf_getstat = fun ?MODULE:getstat/1,
 			      request_type = Type
 			     },
 			    dist_util:handshake_we_started(HSData);

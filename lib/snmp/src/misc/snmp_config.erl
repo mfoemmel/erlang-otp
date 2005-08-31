@@ -382,7 +382,8 @@ config_agent_snmp(Dir, Vsns) ->
 		     " configuration? ~n"
 		     "   Note that if you chose v1 or v2, you won't get any"
 		     " security for these~n"
-		     "   requests (none, minimum, semi)", "minimum", 
+		     "   requests (none, minimum, semi_des, semi_aes)", 
+		     "minimum", 
 		    fun verify_sec_type/1),
     Passwd = 
 	case lists:member(v3, Vsns) and (SecType /= none) of
@@ -705,7 +706,7 @@ config_manager_snmp_usm() ->
     AuthP    = ask("7d. Authentication protocol (no/sha/md5)?", "no",
 		   fun verify_usm_auth_protocol/1),
     AuthKey  = ask_auth_key("7e", AuthP), 
-    PrivP    = ask("7d. Priv protocol (no/des)?", "no",
+    PrivP    = ask("7e. Priv protocol (no/des/aes)?", "no",
 		   fun verify_usm_priv_protocol/1),
     PrivKey  = ask_priv_key("7f", PrivP), 
     {EngineID, UserName,
@@ -725,7 +726,10 @@ ask_priv_key(_Prefix, usmNoPrivProtocol) ->
     "";
 ask_priv_key(Prefix, usmDESPrivProtocol) ->
     ask(Prefix ++ "  Priv [des] key (length 0 or 16)?", "\"\"",
-	fun verify_usm_priv_des_key/1).
+	fun verify_usm_priv_des_key/1);
+ask_priv_key(Prefix, usmAesCfb128Protocol) ->
+    ask(Prefix ++ "  Priv [aes] key (length 0 or 16)?", "\"\"",
+	fun verify_usm_priv_aes_key/1).
 
 
 %% ------------------------------------------------------------------
@@ -820,10 +824,11 @@ verify_notif_type("inform") -> {ok, inform};
 verify_notif_type(NT)       -> {error, "invalid notifcation type: " ++ NT}.
 
 
-verify_sec_type("none")    -> {ok, none};
-verify_sec_type("minimum") -> {ok, minimum};
-verify_sec_type("semi")    -> {ok, semi};
-verify_sec_type(ST)        -> {error, "invalid security type: " ++ ST}.
+verify_sec_type("none")     -> {ok, none};
+verify_sec_type("minimum")  -> {ok, minimum};
+verify_sec_type("semi_des") -> {ok, {semi, des}};
+verify_sec_type("semi_aes") -> {ok, {semi, aes}};
+verify_sec_type(ST)         -> {error, "invalid security type: " ++ ST}.
 
     
 verify_address(A) ->
@@ -1114,11 +1119,16 @@ verify_usm_priv_protocol("no") ->
     {ok, usmNoPrivProtocol};
 verify_usm_priv_protocol("des") ->
     {ok, usmDESPrivProtocol};
+verify_usm_priv_protocol("aes") ->
+    {ok, usmAesCfb128Protocol};
 verify_usm_priv_protocol(AuthP) ->
     {error, "invalid priv protocol: " ++ AuthP}.
 
 verify_usm_priv_des_key(Key) ->
     verify_usm_key("priv des", Key, 16).
+
+verify_usm_priv_aes_key(Key) ->
+    verify_usm_key("priv aes", Key, 16).
 
 verify_usm_key(_What, "\"\"", _ExpectLength) ->
     {ok, ""};
@@ -1790,9 +1800,11 @@ write_agent_snmp_usm_conf2(EngineID, SecType, Passwd) ->
     {PrivProt, PrivSecret} = 
 	case SecType of
 	    minimum ->
-		{usmNoPrivProtocol, ""};
-	    semi ->
-		{usmDESPrivProtocol, Secret16}
+		{usmNoPrivProtocol,    ""};
+	    {semi, des} ->
+		{usmDESPrivProtocol,   Secret16};
+	    {semi, aes} ->
+		{usmAesCfb128Protocol, Secret16}
 	end,
     [{EngineID, "initial", "initial", zeroDotZero, 
       usmHMACMD5AuthProtocol, "", "", 
@@ -1921,7 +1933,7 @@ write_agent_snmp_vacm_conf(Dir, Vsns, SecType) ->
 	    minimum ->
 		[{vacmViewTreeFamily, 
 		  "restricted", [1,3,6,1], included, null}];
-	    semi ->
+	    {semi, _} ->
 		[{vacmViewTreeFamily, 
 		  "restricted", [1,3,6,1,2,1,1], included, null},
 		 {vacmViewTreeFamily, 
