@@ -285,7 +285,8 @@ static void do_read(EpmdVars *g,Connection *s)
 	}
       else if (val < 0)
 	{
-	  dbg_tty_printf(g,1,"error on ALIVE socket %d (%d)",s->fd,val);
+	    dbg_tty_printf(g,1,"error on ALIVE socket %d (%d; errno=0x%x)",
+			   s->fd, val, errno);
 	  node_unreg_sock(g,s->fd);
 	  epmd_conn_close(g,s);
 	}
@@ -307,7 +308,7 @@ static void do_read(EpmdVars *g,Connection *s)
      We subtract 1 because we will add a "\0" in "do_request()".
      This is not needed for R3A or higher versions of Erlang,
      because the '\0' is included in the request,
-     but is kept for backwards compatibilty to allow R2D to use
+     but is kept for backwards compatibility to allow R2D to use
      this epmd. */
 
   pack_size = s->want ? s->want : INBUF_SIZE - 1;
@@ -790,6 +791,23 @@ static int conn_open(EpmdVars *g,int fd)
 {
   int i;
   Connection *s;
+
+#ifdef VXWORKS
+  /*
+   * Since file descriptors are global on VxWorks, we might get an fd that
+   * does not fit in the FD_SET.
+   *
+   * Note: This test would be harmless on Unix, but would fail on Windows
+   * because socket are numbered differently and FD_SETs are implemented
+   * differently.
+   */
+  if (fd >= FD_SETSIZE) {
+      dbg_tty_printf(g,0,"file descriptor %d: too high for FD_SETSIZE=%d",
+		     fd,FD_SETSIZE);
+      close(fd);
+      return FALSE;
+  }
+#endif
 
   for (i = 0; i < g->max_conn; i++)
     if (g->conn[i].open == FALSE)

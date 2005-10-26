@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_tags.erl,v 1.12 2004/11/04 17:48:35 richardc Exp $
+%% $Id$
 %%
 %% @private
 %% @copyright 2001-2003 Richard Carlsson
@@ -25,16 +25,19 @@
 
 %% @doc EDoc tag scanning.
 
-%% TODO: tag (or macro) for including the code of a function as <pre>-text.
+%% @TODO tag/macro for including the code of a function as `<pre>'-text.
+%% @TODO consider new tag: @arg name, description
+%% @TODO consider new tag: @license text
 
 -module(edoc_tags).
 
 -export([tags/0, tags/1, tag_names/0, tag_parsers/0, scan_lines/2,
-	 filter_tags/3, check_tags/4, parse_tags/3]).
+	 filter_tags/3, check_tags/4, parse_tags/4]).
 
 -import(edoc_report, [report/4, warning/4, error/3]).
 
 -include("edoc.hrl").
+-include("edoc_types.hrl").
 
 
 %% Tags are described by {Name, Parser, Flags}.
@@ -45,23 +48,41 @@
 %%
 %% Note that the pseudo-tag '@clear' is not listed here.
 %% (Cf. the function 'filter_tags'.)
+%%
+%% Rejected tag suggestions:
+%% - @keywords (never up to date; free text search is better)
+%% - @uses [modules] (never up to date; false dependencies)
+%% - @maintainer (never up to date; duplicates author info)
+%% - @contributor (unnecessary; mention in normal documentation)
+%% - @creator (unnecessary; already have copyright/author)
+%% - @history (never properly updated; use version control etc.)
+%% - @category (useless; superseded by keywords or free text search)
 
 tags() ->
-    [{author, fun parse_contact/3, [module,package,overview]},
+    All = [module,footer,function,package,overview],
+    [{author, fun parse_contact/4, [module,package,overview]},
      {copyright, text, [module,package,overview,single]},
      {deprecated, xml, [module,function,package,single]},
      {doc, xml,	[module,function,package,overview,single]},
-     {'end', text, [module,footer,function,package,overview]},
-     {equiv, fun parse_expr/3, [function,single]},
+     {docfile, fun parse_file/4, All},
+     {'end', text, All},
+     {equiv, fun parse_expr/4, [function,single]},
+     {headerfile, fun parse_header/4, All},
      {hidden, text, [module,function,single]},
      {private, text, [module,function,single]},
      {reference, xml, [module,footer,package,overview]},
-     {see, fun parse_see/3, [module,function,package,overview]},
+     {see, fun parse_see/4, [module,function,package,overview]},
      {since, text, [module,function,package,overview,single]},
-     {spec, fun parse_spec/3, [function,single]},
+     {spec, fun parse_spec/4, [function,single]},
+     {throws, fun parse_throws/4, [function,single]},
      {title, text, [overview,single]},
-     {type, fun parse_type/3, [module,footer,function]},
+     {'TODO', xml, All},
+     {todo, xml, All},
+     {type, fun parse_type/4, [module,footer,function]},
      {version, text, [module,package,overview,single]}].
+
+aliases('TODO') -> todo;
+aliases(T) -> T.
 
 %% Selecting tags based on flags.
 tags(Flag) ->
@@ -160,7 +181,7 @@ scan_tag_lines(_Cs, S, Ss, T, Ss1, L, As) ->
     scan_tag_lines(Ss, T, [S | Ss1], L + 1, As).
 
 make_tag(Cs, L, Ss) ->
-    #tag{name = list_to_atom(lists:reverse(Cs)),
+    #tag{name = aliases(list_to_atom(lists:reverse(Cs))),
 	 line = L,
 	 data = append_lines(lists:reverse(Ss))}.
 
@@ -219,27 +240,29 @@ check_tags([], _, _, _, Error, _) ->
 
 %% Parses tag contents for specific tags.
 
-parse_tags(Ts, How, Where) ->
-    parse_tags(Ts, How, Where, []).
+parse_tags(Ts, How, Env, Where) ->
+    parse_tags(Ts, How, Env, Where, []).
 
-parse_tags([#tag{name = Name} = T | Ts], How, Where, Ts1) ->
+parse_tags([#tag{name = Name} = T | Ts], How, Env, Where, Ts1) ->
     case dict:fetch(Name, How) of
-	F when function(F) ->
-	    T1 = parse_tag(T, F, Where),
-	    parse_tags(Ts, How, Where, [T1 | Ts1]);
 	text ->
-	    parse_tags(Ts, How, Where, [T | Ts1]);
+	    parse_tags(Ts, How, Env, Where, [T | Ts1]);
 	xml ->
-	    T1 = parse_tag(T, fun parse_xml/3, Where),
-	    parse_tags(Ts, How, Where, [T1 | Ts1])
+	    [T1] = parse_tag(T, fun parse_xml/4, Env, Where),
+	    parse_tags(Ts, How, Env, Where, [T1 | Ts1]);
+	F when function(F) ->
+	    Ts2 = parse_tag(T, F, Env, Where),
+	    parse_tags(Ts, How, Env, Where, lists:reverse(Ts2, Ts1))
     end;
-parse_tags([], _How, _Where, Ts) ->
+parse_tags([], _How, _Env, _Where, Ts) ->
     lists:reverse(Ts).
 
-parse_tag(T, F, Where) ->
-    case catch {ok, F(T#tag.data, T#tag.line, Where)} of
+parse_tag(T, F, Env, Where) ->
+    case catch {ok, F(T#tag.data, T#tag.line, Env, Where)} of
 	{ok, Data} ->
-	    T#tag{data = Data};
+	    [T#tag{data = Data}];
+	{expand, Ts} ->
+	    Ts;
 	{error, L, Error} ->
 	    error(L, Where, Error),
 	    exit(error);
@@ -250,17 +273,17 @@ parse_tag(T, F, Where) ->
 %% parser functions for the built-in content types. They also perform
 %% some sanity checks on the results.
 
-parse_xml(Data, Line, _Where) ->
-    edoc_parse_xml:parse(edoc_wiki:expand(Data, Line), Line).
+parse_xml(Data, Line, _Env, _Where) ->
+    edoc_wiki:parse_xml(Data, Line).
 
-parse_see(Data, Line, _Where) ->
-    edoc_parse_ref:parse_see(Data, Line).
+parse_see(Data, Line, _Env, _Where) ->
+    edoc_parser:parse_see(Data, Line).
 
-parse_expr(Data, Line, _Where) ->
-    edoc_parse_expr:parse(Data, Line).
+parse_expr(Data, Line, _Env, _Where) ->
+    edoc_lib:parse_expr(Data, Line).
 
-parse_spec(Data, Line, {_, {F, A}} = _Where) ->
-    Spec = edoc_parse_spec:parse(Data, Line),
+parse_spec(Data, Line, _Env, {_, {F, A}} = _Where) ->
+    Spec = edoc_parser:parse_spec(Data, Line),
     #t_spec{name = N, type = #t_fun{args = As}} = Spec,
     if length(As) /= A ->
 	    throw_error(Line, "@spec arity does not match.");
@@ -275,16 +298,19 @@ parse_spec(Data, Line, {_, {F, A}} = _Where) ->
 	    end
     end.
 
-parse_contact(Data, Line, _Where) ->
-    case edoc_parse_contact:parse(Data, Line) of
+parse_throws(Data, Line, _Env, {_, {_F, _A}} = _Where) ->
+    edoc_parser:parse_throws(Data, Line).
+
+parse_contact(Data, Line, _Env, _Where) ->
+    case edoc_lib:parse_contact(Data, Line) of
 	{"", "", _URI} ->
 	    throw_error(Line, "must specify name or e-mail.");
 	Info ->
 	    Info
     end.
 
-parse_type(Data, Line, _Where) ->
-    Def = edoc_parse_typedef:parse(Data, Line),
+parse_type(Data, Line, _Env, _Where) ->
+    Def = edoc_parser:parse_typedef(Data, Line),
     {#t_typedef{name = #t_name{name = T}}, _} = Def,
     case edoc_types:is_predefined(T) of
 	true ->
@@ -293,5 +319,44 @@ parse_type(Data, Line, _Where) ->
 	    Def
     end.
 
+parse_file(Data, Line, Env, _Where) ->
+    case edoc_lib:parse_expr(Data, Line) of
+	{string, _, File0} ->
+	    File = edoc_lib:strip_space(File0),
+	    case edoc_extract:file(File, module, Env, []) of
+		{ok, Ts} ->
+		    throw({expand, Ts});
+		{error, R} ->
+		    throw_error(Line, {read_file, File, R})
+	    end;
+	_ ->
+	    throw_error(Line, file_not_string)
+    end.
+
+parse_header(Data, Line, Env, {Where, _}) ->
+    parse_header(Data, Line, Env, Where);
+parse_header(Data, Line, Env, Where) when list(Where) ->
+    case edoc_lib:parse_expr(Data, Line) of
+	{string, _, File} ->
+	    Dir = filename:dirname(Where),
+	    Path = Env#env.includes ++ [Dir],
+	    case edoc_lib:find_file(Path, "", File) of
+		"" ->
+		    throw_error(Line, {file_not_found, File});
+		File1 ->
+		    Ts = edoc_extract:header(File1, Env, []),
+		    throw({expand, Ts})
+	    end;
+	_ ->
+	    throw_error(Line, file_not_string)
+    end.
+
+throw_error(L, {read_file, File, R}) ->
+    throw_error(L, {"error reading file '~s': ~w",
+		    [edoc_lib:filename(File), R]});
+throw_error(L, {file_not_found, F}) ->
+    throw_error(L, {"file not found: ~s", [F]});
+throw_error(L, file_not_string) ->
+    throw_error(L, "expected file name as a string");
 throw_error(L, D) ->
     throw({error, L, D}).

@@ -450,6 +450,15 @@ parse_BuiltinType([{'SEQUENCE',_},{'{',_},{'...',Line},{'!',_}|Rest]) ->
 						ExceptionIdentification}]}},
 	     Rest3};
 	_ ->
+	    {ComponentTypeLists,Rest3}=parse_ComponentTypeLists2(Rest2,[#'EXTENSIONMARK'{pos=Line}]),
+	    case Rest3 of
+		[{'}',_}|Rest4] ->
+	    {#type{def=#'SEQUENCE'{components=ComponentTypeLists}},Rest4};
+		_  ->
+		    throw({asn1_error,{get_line(hd(Rest3)),get(asn1_module),
+			       [got,get_token(hd(Rest3)),expected,'}']}})
+	    end;
+	_ -> % Seq case 4,17-19,23-26 will fail here
 	    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),
 			       [got,get_token(hd(Rest2)),expected,'}']}})
     end;
@@ -605,6 +614,9 @@ parse_DefinedType(Tokens=[{typereference,L1,TypeName},
 	Result ->
 	    Result
     end;
+parse_DefinedType(Tokens=[{typereference,L1,Module},{'.',_},
+			  {typereference,_,TypeName},{'{',_}|Rest]) ->
+    parse_ParameterizedType(Tokens);
 parse_DefinedType([{typereference,L1,Module},{'.',_},{typereference,_,TypeName}|Rest]) ->
     {#type{def = #'Externaltypereference'{pos=L1,module=Module,type=TypeName}},Rest};
 parse_DefinedType([{typereference,L1,TypeName}|Rest]) ->
@@ -2117,7 +2129,7 @@ parse_ExtensionAdditionAlternativeList(Tokens,Acc) ->
 	case Tokens of
 	    [{identifier,_,_}|_Rest] ->
 		parse_NamedType(Tokens);
-	    [{'[[',_}|_] ->
+	    [{'[',_},{'[',_}|_] ->
 		parse_ExtensionAdditionAlternatives(Tokens)
 	end,
     case Rest0 of
@@ -2127,7 +2139,7 @@ parse_ExtensionAdditionAlternativeList(Tokens,Acc) ->
 	    {lists:reverse([Element|Acc]),Rest0}
     end.
 
-parse_ExtensionAdditionAlternatives([{'[[',_}|Rest]) ->
+parse_ExtensionAdditionAlternatives([{'[',_},{'[',_}|Rest]) ->
     parse_ExtensionAdditionAlternatives(Rest,[]);
 parse_ExtensionAdditionAlternatives(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
@@ -2138,7 +2150,7 @@ parse_ExtensionAdditionAlternatives([Id = {identifier,_,_}|Rest],Acc) ->
     case Rest2 of
 	[{',',_}|Rest21] ->
 	    parse_ExtensionAdditionAlternatives(Rest21,[NamedType|Acc]);
-	[{']]',_}|Rest21] ->
+	[{']',_},{']',_}|Rest21] ->
 	    {lists:reverse(Acc),Rest21};
 	_ ->
 	    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),
@@ -2160,7 +2172,7 @@ parse_ComponentTypeLists(Tokens) ->
 	    {Clist,Rest01} = parse_ComponentTypeList(Tokens),
 	    case Rest01 of
 		[{',',_}|Rest02] -> 
-		    parse_ComponentTypeLists(Rest02,Clist);
+		    parse_ComponentTypeLists(Rest02,Clist); % 5 - 13
 		_ ->
 		    {Clist,Rest01}
 	    end;
@@ -2180,7 +2192,7 @@ parse_ComponentTypeLists([{'...',L1},{'!',_}|Rest],Clist1) ->
     {_,Rest2} = parse_ExceptionIdentification(Rest),
     %% Exception info is currently thrown away
     parse_ComponentTypeLists2(Rest2,Clist1++[#'EXTENSIONMARK'{pos=L1}]);
-parse_ComponentTypeLists([{'...',L1}|Rest],Clist1) ->
+parse_ComponentTypeLists([{'...',L1}|Rest],Clist1) -> %% first Extensionmark
     parse_ComponentTypeLists2(Rest,Clist1++[#'EXTENSIONMARK'{pos=L1}]);
 parse_ComponentTypeLists(Tokens,Clist1) ->
     {Clist1,Tokens}.
@@ -2225,7 +2237,9 @@ parse_ComponentTypeList(Tokens,Acc) ->
 % 	    {lists:reverse([ComponentType|Acc]),Rest}
 	[{'}',_}|_] ->
 	    {lists:reverse([ComponentType|Acc]),Rest};
-	[{',',_},{'...',_}|_] ->
+% 	[{',',_},{'...',_},{'}',_}|_] ->
+% 	    {lists:reverse([ComponentType|Acc]),Rest};
+ 	[{',',_},{'...',_}|_] ->%% here comes the dubble ellipse
 	    {lists:reverse([ComponentType|Acc]),Rest};
 	_ ->
 	    throw({asn1_error,
@@ -2243,32 +2257,39 @@ parse_ExtensionAdditionList(Tokens,Acc) ->
 	case Tokens of
 	    [{identifier,_,_}|_Rest] ->
 		parse_ComponentType(Tokens);
-	    [{'[[',_}|_] ->
+	    [{'[',_},{'[',_}|_] ->
 		parse_ExtensionAdditions(Tokens);
+	    [{'...',L1}|_Rest] ->
+		{#'EXTENSIONMARK'{pos=L1},Tokens};
 	    _ ->
-		throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
-				   [got,get_token(hd(Tokens)),expected,
-				    [identifier,'[[']]}})
+ 		throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
+ 				   [got,get_token(hd(Tokens)),expected,
+ 				    [identifier,'[[']]}})
 	end,
     case Rest0 of
 	[{',',_}|Rest01] ->
 	    parse_ExtensionAdditionList(Rest01,[Element|Acc]);
+	[{'...',_}|Rest01] ->
+	    {lists:reverse([Element|Acc]),Rest01};
 	_  ->
 	    {lists:reverse([Element|Acc]),Rest0}
     end.
 
-parse_ExtensionAdditions([{'[[',_}|Rest]) ->
+parse_ExtensionAdditions([{'[',_},{'[',_}|Rest]) ->
     parse_ExtensionAdditions(Rest,[]);
 parse_ExtensionAdditions(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,'[[']}}).
 
+parse_ExtensionAdditions([VsnNr = {number,_,_},{':',_}|Rest],Acc) ->
+    %% ignor version number for now
+    parse_ExtensionAdditions(Rest,Acc);
 parse_ExtensionAdditions([Id = {identifier,_,_}|Rest],Acc) ->
     {ComponentType, Rest2} = parse_ComponentType([Id|Rest]),
     case Rest2 of
 	[{',',_}|Rest21] ->
 	    parse_ExtensionAdditions(Rest21,[ComponentType|Acc]);
-	[{']]',_}|Rest21] ->
+	[{']',_},{']',_}|Rest21] ->
 	    {lists:reverse(Acc),Rest21};
 	_ ->
 	    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),

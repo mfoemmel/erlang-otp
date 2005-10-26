@@ -59,13 +59,22 @@
 %%   
 %% And the timer starts all over again with the new WaitFor value.
 %% The procedure is repeated at at most MaxRetries.
+%% 
+%% There is a special case for this timer. When the max_retries has
+%% the value infinity_restartable it means that the timer is
+%% restartable as long as some external event occurs (e.g. receipt of
+%% a pending message for instance). But the timer will never be
+%% restarted "by itself". I.e. when the timer expires (whatever the
+%% timeout time), so does the timer. Whever the timer is restarted,
+%% the timeout time will be calculated in the usual way!
+%% 
 %%----------------------------------------------------------------------
 
 -record(megaco_incr_timer,
         {wait_for    = timer:seconds(7),% Initial timeout (milli seconds)
          factor      = 2,               % Factor to multiply with at timeout
          incr        = 0,               % Milli seconds to add at timeout
-         max_retries = infinity}).      % infinity | Integer
+         max_retries = infinity}).      % infinity | infinity_restartable | Integer
 
 %%----------------------------------------------------------------------
 %% The internal representation of a termination id

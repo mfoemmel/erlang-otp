@@ -27,8 +27,7 @@
 -export([do/1, load/2]).
 
 -include("httpd.hrl").
--include("http_internal.hrl").
--include("httpd_verbosity.hrl").
+
 -define(VMODULE,"ESI").
 -define(DEFAULT_ERL_TIMEOUT,15000).
 
@@ -37,10 +36,11 @@
 %%%=========================================================================
 %%--------------------------------------------------------------------------
 %% deliver(SessionID, Data) -> ok | {error, bad_sessionID}
-%% SessionID = pid()
-%% Data = string() | io_list() (first call must send a string that 
-%% contains all header information including "\r\n\r\n", unless there
-%% is no header information at all.)
+%%	SessionID = pid()
+%%	Data = string() | io_list() (first call must send a string that 
+%%	contains all header information including "\r\n\r\n", unless there
+%%	is no header information at all.)
+%%
 %% Description: Send <Data> (Html page generated sofar) to the server
 %% request handling process so it can forward it to the client.
 %%-------------------------------------------------------------------------
@@ -61,7 +61,6 @@ deliver(_SessionID, _Data) ->
 %% Description:  See httpd(3) ESWAPI CALLBACK FUNCTIONS
 %%-------------------------------------------------------------------------
 do(ModData) ->
-    ?vtrace("do",[]),
     case httpd_util:key1search(ModData#mod.data, status) of
 	{_StatusCode, _PhraseArgs, _Reason} ->
 	    {proceed, ModData#mod.data};
@@ -138,7 +137,6 @@ scheme(RequestURI, ConfigDB) ->
 	no_match ->
 	    case match_script(RequestURI, ConfigDB, eval_script_alias) of
 		no_match ->
-		    ?vtrace("neither erl nor eval",[]),
 		    no_scheme;
 		{EsiBody, ScriptModules} ->
 		    {eval, EsiBody, ScriptModules}
@@ -161,8 +159,6 @@ match_esi_script(RequestURI, [{Alias,Modules} | Rest], AliasType) ->
     AliasMatchStr = alias_match_str(Alias, AliasType),
     case regexp:first_match(RequestURI, AliasMatchStr) of
 	{match, 1, Length} ->
-	    ?vtrace("extract_esibody_and_modules -> "
-		    "match with Length: ~p", [Length]),
 	    {string:substr(RequestURI, Length + 1), Modules};
 	nomatch ->
 	    match_esi_script(RequestURI, Rest, AliasType)
@@ -178,15 +174,10 @@ alias_match_str(Alias, eval_script_alias) ->
 
 erl(#mod{method = Method} = ModData, ESIBody, Modules) 
   when Method == "GET"; Method == "HEAD"->
-    ?vtrace("erl ~p request", [Method]),
     case httpd_util:split(ESIBody,":|%3A|/",2) of
 	{ok, [Module, FuncAndInput]} ->
-	    ?vtrace("~n   Mod:          ~p"
-		    "~n   FuncAndInput: ~p",[Module, FuncAndInput]),
 	    case httpd_util:split(FuncAndInput,"[\?/]",2) of
 		{ok, [FunctionName, Input]} ->
-		    ?vtrace("~n   Function:  ~p"
-			    "~n   Input: ~p",[FunctionName, Input]),
 		    generate_webpage(ModData, ESIBody, Modules, 
 				     Module, FunctionName, Input, 
 				    script_elements(FunctionName, Input));
@@ -199,20 +190,15 @@ erl(#mod{method = Method} = ModData, ESIBody, Modules)
 			      ModData#mod.data]}
 	    end;
 	{ok, BadRequest} ->
-	    ?vlog("erl BAD (~p-) request", [Method]),
 	    {proceed, [{status,{400, none, BadRequest}} | ModData#mod.data]}
     end;
 
-erl(#mod{method = "POST"} = ModData, ESIBody, Modules) ->
-    ?vtrace("erl POST request",[]),
+erl(#mod{method = "POST", entity_body = Body} = ModData, ESIBody, Modules) ->
     case httpd_util:split(ESIBody,":|%3A|/",2) of
 	{ok,[Module, Function]} ->
-	    ?vtrace("~n   Mod:  ~p"
-		    "~n   Function: ~p",[Module, Function]),
-	    generate_webpage(ModData, ESIBody, Modules, Module, Function, "",
-			     [{entity_body, ModData#mod.entity_body}]) ;
+	    generate_webpage(ModData, ESIBody, Modules, Module, 
+			     Function, Body, [{entity_body, Body}]);
 	{ok, BadRequest} ->
-	    ?vlog("erl BAD (POST-) request",[]),
 	    {proceed,[{status, {400, none, BadRequest}} | ModData#mod.data]}
     end.
 
@@ -225,21 +211,17 @@ generate_webpage(ModData, ESIBody, Modules, ModuleName, FunctionName,
     case lists:member(ModuleName, Modules) of
 	true ->
 	    Env = httpd_script_env:create_env(esi, ModData, ScriptElements),
-	    io:format("Env ~p  ~n", [Env]),
 	    Module = list_to_atom(ModuleName),
 	    Function = list_to_atom(FunctionName),
-	    ?vtrace("and now call the module",[]),
 	    case erl_scheme_webpage_chunk(Module, Function, 
 					  Env, Input, ModData) of
 		{error, erl_scheme_webpage_chunk_undefined} ->
-		    ?vtrace("new method failed, so try old method",[]),
 		    erl_scheme_webpage_whole(Module, Function, Env, Input,
 					     ModData);
 		ResponseResult ->
 		    ResponseResult
 	    end;
 	false ->
-	    ?vlog("unknown module",[]),
 	    {proceed, [{status, {403, ModData#mod.request_uri,
 				 ?NICE("Client not authorized to evaluate: "
 				       ++  ESIBody)}} | ModData#mod.data]}
@@ -248,21 +230,22 @@ generate_webpage(ModData, ESIBody, Modules, ModuleName, FunctionName,
 %% Old API that waits for the dymnamic webpage to be totally generated
 %% before anythig is sent back to the client.
 erl_scheme_webpage_whole(Module, Function, Env, Input, ModData) ->
-    io:format("Enter erl_scheme_webpage_whole~n", []),
     case (catch Module:Function(Env, Input)) of
 	{'EXIT',Reason} ->
-	    ?vlog("old method failed, exit with Reason: ~p",
-		  [Reason]),
 	    {proceed, [{status, {500, none, Reason}} |
 		       ModData#mod.data]};
 	Response ->
-	    {Headers, Body} = httpd_esi:parse_headers(lists:flatten(Response)),
+	    {Headers, Body} = 
+		httpd_esi:parse_headers(lists:flatten(Response)),
+	    Length =  httpd_util:flatlength(Body),
 	    case httpd_esi:handle_headers(Headers) of
 		{proceed, AbsPath} ->
 		    {proceed, [{real_name, httpd_util:split_path(AbsPath)} 
 			       | ModData#mod.data]};
 		{ok, NewHeaders, StatusCode} ->
-		    send_headers(ModData, StatusCode, NewHeaders),
+		    send_headers(ModData, StatusCode, 
+				 [{"content-length", 
+				   integer_to_list(Length)}| NewHeaders]),
 		    case ModData#mod.method of
 			"HEAD" ->
 			    {proceed, [{response, {already_sent, 200, 0}} | 
@@ -271,7 +254,7 @@ erl_scheme_webpage_whole(Module, Function, Env, Input, ModData) ->
 			    httpd_response:send_body(ModData, 
 						     StatusCode, Body),
 			    {proceed, [{response, {already_sent, 200, 
-						   length(Body)}} | 
+						  Length}} | 
 				       ModData#mod.data]}
 		    end
 	    end
@@ -280,7 +263,6 @@ erl_scheme_webpage_whole(Module, Function, Env, Input, ModData) ->
 %% New API that allows the dynamic wepage to be sent back to the client 
 %% in small chunks at the time during generation.
 erl_scheme_webpage_chunk(Mod, Func, Env, Input, ModData) -> 
-    io:format("Enter erl_scheme_webpage_chunk~n", []),
     process_flag(trap_exit, true),
     Self = self(),
     %% Spawn worker that generates the webpage.
@@ -303,7 +285,6 @@ erl_scheme_webpage_chunk(Mod, Func, Env, Input, ModData) ->
     Response.
 
 deliver_webpage_chunk(#mod{config_db = Db} = ModData, Pid) ->
-    ?vtrace("deliver_webpage_chunk -> entry with~n   Pid: ~p", [Pid]),
     Timeout = erl_script_timeout(Db),
     deliver_webpage_chunk(ModData, Pid, Timeout).
 
@@ -323,7 +304,9 @@ deliver_webpage_chunk(#mod{config_db = Db} = ModData, Pid, Timeout) ->
 		    case (ModData#mod.http_version =/= "HTTP/1.1") or
 			(IsDisableChunkedSend) of
 			true ->
-			    send_headers(ModData, StatusCode, NewHeaders);
+			    send_headers(ModData, StatusCode, 
+					 [{"connection", "close"} | 
+					  NewHeaders]);
 			false ->
 			    send_headers(ModData, StatusCode, 
 					 [{"transfer-encoding", 
@@ -333,7 +316,7 @@ deliver_webpage_chunk(#mod{config_db = Db} = ModData, Pid, Timeout) ->
 				IsDisableChunkedSend)
 	    end;
 	timeout ->
-	    send_headers(ModData, {504, "Timeout"}, []),
+	    send_headers(ModData, {504, "Timeout"},[{"connection", "close"}]),
 	    httpd_socket:close(ModData#mod.socket_type, ModData#mod.socket),
 	    process_flag(trap_exit,false),
 	    {proceed,[{response, {already_sent, 200, 0}} | ModData#mod.data]}
@@ -341,15 +324,15 @@ deliver_webpage_chunk(#mod{config_db = Db} = ModData, Pid, Timeout) ->
 
 receive_headers(Timeout) ->
     receive
-	  {ok, Chunk} ->
-	  	httpd_esi:parse_headers(lists:flatten(Chunk));		
-	  {'EXIT', Pid, erl_scheme_webpage_chunk_undefined} when is_pid(Pid) ->
-	      {error, erl_scheme_webpage_chunk_undefined};
-	  {'EXIT', Pid, Reason} when is_pid(Pid) ->
-	      exit({mod_esi_linked_process_died, Pid, Reason})
-      after Timeout ->
-	      timeout
-      end.
+	{ok, Chunk} ->
+	    httpd_esi:parse_headers(lists:flatten(Chunk));		
+	{'EXIT', Pid, erl_scheme_webpage_chunk_undefined} when is_pid(Pid) ->
+	    {error, erl_scheme_webpage_chunk_undefined};
+	{'EXIT', Pid, Reason} when is_pid(Pid) ->
+	    exit({mod_esi_linked_process_died, Pid, Reason})
+    after Timeout ->
+	    timeout
+    end.
 
 send_headers(ModData, StatusCode, HTTPHeaders) ->
     ExtraHeaders = httpd_response:cache_headers(ModData),
@@ -404,27 +387,19 @@ input_type([_First|Rest]) ->
 
 eval(#mod{request_uri = ReqUri, method = "POST",
 	  http_version = Version, data = Data}, _ESIBody, _Modules) ->
-    ?vtrace("eval(POST) -> method not supported",[]),	    
     {proceed,[{status,{501,{"POST", ReqUri, Version},
 		       ?NICE("Eval mechanism doesn't support method POST")}}|
 	      Data]};
 
 eval(#mod{method = Method} = ModData, ESIBody, Modules) 
   when Method == "GET"; Method == "HEAD" ->
-    ?vtrace("eval(~p) -> entry when"
-	    "~n   Modules: ~p",[Method, Modules]),	
-
     case is_authorized(ESIBody, Modules) of
 	true ->
 	    case generate_webpage(ESIBody) of
 		{error, Reason} ->
-		    ?vlog("eval -> error:"
-			  "~n   Reason: ~p",[Reason]),	    
 		    {proceed, [{status, {500, none, Reason}} | 
 			       ModData#mod.data]};
 		{ok, Response} ->
-		    ?vtrace("eval -> ok:"
-			    "~n   Response: ~p",[Response]),	    
 		    {Headers, _} = 
 			httpd_esi:parse_headers(lists:flatten(Response)),
 		    case httpd_esi:handle_headers(Headers) of
@@ -440,7 +415,6 @@ eval(#mod{method = Method} = ModData, ESIBody, Modules)
 		    end
 	    end;
 	false ->
-	    ?vlog("eval -> auth failed",[]),	    
 	    {proceed,[{status,
 		       {403, ModData#mod.request_uri,
 			?NICE("Client not authorized to evaluate: "

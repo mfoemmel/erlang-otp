@@ -43,6 +43,7 @@
 -define(V2_PARSE_MOD,     megaco_text_parser_v2).
 -define(V3_PARSE_MOD,     megaco_text_parser_v3).
 -define(PREV3A_PARSE_MOD, megaco_text_parser_prev3a).
+-define(PREV3B_PARSE_MOD, megaco_text_parser_prev3b).
 
 
 %%----------------------------------------------------------------------
@@ -62,6 +63,8 @@ encode_message([{version3,_}|EC], 2, MegaMsg) ->
     megaco_compact_text_encoder_v2:encode_message(EC, MegaMsg);
 encode_message(EC, 2, MegaMsg) ->
     megaco_compact_text_encoder_v2:encode_message(EC, MegaMsg);
+encode_message([{version3,prev3b}|EC], 3, MegaMsg) ->
+    megaco_compact_text_encoder_prev3b:encode_message(EC, MegaMsg);
 encode_message([{version3,prev3a}|EC], 3, MegaMsg) ->
     megaco_compact_text_encoder_prev3a:encode_message(EC, MegaMsg);
 encode_message([{version3,v3}|EC], 3, MegaMsg) ->
@@ -97,6 +100,20 @@ decode_message([], _, Bin) when binary(Bin) ->
 
 	{ok, Tokens, 3, _LastLine} ->
 	    do_decode_message(?V3_PARSE_MOD, Tokens, Bin);
+
+	{error, Reason, Line} ->               %% OTP-4007
+	    parse_error(Reason, Line, [], Bin) %% OTP-4007
+    end;
+decode_message([{version3,prev3b}], _, Bin) when binary(Bin) ->
+    case megaco_text_scanner:scan(Bin) of
+	{ok, Tokens, 1, _LastLine} ->
+	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
+
+	{ok, Tokens, 2, _LastLine} ->
+	    do_decode_message(?V2_PARSE_MOD, Tokens, Bin);
+
+	{ok, Tokens, 3, _LastLine} ->
+	    do_decode_message(?PREV3B_PARSE_MOD, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
@@ -139,6 +156,20 @@ decode_message([{flex, Port}], _, Bin) when binary(Bin) ->
 
 	{ok, Tokens, 3, _LastLine} ->
 	    do_decode_message(?V3_PARSE_MOD, Tokens, Bin);
+
+	{error, Reason, Line} ->               %% OTP-4007
+	    parse_error(Reason, Line, [], Bin) %% OTP-4007
+    end;
+decode_message([{version3,prev3b},{flex, Port}], _, Bin) when binary(Bin) ->
+    case megaco_flex_scanner:scan(Bin, Port) of
+	{ok, Tokens, 1, _LastLine} ->
+	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
+
+	{ok, Tokens, 2, _LastLine} ->
+	    do_decode_message(?V2_PARSE_MOD, Tokens, Bin);
+
+	{ok, Tokens, 3, _LastLine} ->
+	    do_decode_message(?PREV3B_PARSE_MOD, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
@@ -213,6 +244,8 @@ encode_transaction([{version3,_}|EC], 2, Trans) ->
     megaco_compact_text_encoder_v2:encode_transaction(EC, Trans);
 encode_transaction(EC, 2, Trans) ->
     megaco_compact_text_encoder_v2:encode_transaction(EC, Trans);
+encode_transaction([{version3,prev3b}|EC], 3, Trans) ->
+    megaco_compact_text_encoder_prev3b:encode_transaction(EC, Trans);
 encode_transaction([{version3,prev3a}|EC], 3, Trans) ->
     megaco_compact_text_encoder_prev3a:encode_transaction(EC, Trans);
 encode_transaction([{version3,v3}|EC], 3, Trans) ->
@@ -235,6 +268,9 @@ encode_action_requests([{version3,_}|EC], 2, ActReqs)
     megaco_compact_text_encoder_v2:encode_action_requests(EC, ActReqs);
 encode_action_requests(EC, 2, ActReqs) when list(ActReqs) ->
     megaco_compact_text_encoder_v2:encode_action_requests(EC, ActReqs);
+encode_action_requests([{version3,prev3b}|EC], 3, ActReqs) 
+  when list(ActReqs) ->
+    megaco_compact_text_encoder_prev3b:encode_action_requests(EC, ActReqs);
 encode_action_requests([{version3,prev3a}|EC], 3, ActReqs) 
   when list(ActReqs) ->
     megaco_compact_text_encoder_prev3a:encode_action_requests(EC, ActReqs);
@@ -257,6 +293,8 @@ encode_action_request([{version3,_}|EC], 2, ActReq) ->
     megaco_compact_text_encoder_v2:encode_action_request(EC, ActReq);
 encode_action_request(EC, 2, ActReq) ->
     megaco_compact_text_encoder_v2:encode_action_request(EC, ActReq);
+encode_action_request([{version3,prev3b}|EC], 3, ActReq) ->
+    megaco_compact_text_encoder_prev3b:encode_action_request(EC, ActReq);
 encode_action_request([{version3,prev3a}|EC], 3, ActReq) ->
     megaco_compact_text_encoder_prev3a:encode_action_request(EC, ActReq);
 encode_action_request([{version3,v3}|EC], 3, ActReq) ->
@@ -277,6 +315,8 @@ encode_command_request([{version3,_}|EC], 2, CmdReq) ->
     megaco_compact_text_encoder_v2:encode_command_request(EC, CmdReq);
 encode_command_request(EC, 2, CmdReq) ->
     megaco_compact_text_encoder_v2:encode_command_request(EC, CmdReq);
+encode_command_request([{version3,prev3b}|EC], 3, CmdReq) ->
+    megaco_compact_text_encoder_prev3b:encode_command_request(EC, CmdReq);
 encode_command_request([{version3,prev3a}|EC], 3, CmdReq) ->
     megaco_compact_text_encoder_prev3a:encode_command_request(EC, CmdReq);
 encode_command_request([{version3,v3}|EC], 3, CmdReq) ->
@@ -297,6 +337,8 @@ encode_action_reply([{version3,_}|EC], 2, ActRep) ->
     megaco_compact_text_encoder_v2:encode_action_reply(EC, ActRep);
 encode_action_reply(EC, 2, ActRep) ->
     megaco_compact_text_encoder_v2:encode_action_reply(EC, ActRep);
+encode_action_reply([{version3,prev3b}|EC], 3, ActRep) ->
+    megaco_compact_text_encoder_prev3b:encode_action_reply(EC, ActRep);
 encode_action_reply([{version3,prev3a}|EC], 3, ActRep) ->
     megaco_compact_text_encoder_prev3a:encode_action_reply(EC, ActRep);
 encode_action_reply([{version3,v3}|EC], 3, ActRep) ->

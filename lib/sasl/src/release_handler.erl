@@ -200,6 +200,8 @@ install_option({code_change_timeout, TimeOut}) ->
     check_timeout(TimeOut);
 install_option({suspend_timeout, TimeOut}) ->
     check_timeout(TimeOut);
+install_option({update_paths, Bool}) when Bool==true; Bool==false ->
+    true;
 install_option(_Opt) -> false.
 
 check_timeout(infinity) -> true;
@@ -657,7 +659,9 @@ check_rel_data({release, {Name, Vsn}, {erts, EVsn}, Libs}, Root, LibDirs) ->
 			  LibDir = 
 			      case lists:keysearch(Lib, 1, LibDirs) of
 				  {value, {_Lib, _Vsn, Dir}} ->
-				      filename:join(Dir, LibName);
+				      Path = filename:join(Dir,LibName),
+				      check_path(Path),
+				      Path;
 				  _ ->
 				      filename:join([Root, "lib", LibName])
 			      end,
@@ -669,6 +673,15 @@ check_rel_data({release, {Name, Vsn}, {erts, EVsn}, Libs}, Root, LibDirs) ->
 check_rel_data(RelData, _Root, _LibDirs) ->
     throw({error, {bad_rel_data, RelData}}).
 
+check_path(Path) ->
+    case file:read_file_info(Path) of
+	{ok, Info} when Info#file_info.type==directory ->
+	    ok;
+	{ok, _Info} ->
+	    throw({error, {not_a_directory, Path}});
+	{error, _Reason} ->
+	    throw({error, {no_such_directory, Path}})
+    end.
     
 do_check_install_release(RelDir, Vsn, Releases, Masters) ->
     case lists:keysearch(Vsn, #release.vsn, Releases) of

@@ -1,8 +1,11 @@
 %% ========================== -*-Erlang-*- =============================
-%% EDoc function specification grammar for the Yecc parser generator,
+%% EDoc type specification grammar for the Yecc parser generator,
 %% adapted from Sven-Olof Nyström's type specification parser.
 %%
-%% Copyright (C) 2002 Richard Carlsson
+%% Also contains entry points for parsing things like typedefs,
+%% references, and throws-declarations.
+%%
+%% Copyright (C) 2002-2005 Richard Carlsson
 %%
 %% This library is free software; you can redistribute it and/or modify
 %% it under the terms of the GNU Lesser General Public License as
@@ -21,23 +24,25 @@
 %%
 %% Author contact: richardc@csd.uu.se
 %%
-%% $Id: edoc_parser.yrl,v 1.17 2004/11/30 00:41:09 richardc Exp $
+%% $Id$
 %%
-%% ====================================================================
+%% =====================================================================
 
 Nonterminals
 start spec fun_type utype_list utype_tuple utypes utype ptypes ptype
-function_name defs def typedef qname ref aref mref lref pref var_list
-vars.
+function_name defs def typedef etype throws qname ref aref mref lref pref
+var_list vars fields field.
 
 Terminals
-atom float integer var start_spec start_typedef start_ref
+atom float integer var start_spec start_typedef start_throws start_ref
 
-'(' ')' ',' '.' '->' '{' '}' '[' ']' '|' '+' ':' '::' '=' '/' '//' '*'.
+'(' ')' ',' '.' '->' '{' '}' '[' ']' '|' '+' ':' '::' '=' '/' '//' '*'
+'#'.
 
 Rootsymbol start.
 
 start -> start_spec spec: '$2'.
+start -> start_throws throws: '$2'.
 start -> start_typedef typedef: '$2'.
 start -> start_ref ref: '$2'.
 
@@ -82,6 +87,11 @@ ptype -> fun_type: '$1'.
 ptype -> utype_tuple : #t_tuple{types = '$1'}.
 ptype -> '[' ']' : #t_nil{}.
 ptype -> '[' utype ']' : #t_list{type = '$2'}.
+ptype -> '#' atom '{' '}' :
+        #t_record{name = #t_atom{val = tok_val('$2')}}.
+ptype -> '#' atom '{' fields '}' :
+	#t_record{name = #t_atom{val = tok_val('$2')},
+		  fields = lists:reverse('$4')}.
 ptype -> atom utype_list:
 	#t_type{name = #t_name{name = tok_val('$1')},
 		args = '$2'}.
@@ -94,6 +104,13 @@ ptype -> '//' atom '/' qname ':' atom utype_list :
 			       module = qname('$4'),
 			       name = tok_val('$6')},
 		args = '$7'}.
+
+%% Produced in reverse order.
+fields -> field : ['$1'].
+fields -> fields ',' field : ['$3' | '$1'].
+
+field -> atom '=' utype :
+	#t_field{name = #t_atom{val = tok_val('$1')}, type = '$3'}.
 
 %% Produced in reverse order.
 defs -> '$empty' : [].
@@ -153,13 +170,21 @@ lref -> atom '/' integer:
 lref -> atom '(' ')':
     edoc_refs:type(tok_val('$1')).
 
+%% Exception declarations
+
+etype -> ptypes: union('$1').
+
+throws -> etype defs:
+	#t_throws{type = '$1',
+		  defs = lists:reverse('$2')}.
+
 Erlang code.
 
 %% ========================== -*-Erlang-*- =============================
 %% EDoc function specification parser, generated from the file
 %% "edoc_parser.yrl" by the Yecc parser generator.
 %%
-%% Copyright (C) 2002-2004 Richard Carlsson
+%% Copyright (C) 2002-2005 Richard Carlsson
 %%
 %% This library is free software; you can redistribute it and/or modify
 %% it under the terms of the GNU Lesser General Public License as
@@ -177,17 +202,20 @@ Erlang code.
 %% USA
 %% ====================================================================
 
--export([parse_spec/2, parse_typedef/2, parse_ref/2]).
+-export([parse_spec/2, parse_typedef/2, parse_throws/2, parse_ref/2,
+	 parse_see/2]).
 
--include("edoc.hrl").
+-include("edoc_types.hrl").
 
 %% Multiple entry point hack:
 
-parse_spec(Ts, L) -> run_parser(Ts, L, start_spec).
+start_spec(Ts, L) -> run_parser(Ts, L, start_spec).
 
-parse_typedef(Ts, L) -> run_parser(Ts, L, start_typedef).
+start_typedef(Ts, L) -> run_parser(Ts, L, start_typedef).
 
-parse_ref(Ts, L) -> run_parser(Ts, L, start_ref).
+start_throws(Ts, L) -> run_parser(Ts, L, start_throws).
+
+start_ref(Ts, L) -> run_parser(Ts, L, start_ref).
 
 %% Error reporting fix
 
@@ -197,6 +225,7 @@ run_parser(Ts, L, Start) ->
 	    What = case Start of
 		       start_spec -> "specification";
 		       start_typedef -> "type definition";
+		       start_throws -> "exception declaration";
 		       start_ref -> "reference"
 		   end,
 	    {error, {L,?MODULE,["unexpected end of ", What]}};
@@ -219,3 +248,112 @@ union(Ts) ->
     end.
 
 ann(T, A) -> ?set_t_ann(T, A).
+
+%% ---------------------------------------------------------------------
+
+%% @doc EDoc type specification parsing. Parses the content of
+%% <a href="overview-summary.html#ftag-spec">`@spec'</a> declarations.
+
+parse_spec(S, L) ->
+    case edoc_scanner:string(S, L) of
+	{ok, Ts, _} ->
+	    case start_spec(Ts, L) of
+		{ok, Spec} ->
+		    Spec;
+		{error, E} ->
+		    throw_error(E, L)
+	    end;
+	{error, E, _} ->
+	    throw_error(E, L)
+    end.
+
+%% ---------------------------------------------------------------------
+
+%% @doc EDoc type definition parsing. Parses the content of
+%% <a href="overview-summary.html#gtag-type">`@type'</a> declarations.
+
+parse_typedef(S, L) ->
+    {S1, S2} = edoc_lib:split_at_stop(S),
+    N = edoc_lib:count($\n, S1),
+    L1 = L + N,
+    Text = edoc_lib:strip_space(S2),
+    {parse_typedef_1(S1, L), edoc_wiki:parse_xml(Text, L1)}.
+
+parse_typedef_1(S, L) ->
+    case edoc_scanner:string(S, L) of
+	{ok, Ts, _} ->
+	    case start_typedef(Ts, L) of
+		{ok, T} ->
+		    T;
+		{error, E} ->
+		    throw_error({parse_typedef, E}, L)
+	    end;
+	{error, E, _} ->
+	    throw_error({parse_typedef, E}, L)
+    end.
+
+%% ---------------------------------------------------------------------
+
+%% @doc Parses a <a
+%% href="overview-summary.html#References">reference</a> to a module,
+%% package, function, type, or application
+
+parse_ref(S, L) ->
+    case edoc_scanner:string(S, L) of
+	{ok, Ts, _} ->
+	    case start_ref(Ts, L) of
+		{ok, T} ->
+		    T;
+		{error, E} ->
+		    throw_error({parse_ref, E}, L)
+	    end;
+	{error, E, _} ->
+	    throw_error({parse_ref, E}, L)
+    end.
+
+%% ---------------------------------------------------------------------
+
+%% @doc Parses the content of
+%% <a href="overview-summary.html#ftag-see">`@see'</a> references.
+parse_see(S, L) ->
+    {S1, S2} = edoc_lib:split_at_stop(S),
+    N = edoc_lib:count($\n, S1),
+    L1 = L + N,
+    Text = edoc_lib:strip_space(S2),
+    {parse_ref(S1, L), edoc_wiki:parse_xml(Text, L1)}.
+
+%% ---------------------------------------------------------------------
+
+%% @doc EDoc exception specification parsing. Parses the content of
+%% <a href="overview-summary.html#ftag-throws">`@throws'</a> declarations.
+
+parse_throws(S, L) ->
+    case edoc_scanner:string(S, L) of
+	{ok, Ts, _} ->
+	    case start_throws(Ts, L) of
+		{ok, Spec} ->
+		    Spec;
+		{error, E} ->
+		    throw_error({parse_throws, E}, L)
+	    end;
+	{error, E, _} ->
+	    throw_error({parse_throws, E}, L)
+    end.
+
+%% ---------------------------------------------------------------------
+
+throw_error({L, M, D}, _L0) ->
+    throw({error,L,{format_error,M,D}});
+throw_error({parse_spec, E}, L) ->
+    throw_error({"specification", E}, L);
+throw_error({parse_typedef, E}, L) ->
+    throw_error({"type definition", E}, L);
+throw_error({parse_ref, E}, L) ->
+    throw_error({"reference", E}, L);
+throw_error({parse_throws, E}, L) ->
+    throw_error({"throws-declaration", E}, L);
+throw_error({Where, E}, L) when is_list(Where) ->
+    throw({error,L,{"unknown error parsing ~s: ~P.",[Where,E,15]}});
+throw_error(E, L) ->
+    %% Just in case.
+    throw({error,L,{"unknown parse error: ~P.",[E,15]}}).

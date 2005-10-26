@@ -47,51 +47,60 @@ create_win(GS, Title, {X,Y}, Mode, Filter, Extra) ->
     create_win(GS, Title, {X,Y}, Mode, Filter, Extra, null).
 create_win(GS, Title, {X,Y}, Mode, Filter, Extra, FileName) ->
     Pad = 8,
-    W = 480,
-    Hobj = 30,
-    Wlbl = 80, Hlbl=20,
-    Hlb = 130,
-    Wbtn = 70,
+    Wlb = 480, Hlb = 130,
 
-    Win = gs:window(GS, [{title,Title},
-			 {x, X}, {y,Y}, {width, 500}, {height, 320},
-			 {destroy, true}]),
+    Font = dbg_ui_win:font(normal),
 
-    gs:label(Win, [{label, {text,"Filter"}}, {align, sw},
-		   {x, Pad+2}, {y, Pad}, {width, Wlbl}, {height, Hlbl}]),
+    {Wlbl, Hlbl} = dbg_ui_win:min_size(["Directories"], 80, 20),
+    {Wbtn, Hbtn} = dbg_ui_win:min_size(["Filter","Cancel"], 70, 30),
+
+    %% Window
+    Win = gs:window(GS, [{title,Title}, {x, X}, {y,Y}, {destroy,true}]),
+
+    %% 'Filter' label and entry (for selecting directory)
+    gs:label(Win, [{label, {text,"Filter"}}, {font, Font}, {align, sw},
+		   {x, Pad+2}, {y, Pad}, {width,Wlbl}, {height,Hlbl}]),
     gs:entry('Filter', Win, [{x, Pad}, {y, Pad+Hlbl},
-			     {width, W}, {height, Hobj},
+			     {width, Wlb}, {height, Hbtn},
 			     {keypress, true}]),
 
-    Xmid = Pad + W/2,
-    Y2 = Pad+Hobj+Hobj+Pad,
-    gs:label(Win, [{label, {text,"Directories"}}, {align, sw},
-		   {x, Pad+2}, {y, Y2}, {width, Wlbl}, {height, Hlbl}]),
-    gs:label(Win, [{label, {text,"Files"}}, {align, sw},
+    %% Listboxes (showing directories and files)
+    Xmid = Pad + Wlb/2,
+    Y2 = Pad + Hlbl + Hbtn + Pad,
+    gs:label(Win, [{label, {text,"Directories"}},
+		   {font, Font}, {align, sw},
+		   {x, Pad+2}, {y, Y2},
+		   {width, Wlbl}, {height, Hlbl}]),
+    gs:label(Win, [{label, {text,"Files"}},
+		   {font, Font}, {align, sw},
 		   {x, Xmid+Pad/2+2}, {y, Y2},
-		   {width,Wlbl}, {height,Hlbl}]),
-    gs:listbox('Dirs', Win, [{x, Pad}, {y, Y2+Hlbl}, {vscroll,right},
-			     {width, W/2-Pad/2}, {height, Hlb},
+		   {width, Wlbl}, {height, Hlbl}]),
+    gs:listbox('Dirs', Win, [{x, Pad}, {y, Y2+Hlbl},
+			     {width, Wlb/2-Pad/2}, {height, Hlb},
+			     {vscroll, right},
 			     {click, true}, {doubleclick, true}]),
-    gs:listbox('Files', Win, [{x, Xmid+Pad/2}, {y, Y2+Hlbl}, {vscroll,right},
-			      {width, W/2-Pad/2}, {height, Hlb},
+    gs:listbox('Files', Win, [{x, Xmid+Pad/2}, {y, Y2+Hlbl},
+			      {width, Wlb/2-Pad/2}, {height, Hlb},
+			      {vscroll, right},
 			      {click, true}, {doubleclick, true}]),
 
-    Y3 = Y2+Hobj+Hlb,
-    gs:label(Win, [{label, {text,"Selection"}}, {align, sw},
+    %% 'Selection' label and entry (for selecting file)
+    Y3 = Y2 + Hlbl + Hlb,
+    gs:label(Win, [{label, {text,"Selection"}}, {font,Font}, {align,sw},
 		   {x, Pad+2}, {y, Y3}, {width, Wlbl}, {height, Hlbl}]),
     gs:entry('Selection', Win, [{x, Pad}, {y, Y3+Hlbl},
-				{width, W}, {height, Hobj},
+				{width, Wlb}, {height, Hbtn},
 				{keypress, true}]),
 
-    Y4 = Y3+Hobj+Hobj+Pad,
-    Wb = W-Wbtn,
-    Opts = [{y, Y4}, {width, Wbtn}, {height, Hobj}],
+    %% Buttons
+    Y4 = Y3 + Hlbl + Hbtn + Pad,
+    Wb = Wlb - Wbtn,
+    Opts = [{y, Y4}, {width, Wbtn}, {height, Hbtn}, {font, Font}],
     case Mode of
 	normal ->
 	    gs:button(Win, [{label, {text,"Ok"}}, {x, Pad},
 			    {data, select} | Opts]),
-	    gs:button(Win, [{label, {text,"Filter"}}, {x, W/2-Wbtn/2},
+	    gs:button(Win, [{label, {text,"Filter"}}, {x, Wlb/2-Wbtn/2},
 			    {data, filter} | Opts]),
 	    gs:button(Win, [{label, {text,"Cancel"}}, {x, Pad+Wb},
 			    {data, done} | Opts]);
@@ -106,15 +115,19 @@ create_win(GS, Title, {X,Y}, Mode, Filter, Extra, FileName) ->
 			    {data, done} | Opts])
     end,
 
+    %% Insert contents
     {ok, Home} = file:get_cwd(),
     {Cwd, Pattern} = update_win(Filter, Extra, Home),
     if
-	list(FileName) ->
-	    gs:config('Selection', {text, filename:join(Cwd, FileName)});
+	is_list(FileName) ->
+	    gs:config('Selection', {text, filename:join(Cwd,FileName)});
 	true -> ignore
     end,
 
-    gs:config(Win, [{height, Y4+Hobj+Pad}, {map, true}]),
+    Wwin = Pad + Wlb + Pad,
+    Hwin = Y4 + Hbtn + Pad,
+    gs:config(Win, [{width, Wwin}, {height, Hwin}, {map, true}]),
+
     #winInfo{window=Win, extra=Extra, cwd=Cwd, pattern=Pattern}.
 
 %%--------------------------------------------------------------------

@@ -45,14 +45,17 @@ alloc(Defun, SpillIndex, SpillLimit, Options) ->
       Defun, Coloring, 'linearscan', [], Options),
   %% ?HIPE_X86_PP:pp(NewDefun),
   TempMap = hipe_temp_map:cols2tuple(Coloring, ?HIPE_X86_SPECIFIC),
-  {TempMap2,_NewSpillIndex2} = 
-    hipe_spill_minimize:stackalloc(CFG, [], 
-				   SpillIndex, Options, 
-				   ?HIPE_X86_SPECIFIC, 
-				   TempMap),
-    Coloring2 = 
-    hipe_spill_minimize:mapmerge(hipe_temp_map:to_substlist(TempMap), 
-				 TempMap2),
+  {TempMap2,NewSpillIndex2} = 
+    hipe_spillmin:stackalloc(CFG, [], SpillIndex, Options,
+			     ?HIPE_X86_SPECIFIC, TempMap),
+  Coloring2 = 
+    hipe_spillmin:mapmerge(hipe_temp_map:to_substlist(TempMap), TempMap2),
+  case proplists:get_bool(verbose_spills, Options) of
+    true ->
+      ?msg("Stack slot size: ~p~n",[NewSpillIndex2-SpillIndex]);
+    false ->
+      ok
+  end,
   ?add_spills(Options, NewSpillIndex),
   {NewDefun, Coloring2}.
 

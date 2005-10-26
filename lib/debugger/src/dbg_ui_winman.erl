@@ -87,7 +87,9 @@ raise(Win) ->
 %%   MenuBar = gsobj()
 %%--------------------------------------------------------------------
 windows_menu(MenuBar) ->
-    gs:menubutton('WindowsMenuBtn', MenuBar, [{label,{text," Windows "}}]),
+    gs:menubutton('WindowsMenuBtn', MenuBar,
+		  [{label,{text," Windows "}},
+		   {font, dbg_ui_win:font(normal)}]),
     gs:menu('WindowsMenu', 'WindowsMenuBtn', []).
 
 %%--------------------------------------------------------------------
@@ -104,6 +106,7 @@ update_windows_menu([MonInfo|Infos]) ->
 
 menuitem({Title, Win}) ->
     gs:menuitem(Title, 'WindowsMenu', [{label, {text,Title}},
+				       {font, dbg_ui_win:font(normal)},
 				       {data, {dbg_ui_winman,Win}}]).
 
 

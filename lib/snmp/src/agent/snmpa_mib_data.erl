@@ -276,14 +276,26 @@ check_notifications(true, Traps) ->
 check_notifications(_, _) -> true.
 
 check_notifications([]) -> true;
-check_notifications([Trap | Traps]) ->
-    Key = Trap#trap.trapname,
-    ?vtrace("check notification with Key: ~p",[Key]),
+check_notifications([#trap{trapname = Key} = Trap | Traps]) ->
+    ?vtrace("check notification [trap] with Key: ~p",[Key]),
     case snmpa_symbolic_store:get_notification(Key) of
 	{value, Trap} -> check_notifications(Traps);
 	{value,    _} -> throw({error, {'trap already defined', Key}});
 	undefined     -> check_notifications(Traps)
-    end.
+    end;
+check_notifications([#notification{trapname = Key} = Notif | Traps]) ->
+    ?vtrace("check notification [notification] with Key: ~p",[Key]),
+    case snmpa_symbolic_store:get_notification(Key) of
+	{value, Notif} -> 
+	    check_notifications(Traps);
+	{value,     _} -> 
+	    throw({error, {'notification already defined', Key}});
+	undefined      -> 
+	    check_notifications(Traps)
+    end;
+check_notifications([Crap | Traps]) ->
+    ?vlog("skipped check of: ~n~p",[Crap]),
+    check_notifications(Traps).
 
 check_mes(true,_) ->
     ?vtrace("mibentry override = true => skip check",[]),
@@ -292,17 +304,21 @@ check_mes(_,MEs) ->
     check_mes(MEs).
 
 check_mes([]) -> true;
-check_mes([ME | MEs]) ->
-    Name = ME#me.aliasname,
-    Oid1 = ME#me.oid,
+check_mes([#me{aliasname = Name, oid = Oid1} | MEs]) ->
     ?vtrace("check mib entries with aliasname: ~p",[Name]),
     case snmpa_symbolic_store:aliasname_to_oid(Name) of
-	{value, Oid1} -> check_mes(MEs);
+	{value, Oid1} -> 
+	    check_mes(MEs);
 	{value, Oid2} -> 
-	    ?vinfo("~n   expecting '~p'~n   but found '~p'",[Oid1,Oid2]),
+	    ?vinfo("~n   expecting '~p'~n   but found '~p'",[Oid1, Oid2]),
 	    throw({error, {'mibentry already defined', Name}});
-	false -> check_mes(MEs)
-    end.
+	false -> 
+	    check_mes(MEs)
+    end;
+check_mes([Crap | MEs]) ->
+    ?vlog("skipped check of: ~n~p",[Crap]),
+    check_mes(MEs).
+    
 
 
 %%----------------------------------------------------------------------

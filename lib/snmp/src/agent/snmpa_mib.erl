@@ -342,7 +342,13 @@ handle_call(info, _From, #state{data = Data} = State) ->
 
 handle_call({info, Type}, _From, #state{data = Data} = State) ->
     ?vlog("info ~p",[Type]),    
-    {reply, catch snmpa_mib_data:info(Data, Type), State};
+    Reply = case (catch snmpa_mib_data:info(Data, Type)) of
+		Info when list(Info) ->
+		    Info;
+		E ->
+		    [{error, E}]
+	    end,
+    {reply, Reply, State};
 
 handle_call(dump, _From, State) ->
     ?vlog("dump",[]),    

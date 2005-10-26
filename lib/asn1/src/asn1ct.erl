@@ -85,22 +85,26 @@ compile(File,Options) when list(Options) ->
 		[ber_bin_v2|Options--[ber_bin]];
 	    _ -> Options
 	end,
-    case (catch input_file_type(File)) of
-	{single_file,PrefixedFile} ->
- 	    (catch compile1(PrefixedFile,Options1));
+    Options2 = includes(File,Options1),
+    Includes=[I||{i,I}<-Options2],
+    case (catch input_file_type(File,Includes)) of
+	{single_file,SuffixedFile} -> %% "e.g. "/tmp/File.asn"
+ 	    (catch compile1(SuffixedFile,Options2));
 	{multiple_files_file,SetBase,FileName} ->
-	    FileList = get_file_list(FileName),
-	    case [X||{inline,X}<-Options1] of
+	    FileList = get_file_list(FileName,Options2),
+	    io:format("FileList: ~p~n",[FileList]),
+	    case [X||{inline,X}<-Options2] of
 		[] ->
 		    (catch compile_set(SetBase,filename:dirname(FileName),
-				       FileList,Options1));
+				       FileList,Options2));
 		[OutputName] -> 
 		    NewFileList=
 			[filename:rootname(filename:basename(X))||X<-FileList],
-		    (catch compile_inline(OutputName,filename:dirname(FileName),NewFileList,Options1))
+		    (catch compile_inline(OutputName,filename:dirname(FileName),NewFileList,Options2))
 	    end;
 	Err = {input_file_error,_Reason} ->
-	    {error,Err}
+	    {error,Err};
+	Err2 -> Err2
     end.
 
 
@@ -150,14 +154,16 @@ compile_inline(Name,DirName,Modules,Options) ->
     Fun = fun(M)-> compile(filename:join([DirName,M]),Options1) end,
     lists:foreach(Fun,Modules),
     RTmodule = get_runtime_mod(Options1),
-    IgorOptions = remove_asn_flags(Options1),
-    case igor:merge(Name,Modules++RTmodule,[{preprocess,true},{stubs,false}]++IgorOptions) of
+    IgorOptions = igorify_options(remove_asn_flags(Options1)),
+    io:format("*****~nName: ~p~nModules: ~p~nIgorOptions: ~p~n*****",
+	      [Name,Modules++RTmodule,IgorOptions]),
+    case catch igor:merge(Name,Modules++RTmodule,[{preprocess,true},{stubs,false}]++IgorOptions) of
 	{'EXIT',{undef,Reason}} -> %% module igor first in R10B
 	    io:format("Module igor in syntax_tools must be available:~n~p~n",
 		      [Reason]);
 	_ ->
 	    io:format("compiling output module: ~p~n",[Name]),
-	    erl_compile(Name,Options1)
+	    erl_compile(generated_file(Name,IgorOptions),Options1)
     end.
 
 %% compile_set/4 merges and compiles a number of asn1 modules
@@ -764,7 +770,8 @@ check({true,M},File,OutFile,Includes,EncodingRule,DbFile,Options,InputMods) ->
 	    cmp(M#module.name,File);
 	_ -> ok
     end,
-    start(["."|Includes]),
+%    start(["."|Includes]),
+    start(Includes),
     case asn1ct_check:storeindb(M) of 
 	ok   ->
 	    Module = asn1_db:dbget(M#module.name,'MODULE'),
@@ -838,6 +845,7 @@ generate({false,M},_,_,_) ->
 parse_and_save(Module,S) ->
     Options = S#state.options,
     SourceDir = S#state.sourcedir,
+%    CurrDir = ".",
     Includes = [I || {i,I} <-Options],
 %    Base = filename:basename(File),
     Options1 =
@@ -847,15 +855,17 @@ parse_and_save(Module,S) ->
 	    _ -> Options
 	end,
     
+%    case get_input_file(Module,[SourceDir,CurrDir|Includes]) of
     case get_input_file(Module,[SourceDir|Includes]) of
-	{file,PrefixedFile} ->
-	    case dbfile_uptodate(PrefixedFile,Options1) of
+	{file,SuffixedFile} ->
+	    case dbfile_uptodate(SuffixedFile,Options1) of
 		false ->
-		    parse_and_save1(PrefixedFile,Options1);
+		    parse_and_save1(SuffixedFile,Options1);
 		_ -> ok
 	    end;
-	Err ->
-	    {error,{asn1,input_file_error,Err}}
+	_Err ->
+%	    {error,{asn1,input_file_error,Err}}
+	    exit({error,{asn1,Module,"no such file"}})
     end.
 parse_and_save1(File,Options) ->
     Ext = filename:extension(File),
@@ -867,9 +877,10 @@ parse_and_save1(File,Options) ->
 	case parse(Continue1,File,Options) of
 	    {true,Mod} -> Mod;
 	    _ ->
-		exit({error,{asn1,File,"no such file or directory"}})
+		exit({error,{asn1,File,"no such file"}})
 	end,
-    start(["."|Includes]),
+%    start(["."|Includes]),
+    start(Includes),
     case asn1ct_check:storeindb(M) of 
 	ok   ->
 	    asn1_db:dbsave(DbFile,M#module.name)
@@ -940,6 +951,21 @@ compile_erl({false,true},_,_) ->
 compile_erl({false,Result},_,_) ->
     Result.
 
+input_file_type(Name,I) ->
+   case input_file_type(Name) of
+       {error,_} -> input_file_type2(filename:basename(Name),I);
+       Err={input_file_error,_} -> Err;
+       Res -> Res
+   end.
+input_file_type2(Name,[I|Is]) ->
+    case input_file_type(filename:join([I,Name])) of
+	{error,_} -> input_file_type2(Name,Is);
+	Err={input_file_error,_} -> Err;
+	Res -> Res
+    end;
+input_file_type2(Name,[]) ->
+    input_file_type(Name).
+	   
 input_file_type([]) ->
     {empty_name,[]};
 input_file_type(File) ->
@@ -953,7 +979,12 @@ input_file_type(File) ->
 			{ok,_FileInfo} ->
 			    {single_file, lists:concat([File,".asn"])};
 			_Error ->
-			    {single_file, lists:concat([File,".py"])}
+			    case file:read_file_info(lists:concat([File,".py"])) of
+				{ok,_FileInfo} ->
+				    {single_file, lists:concat([File,".py"])};
+				Error ->
+				    Error
+			    end
 		    end
 	    end;
 	".asn1config" ->
@@ -964,45 +995,53 @@ input_file_type(File) ->
 		Error ->
 		    Error
 	    end;
-	Asn1PFix ->
-	    Base = filename:basename(File,Asn1PFix),
-	    case filename:extension(Base) of
-		[] ->
-		    {single_file,File};
-		SetPFix when (SetPFix == ".set") ->
-		    {multiple_files_file,
-		     list_to_atom(filename:basename(Base,SetPFix)),
-		     File};
-		_Error ->
-		    throw({input_file_error,{'Bad input file',File}})
+	Asn1SFix ->
+	    Base = filename:basename(File,Asn1SFix),
+	    Ret =
+		case filename:extension(Base) of
+		    [] ->
+			{single_file,File};
+		    SetSFix when (SetSFix == ".set") ->
+			{multiple_files_file,
+			 list_to_atom(filename:basename(Base,SetSFix)),
+			 File};
+		    _Error ->
+			throw({input_file_error,{'Bad input file',File}})
+		end,
+	    %% check that the file exists
+	    case file:read_file_info(File) of
+		{ok,_} -> Ret;
+		Err -> Err
 	    end
     end.
 
-get_file_list(File) ->
+get_file_list(File,Options) ->
     case file:open(File,read) of
 	{error,Reason} ->
 	    {error,{File,file:format_error(Reason)}};
 	{ok,Stream} ->
-	    get_file_list1(Stream,[])
+	    get_file_list1(Stream,filename:dirname(File),Options,[])
     end.
 
-get_file_list1(Stream,Acc) ->
+get_file_list1(Stream,Dir,Options,Acc) ->
     Ret = io:get_line(Stream,''),
     case Ret of
 	eof ->
 	    file:close(Stream),
 	    lists:reverse(Acc);
 	FileName ->
-	    PrefixedNameList =
-		case (catch input_file_type(lists:delete($\n,FileName))) of
+	    SuffixedNameList =
+		case (catch input_file_type(filename:join([Dir,lists:delete($\n,FileName)]),Options)) of
+%		case (catch input_file_type(lists:delete($\n,FileName))) of
 		    {empty_name,[]} -> [];
 		    {single_file,Name} -> [Name];
 		    {multiple_files_file,_,Name} ->
-			get_file_list(Name);
-		    Err = {input_file_error,_Reason} ->
-			throw(Err)
+			get_file_list(Name,Options);
+		    Err ->
+			io:format("FileName: ~p, Dir: ~p~n",[FileName,Dir]),
+			[]
 		end,
-	    get_file_list1(Stream,PrefixedNameList++Acc)
+	    get_file_list1(Stream,Dir,Options,SuffixedNameList++Acc)
     end.
 
 get_rule(Options) ->
@@ -1071,6 +1110,22 @@ debug_on(Options) ->
 	    true
     end.
 
+igorify_options(Options) ->
+    case lists:keysearch(outdir,1,Options) of
+	{value,{_,Dir}} ->
+	    Options1 = lists:keydelete(outdir,1,Options),
+	    [{dir,Dir}|Options1];
+	_ ->
+	    Options
+    end.
+
+generated_file(Name,Options) ->
+    case lists:keysearch(dir,1,Options) of
+	{value,{_,Dir}} ->
+	    filename:join([Dir,filename:basename(Name)]);
+	_ ->
+	    Name
+    end.
 
 debug_off(_Options) ->
     erase(asndebug),
@@ -1078,6 +1133,7 @@ debug_off(_Options) ->
 
 
 outfile(Base, Ext, Opts) ->
+%    io:format("Opts. ~p~n",[Opts]),
     Obase = case lists:keysearch(outdir, 1, Opts) of
 		{value, {outdir, Odir}} -> filename:join(Odir, Base);
 		_NotFound -> Base % Not found or bad format
@@ -1087,6 +1143,17 @@ outfile(Base, Ext, Opts) ->
 	    Obase;
 	_ ->
 	    lists:concat([Obase,".",Ext])
+    end.
+
+includes(File,Options) -> 
+    case filename:dirname(File) of
+	[] ->
+	    Options;
+	_ ->
+	    case lists:member({i,"."},Options) of
+		false -> Options ++ [{i,"."}];
+		_ -> Options
+	    end
     end.
 
 %% compile(AbsFileName, Options)

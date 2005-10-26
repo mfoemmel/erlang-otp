@@ -58,16 +58,6 @@ void esock_ssl_finish(void);
 
 void esock_ssl_free(Connection *cp);
 
-/* Setting and reading of fd_set masks */
-/* XXX Maybe this should be moved to esock.c, since they do not
- * (yet) depend on any specific SSL feature or package. */
-
-int esock_ssl_set_masks(Connection *cp, fd_set *rfds, fd_set *wfds, 
-			fd_set *efds, int verbose);
-Connection *esock_ssl_read_masks(Connection *cp, Connection **cpnext, 
-				 fd_set *rfds, fd_set *wfds, fd_set *efds, 
-				 int set_wq_fds);
-
 /* Print error diagnostics to a file pointer */
 
 void esock_ssl_print_errors_fp(FILE *fp);

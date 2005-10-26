@@ -27,10 +27,10 @@
 %% start/2(Type, StartArgs) -> {ok, Pid} | {ok, Pid, State} | 
 %%                             {error, Reason}
 %%
-start(Type, StartArgs) ->
-    ssh_crypto_sup:start_link().
+start(_Type, _StartArgs) ->
+    {ok, self()}.
 
 %% stop(State) -> void()
 %%
-stop(State) ->
+stop(_State) ->
     ok.

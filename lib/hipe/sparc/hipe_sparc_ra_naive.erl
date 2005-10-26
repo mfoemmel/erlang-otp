@@ -12,8 +12,8 @@
 %%                Added support for stack frame minimization
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2005/01/19 10:14:06 $
-%%              $Revision: 1.1 $
+%%              $Date: 2005/08/29 14:34:43 $
+%%              $Revision: 1.2 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -36,12 +36,10 @@ alloc(SparcCfg, Options) ->
   %% Code to minimize stack size by allocation of temps to spill positions
   ?opt_start_timer("Minimize"),
   {TempMap2, NewSpillPos} = 
-    hipe_spill_minimize:stackalloc(SparcCfg, [], 
-				   0, Options, 
-				   hipe_sparc_specific, 
-				   TempMap),
-  TempMap3 = hipe_spill_minimize:mapmerge(hipe_temp_map:to_substlist(TempMap), 
-					  TempMap2),
+    hipe_spillmin:stackalloc(SparcCfg, [], 0, Options, 
+			     hipe_sparc_specific, TempMap),
+  TempMap3 = hipe_spillmin:mapmerge(hipe_temp_map:to_substlist(TempMap), 
+				    TempMap2),
   TempMap4 = hipe_temp_map:cols2tuple(TempMap3, hipe_sparc_specific),
   ?opt_stop_timer("Minimize"),    
 

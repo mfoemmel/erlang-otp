@@ -41,6 +41,11 @@ typedef struct {
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
  * The pthread implementation                                                *
 \*                                                                           */
+
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#error "_GNU_SOURCE not defined. Please, compile all files with -D_GNU_SOURCE."
+#endif
+
 #if defined(ETHR_HAVE_MIT_PTHREAD_H)
 #include <pthread/mit/pthread.h>
 #elif defined(ETHR_HAVE_PTHREAD_H)

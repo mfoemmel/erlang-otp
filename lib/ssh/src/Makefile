@@ -36,27 +36,50 @@ RELSYSDIR = $(RELEASE_PATH)/lib/ssh-$(VSN)
 MODULES= \
 	ssh \
 	ssh_app \
-	ssh_connection \
-	ssh_crypto \
-	ssh_crypto_server \
-	ssh_crypto_sup \
-	ssh_ftp \
+	ssh_bits \
+	ssh_cli \
+	ssh_cm \
+	ssh_dsa \
+	ssh_file \
+	ssh_io \
+	ssh_math \
+	ssh_no_io \
+	ssh_rsa \
+	ssh_sftp \
+	ssh_sftpd \
+	ssh_ssh \
+	ssh_sshd \
+	ssh_tcp \
+	ssh_tcp_wrap \
 	ssh_transport \
-	ssh_userauth
+	ssh_userauth \
+	ssh_xfer
 
-HRL_FILES= ssh.hrl
+PUBLIC_HRL_FILES= ssh.hrl ssh_userauth.hrl ssh_xfer.hrl
 
-ERL_FILES= $(MODULES:%=%.erl)
+ERL_FILES= $(MODULES:%=%.erl) $(ASN_ERLS)
 
-TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+ALL_MODULES= $(MODULES) $(ASN_MODULES)
+
+TARGET_FILES= $(ALL_MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 
 APP_FILE= ssh.app
 APPUP_FILE= ssh.appup
 
 APP_SRC= $(APP_FILE).src
 APP_TARGET= $(EBIN)/$(APP_FILE)
+
 APPUP_SRC= $(APPUP_FILE).src
 APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
+
+ASN_MODULES = PKCS-1 DSS
+ASN_ASNS = $(ASN_MODULES:%=%.asn1)
+ASN_ERLS = $(ASN_MODULES:%=%.erl)
+ASN_HRLS = $(ASN_MODULES:%=%.hrl)
+ASN_DBS = $(ASN_MODULES:%=%.asn1db)
+ASN_TABLES = $(ASN_MODULES:%=%.table)
+
+ASN_FLAGS = -bber_bin +der +compact_bit_string +optimize +noobj
 
 # ----------------------------------------------------
 # FLAGS
@@ -68,17 +91,30 @@ ERL_COMPILE_FLAGS +=
 # Targets
 # ----------------------------------------------------
 
-debug opt: $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) 
+debug opt: $(TARGET_FILES)
+
+debug: ERLC_FLAGS += -Ddebug
 
 clean:
-	rm -f $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) 
+	rm -f $(TARGET_FILES)
 	rm -f errs core *~
+	rm -f $(ASN_ERLS) $(ASN_HRLS) $(ASN_DBS)
+
+$(TARGET_FILES): ssh.hrl
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
+
+%.hrl: %.asn1
+	erlc $(ASN_FLAGS) $<
+
+DSS.hrl DSS.erl: DSS.asn1
+PKCS-1.hrl PKCS-1.erl: PKCS-1.asn1
+
+$(EBIN)/ssh_file.$(EMULATOR): $(ASN_HRLS)
 
 docs:
 
@@ -91,14 +127,9 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(ERL_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
-	$(INSTALL_DATA) $(TARGET_FILES) $(APP_TARGET) \
-		$(APPUP_TARGET) $(RELSYSDIR)/ebin
+	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
+	$(INSTALL_DIR) $(RELSYSDIR)/include
+	$(INSTALL_DATA) $(PUBLIC_HRL_FILES) $(RELSYSDIR)/include
 
 release_docs_spec:
-
-
-
-
-
-
 

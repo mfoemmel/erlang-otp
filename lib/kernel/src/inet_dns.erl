@@ -204,11 +204,10 @@ encode(Q) ->
     {B1,Ptrs0} = encode_query_section(Q#dns_rec.qdlist, [], B0),
     {B2,Ptrs1} = encode_res_section(Q#dns_rec.anlist, Ptrs0, B1),
     {B3,Ptrs2} = encode_res_section(Q#dns_rec.nslist, Ptrs1, B2),
-    {B4,Ptrs3} = encode_res_section(Q#dns_rec.arlist, Ptrs2, B3),
+    {B4,_Ptrs3} = encode_res_section(Q#dns_rec.arlist, Ptrs2, B3),
     {ok, B4}.
 
 encode_header(H) ->
-    ID = H#dns_header.id,
     F1 = 
 	(H#dns_header.qr bsl 7) bor
 	(H#dns_header.opcode bsl 3) bor
@@ -237,11 +236,11 @@ encode_res_section([R | Rs], Ptrs, Buffer) ->
     Class = encode_class(R#dns_rr.class),
     {NBuffer, NPtrs} = dn_compress(DName, Ptrs, Buffer),
     DataPtr = length(NBuffer) + 10, % length(i16, i16, i32, i16) = 10
-    {Data,Ptrs1} = encode_data(R#dns_rr.type,
-			       R#dns_rr.class,
-			       R#dns_rr.data,
-			       NPtrs,
-			       DataPtr),
+    {Data,_Ptrs1} = encode_data(R#dns_rr.type,
+				R#dns_rr.class,
+				R#dns_rr.data,
+				NPtrs,
+				DataPtr),
     N = length(Data),
     encode_res_section(Rs, NPtrs, NBuffer ++ 
 		       ?int16(Type) ++ ?int16(Class) ++
@@ -380,11 +379,11 @@ decode_data(?S_SOA, _, Data, Buffer) ->
 decode_data(?S_MB, _, Dom, Buffer)    -> decode_domain(Dom, Buffer); 
 decode_data(?S_MG, _, Dom, Buffer)    -> decode_domain(Dom, Buffer); 
 decode_data(?S_MR, _, Dom, Buffer)    -> decode_domain(Dom, Buffer); 
-decode_data(?S_NULL, _, Data, Buffer) -> Data;
-decode_data(?S_WKS, in, [A,B,C,D, P | BitMap], Buffer) -> 
+decode_data(?S_NULL, _, Data, _Buffer) -> Data;
+decode_data(?S_WKS, in, [A,B,C,D, P | BitMap], _Buffer) -> 
     { {A,B,C,D}, P, BitMap};
 decode_data(?S_PTR, _, Dom, Buffer)   -> decode_domain(Dom, Buffer);
-decode_data(?S_HINFO, _, Data, Buffer) ->
+decode_data(?S_HINFO, _, Data, _Buffer) ->
     {CPU, RData} = get_data(hd(Data), tl(Data)),
     {OS, _} = get_data(hd(RData), tl(RData)),
     {CPU, OS};
@@ -401,9 +400,9 @@ decode_data(?S_MX, _, [P1,P0 | Dom], Buffer) ->
     { ?i16(P1,P0), decode_domain(Dom, Buffer) };
 decode_data(?S_SRV, _, [P1,P0, W1,W0, Po1,Po0 | Dom], Buffer) ->
     { ?i16(P1,P0), ?i16(W1,W0), ?i16(Po1,Po0), decode_domain(Dom, Buffer) };
-decode_data(?S_TXT, _, Data, Buffer) -> Data;
+decode_data(?S_TXT, _, Data, _Buffer) -> Data;
 %% sofar unknown or non standard
-decode_data(_, _, Data, Buffer) ->
+decode_data(_, _, Data, _Buffer) ->
     Data.
 
 decode_domain(Data, Buffer) ->
@@ -521,7 +520,7 @@ dn_compress(Name, Ns, Buffer, FullLength) ->
     {Buf, NNs} = dn_comp(Name, Ns, [], FullLength),
     {Buffer ++ Buf, NNs}.
 
-dn_comp([], Ns0, Buf, Offset) ->
+dn_comp([], Ns0, Buf, _Offset) ->
     { Buf, Ns0};
 dn_comp(Name, Ns0, Buf, Offset) ->
     case dn_find(Name, Ns0) of
@@ -532,7 +531,7 @@ dn_comp(Name, Ns0, Buf, Offset) ->
 	    dn_comp_label(Name, [{Name, Offset} | Ns0], [], Buf, Offset)
     end.
 
-dn_comp_label([$\\, 0 | Name], Ns, Cn, Buf, Offset) ->
+dn_comp_label([$\\, 0 | _Garbage], Ns, Cn, Buf, _Offset) ->
     Label = [length(Cn) | reverse([0 | Cn])],
     { Buf ++ Label, Ns};
 dn_comp_label([$. | Name], Ns, Cn, Buf, Offset) ->
@@ -542,7 +541,7 @@ dn_comp_label([$\\, C | Name], Ns, Cn, Buf, Offset) ->
     dn_comp_label(Name, Ns, [C, $\\ | Cn], Buf, Offset+2); %% Keep $\\
 dn_comp_label([C | Name], Ns, Cn, Buf, Offset) ->
     dn_comp_label(Name, Ns, [C|Cn], Buf, Offset+1);
-dn_comp_label([], Ns, Cn, Buf, Offset) ->
+dn_comp_label([], Ns, Cn, Buf, _Offset) ->
     Label = [length(Cn) | reverse([0|Cn])],
     { Buf ++ Label, Ns}.
 
@@ -556,7 +555,7 @@ dn_skip([N|Dn]) when N band ?INDIR_MASK == 0 ->
 	{'EXIT', _} -> error;
 	NDn -> dn_skip(NDn)
     end;
-dn_skip([N1,N2|Dn]) when N1 band ?INDIR_MASK == ?INDIR_MASK ->
+dn_skip([N1,_N2|Dn]) when N1 band ?INDIR_MASK == ?INDIR_MASK ->
     Dn;
 dn_skip(_) -> error.
 

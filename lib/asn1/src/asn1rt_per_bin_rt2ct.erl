@@ -1186,6 +1186,8 @@ encode_bin_bit_string(C,UnusedAndBin={_,_},NamedBitList) ->
 
 remove_trailing_bin([], {Unused,Bin}) ->
     {Unused,Bin};
+remove_trailing_bin(_NamedNumberList,{_Unused,<<>>}) ->
+    {0,<<>>};
 remove_trailing_bin(NamedNumberList, {_Unused,Bin}) ->
     Size = size(Bin)-1,
     <<Bfront:Size/binary, LastByte:8>> = Bin,

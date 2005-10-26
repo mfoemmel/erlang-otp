@@ -33,6 +33,7 @@
 -include_lib("megaco/include/megaco_message_prev3a.hrl").
 -include("megaco_text_tokens.hrl").
 
+
 %%----------------------------------------------------------------------
 %% Convert a 'MegacoMessage' record into a binary
 %% Return {ok, DeepIoList} | {error, Reason}

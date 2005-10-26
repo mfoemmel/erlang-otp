@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_report.erl,v 1.9 2004/08/24 23:06:22 richardc Exp $
+%% $Id$
 %% 
 %% @private
 %% @copyright 2001-2003 Richard Carlsson
@@ -86,6 +86,8 @@ where({File, module}) ->
     io_lib:fwrite("~s, in module header: ", [File]);
 where({File, footer}) ->
     io_lib:fwrite("~s, in module footer: ", [File]);
+where({File, header}) ->
+    io_lib:fwrite("~s, in header file: ", [File]);
 where({File, {F, A}}) ->
     io_lib:fwrite("~s, function ~s/~w: ", [File, F, A]);
 where([]) ->

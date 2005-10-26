@@ -47,7 +47,6 @@
             httpd_socket,
             httpd_sup,
             httpd_util,
-            httpd_verbosity,
             mod_actions,
             mod_alias,
             mod_auth,

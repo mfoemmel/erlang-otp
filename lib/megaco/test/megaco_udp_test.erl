@@ -26,13 +26,27 @@
 -include_lib("megaco/src/udp/megaco_udp.hrl").
 -include("megaco_test_lib.hrl").
 
--compile(export_all).
 
 %%----------------------------------------------------------------------
 %% External exports
 %%----------------------------------------------------------------------
 -export([
-        ]).
+	 all/1,
+	 
+	 start/1,
+	 start_normal/1,
+	 start_invalid_opt/1,
+
+	 sending/1,
+	 sendreceive/1,
+
+	 errors/1,
+	 socket/1,
+
+         init_per_testcase/2, fin_per_testcase/2,
+ 
+         t/0, t/1
+         ]).
 
 %%----------------------------------------------------------------------
 %% Internal exports
@@ -55,7 +69,8 @@
 %% Function: t/0
 %% Description: Run all test cases
 %%----------------------------------------------------------------------
-t()     -> megaco_test_lib:t(?MODULE).
+t() -> megaco_test_lib:t(?MODULE).
+
 %%----------------------------------------------------------------------
 %% Function: t/1
 %% Description: Run the specified test cases 
@@ -83,6 +98,7 @@ fin_per_testcase(Case, Config) ->
 %%======================================================================
 %% Test case definitions
 %%======================================================================
+
 all(suite) ->
     [
      start,
@@ -91,29 +107,82 @@ all(suite) ->
     ].
 
 start(suite) ->
-    [];
-start(Config) when list(Config) ->
-    ?ACQUIRE_NODES(1, Config),
-    normal_start_case().
+    [
+     start_normal,
+     start_invalid_opt
+    ].
 
 sending(suite) ->
+    [
+     sendreceive
+    ].
+
+errors(suite) ->
+    [
+     socket
+    ].
+
+
+%% ------------------ start ------------------------
+
+start_normal(suite) ->
     [];
-sending(Config) when list(Config) ->
+start_normal(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Opts = [{port, 0}, {receive_handle, apa}],
+    start_case(Opts, ok).
+
+start_invalid_opt(suite) ->
+    [];
+start_invalid_opt(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Opts = [{port, 0}, {receivehandle, apa}],
+    start_case(Opts, error).
+
+
+%% ------------------ sending ------------------------
+
+sendreceive(suite) ->
+    [];
+sendreceive(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     sendreceive().
 
-errors(suite) ->
+
+%% ------------------ errors ------------------------
+
+socket(suite) ->
     [];
-errors(Config) when list(Config) ->
+socket(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     failing_socket().
+
 
 %%======================================================================
 %% Test functions
 %%======================================================================
 
-normal_start_case() ->
-    ?SKIP(not_yet_implemented).
+start_case(Opts, Expect) ->
+    case (catch megaco_udp:start_transport()) of
+	{ok, Pid} ->
+	    case (catch megaco_udp:open(Pid, Opts)) of
+		{ok, _Handle, _CtrlPid} when Expect == ok ->
+		    {ok, Pid};
+		{ok, Handle, CtrlPid} ->
+		    exit(Pid, kill),
+		    ?ERROR({unexpected_start_sucesss, Handle, CtrlPid});
+		{error, _Reason} when Expect == error ->
+		    exit(Pid, kill),
+		    ok;
+		{error, Reason} ->
+		    exit(Pid, kill),
+		    ?ERROR({unexpected_start_failure, Reason});
+		Error ->
+		    ?ERROR({unexpected_result, Error})
+	    end;
+	{error, Reason} ->
+	    ?ERROR({failed_starting_transport, Reason})
+    end.
 
 sendreceive() ->
     ?SKIP(not_yet_implemented).
@@ -121,15 +190,3 @@ sendreceive() ->
 failing_socket() ->
     ?SKIP(not_yet_implemented).
 
-%%======================================================================
-%% Internal functions
-%%======================================================================
-compute_res(All) ->
-    compute_res(All, [], 0).
-
-compute_res([H | T], Bad, Sum) when integer(H) ->
-    compute_res(T, Bad, Sum + H);
-compute_res([H | T], Bad, Sum) ->
-    compute_res(T, [H | Bad], Sum);
-compute_res([], Bad, Sum) ->
-    ok = io:format("#bytes: ~w; errors: ~p~n", [Sum, Bad]).

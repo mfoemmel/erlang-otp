@@ -41,7 +41,7 @@
 
 %% API
 -export([t/0, t1/0, t/1]).
--export([e/0]).
+-export([b/0, e/0]).
 
 %% Internal exports
 -export([do_measure_codec/7, do_measure_codec_loop/7]).
@@ -80,6 +80,10 @@ t() ->
 e() ->
     t([erlang]).
 
+b() ->
+    t([ber, per]).
+
+
 %% Dirs is a list of directories containing files,
 %% each with a single megaco message. 
 %%
@@ -96,8 +100,10 @@ t(Dirs) when list(Dirs) ->
     display_system_info(),
     display_app_info(),
     io:format("~n", []),
+    Started = now(),
     EDirs = expand_dirs(Dirs, []),
     Results = t1(EDirs, []), 
+    display_time(Started, now()),
     store_results(Results).
 
 display_os_info() ->
@@ -147,7 +153,44 @@ display_asn1_info() ->
     io:format("ASN.1 version:       ~s~n", [Vsn]).
 
 
+%% {MegaSec, Sec, MicroSec}
+display_time(Start, Fin) ->
+    FormatDate1 = format_timestamp(Start),
+    FormatDate2 = format_timestamp(Fin),
+    FormatDiff  = format_diff(Start, Fin),
+    io:format("Started:  ~s~n", [FormatDate1]),
+    io:format("Finished: ~s~n", [FormatDate2]),
+    io:format("          ~s~n~n~n", [FormatDiff]),
+    ok.
     
+format_timestamp({_N1, _N2, N3} = Now) ->
+    {Date, Time}   = calendar:now_to_datetime(Now),
+    {YYYY,MM,DD}   = Date,
+    {Hour,Min,Sec} = Time,
+    FormatDate =
+        io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+                      [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),
+    lists:flatten(FormatDate).
+  
+format_diff(Start, Fin) ->
+    DateTime1 = calendar:now_to_universal_time(Start),
+    DateTime2 = calendar:now_to_universal_time(Fin),
+    T1 = calendar:datetime_to_gregorian_seconds(DateTime1),
+    T2 = calendar:datetime_to_gregorian_seconds(DateTime2),
+    {_, Diff} = calendar:gregorian_seconds_to_datetime(T2 - T1),
+    Tmp = 
+	case Diff of
+	    {0, 0, S} ->
+		io_lib:format("~.2.0w sec", [S]);
+	    {0, M, S} ->
+		io_lib:format("~w min ~.2.0w sec", [M,S]);
+	    {H, M, S} ->
+		io_lib:format("~w hour ~w min ~.2.0w sec", [H,M,S])
+	end,
+    lists:flatten(Tmp).
+    
+    
+			      
 t1([], Results) ->
     lists:reverse(Results);
 t1([{Dir, Codec, Conf, _} = EDir|Dirs], Results) ->
@@ -166,7 +209,7 @@ t1([{Dir, Codec, Conf, _} = EDir|Dirs], Results) ->
 measure({Dir, Codec, Conf, Count}) when list(Dir) ->
     io:format("measure using codec ~p ~p~n ", [Codec, Conf]),
     {Init, Conf1} = measure_init(Conf),
-    Conf2 = [{version3,prev3a}|Conf1],
+    Conf2 = [{version3,prev3b}|Conf1],
     Res = measure(Dir, Codec, Conf2, read_files(Dir), [], Count),
     measure_fin(Init),
     Res.

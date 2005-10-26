@@ -390,12 +390,12 @@ tr_ammDescriptors([], Acc, _State) ->
     lists:reverse(Acc);
 tr_ammDescriptors([Desc|Descs], Acc, State) ->
     case tr_ammDescriptor(Desc, State) of
-	deprecated when State#state.mode == encode ->
+	{_, deprecated} when State#state.mode == encode ->
 	    ?error({deprecated, Desc});
-	deprecated when State#state.mode == decode ->
+	{_, deprecated} when State#state.mode == decode ->
 	    %% SKIP
 	    tr_ammDescriptors(Descs, Acc, State);
-	deprecated ->
+	{_, deprecated} ->
 	    %% SKIP
 	    tr_ammDescriptors(Descs, Acc, State);
 	NewDesc ->
@@ -744,12 +744,12 @@ do_tr_TerminationAudit([], Acc, _State) ->
     lists:reverse(Acc);
 do_tr_TerminationAudit([Parm|ParmList], Acc, State) ->
     case tr_AuditReturnParameter(Parm, State) of
-	deprecated when State#state.mode == encode ->
+	{_, deprecated} when State#state.mode == encode ->
 	    ?error({deprecated, Parm});
-	deprecated when State#state.mode == decode ->
+	{_, deprecated} when State#state.mode == decode ->
 	    %% SKIP
 	    do_tr_TerminationAudit(ParmList, Acc, State);
-	deprecated ->
+	{_, deprecated} ->
 	    %% SKIP
 	    do_tr_TerminationAudit(ParmList, Acc, State);
 	NewParm ->

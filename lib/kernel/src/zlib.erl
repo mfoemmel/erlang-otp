@@ -18,18 +18,18 @@
 
 -module(zlib).
 
--export([open/0,close/1,deflateInit/2,deflateInit/6,
+-export([open/0,close/1,deflateInit/1,deflateInit/2,deflateInit/6,
 	 deflateSetDictionary/2,deflateReset/1,deflateParams/3,
-	 deflate/3,deflateEnd/1,
+	 deflate/2,deflate/3,deflateEnd/1,
 	 inflateInit/1,inflateInit/2,inflateSetDictionary/2,
-	 inflateSync/1,inflateReset/1,inflate/3,inflateEnd/1,
-	 setBufsz/2,getBufsz/1,crc32/1,crc32/2,crc32/3,getQSize/1,
+	 inflateSync/1,inflateReset/1,inflate/2,inflateEnd/1,
+	 setBufSize/2,getBufSize/1,
+	 crc32/1,crc32/2,crc32/3,adler32/2,adler32/3,getQSize/1,
 	 compress/1,uncompress/1,zip/1,unzip/1,
-	 gzip_file/1,gzip/1,gunzip_file/1,gunzip/1]).
+	 gzip/1,gunzip/1]).
 
 %% flush argument encoding
 -define(Z_NO_FLUSH,      0).
--define(Z_PARTIAL_FLUSH, 1). %% use Z_SYNC_FLUSH instead
 -define(Z_SYNC_FLUSH,    2).
 -define(Z_FULL_FLUSH,    3).
 -define(Z_FINISH,        4).
@@ -119,13 +119,22 @@
 -define(GET_BUFSZ,       19).
 -define(GET_QSIZE,       20).
 
+-define(ADLER32_1,       21).
+-define(ADLER32_2,       22).
+
 %% open a z_stream
 open() ->
     open_port({spawn, zlib_drv}, [binary]).
 
 %% close and release z_stream
 close(Z) ->
-    port_close(Z).
+    try true = port_close(Z),
+	ok
+    catch _:_ -> erlang:error(badarg)
+    end.
+
+deflateInit(Z) ->
+    call(Z, ?DEFLATE_INIT, <<?Z_DEFAULT_COMPRESSION:32>>).
 
 deflateInit(Z, Level) ->
     call(Z, ?DEFLATE_INIT, <<(arg_level(Level)):32>>).
@@ -133,8 +142,8 @@ deflateInit(Z, Level) ->
 deflateInit(Z, Level, Method, WindowBits, MemLevel, Strategy) ->
     call(Z, ?DEFLATE_INIT2, <<(arg_level(Level)):32, 
 			     (arg_method(Method)):32,
-			     WindowBits:32, 
-			     MemLevel:32,
+			     (arg_bitsz(WindowBits)):32, 
+			     (arg_mem(MemLevel)):32,
 			     (arg_strategy(Strategy)):32>>).
 
 deflateSetDictionary(Z, Dictionary) ->
@@ -147,14 +156,18 @@ deflateParams(Z, Level, Strategy) ->
     call(Z, ?DEFLATE_PARAMS, <<(arg_level(Level)):32, 
 			      (arg_strategy(Strategy)):32>>).
 
+deflate(Z, Data) ->
+    deflate(Z, Data, none).
+
 deflate(Z, Data, Flush) ->
-    case catch port_command(Z, Data) of
+    try port_command(Z, Data) of
 	true ->
 	    call(Z, ?DEFLATE, <<(arg_flush(Flush)):32>>),
-	    collect(Z);
-	Error -> 
-	    flush(Z), 
-	    Error
+	    collect(Z)
+    catch 
+	error:_Err ->
+	    flush(Z),
+	    erlang:error(badarg) 
     end.
 
 deflateEnd(Z) ->
@@ -164,7 +177,7 @@ inflateInit(Z) ->
     call(Z, ?INFLATE_INIT, []).    
 
 inflateInit(Z, WindowBits) -> 
-    call(Z, ?INFLATE_INIT2, <<WindowBits:32>>).
+    call(Z, ?INFLATE_INIT2, <<(arg_bitsz(WindowBits)):32>>).
 
 inflateSetDictionary(Z, Dictionary) -> 
     call(Z, ?INFLATE_SETDICT, Dictionary).
@@ -175,23 +188,25 @@ inflateSync(Z) ->
 inflateReset(Z) -> 
     call(Z, ?INFLATE_RESET, []).    
 
-inflate(Z, Data, Flush) ->
-    case catch port_command(Z, Data) of
+inflate(Z, Data) ->
+    try port_command(Z, Data) of
 	true -> 
-	    call(Z, ?INFLATE, <<(arg_flush(Flush)):32>>),
-	    collect(Z);
-	Error -> flush(Z), Error
+	    call(Z, ?INFLATE, <<?Z_NO_FLUSH:32>>),
+	    collect(Z)
+    catch 
+	error:_Err ->
+	    flush(Z),
+	    erlang:error(badarg) 
     end.
 
 inflateEnd(Z) ->
     call(Z, ?INFLATE_END, []).
 
-setBufsz(Z, Size) ->
+setBufSize(Z, Size) ->
     call(Z, ?SET_BUFSZ, <<Size:32>>).
 
-getBufsz(Z) ->
+getBufSize(Z) ->
     call(Z, ?GET_BUFSZ, []).
-
 
 crc32(Z) ->
     call(Z, ?CRC32_0, []).
@@ -199,86 +214,76 @@ crc32(Z) ->
 crc32(Z, Binary) ->
     call(Z, ?CRC32_1, Binary).
 
-crc32(Z, CRC, Binary) ->
-    call(Z, ?CRC32_2, <<CRC:32, Binary/binary>>).
-    
+crc32(Z, CRC, Binary) when is_binary(Binary), is_integer(CRC) ->
+    call(Z, ?CRC32_2, <<CRC:32, Binary/binary>>);
+crc32(_Z, _CRC, _Binary)  ->
+    erlang:error(badarg).
+
+adler32(Z, Binary) ->
+    call(Z, ?ADLER32_1, Binary).
+
+adler32(Z, Adler, Binary) when is_binary(Binary), is_integer(Adler) ->
+    call(Z, ?ADLER32_2, <<Adler:32, Binary/binary>>);
+adler32(_Z, _Adler, _Binary)  ->
+    erlang:error(badarg).
+
 getQSize(Z) ->
     call(Z, ?GET_QSIZE, []).    
 
 %% compress/uncompress zlib with header
 compress(Binary) ->
     Z = open(),
-    ok = deflateInit(Z, default),
-    {ok,Bs1} = deflate(Z, Binary, none),
-    {ok,Bs2} = deflate(Z, <<>>, finish),
-    ok = deflateEnd(Z),
+    deflateInit(Z, default),
+    Bs = deflate(Z, Binary,finish),
+    deflateEnd(Z),
     close(Z),
-    {ok, list_to_binary(Bs1++Bs2)}.
+    list_to_binary(Bs).
 
-uncompress(Binary) ->
+uncompress(Binary) when is_binary(Binary), size(Binary) >= 8 ->
     Z = open(),
-    ok = inflateInit(Z),
-    {ok,Bs1} = inflate(Z, Binary, none),
-    {ok,Bs2} = inflate(Z, <<>>, finish),
-    ok = inflateEnd(Z),
+    inflateInit(Z),
+    Bs = inflate(Z, Binary),
+    inflateEnd(Z),
     close(Z),
-    {ok, list_to_binary(Bs1++Bs2)}.
+    list_to_binary(Bs);
+uncompress(Binary) when is_binary(Binary) -> erlang:error(data_error);
+uncompress(_) -> erlang:error(badarg).
 
 %% unzip/zip zlib without header (zip members)
 zip(Binary) ->
     Z = open(),
-    ok = deflateInit(Z, default, deflated, -?MAX_WBITS, 8, default),
-    {ok,Bs1} = deflate(Z, Binary, none),
-    {ok,Bs2} = deflate(Z, <<>>, finish),
-    ok = deflateEnd(Z),
+    deflateInit(Z, default, deflated, -?MAX_WBITS, 8, default),
+    Bs = deflate(Z, Binary, finish),
+    deflateEnd(Z),
     close(Z),
-    {ok, list_to_binary(Bs1++Bs2)}.
+    list_to_binary(Bs).
 
 unzip(Binary) ->
     Z = open(),
-    ok = inflateInit(Z, -?MAX_WBITS),
-    {ok,Bs1} = inflate(Z, Binary, none),
-    {ok,Bs2} = inflate(Z, <<>>, finish),
-    ok = inflateEnd(Z),
+    inflateInit(Z, -?MAX_WBITS),
+    Bs = inflate(Z, Binary),
+    inflateEnd(Z),
     close(Z),
-    {ok, list_to_binary(Bs1++Bs2)}.
-
-
-%% gunzip/gzip versions
-gzip_file(Src) ->
-    case file:read_file(Src) of
-	{ok,Bin} ->
-	    gzip(Bin);
-	Error ->
-	    Error
-    end.
+    list_to_binary(Bs).
     
 gzip(Data) ->
     Bin0 = if list(Data) -> 
 		   list_to_binary(Data);
 	      binary(Data) ->
-		   Data
+		   Data;
+	      true -> 
+		   erlang:error(badarg)
 	   end,
     Z = open(),
-    ok = deflateInit(Z, default, deflated, -?MAX_WBITS, 8, default),
-    {ok,Bs1} = deflate(Z, Bin0, none),
-    {ok,Bs2} = deflate(Z, <<>>, finish),
-    ok = deflateEnd(Z),
-    {ok,Crc} = crc32(Z, Bin0),
+    deflateInit(Z, default, deflated, -?MAX_WBITS, 8, default),
+    Bs = deflate(Z, Bin0, finish),
+    deflateEnd(Z),
+    Crc = crc32(Z, Bin0),
     close(Z),
     %% add header and crc
     Head = write_gzip_header(#gzip {}),
     Tail = <<Crc:32/little, (size(Bin0)):32/little>>,
-    {ok, list_to_binary([Head,Bs1,Bs2,Tail])}.
-
-
-gunzip_file(Src) ->
-    case file:read_file(Src) of
-	{ok, Bin} ->
-	    gunzip(Bin);
-	Error -> 
-	    Error
-    end.
+    list_to_binary([Head,Bs,Tail]).
 
 gunzip(Bin0 = <<?ID1, ?ID2, Method, Flags, MTime:32, 
 	       XFlags, OsType, _/binary>>) ->
@@ -290,23 +295,25 @@ gunzip(Bin0 = <<?ID1, ?ID2, Method, Flags, MTime:32,
     {_,Bin1} = read_gzip_header(Flags, Bin0, 10, Gz0),
     %% io:format("gunzip header = ~p\n", [Gz1]),
     Z = open(),
-    ok = inflateInit(Z, -?MAX_WBITS),
-    {ok,Bs1} = inflate(Z, Bin1, none),
-    {ok,Bs2} = inflate(Z, <<>>, finish),
-    {ok,Crc} = crc32(Z),
-    {ok,Remain} = getQSize(Z),
-    ok = inflateEnd(Z),
+    inflateInit(Z, -?MAX_WBITS),
+    Bs = inflate(Z, Bin1),
+    Crc = crc32(Z),
+    Remain = getQSize(Z),
+    inflateEnd(Z),
     close(Z),
     Offset = size(Bin1) - Remain,
-    Bin2 = list_to_binary(Bs1++Bs2),
+    Bin2 = list_to_binary(Bs),
     <<_:Offset/binary, Crc32:32/little, Length:32/little, _/binary>> = Bin1,
     if Crc32 =/= Crc ->
-	    {error, bad_crc};
+	    erlang:error(bad_crc);
        Length =/= size(Bin2) ->
-	    {error, bad_length};
+	    erlang:error(bad_length);
        true ->
-	    {ok, Bin2}
-    end.
+	    Bin2
+    end;
+gunzip(_) -> 
+    erlang:error(badarg).
+    
 
 write_gzip_header(Gz) ->
     {D1,F1} = 
@@ -400,7 +407,7 @@ collect(Z,Acc) ->
 	{Z, {data, Bin}} ->
 	    collect(Z,[Bin|Acc])
     after 0 ->
-	    {ok,lists:reverse(Acc)}
+	    lists:reverse(Acc)
     end.
 
 flush(Z) ->
@@ -410,32 +417,46 @@ flush(Z) ->
     after 0 ->
 	    ok
     end.
-
     
 arg_flush(none)    -> ?Z_NO_FLUSH;
-arg_flush(partial) -> ?Z_PARTIAL_FLUSH;
+%% ?Z_PARTIAL_FLUSH is deprecated in zlib -- deliberately not included.
 arg_flush(sync)    -> ?Z_SYNC_FLUSH;
 arg_flush(full)    -> ?Z_FULL_FLUSH;
-arg_flush(finish)  -> ?Z_FINISH.
+arg_flush(finish)  -> ?Z_FINISH;
+arg_flush(_) -> erlang:error(badarg).
 
 arg_level(none)             -> ?Z_NO_COMPRESSION;
 arg_level(best_speed)       -> ?Z_BEST_SPEED;
 arg_level(best_compression) -> ?Z_BEST_COMPRESSION;
 arg_level(default)          -> ?Z_DEFAULT_COMPRESSION;
-arg_level(Level) when Level >= 0, Level =< 9  -> Level.
-
+arg_level(Level) when Level >= 0, Level =< 9  -> Level;
+arg_level(_) -> erlang:error(badarg).
+     
 arg_strategy(filtered) -> ?Z_FILTERED;
 arg_strategy(huffman_only) -> ?Z_HUFFMAN_ONLY;
-arg_strategy(default) ->      ?Z_DEFAULT_STRATEGY.
+arg_strategy(default) ->      ?Z_DEFAULT_STRATEGY;
+arg_strategy(_) -> erlang:error(badarg).
 
-arg_method(deflated) -> ?Z_DEFLATED.
+arg_method(deflated) -> ?Z_DEFLATED;
+arg_method(_) -> erlang:error(badarg).
 
-    
-    
+arg_bitsz(Bits) when 8 < abs(Bits), abs(Bits) =< 15 ->  Bits;
+arg_bitsz(_) -> erlang:error(badarg).
+
+arg_mem(Level) when is_integer(Level), 1 =< Level , Level =< 9 -> Level;
+arg_mem(_) -> erlang:error(badarg).
 
 call(Z, Cmd, Arg) ->
-    case port_control(Z, Cmd, Arg) of
+    try port_control(Z, Cmd, Arg) of
 	[0|Res] -> list_to_atom(Res);
-	[1|Res] -> {error, list_to_atom(Res)};
-	[2,A,B,C,D] -> {ok, (A bsl 24)+(B bsl 16)+(C bsl 8)+D}
+	[1|Res] ->
+	    flush(Z),
+	    erlang:error(list_to_atom(Res));
+	[2,A,B,C,D] ->
+	    (A bsl 24)+(B bsl 16)+(C bsl 8)+D;
+	[3,A,B,C,D] ->
+	    erlang:error({need_dictionary,(A bsl 24)+(B bsl 16)+(C bsl 8)+D})
+    catch 
+	error:badarg -> %% Rethrow loses port_control from stacktrace.
+	    erlang:error(badarg)
     end.

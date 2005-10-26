@@ -121,7 +121,15 @@ info:
 # Special Build Targets
 # ----------------------------------------------------
 
-parser: megaco_text_parser.$(EMULATOR)
+parser: parser_v1 parser_v2 parser_prev3a parser_prev3b
+
+parser_v1: megaco_text_parser_v1.$(EMULATOR)
+
+parser_v2: megaco_text_parser_v2.$(EMULATOR)
+
+parser_prev3a: megaco_text_parser_prev3a.$(EMULATOR)
+
+parser_prev3b: megaco_text_parser_prev3b.$(EMULATOR)
 
 
 # ----------------------------------------------------

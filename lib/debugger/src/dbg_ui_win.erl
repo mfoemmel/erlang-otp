@@ -19,7 +19,7 @@
 
 %% External exports
 -export([init/0,
-	 font/1,
+	 font/1, min_size/3, min_size/4,
 	 create_menus/2, select/2, selected/1,
 	 add_break/2, update_break/2, delete_break/1,
 	 motion/2
@@ -59,6 +59,30 @@ font(Style) ->
     end.
 
 %%--------------------------------------------------------------------
+%% min_size(Strings, MinW, MinH) -> {W, H}
+%% min_size(Font, Strings, MinW, MinH) -> {W, H}
+%%   Font = GS font - defaults to dbg_ui_win:font(normal)
+%%   Strings = [string()]
+%%   MinW = MinH = int()
+%%   W = H = int()
+%%--------------------------------------------------------------------
+min_size(Strings, MinW, MinH) ->
+    min_size(font(normal), Strings, MinW, MinH).
+
+min_size(Font, Strings, MinW, MinH) ->
+    GS = init(),
+    min_size(GS, Font, Strings, MinW, MinH).
+
+min_size(GS, Font, [String|Strings], MinW, MinH) ->
+    {W, H} = gs:read(GS, {font_wh, {Font, String}}),
+    min_size(GS, Font, Strings, max(MinW, W), max(MinH, H));
+min_size(_GS, _Font, [], W, H) ->
+    {W, H}.
+
+max(X, Y) when X>Y -> X;
+max(_X, Y) -> Y.
+
+%%--------------------------------------------------------------------
 %% create_menus(MenuBar, [Menu])
 %%   MenuBar = gsobj()
 %%   Menu = {Name, [Item]}
@@ -84,7 +108,8 @@ font(Style) ->
 %%--------------------------------------------------------------------
 create_menus(MenuBar, [{Title, Items}|Menus]) ->
     Title2 = " "++(atom_to_list(Title))++" ",
-    MenuBtn = gs:menubutton(MenuBar, [{label, {text,Title2}}]),
+    MenuBtn = gs:menubutton(MenuBar, [{label, {text,Title2}},
+				      {font, font(normal)}]),
     case Title of
 	'Help' -> gs:config(MenuBtn, {side, right});
 	_ -> ignore
@@ -103,6 +128,7 @@ create_items(_Menu, [], _Group) ->
 
 create_item(Menu, {Name, _N, cascade, Items}, _Group) ->
     MenuBtn = gs:menuitem(Menu, [{label, {text,Name}},
+				 {font, font(normal)},
 				 {itemtype, cascade}]),
     SubMenu = gs:menu(Name, MenuBtn, []),
     create_items(SubMenu, Items, Name);
@@ -118,7 +144,8 @@ create_item(Menu, MenuItem, Group) ->
 		      [{itemtype, radio}, {data, {menu, Group}},
 		       {group, group(Group)}]
 	      end,
-    gs:menuitem(Name, Menu, [{label, {text,Name}} | Options]),
+    gs:menuitem(Name, Menu, [{label, {text,Name}},
+			     {font, font(normal)} | Options]),
     if
 	integer(N) -> gs:config(Name, {underline, N});
 	true -> ignore
@@ -162,31 +189,37 @@ selected(Menu) ->
 %%       Status = active | inactive
 %%--------------------------------------------------------------------
 add_break(Menu, Point) ->
+    Font = font(normal),
 
     %% Create a name for the breakpoint
     {Mod, Line} = Point,
     Label = io_lib:format("~w ~5w", [Mod, Line]),
 
     %% Create a menu for the breakpoint
-    MenuBtn = gs:menuitem(Menu, [{label, {text,Label}},
+    MenuBtn = gs:menuitem(Menu, [{label, {text,Label}}, {font, Font},
 				 {itemtype, cascade}]),
     SubMenu = gs:menu(MenuBtn, []),
     SMI = gs:menuitem(SubMenu, [{data, {break,Point,null}}]),
-    gs:menuitem(SubMenu, [{label, {text,"Delete"}},
+    gs:menuitem(SubMenu, [{label, {text,"Delete"}}, {font, Font},
 			  {data, {break,Point,delete}}]),
-    TriggerMenuBtn = gs:menuitem(SubMenu, [{label,{text,"Trigger Action"}},
-					   {itemtype, cascade}]),
+    TriggerMenuBtn = gs:menuitem(SubMenu,
+				 [{label,{text,"Trigger Action"}},
+				  {font, Font},
+				  {itemtype, cascade}]),
     TriggerMenu = gs:menu(TriggerMenuBtn, []),
     Group = element(3, erlang:now()),
     EMI = gs:menuitem(TriggerMenu, [{label, {text,"Enable"}},
+				    {font, Font},
 				    {itemtype, radio}, {group, Group},
 				    {data,
 				     {break,Point,{trigger,enable}}}]),
     DiMI = gs:menuitem(TriggerMenu, [{label, {text,"Disable"}},
+				     {font, Font},
 				     {itemtype, radio}, {group, Group},
 				     {data,
 				      {break,Point,{trigger,disable}}}]),
     DeMI = gs:menuitem(TriggerMenu, [{label, {text,"Delete"}},
+				     {font, Font},
 				     {itemtype, radio}, {group, Group},
 				     {data,
 				      {break,Point,{trigger,delete}}}]),
@@ -212,7 +245,9 @@ update_break(Break, Options) ->
 			inactive ->
 			    {"Enable", {break,Point,{status,active}}}
 		    end,
-    gs:config(Break#break.smi, [{label, {text,Label}}, {data, Data}]),
+    gs:config(Break#break.smi, [{label, {text,Label}},
+				{font, font(normal)},
+				{data, Data}]),
 
     TriggerMI = case Trigger of
 		    enable -> Break#break.emi;

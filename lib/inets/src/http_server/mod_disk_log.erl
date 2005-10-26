@@ -21,7 +21,6 @@
 -export([report_error/2]).
 
 -define(VMODULE,"DISK_LOG").
--include("httpd_verbosity.hrl").
 
 -include("httpd.hrl").
 
@@ -365,13 +364,6 @@ open1(Filename, MaxBytes, MaxFiles, Opts0) ->
         {ok, LogDB} ->
             {ok, LogDB};
         {error, Reason} ->
-            ?vlog("failed opening disk log with args:"
-                  "~n   Filename: ~p"
-                  "~n   MaxBytes: ~p"
-                  "~n   MaxFiles: ~p"
-                  "~n   Opts0:    ~p"
-                  "~nfor reason:"
-                  "~n   ~p", [Filename, MaxBytes, MaxFiles, Opts0, Reason]),
             {error, 
              ?NICE("Can't create " ++ Filename ++ 
                    lists:flatten(io_lib:format(", ~p",[Reason])))};
@@ -402,4 +394,3 @@ write(Log, Entry, _) ->
 %% Close the log file
 close(Log) ->
     disk_log:close(Log).
-

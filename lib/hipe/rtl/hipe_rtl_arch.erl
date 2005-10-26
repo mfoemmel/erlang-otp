@@ -5,9 +5,9 @@
 %%  Filename : 	hipe_rtl_arch.erl
 %%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
-%%              $Author: chvi3471 $
-%%              $Date: 2005/04/20 12:40:11 $
-%%              $Revision: 1.55 $
+%%              $Author: mikpe $
+%%              $Date: 2005/09/15 08:23:37 $
+%%              $Revision: 1.56 $
 %%=====================================================================
 %% @doc
 %%
@@ -553,13 +553,13 @@ pcb_address(Dst, Off) ->
 proc_pointer() ->	% must not be exported
   case get(hipe_target_arch) of
     ultrasparc ->
-      hipe_rtl:mk_reg(hipe_sparc_registers:proc_pointer());
+      hipe_rtl:mk_reg_gcsafe(hipe_sparc_registers:proc_pointer());
     powerpc ->
-      hipe_rtl:mk_reg(hipe_ppc_registers:proc_pointer());
+      hipe_rtl:mk_reg_gcsafe(hipe_ppc_registers:proc_pointer());
     x86 ->
-      hipe_rtl:mk_reg(hipe_x86_registers:proc_pointer());
+      hipe_rtl:mk_reg_gcsafe(hipe_x86_registers:proc_pointer());
     amd64 ->
-      hipe_rtl:mk_reg(hipe_amd64_registers:proc_pointer())
+      hipe_rtl:mk_reg_gcsafe(hipe_amd64_registers:proc_pointer())
   end.
 
 %%

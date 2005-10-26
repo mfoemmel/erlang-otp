@@ -64,8 +64,8 @@
 %% link/1 and spawn_link/1), and external code which is not
 %% interpreted.
 %%
-%% dbg_icmd, dbg_ieval, dbg_imeta
-%% ------------------------------
+%% dbg_icmd, dbg_ieval
+%% -------------------
 %% Code for the meta process.
 %%
 %% dbg_iserver
@@ -87,10 +87,8 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% i(AbsMods)
-%% i(AbsMods, Options) -> {module,Mod} | error
-%% ni(AbsMods)
-%% ni(AbsMods, Options) -> {module,Mod} | error
+%% i(AbsMods) -> {module,Mod} | error | ok
+%% ni(AbsMods) -> {module,Mod} | error | ok
 %%   AbsMods = AbsMod | [AbsMod]
 %%     AbsMod = atom() | string()
 %%     Mod = atom()
@@ -101,15 +99,15 @@ i(AbsMods, _Options) -> i2(AbsMods, local).
 ni(AbsMods) -> i2(AbsMods, distributed).
 ni(AbsMods, _Options) -> i2(AbsMods, distributed).
     
-i2([AbsMod|AbsMods], Dist) when atom(AbsMod); list(AbsMod) ->
+i2([AbsMod|AbsMods], Dist) when is_atom(AbsMod); is_list(AbsMod) ->
     int_mod(AbsMod, Dist),
     i2(AbsMods, Dist);
-i2([AbsMod], Dist) when atom(AbsMod); list(AbsMod) ->
-    int_mod(AbsMod, Dist);
-i2(AbsMod, Dist) when atom(AbsMod); list(AbsMod) ->
+i2([AbsMod], Dist) when is_atom(AbsMod); is_list(AbsMod) ->
     int_mod(AbsMod, Dist);
 i2([], _Dist) ->
-    error.
+    ok;
+i2(AbsMod, Dist) when is_atom(AbsMod); is_list(AbsMod) ->
+    int_mod(AbsMod, Dist).
 
 %%--------------------------------------------------------------------
 %% n(AbsMods) -> ok
@@ -118,15 +116,15 @@ i2([], _Dist) ->
 n(AbsMods) -> n2(AbsMods, local).
 nn(AbsMods) -> n2(AbsMods, distributed).
 
-n2([AbsMod|AbsMods], Dist) when atom(AbsMod); list(AbsMod) ->
+n2([AbsMod|AbsMods], Dist) when is_atom(AbsMod); is_list(AbsMod) ->
     del_mod(AbsMod, Dist),
     n2(AbsMods, Dist);
-n2([AbsMod], Dist) when atom(AbsMod); list(AbsMod) ->
-    del_mod(AbsMod, Dist);
-n2(AbsMod, Dist) when atom(AbsMod); list(AbsMod) ->
+n2([AbsMod], Dist) when is_atom(AbsMod); is_list(AbsMod) ->
     del_mod(AbsMod, Dist);
 n2([], _Dist) ->
-    error.
+    ok;
+n2(AbsMod, Dist) when is_atom(AbsMod); is_list(AbsMod) ->
+    del_mod(AbsMod, Dist).
 
 %%--------------------------------------------------------------------
 %% interpreted() -> [Mod]
@@ -139,7 +137,7 @@ interpreted() ->
 %%   Mod = atom()
 %%   File = string()
 %%--------------------------------------------------------------------
-file(Mod) when atom(Mod) ->
+file(Mod) when is_atom(Mod) ->
     dbg_iserver:safe_call({file, Mod}).
 
 %%--------------------------------------------------------------------
@@ -147,12 +145,12 @@ file(Mod) when atom(Mod) ->
 %%   File = string()
 %%   Reason = no_src | no_beam | no_debug_info | badarg
 %%--------------------------------------------------------------------
-interpretable(File) when list(File) ->
+interpretable(File) when is_list(File) ->
     case check_file(File) of
 	{ok, _Res} -> true;
 	Error -> Error
     end;
-interpretable(Mod) when atom(Mod) ->
+interpretable(Mod) when is_atom(Mod) ->
     case check_module(Mod) of
 	{ok, _Res} -> true;
 	Error -> Error
@@ -179,7 +177,7 @@ auto_attach([], _Function) ->
     auto_attach(false);
 auto_attach(Flags, {Mod, Func}) ->
     auto_attach(Flags, {Mod, Func, []});
-auto_attach(Flags, {Mod, Func, Args}) when atom(Mod),atom(Func),list(Args) ->
+auto_attach(Flags, {Mod, Func, Args}) when is_atom(Mod),is_atom(Func),is_list(Args) ->
     check_flags(Flags),
     dbg_iserver:safe_cast({set_auto_attach, Flags, {Mod, Func, Args}}).
 
@@ -234,14 +232,14 @@ check_flag(false) -> true.
 %%       Status = active | inactive
 %%       Cond = null | Function
 %%--------------------------------------------------------------------
-break(Mod, Line) when atom(Mod), integer(Line) ->
+break(Mod, Line) when is_atom(Mod), is_integer(Line) ->
     dbg_iserver:safe_call({new_break, {Mod, Line},
 			   [active, enable, null, null]}).
 
-delete_break(Mod, Line) when atom(Mod), integer(Line) ->
+delete_break(Mod, Line) when is_atom(Mod), is_integer(Line) ->
     dbg_iserver:safe_cast({delete_break, {Mod, Line}}).
 
-break_in(Mod, Func, Arity) when atom(Mod), atom(Func), integer(Arity) ->
+break_in(Mod, Func, Arity) when is_atom(Mod), is_atom(Func), is_integer(Arity) ->
     case dbg_iserver:safe_call({is_interpreted, Mod, Func, Arity}) of
 	{true, Clauses} ->
 	    Lines = first_lines(Clauses),
@@ -250,7 +248,7 @@ break_in(Mod, Func, Arity) when atom(Mod), atom(Func), integer(Arity) ->
 	    {error, function_not_found}
     end.
 
-del_break_in(Mod, Func, Arity) when atom(Mod), atom(Func), integer(Arity) ->
+del_break_in(Mod, Func, Arity) when is_atom(Mod), is_atom(Func), is_integer(Arity) ->
     case dbg_iserver:safe_call({is_interpreted, Mod, Func, Arity}) of
 	{true, Clauses} ->
 	    Lines = first_lines(Clauses),
@@ -267,16 +265,16 @@ first_lines(Clauses) ->
 no_break() ->
     dbg_iserver:safe_cast(no_break).
 
-no_break(Mod) when atom(Mod) ->
+no_break(Mod) when is_atom(Mod) ->
     dbg_iserver:safe_cast({no_break, Mod}).
 
-disable_break(Mod, Line) when atom(Mod), integer(Line) ->
+disable_break(Mod, Line) when is_atom(Mod), is_integer(Line) ->
     dbg_iserver:safe_cast({break_option, {Mod, Line}, status, inactive}).
     
-enable_break(Mod, Line) when atom(Mod), integer(Line) ->
+enable_break(Mod, Line) when is_atom(Mod), is_integer(Line) ->
     dbg_iserver:safe_cast({break_option, {Mod, Line}, status, active}).
 
-action_at_break(Mod, Line, Action) when atom(Mod), integer(Line) ->
+action_at_break(Mod, Line, Action) when is_atom(Mod), is_integer(Line) ->
     check_action(Action),
     dbg_iserver:safe_cast({break_option, {Mod, Line}, action, Action}).
 
@@ -284,18 +282,18 @@ check_action(enable) -> true;
 check_action(disable) -> true;
 check_action(delete) -> true.
 
-test_at_break(Mod, Line, Function) when atom(Mod), integer(Line) ->
+test_at_break(Mod, Line, Function) when is_atom(Mod), is_integer(Line) ->
     check_function(Function),
     dbg_iserver:safe_cast({break_option, {Mod, Line}, condition, Function}).
 
-check_function({Mod, Func}) when atom(Mod), atom(Func) -> true.
+check_function({Mod, Func}) when is_atom(Mod), is_atom(Func) -> true.
 
 get_binding(Var, Bs) ->
     dbg_icmd:get_binding(Var, Bs).
 
 all_breaks() ->
     dbg_iserver:safe_call(all_breaks).
-all_breaks(Mod) when atom(Mod) ->
+all_breaks(Mod) when is_atom(Mod) ->
     dbg_iserver:safe_call({all_breaks, Mod}).
 
 %%--------------------------------------------------------------------
@@ -330,7 +328,7 @@ continue(Pid) when pid(Pid) ->
 	    Error
     end.
     
-continue(X, Y, Z) when integer(X), integer(Y), integer(Z) ->
+continue(X, Y, Z) when is_integer(X), is_integer(Y), is_integer(Z) ->
     continue(c:pid(X, Y, Z)).
 
 
@@ -436,7 +434,7 @@ meta(Meta, continue) -> dbg_icmd:continue(Meta);
 meta(Meta, finish) -> dbg_icmd:finish(Meta);
 meta(Meta, skip) -> dbg_icmd:skip(Meta);
 meta(Meta, timeout) -> dbg_icmd:timeout(Meta);
-meta(Meta, stop) -> dbg_icmd:stop(Meta, self());
+meta(Meta, stop) -> dbg_icmd:stop(Meta);
 meta(Meta, messages) -> dbg_icmd:get(Meta, messages, null).
 
 meta(Meta, trace, Trace) -> dbg_icmd:set(Meta, trace, Trace);
@@ -485,7 +483,7 @@ eval(Mod, Func, Args) ->
 int_mod(AbsMod, Dist) ->
     case check(AbsMod) of
 	{ok, Res} -> load(Res, Dist);
-	{error,_} ->
+	_Error ->
 	    io:format("** Invalid beam file or no abstract code: ~p\n",
 		      [AbsMod]),
 	    error
@@ -539,10 +537,10 @@ check_file(Name0) ->
 		  end
 	  end,
     if
-	list(Src) ->
+	is_list(Src) ->
 	    Mod = scan_module_name(Src),
 	    case find_beam(Mod, Src) of
-		Beam when list(Beam) ->
+		Beam when is_list(Beam) ->
 		    case check_beam(Beam) of
 			{ok, Exp, Abst} ->
 			    {ok, {Mod, Src, Beam, Exp, Abst}};
@@ -628,7 +626,7 @@ scan_module_name(File) ->
 	    R = (catch {ok, scan_module_name_1(FD)}),
 	    file:close(FD),
 	    case R of
-		{ok, A} when atom(A) -> A;
+		{ok, A} when is_atom(A) -> A;
 		_ -> error
 	    end;
 	_ ->
@@ -657,15 +655,16 @@ scan_module_name_3(Ts) ->
 	_ -> error
     end.
 
-module_atom(A) when atom(A) -> A;
-module_atom(L) when list(L) -> list_to_atom(packages:concat(L)).
+module_atom(A) when is_atom(A) -> A;
+module_atom(L) when is_list(L) -> list_to_atom(packages:concat(L)).
 
 %%--Stop interpreting modules-----------------------------------------
 
 del_mod(AbsMod, Dist) ->
     Mod = if
-	      atom(AbsMod) -> AbsMod;
-	      list(AbsMod) -> list_to_atom(filename:basename(AbsMod,".erl"))
+	      is_atom(AbsMod) -> AbsMod;
+	      is_list(AbsMod) ->
+		  list_to_atom(filename:basename(AbsMod,".erl"))
 	  end,
     dbg_iserver:safe_cast({delete, Mod}),
     everywhere(Dist,

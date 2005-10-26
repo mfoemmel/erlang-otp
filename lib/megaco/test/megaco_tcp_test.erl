@@ -26,12 +26,32 @@
 -include_lib("megaco/src/tcp/megaco_tcp.hrl").
 -include("megaco_test_lib.hrl").
 
--compile(export_all).
+%% -compile(export_all).
+
 
 %%----------------------------------------------------------------------
 %% External exports
 %%----------------------------------------------------------------------
 -export([
+	 all/1,
+
+	 start/1,
+	 start_normal/1,
+	 start_invalid_opt/1,
+
+	 sending/1,
+	 sendreceive/1, 
+
+	 errors/1,
+	 socket/1,
+	 accept_process/1,
+	 accept_supervisor/1,
+	 connection_supervisor/1,
+	 tcp_server/1, 
+	 
+	 init_per_testcase/2, fin_per_testcase/2, 
+
+	 t/0, t/1
         ]).
 
 %%----------------------------------------------------------------------
@@ -91,6 +111,17 @@ all(suite) ->
      errors
     ].
 
+start(suite) ->
+    [
+     start_normal,
+     start_invalid_opt
+    ].
+
+sending(suite) ->
+    [
+     sendreceive
+    ].
+
 errors(suite) ->
     [
      socket,
@@ -100,19 +131,36 @@ errors(suite) ->
      tcp_server
     ].
 
-start(suite) ->
+
+%% ------------------ start ------------------------
+
+start_normal(suite) ->
     [];
-start(Config) when list(Config) ->
+start_normal(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Options = [{port, 20000}, {receive_handle, apa}],
+    {ok, Pid} = start_case(Options, ok),
+    exit(Pid, kill),
+    ok.
+
+start_invalid_opt(suite) ->
+    [];
+start_invalid_opt(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Options = [{port, 20000}, {receivehandle, apa}],
-    normal_start_case(Options).
+    ok = start_case(Options, error).
 
-sending(suite) ->
+
+%% ------------------ sending ------------------------
+
+sendreceive(suite) ->
     [];
-sending(Config) when list(Config) ->
+sendreceive(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     sendreceive().
 
+
+%% ------------------ errors ------------------------
 
 socket(suite) ->
     [];
@@ -144,24 +192,31 @@ tcp_server(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     failing_tcp_server().
 
+
 %%======================================================================
 %% Test functions
 %%======================================================================
 
-normal_start_case(Options) ->
-    case catch megaco_tcp:start_transport() of
+start_case(Options, Expect) ->
+    case (catch megaco_tcp:start_transport()) of
 	{ok, Pid} ->
-	    case catch megaco_tcp:listen(Pid, Options) of
+	    case (catch megaco_tcp:listen(Pid, Options)) of
+		ok when Expect == ok ->
+		    {ok, Pid};
 		ok ->
+		    exit(Pid, kill),
+		    ?ERROR(unexpected_start_sucesss);
+		{error, _Reason} when Expect == error ->
+		    exit(Pid, kill),
 		    ok;
 		{error, Reason} ->
-		    io:format("<ERROR> couldn't start tpkt socket "
-			      "because of: ~w~n",
-			      [Reason])
+		    exit(Pid, kill),
+		    ?ERROR({unexpected_start_failure, Reason});
+		Error ->
+		    ?ERROR({unexpected_result, Error})
 	    end;
 	{error, Reason} ->
-	    io:format("<ERROR> couldn't start tpkt because of: ~w~n",
-		      [Reason])
+	    ?ERROR({failed_starting_transport, Reason})
     end.
 
 sendreceive() ->
@@ -182,15 +237,16 @@ failing_connection_supervisor() ->
 failing_tcp_server() ->
     ?SKIP(not_yet_implemented).
 
+
 %%======================================================================
 %% Internal functions
 %%======================================================================
-compute_res(All) ->
-    compute_res(All, [], 0).
+% compute_res(All) ->
+%     compute_res(All, [], 0).
 
-compute_res([H | T], Bad, Sum) when integer(H) ->
-    compute_res(T, Bad, Sum + H);
-compute_res([H | T], Bad, Sum) ->
-    compute_res(T, [H | Bad], Sum);
-compute_res([], Bad, Sum) ->
-    ok = io:format("#bytes: ~w; errors: ~p~n", [Sum, Bad]).
+% compute_res([H | T], Bad, Sum) when integer(H) ->
+%     compute_res(T, Bad, Sum + H);
+% compute_res([H | T], Bad, Sum) ->
+%     compute_res(T, [H | Bad], Sum);
+% compute_res([], Bad, Sum) ->
+%     ok = io:format("#bytes: ~w; errors: ~p~n", [Sum, Bad]).

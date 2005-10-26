@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_extract.erl,v 1.31 2004/11/30 00:44:40 richardc Exp $
+%% $Id$
 %%
 %% @copyright 2001-2003 Richard Carlsson
 %% @author Richard Carlsson <richardc@csd.uu.se>
@@ -26,11 +26,31 @@
 
 -module(edoc_extract).
 
--export([source/4, source/5, file/4, text/4]).
+-export([source/3, source/4, source/5, header/3, header/4, header/5,
+	 file/4, text/4]).
 
--import(edoc_report, [report/3]).
+-import(edoc_report, [report/3, warning/3]).
 
+%% %% @headerfile "edoc.hrl" (disabled until it can be made private)
 -include("edoc.hrl").
+
+%% @type filename() = file:filename()
+
+%% @spec source(File::filename(), Env::edoc_env(), Options::option_list())
+%%             -> {ModuleName, edoc_module()}
+%%    ModuleName = atom()
+%%
+%% @doc Like {@link source/5}, but reads the syntax tree and the
+%% comments from the specified file.
+%%
+%% @see edoc:read_comments/2
+%% @see edoc:read_source/2
+%% @see source/4
+
+source(File, Env, Opts) ->
+    Forms = edoc:read_source(File, Opts),
+    Comments = edoc:read_comments(File, Opts),
+    source(Forms, Comments, File, Env, Opts).
 
 %% @spec source(Forms, Comments::[comment()], File::filename(),
 %%              Env::edoc_env(), Options::option_list()) ->
@@ -50,6 +70,7 @@
 %%
 %% @see edoc:read_comments/2
 %% @see edoc:read_source/2
+%% @see source/3
 %% @see source/4
 %% @see //syntax_tools/erl_recomment
 
@@ -77,52 +98,134 @@ source(Forms, Comments, File, Env, Opts) ->
 %% edoc_lib:get_doc_env/4}. The `File' argument is used for
 %% error reporting and output file name generation only.
 %%
-%% <p>See {@link edoc:get_doc/2} for descriptions of the `def',
-%% `hidden', and `private' options.</p>
+%% See {@link edoc:get_doc/2} for descriptions of the `def',
+%% `hidden', `private', and `todo' options.
 %%
+%% @see edoc:read_comments/2
+%% @see edoc:read_source/2
 %% @see source/5
-%% @see erl_recomment
+%% @see //syntax_tools/erl_recomment
 
 %% Note that the actual module name found in the source file will be
 %% used for generating the documentation, creating relative links, etc.
 
-%% INHERIT-OPTIONS: get_macro_defs/1
+%% INHERIT-OPTIONS: add_macro_defs/3
 %% INHERIT-OPTIONS: edoc_data:module/4
 
 source(Forms, File, Env, Opts) when list(Forms) ->
     source(erl_syntax:form_list(Forms), File, Env, Opts);
 source(Tree, File0, Env, Opts) ->
+    Forms = preprocess_forms(Tree),
     File = edoc_lib:filename(File0),
     Module = get_module_info(Tree, File),
-    Forms = preprocess_forms(erl_syntax:form_list_elements(
-			       erl_syntax:flatten_form_list(Tree))),
     {Header, Footer, Entries} = collect(Forms, Module),
-    Defs = get_macro_defs(Opts),
     Name = Module#module.name,
     Package = list_to_atom(packages:strip_last(Name)),
     Env1 = Env#env{module = Name,
 		   package = Package,
 		   root = edoc_refs:relative_package_path('', Package)},
-    Defs1 = dict:from_list(Defs ++ module_macros(Env1)),
-    Entries1 = get_tags([Header, Footer | Entries], Defs1, Env1, File),
-    Data = edoc_data:module(Module, Entries1, Env1, Opts),
+    Env2 = add_macro_defs(module_macros(Env1), Opts, Env1),
+    Entries1 = get_tags([Header, Footer | Entries], Env2, File),
+    Data = edoc_data:module(Module, Entries1, Env2, Opts),
     {Name, Data}.
 
+
+%% @spec header(File::filename(), Env::edoc_env(), Options::option_list())
+%%             -> {ok, Tags} | {error, Reason}
+%%
+%%   edoc_env() = edoc_lib:edoc_env()
+%%   Tags = [term()]
+%%   Reason = term()
+%%
+%% @doc Similar to {@link header/5}, but reads the syntax tree and the
+%% comments from the specified file.
+%%
+%% @see edoc:read_comments/2
+%% @see edoc:read_source/2
+%% @see header/4
+
+header(File, Env, Opts) ->
+    Forms = edoc:read_source(File),
+    Comments = edoc:read_comments(File),
+    header(Forms, Comments, File, Env, Opts).
+
+%% @spec header(Forms, Comments::[comment()], File::filename(),
+%%              Env::edoc_env(), Options::option_list()) ->
+%%       {ok, Tags} | {error, Reason}
+%%
+%%   Forms = syntaxTree() | [syntaxTree()]
+%%   edoc_env() = edoc_lib:edoc_env()
+%%   Tags = [term()]
+%%   Reason = term()
+%%
+%% @doc Similar to {@link header/4}, but first inserts the given
+%% comments in the syntax trees. The syntax trees must contain valid
+%% position information. (Cf. {@link edoc:read_comments/2}.)
+%%
+%% @see header/3
+%% @see header/4
+%% @see //syntax_tools/erl_recomment
+
+header(Forms, Comments, File, Env, Opts) when list(Forms) ->
+    Forms1 = erl_syntax:form_list(Forms),
+    header(Forms1, Comments, File, Env, Opts);
+header(Forms, Comments, File, Env, Opts) ->
+    Tree = erl_recomment:quick_recomment_forms(Forms, Comments),
+    header(Tree, File, Env, Opts).
+
+%% @spec header(Forms, File::filename(), Env::edoc_env(),
+%%              Options::option_list()) ->
+%%       {ok, Tags} | {error, Reason}
+%%
+%%   Forms = syntaxTree() | [syntaxTree()]
+%%   edoc_env() = edoc_lib:edoc_env()
+%%   Tags = [term()]
+%%   Reason = term()
+%%
+%% @doc Extracts EDoc documentation from commented header file syntax
+%% trees. Similar to {@link source/5}, but ignores any documentation
+%% that occurs before a module declaration or a function definition.
+%% (Warning messages are printed if content may be ignored.) `Env' is
+%% assumed to already be set up with a suitable module context.
+%%
+%% @see header/5
+%% @see //syntax_tools/erl_recomment
+
+header(Forms, File, Env, Opts) when list(Forms) ->
+    header(erl_syntax:form_list(Forms), File, Env, Opts);
+header(Tree, File0, Env, _Opts) ->
+    Forms = preprocess_forms(Tree),
+    File = edoc_lib:filename(File0),
+    Module = #module{name = Env#env.module},  % a dummy module record
+    %% We take only "footer" tags, i.e., any kind of definition will
+    %% kill all the information above it up to that point. Then we call
+    %% this the 'header' to make error reports make better sense.
+    {Header, Footer, Entries} = collect(Forms, Module),
+    if Header#entry.data /= [] ->
+	    warning(File, "documentation before module declaration is ignored by @headerfile", []);
+       true -> ok
+    end,
+    if Entries /= [] ->
+	    warning(File, "documentation before function definitions is ignored by @headerfile", []);
+       true -> ok
+    end,
+    [Entry] = get_tags([Footer#entry{name = header}], Env, File),
+    Entry#entry.data.
 
 %% NEW-OPTIONS: def
 %% DEFER-OPTIONS: source/4
 
-get_macro_defs(Opts) ->
+add_macro_defs(Defs0, Opts, Env) ->
     Defs = proplists:append_values(def, Opts),
     edoc_macros:check_defs(Defs),
-    Defs.
+    Env#env{macros = Defs ++ Defs0 ++ Env#env.macros}.
 
 
 %% @spec file(File::filename(), Context, Env::edoc_env(),
 %%            Options::option_list()) -> {ok, Tags} | {error, Reason}
 %%   Context = overview | package
-%%   Tags = [term()]
 %%   edoc_env() = edoc_lib:edoc_env()
+%%   Tags = [term()]
 %%   Reason = term()
 %%
 %% @doc Reads a text file and returns the list of tags in the file. Any
@@ -131,7 +234,7 @@ get_macro_defs(Opts) ->
 %% `Reason' is an atom returned from the call to {@link
 %% //kernel/file:read_file/1}.
 %%
-%% <p>See {@link text/4} for options.</p>
+%% See {@link text/4} for options.
 
 %% INHERIT-OPTIONS: text/4
 
@@ -154,17 +257,16 @@ file(File, Context, Env, Opts) ->
 %% the first tag are ignored. `Env' is an environment created by {@link
 %% edoc_lib:get_doc_env/4}.
 %%
-%% <p>See {@link source/4} for a description of the `def' option.</p>
+%% See {@link source/4} for a description of the `def' option.
 
-%% INHERIT-OPTIONS: get_macro_defs/1
+%% INHERIT-OPTIONS: add_macro_defs/3
 %% DEFER-OPTIONS: source/4
 
 text(Text, Context, Env, Opts) ->
     text(Text, Context, Env, Opts, "").
 
 text(Text, Context, Env, Opts, Where) ->
-    Defs = get_macro_defs(Opts),
-    Defs1 = dict:from_list(Defs ++ file_macros(Context, Env)),
+    Env1 = add_macro_defs(file_macros(Context, Env), Opts, Env),
     Cs = edoc_lib:lines(Text),
     Ts0 = edoc_tags:scan_lines(Cs, 1),
     Tags = sets:from_list(edoc_tags:tag_names()),
@@ -175,9 +277,9 @@ text(Text, Context, Env, Opts, Where) ->
 	true ->
 	    exit(error);
 	false ->
-	    Ts2 = edoc_macros:expand_tags(Ts1, Defs1, Env, Where),
+	    Ts2 = edoc_macros:expand_tags(Ts1, Env1, Where),
 	    How = dict:from_list(edoc_tags:tag_parsers()),
-	    edoc_tags:parse_tags(Ts2, How, Where)
+	    edoc_tags:parse_tags(Ts2, How, Env1, Where)
     end.
 
 
@@ -227,28 +329,32 @@ get_list_keyval(Key, L) ->
 %% @doc Preprocessing: copies any precomments on forms to standalone
 %% comments, and removes "invisible" forms from the list.
 
-preprocess_forms([F | Fs]) ->
+preprocess_forms(Tree) ->
+    preprocess_forms_1(erl_syntax:form_list_elements(
+			 erl_syntax:flatten_form_list(Tree))).
+
+preprocess_forms_1([F | Fs]) ->
     case erl_syntax:get_precomments(F) of
 	[] ->
-	    preprocess_forms_1(F, Fs);
+	    preprocess_forms_2(F, Fs);
 	Cs ->
-	    Cs ++ preprocess_forms_1(F, Fs)
+	    Cs ++ preprocess_forms_2(F, Fs)
     end;
-preprocess_forms([]) ->
+preprocess_forms_1([]) ->
     [].
 
-preprocess_forms_1(F, Fs) ->
+preprocess_forms_2(F, Fs) ->
     case erl_syntax_lib:analyze_form(F) of
 	comment ->
-	    [F | preprocess_forms(Fs)];
+	    [F | preprocess_forms_1(Fs)];
 	{function, _} ->
-	    [F | preprocess_forms(Fs)];
+	    [F | preprocess_forms_1(Fs)];
 	{rule, _} ->
-	    [F | preprocess_forms(Fs)];
+	    [F | preprocess_forms_1(Fs)];
 	{attribute, {module, _}} ->
-	    [F | preprocess_forms(Fs)];
+	    [F | preprocess_forms_1(Fs)];
 	_ ->
-	    preprocess_forms(Fs)
+	    preprocess_forms_1(Fs)
     end.
 
 %% This collects the data for the header and the functions of the
@@ -335,9 +441,6 @@ patterns(Cs) ->
 find_names(Ps) ->
     find_names(Ps, []).
 
-%% TODO: also handle patterns like '"..."++Cs' as list patterns.
-%% TODO: make variable name from record name in record patterns
-
 find_names([P | Ps], Ns) ->
     case erl_syntax:type(P) of
 	variable ->
@@ -350,6 +453,14 @@ find_names([P | Ps], Ns) ->
 	    find_names([P1, P2 | Ps], Ns);
 	list ->
 	    P1 = erl_syntax:list_tail(P),
+	    find_names([P1 | Ps], Ns);
+	record_expr ->
+	    A = erl_syntax:record_expr_type(P),
+	    N = list_to_atom(capitalize(erl_syntax:atom_name(A))),
+	    find_names(Ps, [N | Ns]);
+	infix_expr ->
+	    %% this can only be a '++' operation
+	    P1 = erl_syntax:infix_expr_right(P),
 	    find_names([P1 | Ps], Ns);
 	_ ->
 	    find_names(Ps, Ns)
@@ -394,12 +505,25 @@ tidy_name_1([C | _]=Cs) when C >= $A, C =< $Z -> Cs;
 tidy_name_1([C | _]=Cs) when C >= $\300, C =< $\336, C =/= $\327-> Cs;
 tidy_name_1(Cs) -> [$_ | Cs].
 
+%% Change initial character from lowercase to uppercase.
+
+capitalize([C | Cs]) when C >= $a, C =< $z -> [C - 32 | Cs];
+capitalize(Cs) -> Cs.
+
 %% Collects the tags belonging to each entry, checks them, expands
 %% macros and parses the content.
 
+%% %This is commented out until it can be made private
+%% %@type tags() = #tags{names = set(atom()),
+%% %                     single = set(atom()),
+%% %                     module = set(atom()),
+%% %                     footer = set(atom()),
+%% %                     function = set(atom())}
+%% %  set(T) = sets:set(T)
+
 -record(tags, {names,single,module,function,footer}).
 
-get_tags(Es, Defs, Env, File) ->
+get_tags(Es, Env, File) ->
     %% Cache this stuff for quick lookups.
     Tags = #tags{names = sets:from_list(edoc_tags:tag_names()),
 		 single = sets:from_list(edoc_tags:tags(single)),
@@ -407,17 +531,17 @@ get_tags(Es, Defs, Env, File) ->
 		 footer = sets:from_list(edoc_tags:tags(footer)),
 		 function = sets:from_list(edoc_tags:tags(function))},
     How = dict:from_list(edoc_tags:tag_parsers()),
-    get_tags(Es, Tags, Defs, Env, How, File).
+    get_tags(Es, Tags, Env, How, File).
 
-get_tags([#entry{name = Name, data = Cs} = E | Es], Tags, Defs, Env,
+get_tags([#entry{name = Name, data = Cs} = E | Es], Tags, Env,
 	 How, File) ->
     Where = {File, Name},
     Ts0 = scan_tags(Cs),
     Ts1 = check_tags(Ts0, Tags, Where),
-    Ts2 = edoc_macros:expand_tags(Ts1, Defs, Env, Where),
-    Ts = edoc_tags:parse_tags(Ts2, How, Where),
-    [E#entry{data = Ts} | get_tags(Es, Tags, Defs, Env, How, File)];
-get_tags([], _, _, _, _, _) ->
+    Ts2 = edoc_macros:expand_tags(Ts1, Env, Where),
+    Ts = edoc_tags:parse_tags(Ts2, How, Env, Where),
+    [E#entry{data = Ts} | get_tags(Es, Tags, Env, How, File)];
+get_tags([], _, _, _, _) ->
     [].
 
 %% Scanning a list of separate comments for tags.

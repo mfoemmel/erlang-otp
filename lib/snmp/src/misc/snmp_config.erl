@@ -486,31 +486,46 @@ config_manager_sys() ->
     ConfigDbAutoSave = ask("7. Database auto save "
 			   "(infinity/milli seconds)?", 
 			   "5000", fun verify_dets_auto_save/1),
-    ServerVerb = ask("8. Server verbosity "
+    IRB = 
+	case ask("8. Inform request behaviour (auto/user)?", 
+		 "auto", fun verify_irb/1) of
+	    auto ->
+		auto;
+	    user ->
+		case ask("8b. Use default GC timeout"
+			 "(default/seconds)?",
+			 "default", fun verify_irb_user/1) of
+		    default ->
+			user;
+		    IrbGcTo ->
+			{user, IrbGcTo}
+		end
+	end,
+    ServerVerb = ask("9. Server verbosity "
 			"(silence/info/log/debug/trace)?", 
 			"silence",
 			fun verify_verbosity/1),
-    ServerTimeout = ask("9. Server GC timeout?", "30000",
+    ServerTimeout = ask("10. Server GC timeout?", "30000",
 			   fun verify_timeout/1),    
-    NoteStoreVerb = ask("10. Note store verbosity "
+    NoteStoreVerb = ask("11. Note store verbosity "
 			"(silence/info/log/debug/trace)?", 
 			"silence",
 			fun verify_verbosity/1),
-    NoteStoreTimeout = ask("11. Note store GC timeout?", "30000",
+    NoteStoreTimeout = ask("12. Note store GC timeout?", "30000",
 			   fun verify_timeout/1),    
-    NetIfMod = ask("12. Which network interface module shall be used?",
+    NetIfMod = ask("13. Which network interface module shall be used?",
 		   "snmpm_net_if", fun verify_module/1),
-    NetIfVerb = ask("13. Network interface verbosity "
+    NetIfVerb = ask("14. Network interface verbosity "
 		    "(silence/info/log/debug/trace)?", "silence",
 		    fun verify_verbosity/1),
-    NetIfBindTo = ask("14. Bind the manager IP address "
+    NetIfBindTo = ask("15. Bind the manager IP address "
 		      "(true/false)?",
 		      "false", fun verify_bool/1),
-    NetIfNoReuse = ask("15. Shall the manager IP address and port "
+    NetIfNoReuse = ask("16. Shall the manager IP address and port "
 		       "be not reusable (true/false)?",
 		       "false", fun verify_bool/1),
     NetIf = 
-	case ask("16. Receive buffer size of the manager (in bytes) "
+	case ask("17. Receive buffer size of the manager (in bytes) "
 		 "(default/pos integer)?", "default", 
 		 fun verify_netif_recbuf/1) of
 	    default ->
@@ -526,22 +541,22 @@ config_manager_sys() ->
 			      {no_reuse, NetIfNoReuse}]}]
 	end,
     ATL = 
-	case ask("17. Shall the manager use an audit trail log "
+	case ask("18. Shall the manager use an audit trail log "
 		 "(y/n)?",
 		 "n", fun verify_yes_or_no/1) of
 	    yes ->
-		ATLDir = ask("17b. Where to store the "
+		ATLDir = ask("18b. Where to store the "
 			     "audit trail log?",
 			     DefDir, fun verify_dir/1),
-		ATLMaxFiles = ask("17c. Max number of files?", 
+		ATLMaxFiles = ask("18c. Max number of files?", 
 				  "10", 
 				  fun verify_pos_integer/1),
-		ATLMaxBytes = ask("17d. Max size (in bytes) "
+		ATLMaxBytes = ask("18d. Max size (in bytes) "
 				  "of each file?", 
 				  "10240", 
 				  fun verify_pos_integer/1),
 		ATLSize = {ATLMaxBytes, ATLMaxFiles},
-		ATLRepair = ask("17e. Audit trail log repair "
+		ATLRepair = ask("18e. Audit trail log repair "
 				"(true/false/truncate)?", "true",
 				fun verify_atl_repair/1),
 		[{audit_trail_log, [{dir,    ATLDir},
@@ -551,14 +566,14 @@ config_manager_sys() ->
 		[]
 	end,
     DefUser = 
-	case ask("18. Do you wish to assign a default user [yes] or use~n"
+	case ask("19. Do you wish to assign a default user [yes] or use~n"
 		 "    the default settings [no] (y/n)?", "n", 
 		 fun verify_yes_or_no/1) of
 	    yes ->
-		DefUserMod = ask("18b. Default user module?", 
+		DefUserMod = ask("19b. Default user module?", 
 				 "snmpm_user_default",
 				 fun verify_module/1),
-		DefUserData = ask("18c. Default user data?", "undefined",
+		DefUserData = ask("19c. Default user data?", "undefined",
 				  fun verify_user_data/1),
 		[{def_user_mod,  DefUserMod},
 		 {def_user_data, DefUserData}];
@@ -573,6 +588,7 @@ config_manager_sys() ->
 		       {db_dir,    ConfigDbDir},
 		       {repair,    ConfigDbRepair},
 		       {auto_save, ConfigDbAutoSave}]},
+	 {inform_request_behaviour, IRB},
 	 {mibs,       []},
 	 {server,     [{timeout,   ServerTimeout},
 		       {verbosity, ServerVerb}]},
@@ -1023,6 +1039,27 @@ verify_netif_recbuf(I0) ->
 	_ ->
 	    {error, "invalid network interface recbuf size: " ++ I0}
     end.
+
+
+verify_irb("auto") ->
+    {ok, auto};
+verify_irb("user") ->
+    {ok, user};
+verify_irb(IRB) ->
+    E = lists:flatten(io_lib:format("invalid irb: ~p", [IRB])),
+    {error, E}.
+
+
+verify_irb_user("default") ->
+    {ok, default};
+verify_irb_user(TO) ->
+    case (catch list_to_integer(TO)) of
+	I when integer(I), I > 0 ->
+	    {ok, I*1000}; % Time is given in seconds
+	_ ->
+	    {error, "invalid IRB GC time: " ++ TO}
+    end.
+    
 
 
 verify_user_id(UserId) when list(UserId) ->

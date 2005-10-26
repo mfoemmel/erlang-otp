@@ -21,6 +21,8 @@
 %% Author contact: richardc@csd.uu.se
 %% =====================================================================
 
+%% Note: Documentation in this file is included by edoc_extract.erl
+
 -define(APPLICATION, edoc).
 -define(INFO_FILE, "edoc-info").
 -define(PACKAGE_FILE, "package.edoc").
@@ -40,11 +42,19 @@
 
 %% Module information
 
--record(module, {name,		% = atom()
-		 functions,	% = ordset({atom(), int()})
-		 exports,	% = ordset({atom(), int()})
-		 attributes,	% = ordset({atom(), term()})
-		 records	% = [{atom(), [{atom(), term()}]}]
+%% @type module() = #module{name = [] | atom(),
+%%                          functions = ordset(function_name()),
+%%                          exports = ordset(function_name()),
+%%                          attributes = ordset({atom(), term()}),
+%%                          records = [{atom(), [{atom(), term()}]}]}
+%%  ordset(T) = sets:ordset(T)
+%%  function_name(T) = {atom(), integer()}
+
+-record(module, {name = [],
+		 functions = [],
+		 exports = [],
+		 attributes = [],
+		 records = []
 		}).
 
 %% Environment for generating documentation data
@@ -57,57 +67,32 @@
 	      apps,
 	      modules,
 	      packages,
-	      app_default
+	      app_default,
+	      macros = [],
+	      includes = []
 	     }).
 
 %% Simplified comment data
 
+%% @type comment() = #comment{line = integer(),
+%%                            text = string()}
+
 -record(comment, {line = 0, text}).
 
-%% Module Entries (one per function, plus one for the module header)
+%% Module Entries (one per function, plus module header and footer)
+
+%% @type entry() = #entry{name = atom(),
+%%                        args = [string()],
+%%                        line = integer(),
+%%                        export = bool(),
+%%                        data = term()}
 
 -record(entry, {name, args = [], line = 0, export, data}).
 
 %% Generic tag information
 
+%% @type tag() = #tag{name = atom(),
+%%                    line = integer(),
+%%                    data = term()}
+
 -record(tag, {name, line = 0, data}).
-
-%% Type specification data structures
-
--record(t_spec, {name, type, defs=[]}).		% function specification
-
--record(t_typedef, {name, args, type,
-		    defs=[]}).			% type declaration/definition
-
--record(t_def, {name, type}).			% local definition 'name = type'
--record(t_name, {app = [],			% app = [] if module = []
-		 module=[],			% unqualified if module = []
-		 name=[]}).
-
-%% The following records all have 'a=[]' as their first field.
-%% This is used for name annotations; in particular, the fun-argument
-%% types of a function specification (t_spec) are often annotated with
-%% the names of the corresponding formal parameters.
-
--define(t_ann(X), element(2, X)).
--define(set_t_ann(X, Y), setelement(2, X, Y)).
-
--record(t_var, {a=[], name=[]}).	% type variable
-
--record(t_type, {a=[], name, args = []}).	% abstract type 'name(...)'
-
--record(t_union, {a=[], types = []}).	% union type 't1|...|tN'
-
--record(t_fun, {a=[], args, range}).	% function '(t1,...,tN) -> range'
-
--record(t_tuple, {a=[], types = []}).	% tuple type '{t1,...,tN}'
-
--record(t_list, {a=[], type}).		% list type '[type]'
-
--record(t_nil, {a=[]}).			% empty-list constant '[]'
-
--record(t_atom, {a=[], val}).		% atom constant
-
--record(t_integer, {a=[], val}).	% integer constant
-
--record(t_float, {a=[], val}).		% floating-point constant

@@ -25,6 +25,11 @@
 %% Include files
 %%-----------------------------------------------------------------
 -include_lib("megaco/src/tcp/megaco_tcp.hrl").
+-include_lib("megaco/src/engine/megaco_internal.hrl"). 
+
+
+-define(d1(F, A), ?d("~p " ++ F, [self()|A])).
+-define(d2(F),    ?d1(F, [])).
 
 
 %%-----------------------------------------------------------------
@@ -65,29 +70,43 @@ start_link({TcpRec, SupPid, Listen}) ->
 %%              contact.
 %%-----------------------------------------------------------------
 net_accept(TcpRec, SupPid, ListenFd, Parent) ->
-    case gen_tcp:accept(ListenFd) of
+    do_accept(TcpRec, SupPid, ListenFd), 
+    net_accept(TcpRec, SupPid, ListenFd, Parent).
+
+do_accept(Tcp, Sup, Fd) ->
+    case gen_tcp:accept(Fd) of
 	{ok, S} ->
-	    ?tcp_debug(TcpRec, "tcp accept", []),
-	    case megaco_tcp:start_connection(SupPid, 
-					     TcpRec#megaco_tcp{socket=S}) of
+	    ?d1("do_accept -> accepted: "
+		"~n   S: ~p", [S]),
+	    case megaco_tcp:start_connection(Sup, 
+					     Tcp#megaco_tcp{socket = S}) of
 		{ok, Pid} ->
+		    ?d1("do_accept -> connection started"
+			"~n   Pid: ~p", [Pid]),
 		    case gen_tcp:controlling_process(S, Pid) of
 			ok ->
+			    ?d2("do_accept -> control transferred"),
 			    ok;
 			{error, _Reason} ->
+			    ?d1("do_accept -> "
+				"failed changing controlling process: "
+				"n   _Reason: ~p", [_Reason]),
 			    tcp_clear(S),
 			    gen_tcp:close(S)	
 		    end;
 			    
 		{error, _Reason} ->
+		    ?d1("do_accept -> failed starting connection: "
+			"~n   _Reason: ~p", [_Reason]),
 		    tcp_clear(S),
 		    gen_tcp:close(S)	
 	    end;
-	{error, Reason} ->
-	    ?tcp_debug(TcpRec, "tcp accept failed", [{error, Reason}])
-    end,
-    net_accept(TcpRec, SupPid, ListenFd, Parent).
-
+	{error, _Reason} ->
+	    ?d1("do_accept -> accept failed: "
+		"~n   _Reason: ~p", [_Reason]),
+	    ok
+    end.
+    
 
 tcp_clear(Socket) ->
     receive

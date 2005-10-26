@@ -20,11 +20,13 @@
 -export([behaviour_info/1]).
 
 behaviour_info(callbacks) ->
-    [{start_link, 2}, 
-     {stop,       1},
-     {send_pdu,   7},
-     {note_store, 2},
-     {verbosity,  2}];
+    [{start_link,      2}, 
+     {stop,            1},
+     {send_pdu,        7},
+     {inform_response, 4},
+     {note_store,      2},
+     {info,            1},
+     {verbosity,       2}];
 behaviour_info(_) ->
     undefined.
 

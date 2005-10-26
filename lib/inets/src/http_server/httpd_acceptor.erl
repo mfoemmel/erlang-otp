@@ -18,14 +18,12 @@
 -module(httpd_acceptor).
 
 -include("httpd.hrl").
--include("httpd_verbosity.hrl").
-
 
 %% External API
--export([start_link/6]).
+-export([start_link/5]).
 
 %% Other exports (for spawn's etc.)
--export([acceptor/4, acceptor/7]).
+-export([acceptor/4, acceptor/6]).
 
 
 %%
@@ -34,15 +32,12 @@
 
 %% start_link
 
-start_link(Manager, SocketType, Addr, Port, ConfigDb, Verbosity) ->
-    Args = [self(), Manager, SocketType, Addr, Port, ConfigDb, Verbosity],
+start_link(Manager, SocketType, Addr, Port, ConfigDb) ->
+    Args = [self(), Manager, SocketType, Addr, Port, ConfigDb],
     proc_lib:start_link(?MODULE, acceptor, Args).
 
 
-acceptor(Parent, Manager, SocketType, Addr, Port, ConfigDb, Verbosity) ->
-    put(sname,acc),
-    put(verbosity,Verbosity),
-    ?vlog("starting",[]),
+acceptor(Parent, Manager, SocketType, Addr, Port, ConfigDb) ->
     case (catch do_init(SocketType, Addr, Port)) of
 	{ok, ListenSocket} ->
 	    proc_lib:init_ack(Parent, {ok, self()}),
@@ -63,7 +58,6 @@ do_socket_start(SocketType) ->
 	ok ->
 	    ok;
 	{error, Reason} ->
-	    ?vinfo("failed socket start: ~p",[Reason]),
 	    throw({error, {socket_start_failed, Reason}})
     end.
 
@@ -73,7 +67,6 @@ do_socket_listen(SocketType, Addr, Port) ->
 	{ok, ListenSocket} ->
 	    ListenSocket;
 	{error, Reason} ->
-	    ?vinfo("failed socket listen operation: ~p", [Reason]),
 	    throw({error, {listen, Reason}})
     end.
 
@@ -81,7 +74,6 @@ do_socket_listen(SocketType, Addr, Port) ->
 %% acceptor 
 
 acceptor(Manager, SocketType, ListenSocket, ConfigDb) ->
-    ?vdebug("await connection",[]),
     case (catch http_transport:accept(SocketType, ListenSocket, 50000)) of
 	{ok, Socket} ->
 	    handle_connection(Manager, ConfigDb, SocketType, Socket),
@@ -98,24 +90,20 @@ acceptor(Manager, SocketType, ListenSocket, ConfigDb) ->
 handle_connection(Manager, ConfigDb, SocketType, Socket) ->
     {ok, Pid} = httpd_request_handler:start(Manager, ConfigDb),
     http_transport:controlling_process(SocketType, Socket, Pid),
-    httpd_request_handler:synchronize(Pid, SocketType, Socket).
+    httpd_request_handler:socket_ownership_transfered(Pid, SocketType, Socket).
 
 handle_error(timeout, _, _) ->
-    ?vtrace("Accept timeout",[]),
     ok;
 
 handle_error({enfile, _}, _, _) ->
-    ?vinfo("Accept error: enfile",[]),
     %% Out of sockets...
     sleep(200);
 
 handle_error(emfile, _, _) ->
-    ?vinfo("Accept error: emfile",[]),
     %% Too many open files -> Out of sockets...
     sleep(200);
 
 handle_error(closed, _, _) ->
-    ?vlog("Accept error: closed",[]),
     error_logger:info_report("The httpd accept socket was closed by" 
 			     "a third party. "
 			     "This will not have an impact on inets "
@@ -126,7 +114,6 @@ handle_error(closed, _, _) ->
     exit(normal);
 
 handle_error(econnaborted, _, _) ->
-    ?vlog("Accept aborted",[]),
     ok;
 
 handle_error(esslaccept, _, _) ->
@@ -136,12 +123,10 @@ handle_error(esslaccept, _, _) ->
     ok;
 
 handle_error({'EXIT', Reason}, ConfigDb, SocketType) ->
-    ?vinfo("Accept exit:~n   ~p",[Reason]),
     String = lists:flatten(io_lib:format("Accept exit: ~p", [Reason])),
     accept_failed(SocketType, ConfigDb, String);
 
 handle_error(Reason, ConfigDb, SocketType) ->
-    ?vinfo("Accept error:~n   ~p",[Reason]),
     String = lists:flatten(io_lib:format("Accept error: ~p", [Reason])),
     accept_failed(SocketType, ConfigDb, String).
 

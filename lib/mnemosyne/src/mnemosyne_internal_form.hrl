@@ -30,11 +30,11 @@
 		   type		= ?UNKNOWN,	% table, rule
 		   recursive	= ?UNKNOWN,	% recursive, non_recursive
 		   args,
-		   original_args_vars = ordsets:new_set(),
+		   original_args_vars = ordsets:new(),
 		   record_type  = ?UNKNOWN,
 		   record_def   = ?UNKNOWN,
-		   defvars	= ordsets:new_set(),
-		   singelvars	= ordsets:new_set(),
+		   defvars	= ordsets:new(),
+		   singelvars	= ordsets:new(),
 		   pattern,
 		   back_pattern,
 		   idx_method	= no_idx,	% {dyn_idx,Pos}
@@ -69,7 +69,7 @@
 		   conj		= [],
 		   fncalls	= [],
 		   size_estimate= 0,
-		   sign		= ordsets:new_set(),
+		   sign		= ordsets:new(),
 		   rec_count = 0
 		  }).
 	

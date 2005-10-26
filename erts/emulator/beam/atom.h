@@ -45,11 +45,12 @@ extern IndexTable atom_table;
 #define atom_table_size   atom_table.sz
 
 Eterm am_atom_put(byte*, int);
-EXTERN_FUNCTION(int, atom_erase, (byte*, int));
-EXTERN_FUNCTION(int, atom_static_put, (byte*, int));
-EXTERN_FUNCTION(void, init_atom_table, (_VOID_));
-EXTERN_FUNCTION(void, atom_info, (CIO));
-EXTERN_FUNCTION(void, dump_atoms, (CIO));
+int erts_atom_get(byte* name, int len, Eterm* ap);
+int atom_erase(byte*, int);
+int atom_static_put(byte*, int);
+void init_atom_table(void);
+void atom_info(CIO);
+void dump_atoms(CIO);
 
 #endif
 

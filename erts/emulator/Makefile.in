@@ -159,7 +159,7 @@ else
 CS_CFLAGS = $(CS_CFLAGS_)
 endif
 
-LIBS	= @LIBS@ -L../lib/internal/$(TARGET)
+LIBS	= @LIBS@ @TERMCAP_LIB@ -L../lib/internal/$(TARGET)
 ifeq ($(TARGET),win32)
 LIBS    += -L$(ERL_TOP)/erts/obj$(TYPEMARKER)/$(TARGET) -lz
 else

@@ -277,7 +277,7 @@ start_remote_sender(Node,Tab,Storage) ->
 	    {SenderPid, TabSize, DetsData};
 	%% Protocol conversion hack
 	{copier_done, Node} ->
-	    dbg_out("Sender of table ~p crashed on node ~p ~n", [Tab, Node]),
+	    verbose("Sender of table ~p crashed on node ~p ~n", [Tab, Node]),
 	    down(Tab, Storage)
     end.
 
@@ -343,7 +343,7 @@ do_init_table(Tab,Storage,Cs,SenderPid,
 		    tab_receiver(Node,Tab,Storage,Cs,PConv,OrigTabRec);
 		Reason ->
 		    Msg = "[d]ets:init table failed",
-		    dbg_out("~s: ~p: ~p~n", [Msg, Tab, Reason]),
+		    verbose("~s: ~p: ~p~n", [Msg, Tab, Reason]),
 		    down(Tab, Storage)
 	    end;
 	Error ->
@@ -394,7 +394,7 @@ tab_receiver(Node, Tab, Storage, Cs, PConv, OrigTabRec) ->
 		    finish_copy(Storage, Tab, Cs, SenderPid, DatBin,OrigTabRec);
 		{old_init_table_complete, Reason} ->
 		    Msg = "OLD: [d]ets:init table failed",
-		    dbg_out("~s: ~p: ~p~n", [Msg, Tab, Reason]),
+		    verbose("~s: ~p: ~p~n", [Msg, Tab, Reason]),
 		    down(Tab, Storage)
 	    end;
 
@@ -407,12 +407,12 @@ tab_receiver(Node, Tab, Storage, Cs, PConv, OrigTabRec) ->
 
 	{'EXIT', PConv, Reason} ->  %% [d]ets:init process crashed 
 	    Msg = "Receiver crashed",
-	    dbg_out("~s: ~p: ~p~n", [Msg, Tab, Reason]),
+	    verbose("~s: ~p: ~p~n", [Msg, Tab, Reason]),
 	    down(Tab, Storage);
 	
 	%% Protocol conversion hack
 	{copier_done, Node} ->
-	    dbg_out("Sender of table ~p crashed on node ~p ~n", [Tab, Node]),
+	    verbose("Sender of table ~p crashed on node ~p ~n", [Tab, Node]),
 	    down(Tab, Storage);
 	
 	{'EXIT', Pid, Reason} ->
@@ -500,7 +500,7 @@ finish_copy(Storage,Tab,Cs,SenderPid,DatBin,OrigTabRec) ->
 	    ok;
 	{error, Reason} ->
 	    Msg = "Failed to handle last",
-	    dbg_out("~s: ~p: ~p~n", [Msg, Tab, Reason]),
+	    verbose("~s: ~p: ~p~n", [Msg, Tab, Reason]),
 	    down(Tab, Storage)
     end.
 

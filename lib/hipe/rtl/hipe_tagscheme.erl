@@ -143,12 +143,12 @@ test_nil(X, TrueLab, FalseLab, Pred) ->
   hipe_rtl:mk_branch(X, eq, hipe_rtl:mk_imm(?NIL), TrueLab, FalseLab, Pred).
 
 test_cons(X, TrueLab, FalseLab, Pred) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   Mask = hipe_rtl:mk_imm(?TAG_PRIMARY_MASK - ?TAG_PRIMARY_LIST),
   hipe_rtl:mk_alub(Tmp, X, 'and', Mask, 'eq', TrueLab, FalseLab, Pred).
 
 test_is_boxed(X, TrueLab, FalseLab, Pred) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   Mask = hipe_rtl:mk_imm(?TAG_PRIMARY_MASK - ?TAG_PRIMARY_BOXED),
   hipe_rtl:mk_alub(Tmp, X, 'and', Mask, 'eq', TrueLab, FalseLab, Pred).
 
@@ -156,7 +156,7 @@ get_header(Res, X) ->
   hipe_rtl:mk_load(Res, X, hipe_rtl:mk_imm(-(?TAG_PRIMARY_BOXED))).
 
 mask_and_compare(X, Mask, Value, TrueLab, FalseLab, Pred) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   [hipe_rtl:mk_alu(Tmp, X, 'and', hipe_rtl:mk_imm(Mask)),
    hipe_rtl:mk_branch(Tmp, 'eq', hipe_rtl:mk_imm(Value), TrueLab, FalseLab, Pred)].
 
@@ -173,7 +173,7 @@ test_any_pid(X, TrueLab, FalseLab, Pred) ->
    test_external_pid(X, TrueLab,FalseLab,Pred)].
 
 test_external_pid(X, TrueLab, FalseLab, Pred) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   HalfTrueLab = hipe_rtl:mk_new_label(),
   ExternalPidMask = ?TAG_HEADER_MASK,
   [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
@@ -192,7 +192,7 @@ test_any_port(X, TrueLab, FalseLab, Pred) ->
    test_external_port(X, TrueLab,FalseLab,Pred)].
 
 test_external_port(X, TrueLab, FalseLab, Pred) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   HalfTrueLab = hipe_rtl:mk_new_label(),
   ExternalPortMask = ?TAG_HEADER_MASK,
   [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
@@ -209,8 +209,8 @@ test_atom(X, TrueLab, FalseLab, Pred) ->
 		   TrueLab, FalseLab, Pred).
 
 test_tuple(X, TrueLab, FalseLab, Pred) ->
-  Tmp = hipe_rtl:mk_new_reg(),
-  Tmp2 = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
   HalfTrueLab = hipe_rtl:mk_new_label(),
   [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
    HalfTrueLab,
@@ -219,7 +219,7 @@ test_tuple(X, TrueLab, FalseLab, Pred) ->
 		    TrueLab, FalseLab, Pred)].
 
 test_tuple_N(X, N, TrueLab, FalseLab, Pred) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   HalfTrueLab = hipe_rtl:mk_new_label(),
   [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
    HalfTrueLab,
@@ -228,7 +228,7 @@ test_tuple_N(X, N, TrueLab, FalseLab, Pred) ->
 		      TrueLab, FalseLab, Pred)].
 
 test_ref(X, TrueLab, FalseLab, Pred) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   HalfTrueLab = hipe_rtl:mk_new_label(),
   TwoThirdsTrueLab = hipe_rtl:mk_new_label(),
   [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
@@ -242,7 +242,7 @@ test_ref(X, TrueLab, FalseLab, Pred) ->
   ].
 
 test_fun(X, TrueLab, FalseLab, Pred) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   HalfTrueLab = hipe_rtl:mk_new_label(),
   [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
    HalfTrueLab,
@@ -255,7 +255,7 @@ flonum_header() ->
 
 test_flonum(X, TrueLab, FalseLab, Pred) ->
   HeaderFlonum = flonum_header(),
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   HalfTrueLab = hipe_rtl:mk_new_label(),
   [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
    HalfTrueLab,
@@ -264,7 +264,7 @@ test_flonum(X, TrueLab, FalseLab, Pred) ->
 		      TrueLab, FalseLab, Pred)].
 
 test_bignum(X, TrueLab, FalseLab, Pred) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   HalfTrueLab = hipe_rtl:mk_new_label(),
   BigMask = ?TAG_HEADER_MASK - ?BIG_SIGN_BIT,
   [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
@@ -274,7 +274,7 @@ test_bignum(X, TrueLab, FalseLab, Pred) ->
 		    TrueLab, FalseLab, Pred)].
 
 test_binary(X, TrueLab, FalseLab, Pred) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   HalfTrueLab = hipe_rtl:mk_new_label(),
   Mask = ?TAG_HEADER_MASK - ?BINARY_XXX_MASK,
   [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
@@ -298,7 +298,7 @@ test_number(X, TrueLab, FalseLab, Pred) ->
   Lab1 = hipe_rtl:mk_new_label(),
   Lab2 = hipe_rtl:mk_new_label(),
   Lab3 = hipe_rtl:mk_new_label(),
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   BigMask = ?TAG_HEADER_MASK - ?BIG_SIGN_BIT,
   HeaderFlonum = flonum_header(),
   [test_fixnum(X, TrueLab, hipe_rtl:label_name(Lab1), 0.5),
@@ -350,14 +350,14 @@ test_fixnums(Args, TrueLab, FalseLab, Pred)->
   Ands ++ [test_fixnum(Reg, TrueLab, FalseLab, Pred)].
 
 test_fixnums_1([Arg1, Arg2], Acc)->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   {Tmp, lists:reverse([hipe_rtl:mk_alu(Tmp, Arg1, 'and', Arg2)|Acc])};
 test_fixnums_1([Arg1, Arg2|Args], Acc)->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   test_fixnums_1([Tmp|Args], [hipe_rtl:mk_alu(Tmp, Arg1, 'and', Arg2)|Acc]).
 
 test_two_fixnums(Arg1, Arg2, FalseLab) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   TrueLab = hipe_rtl:mk_new_label(),
   [hipe_rtl:mk_alu(Tmp, Arg1, 'and', Arg2),
    test_fixnum(Tmp, hipe_rtl:label_name(TrueLab), FalseLab, 0.99),
@@ -380,7 +380,7 @@ fixnum_le(Arg1, Arg2, TrueLab, FalseLab, Pred) ->
 
 %% We know the answer will be a fixnum
 unsafe_fixnum_add(Arg1, Arg2, Res) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   [hipe_rtl:mk_alu(Tmp, Arg2, sub, 
 		   hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
    hipe_rtl:mk_alu(Res, Arg1, add, Tmp)].
@@ -388,7 +388,7 @@ unsafe_fixnum_add(Arg1, Arg2, Res) ->
 %%% (16X+tag)+((16Y+tag)-tag) = 16X+tag+16Y = 16(X+Y)+tag
 %%% (16X+tag)-((16Y+tag)-tag) = 16X+tag-16Y = 16(X-Y)+tag
 fixnum_addsub(AluOp, Arg1, Arg2, Res, OtherLab) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   %% XXX: Consider moving this test to the users of fixnum_addsub.
   case Arg1 =/= Res andalso Arg2 =/= Res of 
     true -> 
@@ -402,7 +402,7 @@ fixnum_addsub(AluOp, Arg1, Arg2, Res, OtherLab) ->
        NoOverflowLab];
     false ->
       %% At least one of the arguments is the same as Res.
-      Tmp2 = hipe_rtl:mk_new_var(),
+      Tmp2 = hipe_rtl:mk_new_var(), % XXX: shouldn't this var be a reg?
       NoOverflowLab = hipe_rtl:mk_new_label(),
       [hipe_rtl:mk_alu(Tmp, Arg2, sub, 
 		       hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
@@ -415,9 +415,9 @@ fixnum_addsub(AluOp, Arg1, Arg2, Res, OtherLab) ->
 
 %%% ((16X+tag) div 16) * ((16Y+tag)-tag) + tag = X*16Y+tag = 16(XY)+tag
 %% fixnum_mul(Arg1, Arg2, Res, OtherLab) ->
-%%   Tmp = hipe_rtl:mk_new_reg(),
-%%   U1 = hipe_rtl:mk_new_reg(),
-%%   U2 = hipe_rtl:mk_new_reg(),
+%%   Tmp = hipe_rtl:mk_new_reg_gcsafe(),
+%%   U1 = hipe_rtl:mk_new_reg_gcsafe(),
+%%   U2 = hipe_rtl:mk_new_reg_gcsafe(),
 %%   NoOverflowLab = hipe_rtl:mk_new_label(),
 %%   [untag_fixnum(U1, Arg1),
 %%    hipe_rtl:mk_alu(U2, Arg2, 'sub', hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
@@ -429,7 +429,7 @@ fixnum_addsub(AluOp, Arg1, Arg2, Res, OtherLab) ->
 fixnum_andorxor(AluOp, Arg1, Arg2, Res) ->
   case AluOp of
     'xor' ->
-      Tmp = hipe_rtl:mk_new_reg(),
+      Tmp = hipe_rtl:mk_new_reg_gcsafe(),
       [hipe_rtl:mk_alu(Tmp, Arg1, 'xor', Arg2),	% clears tag :-(
        hipe_rtl:mk_alu(Res, Tmp, 'or', hipe_rtl:mk_imm(?TAG_IMMED1_SMALL))];
     _ -> hipe_rtl:mk_alu(Res, Arg1, AluOp, Arg2)
@@ -440,8 +440,8 @@ fixnum_not(Arg, Res) ->
   hipe_rtl:mk_alu(Res, Arg, 'xor', hipe_rtl:mk_imm(Mask)).
 
 fixnum_bsr(Arg1, Arg2, Res) ->
-  Tmp1 = hipe_rtl:mk_new_reg(),
-  Tmp2 = hipe_rtl:mk_new_reg(),
+  Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
   [untag_fixnum(Tmp1, Arg2),
    hipe_rtl:mk_alu(Tmp2, Arg1, 'sra', Tmp1),
    hipe_rtl:mk_alu(Res, Tmp2, 'or', hipe_rtl:mk_imm(?TAG_IMMED1_SMALL))].
@@ -475,8 +475,8 @@ unsafe_update_element(Tuple, Index, Value) ->   % Index is an immediate
 %     %% (Index >> 2) = 00x..x11 and ((Index >> 4) << 2) = 00x..x00.
 %     %% Therefore, ((Index >> 4) << 2) = (Index >> 2) - 3.
 %     %% So Offset = ((Index >> 4) << 2) - 2 = (Index >> 2) - (3 + 2).
-%     Tmp1 = hipe_rtl:mk_new_reg(),
-%     Tmp2 = hipe_rtl:mk_new_reg(),
+%     Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
+%     Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
 %     Shift = ?TAG_IMMED1_SIZE - 2,
 %     OffAdj = (?TAG_IMMED1_SMALL bsr Shift) + ?TAG_PRIMARY_BOXED,
 %     [hipe_rtl:mk_alu(Tmp1, Index, 'srl', hipe_rtl:mk_imm(Shift)),
@@ -486,11 +486,11 @@ unsafe_update_element(Tuple, Index, Value) ->   % Index is an immediate
 element(Dst, Index, Tuple, FailLabName, {tuple, A}, IndexInfo) ->
   FixnumOkLab = hipe_rtl:mk_new_label(),
   IndexOkLab = hipe_rtl:mk_new_label(),
-  Ptr = hipe_rtl:mk_new_reg(),
-  UIndex = hipe_rtl:mk_new_reg(),
+  Ptr = hipe_rtl:mk_new_reg(), % offset from Tuple
+  UIndex = hipe_rtl:mk_new_reg_gcsafe(),
   Arity = hipe_rtl:mk_imm(A),
-  InvIndex = hipe_rtl:mk_new_reg(),
-  Offset = hipe_rtl:mk_new_reg(),
+  InvIndex = hipe_rtl:mk_new_reg_gcsafe(),
+  Offset = hipe_rtl:mk_new_reg_gcsafe(),
 
   case IndexInfo of
     valid ->
@@ -519,12 +519,12 @@ element(Dst, Index, Tuple, FailLabName, {tuple, A}, IndexInfo) ->
 element(Dst, Index, Tuple, FailLabName, tuple, IndexInfo) ->
   FixnumOkLab = hipe_rtl:mk_new_label(),
   IndexOkLab = hipe_rtl:mk_new_label(),
-  Ptr = hipe_rtl:mk_new_reg(),
-  Header = hipe_rtl:mk_new_reg(),
-  UIndex = hipe_rtl:mk_new_reg(),
-  Arity = hipe_rtl:mk_new_reg(),
-  InvIndex = hipe_rtl:mk_new_reg(),
-  Offset = hipe_rtl:mk_new_reg(),
+  Ptr = hipe_rtl:mk_new_reg(), % offset from Tuple
+  Header = hipe_rtl:mk_new_reg_gcsafe(),
+  UIndex = hipe_rtl:mk_new_reg_gcsafe(),
+  Arity = hipe_rtl:mk_new_reg_gcsafe(),
+  InvIndex = hipe_rtl:mk_new_reg_gcsafe(),
+  Offset = hipe_rtl:mk_new_reg_gcsafe(),
   
   case IndexInfo of
     fixnums ->
@@ -557,14 +557,13 @@ element(Dst, Index, Tuple, FailLabName, _TupleInfo, IndexInfo) ->
   BoxedOkLab = hipe_rtl:mk_new_label(),
   TupleOkLab = hipe_rtl:mk_new_label(),
   IndexOkLab = hipe_rtl:mk_new_label(),
-  Ptr = hipe_rtl:mk_new_reg(),
-  Header = hipe_rtl:mk_new_reg(),
-  Tmp = hipe_rtl:mk_new_reg(),
-  UIndex = hipe_rtl:mk_new_reg(),
-  Arity = hipe_rtl:mk_new_reg(),
-  InvIndex = hipe_rtl:mk_new_reg(),
-  
-  Offset = hipe_rtl:mk_new_reg(),
+  Ptr = hipe_rtl:mk_new_reg(), % offset from Tuple
+  Header = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
+  UIndex = hipe_rtl:mk_new_reg_gcsafe(),
+  Arity = hipe_rtl:mk_new_reg_gcsafe(),
+  InvIndex = hipe_rtl:mk_new_reg_gcsafe(),
+  Offset = hipe_rtl:mk_new_reg_gcsafe(),
 
   case IndexInfo of
     fixnums ->
@@ -703,13 +702,13 @@ create_heap_binary(Base, Size, Dst) when is_integer(Size) ->
   WordSize = hipe_rtl_arch:word_size(),
   NoWords=(Size + 3*WordSize-1) div WordSize,
   NoBytes = NoWords*WordSize,
-  HeapBinHeader = hipe_rtl:mk_imm(mk_header(NoWords, 
+  HeapBinHeader = hipe_rtl:mk_imm(mk_header(NoWords-1, 
 					    ?TAG_HEADER_HEAP_BIN)),
   [GetHPInsn,
    tag_boxed(Dst, HP),
    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?HEAP_BIN_THING_WORD), HeapBinHeader),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_BINSIZE), hipe_rtl:mk_imm(Size)),
-   hipe_rtl:mk_alu(Base, HP, add, hipe_rtl:mk_imm(2*WordSize)),
+   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?HEAP_BIN_SIZE), hipe_rtl:mk_imm(Size)),
+   hipe_rtl:mk_alu(Base, HP, add, hipe_rtl:mk_imm(?HEAP_BIN_DATA)),
    hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(NoBytes)),
    PutHPInsn];
 
@@ -717,22 +716,24 @@ create_heap_binary(Base, Size, Dst) ->
   {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
   WordSize = hipe_rtl_arch:word_size(),
   Log2WordSize = hipe_rtl_arch:log2_word_size(),
-  EvenWordSize = hipe_rtl:mk_new_reg(), 
-  Tmp1 = hipe_rtl:mk_new_reg(),
-  Tmp2 = hipe_rtl:mk_new_reg(),
-  Header = hipe_rtl:mk_new_reg(),
+  EvenWordSize = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
+  Header = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp3 = hipe_rtl:mk_new_reg(), % offset from HP
+  Tmp4 = hipe_rtl:mk_new_reg(), % offset from HP
   [GetHPInsn,
    hipe_rtl:mk_alu(Tmp1, Size, add, hipe_rtl:mk_imm(WordSize-1)),
    hipe_rtl:mk_alu(EvenWordSize, Tmp1, sra, hipe_rtl:mk_imm(Log2WordSize)),
    hipe_rtl:mk_alu(Tmp2, EvenWordSize, add, hipe_rtl:mk_imm(1)),
-   hipe_rtl:mk_alu(Base, HP, add, hipe_rtl:mk_imm(2*WordSize)),
+   hipe_rtl:mk_alu(Base, HP, add, hipe_rtl:mk_imm(?HEAP_BIN_DATA)),
    mk_var_header(Header, Tmp2, ?TAG_HEADER_HEAP_BIN),
    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?HEAP_BIN_THING_WORD), Header),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(WordSize), Size),
+   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?HEAP_BIN_SIZE), Size),
    tag_boxed(Dst, HP),
-   hipe_rtl:mk_alu(Tmp1, HP, add, Size),
-   hipe_rtl:mk_alu(Tmp2, Tmp1, add, hipe_rtl:mk_imm(3*WordSize-1)),
-   hipe_rtl:mk_alu(HP, Tmp2, 'and', hipe_rtl:mk_imm(-WordSize)),
+   hipe_rtl:mk_alu(Tmp3, HP, add, Size),
+   hipe_rtl:mk_alu(Tmp4, Tmp3, add, hipe_rtl:mk_imm(3*WordSize-1)),
+   hipe_rtl:mk_alu(HP, Tmp4, 'and', hipe_rtl:mk_imm(-WordSize)),
    PutHPInsn].
 
 create_refc_binary(Base, Size, Dst) ->
@@ -740,7 +741,7 @@ create_refc_binary(Base, Size, Dst) ->
   ProcBinHeader = hipe_rtl:mk_imm(mk_header((?PROC_BIN_WORDSIZE)-1, 
 					    ?TAG_HEADER_REFC_BIN)),
   WordSize = hipe_rtl_arch:word_size(),
-  Tmp2 = hipe_rtl:mk_new_reg(),
+  Tmp2 = hipe_rtl:mk_new_reg(), % offset from Base
   [GetHPInsn,
    tag_boxed(Dst, HP),
    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_THING_WORD), ProcBinHeader),
@@ -756,8 +757,8 @@ finalize_bin(Dst, Base, Offset, TrueLblName) ->
   {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
   WordSize = hipe_rtl_arch:word_size(),
   WordSizeShift = hipe_rtl_arch:log2_word_size(),
-  TmpOffset = hipe_rtl:mk_new_reg(),
-  Tmp2 = hipe_rtl:mk_new_reg(),
+  TmpOffset = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp2 = hipe_rtl:mk_new_reg(), % offset from Base
   HeapLbl = hipe_rtl:mk_new_label(),
   REFCLbl = hipe_rtl:mk_new_label(),
   ProcBinHeader = hipe_rtl:mk_imm(mk_header((?PROC_BIN_WORDSIZE)-1, 
@@ -794,14 +795,14 @@ heap_arch_spec(HP) ->
   end.
 
 heap_arch_spec_non_shared(HP) ->
-  Tmp1 = hipe_rtl:mk_new_reg(),
+  Tmp1 = hipe_rtl:mk_new_reg(), % MSO state
   [hipe_rtl_arch:pcb_load(Tmp1, ?P_OFF_HEAP_MSO),
    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_NEXT), Tmp1),
    hipe_rtl_arch:pcb_store(?P_OFF_HEAP_MSO, HP)].
 
 heap_arch_spec_shared(HP) ->
-  Tmp1 = hipe_rtl:mk_new_reg(),
-  MSO = hipe_rtl:mk_new_reg(),
+  Tmp1 = hipe_rtl:mk_new_reg(), % MSO state
+  MSO = hipe_rtl:mk_new_reg_gcsafe(),
   [hipe_rtl:mk_load_address(MSO, erts_global_mso, c_const),
    hipe_rtl:mk_load(Tmp1, MSO, hipe_rtl:mk_imm(?OFF_HEAP_MSO)),
    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_NEXT), Tmp1),
@@ -809,10 +810,10 @@ heap_arch_spec_shared(HP) ->
 
 get_base(Base, ByteSize) ->
   {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(), 
-  Header = hipe_rtl:mk_new_reg(),
-  Tmp1 = hipe_rtl:mk_new_reg(),
-  Tmp2 = hipe_rtl:mk_new_reg(),
-  EvenWordSize = hipe_rtl:mk_new_reg(),
+  Header = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
+  EvenWordSize = hipe_rtl:mk_new_reg_gcsafe(),
   WordSize = hipe_rtl_arch:word_size(),
   [GetHPInsn,
    hipe_rtl:mk_alu(Tmp1, ByteSize, add, hipe_rtl:mk_imm(WordSize-1)),
@@ -888,12 +889,12 @@ unsafe_mk_big_bigendian(Dst, Src, Signedness) ->
   PosLabel = hipe_rtl:mk_new_label(),
   NegLabel = hipe_rtl:mk_new_label(),
   JoinLabel = hipe_rtl:mk_new_label(),
-  Tmp1 = hipe_rtl:mk_new_reg(),
+  Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
   [GetHPInsn | case Signedness of
 		 unsigned ->
 		   [hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0*WordSize), PosHead),
-		    hipe_rtl:mk_alu(Tmp1, Src, sll, hipe_rtl:mk_imm(16)),
-		    hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(16)),
+		    hipe_rtl:mk_alu(Tmp1, Src, sll, hipe_rtl:mk_imm(16)), % XXX: 64-bit unsafe
+		    hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(16)), % XXX: 64-bit unsafe
 		    hipe_rtl:mk_alu(Src, Src, 'or', Tmp1),
 		    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(WordSize), Src),
 		    tag_boxed(Dst, HP),
@@ -909,8 +910,8 @@ unsafe_mk_big_bigendian(Dst, Src, Signedness) ->
 		    NegLabel,
 		    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0*WordSize), NegHead),
 		    JoinLabel,
-		    hipe_rtl:mk_alu(Tmp1, Src, sll, hipe_rtl:mk_imm(16)),
-		    hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(16)),
+		    hipe_rtl:mk_alu(Tmp1, Src, sll, hipe_rtl:mk_imm(16)), % XXX: 64-bit unsafe
+		    hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(16)), % XXX: 64-bit unsafe
 		    hipe_rtl:mk_alu(Src, Src, 'or', Tmp1),
 		    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(1*WordSize), Src),
 		    tag_boxed(Dst, HP),
@@ -950,21 +951,21 @@ unsafe_mk_big_littleendian(Dst, Src, Signedness) ->
 	       end].
 
 test_subbinary(Binary, TrueLblName, FalseLblName) ->
-  Tmp1 = hipe_rtl:mk_new_reg(),
-  Tmp2 = hipe_rtl:mk_new_reg(),
+  Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
   [get_header(Tmp1, Binary),
    hipe_rtl:mk_alu(Tmp2, Tmp1, 'and', hipe_rtl:mk_imm(?TAG_HEADER_MASK)),
    hipe_rtl:mk_branch(Tmp2, eq, hipe_rtl:mk_imm(?TAG_HEADER_SUB_BIN), TrueLblName, FalseLblName)].
 
 test_heap_binary(Binary, TrueLblName, FalseLblName) ->
-  Tmp1 = hipe_rtl:mk_new_reg(),
-  Tmp2 = hipe_rtl:mk_new_reg(),
+  Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
   [get_header(Tmp1, Binary),
    hipe_rtl:mk_alu(Tmp2, Tmp1, 'and', hipe_rtl:mk_imm(?TAG_HEADER_MASK)),
    hipe_rtl:mk_branch(Tmp2, eq, hipe_rtl:mk_imm(?TAG_HEADER_HEAP_BIN), TrueLblName, FalseLblName)].
 
 mk_var_header(Header, Size, Tag) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   [hipe_rtl:mk_alu(Tmp, Size, sll, hipe_rtl:mk_imm(?HEADER_ARITY_OFFS)),
    hipe_rtl:mk_alu(Header, Tmp, 'add', hipe_rtl:mk_imm(Tag))].
 
@@ -973,7 +974,7 @@ get_erts_mb(MatchBuf) ->
     [] ->
       [hipe_rtl:mk_load_address(MatchBuf, erts_mb, c_const)];
     Offset ->
-      Tmp = hipe_rtl:mk_new_reg(),
+      Tmp = hipe_rtl:mk_new_reg(), % points to per-CPU state
       [hipe_rtl_arch:pcb_load(Tmp, Offset),
        hipe_rtl:mk_alu(MatchBuf, Tmp, 'add', hipe_rtl:mk_imm(?SCHED_DATA_ERTS_MB_OFFS))]
   end.

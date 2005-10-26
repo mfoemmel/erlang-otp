@@ -430,6 +430,7 @@ TESTS +=					\
 	odbc_test				\
 	parsetools_test				\
 	ssl_test				\
+	ssh_test				\
 	tools_test				\
 	toolbar_test				\
 	xmerl_test

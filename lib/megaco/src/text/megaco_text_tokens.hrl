@@ -75,10 +75,11 @@
 -define(PrettyBriefToken                 , "Brief"                 ).
 -define(PrettyBufferToken                , "Buffer"                ).
 -define(PrettyCtxToken                   , "Context"               ).
--define(PrettyContextAuditToken          , "ContextAudit"          ).
 -define(PrettyContextAttrToken           , "ContextAttr"           ). % v3
+-define(PrettyContextAuditToken          , "ContextAudit"          ).
+-define(PrettyContextListToken           , "ContextList"           ). % v3
 -define(PrettyDigitMapToken              , "DigitMap"              ).
--define(PrettyDirectionToken             , "Direction"             ). % v3
+-define(PrettyDirectionToken             , "Direction"             ). % v3 BMK BMK BMK
 -define(PrettyDiscardToken               , "Discard"               ).
 -define(PrettyDisconnectedToken          , "Disconnected"          ).
 -define(PrettyDelayToken                 , "Delay"                 ).
@@ -187,10 +188,11 @@
 -define(CompactBriefToken                 , "BR"                   ).
 -define(CompactBufferToken                , "BF"                   ).
 -define(CompactCtxToken                   , "C"                    ).
--define(CompactContextAuditToken          , "CA"                   ).
 -define(CompactContextAttrToken           , "CT"                   ). % v3
+-define(CompactContextAuditToken          , "CA"                   ).
+-define(CompactContextListToken           , "CLT"                  ). % v3
 -define(CompactDigitMapToken              , "DM"                   ).
--define(CompactDirectionToken             , "DI"                   ). % v3
+-define(CompactDirectionToken             , "DI"                   ). % v3 BMK BMK BMK
 -define(CompactDiscardToken               , "DS"                   ).
 -define(CompactDisconnectedToken          , "DC"                   ).
 -define(CompactDelayToken                 , "DL"                   ).

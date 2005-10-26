@@ -80,20 +80,6 @@ ifeq ($(HOST_OS),)
 HOST_OS := $(shell $(ERL_TOP)/erts/autoconf/config.guess)
 endif
 LD_R_FLAG=@DED_LD_FLAG_RUNTIME_LIBRARY_PATH@
-ifeq ($(findstring @,$(LD_R_FLAG)),@)
-# Old erts configure used which hasn't replaced
-# @DED_LD_FLAG_RUNTIME_LIBRARY_PATH@; we try our best here instead...
-ifeq ($(findstring darwin,$(TARGET)),darwin)	# darwin: no flag
-LD_R_FLAG =
-else
-ifeq ($(findstring osf,$(TARGET)),osf)		# osf1: -rpath
-# Note, whitespace after -rpath is important!
-LD_R_FLAG = -rpath 
-else						# Default: -R
-LD_R_FLAG = -R
-endif
-endif
-endif
 ifeq ($(strip $(LD_R_FLAG)),)
 LD_R_OPT =
 else

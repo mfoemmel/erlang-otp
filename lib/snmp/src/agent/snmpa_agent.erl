@@ -209,7 +209,7 @@ do_init(Prio, Parent, Ref, Options) ->
     Vsns    = get_versions(Options),
 
     NS = start_note_store(Prio, Ref, Options),
-    {Type, NetIfPid} = 
+    {Type, NetIfPid, NetIfMod} = 
 	start_net_if(Parent, Prio, Ref, Vsns, NS, Options),
 
     MibPid = start_mib_server(Prio, Ref, Mibs, Options),
@@ -225,7 +225,8 @@ do_init(Prio, Parent, Ref, Options) ->
 		multi_threaded = MultiT, 
 		ref            = Ref,
 		vsns           = Vsns,
-		note_store     = NS}}.
+		note_store     = NS,
+		net_if_mod     = NetIfMod}}.
 
 
 start_note_store(Prio, Ref, Options) ->
@@ -264,10 +265,10 @@ start_net_if(none, Prio, Ref, Vsns, NoteStore, Options) ->
 	    "~n   NiOpts: ~p",[Mod, NiOpts]),
 
     case (catch snmpa_misc_sup:start_net_if(Prio, NoteStore, Ref, self(),
-					   Mod, NiOpts)) of
+					    Mod, NiOpts)) of
 	{ok, Pid} -> 
 	    ?vdebug("start_net_if -> Pid: ~p", [Pid]),
-	    {master_agent, Pid};
+	    {master_agent, Pid, Mod};
 	{error, Reason} -> 
 	    ?vinfo("error starting net if: ~n~p",[Reason]),
 	    throw({error, {net_if_error, Reason}});
@@ -280,8 +281,8 @@ start_net_if(none, Prio, Ref, Vsns, NoteStore, Options) ->
     end;
 start_net_if(Parent, _Prio, _Ref, _Vsns, _NoteStore, _Options) 
   when pid(Parent) ->
-    ?vdebug("start_net_if(~p) -> ignore", [Parent]),
-    {subagent, undefined}.
+    ?vdebug("start_net_if(~p) -> subagent => ignore", [Parent]),
+    {subagent, undefined, undefined}.
     
     
 start_mib_server(Prio, Ref, Mibs, Options) ->
@@ -740,7 +741,23 @@ handle_call({whereis_mib, Mib}, _From, S) ->
     {reply, snmpa_mib:whereis_mib(get(mibserver), Mib), S};
 
 handle_call(info, _From, S) ->
-    {reply, [{vsns, S#state.vsns} | snmpa_mib:info(get(mibserver))], S};
+    Vsns  = S#state.vsns,
+    Stats = get_stats_counters(), 
+    AI    = agent_info(S),
+    NI    = net_if_info(S),
+    NS    = note_store_info(S),
+    SS    = symbolic_store_info(),
+    LD    = local_db_info(),
+    MS    = mib_server_info(), 
+    Info  = [{vsns,           Vsns}, 
+	     {stats_counters, Stats},
+	     {agent,          AI}, 
+	     {net_if,         NI}, 
+	     {note_store,     NS},
+	     {symbolic_store, SS},
+	     {local_db,       LD},
+	     {mib_server,     MS}], 
+    {reply, Info, S};
 
 handle_call(get_net_if, _From, S) ->
     {reply, get(net_if), S};
@@ -844,15 +861,43 @@ terminate(_Reason, _S) ->
 %%-----------------------------------------------------------------
 
 %% Downgrade
+%% The net_if_mod field was added as of version 4.4
 %%
 code_change({down, _Vsn}, S, _Extra) ->
-    NS = worker_restart(S),
+    S1 = worker_restart(S),
+    #state{type           = T, 
+	   parent         = P, 
+	   worker         = W, 
+	   worker_state   = WS,
+	   set_worker     = SW, 
+	   multi_threaded = MT, 
+	   ref            = R, 
+	   vsns           = V,
+	   nfilters       = NF,
+	   note_store     = NS,
+	   mib_server     = MS,   
+	   net_if         = NI} = S1,
+    NS = {state, T, P, W, WS, SW, MT, R, V, NF, NS, MS, NI},
     {ok, NS};
 
 %% Upgrade
+%% The net_if_mod field was added as of version 4.4
 %%
 code_change(_Vsn, S, _Extra) ->
-    NS = worker_restart(S),
+    {state, T, P, W, WS, SW, MT, R, V, NF, NS, MS, NI} = S,
+    S1 = #state{type           = T, 
+		parent         = P, 
+		worker         = W, 
+		worker_state   = WS,
+		set_worker     = SW, 
+		multi_threaded = MT, 
+		ref            = R, 
+		vsns           = V,
+		nfilters       = NF,
+		note_store     = NS,
+		mib_server     = MS,   
+		net_if         = NI},
+    NS = worker_restart(S1),
     {ok, NS}.
 
 
@@ -1574,35 +1619,35 @@ get_var_value_from_ivb(#ivarbind{status = Status, varbind = Vb}, _) ->
 %% Returns: A correct return value (see make_value_a_correct_value)
 get_var_value_from_mib(#me{entrytype = variable,
 			   asn1_type = ASN1Type,
-			   mfa = {Module, Func, Args}},
+			   mfa       = {Mod, Func, Args}},
 		       _Oid) ->
     ?vtrace("get_var_value_from_mib(variable) -> entry when"
-	    "~n   Module: ~p"
-	    "~n   Func:   ~p"
-	    "~n   Args:   ~p", [Module, Func, Args]),
-    Result = (catch dbg_apply(Module, Func, [get | Args])),
+	    "~n   Mod:  ~p"
+	    "~n   Func: ~p"
+	    "~n   Args: ~p", [Mod, Func, Args]),
+    Result = (catch dbg_apply(Mod, Func, [get | Args])),
     % mib shall return {value, <a-nice-value-within-range>} |
     % {noValue, noSuchName} (v1) | 
     % {noValue, noSuchObject | noSuchInstance} (v2, v1)
     % everything else (including 'genErr') will generate 'genErr'.
-    make_value_a_correct_value(Result, ASN1Type, {Module, Func, Args});
+    make_value_a_correct_value(Result, ASN1Type, {Mod, Func, Args});
 
 get_var_value_from_mib(#me{entrytype = table_column,
-			   oid = MeOid,
+			   oid       = MeOid,
 			   asn1_type = ASN1Type,
-			   mfa = {Module, Func, Args}},
+			   mfa       = {Mod, Func, Args}},
 		       Oid) ->
     ?vtrace("get_var_value_from_mib(table_column) -> entry when"
-	    "~n   MeOid:  ~p"
-	    "~n   Module: ~p"
-	    "~n   Func:   ~p"
-	    "~n   Args:   ~p"
-	    "~n   Oid:    ~p", [MeOid, Module, Func, Args, Oid]),
+	    "~n   MeOid: ~p"
+	    "~n   Mod:   ~p"
+	    "~n   Func:  ~p"
+	    "~n   Args:  ~p"
+	    "~n   Oid:   ~p", [MeOid, Mod, Func, Args, Oid]),
     Col = lists:last(MeOid),
     Indexes = snmp_misc:diff(Oid, MeOid),
-    [Result] = (catch dbg_apply(Module, Func, [get, Indexes, [Col] | Args])),
-    make_value_a_correct_value(Result, ASN1Type, {Module, Func, Args, 
-						  Indexes, Col}).
+    [Result] = (catch dbg_apply(Mod, Func, [get, Indexes, [Col] | Args])),
+    make_value_a_correct_value(Result, ASN1Type, 
+			       {Mod, Func, Args, Indexes, Col}).
 
 
 %% For table operations we need to pass RestOid down to the table-function.
@@ -1610,14 +1655,14 @@ get_var_value_from_mib(#me{entrytype = table_column,
 %% non-existing row).
 %% Returns: {error, ErrorStatus, OrgIndex} |
 %%          {value, Type, Value}
-get_tab_value_from_mib(#me{mfa = {Module,Func,Args}}, TableOid, TableVbs) ->
+get_tab_value_from_mib(#me{mfa = {Mod, Func, Args}}, TableOid, TableVbs) ->
     ?vtrace("get_tab_value_from_mib -> entry when"
-	    "~n   Module: ~p"
-	    "~n   Func:   ~p"
-	    "~n   Args:   ~p", [Module, Func, Args]),
+	    "~n   Mod:  ~p"
+	    "~n   Func: ~p"
+	    "~n   Args: ~p", [Mod, Func, Args]),
     TableOpsWithShortOids = deletePrefixes(TableOid, TableVbs),
-    case get_value_all_rows(snmpa_svbl:sort_varbinds_rows(TableOpsWithShortOids),
-			    Module, Func, Args, []) of
+    SortedVBsRows = snmpa_svbl:sort_varbinds_rows(TableOpsWithShortOids), 
+    case get_value_all_rows(SortedVBsRows, Mod, Func, Args, []) of
 	{Error, Index} ->
 	    #ivarbind{varbind = Vb} = lists:nth(Index, TableVbs),
 	    {error, Error, Vb#varbind.org_index};
@@ -1638,31 +1683,29 @@ merge_varbinds_and_value(IVbs, [{{value, Type, Value}, Index} | Values]) ->
      merge_varbinds_and_value(IVbs, Values)];
 merge_varbinds_and_value(_, []) -> [].
     
-get_value_all_rows([{RowIndex, OrgCols} | Rows], Module, Func, Args, Res) 
-  when RowIndex == [] ->
+get_value_all_rows([{[], OrgCols} | Rows], Mod, Func, Args, Res) ->
     ?vtrace("get_value_all_rows -> entry when"
 	    "~n   OrgCols: ~p", [OrgCols]),
-    Cols = lists:map(fun({_Col, _ASN1Type, Index}) ->
-			     {{value, noValue, noSuchInstance}, Index}
-		     end, OrgCols),
+    Cols   = [{{value, noValue, noSuchInstance}, Index} || 
+		 {_Col, _ASN1Type, Index} <- OrgCols], 
     NewRes = lists:append(Cols, Res),
-    get_value_all_rows(Rows, Module, Func, Args, NewRes);
-get_value_all_rows([{RowIndex, OrgCols} | Rows], Module, Func, Args, Res) ->
+    get_value_all_rows(Rows, Mod, Func, Args, NewRes);
+get_value_all_rows([{RowIndex, OrgCols} | Rows], Mod, Func, Args, Res) ->
     ?vtrace("get_value_all_rows -> entry when"
 	    "~n   RowIndex: ~p"
 	    "~n   OrgCols:  ~p", [RowIndex, OrgCols]),
     {DOrgCols, Dup} = remove_duplicates(OrgCols),
-    Cols = delete_index(DOrgCols),
-    Result = (catch dbg_apply(Module, Func, [get, RowIndex, Cols | Args])),
-    case validate_tab_res(Result, DOrgCols, {Module, Func, Args}) of
+    Cols   = delete_index(DOrgCols),
+    Result = (catch dbg_apply(Mod, Func, [get, RowIndex, Cols | Args])),
+    case validate_tab_res(Result, DOrgCols, {Mod, Func, Args}) of
 	Values when list(Values) ->
-	    NVals = restore_duplicates(Dup, Values),
+	    NVals  = restore_duplicates(Dup, Values),
 	    NewRes = lists:append(NVals, Res),
-	    get_value_all_rows(Rows, Module, Func, Args, NewRes);
+	    get_value_all_rows(Rows, Mod, Func, Args, NewRes);
 	{error, ErrorStatus, Index} ->
-	    validate_err(row_set, {ErrorStatus, Index}, {Module, Func, Args})
+	    validate_err(row_set, {ErrorStatus, Index}, {Mod, Func, Args})
     end;
-get_value_all_rows([], _Module, _Func, _Args, Res) -> 
+get_value_all_rows([], _Mod, _Func, _Args, Res) -> 
     ?vtrace("get_value_all_rows -> entry when done"
 	    "~n   Res: ~p", [Res]),
     Res.
@@ -1706,7 +1749,7 @@ remove_duplicates([], NCols, Dup) ->
     {lists:reverse(NCols), lists:reverse(Dup)}.
 
 restore_duplicates([], Cols) ->
-    lists:map(fun({_Col, Val, OrgIndex}) -> {Val, OrgIndex} end, Cols);
+    [{Val, OrgIndex} || {_Col, Val, OrgIndex} <- Cols];
 restore_duplicates([{Col, _Val2, OrgIndex2} | Dup],
 		   [{Col, NVal, OrgIndex1} | Cols]) ->
     [{NVal, OrgIndex2} |
@@ -1753,7 +1796,8 @@ validate_tab_res(Error, [{_Col, _ASN1Type, Index} | _OrgCols], Mfa) ->
     user_err("Invalid return value ~w from ~w (get)",[Error, Mfa]),
     {error, genErr, Index}.
 
-validate_tab_res([Value | Values], [{Col, ASN1Type, Index} | OrgCols],
+validate_tab_res([Value | Values], 
+		 [{Col, ASN1Type, Index} | OrgCols],
 		 Mfa, Res, I) ->
     %% This one makes it possible to return a list of genErr, which
     %% is not allowed according to the manual.  But that's ok, as
@@ -1766,7 +1810,8 @@ validate_tab_res([Value | Values], [{Col, ASN1Type, Index} | OrgCols],
 	    NewRes = [{Col, CorrectValue, Index} | Res],
 	    validate_tab_res(Values, OrgCols, Mfa, NewRes, I)
     end;
-validate_tab_res([], [], _Mfa, Res, _I) -> Res;
+validate_tab_res([], [], _Mfa, Res, _I) -> 
+    lists:reverse(Res);
 validate_tab_res([], [{_Col, _ASN1Type, Index}|_], Mfa, _Res, _I) ->
     user_err("Too few values returned from ~w (get)", [Mfa]),
     {error, genErr, Index};
@@ -1822,7 +1867,7 @@ oid_sort_varbindlist(Vbs) ->
 
 %% LAVb is Last Accessible Vb
 next_loop_varbinds([], [Vb | Vbs], MibView, Res, LAVb) ->
-    ?vt("next_loop_varbins -> entry when"
+    ?vt("next_loop_varbinds -> entry when"
  	"~n   Vb:      ~p"
  	"~n   MibView: ~p", [Vb, MibView]),
     case varbind_next(Vb, MibView) of
@@ -1866,7 +1911,7 @@ next_loop_varbinds([], [Vb | Vbs], MibView, Res, LAVb) ->
     end;
 next_loop_varbinds({table, TableOid, ME, TabOids},
 		   [Vb | Vbs], MibView, Res, _LAVb) ->
-    ?vt("next_loop_varbins(table) -> entry with"
+    ?vt("next_loop_varbinds(table) -> entry with"
  	"~n   TableOid: ~p"
  	"~n   Vb:       ~p", [TableOid, Vb]),
     case varbind_next(Vb, MibView) of
@@ -1890,11 +1935,11 @@ next_loop_varbinds({table, TableOid, ME, TabOids},
     end;
 next_loop_varbinds({table, TableOid, ME, TabOids},
 		   [], MibView, Res, _LAVb) ->
-    ?vt("next_loop_varbins(table) -> entry with"
+    ?vt("next_loop_varbinds(table) -> entry with"
 	"~n   TableOid: ~p", [TableOid]),
     case get_next_table(ME, TableOid, TabOids, MibView) of
 	{ok, TabRes, TabEndOfTabVbs} ->
- 	    ?vt("next_loop_varbins(table) -> get_next_table result:"
+ 	    ?vt("next_loop_varbinds(table) -> get_next_table result:"
 		"~n   TabRes:         ~p"
 		"~n   TabEndOfTabVbs: ~p", [TabRes, TabEndOfTabVbs]),
 	    NewRes = lists:append(TabRes, Res),
@@ -1908,7 +1953,7 @@ next_loop_varbinds({table, TableOid, ME, TabOids},
     end;
 next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
 		   [Vb | Vbs], MibView, Res, _LAVb) ->
-    ?vt("next_loop_varbins(subagent) -> entry with"
+    ?vt("next_loop_varbinds(subagent) -> entry with"
 	"~n   SAPid: ~p"
 	"~n   SAOid: ~p"
  	"~n   Vb:    ~p", [SAPid, SAOid, Vb]),
@@ -1957,7 +2002,7 @@ next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
     end;
 next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
 		   [], MibView, Res, _LAVb) ->
-     ?vt("next_loop_varbins(subagent) -> entry with"
+     ?vt("next_loop_varbinds(subagent) -> entry with"
 	 "~n   SAPid: ~p"
 	 "~n   SAOid: ~p", [SAPid, SAOid]),
     case get_next_sa(SAPid, SAOid, SAVbs, MibView) of
@@ -1992,7 +2037,7 @@ next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
  	    {ErrorStatus, OrgIndex, []}
     end;
 next_loop_varbinds([], [], _MibView, Res, _LAVb) ->
-    ?vt("next_loop_varbins -> entry when done", []),
+    ?vt("next_loop_varbinds -> entry when done", []),
     {noError, 0, Res}.
 
 try_get_instance(_Vb, #me{mfa = {M, F, A}, asn1_type = ASN1Type}) ->
@@ -2244,6 +2289,7 @@ next_oid(Oid) ->
 	[] -> []
     end.
 
+
 %%%-----------------------------------------------------------------
 %%% 5. GET-BULK REQUEST
 %%%-----------------------------------------------------------------
@@ -2256,8 +2302,13 @@ do_get_bulk(MibView, NonRepeaters, MaxRepetitions, PduMS, Varbinds) ->
 	    "~n   Varbinds:       ~p",
 	    [MibView, NonRepeaters, MaxRepetitions, PduMS, Varbinds]),
     {NonRepVbs, RestVbs} = split_vbs(NonRepeaters, Varbinds, []),
+    ?vt("do get bulk -> split: "
+	"~n   NonRepVbs: ~p"
+	"~n   RestVbs:   ~p", [NonRepVbs, RestVbs]),
     case do_get_next(MibView, NonRepVbs) of
 	{noError, 0, UResNonRepVbs} -> 
+	    ?vt("do get bulk -> next: "
+		"~n   UResNonRepVbs: ~p", [UResNonRepVbs]),
 	    ResNonRepVbs = lists:keysort(#varbind.org_index, UResNonRepVbs),
 	    %% Decode the first varbinds, produce a reversed list of
 	    %% listOfBytes.
@@ -2820,6 +2871,107 @@ subagents_verbosity([{Pid,_Oid}|T],V) ->
     subagents_verbosity(T,V);
 subagents_verbosity(_,_V) ->
     ok.
+
+
+%% ---------------------------------------------------------------------
+
+agent_info(#state{worker = W, set_worker = SW}) ->	 
+    case (catch get_agent_info(W, SW)) of
+	Info when list(Info) ->
+	    Info;
+	E ->
+	    [{error, E}]
+    end.
+
+get_agent_info(W, SW) ->
+    MASz   = proc_mem(self()),
+    WSz    = proc_mem(W),
+    SWSz   = proc_mem(SW),
+    ATSz   = tab_mem(snmp_agent_table),
+    CCSz   = tab_mem(snmp_community_cache),
+    VacmSz = tab_mem(snmpa_vacm),
+    [{process_memory, [{master_agent, MASz}, 
+		       {worker,       WSz}, 
+		       {set_worker,   SWSz}]}, 
+     {db_memory, [{agent,           ATSz}, 
+		  {community_cache, CCSz}, 
+		  {vacm,            VacmSz}]}].
+
+proc_mem(P) when pid(P) ->
+    case (catch erlang:process_info(P, memory)) of
+	{memory, Sz} when integer(Sz) ->
+	    Sz;
+	_ ->
+	    undefined
+    end;
+proc_mem(_) ->
+    undefined.
+
+tab_mem(T) ->
+    case (catch ets:info(T, memory)) of
+	Sz when integer(Sz) ->
+	    Sz;
+	_ ->
+	    undefined
+    end.
+
+net_if_info(#state{net_if_mod = Mod}) when Mod /= undefined ->
+    case (catch Mod:info(get(net_if))) of
+	Info when list(Info) ->
+	    Info;
+	E ->
+	    [{error, E}]
+    end;
+net_if_info(_) ->
+    %% This could be a result of a code upgrade
+    %% Make best effert
+    [{process_memory, proc_mem(get(net_if))}].
+
+note_store_info(#state{note_store = NS}) ->
+    case (catch snmp_note_store:info(NS)) of
+	Info when list(Info) ->
+	    Info;
+	E ->
+	    [{error, E}]
+    end.
+
+symbolic_store_info() ->
+    case (catch snmpa_symbolic_store:info()) of
+	Info when list(Info) ->
+	    Info;
+	E ->
+	    [{error, E}]
+    end.
+
+local_db_info() ->
+    case (catch snmpa_local_db:info()) of
+	Info when list(Info) ->
+	    Info;
+	E ->
+	    [{error, E}]
+    end.
+
+mib_server_info() ->
+    case (catch snmpa_mib:info(get(mibserver))) of
+	Info when list(Info) ->
+	    Info;
+	E ->
+	    [{error, E}]
+    end.
+	
+get_stats_counters() ->
+    Counters = snmpa_mpd:counters(),
+    get_stats_counters(Counters, []).
+
+get_stats_counters([], Acc) ->
+    lists:reverse(Acc);
+get_stats_counters([Counter|Counters], Acc) ->
+    case ets:lookup(snmp_agent_table, Counter) of
+	[CounterVal] ->
+	    get_stats_counters(Counters, [CounterVal|Acc]);
+	_ ->
+	    get_stats_counters(Counters, Acc)
+    end.
 
 
 %% ---------------------------------------------------------------------

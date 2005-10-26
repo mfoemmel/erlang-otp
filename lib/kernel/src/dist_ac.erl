@@ -402,7 +402,7 @@ handle_info({ac_application_unloaded, AppName}, S) ->
 handle_info({ac_start_application_req, AppName}, S) ->
     %% We must decide if we or another node should start the application
     Lock = {?LOCK_ID, self()},
-    case global:set_lock(Lock, [node()], 1) of
+    case global:set_lock(Lock, [node()], 0) of
 	true ->
 	    S2 = case catch start_appl(AppName, S, reply) of
 		     {ok, NewS, _} ->
@@ -998,8 +998,9 @@ permit(true, _, AppName, From, S, LockId) ->
 	    %% Delete the lock, so others may start the app
 	    global:del_lock(LockId),
 	    {noreply, NewS#state{t_reqs = [{AppName, From} | TR]}};
-	{ok, NewS, false} ->
-	    %% XXX This looks strange. Shall really NewS be disregarded???
+	{ok, _S, false} ->
+	    %% Application should be started, but at another node
+	    %% State remains the same
 	    {reply, ok, S};
 	{_ErrorTag, R} ->
 	    {stop, R, {error, R}, S}

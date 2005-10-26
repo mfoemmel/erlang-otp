@@ -39,7 +39,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 MODULES = hipe_schedule hipe_schedule_prio \
 	  hipe_target_machine hipe_ultra_mod2 hipe_ultra_prio \
-	  hipe_spill_minimize
+	  hipe_spillmin hipe_spillmin_color hipe_spillmin_scan
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)

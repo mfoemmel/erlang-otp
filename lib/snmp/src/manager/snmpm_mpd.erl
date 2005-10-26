@@ -235,7 +235,7 @@ process_v3_msg(NoteStore, Msg, Hdr, Data, Addr, Port, Log) ->
 	    "~n   ~p",[SecRes]),
     {SecEngineID, SecName, ScopedPDUBytes, SecData} =
 	check_sec_module_result(SecRes, Hdr, Data, IsReportable, Log),
-    ?vtrace("process_v3_msg -> 7.2.6 - check module result: "
+    ?vtrace("process_v3_msg -> 7.2.6 - checked module result: "
 	    "~n   SecEngineID: ~p"
 	    "~n   SecName:     ~p",[SecEngineID, SecName]),
 
@@ -293,8 +293,8 @@ process_v3_msg(NoteStore, Msg, Hdr, Data, Addr, Port, Log) ->
 		{SecEngineID, MsgSecModel, SecName, SecLevel,
 		 CtxEngineID, CtxName, _ReqId} ->
 		    ?vtrace("process_v3_msg -> 7.2.11b: ok", []),
-		    %% BMK BMK: Should we not discard the cached info
-		    %% BMK BMK: or let the gc deal with it?
+		    %% BMK BMK: Should we discard the cached info
+		    %% BMK BMK: or do we let the gc deal with it?
  		    {ok, 'version-3', PDU, PduMMS, ok};
  		_ when tuple(Note) ->
  		    ?vlog("process_v3_msg -> 7.2.11b: error"
@@ -446,8 +446,13 @@ check_sec_module_result({error, Reason, ErrorInfo}, V3Hdr, Data, true, Log) ->
 	    discard({securityError, Reason})
     end;
 check_sec_module_result({error, Reason, _ErrorInfo}, _, _, _, _) ->
+    ?vtrace("security module result:"
+	    "~n   Reason:     ~p"
+	    "~n   _ErrorInfo: ~p", [Reason, _ErrorInfo]),
     discard({securityError, Reason});
 check_sec_module_result(Res, _, _, _, _) ->
+    ?vtrace("security module result:"
+	    "~n   Res: ~p", [Res]),
     discard({securityError, Res}).
 
 get_scoped_pdu(D) when list(D) ->
@@ -553,7 +558,7 @@ sec_engine_id(TargetName) ->
 
 %% BMK BMK BMK
 %% Denna verkar väldigt lik generate_v1_v2c_response_msg!
-%% Gemensam? Borde finnas olikheter?
+%% Gemensam? Borde det finnas olikheter?
 %% 
 generate_v1_v2c_msg(Vsn, Pdu, Community, Log) ->
     ?vdebug("generate_v1_v2c_msg -> encode pdu", []),
@@ -576,6 +581,7 @@ generate_v1_v2c_msg(Vsn, Pdu, Community, Log) ->
 		    {discarded, Reason};
 		{ok, Packet} when size(Packet) =< MMS ->
 		    Log(Packet),
+		    inc_snmp_out(Pdu),
 		    {ok, Packet};
 		{ok, Packet} ->
 		    ?vlog("packet max size exceeded: "
@@ -678,8 +684,15 @@ generate_v3_outgoing_msg(Message,
 	{error, Reason} ->
 	    config_err("~p (message: ~p)", [Reason, Message]),
 	    {discarded, Reason};
+	Bin when binary(Bin) ->
+	    {ok, Bin};
 	OutMsg when list(OutMsg) ->
-	    {ok, list_to_binary(OutMsg)}
+	    case (catch list_to_binary(OutMsg)) of
+		Bin when binary(Bin) ->
+		    {ok, Bin};
+		{'EXIT', Reason} ->
+		    {error, Reason}
+	    end
     end.
 
 
@@ -766,8 +779,15 @@ generate_v1_v2c_outgoing_msg(Message) ->
     case (catch snmp_pdus:enc_message_only(Message)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
-	Packet ->
-	    {ok, list_to_binary(Packet)}
+	Bin when binary(Bin) ->
+	    {ok, Bin};
+	Packet when list(Packet) ->
+	    case (catch list_to_binary(Packet)) of
+		Bin when binary(Bin) ->
+		    {ok, Bin};
+		{'EXIT', Reason} ->
+		    {error, Reason}
+	    end
     end.
 
 

@@ -1,2147 +1,1739 @@
 %% ``The contents of this file are subject to the Erlang Public License,
-%% Version 1.1,  (the "License"); you may not use this file except in
+%% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not,  it can be
+%% Erlang Public License along with this software. If not, it can be
 %% retrieved via the world wide web at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
-%% basis,  WITHOUT WARRANTY OF ANY KIND,  either express or implied. See
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
+%% 
 %% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999,  Ericsson Utvecklings
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
-%%
+%% 
 %%     $Id$
 %%
+
+%%% Description: SSH transport protocol
+
 -module(ssh_transport).
 
--behaviour(gen_server).
+-import(lists, [reverse/1, map/2, foreach/2, foldl/3]).
 
 -include("ssh.hrl").
+-include_lib("kernel/include/inet.hrl").
 
--export([
-         open/1,
-         open/2,
-         dump_config/1,
-         send_msg/2,
-         set_active_once/1,
-         set_controlling_process/2,
-         exchange_keys/1,
-         close/1
-        ]).
+-export([connect/1, connect/2, connect/3, close/1]).
+-export([listen/2, listen/3, listen/4, stop_listener/1]).
+-export([debug/2, debug/3, debug/4]).
+-export([ignore/2]).
+-export([disconnect/2, disconnect/3, disconnect/4]).
 
--export([
-         init/1,
-         handle_info/2,
-         handle_cast/2,
-         handle_call/3,
-         terminate/2,
-         code_change/3
-        ]).
+-export([client_init/4, server_init/4]).
 
--export([
-         parse_packet/2,
-         flatlength/1,
-         split_data/2
-        ]).
+-export([ssh_init/3, server_hello/3]).
 
-%% The AUX_CRYPTO module could become 'crypto' I guess.
--define(AUX_CRYPTO,             ssh_crypto).
+-export([service_request/2, service_accept/2]).
 
--define(RECV_TIMEOUT,           60000).
--define(CONNECT_TIMEOUT,        60000).
--define(SEND_TIMEOUT,           60000).
--define(LANGUAGE,               "en").
--define(PAYLOAD_MAXLEN,         35000).
--define(MAX_BYTES_BEFORE_REKEY, 1073741824). % 1 bsl 30.
--define(RECV_BUF_SIZE,          8192).
--define(SEND_BUF_SIZE,          8192).
--define(NODELAY,                true).
+-export([get_session_id/1]).
 
--define(SUPP_EXCH_ALGS,         [?SSH_ALG_KEX_DH_GROUP1]).
--define(SUPP_PUB_KEY_ALGS,      [?SSH_ALG_PUB_KEY_RSA,
-                                 ?SSH_ALG_PUB_KEY_DSS]).
--define(SUPP_MAC_ALGS,          [?SSH_ALG_HMAC_MD5,
-                                 ?SSH_ALG_HMAC_SHA1]).
--define(SUPP_CIPH_ALGS,         [?SSH_ALG_AES128_CBC,
-                                 ?SSH_ALG_3DES_CBC]).
--define(SUPP_COMPR_ALGS,        ["none"]).
+%% io wrappers
+-export([yes_no/2, read_password/2]).
 
--define(DB_DEFAULT,
-        [
-         {owner_pid,      '_'},
-         {socket,         '_'},
-         {cipher_cache,   {0, <<>>}},
-         {plain_cache,    {0, <<>>}},
-         {msgs,           []},
-         {msgs_to_send,   []},
-         {ignore_one,     false},
-         {owner_window,   0},
-         {kex,            '_'},
-         {session_id,     "none"},
-         {iv_c2s,         '_'},
-         {iv_s2c,         '_'},
-         {seq_no_c2s,     <<0, 0, 0, 0>>},
-         {seq_no_s2c,     <<0, 0, 0, 0>>},
-         {kex_alg,        '_'},
-         {pub_key_alg,    '_'},
-         {cipher_c2s,     "none"},
-         {cipher_s2c,     "none"},
-         {mac_c2s,        "none"},
-         {mac_s2c,        "none"},
-         {compr_c2s,      "none"},
-         {compr_s2c,      "none"},
-         {enc_key_c2s,    '_'},
-         {enc_key_s2c,    '_'},
-         {auth_key_c2s,   '_'},
-         {auth_key_s2c,   '_'},
-         {bytes_sent,     0},
-         {bytes_recvd,    0},
-         {vsn_c,          '_'},
-         {vsn_s,          '_'},
-         {server_key_fun, '_'},
-         {error_code,     '_'},
-         {options,        []},
-         {next,           '_'}
-        ]).
+-define(DBG_ALG,     true).
+-define(DBG_KEX,     false).
+-define(DBG_CRYPTO,  false).
+-define(DBG_PACKET,  false).
+-define(DBG_MESSAGE, true).
+-define(DBG_BIN_MESSAGE, false).
+-define(DBG_MAC,     false).
+-define(DBG_ZLIB,    true).
 
--record(kex,
-        {
-          init_c =      '_',
-          init_s =      '_',
-          phase =       '_',
-          params =      '_',
-          requester =   '_'
-         }).
+-record(alg,
+	{
+	  kex,
+	  hkey,
+	  send_mac,
+	  recv_mac,
+	  encrypt,
+	  decrypt,
+	  compress,
+	  decompress,
+	  c_lng,
+	  s_lng
+	 }).
+	  
+-record(ssh,
+	{
+	  state,        %% what it's waiting for
 
--record(dh_params,
-        {
-          e =   '_',
-          x =   '_'
-         }).
+	  role,         %% client | server
+	  peer,         %% string version of peer address 
 
-%% In case a record is preferred to carry the state variables, this has been
-%% used during development.
-%%-record(ssh,
-%%      {
-%%        owner_pid =           '_',
-%%        socket =              '_',
-%%        cipher_cache =        {0, <<>>},
-%%        plain_cache =         {0, <<>>},
-%%        msgs =                [],
-%%        msgs_to_send =        [],
-%%        ignore_one =          false,
-%%        owner_window =        '_',
-%%        kex =                 '_',
-%%        session_id =          "none",
-%%        iv_c2s =              '_',
-%%        iv_s2c =              '_',
-%%        seq_no_c2s =  <<0, 0, 0, 0>>,
-%%        seq_no_s2c =  <<0, 0, 0, 0>>,
-%%        kex_alg =             '_',
-%%        pub_key_alg =         '_',
-%%        cipher_c2s =          "none",
-%%        cipher_s2c =          "none",
-%%        mac_c2s =             "none",
-%%        mac_s2c =             "none",
-%%        compr_c2s =           "none",
-%%        compr_s2c =           "none",
-%%        enc_key_c2s =         '_',
-%%        enc_key_s2c =         '_',
-%%        auth_key_c2s =        '_',
-%%        auth_key_s2c =        '_',
-%%        bytes_sent =  0,
-%%        bytes_recvd = 0,
-%%        vsn_c =               '_',
-%%        vsn_s =               '_',
-%%        server_key_fun =      '_',
-%%        error_code =          '_',
-%%        options =             [],
-%%        next =                '_'
-%%       }).
+	  c_vsn,        %% client version {Major,Minor}
+	  s_vsn,        %% server version {Major,Minor}
 
-%%%----------------------------------------------------------------------
-%%% #             open/1
-%%%    
-%%% Input:        Host : ip_address()
-%%% Output:       {error, Reason} | {ok, ssh_transport()}
-%%%
-%%% Description:  Connects to ssh service on Host.
-%%%----------------------------------------------------------------------
+	  c_version,    %% client version string
+	  s_version,    %% server version string
 
-open(Host) ->
-    open(Host, [{port, ?SSH_PORT}, {verifun, fun(_, _) -> true end}]).
+	  c_keyinit,    %% binary payload of kexinit packet
+	  s_keyinit,    %% binary payload of kexinit packet
 
-%%%----------------------------------------------------------------------
-%%% #             open/2
-%%%    
-%%% Input:      Host    : ip_address()
-%%%             Options : list() of option()
-%%%
-%%%             option() = {verifun, verifun()} |
-%%%                        {port, integer()} |
-%%%                        {exch_alg, exch_algs()} |
-%%%                        {pub_key_alg, pub_key_algs()} |
-%%%                        {cipher_c2s, ciph_algs()} |
-%%%                        {cipher_s2c, ciph_algs()} |
-%%%                        {mac_c2s, mac_algs()} |
-%%%                        {mac_s2c, mac_algs()} |
-%%%                        {compr_c2s, compr_algs()} |
-%%%                        {compr_s2c, compr_algs()}
-%%%
-%%%             verifun() = fun(pub_key_alg(), Fingerprint) -> true | false
-%%%
-%%%             exch_algs() = [exch_alg() | exch_algs()] | []
-%%%             exch_alg() = "diffie-hellman-group1-sha1"
-%%%
-%%%             pub_key_algs() = [pub_key_alg() | pub_key_algs()] | []
-%%%             pub_key_alg() = "ssh-dss" | "ssh-rsa"
-%%%
-%%%             ciph_algs() = [ciph_alg() | ciph_algs()] | []
-%%%             ciph_alg() = "3des-cbc" | "aes128-cbc"
-%%%
-%%%             mac_algs() = [mac_alg() | mac_algs()] | []
-%%%             mac_alg() = "hmac-md5" | "hmac-sha1"
-%%%
-%%%             compr_algs() = [compr_alg() | compr_algs()] | []
-%%%             compr_alg() = "none"
-%%%
-%%% Output:       {error, Reason} | {ok, ssh_transport()}
-%%%
-%%% Description:  Connects to ssh service on Host. Default options are
-%%%               + Accept any host key
-%%%                 {verifun, fun(_, _) -> true end}
-%%%               + Connect to port 22.
-%%%                 {port, 22}
-%%%               + Accept Diffie-Hellman key exchange over hard-coded group.
-%%%                 {exch_alg, ["diffie-hellman-group1-sha1"]}
-%%%               + Prefer RSA host key, but accept DSS host key
-%%%                 {pub_key_alg, ["ssh-rsa", "ssh-dss"]}
-%%%               + Prefer MD5 HMAC, but also accept SHA1 HMAC.
-%%%                 (xxx_c2s: client -> server, xxx_s2c: server -> client)
-%%%                 {mac_c2s, ["hmac-md5", "hmac-sha1"]}
-%%%                 {mac_s2c, ["hmac-md5", "hmac-sha1"]}
-%%%               + Accept no compression.
-%%%                 {compr_c2s, ["none"]}
-%%%                 {compr_s2c, ["none"]}
-%%%
-%%%----------------------------------------------------------------------
+	  algorithms,   %% new algorithms (SSH_MSG_KEXINIT)
+	  
+	  kex,          %% key exchange algorithm
+	  hkey,         %% host key algorithm
+	  key_cb,       %% Private/Public key callback module
+	  io_cb,        %% Interaction callback module
 
-open(Host, Options) ->
-    {ok, Pid} = gen_server:start_link(?MODULE, ok, []),
-    ServerKeyFun =
-        case lists:keysearch(verifun, 1, Options) of
-            {value, {verifun, Fun}} ->
-                Fun;
-            false ->
-                fun(_, _) -> true end
-        end,
-    Port =
-        case lists:keysearch(port, 1, Options) of
-            {value, {port, P}} ->
-                P;
-            false ->
-                ?SSH_PORT
-        end,
-    RestOpts =
-        lists:filter(fun({OptionName, _})
-                        when OptionName /= verifun,
-			OptionName /= port ->
-                             true;
-                        (_) ->
-                             false
-                     end,
-                     Options),
-    PostOpts = {post_init, Host, Port, ServerKeyFun, RestOpts, self()},
-    case gen_server:call(Pid, PostOpts, ?CONNECT_TIMEOUT) of
-        ok ->
-            case exchange_keys(Pid) of
-                ok    -> {ok, Pid};
-                Other -> Other
-            end;
-        Other ->
-            Other
+	  send_mac=none, %% send MAC algorithm
+	  send_mac_key,  %% key used in send MAC algorithm
+	  send_mac_size = 0,
+
+	  recv_mac=none, %% recv MAC algorithm
+	  recv_mac_key,  %% key used in recv MAC algorithm
+	  recv_mac_size = 0,
+
+	  encrypt = none,       %% encrypt algorithm
+	  encrypt_keys,         %% encrypt keys
+	  encrypt_block_size = 8,
+
+	  decrypt = none,       %% decrypt algorithm
+	  decrypt_keys,         %% decrypt keys
+	  decrypt_block_size = 8,
+
+	  compress = none,
+	  decompress = none,
+
+	  c_lng=none,   %% client to server languages
+	  s_lng=none,   %% server to client languages
+
+	  user_ack    = true,   %% client
+	  timeout     = infinity,
+
+	  shared_secret,        %% K from key exchange
+	  exchanged_hash,       %% H from key exchange
+	  session_id,           %% same as FIRST exchanged_hash
+	  
+	  opts = []
+	 }).
+
+
+transport_messages()                                                     ->
+    [ {ssh_msg_disconnect, ?SSH_MSG_DISCONNECT, 
+       [uint32,string,string]},
+      
+      {ssh_msg_ignore, ?SSH_MSG_IGNORE,
+       [string]},
+
+      {ssh_msg_unimplemented, ?SSH_MSG_UNIMPLEMENTED,
+       [uint32]},
+
+      {ssh_msg_debug, ?SSH_MSG_DEBUG,
+       [boolean, string, string]},
+
+      {ssh_msg_service_request, ?SSH_MSG_SERVICE_REQUEST,
+       [string]},
+
+      {ssh_msg_service_accept, ?SSH_MSG_SERVICE_ACCEPT,
+       [string]},
+
+      {ssh_msg_kexinit, ?SSH_MSG_KEXINIT,
+       [cookie,
+	name_list, name_list, 
+	name_list, name_list, 
+	name_list, name_list,
+	name_list, name_list,
+	name_list, name_list,
+	boolean, 
+	uint32]},
+
+      {ssh_msg_newkeys, ?SSH_MSG_NEWKEYS,
+       []}
+     ].
+
+
+kexdh_messages()                                                         ->
+    [ {ssh_msg_kexdh_init, ?SSH_MSG_KEXDH_INIT,
+       [mpint]},
+      
+      {ssh_msg_kexdh_reply, ?SSH_MSG_KEXDH_REPLY,
+       [binary, mpint, binary]}
+     ].
+
+
+kex_dh_gex_messages()                                                    ->
+    [ {ssh_msg_kex_dh_gex_request, ?SSH_MSG_KEX_DH_GEX_REQUEST,
+       [uint32, uint32, uint32]},
+
+      {ssh_msg_kex_dh_gex_request_old, ?SSH_MSG_KEX_DH_GEX_REQUEST_OLD,
+       [uint32]},
+      
+      {ssh_msg_kex_dh_gex_group, ?SSH_MSG_KEX_DH_GEX_GROUP,
+       [mpint, mpint]},
+
+      {ssh_msg_kex_dh_gex_init, ?SSH_MSG_KEX_DH_GEX_INIT,
+       [mpint]},
+      
+      {ssh_msg_kex_dh_gex_reply, ?SSH_MSG_KEX_DH_GEX_REPLY,
+       [binary, mping, binary]}
+     ].
+
+yes_no(SSH, Prompt) when pid(SSH)                                        ->
+    {ok, CB} = call(SSH, {get_cb, io}),
+    CB:yes_no(Prompt);
+yes_no(SSH, Prompt) when record(SSH,ssh)                                 ->
+    (SSH#ssh.io_cb):yes_no(Prompt).
+
+read_password(SSH, Prompt) when pid(SSH)                                 ->
+    {ok, CB} = call(SSH, {get_cb, io}),
+    CB:read_password(Prompt);
+read_password(SSH, Prompt) when record(SSH,ssh)                          ->
+    (SSH#ssh.io_cb):read_password(Prompt).
+
+%% read_line(SSH, Prompt) when pid(SSH) ->
+%%     {ok, CB} = call(SSH, {get_cb, io}),
+%%     CB:read_line(Prompt);
+%% read_line(SSH, Prompt) when record(SSH,ssh) ->
+%%     (SSH#ssh.io_cb):read_line(Prompt).
+
+call(SSH, Req)                                                           ->
+    Ref = make_ref(),
+    SSH ! {ssh_call, [self()|Ref], Req},
+    receive
+	{Ref, Reply} ->
+	    Reply
     end.
 
-%%%----------------------------------------------------------------------
-%%% #             send_msg/2
-%%%    
-%%% Input:      Ssh     : ssh_transport()
-%%%             Message : binary() | list()
-%%%
-%%% Output:       {error, Reason} | ok
-%%%
-%%% Description:  Sends Message to the peer as an SSH Transport message.
-%%%               Size of Message should be less than 33 kbytes.
-%%%
-%%%----------------------------------------------------------------------
+connect(Host)                                                            ->
+    connect(Host, []).
 
-send_msg(Ssh, {Size, Data}) ->
-    gen_server:call(Ssh, {send_msg, {Size, Data}}, ?SEND_TIMEOUT);
-send_msg(Ssh, Data) ->
-    send_msg(Ssh, {flatlength(Data), Data}).
+connect(Host, Opts)                                                      ->
+    connect(Host, 22, Opts).
 
-%%%----------------------------------------------------------------------
-%%% #             set_active_once/1
-%%%    
-%%% Input:      Ssh     : ssh_transport()
-%%%
-%%% Output:       ok.
-%%%
-%%% Description:  Evaluating this will cause one message to be sent to
-%%%               the caller.
-%%%
-%%%----------------------------------------------------------------------
+connect(Host,Port,Opts)                                                  ->
+    Pid = spawn_link(?MODULE, client_init, [self(), Host, Port, Opts]),
+    receive
+	{Pid, Reply} ->
+	    Reply
+    end.
 
-set_active_once(Ssh) ->
-    gen_server:cast(Ssh, {set_active_once, self()}).
+listen(UserFun, Port) ->
+    listen(UserFun, Port, []).
 
-%%%----------------------------------------------------------------------
-%%% #             set_controlling_process/1
-%%%    
-%%% Input:      Ssh     : ssh_transport()
-%%%             Pid     : pid()
-%%%
-%%% Output:       {error, not_owner} | ok.
-%%%
-%%% Description:  The controlling process will be able to receive messages
-%%%               from the ssh transport.
-%%%
-%%%----------------------------------------------------------------------
+listen(UserFun, Port, Opts) ->
+    listen(UserFun, any, Port, Opts).
 
-set_controlling_process(Ssh, Pid) ->
-    gen_server:call(Ssh, {set_controlling_process, self(), Pid}).
+listen(UserFun, Addr, Port, Opts) ->
+    case spawn_link(?MODULE, server_init, [UserFun, Addr, Port, Opts]) of
+	Pid when is_pid(Pid) -> {ok, Pid};
+	Error -> Error
+    end.
 
-%%%----------------------------------------------------------------------
-%%% #             close/1
-%%%    
-%%% Input:      Ssh     : ssh_transport()
-%%%
-%%% Output:       ok.
-%%%
-%%% Description:  Terminates the SSH transport with DISCONNECT_BY_APPLICATION.
-%%%
-%%%----------------------------------------------------------------------
+stop_listener(Pid) when is_pid(Pid) ->
+    Ref = erlang:monitor(process, Pid),
+    Pid ! {Pid, stop},
+    receive
+	{'DOWN', Ref, process, Pid, normal} ->
+	    ok;
+	{'DOWN', Ref, process, Pid, Error} ->
+	    {error, Error}
+    after 2000 ->
+	    {error, timeout}
+    end.	    
 
-close(Ssh) ->
-    gen_server:cast(Ssh, close).
+debug(SSH, Message) ->
+    debug(SSH, true, Message, "en").
 
-%%%----------------------------------------------------------------------
-%%% #             exchange_keys/1
-%%%    
-%%% Input:      Ssh     : ssh_transport()
-%%%
-%%% Output:       ok.
-%%%
-%%% Description:  Forces a reexchange of transport keys.
-%%%
-%%%----------------------------------------------------------------------
+debug(SSH, Message, Lang) ->
+    debug(SSH, true, Message, Lang).
 
-exchange_keys(Ssh) ->
-    gen_server:call(Ssh, exchange_keys, ?CONNECT_TIMEOUT).
+debug(SSH, Display, Message, Lang) ->
+    SSH ! {ssh_msg, self(), #ssh_msg_debug { always_display = Display,
+					     message = Message,
+					     language = Lang }}.
 
-dump_config(Ssh) ->
-    gen_server:cast(Ssh, dump_config).
+ignore(SSH, Data) ->
+    SSH ! {ssh_msg, self(), #ssh_msg_ignore { data = Data }}.
 
-%%%----------------------------------------------------------------------
-%%% #    init/1, handle_call/3, handle_cast/2, handle_info/2, ...
-%%%    
-%%% Input:
-%%%
-%%% Output:
-%%%
-%%% Description: gen_server callbacks.
-%%%
-%%%----------------------------------------------------------------------
+disconnect(SSH, Code) ->
+    disconnect(SSH, Code, "", "").
 
-init(_) ->
-    process_flag(trap_exit, true),
-    {ok, db_new()}.
+disconnect(SSH, Code, _Msg) ->
+    disconnect(SSH, Code, "", "").
 
-handle_call({post_init, Host, Port, ServerKeyFun, Options, CtrlPid}, From, State) ->
-    ConOpts = [binary, 
-	       {packet, line}, 
-	       {active, false},
-	       {recbuf, ?RECV_BUF_SIZE}, 
-	       {sndbuf, ?SEND_BUF_SIZE},
-	       {nodelay, ?NODELAY}],
-    case gen_tcp:connect(Host, Port, ConOpts, ?CONNECT_TIMEOUT) of
-        {ok, Sock} ->
-	    NewOpts = [{owner_pid, CtrlPid},
-		       {socket, Sock},
-		       {options, Options},
-		       {server_key_fun, ServerKeyFun}],
-	    NewState = db_insert(State, NewOpts),
-            case send_version(NewState) of
-                {ok, NewState1} ->
-                    {reply, ok, NewState1};
-                Other ->
-                    {stop, Other, NewState}
-            end;
-        {error, Reason} ->
-            {stop, normal, {error, {sockconnect, Reason}}, State}
+disconnect(SSH, Code, Msg, Lang) ->
+    SSH ! {ssh_msg, self(), #ssh_msg_disconnect { code = Code,
+						  description = Msg,
+						  language = Lang }}.
+
+close(SSH) ->
+    call(SSH, close).
+
+
+service_accept(SSH, Name)                                                ->
+    SSH ! {ssh_msg, self(), #ssh_msg_service_accept { name = Name }}.
+
+service_request(SSH, Name)                                               ->
+    SSH ! {ssh_msg, self(), #ssh_msg_service_request { name = Name}},
+    receive
+	{ssh_msg, SSH, R} when record(R, ssh_msg_service_accept) ->
+	    ok;
+	{ssh_msg, SSH, R} when record(R, ssh_msg_disconnect) ->
+	    {error, R};
+	Other ->
+	    {error, Other}
+    end.    
+    
+    
+client_init(User, Host, Port, Opts) ->
+    IfAddr = proplists:get_value(ifaddr, Opts, any),
+    Tmo    = proplists:get_value(connect_timeout, Opts, infinity),
+    case gen_tcp:connect(Host, Port, [{packet,line},
+				      {active,once},
+				      {ifaddr,IfAddr}], Tmo) of
+	{ok, S} ->
+	    SSH = ssh_init(S, client, Opts),
+	    Peer = if tuple(Host) -> inet_parse:ntoa(Host);
+		      atom(Host) -> atom_to_list(Host);
+		      list(Host) -> Host
+		   end,
+	    client_hello(S, User, SSH#ssh { peer = Peer });
+	Error ->
+	    User ! {self(), Error}
+    end.
+
+
+server_init(UserFun, Addr, Port, Opts) ->
+    Serv = fun(S) ->
+		   SSH = ssh_init(S, server, Opts),
+		   Self = self(),
+		   User = UserFun(Self),
+		   server_hello(S, User, SSH)
+	   end,
+    ssh_tcp_wrap:server(Port, [{packet,line}, {active,once},
+			       {ifaddr,Addr}, {reuseaddr,true}],
+			Serv).
+
+%%
+%% Initialize basic ssh system
+%%
+ssh_init(S, Role, Opts) ->
+    ssh_bits:install_messages(transport_messages()),
+    crypto:start(),
+    {A,B,C} = erlang:now(),
+    random:seed(A, B, C),
+    put(send_sequence, 0),
+    put(recv_sequence, 0),
+    case Role of
+	client ->
+	    Vsn = proplists:get_value(vsn, Opts, {2,0}),
+	    Version = format_version(Vsn),
+	    send_version(S, Version),
+	    #ssh { role = Role,
+		   c_vsn = Vsn,
+		   c_version=Version,
+		   key_cb = proplists:get_value(key_cb, Opts, ssh_file),
+		   io_cb = case proplists:get_value(user_interaction, Opts, true) of
+			       true -> ssh_io;
+			       false -> ssh_no_io
+			   end,
+		   opts = Opts };
+	server  ->
+	    Vsn = proplists:get_value(vsn, Opts, {1,99}),
+	    Version = format_version(Vsn),
+	    send_version(S, Version),
+	    #ssh { role = Role,
+		   s_vsn = Vsn,
+		   s_version=Version,
+		   key_cb = proplists:get_value(key_cb, Opts, ssh_file),
+		   io_cb = proplists:get_value(io_cb, Opts, ssh_io),
+		   opts = Opts  }
+    end.
+
+ssh_setopts(NewOpts, SSH) ->
+    Opts = SSH#ssh.opts,
+    SSH#ssh { opts = NewOpts ++ Opts }.
+
+format_version({Major,Minor})                                            ->
+    "SSH-"++integer_to_list(Major)++"."++integer_to_list(Minor)++"-Erlang".
+    
+
+%% choose algorithms
+kex_init(SSH)                                                            ->
+    Random = ssh_bits:random(16),
+    Comp = case proplists:get_value(compression, SSH#ssh.opts, none) of
+	       zlib -> ["zlib", "none"];
+	       none -> ["none", "zlib"]
+	   end,
+    case SSH#ssh.role of
+	client ->
+	    #ssh_msg_kexinit { 
+	  cookie = Random,
+	  kex_algorithms = ["diffie-hellman-group1-sha1"],
+	  server_host_key_algorithms = ["ssh-rsa", "ssh-dss"],
+	  encryption_algorithms_client_to_server = ["3des-cbc"],
+	  encryption_algorithms_server_to_client = ["3des-cbc"],
+	  mac_algorithms_client_to_server = ["hmac-sha1"],
+	  mac_algorithms_server_to_client = ["hmac-sha1"],
+	  compression_algorithms_client_to_server = Comp,
+	  compression_algorithms_server_to_client = Comp,
+	  languages_client_to_server = [],
+	  languages_server_to_client = []
+	 };
+	server ->
+	    #ssh_msg_kexinit {
+	  cookie = Random,
+	  kex_algorithms = ["diffie-hellman-group1-sha1"],
+	  server_host_key_algorithms = ["ssh-dss"],
+	  encryption_algorithms_client_to_server = ["3des-cbc"],
+	  encryption_algorithms_server_to_client = ["3des-cbc"],
+	  mac_algorithms_client_to_server = ["hmac-sha1"],
+	  mac_algorithms_server_to_client = ["hmac-sha1"],
+	  compression_algorithms_client_to_server = Comp,
+	  compression_algorithms_server_to_client = Comp,
+	  languages_client_to_server = [],
+	  languages_server_to_client = []
+	 }
+    end.
+
+
+server_hello(S, User, SSH)                                               ->
+    receive
+	{tcp, S, V = "SSH-"++_} ->
+	    Version = trim_tail(V),
+	    ?dbg(true, "client version: ~p\n",[Version]),
+	    case string:tokens(Version, "-") of
+		[_, "2.0" | _] ->
+		    negotiate(S, User, SSH#ssh { c_vsn = {2,0},
+						 c_version = Version}, false);
+		[_, "1.3" | _] ->
+		    negotiate(S, User, SSH#ssh { c_vsn = {1,3}, 
+						 c_version = Version}, false);
+		[_, "1.5" | _] ->
+		    negotiate(S, User, SSH#ssh { c_vsn = {1,5}, 
+						 c_version = Version}, false);
+		_ ->
+		    exit(unknown_version)
+	    end;
+	{tcp, S, _Line} ->
+	    ?dbg(true, "info: ~p\n", [_Line]),
+	    inet:setopts(S, [{active, once}]),
+	    server_hello(S, User, SSH)
+    after 5000 ->
+	    ?dbg(true, "timeout 5s\n", []),
+	    gen_tcp:close(S),
+	    {error, timeout}
+    end.
+
+client_hello(S, User, SSH)                                               ->
+    receive
+	{tcp, S, V = "SSH-"++_} ->
+	    Version = trim_tail(V),
+	    ?dbg(true, "server version: ~p\n",[Version]),
+	    case string:tokens(Version, "-") of
+		[_, "2.0" | _] ->
+		    negotiate(S, User, SSH#ssh { s_vsn = {2,0},
+						 s_version = Version }, true);
+		[_, "1.99" | _] -> %% compatible server
+		    negotiate(S, User, SSH#ssh { s_vsn = {2,0}, 
+						 s_version = Version }, true);
+		[_, "1.3" | _] ->
+		    negotiate(S, User, SSH#ssh { s_vsn = {1,3}, 
+						 s_version = Version }, true);
+		[_, "1.5" | _] ->
+		    negotiate(S, User, SSH#ssh { s_vsn = {1,5}, 
+						 s_version = Version }, true);
+		_ ->
+		    exit(unknown_version)
+	    end;
+	{tcp, S, _Line} ->
+	    ?dbg(true, "info: ~p\n", [_Line]),
+	    inet:setopts(S, [{active, once}]),
+	    client_hello(S, User, SSH)
+    after 5000 ->
+	    ?dbg(true, "timeout 5s\n", []),
+	    gen_tcp:close(S),
+	    {error, timeout}
+    end.
+
+%% Determine the version and algorithms
+negotiate(S, User, SSH, UserAck) ->
+    inet:setopts(S, [{packet,0},{mode,binary}]),
+    send_negotiate(S, User, SSH, UserAck).
+
+%% We start re-negotiate
+send_negotiate(S, User, SSH, UserAck) ->
+    SendAlg = kex_init(SSH),
+    {ok, SendPdu} = send_algorithms(S, SSH, SendAlg),
+    {ok, {RecvPdu,RecvAlg}} = recv_algorithms(S, SSH),
+    kex_negotiate(S, User, SSH, UserAck, SendAlg, SendPdu, RecvAlg, RecvPdu).
+
+%% Other side started re-negotiate
+recv_negotiate(S, User, SSH, RecvAlg, UserAck)                           ->
+    RecvPdu = ssh_bits:encode(RecvAlg),
+    SendAlg = kex_init(SSH),
+    {ok, SendPdu} = send_algorithms(S, SSH, SendAlg),
+    send_msg(S, SSH, SendAlg),
+    kex_negotiate(S, User, SSH, UserAck, SendAlg, SendPdu, RecvAlg, RecvPdu).
+
+%% Select algorithms
+kex_negotiate(S, User, SSH, UserAck, SendAlg, SendPdu, RecvAlg, RecvPdu) ->
+    case SSH#ssh.role of
+	client ->
+	    SSH1 = SSH#ssh { c_keyinit = SendPdu, s_keyinit = RecvPdu },
+	    case select_algorithm(SSH1, #alg {}, SendAlg, RecvAlg) of
+		{ok, SSH2} ->
+		    ALG = SSH2#ssh.algorithms,
+		    case client_kex(S, SSH2, ALG#alg.kex) of
+			{ok, SSH3} ->
+			    newkeys(S, User, SSH3, UserAck);
+			Error ->
+			    kexfailed(S, User, UserAck, Error)
+		    end;
+		Error ->
+		    kexfailed(S, User, UserAck, Error)
+	    end;
+
+	server ->
+	    SSH1 = SSH#ssh { c_keyinit = RecvPdu, s_keyinit = SendPdu }, 
+	    case select_algorithm(SSH1, #alg {}, RecvAlg, SendAlg) of
+		{ok,SSH2} ->
+		    ALG = SSH2#ssh.algorithms,
+		    case server_kex(S, SSH2, ALG#alg.kex) of
+			{ok, SSH3} ->
+			    newkeys(S, User, SSH3, UserAck);
+			Error ->
+			    kexfailed(S, User, UserAck, Error)
+		    end;
+		Error ->
+		    kexfailed(S, User, UserAck, Error)
+	    end
+    end.
+    
+newkeys(S, User, SSH, UserAck)                                           ->
+    %% Send new keys and wait for newkeys
+    send_msg(S, SSH, #ssh_msg_newkeys {}),
+    case recv_msg(S, SSH) of
+	{ok, M} when record(M, ssh_msg_newkeys) ->
+	    SSH1 = install_alg(SSH),
+	    if UserAck == true ->
+		    User ! {self(), {ok, self()}},
+		    inet:setopts(S, [{active, once}]),
+		    ssh_main(S, User, SSH1);
+	       true ->
+		    inet:setopts(S, [{active, once}]),
+		    ssh_main(S, User, SSH1)
+	    end;
+	{ok,_} ->
+	    {error, bad_message};
+	Error ->
+	    Error
+    end.
+
+
+
+client_kex(S, SSH, 'diffie-hellman-group1-sha1')                         ->
+    ssh_bits:install_messages(kexdh_messages()),
+    {G,P} = dh_group1(),
+    {Private, Public} = dh_gen_key(G,P,1024),
+    ?dbg(?DBG_KEX, "public: ~.16B\n", [Public]),
+    send_msg(S, SSH, #ssh_msg_kexdh_init { e = Public }),
+    case recv_msg(S, SSH) of
+	{ok, R} when record(R, ssh_msg_kexdh_reply) ->
+	    K_S = R#ssh_msg_kexdh_reply.public_host_key,
+	    F = R#ssh_msg_kexdh_reply.f,
+	    K = ssh_math:ipow(F, Private, P),
+	    H = kex_h(SSH, K_S, Public, F, K),
+	    H_SIG = R#ssh_msg_kexdh_reply.h_sig,
+	    ?dbg(?DBG_KEX, "shared_secret: ~s\n", [fmt_binary(K, 16, 4)]),
+	    ?dbg(?DBG_KEX, "hash: ~s\n", [fmt_binary(H, 16, 4)]),
+	    case verify_host_key(S, SSH, K_S, H, H_SIG) of
+		ok ->
+		    {ok, SSH#ssh { shared_secret  = K,
+				   exchanged_hash = H,
+				   session_id = H }};
+		Error ->
+		    Error
+	    end;
+	{ok,_} ->
+	    {error, bad_message};
+	Error ->
+	    Error
     end;
-handle_call({set_controlling_process, Old, New}, From, State) ->
-    case db_lookup(State, owner_pid) of
-        Old ->
-            {reply, ok, db_insert(State, {owner_pid, New})};
-        _ ->
-            {reply, {error, not_owner}}
+client_kex(S, SSH, 'diffie-hellman-group-exchange-sha1')                 ->
+    ssh_bits:install_messages(kex_dh_gex_messages()),
+    Min = 512,
+    NBits = 1024,
+    Max = 4096,
+    send_msg(S, SSH, #ssh_msg_kex_dh_gex_request { min = Min,
+						   n   = NBits,
+						   max = Max }),
+    case recv_msg(S, SSH) of
+	{ok, RG} when record(RG, ssh_msg_kex_dh_gex_group) ->
+	    P = RG#ssh_msg_kex_dh_gex_group.p,
+	    G = RG#ssh_msg_kex_dh_gex_group.g,
+	    {Private, Public} = dh_gen_key(G,P, 1024),
+	    ?dbg(?DBG_KEX, "public: ~.16B\n", [Public]),
+	    send_msg(S, SSH, #ssh_msg_kex_dh_gex_init { e = Public }),
+	    case recv_msg(S, SSH) of
+		{ok, R} when record(R, ssh_msg_kex_dh_gex_reply) ->
+		    K_S = R#ssh_msg_kex_dh_gex_reply.public_host_key,
+		    F = R#ssh_msg_kex_dh_gex_reply.f,
+		    K = ssh_math:ipow(F, Private, P),
+		    H = kex_h(SSH, K_S, Min, NBits, Max, P, G, Public, F, K),
+		    H_SIG = R#ssh_msg_kex_dh_gex_reply.h_sig,
+		    ?dbg(?DBG_KEX, "shared_secret: ~s\n",
+			 [fmt_binary(K, 16, 4)]),
+		    ?dbg(?DBG_KEX, "hash: ~s\n", 
+			 [fmt_binary(H, 16, 4)]),
+		    case verify_host_key(S, SSH, K_S, H, H_SIG) of
+			ok ->
+			    {ok,  SSH#ssh { shared_secret  = K,
+					    exchanged_hash = H,
+					    session_id = H }};
+			Error ->
+			    Error
+		    end;
+		{ok,_} ->
+		    {error, bad_message};
+		Error ->
+		    Error
+	    end;
+	{ok,_} ->
+	    {error, bad_message};
+	Error ->
+	    Error
     end;
-handle_call({send_msg, Data}, From, State) ->
-    handle_send_msg(Data, From, State);
-handle_call(exchange_keys, From, State) ->
-    handle_exchange_keys(From, State).
+client_kex(_S, _SSH, Kex)                                                ->
+    {error, {bad_kex_algorithm, Kex}}.
 
-handle_cast(close, State) ->
-    handle_close(State);
-handle_cast(more_data, State) ->
-    handle_more(State);
-handle_cast({set_active_once, Pid}, State) ->
-    case db_lookup(State, owner_pid) of
-        Pid ->
-            handle_set_active_once(State);
-        _ ->
-            Pid ! {ssh_transport_error, self(), not_owner},
-            {noreply, State}
+
+server_kex(S, SSH, 'diffie-hellman-group1-sha1')                         ->
+    ssh_bits:install_messages(kexdh_messages()),
+    {G,P} = dh_group1(),
+    {Private, Public} = dh_gen_key(G,P,1024),
+    ?dbg(?DBG_KEX, "public: ~.16B\n", [Public]),
+    case recv_msg(S, SSH) of
+	{ok, R} when record(R, ssh_msg_kexdh_init) ->
+	    E = R#ssh_msg_kexdh_init.e,
+	    K = ssh_math:ipow(E, Private, P),
+	    {Key,K_S} = get_host_key(SSH),
+	    H = kex_h(SSH, K_S, E, Public, K),
+	    H_SIG = sign_host_key(S, SSH, Key, H),
+	    send_msg(S, SSH,
+		     #ssh_msg_kexdh_reply { public_host_key = K_S,
+					    f = Public,
+					    h_sig = H_SIG
+					   }),
+	    ?dbg(?DBG_KEX, "shared_secret: ~s\n", [fmt_binary(K, 16, 4)]),
+	    ?dbg(?DBG_KEX, "hash: ~s\n", [fmt_binary(H, 16, 4)]),
+	    {ok, SSH#ssh { shared_secret = K,
+			   exchanged_hash = H,
+			   session_id = H }};
+	{ok,_} ->
+	    {error, bad_message};
+	Error ->
+	    Error
     end;
-handle_cast(dump_config, State) ->
-    dump_config_imp(State),
-    {noreply, State}.
+server_kex(S, SSH, 'diffie-hellman-group-exchange-sha1')                 ->
+    ssh_bits:install_messages(kex_dh_gex_messages()),
+    R0 = recv_msg(S, SSH),
+    #ssh_msg_kex_dh_gex_request { min = Min,
+				  n   = NBits,
+				  max = Max } = R0,
+    {G,P} = dh_group1(), %% FIX ME!!!
+    send_msg(S, SSH, #ssh_msg_kex_dh_gex_group { p = P, g = G }),
+    {Private, Public} = dh_gen_key(G,P,1024),
+    ?dbg(?DBG_KEX, "public: ~.16B\n", [Public]),
+    case recv_msg(S, SSH) of
+	{ok, R} when record(R, ssh_msg_kex_dh_gex_init) ->
+	    E = R#ssh_msg_kex_dh_gex_init.e,
+	    K = ssh_math:ipow(E, Private, P),
+	    {Key,K_S} = get_host_key(SSH),
+	    H = kex_h(SSH, K_S, Min, NBits, Max, P, G, E, Public, K),
+	    H_SIG = sign_host_key(S, SSH, Key, H),
+	    send_msg(S, SSH,
+		     #ssh_msg_kex_dh_gex_reply { public_host_key = K_S,
+						 f = Public,
+						 h_sig = H_SIG
+						}),
+	    ?dbg(?DBG_KEX, "shared_secret: ~s\n", [fmt_binary(K, 16, 4)]),
+	    ?dbg(?DBG_KEX, "hash: ~s\n", [fmt_binary(H, 16, 4)]),
+	    {ok, SSH#ssh { shared_secret = K,
+			   exchanged_hash = H,
+			   session_id = H }};
+	{ok,_} ->
+	    {error, bad_message};
+	Error ->
+	    Error
+    end;
+server_kex(_S, _SSH, Kex)                                                ->
+    {error, {bad_kex_algorithm, Kex}}.
 
-handle_info({tcp, Sock, Data}, State) ->
-    handle_data_from_socket(Data, State);
-handle_info({tcp_closed, Sock}, State) ->
-    handle_tcp_closed(State);
-handle_info({tcp_error, Sock, Reason}, State) ->
-    gen_tcp:close(Sock),
-    {stop, {tcp_error, Reason}, State};
-handle_info(timeout, State) ->
-    handle_timeout(State);
-handle_info(Other, State) ->
-    {stop, Other, State}.
+ssh_main(S, User, SSH)                                                   ->
+    receive
+	{tcp, S, Data} ->
+	    %% This is a lazy way of gettting events without block
+	    ?dbg(?DBG_PACKET, "UNRECEIVE: ~w BYTES\n", [size(Data)]),
+	    gen_tcp:unrecv(S, Data),
+	    case recv_msg(S, SSH) of
+		{ok, M} when record(M, ssh_msg_unimplemented) ->
+		    ?dbg(true, "UNIMPLEMENTED: ~p\n",
+			 [M#ssh_msg_unimplemented.sequence]),
+		    inet:setopts(S, [{active, once}]),
+		    ssh_main(S, User, SSH);
+		{ok,M} when record(M, ssh_msg_disconnect) ->
+		    User ! {ssh_msg, self(), M},
+		    ?dbg(true, "DISCONNECT: ~w ~s\n",
+			 [M#ssh_msg_disconnect.code,
+			  M#ssh_msg_disconnect.description]),
+		    gen_tcp:close(S);
 
-terminate(normal, State) ->
-    case db_lookup(State, error_code) of
-        '_' ->
-            ok;
-        {Code, Description} ->
-            disconnect(State, Code, Description)
+		{ok,M} when record(M, ssh_msg_kexinit) ->
+		    recv_negotiate(S, User, SSH, M, false);
+
+		{ok,M} ->
+		    User ! {ssh_msg, self(), M},
+		    inet:setopts(S, [{active, once}]),
+		    ssh_main(S, User, SSH);
+		{error, unimplemented} ->
+		    send_msg(S, SSH, 
+			     #ssh_msg_unimplemented { sequence =
+						      get(recv_sequence)-1}),
+		    inet:setopts(S, [{active, once}]),
+		    ssh_main(S, User, SSH);
+		{error, _Other} ->
+		    inet:setopts(S, [{active, once}]),
+		    %% send disconnect!
+		    ssh_main(S, User, SSH)
+	    end;
+
+	{tcp_closed, S} ->
+	    User ! {ssh_msg, self(),
+		    #ssh_msg_disconnect { code=?SSH_DISCONNECT_CONNECTION_LOST,
+					  description = "Connection closed",
+					  language = "" }},
+	    gen_tcp:close(S), %% CHECK ME, is this needed ?
+	    ok;
+
+	{ssh_msg, User, Msg} ->
+	    send_msg(S, SSH, Msg),
+	    if record(Msg, ssh_msg_disconnect) ->
+		    ok;
+	       true ->
+		    ssh_main(S, User, SSH)
+	    end;
+
+	{ssh_install, Table} ->
+	    ssh_bits:install_messages(Table),
+	    ssh_main(S, User, SSH);
+
+	{ssh_uninstall, Table} ->
+	    ssh_bits:uninstall_messages(Table),
+	    ssh_main(S, User, SSH);
+
+	{ssh_renegotiate, UserAck, Opts} ->
+	    %% Of some reason, the socket is still active, once when we
+	    %% get here, which yelds EINVAL when doing recv. This might be a bug...
+	    inet:setopts(S, [{active, false}]),
+	    send_negotiate(S, User, ssh_setopts(Opts, SSH), UserAck);
+
+	{ssh_call, From, close} ->	
+	    ?dbg(true, "Call: close from ~p\n", [From]),
+	    gen_tcp:close(S),
+	    reply(From, ok),
+	    ok;
+
+	{ssh_call, From, Req} ->
+	    ?dbg(true, "Call: ~p from ~p\n", [Req,From]),
+	    SSH1 = handle_call(Req, From, SSH),
+	    ssh_main(S, User, SSH1);
+
+	_Other ->
+	    ?dbg(true, "ssh_loop: got ~p\n", [_Other]),
+	    ssh_main(S, User, SSH)
+    end.
+
+%%
+%% Handle call's to ssh_transport
+%%
+handle_call({get_cb,io}, From, SSH) ->
+    reply(From, {ok, SSH#ssh.io_cb}),
+    SSH;
+handle_call({get_cb,key}, From, SSH) ->
+    reply(From, {ok, SSH#ssh.key_cb}),
+    SSH;
+handle_call(get_session_id, From, SSH) ->
+    reply(From, {ok, SSH#ssh.session_id}),
+    SSH;
+handle_call(_Other, From, SSH) ->
+    reply(From, {error, bad_call}),
+    SSH.
+
+reply([Pid|Ref], Reply) ->
+    ?dbg(true, "Reply: ~p\n", [Reply]),
+    Pid ! {Ref, Reply}.
+
+
+%%
+%% The host key should be read from storage
+%%
+get_host_key(SSH) ->
+    #ssh{key_cb = Mod, opts = Opts, algorithms = ALG} = SSH,
+    Scope = proplists:get_value(key_scope, Opts, system),
+    case ALG#alg.hkey of
+	'ssh-rsa' ->
+	    case Mod:private_host_rsa_key(Scope, Opts) of
+		{ok,Key=#ssh_key { public={N,E}} } ->
+		    ?dbg(true, "x~n", []),
+		    {Key,
+		     ssh_bits:encode(["ssh-rsa",E,N],[string,mpint,mpint])};
+		Error ->
+		    ?dbg(true, "y~n", []),
+		    exit(Error)
+	    end;
+	'ssh-dss' ->
+	    case Mod:private_host_dsa_key(Scope, Opts) of
+		{ok,Key=#ssh_key { public={P,Q,G,Y}}} ->
+		    {Key, ssh_bits:encode(["ssh-dss",P,Q,G,Y],
+					  [string,mpint,mpint,mpint,mpint])};
+		Error ->
+		    exit(Error)
+	    end;
+	_ ->
+	    exit({error, bad_key_type})
+    end.
+
+sign_host_key(_S, SSH, Private, H)                                       ->
+    ALG = SSH#ssh.algorithms,
+    Module = case ALG#alg.hkey of
+		 'ssh-rsa' -> ssh_rsa;
+		 'ssh-dss' -> ssh_dsa;
+		 A -> A
+	     end,
+    case catch Module:sign(Private, H) of
+	{'EXIT', Reason} ->
+	    io:format("SIGN FAILED: ~p\n", [Reason]),
+	    {error, Reason};
+	SIG ->
+	    ssh_bits:encode([Module:alg_name() ,SIG],[string,binary])
+    end.    
+
+verify_host_key(_S, SSH, K_S, H, H_SIG)                                  ->
+    ALG = SSH#ssh.algorithms,
+    case ALG#alg.hkey of
+	'ssh-rsa' ->
+	    case ssh_bits:decode(K_S,[string,mpint,mpint]) of
+		["ssh-rsa", E, N] ->
+		    ["ssh-rsa",SIG] = ssh_bits:decode(H_SIG,[string,binary]),
+		    Public = #ssh_key { type=rsa, public={N,E} },
+		    case catch ssh_rsa:verify(Public, H, SIG) of
+			{'EXIT', Reason} ->
+			    io:format("VERIFY FAILED: ~p\n", [Reason]),
+			    {error, bad_signature};
+			ok ->
+			    known_host_key(SSH, Public, "ssh-rsa")
+		    end;
+		_ ->
+		    {error, bad_format}
+	    end;
+	'ssh-dss' ->
+	    case ssh_bits:decode(K_S,[string,mpint,mpint,mpint,mpint]) of
+		["ssh-dss",P,Q,G,Y] ->
+		    ["ssh-dss",SIG] = ssh_bits:decode(H_SIG,[string,binary]),
+		    Public = #ssh_key { type=dsa, public={P,Q,G,Y} },
+		    case catch ssh_dsa:verify(Public, H, SIG) of
+			{'EXIT', Reason} ->
+			    io:format("VERIFY FAILED: ~p\n", [Reason]),
+			    {error, bad_signature};
+			ok ->
+			    known_host_key(SSH, Public, "ssh-dss")
+		    end;
+		_ ->
+		    {error, bad_host_key_format}
+	    end;
+	_ ->
+	    {error, bad_host_key_algorithm}
+    end.
+
+accepted_host(SSH, Peer, Opts) ->
+    case proplists:get_value(silently_accept_hosts, Opts, false) of
+	true ->
+	    yes;
+	false ->
+	    yes_no(SSH, "New host "++Peer++" accept")
+    end.
+
+known_host_key(SSH, Public, Alg) ->
+    #ssh{opts = Opts, key_cb = Mod, peer = Peer} = SSH,
+    case Mod:lookup_host_key(Peer, Alg, Opts) of
+	{ok, Public} ->
+	    ok;
+	{ok, BadPublic} ->
+	    io:format("known_host_key: Public ~p BadPublic ~p\n", [Public, BadPublic]),
+	    {error, bad_public_key};
+	{error, not_found} ->
+	    case accepted_host(SSH, Peer, Opts) of
+		yes ->
+		    Mod:add_host_key(Peer, Public, Opts);
+		no ->
+		    {error, rejected}
+	    end
+    end.
+	    
+send_algorithms(S, SSH, KexInit) ->
+    Payload = ssh_bits:encode(KexInit),
+    ?dbg(?DBG_MESSAGE, "SEND_MSG: ~70p\n", [KexInit]),
+    Res = send_packet(S, SSH, Payload),
+    {Res,Payload}.
+		       
+
+recv_algorithms(S, SSH) ->
+    case recv_packet(S, SSH) of
+	{ok, Packet} ->
+	    case ssh_bits:decode(Packet) of
+		{ok, R} ->
+		    ?dbg(?DBG_MESSAGE, "RECV_MSG: ~70p\n", [R]),
+		    {ok, {Packet, R}};
+		Error ->
+		    Error
+	    end;
+	Error ->
+	    ?dbg(?DBG_MESSAGE, "RECV_MSG: ~p\n", [Error]),
+	    Error
+    end.
+
+%%   Each of the algorithm strings MUST be a comma-separated list of
+%%   algorithm names (see ''Algorithm Naming'' in [SSH-ARCH]).  Each
+%%   supported (allowed) algorithm MUST be listed in order of preference.
+%%
+%%   The first algorithm in each list MUST be the preferred (guessed)
+%%   algorithm.  Each string MUST contain at least one algorithm name.
+
+select_algorithm(SSH, ALG, C, S) ->
+    %% find out the selected algorithm
+    C_Enc = select(C#ssh_msg_kexinit.encryption_algorithms_client_to_server,
+		   S#ssh_msg_kexinit.encryption_algorithms_client_to_server),
+
+    C_Mac = select(C#ssh_msg_kexinit.mac_algorithms_client_to_server,
+		   S#ssh_msg_kexinit.mac_algorithms_client_to_server),
+
+    C_Cmp = select(C#ssh_msg_kexinit.compression_algorithms_client_to_server,
+		   S#ssh_msg_kexinit.compression_algorithms_client_to_server),
+
+    C_Lng = select(C#ssh_msg_kexinit.languages_client_to_server,
+		   S#ssh_msg_kexinit.languages_client_to_server),
+
+    S_Enc = select(C#ssh_msg_kexinit.encryption_algorithms_server_to_client,
+		   S#ssh_msg_kexinit.encryption_algorithms_server_to_client),
+
+    S_Mac = select(C#ssh_msg_kexinit.mac_algorithms_server_to_client,
+		   S#ssh_msg_kexinit.mac_algorithms_server_to_client),
+
+    S_Cmp = select(C#ssh_msg_kexinit.compression_algorithms_server_to_client,
+		   S#ssh_msg_kexinit.compression_algorithms_server_to_client),
+
+    S_Lng = select(C#ssh_msg_kexinit.languages_server_to_client,
+		   S#ssh_msg_kexinit.languages_server_to_client),
+
+    HKey = select_all(C#ssh_msg_kexinit.server_host_key_algorithms,
+		      S#ssh_msg_kexinit.server_host_key_algorithms),
+    HK = case HKey of
+	     [] -> undefined;
+	     [HK0|_] -> HK0
+	 end,
+    %% Fixme verify Kex against HKey list and algorithms
+    
+    Kex = select(C#ssh_msg_kexinit.kex_algorithms,
+		 S#ssh_msg_kexinit.kex_algorithms),
+
+    ALG1 = ALG#alg { kex = Kex, hkey = HK },
+
+    ALG2 = save_alg(SSH#ssh.role, 
+		   ALG1,
+		   [{c_enc, C_Enc},
+		    {c_mac, C_Mac},
+		    {c_cmp, C_Cmp},
+		    {c_lng, C_Lng},
+		    {s_enc, S_Enc},
+		    {s_mac, S_Mac},
+		    {s_cmp, S_Cmp},
+		    {s_lng, S_Lng}]),
+    {ok, SSH#ssh { algorithms = ALG2 }}.
+
+
+save_alg(Role, ALG, [{Key,A} | As]) ->
+    if A == undefined ->
+	    save_alg(Role, ALG, As);
+       true ->
+	    case Key of
+		c_enc ->
+		    case Role of
+			client ->
+			    save_alg(Role,ALG#alg { encrypt = A }, As);
+			server ->
+			    save_alg(Role,ALG#alg { decrypt = A }, As)
+		    end;
+
+		s_enc -> 
+		    case Role of
+			server -> 
+			    save_alg(Role,ALG#alg { encrypt = A }, As);
+			client ->
+			    save_alg(Role,ALG#alg { decrypt = A }, As)
+		    end;
+
+		c_mac ->
+		    case Role of
+			client ->
+			    save_alg(Role,ALG#alg { send_mac=A }, As);
+			server ->
+			    save_alg(Role,ALG#alg { recv_mac=A }, As)
+		    end;
+
+		s_mac -> 
+		    case Role of
+			server -> 
+			    save_alg(Role,ALG#alg { send_mac = A }, As); 
+			client ->
+			    save_alg(Role,ALG#alg { recv_mac = A }, As)
+		    end;
+
+		c_cmp -> 
+		    case Role of
+			client ->
+			    save_alg(Role,ALG#alg { compress = A }, As);
+			server ->
+			    save_alg(Role,ALG#alg { decompress = A }, As)
+		    end;
+			    
+		s_cmp -> 
+		    case Role of
+			server ->
+			    save_alg(Role, ALG#alg { compress = A }, As);
+			client ->
+			    save_alg(Role, ALG#alg { decompress = A }, As)
+		    end;
+		c_lng -> save_alg(Role, ALG#alg { c_lng = A }, As);
+		s_lng -> save_alg(Role, ALG#alg { s_lng = A }, As)
+	    end
+    end;
+save_alg(_Role, ALG, []) ->
+    ALG.
+
+install_alg(SSH) ->
+    SSH1 = alg_final(SSH),
+    SSH2 = alg_setup(SSH1),
+    alg_init(SSH2).
+
+alg_setup(SSH) ->
+    ALG = SSH#ssh.algorithms,
+    ?dbg(?DBG_ALG, "ALG: setup ~p\n", [ALG]),
+    SSH#ssh { kex       = ALG#alg.kex,
+	      hkey      = ALG#alg.hkey,
+	      encrypt = ALG#alg.encrypt,
+	      decrypt = ALG#alg.decrypt,
+	      send_mac = ALG#alg.send_mac,
+	      send_mac_size = mac_digest_size(ALG#alg.send_mac),
+	      recv_mac = ALG#alg.recv_mac,
+	      recv_mac_size = mac_digest_size(ALG#alg.recv_mac),
+	      compress = ALG#alg.compress,
+	      decompress = ALG#alg.decompress,
+	      c_lng = ALG#alg.c_lng,
+	      s_lng = ALG#alg.s_lng,
+	      algorithms = undefined
+	      }.
+
+alg_init(SSH0) ->
+    ?dbg(?DBG_ALG, "ALG: init\n", []),
+    {ok,SSH1} = send_mac_init(SSH0),
+    {ok,SSH2} = recv_mac_init(SSH1),
+    {ok,SSH3} = encrypt_init(SSH2),
+    {ok,SSH4} = decrypt_init(SSH3),
+    {ok,SSH5} = compress_init(SSH4),
+    {ok,SSH6} = decompress_init(SSH5),
+    SSH6.
+
+alg_final(SSH0) ->
+    ?dbg(?DBG_ALG, "ALG: final\n", []),
+    {ok,SSH1} = send_mac_final(SSH0),
+    {ok,SSH2} = recv_mac_final(SSH1),
+    {ok,SSH3} = encrypt_final(SSH2),
+    {ok,SSH4} = decrypt_final(SSH3),
+    {ok,SSH5} = compress_final(SSH4),
+    {ok,SSH6} = decompress_final(SSH5),
+    SSH6.
+
+
+
+select_all(CL, SL) ->
+    A = CL -- SL,  %% algortihms only used by client
+    %% algorithms used by client and server (client pref)
+    map(fun(ALG) -> list_to_atom(ALG) end, (CL -- A)).
+
+select([], []) ->
+    none;
+select(CL, SL) ->
+    C = case select_all(CL,SL) of
+	    [] -> undefined;
+	    [ALG|_] -> ALG
+	end,
+    ?dbg(?DBG_ALG, "ALG: select: ~p ~p = ~p\n", [CL, SL, C]),
+    C.
+	    
+send_version(S, Version) ->
+    gen_tcp:send(S, [Version,"\r\n"]).
+
+
+send_msg(S, SSH, Record) ->
+    ?dbg(?DBG_MESSAGE, "SEND_MSG: ~70p\n", [Record]),
+    Bin = ssh_bits:encode(Record),
+    ?dbg(?DBG_BIN_MESSAGE, "Encoded: ~70p\n", [Bin]),
+    send_packet(S, SSH, Bin).
+
+
+%%
+%% TotalLen = 4 + 1 + size(Data) + size(Padding)
+%% PaddingLen = TotalLen - (size(Data)+4+1)
+%% 
+send_packet(S, SSH, Data0) when binary(Data0) ->
+    Data = compress(SSH, Data0),
+    BlockSize = SSH#ssh.encrypt_block_size,
+    PL = (BlockSize - ((4 + 1 + size(Data)) rem BlockSize)) rem BlockSize,
+    PaddingLen = if PL <  4 -> PL+BlockSize;
+		    true -> PL
+		 end,
+    Padding = ssh_bits:random(PaddingLen),
+    PacketLen = 1 + PaddingLen + size(Data),
+    Packet = <<?UINT32(PacketLen),?BYTE(PaddingLen), 
+	      Data/binary, Padding/binary>>,
+    EncPacket = encrypt(SSH, Packet),
+    Seq = get(send_sequence),
+    MAC = send_mac(SSH, Packet, Seq),
+    ?dbg(?DBG_PACKET, "SEND_PACKET:~w len=~p,payload=~p,padding=~p,mac=~p\n",
+	 [Seq, PacketLen, size(Data), PaddingLen, MAC]),
+    Res = gen_tcp:send(S, [EncPacket, MAC]),
+    put(send_sequence, (Seq+1) band 16#ffffffff),
+    Res.
+
+recv_msg(S, SSH) ->
+    case recv_packet(S, SSH) of
+	{ok, Packet} ->
+	    case ssh_bits:decode(Packet) of
+		{ok, M} when record(M, ssh_msg_debug) ->
+		    if M#ssh_msg_debug.always_display == true ->
+			    io:format("DEBUG: ~p\n",
+				      [M#ssh_msg_debug.message]);
+		       true ->
+			    ?dbg(true, "DEBUG: ~p\n",
+				 [M#ssh_msg_debug.message])
+		    end,
+		    inet:setopts(S, [{active, once}]),
+		    recv_msg(S, SSH);
+		{ok, M} when record(M, ssh_msg_ignore) ->
+		    inet:setopts(S, [{active, once}]),
+		    recv_msg(S, SSH);
+		{ok, Msg} ->
+		    ?dbg(?DBG_MESSAGE, "RECV_MSG: ~70p\n", [Msg]),
+		    {ok, Msg};
+		Error ->
+		    %% Fixme (send disconnect...)
+		    Error
+	    end;
+	Error ->
+	    ?dbg(?DBG_MESSAGE, "RECV_MSG: ~70p\n", [Error]),
+	    Error
+    end.
+
+%% receive ONE packet
+recv_packet(S, SSH) ->
+    BlockSize = SSH#ssh.decrypt_block_size,
+    case gen_tcp:recv(S, BlockSize) of
+	{ok, EncData0} ->
+	    Data0 = decrypt(SSH, EncData0),
+	    <<?UINT32(PacketLen), _/binary>> = Data0,
+	    if PacketLen < 5; PacketLen > ?SSH_MAX_PACKET_SIZE ->
+		    terminate(S, SSH, ?SSH_DISCONNECT_PROTOCOL_ERROR,
+			      "Bad packet length "++
+			      integer_to_list(PacketLen));
+	       true ->
+		    case gen_tcp:recv(S, (PacketLen - BlockSize)+4) of
+			{ok, EncData1} ->
+			    Data1 = decrypt(SSH, EncData1),
+			    Data = <<Data0/binary, Data1/binary>>,
+			    recv_packet_data(S, SSH, PacketLen, Data);
+			Error ->
+			    Error
+		    end
+	    end;
+	Error ->
+	    Error
+    end.
+
+recv_packet_data(S, SSH, PacketLen, Data) ->
+    Seq = get(recv_sequence),
+    Res = valid_mac(SSH, S, Data, Seq),
+    put(recv_sequence, (Seq+1) band 16#ffffffff),
+    case Res of
+	true ->
+	    <<_:32, PaddingLen:8, _/binary>> = Data,
+	    PayloadLen = PacketLen - PaddingLen - 1,
+	    <<_:32, _:8, Payload:PayloadLen/binary, 
+	     _:PaddingLen/binary>> = Data,
+	    ?dbg(?DBG_PACKET, 
+		 "RECV_PACKET:~w, len=~p,payload=~w,padding=~w\n", 
+		 [Seq,PacketLen,PayloadLen,PaddingLen]),
+	    {ok, decompress(SSH, Payload)};
+	false ->
+	    ?dbg(?DBG_PACKET, "RECV_PACKET:~w, len=~p\n", 
+		 [Seq,PacketLen]),
+	    terminate(S, SSH, ?SSH_DISCONNECT_MAC_ERROR,
+		      "Bad MAC #"++ integer_to_list(Seq))
+    end.
+
+
+kexfailed(S, User, UserAck, Error) ->
+    Description =
+	case Error of
+	    {error, bad_message} ->
+		"key exchanged failed: bad message received";
+	    _ ->
+		"key exchanged failed"
+	end,
+    M = #ssh_msg_disconnect { code = ?SSH_DISCONNECT_KEY_EXCHANGE_FAILED,
+			      description = Description,
+			      language = "en"},
+    if UserAck == true ->
+	    User ! {self(), Error};
+       true ->
+	    User ! {ssh_msg, self(), M}
     end,
-    ok;
-terminate(tcp_closed, State) ->
-    ok;
-terminate({server_disconnected, How}, State) ->
-    ok;
-terminate({Type, Description}, State) ->
-    disconnect(State, Type, Description),
-    ok;
-terminate(Reason, State) ->
-    ok.
+    gen_tcp:close(S),
+    Error.
 
-code_change(OldVsn, State, Extra) ->
-    {ok, State}.
 
-%%%----------------------------------------------------------------------
-%%% #             send_version/1
-%%%    
-%%% Input:
-%%% Output:
-%%%
-%%% Description:  Sends version string.
-%%%----------------------------------------------------------------------
 
-send_version(State) ->
-    Sock = db_lookup(State, socket),
-    case gen_tcp:send(Sock, [?SSH_VERSION_STRING, ?SSH_LINE_TERM]) of
-        ok ->
-            receive_version(State);
-        {error, Reason} ->
-            {error, {sendversion, Reason}}
-    end.
+%% Send a disconnect message
+terminate(S, SSH, Code, Message) ->
+    M = #ssh_msg_disconnect { code=Code, 
+			      description=Message,
+			      language = "en" },
+    send_msg(S, SSH, M),
+    gen_tcp:close(S),
+    {error, M}.
 
-%%%----------------------------------------------------------------------
-%%% #           receive_version/1
-%%%    
-%%% Input:
-%%% Output:     {ok, State} | {error, Reason}
-%%%
-%%% Description:  Receives and checks peer's version string for compatibility.
-%%%----------------------------------------------------------------------
+    
 
-receive_version(State) ->
-    Sock = db_lookup(State, socket),
-    case get_version(Sock) of
-        {ok, Vsn, VsnString} ->
-            case lists:member(Vsn, ?SSH_COMPATIBLE_VERSIONS) of
-                true ->
-                    inet:setopts(Sock, [{packet, raw}, {active, once}]),
-		    NewVersions = [{vsn_s, ?SSH_STRING(VsnString)},
-				   {vsn_c, ?SSH_STRING(?SSH_VERSION_STRING)}],
-                    {ok, db_insert(State, NewVersions)};
-                false ->
-                    {error, incompatible}
-            end;
-        {error, Reason} ->
-            {error, {readversion, Reason}}
-    end.
+    
 
-handle_send_msg(Msg, From, State) ->
-    case db_lookup(State, kex) of
-        '_' ->
-            %% We are not currently performing key exchange, so simply send
-            %% the message:
-            case send(State, Msg) of
-                {ok, NewState} ->
-                    case db_lookup(NewState, bytes_sent) of
-                        Sent when Sent >= ?MAX_BYTES_BEFORE_REKEY ->
-                            %% Time to initiate key re-exchange. requester
-                            %% is different from '_' if key re-exchange is
-                            %% initiated by user.
-                            gen_server:reply(From, ok),
-			    NewKex = {kex, #kex{requester = '_'}},
-			    kex_init(db_insert(NewState, NewKex));
-                        _ ->
-                            {reply, ok, NewState}
-                    end;
-                Other ->
-		    NewError = {error_code,
-				{?SSH_DISCONNECT_CONNECTION_LOST,
-				 lists:flatten(io_lib:format("~p", [Other]))}},
-		    Res = db_insert(State,NewError),
-		    {stop, normal, Other, Res}
-            end;
-        _ ->
-            %% We are currently exchanging keys, so put message in queue.
-	    OldMsgs = db_lookup(State, msgs_to_send),
-	    NewMsgs = {msgs_to_send, OldMsgs ++ [{Msg, From}]},
-	    {noreply, db_insert(State, NewMsgs)}
-    end.
-
-send_msgs_to_send(State) ->
-    case db_lookup(State, msgs_to_send) of
-        [] ->
-            {ok, State};
-        [{Msg, From}|MsgsToSend] ->
-            case send(State, Msg) of
-                {ok, NewState} ->
-                    gen_server:reply(From, ok),
-		    Msgs = db_insert(NewState, {msgs_to_send, MsgsToSend}),
-                    send_msgs_to_send(Msgs);
-                Other ->
-                    Other
-            end
-    end.
-
-handle_set_active_once(State) ->
-    case db_lookup(State, [owner_pid, msgs, owner_window]) of
-        [Pid, [], Count] ->
-            {noreply, db_insert(State, {owner_window, Count + 1})};
-        [Pid, [{error, closed}], _] ->
-            Pid ! {ssh_transport_error, self(), closed},
-            {stop, normal, State};
-        [Pid, Msgs, Count] -> %% Will this ever happen?
-            {NewCount, NewMsgs} = deliver_msgs(Count + 1, Pid, Msgs),
-            {noreply, db_insert(State, [{msgs, NewMsgs},
-					{owner_window, NewCount}])}
-    end.
-
-handle_close(State) ->
-    gen_tcp:close(db_lookup(State, socket)),
-    %% At least one server implementation (Foxit WAC) reports a
-    %% SSH_DISCONNECT_BY_APPLICATION as a fatal error.
-						%    disconnect(State, ?SSH_DISCONNECT_BY_APPLICATION,
-						%              "Stopped."),
-    {stop, normal, State}.
-
-handle_tcp_closed(State) ->
-    case db_lookup(State, [owner_window, owner_pid]) of
-        [0, _] ->
-            case db_lookup(State, msgs) of
-                [] ->
-                    {stop, tcp_closed, State};
-                Msgs ->
-                    {noreply, db_insert(
-                                State,
-                                {msgs, Msgs ++ [{error, closed}]})}
-            end;
-        [Count, Pid] ->
-            case db_lookup(State, msgs) of
-                [] ->
-                    Pid ! {ssh_transport_error, self(), closed},
-                    {stop, normal, State};
-                Msgs ->
-                    {NewCount, NewMsgs} =
-                        deliver_msgs(Count, Pid, Msgs),
-                    {noreply, db_insert(
-				State,
-				[{owner_window, NewCount},
-				 {msgs, NewMsgs ++ [{error, closed}]}])}
-            end
-    end.
-
-handle_data_from_socket(Data, State) ->
-    {OldSize, OldData} = db_lookup(State, cipher_cache),
-    AddSize = flatlength(Data),
-    incoming(db_insert(State, {cipher_cache,
-			       {OldSize + AddSize, [OldData, Data]}})).
-
-handle_more(State) ->
-    incoming(State).
-
-handle_timeout(State) ->
-    {noreply, State}.
-
-handle_disconnect_msg(Msg, State) ->
-    case parse_packet(Msg) of
-        {?SSH_MSG_DISCONNECT,
-         [Code, Description, _]} ->
-            {stop, {server_disconnected, Code, Description}, State};
-        Other ->
-            {stop, {server_disconnected, silently}, State}
-    end.
-
-
-handle_exchange_keys(From, State) ->
-    case db_lookup(State, kex) of
-        '_' ->
-            %% Let's initiate a key exchange.
-            kex_init(db_insert(State, {kex, #kex{requester = From}}));
-        Kex ->
-            %% Seems a key exchange is already in progress.
-            {noreply, db_insert(State, {kex, Kex#kex{requester = From}})}
-    end.
-
-kex_init(State) ->
-    [Kex, Options] = db_lookup(State, [kex, options]),
-    Cookie = ?AUX_CRYPTO:rand_bytes(16),
-    MyKexInit =
-        [?SSH_MSG_KEXINIT, Cookie,
-         algorithm_proposal(true, ?SUPP_EXCH_ALGS, exch_alg, Options),
-         algorithm_proposal(true, ?SUPP_PUB_KEY_ALGS, pub_key_alg, Options),
-         algorithm_proposal(true, ?SUPP_CIPH_ALGS, cipher_c2s, Options),
-         algorithm_proposal(true, ?SUPP_CIPH_ALGS, cipher_s2c, Options),
-         algorithm_proposal(true, ?SUPP_MAC_ALGS, mac_c2s, Options),
-         algorithm_proposal(true, ?SUPP_MAC_ALGS, mac_s2c, Options),
-         algorithm_proposal(true, ?SUPP_COMPR_ALGS, compr_c2s, Options),
-         algorithm_proposal(true, ?SUPP_COMPR_ALGS, compr_s2c, Options),
-         lists:duplicate(2, ?SSH_STRING("")),  % languages
-         ?SSH_FALSE, ?SSH_UINT_32(0)],
-    case send(State, MyKexInit) of
-        {ok, NewState} ->
-            %% Ok, do we have the server's kexinit packet?
-            NewStateKex = db_lookup(NewState, kex),
-            case NewStateKex#kex.init_s of
-                '_' -> %% No, so we will wait for it.
-                    {noreply,
-                     db_insert(NewState,
-                               {kex, NewStateKex#kex{
-                                       init_c = pack(MyKexInit, false, State),
-                                       phase = receive_kexinit}})};
-                _ ->  %% Yes, so we will try to agree upon algorithms.
-                    agree(
-                      db_insert(NewState,
-                                {kex, NewStateKex#kex{
-                                        init_c = pack(MyKexInit, false,
-                                                      State)
-                                       }
-                                }))
-            end;
-        {error, Reason} ->
-            case Kex#kex.requester of
-                '_' ->
-                    ok;
-                From ->
-                    gen_server:reply(From, {error, {sendkexinit, Reason}})
-            end,
-            {stop, normal,
-             db_insert(State, {error_code,
-                               {?SSH_DISCONNECT_CONNECTION_LOST,
-                                lists:flatten(
-                                  io_lib:format("~p", [{sendkexinit, Reason}]))}
-                              })}
-    end.
-
-agree(State) ->
-    [Kex, Options] = db_lookup(State, [kex, options]),
-    I_S = Kex#kex.init_s,
-    %% Is the format of the server's packet ok?
-    case parse_packet(I_S) of
-        {?SSH_MSG_KEXINIT, ParsedServerKexInit} ->
-            %% Yes, but what about the algorithms?
-            [CtrlPid,
-             Socket,
-             SessionID,
-             VsnC,
-             VsnS,
-             ServerKeyFun] =
-                db_lookup(State,
-                          [owner_pid,
-                           socket,
-                           session_id,
-                           vsn_c,
-                           vsn_s,
-                           server_key_fun]),
-            case agreed(db_insert(db_new(),
-                                  [{owner_pid, CtrlPid},
-                                   {socket, Socket},
-                                   {session_id, SessionID},
-                                   {vsn_c, VsnC},
-                                   {vsn_s, VsnS},
-                                   {server_key_fun, ServerKeyFun},
-                                   {options, Options}]),
-                        ParsedServerKexInit) of
-                {ok, NextState, IgnoreOne} ->
-                    %% Seems as if we can talk. Try to carry out the key exch.
-                    start_kex(
-                      db_insert(State, [{next, NextState},
-                                        {kex, Kex#kex{
-                                                init_s =
-                                                [<<(size(I_S)):32/integer>>,
-                                                 I_S]}},
-                                        {ignore_one, IgnoreOne}]));
-                {error, Reason} ->
-                    %% We could not agree upon which algorithms to use.
-                    case Kex#kex.requester of
-                        '_' ->
-                            ok;
-                        From ->
-                            gen_server:reply(From,
-                                             {error, {agreealg, Reason}})
-                    end,
-                    {stop,
-                     normal,
-                     db_insert(State,
-                               {error_code,
-                                {?SSH_DISCONNECT_KEY_EXCHANGE_FAILED,
-                                 lists:flatten(
-                                   io_lib:format("~p",
-                                                 [{agreealg, Reason}]))}})
-                    }
-            end;
-        _ ->
-            %% Seems as if the peer's kex init packet was malformed.
-            case Kex#kex.requester of
-                '_' ->
-                    ok;
-                From ->
-                    gen_server:reply(From, {error, {parsekexinit, malformed_kex_init}})
-            end,
-            {stop, normal,
-             db_insert(State,
-                       {error_code,
-                        {?SSH_DISCONNECT_PROTOCOL_ERROR,
-                         lists:flatten(io_lib:format(
-                                         "~p",
-                                         [{parsekexinit, malformed_kex_init}]))}})}
-    end.
-
-start_kex(State) ->
-    %% We have sent and received kex_init packets.
-    %% It is now time to carry out the key exchange.
-    [Sock, Kex, NextState] =
-        db_lookup(State, [socket, kex, next]),
-    #kex{init_c = I_C,
-         init_s = I_S} = Kex,
-    KexAlg = db_lookup(NextState, kex_alg),
-
-    case KexAlg of
-        ?SSH_ALG_KEX_DH_GROUP1 ->
-            X = ?AUX_CRYPTO:rand_uniform(mpint(2), ?DH_14_Q),
-            E = ?AUX_CRYPTO:mod_exp(?DH_14_G, X, ?DH_14_P),
-            ClientKex = [?SSH_MSG_KEXDH_INIT, E],
-            case send(State, ClientKex) of
-                {ok, NewState} ->
-                    KexData = #dh_params{x = X, e = E},
-                    {noreply,
-                     db_insert(NewState,
-                               {kex, Kex#kex{params = KexData,
-                                             phase = receive_kexpacket}})};
-                {error, Reason} ->
-                    case Kex#kex.requester of
-                        '_' ->
-                            ok;
-                        From ->
-                            gen_server:reply(From, {error, {sendkex, Reason}})
-                    end,
-                    {stop, normal,
-                     db_insert(
-                       State,
-                       {error_code,
-                        {?SSH_DISCONNECT_CONNECTION_LOST,
-                         lists:flatten(
-                           io_lib:format("~p", [{sendkex, Reason}]))}})}
-            end
-    end.
-
-kex_continue(State) ->
-    [Sock, Kex, NextState] =
-        db_lookup(State, [socket, kex, next]),
-    [KexAlg, PubKeyAlg] =
-        db_lookup(NextState, [kex_alg, pub_key_alg]),
-
-    case KexAlg of
-        ?SSH_ALG_KEX_DH_GROUP1 ->
-            %% This function is called when a kex packet is received, so
-            %% the kex packet should be last.
-            [Packet|ReversedMsgs] = lists:reverse(db_lookup(State, msgs)),
-            NewState = db_insert(State, {msgs, lists:reverse(ReversedMsgs)}),
-            #kex{init_c = I_C,
-                 init_s = I_S,
-                 params = Params} = Kex,
-            #dh_params{x = X, e = E} = Params,
-            case parse_packet(Packet) of
-                {?SSH_MSG_KEXDH_REPLY, [K_S, F, Sig]} ->
-                    case within_bounds(F, ?DH_14_P) of
-                        true ->
-                            Fingerprint = hex_string(crypto:md5([K_S])),
-                            K = ?AUX_CRYPTO:mod_exp(F, X, ?DH_14_P),
-                            [VsnC, VsnS] =
-                                db_lookup(NewState, [vsn_c, vsn_s]),
-                            Data = [VsnC,
-                                    VsnS,
-                                    I_C, I_S,
-                                    <<(length(K_S)):32/integer>>,
-                                    K_S, E, F, K],
-                            H = crypto:sha(Data),
-                            case verify_signature(PubKeyAlg, H, Sig, K_S) of
-                                true ->
-                                    kex_continue_verified(
-                                      State, NextState, NewState, Kex,
-                                      PubKeyAlg, Fingerprint, K_S, H, K);
-
-                                false ->
-                                    case Kex#kex.requester of
-                                        '_' ->
-                                            ok;
-                                        Ref ->
-                                            gen_server:reply(
-                                              Ref,
-                                              {error, {sigverif, failed}})
-                                    end,
-                                    {stop, normal,
-                                     db_insert(
-                                       NewState,
-                                       {error_code,
-                                        {?SSH_DISCONNECT_KEY_EXCHANGE_FAILED,
-                                         "{sigverif, failed}"}})}
-                            end;
-                        false ->
-                            case Kex#kex.requester of
-                                '_' ->
-                                    ok;
-                                Ref ->
-                                    gen_server:reply(Ref,
-                                                     {error, {sigverif, failed}})
-                            end,
-                            {stop, normal,
-                             db_insert(NewState,
-                                       {error_code,
-                                        {?SSH_DISCONNECT_KEY_EXCHANGE_FAILED,
-                                         "{sigverif, failed}"}})}
-                    end;
-                _ ->
-                    %% A malformed kex packet.
-                    case Kex#kex.requester of
-                        '_' ->
-                            ok;
-                        Ref ->
-                            gen_server:reply(Ref,
-                                             {error, {parsekex,
-                                                      malformed_kex_packet}})
-                    end,
-                    {stop, normal,
-                     db_insert(NewState,
-                               {error_code,
-                                {?SSH_DISCONNECT_PROTOCOL_ERROR,
-                                 lists:flatten(
-                                   io_lib:format("~p",
-                                                 [{parsekex,
-                                                   malformed_kex_packet}]))}})}
-            end
-    end.
-
-kex_continue_verified(State, NextState, NewState, Kex, PubKeyAlg,
-                      Fingerprint, K_S, H, K) ->
-    %% The kex has been verified. Is the server key ok with the application?
-    %% If yes, go on deriving the session keys.
-    case (db_lookup(State, server_key_fun))(
-           PubKeyAlg,
-           Fingerprint) of
-        true ->
-            SessionID =
-                case db_lookup(NewState, session_id) of
-                    "none" ->
-                        H;
-                    OldID ->
-                        OldID
-                end,
-            IV_C2S = derive_key(
-                       K, H, "A", SessionID,
-                       block_size(
-                         c2s, NextState)),
-            IV_S2C = derive_key(
-                       K, H, "B", SessionID,
-                       block_size(s2c, NextState)),
-            IKey_C2S = derive_key(
-                         K, H, "C", SessionID,
-                         key_size(c2s, NextState)),
-            IKey_S2C = derive_key(
-                         K, H, "D", SessionID,
-                         key_size(s2c, NextState)),
-            AKey_C2S = derive_key(
-                         K, H, "E", SessionID,
-                         mac_size(c2s, NextState)),
-            AKey_S2C = derive_key(
-                         K, H, "F", SessionID,
-                         mac_size(s2c, NextState)),
-            send_new_keys(
-              db_insert(
-                NewState,
-                [{kex, Kex#kex{params = '_',
-			       init_s = '_',
-                               init_c = '_'}},
-                 {next,
-                  db_insert(NextState,
-                            [{session_id, SessionID},
-                             {iv_c2s, IV_C2S},
-                             {iv_s2c, IV_S2C},
-                             {enc_key_c2s, IKey_C2S},
-                             {enc_key_s2c, IKey_S2C},
-                             {auth_key_c2s, AKey_C2S},
-                             {auth_key_s2c, AKey_S2C}])
-                 }]));
-        Other ->
-            case Kex#kex.requester of
-                '_' ->
-                    ok;
-                Ref ->
-                    gen_server:reply(
-                      Ref,
-                      {error, {hostkey,
-                               PubKeyAlg,
-                               Fingerprint,
-                               b64_encode_pub_key(K_S)
-                              }})
-            end,
-            {stop, normal,
-             db_insert(NewState,
-                       {error_code,
-                        {?SSH_DISCONNECT_HOST_KEY_NOT_VERIFIABLE,
-                         "Host key not accepted by user."}})}
-    end.
-
-send_new_keys(State) ->
-    %% We have performed the key exchange and accepted the server's host key.
-    %% Before using the new session keys. Both parties should send newkeys
-    %% packets.
-    case send(State, [?SSH_MSG_NEWKEYS]) of
-        {ok, NewState} ->
-            Kex = db_lookup(NewState, kex),
-            {noreply,
-             db_insert(NewState, {kex, Kex#kex{phase = receive_new_keys}})};
-        {error, Reason} ->
-            Kex = db_lookup(State, kex),
-            case Kex#kex.requester of
-                '_' ->
-                    ok;
-                Ref ->
-                    gen_server:reply(Ref,
-                                     {error, {sendnewkeys, Reason}})
-            end,
-            {stop, normal,
-             db_insert(
-               State,
-               {error_code,
-                {?SSH_DISCONNECT_CONNECTION_LOST,
-                 lists:flatten(
-                   io_lib:format("~p", [{sendnewkeys, Reason}]))}})}
-    end.
-
-receive_new_keys(State) ->
-    [Msg | ReversedMsgs] = lists:reverse(db_lookup(State, msgs)),
-    case Msg of
-        <<?SSH_MSG_NEWKEYS>> ->
-            %% The peer sent its newkeys packet, so lets start using the
-            %% new session keys.
-            %% We have already prepared a new state db in the 'next' field.
-            Msgs = lists:reverse(ReversedMsgs),
-            [SequenceNoC2S,
-             SequenceNoS2C,
-             CipherCache,
-             PlainCache,
-             WaitingForMsg,
-             NextState,
-             MsgsToSend,
-             Kex,
-             Pid] =
-                db_lookup(State,
-                          [seq_no_c2s,
-                           seq_no_s2c,
-                           cipher_cache,
-                           plain_cache,
-                           owner_window,
-                           next,
-                           msgs_to_send,
-                           kex,
-                           owner_pid]),
-            case Kex#kex.requester of
-                '_' ->
-                    %% The key exchange was initiated by the peer or by
-                    %% this process.
-                    ok;
-                Ref ->
-                    %% The key exchange was initiated by the application.
-                    gen_server:reply(Ref, ok)
-            end,
-            %% In case our db implementation is e.g. ETS:
-            db_destroy(State),
-            case send_msgs_to_send(
-                   db_insert(NextState,
-                             [{seq_no_c2s, SequenceNoC2S},
-                              {seq_no_s2c, SequenceNoS2C},
-                              {cipher_cache, CipherCache},
-                              {plain_cache, PlainCache},
-                              {owner_window, WaitingForMsg},
-                              {msgs_to_send, MsgsToSend},
-                              {owner_pid, Pid},
-                              {msgs, Msgs}])) of
-                {ok, NewState} ->
-                    case WaitingForMsg of
-                        0 ->
-                            {noreply, NewState};
-                        Count ->
-                            {NewCount, NewMsgs} =
-                                deliver_msgs(Count, Pid, Msgs),
-                            {noreply,
-                             db_insert(NewState,
-                                       [{owner_window, NewCount},
-                                        {msgs, NewMsgs}])}
-                    end;
-                _ ->
-                    {stop, normal,
-                     db_insert(State,
-                               {error_code,
-                                {?SSH_DISCONNECT_CONNECTION_LOST,
-                                 "Connection lost."}})}
-            end;
-        _ ->
-            Kex = db_lookup(State, kex),
-            case Kex#kex.requester of
-                '_' ->
-                    ok;
-                Ref ->
-                    gen_server:reply(Ref,
-                                     {error, {receivenewkeys, illegalpacket}})
-            end,
-            {stop, normal,
-             db_insert(State,
-                       {error_code,
-                        {?SSH_DISCONNECT_PROTOCOL_ERROR,
-                         "Expected new_keys packet."}})}
-    end.
-
-disconnect(State, Code, Reason) when integer(Code), list(Reason) ->
-    send(State, [?SSH_MSG_DISCONNECT,
-                 ?SSH_UINT_32(Code),
-                 ?SSH_STRING(Reason),
-                 ?SSH_STRING(?LANGUAGE)]),
-    gen_tcp:close(db_lookup(State, socket));
-disconnect(State, Code, Reason) ->
-    send(State, [?SSH_MSG_DISCONNECT,
-                 ?SSH_UINT_32(?SSH_DISCONNECT_BY_APPLICATION),
-                 ?SSH_STRING("Unknown error"),
-                 ?SSH_STRING(?LANGUAGE)]),
-    gen_tcp:close(db_lookup(State, socket)).
-
-incoming(State) ->
-    case db_lookup(State, plain_cache) of
-        {0, _} ->
-            {CipherCacheSize, CipherCache} =
-                db_lookup(State, cipher_cache),
-            case {CipherCacheSize,
-                  block_size(s2c, State)} of
-                {DataSize, BlockSize} when DataSize >= BlockSize ->
-                    [ToDecrypt, NewCipherCache] =
-                        split_data([BlockSize],
-                                   CipherCache),
-                    {NewPlainCache, NewState} =
-                        decrypt({BlockSize, ToDecrypt}, State),
-                    incoming(
-                      db_insert(NewState,
-                                [{cipher_cache,
-                                  {DataSize - BlockSize, NewCipherCache}},
-                                 {plain_cache, {BlockSize, NewPlainCache}}]));
-                _ ->
-                    incomplete_msg(State)
-            end;
-        {PlainSize, <<PacketSize:32/integer, PadSize, MsgHead/binary>>}
-        when PacketSize > ?PAYLOAD_MAXLEN ->
-            {stop, normal,
-             db_insert(State,
-                       {error_code,
-                        {?SSH_DISCONNECT_PROTOCOL_ERROR,
-                         "Bad length: " ++ integer_to_list(PacketSize)}})};
-        {PlainSize, PlainCache} ->
-            <<PacketSize:32/integer, PadSize, MsgHead/binary>> = PlainCache,
-            {CipherCacheSize, CipherCache} = db_lookup(State, cipher_cache),
-            %% Needed = MacSize plus PacketSize - BlockSize + 4
-            MacSize = mac_size(s2c, State),
-            BlockSize = block_size(s2c, State),
-            case PacketSize + MacSize - BlockSize + 4 of
-                Needed when CipherCacheSize >= Needed ->
-                    ToDecryptSize = PacketSize - BlockSize + 4,
-                    [ToDecrypt, Mac, Rest] =
-                        split_data([ToDecryptSize, MacSize],
-                                   CipherCache),
-                    MsgTailSize = ToDecryptSize - PadSize,
-                    {Decrypted, NewState1} = decrypt({ToDecryptSize, ToDecrypt},
-						     State),
-                    {Msg, Pad} =
-                        case MsgTailSize of
-                            MsgTailSize when MsgTailSize >= 0 ->
-                                <<MsgTail:MsgTailSize/binary, Pado/binary>> =
-                                    Decrypted,
-                                {[MsgHead, MsgTail], Pado};
-                            _ ->
-                                MsgSize = BlockSize - 5 + MsgTailSize,
-                                <<RealMsg:MsgSize/binary, PadHead/binary>> =
-                                    MsgHead,
-                                {[RealMsg], [PadHead, Decrypted]}
-                        end,
-
-                    case verify_mac([PlainCache,
-                                     Decrypted], Mac, NewState1) of
-                        {ok, NewState2} ->
-                            verified_msg(list_to_binary(Msg),
-                                         db_insert(
-                                           NewState2,
-                                           {cipher_cache,
-                                            {CipherCacheSize - ToDecryptSize -
-                                             MacSize, Rest}}));
-                        _ ->
-                            {stop, normal,
-                             db_insert(NewState1,
-                                       {error_code,
-                                        {?SSH_DISCONNECT_MAC_ERROR,
-                                         "MAC verification error."}})}
-                    end;
-                _ ->
-                    incomplete_msg(State)
-            end
-    end.
-
-verified_msg(Msg, State) ->
-    case {Msg, db_lookup(State, ignore_one)} of
-        {<<?SSH_MSG_DISCONNECT, _/binary>>, _} ->
-            handle_disconnect_msg(Msg, State);
-        {<<Ignore, _/binary>>, _} when Ignore == ?SSH_MSG_DEBUG;
-				       Ignore == ?SSH_MSG_IGNORE ->
-            incomplete_msg(db_insert(State, {plain_cache, {0, <<>>}}));
-        {_, true} ->
-            incomplete_msg(db_insert(State,
-                                     [{plain_cache, {0, <<>>}},
-                                      {ignore_one, false}]));
-        {<<?SSH_MSG_KEXINIT, _/binary>>, _} ->
-            case db_lookup(State, kex) of
-                '_' ->
-                    set_rereceive(State),
-                    kex_init(db_insert(State,
-                                       [{plain_cache, {0, <<>>}},
-                                        {kex, #kex{init_s = Msg}}]));
-                Kex ->
-                    new_msg(db_insert(State,
-                                      [{plain_cache, {0, <<>>}},
-                                       {kex, Kex#kex{init_s = Msg}}]))
-            end;
-        _ ->
-            new_msg(db_insert(State,
-                              [{msgs, db_lookup(State, msgs) ++ [Msg]},
-                               {plain_cache, {0, <<>>}}]))
-    end.
-
-new_msg(State) ->
-    case db_lookup(State, [kex, bytes_recvd]) of
-        [Kex, ReceivedBytes]
-        when Kex == '_',
-	ReceivedBytes >= ?MAX_BYTES_BEFORE_REKEY ->
-            set_rereceive(State),
-            case db_lookup(State, [owner_window, owner_pid]) of
-                [0, _] ->
-                    kex_init(db_insert(State,
-                                       {kex, #kex{requester = '_'}}));
-                [Count, Pid] ->
-                    Msgs = db_lookup(State, msgs),
-                    {NewCount, NewMsgs} =
-                        deliver_msgs(Count, Pid, Msgs),
-                    kex_init(db_insert(State,
-                                       [{owner_window, NewCount},
-                                        {msgs, NewMsgs},
-                                        {kex, #kex{requester = '_'}}]))
-            end;
-        ['_', _] ->
-            set_rereceive(State),
-            case db_lookup(State, [owner_window, owner_pid]) of
-                [0, _] ->
-                    {noreply, State};
-                [Count, Pid] ->
-                    Msgs = db_lookup(State, msgs),
-                    {NewCount, NewMsgs} = deliver_msgs(Count, Pid, Msgs),
-                    {noreply,
-                     db_insert(State,
-                               [{owner_window, NewCount},
-                                {msgs, NewMsgs}])}
-            end;
-        _ ->
-            set_rereceive(State),
-            Kex = db_lookup(State, kex),
-            case Kex#kex.phase of
-                receive_kexinit ->
-                    case Kex#kex.init_s of
-                        '_' -> %%% The new message was not a kex_init message.
-                            case db_lookup(State, [owner_window,
-						   owner_pid]) of
-                                [0, _] ->
-                                    {noreply, State};
-                                [Count, Pid] ->
-                                    Msgs = db_lookup(State, msgs),
-                                    {NewCount, NewMsgs} =
-                                        deliver_msgs(Count, Pid, Msgs),
-                                    {noreply,
-                                     db_insert(State,
-                                               [{owner_window, NewCount},
-                                                {msgs, NewMsgs}])}
-                            end;
-                        _ ->
-                            agree(State)
-                    end;
-                receive_kexpacket ->
-                    kex_continue(State);
-                receive_new_keys ->
-                    receive_new_keys(State)
-            end
-    end.
-
-incomplete_msg(State) ->
-    set_rereceive(State),
-    {noreply, State}.
-
-decrypt({0, _}, State) ->
-    {<<>>, State};
-decrypt({Size, Data}, State) ->
-    case db_lookup(State, cipher_s2c) of
-        "none" ->
-            {list_to_binary([Data]), State};
-        ?SSH_ALG_3DES_CBC ->
-            [IV, Key, BytesReceived] =
-                db_lookup(State, [iv_s2c, enc_key_s2c, bytes_recvd]),
-            <<Key1:8/binary, Key2:8/binary, Key3:8/binary>> =
-                Key,
-            DecryptedData =
-                crypto:des_ede3_cbc_decrypt(Key1, Key2, Key3, IV,
-                                            Data),
-            NewIV = last(block_size(s2c, State), {Size, Data}),
-            {DecryptedData,
-             db_insert(State,
-                       [{iv_s2c, NewIV},
-                        {bytes_recvd,
-                         BytesReceived + Size}])};
-        ?SSH_ALG_AES128_CBC ->
-            [IV, Key, BytesReceived] =
-                db_lookup(State, [iv_s2c, enc_key_s2c, bytes_recvd]),
-            DecryptedData =
-                ?AUX_CRYPTO:aes128_cbc_decrypt(Key, IV, Data),
-            NewIV = last(block_size(s2c, State), {Size, Data}),
-            {DecryptedData,
-             db_insert(State,
-                       [{iv_s2c, NewIV},
-                        {bytes_recvd,
-                         BytesReceived + Size}])}
-    end.
-
-verify_mac(Data, MacToVerify, State) ->
-    case db_lookup(State, [mac_s2c, seq_no_s2c]) of
-        [MacAlg, SequenceNo]
-        when MacAlg == "none" ->
-            case flatlength(MacToVerify) of
-                0 ->
-                    {ok, db_insert(State,
-				   {seq_no_s2c, uint_inc(SequenceNo)})};
-                _ ->
-                    {error, mac}
-            end;
-        [MacAlg, SequenceNo]
-        when MacAlg == ?SSH_ALG_HMAC_SHA1 ->
-            [AuthKey, BytesReceived] =
-                db_lookup(State, [auth_key_s2c, bytes_recvd]),
-            Mac = crypto:sha_mac(AuthKey, [SequenceNo, Data]),
-            case compare_data(MacToVerify, Mac) of
-                equal ->
-                    {ok,
-                     db_insert(State,
-                               [{seq_no_s2c, uint_inc(SequenceNo)},
-                                {bytes_recvd, BytesReceived + 20}])};
-                _ ->
-                    {error, mac}
-            end;
-        [MacAlg, SequenceNo]
-        when MacAlg == ?SSH_ALG_HMAC_MD5 ->
-            [AuthKey, BytesReceived] =
-                db_lookup(State, [auth_key_s2c, bytes_recvd]),
-            Mac = crypto:md5_mac(AuthKey, [SequenceNo, Data]),
-            case compare_data(MacToVerify, Mac) of
-                equal ->
-                    {ok,
-                     db_insert(State,
-                               [{seq_no_s2c, uint_inc(SequenceNo)},
-                                {bytes_recvd, BytesReceived + 20}])};
-                _ ->
-                    {error, mac}
-            end
-    end.
-
-
-agreed(State, [_, SExchAlgs, SPubKeyAlgs, SCipherC2SAlgs, SCipherS2CAlgs,
-               SMacC2SAlgs, SMacS2CAlgs, SComprC2SAlgs, SComprS2CAlgs,
-               _, _, KexFollows, _]) ->
-    Options = db_lookup(State, options),
-    agreed([SExchAlgs, SPubKeyAlgs, SCipherC2SAlgs, SCipherS2CAlgs,
-            SMacC2SAlgs, SMacS2CAlgs, SComprC2SAlgs, SComprS2CAlgs],
-           [algorithm_proposal(false, ?SUPP_EXCH_ALGS, exch_alg, Options),
-            algorithm_proposal(false, ?SUPP_PUB_KEY_ALGS, pub_key_alg, Options),
-            algorithm_proposal(false, ?SUPP_CIPH_ALGS, cipher_c2s, Options),
-            algorithm_proposal(false, ?SUPP_CIPH_ALGS, cipher_s2c, Options),
-            algorithm_proposal(false, ?SUPP_MAC_ALGS, mac_c2s, Options),
-            algorithm_proposal(false, ?SUPP_MAC_ALGS, mac_s2c, Options),
-            algorithm_proposal(false, ?SUPP_COMPR_ALGS, compr_c2s, Options),
-            algorithm_proposal(false, ?SUPP_COMPR_ALGS, compr_s2c, Options)],
-           [kex_alg, pub_key_alg, cipher_c2s, cipher_s2c,
-            mac_c2s, mac_s2c, compr_c2s, compr_s2c],      
-           State, true, KexFollows).
-
-agreed([], [], [], State, AllCorrect, KexFollows) ->
-    {ok, State, (AllCorrect == false) and (KexFollows == true)};
-agreed([SAlgs|SRest], [CAlgs|CRest], [Field|FRest],
-       State, AllCorrect, KexFollows) ->
-    case common(SAlgs, CAlgs) of
-        {ok, Alg, Correct} ->
-            agreed(SRest, CRest, FRest, db_insert(State, {Field, Alg}),
-                   Correct and AllCorrect, KexFollows);
-        Other ->
-            {error, {none_in_common, Field}}
-    end.
-
-common(SString, CAlgs) ->
-    {ok, SAlgs} = regexp:split(SString, ", "),
-    case {SAlgs, CAlgs} of
-        {[Common | _], [Common | _]} ->
-            {ok, Common, true};
-        _ ->
-            common_1(SAlgs, CAlgs)
-    end.
-
-common_1(SAlgs, []) ->
-    {error, none_in_common};
-common_1(SAlgs, [CAlg | CRest]) ->
-    case lists:member(CAlg, SAlgs) of
-        true ->
-            {ok, CAlg, false};
-        false ->
-            common_1(SAlgs, CRest)
-    end.
-
-get_version(Sock) ->
-    case gen_tcp:recv(Sock, 0, ?RECV_TIMEOUT) of %%% Sock is in line mode.
-        {ok, Line} ->
-            get_version(Sock, binary_to_list(Line));
-        Other ->
-            Other
-    end.
-
-get_version(Sock, "SSH-" ++ VsnLine) ->
-    case do_get_version(VsnLine, "") of
-        {ok, Vsn} ->
-            VsnString =
-                strip_end_of_line(VsnLine),
-            {ok, Vsn, "SSH-" ++ VsnString};
-        Other ->
-            Other
-    end;
-get_version(Sock, LastLine) ->
-    case gen_tcp:recv(Sock, 0, ? RECV_TIMEOUT) of
-        {ok, Line} ->
-            get_version(Sock, binary_to_list(Line));
-        Other ->
-            Other
-    end.
-
-do_get_version([], Acc) ->
-    {error, Acc};
-do_get_version([$- | _], Acc) ->
-    {ok, Acc};
-do_get_version([Char | Rest], Acc) ->
-    do_get_version(Rest, Acc ++ [Char]).
-
-parse_packet(<<?SSH_MSG_KEXINIT, KexInit/binary>>) ->
-    parse_packet([cookie, string, string, string, string, string,
-                  string, string, string, string, string, boolean,
-                  uint32], KexInit, {?SSH_MSG_KEXINIT, []});
-parse_packet(<<?SSH_MSG_KEXDH_REPLY, KexReply/binary>>) ->
-    parse_packet([string, mpint, string], KexReply, {?SSH_MSG_KEXDH_REPLY, []});
-parse_packet(<<?SSH_MSG_IGNORE, Ignore/binary>>) ->
-    parse_packet([string], Ignore, {?SSH_MSG_IGNORE, []});
-parse_packet(<<?SSH_MSG_DISCONNECT, Disconnect/binary>>) ->
-    parse_packet([uint32, string, string], Disconnect, {?SSH_MSG_DISCONNECT, []});
-parse_packet(<<?SSH_MSG_UNIMPLEMENTED, Unimplemented/binary>>) ->
-    {?SSH_MSG_UNIMPLEMENTED, Unimplemented};
-parse_packet(<<?SSH_MSG_SERVICE_ACCEPT, Service/binary>>) ->
-    parse_packet([string], Service, {?SSH_MSG_SERVICE_ACCEPT, []});
-parse_packet(<<?SSH_MSG_DEBUG, Debug/binary>>) ->
-    parse_packet([boolean, string, string], Debug, {?SSH_MSG_DEBUG, []});
-parse_packet(<<?SSH_MSG_NEWKEYS, NewKeys/binary>>) ->
-    {?SSH_MSG_NEWKEYS, NewKeys}.
-
-parse_packet(Recipe, Packet) ->
-    parse_packet(Recipe, Packet, {ok, []}).
-
-parse_packet([], _, {Type, Acc}) ->
-    {Type, lists:reverse(Acc)};
-parse_packet([cookie | Pieces], <<Cookie:16/binary, Rest/binary>>, { Type, Acc}) ->
-    parse_packet(Pieces, Rest, {Type, [Cookie | Acc]});
-parse_packet([string|Pieces], <<StringLength:32/integer, Binary/binary>>,
-             {Type, Acc}) ->
-    case Binary of
-        <<String:StringLength/binary, Rest/binary>> ->
-            parse_packet(Pieces, Rest, {Type, [binary_to_list(String) | Acc]});
-        _ ->
-            {error, parse_string}
-    end;
-parse_packet([boolean | Pieces], <<Boolean, Rest/binary>>, {Type, Acc})
-  when Boolean == ?SSH_FALSE ->
-    parse_packet(Pieces, Rest, {Type, [false | Acc]});
-parse_packet([boolean | Pieces], <<Boolean, Rest/binary>>, {Type, Acc }) ->
-    parse_packet(Pieces, Rest, {Type, [true | Acc]});
-parse_packet([uint32 | Pieces], <<UInt32:32/integer, Rest/binary>>, {Type, Acc}) ->
-    parse_packet(Pieces, Rest, {Type, [UInt32|Acc]});
-parse_packet([uint64 | Pieces], <<UInt64:64/integer, Rest/binary>>, {Type, Acc}) ->
-    parse_packet(Pieces, Rest, {Type, [UInt64 | Acc]});
-parse_packet([mpint | Pieces], <<MPIntLength:32/integer, Binary/binary>>,
-             {Type, Acc}) ->
-    case Binary of
-        <<MPInt:MPIntLength/binary, Rest/binary>> ->
-            parse_packet(Pieces, Rest,
-                         {Type, [<<MPIntLength:32/integer, MPInt/binary>> |
-				 Acc]});
-        _ ->
-            {error, parse_mpint}
-    end;
-parse_packet([dsskey | Pieces], <<StringLength:32/integer, Binary/binary>>,
-             {Type, Acc}) ->
-    case Binary of
-        <<String:StringLength/binary, Rest/binary>> ->
-            case
-                parse_packet([string, mpint, mpint, mpint, mpint],
-                             String, {dummy, []}) of
-                {dummy, DssKey} ->
-                    parse_packet(Pieces, Rest, {Type,
-						[DssKey | Acc]});
-                _ ->
-                    {error, parse_dsskey}
-            end;
-        _ ->
-            {error, parse_dsskey}
-    end;
-parse_packet([dsssig | Pieces], <<StringLength:32/integer, Binary/binary>>,
-             {Type, Acc}) ->
-    case Binary of
-        <<String:StringLength/binary, Rest/binary>> ->
-            case parse_packet([string, string], String, {dummy, []}) of
-                {dummy, DssSig} ->
-                    parse_packet(Pieces, Rest, {Type, [DssSig | Acc]});
-                _ ->
-                    {error, parse_dsssig}
-            end;
-        _ ->
-            {error, parse_dsssig}
-    end;
-parse_packet([rsakey | Pieces], <<StringLength:32/integer, Binary/binary>>,
-             {Type, Acc}) ->
-    case Binary of
-        <<String:StringLength/binary, Rest/binary>> ->
-            case parse_packet([string, mpint, mpint], String, { dummy, []}) of
-                {dummy, RsaKey} ->
-                    parse_packet(Pieces, Rest, {Type, [RsaKey | Acc]});
-                _ ->
-                    {error, parse_rsakey}
-            end;
-        _ ->
-            {error, parse_rsakey}
-    end;
-parse_packet([rsasig | Pieces], <<StringLength:32/integer, Binary/binary>>,
-             {Type, Acc}) ->
-    case Binary of
-        <<String:StringLength/binary, Rest/binary>> ->
-            case parse_packet([string, string], String, {dummy, []}) of
-                {dummy, RsaSig} ->
-                    parse_packet(Pieces, Rest, {Type, [RsaSig | Acc]});
-                _ ->
-                    {error, parse_rsasig}
-            end;
-        _ ->
-            {error, parse_rsasig}
-    end;
-parse_packet([Type |_], _, _) ->
-    %% There is a limited number of types, so the following is ok.
-    Error = list_to_atom("parse_" ++ atom_to_list(Type)),
-    {error, Error}.
-
-pack({PaySize, PayLoad}, Padding, State) ->
-    case Padding of
-        false ->
-            [<<PaySize:32/integer>>, PayLoad];
-        Padding ->
-            BlockSize = block_size(c2s, State),
-            PadSize =
-                case {Padding, 2 * BlockSize - 5 - (PaySize rem BlockSize)} of
-                    {true, Whatever} ->
-                        Whatever;
-                    {random, Whatever} when Whatever < BlockSize ->
-                        Whatever + BlockSize *
-                            ?AUX_CRYPTO:rand_uniform(0, 256 div BlockSize - 1);
-                    {random, Whatever} ->
-                        Whatever + 8 *
-                            ?AUX_CRYPTO:rand_uniform(0, 256 div BlockSize - 2)
-                end,
-            Pad = padding(PadSize, Padding),
-            PacketSize = 1 + PaySize + PadSize,
-            {PacketSize + 4,
-             [<<PacketSize:32/integer, PadSize>>, PayLoad, Pad]}
-    end;
-pack(ListOfListsAndBinaries, Padding, State) when list(ListOfListsAndBinaries) ->
-    pack({flatlength(ListOfListsAndBinaries), ListOfListsAndBinaries},
-         Padding, State);
-pack(OneTerm, Padding, State) ->
-    pack([OneTerm], Padding, State).
-
-send(State, Data) ->
-    case db_lookup(State, cipher_c2s) of
-        "none" ->
-            {PacketSize, Packet} = pack(Data, true, State),
-            add_mac_and_send(Packet, PacketSize, Packet, State);
-        ?SSH_ALG_3DES_CBC ->
-            [<<Key1:8/binary, Key2:8/binary, Key3:8/binary>>, IV] =
-                db_lookup(State, [enc_key_c2s, iv_c2s]),
-            {PacketSize, Packet} = pack(Data, true, State), %% random),
-            EncPacket =
-                crypto:des_ede3_cbc_encrypt(Key1, Key2, Key3, IV, Packet),
-            AllButLastSize = PacketSize - 8,
-            <<_:AllButLastSize/binary, NewIV:8/binary>> = EncPacket,
-            add_mac_and_send(Packet, PacketSize, EncPacket,
-                             db_insert(State, {iv_c2s, NewIV}));
-        ?SSH_ALG_AES128_CBC ->
-            [Key, IV] =
-                db_lookup(State, [enc_key_c2s, iv_c2s]),
-            {PacketSize, Packet} = pack(Data, true, State), %% random),
-            EncPacket = ?AUX_CRYPTO:aes128_cbc_encrypt(Key, IV, Packet),
-            AllButLastSize = PacketSize - block_size(c2s, State),
-            <<_:AllButLastSize/binary, NewIV/binary>> = EncPacket,
-            add_mac_and_send(Packet, PacketSize, EncPacket,
-                             db_insert(State, {iv_c2s, NewIV}))
-    end.
-
-add_mac_and_send(Packet, PacketSize, EncPacket,
-                 State) ->
-    case db_lookup(State, [mac_c2s, seq_no_c2s, socket]) of
-        ["none", SequenceNo, Sock] ->
-            case gen_tcp:send(Sock, EncPacket) of
-                ok ->
-                    {ok, db_insert(State, {seq_no_c2s,
-					   uint_inc(SequenceNo)})};
-                Other ->
-                    Other
-            end;
-        [?SSH_ALG_HMAC_SHA1, SequenceNo, Sock] ->
-            [AuthKey, BytesSent] =
-                db_lookup(State, [auth_key_c2s, bytes_sent]),
-            Mac = crypto:sha_mac(AuthKey,
-                                 [SequenceNo, Packet]),
-            case gen_tcp:send(Sock, [EncPacket, Mac]) of
-                ok ->
-                    {ok, db_insert(State,
-                                   [{seq_no_c2s, uint_inc(SequenceNo)},
-                                    {bytes_sent,
-                                     BytesSent + PacketSize}])};
-                Other ->
-                    Other
-            end;
-        [?SSH_ALG_HMAC_MD5, SequenceNo, Sock] ->
-            [AuthKey, BytesSent] =
-                db_lookup(State, [auth_key_c2s, bytes_sent]),
-            Mac = crypto:md5_mac(AuthKey,
-                                 [SequenceNo, Packet]),
-            case gen_tcp:send(Sock, [EncPacket, Mac]) of
-                ok ->
-                    {ok, db_insert(State,
-                                   [{seq_no_c2s, uint_inc(SequenceNo)},
-                                    {bytes_sent,
-                                     BytesSent + PacketSize}])};
-                Other ->
-                    Other
-            end
-    end.
-
-padding(Size, random) ->
-    ?AUX_CRYPTO:rand_bytes(Size);
-padding(Size, true) ->
-    lists:duplicate(Size, 0).
-
-flatlength(Binary) when binary(Binary) ->
-    size(Binary);
-flatlength(List) ->
-    flatlength(List, 0).
-
-flatlength([H | T], L) when list(H) ->
-    flatlength(H, flatlength(T, L));
-flatlength([H | T], L) when binary(H) ->
-    flatlength(T , L + size(H));
-flatlength([H | T], L) ->
-    flatlength(T, L+1);
-flatlength([], L) ->
-    L.
-
-uint_inc(Binary) ->
-    Size = size(Binary) * 8,
-    <<Int:Size/integer>> = Binary,
-    NewInt = Int + 1,
-    <<NewInt:Size/integer>>.
-
-
-%%% In the following operations, positive integers are assumed.
-
-mpint_to_int(<<Size:32/integer, Bin/binary>>) ->
-    BitSize = 8 * Size,
-    <<Int:BitSize/integer>> = Bin,
-    Int.
-
-mpint(Integer) when integer(Integer), Integer >= 0 ->
-    Binary = int_to_bin(Integer),
-    mpint(Binary);
-mpint(Binary) when binary(Binary) ->
-    case Binary of
-        <<MSB, _/binary>> when MSB > 127 ->
-            %% A positive value should not have a 1 as most significant bit.
-            <<(size(Binary) + 1):32/integer, 0, Binary/binary>>;
-        _ ->
-            <<(size(Binary)):32/integer, Binary/binary>>
-		end.
-
-int_to_bin(Integer) ->
-    int_to_bin(Integer, []).
-
-int_to_bin(0, List) ->
-    list_to_binary(List);
-int_to_bin(Integer, List) ->
-    int_to_bin(Integer bsr 8, [Integer band 255|List]).
-
-strip_end_of_line(String) ->
-    do_strip_end_of_line(lists:reverse(String)).
-
-do_strip_end_of_line("\n\r" ++ String) ->
-    lists:reverse(String);
-do_strip_end_of_line("\n" ++ String) ->
-    lists:reverse(String);
-do_strip_end_of_line(String) ->
-    lists:reverse(String).
-
-hex_string(Binary) ->
-    hex_string(Binary, []).
-
-hex_string(<<>>, Acc) ->
-    lists:reverse(Acc);
-hex_string(<<Byte, Rest/binary>>, Acc) ->
-    hex_string(Rest, [hex_char(Byte band 15), hex_char(Byte bsr 4)|
-		      case (length(Acc) + 1) rem 3 of
-			  0 -> [$: | Acc];
-			  _ -> Acc
-		      end]).
-
-hex_char(HB) when HB > 9 ->
-    $a + HB - 10;
-hex_char(HB) ->
-    $0 + HB.
-
-block_size(Dir, State) ->
-    Cipher = case Dir of
-                 s2c -> db_lookup(State, cipher_s2c);
-                 c2s -> db_lookup(State, cipher_c2s)
-             end,
-    case Cipher of
-        "none" ->               8;
-        ?SSH_ALG_3DES_CBC ->    8;
-        ?SSH_ALG_AES128_CBC -> 16
-    end.
-
-key_size(Dir, State) ->
-    Cipher = case Dir of
-                 s2c -> db_lookup(State, cipher_s2c);
-                 c2s -> db_lookup(State, cipher_c2s)
-             end,
-    case Cipher of
-        "none" ->               0;
-        ?SSH_ALG_3DES_CBC ->   24;
-        ?SSH_ALG_AES128_CBC -> 16
-    end.
-
-mac_size(Dir, State) ->
-    Mac = case Dir of
-              s2c -> db_lookup(State, mac_s2c);
-              c2s -> db_lookup(State, mac_c2s)
-          end,
-    case Mac of
-        "none" ->              0;
-        ?SSH_ALG_HMAC_SHA1 -> 20;
-        ?SSH_ALG_HMAC_MD5 ->  16
-    end.
-
-last(Size, {DataSize, Data}) ->
-    [_, Wanted] = split_data([DataSize - Size], Data),
-    Wanted.
-
-split_data(SplitSizes, Data) when binary(Data) ->
-    split_data(SplitSizes, Data, []);
-split_data(SplitSizes, Data) ->
-    split_data(SplitSizes, list_to_binary(Data), []).
-
-split_data([], Rest, Acc) ->
-    lists:reverse([Rest | Acc]);
-split_data([FirstSize | RestSizes], Data, Acc) when size(Data) >= FirstSize ->
-    <<First:FirstSize/binary, Rest/binary>> = Data,
-    split_data(RestSizes, Rest, [First | Acc]).
-
-%% This is a lot more complicated, but might give better performance
-%% since list_to_binary/1 is not called.
-%%split_data(SplitSizes, Data) ->
-%%    split_data(SplitSizes, Data, []).
+%% public key algorithms
 %%
-%%split_data([], Rest, Acc) ->
-%%    lists:reverse([Rest|Acc]);
-%%split_data([SplitSize|SplitSizes], Data, Acc) ->
-%%    {FirstPiece, Rest} = do_split_data(SplitSize, Data, []),
-%%    split_data(SplitSizes, Rest, [FirstPiece|Acc]).
+%%   ssh-dss              REQUIRED     sign    Raw DSS Key
+%%   ssh-rsa              RECOMMENDED  sign    Raw RSA Key
+%%   x509v3-sign-rsa      OPTIONAL     sign    X.509 certificates (RSA key)
+%%   x509v3-sign-dss      OPTIONAL     sign    X.509 certificates (DSS key)
+%%   spki-sign-rsa        OPTIONAL     sign    SPKI certificates (RSA key)
+%%   spki-sign-dss        OPTIONAL     sign    SPKI certificates (DSS key)
+%%   pgp-sign-rsa         OPTIONAL     sign    OpenPGP certificates (RSA key)
+%%   pgp-sign-dss         OPTIONAL     sign    OpenPGP certificates (DSS key)
 %%
-%%do_split_data(0, Data, Acc) ->
-%%    {lists:reverse(Acc), Data};
-%%do_split_data(SizeofFirst, Data, Acc) when binary(Data) ->
-%%    <<First:SizeofFirst/binary,
-%%     Rest/binary>> = Data,
-%%    {lists:reverse([First|Acc]), Rest};
-%%do_split_data(SizeofFirst, [H|T], Acc) when binary(H), size(H) < SizeofFirst ->
-%%    do_split_data(SizeofFirst - size(H), T, [H|Acc]);
-%%do_split_data(SizeofFirst, [H|T], Acc) when integer(H) ->
-%%    do_split_data(SizeofFirst - 1, T, [H|Acc]);
-%%do_split_data(SizeofFirst, [H|T], Acc) ->
-%%    case flatlength(H) of
-%%       HLength when HLength >= SizeofFirst ->
-%%           {First, Rest} = do_split_data(SizeofFirst, H, []),
-%%           {lists:reverse([First|Acc]), [Rest|T]};
-%%       HLength ->
-%%           do_split_data(SizeofFirst - HLength, T, [H|Acc])
-%%    end.
 
-compare_data(Data1, Data2) when binary(Data1), binary(Data2) ->
-    do_compare_data(Data1, Data2);
-compare_data(Data1, Data2) when binary(Data1) ->
-    do_compare_data(Data1, list_to_binary(Data2));
-compare_data(Data1, Data2) when binary(Data2) ->
-    do_compare_data(list_to_binary(Data1), Data2);
-compare_data(Data1 , Data2) ->
-    do_compare_data(list_to_binary(Data1), list_to_binary(Data2)).
+%% key exchange
+%%
+%%     diffie-hellman-group1-sha1       REQUIRED
+%%
+%%
 
-do_compare_data(Binary1, Binary1) ->
-    equal;
-do_compare_data(_, _) ->
-    not_equal.
+    
 
-set_rereceive(State) ->
-    BlockSize = block_size(s2c, State),
-    case db_lookup(State, cipher_cache) of
-        {Size, _} when Size < BlockSize ->
-            inet:setopts(db_lookup(State, socket), [{active, once}]);
-        Size ->
-            case db_lookup(State, plain_cache) of
-                {0, _} ->
-                    gen_server:cast(self(), more_data);
-                _ ->
-                    inet:setopts(db_lookup(State, socket), [{active, once}])
-            end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Encryption
+%%   context stored in dictionary as 'encrypt_ctx'
+%%
+%% chiphers
+%%
+%%       3des-cbc         REQUIRED          
+%%       three-key 3DES in CBC mode
+%%       blowfish-cbc     OPTIONAL          Blowfish in CBC mode
+%%       twofish256-cbc   OPTIONAL          Twofish in CBC mode,
+%%                                          with 256-bit key
+%%       twofish-cbc      OPTIONAL          alias for "twofish256-cbc" (this
+%%                                          is being retained for
+%%                                          historical reasons)
+%%       twofish192-cbc   OPTIONAL          Twofish with 192-bit key
+%%       twofish128-cbc   OPTIONAL          Twofish with 128-bit key
+%%       aes256-cbc       OPTIONAL          AES in CBC mode,
+%%                                          with 256-bit key
+%%       aes192-cbc       OPTIONAL          AES with 192-bit key
+%%       aes128-cbc       RECOMMENDED       AES with 128-bit key
+%%       serpent256-cbc   OPTIONAL          Serpent in CBC mode, with
+%%                                          256-bit key
+%%       serpent192-cbc   OPTIONAL          Serpent with 192-bit key
+%%       serpent128-cbc   OPTIONAL          Serpent with 128-bit key
+%%       arcfour          OPTIONAL          the ARCFOUR stream cipher
+%%       idea-cbc         OPTIONAL          IDEA in CBC mode
+%%       cast128-cbc      OPTIONAL          CAST-128 in CBC mode
+%%       none             OPTIONAL          no encryption; NOT RECOMMENDED
+%%  
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+encrypt_init(SSH) ->
+    case SSH#ssh.encrypt of
+	none ->
+	    {ok,SSH};
+	'3des-cbc' ->
+	    {IV,KD} = 
+		case SSH#ssh.role of
+		    client ->
+			{hash(SSH, "A", 64),
+			 hash(SSH, "C", 192)};
+		    server ->
+			{hash(SSH, "B", 64),
+			 hash(SSH, "D", 192)}
+		end,
+	    <<K1:8/binary, K2:8/binary, K3:8/binary>> = KD,
+	    put(encrypt_ctx,  IV),
+	    {ok,SSH#ssh { encrypt_keys = {K1,K2,K3},
+			  encrypt_block_size = 8 }};
+	_ ->
+	    exit({bad_algorithm,SSH#ssh.encrypt})
     end.
 
-derive_key(K, H, Salt, SessionID, Length) when Length =< 20 ->
-    <<Key:Length/binary, _/binary>> =
-        crypto:sha([K, H, Salt, SessionID]),
-    Key;
-derive_key(K, H, Salt, SessionID, Length) ->
-    Key = crypto:sha([K, H, Salt, SessionID]),
-    derive_key(K, H,  Key, Length).
+encrypt_final(SSH) ->
+    erase(encrypt_ctx),
+    {ok, SSH#ssh { encrypt = none, 
+		   encrypt_keys = undefined,
+		   encrypt_block_size = 8
+		  }}.
 
-derive_key(K, H, Sofar , Length) when size(Sofar) >= Length ->
-    <<Key:Length/binary, _/binary>> = Sofar,
-    Key;
-derive_key(K, H, Sofar, Length) ->
-    derive_key(K, H, <<Sofar/binary, (crypto:sha([K, H, Sofar]))/binary>>, Length).
 
-algorithm_proposal(AsString, ListOfAlgs, OptionName, Options) ->
-    FinalListOfAlgs =
-        case lists:keysearch(OptionName, 1, Options) of
-            false ->
-                ListOfAlgs;
-            {value, {OptionName, Algs}} ->
-                Algs
-        end,
-    case AsString of
-        true ->
-            case FinalListOfAlgs of
-                [] ->
-                    ?SSH_STRING("");
-                _ ->
-                    sized_binary([hd(FinalListOfAlgs),
-                                  [[", ", X] || X <- tl(FinalListOfAlgs)]])
-            end;
-        false ->
-            FinalListOfAlgs
+encrypt(SSH, Data) ->
+    case SSH#ssh.encrypt of
+	none -> 
+	    Data;
+	'3des-cbc' ->
+	    {K1,K2,K3} = SSH#ssh.encrypt_keys,
+	    IV0 = get(encrypt_ctx),
+	    ?dbg(?DBG_CRYPTO, "encrypt: IV=~p K1=~p, K2=~p, K3=~p\n",
+		 [IV0,K1,K2,K3]),
+	    Enc = crypto:des3_cbc_encrypt(K1,K2,K3,IV0,Data),
+	    ?dbg(?DBG_CRYPTO, "encrypt: ~p -> ~p\n", [Data, Enc]),
+	    %% Enc = list_to_binary(E0),
+	    IV = crypto:des_cbc_ivec(Enc),
+	    put(encrypt_ctx, IV),
+	    Enc;
+	_ ->
+	    exit({bad_algorithm,SSH#ssh.encrypt})
     end.
 
-verify_signature(?SSH_ALG_PUB_KEY_DSS, H, Sig, K_S) ->
-    {dummy, [["ssh-dss", K_S_P, K_S_Q, K_S_G, K_S_Y]]} =
-        parse_packet([dsskey], sized_binary(K_S), {dummy, []}),
-    {dummy, [["ssh-dss", SigBlob]]} =
-        parse_packet([dsssig], sized_binary(Sig), {dummy, []}),   
-    case ?AUX_CRYPTO:dss_verify([<<20:32/integer>>, H],
-				SigBlob,
-				[K_S_P, K_S_Q, K_S_G, K_S_Y]
-			       ) of
-        <<1>> ->
-            true;
-        _ ->
-            false
-    end;
-verify_signature(?SSH_ALG_PUB_KEY_RSA, H, Sig, K_S) ->
-    {dummy, [["ssh-rsa", K_S_E, K_S_N]]} =
-        parse_packet([rsakey], sized_binary(K_S), {dummy, []}),
-    {dummy, [["ssh-rsa", SigBlob]]} =
-        parse_packet([rsasig], sized_binary(Sig), {dummy, []}),   
-    case ?AUX_CRYPTO:rsa_verify([<<20:32/integer>>, H],
-				sized_binary(SigBlob),
-				[K_S_E, K_S_N]
-			       ) of
-        <<1>> ->
-            true;
-        _ ->
-            false
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Decryption
+%%   context stored in dictionary as 'decrypt_ctx'
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+decrypt_init(SSH) ->
+    case SSH#ssh.decrypt of
+	none ->
+	    {ok,SSH};
+	'3des-cbc' ->
+	    {IV,KD} = case SSH#ssh.role of
+			  client ->
+			      {hash(SSH, "B", 64),
+			       hash(SSH, "D", 192)};
+			  server -> 
+			      {hash(SSH, "A", 64),
+			       hash(SSH, "C", 192)}
+		      end,
+	    <<K1:8/binary, K2:8/binary, K3:8/binary>> = KD,
+	    put(decrypt_ctx,  IV),
+	    {ok,SSH#ssh{ decrypt_keys = {K1,K2,K3},
+			 decrypt_block_size = 8	}};
+	_ ->
+	    exit({bad_algorithm,SSH#ssh.decrypt})
     end.
 
-within_bounds(MPInt, MPRoof) ->
-    Roof = mpint_to_int(MPRoof),
-    case mpint_to_int(MPInt) of
-        Int when Int > 0, Int =< Roof ->
-            true;
-        _ ->
-            false
+decrypt_final(SSH) ->
+    erase(decrypt_ctx),
+    {ok, SSH#ssh { decrypt = none, 
+		   decrypt_keys = undefined,
+		   decrypt_block_size = 8 }}.
+
+decrypt(SSH, Data) ->
+    case SSH#ssh.decrypt of
+	none -> 
+	    Data;
+	'3des-cbc' ->
+	    {K1,K2,K3} = SSH#ssh.decrypt_keys,
+	    IV0 = get(decrypt_ctx),
+	    ?dbg(?DBG_CRYPTO, "decrypt: IV=~p K1=~p, K2=~p, K3=~p\n",
+		 [IV0,K1,K2,K3]),
+	    Dec = crypto:des3_cbc_decrypt(K1,K2,K3,IV0,Data),
+	    %% Enc = list_to_binary(E0),
+	    ?dbg(?DBG_CRYPTO, "decrypt: ~p -> ~p\n", [Data, Dec]),
+	    IV = crypto:des_cbc_ivec(Data),
+	    put(decrypt_ctx, IV),
+	    Dec;
+	_ ->
+	    exit({bad_algorithm,SSH#ssh.decrypt})
     end.
 
-b64_encode_pub_key(PubKeyBlob) ->
-    httpd_util:encode_base64(binary_to_list(list_to_binary(PubKeyBlob))).
 
-
-%% Settled for ETS in favour of record. Crash reports and such doesn't work
-%% very well when you carry around big binaries in loop data.
-
-db_new() ->
-    Ets = ets:new(?MODULE, [private, set]),
-    db_insert(Ets, ?DB_DEFAULT),
-    Ets.
-
-db_insert(Ets, KeysAndValues) ->
-    true = ets:insert(Ets, KeysAndValues),
-    Ets.
-
-db_lookup(Ets, Key) when atom(Key) ->
-    [{Key, Value}] = ets:lookup(Ets, Key),
-    Value;
-db_lookup(Ets, Keys) ->
-    db_lookup(Ets, lists:reverse(Keys), []).
-
-db_lookup(Ets, [], Acc) ->
-    Acc;
-db_lookup(Ets, [Key|Keys], Acc) ->
-    db_lookup(Ets, Keys, [db_lookup(Ets, Key)|Acc]).
-
-db_destroy(Ets) ->
-    ets:delete(Ets).
-
-%%db_new() ->
-%%    #ssh{}.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Compression
+%%   context stored in dictionary as 'compress_ctx'
 %%
-%%db_insert(Db, KeyAndValue) when tuple(KeyAndValue) ->
-%%    db_insert(Db, [KeyAndValue]);
-%%db_insert(Db, []) ->
-%%    Db;
-%%db_insert(Db, [{owner_pid, Value}|Values]) ->
-%%    db_insert(Db#ssh{owner_pid = Value}, Values);
-%%db_insert(Db, [{socket, Value}|Values]) ->
-%%    db_insert(Db#ssh{socket = Value}, Values);
-%%db_insert(Db, [{cipher_cache, Value}|Values]) ->
-%%    db_insert(Db#ssh{cipher_cache = Value}, Values);
-%%db_insert(Db, [{plain_cache, Value}|Values]) ->
-%%    db_insert(Db#ssh{plain_cache = Value}, Values);
-%%db_insert(Db, [{msgs, Value}|Values]) ->
-%%    db_insert(Db#ssh{msgs = Value}, Values);
-%%db_insert(Db, [{msgs_to_send, Value}|Values]) ->
-%%    db_insert(Db#ssh{msgs_to_send = Value}, Values);
-%%db_insert(Db, [{ignore_one, Value}|Values]) ->
-%%    db_insert(Db#ssh{ignore_one = Value}, Values);
-%%db_insert(Db, [{owner_window, Value}|Values]) ->
-%%    db_insert(Db#ssh{owner_window = Value}, Values);
-%%db_insert(Db, [{kex, Value}|Values]) ->
-%%    db_insert(Db#ssh{kex = Value}, Values);
-%%db_insert(Db, [{session_id, Value}|Values]) ->
-%%    db_insert(Db#ssh{session_id = Value}, Values);
-%%db_insert(Db, [{iv_c2s, Value}|Values]) ->
-%%    db_insert(Db#ssh{iv_c2s = Value}, Values);
-%%db_insert(Db, [{iv_s2c, Value}|Values]) ->
-%%    db_insert(Db#ssh{iv_s2c = Value}, Values);
-%%db_insert(Db, [{seq_no_c2s, Value}|Values]) ->
-%%    db_insert(Db#ssh{seq_no_c2s = Value}, Values);
-%%db_insert(Db, [{seq_no_s2c, Value}|Values]) ->
-%%    db_insert(Db#ssh{seq_no_s2c = Value}, Values);
-%%db_insert(Db, [{kex_alg, Value}|Values]) ->
-%%    db_insert(Db#ssh{kex_alg = Value}, Values);
-%%db_insert(Db, [{pub_key_alg, Value}|Values]) ->
-%%    db_insert(Db#ssh{pub_key_alg = Value}, Values);
-%%db_insert(Db, [{cipher_c2s, Value}|Values]) ->
-%%    db_insert(Db#ssh{cipher_c2s = Value}, Values);
-%%db_insert(Db, [{cipher_s2c, Value}|Values]) ->
-%%    db_insert(Db#ssh{cipher_s2c = Value}, Values);
-%%db_insert(Db, [{mac_c2s, Value}|Values]) ->
-%%    db_insert(Db#ssh{mac_c2s = Value}, Values);
-%%db_insert(Db, [{mac_s2c, Value}|Values]) ->
-%%    db_insert(Db#ssh{mac_s2c = Value}, Values);
-%%db_insert(Db, [{compr_c2s, Value}|Values]) ->
-%%    db_insert(Db#ssh{compr_c2s = Value}, Values);
-%%db_insert(Db, [{compr_s2c, Value}|Values]) ->
-%%    db_insert(Db#ssh{compr_s2c = Value}, Values);
-%%db_insert(Db, [{enc_key_c2s, Value}|Values]) ->
-%%    db_insert(Db#ssh{enc_key_c2s = Value}, Values);
-%%db_insert(Db, [{enc_key_s2c, Value}|Values]) ->
-%%    db_insert(Db#ssh{enc_key_s2c = Value}, Values);
-%%db_insert(Db, [{auth_key_c2s, Value}|Values]) ->
-%%    db_insert(Db#ssh{auth_key_c2s = Value}, Values);
-%%db_insert(Db, [{auth_key_s2c, Value}|Values]) ->
-%%    db_insert(Db#ssh{auth_key_s2c = Value}, Values);
-%%db_insert(Db, [{bytes_sent, Value}|Values]) ->
-%%    db_insert(Db#ssh{bytes_sent = Value}, Values);
-%%db_insert(Db, [{bytes_recvd, Value}|Values]) ->
-%%    db_insert(Db#ssh{bytes_recvd = Value}, Values);
-%%db_insert(Db, [{vsn_c, Value}|Values]) ->
-%%    db_insert(Db#ssh{vsn_c = Value}, Values);
-%%db_insert(Db, [{vsn_s, Value}|Values]) ->
-%%    db_insert(Db#ssh{vsn_s = Value}, Values);
-%%db_insert(Db, [{server_key_fun, Value}|Values]) ->
-%%    db_insert(Db#ssh{server_key_fun = Value}, Values);
-%%db_insert(Db, [{error_code, Value}|Values]) ->
-%%    db_insert(Db#ssh{error_code = Value}, Values);
-%%db_insert(Db, [{options, Value}|Values]) ->
-%%    db_insert(Db#ssh{options = Value}, Values);
-%%db_insert(Db, [{next, Value}|Values]) ->
-%%    db_insert(Db#ssh{next = Value}, Values).
+%%     none     REQUIRED        no compression
+%%     zlib     OPTIONAL        ZLIB (LZ77) compression
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+compress_init(SSH) ->
+    compress_init(SSH, 1).
+compress_init(SSH, Level) ->
+    Compress = SSH#ssh.compress,
+    ?dbg(?DBG_ZLIB, "compress_init: ~p Level ~p\n", [Compress, Level]),
+    case Compress of
+	none ->
+	    {ok,SSH};
+	zlib ->
+	    Z = zlib:open(),
+	    case zlib:deflateInit(Z, Level) of
+		ok ->
+		    put(compress_ctx, Z),
+		    {ok, SSH};
+		Error ->
+		    zlib:close(Z),
+		    Error
+	    end;
+	_ ->
+	    exit({bad_algorithm,SSH#ssh.compress})
+    end.
+
+compress_final(SSH) ->
+    case SSH#ssh.compress of
+	none ->
+	    {ok, SSH};
+	zlib ->
+	    zlib:close(get(compress_ctx)),
+	    erase(compress_ctx),
+	    {ok, SSH#ssh { compress = none }};
+	_ ->
+	    exit({bad_algorithm,SSH#ssh.compress})
+    end.
+
+compress(SSH, Data) ->
+    case SSH#ssh.compress of
+	none ->
+	    Data;
+	zlib ->
+	    Compressed = zlib:deflate(get(compress_ctx), Data, sync),
+	    ?dbg(?DBG_ZLIB, "deflate: ~p -> ~p\n", [Data, Compressed]),
+	    list_to_binary(Compressed);
+	_ ->
+	    exit({bad_algorithm,SSH#ssh.compress})
+    end.    
+
+    
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Decompression
+%%   context stored in dictionary as 'decompress_ctx'
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+decompress_init(SSH) ->
+    case SSH#ssh.decompress of
+	none ->
+	    {ok,SSH};
+	zlib ->
+	    Z = zlib:open(),
+	    case zlib:inflateInit(Z) of
+		ok ->
+		    put(decompress_ctx, Z),
+		    {ok,SSH};
+		Error ->
+		    zlib:close(Z),
+		    Error
+	    end;
+	_ ->
+	    exit({bad_algorithm,SSH#ssh.decompress})
+    end.
+
+decompress_final(SSH) ->
+    case SSH#ssh.decompress of
+	none ->
+	    {ok, SSH};
+	zlib ->
+	    zlib:close(get(decompress_ctx)),
+	    erase(decompress_ctx),
+	    {ok, SSH#ssh { decompress = none }};
+	_ ->
+	    exit({bad_algorithm,SSH#ssh.decompress})
+    end.
+    
+decompress(SSH, Data) ->
+    case SSH#ssh.decompress of
+	none ->
+	    Data;
+	zlib ->
+	    Decompressed = zlib:inflate(get(decompress_ctx), Data),
+	    ?dbg(?DBG_ZLIB, "inflate: ~p -> ~p\n", [Data, Decompressed]),
+	    list_to_binary(Decompressed);
+	_ ->
+	    exit({bad_algorithm,SSH#ssh.decompress})
+    end.
+
 %%
-%%db_lookup(Db, Key) when atom(Key) ->
-%%    [Value] = db_lookup(Db, [Key]),
-%%    Value;
-%%db_lookup(Db, Keys) ->
-%%    db_lookup(Db, lists:reverse(Keys), []).
+%% macs
 %%
-%%db_lookup(Db, [], Acc) ->
-%%    Acc;
-%%db_lookup(Db, [owner_pid|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.owner_pid|Acc]);
-%%db_lookup(Db, [socket|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.socket|Acc]);
-%%db_lookup(Db, [cipher_cache|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.cipher_cache|Acc]);
-%%db_lookup(Db, [plain_cache|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.plain_cache|Acc]);
-%%db_lookup(Db, [msgs|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.msgs|Acc]);
-%%db_lookup(Db, [msgs_to_send|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.msgs_to_send|Acc]);
-%%db_lookup(Db, [ignore_one|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.ignore_one|Acc]);
-%%db_lookup(Db, [owner_window|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.owner_window|Acc]);
-%%db_lookup(Db, [kex|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.kex|Acc]);
-%%db_lookup(Db, [session_id|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.session_id|Acc]);
-%%db_lookup(Db, [iv_c2s|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.iv_c2s|Acc]);
-%%db_lookup(Db, [iv_s2c|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.iv_s2c|Acc]);
-%%db_lookup(Db, [seq_no_c2s|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.seq_no_c2s|Acc]);
-%%db_lookup(Db, [seq_no_s2c|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.seq_no_s2c|Acc]);
-%%db_lookup(Db, [kex_alg|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.kex_alg|Acc]);
-%%db_lookup(Db, [pub_key_alg|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.pub_key_alg|Acc]);
-%%db_lookup(Db, [cipher_c2s|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.cipher_c2s|Acc]);
-%%db_lookup(Db, [cipher_s2c|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.cipher_s2c|Acc]);
-%%db_lookup(Db, [mac_c2s|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.mac_c2s|Acc]);
-%%db_lookup(Db, [mac_s2c|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.mac_s2c|Acc]);
-%%db_lookup(Db, [compr_c2s|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.compr_c2s|Acc]);
-%%db_lookup(Db, [compr_s2c|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.compr_s2c|Acc]);
-%%db_lookup(Db, [enc_key_c2s|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.enc_key_c2s|Acc]);
-%%db_lookup(Db, [enc_key_s2c|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.enc_key_s2c|Acc]);
-%%db_lookup(Db, [auth_key_c2s|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.auth_key_c2s|Acc]);
-%%db_lookup(Db, [auth_key_s2c|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.auth_key_s2c|Acc]);
-%%db_lookup(Db, [bytes_sent|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.bytes_sent|Acc]);
-%%db_lookup(Db, [bytes_recvd|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.bytes_recvd|Acc]);
-%%db_lookup(Db, [vsn_c|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.vsn_c|Acc]);
-%%db_lookup(Db, [vsn_s|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.vsn_s|Acc]);
-%%db_lookup(Db, [server_key_fun|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.server_key_fun|Acc]);
-%%db_lookup(Db, [error_code|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.error_code|Acc]);
-%%db_lookup(Db, [options|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.options|Acc]);
-%%db_lookup(Db, [next|Keys], Acc) ->
-%%    db_lookup(Db, Keys, [Db#ssh.next|Acc]).
+%%     hmac-sha1    REQUIRED        HMAC-SHA1 (digest length = key
+%%                                  length = 20)
+%%     hmac-sha1-96 RECOMMENDED     first 96 bits of HMAC-SHA1 (digest
+%%                                  length = 12, key length = 20)
+%%     hmac-md5     OPTIONAL        HMAC-MD5 (digest length = key
+%%                                  length = 16)
+%%     hmac-md5-96  OPTIONAL        first 96 bits of HMAC-MD5 (digest
+%%                                  length = 12, key length = 16)
+%%     none         OPTIONAL        no MAC; NOT RECOMMENDED
 %%
-%%db_destroy(Db) ->
-%%    ok.
 
-deliver_msgs(0, Pid, Msgs) ->
-    {0, Msgs};
-deliver_msgs(Count, Pid, []) ->
-    {Count, []};
-deliver_msgs(Count, Pid, [Msg|Msgs]) ->
-    Pid ! {ssh_transport, self(), Msg},
-    deliver_msgs(Count - 1, Pid, Msgs).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% MAC calculation
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-sized_binary(Binary) when binary(Binary) ->
-    <<(size(Binary)):32/integer, Binary/binary>>;
-sized_binary(List) ->
-    sized_binary(list_to_binary(List)).
+send_mac_init(SSH) ->
+    case SSH#ssh.role of
+	client ->
+	    Key = hash(SSH, "E", mac_key_size(SSH#ssh.send_mac)),
+	    {ok, SSH#ssh { send_mac_key = Key }};
+	server ->
+	    Key = hash(SSH, "F", mac_key_size(SSH#ssh.send_mac)),
+	    {ok, SSH#ssh { send_mac_key = Key }}
+    end.
 
-%%%----------------------------------------------------------------------
-%%% #4     CODE FOR TEMPORARY CORRECTIONS
-%%%----------------------------------------------------------------------
+send_mac_final(SSH) ->
+    {ok, SSH#ssh {  send_mac = none, send_mac_key = undefined }}.
 
-dump_config_imp(State) ->
-    ListOfInterestingConfigs =
-        [owner_pid,
-         socket,
-         cipher_cache,
-         plain_cache,
-         msgs,
-         msgs_to_send,
-         ignore_one,
-         owner_window,
-         session_id,
-         seq_no_c2s,
-         seq_no_s2c,
-         kex_alg,
-         pub_key_alg,
-         cipher_c2s,
-         cipher_s2c,
-         mac_c2s,
-         mac_s2c,
-         compr_c2s,
-         compr_s2c,
-         enc_key_c2s,
-         enc_key_s2c,
-         auth_key_c2s,
-         auth_key_s2c,
-         bytes_sent,
-         bytes_recvd,
-         vsn_s,
-         error_code],
-    io:format("Ssh Transport ~p:~n", [self()]),
-    [dump_config_imp(X, State) || X <- ListOfInterestingConfigs],
-    ok.
+send_mac(SSH, Data, Seq) ->
+    case SSH#ssh.send_mac of
+	none -> 
+	    <<>>;
+	'hmac-sha1' ->
+	    crypto:sha_mac(SSH#ssh.send_mac_key, [<<?UINT32(Seq)>>, Data]);
+	'hmac-sha1-96' ->
+	    crypto:sha_mac_96(SSH#ssh.send_mac_key, [<<?UINT32(Seq)>>, Data]);
+	'hmac-md5' ->
+	    crypto:md5_mac(SSH#ssh.send_mac_key, [<<?UINT32(Seq)>>, Data]);
+	'hmac-md5-96' ->
+	    crypto:md5_mac_96(SSH#ssh.send_mac_key, [<<?UINT32(Seq)>>, Data]);
+	_ ->
+	    exit({bad_algorithm,SSH#ssh.send_mac})
+    end.
+	
 
-dump_config_imp(CacheName, State)
-  when CacheName == cipher_cache; CacheName == plain_cache ->
-    NiceString =
-        case db_lookup(State, CacheName) of
-            {Size, Cache} when Size > 100 ->
-                [Hd, _] = split_data([100], Cache),
-                lists:flatten(
-                  io_lib:format("~p", [{Size, list_to_binary([Hd])}]));
-            {Size, Cache} ->
-                lists:flatten(
-                  io_lib:format("~p", [{Size, list_to_binary([Cache])}]))
-        end,
-    ShortString = case length(NiceString) of
-                      Length when Length < 144 ->
-                          NiceString;
-                      _ ->
-                          NiceString1 = lists:sublist(NiceString, 144),
-                          {ok, NiceString2, _} =
-                              regexp:sub(NiceString1, ", [^, ]*...$$", ", ..."),
-                          NiceString2
-                  end,
-    io:format(" ~-13w: ~s~n", [CacheName, ShortString]);
-dump_config_imp(vsn_s, State) ->
-    <<VsnSSize:32/integer, VsnS/binary>> =
-        list_to_binary([(db_lookup(State, vsn_s))]),
-    io:format(" ~-13w: ~p~n", [vsn_s, binary_to_list(VsnS)]);
-dump_config_imp(SequenceNo, State)
-  when SequenceNo == seq_no_c2s; SequenceNo == seq_no_s2c ->
-    <<Seq:32/integer>> = db_lookup(State, SequenceNo),
-    io:format(" ~-13w: ~p~n", [SequenceNo, Seq]);
-dump_config_imp(Msgs, State)
-  when Msgs == msgs; Msgs == msgs_to_send ->
-    case db_lookup(State, Msgs) of
-        [] ->
-            io:format(" ~-13w: ~p~n", [Msgs, []]);
-        MsgsData ->
-            TruncText =
-                lists:flatten(io_lib:format("...(~p)", [length(MsgsData)])),
-            LongString = lists:flatten(io_lib:format("~w", [MsgsData])),
-            ShortString =
-                case length(LongString) of
-                    LLength when LLength > 144 ->
-                        Tmp =
-                            lists:sublist(LongString, 144 + length(TruncText)),
-                        element(2, regexp:sub(Tmp, ", [^, ]*$$", TruncText));
-                    _ ->
-                        LongString        
-                end,   
-            io:format(" ~-13w: ~s~n", [Msgs, ShortString])
-    end;
-dump_config_imp(BinConf, State)
-  when BinConf == session_id; BinConf == enc_key_s2c; BinConf == enc_key_c2s;
-       BinConf == auth_key_s2c; BinConf == auth_key_c2s ->
-    BinConfValue = db_lookup(State, BinConf),
-    io:format(" ~-13w: ~p~n", [BinConf, hex_string(BinConfValue)]);
-dump_config_imp(ConfigName, State) ->
-    io:format(" ~-13w: ~p~n", [ConfigName, db_lookup(State, ConfigName)]).
+recv_mac_init(SSH) ->
+    case SSH#ssh.role of
+	client ->
+	    Key = hash(SSH, "F", mac_key_size(SSH#ssh.recv_mac)),
+	    {ok, SSH#ssh { recv_mac_key = Key }};
+	server ->
+	    Key = hash(SSH, "E", mac_key_size(SSH#ssh.recv_mac)),
+	    {ok, SSH#ssh { recv_mac_key = Key }}
+    end.
 
+recv_mac_final(SSH) ->
+    {ok, SSH#ssh { recv_mac = none, recv_mac_key = undefined }}.
+
+recv_mac(SSH, Data, Seq) ->
+    case SSH#ssh.recv_mac of
+	none -> 
+	    <<>>;
+	'hmac-sha1' ->
+	    crypto:sha_mac(SSH#ssh.recv_mac_key, [<<?UINT32(Seq)>>, Data]);
+	'hmac-sha1-96' ->
+	    crypto:sha_mac_96(SSH#ssh.recv_mac_key, [<<?UINT32(Seq)>>, Data]);
+	'hmac-md5' ->
+	    crypto:md5_mac(SSH#ssh.recv_mac_key, [<<?UINT32(Seq)>>, Data]);
+	'hmac-md5-96' ->
+	    crypto:md5_mac_96(SSH#ssh.recv_mac_key, [<<?UINT32(Seq)>>, Data]);
+	_ ->
+	    exit({bad_algorithm,SSH#ssh.recv_mac})
+    end.
+
+
+%% return N hash bytes (HASH)
+hash(SSH, Char, Bits) ->
+    HASH =
+	case SSH#ssh.kex of
+	    'diffie-hellman-group1-sha1' ->
+		fun(Data) -> crypto:sha(Data) end;
+	    'diffie-hellman-group-exchange-sha1' ->
+		fun(Data) -> crypto:sha(Data) end;
+	    _ ->
+		exit({bad_algorithm,SSH#ssh.kex})
+	end,
+    hash(SSH, Char, Bits, HASH).
+
+hash(_SSH, _Char, 0, _HASH) ->
+    <<>>;
+hash(SSH, Char, N, HASH) ->
+    K = ssh_bits:mpint(SSH#ssh.shared_secret),
+    H = SSH#ssh.exchanged_hash,
+    SessionID = SSH#ssh.session_id,
+    K1 = HASH([K, H, Char, SessionID]),
+    Sz = N div 8,
+    <<Key:Sz/binary, _/binary>> = hash(K, H, K1, N-128, HASH),
+    ?dbg(?DBG_KEX, "Key ~s: ~s\n", [Char, fmt_binary(Key, 16, 4)]),
+    Key.
+
+hash(_K, _H, Ki, N, _HASH) when N =< 0 ->
+    Ki;
+hash(K, H, Ki, N, HASH) ->
+    Kj = HASH([K, H, Ki]),
+    hash(K, H, <<Ki/binary, Kj/binary>>, N-128, HASH).
+%%
+%% calcuation of H (diffie-hellman-group1-sha1)
+%% Must use ssh#ssh.algorithms here because new algorithms
+%% are not install at this point
+%%
+kex_h(SSH, K_S, E, F, K) ->
+    L = ssh_bits:encode([SSH#ssh.c_version, SSH#ssh.s_version,
+			 SSH#ssh.c_keyinit, SSH#ssh.s_keyinit,
+			 K_S, E,F,K],
+			[string,string,string,string,string,
+			 mpint,mpint,mpint]),
+    crypto:sha(L).
+
+kex_h(SSH, K_S, Min, NBits, Max, Prime, Gen, E, F, K) ->
+    L = if Min==-1; Max==-1 ->
+		Ts = [string,string,string,string,string,
+		      uint32,
+		      mpint,mpint,mpint,mpint,mpint],
+		ssh_bits:encode([SSH#ssh.c_version,SSH#ssh.s_version,
+				 SSH#ssh.c_keyinit,SSH#ssh.s_keyinit,
+				 K_S, NBits, Prime, Gen, E,F,K],
+				Ts);
+	   true ->
+		Ts = [string,string,string,string,string,
+		      uint32,uint32,uint32,
+		      mpint,mpint,mpint,mpint,mpint],
+		ssh_bits:encode([SSH#ssh.c_version,SSH#ssh.s_version,
+				 SSH#ssh.c_keyinit,SSH#ssh.s_keyinit,
+				 K_S, Min, NBits, Max,
+				 Prime, Gen, E,F,K], Ts)
+	end,
+    crypto:sha(L).
+    
+    
+
+
+mac_key_size('hmac-sha1')    -> 20*8;
+mac_key_size('hmac-sha1-96') -> 20*8;
+mac_key_size('hmac-md5')     -> 16*8;
+mac_key_size('hmac-md5-96')  -> 16*8;
+mac_key_size(none) -> 0;
+mac_key_size(_) -> exit(bad_algoritm).
+
+mac_digest_size('hmac-sha1')    -> 20;
+mac_digest_size('hmac-sha1-96') -> 12;
+mac_digest_size('hmac-md5')    -> 20;
+mac_digest_size('hmac-md5-96') -> 12;
+mac_digest_size(none) -> 0;
+mac_digest_size(_) -> exit(bad_algoritm).
+
+%% integrity_char(send, client) -> "E";
+%% integrity_char(recv, server) -> "E";
+%% integrity_char(send, server) -> "F";
+%% integrity_char(recv, client) -> "F".
+    
+valid_mac(SSH, S, Data, Seq) ->
+    if SSH#ssh.recv_mac_size == 0 ->
+	    true;
+       true ->
+	    {ok,MAC0} = gen_tcp:recv(S, SSH#ssh.recv_mac_size),
+	    ?dbg(?DBG_MAC, "~p: MAC0=~p\n", [Seq, MAC0]),
+	    MAC1 = recv_mac(SSH, Data, Seq),
+	    ?dbg(?DBG_MAC, "~p: MAC1=~p\n", [Seq, MAC1]),
+	     MAC0 == MAC1
+    end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% Diffie-Hellman utils
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+dh_group1() ->
+    {2, 16#FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE65381FFFFFFFFFFFFFFFF}.
+
+dh_gen_key(G,P, _Bits) ->
+    Private = ssh_bits:irandom(ssh_bits:isize(P)-1, 1, 1),
+    Public = ssh_math:ipow(G, Private, P),
+    {Private,Public}.
+
+%% trim(Str) ->
+%%     reverse(trim_head(reverse(trim_head(Str)))).
+
+trim_tail(Str) ->
+    reverse(trim_head(reverse(Str))).
+
+trim_head([$\s|Cs]) -> trim_head(Cs);
+trim_head([$\t|Cs]) -> trim_head(Cs);
+trim_head([$\n|Cs]) -> trim_head(Cs);
+trim_head([$\r|Cs]) -> trim_head(Cs);
+trim_head(Cs) -> Cs.
+
+%%
+%% DEBUG utils
+%% Format integers and binaries as hex blocks
+%%
+-ifdef(debug).
+%% fmt_binary(B) ->
+%%     fmt_binary(B, 0, 0).
+
+%% fmt_binary(B, BlockSize) ->
+%%     fmt_binary(B, BlockSize, 0).
+
+fmt_binary(B, BlockSize, GroupSize) ->
+    fmt_block(fmt_bin(B), BlockSize, GroupSize).
+
+fmt_block(Bin, BlockSize, GroupSize) ->
+    fmt_block(Bin, BlockSize, 0, GroupSize).
+    
+
+fmt_block(Bin, 0, _I, _G) ->
+    binary_to_list(Bin);
+fmt_block(Bin, Sz, G, G) when G =/= 0 ->
+    ["\n" | fmt_block(Bin, Sz, 0, G)];
+fmt_block(Bin, Sz, I, G) ->
+    case Bin of
+	<<Block:Sz/binary, Tail/binary>> ->
+	    if Tail == <<>> ->
+		    [binary_to_list(Block)];
+	       true ->
+		    [binary_to_list(Block), " " | fmt_block(Tail, Sz, I+1, G)]
+	    end;
+	<<>> ->
+	    [];
+	_ -> 
+	    [binary_to_list(Bin)]
+    end.
+
+%% Format integer or binary as hex
+fmt_bin(X) when integer(X) ->
+    list_to_binary(io_lib:format("~.16B", [X]));
+fmt_bin(X) when binary(X) ->
+    Sz = size(X)*8,
+    <<Y:Sz/unsigned-big>> = X,
+    Fmt = "~"++integer_to_list(size(X)*2)++".16.0B",
+    list_to_binary(io_lib:format(Fmt, [Y])).
+
+-endif.
+
+%% Retrieve session_id from ssh, needed by public-key auth
+get_session_id(SSH) ->
+    {ok, SessionID} = call(SSH, get_session_id),
+    SessionID.

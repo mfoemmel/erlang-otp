@@ -121,7 +121,7 @@ fnvarset(Ds) when list(Ds) ->
 		fun(F,S1) when record(F,fn) ->
 			ordsets:add_element(F#fn.alias_var, S1)
 		end, S, D#disj_alt.fncalls)
-      end, ordsets:new_set(), Ds).
+      end, ordsets:new(), Ds).
 
 
 separate_constraints(Goals) ->
@@ -311,116 +311,116 @@ constraints_bindings([], Bs) ->
     Bs.
 
 %%%----------------------------------------------------------------
-remove_obsolete_subgoals(Disj, WantedVariables) ->
-    Res = 
-	remove_obsolete_subgoals(Disj, WantedVariables, ordsets:new_set(), []),
-    ?debugmsg(3, "~s\n", [mnemosyne_pp:body(Res)]),
-    Res.
+%% remove_obsolete_subgoals(Disj, WantedVariables) ->
+%%     Res = 
+%% 	remove_obsolete_subgoals(Disj, WantedVariables, ordsets:new(), []),
+%%     ?debugmsg(3, "~s\n", [mnemosyne_pp:body(Res)]),
+%%     Res.
 
-remove_obsolete_subgoals([Conj|Conjs], WantedVariables, Dset, Acc) 
-						when record(Conj,disj_alt) ->
-    {C,Set} = remove_obsolete_subgoals1(Conj#disj_alt.conj),
-    Sign = mk_sign(Conj#disj_alt.bs, 
-		   ordsets:union(mnemosyne_unify:variables(C),WantedVariables),
-		   Set),
-    case Conj#disj_alt.fncalls of
-	[] ->
-	    case ordsets:is_element(Sign,Dset) of
-		true ->
-		    remove_obsolete_subgoals(Conjs, WantedVariables, Dset, Acc);
-		false ->
-		    remove_obsolete_subgoals(Conjs, WantedVariables, 
-					     ordsets:add_element(Sign,Dset),
-					     [Conj#disj_alt{conj=C,sign=Sign}|Acc])
-	    end;
-	_ ->
-	    remove_obsolete_subgoals(Conjs, WantedVariables, 
-					     ordsets:add_element(Sign,Dset),
-				     [Conj#disj_alt{conj=C,sign=Sign}|Acc])
-    end;
-remove_obsolete_subgoals([], WantedVariables, Dset, Acc) ->
-    remove_parts(Acc).
-
-
-remove_obsolete_subgoals1(Goals) ->
-    remove_obsolete_subgoals1(Goals, ordsets:new_set(), []).
-
-remove_obsolete_subgoals1([Goal|Goals], Set, Acc) when record(Goal,pred_sym) ->
-    test_obsolete_goon({Goal#pred_sym.functor,
-			Goal#pred_sym.module,
-			Goal#pred_sym.args},
-		       Goal, Goals, Set, Acc);
-
-remove_obsolete_subgoals1([{'#not',C,Gs0}|Goals], Set, Acc) ->
-    {Gs,G_set} = remove_obsolete_subgoals1(Gs0),
-    test_obsolete_goon({'#not',C, G_set}, {'#not',C,Gs}, Goals, Set, Acc);
-
-remove_obsolete_subgoals1([Goal|Goals], Set, Acc) ->
-    remove_obsolete_subgoals1(Goals, Set, [Goal|Acc]);
-
-remove_obsolete_subgoals1([], Set, Acc) ->
-    {Acc, Set}.
+%% remove_obsolete_subgoals([Conj|Conjs], WantedVariables, Dset, Acc) 
+%% 						when record(Conj,disj_alt) ->
+%%     {C,Set} = remove_obsolete_subgoals1(Conj#disj_alt.conj),
+%%     Sign = mk_sign(Conj#disj_alt.bs, 
+%% 		   ordsets:union(mnemosyne_unify:variables(C),WantedVariables),
+%% 		   Set),
+%%     case Conj#disj_alt.fncalls of
+%% 	[] ->
+%% 	    case ordsets:is_element(Sign,Dset) of
+%% 		true ->
+%% 		    remove_obsolete_subgoals(Conjs, WantedVariables, Dset, Acc);
+%% 		false ->
+%% 		    remove_obsolete_subgoals(Conjs, WantedVariables, 
+%% 					     ordsets:add_element(Sign,Dset),
+%% 					     [Conj#disj_alt{conj=C,sign=Sign}|Acc])
+%% 	    end;
+%% 	_ ->
+%% 	    remove_obsolete_subgoals(Conjs, WantedVariables, 
+%% 					     ordsets:add_element(Sign,Dset),
+%% 				     [Conj#disj_alt{conj=C,sign=Sign}|Acc])
+%%     end;
+%% remove_obsolete_subgoals([], WantedVariables, Dset, Acc) ->
+%%     remove_parts(Acc).
 
 
+%% remove_obsolete_subgoals1(Goals) ->
+%%     remove_obsolete_subgoals1(Goals, ordsets:new(), []).
 
-%%%----
-test_obsolete_goon(Key, Goal, Goals, Set, Acc) ->
-    case ordsets:is_element(Key,Set) of
-	true ->					% Already there, remove
-	    remove_obsolete_subgoals1(Goals, Set, Acc);
-	false ->
-	    remove_obsolete_subgoals1(Goals, ordsets:add_element(Key,Set),
-				      [Goal|Acc])
-    end.
+%% remove_obsolete_subgoals1([Goal|Goals], Set, Acc) when record(Goal,pred_sym) ->
+%%     test_obsolete_goon({Goal#pred_sym.functor,
+%% 			Goal#pred_sym.module,
+%% 			Goal#pred_sym.args},
+%% 		       Goal, Goals, Set, Acc);
+
+%% remove_obsolete_subgoals1([{'#not',C,Gs0}|Goals], Set, Acc) ->
+%%     {Gs,G_set} = remove_obsolete_subgoals1(Gs0),
+%%     test_obsolete_goon({'#not',C, G_set}, {'#not',C,Gs}, Goals, Set, Acc);
+
+%% remove_obsolete_subgoals1([Goal|Goals], Set, Acc) ->
+%%     remove_obsolete_subgoals1(Goals, Set, [Goal|Acc]);
+
+%% remove_obsolete_subgoals1([], Set, Acc) ->
+%%     {Acc, Set}.
+
 
 
 %%%----
-mk_sign(Bs, Vars, Set) -> 
-    mk_sign1(mnemosyne_unify:bindings_to_list(Bs), Vars, Set).
+%% test_obsolete_goon(Key, Goal, Goals, Set, Acc) ->
+%%     case ordsets:is_element(Key,Set) of
+%% 	true ->					% Already there, remove
+%% 	    remove_obsolete_subgoals1(Goals, Set, Acc);
+%% 	false ->
+%% 	    remove_obsolete_subgoals1(Goals, ordsets:add_element(Key,Set),
+%% 				      [Goal|Acc])
+%%     end.
 
-mk_sign1([B|Bs], Vars, Set) -> 
-    case ordsets:is_element(element(1,B),Vars) of
-	true ->
-	    mk_sign1(Bs, Vars, add_sign(B,Set));
-	false ->
-	    mk_sign1(Bs, Vars, Set)
-    end;
-mk_sign1([], Vars, Set) -> 
-    Set.
-
-add_sign({V, {'#bind_trigger',L}}, Set) ->
-    add_signL(V, L, Set);
-add_sign(B, Set) ->
-    ordsets:add_element({'#binding',B},Set).
-
-add_signL(V, [T|Ts], Set) ->
-    add_signL(V, Ts, 
-	      ordsets:add_element({'#binding',{V,{'#bind_trigger',T}}}, Set));
-add_signL(V, [], Set) ->
-    Set.
 
 %%%----
-remove_parts(Conjs) -> 
-    lists:map(fun(C) ->
-		      C#disj_alt{sign=[]}
-	      end, Conjs).  %%%% arg to map was: remove_parts(Conjs, [])).
+%% mk_sign(Bs, Vars, Set) -> 
+%%     mk_sign1(mnemosyne_unify:bindings_to_list(Bs), Vars, Set).
 
-remove_parts([Conj|Post], Pre) ->
-    NewPre = test_more_general(Conj, Pre),
-    NewPost = test_more_general(Conj, Post),
-    remove_parts(NewPost, [Conj|NewPre]);
-remove_parts([], Pre) ->
-    Pre.
+%% mk_sign1([B|Bs], Vars, Set) -> 
+%%     case ordsets:is_element(element(1,B),Vars) of
+%% 	true ->
+%% 	    mk_sign1(Bs, Vars, add_sign(B,Set));
+%% 	false ->
+%% 	    mk_sign1(Bs, Vars, Set)
+%%     end;
+%% mk_sign1([], Vars, Set) -> 
+%%     Set.
 
-test_more_general(Conj, [C|Cs]) ->
-    case ordsets:subset(Conj#disj_alt.sign, C#disj_alt.sign) of
-	true -> %% C is more restricted, remove it
-	    test_more_general(Conj, Cs);
-	false -> %% Keep C
-	    [C | test_more_general(Conj, Cs)]
-    end;
-test_more_general(Conj, []) ->
-    [].
+%% add_sign({V, {'#bind_trigger',L}}, Set) ->
+%%     add_signL(V, L, Set);
+%% add_sign(B, Set) ->
+%%     ordsets:add_element({'#binding',B},Set).
+
+%% add_signL(V, [T|Ts], Set) ->
+%%     add_signL(V, Ts, 
+%% 	      ordsets:add_element({'#binding',{V,{'#bind_trigger',T}}}, Set));
+%% add_signL(V, [], Set) ->
+%%     Set.
+
+%%%----
+%% remove_parts(Conjs) -> 
+%%     lists:map(fun(C) ->
+%% 		      C#disj_alt{sign=[]}
+%% 	      end, Conjs).  %%%% arg to map was: remove_parts(Conjs, [])).
+
+%% remove_parts([Conj|Post], Pre) ->
+%%     NewPre = test_more_general(Conj, Pre),
+%%     NewPost = test_more_general(Conj, Post),
+%%     remove_parts(NewPost, [Conj|NewPre]);
+%% remove_parts([], Pre) ->
+%%     Pre.
+
+%% test_more_general(Conj, [C|Cs]) ->
+%%     case ordsets:is_subset(Conj#disj_alt.sign, C#disj_alt.sign) of
+%% 	true -> %% C is more restricted, remove it
+%% 	    test_more_general(Conj, Cs);
+%% 	false -> %% Keep C
+%% 	    [C | test_more_general(Conj, Cs)]
+%%     end;
+%% test_more_general(Conj, []) ->
+%%     [].
 
 %%%----------------------------------------------------------------
 %% Now check if the query could be run as a mnesia:match_object operation or if
@@ -454,23 +454,21 @@ how_to_eval(_, _, _, Z) ->
 
 test_range_restricted(_,_) ->
     ?not_yet(remove_obsolete_clauses),
-    ok;
-
-
-test_range_restricted(Pattern, [C|Cs]) ->
-    BoundPattern = mnemosyne_unify:instantiate(Pattern, C#disj_alt.bs),
-    case catch test_range_restricted(BoundPattern, C) of
-	{error, {Line,Mod,{not_range_restricted,Vars}}} ->
-	    throw({error,
-		   {0,?MODULE, {not_range_restricted,Vars,C#disj_alt.conj}}});
-	{error, Others} ->
-	    throw({error,Others});
-	Others ->
-	    Others
-    end,
-    test_range_restricted(Pattern, Cs);
-test_range_restricted(_, []) ->
     ok.
+%% test_range_restricted(Pattern, [C|Cs]) ->
+%%     BoundPattern = mnemosyne_unify:instantiate(Pattern, C#disj_alt.bs),
+%%     case catch test_range_restricted(BoundPattern, C) of
+%% 	{error, {Line,Mod,{not_range_restricted,Vars}}} ->
+%% 	    throw({error,
+%% 		   {0,?MODULE, {not_range_restricted,Vars,C#disj_alt.conj}}});
+%% 	{error, Others} ->
+%% 	    throw({error,Others});
+%% 	Others ->
+%% 	    Others
+%%     end,
+%%     test_range_restricted(Pattern, Cs);
+%% test_range_restricted(_, []) ->
+%%     ok.
 
 
 %%%----------------------------------------------------------------
@@ -532,7 +530,7 @@ disj_bs_to_set(C) ->
 	    {'#bindings',_,X} -> X;
 	    _ when record(C,disj_alt) -> C#disj_alt.bs
 	end,
-    ordsets:list_to_set( mnemosyne_unify:bindings_to_list(Bs) ).
+    ordsets:from_list( mnemosyne_unify:bindings_to_list(Bs) ).
 
 %%%----------------------------------------------------------------
 subgoal_ordering(Opr) ->
@@ -667,7 +665,7 @@ push_function_calls1(D) ->
 
 
 push_function_calls1([FnCall|FnCalls], FnRest, Gs, VarsWithValue) ->
-    case ordsets:subset(mnemosyne_unify:variables(FnCall#fn.fndef), 
+    case ordsets:is_subset(mnemosyne_unify:variables(FnCall#fn.fndef), 
 			VarsWithValue) of
 	true -> %% All function arguments are bound, insert fn call
 	    [FnCall |
@@ -764,9 +762,9 @@ adornments_disj([D|Ds], Ncommonvars, WantedVars, Acc) when record(D,disj_alt)->
 	    D#disj_alt.fncalls},
 	   mnemosyne_unify:count_bs_vars(D#disj_alt.bs, Ncommonvars)),
 
-    S2 = ordsets:list_to_set(mnemosyne_unify:sing_vars(S1, [])),
+    S2 = ordsets:from_list(mnemosyne_unify:sing_vars(S1, [])),
     SingVars = ordsets:subtract(S2, WantedVars),
-    DefVars = ordsets:new_set(),
+    DefVars = ordsets:new(),
     adornments_disj(Ds, Ncommonvars, WantedVars, 
 		    [D#disj_alt{conj=adornments(D#disj_alt.conj,
 						DefVars,SingVars)}

@@ -705,209 +705,9 @@ terminate(_Reason, _State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 
-code_change(_Vsn, S, upgrade_from_pre_2_2_0) ->
-    ?d("code_change(upgrade_from_pre_2_2_0) -> entry", []),
-    NewVals = [{recv_pending_limit, infinity}],
-    upgrade_user_info(NewVals),
-    upgrade_conn_info(),
-    {ok, S};
-
-code_change(_Vsn, S, downgrade_from_2_2_0) ->
-    ?d("code_change(downgrade_from_2_2_0) -> entry", []),
-    NewItems = [recv_pending_limit],
-    downgrade_user_info(NewItems),
-    downgrade_conn_info(),
-    {ok, S};
-
 code_change(_Vsn, S, _Extra) ->
     {ok, S}.
 
-
-
-%% ------
-%% These function is used to upgrade user and connection info when
-%% the conn_data record has been changed.
-%% 
-
-upgrade_user_info(NewVals) ->
-    Users = [default|system_info(users)],
-    F = fun({Item, Val}) ->
-		do_upgrade_user_info(Users, Item, Val)
-	end,
-    lists:foreach(F, NewVals),
-    ok.
-
-do_upgrade_user_info([], _Item, _Val) ->
-    ok;
-do_upgrade_user_info([Mid|Mids], Item, Val) ->
-    do_update_user(Mid, Item, Val),
-    do_upgrade_user_info(Mids, Item, Val).
-
-downgrade_user_info(NewItems) ->
-    ?d("downgrade_user_info -> entry", []),
-    Users = [default|system_info(users)],
-    F = fun(Item) ->
-		do_downgrade_user_info(Users, Item)
-	end,
-    lists:foreach(F, NewItems),
-    ok.
-
-do_downgrade_user_info([], _Item) ->
-    ok;
-do_downgrade_user_info([Mid|Mids], Item) ->
-    ?d("do_downgrade_user_info -> entry with: "
-	"~n   Mid:  ~p"
-	"~n   Item: ~p", [Mid, Item]),
-    ets:delete(megaco_config, {Mid, Item}),
-    do_downgrade_user_info(Mids, Item).
-
-upgrade_conn_info() ->
-    Conns = system_info(connections),
-    do_upgrade_conn_info(Conns, infinity),
-    ok.
-
-do_upgrade_conn_info([], _RecvPendingLimit) ->
-    ok;
-do_upgrade_conn_info([CH|Conns], RecvPendingLimit) ->
-    case lookup_local_conn(CH) of
-        [] ->
-            ok;
-	[CD] ->
-            do_upgrade_conn_data(CD, RecvPendingLimit)
-    end,
-    do_upgrade_conn_info(Conns, RecvPendingLimit).
-
-do_upgrade_conn_data(OldStyleCD, RecvPendingLimit) ->
-    NewStyleCD = new_conn_data(OldStyleCD, RecvPendingLimit),
-    ets:insert(megaco_local_conn, NewStyleCD).
-
-new_conn_data({conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
-	       AutoAck, 
-	       TransAck, TransAckMaxCnt, 
-	       TransReq, TransReqMaxCnt, TransReqMaxSz, 
-	       TransTmr, TransSndr, 
-	       
-	       PendingTmr, 
-	       SentPendingLimit, 
-	       %% RecvPendingLimit - This is where to insert the new values
-	       ReplyTmr, CtrPid, MonRef, 
-	       Sendmod, SendHandle, 
-	       EncodeMod, EncodeConf, 
-	       ProtV, AuthData, 
-	       UserMod, UserArgs, ReplyAction, ReplyData,
-	       Threaded}, 
-	      RecvPendingLimit) ->
-    #conn_data{conn_handle        = CH, 
-	       serial             = Serial,
-	       max_serial         = MaxSerial,
-	       request_timer      = ReqTmr,
-	       long_request_timer = LongReqTmr,
-	       
-	       auto_ack           = AutoAck,
-	       
-	       trans_ack          = TransAck,
-	       trans_ack_maxcount = TransAckMaxCnt,
-	       
-	       trans_req          = TransReq,
-	       trans_req_maxcount = TransReqMaxCnt,
-	       trans_req_maxsize  = TransReqMaxSz,
-	       
-	       trans_timer        = TransTmr,
-	       trans_sender       = TransSndr,
-	       
-	       pending_timer      = PendingTmr,
-	       sent_pending_limit = SentPendingLimit,
-	       recv_pending_limit = RecvPendingLimit, %% The new value
-
-	       reply_timer        = ReplyTmr,
-	       control_pid        = CtrPid,
-	       monitor_ref        = MonRef,
-	       send_mod           = Sendmod,
-	       send_handle        = SendHandle,
-	       encoding_mod       = EncodeMod,
-	       encoding_config    = EncodeConf,
-	       protocol_version   = ProtV,
-	       auth_data          = AuthData,
-	       user_mod           = UserMod,
-	       user_args          = UserArgs,
-	       reply_action       = ReplyAction,
-	       reply_data         = ReplyData,
-	       threaded           = Threaded}.
-
-
-downgrade_conn_info() ->
-    ?d("downgrade_conn_info -> entry", []),
-    Conns = system_info(connections),
-    do_downgrade_conn_info(Conns),
-    ok.
-
-do_downgrade_conn_info([]) ->
-    ok;
-do_downgrade_conn_info([CH|Conns]) ->
-    ?d("do_downgrade_conn_info -> entry with: "
-	"~n   CH: ~p", [CH]),
-    case lookup_local_conn(CH) of
-        [] ->
-            ok;
-	[CD] ->
-            do_downgrade_conn_data(CD)
-    end,
-    do_downgrade_conn_info(Conns).
-
-do_downgrade_conn_data(NewStyleCD) ->
-    OldStyleCD = old_conn_data(NewStyleCD),
-    ets:insert(megaco_local_conn, OldStyleCD).
-
-old_conn_data(#conn_data{conn_handle        = CH, 
-			 serial             = Serial,
-			 max_serial         = MaxSerial,
-			 request_timer      = ReqTmr,
-			 long_request_timer = LongReqTmr,
-			 
-			 auto_ack           = AutoAck,
-			 
-			 trans_ack          = TransAck,
-			 trans_ack_maxcount = TransAckMaxCnt,
-			 
-			 trans_req          = TransReq,
-			 trans_req_maxcount = TransReqMaxCnt,
-			 trans_req_maxsize  = TransReqMaxSz,
-			 
-			 trans_timer        = TransTmr,
-			 trans_sender       = TransSndr,
-			 
-			 pending_timer      = PendingTmr,
-			 sent_pending_limit = SentPendingLimit,
-			 %% recv_pending_limit = RecvPendingLimit, 
-			 
-			 reply_timer        = ReplyTmr,
-			 control_pid        = CtrPid,
-			 monitor_ref        = MonRef,
-			 send_mod           = Sendmod,
-			 send_handle        = SendHandle,
-			 encoding_mod       = EncodeMod,
-			 encoding_config    = EncodeConf,
-			 protocol_version   = ProtV,
-			 auth_data          = AuthData,
-			 user_mod           = UserMod,
-			 user_args          = UserArgs,
-			 reply_action       = ReplyAction,
-			 reply_data         = ReplyData,
-			 threaded           = Threaded}) ->
-    {conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
-     AutoAck, 
-     TransAck, TransAckMaxCnt, 
-     TransReq, TransReqMaxCnt, TransReqMaxSz, 
-     TransTmr, TransSndr, 
-     PendingTmr, 
-     SentPendingLimit, 
-     %% RecvPendingLimit 
-     ReplyTmr, CtrPid, MonRef, 
-     Sendmod, SendHandle, 
-     EncodeMod, EncodeConf, 
-     ProtV, AuthData, 
-     UserMod, UserArgs, ReplyAction, ReplyData,
-     Threaded}.
 
 
 %%%----------------------------------------------------------------------
@@ -1017,9 +817,14 @@ verify_timer(Timer) when record(Timer, megaco_incr_timer) ->
     (verify_strict_int(Timer#megaco_incr_timer.wait_for) and
      verify_strict_int(Timer#megaco_incr_timer.factor)   and
      verify_strict_int(Timer#megaco_incr_timer.incr)     and
-     verify_int(Timer#megaco_incr_timer.max_retries));
+     verify_max_retries(Timer#megaco_incr_timer.max_retries));
 verify_timer(Timer) ->
     verify_int(Timer).
+
+verify_max_retries(infinity_restartable) ->
+    true;
+verify_max_retries(Int) ->
+    verify_int(Int).
 
 handle_stop_user(UserMid) ->
     case catch user_info(UserMid, mid) of

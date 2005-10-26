@@ -26,7 +26,6 @@
 	remove/1, remove_all/1, config/1]).
 
 -define(VMODULE,"CONF").
--include("httpd_verbosity.hrl").
 -include("httpd.hrl").
 
 %%%=========================================================================
@@ -149,7 +148,6 @@ check_enum(Enum, [_NotValid|Rest]) ->
 
 %% Phase 1: Load
 load(ConfigFile) ->
-    ?CDEBUG("load -> ConfigFile: ~p",[ConfigFile]),
     case read_config_file(ConfigFile) of
 	{ok, Config} ->
 	    case bootstrap(Config) of
@@ -165,7 +163,6 @@ load(ConfigFile) ->
 load(eof, []) ->
     eof;
 load("MaxHeaderSize " ++ MaxHeaderSize, []) ->
-    ?DEBUG("load -> MaxHeaderSize: ~p",[MaxHeaderSize]),
     case make_integer(MaxHeaderSize) of
         {ok, Integer} ->
             {ok, [], {max_header_size,Integer}};
@@ -174,10 +171,8 @@ load("MaxHeaderSize " ++ MaxHeaderSize, []) ->
                           " is an invalid number of MaxHeaderSize")}
     end;
 load("MaxHeaderAction " ++ Action, []) ->
-    ?DEBUG("load -> MaxHeaderAction: ~p",[Action]),
     {ok, [], {max_header_action,list_to_atom(clean(Action))}};
 load("MaxBodySize " ++ MaxBodySize, []) ->
-    ?DEBUG("load -> MaxBodySize: ~p",[MaxBodySize]),
     case make_integer(MaxBodySize) of
         {ok, Integer} ->
             {ok, [], {max_body_size,Integer}};
@@ -186,13 +181,10 @@ load("MaxBodySize " ++ MaxBodySize, []) ->
                           " is an invalid number of MaxBodySize")}
     end;
 load("MaxBodyAction " ++ Action, []) ->
-    ?DEBUG("load -> MaxBodyAction: ~p",[Action]),
     {ok, [], {max_body_action,list_to_atom(clean(Action))}};
 load("ServerName " ++ ServerName, []) ->
-    ?DEBUG("load -> ServerName: ~p",[ServerName]),
     {ok,[],{server_name,clean(ServerName)}};
 load("SocketType " ++ SocketType, []) ->
-    ?DEBUG("load -> SocketType: ~p",[SocketType]),
     case check_enum(clean(SocketType),["ssl","ip_comm"]) of
 	{ok, ValidSocketType} ->
 	    {ok, [], {com_type,ValidSocketType}};
@@ -200,7 +192,6 @@ load("SocketType " ++ SocketType, []) ->
 	    {error, ?NICE(clean(SocketType) ++ " is an invalid SocketType")}
     end;
 load("Port " ++ Port, []) ->
-    ?DEBUG("load -> Port: ~p",[Port]),
     case make_integer(Port) of
 	{ok, Integer} ->
 	    {ok, [], {port,Integer}};
@@ -208,7 +199,6 @@ load("Port " ++ Port, []) ->
 	    {error, ?NICE(clean(Port)++" is an invalid Port")}
     end;
 load("BindAddress " ++ Address, []) ->
-    ?DEBUG("load -> Address:  ~p",[Address]),
     %% If an ipv6 address is provided in URL-syntax strip the
     %% url specific part e.i. "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]"
     %% -> "FEDC:BA98:7654:3210:FEDC:BA98:7654:3210"
@@ -219,15 +209,12 @@ load("BindAddress " ++ Address, []) ->
 	"*" ->
 	    {ok, [], {bind_address,any}};
 	CAddress ->
-	    ?CDEBUG("load -> CAddress:  ~p",[CAddress]),
 	    case (catch inet:getaddr(CAddress,inet6)) of
 		{ok, IPAddr} ->
-		    ?CDEBUG("load -> IPAddr:  ~p",[IPAddr]),
 		    {ok, [], {bind_address, IPAddr}};
 		_ ->
 		    case inet:getaddr(CAddress, inet) of
 			{ok, IPAddr} ->
-			    ?CDEBUG("load -> IPAddr:  ~p",[IPAddr]),
 			    {ok, [], {bind_address,IPAddr}};
 			{error, _} ->
 			    {error, ?NICE(CAddress++" is an invalid address")}
@@ -286,7 +273,6 @@ load("ServerRoot " ++ ServerRoot, []) ->
 	    {error, ?NICE(clean(ServerRoot)++" is an invalid ServerRoot")}
     end;
 load("MaxClients " ++ MaxClients, []) ->
-    ?DEBUG("load -> MaxClients: ~p",[MaxClients]),
     case make_integer(MaxClients) of
 	{ok, Integer} ->
 	    {ok, [], {max_clients,Integer}};
@@ -304,7 +290,6 @@ load("DocumentRoot " ++ DocumentRoot,[]) ->
 load("DefaultType " ++ DefaultType, []) ->
     {ok, [], {default_type,clean(DefaultType)}};
 load("SSLCertificateFile " ++ SSLCertificateFile, []) ->
-    ?DEBUG("load -> SSLCertificateFile: ~p",[SSLCertificateFile]),
     case is_file(clean(SSLCertificateFile)) of
 	{ok, File} ->
 	    {ok, [], {ssl_certificate_file,File}};
@@ -313,7 +298,6 @@ load("SSLCertificateFile " ++ SSLCertificateFile, []) ->
 			  " is an invalid SSLCertificateFile")}
     end;
 load("SSLCertificateKeyFile " ++ SSLCertificateKeyFile, []) ->
-    ?DEBUG("load -> SSLCertificateKeyFile: ~p",[SSLCertificateKeyFile]),
     case is_file(clean(SSLCertificateKeyFile)) of
 	{ok, File} ->
 	    {ok, [], {ssl_certificate_key_file,File}};
@@ -322,7 +306,6 @@ load("SSLCertificateKeyFile " ++ SSLCertificateKeyFile, []) ->
 			  " is an invalid SSLCertificateKeyFile")}
     end;
 load("SSLVerifyClient " ++ SSLVerifyClient, []) ->
-    ?DEBUG("load -> SSLVerifyClient: ~p",[SSLVerifyClient]),
     case make_integer(clean(SSLVerifyClient)) of
 	{ok, Integer} when Integer >=0,Integer =< 2 ->
 	    {ok, [], {ssl_verify_client,Integer}};
@@ -334,7 +317,6 @@ load("SSLVerifyClient " ++ SSLVerifyClient, []) ->
 			 " is an invalid SSLVerifyClient")}
     end;
 load("SSLVerifyDepth " ++ SSLVerifyDepth, []) ->
-    ?DEBUG("load -> SSLVerifyDepth: ~p",[SSLVerifyDepth]),
     case make_integer(clean(SSLVerifyDepth)) of
 	{ok, Integer} when Integer > 0 ->
 	    {ok, [], {ssl_verify_client_depth,Integer}};
@@ -346,7 +328,6 @@ load("SSLVerifyDepth " ++ SSLVerifyDepth, []) ->
 			 " is an invalid SSLVerifyDepth")}
     end;
 load("SSLCiphers " ++ SSLCiphers, []) ->
-    ?DEBUG("load -> SSLCiphers: ~p",[SSLCiphers]),
     {ok, [], {ssl_ciphers, clean(SSLCiphers)}};
 load("SSLCACertificateFile " ++ SSLCACertificateFile, []) ->
     case is_file(clean(SSLCACertificateFile)) of
@@ -357,13 +338,9 @@ load("SSLCACertificateFile " ++ SSLCACertificateFile, []) ->
 			  " is an invalid SSLCACertificateFile")}
     end;
 load("SSLPasswordCallbackModule " ++ SSLPasswordCallbackModule, []) ->
-    ?DEBUG("load -> SSLPasswordCallbackModule: ~p",
-	   [SSLPasswordCallbackModule]),
     {ok, [], {ssl_password_callback_module,
 	      list_to_atom(clean(SSLPasswordCallbackModule))}};
 load("SSLPasswordCallbackFunction " ++ SSLPasswordCallbackFunction, []) ->
-    ?DEBUG("load -> SSLPasswordCallbackFunction: ~p",
-	   [SSLPasswordCallbackFunction]),
     {ok, [], {ssl_password_callback_function,
 	      list_to_atom(clean(SSLPasswordCallbackFunction))}};
 load("DisableChunkedTransferEncodingSend " ++ TrueOrFalse, []) ->
@@ -391,9 +368,7 @@ store(ConfigList) ->
     Port = httpd_util:key1search(ConfigList, port),
     Addr = httpd_util:key1search(ConfigList,bind_address),
     Name = httpd_util:make_name("httpd_conf",Addr,Port),
-    ?CDEBUG("store -> Name = ~p",[Name]),
     ConfigDB = ets:new(Name, [named_table, bag, protected]),
-    ?CDEBUG("store -> ConfigDB = ~p",[ConfigDB]),
     store(ConfigDB, ConfigList, lists:append(Modules,[?MODULE]),ConfigList).
 
 store({mime_types,MimeTypesList},ConfigList) ->
@@ -451,7 +426,6 @@ bootstrap([Line|Config]) ->
 		ok ->
 		    {ok, TheMods};
 		{error, Reason} ->
-		    ?ERROR("bootstrap -> : validation failed: ~p",[Reason]),
 		    {error, Reason}
 	    end;
 	_ ->
@@ -471,12 +445,10 @@ load_config([], _Modules, _Contexts, ConfigList) ->
 			  " must be specified in the config file")}
     end;
 load_config([Line|Config], Modules, Contexts, ConfigList) ->
-    ?CDEBUG("load_config -> Line: ~p",[Line]),
     case load_traverse(Line, Contexts, Modules, [], ConfigList, no) of
 	{ok, NewContexts, NewConfigList} ->
 	    load_config(Config, Modules, NewContexts, NewConfigList);
 	{error, Reason} -> 
-	    ?ERROR("load_config -> traverse failed: ~p",[Reason]),
 	    {error, Reason}
     end.
 
@@ -603,31 +575,18 @@ a_must(ConfigList,[Directive|Rest]) ->
 
 %% Pahse 2: store
 store(ConfigDB, _ConfigList, _Modules,[]) ->
-    ?vtrace("store -> done",[]),
     {ok, ConfigDB};
 store(ConfigDB, ConfigList, Modules, [ConfigListEntry|Rest]) ->
-    ?vtrace("store -> entry with"
-	    "~n   ConfigListEntry: ~p",[ConfigListEntry]),
     case store_traverse(ConfigListEntry,ConfigList,Modules) of
 	{ok, ConfigDBEntry} when tuple(ConfigDBEntry) ->
-	    ?vtrace("store -> ConfigDBEntry(tuple): "
-		    "~n   ~p",[ConfigDBEntry]),
-	    ?CDEBUG("store -> ConfigDBEntry(tuple): "
-		    "~n   ~p",[ConfigDBEntry]),
 	    ets:insert(ConfigDB,ConfigDBEntry),
 	    store(ConfigDB,ConfigList,Modules,Rest);
 	{ok, ConfigDBEntry} when list(ConfigDBEntry) ->
-	    ?vtrace("store -> ConfigDBEntry(list): "
-		    "~n   ~p",[ConfigDBEntry]),
-	    ?CDEBUG("store -> ConfigDBEntry(list): "
-		"~n   ~p",[ConfigDBEntry]),
 	    lists:foreach(fun(Entry) ->
 				  ets:insert(ConfigDB,Entry)
 			  end,ConfigDBEntry),
 	    store(ConfigDB,ConfigList,Modules,Rest);
 	{error, Reason} ->
-	    ?vlog("store -> error: ~p",[Reason]),
-	    ?ERROR("store -> error: ~p",[Reason]),
 	    {error,Reason}
     end.
 
@@ -640,7 +599,6 @@ store_traverse(ConfigListEntry, ConfigList, [Module|Rest]) ->
 	{'EXIT',{undef, _}} ->
 	    store_traverse(ConfigListEntry,ConfigList,Rest);
 	{'EXIT', Reason} ->
-	    ?vinfo("store_traverse -> exit: ~p",[Reason]),
 	    error_logger:error_report({'EXIT',Reason}),
 	    store_traverse(ConfigListEntry,ConfigList,Rest);
 	Result ->
@@ -659,23 +617,17 @@ store_mime_types1(MimeTypesDB,[Type|Rest]) ->
 
 %% Phase 3: remove
 remove_traverse(_ConfigDB,[]) ->
-    ?vtrace("remove_traverse -> done", []),
     ok;
 remove_traverse(ConfigDB,[Module|Rest]) ->
-    ?vtrace("remove_traverse -> call ~p:remove", [Module]),
     case (catch apply(Module,remove,[ConfigDB])) of
 	{'EXIT',{undef,_}} ->
-	    ?vtrace("remove_traverse -> undef", []),
 	    remove_traverse(ConfigDB,Rest);
 	{'EXIT',{function_clause,_}} ->
-	    ?vtrace("remove_traverse -> function_clause", []),
 	    remove_traverse(ConfigDB,Rest);
 	{'EXIT',Reason} ->
-	    ?vtrace("remove_traverse -> exit: ~p", [Reason]),
 	    error_logger:error_report({'EXIT',Reason}),
 	    remove_traverse(ConfigDB,Rest);
 	{error,Reason} ->
-	    ?vtrace("remove_traverse -> error: ~p", [Reason]),
 	    error_logger:error_report(Reason),
 	    remove_traverse(ConfigDB,Rest);
 	_ ->

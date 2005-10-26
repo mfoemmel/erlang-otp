@@ -21,7 +21,7 @@
 -include("snmp_verbosity.hrl").
 
 %% External exports
--export([start_link/3, get_note/2, set_note/4, verbosity/2]).
+-export([start_link/3, get_note/2, set_note/4, info/1, verbosity/2]).
 
 %% Internal exports
 -export([init/1, 
@@ -70,13 +70,16 @@ start_link(Prio, Mod, Opts) ->
 %% Interface functions.
 %%-----------------------------------------------------------------
 get_note(Pid, Key) ->
-    gen_server:call(Pid, {get_note, Key}, infinity).
+    call(Pid, {get_note, Key}).
 %% Lifetime is in 1/10 sec.
 set_note(Pid, Lifetime, Key, Value) ->
-    gen_server:call(Pid, {set_note, Lifetime, Key, Value}, infinity).
+    call(Pid, {set_note, Lifetime, Key, Value}).
+
+info(Pid) ->
+    call(Pid, info).
 
 verbosity(Pid, Verbosity) -> 
-    gen_server:cast(Pid,{verbosity,Verbosity}).
+    cast(Pid, {verbosity, Verbosity}).
 
 
 init([Prio, Mod, Opts]) ->
@@ -141,6 +144,11 @@ handle_call({get_note, Key}, _From,
     Val = handle_get_note(Notes, Mod, Key),
     ?vdebug("get note: ~p",[Val]),
     {reply, Val, State};
+
+handle_call(info, _From, #state{timer = Pid, notes = Notes} = State) ->
+    ?vlog("info",[]),
+    Info = get_info(Pid, Notes),
+    {reply, Info, State};
 
 handle_call(stop, _From, State) ->
     ?vlog("stop",[]),
@@ -337,6 +345,46 @@ gc(_Flag, [_ | T], Tab, Now) -> gc(work_to_do, T, Tab, Now);
 gc(Flag, [], _Tab, _Now) -> Flag.
     
     
+%%-----------------------------------------------------------------
+
+get_info(Tmr, Notes) ->
+    ProcSize = proc_mem(self()),
+    TMRSz    = proc_mem(Tmr),
+    NotesSz  = tab_size(Notes),
+    [{process_memory, [{notes, ProcSize}, {timer, TMRSz}]},
+     {db_memory, [{notes, NotesSz}]}].
+
+proc_mem(P) when pid(P) ->
+    case (catch erlang:process_info(P, memory)) of
+	{memory, Sz} ->
+	    Sz;
+	_ ->
+	    undefined
+    end;
+proc_mem(_) ->
+    undefined.
+
+tab_size(T) ->
+    case (catch ets:info(T, memory)) of
+	Sz when integer(Sz) ->
+	    Sz;
+	_ ->
+	    undefined
+    end.
+
+
+%%-----------------------------------------------------------------
+
+call(Pid, Req) ->
+    call(Pid, Req, infinity).
+
+call(Pid, Req, Timeout) ->
+    gen_server:call(Pid, Req, Timeout).
+
+cast(Pid, Msg) ->
+    gen_server:cast(Pid, Msg).
+
+
 %%-----------------------------------------------------------------
 
 error_msg(F, A) ->

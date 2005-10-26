@@ -146,15 +146,21 @@ send_to_port(Process *c_p, Eterm message,
 	return;
     }
 
-    if (c_p == NULL
-	|| (! IS_TRACED_FL(c_p, F_TRACE_SCHED | F_TIMESTAMP))) {
-	do_send_to_port(trace_port, message);
-	return;
-    }
-    /* Make a fake schedule only if the current process is traced
+    /*
+     * Make a fake schedule only if the current process is traced
      * with 'running' and 'timestamp'.
      */
 
+    if (c_p == NULL || (! IS_TRACED_FL(c_p, F_TRACE_SCHED | F_TIMESTAMP))) {
+	do_send_to_port(trace_port, message);
+	return;
+    }
+
+    /*
+     * Note that the process being traced for some type of trace messages
+     * (e.g. getting_linked) need not be the current process. That other
+     * process might not have timestamps enabled.
+     */
     if (*tracee_flags & F_TIMESTAMP) {
 	ASSERT(is_tuple(message));
 	hp = tuple_val(message);
@@ -172,6 +178,7 @@ send_to_port(Process *c_p, Eterm message,
 	hp += 4;
     }
 
+    trace_port->control_flags &= ~PORT_CONTROL_FLAG_HEAVY;
     do_send_to_port(trace_port, message);
 
     if (trace_port->control_flags & PORT_CONTROL_FLAG_HEAVY) {
@@ -184,7 +191,6 @@ send_to_port(Process *c_p, Eterm message,
 	 * just after writning the real trace message, and now gets scheduled
 	 * in again.
 	 */
-	trace_port->control_flags &= ~PORT_CONTROL_FLAG_HEAVY;
 	do_send_schedfix_to_port(trace_port, c_p->id, ts);
     }
 }
@@ -237,6 +243,7 @@ seq_trace_send_to_port(Process *c_p, Eterm message, Eterm timestamp)
 	hp += 4;
     }
 
+    trace_port->control_flags &= ~PORT_CONTROL_FLAG_HEAVY;
     do_send_to_port(trace_port, message);
 
     if (trace_port->control_flags & PORT_CONTROL_FLAG_HEAVY) {
@@ -249,7 +256,6 @@ seq_trace_send_to_port(Process *c_p, Eterm message, Eterm timestamp)
 	 * just after writning the real trace message, and now gets scheduled
 	 * in again.
 	 */
-	trace_port->control_flags &= ~PORT_CONTROL_FLAG_HEAVY;
 	do_send_schedfix_to_port(trace_port, c_p->id, ts);
     }
 }
@@ -1169,7 +1175,12 @@ trace_proc(Process *c_p, Process *t_p, Eterm what, Eterm data)
 	if (t_p->flags & F_TIMESTAMP) {
 	    hp = patch_ts(mess, hp);
 	}
-	send_to_port(c_p, mess, &t_p->tracer_proc, &t_p->flags);
+	if (what == am_exit) {
+	    /* No fake schedule out and in again after an exit */
+	    send_to_port(NULL, mess, &t_p->tracer_proc, &t_p->flags);
+	} else {
+	    send_to_port(c_p, mess, &t_p->tracer_proc, &t_p->flags);
+	}
     } else {
 	Eterm tmp;
 	Process *tracer;

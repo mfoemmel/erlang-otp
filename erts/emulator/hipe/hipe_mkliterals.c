@@ -1,14 +1,14 @@
 /*
  * $Id$
  */
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 #include <stdio.h>
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
 #include <math.h>
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
 #include "sys.h"
 #include "erl_vm.h"
 #include "global.h"

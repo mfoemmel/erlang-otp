@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_wiki.erl,v 1.6 2004/11/04 22:06:19 richardc Exp $
+%% $Id$
 %%
 %% @private
 %% @copyright 2001-2003 Richard Carlsson
@@ -23,13 +23,29 @@
 %% @end
 %% =====================================================================
 
-%% @doc EDoc wiki expansion.
+%% @doc EDoc wiki expansion, parsing and postprocessing of XML text.
+%% Uses {@link //xmerl. XMerL}.
+%% @end
 
-%% Whatever happens in this module, it must interact nicely with the
-%% following XML-parsing. E.g. auto-detecting paragraph breaks would be
-%% nice, but could be tricky to get right.
+%% Notes:
 %%
-%% The central reasoning for the code-quoting goes like this: I don't
+%% * Whatever happens in this module, it must interact nicely with the
+%% actual XML-parsing. It is not acceptable to break any existing and
+%% legal XML markup so that it does not parse or is rendered wrong.
+%%
+%% * The focus should always be on making *documentation* easier to
+%% write. No wiki notation should be introduced unless it is clear that
+%% it is better than using plain XHTML, making typing less cumbersome
+%% and the resulting text easier to read. The wiki notation should be a
+%% small bag of easy-to-remember tricks for making XHTML documentation
+%% easier to write, not a complete markup language in itself. As a
+%% typical example, it is hardly worthwile to introduce a special
+%% notation like say, ""..."" for emphasized text, since <em>...</em> is
+%% not much harder to write, not any less readable, and no more
+%% difficult to remember, especially since emphasis is not very often
+%% occurring in normal documentation.
+%%
+%% * The central reasoning for the code-quoting goes like this: I don't
 %% want to have special escape characters within the quotes (like
 %% backslash in C), to allow quoting of the quote characters themselves.
 %% I also don't want to use the "`" character both for opening and
@@ -51,17 +67,53 @@
 
 -module(edoc_wiki).
 
--export([expand/2]).
+-export([parse_xml/2, expand_text/2]).
 
 -include("edoc.hrl").
+-include("xmerl.hrl").
 
+-define(BASE_HEADING, 3).
+
+
+%% Parsing Wiki-XML with pre-and post-expansion.
+
+parse_xml(Data, Line) ->
+    par(parse_xml_1(expand_text(Data, Line), Line)).
+
+parse_xml_1(Text, Line) ->
+    Text1 = "<doc>" ++ Text ++ "</doc>",
+    case catch {ok, xmerl_scan:string(Text1, [{line, Line}])} of
+	{ok, {E, _}} ->
+	    E#xmlElement.content;
+	{'EXIT', {fatal, {Reason, L, _C}}} ->
+	    throw_error(L, {"XML parse error: ~p.", [Reason]});
+	{'EXIT', Reason} ->
+	    throw_error(Line, {"error in XML parser: ~P.", [Reason, 10]});
+	Other ->
+	    throw_error(Line, {"nocatch in XML parser: ~P.", [Other, 10]})
+    end.
 
 %% Expand wiki stuff in arbitrary text.
 
-expand(Cs, L) ->
-    lists:reverse(expand(Cs, L, [])).
+expand_text(Cs, L) ->
+    lists:reverse(expand_new_line(Cs, L, [])).
 
 %% Interestingly, the reverse of "code" is "edoc". :-)
+
+expand_new_line([$\s = C | Cs], L, As) ->
+    expand_new_line(Cs, L, [C | As]);
+expand_new_line([$\t = C | Cs], L, As) ->
+    expand_new_line(Cs, L, [C | As]);
+expand_new_line([$\n = C | Cs], L, As) ->
+    expand_new_line(Cs, L + 1, [C | As]);
+expand_new_line([$=, $=, $=, $= | Cs], L, As) ->
+    expand_heading(Cs, 2, L, As);
+expand_new_line([$=, $=, $= | Cs], L, As) ->
+    expand_heading(Cs, 1, L, As);
+expand_new_line([$=, $= | Cs], L, As) ->
+    expand_heading(Cs, 0, L, As);
+expand_new_line(Cs, L, As) ->
+    expand(Cs, L, As).
 
 expand([$`, $' | Cs], L, As) ->
     expand(Cs, L, [$` | As]);    % produce "`" - don't start a new quote
@@ -69,9 +121,9 @@ expand([$`, $`, $` | Cs], L, As) ->
     %% If this is the first thing on the line, compensate for the
     %% indentation, unless we had to skip one or more empty lines.
     {Cs1, Skipped} = strip_empty_lines(Cs),    % avoid vertical space
-    N = case Skipped of
-	    true -> 0;
-	    false ->
+    N = if Skipped > 0 ->
+		0;
+	   true ->
 		{As1, _} = edoc_lib:split_at(As, $\n),
 		case edoc_lib:is_space(As1) of
 		    true -> 3 + length(As1);
@@ -79,17 +131,66 @@ expand([$`, $`, $` | Cs], L, As) ->
 		end
 	end,
     Ss = lists:duplicate(N, $\s),
-    expand_triple(Cs1, L, Ss ++ "[ATADC[!<>erp<" ++ As);
+    expand_triple(Cs1, L + Skipped, Ss ++ "[ATADC[!<>erp<" ++ As);
 expand([$`, $` | Cs], L, As) ->
     expand_double(edoc_lib:strip_space(Cs), L, ">edoc<" ++ As);
 expand([$` | Cs], L, As) ->
     expand_single(edoc_lib:strip_space(Cs), L, ">edoc<" ++ As);
+expand([$[ | Cs], L, As) ->
+    expand_uri(Cs, L, As);
 expand([$\n = C | Cs], L, As) ->
-    expand(Cs, L + 1, [C | As]);
+    expand_new_line(Cs, L + 1, [C | As]);
 expand([C | Cs], L, As) ->
     expand(Cs, L, [C | As]);
 expand([], _, As) ->
     As.
+
+%% == Heading ==
+%% === SubHeading ===
+%% ==== SubSubHeading ====
+
+expand_heading([$= | _] = Cs, N, L, As) ->
+    expand_heading_1(Cs, N, L, As);
+expand_heading(Cs, N, L, As) ->
+    {Cs1, Cs2} = edoc_lib:split_at(Cs, $\n),
+    case edoc_lib:strip_space(lists:reverse(Cs1)) of
+	[$=, $= | Cs3] ->
+	    {Es, Ts} = lists:splitwith(fun (X) -> X == $= end, Cs3),
+	    if length(Es) == N ->
+		    Ts1 = edoc_lib:strip_space(
+			    lists:reverse(edoc_lib:strip_space(Ts))),
+		    expand_heading_2(Ts1, Cs2, N, L, As);
+	       true ->
+		    H1 = lists:duplicate(N+2, $=),
+		    H2 = "==" ++ Es,
+		    throw_error(L, {"heading end marker mismatch: "
+				     "~s...~s", [H1, H2]})
+	    end;
+	_ ->
+	    expand_heading_1(Cs, N, L, As)
+    end.
+
+expand_heading_1(Cs, N, L, As) ->
+    expand(Cs, L, lists:duplicate(N + 2, $=) ++ As).
+
+expand_heading_2(Ts, Cs, N, L, As) ->
+    H = ?BASE_HEADING + N,
+    Ts1 = io_lib:format("<h~w><a name=\"~s\">~s</a></h~w>\n",
+			[H, make_label(Ts), Ts, H]),
+    expand_new_line(Cs, L + 1, lists:reverse(lists:flatten(Ts1), As)).
+
+make_label([$\s | Cs]) ->
+    [$_ | make_label(edoc_lib:strip_space(Cs))];
+make_label([$\t | Cs]) ->
+    [$_ | make_label(edoc_lib:strip_space(Cs))];
+make_label([$\n | Cs]) ->
+    [$_ | make_label(edoc_lib:strip_space(Cs))];
+make_label([C | Cs]) ->
+    [C | make_label(Cs)];
+make_label([]) ->
+    [].
+
+%% `...'
 
 expand_single(Cs, L, As) ->
     expand_single(Cs, L, As, L).
@@ -107,8 +208,9 @@ expand_single([$\n = C | Cs], L, As, L0) ->
 expand_single([C | Cs], L, As, L0) ->
     expand_single(Cs, L, [C | As], L0);
 expand_single([], L, _, L0) ->
-    throw_error(L0, {"`-quote ended unexpectedly at line ~w.", [L]}).
+    throw_error(L0, {"`-quote ended unexpectedly at line ~w", [L]}).
 
+%% ``...''
 
 expand_double(Cs, L, As) ->
     expand_double(Cs, L, As, L).
@@ -126,8 +228,9 @@ expand_double([$\n = C | Cs], L, As, L0) ->
 expand_double([C | Cs], L, As, L0) ->
     expand_double(Cs, L, [C | As], L0);
 expand_double([], L, _, L0) ->
-    throw_error(L0, {"``-quote ended unexpectedly at line ~w.", [L]}).
+    throw_error(L0, {"``-quote ended unexpectedly at line ~w", [L]}).
 
+%% ```...'''
 
 expand_triple(Cs, L, As) ->
     expand_triple(Cs, L, As, L).
@@ -141,19 +244,210 @@ expand_triple([$\n = C | Cs], L, As, L0) ->
 expand_triple([C | Cs], L, As, L0) ->
     expand_triple(Cs, L, [C | As], L0);
 expand_triple([], L, _, L0) ->
-    throw_error(L0, {"```-quote ended unexpectedly at line ~w.", [L]}).
+    throw_error(L0, {"```-quote ended unexpectedly at line ~w", [L]}).
+
+%% e.g. [file:/...] or [http://... LinkText]
+
+expand_uri("http:/" ++ Cs, L, As) ->
+    expand_uri(Cs, L, "/:ptth", As);
+expand_uri("ftp:/" ++ Cs, L, As) ->
+    expand_uri(Cs, L, "/:ptf", As);
+expand_uri("file:/" ++ Cs, L, As) ->
+    expand_uri(Cs, L, "/:elif", As);
+expand_uri(Cs, L, As) ->
+    expand(Cs, L, [$[ | As]).
+
+expand_uri([$] | Cs], L, Us, As) ->
+    expand(Cs, L, push_uri(Us, ">tt/<" ++ Us ++ ">tt<", As));
+expand_uri([$\s = C | Cs], L, Us, As) ->
+    expand_uri(Cs, 0, L, [C], Us, As);
+expand_uri([$\t = C | Cs], L, Us, As) ->
+    expand_uri(Cs, 0, L, [C], Us, As);
+expand_uri([$\n = C | Cs], L, Us, As) ->
+    expand_uri(Cs, 1, L, [C], Us, As);
+expand_uri([C | Cs], L, Us, As) ->
+    expand_uri(Cs, L, [C | Us], As);
+expand_uri([], L, Us, _As) ->
+    expand_uri_error(Us, L).
+
+expand_uri([$] | Cs], N, L, Ss, Us, As) ->
+    Ss1 = lists:reverse(edoc_lib:strip_space(
+			  lists:reverse(edoc_lib:strip_space(Ss)))),
+    expand(Cs, L + N, push_uri(Us, Ss1, As));
+expand_uri([$\n = C | Cs], N, L, Ss, Us, As) ->
+    expand_uri(Cs, N + 1, L, [C | Ss], Us, As);
+expand_uri([C | Cs], N, L, Ss, Us, As) ->
+    expand_uri(Cs, N, L, [C | Ss], Us, As);
+expand_uri([], _, L, _Ss, Us, _As) ->
+    expand_uri_error(Us, L).
+
+expand_uri_error(Us, L) ->
+    {Ps, _} = edoc_lib:split_at(lists:reverse(Us), $:),
+    throw_error(L, {"reference '[~s:...' ended unexpectedly", [Ps]}).
+
+
+push_uri(Us, Ss, As) ->
+    ">a/<" ++ Ss ++ ">\"pot_\"=tegrat \"" ++ Us ++ "\"=ferh a<" ++ As.
 
 
 strip_empty_lines(Cs) ->
-    strip_empty_lines(Cs, false).
+    strip_empty_lines(Cs, 0).
 
-strip_empty_lines(Cs, Skipped) ->
+strip_empty_lines(Cs, N) ->
     {Cs1, Cs2} = edoc_lib:split_at(Cs, $\n),
     case edoc_lib:is_space(Cs1) of
 	true ->
-	    strip_empty_lines(Cs2, true);
+	    strip_empty_lines(Cs2, N + 1);
 	false ->
-	    {Cs, Skipped}
+	    {Cs, N}
+    end.
+
+
+%% Scanning element content for paragraph breaks (empty lines).
+%% Paragraphs are flushed by block level elements.
+
+par(Es) ->
+    par(Es, [], []).
+
+par([E=#xmlText{} | Es], As, Bs) ->
+    par_text(E#xmlText.value, As, Bs, E, Es);
+par([E=#xmlElement{name = Name} | Es], As, Bs) ->
+    %% (Note that paragraphs may not contain any further block-level
+    %% elements, including other paragraphs. Tables get complicated.)
+    case Name of
+	'p'          -> par_flush(Es, [E | As], Bs);
+	'hr'         -> par_flush(Es, [E | As], Bs);
+	'h1'         -> par_flush(Es, [E | As], Bs);
+	'h2'         -> par_flush(Es, [E | As], Bs);
+	'h3'         -> par_flush(Es, [E | As], Bs);
+	'h4'         -> par_flush(Es, [E | As], Bs);
+	'h5'         -> par_flush(Es, [E | As], Bs);
+	'h6'         -> par_flush(Es, [E | As], Bs);
+	'pre'        -> par_flush(Es, [E | As], Bs);
+	'address'    -> par_flush(Es, [E | As], Bs);
+	'div'        -> par_flush(Es, [par_elem(E) | As], Bs);
+	'blockquote' -> par_flush(Es, [par_elem(E) | As], Bs);
+	'form'       -> par_flush(Es, [par_elem(E) | As], Bs);
+	'fieldset'   -> par_flush(Es, [par_elem(E) | As], Bs);
+	'noscript'   -> par_flush(Es, [par_elem(E) | As], Bs);
+	'ul'         -> par_flush(Es, [par_subelem(E) | As], Bs);
+	'ol'         -> par_flush(Es, [par_subelem(E) | As], Bs);
+	'dl'         -> par_flush(Es, [par_subelem(E) | As], Bs);
+	'table'      -> par_flush(Es, [par_subelem(E) | As], Bs);
+	_            -> par(Es, [E | As], Bs)
+    end;
+par([E | Es], As, Bs) ->
+    par(Es, [E | As], Bs);
+par([], As, Bs) ->
+    lists:reverse(As ++ Bs).
+
+par_text(Cs, As, Bs, E, Es) ->
+    case ptxt(Cs) of
+	none ->
+	    %% no blank lines: keep this element as it is
+	    par(Es, [E | As], Bs);
+	{Cs1, Ss, Cs2} ->
+	    Es1 = case Cs1 of
+		      [] -> lists:reverse(As);
+		      _ -> lists:reverse(As, [E#xmlText{value = Cs1}])
+		  end,
+	    Bs0 = case Es1 of
+		      [] -> Bs;
+		      _ -> [#xmlElement{name = p, content = Es1} | Bs]
+		  end,
+	    Bs1 = case Ss of
+		      [] -> Bs0;
+		      _ -> [#xmlText{value = Ss} | Bs0]
+		  end,
+	    case Cs2 of
+		[] ->
+		    par(Es, [], Bs1);
+		_ ->       
+		    par_text(Cs2, [], Bs1, #xmlText{value = Cs2}, Es)
+	    end
+    end.
+
+par_flush(Es, As, Bs) ->
+    par(Es, [], As ++ Bs).
+
+par_elem(E) ->
+    E#xmlElement{content = par(E#xmlElement.content)}.
+
+%% Only process content of subelements; ignore immediate content.
+par_subelem(E) ->
+    E#xmlElement{content = par_subelem_1(E#xmlElement.content)}.
+
+par_subelem_1([E=#xmlElement{name = Name} | Es]) ->
+    E1 = case par_skip(Name) of
+	     true ->
+		 E;
+	     false ->
+		 case par_sub(Name) of
+		     true ->
+			 par_subelem(E);
+		     false ->
+			 par_elem(E)
+		 end
+	 end,
+    [E1 | par_subelem_1(Es)];
+par_subelem_1([E | Es]) ->
+    [E | par_subelem_1(Es)];
+par_subelem_1([]) ->
+    [].
+
+par_skip('caption') -> true;
+par_skip('col') -> true;
+par_skip('colgroup') -> true;
+par_skip(_) -> false.
+
+par_sub(tr) -> true;
+par_sub(thead) -> true;
+par_sub(tfoot) -> true;
+par_sub(tbody) -> true;
+par_sub(_) -> false.
+
+
+%% scanning text content for a blank line
+
+ptxt(Cs) ->
+    ptxt(Cs, []).
+
+ptxt([$\n | Cs], As) ->
+    ptxt_1(Cs, As, [$\n]);
+ptxt([C | Cs], As) ->
+    ptxt(Cs, [C | As]);
+ptxt([], _As) ->
+    none.
+
+%% scanning text following an initial newline
+ptxt_1([C=$\s | Cs], As, Ss) ->
+    ptxt_1(Cs, As, [C | Ss]);
+ptxt_1([C=$\t | Cs], As, Ss) ->
+    ptxt_1(Cs, As, [C | Ss]);
+ptxt_1([C=$\n | Cs], As, Ss) ->
+    %% blank line detected
+    ptxt_2(Cs, As, [C | Ss]);
+ptxt_1(Cs, As, []) ->
+    %% fast path; just a single newline, keep scanning
+    ptxt(Cs, As);
+ptxt_1(Cs, As, Ss) ->
+    %% not a blank line
+    ptxt(Cs, lists:reverse(Ss, As)).
+
+%% collecting whitespace following a blank line
+ptxt_2([C=$\s | Cs], As, Ss) ->
+    ptxt_2(Cs, As, [C | Ss]);
+ptxt_2([C=$\t | Cs], As, Ss) ->
+    ptxt_2(Cs, As, [C | Ss]);
+ptxt_2([C=$\n | Cs], As, Ss) ->
+    ptxt_2(Cs, As, [C | Ss]);
+ptxt_2(Cs, As, Ss) ->
+    %% ended by non-whitespace or end of element
+    case edoc_lib:is_space(As) of
+	true ->
+	    {[], lists:reverse(Ss ++ As), Cs};
+	false ->
+	    {lists:reverse(As), lists:reverse(Ss), Cs}
     end.
 
 

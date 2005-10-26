@@ -141,8 +141,7 @@ unfold_each_alt([], RecDefs, SymTab, Acc) ->
 
 
 append_clauses([C|Cs], Acc) ->
-    lists:append(lists:map({lists,append},[C],Acc),
-		 append_clauses(Cs, Acc));
+    lists:map(fun(E) -> E++C end, Acc) ++ append_clauses(Cs, Acc);
 append_clauses([], Acc) ->
     [].
 
@@ -173,7 +172,7 @@ symtab(Goal, SymTab) when Goal#pred_sym.type == rule ->
     case mnemosyne_lib:lookup(Goal#pred_sym.functor, SymTab) of
 	false ->
 	    analyse(mnemosyne_lib:db_read_clauses(Goal),
-		    ordsets:list_to_set([Goal#pred_sym.functor]),
+		    ordsets:from_list([Goal#pred_sym.functor]),
 		    mnemosyne_lib:insert(Goal#pred_sym.functor, 
 					 non_recursive, % Might change later
 					 SymTab));	% in the analyze
@@ -259,18 +258,18 @@ expand_record(R, VarTypes, RecordDefs, Mod) when record(R,rec_c) ->
     %% #{a=.., b=.. ...}
     case mnemosyne_compiler:lookup_record_def(R#rec_c.name, RecordDefs) of
 	{value, {RecName,FieldNames}} ->
-	    Empty = ordsets:new_set(),
-	    case ordsets:subtract(ordsets:list_to_set(
+	    Empty = ordsets:new(),
+	    case ordsets:subtract(ordsets:from_list(
 				    mnemosyne_lib:elements(1,R#rec_c.fields)
 				   ),
-				  ordsets:list_to_set(FieldNames)) of
+				  ordsets:from_list(FieldNames)) of
 		Empty -> 
 		    InitialValue =
 			case catch Mod:'MNEMOSYNE RECFUNDEF'(RecName) of
 			    {'EXIT', Reason} ->
 				throw ({error, 
 					{R#rec_c.line, ?MODULE,
-					 {internal, {record,R#rec_f.name}}}});
+					 {internal, {record,R#rec_c.name}}}});
 			    Initial ->
 				Initial
 			end,
@@ -288,7 +287,7 @@ expand_record(R, VarTypes, RecordDefs, Mod) when record(R,rec_c) ->
 		    throw({error, 
 			   {R#rec_c.line,?MODULE,
 			    {undefined,{record_fields,R#rec_c.name,
-					ordsets:set_to_list(S)}}}})
+					ordsets:to_list(S)}}}})
 	    end;
 
 	false ->

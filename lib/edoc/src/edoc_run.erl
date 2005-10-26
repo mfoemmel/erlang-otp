@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_run.erl,v 1.15 2004/11/30 00:39:00 richardc Exp $
+%% $Id$
 %%
 %% @copyright 2003 Richard Carlsson
 %% @author Richard Carlsson <richardc@csd.uu.se>
@@ -24,12 +24,12 @@
 
 %% @doc Interface for calling EDoc from Erlang startup options.
 %%
-%% <p>The following is an example of typical usage in a Makefile:
+%% The following is an example of typical usage in a Makefile:
 %% ```docs:
 %%            erl -noshell -run edoc_run application "'$(APP_NAME)'" \
 %%              '"."' '[{def,{vsn,"$(VSN)"}}]' -s init stop'''
 %% (note the single-quotes to avoid shell expansion, and the
-%% double-quotes enclosing the strings).</p>
+%% double-quotes enclosing the strings).
 
 -module(edoc_run).
 
@@ -37,6 +37,15 @@
 
 -import(edoc_report, [report/2, error/1]).
 
+
+%% @spec application([string()]) -> ok | error
+%%
+%% @doc Calls {@link edoc:application/3} with the corresponding
+%% arguments. The strings in the list are parsed as Erlang constant
+%% terms. The list can be either `[App]', `[App, Options]' or `[App,
+%% Dir, Options]'. In the first case {@link edoc:application/1} is
+%% called instead; in the second case, {@link edoc:application/2} is
+%% called.
 
 application(Args) ->
     F = fun () ->
@@ -50,6 +59,13 @@ application(Args) ->
 	end,
     run(F).
 
+%% @spec files([string()]) -> ok | error
+%%
+%% @doc Calls {@link edoc:files/2} with the corresponding arguments. The
+%% strings in the list are parsed as Erlang constant terms. The list can
+%% be either `[Files]' or `[Files, Options]'. In the first case, {@link
+%% edoc:files/1} is called instead.
+
 files(Args) ->
     F = fun () ->
 		case parse_args(Args) of
@@ -60,6 +76,13 @@ files(Args) ->
 		end
 	end,
     run(F).
+
+%% @spec packages([string()]) -> ok | error
+%%
+%% @doc Calls {@link edoc:application/2} with the corresponding
+%% arguments. The strings in the list are parsed as Erlang constant
+%% terms. The list can be either `[Packages]' or `[Packages, Options]'.
+%% In the first case {@link edoc:application/1} is called instead.
 
 packages(Args) ->
     F = fun () ->
@@ -85,7 +108,7 @@ toc(Args) ->
     run(F).
 
 
-%% @spec ([string()]) -> ok | error
+%% @spec file([string()]) -> ok | error
 %%
 %% @deprecated This is part of the old interface to EDoc and is mainly
 %% kept for backwards compatibility. The preferred way of generating
@@ -97,11 +120,10 @@ toc(Args) ->
 %% be either `[File]' or `[File, Options]'. In the first case, an empty
 %% list of options is passed to {@link edoc:file/2}.
 %%
-%% <p>The following is an example of typical usage in a Makefile:
+%% The following is an example of typical usage in a Makefile:
 %% ```$(DOCDIR)/%.html:%.erl
 %%            erl -noshell -run edoc_run file '"$<"' '[{dir,"$(DOCDIR)"}]' \
 %%              -s init stop'''
-%% </p>
 
 file(Args) ->
     F = fun () ->
@@ -146,7 +168,7 @@ parse_args([]) ->
     [].
 
 parse_arg(A) ->
-    case catch {ok, edoc_parse_expr:parse(A, 1)} of
+    case catch {ok, edoc_lib:parse_expr(A, 1)} of
 	{ok, Expr} ->
 	    case catch erl_parse:normalise(Expr) of
 		{'EXIT', _} ->

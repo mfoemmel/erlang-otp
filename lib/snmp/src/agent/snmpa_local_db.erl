@@ -24,7 +24,7 @@
 
 
 %% External exports
--export([start_link/3, stop/0, verbosity/1]).
+-export([start_link/3, stop/0, info/0, verbosity/1]).
 -export([dump/0, register_notify_client/2, unregister_notify_client/1]).
 -export([table_func/2, table_func/4,
 	 variable_get/1, variable_set/2, variable_delete/1, variable_inc/2,
@@ -97,6 +97,9 @@ unregister_notify_client(Client) ->
 
 dump() ->
     call(dump).
+
+info() ->
+    call(info).
 
 verbosity(Verbosity) ->
     cast({verbosity,Verbosity}).
@@ -413,6 +416,11 @@ handle_call(dump, _From, #state{dets = Dets} = State) ->
     ?vlog("dump",[]),
     dets:sync(Dets),
     {reply, ok, State};
+
+handle_call(info, _From, #state{dets = Dets, ets = Ets} = State) ->
+    ?vlog("info",[]),
+    Info = get_info(Dets, Ets),
+    {reply, Info, State};
 
 handle_call(print, _From, #state{dets = Dets, ets = Ets} = State) ->
     ?vlog("print",[]),
@@ -873,6 +881,41 @@ table_func(undo, _RowIndex, _Cols, _NameDb) ->
 get_opt(Key, Opts, Def) ->
     snmp_misc:get_option(Key, Opts, Def).
 
+
+%%------------------------------------------------------------------
+
+get_info(Dets, Ets) ->
+    ProcSize = proc_mem(self()),
+    DetsSz   = dets_size(Dets),
+    EtsSz    = ets_size(Ets),
+    [{process_memory, ProcSize},
+     {db_memory, [{dets, DetsSz}, {ets, EtsSz}]}].
+
+proc_mem(P) when pid(P) ->
+    case (catch erlang:process_info(P, memory)) of
+	{memory, Sz} ->
+	    Sz;
+	_ ->
+	    undefined
+    end;
+proc_mem(_) ->
+    undefined.
+
+dets_size(T) ->
+    case (catch dets:info(T, file_size)) of
+	Sz when integer(Sz) ->
+	    Sz;
+	_ ->
+	    undefined
+    end.
+
+ets_size(T) ->
+    case (catch ets:info(T, memory)) of
+	Sz when integer(Sz) ->
+	    Sz;
+	_ ->
+	    undefined
+    end.
 
 %%------------------------------------------------------------------
 

@@ -21,6 +21,7 @@
 
 behaviour_info(callbacks) ->
     [{start_link, 4},
+     {info,       1}, 
      {verbosity,  2}];
 behaviour_info(_) ->
     undefined.

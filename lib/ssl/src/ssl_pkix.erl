@@ -109,7 +109,7 @@ transform(SignAlg) when record(SignAlg, 'AlgorithmIdentifier') ->
     SignAlgCd#'SignatureAlgorithm'{algorithm = NAlgo};
 
 transform({rdnSequence, Lss}) when list(Lss) ->
-    {rndSequence, 
+    {rdnSequence, 
      lists:map(fun(Ls) -> lists:map(fun(L) -> transform(L) end, Ls)
 	       end, Lss)};
 transform({rdnSequence, Lss}) ->

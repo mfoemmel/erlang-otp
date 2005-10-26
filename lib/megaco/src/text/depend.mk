@@ -9,6 +9,9 @@ megaco_text_parser_v2.erl: \
 megaco_text_parser_prev3a.erl: \
 	megaco_text_parser_prev3a.yrl \
 	megaco_text_parser_prev3a.hrl
+megaco_text_parser_prev3b.erl: \
+	megaco_text_parser_prev3b.yrl \
+	megaco_text_parser_prev3b.hrl
 
 megaco_text_mini_parser.erl: \
 	megaco_text_mini_parser.yrl \
@@ -41,6 +44,13 @@ $(EBIN)/megaco_compact_text_encoder_prev3a.$(EMULATOR): \
 	megaco_text_tokens.hrl \
 	megaco_text_gen_prev3a.hrl
 
+$(EBIN)/megaco_compact_text_encoder_prev3b.$(EMULATOR): \
+	megaco_compact_text_encoder_prev3b.erl \
+	$(MEGACO_INCLUDEDIR)/megaco.hrl \
+	$(MEGACO_INCLUDEDIR)/megaco_message_prev3b.hrl \
+	megaco_text_tokens.hrl \
+	megaco_text_gen_prev3b.hrl
+
 $(EBIN)/megaco_pretty_text_encoder.$(EMULATOR): \
 	megaco_pretty_text_encoder.erl
 
@@ -65,6 +75,13 @@ $(EBIN)/megaco_pretty_text_encoder_prev3a.$(EMULATOR): \
 	megaco_text_tokens.hrl \
 	megaco_text_gen_prev3a.hrl
 
+$(EBIN)/megaco_pretty_text_encoder_prev3b.$(EMULATOR): \
+	megaco_pretty_text_encoder_prev3b.erl \
+	$(MEGACO_INCLUDEDIR)/megaco.hrl \
+	$(MEGACO_INCLUDEDIR)/megaco_message_prev3b.hrl \
+	megaco_text_tokens.hrl \
+	megaco_text_gen_prev3b.hrl
+
 $(EBIN)/megaco_text_parser_v1.$(EMULATOR): \
 	megaco_text_parser_v1.erl \
 	$(MEGACO_INCLUDEDIR)/megaco.hrl \
@@ -85,6 +102,13 @@ $(EBIN)/megaco_text_parser_prev3a.$(EMULATOR): \
 	$(MEGACO_INCLUDEDIR)/megaco_message_prev3a.hrl \
 	megaco_text_tokens.hrl \
 	megaco_text_parser_prev3a.hrl
+
+$(EBIN)/megaco_text_parser_prev3b.$(EMULATOR): \
+	megaco_text_parser_prev3b.erl \
+	$(MEGACO_INCLUDEDIR)/megaco.hrl \
+	$(MEGACO_INCLUDEDIR)/megaco_message_prev3b.hrl \
+	megaco_text_tokens.hrl \
+	megaco_text_parser_prev3b.hrl
 
 $(EBIN)/megaco_text_scanner.$(EMULATOR): megaco_text_scanner.erl \
 	$(MEGACO_INCLUDEDIR)/megaco.hrl \

@@ -801,6 +801,10 @@ BIF_RETTYPE exit_1(BIF_ALIST_1)
 Eterm 
 raise_3(Process *c_p, Eterm class, Eterm value, Eterm stacktrace) {
     Eterm reason;
+    Eterm l, *hp, *hp_end, *tp;
+    int depth, cnt;
+    size_t sz;
+    struct StackTrace *s;
     
     if (class == am_error) {
 	c_p->fvalue = value;
@@ -814,67 +818,59 @@ raise_3(Process *c_p, Eterm class, Eterm value, Eterm stacktrace) {
     } else goto error;
     reason &= ~EXF_SAVETRACE;
     
-    if (is_nil(stacktrace)) {
-	c_p->ftrace = NIL;
+    /* Check syntax of stacktrace, and count depth.
+     * Accept anything that can be returned from erlang:get_stacktrace/0,
+     * as well as a 2-tuple with a fun as first element that the
+     * error_handler may need to give us.
+     */
+    for (l = stacktrace, depth = 0;  
+	 is_list(l);  
+	 l = CDR(list_val(l)), depth++) {
+	Eterm t = CAR(list_val(l));
+	int arity;
+	if (is_not_tuple(t)) goto error;
+	tp = tuple_val(t);
+	arity = arityval(tp[0]);
+	if ((arity == 3) && is_atom(tp[1]) && is_atom(tp[2])) continue;
+	if ((arity == 2) && is_fun(tp[1])) continue;
+	goto error;
+    }
+    if (is_not_nil(l)) goto error;
+    
+    /* Create stacktrace and store */
+    if (depth <= erts_backtrace_depth) {
+	cnt = 0;
+	c_p->ftrace = stacktrace;
     } else {
-	Eterm l, *hp, *hp_end, *tp;
-	int depth, cnt;
-	size_t sz;
-	struct StackTrace *s;
-	/* Check syntax of stacktrace, and count depth.
-	 * Accept anything that can be returned from erlang:get_stacktrace/0,
-	 * as well as a 2-tuple with a fun as first element that the
-	 * error_handler may need to give us.
-	 */
-	for (l = stacktrace, depth = 0;  
-	     is_list(l);  
-	     l = CDR(list_val(l)), depth++) {
-	    Eterm t = CAR(list_val(l));
-	    int arity;
-	    if (is_not_tuple(t)) goto error;
-	    tp = tuple_val(t);
-	    arity = arityval(tp[0]);
-	    if ((arity == 3) && is_atom(tp[1]) && is_atom(tp[2])) continue;
-	    if ((arity == 2) && is_fun(tp[1])) continue;
-	    goto error;
+	cnt = depth = erts_backtrace_depth;
+	c_p->ftrace = NIL;
+    }
+    tp = &c_p->ftrace;
+    sz = (offsetof(struct StackTrace, trace) + sizeof(Eterm) - 1) 
+	/ sizeof(Eterm);
+    hp = HAlloc(c_p, sz + 2*(cnt + 1));
+    hp_end = hp + sz + 2*(cnt + 1);
+    s = (struct StackTrace *) hp;
+    s->header = make_neg_bignum_header(sz - 1);
+    s->freason = reason;
+    s->pc = NULL;
+    s->current = NULL;
+    s->depth = 0;
+    hp += sz;
+    if (cnt > 0) {
+	/* Copy list up to depth */
+	for (cnt = 0, l = stacktrace;
+	     cnt < depth;
+	     cnt++, l = CDR(list_val(l))) {
+	    ASSERT(*tp == NIL);
+	    *tp = CONS(hp, CAR(list_val(l)), *tp);
+	    tp = &CDR(list_val(*tp));
+	    hp += 2;
 	}
-	if (is_not_nil(l)) goto error;
-	
-	/* Create stacktrace and store */
-	if (depth <= erts_backtrace_depth) {
-	    cnt = 0;
-	    c_p->ftrace = stacktrace;
-	} else {
-	    cnt = depth = erts_backtrace_depth;
-	    c_p->ftrace = NIL;
-	}
-	tp = &c_p->ftrace;
-	sz = (offsetof(struct StackTrace, trace) + sizeof(Eterm) - 1) 
-	    / sizeof(Eterm);
-	hp = HAlloc(c_p, sz + 2*(cnt + 1));
-	hp_end = hp + sz + 2*(cnt + 1);
-	s = (struct StackTrace *) hp;
-	s->header = make_neg_bignum_header(sz - 1);
-	s->freason = reason;
-	s->pc = NULL;
-	s->current = NULL;
-	s->depth = 0;
-	hp += sz;
-	if (cnt > 0) {
-	    /* Copy list up to depth */
-	    for (cnt = 0, l = stacktrace;
-		 cnt < depth;
-		 cnt++, l = CDR(list_val(l))) {
-		ASSERT(*tp == NIL);
-		*tp = CONS(hp, CAR(list_val(l)), *tp);
-		tp = &CDR(list_val(*tp));
-		hp += 2;
-	    }
-	}
-	c_p->ftrace = CONS(hp, c_p->ftrace, make_big((Eterm *) s));
-	hp += 2;
-	ASSERT(hp <= hp_end);
-    } /* if (is_nil(stacktrace)) ; else { */
+    }
+    c_p->ftrace = CONS(hp, c_p->ftrace, make_big((Eterm *) s));
+    hp += 2;
+    ASSERT(hp <= hp_end);
     
     BIF_ERROR(c_p, reason);
     
@@ -1740,6 +1736,26 @@ BIF_RETTYPE size_1(BIF_ALIST_1)
     BIF_ERROR(BIF_P, BADARG);
 }
 
+
+/**********************************************************************/
+
+/* return the size of an I/O list */
+
+BIF_RETTYPE iolist_size_1(BIF_ALIST_1)
+{
+    Sint size = io_list_len(BIF_ARG_1);
+
+    if (size == -1) {
+	BIF_ERROR(BIF_P, BADARG);
+    } else if (IS_USMALL(0, (Uint) size)) {
+	BIF_RET(make_small(size));
+    } else {
+	Eterm* hp = HAlloc(BIF_P, BIG_UINT_HEAP_SIZE);
+	BIF_RET(uint_to_big(size, hp));
+    }
+}
+
+
 /**********************************************************************/
 
 /* return the N'th element of a tuple */
@@ -1862,7 +1878,7 @@ BIF_RETTYPE atom_to_list_1(BIF_ALIST_1)
 
 /**********************************************************************/
 
-/* convert a list of ascii intgers to an atom */
+/* convert a list of ascii integers to an atom */
  
 BIF_RETTYPE list_to_atom_1(BIF_ALIST_1)
 {
@@ -1876,6 +1892,26 @@ BIF_RETTYPE list_to_atom_1(BIF_ALIST_1)
     }
     else {
 	BIF_RET(am_atom_put(tmp_buf, i));
+    }
+}
+
+/* conditionally convert a list of ascii integers to an atom */
+ 
+BIF_RETTYPE list_to_existing_atom_1(BIF_ALIST_1)
+{
+    int i;
+
+    if ((i = intlist_to_buf(BIF_ARG_1, tmp_buf, TMP_BUF_SIZE)) < 0) {
+    error:
+	BIF_ERROR(BIF_P, BADARG);
+    } else {
+	Eterm a;
+	
+	if (erts_atom_get(tmp_buf, i, &a)) {
+	    BIF_RET(a);
+	} else {
+	    goto error;
+	}
     }
 }
 

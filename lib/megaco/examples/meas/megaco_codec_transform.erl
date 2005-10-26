@@ -305,31 +305,31 @@ extension_of(erlang) ->
 
 
 %% decode_message
-%% Note: The '{version3,prev3a}' will be ignored 
+%% Note: The '{version3,prev3b}' will be ignored 
 %%       by other than v3-codec's.
 %%       This is a "fix" to make enable the pre-v3
-%%       encoder introduced in version 3.0 of 
+%%       encoder introduced in version 3.2 of 
 %%       the Megaco application.
 
 decode_message(pretty, BinMsg) ->
     Mod  = megaco_pretty_text_encoder,
-    Conf = [{version3,prev3a}],
+    Conf = [{version3,prev3b}],
     do_decode(Mod, Conf, BinMsg);
 decode_message(compact, BinMsg) ->
     Mod  = megaco_compact_text_encoder,
-    Conf = [{version3,prev3a}],
+    Conf = [{version3,prev3b}],
     do_decode(Mod, Conf, BinMsg);
 decode_message(ber, BinMsg) ->
     Mod  = megaco_ber_bin_encoder,
-    Conf = [{version3,prev3a}],
+    Conf = [{version3,prev3b}],
     do_decode(Mod, Conf, BinMsg);
 decode_message(per, BinMsg) ->
     Mod  = megaco_per_bin_encoder,
-    Conf = [{version3,prev3a}],
+    Conf = [{version3,prev3b}],
     do_decode(Mod, Conf, BinMsg);
 decode_message(erlang, BinMsg) ->
     Mod  = megaco_erl_dist_encoder,
-    Conf = [{version3,prev3a}],
+    Conf = [{version3,prev3b}],
     do_decode(Mod, Conf, BinMsg);
 decode_message(Codec, _) ->
     throw({error, {unsupported_codec, Codec}}).
@@ -359,23 +359,23 @@ do_decode(Mod, Conf, Bin) ->
 
 encode_message(pretty, Msg) ->
     Mod  = megaco_pretty_text_encoder,
-    Conf = [{version3,prev3a}],
+    Conf = [{version3,prev3b}],
     do_encode(Mod, Conf, Msg);
 encode_message(compact, Msg) ->
     Mod  = megaco_compact_text_encoder,
-    Conf = [{version3,prev3a}],
+    Conf = [{version3,prev3b}],
     do_encode(Mod, Conf, Msg);
 encode_message(ber, Msg) ->
     Mod  = megaco_ber_bin_encoder,
-    Conf = [{version3,prev3a}],
+    Conf = [{version3,prev3b}],
     do_encode(Mod, Conf, Msg);
 encode_message(per, Msg) ->
     Mod  = megaco_per_bin_encoder,
-    Conf = [{version3,prev3a}],
+    Conf = [{version3,prev3b}],
     do_encode(Mod, Conf, Msg);
 encode_message(erlang, Msg) ->
     Mod  = megaco_erl_dist_encoder,
-    Conf = [{version3,prev3a}],
+    Conf = [{version3,prev3b}],
     do_encode(Mod, Conf, Msg);
 encode_message(Codec, _) ->
     throw({error, {unsupported_codec, Codec}}).

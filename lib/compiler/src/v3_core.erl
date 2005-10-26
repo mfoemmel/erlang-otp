@@ -962,9 +962,9 @@ uexpr(#iset{anno=A,var=V,arg=A0}, Ks, St0) ->
 %% imatch done in uexprs.
 uexpr(#iletrec{anno=A,defs=Fs0,body=B0}, Ks, St0) ->
     %%ok = io:fwrite("~w: ~p~n", [?LINE,{Fs0,B0}]),
-    {Fs1,St1} = mapfoldl(fun ({Name,F0}, St0) ->
-				 {F1,St1} = uexpr(F0, Ks, St0),
-				 {{Name,F1},St1}
+    {Fs1,St1} = mapfoldl(fun ({Name,F0}, S0) ->
+				 {F1,S1} = uexpr(F0, Ks, S0),
+				 {{Name,F1},S1}
 			 end, St0, Fs0),
     {B1,St2} = uexprs(B0, Ks, St1),
     Used = used_in_any(map(fun ({_,F}) -> F end, Fs1) ++ B1),
@@ -1217,11 +1217,11 @@ cexprs([Le|Les], As0, St0) ->
 %% cexpr(Lexpr, [AfterVar], State) -> {Cexpr,[ExpVar],[UsedVar],State}.
 
 cexpr(#iletrec{anno=A,defs=Fs0,body=B0}, As, St0) ->
-    {Fs1,{_,St1}} = mapfoldl(fun ({Name,F0}, {Used,St0}) ->
-					{F1,[],Us,St1} = cexpr(F0, [], St0),
+    {Fs1,{_,St1}} = mapfoldl(fun ({Name,F0}, {Used,S0}) ->
+					{F1,[],Us,S1} = cexpr(F0, [], S0),
 					{#c_def{name=#c_fname{id=Name,arity=1},
 						val=F1},
-					 {union(Us, Used),St1}}
+					 {union(Us, Used),S1}}
 				end, {[],St0}, Fs0),
     Exp = intersection(A#a.ns, As),
     {B1,_Us,St2} = cexprs(B0, Exp, St1),

@@ -42,7 +42,6 @@ MODULES= \
 	dbg_idb \
 	dbg_ieval \
 	dbg_iload \
-	dbg_imeta \
 	dbg_iserver \
 	dbg_ui_break \
 	dbg_ui_break_win \
@@ -60,6 +59,8 @@ MODULES= \
 	dbg_ui_winman
 
 HRL_FILES=
+
+INTERNAL_HRL_FILES= dbg_ieval.hrl
 
 ERL_FILES= $(MODULES:%=%.erl)
 
@@ -113,7 +114,7 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(TOOLBOX_FILES) $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_HRL_FILES) $(TOOLBOX_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(TARGET_TOOLBOX_FILES) $(RELSYSDIR)/ebin
 

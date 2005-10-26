@@ -302,7 +302,7 @@ expand_binbase(Instr) ->
   Base=hipe_rtl:binbase_dst(Instr),
   Orig=hipe_rtl:binbase_orig(Instr),
   OrigOffset=hipe_rtl:binbase_offset(Instr),
-  Tmp1=hipe_rtl:mk_new_reg(),
+  Tmp1=hipe_rtl:mk_new_reg_gcsafe(),
   HeapLbl=hipe_rtl:mk_new_label(),
   REFCLbl=hipe_rtl:mk_new_label(),
   JoinLbl=hipe_rtl:mk_new_label(),
@@ -336,7 +336,7 @@ expand_gctest(Instr) ->
   GCLabel = hipe_rtl:mk_new_label(),
   ContLabelName = hipe_rtl:label_name(ContLabel),
   GCLabelName = hipe_rtl:label_name(GCLabel),
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg(), % diff between two gc-unsafe pointers
   StartCode = 
     [GetHPInsn, 
      GetHLIMITInsn,
@@ -344,12 +344,12 @@ expand_gctest(Instr) ->
   {SeparateCode, GCAmount, HPAmount} =
     case hipe_rtl:is_reg(HeapNeed) of	
       true ->
-	GA = hipe_rtl:mk_new_var(),
-	HA = hipe_rtl:mk_new_reg(),
+	GA = hipe_rtl:mk_new_reg_gcsafe(),
+	HA = hipe_rtl:mk_new_reg_gcsafe(),
 	{[hipe_rtl:mk_alu(HA, HeapNeed, sll, 
 			  hipe_rtl:mk_imm(hipe_rtl_arch:
 					  log2_word_size()))|
-	  hipe_tagscheme:realtag_fixnum(GA, HeapNeed)], HA, GA};
+	  hipe_tagscheme:realtag_fixnum(GA, HeapNeed)], GA, HA};
       false ->
 	WordsNeeded = hipe_rtl:imm_value(HeapNeed),
 	GA = hipe_rtl:mk_imm(hipe_tagscheme:mk_fixnum(WordsNeeded)),

@@ -14,10 +14,10 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_macros.erl,v 1.9 2005/06/08 20:18:37 richardc Exp $
+%% $Id$
 %%
 %% @private
-%% @copyright 2001-2003 Richard Carlsson
+%% @copyright 2001-2005 Richard Carlsson
 %% @author Richard Carlsson <richardc@csd.uu.se>
 %% @see edoc
 %% @end
@@ -27,11 +27,12 @@
 
 -module(edoc_macros).
 
--export([expand_tags/4, std_macros/1, check_defs/1]).
+-export([expand_tags/3, std_macros/1, check_defs/1]).
 
 -import(edoc_report, [report/2, error/3]).
 
 -include("edoc.hrl").
+-include("edoc_types.hrl").
 
 -define(DEFAULT_XML_EXPORT, xmerl_html).
 
@@ -48,11 +49,12 @@ std_macros(Env) ->
      [{docRoot, Env#env.root},
       {date, fun date_macro/3},
       {link, fun link_macro/3},
+      {section, fun section_macro/3},
       {time, fun time_macro/3},
       {type, fun type_macro/3}]).
 
 
-%% Check well-formedness of list of macro definitions.
+%% Check well-formedness of user-specified list of macro definitions.
 
 check_defs([{K, D} | Ds]) when atom(K), list(D) ->
     check_defs(Ds);
@@ -78,7 +80,7 @@ time_macro(_S, _Line, _Env) ->
 
 link_macro(S, Line, Env) ->
     {S1, S2} = edoc_lib:split_at_stop(S),
-    Ref = edoc_parse_ref:parse(S1, Line),
+    Ref = edoc_parser:parse_ref(S1, Line),
     URI = edoc_refs:get_uri(Ref, Env),
     Txt = if S2 == [] -> "<code>" ++ S1 ++ "</code>";
 	     true -> S2
@@ -90,15 +92,25 @@ link_macro(S, Line, Env) ->
     lists:flatten(io_lib:fwrite("<a href=\"~s\"~s>~s</a>",
 				[URI, Target, Txt])).
 
+section_macro(S, _Line, _Env) ->
+    S1 = lists:reverse(edoc_lib:strip_space(
+			 lists:reverse(edoc_lib:strip_space(S)))),
+    lists:flatten(io_lib:format("<a href=\"#~s\">~s</a>",
+				[edoc_lib:to_label(S1), S1])).
+
 type_macro(S, Line, Env) ->
     S1 = "t()=" ++ S,
-    Def = edoc_parse_typedef:parse(S1, Line),
+    Def = edoc_parser:parse_typedef(S1, Line),
     {#t_typedef{type = T}, _} = Def,
     Txt = edoc_layout:type(edoc_data:type(T, Env)),
     lists:flatten(io_lib:fwrite("<code>~s</code>", [Txt])).
 
 
 %% Expand inline macros in tag content.
+
+expand_tags(Ts, Env, Where) ->
+    Defs = dict:from_list(Env#env.macros),
+    expand_tags(Ts, Defs, Env, Where).
 
 expand_tags([#tag{data = Cs, line = L} = T | Ts], Defs, Env, Where) ->
     [T#tag{data = expand_tag(Cs, L, Defs, Env, Where)}
@@ -154,10 +166,10 @@ expand([], _, _, _, _, As) ->
     As.
 
 expand_macro(Cs, L, Defs, Env, Set, As) ->
-    {M, Cs1} = macro_name(Cs, L),
-    {Arg, Cs2, L1} = macro_content(Cs1, L, Defs),
+    {M, Cs1, L1} = macro_name(Cs, L),
+    {Arg, Cs2, L2} = macro_content(Cs1, L1),
     As1 = expand_macro_def(M, Arg, L, Defs, Env, Set, As),
-    expand(Cs2, L1, Defs, Env, Set, As1).
+    expand(Cs2, L2, Defs, Env, Set, As1).
 
 %% The macro argument (the "content") is expanded in the environment of
 %% the call, and the result is bound to the '{@?}' parameter. The result
@@ -212,6 +224,8 @@ macro_name([$\s | _Cs], _As, L) ->
     throw_error(L, macro_name);
 macro_name([$\t | _Cs], _As, L) ->
     throw_error(L, macro_name);
+macro_name([$\n | _Cs], _As, L) ->
+    throw_error(L, macro_name);
 macro_name([C | _Cs], As, L) ->
     throw_error(L, {macro_name, [C | As]});
 macro_name([], _As, L) ->
@@ -228,29 +242,41 @@ macro_name_1([C | Cs], As, L) when C >= $\300, C =< $\377,
     macro_name_1(Cs, [C | As], L);
 macro_name_1([$_ | Cs], As, L) ->
     macro_name_1(Cs, [$_ | As], L);
-macro_name_1([$\s | _] = Cs, As, _L) ->
-    macro_name_2(Cs, As);
-macro_name_1([$\t | _] = Cs, As, _L) ->
-    macro_name_2(Cs, As);
-macro_name_1([$\n | _] = Cs, As, _L) ->
-    macro_name_2(Cs, As);
-macro_name_1([$} | _] = Cs, As, _L) ->
-    macro_name_2(Cs, As);
+macro_name_1([$\s | Cs], As, L) ->
+    macro_name_2(Cs, As, L);
+macro_name_1([$\t | Cs], As, L) ->
+    macro_name_2(Cs, As, L);
+macro_name_1([$\n | Cs], As, L) ->
+    macro_name_2(Cs, As, L + 1);
+macro_name_1([$} | _] = Cs, As, L) ->
+    macro_name_3(Cs, As, L);
 macro_name_1([C | _Cs], As, L) ->
     throw_error(L, {macro_name, [C | As]});
 macro_name_1([], _As, L) ->
     throw_error(L, unterminated_macro).
 
-macro_name_2(Cs, As) ->
-    {list_to_atom(lists:reverse(As)), edoc_lib:strip_space(Cs)}.
+macro_name_2([$\s | Cs], As, L) ->
+    macro_name_2(Cs, As, L);
+macro_name_2([$\t | Cs], As, L) ->
+    macro_name_2(Cs, As, L);
+macro_name_2([$\n | Cs], As, L) ->
+    macro_name_2(Cs, As, L + 1);
+macro_name_2([_ | _] = Cs, As, L) ->
+    macro_name_3(Cs, As, L);
+macro_name_2([], _As, L) ->
+    throw_error(L, unterminated_macro).
+
+macro_name_3(Cs, As, L) ->
+    {list_to_atom(lists:reverse(As)), Cs, L}.
+
 
 %% The macro content ends at the first non-escaped '}' character that is
 %% not balanced by a corresponding non-escaped '{@' sequence.
 %% Escape sequences are those defined above.
 
-macro_content(Cs, L, Defs) ->
+macro_content(Cs, L) ->
     %% If there is an error, we report the start line, not the end line.
-    case catch {ok, macro_content(Cs, [], L, 0, Defs)} of
+    case catch {ok, macro_content(Cs, [], L, 0)} of
 	{ok, X} ->
 	    X;
 	{'EXIT', R} ->
@@ -261,23 +287,25 @@ macro_content(Cs, L, Defs) ->
 	    throw(Other)
     end.
 
-macro_content([$@, $@ | Cs], As, L, N, Defs) ->
-    macro_content(Cs, [$@, $@ | As], L, N, Defs);  % escaped '@'
-macro_content([$@, $} | Cs], As, L, N, Defs) ->
-    macro_content(Cs, [$}, $@ | As], L, N, Defs);  % escaped '}'
-macro_content([$@, ${ | Cs], As, L, N, Defs) ->
-    macro_content(Cs, [${, $@ | As], L, N, Defs);  % escaped '{'
-macro_content([${, $@ | Cs], As, L, N, Defs) ->
-    macro_content(Cs, [$@, ${ | As], L, N + 1, Defs);
-macro_content([$} | Cs], As, L, 0, _Defs) ->
+%% @throws 'end'
+
+macro_content([$@, $@ | Cs], As, L, N) ->
+    macro_content(Cs, [$@, $@ | As], L, N);  % escaped '@'
+macro_content([$@, $} | Cs], As, L, N) ->
+    macro_content(Cs, [$}, $@ | As], L, N);  % escaped '}'
+macro_content([$@, ${ | Cs], As, L, N) ->
+    macro_content(Cs, [${, $@ | As], L, N);  % escaped '{'
+macro_content([${, $@ | Cs], As, L, N) ->
+    macro_content(Cs, [$@, ${ | As], L, N + 1);
+macro_content([$} | Cs], As, L, 0) ->
     {lists:reverse(As), Cs, L};
-macro_content([$} | Cs], As, L, N, Defs) ->
-    macro_content(Cs, [$} | As], L, N - 1, Defs);
-macro_content([$\n = C | Cs], As, L, N, Defs) ->
-    macro_content(Cs, [C | As], L + 1, N, Defs);
-macro_content([C | Cs], As, L, N, Defs) ->
-    macro_content(Cs, [C | As], L, N, Defs);
-macro_content([], _As, _L, _N, _Defs) ->
+macro_content([$} | Cs], As, L, N) ->
+    macro_content(Cs, [$} | As], L, N - 1);
+macro_content([$\n = C | Cs], As, L, N) ->
+    macro_content(Cs, [C | As], L + 1, N);
+macro_content([C | Cs], As, L, N) ->
+    macro_content(Cs, [C | As], L, N);
+macro_content([], _As, _L, _N) ->
     throw('end').
 
 throw_error(L, unterminated_macro) ->

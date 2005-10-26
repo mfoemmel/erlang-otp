@@ -17,7 +17,6 @@
 %%
 -module(mod_auth).
 
-
 %% The functions that the webbserver call on startup stop
 %% and when the server traverse the modules.
 -export([do/1, load/2, store/2, remove/1]).
@@ -38,14 +37,11 @@
 -include("mod_auth.hrl").
 
 -define(VMODULE,"AUTH").
--include("httpd_verbosity.hrl").
 
 -define(NOPASSWORD,"NoPassword").
 
-
 %% do
 do(Info) ->
-    ?vtrace("do", []),
     case httpd_util:key1search(Info#mod.data,status) of
 	%% A status code has been generated!
 	{_StatusCode, _PhraseArgs, _Reason} ->
@@ -114,7 +110,6 @@ do_auth(Info, Directory, DirectoryData, _AuthType) ->
 	{authorized, User} ->
 	    {proceed, [{remote_user,User}|Info#mod.data]};
 	{authorization_required, Realm} ->
-	    ?vtrace("do_auth -> authorization_required: ~p",[Realm]),
 	    ReasonPhrase = httpd_util:reason_phrase(401),
 	    Message = httpd_util:message(401,none,Info#mod.config_db),
 	    {proceed,
@@ -305,8 +300,6 @@ validate_addr(_RemoteAddr, none) ->           % When called from 'deny'
 validate_addr(_RemoteAddr, []) ->
     false;
 validate_addr(RemoteAddr, [HostRegExp | Rest]) ->
-    ?DEBUG("validate_addr -> RemoteAddr: ~p HostRegExp: ~p",
-	   [RemoteAddr, HostRegExp]),
     case regexp:match(RemoteAddr, HostRegExp) of
 	{match,_,_} ->
 	    true;
@@ -317,9 +310,7 @@ validate_addr(RemoteAddr, [HostRegExp | Rest]) ->
 %% deny
 
 deny({_,RemoteAddr}, _SocketType, _Socket,DirectoryData) ->
-    ?DEBUG("deny -> RemoteAddr: ~p",[RemoteAddr]),
     Hosts = httpd_util:key1search(DirectoryData, deny_from, none),
-    ?DEBUG("deny -> Hosts: ~p",[Hosts]),
     case validate_addr(RemoteAddr,Hosts) of
 	true ->
 	    {denied, ?NICE("Connection from your host is not allowed")};
@@ -499,7 +490,6 @@ store({directory,Directory0, DirData0}, ConfigList) ->
 		{error, Reason} ->
 		    {error, Reason};
 		Other ->
-		    ?ERROR("unexpected result: ~p",[Other]),
 		    {error, Other}
 	    end
     end.

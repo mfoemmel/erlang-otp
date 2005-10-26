@@ -42,7 +42,7 @@
 	 get_agent_mp_model/2, 
 	 get_agent_user_id/2, 
 	 
-	 system_info/1, 
+	 system_info/0, system_info/1, 
 	 get_engine_id/0, get_engine_max_message_size/0,
 
 	 register_usm_user/3, unregister_usm_user/2, 
@@ -65,6 +65,7 @@
 	 maybe_cre_stats_counter/2,
 	 incr_stats_counter/2,
 	 reset_stats_counter/1,
+	 get_stats_counters/0,
 
 	 load_mib/1, unload_mib/1, which_mibs/0, 
 	 make_mini_mib/0,
@@ -72,6 +73,7 @@
 
 	 system_start_time/0,
 
+	 info/0, 
 	 verbosity/1 
 
 	]).
@@ -103,6 +105,9 @@
 
 %% Macros and Constants:
 -define(SERVER, ?MODULE).
+
+-define(IRB_DEFAULT, auto).
+%% -define(IRB_DEFAULT, {user, timer:seconds(15)}).
 
 -define(USER_MOD_DEFAULT,  snmpm_user_default).
 -define(USER_DATA_DEFAULT, undefined).
@@ -301,6 +306,11 @@ get_agent_user_id(Addr, Port) ->
     agent_info(Addr, Port, user_id).
 
 
+system_info() ->
+    system_info(all).
+
+system_info(all) ->
+    lists:sort(ets:tab2list(snmpm_config_table));
 system_info(Key) when atom(Key) ->
     case ets:lookup(snmpm_config_table, Key) of
 	[{_, Val}] ->
@@ -588,6 +598,8 @@ reset_stats_counter(Counter) ->
     end,
     ok.
     
+get_stats_counters() ->
+    ets:tab2list(snmpm_stats_table).
     
 load_mib(Mib) when list(Mib) ->
     call({load_mib, Mib}).
@@ -623,6 +635,9 @@ make_mini_mib() ->
     MiniElems = ets:match(snmpm_mib_table, Pat),
     lists:keysort(1, [list_to_tuple(MiniElem) || MiniElem <- MiniElems]).
 
+
+info() ->
+    call(info).
 
 verbosity(Verbosity) ->
     case ?vvalidate(Verbosity) of
@@ -704,11 +719,13 @@ do_init(Opts) ->
     process_flag(priority, Prio),
 
     %% -- Server (optional) --
-    ServerOpts = get_opt(server,    Opts,      []),
-    ServerVerb = get_opt(verbosity, ServerOpts, silence),
-    ServerGct  = get_opt(timeout,   ServerOpts, 30000),
-    ets:insert(snmpm_config_table, {server_verbosity, ServerVerb}),
-    ets:insert(snmpm_config_table, {server_timeout,   ServerGct}),
+    ServerOpts = get_opt(server,         Opts,      []),
+    ServerVerb = get_opt(verbosity,      ServerOpts, silence),
+    ServerGct  = get_opt(timeout,        ServerOpts, 30000),
+    ServerMt   = get_opt(multi_threaded, ServerOpts, true),
+    ets:insert(snmpm_config_table, {server_verbosity,      ServerVerb}),
+    ets:insert(snmpm_config_table, {server_timeout,        ServerGct}),
+    ets:insert(snmpm_config_table, {server_multi_threaded, ServerMt}),
    
     %% -- Mibs (optional) --
     ?vdebug("initiate mini mib", []),
@@ -718,12 +735,20 @@ do_init(Opts) ->
 
     %% -- Net-if (optional) --
     ?vdebug("net_if options", []),
-    NetIfOpts    = get_opt(net_if,    Opts,      []),
-    NetIfMod     = get_opt(module,    NetIfOpts, snmpm_net_if),
-    NetIfVerb    = get_opt(verbosity, NetIfOpts, silence),
-    NetIfOptions = get_opt(options,   NetIfOpts, []),
+    NetIfIrb     = 
+	case get_opt(inform_response_behaviour, Opts, ?IRB_DEFAULT) of
+	    user ->
+		{user, timer:seconds(15)};
+	    Irb ->
+		Irb
+	end,
+    NetIfOpts    = get_opt(net_if,                    Opts,      []),
+    NetIfMod     = get_opt(module,                    NetIfOpts, snmpm_net_if),
+    NetIfVerb    = get_opt(verbosity,                 NetIfOpts, silence),
+    NetIfOptions = get_opt(options,                   NetIfOpts, []),
     ets:insert(snmpm_config_table, {net_if_module,    NetIfMod}),
     ets:insert(snmpm_config_table, {net_if_verbosity, NetIfVerb}),
+    ets:insert(snmpm_config_table, {net_if_irb,       NetIfIrb}),
     ets:insert(snmpm_config_table, {net_if_options,   NetIfOptions}),
 
     %% -- Versions (optional) --
@@ -880,6 +905,8 @@ verify_option({prio, Prio}) ->
     verify_prio(Prio);
 verify_option({mibs, Mibs}) ->
     verify_mibs(Mibs);
+verify_option({inform_request_behaviour, IRB}) ->
+    verify_irb(IRB);
 verify_option({net_if, NetIfOpts}) ->
     verify_net_if_opts(NetIfOpts);
 verify_option({server, ServerOpts}) ->
@@ -909,6 +936,15 @@ verify_prio(Prio) when atom(Prio) ->
     ok;
 verify_prio(Prio) ->
     error({invalid_prio, Prio}).
+
+verify_irb(auto) ->
+    ok;
+verify_irb(user) ->
+    ok;
+verify_irb({user, To}) when is_integer(To) and (To > 0) ->
+    ok;
+verify_irb(IRB) ->
+    error({invalid_irb, IRB}).
 
 verify_mibs([]) ->
     ok;
@@ -1817,6 +1853,11 @@ handle_call({verbosity, Verbosity}, _From, State) ->
     put(verbosity, Verbosity),
     {reply, ok, State};
 
+handle_call(info, _From, State) ->
+    ?vlog("received info request", []),
+    Reply = get_info(),
+    {reply, Reply, State};
+
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
@@ -2442,6 +2483,45 @@ get_opt(Key, Opts) ->
 get_opt(Key, Opts, Def) ->
     ?d("get option ~w with default ~p from ~p", [Key, Def, Opts]),
     snmp_misc:get_option(Key, Opts, Def).
+
+
+%%----------------------------------------------------------------------
+
+get_info() ->
+    ProcSize = proc_mem(self()),
+    CntSz    = tab_size(snmpm_counter_table),
+    StatsSz  = tab_size(snmpm_stats_table),
+    MibSz    = tab_size(snmpm_mib_table),
+    ConfSz   = tab_size(snmpm_config_table),
+    AgentSz  = tab_size(snmpm_agent_table),
+    UserSz   = tab_size(snmpm_user_table),
+    UsmSz    = tab_size(snmpm_usm_table),
+    [{process_memory, ProcSize},
+     {db_memory, [{counter, CntSz}, 
+		  {stats,   StatsSz},
+		  {mib,     MibSz}, 
+		  {config,  ConfSz},
+		  {agent,   AgentSz}, 
+		  {user,    UserSz}, 
+		  {usm,     UsmSz}]}].
+
+proc_mem(P) when pid(P) ->
+    case (catch erlang:process_info(P, memory)) of
+	{memory, Sz} when integer(Sz) ->
+	    Sz;
+	_ ->
+	    undefined
+    end;
+proc_mem(_) ->
+    undefined.
+
+tab_size(T) ->
+    case (catch ets:info(T, memory)) of
+	Sz when integer(Sz) ->
+	    Sz;
+	_ ->
+	    undefined
+    end.
 
 
 %%----------------------------------------------------------------------

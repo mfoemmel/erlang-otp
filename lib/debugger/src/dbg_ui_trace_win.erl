@@ -79,8 +79,8 @@ create_win(GS, Title, TraceWin, Menus) ->
     
     Win = gs:window(trace_window, GS, [{title, Title},
 				       {width, 550},
-				       {configure, true}, {destroy, true},
-				       {keypress, true}, {motion, true}]),
+				       {configure,true}, {destroy,true},
+				       {keypress,true}, {motion,true}]),
 
     MenuBar = gs:menubar(Win, []),
     dbg_ui_win:create_menus(MenuBar, Menus),
@@ -111,7 +111,7 @@ create_win(GS, Title, TraceWin, Menus) ->
 		   gs:read('TraceArea', height)}),
     
     gs:config(Win, {map, true}),
-    #winInfo{window=Win, size={gs:read(Win, width), gs:read(Win, height)},
+    #winInfo{window=Win, size={gs:read(Win,width), gs:read(Win,height)},
 	     flags=Flags,
 	     editor={'$top', Editor}, editors=[{'$top', Editor}]}.
 
@@ -158,7 +158,7 @@ configure(WinInfo, TraceWin) ->
     H3 = if
 	     Ev1==close, Ev2==open, Bi1==open ->
 		 Wnew1 = round((W-10-4)/2), % W = window/2 - rb - pads
-		 Hbi1 = gs:read('BindArea', height), % H = bind area height
+		 Hbi1 = gs:read('BindArea', height), % H = bind area h
 		 resize_eval_area(open, width, Wnew1),
 		 resize_eval_area(open, height, Hbi1),
 		 gs:config('RB3', {width, 10}),
@@ -186,7 +186,7 @@ configure(WinInfo, TraceWin) ->
     H4 = if
 	     Bi1==close, Bi2==open, Ev2==open ->
 		 Wnew3 = round((W-10-4)/2), % W = window/2 - rb - pads
-		 Hs2 = gs:read('EvalArea', height), % H = eval area height
+		 Hs2 = gs:read('EvalArea', height), % H = eval area h
 		 resize_bind_area(open, width, Wnew3),
 		 resize_bind_area(open, height, Hs2),
 		 gs:config('RB3', [{width,10},{height,Hs2}]),
@@ -301,7 +301,8 @@ select(MenuItem, Bool) ->
 %%--------------------------------------------------------------------
 add_break(WinInfo, Menu, {{Mod,Line},[Status|_Options]}=Break) ->
     case lists:keysearch(Mod, 1, WinInfo#winInfo.editors) of
-	{value, {Mod, Editor}} -> add_break_to_code(Editor, Line, Status);
+	{value, {Mod, Editor}} ->
+	    add_break_to_code(Editor, Line, Status);
 	false -> ignore
     end,
     add_break_to_menu(WinInfo, Menu, Break).
@@ -329,7 +330,8 @@ add_break_to_menu(WinInfo, Menu, {Point, [Status|_Options]=Options}) ->
 %%--------------------------------------------------------------------
 update_break(WinInfo, {{Mod,Line},[Status|_Options]}=Break) ->
     case lists:keysearch(Mod, 1, WinInfo#winInfo.editors) of
-	{value, {Mod, Editor}} -> add_break_to_code(Editor, Line, Status);
+	{value, {Mod, Editor}} ->
+	    add_break_to_code(Editor, Line, Status);
 	false -> ignore
     end,
     update_break_in_menu(WinInfo, Break).
@@ -395,27 +397,32 @@ clear_breaks(WinInfo, Mod) ->
 
 %%--------------------------------------------------------------------
 %% display(Arg)
-%%   Arg = {exit,Mod,Line,Reason} | {exit,Reason} | {text,Text} | idle
-%%       | {Status,Mod,Line} | {Status,Mod}
+%%   Arg = idle | {Status,Mod,Line} | {running,Mod}
+%%       ¦ {exit,Where,Reason} | {text,Text}
+%%     Status = break | wait ¦ Level
+%%       Level = int()
 %%     Mod = atom()
 %%     Line = integer()
+%%     Where = {Mod,Line} | null
 %%     Reason = term()
 %%     Text = string()
-%%     Status = break | running | wait_at
 %%--------------------------------------------------------------------
 display(Arg) ->
     Str = case Arg of
-	      {exit, Mod, Line, Reason} ->
+	      idle -> "State: uninterpreted";
+	      {exit, {Mod,Line}, Reason} ->
 		  gs:config(trace_window, raise),
 		  io_lib:format("State: EXITED [~w.erl/~w], Reason:~w",
 				[Mod, Line, Reason]);
-	      {exit, Reason} ->
+	      {exit, null, Reason} ->
 		  gs:config(trace_window, raise),
-		  io_lib:format("State: EXITED [uninterpreted], Reason:~w",
-				[Reason]);
-	      {text, Text}  -> Text;
-	      idle -> "State: uninterpreted";
-	      {Level, Mod, Line} when integer(Level) ->
+		  io_lib:format("State: EXITED [uninterpreted], "
+				"Reason:~w", [Reason]);
+	      {Level, null, _Line} when is_integer(Level) ->
+		  io_lib:format("*** Call level #~w "
+				"(in non-interpreted code)",
+				[Level]);
+	      {Level, Mod, Line} when is_integer(Level) ->
 		  io_lib:format("*** Call level #~w [~w.erl/~w]",
 				[Level, Mod, Line]);
 	      {Status, Mod, Line} ->
@@ -423,9 +430,11 @@ display(Arg) ->
 			     wait -> 'receive';
 			     _ -> Status
 			 end,
-		  io_lib:format("State: ~w [~w.erl/~w]", [What, Mod, Line]);
-	      {Status, Mod} ->
-		  io_lib:format("State: ~w [~w.erl]", [Status, Mod])
+		  io_lib:format("State: ~w [~w.erl/~w]",
+				[What, Mod, Line]);
+	      {running, Mod} ->
+		  io_lib:format("State: running [~w.erl]", [Mod]);
+	      {text, Text}  -> Text
 	  end,
     gs:config(info_window, {label,{text,lists:flatten(Str)}}).
 
@@ -461,7 +470,7 @@ show_code(WinInfo, Mod, Contents) ->
 			  case BreakInfo#breakInfo.point of
 			      {Mod2, Line} when Mod2==Mod ->
 				  Status = BreakInfo#breakInfo.status,
-				  add_break_to_code(Editor, Line, Status);
+				  add_break_to_code(Editor, Line,Status);
 			      _Point -> ignore
 			  end
 		  end,
@@ -476,7 +485,7 @@ show_code(WinInfo, Mod, Contents) ->
     end.
 	
 show_code(Editor, Text) when length(Text)>1500 ->
-    %% Add some text at a time so that other processes may get scheduled in
+    %% Add some text at a time so that other processes may get scheduled
     Str = string:sub_string(Text, 1, 1500),
     config_editor(Editor, {insert,{'end', Str}}),
     show_code(Editor, string:sub_string(Text, 1501));
@@ -591,24 +600,27 @@ eval_output(Text, Face) ->
 %%--------------------------------------------------------------------
 update_bindings(Bs) ->
     gs:config('BindGrid', {rows, {1,length(Bs)+1}}),
-    Last = lists:foldl(fun({Var, Val}, Row) ->
-			       Opts = [{text, {1,atom_to_list(Var)}},
-				       {text, {2,io_lib:format("~P",
-							       [Val, 4])}},
-				       {doubleclick, true},
-				       {data, {binding,{Var,Val}}}],
-			       case gs:read('BindGrid',{obj_at_row,Row}) of
-				   undefined ->
-				       gs:gridline('BindGrid',
-						   [{row, Row},
-						    {height,14} | Opts]);
-				   GridLine ->
-				       gs:config(GridLine, Opts)
-			       end,
-			       Row+1
-		       end,
-		       2,
-		       Bs),
+    Font = dbg_ui_win:font(normal),
+    Last =
+	lists:foldl(fun({Var, Val}, Row) ->
+			    Opts = [{text, {1,atom_to_list(Var)}},
+				    {text, {2,io_lib:format("~P",
+							    [Val, 4])}},
+				    {doubleclick, true},
+				    {data, {binding,{Var,Val}}}],
+			    case gs:read('BindGrid',{obj_at_row,Row}) of
+				undefined ->
+				    gs:gridline('BindGrid',
+						[{row, Row},
+						 {height, 14},
+						 {font, Font} | Opts]);
+				GridLine ->
+				    gs:config(GridLine, Opts)
+			    end,
+			    Row+1
+		    end,
+		    2,
+		    Bs),
     delete_gridlines(Last).
 
 delete_gridlines(Row) -> 
@@ -645,7 +657,7 @@ trace_output(Str) ->
 %%           | MenuItem | {Menu, [MenuItem]}
 %%               MenuItem = Menu = atom()
 %%           | {break, Point, What}
-%%               What = add | delete | {status,Status} | {trigger,Trigger}
+%%               What = add | delete | {status,Status} |{trigger,Trigger}
 %%           | {module, Mod, view}
 %%
 %%           | {user_command, Cmd}
@@ -717,7 +729,7 @@ handle_event({gs, _Id, click, {button, Name}, _Arg}, _WinInfo) ->
     Name;
 
 %% Evaluator area
-handle_event({gs, 'EvalEntry', keypress, _Data, ['Return'|_]}, _WinInfo) ->
+handle_event({gs, 'EvalEntry', keypress, _Data, ['Return'|_]}, _WI) ->
     Command = case gs:read('EvalEntry', text) of
 		  [10] ->
 		      eval_output("\n", normal),
@@ -751,7 +763,8 @@ code_area(X, Y, FrameOpts, Win) ->
     gs:frame('CodeArea', Win,
 	     [{x,X}, {y,Y}, {width,546}, {height,400} | FrameOpts]),
     gs:label(info_window, 'CodeArea',
-	     [{label,{text,""}}, {x,5}, {y,10}, {width,406}, {height,15},
+	     [{label,{text,""}}, {font,dbg_ui_win:font(normal)},
+	      {x,5}, {y,10}, {width,406}, {height,15},
 	      {anchor,nw}, {align,w}]),
     code_editor('CodeEditor', 536, 365).
 
@@ -812,9 +825,10 @@ button_area(Bu, X, Y, FrameOpts, Win) ->
 	    end,
     gs:frame('ButtonArea', Win,
 	     [{x,X}, {y,Y}, {width,W}, {height,H} | FrameOpts]),
+    Font = dbg_ui_win:font(normal),
     lists:foldl(fun({Name, Button}, Xb) ->
 			gs:button(Button, 'ButtonArea',
-				  [{label, {text,Name}},
+				  [{label, {text,Name}}, {font,Font},
 				   {x, Xb}, {y, 1},
 				   {width, 77}, {height, 24},
 				   {data, {button,Name}}]),
@@ -835,16 +849,17 @@ eval_area({Ev,Bi}, X, Y, FrameOpts, Win) ->
 		Ev==open -> {289,200};
 		true -> {0,0}
 	    end,
+    Font = dbg_ui_win:font(normal),
     gs:frame('EvalArea', Win,
 	     [{x,X}, {y,Y}, {width,W}, {height,H} | FrameOpts]),
     gs:label('EvalArea',
-	     [{label,{text,"Evaluator:"}},
+	     [{label,{text,"Evaluator:"}}, {font, Font},
 	      {x,5}, {y,35}, {width,80}, {height,25},
 	      {anchor,sw}, {align,center}]),
     gs:entry('EvalEntry', 'EvalArea',
-	     [{x,80}, {y,35}, {width,185}, {height,25},
+	     [{font, Font},
+	      {x,80}, {y,35}, {width,185}, {height,25},
 	      {anchor,sw}, {keypress,true}]),
-    Font = dbg_ui_win:font(normal),
     gs:editor('EvalEditor', 'EvalArea',
 	      [{x,5}, {y,35}, {width, 280}, {height, 160},
 	       {keypress,false},
@@ -889,7 +904,7 @@ bind_area({Ev,Bi}, X, Y, FrameOpts, Win) ->
 	     calc_columnwidths(241), {rows, {1,50}}]), 
     gs:gridline('BindGrid',
 		[{row,1}, {height,14}, {fg,blue},
-		 {text,{1,"Name"}}, {text,{2,"Value"}}]),
+		 {text,{1,"Name"}}, {text,{2,"Value"}}, {font,Font}]),
     gs:config('BindGrid', {rows,{1,1}}),
     if
 	Bi==open, Ev==close -> resize_bind_area(Bi, width, 297);
@@ -1080,7 +1095,8 @@ configure(WinInfo, NewW, NewH) ->
 	    resize_eval_area(Ev, height, Deval2),
 	    case rb3(Flags) of
 		open ->
-		    gs:config('RB3', {height,gs:read('RB3',height)+Deval2});
+		    gs:config('RB3',
+			      {height,gs:read('RB3',height)+Deval2});
 		close -> ignore
 	    end,
 	    resize_bind_area(Bi, height, Deval2),
@@ -1147,7 +1163,7 @@ configure_widths(OldW, NewW, Flags) ->
 configure_heights(OldH, NewH, Flags) ->
     {_Bu,Ev,Bi,Tr} = Flags,
 
-    %% Difference between old and new height, considering min window height
+    %% Difference between old and new height, considering min win height
     MinH = min_height(Flags),
     Diff = abs(max(OldH,MinH)-max(NewH,MinH)),
     
@@ -1285,19 +1301,19 @@ resizeloop(WI, RB, Prev, {Min1,Max1},{Min2,Max2},{Min3,Max3}) ->
 	    gs:config('RB1', {y,Y}),
 	    resizeloop(WI, RB, Y, {Min1,Max1},{Min2,Max2},{Min3,Max3});
 	{gs,_,motion,_,_} when RB=='RB1' ->
-	    resizeloop(WI, RB, Prev, {Min1,Max1},{Min2,Max2},{Min3,Max3});
+	    resizeloop(WI, RB, Prev,{Min1,Max1},{Min2,Max2},{Min3,Max3});
 	
 	{gs,_,motion,_,[_,Y]} when RB=='RB2', Y>Min2,Y<Max2 ->
 	    gs:config('RB2', {y,Y}),
 	    resizeloop(WI, RB, Y, {Min1,Max1},{Min2,Max2},{Min3,Max3});
 	{gs,_,motion,_,_} when RB=='RB2' ->
-	    resizeloop(WI, RB, Prev, {Min1,Max1},{Min2,Max2},{Min3,Max3});
+	    resizeloop(WI, RB, Prev,{Min1,Max1},{Min2,Max2},{Min3,Max3});
 	 
 	{gs,_,motion,_,[X,_]} when RB=='RB3', X>Min3,X<Max3 ->
 	    gs:config('RB3', {x,X}),
 	    resizeloop(WI, RB, X, {Min1,Max1},{Min2,Max2},{Min3,Max3});
 	{gs,_,motion,_,_} when RB=='RB3' ->
-	    resizeloop(WI, RB, Prev, {Min1,Max1},{Min2,Max2},{Min3,Max3});
+	    resizeloop(WI, RB, Prev,{Min1,Max1},{Min2,Max2},{Min3,Max3});
 	
 	{gs,_,buttonrelease,_,_} ->
 	    resize_win(WI, RB, Prev)
@@ -1409,7 +1425,7 @@ min(_A, B) -> B.
 %%====================================================================
 
 helpwin(gotoline, WinInfo, GS, Coords) ->
-    spawn_link(?MODULE, helpwin, [gotoline, WinInfo, GS, Coords, self()]);
+    spawn_link(?MODULE, helpwin, [gotoline, WinInfo, GS, Coords,self()]);
 helpwin(search, WinInfo, GS, Coords) ->
     spawn_link(?MODULE, helpwin, [search, WinInfo, GS, Coords, self()]).
 
@@ -1472,7 +1488,7 @@ helpwin_action(gotoline, default, AttPid, _Editor, Data, Win) ->
 	    end
     end,
     Data;
-helpwin_action(search, case_sensitive, _AttPid, _Editor, {Pos, CS}, _Win) ->
+helpwin_action(search, case_sensitive, _AttPid, _Ed, {Pos, CS}, _Win) ->
     Bool = if CS==true -> false; CS==false -> true end,
     {Pos, Bool};
 helpwin_action(search, default, _AttPid, Editor, {Pos, CS}, Win) ->
@@ -1498,7 +1514,7 @@ search(_Str, _Editor, Max, {Row, _Col}, _CS) when Row>Max ->
     not_found;
 search(Str, Editor, Max, {Row, Col}, CS) ->
     SearchIn = lowercase(CS, gs:read(Editor,
-				     {get, {{Row,Col+1},{Row,lineend}}})),
+				     {get,{{Row,Col+1},{Row,lineend}}})),
     case string:str(SearchIn, Str) of
 	0 -> search(Str, Editor, Max, {Row+1, 0}, CS);
 	N -> {Row, Col+N}
@@ -1531,7 +1547,8 @@ unmark_string(Editor, {Row, Col}) ->
 helpwin(Type, GS, {X, Y}) ->
     W = 200, Pad=10, Wbtn = 50,
 
-    Title = case Type of search -> "Search"; gotoline -> "Go To Line" end,
+    Title =
+	case Type of search -> "Search"; gotoline -> "Go To Line" end,
     Win = gs:window(GS, [{title, Title}, {x, X}, {y, Y}, {width, W},
 			 {destroy, true}]),
     
@@ -1539,11 +1556,14 @@ helpwin(Type, GS, {X, Y}) ->
 			 {keypress, true}]),
     Hent = gs:read(Ent, height),
 
+    Font = dbg_ui_win:font(normal),
+
     {Ybtn, Lbl} =
 	case Type of
 	    search ->
 		Ycb = Pad+Hent,
 		gs:checkbutton(Win, [{label, {text, "Case Sensitive"}},
+				     {font, Font},
 				     {align, w},
 				     {x, Pad}, {y, Ycb},
 				     {width, W-2*Pad}, {height, 15},
@@ -1556,14 +1576,14 @@ helpwin(Type, GS, {X, Y}) ->
 	end,
 
     BtnLbl = case Type of search -> "Search"; gotoline -> "Go" end,
-    Btn = gs:button(Win, [{label, {text, BtnLbl}},
+    Btn = gs:button(Win, [{label, {text, BtnLbl}}, {font, Font},
 			  {x, W/2-3/2*Wbtn-Pad}, {y, Ybtn},
 			  {width, Wbtn}, {height, Hent},
 			  {data, default}]),
-    gs:button(Win, [{label, {text, "Clear"}},
+    gs:button(Win, [{label, {text, "Clear"}}, {font, Font},
 		    {x, W/2-1/2*Wbtn}, {y, Ybtn},
 		    {width, Wbtn}, {height, Hent}]),
-    gs:button(Win, [{label, {text, "Close"}},
+    gs:button(Win, [{label, {text, "Close"}}, {font, Font},
 		    {x, W/2+1/2*Wbtn+Pad}, {y, Ybtn},
 		    {width, Wbtn}, {height, Hent}]),
 

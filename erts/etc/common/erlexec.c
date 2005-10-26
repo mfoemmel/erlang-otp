@@ -275,6 +275,7 @@ int main(int argc, char **argv)
     char *malloc_lib;
     int process_args = 1;
     int print_args_exit = 0;
+    int run_valgrind = 0;
 
 #ifdef __WIN32__
     this_module_handle = module;
@@ -538,10 +539,13 @@ int main(int argc, char **argv)
 		    break;
 	
 		  case 'v':	/* -version */
-		    if (strcmp(argv[i], "-version") == 0)
+		    if (strcmp(argv[i], "-version") == 0) {
 			add_Eargs("-V");
-		    else
+		    } else if (strcmp(argv[i], "-valgrind") == 0) {
+			run_valgrind = 1;
+		    } else {
 			add_arg(argv[i]);
+		    }
 		    break;
 
 		  default:
@@ -680,6 +684,18 @@ int main(int argc, char **argv)
     for (i = 0; i < argsCnt; i++)
 	Eargsp[EargsCnt++] = argsp[i];
     Eargsp[EargsCnt] = NULL;
+
+    if (run_valgrind) {
+	EargsCnt++;
+	ensure_EargsSz(EargsCnt + 1);
+	Eargsp[EargsCnt] = NULL;
+
+	for (i = EargsCnt-1; i > 0; i--) {
+	    Eargsp[i] = Eargsp[i-1];
+	}
+	Eargsp[0] = emu = "valgrind";
+    }
+
     
     if (print_args_exit) {
 	for (i = 1; i < EargsCnt; i++)
@@ -694,7 +710,6 @@ int main(int argc, char **argv)
 	    printf(" %s", Eargsp[i]);
 	printf("\n\n");
     }
-
 
 #ifdef __WIN32__
 
@@ -736,7 +751,11 @@ int main(int argc, char **argv)
 #ifdef DEBUG
     else
 #endif
-	execv(emu, Eargsp);
+	if (run_valgrind) {
+	    execvp(emu, Eargsp);
+	} else {
+	    execv(emu, Eargsp);
+	}
     error("Error %d executing \'%s\'.", errno, emu);
     return 1;
 #endif
@@ -1304,8 +1323,3 @@ possibly_quote(char* arg)
 }
 
 #endif
-
-
-
-
-

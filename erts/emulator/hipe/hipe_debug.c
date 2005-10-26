@@ -5,11 +5,11 @@
  * - detect mode-switch native return addresses (ARCH-specific)
  * - map user-code native return addresses to symbolic names
  */
-#include <stddef.h>	/* offsetof() */
-#include <stdio.h>
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
+#include <stddef.h>	/* offsetof() */
+#include <stdio.h>
 #include "sys.h"
 #include "erl_vm.h"
 #include "global.h"

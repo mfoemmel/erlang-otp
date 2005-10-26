@@ -637,7 +637,7 @@ pat_type(P, Vars) ->
 	    t_from_term(concrete(P));
 	cons ->
 	    t_cons(pat_type(cons_hd(P), Vars), 
-		   pat_type(cons_hd(P), Vars));
+		   pat_type(cons_tl(P), Vars));
 	tuple ->
 	    t_tuple([pat_type(E, Vars) || E <- tuple_es(P)]);
 	binary ->

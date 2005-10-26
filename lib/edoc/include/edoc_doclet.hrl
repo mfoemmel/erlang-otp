@@ -25,11 +25,28 @@
 
 %% Context for doclets
 
+%% @type edoc_context() = #context{dir = string(),
+%%                                 env = edoc_lib:edoc_env(),
+%%                                 opts = [term()]}
+
 -record(context, {dir = "",
 		  env,
 		  opts = []}).
 
 %% Doclet commands
+
+%% @type no_app().
+%%    A value used to mark absence of an Erlang application
+%%    context. Use the macro `NO_APP' defined in
+%%    <a href="../include/edoc_doclet.hrl">`edoc_doclet.hrl'</a>
+%%    to produce this value.
+
+%% @type doclet_gen() = #doclet_gen{sources = [string()],
+%%                                  app = no_app() | atom(),
+%%                                  packages = [atom()],
+%%                                  modules = [atom()],
+%%                                  modules = [atom()],
+%%                                  filemap = function()}
 
 -record(doclet_gen, {sources = [],
 		     app = ?NO_APP,
@@ -37,6 +54,9 @@
 		     modules = [],
 		     filemap
 		    }).
+
+%% @type doclet_toc() = #doclet_gen{paths = [string()],
+%%                                  indir = string()}
 
 -record(doclet_toc, {paths,
 		     indir

@@ -73,6 +73,7 @@ static ErlDrvTermData mfs_COLON = 0;
 static ErlDrvTermData mfs_COMMA = 0;
 static ErlDrvTermData mfs_ContextAttrToken = 0;             /* v3 */
 static ErlDrvTermData mfs_ContextAuditToken = 0;
+static ErlDrvTermData mfs_ContextListToken = 0;             /* v3 */
 static ErlDrvTermData mfs_CtxToken = 0;
 static ErlDrvTermData mfs_DelayToken = 0;
 static ErlDrvTermData mfs_DeleteToken = 0;
@@ -388,10 +389,12 @@ buffer                                  LOAD_TOKEN(mfs_BufferToken);
 bf                                      LOAD_TOKEN(mfs_BufferToken);
 context                                 LOAD_TOKEN(mfs_CtxToken);
 c                                       LOAD_TOKEN(mfs_CtxToken);
-contextaudit                            LOAD_TOKEN(mfs_ContextAuditToken);
-ca                                      LOAD_TOKEN(mfs_ContextAuditToken);
 contextattr                             LOAD_TOKEN(mfs_ContextAttrToken);
 ct                                      LOAD_TOKEN(mfs_ContextAttrToken);
+contextaudit                            LOAD_TOKEN(mfs_ContextAuditToken);
+ca                                      LOAD_TOKEN(mfs_ContextAuditToken);
+contextlist                             LOAD_TOKEN(mfs_ContextListToken);
+clt                                     LOAD_TOKEN(mfs_ContextListToken);
 direction                               LOAD_TOKEN(mfs_DirectionToken);
 di                                      LOAD_TOKEN(mfs_DirectionToken);
 discard                                 LOAD_TOKEN(mfs_DiscardToken);

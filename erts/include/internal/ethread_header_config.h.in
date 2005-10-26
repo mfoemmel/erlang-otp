@@ -16,9 +16,6 @@
  *     $Id$
  */
 
-/* Define if you want to turn on some gnu features. */
-#undef _GNU_SOURCE
-
 /* Define if you have win32 threads */
 #undef ETHR_WIN32_THREADS
 

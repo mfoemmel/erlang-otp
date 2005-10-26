@@ -16,71 +16,309 @@
 %%     $Id$
 %%
 
+%%% Description: SSH user authenication
+
 -module(ssh_userauth).
 
+-export([auth/3, auth_remote/3]).
+
 -include("ssh.hrl").
+-include("ssh_userauth.hrl").
+-include("PKCS-1.hrl").
 
--export([
-	 passwd/4
-	]).
+-define(PREFERRED_PK_ALG, ssh_rsa).
 
-%%%----------------------------------------------------------------------
-%%% #             passwd/4
-%%%     
-%%% Input:        Ssh, UserName, Password, Service : 
-%%% Output:       {error, Reason} | ok
-%%%
-%%% Description:  Authenticates service Service as user UserName with Password.
-%%%----------------------------------------------------------------------
+other_alg(ssh_rsa) -> ssh_dsa;
+other_alg(ssh_dsa) -> ssh_rsa.
 
-passwd(Ssh, Name, Password, Service) ->
-    case ssh_transport:send_msg(Ssh,
-				[?SSH_MSG_SERVICE_REQUEST,
-				 ?SSH_STRING("ssh-userauth")]) of
-	ok ->
-	    ssh_transport:set_active_once(Ssh),
-	    receive
-		{ssh_transport, Ssh, <<?SSH_MSG_SERVICE_ACCEPT,_/binary>>} ->
-		    case ssh_transport:send_msg(Ssh, 
-						[?SSH_MSG_USERAUTH_REQUEST,
-						 ?SSH_STRING(Name),
-						 ?SSH_STRING(Service),
-						 ?SSH_STRING("password"),
-						 0,
-						 ?SSH_STRING(Password)]) of
-			ok ->
-			    ssh_transport:set_active_once(Ssh),
-			    receive
-				{ssh_transport, Ssh, 
-				 <<?SSH_MSG_USERAUTH_SUCCESS>>} ->
-				    ok;
-				{ssh_transport, Ssh,
-				 <<?SSH_MSG_USERAUTH_FAILURE,
-				 StrSize:32/integer,
-				 Str:StrSize/binary,
-				 Boolean>>} ->
-				    case regexp:split(binary_to_list(Str),
-						      ",") of
-					{ok,ListOfMethods} ->
-					    case lists:member("password",
-							      ListOfMethods) of
-						true ->
-						    {error,wrong_password};
-						false ->
-						    {error,password_not_supported}
-					    end;
-					Other ->
-					    {error,protocol_error}
-				    end;
-				{ssh_transport_error, Ssh, Error} ->
-				    {error, {transport_error, Error}}
-			    end;
-			Other ->
-			    Other
+auth(SSH, Service, Opts) ->
+    case user_name(Opts) of
+	{ok, User} ->
+	    _Failure = none(SSH, Service, User),
+	    AlgM = proplists:get_value(public_key_alg,
+				       Opts, ?PREFERRED_PK_ALG),
+	    case public_key(SSH, Service, User, Opts, AlgM) of
+		ok -> ok;
+		{failure, _F} ->
+		    case public_key(SSH, Service, User, Opts,
+				    other_alg(AlgM)) of
+			ok -> ok;
+			{failure, _F} ->
+			    passwd(SSH, Service, User, Opts);
+			Error -> Error
 		    end;
-		{ssh_transport_error, Ssh, Error} ->
-		    {error, {transport_error, Error}}
+		Error -> Error
 	    end;
-	Other ->
-	    Other
+	Error -> Error
     end.
+
+%% Find user name
+user_name(Opts) ->
+    Env = case os:type() of
+	      {win32, _} -> "USERNAME";
+	      {unix, _} -> "LOGNAME"
+	  end,
+    case proplists:get_value(user, Opts, os:getenv(Env)) of
+	false ->
+	    case os:getenv("USER") of
+		false -> {error, no_user};
+		User1 -> {ok, User1}
+	    end;
+	User2 -> {ok, User2}
+    end.
+
+%% Public-key authentication
+public_key(SSH, Service, User, Opts, AlgM) ->
+    SSH ! {ssh_install, userauth_pk_messages()},
+    Alg = AlgM:alg_name(),
+    case ssh_file:private_identity_key(Alg, Opts) of
+	{ok, PrivKey} ->
+	    PubKeyBlob = ssh_file:encode_public_key(PrivKey),
+	    SigData = build_sig_data(SSH, User, Service, Alg, PubKeyBlob),
+	    Sig = AlgM:sign(PrivKey, SigData),
+	    SigBlob = list_to_binary([?string(Alg), ?string(Sig)]),
+	    SSH ! {ssh_msg, self(),
+		   #ssh_msg_userauth_request{
+				  user = User,
+				  service = Service,
+				  method = "publickey",
+				  data = [?TRUE,
+					  ?string(Alg),
+					  ?string(PubKeyBlob),
+					  ?string(SigBlob)]}},
+	    public_key_reply(SSH);
+	{error, enoent} ->
+	    {failure, enoent};
+	Error ->
+	    Error
+    end.
+
+%% Send none to find out supported authentication methods
+none(SSH, Service, User) ->
+    SSH ! {ssh_install, 
+	   userauth_messages() ++ userauth_passwd_messages()},
+    SSH ! {ssh_msg, self(), 
+	   #ssh_msg_userauth_request { user = User,
+				       service = Service,
+				       method = "none",
+				       data = <<>> }},
+    passwd_reply(SSH).
+
+%% Password authentication for ssh-connection
+
+passwd(SSH, Service, User, Opts) -> 
+    SSH ! {ssh_install, 
+	   userauth_messages() ++ userauth_passwd_messages()},
+    do_password(SSH, Service, User, Opts).
+
+get_password_option(Opts, User) ->
+    Passwords = proplists:get_value(user_passwords, Opts, []),
+    case lists:keysearch(User, 1, Passwords) of
+	{value, {User, Pw}} -> Pw;
+	false -> proplists:get_value(password, Opts, false)
+    end.
+
+do_password(SSH, Service, User, Opts) ->
+    Password = case proplists:get_value(password, Opts) of
+		   undefined -> ssh_transport:read_password(SSH, "ssh password: ");
+		   PW -> PW
+	       end,
+    ?dbg(true, "do_password: User=~p Password=~p\n", [User, Password]),
+    SSH ! {ssh_msg, self(), 
+	   #ssh_msg_userauth_request { user = User,
+				       service = Service,
+				       method = "password",
+				       data =
+				       <<?BOOLEAN(?FALSE),
+					?STRING(list_to_binary(Password))>> }},
+    case passwd_reply(SSH) of
+	ok -> ok;
+	{error, E} -> {error, E};
+	_  -> do_password(SSH, Service, User, Opts)
+    end.	    
+
+public_key_reply(SSH) ->
+    receive
+	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_success) ->
+	    ok;
+	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_failure) ->
+	    {failure,
+	     string:tokens(R#ssh_msg_userauth_failure.authentications, ",")};
+	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_banner) ->
+	    io:format("~w", [R#ssh_msg_userauth_banner.message]),
+	    public_key_reply(SSH);
+	{ssh_msg, SSH, R} when record(R, ssh_msg_disconnect) ->
+	    {error, disconnected};
+	Other ->
+	    io:format("public_key_reply: Other=~w\n", [Other]),
+	    {error, unknown_msg}
+    end.
+
+passwd_reply(SSH) ->
+    receive
+	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_success) ->
+	    ok;
+	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_failure) ->
+	    {failure,
+	     string:tokens(R#ssh_msg_userauth_failure.authentications, ",")};
+	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_banner) ->
+	    io:format("~w", [R#ssh_msg_userauth_banner.message]),
+	    passwd_reply(SSH);
+	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_passwd_changereq) ->
+	    {error, R};
+	{ssh_msg, SSH, R} when record(R, ssh_msg_disconnect) ->
+	    {error, disconnected};
+	Other ->
+	    io:format("passwd_reply: Other=~w\n", [Other]),
+	    self() ! Other,
+	    {error, unknown_msg}
+    end.
+
+auth_remote(SSH, Service, Opts) ->
+    SSH ! {ssh_install, 
+	   userauth_messages() ++ userauth_passwd_messages()},
+    ssh_transport:service_accept(SSH, "ssh-userauth"),
+    do_auth_remote(SSH, Service, Opts).
+
+do_auth_remote(SSH, Service, Opts) ->
+    receive
+	{ssh_msg, SSH, #ssh_msg_userauth_request { user = User,
+						   service = Service,
+						   method = "password",
+						   data = Data}} ->
+	    <<_:8, ?UINT32(Sz), BinPwd:Sz/binary>> = Data,
+	    Password = binary_to_list(BinPwd),
+	    ?dbg(false, "received pwd: ~p   '~p'\n",
+		 [Password, lists:keysearch(password, 1, Opts)]),
+	    OurPw = get_password_option(Opts, User),
+	    case OurPw of		
+		Password ->
+		    SSH ! {ssh_msg, self(), #ssh_msg_userauth_success{}},
+		    ok;
+		_ ->
+		    SSH ! {ssh_msg, self(), #ssh_msg_userauth_failure {
+					  authentications = "",
+					  partial_success = false}},
+		    do_auth_remote(SSH, Service, Opts)
+	    end;
+	{ssh_msg, SSH, #ssh_msg_userauth_request { user = _User,
+						   service = Service,
+						   method = "none",
+						   data = _Data}} ->
+	    SSH ! {ssh_msg, self(), #ssh_msg_userauth_failure {
+				  authentications = "publickey,password",
+				  partial_success = false}},
+	    do_auth_remote(SSH, Service, Opts);
+	{ssh_msg, SSH, #ssh_msg_userauth_request  { user = User,
+						    service = Service,
+						    method = "publickey",
+						    data = Data}} ->
+	    <<?BOOLEAN(HaveSig), ?UINT32(ALen), BAlg:ALen/binary, 
+	     ?UINT32(KLen), KeyBlob:KLen/binary, SigWLen/binary>> = Data,
+	    Alg = binary_to_list(BAlg),
+	    %% is ssh_file the proper module?
+	    %% shouldn't this fun be in a ssh_key.erl?
+ 	    case HaveSig of
+ 		?TRUE ->
+		    case verify_sig(SSH, User, Service, Alg, KeyBlob, SigWLen, Opts) of
+			ok ->
+			    SSH ! {ssh_msg, self(),
+				   #ssh_msg_userauth_success{}},
+			    ok;
+			_ ->
+			    SSH ! {ssh_msg, self(),
+				   #ssh_msg_userauth_failure{
+						  authentications="publickey,password",
+						  partial_success = false}},
+			    do_auth_remote(SSH, Service, Opts)
+		    end;
+		?FALSE ->
+		    SSH ! {ssh_install, userauth_pk_messages()},
+		    SSH ! {ssh_msg, self(),
+			   #ssh_msg_userauth_pk_ok{
+					  algorithm_name = Alg,
+					  key_blob = KeyBlob}},
+		    do_auth_remote(SSH, Service, Opts)
+	    end;
+	{ssh_msg, SSH, #ssh_msg_userauth_request  { user = _User,
+						    service = Service,
+						    method = _Other,
+						    data = _Data}} ->
+	    SSH ! {ssh_msg, self(),
+		   #ssh_msg_userauth_failure {
+				  authentications = "publickey,password",
+				  partial_success = false}},
+	    do_auth_remote(SSH, Service, Opts);
+	Other ->
+	    io:format("Other ~p~n", [Other]),
+	    {error, Other}
+    end.
+
+alg_to_module("ssh-dss") ->
+    ssh_dsa;
+alg_to_module("ssh-rsa") ->
+    ssh_rsa.
+
+build_sig_data(SSH, User, Service, Alg, KeyBlob) ->
+    %% {P1,P2} = Key#ssh_key.public,
+    %% EncKey = ssh_bits:encode([Alg,P1,P2], [string, mpint, mpint]),
+    SessionID = ssh_transport:get_session_id(SSH),
+    Sig = [?binary(SessionID),
+	   ?SSH_MSG_USERAUTH_REQUEST,
+	   ?string(User),
+	   ?string(Service),
+	   ?binary(<<"publickey">>),
+	   ?TRUE,
+	   ?string(Alg),
+	   ?binary(KeyBlob)],
+    list_to_binary(Sig).
+
+verify_sig(SSH, User, Service, Alg, KeyBlob, SigWLen, Opts) ->
+    {ok, Key} = ssh_file:decode_public_key_v2(KeyBlob, Alg),
+    case ssh_file:lookup_user_key(Alg, Opts) of
+	{ok, OurKey} ->
+	    case OurKey of
+		Key ->
+		    NewSig = build_sig_data(SSH, User, Service, Alg, KeyBlob),
+		    <<?UINT32(AlgSigLen), AlgSig:AlgSigLen/binary>> = SigWLen,
+		    <<?UINT32(AlgLen), _Alg:AlgLen/binary,
+		     ?UINT32(SigLen), Sig:SigLen/binary>> = AlgSig,
+		    M = alg_to_module(Alg),
+		    M:verify(OurKey, NewSig, Sig);
+		_ ->
+		    {error, key_unacceptable}
+	    end;
+	Error -> Error
+    end.
+
+userauth_messages() ->
+    [ {ssh_msg_userauth_request, ?SSH_MSG_USERAUTH_REQUEST,
+       [string, 
+	string, 
+	string, 
+	'...']},
+
+      {ssh_msg_userauth_failure, ?SSH_MSG_USERAUTH_FAILURE,
+       [string, 
+	boolean]},
+
+      {ssh_msg_userauth_success, ?SSH_MSG_USERAUTH_SUCCESS,
+       []},
+
+      {ssh_msg_userauth_banner, ?SSH_MSG_USERAUTH_BANNER,
+       [string, 
+	string]}].
+
+userauth_passwd_messages() ->
+    [ 
+      {ssh_msg_userauth_passwd_changereq, ?SSH_MSG_USERAUTH_PASSWD_CHANGEREQ,
+       [string, 
+	string]}
+     ].
+
+userauth_pk_messages() ->
+    [ {ssh_msg_userauth_pk_ok, ?SSH_MSG_USERAUTH_PK_OK,
+       [string, % algorithm name
+	string]} % key blob
+     ].
+

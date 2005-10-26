@@ -22,9 +22,6 @@
 %% External exports
 -export([start/2, stop/0]).
 
-%% Internal exports
--export([init/3]).
-
 -define(TRACEWIN, ['Button Area', 'Evaluator Area', 'Bindings Area']).
 -define(BACKTRACE, 100).
 
@@ -40,11 +37,13 @@
 		focus,     % undefined | #pinfo{} Process in focus
 		coords,    % {X,Y} Mouse pointer position
 
-		intdir,    % string() Default dir of file(s) to interpret
+		intdir,    % string() Default dir
 		pinfos,    % [#pinfo{}] Debugged processes
 
 		tracewin,  % [Area] Areas shown in trace window
 		backtrace, % integer() Number of call frames to fetch
+
+		attach,    % false | {Flags, Function}
 
 		sfile,     % default | string() Settings file
 		changed    % boolean() Settings have been changed
@@ -64,7 +63,8 @@
 start(Mode, SFile) ->
     case whereis(?MODULE) of
 	undefined ->
-	    Pid = spawn(?MODULE, init, [self(), Mode, SFile]),
+	    CallingPid = self(),
+	    Pid = spawn(fun () -> init(CallingPid, Mode, SFile) end),
 	    receive
 		{initialization_complete, Pid} ->
 		    {ok, Pid};
@@ -96,7 +96,7 @@ stop() ->
 
 
 %%====================================================================
-%% Internal exports
+%% Initialization
 %%====================================================================
 
 init(CallingPid, Mode, SFile) ->
@@ -120,7 +120,8 @@ init2(CallingPid, Mode, SFile, GS) ->
     int:subscribe(),
 
     %% Start other necessary stuff
-    dbg_ui_winman:start(),                      % Debugger window manager
+    dbg_ui_winman:start(), % Debugger window manager
+
     %% Create monitor window
     Title = "Monitor",
     Win = dbg_ui_mon_win:create_win(GS, Title, menus()),
@@ -167,35 +168,41 @@ init2(CallingPid, Mode, SFile, GS) ->
     end.
 
 init_options(TraceWin, AutoAttach, StackTrace, BackTrace, State) ->
-    lists:foreach(fun(Area) -> dbg_ui_mon_win:select(Area, true) end,
+    lists:foreach(fun(Area) ->
+			  dbg_ui_mon_win:select(Area, true)
+		  end,
 		  TraceWin),
 
     case AutoAttach of
 	false -> ignore;
 	{Flags, _Function} ->
+	    dbg_ui_mon_win:show_option(State#state.win,
+				       auto_attach, Flags),
 	    lists:foreach(fun(Flag) ->
 				  dbg_ui_mon_win:select(map(Flag), true)
 			  end,
 			  Flags)
     end,
 
+    dbg_ui_mon_win:show_option(State#state.win,
+			       stack_trace, StackTrace),
     dbg_ui_mon_win:select(map(StackTrace), true),
 
-    %% Backtrace size is (currently) not shown in window
+    dbg_ui_mon_win:show_option(State#state.win, back_trace, BackTrace),
 
     State#state{tracewin=TraceWin, backtrace=BackTrace}.
 
 init_contents(Mods, Breaks, Processes, State) ->
     Win2 =
         lists:foldl(fun(Mod, Win) ->
-			    dbg_ui_mon_win:add_module(Win, 'Module', Mod)
+			    dbg_ui_mon_win:add_module(Win,'Module',Mod)
 		    end,
 		    State#state.win,
 		    Mods),
 
     Win3 = 
         lists:foldl(fun(Break, Win) ->
-			    dbg_ui_mon_win:add_break(Win, 'Break', Break)
+			    dbg_ui_mon_win:add_break(Win,'Break',Break)
 		    end,
 		    Win2,
 		    Breaks),
@@ -219,7 +226,7 @@ loop(State) ->
 
 	%% From the GUI
 	GuiEvent when tuple(GuiEvent), element(1, GuiEvent)==gs ->
-	    Cmd = dbg_ui_mon_win:handle_event(GuiEvent, State#state.win),
+	    Cmd = dbg_ui_mon_win:handle_event(GuiEvent,State#state.win),
 	    State2 = gui_cmd(Cmd, State),
 	    loop(State2);
 
@@ -234,6 +241,8 @@ loop(State) ->
 
 	%% From the dbg_ui_edit process
 	{dbg_ui_edit, 'Backtrace:', BackTrace}  ->
+	    dbg_ui_mon_win:show_option(State#state.win,
+				       back_trace, BackTrace),
 	    loop(State#state{backtrace=BackTrace});
 
 	%% From the dbg_ui_settings process
@@ -290,12 +299,14 @@ gui_cmd('Exit', State) ->
     gui_cmd(stopped, State);
 
 %% Edit Menu
-gui_cmd('Clear', State) ->
+gui_cmd('Refresh', State) ->
     int:clear(),
     Win = dbg_ui_mon_win:clear_processes(State#state.win),
     gui_enable_functions(undefined),
     State2 = State#state{win=Win, focus=undefined, pinfos=[]},
-    lists:foldl(fun(PidTuple, S) -> int_cmd({new_process,PidTuple}, S) end,
+    lists:foldl(fun(PidTuple, S) ->
+			int_cmd({new_process,PidTuple}, S)
+		end,
 		State2,
 		int:snapshot());
 gui_cmd('Kill All', State) ->
@@ -371,12 +382,23 @@ gui_cmd({break, {Mod, Line}, What}, State) ->
 
 %% Options Commands
 gui_cmd({'Trace Window', TraceWin}, State) ->
-    State#state{tracewin=TraceWin};
+    State2 = State#state{tracewin=TraceWin},
+    case State#state.attach of
+	false -> ignore;
+	{Flags, {dbg_ui_trace, start, StartFlags}} ->
+	    case trace_function(State2) of
+		{_, _, StartFlags} -> ignore;
+		NewFunction -> % {_, _, NewStartFlags}
+		    int:auto_attach(Flags, NewFunction)
+	    end;
+	_AutoAttach -> ignore
+    end,
+    State2;
 gui_cmd({'Auto Attach', When}, State) ->
     if
 	When==[] -> int:auto_attach(false);
 	true ->
-	    Flags =  lists:map(fun(Name) -> map(Name) end, When),
+	    Flags = lists:map(fun(Name) -> map(Name) end, When),
 	    int:auto_attach(Flags, trace_function(State))
     end,
     State;
@@ -396,7 +418,8 @@ gui_cmd('Debugger', State) ->
     State;
 
 gui_cmd({focus, Pid, Win}, State) ->
-    {value, PInfo} = lists:keysearch(Pid, #pinfo.pid, State#state.pinfos),
+    {value, PInfo} =
+	lists:keysearch(Pid, #pinfo.pid, State#state.pinfos),
     gui_enable_functions(PInfo),
     State#state{win=Win, focus=PInfo};
 gui_cmd(default, State) ->
@@ -470,12 +493,18 @@ int_cmd({auto_attach, AutoAttach}, State) ->
 		  {Flags, _Function} -> Flags
 	      end,
     OffFlags = [init, exit, break] -- OnFlags,
-    lists:foreach(fun(Flag) -> dbg_ui_mon_win:select(map(Flag), true) end,
+    dbg_ui_mon_win:show_option(State#state.win, auto_attach, OnFlags),
+    lists:foreach(fun(Flag) ->
+			  dbg_ui_mon_win:select(map(Flag), true)
+		  end,
 		  OnFlags),
-    lists:foreach(fun(Flag) -> dbg_ui_mon_win:select(map(Flag), false) end,
+    lists:foreach(fun(Flag) ->
+			  dbg_ui_mon_win:select(map(Flag), false)
+		  end,
 		  OffFlags),
-    State;
+    State#state{attach=AutoAttach};
 int_cmd({stack_trace, Flag}, State) ->
+    dbg_ui_mon_win:show_option(State#state.win, stack_trace, Flag),
     dbg_ui_mon_win:select(map(Flag), true),
     State.
 
@@ -489,7 +518,7 @@ menus() ->
 	       {'Save Settings...', 2},
 	       separator,
 	       {'Exit', 0}]},
-     {'Edit', [{'Clear', no},
+     {'Edit', [{'Refresh', no},
 	       {'Kill All', no}]},
      {'Module', [{'Interpret...', 0},
 		 {'Delete All Modules', no},
@@ -591,15 +620,17 @@ load_settings(SFile, State) ->
 	{ok, Binary} ->
 	    case catch binary_to_term(Binary) of
 		{debugger_settings, Settings} ->
-		    load_settings2(Settings, State#state{sfile=SFile,
-							 changed=false});
+		    load_settings2(Settings,
+				   State#state{sfile=SFile,
+					       changed=false});
 		_Error -> State
 	    end;
 	{error, _Reason} -> State
     end.
 
 load_settings2(Settings, State) ->
-    {TraceWin, AutoAttach, StackTrace, BackTrace, Files, Breaks} = Settings,
+    {TraceWin, AutoAttach, StackTrace, BackTrace, Files, Breaks} =
+	Settings,
 
     TraceWinAll = ['Button Area', 'Evaluator Area', 'Bindings Area',
 		   'Trace Area'],
@@ -615,12 +646,15 @@ load_settings2(Settings, State) ->
 
     int:stack_trace(StackTrace),
 
+    dbg_ui_mon_win:show_option(State#state.win, back_trace, BackTrace),
+
     case State#state.mode of
 	local -> lists:foreach(fun(File) -> int:i(File) end, Files);
 	global -> lists:foreach(fun(File) -> int:ni(File) end, Files)
     end,
     lists:foreach(fun(Break) ->
-			  {{Mod, Line}, [Status, Action, _, Cond]} = Break,
+			  {{Mod, Line}, [Status, Action, _, Cond]} =
+			      Break,
 			  int:break(Mod, Line),
 			  if
 			      Status==inactive ->
@@ -629,12 +663,12 @@ load_settings2(Settings, State) ->
 			  end,
 			  if
 			      Action/=enable ->
-				  int:action_at_break(Mod, Line, Action);
+				  int:action_at_break(Mod,Line,Action);
 			      true -> ignore
 			  end,
 			  case Cond of
 			      CFunction when tuple(CFunction) ->
-				  int:test_at_break(Mod, Line, CFunction);
+				  int:test_at_break(Mod,Line,CFunction);
 			      null -> ignore
 			  end
 		  end,
@@ -647,7 +681,10 @@ save_settings(SFile, State) ->
 		int:auto_attach(),
 		int:stack_trace(),
 		State#state.backtrace,
-		lists:map(fun(Mod) -> int:file(Mod) end, int:interpreted()),
+		lists:map(fun(Mod) ->
+				  int:file(Mod)
+			  end,
+			  int:interpreted()),
 		int:all_breaks()},
 
     Binary = term_to_binary({debugger_settings, Settings}),
@@ -664,6 +701,10 @@ save_settings(SFile, State) ->
 %%====================================================================
 
 registered_name(Pid) ->
+
+    %% Yield in order to give Pid more time to register its name
+    timer:sleep(200),
+
     Node = node(Pid),
     if
 	Node==node() ->
@@ -672,11 +713,12 @@ registered_name(Pid) ->
 		_ -> undefined
 	    end;
 	true ->
-	    case rpc:call(Node,erlang,process_info,[Pid,registered_name]) of
+	    case rpc:call(Node,erlang,process_info,
+			  [Pid,registered_name]) of
 		{registered_name, Name} -> Name;
 		_ -> undefined
 	    end
     end.
 
 trace_function(State) ->
-    {dbg_ui_trace, start, [State#state.tracewin, State#state.backtrace]}.
+    {dbg_ui_trace, start, [State#state.tracewin,State#state.backtrace]}.

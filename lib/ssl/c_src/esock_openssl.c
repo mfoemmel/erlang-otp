@@ -59,6 +59,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#ifndef __WIN32__
+# include <fcntl.h>
+# include <unistd.h>
+#endif
 
 #include "esock.h"
 #include "esock_ssl.h"
@@ -141,6 +145,34 @@ static char x509_buf[X509BUFSIZE]; /* for verify_callback */
 static int callback_data_index = -1; /* for ctx ex_data */
 static unsigned char randvec[1024]; /* XXX */
 
+#if defined(__WIN32__) || OPEN_MAX > 256
+# define FOPEN_WORKAROUND(var, expr) var = (expr)
+# define VOID_FOPEN_WORKAROUND(expr) expr
+#else
+/*
+ * This is an ugly workaround. On Solaris, fopen() will return NULL if
+ * it gets a file descriptor > 255. To avoid that, we'll make sure that
+ * there is always one low-numbered file descriptor available when
+ * fopen() is called.
+ */
+static int reserved_fd;		/* Reserve a low-numbered file descriptor */
+# define USE_FOPEN_WORKAROUND 1
+
+# define FOPEN_WORKAROUND(var, expr)		\
+do {						\
+   close(reserved_fd);				\
+   var = (expr);				\
+   reserved_fd = open("/dev/null", O_RDONLY);	\
+} while (0)
+
+# define VOID_FOPEN_WORKAROUND(expr)		\
+do {						\
+   close(reserved_fd);				\
+   expr;					\
+   reserved_fd = open("/dev/null", O_RDONLY);	\
+} while (0)
+#endif
+
 esock_version *esock_ssl_version(void)
 {
     static esock_version vsn;
@@ -213,6 +245,10 @@ int esock_ssl_init(void)
     callback_data_index = SSL_CTX_get_ex_new_index(0, "callback_data", 
 						 NULL, NULL, 
 						 callback_data_free);
+#ifdef USE_FOPEN_WORKAROUND
+    reserved_fd = open("/dev/null", O_RDONLY);
+    DEBUGF(("init: reserved_fd=%d\r\n", reserved_fd));
+#endif
     return 0;
 }
 
@@ -237,112 +273,6 @@ void esock_ssl_free(Connection *cp)
     }
 }
 
-/* Set fd_set masks
- *
- */
-int esock_ssl_set_masks(Connection *cp, fd_set *rfds, 
-			fd_set *wfds, fd_set *efds, int verbose)
-{
-    int i = 0;
-    
-    if (verbose)
-	DEBUGF(("MASKS SET FOR FD: "));
-    while (cp) {
-	switch (cp->state) {
-	case ESOCK_ACTIVE_LISTENING:
-	    if (verbose)
-		DEBUGF(("%d (read) ", cp->fd));
-	    FD_SET(cp->fd, rfds);
-	    break;
-	case ESOCK_WAIT_CONNECT:
-	    if (verbose)
-		DEBUGF(("%d (write) ", cp->fd));
-	    FD_SET(cp->fd, wfds);
-#ifdef __WIN32__
-	    FD_SET(cp->fd, efds); /* Failure shows in efds */
-#endif
-	    break;
-	case ESOCK_SSL_CONNECT:
-	case ESOCK_SSL_ACCEPT:
-	    if (cp->ssl_want == ESOCK_SSL_WANT_READ) {
-		if (verbose)
-		    DEBUGF(("%d (read) ", cp->fd));
-		FD_SET(cp->fd, rfds);
-	    } else if (cp->ssl_want == ESOCK_SSL_WANT_WRITE) {
-		if (verbose)
-		    DEBUGF(("%d (write) ", cp->fd));
-		FD_SET(cp->fd, wfds);
-	    }
-	    break;
-	case ESOCK_JOINED:
-	    if (!cp->bp) {
-		if (cp->wq.len) {
-		    if (verbose)
-			DEBUGF(("%d (write) ", cp->fd));
-		    FD_SET(cp->fd, wfds);
-		} else if (!cp->proxy->eof) {
-		    if (verbose)
-			DEBUGF(("%d (read) ", cp->proxy->fd));
-		    FD_SET(cp->proxy->fd, rfds);
-		}
-	    }
-	    if (!cp->proxy->bp) {
-		if (cp->proxy->wq.len) {
-		    if (verbose)
-			DEBUGF(("%d (write) ", cp->proxy->fd));
-		    FD_SET(cp->proxy->fd, wfds);
-		} else if (!cp->eof) {
-		    if (verbose)
-			DEBUGF(("%d (read) ", cp->fd));
-		    FD_SET(cp->fd, rfds);
-		}
-	    }
-	    break;
-	case ESOCK_SSL_SHUTDOWN:
-	    if (cp->ssl_want == ESOCK_SSL_WANT_READ) {
-		if (verbose)
-		    DEBUGF(("%d (read) ", cp->fd));
-		FD_SET(cp->fd, rfds);
-	    } else if (cp->ssl_want == ESOCK_SSL_WANT_WRITE) {
-		if (verbose)
-		    DEBUGF(("%d (write) ", cp->fd));
-		FD_SET(cp->fd, wfds);
-	    }
-	    break;
-	default:
-	    break;
-	}
-	i++;
-	cp = cp->next;
-    }
-    if (verbose)
-	DEBUGF(("\n"));
-    return i;
-}
-
-
-Connection *esock_ssl_read_masks(Connection *cp, Connection **cpnext, 
-				 fd_set *rfds, fd_set *wfds, fd_set *efds,
-				 int set_wq_fds)
-{
-    while(cp) {
-	if (FD_ISSET(cp->fd, rfds) ||
-	    (cp->proxy && FD_ISSET(cp->proxy->fd, rfds)) ||
-	    (FD_ISSET(cp->fd, wfds)) ||
-	    (cp->proxy && FD_ISSET(cp->proxy->fd, wfds))
-#ifdef __WIN32__
-	    || FD_ISSET(cp->fd, efds) /* Connect failure in WIN32 */
-#endif
-	    || (set_wq_fds && (cp->wq.len || 
-			       (cp->proxy && cp->proxy->wq.len)))) {
-	    *cpnext = cp->next;
-	    return cp;
-	}
-	cp = cp->next;
-    }
-    *cpnext = NULL;
-    return NULL;
-}
 
 /*
  * Print SSL specific errors.
@@ -695,7 +625,7 @@ int esock_ssl_getprotocol_version(Connection *cp, char **buf)
 	MAYBE_SET_ERRSTR("enoent");
 	return -1;
     }
-    *buf = SSL_get_version(ssl);
+    *buf = (char *) SSL_get_version(ssl);
 
     return 0;
 }
@@ -710,7 +640,7 @@ int esock_ssl_getcipher(Connection *cp, char **buf)
 	MAYBE_SET_ERRSTR("enoent");
 	return -1;
     }
-    *buf = SSL_get_cipher(ssl);
+    *buf = (char *) SSL_get_cipher(ssl);
 
     return 0;
 }
@@ -848,15 +778,20 @@ static int set_ssl_parameters(Connection *cp, SSL_CTX *ctx)
 
     /* Set location for "trusted" certificates */
     if (cacertfile || cacertdir) {
+	int res;
 	DEBUGF(("set_ssl_parameters: SSL_CTX_load_verify_locations\n"));
-	if (!SSL_CTX_load_verify_locations(ctx, cacertfile, cacertdir)) {
+	FOPEN_WORKAROUND(res, SSL_CTX_load_verify_locations(ctx, cacertfile,
+							    cacertdir));
+	if (!res) {
 	    DEBUGF(("ERROR: Cannot load verify locations\n"));
 	    MAYBE_SET_ERRSTR("ecacertfile");
 	    goto err_end;
 	}
     } else {
+	int res;
 	DEBUGF(("set_ssl_parameters: SSL_CTX_set_default_verify_paths\n"));
-	if (!SSL_CTX_set_default_verify_paths(ctx)) {
+	FOPEN_WORKAROUND(res, SSL_CTX_set_default_verify_paths(ctx));
+	if (!res) {
 	    DEBUGF(("ERROR: Cannot set default verify paths\n"));
 	    MAYBE_SET_ERRSTR("ecacertfile");
 	    goto err_end;
@@ -870,7 +805,8 @@ static int set_ssl_parameters(Connection *cp, SSL_CTX *ctx)
      */
     if (cp->origin == ORIG_LISTEN && cacertfile) {
 	DEBUGF(("set_ssl_parameters: SSL_CTX_set_client_CA_list\n"));
-	SSL_CTX_set_client_CA_list(ctx, SSL_load_client_CA_file(cacertfile));
+	VOID_FOPEN_WORKAROUND(SSL_CTX_set_client_CA_list(ctx,
+			           SSL_load_client_CA_file(cacertfile)));
 	if (!SSL_CTX_get_client_CA_list(ctx)) {
 	    DEBUGF(("ERROR: Cannot set client CA list\n"));
 	    MAYBE_SET_ERRSTR("ecacertfile");
@@ -883,18 +819,22 @@ static int set_ssl_parameters(Connection *cp, SSL_CTX *ctx)
 	keyfile = certfile;
 
     if (certfile) {
+	int res;
 	DEBUGF(("set_ssl_parameters: SSL_CTX_use_certificate_file\n"));
-	if (SSL_CTX_use_certificate_file(ctx, certfile, 
-					 SSL_FILETYPE_PEM) <= 0) {
+	FOPEN_WORKAROUND(res, SSL_CTX_use_certificate_file(ctx, certfile,
+							   SSL_FILETYPE_PEM));
+	if (res <= 0) {
 	    DEBUGF(("ERROR: Cannot set certificate file\n"));
 	    MAYBE_SET_ERRSTR("ecertfile");
 	    goto err_end;
 	}
     }
     if (keyfile) { 
+	int res;
 	DEBUGF(("set_ssl_parameters: SSL_CTX_use_PrivateKey_file\n"));
-	if (SSL_CTX_use_PrivateKey_file(ctx, keyfile, 
-					SSL_FILETYPE_PEM) <= 0) {
+	FOPEN_WORKAROUND(res, SSL_CTX_use_PrivateKey_file(ctx, keyfile, 
+					SSL_FILETYPE_PEM));
+	if (res <= 0) {
 	    DEBUGF(("ERROR: Cannot set private key file\n"));
 	    MAYBE_SET_ERRSTR("ekeyfile");
 	    goto err_end;

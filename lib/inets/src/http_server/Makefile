@@ -53,7 +53,6 @@ MODULES = \
         httpd_script_env \
         httpd_socket \
 	httpd_sup \
-	httpd_verbosity \
 	httpd_util \
 	mod_actions \
 	mod_alias \
@@ -78,7 +77,7 @@ MODULES = \
 	mod_security \
 	mod_security_server
 
-HRL_FILES = httpd.hrl httpd_verbosity.hrl mod_auth.hrl 
+HRL_FILES = httpd.hrl mod_auth.hrl 
 
 ERL_FILES = $(MODULES:%=%.erl)
 
@@ -87,28 +86,7 @@ TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 # ----------------------------------------------------
 # INETS FLAGS
 # ----------------------------------------------------
-# DONT_USE_VERBOSITY = -Ddont_use_verbosity=true
-INETS_FLAGS = -D'SERVER_SOFTWARE="inets/$(VSN)"' \
-              -Ddefault_verbosity=silence \
-              $(DONT_USE_VERBOSITY)
-
-# INETS_DEBUG_DEFAULT = d
-ifeq ($(INETS_DEBUG),)
-  INETS_DEBUG = $(INETS_DEBUG_DEFAULT)
-endif
-
-ifeq ($(INETS_DEBUG),c)
-  INETS_FLAGS += -Dinets_cdebug -Dinets_debug -Dinets_log -Dinets_error
-endif
-ifeq ($(INETS_DEBUG),d)
-  INETS_FLAGS += -Dinets_debug -Dinets_log -Dinets_error
-endif
-ifeq ($(INETS_DEBUG),l)
-  INETS_FLAGS += -Dinets_log -Dinets_error
-endif
-ifeq ($(INETS_DEBUG),e)
-  INETS_FLAGS += -Dinets_error
-endif
+INETS_FLAGS = -D'SERVER_SOFTWARE="inets/$(VSN)"' 
 
 
 # ----------------------------------------------------

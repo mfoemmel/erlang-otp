@@ -131,6 +131,8 @@ handle_call(Request, _, State = #state{session = Session =
 				       timers = Timers,
 				       options = Options}) ->
     Address = handle_proxy(Request#request.address, Options#options.proxy),
+    http_util:verbose_output(Options#options.verbose,
+			     Request,"Sending: "),
     case httpc_request:send(Address, Request, Socket) of
         ok ->
 	    %% Activate the request time out for the new request
@@ -168,10 +170,7 @@ handle_call(Request, _, State = #state{session = Session =
 						  undefined}}}
 	    end;
 	{error, Reason} ->
-	    NewState = answer_request(Request, 
-				      httpc_response:error(Request,Reason),
-				      State), 
-	    {stop, normal, NewState}
+	    {reply, {pipline_failed, Reason}, State}
     end.
 %%--------------------------------------------------------------------
 %% Function: handle_cast(Msg, State) -> {noreply, State} |
@@ -208,7 +207,8 @@ handle_info({Proto, _Socket, Data}, State =
 	    #state{mfa = {Module, Function, Args}, 
 		   request = #request{method = Method}, session = Session}) 
   when Proto == tcp; Proto == ssl; Proto == httpc_handler ->
-    
+    http_util:verbose_output((State#state.options)#options.verbose,
+			     Data,"Received: "),
     case Module:Function([Data | Args]) of
         {ok, Result} ->
             handle_http_msg(Result, State); 
@@ -258,8 +258,7 @@ handle_info({timeout, RequestId}, State =
 handle_info({timeout, RequestId}, State = #state{request = Request}) ->
     httpc_response:send(Request#request.from, 
 		       httpc_response:error(Request,timeout)),
-    {noreply, State#state{canceled = [RequestId | State#state.canceled],
-			  request = Request#request{from = answer_sent}}};
+    {noreply, State#state{canceled = [RequestId | State#state.canceled]}};
 
 handle_info(timeout_pipeline, State = #state{request = undefined}) ->
     {stop, normal, State};
@@ -334,6 +333,8 @@ send_first_request(Address, Request, State) ->
     SocketType = socket_type(Request),
     case http_transport:connect(SocketType, Address, Ipv6) of
 	{ok, Socket} ->
+	    http_util:verbose_output((State#state.options)#options.verbose,
+				     Request,"Sending: "),
 	    case httpc_request:send(Address, Request, Socket) of
 		ok ->
 		    ClientClose = 
@@ -500,6 +501,8 @@ handle_response(State = #state{request = Request,
 	continue -> 
 	    %% Send request body
 	    {_, RequestBody} = Request#request.content,
+	    http_util:verbose_output(Options#options.verbose,
+				     RequestBody,"Sending request body: "),
 	    http_transport:send(socket_type(Session#tcp_session.scheme), 
 					    Session#tcp_session.socket, 
 				RequestBody),

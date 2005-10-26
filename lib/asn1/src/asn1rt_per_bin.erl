@@ -1122,11 +1122,17 @@ encode_bin_bit_string(C,UnusedAndBin={_Unused,_BinBits},NamedBitList) ->
 
 remove_trailing_bin([], {Unused,Bin},_) ->
     {Unused,Bin};
+remove_trailing_bin(_NamedNumberList,{_Unused,<<>>},C) ->
+    case C of
+	Int when integer(Int),Int > 0 ->
+	    %% this padding see OTP-4353
+	    pad_list(Int,{0,<<>>});
+	_ -> {0,<<>>}
+    end;
 remove_trailing_bin(NamedNumberList, {_Unused,Bin},C) ->
     Size = size(Bin)-1,
     <<Bfront:Size/binary, LastByte:8>> = Bin,
     %% clear the Unused bits to be sure
-%    LastByte1 = LastByte band (((1 bsl Unused) -1) bxor 255),
     Unused1 = trailingZeroesInNibble(LastByte band 15),
     Unused2 = 
 	case Unused1 of 

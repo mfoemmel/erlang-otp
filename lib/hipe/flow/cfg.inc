@@ -148,11 +148,10 @@
 %%
 
 start_label(CFG) -> (CFG#cfg.info)#cfg_info.start_label.
--ifdef(GEN_CFG).
--else.
+-ifndef(GEN_CFG).
 start_label_update(CFG, NewStartLabel) ->
-   Info = CFG#cfg.info,
-   CFG#cfg{info=Info#cfg_info{start_label=NewStartLabel}}.
+  Info = CFG#cfg.info,
+  CFG#cfg{info=Info#cfg_info{start_label=NewStartLabel}}.
 
 function(CFG) -> (CFG#cfg.info)#cfg_info.'fun'.
 
@@ -220,11 +219,10 @@ info_update(CFG, I) ->
 -endif.
 
 %%=====================================================================
--ifdef(GEN_CFG).
--else.
+-ifndef(GEN_CFG).
 
-%% other_entrypoints(CFG)
-%%	returns a list of labels that are refered to from the data section.
+%% @spec other_entrypoints(CFG::cfg()) -> [label()]
+%% @doc	 Returns a list of labels that are refered to from the data section.
 
 other_entrypoints(CFG) ->
   hipe_consttab:referred_labels(data(CFG)).
@@ -260,49 +258,101 @@ remove_duplicates([H|T], Acc) ->
 remove_duplicates([], Acc) ->
   lists:reverse(Acc).
 
+
+-ifdef(RTL_CFG).	%% this could be CFG_CAN_HAVE_PHI_NODES
+			%% if Icode also starts using this function
+
+%% @spec bb_insert_between(CFG::cfg(),
+%%                         Label::label(), NewBB::basic_block(),
+%%                         Pred::label(), Succ::label()) -> cfg() 
+%%
+%% @doc Insert the new basic block with label Label in the edge from
+%%      Pred to Succ
+
+bb_insert_between(CFG, Label, NewBB, Pred, Succ) ->
+  Last = hipe_bb:last(NewBB),
+  
+  %% Asserts that NewBB ends in a label
+  true = is_branch(Last),
+
+  %% Asserts that the only Successor of NewBB is Succ
+  [Succ] = remove_duplicates(branch_successors(Last)),
+
+  HT = CFG#cfg.table,
+ 
+  %% Asserts that Label does not exist in the CFG
+  none = gb_trees:lookup(Label, HT),
+
+  %% Updates the predecessor of NewBB
+  {value, {PBB, PSucc, PPred}} = gb_trees:lookup(Pred, HT),
+  NewPSucc = [Label|lists:delete(Succ, PSucc)],
+  PLast = hipe_bb:last(PBB),
+  PButLast = hipe_bb:butlast(PBB),
+  NewPBB = hipe_bb:code_update(PBB, PButLast++[redirect_jmp(PLast, Succ, Label)]),
+  HT1 = gb_trees:update(Pred, {NewPBB,NewPSucc,PPred}, HT),
+ 
+  %% Updates the successor of NewBB
+  {value, {SBB, SSucc, SPred}} = gb_trees:lookup(Succ, HT1),
+  NewSPred = [Label|lists:delete(Pred, SPred)],
+  SCode = hipe_bb:code(SBB),
+  NewSCode = redirect_phis(SCode, Pred, Label, []),
+  NewSBB = hipe_bb:code_update(SBB, NewSCode),
+  HT2 = gb_trees:update(Succ, {NewSBB,SSucc,NewSPred}, HT1),
+  
+  %% Enters NewBB into the CFG
+  HT3 = gb_trees:insert(Label, {NewBB,[Succ],[Pred]}, HT2), 
+  CFG#cfg{table = HT3}.
+
+redirect_phis([], _OldPred, _NewPred, Acc) ->
+  lists:reverse(Acc);
+redirect_phis([I|Rest], OldPred, NewPred, Acc) ->
+  case is_phi(I) of
+    true ->
+      Phi = phi_redirect_pred(I, OldPred, NewPred),
+      redirect_phis(Rest, OldPred, NewPred, [Phi|Acc]);
+    false ->
+      redirect_phis(Rest, OldPred, NewPred, [I|Acc])
+  end.
+
+
+-endif.
+
 %% @spec bb(CFG::cfg(), Label::label(), NewBB::basic_block()) -> cfg()
-%% @doc  Adds a new basic block to a CFG.
+%% @doc  Adds a new basic block to a CFG (or updates an existing block).
 bb_add(CFG, Label, NewBB) ->
+  %% Asserting that the NewBB is a legal basic block
   Last = hipe_bb:last(NewBB),
   case is_branch(Last) of
-    false -> 
-      throw({?MODULE,{"Basic block ends without branch",Last}});
-    true -> ok
+    true  -> ok;
+    false -> throw({?MODULE,{"Basic block ends without branch",Last}})
   end,
   %% The order of the elements from branch_successors/1 is
   %% significant. It determines the basic block order when
   %% the CFG is converted to linear form, and the order may
   %% have been tuned for branch prediction purposes.
   Succ = remove_duplicates(branch_successors(Last)),
-  %% Special handling of the case when a BB is its own predecessor
-  SelfPreds = 
-    case lists:member(Label, Succ) of
-      true -> [Label];
-      false -> []
-    end,
   HT = CFG#cfg.table,
-  {HT1, CFGBlock, AddPreds} = 
-    case gb_trees:lookup(Label, HT) of
-      {value, {_Block, OldSucc, Preds}} ->
-	%% Delete this block as pred of old successors.
-	HTtemp = 
-	  lists:foldl(fun (S,HTAcc) ->
-			remove_pred(HTAcc, S, Label)
-		      end,
-		      HT,
-		      OldSucc -- Succ),
-	{HTtemp,
-	 {NewBB, Succ, remove_duplicates(SelfPreds ++ Preds)},
-	 Succ -- OldSucc};
-      none ->
-	{HT,{NewBB, Succ, SelfPreds}, Succ}
-    end,
-  %% Add this block as predecessor to its successors
-  NewHT = lists:foldl(fun (P,HTAcc) ->
-			add_pred(HTAcc, P, Label)
-		      end,
-		      HT1, AddPreds),
-  CFG#cfg{table=gb_trees:enter(Label, CFGBlock, NewHT)}.
+  {OldSucc, OldPred} = case gb_trees:lookup(Label, HT) of
+			 {value, {_Block, OSucc, OPred}} ->
+			   {OSucc, OPred};
+			 none ->
+		           {[], []}
+		       end,
+  %% Change this block to contain new BB and new successors, but keep the
+  %% old predecessors which will be updated in the following steps
+  HT1 = gb_trees:enter(Label, {NewBB, Succ, OldPred}, HT),
+  %% Add this block as predecessor to its new successors
+  HT2 = lists:foldl(fun (P,HTAcc) ->
+		      add_pred(HTAcc, P, Label)
+		    end,
+		    HT1, Succ -- OldSucc),
+  %% Remove this block as predecessor of its former successors
+  HT3 = lists:foldl(fun (S,HTAcc) ->
+		      remove_pred(HTAcc, S, Label)
+		    end,
+		    HT2, OldSucc -- Succ),
+  CFG#cfg{table = HT3}.
+
 
 remove_pred(HT, FromL, PredL) ->
   case gb_trees:lookup(FromL, HT) of
@@ -310,7 +360,7 @@ remove_pred(HT, FromL, PredL) ->
       Code = hipe_bb:code(Block),
       NewCode = remove_pred_from_phis(Code, PredL, []),
       NewBlock = hipe_bb:code_update(Block, NewCode),      
-      gb_trees:update(FromL,{NewBlock,Succ,lists:delete(PredL,Preds)},HT);
+      gb_trees:update(FromL, {NewBlock,Succ,lists:delete(PredL,Preds)}, HT);
     none ->
       HT
   end.
@@ -320,7 +370,7 @@ add_pred(HT, ToL, PredL) ->
     {value,{Block,Succ,Preds}} ->
       gb_trees:update(ToL, {Block,Succ,[PredL|lists:delete(PredL,Preds)]}, HT);
     none ->
-      gb_trees:insert(ToL,{[],[],[PredL]},HT)
+      gb_trees:insert(ToL, {[],[],[PredL]}, HT)
   end.
 
 %% find_highest_label(CFG) ->
@@ -362,6 +412,7 @@ remove_pred_from_phis(Code, _Label, _Acc) ->
   Code.
 -endif.
 
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Constructs a CFG from a list of instructions.
@@ -375,8 +426,7 @@ take_bbs(Xs, CFG) ->
     true ->
       case take_bb(tl(Xs), []) of
 	{Code, Rest} ->
-	  NewCFG = bb_add(CFG, label_name(Lbl),
-			  hipe_bb:mk_bb(Code)),
+	  NewCFG = bb_add(CFG, label_name(Lbl), hipe_bb:mk_bb(Code)),
 	  take_bbs(Rest, NewCFG)
       end;
     false ->
@@ -452,8 +502,7 @@ reverse_postorder(CFG) ->
   Start = start_label(CFG),
   Succ = succ_map(CFG),
   {Ordering,_Visited} =
-    depth_search([Start|other_entrypoints(CFG)],
-		 none_visited(), Succ, []),
+    depth_search([Start|other_entrypoints(CFG)], none_visited(), Succ, []),
   Ordering.
 
 depth_search([N|Ns], Visited, Succ, Acc) ->
@@ -461,8 +510,7 @@ depth_search([N|Ns], Visited, Succ, Acc) ->
     true ->
       depth_search(Ns, Visited, Succ, Acc);
     false ->
-      {Order,Vis} = 
-	depth_search(succ(Succ, N), visit(N, Visited), Succ, Acc),
+      {Order,Vis} = depth_search(succ(Succ, N), visit(N, Visited), Succ, Acc),
       depth_search(Ns, Vis, Succ, [N|Order])
   end;
 depth_search([], Visited, _, Ordering) ->
@@ -500,8 +548,7 @@ reverse_inorder(CFG) ->
   Start = start_label(CFG),
   Succ = succ_map(CFG),
   {Ordering,_Visited} =
-    inorder_search([Start|other_entrypoints(CFG)], 
-		   none_visited(), Succ, []),
+    inorder_search([Start|other_entrypoints(CFG)], none_visited(), Succ, []),
   Ordering. 
 
 inorder_search([N|Ns], Visited, Succ, Acc) ->
@@ -544,8 +591,7 @@ preorder(CFG) ->
   Start = start_label(CFG),
   Succ = succ_map(CFG),
   {Ordering,_Visited} =
-    preorder_search([Start|other_entrypoints(CFG)],
-		    none_visited(), Succ, []),
+    preorder_search([Start|other_entrypoints(CFG)], none_visited(), Succ, []),
   lists:reverse(Ordering).
 
 preorder_search([N|Ns], Visited, Succ, Acc) ->
@@ -569,8 +615,7 @@ reverse_breadthorder(CFG) ->
   Start = start_label(CFG),
   Succ = succ_map(CFG),
   {Vis,RBO1} = breadth_list([Start], none_visited(), Succ, []),
-  {_Vis1,RBO2} = breadth_list(other_entrypoints(CFG),
-			      Vis, Succ, RBO1),
+  {_Vis1,RBO2} = breadth_list(other_entrypoints(CFG), Vis, Succ, RBO1),
   RBO2.
 
 breadth_list([X|Xs], Vis, Succ, BO) ->
@@ -624,19 +669,18 @@ pred(Map, Label) ->
   end.
 -endif.	% PRED_MAP_NEEDED
 
--ifdef(GEN_CFG).
--else.
+-ifndef(GEN_CFG).
 fallthrough(CFG, Label) ->
-    HT = CFG#cfg.table,
-    case gb_trees:lookup(Label, HT) of
-	{value, {_Block, Succ,_}} ->
-	    case Succ of
-		[X|_] -> X;
-		_ -> none
-	    end;
-	none ->
-	    erlang:fault({"fallthrough label not found",Label})
-    end.
+  HT = CFG#cfg.table,
+  case gb_trees:lookup(Label, HT) of
+    {value, {_Block,Succ,_}} ->
+       case Succ of
+	 [X|_] -> X;
+	 _ -> none
+       end;
+     none ->
+       erlang:fault({"fallthrough label not found",Label})
+  end.
 
 conditional(CFG, Label) ->
   HT = CFG#cfg.table,
@@ -660,8 +704,7 @@ linearize_cfg(CFG) ->
   Vis = none_visited(),
   {Vis0, NestedCode} = lin_succ(Start, CFG, Vis),
   BlocksInData = hipe_consttab:referred_labels(data(CFG)),
-  AllCode = lin_other_entries(NestedCode, CFG,
-			      BlocksInData, Vis0),
+  AllCode = lin_other_entries(NestedCode, CFG, BlocksInData, Vis0),
   lists:flatten(AllCode).
 
 lin_succ(none, _CFG, Vis) ->
@@ -680,7 +723,7 @@ lin_succ(Label, CFG, Vis) ->
       Vis0 = visit(Label, Vis),
       Block = bb(CFG, Label),
       case hipe_bb:is_bb(Block) of
-	true->
+	true ->
 	  Fallthrough = fallthrough(CFG, Label),
 	  Cond = conditional(CFG, Label),
 	  LblInstr = mk_label(Label),
@@ -688,7 +731,7 @@ lin_succ(Label, CFG, Vis) ->
 	  {Vis2, Code2} = lin_succ(Cond, CFG, Vis1),
 	  {Vis2, [[LblInstr|hipe_bb:code(Block)], Code1, Code2]};
 	false ->
-	  erlang:fault({?MODULE,"Referenced label has no basic block",Label})
+	  erlang:fault({?MODULE,"No basic block with label",Label})
       end
   end.
 
@@ -719,7 +762,7 @@ find_new_label(Old, Map) ->
 
 remove_trivial_bbs(CFG) ->
   ?opt_start_timer("Merge BBs"),
-  CFG0 = merge_bbs(CFG),
+  CFG0 = merge_bbs(rewrite_trivial_branches(CFG)),
   ?opt_stop_timer("Merge BBs"),
   %% pp(CFG0),
   ?opt_start_timer("FindDead"),
@@ -756,7 +799,7 @@ redirect_data(CFG, Map) ->
   NewData = hipe_consttab:update_referred_labels(Data, rd_succs(Map)),
   update_data(CFG, NewData).
 
-redirect_branches(Map,CFG) ->
+redirect_branches(Map, CFG) ->
   lists:foldl(fun ({From,{newsuccs,Redirects}},CFGAcc) ->
 		  lists:foldl(
 		    fun({ToOld,ToNew},CFG1) ->
@@ -776,15 +819,12 @@ redirect_branches(Map,CFG) ->
 	      gb_trees:to_list(Map)).
 
 redirect(CFG, From, ToOld, ToNew) ->
-  Code = hipe_bb:code(bb(CFG, From)),
-  Last = lists:last(Code),
-  NewLast = redirect_jmp(Last, ToOld, ToNew),
-  bb_add(CFG, From, hipe_bb:mk_bb(butlast(Code)++[NewLast])).
+  BB = bb(CFG, From),
+  LastInstr = hipe_bb:last(BB),
+  NewLastInstr = redirect_jmp(LastInstr, ToOld, ToNew),
+  NewBB = hipe_bb:mk_bb(hipe_bb:butlast(BB) ++ [NewLastInstr]),
+  bb_add(CFG, From, NewBB).
 
-butlast([X|Xs]) -> butlast(Xs,X).
-
-butlast([],_) -> [];
-butlast([X|Xs],Y) -> [Y|butlast(Xs,X)].
 
 bb_remove(CFG, Label) ->
   HT = CFG#cfg.table,
@@ -812,19 +852,20 @@ remap([L|Rest], Map, CFG) ->
 	  remap(Rest, NewMap, CFG1)
       end;
     false ->
-	 remap(Rest, Map, CFG)
+      remap(Rest, Map, CFG)
   end;
-remap([], Map, CFG) -> {Map, CFG}.
+remap([], Map, CFG) ->
+  {Map, CFG}.
 
 remap_to_succ(L, SuccL, Map, PredMap) ->
-  insert_remap(L,forward(SuccL,Map),pred(PredMap,L), Map).
+  insert_remap(L, forward(SuccL,Map), pred(PredMap,L), Map).
 
 %% Find the proxy for a BB
 forward(L, Map) ->
   case gb_trees:lookup(L,Map) of 
     {value, {dead,To}} -> 
-      forward(To,Map); %% Hope this terminates.
-    _ -> L 
+      forward(To, Map); %% Hope this terminates.
+    _ -> L
   end.
 
 %% A redirection map contains mappings from labels to
@@ -835,16 +876,13 @@ forward(L, Map) ->
 rd_map_new() -> gb_trees:empty().
 
 rd_succs(M) ->
-  R = 
-    lists:foldl(fun ({From,{dead,To}},Acc) -> 
-		  [{From,forward(To,M)}|Acc];
+  lists:foldl(fun ({From,{dead,To}},Acc) -> [{From,forward(To,M)}|Acc];
 		  (_,Acc) -> Acc
-	        end,
-		[],
-		gb_trees:to_list(M)),
-  R.
+	      end,
+	      [],
+	      gb_trees:to_list(M)).
 
-add_redirecedto(L,From,To,Map) ->
+add_redirectedto(L,From,To,Map) ->
   case gb_trees:lookup(L,Map) of 
     {value, {newsuccs,NS}} ->
       gb_trees:update(L,{newsuccs,[{From,To}|lists:keydelete(From,1,NS)]},Map);
@@ -852,13 +890,14 @@ add_redirecedto(L,From,To,Map) ->
     none ->
       gb_trees:insert(L,{newsuccs,[{From,To}]},Map)
   end.
+
 insert_remap(L,ToL,Preds,Map) ->
   Map2 = gb_trees:enter(L,{dead,ToL},Map),
   lists:foldl(fun (Pred,AccMap) ->
-		   add_redirecedto(Pred,L,ToL,AccMap)
-		end,
-		Map2,
-		Preds).
+		   add_redirectedto(Pred,L,ToL,AccMap)
+	      end,
+	      Map2,
+	      Preds).
 
 is_empty(BB) ->
   is_empty_bb(hipe_bb:code(BB)).
@@ -876,6 +915,38 @@ is_empty_bb([]) ->
   true.
 
 
+%% Rewrite all pure branches with one successor to goto:s
+
+rewrite_trivial_branches(CFG) ->
+  SuccMap = succ_map(CFG),
+  rewrite_trivial_branches(postorder(CFG), SuccMap, CFG).
+
+rewrite_trivial_branches([L|Left], SuccMap, CFG) ->
+  BB = bb(CFG, L),
+  Last = hipe_bb:last(BB),
+  case is_goto(Last) of
+    true ->
+      rewrite_trivial_branches(Left, SuccMap, CFG);
+    false ->
+      case is_pure_branch(Last) of
+	false ->
+	  rewrite_trivial_branches(Left, SuccMap, CFG);
+	true ->
+	  case succ(SuccMap, L) of
+	    [Successor] ->
+	      Head = hipe_bb:butlast(BB),
+	      NewBB = hipe_bb:mk_bb(Head ++ [mk_goto(Successor)]),
+	      NewCFG = bb_add(CFG, L, NewBB),
+	      rewrite_trivial_branches(Left, SuccMap, NewCFG);
+	    _ ->
+	      rewrite_trivial_branches(Left, SuccMap, CFG)
+	  end
+      end
+  end;
+rewrite_trivial_branches([], _SuccMap, CFG) ->
+  CFG.
+
+
 %% Go through the CFG and find pairs of BBs that can be merged to one BB.
 %% They are of the form:
 %%
@@ -889,8 +960,7 @@ is_empty_bb([]) ->
 %% Note: calls might end a basic block 
 
 merge_bbs(CFG) ->
-  lists:foldl(fun merge_successor/2,
-	      CFG, postorder(CFG)).
+  lists:foldl(fun merge_successor/2, CFG, postorder(CFG)).
 
 %% If L fulfills the requirements, merge it with its successor.
 merge_successor(L,CFG) ->

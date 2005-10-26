@@ -116,9 +116,20 @@
 %% 				       Label, [{line, ?MODULE, ?LINE}, C | Contents])
 %% 	   end).
 
+-ifdef(megaco_trace_io).
+-define(report(Level, C, Label, Contents), 
+	io:format("*** [~s] ~p ~p *** "
+		  "~n   ~p[~p] " ++ Label ++ 
+		  "~n   ~p"
+		  "~n   ~p"
+		  "~n", 
+		  [megaco:format_timestamp(now()), 
+		   self(), Level, ?MODULE, ?LINE, C, Contents])).
+-else.
 -define(report(Level, C, Label, Contents),
 	megaco:report_event(Level, ?APPLICATION, Label,
 			    [{line, ?MODULE, ?LINE}, C | Contents])).
+-endif.
 
 -define(report_important(C, Label, Contents), ?report(20, C, Label, Contents)).
 -define(report_verbose(  C, Label, Contents), ?report(40, C, Label, Contents)).

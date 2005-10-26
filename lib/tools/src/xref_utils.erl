@@ -554,7 +554,7 @@ filename2appl(File) ->
     true = string:len(V) > 0,
     VsnT = string:tokens(V, "."),
     ApplName = string:sub_string(File, 1, Pos-1),
-    Vsn = map({erlang,list_to_integer}, VsnT),
+    Vsn = map(fun erlang:list_to_integer/1, VsnT),
     {list_to_atom(ApplName),Vsn}.
 
 find_files_dir(Dir, Recurse, Collect, Watch, L) ->

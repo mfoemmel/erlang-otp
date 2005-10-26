@@ -18,9 +18,9 @@
 %%              * 2001-07-30 EJ (happi@csd.uu.se):
 %%               Fixed some bugs and started cleanup.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2004/10/28 05:13:11 $
-%%              $Revision: 1.19 $
+%%              $Author: mikpe $
+%%              $Date: 2005/09/15 13:45:48 $
+%%              $Revision: 1.20 $
 %% ====================================================================
 %%  Exports  :
 %%    gen_switch_val(I, VarMap, ConstTab, Options)
@@ -418,7 +418,7 @@ gen_linear_switch_val(Arg,Cases,Fail,VarMap,ConstTab,_Options) ->
 fast_linear_search(_Arg,[],[],Fail) ->
   [hipe_rtl:mk_goto(hipe_rtl:label_name(Fail))];
 fast_linear_search(Arg,[Case|Cases],[Label|Labels],Fail) ->
-  Reg = hipe_rtl:mk_new_reg(),
+  Reg = hipe_rtl:mk_new_reg_gcsafe(),
   NextLab = hipe_rtl:mk_new_label(),
   C2 = fast_linear_search(Arg,Cases,Labels,Fail),
   C1 =
@@ -500,7 +500,7 @@ get_cases([_|T], N1, N2) ->
 inline_search([], _LabelList, _KeyReg, _Default) -> [];
 inline_search(KeyList, LabelList, KeyReg, Default) ->
   %% Create some registers and labels that we need.
-  Reg = hipe_rtl:mk_new_reg(),
+  Reg = hipe_rtl:mk_new_reg_gcsafe(),
   Lab1 = hipe_rtl:mk_new_label(),
   Lab2 = hipe_rtl:mk_new_label(),
   Lab3 = hipe_rtl:mk_new_label(),
@@ -575,7 +575,7 @@ inline_search(KeyList, LabelList, KeyReg, Default) ->
 
 
 inline_atom_search(Start, End, Block, LBlock, KeyReg, Default, Labels) ->
-  Reg = hipe_rtl:mk_new_reg(),
+  Reg = hipe_rtl:mk_new_reg_gcsafe(),
   
   Length = (End - Start) +1,
   
@@ -648,8 +648,8 @@ gen_jump_table(Arg,Fail,IcodeFail,VarMap,ConstTab,Cases,Min) ->
   
   %% Make some labels and registers that we need.
   BelowLab = hipe_rtl:mk_new_label(),
-  UntaggedR = hipe_rtl:mk_new_reg(),
-  StartR = hipe_rtl:mk_new_reg(),
+  UntaggedR = hipe_rtl:mk_new_reg_gcsafe(),
+  StartR = hipe_rtl:mk_new_reg_gcsafe(),
   
   %% Generate the code to do the switch...
   {[
@@ -730,7 +730,7 @@ rewrite_switch_val_cases([], Fail, _Arg) ->
 %%
 
 gen_search_switch_val(Arg, Cases, Default, VarMap, ConstTab, _Options) ->
-  ValTableR = hipe_rtl:mk_new_reg(),
+  ValTableR = hipe_rtl:mk_new_reg_gcsafe(),
 
   {Values,_Labels} = split_cases(Cases),
   {NewConstTab,Id} = hipe_consttab:insert_sorted_block(ConstTab, Values),
@@ -852,9 +852,9 @@ tab(KeyList, LabelList, KeyReg, TablePntrReg, Default) ->
   Pow2 = trunc(math:pow(2,(trunc(math:log(LastOffset) / math:log(2))))),
 
   %% Create some registers an lables that we need.
-  IndexReg = hipe_rtl:mk_new_reg(),
-  Temp = hipe_rtl:mk_new_reg(),
-  Temp2 = hipe_rtl:mk_new_reg(),
+  IndexReg = hipe_rtl:mk_new_reg_gcsafe(),
+  Temp = hipe_rtl:mk_new_reg_gcsafe(),
+  Temp2 = hipe_rtl:mk_new_reg_gcsafe(),
   Lab1 = hipe_rtl:mk_new_label(),
   Lab2 = hipe_rtl:mk_new_label(),
   Lab3 = hipe_rtl:mk_new_label(),
@@ -893,8 +893,8 @@ tab(KeyList, LabelList, KeyReg, TablePntrReg, Default) ->
     ].
 
 step(I,TablePntrReg,IndexReg,KeyReg) ->
-  Temp = hipe_rtl:mk_new_reg(),
-  TempIndex = hipe_rtl:mk_new_reg(),
+  Temp = hipe_rtl:mk_new_reg_gcsafe(),
+  TempIndex = hipe_rtl:mk_new_reg_gcsafe(),
   Lab1 = hipe_rtl:mk_new_label(),
   Lab2 = hipe_rtl:mk_new_label(),
   [hipe_rtl:mk_alu(TempIndex, IndexReg, add, hipe_rtl:mk_imm(I)),
@@ -960,7 +960,7 @@ gen_switch_tuple(I, Map, ConstTab, _Options) ->
 		    {[{H1,L2}|Rest], M1} end,
 		{[], Map2},
 		hipe_icode:switch_tuple_arity_cases(I)),
-  Hdr = hipe_rtl:mk_new_reg(),
+  Hdr = hipe_rtl:mk_new_reg_gcsafe(),
   IsBoxedLab = hipe_rtl:mk_new_label(),
   {[hipe_tagscheme:test_is_boxed(X, hipe_rtl:label_name(IsBoxedLab),
 				 FailLab, 0.9),

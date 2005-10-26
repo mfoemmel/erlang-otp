@@ -107,7 +107,6 @@ send_body(SocketType,Socket,FileDescriptor) ->
 	    case httpd_socket:deliver(SocketType,Socket,Binary) of
 		socket_closed ->
 		    ?LOG("send_body -> socket closed while sending",[]),
-		     io:format("Socket closed ~n", []),
 		    socket_close;
 		_ ->
 		    send_body(SocketType,Socket,FileDescriptor)

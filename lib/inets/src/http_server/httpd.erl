@@ -16,9 +16,10 @@
 %%     $Id$
 %%
 -module(httpd).
+
 -export([multi_start/1, multi_start_link/1,
-	 start/0, start/1, start/2, 
-	 start_link/0, start_link/1, start_link/2,
+	 start/0, start/1, 
+	 start_link/0, start_link/1, 
 	 start_child/0,start_child/1,
 	 multi_stop/1,
 	 stop/0,stop/1,stop/2,
@@ -28,110 +29,67 @@
 	 parse_query/1]).
 
 %% Optional start related stuff...
--export([load/1,        load_mime_types/1, 
-	 start2/1,      start2/2, 
-	 start_link2/1, start_link2/2, 
-	 stop2/1]).
+-export([load/1, load_mime_types/1, start2/1, start_link2/1, stop2/1]).
 
 %% Management stuff
 -export([block/0,block/1,block/2,block/3,block/4,
 	 unblock/0,unblock/1,unblock/2]).
 
 %% Debugging and status info stuff...
--export([verbosity/3,verbosity/4]).
 -export([get_status/1,get_status/2,get_status/3,
 	 get_admin_state/0,get_admin_state/1,get_admin_state/2,
 	 get_usage_state/0,get_usage_state/1,get_usage_state/2]).
 
 -include("httpd.hrl").
 
--define(D(F, A), io:format("~p:" ++ F ++ "~n", [?MODULE|A])).
-
-
-%% start
-
 start() ->
     start("/var/tmp/server_root/conf/8888.conf").
 
 start(ConfigFile) ->
-    %% ?D("start(~s) -> entry", [ConfigFile]),
-    start(ConfigFile, []).
-
-start(ConfigFile, Verbosity) when list(ConfigFile), list(Verbosity) ->
-    httpd_instance_sup:start(ConfigFile, Verbosity).
-
-
-%% start_link
+    httpd_instance_sup:start(ConfigFile).
 
 start_link() ->
     start("/var/tmp/server_root/conf/8888.conf").
 
-start_link(ConfigFile) ->
-    start_link(ConfigFile, []).
+start_link(ConfigFile) when is_list(ConfigFile) ->
+    httpd_instance_sup:start_link(ConfigFile).
 
-start_link(ConfigFile, Verbosity) when list(ConfigFile), list(Verbosity) ->
-    httpd_instance_sup:start_link(ConfigFile, Verbosity).
-
-
-%% start2 & start_link2
-
-start2(Config) ->
-    start2(Config, []).
-
-start2(Config, Verbosity) when list(Config), list(Verbosity) ->
-    httpd_instance_sup:start2(Config, Verbosity).
+start2(Config) when is_list(Config) ->
+    httpd_instance_sup:start2(Config).
 
 start_link2(Config) ->
-    start_link2(Config, []).
-
-start_link2(Config, Verbosity) when list(Config), list(Verbosity) ->
-    httpd_instance_sup:start_link2(Config, Verbosity).
-
-
-%% stop
+    httpd_instance_sup:start_link2(Config).
 
 stop() ->
   stop(8888).
 
-stop(Port) when integer(Port) ->
+stop(Port) when is_integer(Port) ->
     stop(undefined, Port);
-stop(Pid) when pid(Pid) ->
+stop(Pid) when is_pid(Pid) ->
     httpd_instance_sup:stop(Pid);
-stop(ConfigFile) when list(ConfigFile) ->
-    %% ?D("stop(~s) -> entry", [ConfigFile]),
+stop(ConfigFile) when is_list(ConfigFile) ->
     httpd_instance_sup:stop(ConfigFile).
 
-stop(Addr, Port) when integer(Port) ->
+stop(Addr, Port) when is_integer(Port) ->
     httpd_instance_sup:stop(Addr, Port).
 
-stop2(Config) when list(Config) ->
+stop2(Config) when is_list(Config) ->
     httpd_instance_sup:stop2(Config).
-
-%% start_child
 
 start_child() ->
     start_child("/var/tmp/server_root/conf/8888.conf").
 
 start_child(ConfigFile) ->
-    start_child(ConfigFile, []).
-
-start_child(ConfigFile, Verbosity) ->
-    httpd_sup:start_child(ConfigFile, Verbosity).
-
-
-%% stop_child
+    httpd_sup:start_child(ConfigFile).
 
 stop_child() ->
   stop_child(8888).
 
 stop_child(Port) ->
-    stop_child(undefined,Port).
+    stop_child(undefined, Port).
 
 stop_child(Addr, Port) when integer(Port) ->
     httpd_sup:stop_child(Addr, Port).
-
-
-%% multi_start
 
 multi_start(MultiConfigFile) ->
     case read_multi_file(MultiConfigFile) of
@@ -149,9 +107,6 @@ mstart([H|T],Results) ->
     Res = start(H),
     mstart(T,[Res|Results]).
 
-
-%% multi_start_link
-
 multi_start_link(MultiConfigFile) ->
     case read_multi_file(MultiConfigFile) of
 	{ok,ConfigFiles} ->
@@ -159,7 +114,6 @@ multi_start_link(MultiConfigFile) ->
 	Error ->
 	    Error
     end.
-
 mstart_link(ConfigFiles) ->
     mstart_link(ConfigFiles,[]).
 mstart_link([],Results) ->
@@ -167,9 +121,6 @@ mstart_link([],Results) ->
 mstart_link([H|T],Results) ->
     Res = start_link(H),
     mstart_link(T,[Res|Results]).
-
-
-%% multi_stop
 
 multi_stop(MultiConfigFile) ->
     case read_multi_file(MultiConfigFile) of
@@ -187,9 +138,6 @@ mstop([H|T],Results) ->
     Res = stop(H),
     mstop(T,[Res|Results]).
 
-
-%% multi_restart
-
 multi_restart(MultiConfigFile) ->
     case read_multi_file(MultiConfigFile) of
 	{ok,ConfigFiles} ->
@@ -206,14 +154,11 @@ mrestart([H|T],Results) ->
     Res = restart(H),
     mrestart(T,[Res|Results]).
 
-
-%% restart
-
 restart() -> restart(undefined,8888).
 
-restart(Port) when integer(Port) ->
+restart(Port) when is_integer(Port) ->
     restart(undefined,Port);
-restart(ConfigFile) when list(ConfigFile) ->
+restart(ConfigFile) when is_list(ConfigFile) ->
     case get_addr_and_port(ConfigFile) of
 	{ok,Addr,Port} ->
 	    restart(Addr,Port);
@@ -221,11 +166,10 @@ restart(ConfigFile) when list(ConfigFile) ->
 	    Error
     end.
     
-
-restart(Addr,Port) when integer(Port) ->
+restart(Addr,Port) when is_integer(Port) ->
     do_restart(Addr,Port).
 
-do_restart(Addr,Port) when integer(Port) -> 
+do_restart(Addr,Port) when is_integer(Port) -> 
     Name = make_name(Addr,Port),
     case whereis(Name) of
 	Pid when pid(Pid) ->
@@ -280,10 +224,10 @@ do_restart(Addr,Port) when integer(Port) ->
 %%%
 block() -> block(undefined,8888,disturbing).
 
-block(Port) when integer(Port) -> 
+block(Port) when is_integer(Port) -> 
     block(undefined,Port,disturbing);
 
-block(ConfigFile) when list(ConfigFile) ->
+block(ConfigFile) when is_list(ConfigFile) ->
     case get_addr_and_port(ConfigFile) of
 	{ok,Addr,Port} ->
 	    block(Addr,Port,disturbing);
@@ -291,13 +235,13 @@ block(ConfigFile) when list(ConfigFile) ->
 	    Error
     end.
 
-block(Addr,Port) when integer(Port) -> 
+block(Addr,Port) when is_integer(Port) -> 
     block(Addr,Port,disturbing);
 
-block(Port,Mode) when integer(Port), atom(Mode) ->
+block(Port,Mode) when is_integer(Port), is_atom(Mode) ->
     block(undefined,Port,Mode);
 
-block(ConfigFile,Mode) when list(ConfigFile), atom(Mode) ->
+block(ConfigFile,Mode) when is_list(ConfigFile), is_atom(Mode) ->
     case get_addr_and_port(ConfigFile) of
 	{ok,Addr,Port} ->
 	    block(Addr,Port,Mode);
@@ -306,12 +250,13 @@ block(ConfigFile,Mode) when list(ConfigFile), atom(Mode) ->
     end.
 
 
-block(Addr,Port,disturbing) when integer(Port) ->
+block(Addr,Port,disturbing) when is_integer(Port) ->
     do_block(Addr,Port,disturbing);
-block(Addr,Port,non_disturbing) when integer(Port) ->
+block(Addr,Port,non_disturbing) when is_integer(Port) ->
     do_block(Addr,Port,non_disturbing);
 
-block(ConfigFile,Mode,Timeout) when list(ConfigFile), atom(Mode), integer(Timeout) ->
+block(ConfigFile,Mode,Timeout) when is_list(ConfigFile), is_atom(Mode), 
+				    is_integer(Timeout) ->
     case get_addr_and_port(ConfigFile) of
 	{ok,Addr,Port} ->
 	    block(Addr,Port,Mode,Timeout);
@@ -320,12 +265,14 @@ block(ConfigFile,Mode,Timeout) when list(ConfigFile), atom(Mode), integer(Timeou
     end.
 
 
-block(Addr,Port,non_disturbing,Timeout) when integer(Port), integer(Timeout) ->
+block(Addr,Port,non_disturbing,Timeout) when 
+  is_integer(Port), is_integer(Timeout) ->
     do_block(Addr,Port,non_disturbing,Timeout);
-block(Addr,Port,disturbing,Timeout) when integer(Port), integer(Timeout) ->
+block(Addr,Port,disturbing,Timeout) when is_integer(Port), 
+					 is_integer(Timeout) ->
     do_block(Addr,Port,disturbing,Timeout).
 
-do_block(Addr,Port,Mode) when integer(Port), atom(Mode) -> 
+do_block(Addr,Port,Mode) when is_integer(Port), is_atom(Mode) -> 
     Name = make_name(Addr,Port),
     case whereis(Name) of
 	Pid when pid(Pid) ->
@@ -335,7 +282,7 @@ do_block(Addr,Port,Mode) when integer(Port), atom(Mode) ->
     end.
     
 
-do_block(Addr,Port,Mode,Timeout) when integer(Port), atom(Mode) -> 
+do_block(Addr,Port,Mode,Timeout) when is_integer(Port), is_atom(Mode) -> 
     Name = make_name(Addr,Port),
     case whereis(Name) of
 	Pid when pid(Pid) ->
@@ -360,9 +307,9 @@ do_block(Addr,Port,Mode,Timeout) when integer(Port), atom(Mode) ->
 %%%              ConfigFile -> string()
 %%%
 unblock()                        -> unblock(undefined,8888).
-unblock(Port) when integer(Port) -> unblock(undefined,Port);
+unblock(Port) when is_integer(Port) -> unblock(undefined,Port);
 
-unblock(ConfigFile) when list(ConfigFile) ->
+unblock(ConfigFile) when is_list(ConfigFile) ->
     case get_addr_and_port(ConfigFile) of
 	{ok,Addr,Port} ->
 	    unblock(Addr,Port);
@@ -370,7 +317,7 @@ unblock(ConfigFile) when list(ConfigFile) ->
 	    Error
     end.
 
-unblock(Addr,Port) when integer(Port) -> 
+unblock(Addr,Port) when is_integer(Port) -> 
     Name = make_name(Addr,Port),
     case whereis(Name) of
 	Pid when pid(Pid) ->
@@ -378,20 +325,6 @@ unblock(Addr,Port) when integer(Port) ->
 	_ ->
 	    {error,not_started}
     end.
-
-
-verbosity(Port,Who,Verbosity) ->
-    verbosity(undefined,Port,Who,Verbosity).
-
-verbosity(Addr,Port,Who,Verbosity) ->
-    Name = make_name(Addr,Port),
-    case whereis(Name) of
-	Pid when pid(Pid) ->
-	    httpd_manager:verbosity(Pid,Who,Verbosity);
-	_ ->
-	    not_started
-    end.
-
 
 %%% =========================================================
 %%% Function:    get_admin_state/0, get_admin_state/1, get_admin_state/2
@@ -410,9 +343,9 @@ verbosity(Addr,Port,Who,Verbosity) ->
 %%%              Reason  -> term()
 %%%
 get_admin_state()                        -> get_admin_state(undefined,8888).
-get_admin_state(Port) when integer(Port) -> get_admin_state(undefined,Port);
+get_admin_state(Port) when is_integer(Port) -> get_admin_state(undefined,Port);
 
-get_admin_state(ConfigFile) when list(ConfigFile) ->
+get_admin_state(ConfigFile) when is_list(ConfigFile) ->
     case get_addr_and_port(ConfigFile) of
 	{ok,Addr,Port} ->
 	    unblock(Addr,Port);
@@ -420,10 +353,10 @@ get_admin_state(ConfigFile) when list(ConfigFile) ->
 	    Error
     end.
 
-get_admin_state(Addr,Port) when integer(Port) -> 
+get_admin_state(Addr,Port) when is_integer(Port) -> 
     Name = make_name(Addr,Port),
     case whereis(Name) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    httpd_manager:get_admin_state(Pid);
 	_ ->
 	    {error,not_started}
@@ -448,9 +381,9 @@ get_admin_state(Addr,Port) when integer(Port) ->
 %%%              Reason  -> term()
 %%%
 get_usage_state()                        -> get_usage_state(undefined,8888).
-get_usage_state(Port) when integer(Port) -> get_usage_state(undefined,Port);
+get_usage_state(Port) when is_integer(Port) -> get_usage_state(undefined,Port);
 
-get_usage_state(ConfigFile) when list(ConfigFile) ->
+get_usage_state(ConfigFile) when is_list(ConfigFile) ->
     case get_addr_and_port(ConfigFile) of
 	{ok,Addr,Port} ->
 	    unblock(Addr,Port);
@@ -458,10 +391,10 @@ get_usage_state(ConfigFile) when list(ConfigFile) ->
 	    Error
     end.
 
-get_usage_state(Addr,Port) when integer(Port) -> 
+get_usage_state(Addr,Port) when is_integer(Port) -> 
     Name = make_name(Addr,Port),
     case whereis(Name) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    httpd_manager:get_usage_state(Pid);
 	_ ->
 	    {error,not_started}
@@ -493,7 +426,7 @@ get_usage_state(Addr,Port) when integer(Port) ->
 %%              program such as erl_call (see erl_interface).
 %% 
 
-get_status(ConfigFile) when list(ConfigFile) ->
+get_status(ConfigFile) when is_list(ConfigFile) ->
     case get_addr_and_port(ConfigFile) of
 	{ok,Addr,Port} ->
 	    get_status(Addr,Port);
@@ -501,35 +434,29 @@ get_status(ConfigFile) when list(ConfigFile) ->
 	    Error
     end;
 
-get_status(Port) when integer(Port) ->
+get_status(Port) when is_integer(Port) ->
     get_status(undefined,Port,5000).
 
-get_status(Port,Timeout) when integer(Port), integer(Timeout) ->
+get_status(Port,Timeout) when is_integer(Port), is_integer(Timeout) ->
     get_status(undefined,Port,Timeout);
 
-get_status(Addr,Port) when list(Addr), integer(Port) ->
+get_status(Addr,Port) when is_list(Addr), is_integer(Port) ->
     get_status(Addr,Port,5000).
 
-get_status(Addr,Port,Timeout) when integer(Port) ->
+get_status(Addr,Port,Timeout) when is_integer(Port) ->
     Name = make_name(Addr,Port), 
     case whereis(Name) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    httpd_manager:get_status(Pid,Timeout);
 	_ ->
 	    not_started
     end.
-
-
-%% load config
 
 load(ConfigFile) ->
     httpd_conf:load(ConfigFile).
 
 load_mime_types(MimeTypesFile) ->
     httpd_conf:load_mime_types(MimeTypesFile).
-
-
-%% parse_query
 
 parse_query(String) ->
   {ok, SplitString} = regexp:split(String,"[&;]"),
@@ -547,9 +474,6 @@ foreach([KeyValue|Rest]) ->
       foreach(Rest)
   end.
 
-
-%% get_addr_and_port
-
 get_addr_and_port(ConfigFile) ->
     case httpd_conf:load(ConfigFile) of
 	{ok,ConfigList} ->
@@ -560,8 +484,6 @@ get_addr_and_port(ConfigFile) ->
 	    Error
     end.
 
-
-%% make_name
 
 make_name(Addr,Port) ->
     httpd_util:make_name("httpd",Addr,Port).

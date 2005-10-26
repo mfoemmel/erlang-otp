@@ -23,14 +23,11 @@
 -include("httpd.hrl").
 
 -define(VMODULE,"SOCKET").
--include("httpd_verbosity.hrl").
 -include_lib("kernel/include/inet.hrl").
 
 deliver(SocketType, Socket, IOListOrBinary)  ->
     case http_transport:send(SocketType, Socket, IOListOrBinary) of
 	{error, _Reason} ->
-	    ?vlog("deliver(~p) failed for reason:"
-		  "~n   Reason: ~p",[SocketType,_Reason]),
 	    (catch close(SocketType, Socket)), 
 	    socket_closed;
 	_ ->
@@ -52,14 +49,5 @@ close(SocketType, Socket) ->
 	    {'EXIT',Reason} ->     {error,Reason};
 	    Otherwise ->           {error,Otherwise}
 	end,
-    ?vtrace("close(~p) result: ~p",[SocketType, Res]),
     Res.
 
--ifdef(inets_debug).
-data_size(L) when list(L) -> 
-    httpd_util:flatlength(L);
-data_size(B) when binary(B) ->
-    size(B);
-data_size(O) ->
-    {unknown_size,O}.
--endif.

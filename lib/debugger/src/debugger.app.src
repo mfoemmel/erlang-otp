@@ -7,7 +7,6 @@
 	     dbg_idb,
 	     dbg_ieval,
 	     dbg_iload,
-	     dbg_imeta,
 	     dbg_iserver,
 	     dbg_ui_break,
 	     dbg_ui_break_win,

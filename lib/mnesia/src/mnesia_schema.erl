@@ -101,6 +101,7 @@
 	 insert_schema_ops/2,
 	 do_create_table/1,
 	 do_delete_table/1,
+	 do_read_table_property/2,
 	 do_delete_table_property/2,
  	 do_write_table_property/2]).
 
@@ -962,8 +963,7 @@ do_create_table(Cs) ->
 
 make_create_table(Cs) ->
     Tab = Cs#cstruct.name,
-    verify('EXIT', element(1, ?catch_val({Tab, cstruct})),
-	   {already_exists, Tab}),
+    verify(false, check_if_exists(Tab), {already_exists, Tab}),
     unsafe_make_create_table(Cs).
 
 % unsafe_do_create_table(Cs) ->
@@ -990,6 +990,23 @@ unsafe_make_create_table(Cs) ->
     mnesia_locker:wlock_no_exist(Tid, Store, Tab, Nodes),
     [{op, create_table, cs2list(Cs)}].
 
+check_if_exists(Tab) ->
+    TidTs = get_tid_ts_and_lock(schema, write),
+    {_, _, Ts} = TidTs,
+    Store = Ts#tidstore.store, 
+    ets:foldl(
+      fun({op, create_table, [{name, T}|_]}, _Acc) when T==Tab ->
+	      true;
+	 ({op, delete_table, [{name,T}|_]}, _Acc) when T==Tab ->
+	      false;
+	 (_Other, Acc) ->
+	      Acc
+      end, existed_before(Tab), Store).
+
+existed_before(Tab) ->
+    ('EXIT' =/= element(1, ?catch_val({Tab,cstruct}))).
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Delete a table entirely on all nodes.
 
@@ -1004,22 +1021,51 @@ do_delete_table(Tab) ->
     insert_schema_ops(TidTs, make_delete_table(Tab, whole_table)).
 
 make_delete_table(Tab, Mode) ->
-    case Mode of
-	whole_table ->
-	    case val({Tab, frag_properties}) of
-		[] ->
-		    [make_delete_table2(Tab)];
-		_Props ->
-		    %% Check if it is a base table 
-		    mnesia_frag:lookup_frag_hash(Tab),
-
-		    %% Check for foreigners
-		    F = mnesia_frag:lookup_foreigners(Tab),
-		    verify([], F, {combine_error, Tab, "Too many foreigners", F}),
-		    [make_delete_table2(T) || T <- mnesia_frag:frag_names(Tab)]		    
+    case existed_before(Tab) of
+	false ->
+	    %% Deleting a table that was created in this very
+	    %% schema transaction. Delete all ops in the Store
+	    %% that operate on this table. We cannot run a normal
+	    %% delete operation, since that involves checking live
+	    %% nodes etc.
+	    TidTs = get_tid_ts_and_lock(schema, write),
+	    {_, _, Ts} = TidTs,
+	    Store = Ts#tidstore.store, 
+	    Deleted = ets:select_delete(
+			Store, [{{op,'$1',[{name,Tab}|'_']},
+				 [{'or',
+				   {'==','$1',create_table},
+				   {'==','$1',delete_table}}], [true]}]),
+	    ets:select_delete(
+	      Store, [{{op,'$1',[{name,Tab}|'_'],'_'},
+		       [{'or',
+			 {'==','$1',write_table_property},
+			 {'==','$1',delete_table_property}}],
+		       [true]}]),
+	    case Deleted of
+		0 -> mnesia:abort({no_exists, Tab});
+		_ -> []
 	    end;
-	single_frag ->
-	    [make_delete_table2(Tab)]
+	true ->
+	    case Mode of
+		whole_table ->
+		    case val({Tab, frag_properties}) of
+			[] ->
+			    [make_delete_table2(Tab)];
+			_Props ->
+			    %% Check if it is a base table 
+			    mnesia_frag:lookup_frag_hash(Tab),		    
+			    
+			    %% Check for foreigners
+			    F = mnesia_frag:lookup_foreigners(Tab),
+			    verify([], F, {combine_error,
+					   Tab, "Too many foreigners", F}),
+			    [make_delete_table2(T) ||
+				T <- mnesia_frag:frag_names(Tab)]
+		    end;
+		single_frag ->
+		    [make_delete_table2(Tab)]
+	    end
     end.
 
 make_delete_table2(Tab) ->
@@ -1524,14 +1570,38 @@ update_existing_op([Op|Ops], Tab, Prop, How, Acc) ->
     update_existing_op(Ops, Tab, Prop, How, [Op|Acc]);
 update_existing_op([], _, _, _, _) ->
     false.
- 
+
+do_read_table_property(Tab, Key) ->
+    TidTs = get_tid_ts_and_lock(schema, read),
+    {_, _, Ts} = TidTs,
+    Store = Ts#tidstore.store, 
+    Props = ets:foldl(
+	      fun({op, create_table, [{name, T}|Opts]}, _Acc)
+		 when T==Tab ->
+		      find_props(Opts);
+		 ({op, Op, [{name,T}|Opts], _Prop}, _Acc)
+		 when T==Tab, Op==write_property; Op==delete_property ->
+		      find_props(Opts);
+		 ({op, delete_table, [{name,T}|_]}, _Acc)
+		 when T==Tab ->
+		      [];
+		 (_Other, Acc) ->
+		      Acc
+	      end, [], Store),
+    case lists:keysearch(Key, 1, Props) of
+	{value, Property} ->
+	    Property;
+	false ->
+	    undefined
+    end.
+
+
 %% perhaps a misnomer. How could also be delete_property... never mind.
 %% Returns the modified L.
 insert_prop(Prop, L, How) ->
     Prev = find_props(L),
     MergedProps = merge_with_previous(How, Prop, Prev),
     replace_props(L, MergedProps).
-
 
 find_props([{user_properties, P}|_]) -> P;
 find_props([_H|T]) -> find_props(T).
@@ -2492,19 +2562,22 @@ restore_schema([{schema, Tab, List} | Schema], R) ->
 	    R2 = R#r{tables = [{Tab, Where, Snmp, RecName} | R#r.tables]},
 	    restore_schema(Schema, R2);
 	recreate_tables -> 
-	    TidTs = get_tid_ts_and_lock(Tab, write),
+	    case ?catch_val({Tab, cstruct}) of
+		{'EXIT', _} ->    
+		    TidTs = {_Mod, Tid, Ts} = get(mnesia_activity_state),
+		    RunningNodes = val({current, db_nodes}),
+		    Nodes = mnesia_lib:intersect(mnesia_lib:cs_to_nodes(list2cs(List)), 
+						 RunningNodes),
+		    mnesia_locker:wlock_no_exist(Tid, Ts#tidstore.store, Tab, Nodes),
+		    TidTs;
+		_ ->
+		    TidTs = get_tid_ts_and_lock(Tab, write)
+	    end,
 	    NC    = {cookie, ?unique_cookie},
 	    List2 = lists:keyreplace(cookie, 1, List, NC),		
 	    Where = where_to_commit(Tab, List2),
 	    Snmp  = pick(Tab, snmp, List2, []),
 	    RecName = pick(Tab, record_name, List2, Tab),
-% 	    case ?catch_val({Tab, cstruct}) of
-% 		{'EXIT', _} ->
-% 		    ignore;
-% 		OldCs when record(OldCs, cstruct) -> 
-% 		    do_delete_table(Tab)
-% 	    end,
-% 	    unsafe_do_create_table(list2cs(List2)),
 	    insert_schema_ops(TidTs, [{op, restore_recreate, List2}]),
 	    R2 = R#r{tables = [{Tab, Where, Snmp, RecName} | R#r.tables]},
 	    restore_schema(Schema, R2);

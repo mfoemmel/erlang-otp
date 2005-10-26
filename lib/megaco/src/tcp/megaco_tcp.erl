@@ -26,14 +26,18 @@
 
 -behaviour(gen_server).
 
-%% -define(d(F,A), io:format("~p~p:" ++ F ++ "~n", [self(),?MODULE|A])).
--define(d(F,A), ok).
 
 %%-----------------------------------------------------------------
 %% Include files
 %%-----------------------------------------------------------------
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/src/tcp/megaco_tcp.hrl"). 
+-include_lib("megaco/src/engine/megaco_internal.hrl"). 
+
+
+-define(d1(F, A), ?d("~p " ++ F, [self()|A])).
+-define(d2(F),    ?d1(F, [])).
+
 
 %%-----------------------------------------------------------------
 %% External exports
@@ -111,6 +115,7 @@ reset_stats(Socket) ->
 %% Description: Starts the TPKT transport service
 %%-----------------------------------------------------------------
 start_transport() ->
+    ?d2("start_transport -> entry"),
     (catch megaco_stats:init(megaco_tcp_stats)),
     megaco_tcp_sup:start_link().
 
@@ -119,9 +124,14 @@ start_transport() ->
 %% Description: Starts new TPKT listener sockets
 %%-----------------------------------------------------------------
 listen(SupPid, Parameters) ->
+    ?d1("listen -> entry with"
+	"~n   SupPid:     ~p"
+	"~n   Parameters: ~p", [SupPid, Parameters]),
     ProcList = supervisor:which_children(SupPid),
     case lists:keysearch(megaco_tcp, 1, ProcList) of
 	{value, {_Name, Pid, _Type, _Modules}} ->
+	    ?d1("listen -> found listener: "
+		"~n   Pid: ~p", [Pid]),
 	    call(Pid, {add_listener, Parameters});
 	false ->
 	    {error, no_tcp_server}
@@ -133,9 +143,14 @@ listen(SupPid, Parameters) ->
 %%              at the MG side when trying to connect an MGC
 %%-----------------------------------------------------------------
 connect(SupPid, Parameters) ->
+    ?d1("connect -> entry with"
+	"~n   SupPid:     ~p"
+	"~n   Parameters: ~p", [SupPid, Parameters]),
     Mand = [host, port, receive_handle],
     case parse_options(Parameters, #megaco_tcp{}, Mand) of
 	{ok, TcpRec} ->
+	    ?d1("connect -> options parsed: "
+		"~n   TcpRec: ~p", [TcpRec]),
 	    IpOpt = [binary, {packet, tpkt}, {active, once} |
 		     TcpRec#megaco_tcp.options],
 
@@ -145,27 +160,39 @@ connect(SupPid, Parameters) ->
 				       TcpRec#megaco_tcp.port, 
 				       IpOpt) of
 		{ok, Socket} ->
+		    ?d1("connect -> connected: "
+			"~n   Socket: ~p", [Socket]),
                     %%----------------------------------------------
                     %% Socket up start a new control process
-		    case start_connection(SupPid, 
-					  TcpRec#megaco_tcp{socket = Socket}) 
-			of
+		    Rec2 = TcpRec#megaco_tcp{socket = Socket}, 
+		    case start_connection(SupPid, Rec2) of
 			{ok, Pid} ->
+			    ?d1("connect -> connection started: "
+				"~n   Pid: ~p", [Pid]),
 			    gen_tcp:controlling_process(Socket, Pid),
+			    ?d2("connect -> control transferred"),
 			    {ok, Socket, Pid};
 			{error, Reason} ->
+			    ?d1("connect -> failed starting connection: "
+				"~n   Reason: ~p", [Reason]),
 			    {error, Reason}
 		    end;
 		{error, Reason} ->
+		    ?d1("connect -> failed connecting: "
+			"~n   Reason: ~p", [Reason]),
 		    Error = {error, {gen_tcp_connect, Reason}},
 		    ?tcp_debug(TcpRec, "tcp connect failed", [Error]),
 		    Error;
 		{'EXIT', _Reason} = Exit ->
+		    ?d1("connect -> connect exited: "
+			"~n   Exit: ~p", [Exit]),
 		    Error = {error, {gen_tcp_connect, Exit}},
 		    ?tcp_debug(TcpRec, "tcp connect failed", [Error]),
 		    Error
 	    end;
-	{error, _Reason} = Error->
+	{error, _Reason} = Error ->
+	    ?d1("connect -> failed parsing options: "
+		"~n   Error: ~p", [Error]),
 	    ?tcp_debug(#megaco_tcp{}, "tcp connect failed",
 		       [Error, {options, Parameters}]),
 	    Error
@@ -176,7 +203,7 @@ connect(SupPid, Parameters) ->
 %% Description: Function is used for sending data on the TCP socket
 %%-----------------------------------------------------------------
 send_message(Socket, Data) ->
-    ?d("send_message -> entry with"
+    ?d1("send_message -> entry with"
 	"~n   Socket:     ~p"
 	"~n   size(Data): ~p", [Socket, size(Data)]),
     {Size, NewData} = add_tpkt_header(Data),
@@ -246,21 +273,32 @@ start_link(Args) ->
 %%              process
 %%-----------------------------------------------------------------
 start_connection(SupPid, #megaco_tcp{socket = Socket} = TcpRec) ->
+    ?d1("start_connection -> entry with"
+	"~n   SupPid: ~p" 
+	"~n   Socket: ~p", [SupPid, Socket]),
+    
     ProcList = supervisor:which_children(SupPid),
     case lists:keysearch(megaco_tcp_connection_sup, 1, ProcList) of
 	{value, {_Name, ConnSupPid, _Type, _Modules}} ->
+	    ?d1("start_connection -> found connection supervisor: "
+		"~n   ConnSupPid: ~p", [ConnSupPid]),
 	    ?tcp_debug(TcpRec, "tcp connect", []),
 	    case supervisor:start_child(ConnSupPid, [TcpRec]) of
 		{ok, Pid} ->
+		    ?d1("start_connection -> started: "
+			"~n   Pid: ~p", [Pid]),
 		    ?tcp_debug(TcpRec, "connect handler started", [Pid]),
 		    create_snmp_counters(Socket),
 		    {ok, Pid};
 		{error, Reason} ->
+		    ?d1("start_connection -> failed starting: "
+			"~n   Reason: ~p", [Reason]),
 		    Error = {error, {controlling_process_not_started, Reason}},
 		    ?tcp_debug(TcpRec, "tcp connect failed", [Error]),
 		    Error
 	    end;
 	false ->
+	    ?d2("start_connection -> could not find connection supervisor"),
 	    Error = {error, no_connection_supervisor},
 	    ?tcp_debug(TcpRec, "tcp connect failed", [Error]),
 	    Error
@@ -309,11 +347,19 @@ terminate(_Reason, _State) ->
 %%              to start 
 %%-----------------------------------------------------------------
 start_tcp_listener(P, State) ->
+    ?d1("start_tcp_listener -> entry with"
+	"~n   P: ~p", [P]),
     case setup(State#state.supervisor_pid, P) of
 	{ok, Pid, Data} ->
+	    ?d1("start_tcp_listener -> setup ok"
+		"~n   Pid:  ~p"
+		"~n   Data: ~p", [Pid, Data]),
 	    link(Pid),
-	    {reply, ok, State#state{linkdb=[{Pid, Data} | State#state.linkdb]}};
+	    {reply, ok, 
+	     State#state{linkdb=[{Pid, Data} | State#state.linkdb]}};
 	{error, Reason} ->
+	    ?d1("start_tcp_listener -> setup failed"
+		"~n   Reason: ~p", [Reason]),
 	    {reply, {error, {could_not_start_listener, Reason}}, State}
     end.
 
@@ -322,6 +368,8 @@ start_tcp_listener(P, State) ->
 %% Description: Handling call messages (really just garbage)
 %%-----------------------------------------------------------------
 handle_call({add_listener, Parameters}, _From, State) ->
+    ?d1("handle_call(add_listener) -> entry with"
+	"~n   Parameters: ~p", [Parameters]),
     start_tcp_listener(Parameters, State);
 handle_call(Request, From, State) ->
     error_logger:error_report([{?MODULE, {garbage_call, Request, From}}]),
@@ -371,38 +419,60 @@ code_change(_Vsn, State, _Extra) ->
 %%              socket in the MGC
 %%-----------------------------------------------------------------
 setup(SupPid, Options) ->
+    ?d1("setup -> entry with"
+	"~n   SupPid:  ~p"
+	"~n   Options: ~p", [SupPid, Options]),
     Mand = [port, receive_handle],
     case parse_options(Options, #megaco_tcp{}, Mand) of
 	{ok, TcpRec} ->
     
+	    ?d1("setup -> options parsed"
+		"~n   TcpRec: ~p", [TcpRec]),
+
             %%------------------------------------------------------
             %% Setup the listen socket
 	    IpOpts = [binary, {packet, tpkt}, {active, once},
 		      {reuseaddr, true} | TcpRec#megaco_tcp.options],
 	    case catch gen_tcp:listen(TcpRec#megaco_tcp.port, IpOpts) of
 		{ok, Listen} ->
+
+		    ?d1("setup -> listen ok"
+			"~n   Listen: ~p", [Listen]),
+
 	            %%-----------------------------------------------
 	            %% Startup the accept process that will wait for 
 	            %% connect attempts
 		    case start_accept(SupPid, TcpRec, Listen) of
 			{ok, Pid} ->
+
+			    ?d1("setup -> accept process started"
+				"~n   Pid: ~p", [Pid]),
+
 			    ?tcp_debug(TcpRec, "tcp listen setup", []),
 			    {ok, Pid, {TcpRec, Listen}};
 			{error, _Reason} = Error ->
+			    ?d1("setup -> failed starting accept process"
+				"~n   Error: ~p", [Error]),
 			    ?tcp_debug(TcpRec, "tcp listen setup failed", 
 				       [Error]),
 			    Error
 		    end;
 		{error, Reason} ->
+		    ?d1("setup -> listen failed"
+			"~n   Reason: ~p", [Reason]),
 		    Error = {error, {gen_tcp_listen, Reason}},
 		    ?tcp_debug(TcpRec, "tcp listen setup failed", [Error]),
 		    Error;
 		{'EXIT', _Reason} = Exit ->
+		    ?d1("setup -> listen exited"
+			"~n   Exit: ~p", [Exit]),
 		    Error = {error, {gen_tcp_listen, Exit}},
 		    ?tcp_debug(TcpRec, "tcp listen setup failed", [Error]),
 		    Error
 	    end;
 	{error, _Reason} = Error ->
+	    ?d1("setup -> failed parsing options"
+		"~n   Error: ~p", [Error]),
 	    ?tcp_debug(#megaco_tcp{}, "tcp listen setup failed",
 		       [Error, {options, Options}]),
 	    Error
@@ -415,18 +485,29 @@ setup(SupPid, Options) ->
 %%              if it died of some reason.
 %%-----------------------------------------------------------------
 resetup(Pid, Reason, State) ->
+    ?d1("resetup -> entry with"
+	"~n   Pid:    ~p"
+	"~n   Reason: ~p", [Pid, Reason]),
     case lists:keysearch(Pid, 1, State#state.linkdb) of
 	{value, {Pid, {TcpRec, Listener}}} ->
+	    ?d1("resetup -> found accept process: "
+		"~n   TcpRec:   ~p"
+		"~n   Listener: ~p", [TcpRec, Listener]),
 	    ?tcp_debug(TcpRec, "tcp listen resetup", [{error, Reason}]),
 	    unlink(Pid),
 	    case start_accept(State#state.supervisor_pid, TcpRec, Listener) of
 		{ok, NewPid} ->
+		    ?d1("resetup -> start new accept process ok: "
+			"~n   NewPid: ~p", [NewPid]),
 		    link(NewPid),
 		    NewList = lists:keyreplace(Pid, 1, State#state.linkdb,
 					       {NewPid, {TcpRec, Listener}}),
 		    State#state{linkdb=NewList};
 		{error, Reason} ->
-		    ?tcp_debug(TcpRec, "tcp listen resetup failed", [{error, Reason}]),
+		    ?d1("resetup -> failed starting new accept process: "
+			"~n   :Reason ~p", [Reason]),
+		    ?tcp_debug(TcpRec, 
+			       "tcp listen resetup failed", [{error, Reason}]),
 		    State
 	    end;
 	false ->
@@ -439,16 +520,28 @@ resetup(Pid, Reason, State) ->
 %%              process
 %%-----------------------------------------------------------------
 start_accept(SupPid, TcpRec, Listen) ->
+    ?d1("start_accept -> entry with"
+	"~n   SupPid: ~p"
+	"~n   TcpRec: ~p"
+	"~n   Reason: ~p", [SupPid, TcpRec, Listen]),
     case get_pid_from_supervisor(SupPid, megaco_tcp_accept_sup) of
 	{ok, AcceptSupPid} ->
+	    ?d1("start_accept -> found accept supervisor"
+		"~n   AcceptSupPid: ~p", [AcceptSupPid]),
 	    case supervisor:start_child(AcceptSupPid, 
 					[{TcpRec, SupPid, Listen}]) of
 		{ok, Pid} ->
+		    ?d1("start_accept -> accept process started"
+			"~n   Pid: ~p", [Pid]),
 		    {ok, Pid};
 		{error, Reason} ->
+		    ?d1("start_accept -> failed starting accept process: "
+			"~n   Reason: ~p", [Reason]),
 		    {error, {accept_not_started, Reason}}
 	    end;
 	{error, Reason} ->
+	    ?d1("start_accept -> could not find acceept supervisor: "
+		"~n   Reason: ~p", [Reason]),
 	    {error, {no_tcp_accept_sup, Reason}}
     end.
 
@@ -470,6 +563,9 @@ add_tpkt_header(IOList) when list(IOList) ->
 %%              module.
 %%-----------------------------------------------------------------
 parse_options([{Tag, Val} | T], TcpRec, Mand) ->
+    ?d1("parse_options -> entry with"
+	"~n   Tag: ~p"
+	"~n   Val: ~p", [Tag, Val]),
     Mand2 = Mand -- [Tag],
     case Tag of
 	port ->
@@ -485,13 +581,20 @@ parse_options([{Tag, Val} | T], TcpRec, Mand) ->
 	serialize when Val == true; Val == false ->
 	    parse_options(T, TcpRec#megaco_tcp{serialize = Val}, Mand2);
         Bad ->
+	    ?d1("parse_options -> bad option: "
+		"~n   Tag: ~p", [Tag]),
 	    {error, {bad_option, Bad}}
     end;
 parse_options([], TcpRec, []) ->
+    ?d2("parse_options -> done"),
     {ok, TcpRec};
 parse_options([], _TcpRec, Mand) ->
+    ?d1("parse_options -> entry with"
+	"~n   Mand: ~p", [Mand]),
     {error, {missing_options, Mand}};
 parse_options(BadList, _TcpRec, _Mand) ->
+    ?d1("parse_options -> entry with"
+	"~n   BadList: ~p", [BadList]),
     {error, {bad_option_list, BadList}}.
 
 

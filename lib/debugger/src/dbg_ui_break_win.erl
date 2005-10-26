@@ -46,21 +46,24 @@
 %%   Line = integer() | ""
 %%--------------------------------------------------------------------
 create_win(GS, {X, Y}, function, Mod, _Line) ->
-    Pad = 10,
-    Wbtn = 70, Hbtn = 30,
+    Pad = 8,
+    W = 230,
 
-    Title = "Function Break",
-		
-    Win = gs:window(GS, [{title, Title}, {x, X}, {y, Y},
+    Font = dbg_ui_win:font(normal),
+
+    %% Window
+    Win = gs:window(GS, [{title, "Function Break"}, {x, X}, {y, Y},
 			 {destroy, true}, {configure, true}]),
-    Frm = gs:frame(Win, [{x, 0}, {y, 0}, {width, 230}, {height, 190},
-			 {packer_x, [{fixed, 70}, {stretch, 1, 150},
+
+    %% Frame
+    Frm = gs:frame(Win, [{x, 0}, {y, 0}, {width, W}, {height, 190},
+			 {packer_x, [{fixed, 70}, {stretch, 1, W-80},
 				     {fixed, 10}]},
 			 {packer_y, [{fixed, 10}, {fixed, 30},
-				     {stretch, 1, 100}, {fixed, 50}]}]),
+				     {stretch, 1, 100}, {fixed, 40}]}]),
 
-    %% Create module input field
-    gs:label(Frm, [{label, {text,"Module"}}, {align, e},
+    %% Create input field (label+entry)
+    gs:label(Frm, [{label, {text,"Module:"}}, {font, Font}, {align, e},
 		   {pack_x, 1}, {pack_y, 2}]),
     Ent = gs:entry(Frm, [{text, Mod},
 			 {pack_x, 2}, {pack_y, 2},
@@ -68,19 +71,20 @@ create_win(GS, {X, Y}, function, Mod, _Line) ->
     Entries = [{Ent, atom}],
 
     %% Create a listbox containing the functions of the module
-    gs:label(Frm, [{label, {text,"Function"}}, {align, e},
+    gs:label(Frm, [{label, {text,"Function:"}}, {font, Font}, {align, ne},
 		   {pack_x, 1}, {pack_y, 3}]),
     Lb = gs:listbox(Frm, [{bw, 2}, {relief, ridge}, {vscroll, right},
 			  {pack_x, 2}, {pack_y, 3}]),
 
     %% Add Ok and Cancel buttons
+    {Wbtn, Hbtn} = dbg_ui_win:min_size(["Ok","Cancel"], 70, 30),
     Bot = gs:frame(Frm, [{pack_x, {1, 3}}, {pack_y, 4}]),
-    Ok = gs:button(Bot, [{label, {text,"Ok"}},
-			  {x, Pad}, {y, Pad},
-			  {width, Wbtn}, {height, Hbtn}]),
-    Cancel = gs:button(Bot, [{label, {text,"Cancel"}},
-			     {x, 230-Pad-Wbtn}, {y, Pad},
-			     {width, Wbtn}, {height, Hbtn}]),
+    Ok = gs:button(Bot, [{x, Pad}, {y, Pad},
+			 {width, Wbtn}, {height, Hbtn},
+			 {label, {text,"Ok"}}, {font, Font}]),
+    Cancel = gs:button(Bot, [{x, W-Pad-Wbtn}, {y, Pad},
+			     {width, Wbtn}, {height, Hbtn},
+			     {label, {text,"Cancel"}}, {font, Font}]),
 
     Wfrm = gs:read(Frm, width), Hfrm = gs:read(Frm, height),
     gs:config(Win, [{width, Wfrm}, {height, Hfrm}, {map, true}]),
@@ -88,76 +92,81 @@ create_win(GS, {X, Y}, function, Mod, _Line) ->
 	     packer=Frm, entries=Entries, trigger=enable,
 	     ok=Ok, cancel=Cancel, listbox=Lb, funcs=[]};
 create_win(GS, {X, Y}, Type, Mod, Line) ->
-    Pad = 10,
-    Wlbl = 80,
-    Went = 150,
-    Wbtn = 70, Hbtn = 30,
+    Pad = 8,
+    W = 230,
 
+    Font = dbg_ui_win:font(normal),
+
+    %% Window
     Title = case Type of
 		line -> "Line Break";
 		conditional -> "Conditional Break"
 	    end,
-		
-    Wwin = Pad+Wlbl+Went+Pad,
-    Win = gs:window(GS, [{title, Title}, {x, X}, {y, Y}, {width, Wwin},
+    Win = gs:window(GS, [{title, Title}, {x, X}, {y, Y},
 			 {destroy, true}]),
 
     %% Create input fields (label+entry)
+    {Wlbl, Hlbl} = dbg_ui_win:min_size(["C-Function:"], 10, 30),
+    Went = W-Wlbl-2*Pad,
     Labels = case Type of
 		 line ->
-		     [{atom, "Module:", Mod}, {integer, "Line:", Line}];
+		     [{atom,"Module:",Mod}, {integer,"Line:",Line}];
 		 conditional ->
-		     [{atom, "Module:", Mod}, {integer, "Line:", Line},
-		      {atom, "C-Module:", ""}, {atom, "C-Function:", ""}]
+		     [{atom,"Module:",Mod}, {integer,"Line:",Line},
+		      {atom,"C-Module:",""}, {atom,"C-Function:",""}]
 	     end,
     Fun = fun({DataType, Label, Default}, Yin) ->
+		  gs:create(label, Win, [{x, Pad}, {y, Yin},
+					 {width,Wlbl}, {height,Hlbl},
+					 {label, {text,Label}},
+					 {font, Font}, {align, e}]),
 		  Ent = gs:create(entry, Win, [{x, Pad+Wlbl}, {y, Yin},
 					       {width, Went},
+					       {height, Hlbl},
 					       {text, Default},
 					       {keypress, true}]),
-		  Hent = gs:read(Ent, height),
-		  gs:create(label, Win, [{label, {text,Label}}, {align, e},
-					 {x, Pad}, {y, Yin},
-					 {width, Wlbl}, {height, Hent}]),
-		  {{Ent, DataType}, Yin+Hent}
+		  {{Ent, DataType}, Yin+Hlbl}
 	  end,
     {Entries, Yacc} = lists:mapfoldl(Fun, Pad, Labels),
     {First, _DataType} = hd(Entries),
     gs:config(First, {setfocus, true}),
 
     %% Add 'trigger action' buttons
-    Wfrm = 100,
-    Hfrm = 90,
-    Frm = gs:frame(Win, [{bw, 2},
-			 {x, Pad-2}, {y, Yacc+Pad-2},
-			 {width, Wfrm+4}, {height, Hfrm+5}]),
-    gs:label(Frm, [{label, {text,"Trigger Action"}},
-		   {x, 0}, {y, 0}, {width, Wfrm}, {height, Hfrm/4}]),
-    gs:radiobutton(Frm, [{label, {text, "Enable"}},
-			 {x, 5}, {y, Hfrm/4}, {align, w},
-			 {width, Wfrm-5}, {height, Hfrm/4},
-			 {data, enable}, {group, g1}, {select, true}]),
-    gs:radiobutton(Frm, [{label, {text, "Disable"}},
-			 {x, 5}, {y, 2*Hfrm/4}, {align, w},
-			 {width, Wfrm-5}, {height, Hfrm/4},
-			 {data, disable}, {group, g1}]),
-    gs:radiobutton(Frm, [{label, {text, "Delete"}},
-			 {x, 5}, {y, 3*Hfrm/4}, {align, w},
-			 {width, Wfrm-5}, {height, Hfrm/4},
-			 {data, delete}, {group, g1}]),
+    {Wlbl2, Hlbl2} = dbg_ui_win:min_size(["Trigger Action"], 100, 20),
+    Wfrm = Wlbl2+8, Hfrm = Hlbl2*4+4,
+    Grp = erlang:now(),
+    Frm = gs:frame(Win, [{x, W/2-Wfrm/2-2}, {y, Yacc+Pad-2},
+			 {width, Wfrm}, {height, Hfrm}, {bw, 2}]),
+    gs:label(Frm, [{label, {text, "Trigger Action"}}, {font, Font},
+		   {x, 2}, {y, 0}, {width, Wlbl2}, {height, Hlbl2}]),
+    gs:radiobutton(Frm, [{label, {text, "Enable"}}, {font, Font},
+			 {x, 10}, {y, Hlbl2},
+			 {width, Wlbl2-10}, {height, Hlbl2},
+			 {align, w}, {data, enable}, {group, Grp},
+			 {select, true}]),
+    gs:radiobutton(Frm, [{label, {text, "Disable"}}, {font, Font},
+			 {x, 10}, {y, Hlbl2*2},
+			 {width, Wlbl2-10}, {height, Hlbl2},
+			 {align, w}, {data, disable}, {group, Grp}]),
+    gs:radiobutton(Frm, [{label, {text, "Delete"}}, {font, Font},
+			 {x, 10}, {y, Hlbl2*3},
+			 {width, Wlbl2-10}, {height, Hlbl2},
+			 {align, w}, {data, delete}, {group, Grp}]),
 
     %% Add Ok and Cancel buttons
-    Xbtn = Wwin-Pad-Wbtn, Ybtn = Yacc+Pad+Hfrm-Hbtn,
-    Btn = gs:button(Win, [{label, {text,"Ok"}},
-			  {x, Xbtn}, {y, Ybtn},
-			  {width, Wbtn}, {height, Hbtn}]),
-    gs:button(Win, [{label, {text,"Cancel"}},
-		    {x, Xbtn}, {y, Ybtn-Pad-Hbtn},
-		    {width, Wbtn}, {height, Hbtn}]),
+    {Wbtn, Hbtn} = dbg_ui_win:min_size(["Ok","Cancel"], 70, 30),
+    Ybtn = Yacc + Pad + Hfrm + Pad,
+    Ok = gs:button(Win, [{x, Pad}, {y, Ybtn},
+			 {width, Wbtn}, {height, Hbtn},
+			 {label, {text,"Ok"}}, {font, Font}]),
+    gs:button(Win, [{x, W-Pad-Wbtn}, {y, Ybtn},
+		    {width, Wbtn}, {height, Hbtn},
+		    {label, {text,"Cancel"}}, {font, Font}]),
 
-    Hwin = Ybtn+Hbtn+Pad,
-    gs:config(Win, [{height, Hwin}, {map, true}]),
-    #winInfo{type=Type, entries=Entries, trigger=enable, ok=Btn}.
+    Hwin = Ybtn + Hbtn + Pad,
+    gs:config(Win, [{width, W}, {height, Hwin}, {map, true}]),
+
+    #winInfo{type=Type, entries=Entries, trigger=enable, ok=Ok}.
 
 %%--------------------------------------------------------------------
 %% update_functions(WinInfo, Funcs) -> WinInfo

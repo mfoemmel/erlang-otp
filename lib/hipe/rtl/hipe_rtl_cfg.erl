@@ -1,3 +1,6 @@
+%% -*- erlang-indent-level: 2 -*-
+%%======================================================================
+
 -module(hipe_rtl_cfg).
 
 -export([init/1,
@@ -7,17 +10,15 @@
          succ/2, succ_map/1,
          pred/2, pred_map/1,
          bb/2,
-         bb_add/3,
+         bb_add/3,bb_insert_between/5,
 	 redirect/4,
          remove_trivial_bbs/1,
          remove_unreachable_code/1,
 	 linearize/1,
 	 pp/1, pp/2]).
--export([postorder/1, reverse_postorder/1]).
+-export([preorder/1, postorder/1, reverse_postorder/1]).
 
 -define(RTL_CFG,true).	% needed for cfg.inc below
-
--export([preorder/1]). %% Added Daz, 2005/08/09, to get the preorder too
 
 -include("../main/hipe.hrl").
 -include("../flow/cfg.inc").
@@ -108,6 +109,13 @@ is_branch(Instr) ->
       _ -> false
    end.
 
+is_pure_branch(Branch) ->
+  case hipe_rtl:type(Branch) of
+    branch -> true;
+    switch -> true;
+    goto -> true;
+    _ -> false
+  end.
 
 redirect_jmp(Jmp, ToOld, ToNew) ->
    hipe_rtl:redirect_jmp(Jmp, ToOld, ToNew).
@@ -171,5 +179,8 @@ linearize(CFG) ->
 is_phi(I) ->
   hipe_rtl:is_phi(I).
 
-phi_remove_pred(I, _Pred) ->
-  I. %%hipe_rtl:phi_remove_pred(I, Pred).NYI
+phi_remove_pred(I, Pred) ->
+  hipe_rtl:phi_remove_pred(I, Pred).
+
+phi_redirect_pred(I, OldPred, NewPred) ->
+  hipe_rtl:phi_redirect_pred(I, OldPred, NewPred).

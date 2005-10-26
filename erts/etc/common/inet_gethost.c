@@ -66,12 +66,17 @@ typedef unsigned char OpType;
 #define OP_GETHOSTBYNAME 1
 #define OP_GETHOSTBYADDR 2
 #define OP_CANCEL_REQUEST 3
+#define OP_CONTROL 4
 
 /* The protocol (IPV4/IPV6) */
 typedef unsigned char ProtoType;
 
 #define PROTO_IPV4 1
 #define PROTO_IPV6 2
+
+/* OP_CONTROL */
+typedef unsigned char CtlType;
+#define SETOPT_DEBUG_LEVEL 0
 
 /* The unit of an IP address (0 == error, 4 == IPV4, 16 == IPV6) */
 typedef unsigned char UnitType;
@@ -250,7 +255,9 @@ static OpType get_op(AddrByte *buff);
 static AddrByte *get_op_addr(AddrByte *buff);
 static SerialType get_serial(AddrByte *buff);
 static ProtoType get_proto(AddrByte *buff);
+static CtlType get_ctl(AddrByte *buff);
 static AddrByte *get_data(AddrByte *buff);
+static int get_debug_level(AddrByte *buff);
 static int relay_reply(Worker *pw);
 static int ignore_reply(Worker *pw);
 static void init_workers(int max);
@@ -442,7 +449,8 @@ static int handle_io_busy(int ndx)
 static int handle_io_free(int ndx)
 {
     /* IO from a free worker means "kill me" */
-    DEBUGF(1,("Free worker spontaneously died."));
+    DEBUGF(1,("Free worker[%ld] spontaneously died.",
+	      (long) free_workers[ndx].pid));
     kill_worker(&free_workers[ndx]);
     --num_free_workers;
     free_workers[ndx] = free_workers[num_free_workers];
@@ -460,7 +468,8 @@ static int handle_io_stalled(int ndx)
 	stalled_workers[ndx] = stalled_workers[num_stalled_workers];
 	return 1; 
     } else {
-	DEBUGF(3,("Ignoring reply from stalled worker.")); 
+	DEBUGF(3,("Ignoring reply from stalled worker[%ld].",
+		  (long) stalled_workers[ndx].pid)); 
 	free_workers[num_free_workers] = stalled_workers[ndx];
 	free_workers[num_free_workers].state = WORKER_FREE;
 	++num_free_workers;
@@ -565,8 +574,10 @@ static int clean_que_of(SerialType s)
 		}
 	    }
 	    --(busy_workers[i].que_size);
-	    DEBUGF(3,("Removing serial %d from worker specific que on request, "
-		      "que %sempty",s, (busy_workers[i].que_first) ? "not " : ""));
+	    DEBUGF(3,("Removing serial %d from worker[%ld] specific que "
+		      "on request, que %sempty", 
+		      s, (long) busy_workers[i].pid, 
+		      (busy_workers[i].que_first) ? "not " : ""));
 	    return 1;
 	}
     }
@@ -712,9 +723,10 @@ static void main_loop(void)
 		return;
 	    }
 #endif
-	    if ((op = get_op(inbuff)) == OP_CANCEL_REQUEST) {
-		if (!clean_que_of(get_serial(inbuff))) {
-		    SerialType serial = get_serial(inbuff);
+	    op = get_op(inbuff);
+	    if (op == OP_CANCEL_REQUEST) {
+		SerialType serial = get_serial(inbuff);
+		if (!clean_que_of(serial)) {
 		    for (i = 0; i <  num_busy_workers; ++i) {
 			if (busy_workers[i].serial == serial) {		    
 			    if (busy_workers[i].que_size) {
@@ -728,6 +740,49 @@ static void main_loop(void)
 			}
 		    }
 		}
+#ifdef WIN32
+		FREE(qi);
+#endif
+		continue; /* New select */
+	    } else if (op == OP_CONTROL) {
+		CtlType ctl;
+		SerialType serial = get_serial(inbuff);
+		if (serial != INVALID_SERIAL) {
+		    fatal("Invalid serial: %d.", serial);
+		}
+		switch (ctl = get_ctl(inbuff)) {
+		case SETOPT_DEBUG_LEVEL:
+		    debug_level = get_debug_level(inbuff);
+		    DEBUGF(debug_level, ("debug_level = %d", debug_level));
+		    for (w = 0; w < 3; ++w) {
+			for (i = 0; i < *wsizes[w]; i++) {
+			    int res;
+			    cw = &(workers[w][i]);
+#ifdef WIN32
+			    if ((res = send_mes_to_worker(qi, cw)) == 0) {
+				QueItem *m =
+				    ALLOC(sizeof(QueItem) - 1 + qi->req_size);
+				memcpy(qi->request, m->request,
+				       (m->req_size = qi->req_size));
+				m->next = NULL;
+				qi = m;
+			    }
+#else
+			    res = send_request_to_worker(inbuff, insize, cw);
+#endif
+			    if (res != 0) {
+			        kill_worker(cw);
+				(*wsizes[w])--;
+				*cw = workers[w][*wsizes[w]];
+			    }
+			}
+	            }
+	            break;
+		default:
+		    warning("Unknown control requested from erlang (%d), "
+			    "message discarded.", (int) ctl);
+		    break;
+		} 
 #ifdef WIN32
 		FREE(qi);
 #endif
@@ -782,8 +837,8 @@ static void main_loop(void)
 		    ++(cw->que_size);
 		    continue;
 		}
-		/* Otherwise buissiness as usual */
-	    }   
+		/* Otherwise busyness as usual */
+	    }
 
 	    save_serial = get_serial(inbuff);
 
@@ -818,8 +873,8 @@ static void main_loop(void)
 		}
 	    } else {
 		cw->serial = save_serial;
-		domaincopy(cw->domain,domainbuff);
-		}
+		domaincopy(cw->domain, domainbuff);
+	    }
 	}
     }
 }
@@ -859,10 +914,10 @@ static void kill_worker(Worker *pw)
     int selret;
     static char buff[1024];
 
-    DEBUGF(3,("Killing worker with fd %d, serial %d, pid %d", 
+    DEBUGF(3,("Killing worker[%ld] with fd %d, serial %d", 
+	      (long) pw->pid,
 	      (int) pw->readfrom, 
-	      (int) pw->serial,
-	      (int) pw->pid));
+	      (int) pw->serial));
     kill(pw->pid, SIGUSR1);
     /* This is all just to check that the child died, not 
        really necessary */
@@ -975,7 +1030,9 @@ static Worker *pick_worker_greedy(AddrByte *domainbuff)
 static void restart_worker(Worker *w)
 {
     kill_worker(w);
-    create_worker(w,1);
+    if (create_worker(w,1) < 0) {
+	fatal("Unable to create worker process, insufficient resources");
+    }
 }
 
 static void kill_last_picked_worker(void)
@@ -1014,9 +1071,9 @@ static void start_que_request(Worker *w)
     }
 #endif
     w->serial = save_serial;
-    DEBUGF(3,("Did deque serial %d from worker specific que (%d), "
+    DEBUGF(3,("Did deque serial %d from worker[%ld] specific que, "
 	      "Que is %sempty",
-	      get_serial(qi->request), (int) w->pid, 
+	      get_serial(qi->request), (long) w->pid, 
 	      (w->que_first) ? "not " : ""));
 #ifndef WIN32
     FREE(qi);
@@ -1085,6 +1142,8 @@ static void stall_worker(int ndx)
     stalled_workers[num_stalled_workers] = busy_workers[ndx];
     stalled_workers[num_stalled_workers].state = WORKER_STALLED;
     busy_workers[ndx] = busy_workers[num_busy_workers];
+    DEBUGF(3, ("Stalled worker[%ld]",
+	   (long) stalled_workers[num_stalled_workers].pid));
     ++num_stalled_workers;
 }
 
@@ -1098,7 +1157,7 @@ static int read_request(AddrByte **buff, size_t *buff_size)
     int siz;
     int r;
 
-    if ((r = READ_PACKET_BYTES(0,&siz)) != 4) {
+    if ((r = READ_PACKET_BYTES(0,&siz)) != PACKET_BYTES) {
 	if (r == 0) {
 	    return 0;
 	} else {
@@ -1145,9 +1204,19 @@ static ProtoType get_proto(AddrByte *buff)
     return (ProtoType) buff[5];
 }
 
+static CtlType get_ctl(AddrByte *buff)
+{
+    return (CtlType) buff[5];
+}
+
 static AddrByte *get_data(AddrByte *buff)
 {
     return buff + 6;
+}
+
+static int get_debug_level(AddrByte *buff)
+{
+    return get_int32(buff + 6);
 }
 
 #ifdef WIN32
@@ -1262,7 +1331,7 @@ static int ignore_reply(Worker *pw)
 /*
  * Domain name "parsing" and worker specific queing
  */
-static void domaincopy(AddrByte *out,AddrByte *in)
+static void domaincopy(AddrByte *out, AddrByte *in)
 {
     AddrByte *ptr = out; 
     *ptr++ = *in++;
@@ -1379,6 +1448,8 @@ static int create_worker(Worker *pworker, int save_que)
 	pworker->que_first = pworker->que_last = NULL;
 	pworker->que_size = 0;
     }
+    DEBUGF(3,("Created worker[%ld] with fd %d", 
+	      (long) pworker->pid, (int) pworker->readfrom));
     return 0;
 }
 
@@ -1422,6 +1493,8 @@ static int create_worker(Worker *pworker, int save_que)
 	    pworker->que_first = pworker->que_last = NULL;
 	    pworker->que_size = 0;
 	}
+	DEBUGF(3,("Created worker[%ld] with fd %d", 
+		  (long) pworker->pid, (int) pworker->readfrom));
 	return 0;
     } else { /* child */
 	close(p1[1]);
@@ -1514,7 +1587,21 @@ static int worker_loop(void)
 #endif
 	/* Decode the request... */
 	serial = get_serial(req);
-	op = get_op(req);
+	if (OP_CONTROL == (op = get_op(req))) {
+	    CtlType ctl;
+	    if (serial != INVALID_SERIAL) {
+		DEBUGF(1, ("Worker got invalid serial: %d.", serial));
+		exit(0);
+	    }
+	    switch (ctl = get_ctl(req)) {
+	    case SETOPT_DEBUG_LEVEL:
+		debug_level = get_debug_level(req);
+		DEBUGF(debug_level, 
+		       ("Worker debug_level = %d.", debug_level));
+		break;
+	    }
+	    continue;
+	}
 	proto = get_proto(req);
 	data = get_data(req);
 	DEBUGF(4,("Worker got request, op = %d, proto = %d, data = %s.",
@@ -1543,9 +1630,14 @@ static int worker_loop(void)
 	    } else {
 		DEBUGF(4,("Starting gethostbyname(%s)",data));
 		he = gethostbyname(data);
-		DEBUGF(4,("gethostbyname(%s) gave %s",data,
-			  (he) ? "success" : "error"));
-		error_num = (he) ? 0 : map_netdb_error(h_errno);
+		error_num = he ? 0 : map_netdb_error(h_errno);
+		if (error_num) {
+		    DEBUGF(4,("gethostbyname(%s) gave error: %d", 
+			      data, error_num));
+		} else {
+		    DEBUGF(4,("gethostbyname(%s) gave success",
+			      data));
+		}
 	    }
 	    if (!he) {
 		data_size = build_error_reply(serial, error_num, 

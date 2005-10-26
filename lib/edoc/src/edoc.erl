@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc.erl,v 1.78 2004/11/30 00:48:22 richardc Exp $
+%% $Id$
 %%
 %% @copyright 2001-2003 Richard Carlsson
 %% @author Richard Carlsson <richardc@csd.uu.se>
@@ -23,17 +23,26 @@
 %% @end
 %% =====================================================================
 
-%% TODO: some 'skip' option for ignoring particular modules/packages?
-%% TODO: intermediate-level packages: document even if no local sources.
-%% TODO: document all options
+%% @TODO @private_type tag, opaque unless generating private docs?
+%% @TODO document the record type syntax
+%% @TODO document the @docfile and @headerfile tags, with includes-option
+%% @TODO some 'skip' option for ignoring particular modules/packages?
+%% @TODO intermediate-level packages: document even if no local sources.
+%% @TODO multiline comment support (needs modified comment representation)
+%% @TODO config-file for default settings
+%% @TODO config: locations of all local docdirs; generate local doc-index page
+%% @TODO config: URL:s of offline packages/apps
+%% @TODO config: default stylesheet
+%% @TODO config: default header/footer, etc.
+%% @TODO offline linkage
 
 %% @doc EDoc - the Erlang program documentation generator.
 %%
-%% <p>This module provides the main user interface to EDoc.
+%% This module provides the main user interface to EDoc.
 %% <ul>
 %%   <li><a href="overview-summary.html">EDoc User Manual</a></li>
 %%   <li><a href="overview-summary.html#usage">Running EDoc</a></li>
-%% </ul></p>
+%% </ul>
 
 -module(edoc).
 
@@ -73,7 +82,7 @@ file(Name) ->
 %% @doc Reads a source code file and outputs formatted documentation to
 %% a corresponding file.
 %%
-%% <p>Options:
+%% Options:
 %% <dl>
 %%  <dt>{@type {dir, filename()@}}
 %%  </dt>
@@ -91,13 +100,13 @@ file(Name) ->
 %%  <dd>Specifies the suffix for the created file. The default value is
 %%      `".html"'.
 %%  </dd>
-%% </dl></p>
+%% </dl>
 %%
-%% <p>See {@link get_doc/2} and {@link layout/2} for further
-%% options.</p>
+%% See {@link get_doc/2} and {@link layout/2} for further
+%% options.
 %%
-%% <p>For running EDoc from a Makefile or similar, see
-%% {@link edoc_run:file/1}.</p>
+%% For running EDoc from a Makefile or similar, see
+%% {@link edoc_run:file/1}.
 %%
 %% @see read/2
 
@@ -115,7 +124,7 @@ file(Name, Options) ->
     edoc_lib:write_file(Text, Dir, BaseName ++ Suffix).
 
 
-%% TODO: better documentation of files/1/2, packages/1/2, application/1/2/3
+%% @TODO better documentation of files/1/2, packages/1/2, application/1/2/3
 
 %% @spec (Files::[filename() | {package(), [filename()]}]) -> ok
 %% @equiv packages(Packages, [])
@@ -193,7 +202,7 @@ application(App, Options) when atom(App) ->
 %%   </li>
 %% </ul>
 %%
-%% <p>See {@link run/3} for details.</p>
+%% See {@link run/3} for details.
 %%
 %% @see application/2
 
@@ -254,11 +263,11 @@ opt_negations() ->
 %% that the doclet plugin module has its own particular options; see the
 %% `doclet' option below.
 %% 
-%% <p>Also see {@link edoc:layout/2} for layout-related options, and
+%% Also see {@link edoc:layout/2} for layout-related options, and
 %% {@link edoc:get_doc/2} for options related to reading source
-%% files.</p>
+%% files.
 %%
-%% <p>Options:
+%% Options:
 %% <dl>
 %%  <dt>{@type {app_default, string()@}}
 %%  </dt>
@@ -313,11 +322,11 @@ opt_negations() ->
 %%      `{packages, false}'. See the `subpackages' option below for
 %%      further details.
 %%
-%%      <p>If the source code is organized in a hierarchy of
+%%      If the source code is organized in a hierarchy of
 %%      subdirectories although it does not use packages, use
 %%      `no_packages' together with the recursive-search `subpackages'
 %%      option (on by default) to automatically generate documentation
-%%      for all the modules.</p>
+%%      for all the modules.
 %%  </dd>
 %%  <dt>{@type {source_path, [filename()]@}}
 %%  </dt>
@@ -336,15 +345,15 @@ opt_negations() ->
 %%      `false'. `no_subpackages' is an alias for `{subpackages,
 %%      false}'. See also the `exclude_packages' option.
 %%
-%%      <p>Subpackage source files are found by recursively searching
+%%      Subpackage source files are found by recursively searching
 %%      for source code files in subdirectories of the known source code
 %%      root directories. (Also see the `source_path' option.) Directory
 %%      names must begin with a lowercase letter and contain only
 %%      alphanumeric characters and underscore, or they will be ignored.
 %%      (For example, a subdirectory named `test-files' will not be
-%%      searched.)</p>
+%%      searched.)
 %%  </dd>
-%% </dl></p>
+%% </dl>
 %%
 %% @see files/2
 %% @see packages/2
@@ -539,7 +548,7 @@ layout(Doc) ->
 %% @doc Transforms EDoc module documentation data to text. The default
 %% layout creates an HTML document.
 %%
-%% <p>Options:
+%% Options:
 %% <dl>
 %%  <dt>{@type {layout, Module::atom()@}}
 %%  </dt>
@@ -548,7 +557,7 @@ layout(Doc) ->
 %%      default callback module is {@link edoc_layout}; see {@link
 %%      edoc_layout:module/2} for layout-specific options.
 %%  </dd>
-%% </dl></p>
+%% </dl>
 %%
 %% @see layout/1
 %% @see read/2
@@ -600,7 +609,7 @@ read_source(Name) ->
 %% @doc Reads an Erlang source file and returns the list of "source code
 %% form" syntax trees.
 %%
-%% <p>Options:
+%% Options:
 %% <dl>
 %%  <dt>{@type {preprocess, bool()@}}
 %%  </dt>
@@ -608,11 +617,11 @@ read_source(Name) ->
 %%      Erlang preprocessor (`epp'). The default value is `false'.
 %%      `no_preprocess' is an alias for `{preprocess, false}'.
 %%
-%%      <p>Normally, preprocessing is not necessary for EDoc to work, but
+%%      Normally, preprocessing is not necessary for EDoc to work, but
 %%      if a file contains too exotic definitions or uses of macros, it
 %%      will not be possible to read it without preprocessing. <em>Note:
 %%      comments in included files will not be available to EDoc, even
-%%      with this option enabled.</em></p>
+%%      with this option enabled.</em>
 %%  </dd>
 %%  <dt>{@type {includes, Path::[string()]@}}
 %%  </dt>
@@ -626,7 +635,7 @@ read_source(Name) ->
 %%  <dd>Specifies a list of pre-defined Erlang preprocessor (`epp')
 %%      macro definitions, used if the `preprocess' option is turned on.
 %%      The default value is the empty list.</dd>
-%% </dl></p>
+%% </dl>
 %%
 %% @see get_doc/2
 %% @see //syntax_tools/erl_syntax
@@ -697,7 +706,7 @@ get_doc(File) ->
 %% Note that without an environment parameter (see {@link get_doc/3}),
 %% hypertext links may not be correct.
 %%
-%% <p>Options:
+%% Options:
 %% <dl>
 %%  <dt>{@type {def, Macros@}}
 %%  </dt>
@@ -719,10 +728,16 @@ get_doc(File) ->
 %%  <dd>If the value is `true', documentation of private functions will
 %%      also be included. The default value is `false'.
 %%  </dd>
-%% </dl></p>
+%%  <dt>{@type {todo, bool()@}}
+%%  </dt>
+%%  <dd>If the value is `true', To-Do notes written using `@todo' or
+%%  `@TODO' tags will be included in the documentation. The default
+%%  value is `false'.
+%%  </dd>
+%% </dl>
 %%
-%% <p>See {@link read_source/2}, {@link read_comments/2} and {@link
-%% edoc_lib:get_doc_env/4} for further options.</p>
+%% See {@link read_source/2}, {@link read_comments/2} and {@link
+%% edoc_lib:get_doc_env/4} for further options.
 %%
 %% @see get_doc/3
 %% @see edoc_extract:source/5
@@ -737,7 +752,8 @@ get_doc(File, Opts) ->
     get_doc(File, Env, Opts).
 
 %% @spec get_doc(File::filename(), Env::edoc_lib:edoc_env(),
-%%        Options::option_list()) -> term()
+%%        Options::option_list()) -> {ModuleName, edoc_module()}
+%%     ModuleName = atom()
 %%
 %% @doc Like {@link get_doc/2}, but for a given environment
 %% parameter. `Env' is an environment created by {@link
@@ -747,6 +763,4 @@ get_doc(File, Opts) ->
 %% DEFER-OPTIONS: get_doc/2
 
 get_doc(File, Env, Opts) ->
-    Forms = read_source(File, Opts),
-    Comments = read_comments(File, Opts),
-    edoc_extract:source(Forms, Comments, File, Env, Opts).
+    edoc_extract:source(File, Env, Opts).

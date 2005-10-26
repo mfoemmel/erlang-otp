@@ -28,8 +28,11 @@
 	 send_pdu/6, % Backward compatibillity
 	 send_pdu/7,
 
+	 inform_response/4, 
+
 	 note_store/2, 
 
+	 info/1, 
  	 verbosity/2
 	]).
 
@@ -53,7 +56,9 @@
 	  note_store,
 	  sock, 
 	  mpd_state,
-	  log
+	  log,
+	  irb = auto, % auto | {user, integer()}
+	  irgc
 	 }).
 
 
@@ -64,6 +69,9 @@
 -define(GS_START_LINK(Args),
 	gen_server:start_link(?MODULE, Args, [])).
 -endif.
+
+
+-define(IRGC_TIMEOUT, timer:minutes(5)).
 
 
 %%%-------------------------------------------------------------------
@@ -96,6 +104,12 @@ send_pdu(Pid, Pdu, Vsn, MsgData, Addr, Port, ExtraInfo)
 note_store(Pid, NoteStore) ->
     call(Pid, {note_store, NoteStore}).
 
+inform_response(Pid, Ref, Addr, Port) ->
+    cast(Pid, {inform_response, Ref, Addr, Port}).
+
+info(Pid) ->
+    call(Pid, info).
+
 verbosity(Pid, V) ->
     call(Pid, {verbosity, V}).
 
@@ -124,10 +138,14 @@ init([Server, NoteStore]) ->
 	    
 do_init(Server, NoteStore) ->
     process_flag(trap_exit, true),
-    %% -- Prio --
 
+    %% -- Prio --
     {ok, Prio} = snmpm_config:system_info(prio),
     process_flag(priority, Prio),
+
+    %% -- Create inform request table --
+    ets:new(snmpm_inform_request_table,
+	    [set, protected, named_table, {keypos, 1}]),
 
     %% -- Verbosity -- 
     {ok, Verbosity} = snmpm_config:system_info(net_if_verbosity),
@@ -137,10 +155,14 @@ do_init(Server, NoteStore) ->
 
     %% -- MPD --
     {ok, Vsns} = snmpm_config:system_info(versions),
-    MpdState = snmpm_mpd:init(Vsns),
+    MpdState   = snmpm_mpd:init(Vsns),
 
     %% -- Module dependent options --
     {ok, Opts} = snmpm_config:system_info(net_if_options),
+
+    %% -- Inform response behaviour --
+    {ok, IRB}  = snmpm_config:system_info(net_if_irb), 
+    IrGcRef    = irgc_start(IRB), 
 
     %% -- Socket --
     RecBuf  = get_opt(Opts, recbuf,   default),
@@ -153,12 +175,15 @@ do_init(Server, NoteStore) ->
     {ok, ATL} = snmpm_config:system_info(audit_trail_log),
     Log = do_init_log(ATL),
 
+    
     %% -- We are done ---
     State = #state{server     = Server, 
 		   note_store = NoteStore, 
 		   mpd_state  = MpdState,
 		   sock       = Sock, 
-		   log        = Log},
+		   log        = Log,
+		   irb        = IRB,
+		   irgc       = IrGcRef},
     ?vdebug("started", []),
     {ok, State}.
 
@@ -248,6 +273,11 @@ handle_call(stop, _From, State) ->
     Reply = ok,
     {stop, normal, Reply, State};
 
+handle_call(info, _From, State) ->
+    ?vlog("received info request", []),
+    Reply = get_info(State),
+    {reply, Reply, State};
+
 handle_call(Req, From, State) ->
     error_msg("received unknown request (from ~p): ~n~p", [Req, From]),
     {reply, {error, {invalid_request, Req}}, State}.
@@ -269,9 +299,18 @@ handle_cast({send_pdu, Pdu, Vsn, MsgData, Addr, Port, _ExtraInfo}, State) ->
     handle_send_pdu(Pdu, Vsn, MsgData, Addr, Port, State), 
     {noreply, State};
 
+handle_cast({inform_response, Ref, Addr, Port}, State) ->
+    ?vlog("received inform_response message with"
+	  "~n   Ref:  ~p"
+	  "~n   Addr: ~p"
+	  "~n   Port: ~p", [Ref, Addr, Port]),
+    handle_inform_response(Ref, Addr, Port, State), 
+    {noreply, State};
+
 handle_cast(Msg, State) ->
     error_msg("received unknown message: ~n~p", [Msg]),
     {noreply, State}.
+
 
 %%--------------------------------------------------------------------
 %% Func: handle_info/2
@@ -284,6 +323,11 @@ handle_info({udp, Sock, Ip, Port, Bytes}, #state{sock = Sock} = State) ->
     handle_recv_msg(Ip, Port, Bytes, State),
     {noreply, State};
 
+handle_info(inform_response_gc, State) ->
+    ?vlog("received inform_response_gc message", []),
+    State2 = handle_inform_response_gc(State),
+    {noreply, State2};
+
 handle_info(Info, State) ->
     error_msg("received unknown info: ~n~p", [Info]),
     {noreply, State}.
@@ -294,9 +338,19 @@ handle_info(Info, State) ->
 %% Purpose: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%--------------------------------------------------------------------
-terminate(Reason, _State) ->
+terminate(Reason, #state{log = Log, irgc = IrGcRef}) ->
     ?vdebug("terminate: ~p",[Reason]),
+    irgc_stop(IrGcRef),
     %% Close logs
+    do_close_log(Log),
+    ok.
+
+
+do_close_log({Log, _Type}) ->
+    (catch snmp_log:sync(Log)),
+    (catch snmp_log:close(Log)),
+    ok;
+do_close_log(_) ->
     ok.
 
 
@@ -306,9 +360,37 @@ terminate(Reason, _State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
  
-code_change(_Vsn, S, _Extra) ->
-    {ok, S}.
- 
+code_change({down, _Vsn}, OldState, downgrade_to_pre45) ->
+    ?d("code_change(down) -> entry", []),
+    #state{server     = Server, 
+	   note_store = NoteStore, 
+	   sock       = Sock, 
+	   mpd_state  = MpdState, 
+	   log        = Log, 
+	   irgc       = IrGcRef} = OldState,
+    irgc_stop(IrGcRef),
+    (catch ets:delete(snmpm_inform_request_table)),
+    State = {state, Server, NoteStore, Sock, MpdState, Log},
+    {ok, State};
+
+% upgrade
+code_change(_Vsn, OldState, upgrade_from_pre45) ->
+    ?d("code_change(up) -> entry", []),
+    {state, Server, NoteStore, Sock, MpdState, Log} = OldState,
+    State = #state{server     = Server, 
+		   note_store = NoteStore, 
+		   sock       = Sock, 
+		   mpd_state  = MpdState, 
+		   log        = Log, 
+		   irb        = auto,
+		   irgc       = undefined},
+    ets:new(snmpm_inform_request_table,
+	    [set, protected, named_table, {keypos, 1}]),
+    {ok, State};
+
+code_change(_Vsn, State, _Extra) ->
+    {ok, State}.
+
  
 %%%-------------------------------------------------------------------
 %%% Internal functions
@@ -319,27 +401,16 @@ handle_recv_msg(Addr, Port, Bytes,
 		       note_store = NoteStore, 
 		       mpd_state  = MpdState, 
 		       sock       = Sock,
-		       log        = Log}) ->
+		       log        = Log,
+		       irb        = IRB}) ->
     Logger = logger(Log, read, Addr, Port),
     case (catch snmpm_mpd:process_msg(Bytes, snmpUDPDomain, Addr, Port, 
 				      MpdState, NoteStore, Logger)) of
 	%% BMK BMK BMK
 	%% Do we really need message size here??
 	{ok, Vsn, #pdu{type = 'inform-request'} = Pdu, _MS, ACM} ->
-	    ?vtrace("received inform-request", []),
-	    Pid ! {snmp_inform, Pdu, Addr, Port},
-	    RePdu = make_response_pdu(Pdu),
-	    case snmpm_mpd:generate_response_msg(Vsn, RePdu, ACM, Logger) of
-		{ok, Msg} ->
-		    udp_send(Sock, Addr, Port, Msg);
-		{discarded, Reason} ->
-		    ?vlog("failed generating response message:"
-			  "~n   Reason: ~p", [Reason]),
-		    ReqId = RePdu#pdu.request_id,
-		    ErrorInfo = {failed_generating_response, {RePdu, Reason}},
-		    Pid ! {snmp_error, ReqId, ErrorInfo, Addr, Port},
-		    ok
-	    end;
+	    handle_inform_request(IRB, Pid, Vsn, Pdu, ACM, 
+				  Sock, Addr, Port, Logger);
 
 %% 	{ok, _Vsn, #pdu{type = report} = Pdu, _MS, _ACM} ->
 %% 	    ?vtrace("received report", []),
@@ -369,6 +440,13 @@ handle_recv_msg(Addr, Port, Bytes,
 	    ?vtrace("received pdu", []),
 	    Pid ! {snmp_pdu, Pdu, Addr, Port};
 
+	{discarded, Reason, Report} ->
+	    ?vtrace("discarded: ~p", [Reason]),
+	    ErrorInfo = {failed_processing_message, Reason},
+	    Pid ! {snmp_error, ErrorInfo, Addr, Port},
+	    udp_send(Sock, Addr, Port, Report),
+	    ok;
+
 	{discarded, Reason} ->
 	    ?vtrace("discarded: ~p", [Reason]),
 	    ErrorInfo = {failed_processing_message, Reason},
@@ -380,6 +458,99 @@ handle_recv_msg(Addr, Port, Bytes,
 		      "~n   ~p", [Error]),
 	    ok
     end.
+
+
+handle_inform_request(auto, Pid, Vsn, Pdu, ACM, Sock, Addr, Port, Logger) ->
+    ?vtrace("received inform-request (true)", []),
+    Pid ! {snmp_inform, ignore, Pdu, Addr, Port},
+    RePdu = make_response_pdu(Pdu),
+    case snmpm_mpd:generate_response_msg(Vsn, RePdu, ACM, Logger) of
+	{ok, Msg} ->
+	    udp_send(Sock, Addr, Port, Msg);
+	{discarded, Reason} ->
+	    ?vlog("failed generating response message:"
+		  "~n   Reason: ~p", [Reason]),
+	    ReqId = RePdu#pdu.request_id,
+	    ErrorInfo = {failed_generating_response, {RePdu, Reason}},
+	    Pid ! {snmp_error, ReqId, ErrorInfo, Addr, Port},
+	    ok
+    end;
+handle_inform_request({user, To}, Pid, Vsn, #pdu{request_id = ReqId} = Pdu, 
+		      ACM, _, Addr, Port, _) ->
+    ?vtrace("received inform-request (false)", []),
+
+    Pid ! {snmp_inform, ReqId, Pdu, Addr, Port},
+
+    %% Before we go any further, we need to check that we have not
+    %% already received this message (possible resend).
+
+    Key = {ReqId, Addr, Port},
+    case ets:lookup(snmpm_inform_request_table, Key) of
+	[_] ->
+	    %% OK, we already know about this.  We assume this
+	    %% is a resend. Either the agent is really eager or
+	    %% the user has not answered yet. Bad user!
+	    ok;
+	[] ->
+	    RePdu  = make_response_pdu(Pdu),
+	    Expire = t() + To, 
+	    Rec    = {Key, Expire, {Vsn, ACM, RePdu}},
+	    ets:insert(snmpm_inform_request_table, Rec)
+    end.
+	    
+handle_inform_response(Ref, Addr, Port, 
+		       #state{server = Pid, sock = Sock, log = Log}) ->
+    Logger = logger(Log, read, Addr, Port),
+    Key    = {Ref, Addr, Port},
+    case ets:lookup(snmpm_inform_request_table, Key) of
+	[{Key, _, {Vsn, ACM, RePdu}}] ->
+	    ets:delete(snmpm_inform_request_table, Key), 
+	    case snmpm_mpd:generate_response_msg(Vsn, RePdu, ACM, Logger) of
+		{ok, Msg} ->
+		    udp_send(Sock, Addr, Port, Msg);
+		{discarded, Reason} ->
+		    ?vlog("failed generating response message:"
+			  "~n   Reason: ~p", [Reason]),
+		    ReqId     = RePdu#pdu.request_id,
+		    ErrorInfo = {failed_generating_response, {RePdu, Reason}},
+		    Pid ! {snmp_error, ReqId, ErrorInfo, Addr, Port},
+		    ok
+	    end;
+	[] ->
+	    %% Already acknowledged, or the user was to slow to reply...
+	    ok
+    end,
+    ok.
+
+
+handle_inform_response_gc(#state{irb = IRB} = State) ->
+    ets:safe_fixtable(snmpm_inform_request_table, true),
+    do_irgc(ets:first(snmpm_inform_request_table), t()),
+    ets:safe_fixtable(snmpm_inform_request_table, false),
+    State#state{irgc = irgc_start(IRB)}.
+
+%% We are deleting at the same time as we are traversing the table!!!
+do_irgc('$end_of_table', _) ->
+    ok;
+do_irgc(Key, Now) ->
+    Next = ets:next(snmpm_inform_request_table, Key),
+    case ets:lookup(snmpm_inform_request_table, Key) of
+        [{Key, BestBefore, _}] when BestBefore < Now ->
+            ets:delete(snmpm_inform_request_table, Key);
+        _ ->
+            ok
+    end,
+    do_irgc(Next, Now).
+
+irgc_start(auto) ->
+    undefined;
+irgc_start(_) ->
+    erlang:send_after(?IRGC_TIMEOUT, self(), inform_response_gc).
+
+irgc_stop(undefined) ->
+    ok;
+irgc_stop(Ref) ->
+    (catch erlang:cancel_timer(Ref)).
 
 
 handle_send_pdu(Pdu, Vsn, MsgData, Addr, Port, 
@@ -526,6 +697,13 @@ make_response_pdu(#pdu{request_id = ReqId, varbinds = Vbs}) ->
 
 %% -------------------------------------------------------------------
 
+t() ->
+    {A,B,C} = erlang:now(),
+    A*1000000000+B*1000+(C div 1000).
+
+
+%% -------------------------------------------------------------------
+
 logger(undefined, _Type, _Addr, _Port) ->
     fun(_) ->
 	    ok
@@ -564,6 +742,58 @@ get_opt(Opts, Key, Def) ->
 
 
 %% -------------------------------------------------------------------
+
+get_info(#state{sock = Id}) ->
+    ProcSize = proc_mem(self()),
+    PortInfo = get_port_info(Id),
+    [{process_memory, ProcSize}, {port_info, PortInfo}].
+
+proc_mem(P) when pid(P) ->
+    case (catch erlang:process_info(P, memory)) of
+	{memory, Sz} when integer(Sz) ->
+	    Sz;
+	_ ->
+	    undefined
+    end;
+proc_mem(_) ->
+    undefined.
+
+
+get_port_info(Id) ->
+    PortInfo = case (catch erlang:port_info(Id)) of
+		   PI when list(PI) ->
+		       [{port_info, PI}];
+		   _ ->
+		       []
+	       end,
+    PortStatus = case (catch prim_inet:getstatus(Id)) of
+		     {ok, PS} ->
+			 [{port_status, PS}];
+		     _ ->
+			 []
+		 end,
+    PortAct = case (catch inet:getopts(Id, [active])) of
+		  {ok, PA} ->
+		      [{port_act, PA}];
+		  _ ->
+		      []
+	      end,
+    PortStats = case (catch inet:getstat(Id)) of
+		    {ok, Stat} ->
+			[{port_stats, Stat}];
+		    _ ->
+			[]
+		end,
+    IfList = case (catch inet:getif(Id)) of
+		 {ok, IFs} ->
+		     [{interfaces, IFs}];
+		 _ ->
+		     []
+	     end,
+    [{socket, Id}] ++ IfList ++ PortStats ++ PortInfo ++ PortStatus ++ PortAct.
+
+
+%% ----------------------------------------------------------------
 
 call(Pid, Req) ->
     call(Pid, Req, infinity).

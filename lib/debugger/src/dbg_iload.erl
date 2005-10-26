@@ -63,8 +63,8 @@ load_mod1(Mod, File, Binary, Db) ->
 %%====================================================================
 
 store_module(Mod, File, Binary, Db) ->
-    {interpreter_module,Exp,Abst,Src,MD5} = binary_to_term(Binary),
-    Forms = case Abst of
+    {interpreter_module, Exp, Abst, Src, MD5} = binary_to_term(Binary),
+    Forms = case abstr(Abst) of
 		{abstract_v1,Forms0} -> Forms0;
 		{abstract_v2,Forms0} -> Forms0;
 		{raw_abstract_v1,Code} ->
@@ -82,6 +82,7 @@ store_module(Mod, File, Binary, Db) ->
     Attr = store_forms(Forms, Mod, Db, Exp, []),
     erase(mod_md5),
     erase(current_function),
+%    store_funs(Db, Mod),
     erase(vcount),
     erase(funs),
     erase(fun_count),
@@ -90,6 +91,18 @@ store_module(Mod, File, Binary, Db) ->
     NewBinary = store_mod_line_no(Mod, Db, binary_to_list(Src)),
     dbg_idb:insert(Db, mod_bin, NewBinary),
     dbg_idb:insert(Db, module, Mod).
+
+abstr(Bin) when binary(Bin) -> binary_to_term(Bin);
+abstr(Term) -> Term.
+
+% store_funs(Db, Mod) ->
+%     store_funs_1(get(funs), Db, Mod).
+
+% store_funs_1([{Name,Index,Uniq,_,_,Arity,Cs}|Fs], Db, Mod) ->
+%     dbg_idb:insert(Db, {Mod,Name,Arity,false}, Cs),
+%     dbg_idb:insert(Db, {'fun',Mod,Index,Uniq}, {Name,Arity,Cs}),
+%     store_funs_1(Fs, Db, Mod);
+% store_funs_1([], _, _) -> ok.
 
 store_forms([{function,_,module_info,0,_}|Fs], Mod, Db, Exp, Attr) ->
     Cs = [{clause,0,[],[], [{module_info_0,0,Mod}]}],
@@ -370,11 +383,19 @@ expr({'fun',_,{clauses,_},{_OldUniq,_Hvss,_Free}}) ->
     %% Old format (abstract_v1).
     exit({?MODULE,old_funs});
 expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,self}},[]}) ->
-    {dbg, Line, self, []};
-expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,throw}},As0}) when length(As0) == 1 ->
-    [As] = expr_list(As0),
-    {throw,Line,As};
-expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,apply}},As0}) when length(As0) == 3 ->
+    {dbg,Line,self,[]};
+expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,get_stacktrace}},[]}) ->
+    {dbg,Line,get_stacktrace,[]};
+expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,throw}},[_]=As}) ->
+    {dbg,Line,throw,expr_list(As)};
+expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,error}},[_]=As}) ->
+    {dbg,Line,error,expr_list(As)};
+expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,fault}},[_]=As}) ->
+    {dbg,Line,fault,expr_list(As)};
+expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,exit}},[_]=As}) ->
+    {dbg,Line,exit,expr_list(As)};
+expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,apply}},As0}) 
+  when length(As0) == 3 ->
     As = expr_list(As0),
     {apply,Line,As};
 expr({call,Line,{remote,_,{atom,_,Mod},{atom,_,Func}},As0}) ->
@@ -406,12 +427,13 @@ expr({'catch',Line,E0}) ->
     %% No new variables added.
     E1 = expr(E0),
     {'catch',Line,E1};
-expr({'try',Line,Es0,CaseCs0,CatchCs0}) ->
+expr({'try',Line,Es0,CaseCs0,CatchCs0,As0}) ->
     %% No new variables added.
     Es = expr_list(Es0),
     CaseCs = icr_clauses(CaseCs0),
     CatchCs = icr_clauses(CatchCs0),
-    {'try',Line,Es,CaseCs,CatchCs};
+    As = expr_list(As0),
+    {'try',Line,Es,CaseCs,CatchCs,As};
 expr({'query', Line, E0}) ->
     E = expr(E0),
     {'query', Line, E};
@@ -456,7 +478,6 @@ expr({bin_element,Line,Expr,Size,Type}) ->
     Size1 = expr(Size),
     {bin_element,Line,Expr1,Size1,Type};
 expr(Other) ->
-    io:format("~p\n", [Other]),
     exit({?MODULE,{unknown_expr,Other}}).
 
 %% is_guard_test(Expression) -> true | false.

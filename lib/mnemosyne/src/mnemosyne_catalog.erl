@@ -414,7 +414,7 @@ checked_tables() ->
     lists:foldl(
       fun({{image,Table},_},Acc) -> ordsets:add_element(Table,Acc);
 	 (_,Acc) -> Acc
-      end, ordsets:new_set(), ets:match_object(?CATALOG,{{image,'_'}, '_'})).
+      end, ordsets:new(), ets:match_object(?CATALOG,{{image,'_'}, '_'})).
 
 %%%----------------------------------------------------------------
 
@@ -812,8 +812,8 @@ mk_format([], _, _) ->
 
 
 
-mk_hdr1(Maxs, []) -> 
-    "| " ++ lists:duplicate(lists:sum(Maxs)+length(Maxs),$ ) ++ "|\n";
+%% mk_hdr1(Maxs, []) -> 
+%%     "| " ++ lists:duplicate(lists:sum(Maxs)+length(Maxs),$ ) ++ "|\n";
 mk_hdr1(Maxs, Def) ->
     mk_hdr1(Maxs, Def, 1) ++ "\n".
 
@@ -827,10 +827,10 @@ mk_hdr1([W|Ws], [{N1,S}], N) when N==N1 ->
     "| " ++ mk_hdr1_s(W1,S) ++ "|";
 
 mk_hdr1([W|Ws], [{N1,S}|Ds], N) when N<N1 ->
-    "|  " ++ lists:duplicate(W,$ ) ++ mk_hdr1(Ws, [{N1,S}|Ds], N+1);
+    "|  " ++ lists:duplicate(W,$ ) ++ mk_hdr1(Ws, [{N1,S}|Ds], N+1).
 
-mk_hdr1(_, [], _) ->
-    "|".
+%% mk_hdr1(_, [], _) ->
+%%     "|".
 
 mk_hdr1_split([W|Ws], I, Acc) when I>0 -> mk_hdr1_split(Ws,I-1,Acc+W+1);
 mk_hdr1_split(Ws, _, Acc) -> {Acc,Ws}.
@@ -946,8 +946,8 @@ stat(_, _) ->
     undefined.
 
 
-string(clock, {H,M,S}) -> ?str("~2..0w:~2..0w:~2..0w", [H,M,S]);
-string(date, {Y,M,D}) -> ?str("~w-~2..0w-~2..0w", [Y,M,D]);
+%% string(clock, {H,M,S}) -> ?str("~2..0w:~2..0w:~2..0w", [H,M,S]);
+%% string(date, {Y,M,D}) -> ?str("~w-~2..0w-~2..0w", [Y,M,D]);
 string(time_us, MicroSecs) when integer(MicroSecs) -> 
     if
 	MicroSecs < 1000 -> ?str("~wus",[MicroSecs]);

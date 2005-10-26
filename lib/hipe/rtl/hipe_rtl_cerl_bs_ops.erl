@@ -11,7 +11,6 @@
 
 -export([gen_rtl/5]).
 -include("../main/hipe.hrl").
--include("hipe_icode2rtl.hrl").
 -include("hipe_literals.hrl").
 -define(FIVE_HIGH_BITS, 31 bsl 27).
 -define(BYTE_SHIFT, 3).

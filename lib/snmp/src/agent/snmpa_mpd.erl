@@ -17,7 +17,7 @@
 %%
 -module(snmpa_mpd).
 
--export([init/1, reset/0, inc/1, 
+-export([init/1, reset/0, inc/1, counters/0, 
 	 discarded_pdu/1,
 	 process_packet/6,
 	 generate_response_msg/5, generate_msg/5, 

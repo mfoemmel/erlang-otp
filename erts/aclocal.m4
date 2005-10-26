@@ -465,6 +465,7 @@ dnl On ofs1 the '-pthread' switch should be used
 	    solaris*)
 		ETHR_DEFS="$ETHR_DEFS -D_POSIX_PTHREAD_SEMANTICS" ;;
 	    linux*)
+		ETHR_DEFS="$ETHR_DEFS -D_GNU_SOURCE"
 		linux_kernel_vsn_=`uname -r` # FIXME: for cross compilation.
 
 		usable_sigusrx=no
@@ -507,7 +508,7 @@ dnl On ofs1 the '-pthread' switch should be used
 
 	dnl We need the thread library in order to find some functions
 	saved_libs=$LIBS
-	LIBS="$CFLAGS $ETHR_X_LIBS"
+	LIBS="$LIBS $ETHR_X_LIBS"
 
 
 

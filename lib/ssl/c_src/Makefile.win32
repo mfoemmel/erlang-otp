@@ -69,6 +69,7 @@ CFLAGS = $(INCLUDES) /nologo $(OPTS) $(DEFS)
 SSL_BASE_OBJS = \
 	$(OBJDIR)\esock.obj \
 	$(OBJDIR)\debuglog.obj \
+	$(OBJDIR)\esock_poll$(obj) \
 	$(OBJDIR)\esock_osio.obj \
 	$(OBJDIR)\esock_utils.obj \
 	$(OBJDIR)\esock_posix_str.obj

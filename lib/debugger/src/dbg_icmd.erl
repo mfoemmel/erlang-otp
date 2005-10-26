@@ -18,133 +18,67 @@
 -module(dbg_icmd).
 
 %% Internal command receiver/handler
--export([cmd/5]).
+-export([cmd/3]).
 
 %% User control of process execution and settings
--export([step/1, next/1, continue/1, finish/1, skip/1, timeout/1, stop/2]).
+-export([step/1, next/1, continue/1, finish/1, skip/1, timeout/1,
+	 stop/1]).
 -export([eval/2]).
 -export([set/3, get/3]).
--export([handle_msg/2]).
+-export([handle_msg/4]).
 
 %% Library functions for attached process handling
--export([tell_attached/1, tell_attached/2, tell_attached_if_break/1]).
+-export([tell_attached/1]).
 
 %% get_binding/2
 -export([get_binding/2]).
+
+-include("dbg_ieval.hrl").
 
 %%====================================================================
 %% Internal command receiver/handler
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% cmd(Expr, Bs, Cm, Le, F) -> {skip, Bs} | Bs
-%% This function is called from dbg_ieval before evaluating any expression
-%% to give the user the chance to inspect variables etc.
-%% get(next_break) => init_break | break | running | Next == CallLevel
-%%                  | Finish == {Next,Function}
+%% cmd(Expr, Bs, Ieval) -> {skip, Bs} | Bs
+%% This function is called from dbg_ieval before evaluating any
+%% expression to give the user the chance to inspect variables etc.
+%% get(next_break) => break | running
+%%                  | Le
 %% specifies if the process should break.
 %%--------------------------------------------------------------------
-cmd(Expr, Bs, Cm, Le, F) ->
-    cmd(Expr, Bs, Cm, Le, F, get(next_break)).  %% debug below
-%     Br = get(next_break),
-%     case catch cmd(Expr, Bs, Cm, Le, F, get(next_break)) of
-% 	{'EXIT', Reason} ->
-% 	    io:format("~p[~p]: ~p~nEXIT:~p~n", [?MODULE,?LINE,
-% 						[Expr,Bs,Cm,Le,F, Br], 
-% 						Reason]),
-% 	    exit(Reason);
-% 	Else ->
-% 	    Else
-%     end.
+cmd(Expr, Bs, Ieval) ->
+    cmd(Expr, Bs, get(next_break), Ieval).
 
-cmd(_Expr, Bs, {none}, _Le, _F, _NextBreak) ->
-    Bs;
-
-cmd(Expr, Bs, Cm, Le, F, init_break) ->
-    put(next_break, break),
-    break(Expr, Bs, Cm, Le, F);
-cmd(Expr, Bs, Cm, Le, F, break) ->
-    break(Expr, Bs, Cm, Le, F);
-cmd(Expr, Bs, Cm, Le, F, running) ->
-    LineNo = element(2, Expr),
-    case break_p(Cm, LineNo, Le, Bs) of
+%% Evaluation should break
+cmd(Expr, Bs, break, Ieval) ->
+    break(Expr, Bs, Ieval);
+%% Evaluation should continue, unless there is a breakpoint at
+%% the current line
+cmd(Expr, Bs, running, #ieval{level=Le,module=M}=Ieval) ->
+    Line = element(2, Expr),
+    case break_p(M, Line, Le, Bs) of
 	true ->
 	    put(next_break, break),
-	    break(Expr, Bs, Cm, Le, F);
+	    break(Expr, Bs, Ieval);
 	false ->
-	    handle_cmd(Bs, Cm, Le, running, LineNo, F)
+	    handle_cmd(Bs, running, Ieval)
     end;
-
-cmd(Expr, Bs, Cm, Le, F, Next) when integer(Next), Next<Le ->
-    LineNo = element(2, Expr),
-    handle_cmd(Bs, Cm, Le, Next, LineNo, F);
-cmd(Expr, Bs, Cm, Le, F, Next) when integer(Next), Next>=Le ->
+%% Evaluation should continue for now (until we've returned to
+%% call level Next)
+cmd(Expr, Bs, Next, #ieval{level=Le}=Ieval) when is_integer(Next),
+						 Next<Le ->
+    Line = element(2, Expr),
+    handle_cmd(Bs, Next, Ieval#ieval{line=Line});
+%% Evaluation has returned to call level Next, break
+cmd(Expr, Bs, Next, #ieval{level=Le}=Ieval) when is_integer(Next),
+                                                 Next>=Le ->
     put(next_break, break),
-    break(Expr, Bs, Cm, Le, F);
+    break(Expr, Bs, Ieval).
 
-cmd(Expr, Bs, Cm, Le, F, {Next,FP}) when integer(Next), Next<Le ->
-    LineNo = element(2, Expr),
-    handle_cmd(Bs, Cm, Le, {Next,FP}, LineNo, F);
-cmd(Expr, Bs, Cm, Le, F, {Next,F}) when integer(Next), Next>=Le ->
-    LineNo = element(2, Expr),
-    handle_cmd(Bs, Cm, Le, {Next,F}, LineNo, F);
-cmd(Expr, Bs, Cm, Le, F, {Next,_}) when integer(Next), Next>=Le ->
-    put(next_break, break),
-    break(Expr, Bs, Cm, Le, F).
-
-break(Expr, Bs, Cm, Le, F) ->
-    LineNo = element(2, Expr),
-    tell_attached({break_at, Cm, LineNo, Le}),
-    dbg_iserver:cast(get(int), {set_status, self(), break, {Cm, LineNo}}),
-    handle_cmd(Bs, Cm, Le, break, LineNo, F).
-
-%% handle_cmd/6 - Loops for a while  but finally returns a list of bindings.
-handle_cmd(Bs, Cm, Le, break, LineNo, F) ->
-    receive
-	{user, {cmd, Cmd}} ->
-	    dbg_iserver:cast(get(int), {set_status, self(), running, {}}),
-	    tell_attached(running),
-	    case Cmd of
-		step -> Bs;
-		next -> put(next_break, Le), Bs;
-		continue -> put(next_break, running), Bs;
-		finish -> put(next_break, {Le,F}), Bs;
-		skip -> {skip, Bs}
-	    end;
-	{user, {eval, Cmd}} ->
-	    Bs1 = eval_nonrestricted(Cmd, Bs, Cm, Le, LineNo, F),
-	    handle_cmd(Bs1, Cm, Le, break, LineNo, F);
-
-	{'EXIT', Pid, Reason} ->
-	    case get(self) of
-		Pid ->   % Debugged process has terminated
-		    dbg_ieval:exit(Pid,Reason,Cm,LineNo,Bs);
-		_ ->     % Interpreter has terminated
-		    exit(Reason)
-	    end;
-	
-	Msg ->
-	    handle_msg(Msg, {break, Bs, Le, Cm, LineNo}),
-	    handle_cmd(Bs, Cm, Le, break, LineNo, F)
-    end;
-handle_cmd(Bs, Cm, Le, State, LineNo, F) -> % State=running|Next|{Next,Fp}
-    receive
-	{'EXIT', Pid, Reason} ->
-	    case get(self) of
-		Pid ->   % Debugged process has terminated
-		    dbg_ieval:exit(Pid,Reason,Cm,LineNo,Bs);
-		_ ->     % Interpreter has terminated
-		    exit(Reason)
-	    end;
-	{user, {cmd,_}} -> %% ignore stuff that we don't wont here.
-	    Bs;
-	Msg ->
-	    NewState = handle_msg(Msg, {State, Bs, Le, Cm, LineNo}),
-	    handle_cmd(Bs, Cm, Le, NewState, LineNo, F)
-    
-	after 0 -> Bs
-	end.
-
+%% break_p(Mod, Line, Le, Bs) -> true | false
+%% Checks if there is a breakpoint at Line in Mod.
+%% As a side effect, disables or deletes breakpoint as specified
 break_p(Mod, Line, Le, Bs) ->
     case lists:keysearch({Mod, Line}, 1, get(breakpoints)) of
 	{value, {_Point, [active, Action, _, Cond]}} ->
@@ -153,10 +87,17 @@ break_p(Mod, Line, Le, Bs) ->
 		_ ->
 		    Bool = case Cond of
 			       null -> true;
-			       {CM, CN} -> catch apply(CM, CN, [Bs])
+			       {CM, CN} ->
+				   try apply(CM, CN, [Bs]) of
+				       true -> true;
+				       false -> false;
+				       _Term -> false
+				   catch
+				       _C:_R -> false
+				   end
 			   end,
 		    if
-			Bool==true ->
+			Bool ->
 			    case Action of
 				enable -> ignore;
 				disable ->
@@ -178,6 +119,50 @@ break_p(Mod, Line, Le, Bs) ->
 	    false
     end.
 
+%% Called whenever evaluation enters break mode, informs attached
+%% process and dbg_iserver
+break(Expr, Bs, #ieval{level=Le,module=M}=Ieval) ->
+    Line = element(2, Expr),
+    dbg_iserver:cast(get(int), {set_status,self(),break,{M,Line}}),
+    tell_attached({break_at,M,Line,Le}),
+    handle_cmd(Bs, break, Ieval#ieval{line=Line}).
+
+%%--------------------------------------------------------------------
+%% handle_cmd(Bs0, Status, Ieval) -> Bs1 | {skip, Bs1}
+%%   Status = break | running | Le
+%% In break mode, loop waiting for user commands (and handle other
+%% messages meanwhile).
+%% In other modes, handle other messages, if any.
+%%--------------------------------------------------------------------
+handle_cmd(Bs, break, #ieval{level=Le}=Ieval) ->
+    receive
+	{user, {cmd, Cmd}} ->
+	    dbg_iserver:cast(get(int), {set_status,self(),running,{}}),
+	    tell_attached(running),
+	    case Cmd of
+		step -> Bs;
+		next -> put(next_break, Le), Bs;
+		continue -> put(next_break, running), Bs;
+		finish -> put(next_break, Le-1), Bs;
+		skip -> {skip, Bs}
+	    end;
+	{user, {eval, Cmd}} ->
+	    Bs1 = eval_nonrestricted(Cmd, Bs, Ieval),
+	    handle_cmd(Bs1, break, Ieval);
+	Msg ->
+	    dbg_ieval:check_exit_msg(Msg, Bs, Ieval),
+	    handle_msg(Msg, break, Bs, Ieval),
+	    handle_cmd(Bs, break, Ieval)
+    end;
+handle_cmd(Bs, Status, Ieval) ->
+    receive
+	Msg ->
+	    dbg_ieval:check_exit_msg(Msg, Bs, Ieval),
+	    handle_msg(Msg, Status, Bs, Ieval),
+	    handle_cmd(Bs, Status, Ieval)
+    after 0 -> 
+	    Bs
+    end.
 
 %%====================================================================
 %% User control of process execution and settings
@@ -189,8 +174,9 @@ continue(Meta) -> Meta ! {user, {cmd, continue}}.
 finish(Meta) ->   Meta ! {user, {cmd, finish}}.
 skip(Meta) ->     Meta ! {user, {cmd, skip}}.
 
-timeout(Meta) -> Meta ! timeout.
-stop(Meta, AttPid) -> Meta ! {int, {attached, AttPid}}.
+timeout(Meta) ->  Meta ! {user, timeout}.
+
+stop(Meta) ->     Meta ! {user, {cmd, stop}}.
 
 eval(Meta, {Mod, Cmd}) ->
     eval(Meta, {Mod, Cmd, nostack});
@@ -210,192 +196,184 @@ eval(Meta, {Mod, Cmd, SP}) ->
 set(Meta, Tag, Args) ->
     Meta ! {user, {set, Tag, Args}}.
 
-%% Tag           Args
-%% ---           ----
-%% bindings      SP
-%% stack_frame   {Dir, SP}
-%% messages      null
-%% backtrace     N
+%% Tag          Args           Reply
+%% ---          ----           -----
+%% bindings     nostack | SP   [{Var,Val}]  (Var=atom(), Val=term())
+%% stack_frame  {up|down, SP}  [{Le,Where,Bs}] | top | bottom
+%%                                          (Where = {Mod,Li}
+%% messages     null           [Msg]        (Msg=term())
+%% backtrace    all | N        [{Le,MFA}]   (MFA={M,F,Args}|{Fun,Args})
 get(Meta, Tag, Args) ->
     Meta ! {user, {get, Tag, self(), Args}},
     receive
 	{Meta, Tag, Reply} -> Reply
     end.
 
-handle_msg({int, Msg}, Info) ->
-    handle_int_msg(Msg, Info);
-handle_msg({user, Msg}, Info) ->
-    handle_user_msg(Msg, Info);
-handle_msg(Msg, Info = {State,_,_,_,_}) ->
-    io:format("***WARNING*** Unexp msg ~p, info ~p~n", [Msg, Info]),
-    State.
+%%--------------------------------------------------------------------
+%% handle_msg({int, Msg} | {user, Msg}, Status, Bs, Ieval)
+%%   Status = idle | exit_at | wait_at | wait_after_at
+%%         | break | running | Le | {Le,MFA}
+%%--------------------------------------------------------------------
+handle_msg({int, Msg}, Status, Bs, Ieval) ->
+    handle_int_msg(Msg, Status, Bs, Ieval);
+handle_msg({user, Msg}, Status, Bs, Ieval) ->
+    handle_user_msg(Msg, Status, Bs, Ieval);
+handle_msg(Msg, Status, Bs, Ieval) ->
+    io:format("***WARNING*** Unexp msg ~p, info ~p~n", 
+	      [Msg,{Status,Bs,Ieval}]).
 
-handle_int_msg({attached, AttPid}, {Status,_Bs,Le,Cm,Line}) ->
+%% handle_int_msg(Msg, Status, Bs, Ieval)
+%%   Msg = {attached, AttPid} | {detached, AttPid}
+%%       | {old_code, Mod}
+%%       | {new_break, Break} | {delete_break, Break}
+%%       | {break_options, {Break, Options}}
+%%       | no_break | {no_break, Mod}
+%%       | stop (only when Status==exit_at, means AttPid has terminated)
+%% Interpreter internal messages (from dbg_iserver)
+handle_int_msg({attached, AttPid}, Status, _Bs, 
+	       #ieval{level=Le,module=M,line=Line}) ->
+
+    %% Update process dictionary
+    put(attached, AttPid),
+    put(next_break, break),
+
+    %% Tell attached process in which module evalution is located
     if
-	Status==main, Le==1 ->
-	    attach(AttPid);
-	Status==running;
-	integer(Status);
-	tuple(Status) ->
-	    attach(AttPid, Cm, Line);
+	Le==1 ->
+	    tell_attached({attached, undefined, -1, get(trace)});
 	true ->
-	    attach(AttPid, Cm, Line),
+	    tell_attached({attached, M, Line, get(trace)}),
+
+	    %% Give info about status and call level as well
+	    %% In this case, Status can not be exit_at
 	    Msg = case Status of
-		      main -> {func_at, Cm, Line, Le};
-		      break -> {break_at, Cm, Line, Le};
-		      wait -> {wait_at, Cm, Line, Le};
-		      wait_after -> {wait_after_at, Cm, Line, Le}
+		      idle -> {func_at,M,Line,Le};
+		      break -> {break_at,M,Line,Le};
+		      wait_at -> {wait_at,M,Line,Le};
+		      wait_after_at -> {wait_after_at,M,Line,Le};
+		      _ -> running % running | Le | {Le,MFA}
 		  end,
-	    tell_attached(AttPid, Msg)
-    end,
-    break;
-handle_int_msg({detached, AttPid}, {State,_,_,_,_}) ->
-    detach(AttPid),
-    State;
-handle_int_msg({old_code, Mod}, {Status, Bs, Le, Cm, Line}) ->
+	    tell_attached(Msg)
+    end;
+handle_int_msg(detached, _Status, _Bs, _Ieval) ->
+    %% Update process dictionary
+    put(attached, undefined),
+    put(next_break, running),
+    put(trace, false); % no need for tracing if there is no AttPid
+handle_int_msg({old_code,Mod}, Status, Bs,
+	       #ieval{level=Le,module=M}=Ieval) ->
     if
-	Status==main, Le==1 ->
+	Status==idle, Le==1 ->
 	    erase([Mod|db]),
 	    put(cache, []);
 	true ->
-	    case dbg_ieval:in_use_p(Mod, Cm) of
+	    case dbg_ieval:in_use_p(Mod, M) of
 		true ->
 		    %% A call to Mod is on the stack (or might be),
 		    %% so we must terminate.
 		    exit(get(self), kill),
-		    dbg_ieval:exit(old_code, Cm, Line, Bs);
+		    dbg_ieval:exception(exit, old_code, Bs, Ieval);
 		false ->
 		    erase([Mod|db]),
 		    put(cache, [])
 	    end
-    end,
-    break;
-handle_int_msg({new_break, Break}, {State,_,_,_,_}) ->
-    put(breakpoints, [Break | get(breakpoints)]),
-    State;
-handle_int_msg({delete_break, Point}, {State,_,_,_,_}) ->
-    put(breakpoints, lists:keydelete(Point, 1, get(breakpoints))),
-    State;
-handle_int_msg({break_options, Break}, {State,_,_,_,_}) ->
+    end;
+handle_int_msg({new_break, Break}, _Status, _Bs, _Ieval) ->
+    put(breakpoints, [Break | get(breakpoints)]);
+handle_int_msg({delete_break, Point}, _Status, _Bs, _Ieval) ->
+    put(breakpoints, lists:keydelete(Point, 1, get(breakpoints)));
+handle_int_msg({break_options, Break}, _Status, _Bs, _Ieval) ->
     {Point, _Options} = Break,
-    put(breakpoints, lists:keyreplace(Point, 1, get(breakpoints), Break)),
-    State;
-handle_int_msg(no_break, {State,_,_,_,_}) ->
-    put(breakpoints, []),
-    State;
-handle_int_msg({no_break, Mod}, {State,_,_,_,_}) ->
-    put(breakpoints, lists:filter(fun({{M,_L},_Os}) ->
-					  if
-					      M==Mod -> false;
-					      true -> true
-					  end
-				  end,
-				  get(breakpoints))),
-    State;
+    put(breakpoints, lists:keyreplace(Point,1,get(breakpoints), Break));
+handle_int_msg(no_break, _Status, _Bs, _Ieval) ->
+    put(breakpoints, []);
+handle_int_msg({no_break,M}, _Status, _Bs, _Ieval) ->
+    put(breakpoints, [ML || {Mod,_L}=ML <- get(breakpoints), Mod=/=M]);
+handle_int_msg(stop, exit_at, _Bs, _Ieval) ->
+    erlang:exit(normal).
 
-handle_int_msg(stop, {exit,_Bs,_Le,_Cm,_Line}) ->
-    exit(normal).
-
-handle_user_msg({eval, Cmd}, {wait,Bs,_Le,_Cm,_Line}) ->
-    eval_restricted(Cmd, Bs),
-    break;
-handle_user_msg({eval, Cmd}, {wait_after,Bs,_Le,_Cm,_Line}) ->
-    eval_restricted(Cmd, Bs),
-    break;
-
-handle_user_msg({set, trace, Bool}, _Info) ->
-    set_trace(Bool),
-    break;
-handle_user_msg({set, stack_trace, Flag}, _Info) ->
-    set_stack_trace(Flag),
-    break;
-
-handle_user_msg({get, bindings, From, SP}, {_Status,Bs,_Le,_Cm,_Line}) ->
-    reply(From, bindings, bindings(Bs, SP)),
-    break;
-handle_user_msg({get, stack_frame, From, {Dir, SP}}, _Info) ->
-    reply(From, stack_frame, stack_frame(Dir, SP)),
-    break;
-handle_user_msg({get, messages, From, _}, _Info) ->
-    reply(From, messages, messages()),
-    break;
-handle_user_msg({get, backtrace, From, N}, _Info) ->
-    reply(From, backtrace, backtrace(N)),
-    break.
-
-reply(From, Tag, Reply) ->
-    From ! {self(), Tag, Reply}.
-
-set_trace(Bool) ->
+%% handle_user_msg(Msg, Status, Bs, Ieval)
+%%   Msg = {cmd, Cmd}, Cmd = step | next | continue | finish| skip| stop
+%%       | timeout
+%%       | {eval, {Pid, Mod, Str, SP}}
+%%       | {set, Tag, Args} | {get, Tag, Pid, Args}
+%% Messages from the attached process
+%% Msg = {cmd, Cmd}, Cmd /= stop, can only be received in break mode,
+%% handled in handle_cmd/3
+%% Msg = timeout is handled when needed (when evaluating receive..after)
+%% in dbg_ieval:do_receive/5 when Status==wait_after_at
+%% For all other Status, it should be ignored
+handle_user_msg({cmd, stop}, Status, _Bs, _Ieval) ->
+    case lists:member(Status, [running, wait_at, wait_after_at]) of
+	true ->
+	    put(next_break, break);
+	false when is_integer(Status); is_tuple(Status) ->
+	    put(next_break, break);
+	false -> % idle | exit_at (| break)
+	    ignore
+    end;
+handle_user_msg({cmd, continue}, Status, _Bs, _Ieval) ->
+    %% Allow leaving break mode when waiting in a receive
+    case lists:member(Status, [wait_at, wait_after_at]) of
+	true ->
+	    put(next_break, running);
+	false ->
+	    ignore
+    end;
+handle_user_msg({cmd, _Cmd}, _Status, _Bs, _Ieval) ->
+    ignore;
+handle_user_msg(timeout, _Status, _Bs, _Ieval) ->
+    ignore;
+handle_user_msg({eval,Cmd}, wait_at, Bs, _Ieval) ->
+    eval_restricted(Cmd, Bs);
+handle_user_msg({eval,Cmd}, wait_after_at, Bs, _Ieval) ->
+    eval_restricted(Cmd, Bs);
+handle_user_msg({set,trace,Bool}, _Status, _Bs, _Ieval) ->
     put(trace, Bool),
-    tell_attached({trace, Bool}).
+    tell_attached({trace, Bool});
+handle_user_msg({set,stack_trace,Flag}, _Status, _Bs, _Ieval) ->
+    set_stack_trace(Flag);
+handle_user_msg({get,bindings,From,SP}, _Status, Bs, _Ieval) ->
+    reply(From, bindings, bindings(Bs, SP));
+handle_user_msg({get,stack_frame,From,{Dir,SP}}, _Status, _Bs,_Ieval) ->
+    reply(From, stack_frame, dbg_ieval:stack_frame(Dir, SP));
+handle_user_msg({get,messages,From,_}, _Status, _Bs, _Ieval) ->
+    reply(From, messages, messages());
+handle_user_msg({get,backtrace,From,N}, _Status, _Bs, _Ieval) ->
+    reply(From, backtrace, dbg_ieval:backtrace(N)).
 
 set_stack_trace(true) ->
     set_stack_trace(all);
 set_stack_trace(Flag) ->    
     if
-	Flag==false -> erase(stack);
-	true ->
-	    case get(stack) of
-		undefined -> put(stack, []);
-		_Stack -> ignore
-	    end
+	Flag==false ->
+	    put(stack, []);
+	Flag==no_tail; Flag==all ->
+	    ignore
     end,
-    put(stack_trace, Flag),
+    put(trace_stack, Flag),
     tell_attached({stack_trace, Flag}).
+
+reply(From, Tag, Reply) ->
+    From ! {self(), Tag, Reply}.
 
 bindings(Bs, nostack) ->
     Bs;
 bindings(Bs, SP) ->
-    bindings(Bs, SP, get(stack)).
-
-bindings(Bs, SP, Stack) when SP>element(1, hd(Stack)) ->
-    Bs;
-bindings(_Bs, SP, Stack) ->
-    binding(SP, Stack).
-
-binding(SP, [{SP,{_,_,_,Bs}}|_]) ->
-    Bs;
-binding(SP, [{Le,_}|_]) when SP>Le ->
-    [];
-binding(SP, [_|Stack]) ->
-    binding(SP, Stack);
-binding(_SP, []) ->
-    [].
-
-stack_frame(up, SP) ->
-    stack_frame_up(SP-1, get(stack));
-stack_frame(down, SP) ->
-    stack_frame_down(SP+1, get(stack), bottom).
-
-stack_frame_up(_, []) ->
-    top;
-stack_frame_up(SP, [{Level,_Frame} | Stack]) when SP < Level ->
-    stack_frame_up(SP, Stack);
-stack_frame_up(_SP, [{Level, {Mod, _, Line, _}} | _Stack]) ->
-    {Level, Mod, Line}.
-
-stack_frame_down(SP, [{Level, Frame} | Stack], _Above) when SP<Level ->
-    stack_frame_down(SP, Stack, {Level,Frame});
-stack_frame_down(SP, [{SP, {Mod, _, Line, _}} | _Stack], _Above) ->
-    {SP, Mod, Line};
-stack_frame_down(_SP, _Stack, bottom) ->
-    bottom;
-stack_frame_down(_SP, _Stack, {Level, {Mod, _, Line, _}}) ->
-    {Level, Mod, Line}.
+    case dbg_ieval:stack_level() of
+	Le when SP>Le ->
+	    Bs;
+	_ ->
+	    dbg_ieval:bindings(SP)
+    end.
 
 messages() ->
     {messages, Msgs} = erlang:process_info(get(self), messages),
     Msgs.
 
-backtrace(all) ->
-    get(stack);
-backtrace(N) ->
-    lists:sublist(get(stack), N).
-
 
 %%====================================================================
-%% Evaluating expressions withing process context
+%% Evaluating expressions within process context
 %%====================================================================
 
 eval_restricted({From,_Mod,Cmd,SP}, Bs) ->
@@ -410,48 +388,52 @@ eval_restricted({From,_Mod,Cmd,SP}, Bs) ->
 		  end,
 	    From ! {self(), {eval_rsp, Res}};
 	_Forms ->
-	    From ! {self(), {eval_rsp,'Only possible to inspect variables'}}
+	    Rsp = 'Only possible to inspect variables',
+	    From ! {self(), {eval_rsp, Rsp}}
     end.
 
-eval_nonrestricted({From, Mod, Cmd, SP}, Bs, _Cm, Le, _LineNo, _F) when SP < Le->
-    %% Evaluate in stack.
+eval_nonrestricted({From,Mod,Cmd,SP}, Bs, #ieval{level=Le}) when SP<Le->
+    %% Evaluate in stack
     eval_restricted({From, Mod, Cmd, SP}, Bs),
     Bs;
-eval_nonrestricted({From, _Mod, Cmd, _SP}, Bs, Cm, Le, LineNo, F) ->
-    case catch parse_cmd(Cmd, LineNo) of
+eval_nonrestricted({From, _Mod, Cmd, _SP}, Bs, 
+		   #ieval{level=Le,module=M,line=Line}=Ieval) ->
+    case catch parse_cmd(Cmd, Line) of
 	{'EXIT', _Reason} ->
 	    From ! {self(), {eval_rsp, 'Parse error'}},
 	    Bs;
 	Forms ->
-	    mark_running(LineNo, Le),
+	    mark_running(Line, Le),
 	    {Res, Bs2} =
 		lists:foldl(fun(Expr, {_Res, Bs0}) ->
-				    eval_nonrestricted(Expr, Bs0, Cm, Le, F)
+				    eval_nonrestricted_1(Expr,Bs0,Ieval)
 			    end,
 			    {null, Bs},
 			    Forms),
-	    mark_break(Cm, LineNo, Le),
+	    mark_break(M, Line, Le),
 	    From ! {self(), {eval_rsp, Res}},
 	    Bs2
     end.
 
-eval_nonrestricted({match,_,{var,_,Var},Expr}, Bs, Cm, Le, F) ->
-    {value, Res, Bs2} = dbg_ieval:eval_expr(Expr, Bs, Cm, false, Le, F),
+eval_nonrestricted_1({match,_,{var,_,Var},Expr}, Bs, Ieval) ->
+    {value,Res,Bs2} = 
+	dbg_ieval:eval_expr(Expr, Bs, Ieval#ieval{last_call=false}),
     Bs3 = case lists:keysearch(Var, 1, Bs) of
-	      {value, {Var, _Value}} ->
-		  lists:keyreplace(Var, 1, Bs2, {Var, Res});
-	      false -> [{Var, Res} | Bs2]
+	      {value, {Var,_Value}} ->
+		  lists:keyreplace(Var, 1, Bs2, {Var,Res});
+	      false -> [{Var,Res} | Bs2]
 	  end,
-    {Res, Bs3};
-eval_nonrestricted({var,_,Var}, Bs, _Cm, _Le, _F) ->
+    {Res,Bs3};
+eval_nonrestricted_1({var,_,Var}, Bs, _Ieval) ->
     Res = case lists:keysearch(Var, 1, Bs) of
 	      {value, {Var, Value}} -> Value;
 	      false -> unbound
 	  end,
-    {Res, Bs};
-eval_nonrestricted(Expr, Bs, Cm, Le, F) ->
-    {value, Res, Bs2} = dbg_ieval:eval_expr(Expr, Bs, Cm, false, Le, F),
-    {Res, Bs2}.
+    {Res,Bs};
+eval_nonrestricted_1(Expr, Bs, Ieval) ->
+    {value,Res,Bs2} = 
+	dbg_ieval:eval_expr(Expr, Bs, Ieval#ieval{last_call=false}),
+    {Res,Bs2}.
 
 mark_running(LineNo, Le) ->
     put(next_break, running),
@@ -463,7 +445,7 @@ mark_break(Cm, LineNo, Le) ->
     put(next_break, break),
     put(user_eval, tl(get(user_eval))),
     tell_attached({break_at, Cm, LineNo, Le}),
-    dbg_iserver:cast(get(int), {set_status, self(), break, {Cm, LineNo}}).
+    dbg_iserver:cast(get(int), {set_status,self(),break,{Cm,LineNo}}).
 
 parse_cmd(Cmd, LineNo) ->
     {ok,Tokens,_} = erl_scan:string(Cmd, LineNo),
@@ -475,35 +457,11 @@ parse_cmd(Cmd, LineNo) ->
 %% Library functions for attached process handling
 %%====================================================================
 
-attach(AttPid) ->     % Idle waiting for new call
-    attach(AttPid, null, null).
-attach(AttPid, Mod, Line) ->
-    put(next_break, break),
-    case lists:member(AttPid, get(attached)) of
-	true -> ignore;
-	false -> put(attached, [AttPid | get(attached)])
-    end,
-    tell_attached(AttPid, {attached, Mod, Line, get(trace)}).
-
-detach(AttPid) ->
-    Attached = lists:delete(AttPid, get(attached)),
-    put(attached, Attached),
-    if
-	Attached==[] -> set_trace(false);
-	true -> ignore
-    end.
-
 tell_attached(Msg) ->
-    lists:foreach(fun(AttPid) -> tell_attached(AttPid, Msg) end,
-		  get(attached)).
-
-tell_attached(AttPid, Msg) ->
-    AttPid ! {self(), Msg}.
-
-tell_attached_if_break(Msg) ->
-    case get(next_break) of
-	break -> tell_attached(Msg);
-	_ -> ignore
+    case get(attached) of
+	undefined -> ignore;
+	AttPid ->
+	    AttPid ! {self(), Msg}
     end.
 
 

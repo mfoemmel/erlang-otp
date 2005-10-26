@@ -17,6 +17,7 @@ s|@LDFLAGS@|-r|
 # FIXME: A bit strange to clear out remaining DED_*
 s|@DED_LDFLAGS@||
 s|@DED_CFLAGS@||
+s|@STATIC_CFLAGS@||
 s|@GCCLIB@|libgcc.a|
 s|@DEFS@||
 s|@DEXPORT@||
@@ -35,6 +36,7 @@ s|@cc_root@|/clearcase/otp/|
 s|@HCFLAGS@|-DOSE|
 s|@HCLIBS@||
 s|@ENABLE_ALLOC_TYPE_VARS@||
+s|@TERMCAP_LIB@||
 
 # Conditional inclusion of applications
 s|@HIPE_APP@||

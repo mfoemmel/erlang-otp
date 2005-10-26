@@ -3718,7 +3718,7 @@ higher_Ub(_,'MAX') ->
 higher_Ub(L,Ub) ->
     remove_val_from_list(Ub + 1,L).
 
-remove_val_from_list(List,Val) ->
+remove_val_from_list(Val,List) ->
     case lists:member(Val,List) of
 	true ->
 	    {lists:delete(Val,List),Val};
@@ -5867,12 +5867,7 @@ get_taglist(S,Type) when record(Type,type) ->
 	[] ->
 	    get_taglist(S,Type#type.def);
 	[Tag|_]  ->
-% 	    case lists:member(S#state.erule,[ber,ber_bin]) of
-% 		true ->
-% 		   lists:map(fun(Tx) -> asn1ct_gen:def_to_tag(Tx) end,Type#type.tag);
-% 		_ ->
 	    [asn1ct_gen:def_to_tag(Tag)]
-%	    end
     end;
 get_taglist(S,{'CHOICE',{Rc,Ec}}) ->
     get_taglist(S,{'CHOICE',Rc ++ Ec});
@@ -5886,16 +5881,16 @@ get_taglist(S,#'ObjectClassFieldType'{type={fixedtypevaluefield,_,Type}}) ->
 get_taglist(S,{ERef=#'Externaltypereference'{},FieldNameList})
   when list(FieldNameList) ->
     case get_ObjectClassFieldType(S,ERef,FieldNameList) of
-	Type when record(Type,type) ->
-	    get_taglist(S,Type);
+% 	Type when record(Type,type) ->
+% 	    get_taglist(S,Type);
 	{fixedtypevaluefield,_,Type} -> get_taglist(S,Type);
 	{TypeFieldName,_} when atom(TypeFieldName) -> []%should check if allowed
     end;
 get_taglist(S,{ObjCl,FieldNameList}) when record(ObjCl,objectclass),
 					  list(FieldNameList) ->
     case get_ObjectClassFieldType(S,ObjCl#objectclass.fields,FieldNameList) of
-	Type when record(Type,type) ->
-	    get_taglist(S,Type);
+% 	Type when record(Type,type) ->
+% 	    get_taglist(S,Type);
 	{fixedtypevaluefield,_,Type} -> get_taglist(S,Type);
 	{TypeFieldName,_} when atom(TypeFieldName) -> []%should check if allowed
     end;

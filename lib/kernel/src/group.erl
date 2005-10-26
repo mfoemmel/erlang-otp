@@ -19,20 +19,26 @@
 
 %% A group leader process for user io.
 
--export([start/2,server/2]).
+-export([start/2, start/3, server/3]).
 -export([interfaces/1]).
 
 -import(io_lib, [deep_char_list/1]).
 
 start(Drv, Shell) ->
-    spawn_link(group, server, [Drv, Shell]).
+    start(Drv, Shell, []).
 
-server(Drv, Shell) ->
+start(Drv, Shell, Options) ->
+    spawn_link(group, server, [Drv, Shell, Options]).
+
+server(Drv, Shell, Options) ->
     process_flag(trap_exit, true),
     edlin:init(),
-    put(line_buffer, []),
+    put(line_buffer, proplists:get_value(line_buffer, Options, [])),
     put(read_mode, list),
     put(user_drv, Drv),
+    put(expand_fun,
+	proplists:get_value(expand_fun, Options,
+			    fun(B) -> edlin_expand:expand(B) end)),
     start_shell(Shell),
     server_loop(Drv, get(shell), []).
 
@@ -301,6 +307,37 @@ get_line1({undefined,{_A,Mode,Char},_Cs,Cont,Rs}, Drv, Ls0)
 		      Drv,
 		      Ls)
     end;
+get_line1({expand, Before, Cs0, Cont,Rs}, Drv, Ls0) ->
+    send_drv_reqs(Drv, Rs),
+    ExpandFun = get(expand_fun),
+    {Found, Add, Matches} = ExpandFun(Before),
+    case Found of
+	no -> send_drv(Drv, beep);
+	yes -> ok
+    end,
+    Cs1 = append(Add, Cs0),
+    Cs = case Matches of
+	     [] -> Cs1;
+	     _ -> MatchStr = edlin_expand:format_matches(Matches),
+		  send_drv(Drv, {put_chars, list_to_binary(MatchStr)}),
+		  [$\^L | Cs1]
+	 end,
+    get_line1(edlin:edit_line(Cs, Cont), Drv, Ls0);
+    
+%%     Rs = expand(
+%%     case down_stack(Ls0) of
+%% 	{none,_Ls} ->
+%% 	    send_drv_reqs(Drv, edlin:erase_line(Cont)),
+%% 	    get_line1(edlin:start(edlin:prompt(Cont)), Drv, Ls0);
+%% 	{Lcs,Ls} ->
+%% 	    send_drv_reqs(Drv, edlin:erase_line(Cont)),
+%% 	    {more_chars,Ncont,Nrs} = edlin:start(edlin:prompt(Cont)),
+%% 	    send_drv_reqs(Drv, Nrs),
+%% 	    get_line1(edlin:edit_line1(lists:sublist(Lcs, 1, length(Lcs)-1),
+%% 				      Ncont),
+%% 		      Drv,
+%% 		      Ls)
+%%     end;
 get_line1({undefined,_Char,Cs,Cont,Rs}, Drv, Ls) ->
     send_drv_reqs(Drv, Rs),
     send_drv(Drv, beep),

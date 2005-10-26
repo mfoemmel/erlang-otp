@@ -19,8 +19,6 @@
 -module(mod_auth_server).
 
 -include("httpd.hrl").
-%% -include("mod_auth.hrl").
--include("httpd_verbosity.hrl").
 
 -behaviour(gen_server).
 
@@ -32,12 +30,8 @@
 	 add_group_member/6, delete_group_member/6, list_group_members/5, 
 	 delete_group/5, list_groups/4]).
 
-%% Management exports
--export([verbosity/3]).
-
 %% gen_server exports
--export([start_link/3,
-	 init/1,
+-export([start_link/2, init/1,
 	 handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
@@ -55,35 +49,18 @@
 %% 
 %% NOTE: This is called by httpd_misc_sup when the process is started
 %% 
-start_link(Addr, Port, Verbosity)->
-    ?vlog("start_link -> entry with"
-	  "~n   Addr: ~p"
-	  "~n   Port: ~p", [Addr, Port]),
+start_link(Addr, Port)->
     Name = make_name(Addr, Port),
-    gen_server:start_link({local, Name}, ?MODULE, [Verbosity],
-			  [{timeout, infinity}]).
+    gen_server:start_link({local, Name}, ?MODULE, [], [{timeout, infinity}]).
 
 
 %% start/2
 
 start(Addr, Port)->
-    ?vtrace("start -> entry with"
-	    "~n   Addr: ~p"
-	    "~n   Port: ~p", [Addr, Port]),
     Name = make_name(Addr, Port),
     case whereis(Name) of
 	undefined ->
-           Verbosity = get(auth_verbosity),
-           case (catch httpd_misc_sup:start_auth_server(Addr, Port, 
-                                                        Verbosity)) of
-		{ok, Pid} ->
-		    put(auth_server, Pid),
-		    ok;
-		{error, Reason} ->
-		    exit({failed_start_auth_server, Reason});
-		Error ->
-		    exit({failed_start_auth_server, Error})
-	    end;
+	    httpd_misc_sup:start_auth_server(Addr, Port);
 	_ -> %% Already started...
 	    ok
     end.
@@ -92,9 +69,6 @@ start(Addr, Port)->
 %% stop/2
 
 stop(Addr, Port)->
-    ?vtrace("stop -> entry with"
-	    "~n   Addr: ~p"
-	    "~n   Port: ~p", [Addr, Port]),
     Name = make_name(Addr, Port),
     case whereis(Name) of
 	undefined -> %% Already stopped
@@ -102,15 +76,6 @@ stop(Addr, Port)->
 	_ ->
            (catch httpd_misc_sup:stop_auth_server(Addr, Port))
     end.
-
-
-%% verbosity/3
-
-verbosity(Addr, Port, Verbosity) ->
-    Name = make_name(Addr, Port),
-    Req  = {verbosity, Verbosity},
-    call(Name, Req).
-
 
 %% add_password/4
 
@@ -208,15 +173,8 @@ list_groups(Addr, Port, Dir, Password) ->
 
 %% init
 
-init([undefined]) ->
-    init([?default_verbosity]);
-
-init([Verbosity]) ->
-    put(sname,auth),
-    put(verbosity,Verbosity),
-    ?vlog("starting",[]),
+init(_) ->
     {ok,#state{tab = ets:new(auth_pwd,[set,protected])}}.
-
 
 %% handle_call
 
@@ -299,12 +257,7 @@ handle_call({update_password, Dir, Old, New},_From,State)->
     {reply, Reply, State};
 
 handle_call(stop, _From, State)->
-    {stop, normal, State};
-
-handle_call({verbosity,Verbosity},_From,State)->
-    OldVerbosity = put(verbosity,Verbosity),
-    ?vlog("set verbosity:  ~p -> ~p",[Verbosity,OldVerbosity]),
-    {reply,OldVerbosity,State}.
+    {stop, normal, State}.
 
 handle_info(_Info, State)->
     {noreply, State}.
@@ -321,14 +274,12 @@ terminate(_Reason,State) ->
 %% code_change({down, ToVsn}, State, Extra)
 %% 
 code_change({down, _}, #state{tab = Tab}, downgrade_to_2_6_0) ->
-    ?vlog("downgrade to 2.6.0", []),
     {ok, {state, Tab, undefined}};
 
 
 %% code_change(FromVsn, State, Extra)
 %%
 code_change(_, {state, Tab, _}, upgrade_from_2_6_0) ->
-    ?vlog("upgrade from 2.6.0", []),
     {ok, #state{tab = Tab}}.
 
 
@@ -348,12 +299,8 @@ api_call(Addr, Port, Dir, Func, Args,Password,State) ->
 	    case ets:match_object(ConfigName, {directory, Dir, '$1'}) of
 		[{directory, Dir, DirData}] ->
 		    AuthMod = auth_mod_name(DirData),
-		    ?DEBUG("api_call -> call ~p:~p",[AuthMod,Func]),
-		    Ret = (catch apply(AuthMod, Func, [DirData|Args])),
-		    ?DEBUG("api_call -> Ret: ~p",[ret]),
-		    Ret;
-		_O ->
-		    ?DEBUG("api_call -> O: ~p",[_O]),
+		    (catch apply(AuthMod, Func, [DirData|Args]));
+		_ ->
 		    {error, no_such_directory}
 	    end;
 	bad_password ->

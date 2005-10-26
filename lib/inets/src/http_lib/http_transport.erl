@@ -17,6 +17,7 @@
 %
 -module(http_transport).
 
+% Internal application API
 -export([start/1, connect/3, listen/2, listen/3, accept/2, accept/3, close/2,
 	 send/3, controlling_process/3, setopts/3,
 	 peername/2, resolve/0]).
@@ -27,7 +28,7 @@
 
 %%-------------------------------------------------------------------------
 %% start(SocketType) -> ok | {error, Reason}
-%%      SocketType - ip_comm | {ssl, _}  
+%%      SocketType = ip_comm | {ssl, _}  
 %%                                   
 %% Description: Makes sure inet_db or ssl is started. 
 %%-------------------------------------------------------------------------
@@ -53,17 +54,27 @@ start({ssl, _}) ->
     end.
 
 %%-------------------------------------------------------------------------
-%% connect(SocketType, Address, IPV6) -> ok | {error, Reason}
-%%      SocketType - ip_comm | {ssl, SslConfig}  
-%%      Address - {Host, Port}
-%%      IPV6 - disabled | enabled
+%% connect(SocketType, Address, IPV6) -> {ok, Socket} | {error, Reason}
+%%      SocketType = ip_comm | {ssl, SslConfig}  
+%%      Address = {Host, Port}
+%%      IPV6 = disabled | enabled
+%%      Socket = socket()
 %%                                   
 %% Description: Connects to the Host and Port specified in HTTPRequest.
 %%		uses ipv6 if possible.
 %%-------------------------------------------------------------------------
 connect(ip_comm, {Host, Port}, enabled) ->
     {Opts, NewHost} = 
-	case (catch inet:getaddr(Host, inet6)) of
+	case inet:getaddr(Host, inet6) of
+	    {ok, IPAddr = {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
+		case inet:getaddr(Host, inet) of
+		    {ok,NewIP} ->
+			{[binary, {packet, 0}, {active, false},
+			  {reuseaddr,true}], NewIP};
+		    _Error ->
+			{[binary, {packet, 0}, {active, false},
+			  {reuseaddr,true}, inet6], IPAddr}
+		end;
 	    {ok, IPAddr} ->
 		{[binary, {packet, 0}, {active, false},
 		  {reuseaddr,true}, inet6], IPAddr};
@@ -82,9 +93,10 @@ connect({ssl, SslConfig}, {Host, Port}, _) ->
     ssl:connect(Host, Port, Opts).
 
 %%-------------------------------------------------------------------------
-%% listen(SocketType, Port) -> ok | {error, Reason}
-%%      SocketType - ip_comm | {ssl, SSLConfig}  
-%%      Port - integer()                             
+%% listen(SocketType, Port) -> {ok, Socket} | {error, Reason}
+%%      SocketType = ip_comm | {ssl, SSLConfig}  
+%%      Port = integer() 
+%%      Socket = socket()                            
 %%
 %% Description: Sets up socket to listen on the port Port on the local
 %% host using either gen_tcp or ssl. In the gen_tcp case the port
@@ -107,7 +119,8 @@ listen(ip_comm, Addr, Port) ->
 					  {reuseaddr,true}, {fd,Fd}])};
 	    error ->
 		{Port,
-		 sock_opt(ip_comm, Addr, [{backlog, 128}, {reuseaddr, true}])}
+		 sock_opt(ip_comm, Addr, 
+			  [{backlog, 128}, {reuseaddr, true}])}
 	end,
     gen_tcp:listen(NewPort, Opt);
 
@@ -116,14 +129,15 @@ listen({ssl, SSLConfig} = Ssl, Addr, Port) ->
     ssl:listen(Port, Opt).
 
 %%-------------------------------------------------------------------------
-%% accept(SocketType, ListenSocket) -> ok | {error, Reason}
+%% accept(SocketType, ListenSocket) -> {ok, Socket} | {error, Reason}
 %% accept(SocketType, ListenSocket, Timeout) -> ok | {error, Reason}
-%%   SocketType - ip_comm | {ssl, SSLConfig}  
-%%   ListenSocket - socket()    
-%%   Timeout - infinity | integer() >= 0
+%%   SocketType = ip_comm | {ssl, SSLConfig}  
+%%   ListenSocket = socket()    
+%%   Timeout = infinity | integer() >= 0
+%%   Socket = socket()
 %%                                   
 %% Description: Accepts an incoming connection request on a listen socket,
-%% using either gen_tcl or ssl.
+%% using either gen_tcp or ssl.
 %%-------------------------------------------------------------------------
 accept(SocketType, ListenSocket) ->
     accept(SocketType, ListenSocket, infinity).
@@ -134,9 +148,9 @@ accept({ssl,_SSLConfig}, ListenSocket, Timeout) ->
 
 %%-------------------------------------------------------------------------
 %% controlling_process(SocketType, Socket, NewOwner) -> ok | {error, Reason}
-%%   SocketType - ip_comm | {ssl, _}  
-%%   Socket - socket()        
-%%   NewOwner - pid()
+%%   SocketType = ip_comm | {ssl, _}  
+%%   Socket = socket()        
+%%   NewOwner = pid()
 %%                                
 %% Description: Assigns a new controlling process to Socket. 
 %%-------------------------------------------------------------------------
@@ -147,9 +161,9 @@ controlling_process({ssl, _}, Socket, NewOwner) ->
 
 %%-------------------------------------------------------------------------
 %% setopts(SocketType, Socket, Options) -> ok | {error, Reason}
-%%     SocketType - ip_comm | {ssl, _}
-%%     Socket - socket()
-%%     Options - list()                              
+%%     SocketType = ip_comm | {ssl, _}
+%%     Socket = socket()
+%%     Options = list()                              
 %% Description: Sets one or more options for a socket, using either
 %% gen_tcp or ssl.
 %%-------------------------------------------------------------------------
@@ -160,9 +174,9 @@ setopts({ssl, _}, Socket, Options) ->
 
 %%-------------------------------------------------------------------------
 %% send(RequestOrSocketType, Socket, Message) -> ok | {error, Reason}
-%%     SocketType - ip_comm | {ssl, _}
-%%     Socket - socket()
-%%     Message - list() | binary()                           
+%%     SocketType = ip_comm | {ssl, _}
+%%     Socket = socket()
+%%     Message = list() | binary()                           
 %% Description: Sends a packet on a socket, using either gen_tcp or ssl.
 %%-------------------------------------------------------------------------
 send(ip_comm, Socket, Message) ->
@@ -172,8 +186,8 @@ send({ssl, _}, Socket, Message) ->
 
 %%-------------------------------------------------------------------------
 %% close(SocketType, Socket) -> ok | {error, Reason}
-%%     SocketType - ip_comm | {ssl, _}
-%%     Socket - socket()  
+%%     SocketType = ip_comm | {ssl, _}
+%%     Socket = socket()  
 %%                                   
 %% Description: Closes a socket, using either gen_tcp or ssl.
 %%-------------------------------------------------------------------------
@@ -183,12 +197,12 @@ close({ssl, _}, Socket) ->
     ssl:close(Socket).
 
 %%-------------------------------------------------------------------------
-%% peername(RequestOrSocketType, Socket) -> ok | {error, Reason}
-%%     SocketType - ip_comm | {ssl, _}
-%%     Socket - socket() 
+%% peername(SocketType, Socket) -> ok | {error, Reason}
+%%     SocketType = ip_comm | {ssl, _}
+%%     Socket = socket() 
 %%                          
-%% Description: Returns the address and port for the other end of a connection,
-%% usning either gen_tcp or ssl.
+%% Description: Returns the address and port for the other end of a
+%% connection, usning either gen_tcp or ssl.
 %%-------------------------------------------------------------------------
 peername(ip_comm, Socket) ->
     case inet:peername(Socket) of
@@ -222,7 +236,7 @@ peername({ssl, _}, Socket) ->
 
 %%-------------------------------------------------------------------------
 %% resolve() -> HostName
-%%     HostName - string()
+%%     HostName = string()
 %%     
 %% Description: Returns the local hostname. 
 %%-------------------------------------------------------------------------

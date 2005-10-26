@@ -1580,7 +1580,7 @@ enc_PropertyGroup([H | _T] = List, mand_v, State) when record(H, 'PropertyParm')
     enc_PropertyGroup(List, opt_v, State);
 enc_PropertyGroup(PG, opt_v, State) ->
     [
-     [[enc_PropertyGroupParm(PP, State), ?LfToken] || PP <- PG]
+     [[enc_PropertyGroupParm(PP, State), ?CrToken, ?LfToken] || PP <- PG]
     ].
 
 enc_PropertyGroupParm(Val, State)
@@ -1735,7 +1735,11 @@ enc_EventsDescriptor(Val, State)
 
 enc_RequestedEvent(Val, State)
   when record(Val, 'RequestedEvent') ->
+%%     d("enc_RequestedEvent -> entry with"
+%%       "~n   Val: ~p", [Val]),
     PkgdName = ?META_ENC(event, Val#'RequestedEvent'.pkgdName),
+%%     d("enc_RequestedEvent -> entry with"
+%%       "~n   PkgdName: ~p", [PkgdName]),
     [
      enc_PkgdName(PkgdName, State),
      enc_opt_brackets(
@@ -1748,16 +1752,102 @@ enc_RequestedEvent(Val, State)
 
 decompose_requestedActions(asn1_NOVALUE) ->
     [];
-decompose_requestedActions(Val)
-  when record(Val, 'RequestedActions') ->
+
+%% 
+%% This in the ABNF: 
+%% at-most-once each of KeepActiveToken , eventDM and eventStream
+%% at most one of either embedWithSig or embedNoSig but not both
+%% KeepActiveToken and embedWithSig must not both be present
+%% 
+
+%% embedWithSig
+decompose_requestedActions(#'RequestedActions'{keepActive        = KA,
+					       eventDM           = EDM,
+					       secondEvent       = SE,
+					       signalsDescriptor = SD}) 
+  when KA /= true,
+       SD /= asn1_NOVALUE, SD /= [] ->
+%%     d("decompose_requestedActions -> entry with"
+%%       "~n   EDM: ~p"
+%%       "~n   SE:  ~p"
+%%       "~n   SD:  ~p", [EDM, SE, SD]),
     [
-     {[Val#'RequestedActions'.keepActive],  fun enc_keepActive/2},
-     {[Val#'RequestedActions'.eventDM],     fun enc_EventDM/2},
-     {[Val#'RequestedActions'.secondEvent], fun enc_SecondEventsDescriptor/2},
-     {[Val#'RequestedActions'.signalsDescriptor], fun enc_SignalsDescriptor/2}
+     {[EDM],      fun enc_EventDM/2},
+     {[{SE, SD}], fun enc_embedWithSig/2}
+    ];
+
+%% embedNoSig
+decompose_requestedActions(#'RequestedActions'{keepActive        = KA,
+					       eventDM           = EDM,
+					       secondEvent       = SE,
+					       signalsDescriptor = SD}) 
+  when SD == asn1_NOVALUE; SD == [] ->
+%%     d("decompose_requestedActions -> entry with"
+%%       "~n   KA:  ~p"
+%%       "~n   EDM: ~p"
+%%       "~n   SE:  ~p", [KA, EDM, SE]),
+    [
+     {[KA],  fun enc_keepActive/2},
+     {[EDM], fun enc_EventDM/2},
+     {[SE],  fun enc_embedNoSig/2}
+    ];
+
+%% Fallback, if everything else failes....
+decompose_requestedActions(#'RequestedActions'{keepActive        = KA,
+					       eventDM           = EDM,
+					       secondEvent       = SE,
+					       signalsDescriptor = SD}) ->
+%%     d("decompose_requestedActions -> entry with"
+%%       "~n   KA:  ~p"
+%%       "~n   EDM: ~p"
+%%       "~n   SE:  ~p"
+%%       "~n   SD:  ~p", [KA, EDM, SE, SD]),
+    [
+     {[KA],       fun enc_keepActive/2},
+     {[EDM],      fun enc_EventDM/2},
+     {[{SE, SD}], fun enc_embedWithSig/2}
+    ].
+
+
+enc_embedNoSig(#'SecondEventsDescriptor'{requestID = RID,
+					 eventList = Evs}, State) ->
+%%     d("enc_embedNoSig -> entry with"
+%%       "~n   RID: ~p"
+%%       "~n   Evs: ~p", [RID, Evs]),
+    [
+     ?EmbedToken,
+     ?LBRKT_INDENT(State),
+     enc_embedFirst(RID, Evs, ?INC_INDENT(State)), 
+     ?RBRKT_INDENT(State)
+    ].
+
+enc_embedWithSig({asn1_NOVALUE, SD}, State) ->
+%%     d("enc_embedWithSig -> entry with"
+%%       "~n   SD:  ~p", [SD]),
+    [
+     ?EmbedToken,
+     ?LBRKT_INDENT(State),
+     enc_SignalsDescriptor(SD, ?INC_INDENT(State)),
+     ?RBRKT_INDENT(State)
+    ];
+enc_embedWithSig({#'SecondEventsDescriptor'{requestID = RID,
+					    eventList = Evs}, SD}, State) ->
+%%     d("enc_embedWithSig -> entry with"
+%%       "~n   RID: ~p"
+%%       "~n   Evs: ~p"
+%%       "~n   SD:  ~p", [RID, Evs, SD]),
+    [
+     ?EmbedToken,
+     ?LBRKT_INDENT(State),
+     enc_SignalsDescriptor(SD, ?INC_INDENT(State)),
+     ?COMMA_INDENT(?INC_INDENT(State)), 
+     enc_embedFirst(RID, Evs, ?INC_INDENT(State)), 
+     ?RBRKT_INDENT(State)
     ].
 
 enc_keepActive(Val, _State) ->
+%%     d("enc_keepActive -> entry with"
+%%       "~n   Val: ~p", [Val]),
     case Val of
 	true -> [?KeepActiveToken];
 	false -> []
@@ -1766,6 +1856,9 @@ enc_keepActive(Val, _State) ->
 enc_EventDM({'EventDM',Val}, State) ->
     enc_EventDM(Val, State);
 enc_EventDM({Tag, Val}, State) ->
+%%     d("enc_EventDM -> entry with"
+%%       "~n   Tag: ~p"
+%%       "~n   Val: ~p", [Tag, Val]),
     case Tag of
 	digitMapName ->
 	    [
@@ -1784,51 +1877,43 @@ enc_EventDM({Tag, Val}, State) ->
 	    error({invalid_EventDM_tag, Tag})
     end.
 
-enc_SecondEventsDescriptor(Val, State)
-  when record(Val, 'SecondEventsDescriptor') ->
-    #'SecondEventsDescriptor'{requestID = RequestId,
-			      eventList = Events} = Val,
-    if
-	RequestId == asn1_NOVALUE, Events == [] ->
-	    [
-	     ?EmbedToken,
-	     ?LBRKT_INDENT(State),
-	     ?EventsToken,
-	     ?RBRKT_INDENT(State)
-	    ];
-
-	RequestId /= asn1_NOVALUE, Events /= [] ->
-	    [
-	     ?EmbedToken,
-	     ?LBRKT_INDENT(State),
-	     enc_list([{Events,	fun(V, S) -> enc_embedFirst(V, S, RequestId) end}],
-		      ?INC_INDENT(State)),
-	     ?RBRKT_INDENT(State)
-	    ]
-    end.
-
-enc_embedFirst(Val, State, RequestId)
-  when record(Val, 'SecondRequestedEvent') ->
+enc_embedFirst(RID, Evs, State)
+  when RID /= asn1_NOVALUE, list(Evs), Evs /= [] ->
+%%     d("enc_embedFirst -> entry with"
+%%       "~n   RID: ~p"
+%%       "~n   Evs: ~p", [RID, Evs]),
     [
      ?EventsToken,
      ?EQUAL,
-     enc_RequestID(RequestId, State),
+     enc_RequestID(RID, State),
      ?LBRKT_INDENT(State),
-     %% BUGBUG: Does this really work?
-     enc_list([{[Val], fun enc_SecondRequestedEvent/2}], ?INC_INDENT(State)),
+     enc_list([{Evs, fun enc_SecondRequestedEvent/2}], ?INC_INDENT(State)),
      ?RBRKT_INDENT(State)
+    ];
+enc_embedFirst(_RID, _Evs, State) ->
+%%     d("enc_embedFirst -> entry"),
+    [
+     ?EventsToken
     ].
 
-enc_SecondRequestedEvent(Val, State)
-  when record(Val, 'SecondRequestedEvent') ->
-    PkgdName = ?META_ENC(event, Val#'SecondRequestedEvent'.pkgdName),
+enc_SecondRequestedEvent(#'SecondRequestedEvent'{pkgdName    = N,
+						 streamID    = SID,
+						 evParList   = EPL,
+						 eventAction = EA}, 
+			 State) ->
+%%     d("enc_SecondRequestedEvent -> entry with"
+%%       "~n   N:   ~p"
+%%       "~n   SID: ~p"
+%%       "~n   EPL: ~p"
+%%       "~n   EA:  ~p", [N, SID, EPL, EA]),    
+    PkgdName = ?META_ENC(event, N),
     [
      enc_PkgdName(PkgdName, State),
      enc_opt_brackets(
        enc_list(
-	 [{[Val#'SecondRequestedEvent'.streamID], fun enc_eventStream/2},
-	  {Val#'SecondRequestedEvent'.evParList, fun enc_eventOther/2} |
-	  decompose_secondRequestedActions(Val#'SecondRequestedEvent'.eventAction)],
+	 [{[SID], fun enc_eventStream/2},
+	  {EPL, fun enc_eventOther/2} |
+	  decompose_secondRequestedActions(EA)],
 	 ?INC_INDENT(State)),
        State)
     ].
@@ -1837,6 +1922,8 @@ decompose_secondRequestedActions(asn1_NOVALUE) ->
     [];
 decompose_secondRequestedActions(Val)
   when record(Val, 'SecondRequestedActions') ->
+%%     d("decompose_secondRequestedActions -> entry with"
+%%       "~n   Val: ~p", [Val]),
     [
      {[Val#'SecondRequestedActions'.keepActive],
       fun enc_keepActive/2},
@@ -1886,6 +1973,8 @@ enc_SignalsDescriptor([], _State) ->
      ?SignalsToken
     ];
 enc_SignalsDescriptor(List, State) when list(List) ->
+%     d("enc_SignalsDescriptor -> entry with"
+%       "~n   List: ~p", [List]),
     [
      ?SignalsToken,
      ?LBRKT_INDENT(State),
@@ -1896,6 +1985,9 @@ enc_SignalsDescriptor(List, State) when list(List) ->
 enc_SignalRequest({'SignalRequest',Val}, State) ->
     enc_SignalRequest(Val, State);
 enc_SignalRequest({Tag, Val}, State) ->
+%     d("enc_SignalsDescriptor -> entry with"
+%       "~n   Tag: ~p"
+%       "~n   Val: ~p", [Tag, Val]),
     case Tag of
 	signal ->
 	    enc_Signal(Val, State);
@@ -2380,9 +2472,13 @@ enc_integer(Val, _State, Min, Max) ->
 %% the elements. Optional asn1_NOVALUE values are ignored.
 
 enc_list(List, State) ->
+%     d("enc_list -> entry"),
     enc_list(List, State, fun(S) -> ?COMMA_INDENT(S) end, false).
 
 enc_list([{Elems, ElemEncoder} | Tail], State, SepEncoder, NeedsSep) ->
+%     d("enc_list -> entry with"
+%       "~n   Elems:       ~p"
+%       "~n   ElemEncoder: ~p", [Elems, ElemEncoder]),
     case do_enc_list(Elems, State, ElemEncoder, SepEncoder, NeedsSep) of
 	[] ->
 	    enc_list(Tail, State, SepEncoder, NeedsSep);
@@ -2391,20 +2487,30 @@ enc_list([{Elems, ElemEncoder} | Tail], State, SepEncoder, NeedsSep) ->
 	     enc_list(Tail, State, SepEncoder, true)]
     end;
 enc_list([], _State, _SepEncoder, _NeedsSep) ->
+%     d("enc_list -> entry when done with []"),
     [];
 enc_list(asn1_NOVALUE, _State, _SepEncoder, _NeedsSep) ->
+%     d("enc_list -> entry when done with asn1_NOVALUE"),
     [];
 enc_list(A, B, C, D) ->
     error({invlid_list, A, B, C, D}).
 
 do_enc_list(asn1_NOVALUE, _State, _ElemEncoder, _SepEncoder, _NeedsSep) ->
+%     d("do_enc_list -> entry when done with asn1_NOVALUE"),
     [];
 do_enc_list([], _State, _ElemEncoder, _SepEncoder, _NeedsSep) ->
+%     d("do_enc_list -> entry when done with []"),
     [];
 do_enc_list([asn1_NOVALUE | T], State, ElemEncoder, SepEncoder, NeedsSep) ->
+%     d("do_enc_list -> entry with asn1_NOVALUE"),
     do_enc_list(T, State, ElemEncoder, SepEncoder, NeedsSep);
 do_enc_list([H | T], State, ElemEncoder, SepEncoder, NeedsSep)
   when function(ElemEncoder), function(SepEncoder) ->
+%     d("do_enc_list -> entry with"
+%       "~n   H:           ~p"
+%       "~n   NeedsSep:    ~p"
+%       "~n   ElemEncoder: ~p"
+%       "~n   SepEncoder:  ~p", [H, NeedsSep, ElemEncoder, SepEncoder]),
     case ElemEncoder(H, State) of
 	[] ->
 	    do_enc_list(T, State, ElemEncoder, SepEncoder, NeedsSep);
@@ -2475,14 +2581,15 @@ error(Reason) ->
 
 %% -------------------------------------------------------------------
 
-% d(F) ->
-%     d(F,[]).
-% d(F, A) ->
-%     d(get(dbg), F, A).
+%% d(F) ->
+%%     d(F,[]).
+%% d(F, A) ->
+%% %%    d(true, F, A).
+%%     d(get(dbg), F, A).
 
-% d(true, F, A) ->
-%     io:format("~p:" ++ F ++ "~n", [?MODULE | A]);
-% d(_, _, _) ->
-%     ok.
+%% d(true, F, A) ->
+%%     io:format("~p:" ++ F ++ "~n", [?MODULE | A]);
+%% d(_, _, _) ->
+%%     ok.
 
 

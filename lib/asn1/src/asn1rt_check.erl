@@ -354,5 +354,6 @@ dynamicsort_SET_components(ListOfEncCs) ->
 %% Res -> list()
 %% Sorts the elements in Arg in increasing size
 dynamicsort_SETOF(ListOfEncVal) ->
-    BinL = lists:map(fun(X) -> list_to_binary(X) end,ListOfEncVal),
+    BinL = lists:map(fun(L) when list(L) -> list_to_binary(L);
+			(B) -> B end,ListOfEncVal),
     lists:sort(BinL).

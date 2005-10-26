@@ -171,7 +171,7 @@ cookies(Url) ->
 %%                       {ok, State, Timeout} | ignore |{stop, Reason}
 %% Description: Initiates the httpc_manger process
 %%--------------------------------------------------------------------
-init([CookiesConf]) ->
+init([CookiesConf|Options]) ->
     process_flag(trap_exit, true),
     ets:new(httpc_manager_session_db, 
 	    [public, set, named_table, {keypos, #tcp_session.id}]),
@@ -271,7 +271,8 @@ handle_cast({set_options, Options}, State = #state{options = OldOptions}) ->
 		 cookies = http_util:key1search(Options, cookies, 
 						 OldOptions#options.cookies),
 		 ipv6 = http_util:key1search(Options, ipv6, 
-					     OldOptions#options.ipv6)
+					     OldOptions#options.ipv6),
+		 verbose = is_verbose(Options)
 		}, 
     {noreply, State#state{options = NewOptions}};
 
@@ -446,3 +447,9 @@ call(Msg, Timeout) ->
 
 cast(Msg) ->
    gen_server:cast(?MODULE, Msg).
+
+is_verbose(Ps) ->
+    check_param(verbose,Ps).
+
+check_param(Key,Ps) ->
+    lists:member(Key,Ps).

@@ -79,10 +79,8 @@
 	  %% data needed further on.
 	  caller = undefined, % term()     
 	  ip_v6_disabled,     % boolean()
-	  progress            % ignore | pid()	    
+	  progress = ignore   % ignore | pid()	    
 	 }).
-
-
 
 %%%=========================================================================
 %%%  API - CLIENT FUNCTIONS
@@ -369,7 +367,7 @@ append_chunk_start(Pid, RemoteFile) ->
 
 %%--------------------------------------------------------------------------
 %% send_chunk(Pid, Bin) -> ok | {error, elogin} | {error, enotbinary} 
-%%                       | {error, echunk} | {error, econn
+%%                       | {error, echunk} | {error, econn}
 %%      Pid = pid()
 %%	Bin = binary().
 %%
@@ -500,9 +498,17 @@ init([{client, ClientPid}, Flags]) ->
 		    dbg:p(all, [call]),
 		    case  is_debug(Flags) of 
 			true ->
-			    dbg:tp(ftp, [{'_', [], [{return_trace}]}]);
+			    dbg:tp(ftp, [{'_', [], [{return_trace}]}]),
+			    dbg:tp(ftp_response, [{'_', [], 
+						   [{return_trace}]}]),
+			    dbg:tp(ftp_progress, [{'_', [], 
+						   [{return_trace}]}]); 
 			false -> %trace
-			    dbg:tpl(ftp, [{'_', [], [{return_trace}]}])
+			    dbg:tpl(ftp, [{'_', [], [{return_trace}]}]),
+			    dbg:tpl(ftp_response, [{'_', [], 
+						    [{return_trace}]}]),
+			    dbg:tpl(ftp_progress, [{'_', [], 
+						    [{return_trace}]}])  
 		    end,
 		    #state{ldir = LDir};
 		false ->
@@ -592,7 +598,7 @@ handle_call({_, {cd, Dir}}, From,  #state{chunk = false}
 
 handle_call({_,{lcd, Dir}}, _From, #state{ldir = LDir0} = State) ->
     LDir = filename:absname(Dir, LDir0),
-    case file:read_file_info(LDir) of
+    case file:read_file_info(LDir) of %% FIX better check that LDir is a dir.
 	{ok, _ } ->
 	    {reply, ok, State#state{ldir = LDir}};
 	_  ->
@@ -810,6 +816,7 @@ handle_info({tcp_closed, Socket}, #state{dsock = Socket, data = Data,
     activate_ctrl_connection(State),
     {noreply, State#state{dsock = undefined, 
 			  caller = {handle_dir_result, Dir, Data},
+%			  data = <<?CR,?LF>>}};
 			  data = <<>>}};
 	    
 handle_info({tcp_error, Socket, Reason}, #state{dsock = Socket,
@@ -830,7 +837,7 @@ handle_info({tcp, Socket, Data}, #state{csock = Socket,
     case ftp_response:parse_lines(<<CtrlData/binary, Data/binary>>, 
 				  AccLines, LineStatus) of
 	{ok, Lines, NextMsgData} ->
-	    verbose(Lines, Verbose),
+	    verbose(Lines, Verbose, 'receive'),
 	    CtrlResult = ftp_response:interpret(Lines), 
 	    case Caller of
 		quote ->
@@ -849,12 +856,16 @@ handle_info({tcp, Socket, Data}, #state{csock = Socket,
 	    {noreply, State#state{ctrl_data = NewCtrlData}}
     end;
 
-handle_info({tcp_closed, Socket}, #state{csock = Socket} = State) ->    
-    {stop, ftp_server_close, State#state{csock = undefined}};
+handle_info({tcp_closed, Socket}, #state{csock = Socket}) ->  
+    %% If the server closes the control channel it is 
+    %% the expected behavior that connection process terminates.
+    exit(normal); %% User will get error message from terminate/2
 
 handle_info({tcp_error, Socket, Reason}, _) ->
     error_logger:error_report("tcp_error on socket: ~p  for reason: ~p~n", 
 			      [Socket, Reason]),
+    %% If tcp does not work the only option is to terminate,
+    %% this is the expected behavior under these circumstances.
     exit(normal); %% User will get error message from terminate/2
 
 %% Monitor messages - if the process owning the ftp connection goes
@@ -891,7 +902,8 @@ terminate(normal, State) ->
     progress_report(stop, State), 
     do_termiante({error, econn}, State);
 terminate(Reason, State) -> 
-    do_termiante({error, {connection_terminated, Reason}}, State).
+    error_logger:error_report("Ftp connection closed due to: ~p~n", [Reason]),
+    do_termiante({error, eclosed}, State).
 
 do_termiante(ErrorMsg, State) ->
     close_data_connection(State),
@@ -904,42 +916,8 @@ do_termiante(ErrorMsg, State) ->
     end,
     ok. 
 
-code_change(_OldVsn, State, [{new, '4.5.3'}]) ->
-    NewState = {state,
-                State#state.csock,
-                State#state.dsock,
-                State#state.verbose,
-                State#state.ldir,
-                State#state.type,
-                State#state.chunk,
-                State#state.mode,
-		State#state.timeout,
-		State#state.data,
-		State#state.ctrl_data,
-		State#state.owner,
-		State#state.client,
-		State#state.caller,
-		State#state.ip_v6_disabled,
-                ignore},
-    {ok, NewState};
-
-code_change(_OldVsn, State, [{old, '4.5.2'}]) ->
-    NewState = {state,
-		State#state.csock,
-                State#state.dsock,
-                State#state.verbose,
-                State#state.ldir,
-                State#state.type,
-                State#state.chunk,
-                State#state.mode,
-		State#state.timeout,
-		State#state.data,
-		State#state.ctrl_data,
-		State#state.owner,
-		State#state.client,
-		State#state.caller,
-		State#state.ip_v6_disabled},
-    {ok, NewState}.
+code_change(_, State, _) ->
+    {ok, State}.
 
 %%%=========================================================================
 %% Start/stop
@@ -1011,6 +989,7 @@ handle_ctrl_result({Status, Lines},
 %% Data connection setup passive mode 
 handle_ctrl_result({pos_compl, Lines}, #state{mode = passive,
 					      ip_v6_disabled = false,
+					      client=From,
 					      caller = 
 					      {setup_data_connection, 
 					       Caller},
@@ -1019,11 +998,17 @@ handle_ctrl_result({pos_compl, Lines}, #state{mode = passive,
 		   = State) ->
     [_, PortStr | _] =  lists:reverse(string:tokens(Lines, "|")),
     {ok, {IP, _}} = inet:peername(CSock),
-    {ok, Socket} = connect(IP, list_to_integer(PortStr), Timeout, State),
-    handle_caller(State#state{caller = Caller, dsock = Socket});
+    case connect(IP, list_to_integer(PortStr), Timeout, State) of
+	{ok, Socket} ->	       
+	    handle_caller(State#state{caller = Caller, dsock = Socket});
+	{error,Reason} ->
+	    gen_server:reply(From,{error,Reason}),
+	    {noreply,State#state{client = undefined, caller = undefined}}
+    end;
 
 handle_ctrl_result({pos_compl, Lines}, 
 		   #state{mode = passive, ip_v6_disabled = true,
+			  client=From,
 			  caller = {setup_data_connection, Caller}, 
 			  timeout = Timeout} = State) ->
     
@@ -1033,9 +1018,13 @@ handle_ctrl_result({pos_compl, Lines},
 	lists:splitwith(fun(?RIGHT_PAREN) -> false; (_) -> true end, Rest),
     [A1, A2, A3, A4, P1, P2] = lists:map(fun(X) -> list_to_integer(X) end,
 					 string:tokens(NewPortAddr, [$,])),
-    {ok, Socket} = connect({A1, A2, A3, A4}, (P1 * 256) + P2,
-			   Timeout, State),
-    handle_caller(State#state{caller = Caller, dsock = Socket});
+    case connect({A1, A2, A3, A4}, (P1 * 256) + P2, Timeout, State) of
+	{ok,Socket} ->
+	    handle_caller(State#state{caller = Caller, dsock = Socket});
+	{error,Reason} ->
+	    gen_server:reply(From,{error,Reason}),
+	    {noreply,State#state{client = undefined, caller = undefined}}
+    end;
 
 %% FTP server does not support passive mode try to fallback on active mode
 handle_ctrl_result(_, #state{mode = passive, caller = {setup_data_connection, 
@@ -1062,6 +1051,7 @@ handle_ctrl_result({Status, _},
     ctrl_result_response(Status, State, {error, euser});
 
 %%--------------------------------------------------------------------------
+%% Print current working directory
 handle_ctrl_result({pos_compl, Lines}, #state{caller = pwd, 
 					      client = From} = State) ->
     Dir = pwd_result(Lines),
@@ -1069,7 +1059,7 @@ handle_ctrl_result({pos_compl, Lines}, #state{caller = pwd,
     {noreply, State#state{client = undefined, caller = undefined}};
 
 %%--------------------------------------------------------------------------
-%% Directory listing handling 
+%% Directory listing 
 handle_ctrl_result({pos_prel, _}, #state{caller = {dir, Dir}} = State) ->
     NewState = accept_data_connection(State),
     activate_data_connection(NewState),
@@ -1081,7 +1071,8 @@ handle_ctrl_result({pos_compl, _}, #state{caller = {handle_dir_result, Dir,
     case Dir of
 	"" -> % Current directory
 	    gen_server:reply(From, {ok, Data}),
-	    {noreply, State#state{client = undefined, caller = undefined}};
+	    {noreply, State#state{client = undefined, 
+				  caller = undefined}};
 	_ ->
 	    %% If there is only one line it might be a directory with on
 	    %% file but it might be an error message that the directory
@@ -1091,7 +1082,7 @@ handle_ctrl_result({pos_compl, _}, #state{caller = {handle_dir_result, Dir,
 	    %% an error string is allowed by the FTP RFC. 
 	    case lists:dropwhile(fun(?CR) -> false;(_) -> true end, 
 				 binary_to_list(Data)) of
-		[?CR, ?LF] ->	
+		L when L == [?CR, ?LF]; L == [] ->	
 		    send_ctrl_message(State, mk_cmd("PWD", [])),
 		    activate_ctrl_connection(State),
 		    {noreply, 
@@ -1115,6 +1106,11 @@ handle_ctrl_result({Status, _},
 		   #state{caller = {handle_dir_data, _, _}} = State) ->
     ctrl_result_response(Status, State, {error, epath});
 
+handle_ctrl_result(S={_Status, _},
+		   #state{caller = {handle_dir_result, _, _}} = State) ->
+    %% OTP-5731, macosx
+    ctrl_result_response(S, State, {error, epath});
+
 handle_ctrl_result({pos_compl, _},
 		   #state{caller = {handle_dir_data_second_phase, OldDir, 
 				    DirData}} = State) ->
@@ -1133,7 +1129,11 @@ handle_ctrl_result(_, #state{caller = {handle_dir_data_third_phase, DirData},
 handle_ctrl_result({Status, _}, #state{caller = cd} = State) ->
     ctrl_result_response(Status, State, {error, epath});
 
+handle_ctrl_result(Status={epath, _}, #state{caller = {dir,_}} = State) ->
+     ctrl_result_response(Status, State, {error, epath});
+
 %%--------------------------------------------------------------------------
+%% File renaming
 handle_ctrl_result({pos_interm, _}, #state{caller = {rename, NewFile}} 
 		   = State) ->
     send_ctrl_message(State, mk_cmd("RNTO ~s", [NewFile])),
@@ -1149,6 +1149,7 @@ handle_ctrl_result({Status, _},
     ctrl_result_response(Status, State, {error, epath});
 
 %%--------------------------------------------------------------------------
+%% File handling - recv_bin
 handle_ctrl_result({pos_prel, _}, #state{caller = recv_bin} = State) ->
     NewState = accept_data_connection(State),
     activate_data_connection(NewState),
@@ -1160,11 +1161,17 @@ handle_ctrl_result({pos_compl, _}, #state{caller = {recv_bin, Data},
     close_data_connection(State),
     {noreply, State#state{client = undefined, caller = undefined}};
 
+handle_ctrl_result({Status, _}, #state{caller = recv_bin} = State) ->
+    close_data_connection(State),
+    ctrl_result_response(Status, State#state{dsock = undefined}, 
+			 {error, epath});
+
 handle_ctrl_result({Status, _}, #state{caller = {recv_bin, _}} = State) ->
     close_data_connection(State),
     ctrl_result_response(Status, State#state{dsock = undefined}, 
 			 {error, epath});
 %%--------------------------------------------------------------------------
+%% File handling - start_chunk_transfer
 handle_ctrl_result({pos_prel, _}, #state{client = From,
 					 caller = start_chunk_transfer}
 		   = State) ->
@@ -1173,6 +1180,7 @@ handle_ctrl_result({pos_prel, _}, #state{client = From,
     {noreply, NewState#state{chunk = true, client = undefined,
 			     caller = undefined}};
 %%--------------------------------------------------------------------------
+%% File handling - recv_file
 handle_ctrl_result({pos_prel, _}, #state{caller = {recv_file, _}} = State) ->
     NewState = accept_data_connection(State),
     activate_data_connection(NewState),
@@ -1184,12 +1192,12 @@ handle_ctrl_result({Status, _}, #state{caller = {recv_file, Fd}} = State) ->
     ctrl_result_response(Status, State#state{dsock = undefined}, 
 			 {error, epath});
 %%--------------------------------------------------------------------------
+%% File handling - transfer_*
 handle_ctrl_result({pos_prel, _}, #state{caller = {transfer_file, Fd}} 
 		   = State) ->
     NewState = accept_data_connection(State),
     send_file(Fd, NewState); 
 
-%%--------------------------------------------------------------------------
 handle_ctrl_result({pos_prel, _}, #state{caller = {transfer_data, Bin}} 
 		   = State) ->
     NewState = accept_data_connection(State),
@@ -1199,18 +1207,21 @@ handle_ctrl_result({pos_prel, _}, #state{caller = {transfer_data, Bin}}
     {noreply, NewState#state{caller = transfer_data_second_phase,
 			     dsock = undefined}};
 %%--------------------------------------------------------------------------
+%% Default
 handle_ctrl_result({Status, Lines}, #state{client = From} = State) 
   when From =/= undefined ->
     ctrl_result_response(Status, State, {error, Lines}).
 
 %%--------------------------------------------------------------------------
-%% Help function to handle_ctrl_result
+%% Help functions to handle_ctrl_result
+%%--------------------------------------------------------------------------
 ctrl_result_response(pos_compl, #state{client = From} = State, _)  ->
     gen_server:reply(From, ok),
     {noreply, State#state{client = undefined, caller = undefined}};
 
 ctrl_result_response(Status, #state{client = From} = State, _) when
 Status == etnospc; Status == epnospc; Status == efnamena; Status == econn ->
+%Status == etnospc; Status == epnospc; Status == econn ->
     gen_server:reply(From, {error, Status}),
     {stop, normal, {error, Status}, State#state{client = undefined}};
 
@@ -1218,8 +1229,6 @@ ctrl_result_response(_, #state{client = From} = State, ErrorMsg) ->
     gen_server:reply(From, ErrorMsg),
     {noreply, State#state{client = undefined, caller = undefined}}.
 
-%%--------------------------------------------------------------------------
-%% Help functions to handle_ctrl_result
 %%--------------------------------------------------------------------------
 handle_caller(#state{caller = {dir, Dir, Len}} = State) ->
     Cmd = case Len of
@@ -1285,12 +1294,6 @@ setup_ctrl_connection(Host, Port, Timeout, State)->
 	    {stop, normal, State#state{client = undefined}}
     end.
 
-
-%% Data connection already set up
-%%setup_data_connection(#state{dsock = DSock} = State) 
-%%  when DSock =/= undefined ->
-%%    handle_caller(State);
-
 setup_data_connection(#state{mode   = active, 
 			     caller = Caller, 
 			     csock  = CSock} = State) ->    
@@ -1335,16 +1338,26 @@ setup_data_connection(#state{mode = passive, ip_v6_disabled = true,
     activate_ctrl_connection(State),
     {noreply, State#state{caller = {setup_data_connection, Caller}}}.
 
-
+connect(Host={_,_,_,_}, Port, TimeOut, _) ->
+    gen_tcp:connect(Host, Port,[binary, {packet, 0}, {active, false}] ,
+		    TimeOut);
+connect(Host={_,_,_,_,_,_,_,_}, Port, TimeOut, #state{ip_v6_disabled = false}) ->
+    gen_tcp:connect(Host, Port,
+		    [binary, {packet, 0}, {active, false}, inet6],
+		    TimeOut);    
 connect(Host, Port, TimeOut, #state{ip_v6_disabled = false}) ->
     {Opts, NewHost} = 
-	case catch (inet:getaddr(Host, inet6)) of
-	    %% If an ipv4-ipv6-compatible address is returned 
+	case (inet:getaddr(Host, inet6)) of
+	    %% If an ipv4-mapped ipv6 address is returned 
 	    %% use ipv4 directly as some ftp-servers does not
 	    %% handle "ip4-ipv6-compatiblity" mode well!
-	    {ok, {0, 0, 0, 0, _, _, _, _}} ->
-		{ok, NewIP} = inet:getaddr(Host, inet),
-		{[binary, {packet, 0}, {active, false}], NewIP};
+	    {ok, IP = {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
+		case inet:getaddr(Host, inet) of
+		    {ok,NewIP} -> 
+			{[binary, {packet, 0}, {active, false}], NewIP};
+		    _Error ->
+			{[binary, {packet, 0}, {active, false}, inet6], IP}
+		end;
 	    {ok, IP} ->
 		{[binary, {packet, 0}, {active, false}, inet6], IP};
 	    {error, _} ->
@@ -1365,7 +1378,9 @@ accept_data_connection(#state{mode = active,
 accept_data_connection(#state{mode = passive} = State) ->
     State.
 
-send_ctrl_message(#state{csock = Socket}, Message) ->
+send_ctrl_message(#state{csock = Socket,verbose=Verbose}, Message) ->
+%    io:format("Sending: ~p~n",[Message]),
+    verbose(lists:flatten(Message),Verbose,send),
     send_message(Socket, Message).
 
 send_data_message(#state{dsock = Socket}, Message) ->
@@ -1378,11 +1393,17 @@ send_message(Socket, Message) ->
 	{error, Reason} ->
 	    error_logger:error_report("gen_tcp:send/2 failed for "
 				      "reason ~p~n", [Reason]),
+	    %% If tcp does not work the only option is to terminate,
+	    %% this is the expected behavior under these circumstances.
 	    exit(normal) %% User will get error message from terminate/2
     end.
 
+activate_ctrl_connection(#state{csock = Socket, ctrl_data = {<<>>, _, _}}) ->
+    activate_connection(Socket);
 activate_ctrl_connection(#state{csock = Socket}) ->
-    activate_connection(Socket).
+    %% We have already received at least part of the next control message,
+    %% that has been saved in ctrl_data, process this first.
+    self() ! {tcp, Socket, <<>>}.
 
 activate_data_connection(#state{dsock = Socket}) ->
     activate_connection(Socket).
@@ -1448,10 +1469,15 @@ file_write(Bytes, Fd) ->
 
 call(GenServer, Msg, Format) ->
     call(GenServer, Msg, Format, infinity).
-call(GenServer, Msg, Format, Timeout) ->
-    case gen_server:call(GenServer, {self(), Msg}, Timeout) of
+call(GenServer, Msg, Format, Timeout) ->   
+
+    Result = (catch gen_server:call(GenServer, {self(), Msg}, Timeout)),
+
+    case Result of
 	{ok, Bin} when binary(Bin), Format == string ->
 	    {ok, binary_to_list(Bin)};
+	{'EXIT', _} ->
+	    {error, eclosed};
 	Result ->
 	    Result
     end.
@@ -1500,10 +1526,17 @@ check_option(Pred, Value, Default) ->
 	    Default
     end.
 
-verbose(Lines, true) ->
+verbose(Lines, true, Direction) ->
+    DirStr =
+	case Direction of
+	    send ->
+		"Sending: ";
+	    _ ->
+		"Receiving: "
+	end,
     Str = string:strip(string:strip(Lines, right, ?LF), right, ?CR),
-    erlang:display(Str);
-verbose(_, false) ->
+    erlang:display(DirStr++Str);
+verbose(_, false,_) ->
     ok.
 
 ensure_started() ->

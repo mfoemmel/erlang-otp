@@ -1672,12 +1672,17 @@ bs_function({function,Name,Arity,CLabel,Asm0}=Func) ->
     end.
 
 %%%
-%%% Pass 1: Found out which bs_restore's that are needed. For now we assume
-%%% that a bs_restore is needed unless it is directly preceeded by a bs_save.
+%%% Pass 1: Found out which bs_restore's that are needed. We are very
+%%% conservative of which bs_restore's are needed.
 %%%
 
 bs_needed([{bs_save,Name},{bs_restore,Name}|T], N, _BsUsed, Dict) ->
     bs_needed(T, N, true, Dict);
+%% XXX NOT now - breaks hipe.
+%% bs_needed([{bs_save,Name},{test,is_eq_exact,_,_},
+%% 	   {bs_restore,Name}|T], N, _BsUsed, Dict) ->
+%%     %% This instruction sequence is common. No bs_restore/1 is needed here.
+%%     bs_needed(T, N, true, Dict);
 bs_needed([{bs_save,_Name}|T], N, _BsUsed, Dict) ->
     bs_needed(T, N, true, Dict);
 bs_needed([{bs_restore,Name}|T], N, _BsUsed, Dict) ->

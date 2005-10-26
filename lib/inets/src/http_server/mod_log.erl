@@ -21,9 +21,7 @@
 -export([report_error/2]).
 
 -include("httpd.hrl").
-
 -define(VMODULE,"LOG").
--include("httpd_verbosity.hrl").
 
 %% do
 
@@ -111,7 +109,8 @@ transfer_log(Info,RFC931,AuthUser,Date,StatusCode,Bytes) ->
 	TransferLog ->
 	    {_PortNumber, RemoteHost} = 
 		(Info#mod.init_data)#init_data.peername,
-	    case (catch io:format(TransferLog, "~s ~s ~s [~s] \"~s\" ~w ~w~n",
+	    case (catch io:format(TransferLog, 
+				  "~s ~s ~s [~s] \"~s\" ~w ~w~n",
 				  [RemoteHost, RFC931, AuthUser, 
 				   Date, Info#mod.request_line,
 				   StatusCode, Bytes])) of

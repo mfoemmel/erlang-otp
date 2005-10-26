@@ -97,7 +97,9 @@
  * synchronization.
  *
  */
-
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 #ifdef __WIN32__
 #include "esock_winsock.h"
 #endif
@@ -134,6 +136,7 @@
 #include "esock_ssl.h"
 #include "esock_osio.h"
 #include "esock_posix_str.h"
+#include "esock_poll.h"
 
 #define MAJOR_VERSION   2
 #define MINOR_VERSION   0
@@ -155,6 +158,10 @@
 #define JOINED_STATE_INVALID(cp) (!(PROXY_TO_SSL_VALID(cp)) && \
 				!(SSL_TO_PROXY_VALID(cp)))
 static int loop(void);
+static int set_poll_conns(Connection *cp, EsockPoll *ep, int verbose);
+static Connection *next_polled_conn(Connection *cp, Connection **cpnext,
+				    EsockPoll *ep, int set_wq_fds);
+
 static void leave_joined_state(Connection *cp);
 static void do_shutdown(Connection *cp);
 static void close_and_remove_connection(Connection *cp);
@@ -178,18 +185,15 @@ static void ensure_write_queue(WriteQueue *wq, int size);
 static void clean_up(void);
 
 static Connection  *connections = NULL;
-static fd_set readmask, writemask, exceptmask;
 static int num_sock_fds;	/* On UNIX all file descriptors */
 static Proxy *proxies = NULL;
 static int proxy_listensock = INVALID_FD;
 static int proxy_listenport = 0;
-static int proxy_backlog = 5;
+static int proxy_backlog = 128;
 static int proxysock_last_err = 0;
 static int proxysock_err_cnt = 0;
 static char rwbuf[RWBUFLEN];
 static unsigned char *ebuf = NULL; /* Set by read_ctrl() */
-static unsigned long one = 1;
-static struct timeval timeout = {SELECT_TIMEOUT, 0};
 
 static char *connstr[] = {
     "STATE_NONE", 
@@ -349,6 +353,7 @@ int main(int argc, char **argv)
 
 static int loop(void)
 {
+    EsockPoll pollfd;
     FD fd, msgsock, listensock, connectsock, proxysock;
     int cc, wc, fport, lport, pport, length, backlog, intref, op;
     int value;
@@ -358,59 +363,36 @@ static int loop(void)
     unsigned char *cert, *bin;
     int certlen, binlen;
     struct sockaddr_in iserv_addr;
-    int sret = 1, j;
+    int sret = 1;
     Connection *cp, *cpnext, *newcp;
     Proxy *pp;
-    struct timeval tv;
     time_t last_time = 0, now = 0;
     int set_wq_fds;
 
-    while(1) {
+    esock_poll_init(&pollfd);
 
-	FD_ZERO(&readmask);
-	FD_ZERO(&writemask);
-	FD_ZERO(&exceptmask);
-	FD_SET(local_read_fd, &readmask);
-	FD_SET(proxy_listensock, &readmask);
-	tv = timeout;		/* select() might change tv */
+    while(1) {
+	esock_poll_zero(&pollfd);
+	esock_poll_fd_set_read(&pollfd, proxy_listensock);
+	esock_poll_fd_set_read(&pollfd, local_read_fd);
+
 	set_wq_fds = 0;
 
 	if (sret)		/* sret == 1 the first time. */
 	    DEBUGF(("==========LOOP=============\n"));
 
-	cc = esock_ssl_set_masks(connections, &readmask, &writemask, 
-				 &exceptmask, sret) + 1;
+	cc = set_poll_conns(connections, &pollfd, sret) + 1;
+
 	if (sret) {
 	    print_connections();
-	    DEBUGF(("Before select: %d descriptor%s (total %d)\n", cc, 
-		    (cc == 1) ? "" : "s", num_sock_fds));
+	    DEBUGF(("Before poll/select: %d descriptor%s (total %d)\n",
+		    cc, (cc == 1) ? "" : "s", num_sock_fds));
 	}
 
-	sret = select(FD_SETSIZE, &readmask, &writemask, &exceptmask, &tv);
+	sret = esock_poll(&pollfd, SELECT_TIMEOUT);
 	if (sret < 0) {
-	    DEBUGF(("select error: %s\n", psx_errstr()));
+	    DEBUGF(("select/poll error: %s\n", psx_errstr()));
 	    continue;
-	} else if (sret == 0) {
-	    FD_ZERO(&readmask);
-	    FD_ZERO(&writemask);
-	    FD_ZERO(&exceptmask);
-	}
-
-	if (sret) {
-	    DEBUGF(("After select: %d descriptor%s: ", sret, 
-		    (sret == 1) ? "" : "s"));
-#ifndef __WIN32__
-	    for (j = 0; j < FD_SETSIZE; j++) {
-		if (FD_ISSET(j, &readmask) || 
-		    FD_ISSET(j, &writemask) ||
-		    FD_ISSET(j, &exceptmask))
-		    DEBUGF(("%d ", j));
-	    }
-#else
-	    /* XXX Make this better */
-	    DEBUGF(("(not shown)"));
-#endif
-	    DEBUGF(("\n"));
 	}
 	
 	time(&now);
@@ -424,7 +406,8 @@ static int loop(void)
 	 * is later used as a reference for joining a proxy 
 	 * connection with a network connection.
 	 */
-	if (FD_ISSET(proxy_listensock, &readmask)) {
+
+	if (esock_poll_fd_isset_read(&pollfd, proxy_listensock)) {
 	    while (1) {
 		length = sizeof(iserv_addr);
 		proxysock = do_accept(proxy_listensock, 
@@ -454,6 +437,7 @@ static int loop(void)
 			safe_close(proxysock);
 		    } else {
 			/* Add to pending proxy connections */
+			SET_NONBLOCKING(proxysock);
 			pp = new_proxy(proxysock);
 			pp->peer_port = ntohs(iserv_addr.sin_port);
 			DEBUGF(("-----------------------------------\n"));
@@ -468,8 +452,7 @@ static int loop(void)
 	/* 
 	 * Read control messages from Erlang
 	 */
-	if (FD_ISSET(local_read_fd, &readmask)) {  
-
+	if (esock_poll_fd_isset_read(&pollfd, local_read_fd)) {  
 	    cc = read_ctrl(&ebuf);
 	    if ( cc < 0 ) {
 		DEBUGF(("Read loop -1 or 0\n"));
@@ -823,12 +806,10 @@ static int loop(void)
 	/* Note: We may remove the current connection (cp). Thus we
 	 * must be careful not to read cp->next after cp has been
 	 * removed.  */
-	for (cp = esock_ssl_read_masks(connections, &cpnext, &readmask, 
-				       &writemask, &exceptmask, set_wq_fds); 
+	for (cp = next_polled_conn(connections, &cpnext, &pollfd, set_wq_fds); 
 	     cp != NULL; 
-	     cp = esock_ssl_read_masks(cpnext, &cpnext, &readmask, 
-				       &writemask, &exceptmask, set_wq_fds)
-	    ) {
+	     cp = next_polled_conn(cpnext, &cpnext, &pollfd, set_wq_fds)
+	     ) {
 
 	    switch(cp->state) {
 
@@ -911,7 +892,7 @@ static int loop(void)
 		/* 
 		 * Reading from Proxy, writing to SSL 
 		 */
-		if (FD_ISSET(cp->fd, &writemask)) {
+		if (esock_poll_fd_isset_write(&pollfd, cp->fd)) {
 		    /* If there is a write queue, write to ssl only */
 		    if (cp->wq.len > 0) { 
 			/* The write retry semantics of SSL_write in
@@ -965,7 +946,7 @@ static int loop(void)
 				cp->wq.len = 0;
 			}
 		    }
-		} else if (FD_ISSET(cp->proxy->fd, &readmask)) {
+		} else if (esock_poll_fd_isset_read(&pollfd, cp->proxy->fd)) {
 		    /* Read from proxy and write to SSL */
 		    DEBUGF(("-----------------------------------\n"));
 		    DEBUGF(("JOINED: reading from proxy, "
@@ -1016,9 +997,9 @@ static int loop(void)
 			    cp->wq.len = cc - wc;
 			    cp->wq.offset = 0;
 			} 
-		    } else if (cc == 0) {
-			/* EOF proxy */
-			DEBUGF(("proxy eof\n"));
+		    } else {
+			/* EOF proxy or error */
+			DEBUGF(("proxy eof or error\n"));
 			cp->proxy->eof = 1;
 			if (cp->wq.len == 0) {
 			    esock_ssl_shutdown(cp);
@@ -1028,16 +1009,12 @@ static int loop(void)
 			    leave_joined_state(cp);
 			    break;
 			}
-		    } else {
-			/* This should not happen */
-			DEBUGF(("ERROR: proxy readmask set, cc < 0,  fd = %d"
-			       " proxyfd = %d\n", cp->fd, cp->proxy->fd));
 		    }
 		}
 		/* 
 		 * Reading from SSL, writing to proxy 
 		 */
-		if (FD_ISSET(cp->proxy->fd, &writemask)) {
+		if (esock_poll_fd_isset_write(&pollfd, cp->proxy->fd)) {
 		    /* If there is a write queue, write to proxy only */
 		    if (cp->proxy->wq.len > 0) {
 			DEBUGF(("-----------------------------------\n"));
@@ -1067,7 +1044,7 @@ static int loop(void)
 				cp->proxy->wq.len = 0;
 			}
 		    }
-		} else if (FD_ISSET(cp->fd, &readmask)) {
+		} else if (esock_poll_fd_isset_read(&pollfd, cp->fd)) {
 		    /* Read from SSL and write to proxy */
 		    DEBUGF(("-----------------------------------\n"));
 		    DEBUGF(("JOINED: read from ssl fd = %d\n",
@@ -1151,7 +1128,7 @@ static int loop(void)
 		length = sizeof(iserv_addr);
 		if (
 #ifdef __WIN32__
-		    FD_ISSET(connectsock, &exceptmask)
+		    esock_poll_fd_isset_exception(&pollfd, connectsock)
 #else
 		    getpeername(connectsock, (struct sockaddr *)&iserv_addr, 
 				&length) < 0
@@ -1200,6 +1177,108 @@ static int loop(void)
 	    }
 	}
    }
+}
+
+static int set_poll_conns(Connection *cp, EsockPoll *ep, int verbose)
+{
+    int i = 0;
+    
+    if (verbose)
+	DEBUGF(("MASKS SET FOR FD: "));
+    while (cp) {
+	switch (cp->state) {
+	case ESOCK_ACTIVE_LISTENING:
+	    if (verbose)
+		DEBUGF(("%d (read) ", cp->fd));
+	    esock_poll_fd_set_read(ep, cp->fd);
+	    break;
+	case ESOCK_WAIT_CONNECT:
+	    if (verbose)
+		DEBUGF(("%d (write) ", cp->fd));
+	    esock_poll_fd_set_write(ep, cp->fd);
+#ifdef __WIN32__
+	    esock_poll_fd_set_exception(ep, cp->fd); /* Failure shows in exceptions */
+#endif
+	    break;
+	case ESOCK_SSL_CONNECT:
+	case ESOCK_SSL_ACCEPT:
+	    if (cp->ssl_want == ESOCK_SSL_WANT_READ) {
+		if (verbose)
+		    DEBUGF(("%d (read) ", cp->fd));
+		esock_poll_fd_set_read(ep, cp->fd);
+	    } else if (cp->ssl_want == ESOCK_SSL_WANT_WRITE) {
+		if (verbose)
+		    DEBUGF(("%d (write) ", cp->fd));
+		esock_poll_fd_set_write(ep, cp->fd);
+	    }
+	    break;
+	case ESOCK_JOINED:
+	    if (!cp->bp) {
+		if (cp->wq.len) {
+		    if (verbose)
+			DEBUGF(("%d (write) ", cp->fd));
+		    esock_poll_fd_set_write(ep, cp->fd);
+		} else if (!cp->proxy->eof) {
+		    if (verbose)
+			DEBUGF(("%d (read) ", cp->proxy->fd));
+		    esock_poll_fd_set_read(ep, cp->proxy->fd);
+		}
+	    }
+	    if (!cp->proxy->bp) {
+		if (cp->proxy->wq.len) {
+		    if (verbose)
+			DEBUGF(("%d (write) ", cp->proxy->fd));
+		    esock_poll_fd_set_write(ep, cp->proxy->fd);
+		} else if (!cp->eof) {
+		    if (verbose)
+			DEBUGF(("%d (read) ", cp->fd));
+		    esock_poll_fd_set_read(ep, cp->fd);
+		}
+	    }
+	    break;
+	case ESOCK_SSL_SHUTDOWN:
+	    if (cp->ssl_want == ESOCK_SSL_WANT_READ) {
+		if (verbose)
+		    DEBUGF(("%d (read) ", cp->fd));
+		esock_poll_fd_set_read(ep, cp->fd);
+	    } else if (cp->ssl_want == ESOCK_SSL_WANT_WRITE) {
+		if (verbose)
+		    DEBUGF(("%d (write) ", cp->fd));
+		esock_poll_fd_set_write(ep, cp->fd);
+	    }
+	    break;
+	default:
+	    break;
+	}
+	i++;
+	cp = cp->next;
+    }
+    if (verbose)
+	DEBUGF(("\n"));
+    return i;
+}
+
+
+static Connection *next_polled_conn(Connection *cp, Connection **cpnext,
+				    EsockPoll *ep, int set_wq_fds)
+{
+    while(cp) {
+	if (esock_poll_fd_isset_read(ep, cp->fd) ||
+	    (cp->proxy && esock_poll_fd_isset_read(ep, cp->proxy->fd)) ||
+	    (esock_poll_fd_isset_write(ep, cp->fd)) ||
+	    (cp->proxy && esock_poll_fd_isset_write(ep, cp->proxy->fd))
+#ifdef __WIN32__
+	    || esock_poll_fd_isset_exception(ep, cp->fd) /* Connect failure in WIN32 */
+#endif
+	    || (set_wq_fds && (cp->wq.len || 
+			       (cp->proxy && cp->proxy->wq.len)))) {
+	    *cpnext = cp->next;
+	    return cp;
+	}
+	cp = cp->next;
+    }
+    *cpnext = NULL;
+    return NULL;
 }
 
 static void leave_joined_state(Connection *cp)
@@ -1456,6 +1535,7 @@ static FD do_connect(char *lipstring, int lport, char *fipstring, int fport)
 
 static FD do_listen(char *ipstring, int lport, int backlog, int *aport)
 {
+    static int one = 1;		/* Type must be int, not long */
     struct sockaddr_in sock_addr;
     long inaddr;
     int length;
@@ -1670,12 +1750,14 @@ static void remove_proxy(Proxy *proxy)
 static int check_num_sock_fds(FD fd) 
 {
     num_sock_fds++;		/* fd is valid */
+#ifdef USE_SELECT
     if (num_sock_fds > FD_SETSIZE) {
 	num_sock_fds--;
 	sock_set_errno(ERRNO_MFILE);
 	safe_close(fd);
 	return -1;
     }
+#endif
     return 0;
 }
 

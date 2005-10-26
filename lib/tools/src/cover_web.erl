@@ -554,7 +554,7 @@ parse_options(Options)->
 	{ok,Tokens,_Line} ->
 	    case erl_parse:parse_exprs(Tokens) of
 		{ok,X}->
-		    case lists:map({erl_parse,normalise},X) of
+		    case lists:map(fun erl_parse:normalise/1, X) of
 			[List] when is_list(List) -> List;
 			List -> List
 		    end;

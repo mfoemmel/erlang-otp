@@ -126,9 +126,6 @@ mk_bodies([R|Clauses], Args, Acc) ->
 		  Bs -> [mnemosyne_unify:instantiate(Body,Bs) | Acc]
 	      end);
 
-mk_bodies([L|Ls], Args, Acc) when list(L) ->
-    mk_bodies(Ls, Args, mk_bodies(L,Args,Acc));
-
 mk_bodies([], _, Acc) ->
     Acc.
 

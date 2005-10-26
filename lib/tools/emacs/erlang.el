@@ -465,7 +465,8 @@ there is no attempt to create the menu.")
 (defvar erlang-man-dirs
   '(("Man - Commands" "/man/man1" t)
     ("Man - Modules" "/man/man3" t)
-    ("Man - Unsupported" "/uc/man/man3" t))
+    ("Man - Files" "/man/man4" t)
+    ("Man - Applications" "/man/man6" t))
   "*The man directories displayed in the Erlang menu.
 
 Each item in the list should be a list with three elements, the first
@@ -2549,7 +2550,7 @@ This function is aware of imported functions."
   (if (or (null module) (string= module ""))
       (error "No Erlang module name given"))
   (let ((dir-list erlang-man-dirs)
-	(pat (concat "\\b" (regexp-quote module) "\\.[^.]$"))
+	(pat (concat "/" (regexp-quote module) "\\.[^.]$"))
 	(file nil)
 	file-list)
     (while (and dir-list (null file))

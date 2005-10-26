@@ -348,9 +348,13 @@ valfun_1({catch_end,Reg}, #vst{current=#st{ct=[Fail|Fails]}=St0}=Vst0) ->
 	Type ->
 	    error({bad_type,Type})
     end;
-valfun_1({try_end,Reg}, #vst{current=#st{ct=[Fail|Fails]}=St}=Vst) ->
-    case get_special_y_type(Reg, Vst) of
+valfun_1({try_end,Reg}, #vst{current=#st{ct=[Fail|Fails]}=St}=Vst0) ->
+    case get_special_y_type(Reg, Vst0) of
 	{trytag,Fail} ->
+	    Vst = case Fail of
+		      [FailLabel] -> branch_state(FailLabel, Vst0);
+		      _ -> Vst0
+		  end,
 	    set_type_reg(initialized_ct, Reg, 
 			 Vst#vst{current=St#st{ct=Fails,fls=undefined}});
 	Type ->
@@ -604,7 +608,15 @@ val_dsetel(_, #vst{current=#st{setelem=true}=St}=Vst) ->
     Vst#vst{current=St#st{setelem=false}};
 val_dsetel(_, Vst) -> Vst.
 
+kill_state(#vst{current=#st{ct=[[Fail]|_]}}=Vst) when is_integer(Fail) ->
+    %% There is an active catch. Make sure that we merge the state into
+    %% the catch label before clearing it, so that that we can be sure
+    %% that the label gets a state.
+    kill_state_1(branch_state(Fail, Vst));
 kill_state(Vst) ->
+    kill_state_1(Vst).
+
+kill_state_1(Vst) ->
     Vst#vst{current=none}.
 
 %% A "plain" call.

@@ -182,6 +182,23 @@ am_atom_put(byte* name, int len)
     return make_atom(index_put(&atom_table, (void*) &a));
 }
 
+int
+erts_atom_get(byte* name, int len, Eterm* ap)
+{
+    Atom a;
+    int i;
+
+    a.len = len;
+    a.name = name;
+    i = index_get(&atom_table, (void*) &a);
+    if (i < 0) {
+	return 0;
+    } else {
+	*ap = make_atom(i);
+	return 1;
+    }
+}
+
 void
 init_atom_table(void)
 {

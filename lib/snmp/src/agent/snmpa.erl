@@ -36,7 +36,7 @@
 	 int_to_enum/2, int_to_enum/3, 
 	 enum_to_int/2, enum_to_int/3,
 
-	 info/0, info/1, 
+	 info/0, info/1, old_info_format/1, 
 	 load_mibs/1, load_mibs/2, 
 	 unload_mibs/1, unload_mibs/2, 
 	 which_mibs/0, which_mibs/1, 
@@ -180,9 +180,19 @@ get_next(Agent, Vars) -> snmpa_agent:get_next(Agent, Vars).
 get_next(Agent, Vars, Context) -> snmpa_agent:get_next(Agent, Vars, Context).
 
 
-info() -> info(snmp_master_agent).
+info()      -> info(snmp_master_agent).
 info(Agent) -> snmpa_agent:info(Agent).
 
+old_info_format(Info) when list(Info) ->
+    {value, Vsns}         = lists:keysearch(vsns,            1, Info),
+    {value, {_, MibInfo}} = lists:keysearch(mib_server,      1, Info),
+    {value, SAa}          = lists:keysearch(subagents,       1, MibInfo),
+    {value, LoadedMibs}   = lists:keysearch(loaded_mibs,     1, MibInfo),
+    {value, TreeSz}       = lists:keysearch(tree_size_bytes, 1, MibInfo),
+    {value, ProcMem}      = lists:keysearch(process_memory,  1, MibInfo),
+    {value, DbMem}        = lists:keysearch(db_memory,       1, MibInfo),
+    [Vsns, SAa, LoadedMibs, TreeSz, ProcMem, DbMem].
+    
 
 %% -
 

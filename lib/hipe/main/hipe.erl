@@ -1343,6 +1343,7 @@ opt_keys() ->
      sparc_prop,
      sparc_schedule,
      sparc_rename,
+     spillmin_color,
      target,
      time,
      timeout,
@@ -1357,6 +1358,7 @@ opt_keys() ->
      use_clusters,
      use_jumptable,
      verbose,
+     %% verbose_spills,
      x87].
 
 %% Definitions: 
@@ -1379,7 +1381,7 @@ o1_opts() ->
 o2_opts() ->
   Common = [icode_ssa_const_prop, icode_ssa_copy_prop, icode_type,
 	    rtl_ssa, rtl_ssa_const_prop,
-	    use_indexing, remove_comments | o1_opts()],
+	    spillmin_color, use_indexing, remove_comments | o1_opts()],
   case get(hipe_target_arch) of
     ultrasparc ->
       [sparc_prop | Common];	% no rtl_lcm here; untagged values over GC...
@@ -1387,7 +1389,7 @@ o2_opts() ->
       [rtl_lcm | Common];
     x86 ->
       [rtl_lcm | Common];
-      %%[rtl_ssapre | Common]; if we want A-SSAPRE as default
+      % [rtl_ssapre | Common];
     amd64 ->
       [rtl_lcm | Common];
     Arch -> 

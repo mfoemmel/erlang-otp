@@ -277,7 +277,7 @@ getservbyname(Name, Proto) when atom(Name) ->
 %% Return a list of available options
 options() ->
     [
-     reuseaddr, keepalive, dontroute, linger,
+     tos, priority, reuseaddr, keepalive, dontroute, linger,
      broadcast, sndbuf, recbuf, nodelay,
      buffer, header, active, packet, deliver, mode,
      multicast_if, multicast_ttl, multicast_loop,
@@ -294,7 +294,7 @@ stats() ->
 %% Available options for tcp:connect
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 connect_options() ->
-    [reuseaddr, keepalive, linger, sndbuf, recbuf, nodelay,
+    [tos, priority, reuseaddr, keepalive, linger, sndbuf, recbuf, nodelay,
      header, active, packet, packet_size, buffer, mode, deliver,
      exit_on_close, high_watermark, low_watermark, bit8, send_timeout,
      delay_send].
@@ -348,7 +348,7 @@ con_add(Name, Val, R, Opts, AllOpts) ->
 %% Available options for tcp:listen
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 listen_options() ->
-    [reuseaddr, keepalive, linger, sndbuf, recbuf, nodelay,
+    [tos, priority, reuseaddr, keepalive, linger, sndbuf, recbuf, nodelay,
      header, active, packet, buffer, mode, deliver, backlog,
      exit_on_close, high_watermark, low_watermark, bit8, send_timeout,
      delay_send, packet_size].
@@ -404,7 +404,8 @@ list_add(Name, Val, R, Opts, As) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 udp_options() ->
-    [reuseaddr, sndbuf, recbuf, header, active, buffer, mode, deliver,
+    [tos, priority, reuseaddr, sndbuf, recbuf, header, active, buffer, mode, 
+     deliver,
      broadcast, dontroute, multicast_if, multicast_ttl, multicast_loop,
      add_membership, drop_membership].
 
@@ -466,56 +467,34 @@ translate_ip(loopback, inet6) -> {0,0,0,0,0,0,0,1};
 translate_ip(IP, _) -> IP.
 
 
-getaddrs_tm({A,B,C,D} = IP, inet, _) ->
+getaddrs_tm({A,B,C,D} = IP, Fam, _)  ->
+    %% Only "syntactic" validation and check of family.
     if 
-	?ip(A,B,C,D) -> {ok,[IP]};
+	?ip(A,B,C,D) ->
+	    if
+		Fam == inet -> {ok,[IP]};
+		true -> {error,nxdomain}
+	    end;
 	true ->         {error,einval}
     end;
-getaddrs_tm({A,B,C,D} = IP, inet6, Timer) ->
-    %% We need to test this with the resolver. If the
-    %% resolver returns an inet6 formatted address, we may
-    %% assume ipv6 is working correctly on this host.
-    %% If the resolver fails, nxdomain must be returned.
-    if 
-	?ip(A,B,C,D) -> 
-	    IPStr = inet_parse:ntoa(IP),
-	    case gethostbyname_tm(IPStr, inet6, Timer) of
-		{ok,Ent} -> {ok,Ent#hostent.h_addr_list};
-		Error -> Error
-	    end;
-	true ->         
-	    {error,einval}
-    end;
-
-getaddrs_tm({A,B,C,D,E,F,G,H} = IP, inet6, Timer) ->
-    %% We need to test this with the resolver. If the
-    %% resolver returns an inet6 formatted address, we may
-    %% assume ipv6 is working correctly on this host.
-    %% If the resolver fails, nxdomain must be returned.
+getaddrs_tm({A,B,C,D,E,F,G,H} = IP, Fam, _) ->
+    %% Only "syntactic" validation; we assume that the address was
+    %% "semantically" validated when it was converted to a tuple.
     if 
 	?ip6(A,B,C,D,E,F,G,H) ->
-	    IPStr = inet_parse:ntoa(IP),
-	    case gethostbyname_tm(IPStr, inet6, Timer) of
-		{ok,Ent} -> {ok,Ent#hostent.h_addr_list};
-		Error -> Error
+	    if
+		Fam == inet6 -> {ok,[IP]};
+		true -> {error,nxdomain}
 	    end;
-	true ->         
-	    {error,einval}
+	true -> {error,einval}
     end;
-getaddrs_tm(Address, Family, Timer) when atom(Address) ->
+getaddrs_tm(Address, Family, Timer) when is_atom(Address) ->
     getaddrs_tm(atom_to_list(Address), Family, Timer);
 getaddrs_tm(Address, Family, Timer) ->
-    Result = case inet_parse:visible_string(Address) of
-		 true when Family == inet ->
-		     inet_parse:ipv4_address(Address);
-		 true when Family == inet6 -> 
-		     inet_parse:ipv6_address(Address);
-		 false ->
-		     false
-	     end,
-    if Result == false -> 
+    case inet_parse:visible_string(Address) of
+	false ->
 	    {error,einval};
-       true ->
+	true ->
 	    %% Address is a host name or a valid IP address,
 	    %% either way check it with the resolver.
 	    case gethostbyname_tm(Address, Family, Timer) of

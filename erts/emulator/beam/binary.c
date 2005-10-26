@@ -257,6 +257,36 @@ BIF_RETTYPE list_to_binary_1(BIF_ALIST_1)
     BIF_RET(bin);
 }
 
+/* Turn a possibly deep list of ints (and binaries) into */
+/* One large binary object                               */
+
+BIF_RETTYPE iolist_to_binary_1(BIF_ALIST_1)
+{
+    Eterm bin;
+    int i;
+    byte* bytes;
+
+    if (is_binary(BIF_ARG_1)) {
+	BIF_RET(BIF_ARG_1);
+    }
+    if (is_nil(BIF_ARG_1)) {
+	BIF_RET(new_binary(BIF_P,(byte*)"",0));
+    }
+    if (is_not_list(BIF_ARG_1)) {
+    error:
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    if ((i = io_list_len(BIF_ARG_1)) < 0) {
+	goto error;
+    }
+    bin = new_binary(BIF_P, (byte *)NULL, i);
+    GET_BINARY_BYTES(bin, bytes);
+    if (io_list_to_buf(BIF_ARG_1, (char*) bytes, i) < 0) {
+	goto error;
+    }
+    BIF_RET(bin);
+}
+
 BIF_RETTYPE split_binary_2(BIF_ALIST_2)
 {
     Uint pos;

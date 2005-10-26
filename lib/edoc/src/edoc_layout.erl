@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_layout.erl,v 1.28 2004/11/30 00:42:16 richardc Exp $
+%% $Id$
 %%
 %% @author Richard Carlsson <richardc@csd.uu.se>
 %% @copyright 2001-2002 Richard Carlsson
@@ -22,8 +22,8 @@
 %% @end
 %% =====================================================================
 
-%% TODO: generate navigation links, at least back to index.html
-%% TODO: mark deprecated functions in function index.
+%% @TODO generate navigation links, at least back to index.html
+%% @TODO mark deprecated functions in function index.
 
 %% @doc The standard HTML layout module for EDoc. See the {@link edoc}
 %% module for details on usage.
@@ -54,7 +54,7 @@
 
 %% @doc The layout function.
 %%
-%% <p>Options to the standard layout:
+%% Options to the standard layout:
 %% <dl>
 %%  <dt>{@type {index_columns, integer()@}}
 %%  </dt>
@@ -73,11 +73,9 @@
 %%      used for exporting the documentation. See {@link
 %%      //xmerl/xmerl:export_simple/3} for details.
 %%  </dd>
-%% </dl></p>
+%% </dl>
 %%
 %% @see edoc:layout/2
-
--record(opts, {root, stylesheet, index_columns}).
 
 %% NEW-OPTIONS: xml_export, index_columns, stylesheet
 
@@ -85,9 +83,16 @@ module(Element, Options) ->
     XML = layout_module(Element, init_opts(Element, Options)),
     Export = proplists:get_value(xml_export, Options,
 				 ?DEFAULT_XML_EXPORT),
-    xmerl:export_simple([XML], Export, []).
+    xmerl:export_simple(XML, Export, []).
 
 % Put layout options in a data structure for easier access.
+
+%% %Commented out until it can be made private
+%% %@type opts() = #opts{root = string(),
+%% %                     stylesheet = string(),
+%% %                     index_columns = integer()}
+
+-record(opts, {root, stylesheet, index_columns}).
 
 init_opts(Element, Options) ->
     R = #opts{root = get_attrval(root, Element),
@@ -116,7 +121,7 @@ init_opts(Element, Options) ->
 
 %% <!ELEMENT module (behaviour*, description?, author*, copyright?,
 %%                   version?, since?, deprecated?, see*, reference*,
-%%                   typedecls?, functions)>
+%%                   todo?, typedecls?, functions)>
 %% <!ATTLIST module
 %%   name CDATA #REQUIRED
 %%   private NMTOKEN(yes | no) #IMPLIED
@@ -141,6 +146,7 @@ init_opts(Element, Options) ->
 %%   name CDATA #REQUIRED
 %%   href CDATA #IMPLIED>
 %% <!ELEMENT reference (#PCDATA)>
+%% <!ELEMENT todo (#PCDATA)>
 %% <!ELEMENT typedecls (typedecl+)>
 %% <!ELEMENT functions (function+)>
 
@@ -154,19 +160,23 @@ layout_module(#xmlElement{name = module, content = Es}=E, Opts) ->
     SortedFs = lists:sort([{function_name(E), E} || E <- Functions]),
     Types = get_content(typedecls, Es),
     SortedTs = lists:sort([{type_name(E), E} || E <- Types]),
-    Body = ([?NL, {h1, [Title]}, ?NL]
+    Body = ([?NL, ?NL, {h1, [Title]}, ?NL]
 	    ++ ShortDesc
+	    ++ [?NL]
 	    ++ copyright(Es)
 	    ++ deprecated(Es, "module")
 	    ++ doc_index(FullDesc, Functions, Types)
+	    ++ [?NL]
 	    ++ version(Es)
 	    ++ since(Es)
 	    ++ behaviours(Es)
 	    ++ authors(Es)
 	    ++ references(Es)
 	    ++ sees(Es)
+	    ++ todos(Es)
 	    ++ if FullDesc == [] -> [];
-		  true -> [{h2, [{a, [{name, "description"}],
+		  true -> [?NL,
+			   {h2, [{a, [{name, "description"}],
 				  ["Description"]}]}
 			   | FullDesc]
 	       end
@@ -251,8 +261,8 @@ label_href(Content, F) ->
 	Ref -> [{a, [{href, local_label(Ref)}], Content}]
     end.
 
-%% <!ELEMENT function (args, typespec?, equiv?, description?, since?,
-%%                     deprecated?, see*)>
+%% <!ELEMENT function (args, typespec?, throws?, equiv?, description?,
+%%                     since?, deprecated?, see*, todo?)>
 %% <!ATTLIST function
 %%   name CDATA #REQUIRED
 %%   arity CDATA #REQUIRED
@@ -275,7 +285,7 @@ functions(Fs) ->
 
 function(Name, E=#xmlElement{content = Es}) ->
     ([?NL,
-      {h3, label_anchor(function_header(Name, E, " (private)"), E)},
+      {h3, label_anchor(function_header(Name, E, " *"), E)},
       ?NL]
      ++ case typespec(get_content(typespec, Es)) of
 	    [] ->
@@ -283,11 +293,13 @@ function(Name, E=#xmlElement{content = Es}) ->
 			  get_attrval(name, E));
 	    Spec -> Spec
 	end
+     ++ throws(Es)
      ++ equiv(Es)
      ++ deprecated(Es, "function")
      ++ fulldesc(Es)
      ++ since(Es)
-     ++ sees(Es)).
+     ++ sees(Es)
+     ++ todos(Es)).
 
 function_name(E) ->
     get_attrval(name, E) ++ "/" ++ get_attrval(arity, E).
@@ -321,6 +333,17 @@ signature(Es, Name) ->
 
 arg(#xmlElement{content = Es}) ->
     [get_text(argName, Es)].
+
+%% <!ELEMENT throws (type, localdef*)>
+
+throws(Es) ->
+    case get_content(throws, Es) of
+	[] -> [];
+	Es1 ->
+	    [{p, (["throws ", {tt, t_utype(get_elem(type, Es1))}]
+		  ++ local_defs(get_elem(localdef, Es1)))},
+	     ?NL]
+    end.
 
 %% <!ELEMENT typespec (erlangName, type, localdef*)>
 
@@ -513,6 +536,15 @@ references(Es) ->
 	     ?NL]
     end.
 
+todos(Es) ->
+    case get_elem(todo, Es) of
+	[] -> [];
+	Es1 ->
+	    Todos = [{li, C} || #xmlElement{content = C} <- Es1],
+	    [{p, [{font, [{color,red}], [{b, ["To do"]}, {ul, Todos}]}]},
+	     ?NL]
+    end.
+
 t_name([E]) ->
     N = get_attrval(name, E),
     case get_attrval(module, E) of
@@ -555,6 +587,8 @@ t_type([#xmlElement{name = tuple, content = Es}]) ->
     t_tuple(Es);
 t_type([#xmlElement{name = 'fun', content = Es}]) ->
     t_fun(Es);
+t_type([#xmlElement{name = record, content = Es}]) ->
+    t_record(Es);
 t_type([E = #xmlElement{name = abstype, content = Es}]) ->
     T = t_abstype(Es),
     see(E, T);
@@ -585,6 +619,13 @@ t_tuple(Es) ->
 t_fun(Es) ->
     ["("] ++ seq(fun t_utype_elem/1, get_content(argtypes, Es),
 		 [") -> "] ++ t_utype(get_elem(type, Es))).
+
+t_record(Es) ->
+    ["#"] ++ t_type(get_elem(atom, Es)) ++ ["{"]
+	++ seq(fun t_field/1, get_elem(field, Es), ["}"]).
+
+t_field(#xmlElement{content = Es}) ->
+    t_type(get_elem(atom, Es)) ++ [" = "] ++ t_utype(get_elem(type, Es)).
 
 t_abstype(Es) ->
     ([t_name(get_elem(erlangName, Es)), "("]
@@ -645,14 +686,15 @@ local_label(R) ->
     "#" ++ R.
 
 xhtml(Title, CSS, Body) ->
-    {html, [?NL,
+    [{html, [?NL,
 	    {head, [?NL,
 		    {title, [Title]},
 		    ?NL] ++ CSS},
 	    ?NL,
 	    {body, [{bgcolor, "white"}], Body},
 	    ?NL]
-    }.
+     },
+     ?NL].
 
 %% ---------------------------------------------------------------------
 
@@ -679,9 +721,10 @@ package(E=#xmlElement{name = package, content = Es}, Options) ->
 	    ++ authors(Es)
 	    ++ references(Es)
 	    ++ sees(Es)
+	    ++ todos(Es)
 	    ++ FullDesc),
     XML = xhtml(Title, stylesheet(Opts), Body),
-    xmerl:export_simple([XML], ?HTML_EXPORT, []).
+    xmerl:export_simple(XML, ?HTML_EXPORT, []).
 
 overview(E=#xmlElement{name = overview, content = Es}, Options) ->
     Opts = init_opts(E, Options),
@@ -697,6 +740,7 @@ overview(E=#xmlElement{name = overview, content = Es}, Options) ->
 	    ++ authors(Es)
 	    ++ references(Es)
 	    ++ sees(Es)
+	    ++ todos(Es)
 	    ++ FullDesc),
     XML = xhtml(Title, stylesheet(Opts), Body),
-    xmerl:export_simple([XML], ?HTML_EXPORT, []).
+    xmerl:export_simple(XML, ?HTML_EXPORT, []).

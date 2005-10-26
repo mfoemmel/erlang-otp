@@ -103,6 +103,13 @@ is_branch(Instr) ->
     _ -> false
   end.
 
+is_pure_branch(Branch) ->
+  case hipe_sparc:type(Branch) of
+    b -> true;
+    goto -> true;
+    _ -> false
+  end.
+
 redirect_jmp(Jmp, ToOld, ToNew) ->
   hipe_sparc:redirect_jmp(Jmp, ToOld, ToNew).
 
@@ -117,13 +124,12 @@ redirect_ops([],CFG,_) -> CFG.
 rewrite(I,Map) ->
   case hipe_sparc:type(I) of
     load_address ->
-	case hipe_sparc:load_address_type(I) of
-	  constant -> I;
-	  _ -> 
-	    NewL =
-	      find_new_label(hipe_sparc:load_address_address(I),Map),
-	    hipe_sparc:load_address_address_update(I,NewL)
-	end;
+      case hipe_sparc:load_address_type(I) of
+	constant -> I;
+	_ -> 
+	  NewL = find_new_label(hipe_sparc:load_address_address(I),Map),
+	  hipe_sparc:load_address_address_update(I,NewL)
+      end;
     _ -> I
   end.
 

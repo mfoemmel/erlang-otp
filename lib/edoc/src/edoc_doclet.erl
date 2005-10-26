@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_doclet.erl,v 1.17 2004/11/30 00:45:41 richardc Exp $
+%% $Id$
 %%
 %% @copyright 2003 Richard Carlsson
 %% @author Richard Carlsson <richardc@csd.uu.se>
@@ -26,7 +26,10 @@
 
 %% Note that this is written so that it is *not* depending on edoc.hrl!
 
-%% TODO: copy "doc-files" subdirectories, recursively.
+%% @TODO copy "doc-files" subdirectories, recursively.
+%% @TODO generate summary page of TODO-notes
+%% @TODO generate summary page of deprecated things
+%% @TODO generate decent indexes over modules, methods, records, etc.
 
 -module(edoc_doclet).
 
@@ -34,6 +37,7 @@
 
 -import(edoc_report, [report/2, warning/2]).
 
+%% @headerfile "edoc_doclet.hrl"
 -include("../include/edoc_doclet.hrl").
 
 -define(EDOC_APP, edoc).
@@ -55,15 +59,16 @@
 %% directory, if it exists.) Note that the "empty package" is never
 %% included in Packages!
 
+%% @spec (Command::doclet_gen() | doclet_toc(), edoc_context()) -> ok
 %% @doc Main doclet entry point. See the file <a
 %% href="../include/edoc_doclet.hrl">`edoc_doclet.hrl'</a> for the data
 %% structures used for passing parameters.
 %%
-%% <p>Also see {@link edoc:layout/2} for layout-related options, and
+%% Also see {@link edoc:layout/2} for layout-related options, and
 %% {@link edoc:get_doc/2} for options related to reading source
-%% files.</p>
+%% files.
 %%
-%% <p>Options:
+%% Options:
 %% <dl>
 %%  <dt>{@type {file_suffix, string()@}}
 %%  </dt>
@@ -102,7 +107,7 @@
 %%  </dt>
 %%  <dd>Specifies the title of the overview-page.
 %%  </dd>
-%% </dl></p>
+%% </dl>
 
 %% INHERIT-OPTIONS: title/2
 %% INHERIT-OPTIONS: sources/5
@@ -197,10 +202,19 @@ check_name(M, M0, P0, File) ->
     P = list_to_atom(packages:strip_last(M)),
     N = packages:last(M),
     N0 = packages:last(M0),
-    if N =/= N0 ->
-	    warning("file '~s' actually contains module '~s'.", [File, M]);
-       true ->
-	    ok
+    case N of
+	[$? | _] ->
+	    %% A module name of the form '?...' is assumed to be caused
+	    %% by the epp_dodger parser when the module declaration has
+	    %% the form '-module(?MACRO).'; skip the filename check.
+	    ok;
+	_ ->
+	    if N =/= N0 ->
+		    warning("file '~s' actually contains module '~s'.",
+			    [File, M]);
+	       true ->
+		    ok
+	    end
     end,
     if P =/= P0 ->
 	    warning("file '~s' belongs to package '~s', not '~s'.",
@@ -429,7 +443,7 @@ read_file(File, Context, Env, Opts) ->
     end.
 
 
-%% FIXME: meta-level index generation
+%% @TODO FIXME: meta-level index generation
 
 %% Creates a Table of Content from a list of Paths (ie paths to applications)
 %% and an overview file.
@@ -444,7 +458,7 @@ toc(Paths, Ctxt) ->
     Env = Ctxt#context.env,
     app_index_file(Paths, Dir, Env, Opts).
 
-%% FIXME: it's unclear how much of this is working at all
+%% @TODO FIXME: it's unclear how much of this is working at all
 
 %% NEW-OPTIONS: title
 %% INHERIT-OPTIONS: overview/4

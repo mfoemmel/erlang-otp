@@ -16,8 +16,239 @@
 %%     $Id$
 %%
 
+%%
+%% SSH definitions
+%%
+
 -ifndef(SSH_HRL).
 -define(SSH_HRL, 1).
+
+-define(SSH_DEFAULT_PORT, 22).
+-define(SSH_MAX_PACKET_SIZE, (256*1024)).
+
+-define(FALSE, 0).
+-define(TRUE,  1).
+%% basic binary constructors
+-define(BOOLEAN(X),  X:8/unsigned-big-integer).
+-define(BYTE(X),     X:8/unsigned-big-integer).
+-define(UINT16(X),   X:16/unsigned-big-integer).
+-define(UINT32(X),   X:32/unsigned-big-integer).
+-define(UINT64(X),   X:64/unsigned-big-integer).
+-define(STRING(X),   ?UINT32((size(X))), (X)/binary).
+
+%% building macros
+-define(boolean(X),
+	case X of
+	    true -> <<?BOOLEAN(1)>>;
+	    false -> (<<?BOOLEAN(0)>>)
+	end).
+
+-define(byte(X),   << ?BYTE(X) >> ).
+-define(uint16(X), << ?UINT16(X) >> ).
+-define(uint32(X), << ?UINT32(X) >> ).
+-define(uint64(X), << ?UINT64(X) >> ).
+
+-define(string(X),
+	if list(X) ->
+		(fun(__B) -> (<<?STRING(__B)>>) end)(list_to_binary(X));
+	   atom(X) ->
+		(fun(__B) -> (<<?STRING(__B)>>) end)(list_to_binary(atom_to_list(X)));
+	   binary(X) ->
+		(<<?STRING(X)>>)
+	end).
+
+-define(binary(X),
+	<<?STRING(X)>>).
+
+-ifdef(debug).
+-define(dbg(Debug, Fmt, As),
+	case (Debug) of
+	    true ->
+		io:format([$# | (Fmt)], (As));
+	    _ ->
+		ok
+	end).
+-else.
+-define(dbg(Debug, Fmt, As), ok).
+-endif.
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% BASIC transport messages
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-define(SSH_MSG_DISCONNECT,             1).
+-define(SSH_MSG_IGNORE,                 2).
+-define(SSH_MSG_UNIMPLEMENTED,          3).
+-define(SSH_MSG_DEBUG,                  4).
+-define(SSH_MSG_SERVICE_REQUEST,        5).
+-define(SSH_MSG_SERVICE_ACCEPT,         6).
+
+-define(SSH_MSG_KEXINIT,                20).
+-define(SSH_MSG_NEWKEYS,                21).
+
+
+-record(ssh_msg_disconnect,
+	{
+	  code,         %% uint32
+	  description,  %% string
+	  language      %% string
+	 }).
+
+-record(ssh_msg_ignore,
+	{
+	  data          %% string
+	 }).
+
+-record(ssh_msg_unimplemented,
+	{
+	  sequence     %% uint32
+	 }).
+
+-record(ssh_msg_debug,
+	{
+	  always_display,  %% boolean
+	  message,         %% string
+	  language         %% string
+	 }).
+
+
+-record(ssh_msg_service_request,
+	{
+	  name     %% string (service name)
+	 }).
+
+-record(ssh_msg_service_accept,
+	{
+	  name     %% string
+	 }).
+
+-record(ssh_msg_kexinit,
+	{
+	  cookie,                                   %% random(16)
+	  kex_algorithms,                           %% string
+	  server_host_key_algorithms,               %% string    
+	  encryption_algorithms_client_to_server,   %% string    
+	  encryption_algorithms_server_to_client,   %% string    
+	  mac_algorithms_client_to_server,          %% string
+	  mac_algorithms_server_to_client,          %% string    
+	  compression_algorithms_client_to_server,  %% string
+	  compression_algorithms_server_to_client,  %% string
+	  languages_client_to_server,               %% string
+	  languages_server_to_client,               %% string
+	  first_kex_packet_follows=false,           %% boolean
+	  %% (reserved for future extension)
+	  reserved=0                                %% uint32=0
+	 }).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% KEY DH messages
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% diffie-hellman-group1-sha1
+-define(SSH_MSG_KEXDH_INIT,  30).
+-define(SSH_MSG_KEXDH_REPLY,  31).
+
+-record(ssh_msg_kexdh_init,
+	{
+	  e  %% mpint
+	 }).
+
+-record(ssh_msg_kexdh_reply,
+	{
+	  public_host_key,  %% string (K_S)
+	  f,                %% mpint
+	  h_sig             %% string, signature of H
+	 }).
+
+-record(ssh_msg_newkeys,
+	{}).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% KEY DH GEX messages
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% diffie-hellman-group-exchange-sha1
+-define(SSH_MSG_KEX_DH_GEX_REQUEST_OLD, 30).
+-define(SSH_MSG_KEX_DH_GEX_REQUEST,     34).
+-define(SSH_MSG_KEX_DH_GEX_GROUP,       31).
+-define(SSH_MSG_KEX_DH_GEX_INIT,        32).
+-define(SSH_MSG_KEX_DH_GEX_REPLY,       33).
+
+-record(ssh_msg_kex_dh_gex_request,
+	{
+	  min,
+	  n,
+	  max
+	 }).
+
+-record(ssh_msg_kex_dh_gex_request_old,
+	{
+	  n
+	 }).
+
+-record(ssh_msg_kex_dh_gex_group,
+	{
+	  p,  %% prime
+	  g   %% generator
+	 }).
+
+-record(ssh_msg_kex_dh_gex_init,
+	{
+	  e
+	 }).
+
+-record(ssh_msg_kex_dh_gex_reply,
+	{
+	  public_host_key,  %% string (K_S)
+	  f,
+	  h_sig
+	 }).
+
+
+-define(SSH_CIPHER_NONE, 0).
+-define(SSH_CIPHER_3DES, 3).
+-define(SSH_CIPHER_AUTHFILE, ?SSH_CIPHER_3DES).
+
+
+-record(ssh_key,
+	{
+	  type,
+	  public,
+	  private,
+	  comment = ""
+	 }).
+
+%% assertion macro
+-define(ssh_assert(Expr, Reason),
+	case Expr of
+	    true -> ok;
+	    _ -> exit(Reason)
+	end).
+
+%% error codes
+-define(SSH_DISCONNECT_HOST_NOT_ALLOWED_TO_CONNECT,   1).
+-define(SSH_DISCONNECT_PROTOCOL_ERROR,   2).
+-define(SSH_DISCONNECT_KEY_EXCHANGE_FAILED,   3).
+-define(SSH_DISCONNECT_RESERVED,   4).
+-define(SSH_DISCONNECT_MAC_ERROR,   5).
+-define(SSH_DISCONNECT_COMPRESSION_ERROR,   6).
+-define(SSH_DISCONNECT_SERVICE_NOT_AVAILABLE,   7).
+-define(SSH_DISCONNECT_PROTOCOL_VERSION_NOT_SUPPORTED,   8).
+-define(SSH_DISCONNECT_HOST_KEY_NOT_VERIFIABLE,   9).
+-define(SSH_DISCONNECT_CONNECTION_LOST,  10).
+-define(SSH_DISCONNECT_BY_APPLICATION,  11).
+-define(SSH_DISCONNECT_TOO_MANY_CONNECTIONS,  12).
+-define(SSH_DISCONNECT_AUTH_CANCELLED_BY_USER,  13).
+-define(SSH_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE,  14).
+-define(SSH_DISCONNECT_ILLEGAL_USER_NAME,  15).
 
 %%%----------------------------------------------------------------------
 %%% #   DH_14_xxx
@@ -118,175 +349,6 @@
 -define(SSH_TRUE, 1).
 
 %%%----------------------------------------------------------------------
-%%% #   SSH_MSG_xxx
-%%% Description: Packet types in the SSH transport protocol.
-%%%              30-49 are for key exchange packets.
-%%%----------------------------------------------------------------------
-
--define(SSH_MSG_DISCONNECT, 	1).
--define(SSH_MSG_IGNORE, 	2).
--define(SSH_MSG_UNIMPLEMENTED, 	3).
--define(SSH_MSG_DEBUG, 		4).
--define(SSH_MSG_SERVICE_REQUEST,5).
--define(SSH_MSG_SERVICE_ACCEPT,	6).
--define(SSH_MSG_KEXINIT,	20).
--define(SSH_MSG_NEWKEYS,	21).
-
--define(SSH_MSG_KEXDH_INIT,	30).
--define(SSH_MSG_KEXDH_REPLY,	31).
-
-%%%----------------------------------------------------------------------
-%%% #   SSH_DISCONNECT_xxx
-%%% Description: Reason codes for SSH_MSG_DISCONNECT packets.
-%%%----------------------------------------------------------------------
-
--define(SSH_DISCONNECT_HOST_NOT_ALLOWED_TO_CONNECT,      1).
--define(SSH_DISCONNECT_PROTOCOL_ERROR,                   2).
--define(SSH_DISCONNECT_KEY_EXCHANGE_FAILED,              3).
--define(SSH_DISCONNECT_RESERVED,                         4).
--define(SSH_DISCONNECT_MAC_ERROR,                        5).
--define(SSH_DISCONNECT_COMPRESSION_ERROR,                6).
--define(SSH_DISCONNECT_SERVICE_NOT_AVAILABLE,            7).
--define(SSH_DISCONNECT_PROTOCOL_VERSION_NOT_SUPPORTED,   8).
--define(SSH_DISCONNECT_HOST_KEY_NOT_VERIFIABLE,          9).
--define(SSH_DISCONNECT_CONNECTION_LOST,                 10).
--define(SSH_DISCONNECT_BY_APPLICATION,                  11).
--define(SSH_DISCONNECT_TOO_MANY_CONNECTIONS,            12).
--define(SSH_DISCONNECT_AUTH_CANCELLED_BY_USER,          13).
--define(SSH_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE,  14).
--define(SSH_DISCONNECT_ILLEGAL_USER_NAME,               15).
-
-%%%----------------------------------------------------------------------
-%%% #   SSH_MSG_USERAUTH_xxx
-%%% Description: Packet types used by the user authentication protocol.
-%%%----------------------------------------------------------------------
-
--define(SSH_MSG_USERAUTH_REQUEST,		50).
--define(SSH_MSG_USERAUTH_FAILURE,		51).
--define(SSH_MSG_USERAUTH_SUCCESS,		52).
--define(SSH_MSG_USERAUTH_BANNER,		53).
-
--define(SSH_MSG_USERAUTH_PK_OK,			60).
-
--define(SSH_MSG_USERAUTH_PASSWD_CHANGEREQ,	60).
-
-%%%----------------------------------------------------------------------
-%%% #   SSH_MSG_xxx
-%%% Description: Packet types used by the connection protocol.
-%%%----------------------------------------------------------------------
-
--define(SSH_MSG_GLOBAL_REQUEST,			80).
--define(SSH_MSG_REQUEST_SUCCESS,		81).
--define(SSH_MSG_REQUEST_FAILURE,		82).
--define(SSH_MSG_CHANNEL_OPEN,			90).
--define(SSH_MSG_CHANNEL_OPEN_CONFIRMATION,	91).
--define(SSH_MSG_CHANNEL_OPEN_FAILURE,		92).
--define(SSH_MSG_CHANNEL_WINDOW_ADJUST,		93).
--define(SSH_MSG_CHANNEL_DATA,			94).
--define(SSH_MSG_CHANNEL_EXTENDED_DATA,		95).
--define(SSH_MSG_CHANNEL_EOF,			96).
--define(SSH_MSG_CHANNEL_CLOSE,			97).
--define(SSH_MSG_CHANNEL_REQUEST,		98).
--define(SSH_MSG_CHANNEL_SUCCESS,		99).
--define(SSH_MSG_CHANNEL_FAILURE,		100).
-
-%%%----------------------------------------------------------------------
-%%% #   SSH_EXTENDED_DATA_xxx
-%%% Description: Type codes for SSH_MSG_CHANNEL_EXTENDED_DATA packages
-%%%----------------------------------------------------------------------
-
--define(SSH_EXTENDED_DATA_STDERR, 1).
-
-%%%----------------------------------------------------------------------
-%%% #   SSH_OPEN_xxx
-%%% Description: Reason codes for SSH_MSG_OPEN_FAILURE packages.
-%%%----------------------------------------------------------------------
-
--define(SSH_OPEN_ADMINISTRATIVELY_PROHIBITED,	1).
--define(SSH_OPEN_CONNECT_FAILED,		2).
--define(SSH_OPEN_UNKNOWN_CHANNEL_TYPE,		3).
--define(SSH_OPEN_RESOURCE_SHORTAGE,		4).
-
-%%%----------------------------------------------------------------------
-%%% #   SSH_FILE_TRANSFER_VERSION
-%%% Description: The version of the filetransfer protocol we implement.
-%%%----------------------------------------------------------------------
-
--define(SSH_FILE_TRANSFER_VERSION,	3).
-
-%%%----------------------------------------------------------------------
-%%% #   SSH_FXP_xxx
-%%% Description: Request and initialization packet types for file transfer
-%%%              protocol.
-%%%----------------------------------------------------------------------
-
--define(SSH_FXP_INIT,		1).
--define(SSH_FXP_VERSION,	2).
--define(SSH_FXP_OPEN,		3).
--define(SSH_FXP_CLOSE,		4).
--define(SSH_FXP_READ,		5).
--define(SSH_FXP_WRITE,		6).
--define(SSH_FXP_LSTAT,		7).
--define(SSH_FXP_FSTAT,		8).
--define(SSH_FXP_SETSTAT,	9).
--define(SSH_FXP_FSETSTAT,	10).
--define(SSH_FXP_OPENDIR,	11).
--define(SSH_FXP_READDIR,	12).
--define(SSH_FXP_REMOVE,		13).
--define(SSH_FXP_MKDIR,		14).
--define(SSH_FXP_RMDIR,		15).
--define(SSH_FXP_REALPATH,	16).
--define(SSH_FXP_STAT,		17).
--define(SSH_FXP_RENAME,		18).
--define(SSH_FXP_READLINK,	19).
--define(SSH_FXP_SYMLINK,	20).
--define(SSH_FXP_STATUS,		101).
--define(SSH_FXP_HANDLE,		102).
--define(SSH_FXP_DATA,		103).
--define(SSH_FXP_NAME,		104).
--define(SSH_FXP_ATTRS,		105).
--define(SSH_FXP_EXTENDED,	200).
--define(SSH_FXP_EXTENDED_REPLY,	201).
-
-%%%----------------------------------------------------------------------
-%%% #   SSH_FXP_xxx
-%%% Description: Response packet types for file transfer protocol.
-%%%----------------------------------------------------------------------
-
--define(SSH_FX_OK,			0).
--define(SSH_FX_EOF,			1).
--define(SSH_FX_NO_SUCH_FILE,		2).
--define(SSH_FX_PERMISSION_DENIED,	3).
--define(SSH_FX_FAILURE,			4).
--define(SSH_FX_BAD_MESSAGE,		5).
--define(SSH_FX_NO_CONNECTION,		6).
--define(SSH_FX_CONNECTION_LOST,		7).
--define(SSH_FX_OP_UNSUPPORTED,		8).
-
-%%%----------------------------------------------------------------------
-%%% #   SSH_FILEXFER_xxx
-%%% Description: Bits for file attributes bit mask
-%%%----------------------------------------------------------------------
-
--define(SSH_FILEXFER_ATTR_SIZE,		16#00000001).
--define(SSH_FILEXFER_ATTR_UIDGID,	16#00000002).
--define(SSH_FILEXFER_ATTR_PERMISSIONS,	16#00000004).
--define(SSH_FILEXFER_ATTR_ACMODTIME,	16#00000008).
--define(SSH_FILEXFER_ATTR_EXTENDED,	16#80000000).
-
-%%%----------------------------------------------------------------------
-%%% #   SSH_FXF_xxx
-%%% Description: Bits for file pflags bit mask
-%%%----------------------------------------------------------------------
-
--define(SSH_FXF_READ,		16#00000001).
--define(SSH_FXF_WRITE,		16#00000002).
--define(SSH_FXF_APPEND,		16#00000004).
--define(SSH_FXF_CREAT,		16#00000008).
--define(SSH_FXF_TRUNC,		16#00000010).
--define(SSH_FXF_EXCL,		16#00000020).
-
-%%%----------------------------------------------------------------------
 %%% #   SSH_ALG_xxx
 %%% Description: The names of algorithms we support.
 %%%----------------------------------------------------------------------
@@ -310,6 +372,17 @@
 			  atime =	'_',
 			  mtime =	'_',
 			  extended =	[]}).
+-record(ssh_pty, {term = "", % e.g. "xterm"
+		  width = 80,
+		  height = 25,
+		  pixel_width = 1024,
+		  pixel_height = 768,
+		  modes = <<>>}).
+
+%% -record(ssh_key, {type =     '_',
+%% 		  public =   '_',
+%% 		  private =  '_',
+%% 		  comment = ""}).
 
 %%%----------------------------------------------------------------------
 %%% #2.3   DEFINITION OF MACROS

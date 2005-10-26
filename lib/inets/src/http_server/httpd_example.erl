@@ -17,7 +17,7 @@
 %%
 -module(httpd_example).
 -export([print/1]).
--export([get/2, post/2, yahoo/2, test1/2]).
+-export([get/2, post/2, yahoo/2, test1/2, get_bin/2]).
 
 -export([newformat/3]).
 %% These are used by the inets test-suite
@@ -29,7 +29,6 @@ print(String) ->
    top("Print"),
    String++"\n",
    footer()].
-
 
 test1(Env, []) ->
     io:format("Env:~p~n",[Env]),
@@ -56,6 +55,16 @@ get(_Env,[]) ->
 
 get(Env,Input) ->
   default(Env,Input).
+
+get_bin(_Env,_Input) ->
+    [list_to_binary(header()),
+     list_to_binary(top("GET Example")),
+     list_to_binary("<FORM ACTION=\"/cgi-bin/erl/httpd_example:get\" METHOD=GET>	
+<B>Input:</B> <INPUT TYPE=\"text\" NAME=\"input1\">
+<INPUT TYPE=\"text\" NAME=\"input2\">
+<INPUT TYPE=\"submit\"><BR>
+</FORM>" ++ "\n"),
+   footer()].
 
 post(_Env,[]) ->
   [header(),

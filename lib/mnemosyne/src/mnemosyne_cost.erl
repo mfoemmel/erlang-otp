@@ -114,6 +114,6 @@ location(P) ->
     end.
 
 
-card(S) -> length(ordsets:set_to_list(S)).
+card(S) -> length(ordsets:to_list(S)).
 
 

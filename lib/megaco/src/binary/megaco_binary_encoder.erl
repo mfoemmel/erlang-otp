@@ -66,6 +66,10 @@ encode_message(EC, 2, MegaMsg) ->
     AsnMod   = megaco_ber_media_gateway_control_v2,
     TransMod = megaco_binary_transformer_v2,
     ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message([{version3,prev3b}|EC], 3, MegaMsg) ->
+    AsnMod   = megaco_ber_media_gateway_control_prev3b,
+    TransMod = megaco_binary_transformer_prev3b,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
 encode_message([{version3,prev3a}|EC], 3, MegaMsg) ->
     AsnMod   = megaco_ber_media_gateway_control_prev3a,
     TransMod = megaco_binary_transformer_prev3a,
@@ -101,6 +105,10 @@ encode_transaction([{version3,_}|EC], 2, Trans) ->
 encode_transaction(EC, 2, Trans) ->
     AsnMod   = megaco_ber_media_gateway_control_v2,
     TransMod = megaco_binary_transformer_v2,
+    ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, io_list);
+encode_transaction([{version3,prev3b}|EC], 3, Trans) ->
+    AsnMod   = megaco_ber_media_gateway_control_prev3b,
+    TransMod = megaco_binary_transformer_prev3b,
     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, io_list);
 encode_transaction([{version3,prev3a}|EC], 3, Trans) ->
     AsnMod   = megaco_ber_media_gateway_control_prev3a,
@@ -138,6 +146,11 @@ encode_action_requests(EC, 2, ActReqs) when list(ActReqs) ->
     AsnMod   = megaco_ber_media_gateway_control_v2,
     TransMod = megaco_binary_transformer_v2,
     ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
+encode_action_requests([{version3,prev3b}|EC], 3, ActReqs) 
+  when list(ActReqs) ->
+    AsnMod   = megaco_ber_media_gateway_control_prev3b,
+    TransMod = megaco_binary_transformer_prev3b,
+    ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
 encode_action_requests([{version3,prev3a}|EC], 3, ActReqs) 
   when list(ActReqs) ->
     AsnMod   = megaco_ber_media_gateway_control_prev3a,
@@ -174,6 +187,10 @@ encode_action_request(EC, 2, ActReq) ->
     AsnMod   = megaco_ber_media_gateway_control_v2,
     TransMod = megaco_binary_transformer_v2,
     ?BIN_LIB:encode_action_request(EC, ActReq, AsnMod, TransMod, io_list);
+encode_action_request([{version3,prev3b}|EC], 3, ActReq) ->
+    AsnMod   = megaco_ber_media_gateway_control_prev3b,
+    TransMod = megaco_binary_transformer_prev3b,
+    ?BIN_LIB:encode_action_request(EC, ActReq, AsnMod, TransMod, io_list);
 encode_action_request([{version3,prev3a}|EC], 3, ActReq) ->
     AsnMod   = megaco_ber_media_gateway_control_prev3a,
     TransMod = megaco_binary_transformer_prev3a,
@@ -193,6 +210,11 @@ encode_action_request(EC, 3, ActReq) ->
 %% Return {ok, Version} | {error, Reason}
 %%----------------------------------------------------------------------
 
+version_of([{version3,prev3b},driver|EC], Binary) ->
+    Decoders = [megaco_ber_bin_drv_media_gateway_control_v1,
+		megaco_ber_bin_drv_media_gateway_control_v2,
+		megaco_ber_bin_drv_media_gateway_control_prev3b],
+    ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
 version_of([{version3,prev3a},driver|EC], Binary) ->
     Decoders = [megaco_ber_bin_drv_media_gateway_control_v1,
 		megaco_ber_bin_drv_media_gateway_control_v2,
@@ -207,6 +229,11 @@ version_of([driver|EC], Binary) ->
     Decoders = [megaco_ber_bin_drv_media_gateway_control_v1,
 		megaco_ber_bin_drv_media_gateway_control_v2,
 		megaco_ber_bin_drv_media_gateway_control_v3],
+    ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
+version_of([{version3,prev3b}|EC], Binary) ->
+    Decoders = [megaco_ber_bin_media_gateway_control_v1,
+		megaco_ber_bin_media_gateway_control_v2,
+		megaco_ber_bin_media_gateway_control_prev3b],
     ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
 version_of([{version3,prev3a}|EC], Binary) ->
     Decoders = [megaco_ber_bin_media_gateway_control_v1,
@@ -233,6 +260,14 @@ version_of(EC, Binary) ->
 decode_message(EC, Binary) ->
     decode_message(EC, 1, Binary).
 
+decode_message([{version3,prev3b},driver|EC], dynamic, Binary) ->
+    Decoders = [{megaco_ber_bin_drv_media_gateway_control_v1,
+		 megaco_binary_transformer_v1},
+		{megaco_ber_bin_drv_media_gateway_control_v2,
+		 megaco_binary_transformer_v2},
+		{megaco_ber_bin_drv_media_gateway_control_prev3b,
+		 megaco_binary_transformer_prev3b}],
+    ?BIN_LIB:decode_message_dynamic(EC, Binary, Decoders, binary);
 decode_message([{version3,prev3a},driver|EC], dynamic, Binary) ->
     Decoders = [{megaco_ber_bin_drv_media_gateway_control_v1,
 		 megaco_binary_transformer_v1},
@@ -256,6 +291,14 @@ decode_message([driver|EC], dynamic, Binary) ->
 		 megaco_binary_transformer_v2},
 		{megaco_ber_bin_drv_media_gateway_control_v3,
 		 megaco_binary_transformer_v3}],
+    ?BIN_LIB:decode_message_dynamic(EC, Binary, Decoders, binary);
+decode_message([{version3,prev3b}|EC], dynamic, Binary) ->
+    Decoders = [{megaco_ber_bin_media_gateway_control_v1,
+		 megaco_binary_transformer_v1},
+		{megaco_ber_bin_media_gateway_control_v2,
+		 megaco_binary_transformer_v2},
+		{megaco_ber_bin_media_gateway_control_prev3b,
+		 megaco_binary_transformer_prev3b}],
     ?BIN_LIB:decode_message_dynamic(EC, Binary, Decoders, binary);
 decode_message([{version3,prev3a}|EC], dynamic, Binary) ->
     Decoders = [{megaco_ber_bin_media_gateway_control_v1,
@@ -331,6 +374,10 @@ decode_message(EC, 2, Binary) ->
 
 %% -- Version 3 --
  
+decode_message([{version3,prev3b},driver|EC], 3, Binary) ->
+    AsnMod   = megaco_ber_bin_drv_media_gateway_control_prev3b,
+    TransMod = megaco_binary_transformer_prev3b,
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 decode_message([{version3,prev3a},driver|EC], 3, Binary) ->
     AsnMod   = megaco_ber_bin_drv_media_gateway_control_prev3a,
     TransMod = megaco_binary_transformer_prev3a,
@@ -345,6 +392,10 @@ decode_message([driver|EC], 3, Binary) ->
     TransMod = megaco_binary_transformer_v3,
     ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 
+decode_message([{version3,prev3b}|EC], 3, Binary) ->
+    AsnMod   = megaco_ber_bin_media_gateway_control_prev3b,
+    TransMod = megaco_binary_transformer_prev3b,
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 decode_message([{version3,prev3a}|EC], 3, Binary) ->
     AsnMod   = megaco_ber_bin_media_gateway_control_prev3a,
     TransMod = megaco_binary_transformer_prev3a,
@@ -360,6 +411,11 @@ decode_message(EC, 3, Binary) ->
     ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary).
 
 
+decode_mini_message([{version3,prev3b},driver|EC], dynamic, Bin) ->
+    Mods = [megaco_ber_bin_drv_media_gateway_control_v1,
+	    megaco_ber_bin_drv_media_gateway_control_v2,
+	    megaco_ber_bin_drv_media_gateway_control_prev3b],
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
 decode_mini_message([{version3,prev3a},driver|EC], dynamic, Bin) ->
     Mods = [megaco_ber_bin_drv_media_gateway_control_v1,
 	    megaco_ber_bin_drv_media_gateway_control_v2,
@@ -374,6 +430,11 @@ decode_mini_message([driver|EC], dynamic, Bin) ->
     Mods = [megaco_ber_bin_drv_media_gateway_control_v1,
 	    megaco_ber_bin_drv_media_gateway_control_v2,
 	    megaco_ber_bin_drv_media_gateway_control_v3],
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
+decode_mini_message([{version3,prev3b}|EC], dynamic, Bin) ->
+    Mods = [megaco_ber_bin_media_gateway_control_v1,
+	    megaco_ber_bin_media_gateway_control_v2,
+	    megaco_ber_bin_media_gateway_control_prev3b],
     ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
 decode_mini_message([{version3,prev3a}|EC], dynamic, Bin) ->
     Mods = [megaco_ber_bin_media_gateway_control_v1,
@@ -417,6 +478,9 @@ decode_mini_message(EC, 2, Bin) ->
     AsnMod = megaco_ber_bin_media_gateway_control_v2,
     ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
 
+decode_mini_message([{version3,prev3b},driver|EC], 3, Bin) ->
+    AsnMod = megaco_ber_bin_drv_media_gateway_control_prev3b,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
 decode_mini_message([{version3,prev3a},driver|EC], 3, Bin) ->
     AsnMod = megaco_ber_bin_drv_media_gateway_control_prev3a,
     ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
@@ -425,6 +489,9 @@ decode_mini_message([{version3,v3},driver|EC], 3, Bin) ->
     ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
 decode_mini_message([driver|EC], 3, Bin) ->
     AsnMod = megaco_ber_bin_drv_media_gateway_control_v3,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([{version3,prev3b}|EC], 3, Bin) ->
+    AsnMod = megaco_ber_bin_media_gateway_control_prev3b,
     ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
 decode_mini_message([{version3,prev3a}|EC], 3, Bin) ->
     AsnMod = megaco_ber_bin_media_gateway_control_prev3a,

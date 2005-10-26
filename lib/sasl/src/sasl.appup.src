@@ -1,1 +1,6 @@
-{"%VSN%",[],[]}.
+{"%VSN%",
+ [{"2.0.1", [{load_module, release_handler},
+	     {load_module, release_handler_1}]}],
+ [{"2.0.1", [{load_module, release_handler},
+	     {load_module, release_handler_1}]}]
+}.

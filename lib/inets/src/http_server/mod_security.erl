@@ -31,12 +31,10 @@
 -include("httpd.hrl").
 
 -define(VMODULE,"SEC").
--include("httpd_verbosity.hrl").
 
 
 %% do/1
 do(Info) ->
-    ?vdebug("~n   do with ~n   Info: ~p",[Info]),
     %% Check and see if any user has been authorized.
     case httpd_util:key1search(Info#mod.data,remote_user,not_defined_user) of
 	not_defined_user ->
@@ -52,8 +50,6 @@ do(Info) ->
 			    {proceed, Info#mod.data};
 			[$B,$a,$s,$i,$c,$ |EncodedString] ->
 			    %% Someone tried to authenticate, and obviously failed!
-			    ?vlog("~n   Authentication failed: ~s",
-				  [EncodedString]),
 			    DecodedString = http_base_64:decode(EncodedString),
 			    report_failed(Info, DecodedString,"Failed authentication"),
 			    take_failed_action(Info, DecodedString),
@@ -64,7 +60,6 @@ do(Info) ->
 	    end;
 	User ->
 	    %% A user has been authenticated, now is he blocked ?
-	    ?vtrace("user '~p' authentication",[User]),
 	    Path = mod_alias:path(Info#mod.data,
 				  Info#mod.config_db,
 				  Info#mod.request_uri),
@@ -75,11 +70,9 @@ do(Info) ->
 							SDirData, 
 							Addr, Port) of
 		true ->
-		    ?vtrace("user blocked",[]),
 		    report_failed(Info, User ,"User Blocked"),
 		    {proceed, [{status, {403, Info#mod.request_uri, ""}}|Info#mod.data]};
 		false ->
-		    ?vtrace("user not blocked",[]),
 		    report_failed(Info, User,"Authentication Succedded"),
 		    mod_security_server:store_successful_auth(Addr, Port, 
 							      User, SDirData),
@@ -187,10 +180,6 @@ load_return_int_tag(Name, Atom, Time, Dir, DirData) ->
     end.
 
 store({security_directory, _Dir0, DirData}, ConfigList) ->
-    ?CDEBUG("store(security_directory) -> ~n"
-	    "      Dir0:       ~p~n"
-	    "      DirData:    ~p",
-	    [_Dir0, DirData]),
     Addr = httpd_util:key1search(ConfigList, bind_address),
     Port = httpd_util:key1search(ConfigList, port),
     mod_security_server:start(Addr, Port),

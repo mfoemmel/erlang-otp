@@ -124,7 +124,6 @@
 	 compact_otp5186_msg04/1, 
 	 compact_otp5186_msg05/1, 
 	 compact_otp5186_msg06/1, 
-
 	 compact_otp5290_msg01/1, 
 	 compact_otp5290_msg02/1, 
 
@@ -153,7 +152,10 @@
 	 pretty_otp5085_msg5/1, 
 	 pretty_otp5085_msg6/1, 
 	 pretty_otp5085_msg7/1, 
-
+	 pretty_otp5600_msg1/1, 
+	 pretty_otp5600_msg2/1, 
+	 pretty_otp5601_msg1/1, 
+	 
 	 flex_pretty_tickets/1, 
 	 flex_pretty_otp5042_msg1/1, 
 	 flex_pretty_otp5085_msg1/1, 
@@ -163,6 +165,9 @@
 	 flex_pretty_otp5085_msg5/1, 
 	 flex_pretty_otp5085_msg6/1, 
 	 flex_pretty_otp5085_msg7/1, 
+         flex_pretty_otp5600_msg1/1,
+         flex_pretty_otp5600_msg2/1,
+         flex_pretty_otp5601_msg1/1,
 
 	 init_per_testcase/2, fin_per_testcase/2]).  
 
@@ -450,10 +455,18 @@ pretty_tickets(suite) ->
      pretty_otp5085_msg4,
      pretty_otp5085_msg5,
      pretty_otp5085_msg6,
-     pretty_otp5085_msg7
+     pretty_otp5085_msg7,
+     pretty_otp5600_msg1,
+     pretty_otp5600_msg2,
+     pretty_otp5601_msg1
     ].
 
 flex_pretty_tickets(suite) ->
+    {req, [], 
+     {conf, flex_pretty_init, flex_pretty_tickets_cases(), 
+      flex_pretty_finish}}.
+
+flex_pretty_tickets_cases() ->
     [
      flex_pretty_otp5042_msg1,
      flex_pretty_otp5085_msg1,
@@ -462,7 +475,10 @@ flex_pretty_tickets(suite) ->
      flex_pretty_otp5085_msg4,
      flex_pretty_otp5085_msg5,
      flex_pretty_otp5085_msg6,
-     flex_pretty_otp5085_msg7
+     flex_pretty_otp5085_msg7,
+     flex_pretty_otp5600_msg1,
+     flex_pretty_otp5600_msg2,
+     flex_pretty_otp5601_msg1
     ].
 
 
@@ -522,7 +538,8 @@ flex_pretty_otp5042_msg1(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msg0 = pretty_otp5042_msg1(),
     Bin0 = list_to_binary(Msg0),
-    case decode_message(megaco_pretty_text_encoder, false, [], Bin0) of
+    Conf = flex_scanner_conf(Config),
+    case decode_message(megaco_pretty_text_encoder, false, [Conf], Bin0) of
 	{error, [{reason, Reason}|_]} ->
 	    case Reason of
 		{_, _Mod, {bad_timeStamp, TimeStamp}} ->
@@ -545,49 +562,80 @@ flex_pretty_otp5085_msg1(suite) ->
 flex_pretty_otp5085_msg1(Config) when list(Config) ->
     d("flex_pretty_otp5085_msg1 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
-    pretty_otp5085(ok, pretty_otp5085_msg1()).
+    Conf = flex_scanner_conf(Config),
+    pretty_otp5085(ok, pretty_otp5085_msg1(), [Conf]).
 
 flex_pretty_otp5085_msg2(suite) ->
     [];
 flex_pretty_otp5085_msg2(Config) when list(Config) ->
     d("flex_pretty_otp5085_msg2 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
-    pretty_otp5085(error, pretty_otp5085_msg2()).
+    Conf = flex_scanner_conf(Config),
+    pretty_otp5085(error, pretty_otp5085_msg2(), [Conf]).
 
 flex_pretty_otp5085_msg3(suite) ->
     [];
 flex_pretty_otp5085_msg3(Config) when list(Config) ->
     d("flex_pretty_otp5085_msg3 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
-    pretty_otp5085(ok, pretty_otp5085_msg3()).
+    Conf = flex_scanner_conf(Config),
+    pretty_otp5085(ok, pretty_otp5085_msg3(), [Conf]).
 
 flex_pretty_otp5085_msg4(suite) ->
     [];
 flex_pretty_otp5085_msg4(Config) when list(Config) ->
     d("flex_pretty_otp5085_msg4 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
-    pretty_otp5085(ok, pretty_otp5085_msg4()).
+    Conf = flex_scanner_conf(Config),
+    pretty_otp5085(ok, pretty_otp5085_msg4(), [Conf]).
 
 flex_pretty_otp5085_msg5(suite) ->
     [];
 flex_pretty_otp5085_msg5(Config) when list(Config) ->
     d("flex_pretty_otp5085_msg5 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
-    pretty_otp5085(ok, pretty_otp5085_msg5()).
+    Conf = flex_scanner_conf(Config),
+    pretty_otp5085(ok, pretty_otp5085_msg5(), [Conf]).
 
 flex_pretty_otp5085_msg6(suite) ->
     [];
 flex_pretty_otp5085_msg6(Config) when list(Config) ->
     d("flex_pretty_otp5085_msg6 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
-    pretty_otp5085(ok, pretty_otp5085_msg6()).
+    Conf = flex_scanner_conf(Config),
+    pretty_otp5085(ok, pretty_otp5085_msg6(), [Conf]).
 
 flex_pretty_otp5085_msg7(suite) ->
     [];
 flex_pretty_otp5085_msg7(Config) when list(Config) ->
     d("flex_pretty_otp5085_msg7 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
-    pretty_otp5085(ok, pretty_otp5085_msg7()).
+    Conf = flex_scanner_conf(Config),
+    pretty_otp5085(ok, pretty_otp5085_msg7(), [Conf]).
+
+flex_pretty_otp5600_msg1(suite) ->
+    [];
+flex_pretty_otp5600_msg1(Config) when list(Config) ->
+    d("flex_pretty_otp5600_msg1 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    pretty_otp5600(ok, pretty_otp5600_msg1(), [Conf]).
+
+flex_pretty_otp5600_msg2(suite) ->
+    [];
+flex_pretty_otp5600_msg2(Config) when list(Config) ->
+    d("flex_pretty_otp5600_msg2 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    pretty_otp5600(ok, pretty_otp5600_msg2(), [Conf]).
+ 
+flex_pretty_otp5601_msg1(suite) ->
+    [];
+flex_pretty_otp5601_msg1(Config) when list(Config) ->
+    d("flex_pretty_otp5601_msg1 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    pretty_otp5601(ok, pretty_otp5601_msg1(), [Conf]).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -2120,6 +2168,7 @@ compact_otp5290_msg01() ->
 compact_otp5290_msg02() ->
     "!/2 <ml>\nT=12345678{C=*{CA{TP,PR,TP}}}".
 
+
 %% --------------------------------------------------------------
 %% 
 %% 
@@ -2763,10 +2812,13 @@ pretty_otp5085_msg7(Config) when list(Config) ->
     pretty_otp5085(ok, pretty_otp5085_msg7()).
 
 pretty_otp5085(Expected, Msg) ->
+    pretty_otp5085(Expected, Msg, []).
+
+pretty_otp5085(Expected, Msg, Conf) ->
     t("pretty_otp5085 -> entry with"
       "~n   Expected: ~p"
       "~n   Msg:      ~p", [Expected, Msg]),
-    case (catch encode_message(megaco_pretty_text_encoder, [], Msg)) of
+    case (catch encode_message(megaco_pretty_text_encoder, Conf, Msg)) of
 	{error, Reason} when Expected == error ->
  	    d("pretty_otp5085 -> encode failed as expected"
 	      "~n   Reason: ~w", [Reason]),
@@ -2782,7 +2834,7 @@ pretty_otp5085(Expected, Msg) ->
 	{ok, Bin} ->
 	    d("pretty_otp5085 -> successfull encode as expected:"
 	      "~n~s", [binary_to_list(Bin)]),
-	    case decode_message(megaco_pretty_text_encoder, false, [], Bin) of
+	    case decode_message(megaco_pretty_text_encoder, false, Conf, Bin) of
 		{ok, Msg} ->
  		    d("pretty_otp5085 -> successfull decode~n", []),
 		    ok;
@@ -2989,6 +3041,226 @@ pretty_otp5085_msg7() ->
     }.
 
 
+
+pretty_otp5600_msg1(suite) ->
+    [];
+pretty_otp5600_msg1(Config) when list(Config) ->
+    d("pretty_otp5600_msg1 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    %%     put(severity,trc),
+    %%     put(dbg,true),
+    pretty_otp5600(ok, pretty_otp5600_msg1()).
+
+pretty_otp5600_msg2(suite) ->
+    [];
+pretty_otp5600_msg2(Config) when list(Config) ->
+    d("pretty_otp5600_msg2 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    %%     put(severity,trc),
+    %%     put(dbg,true),
+    pretty_otp5600(ok, pretty_otp5600_msg2()).
+
+pretty_otp5600(Expected, Msg) ->
+    pretty_otp5600(Expected, Msg, []).
+
+pretty_otp5600(Expected, Msg, Conf) ->
+    t("pretty_otp5600 -> entry with"
+      "~n   Expected: ~p"
+      "~n   Msg:      ~p", [Expected, Msg]),
+    case (catch encode_message(megaco_pretty_text_encoder, Conf, Msg)) of
+	{error, Reason} when Expected == error ->
+ 	    d("pretty_otp5600 -> encode failed as expected"
+	      "~n   Reason: ~w", [Reason]),
+	    ok;
+	{error, Reason} ->
+ 	    e("pretty_otp5600 -> encode failed unexpectedly: "
+	      "~n   Reason: ~w", [Reason]),
+	    exit({unexpected_encode_result, Reason});
+	{ok, Bin} when Expected == error ->
+ 	    e("pretty_otp5600 -> encode succeded unexpectedly: "
+	      "~n   ~w", [binary_to_list(Bin)]),
+	    exit({unexpected_encode_result, binary_to_list(Bin)});
+	{ok, Bin} ->
+	    d("pretty_otp5600 -> successfull encode as expected:"
+	      "~n~s", [binary_to_list(Bin)]),
+	    case decode_message(megaco_pretty_text_encoder, false, Conf, Bin) of
+		{ok, Msg} ->
+ 		    d("pretty_otp5600 -> successfull decode~n", []),
+		    ok;
+		{ok, Msg2} ->
+ 		    e("pretty_otp5600 -> successfull decode"
+		      " - but not equal", []),
+		    exit({unexpected_decode_result, Msg, Msg2});
+		Else ->
+ 		    e("pretty_otp5600 -> decode failed:~n~p", [Else]),
+		    exit({unexpected_decode_result, Else})
+	    end
+    end.
+
+
+pretty_otp5600_msg1() ->
+    SRE = #'SecondRequestedEvent'{ pkgdName = "al/on",
+				   evParList = [] },
+    
+    SED = #'SecondEventsDescriptor'{ requestID = 2,
+				     eventList = [ SRE ] },
+    
+    SIG = { signal, #'Signal'{ signalName = "cg/dt",
+			       sigParList = [] } },
+    
+    RA = #'RequestedActions'{ secondEvent = SED,
+			      signalsDescriptor = [ SIG ] },
+    
+    RE = #'RequestedEvent'{ pkgdName = "al/of",
+			    eventAction = RA,
+			    evParList = [] },
+    
+    EV = #'EventsDescriptor'{ requestID = 1, eventList = [ RE ] },
+    
+    TermID = {megaco_term_id, true, [[$*]] },
+    
+    AMMR = #'AmmRequest'{ terminationID = [ TermID ],
+			  descriptors = [ { eventsDescriptor, EV } ] },
+    
+    CR = #'CommandRequest'{command = {modReq, AMMR}},
+    
+    AR = #'ActionRequest'{contextId = ?megaco_null_context_id,
+			  commandRequests = [CR]},
+    ARs = [AR],
+    TR = #'TransactionRequest'{transactionId = 5600, actions = ARs},
+    TRs = [{transactionRequest, TR}],
+    Mess = #'Message'{version = ?VERSION,
+		      mId = ?MGC_MID,
+		      messageBody = {transactions, TRs}},
+    #'MegacoMessage'{mess = Mess}.
+    
+    
+pretty_otp5600_msg2() ->
+    SIG = { signal, #'Signal'{ signalName = "cg/dt",
+			       sigParList = [] } },
+    
+    SRA = #'SecondRequestedActions'{ signalsDescriptor = [ SIG ] },
+
+    SRE = #'SecondRequestedEvent'{ pkgdName    = "al/on",
+				   eventAction = SRA,
+				   evParList   = [] },
+
+    SED = #'SecondEventsDescriptor'{ requestID = 2,
+				     eventList = [ SRE ] },
+    
+    RA = #'RequestedActions'{ secondEvent = SED },
+    
+    RE = #'RequestedEvent'{ pkgdName = "al/of",
+			    eventAction = RA,
+			    evParList = [] },
+    
+    EV = #'EventsDescriptor'{ requestID = 1, eventList = [ RE ] },
+    
+    TermID = {megaco_term_id, true, [[$*]] },
+    
+    AMMR = #'AmmRequest'{ terminationID = [ TermID ],
+			  descriptors = [ { eventsDescriptor, EV } ] },
+    
+    CR = #'CommandRequest'{command = {modReq, AMMR}},
+    
+    AR = #'ActionRequest'{contextId = ?megaco_null_context_id,
+			  commandRequests = [CR]},
+    ARs = [AR],
+    TR = #'TransactionRequest'{transactionId = 5600, actions = ARs},
+    TRs = [{transactionRequest, TR}],
+    Mess = #'Message'{version = ?VERSION,
+		      mId = ?MGC_MID,
+		      messageBody = {transactions, TRs}},
+    #'MegacoMessage'{mess = Mess}.
+    
+
+pretty_otp5601_msg1(suite) ->
+    [];
+pretty_otp5601_msg1(Config) when list(Config) ->
+    d("pretty_otp5601_msg1 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    %% put(severity,trc),
+    %% put(dbg,true),
+    pretty_otp5601(ok, pretty_otp5601_msg1()).
+
+pretty_otp5601(Expected, Msg) ->
+    pretty_otp5601(Expected, Msg, []).
+
+pretty_otp5601(Expected, Msg, Conf) ->
+    t("pretty_otp5601 -> entry with"
+      "~n   Expected: ~p"
+      "~n   Msg:      ~p", [Expected, Msg]),
+    case (catch encode_message(megaco_pretty_text_encoder, Conf, Msg)) of
+	{error, Reason} when Expected == error ->
+ 	    d("pretty_otp5601 -> encode failed as expected"
+	      "~n   Reason: ~w", [Reason]),
+	    ok;
+	{error, Reason} ->
+ 	    e("pretty_otp5601 -> encode failed unexpectedly: "
+	      "~n   Reason: ~w", [Reason]),
+	    exit({unexpected_encode_result, Reason});
+	{ok, Bin} when Expected == error ->
+ 	    e("pretty_otp5601 -> encode succeded unexpectedly: "
+	      "~n   ~w", [binary_to_list(Bin)]),
+	    exit({unexpected_encode_result, binary_to_list(Bin)});
+	{ok, Bin} ->
+	    d("pretty_otp5601 -> successfull encode as expected:"
+	      "~n~s", [binary_to_list(Bin)]),
+	    case decode_message(megaco_pretty_text_encoder, false, Conf, Bin) of
+		{ok, Msg} ->
+ 		    d("pretty_otp5601 -> successfull decode~n", []),
+		    ok;
+		{ok, Msg2} ->
+ 		    e("pretty_otp5601 -> successfull decode"
+		      " - but not equal", []),
+		    exit({unexpected_decode_result, Msg, Msg2});
+		Else ->
+ 		    e("pretty_otp5601 -> decode failed:~n~p", [Else]),
+		    exit({unexpected_decode_result, Else})
+	    end
+    end.
+
+pretty_otp5601_msg1() ->
+    SRE1 = #'SecondRequestedEvent'{ pkgdName = "al/on",
+				    evParList = [] },
+
+    SRA = #'SecondRequestedActions'{ eventDM = { digitMapName, "dialllan0" }},
+
+    SRE2 = #'SecondRequestedEvent'{ pkgdName = "dd/ce",
+				    eventAction = SRA,
+				    evParList = [] },
+
+    SED = #'SecondEventsDescriptor'{ requestID = 2,
+				     eventList = [ SRE1, SRE2 ] },
+
+    RA = #'RequestedActions'{ secondEvent = SED },
+
+    RE = #'RequestedEvent'{ pkgdName = "al/of",
+			    eventAction = RA,
+			    evParList = [] },
+
+    EV = #'EventsDescriptor'{ requestID = 1, eventList = [ RE ] },
+
+    TermID = {megaco_term_id, true, [[$*]] },
+
+    AMMR = #'AmmRequest'{ terminationID = [ TermID ],
+			  descriptors = [ { eventsDescriptor, EV } ] },
+
+    CR = #'CommandRequest'{command = {modReq, AMMR}},
+
+    AR = #'ActionRequest'{contextId = ?megaco_null_context_id,
+			  commandRequests = [CR]},
+    ARs = [AR],
+    TR = #'TransactionRequest'{transactionId = 5600, actions = ARs},
+    TRs = [{transactionRequest, TR}],
+    Mess = #'Message'{version = ?VERSION,
+		      mId = ?MGC_MID,
+		      messageBody = {transactions, TRs}},
+    #'MegacoMessage'{mess = Mess}.
+
+
+
+    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 msgs() ->

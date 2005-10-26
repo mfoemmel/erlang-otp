@@ -27,12 +27,10 @@
 -include("httpd.hrl").
 
 -define(VMODULE,"ALIAS").
--include("httpd_verbosity.hrl").
 
 %% do
 
 do(Info) ->
-    ?vtrace("do",[]),
     case httpd_util:key1search(Info#mod.data, status) of
 	%% A status code has been generated!
 	{_StatusCode, _PhraseArgs, _Reason} ->
@@ -50,26 +48,15 @@ do(Info) ->
     end.
 
 do_alias(Info) ->
-    ?vtrace("do_alias -> entry with"
-	    "~n   URI: ~p",[Info#mod.request_uri]),
     {ShortPath, Path, AfterPath} =
 	real_name(Info#mod.config_db, 
 		  Info#mod.request_uri,
 		  httpd_util:multi_lookup(Info#mod.config_db,alias)),
-    ?vtrace("do_alias -> real_name: "
-	    "~n   ShortPath: ~p"
-	    "~n   Path:      ~p"
-	    "~n   AfterPath: ~p",
-	    [ShortPath, Path, AfterPath]),
     %% Relocate if a trailing slash is missing else proceed!
     LastChar = lists:last(ShortPath),
     case file:read_file_info(ShortPath) of 
 	{ok, FileInfo} when FileInfo#file_info.type == directory, 
 	LastChar /= $/ ->
-	    ?vtrace("do_alias -> file found when: "
-		    "~n   LastChar:  ~p"
-		    "~n   FileInfo:  ~p",
-		    [LastChar, FileInfo]),
 	    ServerName = httpd_util:lookup(Info#mod.config_db, server_name),
 	    Port = port_string(httpd_util:lookup(Info#mod.config_db,port, 80)),
 	    URL = "http://" ++ ServerName ++ Port ++ 

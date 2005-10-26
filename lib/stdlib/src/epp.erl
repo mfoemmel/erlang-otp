@@ -427,6 +427,8 @@ macro_uses({_Args, Tokens}) ->
 
 macro_ref([]) ->
     [];
+macro_ref([{'?', _}, {'?', _} | Rest]) ->
+    macro_ref(Rest);
 macro_ref([{'?', _}, {atom, _, A} | Rest]) ->
     [{atom, A} | macro_ref(Rest)];
 macro_ref([{'?', _}, {var, _, A} | Rest]) ->

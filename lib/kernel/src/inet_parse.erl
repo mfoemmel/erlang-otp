@@ -701,7 +701,6 @@ split_mid([$\n | Cs], Acc, Tokens) -> split_line(Cs, [reverse(Acc) | Tokens]);
 split_mid([], Acc, Tokens) -> split_end(Acc, Tokens);
 split_mid([C|Cs], Acc, Tokens) -> split_mid(Cs, [C|Acc], Tokens).
 
-split_end([], Tokens) -> reverse(Tokens);
 split_end(Acc, Tokens) -> reverse([reverse(Acc) | Tokens]).
 
 

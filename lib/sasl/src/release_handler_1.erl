@@ -239,8 +239,18 @@ eval({load_object_code, {Lib, LibVsn, Modules}}, EvalState) ->
 	    throw({error, {bad_lib_vsn, Lib, LibVsn2}})
     end;
 eval(point_of_no_return, EvalState) ->
+    Libs = case get_opt(update_paths, EvalState, false) of
+	       false ->
+		   EvalState#eval_state.newlibs; % [{Lib, Path}]
+	       true ->
+		   lists:map(fun({Lib, _LibVsn, LibDir}) ->
+				     Ebin= filename:join(LibDir,"ebin"),
+				     {Lib, Ebin}
+			     end,
+			     EvalState#eval_state.libdirs)
+	   end,
     lists:foreach(fun({Lib, Path}) -> code:replace_path(Lib, Path) end,
-		  EvalState#eval_state.newlibs),
+		  Libs),
     EvalState;
 eval({load, {Mod, _PrePurgeMethod, PostPurgeMethod}}, EvalState) ->
     Bins = EvalState#eval_state.bins,

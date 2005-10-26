@@ -53,7 +53,7 @@
 -export([fam2rel/1, rel2fam/1]).
 
 -import(lists,
-        [any/2, append/1, duplicate/2, flatten/1, foreach/2,
+        [any/2, append/1, flatten/1, foreach/2,
          keysort/2, last/1, map/2, mapfoldl/3, member/2, merge/2,
          reverse/1, reverse/2, sort/1, umerge/1, umerge/2, usort/1]).
 
@@ -386,7 +386,7 @@ is_equal(S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
         false -> erlang:fault(type_mismatch, [S1, S2])
     end;
 is_equal(S1, S2) when ?IS_ORDSET(S1), ?IS_ORDSET(S2) ->
-    case match_types(?TYPE(S1), ?TYPE(S2)) of
+    case match_types(?ORDTYPE(S1), ?ORDTYPE(S2)) of
         true  -> ?ORDDATA(S1) == ?ORDDATA(S2);
         false -> erlang:fault(type_mismatch, [S1, S2])
     end;
@@ -1266,30 +1266,29 @@ set_of_sets(_, _L, _T) ->
 ordset_of_sets([S | Ss], L, T) when ?IS_SET(S) ->
     ordset_of_sets(Ss, [?LIST(S) | L], [[?TYPE(S)] | T]);
 ordset_of_sets([S | Ss], L, T) when ?IS_ORDSET(S) ->
-    ordset_of_sets(Ss, [?LIST(S) | L], [?ORDTYPE(S) | T]);
+    ordset_of_sets(Ss, [?ORDDATA(S) | L], [?ORDTYPE(S) | T]);
 ordset_of_sets([], L, T) ->
     ?ORDSET(list_to_tuple(reverse(L)), list_to_tuple(reverse(T)));
 ordset_of_sets(_, _L, _T) ->
     error.
 
 %% Inlined.
-rel(Ts, TS) ->
-    case {TS, is_type(TS)} of
-	{[Type], true} ->
-	    case catch atoms_only(Type, 1) of
-		true when ?IS_RELATION(Type) ->
-		    rel(Ts, size(Type), Type);
-		_ ->
-		    rel_type(Ts, [], Type)
-	    end;
-	_ ->
-	    rel(Ts, TS, erlang:make_tuple(TS, ?ATOM_TYPE))
-    end.
-
+rel(Ts, [Type]) ->
+    case is_type(Type) and atoms_only(Type, 1) of
+        true ->
+            rel(Ts, size(Type), Type);
+        false ->
+            rel_type(Ts, [], Type)
+    end;
+rel(Ts, Sz) ->
+    rel(Ts, Sz, erlang:make_tuple(Sz, ?ATOM_TYPE)).
+    
 atoms_only(Type, I) when ?IS_ATOM_TYPE(?REL_TYPE(I, Type)) ->
     atoms_only(Type, I+1);
-atoms_only(Type, I) when I > size(Type) ->
-    true.
+atoms_only(Type, I) when I > size(Type), ?IS_RELATION(Type) ->
+    true;
+atoms_only(_Type, _I) ->
+    false.
 
 rel(Ts, Sz, Type) when Sz >= 1 ->
     SL = usort(Ts),
@@ -2355,9 +2354,9 @@ setfun(T, Fun, Type, NType) ->
 		NT -> {?LIST(NS), NT}
 	    end;
 	NS when ?IS_ORDSET(NS) ->
-	    case unify_types(NType, NT = ?TYPE(NS)) of
+	    case unify_types(NType, NT = ?ORDTYPE(NS)) of
 		[] -> type_mismatch;
-		NT -> {?LIST(NS), NT}
+		NT -> {?ORDDATA(NS), NT}
 	    end;
 	_ ->
 	    badarg

@@ -25,29 +25,21 @@
 
 -behaviour(supervisor).
 
--include("httpd_verbosity.hrl").
-
 -export([init/1]).
 
 %% Internal API
--export([start/2, start_link/2, start2/2, start_link2/2, stop/1, stop/2, stop2/1]).
+-export([start/1, start_link/1, start2/1, start_link2/1, stop/1, stop/2, 
+	 stop2/1]).
 
 %%%=========================================================================
 %%%  Supervisor callback
 %%%=========================================================================
-init([ConfigFile, ConfigList, Verbosity, Addr, Port]) -> 
-    init(ConfigFile, ConfigList, Verbosity, Addr, Port);
-init(BadArg) ->
-    {error, {badarg, BadArg}}.
-
-init(ConfigFile, ConfigList, Verbosity, Addr, Port) ->
+init([ConfigFile, ConfigList, Addr, Port]) -> 
     Flags = {one_for_one, 0, 1},
-    AccSupVerbosity  = get_acc_sup_verbosity(Verbosity),
-    MiscSupVerbosity = get_misc_sup_verbosity(Verbosity),
-    Children  = [sup_spec(httpd_acceptor_sup, Addr, Port, AccSupVerbosity), 
-		 sup_spec(httpd_misc_sup, Addr, Port, MiscSupVerbosity), 
-		 worker_spec(httpd_manager, Addr, Port, ConfigFile, ConfigList, 
-			     Verbosity)],
+    Children  = [sup_spec(httpd_acceptor_sup, Addr, Port), 
+		 sup_spec(httpd_misc_sup, Addr, Port), 
+		 worker_spec(httpd_manager, Addr, Port, 
+			     ConfigFile, ConfigList)],
     {ok, {Flags, Children}}.
 
 
@@ -55,8 +47,8 @@ init(ConfigFile, ConfigList, Verbosity, Addr, Port) ->
 %%%  ??? functions
 %%%=========================================================================
 
-start(ConfigFile, Verbosity) ->
-    case start_link(ConfigFile, Verbosity) of
+start(ConfigFile) ->
+    case start_link(ConfigFile) of
 	{ok, Pid} ->
 	    unlink(Pid),
 	    {ok, Pid};
@@ -66,15 +58,15 @@ start(ConfigFile, Verbosity) ->
     end.
 
     
-start_link(ConfigFile, Verbosity) ->
+start_link(ConfigFile) ->
     case get_addr_and_port(ConfigFile) of
 	{ok, ConfigList, Addr, Port} ->
 	    Name    = make_name(Addr, Port),
 	    SupName = {local, Name},
 	    supervisor:start_link(SupName, ?MODULE, 
 				  [ConfigFile, ConfigList, 
-				   Verbosity, Addr, Port]);
-
+				   Addr, Port]);
+	
 	{error, Reason} ->
 	    error_logger:error_report(Reason),
 	    {stop, Reason};
@@ -85,8 +77,8 @@ start_link(ConfigFile, Verbosity) ->
     end.
 
     
-start2(ConfigList, Verbosity) ->
-    case start_link2(ConfigList, Verbosity) of
+start2(ConfigList) ->
+    case start_link2(ConfigList) of
 	{ok, Pid} ->
 	    unlink(Pid),
 	    {ok, Pid};
@@ -96,12 +88,12 @@ start2(ConfigList, Verbosity) ->
     end.
 
     
-start_link2(ConfigList, Verbosity) ->
+start_link2(ConfigList) ->
     {ok, Addr, Port} = get_addr_and_port2(ConfigList),
     Name    = make_name(Addr, Port),
     SupName = {local, Name},
     supervisor:start_link(SupName, ?MODULE, 
-			  [undefined, ConfigList, Verbosity, Addr, Port]).
+			  [undefined, ConfigList, Addr, Port]).
     
 
 stop(Pid) when pid(Pid) ->
@@ -139,18 +131,18 @@ stop2(ConfigList) when list(ConfigList) ->
 do_stop(Pid) ->
     exit(Pid, shutdown).
 
-sup_spec(SupModule, Addr, Port, Verbosity) ->
+sup_spec(SupModule, Addr, Port) ->
     Name = {SupModule, Addr, Port},
-    StartFunc = {SupModule, start_link, [Addr, Port, Verbosity]},
+    StartFunc = {SupModule, start_link, [Addr, Port]},
     Restart = permanent, 
     Shutdown = infinity,
     Modules = [SupModule],
     Type = supervisor,
     {Name, StartFunc, Restart, Shutdown, Type, Modules}.
     
-worker_spec(WorkerModule, Addr, Port, ConfigFile, ConfigList, Verbosity) ->
+worker_spec(WorkerModule, Addr, Port, ConfigFile, ConfigList) ->
     Name = {WorkerModule, Addr, Port},
-    StartFunc = {WorkerModule, start_link, [ConfigFile, ConfigList, Verbosity]}, 
+    StartFunc = {WorkerModule, start_link, [ConfigFile, ConfigList]}, 
     Restart = permanent, 
     Shutdown = 4000,
     Modules = [WorkerModule],
@@ -173,19 +165,3 @@ get_addr_and_port2(ConfigList) ->
     Port = httpd_util:key1search(ConfigList, port, 80),
     Addr = httpd_util:key1search(ConfigList, bind_address),
     {ok, Addr, Port}.
-
-get_acc_sup_verbosity(V) ->
-    case httpd_util:key1search(V, all) of
-	undefined ->
-	    httpd_util:key1search(V, acceptor_sup_verbosity, ?default_verbosity);
-	Verbosity ->
-	    Verbosity
-    end.
-
-get_misc_sup_verbosity(V) ->
-    case httpd_util:key1search(V, all) of
-	undefined ->
-	    httpd_util:key1search(V, misc_sup_verbosity, ?default_verbosity);
-	Verbosity ->
-	    Verbosity
-    end.

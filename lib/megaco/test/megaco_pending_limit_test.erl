@@ -40,7 +40,8 @@
 
 	 tickets/1,
 	 otp_4956/1,
-	 otp_5310/1
+	 otp_5310/1,
+	 otp_5619/1
 	
 	]).
 
@@ -144,7 +145,8 @@ recv(suite) ->
 tickets(suite) ->
     [
      otp_4956,
-     otp_5310
+     otp_5310,
+     otp_5619
     ].
 
 
@@ -1236,11 +1238,11 @@ otp_4956_mgc_verify_notify_request_fun1() ->
 otp_4956_mgc_verify_notify_request_fun2() ->
     fun({handle_trans_request, _, ?VERSION, [AR]}) ->
             case AR of
-                #'ActionRequest'{contextId = Cid, 
+                #'ActionRequest'{contextId = _Cid, 
                                  commandRequests = [CR]} ->
                     #'CommandRequest'{command = Cmd} = CR,
                     {notifyReq, NR} = Cmd,
-                    #'NotifyRequest'{terminationID = [Tid],
+                    #'NotifyRequest'{terminationID = [_Tid],
                                      observedEventsDescriptor = OED,
                                      errorDescriptor = asn1_NOVALUE} = NR,
                     #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
@@ -1627,7 +1629,100 @@ filter_aborted2([{TransId, State, _}|T], Aborted) ->
     filter_aborted2(T, Aborted);
 filter_aborted2([_|T], Aborted) ->
     filter_aborted2(T, Aborted).
-    
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% The timeout times is a little odd in this test case. The (short)
+%% request timer is longer then the (long) request timer. This is
+%% simply to produce the effect that we want regarding max_retries =
+%% infinity_restartable. Also the pending timeout has to be shorter
+%% then "short" + "long" and longer then "long"
+
+otp_5619(suite) ->
+    [];
+otp_5619(doc) ->
+    "...";
+otp_5619(Config) when list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        otp_5619),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p", 
+      [MgcNode, MgNode]),
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+    %% Start the MGC and MGs
+    i("[MGC] start"),    
+    MgcMid = {deviceName, "ctrl"}, 
+    ET = [{text, tcp}, {text, udp}, {binary, tcp}, {binary, udp}],
+    {ok, Mgc} = ?MGC_START(MgcNode, MgcMid, ET, [], ?MGC_VERBOSITY),
+
+    i("[MG] start"),    
+    MgMid = {deviceName, "mg"},
+    MgConfig = [],
+    {ok, Mg} = ?MG_START(MgNode, MgMid, text, tcp, MgConfig, ?MG_VERBOSITY),
+
+    d("MG user info: ~p", [?MG_USER_INFO(Mg, all)]),
+    d("MG conn info: ~p", [?MG_CONN_INFO(Mg, all)]),
+
+    i("[MG] connect to the MGC (service change)"),    
+    ServChRes = ?MG_SERV_CHANGE(Mg),
+    d("service change result: ~p", [ServChRes]),
+
+    d("[MG] update connection info long request timer"),
+    LongReqTmr = #megaco_incr_timer{wait_for    = timer:seconds(1),
+				    factor      = 1,
+				    max_retries = infinity_restartable},
+    ?MG_UPDATE_CI(Mg, long_request_timer, LongReqTmr),
+
+    d("MG conn info: ~p", [?MG_CONN_INFO(Mg, all)]),
+
+    d("MGC conn info: ~p", [?MGC_CONN_INFO(Mgc, all)]),
+
+    d("[MGC] update connection info pending timer"),
+    PendingTimer = #megaco_incr_timer{wait_for = timer:seconds(3),
+				      factor   = 1},
+    ?MGC_UPDATE_CI(Mgc, pending_timer, PendingTimer),
+
+    d("[MGC] update connection info sent pending limit"),
+    PendingLimit = 5,
+    ?MGC_UPDATE_CI(Mgc, sent_pending_limit, PendingLimit),
+
+    d("MGC conn info: ~p", [?MG_CONN_INFO(Mgc, all)]),
+
+
+    d("[MGC] late reply to requests "
+      "(simulate that the request takes a long time)"),
+    {ok, _} = ?MGC_REQ_DISC(Mgc, 11000),
+
+
+    d("[MG] send the notify and await the timeout"),
+    {ok, Reply} = ?MG_NOTIF_RAR(Mg),
+    case Reply of
+	{_Version, {error, timeout}} ->
+	    d("[MG] expected reply (timeout) received~n", []);
+	_ ->
+	    ?ERROR({unexpected_reply, Reply})
+    end,
+
+
+    %% Tell MG to stop
+    i("[MG] stop~n"),
+    ?MG_STOP(Mg),
+
+    %% Tell Mgc to stop
+    i("[MGC] stop~n"),
+    ?MGC_STOP(Mgc),
+
+    i("done", []),
+    ok.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -1817,6 +1912,8 @@ print(true, Ts, Tc, P, F, A) ->
 print(_, _, _, _, _, _) ->
     ok.
 
+format_timestamp(Now) -> megaco:format_timestamp(Now).
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -1831,12 +1928,4 @@ print(_, _, _, _, _, _) ->
 %%     erlang:send_after(random(), self(), apply_load_timeout).
 
 
-format_timestamp({_N1, _N2, N3} = Now) ->
-    {Date, Time}   = calendar:now_to_datetime(Now),
-    {YYYY,MM,DD}   = Date,
-    {Hour,Min,Sec} = Time,
-    FormatDate = 
-        io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
-                      [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),  
-    lists:flatten(FormatDate).
 

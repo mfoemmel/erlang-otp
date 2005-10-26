@@ -95,7 +95,7 @@ gen_all(Fd, AIds) ->
 
 join(Sep, [H1, H2| T]) ->
     [H1, Sep| join(Sep, [H2| T])]; 
-join(Sep, [H1]) ->
+join(_Sep, [H1]) ->
     H1;
 join(_, []) ->
     [].

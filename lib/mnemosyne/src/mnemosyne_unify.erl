@@ -47,10 +47,10 @@ ground(U) ->
     end.
 
 variables_and_annonymous(U) -> 
-    variables(U, ordsets:new_set()).
+    variables(U, ordsets:new()).
 
 variables(U) -> 
-    ordsets:del_element('_', variables(U, ordsets:new_set())).
+    ordsets:del_element('_', variables(U, ordsets:new())).
     
 
 %%---- returns a {Var,Num} list of the frequency of the variables in U
@@ -231,7 +231,7 @@ bind(Ulast, {'#bind_trigger',Cu}, Vlast, VlastAny, Bs) ->
 	    rebind(Ulast, {'#var',Vlast}, 
 		   rebind(Vlast, 
 			  {'#bind_trigger',
-			   ordsets:list_to_set(lists:append(Cv,Cu))},
+			   ordsets:from_list(lists:append(Cv,Cu))},
 			  Bs));
 
 	{'#var',Vlast} ->
@@ -283,12 +283,12 @@ add_bind_trigger1(VarName, Bind_Trigger, Bs)  ->
     case deref(any,LastVar,Bs) of
 	{'#bind_trigger',Tr} ->			% VarName has already triggers
 	    rebind(LastVar, 
-		   {'#bind_trigger', ordsets:list_to_set([Bind_Trigger|Tr])},
+		   {'#bind_trigger', ordsets:from_list([Bind_Trigger|Tr])},
 		   Bs);
 
 	{'#var', LastVar} ->			% set first trigger
 	    mk_binding(LastVar, 
-		       {'#bind_trigger',ordsets:list_to_set([Bind_Trigger])}, 
+		       {'#bind_trigger',ordsets:from_list([Bind_Trigger])}, 
 		       Bs);
 
 	{'#value',Value} ->			% Too late! Just check
@@ -300,7 +300,7 @@ add_bind_trigger1(VarName, Bind_Trigger, Bs)  ->
 %%     returns the list of still valid triggers or throw(fail)
 
 apply_bind_triggers(Triggers, Bs) ->
-    apply_bind_triggers(Triggers, Bs, ordsets:new_set()).
+    apply_bind_triggers(Triggers, Bs, ordsets:new()).
 
 
 apply_bind_triggers([H|T], Bs, KeptTriggers) when list(H) ->
@@ -452,7 +452,7 @@ inst(X, Bs) ->
     X.
 
 
-get_bound_vars(Bs, What) -> get_bound_vars(Bs, Bs, What, ordsets:new_set()).
+get_bound_vars(Bs, What) -> get_bound_vars(Bs, Bs, What, ordsets:new()).
 
 get_bound_vars({L,V,{Type,_},R}, Bs, What, Set) ->
     get_bound_vars(L, Bs, What, 

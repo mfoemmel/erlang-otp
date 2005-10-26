@@ -113,6 +113,7 @@ image_of_sname(ms)        -> "A-MIB-SERVER";
 image_of_sname(conf)      -> "A-CONF";
 
 image_of_sname(mse)       -> "M-SERVER";
+image_of_sname(msew)      -> io_lib:format("M-SERVER-worker(~p)", [self()]);
 image_of_sname(mns)       -> "M-NOTE-STORE";
 image_of_sname(mnif)      -> "M-NET-IF";
 image_of_sname(mconf)     -> "M-CONF";

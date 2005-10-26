@@ -140,8 +140,8 @@ parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, Header, Headers,
 			   0, HTTPHeaders),
     case ((Length > MaxHeaderSize) or (MaxHeaderSize == nolimit)) of
 	true ->
-	    {error, {header_too_long, MaxHeaderSize, MaxHeaderSize-Length},
-	     lists:nth(3, lists:reverse(Result))};
+	    {error, {header_too_long, MaxHeaderSize}, 
+	     lists:nth(3, lists:reverse(Result))}; % HTTP Version
 	false ->
 	    RequestHeaderRcord = 
 		http_request:headers(HTTPHeaders, #http_request_h{}),

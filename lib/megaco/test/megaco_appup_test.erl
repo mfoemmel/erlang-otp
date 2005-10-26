@@ -37,6 +37,7 @@ init_per_testcase(Case, Config) ->
 fin_per_testcase(Case, Config) ->
     megaco_test_lib:fin_per_testcase(Case, Config).
 
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 all(suite) ->
@@ -45,6 +46,7 @@ all(suite) ->
 	 appup
 	],
     {req, [], {conf, appup_init, Cases, appup_fin}}.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -106,6 +108,8 @@ check_appup(V, UpFrom, DownTo, Modules) ->
     check_version(V),
     check_depends(up,   UpFrom, Modules),
     check_depends(down, DownTo, Modules),
+    check_module_subset(UpFrom),
+    check_module_subset(DownTo),
     ok.
 
 
@@ -289,6 +293,72 @@ instruction_module(Instr) ->
     error({error, {unknown_instruction, Instr}}).
 
     
+%% Check that the modules handled in an instruction set for version X
+%% is a subset of the instruction set for version X-1.
+check_module_subset(Instructions) ->
+    do_check_module_subset(modules_of(Instructions)).
+ 
+do_check_module_subset([]) ->
+    ok;
+do_check_module_subset([_]) ->
+    ok;
+do_check_module_subset([{_V1, Mods1}|T]) ->
+    {V2, Mods2} = hd(T),
+    %% Check that the modules in V1 is a subset of V2
+    case do_check_module_subset2(Mods1, Mods2) of
+        ok ->
+            do_check_module_subset(T);
+        {error, Modules} ->
+            fail({subset_missing_instructions, V2, Modules})
+    end.
+ 
+do_check_module_subset2(Mods1, Mods2) ->
+    do_check_module_subset2(Mods1, Mods2, []).
+ 
+do_check_module_subset2([], _, []) ->
+    ok;
+do_check_module_subset2([], _, Acc) ->
+    {error, lists:reverse(Acc)};
+do_check_module_subset2([Mod|Mods], Mods2, Acc) ->
+    case lists:member(Mod, Mods2) of
+        true ->
+            do_check_module_subset2(Mods, Mods2, Acc);
+        false ->
+            do_check_module_subset2(Mods, Mods2, [Mod|Acc])
+    end.
+     
+ 
+modules_of(Instructions) ->
+    modules_of(Instructions, []).
+ 
+modules_of([], Acc) ->
+    lists:reverse(Acc);
+modules_of([{V,Instructions}|T], Acc) ->
+    Mods = modules_of2(Instructions, []),
+    modules_of(T, [{V, Mods}|Acc]).
+ 
+modules_of2([], Acc) ->
+    lists:reverse(Acc);
+modules_of2([Instr|Instructions], Acc) ->
+    case module_of(Instr) of
+        {value, Mod} ->
+            modules_of2(Instructions, [Mod|Acc]);
+        false ->
+            modules_of2(Instructions, Acc)
+    end.
+ 
+module_of({add_module, Module}) ->
+    {value, Module};
+module_of({remove, {Module, _Pre, _Post}}) ->
+    {value, Module};
+module_of({load_module, Module, _Pre, _Post, _Depend}) ->
+    {value, Module};
+module_of({update, Module, _Change, _Pre, _Post, _Depend}) ->
+    {value, Module};
+module_of(_) ->
+    false.
+ 
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 check_version(V) when list(V) ->

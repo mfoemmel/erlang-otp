@@ -1895,8 +1895,9 @@ reverse([],Acc) ->
 
 escape_lt_and_gt(Rawline,HTML) when HTML =/= true ->
     Rawline;
-escape_lt_and_gt(Rawline,HTML) ->
+escape_lt_and_gt(Rawline,_HTML) ->
     escape_lt_and_gt1(Rawline,[]).
+
 escape_lt_and_gt1([$<|T],Acc) ->
     escape_lt_and_gt1(T,[$;,$t,$l,$&|Acc]);
 escape_lt_and_gt1([$>|T],Acc) ->

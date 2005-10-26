@@ -98,7 +98,7 @@ set_kanno(Kthing, Anno) -> setelement(2, Kthing, Anno).
 -record(iset, {anno=[],vars,arg,body}).
 -record(iletrec, {anno=[],defs}).
 -record(ialias, {anno=[],vars,pat}).
--record(iclause, {anno=[],sub,pats,guard,body}).
+-record(iclause, {anno=[],isub,osub,pats,guard,body}).
 -record(ireceive_accept, {anno=[],arg}).
 -record(ireceive_next, {anno=[],arg}).
 
@@ -233,16 +233,16 @@ expr(#c_tuple{anno=A,es=Ces}, Sub, St0) ->
     {Kes,Ep,St1} = atomic_list(Ces, Sub, St0),
     {#k_tuple{anno=A,es=Kes},Ep,St1};
 expr(#c_binary{anno=A,segments=Cv}, Sub, St0) ->
-    case catch atomic_bin(Cv, Sub, St0, 0) of
-	{'EXIT',R} -> exit(R);
-	bad_element_size ->
+    try atomic_bin(Cv, Sub, St0, 0) of
+	{Kv,Ep,St1} ->
+	    {#k_binary{anno=A,segs=Kv},Ep,St1}
+    catch
+	throw:bad_element_size ->
 	    Erl = #c_atom{val=erlang},
 	    Name = #c_atom{val=error},
 	    Args = [#c_atom{val=badarg}],
-	    Fault = #c_call{module=Erl,name=Name,args=Args},
-	    expr(Fault, Sub, St0);
-	{Kv,Ep,St1} ->
-	    {#k_binary{anno=A,segs=Kv},Ep,St1}
+	    Error = #c_call{module=Erl,name=Name,args=Args},
+	    expr(Error, Sub, St0)
     end;
 expr(#c_fname{anno=A,arity=Ar}=Fname, Sub, St) ->
     %% A local in an expression.
@@ -526,82 +526,97 @@ force_variable(Ke, St0) ->
     {V,St1} = new_var(St0),
     {V,[#iset{vars=[V],arg=Ke}],St1}.
 
-%% pattern(Cpat, Sub, State) -> {Kpat,Sub,State}.
+%% pattern(Cpat, Isub, Osub, State) -> {Kpat,Sub,State}.
 %%  Convert patterns.  Variables shadow so rename variables that are
 %%  already defined.
+%%
+%%  Patterns are complicated by sizes in binaries.  These are pure
+%%  input variables which create no bindings.  We, therefore, need to
+%%  carry around the original substitutions to get the correct
+%%  handling.
 
-pattern(#c_var{anno=A,name=V}, Sub, St0) ->
+pattern(#c_var{anno=A,name=V}, _Isub, Osub, St0) ->
     case sets:is_element(V, St0#kern.ds) of
 	true ->
 	    {New,St1} = new_var_name(St0),
 	    {#k_var{anno=A,name=New},
-	     set_vsub(V, New, Sub),
+	     set_vsub(V, New, Osub),
 	     St1#kern{ds=sets:add_element(New, St1#kern.ds)}};
 	false ->
-	    {#k_var{anno=A,name=V},Sub,
+	    {#k_var{anno=A,name=V},Osub,
 	     St0#kern{ds=sets:add_element(V, St0#kern.ds)}}
     end;
-pattern(#c_char{anno=A,val=C}, Sub, St) ->
-    {#k_int{anno=A,val=C},Sub,St};		%Convert to integers!
-pattern(#c_int{anno=A,val=I}, Sub, St) ->
-    {#k_int{anno=A,val=I},Sub,St};
-pattern(#c_float{anno=A,val=F}, Sub, St) ->
-    {#k_float{anno=A,val=F},Sub,St};
-pattern(#c_atom{anno=A,val=At}, Sub, St) ->
-    {#k_atom{anno=A,val=At},Sub,St};
-pattern(#c_string{val=S}, Sub, St) ->
+pattern(#c_char{anno=A,val=C}, _Isub, Osub, St) ->
+    {#k_int{anno=A,val=C},Osub,St};		%Convert to integers!
+pattern(#c_int{anno=A,val=I}, _Isub, Osub, St) ->
+    {#k_int{anno=A,val=I},Osub,St};
+pattern(#c_float{anno=A,val=F}, _Isub, Osub, St) ->
+    {#k_float{anno=A,val=F},Osub,St};
+pattern(#c_atom{anno=A,val=At}, _Isub, Osub, St) ->
+    {#k_atom{anno=A,val=At},Osub,St};
+pattern(#c_string{val=S}, _Isub, Osub, St) ->
     L = foldr(fun (C, T) -> #k_cons{hd=#k_int{val=C},tl=T} end,
 	      #k_nil{}, S),
-    {L,Sub,St};
-pattern(#c_nil{anno=A}, Sub, St) ->
-    {#k_nil{anno=A},Sub,St};
-pattern(#c_cons{anno=A,hd=Ch,tl=Ct}, Sub0, St0) ->
-    {Kh,Sub1,St1} = pattern(Ch, Sub0, St0),
-    {Kt,Sub2,St2} = pattern(Ct, Sub1, St1),
-    {#k_cons{anno=A,hd=Kh,tl=Kt},Sub2,St2};
-pattern(#c_tuple{anno=A,es=Ces}, Sub0, St0) ->
-    {Kes,Sub1,St1} = pattern_list(Ces, Sub0, St0),
-    {#k_tuple{anno=A,es=Kes},Sub1,St1};
-pattern(#c_binary{anno=A,segments=Cv}, Sub0, St0) ->
-    {Kv,Sub1,St1} = pattern_bin(Cv, Sub0, St0),
-    {#k_binary{anno=A,segs=Kv},Sub1,St1};
-pattern(#c_alias{anno=A,var=Cv,pat=Cp}, Sub0, St0) ->
+    {L,Osub,St};
+pattern(#c_nil{anno=A}, _Isub, Osub, St) ->
+    {#k_nil{anno=A},Osub,St};
+pattern(#c_cons{anno=A,hd=Ch,tl=Ct}, Isub, Osub0, St0) ->
+    {Kh,Osub1,St1} = pattern(Ch, Isub, Osub0, St0),
+    {Kt,Osub2,St2} = pattern(Ct, Isub, Osub1, St1),
+    {#k_cons{anno=A,hd=Kh,tl=Kt},Osub2,St2};
+pattern(#c_tuple{anno=A,es=Ces}, Isub, Osub0, St0) ->
+    {Kes,Osub1,St1} = pattern_list(Ces, Isub, Osub0, St0),
+    {#k_tuple{anno=A,es=Kes},Osub1,St1};
+pattern(#c_binary{anno=A,segments=Cv}, Isub, Osub0, St0) ->
+    {Kv,Osub1,St1} = pattern_bin(Cv, Isub, Osub0, St0),
+    {#k_binary{anno=A,segs=Kv},Osub1,St1};
+pattern(#c_alias{anno=A,var=Cv,pat=Cp}, Isub, Osub0, St0) ->
     {Cvs,Cpat} = flatten_alias(Cp),
-    {Kvs,Sub1,St1} = pattern_list([Cv|Cvs], Sub0, St0),
-    {Kpat,Sub2,St2} = pattern(Cpat, Sub1, St1),
-    {#ialias{anno=A,vars=Kvs,pat=Kpat},Sub2,St2}.
+    {Kvs,Osub1,St1} = pattern_list([Cv|Cvs], Isub, Osub0, St0),
+    {Kpat,Osub2,St2} = pattern(Cpat, Isub, Osub1, St1),
+    {#ialias{anno=A,vars=Kvs,pat=Kpat},Osub2,St2}.
 
 flatten_alias(#c_alias{var=V,pat=P}) ->
     {Vs,Pat} = flatten_alias(P),
     {[V|Vs],Pat};
 flatten_alias(Pat) -> {[],Pat}.
 
-pattern_bin(Es, Sub, St) -> pattern_bin(Es, Sub, St, 0).
+pattern_bin(Es, Isub, Osub0, St0) ->
+    {Kbin,{_,Osub},St} = pattern_bin(Es, Isub, Osub0, St0, 0),
+    {Kbin,Osub,St}.
 
 pattern_bin([#c_bitstr{anno=A,val=E0,size=S0,unit=U,type=T,flags=Fs}|Es0], 
-	    Sub0, St0, B0) ->
-    {S1,[],St1} = expr(S0, Sub0, St0),
+	    Isub0, Osub0, St0, B0) ->
+    {S1,[],St1} = expr(S0, Isub0, St0),
     U0 = core_lib:literal_value(U),
     Fs0 = core_lib:literal_value(Fs),
     %%ok= io:fwrite("~w: ~p~n", [?LINE,{B0,S1,U0,Fs0}]),
     {B1,Fs1} = aligned(B0, S1, U0, Fs0),
-    {E,Sub1,St2} = pattern(E0, Sub0, St1),
-    {Es,Sub2,St3} = pattern_bin(Es0, Sub1, St2, B1),
+    {E,Osub1,St2} = pattern(E0, Isub0, Osub0, St1),
+    Isub1 = case E0 of
+		#c_var{name=V} ->
+		    set_vsub(V, E#k_var.name, Isub0);
+		_ -> Isub0
+	    end,
+    {Es,{Isub,Osub},St3} = pattern_bin(Es0, Isub1, Osub1, St2, B1),
     {#k_bin_seg{anno=A,size=S1,
 		unit=U0,
 		type=core_lib:literal_value(T),
 		flags=Fs1,
 		seg=E,next=Es},
-     Sub2,St3};
-pattern_bin([], Sub, St, _Bits) -> {#k_bin_end{},Sub,St}.
+     {Isub,Osub},St3};
+pattern_bin([], Isub, Osub, St, _Bits) -> {#k_bin_end{},{Isub,Osub},St}.
 
 %% pattern_list([Cexpr], Sub, State) -> {[Kexpr],Sub,State}.
 
 pattern_list(Ces, Sub, St) ->
-    foldr(fun (Ce, {Kes,Sub0,St0}) ->
-		  {Ke,Sub1,St1} = pattern(Ce, Sub0, St0),
-		  {[Ke|Kes],Sub1,St1}
-	  end, {[],Sub,St}, Ces).
+    pattern_list(Ces, Sub, Sub, St).
+
+pattern_list(Ces, Isub, Osub, St) ->
+    foldr(fun (Ce, {Kes,Osub0,St0}) ->
+		  {Ke,Osub1,St1} = pattern(Ce, Isub, Osub0, St0),
+		  {[Ke|Kes],Osub1,St1}
+	  end, {[],Osub,St}, Ces).
 
 %% new_sub() -> Subs.
 %% set_vsub(Name, Sub, Subs) -> Subs.
@@ -689,15 +704,11 @@ is_remote_bif(erlang, N, A) ->
     case erl_internal:guard_bif(N, A) of
 	true -> true;
 	false ->
-	    case erl_internal:type_test(N, A) of
-		true -> true;
-		false ->
-		    case catch erl_internal:op_type(N, A) of
-			arith -> true;
-			bool -> true;
-			comp -> true;
-			_Other -> false		%List, send or not an op
-		    end
+	    case catch erl_internal:op_type(N, A) of
+		arith -> true;
+		bool -> true;
+		comp -> true;
+		_Other -> false		%List, send or not an op
 	    end
     end;
 is_remote_bif(_, _, _) -> false.
@@ -749,7 +760,7 @@ first([H|T]) -> [H|first(T)].
 %% 1. The patterns in the clauses to converted to lists of kernel
 %% patterns.  The Core clause is now hybrid, this is easier to work
 %% with.  Remove clauses with trivially false guards, this simplifies
-%% later passes.  Add local defined vars and variable subs to each
+%% later passes.  Add locally defined vars and variable subs to each
 %% clause for later use.
 %%
 %% 2. The pattern matching is optimised.  Variable substitutions are
@@ -780,8 +791,9 @@ match_pre(Cs, Sub0, St) ->
 		  case is_false_guard(G) of
 		      true -> {Cs0,St0};
 		      false ->
-			  {Kps,Sub1,St1} = pattern_list(Ps, Sub0, St0),
-			  {[#iclause{anno=A,sub=Sub1,pats=Kps,guard=G,body=B}|
+			  {Kps,Osub1,St1} = pattern_list(Ps, Sub0, St0),
+			  {[#iclause{anno=A,isub=Sub0,osub=Osub1,
+				     pats=Kps,guard=G,body=B}|
 			    Cs0],St1}
 		  end
 	  end, {[],St}, Cs).
@@ -805,18 +817,18 @@ match_guard(Cs0, Def0, St0) ->
     {Cs1,Def1,St1} = match_guard_1(Cs0, Def0, St0),
     {build_alt(build_guard(Cs1), Def1),St1}.
 
-match_guard_1([#iclause{anno=A,sub=Sub,guard=G,body=B}|Cs0], Def0, St0) ->
+match_guard_1([#iclause{anno=A,osub=Osub,guard=G,body=B}|Cs0], Def0, St0) ->
     case is_true_guard(G) of
 	true ->
 	    %% The true clause body becomes the default.
-	    {Kb,Pb,St1} = body(B, Sub, St0),
+	    {Kb,Pb,St1} = body(B, Osub, St0),
 	    Line = get_line(A),
 	    St2 = maybe_add_warning(Cs0, Line, St1),
 	    St = maybe_add_warning(Def0, Line, St2),
 	    {[],pre_seq(Pb, Kb),St};
 	false ->
-	    {Kg,St1} = guard(G, Sub, St0),
-	    {Kb,Pb,St2} = body(B, Sub, St1),
+	    {Kg,St1} = guard(G, Osub, St0),
+	    {Kb,Pb,St2} = body(B, Osub, St1),
 	    {Cs1,Def1,St3} = match_guard_1(Cs0, Def0, St2),
 	    {[#k_guard_clause{guard=Kg,body=pre_seq(Pb, Kb)}|Cs1],
 	     Def1,St3}
@@ -920,12 +932,15 @@ match_varcon(Us, [C|_]=Cs, Def, St) ->
 %%  as well.
 
 match_var([U|Us], Cs0, Def, St) ->
-    Cs1 = map(fun (#iclause{sub=Sub0,pats=[Arg|As]}=C) ->
+    Cs1 = map(fun (#iclause{isub=Isub0,osub=Osub0,pats=[Arg|As]}=C) ->
 		      Vs = [arg_arg(Arg)|arg_alias(Arg)],
- 		      Sub1 = foldl(fun (#k_var{name=V}, Acc) ->
+ 		      Osub1 = foldl(fun (#k_var{name=V}, Acc) ->
  					   subst_vsub(V, U#k_var.name, Acc)
- 				   end, Sub0, Vs),
-		      C#iclause{sub=Sub1,pats=As}
+ 				   end, Osub0, Vs),
+ 		      Isub1 = foldl(fun (#k_var{name=V}, Acc) ->
+					    subst_vsub(V, U#k_var.name, Acc)
+				    end, Isub0, Vs),
+		      C#iclause{isub=Isub1,osub=Osub1,pats=As}
 	      end, Cs0),
     match(Us, Cs1, Def, St).
 
@@ -1035,7 +1050,7 @@ match_clause([U|Us], [C|_]=Cs0, Def, St0) ->
     {B,St3} = match(Vs ++ Us, Cs1, Def, St2),
     {#k_val_clause{anno=Anno,val=Match,body=B},St3}.
 
-sub_size_var(#k_bin_seg{size=#k_var{name=Name}=Kvar}=BinSeg, [#iclause{sub=Sub}|_]) ->
+sub_size_var(#k_bin_seg{size=#k_var{name=Name}=Kvar}=BinSeg, [#iclause{isub=Sub}|_]) ->
     BinSeg#k_bin_seg{size=Kvar#k_var{name=get_vsub(Name, Sub)}};
 sub_size_var(K, _) -> K.
 
@@ -1057,7 +1072,7 @@ get_match(M, St) ->
     {M,[],St}.
 
 new_clauses(Cs0, U, St) ->
-    Cs1 = map(fun (#iclause{sub=Sub0,pats=[Arg|As]}=C) ->
+    Cs1 = map(fun (#iclause{isub=Isub0,osub=Osub0,pats=[Arg|As]}=C) ->
 		      Head = case arg_arg(Arg) of
 				 #k_cons{hd=H,tl=T} -> [H,T|As];
 				 #k_tuple{es=Es} -> Es ++ As;
@@ -1067,10 +1082,13 @@ new_clauses(Cs0, U, St) ->
 				 _Other -> As
 			     end,
 		      Vs = arg_alias(Arg),
-		      Sub1 = foldl(fun (#k_var{name=V}, Acc) ->
-					   subst_vsub(V, U#k_var.name, Acc)
-				   end, Sub0, Vs),
-		      C#iclause{sub=Sub1,pats=Head}
+		      Osub1 = foldl(fun (#k_var{name=V}, Acc) ->
+					    subst_vsub(V, U#k_var.name, Acc)
+				    end, Osub0, Vs),
+		      Isub1 = foldl(fun (#k_var{name=V}, Acc) ->
+					    subst_vsub(V, U#k_var.name, Acc)
+				    end, Isub0, Vs),
+		      C#iclause{isub=Isub1,osub=Osub1,pats=Head}
 	      end, Cs0),
     {Cs1,St}.
 

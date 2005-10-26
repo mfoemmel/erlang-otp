@@ -21,12 +21,10 @@
 -include("httpd.hrl").
 
 -define(VMODULE,"INCLUDE").
--include("httpd_verbosity.hrl").
 
 %% do
 
 do(Info) ->
-    ?vtrace("do",[]),
     case Info#mod.method of
 	"GET" ->
 	    case httpd_util:key1search(Info#mod.data,status) of
@@ -50,27 +48,18 @@ do(Info) ->
     end.
 
 do_include(Info) ->
-    ?vtrace("do_include -> entry with"
-	    "~n   URI: ~p",[Info#mod.request_uri]),
     Path = mod_alias:path(Info#mod.data,Info#mod.config_db,
 			  Info#mod.request_uri),
     Suffix = httpd_util:suffix(Path),
     case httpd_util:lookup_mime_default(Info#mod.config_db,Suffix) of
 	"text/x-server-parsed-html" ->
 	    HeaderStart = [{content_type, "text/html"}], 
-	    ?vtrace("do_include -> send ~p", [Path]),
 	    case send_in(Info, Path, HeaderStart, file:read_file_info(Path)) of
 		{ok, ErrorLog, Size} ->
-		    ?vtrace("do_include -> sent ~w bytes", [Size]),
 		    {proceed, [{response, {already_sent, 200, Size}},
 			       {mime_type, "text/html"} |
 			       lists:append(ErrorLog, Info#mod.data)]};
 		{error, Reason} ->
-		    ?vlog("send in failed:"
-			  "~n   Reason: ~p"
-			  "~n   Path:   ~p"
-			  "~n   Info:   ~p",
-			  [Reason,Info,Path]),
 		    {proceed,
 		     [{status,send_error(Reason,Info,Path)}|Info#mod.data]}
 	    end;
@@ -101,7 +90,7 @@ update_context([Tag|R1],[Value|R2],Context) ->
 verify_tags(Command,ValidTags,TagList,ValueList) when length(TagList)==length(ValueList) ->
     verify_tags(Command, ValidTags, TagList);
 verify_tags(Command, _ValidTags, _TagList, _ValueList) ->
-    {error,?NICE(Command ++ " directive has spurious tags")}.
+    {error, ?NICE(Command ++ " directive has spurious tags")}.
 
 verify_tags(_Command, _ValidTags, []) ->
     ok;
@@ -110,7 +99,7 @@ verify_tags(Command, ValidTags, [Tag|Rest]) ->
 	true ->
 	    verify_tags(Command, ValidTags, Rest);
 	false ->
-	    {error,?NICE(Command++" directive has a spurious tag ("++
+	    {error, ?NICE(Command++" directive has a spurious tag ("++
 			 atom_to_list(Tag)++")")}
     end.
 
@@ -132,10 +121,8 @@ include(_Info, Context, ErrorLog, _TagList, _ValueList, R) ->
       ErrorLog], httpd_util:key1search(Context, errmsg, ""), R}.
 
 include(Info, Context, ErrorLog, R, Path) ->
-    ?DEBUG("include -> read file: ~p",[Path]),
     case file:read_file(Path) of
 	{ok, Body} ->
-	    ?DEBUG("include -> size(Body): ~p",[size(Body)]),
 	    {ok, NewContext, NewErrorLog, Result} =
 		parse(Info, binary_to_list(Body), Context, ErrorLog, []),
 	    {ok, NewContext, NewErrorLog, Result, R};
@@ -331,16 +318,10 @@ flastmod(_Info, Context, ErrorLog, R, File) ->
 %%
 
 exec(Info,Context,ErrorLog,[cmd],[Command],R) ->
-    ?vtrace("exec cmd:~n   Command: ~p",[Command]),
     cmd(Info,Context,ErrorLog,R,Command);
 exec(Info,Context,ErrorLog,[cgi],[RequestURI],R) ->
-    ?vtrace("exec cgi:~n   RequestURI: ~p",[RequestURI]),
     cgi(Info,Context,ErrorLog,R,RequestURI);
-exec(_Info, Context, ErrorLog, TagList, ValueList, R) ->
-    ?vtrace("exec with spurious tag:"
-	    "~n   TagList:   ~p"
-	    "~n   ValueList: ~p",
-	    [TagList,ValueList]),
+exec(_Info, Context, ErrorLog, _TagList, _ValueList, R) ->
     {ok, Context,
      [{internal_info,?NICE("exec directive has a spurious tag")}|
       ErrorLog], httpd_util:key1search(Context,errmsg,""),R}.
@@ -357,18 +338,10 @@ cmd(Info, Context, ErrorLog, R, Command) ->
 	    {NewErrorLog, Result} = proxy(Port, ErrorLog),
 	    {ok, Context, NewErrorLog, Result, R};
 	{'EXIT', Reason} ->
-	    ?vlog("open port failed: exit"
-		  "~n   URI:    ~p"
-		  "~n   Reason: ~p",
-		  [Info#mod.request_uri,Reason]),
 	    exit({open_port_failed,Reason,
 		  [{uri,Info#mod.request_uri},{script,Command},
 		   {env,Env},{dir,Dir}]});
 	O ->
-	    ?vlog("open port failed: unknown result"
-		  "~n   URI: ~p"
-		  "~n   O:   ~p",
-		  [Info#mod.request_uri,O]),
 	    exit({open_port_failed,O,
 		  [{uri,Info#mod.request_uri},{script,Command},
 		   {env,Env},{dir,Dir}]})
@@ -409,14 +382,12 @@ remove_header([_C|Rest]) ->
 
 exec_script(#mod{config_db = Db, request_uri = RequestUri} = Info, 
 	    Script, _AfterScript, ErrorLog, Context, R) ->
-    ?vtrace("exec_script -> entry",[]),
     process_flag(trap_exit,true),    
     Aliases = httpd_util:multi_lookup(Db, alias),
     {_, Path, AfterPath} = mod_alias:real_name(Db, RequestUri, Aliases),
     Env  = env(Info) ++ mod_cgi:env(Info, Path, AfterPath),
     Dir  = filename:dirname(Path),
     Port = (catch open_port({spawn,Script},[stream,{env, Env},{cd, Dir}])),
-    ?vtrace("exec_script -> Port: ~w",[Port]),
     case Port of
 	P when port(P) ->
 	    %% Send entity body to port.
@@ -428,11 +399,6 @@ exec_script(#mod{config_db = Db, request_uri = RequestUri} = Info,
 		  end,
 	    case Res of
 		{'EXIT', Reason} ->
-		    ?vlog("port send failed:"
-			  "~n   Port:   ~p"
-			  "~n   URI:    ~p"
-			  "~n   Reason: ~p",
-			  [Port, RequestUri, Reason]),
 		    exit({open_cmd_failed,Reason,
 			  [{mod,?MODULE},{port,Port},
 			   {uri,RequestUri},
@@ -443,18 +409,10 @@ exec_script(#mod{config_db = Db, request_uri = RequestUri} = Info,
 		    {ok, Context, NewErrorLog, remove_header(Result), R}
 	    end;
 	{'EXIT', Reason} ->
-	    ?vlog("open port failed: exit"
-		  "~n   URI:    ~p"
-		  "~n   Reason: ~p",
-		  [RequestUri,Reason]),
 	    exit({open_port_failed,Reason,
 		  [{mod,?MODULE},{uri,RequestUri},{script,Script},
 		   {env,Env},{dir,Dir}]});
 	O ->
-	    ?vlog("open port failed: unknown result"
-		  "~n   URI: ~p"
-		  "~n   O:   ~p",
-		[RequestUri,O]),
 	    exit({open_port_failed,O,
 		  [{mod,?MODULE},{uri,RequestUri},{script,Script},
 		   {env,Env},{dir,Dir}]})
@@ -470,11 +428,8 @@ proxy(Port, ErrorLog) ->
     proxy(Port, ErrorLog, []).
 
 proxy(Port, ErrorLog, Result) ->
-    ?vdebug("proxy -> entry with"
-	"~n   length(Result): ~p", [length(Result)]),
     receive
 	{Port, {data, Response}} ->
-	    ?vtrace("proxy -> got some data from the port",[]),
 	    proxy(Port, ErrorLog, lists:append(Result,Response));
 	{'EXIT', Port, normal} when port(Port) ->
 	    process_flag(trap_exit, false),
@@ -505,17 +460,14 @@ send_in(Info, Path, Head, {ok,FileInfo}) ->
 	{ok, Bin} ->
 	    send_in1(Info, binary_to_list(Bin), Head, FileInfo);
 	{error, Reason} ->
-	    ?vlog("failed reading file: ~p",[Reason]),
 	    {error, {open,Reason}}
     end;
 send_in(_Info , _Path, _Head,{error,Reason}) ->
-    ?vlog("failed open file: ~p",[Reason]),
     {error, {open,Reason}}.
 
 send_in1(Info, Data, Head, FileInfo) ->
     {ok, _Context, Err, ParsedBody} = parse(Info,Data,?DEFAULT_CONTEXT,[],[]),
     Size = length(ParsedBody),
-    ?vdebug("send_in1 -> Size: ~p",[Size]),
     Date = httpd_util:rfc1123_date(FileInfo#file_info.mtime),
     Head1 = case Info#mod.http_version of 
 		"HTTP/1.1"->
@@ -538,26 +490,22 @@ parse(Info,Body) ->
 parse(_Info, [], Context, ErrorLog, Result) ->
     {ok, Context, lists:reverse(ErrorLog), lists:reverse(Result)};
 parse(Info,[$<,$!,$-,$-,$#|R1],Context,ErrorLog,Result) ->
-  ?DEBUG("parse -> start command directive when length(R1): ~p",[length(R1)]),
   case catch parse0(R1,Context) of
     {parse_error,Reason} ->
       parse(Info,R1,Context,[{internal_info,?NICE(Reason)}|ErrorLog],
 	    [$#,$-,$-,$!,$<|Result]);
     {ok,Context,Command,TagList,ValueList,R2} ->
-      ?DEBUG("parse -> Command: ~p",[Command]),
-      {ok,NewContext,NewErrorLog,MoreResult,R3}=
-	handle(Info,Context,ErrorLog,Command,TagList,ValueList,R2),
-      parse(Info,R3,NewContext,NewErrorLog,lists:reverse(MoreResult)++Result)
+	  {ok,NewContext,NewErrorLog,MoreResult,R3}=
+	      handle(Info,Context,ErrorLog,Command,TagList,ValueList,R2),
+	  parse(Info,R3,NewContext,NewErrorLog,
+		lists:reverse(MoreResult)++Result)
   end;
 parse(Info,[$<,$!,$-,$-|R1],Context,ErrorLog,Result) ->
-  ?DEBUG("parse -> start comment when length(R1) = ~p",[length(R1)]),
   case catch parse5(R1,[],0) of
     {parse_error,Reason} ->
-      ?ERROR("parse -> parse error: ~p",[Reason]),
-      parse(Info,R1,Context,[{internal_info,?NICE(Reason)}|ErrorLog],Result);
-    {Comment,R2} ->
-      ?DEBUG("parse -> length(Comment) = ~p, length(R2) = ~p",
-	     [length(Comment),length(R2)]),
+	  parse(Info,R1,Context,
+		[{internal_info,?NICE(Reason)}|ErrorLog],Result);
+      {Comment,R2} ->
       parse(Info,R2,Context,ErrorLog,Comment++Result)
   end;
 parse(Info,[C|R],Context,ErrorLog,Result) ->

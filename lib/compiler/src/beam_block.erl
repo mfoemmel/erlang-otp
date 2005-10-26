@@ -57,6 +57,28 @@ blockify([{test,bs_skip_bits,F,[{integer,I1},Unit1,_]}|Is],
 	 [{test,bs_skip_bits,F,[{integer,I2},Unit2,Flags]}|Acc]) ->
     blockify(Is, [{test,bs_skip_bits,F,
 		   [{integer,I1*Unit1+I2*Unit2},1,Flags]}|Acc]);
+%% XXX NOT now - breaks hipe.
+%% blockify([{test,bs_test_tail,_,[0]}|Is],
+%% 	 [{test,bs_skip_bits,_,[{atom,all},8,{field_flags,Fl}]}|Acc1]=Acc0) ->
+%%     %% The bs_test_tail/2 instruction is not needed here - it can't fail
+%%     %% because the bs_skip_bits/4 instruction will fail if the binary
+%%     %% is not aligned at this point.
+%%     case member(aligned, Fl) of
+%% 	false ->
+%% 	    blockify(Is, Acc0);
+%% 	true ->
+%% 	    %% Since the bs_skip_bits/4 instruction is aligned, it can't fail.
+%% 	    %% We can also get rid of any bs_restore/1 instruction.
+%% 	    case Acc1 of
+%% 		[{bs_restore,_}|Acc] -> ok;
+%% 		Acc -> ok
+%% 	    end,
+%% 	    blockify(Is, Acc)
+%%     end;
+%% blockify([{test,bs_test_tail,_,[0]}|Is],
+%% 	 [{test,bs_get_binary,_,[{atom,all},8,_,_]}|_]=Acc) ->
+%%     %% The bs_test_tail/2 instruction is not needed here - it can't fail.
+%%     blockify(Is, Acc);
 blockify([{test,is_atom,{f,Fail},[Reg]}=I|
 	  [{select_val,Reg,{f,Fail},
 	    {list,[{atom,false},{f,_}=BrFalse,

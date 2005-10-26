@@ -70,8 +70,8 @@
 	    argtypes = [],
 	    module = ?NO_MODULE,
 	    line = none,
-	    erl_vars = ordsets:new_set(),
-	    db_vars = ordsets:new_set(),
+	    erl_vars = ordsets:new(),
+	    db_vars = ordsets:new(),
 	    allow_erl_vars = false,
 	    allow_db_vars = true,
 	    allow_fun_calls = false,
@@ -320,8 +320,6 @@ pass2({[{eof,EOFline}|Forms],S0}) -> %% Forms are the forms in reverse order
     S1 = S0#s{mquery = mk_initial_mquery ()},
     {RulePart, S3} =
 	case mk_rules_def_fkn(S1) of
-	    [] ->
-		{[], S1};
 	    {ok, FnDefL, S2} ->
 		{FnDefL, S2};
 	    {error, ErrLst} ->
@@ -617,7 +615,7 @@ the_query1({Pattern,Goal0,S}) ->
     {call,Call,Opt}.
 
 
-vars(X) -> vars(X,ordsets:new_set()).
+vars(X) -> vars(X,ordsets:new()).
 
 vars({var,_,V}, S) -> ordsets:add_element(V,S);
 vars({cons,_,H,T}, S) -> vars(T, vars(H,S));
@@ -762,7 +760,7 @@ db_vars(L) ->
       fun
 	  ({generate,_,{var,_,V},_}, VarSet) -> ordsets:add_element(V, VarSet);
 	  (_, VarSet) -> VarSet
-      end, ordsets:new_set(), L).
+      end, ordsets:new(), L).
       
 
 generate_constraint(Left, Right, Op, S0) ->
@@ -800,7 +798,7 @@ generate_constraint(Left, Right, Op, S0) ->
     end.
 
 generate_general_constraint (Constr, S) ->
-    Vars = all_vars (Constr, ordsets:new_set()),
+    Vars = all_vars (Constr, ordsets:new()),
     Vars2 = make_replacements (Vars),
     Code  = exchange_vars (Constr, Vars2),
     QueryNo = S#s.mquery_next,
@@ -928,7 +926,7 @@ generate_generator({var,VLL,VL}, Right, S) ->
 
 	SomeExpr when IsCompilable == true ->
 	    
-	    Vars = all_vars (NewExpr, ordsets:new_set()),
+	    Vars = all_vars (NewExpr, ordsets:new()),
 	    Vars2 = make_replacements (Vars),
 	    Code  = exchange_vars (NewExpr, Vars2),
 	    QueryNo = S#s.mquery_next,
@@ -1173,8 +1171,8 @@ all_vars (X, Res) when tuple (X) ->
     all_vars (tuple_to_list (X), Res)
 ;
 all_vars ([H|T], Res) ->
-    ordsets:union ([all_vars (H, ordsets:new_set()), 
-		    all_vars (T, ordsets:new_set()), Res])
+    ordsets:union ([all_vars (H, ordsets:new()), 
+		    all_vars (T, ordsets:new()), Res])
 ;
 all_vars (_, Res) ->
     Res.
@@ -1252,21 +1250,21 @@ var_names([{var,_,Name}|T]) ->
     [Name | var_names (T)].
 
 
-contain_db_var ({record_field, L, Var, Type, Field}, DBvars) ->
-    contain_db_var (Var, DBvars);
-contain_db_var ({var, L, Name}, DBvars) ->
-    ordsets:is_element ({var, '_', Name}, DBvars);
-contain_db_var (X, DBvars) when tuple (X) ->
-    contain_db_var (tuple_to_list (X), DBvars);
-contain_db_var ([H|T], DBvars) ->
-    case contain_db_var (H, DBvars) of
-	true ->
-	    true;
-	false ->
-	    contain_db_var (T, DBvars)
-    end;
-contain_db_var (_, _) ->
-    false.
+%% contain_db_var ({record_field, L, Var, Type, Field}, DBvars) ->
+%%     contain_db_var (Var, DBvars);
+%% contain_db_var ({var, L, Name}, DBvars) ->
+%%     ordsets:is_element ({var, '_', Name}, DBvars);
+%% contain_db_var (X, DBvars) when tuple (X) ->
+%%     contain_db_var (tuple_to_list (X), DBvars);
+%% contain_db_var ([H|T], DBvars) ->
+%%     case contain_db_var (H, DBvars) of
+%% 	true ->
+%% 	    true;
+%% 	false ->
+%% 	    contain_db_var (T, DBvars)
+%%     end;
+%% contain_db_var (_, _) ->
+%%     false.
 
 mk_initial_mquery () ->
     [{function,0,'MNEMOSYNE QUERY',2,

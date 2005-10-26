@@ -74,9 +74,6 @@
 -include("httpd.hrl").
 
 -define(VMODULE,"BROWSER").
--include("httpd_verbosity.hrl").
-
-
 
 do(Info) ->
     case httpd_util:key1search(Info#mod.data,status) of
@@ -84,7 +81,6 @@ do(Info) ->
 	    {proceed,Info#mod.data};
 	undefined ->
 	    Browser = getBrowser1(Info),
-	    ?vdebug("do -> Browser: ~p", [Browser]),
 	    {proceed,[{'user-agent', Browser}|Info#mod.data]}
     end.
 

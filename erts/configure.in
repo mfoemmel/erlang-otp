@@ -68,13 +68,6 @@ AC_ISC_POSIX
 
 AC_CONFIG_HEADER($host/config.h:config.h.in include/internal/$host/ethread_header_config.h:include/internal/ethread_header_config.h.in)
 
-case $host_os in
-	linux*)  AC_DEFINE(_GNU_SOURCE, 1, \
-[Define if you want to turn on some gnu features.]) ;;
-	*) ;;
-esac
-
-
 dnl ----------------------------------------------------------------------
 dnl Optional features.
 dnl ----------------------------------------------------------------------
@@ -146,6 +139,13 @@ AC_PROG_CC
 dnl ---------------------------------------------------------------------
 dnl Special windows stuff regarding CFLAGS and details in the environment...
 dnl ---------------------------------------------------------------------
+
+dnl NOTE: CPPFLAGS will be included in CFLAGS at the end
+case $host_os in
+    linux*) CPPFLAGS="$CPPFLAGS -D_GNU_SOURCE";; 
+    *) ;;
+esac
+
 AC_MSG_CHECKING(for mixed cygwin and native VC++ environment)
 if test "X$CC" = "Xcc.sh" -a "X$host" = "Xwin32"; then
 	if test -x /usr/bin/cygpath; then
@@ -171,7 +171,7 @@ dnl
 
 extra_flags="-I${ERL_TOP}/erts/$host $OTP_EXTRA_FLAGS"
 CFLAGS="$CFLAGS $extra_flags"
-DEBUG_CFLAGS="-g $extra_flags"
+DEBUG_CFLAGS="-g $CPPFLAGS $extra_flags"
 
 CFLAG_RUNTIME_LIBRARY_PATH="-Wl,-R"
 case $host_os in
@@ -463,7 +463,22 @@ if test $emu_threads = yes; then
 	ENABLE_ALLOC_TYPE_VARS="$ENABLE_ALLOC_TYPE_VARS threads"
 	case $host_os in
 	    solaris*) AC_DEFINE(ENABLE_CHILD_WAITER_THREAD) ;;
-	    linux*) AC_DEFINE(USE_RECURSIVE_MALLOC_MUTEX) ;;
+	    linux*)
+		AC_DEFINE(USE_RECURSIVE_MALLOC_MUTEX)
+		# -D_GNU_SOURCE already defined in CFLAGS remove it
+		# from EMU_THR_DEFS
+		new_emu_thr_defs=
+		for thr_def in $EMU_THR_DEFS; do
+		    case $thr_def in
+			-D_GNU_SOURCE*)
+			    ;;
+			*)
+			    new_emu_thr_defs="$new_emu_thr_defs $thr_def"
+			    ;;
+		    esac
+		done
+		EMU_THR_DEFS=$new_emu_thr_defs
+		;;
 	    *) ;;
 	esac
 fi
@@ -486,21 +501,25 @@ dnl Try to figure out where to get the termcap functions from.
 dnl We use tgetent(), tgetflag(), tgetnum(), tgetstr() and tputs()
 dnl ----------------------------------------------------------------------
 
+TERMCAP_LIB=
+
 if test "X$host" != "Xwin32"; then
-  AC_CHECK_LIB(ncurses, tgetent)
-  if test $ac_cv_lib_ncurses_tgetent = no ; then
-    AC_CHECK_LIB(curses, tgetent)
-    if test $ac_cv_lib_curses_tgetent = no ; then
-      AC_CHECK_LIB(termcap, tgetent)
-      if test $ac_cv_lib_termcap_tgetent = no ; then
-	AC_CHECK_LIB(termlib, tgetent)
-	if test $ac_cv_lib_termlib_tgetent = no ; then
-	  AC_MSG_ERROR([No curses library functions found])
+    # try these libs
+    termcap_libs="ncurses curses termcap termlib"
+
+    for termcap_lib in $termcap_libs; do
+	AC_CHECK_LIB($termcap_lib, tgetent, TERMCAP_LIB="-l$termcap_lib")
+	if test "x$TERMCAP_LIB" != "x"; then
+	    break
 	fi
-      fi
+    done
+
+    if test "x$TERMCAP_LIB" = "x"; then
+	AC_MSG_ERROR([No curses library functions found])
     fi
-  fi
 fi
+
+AC_SUBST(TERMCAP_LIB)
 
 dnl
 dnl This test kindly borrowed from Tcl
@@ -611,9 +630,9 @@ dnl ----------------------------------------------------------------------
 dnl Checks for header files.
 dnl ----------------------------------------------------------------------
 
-dnl We sometimes need ETHR_DEFS in order to find certain headers.
+dnl We sometimes need EMU_THR_DEFS in order to find certain headers.
 saved_cppflags=$CPPFLAGS
-CPPFLAGS="$CPPFLAGS $ETHR_DEFS"
+CPPFLAGS="$CPPFLAGS $EMU_THR_DEFS"
 
 AC_HEADER_DIRENT
 AC_HEADER_STDC
@@ -735,6 +754,8 @@ dnl Checks for library functions.
 dnl ----------------------------------------------------------------------
 
 dnl We may need the thread library in order to find some functions
+saved_cppflags=$CPPFLAGS
+CPPFLAGS="$CPPFLAGS $EMU_THR_DEFS"
 saved_libs=$LIBS
 LIBS="$LIBS $EMU_THR_X_LIBS"
 
@@ -780,6 +801,8 @@ LM_CHECK_FUNC_DECL(fread, [extern int fread();],,
 
 dnl Restore LIBS
 LIBS=$saved_libs
+dnl restore CPPFLAGS
+CPPFLAGS=$saved_cppflags
 
 dnl ----------------------------------------------------------------------
 dnl Checks for features/quirks in the system that affects Erlang.
@@ -1294,7 +1317,6 @@ dnl Stuff that should be moved into their respective application
 dnl ----------------------------------------------------------------------
 
 dnl crypto
-dnl ssh
 #--------------------------------------------------------------------
 # Dynamic Erlang Drivers
 #
@@ -1316,13 +1338,9 @@ dnl ssh
 #
 #--------------------------------------------------------------------
 
+DED_CFLAGS="$CFLAGS $CPPFLAGS $EMU_THR_DEFS"
 if test "x$GCC" = xyes; then
-	DED_CFLAGS="$CFLAGS -fPIC"
-else
-	DED_CFLAGS="$CFLAGS"
-fi
-if test $emu_threads = yes; then
-	DED_CFLAGS="$ETHR_DEFS $DED_CFLAGS"
+    DED_CFLAGS="$DED_CFLAGS -fPIC"
 fi
 
 DED_LD=ld
@@ -1657,6 +1675,11 @@ if test "$CXX" = false; then
   echo "No C++ compiler found" > $ERL_TOP/lib/orber/SKIP
 fi
 
+dnl ----------------------------------------------------------------------
+dnl Include CPPFLAGS in CFLAGS
+dnl ----------------------------------------------------------------------
+CFLAGS="$CFLAGS $CPPFLAGS"
+
 #
 # Currently if we compile for 64 bits we want to compile
 # some external port programs using 32 bits
@@ -1752,7 +1775,6 @@ dnl
   ../lib/ssl/c_src/$host/Makefile:../lib/ssl/c_src/Makefile.in
   ../lib/ssl/examples/certs/$host/Makefile:../lib/ssl/examples/certs/Makefile.in
   ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in
-  ../lib/ssh/c_src/$host/Makefile:../lib/ssh/c_src/Makefile.in
   ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in
   ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in
   ../lib/asn1/c_src/$host/Makefile:../lib/asn1/c_src/Makefile.in

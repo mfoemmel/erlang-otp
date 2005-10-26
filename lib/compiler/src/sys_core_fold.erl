@@ -1162,7 +1162,8 @@ move_to_guard_1(Call, #c_case{clauses=[_,_|Cs]=Cs0}=Case) ->
 	    shadow_warning(Cs, none),
 	    Call;				%The case is not needed.
 	false -> move_to_guard_2(Call, Case)
-    end.
+    end;
+move_to_guard_1(_, Case) -> Case.
 
 move_to_guard_2(Call, #c_case{clauses=[A,B|Cs]}=Case) ->
     case {A,B} of

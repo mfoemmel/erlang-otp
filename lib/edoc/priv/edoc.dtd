@@ -2,16 +2,15 @@
 <!-- EDoc DTD Version 0.2 -->
 
 <!ELEMENT overview (title, description?, author*, copyright?, version?,
-                    since?, see*, reference*, packages, modules)>
+                    since?, see*, reference*, todo?, packages, modules)>
 <!ATTLIST overview
   root CDATA #IMPLIED>
 
 <!ELEMENT title (#PCDATA)>
 
-
-<!ELEMENT package (description?, author*, copyright?,
-                   version?, since?, deprecated?, see*, reference*,
-                   modules)>
+<!ELEMENT package (description?, author*, copyright?, version?,
+		   since?, deprecated?, see*, reference*, todo?,
+		   modules)>
 <!ATTLIST package
   name CDATA #REQUIRED
   root CDATA #IMPLIED>
@@ -19,9 +18,9 @@
 <!ELEMENT modules (module+)>
 
 
-<!ELEMENT module (behaviour*, description?, author*, copyright?,
-                  version?, since?, deprecated?, see*, reference*,
-                  typedecls?, functions)>
+<!ELEMENT module (behaviour*, description?, author*, copyright?, version?,
+		  since?, deprecated?, see*, reference*, todo?,
+		  typedecls?, functions)>
 <!ATTLIST module
   name CDATA #REQUIRED
   private (yes | no) #IMPLIED
@@ -54,14 +53,16 @@
 
 <!ELEMENT reference (#PCDATA)>
 
+<!ELEMENT todo (#PCDATA)>
+
 <!ELEMENT typedecls (typedecl+)>
 <!ELEMENT typedecl (typedef, description?)>
 <!ATTLIST typedecl
   label CDATA #IMPLIED>
 
 <!ELEMENT functions (function+)>
-<!ELEMENT function (args, typespec?, equiv?, description?, since?,
-                    deprecated?, see*)>
+<!ELEMENT function (args, typespec?, throws?, equiv?, description?,
+                    since?, deprecated?, see*, todo?)>
 <!ATTLIST function
   name CDATA #REQUIRED
   arity CDATA #REQUIRED
@@ -71,6 +72,8 @@
 <!ELEMENT args (arg*)>
 <!ELEMENT arg (description?)>
 <!ATTLIST arg name CDATA #REQUIRED>
+
+<!ELEMENT throws (type, localdef*)>
 
 <!ELEMENT equiv (expr, see?)>
 <!ELEMENT expr (#PCDATA)>
@@ -94,11 +97,11 @@
 <!ELEMENT argtypes (type*)>
 
 <!ELEMENT type (typevar | atom | integer | float | nil | list | tuple |
-                fun | abstype | union)>
+                fun | record | abstype | union)>
 <!ATTLIST type name CDATA #IMPLIED>
 
 <!ELEMENT union (typevar | atom | integer | float | nil | list | tuple |
-                 fun | abstype)+>
+                 fun | record | abstype)+>
 
 <!ELEMENT typevar EMPTY>
 <!ATTLIST typevar name CDATA #REQUIRED>
@@ -119,6 +122,10 @@
 <!ELEMENT tuple (type*)>
 
 <!ELEMENT fun (argtypes, type)>
+
+<!ELEMENT record (atom, field*)>
+
+<!ELEMENT field (atom, type)>
 
 <!ELEMENT abstype (erlangName, type*)>
 <!ATTLIST abstype

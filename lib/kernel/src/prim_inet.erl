@@ -254,7 +254,7 @@ accept0(L, Time) when port(L), integer(Time) ->
 
 %% setup options from listen socket on the connected socket
 accept_opts(L, S) ->
-    case getopts(L, [active, nodelay, keepalive, delay_send]) of
+    case getopts(L, [active, nodelay, keepalive, delay_send, priority, tos]) of
 	{ok, Opts} ->
 	    case setopts(S, Opts) of
 		ok -> {ok, S};
@@ -796,6 +796,8 @@ enc_opt(linger)          -> ?INET_OPT_LINGER;
 enc_opt(broadcast)       -> ?INET_OPT_BROADCAST;
 enc_opt(sndbuf)          -> ?INET_OPT_SNDBUF;
 enc_opt(recbuf)          -> ?INET_OPT_RCVBUF;
+enc_opt(priority)        -> ?INET_OPT_PRIORITY;
+enc_opt(tos)             -> ?INET_OPT_TOS;
 enc_opt(nodelay)         -> ?TCP_OPT_NODELAY;
 enc_opt(multicast_if)    -> ?UDP_OPT_MULTICAST_IF;
 enc_opt(multicast_ttl)   -> ?UDP_OPT_MULTICAST_TTL;
@@ -824,6 +826,8 @@ dec_opt(?INET_OPT_LINGER)         -> linger;
 dec_opt(?INET_OPT_BROADCAST)      -> broadcast;
 dec_opt(?INET_OPT_SNDBUF)         -> sndbuf;
 dec_opt(?INET_OPT_RCVBUF)         -> recbuf;
+dec_opt(?INET_OPT_PRIORITY)       -> priority;
+dec_opt(?INET_OPT_TOS)            -> tos;
 dec_opt(?TCP_OPT_NODELAY)         -> nodelay;
 dec_opt(?UDP_OPT_MULTICAST_IF)    -> multicast_if;
 dec_opt(?UDP_OPT_MULTICAST_TTL)   -> multicast_ttl;
@@ -852,6 +856,8 @@ type_opt(linger)          -> {bool, int};
 type_opt(broadcast)       -> bool;
 type_opt(sndbuf)          -> int;
 type_opt(recbuf)          -> int;
+type_opt(priority)        -> int;
+type_opt(tos)             -> int;
 type_opt(nodelay)         -> bool;
 %% multicast
 type_opt(multicast_ttl)   -> int;
@@ -1003,7 +1009,7 @@ enum_name(Val, [_|List]) -> enum_name(Val, List);
 enum_name(_, []) -> false.
 
 %% encode opt/val REVERSED since options are stored in reverse order
-%% i.e the recent options first (we must process old -> new)
+%% i.e. the recent options first (we must process old -> new)
 encode_opt_val(Opts) -> enc_opt_val(Opts, []).
 
 enc_opt_val([{Opt,Val} | Opts], Acc) ->

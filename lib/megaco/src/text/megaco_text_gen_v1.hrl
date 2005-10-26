@@ -1295,7 +1295,7 @@ enc_PropertyGroup([H | _T] = List, mand_v, State) when record(H, 'PropertyParm')
     enc_PropertyGroup(List, opt_v, State);
 enc_PropertyGroup(PG, opt_v, State) ->
     [
-     [[enc_PropertyGroupParm(PP, State), ?LfToken] || PP <- PG]
+     [[enc_PropertyGroupParm(PP, State), ?CrToken, ?LfToken] || PP <- PG]
     ].
 
 enc_PropertyGroupParm(Val, State)
@@ -1461,13 +1461,78 @@ enc_RequestedEvent(Val, State)
 
 decompose_requestedActions(asn1_NOVALUE) ->
     [];
-decompose_requestedActions(Val)
-  when record(Val, 'RequestedActions') ->
+
+%% 
+%% This in the ABNF: 
+%% at-most-once each of KeepActiveToken , eventDM and eventStream
+%% at most one of either embedWithSig or embedNoSig but not both
+%% KeepActiveToken and embedWithSig must not both be present
+%% 
+
+%% embedWithSig
+decompose_requestedActions(#'RequestedActions'{keepActive        = KA,
+					       eventDM           = EDM,
+					       secondEvent       = SE,
+					       signalsDescriptor = SD}) 
+  when KA /= true,
+       SD /= asn1_NOVALUE, SD /= [] ->
+%     d("decompose_requestedActions -> entry with"
+%       "~n   EDM: ~p"
+%       "~n   SE:  ~p"
+%       "~n   SD:  ~p", [EDM, SE, SD]),
     [
-     {[Val#'RequestedActions'.keepActive],  fun enc_keepActive/2},
-     {[Val#'RequestedActions'.eventDM],     fun enc_EventDM/2},
-     {[Val#'RequestedActions'.secondEvent], fun enc_SecondEventsDescriptor/2},
-     {[Val#'RequestedActions'.signalsDescriptor], fun enc_SignalsDescriptor/2}
+     {[EDM],      fun enc_EventDM/2},
+     {[{SE, SD}], fun enc_embedWithSig/2}
+    ];
+
+%% embedNoSig
+decompose_requestedActions(#'RequestedActions'{keepActive        = KA,
+					       eventDM           = EDM,
+					       secondEvent       = SE,
+					       signalsDescriptor = SD}) 
+  when SD == asn1_NOVALUE; SD == [] ->
+    [
+     {[KA],  fun enc_keepActive/2},
+     {[EDM], fun enc_EventDM/2},
+     {[SE],  fun enc_embedNoSig/2}
+    ];
+
+%% Fallback, if everything else failes....
+decompose_requestedActions(#'RequestedActions'{keepActive        = KA,
+					       eventDM           = EDM,
+					       secondEvent       = SE,
+					       signalsDescriptor = SD}) ->
+    [
+     {[KA],       fun enc_keepActive/2},
+     {[EDM],      fun enc_EventDM/2},
+     {[{SE, SD}], fun enc_embedWithSig/2}
+    ].
+
+enc_embedNoSig(#'SecondEventsDescriptor'{requestID = RID,
+					 eventList = Evs}, State) ->
+    [
+     ?EmbedToken,
+     ?LBRKT_INDENT(State),
+     enc_embedFirst(RID, Evs, ?INC_INDENT(State)),
+     ?RBRKT_INDENT(State)
+    ].
+
+enc_embedWithSig({asn1_NOVALUE, SD}, State) ->
+    [
+     ?EmbedToken,
+     ?LBRKT_INDENT(State),
+     enc_SignalsDescriptor(SD, ?INC_INDENT(State)),
+     ?RBRKT_INDENT(State)
+    ];
+enc_embedWithSig({#'SecondEventsDescriptor'{requestID = RID,
+					    eventList = Evs}, SD}, State) ->
+    [
+     ?EmbedToken,
+     ?LBRKT_INDENT(State),
+     enc_SignalsDescriptor(SD, ?INC_INDENT(State)),
+     ?COMMA_INDENT(?INC_INDENT(State)), 
+     enc_embedFirst(RID, Evs, ?INC_INDENT(State)), 
+     ?RBRKT_INDENT(State)
     ].
 
 enc_keepActive(Val, _State) ->
@@ -1497,52 +1562,33 @@ enc_EventDM({Tag, Val}, State) ->
 	    error({invalid_EventDM_tag, Tag})
     end.
 
-%% embedFirst
-enc_SecondEventsDescriptor(Val, State)
-  when record(Val, 'SecondEventsDescriptor') ->
-    #'SecondEventsDescriptor'{requestID = RequestId,
-			      eventList = Events} = Val,
-    if
-	RequestId == asn1_NOVALUE, Events == [] ->
-	    [
-	     ?EmbedToken,
-	     ?LBRKT_INDENT(State),
-	     ?EventsToken,
-	     ?RBRKT_INDENT(State)
-	    ];
-
-	RequestId /= asn1_NOVALUE, Events /= [] ->
-	    [
-	     ?EmbedToken,
-	     ?LBRKT_INDENT(State),
-	     enc_list([{Events,	fun(V, S) -> enc_embedFirst(V, S, RequestId) end}],
-		      ?INC_INDENT(State)),
-	     ?RBRKT_INDENT(State)
-	    ]
-    end.
-
-enc_embedFirst(Val, State, RequestId)
-  when record(Val, 'SecondRequestedEvent') ->
+enc_embedFirst(RID, Evs, State)
+  when RID /= asn1_NOVALUE, list(Evs), Evs /= [] ->
     [
      ?EventsToken,
      ?EQUAL,
-     enc_RequestID(RequestId, State),
+     enc_RequestID(RID, State),
      ?LBRKT_INDENT(State),
-     %% BUGBUG: Does this really work?
-     enc_list([{[Val], fun enc_SecondRequestedEvent/2}], ?INC_INDENT(State)),
+     enc_list([{Evs, fun enc_SecondRequestedEvent/2}], ?INC_INDENT(State)),
      ?RBRKT_INDENT(State)
+    ];
+enc_embedFirst(_RID, _Evs, State) ->
+    [
+     ?EventsToken
     ].
 
-enc_SecondRequestedEvent(Val, State)
-  when record(Val, 'SecondRequestedEvent') ->
-    PkgdName = ?META_ENC(event, Val#'SecondRequestedEvent'.pkgdName),
+enc_SecondRequestedEvent(#'SecondRequestedEvent'{pkgdName    = N,
+						 streamID    = SID,
+						 evParList   = EPL,
+						 eventAction = EA}, State) ->
+    PkgdName = ?META_ENC(event, N),
     [
      enc_PkgdName(PkgdName, State),
      enc_opt_brackets(
        enc_list(
-	 [{[Val#'SecondRequestedEvent'.streamID], fun enc_eventStream/2},
-	  {Val#'SecondRequestedEvent'.evParList, fun enc_eventOther/2} |
-	  decompose_secondRequestedActions(Val#'SecondRequestedEvent'.eventAction)],
+	 [{[SID], fun enc_eventStream/2},
+	  {EPL, fun enc_eventOther/2} |
+	  decompose_secondRequestedActions(EA)],
 	 ?INC_INDENT(State)),
        State)
     ].

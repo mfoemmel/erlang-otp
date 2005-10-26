@@ -31,6 +31,7 @@
 
 -export([
 	 display_text_messages/2, display_text_messages/3,
+	 generate_text_messages/4,
 	 test_msgs/6,
 
 	 plain_decode_encode/5,
@@ -81,6 +82,55 @@ display_text_message(Name, EC, Msg, V) when tuple(Msg) ->
 display_text_message(_, _, _, _) ->
     skipping.
 
+generate_text_messages(DirName, V, EC, Msgs) when is_atom(DirName) ->
+    generate_text_messages(atom_to_list(DirName), V, EC, Msgs);
+generate_text_messages(DirName, V, EC, Msgs) when is_list(DirName) ->
+    DirPath = filename:join(["/tmp", DirName]),
+    case file:make_dir(DirPath) of
+	ok ->
+	    generate_text_messages2(DirPath, V, EC, Msgs);
+	{error, eexist} ->
+	    generate_text_messages2(DirPath, V, EC, Msgs);
+	{error, Reason} ->
+	    io:format("Failed creating directory ~s: ~p~n", [DirPath, Reason]),
+	    ok
+    end.
+
+generate_text_messages2(_, _, _, []) ->
+    ok;
+generate_text_messages2(Dir, V, EC, [{Name, Msg, _ED, _Conf}|Msgs]) ->
+    (catch generate_text_message(Dir, Name, EC, Msg, V)),
+    generate_text_messages2(Dir, V, EC, Msgs).
+
+generate_text_message(Dir, Name, EC, Msg, V) ->
+    io:format("~p: ", [Name]),
+    case (catch megaco_pretty_text_encoder:encode_message(EC,V,Msg)) of
+	{'EXIT', EReason} ->
+	    io:format("failed encoding [exit]: ~n~p~n", [EReason]),
+	    throw(continue);
+	{error, {{deprecated, PWhat}, _}} ->
+ 	    io:format("failed encoding [deprecated]: ~n~p~n", [PWhat]),
+	    throw(continue);
+	{error, PReason} ->
+ 	    io:format("failed encoding [error]: ~n~p~n", [PReason]),
+	    throw(continue);
+	{ok, Pretty} ->
+	    io:format("encoded", []),
+	    FName = filename:flatten([Name, ".txt"]),
+	    Filename = filename:join([Dir, FName]),
+	    case (catch file:open(Filename, [write])) of
+		{ok, Fd} ->
+		    io:format(Fd, "~s~n", [binary_to_list(Pretty)]),
+		    io:format(" - written to disk~n", []),
+		    (catch file:close(Fd)),
+		    ok;
+		{error, OReason} ->
+		    io:format(" - failed writing to disk: "
+			      "~n~p~n~s~n", 
+			      [OReason, binary_to_list(Pretty)]),
+		    throw(continue)
+	    end
+    end.
 
 test_msgs(Codec, DynamicDecode, Ver, EC, Check, Msgs) 
   when function(Check), list(Msgs) ->

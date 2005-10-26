@@ -1017,10 +1017,12 @@ erase_activity_id() ->
     erase(mnesia_activity_state).
 
 get_elements(Type,Store) ->    
-    case catch ?ets_lookup_element(Store, Type, 2) of
+    case catch ?ets_lookup(Store, Type) of
+	[] -> [];
+	[{_,Val}] -> [Val];
 	{'EXIT', _} -> [];
-	Vals -> Vals
-    end.	     
+	Vals -> [Val|| {_,Val} <- Vals]
+    end.
     
 opt_propagate_store(_Current, _Obsolete, false) ->
     ok;

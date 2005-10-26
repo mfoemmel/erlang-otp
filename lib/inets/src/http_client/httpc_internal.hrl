@@ -39,7 +39,8 @@
 	  max_pipeline_length = ?HTTP_PIPELINE_LENGTH,
 	  max_sessions =  ?HTTP_MAX_TCP_SESSIONS,
 	  cookies = disabled, % enabled | disabled | verify
-	  ipv6 = enabled % enabled | disabled
+	  ipv6 = enabled, % enabled | disabled
+	  verbose = false
 	 }).
 
 %%% All data associated to a specific HTTP request
@@ -54,7 +55,7 @@
 	  method,        % atom() - HTTP request Method
 	  headers,       % #http_request_h{}
 	  content,       % {ContentType, Body} - Current HTTP request
-	  settings,      % #client_settings{} - User defined settings
+	  settings,      % #http_options{} - User defined settings
 	  abs_uri        % string() ex: "http://www.erlang.org"
 	 }).
 

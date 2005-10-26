@@ -441,6 +441,8 @@ static int my_strncasecmp(const char *s1, const char *s2, size_t n)
 #define INET_OPT_OOBINLINE  5   /* enable/disable out-of-band data in band */
 #define INET_OPT_SNDBUF     6   /* set send buffer size */
 #define INET_OPT_RCVBUF     7   /* set receive buffer size */
+#define INET_OPT_PRIORITY   8   /* set priority */
+#define INET_OPT_TOS        9   /* Set type of service */
 #define TCP_OPT_NODELAY     10  /* don't delay send to coalesce packets */
 #define UDP_OPT_MULTICAST_IF 11  /* set/get IP multicast interface */
 #define UDP_OPT_MULTICAST_TTL 12 /* set/get IP multicast timetolive */
@@ -621,7 +623,6 @@ typedef struct {
 
     subs_list empty_out_q_subs; /* Empty out queue subscribers */
 } inet_descriptor;
-
 
 #define TCP_REQ_ACCEPT    30
 #define TCP_REQ_LISTEN    31
@@ -3189,7 +3190,7 @@ static int inet_ctl_getiflist(inet_descriptor* desc, char** rbuf, int rsize)
     int buflen;
     int res;
     
-    buf = NULL;
+    buf = (char *) ALLOC(1);
     buflen = 0;
     
     /* Courtesy of Per Bergqvist */
@@ -3581,6 +3582,10 @@ static int inet_set_opts(inet_descriptor* desc, char* ptr, int len)
     int arg_sz;
     int old_htype = desc->htype;
     int old_active = desc->active;
+    int propagate = 0; /* Set to 1 if failure to set this option
+			  should be propagated to erlang (not all 
+			  errors can be propagated for BC reasons) */
+    int res;
 
     while(len >= 5) {
 	opt = *ptr++;
@@ -3759,6 +3764,28 @@ static int inet_set_opts(inet_descriptor* desc, char* ptr, int len)
 	    DEBUGF(("inet_set_opts(%ld): s=%d, SO_LINGER=%d,%d",
 		    (long)desc->port, desc->s, li_val.l_onoff,li_val.l_linger));
 	    break;
+	case INET_OPT_PRIORITY: 
+#ifdef SO_PRIORITY
+	    type = SO_PRIORITY;
+	    propagate = 1; /* We do want to know if this fails */
+	    DEBUGF(("inet_set_opts(%ld): s=%d, SO_PRIORITY=%d\r\n",
+		    (long)desc->port, desc->s, ival));
+	    break;
+#else
+	    continue;
+#endif
+	case INET_OPT_TOS:
+#if defined(IP_TOS) && defined(SOL_IP)
+	    proto = SOL_IP;
+	    type = IP_TOS;
+	    propagate = 1;
+	    DEBUGF(("inet_set_opts(%ld): s=%d, IP_TOS=%d\r\n",
+		    (long)desc->port, desc->s, ival));
+	    break;
+#else
+	    continue;
+#endif
+
 	case TCP_OPT_NODELAY:
 	    proto = IPPROTO_TCP; 
 	    type = TCP_NODELAY; 
@@ -3817,17 +3844,57 @@ static int inet_set_opts(inet_descriptor* desc, char* ptr, int len)
 	default:
 	    return -1;
 	}
+#if  defined(IP_TOS) && defined(SOL_IP) && defined(SO_PRIORITY)
+	{
+	    /* The relations between SO_PRIORITY, TOS and other options
+	       is not what you (or at least I) would expect...:
+	       If TOS is set after priority, priority is zeroed.
+	       If any other option is set after tos, tos might be zeroed.
+	       Therefore, save tos and priority. If something else is set, 
+	       restore both after setting, if  tos is set, restore only 
+	       prio and if prio is set restore none... All to keep the
+	       user feeling socket options are independent. /PaN */
+	    int tmp_ival_prio;
+	    int tmp_arg_sz_prio = sizeof(tmp_ival_prio);
+	    int tmp_ival_tos;
+	    int tmp_arg_sz_tos = sizeof(tmp_ival_tos);
 
-#ifdef DEBUG
-	{ 
-	    int res =
+	    res = sock_getopt(desc->s, SOL_SOCKET, SO_PRIORITY,
+			      (char *) &tmp_ival_prio, &tmp_arg_sz_prio);
+	    if (res == 0) {
+		res = sock_getopt(desc->s, SOL_IP, IP_TOS, 
+			      (char *) &tmp_ival_tos, &tmp_arg_sz_tos);
+		if (res == 0) {
+		    res = sock_setopt(desc->s, proto, type, arg_ptr, arg_sz);
+		    if (res == 0) {
+			if (type != SO_PRIORITY) {
+			    if (type != IP_TOS) {
+				res = sock_setopt(desc->s, 
+						  SOL_IP, 
+						  IP_TOS,
+						  (char *) &tmp_ival_tos, 
+						  tmp_arg_sz_tos);
+			    }
+			    if (res == 0) {
+				res =  sock_setopt(desc->s, 
+						   SOL_SOCKET, 
+						   SO_PRIORITY,
+						   (char *) &tmp_ival_prio, 
+						   tmp_arg_sz_prio);
+			    }
+			}
+		    }
+		}
+	    }
+	} 
+#else
+	res = sock_setopt(desc->s, proto, type, arg_ptr, arg_sz);
 #endif
-		sock_setopt(desc->s, proto, type, arg_ptr, arg_sz);
-#ifdef DEBUG
-	    DEBUGF(("inet_set_opts(%ld): s=%d returned %d\r\n",
-		    (long)desc->port, desc->s, res));
+	if (propagate && res != 0) {
+	    return -1;
 	}
-#endif
+	DEBUGF(("inet_set_opts(%ld): s=%d returned %d\r\n",
+		(long)desc->port, desc->s, res));
 #ifdef VXWORKS
 skip_os_setopt:
 #endif
@@ -3966,7 +4033,27 @@ static int inet_fill_opts(inet_descriptor* desc,
 		ptr += 4;
 	    }
 	    continue;
-
+	case INET_OPT_PRIORITY:
+#ifdef SO_PRIORITY
+	    type = SO_PRIORITY;
+	    break;
+#else
+	    *ptr++ = opt;
+	    put_int32(0, ptr);
+	    ptr += 4;
+	    continue;
+#endif
+	case INET_OPT_TOS:
+#if defined(IP_TOS) && defined(SOL_IP)
+	    proto = SOL_IP;
+	    type = IP_TOS;
+	    break;
+#else
+	    *ptr++ = opt;
+	    put_int32(0, ptr);
+	    ptr += 4;
+	    continue;
+#endif
 	case INET_OPT_REUSEADDR: 
 	    type = SO_REUSEADDR; 
 	    break;
@@ -4829,6 +4916,8 @@ static void tcp_inet_stop(ErlDrvData e)
     inet_stop(INETP(desc));
 }
 
+
+    
 
 /* tcp requests from Erlang */
 static int tcp_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,

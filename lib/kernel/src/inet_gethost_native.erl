@@ -25,7 +25,7 @@
 -export([server_init/2, main_loop/1]).
 
 %% API exports
--export([gethostbyname/1, gethostbyname/2, gethostbyaddr/1]).
+-export([gethostbyname/1, gethostbyname/2, gethostbyaddr/1, control/1]).
 
 %%% Exports for sys:handle_system_msg/6
 -export([system_continue/3, system_terminate/4, system_code_change/4]).
@@ -37,9 +37,13 @@
 -define(OP_GETHOSTBYNAME,1).
 -define(OP_GETHOSTBYADDR,2).
 -define(OP_CANCEL_REQUEST,3).
+-define(OP_CONTROL,4).
 
 -define(PROTO_IPV4,1).
 -define(PROTO_IPV6,2).
+
+%% OP_CONTROL
+-define(SETOPT_DEBUG_LEVEL, 0).
 
 -define(UNIT_ERROR,0).
 -define(UNIT_IPV4,4).
@@ -50,6 +54,7 @@
 -define(REQUEST_TIMEOUT, (inet_db:res_option(timeout)*4)).
 
 -define(MAX_TIMEOUT, 16#7FFFFFF).
+-define(INVALID_SERIAL, 16#FFFFFFFF).
 
 %-define(DEBUG,1).
 -ifdef(DEBUG).
@@ -127,20 +132,19 @@ start_raw() ->
     spawn(?MODULE,run_once,[]).
 
 run_once() ->
-    Pool = get_poolsize(),
-    ExtraArgs = get_extra_args(),
-    Port = open_port({spawn, ?PORT_PROGRAM++" "++integer_to_list(Pool)++" "++
-		      ExtraArgs},
-		     [{packet,4},eof,binary]),
+    Port = do_open_port(get_poolsize(), get_extra_args()),
     Timeout = ?REQUEST_TIMEOUT,
-    {Pid, R, Request} = receive
-			 {{Pid0,R0}, {?OP_GETHOSTBYNAME, Proto0, Name0}} ->
-			     {Pid0, R0, [<<1:32, ?OP_GETHOSTBYNAME:8, Proto0:8>>, Name0,0]};
-			{{Pid1,R1}, {?OP_GETHOSTBYADDR, Proto1, Name1}}  ->
-			     {Pid1, R1, [<<1:32, ?OP_GETHOSTBYADDR:8, Proto1:8>>, Name1,0]}
-		     after Timeout ->
-			     exit(normal)
-		     end,
+    {Pid, R, Request} = 
+	receive
+	    {{Pid0,R0}, {?OP_GETHOSTBYNAME, Proto0, Name0}} ->
+		{Pid0, R0, 
+		 [<<1:32, ?OP_GETHOSTBYNAME:8, Proto0:8>>,Name0,0]};
+	    {{Pid1,R1}, {?OP_GETHOSTBYADDR, Proto1, Data1}}  ->
+		{Pid1, R1, 
+		 <<1:32, ?OP_GETHOSTBYADDR:8, Proto1:8, Data1/binary>>}
+	after Timeout ->
+		exit(normal)
+	end,
     (catch port_command(Port, Request)),
     receive
 	{Port, {data, <<1:32, BinReply/binary>>}} ->
@@ -149,7 +153,7 @@ run_once() ->
 	    Pid ! {R,{error,timeout}}
     end.
 
-terminate(Reason,Pid) ->
+terminate(_Reason,Pid) ->
     (catch exit(Pid,kill)),
     ok.
 
@@ -169,19 +173,16 @@ server_init(Starter, Ref) ->
 	Winner ->
 	   exit({already_started,Winner})
     end,
-    Pool = get_poolsize(),
-    ExtraArgs = get_extra_args(),
-    Port = open_port({spawn, ?PORT_PROGRAM++" "++integer_to_list(Pool)++" "++
-		      ExtraArgs},
-		     [{packet,4},eof,binary]),
+    Poolsize = get_poolsize(),
+    Port = do_open_port(Poolsize, get_extra_args()),
     Timeout = ?REQUEST_TIMEOUT,
     put(rid,0),
     put(num_requests,0),
-    RequestTab = ets:new(ign_requests,[{keypos,2},set,protected]),
+    RequestTab = ets:new(ign_requests,[{keypos,#request.rid},set,protected]),
     RequestIndex = ets:new(ign_req_index,[set,protected]),
     State = #state{port = Port, timeout = Timeout, requests = RequestTab,
 		   req_index = RequestIndex, 
-		   pool_size = Pool,
+		   pool_size = Poolsize,
 		   statistics = #statistics{},
 		   parent = Starter},
     main_loop(State).
@@ -203,6 +204,20 @@ handle_message({{Pid,_} = Client, {?OP_GETHOSTBYADDR, Proto, Data} = R},
     NewState = do_handle_call(R,Client,State,
 			      <<?OP_GETHOSTBYADDR:8, Proto:8, Data/binary>>),
     main_loop(NewState);
+
+handle_message({{Pid,Ref}, {?OP_CONTROL, Ctl, Data}}, State)
+  when pid(Pid) ->
+    catch port_command(State#state.port, 
+		       <<?INVALID_SERIAL:32, ?OP_CONTROL:8, 
+			Ctl:8, Data/binary>>),
+    Pid ! {Ref, ok},
+    main_loop(State);
+
+handle_message({{Pid,Ref}, restart_port}, State)
+  when pid(Pid) ->
+    NewPort=restart_port(State),
+    Pid ! {Ref, ok},
+    main_loop(State#state{port=NewPort});
 
 handle_message({Port, {data, Data}}, State = #state{port = Port}) ->
     NewState = case Data of
@@ -236,7 +251,7 @@ handle_message({Port, {data, Data}}, State = #state{port = Port}) ->
 	       end,    
     main_loop(NewState);
 	
-handle_message({'EXIT', Port, Reason}, State = #state{port = Port}) -> 
+handle_message({'EXIT',Port,_Reason}, State = #state{port = Port}) -> 
     ?dbg("Port died.~n",[]),
     NewPort=restart_port(State),
     main_loop(State#state{port=NewPort});
@@ -304,8 +319,7 @@ pick_request(State, RID) ->
     case ets:lookup(State#state.requests, RID) of
 	[] ->
 	    false;
-	[R] ->
-	    #request{rid = NRid, op = Op, proto = Proto, rdata = Data} = R,
+	[#request{rid = RID, op = Op, proto = Proto, rdata = Data}=R] ->
 	    ets:delete(State#state.requests,RID),
 	    ets:delete(State#state.req_index,{Op,Proto,Data}),
 	    put(num_requests,get(num_requests) - 1),
@@ -343,19 +357,16 @@ get_rid () ->
 foreach(Fun,Table) ->
     foreach(Fun,Table,ets:first(Table)).
 
-foreach(Fun,Table,'$end_of_table') ->
+foreach(_Fun,_Table,'$end_of_table') ->
     ok;
 foreach(Fun,Table,Key) ->
     [Object] = ets:lookup(Table,Key),
     Fun(Object),
     foreach(Fun,Table,ets:next(Table,Key)).
 
-restart_port(State = #state{port = Port, requests = Requests}) ->
+restart_port(#state{port = Port, requests = Requests}) ->
     (catch port_close(Port)),
-    NewPort = open_port({spawn, ?PORT_PROGRAM++" "++
-			 integer_to_list(get_poolsize())++" "++
-			 get_extra_args()},
-			[{packet,4},eof,binary]),
+    NewPort = do_open_port(get_poolsize(), get_extra_args()),
     foreach(fun(#request{rid = Rid, op = Op, proto = Proto, rdata = Rdata}) ->
 		    case Op of 
 			?OP_GETHOSTBYNAME ->
@@ -373,6 +384,10 @@ restart_port(State = #state{port = Port, requests = Requests}) ->
 			    
     
 
+do_open_port(Poolsize, ExtraArgs) ->
+    open_port({spawn, 
+	       ?PORT_PROGRAM++" "++integer_to_list(Poolsize)++" "++ExtraArgs},
+	      [{packet,4},eof,binary]).
 
 get_extra_args() ->
     FirstPart = case application:get_env(kernel, gethost_prioritize) of
@@ -434,16 +449,25 @@ gethostbyaddr({A,B,C,D,E,F,G,H}) when ?VALID_V6(A), ?VALID_V6(B), ?VALID_V6(C), 
 gethostbyaddr(Addr) when list(Addr) ->
     case inet_parse:address(Addr) of
         {ok, IP} -> gethostbyaddr(IP);
-        Error -> {error, formerr}
+        _Error -> {error, formerr}
     end;
 gethostbyaddr(Addr) when atom(Addr) ->
     gethostbyaddr(atom_to_list(Addr));
 gethostbyaddr(_) -> {error, formerr}.
 
+control({debug_level, Level}) when is_integer(Level) ->
+    getit(?OP_CONTROL, ?SETOPT_DEBUG_LEVEL, <<Level:32>>);
+control(soft_restart) ->
+    getit(restart_port);
+control(_) -> {error, formerr}.
+
 getit(Op, Proto, Data) ->
+    getit({Op, Proto, Data}).
+
+getit(Req) ->
     Pid = ensure_started(),
     Ref = make_ref(),
-    Pid ! {{self(),Ref}, {Op, Proto, Data}},
+    Pid ! {{self(),Ref}, Req},
     receive
 	{Ref, {ok,BinHostent}} ->
 	    parse_address(BinHostent);
@@ -529,7 +553,7 @@ parse_address(BinHostent) ->
 		    {ok, #hostent{h_addr_list = Addresses, h_addrtype = inet6,
 				  h_aliases = Names, h_length = ?UNIT_IPV6, 
 				  h_name = Name}};
-		Else ->
+		_Else ->
 		    {error, {internal_error, {malformed_response, BinHostent}}}
 	    end
 	end of
@@ -582,7 +606,7 @@ pick_names(0,<<>>) ->
     [];
 pick_names(0,_) ->
     exit({error,format_error});
-pick_names(N,<<>>) ->
+pick_names(_N,<<>>) ->
     exit({error,format_error});
 pick_names(N,Bin) ->
     Ndx = ndx(0,Bin),

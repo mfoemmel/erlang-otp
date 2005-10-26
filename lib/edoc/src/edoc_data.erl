@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_data.erl,v 1.27 2004/11/30 00:46:14 richardc Exp $
+%% $Id$
 %%
 %% @private
 %% @copyright 2003 Richard Carlsson
@@ -32,14 +32,14 @@
 
 -include("edoc.hrl").
 
-%% TODO: report multiple definitions of the same type in the same module.
-%% TODO: check that variables in @equiv are found in the signature
-%% TODO: copy types from target (if missing) when using @equiv
-%% TODO: recognize 'behaviour_info/1' functions?
+%% @TODO report multiple definitions of the same type in the same module.
+%% @TODO check that variables in @equiv are found in the signature
+%% @TODO copy types from target (if missing) when using @equiv
+%% @TODO recognize 'behaviour_info/1' functions?
 
 %% <!ELEMENT module (behaviour*, description?, author*, copyright?,
 %%                   version?, since?, deprecated?, see*, reference*,
-%%                   typedecls?, functions)>
+%%                   todo?, typedecls?, functions)>
 %% <!ATTLIST module
 %%   name CDATA #REQUIRED
 %%   private NMTOKEN(yes | no) #IMPLIED
@@ -65,11 +65,12 @@
 %%   name CDATA #REQUIRED
 %%   href CDATA #IMPLIED>
 %% <!ELEMENT reference (#PCDATA)>
+%% <!ELEMENT todo (#PCDATA)>
 %% <!ELEMENT typedecls (typedecl+)>
 %% <!ELEMENT typedecl (typedef, description?)>
 %% <!ELEMENT functions (function+)>
 
-%% NEW-OPTIONS: private, hidden
+%% NEW-OPTIONS: private, hidden, todo
 %% DEFER-OPTIONS: edoc_extract:source/4
 
 module(Module, Entries, Env, Opts) ->
@@ -96,6 +97,7 @@ module(Module, Entries, Env, Opts) ->
 	    ++ get_deprecated(HeaderTags)
 	    ++ sees(HeaderTags, Env)
 	    ++ references(HeaderTags)
+	    ++ todos(HeaderTags, Opts)
 	    ++ [{typedecls, types(AllTags, Env)},
 		{functions, functions(Entries, Env, Opts)}])
 	  },
@@ -123,7 +125,7 @@ types(Tags, Env) ->
 functions(Es, Env, Opts) ->
     Private = proplists:get_bool(private, Opts),
     Hidden = proplists:get_bool(hidden, Opts),
-    [function(N, As, Export, Ts, Env)
+    [function(N, As, Export, Ts, Env, Opts)
      || #entry{name = {_,_}=N, args = As, export = Export, data = Ts}
 	    <- [E || E <- Es, function_filter(E, Private, Hidden)]].
 
@@ -138,8 +140,8 @@ function_filter(_, _, _) ->
 is_hidden(Ts) ->
     get_tags(hidden, Ts) =/= [].
 
-%% <!ELEMENT function (args, typespec?, equiv?, description?, since?,
-%%                     deprecated?, see*)>
+%% <!ELEMENT function (args, typespec?, throws?, equiv?, description?,
+%%                     since?, deprecated?, see*, todo?)>
 %% <!ATTLIST function
 %%   name CDATA #REQUIRED
 %%   arity CDATA #REQUIRED
@@ -149,9 +151,10 @@ is_hidden(Ts) ->
 %% <!ELEMENT arg description?>
 %% <!ATTLIST arg name CDATA #REQUIRED>
 %% <!ELEMENT equiv (expr, see?)>
+%% <!ELEMENT equiv (expr, see?)>
 %% <!ELEMENT expr (#PCDATA)>
 
-function({N, A}, As, Export, Ts, Env) ->
+function({N, A}, As, Export, Ts, Env, Opts) ->
     {As1, Spec} = signature(Ts, As, Env),
     {function, [{name, atom_to_list(N)},
 		{arity, integer_to_list(A)},
@@ -162,13 +165,23 @@ function({N, A}, As, Export, Ts, Env) ->
 		{label, edoc_refs:to_label(edoc_refs:function(N, A))}],
      [{args, [{arg, [{argName, [atom_to_list(A)]}]} || A <- As1]}]
      ++ Spec
+     ++ get_throws(Ts, Env)
      ++ get_equiv(Ts, Env)
      ++ get_doc(Ts)
      ++ get_since(Ts)
      ++ get_deprecated(Ts, N, A, Env)
      ++ sees(Ts, Env)
-     ++ references(Ts)
+     ++ todos(Ts, Opts)
     }.
+
+get_throws(Ts, Env) ->
+    case get_tags(throws, Ts) of
+	[Throws] ->
+	    Type = Throws#tag.data,
+	    [edoc_types:to_xml(Type, Env)];
+	[] ->
+	    []
+    end.
 
 get_equiv(Ts, Env) ->
     case get_tags(equiv, Ts) of
@@ -209,7 +222,6 @@ get_pcdata_tag(Tag, Ts) ->
 	    []
     end.
 
-%% TODO: use info from '-deprecated(...)' (xref-)declarations.
 %% Deprecation declarations for xref:
 %%
 %%   -deprecated(Info).
@@ -217,6 +229,7 @@ get_pcdata_tag(Tag, Ts) ->
 %%       Spec = module | {F,A} | {F,A,Details}}
 %%       Details = next_version | next_major_release | eventually
 %%                 (EXTENSION: | string() | {M1,F1,A1}}
+%% @TODO use info from '-deprecated(...)' (xref-)declarations.
 
 get_deprecated(Ts) ->
     case get_tags(deprecated, Ts) of
@@ -316,6 +329,14 @@ href(Ref, Env) ->
 references(Tags) ->
     [{reference, XML} || #tag{data = XML} <- get_tags(reference, Tags)].
 
+todos(Tags, Opts) ->
+    case proplists:get_bool(todo, Opts) of
+	true ->
+	    [{todo, XML} || #tag{data = XML} <- get_tags('todo', Tags)];
+	false ->
+	    []
+    end.
+
 signature(Ts, As, Env) ->
     case get_tags(spec, Ts) of
 	[T] ->
@@ -376,39 +397,55 @@ get_tags(_, []) -> [].
 type(T, Env) ->
     xmerl_lib:expand_element({type, [edoc_types:to_xml(T, Env)]}).
 
-package(Package, Tags, Env, _Opts) ->
+%% <!ELEMENT package (description?, author*, copyright?, version?,
+%% 		   since?, deprecated?, see*, reference*, todo?,
+%% 		   modules)>
+%% <!ATTLIST package
+%%   name CDATA #REQUIRED
+%%   root CDATA #IMPLIED>
+%% <!ELEMENT modules (module+)>
+
+package(Package, Tags, Env, Opts) ->
     Env1 = Env#env{package = Package,
 		   root = edoc_refs:relative_package_path('', Package)},
-    xmerl_lib:expand_element(package_1(Package, Tags, Env1)).
+    xmerl_lib:expand_element(package_1(Package, Tags, Env1, Opts)).
 
-package_1(Package, Tags, Env) ->
+package_1(Package, Tags, Env, Opts) ->
     {package, [{root, Env#env.root}],
      ([{packageName, [atom_to_list(Package)]}]
       ++ get_doc(Tags)
       ++ authors(Tags)
+      ++ get_copyright(Tags)
       ++ get_version(Tags)
       ++ get_since(Tags)
-      ++ get_copyright(Tags)
       ++ get_deprecated(Tags)
       ++ sees(Tags, Env)
-      ++ references(Tags))
+      ++ references(Tags)
+      ++ todos(Tags, Opts))
     }.
 
-overview(Title, Tags, Env, _Opts) ->
+%% <!ELEMENT overview (title, description?, author*, copyright?, version?,
+%%                     since?, see*, reference*, todo?, packages, modules)>
+%% <!ATTLIST overview
+%%   root CDATA #IMPLIED>
+%% <!ELEMENT title (#PCDATA)>
+
+overview(Title, Tags, Env, Opts) ->
     Env1 = Env#env{package = '',
 		   root = ""},
-    xmerl_lib:expand_element(overview_1(Title, Tags, Env1)).
+    xmerl_lib:expand_element(overview_1(Title, Tags, Env1, Opts)).
 
-overview_1(Title, Tags, Env) ->
+overview_1(Title, Tags, Env, Opts) ->
     {overview, [{root, Env#env.root}],
      ([{title, [get_title(Tags, Title)]}]
       ++ get_doc(Tags)
       ++ authors(Tags)
+      ++ get_copyright(Tags)
       ++ get_version(Tags)
       ++ get_since(Tags)
-      ++ get_copyright(Tags)
       ++ sees(Tags, Env)
-      ++ references(Tags))
+      ++ references(Tags)
+      ++ todos(Tags, Opts))
     }.
 
 get_title(Ts, Default) ->

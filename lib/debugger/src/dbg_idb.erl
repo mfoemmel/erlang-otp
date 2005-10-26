@@ -27,7 +27,7 @@
 insert(DbRef, Key, Value) ->
     case DbRef of
 	{Node, ModDb} ->
-	    rpc:call(Node, ets, insert, [ModDb, {Key, Value}]);
+	    rpc:block_call(Node, ets, insert, [ModDb, {Key, Value}]);
 	ModDb ->
 	    ets:insert(ModDb, {Key, Value})
     end.
@@ -35,7 +35,7 @@ insert(DbRef, Key, Value) ->
 lookup(DbRef, Key) ->
     Res = case DbRef of
 	      {Node, ModDb} ->
-		  rpc:call(Node, ets, lookup, [ModDb, Key]);
+		  rpc:block_call(Node, ets, lookup, [ModDb, Key]);
 	      ModDb ->
 		  ets:lookup(ModDb, Key)
 	  end,
@@ -47,7 +47,7 @@ lookup(DbRef, Key) ->
 match_object(DbRef, Key) ->
     case DbRef of
 	{Node, ModDb} ->
-	    rpc:call(Node, ets, match_object, [ModDb, Key]);
+	    rpc:block_call(Node, ets, match_object, [ModDb, Key]);
 	ModDb ->
 	    ets:match_object(ModDb, Key)
     end.

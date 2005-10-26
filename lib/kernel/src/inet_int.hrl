@@ -116,6 +116,8 @@
 -define(INET_OPT_OOBINLINE,      5).
 -define(INET_OPT_SNDBUF,         6).
 -define(INET_OPT_RCVBUF,         7).
+-define(INET_OPT_PRIORITY,       8).
+-define(INET_OPT_TOS,            9).
 -define(TCP_OPT_NODELAY,         10).
 -define(UDP_OPT_MULTICAST_IF,    11).
 -define(UDP_OPT_MULTICAST_TTL,   12).

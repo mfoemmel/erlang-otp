@@ -61,14 +61,14 @@ rtl_lcm(CFG, Options) ->
   ?option_time({CFG1, MoveSet} = perform_lcm(CFG, NodeInfo, EdgeInfo, ExprMap, 
 					     IdMap, AllExpr, mk_edge_bb_map(), 
 					     ?SETS:new(), Labels),
-	       "RTL_LCM perform_lcm", Options),
+	       "RTL LCM perform_lcm", Options),
 
   %% Scan through list of moved expressions and replace their 
   %% assignments with the new temporary created for that expression
   MoveList = ?SETS:to_list(MoveSet),
   ?option_time(CFG2 = moved_expr_replace_assignments(CFG1, ExprMap, IdMap, 
 						     MoveList),
-	       "RTL_LCM moved_expr_replace_assignments", Options),
+	       "RTL LCM moved_expr_replace_assignments", Options),
   pp_debug("-------------------------------------------------~n~n",[]),%DEBUG
   
   CFG2.
@@ -316,12 +316,20 @@ insert_expr_between(CFG0, BetweenMap, Pred, Succ, Instr) ->
 %% no machine registers. 
 no_machine_regs([]) ->
   true;
-no_machine_regs([{rtl_reg, N}|Regs]) ->
-  (N >= hipe_rtl_arch:first_virtual_reg()) andalso no_machine_regs(Regs);
-no_machine_regs([{rtl_fpreg, N}|Regs]) ->
-  (N >= hipe_rtl_arch:first_virtual_reg()) andalso no_machine_regs(Regs);
-no_machine_regs([_|Regs]) ->
-  no_machine_regs(Regs).
+no_machine_regs([Reg|Regs]) ->
+  case hipe_rtl:is_reg(Reg) of
+    true ->
+      N = hipe_rtl:reg_index(Reg),
+      (N >= hipe_rtl_arch:first_virtual_reg()) andalso no_machine_regs(Regs);
+    _ ->
+      case hipe_rtl:is_fpreg(Reg) of
+	true ->
+	  N = hipe_rtl:fpreg_index(Reg),
+	  (N >= hipe_rtl_arch:first_virtual_reg()) andalso no_machine_regs(Regs);
+	_ ->
+	  no_machine_regs(Regs)
+      end
+  end.
 
 %%=============================================================================
 %% Returns true if an RTL instruction is an expression.
@@ -1439,7 +1447,12 @@ mk_replacement_regs([], NewRegs) ->
 mk_replacement_regs([Define|Defines], NewRegs) ->
   case hipe_rtl:is_reg(Define) of
     true ->
-      mk_replacement_regs(Defines, [hipe_rtl:mk_new_reg()|NewRegs]);
+      NewReg =
+	case hipe_rtl:reg_is_gcsafe(Define) of
+	  true -> hipe_rtl:mk_new_reg_gcsafe();
+	  false -> hipe_rtl:mk_new_reg()
+	end,
+      mk_replacement_regs(Defines, [NewReg|NewRegs]);
     false ->
       case hipe_rtl:is_var(Define) of
 	true ->

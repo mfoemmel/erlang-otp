@@ -28,7 +28,6 @@
 -include("httpd.hrl").
 
 -define(VMODULE,"CGI").
--include("httpd_verbosity.hrl").
 
 -define(DEFAULT_CGI_TIMEOUT, 15000).
 
@@ -60,14 +59,12 @@ env(ModData, _Script, AfterScript) ->
 %% Description:  See httpd(3) ESWAPI CALLBACK FUNCTIONS
 %%-------------------------------------------------------------------------
 do(ModData) ->
-    ?vtrace("do",[]),
     case httpd_util:key1search(ModData#mod.data, status) of
 	%% A status code has been generated!
 	{_StatusCode, _PhraseArgs, _Reason} ->
 	    {proceed, ModData#mod.data};
 	%% No status code has been generated!
 	undefined ->
-	    ?vtrace("do -> no status code has been generated", []),
 	    case httpd_util:key1search(ModData#mod.data, response) of
 		undefined ->
 		    generate_response(ModData);
@@ -127,10 +124,8 @@ generate_response(ModData) ->
 	    Value ->
 		Value
 	end,
-    ?vtrace("generate_response -> RequestURI: ~p", [RequestURI]),
     ScriptAliases =
 	httpd_util:multi_lookup(ModData#mod.config_db, script_alias),
-    ?vtrace("generate_response -> ScriptAliases: ~p", [ScriptAliases]),
     case mod_alias:real_script_name(ModData#mod.config_db, RequestURI,
 				    ScriptAliases) of
 	{Script, AfterScript} ->
@@ -179,15 +174,10 @@ strip_extention(FileName, [Extention | Extentions]) ->
 %% ---------------------------------
 
 exec_script(ModData, Script, AfterScript, RequestURI) ->
-    ?vdebug("exec_script -> entry with"
-	    "~n   Script:      ~p"
-	    "~n   AfterScript: ~p",
-	    [Script,AfterScript]),
     exec_script(is_executable(Script), ModData, Script, 
 		AfterScript, RequestURI).
 
 exec_script(true, ModData, Script, AfterScript, _RequestURI) ->
-    ?vtrace("exec_script -> entry when script is executable",[]),
     process_flag(trap_exit,true),
     Dir  = filename:dirname(Script),
     ScriptElements = script_elements(ModData, AfterScript),
@@ -196,7 +186,6 @@ exec_script(true, ModData, Script, AfterScript, _RequestURI) ->
     %% Run script
     Port = (catch open_port({spawn, Script},[binary, stream,
 					     {cd, Dir}, {env, Env}])),
-    ?vtrace("exec_script -> Port: ~w",[Port]),
     case Port of
 	Port when is_port(Port) ->
 	    send_request_body_to_script(ModData, Port),
@@ -208,8 +197,7 @@ exec_script(true, ModData, Script, AfterScript, _RequestURI) ->
 		   {env,Env},{dir,Dir}]})
     end;
 
-exec_script(false, ModData, Script, _AfterScript, _RequestURI) ->
-    ?vlog("script ~s not executable",[Script]),
+exec_script(false, ModData, _Script, _AfterScript, _RequestURI) ->
     {proceed,
      [{status,
        {404,ModData#mod.request_uri,
@@ -226,10 +214,6 @@ send_request_body_to_script(ModData, Port) ->
     end.	
 	   
 deliver_webpage(#mod{config_db = Db} = ModData, Port) ->
-    ?vdebug("deliver_webpage -> entry with"
-	    "~n   ModData:      ~p"
-	    "~n   Port ~p", [ModData, Port]),
-    
     Timeout = cgi_timeout(Db),    
     case receive_headers(Port, httpd_cgi, parse_headers, 
 			 [<<>>, [], []], Timeout) of
@@ -245,7 +229,9 @@ deliver_webpage(#mod{config_db = Db} = ModData, Port) ->
 		    case (ModData#mod.http_version =/= "HTTP/1.1") or 
 			(IsDisableChunkedSend) of
 			true ->
-			    send_headers(ModData, Status, HTTPHeaders);
+			    send_headers(ModData, Status, 
+					 [{"connection", "close"}
+					   | HTTPHeaders]);
 			false ->
 			    send_headers(ModData, Status,
 					 [{"transfer-encoding",
@@ -303,7 +289,6 @@ handle_body(Port, ModData, Body, Timeout, Size, IsDisableChunkedSend) ->
 	    handle_body(Port, ModData, Data, Timeout, Size + size(Data),
 			IsDisableChunkedSend);
 	{'EXIT', Port, normal} when is_port(Port) ->
-	    ?vtrace("mod_cgi:handle_body -> exit signal from port: normal",[]),
 	    httpd_response:send_final_chunk(ModData, IsDisableChunkedSend),
 	    process_flag(trap_exit,false),
 	    {proceed, [{response, {already_sent, 200, Size}} |
@@ -341,4 +326,4 @@ reason({error,emfile})     -> ": To many open files";
 reason({error,{enfile,_}}) -> ": File/port table overflow";
 reason({error,enomem})     -> ": Not enough memory";
 reason({error,eagain})     -> ": No more available OS processes";
-reason(_)                  -> "".
+reason(Reason) -> lists:flatten(io_lib:format("Reason: ~p~n", [Reason])).

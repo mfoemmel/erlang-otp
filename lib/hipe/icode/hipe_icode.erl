@@ -581,6 +581,7 @@
 	 %% var_annotation/1,
 	 %% fvar_name/1,
 	 %% reg_name/1,		 
+	 reg_is_gcsafe/1,
 	 const_value/1,
 	 %% info/1,
 	 fmove_dst/1,
@@ -820,14 +821,21 @@ phi_arg(P, Pred) ->
   end.
 is_phi(#phi{}) -> true;
 is_phi(_) -> false.
-phi_enter_pred(P, Pred, Var) ->
-  P#phi{arglist=[{Pred,Var}|lists:keydelete(Pred, 1, phi_arglist(P))]}.
-phi_remove_pred(P, Pred) ->
-  P#phi{arglist=lists:keydelete(Pred, 1, phi_arglist(P))}.
-phi_argvar_subst(P, Subst) -> 
+phi_enter_pred(Phi, Pred, Var) ->
+  Phi#phi{arglist=[{Pred,Var}|lists:keydelete(Pred, 1, phi_arglist(Phi))]}.
+phi_remove_pred(Phi, Pred) ->
+  NewArgList = lists:keydelete(Pred, 1, phi_arglist(Phi)),
+  case NewArgList of
+    [Arg] -> %% the phi should be turned into a move instruction
+      {_Label,Var} = Arg,
+      mk_move(phi_dst(Phi), Var);
+    [_|_] ->
+      Phi#phi{arglist=NewArgList}
+  end.
+phi_argvar_subst(P, Subst) ->
   NewArgList = [{Pred, subst1(Subst, Var)} || {Pred,Var} <- phi_arglist(P)],
   P#phi{arglist=NewArgList}.
-phi_redirect_pred(P, OldPred, NewPred)->
+phi_redirect_pred(P, OldPred, NewPred) ->
   Subst = [{OldPred, NewPred}],
   NewArgList = [{subst1(Subst, Pred), Var} || {Pred,Var} <- phi_arglist(P)],
   P#phi{arglist=NewArgList}.
@@ -863,7 +871,7 @@ op_type(Fun) ->
     false -> primop
   end.
 
-is_mfa({M,F,A}) when atom(M), atom(F), integer(A) -> true;
+is_mfa({M,F,A}) when is_atom(M), is_atom(F), is_integer(A) -> true;
 is_mfa(_) -> false.
 
 
@@ -879,7 +887,7 @@ mk_call(DstList, M, F, ArgList, Type) ->
 %% mk_call(DstList, M, F, ArgList, Type, Continuation, Fail) ->
 %%   mk_call(DstList, M, F, ArgList, Type, Continuation, Fail, false).
 mk_call(DstList, M, F, ArgList, Type, Continuation, Fail, Guard)
-  when atom(M), atom(F) ->
+  when is_atom(M), is_atom(F) ->
   case Type of
     local -> ok;
     remote -> ok;
@@ -935,7 +943,7 @@ call_in_guard(#call{in_guard=InGuard}) -> InGuard.
 %% enter
 %%
 
-mk_enter(M, F, Args, Type) when atom(M), atom(F) ->
+mk_enter(M, F, Args, Type) when is_atom(M), is_atom(F) ->
   case Type of
     local -> ok;
     remote -> ok;
@@ -1044,6 +1052,7 @@ annotate_var({var, Name, _OldType}, Type) -> {var, Name, Type}.
  
 mk_reg(V) -> {reg,V}.
 reg_name({reg,Name}) -> Name.
+reg_is_gcsafe({reg,_}) -> false. % for now
 %% @spec is_reg(icode_arg()) -> bool()
 is_reg({reg,_}) -> true;
 is_reg(_) -> false.

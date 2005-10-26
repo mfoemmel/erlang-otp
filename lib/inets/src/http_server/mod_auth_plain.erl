@@ -21,8 +21,6 @@
 -include("mod_auth.hrl").
 
 -define(VMODULE,"AUTH_PLAIN").
--include("httpd_verbosity.hrl").
-
 
 %% Internal API
 -export([store_directory_data/2]).
@@ -49,8 +47,6 @@
 %%
 
 add_user(DirData, #httpd_user{username = User} = UStruct) ->
-    ?vtrace("add_user -> entry with:"
-	"~n   User: ~p",[User]),
     PWDB = httpd_util:key1search(DirData, auth_user_file),
     Record = {User,
 	      UStruct#httpd_user.password, 
@@ -64,8 +60,6 @@ add_user(DirData, #httpd_user{username = User} = UStruct) ->
     end.
 
 get_user(DirData, User) ->
-    ?vtrace("get_user -> entry with:"
-	"~n   User: ~p",[User]),
     PWDB = httpd_util:key1search(DirData, auth_user_file),
     case ets:lookup(PWDB, User) of
 	[{User, PassWd, Data}] ->
@@ -85,8 +79,6 @@ list_users(DirData) ->
     end.
 
 delete_user(DirData, UserName) ->
-    ?vtrace("delete_user -> entry with:"
-	"~n   UserName: ~p",[UserName]),
     PWDB = httpd_util:key1search(DirData, auth_user_file),
     case ets:lookup(PWDB, UserName) of
 	[{UserName, _SomePassword, _SomeData}] ->
@@ -111,50 +103,38 @@ delete_user(DirData, UserName) ->
 %%
   
 add_group_member(DirData, Group, UserName) ->
-    ?DEBUG("add_group_members -> ~n"
-	   "    Group:    ~p~n"
-	   "    UserName: ~p",[Group,UserName]),
     GDB = httpd_util:key1search(DirData, auth_group_file),
     case ets:lookup(GDB, Group) of
 	[{Group, Users}] ->
 	    case lists:member(UserName, Users) of
 		true ->
-		    ?DEBUG("add_group_members -> already member in group",[]),
 		    true;
 		false ->
-		    ?DEBUG("add_group_members -> add",[]),
 		    ets:insert(GDB, {Group, [UserName|Users]}),
 		    true
 	    end;
 	[] ->
-	    ?DEBUG("add_group_members -> create grouo",[]),
 	    ets:insert(GDB, {Group, [UserName]}),
 	    true;
 	Other ->
-	    ?ERROR("add_group_members -> Other: ~p",[Other]),
 	    {error, Other}
     end.
 
 list_group_members(DirData, Group) ->
-    ?DEBUG("list_group_members -> Group: ~p",[Group]),
     GDB = httpd_util:key1search(DirData, auth_group_file),
     case ets:lookup(GDB, Group) of
 	[{Group, Users}] ->
-	    ?DEBUG("list_group_members -> Users: ~p",[Users]),
 	    {ok, Users};
 	_ ->
 	    {error, no_such_group}
     end.
 
 list_groups(DirData) ->
-    ?DEBUG("list_groups -> entry",[]),
     GDB = httpd_util:key1search(DirData, auth_group_file),
     case ets:match(GDB, '$1') of
 	[] ->
-	    ?DEBUG("list_groups -> []",[]),
 	    {ok, []};
 	Groups0 when list(Groups0) ->
-	    ?DEBUG("list_groups -> Groups0: ~p",[Groups0]),
 	    {ok, httpd_util:uniq(lists:foldr(fun({G, _}, A) -> [G|A] end,
 					     [], lists:flatten(Groups0)))};
 	_ ->
@@ -162,37 +142,28 @@ list_groups(DirData) ->
     end.
 
 delete_group_member(DirData, Group, User) ->
-    ?DEBUG("list_group_members -> ~n"
-	   "     Group: ~p~n"
-	   "     User:  ~p",[Group,User]),
     GDB = httpd_util:key1search(DirData, auth_group_file),
     case ets:lookup(GDB, Group) of
 	[{Group, Users}] when list(Users) ->
 	    case lists:member(User, Users) of
 		true ->
-		    ?DEBUG("list_group_members -> deleted from group",[]),
 		    ets:delete(GDB, Group),
 		    ets:insert(GDB, {Group, lists:delete(User, Users)}),
 		    true;
 		false ->
-		    ?DEBUG("list_group_members -> not member",[]),
 		    {error, no_such_group_member}
 	    end;
 	_ ->
-	    ?ERROR("list_group_members -> no such group",[]),
 	    {error, no_such_group}
     end.
 
 delete_group(DirData, Group) ->
-    ?DEBUG("list_group_members -> Group: ~p",[Group]),
     GDB = httpd_util:key1search(DirData, auth_group_file),
     case ets:lookup(GDB, Group) of
 	[{Group, _Users}] ->
-	    ?DEBUG("list_group_members -> delete",[]),
 	    ets:delete(GDB, Group),
 	    true;
 	_ ->
-	    ?ERROR("delete_group -> no such group",[]),
 	    {error, no_such_group}
     end.
 
@@ -214,13 +185,9 @@ store_directory_data(_Directory, DirData) ->
 					    {auth_group_file, GroupDB}),
 		    {ok, NDD2};
 		Err ->
-		    ?ERROR("failed storing directory data: "
-			   "load group error: ~p",[Err]),
 		    {error, Err}
 	    end;
 	Err2 ->
-	    ?ERROR("failed storing directory data: "
-		   "load passwd error: ~p",[Err2]),
 	    {error, Err2}
     end.
 

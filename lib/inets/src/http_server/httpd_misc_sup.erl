@@ -24,11 +24,9 @@
 
 -behaviour(supervisor).
 
--include("httpd_verbosity.hrl").
-
 %% API 
--export([start_link/3, start_auth_server/3, stop_auth_server/2, 
-	 start_sec_server/3,  stop_sec_server/2]).
+-export([start_link/2, start_auth_server/2, stop_auth_server/2, 
+	 start_sec_server/2,  stop_sec_server/2]).
 
 %% Supervisor callback
 -export([init/1]).
@@ -37,25 +35,23 @@
 %%%  API
 %%%=========================================================================
 
-start_link(Addr, Port, MiscSupVerbosity) ->
+start_link(Addr, Port) ->
     SupName = make_name(Addr, Port),
-    supervisor:start_link({local, SupName}, ?MODULE, [MiscSupVerbosity]).
+    supervisor:start_link({local, SupName}, ?MODULE, []).
 
 %%----------------------------------------------------------------------
 %% Function: [start|stop]_[auth|sec]_server/3
 %% Description: Starts a [auth | security] worker (child) process
 %%----------------------------------------------------------------------
-start_auth_server(Addr, Port, Verbosity) ->
-    start_permanent_worker(mod_auth_server, Addr, Port, 
-			   Verbosity, [gen_server]).
+start_auth_server(Addr, Port) ->
+    start_permanent_worker(mod_auth_server, Addr, Port, [gen_server]).
 
 stop_auth_server(Addr, Port) ->
     stop_permanent_worker(mod_auth_server, Addr, Port).
 
 
-start_sec_server(Addr, Port, Verbosity) ->
-    start_permanent_worker(mod_security_server, Addr, Port, 
-			   Verbosity, [gen_server]).
+start_sec_server(Addr, Port) ->
+    start_permanent_worker(mod_security_server, Addr, Port, [gen_server]).
 
 stop_sec_server(Addr, Port) ->
     stop_permanent_worker(mod_security_server, Addr, Port).
@@ -64,26 +60,18 @@ stop_sec_server(Addr, Port) ->
 %%%=========================================================================
 %%%  Supervisor callback
 %%%=========================================================================
-init([Verbosity]) -> 
-    do_init(Verbosity);
-init(BadArg) ->
-    {error, {badarg, BadArg}}.
-
-%%%=========================================================================
-%%%  Internal functions
-%%%=========================================================================
-do_init(Verbosity) ->
-    put(verbosity,?vvalidate(Verbosity)),
-    put(sname,misc_sup),
-    ?vlog("starting", []),
+init(_) -> 
     Flags     = {one_for_one, 0, 1},
     Workers   = [],
     {ok, {Flags, Workers}}.
 
-start_permanent_worker(Mod, Addr, Port, Verbosity, Modules) ->
+%%%=========================================================================
+%%%  Internal functions
+%%%=========================================================================
+start_permanent_worker(Mod, Addr, Port, Modules) ->
     SupName = make_name(Addr, Port),
     Spec    = {{Mod, Addr, Port},
-	       {Mod, start_link, [Addr, Port, Verbosity]}, 
+	       {Mod, start_link, [Addr, Port]}, 
 	       permanent, timer:seconds(1), worker, [Mod] ++ Modules},
     supervisor:start_child(SupName, Spec).
 

@@ -64,6 +64,10 @@ ifeq ($(SNMP_DEBUG),d)
   SNMP_FLAGS += -Dsnmp_debug
 endif
 
+ifeq ($(SNMP_EXT_VERBOSITY),true)
+  SNMP_FLAGS += -Dsnmp_extended_verbosity
+endif
+
 
 # ----------------------------------------------------
 # FLAGS
@@ -81,6 +85,7 @@ ERL_COMPILE_FLAGS += -I../../include \
                      +'{attribute,insert,app_vsn,$(APP_VSN)}' \
                      -I$(ERL_TOP)/lib/stdlib \
                      $(SNMP_FLAGS)
+
 
 # ----------------------------------------------------
 # Targets

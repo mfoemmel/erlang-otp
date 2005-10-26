@@ -28,7 +28,7 @@
 -export([is_guard_expr/1]).
 -export([bool_option/4,value_option/3,value_option/7]).
 
--import(lists, [member/2,map/2,foldl/3,foldr/3,mapfoldl/3,all/2]).
+-import(lists, [member/2,map/2,foldl/3,foldr/3,mapfoldl/3,all/2,reverse/1]).
 
 %% bool_option(OnOpt, OffOpt, Default, Options) -> true | false.
 %% value_option(Flag, Default, Options) -> Value.
@@ -205,10 +205,12 @@ format_error({format_error,{Fmt,Args}}) ->
 format_error({mnemosyne,What}) ->
     "mnemosyne " ++ What ++ ", missing transformation";
 
-format_error({several_behaviours,Behaviours}) ->
-    io_lib:format("several behaviours defined - ~p", [Behaviours]);
-format_error({undefined_behaviour_func, {Func, Arity}}) ->
-    io_lib:format("undefined call-back function ~w/~w", [Func, Arity]);
+format_error({conflicting_behaviours,{Name,Arity},B,FirstL,FirstB}) ->
+    io_lib:format("conflicting behaviours - callback ~w/~w required by both '~p' "
+		  "and '~p' (line ~p)", [Name,Arity,B,FirstB,FirstL]);
+format_error({undefined_behaviour_func, {Func,Arity}, Behaviour}) ->
+    io_lib:format("undefined callback function ~w/~w (behaviour '~w')",
+		  [Func,Arity,Behaviour]);
 format_error({undefined_behaviour,Behaviour}) ->
     io_lib:format("behaviour ~w undefined", [Behaviour]);
 format_error({undefined_behaviour_callbacks,Behaviour}) ->
@@ -369,9 +371,6 @@ place_warning(Ws, W) -> [W | Ws].
 add_warning(W, St) -> St#lint{warnings=place_warning(St#lint.warnings, W)}.
 add_warning(Line, W, St) -> add_warning({Line,erl_lint,W}, St).
 
-add_warning(true, L, W, St) -> add_warning(L, W, St); 
-add_warning(false, _L, _W, St) -> St.
-
 %% forms([Form], State) -> State'
 
 forms(Forms, St0) ->
@@ -499,16 +498,15 @@ func_warning(Line, Type, Fs, St) ->
 %% behaviour_check([{Line,Behaviour}], State) -> State'
 %%  Check behaviours for existence and defined functions.
 
-behaviour_check(Bs, St) ->
-    Mult = length(Bs) > 1,                      %More than one behaviour?
-    foldl(fun ({Line,B}, St0) ->
-                  St1 = add_warning(Mult, Line, {several_behaviours,B}, St0),
-                  {Bfs, St2} = behaviour_callbacks(Line, B, St1),
-                  Missing = ordsets:subtract(ordsets:from_list(Bfs),
-                                             gb_sets:to_list(St2#lint.exports)),
-                  func_warning(Line, undefined_behaviour_func,
-                               Missing, St2)
-          end, St, Bs).
+behaviour_check(Bs, St0) ->
+    {AllBfs,St1} = all_behaviour_callbacks(Bs, [], St0),
+    St = behaviour_missing_callbacks(AllBfs, St1),
+    behaviour_conflicting(AllBfs, St).
+
+all_behaviour_callbacks([{Line,B}|Bs], Acc, St0) ->
+    {Bfs0,St} = behaviour_callbacks(Line, B, St0),
+    all_behaviour_callbacks(Bs, [{{Line,B},Bfs0}|Acc], St);
+all_behaviour_callbacks([], Acc, St) -> {reverse(Acc),St}.
 
 behaviour_callbacks(Line, B, St0) ->
     case catch B:behaviour_info(callbacks) of
@@ -543,6 +541,33 @@ behaviour_callbacks(Line, B, St0) ->
             St1 = add_warning(Line, {ill_defined_behaviour_callbacks,B}, St0),
             {[], St1}
     end.
+
+behaviour_missing_callbacks([{{Line,B},Bfs}|T], #lint{exports=Exp}=St0) ->
+    Missing = ordsets:subtract(ordsets:from_list(Bfs), gb_sets:to_list(Exp)),
+    St = foldl(fun (F, S0) ->
+		       add_warning(Line, {undefined_behaviour_func,F,B}, S0)
+	       end, St0, Missing),
+    behaviour_missing_callbacks(T, St);
+behaviour_missing_callbacks([], St) -> St.
+
+behaviour_conflicting(AllBfs, St) ->
+    R0 = sofs:relation(AllBfs, [{item,[callback]}]),
+    R1 = sofs:family_to_relation(R0),
+    R2 = sofs:converse(R1),
+    R3 = sofs:relation_to_family(R2),
+    R4 = sofs:family_specification(fun(S) -> sofs:no_elements(S) > 1 end, R3),
+    R = sofs:to_external(R4),
+    behaviour_add_conflicts(R, St).
+
+behaviour_add_conflicts([{Cb,[{FirstL,FirstB}|Cs]}|T], St0) ->
+    St = behaviour_add_conflict(Cs, Cb, FirstL, FirstB, St0),
+    behaviour_add_conflicts(T, St);
+behaviour_add_conflicts([], St) -> St.
+
+behaviour_add_conflict([{Line,B}|Cs], Cb, FirstL, FirstB, St0) ->
+    St = add_warning(Line, {conflicting_behaviours,Cb,B,FirstL,FirstB}, St0),
+    behaviour_add_conflict(Cs, Cb, FirstL, FirstB, St);
+behaviour_add_conflict([], _, _, _, St) -> St.
 
 %% For storing the import list we use the orddict module. 
 %% We know an empty set is [].

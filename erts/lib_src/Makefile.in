@@ -68,6 +68,13 @@ endif
 
 CFLAGS += @WFLAGS@ @DEFS@
 
+ifeq ($(findstring -D_GNU_SOURCE,$(CFLAGS)),)
+THR_DEFS = $(ETHR_DEFS)
+else
+# Remove duplicate -D_GNU_SOURCE
+THR_DEFS = $(filter-out -D_GNU_SOURCE%, $(ETHR_DEFS))
+endif
+
 LIBS=@LIBS@
 
 TT_DIR=$(TARGET)/$(TYPE)
@@ -165,10 +172,10 @@ $(ERTS_ST_LIB): $(ERTS_ST_LIB_OBJS) $(ERTS_LIB_DIR)
 #
 
 $(OBJ_DIR)/%_mt.o: common/%.c
-	$(CC) $(ETHR_DEFS) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(THR_DEFS) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(OBJ_DIR)/%_mt.o: $(ERLANG_OSTYPE)/%.c
-	$(CC) $(ETHR_DEFS) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(THR_DEFS) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(OBJ_DIR)/%_st.o: common/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
@@ -265,12 +272,12 @@ depend:
 	@echo "# Generated dependency rules" > $(DEPEND_MK);
 ifneq ($(strip $(ETHREAD_LIB_SRC)),)
 	@echo "# ethread lib objects..." >> $(DEPEND_MK);
-	$(DEP_CC) -MM $(ETHR_DEFS) $(CFLAGS) $(INCLUDES) $(ETHREAD_LIB_SRC) \
+	$(DEP_CC) -MM $(THR_DEFS) $(CFLAGS) $(INCLUDES) $(ETHREAD_LIB_SRC) \
 		| $(SED_MT_DEPEND) >> $(DEPEND_MK)
 endif
 ifneq ($(strip $(ERTS_MT_LIB_SRC)),)
 	@echo "# Mutithread erts lib objects..." >> $(DEPEND_MK);
-	$(DEP_CC) -MM $(ETHR_DEFS) $(CFLAGS) $(INCLUDES) $(ERTS_MT_LIB_SRC) \
+	$(DEP_CC) -MM $(THR_DEFS) $(CFLAGS) $(INCLUDES) $(ERTS_MT_LIB_SRC) \
 		| $(SED_MT_DEPEND) >> $(DEPEND_MK)
 endif
 ifneq ($(strip $(ERTS_ST_LIB_SRC)),)

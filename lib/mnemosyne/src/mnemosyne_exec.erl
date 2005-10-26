@@ -518,7 +518,7 @@ setup([C|Cs], NextPid) ->
     setup(C, setup(Cs,NextPid));
 
 setup({'#or',Count, Alts}, NextPid) ->
-    make_split( lists:map({?MODULE,setup},[NextPid],Alts), Count);
+    make_split(lists:map(fun(A) -> setup(A, NextPid) end, Alts), Count);
 
 setup({'#bindings',RecCount, Bs}, NextPid) ->
     ?start_op(bindings, [NextPid,RecCount,Bs]);

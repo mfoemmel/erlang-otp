@@ -75,6 +75,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/ssl-$(VSN)
 # ----------------------------------------------------
 OBJS = 	$(OBJDIR)/esock$(obj) \
 	$(OBJDIR)/debuglog$(obj) \
+	$(OBJDIR)/esock_poll$(obj) \
 	$(OBJDIR)/esock_osio$(obj) \
 	$(OBJDIR)/esock_utils$(obj) \
 	$(OBJDIR)/esock_posix_str$(obj) \

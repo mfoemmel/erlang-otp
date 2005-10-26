@@ -46,6 +46,7 @@ MODULES= \
 	digraph \
 	digraph_utils \
 	edlin \
+	edlin_expand \
 	epp \
 	erl_bits \
 	erl_compile \

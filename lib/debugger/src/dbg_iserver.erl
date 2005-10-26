@@ -29,7 +29,7 @@
 -record(proc,  {pid,           % pid() Debugged process
 		meta,          % pid() Meta process
 		attpid,        % pid() | undefined  Attached process
-		status,        % running | 
+		status,        % running | exit | idle | waiting
 		info     = {}, % {} | term()
 		exit_info= {}, % {} | {{Mod,Line}, Bs, Stack}
 		function       % {Mod,Func,Args} Initial function call
@@ -126,20 +126,22 @@ handle_call({attached, AttPid, Pid}, _From, State) ->
 	    case Proc#proc.status of
 		exit ->
 		    Args = [self(),
-			    AttPid,Pid,Proc#proc.info,Proc#proc.exit_info],
-		    Meta = spawn_link(dbg_imeta, exit_info, Args),
+			    AttPid,Pid,Proc#proc.info,
+			    Proc#proc.exit_info],
+		    Meta = spawn_link(dbg_ieval, exit_info, Args),
 		    Proc2 = Proc#proc{meta=Meta, attpid=AttPid},
 		    Procs = lists:keyreplace(Pid, #proc.pid,
 					     State#state.procs, Proc2),
-		    {reply, {ok, Meta}, State#state{procs=Procs}};
+		    {reply, {ok,Meta}, State#state{procs=Procs}};
 		_Status ->
-		    send(Proc#proc.meta, {attached, AttPid}),
+		    Meta = Proc#proc.meta,
+		    send(Meta, {attached, AttPid}),
 		    Procs = lists:keyreplace(Pid, #proc.pid,
 					     State#state.procs,
 					     Proc#proc{attpid=AttPid}),
-		    {reply, {ok, Proc#proc.meta}, State#state{procs=Procs}}
+		    {reply, {ok, Meta}, State#state{procs=Procs}}
 	    end;
-	_AttPid ->
+	_AttPid -> % there is already an attached process
 	    {reply, error, State}
     end;
 
@@ -192,17 +194,18 @@ handle_call({new_process, Pid, Meta, Function}, _From, State) ->
     link(Meta),
 
     %% A new, debugged process has been started. Return its status,
-    %% ie running (running as usual) or init_break (stop)
+    %% ie running (running as usual) or break (stop)
     %% The status depends on if the process is automatically attached to
     %% or not.
     Reply = case auto_attach(init, State#state.auto, Pid) of
-		AttPid when pid(AttPid) -> init_break;
+		AttPid when pid(AttPid) -> break;
 		ignore -> running
 	    end,
 
     %% Do not add AttPid, it should call attached/2 when started instead
     Proc = #proc{pid=Pid, meta=Meta, status=running, function=Function},
-    send_all(subscriber, {new_process, {Pid,Function,running,{}}}, State),
+    send_all(subscriber,
+	     {new_process, {Pid,Function,running,{}}}, State),
 
     {reply, Reply, State#state{procs=State#state.procs++[Proc]}};
 
@@ -309,6 +312,7 @@ handle_cast({subscribe, Sub}, State) ->
 
 %% Attaching to a process
 handle_cast({attach, Pid, {Mod, Func, Args}}, State) ->
+    %% Simply spawn process, which should call int:attached(Pid)
     spawn(Mod, Func, [Pid | Args]),
     {noreply, State};
 
@@ -382,6 +386,11 @@ handle_cast({set_status, Meta, Status, Info}, State) ->
     Proc2 = Proc#proc{status=Status, info=Info},
     {noreply, State#state{procs=lists:keyreplace(Meta, #proc.meta,
 						 State#state.procs, Proc2)}};
+handle_cast({set_exit_info, Meta, ExitInfo}, State) ->
+    {true, Proc} = get_proc({meta, Meta}, State#state.procs),
+    Procs = lists:keyreplace(Meta, #proc.meta, State#state.procs,
+			     Proc#proc{exit_info=ExitInfo}),
+    {noreply,State#state{procs=Procs}};
 
 %% Code loading
 handle_cast({delete, Mod}, State) ->
@@ -389,7 +398,8 @@ handle_cast({delete, Mod}, State) ->
     %% Remove the ETS table with information about the module
     Db = State#state.db,
     case ets:lookup(Db, {Mod, refs}) of
-	[] -> ignore;
+	[] -> % Mod is not interpreted
+	    {noreply, State};
 	[{{Mod, refs}, ModDbs}] ->
 	    ets:delete(Db, {Mod, refs}),
 	    AllPids = lists:foldl(
@@ -410,70 +420,57 @@ handle_cast({delete, Mod}, State) ->
 				      false -> ignore % pid may have exited
 				  end
 			  end,
-			  AllPids)
-    end,
+			  AllPids),
 
-    send_all([subscriber, attached], {no_interpret, Mod}, State),
+	    send_all([subscriber,attached], {no_interpret, Mod}, State),
 
-    %% Remove all breakpoints for Mod
-    handle_cast({no_break, Mod}, State).
+	    %% Remove all breakpoints for Mod
+	    handle_cast({no_break, Mod}, State)
+    end.
 
 %% Process exits
-handle_info({'EXIT', Who, Why}, State) ->
+handle_info({'EXIT',Who,Why}, State) ->
     case get_proc({meta, Who}, State#state.procs) of
 
-	%% Exited process is a meta process
-	{true, Proc} when Proc#proc.status/=exit ->
-	    Pid = Proc#proc.pid,
+	%% Exited process is a meta process for exit_info
+	{true,#proc{status=exit}} ->
+	    {noreply,State};
 	    
-	    %% Extract information from the exit reason
-	    {Info, ExitInfo} = case Why of
-				   {Who, Reason} -> {Reason, {}};
-				   {Who, Reason, Where, Bs, Stack} ->
-				       {Reason, {Where, Bs, Stack}};
-				   _Reason -> {Why, {}}
-			       end,
-
-	    %% Check if a new meta process should be started, i.e. if
-	    %% someone is attached to the debugged process
+	%% Exited process is a meta process
+	{true,Proc} ->
+	    Pid = Proc#proc.pid,
+	    ExitInfo = Proc#proc.exit_info,
+	    %% Check if someone is attached to the debugged process,
+	    %% if so a new meta process should be started
 	    Meta = case Proc#proc.attpid of
 		       AttPid when pid(AttPid) ->
-			   Args = [self(),
-				   AttPid, Proc#proc.pid, Info, ExitInfo],
-			   spawn_link(dbg_imeta, exit_info, Args);
+			   spawn_link(dbg_ieval, exit_info, 
+				      [self(),AttPid,Pid,Why,ExitInfo]);
 		       undefined ->
 			   %% Otherwise, auto attach if necessary
 			   auto_attach(exit, State#state.auto, Pid),
 			   Who
 		   end,
-	    
-	    send_all(subscriber, {new_status, Pid, exit, Info}, State),
-	    
-	    Proc2 = Proc#proc{meta=Meta, status=exit, info=Info,
-			      exit_info=ExitInfo},
+	    send_all(subscriber, {new_status,Pid,exit,Why}, State),
 	    Procs = lists:keyreplace(Who, #proc.meta, State#state.procs,
-				     Proc2),
-	    {noreply, State#state{procs=Procs}};
+				     Proc#proc{meta=Meta,
+					       status=exit,
+					       info=Why}),
+	    {noreply,State#state{procs=Procs}};
 
-	%% Exited process is a simple meta process for a terminated process
-	{true, Proc} when Proc#proc.status==exit ->
-	    {noreply, State};
-	
 	false ->
 	    case get_proc({attpid, Who}, State#state.procs) of
 		
 		%% Exited process is an attached process
 		{true, Proc} ->
-
 		    %% If status==exit, then the meta process is a
 		    %% simple meta for a terminated process and can be
-		    %% terminated as well (it is only needed by the attached
-		    %% process)
+		    %% terminated as well (it is only needed by
+		    %% the attached process)
 		    case Proc#proc.status of
 			exit -> send(Proc#proc.meta, stop);
-			_Status -> send(Proc#proc.meta, {detached, Who})
+			_Status -> send(Proc#proc.meta, detached)
 		    end,
-		    
 		    Procs = lists:keyreplace(Proc#proc.pid, #proc.pid,
 					     State#state.procs,
 					     Proc#proc{attpid=undefined}),

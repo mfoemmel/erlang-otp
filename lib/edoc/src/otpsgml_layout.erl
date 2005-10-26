@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: otpsgml_layout.erl,v 1.8 2004/11/30 00:37:57 richardc Exp $
+%% $Id$
 %%
 %% @author Richard Carlsson <richardc@csd.uu.se>
 %% @author Kenneth Lundin <kenneth@erix.ericsson.se>
@@ -52,7 +52,7 @@
 
 %% @doc The layout function.
 %%
-%% <p>Options:
+%% Options:
 %% <dl>
 %%  <dt>{@type {index_columns, integer()@}}
 %%  </dt>
@@ -71,7 +71,7 @@
 %%      used for exporting the documentation. See {@link
 %%      //xmerl/xmerl:export_simple/3} for details.
 %%  </dd>
-%% </dl></p>
+%% </dl>
 %%
 %% @see edoc:layout/2
 
@@ -79,7 +79,6 @@
 
 module(Element, Options) ->
     XML = layout_module(Element, init_opts(Element, Options)),
-%    io:format("XML = ~p~n",[XML]),
     Export = proplists:get_value(xml_export, Options,
 				 ?DEFAULT_XML_EXPORT),
     xmerl:export_simple([XML], Export, []).
@@ -449,7 +448,6 @@ localdef(E = #xmlElement{content = Es}) ->
      ++ [" = "] ++ t_utype(get_elem(type, Es))).
 
 fulldesc(Es) ->
-%    io:format("FullDesc:\n~p\n",[Es]),
     case get_content(fullDescription, get_content(description, Es)) of
 %	[] -> [?NL];
 	[] -> index_desc(Es);

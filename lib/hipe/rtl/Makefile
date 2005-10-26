@@ -50,7 +50,7 @@ endif
 
 MODULES = hipe_rtl_arch hipe_tagscheme $(HIPE_MODULES)
 
-HRL_FILES= hipe_icode2rtl.hrl hipe_literals.hrl
+HRL_FILES= hipe_literals.hrl
 ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 

@@ -168,11 +168,16 @@
 #  define SOMAXCONN 5
 #endif
 
-/* How to get max no of file descriptors? We used to use NOFILE from
-   <sys/param.h>, but that tends to have little relation to reality.
-   Best is to use sysconf() (POSIX), but we'll just punt if that isn't
-   available (noone wants more than 64 Erlang systems on a host, right?:-) */
-#define MAX_FILES 64		/* if sysconf() isn't available, or fails */
+/*
+ * How to get max no of file descriptors? We used to use NOFILE from
+ * <sys/param.h>, but that tends to have little relation to reality.
+ * Best is to use sysconf() (POSIX), but we'll just punt if that isn't
+ * available. Start out with a high value because it will also be
+ * use as the number of file descriptors given to select() (it's is
+ * a terrible bug not to have all file descriptors included in the select()).
+ * The value will be adjusted down if FD_SETSIZE is smaller.
+ */
+#define MAX_FILES 1024		/* if sysconf() isn't available, or fails */
 
 /* ************************************************************************ */
 /* Macros that let us use IPv6                                              */

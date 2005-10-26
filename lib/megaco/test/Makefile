@@ -182,19 +182,34 @@ codec2_tickets: make
             -s megaco_codec_v2_test tickets \
             -s erlang halt
 
-codec3: make
-	erl -noshell -sname megaco_codec3 $(ERL_PATH) \
+codec3a: make
+	erl -noshell -sname megaco_codec3a $(ERL_PATH) \
             -s megaco_test_lib t megaco_codec_prev3a_test \
             $(EHALT)
 
-codec3_tickets: make
-	erl -noshell -sname megaco_codec3_tickets $(ERL_PATH) \
+codec3a_tickets: make
+	erl -noshell -sname megaco_codec3a_tickets $(ERL_PATH) \
             -s megaco_codec_prev3a_test tickets \
+            -s erlang halt
+
+codec3b: make
+	erl -noshell -sname megaco_codec3b $(ERL_PATH) \
+            -s megaco_test_lib t megaco_codec_prev3b_test \
+            $(EHALT)
+
+codec3b_tickets: make
+	erl -noshell -sname megaco_codec3b_tickets $(ERL_PATH) \
+            -s megaco_codec_prev3b_test tickets \
             -s erlang halt
 
 conf: make
 	erl -noshell -sname megaco_conf $(ERL_PATH) \
             -s megaco_test_lib t megaco_config_test \
+            -s erlang halt
+
+dm: make
+	erl -noshell -sname megaco_dm $(ERL_PATH) \
+            -s megaco_test_lib t megaco_digit_map_test \
             -s erlang halt
 
 app: make
@@ -241,6 +256,16 @@ actions: make
 pl: make
 	erl -noshell -sname megaco_pl $(ERL_PATH) \
             -s megaco_test_lib t megaco_pending_limit_test \
+            $(EHALT)
+
+udp: make
+	erl -noshell -sname megaco_pl $(ERL_PATH) \
+            -s megaco_test_lib t megaco_udp_test \
+            $(EHALT)
+
+tcp: make
+	erl -noshell -sname megaco_pl $(ERL_PATH) \
+            -s megaco_test_lib t megaco_tcp_test \
             $(EHALT)
 
 load: make
@@ -291,14 +316,29 @@ gnuplot_gif: make
             -s megaco_call_flow_test gnuplot_gif \
             -s erlang halt
 
-display_text_msgs1: make
-	erl -noshell -sname megaco_display_text_msgs1 $(ERL_PATH) \
+display_v1: make
+	erl -noshell -sname megaco_display_text_msgs_v1 $(ERL_PATH) \
             -s megaco_codec_v1_test display_text_messages \
             -s erlang halt
 
-display_text_msgs2: make
-	erl -noshell -sname megaco_display_text_msgs2 $(ERL_PATH) \
+display_v2: make
+	erl -noshell -sname megaco_display_text_msgs_v2 $(ERL_PATH) \
             -s megaco_codec_v2_test display_text_messages \
+            -s erlang halt
+
+display_prev3a: make
+	erl -noshell -sname megaco_display_text_msgs_prev3a $(ERL_PATH) \
+            -s megaco_codec_prev3a_test display_text_messages \
+            -s erlang halt
+
+display_prev3b: make
+	erl -noshell -sname megaco_display_text_msgs_prev3b $(ERL_PATH) \
+            -s megaco_codec_prev3b_test display_text_messages \
+            -s erlang halt
+
+generate_prev3b: make
+	erl -noshell -sname megaco_generate_text_msgs_prev3b $(ERL_PATH) \
+            -s megaco_codec_prev3b_test generate_text_messages \
             -s erlang halt
 
 node:

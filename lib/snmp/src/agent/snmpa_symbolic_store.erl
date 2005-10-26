@@ -383,9 +383,8 @@ handle_call({get_notification, Key}, _From, #state{db = DB} = S) ->
 
 handle_call(info, _From, #state{db = DB} = S) ->
     ?vlog("info",[]),
-    {memory, ProcSize} = erlang:process_info(self(),memory),
-    DbSize = snmpa_general_db:info(DB, memory),
-    {reply, [{process_memory, ProcSize}, {db_memory, DbSize}], S};
+    Info = get_info(DB), 
+    {reply, Info, S};
 
 handle_call(stop, _From, S) -> 
     ?vlog("stop",[]),
@@ -600,6 +599,33 @@ write_alias(AN, DB, Enums, MibName, Oid) ->
 		   mib_name = MibName, 
 		   info     = AN},
     snmpa_general_db:write(DB, Rec2).
+
+%% -------------------------------------
+
+get_info(DB) ->
+    ProcSize = proc_mem(self()),
+    DbSz     = tab_size(DB),
+    [{process_memory, ProcSize}, {db_memory, DbSz}].
+
+proc_mem(P) when pid(P) ->
+    case (catch erlang:process_info(P, memory)) of
+	{memory, Sz} when integer(Sz) ->
+	    Sz;
+	_ ->
+	    undefined
+    end;
+proc_mem(_) ->
+    undefined.
+
+tab_size(DB) ->
+    case (catch snmpa_general_db:info(DB, memory)) of
+        Sz when integer(Sz) ->
+            Sz;
+        _ ->
+            undefined
+    end.
+
+
 
 %% -------------------------------------
 

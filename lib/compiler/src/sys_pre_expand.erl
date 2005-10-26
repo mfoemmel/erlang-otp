@@ -278,7 +278,7 @@ guard_tests([Gt0|Gts0], St0) ->
 guard_tests([], St) -> {[],St}.
 
 guard_test({call,Line,{atom,_,record},[A,{atom,_,Name}]}, St) ->
-    record_test_in_guard(Line, A, Name, St);
+    in_guard(fun() -> record_test_in_guard(Line, A, Name, St) end);
 guard_test({call,Line,{atom,Lt,Tname},As}, St) ->
     %% XXX This is ugly. We can remove this workaround if/when
     %% we'll allow 'andalso' in guards. For now, we must have
@@ -286,25 +286,28 @@ guard_test({call,Line,{atom,Lt,Tname},As}, St) ->
     Test = {remote,Lt,
 	    {atom,Lt,erlang},
 	    {atom,Lt,normalise_test(Tname, length(As))}},
-    put(sys_pre_expand_in_guard, yes),
-    R = expr({call,Line,Test,As}, St),
-    erase(sys_pre_expand_in_guard),
-    R;
+    in_guard(fun() -> expr({call,Line,Test,As}, St) end);
 guard_test(Test, St) ->
     %% XXX See the previous clause.
-    put(sys_pre_expand_in_guard, yes),
-    R = expr(Test, St),
-    erase(sys_pre_expand_in_guard),
-    R.
+    in_guard(fun() -> expr(Test, St) end).
+
+is_in_guard() ->
+    get(sys_pre_expand_in_guard) =/= undefined.
+
+in_guard(F) ->
+    undefined = put(sys_pre_expand_in_guard, true),
+    Res = F(),
+    true = erase(sys_pre_expand_in_guard),
+    Res.
 
 %% record_test(Line, Term, Name, Vs, St) -> TransformedExpr
 %%  Generate code for is_record/1.
 
 record_test(Line, Term, Name, St) ->
-    case get(sys_pre_expand_in_guard) of
-	undefined ->
+    case is_in_guard() of
+	false ->
 	    record_test_in_body(Line, Term, Name, St);
-	yes ->
+	true ->
 	    record_test_in_guard(Line, Term, Name, St)
     end.
 
@@ -424,8 +427,7 @@ expr({record,Line,Name,Is}, St) ->
 		      record_inits(record_fields(Name, St), Is)]},
 	 St);
 expr({record_field,Line,R,Name,F}, St) ->
-    I = index_expr(Line, F, Name, record_fields(Name, St)),
-    expr({call,Line,{atom,Line,element},[I,R]}, St);
+    get_record_field(Line, R, F, Name, St);
 expr({record,_,R,Name,Us}, St0) ->
     {Ue,St1} = record_update(R, Name, record_fields(Name, St0), Us, St0),
     expr(Ue, St1);
@@ -667,8 +669,51 @@ index_expr(Line, {atom,_,F}, _Name, Fs) ->
     {integer,Line,index_expr(F, Fs, 2)}.
 
 index_expr(F, [{record_field,_,{atom,_,F},_}|_], I) -> I;
-index_expr(F, [_|Fs], I) ->
-    index_expr(F, Fs, I+1).
+index_expr(F, [_|Fs], I) -> index_expr(F, Fs, I+1).
+
+%% get_record_field(Line, RecExpr, FieldExpr, Name, St) -> {Expr,St'}.
+%%  Return an expression which verifies that the type of record
+%%  is correct and then returns the value of the field.
+%%  This expansion must be passed through expr again.
+
+get_record_field(Line, R, Index, Name, St) ->
+    case strict_record_tests(St#expand.compile) of
+	false ->
+	    sloppy_get_record_field(Line, R, Index, Name, St);
+	true ->
+	    strict_get_record_field(Line, R, Index, Name, St)
+    end.
+
+strict_get_record_field(Line, R, {atom,_,F}=Index, Name, St0) ->
+    case is_in_guard() of
+	false ->				%Body context.
+	    {Var,St} = new_var(Line, St0),
+	    Fs = record_fields(Name, St),
+	    I = index_expr(F, Fs, 2),
+	    P = record_pattern(2, I, Var, length(Fs)+1, Line, [{atom,Line,Name}]),
+	    E = {block,Line,[{match,Line,{tuple,Line,P},R},Var]},
+	    expr(E, St);
+	true ->					%In a guard.
+	    Fs = record_fields(Name, St0),
+	    I = index_expr(Line, Index, Name, Fs),
+	    expr({call,Line,{atom,Line,element},[I,R]}, St0)
+    end.
+
+record_pattern(I, I, Var, Sz, Line, Acc) ->
+    record_pattern(I+1, I, Var, Sz, Line, [Var|Acc]);
+record_pattern(Cur, I, Var, Sz, Line, Acc) when Cur =< Sz ->
+    record_pattern(Cur+1, I, Var, Sz, Line, [{var,Line,'_'}|Acc]);
+record_pattern(_, _, _, _, _, Acc) -> reverse(Acc).
+
+sloppy_get_record_field(Line, R, Index, Name, St) ->
+    Fs = record_fields(Name, St),
+    I = index_expr(Line, Index, Name, Fs),
+    expr({call,Line,{atom,Line,element},[I,R]}, St).
+
+strict_record_tests([strict_record_tests|_]) -> true;
+strict_record_tests([no_strict_record_tests|_]) ->false;
+strict_record_tests([_|Os]) -> strict_record_tests(Os);
+strict_record_tests([]) -> false.		%Default.
 
 %% pattern_fields([RecDefField], [Match]) -> [Pattern].
 %%  Build a list of match patterns for the record tuple elements.
@@ -935,9 +980,9 @@ expand_package(M, _St) ->
 %% values.
 
 make_bool_switch(L, E, V, T, F) ->
-    case get(sys_pre_expand_in_guard) of
-	undefined -> make_bool_switch_body(L, E, V, T, F);
-	yes -> make_bool_switch_guard(L, E, V, T, F)
+    case is_in_guard() of
+	false -> make_bool_switch_body(L, E, V, T, F);
+	true -> make_bool_switch_guard(L, E, V, T, F)
     end.
 
 make_bool_switch_guard(_, E, _, {atom,_,true}, {atom,_,false}) -> E;

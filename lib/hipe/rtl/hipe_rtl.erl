@@ -46,6 +46,31 @@
 %% </ol>
 %% These registers all share the same namespace.
 %%
+%% IMPORTANT: 
+%%
+%%     The variables contain tagged Erlang terms, the registers
+%%     contain untagged values (that can be all sorts of things) and
+%%     the floating point registers contain untagged floating point
+%%     values. This means that the different kinds of 'registers' are
+%%     incompatible and CANNOT be assigned to each other unless the
+%%     proper conversions are made.
+%%
+%%     When performing optimizations, it is reasonably safe to move
+%%     values stored in variables. However, when moving around untagged
+%%     values from either registers or floating point registers make
+%%     sure you know what you are doing. 
+%%
+%%     Example 1: A register might contain the untagged pointer to
+%%                something on the heap. If this value is moved across
+%%                a program point where a garbage collection might
+%%                occur, the pointer can be invalid. If you are lucky
+%%                you will end up with a segmentation fault; if unlucky,
+%%                you will be stuck on a wild goose chase.
+%%
+%%     Example 2: Floating point arithmetic instructions must occur in
+%%                a floating point block. Otherwise, exceptions can be
+%%                masked.
+%%
 %% @end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -88,6 +113,7 @@
 	 phi_arglist/1,
 	 is_phi/1,
 	 phi_enter_pred/3,
+	 phi_remove_pred/2,
 
 	 mk_alu/4,
 	 alu_dst/1,
@@ -264,10 +290,13 @@
 	 fixnumop_src/1,
 	 fixnumop_type/1,
 
-	 mk_reg/1,
-	 mk_new_reg/0,
+	 mk_reg/1,		% assumes non gc-safe
+	 mk_reg_gcsafe/1,
+	 mk_new_reg/0,		% assumes non gc-safe
+	 mk_new_reg_gcsafe/0,
 	 is_reg/1,
 	 reg_index/1,
+	 reg_is_gcsafe/1,
 
 	 %% mk_fpreg/1,
 	 mk_new_fpreg/0,
@@ -436,8 +465,16 @@ is_phi(#phi{}) -> true;
 is_phi(_) -> false.
 phi_enter_pred(Phi, Pred, Var) ->
   Phi#phi{arglist=[{Pred,Var}|lists:keydelete(Pred, 1, phi_arglist(Phi))]}.
-%% phi_remove_pred(Phi, Pred) ->
-%%   Phi#phi{arglist=lists:keydelete(Pred, 1, phi_arglist(Phi))}.
+phi_remove_pred(Phi, Pred) ->
+  NewArgList = lists:keydelete(Pred, 1, phi_arglist(Phi)),
+  case NewArgList of
+    [Arg] -> %% the phi should be turned into a move instruction
+      {_Label,Var} = Arg,
+      mk_move(phi_dst(Phi), Var);
+  %%    io:format("~nPhi (~w) turned into move (~w) when removing pred ~w~n",[Phi,Move,Pred]),
+    [_|_] ->
+      Phi#phi{arglist=NewArgList}
+  end.
 phi_argvar_subst(Phi, Subst) ->
   NewArgList = [{Pred,subst1(Subst, Var)} || {Pred,Var} <- phi_arglist(Phi)],
   Phi#phi{arglist=NewArgList}.
@@ -815,10 +852,14 @@ fconv_src_update(C, NewSrc) -> C#fconv{src=NewSrc}.
 %% change_var_to_reg(Var) ->
 %%   mk_reg(var_index(Var)).
 
-mk_reg(Num) when Num >= 0 -> {rtl_reg,Num}.
-mk_new_reg() -> mk_reg(hipe_gensym:get_next_var(rtl)).
-reg_index({rtl_reg,Index}) -> Index.
-is_reg({rtl_reg,_}) -> true;
+mk_reg(Num, IsGcSafe) when Num >= 0 -> {rtl_reg,Num,IsGcSafe}.
+mk_reg(Num) -> mk_reg(Num, false).
+mk_reg_gcsafe(Num) -> mk_reg(Num, true).
+mk_new_reg() -> mk_reg(hipe_gensym:get_next_var(rtl), false).
+mk_new_reg_gcsafe() -> mk_reg(hipe_gensym:get_next_var(rtl), true).
+reg_index({rtl_reg,Index,_}) -> Index.
+reg_is_gcsafe({rtl_reg,_,IsGcSafe}) -> IsGcSafe.
+is_reg({rtl_reg,_,_}) -> true;
 is_reg(_) -> false.
 
 mk_var(Num) when Num >= 0 -> {rtl_var,Num}.
@@ -1185,18 +1226,19 @@ is_shift_op(_) -> false.
 %% is_rel_op(_) -> false.
 
 redirect_jmp(Jmp, ToOld, ToNew) ->
+  %% OBS: In a jmp instruction more than one labels may be identical
+  %%      and thus need redirection!
   case type(Jmp) of
     branch ->
-      case branch_true_label(Jmp) of
+      TmpJmp = case branch_true_label(Jmp) of
+		 ToOld -> branch_true_label_update(Jmp, ToNew);
+		 _ -> Jmp
+	       end,
+      case branch_false_label(TmpJmp) of
 	ToOld ->
-	  branch_true_label_update(Jmp, ToNew);
+	  branch_false_label_update(TmpJmp, ToNew);
 	_ ->
-	  case branch_false_label(Jmp) of
-	    ToOld ->
-	      branch_false_label_update(Jmp, ToNew);
-	    _ ->
-	      Jmp
-	  end
+	  TmpJmp
       end;
     switch ->
       NewLbls = lists:map(fun(Lbl) when Lbl =:= ToOld -> ToNew;
@@ -1204,35 +1246,27 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 			  end, switch_labels(Jmp)),
       switch_labels_update(Jmp, NewLbls);
     alub ->
-      case alub_true_label(Jmp) of
-	ToOld ->
-	  alub_true_label_update(Jmp, ToNew);
-	_ ->
-	  case alub_false_label(Jmp) of
-	    ToOld ->
-	      alub_false_label_update(Jmp, ToNew);
-	    _ ->
-	      Jmp
-	  end
+      TmpJmp = case alub_true_label(Jmp) of
+		 ToOld -> alub_true_label_update(Jmp, ToNew);
+		 _ -> Jmp
+	       end,
+      case alub_false_label(TmpJmp) of
+	ToOld -> alub_false_label_update(TmpJmp, ToNew);
+	_ -> TmpJmp
       end;
     goto ->
       case goto_label(Jmp) of
-	ToOld ->
-	  goto_label_update(Jmp, ToNew);
-	_ ->
-	  Jmp
+	ToOld -> goto_label_update(Jmp, ToNew);
+	_ -> Jmp
       end;
     call ->
-      case call_continuation(Jmp) of
-	ToOld ->
-	  call_continuation_update(Jmp, ToNew);
-	_ ->
-	  case call_fail(Jmp) of
-	    ToOld ->
-	      call_fail_update(Jmp, ToNew);
-	    _ ->
-	      Jmp
-	  end
+      TmpJmp = case call_continuation(Jmp) of
+		 ToOld -> call_continuation_update(Jmp, ToNew);
+		 _ -> Jmp
+	       end,
+      case call_fail(TmpJmp) of
+	ToOld -> call_fail_update(TmpJmp, ToNew);
+	_ -> TmpJmp
       end;
     _ ->
       Jmp

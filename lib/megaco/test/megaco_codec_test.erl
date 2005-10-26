@@ -52,4 +52,5 @@ all(suite) ->
 codec(suite) ->
     [{megaco_codec_v1_test,     all}, 
      {megaco_codec_v2_test,     all}, 
-     {megaco_codec_prev3a_test, all}].
+     {megaco_codec_prev3a_test, all}, 
+     {megaco_codec_prev3b_test, all}].

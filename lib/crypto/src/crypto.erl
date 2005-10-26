@@ -28,6 +28,16 @@
 -export([des3_cbc_encrypt/5, des3_cbc_decrypt/5]).
 -export([des_ede3_cbc_encrypt/5, des_ede3_cbc_decrypt/5]).
 -export([aes_cfb_128_encrypt/3, aes_cfb_128_decrypt/3]).
+-export([rand_bytes/1,
+	 rand_bytes/3,
+	 rand_uniform/2,
+	 mod_exp/3,
+	 dss_verify/3,
+	 rsa_verify/3,
+	 aes_cbc_128_encrypt/3,
+	 aes_cbc_128_decrypt/3,
+	 mpint/1, erlint/1]).
+
 
 -define(INFO,		 0).
 -define(MD5,		 1).
@@ -48,6 +58,13 @@
 -define(DES_EDE3_CBC_DECRYPT, 16).
 -define(AES_CFB_128_ENCRYPT, 17).
 -define(AES_CFB_128_DECRYPT, 18).
+-define(RAND_BYTES,	 19).
+-define(RAND_UNIFORM,    20).
+-define(MOD_EXP,	 21).
+-define(DSS_VERIFY,	 22).
+-define(RSA_VERIFY,	 23).
+-define(AES_CBC_128_ENCRYPT, 24).
+-define(AES_CBC_128_DECRYPT, 25).
 
 -define(FUNC_LIST, [md5,
 		    md5_init,
@@ -66,7 +83,14 @@
 		    des_ede3_cbc_encrypt,
 		    des_ede3_cbc_decrypt,
 		    aes_cfb_128_encrypt,
-		    aes_cfb_128_decrypt]).
+		    aes_cfb_128_decrypt,
+		    rand_bytes,
+		    rand_uniform,
+		    mod_exp,
+		    dss_verify,
+		    rsa_verify,
+		    aes_cbc_128_encrypt,
+		    aes_cbc_128_decrypt]).
 
 start() ->
     application:start(crypto).
@@ -168,6 +192,7 @@ des_cbc_ivec(Data) when list(Data) ->
 des3_cbc_encrypt(Key1, Key2, Key3, IVec, Data) ->
     des_ede3_cbc_encrypt(Key1, Key2, Key3, IVec, Data).
 des_ede3_cbc_encrypt(Key1, Key2, Key3, IVec, Data) ->
+    %%io:format("des_ede3_cbc_encrypt: size(Data)=~p\n", [size(list_to_binary([Data]))]),
     control(?DES_EDE3_CBC_ENCRYPT, [Key1, Key2, Key3, IVec, Data]).
 
 des3_cbc_decrypt(Key1, Key2, Key3, IVec, Data) ->
@@ -185,25 +210,91 @@ aes_cfb_128_decrypt(Key, IVec, Data) ->
     control(?AES_CFB_128_DECRYPT, [Key, IVec, Data]).    
 
 
+%% 
+%% RAND - pseudo random numbers using RN_ functions in crypto lib
+%%
+
+rand_bytes(Bytes) ->
+    rand_bytes(Bytes, 0, 0).
+rand_bytes(Bytes, Topmask, Bottommask) ->
+    control(?RAND_BYTES,[<<Bytes:32/integer,
+			  Topmask:8/integer,
+			  Bottommask:8/integer>>]).
+
+rand_uniform(From,To) when binary(From), binary(To) ->
+    case control(?RAND_UNIFORM,[From,To]) of
+	<<Len:32/integer, MSB, Rest/binary>> when MSB > 127 ->
+	    <<(Len + 1):32/integer, 0, MSB, Rest/binary>>;
+	Whatever ->
+	    Whatever
+    end;
+rand_uniform(From,To) when integer(From),integer(To) ->
+    BinFrom = mpint(From),
+    BinTo = mpint(To),
+    case rand_uniform(BinFrom, BinTo) of
+        Result when binary(Result) ->
+            erlint(Result);
+        Other ->
+            Other
+    end.
+
+%%
+%% mod_exp - utility for rsa generation
+%%
+mod_exp(Base, Exponent, Modulo)
+  when integer(Base), integer(Exponent), integer(Modulo) ->
+    erlint(mod_exp(mpint(Base), mpint(Exponent), mpint(Modulo)));
+
+mod_exp(Base, Exponent, Modulo) ->
+    case control(?MOD_EXP,[Base,Exponent,Modulo]) of
+	<<Len:32/integer, MSB, Rest/binary>> when MSB > 127 ->
+	    <<(Len + 1):32/integer, 0, MSB, Rest/binary>>;
+	Whatever ->
+	    Whatever
+    end.
+
+%%
+%% DSS, RSA - verify
+%%
+
+dss_verify(Dgst,Signature,Key) ->
+    control(?DSS_VERIFY, [Dgst,Signature,Key]) == <<1>>.
+
+rsa_verify(Dgst,Signature,Key) ->
+    control(?RSA_VERIFY, [Dgst,Signature,Key]) == <<1>>.
+
+%%
+%% AES - with 128 bit key in cipher block chaining mode (CBC)
+%%
+
+aes_cbc_128_encrypt(Key, IVec, Data) ->
+    control(?AES_CBC_128_ENCRYPT, [Key, IVec, Data]).
+
+aes_cbc_128_decrypt(Key, IVec, Data) ->
+    control(?AES_CBC_128_DECRYPT, [Key, IVec, Data]).
+
+
+
 %%
 %%  LOCAL FUNCTIONS
 %%
-control_bin(Cmd, Key, Data) when binary(Key) ->
-    control(Cmd, [sizehdr(size(Key)), Key, Data]);
-control_bin(Cmd, Key, Data) when list(Key) ->
-    control(Cmd, [sizehdr(flen(Key)), Key, Data]).
+control_bin(Cmd, Key, Data) ->
+    Sz = flen(Key),
+    control(Cmd, [<<Sz:32/integer-unsigned>>, Key, Data]).
 
 control(Cmd, Data) ->
     [{port, Port}| _] = ets:lookup(crypto_server_table, port),
     erlang:port_control(Port, Cmd, Data).
 
-sizehdr(N) ->
-    [(N bsr 24) band 255,
-     (N bsr 16) band 255,
-     (N bsr  8) band 255,
-     N band 255].
+%% sizehdr(N) ->
+%%     [(N bsr 24) band 255,
+%%      (N bsr 16) band 255,
+%%      (N bsr  8) band 255,
+%%      N band 255].
 
-%% Flat length of IOlist
+%% Flat length of IOlist (or binary)
+flen(L) when binary(L) ->
+    size(L);
 flen(L) ->
     flen(L, 0).
 
@@ -215,3 +306,46 @@ flen([H| T], N) when integer(H), 0 =< H, H =<  255 ->
     flen(T, N + 1);
 flen([], N) ->
     N.
+
+%% large integer in a binary with 32bit length
+%% MP representaion  (SSH2)
+mpint(X) when X < 0 ->
+    case X of
+	-1 ->
+	    <<0,0,0,1,16#ff>>;	    
+       _ ->
+	    mpint_neg(X,0,[])
+    end;
+mpint(X) ->
+    case X of 
+	0 ->
+	    <<0,0,0,0>>;
+	_ ->
+	    mpint_pos(X,0,[])
+    end.
+
+-define(UINT32(X),   X:32/unsigned-big-integer).
+
+mpint_neg(-1,I,Ds=[MSB|_]) ->
+    if MSB band 16#80 =/= 16#80 ->
+	    <<?UINT32((I+1)), (list_to_binary([255|Ds]))/binary>>;
+       true ->
+	    (<<?UINT32(I), (list_to_binary(Ds))/binary>>)
+    end;
+mpint_neg(X,I,Ds)  ->
+    mpint_neg(X bsr 8,I+1,[(X band 255)|Ds]).
+    
+mpint_pos(0,I,Ds=[MSB|_]) ->
+    if MSB band 16#80 == 16#80 ->
+	    <<?UINT32((I+1)), (list_to_binary([0|Ds]))/binary>>;
+       true ->
+	    (<<?UINT32(I), (list_to_binary(Ds))/binary>>)
+    end;
+mpint_pos(X,I,Ds) ->
+    mpint_pos(X bsr 8,I+1,[(X band 255)|Ds]).
+
+%% int from integer in a binary with 32bit length
+erlint(<<MPIntSize:32/integer,MPIntValue/binary>>) ->
+    Bits= MPIntSize * 8,
+    <<Integer:Bits/integer>> = MPIntValue,
+    Integer.

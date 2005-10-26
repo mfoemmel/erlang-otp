@@ -101,8 +101,8 @@ slg_newclause(Akey, G, PosNegMin) ->
 %%%----------------------------------------------------------------
 slg_answer(Akey, G, PosNegMin) -> 
     case subsumed_by_any_anss(Akey,G) of
-	true ->
-	    PosNegMin;
+%% 	true ->
+%% 	    PosNegMin;
 	false -> 
 	    add_to_anss(Akey, G),
 	    case delayed_literals(G) of
@@ -183,12 +183,12 @@ update_lookup(Akey, Bkey, pos, {PosMin,NegMin}) ->
     NegLink_B = neglink(Bkey),
     set_poslink(Akey, min(poslink(Akey),PosLink_B)),
     set_neglink(Akey, min(neglink(Akey),NegLink_B)),
-    {min(PosMin,PosLink_B), min(NegMin,NegLink_B)};
-update_lookup(Akey, Bkey, neg, {PosMin,NegMin}) ->
-    PosLink_B = poslink(Bkey),
-    NegLink_B = neglink(Bkey),
-    set_neglink(Akey, min(neglink(Akey),PosLink_B)),
-    {PosMin, min(NegMin,PosLink_B,NegLink_B)}.
+    {min(PosMin,PosLink_B), min(NegMin,NegLink_B)}.
+%% update_lookup(Akey, Bkey, neg, {PosMin,NegMin}) ->
+%%     PosLink_B = poslink(Bkey),
+%%     NegLink_B = neglink(Bkey),
+%%     set_neglink(Akey, min(neglink(Akey),PosLink_B)),
+%%     {PosMin, min(NegMin,PosLink_B,NegLink_B)}.
 
 
 %% Returns  {New_PosMin, New_NegMin}.
@@ -205,12 +205,12 @@ update_solution(Akey, Bkey, Sign, PosNegMin, BPosNegMin) ->
 		     NegLinkB = neglink(Bkey),
 		     set_neglink(Akey, min(neglink(Akey),NegLinkB)),
 		     set_poslink(Akey, min(poslink(Akey),PosLinkB)),
-		     {min(PosMin,PosLinkB), min(NegMin,NegLinkB)};
+		     {min(PosMin,PosLinkB), min(NegMin,NegLinkB)}
 	
-	{_,neg} ->   PosLinkB   = poslink(Bkey),
-		     NegLinkB   = neglink(Bkey),
-		     set_neglink(Akey, min(neglink(Akey),PosLinkB,NegLinkB)),
-		     {PosMin,  min(NegMin,PosLinkB,NegLinkB)}
+%% 	{_,neg} ->   PosLinkB   = poslink(Bkey),
+%% 		     NegLinkB   = neglink(Bkey),
+%% 		     set_neglink(Akey, min(neglink(Akey),PosLinkB,NegLinkB)),
+%% 		     {PosMin,  min(NegMin,PosLinkB,NegLinkB)}
     end.
 
 %%%----------------------------------------------------------------
@@ -304,7 +304,7 @@ replace([H|T], X, New) -> [H | replace(T,X,New)].
 subsumed_by_any_anss(Akey, G) -> subsumed_by_any_anss1(head(G), anss(Akey)).
 
 subsumed_by_any_anss1(H, [L|Ls]) ->
-exit({mnemosyne_bug});
+    exit({mnemosyne_bug});
 %    case mnemosyne_unify:subsumes_chk(H, head(L)) of
 %	true -> true;
 %	false -> subsumed_by_any_anss1(H,Ls)
@@ -337,7 +337,6 @@ slg_resolvents_P_A(P) when record(P,pred_sym) ->
     case P#pred_sym.type of
 	rule ->
 	    lists:map(fun(Body) -> {P,[],Body} end,
-		      [],
 		      mnemosyne_lib:db_read_clauses(P));
 	table -> 
 	    ?not_yet({?MODULE,slg_resolvents_P_A,table,P#pred_sym.functor})
@@ -349,7 +348,7 @@ key(A) when record(A,pred_sym) -> mnemosyne_unify:numbervars(A#pred_sym.args).
 min(A,B) when A<B -> A;
 min(_,B) -> B.
 
-min(A,B,C) -> min(A,min(B,C)).
+%%min(A,B,C) -> min(A,min(B,C)).
 
 %%%----------------------------------------------------------------
 %%%

@@ -10,9 +10,9 @@
 %%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: tobiasl $
-%%              $Date: 2004/03/08 13:34:40 $
-%%              $Revision: 1.14 $
+%%              $Author: kostis $
+%%              $Date: 2005/09/16 16:59:34 $
+%%              $Revision: 1.16 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -92,8 +92,12 @@ icode_var2rtl_var(Var, Map) ->
 	var ->
 	  NewVar = hipe_rtl:mk_new_var(),
 	  {NewVar,insert(Var, NewVar, Map)};
-	reg ->
-	  NewVar = hipe_rtl:mk_new_reg(),
+	{reg,IsGcSafe} ->
+	  NewVar =
+	    case IsGcSafe of
+	      %% true -> hipe_rtl:mk_new_reg_gcsafe();
+	      false -> hipe_rtl:mk_new_reg()
+	    end,
 	  {NewVar,insert(Var, NewVar, Map)}
       end;
     {value,NewVar} ->
@@ -115,7 +119,7 @@ type_of_var(X) ->
 	false ->
 	  case hipe_icode:is_reg(X) of
 	    true ->
-	      reg;
+	      {reg, hipe_icode:reg_is_gcsafe(X)};
 	    false ->
 	      %% Sanity check
 	      case hipe_icode:is_const(X) of

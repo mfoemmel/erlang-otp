@@ -52,6 +52,9 @@
 #define GET_BUFSZ       19
 #define GET_QSIZE       20
 
+#define ADLER32_1         21
+#define ADLER32_2         22
+
 #define DEFAULT_BUFSZ   4000
 
 static int zlib_init(void);
@@ -94,7 +97,8 @@ typedef struct {
     int binsz;
     int binsz_need;
     uLong crc;
-    int   want_crc;     /* 1 if crc is calculated on clear text */
+    int inflate_eos_seen;
+    int want_crc;       /* 1 if crc is calculated on clear text */
     ErlDrvPort port;    /* the associcated port */
 } ZLibData;
 
@@ -128,22 +132,22 @@ static char* zlib_reason(int code, int* err)
 	return erl_errno_id(errno);
     case Z_STREAM_ERROR:
 	*err = 1;
-	return "stream";
+	return "stream_error";
     case Z_DATA_ERROR:
 	*err = 1;
-	return "data";
+	return "data_error";
     case Z_MEM_ERROR:
 	*err = 1;
-	return "mem";
+	return "mem_error";
     case Z_BUF_ERROR:
 	*err = 1;
-	return "buf";
+	return "buf_error";
     case Z_VERSION_ERROR:
 	*err = 1;
-	return "version";
+	return "version_error";
     default:
 	*err = 1;
-	return "unknown";
+	return "unknown_error";
     }
 }
 
@@ -168,19 +172,24 @@ static int zlib_return(int code, char** rbuf, int rlen)
     return len;
 }
 
-static int zlib_value(int value, char** rbuf, int rlen)
+static int zlib_value2(int msg_code, int value, char** rbuf, int rlen)
 {
-    int msg_code = 2; /* 2 = integer */
     char* dst = *rbuf;
 
-    if (rlen  < 5)
+    if (rlen  < 5) {
 	return -1;
+    }
     *dst++ = msg_code;
     *dst++ = (value >> 24) & 0xff;
     *dst++ = (value >> 16) & 0xff;
     *dst++ = (value >> 8) & 0xff;
-    *dst++ = (value >> 0) & 0xff;
+    *dst++ = value & 0xff;
     return 5;
+}
+
+static int zlib_value(int value, char** rbuf, int rlen)
+{
+    return zlib_value2(2, value, rbuf, rlen);
 }
 
 static int zlib_output_init(ZLibData* d)
@@ -227,38 +236,42 @@ static int zlib_inflate(ZLibData* d, int flush)
 	int vlen;
 	SysIOVec* iov = driver_peekq(d->port, &vlen);
 	int len;
+	int possibly_more_output = 0;
 
 	d->s.next_in = iov[0].iov_base;
 	d->s.avail_in = iov[0].iov_len;
-
-	while((d->s.avail_in > 0) && (res != Z_STREAM_END)) {
+	while((possibly_more_output || (d->s.avail_in > 0)) && (res != Z_STREAM_END)) {
 	    res = inflate(&d->s, Z_NO_FLUSH);
-	    if (res < 0)
+	    if (res == Z_NEED_DICT) {
+		/* Essential to eat the header bytes that zlib has looked at */
+		len = iov[0].iov_len - d->s.avail_in;
+		driver_deq(d->port, len);
 		return res;
-	    if (d->s.avail_out == 0) {
+	    }
+	    if (res < 0) {
+		return res;
+	    }
+	    if (d->s.avail_out != 0) {
+		possibly_more_output = 0;
+	    } else {
 		if (d->want_crc)
 		    d->crc = crc32(d->crc, d->bin->orig_bytes,
 				   d->binsz - d->s.avail_out);
 		zlib_output(d);
+		possibly_more_output = 1;
 	    }
 	}
 	len = iov[0].iov_len - d->s.avail_in;
 	driver_deq(d->port, len);
     }
 
-    if (flush != Z_NO_FLUSH) {
-	if ((res = inflate(&d->s, flush)) < 0)
-	    return res;
-	while(d->s.avail_out < d->binsz) {
-	    if (d->want_crc)
-		d->crc = crc32(d->crc, d->bin->orig_bytes,
-			       d->binsz - d->s.avail_out);
-	    zlib_output(d);
-	    if (res == Z_STREAM_END)
-		break;
-	    if ((res = inflate(&d->s, flush)) < 0)
-		return res;
-	}
+    if (d->want_crc) {
+       d->crc = crc32(d->crc, d->bin->orig_bytes,
+		      d->binsz - d->s.avail_out);
+    }
+    zlib_output(d);
+    if (res == Z_STREAM_END) {       
+       d->inflate_eos_seen = 1;
     }
     return res;
 }
@@ -281,26 +294,41 @@ static int zlib_deflate(ZLibData* d, int flush)
 	d->s.avail_in = iov[0].iov_len;
 
 	while((d->s.avail_in > 0) && (res != Z_STREAM_END)) {
-	    if ((res = deflate(&d->s, Z_NO_FLUSH)) < 0)
+	    if ((res = deflate(&d->s, Z_NO_FLUSH)) < 0) {
 		return res;
-	    if (d->s.avail_out == 0)
+	    }
+	    if (d->s.avail_out == 0) {
 		zlib_output(d);
+	    }
 	}
 	len = iov[0].iov_len - d->s.avail_in;
-	if (d->want_crc)
+	if (d->want_crc) {
 	    d->crc = crc32(d->crc, iov[0].iov_base, len);
+	}
 	driver_deq(d->port, len);
     }
 
     if (flush != Z_NO_FLUSH) {
-	if ((res = deflate(&d->s, flush)) < 0)
+	if ((res = deflate(&d->s, flush)) < 0) {
 	    return res;
-	while(d->s.avail_out < d->binsz) {
-	    zlib_output(d);
-	    if (res == Z_STREAM_END)
-		break;
-	    if ((res = deflate(&d->s, flush)) < 0)
-		return res;
+	}
+	if (flush == Z_FINISH) {
+	    while (d->s.avail_out < d->binsz) {
+		zlib_output(d);
+		if (res == Z_STREAM_END) {
+		    break;
+		}
+		if ((res = deflate(&d->s, flush)) < 0) {
+		    return res;
+		}
+	    }
+	} else {
+	    while (d->s.avail_out < d->binsz) {
+		zlib_output(d);
+		if (res == Z_STREAM_END) {
+		    break;
+		}
+	    }
 	}
     }
     return res;
@@ -343,6 +371,7 @@ static ErlDrvData zlib_start(ErlDrvPort port, char* buf)
     d->binsz     = 0;
     d->binsz_need = DEFAULT_BUFSZ;
     d->crc       = crc32(0L, Z_NULL, 0);
+    d->inflate_eos_seen = 0;
     d->want_crc  = 0;
     return (ErlDrvData)d;
 }
@@ -401,7 +430,11 @@ static int zlib_ctl(ErlDrvData drv_data, unsigned int command, char *buf,
     case DEFLATE_SETDICT:
 	if (d->state != ST_DEFLATE) goto badarg;
 	res = deflateSetDictionary(&d->s, buf, len);
-	return zlib_return(res, rbuf, rlen);
+	if (res == Z_OK) {
+	    return zlib_value(d->s.adler, rbuf, rlen);
+	} else {
+	    return zlib_return(res, rbuf, rlen);
+	}
 
     case DEFLATE_RESET:
 	if (len != 0) goto badarg;
@@ -436,6 +469,7 @@ static int zlib_ctl(ErlDrvData drv_data, unsigned int command, char *buf,
 	res = inflateInit(&d->s);
 	if (res == Z_OK) {
 	    d->state = ST_INFLATE;
+	    d->inflate_eos_seen = 0;
 	    d->want_crc = 0;
 	    d->crc = crc32(0L, Z_NULL, 0);
 	}
@@ -450,6 +484,7 @@ static int zlib_ctl(ErlDrvData drv_data, unsigned int command, char *buf,
 	res = inflateInit2(&d->s, wbits);
 	if (res == Z_OK) {
 	    d->state = ST_INFLATE;
+	    d->inflate_eos_seen = 0;
 	    d->want_crc = (wbits < 0);
 	    d->crc = crc32(0L, Z_NULL, 0);
 	}
@@ -464,7 +499,16 @@ static int zlib_ctl(ErlDrvData drv_data, unsigned int command, char *buf,
     case INFLATE_SYNC:
 	if (d->state != ST_INFLATE) goto badarg;
 	if (len != 0) goto badarg;
-	res = inflateSync(&d->s);
+	if (driver_sizeq(d->port) == 0) {
+	    res = Z_BUF_ERROR;
+	} else {
+	    int vlen;
+	    SysIOVec* iov = driver_peekq(d->port, &vlen);
+
+	    d->s.next_in = iov[0].iov_base;
+	    d->s.avail_in = iov[0].iov_len;
+	    res = inflateSync(&d->s);
+	}
 	return zlib_return(res, rbuf, rlen);
 
     case INFLATE_RESET:
@@ -472,6 +516,7 @@ static int zlib_ctl(ErlDrvData drv_data, unsigned int command, char *buf,
 	if (len != 0) goto badarg;
 	driver_deq(d->port, driver_sizeq(d->port));
 	res = inflateReset(&d->s);
+	d->inflate_eos_seen = 0;
 	return zlib_return(res, rbuf, rlen);
 
     case INFLATE_END:
@@ -479,6 +524,9 @@ static int zlib_ctl(ErlDrvData drv_data, unsigned int command, char *buf,
 	if (len != 0) goto badarg;
 	driver_deq(d->port, driver_sizeq(d->port));
 	res = inflateEnd(&d->s);
+	if (res == Z_OK && d->inflate_eos_seen == 0) {
+	    res = Z_DATA_ERROR;
+	}
 	d->state = ST_NONE;
 	return zlib_return(res, rbuf, rlen);
 
@@ -486,7 +534,11 @@ static int zlib_ctl(ErlDrvData drv_data, unsigned int command, char *buf,
 	if (d->state != ST_INFLATE) goto badarg;
 	if (len != 4) goto badarg;
 	res = zlib_inflate(d, i32(buf));
-	return zlib_return(res, rbuf, rlen);
+	if (res == Z_NEED_DICT) {
+	    return zlib_value2(3, d->s.adler, rbuf, rlen);
+	} else {
+	    return zlib_return(res, rbuf, rlen);
+	}
 
     case GET_QSIZE:
 	return zlib_value(driver_sizeq(d->port), rbuf, rlen);
@@ -530,6 +582,20 @@ static int zlib_ctl(ErlDrvData drv_data, unsigned int command, char *buf,
 	crc = i32(buf);
 	crc = crc32(crc, buf+4, len-4);
 	return zlib_value(crc, rbuf, rlen);
+    }
+
+    case ADLER32_1: {
+	uLong adler = adler32(0L, Z_NULL, 0);
+	adler = adler32(adler, buf, len);
+	return zlib_value(adler, rbuf, rlen);
+    }
+	
+    case ADLER32_2: {
+	uLong adler;
+	if (len < 4) goto badarg;
+	adler = i32(buf);
+	adler = adler32(adler, buf+4, len-4);
+	return zlib_value(adler, rbuf, rlen);
     }
     }
 

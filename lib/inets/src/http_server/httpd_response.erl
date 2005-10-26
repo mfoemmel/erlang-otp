@@ -24,7 +24,6 @@
 -include("http_internal.hrl").
 
 -define(VMODULE,"RESPONSE").
--include("httpd_verbosity.hrl").
 
 %% If peername does not exist the client already discarded the
 %% request so we do not need to send a reply.
@@ -32,7 +31,6 @@ generate_and_send_response(#mod{init_data =
 				#init_data{peername = {_,"unknown"}}}) ->
     ok;
 generate_and_send_response(#mod{config_db = ConfigDB} = ModData) ->
-    ?vtrace("send -> Request line: ~p", [ModData#mod.request_line]),
     Modules = httpd_util:lookup(ConfigDB,modules,
 				[mod_get, mod_head, mod_log]),
     case traverse_modules(ModData, Modules) of
@@ -40,21 +38,12 @@ generate_and_send_response(#mod{config_db = ConfigDB} = ModData) ->
 	    ok;
 	{proceed, Data} ->
 	    case httpd_util:key1search(Data, status) of
-		{StatusCode, PhraseArgs, Reason} ->
-		    ?vdebug("send -> proceed/status: ~n"
-			    "~n   StatusCode: ~p"
-			    "~n   PhraseArgs: ~p"
-			    "~n   Reason:     ~p",
-			    [StatusCode, PhraseArgs, Reason]),
+		{StatusCode, PhraseArgs, _Reason} ->
 		    send_status(ModData, StatusCode, PhraseArgs),
 		    ok;		
 		undefined ->
 		    case httpd_util:key1search(Data, response) of
-			{already_sent, StatusCode, Size} ->
-			    ?vtrace("send -> already sent: "
-				    "~n   StatusCode: ~p"
-				    "~n   Size:       ~p", 
-				    [StatusCode, Size]),
+			{already_sent, _StatusCode, _Size} ->
 			    ok;
 			{response, Header, Body} -> %% New way
 			    send_response(ModData, Header, Body),
@@ -63,7 +52,6 @@ generate_and_send_response(#mod{config_db = ConfigDB} = ModData) ->
 			    send_response_old(ModData, StatusCode, Response),
 			    ok;
 			undefined ->
-			    ?vtrace("send -> undefined response", []),
 			    send_status(ModData, 500, none),
 			    ok
 		    end
@@ -78,7 +66,6 @@ traverse_modules(ModData,[]) ->
 traverse_modules(ModData,[Module|Rest]) ->
     case (catch apply(Module,do,[ModData])) of
 	{'EXIT', Reason} ->
-	    ?vlog("traverse_modules -> exit reason: ~p",[Reason]),
 	    String = 
 		lists:flatten(
 		  io_lib:format("traverse exit from apply: ~p:do => ~n~p",
@@ -124,8 +111,6 @@ get_body(ReasonPhrase, Message)->
  
 
 send_response(ModData, Header, Body) ->
-    ?vtrace("send_response -> (new) entry with"
-	    "~n   Header:       ~p", [Header]),
     case httpd_util:key1search(Header, code) of
 	undefined ->
 	    %% No status code 
@@ -137,8 +122,7 @@ send_response(ModData, Header, Body) ->
 							       Header)) of
 		ok ->
 		    send_body(ModData, StatusCode, Body);
-		Error ->
-		    ?vlog("head delivery failure: ~p", [Error]),
+		_ ->
 		    done   
 	    end
     end.
@@ -146,9 +130,6 @@ send_response(ModData, Header, Body) ->
 send_header(#mod{socket_type = Type, socket = Sock, 
 		 http_version = Ver,  connection = Conn} = _ModData, 
 	    StatusCode, KeyValueTupleHeaders) ->
-    ?vtrace("send_header -> entry with"
-	    "~n   Ver:  ~p"
-	    "~n   Conn: ~p", [Ver, Conn]),
     Headers = create_header(lists:map(fun transform/1, KeyValueTupleHeaders)),
     NewVer = case {Ver, StatusCode} of
 		 {[], _} ->
@@ -169,18 +150,15 @@ send_header(#mod{socket_type = Type, socket = Sock,
 		  httpd_util:reason_phrase(StatusCode), ?CRLF],
     ConnectionHeader = get_connection(Conn, NewVer),
     Head = list_to_binary([StatusLine, Headers, ConnectionHeader , ?CRLF]),
-    ?vtrace("deliver head", []),
     httpd_socket:deliver(Type, Sock, Head).
 
 send_body(#mod{socket_type = Type, socket = Socket}, _, nobody) ->
-    ?vtrace("send_body -> no body", []),
     httpd_socket:close(Type, Socket),
     ok;
 
 send_body(#mod{socket_type = Type, socket = Sock}, 
 	  _StatusCode, Body) when list(Body) ->
-    ?vtrace("deliver body of size ~p", [length(Body)]),
-    httpd_socket:deliver(Type, Sock, Body);
+    ok = httpd_socket:deliver(Type, Sock, Body);
 
 send_body(#mod{socket_type = Type, socket = Sock} = ModData, 
 	  StatusCode, {Fun, Args}) ->
@@ -194,20 +172,17 @@ send_body(#mod{socket_type = Type, socket = Sock} = ModData,
 				 httpd_util:key1search(ModData#mod.data,
 						       content_length)}}]};
 	{ok, Body} ->
-	    ?vtrace("deliver body", []),
 	    case httpd_socket:deliver(Type, Sock, Body) of
 		ok ->
 		    {proceed,[{response,
 			       {already_sent, StatusCode, 
 				httpd_util:key1search(ModData#mod.data,
 						      content_length)}}]};
-		Error ->
-		    ?vlog("body delivery failure: ~p", [Error]),
+		_ ->
 		    done
 	    end;	    
 
-	Error ->
-	    ?vlog("failure of apply(~p,~p): ~p", [Fun, Args, Error]),
+	_ ->
 	    done
     end.
 
@@ -340,11 +315,6 @@ transform({Field, Value}) when is_list(Field) ->
 %%----------------------------------------------------------------------
 send_response_old(#mod{method      = "HEAD"} = ModData,
 		  StatusCode, Response) ->
-    ?vtrace("send_response_old(HEAD) -> entry with"
-	    "~n   StatusCode: ~p"
-	    "~n   Response:   ~p",
-	    [StatusCode,Response]),
-
     NewResponse = lists:flatten(Response),
     
     case httpd_util:split(NewResponse, [?CR, ?LF, ?CR, ?LF],2) of
@@ -362,16 +332,13 @@ send_response_old(#mod{method      = "HEAD"} = ModData,
 send_response_old(#mod{socket_type = Type, 
 		       socket      = Sock} = ModData,
 		  StatusCode, Response) ->
-    ?vtrace("send_response_old -> entry with"
-	    "~n   StatusCode: ~p"
-	    "~n   Response:   ~p",
-	    [StatusCode,Response]),
-    
+
     NewResponse = lists:flatten(Response),
     
     case httpd_util:split(NewResponse, [?CR, ?LF, ?CR, ?LF], 2) of
 	{ok, [Head, Body]} ->
-	    {ok, NewHead} = handle_headers(string:tokens(Head, [?CR,?LF]), []),
+	    {ok, NewHead} = handle_headers(string:tokens(Head, 
+							 [?CR,?LF]), []),
 	    send_header(ModData, StatusCode, [{content_length,
 					       content_length(Body)} | 
 					      NewHead]),

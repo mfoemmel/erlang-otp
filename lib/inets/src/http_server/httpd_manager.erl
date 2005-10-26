@@ -19,12 +19,11 @@
 -module(httpd_manager).
 
 -include("httpd.hrl").
--include("httpd_verbosity.hrl").
 
 -behaviour(gen_server).
 
 %% External API
--export([start/2, start/3, start_link/2, start_link/3, stop/1, restart/1]).
+-export([start/2, start_link/2, stop/1, restart/1]).
 
 %% Internal API
 -export([new_connection/1, done_connection/1]).
@@ -46,8 +45,6 @@
 -export([get_admin_state/1, get_usage_state/1]).
 -export([is_busy/1,is_busy/2,is_busy_or_blocked/1,is_blocked/1]). %% ???????
 -export([get_status/1, get_status/2]).
--export([verbosity/2, verbosity/3]).
-
 
 -export([c/1]).
 
@@ -71,33 +68,21 @@ c(Port) ->
 %%
 
 start(ConfigFile, ConfigList) ->
-    start(ConfigFile, ConfigList, []).
-
-start(ConfigFile, ConfigList, Verbosity) ->
     Port = httpd_util:key1search(ConfigList,port,80),
     Addr = httpd_util:key1search(ConfigList,bind_address),
     Name = make_name(Addr,Port),
-    ?LOG("start -> Name = ~p",[Name]),
     gen_server:start({local,Name},?MODULE,
-		     [ConfigFile, ConfigList, Addr, Port, Verbosity],[]).
+		     [ConfigFile, ConfigList, Addr, Port],[]).
     
 start_link(ConfigFile, ConfigList) ->
-    start_link(ConfigFile, ConfigList, []).
-    
-start_link(ConfigFile, ConfigList, Verbosity) ->
     Port = httpd_util:key1search(ConfigList,port,80),
     Addr = httpd_util:key1search(ConfigList,bind_address),
     Name = make_name(Addr,Port),
-    ?LOG("start_link -> Name = ~p",[Name]),
     gen_server:start_link({local, Name},?MODULE,
-			  [ConfigFile, ConfigList, Addr, Port, Verbosity],[]).
+			  [ConfigFile, ConfigList, Addr, Port],[]).
     
-%% stop
-
 stop(ServerRef) ->
     gen_server:call(ServerRef, stop).
-
-%% restart
 
 restart(ServerRef) ->
     gen_server:call(ServerRef, restart).
@@ -157,23 +142,6 @@ get_status(ServerRef) ->
 
 get_status(ServerRef,Timeout) ->
     gen_server:call(ServerRef,get_status,Timeout).
-
-
-verbosity(ServerRef,Verbosity) ->
-    verbosity(ServerRef,all,Verbosity).
-
-verbosity(ServerRef,all,Verbosity) ->
-    gen_server:call(ServerRef,{verbosity,all,Verbosity});
-verbosity(ServerRef,manager,Verbosity) ->
-    gen_server:call(ServerRef,{verbosity,manager,Verbosity});
-verbosity(ServerRef,request,Verbosity) ->
-    gen_server:call(ServerRef,{verbosity,request,Verbosity});
-verbosity(ServerRef,acceptor,Verbosity) ->
-    gen_server:call(ServerRef,{verbosity,acceptor,Verbosity});
-verbosity(ServerRef,security,Verbosity) ->
-    gen_server:call(ServerRef,{verbosity,security,Verbosity});
-verbosity(ServerRef,auth,Verbosity) ->
-    gen_server:call(ServerRef,{verbosity,auth,Verbosity}).
 
 %%
 %% Internal API
@@ -252,28 +220,22 @@ config_match(Addr, Port, Pattern) ->
 
 %% init
 
-init([ConfigFile, ConfigList, Addr, Port, Verbosity]) ->
+init([ConfigFile, ConfigList, Addr, Port]) ->
     process_flag(trap_exit, true),
-    case (catch do_init(ConfigFile, ConfigList, Addr, Port, Verbosity)) of
+    case (catch do_init(ConfigFile, ConfigList, Addr, Port)) of
 	{error, Reason} ->
-	    ?vlog("failed starting server: ~p", [Reason]),
 	    {stop, Reason};
 	{ok, State} ->
 	    {ok, State}
     end.
    
 
-do_init(ConfigFile, ConfigList, Addr, Port, Verbosity) ->
-    put(sname,man),
-    set_verbosity(Verbosity),
-    ?vlog("starting",[]),
+do_init(ConfigFile, ConfigList, Addr, Port) ->
     ConfigDB   = do_initial_store(ConfigList),
-    ?vtrace("config db: ~p", [ConfigDB]),
     SocketType = httpd_conf:config(ConfigDB),
-    ?vtrace("socket type: ~p, now start acceptor", [SocketType]),
-    case httpd_acceptor_sup:start_acceptor(SocketType, Addr, Port, ConfigDB) of
-	{ok, Pid} ->
-	    ?vtrace("acceptor started: ~p", [Pid]),
+    case httpd_acceptor_sup:start_acceptor(SocketType, Addr,
+					   Port, ConfigDB) of
+	{ok, _Pid} ->
 	    Status = [{max_conn,0}, {last_heavy_load,never}, 
 		      {last_connection,never}],
 	    State  = #state{socket_type = SocketType,
@@ -281,7 +243,6 @@ do_init(ConfigFile, ConfigList, Addr, Port, Verbosity) ->
 			    config_db   = ConfigDB,
 			    connections = [],
 			    status      = Status},
-	    ?vdebug("started",[]),
 	    {ok, State};
 	Else ->
 	    Else
@@ -293,7 +254,6 @@ do_initial_store(ConfigList) ->
 	{ok, ConfigDB} ->
 	    ConfigDB;
 	{error, Reason} ->
-	    ?vinfo("failed storing configuration: ~p",[Reason]),
 	    throw({error, Reason})
     end.
 
@@ -302,36 +262,24 @@ do_initial_store(ConfigList) ->
 %% handle_call
 
 handle_call(stop, _From, State) ->
-    ?vlog("stop",[]),
     {stop, normal, ok, State};
 
 handle_call({config_lookup, Query}, _From, State) ->
-    ?vlog("config lookup: Query = ~p",[Query]),
     Res = httpd_util:lookup(State#state.config_db, Query),
-    ?vdebug("config lookup result: ~p",[Res]),
     {reply, Res, State};
 
 handle_call({config_multi_lookup, Query}, _From, State) ->
-    ?vlog("multi config lookup: Query = ~p",[Query]),
     Res = httpd_util:multi_lookup(State#state.config_db, Query),
-    ?vdebug("multi config lookup result: ~p",[Res]),
     {reply, Res, State};
 
 handle_call({config_match, Query}, _From, State) ->
-    ?vlog("config match: Query = ~p",[Query]),
     Res = ets:match_object(State#state.config_db, Query),
-    ?vdebug("config match result: ~p",[Res]),
     {reply, Res, State};
 
 handle_call(get_status, _From, State) ->
-    ?vdebug("get status",[]),
     ManagerStatus  = manager_status(self()),
-    %% AuthStatus     = auth_status(get(auth_server)),
-    %% SecStatus      = sec_status(get(sec_server)),
-    %% AccStatus      = sec_status(get(acceptor_server)),
     S1 = [{current_conn,length(State#state.connections)}|State#state.status]++
 	[ManagerStatus],
-    ?vtrace("status = ~p",[S1]),
     {reply,S1,State};
 
 handle_call(is_busy, _From, State) ->
@@ -341,7 +289,6 @@ handle_call(is_busy, _From, State) ->
 		_ ->
 		    false
 	  end,
-    ?vlog("is busy: ~p",[Reply]),
     {reply,Reply,State};
 
 handle_call(is_busy_or_blocked, _From, State) ->
@@ -357,7 +304,6 @@ handle_call(is_busy_or_blocked, _From, State) ->
 	    _ ->
 		blocked
 	  end,
-    ?vlog("is busy or blocked: ~p",[Reply]),
     {reply,Reply,State};
 
 handle_call(is_blocked, _From, State) ->
@@ -368,27 +314,17 @@ handle_call(is_blocked, _From, State) ->
 	    _ ->
 		true
 	  end,
-    ?vlog("is blocked: ~p",[Reply]),
     {reply,Reply,State};
 
 handle_call(get_admin_state, _From, State) ->
     Reply = get_astate(State),
-    ?vlog("admin state: ~p",[Reply]),
     {reply,Reply,State};
 
 handle_call(get_usage_state, _From, State) ->
     Reply = get_ustate(State),
-    ?vlog("usage state: ~p",[Reply]),
-    {reply,Reply,State};
-
-handle_call({verbosity,Who,Verbosity}, _From, State) ->
-    V = ?vvalidate(Verbosity),
-    ?vlog("~n   Set new verbosity to ~p for ~p",[V,Who]),
-    Reply = set_verbosity(Who,V,State),
     {reply,Reply,State};
 
 handle_call(restart, _From, State) when State#state.admin_state == blocked ->
-    ?vlog("restart",[]),
     case handle_restart(State) of
 	{stop, Reply,S1} ->
 	    {stop, Reply, S1};
@@ -397,28 +333,21 @@ handle_call(restart, _From, State) when State#state.admin_state == blocked ->
     end;
 
 handle_call(restart, _From, State) ->
-    ?vlog("restart(~p)",[State#state.admin_state]),
     {reply,{error,{invalid_admin_state,State#state.admin_state}},State};
 
 handle_call(block, _From, State) ->
-    ?vlog("block(disturbing)",[]),
     {Reply,S1} = handle_block(State),
     {reply,Reply,S1};
 
 handle_call(unblock, {From,_Tag}, State) ->
-    ?vlog("unblock",[]),
     {Reply,S1} = handle_unblock(State,From),
     {reply, Reply, S1};
 
 handle_call({new_connection, Pid}, _From, State) ->
-    ?vlog("~n   New connection (~p) when connection count = ~p",
-	  [Pid,length(State#state.connections)]),
-    {S, S1} = handle_new_connection(State, Pid),
-    Reply = {S, get(request_handler_verbosity)},
-    {reply, Reply, S1};
+    {Status, NewState} = handle_new_connection(State, Pid),
+    {reply, Status, NewState};
 
 handle_call(Request, From, State) ->
-    ?vinfo("~n   unknown request '~p' from ~p", [Request,From]),
     String = 
 	lists:flatten(
 	  io_lib:format("Unknown request "
@@ -433,22 +362,18 @@ handle_call(Request, From, State) ->
 %% handle_cast
 
 handle_cast({done_connection, Pid}, State) ->
-    ?vlog("~n   Done connection (~p)", [Pid]),
     S1 = handle_done_connection(State, Pid),
     {noreply, S1};
 
 handle_cast({block, disturbing, Timeout, From, Ref}, State) ->
-    ?vlog("block(disturbing,~p)",[Timeout]),
     S1 = handle_block(State, Timeout, From, Ref),
     {noreply,S1};
 
 handle_cast({block, non_disturbing, Timeout, From, Ref}, State) ->
-    ?vlog("block(non-disturbing,~p)",[Timeout]),
     S1 = handle_nd_block(State, Timeout, From, Ref),
     {noreply,S1};
 
 handle_cast(Message, State) ->
-    ?vinfo("~n   received unknown message '~p'",[Message]),
     String = 
 	lists:flatten(
 	  io_lib:format("Unknown message "
@@ -461,12 +386,10 @@ handle_cast(Message, State) ->
 %% handle_info
 
 handle_info({block_timeout, Method}, State) ->
-    ?vlog("received block_timeout event",[]),
     S1 = handle_block_timeout(State,Method),
     {noreply, S1};
 
 handle_info({'DOWN', Ref, process, _Object, _Info}, State) ->
-    ?vlog("~n   down message for ~p",[Ref]),
     S1 = 
 	case State#state.blocker_ref of
 	    Ref ->
@@ -477,21 +400,17 @@ handle_info({'DOWN', Ref, process, _Object, _Info}, State) ->
 	end,
     {noreply, S1};
 
-handle_info({'EXIT', Pid, normal}, State) ->
-    ?vdebug("~n   Normal exit message from ~p", [Pid]),
+handle_info({'EXIT', _, normal}, State) ->
     {noreply, State};
 
-handle_info({'EXIT', Pid, blocked}, S) ->
-    ?vdebug("blocked exit signal from request handler (~p)", [Pid]),
+handle_info({'EXIT', _, blocked}, S) ->
     {noreply, S};
 
 handle_info({'EXIT', Pid, Reason}, State) ->
-    ?vlog("~n   Exit message from ~p for reason ~p",[Pid, Reason]),
     S1 = check_connections(State, Pid, Reason),
     {noreply, S1};
 
 handle_info(Info, State) ->
-    ?vinfo("~n   received unknown info '~p'",[Info]),
     String = 
 	lists:flatten(
 	  io_lib:format("Unknown info "
@@ -504,8 +423,7 @@ handle_info(Info, State) ->
 
 %% terminate
 
-terminate(R, #state{config_db = Db}) -> 
-    ?vlog("Terminating for reason: ~n   ~p", [R]),
+terminate(_, #state{config_db = Db}) -> 
     httpd_conf:remove_all(Db),
     ok.
 
@@ -547,12 +465,9 @@ check_connections(#state{admin_state = shutting_down,
 		  io_lib:format("request handler (~p) crashed:"
 				"~n   ~p", [Pid, Reason])),
 	    report_error(State, String),
-	    ?vlog("block complete",[]),
 	    demonitor_blocker(State#state.blocker_ref),
 	    {Tmr,From,Ref} = State#state.blocking_tmr,
-	    ?vlog("(possibly) stop block timer",[]),
 	    stop_block_tmr(Tmr),
-	    ?vlog("and send the reply",[]),
 	    From ! {block_reply,ok,Ref},
 	    State#state{admin_state = blocked, connections = [],
 			blocker_ref = undefined};
@@ -595,25 +510,21 @@ handle_new_connection(_UsageState, unblocked, State, Handler) ->
     Status      = update_connection_status(State#state.status, 
 					   length(Connections)+1),
     link(Handler),
-    {accept, 
+    {{ok, accept}, 
      State#state{connections = [Handler|Connections], status = Status}};
 
 handle_new_connection(_UsageState, _AdminState, State, _Handler) ->
     {{reject, blocked}, 
      State}.
 
-
 handle_done_connection(#state{admin_state = shutting_down,
 			      connections = Connections} = State, Handler) ->
     unlink(Handler),
     case lists:delete(Handler, Connections) of
 	[] -> % Ok, block complete
-	    ?vlog("block complete",[]),
 	    demonitor_blocker(State#state.blocker_ref),
 	    {Tmr,From,Ref} = State#state.blocking_tmr,
-	    ?vlog("(possibly) stop block timer",[]),
 	    stop_block_tmr(Tmr),
-	    ?vlog("and send the reply",[]),
 	    From ! {block_reply,ok,Ref},
 	    State#state{admin_state = blocked, connections = [],
 			blocker_ref = undefined};
@@ -636,22 +547,16 @@ handle_block(#state{admin_state = AdminState} = S) ->
 
 handle_block(S,unblocked) ->
     %% Kill all connections
-    ?vtrace("handle_block(unblocked) -> kill all request handlers",[]),
-%%    [exit(Pid,blocked) || Pid <- S#state.connections],
     [kill_handler(Pid) || Pid <- S#state.connections],
     {ok,S#state{connections = [], admin_state = blocked}};
 handle_block(S,blocked) ->
-    ?vtrace("handle_block(blocked) -> already blocked",[]),
     {ok,S};
 handle_block(S,shutting_down) ->
-    ?vtrace("handle_block(shutting_down) -> ongoing...",[]),
     {{error,shutting_down},S}.
     
 
 kill_handler(Pid) ->
-    ?vtrace("kill request handler: ~p",[Pid]),
     exit(Pid, blocked).
-%%    exit(Pid, kill).
 
 handle_block(S,Timeout,From,Ref) when Timeout >= 0 ->
     do_block(S,Timeout,From,Ref);
@@ -665,16 +570,12 @@ do_block(S,Timeout,From,Ref) ->
     case S#state.connections of
 	[] ->
 	    %% Already in idle usage state => go directly to blocked
-	    ?vdebug("do_block -> already in idle usage state",[]),
 	    From ! {block_reply,ok,Ref},
 	    S#state{admin_state = blocked};
 	_ ->
 	    %% Active or Busy usage state => go to shutting_down
-	    ?vdebug("do_block -> active or busy usage state",[]),
 	    %% Make sure we get to know if blocker dies...
-	    ?vtrace("do_block -> create blocker monitor",[]),
 	    MonitorRef = monitor_blocker(From),
-	    ?vtrace("do_block -> (possibly) start block timer",[]),
 	    Tmr = {start_block_tmr(Timeout,disturbing),From,Ref},
 	    S#state{admin_state = shutting_down, 
 		    blocker_ref = MonitorRef, blocking_tmr = Tmr}
@@ -695,16 +596,12 @@ do_nd_block(S,Timeout,From,Ref) ->
     case S#state.connections of
 	[] ->
 	    %% Already in idle usage state => go directly to blocked
-	    ?vdebug("do_nd_block -> already in idle usage state",[]),
 	    From ! {block_reply,ok,Ref},
 	    S#state{admin_state = blocked};
 	_ ->
 	    %% Active or Busy usage state => go to shutting_down
-	    ?vdebug("do_nd_block -> active or busy usage state",[]),
 	    %% Make sure we get to know if blocker dies...
-	    ?vtrace("do_nd_block -> create blocker monitor",[]),
 	    MonitorRef = monitor_blocker(From),
-	    ?vtrace("do_nd_block -> (possibly) start block timer",[]),
 	    Tmr = {start_block_tmr(Timeout,non_disturbing),From,Ref},
 	    S#state{admin_state = shutting_down, 
 		    blocker_ref = MonitorRef, blocking_tmr = Tmr}
@@ -716,31 +613,23 @@ handle_block_timeout(S,Method) ->
     handle_block_timeout1(S,Method,S#state.blocking_tmr).
 
 handle_block_timeout1(S,non_disturbing,{_,From,Ref}) ->
-    ?vdebug("handle_block_timeout1(non-disturbing) -> send reply: timeout",[]),
     From ! {block_reply,{error,timeout},Ref},
     S#state{admin_state = unblocked, 
 	    blocker_ref = undefined, blocking_tmr = undefined};
 
 handle_block_timeout1(S,disturbing,{_,From,Ref}) ->
-    ?vdebug("handle_block_timeout1(disturbing) -> kill all connections",[]),
     [exit(Pid,blocked) || Pid <- S#state.connections],
 
-    ?vdebug("handle_block_timeout1 -> send reply: ok",[]),
     From ! {block_reply,ok,Ref},
     S#state{admin_state = blocked,    connections = [], 
 	    blocker_ref = undefined, blocking_tmr = undefined};
 
 handle_block_timeout1(S,Method,{_,From,Ref}) ->
-    ?vinfo("received block timeout with unknown block method:"
-	   "~n   Method:  ~p",[Method]),
     From ! {block_reply,{error,{unknown_block_method,Method}},Ref},
     S#state{admin_state = blocked,    connections = [], 
 	    blocker_ref = undefined, blocking_tmr = undefined};
 
-handle_block_timeout1(S,Method,TmrInfo) ->
-    ?vinfo("received block timeout with erroneous timer info:"
-	   "~n   Method:  ~p"
-	   "~n   TmrInfo: ~p",[Method,TmrInfo]),
+handle_block_timeout1(S, _Method, _TmrInfo) ->
     S#state{admin_state = unblocked,
 	    blocker_ref = undefined, blocking_tmr = undefined}.
 
@@ -750,7 +639,6 @@ handle_unblock(S, FromA) ->
 handle_unblock(S, _FromA, unblocked) ->
     {ok,S};
 handle_unblock(S, FromA, _AdminState) ->
-    ?vtrace("handle_unblock -> (possibly) stop block timer",[]),
     stop_block_tmr(S#state.blocking_tmr),
     case S#state.blocking_tmr of
 	{_Tmr,FromB,Ref} ->
@@ -765,7 +653,6 @@ handle_unblock(S, FromA, _AdminState) ->
 %% The blocker died so we give up on the block.
 handle_blocker_exit(S) ->
     {Tmr,_From,_Ref} = S#state.blocking_tmr,
-    ?vtrace("handle_blocker_exit -> (possibly) stop block timer",[]),
     stop_block_tmr(Tmr),
     S#state{admin_state = unblocked,
 	    blocker_ref = undefined, blocking_tmr = undefined}.
@@ -781,34 +668,25 @@ handle_blocker_exit(S) ->
 handle_restart(#state{config_file = undefined} = State) ->
     {continue, {error, undefined_config_file}, State};
 handle_restart(#state{config_db = Db, config_file = ConfigFile} = State) ->
-    ?vtrace("load new configuration",[]),
     {ok, Config} = httpd_conf:load(ConfigFile),
-    ?vtrace("check for illegal changes (addr, port and socket-type)",[]),
     case (catch check_constant_values(Db, Config)) of
 	ok ->
 	    %% If something goes wrong between the remove 
 	    %% and the store where fu-ed
-	    ?vtrace("remove old configuration, now hold you breath...",[]),
 	    httpd_conf:remove_all(Db),
-	    ?vtrace("store new configuration",[]),
 	    case httpd_conf:store(Config) of
 		{ok, NewConfigDB} ->
-		    ?vlog("restart done, puh!",[]),
 		    {continue, ok, State#state{config_db = NewConfigDB}};
 		Error ->
-		    ?vlog("failed store new config: ~n   ~p",[Error]),
 		    {stop, Error, State}
 	    end;
 	Error ->
-	    ?vlog("restart NOT performed due to:"
-		  "~n   ~p",[Error]),
 	    {continue, Error, State}
     end.
 
 
 check_constant_values(Db, Config) ->
     %% Check port number
-    ?vtrace("check_constant_values -> check port number",[]),
     Port = httpd_util:lookup(Db,port),
     case httpd_util:key1search(Config,port) of  %% MUST be equal
 	Port ->
@@ -818,7 +696,6 @@ check_constant_values(Db, Config) ->
     end,
 
     %% Check bind address
-    ?vtrace("check_constant_values -> check bind address",[]),
     Addr = httpd_util:lookup(Db,bind_address),
     case httpd_util:key1search(Config,bind_address) of  %% MUST be equal
 	Addr ->
@@ -828,7 +705,6 @@ check_constant_values(Db, Config) ->
     end,
 
     %% Check socket type
-    ?vtrace("check_constant_values -> check socket type",[]),
     SockType = httpd_util:lookup(Db, com_type),
     case httpd_util:key1search(Config, com_type) of  %% MUST be equal
 	SockType ->
@@ -836,7 +712,6 @@ check_constant_values(Db, Config) ->
 	OtherSockType ->
 	    throw({error,{sock_type_changed,SockType,OtherSockType}})
     end,
-    ?vtrace("check_constant_values -> done",[]),
     ok.
 
 
@@ -940,67 +815,11 @@ report_error(State,String) ->
     error_logger:error_report(String),
     mod_log:report_error(Cdb,String),
     mod_disk_log:report_error(Cdb,String).
-    
-
-set_verbosity(V) ->
-    Units = [manager_verbosity, 
-	     acceptor_verbosity, request_handler_verbosity, 
-	     security_verbosity, auth_verbosity],
-    case httpd_util:key1search(V, all) of
-	undefined ->
-	    set_verbosity(V, Units);
-	Verbosity when atom(Verbosity) ->
-	    V1 = [{Unit, Verbosity} || Unit <- Units],
-	    set_verbosity(V1, Units)
-    end.
-
-set_verbosity(_V, []) ->
-    ok;
-set_verbosity(V, [manager_verbosity = Unit|Units]) ->
-    Verbosity = httpd_util:key1search(V, Unit, ?default_verbosity),
-    put(verbosity, ?vvalidate(Verbosity)),
-    set_verbosity(V, Units);
-set_verbosity(V, [Unit|Units]) ->
-    Verbosity = httpd_util:key1search(V, Unit, ?default_verbosity),
-    put(Unit, ?vvalidate(Verbosity)),
-    set_verbosity(V, Units).
-
-    
-set_verbosity(manager,V,_S) ->
-    put(verbosity,V);
-set_verbosity(acceptor,V,_S) ->
-    put(acceptor_verbosity,V);
-set_verbosity(request,V,_S) ->
-    put(request_handler_verbosity,V);
-set_verbosity(security,V,S) ->
-    OldVerbosity = put(security_verbosity,V),
-    Addr = httpd_util:lookup(S#state.config_db, bind_address),
-    Port = httpd_util:lookup(S#state.config_db, port),
-    mod_security_server:verbosity(Addr,Port,V),
-    OldVerbosity;
-set_verbosity(auth,V,S) ->
-    OldVerbosity = put(auth_verbosity,V),
-    Addr = httpd_util:lookup(S#state.config_db, bind_address),
-    Port = httpd_util:lookup(S#state.config_db, port),
-    mod_auth_server:verbosity(Addr,Port,V),
-    OldVerbosity;
-
-set_verbosity(all,V,S) ->
-    OldMv = put(verbosity,V),
-    OldAv = put(acceptor_verbosity,V),
-    OldRv = put(request_handler_verbosity,V),
-    OldSv = put(security_verbosity,V),
-    OldAv = put(auth_verbosity,V),
-    Addr  = httpd_util:lookup(S#state.config_db, bind_address),
-    Port  = httpd_util:lookup(S#state.config_db, port),
-    mod_security_server:verbosity(Addr,Port,V),
-    mod_auth_server:verbosity(Addr,Port,V),
-    [{manager,OldMv}, {request,OldRv}, {security,OldSv}, {auth, OldAv}].
-    
-    
+        
 %%
 call(ServerRef,Request) ->
     gen_server:call(ServerRef,Request).
 
 cast(ServerRef,Message) ->
     gen_server:cast(ServerRef,Message).
+

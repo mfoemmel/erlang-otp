@@ -81,13 +81,11 @@ ra(SparcCfg, SpillLimit, Options, Method) ->
     [] -> 
       %% Code to minimize stack size by allocation of temps to spillpositions
       {TempMap2, NewSpillIndex2} = 
-	hipe_spill_minimize:stackalloc(NewCfg, [], 
-				       0, Options, 
-				       hipe_sparc_specific, 
-				       TempMap),
+	hipe_spillmin:stackalloc(NewCfg, [], 0, Options, 
+				 hipe_sparc_specific, TempMap),
       TempMap3 =
-	hipe_spill_minimize:mapmerge(hipe_temp_map:to_substlist(TempMap), 
-				     TempMap2),
+	hipe_spillmin:mapmerge(hipe_temp_map:to_substlist(TempMap), 
+			       TempMap2),
       TempMap4 = cols2tuple(TempMap3),
       ?add_spills(Options, NewSpillIndex2),
       {NewCfg, TempMap4, NewSpillIndex2};

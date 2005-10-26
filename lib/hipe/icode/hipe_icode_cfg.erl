@@ -1,9 +1,10 @@
 %% -*- erlang-indent-level: 2 -*-
-
+%%======================================================================
 
 -module(hipe_icode_cfg).
 
 -export([bb/2, bb_add/3,
+	 %% bb_insert_between/5,
 	 cfg_to_linear/1,
 	 is_closure/1,
 	 closure_arity/1,
@@ -85,11 +86,24 @@ is_goto(Instr) ->
 is_branch(Instr) ->
   hipe_icode:is_branch(Instr).
 
+is_pure_branch(Branch) ->
+  case hipe_icode:type(Branch) of
+    'if' -> true;
+    goto -> true;
+    switch_val -> true;
+    switch_tuple_arity -> true;
+    type -> true;
+    _ -> false
+  end.
+
 is_phi(I)->
   hipe_icode:is_phi(I).
 
 phi_remove_pred(I, Pred)->
   hipe_icode:phi_remove_pred(I, Pred).
+
+%% phi_redirect_pred(I, OldPred, NewPred)->
+%%   hipe_icode:phi_redirect_pred(I, OldPred, NewPred).
 
 redirect_jmp(Jmp, ToOld, ToNew) ->
   hipe_icode:redirect_jmp(Jmp, ToOld, ToNew).

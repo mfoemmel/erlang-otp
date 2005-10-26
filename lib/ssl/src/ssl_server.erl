@@ -278,8 +278,8 @@ handle_call({connect, Broker, LIP, LPort, FIP, FPort, Flags}, From, St) ->
     debug(St, "connect: broker = ~w, ip = ~w, "
 	  "sport = ~w~n", [Broker, FIP, FPort]),
     Port = St#st.port,
-    LIPStr = io_lib:format("~w.~w.~w.~w", tuple_to_list(LIP)),
-    FIPStr = io_lib:format("~w.~w.~w.~w", tuple_to_list(FIP)),
+    LIPStr = ip_to_string(LIP),
+    FIPStr = ip_to_string(FIP),
     IntRef = new_intref(St),
     send_cmd(Port, ?CONNECT, [int32(IntRef), 
 			      int16(LPort), LIPStr, 0, 
@@ -341,7 +341,7 @@ handle_call({listen, Broker, IP, LPort, Flags, BackLog}, From, St) ->
     debug(St, "listen: broker = ~w, IP = ~w, "
 	  "sport = ~w~n", [Broker, IP, LPort]),
     Port = St#st.port,
-    IPStr = io_lib:format("~w.~w.~w.~w", tuple_to_list(IP)),
+    IPStr = ip_to_string(IP),
     IntRef = new_intref(St),
     send_cmd(Port, ?LISTEN, [int32(IntRef), int16(LPort), IPStr, 0, 
 			     int16(BackLog), Flags, 0]), 
@@ -957,25 +957,18 @@ delete_all_by_pos(Key, Pos, Cons) ->
     end.
 
 replace_posn_by_pos(Key, Pos, Cons, Repls) ->
-    case replace_posn_by_pos1(Key, Pos, {not_found, Cons}, Repls) of
-	{not_found, _} ->
-	    not_found;
-	{ODesc, NCons} ->
-	    {ok, ODesc, NCons}
-    end.
+    replace_posn_by_pos1(Key, Pos, Cons, Repls, []).
 
-replace_posn_by_pos1(Key, Pos, {_R, [H| T]}, Repls) 
-  when element(Pos, H) == Key ->
-    NewH = lists:foldl(fun({Val, VPos}, Tuple) -> 
-			     setelement(VPos, Tuple, Val) 
-		     end,
-		     H, Repls), 
-    {H, [NewH| T]};
-replace_posn_by_pos1(Key, Pos, {R, [H|T]}, Repls) ->
-    {R0, T0} = replace_posn_by_pos1(Key, Pos, {R, T}, Repls),
-    {R0, [H| T0]};
-replace_posn_by_pos1(_, _, {R, []}, _) ->
-    {R, []}.
+replace_posn_by_pos1(Key, Pos, [H0| T], Repls, Acc)
+  when element(Pos, H0) =:= Key ->
+    H = lists:foldl(fun({Val, VPos}, Tuple) -> 
+			    setelement(VPos, Tuple, Val) 
+		    end, H0, Repls), 
+    {ok, H0, lists:reverse(Acc, [H| T])};
+replace_posn_by_pos1(Key, Pos, [H|T], Repls, Acc) ->
+    replace_posn_by_pos1(Key, Pos, T, Repls, [H| Acc]);
+replace_posn_by_pos1(_, _, [], _, _) ->
+    not_found.
 
 %%
 %% Binary/integer conversions
@@ -1025,11 +1018,12 @@ dec([atom|F], Bin0) ->
 
 dec([bin|F], Bin) ->
     {Bin1, Bin2} = dec_bin(Bin),
-    [Bin1| dec(F, Bin2)];
+    [Bin1| dec(F, Bin2)].
 
-dec([bins|F], <<N:32, Bin0/binary>>) ->
-    {Bins, Bin1} = dec_bins(N, Bin0),
-    [Bins| dec(F, Bin1)].
+%% NOTE: This clause is not actually used yet.
+%% dec([bins|F], <<N:32, Bin0/binary>>) ->
+%%     {Bins, Bin1} = dec_bins(N, Bin0),
+%%     [Bins| dec(F, Bin1)].
 
 dec_string(Bin) ->
     dec_string(Bin, []).
@@ -1043,14 +1037,14 @@ dec_bin(<<L:32, Bin0/binary>>) ->
     <<Bin1:L/binary, Bin2/binary>> = Bin0,
     {Bin1, Bin2}.
 
-dec_bins(N, Bin) ->
-    dec_bins(N, Bin, []).
+%% dec_bins(N, Bin) ->
+%%     dec_bins(N, Bin, []).
 
-dec_bins(0, Bin, Acc) ->
-    {lists:reverse(Acc), Bin};
-dec_bins(N, Bin0, Acc) when N > 0 ->
-    {Bin1, Bin2} = dec_bin(Bin0),
-    dec_bins(N - 1, Bin2, [Bin1| Acc]).
+%% dec_bins(0, Bin, Acc) ->
+%%     {lists:reverse(Acc), Bin};
+%% dec_bins(N, Bin0, Acc) when N > 0 ->
+%%     {Bin1, Bin2} = dec_bin(Bin0),
+%%     dec_bins(N - 1, Bin2, [Bin1| Acc]).
 
 %%
 %% new_intref
@@ -1230,6 +1224,10 @@ get_env(Key, Val) ->
 	_Other ->
 	    ""
     end.
+
+ip_to_string({A,B,C,D}) ->
+    [integer_to_list(A),$.,integer_to_list(B),$.,
+     integer_to_list(C),$.,integer_to_list(D)].
 
 debug(St, Format, Args) ->
     debug1(St#st.debug, Format, Args).

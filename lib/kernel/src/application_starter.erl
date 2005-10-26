@@ -39,7 +39,7 @@
 %%%=============================================================================
 start([], _Type, _Apps) ->
     ok;
-start([{Phase,PhaseArgs}|Phases], Type, Apps) ->
+start([{Phase,_PhaseArgs}|Phases], Type, Apps) ->
     case start_apps(Phase, Type, Apps) of
 	{error, Error} ->
 	    {error, Error};
@@ -70,7 +70,7 @@ run_start_phase(Phase, Type, App) ->
     {ok,{Mod,Arg}} = application:get_key(App, mod),
     case Mod of
 	application_starter ->
-	    [StartMod, StartArgs] = Arg,
+	    [StartMod, _StartArgs] = Arg,
 	    run_the_phase(Phase, Type, App, StartMod),
 	    {ok, IncApps} = application:get_key(App, included_applications),
 	    start_apps(Phase, Type, IncApps);

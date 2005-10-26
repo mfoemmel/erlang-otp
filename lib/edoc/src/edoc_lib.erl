@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_lib.erl,v 1.33 2004/11/30 00:43:52 richardc Exp $
+%% $Id$
 %%
 %% @private
 %% @copyright 2001-2003 Richard Carlsson
@@ -29,12 +29,13 @@
 
 -export([count/2, lines/1, split_at/2, split_at_stop/1, filename/1,
 	 transpose/1, segment/2, get_first_sentence/1, is_space/1,
-	 strip_space/1, escape_uri/1, join_uri/2, is_relative_uri/1,
-	 is_name/1, find_doc_dirs/0, find_sources/2, find_sources/3,
-	 find_file/3, try_subdir/2, unique/1, write_file/3,
-	 write_file/4, write_info_file/4, read_info_file/1,
-	 get_doc_env/1, get_doc_env/4, copy_file/2, copy_dir/2,
-	 uri_get/1, run_doclet/2, run_layout/2, simplify_path/1]).
+	 strip_space/1, parse_expr/2, parse_contact/2, escape_uri/1,
+	 join_uri/2, is_relative_uri/1, is_name/1, to_label/1,
+	 find_doc_dirs/0, find_sources/2, find_sources/3, find_file/3,
+	 try_subdir/2, unique/1, write_file/3, write_file/4,
+	 write_info_file/4, read_info_file/1, get_doc_env/1,
+	 get_doc_env/4, copy_file/2, copy_dir/2, uri_get/1,
+	 run_doclet/2, run_layout/2, simplify_path/1]).
 
 -import(edoc_report, [report/2, warning/2]).
 
@@ -127,20 +128,26 @@ transpose([[X | Xs] | Xss]) ->
 %% end of the summary sentence only if it is also the last segment in
 %% the list.
 
-get_first_sentence([E = #xmlText{value = Txt}]) ->
+get_first_sentence([#xmlElement{name = p, content = Es} | _]) ->
+    %% Descend into initial paragraph.
+    get_first_sentence_1(Es);
+get_first_sentence(Es) ->
+    get_first_sentence_1(Es).
+
+get_first_sentence_1([E = #xmlText{value = Txt}]) ->
     {_, Txt1} = end_of_sentence(Txt),
     [E#xmlText{value = Txt1}];
-get_first_sentence([E = #xmlText{value = Txt} | Es]) ->
+get_first_sentence_1([E = #xmlText{value = Txt} | Es]) ->
     case end_of_sentence(Txt) of
 	{true, Txt1} ->
 	    [E#xmlText{value = Txt1}];
 	{false, _} ->
-	    [E | get_first_sentence(Es)]
+	    [E | get_first_sentence_1(Es)]
     end;
-get_first_sentence([E | Es]) ->
-    % Skip non-text segments - don't descend
-    [E | get_first_sentence(Es)];
-get_first_sentence([]) ->
+get_first_sentence_1([E | Es]) ->
+    % Skip non-text segments - don't descend further
+    [E | get_first_sentence_1(Es)];
+get_first_sentence_1([]) ->
     [].
 
 end_of_sentence(Cs) ->
@@ -224,12 +231,98 @@ unique([X | Xs], X) -> unique(Xs, X);
 unique([X | Xs], _) -> [X | unique(Xs, X)];
 unique([], _) -> [].
 
-% key_unique([X | Xs]) -> [X | key_unique(Xs, element(1,X))];
-% key_unique([]) -> [].
 
-% key_unique([X | Xs], K) when element(1,X) =:= K -> key_unique(Xs, K);
-% key_unique([X | Xs], _) -> [X | key_unique(Xs, element(1,X))];
-% key_unique([], _) -> [].
+%% ---------------------------------------------------------------------
+%% Parsing utilities
+
+%% @doc EDoc Erlang expression parsing. For parsing things like the
+%% content of <a href="overview-summary.html#ftag-equiv">`@equiv'</a>
+%% tags, and strings denoting file names, e.g. in @headerfile. Also used
+%% by {@link edoc_run}.
+
+parse_expr(S, L) ->
+    case erl_scan:string(S ++ ".", L) of
+	{ok, Ts, _} ->
+	    case erl_parse:parse_exprs(Ts) of
+		{ok, [Expr]} ->
+		    Expr;
+ 		{error, {999999, erl_parse, _}} ->
+ 		    throw_error(eof, L);
+ 		{error, E} ->
+ 		    throw_error(E, L)
+	    end;
+	{error, E, _} ->
+	    throw_error(E, L)
+    end.
+
+
+%% @doc EDoc "contact information" parsing. This is the type of the
+%% content in e.g.
+%% <a href="overview-summary.html#mtag-author">`@author'</a> tags.
+
+%% @type info() = #info{name = string(),
+%%                      mail = string(),
+%%                      uri = string()}
+
+-record(info, {name = "", email = "", uri = ""}).
+
+parse_contact(S, L) ->
+    I = scan_name(S, L, #info{}, []),
+    {I#info.name, I#info.email, I#info.uri}.
+
+%% The name is taken as the first non-whitespace-only string before,
+%% between, or following the e-mail/URI sections. Subsequent text that
+%% is not e/mail or URI is ignored.
+
+scan_name([$< | Cs], L, I, As) ->
+    case I#info.email of
+	"" ->
+	    {Cs1, I1} = scan_email(Cs, L, set_name(I, As), []),
+	    scan_name(Cs1, L, I1, []);
+	_ ->
+	    throw_error("multiple '<...>' sections.", L)
+    end;
+scan_name([$[ | Cs], L, I, As) ->
+    case I#info.uri of
+	"" ->
+	    {Cs1, I1} = scan_uri(Cs, L, set_name(I, As), []),
+	    scan_name(Cs1, L, I1, []);
+	_ ->
+	    throw_error("multiple '[...]' sections.", L)
+    end;
+scan_name([$\n | Cs], L, I, As) ->
+    scan_name(Cs, L + 1, I, [$\n | As]);
+scan_name([C | Cs], L, I, As) ->
+    scan_name(Cs, L, I, [C | As]);
+scan_name([], _L, I, As) ->
+    set_name(I, As).
+
+scan_uri([$] | Cs], _L, I, As) ->
+    {Cs, I#info{uri = strip_and_reverse(As)}};
+scan_uri([$\n | Cs], L, I, As) ->
+    scan_uri(Cs, L + 1, I, [$\n | As]);
+scan_uri([C | Cs], L, I, As) ->
+    scan_uri(Cs, L, I, [C | As]);
+scan_uri([], L, _I, _As) ->
+    throw_error({missing, $]}, L).
+
+scan_email([$> | Cs], _L, I, As) ->
+    {Cs, I#info{email = strip_and_reverse(As)}};
+scan_email([$\n | Cs], L, I, As) ->
+    scan_email(Cs, L + 1, I, [$\n | As]);
+scan_email([C | Cs], L, I, As) ->
+    scan_email(Cs, L, I, [C | As]);
+scan_email([], L, _I, _As) ->
+    throw_error({missing, $>}, L).
+
+set_name(I, As) ->
+    case I#info.name of
+	"" -> I#info{name = strip_and_reverse(As)};
+	_ -> I
+    end.
+
+strip_and_reverse(As) ->
+    edoc_lib:strip_space(lists:reverse(edoc_lib:strip_space(As))).
 
 
 %% ---------------------------------------------------------------------
@@ -241,6 +334,8 @@ unique([], _) -> [].
 %%
 %% Note that this should *not* be applied to complete URI, but only to
 %% segments that may need escaping, when forming a complete URI.
+%%
+%% @TODO general utf-8 encoding for all of Unicode (0-16#10ffff)
 
 escape_uri([C | Cs]) when C >= $a, C =< $z ->
     [C | escape_uri(Cs)];
@@ -256,7 +351,6 @@ escape_uri([C = $_ | Cs]) ->
     [C | escape_uri(Cs)];
 escape_uri([C | Cs]) when C > 16#7f ->
     %% This assumes that characters are at most 16 bits wide.
-    %% TODO: general utf-8 encoding for all of Unicode (0-16#10ffff)
     escape_byte(((C band 16#c0) bsr 6) + 16#c0)
 	++ escape_byte(C band 16#3f + 16#80)
 	++ escape_uri(Cs);
@@ -348,28 +442,55 @@ uri_get_file(File0) ->
 	    {error, file:format_error(R)}
     end.
 
-%% First try unofficial undocumented, old http access function, for
-%% backwards compatibility with pre-R10 versions of OTP.
-
-%% FIXME: check somehow if we have an internet connection, making inets quieter
-
 uri_get_http(URI) ->
+    %% First try unofficial undocumented, old http access function, for
+    %% backwards compatibility with pre-R10 versions of OTP.
     case catch {ok, http:request_sync(get, {URI,[]})} of
 	{'EXIT', {undef,_}} ->
+	    uri_get_http_r11(URI);
+	Result ->
+	    uri_get_http_1(Result, URI)
+    end.
+
+uri_get_http_r11(URI) ->
+    %% Try using option full_result=false
+    case catch {ok, http:request(get, {URI,[]}, [],
+				 [{full_result, false}])} of
+	{'EXIT', _} ->
 	    uri_get_http_r10(URI);
 	Result ->
 	    uri_get_http_1(Result, URI)
     end.
 
+uri_get_http_r10(URI) ->
+    %% Try most general form of request
+    Result = (catch {ok, http:request(get, {URI,[]}, [], [])}),
+    uri_get_http_1(Result, URI).
+
 uri_get_http_1(Result, URI) ->
     case Result of
-	{ok, {200,_Hdrs,Text}} ->
+	{ok, {ok, {200, Text}}} when list(Text) ->
+	    %% new short result format
 	    {ok, Text};
-	{ok, {Status,_Hdrs,_Text}} ->
-	    Reason = httpd_util:reason_phrase(Status),
-	    {error, http_errmsg(Reason, URI)};
+	{ok, {ok, {Status, Text}}} when integer(Status), list(Text) ->
+	    %% new short result format when status /= 200
+	    Phrase = httpd_util:reason_phrase(Status),
+	    {error, http_errmsg(Phrase, URI)};
+	{ok, {ok, {{_Vsn, 200, _Phrase}, _Hdrs, Text}}} when list(Text) ->
+	    %% new long result format
+	    {ok, Text};
+	{ok, {ok, {{_Vsn, _Status, Phrase}, _Hdrs, Text}}} when list(Text) ->
+	    %% new long result format when status /= 200
+	    {error, http_errmsg(Phrase, URI)};
+	{ok, {200,_Hdrs,Text}} when list(Text) ->
+	    %% old result format
+	    {ok, Text};
+	{ok, {Status,_Hdrs,Text}} when list(Text) ->
+	    %% old result format when status /= 200
+	    Phrase = httpd_util:reason_phrase(Status),
+	    {error, http_errmsg(Phrase, URI)};
 	{ok, {error, R}} ->
-	    Reason = io_lib:format("~w", [R]),
+	    Reason = inet:format_error(R),
 	    {error, http_errmsg(Reason, URI)};
 	{ok, R} ->
 	    Reason = io_lib:format("bad return value ~P", [R, 5]),
@@ -382,16 +503,42 @@ uri_get_http_1(Result, URI) ->
 	    {error, http_errmsg(Reason, URI)}
     end.
 
-uri_get_http_r10(URI) ->
-    Result = (catch {ok, http:request(get, {URI,[]}, [], [])}),
-    uri_get_http_1(Result, URI).
-
 http_errmsg(Reason, URI) ->
-    io_lib:format("http error: ~s: '~s'.", [Reason, URI]).
+    io_lib:format("http error: ~s: '~s'", [Reason, URI]).
+
+%% @TODO implement ftp access method
 
 uri_get_ftp(URI) ->
     Msg = io_lib:format("cannot access ftp scheme yet: '~s'.", [URI]),
     {error, Msg}.
+
+to_label([$\s | Cs]) ->
+    to_label(Cs);
+to_label([$\t | Cs]) ->
+    to_label(Cs);
+to_label([$\n | Cs]) ->
+    to_label(Cs);
+to_label([]) ->
+    [];
+to_label(Cs) ->
+    to_label_1(Cs).
+
+to_label_1([$\s | Cs]) ->
+    to_label_2([$\s | Cs]);
+to_label_1([$\t | Cs]) ->
+    to_label_2([$\s | Cs]);
+to_label_1([$\n | Cs]) ->
+    to_label_2([$\s | Cs]);
+to_label_1([C | Cs]) ->
+    [C | to_label_1(Cs)];
+to_label_1([]) ->
+    [].
+
+to_label_2(Cs) ->
+    case to_label(Cs) of
+	[] -> [];
+	Cs1 -> [$_ | Cs1]
+    end.
 
 
 %% ---------------------------------------------------------------------
@@ -765,13 +912,16 @@ get_doc_env(App, Packages, Modules, Opts) ->
     Suffix = proplists:get_value(file_suffix, Opts,
 				 ?DEFAULT_FILE_SUFFIX),
     AppDefault = proplists:get_value(app_default, Opts, ?APP_DEFAULT),
+    Includes = proplists:append_values(includes, Opts),
+
     {A, P, M} = get_doc_links(App, Packages, Modules, Opts),
     #env{file_suffix = Suffix,
 	 package_summary = ?PACKAGE_SUMMARY ++ Suffix,
 	 apps = A,
 	 packages = P,
 	 modules = M,
-	 app_default = AppDefault
+	 app_default = AppDefault,
+	 includes = Includes
 	}.
 
 %% ---------------------------------------------------------------------
@@ -815,3 +965,16 @@ get_plugin(Key, Default, Opts) ->
 	    report("bad value for option '~w': ~P.", [Key, Other, 10]),
 	    exit(error)
     end.
+
+
+%% ---------------------------------------------------------------------
+%% Error handling
+
+throw_error({missing, C}, L) ->
+    throw_error({"missing '~c'.", [C]}, L);
+throw_error(eof, L) ->
+    throw({error,L,"unexpected end of expression."});
+throw_error({L, M, D}, _L) ->
+    throw({error,L,{format_error,M,D}});
+throw_error(D, L) ->
+    throw({error, L, D}).

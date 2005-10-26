@@ -30,8 +30,9 @@
 %% digitMapLetter     = DIGIT   ; Basic event symbols 
 %%                    / %x41-4B ; a-k
 %%                    / %x61-6B ; A-K 
-%%                    / "L"     ; Long  inter-event timers, e.g. 16 sec
+%%                    / "T"     ; Start inter-event timers
 %%                    / "S"     ; Short inter-event timers
+%%                    / "L"     ; Long  inter-event timers, e.g. 16 sec
 %%                    / "Z"     ; Long duration modifier
 %% DIGIT              = %x30-39 ; 0-9 
 %%                   
@@ -39,6 +40,15 @@
 %% Example of a digit map:
 %% 
 %% (0| 00|[1-7]xxx|8xxxxxxx|Fxxxxxxx|Exx|91xxxxxxxxxx|9011x.) 
+%% 
+%% DM = "(0| 00|[1-7]xxx|8xxxxxxx|Fxxxxxxx|Exx|91xxxxxxxxxx|9011x.)".
+%% DM = "xxx | xxL3 | xxS4".
+%% megaco:parse_digit_map(DM).
+%% megaco:test_digit_event(DM, "1234").
+%% megaco:test_digit_event(DM, "12ssss3").
+%% megaco:test_digit_event(DM, "12ssss4").
+%% megaco:test_digit_event(DM, "12ssss5").
+%% 
 %%----------------------------------------------------------------------
 
 -module(megaco_digit_map).
@@ -46,6 +56,7 @@
 -export([parse/1, eval/1, eval/2, report/2, test/2]). % Public
 -export([test_eval/2]).                               % Internal
 
+-include("megaco_internal.hrl").
 -include("megaco_message_internal.hrl").
 -include_lib("megaco/src/text/megaco_text_tokens.hrl").
 
@@ -53,8 +64,9 @@
 
 -record(timers, {mode       = state_dependent,
 		 start 	    = 0,
-		 short 	    = timer_to_millis(3),
+		 short 	    = timer_to_millis(3), 
 		 long  	    = timer_to_millis(9),
+		 duration   = 100,      % (not used) 100 ms <-> 9.9 sec
 		 unexpected = reject}). % ignore | reject
 
 %%----------------------------------------------------------------------
@@ -62,9 +74,12 @@
 %% into a list of state transitions.
 %% 
 %% Returns {ok, StateTransitionList} | {error, Reason}
+%% 
 %%----------------------------------------------------------------------
 
 parse(DigitMapBody) when list(DigitMapBody) ->
+    ?d("parse -> entry with"
+       "~n   DigitMapBody: ~p", [DigitMapBody]),
     case parse_digit_map(DigitMapBody) of
 	{ok, STL} ->
 	    {ok, STL};
@@ -78,6 +93,8 @@ parse_digit_map(Chars) ->
     parse_digit_map(Chars, 1, [], []).
 
 parse_digit_map(Chars, Line, DS, STL) ->
+    ?d("parse_digit_map(~w) -> entry with"
+       "~n   DS: ~p", [Line, DS]),
     case megaco_text_scanner:skip_sep_chars(Chars, Line) of
 	{[], _Line2} when DS /= [] ->
 	    case parse_digit_string(DS) of
@@ -131,6 +148,8 @@ parse_digit_map(Chars, Line, DS, STL) ->
     end.
 
 parse_digit_string(Chars) ->
+    ?d("parse_digit_string -> entry with"
+       "~n   Chars: ~p", [Chars]),
     parse_digit_string(Chars, []).
 
 parse_digit_string([Char | Chars], DS) ->
@@ -165,6 +184,8 @@ parse_digit_string([Char | Chars], DS) ->
 	    {error, {illegal_char_in_digit_string, BadChar}}
     end;
 parse_digit_string([], DM) ->
+    ?d("parse_digit_string -> entry when done with"
+       "~n   DM: ~p", [DM]),
     {ok, DM}.
     
 parse_digit_letter([Char | Chars], DL, DS) ->
@@ -202,6 +223,7 @@ parse_digit_letter([Char | Chars], DL, DS) ->
 parse_digit_letter([], _DL, _DS) ->
     {error, square_bracket_mismatch}.
 
+
 %%----------------------------------------------------------------------
 %% Collect digit map letters according to digit map
 %% Returns {ok, Letters} | {error, Reason}
@@ -217,21 +239,33 @@ eval(DMV) when record(DMV, 'DigitMapValue') ->
 eval(STL) when list(STL) ->
      eval(STL, #timers{}).
 	
-eval(STL, DMV) when record(DMV, 'DigitMapValue') ->
-    Timers = #timers{start = timer_to_millis(DMV#'DigitMapValue'.startTimer),
-		     short = timer_to_millis(DMV#'DigitMapValue'.shortTimer),
-		     long  = timer_to_millis(DMV#'DigitMapValue'.longTimer)},
+eval(STL, #'DigitMapValue'{startTimer    = Start,
+			   shortTimer    = Short,
+			   longTimer     = Long,
+			   durationTimer = Duration}) ->
+    Timers = #timers{start    = timer_to_millis(Start),
+		     short    = timer_to_millis(Short),
+		     long     = timer_to_millis(Long),
+		     duration = duration_to_millis(Duration)},
     eval(STL, Timers);
-eval(STL, {ignore, DMV}) when record(DMV, 'DigitMapValue') ->
-    Timers = #timers{start = timer_to_millis(DMV#'DigitMapValue'.startTimer),
-		     short = timer_to_millis(DMV#'DigitMapValue'.shortTimer),
-		     long  = timer_to_millis(DMV#'DigitMapValue'.longTimer),
+eval(STL, {ignore, #'DigitMapValue'{startTimer    = Start,
+				    shortTimer    = Short,
+				    longTimer     = Long,
+				    durationTimer = Duration}}) ->
+    Timers = #timers{start      = timer_to_millis(Start),
+		     short      = timer_to_millis(Short),
+		     long       = timer_to_millis(Long),
+		     duration   = duration_to_millis(Duration),
 		     unexpected = ignore},
     eval(STL, Timers);
-eval(STL, {reject, DMV}) when record(DMV, 'DigitMapValue') ->
-    Timers = #timers{start = timer_to_millis(DMV#'DigitMapValue'.startTimer),
-		     short = timer_to_millis(DMV#'DigitMapValue'.shortTimer),
-		     long  = timer_to_millis(DMV#'DigitMapValue'.longTimer),
+eval(STL, {reject, #'DigitMapValue'{startTimer    = Start,
+				    shortTimer    = Short,
+				    longTimer     = Long,
+				    durationTimer = Duration}}) ->
+    Timers = #timers{start      = timer_to_millis(Start),
+		     short      = timer_to_millis(Short),
+		     long       = timer_to_millis(Long),
+		     duration   = duration_to_millis(Duration),
 		     unexpected = reject},
     eval(STL, Timers);
 eval(STL, Timers) when list(STL),
@@ -250,62 +284,105 @@ eval(DigitMapBody, Timers) ->
 	    {error, Reason}
     end.
 
+%% full | unambiguous
+
 collect(Event, State, Timers, STL, Letters) ->
+    ?d("collect -> entry with"
+       "~n   Event:  ~p"
+       "~n   State:  ~p"
+       "~n   Timers: ~p"
+       "~n   STL:    ~p", [Event, State, Timers, STL]),
     case handle_event(Event, State, Timers, STL, Letters) of
+	{completed_full, _Timers2, _STL2, Letters2} ->
+	    completed(full, Letters2);
 	{completed, _Timers2, _STL2, Letters2} ->
-	    completed(Letters2);
+	    completed(unambiguous, Letters2);
 	{State2, Timers2, STL2, Letters2} ->
+	    ?d("collect -> "
+	       "~n   State2:  ~p"
+	       "~n   Timers2: ~p", [State2, Timers2]),
 	    MaxWait = choose_timer(State2, Event, Timers2),
-	    %% ok = io:format("Timer: ~p ~p~n~p~n~p~n",
-	    %%                [State2, MaxWait, Timers2, STL2]),
+	    ?d("collect -> Timer choosen: "
+	       "~n   MaxWait: ~p", [MaxWait]),
 	    receive
 		{?MODULE, _FromPid, Event2} ->
-		    %% ok = io:format("Got event: ~p~n", [Event2]),
+		    ?d("collect -> Got event: "
+		       "~n   ~p", [Event2]),
 		    collect(Event2, State2, Timers2, STL2, Letters2)
 	    after MaxWait ->
-		    collect(inter_event_timeout, State2, Timers2, STL2, Letters2)
+		    collect(inter_event_timeout, 
+			    State2, Timers2, STL2, Letters2)
 	    end;
 	{error, Reason} ->
 	    {error, Reason}
     end.
 
-choose_timer(State, start, T) ->
-    Extra = T#timers.start,
-    Timer = do_choose_timer(State, T),
-    if
-	Timer == infinity -> infinity;
-	Extra == infinity -> infinity;
-	true              -> Timer + Extra
-    end;
+%% choose_timer(State, start, T) ->
+%%     ?d("choose_timer(start) -> entry with"
+%%        "~n   State: ~p"
+%%        "~n   T:     ~p", [State, T]),
+%%     Extra = T#timers.start,
+%%     Timer = do_choose_timer(State, T),
+%%     if
+%% 	Timer == infinity -> infinity;
+%% 	Extra == infinity -> infinity;
+%% 	true              -> Timer + Extra
+%%     end;
+choose_timer(_State, start, #timers{start = 0}) ->
+    ?d("choose_timer(start) -> entry", []),
+    infinity;
+choose_timer(_State, start, #timers{start = T}) ->
+    ?d("choose_timer(start) -> entry with"
+       "~n   T: ~p", [T]),
+    T;
 choose_timer(State, _Event, T) ->
+    ?d("choose_timer(~p) -> entry with"
+       "~n   State: ~p"
+       "~n   T:     ~p", [_Event, State, T]),
     do_choose_timer(State, T).
 
-do_choose_timer(State, T) ->
-    case T#timers.mode of
-	state_dependent ->
-	    case State of
-		mandatory_event -> T#timers.long;
-		optional_event  -> T#timers.short
-	    end;
-	use_short_timer -> 
-	    T#timers.short;
-	use_long_timer -> 
-	    T#timers.long
-    end.
+%% do_choose_timer(State, T) ->
+%%     case T#timers.mode of
+%% 	state_dependent ->
+%% 	    case State of
+%% 		mandatory_event -> T#timers.long;
+%% 		optional_event  -> T#timers.short
+%% 	    end;
+%% 	use_short_timer -> 
+%% 	    T#timers.short;
+%% 	use_long_timer -> 
+%% 	    T#timers.long
+%%     end.
 
-timer_to_millis(asn1_NOVALUE) -> 0;
+do_choose_timer(mandatory_event, #timers{mode = state_dependent, long = T}) ->
+    T;
+do_choose_timer(optional_event, #timers{mode = state_dependent, short = T}) ->
+    T;
+do_choose_timer(_State, #timers{mode = use_short_timer, short = T}) ->
+    T;
+do_choose_timer(_State, #timers{mode = use_long_timer, long = T}) ->
+    T.
+
+timer_to_millis(asn1_NOVALUE) -> infinity; 
 timer_to_millis(infinity)     -> infinity;
 timer_to_millis(Seconds)      -> timer:seconds(Seconds).
     
-completed(Letters) ->
-    {ok, lists:reverse(Letters)}.
+%% Time for duration is in hundreds of milliseconds
+duration_to_millis(asn1_NOVALUE) -> 100;
+duration_to_millis(Time) when is_integer(Time) -> Time*100.
+
+completed(Kind, Letters) ->
+    ?d("completed -> entry with"
+       "~n   Kind: ~p", [Kind]),
+    {ok, Kind, lists:reverse(Letters)}.
 
 unexpected_event(Event, STL, Letters) ->
-    Expected = [ST#state_transition.next || ST <- STL],
-    SoFar = lists:reverse(Letters),
-    Reason = {unexpected_event, Event, SoFar, Expected},
+    Expected = [Next || #state_transition{next = Next} <- STL],
+    SoFar    = lists:reverse(Letters),
+    Reason   = {unexpected_event, Event, SoFar, Expected},
     {error, Reason}.
     
+
 %%----------------------------------------------------------------------
 %% Handles a received event according to digit map
 %% State ::= optional_event | mandatory_event
@@ -313,27 +390,45 @@ unexpected_event(Event, STL, Letters) ->
 %% Returns {State, NewSTL, Letters} | {error, Reason}
 %%----------------------------------------------------------------------
 handle_event(inter_event_timeout, optional_event, Timers, STL, Letters) ->
-    {completed, Timers, STL, Letters};
+    {completed_full, Timers, STL, Letters};
 handle_event(cancel, _State, _Timers, STL, Letters) ->
     unexpected_event(cancel, STL, Letters);
 handle_event(start, _State, Timers, STL, Letters) ->
     {State2, Timers2, STL2} = compute(Timers, STL),
     {State2, Timers2, STL2, Letters};
 handle_event(Event, State, Timers, STL, Letters) ->
+    ?d("handle_event -> entry when"
+       "~n   Event:  ~p"
+       "~n   State:  ~p"
+       "~n   Timers: ~p", [Event, State, Timers]),
     {STL2, Collect} = match_event(Event, STL, [], false),
+    ?d("handle_event -> event matched: "
+       "~n   Collect: ~p"
+       "~n   STL2:    ~p", [Collect, STL2]),
     case STL2 of
-	[] ->
-	    case Timers#timers.unexpected of
-		ignore ->
-		    ok = io:format("<WARNING> Ignoring unexpected event: ~p~n"
-				   "Expected: ~p~n",
-				   [Event, STL]),
-		    {State, Timers, STL, Letters};
-		reject ->
-		    unexpected_event(Event, STL, Letters)
-	    end;
-	STL2 ->
+%% 	[] ->
+%% 	    case Timers#timers.unexpected of
+%% 		ignore ->
+%% 		    ok = io:format("<WARNING> Ignoring unexpected event: ~p~n"
+%% 				   "Expected: ~p~n",
+%% 				   [Event, STL]),
+%% 		    {State, Timers, STL, Letters};
+%% 		reject ->
+%% 		    unexpected_event(Event, STL, Letters)
+%% 	    end;
+	[] when Timers#timers.unexpected == ignore ->
+	    ok = io:format("<WARNING> Ignoring unexpected event: ~p~n"
+			   "Expected: ~p~n",
+			   [Event, STL]),
+	    {State, Timers, STL, Letters};
+	[] when Timers#timers.unexpected == reject ->
+	    unexpected_event(Event, STL, Letters);
+	_ ->
 	    {State3, Timers2, STL3} = compute(Timers, STL2),
+	    ?d("handle_event -> computed: "
+	       "~n   State3:  ~p"
+	       "~n   Timers2: ~p"
+	       "~n   STL3:    ~p", [State3, Timers2, STL3]),
 	    case Collect of
 		true  -> {State3, Timers2, STL3, [Event | Letters]};
 		false -> {State3, Timers2, STL3, Letters}
@@ -364,11 +459,13 @@ match_event(_Event, [], NewSTL, Collect) ->
 %% Returns {State, Timers, NewSTL}
 %%----------------------------------------------------------------------
 compute(Timers, OldSTL) ->
-    {State, GlobalMode, NewSTL} = compute(mandatory_event, state_dependent, OldSTL, []),
+    {State, GlobalMode, NewSTL} = 
+	compute(mandatory_event, state_dependent, OldSTL, []),
     Timers2 = Timers#timers{mode = GlobalMode},
     {State, Timers2, NewSTL}.
 
-compute(State, GlobalMode, [ST | OldSTL], NewSTL) when record(ST, state_transition) ->
+compute(State, GlobalMode, [ST | OldSTL], NewSTL) 
+  when record(ST, state_transition) ->
     Cont = ST#state_transition.cont,
     Mode = ST#state_transition.mode,
     {State2, GlobalMode2, NewSTL2} =
@@ -384,7 +481,14 @@ compute(State, GlobalMode, [], NewSTL) ->
     end.
 
 compute_cont([Next | Cont] = All, Mode, GlobalMode, State, STL) ->
+    ?d("compute_cont -> entry with"
+       "~n   Next:       ~p"
+       "~n   Mode:       ~p"
+       "~n   GlobalMode: ~p", [Next, Mode, GlobalMode]),
     case Next of
+	%% Retain long timer if that has already been choosen
+	use_short_timer when GlobalMode == use_long_timer ->
+	    compute_cont(Cont, Mode, GlobalMode, State, STL);
 	use_short_timer ->
 	    Mode2 = use_short_timer,
 	    compute_cont(Cont, Mode2, GlobalMode, State, STL);
@@ -422,6 +526,7 @@ make_cont(Mode, [Next | Cont2], Cont) ->
 make_cont(Mode, Next, Cont) ->
     #state_transition{mode = Mode, next = Next, cont = Cont}.
 
+
 %%----------------------------------------------------------------------
 %% Send one or more events to event collector process
 %% 
@@ -450,10 +555,12 @@ report(Pid, Event) when pid(Pid) ->
 	cancel                  -> cast(Pid, Event);
 	$Z                      -> cast(Pid, cancel);
 	$z                      -> cast(Pid, cancel);
-	$S                      -> sleep(1);
-	$s                      -> sleep(1);
-	$L                      -> sleep(10);
-	$l                      -> sleep(10);
+	$R                      -> timer:sleep(100);  % 100 ms
+	$r                      -> timer:sleep(100);  % 100 ms
+	$S                      -> sleep(1);  % 1 sec (1000 ms)
+	$s                      -> sleep(1);  % 1 sec (1000 ms)
+	$L                      -> sleep(10); % 10 sec (10000 ms)
+	$l                      -> sleep(10); % 10 sec (10000 ms)
 	_                       -> {error, {illegal_event, Event}}
     end.
 

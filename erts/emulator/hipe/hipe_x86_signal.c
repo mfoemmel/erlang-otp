@@ -29,7 +29,9 @@
 
 #if __GLIBC__ == 2 && __GLIBC_MINOR__ == 3
 /* See comment below for glibc 2.2. */
+#ifndef __USE_GNU
 #define __USE_GNU		/* to un-hide RTLD_NEXT */
+#endif
 #include <dlfcn.h>
 static int (*__next_sigaction)(int, const struct sigaction*, struct sigaction*);
 #define init_done()	(__next_sigaction != 0)

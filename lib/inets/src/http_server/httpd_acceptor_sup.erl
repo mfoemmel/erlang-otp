@@ -24,10 +24,8 @@
 
 -behaviour(supervisor).
 
--include("httpd_verbosity.hrl").
-
 %% API
--export([start_link/3, start_acceptor/4, stop_acceptor/2]).
+-export([start_link/2, start_acceptor/4, stop_acceptor/2]).
 
 %% Supervisor callback
 -export([init/1]).
@@ -35,18 +33,17 @@
 %%%=========================================================================
 %%%  API
 %%%=========================================================================
-start_link(Addr, Port, AccSupVerbosity) ->
+start_link(Addr, Port) ->
     SupName = make_name(Addr, Port),
-    supervisor:start_link({local, SupName}, ?MODULE, [AccSupVerbosity]).
+    supervisor:start_link({local, SupName}, ?MODULE, []).
 
 %%----------------------------------------------------------------------
 %% Function: [start|stop]_acceptor/5
 %% Description: Starts/stops an [auth | security] worker (child) process
 %%----------------------------------------------------------------------
 start_acceptor(SocketType, Addr, Port, ConfigDb) ->
-    Verbosity = get_acc_verbosity(),
-    start_worker(httpd_acceptor, SocketType, Addr, Port, 
-		 ConfigDb, Verbosity, self(), []).
+    start_worker(httpd_acceptor, SocketType, Addr, Port,
+		 ConfigDb, self(), []).
 
 stop_acceptor(Addr, Port) ->
     stop_worker(httpd_acceptor, Addr, Port).
@@ -54,38 +51,21 @@ stop_acceptor(Addr, Port) ->
 %%%=========================================================================
 %%%  Supervisor callback
 %%%=========================================================================
-init([Verbosity]) -> 
-    do_init(Verbosity);
-
-init(BadArg) ->
-    {error, {badarg, BadArg}}.
-
-%%%=========================================================================
-%%%  Internal functions
-%%%=========================================================================      
-do_init(Verbosity) ->
-    put(verbosity,?vvalidate(Verbosity)),
-    put(sname,acc_sup),
-    ?vlog("starting", []),
+init(_) ->    
     Flags     = {one_for_one, 500, 100},
     Workers   = [],
     {ok, {Flags, Workers}}.
 
+%%%=========================================================================
+%%%  Internal functions
+%%%=========================================================================  
+
 make_name(Addr,Port) ->
-    httpd_util:make_name("httpd_acc_sup",Addr,Port).
+    httpd_util:make_name("httpd_acc_sup", Addr, Port).
 
-get_acc_verbosity() ->
-    get_verbosity(get(acceptor_verbosity)).
-
-get_verbosity(undefined) ->
-    ?default_verbosity;
-get_verbosity(V) ->
-    ?vvalidate(V).
-
-start_worker(M, SocketType, Addr, Port, ConfigDB, Verbosity, Manager, 
-	     Modules) ->
+start_worker(M, SocketType, Addr, Port, ConfigDB, Manager, Modules) ->
     SupName = make_name(Addr, Port),
-    Args    = [Manager, SocketType, Addr, Port, ConfigDB, Verbosity],
+    Args    = [Manager, SocketType, Addr, Port, ConfigDB],
     Spec    = {{M, Addr, Port},
 	       {M, start_link, Args}, 
 	       permanent, timer:seconds(1), worker, [M] ++ Modules},

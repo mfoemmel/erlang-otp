@@ -42,40 +42,42 @@
 %%   Value = term()
 %%--------------------------------------------------------------------
 create_win(GS, {X, Y}, Title, Prompt, {Type, Value}) ->
-    Pad=10, Wbtn = 50,
-    
-    Win = gs:window(GS, [{title, Title}, {x, X}, {y, Y}, {destroy, true}]),
-
-    Lbl = gs:label(Win, [{align, e}]),
+    Pad=8,
 
     Font = dbg_ui_win:font(normal),
-    Prompt2 = io_lib:format("~p", [Prompt]),
-    Value2 = io_lib:format("~p", [Value]),
-    {W1, _} = gs:read(Lbl, {font_wh, {Font, Prompt2}}),
-    {W2, _} = gs:read(Lbl, {font_wh, {Font, Value2}}),
-    Wlbl = min(50, W1),
-    Went = min(50, W2),
-    W = Pad + Wlbl + Went + Pad,
 
-    gs:config(Lbl, [{label, {text, Prompt}}, {font, Font},
-		    {x, Pad}, {y, Pad}, {width, Wlbl}]),
-    Ent = gs:entry(Win, [{text, Value2},
-			 {x, Pad+Wlbl}, {y, Pad}, {width, Went},
+    %% Window
+    Win = gs:window(GS, [{title, Title}, {x, X}, {y, Y},
+			 {destroy, true}]),
+
+    %% Label
+    {Wlbl, Hlbl} = dbg_ui_win:min_size([Prompt], 50, 30),
+    gs:label(Win, [{x, Pad}, {y, Pad}, {width, Wlbl}, {height, Hlbl},
+		   {align, e}, {label, {text, Prompt}}, {font, Font}]),
+
+
+    %% Entry
+    {Went, _Hent} = dbg_ui_win:min_size([Value], 100, 20),
+    Ent = gs:entry(Win, [{x, Pad+Wlbl}, {y, Pad},
+			 {width, Went}, {height, Hlbl},
+			 {text, Value},
 			 {keypress, true}]),
-    Hent = gs:read(Ent, height),
-    
-    Ybtn = Pad+Hent+Pad,
-    Btn = gs:button(Win, [{label, {text,"Ok"}}, {x, Pad}, {y, Ybtn},
-			  {width, Wbtn}, {height, Hent}]),
-    gs:button(Win, [{label, {text,"Cancel"}}, {x, W-Pad-Wbtn}, {y, Ybtn},
-		    {width, Wbtn}, {height, Hent}]),
 
-    H = Ybtn+Hent+Pad,
+    %% Ok and Cancel buttons
+    W = Pad + Wlbl + Went + Pad,
+    {Wbtn, Hbtn} = dbg_ui_win:min_size(["Cancel"], 70, 30),
+    Ybtn = Pad + Hlbl + Pad,
+    Btn = gs:button(Win, [{x, Pad}, {y, Ybtn},
+			  {width, Wbtn}, {height, Hbtn},
+			  {label, {text,"Ok"}}, {font, Font}]),
+    gs:button(Win, [{x, W-Pad-Wbtn}, {y, Ybtn},
+		    {width, Wbtn}, {height, Hbtn},
+		    {label, {text,"Cancel"}}, {font, Font}]),
+
+    H = Ybtn + Hbtn + Pad,
     gs:config(Win, [{width, W}, {height, H}, {map, true}]),
-    #winInfo{window=Win, entry=Ent, button=Btn, type=Type}.
 
-min(X, Y) when X<Y -> Y;
-min(X, _Y) -> X.
+    #winInfo{window=Win, entry=Ent, button=Btn, type=Type}.
 
 %%--------------------------------------------------------------------
 %% get_window(WinInfo) -> Window

@@ -138,7 +138,7 @@ gethostbyaddr_tm({A,B,C,D,E,F,G,H},Timer) when ?ip6(A,B,C,D,E,F,G,H) ->
 gethostbyaddr_tm(Addr,Timer) when list(Addr) ->
     case inet_parse:address(Addr) of
 	{ok, IP} -> gethostbyaddr_tm(IP,Timer);
-	Error -> {error, formerr}
+	_Error -> {error, formerr}
     end;
 gethostbyaddr_tm(Addr,Timer) when atom(Addr) ->
     gethostbyaddr_tm(atom_to_list(Addr),Timer);
@@ -232,7 +232,7 @@ gethostbyname_tm(Name,inet6,Timer) ->
 	Error ->
 	    Error
     end;
-gethostbyname_tm(Name,Family,Timer) ->
+gethostbyname_tm(_Name, _Family, _Timer) ->
     {error, einval}.
 	    
 %% --------------------------------------------------------------------------
@@ -285,7 +285,7 @@ res_getbyname(Name,Type,Timer) ->
 			     get_searchlist(),nxdomain,Type,Timer);
 	{_,Dot} ->
 	    case res_getby_query_alt(Name,Type,Timer) of
-		{error,Reason} ->
+		{error,_Reason} ->
 		    res_getby_search(Name, Dot,
 				     get_searchlist(),nxdomain,Type,Timer);
 		Other -> Other
@@ -308,7 +308,7 @@ get_searchlist() ->
 	L -> L
     end.
 
-res_getby_search(Name, Dot, [Dom | Ds], Reason,Type,Timer) ->
+res_getby_search(Name, Dot, [Dom | Ds], _Reason, Type, Timer) ->
     case res_getby_query(Name ++ Dot ++ Dom,res_option(nameserver),
 			 Type,Timer) of
 	{ok, HEnt} -> {ok, HEnt};
@@ -316,7 +316,7 @@ res_getby_search(Name, Dot, [Dom | Ds], Reason,Type,Timer) ->
 	{error, NewReason} -> res_getby_search(Name,Dot,Ds,NewReason,
 					       Type,Timer)
     end;
-res_getby_search(Name, _, [], Reason,_,_) ->
+res_getby_search(_Name, _, [], Reason,_,_) ->
     {error, Reason}.
 
 
@@ -380,9 +380,10 @@ res_send2(Id, Buffer, Ns, Timer) ->
     Tm = res_option(timeout),
     if
 	length(Buffer) > ?PACKETSZ ->
-
 	    res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns);
 	UseVc == true ->
+	    %% XXX This seems to be a bug. Timeout is not used here,
+	    %% but it should probably be used to change the timer.
 	    Timeout = inet:timeout(Tm*5, Timer),
 	    res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns);
 	true ->
@@ -398,7 +399,7 @@ res_send_udp2(Id, Buffer, Retry, Tm, Timer, Ns) ->
 	Error -> Error
     end.
 
-res_send_udp(S, Id, Buffer, N, N, Tm, Timer, Ns) -> 
+res_send_udp(_S, _Id, _Buffer, N, N, _Tm, _Timer, _Ns) -> 
     {error, timeout};
 res_send_udp(S, Id, Buffer, I, N, Tm, Timer, Ns) ->
     Num = length(Ns),
@@ -431,10 +432,10 @@ res_send_query_udp(S, Id, Buffer, I, N, Tm, Timer, [{IP, Port}|Ns],ErrNs) ->
 			       Ns, [{IP,Port}|ErrNs]);
 	{error, timeout} when Timeout == 0 ->
 	    {error, timeout};
-	Error -> res_send_query_udp(S, Id, Buffer, I, N, Tm, Timer,
+	_Error -> res_send_query_udp(S, Id, Buffer, I, N, Tm, Timer,
 				    Ns, ErrNs)
     end;
-res_send_query_udp(S, Id, Buffer, I, N, Tm, Timer, [], ErrNs) ->
+res_send_query_udp(_S, _Id, _Buffer, _I, _N, _Tm, _Timer, [], ErrNs) ->
     {noanswer, ErrNs}.
 
 
@@ -459,26 +460,26 @@ res_send_tcp2(Id, Buffer, Retry, Tm, Timer, [{IP,Port}|Ns]) ->
     case catch inet_tcp:connect(IP, Port, 
 				[{active,false},{packet,2}], 
 				Timeout) of
-	{ok, S} ->
-	    inet_tcp:send(S, Buffer),
-	    case inet_tcp:recv(S, 0, Timeout) of
-		{ok, Answer} ->
-		    inet_tcp:close(S),
-		    case decode_answer(Answer, Id) of
-			{ok,Rec} -> {ok, Rec};
-			{error, nxdomain} -> {error, nxdomain};
-			{error, fmt} -> {error, einval};
-			Error ->
-			    res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns)
-		    end;
-		Error ->
-		    inet_tcp:close(S),
-		    res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns)
-	    end;
-	Error -> 
-	    res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns)
-    end;
-res_send_tcp2(Id, Buffer, Retry, Tm, Timer, []) ->
+	     {ok, S} ->
+		 inet_tcp:send(S, Buffer),
+		 case inet_tcp:recv(S, 0, Timeout) of
+		     {ok, Answer} ->
+			 inet_tcp:close(S),
+			 case decode_answer(Answer, Id) of
+			     {ok,Rec} -> {ok, Rec};
+			     {error, nxdomain} -> {error, nxdomain};
+			     {error, fmt} -> {error, einval};
+			     _Error ->
+				 res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns)
+			 end;
+		     _Error ->
+			 inet_tcp:close(S),
+			 res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns)
+		 end;
+	       _Error -> 
+		 res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns)
+	 end;
+res_send_tcp2(_Id, _Buffer, _Retry, _Tm, _Timer, []) ->
     {error, timeout}.
 
 

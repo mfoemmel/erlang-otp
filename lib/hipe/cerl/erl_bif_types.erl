@@ -35,14 +35,15 @@
 		    t_binary/0, t_bool/0,
 		    t_byte/0, t_char/0, t_constant/0,
 		    t_cons/0, t_cons/2, t_cons_hd/1, t_cons_tl/1,
-		    t_float/0, t_from_term/1, t_fun/0, t_fun/2, t_fun_range/1,
+		    t_float/0, t_from_term/1, t_fun/0, t_fun/2, 
+		    t_fun_arity/1, t_fun_range/1,
 		    t_integer/0, t_integers/1, t_is_float/1, t_improper_list/0,
 		    t_is_atom/1, t_is_binary/1, t_is_bool/1, t_is_constant/1,
 		    t_is_float/1, t_is_fun/1, t_is_improper_list/1,
 		    t_is_integer/1, t_is_number/1, t_is_pid/1, t_is_port/1,
 		    t_is_ref/1, t_is_tuple/1,
 		    t_is_any/1, t_is_byte/1, t_is_integer/1, t_is_nil/1,
-		    t_is_none/1, t_list/0, t_list/1,
+		    t_is_none/1, t_is_subtype/2, t_list/0, t_list/1,
 		    t_list_elements/1, t_number/0, t_number_vals/1,
 		    t_nil/0, t_nonempty_list/0, t_nonempty_list/1, 
 		    t_pid/0, t_port/0, 
@@ -411,6 +412,20 @@ type(erlang, is_float, 1, Xs) ->
 type(erlang, is_function, 1, Xs) ->
     Fun = fun (X) -> check_guard(X, fun (Y) -> t_is_fun(Y) end, t_fun()) end,
     strict(arg_types(erlang, is_function, 1), Xs, Fun);
+type(erlang, is_function, 2, Xs) ->
+    Fun = fun ([FunType, ArityType]) -> 
+		  case t_number_vals(ArityType) of
+		      any -> t_bool();
+		      [Val] -> 
+			  FunConstr = t_fun(any_list(Val), t_any()),
+			  Fun2 = fun(X) -> t_is_subtype(X, FunConstr)
+					       andalso (not t_is_none(X))
+				 end,
+			  check_guard_single(FunType, Fun2, FunConstr);
+		      _Vals -> t_bool()
+		  end
+	  end,
+    strict(arg_types(erlang, is_function, 2), Xs, Fun);
 type(erlang, is_integer, 1, Xs) ->
     Fun = fun (X) -> check_guard(X, fun (Y) -> t_is_integer(Y) end,
 				t_integer())
@@ -786,7 +801,15 @@ type(erlang, tuple_to_list, 1, Xs) ->
 		       SubTypes -> 
 			   Args = lists:flatten([t_tuple_args(ST)
 						 || ST <-SubTypes]),
-			   t_nonempty_list(t_sup(Args))
+			   %% Can be nil if the tuple can be {}
+			   case lists:any(fun(T) -> 
+						  t_tuple_arity(T) =:= 0
+					  end, SubTypes) of
+			       true ->
+				   t_list(t_sup(Args));
+			       false ->
+				   t_nonempty_list(t_sup(Args))
+			   end
 		   end
 	   end);
 type(erlang, universaltime, 0, _) ->
@@ -1137,6 +1160,9 @@ all_is_none([X | Xs]) ->
 all_is_none([]) -> true.
 
 check_guard([X], Test, Type) ->
+    check_guard_single(X, Test, Type).
+
+check_guard_single(X, Test, Type) ->
     case Test(X) of
 	true -> 
 	    t_from_term(true);
@@ -1359,6 +1385,8 @@ arg_types(erlang, is_float, 1) ->
   [t_any()];
 arg_types(erlang, is_function, 1) ->
   [t_any()];
+arg_types(erlang, is_function, 2) ->
+  [t_any(), t_integer()];
 arg_types(erlang, is_integer, 1) ->
   [t_any()];
 arg_types(erlang, is_list, 1) ->

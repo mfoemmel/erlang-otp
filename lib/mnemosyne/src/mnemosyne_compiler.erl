@@ -348,11 +348,11 @@ set_record_type(R, VarTypes, RecordDefs) when record(R,rec_c),
     %% #r{a=.., b=.. ...}
     case lookup_record_def(R#rec_c.name, RecordDefs) of
 	{value, {RecName,FieldNames}} ->
-	    Empty = ordsets:new_set(),
-	    case ordsets:subtract(ordsets:list_to_set(
+	    Empty = ordsets:new(),
+	    case ordsets:subtract(ordsets:from_list(
 				    mnemosyne_lib:elements(1,R#rec_c.fields)
 				   ),
-				  ordsets:list_to_set(FieldNames)) of
+				  ordsets:from_list(FieldNames)) of
 		Empty ->
 		    R#rec_c{fields = set_record_type(R#rec_c.fields,
 						  VarTypes, RecordDefs)};
@@ -361,7 +361,7 @@ set_record_type(R, VarTypes, RecordDefs) when record(R,rec_c),
 		    throw({error, 
 			   {R#rec_c.line,?MODULE,
 			    {undefined,{record_fields,R#rec_c.name,
-					ordsets:set_to_list(S)}}}})
+					ordsets:to_list(S)}}}})
 	    end;
 
 	false -> %% No record declaration, reported later

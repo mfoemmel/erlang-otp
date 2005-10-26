@@ -1085,8 +1085,8 @@ check_pending_limit(Limit, Direction, TransId) ->
 	    %% is ok to be _at_ the limit
 	    ?rt2("check pending limit - ok", [Val]),
 	    ok;
-	Val ->
-	    ?rt2("check pending limit - aborted", [Val]),
+	_Val ->
+	    ?rt2("check pending limit - aborted", [_Val]),
 	    aborted
     end.
 
@@ -1183,8 +1183,8 @@ handle_request(ConnData, TransId, T) ->
 	    ignore
     end.
 
-do_handle_request(_, ignore, ConnData, TransId) ->
-    ?rt1(ConnData, "ignore: don't reply", [TransId]),
+do_handle_request(_, ignore, _ConnData, _TransId) ->
+    ?rt1(_ConnData, "ignore: don't reply", [_TransId]),
     ignore;
 do_handle_request({pending, _RequestData}, {aborted, ignore}, _, _) ->
     ?rt2("handle request: pending - aborted - ignore => don't reply", []),
@@ -2556,8 +2556,14 @@ do_request_timeout(ConnHandle, TransId, ConnData,
     ConnData2  = ConnData#conn_data{send_handle      = SendHandle,
 				    protocol_version = Version},
     case CurrTimer of
-	timeout ->
+	timeout ->  %%%%%%%
 	    cancel_request(ConnData2, Req, timeout);
+
+	%% Restartable timer 
+	%% (max_retries = infinity_restartable)
+	{_, timeout} ->  
+	    cancel_request(ConnData2, Req, timeout);
+
 	Timer ->
 	    {SendOrNoSend, Data} = Req#request.bytes,
 	    case SendOrNoSend of
@@ -2638,27 +2644,14 @@ maybe_send_message(#conn_data{trans_sender = Pid}, {Serial, Bin})
 
     
 reply_timeout(ConnHandle, TransId, timeout) ->
-    ?report_trace(ConnHandle, "reply timeout", [timeout,TransId]),
-    incNumTimerRecovery(ConnHandle),
-    %% OTP-4378
-    case megaco_monitor:lookup_reply(TransId) of
-	[#reply{state = waiting_for_ack} = Rep] ->
-	    Serial = (Rep#reply.trans_id)#trans_id.serial,
-	    ConnData = 
-		case megaco_config:lookup_local_conn(ConnHandle) of
-		    [ConnData0] ->
-			ConnData0;
-		    [] ->
-			fake_conn_data(ConnHandle)
-		end,
-	    ConnData2 = ConnData#conn_data{serial = Serial},
-	    T = #'TransactionAck'{firstAck = Serial},
-	    handle_ack(ConnData2, {error, timeout}, Rep, T);
-	[#reply{pending_timer_ref = Ref}] -> % aborted?
-	    megaco_monitor:cancel_apply_after(Ref),
-	    megaco_monitor:delete_reply(TransId),
-	    megaco_config:del_pending_counter(sent, TransId)
-    end;
+    handle_reply_timer_timeout(ConnHandle, TransId);
+
+%% This means that infinity_restartable was used for max_retries.
+%% There is currently no reason to use this for the reply_timeout,
+%% since there is no external event to restart the timer!
+reply_timeout(ConnHandle, TransId, {_, timeout}) ->
+    handle_reply_timer_timeout(ConnHandle, TransId);
+
 reply_timeout(ConnHandle, TransId, Timer) ->
     ?report_trace(ConnHandle, "reply timeout", [Timer, TransId]),
     case megaco_monitor:lookup_reply(TransId) of
@@ -2680,6 +2673,29 @@ reply_timeout(ConnHandle, TransId, Timer) ->
 		
     end.
 
+handle_reply_timer_timeout(ConnHandle, TransId) ->
+    ?report_trace(ConnHandle, "reply timeout", [timeout,TransId]),
+    incNumTimerRecovery(ConnHandle),
+    %% OTP-4378
+    case megaco_monitor:lookup_reply(TransId) of
+	[#reply{state = waiting_for_ack} = Rep] ->
+	    Serial = (Rep#reply.trans_id)#trans_id.serial,
+	    ConnData = 
+		case megaco_config:lookup_local_conn(ConnHandle) of
+		    [ConnData0] ->
+			ConnData0;
+		    [] ->
+			fake_conn_data(ConnHandle)
+		end,
+	    ConnData2 = ConnData#conn_data{serial = Serial},
+	    T = #'TransactionAck'{firstAck = Serial},
+	    handle_ack(ConnData2, {error, timeout}, Rep, T);
+	[#reply{pending_timer_ref = Ref}] -> % aborted?
+	    megaco_monitor:cancel_apply_after(Ref),
+	    megaco_monitor:delete_reply(TransId),
+	    megaco_config:del_pending_counter(sent, TransId)
+    end.
+    
 pending_timeout(ConnData, TransId, Timer) ->
     ?report_trace(ConnData, "pending timeout", [Timer, TransId]),
     case megaco_monitor:lookup_reply(TransId) of
@@ -2709,6 +2725,10 @@ pending_timeout(ConnData, TransId, Timer) ->
 		    send_pending(ConnData),
 		    case Timer of
 			timeout ->
+			    %% We are done
+			    incNumTimerRecovery(ConnHandle),
+			    ok;
+			{_, timeout} ->
 			    %% We are done
 			    incNumTimerRecovery(ConnHandle),
 			    ok;
@@ -2831,6 +2851,8 @@ return_incr(Timer) ->
     case Timer#megaco_incr_timer.max_retries of
 	infinity ->
 	    {WaitFor, Timer};
+	infinity_restartable ->
+	    {WaitFor, {Timer, timeout}};
 	Int when integer(Int), Int > 0 -> 
 	    {WaitFor, Timer};
 	0  ->
@@ -2846,7 +2868,9 @@ recalc_timer(Timer) when record(Timer, megaco_incr_timer) ->
     Max     = decr(Timer#megaco_incr_timer.max_retries),
     Timer2  = Timer#megaco_incr_timer{wait_for    = New,
                                       max_retries = Max},
-    return_incr(Timer2).
+    return_incr(Timer2);
+recalc_timer({Timer, timeout}) when record(Timer, megaco_incr_timer) ->
+    recalc_timer(Timer).
 
 decr(infinity) -> infinity;
 decr(Int)      -> Int - 1.
@@ -2856,29 +2880,29 @@ error_msg(F, A) ->
     (catch error_logger:error_msg(F ++ "~n", A)).
 
 
-% d(F) ->
-%     d(F,[]).
+%% d(F) ->
+%%     d(F,[]).
 
-% d(F,A) ->
-%     d(true,F,A).
-%     %% d(get(dbg),F,A).
+%% d(F,A) ->
+%%     d(true,F,A).
+%%     %% d(get(dbg),F,A).
 
-% d(true,F,A) ->
-%     io:format("*** [~s] ~p:~p ***"
-% 	      "~n   " ++ F ++ "~n", 
-% 	      [format_timestamp(now()), self(),?MODULE|A]);
-% d(_, _, _) ->
-%     ok.
+%% d(true,F,A) ->
+%%     io:format("*** [~s] ~p:~p ***"
+%% 	      "~n   " ++ F ++ "~n", 
+%% 	      [format_timestamp(now()), self(),?MODULE|A]);
+%% d(_, _, _) ->
+%%     ok.
 
-% format_timestamp(Now) ->
-%     {N1, N2, N3}   = Now,
-%     {Date, Time}   = calendar:now_to_datetime(Now),
-%     {YYYY,MM,DD}   = Date,
-%     {Hour,Min,Sec} = Time,
-%     FormatDate = 
-%         io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
-%                       [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),  
-%     lists:flatten(FormatDate).
+%% format_timestamp(Now) ->
+%%     {N1, N2, N3}   = Now,
+%%     {Date, Time}   = calendar:now_to_datetime(Now),
+%%     {YYYY,MM,DD}   = Date,
+%%     {Hour,Min,Sec} = Time,
+%%     FormatDate = 
+%%         io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+%%                       [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),  
+%%     lists:flatten(FormatDate).
 
 	      
 %%-----------------------------------------------------------------

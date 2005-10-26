@@ -104,6 +104,8 @@ literal_value(#c_float{val=F}) -> F;
 literal_value(#c_atom{val=A}) -> A;
 literal_value(#c_string{val=S}) -> S;
 literal_value(#c_nil{}) -> [];
+literal_value(#c_binary{segments=Es}) ->
+    list_to_binary([literal_value_bin(Bit) || Bit <- Es]);
 literal_value(#c_cons{hd=H,tl=T}) ->
     [literal_value(H)|literal_value(T)];
 literal_value(#c_tuple{es=Es}) ->
@@ -111,17 +113,32 @@ literal_value(#c_tuple{es=Es}) ->
 
 literal_value_list(Vals) -> lists:map(fun literal_value/1, Vals).
 
+literal_value_bin(#c_bitstr{val=Val,size=Sz,unit=U,type=T,flags=Fs}) ->
+    %% We will only handle literals constructed by make_literal/1.
+    %% Could be made more general in the future if the need arises.
+
+    8 = literal_value(Sz),
+    1 = literal_value(U),
+    integer = literal_value(T),
+    [unsigned,big] = literal_value(Fs),
+    literal_value(Val).
+
 %% make_literal(Value) -> LitExpr.
 %%  Make a literal expression from an Erlang value.
 
-make_literal(I) when integer(I) -> #c_int{val=I};
-make_literal(F) when float(F) -> #c_float{val=F};
-make_literal(A) when atom(A) -> #c_atom{val=A};
 make_literal([]) -> #c_nil{};
 make_literal([H|T]) ->
     #c_cons{hd=make_literal(H),tl=make_literal(T)};
-make_literal(T) when tuple(T) ->
-    #c_tuple{es=make_literal_list(tuple_to_list(T))}.
+make_literal(I) when is_integer(I) -> #c_int{val=I};
+make_literal(F) when is_float(F) -> #c_float{val=F};
+make_literal(A) when is_atom(A) -> #c_atom{val=A};
+make_literal(T) when is_tuple(T) ->
+    #c_tuple{es=make_literal_list(tuple_to_list(T))};
+make_literal(Bs) when is_binary(Bs) ->
+    Template = #c_bitstr{type=make_literal(integer),size=make_literal(8),
+			 unit=make_literal(1),flags=make_literal([unsigned,big])},
+    Es = [Template#c_bitstr{val=make_literal(B)} || B <- binary_to_list(Bs)],
+    #c_binary{segments=Es}.
 
 make_literal_list(Vals) -> lists:map(fun make_literal/1, Vals). 
 

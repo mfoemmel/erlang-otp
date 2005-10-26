@@ -139,9 +139,7 @@ static int errno_map(DWORD last_error) {
 }
 
 static int
-check_error(result, errInfo)
-int result;
-Efile_error* errInfo;
+check_error(int result, Efile_error* errInfo)
 {
     if (result < 0) {
 	errInfo->posix_errno = errno;
@@ -160,8 +158,7 @@ Efile_error* errInfo;
  */
 
 static int
-set_error(errInfo)
-    Efile_error* errInfo;	/* Information about the error. */
+set_error(Efile_error* errInfo)
 {
     errInfo->posix_errno = errno_map(errInfo->os_errno = GetLastError());
     return 0;
@@ -704,9 +701,8 @@ off_t* pSize;			/* Where to store the size of the file. */
 	 * open a directory.  In that case, we'll change the error code
 	 * to EISDIR.
 	 */
-	if (errno == EACCES && stat(name, &statbuf) == 0 && ISDIR(statbuf)) {
-	    errno = EISDIR;
-	    return check_error(-1, errInfo);
+	if (errInfo->posix_errno && stat(name, &statbuf) == 0 && ISDIR(statbuf)) {
+	    errInfo->posix_errno = EISDIR;
 	}
 	return 0;
     }

@@ -27,6 +27,7 @@
 	 config/0,
 	 
          versions1/0, versions2/0,
+	 print_versions/1, print_versions/2, 
  
 	 date_and_time/0, 
 	 universal_time_to_date_and_time/1,
@@ -136,6 +137,173 @@ start() ->
 
 
 config() -> snmp_config:config().
+
+
+%%-----------------------------------------------------------------
+%% {ok, Vs} = snmp:versions1(), snmp:print_versions(Vs).
+
+print_versions(Versions) ->
+    print_versions("", Versions).
+
+print_versions(Prefix, Versions) 
+  when is_list(Prefix) and is_list(Versions) ->
+    do_print_versions(Prefix, Versions);
+print_versions(Prefix, Versions) 
+  when (is_integer(Prefix) and (Prefix >= 0)) and is_list(Versions) ->
+    do_print_versions(lists:duplicate(Prefix, $ ), Versions);
+print_versions(Prefix, BadVersions) 
+  when is_list(Prefix) or (is_integer(Prefix) and (Prefix >= 0)) ->
+    {error, {bad_versions, BadVersions}};
+print_versions(Prefix, BadVersions) 
+  when is_list(BadVersions) ->
+    {error, {bad_prefix, Prefix}};
+print_versions(Prefix, BadVersions) -> 
+    {error, {bad_args, Prefix, BadVersions}}.
+
+do_print_versions(Prefix, Versions) ->
+    print_sys_info(Prefix, Versions),
+    print_os_info(Prefix, Versions),
+    print_mods_info(Prefix, Versions).
+
+print_sys_info(Prefix, Versions) ->
+    case key1search(sys_info, Versions) of
+        {value, SysInfo} when list(SysInfo) ->
+            {value, Arch} = key1search(arch, SysInfo, "Not found"),
+            {value, Ver}  = key1search(ver, SysInfo, "Not found"),
+            io:format("~sSystem info: "
+                      "~n~s   Arch: ~s"
+                      "~n~s   Ver:  ~s"
+                      "~n", [Prefix, 
+			     Prefix, Arch, 
+			     Prefix, Ver]),
+            ok;
+        _ ->
+            io:format("System info: Not found~n", []),
+            not_found
+    end.
+
+print_os_info(Prefix, Versions) ->
+    case key1search(os_info, Versions) of
+        {value, OsInfo} when list(OsInfo) ->
+            Fam =
+                case key1search(fam, OsInfo, "Not found") of
+                    {value, F} when atom(F) ->
+                        atom_to_list(F);
+                    {value, LF} when list(LF) ->
+                        LF;
+                    {value, XF} ->
+                        lists:flatten(io_lib:format("~p", [XF]))
+                end,
+            Name =
+                case key1search(name, OsInfo) of
+                    {value, N} when atom(N) ->
+                        "[" ++ atom_to_list(N) ++ "]";
+                    {value, LN} when list(LN) ->
+                        "[" ++ LN ++ "]";
+                    not_found ->
+                        ""
+                end,
+            Ver =
+                case key1search(ver, OsInfo, "Not found") of
+                    {value, T} when tuple(T) ->
+                        tversion(T);
+                    {value, LV} when list(LV) ->
+                        LV;
+                    {value, XV} ->
+                        lists:flatten(io_lib:format("~p", [XV]))
+                end,
+            io:format("~sOS info: "
+                      "~n~s   Family: ~s ~s"
+                      "~n~s   Ver:    ~s"
+                      "~n", [Prefix, 
+			     Prefix, Fam, Name, 
+			     Prefix, Ver]),
+            ok;
+        _ ->
+            io:format("~sOS info:     Not found~n", [Prefix]),
+            not_found
+    end.
+
+tversion(T) ->
+    L = tuple_to_list(T),
+    lversion(L).
+
+lversion([]) ->
+    "";
+lversion([A]) ->
+    integer_to_list(A);
+lversion([A|R]) ->
+    integer_to_list(A) ++ "." ++ lversion(R).
+
+print_mods_info(Prefix, Versions) ->
+    case key1search(mod_info, Versions) of
+        {value, ModsInfo} when list(ModsInfo) ->
+            io:format("~sModule info: ~n", [Prefix]),
+	    F = fun(MI) -> print_mod_info(Prefix, MI) end,
+            lists:foreach(F, ModsInfo);
+        _ ->
+            io:format("~sModule info: Not found~n", [Prefix]),
+            not_found
+    end.
+
+print_mod_info(Prefix, {Module, Info}) ->
+    Vsn =
+        case key1search(vsn, Info) of
+            {value, I} when integer(I) ->
+                integer_to_list(I);
+            _ ->
+                "Not found"
+        end,
+    AppVsn =
+        case key1search(app_vsn, Info) of
+            {value, S1} when list(S1) ->
+                S1;
+            _ ->
+                "Not found"
+        end,
+    CompVer =
+        case key1search(compiler_version, Info) of
+            {value, S2} when list(S2) ->
+                S2;
+            _ ->
+                "Not found"
+        end,
+    CompDate =
+        case key1search(compile_time, Info) of
+            {value, {Year, Month, Day, Hour, Min, Sec}} ->
+                lists:flatten(
+                  io_lib:format("~w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w",
+                                [Year, Month, Day, Hour, Min, Sec]));
+            _ ->
+                "Not found"
+        end,
+    io:format("~s   ~w:~n"
+              "~s      Vsn:          ~s~n"
+              "~s      App vsn:      ~s~n"
+              "~s      Compiler ver: ~s~n"
+              "~s      Compile time: ~s~n",
+              [Prefix, Module, 
+	       Prefix, Vsn, 
+	       Prefix, AppVsn, 
+	       Prefix, CompVer, 
+	       Prefix, CompDate]),
+    ok.
+
+key1search(Key, Vals) ->
+    case key1search(Key, Vals, undefined) of
+        undefined ->
+            not_found;
+        Value ->
+            Value
+    end.
+
+key1search(Key, Vals, Def) ->
+    case lists:keysearch(Key, 1, Vals) of
+        {value, {Key, Val}} ->
+            {value, Val};
+        false ->
+            {value, Def}
+    end.
 
 
 %%-----------------------------------------------------------------

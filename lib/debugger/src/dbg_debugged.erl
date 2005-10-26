@@ -20,16 +20,6 @@
 %% External exports
 -export([eval/3]).
 
-%% Internal exports
--export([follow/4]).
-
-%-define(DBGDBG, 1).
--ifdef(DBGDBG).
--define(DBG(F,A), io:format("~p~p[~p]:" ++ F,[self(),?MODULE,?LINE] ++ A)).
--else.
--define(DBG(F,A), ok).
--endif.
-
 %%====================================================================
 %% External exports
 %%====================================================================
@@ -37,149 +27,91 @@
 %%--------------------------------------------------------------------
 %% eval(Mod, Func, Args) -> Value
 %% Main entry point from external (non-interpreted) code.
-%% Called via the error handler when a breakpoint is hit.
+%% Called via the error handler.
 %%--------------------------------------------------------------------
 eval(Mod, Func, Args) ->
-    Meta = dbg_imeta:eval(Mod, Func, Args),
-    msg(Meta).
-
-%%====================================================================
-%% Internal exports
-%%====================================================================
-
-follow(_Fol, M, F, As) ->
-    apply(M, F, As).
-
+    SaveStacktrace = erlang:get_stacktrace(),
+    Meta = dbg_ieval:eval(Mod, Func, Args),
+    Mref = erlang:monitor(process, Meta),
+    msg_loop(Meta, Mref, SaveStacktrace).
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
 
-msg(Meta) ->
-    case catch msg_loop(Meta) of
-	{ready,Meta,Value} ->
-	    ?DBG("Result~n",[]),
-	    Value;
-	{'EXIT',Reason0} ->
-	    ?DBG("EXIT ~p~n",[Reason0]),
-	    Reason = remove_debugger_calls(Reason0),
-	    Meta ! {sys,self(),{exited_nocatch,Reason}},
-	    wait_exit(Meta);
-	{'EXIT',Meta,Reason} ->
-	    ?DBG("EXIT ~p~n",[Reason]),
-	    exit(Reason);
-	Thrown ->
-	    ?DBG("Thrown ~p~n",[Thrown]),
-	    Meta ! {sys,self(),{thrown_nocatch,Thrown}},
-	    throw(Thrown)
-    end.
-
-msg_loop(Meta) ->
+msg_loop(Meta, Mref, SaveStacktrace) ->
     receive
-	{sys,Meta,Command} ->
-	    ?DBG("Command~p~n",[Command]),
-	    handle_command(Meta, Command);
-	{'EXIT',Meta,Reason} ->
-	    {'EXIT',Meta,Reason}
+
+	%% Evaluated function has returned a value
+	{sys, Meta, {ready, Val}} ->
+	    demonitor(Mref),
+
+	    %% Restore original stacktrace and return the value
+	    try erlang:raise(throw, stack, SaveStacktrace)
+	    catch
+		throw:stack ->
+		    case Val of
+			{dbg_apply,M,F,A} ->
+			    apply(M, F, A);
+			_ ->
+			    Val
+		    end
+	    end;
+
+	%% Evaluated function raised an (uncaught) exception
+	{sys, Meta, {exception,{Class,Reason,Stacktrace}}} ->
+	    demonitor(Mref),
+
+	    %% ...raise the same exception
+	    erlang:error(erlang:raise(Class, Reason, Stacktrace), 
+			 [Class,Reason,Stacktrace]);
+
+	%% Meta is evaluating a receive, must be done within context
+	%% of real (=this) process
+	{sys, Meta, {'receive',Msg}} ->
+	    receive Msg -> Meta ! {self(), rec_acked} end,
+	    msg_loop(Meta, Mref, SaveStacktrace);
+
+	%% Meta needs something evaluated within context of real process
+	{sys, Meta, {command, Command, Stacktrace}} ->
+	    Reply = handle_command(Command, Stacktrace),
+	    Meta ! {sys, self(), Reply},
+	    msg_loop(Meta, Mref, SaveStacktrace);
+
+	%% Meta has terminated
+	%% Must be due to int:stop() (or -heaven forbid- a debugger bug)
+	{'DOWN', Mref, _, _, Reason} ->
+
+	    %% Restore original stacktrace and return a dummy value
+	    try erlang:raise(throw, stack, SaveStacktrace)
+	    catch
+		throw:stack ->
+		    {interpreter_terminated, Reason}
+	    end
     end.
 
-handle_command(Meta, {ready,Val}) ->
-    {ready,Meta,Val};
-handle_command(Meta, {'receive',Msg}) ->
-    receive
-	Msg -> 
-	    Meta ! {self(),rec_acked}
-    end,
-    msg_loop(Meta);
-handle_command(_Meta, {exit,Reason}) ->
-    exit(Reason);
-handle_command(Meta, {bif,Mod,Name,As,Where,Followed}) ->
-    Res = bif(Mod, Name, As, Followed, Where),
-    Meta ! {sys,self(),{apply_result,Res}},
-    msg_loop(Meta);
-handle_command(Meta, {catch_bif,Mod,Name,As,Where,Followed}) ->
-    send_result(Meta, catch_bif(Meta, Mod, Name, As, Followed, Where)),
-    msg_loop(Meta);
-handle_command(Meta, {apply,Mod,Fnk,As}) ->
-    Res = apply(Mod, Fnk, As),
-    Meta ! {sys,self(),{apply_result,Res}},
-    msg_loop(Meta);
-handle_command(Meta, {catch_apply,Mod,Fnk,As}) ->
-    send_result(Meta, catch_apply(Meta, Mod, Fnk, As)),
-    msg_loop(Meta);
-handle_command(Meta, {eval,Expr,Bs0}) ->
-    Ref = make_ref(),
-    case catch {Ref,erl_eval:expr(Expr, Bs0)} of
-	{Ref,{value,V,Bs}} ->
-	    Meta ! {sys,self(),{eval_result,V,Bs}};
-	Other ->
-	    Meta ! {sys,self(),{thrown,Other}}
-    end,
-    msg_loop(Meta).
-
-send_result(Meta, {catch_normal,Meta,Res}) ->
-    Meta ! {sys,self(),{apply_result,Res}};
-send_result(Meta, Thrown) ->
-    Meta ! {sys,self(),{thrown,Thrown}}.
-
-%%-- Return tuple if apply evaluates normally, otherwise the
-%%-- surrounding catch notices the unnormal exit.
-
-catch_apply(Meta, Mod, Fnk, As) ->
-    Ref = make_ref(),
-    Res0 = (catch {Ref, apply(Mod, Fnk, As)}),
-    case Res0 of
-	{'EXIT', Reason} -> {'EXIT', remove_debugger_calls(Reason)};
-	{Ref, Res} -> 
-	    {catch_normal,Meta,Res};
-	_ ->
-	    Res0
+handle_command(Command, Stacktrace) ->
+    try reply(Command)
+    catch Class:Reason ->
+	    Stacktrace2 = stacktrace_f(erlang:get_stacktrace()),
+	    {exception, {Class,Reason,Stacktrace2++Stacktrace}}
     end.
 
-catch_bif(Meta, Mod, Name, As, Followed, Where) ->
-    Res = (catch bif(Mod, Name, As, Followed, Where)),
-    case Res of
-	{'EXIT', Reason} -> {'EXIT', remove_debugger_calls(Reason)};
-	_ ->
-	    {catch_normal,Meta,Res}
+reply({apply,M,F,As}) ->
+    {value, erlang:apply(M,F,As)};
+reply({eval,Expr,Bs}) ->
+    erl_eval:expr(Expr, Bs). % {value, Value, Bs2}
+
+%% Demonitor and delete message from inbox
+%%
+demonitor(Mref) ->
+    erlang:demonitor(Mref),
+    receive {'DOWN',Mref,_,_,_} -> ok
+    after 0 -> ok
     end.
 
-remove_debugger_calls({Reason,BT}) when is_list(BT) ->
-    {Reason, remove_debugger_calls(BT, [])};
-remove_debugger_calls(Reason) ->
-    Reason.
-remove_debugger_calls([{?MODULE, _F, _A}|R], Acc) ->
-    remove_debugger_calls(R,Acc);
-remove_debugger_calls([Other|R], Acc) ->
-    remove_debugger_calls(R, [Other|Acc]);
-remove_debugger_calls([],Acc) -> 
-    lists:reverse(Acc);
-remove_debugger_calls(What, Acc) ->
-    lists:reverse([What|Acc]).
-
-%% bif(Mod, Name, Arguments)
-%%  Evaluate a BIF.
-
-bif(Mod, Name, As, false, Where) ->
-    erts_debug:apply(Mod, Name, As, Where);
-bif(erlang, spawn, [M,F,As], Attached, _Where) ->
-    spawn(?MODULE,follow,[Attached,M,F,As]);
-bif(erlang, spawn_link, [M,F,As], Attached, _Where) ->
-    spawn_link(?MODULE,follow,[Attached,M,F,As]);
-bif(erlang, spawn, [N,M,F,As], Attached, _Where) ->
-    spawn(N,?MODULE,follow,[Attached,M,F,As]);
-bif(erlang, spawn_link, [N,M,F,As], Attached, _Where) ->
-    spawn_link(N,?MODULE,follow,[Attached,M,F,As]).
-
-%%---------------------------------------------------
-%%-- Sync on exit.
-%%-- The Meta process shall initiate all exits!
-%%---------------------------------------------------
-
-wait_exit(Meta) ->
-    receive
-	{sys,Meta,{exit,Reason}} ->
-	    exit(Reason);
-	{'EXIT',Meta,Reason} ->
-	    exit(Reason)
-    end.
+%% Fix stacktrace - keep all above call to this module.
+%%
+stacktrace_f([]) -> [];
+stacktrace_f([{?MODULE,_,_}|_]) -> [];
+stacktrace_f([F|S]) -> [F|stacktrace_f(S)].

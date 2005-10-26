@@ -24,23 +24,26 @@
 -define(TRACEWIN, ['Button Area', 'Evaluator Area', 'Bindings Area']).
 -define(BACKTRACE, 100).
 
--record(state, {gs,                % term() Graphics system id
-		win,               % term() Attach process window data
-		coords,            % {X,Y} Mouse point position
+-record(state, {gs,            % term() Graphics system id
+		win,           % term() Attach process window data
+		coords,        % {X,Y} Mouse point position
 
-		pid,               % pid() Debugged process
-		meta,              % pid() Meta process
-		status,            % {St,Mod,Line} | idle | running
-		                   % St = exit | break | wait
+		pid,           % pid() Debugged process
+		meta,          % pid() Meta process
+		status,        % {Status,Mod,Line} ¦ {exit,Where,Reason}
+		               %   Status = init ¦ idle | break
+		               %      | wait_break ¦ wait_running
+		               %      ¦ running
+                               % Where={Mod,Line} | null
 
-		cm,                % atom() | undefined Current module
-		cm_obsolete=false, % boolean() Curr module needs reloading
+		cm,            % atom() | undefined Current module
+		cm_obsolete=false, % boolean() Curr mod needs reloading
 
-		stack,             % {Cur,Max}
+		stack,         % {Cur,Max}
 
-		trace,             % boolean()
-		stack_trace,       % all | no_tail | false
-		backtrace          % integer() No. of call frames to fetch
+		trace,         % boolean()
+		stack_trace,   % all | no_tail | false
+		backtrace      % integer() #call frames to fetch
 	       }).
 
 %%====================================================================
@@ -107,11 +110,10 @@ init(Pid, Meta, TraceWin, BackTrace) ->
 
     int:meta(Meta, trace, State3#state.trace),
 
-    gui_enable_functions({first,null,null}, {idle,null,null}),
-    gui_enable_updown(State3#state.stack_trace, State3#state.stack, bottom),
-    gui_enable_btrace(State3#state.trace, State3#state.stack_trace),
+    gui_enable_updown(stack_trace, {1,1}),
+    gui_enable_btrace(false, false),
     dbg_ui_trace_win:display(idle),
-    
+
     loop(State3).
 
 init_options(TraceWin, StackTrace, BackTrace, State) ->
@@ -124,12 +126,13 @@ init_options(TraceWin, StackTrace, BackTrace, State) ->
 
     %% Backtrace size is (currently) not shown in window
 
-    State#state{trace=Trace, stack_trace=StackTrace, backtrace=BackTrace}.
+    State#state{trace=Trace,stack_trace=StackTrace,backtrace=BackTrace}.
 
 init_contents(Breaks, State) ->
     Win =
 	lists:foldl(fun(Break, Win) ->
-			    dbg_ui_trace_win:add_break(Win, 'Break', Break)
+			    dbg_ui_trace_win:add_break(Win,
+						       'Break',Break)
 		    end,
 		    State#state.win,
 		    Breaks),
@@ -141,7 +144,8 @@ loop(#state{meta=Meta} = State) ->
 
 	%% From the GUI main window
 	GuiEvent when tuple(GuiEvent), element(1, GuiEvent)==gs ->
-	    Cmd = dbg_ui_trace_win:handle_event(GuiEvent, State#state.win),
+	    Cmd =
+		dbg_ui_trace_win:handle_event(GuiEvent,State#state.win),
 	    State2 = gui_cmd(Cmd, State),
 	    loop(State2);
 
@@ -158,12 +162,10 @@ loop(#state{meta=Meta} = State) ->
 	%% From the meta process
 	{Meta, Cmd} ->
 	    State2 = meta_cmd(Cmd, State),
-	    gui_enable_functions(State#state.status, State2#state.status),
 	    loop(State2);
 	{NewMeta, {exit_at, Where, Reason, Cur}} ->
 	    State2 = meta_cmd({exit_at, Where, Reason, Cur},
 			      State#state{meta=NewMeta}),
-	    gui_enable_functions(State#state.status, State2#state.status),
 	    loop(State2);
 
 	%% From the dbg_ui_edit process
@@ -231,7 +233,17 @@ gui_cmd('Next', State) ->
     State;
 gui_cmd('Continue', State) ->
     int:meta(State#state.meta, continue),
-    State;
+    {Status, Mod, Line} = State#state.status,
+    if
+	Status==wait_break ->
+	    Win = dbg_ui_trace_win:unmark_line(State#state.win),
+	    gui_enable_functions(wait_running),
+	    State#state{win=Win, status={wait_running,Mod,Line}};
+	true ->
+	    dbg_ui_trace_win:enable(['Stop'], true),
+	    dbg_ui_trace_win:enable(['Continue'], false),
+	    State
+    end;
 gui_cmd('Finish', State) ->
     int:meta(State#state.meta, finish),
     State;
@@ -243,10 +255,34 @@ gui_cmd('Time Out', State) ->
     State;
 gui_cmd('Stop', State) ->
     int:meta(State#state.meta, stop),
-    State;
+    {Status, Mod, Line} = State#state.status,
+    if
+	Status==wait_running ->
+	    Win = dbg_ui_trace_win:mark_line(State#state.win, Line,
+					     break),
+	    gui_enable_functions(wait_break),
+	    gui_enable_updown(State#state.stack_trace,
+			      State#state.stack),
+	    gui_enable_btrace(State#state.trace,
+			      State#state.stack_trace),
+	    dbg_ui_trace_win:display({wait, Mod, Line}),
+	    State#state{win=Win, status={wait_break,Mod,Line}};
+	true ->
+	    dbg_ui_trace_win:enable(['Stop'], false),
+	    dbg_ui_trace_win:enable(['Continue'], true),
+	    State
+    end;
 gui_cmd('Where', State) ->
     {_Cur, Max} = State#state.stack,
-    gui_cmd('Down', State#state{stack={Max, Max}});
+    Stack = {Max, Max},
+    {_Status, Mod, Line} = State#state.status,
+    Win = gui_show_module(State#state.win, Mod, Line,
+			  State#state.cm, State#state.pid, break),
+    gui_update_bindings(State#state.meta),
+    gui_enable_updown(State#state.stack_trace, Stack),
+    dbg_ui_trace_win:display(State#state.status),
+    State#state{win=Win, cm=Mod, stack=Stack};
+
 gui_cmd('Kill', State) ->
     exit(State#state.pid, kill),
     State;
@@ -261,7 +297,7 @@ gui_cmd('Messages', State) ->
 	      fun(Msg, N) ->
 		      Str1 = io_lib:format(" ~w:", [N]),
 		      dbg_ui_trace_win:eval_output(Str1, bold),
-		      Str2 = io_lib:format(" ~s~n", [io_lib:print(Msg)]),
+		      Str2 = io_lib:format(" ~s~n",[io_lib:print(Msg)]),
 		      dbg_ui_trace_win:eval_output(Str2, normal),
 		      N+1
 	      end,
@@ -270,42 +306,68 @@ gui_cmd('Messages', State) ->
     end,
     State;
 gui_cmd('Back Trace', State) ->
-    lists:foreach(fun({Lev, {Mod, {Func,Arity}, _Line, _Bs}}) ->
-			  Str = io_lib:format("~p > ~p:~p/~p~n",
-					      [Lev, Mod, Func, Arity]),
-			  dbg_ui_trace_win:trace_output(Str);
-		     (_) -> ignore
-		  end,
-		  int:meta(State#state.meta,
-			   backtrace, State#state.backtrace)),
+    dbg_ui_trace_win:trace_output("\nBACK TRACE\n----------\n"),
+    lists:foreach(
+      fun({Le, {Mod,Func,Args}}) ->
+	      Str = io_lib:format("~p > ~p:~p~p~n",
+				  [Le, Mod, Func, Args]),
+	      dbg_ui_trace_win:trace_output(Str);
+	 ({Le, {Fun,Args}}) ->
+	      Str = io_lib:format("~p > ~p~p~n", [Le, Fun, Args]),
+	      dbg_ui_trace_win:trace_output(Str);
+	 (_) -> ignore
+      end,
+      int:meta(State#state.meta, backtrace, State#state.backtrace)),
     dbg_ui_trace_win:trace_output("\n"),
     State;
 gui_cmd('Up', State) ->
     {Cur, Max} = State#state.stack,
     case int:meta(State#state.meta, stack_frame, {up, Cur}) of
-	{New, Mod, Line} ->
+	{New, {undefined,-1}, _Bs} -> % call from non-interpreted code
+	    Stack = {New, Max},
+	    Win = dbg_ui_trace_win:show_no_code(State#state.win),
+	    dbg_ui_trace_win:update_bindings([]),
+	    gui_enable_updown(State#state.stack_trace, Stack),
+	    dbg_ui_trace_win:display({New,null,null}),
+	    State#state{win=Win, cm=null, stack=Stack};
+
+	{New, {Mod,Line}, Bs} ->
 	    Stack = {New, Max},
 	    Win = gui_show_module(State#state.win, Mod, Line,
-				  State#state.cm, State#state.pid, where),
-	    gui_update_bindings(State#state.meta, Stack),
-	    gui_enable_updown(State#state.stack_trace, Stack, stack),
-	    dbg_ui_trace_win:display({New, Mod, Line}),
+				  State#state.cm, State#state.pid,
+				  where),
+	    dbg_ui_trace_win:update_bindings(Bs),
+	    gui_enable_updown(State#state.stack_trace, Stack),
+	    dbg_ui_trace_win:display({New,Mod,Line}),
 	    State#state{win=Win, cm=Mod, stack=Stack};
-	top -> State
+	top ->
+	    dbg_ui_trace_win:enable(['Up'], false),
+	    State
     end;
 gui_cmd('Down', State) ->
     {Cur, Max} = State#state.stack,
-    {Stack, {Status, Mod, Line}, Where, How} = 
-	case int:meta(State#state.meta, stack_frame, {down, Cur}) of
-	    {New, M, L} -> {{New, Max}, {New, M, L}, stack, where};
-	    bottom -> {{Max, Max}, State#state.status, bottom, break}
-	end,
-    Win = gui_show_module(State#state.win, Mod, Line,
-			  State#state.cm, State#state.pid, How),
-    gui_update_bindings(State#state.meta, Stack),
-    gui_enable_updown(State#state.stack_trace, Stack, Where),
-    dbg_ui_trace_win:display({Status, Mod, Line}),
-    State#state{win=Win, cm=Mod, stack=Stack};
+    case int:meta(State#state.meta, stack_frame, {down, Cur}) of
+	{New, {undefined,-1}, _Bs} -> % call from non-interpreted code
+	    Stack = {New, Max},
+	    Win = dbg_ui_trace_win:show_no_code(State#state.win),
+	    dbg_ui_trace_win:update_bindings([]),
+	    gui_enable_updown(State#state.stack_trace, Stack),
+	    dbg_ui_trace_win:display({New,null,null}),
+	    State#state{win=Win, cm=null, stack=Stack};
+
+	{New, {Mod,Line}, Bs} ->
+	    Stack = {New, Max},
+	    Win = gui_show_module(State#state.win, Mod, Line,
+				  State#state.cm, State#state.pid,
+				  where),
+	    dbg_ui_trace_win:update_bindings(Bs),
+	    gui_enable_updown(State#state.stack_trace, Stack),
+	    dbg_ui_trace_win:display({New,Mod,Line}),
+	    State#state{win=Win, cm=Mod, stack=Stack};
+
+	bottom ->
+	    gui_cmd('Where', State)
+    end;
 
 %% Break menu
 gui_cmd('Line Break...', State) ->
@@ -340,10 +402,21 @@ gui_cmd({'Trace Window', TraceWin}, State) ->
     Trace = lists:member('Trace Area', TraceWin),
     int:meta(State#state.meta, trace, Trace),
     Win = dbg_ui_trace_win:configure(State#state.win, TraceWin),
-    gui_enable_btrace(Trace, State#state.stack_trace),
+    {Status,_,_} = State#state.status,
+    if
+	Status==break; Status==wait_break ->
+	    gui_enable_btrace(Trace, State#state.stack_trace);
+	true -> ignore
+    end,
     State#state{win=Win, trace=Trace};
 gui_cmd({'Stack Trace', [Name]}, State) ->
     int:meta(State#state.meta, stack_trace, map(Name)),
+    {Status,_,_} = State#state.status,
+    if
+	Status==break; Status==wait_break ->
+	    gui_enable_btrace(State#state.trace, map(Name));
+	true -> ignore
+    end,
     State;
 gui_cmd('Back Trace Size...', State) ->
     dbg_ui_edit:start(State#state.gs, State#state.coords, "Backtrace",
@@ -361,7 +434,8 @@ gui_cmd({user_command, Cmd}, State) ->
     {Status, _Mod, _Line} = State#state.status,
     if
 	Status==break;
-	Status==wait ->
+	Status==wait_break;
+	Status==wait_running ->
 	    Cm = State#state.cm,
 	    Arg = case State#state.stack of
 		      {Cur, Max} when Cur<Max -> {Cm, Cmd, Cur};
@@ -430,93 +504,116 @@ int_cmd({no_break, Mod}, State) ->
 %% the Trace Area is shown or not.
 meta_cmd({attached, Mod, Line, _Trace}, State) ->
     Win = if
-	      Mod/=null ->
+	      Mod/=undefined ->
+		  gui_enable_functions(init),
 		  gui_show_module(State#state.win, Mod, Line,
-				  State#state.cm, State#state.pid);
+				  State#state.cm, State#state.pid,
+				  break);
 	      true -> State#state.win
 	  end,
-    State#state{win=Win, cm=Mod};
+    State#state{win=Win, status={init,Mod,Line}, cm=Mod};
 
 %% Message received when returning to interpreted code
+meta_cmd({re_entry, dbg_ieval, eval_fun}, State) ->
+    State;
 meta_cmd({re_entry, Mod, _Func}, State) ->
     Obs = State#state.cm_obsolete,
     case State#state.cm of
 	Mod when Obs==true ->
-	    Win = gui_load_module(State#state.win, Mod, State#state.pid),
+	    Win = gui_load_module(State#state.win, Mod,State#state.pid),
 	    State#state{win=Win, cm_obsolete=false};
 	Mod -> State;
 	Cm ->
 	    Win = gui_show_module(State#state.win, Mod, 0,
-				  Cm, State#state.pid),
+				  Cm, State#state.pid, break),
 	    State#state{win=Win, cm=Mod}
     end;
 
 %% Message received when attached to a terminated process
-meta_cmd({exit_at, Where, Reason, Cur}, State) ->
+meta_cmd({exit_at, null, Reason, Cur}, State) ->
     Stack = {Cur, Cur},
-    case Where of
-	null ->
-	    gui_enable_updown(false, {Cur,Cur}, bottom),
-	    dbg_ui_trace_win:display({exit, Reason}),
-	    State#state{status={exit, null, null}, stack=Stack};
-	{Mod, Line} ->
-	    Win = gui_show_module(State#state.win, Mod, Line,
-				  State#state.cm, State#state.pid),
-	    gui_update_bindings(State#state.meta),
-	    gui_enable_updown(State#state.stack_trace, {Cur,Cur}, bottom),
-	    dbg_ui_trace_win:display({exit, Mod, Line, Reason}),
-	    State#state{win=Win, cm=Mod, status={exit, Mod, Line},
-			stack=Stack}
-    end;
+    gui_enable_functions(exit),
+    gui_enable_updown(false, Stack),
+    dbg_ui_trace_win:display({exit, null, Reason}),
+    State#state{status={exit,null,Reason}, stack=Stack};
+meta_cmd({exit_at, {Mod,Line}, Reason, Cur}, State) ->
+    Stack = {Cur+1, Cur+1},
+    Win = gui_show_module(State#state.win, Mod, Line,
+			  State#state.cm, State#state.pid, break),
+    gui_enable_functions(exit),
+    gui_enable_updown(State#state.stack_trace, Stack),
+    gui_enable_btrace(State#state.trace, State#state.stack_trace),
+    gui_update_bindings(State#state.meta),
+    dbg_ui_trace_win:display({exit, {Mod,Line}, Reason}),
+    State#state{win=Win, cm=Mod,status={exit,{Mod,Line},Reason},
+		stack=Stack};
 
 meta_cmd({break_at, Mod, Line, Cur}, State) ->
     Stack = {Cur,Cur},
     Win = gui_show_module(State#state.win, Mod, Line,
-			  State#state.cm, State#state.pid),
+			  State#state.cm, State#state.pid, break),
+    gui_enable_functions(break),
+    gui_enable_updown(State#state.stack_trace, Stack),
+    gui_enable_btrace(State#state.trace, State#state.stack_trace),
     gui_update_bindings(State#state.meta),
-    gui_enable_updown(State#state.stack_trace, Stack, bottom),
     dbg_ui_trace_win:display({break, Mod, Line}),
-    State#state{win=Win, cm=Mod, status={break, Mod, Line}, stack=Stack};
+    State#state{win=Win, cm=Mod, status={break,Mod,Line}, stack=Stack};
 meta_cmd({func_at, Mod, Line, Cur}, State) ->
     Stack = {Cur,Cur},
     Win = gui_show_module(State#state.win, Mod, Line,
-			  State#state.cm, State#state.pid),
-    State#state{win=Win, cm=Mod, stack=Stack};
+			  State#state.cm, State#state.pid, where),
+    gui_enable_functions(idle),
+    dbg_ui_trace_win:display(idle),
+    State#state{win=Win, cm=Mod, status={idle,Mod,Line}, stack=Stack};
+meta_cmd({wait_at, Mod, Line, Cur}, #state{status={Status,_,_}}=State)
+  when Status/=init, Status/=break ->
+    Stack = {Cur,Cur},
+    gui_enable_functions(wait_running),
+    dbg_ui_trace_win:display({wait,Mod,Line}),
+    State#state{status={wait_running,Mod,Line}, stack=Stack};
 meta_cmd({wait_at, Mod, Line, Cur}, State) ->
     Stack = {Cur,Cur},
     Win = gui_show_module(State#state.win, Mod, Line,
-			  State#state.cm, State#state.pid),
+			  State#state.cm, State#state.pid, break),
+    gui_enable_functions(wait_break),
+    gui_enable_updown(State#state.stack_trace, Stack),
+    gui_enable_btrace(State#state.trace, State#state.stack_trace),
     gui_update_bindings(State#state.meta),
     dbg_ui_trace_win:display({wait, Mod, Line}),
-    State#state{win=Win, cm=Mod, status={wait, Mod, Line}, stack=Stack};
-
+    State#state{win=Win, cm=Mod, status={wait_break,Mod,Line},
+		stack=Stack};
 meta_cmd({wait_after_at, Mod, Line, Sp}, State) ->
-    dbg_ui_trace_win:enable('Time Out', true),
     meta_cmd({wait_at, Mod, Line, Sp}, State);
-
 meta_cmd(running, State) ->
     Win = dbg_ui_trace_win:unmark_line(State#state.win),
+    gui_enable_functions(running),
     dbg_ui_trace_win:update_bindings([]),
     dbg_ui_trace_win:display({running, State#state.cm}),
-    State#state{win=Win, status={running,null,null}, stack={1,1}};
+    State#state{win=Win, status={running,null,null}};
+
 meta_cmd(idle, State) ->
     Win = dbg_ui_trace_win:show_no_code(State#state.win),
+    gui_enable_functions(idle),
     dbg_ui_trace_win:update_bindings([]),
     dbg_ui_trace_win:display(idle),
-    State#state{win=Win, status={idle,null,null}, cm=undefined, stack={1,1}};
+    State#state{win=Win, status={idle,null,null}, cm=undefined};
 
-%% Message about changed trace option can be ignored, the change must have
-%% been ordered by this process. (In theory, the change could have been
-%% ordered by another attached process. The Debugger, though, allows max one
-%% attached process per debugged process).
+%% Message about changed trace option can be ignored, the change must
+%% have been ordered by this process. (In theory, the change could have
+%% been ordered by another attached process. The Debugger, though,
+%% allows max one attached process per debugged process).
 meta_cmd({trace, _Bool}, State) ->
     State;
 
 meta_cmd({stack_trace, Flag}, State) ->
     dbg_ui_trace_win:select(map(Flag), true),
-    {_Cur,Max} = State#state.stack,
-    gui_enable_updown(Flag, {Max,Max}, bottom),
-    gui_enable_btrace(State#state.trace, Flag),
+    gui_enable_updown(Flag, State#state.stack),
+    {Status,_,_} = State#state.status,
+    if
+	Status==break; Status==wait_break ->
+	    gui_enable_btrace(State#state.trace, Flag);
+	true -> ignore
+    end,
     State#state{stack_trace=Flag};
 
 meta_cmd({trace_output, Str}, State) ->
@@ -572,23 +669,21 @@ menus() ->
 		  {'Back Trace Size...', no}]},
      {'Help', [{'Debugger', no}]}].
 
-enable(new, break) ->
-    ['Step','Next','Continue','Finish','Skip', 'Messages'];
-enable(new, exit) -> [];
-enable(new, running) -> ['Stop'];
-enable(new, wait) -> ['Stop'];
-enable(new, _Status) -> [];
-enable(old, _Status) -> [].
+%% enable(Status) -> [MenuItem]
+%%   Status = init  % when first message from Meta has arrived
+%%          | idle | break | exit | wait_break ¦ wait_running | running
+enable(init) -> [];
+enable(idle) -> ['Stop','Kill'];
+enable(break) -> ['Step','Next','Continue','Finish','Skip',
+		  'Kill','Messages'];
+enable(exit) -> [];
+enable(wait_break) -> ['Continue','Time Out','Kill'];
+enable(wait_running) -> ['Stop','Kill'];
+enable(running) -> ['Stop','Kill'].
 
-disable(new, exit) -> ['Kill'];
-disable(new, _Status) -> [];
-disable(old, first) ->
-    ['Step','Next','Continue','Finish','Skip', 'Time Out','Stop',
-     'Messages'];
-disable(old, break) -> enable(new, break) ++ ['Up', 'Down', 'Where'];
-disable(old, running) -> enable(new, running);
-disable(old, wait) -> ['Time Out', 'Stop'];
-disable(old, _Status) -> [].
+all_buttons() ->
+    ['Step','Next','Continue','Finish','Skip','Time Out','Stop',
+     'Kill','Messages','Back Trace','Where','Up','Down'].
 
 shortcut(s) -> {if_enabled, 'Step'};
 shortcut(n) -> {if_enabled, 'Next'};
@@ -612,10 +707,11 @@ map(false)               -> 'Stack Off'.
 
 
 %% gui_show_module(Win, Mod, Line, Cm, Pid, How) -> Win
+%% gui_show_module(Win, {Mod,Line}, _Reason, Cm, Pid, How) -> Win
+%%   How = where | break
 %% Show contents of a module in code area
-gui_show_module(Win, Mod, Line, Cm, Pid) ->
-    gui_show_module(Win, Mod, Line, Cm, Pid, break).
-
+gui_show_module(Win, {Mod,Line}, _Reason, Cm, Pid, How) ->
+    gui_show_module(Win, Mod, Line, Cm, Pid, How);
 gui_show_module(Win, Mod, Line, Mod, _Pid, How) ->
     dbg_ui_trace_win:mark_line(Win, Line, How);
 gui_show_module(Win, Mod, Line, _Cm, Pid, How) ->
@@ -633,44 +729,33 @@ gui_load_module(Win, Mod, Pid) ->
     Win2.
 
 gui_update_bindings(Meta) ->
-    gui_update_bindings(Meta, nostack).
-gui_update_bindings(Meta, Stack) ->
-    Sp = if
-	     Stack==nostack -> nostack;
-	     true -> {Cur,_Max} = Stack, Cur
-	 end,
-    Bs = int:meta(Meta, bindings, Sp),
+    Bs = int:meta(Meta, bindings, nostack),
     dbg_ui_trace_win:update_bindings(Bs).
 
-gui_enable_functions({Status,_,_}, {Status,_,_}) ->
-    ignore;
-gui_enable_functions({OldStatus,_,_}, {NewStatus,_,_}) ->
-    Enable = enable(old, OldStatus) ++ enable(new, NewStatus),
-    Disable = disable(old, OldStatus) ++ disable(new, NewStatus),
-    dbg_ui_trace_win:enable(Enable, true),
-    dbg_ui_trace_win:enable(Disable, false).
+gui_enable_functions(Status) ->
+    Enable = enable(Status),
+    Disable = all_buttons() -- Enable,
+    dbg_ui_trace_win:enable(Disable, false),
+    dbg_ui_trace_win:enable(Enable, true).
 
-gui_enable_updown(Flag, Stack, Where) ->
+gui_enable_updown(Flag, Stack) ->
     {Enable, Disable} =
 	if
 	    Flag==false -> {[], ['Up', 'Down']};
 	    true ->
 		case Stack of
-		    {0,0} -> {[], ['Up', 'Down']};
 		    {1,1} -> {[], ['Up', 'Down']};
-		    {1,_} -> {['Down'], ['Up']};
-		    {2,_} when Where==bottom -> {[], ['Up', 'Down']};
-		    {2,_} -> {['Down'], ['Up']};
-		    {_,_} when Where==bottom -> {['Up'], ['Down']};
-		    {C,M} when C>M -> {['Down'], ['Up']};
-		    {_,_} -> {['Up', 'Down'], []}
+		    {2,2} -> {[], ['Up', 'Down']};
+		    {Max,Max} -> {['Up'], ['Down']};
+		    {2,_Max} -> {['Down'], ['Up']};
+		    {_Cur,_Max} -> {['Up', 'Down'], []}
 		end
 	end,
     dbg_ui_trace_win:enable(Enable, true),
     dbg_ui_trace_win:enable(Disable, false),
-    case Enable of
-	[] -> dbg_ui_trace_win:enable(['Where'], false);
-	_L -> dbg_ui_trace_win:enable(['Where'], true)
+    if
+	Enable==[] -> dbg_ui_trace_win:enable(['Where'], false);
+	true -> dbg_ui_trace_win:enable(['Where'], true)
     end.
 
 gui_enable_btrace(Trace, StackTrace) ->

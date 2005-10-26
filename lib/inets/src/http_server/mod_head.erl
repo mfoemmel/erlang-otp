@@ -21,12 +21,10 @@
 -include("httpd.hrl").
 
 -define(VMODULE,"HEAD").
--include("httpd_verbosity.hrl").
 
 %% do
 
 do(Info) ->
-    ?vtrace("do",[]),
     case Info#mod.method of
 	"HEAD" ->
 	    case httpd_util:key1search(Info#mod.data,status) of
@@ -53,13 +51,9 @@ do(Info) ->
     end.
 
 do_head(Info) -> 
-    ?vtrace("do_head -> entry with"
-	    "~n   URI: ~p",[Info#mod.request_uri]),
     Path = mod_alias:path(Info#mod.data,
 			  Info#mod.config_db,
 			  Info#mod.request_uri),
-    ?vtrace("do_head -> "
-	    "~n   Path: ~s", [Path]),
     Suffix = httpd_util:suffix(Path),
     %% Does the file exists?
     case file:read_file_info(Path) of

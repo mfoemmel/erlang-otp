@@ -141,8 +141,8 @@ log_to_txt(Log, FileName, Dir, Mibs, TextFile, Start, Stop)
 	    "~n   Stop:     ~p", 
 	    [Log, FileName, Dir, Mibs, TextFile, Start, Stop]),
     File = filename:join(Dir, FileName),
-    Converter = fun() ->
-			do_log_to_file(Log, TextFile, Mibs, Start, Stop)
+    Converter = fun(L) ->
+			do_log_to_file(L, TextFile, Mibs, Start, Stop)
 		end,
     log_convert(Log, File, Converter).
 
@@ -158,8 +158,8 @@ log_to_io(Log, FileName, Dir, Mibs, Start) ->
 log_to_io(Log, FileName, Dir, Mibs, Start, Stop) 
   when list(Mibs) ->
     File = filename:join(Dir, FileName),
-    Converter = fun() ->
-			do_log_to_io(Log, Mibs, Start, Stop)
+    Converter = fun(L) ->
+			do_log_to_io(L, Mibs, Start, Stop)
 		end,
     log_convert(Log, File, Converter).
 
@@ -177,7 +177,7 @@ log_convert(Log, File, Converter) ->
     %% a runtime error.
     case is_owner(Log) of
 	true ->
-	    Converter();
+	    Converter(Log);
 	false ->
 	    %% Not yet member of the ruling party, apply for membership...
 	    %% If a log is opened as read_write it is not possible to 
@@ -186,11 +186,11 @@ log_convert(Log, File, Converter) ->
 	    Log2 = convert_name(Log),
 	    case log_open(Log2, File) of
 		{ok, _} ->
-		    Res = Converter(),
+		    Res = Converter(Log2),
 		    disk_log:close(Log2),
 		    Res;
 		{error, {name_already_open, _}} ->
-                    Converter();
+                    Converter(Log2);
                 {error, Reason} ->
                     {error, {Log, Reason}}
 	    end
@@ -199,9 +199,9 @@ log_convert(Log, File, Converter) ->
 convert_name(Name) when list(Name) ->
     Name ++ "_tmp";
 convert_name(Name) when atom(Name) ->
-    list_to_atom(atom_to_list(Name) ++ "_txt");
+    list_to_atom(atom_to_list(Name) ++ "_tmp");
 convert_name(Name) ->
-    lists:flatten(io_lib:format("~w_txt", [Name])).
+    lists:flatten(io_lib:format("~w_tmp", [Name])).
 
 
 %% -- do_log_to_text ---
@@ -241,7 +241,20 @@ do_log_to_io(Log, Mibs, Start, Stop) ->
 
 loop(eof, _Log, _Write) ->
     ok;
+loop({error, _} = Error, _Log, _Write) ->
+    Error;
+loop({corrupt_log_file, _} = Reason, _Log, _Write) ->
+    {error, Reason};
 loop({Cont, Terms}, Log, Write) ->
+    case (catch lists:foreach(Write, Terms)) of
+	{'EXIT', Reason} ->
+	    {error, Reason};
+	_ ->
+	    loop(disk_log:chunk(Log, Cont), Log, Write)
+    end;
+loop({Cont, Terms, BadBytes}, Log, Write) ->
+    error_logger:error_msg("Skipping ~w bytes while converting ~p~n~n", 
+			   [BadBytes, Log]),
     case (catch lists:foreach(Write, Terms)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};

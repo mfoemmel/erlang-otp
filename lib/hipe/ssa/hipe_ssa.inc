@@ -628,7 +628,7 @@ insertRenamedParams([], Current, Result) ->
 %%
 check(CFG) ->
   Labels  = ?CFG:labels(CFG),
-  VarTree = traverse_labels(Labels,CFG),
+  VarTree = traverse_labels(Labels, CFG),
   DomTree = hipe_dominators:domTree_create(CFG),
   test_uses(Labels, VarTree, DomTree, CFG).
 
@@ -715,9 +715,20 @@ test_code([Instr|Instrs], VarTree, Label, DomTree, CFG, Old) ->
   case ?CODE:is_phi(Instr) of
     true ->
       ArgList = ?CODE:phi_arglist(Instr),
+      case ArgList of
+	[_Arg] ->
+	  ?WARNING_MSG("Phi with only one source at BB with label ~w:\n",
+		       [Label]),
+	  %% case ?CODE of
+	  %%   hipe_rtl -> ?CODE:pp_block(get_code_from_label(CFG, Label));
+	  %%   _ -> ok
+	  %% end,
+	  ok;
+	[_|_] -> ok
+      end,
       [def_doms_use([Var], VarTree, Pred, DomTree,
 		    get_code_from_label(CFG,Pred)) || {Pred,Var} <- ArgList];
-    _ ->
+    false ->
       Uses = uses_to_rename(Instr),
       def_doms_use(Uses, VarTree, Label, DomTree, Old)
   end,

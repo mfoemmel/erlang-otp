@@ -32,12 +32,17 @@ alloc(Defun, SpillLimit, SpillIndex, Options, RegAllocMod, TargetMod) ->
     [] -> %% No new temps, we are done.
       ?add_spills(Options, _NewSpillIndex),
       TempMap = hipe_temp_map:cols2tuple(Coloring, TargetMod),
-      {TempMap2, NewSpillIndex2} =
-	hipe_spill_minimize:stackalloc(
-	  CFG, [], SpillIndex, Options, TargetMod, TempMap),
-      Coloring2 =
-	hipe_spill_minimize:mapmerge(hipe_temp_map:to_substlist(TempMap),
-				     TempMap2),
+      {TempMap2, NewSpillIndex2} = 
+	hipe_spillmin:stackalloc(CFG, [], SpillIndex, Options, 
+				 TargetMod, TempMap),
+      Coloring2 = 
+	hipe_spillmin:mapmerge(hipe_temp_map:to_substlist(TempMap), TempMap2),
+      %% case proplists:get_bool(verbose_spills, Options) of
+      %%   true ->
+      %%     ?msg("Num spill slots used: ~p~n", [NewSpillIndex2-SpillIndex]);
+      %%   false ->
+      %%     ok
+      %% end,
       {NewDefun, Coloring2, NewSpillIndex2};
     _ ->
       %% Since SpillLimit is used as a low-water-mark

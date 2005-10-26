@@ -623,8 +623,12 @@ dir_info() ->
     end.
 
 ets_info([H|T]) ->
-    [{table, H, ets:info(H)} | ets_info(T)];
+    [{table, H, mk_info_tuple(ets:info(H))} | ets_info(T)];
 ets_info([]) -> [].
+
+mk_info_tuple(T) when is_list(T) ->
+    list_to_tuple(T);
+mk_info_tuple(T) -> T.
 
 relatives() ->
     Info = fun(Name) ->

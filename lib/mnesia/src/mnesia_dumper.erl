@@ -522,21 +522,24 @@ insert_op(Tid, _, {op, restore_recreate, TabDef}, InPlace, InitBy) ->
     Tab = Cs#cstruct.name,
     Type = Cs#cstruct.type,
     Storage = mnesia_lib:cs_to_storage_type(node(), Cs),
-    %% Delete all possbibly existing files and tables
+    %% Delete all possibly existing files and tables
     disc_delete_table(Tab, Storage),
     disc_delete_indecies(Tab, Cs, Storage),
     case InitBy of
 	startup ->
 	    ignore;
 	_ ->
-	    mnesia_schema:ram_delete_table(Tab, Storage),
-	    mnesia_checkpoint:tm_del_copy(Tab, node())
+	    case ?catch_val({Tab, cstruct}) of
+		{'EXIT', _} -> ignore;
+		_ ->
+		    mnesia_schema:ram_delete_table(Tab, Storage),
+		    mnesia_checkpoint:tm_del_copy(Tab, node())
+	    end
     end,
-    %%    delete_cstruct(Tid, Cs, InPlace, InitBy),     
     %% And create new ones..
     if
 	(InitBy == startup) or (Storage == unknown) ->
-	    ignore;	
+	    ignore;
 	Storage == ram_copies ->
 	    Args = [{keypos, 2}, public, named_table, Type],
 	    mnesia_monitor:mktab(Tab, Args);
@@ -760,6 +763,7 @@ insert_op(Tid, _, {op, add_index, Pos, TabDef}, InPlace, InitBy) ->
     Storage = mnesia_lib:cs_to_storage_type(node(), Cs),
     case InitBy of
 	startup when Storage == disc_only_copies ->
+	    true = open_files(Tab, Storage, InPlace, InitBy),
 	    mnesia_index:init_indecies(Tab, Storage, [Pos]);
 	startup ->
 	    ignore; 

@@ -20,6 +20,7 @@
 %% External exports
 -export([init/0]).
 -export([create_win/3, get_window/1,
+	 show_option/3,
 	 enable/2, is_enabled/1, select/2,
 	 add_module/3, delete_module/2,
 	 add_process/6, update_process/4, clear_processes/1,
@@ -41,7 +42,14 @@
 
 		  modules=[],   % [#moduleInfo{}] Known modules
 		  processes=[], % [#procInfo{}] Known processes
-		  breaks=[]     % [#breakInfo{}] Known breakpoints
+		  breaks=[],    % [#breakInfo{}] Known breakpoints
+
+		  listbox,      % gsobj() Listinng known modules
+		  fbutton,      % showing Auto Attach option
+		  bbutton,      %  - " -
+		  ebutton,      %  - " -
+		  slabel,       % showing Stack Trace option
+		  blabel        % showing Back Trace Size
 		 }).
 
 %%====================================================================
@@ -57,9 +65,16 @@ init() ->
 %%   Title = string()
 %%   Menus = [menu()]  See dbg_ui_win.erl
 %%--------------------------------------------------------------------
+
+-define(PAD, 5).
+-define(Wf, 150).
+-define(Wg, 770).
+-define(W, 800).
+-define(H, 390).
+
 create_win(GS, Title, Menus) ->
     Win = gs:window(GS, [{title, Title},
-			 {width, 780}, {height, 390},
+			 {width, ?W}, {height, ?H},
 			 {configure,true}, {destroy,true},
 			 {keypress,true}, {motion,true}]),
 
@@ -67,19 +82,61 @@ create_win(GS, Title, Menus) ->
     dbg_ui_win:create_menus(MenuBar, Menus),
     dbg_ui_winman:windows_menu(MenuBar),
 
-    Grid = gs:grid(Win, [{x, 5}, {y, 30}, {width, 770}, {height, 348},
+    Font = dbg_ui_win:font(normal),
+
+    Frame = gs:frame(Win, [{x, ?PAD}, {y, 30},
+			   {width, ?Wf}, {height, ?H}]),
+    Hlb = 200,
+    Listbox = gs:listbox(Frame, [{x, 0}, {y, 0},
+				 {width, ?Wf}, {height, Hlb},
+				 {data, listbox},
+				 {doubleclick, true},
+				 {items, []}]),
+    gs:label(Frame, [{x, 0}, {y, Hlb}, {width, ?Wf}, {height, 20},
+		     {align, w},
+		     {label, {text, "Auto Attach:"}}, {font, Font}]),
+    Fbtn = gs:checkbutton(Frame, [{x, 0}, {y, Hlb+20},
+				  {width, ?Wf}, {height, 20},
+				  {enable, false}, {select, false},
+				  {align, w},
+				  {label, {text, "First Call"}},
+				  {font, Font}]),
+    Bbtn = gs:checkbutton(Frame, [{x, 0}, {y, Hlb+40},
+				  {width, ?Wf}, {height, 20},
+				  {enable, false}, {select, false},
+				  {align, w},
+				  {label, {text, "On Break"}},
+				  {font, Font}]),
+    Ebtn = gs:checkbutton(Frame, [{x, 0}, {y, Hlb+60},
+				  {width, ?Wf}, {height, 20},
+				  {enable, false}, {select, false},
+				  {align, w},
+				  {label, {text, "On exit"}},
+				  {font, Font}]),
+    SLabel = gs:label(Frame, [{x, 0}, {y, Hlb+80},
+			      {width, ?Wf}, {height, 40},
+			      {font, Font}, {align, w}]),
+    BLabel = gs:label(Frame, [{x, 0}, {y, Hlb+120},
+			      {width, ?Wf}, {height, 40},
+			      {font, Font}, {align, w}]),
+
+    Grid = gs:grid(Win, [{x, 2*?PAD+?Wf}, {y, 30},
+			 {width, ?W-(2*?PAD+?Wf)}, {height, ?H-30},
 			 {bg, grey}, {fg, black},
 			 {vscroll, right}, {hscroll, bottom},
-			 calc_columnwidths(770),
+			 calc_columnwidths(?Wg),
 			 {rows, {1,?default_rows}}]),
     gs:gridline(Grid, [{row, 1}, {bw, 5}, {fg, blue},
-		       {font, dbg_ui_win:font(normal)},
+		       {font, Font},
 		       {text, {1,"Pid"}}, {text, {2,"Initial Call"}},
 		       {text, {3,"Name"}}, {text, {4,"Status"}},
 		       {text, {5,"Information"}}]),
 
     gs:config(Win, {map, true}),
-    #winInfo{window=Win, grid=Grid, row=1, focus=0}.
+    #winInfo{window=Win, grid=Grid, row=1, focus=0,
+	     listbox=Listbox,
+	     fbutton=Fbtn, bbutton=Bbtn, ebutton=Ebtn,
+	     slabel=SLabel, blabel=BLabel}.
 
 %%--------------------------------------------------------------------
 %% get_window(WinInfo) -> Window
@@ -88,6 +145,51 @@ create_win(GS, Title, Menus) ->
 %%--------------------------------------------------------------------
 get_window(WinInfo) ->
     WinInfo#winInfo.window.
+
+%%--------------------------------------------------------------------
+%% show_option(WinInfo, Option, Value) -> void()
+%%   WinInfo = #winInfo{}
+%%   Option = auto_attach | stack_trace | back_trace
+%%   Value = [Flag]                          % Option==auto_attach
+%%             Flag = init | break | exit
+%%         | true | all | no_tail | false    % Option==stack_trace
+%%         | int()                           % Option==back_trace
+%%--------------------------------------------------------------------
+show_option(WinInfo, Option, Value) ->
+    case Option of
+
+	auto_attach ->
+	    lists:foreach(fun (Button) ->
+				  gs:config(Button, {select, false})
+			  end,
+			  option_buttons(WinInfo, [init, break, exit])),
+	    lists:foreach(fun (Button) ->
+				  gs:config(Button, {select, true})
+			  end,
+			  option_buttons(WinInfo, Value));
+
+	stack_trace ->
+	    Text = case Value of
+		       all ->     "Stack Trace:\n On (with tail)";
+		       true ->    "Stack Trace:\n On (with tail)";
+		       no_tail -> "Stack Trace:\n On (no tail)";
+		       false ->   "Stack Trace:\n Off"
+		   end,
+	    gs:config(WinInfo#winInfo.slabel, {label, {text, Text}});
+
+	back_trace ->
+	    Text = "Back Trace Size:\n " ++ integer_to_list(Value),
+	    gs:config(WinInfo#winInfo.blabel, {label, {text, Text}})
+    end.
+
+option_buttons(WinInfo, [init|Flags]) ->
+    [WinInfo#winInfo.fbutton|option_buttons(WinInfo, Flags)];
+option_buttons(WinInfo, [break|Flags]) ->
+    [WinInfo#winInfo.bbutton|option_buttons(WinInfo, Flags)];
+option_buttons(WinInfo, [exit|Flags]) ->
+    [WinInfo#winInfo.ebutton|option_buttons(WinInfo, Flags)];
+option_buttons(_WinInfo, []) ->
+    [].
 
 %%--------------------------------------------------------------------
 %% enable([MenuItem], Bool)
@@ -124,13 +226,21 @@ add_module(WinInfo, Menu, Mod) ->
 	{value, _ModInfo} -> WinInfo;
 	false ->
 	    %% Create a menu for the module
+	    Font = dbg_ui_win:font(normal),
 	    MenuBtn = gs:menuitem(Menu, [{label, {text,Mod}},
-				 {itemtype, cascade}]),
+					 {font, Font},
+					 {itemtype, cascade}]),
 	    SubMenu = gs:menu(MenuBtn, []),
 	    gs:menuitem(SubMenu, [{label, {text,"View"}},
+				  {font, Font},
 				  {data, {module,Mod,view}}]),
 	    gs:menuitem(SubMenu, [{label, {text,"Delete"}},
+				  {font, Font},
 				  {data, {module,Mod,delete}}]),
+
+	    %% Add the module to the listbox
+	    gs:config(WinInfo#winInfo.listbox, {add, Mod}),
+
 	    ModInfo = #moduleInfo{module=Mod, menubtn=MenuBtn},
 	    WinInfo#winInfo{modules=[ModInfo | Modules]}
     end.
@@ -144,8 +254,17 @@ delete_module(WinInfo, Mod) ->
     {value, ModInfo} = lists:keysearch(Mod, #moduleInfo.module,
 				       WinInfo#winInfo.modules),
     gs:destroy(ModInfo#moduleInfo.menubtn),
+    delete_module(WinInfo#winInfo.listbox, atom_to_list(Mod), 0),
     WinInfo#winInfo{modules=lists:keydelete(Mod, #moduleInfo.module,
 					    WinInfo#winInfo.modules)}.
+
+delete_module(Listbox, ModS, Index) ->
+    case gs:read(Listbox, {get, Index}) of
+	ModS ->
+	    gs:config(Listbox, {del, Index});
+	_OtherModS ->
+	    delete_module(Listbox, ModS, Index+1)
+    end.
 
 %%--------------------------------------------------------------------
 %% add_process(WinInfo, Pid, Name, Function, Status, Info) -> WinInfo
@@ -161,13 +280,14 @@ add_process(WinInfo, Pid, Name, {Mod,Func,Args}, Status, Info) ->
     Row = (WinInfo#winInfo.row)+1,
     GridLine = case gs:read(Grid, {obj_at_row, Row}) of
 		   undefined ->
-		       if Row>?default_rows -> gs:config(Grid,[{rows,{1,Row}}]);
+		       if Row>?default_rows ->
+			       gs:config(Grid,[{rows,{1,Row}}]);
 			  true -> ok
 		       end,
-		       gs:gridline(Grid, [{row, Row}, {bw, 5}, {fg, black},
-					  {font, dbg_ui_win:font(normal)},
-					  {click, true},
-					  {doubleclick, true}]);
+		       gs:gridline(Grid,[{row,Row}, {bw,5}, {fg,black},
+					 {font,dbg_ui_win:font(normal)},
+					 {click, true},
+					 {doubleclick, true}]);
 		   GSObj ->
 		       GSObj
 	       end,
@@ -345,6 +465,10 @@ handle_event({gs, _Id, click, {break, Point, What}, _Arg}, _WinInfo) ->
 handle_event({gs, _Id, click, {module, Mod, What}, _Arg}, _WinInfo) ->
     {module, Mod, What};
 
+%% Listbox
+handle_event({gs, _Id, doubleclick, listbox, [_Index, ModS|_]}, _WI) ->
+    {module, list_to_atom(ModS), view};
+
 %% Process grid
 handle_event({gs, _Id, keypress, _Data, [Key|_]}, WinInfo) when
   Key=='Up'; Key=='Down' ->
@@ -397,23 +521,24 @@ highlight(WinInfo, Row) ->
 
 configure(WinInfo, {W, H}) ->
     Grid = WinInfo#winInfo.grid,
-    Dx = abs(W - gs:read(Grid, width)-4),
-    Dy = abs(H - gs:read(Grid, height)-42),
+    NewW = W - (2*?PAD+?Wf),
+    Dx = NewW - gs:read(Grid, width),
+    Dy = H-42 - gs:read(Grid, height),
     if
 	(Dx+Dy)=/=0 ->
-	    gs:config(Grid, [{width, W-4}, {height, H-42}]),
-	    Cols = calc_columnwidths(W-6),
+	    gs:config(Grid, [{width, NewW}, {height, H-30}]),
+	    Cols = calc_columnwidths(NewW),
 	    gs:config(Grid, Cols);
 	true ->
 	    ok
     end.
 
 calc_columnwidths(Width) ->
-    if
-	Width=<770 -> 
-	    {columnwidths, [109, 215, 146, 150, 400]};
-	true -> 
-	    S = Width/770,
-	    {columnwidths, [round(109*S), round(215*S), round(146*S), 
-			    round(150*S), round(400*S)]}
-    end.
+    W = if
+	    Width=<?Wg -> ?Wg;
+	    true -> Width
+	end,
+    First = lists:map(fun (X) -> round(X) end,
+		      [0.13*W, 0.27*W, 0.18*W, 0.18*W]),
+    Last = W - lists:sum(First) - 30,
+    {columnwidths, First++[Last]}.

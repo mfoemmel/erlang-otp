@@ -24,9 +24,10 @@
 %% User interface
 -export([
 	 %% Management API
-	 start/1, 
-	 start_link/1, 
+	 start/0, start/1, 
+	 start_link/0, start_link/1, 
 	 stop/0, 
+	 monitor/0, demonitor/1, 
 
 	 load_mib/1, unload_mib/1, 
 	 which_mibs/0, 
@@ -51,6 +52,7 @@
 	 gn/3, gn/4, gn/5, gn/6, gn/7, 
 	 agn/3, agn/4, agn/5, agn/6, agn/7, 
 	 gb/5, gb/6, gb/7, gb/8, gb/9, 
+	 agb/5, agb/6, agb/7, agb/8, agb/9, 
 	 s/3, s/4, s/5, s/6, s/7, 
 	 as/3, as/4, as/5, as/6, as/7, 
 	 cancel_async_request/2, 
@@ -68,14 +70,18 @@
 	 system_start_time/0,
 	 sys_up_time/0,
 
+	 info/0, 
 	 verbosity/2 
 	]).
+
+-export([format_reason/1, format_reason/2]).
 
 %% Application internal export
 -export([start_link/3]).
 
 
 -include("snmpm_atl.hrl").
+-include("snmp_types.hrl").
 
 -define(DEFAULT_AGENT_PORT, 161).
 -define(DEFAULT_CONTEXT,    "").
@@ -87,6 +93,27 @@ start_link(Opts, normal, []) ->
     start_link(Opts).
 
 
+simple_conf() ->
+    Vsns      = [v1, v2, v3],
+    {ok, Cwd} = file:get_cwd(),
+    %% Check if the manager config file exist, if not create it
+    MgrConf = filename:join(Cwd, "manager.conf"),
+    case file:read_file_info(MgrConf) of
+	{ok, _} ->
+	    ok;
+	_ ->
+	    ok = snmp_config:write_manager_config(Cwd, "", 
+						  [{port, 5000},
+						   {engine_id, "mgrEngine"},
+						   {max_message_size, 484}])
+    end,
+    Conf = [{dir, Cwd}, {db_dir, Cwd}],
+    [{versions, Vsns}, {config, Conf}].
+    
+%% Simple start. Start a manager with default values.
+start_link() ->
+    start_link(simple_conf()).
+
 %% This function is normally not used. Instead the manager is
 %% started as a consequence of a call to application:start(snmp)
 %% when {snmp, [{manager, Options}]} is present in the
@@ -97,6 +124,10 @@ start_link(Opts) ->
     {ok, _} = snmpm_supervisor:start_link(normal, Opts),
     ok.
 
+%% Simple start. Start a manager with default values.
+start() ->
+    start(simple_conf()).
+    
 start(Opts) ->
     %% This start the manager top supervisor, which in turn
     %% starts the other processes.
@@ -107,6 +138,13 @@ start(Opts) ->
 stop() ->
     snmpm_supervisor:stop().
 
+
+monitor() ->
+    erlang:monitor(process, snmpm_supervisor).
+
+demonitor(Ref) ->
+    erlang:demonitor(Ref).
+		
 
 %% -- Mibs --
 
@@ -129,6 +167,12 @@ name_to_oid(Name) ->
 %% Get the aliasname for an oid
 oid_to_name(Oid) ->
     snmpm_config:oid_to_name(Oid).
+
+
+%% -- Info -- 
+
+info() ->
+    snmpm_server:info().
 
 
 %% -- Verbosity -- 
@@ -505,6 +549,51 @@ gb(UserId, Addr, Port, NonRep, MaxRep, CtxName, Oids, Timeout, ExtraInfo) ->
 			       NonRep, MaxRep, CtxName, Oids, Timeout,
 			       ExtraInfo).
 
+%% asynchroneous get-bulk
+%% 
+agb(UserId, Addr, NonRep, MaxRep, Oids) ->
+    snmpm_server:async_get_bulk(UserId, Addr, ?DEFAULT_AGENT_PORT, 
+				NonRep, MaxRep, 
+				?DEFAULT_CONTEXT, Oids).
+
+agb(UserId, Addr, Port, NonRep, MaxRep, Oids) 
+  when integer(Port), integer(NonRep), integer(MaxRep), list(Oids) ->
+    snmpm_server:async_get_bulk(UserId, Addr, Port, 
+				NonRep, MaxRep, ?DEFAULT_CONTEXT, Oids);
+agb(UserId, Addr, NonRep, MaxRep, CtxName, Oids) 
+  when integer(NonRep), integer(MaxRep), list(CtxName), list(Oids) ->
+    snmpm_server:async_get_bulk(UserId, Addr, ?DEFAULT_AGENT_PORT, 
+				NonRep, MaxRep, CtxName, Oids);
+agb(UserId, Addr, NonRep, MaxRep, Oids, Expire) 
+  when integer(NonRep), integer(MaxRep), list(Oids), integer(Expire) ->
+    agb(UserId, Addr, ?DEFAULT_AGENT_PORT, 
+       NonRep, MaxRep, ?DEFAULT_CONTEXT, Oids, Expire).
+
+agb(UserId, Addr, Port, NonRep, MaxRep, CtxName, Oids) 
+  when integer(Port), integer(NonRep), integer(MaxRep), 
+       list(CtxName), list(Oids) ->
+    snmpm_server:async_get_bulk(UserId, Addr, Port, 
+				NonRep, MaxRep, CtxName, Oids);
+agb(UserId, Addr, Port, NonRep, MaxRep, Oids, Expire) 
+  when integer(Port), integer(NonRep), integer(MaxRep), 
+       list(Oids), integer(Expire) ->
+    agb(UserId, Addr, Port, 
+	NonRep, MaxRep, ?DEFAULT_CONTEXT, Oids, Expire);
+agb(UserId, Addr, NonRep, MaxRep, CtxName, Oids, Expire) 
+  when integer(NonRep), integer(MaxRep), 
+       list(CtxName), list(Oids), integer(Expire) ->
+    agb(UserId, Addr, ?DEFAULT_AGENT_PORT, 
+	NonRep, MaxRep, CtxName, Oids).
+
+agb(UserId, Addr, Port, NonRep, MaxRep, CtxName, Oids, Expire) ->
+    snmpm_server:async_get_bulk(UserId, Addr, Port, 
+				NonRep, MaxRep, CtxName, Oids, Expire).
+
+agb(UserId, Addr, Port, NonRep, MaxRep, CtxName, Oids, Expire, ExtraInfo) ->
+    snmpm_server:async_get_bulk(UserId, Addr, Port, 
+				NonRep, MaxRep, CtxName, Oids, Expire,
+				ExtraInfo).
+
 
 cancel_async_request(UserId, ReqId) ->
     snmpm_server:cancel_async_request(UserId, ReqId).
@@ -551,5 +640,248 @@ sys_up_time() ->
     % time in 0.01 seconds.
     StartTime = system_start_time(),
     (snmp_misc:now(cs) - StartTime) rem (2 bsl 31).
+
+
+%%%-----------------------------------------------------------------
+%%% This is just some simple utility functions to create a pretty-
+%%% printable string of the error reason received from either:
+%%% 
+%%%    * If any of the sync/async get/get-next/set/get-bulk
+%%%      returnes {error, Reason} 
+%%%    * The Reason parameter in the handle_error user callback 
+%%%      function
+%%% 
+%%%-----------------------------------------------------------------
+
+format_reason(Reason) ->
+    format_reason("", Reason).
+
+format_reason(Prefix, Reason) when is_integer(Prefix) and (Prefix >= 0) ->
+    format_reason(lists:duplicate(Prefix, $ ), Reason);
+format_reason(Prefix, Reason) when is_list(Prefix) ->
+    case (catch do_format_reason(Prefix, Reason)) of
+	FL when is_list(FL) ->
+	    FL;
+	_ ->
+	    %% Crap, try it without any fancy formatting
+	    case (catch io_lib:format("~sInternal manager error: ~n"
+				      "~s   ~p~n", 
+				      [Prefix, Prefix, Reason])) of
+		L1 when is_list(L1) ->
+		    lists:flatten(L1);
+		_ ->
+		    %% Really crap, try it without the prefix
+		    case (catch io_lib:format("Internal manager error: ~n"
+					      "   ~p~n", 
+					      [Reason])) of
+			L2 when is_list(L2) ->
+			    lists:flatten(L2);
+			_ ->
+			    %% Ok, I give up
+			    "Illegal input. Unable to format error reason"
+		    end
+	    end
+    end.
+		    
+
+do_format_reason(Prefix, {failed_generating_response, {RePdu, Reason}}) ->
+    FmtPdu = format_pdu(Prefix ++ "   ", RePdu),
+    lists:flatten(io_lib:format("~sFailed generating response: ~n"
+				"~s"
+				"~s   ~p~n", 
+				[Prefix, FmtPdu, Prefix, Reason]));
+do_format_reason(Prefix, {failed_processing_message, Reason})  ->
+    lists:flatten(io_lib:format("~sFailed processing message: ~n"
+				"~s   ~p~n", 
+				[Prefix, Prefix, Reason]));
+do_format_reason(Prefix, {unexpected_pdu, SnmpInfo})  ->
+    FmtSnmpInfo = format_snmp_info(Prefix ++ "   ", SnmpInfo),
+    lists:flatten(io_lib:format("~sUnexpected PDU: ~n~s", 
+				[Prefix, FmtSnmpInfo]));
+do_format_reason(Prefix, {send_failed, ReqId, Reason})  ->
+    lists:flatten(io_lib:format("~sSend failed: ~n"
+				"~s   Request id: ~w~n"
+				"~s   Reason:     ~p~n", 
+				[Prefix, Prefix, ReqId, Prefix, Reason]));
+do_format_reason(Prefix, {invalid_sec_info, SecInfo, SnmpInfo})  ->
+    FmtSecInfo  = format_sec_info(Prefix ++ "   ", SecInfo),
+    FmtSnmpInfo = format_snmp_info(Prefix ++ "   ", SnmpInfo),
+    lists:flatten(io_lib:format("~sInvalid security info: ~n"
+				"~s"
+				"~s", 
+				[Prefix, FmtSecInfo, FmtSnmpInfo]));
+do_format_reason(Prefix, Reason)  ->
+    lists:flatten(io_lib:format("~sInternal manager error: ~n"
+				"~s   ~p~n", [Prefix, Prefix, Reason])).
+
+format_pdu(Prefix, #pdu{type         = Type,
+			request_id   = ReqId,
+			error_status = ES,
+			error_index  = EI,
+			varbinds     = VBs}) ->
+    FmtPdyType   = format_pdu_type(Type),
+    FmtErrStatus = format_error_status(ES),
+    FmtErrIdx    = format_error_index(EI),
+    FmtVBs       = format_varbinds(Prefix ++ "   ", VBs),
+    lists:flatten(io_lib:format("~s~s: ~n"
+				"~s   Request-id:   ~w~n"
+				"~s   Error-status: ~s~n"
+				"~s   Error-index:  ~s~n"
+				"~s",
+				[Prefix, FmtPdyType,
+				 Prefix, ReqId, 
+				 Prefix, FmtErrStatus, 
+				 Prefix, FmtErrIdx, 
+				 FmtVBs]));
+format_pdu(Prefix, #trappdu{enterprise    = E,
+			    agent_addr    = AA,
+			    generic_trap  = GT,
+			    specific_trap = ST,
+			    time_stamp    = TS,
+			    varbinds      = VBs}) ->
+    FmtVBs = format_varbinds(Prefix ++ "   ", VBs),
+    lists:flatten(io_lib:format("~sTrap PDU: ~n"
+				"~s   Enterprise:    ~p~n"
+				"~s   Agent address: ~p~n"
+				"~s   Generic trap:  ~p~n"
+				"~s   Specific trap: ~p~n"
+				"~s   Time stamp:    ~p~n"
+				"~s",
+				[Prefix, 
+				 Prefix, E,
+				 Prefix, AA, 
+				 Prefix, GT, 
+				 Prefix, ST, 
+				 Prefix, TS, 
+				 FmtVBs]));
+format_pdu(Prefix, PDU) ->
+    lists:flatten(io_lib:format("~s~p~n", [Prefix, PDU])).
+
+format_pdu_type('get-request') ->
+    "GetRequest-PDU";
+format_pdu_type('get-next-request') ->
+    "GetNextRequest-PDU";
+format_pdu_type('get-response') ->
+    "Response-PDU";
+format_pdu_type('set-request') ->
+    "SetRequest-PDU";
+format_pdu_type('get-bulk-request') ->
+    "GetBulkRequest-PDU";
+format_pdu_type('inform-request') ->
+    "InformRequest-PDU";
+format_pdu_type('snmpv2-trap') ->
+    "SNMPv2-Trap-PDU";
+format_pdu_type(report) ->
+    "Report-PDU";
+format_pdu_type(T) ->
+    lists:flatten(io_lib:format("~p", [T])).
+    
+format_snmp_info(Prefix, {ES, EI, VBs}) ->
+    lists:flatten(io_lib:format("~sSNMP info: ~n"
+				"~s   Error-status: ~s~n"
+				"~s   Error-index:  ~s~n"
+				"~s",
+				[Prefix, 
+				 Prefix, format_error_status(ES),
+				 Prefix, format_error_index(EI),
+				 format_varbinds(Prefix ++ "   ", VBs)]));
+format_snmp_info(Prefix, JunkSnmpInfo) ->
+    lists:flatten(io_lib:format("~sJunk SNMP info: ~n"
+				"~s   ~p~n",
+				[Prefix, Prefix, JunkSnmpInfo])).
+
+format_error_status(ES) ->
+    lists:flatten(io_lib:format("~p", [ES])).
+
+format_error_index(EI) ->
+    lists:flatten(io_lib:format("~p", [EI])).
+
+format_sec_info(Prefix, Info) ->
+    FmtSecInfo = do_format_sec_info(Prefix ++ "   ", Info),
+    lists:flatten(io_lib:format("~sSecurity info: ~n~s", 
+				[Prefix, FmtSecInfo])).
+
+do_format_sec_info(_Prefix, []) ->
+    "";
+do_format_sec_info(Prefix, [{Tag, ExpVal, Val}|T]) ->
+    format_sec_info(Prefix, Tag, ExpVal, Val) ++
+	do_format_sec_info(Prefix, T).
+
+
+format_sec_info(_Prefix, _Tag, Val, Val) ->
+    "";
+format_sec_info(Prefix, Tag, ExpVal, Val) ->
+    lists:flatten(io_lib:format("~s~s:~n"
+				"~s   Expected value: ~p~n"
+				"~s   Actual value:   ~p~n",
+				[Prefix, format_sec_info_tag(Tag),
+				 Prefix, ExpVal,
+				 Prefix, Val])).
+
+format_sec_info_tag(sec_engine_id) ->
+    "Sec engine id";
+format_sec_info_tag(msg_sec_model) ->
+    "Msg sec model";
+format_sec_info_tag(sec_name) ->
+    "Sec name";
+format_sec_info_tag(sec_level) ->
+    "Sec level";
+format_sec_info_tag(ctx_engine_id) ->
+    "Context engine id";
+format_sec_info_tag(ctx_name) ->
+    "Context name";
+format_sec_info_tag(request_id) ->
+    "Request id";
+format_sec_info_tag(T) ->
+    lists:flatten(io_lib:format("~p", [T])).
+
+format_varbinds(Prefix, []) ->
+    lists:flatten(io_lib:format("~sVarbinds:    []~n", [Prefix])); 
+format_varbinds(Prefix, VBs) when list(VBs) ->
+    lists:flatten(io_lib:format("~sVarbinds: ~n~s", 
+				[Prefix, format_vbs(Prefix ++ "   ", VBs)]));
+format_varbinds(Prefix, VBs) ->
+    lists:flatten(io_lib:format("~sInvalid varbinds: ~n"
+				"~s   ~p~n", 
+				[Prefix, Prefix, VBs])).
+
+format_vbs(_Prefix, []) ->
+    "";
+format_vbs(Prefix, [VB|VBs]) ->
+    format_vb(Prefix, VB) ++ format_vbs(Prefix, VBs).
+    
+format_vb(Prefix, #varbind{oid          = Oid0,
+			   variabletype = Type,
+			   value        = Val,
+			   org_index    = Idx}) ->
+    Oid = 
+	case snmpm:oid_to_name(Oid0) of
+	    {ok, O} ->
+		O;
+	    _ ->
+		Oid0
+	end,
+    FmtVT  = format_vb_variabletype(Prefix ++ "   ", Type),
+    FmtVal = format_vb_value(Prefix ++ "   ", Type, Val),
+    lists:flatten(io_lib:format("~s~w:~n"
+				"~s"
+				"~s"
+				"~s   Org-index:     ~p~n", 
+				[Prefix, Oid, 
+				 FmtVT, 
+				 FmtVal, 
+				 Prefix, Idx]));
+format_vb(Prefix, JunkVB) ->
+    lists:flatten(io_lib:format("~sJunk varbind:~n"
+				"~s   ~p~n", [Prefix, Prefix, JunkVB])).
+
+format_vb_variabletype(Prefix, Type) when is_atom(Type) ->
+    lists:flatten(io_lib:format("~sVariable-type: ~s~n", 
+				[Prefix, atom_to_list(Type)]));
+format_vb_variabletype(Prefix, Type) ->
+    lists:flatten(io_lib:format("~sVariable-type: ~p~n", [Prefix, Type])).
+
+format_vb_value(Prefix, _Type, Val) ->
+    lists:flatten(io_lib:format("~sValue:         ~p~n", [Prefix, Val])).
 
 

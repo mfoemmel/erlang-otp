@@ -355,9 +355,9 @@ loop(#state{reqs = Reqs, acks = Acks, timeout = Timeout} = S, _To) ->
 %% The request is itself larger then the max size, so first send 
 %% everything we have stored in one message, and then the new request
 %% in another. 
-%% Note that it does not matter if we with this request was the 
-%% passed the maxcount limit
-%% Note that this message cannot be a re-send since, this
+%% Note that it does not matter if we with this request 
+%% passed the maxcount limit.
+%% Note that this message cannot be a re-sent, since 
 %% such a request would have been stored, but sent immediatly.
 handle_send_req(Tid, Req, 
 		#state{conn_handle = CH, 
@@ -434,7 +434,7 @@ handle_send_reqs(Tids, Reqs0, #state{conn_handle = CH,
 	    ?d("handle_send_reqs -> not sent:"
 		"~n   NewReqSz:        ~w"
 		"~n   length(NewReqs): ~w", [NewReqSz, length(NewReqs)]),
-	    {S#state{req_sz = NewReqSz, reqs = NewReqs}, true}
+	    {S#state{req_sz = NewReqSz, reqs = NewReqs}, false}
     end.
     
 merge_tids_and_reqs([], [], Reqs) ->

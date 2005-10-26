@@ -42,8 +42,6 @@
 -module(mod_security_server).
 
 -include("httpd.hrl").
--include("httpd_verbosity.hrl").
-
 
 -behaviour(gen_server).
 
@@ -61,13 +59,10 @@
 	 check_blocked_user/5]).
 
 %% gen_server exports
--export([start_link/3, 
-	 init/1, 
+-export([start_link/2, init/1, 
 	 handle_info/2, handle_call/3, handle_cast/2, 
 	 terminate/2,
 	 code_change/3]).
-
--export([verbosity/3]).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -81,13 +76,9 @@
 %% NOTE: This is called by httpd_misc_sup when the process is started
 %% 
 
-start_link(Addr, Port, Verbosity) ->
-    ?vtrace("start_link -> entry with"
-	    "~n   Addr: ~p"
-	    "~n   Port: ~p", [Addr, Port]),
+start_link(Addr, Port) ->
     Name = make_name(Addr, Port),
-    gen_server:start_link({local, Name}, ?MODULE, [Verbosity],
-			  [{timeout, infinity}]).
+    gen_server:start_link({local, Name}, ?MODULE, [], [{timeout, infinity}]).
 
 
 %% start/2
@@ -97,14 +88,7 @@ start(Addr, Port) ->
     Name = make_name(Addr, Port),
     case whereis(Name) of
 	undefined ->
-	    Verbosity = get(security_verbosity),
-	    case httpd_misc_sup:start_sec_server(Addr, Port, Verbosity) of
-		{ok, Pid} ->
-		    put(security_server, Pid),
-		    ok;
-		Error ->
-		    exit({failed_start_security_server, Error})
-	    end;
+	   httpd_misc_sup:start_sec_server(Addr, Port);
 	_ -> %% Already started...
 	    ok
     end.
@@ -123,14 +107,6 @@ stop(Addr, Port) ->
 	    httpd_misc_sup:stop_sec_server(Addr, Port)
     end.
 
-
-%% verbosity
-
-verbosity(Addr, Port, Verbosity) ->
-    Name = make_name(Addr, Port),
-    Req  = {verbosity, Verbosity},
-    call(Name, Req).
-    
 
 %% list_blocked_users
 
@@ -229,75 +205,35 @@ check_blocked_user(Info, User, SDirData, Addr, Port) ->
 %%                                                                  %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% init
-
-init([undefined]) ->
-    init([?default_verbosity]);
-init([Verbosity]) ->
-    ?DEBUG("init -> entry with Verbosity: ~p",[Verbosity]),
+init(_) ->
     process_flag(trap_exit, true),
-    put(sname, sec),
-    put(verbosity, Verbosity),
-    ?vlog("starting",[]),
     {ok, []}.
 
-
-%% handle_call
-
 handle_call(stop, _From, _Tables) ->
-    ?vlog("stop",[]),
     {stop, normal, ok, []};
 
-
-handle_call({verbosity,Verbosity}, _From, Tables) ->
-    ?vlog("set verbosity to ~p",[Verbosity]),
-    OldVerbosity = get(verbosity),
-    put(verbosity,Verbosity),
-    ?vdebug("old verbosity: ~p",[OldVerbosity]),
-    {reply,OldVerbosity,Tables};
-
-
 handle_call({block_user, User, Addr, Port, Dir, Time}, _From, Tables) ->
-    ?vlog("block user '~p' for ~p",[User,Dir]),
     Ret = block_user_int({User, Addr, Port, Dir, Time}),
-    ?vdebug("block user result: ~p",[Ret]),
     {reply, Ret, Tables};
-
 
 handle_call({list_blocked_users, Addr, Port, Dir}, _From, Tables) ->
-    ?vlog("list blocked users for ~p",[Dir]),
     Blocked = list_blocked(Tables, Addr, Port, Dir, []),
-    ?vdebug("list blocked users: ~p",[Blocked]),
     {reply, Blocked, Tables};
 
-
 handle_call({unblock_user, User, Addr, Port, Dir}, _From, Tables) ->
-    ?vlog("unblock user '~p' for ~p",[User,Dir]),
     Ret = unblock_user_int({User, Addr, Port, Dir}),
-    ?vdebug("unblock user result: ~p",[Ret]),
     {reply, Ret, Tables};
 
-
 handle_call({list_auth_users, Addr, Port, Dir}, _From, Tables) ->
-    ?vlog("list auth users for ~p",[Dir]),
     Auth = list_auth(Tables, Addr, Port, Dir, []),
-    ?vdebug("list auth users result: ~p",[Auth]),
     {reply, Auth, Tables};
-
 
 handle_call({new_table, Addr, Port, Name}, _From, Tables) ->
     case lists:keysearch(Name, 1, Tables) of
 	{value, {Name, {Ets, Dets}}} ->
-	    ?DEBUG("handle_call(new_table) -> we already have this table: ~p",
-		   [Name]),
-	    ?vdebug("new table; we already have this one: ~p",[Name]),
 	    {reply, {ok, {Ets, Dets}}, Tables};
 	false ->
-	    ?LOG("handle_call(new_table) -> new_table: Name = ~p",[Name]),
-	    ?vlog("new table: ~p",[Name]),
 	    TName = make_name(Addr,Port,length(Tables)),
-	    ?DEBUG("handle_call(new_table) -> TName: ~p",[TName]),
-	    ?vdebug("new table: ~p",[TName]),
 	    case dets:open_file(TName, [{type, bag}, {file, Name}, 
 					{repair, true}, 
 					{access, read_write}]) of
@@ -305,19 +241,13 @@ handle_call({new_table, Addr, Port, Name}, _From, Tables) ->
 		    ETS = ets:new(TName, [bag, private]),
 		    sync_dets_to_ets(DFile, ETS),
 		    NewTables = [{Name, {ETS, DFile}}|Tables],
-		    ?DEBUG("handle_call(new_table) -> ~n"
-			   "       NewTables: ~p",[NewTables]),
-		    ?vtrace("new tables: ~p",[NewTables]),
 		    {reply, {ok, {ETS, DFile}}, NewTables};
 		{error, Err} ->
-		    ?LOG("handle_call -> Err: ~p",[Err]),
-		    ?vinfo("failed open dets file: ~p",[Err]),
 		    {reply, {error, {create_dets, Err}}, Tables}
 	    end
     end;
 
 handle_call(delete_tables, _From, Tables) ->
-    ?vlog("delete tables",[]),
     lists:foreach(fun({_Name, {ETS, DETS}}) ->
 			  dets:close(DETS),
 			  ets:delete(ETS)
@@ -325,18 +255,17 @@ handle_call(delete_tables, _From, Tables) ->
     {reply, ok, []};
 
 handle_call({check_blocked_user, [Info, User, SDirData]}, _From, Tables) ->
-    ?vlog("check blocked user '~p'",[User]),
     {ETS, DETS} = httpd_util:key1search(SDirData, data_file),
     Dir = httpd_util:key1search(SDirData, path),
     Addr = httpd_util:key1search(SDirData, bind_address),
     Port = httpd_util:key1search(SDirData, port),
-    CBModule = httpd_util:key1search(SDirData, callback_module, no_module_at_all),
-    ?vdebug("call back module: ~p",[CBModule]),
-    Ret = check_blocked_user(Info, User, Dir, Addr, Port, ETS, DETS, CBModule),
-    ?vdebug("check result: ~p",[Ret]),
+    CBModule = 
+	httpd_util:key1search(SDirData, callback_module, no_module_at_all),
+    Ret = 
+	check_blocked_user(Info, User, Dir, Addr, Port, ETS, DETS, CBModule),
     {reply, Ret, Tables};
-handle_call(Request,From,Tables) ->
-    ?vinfo("~n   unknown call '~p' from ~p",[Request,From]),
+
+handle_call(_Request,_From,Tables) ->
     {reply,ok,Tables}.
 
 
@@ -347,66 +276,56 @@ handle_cast({store_failed_auth, [_, _, []]}, Tables) ->
     %% was the source for the authentication failure so we should ignor it!
     {noreply, Tables};
 handle_cast({store_failed_auth, [Info, DecodedString, SDirData]}, Tables) ->
-    ?vlog("store failed auth",[]),
     {ETS, DETS} = httpd_util:key1search(SDirData, data_file),
     Dir  = httpd_util:key1search(SDirData, path),
     Addr = httpd_util:key1search(SDirData, bind_address),
     Port = httpd_util:key1search(SDirData, port),
     {ok, [User,Password]} = httpd_util:split(DecodedString,":",2),
-    ?vdebug("user '~p' and password '~p'",[User,Password]),
     Seconds = universal_time(),
     Key = {User, Dir, Addr, Port},
     %% Event
-    CBModule = httpd_util:key1search(SDirData, callback_module, no_module_at_all),
-    ?vtrace("call back module: ~p",[CBModule]),
+    CBModule = httpd_util:key1search(SDirData, 
+				     callback_module, no_module_at_all),
     auth_fail_event(CBModule,Addr,Port,Dir,User,Password),
     
     %% Find out if any of this user's other failed logins are too old to keep..
-    ?vtrace("remove old login failures",[]),
     case ets:match_object(ETS, {failed, {Key, '_', '_'}}) of
 	[] ->
-	    ?vtrace("no old login failures",[]),
 	    no;
 	List when list(List) ->
-	    ?vtrace("~p old login failures",[length(List)]),
-	    ExpireTime = httpd_util:key1search(SDirData, fail_expire_time, 30)*60,
-	    ?vtrace("expire time ~p",[ExpireTime]),
+	    ExpireTime = httpd_util:key1search(SDirData, 
+					       fail_expire_time, 30)*60,
 	    lists:map(fun({failed, {TheKey, LS, Gen}}) ->
 			      Diff = Seconds-LS,
 			      if
 				  Diff > ExpireTime ->
-				      ?vtrace("~n   '~p' is to old to keep: ~p",
-					      [TheKey,Gen]),
-				      ets:match_delete(ETS, {failed, {TheKey, LS, Gen}}),
-				      dets:match_delete(DETS, {failed, {TheKey, LS, Gen}});
+				      ets:match_delete(ETS, 
+						       {failed, 
+							{TheKey, LS, Gen}}),
+				      dets:match_delete(DETS, 
+							{failed, 
+							 {TheKey, LS, Gen}});
 				  true ->
-				      ?vtrace("~n   '~p' is not old enough: ~p",
-					      [TheKey,Gen]),
 				      ok
 			      end
 		      end,
 		      List);
-	O ->
-	    ?vlog("~n   unknown login failure search resuylt: ~p",[O]),
+	_ ->
 	    no
     end,
 
     %% Insert the new failure..
     Generation = length(ets:match_object(ETS, {failed, {Key, '_', '_'}})),
-    ?vtrace("insert ('~p') new login failure: ~p",[Key,Generation]),
     ets:insert(ETS, {failed, {Key, Seconds, Generation}}),
     dets:insert(DETS, {failed, {Key, Seconds, Generation}}),
     
     %% See if we should block this user..
     MaxRetries = httpd_util:key1search(SDirData, max_retries, 3),
     BlockTime = httpd_util:key1search(SDirData, block_time, 60),
-    ?vtrace("~n   Max retries ~p, block time ~p",[MaxRetries,BlockTime]),
     case ets:match_object(ETS, {failed, {Key, '_', '_'}}) of
 	List1 when length(List1) >= MaxRetries ->
 	    %% Block this user until Future
-	    ?vtrace("block user '~p'",[User]),
 	    Future = Seconds+BlockTime*60,
-	    ?vtrace("future: ~p",[Future]),
 	    Reason = io_lib:format("Blocking user ~s from dir ~s "
 				   "for ~p minutes", 
 				   [User, Dir, BlockTime]),
@@ -427,13 +346,11 @@ handle_cast({store_failed_auth, [Info, DecodedString, SDirData]}, Tables) ->
 	    ets:match_delete(ETS, {failed, {Key, '_', '_'}}),
 	    dets:match_delete(DETS, {failed, {Key, '_', '_'}});
 	_ ->
-	    ?vtrace("still some tries to go",[]),
 	    no
     end,
     {noreply, Tables};
 
 handle_cast({store_successful_auth, [User, Addr, Port, SDirData]}, Tables) ->
-    ?vlog("store successfull auth",[]),
     {ETS, DETS} = httpd_util:key1search(SDirData, data_file),
     AuthTimeOut = httpd_util:key1search(SDirData, auth_timeout, 30),
     Dir = httpd_util:key1search(SDirData, path),
@@ -452,45 +369,36 @@ handle_cast({store_successful_auth, [User, Addr, Port, SDirData]}, Tables) ->
     {noreply, Tables};
 	    
 handle_cast(Req, Tables) ->
-    ?vinfo("~n   unknown cast '~p'",[Req]),
     error_msg("security server got unknown cast: ~p",[Req]),
     {noreply, Tables}.
 
 
 %% handle_info
 
-handle_info(Info, State) ->
-    ?vinfo("~n   unknown info '~p'",[Info]),
+handle_info(_Info, State) ->
     {noreply, State}.
 
 
 %% terminate
 
-terminate(Reason, _Tables) ->
-    ?vlog("~n   Terminating for reason: ~p",[Reason]),
+terminate(_Reason, _Tables) ->
     ok.
 
 
 %% code_change({down, ToVsn}, State, Extra)
 %% 
 code_change({down, _}, State, _Extra) ->
-    ?vlog("downgrade", []),
     {ok, State};
 
 
 %% code_change(FromVsn, State, Extra)
 %%
 code_change(_, State, _Extra) ->
-    ?vlog("upgrade", []),
     {ok, State}.
-
-
-
 
 %% block_user_int/2
 block_user_int({User, Addr, Port, Dir, Time}) ->
     Dirs = httpd_manager:config_match(Addr, Port, {security_directory, '_'}),
-    ?vtrace("block '~p' for ~p during ~p",[User,Dir,Time]),
     case find_dirdata(Dirs, Dir) of
 	{ok, DirData, {ETS, DETS}} ->
 	    Time1 = 
@@ -502,12 +410,12 @@ block_user_int({User, Addr, Port, Dir, Time}) ->
 		end,
 	    Future = universal_time()+Time1,
 	    ets:match_delete(ETS, {blocked_user, {User,Addr,Port,Dir,'_'}}),
-	    dets:match_delete(DETS, {blocked_user, {User,Addr,Port,Dir,'_'}}),
+	    dets:match_delete(DETS, {blocked_user, 
+				     {User,Addr,Port,Dir,'_'}}),
 	    ets:insert(ETS, {blocked_user, {User,Addr,Port,Dir,Future}}),
 	    dets:insert(DETS, {blocked_user, {User,Addr,Port,Dir,Future}}),
 	    CBModule = httpd_util:key1search(DirData, callback_module, 
 					     no_module_at_all),
-	    ?vtrace("call back module ~p",[CBModule]),
 	    user_block_event(CBModule,Addr,Port,Dir,User),
 	    true;
 	_ ->
@@ -530,27 +438,25 @@ find_dirdata([{security_directory, DirData}|SDirs], Dir) ->
 %% unblock_user_int/2
 
 unblock_user_int({User, Addr, Port, Dir}) ->
-    ?vtrace("unblock user '~p' for ~p",[User,Dir]),
     Dirs = httpd_manager:config_match(Addr, Port, {security_directory, '_'}),
-    ?vtrace("~n   dirs: ~p",[Dirs]),
     case find_dirdata(Dirs, Dir) of
 	{ok, DirData, {ETS, DETS}} ->
-	    case ets:match_object(ETS,{blocked_user,{User,Addr,Port,Dir,'_'}}) of
+	    case ets:match_object(ETS,
+				  {blocked_user,{User,Addr,Port,Dir,'_'}}) of
 		[] ->
-		    ?vtrace("not blocked",[]),
 		    {error, not_blocked};
 		_Objects ->
 		    ets:match_delete(ETS, {blocked_user,
 					   {User, Addr, Port, Dir, '_'}}),
 		    dets:match_delete(DETS, {blocked_user,
 					     {User, Addr, Port, Dir, '_'}}),
-	       	    CBModule = httpd_util:key1search(DirData, callback_module, 
+	       	    CBModule = httpd_util:key1search(DirData, 
+						     callback_module, 
 						     no_module_at_all),
 		    user_unblock_event(CBModule,Addr,Port,Dir,User),
 		    true
 	    end;
 	_ ->
-	    ?vlog("~n   cannot unblock: no such directory '~p'",[Dir]),
 	    {error, no_such_directory}
     end.
 
@@ -571,7 +477,8 @@ list_auth([{_Name, {ETS, DETS}}|Tables], Addr, Port, Dir, Acc) ->
 					     T-TN > 0 ->
 						 [U|Ac];
 					     true ->
-						 Rec = {success,{{U,Ad,P,D},T}},
+						 Rec = {success,
+							{{U,Ad,P,D},T}},
 						 ets:match_delete(ETS,Rec),
 						 dets:match_delete(DETS,Rec),
 						 Ac
@@ -599,9 +506,11 @@ list_blocked([], _Addr, _Port, _Dir, Acc) ->
 		[], Acc);
 list_blocked([{_Name, {ETS, _DETS}}|Tables], Addr, Port, Dir, Acc) ->
     NewBlocked = 
-	case ets:match_object(ETS, {blocked_user, {'_',Addr,Port,Dir,'_'}}) of
+	case ets:match_object(ETS, {blocked_user, 
+				    {'_',Addr,Port,Dir,'_'}}) of
 	    List when list(List) ->
-		lists:foldl(fun({blocked_user, X}, A) -> [X|A] end, Acc, List);
+		lists:foldl(fun({blocked_user, X}, A) -> 
+				    [X|A] end, Acc, List);
 	    _ ->
 		Acc
 	end,
@@ -634,7 +543,8 @@ check_blocked_user(Info, User, Dir, Addr, Port, ETS, DETS, CBModule) ->
 	List when list(List) ->
 	    Blocked = lists:foldl(fun({blocked_user, X}, A) ->
 					  [X|A] end, [], List),
-	    check_blocked_user(Info,User,Dir,Addr,Port,ETS,DETS,TN,Blocked,CBModule);
+	    check_blocked_user(Info,User,Dir,
+			       Addr,Port,ETS,DETS,TN,Blocked,CBModule);
 	_ ->
 	    false
     end.
@@ -658,14 +568,17 @@ check_blocked_user(Info, User, Dir, Addr, Port, ETS, DETS, TN,
     if
 	TD =< 0 ->
 	    %% Blocking has expired, remove.
-	    unblock_user(Info, OUser, ODir, OAddr, OPort, ETS, DETS, CBModule);
+	    unblock_user(Info, OUser, ODir, OAddr, OPort, 
+			 ETS, DETS, CBModule);
 	true ->
 	    true
     end,
-    check_blocked_user(Info, User, Dir, Addr, Port, ETS, DETS, TN, Ls, CBModule).
+    check_blocked_user(Info, User, Dir, Addr, Port, ETS, DETS, 
+		       TN, Ls, CBModule).
 
 unblock_user(Info, User, Dir, Addr, Port, ETS, DETS, CBModule) ->
-    Reason=io_lib:format("User ~s was removed from the block list for dir ~s",
+    Reason =
+	io_lib:format("User ~s was removed from the block list for dir ~s",
 			 [User, Dir]),
     mod_log:security_log(Info, lists:flatten(Reason)),
     user_unblock_event(CBModule,Addr,Port,Dir,User),

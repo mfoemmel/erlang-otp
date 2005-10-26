@@ -25,12 +25,13 @@
 	 start_application/2, start_boot_application/2, stop_application/1,
 	 control_application/1,
 	 change_application_data/2, prep_config_change/0, config_change/1,
-	 which_applications/0, loaded_applications/0, info/0,
+	 which_applications/0, which_applications/1,
+	 loaded_applications/0, info/0,
 	 get_pid_env/2, get_env/2, get_pid_all_env/1, get_all_env/1,
 	 get_pid_key/2, get_key/2, get_pid_all_key/1, get_all_key/1,
 	 get_master/1, get_application/1, get_application_module/1,
 	 start_type/1, permit_application/2, do_config_diff/2,
-	 set_env/3, unset_env/2]).
+	 set_env/3, set_env/4, unset_env/2, unset_env/3]).
 
 %% Internal exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, 
@@ -250,6 +251,8 @@ stop_application(AppName) ->
 %%-----------------------------------------------------------------
 which_applications() ->
     gen_server:call(?AC, which_applications).    
+which_applications(Timeout) ->
+    gen_server:call(?AC, which_applications, Timeout).
 
 loaded_applications() ->
     ets:filter(ac_tab,
@@ -458,9 +461,13 @@ permit_application(ApplName, Flag) ->
 
 set_env(AppName, Key, Val) ->
     gen_server:call(?AC, {set_env, AppName, Key, Val}).
+set_env(AppName, Key, Val, Timeout) ->
+    gen_server:call(?AC, {set_env, AppName, Key, Val}, Timeout).
 
 unset_env(AppName, Key) ->
     gen_server:call(?AC, {unset_env, AppName, Key}).
+unset_env(AppName, Key, Timeout) ->
+    gen_server:call(?AC, {unset_env, AppName, Key}, Timeout).
 
 %%%-----------------------------------------------------------------
 %%% call-back functions from gen_server

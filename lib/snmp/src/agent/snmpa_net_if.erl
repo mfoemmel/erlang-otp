@@ -19,7 +19,8 @@
 
 -behaviour(snmpa_network_interface).
 
--export([start_link/4, 
+-export([start_link/4,
+	 info/1, 
 	 verbosity/2]).
 -export([get_log_type/1, set_log_type/2]).
 -export([system_continue/3, system_terminate/4, system_code_change/4]).
@@ -94,6 +95,14 @@ start_link(Prio, NoteStore, MasterAgent, Opts) ->
 % discard_pdu(Pid, Vsn, ReqId, ACMData, Variable, Extra) ->
 %     Pid ! {discarded_pdu, Vsn, ReqId, ACMData, Variable, Extra}.
     
+info(Pid) ->
+    case call(Pid, info, info_reply) of
+	Info when list(Info) ->
+	    Info;
+	_ ->
+	    []
+    end.
+
 verbosity(Pid, Verbosity) -> 
     Pid ! {verbosity, Verbosity}.
 
@@ -249,6 +258,11 @@ loop(S) ->
 	    ?vlog("~n   got paket from ~w:~w",[Ip,Port]),
 	    NewS = handle_recv(S, Ip, Port, Packet),
 	    loop(NewS);
+
+	{info, Pid} ->
+	    Info = get_info(S),
+	    Pid ! {info_reply, Info, self()},
+	    loop(S);
 
 	{snmp_response, Vsn, RePdu, Type, ACMData, Dest, []} ->
 	    ?vlog("reply pdu: "
@@ -570,11 +584,22 @@ active_once(Sock) ->
 system_continue(_Parent, _Dbg, S) ->
     loop(S).
 
-system_terminate(Reason, _Parent, _Dbg, _S) ->
+system_terminate(Reason, _Parent, _Dbg, #state{log = Log}) ->
+    do_close_log(Log),
     exit(Reason).
 
 system_code_change(S, _Module, _OldVsn, _Extra) ->
     {ok, S}.
+
+do_close_log({dummy, []}) ->
+    ok;
+do_close_log({Log, _}) ->
+    (catch snmp_log:sync(Log)),
+    (catch snmp_log:close(Log)),
+    ok;
+do_close_log(_) ->
+    ok.
+
 
 %%%-----------------------------------------------------------------
 %%% DEBUG FUNCTIONS
@@ -664,6 +689,69 @@ config_err(F, A) ->
  
 error_msg(F,A) -> 
     (catch error_logger:error_msg("~w: " ++ F,[?MODULE|A])).
+
+
+%% ----------------------------------------------------------------
+
+call(Pid, Req, ReplyTag) ->
+    Pid ! {Req, self()},
+    receive 
+	{ReplyTag, Reply, Pid} ->
+	    Reply
+    after 5000 ->
+	    {error, timeout}
+    end.
+
+		       
+%% ----------------------------------------------------------------
+
+get_info(#state{usock = Id, reqs = Reqs}) ->
+    ProcSize = proc_mem(self()),
+    PortInfo = get_port_info(Id),
+    [{reqs, Reqs}, {process_memory, ProcSize}, {port_info, PortInfo}].
+
+proc_mem(P) when pid(P) ->
+    case (catch erlang:process_info(P, memory)) of
+	{memory, Sz} when integer(Sz) ->
+	    Sz;
+	_ ->
+	    undefined
+    end;
+proc_mem(_) ->
+    undefined.
+
+get_port_info(Id) ->
+    PortInfo = case (catch erlang:port_info(Id)) of
+		   PI when list(PI) ->
+		       [{port_info, PI}];
+		   _ ->
+		       []
+	       end,
+    PortStatus = case (catch prim_inet:getstatus(Id)) of
+		     {ok, PS} ->
+			 [{port_status, PS}];
+		     _ ->
+			 []
+		 end,
+    PortAct = case (catch inet:getopts(Id, [active])) of
+		  {ok, PA} ->
+		      [{port_act, PA}];
+		  _ ->
+		      []
+	      end,
+    PortStats = case (catch inet:getstat(Id)) of
+		    {ok, Stat} ->
+			[{port_stats, Stat}];
+		    _ ->
+			[]
+		end,
+    IfList = case (catch inet:getif(Id)) of
+		 {ok, IFs} ->
+		     [{interfaces, IFs}];
+		 _ ->
+		     []
+	     end,
+    [{socket, Id}] ++ IfList ++ PortStats ++ PortInfo ++ PortStatus ++ PortAct.
 
 
 %% ----------------------------------------------------------------

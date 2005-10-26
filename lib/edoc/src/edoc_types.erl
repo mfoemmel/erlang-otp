@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_types.erl,v 1.14 2004/08/25 00:02:28 richardc Exp $
+%% $Id$
 %%
 %% @private
 %% @copyright 2001-2003 Richard Carlsson
@@ -30,7 +30,9 @@
 -export([is_predefined/1, to_ref/1, to_xml/2, to_label/1, arg_names/1,
 	 set_arg_names/2]).
 
--include("edoc.hrl").
+%% @headerfile "edoc_types.hrl"
+
+-include("edoc_types.hrl").
 -include("xmerl.hrl").
 
 
@@ -115,6 +117,10 @@ to_xml(#t_float{val = V}, _Env) ->
     {float, [{value, io_lib:write(V)}], []};
 to_xml(#t_union{types = Ts}, Env) ->
     {union, map(fun wrap_type/2, Ts, Env)};
+to_xml(#t_record{name = N = #t_atom{}, fields = Fs}, Env) ->
+    {record, [to_xml(N, Env) | map(fun to_xml/2, Fs, Env)]};
+to_xml(#t_field{name = N = #t_atom{}, type = T}, Env) ->
+    {field, [to_xml(N, Env), wrap_type(T, Env)]};
 to_xml(#t_def{name = N = #t_var{}, type = T}, Env) ->
     {localdef, [to_xml(N, Env), wrap_type(T, Env)]};
 to_xml(#t_def{name = N, type = T}, Env) ->
@@ -132,7 +138,10 @@ to_xml(#t_typedef{name = N, args = As, type = T, defs = Ds}, Env) ->
     {typedef, [to_xml(N, Env),
 	       {argtypes, map(fun wrap_utype/2, As, Env)},
 	       wrap_type(T, Env)
-	       | map(fun to_xml/2, Ds, Env)]}.
+	       | map(fun to_xml/2, Ds, Env)]};
+to_xml(#t_throws{type = T, defs = Ds}, Env) ->
+    {throws, [wrap_type(T, Env)
+	      | map(fun to_xml/2, Ds, Env)]}.
 
 wrap_type(T, Env) ->
     {type, [to_xml(T, Env)]}.

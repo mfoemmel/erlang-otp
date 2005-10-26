@@ -26,7 +26,7 @@
 
 %% API
 -export([start_link/1]).
--export([start_child/2, stop_child/2]).
+-export([start_child/1, stop_child/2]).
 
 %% Supervisor callback
 -export([init/1]).
@@ -38,8 +38,8 @@
 start_link(HttpdServices) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, [HttpdServices]).
 
-start_child(ConfigFile, Verbosity) ->
-    {ok, Spec} = httpd_child_spec(ConfigFile, Verbosity),
+start_child(ConfigFile) ->
+    {ok, Spec} = httpd_child_spec(ConfigFile),
     supervisor:start_child(?MODULE, Spec).
     
 stop_child(Addr, Port) ->
@@ -66,17 +66,8 @@ init([HttpdServices]) ->
 %%%=========================================================================
 child_spec([], Acc) ->
     Acc;
-child_spec([{httpd, ConfigFile, Verbosity} | Rest], Acc) ->
-    case httpd_child_spec(ConfigFile, Verbosity) of
-	{ok, Spec} ->
-	    child_spec(Rest, [Spec | Acc]);
-	{error, Reason} ->
-	    error_msg("Failed creating child spec "
-		      "using ~p for reason: ~p", [ConfigFile, Reason]),
-	    child_spec(Rest, Acc)
-    end;
 child_spec([{httpd, ConfigFile} | Rest], Acc) ->
-    case httpd_child_spec(ConfigFile, []) of
+    case httpd_child_spec(ConfigFile) of
 	{ok, Spec} ->
 	    child_spec(Rest, [Spec | Acc]);
 	{error, Reason} ->
@@ -85,19 +76,19 @@ child_spec([{httpd, ConfigFile} | Rest], Acc) ->
 	    child_spec(Rest, Acc)
     end.
 
-httpd_child_spec(ConfigFile, Verbosity) ->
+httpd_child_spec(ConfigFile) ->
     case httpd_conf:load(ConfigFile) of
 	{ok, ConfigList} ->
 	    Port = httpd_util:key1search(ConfigList, port, 80),
 	    Addr = httpd_util:key1search(ConfigList, bind_address),
-	    {ok, httpd_child_spec(ConfigFile, Addr, Port, Verbosity)};
+	    {ok, httpd_child_spec(ConfigFile, Addr, Port)};
 	Error ->
 	    Error
     end.
 
-httpd_child_spec(ConfigFile, Addr, Port, Verbosity) ->
+httpd_child_spec(ConfigFile, Addr, Port) ->
     Name = {httpd_instance_sup, Addr, Port},
-    StartFunc = {httpd_instance_sup, start_link, [ConfigFile, Verbosity]},
+    StartFunc = {httpd_instance_sup, start_link, [ConfigFile]},
     Restart = permanent, 
     Shutdown = infinity,
     Modules = [httpd_instance_sup],

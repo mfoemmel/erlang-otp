@@ -512,7 +512,7 @@ gen_type_test(X, Type, TrueLbl, FalseLbl, Pred, ConstTab, _Options) ->
 %%
 
 gen_cond(CondOp, Args, TrueLbl, FalseLbl, Pred) ->
-  Tmp = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   GenLbl = hipe_rtl:mk_new_label(),
   TestRetLbl = hipe_rtl:mk_new_label(),
   TestRetName = hipe_rtl:label_name(TestRetLbl),

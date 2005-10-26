@@ -229,10 +229,10 @@ lattice_meet(Val1, Val2) ->
          (Val1 == bottom) or (Val2 == bottom) -> bottom
 	 % the check is realy just sanity
       end,
-  { M, M, M, M, M}.
+  {M, M, M, M, M}.
 
 all_ones() ->
-  (1 bsl hipe_rtl_arch:word_size() *8) - 1.
+  (1 bsl hipe_rtl_arch:word_size() * 8) - 1.
 
 % when calling partial_eval*() we know that at least one of the Values are 
 % bottom or top. They return { Value, Sign, Zero, Overflow, Carry }. 
@@ -242,10 +242,10 @@ all_ones() ->
 % bits in the words.
 partial_eval_shift(Limit, Val1, Val2) ->
   if 
-    Val2 == 0 -> { Val1, Val1,  Val1, Val1,  Val1 };
-    Val1 == 0 -> { 0,    false, true, false, false };
+    Val2 == 0 -> {Val1, Val1,  Val1, Val1,  Val1};
+    Val1 == 0 -> {0, false, true, false, false};
     (Val2 /= top) and (Val2 /= bottom) and (Val2 >= Limit) -> 
-      { 0, false, true, Val1, Val1 }; % OVerflow & carry we dont know about.
+      {0, false, true, Val1, Val1}; % OVerflow & carry we dont know about.
     true -> lattice_meet(Val1, Val2)
   end.
 
@@ -262,20 +262,20 @@ partial_eval_shift(Limit, Val1, Val2) ->
 
 partial_eval_alu(Val1, add, Val2) ->
   if 
-    (Val1 == 0) -> { Val2,  Val2, Val2, false, false};
-    (Val2 == 0) -> { Val1,  Val1, Val1, false, false};
+    (Val1 == 0) -> {Val2,  Val2, Val2, false, false};
+    (Val2 == 0) -> {Val1,  Val1, Val1, false, false};
     true -> lattice_meet(Val1, Val2)
   end;
 partial_eval_alu(Val1, sub, Val2) ->
   if 
-    (Val2 == 0) -> { Val1,  Val1, Val1, false, false};
+    (Val2 == 0) -> {Val1,  Val1, Val1, false, false};
     true -> lattice_meet(Val1, Val2)
   end;
 partial_eval_alu(Val1, 'or', Val2) ->
   All_ones = all_ones(),
   if 
-    (Val1 == 0) -> { Val2,  Val2, Val2, false, false};
-    (Val2 == 0) -> { Val1,  Val1, Val1, false, false};
+    (Val1 == 0) -> {Val2,  Val2, Val2, false, false};
+    (Val2 == 0) -> {Val1,  Val1, Val1, false, false};
     (Val1 == All_ones) or (Val2 == All_ones) -> 
       { All_ones,  true, false, false, false};
     true -> lattice_meet(Val1, Val2)
@@ -283,29 +283,29 @@ partial_eval_alu(Val1, 'or', Val2) ->
 partial_eval_alu(Val1, 'and', Val2) ->
   All_ones=all_ones(),
   if 
-    Val1 == All_ones -> { Val2,  Val2, Val2, false, false};
-    Val2 == All_ones -> { Val1,  Val1, Val1, false, false};
+    Val1 == All_ones -> {Val2,  Val2, Val2, false, false};
+    Val2 == All_ones -> {Val1,  Val1, Val1, false, false};
     (Val1 == 0) or (Val2 == 0) -> { 0,  false, true, false, false};
     true -> lattice_meet(Val1, Val2)
   end;
 partial_eval_alu(Val1, 'xor', Val2) ->
   if
-    (Val1 == 0) -> { Val2,  Val2, Val2, false, false};
-    (Val2 == 0) -> { Val1,  Val1, Val1, false, false};
+    (Val1 == 0) -> {Val2,  Val2, Val2, false, false};
+    (Val2 == 0) -> {Val1,  Val1, Val1, false, false};
     true -> lattice_meet(Val1, Val2)
   end;
 partial_eval_alu(Val1, 'xornot', Val2) ->
   All_ones=all_ones(),
   if
-    Val1 == All_ones -> { Val2,  Val2, Val2, false, false};
-    Val2 == All_ones -> { Val1,  Val1, Val1, false, false};
+    Val1 == All_ones -> {Val2,  Val2, Val2, false, false};
+    Val2 == All_ones -> {Val1,  Val1, Val1, false, false};
     true -> lattice_meet(Val1, Val2)
   end;
 partial_eval_alu(Val1, andnot, Val2) ->
   All_ones=all_ones(),
   if 
-    (Val2 == 0) -> { Val1,  Val1, Val1, false, false};
-    (Val1 == 0) or (Val2 == All_ones) -> { 0,  false, true, false, false};
+    (Val2 == 0) -> {Val1,  Val1, Val1, false, false};
+    (Val1 == 0) or (Val2 == All_ones) -> {0,  false, true, false, false};
     true -> lattice_meet(Val1, Val2)
   end;
 partial_eval_alu(Val1, Op, Val2) when (Op == sll) or (Op == srl) ->
@@ -317,8 +317,8 @@ partial_eval_alu(Val1, Op, Val2) when (Op == sllx) or (Op == srlx) ->
 % generate all_ones() and 0 depenging on the sign of Val1.
 partial_eval_alu(Val1, Op, Val2) when (Op == sra) or (Op == srax) ->
   if 
-    (Val2 == 0) -> { Val1,  Val1, Val1, false, false};
-    (Val1 == 0) -> { 0, false, true, false, false};
+    (Val2 == 0) -> {Val1,  Val1, Val1, false, false};
+    (Val1 == 0) -> {0, false, true, false, false};
     true -> lattice_meet(Val1, Val2)
   end.
 
@@ -347,10 +347,10 @@ evaluate_alu(Val1, Op, Val2) ->
 
 %% partial_eval_branch/5 returns the result of the comparisson in alub.
 
-% we use the fact that if evaluate_alu set any flag to top or bottom then 
-% all flags that are not true/false have the same value (top or bottom).
-% so we call the hipe_rtl_arch:eval_cond_bits to do the real evaluation, 
-% and try to catch the exception that is thrown if something blows up.
+%% we use the fact that if evaluate_alu set any flag to top or bottom then 
+%% all flags that are not true/false have the same value (top or bottom).
+%% so we call the hipe_rtl_arch:eval_cond_bits to do the real evaluation, 
+%% and try to catch the exception that is thrown if something blows up.
 
 find_first_top_or_bottom([top |_]) -> top;
 find_first_top_or_bottom([bottom| _ ]) -> bottom;
@@ -387,22 +387,22 @@ visit_alub(Inst, Env) ->
   {NewVal, N, Z, C, V} = evaluate_alu(Val1, hipe_rtl:alub_op(Inst), Val2),
   Labels = 
     case NewVal of
-      bottom -> [ hipe_rtl:alub_true_label(Inst), 
-                  hipe_rtl:alub_false_label(Inst)];
+      bottom -> [hipe_rtl:alub_true_label(Inst), 
+                 hipe_rtl:alub_false_label(Inst)];
       top    -> [];
       _      ->
         %if the partial branch cannot be evaluated we must execute the 
         % instruction at runtime.
         case partial_eval_branch(hipe_rtl:alub_cond(Inst), N, Z, C, V) of
-          bottom -> [ hipe_rtl:alub_true_label(Inst), 
-                      hipe_rtl:alub_false_label(Inst)];
+          bottom -> [hipe_rtl:alub_true_label(Inst), 
+                     hipe_rtl:alub_false_label(Inst)];
           top    -> [];
-          true   -> [ hipe_rtl:alub_true_label(Inst) ];
-          false  -> [ hipe_rtl:alub_false_label(Inst) ]
+          true   -> [hipe_rtl:alub_true_label(Inst) ];
+          false  -> [hipe_rtl:alub_false_label(Inst) ]
         end
      end,
-  { [], NewSSA, NewEnv } = set_to(hipe_rtl:alub_dst(Inst), NewVal,  Env),
-  { Labels, NewSSA, NewEnv}.
+  {[], NewSSA, NewEnv} = set_to(hipe_rtl:alub_dst(Inst), NewVal,  Env),
+  {Labels, NewSSA, NewEnv}.
       
 %%-----------------------------------------------------------------------------
 %% Procedure : visit_binbase/2

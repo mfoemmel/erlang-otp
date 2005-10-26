@@ -59,6 +59,7 @@
 	 decode_binary_term_id/2,
 
 	 versions1/0, versions2/0, 
+	 format_versions/1, 
 	 ms/0, nc/0, nc/1, ni/0, ni/1,
 
 	 enable_trace/2, disable_trace/0, set_trace/1,
@@ -74,6 +75,8 @@
 	 reset_stats/0, reset_stats/1
 	]).
 
+%% Internal
+-export([format_timestamp/1]).
 
 -include_lib("megaco/include/megaco.hrl").
 -include("megaco_message_internal.hrl").
@@ -87,12 +90,14 @@
 start() ->
     application:start(?APPLICATION).
 
+
 %%-----------------------------------------------------------------
 %% Stops the Megaco application
 %%-----------------------------------------------------------------
 
 stop() ->
     application:stop(?APPLICATION).
+
 
 %%-----------------------------------------------------------------
 %% Initial configuration of a user
@@ -101,12 +106,14 @@ stop() ->
 start_user(UserMid, Config) ->
     megaco_config:start_user(UserMid, Config).
 
+
 %%-----------------------------------------------------------------
 %% Delete the configuration of a user
 %%-----------------------------------------------------------------
 
 stop_user(UserMid) ->
     megaco_config:stop_user(UserMid).
+
 
 %%-----------------------------------------------------------------
 %% Lookup user information
@@ -147,6 +154,7 @@ conn_info(ConnHandle, Item) ->
 update_conn_info(ConnHandle, Item, Value) ->
     megaco_config:update_conn_info(ConnHandle, Item, Value).
 
+
 %%-----------------------------------------------------------------
 %% Lookup system information
 %%-----------------------------------------------------------------
@@ -161,6 +169,7 @@ system_info(Item) ->
 connect(ReceiveHandle, RemoteMid, SendHandle, ControlPid) ->
     megaco_messenger:connect(ReceiveHandle, RemoteMid, SendHandle, ControlPid).
 
+
 %%-----------------------------------------------------------------
 %% Tear down a "virtual" connection
 %%-----------------------------------------------------------------
@@ -168,12 +177,14 @@ connect(ReceiveHandle, RemoteMid, SendHandle, ControlPid) ->
 disconnect(ConnHandle, Reason) ->
     megaco_messenger:disconnect(ConnHandle, {user_disconnect, Reason}).
 
+
 %%-----------------------------------------------------------------
 %% Sends a transaction request and waits for a reply
 %%-----------------------------------------------------------------
 
 call(ConnHandle, ActionRequests, Options) ->
     megaco_messenger:call(ConnHandle, ActionRequests, Options).
+
 
 %%-----------------------------------------------------------------
 %% Sends a transaction request but does NOT wait for a reply
@@ -199,6 +210,7 @@ test_reply(ConnHandle, Version, EncodingMod, EncodingConfig,
 	   Reply) ->
     megaco_messenger:test_reply(ConnHandle, Version, 
 				EncodingMod, EncodingConfig, Reply).
+
 
 %%-----------------------------------------------------------------
 %% Func: get_stats/0, get_stats/1, get_stats/2
@@ -232,6 +244,7 @@ reset_stats(SendHandle) ->
 cancel(ConnHandle, Reason) ->
     megaco_messenger:cancel(ConnHandle, {user_cancel, Reason}).
 
+
 %%-----------------------------------------------------------------
 %% Process a received message
 %%-----------------------------------------------------------------
@@ -260,6 +273,7 @@ encode_actions(ConnHandle, ActionRequests, Options) ->
 parse_digit_map(DigitMapBody) ->
     megaco_digit_map:parse(DigitMapBody).
 
+
 %%-----------------------------------------------------------------
 %% Collect digit map letters according to the digit map
 %%-----------------------------------------------------------------
@@ -270,6 +284,7 @@ eval_digit_map(DigitMap) ->
 eval_digit_map(DigitMap, Timers) ->
     megaco_digit_map:eval(DigitMap, Timers).
 
+
 %%-----------------------------------------------------------------
 %% Send one or more events to event collector process
 %%-----------------------------------------------------------------
@@ -277,12 +292,14 @@ eval_digit_map(DigitMap, Timers) ->
 report_digit_event(DigitMapEvalPid, Event) ->
     megaco_digit_map:report(DigitMapEvalPid, Event).
 
+
 %%-----------------------------------------------------------------
 %% Feed digit map collector with events and return the result
 %%-----------------------------------------------------------------
 
 test_digit_event(DigitMap, Events) ->
     megaco_digit_map:test(DigitMap, Events).
+
 
 %%-----------------------------------------------------------------
 %% encode_binary_term_id(Config, MegacoTermId) ->
@@ -297,6 +314,7 @@ test_digit_event(DigitMap, Events) ->
 encode_binary_term_id(Config, TermId) ->
     megaco_binary_term_id:encode(Config, TermId).
 
+
 %%-----------------------------------------------------------------
 %% decode_binary_term_id(Config, TerminationId) ->
 %% 
@@ -309,6 +327,152 @@ encode_binary_term_id(Config, TermId) ->
 
 decode_binary_term_id(Config, TermId) ->
     megaco_binary_term_id:decode(Config, TermId).
+
+
+%%-----------------------------------------------------------------
+%% {ok, Vs} = megaco:versions1(), megaco:format_versions(Vs).
+
+format_versions(Versions) when list(Versions) ->
+    print_sys_info(Versions),
+    print_os_info(Versions),
+    print_mods_info(Versions);
+format_versions(BadVersions) ->
+    {error, {bad_versions, BadVersions}}.
+
+print_sys_info(Versions) ->
+    case key1search(sys_info, Versions) of
+	{value, SysInfo} when list(SysInfo) ->
+	    {value, Arch} = key1search(arch, SysInfo, "Not found"),
+	    {value, Ver}  = key1search(ver, SysInfo, "Not found"),
+	    io:format("System info: "
+		      "~n   Arch: ~s"
+		      "~n   Ver:  ~s"
+		      "~n", [Arch, Ver]),
+	    ok;
+	_ ->
+	    io:format("System info: Not found~n", []),
+	    not_found
+    end.
+	    
+print_os_info(Versions) ->
+    case key1search(os_info, Versions) of
+	{value, OsInfo} when list(OsInfo) ->
+	    Fam = 
+		case key1search(fam, OsInfo, "Not found") of
+		    {value, F} when atom(F) ->
+			atom_to_list(F);
+		    {value, LF} when list(LF) ->
+			LF;
+		    {value, XF} ->
+			lists:flatten(io_lib:format("~p", [XF]))
+		end,
+	    Name = 
+		case key1search(name, OsInfo) of
+		    {value, N} when atom(N) ->
+			"[" ++ atom_to_list(N) ++ "]";
+		    {value, LN} when list(LN) ->
+			"[" ++ LN ++ "]";
+		    not_found -> 
+			""
+		end,
+	    Ver = 
+		case key1search(ver, OsInfo, "Not found") of
+		    {value, T} when tuple(T) ->
+			tversion(T);
+		    {value, LV} when list(LV) ->
+			LV;
+		    {value, XV} ->
+			lists:flatten(io_lib:format("~p", [XV]))
+		end,
+	    io:format("OS info: "
+		      "~n   Family: ~s ~s"
+		      "~n   Ver:    ~s"
+		      "~n", [Fam, Name, Ver]),
+	    ok;
+	_ ->
+	    io:format("OS info:     Not found~n", []),
+	    not_found
+    end.
+
+%% tversion({A, B, C}) ->
+%%     lists:flatten(io_lib:format("~w.~w.~w", [A, B, C]));
+tversion(T) ->
+    L = tuple_to_list(T),
+    lversion(L).
+
+lversion([]) ->
+    "";
+lversion([A]) ->
+    integer_to_list(A);
+lversion([A|R]) ->
+    integer_to_list(A) ++ "." ++ lversion(R).
+
+print_mods_info(Versions) ->
+    case key1search(mod_info, Versions) of
+	{value, ModsInfo} when list(ModsInfo) ->
+	    io:format("Module info: ~n", []),
+	    lists:foreach(fun print_mod_info/1, ModsInfo);
+	_ ->
+	    io:format("Module info: Not found~n", []),
+	    not_found
+    end.
+
+print_mod_info({Module, Info}) ->
+    Vsn = 
+	case key1search(vsn, Info) of
+	    {value, I} when integer(I) ->
+		integer_to_list(I);
+	    _ ->
+		"Not found"
+	end,
+    AppVsn = 
+	case key1search(app_vsn, Info) of
+	    {value, S1} when list(S1) ->
+		S1;
+	    _ ->
+		"Not found"
+	end,
+    CompVer = 
+	case key1search(compiler_version, Info) of
+	    {value, S2} when list(S2) ->
+		S2;
+	    _ ->
+		"Not found"
+	end,
+    CompDate = 
+	case key1search(compile_time, Info) of
+	    {value, {Year, Month, Day, Hour, Min, Sec}} ->
+		lists:flatten(
+		  io_lib:format("~w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w", 
+				[Year, Month, Day, Hour, Min, Sec]));
+	    _ ->
+		"Not found"
+	end,
+    io:format("   ~w:~n"
+	      "      Vsn:          ~s~n"
+	      "      App vsn:      ~s~n"
+	      "      Compiler ver: ~s~n"
+	      "      Compile time: ~s~n", 
+	      [Module, Vsn, AppVsn, CompVer, CompDate]),
+    ok.
+    
+    
+
+key1search(Key, Vals) ->
+    case key1search(Key, Vals, undefined) of
+	undefined ->
+	    not_found;
+	Value ->
+	    Value
+    end.
+
+key1search(Key, Vals, Def) ->
+    case lists:keysearch(Key, 1, Vals) of
+	{value, {Key, Val}} ->
+	    {value, Val};
+	false ->
+	    {value, Def}
+    end.
 
 %%-----------------------------------------------------------------
 
@@ -668,8 +832,7 @@ print_trace(Fd, Trace) ->
               "~n", [Trace]).
 
 
-format_timestamp(Now) ->
-    {_N1, _N2, N3}   = Now,
+format_timestamp({_N1, _N2, N3} = Now) ->
     {Date, Time}   = calendar:now_to_datetime(Now),
     {YYYY,MM,DD}   = Date,
     {Hour,Min,Sec} = Time,

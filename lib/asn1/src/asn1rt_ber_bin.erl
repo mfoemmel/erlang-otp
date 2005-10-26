@@ -1039,8 +1039,10 @@ decode_real2(Buffer0, Form, Len, RemBytes1) ->
 						%	    io:format("Form: ~w~n",[Form]), 
 	    case Form of 
 		tuple -> 
-		    {Val,Buf,_RemB} = Exp, 
-		    {{Mantissa, Base, {Val,Buf}}, Buffer4, RemBytes2+RemBytes3};  
+%%		    {Val,Buf,_RemB} = Exp, 
+%%		    {{Mantissa, Base, {Val,Buf}}, Buffer4, RemBytes2+RemBytes3};  
+		    %% This change was only to remove dialyzer warning. Code should be removed or redisigned.
+		    {{Mantissa, Base, {Exp,Buffer3}}, Buffer4, RemBytes2+RemBytes3};  
 		_value -> 
 		    comming 
 	    end 

@@ -101,10 +101,6 @@ l_request(Node, X, Store) ->
 l_req_rec(Node, Store) ->
     ?ets_insert(Store, {nodes, Node}),
     receive 
-	{?MODULE, Node, {switch, Node2, Req}} ->
-	    ?ets_insert(Store, {nodes, Node2}),
-	    {?MODULE, Node2} ! Req,
-	    {switch, Node2, Req};
 	{?MODULE, Node, Reply} -> 
 	    Reply;
 	{mnesia_down, Node} -> 
@@ -866,16 +862,34 @@ receive_wlocks([Node | Tail], Res, Store, Oid) ->
 	    del_debug(Node),
 	    Reason1 = {aborted, {node_not_running, Node}},
 	    flush_remaining(Tail, Node, Reason1);
-	{?MODULE, Node, {switch, Node2, Req}} -> %% for rwlocks
+	{?MODULE, Node, {switch, Sticky, _Req}} -> %% for rwlocks
 	    del_debug(Node),
-	    add_debug(Node2),
-	    ?ets_insert(Store, {nodes, Node2}),
-	    {?MODULE, Node2} ! Req,
-	    receive_wlocks([Node2 | Tail], Res, Store, Oid)
+	    Nonstuck = lists:delete(Sticky,Tail),
+	    [?ets_insert(Store, {nodes, NSNode}) || NSNode <- Nonstuck],
+	    case lists:member(Sticky,Tail) of		
+		true -> 		    
+		    sticky_flush(Nonstuck,Store),
+		    receive_wlocks([Sticky], Res, Store, Oid);
+		false ->
+		    sticky_flush(Nonstuck,Store),
+		    Res
+	    end
     end;
-
 receive_wlocks([], Res, _Store, _Oid) ->
     Res.
+
+sticky_flush([], _) -> ok;
+sticky_flush([Node | Tail], Store) ->
+    receive
+	{?MODULE, Node, _} ->
+	    del_debug(Node),
+	    sticky_flush(Tail, Store);
+	{mnesia_down, Node} ->
+	    del_debug(Node),
+	    ?ets_delete(Store, {nodes, Node}),
+	    sticky_flush(Tail, Store)
+    end.
+
 
 flush_remaining([], _SkipNode, Res) ->
     exit(Res);
@@ -985,11 +999,10 @@ rlock_get_reply(Node, Store, Tab, {granted, V, RealKeys}) ->
 rlock_get_reply(_Node, _Store, _Oid, {not_granted , Reason}) ->
     exit({aborted, Reason});
 
-rlock_get_reply(_Node, Store, Oid, {switch, N2, Req}) ->
+rlock_get_reply(_Node, Store, Oid, {switch, N2, Req}) ->    
     ?ets_insert(Store, {nodes, N2}),
     {?MODULE, N2} ! Req,
     rlock_get_reply(N2, Store, Oid, l_req_rec(N2, Store)).
-
 
 rlock_table(Tid, Store, Tab) ->
     rlock(Tid, Store, {Tab, ?ALL}).

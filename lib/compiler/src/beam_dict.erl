@@ -97,15 +97,15 @@ import(Mod0, Name0, Arity, #asm{imports=Imp0,next_import=NextIndex}=D0)
 %% table if necessary).
 %%    string(String, Dict) -> {Offset, Dict'}
 
-string(Str, Dict) when list(Str) ->
-    #asm{strings = Strings, string_offset = NextOffset} = Dict,
+string(Str, Dict) when is_list(Str) ->
+    #asm{strings=Strings,string_offset=NextOffset} = Dict,
     case old_string(Str, Strings) of
-	{true, Offset} ->
-	    {Offset, Dict};
-	false ->
-	    NewDict = Dict#asm{strings = Strings++Str,
-				    string_offset = NextOffset+length(Str)},
-	    {NextOffset, NewDict}
+	none ->
+	    NewDict = Dict#asm{strings=Strings++Str,
+			       string_offset=NextOffset+length(Str)},
+	    {NextOffset,NewDict};
+	Offset when is_integer(Offset) ->
+	    {NextOffset-Offset,Dict}
     end.
 
 %% Returns the index for a funentry (adding it to the table if necessary).
@@ -148,8 +148,8 @@ import_table(#asm{imports=Imp,next_import=NumImports}) ->
     ImpTab = [MFA || {MFA,_} <- Sorted],
     {NumImports,ImpTab}.
 
-string_table(#asm{strings = Strings, string_offset = Size}) ->
-    {Size, Strings}.
+string_table(#asm{strings=Strings,string_offset=Size}) ->
+    {Size,Strings}.
 
 lambda_table(#asm{locals=Loc0,lambdas=Lambdas0}) ->
     Lambdas1 = sofs:relation(Lambdas0),
@@ -161,19 +161,13 @@ lambda_table(#asm{locals=Loc0,lambdas=Lambdas0}) ->
 
 
 %% Search for string Str in the string pool Pool.
-%%   old_string(Str, Pool) -> false | {true, Offset}
+%%   old_string(Str, Pool) -> none | Index
 
-old_string(Str, Pool) ->
-    old_string(Str, Pool, 0).
-
-old_string([C|Str], [C|Pool], Index) ->
+old_string([C|Str]=Str0, [C|Pool]) ->
     case lists:prefix(Str, Pool) of
-	true ->
-	    {true, Index};
-	false ->
-	    old_string([C|Str], Pool, Index+1)
+	true -> length(Pool)+1;
+	false -> old_string(Str0, Pool)
     end;
-old_string(Str, [_|Pool], Index) ->
-    old_string(Str, Pool, Index+1);
-old_string(_Str, [], _Index) ->
-    false.
+old_string([_|_]=Str, [_|Pool]) ->
+    old_string(Str, Pool);
+old_string([_|_], []) -> none.
