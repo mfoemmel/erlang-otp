@@ -61,6 +61,7 @@
 
 -export([fix_catches/1]).
 
+-include("hipe_icode.hrl").
 
 fix_catches(CFG) ->
   {Map, State} = build_mapping(find_catches(init_state(CFG))),
@@ -105,13 +106,13 @@ catches_out([], Cs) ->
   Cs.
 
 catches_out_instr(I, Cs) ->
-  case hipe_icode:type(I) of
-    begin_try ->
+  case I of
+    #begin_try{} ->
       Id = hipe_icode:begin_try_label(I),
       push_catch(Id, Cs);
-    end_try ->
+    #end_try{} ->
       pop_catch(Cs);
-    begin_handler ->
+    #begin_handler{} ->
       pop_catch(Cs);
     _ ->
       Cs
@@ -195,18 +196,18 @@ rewrite_code(Is, C, State, Map) ->
 
 rewrite_code([I|Is], C, State, Map, As) ->
   [C1] = list_of_catches(catches_out_instr(I, single_catch(C))),
-  case hipe_icode:type(I) of
-    begin_try ->
+  case I of
+    #begin_try{} ->
       {I1, Is1, State1} = update_begin_try(I, Is, C, State, Map),
       I2 = redirect_instr(I1, C, Map),
       rewrite_code(Is1, C1, State1, Map, [I2 | As]);
-    end_try ->
+    #end_try{} ->
       rewrite_code(Is, C1, State, Map, As);
-    call ->
+    #call{} ->
       {I1, Is1, State1} = update_call(I, Is, C, State, Map),
       I2 = redirect_instr(I1, C, Map),
       rewrite_code(Is1, C1, State1, Map, [I2 | As]);
-    fail ->
+    #fail{} ->
       {I1, Is1, State1} = update_fail(I, Is, C, State, Map),
       I2 = redirect_instr(I1, C, Map),
       rewrite_code(Is1, C1, State1, Map, [I2 | As]);

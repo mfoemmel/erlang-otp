@@ -23,6 +23,7 @@
 	 handle_event/2]).
 
 -record(winInfo, {type,            % line | conditional | function
+		  win,             % gsobj()
 		  packer,          % gsobj() | undefined
 		  entries,         % [{atom|integer, GSobj()}]
 		  trigger,         % enable | disable | delete
@@ -53,7 +54,8 @@ create_win(GS, {X, Y}, function, Mod, _Line) ->
 
     %% Window
     Win = gs:window(GS, [{title, "Function Break"}, {x, X}, {y, Y},
-			 {destroy, true}, {configure, true}]),
+			 {destroy, true}, {configure, true},
+			 {keypress, true}, {data, window}]),
 
     %% Frame
     Frm = gs:frame(Win, [{x, 0}, {y, 0}, {width, W}, {height, 190},
@@ -67,14 +69,16 @@ create_win(GS, {X, Y}, function, Mod, _Line) ->
 		   {pack_x, 1}, {pack_y, 2}]),
     Ent = gs:entry(Frm, [{text, Mod},
 			 {pack_x, 2}, {pack_y, 2},
-			 {keypress, true}, {setfocus, true}]),
+			 {keypress, true}, {setfocus, true},
+			 {buttonpress, true}]),
     Entries = [{Ent, atom}],
 
     %% Create a listbox containing the functions of the module
     gs:label(Frm, [{label, {text,"Function:"}}, {font, Font}, {align, ne},
 		   {pack_x, 1}, {pack_y, 3}]),
     Lb = gs:listbox(Frm, [{bw, 2}, {relief, ridge}, {vscroll, right},
-			  {pack_x, 2}, {pack_y, 3}]),
+			  {pack_x, 2}, {pack_y, 3},
+			  {selectmode, multiple}]),
 
     %% Add Ok and Cancel buttons
     {Wbtn, Hbtn} = dbg_ui_win:min_size(["Ok","Cancel"], 70, 30),
@@ -88,7 +92,7 @@ create_win(GS, {X, Y}, function, Mod, _Line) ->
 
     Wfrm = gs:read(Frm, width), Hfrm = gs:read(Frm, height),
     gs:config(Win, [{width, Wfrm}, {height, Hfrm}, {map, true}]),
-    #winInfo{type=function,
+    #winInfo{type=function, win=Win,
 	     packer=Frm, entries=Entries, trigger=enable,
 	     ok=Ok, cancel=Cancel, listbox=Lb, funcs=[]};
 create_win(GS, {X, Y}, Type, Mod, Line) ->
@@ -129,7 +133,7 @@ create_win(GS, {X, Y}, Type, Mod, Line) ->
 	  end,
     {Entries, Yacc} = lists:mapfoldl(Fun, Pad, Labels),
     {First, _DataType} = hd(Entries),
-    gs:config(First, {setfocus, true}),
+    gs:config(First, [{buttonpress, true}, {setfocus, true}]),
 
     %% Add 'trigger action' buttons
     {Wlbl2, Hlbl2} = dbg_ui_win:min_size(["Trigger Action"], 100, 20),
@@ -142,16 +146,19 @@ create_win(GS, {X, Y}, Type, Mod, Line) ->
     gs:radiobutton(Frm, [{label, {text, "Enable"}}, {font, Font},
 			 {x, 10}, {y, Hlbl2},
 			 {width, Wlbl2-10}, {height, Hlbl2},
-			 {align, w}, {data, enable}, {group, Grp},
+			 {align, w}, {group, Grp},
+			 {data, {trigger, enable}},
 			 {select, true}]),
     gs:radiobutton(Frm, [{label, {text, "Disable"}}, {font, Font},
 			 {x, 10}, {y, Hlbl2*2},
 			 {width, Wlbl2-10}, {height, Hlbl2},
-			 {align, w}, {data, disable}, {group, Grp}]),
+			 {align, w}, {group, Grp},
+			 {data, {trigger, disable}}]),
     gs:radiobutton(Frm, [{label, {text, "Delete"}}, {font, Font},
 			 {x, 10}, {y, Hlbl2*3},
 			 {width, Wlbl2-10}, {height, Hlbl2},
-			 {align, w}, {data, delete}, {group, Grp}]),
+			 {align, w}, {group, Grp},
+			 {data, {trigger, delete}}]),
 
     %% Add Ok and Cancel buttons
     {Wbtn, Hbtn} = dbg_ui_win:min_size(["Ok","Cancel"], 70, 30),
@@ -166,7 +173,8 @@ create_win(GS, {X, Y}, Type, Mod, Line) ->
     Hwin = Ybtn + Hbtn + Pad,
     gs:config(Win, [{width, W}, {height, Hwin}, {map, true}]),
 
-    #winInfo{type=Type, entries=Entries, trigger=enable, ok=Ok}.
+    #winInfo{type=Type, win=Win,
+	     entries=Entries, trigger=enable, ok=Ok}.
 
 %%--------------------------------------------------------------------
 %% update_functions(WinInfo, Funcs) -> WinInfo
@@ -178,7 +186,8 @@ create_win(GS, {X, Y}, Type, Mod, Line) ->
 update_functions(WinInfo, Funcs) ->
     Items = lists:map(fun([N, A]) -> io_lib:format("~p/~p", [N, A]) end,
 		      Funcs),
-    gs:config(WinInfo#winInfo.listbox, {items, Items}),
+    gs:config(WinInfo#winInfo.listbox, [{items, Items},
+					{setfocus, true}]),
     WinInfo#winInfo{funcs=Funcs}.
 
 %%--------------------------------------------------------------------
@@ -189,9 +198,9 @@ update_functions(WinInfo, Funcs) ->
 %%         | stopped
 %%         | {win, WinInfo}
 %%         | {module, Mod}
-%%         | {break, [Mod, Line], Action}
-%%         | {break, [Mod, Line, CMod, CFunc], Action}
-%%         | {break, [Mod, Func, Arity], Action}
+%%         | {break, [[Mod, Line]], Action}
+%%         | {break, [[Mod, Line, CMod, CFunc]], Action}
+%%         | {break, [[Mod, Func, Arity]], Action}
 %%--------------------------------------------------------------------
 handle_event({gs, _Id, destroy, _Data, _Arg}, _WinInfo) ->
     stopped;
@@ -199,6 +208,28 @@ handle_event({gs, _Id, configure, _Data, [W, H|_]}, WinInfo) ->
     gs:config(WinInfo#winInfo.packer, [{width, W-10}, {height, H-10}]),
     gs:config(WinInfo#winInfo.cancel, [{x, W-80}]),
     ignore;
+handle_event({gs, Ent, buttonpress, _,[N,X0,Y0|_]}, WinInfo) when N>1 ->
+    %% Right (middle) mouse button click in module entry, display a
+    %% menu containing all interpreted modules
+    Mods = int:interpreted(),
+    X = gs:read(Ent, x) + X0,
+    Y = gs:read(Ent, y) + Y0,
+    Menu = gs:menu(WinInfo#winInfo.win, [{post_at,{X,Y}}]),
+    lists:foreach(fun(Mod) ->
+			  gs:menuitem(Menu, [{label,{text,Mod}},
+					     {data,{module,Mod}}])
+		  end,
+		  Mods),
+    ignore;
+handle_event({gs, LB, keypress, window, [Key|_]}, WinInfo) ->
+    %% Used for functional break window, since listboxes for some
+    %% reason doesn't generate keypress events
+    if
+	Key/='Tab', Key/='Return' ->
+	    ignore;
+	true ->
+	    handle_event({gs, LB, click, listbox, ["Ok"]}, WinInfo)
+    end;
 handle_event({gs, Ent, keypress, Data, [Key|_]}, WinInfo) ->
     case WinInfo#winInfo.type of
 	function when Key/='Tab', Key/='Return' ->
@@ -208,8 +239,11 @@ handle_event({gs, Ent, keypress, Data, [Key|_]}, WinInfo) ->
 		    gs:config(WinInfo#winInfo.listbox, clear),
 		    {win, WinInfo#winInfo{funcs=[]}}
 	    end;
-	function -> % 'Return' | 'Tab'
-	    handle_event({gs, Ent, click, Data, ["Ok"]}, WinInfo);
+	function -> % 'Return' | 'Tab' pressed in Module entry
+	    case check_input(WinInfo#winInfo.entries) of
+		error -> ignore;
+		[Mod] -> {module, Mod}
+	    end;
 	_Type when Key=='Tab'; Key=='Return' ->
 	    case next_entry(Ent, WinInfo#winInfo.entries) of
 		last ->
@@ -225,22 +259,31 @@ handle_event({gs, _Id, click, _Data, ["Ok"|_]}, WinInfo) ->
     case check_input(WinInfo#winInfo.entries) of
 	error -> ignore;
 	Data when WinInfo#winInfo.type/=function ->
-	    {break, Data, WinInfo#winInfo.trigger};
-	[Mod] ->
+	    {break, [Data], WinInfo#winInfo.trigger};
+	[Mod] -> % Function break window
 	    case gs:read(WinInfo#winInfo.listbox, selection) of
-		[Index] ->
-		    Func = lists:nth(Index+1, WinInfo#winInfo.funcs),
-		    {break, [Mod | Func], enable};
 		[] ->
-		    [{Ent, _}] = WinInfo#winInfo.entries,
-		    gs:config(Ent, {setfocus, false}),
-		    {module, Mod}
+		    {module, Mod};
+		IndexL ->
+		    Funcs = WinInfo#winInfo.funcs,
+		    Breaks =
+			lists:map(fun(Index) ->
+					  Func = lists:nth(Index+1,
+							   Funcs),
+					  [Mod | Func]
+				  end,
+				  IndexL),
+		    {break, Breaks, enable}
 	    end
     end;
 handle_event({gs, _Id, click, _Data, ["Cancel"|_]}, _WinInfo) ->
     stopped;
-handle_event({gs, _Id, click, Trigger, _Arg}, WinInfo) ->
+handle_event({gs, _Id, click, {trigger,Trigger}, _Arg}, WinInfo) ->
     {win, WinInfo#winInfo{trigger=Trigger}};
+handle_event({gs, _Id, click, {module, Mod}, _Arg}, WinInfo) ->
+    {Ent, _DataType} = hd(WinInfo#winInfo.entries),
+    gs:config(Ent, {insert,{0,Mod}}),
+    ignore;
 handle_event(_GSEvent, _WinInfo) ->
     ignore.
 

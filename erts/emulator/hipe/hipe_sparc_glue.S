@@ -239,7 +239,7 @@ nbif_suspend_msg:
 /*
  * Suspend from a receive with a timeout (waiting for a message)
  *	if( !(p->flags & F_TIMO) ) { suspend }
- *	else { p->flags ^= F_TIMO; return 0; }
+ *	else { return 0; }
  */
 	.align 4
 	.global nbif_suspend_msg_timeout
@@ -250,8 +250,6 @@ nbif_suspend_msg_timeout:
 	bz,a .suspend_exit			! if not set, suspend
 	mov HIPE_MODE_SWITCH_RES_WAIT_TIMEOUT,TEMP0 ! .. and set C retval
 	!! timeout has occurred
-	xor TEMP1,F_TIMO,TEMP1			! F_TIMO was set, clear it
-	st TEMP1,[P+P_FLAGS]
 	jmp RA+8				! retl
 	mov 0,%o0
 
@@ -341,12 +339,13 @@ sparc_tailcall_to_native:
 sparc_throw_to_native:
 	save %sp,-112,%sp
 	st %i7,[P+P_CRA]			! save C return address
+	ld [P+P_NCALLEE],TEMP0			! handler address
 	ld [P+P_FCALLS],FCALLS			! fcalls
 	ld [P+P_NSP],NSP			! nstop
 	ld [P+P_NSP_LIMIT],NSP_LIMIT		! nstack_max
 	ld [P+P_HP],HP				! htop
 	ld [P+P_HP_LIMIT],HP_LIMIT		! heap_margin
-	ba .find_exn_handler_1
+	jmp TEMP0				! invoke the handler
 	nop
 
 /*
@@ -356,7 +355,6 @@ sparc_throw_to_native:
 .find_exn_handler:
 	/* find and prepare to invoke the handler */
 	st	TEMP3, [P+P_NRA]  	! TEMP3 = RetAdr, save to find current sdesc
-.find_exn_handler_1:
 	call	hipe_handle_exception
 	mov	P, %o0                  ! (delayslot)
 	

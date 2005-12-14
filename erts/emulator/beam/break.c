@@ -35,6 +35,7 @@
 #include "atom.h"
 #include "beam_load.h"
 #include "erl_instrument.h"
+#include "erl_bif_timer.h"
 
 #ifdef _OSE_
 #include "time.h"
@@ -671,6 +672,7 @@ erl_crash_dump_v(char *file, int line, char* fmt, va_list args)
     int fd;
     time_t now;
     char* dumpname;
+    char* e;
     char buf[512];
 #if !defined(VXWORKS) && !defined(__WIN32__)
     int i, max;
@@ -698,6 +700,26 @@ erl_crash_dump_v(char *file, int line, char* fmt, va_list args)
 	dumpname = "erl_crash.dump";
     }
 
+#ifdef UNIX
+    e = getenv("ERL_CRASH_DUMP_NICE");
+    if (e) {
+	int nice_val;
+	nice_val = atoi(e);
+	if (nice_val > 39) {
+	    nice_val = 39;
+	}
+	nice(nice_val);
+    }
+    
+    e = getenv("ERL_CRASH_DUMP_SECONDS");
+    if (e) {
+	unsigned sec;
+	sec = (unsigned) atoi(e);
+	alarm(sec);
+    }
+
+#endif
+
     fd = open(dumpname,O_WRONLY | O_CREAT | O_TRUNC,0640);
     if (fd < 0) 
 	return; /* Can't create the crash dump, skip it */
@@ -715,11 +737,12 @@ erl_crash_dump_v(char *file, int line, char* fmt, va_list args)
     erl_printf(fd, "System version: %s", erts_get_system_version(NULL));
     erl_printf(fd, "Compiled: " ERLANG_COMPILE_DATE "\n");
     erl_printf(fd, "Atoms: %d\n", atom_table.sz);
+
     info(fd); /* General system info */
     if (process_tab != NULL)  /* XXX true at init */
 	process_info(fd); /* Info about each process and port */
     db_info(fd, 0);
-    print_timer_info(fd);
+    erts_print_bif_timer_info(fd);
     distribution_info(fd);
     erl_printf(fd, "=loaded_modules\n");
     loaded(fd);

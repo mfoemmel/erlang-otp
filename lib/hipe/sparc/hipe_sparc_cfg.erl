@@ -20,6 +20,8 @@
 -define(SPARC_CFG,true).		% needed for cfg.inc
 
 -include("../main/hipe.hrl"). 
+-include("hipe_sparc.hrl"). 
+
 -include("../flow/cfg.inc").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -61,35 +63,35 @@ mk_goto(Name) ->
   hipe_sparc:goto_create(Name).
 
 branch_successors(Instr) ->
-  case hipe_sparc:type(Instr) of
-    b -> [hipe_sparc:b_false_label(Instr),hipe_sparc:b_true_label(Instr)];
-%%  br -> [hipe_sparc:br_false_label(Instr),hipe_sparc:br_true_label(Instr)];
-    call_link -> 
+  case Instr of
+    #b{} -> [hipe_sparc:b_false_label(Instr),hipe_sparc:b_true_label(Instr)];
+%%  #br{} -> [hipe_sparc:br_false_label(Instr),hipe_sparc:br_true_label(Instr)];
+    #call_link{} -> 
       case hipe_sparc:call_link_fail(Instr) of
 	[] -> [hipe_sparc:call_link_continuation(Instr)];
 	F -> [hipe_sparc:call_link_continuation(Instr),F]
       end;
-    jmp -> hipe_sparc:jmp_destinations(Instr);
-    goto -> [hipe_sparc:goto_label(Instr)];
+    #jmp{} -> hipe_sparc:jmp_destinations(Instr);
+    #goto{} -> [hipe_sparc:goto_label(Instr)];
     _ -> []
   end.
 
 fails_to(Instr) ->
-  case hipe_sparc:type(Instr) of
-    call_link -> [hipe_sparc:call_link_fail(Instr)];
+  case Instr of
+    #call_link{} -> [hipe_sparc:call_link_fail(Instr)];
     _ -> []
   end.
 
 is_branch(Instr) ->
-  case hipe_sparc:type(Instr) of
-    b -> true;
-    br -> true;
-    goto -> true;
-    jmp -> true;
-    jmp_link -> true;
-    pseudo_return -> true;
-    pseudo_enter -> true;
-    call_link -> 
+  case Instr of
+    #b{} -> true;
+    #br{} -> true;
+    #goto{} -> true;
+    #jmp{} -> true;
+    #jmp_link{} -> true;
+    #pseudo_return{} -> true;
+    #pseudo_enter{} -> true;
+    #call_link{} -> 
       case hipe_sparc:call_link_fail(Instr) of
 	[] -> 
 	  case hipe_sparc:call_link_continuation(Instr) of
@@ -104,9 +106,9 @@ is_branch(Instr) ->
   end.
 
 is_pure_branch(Branch) ->
-  case hipe_sparc:type(Branch) of
-    b -> true;
-    goto -> true;
+  case Branch of
+    #b{} -> true;
+    #goto{} -> true;
     _ -> false
   end.
 
@@ -121,9 +123,9 @@ redirect_ops([Label|Labels], CFG, Map) ->
   redirect_ops(Labels, NewCFG, Map);
 redirect_ops([],CFG,_) -> CFG.
 
-rewrite(I,Map) ->
-  case hipe_sparc:type(I) of
-    load_address ->
+rewrite(I, Map) ->
+  case I of
+    #load_address{} ->
       case hipe_sparc:load_address_type(I) of
 	constant -> I;
 	_ -> 
@@ -211,28 +213,28 @@ prediction_list([], Vis, _, PO, _) ->
   {Vis, PO}.
 
 is_cond(I) ->
-  case hipe_sparc:type(I) of
-    br -> true;
-    b -> true;
+  case I of
+    #br{} -> true;
+    #b{} -> true;
     _ -> false
   end.
 
 cond_pred(I) ->
-   case hipe_sparc:type(I) of
-%%   br -> hipe_sparc:br_pred(I);
-     b -> hipe_sparc:b_pred(I)
+   case I of
+%%   #br{} -> hipe_sparc:br_pred(I);
+     #b{} -> hipe_sparc:b_pred(I)
    end.
 
 cond_true_label(B) ->
-   case hipe_sparc:type(B) of
-%%  br -> hipe_sparc:br_true_label(B);
-     b -> hipe_sparc:b_true_label(B)
+   case B of
+%%   #br{} -> hipe_sparc:br_true_label(B);
+     #b{} -> hipe_sparc:b_true_label(B)
    end.
 
 cond_false_label(B) ->
-  case hipe_sparc:type(B) of
-%%  br -> hipe_sparc:br_false_label(B);
-    b -> hipe_sparc:b_false_label(B)
+  case B of
+%%  #br{} -> hipe_sparc:br_false_label(B);
+    #b{} -> hipe_sparc:b_false_label(B)
   end.
 
 %% init_gensym(CFG) ->

@@ -108,6 +108,7 @@ release_spec: opt
 release_docs_spec:
 
 # Please keep this list sorted.
+$(EBIN)/hipe_rtl_to_x86.beam: ../rtl/hipe_rtl.hrl
 $(EBIN)/hipe_x86_assemble.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl ../misc/hipe_sdi.hrl
 $(EBIN)/hipe_x86_cfg.beam: ../flow/cfg.inc
 $(EBIN)/hipe_x86_frame.beam: ../rtl/hipe_literals.hrl

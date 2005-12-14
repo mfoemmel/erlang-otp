@@ -17,8 +17,6 @@
 %%
 -module(application_controller).
 
--behaviour(gen_server).
-
 %% External exports
 -export([start/1, 
 	 load_application/1, unload_application/1, 
@@ -34,7 +32,7 @@
 	 set_env/3, set_env/4, unset_env/2, unset_env/3]).
 
 %% Internal exports
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, 
+-export([handle_call/3, handle_cast/2, handle_info/2, terminate/2, 
 	 code_change/3, init_starter/4, get_loaded/1]).
 
 %% Test exports, only to be used from the test suites
@@ -176,14 +174,22 @@
 %%          starts user.  This process is special because it should
 %%          be group_leader for this process.
 %% Pre: All modules are loaded, or will be loaded on demand.
-%% Returns: {ok, Pid} | {error, Reason}
+%% Returns: {ok, Pid} | ReasonStr
 %%-----------------------------------------------------------------
 start(KernelApp) ->
-    gen_server:start_link({local, ?AC}, ?MODULE, KernelApp, []).
-
-
-    
-
+    %% OTP-5811 Don't start as a gen_server to prevent crash report
+    %% when (if) the process terminates
+    Init = self(),
+    AC = spawn_link(fun() -> init(Init, KernelApp) end),
+    receive
+	{ack, AC, ok} ->
+	    {ok, AC};
+	{ack, AC, {error, Reason}} ->
+	    to_string(Reason); % init doesn't want error tuple, only a reason
+	{'EXIT', _Pid, Reason} ->
+	    to_string(Reason)
+    end.
+	
 %%-----------------------------------------------------------------
 %% Func: load_application/1
 %% Args: Application = appl_descr() | atom()
@@ -472,8 +478,12 @@ unset_env(AppName, Key, Timeout) ->
 %%%-----------------------------------------------------------------
 %%% call-back functions from gen_server
 %%%-----------------------------------------------------------------
-init(Kernel) ->
+init(Init, Kernel) ->
+    register(?AC, self()),
     process_flag(trap_exit, true),
+    put('$ancestors', [Init]), % OTP-5811, for gen_server compatibility
+    put('$initial_call', {application_controller, start, [Kernel]}),
+
     case catch check_conf() of
 	{ok, ConfData} ->
 	    %% Actually, we don't need this info in an ets table anymore.
@@ -488,19 +498,23 @@ init(Kernel) ->
 		    {ok, KAppl} = make_appl(Kernel),
 		    case catch load(S, KAppl) of
 			{'EXIT', LoadError} ->
-			    {stop, {'load error', LoadError}};
-			{ok, News} ->
-			    {ok, News}
+			    Reason = {'load error', LoadError},
+			    Init ! {ack, self(), {error, to_string(Reason)}};
+			{ok, NewS} ->
+			    Init ! {ack, self(), ok},
+			    gen_server:enter_loop(?MODULE, [], NewS,
+						  {local, ?AC})
 		    end;
-		{error, ErrorMsg} ->
-		    Str = "invalid configuration file",
-		    Str2 = lists:flatten(io_lib:format("~s; ~s ~n",
-						       [Str, ErrorMsg])),
-		    error_logger:format(Str2, []),
-		    {stop, {'invalid configuration file', list_to_atom(ErrorMsg), ConfData}}
+		{error, ErrorStr} ->
+		    Str = lists:flatten(io_lib:format("invalid config data: ~s", [ErrorStr])),
+		    Init ! {ack, self(), {error, to_string(Str)}}
 	    end;
-	{error, R} ->
-	    {stop, R}
+	{error, {File, Line, Str}} ->
+	    ReasonStr =
+		lists:flatten(io_lib:format("error in config file "
+					    "~p (~w): ~s",
+					    [File, Line, Str])),
+	    Init ! {ack, self(), {error, to_string(ReasonStr)}}
     end.
 
 
@@ -964,15 +978,18 @@ handle_application_started(AppName, Res, S) ->
 		    {noreply, S#state{starting = keydelete(AppName, 1, Starting),
 				      start_req = Start_reqN}};
 		_ ->
-		    {stop, shutdown, S}
+		    Reason = {application_start_failure, AppName, R},
+		    {stop, to_string(Reason), S}
 	    end;
 	{error, R} -> %% permanent
 	    notify_cntrl_started(AppName, undefined, S, {error, R}),
 	    info_exited(AppName, R, RestartType),
-	    {stop, shutdown, S};
+	    Reason = {application_start_failure, AppName, R},
+	    {stop, to_string(Reason), S};
 	{info, R} -> %% permanent
 	    notify_cntrl_started(AppName, undefined, S, {error, R}),
-	    {stop, shutdown, S}
+	    Reason = {application_start_failure, AppName, R},
+	    {stop, to_string(Reason), S}
     end.
 
 handle_info({ac_load_application_reply, AppName, Res}, S) ->
@@ -1021,7 +1038,7 @@ handle_info({ac_start_application_reply, AppName, Res}, S) ->
 		    Start_reqN =
 			reply_to_requester(AppName, Start_req,
 					   {error, Reason}),
-		    {stop, Reason, S#state{start_req = Start_reqN}};
+		    {stop, to_string(Reason), S#state{start_req = Start_reqN}};
 		{error, Reason} ->
 		    Start_reqN =
 			reply_to_requester(AppName, Start_req,
@@ -1144,7 +1161,7 @@ handle_info({'EXIT', Pid, Reason}, S) ->
 		    {noreply, NewS};
 		{value, {_AppName, Type}} ->
 		    info_exited(AppName, Reason, Type),
-		    {stop, shutdown, NewS}
+		    {stop, to_string({application_terminated, AppName, Reason}), NewS}
 	    end;
 	false ->
 	    {noreply, S#state{control = del_cntrl(S#state.control, Pid)}}
@@ -1401,7 +1418,7 @@ make_appl(Name) when atom(Name) ->
     FName = atom_to_list(Name) ++ ".app",
     case code:where_is_file(FName) of
 	non_existing ->
-	    {error, {file:format_error({error,enoent}), FName}};
+	    {error, {file:format_error(enoent), FName}};
 	FullName ->
 	    case file:consult(FullName) of
 		{ok, [Application]} ->
@@ -1751,21 +1768,13 @@ check_conf() ->
 					       [] ->
 						   merge_env(Env, SysEnv);
 					       [{error, {SysFName, Line, Str}}|_] ->
-						   Str2 = lists:flatten(
-							    io_lib:format("~p: ~w: ~s~n",
-									  [SysFName, Line, Str])),
-						   error_logger:format(Str2, []),
-						   throw({error, config_error})
+						   throw({error, {SysFName, Line, Str}})
 					   end;
 				       true ->
 					   merge_env(Env, NewEnv)
 				   end;
 			       {error, {Line, _Mod, Str}} ->
-				   Str2 = lists:flatten(
-					    io_lib:format("~p: ~w: ~s~n",
-							  [FName,Line,Str])),
-				   error_logger:format(Str2, []),
-				   throw({error, config_error})
+				   throw({error, {FName, Line, Str}})
 			   end
 		   end, [], Files)};
 	_ -> {ok, []}
@@ -1909,12 +1918,20 @@ test_do_change_appl([A|Apps], [C|Conf], [R|Res]) ->
     do_change_appl(R, #appl{name = A}, C),
     test_do_change_appl(Apps, Conf, Res).
 
-
-
 test_make_apps([], Res) ->
     lists:reverse(Res);
 test_make_apps([A|Apps], Res) ->
     test_make_apps(Apps, [make_appl(A) | Res]).
 
-
-
+%%-----------------------------------------------------------------
+%% String conversion
+%% Exit reason needs to be a string of length <199
+%%-----------------------------------------------------------------
+to_string(Term) ->
+    Str = case io_lib:printable_list(Term) of
+	      true ->
+		  Term;
+	      false ->
+		  lists:flatten(io_lib:write(Term))
+	  end,
+    lists:sublist(Str, 199).

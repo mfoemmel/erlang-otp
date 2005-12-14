@@ -51,16 +51,30 @@ all(suite) ->
 
 tickets(suite) ->
     [
-     otp_5750
+     otp_5750,
+     otp_5799,
+     otp_5826
     ].
 
 
 otp_5750(suite) ->
     [
      otp_5750_01,
-     otp_5750_02,
-     otp_5750_03
+     otp_5750_02
     ].
+
+otp_5799(suite) ->
+    [
+     otp_5799_01
+    ].
+
+otp_5826(suite) ->
+    [
+     otp_5826_01,
+     otp_5826_02,
+     otp_5826_03
+    ].
+
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -79,7 +93,7 @@ otp_5750_01(Config) when list(Config) ->
 	  fun() ->
 		  (catch tde(DM, "1"))
 	  end,
-	  fun({ok, full, "1"}) ->
+	  fun({ok, {full, "1"}}) ->
 		  ok;
 	     (Else) ->
 		  {error, {unexpected_digit_map_result, Else}}
@@ -89,7 +103,7 @@ otp_5750_01(Config) when list(Config) ->
 	  fun() ->
 		  (catch tde(DM, "123"))
 	  end,
-	  fun({ok, unambiguous, "123"}) ->
+	  fun({ok, {unambiguous, "123"}}) ->
 		  ok;
 	     (Else) ->
 		  {error, {unexpected_digit_map_result, Else}}
@@ -104,8 +118,8 @@ otp_5750_01(Config) when list(Config) ->
 	     (Else) ->
 		  {error, {unexpected_digit_map_result, Else}}
 	  end}
-	 ],
-	  
+	],
+
     dm_tests(Tests),
 
     ok.
@@ -125,10 +139,9 @@ otp_5750_02(Config) when list(Config) ->
 	[
 	 {1,
 	  fun() ->
-		  %% (catch tde(DM, "113"))
 		  (catch otp_5750_02_exec(500, DM, "113"))
 	  end,
-	  fun({ok, unambiguous, "113"}) ->
+	  fun({ok, {unambiguous, "113"}}) ->
 		  ok;
 	     (Else) ->
 		  {error, {unexpected_digit_map_result, Else}}
@@ -136,10 +149,9 @@ otp_5750_02(Config) when list(Config) ->
 
 	 {2,
 	  fun() ->
-		  %% (catch tde(DM, "114"))
 		  (catch otp_5750_02_exec(500, DM, "114"))
 	  end,
-	  fun({ok, unambiguous, "114"}) ->
+	  fun({ok, {unambiguous, "114"}}) ->
 		  ok;
 	     (Else) ->
 		  {error, {unexpected_digit_map_result, Else}}
@@ -147,10 +159,9 @@ otp_5750_02(Config) when list(Config) ->
 
 	 {3,
 	  fun() ->
-		  %% (catch tde(DM, "11ssss3"))
 		  (catch otp_5750_02_exec(5000, DM, "11ssss3"))
 	  end,
-	  fun({ok, unambiguous, "113"}) ->
+	  fun({ok, {unambiguous, "113"}}) ->
 		  ok;
 	     (Else) ->
 		  {error, {unexpected_digit_map_result, Else}}
@@ -158,10 +169,9 @@ otp_5750_02(Config) when list(Config) ->
 
 	 {4,
 	  fun() ->
-		  %% (catch tde(DM, "11ssss4"))
 		  (catch otp_5750_02_exec(5000, DM, "11ssss4"))
 	  end,
-	  fun({ok, unambiguous, "114"}) ->
+	  fun({ok, {unambiguous, "114"}}) ->
 		  ok;
 	     (Else) ->
 		  {error, {unexpected_digit_map_result, Else}}
@@ -190,6 +200,191 @@ otp_5750_02_exec(To, DM, Evs) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+otp_5799_01(suite) ->
+    [];
+otp_5799_01(doc) ->
+    [];
+otp_5799_01(Config) when list(Config) ->
+    DM = "234 | 23456",
+
+    %% First case
+    Tests = 
+	[
+	 {1,
+	  fun() ->
+		  (catch tde(DM, "2349"))
+	  end,
+	  fun({ok, {full, "234", $9}}) ->
+		  ok;
+	     (Else) ->
+		  {error, {unexpected_digit_map_result, Else}}
+	  end}
+	],
+
+    dm_tests(Tests),
+
+    ok.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+otp_5826_01(suite) ->
+    [];
+otp_5826_01(doc) ->
+    [];
+otp_5826_01(Config) when list(Config) ->
+    DM = "123Z56",
+
+    %% First case
+    Tests = 
+	[
+	 {1,
+	  fun() ->
+		  (catch tde(DM, [$1,$2,$3,{long, $5},$6]))
+	  end,
+	  fun({ok, {unambiguous, "123Z56"}}) ->
+		  ok;
+	     (Else) ->
+		  {error, {unexpected_digit_map_result, Else}}
+	  end},
+	 {2,
+	  fun() ->
+		  (catch tde(DM, [$1,$2,{long, $3},{long,$5},$6]))
+	  end,
+	  fun({ok, {unambiguous, "123Z56"}}) ->
+		  ok;
+	     (Else) ->
+		  {error, {unexpected_digit_map_result, Else}}
+	  end},
+	 {3,
+	  fun() ->
+		  (catch tde(DM, [$1,$2,$3,{long,$5},{long,$6}]))
+	  end,
+	  fun({ok, {unambiguous, "123Z56"}}) ->
+		  ok;
+	     (Else) ->
+		  {error, {unexpected_digit_map_result, Else}}
+	  end},
+	 {4,
+	  fun() ->
+		  (catch tde(DM, [$1,$2,{long, $3},{long,$5},{long,$6}]))
+	  end,
+	  fun({ok, {unambiguous, "123Z56"}}) ->
+		  ok;
+	     (Else) ->
+		  {error, {unexpected_digit_map_result, Else}}
+	  end}
+	],
+
+    dm_tests(Tests),
+
+    ok.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+otp_5826_02(suite) ->
+    [];
+otp_5826_02(doc) ->
+    [];
+otp_5826_02(Config) when list(Config) ->
+    DM = "12356",
+
+    %% First case
+    Tests = 
+	[
+	 {1,
+	  fun() ->
+		  (catch tde(DM, [$1,$2,$3,{long, $5},$6]))
+	  end,
+	  fun({ok, {unambiguous, "12356"}}) ->
+		  ok;
+	     (Else) ->
+		  {error, {unexpected_digit_map_result, Else}}
+	  end}
+	],
+
+    dm_tests(Tests),
+
+    ok.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+otp_5826_03(suite) ->
+    [];
+otp_5826_03(doc) ->
+    [];
+otp_5826_03(Config) when list(Config) ->
+    DM = "12346 | 12Z346 | 12Z34Z7 | 1234Z8",
+
+    %% First case
+    Tests = 
+	[
+ 	 {1,
+ 	  fun() ->
+ 		  (catch tde(DM, [$1,$2,{long, $3},$4,$6]))
+ 	  end,
+ 	  fun({ok, {unambiguous, "12Z346"}}) ->
+ 		  ok;
+ 	     (Else) ->
+ 		  {error, {unexpected_digit_map_result, Else}}
+ 	  end},
+ 	 {2,
+ 	  fun() ->
+ 		  (catch tde(DM, [$1, {long, $2}, {long, $3},$4, $6]))
+ 	  end,
+ 	  fun({ok, {unambiguous, "12Z346"}}) ->
+ 		  ok;
+ 	     (Else) ->
+ 		  {error, {unexpected_digit_map_result, Else}}
+ 	  end},
+ 	 {3,
+ 	  fun() ->
+ 		  (catch tde(DM, [$1,$2,{long, $3},{long, $4},$6]))
+ 	  end,
+ 	  fun({ok, {unambiguous, "12Z346"}}) ->
+ 		  ok;
+ 	     (Else) ->
+ 		  {error, {unexpected_digit_map_result, Else}}
+ 	  end},
+ 	 {4,
+ 	  fun() ->
+ 		  (catch tde(DM, [$1,$2,{long, $3},$4,{long, $7}]))
+ 	  end,
+ 	  fun({ok, {unambiguous, "12Z34Z7"}}) ->
+ 		  ok;
+ 	     (Else) ->
+ 		  {error, {unexpected_digit_map_result, Else}}
+ 	  end},
+ 	 {5,
+ 	  fun() ->
+ 		  (catch tde(DM, [$1,$2,{long, $3},$4,{long, $8}]))
+ 	  end,
+ 	  fun({error, 
+	       {unexpected_event, {long, $8}, _Collected, _Expected}}) ->
+ 		  ok;
+ 	     (Else) ->
+ 		  {error, {unexpected_digit_map_result, Else}}
+ 	  end},
+ 	 {6,
+ 	  fun() ->
+ 		  (catch tde(DM, [$1,$2,$3,$4,{long, $8}]))
+ 	  end,
+ 	  fun({ok, {unambiguous, "1234Z8"}}) ->
+ 		  ok;
+ 	     (Else) ->
+ 		  {error, {unexpected_digit_map_result, Else}}
+ 	  end}
+	],
+
+    dm_tests(Tests),
+
+    ok.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 dm_tests([]) ->
     ok;
 dm_tests([{No, Exec, Ver}|Tests]) 
@@ -198,9 +393,9 @@ dm_tests([{No, Exec, Ver}|Tests])
 	ok ->
 	    dm_tests(Tests);
 	{error, Reason} ->
-	    ?ERROR({Reason, No});
+	    ?ERROR({No, Reason});
 	Error ->
-	    ?ERROR({Error, No})
+	    ?ERROR({No, Error})
     end.
 
 dm_test(Exec, Verify) ->

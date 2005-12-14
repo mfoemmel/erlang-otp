@@ -82,6 +82,7 @@ BIF_RETTYPE hipe_bifs_read_u8_1(BIF_ALIST_1)
 }
 #endif
 
+#if 0 /* XXX: unused */
 BIF_RETTYPE hipe_bifs_read_u32_1(BIF_ALIST_1)
 {
     Uint32 *address = term_to_address(BIF_ARG_1);
@@ -89,6 +90,7 @@ BIF_RETTYPE hipe_bifs_read_u32_1(BIF_ALIST_1)
 	BIF_ERROR(BIF_P, BADARG);
     BIF_RET(Uint_to_term(*address, BIF_P));
 }
+#endif
 
 BIF_RETTYPE hipe_bifs_write_u8_2(BIF_ALIST_2)
 {
@@ -101,6 +103,7 @@ BIF_RETTYPE hipe_bifs_write_u8_2(BIF_ALIST_2)
     BIF_RET(NIL);
 }
 
+#if 0 /* XXX: unused */
 BIF_RETTYPE hipe_bifs_write_s32_2(BIF_ALIST_2)
 {
     Sint32 *address;
@@ -114,6 +117,7 @@ BIF_RETTYPE hipe_bifs_write_s32_2(BIF_ALIST_2)
     *address = value;
     BIF_RET(NIL);
 }
+#endif
 
 BIF_RETTYPE hipe_bifs_write_u32_2(BIF_ALIST_2)
 {
@@ -869,112 +873,6 @@ BIF_RETTYPE hipe_bifs_term_to_word_1(BIF_ALIST_1)
     BIF_RET(Uint_to_term(BIF_ARG_1, BIF_P));
 }
 
-/*
- * The funinfo (code table) data structure records the following
- * about a given MFA:
- *
- * - the list of MFAs it calls [key: refers_to]
- * - the list of MFAs that calls it [key: referred_from]
- *
- * This is currently just a pile of terms in an ETS table.
- * XXX: Reimplement and provide higher-level interfaces.
- */
-
-DbTable* code_tb = (DbTable*) NULL;
-static void init_code_table(void)
-{
-    Uint32 status;
-    int keypos;
-    int cret;
-
-    status = DB_NORMAL | DB_SET | DB_LHASH | DB_PROTECTED;
-    keypos = 1;
-
-    code_tb = (DbTable*) erts_alloc(ERTS_ALC_T_DB_TABLE, sizeof(DbTable));
-    code_tb->common.status = status;
-    code_tb->common.keypos = keypos;
-    code_tb->common.nitems = 0;
-    cret = db_create_hash((Process *)NULL, &(code_tb->hash));
-
-    if (cret != DB_ERROR_NONE) {
-	printf("HiPE: Not enough mem for code table!\n");
-	exit(1); /* TODO: Die gracefully */
-    }
-}
-
-/* could be a BIF, but we want control over the table contents */
-static BIF_RETTYPE hipe_bifs_set_funinfo_3(BIF_ALIST_3)
-{
-    Eterm tuple[3+3];
-    int cret;
-    Eterm ret;
-
-    if (code_tb == (DbTable*) NULL)
-	init_code_table();
-
-    tuple[0] = make_arityval(2);
-    tuple[1] = BIF_ARG_1;	/* the MFA */
-    tuple[2] = BIF_ARG_2;	/* the key */
-    tuple[3] = make_arityval(2);
-    tuple[4] = make_tuple(&tuple[0]);
-    tuple[5] = BIF_ARG_3;	/* the data */
-
-    cret = db_put_hash(BIF_P, &(code_tb->hash), make_tuple(&tuple[3]), &ret);
-    switch (cret) {
-    case DB_ERROR_NONE:
-	BIF_RET(ret);
-    case DB_ERROR_SYSRES:
-	BIF_ERROR(BIF_P, SYSTEM_LIMIT);
-    default:
-	BIF_ERROR(BIF_P, BADARG);
-    }
-}
-
-/* could be a BIF, but we want control over the table contents */
-static BIF_RETTYPE hipe_bifs_get_funinfo_2(BIF_ALIST_2)
-{
-    Eterm tuple[3];
-    int cret;
-    Eterm ret;
-
-    if (code_tb == (DbTable*) NULL)
-	init_code_table();
-
-    tuple[0] = make_arityval(2);
-    tuple[1] = BIF_ARG_1;	/* the MFA */
-    tuple[2] = BIF_ARG_2;	/* the key */
-
-    cret = db_get_hash(BIF_P, &(code_tb->hash), make_tuple(&tuple[0]), &ret);
-    switch (cret) {
-    case DB_ERROR_NONE:
-	BIF_RET(ret);
-    case DB_ERROR_SYSRES:
-	BIF_ERROR(BIF_P, SYSTEM_LIMIT);
-    default:
-	BIF_ERROR(BIF_P, BADARG);
-    }
-}
-
-BIF_RETTYPE hipe_bifs_set_funinfo_refers_to_2(BIF_ALIST_2)
-{
-    return hipe_bifs_set_funinfo_3(BIF_P, BIF_ARG_1, am_refers_to, BIF_ARG_2);
-}
-
-BIF_RETTYPE hipe_bifs_get_funinfo_refers_to_1(BIF_ALIST_1)
-{
-    return hipe_bifs_get_funinfo_2(BIF_P, BIF_ARG_1, am_refers_to);
-}
-
-BIF_RETTYPE hipe_bifs_set_funinfo_referred_from_2(BIF_ALIST_2)
-{
-    return hipe_bifs_set_funinfo_3(BIF_P, BIF_ARG_1, am_referred_from, BIF_ARG_2);
-}
-
-BIF_RETTYPE hipe_bifs_get_funinfo_referred_from_1(BIF_ALIST_1)
-{
-    return hipe_bifs_get_funinfo_2(BIF_P, BIF_ARG_1, am_referred_from);
-}
-
 /* XXX: this is really a primop, not a BIF */
 BIF_RETTYPE hipe_conv_big_to_float(BIF_ALIST_1)
 {
@@ -1161,10 +1059,9 @@ BIF_RETTYPE hipe_bifs_make_native_stub_2(BIF_ALIST_2)
 /*
  * MFA info hash table:
  * - maps MFA to native code entry point
+ * - the MFAs it calls (refers_to)
+ * - the references to it (referred_from)
  * - maps MFA to most recent trampoline [if powerpc]
- *
- * XXX: migrate refers_to/referred_from from the
- * funinfo ETS table to this hash table
  */
 struct hipe_mfa_info {
     struct {
@@ -1178,6 +1075,8 @@ struct hipe_mfa_info {
     void *local_address;
     Eterm *beam_code;
     Uint orig_beam_op;
+    struct hipe_mfa_info_list *refers_to;
+    struct ref *referred_from;
 #if defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__)
     void *trampoline;
 #endif
@@ -1239,6 +1138,8 @@ static struct hipe_mfa_info *hipe_mfa_info_table_alloc(Eterm m, Eterm f, unsigne
     res->local_address = NULL;
     res->beam_code = NULL;
     res->orig_beam_op = 0;
+    res->refers_to = NULL;
+    res->referred_from = NULL;
 #if defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__)
     res->trampoline = NULL;
 #endif
@@ -1504,6 +1405,209 @@ BIF_RETTYPE hipe_bifs_find_na_or_make_stub_2(BIF_ALIST_2)
     BIF_RET(address_to_term(address, BIF_P));
 }
 
+/*
+ * Patch Reference Handling.
+ */
+struct hipe_mfa_info_list {
+    struct hipe_mfa_info *mfa;
+    struct hipe_mfa_info_list *next;
+};
+
+struct ref {
+    struct hipe_mfa_info *caller_mfa;
+    void *address;
+    void *trampoline;
+    unsigned int flags;
+    struct ref *next;
+};
+#define REF_FLAG_IS_LOAD_MFA		1	/* bit 0: 0 == call, 1 == load_mfa */
+#define REF_FLAG_IS_REMOTE		2	/* bit 1: 0 == local, 1 == remote */
+#define REF_FLAG_PENDING_REDIRECT	4	/* bit 2: 1 == pending redirect */
+#define REF_FLAG_PENDING_REMOVE		8	/* bit 3: 1 == pending remove */
+
+/* add_ref(CalleeMFA, {CallerMFA,Address,'call'|'load_mfa',Trampoline,'remote'|'local'})
+ */
+BIF_RETTYPE hipe_bifs_add_ref_2(BIF_ALIST_2)
+{
+    struct mfa callee;
+    Eterm *tuple;
+    struct mfa caller;
+    void *address;
+    void *trampoline;
+    unsigned int flags;
+    struct hipe_mfa_info *callee_mfa;
+    struct hipe_mfa_info *caller_mfa;
+    struct hipe_mfa_info_list *refers_to;
+    struct ref *ref;
+
+    if (!term_to_mfa(BIF_ARG_1, &callee))
+	goto badarg;
+    if (is_not_tuple(BIF_ARG_2))
+	goto badarg;
+    tuple = tuple_val(BIF_ARG_2);
+    if (tuple[0] != make_arityval(5))
+	goto badarg;
+    if (!term_to_mfa(tuple[1], &caller))
+	goto badarg;
+    address = term_to_address(tuple[2]);
+    if (!address)
+	goto badarg;
+    switch (tuple[3]) {
+      case am_call:
+	flags = 0;
+	break;
+      case am_load_mfa:
+	flags = REF_FLAG_IS_LOAD_MFA;
+	break;
+      default:
+	goto badarg;
+    }
+    if (is_nil(tuple[4]))
+	trampoline = NULL;
+    else {
+	trampoline = term_to_address(tuple[4]);
+	if (!trampoline)
+	    goto badarg;
+    }
+    switch (tuple[5]) {
+      case am_local:
+	break;
+      case am_remote:
+	flags |= REF_FLAG_IS_REMOTE;
+	break;
+      default:
+	goto badarg;
+    }
+    callee_mfa = hipe_mfa_info_table_put(callee.mod, callee.fun, callee.ari);
+    caller_mfa = hipe_mfa_info_table_put(caller.mod, caller.fun, caller.ari);
+
+    refers_to = erts_alloc(ERTS_ALC_T_HIPE, sizeof(*refers_to));
+    refers_to->mfa = callee_mfa;
+    refers_to->next = caller_mfa->refers_to;
+    caller_mfa->refers_to = refers_to;
+
+    ref = erts_alloc(ERTS_ALC_T_HIPE, sizeof(*ref));
+    ref->caller_mfa = caller_mfa;
+    ref->address = address;
+    ref->trampoline = trampoline;
+    ref->flags = flags;
+    ref->next = callee_mfa->referred_from;
+    callee_mfa->referred_from = ref;
+
+    BIF_RET(NIL);
+
+ badarg:
+    BIF_ERROR(BIF_P, BADARG);	
+}
+
+/* Given a CalleeMFA, mark each ref to it as pending-redirect.
+ * This ensures that remove_refs_from() won't remove them: any
+ * removal is instead done at the end of redirect_referred_from().
+ */
+BIF_RETTYPE hipe_bifs_mark_referred_from_1(BIF_ALIST_1) /* get_refs_from */
+{
+    struct mfa mfa;
+    const struct hipe_mfa_info *p;
+    struct ref *ref;
+
+    if (!term_to_mfa(BIF_ARG_1, &mfa))
+	BIF_ERROR(BIF_P, BADARG);
+    p = hipe_mfa_info_table_get(mfa.mod, mfa.fun, mfa.ari);
+    if (p)
+	for(ref = p->referred_from; ref != NULL; ref = ref->next)
+	    ref->flags |= REF_FLAG_PENDING_REDIRECT;
+    BIF_RET(NIL);
+}
+
+BIF_RETTYPE hipe_bifs_remove_refs_from_1(BIF_ALIST_1)
+{
+    struct mfa mfa;
+    struct hipe_mfa_info *caller_mfa, *callee_mfa;
+    struct hipe_mfa_info_list *refers_to, *tmp_refers_to;
+    struct ref **prev, *ref;
+
+    if (!term_to_mfa(BIF_ARG_1, &mfa))
+	BIF_ERROR(BIF_P, BADARG);
+    caller_mfa = hipe_mfa_info_table_get(mfa.mod, mfa.fun, mfa.ari);
+    if (caller_mfa) {
+	refers_to = caller_mfa->refers_to;
+	while (refers_to) {
+	    callee_mfa = refers_to->mfa;
+	    prev = &callee_mfa->referred_from;
+	    ref = *prev;
+	    while (ref) {
+		if (ref->caller_mfa == caller_mfa) {
+		    if (ref->flags & REF_FLAG_PENDING_REDIRECT) {
+			ref->flags |= REF_FLAG_PENDING_REMOVE;
+			prev = &ref->next;
+			ref = ref->next;
+		    } else {
+			struct ref *tmp = ref;
+			ref = ref->next;
+			*prev = ref;
+			erts_free(ERTS_ALC_T_HIPE, tmp);
+		    }
+		} else {
+		    prev = &ref->next;
+		    ref = ref->next;
+		}
+	    }
+	    tmp_refers_to = refers_to;
+	    refers_to = refers_to->next;
+	    erts_free(ERTS_ALC_T_HIPE, tmp_refers_to);
+	}
+	caller_mfa->refers_to = NULL;
+    }
+    BIF_RET(NIL);
+}
+
+/* redirect_referred_from(CalleeMFA)
+ * Redirect all pending-redirect refs in CalleeMFA's referred_from.
+ * Then remove any pending-redirect && pending-remove refs from CalleeMFA's referred_from.
+ */
+BIF_RETTYPE hipe_bifs_redirect_referred_from_1(BIF_ALIST_1)
+{
+    struct mfa mfa;
+    struct hipe_mfa_info *p;
+    struct ref **prev, *ref;
+    int is_remote, res;
+    void *new_address;
+
+    if (!term_to_mfa(BIF_ARG_1, &mfa))
+	BIF_ERROR(BIF_P, BADARG);
+    p = hipe_mfa_info_table_get(mfa.mod, mfa.fun, mfa.ari);
+    if (p) {
+	prev = &p->referred_from;
+	ref = *prev;
+	while (ref) {
+	    if (ref->flags & REF_FLAG_PENDING_REDIRECT) {
+		is_remote = ref->flags & REF_FLAG_IS_REMOTE;
+		new_address = hipe_get_na_nofail(p->m, p->f, p->a, is_remote);
+		if (ref->flags & REF_FLAG_IS_LOAD_MFA)
+		    res = hipe_patch_insn(ref->address, (Uint)new_address, am_load_mfa);
+		else
+		    res = hipe_patch_call(ref->address, new_address, ref->trampoline);
+		if (res)
+		    fprintf(stderr, "%s: patch failed\r\n", __FUNCTION__);
+		ref->flags &= ~REF_FLAG_PENDING_REDIRECT;
+		if (ref->flags & REF_FLAG_PENDING_REMOVE) {
+		    struct ref *tmp = ref;
+		    ref = ref->next;
+		    *prev = ref;
+		    erts_free(ERTS_ALC_T_HIPE, tmp);
+		} else {
+		    prev = &ref->next;
+		    ref = ref->next;
+		}
+	    } else {
+		prev = &ref->next;
+		ref = ref->next;
+	    }
+	}
+    }
+    BIF_RET(NIL);
+}
+
 BIF_RETTYPE hipe_bifs_check_crc_1(BIF_ALIST_1)
 {
     Uint crc;
@@ -1637,4 +1741,40 @@ BIF_RETTYPE hipe_bifs_code_size_1(BIF_ALIST_1)
 
     code_size = p ? p->code_size : 0;
     BIF_RET(make_small(code_size));
+}
+
+BIF_RETTYPE hipe_bifs_patch_insn_3(BIF_ALIST_3)
+{
+    Uint *address, value;
+
+    address = term_to_address(BIF_ARG_1);
+    if (!address)
+	BIF_ERROR(BIF_P, BADARG);
+    if (!term_to_Uint(BIF_ARG_2, &value))
+	BIF_ERROR(BIF_P, BADARG);
+    if (hipe_patch_insn(address, value, BIF_ARG_3))
+	BIF_ERROR(BIF_P, BADARG);
+    BIF_RET(NIL);
+}
+
+BIF_RETTYPE hipe_bifs_patch_call_3(BIF_ALIST_3)
+{
+    Uint *callAddress, *destAddress, *trampAddress;
+
+    callAddress = term_to_address(BIF_ARG_1);
+    if (!callAddress)
+	BIF_ERROR(BIF_P, BADARG);
+    destAddress = term_to_address(BIF_ARG_2);
+    if (!destAddress)
+	BIF_ERROR(BIF_P, BADARG);
+    if (is_nil(BIF_ARG_3))
+	trampAddress = NULL;
+    else {
+	trampAddress = term_to_address(BIF_ARG_3);
+	if (!trampAddress)
+	    BIF_ERROR(BIF_P, BADARG);
+    }
+    if (hipe_patch_call(callAddress, destAddress, trampAddress))
+	BIF_ERROR(BIF_P, BADARG);
+    BIF_RET(NIL);
 }

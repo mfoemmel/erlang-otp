@@ -144,7 +144,8 @@ user_info(UserMid, conn_data) ->
                      user_args         	= '_',
                      reply_action     	= '_',
                      reply_data       	= '_',
-		     threaded       	= '_'},
+		     threaded       	= '_',
+		     strict_version   	= '_'},
     %% ok = io:format("PATTERN: ~p~n", [Pat]),
     ets:match_object(megaco_local_conn, Pat);
 user_info(UserMid, connections) ->
@@ -235,6 +236,7 @@ conn_info(CD, Item) when record(CD, conn_data) ->
         reply_action       -> CD#conn_data.reply_action;
         reply_data         -> CD#conn_data.reply_data;
         threaded           -> CD#conn_data.threaded;
+        strict_version     -> CD#conn_data.strict_version;
         receive_handle     ->
             LocalMid = (CD#conn_data.conn_handle)#megaco_conn_handle.local_mid,
             #megaco_receive_handle{local_mid       = LocalMid,
@@ -555,7 +557,8 @@ init_user_defaults() ->
     init_user_default(user_mod,           megaco_user_default),
     init_user_default(user_args,          []),
     init_user_default(reply_data,         undefined),
-    init_user_default(threaded,           false).
+    init_user_default(threaded,           false),
+    init_user_default(strict_version,     true).
 
 init_user_default(Item, Default) when Item /= mid ->
     Val = get_env(Item, Default),
@@ -705,11 +708,220 @@ terminate(_Reason, _State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 
+code_change(_Vsn, S, upgrade_from_pre_3_2_3) ->
+    upgrade_user_info(),
+    upgrade_conn_data(),
+    {ok, S};
+
+code_change(_Vsn, S, downgrade_to_pre_3_2_3) ->
+    downgrade_user_info(),
+    downgrade_conn_data(),
+    {ok, S};
+
 code_change(_Vsn, S, _Extra) ->
     {ok, S}.
 
 
+%% -- Upgrade user info --
 
+upgrade_user_info() ->
+    NewValues = [{strict_version, true}],
+    upgrade_user_info(NewValues).
+
+upgrade_user_info(NewValues) ->
+    Users = [default|system_info(users)],
+    F = fun({Item, Val}) ->
+		upgrade_user_info(Users, Item, Val)
+	end,
+    lists:foreach(F, NewValues),
+    ok.
+
+upgrade_user_info(Users, Item, Val) ->
+    F = fun(User) -> do_update_user(User, Item, Val) end,
+    lists:foreach(F, Users),
+    ok.
+
+
+%% -- Downgrade user info --
+
+downgrade_user_info() ->
+    NewItems = [strict_version],
+    downgrade_user_info(NewItems).
+
+downgrade_user_info(NewItems) ->
+    Users = [default|system_info(users)],
+    F = fun(Item) ->
+		downgrade_user_info(Users, Item)
+	end,
+    lists:foreach(F, NewItems),
+    ok.
+    
+downgrade_user_info(Users, Item) ->
+    F = fun(User) -> do_downgrade_user_info(User, Item) end,
+    lists:foreach(F, Users),
+    ok.
+
+do_downgrade_user_info(User, Item) ->
+    ets:delete(megaco_config, {User, Item}).
+		
+
+%% -- Upgrade conn data --
+
+upgrade_conn_data() ->
+    Conns = system_info(connections),
+    upgrade_conn_data(Conns).
+
+upgrade_conn_data(Conns) ->
+    StrictVersionDefault = true,
+    F = fun(CH) ->
+		case lookup_local_conn(CH) of
+		    [] ->
+			ok;
+		    [CD] ->
+			upgrade_conn_data(CD, StrictVersionDefault)
+		end
+	end,
+    lists:foreach(F, Conns),
+    ok.
+
+upgrade_conn_data(OldStyleCD, StrictVersionDefault) ->
+    NewStyleCD = new_conn_data(OldStyleCD, StrictVersionDefault),
+    ets:insert(megaco_local_conn, NewStyleCD).
+    
+new_conn_data({conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
+	       AutoAck, 
+	       TransAck, TransAckMaxCnt, 
+	       TransReq, TransReqMaxCnt, TransReqMaxSz, 
+	       TransTmr, TransSndr, 
+	       
+	       PendingTmr, 
+	       SentPendingLimit, 
+	       RecvPendingLimit,
+	       ReplyTmr, CtrPid, MonRef, 
+	       Sendmod, SendHandle, 
+	       EncodeMod, EncodeConf, 
+	       ProtV, AuthData, 
+	       UserMod, UserArgs, ReplyAction, ReplyData,
+	       Threaded
+	       %% StrictVersion - This is where to insert the new values
+	      }, 
+	      StrictVersionDefault) ->
+    #conn_data{conn_handle        = CH, 
+	       serial             = Serial,
+	       max_serial         = MaxSerial,
+	       request_timer      = ReqTmr,
+	       long_request_timer = LongReqTmr,
+	       
+	       auto_ack           = AutoAck,
+	       
+	       trans_ack          = TransAck,
+	       trans_ack_maxcount = TransAckMaxCnt,
+	       
+	       trans_req          = TransReq,
+	       trans_req_maxcount = TransReqMaxCnt,
+	       trans_req_maxsize  = TransReqMaxSz,
+	       
+	       trans_timer        = TransTmr,
+	       trans_sender       = TransSndr,
+	       
+	       pending_timer      = PendingTmr,
+	       sent_pending_limit = SentPendingLimit,
+	       recv_pending_limit = RecvPendingLimit, 
+
+	       reply_timer        = ReplyTmr,
+	       control_pid        = CtrPid,
+	       monitor_ref        = MonRef,
+	       send_mod           = Sendmod,
+	       send_handle        = SendHandle,
+	       encoding_mod       = EncodeMod,
+	       encoding_config    = EncodeConf,
+	       protocol_version   = ProtV,
+	       auth_data          = AuthData,
+	       user_mod           = UserMod,
+	       user_args          = UserArgs,
+	       reply_action       = ReplyAction,
+	       reply_data         = ReplyData,
+	       threaded           = Threaded,
+	       strict_version     = StrictVersionDefault %% The new value
+	      }.
+
+
+%% -- Downgrade conn data --
+
+downgrade_conn_data() ->
+    Conns = system_info(connections),
+    downgrade_conn_data(Conns).
+
+downgrade_conn_data(Conns) ->
+    F = fun(CH) ->
+		case lookup_local_conn(CH) of
+		    [] ->
+			ok;
+		    [CD] ->
+			do_downgrade_conn_data(CD)
+		end
+	end,
+    lists:foreach(F, Conns).
+
+do_downgrade_conn_data(NewStyleCD) ->
+    OldStyleCD = old_conn_data(NewStyleCD),
+    ets:insert(megaco_local_conn, OldStyleCD).
+
+old_conn_data(#conn_data{conn_handle        = CH, 
+			 serial             = Serial,
+			 max_serial         = MaxSerial,
+			 request_timer      = ReqTmr,
+			 long_request_timer = LongReqTmr,
+			 
+			 auto_ack           = AutoAck,
+			 
+			 trans_ack          = TransAck,
+			 trans_ack_maxcount = TransAckMaxCnt,
+			 
+			 trans_req          = TransReq,
+			 trans_req_maxcount = TransReqMaxCnt,
+			 trans_req_maxsize  = TransReqMaxSz,
+			 
+			 trans_timer        = TransTmr,
+			 trans_sender       = TransSndr,
+			 
+			 pending_timer      = PendingTmr,
+			 sent_pending_limit = SentPendingLimit,
+			 recv_pending_limit = RecvPendingLimit, 
+			 
+			 reply_timer        = ReplyTmr,
+			 control_pid        = CtrPid,
+			 monitor_ref        = MonRef,
+			 send_mod           = Sendmod,
+			 send_handle        = SendHandle,
+			 encoding_mod       = EncodeMod,
+			 encoding_config    = EncodeConf,
+			 protocol_version   = ProtV,
+			 auth_data          = AuthData,
+			 user_mod           = UserMod,
+			 user_args          = UserArgs,
+			 reply_action       = ReplyAction,
+			 reply_data         = ReplyData,
+			 threaded           = Threaded
+			 %% strict_version     = StrictVersion
+			}) ->
+    {conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
+     AutoAck, 
+     TransAck, TransAckMaxCnt, 
+     TransReq, TransReqMaxCnt, TransReqMaxSz, 
+     TransTmr, TransSndr, 
+     PendingTmr, 
+     SentPendingLimit, 
+     RecvPendingLimit, 
+     ReplyTmr, CtrPid, MonRef, 
+     Sendmod, SendHandle, 
+     EncodeMod, EncodeConf, 
+     ProtV, AuthData, 
+     UserMod, UserArgs, ReplyAction, ReplyData,
+     Threaded}.
+
+
+		
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
@@ -788,6 +1000,7 @@ verify_val(Item, Val) ->
         user_args        when list(Val) -> true;
         reply_data                      -> true;
         threaded                        -> verify_bool(Val);
+        strict_version                  -> verify_bool(Val);
         _                               -> false
     end.
 
@@ -908,7 +1121,8 @@ replace_conn_data(CD, Item, Val) ->
         user_args          -> CD#conn_data{user_args          = Val};
         reply_action       -> CD#conn_data{reply_action       = Val};
         reply_data         -> CD#conn_data{reply_data         = Val};
-        threaded           -> CD#conn_data{threaded           = Val}
+        threaded           -> CD#conn_data{threaded           = Val};
+        strict_version     -> CD#conn_data{strict_version     = Val}
     end.
 
 %% update auto_ack
@@ -1269,7 +1483,8 @@ init_conn_data(RH, RemoteMid, SendHandle, ControlPid) ->
                user_args          = user_info(Mid, user_args),
                reply_action       = undefined,
                reply_data         = user_info(Mid, reply_data),
-	       threaded           = user_info(Mid, threaded)}.
+	       threaded           = user_info(Mid, threaded),
+	       strict_version     = user_info(Mid, strict_version)}.
 
 handle_disconnect(ConnHandle) when record(ConnHandle, megaco_conn_handle) ->
     case ets:lookup(megaco_local_conn, ConnHandle) of

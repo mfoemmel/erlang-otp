@@ -7,10 +7,9 @@
 %%%----------------------------------------------------------------------
 
 -module(hipe_sparc_finalize).
--author('chvi3471@student.uu.se').
-
 -export([finalize/2]).
 
+-include("hipe_sparc.hrl").
 
 finalize(CFG,Options) ->
   OptCFG = case proplists:get_bool(sparc_peephole,Options) of
@@ -55,8 +54,8 @@ finalize(CFG,Options) ->
 %% peephole([]) ->
 %%   [];
 %% peephole([I|Is]) ->
-%%    case hipe_sparc:type(I) of
-%%      move ->
+%%    case I of
+%%      #move{} ->
 %%        case hipe_sparc:move_src(I) =:= hipe_sparc:move_dest(I) of
 %% 	 true ->
 %% 	   peephole(Is);
@@ -157,19 +156,19 @@ find_delay([I|Is]) ->
 %%
 
 is_delay_instr(I) ->
-  case hipe_sparc:type(I) of
-    label -> false;
-    comment -> false;
-    load_address -> false;
-    load_atom -> false;
-    load_word_index -> false;
-    fop -> false;
+  case I of
+    #label{} -> false;
+    #comment{} -> false;
+    #load_address{} -> false;
+    #load_atom{} -> false;
+    #load_word_index{} -> false;
+    #fop{} -> false;
     %%         in the delayslot can slow down code...
     %%         ... but it can also speed up code.
     %%         the impact is about 10 - 20 % on small bms
     %%         on the average you loose 1-2 % by not putting
     %%         loads in delayslots
-    %% load -> false;
+    %% #load{} -> false;
     _ -> true
   end.
 
@@ -195,8 +194,8 @@ split_at_branch([I|Rest]) ->
   end.
 
 split(I,Lname,Is)->
-  case hipe_sparc:type(I) of
-    b -> 
+  case I of
+    #b{} -> 
       case hipe_sparc:b_false_label(I) of
 	Lname ->
 	  [[hipe_sparc:b_false_label_update(I,[])] |
@@ -206,7 +205,7 @@ split(I,Lname,Is)->
 	   [hipe_sparc:goto_create(FL)]|
 	   split_at_branch(Is)]
       end;
-%%     br -> 
+%%  #br{} -> 
 %%       case hipe_sparc:br_false_label(I) of
 %% 	Lname ->
 %% 	  [[hipe_sparc:br_false_label_update(I,[])] |
@@ -216,13 +215,13 @@ split(I,Lname,Is)->
 %% 	   [hipe_sparc:goto_create(FL)]|
 %% 	   split_at_branch(Is)]
 %%       end;
-    goto -> 
+    #goto{} -> 
       [[I] | split_at_branch(Is)];
-    jmp -> 
+    #jmp{} -> 
       [[I] | split_at_branch(Is)];
-    jmp_link -> 
+    #jmp_link{} -> 
       [[I] | split_at_branch(Is)];
-    call_link ->
+    #call_link{} ->
 %%      [[I] | split_at_branch(Is)];
       case hipe_sparc:call_link_continuation(I) of
 	[] -> 
@@ -239,7 +238,7 @@ split(I,Lname,Is)->
 	   [hipe_sparc:goto_create(CCL)]|
 	   split_at_branch(Is)]
       end;
-    label ->
+    #label{} ->
       [[I] | split_at_branch(Is)];
     _ -> 
       [Same|Lists] = split_at_branch(Is),

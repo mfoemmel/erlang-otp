@@ -57,11 +57,7 @@
 
 select(Node) ->
     case split_node(atom_to_list(Node), $@, []) of
-	[_, Host] ->
-	    case (catch inet:getaddr(Host,inet)) of
-		{ok,_} -> true;
-		_ -> false
-	    end;
+	[_,_Host] -> true;
 	_ -> false
     end.
 
@@ -100,7 +96,7 @@ do_listen(Options0) ->
 		   _ ->
 		       Options0
 	       end,
-    do_listen(First, Last, Options).
+    do_listen(First, Last, [{backlog,128}|Options]).
 
 do_listen(First,Last,_) when First > Last ->
     {error,eaddrinuse};
@@ -231,12 +227,15 @@ nodelay() ->
 %% ------------------------------------------------------------
 get_remote_id(Socket, Node) ->
     case inet:peername(Socket) of
-	{ok, Address} ->
-	    [_, Host] = split_node(atom_to_list(Node), $@, []),
-	    #net_address {address = Address,
-			  host = Host,
-			  protocol = tcp,
-			  family = inet };
+	{ok,Address} ->
+	    case split_node(atom_to_list(Node), $@, []) of
+		[_,Host] ->
+		    #net_address{address=Address,host=Host,
+				 protocol=tcp,family=inet};
+		_ ->
+		    %% No '@' or more than one '@' in node name.
+		    ?shutdown(no_node)
+	    end;
 	{error, _Reason} ->
 	    ?shutdown(no_node)
     end.

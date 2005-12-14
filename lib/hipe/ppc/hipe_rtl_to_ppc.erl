@@ -23,6 +23,8 @@
 -module(hipe_rtl_to_ppc).
 -export([translate/1]).
 
+-include("../rtl/hipe_rtl.hrl").
+
 translate(RTL) ->
   hipe_gensym:init(ppc),
   hipe_gensym:set_var(ppc, hipe_ppc_registers:first_virtual()),
@@ -58,28 +60,28 @@ conv_insn_list([], _, Data) ->
   {[], Data}.
 
 conv_insn(I, Map, Data) ->
-  case hipe_rtl:type(I) of
-    alu -> conv_alu(I, Map, Data);
-    alub -> conv_alub(I, Map, Data);
-    branch -> conv_branch(I, Map, Data);
-    call -> conv_call(I, Map, Data);
-    comment -> conv_comment(I, Map, Data);
-    enter -> conv_enter(I, Map, Data);
-    goto -> conv_goto(I, Map, Data);
-    label -> conv_label(I, Map, Data);
-    load -> conv_load(I, Map, Data);
-    load_address -> conv_load_address(I, Map, Data);
-    load_atom -> conv_load_atom(I, Map, Data);
-    move -> conv_move(I, Map, Data);
-    return -> conv_return(I, Map, Data);
-    store -> conv_store(I, Map, Data);
-    switch -> conv_switch(I, Map, Data);
-    fconv -> conv_fconv(I, Map, Data);
-    fmove -> conv_fmove(I, Map, Data);
-    fload -> conv_fload(I, Map, Data);
-    fstore -> conv_fstore(I, Map, Data);
-    fp -> conv_fp_binary(I, Map, Data);
-    fp_unop -> conv_fp_unary(I, Map, Data);
+  case I of
+    #alu{} -> conv_alu(I, Map, Data);
+    #alub{} -> conv_alub(I, Map, Data);
+    #branch{} -> conv_branch(I, Map, Data);
+    #call{} -> conv_call(I, Map, Data);
+    #comment{} -> conv_comment(I, Map, Data);
+    #enter{} -> conv_enter(I, Map, Data);
+    #goto{} -> conv_goto(I, Map, Data);
+    #label{} -> conv_label(I, Map, Data);
+    #load{} -> conv_load(I, Map, Data);
+    #load_address{} -> conv_load_address(I, Map, Data);
+    #load_atom{} -> conv_load_atom(I, Map, Data);
+    #move{} -> conv_move(I, Map, Data);
+    #return{} -> conv_return(I, Map, Data);
+    #store{} -> conv_store(I, Map, Data);
+    #switch{} -> conv_switch(I, Map, Data);
+    #fconv{} -> conv_fconv(I, Map, Data);
+    #fmove{} -> conv_fmove(I, Map, Data);
+    #fload{} -> conv_fload(I, Map, Data);
+    #fstore{} -> conv_fstore(I, Map, Data);
+    #fp{} -> conv_fp_binary(I, Map, Data);
+    #fp_unop{} -> conv_fp_unary(I, Map, Data);
     _ -> exit({?MODULE,conv_insn,I})
   end.
 

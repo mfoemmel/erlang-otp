@@ -27,8 +27,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2005/01/26 10:05:40 $
-%%              $Revision: 1.15 $
+%%              $Date: 2005/11/06 13:10:51 $
+%%              $Revision: 1.16 $
 %% ====================================================================
 %%  Exports  : cfg/1 - Takes a SPARC CFG and rewrites it.
 %%
@@ -41,7 +41,10 @@
 
 -module(hipe_sparc_opt_frame).
 -export([cfg/1]).
+
 -include("../main/hipe.hrl").
+-include("hipe_sparc.hrl").
+
 -import(hipe_sparc_prop_env,
 	[bind_hpos/3, inc_hp/2, inc_sp/2,
 	 end_of_bb/1, find_hpos/2, find_spos/2,
@@ -92,8 +95,8 @@ bwd_prop_i(I,Live) ->
   Uses = ordsets:from_list(hipe_sparc:uses(I)),
   Defines = 
     ordsets:from_list(
-      case hipe_sparc:type(I) of
-	call_link -> 
+      case I of
+	#call_link{} -> 
 	  [hipe_sparc:mk_reg(X) 
 	   || X <- hipe_sparc_registers:allocatable()];
 	_ -> hipe_sparc:defines(I)
@@ -116,33 +119,33 @@ bwd_prop_i(I,Live) ->
 
 can_kill(I) ->
   %% TODO: Expand this function.
-  case hipe_sparc:type(I) of
-    pseudo_unspill ->
+  case I of
+    #pseudo_unspill{} ->
       %% io:format("hipe_sparc_opt_frame:can_kill/1 -> pseudo_unspill"),
       Dst = hipe_sparc:pseudo_unspill_reg(I),
       case hipe_sparc:is_reg(Dst) of
 	true->
 	  case hipe_sparc_registers:is_precoloured(hipe_sparc:reg_nr(Dst)) of
 	    true -> false;
-	    _ -> true
+	    false -> true
 	  end;
 	false -> %% is fp_reg
 	  true
       end;
-    move ->
-	  %%hipe_sparc:pp_instr(I),
-	  %%io:format("hipe_sparc_opt_frame:can_kill/1 -> move"),
-	  Dest = hipe_sparc:move_dest(I),
-	  case hipe_sparc:is_reg(Dest) of
-	      true ->
-		  case hipe_sparc_registers:is_precoloured(hipe_sparc:reg_nr(Dest)) of
-		      true -> false;
-		      _ -> true
-		  end;
-	      _ -> false
+    #move{} ->
+      %% hipe_sparc:pp_instr(I),
+      %% io:format("hipe_sparc_opt_frame:can_kill/1 -> move"),
+      Dest = hipe_sparc:move_dest(I),
+      case hipe_sparc:is_reg(Dest) of
+	true ->
+	  case hipe_sparc_registers:is_precoloured(hipe_sparc:reg_nr(Dest)) of
+	    true -> false;
+	    false -> true
 	  end;
-      _ -> 
-	  false
+        false -> false
+      end;
+    _ -> 
+      false
   end.
 
 
@@ -229,14 +232,13 @@ prop_instrs([I|Is], GEnv) ->
 prop_instr(I, Env) ->
   %%   pp_lenv(Env),
   %%   hipe_sparc_pp:pp_instr(I),
-
-  case hipe_sparc:type(I) of
-    move ->
+  case I of
+    #move{} ->
       Srcs = [hipe_sparc:move_src(I)],
       Dsts = [hipe_sparc:move_dest(I)],
       {_I0,Env0} = bind_all(Srcs, Dsts, I, hipe_sparc_prop_env:genv__env(Env)),
       {I, kill_uses(hipe_sparc:defines(I), Env0)};
-    multimove ->
+    #multimove{} ->
       NewEnv = kill_all(hipe_sparc:defines(I), hipe_sparc_prop_env:genv__env(Env)),
       Srcs = hipe_sparc:multimove_src(I),
       Dsts = hipe_sparc:multimove_dest(I),
@@ -253,32 +255,31 @@ prop_instr(I, Env) ->
 %%
 
 eval(I, Env) ->
-  case hipe_sparc:type(I) of
-    store -> prop_store(I,Env);
-    load ->  prop_load(I,Env);
-    pseudo_spill -> prop_spill(I,Env);
-    pseudo_unspill -> prop_unspill(I,Env);
-    %%    cmov_cc -> prop_cmov_cc(I,Env);
-    %%    cmov_r -> prop_cmov_r(I,Env);
-    alu -> prop_alu(I,Env);
-    %%    alu_cc -> prop_alu_cc(I,Env);
-    %%    sethi ->  prop_sethi(I,Env);
+  case I of
+    #store{} -> prop_store(I,Env);
+    #load{} ->  prop_load(I,Env);
+    #pseudo_spill{} -> prop_spill(I,Env);
+    #pseudo_unspill{} -> prop_unspill(I,Env);
+    %%    #cmov_cc{} -> prop_cmov_cc(I,Env);
+    %%    #cmov_r{} -> prop_cmov_r(I,Env);
+    #alu{} -> prop_alu(I,Env);
+    %%    #alu_cc{} -> prop_alu_cc(I,Env);
+    %%    #sethi{} -> prop_sethi(I,Env);
 
-    %%    load_atom ->  prop_load_atom(I,Env);
-    %%    load_word_index ->  prop_word_index(I,Env);
-    %%    load_address ->  prop_load_address(I,Env);
+    %%    #load_atom{} -> prop_load_atom(I,Env);
+    %%    #load_word_index{} -> prop_word_index(I,Env);
+    %%    #load_address{} -> prop_load_address(I,Env);
 
+    %%    #b{} -> prop_b(I,Env);
+    %%    #br{} -> prop_br(I,Env);
+    %%    #goto{} -> prop_got(I,Env);
+    %%    #jmp{} -> prop_jmp(I,Env);
 
-    %%    b ->  prop_b(I,Env);
-    %%    br ->  prop_br(I,Env);
-    %%    goto ->  prop_got(I,Env);
-    %%    jmp ->  prop_jmp(I,Env);
+    #call_link{} -> prop_call_link(I,Env);
 
-    call_link ->  prop_call_link(I,Env);
-
-    nop ->  {I,Env};
-    align ->  {I,Env};
-    comment -> {I,Env};
+    #nop{} -> {I,Env};
+    #align{} ->  {I,Env};
+    #comment{} -> {I,Env};
 
     _ -> 
       NewEnv = kill_all(hipe_sparc:defines(I), Env),

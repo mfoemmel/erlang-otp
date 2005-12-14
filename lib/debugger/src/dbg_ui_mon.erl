@@ -358,7 +358,7 @@ gui_cmd('Kill', State) ->
     exit((State#state.focus)#pinfo.pid, kill),
     State;
 
-%%% Breaks Menu
+%% Break Menu
 gui_cmd('Line Break...', State) ->
     dbg_ui_break:start(State#state.gs, State#state.coords, line),
     State;
@@ -367,6 +367,20 @@ gui_cmd('Conditional Break...', State) ->
     State;
 gui_cmd('Function Break...', State) ->
     dbg_ui_break:start(State#state.gs, State#state.coords, function),
+    State;
+gui_cmd('Enable All', State) ->
+    Breaks = int:all_breaks(),
+    lists:foreach(fun ({{Mod, Line}, _Options}) ->
+			  int:enable_break(Mod, Line)
+		  end,
+		  Breaks),
+    State;
+gui_cmd('Disable All', State) ->
+    Breaks = int:all_breaks(),
+    lists:foreach(fun ({{Mod, Line}, _Options}) ->
+			  int:disable_break(Mod, Line)
+		  end,
+		  Breaks),
     State;
 gui_cmd('Delete All', State) ->
     int:no_break(),
@@ -534,6 +548,8 @@ menus() ->
 		{'Conditional Break...', no},
 		{'Function Break...', no},
 		separator,
+		{'Enable All', no},
+		{'Disable All', no},
 		{'Delete All', 0},
 		separator]},
      {'Options', [{'Trace Window', no, cascade,

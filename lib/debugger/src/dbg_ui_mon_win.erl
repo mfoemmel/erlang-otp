@@ -45,9 +45,13 @@
 		  breaks=[],    % [#breakInfo{}] Known breakpoints
 
 		  listbox,      % gsobj() Listinng known modules
-		  fbutton,      % showing Auto Attach option
-		  bbutton,      %  - " -
-		  ebutton,      %  - " -
+
+		  %% Auto attach buttons
+		  fbutton,      % gsobj()
+		  bbutton,      % gsobj()
+		  ebutton,      % gsobj()
+		  selected=[],  % ['First Call'|'On Break'|'On Exit']
+
 		  slabel,       % showing Stack Trace option
 		  blabel        % showing Back Trace Size
 		 }).
@@ -97,22 +101,19 @@ create_win(GS, Title, Menus) ->
 		     {label, {text, "Auto Attach:"}}, {font, Font}]),
     Fbtn = gs:checkbutton(Frame, [{x, 0}, {y, Hlb+20},
 				  {width, ?Wf}, {height, 20},
-				  {enable, false}, {select, false},
-				  {align, w},
-				  {label, {text, "First Call"}},
-				  {font, Font}]),
+				  {label, {text, 'First Call'}},
+				  {align, w}, {font, Font},
+				  {data, autoattach}]),
     Bbtn = gs:checkbutton(Frame, [{x, 0}, {y, Hlb+40},
 				  {width, ?Wf}, {height, 20},
-				  {enable, false}, {select, false},
-				  {align, w},
-				  {label, {text, "On Break"}},
-				  {font, Font}]),
+				  {label, {text, 'On Break'}},
+				  {align, w}, {font, Font},
+				  {data, autoattach}]),
     Ebtn = gs:checkbutton(Frame, [{x, 0}, {y, Hlb+60},
 				  {width, ?Wf}, {height, 20},
-				  {enable, false}, {select, false},
-				  {align, w},
-				  {label, {text, "On exit"}},
-				  {font, Font}]),
+				  {label, {text, 'On Exit'}},
+				  {align, w}, {font, Font},
+				  {data, autoattach}]),
     SLabel = gs:label(Frame, [{x, 0}, {y, Hlb+80},
 			      {width, ?Wf}, {height, 40},
 			      {font, Font}, {align, w}]),
@@ -468,6 +469,24 @@ handle_event({gs, _Id, click, {module, Mod, What}, _Arg}, _WinInfo) ->
 %% Listbox
 handle_event({gs, _Id, doubleclick, listbox, [_Index, ModS|_]}, _WI) ->
     {module, list_to_atom(ModS), view};
+
+%% Auto attach buttons
+handle_event({gs, _Id, click, autoattach, _Arg}, WinInfo) ->
+    Names = lists:foldl(fun (Button, NamesAcc) ->
+				case gs:read(Button, select) of
+				    true ->
+					{text, Name} =
+					    gs:read(Button, label),
+					[list_to_atom(Name)|NamesAcc];
+				    false ->
+					NamesAcc
+				end
+			end,
+			[],
+			[WinInfo#winInfo.ebutton,
+			 WinInfo#winInfo.bbutton,
+			 WinInfo#winInfo.fbutton]),
+    {'Auto Attach', Names};
 
 %% Process grid
 handle_event({gs, _Id, keypress, _Data, [Key|_]}, WinInfo) when

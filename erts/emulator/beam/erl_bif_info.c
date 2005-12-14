@@ -488,9 +488,12 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
     
     rp = process_tab[internal_pid_index(BIF_ARG_1)];
 
-    /* if the process is not active return undefined */
+    /* if the process is not active return undefined ... */
     if (INVALID_PID(rp, BIF_ARG_1)) {
-	BIF_RET(am_undefined);
+	/* ... unless internal_status is requested and process is exiting */
+	if (item != am_internal_status || !rp || rp->id != BIF_ARG_1) {
+	    BIF_RET(am_undefined);
+	}
     }
     res = NIL;
 
@@ -538,7 +541,7 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
 		     rp->initial[INITIAL_FUN],
 		     make_small(rp->initial[INITIAL_ARI]));
 	hp += 4;
-    } else if (item == am_status ) {
+    } else if (item == am_status || item == am_internal_status) {
 	hp = HAlloc(BIF_P, 3);
 	switch (rp->status) {
 	case P_RUNABLE:
@@ -553,7 +556,7 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
 	case P_SUSPENDED:
 	    res = am_suspended;
 	    break;
-	case P_EXITING:
+	case P_EXITING: /* Will only hit if item is internal_status */
 	    res = am_exiting;
 	    break;
 	default:

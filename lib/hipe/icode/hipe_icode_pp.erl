@@ -27,6 +27,8 @@
 -export([pp_instrs/2, pp_exit/1]).
 -endif.
 
+-include("hipe_icode.hrl").
+
 %%---------------------------------------------------------------------
 
 %% @spec pp(Icode::hipe_icode:icode()) -> ok
@@ -132,29 +134,29 @@ pp_instrs_exit(Dev, [I|Is]) ->
 %%---------------------------------------------------------------------
 
 pp_instr(Dev, I) ->
-  case hipe_icode:type(I) of 
-    label ->
+  case I of 
+    #label{} ->
       io:format(Dev, "~p:~n", [hipe_icode:label_name(I)]);
-    comment ->
+    #comment{} ->
       Txt = hipe_icode:comment_text(I),
       Str = case io_lib:deep_char_list(Txt) of
 	      true -> Txt;
 	      false -> io_lib:format("~p", [Txt])
 	    end,
       io:format(Dev, "    % ~s~n", [Str]);
-    phi ->
+    #phi{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, hipe_icode:phi_dst(I)),
       io:format(Dev, " := phi(", []),
       pp_phi_args(Dev, hipe_icode:phi_arglist(I)),
       io:format(Dev, ")~n", []);
-    move ->
+    #move{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, hipe_icode:move_dst(I)),
       io:format(Dev, " := ", []),
       pp_arg(Dev, hipe_icode:move_src(I)),
       io:format(Dev, "~n", []);
-    call ->
+    #call{} ->
       io:format(Dev, "    ", []),
       case hipe_icode:call_dstlist(I) of
 	[] -> %% result is unused -- e.g. taken out by dead code elimination
@@ -177,27 +179,27 @@ pp_instr(Dev, I) ->
 	[] ->  io:format(Dev, "~n", []);
 	Fail ->  io:format(Dev, ", #fail ~w~n", [Fail])
       end;
-    enter ->
+    #enter{} ->
       io:format(Dev, "    ", []),
       pp_fun(Dev, hipe_icode:enter_fun(I),
 	     hipe_icode:enter_args(I),
 	     hipe_icode:enter_type(I)),
       io:format(Dev, "~n", []);
-    return ->
+    #return{} ->
       io:format(Dev, "    return(", []),
       pp_args(Dev, hipe_icode:return_vars(I)),
       io:format(Dev, ")~n", []);
-    begin_try ->
+    #begin_try{} ->
       io:format(Dev, "    begin_try -> ~w cont ~w~n", 
 		[hipe_icode:begin_try_label(I), 
 		 hipe_icode:begin_try_successor(I)]);
-    begin_handler ->
+    #begin_handler{} ->
       io:format(Dev, "    ", []),
       pp_args(Dev, hipe_icode:begin_handler_dstlist(I)),
       io:format(Dev, " := begin_handler()~n",[]);
-    end_try ->
+    #end_try{} ->
       io:format(Dev, "    end_try~n", []);
-    fail ->
+    #fail{} ->
       Type = hipe_icode:fail_class(I),
       io:format(Dev, "    fail(~w, [", [Type]),
       pp_args(Dev, hipe_icode:fail_args(I)),
@@ -205,25 +207,25 @@ pp_instr(Dev, I) ->
 	[] ->  io:put_chars(Dev, "])\n");
 	Fail ->  io:format(Dev, "]) -> ~w\n", [Fail])
       end;
-    'if' ->
+    #'if'{} ->
       io:format(Dev, "    if ~w(", [hipe_icode:if_op(I)]),
       pp_args(Dev, hipe_icode:if_args(I)),
       io:format(Dev, ") then ~p (~.2f) else ~p~n", 
 		[hipe_icode:if_true_label(I), hipe_icode:if_pred(I),
 		 hipe_icode:if_false_label(I)]);
-    switch_val ->
+    #switch_val{} ->
       io:format(Dev, "    switch_val ",[]),
       pp_arg(Dev, hipe_icode:switch_val_arg(I)),
       pp_switch_cases(Dev, hipe_icode:switch_val_cases(I)),
       io:format(Dev, "    fail -> ~w\n", 
 		[hipe_icode:switch_val_fail_label(I)]);
-    switch_tuple_arity ->
+    #switch_tuple_arity{} ->
       io:format(Dev, "    switch_tuple_arity ",[]),
       pp_arg(Dev, hipe_icode:switch_tuple_arity_arg(I)),
       pp_switch_cases(Dev,hipe_icode:switch_tuple_arity_cases(I)),
       io:format(Dev, "    fail -> ~w\n", 
 		[hipe_icode:switch_tuple_arity_fail_label(I)]);
-    type ->
+    #type{} ->
       io:format(Dev, "    if is_", []),
       pp_type(Dev, hipe_icode:type_type(I)),
       io:format(Dev, "(", []),
@@ -231,9 +233,9 @@ pp_instr(Dev, I) ->
       io:format(Dev, ") then ~p (~.2f) else ~p~n", 
 		[hipe_icode:type_true_label(I), hipe_icode:type_pred(I), 
 		 hipe_icode:type_false_label(I)]);
-    goto ->
+    #goto{} ->
       io:format(Dev, "    goto ~p~n", [hipe_icode:goto_label(I)]);
-    fmove ->
+    #fmove{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, hipe_icode:fmove_dst(I)),
       io:format(Dev, " f:= ", []),

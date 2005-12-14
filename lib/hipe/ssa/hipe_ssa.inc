@@ -385,16 +385,6 @@ renameUses(Statement, Current) ->
   case ?CODE:is_phi(Statement) of 
     true  -> Statement;
     false -> VarList = uses_to_rename(Statement),
-% 	     case ?CODE of
-% 	       hipe_rtl ->
-% 	       case hipe_rtl:type(Statement) of
-% 	       call ->
-% 	         io:format("Statement = ~w\n  VarList = ~w\n",
-% 			   [Statement,VarList]);
-% 	       _ -> ok
-% 	       end;
-% 	       _ -> ok
-% 	     end,
 	     updateStatementUses(VarList, Statement, Current)
   end.
 
@@ -424,14 +414,7 @@ updateStatementUses([], Statement, _) ->
 
 unColor(Statement) ->
   %% XXX: should the ?CODE:uses() below be uses_to_rename(Statement) ??
-  NewStatement = unColor(?CODE:uses(Statement), Statement),
-%   case hipe_rtl:type(Statement) of
-%     call ->
-%       io:format("--> NewStatement = ~w\n   (Vars = ~w)\n\n",
-% 		[NewStatement,?CODE:uses(Statement)]);
-%     _ -> ok
-%   end,
-  NewStatement.
+  unColor(?CODE:uses(Statement), Statement).
   %% unColor(uses_to_rename(Statement), Statement).
 
 unColor([{colored,Var} = CVar | Vars], Statement) ->

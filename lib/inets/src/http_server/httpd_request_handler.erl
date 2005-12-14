@@ -280,9 +280,14 @@ handle_http_msg({Method, Uri, Version, {RecordHeaders, Headers}, Body},
 handle_http_msg({ChunkedHeaders, Body}, 
 		State = #state{headers = Headers}) ->
     NewHeaders = http_chunk:handle_headers(Headers, ChunkedHeaders),
-    handle_response(State#state{headers = NewHeaders, body = Body});
+    handle_response(State#state{headers = NewHeaders, body = if_binary_to_list(Body)});
 handle_http_msg(Body, State) ->
-    handle_response(State#state{body = Body}).
+    handle_response(State#state{body = if_binary_to_list(Body)}).
+
+if_binary_to_list(B) when binary(B) ->
+    binary_to_list(B);
+if_binary_to_list(B) ->
+    B.
 
 handle_manager_busy(#state{mod = #mod{config_db = ConfigDB}} = State) ->
     MaxClients = httpd_util:lookup(ConfigDB, max_clients, 150),

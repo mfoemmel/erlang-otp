@@ -6,7 +6,9 @@
 
 -module(hipe_rtl_to_sparc).
 -export([translate/2]).
+
 -include("../main/hipe.hrl").
+-include("../rtl/hipe_rtl.hrl").
 
 %%
 %% Translates RTL-code to SPARC-code.
@@ -54,27 +56,27 @@ translate_instructions([I|Is], Map, ConstTab) ->
   {NewIs ++  NewIs2, NewConstTab2}.
 
 translate_instruction(I, Map, ConstTab) ->
-  case hipe_rtl:type(I) of
-    label ->           translate_label(I, Map, ConstTab);
-    move ->            translate_move(I, Map, ConstTab);
-    multimove ->       translate_multimove(I, Map, ConstTab);
-    alu ->             translate_alu(I, Map, ConstTab);
-    goto ->            translate_goto(I, Map, ConstTab);
-    load ->            translate_load(I, Map, ConstTab);
-    load_atom ->       translate_load_atom(I, Map, ConstTab);
-    load_word_index -> translate_load_word_index(I, Map, ConstTab);
-    goto_index ->      translate_goto_index(I, Map, ConstTab);
-    load_address ->    translate_load_address(I, Map, ConstTab);
-    store ->           translate_store(I, Map, ConstTab);
-    call ->            translate_call(I, Map, ConstTab);
-    enter ->
+  case I of
+    #label{} ->           translate_label(I, Map, ConstTab);
+    #move{} ->            translate_move(I, Map, ConstTab);
+    #multimove{} ->       translate_multimove(I, Map, ConstTab);
+    #alu{} ->             translate_alu(I, Map, ConstTab);
+    #goto{} ->            translate_goto(I, Map, ConstTab);
+    #load{} ->            translate_load(I, Map, ConstTab);
+    #load_atom{} ->       translate_load_atom(I, Map, ConstTab);
+    #load_word_index{} -> translate_load_word_index(I, Map, ConstTab);
+    #goto_index{} ->      translate_goto_index(I, Map, ConstTab);
+    #load_address{} ->    translate_load_address(I, Map, ConstTab);
+    #store{} ->           translate_store(I, Map, ConstTab);
+    #call{} ->            translate_call(I, Map, ConstTab);
+    #enter{} ->
       {Args, Map0} = rvs2srs(hipe_rtl:enter_arglist(I), Map),
       {RegArgs,Head} = move_vars_to_args(Args),
       {Target, Map1} = conv_fun(hipe_rtl:enter_fun(I), Map0),
       Type = hipe_rtl:enter_type(I),
       Ins = [Head, hipe_sparc:pseudo_enter_create(Target, RegArgs, Type)],
       {Ins, Map1, ConstTab};
-    branch ->
+    #branch{} ->
       {Src1, Map0} = rv2sr(hipe_rtl:branch_src1(I), Map),
       {Src2, Map1} = rv2sr(hipe_rtl:branch_src2(I), Map0),
       Zero = hipe_sparc:mk_reg(hipe_sparc_registers:zero()),
@@ -82,22 +84,20 @@ translate_instruction(I, Map, ConstTab) ->
       Cond = rtl_cond_to_sparc_cc(hipe_rtl:branch_cond(I)),
       Ins = [hipe_sparc:alu_cc_create(Zero, Src1, '-', Src2),
 	     if Pred >= 0.5 ->
-		 hipe_sparc:b_create(
-		   Cond,
-		   hipe_rtl:branch_true_label(I),
-		   hipe_rtl:branch_false_label(I),
-		   Pred,
-		   na);
+		 hipe_sparc:b_create(Cond,
+				     hipe_rtl:branch_true_label(I),
+				     hipe_rtl:branch_false_label(I),
+				     Pred,
+				     na);
 		true ->
-		 hipe_sparc:b_create(
-		   neg_cond(Cond),
-		   hipe_rtl:branch_false_label(I),
-		   hipe_rtl:branch_true_label(I),
-		   1.0 - Pred,
-		   na)
+		  hipe_sparc:b_create(neg_cond(Cond),
+				      hipe_rtl:branch_false_label(I),
+				      hipe_rtl:branch_true_label(I),
+				      1.0 - Pred,
+				      na)
 	     end],
       {Ins, Map1, ConstTab};
-    alub -> %% this instruction is a little more high-level
+    #alub{} -> %% this instruction is a little more high-level
       Op = rtl_op2sparc_op(hipe_rtl:alub_op(I)),
       {Dst, Map0} = rv2sr(hipe_rtl:alub_dst(I), Map),
       {Src1, Map1} = rv2sr(hipe_rtl:alub_src1(I), Map0),
@@ -118,11 +118,10 @@ translate_instruction(I, Map, ConstTab) ->
 				1.0 - Pred,
 				na)
 	end,
-
       Ins = [hipe_sparc:alu_cc_create(Dst, Src1, Op, Src2),
 	     Branch],
       {Ins, Map2, ConstTab};
-    switch -> % this instruction is a lot more high-level
+    #switch{} -> % this instruction is a lot more high-level
       Labels = hipe_rtl:switch_labels(I),
       LMap = [{label,L}|| L <- Labels],
       {NewConstTab, JmpT} = 
@@ -136,47 +135,42 @@ translate_instruction(I, Map, ConstTab) ->
       AlignedR = hipe_sparc:mk_new_reg(),
       DestR = hipe_sparc:mk_new_reg(),
       {StartR, Map1} = rv2sr(hipe_rtl:switch_src(I), Map),
-      Ins = 
-	[hipe_sparc:load_address_create(JTR, JmpT, constant),
-
-	 %% Multiply by 4, wordalign 
-	 hipe_sparc:alu_create(AlignedR, StartR, '<<',
-			       hipe_sparc:mk_imm(2)),
-
-	 %% Get the destination from: &JmpT + (Index-Min) * 4
-	 hipe_sparc:load_create(DestR, uw, JTR, AlignedR),
-	 %% Jump to the dest.
-	 hipe_sparc:jmp_create(DestR, hipe_sparc:mk_imm(0), [], Labels)],
-
+      Ins = [hipe_sparc:load_address_create(JTR, JmpT, constant),
+	     %% Multiply by 4, wordalign 
+	     hipe_sparc:alu_create(AlignedR, StartR, '<<', hipe_sparc:mk_imm(2)),
+	     %% Get the destination from: &JmpT + (Index-Min) * 4
+	     hipe_sparc:load_create(DestR, uw, JTR, AlignedR),
+	     %% Jump to the dest.
+	     hipe_sparc:jmp_create(DestR, hipe_sparc:mk_imm(0), [], Labels)],
       {Ins, Map1, NewConstTab};
-    return ->
+    #return{} ->
       {Regs, Map1} = rvs2srs(hipe_rtl:return_varlist(I), Map),
       {RegArgs, Moves} = move_vars_to_retregs(Regs),
       RetIs = [hipe_sparc:pseudo_return_create(RegArgs)],
       {Moves ++ RetIs, Map1, ConstTab};
-    comment ->
+    #comment{} ->
       Ins = [hipe_sparc:comment_create(hipe_rtl:comment_text(I))],
       {Ins, Map, ConstTab};
-    fload ->
+    #fload{} ->
       {Dst, Map0} = rv2sr(hipe_rtl:fload_dst(I), Map),
       {Src, Map1} = rv2sr(hipe_rtl:fload_src(I), Map0),
       {Off, Map2} = rv2sr(hipe_rtl:fload_offset(I), Map1),      
       Ins = [hipe_sparc:load_fp_create(Dst, Src, Off)],
       {Ins, Map2, ConstTab};
-    fstore ->
+    #fstore{} ->
       {Dst, Map0} = rv2sr(hipe_rtl:fstore_base(I), Map),
       {Src, Map1} = rv2sr(hipe_rtl:fstore_src(I), Map0),
       {Off, Map2} = rv2sr(hipe_rtl:fstore_offset(I), Map1),
       Ins = [hipe_sparc:store_fp_create(Dst, Off, Src)],
       {Ins, Map2, ConstTab};
-    fp ->
+    #fp{} ->
       {Dst, Map0} = rv2sr(hipe_rtl:fp_dst(I), Map),
       {Src1, Map1} = rv2sr(hipe_rtl:fp_src1(I), Map0),
       {Src2, Map2} = rv2sr(hipe_rtl:fp_src2(I), Map1),
       Op = rtl_op2sparc_op(hipe_rtl:fp_op(I)),
       Ins = [hipe_sparc:fop_create(Dst, Src1, Op, Src2)],
       {Ins, Map2, ConstTab};
-    fp_unop ->
+    #fp_unop{} ->
       {Dst, Map0} = rv2sr(hipe_rtl:fp_unop_dst(I), Map),
       {Src, Map1} = rv2sr(hipe_rtl:fp_unop_src(I), Map0),
       Ins = 
@@ -187,12 +181,12 @@ translate_instruction(I, Map, ConstTab) ->
 	    exit({?MODULE, {"unknown fp_unop", Op}})
 	end,
       {Ins, Map1, ConstTab};
-    fmove ->
+    #fmove{} ->
       {Dst, Map0} = rv2sr(hipe_rtl:fmove_dst(I), Map),
       {Src, Map1} = rv2sr(hipe_rtl:fmove_src(I), Map0),
       Ins = [hipe_sparc:fmove_create(Dst,double,Src,false,false)],
       {Ins, Map1, ConstTab};
-    fconv ->
+    #fconv{} ->
       {Dst, Map0} = rv2sr(hipe_rtl:fconv_dst(I), Map),
       {Src, Map1} = rv2sr(hipe_rtl:fconv_src(I), Map0),
       Ins = [hipe_sparc:conv_fp_create(Dst,Src)],

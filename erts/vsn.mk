@@ -1,4 +1,4 @@
-VSN = 5.4.10
+VSN = 5.4.12
 SYSTEM_VSN = R10B
 
 # Port number 4365 in 4.2

@@ -61,7 +61,7 @@ nbif_return:
 	/* save RA, no-op on x86 */
 .flush_exit:
 	/* flush cached P state */
-	SAVE_HP
+	SAVE_CACHED_STATE
 .nosave_exit:
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C_QUICK
@@ -202,7 +202,7 @@ nbif_suspend_msg:
 /*
  * Suspend from a receive with a timeout (waiting for a message)
  *	if( !(p->flags & F_TIMO) ) { suspend }
- *	else { p->flags ^= F_TIMO; return 0; }
+ *	else { return 0; }
  */
 	.align	4
 	.global	nbif_suspend_msg_timeout
@@ -212,10 +212,6 @@ nbif_suspend_msg_timeout:
 	testb	$F_TIMO, %al			# F_TIMO set?
 	jz	.no_timeout			# if not set, suspend
 	/* timeout has occurred */
-	/* XXX: The process will immediately execute 'clear_timeout',
-	   repeating this statement. Remove it? */
-	xorb	$F_TIMO, %al			# F_TIMO was set, clear it
-	movl	%eax, P_FLAGS(P)
 	xorl	%eax, %eax			# return 0 to signal timeout
 	NSP_RET0
 .no_timeout:
@@ -260,20 +256,19 @@ x86_tailcall_to_native:
 	.global	x86_throw_to_native
 x86_throw_to_native:
 	ENTER_FROM_C
-	/* find and invoke the handler */
-	xorl	%eax, %eax	# p->narity == 0
-	/*FALLTHROUGH*/
+	/* invoke the handler */
+	jmp	*P_NCALLEE(P)		# set by hipe_find_handler()
 
 /*
  * Find and invoke catch handler (it must exist).
- * The stack/heap registers were just read from P. (XXX: useless knowledge?)
+ * The stack/heap registers were just read from P.
  * - %eax should contain the current call's arity
  */
 	.align	4
 .find_exn_handler:
 	movl	%eax, P_NARITY(P)
 	/* find and prepare to invoke the handler */
-	SWITCH_ERLANG_TO_C
+	SWITCH_ERLANG_TO_C_QUICK	# The cached state is clean and need not be saved.
 	pushl	P
 	call	hipe_handle_exception	# Note: hipe_handle_exception() conses
 	addl	$4, %esp
@@ -334,6 +329,7 @@ nbif_3_simple_exception:
  * We end up here when a BIF called from native signals an
  * exceptional condition, and RESCHEDULE can occur.
  * %edx contains the address of the nbif which failed.
+ * The stack/heap registers were just read from P.
  * P_ARG0(P) is the first actual parameter, if X86_NR_ARG_REGS > 0.
  * P_ARG1(P) is the second actual parameter (if defined), if X86_NR_ARG_REGS > 1.
  */

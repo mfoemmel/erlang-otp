@@ -47,12 +47,18 @@ define(SIMULATE_NSP,0)dnl change to 1 to simulate call/ret insns
 	movl NSP, P_NSP(P); \
 	RESTORE_CSP'
 
+`#define SAVE_CACHED_STATE	\
+	SAVE_HP'
+
+`#define RESTORE_CACHED_STATE	\
+	RESTORE_HP'
+
 `#define SWITCH_C_TO_ERLANG	\
-	RESTORE_HP;		\
+	RESTORE_CACHED_STATE;	\
 	SWITCH_C_TO_ERLANG_QUICK'
 
 `#define SWITCH_ERLANG_TO_C	\
-	SAVE_HP;		\
+	SAVE_CACHED_STATE;	\
 	SWITCH_ERLANG_TO_C_QUICK'
 
 /*

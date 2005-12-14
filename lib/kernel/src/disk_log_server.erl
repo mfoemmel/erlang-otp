@@ -22,10 +22,11 @@
 	 get_log_pids/1, accessible_logs/0]).
 
 %% Local export.
--export([dist_open/1]).
+-export([dist_open/1, get_local_pid/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_info/2, terminate/2]).
+-export([handle_cast/2, code_change/3]). % just to avoid compiler warning
 
 -include("disk_log.hrl").
 
@@ -74,6 +75,9 @@ accessible_logs() ->
 %%% Callback functions from gen_server
 %%%----------------------------------------------------------------------
 
+%% It would have been really nice to have a tag for disk log groups,
+%% like {distributed_disk_log, Log}, but backward compatibility makes
+%% it hard to introduce.
 -define(group(Log), Log).
 
 init([]) ->
@@ -96,7 +100,7 @@ handle_info({pending_reply, Pid, Result0}, State) ->
     NP = lists:keydelete(Pid, #pending.pid, State#state.pending),
     State1 = State#state{pending = NP},
     if 
-        Attach and (Result0 == {error, no_such_log}) ->
+        Attach and (Result0 =:= {error, no_such_log}) ->
             %% The disk_log process has terminated. Try again.
             open([{Request,From} | Clients], State1);
         true -> 
@@ -108,12 +112,14 @@ handle_info({pending_reply, Pid, Result0}, State) ->
                 _ ->
                     put(Pid, Name),
                     link(Pid),
-                    case Request of
-                        {_, local, _} -> 
-                            ets:insert(?DISK_LOG_NAME_TABLE, {Name, Pid}),
-                            ets:insert(?DISK_LOG_PID_TABLE, {Pid, Name});
-                        {_, distr, _} -> 
-                            ok = pg2:join(?group(Name), Pid)
+                    {_, Locality, _} = Request,
+                    ets:insert(?DISK_LOG_PID_TABLE, {Pid, Name}),
+                    ets:insert(?DISK_LOG_NAME_TABLE, {Name, Pid, Locality}),
+                    if 
+                        Locality =:= distr -> 
+                            ok = pg2:join(?group(Name), Pid);
+                        true ->
+                            ok
                     end
             end,
             gen_server:reply(From, result(Request, Result0)),
@@ -132,6 +138,14 @@ handle_info({'EXIT', Pid, _Reason}, State) ->
 handle_info(_, State) ->
     {noreply, State}.
 	    
+%% Just to avoid compiler warning.
+handle_cast(_, State) ->
+    {noreply, State}.
+
+%% Just to avoid compiler warning.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+    
 terminate(_Reason, _) ->
     ok.
 
@@ -171,7 +185,7 @@ do_open({open, W, #arg{name = Name}=A}=Req, From, State) ->
     case check_pending(Name, From, State, Req) of
         {pending, NewState} -> 
             {pending, NewState};
-        false when W == local ->
+        false when W =:= local ->
             case A#arg.distributed of
                 {true, Nodes} ->
                     Fun = fun() -> open_distr_rpc(Nodes, A, From) end,
@@ -188,7 +202,7 @@ do_open({open, W, #arg{name = Name}=A}=Req, From, State) ->
                             start_log(Name, Req, From, State)
                     end
             end;
-        false when W == distr  ->
+        false when W =:= distr  ->
             ok = pg2:create(?group(Name)),
             case get_local_pid(Name) of
                 undefined ->
@@ -203,8 +217,7 @@ do_open({open, W, #arg{name = Name}=A}=Req, From, State) ->
 %% Spawning a process is a means to avoid deadlock when
 %% disk_log_servers mutually open disk_logs.
 open_distr_rpc(Nodes, A, From) ->
-    {AllReplies, BadNodes} =
-	rpc:multicall(Nodes, disk_log_server, dist_open, [A]),
+    {AllReplies, BadNodes} = rpc:multicall(Nodes, ?MODULE, dist_open, [A]),
     {Ok, Bad} = cr(AllReplies, [], []),
     Old = find_old_nodes(Nodes, AllReplies, BadNodes),
     NotOk = lists:map(fun(BadNode) -> {BadNode, {error, nodedown}} end, 
@@ -232,7 +245,8 @@ cr([], Nodes, Bad) ->
 %% the new node is also considered 'down'.
 find_old_nodes(Nodes, Replies, BadNodes) ->
     R = [X || {X, _} <- Replies],
-    ordsets:subtract(lists:sort(Nodes), lists:sort(R ++ BadNodes)).
+    ordsets:to_list(ordsets:subtract(ordsets:from_list(Nodes), 
+                                     ordsets:from_list(R ++ BadNodes))).
 
 start_log(Name, Req, From, State) ->
     Server = self(),
@@ -288,44 +302,39 @@ erase_log(Name, Pid) ->
             true = ets:delete(?DISK_LOG_NAME_TABLE, Name),            
             true = ets:delete(?DISK_LOG_PID_TABLE, Pid);
         {distributed, Pid} ->
+            true = ets:delete(?DISK_LOG_NAME_TABLE, Name),
+            true = ets:delete(?DISK_LOG_PID_TABLE, Pid),
             ok = pg2:leave(?group(Name), Pid)
     end,
     erase(Pid).
 
 do_accessible_logs() ->
-    Local0 = lists:map(fun hd/1, ets:match(?DISK_LOG_NAME_TABLE, {'$1','_'})),
+    LocalSpec = {'$1','_',local},
+    Local0 = lists:map(fun hd/1, ets:match(?DISK_LOG_NAME_TABLE, LocalSpec)),
     Local = lists:sort(Local0),
-    AllDist0 = lists:foldl(fun non_empty_group/2, [], pg2:which_groups()),
-    AllDist = lists:sort(AllDist0),
-    {Local, ordsets:subtract(AllDist, Local)}.
-
-non_empty_group(?group(G), Gs) ->
-    case dist_pids(G) of
-	[] -> Gs;
-	_ -> [G | Gs]
-    end.
+    Groups0 = ordsets:from_list(pg2:which_groups()),
+    Groups = ordsets:to_list(ordsets:subtract(Groups0, Local)),
+    Dist = lists:filter(fun(L) -> dist_pids(L) =/= [] end, Groups),
+    {Local, Dist}.
 
 get_local_pid(LogName) ->
     case ets:lookup(?DISK_LOG_NAME_TABLE, LogName) of
-	[{_, Pid}] ->
+	[{LogName, Pid, local}] ->
 	    {local, Pid};
+        [{LogName, Pid, distr}] ->
+            {distributed, Pid};
 	[] -> 
-	    own_pid(dist_pids(LogName), node())
+            undefined
     end.
-
-own_pid([Pid | _], Node) when node(Pid) == Node ->
-    {distributed, Pid};
-own_pid([_ | T], Node) ->
-    own_pid(T, Node);
-own_pid([], _) ->
-    undefined.
 
 %% Inlined.
 do_get_log_pids(LogName) ->
     case catch ets:lookup(?DISK_LOG_NAME_TABLE, LogName) of
-	[{_, Pid}] ->
+	[{LogName, Pid, local}] ->
 	    {local, Pid};
-	_EmptyOrError -> 
+	[{LogName, _Pid, distr}] ->
+            {distributed, pg2:get_members(?group(LogName))};
+        _EmptyOrError ->
 	    case dist_pids(LogName) of
 		[] -> undefined;
 		Pids  -> {distributed, Pids}
@@ -333,8 +342,19 @@ do_get_log_pids(LogName) ->
     end.
 
 dist_pids(LogName) ->
-    case catch pg2:get_members(?group(LogName)) of
-	Pids when list(Pids) -> Pids;
-	_Error -> []
+    %% Would be much simpler if disk log group names were tagged.
+    GroupName = ?group(LogName),
+    case catch pg2:get_members(GroupName) of
+	[Pid | _] = Pids -> 
+            case rpc:call(node(Pid), ?MODULE, get_local_pid, [LogName]) of
+                undefined -> % does not seem to be a disk_log group
+                    case catch lists:member(Pid,pg2:get_members(GroupName)) of
+                        true -> [];
+                        _ -> dist_pids(LogName)
+                    end;
+                _ -> % badrpc if get_local_pid is not exported
+                    Pids
+            end;
+	_ -> 
+            []
     end.
-

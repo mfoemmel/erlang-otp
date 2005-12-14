@@ -350,19 +350,11 @@ record_test_in_body(Line, Expr, Name, St0) ->
     %% evaluate to a tuple properly.
     Fs = record_fields(Name, St0),
     {Var,St} = new_var(Line, St0),
-
     expr({block,Line,
 	  [{match,Line,Var,Expr},
-	   {op,Line,
-	    'andalso',
-	    {call,Line,{atom,Line,is_tuple},[Var]},
-	    {op,Line,'andalso',
-	     {op,Line,'=:=',
-	      {call,Line,{atom,Line,size},[Var]},
-	      {integer,Line,length(Fs)+1}},
-	     {op,Line,'=:=',
-	      {call,Line,{atom,Line,element},[{integer,Line,1},Var]},
-	      {atom,Line,Name}}}}]}, St).
+	   {call,-Line,{remote,-Line,{atom,-Line,erlang},
+			{atom,-Line,is_record}},
+	    [Var,{atom,Line,Name},{integer,Line,length(Fs)+1}]}]}, St).
 
 normalise_test(atom, 1)      -> is_atom;
 normalise_test(binary, 1)    -> is_binary;

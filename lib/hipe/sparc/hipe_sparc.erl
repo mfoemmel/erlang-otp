@@ -446,10 +446,8 @@
 	 mk_new_fpreg/0, is_fpreg/1, fpreg_nr/1, mk_imm/1,
 	 is_imm/1, imm_value/1, %% mk_spill/1,
 	 is_spill/1, spill_pos/1]).
--export([type/1]).
 
 -include("hipe_sparc_sdesc.hrl").
-
 -include("hipe_sparc.hrl").
 %%-define(DO_ASSERT,true).
 -include("../main/hipe.hrl").
@@ -1194,101 +1192,78 @@ is_spill(_) -> false.
 spill_pos({spill, Pos}) -> Pos.
   
   
-	
-  
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%
-%% Selectors
-%%
-
-%% @spec (sparc_instruction()) -> 
-%%             label | nop | comment | move | multimove | alu | alu_cc |
-%%             sethi | load | store | b | goto | jmp_link | jmp |
-%%             call_link | load_atom | load_word_index | pseudo_return |
-%%             pseudo_enter | pseudo_pop | pseudo_spill | pseudo_unspill |
-%%             load_fp | store_fp | fop | load_address
-%% @end
-%% (Not currently used: pseudo_push, align, cmov_cc, cmov_r, br, fb,
-%% fcmp.)
-%%
-%% @doc Returns the type of a sparc instruction.
-type(Insn) ->
-  element(1, Insn).
-
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Predicates
 %%
 
 %% %% @spec (sparc_instruction()) -> bool()
-%% is_cmov_cc(Insn) -> case type(Insn) of cmov_cc -> true; _ -> false end.
+%% is_cmov_cc(Insn) -> case Insn of #cmov_cc{} -> true; _ -> false end.
 %% %% @spec (sparc_instruction()) -> bool()
-%% is_sethi(Insn) -> case type(Insn) of  sethi -> true; _ -> false end.
+%% is_sethi(Insn) -> case Insn of #sethi{} -> true; _ -> false end.
 %% %% @spec (sparc_instruction()) -> bool()
-%% is_jmp(Insn) -> case type(Insn) of jmp -> true; _ -> false end.
-%% is_load_atom(Insn) -> case type(Insn) of load_atom -> true; _ -> false end.
-%% is_load_address(I) -> case type(I) of load_address -> true; _ -> false end.
+%% is_jmp(Insn) -> case Insn of #jmp{} -> true; _ -> false end.
+%% is_load_atom(Insn) -> case Insn of #load_atom{} -> true; _ -> false end.
+%% is_load_address(Insn) -> case Insn of #load_address{} -> true; _ -> false end.
 
 %% %% @spec (sparc_instruction()) -> bool()
-%% is_any_alu(Insn) -> 
-%%   case type(Insn) of 
-%%     alu -> true; 
-%%     alu_cc ->true; 
-%%     _ -> false 
+%% is_any_alu(Insn) ->
+%%   case Insn of
+%%     #alu{} -> true;
+%%     #alu_cc{} ->true;
+%%     _ -> false
 %%   end.
 
 %% %% @spec (sparc_instruction()) -> bool()
-%% is_any_cmov(Insn) -> 
-%%   case type(Insn) of
-%%     cmov_cc -> true;
-%%     cmov_r -> true;
+%% is_any_cmov(Insn) ->
+%%   case Insn of
+%%     #cmov_cc{} -> true;
+%%     #cmov_r{} -> true;
 %%     _ -> false
 %%   end.
 
 %% %% @spec (sparc_instruction()) -> bool()
 %% is_any_memop(Insn) -> 
-%%   case type(Insn) of
-%%     load -> true;
-%%     store -> true;
-%%     load_fp -> true;
-%%     store_fp -> true;
+%%   case Insn of
+%%     #load{} -> true;
+%%     #store{} -> true;
+%%     #load_fp{} -> true;
+%%     #store_fp{} -> true;
 %%     _ -> false
 %%   end.
 
 %% These instrs are branches that need delayslot filling.
 %% @spec (sparc_instruction()) -> bool()
 is_any_branch(Insn) -> 
-  case type(Insn) of
-    b -> true;
-%%    br -> true;
-    goto -> true;
-    jmp -> true;
-    jmp_link -> true;
-    call_link -> case call_link_continuation(Insn) of
-		   [] -> false;
-		   _ -> true
-		 end;
-    pseudo_return -> true;
-    pseudo_enter -> true;
-%%    fb -> true;
+  case Insn of
+    #b{} -> true;
+%%  #br{} -> true;
+    #goto{} -> true;
+    #jmp{} -> true;
+    #jmp_link{} -> true;
+    #call_link{} -> case call_link_continuation(Insn) of
+		      [] -> false;
+		      _ -> true
+		    end;
+    #pseudo_return{} -> true;
+    #pseudo_enter{} -> true;
+%%  #fb{} -> true;
     _ -> false
   end.
 
 %% These instrs are branches that need delayslot filling.
 %% @spec (sparc_instruction()) -> bool()
 has_delayslot(Insn) -> 
-  case type(Insn) of
-    b -> true;
-%%    br -> true;
-    goto -> true;
-    jmp -> true;
-    jmp_link -> true;
-    call_link -> true;
-    pseudo_return -> true;
-    pseudo_enter -> true;
-%%    fb -> true;
+  case Insn of
+    #b{} -> true;
+%%  #br -> true;
+    #goto{} -> true;
+    #jmp{} -> true;
+    #jmp_link{} -> true;
+    #call_link{} -> true;
+    #pseudo_return{} -> true;
+    #pseudo_enter{} -> true;
+%%  #fb{} -> true;
     _ -> false
   end.
 
@@ -1296,8 +1271,8 @@ has_delayslot(Insn) ->
 %% @doc Changes the target of a jump.
 %% Replaces any references to the target label Old by the label New.
 redirect_jmp(Jmp, ToOld, ToNew) ->
-  case type(Jmp) of
-%%     br ->
+  case Jmp of
+%%  #br{} ->
 %%       case br_true_label(Jmp) of
 %% 	ToOld ->
 %% 	  br_true_label_update(Jmp, ToNew);
@@ -1309,7 +1284,7 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 %% 	      Jmp
 %% 	  end
 %%       end;
-    b ->
+    #b{} ->
       case b_true_label(Jmp) of
 	ToOld ->
 	  b_true_label_update(Jmp, ToNew);
@@ -1321,18 +1296,17 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 	      Jmp
 	  end
       end;
-    goto ->
+    #goto{} ->
       case goto_label(Jmp) of
 	ToOld ->
 	  goto_label_update(Jmp, ToNew);
 	_ ->
 	  Jmp
       end;
-    jmp -> 
+    #jmp{} -> 
       NewDests = replace(ToOld, ToNew, jmp_destinations(Jmp)),
       jmp_destinations_update(Jmp, NewDests);
-
-    call_link ->
+    #call_link{} ->
       case call_link_continuation(Jmp) of
 	ToOld ->
 	  call_link_continuation_update(Jmp, ToNew);
@@ -1344,7 +1318,7 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 	      Jmp
 	  end
       end;
-%%     fb ->
+%%  #fb{} ->
 %%       case fb_true_label(Jmp) of
 %% 	ToOld ->
 %% 	  fb_true_label_update(Jmp, ToNew);
@@ -1442,37 +1416,37 @@ uses(Instr) ->
 %% @spec (sparc_instruction()) -> [operand()]
 %% @doc Returns a list of operands that are used by an instruction
 all_uses(Ins) ->
-  case type(Ins) of
-    label -> [];
-    nop -> [];
-%%    align -> [];
-    comment -> [];
-    move -> [move_src(Ins)];
-    multimove -> multimove_src(Ins);
-%%    cmov_cc -> [icc_reg(), xcc_reg(), cmov_cc_src(Ins)];
-%%    cmov_r -> [cmov_r_src(Ins), cmov_r_reg(Ins)];
-    alu -> [alu_src1(Ins), alu_src2(Ins)];
-    alu_cc -> [alu_cc_src1(Ins), alu_cc_src2(Ins)];
-    sethi -> [sethi_const(Ins)];
-    load -> [load_src(Ins), load_off(Ins)];
-    store -> [store_dest(Ins), store_src(Ins), store_off(Ins)];
-    b -> [icc_reg(), xcc_reg()];
-%%     br -> [br_reg(Ins)];
-    goto -> [];
-    jmp_link ->
+  case Ins of
+    #label{} -> [];
+    #nop{} -> [];
+%%  #align{} -> [];
+    #comment{} -> [];
+    #move{} -> [move_src(Ins)];
+    #multimove{} -> multimove_src(Ins);
+%%  #cmov_cc{} -> [icc_reg(), xcc_reg(), cmov_cc_src(Ins)];
+%%  #cmov_r{} -> [cmov_r_src(Ins), cmov_r_reg(Ins)];
+    #alu{} -> [alu_src1(Ins), alu_src2(Ins)];
+    #alu_cc{} -> [alu_cc_src1(Ins), alu_cc_src2(Ins)];
+    #sethi{} -> [sethi_const(Ins)];
+    #load{} -> [load_src(Ins), load_off(Ins)];
+    #store{} -> [store_dest(Ins), store_src(Ins), store_off(Ins)];
+    #b{} -> [icc_reg(), xcc_reg()];
+%%  #br{} -> [br_reg(Ins)];
+    #goto{} -> [];
+    #jmp_link{} ->
       [jmp_link_target(Ins), jmp_link_off(Ins) | jmp_link_args(Ins)];
-    jmp -> [jmp_target(Ins), jmp_off(Ins) | jmp_args(Ins)];
-    call_link -> 
+    #jmp{} -> [jmp_target(Ins), jmp_off(Ins) | jmp_args(Ins)];
+    #call_link{} -> 
       case call_link_is_known(Ins) of
 	false ->
 	  [call_link_target(Ins)|call_link_args(Ins)];
 	true ->
 	  call_link_args(Ins)
       end;
-    load_atom -> [];
-    load_word_index -> [];
-    pseudo_return -> pseudo_return_regs(Ins);
-    pseudo_enter -> 
+    #load_atom{} -> [];
+    #load_word_index{} -> [];
+    #pseudo_return{} -> pseudo_return_regs(Ins);
+    #pseudo_enter{} -> 
       case pseudo_enter_is_known(Ins) of
 	false ->
 	  [pseudo_enter_target(Ins)|
@@ -1480,24 +1454,24 @@ all_uses(Ins) ->
 	true ->
 	  pseudo_enter_args(Ins)
       end;
-    pseudo_spill -> [pseudo_spill_reg(Ins)];
-    pseudo_unspill -> [];
-%%     pseudo_push -> [pseudo_push_reg(Ins)];
-    pseudo_pop -> [];
+    #pseudo_spill{} -> [pseudo_spill_reg(Ins)];
+    #pseudo_unspill{} -> [];
+%%  #pseudo_push{} -> [pseudo_push_reg(Ins)];
+    #pseudo_pop{} -> [];
 
-    load_fp -> [load_fp_off(Ins), load_fp_src(Ins)];
-    store_fp ->
+    #load_fp{} -> [load_fp_off(Ins), load_fp_src(Ins)];
+    #store_fp{} ->
       case store_fp_type(Ins) of
 	single -> [store_fp_dest(Ins), store_fp_off(Ins),store_fp_src(Ins)];
 	_ ->  [store_fp_dest(Ins), store_fp_off(Ins)| 
 	       format_fpreg([store_fp_src(Ins)])]
       end;
-%%    fb -> [fcc_reg(fb_fcc_reg(Ins))];
-    fop -> format_fpreg([fop_src1(Ins), fop_src2(Ins)]);
-%%    fcmp -> format_fpreg([fcmp_src1(Ins), fcmp_src2(Ins)]);
-    fmove -> format_fpreg([fmove_src(Ins)]);
-    conv_fp -> format_fpreg([conv_fp_src(Ins)]);
-    load_address -> []
+%%  #fb{} -> [fcc_reg(fb_fcc_reg(Ins))];
+    #fop{} -> format_fpreg([fop_src1(Ins), fop_src2(Ins)]);
+%%  #fcmp{} -> format_fpreg([fcmp_src1(Ins), fcmp_src2(Ins)]);
+    #fmove{} -> format_fpreg([fmove_src(Ins)]);
+    #conv_fp{} -> format_fpreg([conv_fp_src(Ins)]);
+    #load_address{} -> []
   end.
 
 %% @spec (sparc_instruction()) -> [imm()]
@@ -1527,52 +1501,50 @@ fp_reg_defines(Ins) ->
 %% @spec (sparc_instruction()) -> [operand()]
 %% @doc Returns a list of operands that are defined by an instruction
 all_defines(Ins)->
-  case type(Ins) of
-    label -> [];
-    nop -> [];
-%%    align -> [];
-    comment -> [];
-    move -> [move_dest(Ins)];
-    multimove -> multimove_dest(Ins);
-%%    cmov_cc -> [cmov_cc_dest(Ins)];
-%%    cmov_r -> [cmov_r_dest(Ins)];
-    alu -> [alu_dest(Ins)];
-    alu_cc -> [icc_reg(), xcc_reg(), alu_cc_dest(Ins)];
-    sethi -> [sethi_dest(Ins)];
-    load -> [load_dest(Ins)];
-    store -> [];
-    b -> [];
-%%    br -> [];
-    goto -> [];
-    jmp_link -> [jmp_link_link(Ins)];
-    jmp -> [];
-    call_link -> 
+  case Ins of
+    #label{} -> [];
+    #nop{} -> [];
+%%  #align{} -> [];
+    #comment{} -> [];
+    #move{} -> [move_dest(Ins)];
+    #multimove{} -> multimove_dest(Ins);
+%%  #cmov_cc{} -> [cmov_cc_dest(Ins)];
+%%  #cmov_r{} -> [cmov_r_dest(Ins)];
+    #alu{} -> [alu_dest(Ins)];
+    #alu_cc{} -> [icc_reg(), xcc_reg(), alu_cc_dest(Ins)];
+    #sethi{} -> [sethi_dest(Ins)];
+    #load{} -> [load_dest(Ins)];
+    #store{} -> [];
+    #b{} -> [];
+%%  #br{} -> [];
+    #goto{} -> [];
+    #jmp_link{} -> [jmp_link_link(Ins)];
+    #jmp{} -> [];
+    #call_link{} -> 
       [mk_reg(hipe_sparc_registers:ret(0)), %% For exceptions.
-	call_link_link(Ins)|
+       call_link_link(Ins)|
        call_link_dests(Ins)]; 
-    load_atom -> [load_atom_dest(Ins)];
-    load_word_index -> [load_word_index_dest(Ins)];
-    pseudo_return -> [];
-    pseudo_enter -> [];
-%%     pseudo_push -> [];
-    pseudo_pop -> [pseudo_pop_reg(Ins)];
-    pseudo_spill -> [];
-    pseudo_unspill -> [pseudo_unspill_reg(Ins)];
-    load_fp -> 
+    #load_atom{} -> [load_atom_dest(Ins)];
+    #load_word_index{} -> [load_word_index_dest(Ins)];
+    #pseudo_return{} -> [];
+    #pseudo_enter{} -> [];
+%%  #pseudo_push{} -> [];
+    #pseudo_pop{} -> [pseudo_pop_reg(Ins)];
+    #pseudo_spill{} -> [];
+    #pseudo_unspill{} -> [pseudo_unspill_reg(Ins)];
+    #load_fp{} -> 
       case load_fp_type(Ins) of
 	single ->[load_fp_dest(Ins)];
 	_ -> format_fpreg([load_fp_dest(Ins)])
       end;
-    store_fp -> [];
-%%    fb -> [];
-    fop -> format_fpreg([fop_dest(Ins)]);
-%%    fcmp -> [fcc_reg(fcmp_fcc_reg(Ins))];
-    fmove -> format_fpreg([fmove_dest(Ins)]);
-    conv_fp -> format_fpreg([conv_fp_dest(Ins)]);
-    load_address -> [load_address_dest(Ins)]
+    #store_fp{} -> [];
+%%  #fb{} -> [];
+    #fop{} -> format_fpreg([fop_dest(Ins)]);
+%%  #fcmp{} -> [fcc_reg(fcmp_fcc_reg(Ins))];
+    #fmove{} -> format_fpreg([fmove_dest(Ins)]);
+    #conv_fp{} -> format_fpreg([conv_fp_dest(Ins)]);
+    #load_address{} -> [load_address_dest(Ins)]
   end.
-
-
 
 
 %% @spec (sparc_instruction()) -> {[operand()],[operand()]}
@@ -1580,70 +1552,68 @@ all_defines(Ins)->
 %% Totally redundant, but we need it for speed.
 %%
 all_def_uses(I) ->
-    case type(I) of
-      label -> {[],[]};
-      nop -> {[],[]};
-%%      align -> {[],[]};
-      comment ->  {[],[]};
-      move -> 
+  case I of
+    #label{} -> {[],[]};
+    #nop{} -> {[],[]};
+%%  #align{} -> {[],[]};
+    #comment{} ->  {[],[]};
+    #move{} -> 
 	{[move_dest(I)],
 	 [move_src(I)]};
-      multimove -> 
+    #multimove{} -> 
 	{multimove_dest(I),
 	 multimove_src(I)};
-%%      cmov_cc ->
+%%  #cmov_cc{} ->
 %% 	{[cmov_cc_dest(I)],
 %% 	 [icc_reg(), xcc_reg(), cmov_cc_src(I)]};
 %%       cmov_r ->
 %% 	{[cmov_r_dest(I)],
 %% 	 [cmov_r_src(I), cmov_r_reg(I)]};
-      alu -> 
+    #alu{} ->
 	{[alu_dest(I)],
 	 [alu_src1(I), alu_src2(I)]};
-      alu_cc ->
+    #alu_cc{} ->
 	{[icc_reg(), xcc_reg(), alu_cc_dest(I)],
 	 [alu_cc_src1(I), alu_cc_src2(I)]};
-      sethi ->
+    #sethi{} ->
 	{[sethi_dest(I)], 
 	 [sethi_const(I)]};
-      load -> 
+    #load{} -> 
 	{[load_dest(I)],
 	 [load_src(I), load_off(I)]};
-      store ->
+    #store{} ->
 	{[],
 	 [store_dest(I), store_src(I), store_off(I)]};
-      b -> 
+    #b{} ->
 	{[],
 	 [icc_reg(), xcc_reg()]};
-%%       br -> 
+%%  #br{} ->
 %% 	{[],
 %% 	 [br_reg(I)]};
-      goto -> {[],[]};
-      jmp_link ->
+    #goto{} -> {[],[]};
+    #jmp_link{} ->
 	{[jmp_link_link(I)],
 	 [jmp_link_target(I), jmp_link_off(I) | jmp_link_args(I)]};
-      jmp ->
+    #jmp{} ->
 	{[],
 	 [jmp_target(I), jmp_off(I) | jmp_args(I)]};
-      call_link ->
-	{
-	[call_link_link(I)|
-	   call_link_dests(I)],
-	case call_link_is_known(I) of
-	  false -> 
-	    [call_link_target(I)|call_link_args(I)];
-	  true -> call_link_args(I)
-	end};
-      load_atom ->
+    #call_link{} ->
+	{[call_link_link(I)|call_link_dests(I)],
+	 case call_link_is_known(I) of
+	   false -> 
+	     [call_link_target(I)|call_link_args(I)];
+	   true -> call_link_args(I)
+	 end};
+    #load_atom{} ->
 	{[load_atom_dest(I)],
 	 []};
-      load_word_index ->
+    #load_word_index{} ->
 	{[load_word_index_dest(I)],
 	 []};
-     pseudo_return ->
+    #pseudo_return{} ->
 	{[],
 	 pseudo_return_regs(I)};
-     pseudo_enter ->
+    #pseudo_enter{} ->
 	{[],
 	 case pseudo_enter_is_known(I) of
 	   false ->
@@ -1652,19 +1622,19 @@ all_def_uses(I) ->
 	   true ->
 	     pseudo_enter_args(I)
 	 end};
-       pseudo_spill ->
+    #pseudo_spill{} ->
 	{[],
 	 [pseudo_spill_reg(I)]};
-      pseudo_unspill ->
+    #pseudo_unspill{} ->
 	{[pseudo_unspill_reg(I)],
 	 []};
-%       pseudo_push ->
+%   #pseudo_push{} ->
 % 	{[],
 % 	 [pseudo_push_reg(I)]};
-      pseudo_pop ->
+    #pseudo_pop{} ->
 	{[pseudo_pop_reg(I)],
 	 []};
-      load_fp -> 
+    #load_fp{} ->
 	case load_fp_type(I) of
 	  single ->
 	    {[load_fp_dest(I)],
@@ -1673,7 +1643,7 @@ all_def_uses(I) ->
 	    {format_fpreg([load_fp_dest(I)]),
 	     [load_fp_src(I), load_fp_off(I)]}
 	end;
-      store_fp ->
+    #store_fp{} ->
 	case store_fp_type(I) of
 	  single ->
 	    {[],
@@ -1683,25 +1653,25 @@ all_def_uses(I) ->
 	     [store_fp_off(I), store_fp_dest(I) |
 	      format_fpreg([store_fp_src(I)])]}
 	end;
-%%       fb -> 
+%%  #fb{} ->
 %% 	{[],
 %% 	 [fcc_reg(fb_fcc_reg(I))]};
-      fop -> 
+    #fop{} ->
 	{format_fpreg([fop_dest(I)]),
 	 format_fpreg([fop_src1(I), fop_src2(I)])}; 
-%%       fcmp -> 
+%%  fcmp{} -> 
 %% 	{[fcc_reg(fcmp_fcc_reg(I))],
 %% 	 format_fpreg([fcmp_src1(I), fcmp_src2(I)])};
-      fmove -> 
+    #fmove{} -> 
 	{format_fpreg([fmove_dest(I)]),
 	 format_fpreg([fmove_src(I)])};
-      conv_fp -> 
+    #conv_fp{} -> 
 	{format_fpreg([conv_fp_dest(I)]),
 	 [conv_fp_src(I)]};
-      load_address -> 
+    #load_address{} -> 
 	{[load_address_dest(I)],
 	 []}
-    end.
+  end.
 
 %% @spec (sparc_instruction()) -> {[reg()],[reg()]}
 %% @doc Returns a tuple of reg-defs and reg-uses in instruction.
@@ -1819,20 +1789,20 @@ keep_imms([I|Is]) ->
 %%            New = operand()
 %% @doc Substitution -- replace occurrences of the operator Old by New if {Old,New} is in Subst.
 subst(Ins, Subst) ->
-  case type(Ins) of
-    label -> Ins;
-    nop -> Ins;
-%%    align -> Ins;
-    comment -> Ins;
-    b -> Ins;
-    goto -> Ins;
-    sethi ->
+  case Ins of
+    #label{} -> Ins;
+    #nop{} -> Ins;
+%%  #align{} -> Ins;
+    #comment{} -> Ins;
+    #b{} -> Ins;
+    #goto{} -> Ins;
+    #sethi{} ->
       NewDst = subst1(Subst, sethi_dest(Ins)),
       sethi_dest_update(Ins, NewDst);
-%%     br ->
-%%       NewReg = subst1(Subst, br_reg(Ins)),
-%%       br_reg_update(Ins, NewReg);
-    call_link ->
+%%  #br{} ->
+%%    NewReg = subst1(Subst, br_reg(Ins)),
+%%    br_reg_update(Ins, NewReg);
+    #call_link{} ->
       Ins1 =
 	case call_link_is_known(Ins) of
 	  false ->
@@ -1840,81 +1810,80 @@ subst(Ins, Subst) ->
 	    call_link_target_update(Ins, NewTarget);
 	  true -> Ins
 	end,
-
       NewArgs = subst_list(Subst, call_link_args(Ins1)),
       Ins2 =  call_link_args_update(Ins1,NewArgs),
       NewLink = subst1(Subst, call_link_link(Ins2)),
       call_link_link_update(Ins2, NewLink);
-    load_atom ->
+    #load_atom{} ->
       NewDst = subst1(Subst, load_atom_dest(Ins)),
       load_atom_dest_update(Ins, NewDst);
-    load_word_index ->
+    #load_word_index{} ->
       NewDst = subst1(Subst, load_word_index_dest(Ins)),
       load_word_index_dest_update(Ins, NewDst);
-    load_address ->
+    #load_address{} ->
       NewDst = subst1(Subst, load_address_dest(Ins)),
       load_address_dest_update(Ins, NewDst);
-    move ->
+    #move{} ->
       NewSrc = subst1(Subst, move_src(Ins)),
       NewDst = subst1(Subst, move_dest(Ins)),
       I0 = move_dest_update(Ins, NewDst),
       move_src_update(I0, NewSrc);
-    multimove ->
+    #multimove{} ->
       NewSrc = subst_list(Subst, multimove_src(Ins)),
       NewDst = subst_list(Subst, multimove_dest(Ins)),
       I0 = multimove_dest_update(Ins, NewDst),
       multimove_src_update(I0, NewSrc);
-%%     cmov_cc ->
-%%       NewSrc = subst1(Subst, cmov_cc_src(Ins)),
-%%       NewDst = subst1(Subst, cmov_cc_dest(Ins)),
-%%       I0 = cmov_cc_dest_update(Ins, NewDst),
-%%       cmov_cc_src_update(I0, NewSrc);
-%%     cmov_r ->
-%%       NewSrc = subst1(Subst, cmov_r_src(Ins)),
-%%       NewReg = subst1(Subst, cmov_r_reg(Ins)),
-%%       NewDst = subst1(Subst, cmov_r_dest(Ins)),
-%%       I0 = cmov_r_dest_update(Ins, NewDst),
-%%       I1 = cmov_r_src_update(I0, NewSrc),
-%%       cmov_r_reg_update(I1, NewReg);
-    alu ->
+%%  #cmov_cc{} ->
+%%    NewSrc = subst1(Subst, cmov_cc_src(Ins)),
+%%    NewDst = subst1(Subst, cmov_cc_dest(Ins)),
+%%    I0 = cmov_cc_dest_update(Ins, NewDst),
+%%    cmov_cc_src_update(I0, NewSrc);
+%%  #cmov_r{} ->
+%%    NewSrc = subst1(Subst, cmov_r_src(Ins)),
+%%    NewReg = subst1(Subst, cmov_r_reg(Ins)),
+%%    NewDst = subst1(Subst, cmov_r_dest(Ins)),
+%%    I0 = cmov_r_dest_update(Ins, NewDst),
+%%    I1 = cmov_r_src_update(I0, NewSrc),
+%%    cmov_r_reg_update(I1, NewReg);
+    #alu{} ->
       NewSrc1 = subst1(Subst, alu_src1(Ins)),
       NewSrc2 = subst1(Subst, alu_src2(Ins)),
       NewDst = subst1(Subst, alu_dest(Ins)),
       I0 = alu_dest_update(Ins, NewDst),
       I1 = alu_src1_update(I0, NewSrc1),
       alu_src2_update(I1, NewSrc2);
-    alu_cc ->
+    #alu_cc{} ->
       NewSrc1 = subst1(Subst, alu_cc_src1(Ins)),
       NewSrc2 = subst1(Subst, alu_cc_src2(Ins)),
       NewDst = subst1(Subst, alu_cc_dest(Ins)),
       I0 = alu_cc_dest_update(Ins, NewDst),
       I1 = alu_cc_src1_update(I0, NewSrc1),
       alu_cc_src2_update(I1, NewSrc2);
-    load ->
+    #load{} ->
       NewSrc = subst1(Subst, load_src(Ins)),
       NewOff = subst1(Subst, load_off(Ins)),
       NewDst = subst1(Subst, load_dest(Ins)),
       I0 = load_dest_update(Ins, NewDst),
       I1 = load_src_update(I0, NewSrc),
       load_off_update(I1, NewOff);
-    store ->
+    #store{} ->
       NewSrc = subst1(Subst, store_src(Ins)),
       NewOff = subst1(Subst, store_off(Ins)),
       NewDst = subst1(Subst, store_dest(Ins)),
       I0 = store_dest_update(Ins, NewDst),
       I1 = store_src_update(I0, NewSrc),
       store_off_update(I1, NewOff);
-    jmp_link ->
+    #jmp_link{} ->
       NewTarget = subst1(Subst, jmp_link_target(Ins)),
       NewOff = subst1(Subst, jmp_link_off(Ins)),
       NewLink = subst1(Subst, jmp_link_link(Ins)),
       I0 = jmp_link_link_update(Ins, NewLink),
       I1 = jmp_link_target_update(I0, NewTarget),
       jmp_link_off_update(I1, NewOff);
-    pseudo_return ->
+    #pseudo_return{} ->
       NewRegs = subst_list(Subst, pseudo_return_regs(Ins)),
       pseudo_return_regs_update(Ins, NewRegs);
-    pseudo_enter ->
+    #pseudo_enter{} ->
       NewI = 
 	case pseudo_enter_is_known(Ins) of
 	  false ->
@@ -1925,57 +1894,57 @@ subst(Ins, Subst) ->
 	end,
       NewRegs = subst_list(Subst, pseudo_enter_args(NewI)),
       pseudo_enter_args_update(NewI, NewRegs);
-    pseudo_spill ->
+    #pseudo_spill{} ->
       NewReg = subst1(Subst, pseudo_spill_reg(Ins)),
       pseudo_spill_reg_update(Ins, NewReg);
-    pseudo_unspill ->
+    #pseudo_unspill{} ->
       NewReg = subst1(Subst, pseudo_unspill_reg(Ins)),
       pseudo_unspill_reg_update(Ins, NewReg);
-%     pseudo_push ->
-%       NewReg = subst1(Subst, pseudo_push_reg(Ins)),
-%       pseudo_push_reg_update(Ins, NewReg);
-    pseudo_pop ->
+%   #pseudo_push{} ->
+%     NewReg = subst1(Subst, pseudo_push_reg(Ins)),
+%     pseudo_push_reg_update(Ins, NewReg);
+    #pseudo_pop{} ->
       NewReg = subst1(Subst, pseudo_pop_reg(Ins)),
       pseudo_pop_reg_update(Ins, NewReg);
 
-    load_fp ->
+    #load_fp{} ->
       NewSrc = subst1(Subst, load_fp_src(Ins)),
       NewOff = subst1(Subst, load_fp_off(Ins)),
       NewDst = subst1(Subst, load_fp_dest(Ins)),
       I0 = load_fp_dest_update(Ins, NewDst),
       I1 = load_fp_src_update(I0, NewSrc),
       load_fp_off_update(I1, NewOff);
-    store_fp ->
+    #store_fp{} ->
       NewSrc = subst1(Subst, store_fp_src(Ins)),
       NewOff = subst1(Subst, store_fp_off(Ins)),
       NewDst = subst1(Subst, store_fp_dest(Ins)),
       I0 = store_fp_dest_update(Ins, NewDst),
       I1 = store_fp_src_update(I0, NewSrc),
       store_fp_off_update(I1, NewOff);
-%%    fb -> Ins;
-    fop ->
+%%  #fb{} -> Ins;
+    #fop{} ->
       NewSrc1 = subst1(Subst, fop_src1(Ins)),
       NewSrc2 = subst1(Subst, fop_src2(Ins)),
       NewDst = subst1(Subst, fop_dest(Ins)),
       I0 = fop_dest_update(Ins, NewDst),
       I1 = fop_src1_update(I0, NewSrc1),
       fop_src2_update(I1, NewSrc2);
-%%     fcmp ->
-%%       NewSrc1 = subst1(Subst, fcmp_src1(Ins)),
-%%       NewSrc2 = subst1(Subst, fcmp_src2(Ins)),
-%%       I1 = fcmp_src1_update(Ins, NewSrc1),
-%%       fcmp_src2_update(I1, NewSrc2);
-    fmove ->
+%%  #fcmp{} ->
+%%    NewSrc1 = subst1(Subst, fcmp_src1(Ins)),
+%%    NewSrc2 = subst1(Subst, fcmp_src2(Ins)),
+%%    I1 = fcmp_src1_update(Ins, NewSrc1),
+%%  #fcmp_src2_update(I1, NewSrc2);
+    #fmove{} ->
       NewSrc = subst1(Subst, fmove_src(Ins)),
       NewDst = subst1(Subst, fmove_dest(Ins)),
       I0 = fmove_dest_update(Ins, NewDst),
       fmove_src_update(I0, NewSrc);
-    conv_fp ->
+    #conv_fp{} ->
       NewSrc = subst1(Subst, conv_fp_src(Ins)),
       NewDst = subst1(Subst, conv_fp_dest(Ins)),
       I0 = conv_fp_dest_update(Ins, NewDst),
       conv_fp_src_update(I0, NewSrc);
-    jmp ->
+    #jmp{} ->
       NewTarget = subst1(Subst, jmp_target(Ins)),
       NewOff = subst1(Subst, jmp_off(Ins)),
       I0 = jmp_target_update(Ins, NewTarget),
@@ -1989,78 +1958,78 @@ subst(Ins, Subst) ->
 %% @doc Substitution -- 
 %% replace defined occurrences of the operator Old by New if {Old,New} is in Subst.
 subst_defines(Ins, Subst) ->
-  case type(Ins) of
-    label -> Ins;
-    nop -> Ins;
-%%    align -> Ins;
-    comment -> Ins;
-    b -> Ins;
-    goto -> Ins;
-    jmp -> Ins;
-%%    br -> Ins;
-    sethi ->
+  case Ins of
+    #label{} -> Ins;
+    #nop{} -> Ins;
+%%  #align{} -> Ins;
+    #comment{} -> Ins;
+    #b{} -> Ins;
+    #goto{} -> Ins;
+    #jmp{} -> Ins;
+%%  #br{} -> Ins;
+    #sethi{} ->
       NewDst = subst1(Subst, sethi_dest(Ins)),
       sethi_dest_update(Ins, NewDst);
-    call_link ->
+    #call_link{} ->
       NewLink = subst1(Subst, call_link_link(Ins)),
       call_link_link_update(Ins, NewLink);
-    load_atom ->
+    #load_atom{} ->
       NewDst = subst1(Subst, load_atom_dest(Ins)),
       load_atom_dest_update(Ins, NewDst);
-    load_word_index ->
+    #load_word_index{} ->
       NewDst = subst1(Subst, load_word_index_dest(Ins)),
       load_word_index_dest_update(Ins, NewDst);
-    load_address ->
+    #load_address{} ->
       NewDst = subst1(Subst, load_address_dest(Ins)),
       load_address_dest_update(Ins, NewDst);
-    move ->
+    #move{} ->
       NewDst = subst1(Subst, move_dest(Ins)),
       move_dest_update(Ins, NewDst);
-    multimove ->
+    #multimove{} ->
       NewDst = subst_list(Subst, multimove_dest(Ins)),
       multimove_dest_update(Ins, NewDst);
-%%     cmov_cc ->
+%%  #cmov_cc{} ->
 %%       NewDst = subst1(Subst, cmov_cc_dest(Ins)),
 %%       cmov_cc_dest_update(Ins, NewDst);
-%%     cmov_r ->
+%%  #cmov_r{} ->
 %%       NewDst = subst1(Subst, cmov_r_dest(Ins)),
 %%       cmov_r_dest_update(Ins, NewDst);
-    alu ->
+    #alu{} ->
       NewDst = subst1(Subst, alu_dest(Ins)),
       alu_dest_update(Ins, NewDst);
-    alu_cc ->
+    #alu_cc{} ->
       NewDst = subst1(Subst, alu_cc_dest(Ins)),
       alu_cc_dest_update(Ins, NewDst);
-    load ->
+    #load{} ->
       NewDst = subst1(Subst, load_dest(Ins)),
       load_dest_update(Ins, NewDst);
-    store -> Ins;
-    pseudo_return -> Ins;
-    pseudo_enter -> Ins;
-    pseudo_spill -> Ins;
-    pseudo_unspill -> 
+    #store{} -> Ins;
+    #pseudo_return{} -> Ins;
+    #pseudo_enter{} -> Ins;
+    #pseudo_spill{} -> Ins;
+    #pseudo_unspill{} -> 
       NewReg = subst1(Subst, pseudo_unspill_reg(Ins)),
       pseudo_unspill_reg_update(Ins, NewReg);
-%     pseudo_push -> Ins;
-    pseudo_pop ->
+%   #pseudo_push{} -> Ins;
+    #pseudo_pop{} ->
       NewReg = subst1(Subst, pseudo_pop_reg(Ins)),
       pseudo_pop_reg_update(Ins, NewReg);
-    load_fp ->
+    #load_fp{} ->
       NewDst = subst1(Subst, load_fp_dest(Ins)),
       load_fp_dest_update(Ins, NewDst);
-    store_fp -> Ins;
-%%    fb -> Ins;
-    fop ->
+    #store_fp{} -> Ins;
+%%  #fb{} -> Ins;
+    #fop{} ->
       NewDst = subst1(Subst, fop_dest(Ins)),
       fop_dest_update(Ins, NewDst);
-%%    fcmp -> Ins; %% XXX: Should handle fccn updates.
-    fmove ->
+%%  #fcmp{} -> Ins; %% XXX: Should handle fccn updates.
+    #fmove{} ->
       NewDst = subst1(Subst, fmove_dest(Ins)),
       fmove_dest_update(Ins, NewDst);
-    conv_fp->
+    #conv_fp{} ->
       NewDst = subst1(Subst, conv_fp_dest(Ins)),
       conv_fp_dest_update(Ins, NewDst);
-    jmp_link ->
+    #jmp_link{} ->
       NewLink = subst1(Subst, jmp_link_link(Ins)),
       jmp_link_link_update(Ins, NewLink)
   end.
@@ -2073,72 +2042,72 @@ subst_defines(Ins, Subst) ->
 %% @doc Substitution -- 
 %% replace used occurrences of the operator Old by New if {Old,New} is in Subst.
 subst_uses(Ins, Subst) ->
-  case type(Ins) of
-    label -> Ins;
-    nop -> Ins;
-%%    align -> Ins;
-    comment -> Ins;
-    b -> Ins;
-    goto -> Ins;
-    sethi -> Ins;
-    call_link -> 
+  case Ins of
+    #label{} -> Ins;
+    #nop{} -> Ins;
+%%  #align{} -> Ins;
+    #comment{} -> Ins;
+    #b{} -> Ins;
+    #goto{} -> Ins;
+    #sethi{} -> Ins;
+    #call_link{} -> 
       case call_link_is_known(Ins) of
 	false ->
 	  NewTarget = subst1(Subst, call_link_target(Ins)),
 	  call_link_target_update(Ins, NewTarget);
 	true -> Ins
       end;
-    load_atom -> Ins;
-    load_word_index -> Ins;
-    load_address -> Ins;
-%%     br ->
-%%       NewReg = subst1(Subst, br_reg(Ins)),
-%%       br_reg_update(Ins, NewReg);
-    move ->
+    #load_atom{} -> Ins;
+    #load_word_index{} -> Ins;
+    #load_address{} -> Ins;
+%%  #br{} ->
+%%    NewReg = subst1(Subst, br_reg(Ins)),
+%%    br_reg_update(Ins, NewReg);
+    #move{} ->
       NewSrc = subst1(Subst, move_src(Ins)),
       move_src_update(Ins, NewSrc);
-    multimove ->
+    #multimove{} ->
       NewSrc = subst_list(Subst, multimove_src(Ins)),
       multimove_src_update(Ins, NewSrc);
-%%     cmov_cc ->
-%%       NewSrc = subst1(Subst, cmov_cc_src(Ins)),
-%%       cmov_cc_src_update(Ins, NewSrc);
-%%     cmov_r ->
-%%       NewSrc = subst1(Subst, cmov_r_src(Ins)),
-%%       NewReg = subst1(Subst, cmov_r_reg(Ins)),
-%%       I1 = cmov_r_src_update(Ins, NewSrc),
-%%       cmov_r_reg_update(I1, NewReg);
-    alu ->
+%%  #cmov_cc{} ->
+%%    NewSrc = subst1(Subst, cmov_cc_src(Ins)),
+%%    cmov_cc_src_update(Ins, NewSrc);
+%%  #cmov_r{} ->
+%%    NewSrc = subst1(Subst, cmov_r_src(Ins)),
+%%    NewReg = subst1(Subst, cmov_r_reg(Ins)),
+%%    I1 = cmov_r_src_update(Ins, NewSrc),
+%%    cmov_r_reg_update(I1, NewReg);
+    #alu{} ->
       NewSrc1 = subst1(Subst, alu_src1(Ins)),
       NewSrc2 = subst1(Subst, alu_src2(Ins)),
       I1 = alu_src1_update(Ins, NewSrc1),
       alu_src2_update(I1, NewSrc2);
-    alu_cc ->
+    #alu_cc{} ->
       NewSrc1 = subst1(Subst, alu_cc_src1(Ins)),
       NewSrc2 = subst1(Subst, alu_cc_src2(Ins)),
       I1 = alu_cc_src1_update(Ins, NewSrc1),
       alu_cc_src2_update(I1, NewSrc2);
-    load ->
+    #load{} ->
       NewSrc = subst1(Subst, load_src(Ins)),
       NewOff = subst1(Subst, load_off(Ins)),
       I1 = load_src_update(Ins, NewSrc),
       load_off_update(I1, NewOff);
-    store ->
+    #store{} ->
       NewSrc = subst1(Subst, store_src(Ins)),
       NewOff = subst1(Subst, store_off(Ins)),
       NewDst = subst1(Subst, store_dest(Ins)),
       I0 = store_dest_update(Ins, NewDst),
       I1 = store_src_update(I0, NewSrc),
       store_off_update(I1, NewOff);
-    jmp_link ->
+    #jmp_link{} ->
       NewTarget = subst1(Subst, jmp_link_target(Ins)),
       NewOff = subst1(Subst, jmp_link_off(Ins)),
       I1 = jmp_link_target_update(Ins, NewTarget),
       jmp_link_off_update(I1, NewOff);
-    pseudo_return ->
+    #pseudo_return{} ->
       NewRegs = subst_list(Subst, pseudo_return_regs(Ins)),
       pseudo_return_regs_update(Ins, NewRegs);
-    pseudo_enter ->
+    #pseudo_enter{} ->
       NewI = 
 	case pseudo_enter_is_known(Ins) of
 	  false ->
@@ -2149,46 +2118,46 @@ subst_uses(Ins, Subst) ->
 	end,
       NewRegs = subst_list(Subst, pseudo_enter_args(NewI)),
       pseudo_enter_args_update(NewI, NewRegs);
-    pseudo_spill ->
+    #pseudo_spill{} ->
       NewReg = subst1(Subst, pseudo_spill_reg(Ins)),
       pseudo_spill_reg_update(Ins, NewReg);
-    pseudo_unspill ->
+    #pseudo_unspill{} ->
       Ins;
-%     pseudo_push ->
-%       NewReg = subst1(Subst, pseudo_push_reg(Ins)),
-%       pseudo_push_reg_update(Ins, NewReg);
-    pseudo_pop ->
+%   #pseudo_push{} ->
+%     NewReg = subst1(Subst, pseudo_push_reg(Ins)),
+%     pseudo_push_reg_update(Ins, NewReg);
+    #pseudo_pop{} ->
       Ins;
-    load_fp ->
+    #load_fp{} ->
       NewSrc = subst1(Subst, load_fp_src(Ins)),
       NewOff = subst1(Subst, load_fp_off(Ins)),
       I1 = load_fp_src_update(Ins, NewSrc),
       load_fp_off_update(I1, NewOff);
-    store_fp ->
+    #store_fp{} ->
       NewSrc = subst1(Subst, store_fp_src(Ins)),
       NewOff = subst1(Subst, store_fp_off(Ins)),
       NewDst = subst1(Subst, store_fp_dest(Ins)),
       I0 = store_fp_dest_update(Ins, NewDst),
       I1 = store_fp_src_update(I0, NewSrc),
       store_fp_off_update(I1, NewOff);
-%%    fb -> Ins; %% XXX: Should realy handle subst of fcc-regs.
-    fop ->
+%%  #fb{} -> Ins; %% XXX: Should realy handle subst of fcc-regs.
+    #fop{} ->
       NewSrc1 = subst1(Subst, fop_src1(Ins)),
       NewSrc2 = subst1(Subst, fop_src2(Ins)),
       I1 = fop_src1_update(Ins, NewSrc1),
       fop_src2_update(I1, NewSrc2);
-%%     fcmp ->
-%%       NewSrc1 = subst1(Subst, fcmp_src1(Ins)),
-%%       NewSrc2 = subst1(Subst, fcmp_src2(Ins)),
-%%       I1 = fcmp_src1_update(Ins, NewSrc1),
-%%       fcmp_src2_update(I1, NewSrc2);
-    fmove ->
+%%  #fcmp{} ->
+%%    NewSrc1 = subst1(Subst, fcmp_src1(Ins)),
+%%    NewSrc2 = subst1(Subst, fcmp_src2(Ins)),
+%%    I1 = fcmp_src1_update(Ins, NewSrc1),
+%%    fcmp_src2_update(I1, NewSrc2);
+    #fmove{} ->
       NewSrc = subst1(Subst, fmove_src(Ins)),
       fmove_src_update(Ins, NewSrc);
-    conv_fp ->
+    #conv_fp{} ->
       NewSrc = subst1(Subst, conv_fp_src(Ins)),
       conv_fp_src_update(Ins, NewSrc);
-    jmp ->
+    #jmp{} ->
       NewTarget = subst1(Subst, jmp_target(Ins)),
       NewOff = subst1(Subst, jmp_off(Ins)),
       I0 = jmp_target_update(Ins, NewTarget),

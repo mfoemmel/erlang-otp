@@ -35,6 +35,7 @@
 -module(hipe_unified_loader).
 
 -export([chunk_name/1,
+	 %% Only the code and code_server modules may call the entries below!
 	 load_hipe_modules/0,
 	 load_native_code/2,
 	 post_beam_load/1,
@@ -82,14 +83,7 @@ chunk_name(Architecture) ->
 %%    Called from code.erl at start-up.
 
 load_hipe_modules() ->
-  case erlang:system_info(hipe_architecture) of
-    ultrasparc -> hipe_sparc_loader:module_info(module);
-    powerpc -> hipe_ppc_loader:module_info(module);
-    ppc64 -> hipe_ppc64_loader:module_info(module);
-    x86 -> hipe_x86_loader:module_info(module);
-    amd64 -> hipe_amd64_loader:module_info(module);
-    undefined -> ok
-  end.
+  ok.
 
 %%========================================================================
 
@@ -212,7 +206,9 @@ load_common(Mod, Bin, Beam, OldReferencesToPatch) ->
   %% Redirect references to the old module to the new module's BEAM stub.
   patch_to_emu_step2(OldReferencesToPatch),
   %% Patch referring functions to call the new function
-  redirect(ReferencesToPatch, Addresses),
+  %% The call to export_funs/1 above updated the native addresses
+  %% for the targets, so passing 'Addresses' is not needed.
+  redirect(ReferencesToPatch),
   ?debug_msg("****************Loader Finished****************\n", []),
   {module,Mod}.  % for compatibility with code:load_file/1
 
@@ -412,16 +408,9 @@ patch_mfa_call_list([Offset|Offsets], BaseAddress, DestMFA, DestAddress, Address
 patch_mfa_call_list([], _, _, _, _, _, _) -> [].
 
 patch_call_insn(CallAddress, DestAddress, Trampoline) ->
-  %% This assertion is false when we're called from redirect/3.
+  %% This assertion is false when we're called from redirect/2.
   %% ?ASSERT(assert_local_patch(CallAddress)),
-  case erlang:system_info(hipe_architecture) of
-    powerpc ->
-      hipe_ppc_loader:patch_call(CallAddress, DestAddress, Trampoline);
-    ppc64 ->
-      hipe_ppc64_loader:patch_call(CallAddress, DestAddress, Trampoline);
-    _ ->
-      patch_instr(CallAddress, DestAddress, 'call')
-  end.
+  hipe_bifs:patch_call(CallAddress, DestAddress, Trampoline).
 
 %% ____________________________________________________________________
 %% 
@@ -557,18 +546,7 @@ sort_on_representation(List) ->
 %%	  | 'constant' | 'c_const' | 'closure'
 %%
 patch_instr(Address, Value, Type) ->
-  case erlang:system_info(hipe_architecture) of
-    ultrasparc -> 
-      hipe_sparc_loader:patch_instr(Address, Value, Type);
-    powerpc -> 
-      hipe_ppc_loader:patch_instr(Address, Value, Type);
-    ppc64 -> 
-      hipe_ppc64_loader:patch_instr(Address, Value, Type);
-    x86 -> 
-      hipe_x86_loader:patch_instr(Address, Value, Type);
-    amd64 ->
-      hipe_amd64_loader:patch_instr(Address, Value, Type)
-  end.
+  hipe_bifs:patch_insn(Address, Value, Type).
 
 %%----------------------------------------------------------------
 %% Write a data word of the machine's natural word size.
@@ -694,25 +672,7 @@ add_ref(CalleeMFA, Address, Addresses, RefType, Trampoline, RemoteOrLocal) ->
       []
   end,
   %% io:format("Adding ref ~w\n",[{CallerMFA, CalleeMFA, Address, RefType}]),
-  Refs =
-    case hipe_bifs:get_funinfo_refers_to(CallerMFA) of
-      [{_,OldRefs}] ->
-	OldRefs;
-      [] ->
-	[]
-    end,
-  hipe_bifs:set_funinfo_refers_to(CallerMFA, [CalleeMFA|Refs]),
-  CalleeRefs =
-    case hipe_bifs:get_funinfo_referred_from(CalleeMFA) of
-      [{_,OldRs}] ->
-	OldRs;
-      [] ->
-	[]
-    end,
-  NewRef = #ref{caller_mfa = CallerMFA, address = Address,
-		ref_type = RefType, trampoline = Trampoline,
-		remote_or_local = RemoteOrLocal},
-  hipe_bifs:set_funinfo_referred_from(CalleeMFA, [NewRef|CalleeRefs]).
+  hipe_bifs:add_ref(CalleeMFA, {CallerMFA,Address,RefType,Trampoline,RemoteOrLocal}).
 
 address_to_mfa(Address, [#fundef{address=Adr, mfa=MFA}|_Rest]) when Address >= Adr -> MFA;
 address_to_mfa(Address, [_ | Rest]) -> address_to_mfa(Address, Rest);
@@ -754,7 +714,7 @@ patch_to_emu_step1(Mod) ->
 %% Step 2 must occur after the new BEAM stub module is created.
 patch_to_emu_step2(ReferencesToPatch) ->
   emu_make_stubs(ReferencesToPatch),
-  redirect(ReferencesToPatch, []).
+  redirect(ReferencesToPatch).
 
 %% @spec is_loaded(Module::atom()) -> bool()
 %% @doc Checks whether a module is loaded or not.
@@ -782,47 +742,29 @@ emu_make_stubs(_) -> [].
 
 %%----------------------------------------------------------------
 %% Given a list of MFAs, tag them with their referred_from references.
-%% The resulting {MFA,Refs} list is later passed to redirect/2, once
+%% The resulting {MFA,Refs} list is later passed to redirect/1, once
 %% the MFAs have been bound to (possibly new) native-code addresses.
 %%
-get_refs_from([MFA|MFAs], Acc) ->
-  case hipe_bifs:get_funinfo_referred_from(MFA) of
-    [{{_,_}, Refs}] ->
-      %% Keep all refs and handle rest.
-      get_refs_from(MFAs,[{MFA,Refs}|Acc]);
-    [] -> 
-      get_refs_from(MFAs, Acc)
-  end;
-get_refs_from([], Acc) ->
-  Acc.
+get_refs_from(MFAs, []) ->
+  mark_referred_from(MFAs),
+  MFAs.
+
+mark_referred_from([MFA|MFAs]) ->
+  hipe_bifs:mark_referred_from(MFA),
+  mark_referred_from(MFAs);
+mark_referred_from([]) ->
+  [].
 
 %%----------------------------------------------------------------
 %% Given a list of MFAs with referred_from references, update their
 %% callers to refer to their new native-code addresses.
 %%
 %% The {MFA,Refs} list must come from get_refs_from/2.
-%% 'Addresses' must be an address-descending list from exports/2, or [].
 %%
-redirect([{MFA,Refs}|Rest], Addresses) ->
-  redirect(Refs, MFA, Addresses),
-  redirect(Rest, Addresses);
-redirect([], _) ->
-  true.
-
-redirect([Ref|Refs], ToMFA, Addresses) ->
-  #ref{caller_mfa=_MFA, address=Address, ref_type=RefType,
-       trampoline=Trampoline, remote_or_local=RemoteOrLocal} = Ref,
-  NewAddress = get_native_address(ToMFA, Addresses, RemoteOrLocal),
-  ?IF_DEBUG({{M,F,A},{M2,F2,A2}} = {_MFA, ToMFA}, no_debug),
-  ?IF_DEBUG(ToTag = case Addresses of [] -> " EMU" ; _ -> "" end, no_debug),
-  ?debug_msg("(RE)LINKING ~w:~w/~w (@ 0x~.16b) to ~w~w:~w/~w (@ 0x~.16b)\n",
-	     [M,F,A, Address, ToTag, M2,F2,A2, NewAddress]),
-  case RefType of
-    'call' -> patch_call_insn(Address, NewAddress, Trampoline);
-    'load_mfa' -> patch_instr(Address, NewAddress, RefType)
-  end,
-  redirect(Refs, ToMFA, Addresses);
-redirect([], _, _) ->
+redirect([MFA|Rest]) ->
+  hipe_bifs:redirect_referred_from(MFA),
+  redirect(Rest);
+redirect([]) ->
   true.
 
 %%----------------------------------------------------------------
@@ -836,38 +778,10 @@ redirect([], _, _) ->
 %% referred_from lists should be updated.
 %%
 remove_refs_from([CallerMFA|CallerMFAs]) ->
-  case hipe_bifs:get_funinfo_refers_to(CallerMFA) of
-    [{{CallerMFA, refers_to}, RefsTo}] ->
-      update_refs_from(RefsTo, CallerMFA),
-      hipe_bifs:set_funinfo_refers_to(CallerMFA, []);
-    [] ->
-      []
-  end,
+  hipe_bifs:remove_refs_from(CallerMFA),
   remove_refs_from(CallerMFAs);
 remove_refs_from([]) ->
   [].
-
-update_refs_from([CalleeMFA|Rest], CallerMFA) ->
-  case hipe_bifs:get_funinfo_referred_from(CalleeMFA) of
-    [{{_,_}, RefsFrom}] ->
-      NewRefsFrom = filter_refs_from(RefsFrom, CallerMFA, []),
-      hipe_bifs:set_funinfo_referred_from(CalleeMFA, NewRefsFrom);
-    [] ->
-      []
-  end,
-  update_refs_from(Rest, CallerMFA);
-update_refs_from([], _) ->
-  [].
-
-filter_refs_from([Ref|Rest], CallerMFA, RefsFrom) ->
-  #ref{caller_mfa=MFA} = Ref,
-  NewRefsFrom =
-    if MFA =:= CallerMFA -> RefsFrom;
-       true -> [Ref|RefsFrom]
-    end,
-  filter_refs_from(Rest, CallerMFA, NewRefsFrom);
-filter_refs_from([], _CallerMFA, RefsFrom) ->
-  RefsFrom.
 
 %%----------------------------------------------------------------
 

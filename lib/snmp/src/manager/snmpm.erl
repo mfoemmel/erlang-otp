@@ -27,7 +27,9 @@
 	 start/0, start/1, 
 	 start_link/0, start_link/1, 
 	 stop/0, 
+
 	 monitor/0, demonitor/1, 
+	 notify_started/1, cancel_notify_started/1, 
 
 	 load_mib/1, unload_mib/1, 
 	 which_mibs/0, 
@@ -77,9 +79,10 @@
 -export([format_reason/1, format_reason/2]).
 
 %% Application internal export
--export([start_link/3]).
+-export([start_link/3, snmpm_start_verify/2, snmpm_start_verify/3]).
 
 
+-include("snmp_debug.hrl").
 -include("snmpm_atl.hrl").
 -include("snmp_types.hrl").
 
@@ -144,7 +147,55 @@ monitor() ->
 
 demonitor(Ref) ->
     erlang:demonitor(Ref).
-		
+	
+
+-define(NOTIFY_START_TICK_TIME, 500).
+
+notify_started(To) when is_integer(To) and (To > 0) ->
+    spawn_link(?MODULE, snmpm_start_verify, [self(), To]).
+
+cancel_notify_started(Pid) ->
+    Pid ! {cancel, self()},
+    ok.
+
+snmpm_start_verify(Parent, To) ->
+    ?d("starting", []),
+    snmpm_start_verify(Parent, monitor(), To).
+
+snmpm_start_verify(Parent, _Ref, To) when (To =< 0) ->
+    ?d("timeout", []),
+    unlink(Parent),
+    Parent ! {snmpm_start_timeout, self()};
+snmpm_start_verify(Parent, Ref, To) ->
+    T0 = t(),
+    receive
+	{cancel, Parent} ->
+	    ?d("cancel", []),
+	    demonitor(Ref),
+	    unlink(Parent),
+	    exit(normal);
+	{'EXIT', Parent, _} ->
+	    exit(normal);
+	{'DOWN', Ref, process, _Object, _Info} ->
+	    ?d("down", []),
+	    sleep(?NOTIFY_START_TICK_TIME),
+	    ?MODULE:snmpm_start_verify(Parent, monitor(), t(T0, To))
+    after ?NOTIFY_START_TICK_TIME ->
+	    ?d("down timeout", []),
+	    demonitor(Ref),
+	    case snmpm_server:is_started() of
+		true ->
+		    unlink(Parent),
+		    Parent ! {snmpm_started, self()};
+		_ ->
+		    ?MODULE:snmpm_start_verify(Parent, monitor(), t(T0, To))
+	    end
+    end.
+
+t(T0, T)  -> T - (t() - T0).
+t()       -> snmp_misc:now(ms).
+sleep(To) -> snmp_misc:sleep(To).
+
 
 %% -- Mibs --
 

@@ -1,16 +1,16 @@
 {"%VSN%",
- [
-  {"1.6.0",
-   [
-    {update, memsup, {advanced, upgrade_from_1_6_0}, soft_purge, soft_purge, []}
-   ]
-  }
- ],
- [
-  {"1.6.0",
-   [
-    {update, memsup, {advanced, downgrade_to_1_6_0}, soft_purge, soft_purge, []}
-   ]
-  }
- ]
+ [{"1.7.4",
+   [{apply,
+     {supervisor, terminate_child, [os_mon_sup, memsup_helper_sup]}},
+    {load_module, memsup_helper},
+    {apply,
+     {supervisor, restart_child, [os_mon_sup, memsup_helper_sup]}},
+    {update, memsup, {advanced, []}}]}],
+ [{"1.7.4",
+   [{apply,
+     {supervisor, terminate_child, [os_mon_sup, memsup_helper_sup]}},
+    {load_module, memsup_helper},
+    {apply,
+     {supervisor, restart_child, [os_mon_sup, memsup_helper_sup]}},
+    {update, memsup, {advanced, []}}]}]
 }.

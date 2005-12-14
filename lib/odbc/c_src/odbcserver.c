@@ -525,7 +525,7 @@ static db_result_msg db_query(byte *sql, db_state *state)
     result = SQLExecDirect(statement_handle(state), sql, SQL_NTS);
     
     /* SQL_SUCCESS_WITH_INFO at this point indicates error in user input. */
-    if (result != SQL_SUCCESS) {
+    if (result != SQL_SUCCESS && result != SQL_NO_DATA_FOUND) {
 	diagnos =  get_diagnos(SQL_HANDLE_STMT, statement_handle(state));
 	msg = encode_error_message(diagnos.error_msg);
 	clean_state(state);
@@ -533,27 +533,32 @@ static db_result_msg db_query(byte *sql, db_state *state)
     }
 
     ei_x_new_with_version(&dynamic_buffer(state));
-  
-    /* Handle multiple result sets */
-    do {
 
-	ei_x_encode_list_header(&dynamic_buffer(state), 1);
-	msg = encode_result(state);
-	/* We don't want to continue if an error occured */
-	if (msg.length != 0) { 
-	    break;
-	}
-	msg = more_result_sets(state);
-	/* We don't want to continue if an error occured */
-	if (msg.length != 0) { 
-	    break;
-	}
-    } while (exists_more_result_sets(state)); 
-  
-    ei_x_encode_empty_list(&dynamic_buffer(state));
-  
+    if (result == SQL_NO_DATA_FOUND) { /* OTP-5759, fails when 0 rows deleted */
+	ei_x_encode_tuple_header(&dynamic_buffer(state), 2);
+	ei_x_encode_atom(&dynamic_buffer(state), "updated");
+	ei_x_encode_long(&dynamic_buffer(state), 0);
+    } else {
+	/* Handle multiple result sets */
+	do {
+	    ei_x_encode_list_header(&dynamic_buffer(state), 1);
+	    msg = encode_result(state);
+	    /* We don't want to continue if an error occured */
+	    if (msg.length != 0) { 
+		break;
+	    }
+	    msg = more_result_sets(state);
+	    /* We don't want to continue if an error occured */
+	    if (msg.length != 0) { 
+		break;
+	    }
+	} while (exists_more_result_sets(state)); 
+	
+	ei_x_encode_empty_list(&dynamic_buffer(state));
+    }
+	
     clean_state(state);
-  
+    
     if (msg.length != 0) { /* An error has occurred */
 	ei_x_free(&(dynamic_buffer(state))); 
 	return msg;

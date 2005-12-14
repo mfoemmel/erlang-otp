@@ -36,56 +36,101 @@
 
 scan(Bin) when binary(Bin) ->
     Chars = erlang:binary_to_list(Bin),
-    tokens(Chars, 1, 1, []);
+    tokens1(Chars, 1, []);
 scan(Chars) when list(Chars) ->
-    tokens(Chars, 1, 1, []).
+    tokens1(Chars, 1, []).
 
-%% Version 1 is the default so we don't need to handle it 
-tokens(Chars, Line, Version, Acc) ->
-%     d("tokens -> entry with"
-%       "~n   length(Chars): ~p"
-%       "~n   Line:          ~p"
-%       "~n   length(Acc):   ~p", [length(Chars), Line, length(Acc)]),
+%% As long as we dont know the version, we will loop in this function
+tokens1(Chars, Line, Acc) ->
     case any_chars(Chars, Line) of
 	{token, Token, [], LatestLine} ->
+	    %% We got to the end without actually getting a version token.
 	    Tokens = [{endOfMessage, LatestLine, endOfMessage}, Token | Acc],
-	    {ok, lists:reverse(Tokens), Version, Line};
+	    {error, no_version_found, lists:reverse(Tokens), Line};
 
-        %% Version token for version 2
-	%% (Version 1 is the default so we don't 
-	%%  need to handle it)
-        {token, {'SafeChars',1,"!/2"} = Token, Rest, LatestLine} ->
-% 	    d("tokens -> v2 megaco"
-% 	      "~n   length(Rest): ~p"
-% 	      "~n   LatestLine:   ~p", [length(Rest), LatestLine]),
-            tokens(Rest, LatestLine, 2, [Token | Acc]);
-        {token, {'SafeChars',1,"megaco/2"} = Token, Rest, LatestLine} ->
-% 	    d("tokens -> v2 megaco"
-% 	      "~n   length(Rest): ~p"
-% 	      "~n   LatestLine:   ~p", [length(Rest), LatestLine]),
-            tokens(Rest, LatestLine, 2, [Token | Acc]);
+        %% -- Version token for version 1 --
+        {token, {'SafeChars',_,"!/1"} = Token, Rest, LatestLine} ->
+            tokens2(Rest, LatestLine, 1, [Token | Acc]);
 
-        {token, {'SafeChars',1,"!/3"} = Token, Rest, LatestLine} ->
-% 	    d("tokens -> v3 megaco"
-% 	      "~n   length(Rest): ~p"
-% 	      "~n   LatestLine:   ~p", [length(Rest), LatestLine]),
-            tokens(Rest, LatestLine, 3, [Token | Acc]);
-        {token, {'SafeChars',1,"megaco/3"} = Token, Rest, LatestLine} ->
-% 	    d("tokens -> v3 megaco"
-% 	      "~n   length(Rest): ~p"
-% 	      "~n   LatestLine:   ~p", [length(Rest), LatestLine]),
-            tokens(Rest, LatestLine, 3, [Token | Acc]);
+        {token, {'SafeChars',_,"megaco/1"} = Token, Rest, LatestLine} ->
+            tokens2(Rest, LatestLine, 1, [Token | Acc]);
 
+
+        %% -- Version token for version 2 --
+        {token, {'SafeChars',_,"!/2"} = Token, Rest, LatestLine} ->
+            tokens2(Rest, LatestLine, 2, [Token | Acc]);
+
+        {token, {'SafeChars',_,"megaco/2"} = Token, Rest, LatestLine} ->
+            tokens2(Rest, LatestLine, 2, [Token | Acc]);
+
+
+        %% -- Version token for version 3 --
+        {token, {'SafeChars',_,"!/3"} = Token, Rest, LatestLine} ->
+            tokens2(Rest, LatestLine, 3, [Token | Acc]);
+
+        {token, {'SafeChars',_,"megaco/3"} = Token, Rest, LatestLine} ->
+            tokens2(Rest, LatestLine, 3, [Token | Acc]);
+
+
+        %% -- Version token for version X --
+        {token, {'SafeChars',_,[$!,$/| Vstr]} = Token, Rest, LatestLine} ->
+	    case guess_version(Vstr) of
+		{ok, V} ->
+		    tokens2(Rest, LatestLine, V, [Token | Acc]);
+		{error, Reason} ->
+		    {error, Reason, LatestLine}
+	    end;
+
+        {token, {'SafeChars',_,[$m,$e,$g,$a,$c,$o,$/|Vstr]} = Token, Rest, LatestLine} ->
+	    case guess_version(Vstr) of
+		{ok, V} ->
+		    tokens2(Rest, LatestLine, V, [Token | Acc]);
+		{error, Reason} ->
+		    {error, Reason, LatestLine}
+	    end;
+
+	%% -- Other tokens --
 	{token, Token, Rest, LatestLine} ->
-%   	    d("tokens -> token: "
-%   	      "~n   Token:        ~p"
-%   	      "~n   length(Rest): ~p"
-%   	      "~n   LastLine:     ~p", [Token, length(Rest), LatestLine]),
-	    tokens(Rest, LatestLine, Version, [Token | Acc]);
+	    tokens1(Rest, LatestLine, [Token | Acc]);
 
 	{bad_token, Token, _Rest, _LatestLine} ->
 	    {error, {bad_token, [Token, Acc]}, Line}
     end.
+
+tokens2(Chars, Line0, Version, Tokens0) ->
+    case tokens2(Chars, Line0, Tokens0) of
+	{ok, Tokens, Line} ->
+	    {ok, Tokens, Version, Line};
+	Error ->
+	    Error
+    end.
+
+tokens2(Chars, Line, Acc) ->
+    case any_chars(Chars, Line) of
+	{token, Token, [], LatestLine} ->
+	    Tokens = [{endOfMessage, LatestLine, endOfMessage}, Token | Acc],
+	    {ok, lists:reverse(Tokens), Line};
+
+	{token, Token, Rest, LatestLine} ->
+	    tokens2(Rest, LatestLine, [Token | Acc]);
+
+	{bad_token, Token, _Rest, _LatestLine} ->
+	    {error, {bad_token, [Token, Acc]}, Line}
+    end.
+
+
+guess_version([C]) when (48 =< C) and (C =< 57) ->
+    {ok, C-48};
+guess_version(Str) when is_list(Str) ->
+    case (catch list_to_integer(Str)) of
+	I when is_integer(I) ->
+	    {ok, I};
+	_ ->
+	    {error, {invalid_version, Str}}
+    end;
+guess_version(V) ->
+    {error, {invalid_version, V}}.
+
 
 %% Returns {token,     Token, Rest, LatestLine}
 %% Returns {bad_token, Token, Rest, LatestLine}
@@ -645,13 +690,13 @@ select_token(LowerText) ->
     end.
 
 
-% d(F) ->
-%     d(F, []).
-
-% d(F, A) ->
-%     d(get(dbg), F, A).
-
-% d(true, F, A) ->
-%     io:format("DBG:~p:" ++ F ++ "~n", [?MODULE|A]);
-% d(_, _, _) ->
-%     ok.
+%% d(F) ->
+%%     d(F, []).
+%% 
+%% d(F, A) ->
+%%     d(get(dbg), F, A).
+%% 
+%% d(true, F, A) ->
+%%     io:format("DBG:~p:" ++ F ++ "~n", [?MODULE|A]);
+%% d(_, _, _) ->
+%%     ok.

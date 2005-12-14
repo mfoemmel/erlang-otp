@@ -1484,7 +1484,7 @@ encode_restricted_string(aligned,Val) when list(Val)->
 
 encode_known_multiplier_string(StringType,SizeC,NumBits,CharOutTab,{Name,Val}) when atom(Name) ->
     encode_known_multiplier_string(StringType,SizeC,NumBits,CharOutTab,Val);
-encode_known_multiplier_string(StringType,SizeC,NumBits,CharOutTab,Val) ->
+encode_known_multiplier_string(_StringType,SizeC,NumBits,CharOutTab,Val) ->
     Result = chars_encode2(Val,NumBits,CharOutTab),
     case SizeC of
 	Ub when integer(Ub), Ub*NumBits =< 16  ->

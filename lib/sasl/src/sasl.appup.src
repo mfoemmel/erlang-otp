@@ -1,6 +1,6 @@
 {"%VSN%",
- [{"2.0.1", [{load_module, release_handler},
-	     {load_module, release_handler_1}]}],
- [{"2.0.1", [{load_module, release_handler},
-	     {load_module, release_handler_1}]}]
+ [{"2.1", [{load_module, systools_make},
+	   {load_module, release_handler}]}],
+ [{"2.1", [{load_module, systools_make},
+	   {load_module, release_handler}]}]
 }.

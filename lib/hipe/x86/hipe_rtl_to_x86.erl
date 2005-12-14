@@ -13,6 +13,8 @@
 -module(?HIPE_RTL_TO_X86).
 -export([translate/1]).
 
+-include("../rtl/hipe_rtl.hrl").
+
 translate(RTL) ->	% RTL function -> x86 defun
   hipe_gensym:init(x86),
   hipe_gensym:set_var(x86, ?HIPE_X86_REGISTERS:first_virtual()),
@@ -48,8 +50,8 @@ conv_insn_list([], _, Data) ->
   {[], Data}.
 
 conv_insn(I, Map, Data) ->
-  case hipe_rtl:type(I) of
-    alu ->
+  case I of
+    #alu{} ->
       %% dst = src1 binop src2
       BinOp = conv_binop(hipe_rtl:alu_op(I)),
       {Dst, Map0} = conv_dst(hipe_rtl:alu_dst(I), Map),
@@ -63,7 +65,7 @@ conv_insn(I, Map, Data) ->
 	    conv_alu(Dst, Src1, BinOp, Src2, [])
 	end,
       {FixSrc1++FixSrc2++I2, Map2, Data};
-    alub ->
+    #alub{} ->
       %% dst = src1 op src2; if COND goto label
       BinOp = conv_binop(hipe_rtl:alub_op(I)),
       {Dst, Map0} = conv_dst(hipe_rtl:alub_dst(I), Map),
@@ -76,7 +78,7 @@ conv_insn(I, Map, Data) ->
 				   hipe_rtl:alub_pred(I))],
       I2 = conv_alu(Dst, Src1, BinOp, Src2, I1),
       {FixSrc1++FixSrc2++I2, Map2, Data};
-    branch ->
+    #branch{} ->
       %% <unused> = src1 - src2; if COND goto label
       {FixSrc1, Src1, Map0} = conv_src(hipe_rtl:branch_src1(I), Map),
       {FixSrc2, Src2, Map1} = conv_src(hipe_rtl:branch_src2(I), Map0),
@@ -86,7 +88,7 @@ conv_insn(I, Map, Data) ->
 		       hipe_rtl:branch_false_label(I),
 		       hipe_rtl:branch_pred(I)),
       {FixSrc1++FixSrc2++I2, Map1, Data};
-    call ->
+    #call{} ->
       %%	push <arg1>
       %%	...
       %%	push <argn>
@@ -103,21 +105,21 @@ conv_insn(I, Map, Data) ->
 		     hipe_rtl:call_type(I)),
       %% XXX Fixme: this ++ is probably inefficient.
       {FixArgs++I2, Map2, Data};
-    comment ->
+    #comment{} ->
       I2 = [hipe_x86:mk_comment(hipe_rtl:comment_text(I))],
       {I2, Map, Data};
-    enter ->
+    #enter{} ->
       {FixArgs, Args, Map0} = conv_src_list(hipe_rtl:enter_arglist(I), Map),
       {Fun, Map1} = conv_fun(hipe_rtl:enter_fun(I), Map0),
       I2 = conv_tailcall(Fun, Args, hipe_rtl:enter_type(I)),
       {FixArgs++I2, Map1, Data};
-    goto ->
+    #goto{} ->
       I2 = [hipe_x86:mk_jmp_label(hipe_rtl:goto_label(I))],
       {I2, Map, Data};
-    label ->
+    #label{} ->
       I2 = [hipe_x86:mk_label(hipe_rtl:label_name(I))],
       {I2, Map, Data};
-    load ->
+    #load{} ->
       {Dst, Map0} = conv_dst(hipe_rtl:load_dst(I), Map),
       {FixSrc, Src, Map1} = conv_src(hipe_rtl:load_src(I), Map0),
       {FixOff, Off, Map2} = conv_src(hipe_rtl:load_offset(I), Map1),
@@ -134,35 +136,35 @@ conv_insn(I, Map, Data) ->
 	       mk_load(LoadSize, LoadSign, Src, Off, Dst)
 	   end,
       {FixSrc++FixOff++I2, Map2, Data};
-    load_address ->
+    #load_address{} ->
       {Dst, Map0} = conv_dst(hipe_rtl:load_address_dst(I), Map),
       Addr = hipe_rtl:load_address_address(I),
       Type = hipe_rtl:load_address_type(I),
       Src = hipe_x86:mk_imm_from_addr(Addr, Type),
       I2 = mk_load_address(Type, Src, Dst),
       {I2, Map0, Data};
-    load_atom ->
+    #load_atom{} ->
       {Dst, Map0} = conv_dst(hipe_rtl:load_atom_dst(I), Map),
       Src = hipe_x86:mk_imm_from_atom(hipe_rtl:load_atom_atom(I)),
       I2 = [hipe_x86:mk_move(Src, Dst)],
       {I2, Map0, Data};
-    move ->
+    #move{} ->
       {Dst, Map0} = conv_dst(hipe_rtl:move_dst(I), Map),
       {FixSrc, Src, Map1} = conv_src(hipe_rtl:move_src(I), Map0),
       I2 = [hipe_x86:mk_move(Src, Dst)],
       {FixSrc++I2, Map1, Data};
-    return ->
+    #return{} ->
       {FixArgs, Args, Map0} = conv_src_list(hipe_rtl:return_varlist(I), Map),
       %% frame will fill in npop later, hence the "mk_ret(-1)"
       I2 = move_retvals(Args, [hipe_x86:mk_ret(-1)]),
       {FixArgs++I2, Map0, Data};
-    store ->
+    #store{} ->
       {Ptr, Map0} = conv_dst(hipe_rtl:store_base(I), Map),
       {FixSrc, Src, Map1} = conv_src(hipe_rtl:store_src(I), Map0),
       {FixOff, Off, Map2} = conv_src(hipe_rtl:store_offset(I), Map1),
       I2 = mk_store(hipe_rtl:store_size(I), Src, Ptr, Off),
       {FixSrc++FixOff++I2, Map2, Data};
-    switch ->	% this one also updates Data :-(
+    #switch{} ->	% this one also updates Data :-(
       %% from hipe_rtl2sparc, but we use a hairy addressing mode
       %% instead of doing the arithmetic manually
       Labels = hipe_rtl:switch_labels(I),
@@ -179,37 +181,37 @@ conv_insn(I, Map, Data) ->
       {Index, Map1} = conv_dst(hipe_rtl:switch_src(I), Map),
       I2 = mk_jmp_switch(Index, JTabLab, Labels),
       {I2, Map1, NewData};
-    fload ->
+    #fload{} ->
       {Dst, Map0} = conv_dst(hipe_rtl:fload_dst(I), Map),
       {[], Src, Map1} = conv_src(hipe_rtl:fload_src(I), Map0),
       {[], Off, Map2} = conv_src(hipe_rtl:fload_offset(I), Map1),
       I2 = [hipe_x86:mk_fmove(hipe_x86:mk_mem(Src, Off, 'double'),Dst)],
       {I2, Map2, Data};
-    fstore ->
+    #fstore{} ->
       {Dst, Map0} = conv_dst(hipe_rtl:fstore_base(I), Map),
       {[], Src, Map1} = conv_src(hipe_rtl:fstore_src(I), Map0),
       {[], Off, Map2} = conv_src(hipe_rtl:fstore_offset(I), Map1),
       I2 = [hipe_x86:mk_fmove(Src, hipe_x86:mk_mem(Dst, Off, 'double'))],
       {I2, Map2, Data};
-    fp ->
+    #fp{} ->
       {Dst, Map0} = conv_dst(hipe_rtl:fp_dst(I), Map),
       {[], Src1, Map1} = conv_src(hipe_rtl:fp_src1(I), Map0),
       {[], Src2, Map2} = conv_src(hipe_rtl:fp_src2(I), Map1),
       Op = hipe_rtl:fp_op(I),
       I2 = conv_fp_binop(Dst, Src1, Op, Src2),
       {I2, Map2, Data};
-    fp_unop ->
+    #fp_unop{} ->
       {Dst, Map0} = conv_dst(hipe_rtl:fp_unop_dst(I), Map),
       {[], Src, Map1} = conv_src(hipe_rtl:fp_unop_src(I), Map0),
       Op = hipe_rtl:fp_unop_op(I),
       I2 = conv_fp_unop(Dst, Src, Op),
       {I2, Map1, Data};
-    fmove ->
+    #fmove{} ->
       {Dst, Map0} = conv_dst(hipe_rtl:fmove_dst(I), Map),
       {[], Src, Map1} = conv_src(hipe_rtl:fmove_src(I), Map0),
       I2 = [hipe_x86:mk_fmove(Src, Dst)],
       {I2, Map1, Data};
-    fconv ->
+    #fconv{} ->
       {Dst, Map0} = conv_dst(hipe_rtl:fconv_dst(I), Map),
       {[], Src, Map1} = conv_src(hipe_rtl:fconv_src(I), Map0),
       I2 = [hipe_x86:mk_fmove(Src, Dst)],

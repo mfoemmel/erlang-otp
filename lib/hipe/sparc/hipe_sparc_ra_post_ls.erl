@@ -9,9 +9,9 @@
 %%  History  :	* 2001-11-01 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: tobiasl $
-%%              $Date: 2004/06/22 12:47:58 $
-%%              $Revision: 1.8 $
+%%              $Author: kostis $
+%%              $Date: 2005/11/06 13:10:52 $
+%%              $Revision: 1.9 $
 %% ====================================================================
 %%  Exports  :
 %%hipe:c({test13,test,0},[late_frames,{regalloc,lfls},pp_sparc]).
@@ -19,23 +19,21 @@
 
 -module(hipe_sparc_ra_post_ls).
 -export([rewrite/3]).
+
 -include("../main/hipe.hrl").
+-include("hipe_sparc.hrl").
 
 rewrite(Cfg, TempMap, _Options) ->
   Sparc = hipe_sparc_cfg:linearize(Cfg), 
-  NewCode =
-    rewrite_instrs(hipe_sparc:sparc_code(Sparc), 
-		   TempMap, []),
-  
+  NewCode = rewrite_instrs(hipe_sparc:sparc_code(Sparc), TempMap, []),
   NewSparc = hipe_sparc:sparc_code_update(Sparc, NewCode),
   NewSparc2 = hipe_sparc:sparc_var_range_update(NewSparc, {0,hipe_gensym:get_var(sparc)}),
   NewCfg = hipe_sparc_cfg:init(NewSparc2),
-
   NewCfg.
 
 rewrite_instrs([I|Is], TempMap, AccIs) ->
   NewIs = rewrite_instrs(Is, TempMap, AccIs),
-  NewI =rewrite_instr(I, TempMap),
+  NewI = rewrite_instr(I, TempMap),
   NewI ++ NewIs;
 rewrite_instrs([],_, Is) ->
   Is.  
@@ -78,8 +76,8 @@ rewrite_uses(I, TempMap) ->
 	{Spill,NewTemp} <- NewTemps] ++ 
 	[remap(I, NewTemps)];
     _ ->
-      case hipe_sparc:type(I) of
-	store ->
+      case I of
+	#store{} ->
 	  %% Store can have three spilled temporaries.
 	  Src = hipe_sparc:store_src(I),
 	  Dst = hipe_sparc:store_dest(I),

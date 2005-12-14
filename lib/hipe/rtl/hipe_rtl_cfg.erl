@@ -22,6 +22,7 @@
 
 -include("../main/hipe.hrl").
 -include("../flow/cfg.inc").
+-include("hipe_rtl.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -66,38 +67,38 @@ mk_goto(Name) ->
   hipe_rtl:mk_goto(Name).
 
 branch_successors(Instr) ->
-  case hipe_rtl:type(Instr) of
-    branch -> [hipe_rtl:branch_true_label(Instr), 
-	       hipe_rtl:branch_false_label(Instr)];
-    alub -> [hipe_rtl:alub_true_label(Instr), 
-	     hipe_rtl:alub_false_label(Instr)];
-    switch -> hipe_rtl:switch_labels(Instr);
-    call -> 
+  case Instr of
+    #branch{} -> [hipe_rtl:branch_true_label(Instr), 
+		  hipe_rtl:branch_false_label(Instr)];
+    #alub{} -> [hipe_rtl:alub_true_label(Instr), 
+	        hipe_rtl:alub_false_label(Instr)];
+    #switch{} -> hipe_rtl:switch_labels(Instr);
+    #call{} -> 
       case hipe_rtl:call_fail(Instr) of
 	[] -> [hipe_rtl:call_continuation(Instr)];
 	Fail -> [hipe_rtl:call_continuation(Instr),Fail]
       end;
-    goto -> [hipe_rtl:goto_label(Instr)];
-    goto_index -> hipe_rtl:goto_index_labels(Instr);
+    #goto{} -> [hipe_rtl:goto_label(Instr)];
+    #goto_index{} -> hipe_rtl:goto_index_labels(Instr);
     _ -> []
   end.
 
 fails_to(Instr) ->
-  case hipe_rtl:type(Instr) of
-    call -> [hipe_rtl:call_fail(Instr)];
+  case Instr of
+    #call{} -> [hipe_rtl:call_fail(Instr)];
     _ -> []
   end.
 
 is_branch(Instr) ->
-   case hipe_rtl:type(Instr) of
-      branch -> true;
-      alub -> true;
-      switch -> true;
-      goto -> true;
-      goto_index -> true;
-      enter -> true;
-      return -> true;
-      call -> 
+   case Instr of
+     #branch{} -> true;
+     #alub{} -> true;
+     #switch{} -> true;
+     #goto{} -> true;
+     #goto_index{} -> true;
+     #enter{} -> true;
+     #return{} -> true;
+     #call{} -> 
        case hipe_rtl:call_fail(Instr) of
 	[] ->  
 	   case hipe_rtl:call_continuation(Instr) of
@@ -106,14 +107,14 @@ is_branch(Instr) ->
 	   end;
 	 _ -> true
        end;
-      _ -> false
+     _ -> false
    end.
 
-is_pure_branch(Branch) ->
-  case hipe_rtl:type(Branch) of
-    branch -> true;
-    switch -> true;
-    goto -> true;
+is_pure_branch(Instr) ->
+  case Instr of
+    #branch{} -> true;
+    #switch{} -> true;
+    #goto{} -> true;
     _ -> false
   end.
 
@@ -128,9 +129,9 @@ redirect_ops([Label|Labels], CFG, Map) ->
   redirect_ops(Labels, NewCFG, Map);
 redirect_ops([],CFG,_) -> CFG.
 
-rewrite(I,Map) ->
-  case hipe_rtl:type(I) of
-    load_address ->
+rewrite(I, Map) ->
+  case I of
+    #load_address{} ->
 	case hipe_rtl:load_address_type(I) of
 	  constant -> I;
 	  _ -> 

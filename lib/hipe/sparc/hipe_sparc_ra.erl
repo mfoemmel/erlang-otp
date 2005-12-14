@@ -11,6 +11,7 @@
 -define(HIPE_INSTRUMENT_COMPILER, true). %% Turn on instrumentation.
 
 -include("../main/hipe.hrl").
+-include("hipe_sparc.hrl").
 
 %%---------------------------------------------------------------------
 
@@ -134,9 +135,9 @@ count_caller_saves(CFG, Liveness, T) ->
 		    DefsSet = ordsets:from_list(defines(I,T)),
 		    LiveOverI = ordsets:subtract(LiveOut, DefsSet),      
 		      NewCS = 
-			case hipe_sparc:type(I) of
+			case I of
 			  %% If this is a call instruction, keep the CS-temps.
-			  call_link ->
+			  #call_link{} ->
 			    ordsets:union(CS,LiveOverI);
 			  _ -> CS
 			end,
@@ -190,14 +191,14 @@ count_instrs([Instr|Is], Acc) ->
 count_instrs([],Acc) -> Acc.
 
 icount(I) ->
-  case hipe_sparc:type(I) of
-    label ->
+  case I of
+    #label{} ->
       0;
-    comment ->
+    #comment{} ->
       0;
-    load_address ->
+    #load_address{} ->
       2;
-    multimove ->
+    #multimove{} ->
       %% These should have been removed before assembly...
       %% To be on the safe side, we calculate that we need one extra
       %% move (to a temp) for each register that need to be moved.

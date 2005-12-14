@@ -1174,12 +1174,17 @@ gen_objset_enc(_,{unique,undefined},_,_,_,_,_) ->
 gen_objset_enc(ObjSName,UniqueName,
 	       [{ObjName,Val,Fields},T|Rest],ClName,ClFields,NthObj,Acc)->
     emit({"'getenc_",ObjSName,"'(",{asis,UniqueName},",",{asis,Val},") ->",nl}),
+    CurrMod = get(currmod),
     {InternalFunc,NewNthObj}=
 	case ObjName of
 	    {no_mod,no_name} ->
 		gen_inlined_enc_funs(Fields,ClFields,ObjSName,NthObj);
+	    {CurrMod,Name} ->
+		emit({"    fun 'enc_",Name,"'/4"}),
+		{[],NthObj};
 	    {ModuleName,Name} ->
-		emit(["    {'",ModuleName,"', 'enc_",Name,"'}"]),
+		emit_ext_fun(enc,ModuleName,Name),
+%		emit(["    {'",ModuleName,"', 'enc_",Name,"'}"]),
 		{[],NthObj};
 	    _Other ->
 		emit({"    fun 'enc_",ObjName,"'/4"}),
@@ -1191,17 +1196,24 @@ gen_objset_enc(ObjSName,UniqueName,
 gen_objset_enc(ObjSetName,UniqueName,
 	       [{ObjName,Val,Fields}],_ClName,ClFields,NthObj,Acc) ->
     emit({"'getenc_",ObjSetName,"'(",{asis,UniqueName},",",{asis,Val},") ->",nl}),
+    CurrMod = get(currmod),
     {InternalFunc,_}=
 	case ObjName of
 	    {no_mod,no_name} ->
 		gen_inlined_enc_funs(Fields,ClFields,ObjSetName,NthObj);
+	    {CurrMod,Name} ->
+		emit({"    fun 'enc_",Name,"'/4"}),
+		{[],NthObj};
 	    {ModuleName,Name} ->
-		emit(["    {'",ModuleName,"', 'enc_",Name,"'}"]),
+		emit_ext_fun(enc,ModuleName,Name),
+%		emit(["    {'",ModuleName,"', 'enc_",Name,"'}"]),
 		{[],NthObj};
 	    _Other ->
 		emit({"    fun 'enc_",ObjName,"'/4"}),
 		{[],NthObj}
 	end,
+    emit([";",nl]),
+    emit_default_getenc(ObjSetName,UniqueName),
     emit({".",nl,nl}),
     InternalFunc ++ Acc;
 %% See X.681 Annex E for the following case
@@ -1217,6 +1229,14 @@ gen_objset_enc(ObjSetName,_UniqueName,['EXTENSIONMARK'],
     Acc;
 gen_objset_enc(_,_,[],_,_,_,Acc) ->
     Acc.
+
+emit_ext_fun(EncDec,ModuleName,Name) ->
+    emit([indent(3),"fun(T,V,_O1,_O2) -> '",ModuleName,"':'",EncDec,"_",
+	  Name,"'(T,V,_O1,_O2) end"]).
+
+emit_default_getenc(ObjSetName,UniqueName) ->
+    emit(["'getenc_",ObjSetName,"'(",{asis,UniqueName},", _) ->",nl]),
+    emit([indent(3),"fun(C,V,_,_) -> exit({'Type not compatible with table constraint',{component,C},{value,V}}) end"]).
 
 %% gen_inlined_enc_funs for each object iterates over all fields of a
 %% class, and for each typefield it checks if the object has that
@@ -1358,13 +1378,18 @@ gen_objset_dec(Erules,ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],
 	       ClName,ClFields,NthObj)->
     emit({"'getdec_",ObjSName,"'(",{asis,UniqueName},",",{asis,Val},
 	  ") ->",nl}),
+    CurrMod = get(currmod),
     NewNthObj=
 	case ObjName of
 	    {no_mod,no_name} ->
 		gen_inlined_dec_funs(Erules,Fields,ClFields,ObjSName,
 				     NthObj);
+	    {CurrMod,Name} ->
+		emit({"    fun 'dec_",Name,"'/4"}),
+		NthObj;
 	    {ModName,Name} ->
-		emit(["    {'",ModName,"', 'dec_",Name,"'}"]),
+		emit_ext_fun(dec,ModName,Name),
+%		emit(["    {'",ModName,"', 'dec_",Name,"'}"]),
 		NthObj;
 	    _Other ->
 		emit({"    fun 'dec_",ObjName,"'/4"}),
@@ -1376,15 +1401,21 @@ gen_objset_dec(Erules,ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],
 gen_objset_dec(Erules,ObjSetName,UniqueName,[{ObjName,Val,Fields}],_ClName,
 	       ClFields,NthObj) ->
     emit({"'getdec_",ObjSetName,"'(",{asis,UniqueName},",",{asis,Val},") ->",nl}),
+    CurrMod = get(currmod),
     case ObjName of
 	{no_name,no_name} ->
 	    gen_inlined_dec_funs(Erules,Fields,ClFields,ObjSetName,
 				 NthObj);
+	{CurrMod,Name} ->
+	    emit({"    fun 'dec_",Name,"'/4"});
 	{ModName,Name} ->
-	    emit(["    {'",ModName,"', 'dec_",Name,"'}"]);
+	    emit_ext_fun(dec,ModName,Name);
+%	    emit(["    {'",ModName,"', 'dec_",Name,"'}"]);
 	_Other ->
 	    emit({"    fun 'dec_",ObjName,"'/4"})
     end,
+    emit({";",nl}),
+    emit_default_getdec(ObjSetName,UniqueName),
     emit({".",nl,nl});
 gen_objset_dec(_,ObjSetName,_UniqueName,['EXTENSIONMARK'],_ClName,_ClFields,
 	      _NthObj) ->
@@ -1398,6 +1429,10 @@ gen_objset_dec(_,ObjSetName,_UniqueName,['EXTENSIONMARK'],_ClName,_ClFields,
     ok;
 gen_objset_dec(_,_,_,[],_,_,_) ->
     ok.
+
+emit_default_getdec(ObjSetName,UniqueName) ->
+    emit(["'getdec_",ObjSetName,"'(",{asis,UniqueName},", _) ->",nl]),
+    emit([indent(3),"fun(C,V,_,_) -> exit({{component,C},{value,V}}) end"]).
 
 gen_inlined_dec_funs(Erules,Fields,[{typefield,Name,Prop}|Rest],
 		     ObjSetName,NthObj) ->

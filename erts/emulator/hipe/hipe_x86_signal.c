@@ -249,6 +249,11 @@ void hipe_signal_init(void)
 	    continue;
 	sa.sa_flags |= SA_ONSTACK;
 	if( sigaction(i, &sa, NULL) ) {
+#ifdef SIGCANCEL
+	    /* Solaris 9 x86 refuses to let us modify SIGCANCEL. */
+	    if (i == SIGCANCEL)
+		continue;
+#endif
 	    perror("sigaction");
 	    abort();
 	}

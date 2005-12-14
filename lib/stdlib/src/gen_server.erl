@@ -233,7 +233,7 @@ multi_call(Nodes, Name, Req, Timeout)
 
 
 %%-----------------------------------------------------------------
-%% enter_loop(Module, Options, State, <ServerName>, <TimeOut>) ->_ 
+%% enter_loop(Mod, Options, State, <ServerName>, <TimeOut>) ->_ 
 %%   
 %% Description: Makes an existing process into a gen_server. 
 %%              The calling process will enter the gen_server receive 
@@ -243,20 +243,20 @@ multi_call(Nodes, Name, Req, Timeout)
 %%              The user is responsible for any initialization of the 
 %%              process, including registering a name for it.
 %%-----------------------------------------------------------------
-enter_loop(Module, Options, State) ->
-    enter_loop(Module, Options, State, self(), infinity).
+enter_loop(Mod, Options, State) ->
+    enter_loop(Mod, Options, State, self(), infinity).
 
-enter_loop(Module, Options, State, ServerName = {_, _}) ->
-    enter_loop(Module, Options, State, ServerName, infinity);
+enter_loop(Mod, Options, State, ServerName = {_, _}) ->
+    enter_loop(Mod, Options, State, ServerName, infinity);
 
-enter_loop(Module, Options, State, Timeout) ->
-    enter_loop(Module, Options, State, self(), Timeout).
+enter_loop(Mod, Options, State, Timeout) ->
+    enter_loop(Mod, Options, State, self(), Timeout).
 
-enter_loop(Module, Options, State, ServerName, Timeout) ->
+enter_loop(Mod, Options, State, ServerName, Timeout) ->
     Name = get_proc_name(ServerName),
     Parent = get_parent(),
     Debug = debug_options(Name, Options),
-    loop(Parent, Name, State, Module, Timeout, Debug).
+    loop(Parent, Name, State, Mod, Timeout, Debug).
 
 %%%========================================================================
 %%% Gen-callback functions
@@ -670,6 +670,11 @@ terminate(Reason, Name, Msg, Mod, State, Debug) ->
 	    end
     end.
 
+error_info(_Reason, application_controller, _Msg, _State, _Debug) ->
+    %% OTP-5811 Don't send an error report if it's the system process
+    %% application_controller which is terminating - let init take care
+    %% of it instead
+    ok;
 error_info(Reason, Name, Msg, State, Debug) ->
     Reason1 = 
 	case Reason of
@@ -735,30 +740,32 @@ dbg_opts(Name, Opts) ->
 	    Dbg
     end.
 
-get_proc_name(Pid) when pid(Pid) ->
+get_proc_name(Pid) when is_pid(Pid) ->
     Pid;
-
 get_proc_name({local, Name}) ->
-    case whereis(Name) of
-	undefined ->
+    case process_info(self(), registered_name) of
+	{registered_name, Name} ->
+	    Name;
+	{registered_name, _Name} ->
 	    exit(process_not_registered);
-	_Pid ->
-	    Name
+	[] ->
+	    exit(process_not_registered)
     end;    
-
 get_proc_name({global, Name}) ->
-    case global:whereis_name(Name) of
+    case global:safe_whereis_name(Name) of
 	undefined ->
 	    exit(process_not_registered_globally);
+	Pid when Pid==self() ->
+	    Name;
 	_Pid ->
-	    Name
+	    exit(process_not_registered_globally)
     end.
 
 get_parent() ->
     case get('$ancestors') of
-	[Parent | _] when pid(Parent)->
+	[Parent | _] when is_pid(Parent)->
             Parent;
-        [Parent | _] when atom(Parent)->
+        [Parent | _] when is_atom(Parent)->
             name_to_pid(Parent);
 	_ ->
 	    exit(process_was_not_started_by_proc_lib)
@@ -767,18 +774,16 @@ get_parent() ->
 name_to_pid(Name) ->
     case whereis(Name) of
 	undefined ->
-	    global_name_to_pid(Name);
+	    case global:safe_whereis_name(Name) of
+		undefined ->
+		    exit(could_not_find_registerd_name);
+		Pid ->
+		    Pid
+	    end;
 	Pid ->
 	    Pid
     end.
 
-global_name_to_pid(Atom) -> % Should only be called by name_to_pid/1
-    case global:whereis_name(Atom) of
-	undefined ->
-	    exit(could_not_find_registerd_name);
-	Pid ->
-	    Pid
-    end.
 %%-----------------------------------------------------------------
 %% Status information
 %%-----------------------------------------------------------------

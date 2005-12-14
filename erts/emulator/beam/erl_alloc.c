@@ -40,6 +40,7 @@
 #include "erl_version.h"
 #endif
 #include "erl_monitors.h"
+#include "erl_bif_timer.h"
 
 
 #define GET_ERL_GF_ALLOC_IMPL
@@ -1456,7 +1457,7 @@ erts_allocated_areas(CIO *ciop, void *proc)
 
     values[i].arity = 2;
     values[i].name = "bif_timer";
-    values[i].ui[0] = bif_timer_memory_size();
+    values[i].ui[0] = erts_bif_timer_memory_size();
     i++;
 
     values[i].arity = 2;

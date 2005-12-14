@@ -61,7 +61,9 @@
          which_notification_filter/0,
          which_notification_filter/1,
  
- 	 sys_up_time/0, system_start_time/0]).
+ 	 sys_up_time/0, system_start_time/0,
+
+	 convert_config/1]).
 
 %% USM functions:
 -export([passwd2localized_key/3, localize_key/3]).
@@ -78,8 +80,27 @@
 -include("snmpa_atl.hrl").
 
 
+%%-----------------------------------------------------------------
+%% This utility function is used to convert an old SNMP application
+%% config (prior to snmp-4.0) to a SNMP agent config (as of 
+%% snmp-4.0).
+%% This is the config structure of the SNMP application as of 
+%% snmp-4.0:
+%% {snmp, snmp_config()}
+%% snmp_config() -> [snmp_config_item()]
+%% snmp_config_item() -> {agent,   agent_config()} | 
+%%                       {manager, manager_config()}
+%%-----------------------------------------------------------------
+
+convert_config(Opts) ->
+    snmpa_app:convert_config(Opts).
+
+
+%%-----------------------------------------------------------------
 %% Note that verbosity for the agents is actually only implemented 
 %% (properly) for the master agent.
+%%-----------------------------------------------------------------
+
 verbosity(all,Verbosity) -> 
     catch snmpa_agent:verbosity(sub_agents,Verbosity),
     catch snmpa_agent:verbosity(master_agent,Verbosity),

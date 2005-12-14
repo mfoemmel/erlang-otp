@@ -144,7 +144,7 @@
 	 t_cons/0, t_cons/2, t_cons_hd/1, t_cons_tl/1,
 	 t_float/0, t_from_term/1, t_from_range/2,
 	 t_fun/0, t_fun/1, t_fun/2,
-	 t_fun_args/1,
+	 t_fun_args/1, t_fun_arity/1,
 	 t_fun_range/1, t_identifier/0,
 	 t_inf/2, t_inf_lists/2,
 	 t_integer/0, t_integer/1, t_integers/1,
@@ -179,7 +179,7 @@
 -ifndef(NO_UNUSED).
 -export([t_bool/1, t_byte/1, t_char/1, t_cons/1, t_data_arity/1,
 	 t_degree/1, t_data_args/1, t_from_term/2,
-	 t_fun_arity/1, t_improper_list/1, t_inf/1, t_is_atom/2, t_is_data/1,
+	 t_improper_list/1, t_inf/1, t_is_atom/2, t_is_data/1,
 	 t_is_identifier/1, t_is_number/2, t_is_string/1,
 	 t_is_n_tuple/2, t_is_nonempty_list/1,
 	 t_nonempty_improper_list/0, t_nonempty_improper_list/1,
@@ -1622,11 +1622,8 @@ t_is_fun(_) -> false.
 %% @see t_fun/2
 %% @see t_fun_args/1
 
--ifndef(NO_UNUSED).
 t_fun_arity(?is_fun(?any, _)) -> any;
 t_fun_arity(?is_fun(?fun_domain_args(N, _), _)) -> N.
--endif.
-%% @clear
 
 
 %% @spec t_fun_args(T::type()) -> [type()] | any
@@ -2895,7 +2892,7 @@ t_to_string_1(?is_float) ->
 t_to_string_1(?is_number(_, _)) ->
     "number()";
 t_to_string_1(?is_atom(?singleton(V), _)) ->
-    io_lib:write_string(atom_to_list(V), $');
+    io_lib:write_string(atom_to_list(V), $'); % stupid Emacs '
 t_to_string_1(?is_bool) ->
     "bool()";
 t_to_string_1(?is_atom(?value_set(S), _)) ->

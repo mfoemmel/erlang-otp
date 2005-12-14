@@ -109,7 +109,8 @@
 	 send_all_state_event/2,
 	 sync_send_all_state_event/2, sync_send_all_state_event/3,
 	 reply/2,
-	 start_timer/2,send_event_after/2,cancel_timer/1]).
+	 start_timer/2,send_event_after/2,cancel_timer/1,
+	 enter_loop/4, enter_loop/5, enter_loop/6]).
 
 -export([behaviour_info/1]).
 
@@ -233,6 +234,72 @@ cancel_timer(Ref) ->
 	    end;
 	RemainingTime ->
 	    RemainingTime
+    end.
+
+%% enter_loop/4,5,6
+%% Makes an existing process into a gen_fsm.
+%% The calling process will enter the gen_fsm receive loop and become a
+%% gen_fsm process.
+%% The process *must* have been started using one of the start functions
+%% in proc_lib, see proc_lib(3).
+%% The user is responsible for any initialization of the process,
+%% including registering a name for it.
+enter_loop(Mod, Options, StateName, StateData) ->
+    enter_loop(Mod, Options, StateName, StateData, self(), infinity).
+
+enter_loop(Mod, Options, StateName, StateData, ServerName = {_,_}) ->
+    enter_loop(Mod, Options, StateName, StateData, ServerName,infinity);
+enter_loop(Mod, Options, StateName, StateData, Timeout) ->
+    enter_loop(Mod, Options, StateName, StateData, self(), Timeout).
+
+enter_loop(Mod, Options, StateName, StateData, ServerName, Timeout) ->
+    Name = get_proc_name(ServerName),
+    Parent = get_parent(),
+    Debug = gen:debug_options(Options),
+    loop(Parent, Name, StateName, StateData, Mod, Timeout, Debug).
+
+get_proc_name(Pid) when is_pid(Pid) ->
+    Pid;
+get_proc_name({local, Name}) ->
+    case process_info(self(), registered_name) of
+	{registered_name, Name} ->
+	    Name;
+	{registered_name, _Name} ->
+	    exit(process_not_registered);
+	[] ->
+	    exit(process_not_registered)
+    end;
+get_proc_name({global, Name}) ->
+    case global:safe_whereis_name(Name) of
+	undefined ->
+	    exit(process_not_registered_globally);
+	Pid when Pid==self() ->
+	    Name;
+	_Pid ->
+	    exit(process_not_registered_globally)
+    end.
+
+get_parent() ->
+    case get('$ancestors') of
+	[Parent | _] when is_pid(Parent) ->
+	    Parent;
+	[Parent | _] when is_atom(Parent) ->
+	    name_to_pid(Parent);
+	_ ->
+	    exit(process_was_not_started_by_proc_lib)
+    end.
+
+name_to_pid(Name) ->
+    case whereis(Name) of
+	undefined ->
+	    case global:safe_whereis_name(Name) of
+		undefined ->
+		    exit(could_not_find_registerd_name);
+		Pid ->
+		    Pid
+	    end;
+	Pid ->
+	    Pid
     end.
 
 %%% ---------------------------------------------------

@@ -441,7 +441,7 @@ handle_call({peername, Client}, _From, St) ->
     debug(St, "peername: client = ~w~n", [Client]),
     Reply = case ssl_server:peername(St#st.fd) of
 		{ok, {Address, Port}} ->
-		    {ok, At} = inet:getaddr(Address, inet),
+		    {ok, At} = inet_parse:ipv4_address(Address),
 		    {ok, {At, Port}};
 		Error ->
 		    Error
@@ -498,7 +498,7 @@ handle_call({sockname, Client}, _From, St) ->
     debug(St, "sockname: client = ~w~n", [Client]),
     Reply = case ssl_server:sockname(St#st.fd) of
 		{ok, {Address, Port}} ->
-		    {ok, At} = inet:getaddr(Address, inet),
+		    {ok, At} = inet_parse:ipv4_address(Address),
 		    {ok, {At, Port}};
 		Error ->
 		    Error

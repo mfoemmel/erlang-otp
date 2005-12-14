@@ -1,6 +1,6 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Copyright (c) 1997 by the HiPE group.  All Rights Reserved 
+%% Copyright (c) 1997-2005 by the HiPE group.  All Rights Reserved 
 %% ====================================================================
 %%  Filename : 	hipe_sparc.hrl
 %%  Module   :	hipe_sparc
@@ -45,8 +45,7 @@
 		   fail_label}).
 -record(jmp, {target, off, args, fail_label, destinations=[]}).
 -record(call_link, {target, link, dests, args, continuation_label,
-		    fail_label, type,
-		    stack_descriptor}).
+		    fail_label, type, stack_descriptor}).
 %% Floating point operations
 -record(load_fp, {dst, align, type, src, off}).
 -record(store_fp, {dst, off, type, align, src}).

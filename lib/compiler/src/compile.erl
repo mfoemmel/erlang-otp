@@ -256,8 +256,8 @@ run_tc({Name,Fun}, St) ->
     {Before_c, _} = Before0,
     {After_c, _} = After0,
     Mem0 = erts_debug:flat_size(Val)*erlang:system_info(wordsize),
-    Mem = lists:flatten(io_lib:format("~.1f Kb", [Mem0/1024])),
-    Sz = lists:flatten(io_lib:format("~.1f Mb", [os_process_size()/1024])),
+    Mem = lists:flatten(io_lib:format("~.1f kB", [Mem0/1024])),
+    Sz = lists:flatten(io_lib:format("~.1f MB", [os_process_size()/1024])),
     io:format(" ~-30s: ~10.2f s ~12s ~10s\n",
 	      [Name,(After_c-Before_c) / 1000,Mem,Sz]),
     Val.
@@ -871,8 +871,7 @@ beam_asm(#compile{ifile=File,code=Code0,abstract_code=Abst,options=Opts0}=St) ->
 		      end, Opts0),
     Opts2 = filter(fun is_informative_option/1, Opts1),
     case beam_asm:module(Code0, Abst, Source, Opts2) of
-	{ok,Code} -> {ok,St#compile{code=Code,abstract_code=[]}};
-	{error,Es} -> {error,St#compile{errors=St#compile.errors ++ Es}}
+	{ok,Code} -> {ok,St#compile{code=Code,abstract_code=[]}}
     end.
 
 test_native(#compile{options=Opts}) ->
@@ -993,7 +992,7 @@ report_warnings(#compile{options=Opts,warnings=Ws0}) ->
     end.
 
 format_message(F, [{Line,Mod,E}|Es]) ->
-    M = {Line,io_lib:format("~s:~w: Warning: ~s\n", [F,Line,Mod:format_error(E)])},
+    M = {{F,Line},io_lib:format("~s:~w: Warning: ~s\n", [F,Line,Mod:format_error(E)])},
     [M|format_message(F, Es)];
 format_message(F, [{Mod,E}|Es]) ->
     M = {none,io_lib:format("~s: Warning: ~s\n", [F,Mod:format_error(E)])},

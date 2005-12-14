@@ -516,7 +516,6 @@ ssa_first_free_list(Regs, Next) ->
     foldl(fun({x,R}, N) when R >= N -> R+1;
 	     (_, N) -> N end, Next, Regs).
 
-ssa_last_target([{set,[Dst],_,_},{'%live',_}]) -> Dst;
 ssa_last_target([{set,[Dst],_,_}]) -> Dst;
 ssa_last_target([_|Is]) -> ssa_last_target(Is).
     

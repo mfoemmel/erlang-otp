@@ -224,6 +224,8 @@ init([ConfigFile, ConfigList, Addr, Port]) ->
     process_flag(trap_exit, true),
     case (catch do_init(ConfigFile, ConfigList, Addr, Port)) of
 	{error, Reason} ->
+	    String = lists:flatten(io_lib:format("Failed initiating web server: ~n~p~n~p~n",[ConfigFile,Reason])),
+	    error_logger:error_report(String),
 	    {stop, Reason};
 	{ok, State} ->
 	    {ok, State}

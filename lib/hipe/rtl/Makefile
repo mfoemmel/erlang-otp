@@ -109,12 +109,13 @@ hipe_literals.hrl:	$(HIPE_MKLITERALS)
 ../main/hipe.hrl: ../vsn.mk ../main/hipe.hrl.src
 	sed -e "s;%VSN%;$(HIPE_VSN);" ../main/hipe.hrl.src > ../main/hipe.hrl
 
-$(EBIN)/hipe_rtl.beam: ../main/hipe.hrl
+$(EBIN)/hipe_rtl.beam: hipe_rtl.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_arch.beam: hipe_literals.hrl
-$(EBIN)/hipe_rtl_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl
+$(EBIN)/hipe_rtl_cfg.beam: hipe_rtl.hrl ../flow/cfg.inc ../main/hipe.hrl
+$(EBIN)/hipe_rtl_cleanup_const.beam: hipe_rtl.hrl
 $(EBIN)/hipe_rtl_ebb.beam: ../flow/ebb.inc
 $(EBIN)/hipe_rtl_liveness.beam: ../flow/liveness.inc
-$(EBIN)/hipe_icode2rtl.beam: hipe_literals.hrl ../main/hipe.hrl
+$(EBIN)/hipe_icode2rtl.beam: hipe_literals.hrl ../main/hipe.hrl ../icode/hipe_icode.hrl
 $(EBIN)/hipe_tagscheme.beam: hipe_literals.hrl
 $(EBIN)/hipe_rtl_primops.beam: hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_prop.beam: ../main/hipe.hrl
@@ -125,8 +126,10 @@ $(EBIN)/hipe_rtl_cerl_bs_ops.beam: hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_exceptions.beam: hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_inline_bs_ops.beam: hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_mk_switch.beam: ../main/hipe.hrl
-$(EBIN)/hipe_rtl_prop.beam: ../main/hipe.hrl
+$(EBIN)/hipe_rtl_lcm.beam: hipe_rtl.hrl
+$(EBIN)/hipe_rtl_prop.beam: hipe_rtl.hrl ../main/hipe.hrl
+$(EBIN)/hipe_rtl_symbolic.beam: hipe_rtl.hrl
 $(EBIN)/hipe_rtl_varmap.beam: ../main/hipe.hrl
 
 $(EBIN)/hipe_rtl_ssa.beam: ../ssa/hipe_ssa.inc ../main/hipe.hrl ../ssa/hipe_ssa_liveness.inc
-$(EBIN)/hipe_rtl_ssa_const_prop.beam: ../main/hipe.hrl ../ssa/hipe_ssa_const_prop.inc
+$(EBIN)/hipe_rtl_ssa_const_prop.beam: hipe_rtl.hrl ../main/hipe.hrl ../ssa/hipe_ssa_const_prop.inc

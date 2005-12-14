@@ -526,7 +526,7 @@ RUN_OBJS = \
 	$(OBJDIR)/erl_bif_trace.o	$(OBJDIR)/erl_bif_wrap.o \
 	$(OBJDIR)/erl_trace.o		$(OBJDIR)/copy.o \
 	$(OBJDIR)/utils.o		$(OBJDIR)/bif.o \
-	$(OBJDIR)/io.o \
+	$(OBJDIR)/io.o			$(OBJDIR)/erl_bif_timer.o \
 	$(OBJDIR)/erl_debug.o		$(OBJDIR)/erl_md5.o \
 	$(OBJDIR)/erl_message.o		$(OBJDIR)/erl_process.o \
 	$(OBJDIR)/erl_process_dict.o	$(OBJDIR)/erl_arith.o \

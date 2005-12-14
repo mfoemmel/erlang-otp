@@ -187,10 +187,10 @@ main(Tree, Ctxt, Opts) ->
 start(Reply, Tree, Ctxt, Opts) ->
     init_debug(),
     case debug_runtime() of
-        true ->
-            put(inline_start_time,
-                element(1, erlang:statistics(runtime)));
-        _ ->
+        %% true ->
+        %%     put(inline_start_time,
+        %%         element(1, erlang:statistics(runtime)));
+        false ->
             ok
     end,
     Size = max(1, proplists:get_value(inline_size, Opts)),
@@ -216,45 +216,45 @@ start(Reply, Tree, Ctxt, Opts) ->
 
 init_debug() ->
     case debug_counters() of
-        true ->
-            put(counter_effort_triggers, 0),
-            put(counter_effort_max, 0),
-            put(counter_size_triggers, 0),
-            put(counter_size_max, 0);
-        _ ->
+        %% true ->
+        %%     put(counter_effort_triggers, 0),
+        %%     put(counter_effort_max, 0),
+        %%     put(counter_size_triggers, 0),
+        %%     put(counter_size_max, 0);
+        false ->
             ok
     end.
 
 report_debug() ->
     case debug_runtime() of
-        true ->
-            {Time, _} = erlang:statistics(runtime),
-            report("Total run time for inlining: ~.2.0f s.\n",
-		   [(Time - get(inline_start_time))/1000]);
-        _ ->
+        %% true ->
+        %%     {Time, _} = erlang:statistics(runtime),
+        %%     report("Total run time for inlining: ~.2.0f s.\n",
+	%% 	   [(Time - get(inline_start_time))/1000]);
+        false ->
             ok
     end,
     case debug_counters() of
-        true ->
-            counter_stats();
-        _ ->
+        %% true ->
+        %%     counter_stats();
+        false ->
             ok
     end.
 
-counter_stats() ->
-    T1 = get(counter_effort_triggers),
-    T2 = get(counter_size_triggers),
-    E = get(counter_effort_max),
-    S = get(counter_size_max),
-    M1 = io_lib:fwrite("\tNumber of triggered "
-                       "effort counters: ~p.\n", [T1]),
-    M2 = io_lib:fwrite("\tNumber of triggered "
-                       "size counters: ~p.\n", [T2]),
-    M3 = io_lib:fwrite("\tLargest active effort counter: ~p.\n",
-                       [E]),
-    M4 = io_lib:fwrite("\tLargest active size counter: ~p.\n",
-                       [S]),
-    report("Counter statistics:\n~s", [[M1, M2, M3, M4]]).
+%% counter_stats() ->
+%%     T1 = get(counter_effort_triggers),
+%%     T2 = get(counter_size_triggers),
+%%     E = get(counter_effort_max),
+%%     S = get(counter_size_max),
+%%     M1 = io_lib:fwrite("\tNumber of triggered "
+%%                        "effort counters: ~p.\n", [T1]),
+%%     M2 = io_lib:fwrite("\tNumber of triggered "
+%%                        "size counters: ~p.\n", [T2]),
+%%     M3 = io_lib:fwrite("\tLargest active effort counter: ~p.\n",
+%%                        [E]),
+%%     M4 = io_lib:fwrite("\tLargest active size counter: ~p.\n",
+%%                        [S]),
+%%     report("Counter statistics:\n~s", [[M1, M2, M3, M4]]).
 
 
 %% =====================================================================
@@ -2330,20 +2330,20 @@ count_effort(N, S) ->
     C = st__get_effort(S),
     C1 = counter__add(N, C, effort, S),
     case debug_counters() of
-        true ->
-            case counter__is_active(C1) of
-                true ->
-                    V = counter__value(C1),
-                    case V > get(counter_effort_max) of
-                        true ->
-                            put(counter_effort_max, V);
-                        false ->
-                            ok
-                    end;
-                false ->
-                    ok
-            end;
-        _ ->
+        %% true ->
+        %%     case counter__is_active(C1) of
+        %%         true ->
+        %%             V = counter__value(C1),
+        %%             case V > get(counter_effort_max) of
+        %%                 true ->
+        %%                     put(counter_effort_max, V);
+        %%                 false ->
+        %%                     ok
+        %%             end;
+        %%         false ->
+        %%             ok
+        %%     end;
+        false ->
             ok
     end,
     st__set_effort(C1, S).
@@ -2352,20 +2352,20 @@ count_size(N, S) ->
     C = st__get_size(S),
     C1 = counter__add(N, C, size, S),
     case debug_counters() of
-        true ->
-            case counter__is_active(C1) of
-                true ->
-                    V = counter__value(C1),
-                    case V > get(counter_size_max) of
-                        true ->
-                            put(counter_size_max, V);
-                        false ->
-                            ok
-                    end;
-                false ->
-                    ok
-            end;
-        _ ->
+        %% true ->
+        %%     case counter__is_active(C1) of
+        %%         true ->
+        %%             V = counter__value(C1),
+        %%             case V > get(counter_size_max) of
+        %%                 true ->
+        %%                     put(counter_size_max, V);
+        %%                 false ->
+        %%                     ok
+        %%             end;
+        %%         false ->
+        %%             ok
+        %%     end;
+        false ->
             ok
     end,
     st__set_size(C1, S).
@@ -2697,16 +2697,16 @@ counter__add(N, {V, L}, Type, Data) ->
     N1 = V - N,
     if V > 0, N1 =< 0 ->
 	    case debug_counters() of
-		true ->
-		    case Type of
-			effort ->
-			    put(counter_effort_triggers,
-				get(counter_effort_triggers) + 1);
-			size ->
-			    put(counter_size_triggers,
-				get(counter_size_triggers) + 1)
-		    end;
-		_ ->
+		%% true ->
+		%%     case Type of
+		%% 	effort ->
+		%% 	    put(counter_effort_triggers,
+		%% 		get(counter_effort_triggers) + 1);
+		%% 	size ->
+		%% 	    put(counter_size_triggers,
+		%% 		get(counter_size_triggers) + 1)
+		%%     end;
+		false ->
 		    ok
 	    end,
 	    throw({counter_exceeded, Type, Data});
@@ -2727,16 +2727,12 @@ report_internal_error(S, Vs) ->
 report_error(D) ->
     report_error(D, []).
     
-report_error({F, L, D}, Vs) ->
-    report({F, L, {error, D}}, Vs);
 report_error(D, Vs) ->
     report({error, D}, Vs).
 
 report_warning(D) ->
     report_warning(D, []).
 
-report_warning({F, L, D}, Vs) ->
-    report({F, L, {warning, D}}, Vs);
 report_warning(D, Vs) ->
     report({warning, D}, Vs).
 

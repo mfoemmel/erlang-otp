@@ -111,7 +111,6 @@ encode_body(#conn_data{protocol_version = V} = ConnData,
     %% Create the message envelope
     MegaMsg = compose_message(ConnData, V, Body),
 
-    %% p("encode_body -> ~n~p", [MegaMsg]),
     ?report_debug(ConnData, TraceLabel, [MegaMsg]),
 
     %% Encode the message
@@ -216,20 +215,20 @@ incNum(Cnt) ->
 	    Old
     end.
 	    
-% p(F, A) ->
-%     print(now(), F, A).
-
-% print(Ts, F, A) ->
-%     io:format("*** [~s] ~p ***"
-%               "~n   " ++ F ++ "~n", 
-%               [format_timestamp(Ts), self() | A]).
-
-% format_timestamp(Now) ->
-%     {N1, N2, N3}   = Now,
-%     {Date, Time}   = calendar:now_to_datetime(Now),
-%     {YYYY,MM,DD}   = Date,
-%     {Hour,Min,Sec} = Time,
-%     FormatDate = 
-%         io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
-%                       [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),  
-%     lists:flatten(FormatDate).
+%% p(F, A) ->
+%%     print(now(), F, A).
+%% 
+%% print(Ts, F, A) ->
+%%     io:format("*** [~s] ~p ***"
+%% 		 "~n   " ++ F ++ "~n", 
+%% 		 [format_timestamp(Ts), self() | A]).
+%% 
+%% format_timestamp(Now) ->
+%%     {_N1, _N2, N3}   = Now,
+%%     {Date, Time}   = calendar:now_to_datetime(Now),
+%%     {YYYY,MM,DD}   = Date,
+%%     {Hour,Min,Sec} = Time,
+%%     FormatDate = 
+%% 	   io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+%% 			 [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),  
+%%     lists:flatten(FormatDate).

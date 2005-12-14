@@ -25,8 +25,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2005/03/16 20:48:40 $
-%%              $Revision: 1.31 $
+%%              $Date: 2005/11/06 13:10:51 $
+%%              $Revision: 1.32 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -50,6 +50,7 @@
 
 %% -define(DO_ASSERT,true).
 -include("../main/hipe.hrl").
+-include("hipe_sparc.hrl").
 -include("../rtl/hipe_literals.hrl").
 
 -define(MK_CP_REG(),(hipe_sparc:mk_reg(hipe_sparc_registers:return_address()))).
@@ -65,12 +66,9 @@ frame(Cfg, TempMap, FpMap, NextSpillPos, _Options) ->
 
 rewrite(Cfg, TempMap, FpMap, NextSpillPos) ->
   %%  hipe_sparc_cfg:pp(Cfg),
-
   Sparc = hipe_sparc_cfg:linearize(Cfg),
   Arity = hipe_sparc:sparc_arity(Sparc),
   Code = hipe_sparc:sparc_code(Sparc),
-
-  
   %% ConvNeed is added if there are any conv_fp instructions.
   ConvNeed = 
     case get(hipe_inline_fp) of
@@ -151,12 +149,12 @@ rewrite_instr(I, TempMap, FpMap, Need, Arity, RetLabel) ->
   I2.
 
 remap_fp_regs(I, FpMap) ->
-  case hipe_sparc:type(I) of
-    %% These instructions handles their own remapping.
-    fmove -> I;
-    pseudo_spill-> I;
-    pseudo_unspill-> I;
-    _->
+  case I of
+    %% These instructions handle their own remapping.
+    #fmove{} -> I;
+    #pseudo_spill{} -> I;
+    #pseudo_unspill{} -> I;
+    _ ->
       Defs = hipe_sparc:fp_reg_defines(I),
       NewI = remap_fp(remap_fp(I, Defs, FpMap), 
 		      hipe_sparc:fp_reg_uses(I),
@@ -165,11 +163,10 @@ remap_fp_regs(I, FpMap) ->
   end.
 
 rewrite_instr2(I, TempMap, FpMap, Need, Arity, RetLabel) ->
-
-  case hipe_sparc:type(I) of
-    pseudo_push ->
+  case I of
+    #pseudo_push{} ->
       ?EXIT({pseudo_push, not_supportet_any_more,I});
-    pseudo_pop ->
+    #pseudo_pop{} ->
       Temp = hipe_sparc:pseudo_pop_reg(I),
       Reg = map(Temp,TempMap),
       %% Arg position on stack = -(arg index + need)*4 
@@ -177,17 +174,15 @@ rewrite_instr2(I, TempMap, FpMap, Need, Arity, RetLabel) ->
 		  hipe_sparc:pseudo_pop_index(I)) +
 		Need) * 4),
       gen_stack_load(Pos, Reg);
-    move ->
+    #move{} ->
       rewrite_move(I, TempMap);
-    pseudo_spill ->
+    #pseudo_spill{} ->
       rewrite_spill(I, TempMap, FpMap);
-    pseudo_unspill ->
+    #pseudo_unspill{} ->
       rewrite_unspill(I, TempMap, FpMap);
-
-    call_link ->
+    #call_link{} ->
       rewrite_call(I, TempMap, Need, Arity);
-
-    pseudo_return ->
+    #pseudo_return{} ->
       %% Note we assume that the arguments to return have been 
       %% mapped to physical register in the translation RTL->SPARC.
 
@@ -201,27 +196,23 @@ rewrite_instr2(I, TempMap, FpMap, Need, Arity, RetLabel) ->
 	  %% Number of retvalues not 1.
 	  ?EXIT({multiple_retvals_not_handled,I})
       end;
-
-    pseudo_enter ->
+    #pseudo_enter{} ->
       rewrite_enter(I, TempMap, Need, Arity);
-
-    fmove ->
+    #fmove{} ->
       rewrite_fmove(I, TempMap, FpMap);
-    load_fp -> 
+    #load_fp{} -> 
       rewrite_load_fp(I, TempMap);
-    store_fp -> 
+    #store_fp{} -> 
       rewrite_store_fp(I, TempMap);
-    conv_fp ->
+    #conv_fp{} ->
       NewI = map_temps(I, TempMap),
       Source = hipe_sparc:conv_fp_src(NewI),
       Dest = hipe_sparc:conv_fp_dest(NewI),
       Off = hipe_sparc:mk_imm(get_offset(Need - 1)),
       SP = hipe_sparc:mk_reg(hipe_sparc_registers:stack_pointer()),
-
       [hipe_sparc:store_create(SP, Off, w, Source),
        hipe_sparc:load_fp_create(Dest, 32, single, SP, Off),
        hipe_sparc:conv_fp_create(Dest, Dest)];
-    	
     _ -> 
       %% All other instructions.
       %% No special handling, just map the temps to regs or spill positions.
@@ -821,12 +812,11 @@ extra_stack_need(Code,Need,Arity) ->
 
 stack_need(I, PrevSPLevel) ->
   %% io:format("\n\n~w\n~w\n",[I,TempMap]),
-  case hipe_sparc:type(I) of
-    call_link ->
+  case I of
+    #call_link{} ->
       Argneed = call_args_need(hipe_sparc:call_link_args(I)),
       Argneed;
-
-    pseudo_enter ->
+    #pseudo_enter{} ->
       NoArgs = length(hipe_sparc:pseudo_enter_args(I)),
       NoRegArgs = hipe_sparc_registers:register_args(),
       %% stack, do some shuffling.
@@ -835,7 +825,6 @@ stack_need(I, PrevSPLevel) ->
 	true ->        
 	  %% Arguments to the called function spill 
 	  NewOnStack = NoArgs - NoRegArgs,
-
 	  case NewOnStack > PrevSPLevel of
 	    true -> NewOnStack - PrevSPLevel;
 	    false -> 0

@@ -8,6 +8,8 @@ extern const void *hipe_arch_primop_address(Eterm key);
 /* used by beam_load.c:patch(). patchtype == am_load_fe, Value is an ErlFunEntry* */
 extern void hipe_patch_address(Uint *address, Eterm patchtype, Uint value);
 extern void hipe_patch_load_fe(Uint *address, Uint value);
+extern int hipe_patch_insn(void *address, Uint value, Eterm type);
+extern int hipe_patch_call(void *callAddress, void *destAddress, void *trampoline);
 
 extern void *hipe_make_native_stub(void *beamAddress, unsigned int beamArity);
 

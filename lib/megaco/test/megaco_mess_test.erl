@@ -113,7 +113,8 @@ all(suite) ->
 tickets(suite) ->
     [
      otp_4359,
-     otp_4836
+     otp_4836,
+     otp_5805
     ].
 
 
@@ -761,14 +762,14 @@ otp_4836_mgc_event_sequence(text, tcp) ->
 		{sleep, 100},
 		{send, "pending 2", Pending}, 
 		{sleep, 500},
-% 		{send, "pending 3", Pending}, 
-% 		{sleep, 100},
-% 		{send, "pending 4", Pending}, 
-% 		{sleep, 100},
-% 		{send, "pending 5", Pending}, 
-% 		{sleep, 5000},
+						% 		{send, "pending 3", Pending}, 
+						% 		{sleep, 100},
+						% 		{send, "pending 4", Pending}, 
+						% 		{sleep, 100},
+						% 		{send, "pending 5", Pending}, 
+						% 		{sleep, 5000},
 
-% 		{expect_receive, "notify-request", {NotifyReqVerifyFun, 10000}},
+						% 		{expect_receive, "notify-request", {NotifyReqVerifyFun, 10000}},
 
   		{send, "notify-reply", NotifyReply}
 	       ],
@@ -782,7 +783,7 @@ otp_4836_service_change_reply_msg(Mid, TransId, Cid) ->
 				  serviceChangeResult = SCRPs},
     CR    = {serviceChangeReply, SCR},
     otp_4836_msg(Mid, TransId, CR, Cid).
-    
+
 otp_4836_notify_reply_msg(Mid, TransId, Cid, TermId) ->
     NR  = #'NotifyReply'{terminationID = [TermId]},
     CR  = {notifyReply, NR},
@@ -799,8 +800,8 @@ otp_4836_msg(Mid, TransId, CR, Cid) ->
 		      mId         = Mid,
 		      messageBody = Body},
     #'MegacoMessage'{mess = Mess}.
-    
-    
+
+
 otp_4836_pending_msg(Mid, TransId) ->
     TP   = #'TransactionPending'{transactionId = TransId},
     Body = {transactions, [{transactionPending, TP}]},
@@ -808,7 +809,7 @@ otp_4836_pending_msg(Mid, TransId) ->
 		      mId         = Mid,
 		      messageBody = Body},
     #'MegacoMessage'{mess = Mess}.
-    
+
 
 otp_4836_encode_msg_fun(Mod, Conf) ->
     fun(M) -> 
@@ -879,9 +880,512 @@ otp_4836_verify_notify_request_fun() ->
 	    {error, {invalid_message, M}}
     end.
 
-    
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+otp_5805(suite) ->
+    [];
+otp_5805(Config) when list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        otp_5805),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+	 "~n   MgcNode: ~p"
+	 "~n   MgNode:  ~p", 
+	 [MgcNode, MgNode]),
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+    d("[MGC] start the simulator "),
+    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+
+    d("[MGC] create the event sequence"),
+    MgcEvSeq = otp_5805_mgc_event_sequence(text, tcp),
+
+    i("wait some time before starting the MGC simulation"),
+    sleep(1000),
+
+    d("[MGC] start the simulation"),
+    megaco_test_generator:megaco(Mgc, MgcEvSeq, timer:minutes(1)),
+
+    i("wait some time before starting the MG simulator"),
+    sleep(1000),
+
+    d("start the MG simulator (generator)"),
+    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+
+    d("create the MG event sequence"),
+    MgEvSeq = otp_5805_mg_event_sequence(text, tcp),
+
+    d("start the MG simulation"),
+    megaco_test_generator:tcp(Mg, MgEvSeq, timer:minutes(1)),
+
+    d("[MGC] await the generator reply"),
+    case megaco_test_generator:megaco_await_reply(Mgc) of
+        {ok, MgcReply} ->
+            d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
+            ok;
+        {error, MgcReply} ->
+            d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
+            ?ERROR(mgc_failed)
+    end,
+
+    d("[MG] await the generator reply"),
+    case megaco_test_generator:tcp_await_reply(Mg) of
+        {ok, MgReply} ->
+            d("[MG] OK => MgReply: ~n~p", [MgReply]),
+            ok;
+        {error, MgReply} ->
+            d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
+            ?ERROR(mg_failed)
+    end,
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_generator:stop(Mgc),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_generator:stop(Mg),
+
+    i("done", []),
+    ok.
+
+
+otp_5805_mg_event_sequence(text, tcp) ->
+    DecodeFun = otp_5805_mg_decode_msg_fun(megaco_pretty_text_encoder, []),
+    EncodeFun = otp_5805_mg_encode_msg_fun(megaco_pretty_text_encoder, []),
+    Mid = {deviceName,"mg"},
+    ServiceChangeReq = otp_5805_mg_service_change_request_msg(Mid, 1, 0),
+    ServiceChangeReplyVerifyFun = 
+	otp_5805_mg_verify_service_change_rep_msg_fun(),
+    NotifyReqNNV = otp_5805_mg_notify_request_msg("1"),
+    NotifyReqUV = otp_5805_mg_notify_request_msg("4"),
+    EDVerify = otp_5805_mg_verify_error_descriptor_msg_fun(),
+    MgEvSeq = [{debug,  true},
+	       {decode, DecodeFun},
+	       {encode, EncodeFun},
+	       {connect, 2944},
+
+	       {send, "service-change-request", ServiceChangeReq}, 
+	       {expect_receive, "service-change-reply", {ServiceChangeReplyVerifyFun, 5000}}, 
+	       {sleep, 1000},
+	       {send, "notify request (not negotiated version)", NotifyReqNNV}, 
+	       {expect_receive, "error-descriptor", EDVerify}, 
+	       {sleep, 1000},
+ 	       {send, "notify request (unsupported version)", NotifyReqUV}, 
+	       {expect_receive, "error-descriptor", EDVerify}, 
+
+	       {expect_nothing, 4000},
+	       disconnect
+	      ],
+    MgEvSeq.
+
+otp_5805_mg_encode_msg_fun(Mod, Conf) ->
+    fun(M) -> 
+            Mod:encode_message(Conf, M) 
+    end.
+
+otp_5805_mg_decode_msg_fun(Mod, Conf) ->
+    fun(M) -> 
+            Mod:decode_message(Conf, M) 
+    end.
+
+otp_5805_mg_verify_service_change_rep_msg_fun() ->
+    fun(#'MegacoMessage'{mess = Mess} = M) -> 
+            case Mess of
+		#'Message'{version     = 1,
+			   mId         = _MgMid,
+			   messageBody = Body} ->
+		    case Body of
+			{transactions, [Trans]} ->
+			    case Trans of
+				{transactionReply, TR} ->
+				    case TR of
+					#'TransactionReply'{transactionId = _Tid,
+							    immAckRequired = asn1_NOVALUE,
+							    transactionResult = Res} ->
+					    case Res of
+						{actionReplies, [AR]} ->
+						    case AR of
+							#'ActionReply'{contextId = _Cid,
+								       errorDescriptor = asn1_NOVALUE,
+								       contextReply    = _CtxReq,
+								       commandReply    = [CR]} ->
+							    case CR of
+								{serviceChangeReply, SCR} ->
+								    case SCR of
+									#'ServiceChangeReply'{
+									       terminationID       = _TermID,
+									       serviceChangeResult = SCRes} ->
+									    case SCRes of
+										{serviceChangeResParms, SCRP} ->
+										    case SCRP of
+											#'ServiceChangeResParm'{
+												serviceChangeMgcId   = _MgcMid,
+												serviceChangeVersion = 2} ->
+											    {ok, M};
+											_ ->
+											    {error, {invalid_scrp, SCRP}}
+										    end;
+										_ ->
+										    {error, {invalid_scres, SCRes}}
+									    end;
+									_ ->
+									    {error, {invalid_scr, SCR}}
+								    end;
+								_ ->
+								    {error, {invalid_cr, CR}}
+							    end;
+							_ ->
+							    {error, {invalid_ar, AR}}
+						    end;
+						_ ->
+						    {error, {invalid_tres, Res}}
+					    end;
+					_ ->
+					    {error, {invalid_tr, TR}}
+				    end;
+				_ ->
+				    {error, {invalid_trans, Trans}}
+			    end;
+			_ ->
+			    {error, {invalid_body, Body}}
+		    end;
+		_ ->
+		    {error, {invalid_mess, Mess}}
+	    end;
+       (M) ->
+            {error, {invalid_message, M}}
+    end.
+
+otp_5805_mg_verify_error_descriptor_msg_fun() ->
+    fun(#'MegacoMessage'{mess = Mess} = M) -> 
+            case Mess of
+		#'Message'{version     = 2,
+			   mId         = _MgMid,
+			   messageBody = Body} ->
+		    io:format("otp_5805_mg_verify_error_descriptor_msg_fun -> ok"
+			      "~n   Body:  ~p"
+			      "~n", [Body]),
+		    case Body of
+			{messageError, ED} ->
+			    case ED of
+				#'ErrorDescriptor'{
+				      errorCode = ?megaco_version_not_supported} ->
+				    {ok, M};
+				_ ->
+				    {error, {invalid_ed, ED}}
+			    end;
+			_ ->
+			    {error, {invalid_body, Body}}
+		    end;
+		_ ->
+		    {error, {invalid_mess, Mess}}
+	    end;
+       (M) ->
+            {error, {invalid_message, M}}
+    end.
+
+otp_5805_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, 2, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+otp_5805_mg_service_change_request_msg(Mid, TransId, Cid) ->
+    AR    = otp_5805_mg_service_change_request_ar(Mid, Cid),
+    TR    = cre_transReq(TransId, [AR]),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(1, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+otp_5805_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+otp_5805_mg_notify_request_msg(V) ->
+    M = 
+"MEGACO/" ++ V ++ " mg
+Transaction = 2 {
+	Context = 1 {
+		Notify = 00000000/00000000/01101101 {
+			ObservedEvents = 1 {
+				19990729T22000000:al/of
+			}
+		}
+	}
+}",
+    list_to_binary(M).
+
+
+%%
+%% MGC generator stuff
+%% 
+otp_5805_mgc_event_sequence(text, tcp) ->
+    Mid = {deviceName,"ctrl"},
+    RI = [
+          {port,             2944},
+          {encoding_module,  megaco_pretty_text_encoder},
+          {encoding_config,  []},
+          {transport_module, megaco_tcp}
+         ],
+    ConnectVerify = fun otp_5805_mgc_verify_handle_connect/1,
+    ServiceChangeReqVerify = otp_5805_mgc_verify_service_change_req_fun(Mid),
+    SyntaxErrorVerify1 = fun otp_5805_mgc_verify_handle_syntax_error/1,
+    SyntaxErrorVerify2 = fun otp_5805_mgc_verify_handle_syntax_error/1,
+    DiscoVerify = fun otp_5805_mgc_verify_handle_disconnect/1,
+    EvSeq = [
+             {debug, true},
+	     {megaco_trace, disable},
+	     {megaco_trace, max},
+             megaco_start,
+             {megaco_start_user, Mid, RI, []},
+             start_transport,
+             listen,
+             {megaco_callback, handle_connect, ConnectVerify},
+	     {megaco_conn_info, all},
+             {megaco_callback, handle_trans_request_sc, ServiceChangeReqVerify},
+	     {megaco_update_conn_info, protocol_version, 2}, 
+             {megaco_callback, handle_syntax_error, SyntaxErrorVerify1},
+             {megaco_callback, handle_syntax_error, SyntaxErrorVerify2},
+             {megaco_callback, handle_disconnect, DiscoVerify},
+             megaco_stop_user,
+             megaco_stop
+            ],
+    EvSeq.
+
+otp_5805_mgc_verify_handle_connect({handle_connect, CH, 1}) -> 
+    io:format("otp_5805_mgc_verify_handle_connect -> ok"
+	      "~n   CH:  ~p"
+	      "~n", [CH]),
+    {ok, CH, ok};
+otp_5805_mgc_verify_handle_connect({handle_connect, CH, V}) -> 
+    io:format("otp_5805_mgc_verify_handle_connect -> unexpected version"
+	      "~n   CH:  ~p"
+	      "~n   V:   ~p"
+	      "~n", [CH, V]),
+    {error, {unexpected_version, V}, ok};
+otp_5805_mgc_verify_handle_connect(Else) ->
+    {error, Else, ok}.
+
+
+otp_5805_mgc_verify_service_change_req_fun(Mid) ->
+    fun({handle_trans_request, _, V, [AR]}) ->
+	    io:format("otp_5805_mgc_verify_service_change_req_fun -> ok so far"
+		      "~n   V:   ~p"
+		      "~n", [V]),
+            case AR of
+                #'ActionRequest'{commandRequests = [CR]} ->
+                    case CR of
+                        #'CommandRequest'{command = Cmd} ->
+                            case Cmd of
+                                {serviceChangeReq, 
+                                 #'ServiceChangeRequest'{terminationID = [Tid],
+                                                         serviceChangeParms = Parms}} ->
+                                    case Tid of
+                                        #megaco_term_id{contains_wildcards = false, 
+                                                        id = ["root"]} ->
+                                            case Parms of
+                                                #'ServiceChangeParm'{
+                                                         serviceChangeMethod = restart,
+							 serviceChangeVersion = 2, 
+                                                         serviceChangeReason = [[$9,$0,$1|_]]} ->
+                                                    Reply = 
+                                                        {discard_ack, 
+                                                         [otp_5805_mgc_service_change_reply_ar(Mid, 1)]},
+                                                    {ok, AR, Reply};
+                                                _ ->
+                                                    Err = {invalid_SCP, Parms},
+                                                    ED = otp_5805_err_desc(Parms),
+                                                    ErrReply = 
+							{discard_ack, ED},
+                                                    {error, Err, ErrReply}
+                                            end;
+                                        _ ->
+                                            Err = {invalid_termination_id, Tid},
+                                            ED = otp_5805_err_desc(Tid),
+                                            ErrReply = {discard_ack, ED},
+                                            {error, Err, ErrReply}
+                                    end;
+                                _ ->
+                                    Err = {invalid_command, Cmd},
+                                    ED = otp_5805_err_desc(Cmd),
+                                    ErrReply = {discard_ack, ED},
+                                    {error, Err, ErrReply}
+                            end;
+                        _ ->
+                            Err = {invalid_command_request, CR},
+                            ED = otp_5805_err_desc(CR),
+                            ErrReply = {discard_ack, ED},
+                            {error, Err, ErrReply}
+                    end;
+                _ ->
+                    Err = {invalid_action_request, AR},
+                    ED = otp_5805_err_desc(AR),
+                    ErrReply = {discard_ack, ED},
+                    {error, Err, ErrReply}
+            end;
+       (Else) ->
+            ED = otp_5805_err_desc(Else),
+            ErrReply = {discard_ack, ED},
+            {error, Else, ErrReply}
+    end.
+
+otp_5805_mgc_verify_handle_syntax_error({handle_syntax_error, CH, _, ED}) 
+  when is_record(ED, 'ErrorDescriptor') -> 
+    io:format("otp_5805_mgc_verify_handle_syntax_error -> ok so far"
+	      "~n   CH: ~p"
+	      "~n   ED:  ~p"
+	      "~n", [CH, ED]),
+    case ED of
+	#'ErrorDescriptor'{errorCode = ?megaco_version_not_supported} ->
+	    {ok, CH, reply};
+	#'ErrorDescriptor'{errorCode = Code} ->
+	    {error, {invalid_errorCode, Code}, ok}
+    end;
+otp_5805_mgc_verify_handle_syntax_error(Else) ->
+    io:format("otp_5805_mgc_verify_handle_syntax_error -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp_5805_mgc_verify_handle_disconnect({handle_disconnect, CH, V, _R}) -> 
+    io:format("otp_5805_mgc_verify_handle_disconnect -> ok"
+	      "~n   CH: ~p"
+	      "~n   V:  ~p"
+	      "~n   _R:  ~p"
+	      "~n", [CH, V, _R]),
+    {ok, CH, ok};
+otp_5805_mgc_verify_handle_disconnect(Else) ->
+    io:format("otp_5805_mgc_verify_handle_disconnect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp_5805_mgc_service_change_reply_ar(Mid, Cid) ->
+    SCRP  = cre_serviceChangeResParm(Mid, 2),
+    SCRes = cre_serviceChangeResult(SCRP),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReply([Root], SCRes),
+    CR    = cre_cmdReply(SCR),
+    cre_actionReply(Cid, [CR]).
+
+otp_5805_mgc_notify_reply_ar(Cid, TermId) ->
+    NR    = cre_notifyReply([TermId]),
+    CR    = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+
+otp_5805_err_desc(T) ->
+    EC = ?megaco_internal_gateway_error,
+    ET = lists:flatten(io_lib:format("~w",[T])),
+    #'ErrorDescriptor'{errorCode = EC, errorText = ET}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+cre_serviceChangeParm(M, V, R, P) ->
+    #'ServiceChangeParm'{serviceChangeMethod  = M, 
+			 serviceChangeVersion = V,
+                         serviceChangeReason  = R, 
+                         serviceChangeProfile = P}.
+
+cre_serviceChangeReq(Tid, Parms) ->
+    #'ServiceChangeRequest'{terminationID      = Tid, 
+                            serviceChangeParms = Parms}.
+
+cre_timeNotation(D,T) ->
+    #'TimeNotation'{date = D, time = T}.
+
+cre_obsEvent(Name, Not) ->
+    #'ObservedEvent'{eventName    = Name, 
+                     timeNotation = Not}.
+
+cre_obsEvsDesc(Id, EvList) ->
+    #'ObservedEventsDescriptor'{requestId        = Id, 
+                                observedEventLst = EvList}.
+
+cre_notifyReq(Tid, EvsDesc) ->
+    #'NotifyRequest'{terminationID            = Tid, 
+                     observedEventsDescriptor = EvsDesc}.
+
+cre_command(R) when record(R, 'NotifyRequest') ->
+    {notifyReq, R};
+cre_command(R) when record(R, 'ServiceChangeRequest') ->
+    {serviceChangeReq, R}.
+
+cre_cmdReq(Cmd) ->
+    #'CommandRequest'{command = Cmd}.
+
+cre_actionReq(CtxId, CmdReqs) when list(CmdReqs) ->
+    #'ActionRequest'{contextId       = CtxId,
+                     commandRequests = CmdReqs}.
+
+cre_transReq(TransId, ARs) when list(ARs) ->
+    #'TransactionRequest'{transactionId = TransId,
+			  actions       = ARs}.
+
+%% --
+
+cre_serviceChangeResParm(Mid, V) ->
+    #'ServiceChangeResParm'{serviceChangeMgcId   = Mid, 
+			    serviceChangeVersion = V}.
+
+cre_serviceChangeResult(SCRP) when record(SCRP, 'ServiceChangeResParm') ->
+    {serviceChangeResParms, SCRP};
+cre_serviceChangeResult(ED) when record(ED, 'ErrorDescriptor') ->
+    {errorDescriptor, ED}.
+
+cre_serviceChangeReply(Tid, Res) ->
+    #'ServiceChangeReply'{terminationID       = Tid, 
+                          serviceChangeResult = Res}.
+
+cre_cmdReply(R) when record(R, 'NotifyReply') ->
+    {notifyReply, R};
+cre_cmdReply(R) when record(R, 'ServiceChangeReply') ->
+    {serviceChangeReply, R}.
+
+cre_notifyReply(Tid) ->
+    #'NotifyReply'{terminationID = Tid}.
+
+cre_actionReply(CtxId, CmdRep) ->
+    #'ActionReply'{contextId    = CtxId,
+                   commandReply = CmdRep}.
+
+cre_serviceChangeProf(Name, Ver) when list(Name), integer(Ver) ->
+    #'ServiceChangeProfile'{profileName = Name, 
+                            version     = Ver}.
+
+cre_transaction(Trans) when record(Trans, 'TransactionRequest') ->
+    {transactionRequest, Trans};
+cre_transaction(Trans) when record(Trans, 'TransactionPending') ->
+    {transactionPending, Trans};
+cre_transaction(Trans) when record(Trans, 'TransactionReply') ->
+    {transactionReply, Trans};
+cre_transaction(Trans) when record(Trans, 'TransactionAck') ->
+    {transactionResponseAck, Trans}.
+
+cre_transactions(Trans) when list(Trans) ->
+    {transactions, Trans}.
+
+cre_message(Version, Mid, Body) ->
+    #'Message'{version     = Version,
+               mId         = Mid,
+               messageBody = Body}.
+
+cre_megacoMessage(Mess) ->
+    #'MegacoMessage'{mess = Mess}.
 
 service_change_request() ->
     Parm = #'ServiceChangeParm'{serviceChangeMethod = restart,

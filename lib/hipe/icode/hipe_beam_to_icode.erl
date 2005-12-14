@@ -199,8 +199,8 @@ leafness(Is) -> % -> true, self, or false
 leafness([], Leafness) ->
   Leafness;
 leafness([I|Is], Leafness) ->
-  case hipe_icode:type(I) of
-    comment ->
+  case I of
+    #comment{} ->
       %% BEAM self-tailcalls become gotos, but they leave
       %% a trace behind in comments. Check those to ensure
       %% that the computed leafness is correct. Needed to
@@ -212,17 +212,41 @@ leafness([I|Is], Leafness) ->
 	  _ -> Leafness
 	end,
       leafness(Is, NewLeafness);
-    call ->
+    #call{} ->
       case hipe_icode:call_type(I) of
 	primop -> 
 	  case hipe_icode:call_fun(I) of
 	    call_fun -> false;		% Calls closure
 	    enter_fun -> false;		% Calls closure
+	    {apply_N,_} -> false;
 	    _ -> leafness(Is, Leafness)	% Other primop calls are ok
 	  end;
-	_ -> false    % non-primop call
+	_ ->
+	  {M,F,A} = hipe_icode:call_fun(I),
+	  case erlang:is_builtin(M, F, A) of
+	    true -> leafness(Is, Leafness);
+	    false -> false
+	  end
       end;
-    enter -> false; % SPARC doesn't do leaf optimisation for tailcalls
+    #enter{} ->
+      case hipe_icode:enter_type(I) of
+	primop ->
+	  case hipe_icode:enter_fun(I) of
+	    enter_fun -> false;
+	    {apply_N,_} -> false;
+	    _ ->
+	      %% All primops should be ok except those excluded above,
+	      %% except we don't actually tailcall them...
+	      io:format("leafness: unexpected enter to primop ~w\n", [I]),
+	      true
+	  end;
+	_ ->
+	  {M,F,A} = hipe_icode:enter_fun(I),
+	  case erlang:is_builtin(M, F, A) of
+	    true -> leafness(Is, Leafness);
+	    _ -> false % SPARC doesn't do leaf optimisation for tailcalls
+	  end
+      end;
     _ -> leafness(Is, Leafness)
   end.
 
@@ -1126,8 +1150,6 @@ trans_bif0(BifName, DestReg) ->
   I = hipe_icode:mk_call([BifRes],erlang,BifName,[],remote),
   [I].
 
-trans_bif(1, '+', _Lbl, [Arg], DestReg, Env) ->	%% the identity function
-  {trans_fun([{move,Arg,DestReg}], Env), Env};
 trans_bif(Arity, BifName, Lbl, Args, DestReg, Env) ->
   ?no_debug_msg("  found BIF: ~p(~p) ...~n", [BifName,Args]),
   BifRes = mk_var(DestReg),
@@ -1397,14 +1419,13 @@ trans_type_test(Test, Lbl, Arg, Env) ->
 %% This handles binary type tests. Currently, the only such is the new
 %% is_function/2 BIF.
 %%
-%% XXX: The translation is incomplete as the Arity is ignored.
-%%
-trans_type_test2(function2, Lbl, Arg, _Arity, Env) ->
+trans_type_test2(function2, Lbl, Arg, Arity, Env) ->
   True = mk_label(new),
-  {Move,Var,Env1} = mk_move_and_var(Arg,Env),
-  I = hipe_icode:mk_type([Var], function,
+  {Move1,Var1,Env1} = mk_move_and_var(Arg, Env),
+  {Move2,Var2,Env2} = mk_move_and_var(Arity, Env1),
+  I = hipe_icode:mk_type([Var1,Var2], function2,
 			 hipe_icode:label_name(True), map_label(Lbl)),
-  {[Move,I,True],Env1}.
+  {[Move1,Move2,I,True],Env2}.
 
 %%-----------------------------------------------------------------------
 %% trans_puts(Code, Environment) -> 
@@ -1970,8 +1991,8 @@ fix_fallthroughs([], I, Acc) ->
 %%-----------------------------------------------------------------------
 
 remove_dead_code([I|Code]) ->
-  case hipe_icode:type(I) of
-    fail ->
+  case I of
+    #fail{} ->
       [I|remove_dead_code(skip_to_label(Code))];
     _ ->
       [I|remove_dead_code(Code)]
@@ -1981,8 +2002,8 @@ remove_dead_code([]) ->
 
 %% returns the instructions from the closest label
 skip_to_label([I|Code]) ->
-  case hipe_icode:type(I) of
-    label -> [I|Code];
+  case I of
+    #label{} -> [I|Code];
     _ -> skip_to_label(Code)
   end;
 skip_to_label([]) ->
@@ -2033,8 +2054,8 @@ pp(Stream, [FunCode|FunCodes]) ->
 pp_mfa(Stream, FunCode) ->
     lists:foreach(fun(Instr) -> print_instr(Stream, Instr) end, FunCode).
 
-print_instr(Stream, Label) when element(1,Label) == label ->
-    io:format(Stream, "  label ~p:\n", [element(2,Label)]);
+print_instr(Stream, {label,Lbl}) ->
+    io:format(Stream, "  label ~p:\n", [Lbl]);
 print_instr(Stream, Op) ->
     io:format(Stream, "    ~p\n", [Op]).
 

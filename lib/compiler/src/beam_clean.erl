@@ -122,6 +122,7 @@ renumber_labels([{bif,internal_is_record,{f,_},
 		     {jump,{f,ContLabel}},
 		     {label,FailLabel},
 		     {move,{atom,false},Dst},
+		     {jump,{f,ContLabel}},	%Improves optimization by beam_dead.
 		     {label,ContLabel}|Is], Acc, St);
 renumber_labels([{test,internal_is_record,{f,_}=Fail,
 		  [Term,Tag,{integer,Arity}]}|Is], Acc, St) ->

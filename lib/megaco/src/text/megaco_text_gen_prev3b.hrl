@@ -497,11 +497,11 @@ enc_ActionReply(#'ActionReply'{contextId       = Id,
 			       contextReply    = CtxRep,
 			       commandReply    = CmdRep}, 
 		State) ->
-%     d("enc_ActionReply -> entry with"
-%       "~n   Id:     ~p"
-%       "~n   ED:     ~p"
-%       "~n   CtxRep: ~p"
-%       "~n   CmdRep: ~p", [Id, ED, CtxRep, CmdRep]),
+%%     d("enc_ActionReply -> entry with"
+%% 	 "~n   Id:     ~p"
+%% 	 "~n   ED:     ~p"
+%% 	 "~n   CtxRep: ~p"
+%% 	 "~n   CmdRep: ~p", [Id, ED, CtxRep, CmdRep]),
     [
      ?CtxToken,
      ?EQUAL,
@@ -513,16 +513,16 @@ enc_ActionReply(#'ActionReply'{contextId       = Id,
 
 do_enc_ActionReply(asn1_NOVALUE, CtxRep, [], State) 
   when CtxRep =/= asn1_NOVALUE ->
-%     d("do_enc_ActionReply -> entry with"
-%       "~n   CtxRep: ~p", [CtxRep]),
+%%     d("do_enc_ActionReply -> entry with"
+%%       "~n   CtxRep: ~p", [CtxRep]),
     [
      enc_ContextRequest(CtxRep, ?INC_INDENT(State))
     ];
 do_enc_ActionReply(asn1_NOVALUE, CtxRep, CmdRep, State) 
   when CtxRep =/= asn1_NOVALUE, CmdRep =/= [] ->
-%     d("do_enc_ActionReply -> entry with"
-%       "~n   CtxRep: ~p"
-%       "~n   CmdRep: ~p", [CtxRep, CmdRep]),
+%%     d("do_enc_ActionReply -> entry with"
+%% 	 "~n   CtxRep: ~p"
+%% 	 "~n   CmdRep: ~p", [CtxRep, CmdRep]),
     [
      enc_ContextRequest(CtxRep, ?INC_INDENT(State)),
      ?COMMA_INDENT(?INC_INDENT(State)), 
@@ -531,17 +531,17 @@ do_enc_ActionReply(asn1_NOVALUE, CtxRep, CmdRep, State)
     ];
 do_enc_ActionReply(asn1_NOVALUE, asn1_NOVALUE, CmdRep, State) 
   when CmdRep =/= [] ->
-%     d("do_enc_ActionReply -> entry with"
-%       "~n   CmdRep: ~p", [CmdRep]),
+%%     d("do_enc_ActionReply -> entry with"
+%% 	 "~n   CmdRep: ~p", [CmdRep]),
     [
      enc_list([{CmdRep, fun enc_CommandReply/2}],
 	      ?INC_INDENT(State))
     ];
 do_enc_ActionReply(ED, CtxRep, [], State) 
   when ED =/= asn1_NOVALUE, CtxRep =/= asn1_NOVALUE ->
-%     d("do_enc_ActionReply -> entry with"
-%       "~n   ED:     ~p"
-%       "~n   CtxRep: ~p", [ED, CtxRep]),
+%%     d("do_enc_ActionReply -> entry with"
+%%       "~n   ED:     ~p"
+%%       "~n   CtxRep: ~p", [ED, CtxRep]),
     [
      enc_ContextRequest(CtxRep, ?INC_INDENT(State)),
      ?COMMA_INDENT(?INC_INDENT(State)), 
@@ -550,9 +550,9 @@ do_enc_ActionReply(ED, CtxRep, [], State)
     ];
 do_enc_ActionReply(ED, asn1_NOVALUE, CmdRep, State) 
   when ED =/= asn1_NOVALUE, CmdRep =/= [] ->
-%     d("do_enc_ActionReply -> entry with"
-%       "~n   ED:     ~p"
-%       "~n   CmdRep: ~p", [ED, CmdRep]),
+%%     d("do_enc_ActionReply -> entry with"
+%% 	 "~n   ED:     ~p"
+%% 	 "~n   CmdRep: ~p", [ED, CmdRep]),
     [
      enc_list([{CmdRep, fun enc_CommandReply/2},
 	       {[ED],   fun enc_ErrorDescriptor/2}], % Indention cosmetics
@@ -560,10 +560,10 @@ do_enc_ActionReply(ED, asn1_NOVALUE, CmdRep, State)
     ];
 do_enc_ActionReply(ED, CtxRep, CmdRep, State) 
   when ED =/= asn1_NOVALUE, CtxRep =/= asn1_NOVALUE, CmdRep =/= [] ->
-%     d("do_enc_ActionReply -> entry with"
-%       "~n   ED:     ~p"
-%       "~n   CtxRep: ~p"
-%       "~n   CmdRep: ~p", [ED, CtxRep, CmdRep]),
+%%     d("do_enc_ActionReply -> entry with"
+%% 	 "~n   ED:     ~p"
+%% 	 "~n   CtxRep: ~p"
+%% 	 "~n   CmdRep: ~p", [ED, CtxRep, CmdRep]),
     [
      enc_ContextRequest(CtxRep, ?INC_INDENT(State)),
      ?COMMA_INDENT(?INC_INDENT(State)), 
@@ -573,8 +573,8 @@ do_enc_ActionReply(ED, CtxRep, CmdRep, State)
     ];
 do_enc_ActionReply(ED, asn1_NOVALUE, [], State) 
   when ED =/= asn1_NOVALUE ->
-%     d("do_enc_ActionReply -> entry with"
-%       "~n   ED:     ~p", [ED]),
+%%     d("do_enc_ActionReply -> entry with"
+%%       "~n   ED:     ~p", [ED]),
     [
      enc_ErrorDescriptor(ED, ?INC_INDENT(State))
     ].
@@ -742,10 +742,10 @@ enc_Command({Tag, Val}, State) ->
 enc_CommandReply({'CommandReply',Val}, State) ->
     enc_CommandReply(Val, State);
 enc_CommandReply({Tag, Val}, State) ->
-%     d("enc_CommandReply -> entry with"
-%       "~n   Tag: ~p"
-%       "~n   Val: ~p", [Tag, Val]),
-    case Tag of
+%%     d("enc_CommandReply -> entry with"
+%% 	 "~n   Tag: ~p"
+%% 	 "~n   Val: ~p", [Tag, Val]),
+     case Tag of
 	addReply ->
 	    [?AddToken, enc_AmmsReply(Val, State)];
 	moveReply ->
@@ -895,8 +895,8 @@ enc_SubtractRequest(Val, State)
 
 enc_AuditRequest(Val, State)
   when record(Val, 'AuditRequest') ->
-%     d("enc_AuditRequest -> entry with"
-%       "~n   Val: ~p", [Val]),
+    %%     d("enc_AuditRequest -> entry with"
+    %%       "~n   Val: ~p", [Val]),
     [
      %% Assume that Token is added elsewhere
      ?EQUAL,
@@ -922,14 +922,21 @@ enc_AuditRequest(Val, State)
 %% contextTerminationAudit = EQUAL CtxToken ( terminationIDList / 
 %% 			  LBRKT errorDescriptor RBRKT )
 enc_AuditReply({Tag, Val}, State) ->
+%%     d("enc_AuditReply -> entry with"
+%% 	 "~n   Tag: ~p"
+%% 	 "~n   Val: ~p", [Tag, Val]),
     case Tag of
 	contextAuditResult ->
+	    %% d("enc_AuditReply -> contextAuditResult"),
 	    [
 	     ?EQUAL,
 	     ?CtxToken,
-	     enc_TerminationIDListN(Val, State)
+	     ?LBRKT_INDENT(State), 
+	     enc_TerminationIDListN(Val, State),
+	     ?RBRKT_INDENT(State)
 	    ];
 	error ->
+	    %% d("enc_AuditReply -> error"),
 	    [
 	     ?EQUAL,
 	     ?CtxToken,
@@ -938,6 +945,7 @@ enc_AuditReply({Tag, Val}, State) ->
 	     ?RBRKT_INDENT(State)
 	    ]; 
 	auditResult when record(Val, 'AuditResult') ->
+	    %% d("enc_AuditReply -> auditResult"),
 	    enc_auditOther(Val, State);
 	auditResult ->
 	    error({invalid_auditResult, Val});
@@ -1199,22 +1207,26 @@ enc_IndAudPropertyParm(#'IndAudPropertyParm'{name = PkgdName}, State) ->
     enc_PkgdName(PkgdName, State).
 
 enc_IndAudMediaDescriptor_multiStream([Val], State) ->
-%   d("enc_IndAudMediaDescriptor_multiStream -> entry with"
-%     "~n   Val: ~p", [Val]),
+    %%   d("enc_IndAudMediaDescriptor_multiStream -> entry with"
+    %%     "~n   Val: ~p", [Val]),
     [
      enc_IndAudStreamDescriptor(Val, ?INC_INDENT(State))
     ];
-enc_IndAudMediaDescriptor_multiStream(Vals, _State) when list(Vals) ->
-    error({invalid_IndAudMediaDescriptor_multiStream_length, Vals});
+enc_IndAudMediaDescriptor_multiStream(Vals, State) when list(Vals) ->
+%%     d("enc_IndAudMediaDescriptor_multiStream -> entry with"
+%% 	 "~n   Vals: ~p", [Vals]),
+    [
+     enc_list([{Vals, fun enc_IndAudStreamDescriptor/2}], State)
+    ];
 enc_IndAudMediaDescriptor_multiStream(Val, _State) ->
     error({invalid_IndAudMediaDescriptor_multiStream, Val}).
 
 enc_IndAudStreamDescriptor(#'IndAudStreamDescriptor'{streamID    = SID,
 						     streamParms = Parms}, 
 			   State) ->
-%     d("enc_IndAudStreamDescriptor -> entry with"
-%       "~n   SID:   ~p"
-%       "~n   Parms: ~p", [SID, Parms]),
+%%     d("enc_IndAudStreamDescriptor -> entry with"
+%% 	 "~n   SID:   ~p"
+%% 	 "~n   Parms: ~p", [SID, Parms]),
     [
      ?StreamToken,
      ?EQUAL,
@@ -2743,10 +2755,10 @@ error(Reason) ->
 %%     d(F,[]).
 %% d(F, A) ->
 %%     d(get(dbg), F, A).
-
+%% 
 %% d(true, F, A) ->
 %%     io:format("~p:" ++ F ++ "~n", [?MODULE | A]);
 %% d(_, _, _) ->
 %%     ok.
-
+%% 
 

@@ -35,19 +35,15 @@
 %% @TODO report multiple definitions of the same type in the same module.
 %% @TODO check that variables in @equiv are found in the signature
 %% @TODO copy types from target (if missing) when using @equiv
-%% @TODO recognize 'behaviour_info/1' functions?
 
-%% <!ELEMENT module (behaviour*, description?, author*, copyright?,
-%%                   version?, since?, deprecated?, see*, reference*,
-%%                   todo?, typedecls?, functions)>
+%% <!ELEMENT module (description?, author*, copyright?, version?,
+%%                   since?, deprecated?, see*, reference*, todo?,
+%%                   behaviour*, callbacks?, typedecls?, functions)>
 %% <!ATTLIST module
 %%   name CDATA #REQUIRED
 %%   private NMTOKEN(yes | no) #IMPLIED
 %%   hidden NMTOKEN(yes | no) #IMPLIED
 %%   root CDATA #IMPLIED>
-%% <!ELEMENT behaviour (#PCDATA)>
-%% <!ATTLIST behaviour
-%%   href CDATA #IMPLIED>
 %% <!ELEMENT description (briefDescription, fullDescription?)>
 %% <!ELEMENT briefDescription (#PCDATA)>
 %% <!ELEMENT fullDescription (#PCDATA)>
@@ -66,6 +62,10 @@
 %%   href CDATA #IMPLIED>
 %% <!ELEMENT reference (#PCDATA)>
 %% <!ELEMENT todo (#PCDATA)>
+%% <!ELEMENT behaviour (#PCDATA)>
+%% <!ATTLIST behaviour
+%%   href CDATA #IMPLIED>
+%% <!ELEMENT callbacks (callback+)>
 %% <!ELEMENT typedecls (typedecl+)>
 %% <!ELEMENT typedecl (typedef, description?)>
 %% <!ELEMENT functions (function+)>
@@ -78,6 +78,7 @@ module(Module, Entries, Env, Opts) ->
     HeaderEntry = get_entry(module, Entries),
     HeaderTags = HeaderEntry#entry.data,
     AllTags = get_all_tags(Entries),
+    Functions = function_filter(Entries, Opts),
     Out = {module, ([{name, Name},
 		     {root, Env#env.root}]
 		    ++ case is_private(HeaderTags) of
@@ -99,7 +100,8 @@ module(Module, Entries, Env, Opts) ->
 	    ++ references(HeaderTags)
 	    ++ todos(HeaderTags, Opts)
 	    ++ [{typedecls, types(AllTags, Env)},
-		{functions, functions(Entries, Env, Opts)}])
+		{functions, functions(Functions, Env, Opts)}
+		| callbacks(Functions, Module, Env, Opts)])
 	  },
     xmerl_lib:expand_element(Out).
 
@@ -123,11 +125,14 @@ types(Tags, Env) ->
      || #tag{name = type, data = {Def, Doc}} <- Tags].
 
 functions(Es, Env, Opts) ->
-    Private = proplists:get_bool(private, Opts),
-    Hidden = proplists:get_bool(hidden, Opts),
     [function(N, As, Export, Ts, Env, Opts)
      || #entry{name = {_,_}=N, args = As, export = Export, data = Ts}
-	    <- [E || E <- Es, function_filter(E, Private, Hidden)]].
+	    <- Es].
+
+function_filter(Es, Opts) ->
+    Private = proplists:get_bool(private, Opts),
+    Hidden = proplists:get_bool(hidden, Opts),
+    [E || E <- Es, function_filter(E, Private, Hidden)].
 
 %% Note that only entries whose names have the form {_,_} are functions.
 function_filter(#entry{name = {_,_}, export = Export, data = Ts},
@@ -139,6 +144,36 @@ function_filter(_, _, _) ->
 
 is_hidden(Ts) ->
     get_tags(hidden, Ts) =/= [].
+
+callbacks(Es, Module, Env, Opts) ->
+    case lists:any(fun (#entry{name = {behaviour_info, 1}}) -> true;
+		       (_) -> false
+		   end,
+		   Es) of
+	true ->
+	    case catch (Module#module.name):behaviour_info(callbacks) of
+		{'EXIT', _} -> [];
+		Fs ->
+		    Fs1 = [{F,A} || {F,A} <- Fs, is_atom(F), is_integer(A)],
+		    if Fs1 == [] ->
+			    [];
+		       true ->
+			    [{callbacks,
+			      [callback(F, Env, Opts) || F <- Fs1]}]
+		    end
+	    end;
+	false -> []
+    end.
+
+%% <!ELEMENT callback EMPTY>
+%% <!ATTLIST callback
+%%   name CDATA #REQUIRED
+%%   arity CDATA #REQUIRED>
+
+callback({N, A}, _Env, _Opts) ->
+    {callback, [{name, atom_to_list(N)},
+		{arity, integer_to_list(A)}],
+     []}.
 
 %% <!ELEMENT function (args, typespec?, throws?, equiv?, description?,
 %%                     since?, deprecated?, see*, todo?)>

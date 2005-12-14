@@ -882,12 +882,12 @@ do_load(Mod, Bin, WholeModule) ->
     false ->
       %% In this case, the emulated code for the module must be loaded.
       code:ensure_loaded(Mod),
-      hipe_unified_loader:load(Mod, Bin);
+      code:load_native_partial(Mod, Bin);
     _ ->
       case code:is_sticky(Mod) of
 	true ->
 	  %% Don't purge or register sticky mods; just load native.
-	  hipe_unified_loader:load_module(Mod, Bin, WholeModule);
+	  code:load_native_sticky(Mod, Bin, WholeModule);
 	false ->
 	  %% Normal loading of a whole module
 	  Architecture = erlang:system_info(hipe_architecture),

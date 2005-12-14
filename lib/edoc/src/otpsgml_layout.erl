@@ -575,9 +575,8 @@ deprecated(Es, S) ->
 
 authors(Es) ->
     case get_elem(author, Es) of
-	[] -> {authors,[?NL,{aname,["\s"]},?NL,{email,["\s"]}]};
-	Es1 ->
-	    {authors,[?NL|seq(fun author/1, Es1, [])]}
+	[] -> [?NL,{aname,["\s"]},?NL,{email,["\s"]}];
+	Es1 -> [?NL|seq(fun author/1, Es1, [])]
 %
 %	    [{p, [{b, ["Authors:"]}, " "] ++ seq(fun author/1, Es1, ["."])},
 %	     ?NL]

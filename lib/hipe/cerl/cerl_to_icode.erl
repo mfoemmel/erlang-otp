@@ -927,8 +927,8 @@ expr_primop_1(?PRIMOP_RECEIVE_SELECT, 0, _As, _E, Ts, Ctxt, _Env, S) ->
     primop_receive_select(Ts, Ctxt, S);
 expr_primop_1(?PRIMOP_RECEIVE_NEXT, 0, _As, _E, _Ts, Ctxt, _Env, S) ->
     primop_receive_next(Ctxt, S);
-expr_primop_1(?PRIMOP_IDENTITY, 1, [A], _E, Ts, Ctxt, Env, S) ->
-    expr(A, Ts, Ctxt, Env, S);  % used for unary plus
+%expr_primop_1(?PRIMOP_IDENTITY, 1, [A], _E, Ts, Ctxt, Env, S) ->
+%    expr(A, Ts, Ctxt, Env, S);  % used for unary plus
 expr_primop_1(?PRIMOP_NEG, 1, [A], _, Ts, Ctxt, Env, S) ->
     E = cerl:c_primop(cerl:c_atom('-'), [cerl:c_int(0), A]),
     expr_primop(E, Ts, Ctxt, Env, S);
@@ -1206,7 +1206,7 @@ expr_receive_1(E, F, Ctxt, Env, S) ->
 %% until a message has arrived and does not check for timeout. The test
 %% `suspend_msg_timeout' suspends the process and upon resuming
 %% execution selects the `true' branch if a message has arrived and the
-%% `false' branch otherwise. `clear_timeout' (the name is misleading)
+%% `false' branch otherwise. `clear_timeout'
 %% resets the message pointer when a timeout has occurred.
 %%
 %% Note: the receiving of a message must be performed so that the
@@ -2354,7 +2354,6 @@ function_check(_, _) ->
 %% information, several operations could be rewritten into specialized
 %% safe versions, such as '+'/2 -> add_integer/2.
 
-is_safe_op(?PRIMOP_IDENTITY, 1) -> true;
 is_safe_op(N, A) ->
     case is_comp_op(N, A) of
 	true -> true;
@@ -2362,7 +2361,6 @@ is_safe_op(N, A) ->
 	    is_type_test(N, A)
     end.
 
-is_pure_op(?PRIMOP_IDENTITY, 1) -> true;
 is_pure_op(?PRIMOP_ELEMENT, 2) -> true;
 is_pure_op(?PRIMOP_MAKE_FUN, 6) -> true;
 is_pure_op(?PRIMOP_FUN_ELEMENT, 2) -> true;

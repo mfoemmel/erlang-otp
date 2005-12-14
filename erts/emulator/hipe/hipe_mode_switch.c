@@ -277,6 +277,8 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  /* Native called BEAM, which now throws an exception back to native. */
 	  DPRINTF("beam throws freason %#lx fvalue %#lx", p->freason, p->fvalue);
 	  hipe_pop_beam_trap_frame(p);
+      do_throw_to_native:
+	  hipe_find_handler(p);
 	  result = hipe_throw_to_native(p);
 	  break;
       }
@@ -514,8 +516,7 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  goto do_return_from_native;
       do_apply_fail:
 	  p->freason = BADARG;
-	  result = hipe_throw_to_native(p);
-	  goto do_return_from_native;
+	  goto do_throw_to_native;
       }
       default:
 	erl_exit(1, "hipe_mode_switch: result %#x\r\n", result);

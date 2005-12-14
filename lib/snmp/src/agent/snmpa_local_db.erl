@@ -663,17 +663,29 @@ insert(persistent, Key, Val, #state{dets = Dets, notify_clients = NC}) ->
 	    "      Key:  ~p~n"
 	    "      Val:  ~p",
 	    [Key,Val]),
-    dets:insert(Dets, {Key, Val}),
-    notify_clients(insert,NC),
-    true;
+    case dets:insert(Dets, {Key, Val}) of
+	ok ->
+	    notify_clients(insert,NC),
+	    true;
+	{error, Reason} ->
+	    error_msg("DETS (persistent) insert failed for {~w,~w}: ~n~w", 
+		      [Key, Val, Reason]),
+	    false
+    end;
 insert(permanent, Key, Val, #state{dets = Dets, notify_clients = NC}) -> 
     ?vtrace("insert(permanent) -> ~n"
 	    "      Key:  ~p~n"
 	    "      Val:  ~p",
 	    [Key,Val]),
-    dets:insert(Dets, {Key, Val}),
-    notify_clients(insert,NC),
-    true;
+    case dets:insert(Dets, {Key, Val}) of
+	ok ->
+	    notify_clients(insert,NC),
+	    true;
+	{error, Reason} ->
+	    error_msg("DETS (permanent) insert failed for {~w,~w}: ~n~w", 
+		      [Key, Val, Reason]),
+	    false
+    end;
 insert(UnknownDb, Key, Val, _) ->
     error_msg("Tried to insert ~w = ~w into unknown db ~w", 
 	      [Key, Val, UnknownDb]),
@@ -683,13 +695,25 @@ delete(volatile, Key, State) ->
     ets:delete(State#state.ets, Key),
     true;
 delete(persistent, Key, #state{dets = Dets, notify_clients = NC}) -> 
-    dets:delete(Dets, Key),
-    notify_clients(delete,NC),
-    true;
+    case dets:delete(Dets, Key) of
+	ok ->
+	    notify_clients(delete,NC),
+	    true;
+	{error, Reason} ->
+	    error_msg("DETS (persistent) delete failed for ~w: ~n~w", 
+		      [Key, Reason]),
+	    false
+    end;
 delete(permanent, Key, #state{dets = Dets, notify_clients = NC}) -> 
-    dets:delete(Dets, Key),
-    notify_clients(delete,NC),
-    true;
+    case dets:delete(Dets, Key) of
+	ok ->
+	    notify_clients(delete,NC),
+	    true;
+	{error, Reason} ->
+	    error_msg("DETS (permanent) delete failed for ~w: ~n~w", 
+		      [Key, Reason]),
+	    false
+    end;
 delete(UnknownDb, Key, _) ->
     error_msg("Tried to delete ~w from unknown db ~w", 
 	      [Key, UnknownDb]),
@@ -699,9 +723,23 @@ delete(UnknownDb, Key, _) ->
 match(volatile, Name, Pattern, #state{ets = Ets}) ->
     ets:match(Ets, {{Name,'_'},{Pattern,'_','_'}});
 match(persistent, Name, Pattern, #state{dets = Dets}) ->
-    dets:match(Dets, {{Name,'_'},{Pattern,'_','_'}});
+    case dets:match(Dets, {{Name,'_'},{Pattern,'_','_'}}) of
+	{error, Reason} ->
+	    error_msg("DETS (persistent) match failed for {~w,~w}: ~n~w", 
+		      [Name, Pattern, Reason]),
+	    [];
+	Match ->
+	    Match
+    end;
 match(permanent, Name, Pattern, #state{dets = Dets}) ->
-    dets:match(Dets, {{Name,'_'},{Pattern,'_','_'}});
+    case dets:match(Dets, {{Name,'_'},{Pattern,'_','_'}})  of
+	{error, Reason} ->
+	    error_msg("DETS (permanent) match failed for {~w,~w}: ~n~w", 
+		      [Name, Pattern, Reason]),
+	    [];
+	Match ->
+	    Match
+    end;
 match(UnknownDb, Name, Pattern, _) ->
     error_msg("Tried to match [~p,~p] from unknown db ~w", 
 	      [Name, Pattern, UnknownDb]),
@@ -715,12 +753,18 @@ lookup(volatile, Key, #state{ets = Ets}) ->
 lookup(persistent, Key, #state{dets = Dets}) ->
     case dets:lookup(Dets, Key) of
 	[{_, Val}] -> {value, Val};
-	[] -> undefined
+	[] -> undefined;
+	{error, Reason} ->
+	    error_msg("DETS lookup of ~w failed: ~n~w", [Key, Reason]),
+	    undefined
     end;
 lookup(permanent, Key, #state{dets = Dets}) ->
     case dets:lookup(Dets, Key) of
 	[{_, Val}] -> {value, Val};
-	[] -> undefined
+	[] -> undefined;
+	{error, Reason} ->
+	    error_msg("DETS lookup ~w failed: ~n~w", [Key, Reason]),
+	    undefined
     end;
 lookup(UnknownDb, Key, _) ->
     error_msg("Tried to lookup ~w in unknown db ~w", [Key, UnknownDb]),
@@ -734,10 +778,11 @@ close(#state{dets = Dets, ets = Ets}) ->
 %%-----------------------------------------------------------------
 %% Notify clients interface
 %%-----------------------------------------------------------------
-notify_clients(Event,Clients) ->
-    [notify_client(Client,Event) || Client <- Clients].
+notify_clients(Event, Clients) ->
+    F = fun(Client) -> notify_client(Client, Event) end,
+    lists:foreach(F, Clients).
 
-notify_client({Client,Module},Event) ->
+notify_client({Client,Module}, Event) ->
     catch Module:notify(Client,Event).
 
 

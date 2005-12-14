@@ -4,7 +4,7 @@
 
 
 @author Richard Carlsson <richardc@csd.uu.se>
-@copyright 2003 Richard Carlsson
+@copyright 2003-2005 Richard Carlsson
 @version {@vsn}
 @title Welcome to EDoc
 
@@ -332,7 +332,7 @@ The following tags can be used before a function definition:
       Note that exceptions of type `exit' (as caused by calls to
       `erlang:exit(Term)') and `error' (run-time errors such as `badarg'
       or `badarith') are not viewed as part of the normal interface of
-      the function, and cannot be documented with the `@throw' tag.</dd>
+      the function, and cannot be documented with the `@throws' tag.</dd>
 
   <dt><a name="ftag-type">`@type'</a></dt>
       <dd>See the <a href="#gtag-type">`@type' generic tag</a>

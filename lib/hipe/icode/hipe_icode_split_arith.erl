@@ -9,6 +9,8 @@
 
 -export([cfg/2]).
 
+-include("hipe_icode.hrl").
+
 -define(MIN_RATIO, 0.005).
 
 %%-define(UNSAFE, true).
@@ -38,8 +40,8 @@ cleanup(Cfg) ->
   hipe_icode_cfg:linear_to_cfg(NewIcode).
 
 cleanup_code([I|Is]) ->
-  case hipe_icode:type(I) of
-    call ->
+  case I of
+    #call{} ->
       case hipe_icode:call_fail_label(I) of
 	[] ->
 	  [I|cleanup_code(Is)];
@@ -75,8 +77,8 @@ preprocess_code([H|Code])->
   preprocess_code(Code, 0, 0, [H]).
 
 preprocess_code([I|Left], NofArith, NofIns,CodeAcc = [HdCode|TlCodeAcc])->
-  case hipe_icode:type(I) of
-    call ->
+  case I of
+    #call{} ->
       case is_arith(I) of
 	true ->
 	  case hipe_icode:is_label(HdCode) of
@@ -149,8 +151,8 @@ map_code(Ins, ArithFail, LabelMap) ->
   map_code(Ins, ArithFail, LabelMap, []).
 
 map_code([I|Left], ArithFail, LabelMap, Acc) ->
-  case hipe_icode:type(I) of
-    call ->
+  case I of
+    #call{} ->
       case is_arith(I) of
 	true ->
 	  case hipe_icode:defines(I) of
@@ -219,8 +221,8 @@ find_testpoints([], InfoMap, _Cfg, Dirty) ->
       
 traverse_code([I|Left], Info)->
   NewInfo = kill_defines(I, Info),
-  case hipe_icode:type(I) of
-    call ->
+  case I of
+    #call{} ->
       case is_unsafe_arith(I) of
 	true ->
 	  %% The dst is sure to be a fixnum. Remove the 'killed' mark.
@@ -232,7 +234,7 @@ traverse_code([I|Left], Info)->
 	false ->
 	  traverse_code(Left, NewInfo)
       end;
-    move ->
+    #move{} ->
       Dst = hipe_icode:move_dst(I),
       case gb_sets:is_member(Dst, Info) of 
 	true -> 

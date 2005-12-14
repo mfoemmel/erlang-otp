@@ -21,6 +21,8 @@
 	 insert_node/3
 	]).
 
+-include("../sparc/hipe_sparc.hrl").
+
 % At first, only nodes with no predecessors are selected.
 % - if R is empty, there is an error (unless BB itself is empty)
 
@@ -179,12 +181,12 @@ priority(InstrId, Prio, Nodes,DAG,Preds,Earl,C) ->
     Prio1 = hipe_vectors:get(Prio, InstrId),
     Prio2 = length(ReadyNodes),
     PrioRest =
-	case hipe_sparc:type(Instr) of
-	    load_atom ->
-		[3];
-	    move ->
-		[3];
-	 load -> 
+	case Instr of
+	 #load_atom{} ->
+	    [3];
+	 #move{} ->
+	    [3];
+	 #load{} -> 
   	    Src = hipe_sparc:load_src(Instr),
   	    Off = hipe_sparc:load_off(Instr),
 	    case hipe_sparc:is_reg(Off) of
@@ -193,7 +195,7 @@ priority(InstrId, Prio, Nodes,DAG,Preds,Earl,C) ->
 			  -(hipe_sparc:imm_value(Off))];
 		true -> [1]
 	    end;
-	 store -> 
+	 #store{} -> 
 	     Src = hipe_sparc:store_dest(Instr),
 	     Off = hipe_sparc:store_off(Instr),
 	     case hipe_sparc:is_reg(Off) of

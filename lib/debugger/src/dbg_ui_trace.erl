@@ -384,6 +384,26 @@ gui_cmd('Function Break...', State) ->
     add_break(State#state.gs, State#state.coords, function,
 	      State#state.cm, undefined),
     State;
+gui_cmd('Enable All', State) ->
+    Breaks = int:all_breaks(),
+    ThisMod = State#state.cm,
+    lists:foreach(fun ({{Mod, Line}, _Options}) when Mod==ThisMod ->
+			  int:enable_break(Mod, Line);
+		      (_Break) ->
+			  ignore
+		  end,
+		  Breaks),
+    State;
+gui_cmd('Disable All', State) ->
+    Breaks = int:all_breaks(),
+    ThisMod = State#state.cm,
+    lists:foreach(fun ({{Mod, Line}, _Options}) when Mod==ThisMod ->
+			  int:disable_break(Mod, Line);
+		      (_Break) ->
+			  ignore
+		  end,
+		  Breaks),
+    State;
 gui_cmd('Delete All', State) ->
     int:no_break(State#state.cm),
     State;
@@ -655,6 +675,8 @@ menus() ->
 		{'Conditional Break...', no},
 		{'Function Break...', no},
 		separator,
+		{'Enable All', no},
+		{'Disable All', no},
 		{'Delete All', 0},
 		separator]},
      {'Options', [{'Trace Window', no, cascade,

@@ -162,15 +162,31 @@ create_id() ->
 %% Effect   : 
 %%------------------------------------------------------------
 type_check(Obj, Mod) ->
-    case catch corba_object:is_a(Obj,Mod:typeID()) of
-        true ->
-            ok;
-        _ ->
-	    orber:dbg("[~p] CosNotification_Common:type_check(~p);~n"
-		      "The supplied Object is not or does not inherrit from: ~p", 
-		      [?LINE, Obj, Mod], ?DEBUG_LEVEL),
-            corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
+    case cosNotificationApp:type_check() of
+	false ->
+	    ok;
+	_ ->
+	    case catch corba_object:is_a(Obj,Mod:typeID()) of
+		true ->
+		    ok;
+		false ->
+		    orber:dbg("[~p] CosNotification_Common:type_check(~p);~n"
+			      "The supplied Object is not or does not inherrit from: ~p", 
+			      [?LINE, Obj, Mod], ?DEBUG_LEVEL),
+		    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO});
+		{'EXCEPTION', E} ->
+		    orber:dbg("[~p] CosNotification_Common:type_check(~p, ~p);~n"
+			      "Failed due to: ~p", 
+			      [?LINE, Obj, Mod, E], ?DEBUG_LEVEL),
+		    corba:raise(E);
+		What ->
+		    orber:dbg("[~p] CosNotification_Common:type_check(~p, ~p);~n"
+			      "Failed due to: ~p", 
+			      [?LINE, Obj, Mod, What], ?DEBUG_LEVEL),
+		    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
+	    end
     end.
+	
 
 %%------------------------------------------------------------
 %% function : send_stubborn

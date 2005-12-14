@@ -91,8 +91,7 @@
 	 %% rtl_label_range/1,
 	 %% rtl_label_range_update/2,
 	 rtl_info/1,
-	 rtl_info_update/2,
-	 type/1]).
+	 rtl_info_update/2]).
 
 -export([mk_move/2,
 	 move_dst/1,
@@ -342,8 +341,6 @@
          phi_arglist_update/2,
          phi_redirect_pred/3]).
 
--compile({inline, [{type,1}]}). 
-
 %%
 %% RTL
 %%
@@ -360,36 +357,6 @@
 	      label_range,  %% {Min,Max} First and last name used for labels
 	      info=[]       %% A keylist with arbitrary information.
 	     }).
-
--record(alu, {dst, src1, op, src2}).
--record(alub, {dst, src1, op, src2, 'cond', true_label, false_label, p}).
--record(branch, {src1, src2, 'cond', true_label, false_label, p}).
--record(call, {dstlist, 'fun', arglist, type, continuation, failcontinuation}).
--record(comment, {text}).
--record(enter, {'fun', arglist, type}).
--record(fconv, {dst, src}).
--record(fixnumop, {dst, src, type}).
--record(fload, {dst, src, offset}).
--record(fmove, {dst, src}).
--record(fp, {dst, src1, op, src2}).
--record(fp_unop, {dst, src, op}).
--record(fstore, {base, offset, src}).
--record(gctest, {words}).
--record(binbase, {dst, orig, offset}).
--record(goto, {label}).
--record(goto_index, {block, index, labels}).
--record(label, {name}).
--record(load, {dst, src, offset, size, sign}).
--record(load_address, {dst, address, type}).
--record(load_atom, {dst, atom}).
--record(load_word_index, {dst, block, index}).
--record(move, {dst, src}).
--record(multimove, {dstlist, srclist}).
--record(phi, {dst, id, arglist}).
--record(return, {varlist}).
--record(store, {base, offset, src, size}).
--record(switch, {src, labels, sorted_by=[]}).
-
 
 mk_rtl(Fun, ArgList, Closure, Leaf, Code, Data, VarRange, LabelRange) ->
   #rtl{'fun'=Fun, arglist=ArgList, code=Code, 
@@ -409,6 +376,12 @@ rtl_data(#rtl{data=Data}) -> Data.
 %% rtl_label_range_update(Rtl, LabelRange) -> Rtl#rtl{label_range=LabelRange}.
 rtl_info(#rtl{info=Info}) -> Info.
 rtl_info_update(Rtl, Info) -> Rtl#rtl{info=Info}.
+
+%%-----------------------------------------------------------------------------
+
+-include("hipe_rtl.hrl").
+
+%%-----------------------------------------------------------------------------
 
 %%
 %% move
@@ -885,13 +858,6 @@ is_const_label({rtl_const_lbl, _Label}) -> true;
 is_const_label(_) -> false.
 
 
-%%
-%% @doc Returns the type of an RTL instruction.
-%%
-
-type(RtlIns) ->
-  element(1, RtlIns).
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Utilities - no representation visible below this point
@@ -911,47 +877,43 @@ uses(I) ->
 %%
 
 args(I) ->
-  case type(I) of
-    alu -> [alu_src1(I), alu_src2(I)];
-    alub -> [alub_src1(I), alub_src2(I)];
-    binbase -> [binbase_orig(I), binbase_offset(I)];
-    branch -> [branch_src1(I), branch_src2(I)];
-    call -> 
+  case I of
+    #alu{} -> [alu_src1(I), alu_src2(I)];
+    #alub{} -> [alub_src1(I), alub_src2(I)];
+    #binbase{} -> [binbase_orig(I), binbase_offset(I)];
+    #branch{} -> [branch_src1(I), branch_src2(I)];
+    #call{} -> 
       case call_is_known(I) of
-	false -> 
-	  [call_fun(I)|call_arglist(I)];
-	true ->
-	  call_arglist(I)
+	false -> [call_fun(I)|call_arglist(I)];
+	true -> call_arglist(I)
       end;
-    comment -> [];
-    enter ->
+    #comment{} -> [];
+    #enter{} ->
       case enter_is_known(I) of
-	false -> 
-	  hipe_rtl_arch:add_ra_reg([enter_fun(I)|enter_arglist(I)]);
-	true ->
-	  hipe_rtl_arch:add_ra_reg(enter_arglist(I))
+	false -> hipe_rtl_arch:add_ra_reg([enter_fun(I)|enter_arglist(I)]);
+	true -> hipe_rtl_arch:add_ra_reg(enter_arglist(I))
       end;
-    fconv -> [fconv_src(I)];
-    fixnumop -> [fixnumop_src(I)];
-    fload -> [fload_src(I), fload_offset(I)];
-    fmove -> [fmove_src(I)];
-    fp -> [fp_src1(I), fp_src2(I)];
-    fp_unop -> [fp_unop_src(I)];
-    fstore -> [fstore_base(I), fstore_offset(I), fstore_src(I)];
-    goto -> [];
-    goto_index -> [];
-    gctest -> [gctest_words(I)];
-    label -> [];
-    load -> [load_src(I), load_offset(I)];
-    load_address -> [];
-    load_atom -> [];
-    load_word_index -> [];
-    move -> [move_src(I)];
-    multimove -> multimove_srclist(I);
-    phi -> phi_args(I);
-    return -> hipe_rtl_arch:add_ra_reg(return_varlist(I));
-    store -> [store_base(I), store_offset(I), store_src(I)];
-    switch -> [switch_src(I)]
+    #fconv{} -> [fconv_src(I)];
+    #fixnumop{} -> [fixnumop_src(I)];
+    #fload{} -> [fload_src(I), fload_offset(I)];
+    #fmove{} -> [fmove_src(I)];
+    #fp{} -> [fp_src1(I), fp_src2(I)];
+    #fp_unop{} -> [fp_unop_src(I)];
+    #fstore{} -> [fstore_base(I), fstore_offset(I), fstore_src(I)];
+    #goto{} -> [];
+    #goto_index{} -> [];
+    #gctest{} -> [gctest_words(I)];
+    #label{} -> [];
+    #load{} -> [load_src(I), load_offset(I)];
+    #load_address{} -> [];
+    #load_atom{} -> [];
+    #load_word_index{} -> [];
+    #move{} -> [move_src(I)];
+    #multimove{} -> multimove_srclist(I);
+    #phi{} -> phi_args(I);
+    #return{} -> hipe_rtl_arch:add_ra_reg(return_varlist(I));
+    #store{} -> [store_base(I), store_offset(I), store_src(I)];
+    #switch{} -> [switch_src(I)]
   end.
 
 %%
@@ -959,35 +921,35 @@ args(I) ->
 %%
 
 defines(Instr) ->
-  Defs = case type(Instr) of
-	   alu -> [alu_dst(Instr)];
-	   alub -> [alub_dst(Instr)];
-	   binbase -> [binbase_dst(Instr)];
-	   branch -> [];
-	   call -> call_dstlist(Instr);
-	   comment -> [];
-	   enter -> [];
-	   fconv -> [fconv_dst(Instr)];
-	   fixnumop -> [fixnumop_dst(Instr)];
-	   fload -> [fload_dst(Instr)];
-	   fmove -> [fmove_dst(Instr)];
-	   fp -> [fp_dst(Instr)];
-	   fp_unop -> [fp_unop_dst(Instr)];
-	   fstore -> [];
-	   gctest -> [];
-	   goto -> [];
-	   goto_index -> [];
-	   label -> [];
-	   load -> [load_dst(Instr)];
-	   load_address -> [load_address_dst(Instr)];
-	   load_atom -> [load_atom_dst(Instr)];
-	   load_word_index -> [load_word_index_dst(Instr)];
-	   move -> [move_dst(Instr)];
-	   multimove -> multimove_dstlist(Instr);
-	   phi -> [phi_dst(Instr)];
-	   return -> [];
-	   store -> [];
-	   switch -> []
+  Defs = case Instr of
+	   #alu{} -> [alu_dst(Instr)];
+	   #alub{} -> [alub_dst(Instr)];
+	   #binbase{} -> [binbase_dst(Instr)];
+	   #branch{} -> [];
+	   #call{} -> call_dstlist(Instr);
+	   #comment{} -> [];
+	   #enter{} -> [];
+	   #fconv{} -> [fconv_dst(Instr)];
+	   #fixnumop{} -> [fixnumop_dst(Instr)];
+	   #fload{} -> [fload_dst(Instr)];
+	   #fmove{} -> [fmove_dst(Instr)];
+	   #fp{} -> [fp_dst(Instr)];
+	   #fp_unop{} -> [fp_unop_dst(Instr)];
+	   #fstore{} -> [];
+	   #gctest{} -> [];
+	   #goto{} -> [];
+	   #goto_index{} -> [];
+	   #label{} -> [];
+	   #load{} -> [load_dst(Instr)];
+	   #load_address{} -> [load_address_dst(Instr)];
+	   #load_atom{} -> [load_atom_dst(Instr)];
+	   #load_word_index{} -> [load_word_index_dst(Instr)];
+	   #move{} -> [move_dst(Instr)];
+	   #multimove{} -> multimove_dstlist(Instr);
+	   #phi{} -> [phi_dst(Instr)];
+	   #return{} -> [];
+	   #store{} -> [];
+	   #switch{} -> []
 	 end,
   remove_imms_and_const_lbls(Defs).
 
@@ -1010,20 +972,20 @@ remove_imms_and_const_lbls([Arg|Args]) ->
 %%   subst_defines(Subst, subst_uses(Subst,X)).
 
 subst_uses(Subst, I) ->
-  case type(I) of
-    alu ->
+  case I of
+    #alu{} ->
       I0 = alu_src1_update(I, subst1(Subst, alu_src1(I))),
       alu_src2_update(I0, subst1(Subst, alu_src2(I)));
-    alub ->
+    #alub{} ->
       I0 = alub_src1_update(I, subst1(Subst, alub_src1(I))),
       alub_src2_update(I0, subst1(Subst, alub_src2(I)));
-    binbase ->
-      I0=binbase_orig_update(I,subst1(Subst, binbase_orig(I))),
+    #binbase{} ->
+      I0 = binbase_orig_update(I,subst1(Subst, binbase_orig(I))),
       binbase_offset_update(I0,subst1(Subst, binbase_offset(I0)));
-    branch ->
+    #branch{} ->
       I0 = branch_src1_update(I, subst1(Subst, branch_src1(I))),
       branch_src2_update(I0, subst1(Subst, branch_src2(I)));
-    call ->
+    #call{} ->
       case call_is_known(I) of
 	false ->
 	  I0 = call_fun_update(I, subst1(Subst, call_fun(I))),
@@ -1031,9 +993,9 @@ subst_uses(Subst, I) ->
 	true ->
 	  call_arglist_update(I, subst_list(Subst, call_arglist(I)))
       end;
-    comment ->
+    #comment{} ->
       I;
-    enter -> %% XXX: Check why ra_reg is added in uses() but not updated here
+    #enter{} -> %% XXX: Check why ra_reg is added in uses() but not updated here
       case enter_is_known(I) of
 	false -> 
 	  I0 = enter_fun_update(I, subst1(Subst, enter_fun(I))),
@@ -1041,114 +1003,114 @@ subst_uses(Subst, I) ->
 	true ->
 	  enter_arglist_update(I, subst_list(Subst, enter_arglist(I)))
       end;
-    fconv -> 
+    #fconv{} ->
       fconv_src_update(I, subst1(Subst, fconv_src(I)));
-    fixnumop ->
+    #fixnumop{} ->
       fixnumop_src_update(I, subst1(Subst, fixnumop_src(I)));
-    fload ->
+    #fload{} ->
       I0 = fload_src_update(I, subst1(Subst, fload_src(I))),
       fload_offset_update(I0, subst1(Subst, fload_offset(I)));
-    fmove -> 
+    #fmove{} -> 
       fmove_src_update(I, subst1(Subst, fmove_src(I)));
-    fp ->
+    #fp{} ->
       I0 = fp_src1_update(I, subst1(Subst, fp_src1(I))),
       fp_src2_update(I0, subst1(Subst, fp_src2(I)));
-    fp_unop ->
+    #fp_unop{} ->
       fp_unop_src_update(I, subst1(Subst, fp_unop_src(I)));
-    fstore ->
+    #fstore{} ->
       I0 = fstore_src_update(I, subst1(Subst, fstore_src(I))),
       I1 = fstore_base_update(I0, subst1(Subst, fstore_base(I))),
       fstore_offset_update(I1, subst1(Subst, fstore_offset(I)));
-    goto ->
+    #goto{} ->
       I;
-    goto_index ->
+    #goto_index{} ->
       I;
-    gctest ->
+    #gctest{} ->
       gctest_words_update(I, subst1(Subst, gctest_words(I)));
-    label ->
+    #label{} ->
       I;
-    load ->
+    #load{} ->
       I0 = load_src_update(I, subst1(Subst, load_src(I))),
       load_offset_update(I0, subst1(Subst, load_offset(I)));
-    load_address ->
+    #load_address{} ->
       I;
-    load_atom ->
+    #load_atom{} ->
       I;
-    load_word_index ->
+    #load_word_index{} ->
       I;
-    move -> 
+    #move{} ->
       move_src_update(I, subst1(Subst, move_src(I)));
-    multimove -> 
+    #multimove{} -> 
       multimove_srclist_update(I, subst_list(Subst, multimove_srclist(I)));
-    phi ->
+    #phi{} ->
       phi_argvar_subst(I, Subst);
-    return ->
+    #return{} ->
       return_varlist_update(I, subst_list(Subst, return_varlist(I)));
-    store ->
+    #store{} ->
       I0 = store_src_update(I, subst1(Subst, store_src(I))),
       I1 = store_base_update(I0, subst1(Subst, store_base(I))),
       store_offset_update(I1, subst1(Subst, store_offset(I)));
-    switch ->
+    #switch{} ->
       switch_src_update(I, subst1(Subst, switch_src(I)))
   end.
 
 subst_defines(Subst, I)->
-  case type(I) of
-    alu ->
+  case I of
+    #alu{} ->
       alu_dst_update(I, subst1(Subst, alu_dst(I)));
-    alub ->
+    #alub{} ->
       alub_dst_update(I, subst1(Subst, alub_dst(I)));
-    binbase ->
+    #binbase{} ->
       binbase_dst_update(I, subst1(Subst, binbase_dst(I)));
-    branch ->
+    #branch{} ->
       I;
-    call ->
+    #call{} ->
       call_dstlist_update(I, subst_list(Subst, call_dstlist(I)));
-    comment ->
+    #comment{} ->
       I;
-    enter ->
+    #enter{} ->
       I;
-    fconv ->
+    #fconv{} ->
       fconv_dst_update(I, subst1(Subst, fconv_dst(I)));
-    fixnumop ->
+    #fixnumop{} ->
       fixnumop_dst_update(I, subst1(Subst, fixnumop_dst(I)));
-    fload ->
+    #fload{} ->
       fload_dst_update(I, subst1(Subst, fload_dst(I)));
-    fmove ->
+    #fmove{} ->
       fmove_dst_update(I, subst1(Subst, fmove_dst(I)));
-    fp ->
+    #fp{} ->
       fp_dst_update(I, subst1(Subst, fp_dst(I)));
-    fp_unop ->
+    #fp_unop{} ->
       fp_unop_dst_update(I, subst1(Subst, fp_unop_dst(I)));
-    fstore ->
+    #fstore{} ->
       I;
-    gctest ->
+    #gctest{} ->
       I;
-    goto ->
+    #goto{} ->
       I;
-    goto_index ->
+    #goto_index{} ->
       I;
-    label ->
+    #label{} ->
       I;
-    load ->
+    #load{} ->
       load_dst_update(I, subst1(Subst, load_dst(I)));
-    load_address ->
+    #load_address{} ->
       load_address_dst_update(I, subst1(Subst, load_address_dst(I)));
-    load_atom ->
+    #load_atom{} ->
       load_atom_dst_update(I, subst1(Subst, load_atom_dst(I)));
-    load_word_index ->
+    #load_word_index{} ->
       load_word_index_dst_update(I, subst1(Subst, load_word_index_dst(I)));
-    move ->
+    #move{} ->
       move_dst_update(I, subst1(Subst, move_dst(I)));
-    multimove ->
+    #multimove{} ->
       multimove_dstlist_update(I, subst_list(Subst, multimove_dstlist(I)));
-    phi ->
+    #phi{} ->
       phi_dst_update(I, subst1(Subst, phi_dst(I)));
-    return ->
+    #return{} ->
       I;
-    store ->
+    #store{} ->
       I;
-    switch ->
+    #switch{} ->
       I
   end.
 
@@ -1165,21 +1127,21 @@ subst1([_|Xs], X) -> subst1(Xs,X).
 %% result is not used.
 
 is_safe(Instr) ->
-  case type(Instr) of
-    store -> false;
-    fstore -> false;
-    fp -> false;
-    fp_unop -> false;
-    branch -> false;
-    switch -> false; %% Maybe this is safe...
-    alub -> false;
-    call -> false;
-    enter -> false;
-    goto -> false;
-    goto_index -> false;  % ???
-    return -> false;
-    gctest -> false;
-    comment -> false;
+  case Instr of
+    #store{} -> false;
+    #fstore{} -> false;
+    #fp{} -> false;
+    #fp_unop{} -> false;
+    #branch{} -> false;
+    #switch{} -> false; %% Maybe this is safe...
+    #alub{} -> false;
+    #call{} -> false;
+    #enter{} -> false;
+    #goto{} -> false;
+    #goto_index{} -> false;  % ???
+    #return{} -> false;
+    #gctest{} -> false;
+    #comment{} -> false;
     _ -> true
   end.
 
@@ -1228,8 +1190,8 @@ is_shift_op(_) -> false.
 redirect_jmp(Jmp, ToOld, ToNew) ->
   %% OBS: In a jmp instruction more than one labels may be identical
   %%      and thus need redirection!
-  case type(Jmp) of
-    branch ->
+  case Jmp of
+    #branch{} ->
       TmpJmp = case branch_true_label(Jmp) of
 		 ToOld -> branch_true_label_update(Jmp, ToNew);
 		 _ -> Jmp
@@ -1240,12 +1202,12 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 	_ ->
 	  TmpJmp
       end;
-    switch ->
+    #switch{} ->
       NewLbls = lists:map(fun(Lbl) when Lbl =:= ToOld -> ToNew;
 			     (Lbl) -> (Lbl)
 			  end, switch_labels(Jmp)),
       switch_labels_update(Jmp, NewLbls);
-    alub ->
+    #alub{} ->
       TmpJmp = case alub_true_label(Jmp) of
 		 ToOld -> alub_true_label_update(Jmp, ToNew);
 		 _ -> Jmp
@@ -1254,12 +1216,12 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 	ToOld -> alub_false_label_update(TmpJmp, ToNew);
 	_ -> TmpJmp
       end;
-    goto ->
+    #goto{} ->
       case goto_label(Jmp) of
 	ToOld -> goto_label_update(Jmp, ToNew);
 	_ -> Jmp
       end;
-    call ->
+    #call{} ->
       TmpJmp = case call_continuation(Jmp) of
 		 ToOld -> call_continuation_update(Jmp, ToNew);
 		 _ -> Jmp
@@ -1350,26 +1312,26 @@ pp_instrs(Dev, [I|Is]) ->
   pp_instrs(Dev, Is).
 
 pp_instr(Dev, I) ->
-  case type(I) of
-    phi ->
+  case I of
+    #phi{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, phi_dst(I)),
       io:format(Dev, " <- phi(", []),
       pp_phi_args(Dev, phi_arglist(I)),
       io:format(Dev, ")~n", []);
-    move ->
+    #move{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, move_dst(I)),
       io:format(Dev, " <- ", []),
       pp_arg(Dev, move_src(I)),
       io:format(Dev, "~n", []);
-    multimove ->
+    #multimove{} ->
       io:format(Dev, "    ", []),
       pp_args(Dev, multimove_dstlist(I)),
       io:format(Dev, " <= ", []),
       pp_args(Dev, multimove_srclist(I)),
       io:format(Dev, "~n", []);
-    alu ->
+    #alu{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, alu_dst(I)),
       io:format(Dev, " <- ", []),
@@ -1377,7 +1339,7 @@ pp_instr(Dev, I) ->
       io:format(Dev, " ~w ", [alu_op(I)]),
       pp_arg(Dev, alu_src2(I)),
       io:format(Dev, "~n", []);
-    load ->
+    #load{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, load_dst(I)),
       io:format(Dev, " <- [", []),
@@ -1396,20 +1358,20 @@ pp_instr(Dev, I) ->
 	_ -> []
       end,
       io:format(Dev, "~n", []);
-    load_atom ->
+    #load_atom{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, load_atom_dst(I)),
       io:format(Dev, " <- atom_no(\'~s\')~n", [load_atom_atom(I)]);
-    load_word_index ->
+    #load_word_index{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, load_word_index_dst(I)),
       io:format(Dev, " <- word_index_no( DL~p[~p] )~n",
 		[load_word_index_block(I),load_word_index_index(I)]);
-    goto_index ->
+    #goto_index{} ->
       io:format(Dev, "    ", []),
       io:format(Dev, "goto_index DL~p[~p]~n",
 		[goto_index_block(I), goto_index_index(I)]);
-    load_address ->
+    #load_address{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, load_address_dst(I)),
       case load_address_type(I) of
@@ -1420,7 +1382,7 @@ pp_instr(Dev, I) ->
 	Type ->
 	  io:format(Dev, " <- L~p [~p]~n", [load_address_address(I),Type])
       end;
-    store ->
+    #store{} ->
       io:format(Dev, "    [", []),
       pp_arg(Dev, store_base(I)),
       io:format(Dev, "+", []),
@@ -1434,22 +1396,22 @@ pp_instr(Dev, I) ->
 	_ -> []
       end,
       io:format(Dev, "~n", []);
-    label ->
+    #label{} ->
       io:format(Dev, "L~w:~n", [label_name(I)]);
-    branch ->
+    #branch{} ->
       io:format(Dev, "    if (", []),
       pp_arg(Dev, branch_src1(I)),
       io:format(Dev, " ~w ", [branch_cond(I)]),
       pp_arg(Dev, branch_src2(I)),
       io:format(Dev, ") then L~w (~.2f) else L~w~n", 
 		[branch_true_label(I), branch_pred(I), branch_false_label(I)]);
-    switch ->
+    #switch{} ->
       io:format(Dev, "    switch (", []),
       pp_arg(Dev, switch_src(I)),
       io:format(Dev, ") <", []),
       pp_switch_labels(Dev, switch_labels(I)),
       io:format(Dev, ">\n", []);
-    alub ->
+    #alub{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, alub_dst(I)),
       io:format(Dev, " <- ", []),
@@ -1460,9 +1422,9 @@ pp_instr(Dev, I) ->
       io:format(Dev, " ~w ", [alub_cond(I)]),
       io:format(Dev, "then L~w (~.2f) else L~w~n", 
 		[alub_true_label(I), alub_pred(I), alub_false_label(I)]);
-    goto ->
+    #goto{} ->
       io:format(Dev, "    goto L~w~n", [goto_label(I)]);
-    call ->
+    #call{} ->
       io:format(Dev, "    ", []),
       pp_args(Dev, call_dstlist(I)),
       io:format(Dev, " <- ", []),
@@ -1494,7 +1456,7 @@ pp_instr(Dev, I) ->
 	  io:format(Dev, " fail to L~w", [L])
       end,
       io:format(Dev, "~n", []);
-    enter ->
+    #enter{} ->
       io:format(Dev, "    ", []),
       case enter_is_known(I) of
 	true ->
@@ -1513,19 +1475,19 @@ pp_instr(Dev, I) ->
       end,
       pp_args(Dev, enter_arglist(I)),
       io:format(Dev, ")~n", []);
-    return ->
+    #return{} ->
       io:format(Dev, "    return(", []),
       pp_args(Dev, return_varlist(I)),
       io:format(Dev, ")~n", []);
-    comment ->
+    #comment{} ->
       io:format(Dev, "    ;; ~p~n", [comment_text(I)]);
-    binbase ->
+    #binbase{} ->
       pp_arg(Dev, binbase_dst(I)),
       io:format(Dev, " <- ", []),
       io:format(Dev, "binbase(", []),
       pp_args(Dev, [binbase_orig(I), binbase_offset(I)]),
       io:format(Dev, ")~n", []);
-    fixnumop ->
+    #fixnumop{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, fixnumop_dst(I)),
       io:format(Dev, " <- ", []),
@@ -1537,12 +1499,12 @@ pp_instr(Dev, I) ->
       end,
       pp_arg(Dev, fixnumop_src(I)),
       io:format(Dev, ")~n", []);
-    gctest ->
+    #gctest{} ->
       io:format(Dev, "    gctest(", []),
       pp_arg(Dev, gctest_words(I)),
       io:format(Dev, ")~n", []);
     %% Floating point handling instructions below
-    fload ->
+    #fload{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, fload_dst(I)),
       io:format(Dev, " <-f [", []),
@@ -1550,7 +1512,7 @@ pp_instr(Dev, I) ->
       io:format(Dev, "+", []),
       pp_arg(Dev, fload_offset(I)),
       io:format(Dev, "]~n", []);
-    fstore ->
+    #fstore{} ->
       io:format(Dev, "    [", []),
       pp_arg(Dev, fstore_base(I)),
       io:format(Dev, "+", []),
@@ -1558,7 +1520,7 @@ pp_instr(Dev, I) ->
       io:format(Dev, "] <- ", []),
       pp_arg(Dev, fstore_src(I)),
       io:format(Dev, "~n", []);
-    fp ->
+    #fp{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, fp_dst(I)),
       io:format(Dev, " <- ", []),
@@ -1566,20 +1528,20 @@ pp_instr(Dev, I) ->
       io:format(Dev, " ~w ", [fp_op(I)]),
       pp_arg(Dev, fp_src2(I)),
       io:format(Dev, "~n", []);
-    fp_unop ->
+    #fp_unop{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, fp_unop_dst(I)),
       io:format(Dev, " <- ", []),
       io:format(Dev, " ~w ", [fp_unop_op(I)]),
       pp_arg(Dev, fp_unop_src(I)),
       io:format(Dev, "~n", []);
-    fmove ->
+    #fmove{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, fmove_dst(I)),
       io:format(Dev, " <- ", []),
       pp_arg(Dev, fmove_src(I)),
       io:format(Dev, "~n", []);
-    fconv ->
+    #fconv{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, fconv_dst(I)),
       io:format(Dev, " <-fconv ", []),

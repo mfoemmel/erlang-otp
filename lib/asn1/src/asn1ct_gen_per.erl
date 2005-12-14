@@ -888,12 +888,17 @@ gen_objset_enc(ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],
 	       ClName,ClFields,NthObj,Acc)->
     emit({"'getenc_",ObjSName,"'(",{asis,UniqueName},",",{asis,Val},
 	  ") ->",nl}),
+    CurrMod = get(currmod),
     {InternalFunc,NewNthObj}=
 	case ObjName of
 	    {no_mod,no_name} ->
 		gen_inlined_enc_funs(Fields,ClFields,ObjSName,NthObj);
+	    {CurrMod,Name} ->
+		emit({"    fun 'enc_",Name,"'/3"}),
+		{[],0};
 	    {ModName,Name} ->
-		emit(["    {'",ModName,"', 'enc_",Name,"'}"]),
+		emit_ext_encfun(ModName,Name),
+%		emit(["    {'",ModName,"', 'enc_",Name,"'}"]),
 		{[],0};
 	    _Other ->
 		emit({"    fun 'enc_",ObjName,"'/3"}),
@@ -907,17 +912,24 @@ gen_objset_enc(ObjSetName,UniqueName,
 
     emit({"'getenc_",ObjSetName,"'(",{asis,UniqueName},",",
 	  {asis,Val},") ->",nl}),
+    CurrMod = get(currmod),
     {InternalFunc,_}=
 	case ObjName of
 	    {no_mod,no_name} ->
 		gen_inlined_enc_funs(Fields,ClFields,ObjSetName,NthObj);
+	    {CurrMod,Name} ->
+		emit({"    fun 'enc_",Name,"'/3"}),
+		{[],NthObj};
 	    {ModName,Name} ->
-		emit(["    {'",ModName,"', 'enc_",Name,"'}"]),
+		emit_ext_encfun(ModName,Name),
+%		emit(["    {'",ModName,"', 'enc_",Name,"'}"]),
 		{[],NthObj};
 	    _Other ->
 		emit({"    fun 'enc_",ObjName,"'/3"}),
 		{[],NthObj}
 	end,
+    emit([";",nl]),
+    emit_default_getenc(ObjSetName,UniqueName),
     emit({".",nl,nl}),
     InternalFunc++Acc;
 gen_objset_enc(ObjSetName,_UniqueName,['EXTENSIONMARK'],_ClName,
@@ -929,6 +941,15 @@ gen_objset_enc(ObjSetName,_UniqueName,['EXTENSIONMARK'],_ClName,
     Acc;
 gen_objset_enc(_,_,[],_,_,_,Acc) ->
     Acc.
+
+emit_ext_encfun(ModuleName,Name) ->
+    emit([indent(4),"fun(T,V,O) -> '",ModuleName,"':'enc_",
+	  Name,"'(T,V,O) end"]).
+
+emit_default_getenc(ObjSetName,UniqueName) ->
+    emit(["'getenc_",ObjSetName,"'(",{asis,UniqueName},", _) ->",nl]),
+    emit([indent(4),"fun(C,V,_) -> exit({'Type not compatible with table constraint',{component,C},{value,V}}) end"]).
+
 
 %% gen_inlined_enc_funs for each object iterates over all fields of a
 %% class, and for each typefield it checks if the object has that
@@ -1050,12 +1071,17 @@ gen_objset_dec(ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],ClName,
 
     emit({"'getdec_",ObjSName,"'(",{asis,UniqueName},",",{asis,Val},
 	  ") ->",nl}),
+    CurrMod = get(currmod),
     NewNthObj=
 	case ObjName of
 	    {no_mod,no_name} ->
 		gen_inlined_dec_funs(Fields,ClFields,ObjSName,NthObj);
+	    {CurrMod,Name} ->
+		emit(["    fun 'dec_",Name,"'/4"]),
+		NthObj;
 	    {ModName,Name} ->
-		emit(["    {'",ModName,"', 'dec_",Name,"'}"]),
+		emit_ext_decfun(ModName,Name),
+%		emit(["    {'",ModName,"', 'dec_",Name,"'}"]),
 		NthObj;
 	    _Other ->
 		emit({"    fun 'dec_",ObjName,"'/4"}),
@@ -1068,14 +1094,20 @@ gen_objset_dec(ObjSetName,UniqueName,[{ObjName,Val,Fields}],_ClName,
 
     emit({"'getdec_",ObjSetName,"'(",{asis,UniqueName},",",{asis,Val},
 	  ") ->",nl}),
+    CurrMod=get(currmod),
     case ObjName of
 	{no_mod,no_name} ->
 	    gen_inlined_dec_funs(Fields,ClFields,ObjSetName,NthObj);
+	{CurrMod,Name} ->
+	    emit(["    fun 'dec_",Name,"'/4"]);
 	{ModName,Name} ->
-	    emit(["    {'",ModName,"', 'dec_",Name,"'}"]);
+	    emit_ext_decfun(ModName,Name);
+%	    emit(["    {'",ModName,"', 'dec_",Name,"'}"]);
 	_Other ->
 	    emit({"    fun 'dec_",ObjName,"'/4"})
     end,
+    emit([";",nl]),
+    emit_default_getdec(ObjSetName,UniqueName),
     emit({".",nl,nl}),
     ok;
 gen_objset_dec(ObjSetName,_UniqueName,['EXTENSIONMARK'],_ClName,_ClFields,
@@ -1088,6 +1120,15 @@ gen_objset_dec(ObjSetName,_UniqueName,['EXTENSIONMARK'],_ClName,_ClFields,
     ok;
 gen_objset_dec(_,_,[],_,_,_) ->
     ok.
+
+emit_ext_decfun(ModuleName,Name) ->
+    emit([indent(3),"fun(T,V,O1,O2) -> '",ModuleName,"':'dec_",
+	  Name,"'(T,V,O1,O2) end"]).
+
+emit_default_getdec(ObjSetName,UniqueName) ->
+    emit(["'getdec_",ObjSetName,"'(",{asis,UniqueName},", _) ->",nl]),
+    emit([indent(2), "fun(C,V,_,_) -> exit({{component,C},{value,V}}) end"]).
+
 
 gen_inlined_dec_funs(Fields,[{typefield,Name,_}|Rest],
 		    ObjSetName,NthObj) ->

@@ -11,8 +11,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2004/06/22 10:14:01 $
-%%              $Revision: 1.17 $
+%%              $Date: 2005/11/06 13:10:51 $
+%%              $Revision: 1.18 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -45,7 +45,7 @@
 
 -define(HIPE_INSTRUMENT_COMPILER, true). %% Turn on instrumentation.
 -include("../main/hipe.hrl").
--include("../rtl/hipe_literals.hrl").
+-include("hipe_sparc.hrl").
 
 %% XXX: Make target independent.
 -define(TARGET, hipe_sparc_specific).
@@ -134,8 +134,8 @@ handle(I,State) ->
 
 %% XXX: Make this target independent.
 update_call(I,State,Live,_LiveOut,FpLive) ->
-  case hipe_sparc:type(I) of
-    call_link ->
+  case I of
+    #call_link{} ->
       case {live_in_regs(Live), FpLive} of
 	{[], []} -> 
 	  %% All live temps are allready on the stack.
@@ -143,7 +143,6 @@ update_call(I,State,Live,_LiveOut,FpLive) ->
 	  %% Just add the live-info to the stack descriptor 
 	  %%  of the call.
 	  state__add_instrs(set_live_slots(I,State,Live),State);
-	
 	{ToSpill, ToSpillFp} ->
 	  %% We have at least one live temp that is not on the stack
 	  handle_call(I,State,ToSpill,Live, ToSpillFp)

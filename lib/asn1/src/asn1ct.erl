@@ -1037,7 +1037,7 @@ get_file_list1(Stream,Dir,Options,Acc) ->
 		    {single_file,Name} -> [Name];
 		    {multiple_files_file,_,Name} ->
 			get_file_list(Name,Options);
-		    Err ->
+		    _Err ->
 			io:format("FileName: ~p, Dir: ~p~n",[FileName,Dir]),
 			[]
 		end,

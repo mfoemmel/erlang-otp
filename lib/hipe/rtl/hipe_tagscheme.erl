@@ -20,7 +20,7 @@
 -export([test_nil/4, test_cons/4, test_flonum/4, test_fixnum/4,
 	 test_tuple/4, test_atom/4, test_bignum/4, 
 	 test_any_pid/4, test_any_port/4,
-	 test_ref/4, test_fun/4, test_binary/4, test_list/4,
+	 test_ref/4, test_fun/4, test_fun2/5, test_binary/4, test_list/4,
 	 test_integer/4, test_number/4, test_constant/4, test_tuple_N/5]).
 -export([realtag_fixnum/2, tag_fixnum/2, realuntag_fixnum/2, untag_fixnum/2]).
 -export([test_two_fixnums/3, test_fixnums/4, unsafe_fixnum_add/3,
@@ -249,6 +249,17 @@ test_fun(X, TrueLab, FalseLab, Pred) ->
    get_header(Tmp, X),
    mask_and_compare(Tmp, ?TAG_HEADER_MASK, ?TAG_HEADER_FUN,
 		    TrueLab, FalseLab, Pred)].
+
+test_fun2(X, Arity, TrueLab, FalseLab, Pred) ->
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
+  TFalse = hipe_rtl:mk_new_reg_gcsafe(),
+  HalfTrueLab = hipe_rtl:mk_new_label(),
+  [hipe_rtl:mk_call([Tmp], {erlang,is_function,2}, [X,Arity],
+		    hipe_rtl:label_name(HalfTrueLab), FalseLab, 'not_remote'),
+   HalfTrueLab,
+   hipe_rtl:mk_load_atom(TFalse, 'false'),
+   hipe_rtl:mk_branch(Tmp, 'ne', TFalse,
+		      TrueLab, FalseLab, Pred)].
 
 flonum_header() ->
   mk_header(8 div hipe_rtl_arch:word_size(), ?TAG_HEADER_FLOAT).

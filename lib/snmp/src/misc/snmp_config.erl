@@ -279,7 +279,7 @@ config_agent_sys() ->
 					      fun verify_pos_integer/1),
 			    ATLSize = {ATLMaxBytes, ATLMaxFiles},
 			    ATLRepair = ask("21f. Audit trail log repair "
-					    "(true/false/truncate)?", "true",
+					    "(true/false/truncate/snmp_repair)?", "true",
 					    fun verify_atl_repair/1),
 			    [{audit_trail_log, [{type,   ATLType},
 						{dir,    ATLDir},
@@ -557,7 +557,7 @@ config_manager_sys() ->
 				  fun verify_pos_integer/1),
 		ATLSize = {ATLMaxBytes, ATLMaxFiles},
 		ATLRepair = ask("18e. Audit trail log repair "
-				"(true/false/truncate)?", "true",
+				"(true/false/truncate/snmp_repair)?", "true",
 				fun verify_atl_repair/1),
 		[{audit_trail_log, [{dir,    ATLDir},
 				    {size,   ATLSize},
@@ -1007,6 +1007,8 @@ verify_atl_repair("false") ->
     {ok, false};
 verify_atl_repair("truncate") ->
     {ok, truncate};
+verify_atl_repair("snmp_repair") ->
+    {ok, snmp_repair};
 verify_atl_repair(R) ->
     {error, "invalid audit trail log repair: " ++ R}.
 

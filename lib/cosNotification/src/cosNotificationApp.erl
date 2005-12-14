@@ -44,7 +44,7 @@
 	 install/0, install/1, uninstall/0, uninstall/1,
 	 install_event/0, install_event/1, uninstall_event/0, uninstall_event/1,
 	 install_typed/0, install_typed/1, uninstall_typed/0, uninstall_typed/1,
-	 create_structured_event/6]).
+	 create_structured_event/6, type_check/0]).
  
 %% Application callbacks
 -export([start/2, init/1, stop/1]).
@@ -310,6 +310,20 @@ create_structured_event(_StrD,_StrT,_StrE,_PSeqV,_PSeqF,_AnyR) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
     
 
+%%------------------------------------------------------------
+%% function : type_check
+%% Arguments: 
+%% Returns  : 
+%% Effect   : 
+%%------------------------------------------------------------
+type_check() ->
+    case application:get_env(cosNotification, type_check) of
+	{ok, Boolean} when atom(Boolean) ->
+	    Boolean;
+	_ ->
+	    true
+    end.
+  
 
 %%------------------------------------------------------------
 %% function : start

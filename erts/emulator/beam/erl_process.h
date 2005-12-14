@@ -24,6 +24,7 @@
 #include "erl_process_dict.h"
 #include "erl_node_tables.h"
 #include "erl_monitors.h"
+#include "erl_bif_timer.h"
 
 #ifdef HIPE
 #include "hipe_process.h"
@@ -169,6 +170,8 @@ typedef struct process {
     ErtsMonitor *monitors;      /* The process monitors, both ends */
 
     ErlMessageQueue msg;	/* Message queue */
+
+    ErtsBifTimer *bif_timers;	/* Bif timers aiming at this process */
 
     ProcDict  *dictionary;       /* Process dictionary, may be NULL */
     ProcDict  *debug_dictionary; /* Process dictionary-like debugging 

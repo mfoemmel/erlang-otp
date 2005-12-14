@@ -24,9 +24,11 @@
 
 %% Application exports
 -export([start/0,
+	 start_agent/0,   start_agent/1, 
+	 start_manager/0, start_manager/1, 
 	 config/0,
 	 
-         versions1/0, versions2/0,
+         versions1/0,      versions2/0,
 	 print_versions/1, print_versions/2, 
  
 	 date_and_time/0, 
@@ -134,6 +136,19 @@
 
 start() ->
     application:start(snmp).
+
+
+start_agent() ->
+    snmp_app:start_agent().
+
+start_agent(Type) ->
+    snmp_app:start_agent(Type).
+
+start_manager() ->
+    snmp_app:start_manager().
+
+start_manager(Type) ->
+    snmp_app:start_manager(Type).
 
 
 config() -> snmp_config:config().

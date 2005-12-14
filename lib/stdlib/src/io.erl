@@ -20,7 +20,7 @@
 -export([put_chars/1,put_chars/2,nl/0,nl/1,
 	 get_chars/2,get_chars/3,get_line/1,get_line/2,
 	 setopts/1, setopts/2]).
--export([write/1,write/2,read/1,read/2]).
+-export([write/1,write/2,read/1,read/2,read/3]).
 -export([fwrite/1,fwrite/2,fwrite/3,fread/2,fread/3,
 	 format/1,format/2,format/3]).
 -export([scan_erl_exprs/1,scan_erl_exprs/2,scan_erl_exprs/3,
@@ -134,6 +134,21 @@ read(Io, Prompt) ->
 	    {error,E};
 	{eof,_EndLine} ->
 	    eof;
+	Other ->
+	    Other
+    end.
+
+read(Io, Prompt, StartLine) when integer(StartLine) ->
+    case request(Io, {get_until,Prompt,erl_scan,tokens,[StartLine]}) of
+	{ok,Toks,EndLine} ->
+            case erl_parse:parse_term(Toks) of
+                {ok,Term} -> {ok,Term,EndLine};
+                {error,ErrorInfo} -> {error,ErrorInfo,EndLine}
+            end;
+	{error,E,EndLine} ->
+	    {error,E,EndLine};
+	{eof,EndLine} ->
+	    {eof,EndLine};
 	Other ->
 	    Other
     end.

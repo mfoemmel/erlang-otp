@@ -1,23 +1,19 @@
 {"%VSN%",
  [
-  {"4.6",
+  {"4.6.1",
    [
-    {load_module,http_transport,soft_purge,soft_purge,[]},
-    {load_module,http_util,soft_purge,soft_purge,[]},
-    {load_module,httpc_handler,soft_purge,soft_purge,[]},
-    {load_module,httpc_manager,soft_purge,soft_purge,[]},
-    {load_module,mod_esi,soft_purge,soft_purge,[]}
+    {load_module,mod_auth,soft_purge,soft_purge,[]},
+    {load_module,httpd_request_handler,soft_purge,soft_purge,[]},
+    {load_module,httpd_manager,soft_purge,soft_purge,[]}
    ]				 
   }				 
  ],   
  [
-  {"4.6",
+  {"4.6.1",
    [
-    {load_module,http_transport,soft_purge,soft_purge,[]},
-    {load_module,http_util,soft_purge,soft_purge,[]},
-    {load_module,httpc_handler,soft_purge,soft_purge,[]},
-    {load_module,httpc_manager,soft_purge,soft_purge,[]},
-    {load_module,mod_esi,soft_purge,soft_purge,[]}
+    {load_module,mod_esi,soft_purge,soft_purge,[]},
+    {load_module,httpd_request_handler,soft_purge,soft_purge,[]},
+    {load_module,httpd_manager,soft_purge,soft_purge,[]}
    ]
   }
  ]

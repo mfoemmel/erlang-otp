@@ -87,7 +87,8 @@
 	  user_args,
 	  reply_action,       % call | cast
 	  reply_data,
-	  threaded
+	  threaded,
+	  strict_version      % true
 	 }).
 
 %% N.B. Update megaco_config when a new field is added

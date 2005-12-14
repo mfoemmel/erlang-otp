@@ -240,10 +240,13 @@
 %%%-----------------------------------------------------------------
 %%% General functions
 
-format_error({_Line, ?MODULE, Reason}) ->
-    io_lib:format("~w", [Reason]);
-format_error({_Line, Mod, Reason}) ->
-    Mod:format_error(Reason);
+format_error({_Line, ?MODULE, undefined_script}) ->
+    "no value returned from script";
+format_error({Line, ?MODULE, {Reason, Stacktrace}}) ->
+    io_lib:format("~w: evaluation failed with reason ~w and stacktrace ~w", 
+                  [Line, Reason, Stacktrace]);
+format_error({Line, Mod, Reason}) ->
+    io_lib:format("~w: ~s", [Line, Mod:format_error(Reason)]);
 format_error(ErrorId) ->
     erl_posix_msg:message(ErrorId).
 
@@ -949,7 +952,7 @@ change_time(Name, Atime, Mtime)
 %%% Helpers
 
 consult_stream(Fd) ->
-    case catch consult_stream(io:read(Fd, ''), Fd) of
+    case catch consult_stream(io:read(Fd, '', 1), Fd) of
 	{'EXIT', _Reason} ->
 	    {error, einval};
 	{error, Reason} ->
@@ -958,35 +961,35 @@ consult_stream(Fd) ->
 	    {ok, List}
     end.
 
-consult_stream({ok,Term}, Fd) ->
-    [Term|consult_stream(io:read(Fd, ''), Fd)];
-consult_stream({error,What}, _Fd) ->
+consult_stream({ok,Term,Line}, Fd) ->
+    [Term|consult_stream(io:read(Fd, '',Line), Fd)];
+consult_stream({error,What,_Line}, _Fd) ->
     throw({error, What});
-consult_stream(eof, _Fd) ->
+consult_stream({eof,_Line}, _Fd) ->
     [].
 
 eval_stream(Fd, Handling, Bs) ->
-    eval_stream(Fd, Handling, undefined, [], Bs).
+    eval_stream(Fd, Handling, 1, undefined, [], Bs).
 
-eval_stream(Fd, Handling, Last, E, Bs) ->
-    eval_stream(io:parse_erl_exprs(Fd, ''), Fd, Handling, Last, E, Bs).
+eval_stream(Fd, H, Line, Last, E, Bs) ->
+    eval_stream2(io:parse_erl_exprs(Fd, '', Line), Fd, H, Last, E, Bs).
 
-
-eval_stream({ok,Form,EndLine}, Fd, Handling, Last, E, Bs0) ->
-    case catch erl_eval:exprs(Form, Bs0) of
+eval_stream2({ok,Form,EndLine}, Fd, H, Last, E, Bs0) ->
+    try erl_eval:exprs(Form, Bs0) of
 	{value,V,Bs} ->
-	    eval_stream(Fd, Handling, {V}, E, Bs);
-	{'EXIT',Reason} ->
-	    eval_stream(Fd, Handling, Last, [{EndLine,?MODULE,Reason}|E], Bs0)
+	    eval_stream(Fd, H, EndLine, {V}, E, Bs)
+    catch _Class:Reason ->
+            Error = {EndLine,?MODULE,{Reason,erlang:get_stacktrace()}},
+	    eval_stream(Fd, H, EndLine, Last, [Error|E], Bs0)
     end;
-eval_stream({error,What,_EndLine}, Fd, H, L, E, Bs) ->
-    eval_stream(Fd, H, L, [What | E], Bs);
-eval_stream({eof,_EndLine}, _Fd, H, Last, E, _Bs) ->
+eval_stream2({error,What,EndLine}, Fd, H, Last, E, Bs) ->
+    eval_stream(Fd, H, EndLine, Last, [What | E], Bs);
+eval_stream2({eof,EndLine}, _Fd, H, Last, E, _Bs) ->
     case {H, Last, E} of
 	{return, {Val}, []} ->
 	    {ok, Val};
 	{return, undefined, E} ->
-	    {error, hd(lists:reverse(E, [{error, undefined_script}]))};
+	    {error, hd(lists:reverse(E, [{EndLine,?MODULE,undefined_script}]))};
 	{ignore, _, []} ->
 	    ok;
 	{_, _, [_|_] = E} ->
@@ -1019,7 +1022,11 @@ path_open_first([], _Name, _Mode, LastError) ->
 %% 	characters (integers).
 
 file_name(N) ->
-    catch file_name_1(N).
+    try 
+        file_name_1(N)
+    catch _:_ ->
+        {error, einval}
+    end.
 
 file_name_1([C|T]) when integer(C), C > 0, C =< 255 ->
     [C|file_name_1(T)];
@@ -1028,23 +1035,18 @@ file_name_1([H|T]) ->
 file_name_1([]) ->
     [];
 file_name_1(N) when atom(N) ->
-    atom_to_list(N);
-file_name_1(_) ->
-    throw({error, einval}).
+    atom_to_list(N).
 
 check_binary(Bin) when binary(Bin) ->
     Bin;
-check_binary(List) when list(List) ->
-    %% Convert the list to a binary, 
-    %% to avoid copying a list to the file server.
-    case catch list_to_binary(List) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Bin ->
-	    Bin
-    end;
-check_binary(_) ->
-    {error, einval}.
+check_binary(List) ->
+    %% Convert the list to a binary in order to avoid copying a list
+    %% to the file server.
+    try 
+        list_to_binary(List)
+    catch _:_ ->
+        {error, einval}
+    end.
 
 mode_list(read) ->
     [read];

@@ -53,6 +53,8 @@
 -module(hipe_schedule).
 -export([cfg/1, est_cfg/1, delete_node/5]).
 
+-include("../sparc/hipe_sparc.hrl").
+
 %-define(debug1,true).
 
 %-define(debug2,true).
@@ -208,29 +210,26 @@ fill_delays(Sch, IxBlk, DAG) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 fill_del(N, Sch, _IxBlk, _DAG) when N < 1 -> Sch;
 fill_del(N, Sch, IxBlk, DAG) ->
-
     Index = get_index(Sch, N),
     case ?debug2 of 
 	true -> 
 	    io:format("Index för ~p: ~p~n",[N, Index]),
-	    io:format("Instr: ~p~ntype: ~p~n",
-		      [get_instr(IxBlk, Index), 
-		       hipe_sparc:type(get_instr(IxBlk, Index))]);
+	    io:format("Instr: ~p~n", [get_instr(IxBlk, Index)]);
 	false -> ok
     end,
     NewSch = 
-	case hipe_sparc:type(get_instr(IxBlk, Index)) of
-	    call_link ->
+	case get_instr(IxBlk, Index) of
+	    #call_link{} ->
 		fill_branch_delay(N - 1, N, Sch, IxBlk, DAG);
-	    jmp_link ->
+	    #jmp_link{} ->
 		fill_call_delay(N - 1, N, Sch, IxBlk, DAG);
-	    jmp ->
+	    #jmp{} ->
 		fill_call_delay(N - 1, N, Sch, IxBlk, DAG);
-	    b ->
+	    #b{} ->
 		fill_branch_delay(N - 1, N, Sch, IxBlk, DAG);
-	    br ->
+	    #br{} ->
 		fill_branch_delay(N - 1, N, Sch, IxBlk, DAG);
-	    goto ->
+	    #goto{} ->
 		fill_branch_delay(N - 1, N, Sch, IxBlk, DAG);
 	    _Other ->
 		Sch
@@ -255,8 +254,7 @@ fill_call_delay(Cand, Call, Sch, IxBlk, DAG) ->
     CandIndex = get_index(Sch, Cand),
     CallIndex = get_index(Sch, Call),
     CandI = get_instr(IxBlk, CandIndex),
-    CandType = hipe_sparc:type(CandI),
-    case (CandType == move) or (CandType == alu) of
+    case move_or_alu(CandI) of
 	true ->
 	    case single_depend(CandIndex, CallIndex, DAG) of
 		false -> % Other instrs depends on Cand ...
@@ -270,13 +268,13 @@ fill_call_delay(Cand, Call, Sch, IxBlk, DAG) ->
 		    CallDefs = ordsets:from_list(hipe_sparc:defines(CallI)),
 		    CallUses = ordsets:from_list(hipe_sparc:uses(CallI)),
 		    
-		    Args = case hipe_sparc:type(CallI) of
-			       jmp_link ->
+		    Args = case CallI of
+			       #jmp_link{} ->
 				   ordsets:from_list(
 				     hipe_sparc:jmp_link_args(CallI));
-			       jmp ->
+			       #jmp{} ->
 				   ordsets:from_list(hipe_sparc:jmp_args(CallI));
-			       call_link ->
+			       #call_link{} ->
 				   ordsets:from_list(
 				     hipe_sparc:call_link_args(CallI))
 			   end,
@@ -323,8 +321,7 @@ fill_branch_delay(Cand, Br, Sch, IxBlk, DAG) ->
     CandIndex = get_index(Sch, Cand),
     BrIndex   = get_index(Sch, Br),
     CandI = get_instr(IxBlk, CandIndex),
-    CandType = hipe_sparc:type(CandI),
-    case (CandType == move) or (CandType == alu) of
+    case move_or_alu(CandI) of
 	true ->
 	    case single_depend(CandIndex, BrIndex, DAG) of
 		false -> % Other instrs depends on Cand ...
@@ -761,10 +758,10 @@ indexed_bb(BB) ->
 
 indexed_bb([],_N) -> [];
 indexed_bb([X|Xs],N) ->
-    case hipe_sparc:type(X) of
-	comment ->
+    case X of
+	#comment{} ->
 	    indexed_bb(Xs,N);
-	nop ->
+	#nop{} ->
 	    indexed_bb(Xs,N);
 	_Other ->
 	    [{N,X}|indexed_bb(Xs,N+1)]
@@ -859,27 +856,27 @@ add_deps(N,Instr,DepTab,DAG) ->
 %% which are subsequently used to determine operation latencies
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 dd_type(Instr) ->
-    case hipe_sparc:type(Instr) of
-	b -> branch;
-	br -> branch;
-	call_link -> branch;
-	jmp_link -> branch;
-	jmp -> branch;
-	goto -> branch;
-	load -> load;
-	store -> store;
-	alu -> alu;
-	move -> alu;
-	multimove -> 
+    case Instr of
+	#b{} -> branch;
+	#br{} -> branch;
+	#call_link{} -> branch;
+	#jmp_link{} -> branch;
+	#jmp{} -> branch;
+	#goto{} -> branch;
+	#load{} -> load;
+	#store{} -> store;
+	#alu{} -> alu;
+	#move{} -> alu;
+	#multimove{} -> 
 	    Src = hipe_sparc:multimove_src(Instr),
 	    Lat = round(length(Src)/2),
 	    {mmove,Lat};
-	sethi -> alu;
-	alu_cc -> alu_cc;
-	cmov_cc -> cmov_cc;
-	cmov_r -> alu;
-	load_atom -> alu;
-	load_address -> alu;
+	#sethi{} -> alu;
+	#alu_cc{} -> alu_cc;
+	#cmov_cc{} -> cmov_cc;
+	#cmov_r{} -> alu;
+	#load_atom{} -> alu;
+	#load_address{} -> alu;
 	_ -> pseudo
     end.
 
@@ -1143,8 +1140,8 @@ empty_md_state() -> { [], [], [], [] }.
 %%               store/load resp. heap or stack.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 md_type(I) ->
-    case hipe_sparc:type(I) of
-	load ->
+    case I of
+	#load{} ->
 	    Sp = hipe_sparc_registers:stack_pointer(),
 	    Src = hipe_sparc:load_src(I),
 	    N = hipe_sparc:reg_nr(Src),
@@ -1155,7 +1152,7 @@ md_type(I) ->
 		true ->
 		    {ld,{hp,Src,Off}}
 	    end;
-	store ->
+	#store{} ->
 	    Sp = hipe_sparc_registers:stack_pointer(),
 	    Dst = hipe_sparc:store_dest(I),
 	    N = hipe_sparc:reg_nr(Dst),
@@ -1378,22 +1375,22 @@ cd_branch_to_other_deps(N, [M | Ms], DAG) ->
 %% Description : Maps instrs to a simpler type.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 cd_type(I) ->
-   case hipe_sparc:type(I) of
-	goto ->
+   case I of
+	#goto{} ->
 	    {branch,uncond};
-	br ->
+	#br{} ->
 	    {branch,'cond'};
-	b ->
+	#b{} ->
 	    {branch,'cond'};
-	call_link ->
+	#call_link{} ->
 	    {branch,call};
-	jmp_link ->
+	#jmp_link{} ->
 	   {branch,call};
-	jmp ->
+	#jmp{} ->
 	    {branch,call};
-	load ->
+	#load{} ->
 	    {unsafe,load};
-	store ->
+	#store{} ->
 	    {unsafe,load};
 	T ->
 	    {other,T}
@@ -1461,6 +1458,14 @@ def_use(Instr) ->
     { hipe_sparc:defines(Instr), hipe_sparc:uses(Instr) }.
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Function    : move_or_alu
+%% Description : True if the instruction is a move or an alu; false otherwise
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+move_or_alu(#move{}) -> true;
+move_or_alu(#alu{}) -> true;
+move_or_alu(_) -> false.
+
 %% Debugging stuff below %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -ifdef(debug1).
@@ -1477,7 +1482,7 @@ print_instrs([]) ->
 print_instrs([{N,Instr} | Instrs]) ->
     io:format("(~p): ",[N]),
     hipe_sparc_pp:pp_instr(Instr),
-    io:format("~p~n",[hipe_sparc:type(Instr)]),
+    io:format("~p~n",[element(1,Instr)]),
     print_instrs(Instrs).
 
 print_instrs2([]) ->

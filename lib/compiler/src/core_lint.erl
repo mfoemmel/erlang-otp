@@ -502,7 +502,6 @@ pattern_match(_Req, _Sup, St) ->
 %%  Check that the required number of return values match the supplied.
 
 return_match(any, _Sup, St) -> St;
-return_match(_Req, unknown, St) -> St;
 return_match(N, N, St) -> St;
 return_match(_Req, _Sup, St) ->
     add_error({return_mismatch,St#lint.func}, St).

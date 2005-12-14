@@ -82,19 +82,34 @@ parse(DigitMapBody) when list(DigitMapBody) ->
        "~n   DigitMapBody: ~p", [DigitMapBody]),
     case parse_digit_map(DigitMapBody) of
 	{ok, STL} ->
-	    {ok, STL};
+	    {ok, duration_cleanup(STL, [])};
 	{error, Reason} ->
 	    {error, Reason}
     end;
 parse(_DigitMapBody) ->
     {error, not_a_digit_map_body}.
 
+duration_cleanup([], Acc) ->
+    Acc;
+duration_cleanup([STL|T], Acc) ->
+    #state_transition{cont = Events} = STL,
+    Events2 = duration_events_cleanup(Events, []),
+    duration_cleanup(T, [STL#state_transition{cont = Events2}|Acc]).
+
+duration_events_cleanup([], Acc) ->
+    lists:reverse(Acc);
+duration_events_cleanup([duration_event, Event|Events], Acc) ->
+    duration_events_cleanup(Events, [{duration_event, Event}|Acc]);
+duration_events_cleanup([Event|Events], Acc) ->
+    duration_events_cleanup(Events, [Event|Acc]).
+    
 parse_digit_map(Chars) ->
     parse_digit_map(Chars, 1, [], []).
 
 parse_digit_map(Chars, Line, DS, STL) ->
-    ?d("parse_digit_map(~w) -> entry with"
-       "~n   DS: ~p", [Line, DS]),
+    ?d("parse_digit_map -> entry with"
+       "~n   Chars: ~p"
+       "~n   DS:    ~p", [Chars, DS]),
     case megaco_text_scanner:skip_sep_chars(Chars, Line) of
 	{[], _Line2} when DS /= [] ->
 	    case parse_digit_string(DS) of
@@ -153,6 +168,10 @@ parse_digit_string(Chars) ->
     parse_digit_string(Chars, []).
 
 parse_digit_string([Char | Chars], DS) ->
+    ?d("parse_digit_string -> entry with"
+       "~n   Char:  ~p"
+       "~n   Chars: ~p"
+       "~n   DS:    ~p", [[Char], Chars, DS]),
     case Char of
 	$] ->
 	    parse_digit_letter(Chars, [], DS);
@@ -162,24 +181,35 @@ parse_digit_string([Char | Chars], DS) ->
 	    parse_digit_string(Chars, [{range, $0, $9} | DS]);
 	$. ->
 	    parse_digit_string(Chars, [zero_or_more | DS]);
+
 	I when I >= $0, I =< $9 ->
 	    parse_digit_string(Chars, [{single, I} | DS]);
+
 	A when A >= $a, A =< $k ->
 	    parse_digit_string(Chars, [{single, A} | DS]);
 	A when A >= $A, A =< $K ->
 	    parse_digit_string(Chars, [{single, A} | DS]);
+
 	$S ->
 	    parse_digit_string(Chars, [use_short_timer | DS]);
-	$L ->
-	    parse_digit_string(Chars, [use_long_timer | DS]);
-	$Z ->
-	    parse_digit_string(Chars, [inter_event_timeout | DS]);
 	$s ->
 	    parse_digit_string(Chars, [use_short_timer | DS]);
+
+	$L ->
+	    parse_digit_string(Chars, [use_long_timer | DS]);
 	$l ->
 	    parse_digit_string(Chars, [use_long_timer | DS]);
-	$z ->
-	    parse_digit_string(Chars, [inter_event_timeout | DS]);
+
+        $Z when length(Chars) > 0 ->
+            parse_digit_string(Chars, [duration_event | DS]);
+        $z when length(Chars) > 0 ->
+            parse_digit_string(Chars, [duration_event | DS]);
+
+        $Z ->
+            {error, duration_not_allowed_as_last_char};
+        $z ->
+            {error, duration_not_allowed_as_last_char};
+
 	BadChar ->
 	    {error, {illegal_char_in_digit_string, BadChar}}
     end;
@@ -187,8 +217,14 @@ parse_digit_string([], DM) ->
     ?d("parse_digit_string -> entry when done with"
        "~n   DM: ~p", [DM]),
     {ok, DM}.
-    
+
+
 parse_digit_letter([Char | Chars], DL, DS) ->
+    ?d("parse_digit_letter -> entry with"
+       "~n   Char:  ~p"
+       "~n   Chars: ~p"
+       "~n   DL:    ~p"
+       "~n   DS:    ~p", [[Char], Chars, DL, DS]),
     case Char of
 	$[ ->
 	    parse_digit_string(Chars, [DL | DS]);
@@ -201,22 +237,27 @@ parse_digit_letter([Char | Chars], DL, DS) ->
 		_ ->
 		    parse_digit_letter(Chars, [{single, To} | DL], DS)
 	    end;
+
 	A when A >= $a, A =< $k ->
 	    parse_digit_letter(Chars, [{single, A} | DL], DS);
 	A when A >= $A, A =< $K ->
 	    parse_digit_letter(Chars, [{single, A} | DL], DS);
+
 	$S ->
 	    parse_digit_letter(Chars, [use_short_timer | DL], DS);
-	$L ->
-	    parse_digit_letter(Chars, [use_long_timer | DL], DS);
-	$Z ->
-	    parse_digit_letter(Chars, [inter_event_timeout | DL], DS);
 	$s ->
 	    parse_digit_letter(Chars, [use_short_timer | DL], DS);
+
+	$L ->
+	    parse_digit_letter(Chars, [use_long_timer | DL], DS);
 	$l ->
 	    parse_digit_letter(Chars, [use_long_timer | DL], DS);
+
+	$Z ->
+	    parse_digit_letter(Chars, [duration_event | DL], DS);
 	$z ->
-	    parse_digit_letter(Chars, [inter_event_timeout | DL], DS);
+	    parse_digit_letter(Chars, [duration_event | DL], DS);
+
 	BadChar ->
 	    {error, {illegal_char_between_square_brackets, BadChar}}
     end;
@@ -271,7 +312,19 @@ eval(STL, {reject, #'DigitMapValue'{startTimer    = Start,
 eval(STL, Timers) when list(STL),
 		       record(hd(STL), state_transition),
 		       record(Timers, timers) ->
-    collect(start, mandatory_event, Timers, STL, []);
+    ?d("eval -> entry with"
+       "~n   STL:    ~p"
+       "~n   Timers: ~p", [STL, Timers]),
+    case collect(start, mandatory_event, Timers, lists:reverse(STL), []) of
+	{error, _} = Error ->
+	    ?d("eval -> error:"
+	       "~n   Error: ~p", [Error]),
+	    Error;
+	OK ->
+	    ?d("eval -> ok:"
+	       "~n   OK: ~p", [OK]),
+	    OK
+    end;
 eval(DigitMapBody, ignore) ->
     eval(DigitMapBody, #timers{unexpected = ignore});
 eval(DigitMapBody, reject) ->
@@ -299,8 +352,9 @@ collect(Event, State, Timers, STL, Letters) ->
 	    completed(unambiguous, Letters2);
 	{State2, Timers2, STL2, Letters2} ->
 	    ?d("collect -> "
-	       "~n   State2:  ~p"
-	       "~n   Timers2: ~p", [State2, Timers2]),
+	       "~n   State2:   ~p"
+	       "~n   Timers2:  ~p"
+	       "~n   Letters2: ~p", [State2, Timers2, Letters2]),
 	    MaxWait = choose_timer(State2, Event, Timers2),
 	    ?d("collect -> Timer choosen: "
 	       "~n   MaxWait: ~p", [MaxWait]),
@@ -310,24 +364,17 @@ collect(Event, State, Timers, STL, Letters) ->
 		       "~n   ~p", [Event2]),
 		    collect(Event2, State2, Timers2, STL2, Letters2)
 	    after MaxWait ->
+		    ?d("collect -> timeout after ~w", [MaxWait]),
 		    collect(inter_event_timeout, 
 			    State2, Timers2, STL2, Letters2)
 	    end;
+
 	{error, Reason} ->
+	    ?d("collect -> error: "
+	       "~n   Reason: ~p", [Reason]),
 	    {error, Reason}
     end.
 
-%% choose_timer(State, start, T) ->
-%%     ?d("choose_timer(start) -> entry with"
-%%        "~n   State: ~p"
-%%        "~n   T:     ~p", [State, T]),
-%%     Extra = T#timers.start,
-%%     Timer = do_choose_timer(State, T),
-%%     if
-%% 	Timer == infinity -> infinity;
-%% 	Extra == infinity -> infinity;
-%% 	true              -> Timer + Extra
-%%     end;
 choose_timer(_State, start, #timers{start = 0}) ->
     ?d("choose_timer(start) -> entry", []),
     infinity;
@@ -340,19 +387,6 @@ choose_timer(State, _Event, T) ->
        "~n   State: ~p"
        "~n   T:     ~p", [_Event, State, T]),
     do_choose_timer(State, T).
-
-%% do_choose_timer(State, T) ->
-%%     case T#timers.mode of
-%% 	state_dependent ->
-%% 	    case State of
-%% 		mandatory_event -> T#timers.long;
-%% 		optional_event  -> T#timers.short
-%% 	    end;
-%% 	use_short_timer -> 
-%% 	    T#timers.short;
-%% 	use_long_timer -> 
-%% 	    T#timers.long
-%%     end.
 
 do_choose_timer(mandatory_event, #timers{mode = state_dependent, long = T}) ->
     T;
@@ -371,10 +405,22 @@ timer_to_millis(Seconds)      -> timer:seconds(Seconds).
 duration_to_millis(asn1_NOVALUE) -> 100;
 duration_to_millis(Time) when is_integer(Time) -> Time*100.
 
-completed(Kind, Letters) ->
+completed(Kind, {Letters, Event}) when is_list(Letters) ->
+    ?d("completed -> entry with"
+       "~n   Kind:  ~p"
+       "~n   Event: ~s", [Kind, [Event]]),
+    {ok, {Kind, duration_letter_cleanup(Letters, []), Event}};
+completed(Kind, Letters) when is_list(Letters) ->
     ?d("completed -> entry with"
        "~n   Kind: ~p", [Kind]),
-    {ok, Kind, lists:reverse(Letters)}.
+    {ok, {Kind, duration_letter_cleanup(Letters, [])}}.
+
+duration_letter_cleanup([], Acc) ->
+    Acc;
+duration_letter_cleanup([{long, Letter}|Letters], Acc) ->
+    duration_letter_cleanup(Letters, [$Z,Letter|Acc]);
+duration_letter_cleanup([Letter|Letters], Acc) ->
+    duration_letter_cleanup(Letters, [Letter|Acc]).
 
 unexpected_event(Event, STL, Letters) ->
     Expected = [Next || #state_transition{next = Next} <- STL],
@@ -390,7 +436,7 @@ unexpected_event(Event, STL, Letters) ->
 %% Returns {State, NewSTL, Letters} | {error, Reason}
 %%----------------------------------------------------------------------
 handle_event(inter_event_timeout, optional_event, Timers, STL, Letters) ->
-    {completed_full, Timers, STL, Letters};
+    {completed_full, Timers, STL, Letters}; % 7.1.14.5 2
 handle_event(cancel, _State, _Timers, STL, Letters) ->
     unexpected_event(cancel, STL, Letters);
 handle_event(start, _State, Timers, STL, Letters) ->
@@ -398,30 +444,26 @@ handle_event(start, _State, Timers, STL, Letters) ->
     {State2, Timers2, STL2, Letters};
 handle_event(Event, State, Timers, STL, Letters) ->
     ?d("handle_event -> entry when"
-       "~n   Event:  ~p"
-       "~n   State:  ~p"
-       "~n   Timers: ~p", [Event, State, Timers]),
-    {STL2, Collect} = match_event(Event, STL, [], false),
-    ?d("handle_event -> event matched: "
+       "~n   Event:   ~p"
+       "~n   State:   ~p"
+       "~n   Timers:  ~p"
+       "~n   Letters: ~p", [Event, State, Timers, Letters]),
+    {STL2, Collect, KeepDur} = match_event(Event, STL), 
+    ?d("handle_event -> match event result: "
        "~n   Collect: ~p"
-       "~n   STL2:    ~p", [Collect, STL2]),
+       "~n   KeepDur: ~p"
+       "~n   STL2:    ~p", [Collect, KeepDur, STL2]),
     case STL2 of
-%% 	[] ->
-%% 	    case Timers#timers.unexpected of
-%% 		ignore ->
-%% 		    ok = io:format("<WARNING> Ignoring unexpected event: ~p~n"
-%% 				   "Expected: ~p~n",
-%% 				   [Event, STL]),
-%% 		    {State, Timers, STL, Letters};
-%% 		reject ->
-%% 		    unexpected_event(Event, STL, Letters)
-%% 	    end;
+	[] when State == optional_event -> % 7.1.14.5 5
+	    ?d("handle_event -> complete-full with event - 7.1.14.5 5", []),
+	    {completed_full, Timers, [], {Letters, Event}};
 	[] when Timers#timers.unexpected == ignore ->
 	    ok = io:format("<WARNING> Ignoring unexpected event: ~p~n"
 			   "Expected: ~p~n",
 			   [Event, STL]),
 	    {State, Timers, STL, Letters};
 	[] when Timers#timers.unexpected == reject ->
+	    ?d("handle_event -> unexpected (reject)", []),
 	    unexpected_event(Event, STL, Letters);
 	_ ->
 	    {State3, Timers2, STL3} = compute(Timers, STL2),
@@ -430,51 +472,175 @@ handle_event(Event, State, Timers, STL, Letters) ->
 	       "~n   Timers2: ~p"
 	       "~n   STL3:    ~p", [State3, Timers2, STL3]),
 	    case Collect of
-		true  -> {State3, Timers2, STL3, [Event | Letters]};
-		false -> {State3, Timers2, STL3, Letters}
+		true when KeepDur == true -> 
+		    {State3, Timers2, STL3, [Event | Letters]};
+		true -> 
+		    case Event of
+			{long, ActualEvent} ->
+			    {State3, Timers2, STL3, [ActualEvent | Letters]};
+			_ ->
+			    {State3, Timers2, STL3, [Event | Letters]}
+		    end;
+		false -> 
+		    {State3, Timers2, STL3, Letters}
 	    end
     end.
 
-match_event(Event, [ST | OldSTL], NewSTL, Collect)
+match_event(Event, STL) ->
+    MatchingDuration = matching_duration_event(Event, STL),
+    match_event(Event, STL, [], false, false, MatchingDuration).
+
+match_event(Event, [ST | OldSTL], NewSTL, Collect, KeepDur, MatchingDuration)
   when record(ST, state_transition) ->
+    ?d("match_event -> entry with"
+       "~n   Event:            ~p"
+       "~n   ST:               ~p"
+       "~n   NewSTL:           ~p"
+       "~n   Collect:          ~p"
+       "~n   KeepDur:          ~p"
+       "~n   MatchingDuration: ~p", 
+       [Event, ST, NewSTL, Collect, KeepDur, MatchingDuration]),
     case ST#state_transition.next of
 	{single, Event} ->
-	    match_event(Event, OldSTL, [ST | NewSTL], true);
+	    ?d("match_event -> keep ST (1)", []),
+	    match_event(Event, OldSTL, [ST | NewSTL], true, KeepDur,
+			MatchingDuration);
+        {single, Single} when (Event == {long, Single}) and 
+			      (MatchingDuration == false) ->
+	    %% Chap 7.1.14.5 point 4
+	    ?d("match_event -> keep ST - change to ordinary event (2)", []),
+            match_event(Event, OldSTL, [ST | NewSTL], true, KeepDur,
+			MatchingDuration);
+
 	{range, From, To} when Event >= From, Event =< To ->
+	    ?d("match_event -> keep ST (3)", []),
 	    ST2 = ST#state_transition{next = {single, Event}},
-	    match_event(Event, OldSTL, [ST2 | NewSTL], true);
+	    match_event(Event, OldSTL, [ST2 | NewSTL], true, KeepDur,
+			MatchingDuration);
+
+	{range, From, To} ->
+	    case Event of
+		{long, R} when (R >= From) and (R =< To) and (MatchingDuration == false) ->
+		    ?d("match_event -> keep ST (4)", []),
+		    ST2 = ST#state_transition{next = {single, R}},
+		    match_event(Event, OldSTL, [ST2 | NewSTL], true, true,
+				MatchingDuration);
+		_ ->
+		    ?d("match_event -> drop ST - change to ordinary event (5)", []),
+		    match_event(Event, OldSTL, NewSTL, Collect, KeepDur,
+				MatchingDuration) 
+	    end;
+
+        {duration_event, {single, Single}} when Event == {long, Single} ->
+	    ?d("match_event -> keep ST (5)", []),
+            match_event(Event, OldSTL, [ST | NewSTL], true, true,
+			MatchingDuration);
+
+        {duration_event, {range, From, To}} ->
+	    case Event of
+		{long, R} when R >= From, R =< To ->
+		    ?d("match_event -> keep ST (6)", []),
+		    match_event(Event, OldSTL, [ST | NewSTL], true, true,
+				MatchingDuration);
+		_ ->
+		    ?d("match_event -> drop ST (7)", []),
+		    match_event(Event, OldSTL, NewSTL, Collect, KeepDur,
+				MatchingDuration) 
+	    end;
+
 	Event ->
-	    match_event(Event, OldSTL, [ST | NewSTL], Collect);
+	    ?d("match_event -> keep ST (8)", []),
+	    match_event(Event, OldSTL, [ST | NewSTL], Collect, KeepDur,
+			MatchingDuration);
+
 	_ ->
-	    match_event(Event, OldSTL, NewSTL, Collect)
+	    ?d("match_event -> drop ST (9)", []),
+	    match_event(Event, OldSTL, NewSTL, Collect, KeepDur,
+			MatchingDuration)
     end;
-match_event(Event, [H | T], NewSTL, Collect) when list(H) ->
-    {NewSTL2, _Letters} = match_event(Event, H, NewSTL, Collect),
-    match_event(Event, T, NewSTL2, Collect);
-match_event(_Event, [], NewSTL, Collect) ->
-    {NewSTL, Collect}.
+match_event(Event, [H | T], NewSTL, Collect, KeepDur0, MatchingDuration) 
+  when list(H) ->
+    ?d("match_event -> entry with"
+       "~n   Event:            ~p"
+       "~n   H:                ~p"
+       "~n   NewSTL:           ~p"
+       "~n   Collect:          ~p"
+       "~n   KeepDur0:         ~p"
+       "~n   MatchingDuration: ~p", 
+       [Event, H, NewSTL, Collect, KeepDur0, MatchingDuration]),
+    {NewSTL2, _Letters, KeepDur} = 
+	match_event(Event, H, NewSTL, Collect, KeepDur0, MatchingDuration),
+    ?d("compute -> "
+       "~n   NewSTLs: ~p", [NewSTL2]),
+    match_event(Event, T, NewSTL2, Collect, KeepDur,
+		MatchingDuration);
+match_event(_Event, [], NewSTL, Collect, KeepDur, _MatchingDuration) ->
+    ?d("match_event -> entry with"
+       "~n   NewSTL:  ~p"
+       "~n   Collect: ~p"
+       "~n   KeepDur: ~p", [NewSTL, Collect, KeepDur]),
+    {lists:reverse(NewSTL), Collect, KeepDur}.
     
+
+matching_duration_event({long, Event}, STL) ->
+    Nexts = [Next || #state_transition{next = Next} <- STL],
+    mde(Event, Nexts);
+matching_duration_event(_Event, _STL) ->
+    false.
+
+
+mde(_, []) ->
+    false;
+mde(Event, [{duration_event, {single, Event}}|_]) ->
+    true;
+mde(Event, [{duration_event, {range, From, To}}|_]) 
+  when Event >= From, Event =< To ->
+    true;
+mde(Event, [_|Nexts]) ->
+    mde(Event, Nexts).
+
+
 %%----------------------------------------------------------------------
 %% Compute new state transitions
 %% Returns {State, Timers, NewSTL}
 %%----------------------------------------------------------------------
 compute(Timers, OldSTL) ->
+    ?d("compute -> entry with"
+       "~n   Timers: ~p"
+       "~n   OldSTL: ~p", [Timers, OldSTL]),
     {State, GlobalMode, NewSTL} = 
 	compute(mandatory_event, state_dependent, OldSTL, []),
+    ?d("compute -> "
+       "~n   State:      ~p"
+       "~n   GlobalMode: ~p"
+       "~n   NewSTL:     ~p", [State, GlobalMode, NewSTL]),
     Timers2 = Timers#timers{mode = GlobalMode},
+    ?d("compute -> "
+       "~n   Timers2: ~p", [Timers2]),
     {State, Timers2, NewSTL}.
 
 compute(State, GlobalMode, [ST | OldSTL], NewSTL) 
   when record(ST, state_transition) ->
+    ?d("compute(~w) -> entry with"
+       "~n   GlobalMode: ~p"
+       "~n   ST:         ~p"
+       "~n   NewSTL:     ~p", [State, GlobalMode, ST, NewSTL]),
     Cont = ST#state_transition.cont,
     Mode = ST#state_transition.mode,
     {State2, GlobalMode2, NewSTL2} =
 	compute_cont(Cont, Mode, GlobalMode, State, NewSTL),
     compute(State2, GlobalMode2, OldSTL, NewSTL2);
 compute(State, GlobalMode, [H | T], NewSTL) when list(H) ->
+    ?d("compute(~w) -> entry with"
+       "~n   GlobalMode: ~p"
+       "~n   H:          ~p"
+       "~n   NewSTL:     ~p", [State, GlobalMode, H, NewSTL]),
     {State2, GlobalMode2, NewSTL2} = compute(State, GlobalMode, H, NewSTL),
     compute(State2, GlobalMode2, T, NewSTL2);
 compute(State, GlobalMode, [], NewSTL) ->
+    ?d("compute(~w) -> entry with"
+       "~n   GlobalMode: ~p"
+       "~n   NewSTL:     ~p", [State, GlobalMode, NewSTL]),
     case NewSTL of
 	[] -> {completed, GlobalMode, NewSTL};
 	_  -> {State,     GlobalMode, NewSTL}
@@ -561,9 +727,19 @@ report(Pid, Event) when pid(Pid) ->
 	$s                      -> sleep(1);  % 1 sec (1000 ms)
 	$L                      -> sleep(10); % 10 sec (10000 ms)
 	$l                      -> sleep(10); % 10 sec (10000 ms)
-	_                       -> {error, {illegal_event, Event}}
+        {long, I} when (I >= $0) and (I =< $9) -> cast(Pid, {long, I});
+        {long, A} when (A >= $a) and (A =< $k) -> cast(Pid, {long, A});
+        {long, A} when (A >= $A) and (A =< $K) -> cast(Pid, {long, A});
+%%         {long, I} when (I >= $0) and (I =< $9) -> long(Pid, I);
+%%         {long, A} when (A >= $a) and (A =< $k) -> long(Pid, A);
+%%         {long, A} when (A >= $A) and (A =< $K) -> long(Pid, A);
+ 	_                       -> {error, {illegal_event, Event}}
     end.
 
+%% long(Pid, Event) ->
+%%     cast(Pid, long),
+%%     cast(Pid, Event).
+%% 
 sleep(Sec) ->
     timer:sleep(timer:seconds(Sec)),
     ok.

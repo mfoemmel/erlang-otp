@@ -19,24 +19,14 @@
 
 -module(beam_asm).
 
--export([module/4,format_error/1]).
+-export([module/4]).
 -export([encode/2]).
 
 -import(lists, [map/2,member/2,keymember/3,duplicate/2]).
 -include("beam_opcodes.hrl").
 
--define(bs_aligned, 1).
-
 module(Code, Abst, SourceFile, Opts) ->
-    case assemble(Code, Abst, SourceFile, Opts) of
-	{error, Error} ->
-	    {error, [{none, ?MODULE, Error}]};
-	Bin when binary(Bin) ->
-	    {ok, Bin}
-    end.
-
-format_error({crashed, Why}) ->
-    io_lib:format("beam_asm_int: EXIT: ~p", [Why]).
+    {ok,assemble(Code, Abst, SourceFile, Opts)}.
 
 assemble({Mod,Exp,Attr,Asm,NumLabels}, Abst, SourceFile, Opts) ->
     {1,Dict0} = beam_dict:atom(Mod, beam_dict:new()),
@@ -347,12 +337,10 @@ encode1(Tag, Bytes) ->
 	    [2#11111000 bor Tag, encode(?tag_u, Num-9)| Bytes]
     end.
 
-to_bytes(0, [B|Acc]) when B < 128 ->
-    [B|Acc];
-to_bytes(N, Acc) ->
-    to_bytes(N bsr 8, [N band 16#ff| Acc]).
+to_bytes(0, [B|_]=Done) when B < 128 -> Done;
+to_bytes(N, Acc) -> to_bytes(N bsr 8, [N band 16#ff|Acc]).
 
-negative_to_bytes(-1, [B1, B2|T]) when B1 > 127 ->
-    [B1, B2|T];
+negative_to_bytes(-1, [B1,_B2|_]=Done) when B1 > 127 ->
+    Done;
 negative_to_bytes(N, Acc) ->
     negative_to_bytes(N bsr 8, [N band 16#ff|Acc]).

@@ -33,6 +33,36 @@ void hipe_patch_load_fe(Uint32 *address, Uint32 value)
     *address = value;
 }
 
+int hipe_patch_insn(void *address, Uint32 value, Eterm type)
+{
+    switch (type) {
+      case am_closure:
+      case am_constant:
+      case am_atom:
+      case am_c_const:
+	break;
+      case am_x86_abs_pcrel:
+	value += (Uint)address;
+	break;
+      default:
+	return -1;
+    }
+    *(Uint32*)address = value;
+    return 0;
+}
+
+int hipe_patch_call(void *callAddress, void *destAddress, void *trampoline)
+{
+    Uint rel32;
+
+    if (trampoline)
+	return -1;
+    rel32 = (Uint)destAddress - (Uint)callAddress - 4;
+    *(Uint32*)callAddress = rel32;
+    hipe_flush_icache_word(callAddress);
+    return 0;
+}
+
 /* called from hipe_bif0.c:hipe_bifs_make_native_stub_2()
    and hipe_bif0.c:hipe_make_stub() */
 void *hipe_make_native_stub(void *beamAddress, unsigned int beamArity)

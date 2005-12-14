@@ -457,10 +457,10 @@ parse_BuiltinType([{'SEQUENCE',_},{'{',_},{'...',Line},{'!',_}|Rest]) ->
 		_  ->
 		    throw({asn1_error,{get_line(hd(Rest3)),get(asn1_module),
 			       [got,get_token(hd(Rest3)),expected,'}']}})
-	    end;
-	_ -> % Seq case 4,17-19,23-26 will fail here
-	    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),
-			       [got,get_token(hd(Rest2)),expected,'}']}})
+	    end
+% 	_ -> % Seq case 4,17-19,23-26 will fail here
+% 	    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),
+% 			       [got,get_token(hd(Rest2)),expected,'}']}})
     end;
 parse_BuiltinType([{'SEQUENCE',_},{'{',_}|Rest]) ->
     {ComponentTypeLists,Rest2} = parse_ComponentTypeLists(Rest),
@@ -614,8 +614,8 @@ parse_DefinedType(Tokens=[{typereference,L1,TypeName},
 	Result ->
 	    Result
     end;
-parse_DefinedType(Tokens=[{typereference,L1,Module},{'.',_},
-			  {typereference,_,TypeName},{'{',_}|Rest]) ->
+parse_DefinedType(Tokens=[{typereference,_L1,_Module},{'.',_},
+			  {typereference,_,_TypeName},{'{',_}|_Rest]) ->
     parse_ParameterizedType(Tokens);
 parse_DefinedType([{typereference,L1,Module},{'.',_},{typereference,_,TypeName}|Rest]) ->
     {#type{def = #'Externaltypereference'{pos=L1,module=Module,type=TypeName}},Rest};
@@ -2067,9 +2067,9 @@ check_rest(_) ->
 
 
 to_set(V) when list(V) ->
-	ordsets:list_to_set(V);
+	ordsets:from_list(V);
 to_set(V) ->
-	ordsets:list_to_set([V]).
+	ordsets:from_list([V]).
 
 
 parse_AlternativeTypeLists(Tokens) ->
@@ -2281,7 +2281,7 @@ parse_ExtensionAdditions(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,'[[']}}).
 
-parse_ExtensionAdditions([VsnNr = {number,_,_},{':',_}|Rest],Acc) ->
+parse_ExtensionAdditions([_VsnNr = {number,_,_},{':',_}|Rest],Acc) ->
     %% ignor version number for now
     parse_ExtensionAdditions(Rest,Acc);
 parse_ExtensionAdditions([Id = {identifier,_,_}|Rest],Acc) ->
@@ -2729,7 +2729,7 @@ fixup_constraint(C) ->
 	{'PermittedAlphabet',{'SingleValue',V}} when list(V) ->
 	    %%sort and remove duplicates
 	    V2 = {'SingleValue',
-		  ordsets:list_to_set(lists:flatten(V))},
+		  ordsets:from_list(lists:flatten(V))},
 	    {'PermittedAlphabet',V2};
 	{'PermittedAlphabet',{'SingleValue',V}} ->
 	    V2 = {'SingleValue',[V]},
@@ -2754,7 +2754,7 @@ fixup_size_constraint({{'ValueRange',R1},{'ValueRange',R2}}) ->
 fixup_size_constraint({'SingleValue',[Sv]}) ->
 	fixup_size_constraint({'SingleValue',Sv});
 fixup_size_constraint({'SingleValue',L}) when list(L) ->
-	ordsets:list_to_set(L);
+	ordsets:from_list(L);
 fixup_size_constraint({'SingleValue',L}) ->
 	{L,L};
 fixup_size_constraint({C1,C2}) ->

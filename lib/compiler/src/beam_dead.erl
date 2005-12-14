@@ -234,6 +234,15 @@ backward([{jump,{f,To0}},
 	false -> backward([Block|Is], D, [Jump|Acc]);
 	true -> backward([Jump|Is], D, Acc)
     end;
+backward([{jump,{f,To0}},{move,{atom,Val},Reg}=Move|Is], D, Acc) ->
+    %% This move/2 instruction was introduced by beam_clean when
+    %% it expanded a is_record_internal/3 instruction.
+    To = find_substitution(Reg, Val, D, To0),
+    Jump = {jump,{f,To}},
+    case is_reg_killed(Reg, To, D) of
+	false -> backward([Move|Is], D, [Jump|Acc]);
+	true -> backward([Jump|Is], D, Acc)
+    end;
 backward([{block,[{'%live',_}]}|Is], D, Acc) ->
     %% A redudant block could prevent some jump optimizations in beam_jump.
     %% Ge rid of it.

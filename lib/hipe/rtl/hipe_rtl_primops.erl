@@ -666,7 +666,6 @@ gen_fun_thing_skeleton(FunP, FunName={_Mod,_FunId,Arity}, NumFree,
   FeVar = hipe_rtl:mk_new_reg(),
   PidVar = hipe_rtl:mk_new_reg_gcsafe(),
   NativeVar = hipe_rtl:mk_new_reg(),
-  RefcVar = hipe_rtl:mk_new_reg(),
 
   [hipe_rtl:mk_load_address(FeVar, {FunName, MagicNr, Index}, closure),
    store_struct_field(FunP, ?EFT_FE, FeVar),
@@ -675,16 +674,25 @@ gen_fun_thing_skeleton(FunP, FunName={_Mod,_FunId,Arity}, NumFree,
 
    store_struct_field(FunP, ?EFT_ARITY, hipe_rtl:mk_imm(Arity-NumFree)),
 
-   %% XXX: atomic_inc?
-   load_struct_field(RefcVar, FeVar, ?EFE_REFC, int32),
-   hipe_rtl:mk_alu(RefcVar, RefcVar, add, hipe_rtl:mk_imm(1)),
-   store_struct_field(FeVar, ?EFE_REFC, RefcVar, int32),
+   gen_inc_refc(FeVar, ?EFE_REFC),
 
    store_struct_field(FunP, ?EFT_NUM_FREE, hipe_rtl:mk_imm(NumFree)),
    load_p_field(PidVar, ?P_ID),
    store_struct_field(FunP, ?EFT_CREATOR, PidVar),
    store_struct_field(FunP, ?EFT_THING, hipe_tagscheme:mk_fun_header())].
 
+-ifdef(P_MSG_SAVE). % not SMP, we can inline (XXX: bogus test)
+gen_inc_refc(Ptr, Offset) ->
+  Refc = hipe_rtl:mk_new_reg(),
+  [load_struct_field(Refc, Ptr, Offset, int32),
+   hipe_rtl:mk_alu(Refc, Refc, add, hipe_rtl:mk_imm(1)),
+   store_struct_field(Ptr, Offset, Refc, int32)].
+-else.
+gen_inc_refc(Ptr, Offset) ->
+  Refc = hipe_rtl:mk_new_reg(),
+  [hipe_rtl:mk_alu(Refc, Ptr, 'add', hipe_rtl:mk_imm(Offset)),
+   hipe_rtl:mk_call([], 'atomic_inc', [Refc], [], [], not_remote)].
+-endif.
 
 gen_link_closure(FUNP) ->
   case ?P_OFF_HEAP_FUNS of

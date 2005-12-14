@@ -126,7 +126,7 @@ transpose([[X | Xs] | Xss]) ->
 %% Note that the parser will not produce two adjacent text segments;
 %% thus, if a text segment ends with a period character, it marks the
 %% end of the summary sentence only if it is also the last segment in
-%% the list.
+%% the list, or is followed by a 'p' or 'br' ("whitespace") element.
 
 get_first_sentence([#xmlElement{name = p, content = Es} | _]) ->
     %% Descend into initial paragraph.
@@ -134,14 +134,17 @@ get_first_sentence([#xmlElement{name = p, content = Es} | _]) ->
 get_first_sentence(Es) ->
     get_first_sentence_1(Es).
 
-get_first_sentence_1([E = #xmlText{value = Txt}]) ->
-    {_, Txt1} = end_of_sentence(Txt),
-    [E#xmlText{value = Txt1}];
 get_first_sentence_1([E = #xmlText{value = Txt} | Es]) ->
-    case end_of_sentence(Txt) of
-	{true, Txt1} ->
+    Last = case Es of
+	       [#xmlElement{name = p} | _] -> true;
+	       [#xmlElement{name = br} | _] -> true;
+	       [] -> true;
+	       _ -> false
+	   end,
+    case end_of_sentence(Txt, Last) of
+	{value, Txt1} ->
 	    [E#xmlText{value = Txt1}];
-	{false, _} ->
+	none ->
 	    [E | get_first_sentence_1(Es)]
     end;
 get_first_sentence_1([E | Es]) ->
@@ -150,34 +153,36 @@ get_first_sentence_1([E | Es]) ->
 get_first_sentence_1([]) ->
     [].
 
-end_of_sentence(Cs) ->
-    end_of_sentence(Cs, []).
+end_of_sentence(Cs, Last) ->
+    end_of_sentence(Cs, Last, []).
 
 %% We detect '.' and '!' as end-of-sentence markers.
 
-end_of_sentence([C=$., $\s | _], As) ->
-    end_of_sentence(true, C, As);
-end_of_sentence([C=$., $\t | _], As) ->
-    end_of_sentence(true, C, As);
-end_of_sentence([C=$., $\n | _], As) ->
-    end_of_sentence(true, C, As);
-end_of_sentence([C=$.], As) ->
-    end_of_sentence(false, C, As);
-end_of_sentence([C=$!, $\s | _], As) ->
-    end_of_sentence(true, C, As);
-end_of_sentence([C=$!, $\t | _], As) ->
-    end_of_sentence(true, C, As);
-end_of_sentence([C=$!, $\n | _], As) ->
-    end_of_sentence(true, C, As);
-end_of_sentence([C=$!], As) ->
-    end_of_sentence(false, C, As);
-end_of_sentence([C | Cs], As) ->
-    end_of_sentence(Cs, [C | As]);
-end_of_sentence([], As) ->
-    end_of_sentence(false, $., strip_space(As)).  % add a '.'
+end_of_sentence([C=$., $\s | _], _, As) ->
+    end_of_sentence_1(C, true, As);
+end_of_sentence([C=$., $\t | _], _, As) ->
+    end_of_sentence_1(C, true, As);
+end_of_sentence([C=$., $\n | _], _, As) ->
+    end_of_sentence_1(C, true, As);
+end_of_sentence([C=$.], Last, As) ->
+    end_of_sentence_1(C, Last, As);
+end_of_sentence([C=$!, $\s | _], _, As) ->
+    end_of_sentence_1(C, true, As);
+end_of_sentence([C=$!, $\t | _], _, As) ->
+    end_of_sentence_1(C, true, As);
+end_of_sentence([C=$!, $\n | _], _, As) ->
+    end_of_sentence_1(C, true, As);
+end_of_sentence([C=$!], Last, As) ->
+    end_of_sentence_1(C, Last, As);
+end_of_sentence([C | Cs], Last, As) ->
+    end_of_sentence(Cs, Last, [C | As]);
+end_of_sentence([], Last, As) ->
+    end_of_sentence_1($., Last, strip_space(As)).  % add a '.'
 
-end_of_sentence(Flag, C, As) ->
-    {Flag, lists:reverse([C | As])}.
+end_of_sentence_1(C, true, As) ->
+    {value, lists:reverse([C | As])};
+end_of_sentence_1(_, false, _) ->
+    none.
 
 %% For handling ISO 8859-1 (Latin-1) we use the following information:
 %%
@@ -443,16 +448,6 @@ uri_get_file(File0) ->
     end.
 
 uri_get_http(URI) ->
-    %% First try unofficial undocumented, old http access function, for
-    %% backwards compatibility with pre-R10 versions of OTP.
-    case catch {ok, http:request_sync(get, {URI,[]})} of
-	{'EXIT', {undef,_}} ->
-	    uri_get_http_r11(URI);
-	Result ->
-	    uri_get_http_1(Result, URI)
-    end.
-
-uri_get_http_r11(URI) ->
     %% Try using option full_result=false
     case catch {ok, http:request(get, {URI,[]}, [],
 				 [{full_result, false}])} of

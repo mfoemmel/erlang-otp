@@ -26,6 +26,7 @@
 %%-define(DO_ASSERT, true).
 -include("../main/hipe.hrl").
 -include("../flow/cfg.inc").
+-include("hipe_icode.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -86,13 +87,13 @@ is_goto(Instr) ->
 is_branch(Instr) ->
   hipe_icode:is_branch(Instr).
 
-is_pure_branch(Branch) ->
-  case hipe_icode:type(Branch) of
-    'if' -> true;
-    goto -> true;
-    switch_val -> true;
-    switch_tuple_arity -> true;
-    type -> true;
+is_pure_branch(Instr) ->
+  case Instr of
+    #'if'{} -> true;
+    #goto{} -> true;
+    #switch_val{} -> true;
+    #switch_tuple_arity{} -> true;
+    #type{} -> true;
     _ -> false
   end.
 

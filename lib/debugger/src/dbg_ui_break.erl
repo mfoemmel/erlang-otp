@@ -78,16 +78,20 @@ gui_cmd({win, Win2}, _Win) ->
 gui_cmd({module, Mod}, Win) ->
     Funcs = int:functions(Mod),
     dbg_ui_break_win:update_functions(Win, Funcs);
-gui_cmd({break, Data, Action}, _Win) ->
-    case Data of
-	[Mod, Line] ->
-	    int:break(Mod, Line),
-	    int:action_at_break(Mod, Line, Action);
-	[Mod, Line, CMod, CFunc] ->
-	    int:break(Mod, Line),
-	    int:test_at_break(Mod, Line, {CMod, CFunc}),
-	    int:action_at_break(Mod, Line, Action);
-	[Mod, Func, Arity] ->
-	    int:break_in(Mod, Func, Arity)
-    end,
+gui_cmd({break, DataL, Action}, _Win) ->
+    Fun =
+	fun(Data) ->
+		case Data of
+		    [Mod, Line] ->
+			int:break(Mod, Line),
+			int:action_at_break(Mod, Line, Action);
+		    [Mod, Line, CMod, CFunc] ->
+			int:break(Mod, Line),
+			int:test_at_break(Mod, Line, {CMod, CFunc}),
+			int:action_at_break(Mod, Line, Action);
+		    [Mod, Func, Arity] ->
+			int:break_in(Mod, Func, Arity)
+		end
+	end,
+    lists:foreach(Fun, DataL),
     exit(normal).

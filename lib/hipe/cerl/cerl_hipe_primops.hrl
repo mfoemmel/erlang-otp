@@ -28,7 +28,7 @@
 %% translation from Core Erlang to Icode, or are renamed/rewritten to a
 %% corresponding ICode primop; they only exist to help the translation.
 
--define(PRIMOP_IDENTITY, identity).		% arity 1
+%%-define(PRIMOP_IDENTITY, identity).		% arity 1
 -define(PRIMOP_NOT, 'not').			% arity 1
 -define(PRIMOP_AND, 'and').			% arity 2
 -define(PRIMOP_OR, 'or').			% arity 2

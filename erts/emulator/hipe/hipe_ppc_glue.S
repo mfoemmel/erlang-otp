@@ -265,11 +265,13 @@ CSYM(hipe_ppc_throw_to_native):
 	bl	.enter
 	/* get the process pointer */
 	mr	P, r3
+	/* prepare to invoke handler */
+	LOAD	r0, P_NCALLEE(P)	/* set by hipe_find_handler() */
+	mtctr	r0
 	/* cache some P state in registers */
 	RESTORE_CACHED_STATE
-	/* find and invoke the handler */
-	li	r4, 0			/* narity == 0, no args on the stack */
-	b	.find_exn_handler_no_lr	/* skip LR reload and save */
+	/* invoke the handler */
+	bctr
 
 /*
  * Find and invoke catch handler (it must exist).
@@ -279,7 +281,6 @@ CSYM(hipe_ppc_throw_to_native):
  */
 .find_exn_handler:
 	STORE	TEMP_LR, P_NRA(P)
-.find_exn_handler_no_lr:
 	stw	r4, P_NARITY(P)	/* Note: narity is a 32-bit field */
 	/* find and prepare to invoke the handler */
 	mr	r3, P
@@ -436,7 +437,7 @@ ASYM(nbif_suspend_msg):
 /*
  * Suspend from a receive with a timeout (waiting for a message)
  *	if( !(p->flags & F_TIMO) ) { suspend }
- *	else { p->flags ^= F_TIMO; return 0; }
+ *	else { return 0; }
  */
 	GLOBAL(ASYM(nbif_suspend_msg_timeout))
 ASYM(nbif_suspend_msg_timeout):
@@ -444,12 +445,8 @@ ASYM(nbif_suspend_msg_timeout):
 	li	r3, HIPE_MODE_SWITCH_RES_WAIT_TIMEOUT
 	/* this relies on F_TIMO (1<<2) fitting in a uimm16 */
 	andi.	r0, r4, F_TIMO
-	/* XXX: The process will immediately execute 'clear_timeout',
-	   repeating this statement. Remove it? */
-	xori	r4, r4, F_TIMO			/* F_TIMO was set, clear it */
 	beq-	.suspend_exit			/* sees the CR state from andi. above */
 	/* timeout has occurred */
-	STORE	r4, P_FLAGS(P)
 	li	r3, 0
 	blr
 

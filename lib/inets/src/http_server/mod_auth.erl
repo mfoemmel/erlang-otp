@@ -427,6 +427,7 @@ load("deny " ++ Deny,[{directory,Directory, DirData}|Rest]) ->
     end;
 
 load("</Directory>",[{directory,Directory, DirData}|Rest]) -> 
+    directory_config_check(Directory, DirData),
     {ok, Rest, {directory, Directory, DirData}};
 
 load("AuthMnesiaDB " ++ AuthMnesiaDB,
@@ -440,6 +441,31 @@ load("AuthMnesiaDB " ++ AuthMnesiaDB,
 	    {error, ?NICE(httpd_conf:clean(AuthMnesiaDB) ++
 			  " is an invalid AuthMnesiaDB")}
     end.
+
+directory_config_check(Directory, DirData) ->
+    case httpd_util:key1search(DirData,auth_type) of
+	plain ->
+	    check_filename_present(Directory,auth_user_file,DirData),
+	    check_filename_present(Directory,auth_group_file,DirData);
+	undefined ->
+	    throw({error,?NICE("Server configuration missed AuthDBType directive")});
+	_ ->
+	    ok
+    end.
+check_filename_present(_Dir,AuthFile,DirData) ->
+    case httpd_util:key1search(DirData,AuthFile) of
+	Name when list(Name) ->
+	    ok;
+	_ ->
+	    throw({error,?NICE("Server configuration missed "++directive(AuthFile)++" directive")})
+    end.
+
+directive(auth_user_file) ->
+    "AuthUserFile";
+directive(auth_group_file) ->
+    "AuthGroupFile";
+directive(_) ->
+    "".
 
 %% store
 

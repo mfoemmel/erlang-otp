@@ -20,7 +20,7 @@
 %%
 %% Author contact: richardc@csd.uu.se
 %%
-%% $Id: erl_syntax.erl,v 1.78 2004/11/22 07:21:55 richardc Exp $
+%% $Id$
 %%
 %% =====================================================================
 %%
@@ -208,6 +208,7 @@
 	 if_expr_clauses/1,
 	 implicit_fun/1,
 	 implicit_fun/2,
+	 implicit_fun/3,
 	 implicit_fun_name/1,
 	 infix_expr/3,
 	 infix_expr_left/1,
@@ -559,6 +560,7 @@ type(Node) ->
 	{'cond', _, _} -> cond_expr;
 	{'fun', _, {clauses, _}} -> fun_expr;
 	{'fun', _, {function, _, _}} -> implicit_fun;
+	{'fun', _, {function, _, _, _}} -> implicit_fun;
 	{'if', _, _} -> if_expr;
 	{'receive', _, _, _, _} -> receive_expr;
 	{'receive', _, _} -> receive_expr;
@@ -2484,11 +2486,13 @@ binary_field(Body) ->
 %%                    Types::[syntaxTree()]) -> syntaxTree()
 %%	    Size = none | syntaxTree()
 %%
-%% @doc Creates an abstract binary template field. (Utility function.)
+%% @doc Creates an abstract binary template field.
 %% If <code>Size</code> is <code>none</code>, this is equivalent to
 %% "<code>binary_field(Body, Types)</code>", otherwise it is
 %% equivalent to "<code>binary_field(size_qualifier(Body, Size),
 %% Types)</code>".
+%%
+%% (This is a utility function.)
 %%
 %% @see binary/1
 %% @see binary_field/2
@@ -2605,12 +2609,13 @@ binary_field_types(Node) ->
 %% @spec binary_field_size(Node::syntaxTree()) -> none | syntaxTree()
 %%
 %% @doc Returns the size specifier subtree of a
-%% <code>binary_field</code> node, if any. (Utility function.) If
-%% <code>Node</code> represents
-%% "<code><em>Body</em>:<em>Size</em></code>" or
+%% <code>binary_field</code> node, if any. If <code>Node</code>
+%% represents "<code><em>Body</em>:<em>Size</em></code>" or
 %% "<code><em>Body</em>:<em>Size</em>/<em>T1</em>, ...,
 %% <em>Tn</em></code>", the result is <code>Size</code>, otherwise
 %% <code>none</code> is returned.
+%%
+%% (This is a utility function.)
 %%
 %% @see binary_field/2
 %% @see binary_field/3
@@ -4428,12 +4433,13 @@ record_expr_fields(Node) ->
 %%                   Arguments::[syntaxTree()]) -> syntaxTree()
 %%	    Module = none | syntaxTree()
 %%
-%% @doc Creates an abstract function application expression. (Utility
-%% function.) If <code>Module</code> is <code>none</code>, this is
-%% call is equivalent to <code>application(Function,
-%% Arguments)</code>, otherwise it is equivalent to
-%% <code>application(module_qualifier(Module, Function),
+%% @doc Creates an abstract function application expression. If
+%% <code>Module</code> is <code>none</code>, this is call is equivalent
+%% to <code>application(Function, Arguments)</code>, otherwise it is
+%% equivalent to <code>application(module_qualifier(Module, Function),
 %% Arguments)</code>.
+%%
+%% (This is a utility function.)
 %%
 %% @see application/2
 %% @see module_qualifier/2
@@ -5432,14 +5438,15 @@ class_qualifier_body(Node) ->
 %% @spec implicit_fun(Name::syntaxTree(), Arity::syntaxTree()) ->
 %%           syntaxTree()
 %%
-%% @doc Creates an abstract "implicit fun" expression. (Utility
-%% function.) If <code>Arity</code> is <code>none</code>, this is
-%% equivalent to <code>implicit_fun(Name)</code>, otherwise it is
-%% equivalent to <code>implicit_fun(arity_qualifier(Name,
-%% Arity))</code>.
+%% @doc Creates an abstract "implicit fun" expression. If
+%% <code>Arity</code> is <code>none</code>, this is equivalent to
+%% <code>implicit_fun(Name)</code>, otherwise it is equivalent to
+%% <code>implicit_fun(arity_qualifier(Name, Arity))</code>.
+%%
+%% (This is a utility function.)
 %%
 %% @see implicit_fun/1
-
+%% @see implicit_fun/3
 
 implicit_fun(Name, none) ->
     implicit_fun(Name);
@@ -5448,13 +5455,39 @@ implicit_fun(Name, Arity) ->
 
 
 %% =====================================================================
+%% @spec implicit_fun(Module::syntaxTree(), Name::syntaxTree(),
+%%                    Arity::syntaxTree()) -> syntaxTree()
+%%
+%% @doc Creates an abstract module-qualified "implicit fun" expression.
+%% If <code>Module</code> is <code>none</code>, this is equivalent to
+%% <code>implicit_fun(Name, Arity)</code>, otherwise it is equivalent to
+%% <code>implicit_fun(module_qualifier(Module, arity_qualifier(Name,
+%% Arity))</code>.
+%%
+%% (This is a utility function.)
+%%
+%% @see implicit_fun/1
+%% @see implicit_fun/2
+
+implicit_fun(none, Name, Arity) ->
+    implicit_fun(Name, Arity);
+implicit_fun(Module, Name, Arity) ->
+    implicit_fun(module_qualifier(Module, arity_qualifier(Name, Arity))).
+
+
+%% =====================================================================
 %% @spec implicit_fun(Name::syntaxTree()) -> syntaxTree()
 %%
 %% @doc Creates an abstract "implicit fun" expression. The result
-%% represents "<code>fun <em>Name</em></code>".
+%% represents "<code>fun <em>Name</em></code>". <code>Name</code> should
+%% represent either <code><em>F</em>/<em>A</em></code> or
+%% <code><em>M</em>:<em>F</em>/<em>A</em></code>
 %%
 %% @see implicit_fun_name/1
 %% @see implicit_fun/2
+%% @see implicit_fun/3
+%% @see arity_qualifier/2
+%% @see module_qualifier/2
 
 %% type(Node) = implicit_fun
 %% data(Node) = syntaxTree()
@@ -5462,7 +5495,9 @@ implicit_fun(Name, Arity) ->
 %% `erl_parse' representation:
 %%
 %% {'fun', Pos, {function, Name, Arity}}
+%% {'fun', Pos, {function, Module, Name, Arity}}
 %%
+%%	Module = atom()
 %%	Name = atom()
 %%	Arity = integer()
 
@@ -5483,6 +5518,18 @@ revert_implicit_fun(Node) ->
 		_ ->
 		    Node
 	    end;
+	module_qualifier ->
+	    M = module_qualifier_argument(Name),
+	    Name1 = module_qualifier_body(Name),
+	    F = arity_qualifier_body(Name1),
+	    A = arity_qualifier_argument(Name1),
+	    case {type(M), type(F), type(A)} of
+		{atom, atom, integer} ->
+		    {'fun', Pos,
+		     {function, concrete(M), concrete(F), concrete(A)}};
+		_ ->
+		    Node
+	    end;
 	_ ->
 	    Node
     end.
@@ -5494,16 +5541,25 @@ revert_implicit_fun(Node) ->
 %% @doc Returns the name subtree of an <code>implicit_fun</code> node.
 %%
 %% <p>Note: if <code>Node</code> represents "<code>fun
-%% <em>N</em>/<em>A</em></code>", then the result is the subtree
-%% representing "<code><em>N</em>/<em>A</em></code>".</p>
+%% <em>N</em>/<em>A</em></code>" or "<code>fun
+%% <em>M</em>:<em>N</em>/<em>A</em></code>", then the result is the
+%% subtree representing "<code><em>N</em>/<em>A</em></code>" or
+%% "<code><em>M</em>:<em>N</em>/<em>A</em></code>", respectively.</p>
 %%
 %% @see implicit_fun/1
+%% @see arity_qualifier/2
+%% @see module_qualifier/2
 
 implicit_fun_name(Node) ->
     case unwrap(Node) of
 	{'fun', Pos, {function, Atom, Arity}} ->
 	    arity_qualifier(set_pos(atom(Atom), Pos),
 			    set_pos(integer(Arity), Pos));
+	{'fun', Pos, {function, Module, Atom, Arity}} ->
+	    module_qualifier(set_pos(atom(Module), Pos),
+			     arity_qualifier(
+			       set_pos(atom(Atom), Pos),
+			       set_pos(integer(Arity), Pos)));
 	Node1 ->
 	    data(Node1)
     end.

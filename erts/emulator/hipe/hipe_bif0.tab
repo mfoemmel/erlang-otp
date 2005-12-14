@@ -4,9 +4,9 @@
 # bif hipe_bifs:name/arity
 
 #bif hipe_bifs:read_u8/1
-bif hipe_bifs:read_u32/1
+#bif hipe_bifs:read_u32/1
 bif hipe_bifs:write_u8/2
-bif hipe_bifs:write_s32/2
+#bif hipe_bifs:write_s32/2
 bif hipe_bifs:write_u32/2
 # bif hipe_bifs:write_s64/2
 # bif hipe_bifs:write_u64/2
@@ -34,13 +34,6 @@ bif hipe_bifs:set_native_address/3
 
 bif hipe_bifs:set_funinfo_native_address/3
 bif hipe_bifs:invalidate_funinfo_native_addresses/1
-bif hipe_bifs:set_funinfo_refers_to/2
-bif hipe_bifs:get_funinfo_refers_to/1
-bif hipe_bifs:set_funinfo_referred_from/2
-bif hipe_bifs:get_funinfo_referred_from/1
-# XXX: don't expose the tags used in the funinfo table
-atom refers_to
-atom referred_from
 
 bif hipe_bifs:update_code_size/3
 bif hipe_bifs:code_size/1
@@ -65,6 +58,29 @@ bif hipe_bifs:system_crc/1
 bif hipe_bifs:get_rts_param/1
 
 #bif hipe_bifs:tuple_to_float/1
+
+bif hipe_bifs:patch_insn/3
+bif hipe_bifs:patch_call/3
+
+bif hipe_bifs:add_ref/2
+bif hipe_bifs:mark_referred_from/1
+bif hipe_bifs:remove_refs_from/1
+bif hipe_bifs:redirect_referred_from/1
+
+# atoms used by add_ref/2
+atom call
+atom load_mfa
+atom local
+atom remote
+
+# atoms used by hipe_bifs:patch_insn/3
+atom atom
+atom c_const
+atom call
+atom closure
+atom constant
+atom load_mfa
+atom x86_abs_pcrel
 
 # atom used by hipe_patch_address()
 atom load_fe

@@ -58,8 +58,12 @@
 
 /*
  * nocons_nofail_primop_interface_0(nbif_name, cbif_name)
+ * nocons_nofail_primop_interface_1(nbif_name, cbif_name)
+ * nocons_nofail_primop_interface_2(nbif_name, cbif_name)
+ * nocons_nofail_primop_interface_3(nbif_name, cbif_name)
+ * nocons_nofail_primop_interface_5(nbif_name, cbif_name)
  *
- * A primop with implicit P parameter, 0 ordinary parameters,
+ * A primop with implicit P parameter, 0-3 or 5 ordinary parameters,
  * and no failure mode.
  * Native P state will not be accessed or updated.
  * GC may not occur (NSP/HP limits unchanged).

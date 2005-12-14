@@ -151,7 +151,7 @@ sync(Nodes) ->
 
 send(Name, Msg) ->
     case whereis_name(Name) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    Pid ! Msg,
 	    Pid;
 	undefined ->
@@ -181,10 +181,10 @@ node_disconnected(Node) ->
 %% undefined which one of them is used.
 %% Method blocks the name registration, but does not affect global locking.
 %%-----------------------------------------------------------------
-register_name(Name, Pid) when pid(Pid) ->
+register_name(Name, Pid) when is_pid(Pid) ->
     register_name(Name, Pid, {?MODULE, random_exit_name}).
 
-register_name(Name, Pid, Method) when pid(Pid) ->
+register_name(Name, Pid, Method) when is_pid(Pid) ->
     trans_all_known(fun(Nodes) ->
 		  case where(Name) of
 		      undefined ->
@@ -209,10 +209,10 @@ unregister_name(Name) ->
 		  end)
     end.
 
-re_register_name(Name, Pid) when pid(Pid) ->
+re_register_name(Name, Pid) when is_pid(Pid) ->
     re_register_name(Name, Pid, {?MODULE, random_exit_name}).
 
-re_register_name(Name, Pid, Method) when pid(Pid) ->
+re_register_name(Name, Pid, Method) when is_pid(Pid) ->
     trans_all_known(fun(Nodes) ->
 		  gen_server:multi_call(Nodes,
 					global_name_server,
@@ -237,10 +237,10 @@ registered_names() ->
 %% C-node due to the link between the global_name_server and the
 %% registered process.
 %%-----------------------------------------------------------------
-register_name_external(Name, Pid) when pid(Pid) ->
+register_name_external(Name, Pid) when is_pid(Pid) ->
     register_name_external(Name, Pid, {?MODULE, random_exit_name}).
 
-register_name_external(Name, Pid, Method) when pid(Pid) ->
+register_name_external(Name, Pid, Method) when is_pid(Pid) ->
     trans_all_known(fun(Nodes) ->
 		  case where(Name) of
 		      undefined ->
@@ -262,7 +262,7 @@ set_lock(Id) ->
 set_lock(Id, Nodes) ->
     set_lock(Id, Nodes, infinity, 1).
 
-set_lock(Id, Nodes, Retries) when integer(Retries), Retries >= 0 ->
+set_lock(Id, Nodes, Retries) when is_integer(Retries), Retries >= 0 ->
     set_lock(Id, Nodes, Retries, 1);
 set_lock(Id, Nodes, infinity) ->
     set_lock(Id, Nodes, infinity, 1).
@@ -474,6 +474,9 @@ handle_call({del_lock, Lock}, {Pid, _Tag}, S) ->
 handle_call(get_known, _From, S) ->
     {reply, S#state.known, S};
 
+handle_call(get_synced, _From, S) ->
+    {reply, S#state.synced, S};
+
 handle_call({sync, Nodes}, From, S) ->
     %% If we have several global groups, this won't work, since we will
     %% do start_sync on a nonempty list of nodes even if the system
@@ -508,7 +511,7 @@ handle_cast({init_connect, Vsn, Node, InitMsg}, S) ->
 	{HisVsn, HisTag} ->
 	    init_connect(HisVsn, Node, InitMsg, HisTag, S#state.resolvers, S);
 	%% To be future compatible
-	Tuple when tuple(Tuple) ->
+	Tuple when is_tuple(Tuple) ->
 	    List = tuple_to_list(Tuple),
 	    [_HisVsn, HisTag | _] = List,
 	    %% use own version handling if his is newer.
@@ -625,31 +628,17 @@ handle_cast({new_nodes, _Node, Ops, Names_ext, Nodes, _Nodes_v2}, S) ->
 %%
 %% We are in sync with this node (from the other node's known world).
 %%========================================================================
-handle_cast({in_sync, Node, IsKnown}, S) ->
+handle_cast({in_sync, Node, _IsKnown}, S) ->
     %% Sent from global_name_server at Node (in the other partition).
-    ?trace({'####', in_sync, {Node, IsKnown}}),
+    ?trace({'####', in_sync, {Node, _IsKnown}}),
     lists:foreach(fun(Pid) -> Pid ! {synced, [Node]} end, S#state.syncers),
     NewS = cancel_locker(Node, S, get({sync_tag_my, Node})),
     reset_node_state(Node),
-    %% S#state.known is updated for the sake of the case when not
-    %% S#state.connect_all. It happens that known gets updated when
-    %% connect_all (in this case there is a lock on 'global'), but a
-    %% new_nodes message with Node as a member of Nodes will update
-    %% known soon (without duplicates).
-    NKnown = case lists:member(Node, Known = NewS#state.known) of
-		 false when IsKnown ->
-		     gen_server:cast({global_name_server, Node},
-				     {in_sync, node(), false}),
-                     S#state.the_locker ! {add_to_known, [Node]},
-		     [Node | Known];
-		 _ ->
-		     Known
-	     end,
     NSynced = case lists:member(Node, Synced = NewS#state.synced) of
 		  true -> Synced;
 		  false -> [Node | Synced]
 	      end,
-    {noreply, NewS#state{known = NKnown, synced = NSynced}};
+    {noreply, NewS#state{synced = NSynced}};
 
 %% Called when Pid on other node crashed
 handle_cast({async_del_name, Name, Pid}, S) ->
@@ -668,7 +657,7 @@ handle_cast({async_del_lock, _ResourceId, Pid}, S) ->
 
 handle_info({'EXIT', Deleter, _Reason}=Exit, #state{the_deleter=Deleter}=S) ->
     {stop, {deleter_died,Exit}, S#state{the_deleter=undefined}};
-handle_info({'EXIT', Pid, _Reason}, S) when pid(Pid) ->
+handle_info({'EXIT', Pid, _Reason}, S) when is_pid(Pid) ->
     ?trace({global_EXIT,Pid}),
     %% The process that died was either a synch process started by
     %% start_sync or a registered process.
@@ -888,12 +877,12 @@ resolved(Node, HisResolved, HisKnown, Names_ext, S) ->
     Known = S#state.known,
     Synced = S#state.synced,
     NewNodes = [Node | HisKnown],
+    sync_others(HisKnown),
     do_ops(Ops, Names_ext),
     gen_server:abcast(Known, global_name_server,
 		      {new_nodes, node(), Ops, Names_ext, NewNodes,NewNodes}),
     %% I am synced with Node, but not with HisKnown yet
     lists:foreach(fun(Pid) -> Pid ! {synced, [Node]} end, S#state.syncers),
-    gen_server:abcast(HisKnown, global_name_server, {in_sync, node(), true}),
     NewS = lists:foldl(fun(Node1, S1) -> 
                                Tag1 = get({sync_tag_my, Node1}),
                                ?trace({calling_cancel_locker,Tag1,get()}),
@@ -908,7 +897,6 @@ resolved(Node, HisResolved, HisKnown, Names_ext, S) ->
     NewS#state{known = NewKnown, synced = [Node | Synced]}.
 
 new_nodes(Ops, Names_ext, Nodes, S) ->
-    do_ops(Ops, Names_ext),
     Known = S#state.known,
     %% (*) This one requires some thought...
     %% We're node a, other nodes b and c:
@@ -916,8 +904,9 @@ new_nodes(Ops, Names_ext, Nodes, S) ->
     %% b from c, leading to b sending {new_nodes, [a]} to us (node a).
     %% Therefore, we make sure we never get duplicates in Known.
     NewNodes = lists:delete(node(), Nodes -- Known),
+    sync_others(NewNodes),
+    do_ops(Ops, Names_ext),
     ?trace({new_nodes_in_sync,{new_nodes,NewNodes}}),
-    gen_server:abcast(NewNodes, global_name_server, {in_sync, node(), true}),
     S#state.the_locker ! {add_to_known, NewNodes},
     S#state{known = Known ++ NewNodes}.
 
@@ -1041,7 +1030,6 @@ remove_lock(ResourceId, LockRequesterId, Pid, Pids) ->
 
 do_ops(Ops, Names_ext) ->
     ?trace({do_ops, {ops,Ops}}),
-    send_missing_nodedowns(Ops),
 
     XInserts = [{Name, Pid, RegNode, Method} || 
                    {Name2, Pid2, RegNode} <- Names_ext,
@@ -1066,30 +1054,32 @@ do_ops(Ops, Names_ext) ->
 %% operations were assembled has since died. The final {in_sync,...}
 %% messages do not generate nodedown messages for such nodes. To
 %% compensate "artificial" nodedown messages are created which will
-%% remove the registered names that were inserted. Since monitor_node
-%% may take some time processes are spawned to avoid locking up the
-%% global_name_server. Should somehow double nodedown messages occur
-%% (one of them artificial), nothing bad can happen (the second
-%% nodedown is a no-op). It is assumed that there cannot be a nodeup
-%% before the artificial nodedown.
+%% remove the registered names that were inserted (as well as removing
+%% the node names from 'known'). Since monitor_node may take some time
+%% processes are spawned to avoid locking up the global_name_server.
+%% Should somehow double nodedown messages occur (one of them
+%% artificial), nothing bad can happen (the second nodedown is a
+%% no-op). It is assumed that there cannot be a nodeup before the
+%% artificial nodedown.
 %%
 %% The extra nodedown messages generated here also take care of the
 %% case that a nodedown message is received _before_ the operations
 %% are run.
-send_missing_nodedowns(Ops) ->
-    Nodes = lists:usort([node(Pid) || {insert, {_Name,Pid,_Method}} <- Ops]),
+sync_others(Nodes) ->
     lists:foreach(fun(Node) -> 
-                          spawn(fun() -> send_missing_nodedown(Node) end)
+                          spawn(fun() -> sync_other(Node) end)
                   end, Nodes).
 
-send_missing_nodedown(Node) ->
+sync_other(Node) ->
     monitor_node(Node, true),
     receive
         {nodedown, Node} ->
             ?trace({missing_nodedown, {node, Node}}),
+            error_logger:warning_msg("global: ~w failed to connect to ~w\n",
+                                     [node(), Node]),
             global_name_server ! {nodedown, Node}
     after 0 ->
-            ok
+            gen_server:cast({global_name_server,Node}, {in_sync,node(),true})
     end,
     % monitor_node(Node, false),
     exit(normal).
@@ -1359,10 +1349,8 @@ locker_lock_id(Pid, Vsn) when Vsn > 4 ->
     {?GLOBAL_RID, lists:sort([self(), Pid])}.
 
 lock_nodes_safely(LockId, Extra, S0) ->
-    First = if
-                node() =:= S0#multi.the_boss -> [node()];
-                true -> [node(), S0#multi.the_boss] % optimization
-            end,
+    %% Locking the boss first is an optimization.
+    First = lists:usort([node(), S0#multi.the_boss]) -- [nonode@nohost],
     case set_lock(LockId, First, 0) of
         true ->
             S = update_locker_known(S0),
@@ -1376,9 +1364,9 @@ lock_nodes_safely(LockId, Extra, S0) ->
                             %% Since the boss is locked we should have
                             %% gotten the lock, at least if there are
                             %% no version 4 nodes in the partition or
-                            %% someone else locking 'global'. 
+                            %% someone else is locking 'global'. 
                             %% Calling set_lock with Retries > 0 does
-                            %% not seem to speed thing up.
+                            %% not seem to speed things up.
                             del_lock(LockId, Extra ++ First),
                             {false, S}
                     end;
@@ -1407,10 +1395,7 @@ update_locker_known(Upd, S) ->
                 {add, Nodes} -> Nodes ++ S#multi.known;
                 {remove, Node} -> lists:delete(Node, S#multi.known)
             end,
-    TheBoss = if 
-                  Known =:= [] -> node(); 
-                  true -> lists:max([node() | Known]) 
-              end,	
+    TheBoss = lists:max([node() | Known]), 
     S#multi{known = Known, the_boss = TheBoss}.
 
 random_element(L) ->
@@ -1863,8 +1848,8 @@ collect_deletions(Global, Deletions) ->
 	    collect_deletions(Global, [{Name,Pid} | Deletions]);
 	Other ->
 	    error_logger:error_msg("The global_name_server deleter process "
-				   "received an unexpected message:\n~p\n", 
-				   [Other]),
+                                   "received an unexpected message:\n~p\n", 
+                                   [Other]),
 	    collect_deletions(Global, Deletions)
     after case Deletions of
 	      [] -> infinity;

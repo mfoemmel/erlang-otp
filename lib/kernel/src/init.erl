@@ -81,12 +81,12 @@ get_argument(Arg) ->
 script_id() ->
     request(script_id).
 
-bs2as(L0) when list(L0) ->
+bs2as(L0) when is_list(L0) ->
     map(fun b2a/1, L0);
 bs2as(L) ->
     L.
 
-bs2ss(L0) when list(L0) ->
+bs2ss(L0) when is_list(L0) ->
     map(fun b2s/1, L0);
 bs2ss(L) ->
     L.
@@ -152,14 +152,14 @@ prepare_run_args({s, [M,F|Args]}) ->
 prepare_run_args({run, [M,F|Args]}) ->
     [b2a(M), b2a(F) | bs2ss(Args)].
 
-b2a(Bin) when binary(Bin) ->
+b2a(Bin) when is_binary(Bin) ->
     list_to_atom(binary_to_list(Bin));
-b2a(A) when atom(A) ->
+b2a(A) when is_atom(A) ->
     A.
 
-b2s(Bin) when binary(Bin) ->
+b2s(Bin) when is_binary(Bin) ->
     binary_to_list(Bin);
-b2s(L) when list(L) ->
+b2s(L) when is_list(L) ->
     L.
 
 map(_F, []) ->
@@ -194,19 +194,19 @@ boot(Start,Flags,Args) ->
     boot_loop(BootPid,State).
 
 %%% Convert a term to a printable string, if possible.
-to_string(X) when list(X) ->			% assume string
+to_string(X) when is_list(X) ->			% assume string
     F = flatten(X, []),
     case printable_list(F) of
 	true ->  F;
 	false -> ""
     end;
-to_string(X) when atom(X) ->
+to_string(X) when is_atom(X) ->
     atom_to_list(X);
-to_string(X) when pid(X) ->
+to_string(X) when is_pid(X) ->
     pid_to_list(X);
-to_string(X) when float(X) ->
+to_string(X) when is_float(X) ->
     float_to_list(X);
-to_string(X) when integer(X) ->
+to_string(X) when is_integer(X) ->
     integer_to_list(X);
 to_string(_X) ->
     "".						% can't do anything with it
@@ -214,7 +214,7 @@ to_string(_X) ->
 %% This is an incorrect and narrow definition of printable characters.
 %% The correct one is in io_lib:printable_list/1
 %%
-printable_list([H|T]) when integer(H), H >= 32, H =< 126 ->
+printable_list([H|T]) when is_integer(H), H >= 32, H =< 126 ->
     printable_list(T);
 printable_list([$\n|T]) -> printable_list(T);
 printable_list([$\r|T]) -> printable_list(T);
@@ -222,7 +222,7 @@ printable_list([$\t|T]) -> printable_list(T);
 printable_list([]) -> true;
 printable_list(_) ->  false.
 
-flatten([H|T], Tail) when list(H) ->
+flatten([H|T], Tail) when is_list(H) ->
     flatten(H, flatten(T, Tail));
 flatten([H|T], Tail) ->
     [H|flatten(T, Tail)];
@@ -235,7 +235,7 @@ things_to_string([X|Rest]) ->
 things_to_string([]) ->
     "".
 
-halt_string(String, List) when list(List) ->
+halt_string(String, List) when is_list(List) ->
     String ++ things_to_string(List);
 %% Just in case someone forgot to listify the argument:
 halt_string(String, List) ->
@@ -312,7 +312,7 @@ garb_boot_loop(BootPid,State) ->
     garbage_collect(),
     boot_loop(BootPid,State).
 
-new_kernelpid({Name,{ok,Pid}},BootPid,State) when pid(Pid) ->
+new_kernelpid({Name,{ok,Pid}},BootPid,State) when is_pid(Pid) ->
     link(Pid),
     BootPid ! {self(),ok,Pid},
     Kernel = State#state.kernel,
@@ -429,7 +429,7 @@ make_permanent(Boot,Config,Flags0,State) ->
 
 set_flag(_Flag,false,Flags) ->
     {ok,Flags};
-set_flag(Flag,Value,Flags) when list(Value) ->
+set_flag(Flag,Value,Flags) when is_list(Value) ->
     case catch list_to_binary(Value) of
 	{'EXIT',_} ->
 	    {error,badarg};
@@ -745,7 +745,7 @@ get_boot(BootFile) ->
     case erl_prim_loader:get_file(BootFile) of
 	{ok,Bin,_} ->
 	    case binary_to_term(Bin) of
-		{script,Id,CmdList} when list(CmdList) ->
+		{script,Id,CmdList} when is_list(CmdList) ->
 		    init ! {self(),{script_id,Id}}, % ;-)
 		    {ok, CmdList};
 		_ ->
@@ -781,7 +781,7 @@ eval_script([{kernel_load_completed}|CfgL],Init,PathFs,Vars,P,{_,embedded,Par},D
 eval_script([{kernel_load_completed}|CfgL],Init,PathFs,Vars,P,{_,E,Par},Deb) ->
     eval_script(CfgL,Init,PathFs,Vars,P,{false,E,Par},Deb);
 eval_script([{primLoad,Mods}|CfgL],Init,PathFs,Vars,P,{true,E,Par},Deb)
-  when list(Mods) ->
+  when is_list(Mods) ->
     if 
 	Par == true ->
 	    par_load_modules(Mods,Init);
@@ -858,7 +858,7 @@ make_path(Pa, Pz, Path, Vars) ->
 %% starting with $xxx/, expand $xxx to the value supplied with -boot_var!
 %% If $xxx cannot be expanded this process terminates.
 
-fix_path([Path|Ps], Vars) when atom(Path) ->
+fix_path([Path|Ps], Vars) when is_atom(Path) ->
     [add_var(atom_to_list(Path), Vars)|fix_path(Ps, Vars)];
 fix_path([Path|Ps], Vars) ->
     [add_var(Path, Vars)|fix_path(Ps, Vars)];
@@ -920,7 +920,7 @@ start_em([S|Tail]) ->
     case whereis(user) of
 	undefined -> 
 	    ok;
-	P when pid(P) ->			%Let's set the group_leader()
+	P when is_pid(P) ->			%Let's set the group_leader()
 	    erlang:group_leader(P, self())
     end,
     start_it(S),
@@ -932,9 +932,9 @@ start_it([]) ->
 start_it({eval,Bin}) ->
     Str = binary_to_list(Bin),
     {ok,Ts,_} = erl_scan:string(Str),
-    Ts1 = case lists:reverse(Ts) of
+    Ts1 = case reverse(Ts) of
 	      [{dot,_}|_] -> Ts;
-	      TsR -> lists:reverse([{dot,1} | TsR])
+	      TsR -> reverse([{dot,1} | TsR])
 	  end,
     {ok,Expr} = erl_parse:parse_exprs(Ts1),
     erl_eval:exprs(Expr, []),
@@ -990,7 +990,7 @@ shutdown_timer(Flags) ->
 	    self();
 	Time ->
 	    case catch list_to_integer(binary_to_list(Time)) of
-		T when integer(T) ->
+		T when is_integer(T) ->
 		    Pid = spawn(fun() -> timer(T) end),
 		    receive
 			{Pid, started} ->
@@ -1056,7 +1056,7 @@ check(<<"-s">>) -> start_arg;
 check(<<"-run">>) -> start_arg2;
 check(<<"-eval">>) -> eval_arg;
 check(<<"--">>) -> end_args;
-check(X) when binary(X) ->
+check(X) when is_binary(X) ->
     case binary_to_list(X) of
 	[$-|_Rest] -> flag;
 	_Chars     -> arg			%Even empty atoms
@@ -1129,7 +1129,7 @@ get_flag_list(F,Flags) ->
 %%
 get_flag_args(F,Flags) -> get_flag_args(F,Flags,[]).
 
-get_flag_args(F,[{F,V}|Flags],Acc) when list(V) ->
+get_flag_args(F,[{F,V}|Flags],Acc) when is_list(V) ->
     get_flag_args(F,Flags,[V|Acc]);
 get_flag_args(F,[{F,V}|Flags],Acc) ->
     get_flag_args(F,Flags,[[V]|Acc]);
@@ -1147,8 +1147,8 @@ get_arguments([{F}|Flags]) ->
 get_arguments([]) ->
     [].
 
-to_strings([H|T]) when atom(H) -> [atom_to_list(H)|to_strings(T)];
-to_strings([H|T]) when binary(H) -> [binary_to_list(H)|to_strings(T)];
+to_strings([H|T]) when is_atom(H) -> [atom_to_list(H)|to_strings(T)];
+to_strings([H|T]) when is_binary(H) -> [binary_to_list(H)|to_strings(T)];
 to_strings([])    -> [].
 
 get_argument(Arg,Flags) ->
@@ -1176,12 +1176,14 @@ set_argument([Item|Flags],Flag,Value) ->
 set_argument([],Flag,Value) ->
     [{Flag,[Value]}].
 
-concat([A|T]) when atom(A) ->			%Atom
-    append(atom_to_list(A), concat(T));
-concat([C|T]) when C >= 0, C =< 255 ->
+concat([A|T]) when is_atom(A) ->
+    atom_to_list(A) ++ concat(T);
+concat([C|T]) when is_integer(C), 0 =< C, C =< 255 ->
     [C|concat(T)];
-concat([S|T]) ->				%String
-    append(S, concat(T));
+concat([Bin|T]) when is_binary(Bin) ->
+    binary_to_list(Bin) ++ concat(T);
+concat([S|T]) ->
+    S ++ concat(T);
 concat([]) ->
     [].
 
@@ -1204,9 +1206,10 @@ search(Key, [H|_T]) when tuple(H), element(1, H) == Key ->
 search(Key, [_|T]) -> search(Key, T);
 search(_Key, []) -> false.
 
-extension() -> 
-    case erlang:system_info(machine) of
-        "JAM" -> ".jam";
-        "VEE" -> ".vee";
-        "BEAM" -> ".beam"
-    end.
+extension() ->
+    ".beam".
+%%    case erlang:system_info(machine) of
+%%      "JAM" -> ".jam";
+%%      "VEE" -> ".vee";
+%%      "BEAM" -> ".beam"
+%%    end.

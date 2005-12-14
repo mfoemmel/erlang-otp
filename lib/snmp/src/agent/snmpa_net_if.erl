@@ -213,7 +213,7 @@ create_log() ->
 	    Repair = get_atl_repair(AtlOpts),
 	    Name   = ?audit_trail_log_name,
 	    File   = filename:absname(?audit_trail_log_file, Dir),
-	    case snmp_log:create(Name, File, Size, Repair) of
+	    case snmp_log:create(Name, File, Size, Repair, true) of
 		{ok, Log} ->
 		    ?vdebug("log created: ~w",[Log]),
 		    {Log, Type};
@@ -249,7 +249,13 @@ gen_udp_open(Port, Opts) ->
 	    Fd = list_to_integer(FdStr),
 	    gen_udp:open(0, [{fd, Fd}|Opts]);
 	error ->
-	    gen_udp:open(Port, Opts)
+	    case init:get_argument(snmpa_fd) of
+		{ok, [[FdStr]]} ->
+		    Fd = list_to_integer(FdStr),
+		    gen_udp:open(0, [{fd, Fd}|Opts]);
+		error ->
+		    gen_udp:open(Port, Opts)
+	    end
     end.
 	
 loop(S) ->
@@ -301,6 +307,10 @@ loop(S) ->
 	{set_log_type, Type} when Type == write; Type == read_write ->
 	    #state{log = {Log, _}} = S,
 	    loop(S#state{log = {Log, Type}});
+
+	{disk_log, _Node, Log, Info} ->
+	    NewS = handle_disk_log(Log, Info, S),
+	    loop(NewS);
 
 	{verbosity, Verbosity} ->
 	    ?vlog("verbosity: ~p -> ~p",[get(verbosity),Verbosity]),
@@ -555,6 +565,27 @@ udp_send(UdpId, AgentIp, UdpPort, B) ->
 sz(L) when list(L) -> length(L);
 sz(B) when binary(B) -> size(B);
 sz(_) -> undefined.
+
+
+handle_disk_log(_Log, {wrap, NoLostItems}, State) ->
+    ?vlog("Audit Trail Log - wrapped: ~w previously logged items where lost", 
+	  [NoLostItems]),
+    State;
+handle_disk_log(_Log, {truncated, NoLostItems}, State) ->
+    ?vlog("Audit Trail Log - truncated: ~w items where lost when truncating", 
+	  [NoLostItems]),
+    State;
+handle_disk_log(_Log, full, State) ->
+    error_msg("Failure to write to Audit Trail Log (full)", []),
+    State;
+handle_disk_log(_Log, {error_status, ok}, State) ->
+    State;
+handle_disk_log(_Log, {error_status, {error, Reason}}, State) ->
+    error_msg("Error status received from Audit Trail Log: "
+	      "~n~p", [Reason]),
+    State;
+handle_disk_log(_Log, _Info, State) ->
+    State.
 
 
 clear_reqs(Pid, S) ->

@@ -41,7 +41,9 @@
 
 %% API
 -export([t/0, t1/0, t/1]).
--export([b/0, e/0]).
+-export([te/0,
+	 tb/0, tbb/0, tbp/0,
+	 tt/0, ttp/0, ttc/0]).
 
 %% Internal exports
 -export([do_measure_codec/7, do_measure_codec_loop/7]).
@@ -77,11 +79,26 @@ t1() ->
 t() ->
     t(?MEASURE_CODECS).
 
-e() ->
+te() ->
     t([erlang]).
 
-b() ->
+tb() ->
     t([ber, per]).
+
+tbb() ->
+    t([ber]).
+
+tbp() ->
+    t([per]).
+
+tt() ->
+    t([pretty, compact]).
+
+ttp() ->
+    t([pretty]).
+
+ttc() ->
+    t([compact]).
 
 
 %% Dirs is a list of directories containing files,

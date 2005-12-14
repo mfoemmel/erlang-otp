@@ -14,7 +14,7 @@
 # Portions created by Ericsson are Copyright 1999-2000, Ericsson 
 # Utvecklings AB. All Rights Reserved.''
 # 
-#     $Id: edoc_generate.src,v 1.1.1.1 2004/10/04 13:53:34 richardc Exp $
+#     $Id$
 #
 #
 
@@ -26,6 +26,7 @@ XMERL_DIR=/home/otp/sgml/xmerl-%XMERL_VSN%
 FILE=
 APP=
 TITLE=
+VSN=
 
 while [ $# -gt 0 ]; do
     case $1 in
@@ -39,6 +40,10 @@ while [ $# -gt 0 ]; do
 	shift;;
     -title)
 	TITLE=$2;
+	shift;
+	shift;;
+    -vsn)
+	VSN=$2;
 	shift;
 	shift;;
     esac
@@ -57,8 +62,15 @@ elif [ -n "$APP" -a -n "$TITLE" ] ; then
 	-pa $EDOC_DIR/ebin \
 	-pa $SYNTAX_TOOLS_DIR/ebin \
 	-pa $XMERL_DIR/ebin \
-        -run edoc_run application $APP "\".\"" "[{title,$TITLE}]" \
-        -s erlang halt
+	-run edoc_run application $APP "\".\"" "[{title,$TITLE}]" \
+	-s erlang halt
+elif [ -n "$APP" -a -n "$VSN" ] ; then 
+    erl -boot start_clean -noshell \
+	-pa $EDOC_DIR/ebin \
+	-pa $SYNTAX_TOOLS_DIR/ebin \
+	-pa $XMERL_DIR/ebin \
+	-run edoc_run application $APP "\".\"" "[{def,{vsn,\"$VSN\"}}]" \
+	-s erlang halt
 else
-    echo "Usage: docb_edoc [-file Filename] | [-app Appname -title Title]"
+    echo "Usage: docb_edoc [-file Filename] | [-app Appname [-title Title |-vsn Vsn]]"
 fi

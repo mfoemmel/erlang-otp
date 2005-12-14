@@ -80,10 +80,44 @@ static void patch_ori(Uint32 *address, unsigned int imm10)
     hipe_flush_icache_word(address);
 }
 
-void hipe_patch_load_fe(Uint32 *address, Uint32 value)
+static void patch_sethi_ori(Uint32 *address, Uint32 value)
 {
     patch_sethi(address, value >> 10);
     patch_ori(address+1, value);
+}
+
+void hipe_patch_load_fe(Uint32 *address, Uint32 value)
+{
+    patch_sethi_ori(address, value);
+}
+
+int hipe_patch_insn(void *address, Uint32 value, Eterm type)
+{
+    switch (type) {
+    case am_load_mfa:
+    case am_atom:
+    case am_constant:
+    case am_closure:
+    case am_c_const:
+	break;
+    default:
+	return -1;
+    }
+    patch_sethi_ori((Uint32*)address, value);
+    return 0;
+}
+
+int hipe_patch_call(void *callAddress, void *destAddress, void *trampoline)
+{
+    Uint32 relDest, newI;
+
+    if (trampoline)
+	return -1;
+    relDest = (Uint32)((Sint32)destAddress - (Sint32)callAddress);
+    newI = (1 << 30) | (relDest >> 2);
+    *(Uint32*)callAddress = newI;
+    hipe_flush_icache_word(callAddress);
+    return 0;
 }
 
 /* called from hipe_bif0.c:hipe_bifs_make_native_stub_2()

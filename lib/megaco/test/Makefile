@@ -94,6 +94,10 @@ else
 EHALT = -s init stop
 endif
 
+ifeq ($(MERL),)
+MERL = erl
+endif
+
 
 # ----------------------------------------------------
 # Targets
@@ -109,6 +113,8 @@ docs:
 
 info:
 	@echo "ERL_COMPILE_FLAGS = $(ERL_COMPILE_FLAGS)"
+	@echo "ERL  = $(ERL)"
+	@echo "MERL = $(MERL)"
 	@echo ""
 
 # ----------------------------------------------------
@@ -118,231 +124,231 @@ info:
 make: $(TARGET_FILES)
 
 time1: make
-	erl -noshell -sname megaco_time1 $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_time1 $(ERL_PATH) \
             -run megaco_codec_v1_test tt $(TT_DIR) \
             -s erlang halt
 
 time2: make
-	erl -noshell -sname megaco_time2 $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_time2 $(ERL_PATH) \
             -run megaco_codec_v2_test tt $(TT_DIR) \
             -s erlang halt
 
 timeo1: make
-	erl -noshell -sname megaco_timeo1 $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_timeo1 $(ERL_PATH) \
             -run megaco_codec_v1_test tt_official $(TT_DIR) \
             -s erlang halt
 
 timeo2: make
-	erl -noshell -sname megaco_timeo2 $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_timeo2 $(ERL_PATH) \
             -run megaco_codec_v2_test tt_official $(TT_DIR) \
             -s erlang halt
 
 timet1: make
-	erl -noshell -sname megaco_timet1 $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_timet1 $(ERL_PATH) \
             -run megaco_codec_v1_test tt_texts $(TT_DIR) \
             -s erlang halt
 
 timet2: make
-	erl -noshell -sname megaco_timet2 $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_timet2 $(ERL_PATH) \
             -run megaco_codec_v2_test tt_texts $(TT_DIR) \
             -s erlang halt
 
 timeb1: make
-	erl -noshell -sname megaco_timeb1 $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_timeb1 $(ERL_PATH) \
             -run megaco_codec_v1_test tt_bins $(TT_DIR) \
             -s erlang halt
 
 timeb2: make
-	erl -noshell -sname megaco_timeb2 $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_timeb2 $(ERL_PATH) \
             -run megaco_codec_v2_test tt_bins $(TT_DIR) \
             -s erlang halt
 
 codec: make
-	erl -noshell -sname megaco_codec $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_codec $(ERL_PATH) \
             -s megaco_test_lib t megaco_codec_test \
             $(EHALT)
 
 codec1: make
-	erl -noshell -sname megaco_codec1 $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_codec1 $(ERL_PATH) \
             -s megaco_test_lib t megaco_codec_v1_test \
             $(EHALT)
 
 codec1_tickets: make
-	erl -noshell -sname megaco_codec1_tickets $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_codec1_tickets $(ERL_PATH) \
             -s megaco_codec_v1_test tickets \
             -s erlang halt
 
 codec2: make
-	erl -noshell -sname megaco_codec2 $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_codec2 $(ERL_PATH) \
             -s megaco_test_lib t megaco_codec_v2_test \
             $(EHALT)
 
 codec2_tickets: make
-	erl -noshell -sname megaco_codec2_tickets $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_codec2_tickets $(ERL_PATH) \
             -s megaco_codec_v2_test tickets \
             -s erlang halt
 
 codec3a: make
-	erl -noshell -sname megaco_codec3a $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_codec3a $(ERL_PATH) \
             -s megaco_test_lib t megaco_codec_prev3a_test \
             $(EHALT)
 
 codec3a_tickets: make
-	erl -noshell -sname megaco_codec3a_tickets $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_codec3a_tickets $(ERL_PATH) \
             -s megaco_codec_prev3a_test tickets \
             -s erlang halt
 
 codec3b: make
-	erl -noshell -sname megaco_codec3b $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_codec3b $(ERL_PATH) \
             -s megaco_test_lib t megaco_codec_prev3b_test \
             $(EHALT)
 
 codec3b_tickets: make
-	erl -noshell -sname megaco_codec3b_tickets $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_codec3b_tickets $(ERL_PATH) \
             -s megaco_codec_prev3b_test tickets \
             -s erlang halt
 
 conf: make
-	erl -noshell -sname megaco_conf $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_conf $(ERL_PATH) \
             -s megaco_test_lib t megaco_config_test \
             -s erlang halt
 
 dm: make
-	erl -noshell -sname megaco_dm $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_dm $(ERL_PATH) \
             -s megaco_test_lib t megaco_digit_map_test \
             -s erlang halt
 
 app: make
-	erl -noshell -sname megaco_app $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_app $(ERL_PATH) \
             -s megaco_test_lib t megaco_app_test \
             -s erlang halt
 
 appup: make
-	erl -noshell -sname megaco_appup $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_appup $(ERL_PATH) \
             -s megaco_test_lib t megaco_appup_test \
             -s erlang halt
 
 mess: make
-	erl -noshell -sname megaco_mess $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_mess $(ERL_PATH) \
             -s et_viewer \
             -s megaco_test_lib t megaco_mess_test \
             -s erlang halt
 
 mib: make
-	erl -noshell -sname megaco_mib $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_mib $(ERL_PATH) \
             -s megaco_test_lib t megaco_mib_test \
             $(EHALT)
 
 mreq: make
-	erl -noshell -sname megaco_mreq $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_mreq $(ERL_PATH) \
             -s megaco_test_lib t megaco_mreq_test \
             $(EHALT)
 
 pending: make
-	erl -noshell -sname megaco_pending $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_pending $(ERL_PATH) \
             -s megaco_test_lib t megaco_pending_limit_test \
             $(EHALT)
 
 trans: make
-	erl -noshell -sname megaco_trans $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_trans $(ERL_PATH) \
             -s megaco_test_lib t megaco_trans_test \
             $(EHALT)
 
 actions: make
-	erl -noshell -sname megaco_actions $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_actions $(ERL_PATH) \
             -s megaco_test_lib t megaco_actions_test \
             $(EHALT)
 
 pl: make
-	erl -noshell -sname megaco_pl $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_pl $(ERL_PATH) \
             -s megaco_test_lib t megaco_pending_limit_test \
             $(EHALT)
 
 udp: make
-	erl -noshell -sname megaco_pl $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_pl $(ERL_PATH) \
             -s megaco_test_lib t megaco_udp_test \
             $(EHALT)
 
 tcp: make
-	erl -noshell -sname megaco_pl $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_pl $(ERL_PATH) \
             -s megaco_test_lib t megaco_tcp_test \
             $(EHALT)
 
 load: make
-	erl -noshell -sname megaco_load $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_load $(ERL_PATH) \
             -s megaco_test_lib t megaco_load_test \
             $(EHALT)
 
 ex: make
-	erl -noshell -sname megaco_ex $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_ex $(ERL_PATH) \
             -s megaco_test_lib t megaco_examples_test \
             $(EHALT)
 
 # mess: make
-# 	erl -noshell -sname megaco $(ERL_PATH) \
+# 	$(MERL) -noshell -sname megaco $(ERL_PATH) \
 #             -s et_viewer \
 #             -s megaco_test_lib t megaco_mess_test \
 #             -s erlang halt
 
 tid: make
-	erl -noshell -sname megaco_tid $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_tid $(ERL_PATH) \
             -s megaco_test_lib t megaco_binary_term_id_test \
             -s erlang halt
 
 tickets: make
-	erl -noshell -sname megaco_tickets $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_tickets $(ERL_PATH) \
             -s megaco_test_lib tickets $(SUITE) \
             -s erlang halt
 
 test: make
-	erl -noshell -sname megaco_test $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_test $(ERL_PATH) \
             -s megaco_test_lib t $(SUITE) \
             $(EHALT)
 
 utest: make
-	erl -noshell -sname megaco_utest $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_utest $(ERL_PATH) \
             -s et_viewer \
             -s megaco_test_lib t $(SUITE) \
             -s erlang halt
 
 ftest: make
-	erl -noshell -sname megaco_ftest $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_ftest $(ERL_PATH) \
             -s megaco_filter \
             -s megaco_test_lib t $(SUITE) \
             -s erlang halt
 
 gnuplot_gif: make
-	erl -noshell -sname megaco_gnuplot_gif $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_gnuplot_gif $(ERL_PATH) \
             -s megaco_call_flow_test gnuplot_gif \
             -s erlang halt
 
 display_v1: make
-	erl -noshell -sname megaco_display_text_msgs_v1 $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_display_text_msgs_v1 $(ERL_PATH) \
             -s megaco_codec_v1_test display_text_messages \
             -s erlang halt
 
 display_v2: make
-	erl -noshell -sname megaco_display_text_msgs_v2 $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_display_text_msgs_v2 $(ERL_PATH) \
             -s megaco_codec_v2_test display_text_messages \
             -s erlang halt
 
 display_prev3a: make
-	erl -noshell -sname megaco_display_text_msgs_prev3a $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_display_text_msgs_prev3a $(ERL_PATH) \
             -s megaco_codec_prev3a_test display_text_messages \
             -s erlang halt
 
 display_prev3b: make
-	erl -noshell -sname megaco_display_text_msgs_prev3b $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_display_text_msgs_prev3b $(ERL_PATH) \
             -s megaco_codec_prev3b_test display_text_messages \
             -s erlang halt
 
 generate_prev3b: make
-	erl -noshell -sname megaco_generate_text_msgs_prev3b $(ERL_PATH) \
+	$(MERL) -noshell -sname megaco_generate_text_msgs_prev3b $(ERL_PATH) \
             -s megaco_codec_prev3b_test generate_text_messages \
             -s erlang halt
 
 node:
-	erl -sname megaco $(ERL_PATH)
+	$(MERL) -sname megaco $(ERL_PATH)
 
 
 # ----------------------------------------------------

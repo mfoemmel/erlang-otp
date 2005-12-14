@@ -306,12 +306,16 @@ do_connect(CD) ->
         ok ->
 	    ?SIM(ok, do_encode),
 	    monitor_process(CH, CD#conn_data.control_pid);
+        error ->
+            megaco_config:disconnect(CH),
+            {error, {connection_refused, CD, error}};
         {error, ED} when record(ED,'ErrorDescriptor') ->
             megaco_config:disconnect(CH),
             {error, {connection_refused, CD, ED}};
-        Error ->
+        _Error ->
+	    warning_msg("connect callback failed: ~w", [Res]),
             megaco_config:disconnect(CH),
-            {error, {connection_refused, CD, Error}}
+            {error, {connection_refused, CD, Res}}
     end.
 
 
@@ -523,12 +527,30 @@ prepare_message(RH, SH, Bin, Pid)
             CH         = #megaco_conn_handle{local_mid  = LocalMid,
                                              remote_mid = RemoteMid},
             case megaco_config:lookup_local_conn(CH) of
+		%% 
+		%% Message is not of the negotiated version
+		%% 
+
+                [#conn_data{protocol_version = NegVersion, 
+			    strict_version   = true} = ConnData] 
+		when NegVersion /= Version ->
+		    %% Use already established connection, 
+		    %% but incorrect version
+		    ?rt1(ConnData, "not negotiated version", [Version]),
+		    Error = {error, {not_negotiated_version, 
+				     NegVersion, Version}}, 
+		    handle_syntax_error_callback(RH, ConnData, 
+						 prepare_error(Error));
+
+
                 [ConnData] ->
                     %% Use already established connection
 		    ?rt1(ConnData, "use already established connection", []),
-                    ConnData2 = ConnData#conn_data{send_handle = SH,
+                    ConnData2 = ConnData#conn_data{send_handle      = SH,
 						   protocol_version = Version},
                     check_message_auth(CH, ConnData2, MegaMsg, Bin);
+
+
                 [] ->
                     %% Setup a temporary connection
 		    ?rt3("setup a temporary connection"),
@@ -548,7 +570,9 @@ prepare_message(RH, SH, Bin, Pid)
                     end
             end;
         Error ->
-	    ConnData = handle_decode_error(RH, SH, Bin, Pid, 
+	    ?rt2("decode error", [Error]),
+	    ConnData = handle_decode_error(Error, 
+					   RH, SH, Bin, Pid, 
 					   EncodingMod, 
 					   EncodingConfig, 
 					   ProtVersion),
@@ -560,12 +584,41 @@ prepare_message(RH, SendHandle, _Bin, ControlPid) ->
     {verbose_fail, ConnData, Error}.
 
 
-handle_decode_error(#megaco_receive_handle{local_mid = LocalMid} = RH, SH, 
+handle_decode_error({error, {unsupported_version, _}},
+		    #megaco_receive_handle{local_mid = LocalMid} = RH, SH, 
 		    Bin, Pid,
 		    EM, EC, V) ->
     case (catch EM:decode_mini_message(EC, V, Bin)) of
-	{ok, #'MegacoMessage'{mess = Msg}} ->
-	    #'Message'{version = Ver, mId = RemoteMid} = Msg,
+	{ok, #'MegacoMessage'{mess = #'Message'{version = _Ver, mId = RemoteMid}}} ->
+	    ?rt2("erroneous message received", [SH, RemoteMid, _Ver]),
+            CH = #megaco_conn_handle{local_mid  = LocalMid,
+				     remote_mid = RemoteMid},
+	    incNumErrors(CH),
+	    %% We cannot put the version into conn-data, that will
+	    %% make the resulting error message impossible to sent
+	    %% (unsupported version)
+	    case megaco_config:lookup_local_conn(CH) of
+                [ConnData] ->
+		    ?rt3("known to us"),
+		    ConnData#conn_data{send_handle = SH};
+		[] ->
+		    ?rt3("unknown to us"),
+		    ConnData = fake_conn_data(RH, SH, Pid),
+		    ConnData#conn_data{conn_handle = CH}
+	    end;
+
+	_ ->
+	    ?rt2("erroneous message received", [SH]),
+	    incNumErrors(),
+	    fake_conn_data(RH, SH, Pid)
+    end;
+
+handle_decode_error(_,
+		    #megaco_receive_handle{local_mid = LocalMid} = RH, SH, 
+		    Bin, Pid,
+		    EM, EC, V) ->
+    case (catch EM:decode_mini_message(EC, V, Bin)) of
+	{ok, #'MegacoMessage'{mess = #'Message'{version = Ver, mId = RemoteMid}}} ->
 	    ?rt2("erroneous message received", [SH, Ver, RemoteMid]),
             CH = #megaco_conn_handle{local_mid  = LocalMid,
 				     remote_mid = RemoteMid},
@@ -573,12 +626,13 @@ handle_decode_error(#megaco_receive_handle{local_mid = LocalMid} = RH, SH,
 	    case megaco_config:lookup_local_conn(CH) of
                 [ConnData] ->
 		    ?rt3("known to us"),
-		    ConnData#conn_data{send_handle = SH,
+		    ConnData#conn_data{send_handle      = SH,
 				       protocol_version = Ver};
 		[] ->
 		    ?rt3("unknown to us"),
 		    ConnData = fake_conn_data(RH, SH, Pid),
-		    ConnData#conn_data{conn_handle = CH}
+		    ConnData#conn_data{conn_handle      = CH,
+				       protocol_version = Ver}
 	    end;
 
 	_ ->
@@ -628,7 +682,13 @@ check_message_auth(_ConnHandle, ConnData, MegaMsg, Bin) ->
 handle_syntax_error_callback(ReceiveHandle, ConnData, PrepError) ->
     {Code, Reason, Error} = PrepError,
     ErrorDesc = #'ErrorDescriptor'{errorCode = Code, errorText = Reason},
-    Version   = ConnData#conn_data.protocol_version,
+    Version   = 
+	case Error of
+	    {error, {unsupported_version, UV}} ->
+		UV;
+	    _ ->
+		ConnData#conn_data.protocol_version
+	end,
     UserMod   = ConnData#conn_data.user_mod,
     UserArgs  = ConnData#conn_data.user_args,
     ?report_trace(ReceiveHandle, "callback: syntax error", [ErrorDesc, Error]),
@@ -642,13 +702,14 @@ handle_syntax_error_callback(ReceiveHandle, ConnData, PrepError) ->
         no_reply ->
             {silent_fail, ConnData, PrepError};
         {no_reply,#'ErrorDescriptor'{errorCode=Code2,errorText=Reason2}} ->
-            {silent_fail, ConnData, {Code2,Reason2,Error}}; %%% OTP-XXXX
-        _Bad ->
+            {silent_fail, ConnData, {Code2,Reason2,Error}}; %%% OTP-????
+        _ ->
+	    warning_msg("syntax error callback failed: ~w", [Res]),
             {verbose_fail, ConnData, PrepError}
     end.
 
 fake_conn_data(CH) when record(CH, megaco_conn_handle) ->
-    case catch megaco_config:conn_info(CH, receive_handle) of
+    case (catch megaco_config:conn_info(CH, receive_handle)) of
 	RH when record(RH, megaco_receive_handle) ->
 	    RemoteMid = CH#megaco_conn_handle.remote_mid,
 	    ConnData = 
@@ -733,6 +794,18 @@ prepare_error(Error) ->
         {error, {connection_refused, _}} ->
             Reason = "Connection refused by user",
             Code = ?megaco_unauthorized,
+            {Code, Reason, Error};
+        {error, {unsupported_version, V}} ->
+            Reason = 
+		lists:flatten(io_lib:format("Unsupported version: ~w",[V])),
+            Code = ?megaco_version_not_supported, 
+            {Code, Reason, Error};
+        {error, {not_negotiated_version, NegV, MsgV}} ->
+            Reason = 
+		lists:flatten(
+		  io_lib:format("Not negotiated version: ~w [negotiated ~w]",
+				[MsgV, NegV])),
+            Code = ?megaco_version_not_supported, 
             {Code, Reason, Error};
         {error, _} ->
             Reason = "Syntax error",
@@ -1186,6 +1259,14 @@ handle_request(ConnData, TransId, T) ->
 do_handle_request(_, ignore, _ConnData, _TransId) ->
     ?rt1(_ConnData, "ignore: don't reply", [_TransId]),
     ignore;
+do_handle_request(_, ignore_trans_request, ConnData, TransId) ->
+    ?rt1(ConnData, "ignore trans request: don't reply", [TransId]),
+    case megaco_monitor:lookup_reply(TransId) of
+	[#reply{} = Rep] ->
+	    cancel_reply(ConnData, Rep, ignore);
+	_ ->
+	    ignore
+    end;
 do_handle_request({pending, _RequestData}, {aborted, ignore}, _, _) ->
     ?rt2("handle request: pending - aborted - ignore => don't reply", []),
     ignore;
@@ -1340,7 +1421,13 @@ handle_request_abort_callback(ConnData, TransId, Pid) ->
     Res = (catch apply(UserMod, handle_trans_request_abort, [ConnHandle, Version, Serial, Pid | UserArgs])),
     ?report_debug(ConnData, "return: trans request aborted", 
 		  [TransId, {return, Res}]),
-    ok.
+    case Res of
+	ok ->
+	    ok;
+	_ ->
+	    warning_msg("trans request abort callback failed: ~w", [Res]),
+	    ok
+    end.
 
 handle_request_callback(ConnData, TransId, Actions, T) ->
     ?report_trace(ConnData, "callback: trans request", [T]),
@@ -1351,9 +1438,12 @@ handle_request_callback(ConnData, TransId, Actions, T) ->
     Res = (catch apply(UserMod, handle_trans_request, [ConnHandle, Version, Actions | UserArgs])),
     ?report_debug(ConnData, "return: trans request", [T, {return, Res}]),
     case Res of
-	ignore ->
+	ignore ->  %% NOTE: Only used for testing!!
 	    {discard_ack, ignore};
-	
+
+	ignore_trans_request -> 
+	    {discard_ack, ignore_trans_request};
+
 	{discard_ack, Replies} when list(Replies) ->
 	    Reply     = {actionReplies, Replies},
 	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
@@ -1690,7 +1780,7 @@ handle_ack_callback(ConnData, AckStatus, discard_ack = AckAction, T) ->
         ok ->
             ok;
         {error, Reason} ->
-            ?report_trace(ConnData, "handle ack",
+            ?report_trace(ConnData, "handle ack (no callback)",
                           [T, AckAction, {error, Reason}])
     end;
 handle_ack_callback(ConnData, AckStatus, {handle_ack, AckData}, T) ->
@@ -1701,6 +1791,13 @@ handle_ack_callback(ConnData, AckStatus, {handle_ack, AckData}, T) ->
     UserArgs   = ConnData#conn_data.user_args,
     Res = (catch apply(UserMod, handle_trans_ack, [ConnHandle, Version, AckStatus, AckData | UserArgs])),
     ?report_debug(ConnData, "return: trans ack", [T, AckData, {return, Res}]),
+    case Res of
+	ok ->
+	    ok;
+	_ ->
+	    warning_msg("trans ack callback failed: ~w", [Res]),
+	    ok
+    end,
     Res.
 
 handle_message_error(ConnData, _Error) 
@@ -1718,6 +1815,13 @@ handle_message_error(ConnData, Error) ->
     UserArgs   = ConnData#conn_data.user_args,
     Res = (catch apply(UserMod, handle_message_error, [ConnHandle, Version, Error | UserArgs])),
     ?report_debug(ConnData, "return: message error", [Error, {return, Res}]),
+    case Res of
+	ok ->
+	    ok;
+	_ ->
+	    warning_msg("message error callback failed: ~w", [Res]),
+	    ok
+    end,
     Res.
 
 handle_disconnect_callback(ConnData, UserReason)
@@ -1729,6 +1833,13 @@ handle_disconnect_callback(ConnData, UserReason)
     UserArgs   = ConnData#conn_data.user_args,
     Res = (catch apply(UserMod, handle_disconnect, [ConnHandle, Version, UserReason | UserArgs])),
     ?report_debug(ConnData, "return: disconnect", [{reason, UserReason}, {return, Res}]),
+    case Res of
+	ok ->
+	    ok;
+	_ ->
+	    warning_msg("disconnect callback failed: ~w", [Res]),
+	    ok
+    end,
     Res.
 
 
@@ -2279,7 +2390,7 @@ send_reply(#conn_data{serial = Serial} = CD, Result, ImmAck) ->
                              immAckRequired    = ImmAck,
                              transactionResult = Result},
     Body = {transactions, [{transactionReply, TR}]},
-    case megaco_messenger_misc:encode_body(CD, "send trans reply", Body) of
+    case megaco_messenger_misc:encode_body(CD, "encode trans reply", Body) of
         {ok, Bin} ->
             megaco_messenger_misc:send_message(CD, Bin);
         {error, Reason} = Error ->
@@ -2368,7 +2479,16 @@ send_pending_limit_error(ConnData) ->
 send_message_error(ConnData, Code, Reason) ->
     ED = #'ErrorDescriptor'{errorCode = Code, errorText = Reason},
     Body = {messageError, ED},
-    megaco_messenger_misc:send_body(ConnData, "send trans error", Body).
+    case megaco_messenger_misc:send_body(ConnData, "send trans error", Body) of
+	{error, Reason} ->
+	    ?report_important(ConnData, 
+			      "<ERROR> failed sending message error",
+			      [Body, {error, Reason}]),
+	    error;
+	_ ->
+	    ok
+    end.
+	    
 
 cancel(ConnHandle, Reason) when record(ConnHandle, megaco_conn_handle) ->
     case megaco_config:lookup_local_conn(ConnHandle) of
@@ -2462,6 +2582,13 @@ return_reply(ConnData, TransId, UserReply) ->
 				UserData | UserArgs])),
 	    ?report_debug(ConnData, "return: (cast) trans reply",
 			  [UserReply, {return, Res}]),
+	    case Res of
+		ok ->
+		    ok;
+		_ ->
+		    warning_msg("trans reply callback failed: ~w", [Res]),
+		    ok
+	    end,
 	    Res;
         remote ->
 	    ?report_trace(ConnData, "callback: (remote) trans reply", [UserReply]),
@@ -2509,8 +2636,19 @@ cancel_reply(_ConnData, #reply{state = aborted} = Rep, _Reason) ->
 	   pending_timer_ref = PendingRef} = Rep,
     megaco_monitor:delete_reply(TransId),
     megaco_monitor:cancel_apply_after(ReplyRef),
-    megaco_monitor:cancel_apply_after(PendingRef),     % BMK Still running?
-    megaco_config:del_pending_counter(sent, TransId),  % BMK Still existing?
+    megaco_monitor:cancel_apply_after(PendingRef), % BMK BMK Still running?
+    megaco_config:del_pending_counter(TransId),    % BMK BMK Still existing?
+    ok;
+
+cancel_reply(_ConnData, Rep, ignore) ->
+    ?report_trace(ignore, "cancel reply [ignore]", [Rep]),
+    #reply{trans_id          = TransId,
+	   timer_ref         = ReplyRef,
+	   pending_timer_ref = PendingRef} = Rep,
+    megaco_monitor:delete_reply(TransId),
+    megaco_monitor:cancel_apply_after(ReplyRef),
+    megaco_monitor:cancel_apply_after(PendingRef), % BMK BMK Still running?
+    megaco_config:del_pending_counter(TransId),    % BMK BMK Still existing?
     ok;
 
 cancel_reply(_, _, _) ->
@@ -2805,8 +2943,19 @@ return_unexpected_trans(ConnData, Trans) ->
     UserArgs   = ConnData#conn_data.user_args,
     ConnHandle = ConnData#conn_data.conn_handle,
     Version    = ConnData#conn_data.protocol_version,
-    (catch apply(UserMod, handle_unexpected_trans, 
-		 [ConnHandle, Version, Trans | UserArgs])).
+    Res = (catch apply(UserMod, handle_unexpected_trans, 
+		       [ConnHandle, Version, Trans | UserArgs])),
+    ?report_debug(ConnData, "return: unexpected trans", 
+		  [Trans, {return, Res}]),
+    case Res of
+	ok ->
+	    ok;
+	_ ->
+	    warning_msg("unexpected trans callback failed: ~w", [Res]),
+	    ok
+    end,
+    Res.
+    
 
 
 to_remote_trans_id(#conn_data{conn_handle = CH, serial = Serial}) ->
@@ -2875,6 +3024,9 @@ recalc_timer({Timer, timeout}) when record(Timer, megaco_incr_timer) ->
 decr(infinity) -> infinity;
 decr(Int)      -> Int - 1.
 
+
+warning_msg(F, A) ->
+    (catch error_logger:warning_msg(F ++ "~n", A)).
 
 error_msg(F, A) ->
     (catch error_logger:error_msg(F ++ "~n", A)).

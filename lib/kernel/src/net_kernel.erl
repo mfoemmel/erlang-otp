@@ -110,14 +110,11 @@
 	  connections,  %% table of connections
 	  conn_owners = [], %% List of connection owner pids,
 	  pend_owners = [], %% List of potential owners 
-	  conn_pid    = [], %% All pending and up connection pids
-	  %% used for cleanup of really crashed
-	  %% (e.g. exit(Owner, kill)) connections !!
 	  listen,       %% list of  #listen
 	  monitor,      %% list of monitors (#nmon{}) for nodeup/nodedown
 	  pending_nodeup = [],
 	  allowed,       %% list of allowed nodes in a restricted system
-	  verbose = 0,   %def_verb()    %% level of verboseness
+	  verbose = 0,   %% level of verboseness
 	  publish_on_nodes = undefined
 	 }).
 
@@ -337,9 +334,7 @@ handle_call({connect, Type, Node}, From, State) ->
 	    case setup(Node,Type,From,State) of
 		{ok, SetupPid} ->
 		    Owners = [{SetupPid, Node} | State#state.conn_owners],
-		    Conn = [SetupPid | State#state.conn_pid],
-		    {noreply, State#state{conn_owners = Owners,
-					  conn_pid = Conn}};
+		    {noreply,State#state{conn_owners=Owners}};
 		_  ->
 		    {reply, false, State}
 	    end
@@ -537,7 +532,7 @@ handle_info({accept,AcceptPid,Socket,Family,Proto}, State) ->
 					State#state.allowed,
 					State#state.connecttime),
 	    AcceptPid ! {self(), controller, Pid},
-	    {noreply, State#state { conn_pid = [Pid | State#state.conn_pid] }};
+	    {noreply,State};
 	_ ->
 	    AcceptPid ! {self(), unsupported_protocol},
 	    {noreply, State}
@@ -597,19 +592,41 @@ handle_info({From,nodeup,Node}, State) ->
 %%
 %% Mark a node as pending (accept) if not busy.
 %%
-handle_info({AcceptPid, {accept_pending,Node,Address,Type}}, State) ->
+handle_info({AcceptPid, {accept_pending,MyNode,Node,Address,Type}}, State) ->
     case ets:lookup(sys_dist, Node) of
-	[Conn] when Conn#connection.state == pending ->
-
-	    AcceptPid ! {self(), {accept_pending, pending}},
-	    {noreply, State};
-	[Conn] when Conn#connection.state == up ->
+	[#connection{state=pending}=Conn] ->
+	    if
+		MyNode > Node ->
+		    AcceptPid ! {self(),{accept_pending,nok_pending}},
+		    {noreply,State};
+		true ->
+		    %%
+		    %% A simultaneous connect has been detected and we want to
+		    %% change pending process.
+		    %%
+		    OldOwner = Conn#connection.owner,
+		    ?debug({net_kernel, remark, old, OldOwner, new, AcceptPid}),
+		    exit(OldOwner, remarked),
+		    receive
+			{'EXIT', OldOwner, _} ->
+			    true
+		    end,
+		    Owners = lists:keyreplace(OldOwner,
+					      1,
+					      State#state.conn_owners,
+					      {AcceptPid, Node}),
+		    ets:insert(sys_dist, Conn#connection{owner = AcceptPid}),
+		    AcceptPid ! {self(),{accept_pending,ok_pending}},
+		    State1 = State#state{conn_owners=Owners},
+		    {noreply,State1}
+	    end;
+	[#connection{state=up}=Conn] ->
 	    AcceptPid ! {self(), {accept_pending, up_pending}},
 	    ets:insert(sys_dist, Conn#connection { pending_owner = AcceptPid,
 						  state = up_pending }),
 	    Pend = [{AcceptPid, Node} | State#state.pend_owners ],
 	    {noreply, State#state { pend_owners = Pend }};
-	[Conn] when Conn#connection.state == up_pending ->
+	[#connection{state=up_pending}] ->
 	    AcceptPid ! {self(), {accept_pending, already_pending}},
 	    {noreply, State};
 	_ ->
@@ -618,37 +635,9 @@ handle_info({AcceptPid, {accept_pending,Node,Address,Type}}, State) ->
 					     owner = AcceptPid,
 					     address = Address,
 					     type = Type}),
-	    AcceptPid ! {self(), {accept_pending, ok}},
-	    Owners = [{AcceptPid, Node} | State#state.conn_owners],
+	    AcceptPid ! {self(),{accept_pending,ok}},
+	    Owners = [{AcceptPid,Node} | State#state.conn_owners],
 	    {noreply, State#state{conn_owners = Owners}}
-    end;
-
-%%
-%% A simultaneous connect has been detected and we want to
-%% change pending process.
-%%
-handle_info({AcceptPid, {remark_pending, Node}}, State) ->
-    case ets:lookup(sys_dist, Node) of
-	[Conn] when Conn#connection.state == pending ->
-	    OldOwner = Conn#connection.owner,
-	    ?debug({net_kernel, remark, old, OldOwner, new, AcceptPid}),
-	    exit(OldOwner, remarked),
-	    receive
-		{'EXIT', OldOwner, _} ->
-		    true
-	    end,
-	    Owners = lists:keyreplace(OldOwner,
-				      1,
-				      State#state.conn_owners,
-				      {AcceptPid, Node}),
-	    ets:insert(sys_dist, Conn#connection{owner = AcceptPid}),
-	    AcceptPid ! {self(), {remark_pending, ok}},
-	    State1 = remove_conn_pid(OldOwner,
-				     State#state{conn_owners = Owners}),
-	    {noreply, State1};
-	_ ->
-	    AcceptPid ! {self(), {remark_pending, bad_request}},
-	    {noreply, State}
     end;
 
 handle_info({SetupPid, {is_pending, Node}}, State) ->
@@ -734,18 +723,14 @@ handle_exit(Pid, Reason, State) ->
     catch do_handle_exit(Pid, Reason, State).
 
 do_handle_exit(Pid, Reason, State) ->
-    State1 = remove_conn_pid(Pid, State),
-    listen_exit(Pid, State1),
-    accept_exit(Pid, State1),
-    conn_own_exit(Pid, Reason, State1),
-    nodeup_exit(Pid, State1),
-    monitor_exit(Pid, State1),
-    pending_own_exit(Pid, State1),
-    ticker_exit(Pid, State1),
-    {noreply, State1}.
-
-remove_conn_pid(Pid, State) ->
-    State#state { conn_pid = State#state.conn_pid -- [Pid] }.
+    listen_exit(Pid, State),
+    accept_exit(Pid, State),
+    conn_own_exit(Pid, Reason, State),
+    nodeup_exit(Pid, State),
+    monitor_exit(Pid, State),
+    pending_own_exit(Pid, State),
+    ticker_exit(Pid, State),
+    {noreply,State}.
 
 listen_exit(Pid, State) ->
     case lists:keysearch(Pid, ?LISTEN_ID, State#state.listen) of
@@ -1236,7 +1221,7 @@ do_spawn(SpawnFuncArgs, SpawnOpts, State) ->
 
 %% This code is really intricate. The link will go first and then comes
 %% the pid, This means that the client need not do a network link.
-%% If the link message would not arrive, the runtime system  shall
+%% If the link message would not arrive, the runtime system shall
 %% generate a nodedown message
 
 spawn_func(link,{From,Tag},M,F,A,Gleader) ->
@@ -1346,20 +1331,6 @@ del_pend(_, []) ->
     [].
 
 %% -------- Initialisation functions ------------------------
-
-%% never called could be removed!
-%% was intended to be used to set default value for verbos in the
-%% state record
-%%def_verb() ->
-%%    case init:get_argument(net_kernel_verbose) of
-%%	{ok, [[Level]]} ->
-%%	    case catch list_to_integer(Level) of
-%%		Int when integer(Int) -> Int;
-%%		_ -> 0
-%%	    end;
-%%	_ ->
-%%	    0
-%%    end.
 
 init_node(Name, LongOrShortNames) ->
     {NameWithoutHost,_Host} = lists:splitwith(fun($@)->false;(_)->true end,
@@ -1534,9 +1505,9 @@ std_monitors() -> [#nmon{proc = global_group}].
 
 connecttime() ->
     case application:get_env(kernel, net_setuptime) of
-	{ok, Time} when is_integer(Time), Time > 0, Time < 120 ->
-	    Time * 1000;
-	{ok, Time} when is_float(Time), Time > 0, Time < 120 ->
+	{ok,Time} when is_number(Time), Time >= 120 ->
+	    120 * 1000;
+	{ok,Time} when is_number(Time), Time > 0 ->
 	    round(Time * 1000);
 	_ ->
 	    ?SETUPTIME
@@ -1545,7 +1516,7 @@ connecttime() ->
 %% -------- End initialisation functions --------------------
 
 %% ------------------------------------------------------------
-%% Node informaion.
+%% Node information.
 %% ------------------------------------------------------------
 
 get_node_info(Node) ->

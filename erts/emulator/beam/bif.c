@@ -36,9 +36,6 @@
 #include "erl_db_util.h"
 #include "register.h"
 
-static Eterm new_ref(Process *);	/* forward */
-
-
 /*
  * The BIF's now follow, see the Erlang Manual for a description of what
  * each individual BIF does.
@@ -346,7 +343,7 @@ queue_monitor_message(Process *p, Eterm ref, Eterm type,
 static int local_pid_monitor(Process *p, Eterm target, Eterm *res)
 {
     Process *rp;
-    *res = new_ref(p);
+    *res = erts_make_ref(p);
     if (target == p->id) {
 	return MONITOR_RESULT_OK;
     }
@@ -362,7 +359,7 @@ static int local_pid_monitor(Process *p, Eterm target, Eterm *res)
 static int local_name_monitor(Process *p, Eterm target_name, Eterm *res)
 {
     Process *rp;
-    *res = new_ref(p);
+    *res = erts_make_ref(p);
     if ((rp = whereis_process(target_name)) == NULL) {
 	Eterm lhp[3];
 	Eterm item;
@@ -385,7 +382,7 @@ static int remote_pid_monitor(Process *p, DistEntry *dep,
 {
     Sint code;
      
-    *res = new_ref(p);
+    *res = erts_make_ref(p);
     if ((code = dist_monitor(dep, p->id, target, *res)) == 1) {
 	erl_suspend(p, dep->cid);
 	return MONITOR_RESULT_RESCHEDULE;
@@ -409,7 +406,7 @@ static int remote_name_monitor(Process *p, DistEntry *dep,
 			       Eterm *res)
 {
     int code;
-    *res = new_ref(p);
+    *res = erts_make_ref(p);
     if ((code = dist_monitor(dep, p->id, target_name, *res)) == 1) {
 	erl_suspend(p, dep->cid);
 	return MONITOR_RESULT_RESCHEDULE;
@@ -447,9 +444,12 @@ BIF_RETTYPE monitor_2(BIF_ALIST_2)
 
     if (is_pid(target)) {
 	if (is_internal_pid(target)) {
+	local_pid:
 	    ret = local_pid_monitor(BIF_P, target, &result);
 	} else {
 	    dep = external_pid_dist_entry(target);
+	    if (dep == erts_this_dist_entry)
+		goto local_pid;
 	    if (is_nil(dep->cid)) {
 		BIF_TRAP2(dmonitor_p_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
 	    }
@@ -2455,8 +2455,7 @@ static Uint32 reference0; /* Initialized in erts_init_bif */
 static Uint32 reference1;
 static Uint32 reference2;
 
-/* For internal use */
-static Eterm new_ref(Process *p)
+Eterm erts_make_ref(Process *p)
 {
     Eterm* hp;
 
@@ -2476,7 +2475,7 @@ static Eterm new_ref(Process *p)
 
 BIF_RETTYPE make_ref_0(BIF_ALIST_0)
 {
-    return new_ref(BIF_P);
+    return erts_make_ref(BIF_P);
 }
 
 /**********************************************************************/
@@ -3473,256 +3472,11 @@ BIF_RETTYPE bump_reductions_1(BIF_ALIST_1)
 }
 
 
-/****************************************************************************
-** BIF Timer support
-****************************************************************************/
-
-#define BTR_FLG_SL_TIMER (1 << 0)
-
-typedef struct bif_timer_rec {
-    struct bif_timer_rec* next;
-    ErlTimer tm;
-    ErlHeapFragment* bp;
-    Uint32 flags;
-    Eterm message;
-    Eterm pid;
-    Eterm ref;
-    Uint  ref_heap[REF_THING_SIZE];
-} BifTimerRec;
-
-#define TIMER_HASH_VEC 3331
-
-static BifTimerRec* bif_tm_vec[TIMER_HASH_VEC];  
-static Uint no_bif_timers;
-
-Uint
-bif_timer_memory_size(void)
-{
-    return (sizeof(BifTimerRec *)*TIMER_HASH_VEC
-	    + no_bif_timers*sizeof(BifTimerRec));
-}
-
-static BifTimerRec** find_timer(Eterm ref)
-{
-    Eterm wd = ref_numbers(ref)[0];
-    int ix = wd % TIMER_HASH_VEC;
-    BifTimerRec** tp = &bif_tm_vec[ix];
-
-    while(*tp != NULL) {
-	if (eq(ref, (*tp)->ref))
-	    return tp;
-	tp = &(*tp)->next;
-    }
-    return NULL;
-}
-
-static void
-bif_timeout_proc(BifTimerRec* btm)
-{
-    Process* rp;
-    BifTimerRec** tp = find_timer(btm->ref);
-    int invalid_pid;
-
-    ASSERT((tp != NULL) && (*tp == btm));
-    *tp = btm->next;
-
-    if (is_atom(btm->pid)) {
-	rp = whereis_process(btm->pid);
-	invalid_pid = (rp == NULL);
-    } else {
-	rp = internal_pid_index(btm->pid) < erts_max_processes ? 
-	    process_tab[internal_pid_index(btm->pid)] : NULL;
-	invalid_pid = (INVALID_PID(rp, btm->pid));
-    }
-
-    if (invalid_pid) {
-	free_message_buffer(btm->bp);
-    } else {
-	queue_message_tt(rp, btm->bp, btm->message, NIL);
-    }
-    ERTS_PROC_LESS_MEM(sizeof(BifTimerRec));
-    ASSERT(no_bif_timers > 0);
-    no_bif_timers--;
-    if (btm->flags & BTR_FLG_SL_TIMER)
-	erts_free(ERTS_ALC_T_SL_BIF_TIMER, (void *) btm);
-    else
-	erts_free(ERTS_ALC_T_LL_BIF_TIMER, (void *) btm);
-}
-
-/* tm arg contains the BifTimerRec */
-static void bif_cancel_proc(BifTimerRec* btm)
-{
-    free_message_buffer(btm->bp);
-    ERTS_PROC_LESS_MEM(sizeof(BifTimerRec));
-    ASSERT(no_bif_timers > 0);
-    no_bif_timers--;
-    if (btm->flags & BTR_FLG_SL_TIMER)
-	erts_free(ERTS_ALC_T_SL_BIF_TIMER, (void *) btm);
-    else
-	erts_free(ERTS_ALC_T_LL_BIF_TIMER, (void *) btm);
-}
-
-static BifTimerRec* 
-do_timer(int pack, Process *process, Eterm arg1, Eterm arg2, Eterm arg3)
-{
-    BifTimerRec* btm;
-    ErlHeapFragment* bp;
-    Uint timeout;
-    Uint size;
-    Eterm term, msg;
-    Eterm ref;
-    Eterm* hp;
-    int ix;
-    
-    if (!term_to_Uint(arg1, &timeout)) {
-	return NULL;
-    }
-#ifdef ARCH_64
-    if ((timeout >> 32) != 0) {
-	return NULL;
-    }
-#endif
-    if (is_not_internal_pid(arg2) && is_not_atom(arg2)) {
-	return NULL;
-    }
-
-    ref = new_ref(process);
-    msg = arg3;
-    
-    if (pack) {
-	hp = HAlloc(process, 4);
-	term = TUPLE3(hp, am_timeout, ref, msg);
-    } else {
-	term = msg;
-    }
-    
-    size = size_object(term);
-    ERTS_PROC_MORE_MEM(sizeof(BifTimerRec));
-    no_bif_timers++;
-    if (timeout < ERTS_ALC_MIN_LONG_LIVED_TIME) {
-	btm = (BifTimerRec *) erts_alloc(ERTS_ALC_T_SL_BIF_TIMER,
-					 sizeof(BifTimerRec));
-	btm->flags = BTR_FLG_SL_TIMER;
-    }
-    else {
-	btm = (BifTimerRec *) erts_alloc(ERTS_ALC_T_LL_BIF_TIMER,
-					 sizeof(BifTimerRec));
-	btm->flags = 0;
-    }
-
-    btm->bp = bp = new_message_buffer(size);
-    sys_memcpy((void *) btm->ref_heap,
-	       (void *) ref_thing_ptr(ref),
-	       sizeof(RefThing));
-    btm->ref = make_internal_ref(btm->ref_heap);
-    btm->pid = arg2;
-    ix = ref_numbers(ref)[0] % TIMER_HASH_VEC;
-    btm->next = bif_tm_vec[ix];
-    bif_tm_vec[ix] = btm;
-    hp = bp->mem;
-    btm->message = copy_struct(term, size, &hp, &bp->off_heap);
-    btm->tm.active = 0; /* MUST be initalized */
-    erl_set_timer(&btm->tm,
-		  (ErlTimeoutProc) bif_timeout_proc,
-		  (ErlCancelProc) bif_cancel_proc,
-		  (void*)btm,
-		  timeout);
-    
-    return btm;
-}
-
-/* send_after(Time, Pid, Message) -> Ref */
-BIF_RETTYPE send_after_3(BIF_ALIST_3)
-{
-    BifTimerRec* btm;
-
-    btm = do_timer(0, BIF_P, BIF_ARG_1, BIF_ARG_2, BIF_ARG_3);
-
-    if (btm != NULL)
-	BIF_RET(STORE_NC_IN_PROC(BIF_P, btm->ref));
-    else
-	BIF_ERROR(BIF_P, BADARG);
-}
-
-/* start_timer(Time, Pid, Message) -> Ref */
-BIF_RETTYPE start_timer_3(BIF_ALIST_3)
-{
-    BifTimerRec* btm;
-
-    btm = do_timer(1, BIF_P, BIF_ARG_1, BIF_ARG_2, BIF_ARG_3);
-
-    if (btm != NULL)
-       BIF_RET(STORE_NC_IN_PROC(BIF_P, btm->ref));
-    else
-       BIF_ERROR(BIF_P, BADARG);
-}
-
-/* cancel_timer(Ref)) -> Bool */
-BIF_RETTYPE cancel_timer_1(BIF_ALIST_1)
-{
-    BifTimerRec* btm;
-    BifTimerRec** tp;
-    Uint left;
-
-    if (is_not_ref(BIF_ARG_1))
-	BIF_ERROR(BIF_P, BADARG);
-    if ((tp = find_timer(BIF_ARG_1)) != NULL) {
-	btm = *tp;
-	*tp = btm->next;
-	left = time_left(&btm->tm);
-	erl_cancel_timer(&btm->tm);
-	BIF_RET(make_small_or_big(left, BIF_P));
-    }
-    else 
-	BIF_RET(am_false);
-}
-
-/* read_timer(Ref) -> false | RemainingTime */
-BIF_RETTYPE read_timer_1(BIF_ALIST_1)
-{
-    BifTimerRec** tp;
-
-    if (is_not_ref(BIF_ARG_1)) {
-	BIF_ERROR(BIF_P, BADARG);
-    }
-    if ((tp = find_timer(BIF_ARG_1)) == NULL) {
-	BIF_RET(am_false);
-    } else {
-	Uint left = time_left(&(*tp)->tm);
-	BIF_RET(make_small_or_big(left, BIF_P));
-    }
-}
-
-void print_timer_info(CIO to)
-{
-   int i;
-   BifTimerRec *p;
-
-   for (i = 0; i < TIMER_HASH_VEC; i++) {
-       if ((p = bif_tm_vec[i]) != NULL) {
-	   erl_printf(to, "=timer:");
-	   display(p->pid, to);
-	   erl_printf(to, "\n");
-	   erl_printf(to, "Message: ");
-	   display(p->message, to);
-	   erl_printf(to, "\n");
-	   erl_printf(to, "Time left: %d ms\n", time_left(&p->tm));
-       }
-   }
-}
-
 void erts_init_bif(void)
 {
-    int i;
-
     reference0 = 0;
     reference1 = 0;
     reference2 = 0;
-
-    no_bif_timers = 0;
-    for (i = 0; i < TIMER_HASH_VEC; ++i) {
-	bif_tm_vec[i] = NULL;
-    }
 }
 
 BIF_RETTYPE blocking_read_file_1(BIF_ALIST_1)

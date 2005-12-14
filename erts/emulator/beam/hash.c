@@ -307,6 +307,39 @@ void* hash_erase(Hash* h, void* tmpl)
     return (void*)0;
 }
 
+/*
+** Remove hash entry from table return entry if removed
+** return NULL if not removed
+** NOTE: hash_remove() differs from hash_erase() in that
+**       it returns entry (not the template) and does
+**       *not* call the free() callback.
+*/
+void *
+hash_remove(Hash *h, void *tmpl)
+{
+    HashValue hval = h->fun.hash(tmpl);
+    int ix = hval % h->size;
+    HashBucket *b = h->bucket[ix];
+    HashBucket *prev = NULL;
+	
+    while (b) {
+	if ((b->hvalue == hval) && (h->fun.cmp(tmpl, (void*)b) == 0)) {
+	    if (prev)
+		prev->next = b->next;
+	    else
+		h->bucket[ix] = b->next;
+	    if (h->bucket[ix] == NULL)
+		h->used--;
+	    if (h->used < h->size20percent)  /* rehash at 20% */
+		rehash(h, 0);
+	    return (void *) b;
+	}
+	prev = b;
+	b = b->next;
+    }
+    return NULL;
+}
+
 void hash_foreach(Hash* h, void (*func)(void *, void *), void *func_arg2)
 {
     int i;

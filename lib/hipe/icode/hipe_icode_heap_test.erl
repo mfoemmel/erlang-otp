@@ -22,6 +22,7 @@
 -define(DO_ASSERT,true).
 
 -include("../main/hipe.hrl").
+-include("hipe_icode.hrl").
 
 %-------------------------------------------------------------------------
 -include("../rtl/hipe_literals.hrl").
@@ -98,8 +99,8 @@ add_gc_tests([]) -> [].
 need([I|Is] , Need, Code) ->
   case split(I) of 
     true -> 
-      case hipe_icode:type(I) of
-	call ->
+      case I of
+	#call{} ->
 	  case hipe_icode:call_continuation(I) of
 	    [] -> %% Was fallthrough.
 	      NewLab = hipe_icode:mk_new_label(),
@@ -119,10 +120,10 @@ need([], Need, Code) ->
   {Need, [], lists:reverse(Code)}.
 
 need(I) ->
-  case hipe_icode:type(I) of 
-    call ->
+  case I of 
+    #call{} ->
       primop_need(hipe_icode:call_fun(I), hipe_icode:call_args(I));
-    enter ->
+    #enter{} ->
       primop_need(hipe_icode:enter_fun(I), hipe_icode:enter_args(I));
     _ -> 
       0
@@ -151,9 +152,9 @@ gc_test(Need) ->
    L].
 
 split(I) ->
-  case hipe_icode:type(I) of
-    call -> not known_heap_need(hipe_icode:call_fun(I));
-    enter -> not known_heap_need(hipe_icode:enter_fun(I));
+  case I of
+    #call{} -> not known_heap_need(hipe_icode:call_fun(I));
+    #enter{} -> not known_heap_need(hipe_icode:enter_fun(I));
     _ -> false
   end.
 

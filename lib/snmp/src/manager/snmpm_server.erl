@@ -28,6 +28,7 @@
 
 %% User interface
 -export([start_link/0, stop/0, 
+	 is_started/0, 
 
 	 load_mib/1, unload_mib/1, 
 
@@ -149,6 +150,8 @@ start_link() ->
 stop() ->
     call(stop).
 
+is_started() ->
+    call(is_started, 1000).
 
 load_mib(MibFile) when list(MibFile) ->
     call({load_mib, MibFile}).
@@ -686,6 +689,11 @@ handle_call(info, _From, State) ->
     ?vlog("received info request", []),
     Reply = get_info(State), 
     {reply, Reply, State};
+
+handle_call(is_started, _From, State) ->
+    ?vlog("received is_started request", []),
+    IsStarted = is_started(State), 
+    {reply, IsStarted, State};
 
 handle_call(stop, _From, State) ->
     ?vlog("received stop request", []),
@@ -2569,9 +2577,24 @@ t() ->
     
 
 %%----------------------------------------------------------------------
+
+is_started(#state{net_if = _Pid, net_if_mod = _Mod}) ->
+    %% Mod:is_started(Pid) andalso snmpm_config:is_started().
+    case snmpm_config:is_started() of
+	true ->
+	    true;
+	_ ->
+	    false
+    end.
+
+
+%%----------------------------------------------------------------------
 	
 call(Req) ->
-    gen_server:call(?SERVER, Req, infinity).
+    call(Req, infinity).
+
+call(Req, To) ->
+    gen_server:call(?SERVER, Req, To).
 
 % cast(Msg) ->
 %     gen_server:cast(?SERVER, Msg).

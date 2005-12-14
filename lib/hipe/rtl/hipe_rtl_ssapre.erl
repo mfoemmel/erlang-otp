@@ -26,6 +26,7 @@
 -export([rtl_ssapre/2]).
 
 -include("../main/hipe.hrl").
+-include("hipe_rtl.hrl").
 
 %%-define(SSAPRE_DEBUG, true          ). %% When defined and true, produces debug printouts
 -define(        SETS, ordsets       ). %% Which set implementation module to use
@@ -164,9 +165,10 @@ find_definition_for_computations_in_block(BlockLabel,[],Cfg,VisitedInstructions,
 find_definition_for_computations_in_block(BlockLabel,[Inst|Rest],Cfg,VisitedInstructions,XsiGraph)->
 
   %%  pp_debug(" Inspecting instruction: ",[]),pp_instr(Inst,nil),
-  case ?RTL:type(Inst) of
-    alu ->
-      %% Is Inst interesting for SSAPRE? ie is Inst an arithmetic operation which doesn't deal with precoloured?
+  case Inst of
+    #alu{} ->
+      %% Is Inst interesting for SSAPRE?
+      %% i.e., is Inst an arithmetic operation which doesn't deal with precoloured?
       %% Note that since we parse forward, we have no 'pre_candidate'-type so far.
       case check_definition(Inst,VisitedInstructions,BlockLabel,Cfg,XsiGraph) of
  	{def_found,Def}->
@@ -203,13 +205,16 @@ find_definition_for_computations_in_block(BlockLabel,[Inst|Rest],Cfg,VisitedInst
               NewVisited=[NewInst|TempVisited2],
               NewCfg=Cfg
           end,
-          find_definition_for_computations_in_block(BlockLabel,Rest,NewCfg,NewVisited,XsiGraph)
+          find_definition_for_computations_in_block(BlockLabel, Rest, NewCfg,
+						    NewVisited, XsiGraph)
       end;
     _ ->
       %%pp_debug("~n [L~w] Not concerned with: ~w",[BlockLabel,Inst]),
-      %% If the instruction is not a SSAPRE candidate, we skip it and keep on processing instructions
+      %% If the instruction is not a SSAPRE candidate, we skip it and keep on
+      %% processing instructions
       %% Prepend Inst, so that we have all in reverse order. Easy to parse backwards
-      find_definition_for_computations_in_block(BlockLabel,Rest,Cfg,[Inst|VisitedInstructions],XsiGraph)
+      find_definition_for_computations_in_block(BlockLabel, Rest, Cfg,
+						[Inst|VisitedInstructions], XsiGraph)
   end.
 
 %% ##############################################################################################################################
@@ -239,15 +244,15 @@ check_definition(E,[],BlockLabel,Cfg,XsiGraph)->
       {merge_point,Xsi} 
   end;
 check_definition(E,[CC|Rest],BlockLabel,Cfg,XsiGraph) ->
-  SRC1=?RTL:alu_src1(E),
-  SRC2=?RTL:alu_src2(E),
-  case ?RTL:type(CC) of
-    alu ->
+  SRC1 = ?RTL:alu_src1(E),
+  SRC2 = ?RTL:alu_src2(E),
+  case CC of
+    #alu{} ->
       exit({?MODULE,should_not_be_an_alu,{"Why the hell do we still have an alu???",CC}});
-    pre_candidate ->
+    #pre_candidate{} ->
       %% C is the previous instruction
-      C=CC#pre_candidate.alu,
-      DST=?RTL:alu_dst(C),
+      C = CC#pre_candidate.alu,
+      DST = ?RTL:alu_dst(C),
       case DST==SRC1 orelse DST==SRC2 of
  	false ->
  	  case check_match(E,C) of
@@ -259,7 +264,7 @@ check_definition(E,[CC|Rest],BlockLabel,Cfg,XsiGraph) ->
  	  end;
  	true ->
  	  %% Get the definition of C, since C is PRE-candidate AND has been processed before
- 	  DEF=CC#pre_candidate.def,
+ 	  DEF = CC#pre_candidate.def,
  	  case DEF of
  	    bottom -> 
  	      %% Def(E)=bottom, STOP
@@ -271,7 +276,7 @@ check_definition(E,[CC|Rest],BlockLabel,Cfg,XsiGraph) ->
  	      check_definition(F,Rest,BlockLabel,Cfg,XsiGraph) %% Continue the search
  	  end
       end;
-    move ->
+    #move{} ->
       %% It's a move, we emend E, and continue the definition search
       DST=?RTL:move_dst(CC),
       case SRC1==DST orelse SRC2==DST of
@@ -282,8 +287,8 @@ check_definition(E,[CC|Rest],BlockLabel,Cfg,XsiGraph) ->
  	  F=E
       end,
       check_definition(F,Rest,BlockLabel,Cfg,XsiGraph); %% Continue the search
-    xsi_link ->
-      {_K,Xsi}=?GRAPH:vertex(XsiGraph,CC#xsi_link.number),
+    #xsi_link{} ->
+      {_K,Xsi} = ?GRAPH:vertex(XsiGraph,CC#xsi_link.number),
       C=Xsi#xsi.inst,
       case check_match(C,E) of
  	true -> %% There is a Xsi already with a computation of E!
@@ -292,7 +297,7 @@ check_definition(E,[CC|Rest],BlockLabel,Cfg,XsiGraph) ->
  	_->
  	  check_definition(E,Rest,BlockLabel,Cfg,XsiGraph)
       end;
-    phi -> 
+    #phi{} -> 
       %% skip them. NOTE: Important to separate this case from the next one
       check_definition(E,Rest,BlockLabel,Cfg,XsiGraph);
     _ ->
@@ -352,36 +357,32 @@ expr_is_constant(E)->
 %%  is_number(?RTL:alu_src1(E)) andalso is_number(?RTL:alu_src2(E)).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Must be an arithmetic operation, ie ?RTL:type(Expr) == alu
+%% Must be an arithmetic operation, i.e. #alu{}
 emend(Expr,S,Var) ->
-  SRC1=?RTL:alu_src1(Expr),
-  case SRC1==S of
-    true ->
-      NewExpr=?RTL:alu_src1_update(Expr,Var);
-    _->
-      NewExpr=Expr
-  end,
-  SRC2=?RTL:alu_src2(NewExpr),
-  case SRC2==S of
-    true ->
-      NewExpr2=?RTL:alu_src2_update(NewExpr,Var);
-    _ ->
-      NewExpr2=NewExpr
-  end,
+  SRC1 = ?RTL:alu_src1(Expr),
+  NewExpr = case SRC1==S of
+	      true  -> ?RTL:alu_src1_update(Expr,Var);
+	      false -> Expr
+	    end,
+  SRC2 = ?RTL:alu_src2(NewExpr),
+  NewExpr2 = case SRC2==S of
+	       true  -> ?RTL:alu_src2_update(NewExpr,Var);
+	       false -> NewExpr
+	     end,
   NewExpr2.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 split_for_xsi([],Acc)->
   {[],Acc};%%  no_xsi_no_phi_found;
 split_for_xsi([I|Rest],Acc) -> %% [I|Rest] in backward order, Acc in order
-  case ?RTL:type(I) of
-    xsi_link ->
+  case I of
+    #xsi_link{} ->
       BeforeCode=[I|Rest],
       {lists:reverse(BeforeCode),Acc};
-    phi ->
+    #phi{} ->
       BeforeCode=[I|Rest],
       {lists:reverse(BeforeCode),Acc};
-    _->
+    _ ->
       split_for_xsi(Rest,[I|Acc])
   end.
 
@@ -492,10 +493,10 @@ determine_e_prime(Expr,VisitedInstructions,Pred,XsiGraph)->
 emend_with_phis(EmendedE,[],_)->
   EmendedE;
 emend_with_phis(E,[I|Rest],Pred) ->
-  case ?RTL:type(I) of
-    phi ->
-      Dst=?RTL:phi_dst(I),
-      UE=?RTL:uses(E), %% Should we get SRC1 and SRC2 instead?
+  case I of
+    #phi{} ->
+      Dst = ?RTL:phi_dst(I),
+      UE = ?RTL:uses(E), %% Should we get SRC1 and SRC2 instead?
       case lists:member(Dst,UE) of
   	false ->
   	  emend_with_phis(E,Rest,Pred);
@@ -510,12 +511,12 @@ emend_with_phis(E,[I|Rest],Pred) ->
 emend_with_processed_xsis(EmendedE,[],_,_)->
   {revised_expression,EmendedE};  
 emend_with_processed_xsis(E,[I|Rest],Pred,XsiGraph) ->
-  case ?RTL:type(I) of
-    xsi_link ->
-      Key=I#xsi_link.number,
+  case I of
+    #xsi_link{} ->
+      Key = I#xsi_link.number,
       {_KK,Xsi}=?GRAPH:vertex(XsiGraph,Key),
-      Def=Xsi#xsi.def,
-      UE=?RTL:uses(E), %% Should we get SRC1 and SRC2 instead?
+      Def = Xsi#xsi.def,
+      UE = ?RTL:uses(E), %% Should we get SRC1 and SRC2 instead?
       case lists:member(Def,UE) of
   	false ->
  	  CE=Xsi#xsi.inst,
@@ -556,10 +557,10 @@ emend_with_processed_xsis(E,[I|Rest],Pred,XsiGraph) ->
 %%   pp_debug("~nWe don't find this xsi with def ",[]),pp_arg(Xsi#xsi.def),pp_debug(" in L~w : ",[Xsi#xsi.label]),
 %%   exit({?MODULE,no_such_xsi_in_block,"We didn't find that Xsi in the block"});
 get_visited_instructions(Xsi,[I|Rest]) ->
-  case ?RTL:type(I) of
-    xsi_link ->
-      XsiDef=Xsi#xsi.def,
-      Key=XsiDef#temp.key,
+  case I of
+    #xsi_link{} ->
+      XsiDef = Xsi#xsi.def,
+      Key = XsiDef#temp.key,
       case I#xsi_link.number==Key of
  	true ->
  	  Rest;
@@ -573,10 +574,10 @@ get_visited_instructions(Xsi,[I|Rest]) ->
 split_code_for_xsi([],Acc)->
   {[],Acc};
 split_code_for_xsi([I|Rest],Acc)->
-  case hipe_rtl:type(I) of
-    xsi_link ->
+  case I of
+    #xsi_link{} ->
       {lists:reverse([I|Rest]),Acc};
-    phi ->
+    #phi{} ->
       {lists:reverse([I|Rest]),Acc};
     _ ->
       split_code_for_xsi(Rest,[I|Acc])
@@ -586,7 +587,7 @@ check_one_operand(E,[],BlockLabel,Cfg,XsiKey,XsiGraph)->
   %% No more instructions in that block
   %% No definition found in that block
   %% Search is previous blocks
-  Preds=?CFG:pred(?CFG:pred_map(Cfg),BlockLabel),
+  Preds = ?CFG:pred(?CFG:pred_map(Cfg),BlockLabel),
   case Preds of
     [] ->
       %% Entry Point
@@ -626,18 +627,18 @@ check_one_operand(E,[CC|Rest],BlockLabel,Cfg,XsiKey,XsiGraph) ->
   SRC2=?RTL:alu_src2(E),
 
   %% C is the previous instruction
-  case ?RTL:type(CC) of
-    alu ->
+  case CC of
+    #alu{} ->
       exit({?MODULE,should_not_be_an_alu,{"Why the hell do we still have an alu???",CC}});
-    xsi ->
+    #xsi{} ->
       exit({?MODULE,should_not_be_a_xsi,{"Why the hell do we still have a xsi???",CC}});
-    pre_candidate ->
-      C=CC#pre_candidate.alu,
-      DST=?RTL:alu_dst(C),
+    #pre_candidate{} ->
+      C = CC#pre_candidate.alu,
+      DST = ?RTL:alu_dst(C),
       case DST==SRC1 orelse DST==SRC2 of
  	true ->
  	  %% Get the definition of C, since C is PRE-candidate AND has been processed before
- 	  DEF=CC#pre_candidate.def,
+ 	  DEF = CC#pre_candidate.def,
  	  case DEF of
  	    bottom -> 
  	      %% Def(E)=bottom, STOP
@@ -661,7 +662,7 @@ check_one_operand(E,[CC|Rest],BlockLabel,Cfg,XsiKey,XsiGraph) ->
  	      check_one_operand(E,Rest,BlockLabel,Cfg,XsiKey,XsiGraph)
  	  end
       end;
-    move ->
+    #move{} ->
       %% It's a move, we emend E, and continue the definition search
       DST=?RTL:move_dst(CC),
       case SRC1==DST orelse SRC2==DST of
@@ -672,11 +673,11 @@ check_one_operand(E,[CC|Rest],BlockLabel,Cfg,XsiKey,XsiGraph) ->
   	_ ->
  	  check_one_operand(E,Rest,BlockLabel,Cfg,XsiKey,XsiGraph) %% Continue the search
       end;
-    xsi_link ->
-      Key=CC#xsi_link.number,
+    #xsi_link{} ->
+      Key = CC#xsi_link.number,
       %% Is Key a family member of XsiDef ?
       {_KK,Xsi}=?GRAPH:vertex(XsiGraph,Key),
-      C=Xsi#xsi.inst,
+      C = Xsi#xsi.inst,
       case check_match(E,C) of
         true -> %% There is a Xsi already with a computation of E!
           %% fetch definition of C, and give it to E
@@ -702,7 +703,7 @@ check_one_operand(E,[CC|Rest],BlockLabel,Cfg,XsiKey,XsiGraph) ->
               {expr_found,ExprOp}
           end
       end;
-    phi -> %% skip them
+    #phi{} -> %% skip them
       check_one_operand(E,Rest,BlockLabel,Cfg,XsiKey,XsiGraph);
     _ ->
       PreColouredTest = ?ARCH:is_precoloured(SRC1) orelse ?ARCH:is_precoloured(SRC2),
@@ -791,9 +792,9 @@ create_cfggraph([Label|Ls],Cfg,CFGGraph,ToBeFactorizedAcc,MPAcc,LateEdges,XsiGra
 get_defs_in_non_merge_block([],Acc)->
   ?SETS:from_list(Acc);
 get_defs_in_non_merge_block([Inst|Rest],Acc) ->
-  case ?RTL:type(Inst) of
-    pre_candidate ->
-      Def=Inst#pre_candidate.def,
+  case Inst of
+    #pre_candidate{} ->
+      Def = Inst#pre_candidate.def,
       case Def of
         #temp{}->
           %%        {temp,Key,_Var}->
@@ -809,20 +810,20 @@ get_defs_in_non_merge_block([Inst|Rest],Acc) ->
 get_info_in_merge_block([],_XsiGraph,Defs,Xsis,Maps,Uses)->
   {?SETS:from_list(Defs),Xsis,Maps,Uses}; %% Xsis are in backward order
 get_info_in_merge_block([Inst|Rest],XsiGraph,Defs,Xsis,Maps,Uses) ->
-  case ?RTL:type(Inst) of
-    pre_candidate ->
-      Def=Inst#pre_candidate.def,
+  case Inst of
+    #pre_candidate{} ->
+      Def = Inst#pre_candidate.def,
       case Def of
         #temp{} ->
           get_info_in_merge_block(Rest,XsiGraph,[Def#temp.key|Defs],Xsis,Maps,Uses);
  	_ ->
           get_info_in_merge_block(Rest,XsiGraph,Defs,Xsis,Maps,Uses)
       end;
-    xsi_link ->
-      Key=Inst#xsi_link.number,
-      {_Key,Xsi}=?GRAPH:vertex(XsiGraph,Key),
-      OpList=xsi_oplist(Xsi),
-      {NewMaps,NewUses}=add_map_and_uses(OpList,Key,Maps,Uses),
+    #xsi_link{} ->
+      Key = Inst#xsi_link.number,
+      {_Key,Xsi} = ?GRAPH:vertex(XsiGraph,Key),
+      OpList = xsi_oplist(Xsi),
+      {NewMaps,NewUses} = add_map_and_uses(OpList,Key,Maps,Uses),
       get_info_in_merge_block(Rest,XsiGraph,Defs,[Key|Xsis],NewMaps,NewUses);
     _  ->
       get_info_in_merge_block(Rest,XsiGraph,Defs,Xsis,Maps,Uses)
@@ -1133,10 +1134,9 @@ code_motion_in_block(Label,[],Cfg,_XsiG,Visited,InsertionsAcc)->
   %%pp_debug("~nChecking the Code at L~w:~n~p",[Label,?BB:code(?CFG:bb(Cfg3,Label))]),
   Cfg3;
 code_motion_in_block(L,[Inst|Insts],Cfg,XsiG,Visited,InsertionsAcc) ->
-
   pp_debug("~nInspecting Inst : ~n",[]),pp_instr(Inst,XsiG),
-  case ?RTL:type(Inst) of
-    pre_candidate ->
+  case Inst of
+    #pre_candidate{} ->
       Def=Inst#pre_candidate.def,
       Alu=Inst#pre_candidate.alu,
       case Def of
@@ -1167,9 +1167,9 @@ code_motion_in_block(L,[Inst|Insts],Cfg,XsiG,Visited,InsertionsAcc) ->
           InstToAdd = Move
       end,
       code_motion_in_block(L,Insts,Cfg,XsiG,[InstToAdd|Visited],InsertionsAcc);
-    xsi_link ->
-      Key=Inst#xsi_link.number,
-      {_V,Xsi}=?GRAPH:vertex(XsiG,Key),      
+    #xsi_link{} ->
+      Key = Inst#xsi_link.number,
+      {_V,Xsi} = ?GRAPH:vertex(XsiG,Key),      
       case Xsi#xsi.wba of
         true ->
           %% Xsi is a WBA, it might trigger insertions
@@ -1196,10 +1196,10 @@ code_motion_in_block(L,[Inst|Insts],Cfg,XsiG,Visited,InsertionsAcc) ->
   end.
 
 prepare_inst(Expr)->
-  S1=?RTL:alu_src1(Expr),
-  S2=?RTL:alu_src2(Expr),
+  S1 = ?RTL:alu_src1(Expr),
+  S2 = ?RTL:alu_src2(Expr),
   case S1 of
-    #temp{}->
+    #temp{} ->
       NewInst=?RTL:alu_src1_update(Expr,S1#temp.var);
     _ ->
       NewInst=Expr
@@ -1360,15 +1360,14 @@ manufacture_computation(_Pred,Expr,[])->
   Expr;
 manufacture_computation(Pred,Expr,[I|Rest]) ->
   %%pp_debug("~n Expr = ~w",[Expr]),
-  SRC1=?RTL:alu_src1(Expr),
-  SRC2=?RTL:alu_src2(Expr),
-
-  case ?RTL:type(I) of
-    xsi_link ->
+  SRC1 = ?RTL:alu_src1(Expr),
+  SRC2 = ?RTL:alu_src2(Expr),
+  case I of
+    #xsi_link{} ->
       exit({?MODULE,should_not_be_a_xsi_link,{"Why the hell do we still have a xsi link???",I}});
-    xsi ->
+    #xsi{} ->
       exit({?MODULE,should_not_be_a_xsi,{"Why the hell do we still have a xsi ???",I}});
-    phi ->
+    #phi{} ->
       DST = ?RTL:phi_dst(I),
       Arg = ?RTL:phi_arg(I,Pred),
       NewInst = case DST==SRC1 of
@@ -1471,8 +1470,8 @@ pp_xsi(Xsi)->
   io:format(standard_io, ") cba=~w, later=~w | wba=~w~n", [Xsi#xsi.cba,Xsi#xsi.later,Xsi#xsi.wba]).
 
 pp_instr(I,Graph) ->
-  case ?RTL:type(I) of
-    alu ->
+  case I of
+    #alu{} ->
       io:format(standard_io, "    ", []),
       pp_arg(?RTL:alu_dst(I)),
       io:format(standard_io, " <- ", []),
@@ -1481,12 +1480,12 @@ pp_instr(I,Graph) ->
     _ ->
       case catch ?RTL:pp_instr(standard_io, I) of
  	{'EXIT', _} -> 
- 	  case ?RTL:type(I) of
- 	    pre_candidate ->
+ 	  case I of
+ 	    #pre_candidate{} ->
  	      pp_pre(I);
- 	    xsi ->
+ 	    #xsi{} ->
  	      pp_xsi(I);
- 	    xsi_link ->
+ 	    #xsi_link{} ->
  	      pp_xsi_link(I#xsi_link.number,Graph);
  	    _->
  	      io:format(standard_io,"*** ~w ***~n", [I])
@@ -1527,8 +1526,8 @@ pp_arg(Arg)->
     undefined ->
       io:format(standard_io, "...", []); %%"undefined", []);
     _->
-      case ?RTL:type(Arg) of
-        alu->
+      case Arg of
+        #alu{} ->
           pp_expr(Arg);      
         _->
           ?RTL:pp_arg(standard_io, Arg)

@@ -281,6 +281,16 @@ handle_call({load_binary,Mod,File,Bin}, {_From,_Tag}, S) ->
     Status = do_load_binary(Mod,File,Bin,S#state.moddb),
     {reply,Status,S};
 
+handle_call({load_native_partial,Mod,Bin}, {_From,_Tag}, S) ->
+    Result = (catch hipe_unified_loader:load(Mod,Bin)),
+    Status = hipe_result_to_status(Result),
+    {reply,Status,S};
+
+handle_call({load_native_sticky,Mod,Bin,WholeModule}, {_From,_Tag}, S) ->
+    Result = (catch hipe_unified_loader:load_module(Mod,Bin,WholeModule)),
+    Status = hipe_result_to_status(Result),
+    {reply,Status,S};
+
 handle_call({ensure_loaded,Mod0}, {_From,_Tag}, St0) ->
     Fun = fun (M, St) ->
 		  case erlang:module_loaded(M) of
@@ -1092,6 +1102,12 @@ load_native_code(Mod, Bin) ->
     case erlang:module_loaded(hipe_unified_loader) of
 	false -> no_native;
 	true -> hipe_unified_loader:load_native_code(Mod, Bin)
+    end.
+
+hipe_result_to_status(Result) ->
+    case Result of
+	{module,_} -> Result;
+	_ -> {error,Result}
     end.
 
 post_beam_load(Mod) ->

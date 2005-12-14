@@ -151,7 +151,7 @@ open(_,_,_) ->
     {error, einval}.
 
 %% Opens a file. Returns {error, Reason} | {ok, FileDescriptor}.
-open(File, ModeList) when list(File), list(ModeList) ->
+open(File, ModeList) when is_list(File), list(ModeList) ->
     case open_mode(ModeList) of
 	{error, _} = Error ->
 	    Error;
@@ -163,7 +163,7 @@ open(_, _) ->
 
 %% Opens a port that can be used for open/3 or read_file/2.
 %% Returns {ok, Port} | {error, Reason}.
-open(Portopts) when list(Portopts) ->
+open(Portopts) when is_list(Portopts) ->
 %     drv_open(?FD_DRV, Portopts).
     case drv_open(?FD_DRV, Portopts) of
 	{error, _} = Error ->
@@ -234,7 +234,7 @@ write(#file_descriptor{module = ?MODULE, data = {Port, _}}, Bytes) ->
     end.
 
 %% Returns ok | {error, {WrittenCount, Reason}}
-pwrite(#file_descriptor{module = ?MODULE, data = {Port, _}}, L) when list(L) ->
+pwrite(#file_descriptor{module = ?MODULE, data = {Port, _}}, L) when is_list(L) ->
     case (catch pwrite_int(Port, L, 0, [], [])) of
 	{'EXIT', _} ->
 	    {error, einval};
@@ -247,22 +247,22 @@ pwrite(#file_descriptor{module = ?MODULE}, _) ->
 pwrite_int(_, [], 0, [], []) ->
     ok;
 pwrite_int(Port, [], N, Spec, Data) ->
-    Header = list_to_binary([<<?FILE_PWRITEV, N:32>> | lists:reverse(Spec)]),
-    case drv_command(Port, [Header | lists:reverse(Data)]) of
+    Header = list_to_binary([<<?FILE_PWRITEV, N:32>> | reverse(Spec)]),
+    case drv_command(Port, [Header | reverse(Data)]) of
 	{ok, _Size} ->
 	    ok;
 	{error, {_R, _Reason}} = Error ->
 	    Error
     end;
 pwrite_int(Port, [{Offs, Bin} | T], N, Spec, Data)
-  when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
-       binary(Bin) ->
+  when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
+       is_binary(Bin) ->
     Size = size(Bin),
     pwrite_int(Port, T, N+1, 
 	       [<<Offs:64/signed, Size:64>> | Spec], 
 	       [Bin | Data]);
 pwrite_int(Port, [{Offs, Bytes} | T], N, Spec, Data)
-  when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
+  when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
        list(Bytes) ->
     Bin = list_to_binary(Bytes), % Might throw badarg
     Size = size(Bin),
@@ -276,7 +276,7 @@ pwrite_int(_, [_|_], _N, _Spec, _Data) ->
 
 %% Returns {error, Reason} | ok.
 pwrite(#file_descriptor{module = ?MODULE, data = {Port, _}}, Offs, Bytes) 
-       when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE ->
+       when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE ->
     case pwrite_int(Port, [{Offs, Bytes}], 0, [], []) of
 	{error, {_, Reason}} ->
 	    {error, Reason};
@@ -294,7 +294,7 @@ sync(#file_descriptor{module = ?MODULE, data = {Port, _}}) ->
 
 %% Returns {ok, Data} | eof | {error, Reason}.
 read(#file_descriptor{module = ?MODULE, data = {Port, _}}, Size)
-  when integer(Size), 0 =< Size, Size < ?LARGEFILESIZE ->
+  when is_integer(Size), 0 =< Size, Size < ?LARGEFILESIZE ->
     case drv_command(Port, <<?FILE_READ, Size:64>>) of
 	{ok, {0, _Data}} ->
 	    eof;
@@ -321,7 +321,7 @@ read(#file_descriptor{module = ?MODULE}, _) ->
     {error, einval}.
 
 %% Returns {ok, [Data|eof, ...]} | {error, Reason}
-pread(#file_descriptor{module = ?MODULE, data = {Port, _}}, L) when list(L) ->
+pread(#file_descriptor{module = ?MODULE, data = {Port, _}}, L) when is_list(L) ->
     case (catch pread_int(Port, L, 0, [])) of
 	{'EXIT', _} ->
 	    {error, einval};
@@ -335,7 +335,7 @@ pread_int(_, [], 0, []) ->
     {ok, []};
 pread_int(Port, [], N, Spec) ->
     Command = list_to_binary([<<?FILE_PREADV, 0:32, N:32>> 
-			      | lists:reverse(Spec)]),
+			      | reverse(Spec)]),
     case drv_command(Port, Command) of
 	{ok, _} = Result ->
 	    Result;
@@ -343,8 +343,8 @@ pread_int(Port, [], N, Spec) ->
 	    Error
     end;
 pread_int(Port, [{Offs, Size} | T], N, Spec)
-  when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
-       integer(Size), 0 =< Size, Size < ?LARGEFILESIZE ->
+  when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
+       is_integer(Size), 0 =< Size, Size < ?LARGEFILESIZE ->
     pread_int(Port, T, N+1, [<<Offs:64/signed, Size:64>> | Spec]);
 pread_int(_, [_|_], _N, _Spec) ->
     {error, einval}.
@@ -353,8 +353,8 @@ pread_int(_, [_|_], _N, _Spec) ->
 
 %% Returns {ok, Data} | eof | {error, Reason}.
 pread(#file_descriptor{module = ?MODULE, data = {Port, _}}, Offs, Size) 
-  when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
-       integer(Size), 0 =< Size, Size < ?LARGEFILESIZE ->
+  when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
+       is_integer(Size), 0 =< Size, Size < ?LARGEFILESIZE ->
     case drv_command(Port, 
 		     <<?FILE_PREADV, 0:32, 1:32, Offs:64/signed, Size:64>>) of
 	{ok, [eof]} ->
@@ -390,7 +390,7 @@ truncate(#file_descriptor{module = ?MODULE, data = {Port, _}}) ->
 copy(#file_descriptor{module = ?MODULE} = Source,
      #file_descriptor{module = ?MODULE} = Dest,
      Length)
-  when integer(Length), Length >= 0;
+  when is_integer(Length), Length >= 0;
        atom(Length) ->
     %% XXX Should be moved down to the driver for optimization.
     file:copy_opened(Source, Dest, Length);
@@ -404,14 +404,14 @@ copy(#file_descriptor{module = ?MODULE},
 ipread_s32bu_p32bu(#file_descriptor{module = ?MODULE, data = {Port, _}},
 		   Offs,
 		   MaxSize)
-  when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
-       integer(MaxSize), 0 =< MaxSize, MaxSize < (1 bsl 31) ->
+  when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
+       is_integer(MaxSize), 0 =< MaxSize, MaxSize < (1 bsl 31) ->
     drv_command(Port, <<?FILE_IPREAD, ?IPREAD_S32BU_P32BU,
 		       Offs:64, MaxSize:32>>);
 ipread_s32bu_p32bu(#file_descriptor{module = ?MODULE} = Handle,
 		   Offs,
 		   _MaxSize)
-  when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE ->
+  when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE ->
     ipread_s32bu_p32bu(Handle, Offs, (1 bsl 31)-1).
 
 
@@ -898,7 +898,7 @@ drv_get_response([Port, Result]) ->
 %% options for erlang:open_port/2 and Setopts is a list of 
 %% setopt commands to send to the port, or {error, einval} upon failure.
 
-open_mode(List) when list(List) ->
+open_mode(List) when is_list(List) ->
     case open_mode(List, 0, [], []) of
 	{ok, Mode, Portopts, Setopts} when Mode band 
 			  (?EFILE_MODE_READ bor ?EFILE_MODE_WRITE) 
@@ -924,19 +924,19 @@ open_mode([append|Rest], Mode, Portopts, Setopts) ->
 open_mode([delayed_write|Rest], Mode, Portopts, Setopts) ->
     open_mode([{delayed_write, 64*1024, 2000}|Rest], Mode, Portopts, Setopts);
 open_mode([{delayed_write, Size, Delay}|Rest], Mode, Portopts, Setopts) 
-  when integer(Size), 0 =< Size, Size < ?LARGEFILESIZE,
-       integer(Delay), 0 =< Delay, Delay < 1 bsl 64 ->
+  when is_integer(Size), 0 =< Size, Size < ?LARGEFILESIZE,
+       is_integer(Delay), 0 =< Delay, Delay < 1 bsl 64 ->
     open_mode(Rest, Mode, Portopts, 
 	      [<<?FILE_SETOPT, ?FILE_OPT_DELAYED_WRITE, Size:64, Delay:64>> 
 	       | Setopts]);
 open_mode([{read_ahead, Size}|Rest], Mode, Portopts, Setopts)
-  when integer(Size), 0 =< size, Size < ?LARGEFILESIZE ->
+  when is_integer(Size), 0 =< size, Size < ?LARGEFILESIZE ->
     open_mode(Rest, Mode, Portopts,
 	      [<<?FILE_SETOPT, ?FILE_OPT_READ_AHEAD, Size:64>> | Setopts]);
 open_mode([read_ahead|Rest], Mode, Portopts, Setopts) ->
     open_mode([{read_ahead, 64*1024}|Rest], Mode, Portopts, Setopts);
 open_mode([], Mode, Portopts, Setopts) ->
-    {ok, Mode, lists:reverse(Portopts), lists:reverse(Setopts)};
+    {ok, Mode, reverse(Portopts), reverse(Setopts)};
 open_mode(_, _Mode, _Portopts, _Setopts) ->
     {error, einval}.
 
@@ -947,7 +947,7 @@ open_mode(_, _Mode, _Portopts, _Setopts) ->
 %% Returns {error, einval} upon failure.
 
 lseek_position(Pos)
-  when integer(Pos), 0 =< Pos, Pos < ?LARGEFILESIZE ->
+  when is_integer(Pos), 0 =< Pos, Pos < ?LARGEFILESIZE ->
     lseek_position({bof, Pos});
 lseek_position(bof) ->
     lseek_position({bof, 0});
@@ -956,13 +956,13 @@ lseek_position(cur) ->
 lseek_position(eof) ->
     lseek_position({eof, 0});
 lseek_position({bof, Offset})
-  when integer(Offset), 0 =< Offset, Offset < ?LARGEFILESIZE ->
+  when is_integer(Offset), 0 =< Offset, Offset < ?LARGEFILESIZE ->
     {ok, Offset, ?EFILE_SEEK_SET};
 lseek_position({cur, Offset})
-  when integer(Offset), -(?LARGEFILESIZE) =< Offset, Offset < ?LARGEFILESIZE ->
+  when is_integer(Offset), -(?LARGEFILESIZE) =< Offset, Offset < ?LARGEFILESIZE ->
     {ok, Offset, ?EFILE_SEEK_CUR};
 lseek_position({eof, Offset})
-  when integer(Offset), -(?LARGEFILESIZE) =< Offset, Offset < ?LARGEFILESIZE ->
+  when is_integer(Offset), -(?LARGEFILESIZE) =< Offset, Offset < ?LARGEFILESIZE ->
     {ok, Offset, ?EFILE_SEEK_END};
 lseek_position(_) ->
     {error, einval}.
@@ -976,7 +976,7 @@ translate_response(?FILE_RESP_OK, []) ->
     ok;
 translate_response(?FILE_RESP_OK, Data) ->
     {ok, Data};
-translate_response(?FILE_RESP_ERROR, List) when list(List) ->
+translate_response(?FILE_RESP_ERROR, List) when is_list(List) ->
     {error, list_to_atom(List)};
 translate_response(?FILE_RESP_NUMBER, List) ->
     {N, []} = get_uint64(List),
@@ -984,7 +984,7 @@ translate_response(?FILE_RESP_NUMBER, List) ->
 translate_response(?FILE_RESP_DATA, List) ->
     {N, Data} = get_uint64(List),
     {ok, {N, Data}};
-translate_response(?FILE_RESP_INFO, List) when list(List) ->
+translate_response(?FILE_RESP_INFO, List) when is_list(List) ->
     {ok, transform_info_ints(get_uint32s(List))};
 translate_response(?FILE_RESP_NUMERR, L0) ->
     {N, L1} = get_uint64(L0),
@@ -1006,7 +1006,7 @@ translate_response(?FILE_RESP_N2DATA = X,
 translate_response(?FILE_RESP_N2DATA, 
 		   [<<Offset:64, _ReadSize:64, Size:64>> | D]) ->
     {ok, {Size, Offset, D}};
-translate_response(?FILE_RESP_N2DATA = X, L0) when list(L0) ->
+translate_response(?FILE_RESP_N2DATA = X, L0) when is_list(L0) ->
     {Offset, L1}    = get_uint64(L0),
     {ReadSize, L2} = get_uint64(L1),
     {Size, L3}      = get_uint64(L2),
@@ -1058,7 +1058,7 @@ file_access(1) -> write;
 file_access(2) -> read;
 file_access(3) -> read_write.
 
-int_to_bytes(Int) when integer(Int) ->
+int_to_bytes(Int) when is_integer(Int) ->
     <<Int:32>>;
 int_to_bytes(undefined) ->
     <<-1:32>>.
@@ -1107,25 +1107,25 @@ transform_ldata([_,_,_,_,_,_,_,_|_] = L0) ->
 
 %% List mode
 transform_ldata(0, List, Sizes) ->
-    transform_ldata(0, List, lists:reverse(Sizes), []);
+    transform_ldata(0, List, reverse(Sizes), []);
 transform_ldata(N, L0, Sizes) ->
     {Size, L1} = get_uint64(L0),
     transform_ldata(N-1, L1, [Size | Sizes]).
 
 %% Binary mode
 transform_ldata(1, <<0:64>>, <<>>, R) ->
-    lists:reverse(R, [eof]);
+    reverse(R, [eof]);
 transform_ldata(1, <<Size:64>>, Data, R) 
-  when binary(Data), size(Data) == Size ->
-    lists:reverse(R, [Data]);
+  when is_binary(Data), size(Data) =:= Size ->
+    reverse(R, [Data]);
 transform_ldata(N, <<0:64, Sizes/binary>>, [<<>> | Datas], R) ->
     transform_ldata(N-1, Sizes, Datas, [eof | R]);
 transform_ldata(N, <<Size:64, Sizes/binary>>, [Data | Datas], R) 
-  when binary(Data), size(Data) == Size ->
+  when is_binary(Data), size(Data) =:= Size ->
     transform_ldata(N-1, Sizes, Datas, [Data | R]);
 %% List mode
 transform_ldata(0, [], [], R) ->
-    lists:reverse(R);
+    reverse(R);
 transform_ldata(0, List, [0 | Sizes], R) ->
     transform_ldata(0, List, Sizes, [eof | R]);
 transform_ldata(0, List, [Size | Sizes], R) ->
@@ -1134,21 +1134,26 @@ transform_ldata(0, List, [Size | Sizes], R) ->
 
 
 
-lists_split(List, 0) when list(List) ->
+lists_split(List, 0) when is_list(List) ->
     {[], List};
-lists_split(List, N) when list(List), integer(N), N < 0 ->
-    erlang:fault(badarg, [List, N]);
-lists_split(List, N) when list(List), integer(N) ->
+lists_split(List, N) when is_list(List), is_integer(N), N < 0 ->
+    erlang:error(badarg, [List, N]);
+lists_split(List, N) when is_list(List), is_integer(N) ->
     case lists_split(List, N, []) of
 	premature_end_of_list ->
-	    erlang:fault(badarg, [List, N]);
+	    erlang:error(badarg, [List, N]);
 	Result ->
 	    Result
     end.
 
 lists_split(List, 0, Rev) ->
-    {lists:reverse(Rev), List};
+    {reverse(Rev), List};
 lists_split([], _, _) ->
     premature_end_of_list;
 lists_split([Hd | Tl], N, Rev) ->
     lists_split(Tl, N-1, [Hd | Rev]).
+
+%% We KNOW that lists:reverse/2 is a BIF.
+
+reverse(X) -> lists:reverse(X, []).
+reverse(L, T) -> lists:reverse(L, T).

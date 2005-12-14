@@ -18,18 +18,14 @@
 <!ELEMENT modules (module+)>
 
 
-<!ELEMENT module (behaviour*, description?, author*, copyright?, version?,
+<!ELEMENT module (description?, author*, copyright?, version?,
 		  since?, deprecated?, see*, reference*, todo?,
-		  typedecls?, functions)>
+		  behaviour*, callbacks?, typedecls?, functions)>
 <!ATTLIST module
   name CDATA #REQUIRED
   private (yes | no) #IMPLIED
   hidden (yes | no) #IMPLIED
   root CDATA #IMPLIED>
-
-<!ELEMENT behaviour (#PCDATA)>
-<!ATTLIST behaviour
-  href CDATA #IMPLIED>
 
 <!ELEMENT description (briefDescription, fullDescription?)>
 <!ELEMENT briefDescription (#PCDATA)>
@@ -54,6 +50,16 @@
 <!ELEMENT reference (#PCDATA)>
 
 <!ELEMENT todo (#PCDATA)>
+
+<!ELEMENT behaviour (#PCDATA)>
+<!ATTLIST behaviour
+  href CDATA #IMPLIED>
+
+<!ELEMENT callbacks (callback+)>
+<!ELEMENT callback EMPTY>
+<!ATTLIST callback
+  name CDATA #REQUIRED
+  arity CDATA #REQUIRED>
 
 <!ELEMENT typedecls (typedecl+)>
 <!ELEMENT typedecl (typedef, description?)>

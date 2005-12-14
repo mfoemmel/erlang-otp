@@ -76,7 +76,11 @@
 #include "erl_vm.h"
 #include "global.h"
 
-#define TIW_SIZE 8192		/* timing wheel size (should be a power of 2) */
+#ifdef SMALL_MEMORY
+#define TIW_SIZE 8192
+#else
+#define TIW_SIZE 65536	/* timing wheel size (should be a power of 2) */
+#endif
 static ErlTimer** tiw;		/* the timing wheel, allocated in init_time() */
 static Uint tiw_pos;		/* current position in wheel */
 static Uint tiw_nto;		/* number of timeouts in wheel */
@@ -210,6 +214,7 @@ void
 erl_set_timer(ErlTimer* p, ErlTimeoutProc timeout, ErlCancelProc cancel,
 	      void* arg, Uint t)
 {
+    erts_deliver_time(NULL);
     if (p->active)  /* XXX assert ? */
 	return;
     p->timeout = timeout;

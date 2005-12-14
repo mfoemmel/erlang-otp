@@ -769,7 +769,9 @@ enc_AuditReply({Tag, Val}, State) ->
 	    [
 	     ?EQUAL,
 	     ?CtxToken,
-	     enc_TerminationIDListN(Val, State)
+	     ?LBRKT_INDENT(State),
+	     enc_TerminationIDListN(Val, State),
+	     ?RBRKT_INDENT(State)
 	    ];
 	error ->
 	    [

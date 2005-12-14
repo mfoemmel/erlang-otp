@@ -452,9 +452,8 @@ void erts_cleanup_mso(ProcBin* pb);
 void erts_bif_info_init(void);
 
 /* bif.c */
-Uint bif_timer_memory_size(void);
+Eterm erts_make_ref(Process *p);
 void queue_monitor_message(Process *, Eterm, Eterm, Eterm, Eterm);
-void print_timer_info(CIO);
 void erts_init_bif(void);
 
 /* erl_bif_port.c */

@@ -37,6 +37,43 @@ void hipe_patch_load_fe(Uint64 *address, Uint64 value)
 {
     /* address points to an imm64 operand */
     *address = value;
+    hipe_flush_icache_word(address);
+}
+
+int hipe_patch_insn(void *address, Uint64 value, Eterm type)
+{
+    switch (type) {
+      case am_closure:
+      case am_constant:
+	*(Uint64*)address = value;
+	break;
+      case am_c_const:
+      case am_atom:
+	/* check that value fits in an unsigned imm32 */
+	/* XXX: are we sure it's not really a signed imm32? */
+	if ((Uint)(Uint32)value != value)
+	    return -1;
+	*(Uint32*)address = (Uint32)value;
+	break;
+      default:
+	return -1;
+    }
+    hipe_flush_icache_word(address);
+    return 0;
+}
+
+int hipe_patch_call(void *callAddress, void *destAddress, void *trampoline)
+{
+    Sint rel32;
+
+    if (trampoline)
+	return -1;
+    rel32 = (Sint)destAddress - (Sint)callAddress - 4;
+    if ((Sint)(Sint32)rel32 != rel32)
+	return -1;
+    *(Uint32*)callAddress = (Uint32)rel32;
+    hipe_flush_icache_word(callAddress);
+    return 0;
 }
 
 /*
@@ -262,6 +299,7 @@ void hipe_arch_print_pcb(struct hipe_process_state *p)
  * XXX: The following should really be moved to a generic hipe_bifs_64 file.
  */
 
+#if 0 /* unused */
 static int term_to_Sint64(Eterm term, Sint64 *sp)
 {
     return term_to_Sint(term, sp);
@@ -280,6 +318,7 @@ BIF_RETTYPE hipe_bifs_write_s64_2(BIF_ALIST_2)
     *address = value;
     BIF_RET(NIL);
 }
+#endif
 
 BIF_RETTYPE hipe_bifs_write_u64_2(BIF_ALIST_2)
 {

@@ -242,7 +242,7 @@ do_init_log(true) ->
     {ok, Repair} = snmpm_config:system_info(audit_trail_log_repair),
     Name = ?audit_trail_log_name, 
     File = filename:absname(?audit_trail_log_file, Dir),
-    case snmp_log:create(Name, File, Size, Repair) of
+    case snmp_log:create(Name, File, Size, Repair, true) of
 	{ok, Log} ->
 	    {Log, Type};
 	{error, Reason} ->
@@ -326,6 +326,12 @@ handle_info({udp, Sock, Ip, Port, Bytes}, #state{sock = Sock} = State) ->
 handle_info(inform_response_gc, State) ->
     ?vlog("received inform_response_gc message", []),
     State2 = handle_inform_response_gc(State),
+    {noreply, State2};
+
+handle_info({disk_log, _Node, Log, Info}, State) ->
+    ?vlog("received disk_log message: "
+	  "~n   Info: ~p", [Info]),
+    State2 = handle_disk_log(Log, Info, State),
     {noreply, State2};
 
 handle_info(Info, State) ->
@@ -593,6 +599,27 @@ sz(L) when list(L) ->
     length(L);
 sz(_) ->
     undefined.
+
+
+handle_disk_log(_Log, {wrap, NoLostItems}, State) ->
+    ?vlog("Audit Trail Log - wrapped: ~w previously logged items where lost", 
+	  [NoLostItems]),
+    State;
+handle_disk_log(_Log, {truncated, NoLostItems}, State) ->
+    ?vlog("Audit Trail Log - truncated: ~w items where lost when truncating", 
+	  [NoLostItems]),
+    State;
+handle_disk_log(_Log, full, State) ->
+    error_msg("Failed to write to Audit Trail Log (full)", []),
+    State;
+handle_disk_log(_Log, {error_status, ok}, State) ->
+    State;
+handle_disk_log(_Log, {error_status, {error, Reason}}, State) ->
+    error_msg("Error status received from Audit Trail Log: "
+	      "~n~p", [Reason]),
+    State;
+handle_disk_log(_Log, _Info, State) ->
+    State.
 
 
 % mk_discovery_msg('version-3', Pdu, _VsnHdr, UserName) ->

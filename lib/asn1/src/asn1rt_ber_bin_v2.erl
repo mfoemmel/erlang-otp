@@ -1406,17 +1406,6 @@ encode_bit_string_bits(C, BitListVal, _NamedBitList, TagIn) when list(BitListVal
  
     end. 
  
-encode_constr_bit_str_bits({_Min,Max},BitListVal,TagIn) ->
-    BitLen = length(BitListVal), 
-    if  
-	BitLen > Max -> 
-	    exit({error,{asn1,{bitstring_length,{{was,BitLen},
-						 {maximum,Max}}}}}); 
-	true -> 
-	    {Len, Unused, OctetList} = encode_bitstring(BitListVal),  
-	    %%add unused byte to the Len 
-	    encode_tags(TagIn, [Unused, OctetList], Len+1)  
-    end;
 encode_constr_bit_str_bits({{_Min1,Max1},{Min2,Max2}},BitListVal,TagIn) ->
     BitLen = length(BitListVal),
     case BitLen of
@@ -1431,7 +1420,19 @@ encode_constr_bit_str_bits({{_Min1,Max1},{Min2,Max2}},BitListVal,TagIn) ->
 	    {Len, Unused, OctetList} = encode_bitstring(BitListVal),  
 	    %%add unused byte to the Len 
 	    encode_tags(TagIn, [Unused, OctetList], Len+1)  
+    end;
+encode_constr_bit_str_bits({_Min,Max},BitListVal,TagIn) ->
+    BitLen = length(BitListVal), 
+    if  
+	BitLen > Max -> 
+	    exit({error,{asn1,{bitstring_length,{{was,BitLen},
+						 {maximum,Max}}}}}); 
+	true -> 
+	    {Len, Unused, OctetList} = encode_bitstring(BitListVal),  
+	    %%add unused byte to the Len 
+	    encode_tags(TagIn, [Unused, OctetList], Len+1)  
     end.
+
 
 %% returns a list of length Size + length(BitListVal), with BitListVal 
 %% as the most significant elements followed by padded zero elements

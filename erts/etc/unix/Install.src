@@ -91,24 +91,12 @@ cp -p $ERL_ROOT/erts-%I_VSN%/bin/to_erl .
 cp -p $ERL_ROOT/erts-%I_VSN%/bin/start .
 sed -e "s;%EMU%;%EMULATOR%%EMULATOR_NUMBER%;" $ERL_ROOT/erts-%I_VSN%/bin/start_erl.src > start_erl
 chmod 755 start_erl
+echo ""
 
-if [ -d $ERL_ROOT/lib/sasl* ]
-then
-    (cd $ERL_ROOT/releases
-     echo %I_VSN% %I_SYSTEM_VSN% > start_erl.data)
-     echo ""
-    (cd $ERL_ROOT/releases/%I_SYSTEM_VSN%
-     echo ""
-     echo "Building SASL boot script ..."
-#     ERCL_EMULATOR="$ERL_ROOT/bin/erl +B -boot ./start" $ERL_ROOT/bin/erlc -s start_sasl.rel
-     $ERL_ROOT/bin/erl -noinput +B -boot ./start -s systools make_script start_sasl -s erlang halt
-     $ERL_ROOT/bin/erl -noinput +B -boot ./start -s release_handler create_RELEASES $ERL_ROOT start_sasl.rel -s erlang halt
-     echo "")
-fi
+echo %I_VSN% %I_SYSTEM_VSN% > $ERL_ROOT/releases/start_erl.data
+sed -e "s;%ERL_ROOT%;$ERL_ROOT;" $ERL_ROOT/releases/RELEASES.src > $ERL_ROOT/releases/RELEASES
 
-
-if [ -f $ERL_ROOT/releases/%I_SYSTEM_VSN%/start_sasl.boot ] && \
-   [ "$start_option" = "query" ]
+if [ "$start_option" = "query" ]
 then
     echo "Do you want to use a minimal system startup"
     echo "instead of the SASL startup? (y/n) [n]: " | tr -d '\012'

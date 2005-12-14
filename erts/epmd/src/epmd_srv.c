@@ -1,3 +1,4 @@
+/* -*- c-indent-level: 2; c-continued-statement-offset: 2 -*- */ 
 /* ``The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
@@ -123,6 +124,13 @@ void run(EpmdVars *g)
     epmd_cleanup_exit(g,1);
   }
   g->listenfd = listensock;
+
+  /*
+   * Initialize number of active file descriptors.
+   * Stdin, stdout, and stderr are still open.
+   * One for the listen socket.
+   */
+  g->active_conn = 3+1;
   
   /*
    * Note that we must not enable the SO_REUSEADDR on Windows,
@@ -204,10 +212,12 @@ void run(EpmdVars *g)
 
   dbg_tty_printf(g,2,"entering the main select() loop");
 
+ select_again:
   while(1)
     {	
       fd_set read_mask = g->orig_read_mask;
       struct timeval timeout;
+      int ret;
 
       /* If we are idle we time out now and then to enable the code
 	 below to close connections that are old and probably
@@ -216,41 +226,46 @@ void run(EpmdVars *g)
       timeout.tv_sec = (g->packet_timeout < IDLE_TIMEOUT) ? 1 : IDLE_TIMEOUT;
       timeout.tv_usec = 0;
 
-      if (select(g->max_conn,&read_mask,(fd_set *)0,(fd_set *)0,&timeout) < 0)
+      if ((ret = select(g->max_conn,&read_mask,(fd_set *)0,(fd_set *)0,&timeout)) < 0)
 	dbg_perror(g,"error in select ");
-      else
-	{
-	  /* FIXME: Are we sure that a return value of 0 (timeout)
-	     also clears "read_mask" so that we don't accidently
-	     try to read from a socket that has nothing to read? */
+      else {
+	time_t now;
+	if (ret == 0) {
+	  FD_ZERO(&read_mask);
+	}
+	if (g->delay_accept) {		/* Test of busy server */
+	  sleep(g->delay_accept);
+	}
 
-	  if (g->delay_accept)		/* Test of busy server */
-	    sleep(g->delay_accept);
-
-	  if(FD_ISSET(listensock,&read_mask))
-	    do_accept(g,listensock);
-
-	  /* Go over all connections and look for open ones */
-	  {
-	    time_t now = current_time(g);
-
-	    /* Check all open streams marked by select for data or a
-	       close.  We also close all open sockets except ALIVE
-	       with no activity for a long period */
-
-	    for (i = 0; i < g->max_conn; i++)
-	      if (g->conn[i].open == TRUE) {
-		if (FD_ISSET(g->conn[i].fd,&read_mask))
-		  do_read(g,&g->conn[i]);
-		else if ((g->conn[i].keep == FALSE) &&
-			 ((g->conn[i].mod_time + g->packet_timeout) < now))
-		  {
-		    dbg_tty_printf(g,1,"closing because timed out on receive");
-		    epmd_conn_close(g,&g->conn[i]);
-		  }
-	      }
+	if (FD_ISSET(listensock,&read_mask)) {
+	  if (do_accept(g, listensock) && g->active_conn < g->max_conn) {
+	    /*
+	     * The accept() succeeded, and we have at least one file
+	     * descriptor still free, which means that another accept()
+	     * could succeed. Go do do another select(), in case there
+	     * are more incoming connections waiting to be accepted.
+	     */
+	    goto select_again;
 	  }
 	}
+	  
+	/* Check all open streams marked by select for data or a
+	   close.  We also close all open sockets except ALIVE
+	   with no activity for a long period */
+
+	now = current_time(g);
+	for (i = 0; i < g->max_conn; i++) {
+	  if (g->conn[i].open == TRUE) {
+	    if (FD_ISSET(g->conn[i].fd,&read_mask))
+	      do_read(g,&g->conn[i]);
+	    else if ((g->conn[i].keep == FALSE) &&
+		     ((g->conn[i].mod_time + g->packet_timeout) < now)) {
+	      dbg_tty_printf(g,1,"closing because timed out on receive");
+	      epmd_conn_close(g,&g->conn[i]);
+	    }
+	  }
+	}
+      }
     }
 }
 
@@ -809,35 +824,36 @@ static int conn_open(EpmdVars *g,int fd)
   }
 #endif
 
-  for (i = 0; i < g->max_conn; i++)
-    if (g->conn[i].open == FALSE)
-      {
-	s = &g->conn[i];
+  for (i = 0; i < g->max_conn; i++) {
+    if (g->conn[i].open == FALSE) {
+      g->active_conn++;
+      s = &g->conn[i];
      
-	/* From now on we want to know if there are data to be read */
-	FD_SET(fd,&g->orig_read_mask);
+      /* From now on we want to know if there are data to be read */
+      FD_SET(fd, &g->orig_read_mask);
 
-	s->fd   = fd;
-	s->open = TRUE;
-	s->keep = FALSE;
-	s->want = 0;		/* Currently unknown */
-	s->got  = 0;
-	s->mod_time = current_time(g); /* Note activity */
+      s->fd   = fd;
+      s->open = TRUE;
+      s->keep = FALSE;
+      s->want = 0;		/* Currently unknown */
+      s->got  = 0;
+      s->mod_time = current_time(g); /* Note activity */
 
-	s->buf = (char *)malloc(INBUF_SIZE);
+      s->buf = (char *)malloc(INBUF_SIZE);
 
-	if (s->buf == NULL)
-	  {
-	    dbg_printf(g,0,"empd: Insufficient memory");
-	    return FALSE;
-	  }
-
-	dbg_tty_printf(g,2,"opening connection on file descriptor %d",fd);
-
-	return TRUE;
+      if (s->buf == NULL) {
+	dbg_printf(g,0,"empd: Insufficient memory");
+	close(fd);
+	return FALSE;
       }
 
+      dbg_tty_printf(g,2,"opening connection on file descriptor %d",fd);
+      return TRUE;
+    }
+  }
+
   dbg_tty_printf(g,0,"failed opening connection on file descriptor %d",fd);
+  close(fd);
   return FALSE;
 }
 
@@ -863,9 +879,10 @@ int epmd_conn_close(EpmdVars *g,Connection *s)
   FD_CLR(s->fd,&g->orig_read_mask);
   close(s->fd);			/* Sometimes already closed but close anyway */
   s->open = FALSE;
-  if (s->buf != NULL)		/* Should never be NULL but test anyway */
+  if (s->buf != NULL) {		/* Should never be NULL but test anyway */
     free(s->buf);
-
+  }
+  g->active_conn--;
   return TRUE;
 }
 

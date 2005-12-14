@@ -19,7 +19,8 @@
 
 
 -export([
-	 create/4, change_size/2, close/1, sync/1, info/1, 
+	 create/4, create/5, 
+	 change_size/2, close/1, sync/1, info/1, 
 	 log/4, 
 	 log_to_txt/5, log_to_txt/6, log_to_txt/7,
 	 log_to_io/4,  log_to_io/5,  log_to_io/6
@@ -44,12 +45,16 @@
 %% -- create ---
 
 create(Name, File, Size, Repair) ->
+    create(Name, File, Size, Repair, false).
+
+create(Name, File, Size, Repair, Notify) ->
     ?vtrace("create -> entry with"
 	    "~n   Name:   ~p"
 	    "~n   File:   ~p"
 	    "~n   Size:   ~p"
-	    "~n   Repair: ~p", [Name, File, Size, Repair]),
-    log_open(Name, File, Size, Repair).
+	    "~n   Repair: ~p"
+	    "~n   Notify: ~p", [Name, File, Size, Repair, Notify]),
+    log_open(Name, File, Size, Repair, Notify).
     
 
 %% -- close ---
@@ -447,30 +452,68 @@ ip({A,B,C,D}) ->
 %% Various utility functions
 %% -------------------------------------------------------------------    
 
-log_open(Name, File, Size, Repair) ->
-    case do_log_open(Name, File, Size, Repair) of
-	{error, _Reason} ->
-	    %% Ok, try to clean the log dir, and see if that helps
-	    clean_dir(filename:dirname(File)),
-            do_log_open(Name, File, Size, Repair);
+log_open(Name, File, Size, Repair, Notify) ->
+    case do_log_open(Name, File, Size, Repair, Notify) of
 	{ok, Log} ->
 	    {ok, Log};
 	{repaired, Log, Rec, Bad} ->
 	    ?vlog("log_open -> repaired: "
 		  "~n   Rec: ~p"
 		  "~n   Bad: ~p", [Rec, Bad]),
-	    {ok, Log}
+	    {ok, Log};
+	Error ->
+	    Error
     end.
+
+%% We need to make sure we do not end up in an infinit loop
+%% Take the number of files of the wrap log and add 2 (for
+%% the index and size files).
+do_log_open(Name, File, {_, N} = Size, snmp_repair = _Repair, Notify) ->
+    do_snmp_log_open(Name, File, Size, N+2, Notify);
+
+do_log_open(Name, File, Size, snmp_repair = _Repair, Notify) ->
+    do_snmp_log_open(Name, File, Size, 1, Notify);
+
+do_log_open(Name, File, Size, Repair, Notify) ->
+    do_std_log_open(Name, File, Size, Repair, Notify).
+
+
+do_snmp_log_open(Name, File, Size, N, Notify) when N =< 0 ->
+    do_std_log_open(Name, File, Size, true, Notify);
+do_snmp_log_open(Name, File, Size, N, Notify) ->
+    case do_std_log_open(Name, File, Size, true, Notify) of
+	{error, {not_a_log_file, XFile}} ->
+	    case file:rename(XFile, lists:append([XFile, ".MOVED"])) of
+		ok ->
+		    ?vinfo("Failed open log file (even with repair) - "
+			   "not a logfile:"
+			   "~n   Attempting to move file aside (.MOVED)"
+			   "~n   ~s", [XFile]),
+		    do_snmp_log_open(Name, File, Size, N-1, Notify);
+		Error ->
+		    {error, {rename_failed, Error}}
+	    end;
+	{error, Reason} ->
+	    ?vinfo("Failed open log file (even with repair) - "
+		   "~n   Attempting to move old log file aside (.MOVED)"
+		   "~n~p", [Reason]),
+	    move_log(File),
+	    do_std_log_open(Name, File, Size, true, Notify);
+	Else ->
+	    Else
+    end.
+
 
 %% First try to open the log without the size-spec.  This will 
 %% succeed if the log has already been created.  In that case, 
 %% we'll use whatever size the log had at the time it was closed.
-do_log_open(Name, File, Size, Repair) ->
+do_std_log_open(Name, File, Size, Repair, Notify) ->
     Opts = [{name,   Name},
 	    {file,   File},
 	    {type,   ?LOG_TYPE},
 	    {format, ?LOG_FORMAT},
 	    {mode,   read_write},
+	    {notify, Notify}, 
 	    {repair, Repair}],
     case disk_log:open(Opts) of
 	{error, {badarg, size}} ->
@@ -480,6 +523,7 @@ do_log_open(Name, File, Size, Repair) ->
 	    Else
     end.
 
+
 log_open(Name, File) ->
     Opts = [{name,   Name}, 
 	    {file,   File}, 
@@ -488,11 +532,15 @@ log_open(Name, File) ->
 	    {mode,   read_only}],
     disk_log:open(Opts).
 
-clean_dir(Dir) ->
+
+move_log(File) ->
+    Dir      = filename:dirname(File),
+    FileName = filename:basename(File),
     case file:list_dir(Dir) of
-        {ok, Files} ->
-	    F = fun(File) ->
-			file:delete(filename:join(Dir, File))
+        {ok, Files0} ->
+	    Files = [F || F <- Files0, lists:prefix(FileName, F)],
+	    F = fun(XFile) ->
+			file:rename(XFile, lists:append([XFile, ".MOVED"]))
 		end,
             lists:foreach(F, Files);
         _ ->

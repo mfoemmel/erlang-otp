@@ -268,20 +268,19 @@ decrypt(Data, UsmUser, UsmSecParams, SecLevel) ->
 	    Data
     end.
 
-do_decrypt(Data, UsmUser, 
-	   #usmSecurityParameters{msgPrivacyParameters = PrivParms}) ->
+do_decrypt(Data, UsmUser, UsmSecParams) ->
 	    EncryptedPDU = snmp_pdus:dec_scoped_pdu_data(Data),
 	    SecName      = element(?usmUserSecurityName, UsmUser),
 	    PrivP        = element(?usmUserPrivProtocol, UsmUser),
 	    PrivKey      = element(?usmUserPrivKey,      UsmUser), 
-    try_decrypt(PrivP, PrivKey, PrivParms, EncryptedPDU, SecName).
+    try_decrypt(PrivP, PrivKey, UsmSecParams, EncryptedPDU, SecName).
 
 try_decrypt(?usmNoPrivProtocol, _, _, _, SecName) -> % 3.2.5
     error(usmStatsUnsupportedSecLevels, 
 	  ?usmStatsUnsupportedSecLevels_instance, SecName); % OTP-5464
 try_decrypt(?usmDESPrivProtocol, 
-	    PrivKey, MsgPrivParams, EncryptedPDU, SecName) ->
-    case (catch des_decrypt(PrivKey, MsgPrivParams, EncryptedPDU)) of
+	    PrivKey, UsmSecParams, EncryptedPDU, SecName) ->
+    case (catch des_decrypt(PrivKey, UsmSecParams, EncryptedPDU)) of
 	{ok, DecryptedData} ->
 	    DecryptedData;
 	_ ->
@@ -422,8 +421,9 @@ set_msg_auth_params(Message, UsmSecParams) ->
 des_encrypt(PrivKey, Data) ->
     snmp_usm:des_encrypt(PrivKey, Data, fun get_des_salt/0).
 
-des_decrypt(PrivKey, MsgPrivParams, EncData) ->
-    snmp_usm:des_decrypt(PrivKey, MsgPrivParams, EncData).
+des_decrypt(PrivKey, UsmSecParams, EncData) ->
+    #usmSecurityParameters{msgPrivacyParameters = PrivParms} = UsmSecParams,
+    snmp_usm:des_decrypt(PrivKey, PrivParms, EncData).
 
 get_des_salt() ->
     SaltInt = 
@@ -447,11 +447,11 @@ aes_encrypt(PrivKey, Data) ->
     snmp_usm:aes_encrypt(PrivKey, Data, fun get_aes_salt/0).
 
 aes_decrypt(PrivKey, UsmSecParams, EncData) ->
-    #usmSecurityParameters{msgPrivacyParameters        = MsgPrivParams,
+    #usmSecurityParameters{msgPrivacyParameters        = PrivParams,
 			   msgAuthoritativeEngineTime  = EngineTime,
 			   msgAuthoritativeEngineBoots = EngineBoots} =
 	UsmSecParams,
-    snmp_usm:aes_decrypt(PrivKey, MsgPrivParams, EncData, 
+    snmp_usm:aes_decrypt(PrivKey, PrivParams, EncData, 
 			 EngineBoots, EngineTime).
 
 get_aes_salt() ->

@@ -575,6 +575,12 @@ typedef struct {
     SOCKET s;                   /* the socket or INVALID_SOCKET if not open */
     HANDLE event;               /* Event handle (same as s in unix) */
     long  event_mask;           /* current FD events */
+#ifdef __WIN32__
+    long forced_events;           /* Mask of events that are forcefully signalled 
+				   on windows see winsock_event_select 
+				   for details */
+
+#endif
     ErlDrvPort  port;           /* the port identifier */
     ErlDrvTermData dport;       /* the port identifier as DriverTermData */
     int   state;                /* status */
@@ -746,7 +752,7 @@ typedef struct {
     char*         i_ptr;        /* current pos in buf */
     char*         i_ptr_start;  /* packet start pos in buf */
     int           i_remain;     /* remaining chars to read */
-    int   fdelay_send;           /* Delay all sends until next poll (exp) */
+    int   fdelay_send;          /* delay all sends until the next poll */
 #ifdef USE_HTTP
     int           http_state;   /* 0 = response|request  1=headers fields */
 #endif
@@ -2800,6 +2806,9 @@ static void desc_close(inet_descriptor* desc)
 	sock_close_event(desc->event);
 	desc->event = INVALID_EVENT;
 	desc->event_mask = 0;
+#ifdef __WIN32__
+	desc->forced_events = 0;
+#endif
     }
 }
 
@@ -2823,6 +2832,9 @@ static int erl_inet_close(inet_descriptor* desc)
     } else if (desc->prebound && (desc->s != INVALID_SOCKET)) {
 	sock_select(desc, FD_READ | FD_WRITE | FD_CLOSE, 0);
 	desc->event_mask = 0;
+#ifdef __WIN32__
+	desc->forced_events = 0;
+#endif
     }
     return 0;
 }
@@ -3912,8 +3924,10 @@ skip_os_setopt:
 	    sock_select(desc, (FD_READ|FD_CLOSE), (desc->active>0));
 
 	if ((desc->stype==SOCK_STREAM) && desc->active) {
-	    if (!old_active) return 1;  /* passive => active change */
-	    if (desc->htype != old_htype) return 2;  /* header type change */
+	    if (!old_active || (desc->htype != old_htype)) {
+		/* passive => active change OR header type change in active mode */
+		return 1;
+	    }
 	    return 0;
 	}
     }
@@ -4263,6 +4277,9 @@ static ErlDrvData inet_start(ErlDrvPort port, int size)
     desc->s = INVALID_SOCKET;
     desc->event = INVALID_EVENT;
     desc->event_mask = 0;
+#ifdef __WIN32__
+    desc->forced_events = 0;
+#endif
     desc->port = port;
     desc->dport = driver_mk_port(port);
     desc->state = INET_STATE_CLOSED;
@@ -5786,6 +5803,8 @@ static int tcp_recv(tcp_descriptor* desc, int request_len)
 static int winsock_event_select(inet_descriptor *desc, int flags, int on)
 {
     int save_event_mask = desc->event_mask;
+    
+    desc->forced_events = 0;
     if (on) 
 	desc->event_mask |= flags;
     else
@@ -5795,11 +5814,11 @@ static int winsock_event_select(inet_descriptor *desc, int flags, int on)
 	    desc->port, flags, on, desc->event_mask));
     /* The RIGHT WAY (TM) to do this is to make sure:
        A) The cancelling of all network events is done with
-          NULL as the event parameter (bug in NT's winsock),
+       NULL as the event parameter (bug in NT's winsock),
        B) The actual event handle is reset so that it is only
-          raised if one of the requested network events is active,
+       raised if one of the requested network events is active,
        C) Avoid race conditions by making sure that the event cannot be set
-          while we are preparing to set the correct network event mask.
+       while we are preparing to set the correct network event mask.
        The simplest way to do it is to turn off all events, reset the
        event handle and then, if event_mask != 0, turn on the appropriate
        events again. */
@@ -5827,6 +5846,51 @@ static int winsock_event_select(inet_descriptor *desc, int flags, int on)
 	    desc->event_mask = 0;
 	    return -1;
 	}
+
+	/* Now, WSAEventSelect() is trigged only when the queue goes from
+	   full to empty or from empty to full; therefore we need an extra test 
+	   to see whether it is writeable, readable or closed... */
+	if ((desc->event_mask & FD_WRITE)) {
+	    TIMEVAL tmo = {0,0};
+	    FD_SET fds;
+	    int ret;
+	
+	    FD_ZERO(&fds);
+	    FD_SET(desc->s,&fds);
+	    ret = select(desc->s+1,0,&fds,0,&tmo);
+	    if (ret > 0) {
+		SetEvent(desc->event);
+		desc->forced_events |= FD_WRITE;
+	    }
+	}
+	if ((desc->event_mask & (FD_READ|FD_CLOSE))) {
+	    int readable = 0;
+	    int closed = 0;
+	    TIMEVAL tmo = {0,0};
+	    FD_SET fds;
+	    int ret;
+	    unsigned long arg;
+	  
+	    FD_ZERO(&fds);
+	    FD_SET(desc->s,&fds);
+	    ret = select(desc->s+1,&fds,0,0,&tmo);
+	    if (ret > 0) {
+		++readable;
+		if (ioctlsocket(desc->s,FIONREAD,&arg) != 0) {
+		    ++closed;	/* Which gives a FD_CLOSE event */
+		} else {
+		    closed = (arg == 0);
+		}
+	    }
+	    if ((desc->event_mask & FD_READ) && readable && !closed) {
+		SetEvent(desc->event);
+		desc->forced_events |= FD_READ;
+	    }
+	    if ((desc->event_mask & FD_CLOSE) && closed) {
+		SetEvent(desc->event);
+		desc->forced_events |= FD_CLOSE;
+	    }
+	}
     }
     return 0;
 }
@@ -5848,8 +5912,12 @@ static void tcp_inet_event(ErlDrvData e, ErlDrvEvent event)
     DEBUGF((" => event=%02X, mask=%02X\r\n",
 	    netEv.lNetworkEvents, desc->inet.event_mask));
 
+    /* Add the forced events. */
+
+    netEv.lNetworkEvents |= desc->inet.forced_events;
+
     /*
-     * Calling WSAEventSelect with a mask of 0 doesn't always turn off
+     * Calling WSAEventSelect() with a mask of 0 doesn't always turn off
      * all events.  To avoid acting on events we don't want, we mask
      * the events with mask for the events we really want.
      */
@@ -5863,13 +5931,20 @@ static void tcp_inet_event(ErlDrvData e, ErlDrvEvent event)
     netEv.lNetworkEvents &= desc->inet.event_mask;
 
     if (netEv.lNetworkEvents & FD_READ) {
-	do {
-	    if (tcp_inet_input(desc, event) < 0)
-		goto error;
-	    if (netEv.lNetworkEvents & FD_CLOSE) {
+	if (tcp_inet_input(desc, event) < 0) {
+	    goto error;
+	}
+	if (netEv.lNetworkEvents & FD_CLOSE) {
+	    /*
+	     * We must loop to read out the remaining packets (if any).
+	     */
+	    for (;;) {
 		DEBUGF(("Retrying read due to closed port\r\n"));
+		if (tcp_inet_input(desc, event) < 0) {
+		    goto error;
+		}
 	    }
-	} while (netEv.lNetworkEvents & FD_CLOSE);
+	}
     }
     if (netEv.lNetworkEvents & FD_WRITE) {
 	if (tcp_inet_output(desc, event) < 0)
@@ -5878,8 +5953,9 @@ static void tcp_inet_event(ErlDrvData e, ErlDrvEvent event)
     if (netEv.lNetworkEvents & FD_CONNECT) {
 	if ((err = netEv.iErrorCode[FD_CONNECT_BIT]) != 0) {
 	    async_error(INETP(desc), err);
-	} else
+	} else {
 	    tcp_inet_output(desc, event);
+	}
     } else if (netEv.lNetworkEvents & FD_ACCEPT) {
 	if ((err = netEv.iErrorCode[FD_ACCEPT_BIT]) != 0)
 	    async_error(INETP(desc), err);
@@ -5891,11 +5967,12 @@ static void tcp_inet_event(ErlDrvData e, ErlDrvEvent event)
 	DEBUGF(("Detected close in %s, line %d\r\n", __FILE__, __LINE__));
 	tcp_recv_closed(desc);
     }
-    return;
     DEBUGF(("tcp_inet_event(%ld) }\r\n", (long)desc->inet.port));
+    return;
+
  error:
     DEBUGF(("tcp_inet_event(%ld) error}\r\n", (long)desc->inet.port));
-    return; /*-1;*/
+    return;
 }
 
 #endif /* WIN32 */
@@ -6074,7 +6151,7 @@ static int tcp_sendv(tcp_descriptor* desc, ErlIOVec* ev)
 	DEBUGF(("tcp_sendv(%ld): s=%d, about to send %d,%d bytes\r\n",
 		(long)desc->inet.port, desc->inet.s, h_len, len));
 	if (desc->fdelay_send) {
-	    n = 0;
+	  n = 0;
 	} else if (sock_sendv(desc->inet.s, ev->iov, vsize, &n, 0) 
 		   == SOCKET_ERROR) {
 	    if ((sock_errno() != ERRNO_BLOCK) && (sock_errno() != EINTR)) {
@@ -6160,6 +6237,7 @@ static int tcp_send(tcp_descriptor* desc, char* ptr, int len)
 	DEBUGF(("tcp_send(%ld): s=%d, about to send %d,%d bytes\r\n",
 		(long)desc->inet.port, desc->inet.s, h_len, len));
 	if (desc->fdelay_send) {
+	  sock_send(desc->inet.s, buf, 0, 0);
 	    n = 0;
 	} else 	if (sock_sendv(desc->inet.s,iov,2,&n,0) == SOCKET_ERROR) {
 	    if ((sock_errno() != ERRNO_BLOCK) && (sock_errno() != EINTR)) {
@@ -6608,14 +6686,14 @@ static void udp_inet_event(ErlDrvData e, ErlDrvEvent event)
 
     if ((winSock.WSAEnumNetworkEvents)(desc->inet.s, desc->inet.event,
 				       &netEv) != 0) {
-	DEBUGF(( "port %d: EnumNetwrokEvents = %d\r\n", 
+	DEBUGF(( "port %d: EnumNetworkEvents = %d\r\n", 
 		desc->inet.port, sock_errno() ));
-	return; /* -1; */
+	return;
     }
-    if (netEv.lNetworkEvents == 0)  /* NOTHING */
-	return; /* 0; */
-    if (netEv.lNetworkEvents & FD_READ)
+    netEv.lNetworkEvents |= INETP(desc)->forced_events;
+    if (netEv.lNetworkEvents & FD_READ) {
 	udp_inet_input(desc, (HANDLE)event);
+    }
 }
 
 #endif

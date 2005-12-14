@@ -51,8 +51,8 @@ analyse([], _Cfg, Info, PhiDep) ->
   {Info,PhiDep}.
 
 get_phi_dep([I|Left], Defined, Dep) ->
-  case ?code:type(I) of
-    phi ->
+  case I of
+    #phi{} ->
       Use = ?code:uses(I),
       [Def] = ?code:defines(I),
       NewDep = add_dep(Use, Defined, Dep),
@@ -83,11 +83,11 @@ has_dep(Use, Def, Dep) ->
   end.
 
 analyse_code([I|Left], Info) ->
-  case ?code:type(I) of
-    move ->
+  case I of
+    #move{} ->
       NewInfo = get_info_move_or_fmove(I, Info),
       analyse_code(Left, NewInfo);
-    fmove ->
+    #fmove{} ->
       NewInfo = get_info_move_or_fmove(I, Info),
       analyse_code(Left, NewInfo);
     _ ->
@@ -114,12 +114,12 @@ rewrite([], Cfg, _Info, _PhiDep) ->
   Cfg.
 
 rewrite_code([I|Left], Info, PhiDep, Acc) ->
-  case ?code:type(I) of
-    move ->
+  case I of
+    #move{} ->
       Fun = fun(X, Y) -> ?code:mk_move(X, Y)end,
       NewI = rewrite_move_or_fmove(I, Fun, Info, PhiDep),
       rewrite_code(Left, Info, PhiDep, NewI++Acc);
-    fmove ->
+    #fmove{} ->
       Fun = fun(X, Y) -> ?code:mk_fmove(X, Y)end,
       NewI = rewrite_move_or_fmove(I, Fun, Info, PhiDep),
       rewrite_code(Left, Info, PhiDep, NewI++Acc);

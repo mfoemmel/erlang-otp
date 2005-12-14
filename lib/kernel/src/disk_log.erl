@@ -34,6 +34,9 @@
 -export([init/2, internal_open/2,
 	 system_continue/3, system_terminate/4, system_code_change/4]).
 
+%% To be used by disk_log_h.erl (not (yet) in Erlang/OTP) only.
+-export([ll_open/1, ll_close/1, do_log/2, do_sync/1, do_info/2]).
+
 %% To be used by wrap_log_reader only.
 -export([ichunk_end/2]).
 
@@ -283,6 +286,20 @@ start() ->
 
 internal_open(Pid, A) ->
     req2(Pid, {internal_open, A}).
+
+%%% ll_open() and ll_close() are used by disk_log_h.erl, a module not
+%%% (yet) in Erlang/OTP.
+
+%% -> {ok, Res, log(), Cnt} | Error
+ll_open(A) ->
+    case check_arg(A, #arg{options = A}) of
+	{ok, L} -> do_open(L);
+	Error -> Error
+    end.
+
+%% -> closed | throw(Error)
+ll_close(Log) ->
+    close_disk_log2(Log).
 
 check_arg([], Res) -> 
     Ret = case Res#arg.head of

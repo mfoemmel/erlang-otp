@@ -378,7 +378,7 @@ call_to_primop(erlang, 'and', 2) -> {yes, ?PRIMOP_AND};
 call_to_primop(erlang, 'or', 2) -> {yes, ?PRIMOP_OR};
 call_to_primop(erlang, 'xor', 2) -> {yes, ?PRIMOP_XOR};
 call_to_primop(erlang, '+', 2) -> {yes, ?PRIMOP_ADD};
-call_to_primop(erlang, '+', 1) -> {yes, ?PRIMOP_IDENTITY};
+%%call_to_primop(erlang, '+', 1) -> {yes, ?PRIMOP_IDENTITY};
 call_to_primop(erlang, '-', 2) -> {yes, ?PRIMOP_SUB};
 call_to_primop(erlang, '-', 1) -> {yes, ?PRIMOP_NEG};
 call_to_primop(erlang, '*', 2) -> {yes, ?PRIMOP_MUL};

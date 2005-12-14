@@ -78,6 +78,7 @@ Terminals
     'LESSER'
     'LSBRKT'
     'MtpAddressToken'
+    'MgcIdToken'
     'PendingToken'
     'RSBRKT'
     'ReplyToken'
@@ -156,6 +157,7 @@ safeToken            -> 'PendingToken'          : make_safe_token('$1') .
 safeToken            -> 'ReplyToken'            : make_safe_token('$1') .
 safeToken            -> 'ResponseAckToken'      : make_safe_token('$1') .
 safeToken            -> 'TransToken'            : make_safe_token('$1') .
+safeToken            -> 'MgcIdToken'            : make_safe_token('$1') .
 
 Erlang code.
 

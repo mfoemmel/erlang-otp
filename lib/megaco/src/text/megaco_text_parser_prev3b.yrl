@@ -148,6 +148,7 @@ Nonterminals
     indAudlocalParmList
     indAudmediaDescriptor
     indAudmediaParm
+    indAudmediaParms                  %% v3   
     %% indAudmediaParmList
     indAudpackagesDescriptor
     indAudrequestedEvent
@@ -676,8 +677,10 @@ auditReply -> 'AuditValueToken' 'EQUAL' auditOther
 auditReply -> 'AuditCapToken'   'EQUAL' auditOther
 		  : {auditCapReply,   '$3'} .
 
-contextTerminationAudit -> terminationIDList               : {contextAuditResult, '$1'} .
-contextTerminationAudit -> 'LBRKT' errorDescriptor 'RBRKT' : {contextAuditResult, '$2'} .
+contextTerminationAudit -> terminationIDList               : 
+                           {contextAuditResult, '$1'} .
+contextTerminationAudit -> 'LBRKT' errorDescriptor 'RBRKT' : 
+                           {error, '$2'} .
 
 auditOther              -> terminationID : 
                            {auditResult, 
@@ -766,23 +769,20 @@ indAudauditReturnParameter -> indAudpackagesDescriptor
  
 
 indAudmediaDescriptor -> 'MediaToken' 'LBRKT' 
-                         indAudmediaParm  'RBRKT' 
-                         : merge_indAudMediaDescriptor('$3') .
+                         indAudmediaParm indAudmediaParms 'RBRKT' 
+                         : merge_indAudMediaDescriptor(['$3'|'$4']) .
  
 %% at-most-once per item
 %% and either streamParm or streamDescriptor but not both
-%% <rambling>
-%% This is solved in another way in text than in binary :(
-%% Instead of having a list of indAudmediaParm we put this
-%% stuff in the indAudterminationAuditList with several 
-%% indAudmediaDescriptor's. 
-%% </rambling>
 %% 
  
 indAudmediaParm -> indAudstreamParm                 : {streamParm,     '$1'} .
 indAudmediaParm -> indAudstreamDescriptor           : {streamDescr,    '$1'} .
 indAudmediaParm -> indAudterminationStateDescriptor : {termStateDescr, '$1'} .
  
+indAudmediaParms -> 'COMMA' indAudmediaParm indAudmediaParms : ['$2' | '$3'] .
+indAudmediaParms -> '$empty' : [] .
+
 %% at-most-once
 indAudstreamParm -> indAudlocalControlDescriptor 
                     : #'IndAudStreamParms'{localControlDescriptor = '$1'} .
@@ -797,9 +797,9 @@ indAudstreamDescriptor -> 'StreamToken' 'EQUAL' streamID
 
 indAudlocalControlDescriptor -> 'LocalControlToken' 
                                 'LBRKT' indAudlocalParm indAudlocalParmList 'RBRKT' :
-                                merge_indAudLocalControlDescriptor(['$3'| '$4']) .
+                                merge_indAudLocalControlDescriptor(['$3' | '$4']) .
  
-indAudlocalParmList -> 'COMMA' indAudlocalParm indAudlocalParmList : ['$2'| '$3'] .
+indAudlocalParmList -> 'COMMA' indAudlocalParm indAudlocalParmList : ['$2' | '$3'] .
 indAudlocalParmList -> '$empty' : [] .
 
 %% at-most-once per item

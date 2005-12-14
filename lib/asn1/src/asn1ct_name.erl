@@ -219,7 +219,12 @@ stop_server(Name, _Pid) ->
 start_server(Name,Mod,Fun,Args) ->	
     case whereis(Name) of
 	undefined ->
-	    register(Name, spawn(Mod,Fun, Args));
+	    case catch register(Name, spawn(Mod,Fun, Args)) of
+		{'EXIT',{badarg,_}} ->
+		    start_server(Name,Mod,Fun,Args);
+		_ ->
+		    ok
+	    end;
 	_Pid ->
 	    already_started
     end.

@@ -273,12 +273,35 @@ ensure_name_or_star(Name) ->
 
 %% v2 - start
 
-merge_indAudMediaDescriptor({termStateDescr, Val}) ->
-    #'IndAudMediaDescriptor'{termStateDescr = Val};
-merge_indAudMediaDescriptor({streamParm, Val}) ->
-    #'IndAudMediaDescriptor'{streams = {oneStream, Val}};
-merge_indAudMediaDescriptor({streamDescr, Val}) ->
-    #'IndAudMediaDescriptor'{streams = {multiStream, [Val]}}.
+merge_indAudMediaDescriptor_streams(asn1_NOVALUE, []) ->
+    asn1_NOVALUE;
+merge_indAudMediaDescriptor_streams(Stream, [])  
+  when record(Stream, 'IndAudStreamParms') ->
+    {oneStream, Stream};
+merge_indAudMediaDescriptor_streams(asn1_NOVALUE, MStreams) ->
+    {multiStream, lists:reverse(MStreams)};
+merge_indAudMediaDescriptor_streams(Stream, MStreams) ->
+    return_error(0, 
+		 {invalid_indAudMediaDescriptor_streams, {Stream, MStreams}}).
+
+merge_indAudMediaDescriptor(Vals) ->
+    merge_indAudMediaDescriptor(Vals, asn1_NOVALUE, asn1_NOVALUE, []).
+
+merge_indAudMediaDescriptor([], TSD, OneStream, MultiStreams) ->
+    Streams = merge_indAudMediaDescriptor_streams(OneStream, MultiStreams),
+    #'IndAudMediaDescriptor'{termStateDescr = TSD,
+			     streams        = Streams};
+
+merge_indAudMediaDescriptor([{termStateDescr, H}|T], asn1_NOVALUE, OS, MS) ->
+    merge_indAudMediaDescriptor(T, H, OS, MS);
+merge_indAudMediaDescriptor([{streamDescr, Val}|T], TSD, asn1_NOVALUE, MS) ->
+    merge_indAudMediaDescriptor(T, TSD, asn1_NOVALUE, [Val|MS]);
+merge_indAudMediaDescriptor([{streamParm, Val}|T], TSD, asn1_NOVALUE, []) ->
+    merge_indAudMediaDescriptor(T, TSD, Val, []);
+merge_indAudMediaDescriptor(Vals, TSD, OneStream, MultiStream) ->
+    return_error(0, {invalid_indAudMediaDescriptor, 
+		     {Vals, TSD, OneStream, MultiStream}}).
+
 
 merge_indAudLocalControlDescriptor(Parms) ->
     do_merge_indAudLocalControlDescriptor(Parms, 
@@ -1318,9 +1341,9 @@ value_of({_TokenTag, _Line, Text}) ->
 %% d(F, A) ->
 %%     %% d(true, F, A).
 %%     d(get(dbg), F, A).
-
+%% 
 %% d(true, F, A) ->
 %%     io:format("DBG:~w:" ++ F ++ "~n", [?MODULE | A]);
 %% d(_, _, _) ->
 %%     ok.
-
+%% 

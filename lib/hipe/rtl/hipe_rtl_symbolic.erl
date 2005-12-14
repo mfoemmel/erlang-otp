@@ -10,6 +10,8 @@
 -module(hipe_rtl_symbolic).
 
 -export([find_and_replace/1, expand/1]).
+
+-include("hipe_rtl.hrl").
 -include("hipe_literals.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -158,12 +160,12 @@ update_av_out(Label, LocalAvOut, AvOut) ->
 %%================================================================
 
 binbase_rules(Instr, AvList) ->
-  case hipe_rtl:type(Instr) of
-    binbase ->
+  case Instr of
+    #binbase{} ->
       add_instr(Instr, AvList);
-    gctest ->
+    #gctest{} ->
       gb_sets:empty();
-    call ->
+    #call{} ->
       case cerl_bs_call(hipe_rtl:call_fun(Instr)) of
 	true ->
 	  gb_sets:from_list(AvList);
@@ -175,8 +177,8 @@ binbase_rules(Instr, AvList) ->
   end.
 
 fixnum_rules(Instr, AvList) ->
-  case hipe_rtl:type(Instr) of
-    fixnumop ->
+  case Instr of
+    #fixnumop{} ->
       add_instr(Instr, AvList);
     _ ->
       gb_sets:from_list(AvList)
@@ -196,13 +198,14 @@ add_instr(Instr, AvList) ->
 %%
 %%================================================================
 
+%% XXX: Is this first clause needed? - Kostis
+binbase_replace_rules({gc_test,_} = Instr, Fun, _AvList, Acc, N) ->
+  {[Instr|Acc],gb_sets:empty(),Fun,N};
 binbase_replace_rules(Instr, Fun, AvList, Acc, N) ->
-  case hipe_rtl:type(Instr) of
-    binbase ->
+  case Instr of
+    #binbase{} ->
       add_instr_and_new_code_to_av(Instr, Fun, Acc, AvList, N);
-    gc_test ->
-      {[Instr|Acc],gb_sets:empty(),Fun,N};
-    call ->
+    #call{} ->
       case cerl_bs_call(hipe_rtl:call_fun(Instr)) of
 	true ->
 	  {[Instr|Acc],gb_sets:from_list(AvList),Fun,N};
@@ -214,8 +217,8 @@ binbase_replace_rules(Instr, Fun, AvList, Acc, N) ->
   end. 
 
 fixnum_replace_rules(Instr, Fun, AvList, Acc, N) ->
-  case hipe_rtl:type(Instr) of
-    fixnumop ->
+  case Instr of
+    #fixnumop{} ->
       add_fixnum_instr_and_new_code_to_av(Instr, Fun, Acc, AvList, N);
     _ ->
       {[Instr|Acc],gb_sets:from_list(AvList),Fun,N}
@@ -287,12 +290,12 @@ expand(Cfg) ->
   hipe_rtl_cfg:init(Linear1).
 
 expand_instr(Instr) ->
-  case hipe_rtl:type(Instr) of
-    binbase ->
+  case Instr of
+    #binbase{} ->
       expand_binbase(Instr);
-    fixnumop ->
+    #fixnumop{} ->
      expand_fixnumop(Instr);
-    gctest ->
+    #gctest{} ->
       expand_gctest(Instr);
     _ ->
       Instr

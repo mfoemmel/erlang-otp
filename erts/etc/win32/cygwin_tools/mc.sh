@@ -12,7 +12,8 @@ save_ifs=$IFS
 IFS=:
 for p in $PATH; do 
     if [ -f $p/mc.exe ]; then 
-	if [ -n "`$p/mc.exe -? 2>&1 | grep -i "message compiler"`" ]; then 
+	if [ -n "`$p/mc.exe -? 2>&1 >/dev/null </dev/null \
+                 | grep -i \"message compiler\"`" ]; then 
 	    MCC=$p/mc.exe
 	fi
     fi

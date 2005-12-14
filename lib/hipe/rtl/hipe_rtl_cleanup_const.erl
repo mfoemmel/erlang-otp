@@ -21,6 +21,8 @@
 
 -export([cleanup/1]).
 
+-include("hipe_rtl.hrl").
+
 cleanup(Rtl) ->
   Code = cleanup(hipe_rtl:rtl_code(Rtl), []),
   hipe_rtl:rtl_code_update(Rtl, Code).
@@ -41,8 +43,8 @@ cleanup_instr(Consts, I) ->
   cleanup_instr(ordsets:from_list(Consts), I, []).
 
 cleanup_instr([Const|Left], I, Acc) ->
-  case hipe_rtl:type(I) of
-    X when X == fp_unop; X == fp ->
+  case I of
+    X when is_record(X, fp_unop) ; is_record(X, fp) ->
       Dst = hipe_rtl:mk_new_var(),
       ConstLabel = hipe_rtl:const_label_label(Const),
       Load = hipe_rtl:mk_load_address(Dst, ConstLabel, constant),

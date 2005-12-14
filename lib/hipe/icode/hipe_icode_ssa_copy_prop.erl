@@ -11,4 +11,5 @@
 -define(code, hipe_icode).
 -define(cfg, hipe_icode_cfg).
 
+-include("hipe_icode.hrl").
 -include("../ssa/hipe_ssa_copy_prop.inc").

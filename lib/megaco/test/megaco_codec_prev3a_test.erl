@@ -123,6 +123,7 @@
 	 compact_otp5186_msg04/1, 
 	 compact_otp5186_msg05/1, 
 	 compact_otp5186_msg06/1, 
+         compact_otp5793_msg01/1,
 
 	 pretty_tickets/1, 
 	 pretty_otp4632_msg1/1, 
@@ -153,6 +154,7 @@
          pretty_otp5600_msg1/1,
          pretty_otp5600_msg2/1,
          pretty_otp5601_msg1/1,
+	 pretty_otp5793_msg01/1,
 
 	 flex_pretty_tickets/1, 
 	 flex_pretty_otp5042_msg1/1, 
@@ -167,6 +169,7 @@
          flex_pretty_otp5600_msg1/1,
          flex_pretty_otp5600_msg2/1,
          flex_pretty_otp5601_msg1/1,
+         flex_pretty_otp5793_msg01/1,
 
 	 init_per_testcase/2, fin_per_testcase/2]).  
 
@@ -428,7 +431,8 @@ compact_tickets(suite) ->
      compact_otp5186_msg03,
      compact_otp5186_msg04,
      compact_otp5186_msg05,
-     compact_otp5186_msg06
+     compact_otp5186_msg06,
+     compact_otp5793_msg01
     ].
 
 pretty_tickets(suite) ->
@@ -460,7 +464,8 @@ pretty_tickets(suite) ->
      pretty_otp5085_msg8,
      pretty_otp5600_msg1,
      pretty_otp5600_msg2,
-     pretty_otp5601_msg1
+     pretty_otp5601_msg1,
+     pretty_otp5793_msg01
     ].
 
 flex_pretty_tickets(suite) ->
@@ -481,7 +486,8 @@ flex_pretty_tickets_cases() ->
      flex_pretty_otp5085_msg8,
      flex_pretty_otp5600_msg1,
      flex_pretty_otp5600_msg2,
-     flex_pretty_otp5601_msg1
+     flex_pretty_otp5601_msg1,
+     flex_pretty_otp5793_msg01
     ].
 
 		
@@ -650,6 +656,15 @@ flex_pretty_otp5601_msg1(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Conf = flex_scanner_conf(Config),
     pretty_otp5601(ok, pretty_otp5601_msg1(), [Conf]).
+
+flex_pretty_otp5793_msg01(suite) ->
+    [];
+flex_pretty_otp5793_msg01(Config) when list(Config) ->
+    d("flex_pretty_otp5793_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    pretty_otp5793(ok, pretty_otp5793_msg1(), [Conf]).
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -1121,18 +1136,17 @@ compact_otp4013_msg1(suite) ->
 compact_otp4013_msg1(Config) when list(Config) ->
     d("compact_otp4013_msg1 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
-    M = "MEGCAO/1 MG1 T=12345678{C=-{SC=root{SV{MT=RS,RE=901}}}}",
+    M = "MEGCAO/3 MG1 T=12345678{C=-{SC=root{SV{MT=RS,RE=901}}}}",
     Bin = list_to_binary(M),
     case decode_message(megaco_compact_text_encoder, false, ?EC, Bin) of
 	{ok, _} ->
 	    exit({decoded_erroneous_message,M});
-	{error, Error} when list(Error) -> % Expected result
-	    case lists:keysearch(reason,1,Error) of
-		{value, {reason,{{case_clause,"megcao"},_}}} ->
-		    ok;
-		false ->
-		    exit({unexpected_result,Error})
-	    end;
+	{error, Reason} when is_list(Reason) ->
+	    {value, {reason, no_version_found, _}} = 
+		lists:keysearch(reason, 1, Reason),
+	    {value, {token, [{'SafeChars',_,"megcao/3"}|_]}} = 
+		lists:keysearch(token, 1, Reason),
+	    ok;
 	Else ->
 	    exit({unexpected_decode_result,Else})
     end.
@@ -1276,12 +1290,16 @@ compact_otp4299_msg2(Config) when list(Config) ->
 
     {Pid, Conf} = compact_otp4299_msg2_init(),
 
-    Bin = list_to_binary(compact_otp4299_msg()),
-    Res = decode_message(megaco_compact_text_encoder, false, [Conf], Bin),
+    M1  = compact_otp4299_msg(),
+    d("compact_otp4299_msg2 -> M1: ~n~s", [M1]),
+    Bin = list_to_binary(M1),
+    Res = decode_message(megaco_compact_text_encoder, false, 
+			 [?EC_V3,Conf], Bin),
     compact_otp4299_msg2_finish(Pid),
 
     case Res of
-	{ok, _Msg} ->
+	{ok, M2} ->
+	    d("compact_otp4299_msg2 -> M2: ~n~p", [M2]),
 	    ok;
 
 	{error, Reason} ->
@@ -2141,6 +2159,16 @@ compact_otp5186_check_auditDesc_apt(APT, APT) ->
     ok;
 compact_otp5186_check_auditDesc_apt(APT1, APT2) ->
     exit({not_equal, auditPropertyToken, APT1, APT2}).
+
+compact_otp5793_msg01(suite) ->
+    [];
+compact_otp5793_msg01(Config) when list(Config) ->
+    d("compact_otp5793_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5793(ok, pretty_otp5793_msg1()).
+
+compact_otp5793(Expected, Msg) ->
+    expect_codec(Expected, megaco_compact_text_encoder, Msg, []).
 
 
 %% --------------------------------------------------------------
@@ -3287,6 +3315,94 @@ pretty_otp5601_msg1() ->
 		      mId = ?MGC_MID,
 		      messageBody = {transactions, TRs}},
     #'MegacoMessage'{mess = Mess}.
+
+
+pretty_otp5793_msg01(suite) ->
+    [];
+pretty_otp5793_msg01(Config) when list(Config) ->
+    d("pretty_otp5793_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    %% put(severity,trc),
+    %% put(dbg,true),
+    pretty_otp5793(ok, pretty_otp5793_msg1()).
+
+pretty_otp5793(Expected, Msg) ->
+    expect_codec(Expected, megaco_pretty_text_encoder, Msg, []).
+
+pretty_otp5793(Expected, Msg, Conf) ->
+    expect_codec(Expected, megaco_pretty_text_encoder, Msg, Conf).
+
+pretty_otp5793_msg1() ->
+    {'MegacoMessage',asn1_NOVALUE,
+     {'Message',3,
+      {deviceName,"bs_sbg_4/99"},
+      {transactions,
+       [{transactionReply,
+         {'TransactionReply',
+          370,
+          asn1_NOVALUE,
+          {actionReplies,
+           [{'ActionReply',
+             3,
+             asn1_NOVALUE,
+             asn1_NOVALUE,
+             [{auditValueReply,
+               {contextAuditResult,
+                [{megaco_term_id,
+                  false,
+                  ["ip",
+                   "104",
+                   "1",
+                   "18"]}]}},
+              {auditValueReply,
+               {contextAuditResult,
+                [{megaco_term_id,
+                  false,
+                  ["ip",
+                   "104",
+                   "2",
+                   "19"]}]}}]}]}}}]}}}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+expect_codec(Expect, Codec, Msg, Conf) ->
+    t("expect_codec -> entry with"
+      "~n   Expect: ~p"
+      "~n   Msg:    ~p", [Expect, Msg]),
+    case (catch encode_message(Codec, [?EC_V3|Conf], Msg)) of
+        {error, _Reason} when Expect == error ->
+            d("expect_codec -> encode failed as expected"
+              "~n   _Reason: ~w", [_Reason]),
+            ok;
+        {error, Reason} ->
+            e("expect_codec -> encode failed unexpectedly: "
+              "~n   Reason: ~w", [Reason]),
+            exit({unexpected_encode_result, Reason});
+        {ok, Bin} when Expect == error ->
+            e("expect_codec -> encode succeded unexpectedly: "
+              "~n   ~w", [binary_to_list(Bin)]),
+            exit({unexpected_encode_result, binary_to_list(Bin)});
+        {ok, Bin} ->
+            d("expect_codec -> successfull encode as expected:"
+              "~n~s", [binary_to_list(Bin)]),
+            case (catch decode_message(Codec, false, [?EC_V3|Conf], Bin)) of
+                {ok, Msg} ->
+                    d("expect_codec -> successfull decode~n", []),
+                    ok;
+                {ok, Msg2} ->
+                    e("expect_codec -> successfull decode"
+                      " - but not equal", []),
+                    chk_MegacoMessage(Msg, Msg2);
+		%% exit({unexpected_decode_result, Msg, Msg2});
+                Else ->
+                    e("expect_codec -> decode failed:~n~p", [Else]),
+                    exit({unexpected_decode_result, Else})
+            end;
+        Else ->
+            e("expect_codec -> encode failed:~n~p", [Else]),
+            exit({unexpected_encode_result, Else})
+    end.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

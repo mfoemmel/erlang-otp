@@ -8,9 +8,9 @@
 %%  History  :	* 2000-09-06 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2004/01/15 13:11:53 $
-%%              $Revision: 1.7 $
+%%              $Author: kostis $
+%%              $Date: 2005/11/06 13:10:51 $
+%%              $Revision: 1.8 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -20,6 +20,7 @@
 -export([remove_multimoves/1]).
 
 -include("../main/hipe.hrl").
+-include("hipe_sparc.hrl").
 
 remove_multimoves(CFG) ->
   traverse(hipe_sparc_cfg:labels(CFG), CFG).
@@ -34,8 +35,8 @@ traverse([Name|BBs], CFG) ->
 traverse([], CFG) -> CFG.
 
 traverse_code([I|Is], Acc) ->
-  case hipe_sparc:type(I) of
-    multimove ->
+  case I of
+    #multimove{} ->
       Dests = hipe_sparc:multimove_dest(I),
       Source = hipe_sparc:multimove_src(I),
       NewAcc = make_moves(Dests, Source, Acc, [], false),

@@ -46,9 +46,6 @@ AC_SUBST(DED_LD)
 # ODBC 
 /bin/rm -f $ERL_TOP/lib/odbc/SKIP
 
-AC_CHECK_LIB(odbc, SQLAllocHandle)
-AC_CHECK_LIB(odbc32, main)
-
 AC_SUBST(TARGET_FLAGS)
     case $host_os in
         win32|cygwin)
@@ -67,8 +64,8 @@ AC_SUBST(TARGET_FLAGS)
 	       AC_CHECK_LIB(pthread, pthread_create)
 	       if test ! -d "$with_odbc"; then			
 	       AC_MSG_CHECKING([for odbc in standard locations])
-	         for dir in /opt/local/pgm/odbc /usr/local/odbc /usr/odbc \
-		     /usr
+	         for dir in /usr/local/odbc /usr/odbc \
+		     /usr /opt/local/pgm/odbc 
 		 do   
 		    if test -f "$dir/include/sql.h"; then
 		      is_odbc_std_location=yes	   
@@ -90,9 +87,14 @@ AC_SUBST(TARGET_FLAGS)
               fi
 	  ;;
 esac
+
+AC_CHECK_LIB(odbc, SQLAllocHandle, [ODBC_LIB="$ODBC_LIB -lodbc"],
+		   [], [$ODBC_LIB])
 	 
 AC_SUBST(ODBC_LIB)
 AC_SUBST(ODBC_INCLUDE)
+
+AC_CHECK_LIB(odbc32, main)
 	    
 # Sockets
 #--------------------------------------------------------------------

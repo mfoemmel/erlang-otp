@@ -153,7 +153,7 @@ int esock_poll_fd_isset_read(EsockPoll *ep, FD fd)
 #ifdef USE_SELECT
     return FD_ISSET(fd, &ep->readmask);
 #else
-    return poll_is_set(ep, fd, POLL_INPUT|POLLHUP);
+    return poll_is_set(ep, fd, (POLL_INPUT|POLLHUP|POLLERR|POLLNVAL));
 #endif    
 }
 
@@ -162,7 +162,7 @@ int esock_poll_fd_isset_write(EsockPoll *ep, FD fd)
 #ifdef USE_SELECT
     return FD_ISSET(fd, &ep->writemask);
 #else
-    return poll_is_set(ep, fd, POLLOUT);
+    return poll_is_set(ep, fd, (POLLOUT|POLLHUP|POLLERR|POLLNVAL));
 #endif    
 }
 

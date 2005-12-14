@@ -36,6 +36,8 @@
 	 br_br_latency/2
 	]).
 
+-include("../sparc/hipe_sparc.hrl").
+
 -define(debug(Str,Args),ok).
 %-define(debug(Str,Args),io:format(Str,Args)).
 
@@ -68,54 +70,53 @@ ultra_instr_type({N,I},I_res) ->
     hipe_vectors:set(I_res,N,instr_type(I)).
 
 instr_type(I) ->
-    case hipe_sparc:type(I) of
-	move ->
+    case I of
+	#move{} ->
 	    ieu;
-	multimove -> %% TODO: expand multimoves before scheduling
+	#multimove{} -> %% TODO: expand multimoves before scheduling
 	    ieu;
-	alu ->
+	#alu{} ->
 	    case hipe_sparc:alu_operator(I) of
 		'>>' -> ieu0;
 		'<<' -> ieu0;
 		_ -> ieu
 	    end;
-	alu_cc ->
+	#alu_cc{} ->
 	    ieu1;
-	sethi ->
+	#sethi{} ->
 	    ieu;
-	load ->
+	#load{} ->
 	    mem;
-	store ->
+	#store{} ->
 	    mem;
-	b ->
+	#b{} ->
 	    br;
-	br ->
+	#br{} ->
 	    br;
-	goto ->
+	#goto{} ->
 	    br;
-	jmp_link ->         % imprecise; should be mem+br?
+	#jmp_link{} ->         % imprecise; should be mem+br?
 	    single;
-	jmp ->              % imprecise
+	#jmp{} ->              % imprecise
 	    br;
-	call_link ->        % imprecise; should be mem+br?
+	#call_link{} ->        % imprecise; should be mem+br?
 	    single;
-	cmov_cc ->          % imprecise
+	#cmov_cc{} ->          % imprecise
 	    single;
-	cmov_r ->           % imprecise
+	#cmov_r{} ->           % imprecise
 	    single;
-	load_atom ->        % should be resolved to sethi/or
+	#load_atom{} ->        % should be resolved to sethi/or
 	    single;
-	load_address ->     % should be resolved to sethi/or
+	#load_address{} ->     % should be resolved to sethi/or
 	    single;
-	load_word_index ->  % should be resolved to sethi/or
+	#load_word_index{} ->  % should be resolved to sethi/or
 	    single;
-
-	% uncommon types:
-	label ->
+	%% uncommon types:
+	#label{} ->
 	    none;
-	nop ->
+	#nop{} ->
 	    none;
-	comment ->
+	#comment{} ->
 	    none;
 	_ ->
 	    exit(ultrasparc_instr_type,{cant_schedule,I})

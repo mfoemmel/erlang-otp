@@ -33,7 +33,7 @@
 
 -include("snmp_debug.hrl").
 
--export([convert_config/0]).
+-export([convert_config/0, convert_config/1]).
 
 %% Internal (test)
 -export([start/1]).
@@ -41,7 +41,9 @@
 
 convert_config() ->
     ?d("convert_config -> entry", []),
-    Opts = application:get_all_env(snmp),
+    convert_config( application:get_all_env(snmp) ).
+
+convert_config(Opts) ->
     ?d("start -> Opts: ~p", [Opts]),
     Prio           = get_priority(Opts),
     DbDir          = get_db_dir(Opts),

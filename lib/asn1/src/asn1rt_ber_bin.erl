@@ -1284,15 +1284,6 @@ encode_bit_string_bits(C, BitListVal, _NamedBitList, DoTag) when list(BitListVal
     end.
 
  
-encode_constr_bit_str_bits({_Min,Max},BitListVal,_DoTag) ->
-    BitLen = length(BitListVal), 
-    if  
-	BitLen > Max -> 
-	    exit({error,{asn1,{bitstring_length,{{was,BitLen},
-						 {maximum,Max}}}}}); 
-	true -> 
-	    encode_bitstring(BitListVal)  
-    end;
 encode_constr_bit_str_bits({{_Min1,Max1},{Min2,Max2}},BitListVal,_DoTag) ->
     BitLen = length(BitListVal),
     case BitLen of
@@ -1305,7 +1296,17 @@ encode_constr_bit_str_bits({{_Min1,Max1},{Min2,Max2}},BitListVal,_DoTag) ->
 						  Max1,Min2}}}}});
 	_ ->
 	    encode_bitstring(BitListVal)
+    end;
+encode_constr_bit_str_bits({_Min,Max},BitListVal,_DoTag) ->
+    BitLen = length(BitListVal), 
+    if  
+	BitLen > Max -> 
+	    exit({error,{asn1,{bitstring_length,{{was,BitLen},
+						 {maximum,Max}}}}}); 
+	true -> 
+	    encode_bitstring(BitListVal)  
     end.
+
 
 %% returns a list of length Size + length(BitListVal), with BitListVal 
 %% as the most significant elements followed by padded zero elements
@@ -2188,9 +2189,9 @@ code_type(9) -> 'REAL';
 code_type(10) -> 'ENUMERATED'; 
 code_type(11) -> 'EMBEDDED_PDV'; 
 code_type(16) -> 'SEQUENCE'; 
-code_type(16) -> 'SEQUENCE OF'; 
+% code_type(16) -> 'SEQUENCE OF'; 
 code_type(17) -> 'SET'; 
-code_type(17) -> 'SET OF'; 
+% code_type(17) -> 'SET OF'; 
 code_type(18) -> 'NumericString';   
 code_type(19) -> 'PrintableString';   
 code_type(20) -> 'TeletexString';   

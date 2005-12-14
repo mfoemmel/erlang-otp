@@ -95,29 +95,41 @@ publish_flag(_, OtherNode) ->
 
 make_this_flags(RequestType, OtherNode) ->
     publish_flag(RequestType, OtherNode) bor
-	?DFLAG_EXPORT_PTR_TAG bor
-	?DFLAG_EXTENDED_PIDS_PORTS bor
-	?DFLAG_ATOM_CACHE bor
-	?DFLAG_EXTENDED_REFERENCES bor
-	?DFLAG_DIST_MONITOR bor
-	?DFLAG_FUN_TAGS bor
-	?DFLAG_DIST_MONITOR_NAME bor
-	?DFLAG_HIDDEN_ATOM_CACHE bor
-	?DFLAG_NEW_FUN_TAGS.
+	%% The parenthesis below makes the compiler generate better code.
+	(?DFLAG_EXPORT_PTR_TAG bor
+	 ?DFLAG_EXTENDED_PIDS_PORTS bor
+	 ?DFLAG_ATOM_CACHE bor
+	 ?DFLAG_EXTENDED_REFERENCES bor
+	 ?DFLAG_DIST_MONITOR bor
+	 ?DFLAG_FUN_TAGS bor
+	 ?DFLAG_DIST_MONITOR_NAME bor
+	 ?DFLAG_HIDDEN_ATOM_CACHE bor
+	 ?DFLAG_NEW_FUN_TAGS).
 
-handshake_other_started(#hs_data{request_type = ReqType} = HSData) ->
-    {PreOtherFlags,Node,Version} = recv_name(HSData),
+handshake_other_started(#hs_data{request_type=ReqType}=HSData0) ->
+    {PreOtherFlags,Node,Version} = recv_name(HSData0),
     PreThisFlags = make_this_flags(ReqType, Node),
     {ThisFlags, OtherFlags} = adjust_flags(PreThisFlags,
 					   PreOtherFlags),
-    NewHSData = HSData#hs_data{this_flags = ThisFlags,
-			       other_flags = OtherFlags,
-			       other_version = Version,
-			       other_node = Node,
-			       other_started = true},
-    check_dflag_xnc(NewHSData),
-    is_allowed(NewHSData),
-    mark_pending(NewHSData).
+    HSData = HSData0#hs_data{this_flags=ThisFlags,
+			     other_flags=OtherFlags,
+			     other_version=Version,
+			     other_node=Node,
+			     other_started=true},
+    check_dflag_xnc(HSData),
+    is_allowed(HSData),
+    ?debug({"MD5 connection from ~p (V~p)~n",
+	    [Node, HSData#hs_data.other_version]}),
+    mark_pending(HSData),
+    {MyCookie,HisCookie} = get_cookies(Node),
+    ChallengeA = gen_challenge(),
+    send_challenge(HSData, ChallengeA),
+    reset_timer(HSData#hs_data.timer),
+    ChallengeB = recv_challenge_reply(HSData, ChallengeA, MyCookie),
+    send_challenge_ack(HSData, gen_digest(ChallengeB, HisCookie)),
+    ?debug({dist_util, self(), accept_connection, Node}),
+    connection(HSData).
+
 %%
 %% check if connecting node is allowed to connect
 %% with allow-node-scheme
@@ -175,51 +187,27 @@ check_dflag_xnc(#hs_data{other_node = Node,
 
 
 %% No nodedown will be sent if we fail before this process has
-%% succeeded to mark the node as pending !
-%%
+%% succeeded to mark the node as pending.
 
-mark_pending(#hs_data{other_node = Node} = HSData) ->
-    ?debug({"MD5 connection from ~p (V~p)~n",
-	    [Node, HSData#hs_data.other_version]}),
-    mark_pending_2(HSData),
-    {MyCookie,HisCookie} = get_cookies(Node),
-    ChallengeA = gen_challenge(),
-    send_challenge(HSData, ChallengeA),
-    reset_timer(HSData#hs_data.timer),
-    ChallengeB = 
-	recv_challenge_reply(HSData, ChallengeA, MyCookie),
-    send_challenge_ack(HSData, gen_digest(ChallengeB, HisCookie)),
-
-    ?debug({dist_util, self(), accept_connection, Node}),
-
-    connection(HSData).
-    
-
-mark_pending_2(#hs_data{kernel_pid = Kernel, 
-			other_node = Node, 
-			this_node = MyNode} = HSData) ->
-    case do_mark_pending(Kernel,Node,
+mark_pending(#hs_data{kernel_pid=Kernel,
+		      other_node=Node,
+		      this_node=MyNode}=HSData) ->
+    case do_mark_pending(Kernel, MyNode, Node,
 			 (HSData#hs_data.f_address)(HSData#hs_data.socket,
 						    Node),
 			 HSData#hs_data.other_flags) of
 	ok ->
 	    send_status(HSData, ok),
-	    reset_timer(HSData#hs_data.timer),
-	    true;
+	    reset_timer(HSData#hs_data.timer);
 
-	pending ->
-	    ?trace("Simultaneous connect (md5), "
-		   "i am ~p, she is ~p~n", [MyNode, Node]),
-	    if MyNode > Node ->
-		    send_status(HSData, nok),
-		    ?shutdown(Node);
-	       true ->
-		    send_status(HSData, ok_simultaneous),
-		    do_remark_pending(Kernel, Node),
-		    reset_timer(HSData#hs_data.timer),
-		    true
-	    end;
+	ok_pending ->
+	    send_status(HSData, ok_simultaneous),
+	    reset_timer(HSData#hs_data.timer);
 
+	nok_pending ->
+	    send_status(HSData, nok),
+	    ?shutdown(Node);
+	    
 	up_pending ->
 	    %% Check if connection is still alive, no
 	    %% implies that the connection is no longer pending
@@ -230,13 +218,11 @@ mark_pending_2(#hs_data{kernel_pid = Kernel,
 	    %% and goes up again and contact us before we have
 	    %% detected that the socket was closed. 
 	    wait_pending(Kernel),
-	    reset_timer(HSData#hs_data.timer),
-	    true;
+	    reset_timer(HSData#hs_data.timer);
 
 	already_pending ->
 	    %% FIXME: is this a case ?
-	    ?debug({dist_util,self(),mark_pending2,
-		    already_pending,Node}),
+	    ?debug({dist_util,self(),mark_pending,already_pending,Node}),
 	    ?shutdown(Node)
     end.
 
@@ -261,11 +247,11 @@ do_alive(#hs_data{other_node = Node} = HSData) ->
 	false -> ?shutdown(Node)
     end.
     
-do_mark_pending(Kernel,Node,Address,Flags) ->
-    Kernel ! {self(), {accept_pending,Node,Address,
+do_mark_pending(Kernel, MyNode, Node, Address, Flags) ->
+    Kernel ! {self(), {accept_pending,MyNode,Node,Address,
 		       publish_type(Flags)}},
     receive
-	{Kernel, {accept_pending, Ret}} ->
+	{Kernel,{accept_pending,Ret}} ->
 	    ?trace("do_mark_pending(~p,~p,~p,~p) -> ~p~n",
 		   [Kernel,Node,Address,Flags,Ret]),
 	    Ret
@@ -277,18 +263,6 @@ is_pending(Kernel, Node) ->
 	{Kernel, {is_pending, Reply}} -> Reply
     end.
     
-do_remark_pending(Kernel, Node) ->
-    Kernel ! {self(), {remark_pending, Node}},
-    receive
-	{Kernel, {remark_pending, ok}} -> 
-	    ok;
-	{Kernel, {remark_pending, bad_request}} ->
-	    %% Can not occur !!???
-	    error_msg("** Simultaneous connect failed : ~p~n",
-		      [Node]),
-	    ?shutdown(Node)
-    end.
-
 %%
 %% This will tell the net_kernel about the nodedown as it
 %% recognizes the exit signal.
@@ -316,20 +290,14 @@ flush_down() ->
 	    ok
     end.
 
-handshake_we_started(#hs_data{request_type = ReqType,
-			      other_node = Node,
-			      other_version = Version} = PreHSData) ->
+handshake_we_started(#hs_data{request_type=ReqType,
+			      other_node=Node}=PreHSData) ->
     PreThisFlags = make_this_flags(ReqType, Node),
-    HSData = PreHSData#hs_data{this_flags = PreThisFlags},
+    HSData = PreHSData#hs_data{this_flags=PreThisFlags},
     send_name(HSData),
     recv_status(HSData),
-    {PreOtherFlags, NodeA, VersionA, ChallengeA} = recv_challenge(HSData),
-    if Node =/= NodeA -> ?shutdown(no_node);
-       Version =/= VersionA -> ?shutdown(no_node);
-       true -> true
-    end,
-    {ThisFlags, OtherFlags} = adjust_flags(PreThisFlags,
-					   PreOtherFlags),
+    {PreOtherFlags,ChallengeA} = recv_challenge(HSData),
+    {ThisFlags,OtherFlags} = adjust_flags(PreThisFlags, PreOtherFlags),
     NewHSData = HSData#hs_data{this_flags = ThisFlags,
 			       other_flags = OtherFlags, 
 			       other_started = false}, 
@@ -381,12 +349,8 @@ connection(#hs_data{other_node = Node,
     end.
 
 %% Generate a message digest from Challenge number and Cookie	
-gen_digest(Challenge, Cookie) 
-  when integer(Challenge), atom(Cookie) ->
-    C0 = erlang:md5_init(),
-    C1 = erlang:md5_update(C0, atom_to_list(Cookie)),
-    C2 = erlang:md5_update(C1, integer_to_list(Challenge)),
-    binary_to_list(erlang:md5_final(C2)).
+gen_digest(Challenge, Cookie) when is_integer(Challenge), is_atom(Cookie) ->
+    erlang:md5([atom_to_list(Cookie)|integer_to_list(Challenge)]).
 
 %% ---------------------------------------------------------------
 %% Challenge code
@@ -417,13 +381,6 @@ get_cookies(Node) ->
 	    erlang:fault("Corrupt cookie database")
     end.    
 
-%%
-%% Setnode works quite differently depending on handshale type:
-%% With MD5 digests, cookies are already dealt with and the 
-%% distribution code in the emulator need not know about them.
-%% The cleartext shake on the other hand needs to
-%% inform the emulator of the cookies, as they are contained in every message. 
-%%
 do_setnode(#hs_data{other_node = Node, socket = Socket, 
 		    other_flags = Flags, other_version = Version,
 		    f_getll = GetLL}) ->
@@ -587,16 +544,20 @@ publish_type(Flags) ->
     end.
 
 %% wait for challenge after connect
-recv_challenge(#hs_data{socket = Socket, f_recv = Recv}) ->
+recv_challenge(#hs_data{socket=Socket,other_node=Node,
+			other_version=Version,f_recv=Recv}) ->
     case Recv(Socket, 0, infinity) of
 	{ok,[$n,V1,V0,Fl1,Fl2,Fl3,Fl4,CA3,CA2,CA1,CA0 | Ns]} ->
 	    Flags = ?u32(Fl1,Fl2,Fl3,Fl4),
-	    Node =list_to_atom(Ns),
-	    Version = ?u16(V1,V0),
-	    Challenge = ?u32(CA3,CA2,CA1,CA0),
-	    ?trace("recv: node=~w, challenge=~w version=~w\n",
-		   [Node, Challenge,Version]),
-	    {Flags,Node,Version,Challenge};
+	    case {list_to_existing_atom(Ns),?u16(V1,V0)} of
+		{Node,Version} ->
+		    Challenge = ?u32(CA3,CA2,CA1,CA0),
+		    ?trace("recv: node=~w, challenge=~w version=~w\n",
+			   [Node, Challenge,Version]),
+		    {Flags,Challenge};
+		_ ->
+		    ?shutdown(no_node)
+	    end;
 	_ ->
 	    ?shutdown(no_node)	    
     end.
@@ -610,15 +571,16 @@ recv_challenge_reply(#hs_data{socket = Socket,
 			      f_recv = FRecv}, 
 		     ChallengeA, Cookie) ->
     case FRecv(Socket, 0, infinity) of
-	{ok,[$r,CB3,CB2,CB1,CB0 | SumB]} when length(SumB) == 16 ->
+	{ok,[$r,CB3,CB2,CB1,CB0 | SumB]} when length(SumB) =:= 16 ->
 	    SumA = gen_digest(ChallengeA, Cookie),
 	    ChallengeB = ?u32(CB3,CB2,CB1,CB0),
 	    ?trace("recv_reply: challenge=~w digest=~p\n",
 		   [ChallengeB,SumB]),
 	    ?trace("sum = ~p\n", [SumA]),
-	    if SumB == SumA ->
+	    case list_to_binary(SumB) of
+		SumA ->
 		    ChallengeB;
-	       true ->
+		_ ->
 		    error_msg("** Connection attempt from "
 			      "disallowed node ~w ** ~n", [NodeB]),
 		    ?shutdown(NodeB)
@@ -631,13 +593,14 @@ recv_challenge_ack(#hs_data{socket = Socket, f_recv = FRecv,
 			    other_node = NodeB}, 
 		   ChallengeB, CookieA) ->
     case FRecv(Socket, 0, infinity) of
-	{ok,[$a | SumB]} when length(SumB) == 16 ->
+	{ok,[$a|SumB]} when length(SumB) =:= 16 ->
 	    SumA = gen_digest(ChallengeB, CookieA),
 	    ?trace("recv_ack: digest=~p\n", [SumB]),
 	    ?trace("sum = ~p\n", [SumA]),
-	    if SumB == SumA ->
+	    case list_to_binary(SumB) of
+		SumA ->
 		    ok;
-	       true ->
+		_ ->
 		    error_msg("** Connection attempt to "
 			      "disallowed node ~w ** ~n", [NodeB]),
 		    ?shutdown(NodeB)

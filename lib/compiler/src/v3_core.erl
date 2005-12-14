@@ -808,8 +808,11 @@ pat_alias(#c_alias{var=V1,pat=P1}, P2) ->
     #c_alias{var=V1,pat=pat_alias(P1, P2)};
 pat_alias(P1, #c_alias{var=V2,pat=P2}) ->
     #c_alias{var=V2,pat=pat_alias(P1, P2)};
-pat_alias(P, P) -> P;
-pat_alias(_, _) -> throw(nomatch).
+pat_alias(P1, P2) ->
+    case {core_lib:set_anno(P1, []),core_lib:set_anno(P2, [])} of
+	{P,P} -> P;
+	_ -> throw(nomatch)
+    end.
 
 %% pat_alias_list([A1], [A2]) -> [A].
 

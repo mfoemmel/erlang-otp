@@ -223,7 +223,7 @@ static void mfs_alloc_failed(char* msg, int sz);
 static void mfs_fatal_error(char* msg); 
 static void mfs_short_load_token(ErlDrvTermData token_tag);
 static void mfs_lower_load_token(ErlDrvTermData token_tag);
-static void mfs_octet_load_token(ErlDrvTermData token_tag);
+static void mfs_octet_load_token(ErlDrvTermData token_tag, int is_empty);
 static void mfs_load_map_name();
 static void mfs_load_map_value();
 static void mfs_load_map_timer();
@@ -263,7 +263,9 @@ static ErlDrvEntry mfs_entry = {
 
 #define LOAD_SHORT_TOKEN(TokenTag) mfs_short_load_token(TokenTag)
 
-#define LOAD_OCTET_TOKEN(TokenTag) mfs_octet_load_token(TokenTag)
+#define LOAD_OCTET_TOKEN(TokenTag) mfs_octet_load_token(TokenTag, 0)
+
+#define LOAD_EMPTY_OCTET_TOKEN(TokenTag) mfs_octet_load_token(TokenTag, 1)
 
 
 /* OTP-4236 */
@@ -325,10 +327,12 @@ wild        ((w\-)?)
 <MTP_HEXDIG>{hexdig}{4,8}               {LOAD_TOKEN(mfs_MtpAddressToken); BEGIN(SKIP_RBRKT);}
                                         
 ((Local)|L){lbrkt}                      BEGIN(LOCAL_OCTETS);
-<LOCAL_OCTETS>{octet}*                  {LOAD_OCTET_TOKEN(mfs_LocalDescriptorToken); BEGIN(SKIP_RBRKT);}
-                                 
+<LOCAL_OCTETS>{rbrkt}                   {LOAD_EMPTY_OCTET_TOKEN(mfs_LocalDescriptorToken); BEGIN(INITIAL);}
+<LOCAL_OCTETS>{octet}+                  {LOAD_OCTET_TOKEN(mfs_LocalDescriptorToken); BEGIN(SKIP_RBRKT);}
+                          
 ((Remote)|R){lbrkt}                     BEGIN(REMOTE_OCTETS);
-<REMOTE_OCTETS>{octet}*                 {LOAD_OCTET_TOKEN(mfs_RemoteDescriptorToken); BEGIN(SKIP_RBRKT);}
+<REMOTE_OCTETS>{rbrkt}                  {LOAD_EMPTY_OCTET_TOKEN(mfs_RemoteDescriptorToken); BEGIN(INITIAL);}
+<REMOTE_OCTETS>{octet}+                 {LOAD_OCTET_TOKEN(mfs_RemoteDescriptorToken); BEGIN(SKIP_RBRKT);}
                                         
 ((DigitMap)|DM)                         LOAD_TOKEN(mfs_DigitMapToken);
 ((DigitMap)|DM){equal}                  BEGIN(MAP_NAME);
@@ -349,7 +353,7 @@ wild        ((w\-)?)
 
 <MAP_SKIP_COMMA>{comma}                 BEGIN(MAP_VALUE);
 
-<MAP_BODY>{octet}*                     {mfs_load_map_value(); mfs_load_map_token(); BEGIN(SKIP_RBRKT);}
+<MAP_BODY>{octet}+                     {mfs_load_map_value(); mfs_load_map_token(); BEGIN(SKIP_RBRKT);}
 
 {equal}                                 LOAD_SHORT_TOKEN(mfs_EQUAL);
 {colon}                                 LOAD_SHORT_TOKEN(mfs_COLON);
@@ -758,15 +762,14 @@ static void mfs_short_load_token(ErlDrvTermData TokenTag)
   ASSIGN_TERM_SPEC(2);
 }
 
-static void mfs_octet_load_token(ErlDrvTermData TokenTag)
+static void mfs_octet_load_token(ErlDrvTermData TokenTag, int is_empty)
 {
   /* Build a {TokenTag, LineNumber, String} tuple */
 
-  /*
   DBG( ("mfs_octet_load_token -> entry with"
-	"\n   TokenTag: %ld\n", TokenTag) );
-  */
-
+	"\n   TokenTag: %ld"
+	"\n   is_empty: %ld\n", TokenTag, is_empty) );
+  
   mfs_ensure_term_spec(9); 
   mfs_token_counter++; 
   ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
@@ -775,14 +778,21 @@ static void mfs_octet_load_token(ErlDrvTermData TokenTag)
   ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
   ASSIGN_TERM_SPEC(ERL_DRV_STRING);
 
-  strncpy(mfs_text_ptr, yytext, yyleng);
+  if (is_empty) {
+    *mfs_text_ptr = 0;
+    ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_text_ptr);
+    mfs_text_ptr++;
+    ASSIGN_TERM_SPEC(0);
+  } else {
+    strncpy(mfs_text_ptr, yytext, yyleng);
 
-  DBG_BUF("mfs_octet_load_token", "mfs_text_ptr", 
-           mfs_text_ptr, yyleng);
+    DBG_BUF("mfs_octet_load_token", "mfs_text_ptr", 
+	    mfs_text_ptr, yyleng);
 
-  ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_text_ptr);
-  mfs_text_ptr += yyleng;
-  ASSIGN_TERM_SPEC(yyleng);
+    ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_text_ptr);
+    mfs_text_ptr += yyleng;
+    ASSIGN_TERM_SPEC(yyleng);
+  }
   ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
   ASSIGN_TERM_SPEC(3);
 }

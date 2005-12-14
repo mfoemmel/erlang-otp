@@ -135,7 +135,15 @@ type(erlang, '>', 2, Xs) -> strict(Xs, t_bool());
 type(erlang, '>=', 2, Xs) -> strict(Xs, t_bool());
 type(erlang, '<', 2, Xs) -> strict(Xs, t_bool());
 type(erlang, '=<', 2, Xs) -> strict(Xs, t_bool());
-type(erlang, '+', 1, [X]) -> X;   % +X = X for all X!
+type(erlang, '+', 1, Xs) ->
+    strict(arg_types(erlang, '+', 1), Xs, 
+	   fun ([X]) ->
+		   case t_number_vals(X) of
+		       any -> X;
+		       List when is_list(List) ->
+			   t_integers(List)
+		   end
+	   end);
 type(erlang, '-', 1, Xs) ->
     strict(arg_types(erlang, '-', 1), Xs, 
 	   fun ([X]) -> 
@@ -1185,8 +1193,8 @@ arith(Op, X1, X2) ->
 			'+' -> AllVals = [X + Y ||X <- L1, Y <- L2];
 			'-' -> AllVals = [X - Y ||X <- L1, Y <- L2];
 			'*' -> AllVals = [X * Y ||X <- L1, Y <- L2];
-			'div' -> AllVals = [X div Y ||X <- L1, Y <- L2];
-			'rem' -> AllVals = [X rem Y ||X <- L1, Y <- L2]
+			'div' -> AllVals = [X div Y ||X <- L1, Y <- L2,Y =/= 0];
+			'rem' -> AllVals = [X rem Y ||X <- L1, Y <- L2,Y =/= 0]
 		    end,
 		    {ok, t_integers(ordsets:from_list(AllVals))}
 	    end
@@ -1240,7 +1248,7 @@ arg_types(erlang, '!', 2) ->
 	       t_tuple([t_atom(), t_atom()])]),
   [Pid, t_any()];
 arg_types(erlang, '+', 1) ->
-  [t_any()];
+  [t_number()];
 arg_types(erlang, '+', 2) ->
   arg_types('+');
 arg_types(erlang, '++', 2) ->

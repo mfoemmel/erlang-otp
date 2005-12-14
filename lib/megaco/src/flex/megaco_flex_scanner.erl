@@ -87,18 +87,36 @@ scan(Binary, Port) ->
 
 
 version([]) ->
+    99; % Let the parser deal with this
+version([{'SafeChars',_,"!/1"}|_]) ->
     1;
-version([{'SafeChars',1,"!/1"}|_]) ->
+version([{'SafeChars',_,"megaco/1"}|_]) ->
     1;
-version([{'SafeChars',1,"megaco/1"}|_]) ->
-    1;
-version([{'SafeChars',1,"!/2"}|_]) ->
+version([{'SafeChars',_,"!/2"}|_]) ->
     2;
-version([{'SafeChars',1,"megaco/2"}|_]) ->
+version([{'SafeChars',_,"megaco/2"}|_]) ->
     2;
-version([{'SafeChars',1,"!/3"}|_]) ->
+version([{'SafeChars',_,"!/3"}|_]) ->
     3;
-version([{'SafeChars',1,"megaco/3"}|_]) ->
+version([{'SafeChars',_,"megaco/3"}|_]) ->
     3;
+version([{'SafeChars',_,[$!, $/ | Vstr]}|_]) ->
+    guess_version(Vstr);
+version([{'SafeChars',_,[$m, $e, $g, $a, $c, $o, $/ | Vstr]}|_]) ->
+    guess_version(Vstr);
 version([_|T]) ->
     version(T).
+
+
+guess_version([C]) when (48 =< C) and (C =< 57) ->
+    C-48;
+guess_version(Str) when is_list(Str) ->
+    case (catch list_to_integer(Str)) of
+	I when is_integer(I) ->
+	    I;
+	_ ->
+	    99 % Let the parser deal with this
+    end;
+guess_version(_) ->
+    99. % Let the parser deal with this
+

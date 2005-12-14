@@ -49,10 +49,8 @@ define(FCALLS,%r11)dnl This goes together with line above
 `#if AMD64_HEAP_LIMIT_IN_REGISTER
 #define AMD64_HEAP_LIMIT_REGISTER 12'
 define(HEAP_LIMIT,%r12)dnl Change this together with line above
-`#define SAVE_HEAP_LIMIT	movq 'HEAP_LIMIT`, P_HP_LIMIT(P)
-#define RESTORE_HEAP_LIMIT	movq P_HP_LIMIT(P), 'HEAP_LIMIT`
+`#define RESTORE_HEAP_LIMIT	movq P_HP_LIMIT(P), 'HEAP_LIMIT`
 #else
-#define SAVE_HEAP_LIMIT		/*empty*/
 #define RESTORE_HEAP_LIMIT	/*empty*/
 #endif'
 
@@ -68,22 +66,27 @@ define(NSP,%rsp)dnl
  */
 `#define SWITCH_C_TO_ERLANG_QUICK	\
 	SAVE_CSP; \
-	movq P_NSP(P), NSP; \
-	RESTORE_FCALLS'
+	movq P_NSP(P), NSP'
 
 `#define SWITCH_ERLANG_TO_C_QUICK	\
-	SAVE_FCALLS; \
 	movq NSP, P_NSP(P); \
 	RESTORE_CSP'
 
-`#define SWITCH_C_TO_ERLANG	\
+`#define SAVE_CACHED_STATE	\
+	SAVE_HP;		\
+	SAVE_FCALLS'
+
+`#define RESTORE_CACHED_STATE	\
 	RESTORE_HP;		\
-	RESTORE_HEAP_LIMIT;     \
+	RESTORE_HEAP_LIMIT;	\
+	RESTORE_FCALLS'
+
+`#define SWITCH_C_TO_ERLANG	\
+	RESTORE_CACHED_STATE;	\
 	SWITCH_C_TO_ERLANG_QUICK'
 
 `#define SWITCH_ERLANG_TO_C	\
-	SAVE_HP;		\
-	SAVE_HEAP_LIMIT;        \
+	SAVE_CACHED_STATE;	\
 	SWITCH_ERLANG_TO_C_QUICK'
 
 /*

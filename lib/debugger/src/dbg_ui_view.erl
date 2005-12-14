@@ -150,6 +150,26 @@ gui_cmd('Function Break...', State) ->
     add_break(State#state.gs, State#state.coords, function,
 	      State#state.mod, undefined),
     State;
+gui_cmd('Enable All', State) ->
+    Breaks = int:all_breaks(),
+    ThisMod = State#state.mod,
+    lists:foreach(fun ({{Mod, Line}, _Options}) when Mod==ThisMod ->
+			  int:enable_break(Mod, Line);
+		      (_Break) ->
+			  ignore
+		  end,
+		  Breaks),
+    State;
+gui_cmd('Disable All', State) ->
+    Breaks = int:all_breaks(),
+    ThisMod = State#state.mod,
+    lists:foreach(fun ({{Mod, Line}, _Options}) when Mod==ThisMod ->
+			  int:disable_break(Mod, Line);
+		      (_Break) ->
+			  ignore
+		  end,
+		  Breaks),
+    State;
 gui_cmd('Delete All', State) ->
     int:no_break(State#state.mod),
     State;
@@ -206,16 +226,22 @@ menus() ->
     [{'File', [{'Close', 0}]},
      {'Edit', [{'Go To Line...', 0},
 	       {'Search...', 0}]},
-     {'Break', [{'Line Break...', 6},
-		{'Conditional Break...', 14},
+     {'Break', [{'Line Break...', 5},
+		{'Conditional Break...', 13},
 		{'Function Break...', 0},
 		separator,
-		{'Delete All', 1},
+		{'Enable All', no},
+		{'Disable All', no},
+		{'Delete All', 0},
 		separator]},
-     {'Help', [{'Debugger', 0}]}].
+     {'Help', [{'Debugger', no}]}].
 
+shortcut(c) -> 'Close';
+shortcut(g) -> 'Go To Line...';
+shortcut(s) -> 'Search...';
 shortcut(b) -> 'Line Break...';
 shortcut(r) -> 'Conditional Break...';
+shortcut(f) -> 'Function Break...';
 shortcut(d) -> 'Delete All';
 
 shortcut(_) -> false.

@@ -29,6 +29,8 @@
 	 load_abs/1,
 	 load_abs/2,
 	 load_binary/3,
+	 load_native_partial/2,
+	 load_native_sticky/3,
 	 delete/1,
 	 purge/1,
 	 soft_purge/1,
@@ -108,6 +110,8 @@ ensure_loaded(Mod) ->  call({ensure_loaded,Mod}).
 load_abs(File)     ->  call({load_abs,File,[]}).
 load_abs(File,M)   ->  call({load_abs,File,M}).
 load_binary(Mod,File,Bin) -> call({load_binary,Mod,File,Bin}).
+load_native_partial(Mod,Bin) -> call({load_native_partial,Mod,Bin}).
+load_native_sticky(Mod,Bin,WholeModule) -> call({load_native_sticky,Mod,Bin,WholeModule}).
 delete(Mod)        ->  call({delete,Mod}).
 purge(Mod)         ->  call({purge,Mod}).
 soft_purge(Mod)    ->  call({soft_purge,Mod}).

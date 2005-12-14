@@ -15,6 +15,13 @@
 %% 
 %%     $Id$
 %%
+
+-ifdef(debug).
+-define(dbg(Fmt, Args), ok=io:format("~p: " ++ Fmt, [?LINE|Args])).
+-else.
+-define(dbg(Fmt, Args), no_debug).
+-endif.
+
 -define('RT_BER',"asn1rt_ber_v1").
 -define('RT_BER_BIN',"asn1rt_ber_bin").
 -define('RT_PER',"asn1rt_per_v1").

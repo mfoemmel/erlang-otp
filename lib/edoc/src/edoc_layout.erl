@@ -23,7 +23,6 @@
 %% =====================================================================
 
 %% @TODO generate navigation links, at least back to index.html
-%% @TODO mark deprecated functions in function index.
 
 %% @doc The standard HTML layout module for EDoc. See the {@link edoc}
 %% module for details on usage.
@@ -169,7 +168,7 @@ layout_module(#xmlElement{name = module, content = Es}=E, Opts) ->
 	    ++ [?NL]
 	    ++ version(Es)
 	    ++ since(Es)
-	    ++ behaviours(Es)
+	    ++ behaviours(Es, Name)
 	    ++ authors(Es)
 	    ++ references(Es)
 	    ++ sees(Es)
@@ -248,12 +247,16 @@ index_col({Name, F=#xmlElement{content = Es}}) ->
 
 index_desc(Es) ->
     Desc = get_content(description, Es),
-    case get_content(briefDescription, Desc) of
-	[] ->
-	    equiv(Es);    % no description at all if no equiv
-	ShortDesc ->
-	    ShortDesc
-    end.
+    (case get_content(deprecated, Es) of
+ 	 [] -> [];
+ 	 _ -> ["(", {em, ["Deprecated"]}, ".) "]
+     end
+     ++ case get_content(briefDescription, Desc) of
+	    [] ->
+		equiv(Es);    % no description at all if no equiv
+	    ShortDesc ->
+		ShortDesc
+	end).
 
 label_href(Content, F) ->
     case get_attrval(label, F) of
@@ -294,7 +297,7 @@ function(Name, E=#xmlElement{content = Es}) ->
 	    Spec -> Spec
 	end
      ++ throws(Es)
-     ++ equiv(Es)
+     ++ equiv_p(Es)
      ++ deprecated(Es, "function")
      ++ fulldesc(Es)
      ++ since(Es)
@@ -434,7 +437,13 @@ href(E) ->
 	    [{href, URI} | T]
     end.
 
+equiv_p(Es) ->
+    equiv(Es, true).
+
 equiv(Es) ->
+    equiv(Es, false).
+
+equiv(Es, P) ->
     case get_content(equiv, Es) of
 	[] -> [];
 	Es1 ->
@@ -448,7 +457,12 @@ equiv(Es) ->
 				[E=#xmlElement{}] ->
 				    see(E, Expr1)
 			    end,
-		    [{p, ["Equivalent to "] ++ Expr2 ++ ["."]}, ?NL]
+		    Txt = ["Equivalent to "] ++ Expr2 ++ ["."],
+		    (case P of
+			 true -> [{p, Txt}];
+			 false -> Txt
+		     end
+		     ++ [?NL])
 	    end
     end.
 
@@ -482,17 +496,32 @@ deprecated(Es, S) ->
 	     ?NL]
     end.
 
-behaviours(Es) ->
-    case get_elem(behaviour, Es) of
-	[] -> [];
-	Es1 ->
-	    [{p, [{b, ["Behaviour:"]}, " "]
-	      ++ seq(fun behaviour/1, Es1, ["."])},
-	     ?NL]
-    end.
+behaviours(Es, Name) ->
+    (case get_elem(behaviour, Es) of
+	 [] -> [];
+	 Es1 ->
+	     [{p, ([{b, ["Behaviours:"]}, " "]
+		   ++ seq(fun behaviour/1, Es1, ["."]))},
+	      ?NL]
+     end
+     ++
+     case get_content(callbacks, Es) of
+	 [] -> [];
+	 Es1 ->
+	     [{p, ([{b, ["This module defines the ", {tt, [Name]},
+			 " behaviour."]},
+		    br, " Required callback functions: "]
+		   ++ seq(fun callback/1, Es1, ["."]))},
+	      ?NL]
+     end).
 
 behaviour(E=#xmlElement{content = Es}) ->
     see(E, [{tt, Es}]).
+
+callback(E=#xmlElement{}) ->
+    Name = get_attrval(name, E),
+    Arity = get_attrval(arity, E),
+    [{tt, [Name, "/", Arity]}].
 
 authors(Es) ->
     case get_elem(author, Es) of

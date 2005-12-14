@@ -65,6 +65,7 @@
 
 -include("../../kernel/src/hipe_ext_format.hrl").
 -include("../main/hipe.hrl").
+-include("hipe_sparc.hrl").
 -include("../rtl/hipe_literals.hrl").
 
 %%---------------------------------------------------------------------
@@ -158,59 +159,58 @@ slim_sorted_exportmap([],_,_) -> [].
 is_exported(F, A, Exports) -> lists:member({F,A}, Exports).
 
 %%---------------------------------------------------------------------
-%% assemble_instr(Type, Instr)
+%% assemble_instr(Instr)
 %%     Returns: 	
-%%   Arguments:	Type - The type of the instruction.
-%%              Instr - The complete instruction.
+%%   Arguments:	Instr - The complete instruction.
 %% Description:	Returns the 32-bit SPARC code for the instruction Instr. 
 %%---------------------------------------------------------------------
 
-assemble_instr(Type, I) ->
-  case Type of 
-%%    move ->
-%%      assemble_move(I);
-    alu ->     
+assemble_instr(I) ->
+  case I of 
+%%  #move{} ->
+%%    assemble_move(I);
+    #alu{} ->     
       assemble_alu(I);
-%%    alu_cc ->
-%%      assemble_alu_cc(I);
-%%    store ->
-%%      assemble_store(I);
-%%    load ->
-%%      assemble_load(I);
-    goto ->
+%%  #alu_cc{} ->
+%%    assemble_alu_cc(I);
+%%  #store{} ->
+%%     assemble_store(I);
+%%  #load{} ->
+%%    assemble_load(I);
+    #goto{} ->
       assemble_goto(I);
-    b ->
+    #b{} ->
       assemble_b(I);
-%%     br ->
-%%       assemble_br(I);
-    call_link ->
+%%  #br{} ->
+%%    assemble_br(I);
+    #call_link{} ->
       assemble_call_link(I);
-    jmp_link ->
+    #jmp_link{} ->
       assemble_jmp_link(I);
-%%    jmp ->
-%%      assemble_jmp(I);
-    sethi ->
+%%  #jmp{} ->
+%%    assemble_jmp(I);
+    #sethi{} ->
       assemble_sethi(I);
-%%    load_fp ->
-%%      assemble_load_fp(I);
-%%    store_fp ->
-%%      assemble_store_fp(I);
-%%    fb ->
-%%      assemble_fb(I);
-%%    fop ->
-%%      assemble_fop(I);
-%%    fcmp ->
-%%      assemble_fcmp(I);
-%%    fmove ->
-%%      assemble_fmove(I);
-%%    conv_fp ->
-%%      assemble_conv_fp(I);
-%%    nop ->
-%%      assemble_nop(I);
-    T ->
-      exit([{problem,{not_handled,instruction,T}},{at,I}])
+%%  #load_fp{} ->
+%%    assemble_load_fp(I);
+%%  #store_fp{} ->
+%%    assemble_store_fp(I);
+%%  #fb{} ->
+%%    assemble_fb(I);
+%%  #fop{} ->
+%%    assemble_fop(I);
+%%  #fcmp{} ->
+%%    assemble_fcmp(I);
+%%  #fmove{} ->
+%%    assemble_fmove(I);
+%%  #conv_fp{} ->
+%%    assemble_conv_fp(I);
+%%  #nop{} ->
+%%    assemble_nop(I);
+    _ ->
+      exit([{not_handled_instruction,I}])
   end.
-	 
+
 check_simm13(Val,I) ->
   case hipe_sparc:is_imm(Val) of
     true -> 
@@ -756,51 +756,6 @@ encode_5bit_fpreg(Reg, Type) ->
 %% TODO: implement if needed:
 %% encode_6bit_fpreg(Reg, Type)
 
-%%---------------------------------------------------------------------
-%%  assemble_and_write(CodeList)    
-%% Returns: 	true
-%%              (Or exits...)
-%% Arguments:	CodeList - a list of tuples {Code,Address}
-%%              where Code is pure sparc-code and Address
-%%              is the memory address to write the code to.
-%% Description:	 
-%% ____________________________________________________________________
-%% assemble_and_write([{Code,Address}|Rest]) ->
-%%   assemble(Code,Address),
-%%   assemble_and_write(Rest);
-%% assemble_and_write([]) -> true.
-%%
-%% assemble([Instr|Rest],Address) -> 
-%%   case hipe_sparc:type(Instr) of
-%%     % Comments and labels generates no code.
-%%     comment -> 
-%%       assemble(Rest,Address);
-%%     label ->
-%%       assemble(Rest,Address);
-%%     Type ->   
-%%       % Assemble the instruction and write it to memory.
-%%       write(Address,
-%% 	    case catch(assemble_instr(Type,Instr)) of
-%% 	      {'EXIT',R} ->
-%% 	       io:format("I: ~w\n",[Instr]),
-%% 	       exit(R);
-%% 	      O -> O
-%% 	    end),
-%%       assemble(Rest,Address+4) % Each instruction is 4 bytes.
-%%   end;
-%% assemble([],_) -> true.
-
-%% ____________________________________________________________________
-%%  write(Address,Op)    
-%% Returns: 	true
-%% Arguments:	Address - A smallint pointing to memory
-%%              Op - A 32-bit opcode
-%% Description:	Writes Op to memory at Address. 
-%% ____________________________________________________________________
-%% write(Address,Op) ->
-%%   hipe_bifs:write_u32(Address,Op).
-
-
 %%=====================================================================
 %% A linker for SPARC code appears below
 %%=====================================================================
@@ -821,31 +776,30 @@ link9([],_HAddr,_Map,_ConstMap,AccHCode,AccHRefs) ->
   {AccHCode,AccHRefs}.
 
 link8([I|Is],MFA,Addr,Map,ConstMap,Refs,Code) ->
-  Type = hipe_sparc:type(I),
   case  
-    case Type of
-      call_link -> resolve_call_link(I,Addr,Refs,Map);
-      b -> resolve_b(I,Addr,Refs,Map);
-      goto -> resolve_goto(I,Addr,Refs,Map);
-      load_address -> resolve_load_address(I,Addr,Refs,MFA,Map,ConstMap);
-      load_atom -> resolve_load_atom(I,Addr,Refs);
-      %%load_word_index -> resolve_load_word_index(I,Addr,Refs,MFA,Map,ConstMap);
-      alu -> {assemble_alu(I),Addr+4,Refs};
-      alu_cc -> {assemble_alu_cc(I),Addr+4,Refs};
-      store -> {assemble_store(I),Addr+4,Refs};
-      move -> {assemble_move(I),Addr+4,Refs};
-      load -> {assemble_load(I),Addr+4,Refs};
-      store_fp -> {assemble_store_fp(I),Addr+4,Refs};
-      load_fp -> {assemble_load_fp(I),Addr+4,Refs};
-%%      fb -> {assemble_fb(I),Addr+4,Refs};
-      fop -> {assemble_fop(I),Addr+4,Refs};
-%%       fcmp -> {assemble_fcmp(I),Addr+4,Refs};
-      fmove -> {assemble_fmove(I),Addr+4,Refs};
-      conv_fp -> {assemble_conv_fp(I),Addr+4,Refs};
-      jmp -> {assemble_jmp(I),Addr+4,Refs};
-      nop -> {assemble_nop(I),Addr+4,Refs};
-      sethi -> {assemble_sethi(I),Addr+4,Refs};
-      Other -> exit({bad_type,Other})
+    case I of
+      #call_link{} -> resolve_call_link(I,Addr,Refs,Map);
+      #b{} -> resolve_b(I,Addr,Refs,Map);
+      #goto{} -> resolve_goto(I,Addr,Refs,Map);
+      #load_address{} -> resolve_load_address(I,Addr,Refs,MFA,Map,ConstMap);
+      #load_atom{} -> resolve_load_atom(I,Addr,Refs);
+%%    #load_word_index{} -> resolve_load_word_index(I,Addr,Refs,MFA,Map,ConstMap);
+      #alu{} -> {assemble_alu(I),Addr+4,Refs};
+      #alu_cc{} -> {assemble_alu_cc(I),Addr+4,Refs};
+      #store{} -> {assemble_store(I),Addr+4,Refs};
+      #move{} -> {assemble_move(I),Addr+4,Refs};
+      #load{} -> {assemble_load(I),Addr+4,Refs};
+      #store_fp{} -> {assemble_store_fp(I),Addr+4,Refs};
+      #load_fp{} -> {assemble_load_fp(I),Addr+4,Refs};
+%%    #fb{} -> {assemble_fb(I),Addr+4,Refs};
+      #fop{} -> {assemble_fop(I),Addr+4,Refs};
+%%    #fcmp{} -> {assemble_fcmp(I),Addr+4,Refs};
+      #fmove{} -> {assemble_fmove(I),Addr+4,Refs};
+      #conv_fp{} -> {assemble_conv_fp(I),Addr+4,Refs};
+      #jmp{} -> {assemble_jmp(I),Addr+4,Refs};
+      #nop{} -> {assemble_nop(I),Addr+4,Refs};
+      #sethi{} -> {assemble_sethi(I),Addr+4,Refs};
+      Other -> exit({bad_sparc_instruction,Other})
     end of
     {[I1,I2],NewAddr,NewRefs} ->
       link8(Is,MFA,NewAddr,Map,ConstMap,NewRefs,[I1,I2|Code]);
@@ -881,7 +835,7 @@ resolve_load_address(Instr,Addr,Refs,MFA,_Map,ConstMap)->
   Lo = hipe_sparc:mk_imm(0),
   I1 = hipe_sparc:sethi_create(Dest,Hi),
   I2 = hipe_sparc:alu_create(Dest,Dest,'or',Lo),
-  {[assemble_instr(alu,I2),assemble_instr(sethi,I1)],Addr+8,Ref++Refs}.
+  {[assemble_instr(I2),assemble_instr(I1)],Addr+8,Ref++Refs}.
 
 resolve_goto(I,Addr,Refs,Map) ->
   Dest = hipe_sparc:goto_label(I),
@@ -892,7 +846,7 @@ resolve_goto(I,Addr,Refs,Map) ->
     false -> exit({too_long_branch,{address,Addr}})
   end,
   NewI = hipe_sparc:goto_label_update(I,RelDest),
-  Code = assemble_instr(goto,NewI),
+  Code = assemble_instr(NewI),
   {Code,Addr+4,Refs}.
 
 resolve_b(I,Addr,Refs,Map) ->
@@ -904,7 +858,7 @@ resolve_b(I,Addr,Refs,Map) ->
     false -> exit({too_long_branch,{address,Addr}})
   end,
   NewI = hipe_sparc:b_label_update(I,RelDest),
-  Code = assemble_instr(b,NewI),
+  Code = assemble_instr(NewI),
   {Code,Addr+4,Refs}.
 
 resolve_load_atom(Instr,Addr,Refs)->
@@ -912,7 +866,7 @@ resolve_load_atom(Instr,Addr,Refs)->
   Dest = hipe_sparc:load_atom_dest(Instr),
   I1 = hipe_sparc:sethi_create(Dest, hipe_sparc:mk_imm(0)),
   I2 = hipe_sparc:alu_create(Dest,Dest, 'or', hipe_sparc:mk_imm(0)),
-  {[assemble_instr(alu,I2),assemble_instr(sethi,I1)],
+  {[assemble_instr(I2),assemble_instr(I1)],
    Addr+8,[{?PATCH_TYPE2EXT(load_atom),Addr, Atom}|Refs]}.
 
 %%resolve_load_word_index(_Instr,_Addr,_Refs,_MFA,_Map,_ConstMap) ->
@@ -923,7 +877,7 @@ resolve_load_atom(Instr,Addr,Refs)->
 %%  ConstNo = find_const({MFA,Block},ConstMap),
 %%  I1 = hipe_sparc:sethi_create(Dest, hipe_sparc:mk_imm(0)),
 %%  I2 = hipe_sparc:alu_create(Dest,Dest, 'or', hipe_sparc:mk_imm(0)),
-%%  {[assemble_instr(alu,I2),assemble_instr(sethi,I1)],
+%%  {[assemble_instr(I2),assemble_instr(I1)],
 %%   Addr+8,[{?PATCH_TYPE2EXT(load_word_index),Addr, {word_index, ConstNo, Index}}|Refs]}.
 
 resolve_call_link(Instr,Addr,OldRefs,Map)->
@@ -952,7 +906,7 @@ resolve_call_link(Instr,Addr,OldRefs,Map)->
 	       hipe_sparc:mk_imm(0), 
 	       hipe_sparc:mk_reg(hipe_sparc_registers:return_address()),
 	       hipe_sparc:call_link_args(Instr)),
-      Code = assemble_instr(jmp_link,NewI),
+      Code = assemble_instr(NewI),
       {Code,Addr+4, Refs};
     true -> 
       Patch =
@@ -962,7 +916,7 @@ resolve_call_link(Instr,Addr,OldRefs,Map)->
 	end,
       NewRefs = [{Patch,Addr,Target} | Refs],
       NewI = hipe_sparc:call_link_target_update(Instr,0),
-      Code = assemble_instr(call_link,NewI),
+      Code = assemble_instr(NewI),
       {Code,Addr+4,NewRefs}
   end.
 
@@ -984,18 +938,18 @@ preprocess(Entry, MFA, Address, Map) ->
 		MFA, []).
 
 process_instr([I|Is], Address, Map, MFA, AccCode) ->
-  case hipe_sparc:type(I) of
-    label ->
+  case I of
+    #label{} ->
       process_instr(Is, Address,
 		    [{{MFA,hipe_sparc:label_name(I)},hot,Address}|Map],
 		    MFA, AccCode);
-    comment ->
+    #comment{} ->
       process_instr(Is, Address, Map, MFA, AccCode);
-    load_address ->
+    #load_address{} ->
       process_instr(Is, Address+8, Map, MFA, [I|AccCode]);
-    load_atom ->
+    #load_atom{} ->
       process_instr(Is, Address+8, Map, MFA, [I|AccCode]);
-    load_word_index ->
+    #load_word_index{} ->
       process_instr(Is, Address+8, Map, MFA, [I|AccCode]);
     _Other ->
       process_instr(Is, Address+4, Map, MFA, [I|AccCode])

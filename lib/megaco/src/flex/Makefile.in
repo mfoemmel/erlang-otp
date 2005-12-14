@@ -150,12 +150,16 @@ ifeq ($(MFS_DEBUG),true)
 CFLAGS += -DMFS_DEBUG=true
 endif
 
+ifeq ($(MFS_FLEX_DEBUG),true)
+LEX_FLAGS = -d
+endif
+
 CFLAGS += $(DRIVER_INCLUDES) $(DRV_FLAGS) -funroll-loops -Wall 
 
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER_LINENO),true)
-LEX_FLAGS = -Ca
+LEX_FLAGS += -Ca
 else
-LEX_FLAGS = -Cfe
+LEX_FLAGS += -Cfe
 endif
 
 

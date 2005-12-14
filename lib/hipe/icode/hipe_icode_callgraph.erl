@@ -22,6 +22,7 @@
 -export([pp/1]).
 -endif.
 
+-include("hipe_icode.hrl").
 
 -record(callgraph, {codedict, scc_order}).
 
@@ -66,8 +67,8 @@ get_remote_calls([], Acc) ->
 
 get_remote_calls_1([I|Left], Set) ->
   NewSet =
-    case hipe_icode:type(I) of
-      call ->
+    case I of
+      #call{} ->
 	case hipe_icode:call_type(I) of
 	  remote ->
 	    {M, _F, _A} = hipe_icode:call_fun(I),
@@ -75,7 +76,7 @@ get_remote_calls_1([I|Left], Set) ->
 	  _ ->
 	    Set
 	end;
-      enter ->
+      #enter{} ->
 	case hipe_icode:enter_type(I) of
 	  remote ->
 	    {M, _F, _A} = hipe_icode:enter_fun(I),
@@ -112,8 +113,8 @@ get_local_calls_1(Icode) ->
 
 get_local_calls_1([I|Left], Set) ->
   NewSet =
-    case hipe_icode:type(I) of
-      call ->
+    case I of
+      #call{} ->
 	case hipe_icode:call_type(I) of
 	  local ->
 	    Fun = hipe_icode:call_fun(I),
@@ -128,7 +129,7 @@ get_local_calls_1([I|Left], Set) ->
 	  _ ->
 	    Set
 	end;
-      enter ->
+      #enter{} ->
 	case hipe_icode:enter_type(I) of
 	  local ->
 	    Fun = hipe_icode:enter_fun(I),

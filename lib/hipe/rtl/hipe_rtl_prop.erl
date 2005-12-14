@@ -15,6 +15,7 @@
 -export([do/1]).
 
 -include("../main/hipe.hrl").
+-include("hipe_rtl.hrl").
 
 do(CFG) ->
   CFG1 = prop(CFG),
@@ -40,16 +41,16 @@ prop(CFG) ->
 
 prop_instr(I, Env) ->
   NewEnv = unbind(hipe_rtl:defines(I), Env),
-  case hipe_rtl:type(I) of
-    move ->
+  case I of
+    #move{} ->
       Srcs = [hipe_rtl:move_src(I)],
       Dsts = [hipe_rtl:move_dst(I)],
       bind_all(Srcs, Dsts, I, NewEnv);
-    multimove ->
+    #multimove{} ->
       Srcs = hipe_rtl:multimove_srclist(I),
       Dsts = hipe_rtl:multimove_dstlist(I),
       bind_all(Srcs, Dsts, I, NewEnv);
-    fconv ->
+    #fconv{} ->
       {I, Env};
     _ ->
       Uses = hipe_rtl:uses(I),
@@ -94,8 +95,8 @@ bind_all([], [], I, _, Env) ->
 %%
 
 eval(I, Env) ->
-  case hipe_rtl:type(I) of
-    alu ->
+  case I of
+    #alu{} ->
       Src1 = hipe_rtl:alu_src1(I),
       Src2 = hipe_rtl:alu_src2(I),
       case {hipe_rtl:is_imm(Src1), hipe_rtl:is_imm(Src2)} of
@@ -108,7 +109,7 @@ eval(I, Env) ->
 	_ ->
 	  {I, Env}
       end;
-    alub ->
+    #alub{} ->
       Src1 = hipe_rtl:alub_src1(I),
       Src2 = hipe_rtl:alub_src2(I),
       case {hipe_rtl:is_imm(Src1), hipe_rtl:is_imm(Src2)} of
@@ -135,7 +136,7 @@ eval(I, Env) ->
 	_ ->
 	  {I, Env}
       end;
-    branch ->
+    #branch{} ->
       Src1 = hipe_rtl:branch_src1(I),
       Src2 = hipe_rtl:branch_src2(I),
       case {hipe_rtl:is_imm(Src1), hipe_rtl:is_imm(Src2)} of
@@ -151,9 +152,9 @@ eval(I, Env) ->
 	_ ->
 	  {I, Env}
       end;
-    enter ->
+    #enter{} ->
       {I, new_env()};
-    return ->
+    #return{} ->
       {I, new_env()};
     _ ->
       {I, Env}
@@ -238,8 +239,8 @@ dead_move(X) ->
 %% Simplify multimoves
 %%
 simplify_mm(I, LiveOut) ->
-  case hipe_rtl:type(I) of
-    multimove ->
+  case I of
+    #multimove{} ->
       {NewSourceList, NewDestList} =
 	 simplify_mm(hipe_rtl:multimove_srclist(I),
 		     hipe_rtl:multimove_dstlist(I), LiveOut),
@@ -503,12 +504,12 @@ spread_info(Code, Info) ->
   lists:foldl(fun do_instr/2, {[],Info}, Code).
 
 do_instr(Instr, {Acc,Info}) ->
-  case hipe_rtl:type(Instr) of
-    call ->
+  case Instr of
+    #call{} ->
       {Acc++[Instr],new_load_env()};
-    store ->  
+    #store{} ->  
       {Acc++[Instr],new_load_env()};
-    load ->
+    #load{} ->
       Dst = hipe_rtl:load_dst(Instr),
       LoadType = {Dst, hipe_rtl:load_src(Instr), hipe_rtl:load_offset(Instr), 
 		  hipe_rtl:load_size(Instr), hipe_rtl:load_sign(Instr)},
@@ -556,10 +557,10 @@ remove_store_from_bb(Code) ->
 
 remove_store_from_bb([Instr|Instrs], Env, Acc) ->
   {NewAcc, NewEnv} =
-    case hipe_rtl:type(Instr) of
-      call ->
+    case Instr of
+      #call{} ->
 	{[Instr|Acc],new_load_env()};
-      store ->  
+      #store{} ->  
 	Base = hipe_rtl:store_base(Instr),
 	Offset = hipe_rtl:store_offset(Instr),
 	Size = hipe_rtl:store_size(Instr),
@@ -570,10 +571,10 @@ remove_store_from_bb([Instr|Instrs], Env, Acc) ->
 	  false ->
 	    {[Instr|Acc], gb_sets:add(StoreType, Env)}
 	end;
-      load ->
+      #load{} ->
 	{[Instr|Acc],new_load_env()};
       _ -> 
-      Defs = hipe_rtl:defines(Instr),
+        Defs = hipe_rtl:defines(Instr),
 	{[Instr|Acc], update_store_env(Defs, Env)}
     end,
   remove_store_from_bb(Instrs, NewEnv, NewAcc);

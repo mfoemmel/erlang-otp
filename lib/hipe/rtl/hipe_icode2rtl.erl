@@ -19,6 +19,7 @@
 -define(DEBUG,1).
 
 -include("../main/hipe.hrl").
+-include("../icode/hipe_icode.hrl").
 -include("hipe_literals.hrl").
 
 %%-------------------------------------------------------------------------
@@ -99,34 +100,34 @@ translate_instruction(I, VarMap, ConstTab, Options) ->
   %%  ?IF_DEBUG_LEVEL(3,?msg("From Instr: ~w~n",[I]),no_debug),
   ?IF_DEBUG(?when_option(rtl_show_translation, Options,
 			 ?msg("From Instr: ~w~n",[I])),no_debug),
-  case hipe_icode:type(I) of
-    call ->  
+  case I of
+    #call{} ->  
       gen_call(I, VarMap, ConstTab, Options);
-    comment ->
+    #comment{} ->
       {hipe_rtl:mk_comment(hipe_icode:comment_text(I)), VarMap, ConstTab};  
-    enter -> 
+    #enter{} -> 
       gen_enter(I, VarMap, ConstTab, Options);
-    fail ->
+    #fail{} ->
       gen_fail(I, VarMap, ConstTab);
-    fmove -> 
+    #fmove{} -> 
       gen_fmove(I, VarMap, ConstTab);
-    goto -> 
+    #goto{} -> 
       gen_goto(I, VarMap, ConstTab);
-    'if' ->  
+    #'if'{} ->  
       gen_if(I, VarMap, ConstTab);
-    label ->
+    #label{} ->
       gen_label(I, VarMap, ConstTab);
-    move ->  
+    #move{} ->  
       gen_move(I, VarMap, ConstTab);
-    begin_handler ->
+    #begin_handler{} ->
       hipe_rtl_exceptions:gen_begin_handler(I, VarMap, ConstTab);
-    return -> 
+    #return{} -> 
       gen_return(I, VarMap, ConstTab);
-    switch_val -> 
+    #switch_val{} -> 
       gen_switch_val(I, VarMap, ConstTab, Options);
-    switch_tuple_arity -> 
+    #switch_tuple_arity{} -> 
       gen_switch_tuple(I, VarMap, ConstTab, Options);
-    type -> 
+    #type{} -> 
       gen_type(I, VarMap, ConstTab, Options);
     X ->
       exit({?MODULE,{"unknown Icode instruction",X}})
@@ -494,6 +495,13 @@ gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab, Options) ->
       {hipe_tagscheme:test_binary(X, TrueLbl, FalseLbl, Pred), ConstTab};
     constant ->
       {hipe_tagscheme:test_constant(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    Other ->
+      exit({?MODULE,{"unknown type",Other}})
+  end;
+gen_type_test([X,Y], Type, TrueLbl, FalseLbl, Pred, ConstTab, _Options) ->
+  case Type
+    of function2 ->
+      {hipe_tagscheme:test_fun2(X, Y, TrueLbl, FalseLbl, Pred), ConstTab};
     Other ->
       exit({?MODULE,{"unknown type",Other}})
   end;

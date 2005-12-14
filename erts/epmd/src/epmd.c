@@ -1,3 +1,4 @@
+/* -*- c-indent-level: 2; c-continued-statement-offset: 2 -*- */ 
 /* ``The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
@@ -249,6 +250,7 @@ int main(int argc, char** argv)
     g->conn           = NULL;
     g->nodes.reg = g->nodes.unreg = g->nodes.unreg_tail = NULL;
     g->nodes.unreg_count = 0;
+    g->active_conn    = 0;
 
     argc--;
     argv++;
@@ -316,11 +318,17 @@ int main(int argc, char** argv)
 #endif
       g->max_conn = MAX_FILES;
   
-    /* max_conn must not be greater than FD_SETSIZE. */
-    /* (at least QNX crashes)                         */
+    /*
+     * max_conn must not be greater than FD_SETSIZE.
+     * (at least QNX crashes)
+     *
+     * More correctly, it must be FD_SETSIZE - 1, beacuse the
+     * listen FD is stored outside the connection array.
+     */
   
-    if (g->max_conn > FD_SETSIZE)
-      g->max_conn = FD_SETSIZE;
+    if (g->max_conn > FD_SETSIZE) {
+      g->max_conn = FD_SETSIZE - 1;
+    }
 
     if (g->is_daemon)  {
 	run_daemon(g);

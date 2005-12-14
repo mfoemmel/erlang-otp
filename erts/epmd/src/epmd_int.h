@@ -165,7 +165,7 @@
 #endif
 
 #ifndef SOMAXCONN
-#  define SOMAXCONN 5
+#  define SOMAXCONN 128
 #endif
 
 /*
@@ -173,10 +173,11 @@
  * <sys/param.h>, but that tends to have little relation to reality.
  * Best is to use sysconf() (POSIX), but we'll just punt if that isn't
  * available. Start out with a high value because it will also be
- * use as the number of file descriptors given to select() (it's is
+ * used as the number of file descriptors given to select() (it's is
  * a terrible bug not to have all file descriptors included in the select()).
  * The value will be adjusted down if FD_SETSIZE is smaller.
  */
+
 #define MAX_FILES 1024		/* if sysconf() isn't available, or fails */
 
 /* ************************************************************************ */
@@ -288,7 +289,7 @@ struct enode {
   short creation;		/* Started as a random number 1..3 */
   char nodetype;                /* 77 = normal erlang node 72 = hidden (c-node */
   char protocol;                /* 0 = tcp/ipv4 */
-  unsigned short highvsn;                /* 0 = OTP-R3 erts-4.6.x, 1 = OTP-R4 erts-4.7.x*/
+  unsigned short highvsn;       /* 0 = OTP-R3 erts-4.6.x, 1 = OTP-R4 erts-4.7.x*/
   unsigned short lowvsn;
   char extra[MAXSYMLEN+1];
 };
@@ -315,6 +316,7 @@ typedef struct {
   unsigned delay_accept;
   unsigned delay_write;
   int max_conn;
+  int active_conn;
   char *progname;
   Connection *conn;
   Nodes nodes;

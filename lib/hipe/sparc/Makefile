@@ -113,21 +113,23 @@ release_spec: opt
 
 release_docs_spec:
 
-$(EBIN)/hipe_finalize.beam: ../main/hipe.hrl
-$(EBIN)/hipe_rtl2sparc.beam: ../main/hipe.hrl
+$(EBIN)/hipe_finalize.beam: ../main/hipe.hrl hipe_sparc.hrl
+$(EBIN)/hipe_rtl2sparc.beam: ../main/hipe.hrl ../rtl/hipe_rtl.hrl
 $(EBIN)/hipe_sparc.beam: ../main/hipe.hrl hipe_sparc.hrl hipe_sparc_sdesc.hrl
-$(EBIN)/hipe_sparc_assemble.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl ../../kernel/src/hipe_ext_format.hrl
-$(EBIN)/hipe_sparc_caller_saves.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl
-$(EBIN)/hipe_sparc_frame.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl
+$(EBIN)/hipe_sparc_assemble.beam: ../main/hipe.hrl hipe_sparc.hrl ../rtl/hipe_literals.hrl ../../kernel/src/hipe_ext_format.hrl
+$(EBIN)/hipe_sparc_caller_saves.beam: ../main/hipe.hrl hipe_sparc.hrl
+$(EBIN)/hipe_sparc_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl hipe_sparc.hrl
+$(EBIN)/hipe_sparc_finalize.beam: hipe_sparc.hrl
+$(EBIN)/hipe_sparc_frame.beam: ../main/hipe.hrl hipe_sparc.hrl ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_sparc_liveness.beam: ../flow/liveness.inc
 $(EBIN)/hipe_sparc_main.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_multimove.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_pp.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_prop.beam: ../main/hipe.hrl
+$(EBIN)/hipe_sparc_multimove.beam: ../main/hipe.hrl hipe_sparc.hrl
+$(EBIN)/hipe_sparc_opt_frame.beam: ../main/hipe.hrl hipe_sparc.hrl
+$(EBIN)/hipe_sparc_pp.beam: ../main/hipe.hrl hipe_sparc.hrl
+$(EBIN)/hipe_sparc_prop.beam: ../main/hipe.hrl hipe_sparc.hrl
 $(EBIN)/hipe_sparc_prop_env.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_ra.beam: ../main/hipe.hrl
+$(EBIN)/hipe_sparc_ra.beam: ../main/hipe.hrl hipe_sparc.hrl
 $(EBIN)/hipe_sparc_ra_ls.beam: ../main/hipe.hrl
 $(EBIN)/hipe_sparc_ra_memory.beam: ../main/hipe.hrl
-$(EBIN)/hipe_sparc_ra_post_ls.beam: ../main/hipe.hrl
+$(EBIN)/hipe_sparc_ra_post_ls.beam: ../main/hipe.hrl hipe_sparc.hrl
 $(EBIN)/hipe_sparc_registers.beam: ../rtl/hipe_literals.hrl

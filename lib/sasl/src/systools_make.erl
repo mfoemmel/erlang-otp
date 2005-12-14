@@ -28,6 +28,8 @@
 -export([read_release/2, get_release/2, get_release/3,
 	 get_release/4, pack_app/1]).
 
+-export([read_application/4]).
+
 -import(lists, [filter/2, keysort/2, keysearch/3, map/2, reverse/1,
 		append/1, foldl/3,  member/2, foreach/2]).
 

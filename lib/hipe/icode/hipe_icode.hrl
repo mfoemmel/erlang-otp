@@ -1,6 +1,8 @@
+%%=====================================================================
 %%
-%% This should only be used by hipe_icode.erl and hipe_beam_to_icode.erl!
+%% Contains record definitions for all Icode instructions.
 %%
+%%=====================================================================
 
 -record(icode, {'fun', params, closure, closure_arity, leaf, 
 		code, data, var_range, label_range, info=[]}).

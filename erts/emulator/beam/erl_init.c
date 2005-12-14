@@ -35,6 +35,7 @@
 #include "erl_mseg.h"
 #include "erl_nmgc.h"
 #include "erl_threads.h"
+#include "erl_bif_timer.h"
 
 #ifdef HIPE
 #include "hipe_mode_switch.h"	/* for hipe_mode_switch_init() */
@@ -238,6 +239,7 @@ erl_init(void)
     erts_bp_init();
     init_db(); /* Must be after init_emulator */
     init_time();
+    erts_bif_timer_init();
     erts_init_node_tables();
     init_dist();
     init_io();

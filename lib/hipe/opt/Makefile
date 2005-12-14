@@ -80,7 +80,6 @@ $(DOCS)/%.html:%.erl
 # ----------------------------------------------------
 
 
-
 # ----------------------------------------------------
 # Release Target
 # ---------------------------------------------------- 
@@ -93,4 +92,8 @@ release_spec: opt
 release_docs_spec:
 
 
+$(EBIN)/hipe_schedule.beam: ../sparc/hipe_sparc.hrl
+$(EBIN)/hipe_spill_minimize.beam: ../main/hipe.hrl
+$(EBIN)/hipe_ultra_mod2.beam: ../sparc/hipe_sparc.hrl
+$(EBIN)/hipe_ultra_prio.beam: ../sparc/hipe_sparc.hrl
 $(EBIN)/hipe_spill_minimize.beam: ../main/hipe.hrl

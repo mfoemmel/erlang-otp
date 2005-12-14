@@ -36,6 +36,7 @@
 -export([sparse_cond_const_propagate/1]).
 
 -include("../main/hipe.hrl").
+-include("hipe_icode.hrl").
 
 -define(CONST_PROP_MSG(Str,L),ok).
 %%-define(CONST_PROP_MSG(Str,L),io:format(Str,L)).
@@ -56,26 +57,26 @@
 visit_expression(Instruction, Environment) ->
   EvaluatedArguments =  [lookup_lattice_value(Argument, Environment) 
                          || Argument <- hipe_icode:args(Instruction)],
-  case hipe_icode:type(Instruction) of
-    move  ->
+  case Instruction of
+    #move{}  ->
       visit_move_or_fmove     (Instruction, EvaluatedArguments, Environment);
-    fmov  ->
+    #fmove{}  ->
       visit_move_or_fmove     (Instruction, EvaluatedArguments, Environment);
-    'if' ->
+    #'if'{} ->
       visit_if                (Instruction, EvaluatedArguments, Environment);
-    goto ->
+    #goto{} ->
       visit_goto              (Instruction, EvaluatedArguments, Environment);
-    type ->
+    #type{} ->
       visit_type              (Instruction, EvaluatedArguments, Environment);
-    call ->
+    #call{} ->
       visit_call              (Instruction, EvaluatedArguments, Environment);
-    switch_val ->
+    #switch_val{} ->
       visit_switch_val        (Instruction, EvaluatedArguments, Environment);
-    switch_tuple_arity ->
+    #switch_tuple_arity{} ->
       visit_switch_tuple_arity(Instruction, EvaluatedArguments, Environment);
-    begin_handler ->
+    #begin_handler{} ->
       visit_begin_handler     (Instruction, EvaluatedArguments, Environment);
-    begin_try ->
+    #begin_try{} ->
       visit_begin_try        (Instruction, EvaluatedArguments, Environment);
     _ ->
       %% label, end_try, comment, return, fail
@@ -154,9 +155,9 @@ get_switch_target([{CaseValue, Target} | CaseList], Argument, FailLabel) ->
 %%-----------------------------------------------------------------------------
 
 visit_move_or_fmove(Instruction, [SourceValue], Environment) ->
-  Destination = case hipe_icode:type(Instruction) of
-		  move  -> hipe_icode:move_dst(Instruction);
-		  fmove -> hipe_icode:fmove_dst(Instruction)
+  Destination = case Instruction of
+		  #move {} -> hipe_icode:move_dst(Instruction);
+		  #fmove{} -> hipe_icode:fmove_dst(Instruction)
 		end,
   {Environment1, SSAWork} = update_lattice_value({Destination, SourceValue},
 						 Environment),
@@ -422,22 +423,22 @@ evaluate_type_const(_Type, []) ->
 %%-----------------------------------------------------------------------------
 
 update_instruction(Instruction, Environment) ->
-  case hipe_icode:type(Instruction) of
-    call ->
+  case Instruction of
+    #call{} ->
       update_call(Instruction, Environment);
-    enter ->
+    #enter{} ->
       update_enter(Instruction, Environment);
-    'if' ->
+    #'if'{} ->
       update_if(Instruction, Environment);
-    move ->
+    #move{} ->
       update_move(Instruction, Environment);
-    phi ->
+    #phi{} ->
      update_phi(Instruction, Environment);
-    switch_val ->
+    #switch_val{} ->
       update_switch_val(Instruction, Environment);
-    type ->
+    #type{} ->
       update_type(Instruction, Environment);
-    switch_tuple_arity ->
+    #switch_tuple_arity{} ->
       update_switch_tuple_arity(Instruction, Environment);
     _ ->
       %% goto, comment, label, return, begin_handler, end_try,

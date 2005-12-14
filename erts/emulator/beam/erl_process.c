@@ -770,6 +770,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->msg.last = &p->msg.first;
     p->msg.save = &p->msg.first;
     p->msg.len = 0;
+    p->bif_timers = NULL;
 #ifndef SHARED_HEAP
     p->mbuf = NULL;
     p->mbuf_sz = 0;
@@ -947,6 +948,7 @@ void erts_init_empty_process(Process *p)
     p->msg.last = &p->msg.first;
     p->msg.save = &p->msg.first;
     p->msg.len = 0;
+    p->bif_timers = NULL;
     p->dictionary = NULL;
     p->debug_dictionary = NULL;
     p->ct = NULL;
@@ -1030,14 +1032,25 @@ static void delete_a_link(ErtsLink *lnk, void *dummy)
     erts_destroy_link(lnk);
 }
 
+/*
+ * p must be the currently executing process.
+ */
 static void
-delete_process0(Process* p, int do_delete)
+delete_process(Process* p)
 {
     ErlMessage* mp;
 #ifndef SHARED_HEAP
     ErlHeapFragment* bp;
 #endif
     int i;
+
+   if (p->reg != NULL)
+      unregister_name(p, p->reg->name);
+
+   cancel_timer(p);		/* Always cancel timer just in case */
+
+   if (p->bif_timers)
+       erts_cancel_bif_timers(p);
 
 #ifndef SHARED_HEAP
     /* Clean binaries and funs */
@@ -1160,26 +1173,8 @@ delete_process0(Process* p, int do_delete)
     /*
      * Don't free it here, just mark it.
      */
-    if (do_delete) {
-	ERTS_PROC_LESS_MEM(sizeof(Process));
-        erts_free(ERTS_ALC_T_PROC, (void *) p);
-    } else {
-        p->status = P_FREE;
-    }
+    p->status = P_FREE;
     processes_busy--;
-}
-
-/*
- * p must be the currently executing process.
- */
-static void
-delete_process(Process* p)
-{
-   if (p->reg != NULL)
-      unregister_name(p, p->reg->name);
-
-   cancel_timer(p);		/* Always cancel timer just in case */
-   delete_process0(p, 0);
 }
 
 void

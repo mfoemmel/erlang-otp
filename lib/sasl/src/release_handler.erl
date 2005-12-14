@@ -28,6 +28,9 @@
 	 remove_release/1, 
 	 which_releases/0, make_permanent/1, reboot_old_release/1,
 	 set_unpacked/2, set_removed/1, install_file/2]).
+-export([upgrade_app/2, downgrade_app/2, downgrade_app/3,
+	 upgrade_script/2, downgrade_script/3,
+	 eval_appup_script/4]).
 
 %% Internal exports
 -export([init/1, handle_call/3, handle_info/2, terminate/2,
@@ -321,6 +324,155 @@ create_RELEASES(Root, RelDir, RelFile, LibDirs) ->
 	    Rel2 = Rel#release{status = permanent},
 	    catch write_releases(RelDir, [Rel2], false)
     end.
+
+%%-----------------------------------------------------------------
+%% Func: upgrade_app(App, Dir) -> {ok, Unpurged}
+%%                              | restart_new_emulator
+%%                              | {error, Error}
+%% Types:
+%%   App = atom()
+%%   Dir = string() assumed to be application directory, the code
+%%         located under Dir/ebin
+%% Purpose: Upgrade to the version in Dir according to an appup file
+%%-----------------------------------------------------------------
+upgrade_app(App, NewDir) ->
+    try upgrade_script(App, NewDir) of
+	{ok, NewVsn, Script} ->
+	    eval_appup_script(App, NewVsn, NewDir, Script)
+    catch
+	throw:Reason ->
+	    {error, Reason}
+    end.
+
+%%-----------------------------------------------------------------
+%% Func: downgrade_app(App, Dir)
+%%       downgrade_app(App, Vsn, Dir) -> {ok, Unpurged}
+%%                                     | restart_new_emulator
+%%                                     | {error, Error}
+%% Types:
+%%   App = atom()
+%%   Vsn = string(), may be omitted if Dir == App-Vsn
+%%   Dir = string() assumed to be application directory, the code
+%%         located under Dir/ebin
+%% Purpose: Downgrade from the version in Dir according to an appup file
+%%          located in the ebin dir of the _current_ version
+%%-----------------------------------------------------------------
+downgrade_app(App, OldDir) ->
+    case string:tokens(filename:basename(OldDir), "-") of
+	[_AppS, OldVsn] ->
+	    downgrade_app(App, OldVsn, OldDir);
+	_ ->
+	    {error, {unknown_version, App}}
+    end.
+downgrade_app(App, OldVsn, OldDir) ->
+    try downgrade_script(App, OldVsn, OldDir) of
+	{ok, Script} ->
+	    eval_appup_script(App, OldVsn, OldDir, Script)
+    catch
+	throw:Reason ->
+	    {error, Reason}
+    end.
+
+upgrade_script(App, NewDir) ->
+    OldVsn = ensure_running(App),
+    OldDir = code:lib_dir(App),
+    {NewVsn, Script} = find_script(App, NewDir, OldVsn, up),
+    OldAppl = read_app(App, OldVsn, OldDir),
+    NewAppl = read_app(App, NewVsn, NewDir),
+    case systools_rc:translate_scripts(up,
+				       [Script],[NewAppl],[OldAppl]) of
+	{ok, LowLevelScript} ->
+	    {ok, NewVsn, LowLevelScript};
+	{error, Reason} ->
+	    throw(Reason)
+    end.
+
+downgrade_script(App, OldVsn, OldDir) ->
+    NewVsn = ensure_running(App),
+    NewDir = code:lib_dir(App),
+    {NewVsn, Script} = find_script(App, NewDir, OldVsn, down),
+    OldAppl = read_app(App, OldVsn, OldDir),
+    NewAppl = read_app(App, NewVsn, NewDir),
+    case systools_rc:translate_scripts(dn,
+				       [Script],[OldAppl],[NewAppl]) of
+	{ok, LowLevelScript} ->
+	    {ok, LowLevelScript};
+	{error, Reason} ->
+	    throw(Reason)
+    end.
+
+eval_appup_script(App, ToVsn, ToDir, Script) ->
+    EnvBefore = application_controller:prep_config_change(),
+    AppSpecL = read_appspec(App, ToDir),
+    Res = release_handler_1:eval_script(Script,
+					[], % [AppSpec]
+					[{App, ToVsn, ToDir}],
+					[]), % [Opt]
+    case Res of
+	{ok, _Unpurged} ->
+	    application_controller:config_change(EnvBefore),
+	    application_controller:change_application_data(AppSpecL,[]);
+	_Res ->
+	    ignore
+    end,
+    Res.
+
+ensure_running(App) ->
+    case lists:keysearch(App, 1, application:which_applications()) of
+	{value, {_App, _Descr, Vsn}} ->
+	    Vsn;
+	false ->
+	    throw({app_not_running, App})
+    end.
+
+find_script(App, Dir, OldVsn, UpOrDown) ->
+    Appup = filename:join([Dir, "ebin", atom_to_list(App)++".appup"]),
+    case file:consult(Appup) of
+	{ok, [{NewVsn, UpFromScripts, DownToScripts}]} ->
+	    Scripts = case UpOrDown of
+			  up -> UpFromScripts;
+			  down -> DownToScripts
+		      end,
+	    case lists:keysearch(OldVsn, 1, Scripts) of
+		{value, {_OldVsn, Script}} ->
+		    {NewVsn, Script};
+		false ->
+		    throw({version_not_in_appup, OldVsn})
+	    end;
+	{error, enoent} ->
+	    throw(no_appup_found);
+	{error, Reason} ->
+	    throw(Reason)
+    end.
+
+read_app(App, Vsn, Dir) ->
+    AppS = atom_to_list(App),
+    Path = [filename:join(Dir, "ebin")],
+    case systools_make:read_application(AppS, Vsn, Path, []) of
+	{ok, Appl} ->
+	    Appl;
+	{error, enoent} ->
+	    throw({no_app_found, Vsn, Dir});
+	{error, Reason} ->
+	    throw(Reason)
+    end.
+
+read_appspec(App, Dir) ->
+    AppS = atom_to_list(App),
+    Path = [filename:join(Dir, "ebin")],
+    case file:path_consult(Path, AppS++".app") of
+	{ok, AppSpecL, _File} ->
+	    AppSpecL;
+	{error, Reason} ->
+	    throw(Reason)
+    end.
+				      
+
+				     
+    
+	    
+    
+
 
 %%-----------------------------------------------------------------
 %% Call-back functions from gen_server

@@ -288,14 +288,6 @@ static void doit_node_link_net_exits(ErtsLink *lnk, void *vpdep)
 	    tup = TUPLE2(hp, am_nodedown, name);
 	    queue_message_tt(rp, bp, tup, NIL);
 	}
-#ifdef HEAP_FRAG_ELIM_TEST
-	if (SAVED_HEAP_TOP(rp) == NULL) {
-	    SAVED_HEAP_TOP(rp) = HEAP_TOP(rp);
-	    HEAP_TOP(rp) = HEAP_LIMIT(rp);
-	}
-#endif
-	MSO(rp).overhead = HEAP_SIZE(rp);
-	BUMP_ALL_REDS(rp);
     }
  done:
     erts_destroy_link(lnk);

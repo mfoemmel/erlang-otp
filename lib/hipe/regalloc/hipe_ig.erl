@@ -87,6 +87,7 @@ degree_is_trivially_colourable(Node, K, Degree) ->
 %%----------------------------------------------------------------------
 
 -record(adjset, {index, array}).
+-record(adjset_chunked, {index, chunks}).
 
 -define(BITS_PER_WORD, 8).
 -define(LOG2_BITS_PER_WORD, 3).
@@ -94,9 +95,30 @@ degree_is_trivially_colourable(Node, K, Degree) ->
 adjset_new(NrTemps) ->
   ArrayBits = (NrTemps * (NrTemps - 1)) div 2,
   ArrayWords = (ArrayBits + (?BITS_PER_WORD - 1)) bsr ?LOG2_BITS_PER_WORD,
-  Array = hipe_bifs:bytearray(ArrayWords, 0),
   Index = adjset_mk_index(NrTemps, []),
-  #adjset{index=Index,array=Array}.
+  case (catch(hipe_bifs:bytearray(ArrayWords, 0))) of
+    {'EXIT',_} ->
+      #adjset_chunked{index=Index,chunks=adjset_mk_chunks(ArrayWords)};
+    Array ->
+      #adjset{index=Index,array=Array}
+  end.
+
+-define(LOG2_CHUNK_BYTES, 16).
+-define(CHUNK_BYTES, (1 bsl ?LOG2_CHUNK_BYTES)).
+
+adjset_mk_chunks(ArrayBytes) ->
+  Tail =
+    case ArrayBytes band (?CHUNK_BYTES - 1) of
+      0 -> [];
+      LastChunkBytes -> [hipe_bifs:bytearray(LastChunkBytes, 0)]
+    end,
+  N = ArrayBytes bsr ?LOG2_CHUNK_BYTES,
+  adjset_mk_chunks(N, Tail).
+
+adjset_mk_chunks(0, Tail) ->
+  list_to_tuple(Tail);
+adjset_mk_chunks(N, Tail) ->
+  adjset_mk_chunks(N-1, [hipe_bifs:bytearray(?CHUNK_BYTES, 0) | Tail]).
 
 adjset_mk_index(0, Tail) ->
   list_to_tuple(Tail);
@@ -115,6 +137,22 @@ adjset_add_edge(U0, V0, Set=#adjset{index=Index,array=Array}) -> % PRE: U0 =/= V
   WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
   Word = hipe_bifs:bytearray_sub(Array, WordNr),
   hipe_bifs:bytearray_update(Array, WordNr, Word bor WordMask),
+  Set;
+adjset_add_edge(U0, V0, Set=#adjset_chunked{index=Index,chunks=Chunks}) -> % PRE: U0 =/= V0
+  {U,V} =
+    if U0 < V0 -> {U0,V0};
+       true -> {V0,U0}
+    end,
+  %% INV: U < V
+  BitNr = element(V+1, Index) + U,
+  WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
+  WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
+  %% here things become different
+  ChunkNr = WordNr bsr ?LOG2_CHUNK_BYTES,
+  Chunk = element(ChunkNr+1, Chunks),
+  ChunkOffset = WordNr band (?CHUNK_BYTES - 1),
+  Word = hipe_bifs:bytearray_sub(Chunk, ChunkOffset),
+  hipe_bifs:bytearray_update(Chunk, ChunkOffset, Word bor WordMask),
   Set.
 
 adjset_remove_edge(U0, V0, Set=#adjset{index=Index,array=Array}) -> % PRE: U0 =/= V0
@@ -128,6 +166,22 @@ adjset_remove_edge(U0, V0, Set=#adjset{index=Index,array=Array}) -> % PRE: U0 =/
   WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
   Word = hipe_bifs:bytearray_sub(Array, WordNr),
   hipe_bifs:bytearray_update(Array, WordNr, Word band (bnot WordMask)),
+  Set;
+adjset_remove_edge(U0, V0, Set=#adjset_chunked{index=Index,chunks=Chunks}) -> % PRE: U0 =/= V0
+  {U,V} =
+    if U0 < V0 -> {U0,V0};
+       true -> {V0,U0}
+    end,
+  %% INV: U < V
+  BitNr = element(V+1, Index) + U,
+  WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
+  WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
+  %% here things become different
+  ChunkNr = WordNr bsr ?LOG2_CHUNK_BYTES,
+  Chunk = element(ChunkNr+1, Chunks),
+  ChunkOffset = WordNr band (?CHUNK_BYTES - 1),
+  Word = hipe_bifs:bytearray_sub(Chunk, ChunkOffset),
+  hipe_bifs:bytearray_update(Chunk, ChunkOffset, Word band (bnot WordMask)),
   Set.
 
 adjset_are_adjacent(U0, V0, #adjset{index=Index,array=Array}) ->
@@ -141,6 +195,25 @@ adjset_are_adjacent(U0, V0, #adjset{index=Index,array=Array}) ->
   WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
   WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
   Word = hipe_bifs:bytearray_sub(Array, WordNr),
+  case Word band WordMask of
+    0 -> false;
+    _ -> true
+  end;
+adjset_are_adjacent(U0, V0, #adjset_chunked{index=Index,chunks=Chunks}) ->
+  {U,V} =
+    if U0 < V0 -> {U0,V0};
+       U0 == V0 -> exit({?MODULE,adjacent,U0,V0}); % XXX: probably impossible
+       true -> {V0,U0}
+    end,
+  %% INV: U < V
+  BitNr = element(V+1, Index) + U,
+  WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
+  WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
+  %% here things become different
+  ChunkNr = WordNr bsr ?LOG2_CHUNK_BYTES,
+  Chunk = element(ChunkNr+1, Chunks),
+  ChunkOffset = WordNr band (?CHUNK_BYTES - 1),
+  Word = hipe_bifs:bytearray_sub(Chunk, ChunkOffset),
   case Word band WordMask of
     0 -> false;
     _ -> true

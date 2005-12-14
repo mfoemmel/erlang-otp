@@ -27,35 +27,20 @@ SS_TMP = $(SS_ROOT)/tmp
 LIBPATH= $(ERL_TOP)/lib
 SCRIPT_PATH = -I$(LIBPATH)/kernel/ebin -I$(LIBPATH)/stdlib/ebin -I$(LIBPATH)/sasl/ebin
 
-ifeq ($(findstring win32,$(TARGET)),win32)
-
-# This is a temporary fix until start_sasl is moved within the sasl app
-# and each application can specify it's actions at install time (in Erlang).
 INSTALL_SCRIPTS = \
 	$(SS_ROOT)/start_clean.script \
 	$(SS_ROOT)/start_clean.boot \
 	$(SS_ROOT)/start_sasl.boot \
 	$(SS_ROOT)/start_sasl.script
-else
-ifeq ($(findstring vxworks,$(TARGET)),vxworks)
-
-INSTALL_SCRIPTS = \
-	$(SS_ROOT)/start_clean.script \
-	$(SS_ROOT)/start_clean.boot \
-	$(SS_ROOT)/start_sasl.boot \
-	$(SS_ROOT)/start_sasl.script
-else
-
-INSTALL_SCRIPTS = \
-	$(SS_ROOT)/start_clean.script \
-	$(SS_ROOT)/start_clean.boot
-endif
-endif 
 
 REL_SCRIPTS = \
 	$(SS_ROOT)/start_clean.rel \
 	$(SS_ROOT)/start_sasl.rel \
 	$(SS_ROOT)/start_all_example.rel
+
+ifneq ($(findstring win32,$(TARGET)),win32)
+RELEASES_SRC = RELEASES.src
+endif
 
 ##############################################################################
 # Get version numbers from the VSN files
@@ -72,9 +57,15 @@ include $(LIBPATH)/stdlib/vsn.mk
 
 ##############################################################################
 
-debug opt script: rel $(INSTALL_SCRIPTS)
+debug opt script: rel $(INSTALL_SCRIPTS) $(RELEASES_SRC)
 
 rel:	$(REL_SCRIPTS)
+
+RELEASES.src:
+	$(INSTALL_DIR) $(SS_TMP)
+	( cd $(SS_TMP) && \
+	$(ERL) -noinput +B -eval 'release_handler:create_RELEASES("%ERL_ROOT%", "$(SS_ROOT)", "$(SS_ROOT)/start_sasl.rel", []), halt()')
+	mv RELEASES RELEASES.src
 
 $(SS_ROOT)/start_clean.script \
 $(SS_ROOT)/start_clean.boot:	$(SS_ROOT)/start_clean.rel
@@ -170,6 +161,9 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: script
 	$(INSTALL_DIR) $(RELEASE_PATH)/releases/$(SYSTEM_VSN)
+ifneq ($(findstring win32,$(TARGET)),win32)
+	$(INSTALL_DATA) RELEASES.src $(RELEASE_PATH)/releases
+endif
 	$(INSTALL_DATA) $(INSTALL_SCRIPTS) $(REL_SCRIPTS) \
 	   $(RELEASE_PATH)/releases/$(SYSTEM_VSN)
 	$(INSTALL_DATA) start_clean.script $(RELEASE_PATH)/releases/$(SYSTEM_VSN)/start.script

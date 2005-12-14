@@ -208,7 +208,7 @@
 %%    next_msg      - []
 %%    select_msg    - []
 %%    set_timeout   - [Timeout]
-%%    clear_timeout - []	 %% stupid name - only resets message pointer
+%%    clear_timeout - []
 %%    suspend_msg   - []
 %%
 %% </pre>
@@ -496,7 +496,7 @@
 	 enter_args/1,
 	 enter_args_update/2,
 	 enter_type/1,
-	 %% is_enter/1,
+	 is_enter/1,
 	 
 	 mk_fmove/2,             %% mk_fmove(Dst, Src)
 
@@ -517,7 +517,7 @@
 	 %% mk_const_fun/4,	 %% mk_const_fun(MFA,U,I,Args)
 	 mk_var/1,               %% mk_var(Id)
 	 annotate_var/2,         %% annotate_var(Var, Type)
-	 %%unannotate_var/1,       %% unannotate_var(Var)
+	 %% unannotate_var/1,	 %% unannotate_var(Var)
 	 mk_reg/1,               %% mk_reg(Id)
 	 mk_fvar/1,              %% mk_fvar(Id)
 	 mk_new_var/0,           %% mk_new_var()
@@ -531,8 +531,7 @@
 %% Identifiers
 %%
 
--export([type/1,
-	 %% is_fail/1,
+-export([%% is_fail/1,
 	 is_return/1,
 	 is_move/1,
 	 %% is_begin_try/1,
@@ -960,6 +959,9 @@ enter_fun_update(E, Fun) ->
 enter_args(#enter{args=Args}) -> Args.
 enter_args_update(E, Args) -> E#enter{args=Args}.
 enter_type(#enter{type=Type}) -> Type.
+is_enter(#enter{}) -> true;
+is_enter(_) -> false.
+  
 
 mk_enter_primop(Op, Args) ->
   #enter{'fun'=Op, args=Args, type=primop}.
@@ -1094,46 +1096,46 @@ uses(Instr) ->
 
 %% @spec args(I::icode_instruction()) -> [var()]
 args(I) ->
-  case type(I) of
-    'if' -> if_args(I);
-    switch_val -> [switch_val_arg(I)];
-    switch_tuple_arity -> [switch_tuple_arity_arg(I)];
-    type -> type_args(I);
-    move -> [move_src(I)];
-    fail -> fail_args(I);
-    call -> call_args(I);
-    enter -> enter_args(I);
-    return -> return_vars(I);
-    fmove -> [fmove_src(I)];
-    phi -> phi_args(I);
-    %%    goto -> [];
-    %%    begin_try -> [];
-    %%    begin_handler -> [];
-    %%    end_try -> [];
-    %%    comment -> [];
-    %%    label -> []
+  case I of
+    #'if'{} -> if_args(I);
+    #switch_val{} -> [switch_val_arg(I)];
+    #switch_tuple_arity{} -> [switch_tuple_arity_arg(I)];
+    #type{} -> type_args(I);
+    #move{} -> [move_src(I)];
+    #fail{} -> fail_args(I);
+    #call{} -> call_args(I);
+    #enter{} -> enter_args(I);
+    #return{} -> return_vars(I);
+    #fmove{} -> [fmove_src(I)];
+    #phi{} -> phi_args(I);
+    %%    #goto{} -> [];
+    %%    #begin_try{} -> [];
+    %%    #begin_handler{} -> [];
+    %%    #end_try{} -> [];
+    %%    #comment{} -> [];
+    %%    #label{} -> []
     _ -> []
   end.
 
 defines(I) ->
-  case type(I) of
-    move -> remove_constants([move_dst(I)]);
-    fmove -> remove_constants([fmove_dst(I)]);
-    call -> remove_constants(call_dstlist(I));
-    begin_handler -> remove_constants(begin_handler_dstlist(I));
-    phi -> remove_constants([phi_dst(I)]);
-    %%    'if' -> [];
-    %%    switch_val -> [];
-    %%    switch_tuple_arity -> [];
-    %%    type -> [];
-    %%    goto -> [];
-    %%    fail -> [];
-    %%    enter -> [];
-    %%    return -> [];
-    %%    begin_try -> [];
-    %%    end_try -> [];
-    %%    comment -> [];
-    %%    label -> []
+  case I of
+    #move{} -> remove_constants([move_dst(I)]);
+    #fmove{} -> remove_constants([fmove_dst(I)]);
+    #call{} -> remove_constants(call_dstlist(I));
+    #begin_handler{} -> remove_constants(begin_handler_dstlist(I));
+    #phi{} -> remove_constants([phi_dst(I)]);
+    %%    #'if'{} -> [];
+    %%    #switch_val{} -> [];
+    %%    #switch_tuple_arity{} -> [];
+    %%    #type{} -> [];
+    %%    #goto{} -> [];
+    %%    #fail{} -> [];
+    %%    #enter{} -> [];
+    %%    #return{} -> [];
+    %%    #begin_try{} -> [];
+    %%    #end_try{} -> [];
+    %%    #comment{} -> [];
+    %%    #label{} -> []
     _ -> []
   end.
 
@@ -1161,14 +1163,6 @@ remove_constants([_|Xs]) ->
 %% Utilities
 %%
 
-%% @doc 
-%%    Returns the type of the Icode instruction X. Hopefully, this can
-%%    be compiled better than repeated calls to hipe_icode:is_branch/is_move/..
-%% @end
-
-type(I) when tuple(I) -> element(1, I);
-type(O) -> ?EXIT({bad_icode_type,O}).
-
 %%
 %% Substitution: replace occurrences of X by Y if {X,Y} is in the
 %%   Subst_list.
@@ -1177,49 +1171,49 @@ subst(Subst, X) ->
   subst_defines(Subst, subst_uses(Subst,X)).
 
 subst_uses(Subst, X) ->
-  case type(X) of
-    'if' -> X#'if'{args = subst_list(Subst, if_args(X))};
-    switch_val -> X#switch_val{arg = subst1(Subst, switch_val_arg(X))};
-    switch_tuple_arity ->
+  case X of
+    #'if'{} -> X#'if'{args = subst_list(Subst, if_args(X))};
+    #switch_val{} -> X#switch_val{arg = subst1(Subst, switch_val_arg(X))};
+    #switch_tuple_arity{} ->
       X#switch_tuple_arity{arg = subst1(Subst, switch_tuple_arity_arg(X))};
-    type -> X#type{args = subst_list(Subst, type_args(X))};
-    move -> X#move{src = subst1(Subst, move_src(X))};
-    fail -> X#fail{args = subst_list(Subst, fail_args(X))};
-    call -> X#call{args = subst_list(Subst, call_args(X))};
-    enter -> X#enter{args = subst_list(Subst, enter_args(X))};
-    return -> X#return{vars = subst_list(Subst, return_vars(X))};
-    fmove -> X#fmove{src = subst1(Subst, fmove_src(X))};
-    phi -> phi_argvar_subst(X, Subst);
-%%  goto -> X;
-%%  begin_try -> X;
-%%  begin_handler -> X;
-%%  end_try -> X;
-%%  comment -> X;
-%%  label -> X
+    #type{} -> X#type{args = subst_list(Subst, type_args(X))};
+    #move{} -> X#move{src = subst1(Subst, move_src(X))};
+    #fail{} -> X#fail{args = subst_list(Subst, fail_args(X))};
+    #call{} -> X#call{args = subst_list(Subst, call_args(X))};
+    #enter{} -> X#enter{args = subst_list(Subst, enter_args(X))};
+    #return{} -> X#return{vars = subst_list(Subst, return_vars(X))};
+    #fmove{} -> X#fmove{src = subst1(Subst, fmove_src(X))};
+    #phi{} -> phi_argvar_subst(X, Subst);
+%%  #goto{} -> X;
+%%  #begin_try{} -> X;
+%%  #begin_handler{} -> X;
+%%  #end_try{} -> X;
+%%  #comment{} -> X;
+%%  #label{} -> X
     _ -> X
   end.
 
 subst_defines(Subst, X) ->
-  case type(X) of
-    move -> X#move{dst = subst1(Subst, move_dst(X))};
-    call -> X#call{dstlist = subst_list(Subst, call_dstlist(X))};
-    begin_handler -> 
+  case X of
+    #move{} -> X#move{dst = subst1(Subst, move_dst(X))};
+    #call{} -> X#call{dstlist = subst_list(Subst, call_dstlist(X))};
+    #begin_handler{} -> 
       X#begin_handler{dstlist = subst_list(Subst,
 					   begin_handler_dstlist(X))};
-    fmove -> X#fmove{dst = subst1(Subst, fmove_dst(X))};
-    phi -> X#phi{dst = subst1(Subst, phi_dst(X))};
-%%    'if' -> X;
-%%    switch_val -> X;
-%%    switch_tuple_arity -> X;
-%%    type -> X;
-%%    goto -> X;
-%%    fail -> X;
-%%    enter -> X;
-%%    return -> X;
-%%    begin_try -> X;
-%%    end_try -> X;
-%%    comment -> X;
-%%    label -> X
+    #fmove{} -> X#fmove{dst = subst1(Subst, fmove_dst(X))};
+    #phi{} -> X#phi{dst = subst1(Subst, phi_dst(X))};
+%%    #'if'{} -> X;
+%%    #switch_val{} -> X;
+%%    #switch_tuple_arity{} -> X;
+%%    #type{} -> X;
+%%    #goto{} -> X;
+%%    #fail{} -> X;
+%%    #enter{} -> X;
+%%    #return{} -> X;
+%%    #begin_try{} -> X;
+%%    #end_try{} -> X;
+%%    #comment{} -> X;
+%%    #label{} -> X
     _ -> X
   end.
 
@@ -1235,20 +1229,20 @@ subst1([_|Xs],X) -> subst1(Xs,X).
 %%
 
 successors(Jmp) ->
-  case type(Jmp) of
-    'if' -> [if_true_label(Jmp), if_false_label(Jmp)];
-    goto -> [goto_label(Jmp)];
-    switch_val -> [switch_val_fail_label(Jmp)|
-		   lists:map(fun (C) -> element(2,C) end,
-			     switch_val_cases(Jmp))];
-    switch_tuple_arity -> [switch_tuple_arity_fail_label(Jmp)|
-			   lists:map(fun (C) -> element(2,C) end,
-				     switch_tuple_arity_cases(Jmp))];
-    type -> [type_true_label(Jmp), type_false_label(Jmp)];
-    call -> [call_continuation(Jmp)|
-	     case call_fail_label(Jmp) of [] -> []; L -> [L] end];
-    begin_try -> [begin_try_successor(Jmp), begin_try_label(Jmp)];
-    fail -> case fail_label(Jmp) of [] -> []; L -> [L] end;
+  case Jmp of
+    #'if'{} -> [if_true_label(Jmp), if_false_label(Jmp)];
+    #goto{} -> [goto_label(Jmp)];
+    #switch_val{} -> [switch_val_fail_label(Jmp)|
+		      lists:map(fun (C) -> element(2,C) end,
+				switch_val_cases(Jmp))];
+    #switch_tuple_arity{} -> [switch_tuple_arity_fail_label(Jmp)|
+			      lists:map(fun (C) -> element(2,C) end,
+					switch_tuple_arity_cases(Jmp))];
+    #type{} -> [type_true_label(Jmp), type_false_label(Jmp)];
+    #call{} -> [call_continuation(Jmp)|
+	        case call_fail_label(Jmp) of [] -> []; L -> [L] end];
+    #begin_try{} -> [begin_try_successor(Jmp), begin_try_label(Jmp)];
+    #fail{} -> case fail_label(Jmp) of [] -> []; L -> [L] end;
     _ -> []
   end.
 
@@ -1257,12 +1251,12 @@ successors(Jmp) ->
 %%
 
 fails_to(I) ->
-  case type(I) of
-    switch_val -> [switch_val_fail_label(I)];
-    switch_tuple_arity -> [switch_tuple_arity_fail_label(I)];
-    call -> [call_fail_label(I)];
-    begin_try -> [begin_try_label(I)];  % just for safety
-    fail -> [fail_label(I)];
+  case I of
+    #switch_val{} -> [switch_val_fail_label(I)];
+    #switch_tuple_arity{} -> [switch_tuple_arity_fail_label(I)];
+    #call{} -> [call_fail_label(I)];
+    #begin_try{} -> [begin_try_label(I)];  % just for safety
+    #fail{} -> [fail_label(I)];
     _ -> []
   end.
 
@@ -1275,8 +1269,8 @@ redirect_jmp(Jmp, ToOld, ToOld) ->
   Jmp;    % no need to do anything
 redirect_jmp(Jmp, ToOld, ToNew) ->
   NewIns =
-    case type(Jmp) of
-      'if' ->
+    case Jmp of
+      #'if'{} ->
 	NewJmp = case if_true_label(Jmp) of
 		   ToOld -> if_true_label_update(Jmp, ToNew);
 		   _ -> Jmp
@@ -1285,12 +1279,12 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 	  ToOld -> if_false_label_update(NewJmp, ToNew);
 	  _ -> NewJmp
 	end;
-      goto ->
+      #goto{} ->
 	case goto_label(Jmp) of
 	  ToOld -> Jmp#goto{label=ToNew};
 	  _ -> Jmp
 	end;
-      switch_val ->
+      #switch_val{} ->
 	NewJmp = case switch_val_fail_label(Jmp) of
 		   ToOld -> switch_val_fail_label_update(Jmp, ToNew);
 		   _ -> Jmp
@@ -1304,7 +1298,7 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 				    end, 
 				    switch_val_cases(NewJmp))
 			 };
-      switch_tuple_arity ->
+      #switch_tuple_arity{} ->
 	NewJmp = case switch_tuple_arity_fail_label(Jmp) of
 		   ToOld -> 
 		     Jmp#switch_tuple_arity{fail_label=ToNew};
@@ -1319,7 +1313,7 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 					    end, 
 					    switch_tuple_arity_cases(NewJmp))
 				 };
-      type ->
+      #type{} ->
 	NewJmp = case type_true_label(Jmp) of
 		   ToOld -> Jmp#type{true_label=ToNew};
 		   _ -> Jmp
@@ -1328,7 +1322,7 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 	  ToOld -> NewJmp#type{false_label=ToNew};
 	  _ -> NewJmp
 	end;
-      call -> 
+      #call{} -> 
 	NewCont = case call_continuation(Jmp) of
 		    ToOld -> ToNew;
 		    OldCont -> OldCont
@@ -1339,7 +1333,7 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 		  end,
 	Jmp#call{continuation = NewCont, 
 		 fail_label = NewFail};
-      begin_try ->
+      #begin_try{} ->
 	NewLabl = case begin_try_label(Jmp) of
 		    ToOld ->  ToNew;
 		    OldLab -> OldLab
@@ -1349,7 +1343,7 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 		    OldSucc -> OldSucc
 		  end,
 	Jmp#begin_try{label = NewLabl,successor=NewSucc};
-      fail ->
+      #fail{} ->
 	case fail_label(Jmp) of
 	  ToOld -> Jmp#fail{fail_label=ToNew};
 	  _ -> Jmp
@@ -1367,11 +1361,11 @@ simplify_branch(I) ->
   case ordsets:from_list(successors(I)) of
     [Label] ->
       Goto = mk_goto(Label),
-      case type(I) of
-	type -> Goto;
-	'if' -> Goto;
-	switch_tuple_arity -> Goto;
-	switch_val -> Goto;
+      case I of
+	#type{} -> Goto;
+	#'if'{} -> Goto;
+	#switch_tuple_arity{} -> Goto;
+	#switch_val{} -> Goto;
 	_ -> I
       end;
     _ -> I
@@ -1383,12 +1377,12 @@ simplify_branch(I) ->
 %%
 
 %% is_uncond(I) ->
-%%   case type(I) of
-%%     goto -> true;
-%%     fail -> true;
-%%     enter -> true;
-%%     return -> true;
-%%     call -> 
+%%   case I of
+%%     #goto{} -> true;
+%%     #fail{} -> true;
+%%     #enter{} -> true;
+%%     #return{} -> true;
+%%     #call{} -> 
 %%       case call_fail_label(I) of
 %% 	[] -> 
 %% 	  case call_continuation(I) of
@@ -1407,14 +1401,14 @@ simplify_branch(I) ->
 %% @end
 
 is_branch(Instr) ->
-  case type(Instr) of
-    'if' -> true;
-    switch_val -> true;
-    switch_tuple_arity -> true;
-    type -> true;
-    goto -> true;
-    fail -> true;
-    call -> 
+  case Instr of
+    #'if'{} -> true;
+    #switch_val{} -> true;
+    #switch_tuple_arity{} -> true;
+    #type{} -> true;
+    #goto{} -> true;
+    #fail{} -> true;
+    #call{} -> 
       case call_fail_label(Instr) of
 	[] -> 
 	  case call_continuation(Instr) of
@@ -1423,9 +1417,9 @@ is_branch(Instr) ->
 	  end;
 	_ -> true
       end;
-    enter -> true;
-    return -> true;
-    begin_try -> true;
+    #enter{} -> true;
+    #return{} -> true;
+    #begin_try{} -> true;
     _ -> false
   end.
 
@@ -1499,12 +1493,12 @@ no_comments([I|Xs]) ->
 %% result is not used).
 
 is_safe(Instr) ->
-  case type(Instr) of
-    move -> true;
-    fmove -> true;
-    phi -> true;
-    begin_handler -> true;
-    call ->
+  case Instr of
+    #move{} -> true;
+    #fmove{} -> true;
+    #phi{} -> true;
+    #begin_handler{} -> true;
+    #call{} ->
       case call_fun(Instr) of
 	{M,F,A} ->
 	  erl_bifs:is_safe(M,F,A);

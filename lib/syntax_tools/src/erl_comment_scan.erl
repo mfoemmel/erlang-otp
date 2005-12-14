@@ -20,7 +20,7 @@
 %%
 %% Author contact: richardc@csd.uu.se
 %%
-%% $Id: erl_comment_scan.erl,v 1.16 2003/11/24 15:05:41 richardc Exp $
+%% $Id$
 %%
 %% =====================================================================
 %%

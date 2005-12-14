@@ -748,10 +748,11 @@ cached(Key) ->
 %% #ieval.level is set, the other fields must be set in this function
 fnk_clauses([{clause,Line,Pars,Gs,Body}|Cs], M, F, As, Bs0, Ieval) ->
     case head_match(Pars, As, [], Bs0) of
-	{match,Bs} ->
+	{match,Bs1} ->
+	    Bs = add_bindings(Bs1, Bs0),
 	    case guard(Gs, Bs) of
 		true ->
-		    seq(Body, add_bindings(Bs, Bs0),
+		    seq(Body, Bs,
 			Ieval#ieval{line=Line,
 				    module=M,function=F,arguments=As});
 		false ->

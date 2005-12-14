@@ -70,7 +70,9 @@ encode_message([{version3,prev3a}|EC], 3, MegaMsg) ->
 encode_message([{version3,v3}|EC], 3, MegaMsg) ->
     megaco_compact_text_encoder_v3:encode_message(EC, MegaMsg);
 encode_message(EC, 3, MegaMsg) ->
-    megaco_compact_text_encoder_v3:encode_message(EC, MegaMsg).
+    megaco_compact_text_encoder_v3:encode_message(EC, MegaMsg);
+encode_message(EC, V, MegaMsg) ->
+    {error, {bad_version, V, EC, MegaMsg}}.
 
 
 %%----------------------------------------------------------------------
@@ -101,6 +103,12 @@ decode_message([], _, Bin) when binary(Bin) ->
 	{ok, Tokens, 3, _LastLine} ->
 	    do_decode_message(?V3_PARSE_MOD, Tokens, Bin);
 
+	{ok, _Tokens, V, _LastLine} ->
+	    {error, {unsupported_version, V}};
+
+	{error, Reason, Tokens, Line} ->
+	    parse_error(Reason, Line, Tokens, Bin);
+
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
     end;
@@ -114,6 +122,12 @@ decode_message([{version3,prev3b}], _, Bin) when binary(Bin) ->
 
 	{ok, Tokens, 3, _LastLine} ->
 	    do_decode_message(?PREV3B_PARSE_MOD, Tokens, Bin);
+
+	{ok, _Tokens, V, _LastLine} ->
+	    {error, {unsupported_version, V}};
+
+	{error, Reason, Tokens, Line} ->
+	    parse_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
@@ -129,6 +143,12 @@ decode_message([{version3,prev3a}], _, Bin) when binary(Bin) ->
 	{ok, Tokens, 3, _LastLine} ->
 	    do_decode_message(?PREV3A_PARSE_MOD, Tokens, Bin);
 
+	{ok, _Tokens, V, _LastLine} ->
+	    {error, {unsupported_version, V}};
+
+	{error, Reason, Tokens, Line} ->
+	    parse_error(Reason, Line, Tokens, Bin);
+
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
     end;
@@ -142,6 +162,12 @@ decode_message([{version3,v3}], _, Bin) when binary(Bin) ->
 
 	{ok, Tokens, 3, _LastLine} ->
 	    do_decode_message(?V3_PARSE_MOD, Tokens, Bin);
+
+	{ok, _Tokens, V, _LastLine} ->
+	    {error, {unsupported_version, V}};
+
+	{error, Reason, Tokens, Line} ->
+	    parse_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
@@ -157,6 +183,12 @@ decode_message([{flex, Port}], _, Bin) when binary(Bin) ->
 	{ok, Tokens, 3, _LastLine} ->
 	    do_decode_message(?V3_PARSE_MOD, Tokens, Bin);
 
+	{ok, _Tokens, V, _LastLine} ->
+	    {error, {unsupported_version, V}};
+
+	{error, Reason, Tokens, Line} ->
+	    parse_error(Reason, Line, Tokens, Bin);
+
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
     end;
@@ -170,6 +202,12 @@ decode_message([{version3,prev3b},{flex, Port}], _, Bin) when binary(Bin) ->
 
 	{ok, Tokens, 3, _LastLine} ->
 	    do_decode_message(?PREV3B_PARSE_MOD, Tokens, Bin);
+
+	{ok, _Tokens, V, _LastLine} ->
+	    {error, {unsupported_version, V}};
+
+	{error, Reason, Tokens, Line} ->
+	    parse_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
@@ -185,6 +223,12 @@ decode_message([{version3,prev3a},{flex, Port}], _, Bin) when binary(Bin) ->
 	{ok, Tokens, 3, _LastLine} ->
 	    do_decode_message(?PREV3A_PARSE_MOD, Tokens, Bin);
 
+	{ok, _Tokens, V, _LastLine} ->
+	    {error, {unsupported_version, V}};
+
+	{error, Reason, Tokens, Line} ->
+	    parse_error(Reason, Line, Tokens, Bin);
+
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
     end;
@@ -198,6 +242,12 @@ decode_message([{version3,v3},{flex, Port}], _, Bin) when binary(Bin) ->
 
 	{ok, Tokens, 3, _LastLine} ->
 	    do_decode_message(?V3_PARSE_MOD, Tokens, Bin);
+
+	{ok, _Tokens, V, _LastLine} ->
+	    {error, {unsupported_version, V}};
+
+	{error, Reason, Tokens, Line} ->
+	    parse_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
@@ -251,7 +301,9 @@ encode_transaction([{version3,prev3a}|EC], 3, Trans) ->
 encode_transaction([{version3,v3}|EC], 3, Trans) ->
     megaco_compact_text_encoder_v3:encode_transaction(EC, Trans);
 encode_transaction(EC, 3, Trans) ->
-    megaco_compact_text_encoder_v3:encode_transaction(EC, Trans).
+    megaco_compact_text_encoder_v3:encode_transaction(EC, Trans);
+encode_transaction(EC, V, Trans) ->
+    {error, {bad_version, V, EC, Trans}}.
 
 
 %%----------------------------------------------------------------------
@@ -278,7 +330,9 @@ encode_action_requests([{version3,v3}|EC], 3, ActReqs)
   when list(ActReqs) ->
     megaco_compact_text_encoder_v3:encode_action_requests(EC, ActReqs);
 encode_action_requests(EC, 3, ActReqs) when list(ActReqs) ->
-    megaco_compact_text_encoder_v3:encode_action_requests(EC, ActReqs).
+    megaco_compact_text_encoder_v3:encode_action_requests(EC, ActReqs);
+encode_action_requests(EC, V, ActReqs) ->
+    {error, {bad_version, V, EC, ActReqs}}.
 
 
 %%----------------------------------------------------------------------
@@ -300,7 +354,9 @@ encode_action_request([{version3,prev3a}|EC], 3, ActReq) ->
 encode_action_request([{version3,v3}|EC], 3, ActReq) ->
     megaco_compact_text_encoder_v3:encode_action_request(EC, ActReq);
 encode_action_request(EC, 3, ActReq) ->
-    megaco_compact_text_encoder_v3:encode_action_request(EC, ActReq).
+    megaco_compact_text_encoder_v3:encode_action_request(EC, ActReq);
+encode_action_request(EC, V, ActReq) ->
+    {error, {bad_version, V, EC, ActReq}}.
 
 
 %%----------------------------------------------------------------------
@@ -322,7 +378,9 @@ encode_command_request([{version3,prev3a}|EC], 3, CmdReq) ->
 encode_command_request([{version3,v3}|EC], 3, CmdReq) ->
     megaco_compact_text_encoder_v3:encode_command_request(EC, CmdReq);
 encode_command_request(EC, 3, CmdReq) ->
-    megaco_compact_text_encoder_v3:encode_command_request(EC, CmdReq).
+    megaco_compact_text_encoder_v3:encode_command_request(EC, CmdReq);
+encode_command_request(EC, V, CmdReq) ->
+    {error, {bad_version, V, EC, CmdReq}}.
 
 
 %%----------------------------------------------------------------------
@@ -344,7 +402,9 @@ encode_action_reply([{version3,prev3a}|EC], 3, ActRep) ->
 encode_action_reply([{version3,v3}|EC], 3, ActRep) ->
     megaco_compact_text_encoder_v3:encode_action_reply(EC, ActRep);
 encode_action_reply(EC, 3, ActRep) ->
-    megaco_compact_text_encoder_v3:encode_action_reply(EC, ActRep).
+    megaco_compact_text_encoder_v3:encode_action_reply(EC, ActRep);
+encode_action_reply(EC, V, ActRep) ->
+    {error, {bad_version, V, EC, ActRep}}.
 
 
 % d(F) ->

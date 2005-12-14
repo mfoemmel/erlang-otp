@@ -30,10 +30,10 @@
 
 typedef unsigned long HashValue;
 
-typedef FUNCTION(int,(*HCMP_FUN),(void*, void*));
-typedef FUNCTION(HashValue,(*H_FUN),(void*));
-typedef FUNCTION(void*,(*HALLOC_FUN), (void*));
-typedef FUNCTION(void,(*HFREE_FUN), (void*));
+typedef int (*HCMP_FUN)(void*, void*);
+typedef HashValue (*H_FUN)(void*);
+typedef void* (*HALLOC_FUN)(void*);
+typedef void (*HFREE_FUN)(void*);
 
 /*
 ** This bucket must be placed in top of 
@@ -87,6 +87,7 @@ int   hash_table_sz(Hash *);
 void* hash_get(Hash*, void*);
 void* hash_put(Hash*, void*);
 void* hash_erase(Hash*, void*);
+void* hash_remove(Hash*, void*);
 void  hash_foreach(Hash*, void (*func)(void *, void *), void *);
 
 #endif

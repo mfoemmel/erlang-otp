@@ -17,6 +17,7 @@
 %-endif.
 %-define(TIMING,true).
 -include("../main/hipe.hrl").
+-include("hipe_sparc.hrl").
 
 %% hipe:c({beam_inv_opcodes,opcode,1},[o2,time]).
 
@@ -67,8 +68,8 @@
 %% 
 %%       straighten(Ls, CFG, CFG1, Vis0);
 %%     false ->
-%%       case hipe_sparc:type(Jmp) of 
-%% 	jmp ->
+%%       case Jmp of 
+%% 	#jmp{} ->
 %% 	  straighten(Ls++hipe_sparc:jmp_destinations(Jmp), CFG, NewCFG, Vis0);
 %% 	_ ->
 %% 	  straighten(Ls, CFG, NewCFG, Vis0)
@@ -82,34 +83,34 @@
 %% -------------------------------------------------------------------
 
 %% is_cond(I) ->
-%%   case hipe_sparc:type(I) of
-%%     br -> true;
-%%     b -> true;
+%%   case I of
+%%     #br{} -> true;
+%%     #b{} -> true;
 %%     _ -> false
 %%   end.
 %% 
 %% cond_pred(I) ->
-%%   case hipe_sparc:type(I) of
-%%     br -> hipe_sparc:br_pred(I);
-%%     b -> hipe_sparc:b_pred(I)
+%%   case I of
+%%     #br{} -> hipe_sparc:br_pred(I);
+%%     #b{} -> hipe_sparc:b_pred(I)
 %%   end.
 %% 
 %% cond_false_label(B) ->
-%%   case hipe_sparc:type(B) of
-%%     br -> hipe_sparc:br_false_label(B);
-%%     b -> hipe_sparc:b_false_label(B)
+%%   case B of
+%%     #br{} -> hipe_sparc:br_false_label(B);
+%%     #b{} -> hipe_sparc:b_false_label(B)
 %%   end.
 %% 
 %% cond_false_label_update(B, NewTrue) ->
-%%   case hipe_sparc:type(B) of
-%%     br -> hipe_sparc:br_false_label_update(B, NewTrue);
-%%     b -> hipe_sparc:b_false_label_update(B, NewTrue)
+%%   case B of
+%%     #br{} -> hipe_sparc:br_false_label_update(B, NewTrue);
+%%     #b{} -> hipe_sparc:b_false_label_update(B, NewTrue)
 %%   end.
 %% 
 %% switch_cond(B) ->
-%%   case hipe_sparc:type(B) of
-%%     br -> switch_br(B);
-%%     b -> switch_b(B)
+%%   case B of
+%%     #br{} -> switch_br(B);
+%%     #b{} -> switch_b(B)
 %%   end.
 
 %%
@@ -253,69 +254,6 @@
 %	 {[I|NewIs], Delay}
 %   end.
 
-
-%
-% true if I is an instruction that can be moved to a delay slot
-%
-%
-
-%is_delay_instr(I) ->
-%   case hipe_sparc:type(I) of
-%      comment -> false;
-%      load_address -> false;
-%      load_atom -> false;
-%
-      %% (Happi) Tests have indicated that puting loads 
-      %%         in the delayslot can slow down code...
-      %%         ... but it can also speed up code.
-      %%         the impact is about 10 - 20 % on small bms
-      %%         on the average you loose 1-2 % by not putting
-      %%         loads in delayslots
-      %% load -> false;
-%
-%      _ -> true
-%   end.
-
-
-
-%
-% Split a list of instructions to a list of lists of instructions
-% Where each sublist ends with a branch.
-%
-
-%split_at_branch([]) ->
-%   [];
-%split_at_branch([I]) ->
-%   [[I]];
-%split_at_branch([I|Is]) ->
-%   case hipe_sparc:is_any_branch(I) of
-%      true ->
-%	 [[I] | split_at_branch(Is)];
-%      false ->
-%	 [Same|Lists] = split_at_branch(Is),
-%	 [[I|Same]|Lists]
-%   end.
-
-
-%
-% 
-%
-
-%peephole([]) ->
-%   [];
-%peephole([I|Is]) ->
-%   case hipe_sparc:type(I) of
-%      move ->
-%	 case hipe_sparc:move_src(I) =:= hipe_sparc:move_dest(I) of
-%	    true ->
-%	       peephole(Is);
-%	    false ->
-%	       [I | peephole(Is)]
-%	 end;
-%      _ ->
-%	 [I | peephole(Is)]
-%   end.
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% none_visited() ->
@@ -377,8 +315,8 @@ split_instrs([I0|Is], RevCode, Status) ->
 %% Ensure that correct addressing modes are used.
 %%
 fix_addressing_mode(I) ->
-  case hipe_sparc:type(I) of
-     alu ->
+  case I of
+    #alu{} ->
       Src1 = hipe_sparc:alu_src1(I),
       Src2 = hipe_sparc:alu_src2(I),
       case {hipe_sparc:is_imm(Src1),hipe_sparc:is_imm(Src2),
@@ -394,58 +332,56 @@ fix_addressing_mode(I) ->
 	_ ->
 	  unchanged
       end;
-    alu_cc ->
-       Src1 = hipe_sparc:alu_cc_src1(I),
-       Src2 = hipe_sparc:alu_cc_src2(I),
-	 case {hipe_sparc:is_imm(Src1),hipe_sparc:is_imm(Src2),
-	       is_commutative(hipe_sparc:alu_cc_operator(I))} of
-	   {true,false,true} ->
-	     I0 = hipe_sparc:alu_cc_src1_update(I, Src2),
-	     [hipe_sparc:alu_cc_src2_update(I0, Src1)];
-	   {true,_,_} ->
-	     Tmp = hipe_sparc:mk_new_reg(),
-	     Mov = hipe_sparc:move_create(Tmp, Src1),
-	     NewI = hipe_sparc:alu_cc_src1_update(I, Tmp),
-	     [Mov, NewI];
-	   _ ->
-	     unchanged
-	 end;
-      load ->
-	 Src0 = hipe_sparc:load_src(I),
-	 Off0 = hipe_sparc:load_off(I),
-	 case loadstore_operand(Src0, Off0) of
-	    {Src1, Off1} ->
-	       [hipe_sparc:load_off_update(hipe_sparc:load_src_update(I, Src1), Off1)];
-	    _NoChange -> unchanged
-	 end;
-      store ->
-	 Dst0 = hipe_sparc:store_dest(I),
-	 Off0 = hipe_sparc:store_off(I),
-         Src1 = hipe_sparc:store_src(I),
-         {I1, Changed} =
-     	  case loadstore_operand(Dst0, Off0) of
-	   {Dst1, Off1} ->
-	       {hipe_sparc:store_off_update(
-		  hipe_sparc:store_dest_update(I, Dst1),
-		  Off1),
-		true};
-	    unchanged ->
-	       {I, false}
-	  end,
-         case hipe_sparc:is_imm(Src1) of
-	   true ->
-	       Tmp = hipe_sparc:mk_new_reg(),
-	       Mov = hipe_sparc:move_create(Tmp, Src1),
-	       NewI = hipe_sparc:store_src_update(I1,Tmp),
-	       [Mov, NewI];
-	   false ->
-	     if Changed == true -> [I1];
-	        true -> unchanged
-             end
-	 end;
+    #alu_cc{} ->
+      Src1 = hipe_sparc:alu_cc_src1(I),
+      Src2 = hipe_sparc:alu_cc_src2(I),
+      case {hipe_sparc:is_imm(Src1),hipe_sparc:is_imm(Src2),
+	    is_commutative(hipe_sparc:alu_cc_operator(I))} of
+	{true,false,true} ->
+	  I0 = hipe_sparc:alu_cc_src1_update(I, Src2),
+	  [hipe_sparc:alu_cc_src2_update(I0, Src1)];
+	{true,_,_} ->
+	  Tmp = hipe_sparc:mk_new_reg(),
+	  Mov = hipe_sparc:move_create(Tmp, Src1),
+	  NewI = hipe_sparc:alu_cc_src1_update(I, Tmp),
+	  [Mov, NewI];
+	_ ->
+	  unchanged
+      end;
+    #load{} ->
+      Src0 = hipe_sparc:load_src(I),
+      Off0 = hipe_sparc:load_off(I),
+      case loadstore_operand(Src0, Off0) of
+	{Src1, Off1} ->
+	  [hipe_sparc:load_off_update(hipe_sparc:load_src_update(I, Src1), Off1)];
+	_NoChange -> unchanged
+      end;
+    #store{} ->
+      Dst0 = hipe_sparc:store_dest(I),
+      Off0 = hipe_sparc:store_off(I),
+      Src1 = hipe_sparc:store_src(I),
+      {I1, Changed} =
+     	case loadstore_operand(Dst0, Off0) of
+	  {Dst1, Off1} ->
+	    {hipe_sparc:store_off_update(hipe_sparc:store_dest_update(I, Dst1), Off1),
+	     true};
+	  unchanged ->
+	    {I, false}
+	end,
+      case hipe_sparc:is_imm(Src1) of
+	true ->
+	  Tmp = hipe_sparc:mk_new_reg(),
+	  Mov = hipe_sparc:move_create(Tmp, Src1),
+	  NewI = hipe_sparc:store_src_update(I1,Tmp),
+	  [Mov, NewI];
+	false ->
+	  if Changed == true -> [I1];
+	     true -> unchanged
+          end
+      end;
       %% XXX: jmp, jmp_link?
-      _ -> unchanged
-   end.
+    _ -> unchanged
+  end.
 
 
 loadstore_operand(Opnd1, Opnd2) ->

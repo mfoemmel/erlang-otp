@@ -21,8 +21,8 @@
 -module(megaco_test_generator).
 
 -export([start_link/1, start_link/2, stop/1, 
-	 tcp/2,    tcp_await_reply/1, 
-	 megaco/2, megaco_await_reply/1, megaco_await_reply/2
+	 tcp/2, tcp/3, tcp_await_reply/1, 
+	 megaco/2, megaco/3, megaco_await_reply/1, megaco_await_reply/2
 	]).
 
 %% Internal exports
@@ -50,7 +50,12 @@
 
 %%----------------------------------------------------------------------
 
--record(state, {parent, handler, name}).
+-define(TIMEOUT, timer:minutes(5)).
+
+
+%%----------------------------------------------------------------------
+
+-record(state, {parent, handler, name, timer}).
 
 %% A TCP sequence generator data record
 -record(tcp, 
@@ -108,15 +113,23 @@ stop(Pid) ->
     request(Pid, stop).
 
 
-tcp(Pid, Instructions) when pid(Pid), list(Instructions) ->
-    request(Pid, {tcp, Instructions}).
+tcp(Pid, Instructions) ->
+    tcp(Pid, Instructions, ?TIMEOUT).
+
+tcp(Pid, Instructions, Timeout) 
+  when is_pid(Pid) and is_list(Instructions) and is_integer(Timeout) ->
+    request(Pid, {tcp, Instructions, Timeout}).
 
 tcp_await_reply(Pid) ->
     await_reply(Pid, tcp_reply).
 
 
-megaco(Pid, Instructions) when pid(Pid), list(Instructions) ->
-    request(Pid, {megaco, Instructions}).
+megaco(Pid, Instructions) ->
+    megaco(Pid, Instructions, ?TIMEOUT).
+
+megaco(Pid, Instructions, Timeout) 
+  when is_pid(Pid) and is_list(Instructions) and is_integer(Timeout) ->
+    request(Pid, {megaco, Instructions, Timeout}).
 
 megaco_await_reply(Pid) ->
     await_reply(Pid, megaco_reply).
@@ -164,31 +177,53 @@ loop(#state{parent = Parent} = State) ->
 	    abort(State),
 	    loop(State);
 	    
-	{{tcp, Instructions}, Parent} ->
+	{{tcp, Instructions, Timeout}, Parent} ->
 	    d("loop -> received tcp request"),
 	    Handler = start_tcp_handler(State#state.name, Instructions),
 	    d("loop -> tcp handler: ~p", [Handler]),
-	    loop(State#state{handler = Handler});
+	    Timer = erlang:send_after(Timeout, self(), tcp_timeout),
+	    loop(State#state{handler = Handler, timer = Timer});
 
 	{tcp_result, Pid, Res} when State#state.handler == Pid ->
 	    d("loop -> received tcp result: ~n~p", [Res]),
 	    Parent ! {tcp_reply, self(), Res},
-	    loop(State#state{handler = undefined});
+	    Timer = State#state.timer,
+	    Time = erlang:cancel_timer(Timer),
+	    d("loop -> Timer: ~p", [Time]),
+	    loop(State#state{handler = undefined, timer = undefined});
 
-	{{megaco, Instructions}, Parent} ->
+	{{megaco, Instructions, Timeout}, Parent} ->
 	    d("loop -> received megaco request"),
 	    Handler = start_megaco_handler(State#state.name, Instructions),
 	    d("loop -> megaco handler: ~p", [Handler]),
-	    loop(State#state{handler = Handler});
+	    Timer = erlang:send_after(Timeout, self(), megaco_timeout),
+	    loop(State#state{handler = Handler, timer = Timer});
 
 	{megaco_result, Pid, Res} when State#state.handler == Pid ->
 	    d("loop -> received megaco_reply"),
 	    Parent ! {megaco_reply, self(), Res},
-	    loop(State#state{handler = undefined});
+	    Timer = State#state.timer,
+	    Time = erlang:cancel_timer(Timer),
+	    d("loop -> Timer: ~p", [Time]),
+	    loop(State#state{handler = undefined, timer = undefined});
 
 	{'EXIT', Handler, Reason} when State#state.handler == Handler ->
 	    abort(State),
 	    exit({handler_exit, Reason});
+
+	tcp_timeout ->
+	    d("loop -> received tcp-timeout"),
+	    Handler = State#state.handler,
+	    exit(Handler, kill),
+	    Parent ! {tcp_reply, self(), {error, timeout}},
+	    loop(State#state{handler = undefined, timer = undefined});
+
+	megaco_timeout ->
+	    d("loop -> received megaco-timeout"),
+	    Handler = State#state.handler,
+	    exit(Handler, kill),
+	    Parent ! {megaco_reply, self(), {error, timeout}},
+	    loop(State#state{handler = undefined, timer = undefined});
 
 	Any ->
 	    p("loop -> received "
@@ -214,6 +249,7 @@ start_tcp_handler(Name, Instructions) ->
 tcp_handler_main(Name, Instructions, Parent) ->
     put(name, Name),
     {Tcp, Reply} = handle_tcp(Instructions),
+    close(Tcp), %% attempt to close just in case
     Parent ! {tcp_result, self(), Reply},
     receive
 	{stop, Parent} ->
@@ -323,12 +359,30 @@ do_tcp({connect, {Addr, Port, To}}, Tcp) ->
 	    tcp_error(connect, Error)
     end;
 
+%% Already encoded
+do_tcp({send, Desc, Bin}, #tcp{connection = Sock} = Tcp) 
+  when is_binary(Bin) ->
+    p("send ~s message", [Desc]),
+    NewBin = add_tpkt_header(Bin),
+    d("send -> tpkt header added [~w], now send", [sz(NewBin)]),
+    case (catch gen_tcp:send(Sock, NewBin)) of
+	ok ->
+	    d("send -> message sent"),
+	    Tcp;
+	Error ->
+	    e("send -> send failed: ~n~p",[Error]),
+	    close(Sock),
+	    close(Tcp#tcp.listen),
+	    tcp_error(send, {send_error, Error})
+    end;
+
 do_tcp({send, Desc, Msg}, #tcp{connection = Sock,
 			       encode     = Encode} = Tcp) ->
     p("send ~s message", [Desc]),
     case (catch Encode(Msg)) of
 	{ok, Bin} ->
-	    d("send -> message encoded [~w], now add tpkt header", [sz(Bin)]),
+	    d("send -> message encoded [~w], now add tpkt header: ~n~s", 
+	      [sz(Bin), binary_to_list(Bin)]),
 	    NewBin = add_tpkt_header(Bin),
 	    d("send -> tpkt header added [~w], now send", [sz(NewBin)]),
 	    case (catch gen_tcp:send(Sock, NewBin)) of
@@ -495,14 +549,13 @@ parse_tcp([{expect_nothing, To}|Instrs], RevInstrs)
     parse_tcp(Instrs, [{expect_nothing, To}|RevInstrs]);
 
 parse_tcp([{send, Desc, Msg}|Instrs], RevInstrs) 
-  when list(Desc),
-       tuple(Msg) ->
+  when is_list(Desc) and (is_tuple(Msg) or is_binary(Msg)) ->
     parse_tcp(Instrs, [{send, Desc, Msg}|RevInstrs]);
 
 parse_tcp([{expect_receive, Desc, Verify}|Instrs], RevInstrs) 
   when list(Desc), 
        function(Verify) ->
-    ExpRecv = {expect_receive, {Verify, infinity}},
+    ExpRecv = {expect_receive, Desc, {Verify, infinity}},
     parse_tcp(Instrs, [ExpRecv|RevInstrs]);
 
 parse_tcp([{expect_receive, Desc, {Verify, To}}|Instrs], RevInstrs) 
@@ -1215,6 +1268,8 @@ handle_megaco_callback_reply(_, _, _, _) ->
     
 %%% ----------------------------------------------------------------
 
+close(#tcp{connection = Sock}) ->
+    close(Sock);
 close(undefined) ->	   
     ok;
 close(Sock) ->

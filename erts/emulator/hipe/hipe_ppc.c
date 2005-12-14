@@ -278,25 +278,47 @@ static void patch_imm16(Uint32 *address, unsigned int imm16)
 }
 
 #if defined(__powerpc64__)
+static void patch_li64(Uint32 *address, Uint64 value)
+{
+    patch_imm16(address+0, value >> 48);/* addis r,0,value@highest */
+    patch_imm16(address+1, value >> 32);/* ori r,r,value@higher */
+    /* sldi r,r,32 */
+    patch_imm16(address+3, value >> 16);/* oris r,r,value@h */
+    patch_imm16(address+4, value);	/* ori r,r,value@l */
+}
+
+static int patch_li31(Uint32 *address, Uint32 value)
+{
+    if ((value >> 31) != 0)
+	return -1;
+    patch_imm16(address, value >> 16);	/* addis r,0,value@h */
+    patch_imm16(address+1, value);	/* ori r,r,value@l */
+}
+
 void hipe_patch_load_fe(Uint *address, Uint value)
 {
-    Uint32 *insn = (Uint32*)address;
+    patch_li64((Uint32*)address, value);
+}
 
-    /* addis r,0,value@highest */
-    patch_imm16(insn+0, value >> 48);
-    /* ori r,r,value@higher */
-    patch_imm16(insn+1, value >> 32);
-    /* sldi r,r,32 */
-    /* oris r,r,value@h */
-    patch_imm16(insn+3, value >> 16);
-    /* ori r,r,value@l */
-    patch_imm16(insn+4, value);
+int hipe_patch_insn(void *address, Uint64 value, Eterm type)
+{
+    switch (type) {
+      case am_closure:
+      case am_constant:
+	patch_li64((Uint32*)address, value);
+	return 0;
+      case am_atom:
+      case am_c_const:
+	return patch_li31((Uint32*)address, value);
+      default:
+	return -1;
+    }
 }
 
 void *hipe_make_native_stub(void *beamAddress, unsigned int beamArity)
 {
     unsigned int *code;
-    
+
     if ((unsigned long)&nbif_callemu & ~0x01FFFFFCUL)
 	abort();
 
@@ -337,10 +359,30 @@ static unsigned int at_ha(unsigned int val)
     return ((val + 0x8000) >> 16) & 0xFFFF;
 }
 
-void hipe_patch_load_fe(Uint32 *address, Uint value)
+static void patch_li(Uint32 *address, Uint32 value)
 {
     patch_imm16(address, value);
     patch_imm16(address+1, at_ha(value));
+}
+
+void hipe_patch_load_fe(Uint32 *address, Uint value)
+{
+    patch_li(address, value);
+}
+
+int hipe_patch_insn(void *address, Uint32 value, Eterm type)
+{
+    switch (type) {
+    case am_closure:
+    case am_constant:
+    case am_atom:
+    case am_c_const:
+	break;
+    default:
+	return -1;
+    }
+    patch_li((Uint32*)address, value);
+    return 0;
 }
 
 /* called from hipe_bif0.c:hipe_bifs_make_native_stub_2()
@@ -348,7 +390,7 @@ void hipe_patch_load_fe(Uint32 *address, Uint value)
 void *hipe_make_native_stub(void *beamAddress, unsigned int beamArity)
 {
     unsigned int *code;
-    
+
     /*
      * Native code calls BEAM via a stub looking as follows:
      *
@@ -387,6 +429,50 @@ void *hipe_make_native_stub(void *beamAddress, unsigned int beamArity)
 }
 #endif	/* !__powerpc64__ */
 
+static void patch_b(Uint32 *address, Sint32 offset, Uint32 AA)
+{
+    Uint32 oldI = *address;
+    Uint32 newI = (oldI & 0xFC000001) | ((offset & 0x00FFFFFF) << 2) | (AA & 2);
+    *address = newI;
+    hipe_flush_icache_word(address);
+}
+
+int hipe_patch_call(void *callAddress, void *destAddress, void *trampoline)
+{
+    if ((Uint32)destAddress == ((Uint32)destAddress & 0x01FFFFFC)) {
+	/* The destination is in the [0,32MB[ range.
+	   We can reach it with a ba/bla instruction.
+	   This is the typical case for BIFs and primops.
+	   It's also common for trap-to-BEAM stubs (on ppc32). */
+	patch_b((Uint32*)callAddress, (Uint32)destAddress >> 2, 2);
+    } else {
+	Sint32 destOffset = ((Sint32)destAddress - (Sint32)callAddress) >> 2;
+	if (destOffset >= -0x800000 && destOffset <= 0x7FFFFF) {
+	    /* The destination is within a [-32MB,+32MB[ range from us.
+	       We can reach it with a b/bl instruction.
+	       This is typical for nearby Erlang code. */
+	    patch_b((Uint32*)callAddress, destOffset, 0);
+	} else {
+	    /* The destination is too distant for b/bl/ba/bla.
+	       Must do a b/bl to the trampoline. */
+	    Sint32 trampOffset = ((Sint32)trampoline - (Sint32)callAddress) >> 2;
+	    if (trampOffset >= -0x800000 && trampOffset <= 0x7FFFFF) {
+		/* Update the trampoline's address computation.
+		   (May be redundant, but we can't tell.) */
+#if defined(__powerpc64__)
+		/* This relies on the fact that we allocate code below 2GB. */
+		patch_li31((Uint32*)trampoline, (Uint32)destAddress);
+#else
+		patch_li((Uint32*)trampoline, (Uint32)destAddress);
+#endif
+		/* Update this call site. */
+		patch_b((Uint32*)callAddress, trampOffset, 0);
+	    } else
+		return -1;
+	}
+    }
+    return 0;
+}
 
 void hipe_arch_print_pcb(struct hipe_process_state *p)
 {

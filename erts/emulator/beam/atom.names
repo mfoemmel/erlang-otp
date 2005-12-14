@@ -189,6 +189,7 @@ atom info
 atom initial_call
 atom input
 atom internal_error
+atom internal_status
 atom instruction_counts
 atom invalid
 atom is_seq_trace

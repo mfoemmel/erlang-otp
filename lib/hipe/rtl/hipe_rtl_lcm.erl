@@ -22,6 +22,7 @@
                           %% our test runs.
 
 -include("../main/hipe.hrl").
+-include("hipe_rtl.hrl").
 
 %%-define(LCM_DEBUG, true). %% When defined and true, produces debug printouts
 
@@ -343,9 +344,9 @@ is_expr(I) ->
   case length(Defines) > 0 andalso no_machine_regs(Defines)
     andalso no_machine_regs(Uses) of 
     true ->
-      case hipe_rtl:type(I) of
-        alu -> true;
-%%   	alu ->
+      case I of
+        #alu{} -> true;
+%%   	#alu{} ->
 %%    	  Dst = hipe_rtl:alu_dst(I),
 %%    	  Src1 = hipe_rtl:alu_src1(I),
 %%    	  Src2 = hipe_rtl:alu_src2(I),
@@ -370,41 +371,41 @@ is_expr(I) ->
 %% 	      true
 %% 	  end;
 	       
-        alub -> false; %% TODO: Split instruction to consider alu expression?
-	binbase -> false;
-        branch -> false;
-        call -> false; %% We cannot prove that a call has no side-effects
-        comment -> false;
-        enter -> false;
-        %%fail_to -> false; %% Deprecated?
-        fconv -> true;
-        fixnumop -> true;
-        fload -> true;
-        fmove -> false;
-        fp -> true;
-        fp_unop -> true;
-        fstore -> false;
-        goto -> false;
-        goto_index -> false;
-        gctest -> false;
-        label -> false;
-        load -> true;
-        load_address ->
+        #alub{} -> false; %% TODO: Split instruction to consider alu expression?
+	#binbase{} -> false;
+        #branch{} -> false;
+        #call{} -> false; %% We cannot prove that a call has no side-effects
+        #comment{} -> false;
+        #enter{} -> false;
+        %% #fail_to{} -> false; %% Deprecated?
+        #fconv{} -> true;
+        #fixnumop{} -> true;
+        #fload{} -> true;
+        #fmove{} -> false;
+        #fp{} -> true;
+        #fp_unop{} -> true;
+        #fstore{} -> false;
+        #goto{} -> false;
+        #goto_index{} -> false;
+        #gctest{} -> false;
+        #label{} -> false;
+        #load{} -> true;
+        #load_address{} ->
 	  case hipe_rtl:load_address_type(I) of
 	    c_const -> false;
 	    closure -> false;	%% not sure whether safe to move; 
 	                        %% also probably not worth it
 	    constant -> true
 	  end;
-        load_atom -> true;
-        load_word_index -> true;
-        move -> false;
-        multimove -> false;
-        phi -> false;
-        %restore_catch -> false; %% Deprecated?
-        return -> false;
-        store -> false;
-        switch -> false
+        #load_atom{} -> true;
+        #load_word_index{} -> true;
+        #move{} -> false;
+        #multimove{} -> false;
+        #phi{} -> false;
+        %% #restore_catch{} -> false; %% Deprecated?
+        #return{} -> false;
+        #store{} -> false;
+        #switch{} -> false
       end;
     false->
       false
@@ -415,19 +416,19 @@ is_expr(I) ->
 %% Replaces destination of rtl expression with empty list.
 %% 
 expr_set_dst(I, [Dst|Dsts]) ->
-  case hipe_rtl:type(I) of
-    alu -> hipe_rtl:alu_dst_update(I, Dst);
-    call -> hipe_rtl:call_dstlist_update(I, [Dst|Dsts]);
-    fconv -> hipe_rtl:fconv_dst_update(I, Dst);
-    fixnumop -> hipe_rtl:fixnumop_dst_update(I, Dst);
-    fload -> hipe_rtl:fload_dst_update(I, Dst);
-    %% fmove -> hipe_rtl:fmove_dst_update(I, Dst);
-    fp -> hipe_rtl:fp_dst_update(I, Dst);
-    fp_unop -> hipe_rtl:fp_unop_dst_update(I, Dst);
-    load -> hipe_rtl:load_dst_update(I, Dst);
-    load_address -> hipe_rtl:load_address_dst_update(I, Dst);
-    load_atom -> hipe_rtl:load_atom_dst_update(I, Dst);
-    load_word_index -> hipe_rtl:load_word_index_dst_update(I, Dst);
+  case I of
+    #alu{} -> hipe_rtl:alu_dst_update(I, Dst);
+    #call{} -> hipe_rtl:call_dstlist_update(I, [Dst|Dsts]);
+    #fconv{} -> hipe_rtl:fconv_dst_update(I, Dst);
+    #fixnumop{} -> hipe_rtl:fixnumop_dst_update(I, Dst);
+    #fload{} -> hipe_rtl:fload_dst_update(I, Dst);
+    %% #fmove{} -> hipe_rtl:fmove_dst_update(I, Dst);
+    #fp{} -> hipe_rtl:fp_dst_update(I, Dst);
+    #fp_unop{} -> hipe_rtl:fp_unop_dst_update(I, Dst);
+    #load{} -> hipe_rtl:load_dst_update(I, Dst);
+    #load_address{} -> hipe_rtl:load_address_dst_update(I, Dst);
+    #load_atom{} -> hipe_rtl:load_atom_dst_update(I, Dst);
+    #load_word_index{} -> hipe_rtl:load_word_index_dst_update(I, Dst);
     %% move -> hipe_rtl:move_dst_update(I, Dst);
     _ -> exit({?MODULE,expr_set_dst, {"bad expression"}})
   end.
@@ -436,20 +437,20 @@ expr_set_dst(I, [Dst|Dsts]) ->
 %% Replaces destination of rtl expression with empty list.
 %% 
 expr_clear_dst(I) ->
-  case hipe_rtl:type(I) of
-    alu -> hipe_rtl:alu_dst_update(I, nil);
-    call -> hipe_rtl:call_dstlist_update(I, nil);
-    fconv -> hipe_rtl:fconv_dst_update(I, nil);
-    fixnumop -> hipe_rtl:fixnumop_dst_update(I, nil);
-    fload -> hipe_rtl:fload_dst_update(I, nil);
-    %% fmove -> hipe_rtl:fmove_dst_update(I, nil);
-    fp -> hipe_rtl:fp_dst_update(I, nil);
-    fp_unop -> hipe_rtl:fp_unop_dst_update(I, nil);
-    load -> hipe_rtl:load_dst_update(I, nil);
-    load_address -> hipe_rtl:load_address_dst_update(I, nil);
-    load_atom -> hipe_rtl:load_atom_dst_update(I, nil);
-    load_word_index -> hipe_rtl:load_word_index_dst_update(I, nil);
-    %% move -> hipe_rtl:move_dst_update(I, nil);
+  case I of
+    #alu{} -> hipe_rtl:alu_dst_update(I, nil);
+    #call{} -> hipe_rtl:call_dstlist_update(I, nil);
+    #fconv{} -> hipe_rtl:fconv_dst_update(I, nil);
+    #fixnumop{} -> hipe_rtl:fixnumop_dst_update(I, nil);
+    #fload{} -> hipe_rtl:fload_dst_update(I, nil);
+    %% #fmove{} -> hipe_rtl:fmove_dst_update(I, nil);
+    #fp{} -> hipe_rtl:fp_dst_update(I, nil);
+    #fp_unop{} -> hipe_rtl:fp_unop_dst_update(I, nil);
+    #load{} -> hipe_rtl:load_dst_update(I, nil);
+    #load_address{} -> hipe_rtl:load_address_dst_update(I, nil);
+    #load_atom{} -> hipe_rtl:load_atom_dst_update(I, nil);
+    #load_word_index{} -> hipe_rtl:load_word_index_dst_update(I, nil);
+    %% #move{} -> hipe_rtl:move_dst_update(I, nil);
     _ -> exit({?MODULE,expr_clear_dst, {"bad expression"}})
 
   end.
@@ -834,11 +835,11 @@ exp_kill_expr(_Instr, []) ->
   [];
 exp_kill_expr(Instr, [CheckedExpr|Exprs]) ->
   %% Calls, gctests and stores potentially clobber everything
-  case hipe_rtl:type(Instr) of
-    call -> [];
-    gctest -> [];
-    store -> [];     %% FIXME: Only regs and vars clobbered, not fregs...
-    fstore -> 
+  case Instr of
+    #call{} -> [];
+    #gctest{} -> [];
+    #store{} -> [];     %% FIXME: Only regs and vars clobbered, not fregs...
+    #fstore{} -> 
       %% fstore potentially clobber float expressions
       [ExprDefine|_] = hipe_rtl:defines(CheckedExpr),
       case hipe_rtl:is_fpreg(ExprDefine) of
@@ -851,9 +852,8 @@ exp_kill_expr(Instr, [CheckedExpr|Exprs]) ->
       InstrDefines  = hipe_rtl:defines(Instr),
       ExprUses      = hipe_rtl:uses(CheckedExpr),
       Diff          = ExprUses -- InstrDefines,
-
       case length(Diff) < length(ExprUses) of  
-	true->
+	true ->
 	  exp_kill_expr(Instr, Exprs);
 	false ->
 	  [CheckedExpr | exp_kill_expr(Instr, Exprs)]
@@ -878,11 +878,11 @@ calc_killed_expr_bb([], _UseMap, _AllExpr, KilledExprs) ->
   KilledExprs;
 calc_killed_expr_bb([Instr|Instrs], UseMap, AllExpr, KilledExprs) ->
   %% Calls, gctests and stores potentially clobber everything
-  case hipe_rtl:type(Instr) of
-    call -> AllExpr;
-    gctest -> AllExpr;
-    store -> AllExpr;     %% FIXME: Only regs and vars clobbered, not fregs...
-    fstore -> 
+  case Instr of
+    #call{} -> AllExpr;
+    #gctest{} -> AllExpr;
+    #store{} -> AllExpr;     %% FIXME: Only regs and vars clobbered, not fregs...
+    #fstore{} -> 
       %% Kill all float expressions
       %% FIXME: Make separate function is_fp_expr
       ?SETS:from_list

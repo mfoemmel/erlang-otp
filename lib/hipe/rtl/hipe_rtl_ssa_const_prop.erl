@@ -52,6 +52,7 @@
 -export([sparse_cond_const_propagate/1]).
 
 -include("../main/hipe.hrl").
+-include("hipe_rtl.hrl").
 
 %-define(DEBUG, true).
 
@@ -82,63 +83,63 @@
 %% Returns   : { FlowWorkList, SSAWorkList, Environment} 
 %%-----------------------------------------------------------------------------
 visit_expression(Instruction, Environment) ->
-  case hipe_rtl:type(Instruction) of
-    alu ->
+  case Instruction of
+    #alu{} ->
       visit_alu(Instruction, Environment);
-    alub ->
+    #alub{} ->
       visit_alub(Instruction, Environment);
-    binbase ->
+    #binbase{} ->
       visit_binbase(Instruction, Environment);
-    branch ->
+    #branch{} ->
       visit_branch(Instruction, Environment);
-    call ->
+    #call{} ->
       visit_call(Instruction, Environment);
-%%    comment ->
+%%    #comment{} ->
 %%      visit_comment(Instruction, Environment);
-%%    enter ->
+%%    #enter{} ->
 %%      visit_enter(Instruction, Environment);
-    fconv ->
+    #fconv{} ->
       visit_fconv(Instruction, Environment);
-    fixnumop ->
+    #fixnumop{} ->
       visit_fixnumop(Instruction, Environment);
-    fload ->
+    #fload{} ->
       visit_fload(Instruction, Environment);
-    fmove ->
+    #fmove{} ->
       visit_fmove(Instruction, Environment);
-    fp ->
+    #fp{} ->
       visit_fp(Instruction, Environment);
-    fp_unop ->
+    #fp_unop{} ->
       visit_fp_unop(Instruction, Environment);
-%%    fstore ->
+%%    #fstore{} ->
 %%      visit_fstore(Instruction, Environment);
-%%    gctest ->
+%%    #gctest{} ->
 %%      visit_gctest(Instruction, Environment);
-    goto ->
+    #goto{} ->
       visit_goto(Instruction, Environment);
-    goto_index ->
+    #goto_index{} ->
       visit_goto_index(Instruction, Environment);
-%%    label ->
+%%    #label{} ->
 %%      visit_label(Instruction, Environment);
-    load ->
+    #load{} ->
       visit_load(Instruction, Environment);
-    load_address ->
+    #load_address{} ->
       visit_load_address(Instruction, Environment);
-    load_atom ->
+    #load_atom{} ->
       visit_load_atom(Instruction, Environment);
-    load_word_index ->
+    #load_word_index{} ->
       visit_load_word_index(Instruction, Environment);
-    move ->
+    #move{} ->
       visit_move(Instruction, Environment);
-    multimove ->
+    #multimove{} ->
       visit_multimove(Instruction, Environment);
-% phi-nodes are handled in scc
-%    phi ->
-%      visit_phi(Instruction, Environment);
-%%    return ->
+%% phi-nodes are handled in scc
+%%    #phi{} ->
+%%      visit_phi(Instruction, Environment);
+%%    #return{} ->
 %%      visit_return(Instruction, Environment);
-%%    store ->
+%%    #store{} ->
 %%      visit_store(Instruction, Environment);
-    switch ->
+    #switch{} ->
       visit_switch(Instruction, Environment);
     _ ->
       %% label, end_try, comment, return, fail, et al
@@ -644,58 +645,58 @@ visit_switch(Inst, Env) ->
 %% instructions also ! (of course this will be done in some later step dead
 %%  code elimination ? but it's a simple check.)
 update_instruction(Inst, Env) ->
-  case hipe_rtl:type(Inst) of 
-    alu ->
+  case Inst of 
+    #alu{} ->
       update_alu(Inst, Env);
-    alub ->
+    #alub{} ->
       update_alub(Inst, Env);
-    branch ->
+    #branch{} ->
       update_branch(Inst, Env);
-    call ->
+    #call{} ->
       subst_all_uses(Inst, Env);
-%%    comment ->
+%%    #comment{} ->
 %%      [Inst];
-    enter ->
+    #enter{} ->
       subst_all_uses(Inst, Env);
-    fconv ->
+    #fconv{} ->
       subst_all_uses(Inst, Env);
-    fload ->
+    #fload{} ->
       subst_all_uses(Inst, Env);
-    fmove ->
+    #fmove{} ->
       subst_all_uses(Inst, Env);
-    fp ->
+    #fp{} ->
       subst_all_uses(Inst, Env);
-    fp_unop ->
+    #fp_unop{} ->
       subst_all_uses(Inst, Env);
-    fstore ->
+    #fstore{} ->
       subst_all_uses(Inst, Env);
-    gctest ->
+    #gctest{} ->
       subst_all_uses(Inst, Env);
-%%    goto ->
+%%    #goto{} ->
 %%       [ Inst ];
-    goto_index ->
+    #goto_index{} ->
       update_goto_index(Inst, Env);
-%%    label ->
+%%    #label{} ->
 %%      [ Inst ];
-    load ->
+    #load{} ->
       subst_all_uses(Inst, Env);
-    load_address ->
+    #load_address{} ->
       subst_all_uses(Inst, Env);
-    load_atom ->
+    #load_atom{} ->
       subst_all_uses(Inst, Env);
-    load_word_index ->
+    #load_word_index{} ->
       subst_all_uses(Inst, Env);
-    move ->
+    #move{} ->
       subst_all_uses(Inst, Env);
-    multimove ->
+    #multimove{} ->
       subst_all_uses(Inst, Env);
-    return ->
+    #return{} ->
       subst_all_uses(Inst, Env);
-    store ->
+    #store{} ->
       subst_all_uses(Inst, Env);
-    switch ->
+    #switch{} ->
       update_switch(Inst, Env);
-    phi ->
+    #phi{} ->
       update_phi(Inst, Env);
     _ ->  % for the others it's sufficient to just update any thing they use.
       [ Inst ]

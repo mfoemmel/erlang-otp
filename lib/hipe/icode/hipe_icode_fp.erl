@@ -7,15 +7,16 @@
 %%% Created : 23 Apr 2003 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%
 %%% CVS      :
-%%%              $Author: tobiasl $
-%%%              $Date: 2005/05/18 11:40:03 $
-%%%              $Revision: 1.28 $
+%%%              $Author: kostis $
+%%%              $Date: 2005/11/06 13:10:55 $
+%%%              $Revision: 1.29 $
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_fp).
 
 -export([cfg/2]).
 
+-include("hipe_icode.hrl").
 
 -record(state, {info, info_map, block_map, edge_map, cfg}).
 
@@ -53,8 +54,8 @@ annotate_fclearerror([], Cfg) ->
   Cfg.
 
 annotate_fclearerror1([I|Left], Label, Cfg, Acc) ->
-  case hipe_icode:type(I) of
-    call ->
+  case I of
+    #call{} ->
       case hipe_icode:call_fun(I) of
 	fclearerror ->
 	  Fail = lookahead_for_fcheckerror(Left, Label, Cfg),
@@ -70,8 +71,8 @@ annotate_fclearerror1([], _Label, _Cfg, Acc) ->
   lists:reverse(Acc).
 
 lookahead_for_fcheckerror([I|Left], Label, Cfg) ->
-  case hipe_icode:type(I) of
-    call ->
+  case I of
+    #call{} ->
       case hipe_icode:call_fun(I) of
 	fcheckerror ->
 	  hipe_icode:call_fail_label(I);
@@ -105,8 +106,8 @@ unannotate_fclearerror([], Cfg) ->
   Cfg.
 
 unannotate_fclearerror1([I|Left], Acc) ->
-  case hipe_icode:type(I) of
-    call ->
+  case I of
+    #call{} ->
       case hipe_icode:call_fun(I) of
 	{fclearerror, _Fail} ->
 	  NewI = hipe_icode:call_fun_update(I, fclearerror),
@@ -165,8 +166,8 @@ transform_instrs([I|Left], PhiMap, Map, Info, Acc)->
   NewMap = delete_all(Defines, Map),
   NewPhiMap = delete_all(Defines, PhiMap),
   
-  case hipe_icode:type(I) of
-    phi ->
+  case I of
+    #phi{} ->
       Uses = uses(I),
       case [X||X<-Uses,lookup(X, PhiMap)/=none] of
 	[] ->
@@ -185,7 +186,7 @@ transform_instrs([I|Left], PhiMap, Map, Info, Acc)->
 	  NewI = subst_phi(I, Dst, PhiMap),
 	  transform_instrs(Left, NewPhiMap, NewMap, Info, [NewI|Acc])
       end;
-    call ->
+    #call{} ->
       case hipe_icode:call_fun(I) of
 	X when X == unsafe_untag_float; X == conv_to_float ->
 	  [Dst] = defines(I),
@@ -380,8 +381,8 @@ redirect_phis(Code, OldFrom, NewFrom)->
   redirect_phis(Code, OldFrom, NewFrom, []).
 
 redirect_phis([I|Left], OldFrom, NewFrom, Acc)->
-  case hipe_icode:type(I) of
-    phi ->
+  case I of
+    #phi{} ->
       NewI = hipe_icode:phi_redirect_pred(I, OldFrom, NewFrom),
       redirect_phis(Left, OldFrom, NewFrom, [NewI|Acc]);
     _ ->
@@ -464,8 +465,8 @@ place_error_handling(WorkList, State) ->
   end.
 
 place_error([I|Left], InBlock, Acc) ->
-  case hipe_icode:type(I) of
-    call ->
+  case I of
+    #call{} ->
       case hipe_icode:call_fun(I) of
 	X when X == fp_add; X == fp_sub; 
 	       X == fp_mul; X == fp_div; X == fnegate ->
@@ -526,16 +527,12 @@ place_error([I|Left], InBlock, Acc) ->
 	      end
 	  end
       end;
-    X when X == fail; X == return; X == enter ->
-      case InBlock of
-	{true, []} ->
-	  Check = hipe_icode:mk_primop([], fcheckerror, []),
-	  place_error(Left, false, [I, Check|Acc]);
-	{true, _} ->
-	  exit({"End of control flow in caught fp ebb", I});
-	false ->
-	  place_error(Left, InBlock, [I|Acc])
-      end;
+    #fail{} ->
+      place_error_1(I, Left, InBlock, Acc);
+    #return{} ->
+      place_error_1(I, Left, InBlock, Acc);
+    #enter{} ->
+      place_error_1(I, Left, InBlock, Acc);
     Other ->
       case instr_allowed_in_fp_ebb(Other) of
 	true ->
@@ -555,6 +552,17 @@ place_error([I|Left], InBlock, Acc) ->
 place_error([], InBlock, Acc) ->
   {lists:reverse(Acc), InBlock}.
 
+place_error_1(I, Left, InBlock, Acc) ->
+  case InBlock of
+    {true, []} ->
+      Check = hipe_icode:mk_primop([], fcheckerror, []),
+      place_error(Left, false, [I,Check|Acc]);
+    {true, _} ->
+      exit({"End of control flow in caught fp ebb", I});
+    false ->
+      place_error(Left, InBlock, [I|Acc])
+  end.
+
 %% If the block has no successors and we still are in a fp ebb we must
 %% end it to make sure we don't have any unchecked fp exceptions.
 
@@ -573,18 +581,18 @@ handle_unchecked_end(Succ, Code, InBlock) ->
       Code
   end.      
 
-instr_allowed_in_fp_ebb(Type) ->
-  case Type of
-    comment -> true;
-    fmove -> true;
-    goto -> true;
-    'if' -> true;
-    move -> true;
-    phi -> true;
-    begin_handler -> true;
-    switch_tuple_arity -> true;
-    switch_val -> true;
-    type -> true;
+instr_allowed_in_fp_ebb(Instr) ->
+  case Instr of
+    #comment{} -> true;
+    #fmove{} -> true;
+    #goto{} -> true;
+    #'if'{} -> true;
+    #move{} -> true;
+    #phi{} -> true;
+    #begin_handler{} -> true;
+    #switch_tuple_arity{} -> true;
+    #switch_val{} -> true;
+    #type{} -> true;
     _ -> false
   end.
 

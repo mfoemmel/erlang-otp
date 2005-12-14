@@ -55,11 +55,6 @@ ifndef HIPE_ENABLED
 HIPE_MODULES =
 else
 HIPE_MODULES = \
-	hipe_amd64_loader \
-	hipe_ppc_loader \
-	hipe_ppc64_loader \
-	hipe_sparc_loader \
-	hipe_x86_loader \
 	hipe_unified_loader
 endif
 

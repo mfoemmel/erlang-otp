@@ -6,5 +6,5 @@ atom handle_fp_exception
 atom inc_stack_0
 atom sse2_fnegate_mask
 
-bif hipe_bifs:write_s64/2
+# bif hipe_bifs:write_s64/2
 bif hipe_bifs:write_u64/2

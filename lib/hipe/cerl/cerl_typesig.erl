@@ -487,8 +487,11 @@ get_bif_constr({erlang, Op, 2}, Dst, [Arg1, Arg2]) when ((Op == '+') or
 			  AllCombs = [{X, Y} || X <- DstVals, Y <- AVals],
 			  AllRes = [eval_inv_arith(Op, X, Y, Pos) 
 				    || {X, Y} <- AllCombs],
-			  t_integers(AllRes)
-		    end;
+			  case lists:any(fun(X) -> X == any end, AllRes) of
+			    true -> t_integer();
+			    false -> t_integers(AllRes)
+			  end
+		      end;
 		    false  ->
 		      t_integer()
 		  end;
@@ -535,7 +538,8 @@ eval_arith('*', X, Y) -> X * Y;
 eval_arith('-', X, Y) -> X - Y.
 
 eval_inv_arith('+', Dst, A, _Pos) -> Dst - A;
-eval_inv_arith('*', Dst, A, _Pos) -> Dst div A;
+eval_inv_arith('*',_Dst, A, _Pos) when A =:= 0 -> any;
+eval_inv_arith('*', Dst, A, _Pos) when A =/= 0 -> Dst div A;
 eval_inv_arith('-', Dst, A, 1) -> A - Dst;
 eval_inv_arith('-', Dst, A, 2) -> A + Dst.
 
