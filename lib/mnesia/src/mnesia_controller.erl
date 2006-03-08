@@ -1385,7 +1385,19 @@ orphan_tables([], _, _, LocalOrphans, RemoteMasters) ->
     {LocalOrphans, RemoteMasters}.
 
 node_has_tabs([Tab | Tabs], Node, State) when Node /= node() ->
-    State2 = update_whereabouts(Tab, Node, State),
+    State2 = 
+	case catch update_whereabouts(Tab, Node, State) of
+	    State1 = #state{} ->
+		State1;
+	    {'EXIT', R} -> 
+		%% Tab was just deleted?
+		case ?catch_val({Tab, cstruct}) of
+		    {'EXIT', _} -> % yes, it doesn't exist
+			State;     % Just ignore it
+		    _ ->   %% Hmm it exists, thats bad
+			erlang:fault(R) %% Lets die
+		end
+	end,
     node_has_tabs(Tabs, Node, State2);
 node_has_tabs([Tab | Tabs], Node, State) ->
     user_sync_tab(Tab),

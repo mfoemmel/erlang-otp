@@ -46,6 +46,8 @@
 	 term_to_compact_string/1,
 	 term_to_pretty_string/1]).
 
+-export([token_tag2string/1, token_tag2string/2]).
+
 -include("megaco_text_tokens.hrl").
 -include_lib("megaco/src/engine/megaco_message_internal.hrl").
 
@@ -476,6 +478,32 @@ trim_quoted_string([]) ->
 
 
 %%----------------------------------------------------------------------
+%% A utility function to pretty print the tags found in a megaco message
+%%----------------------------------------------------------------------
+
+-define(TT2S_BEST_VERSION, prev3b).
+
+token_tag2string(Tag) ->
+    token_tag2string(Tag, ?TT2S_BEST_VERSION).
+
+token_tag2string(Tag, 1) ->
+    token_tag2string(Tag, v1);
+token_tag2string(Tag, v1) ->
+    megaco_pretty_text_encoder_v1:token_tag2string(Tag);
+token_tag2string(Tag, 2) ->
+    token_tag2string(Tag, v2);
+token_tag2string(Tag, v2) ->
+    megaco_pretty_text_encoder_v2:token_tag2string(Tag);
+token_tag2string(Tag, 3) ->
+    token_tag2string(Tag, prev3b);
+token_tag2string(Tag, v3) ->
+    token_tag2string(Tag, prev3b);
+token_tag2string(Tag, prev3b) ->
+    megaco_pretty_text_encoder_prev3b:token_tag2string(Tag);
+token_tag2string(Tag, _Vsn) ->
+    token_tag2string(Tag, ?TT2S_BEST_VERSION).
+
+
 
 %% d(F) ->
 %%     d(F, []).

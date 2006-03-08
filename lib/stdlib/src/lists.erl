@@ -93,7 +93,7 @@ nth(N, [_|T]) when N > 1 ->
 nthtail(1, [_|T]) -> T;
 nthtail(N, [_|T]) when N > 1 ->
     nthtail(N - 1, T);
-nthtail(0, L) when list(L) -> L.
+nthtail(0, L) when is_list(L) -> L.
 
 %% prefix(Prefix, List) -> (true | false)
 
@@ -121,14 +121,14 @@ last(E, []) -> E.
 %%  returns the sequence Min..Max
 %%  Min <= Max and Min and Max must be integers
 
-seq(Min, Max) when integer(Min), integer(Max), Min =< Max -> 
+seq(Min, Max) when is_integer(Min), is_integer(Max), Min =< Max -> 
     seq(Min, Max, 1, []).
 
 seq(Min, Max, Incr) when Min =< Max, Incr > 0 ->
     seq(Min, Min + ((Max-Min) div Incr) * Incr, Incr, []);
 seq(Min, Max, Incr) when Min >= Max, Incr < 0 ->
     seq(Min, Min + ((Max-Min) div Incr) * Incr, Incr, []);
-seq(M, M, 0) when integer(M) ->
+seq(M, M, 0) when is_integer(M) ->
     [M].
 
 seq(Min, Min, _, L) -> [Min|L];
@@ -137,17 +137,17 @@ seq(Min, Max, I, L) -> seq(Min, Max-I, I, [Max|L]).
 %% sum(L) suns the sum of the elements in L
 
 sum(L)          -> sum(L, 0).
+
 sum([H|T], Sum) -> sum(T, Sum + H);
 sum([], Sum)    -> Sum.
 
 %% duplicate(N, X) -> [X,X,X,.....,X]  (N times)
 %%   return N copies of X
 
-duplicate(N, X) when integer(N), N >= 0 -> duplicate(N, X, []).
+duplicate(N, X) when is_integer(N), N >= 0 -> duplicate(N, X, []).
 
 duplicate(0, _, L) -> L;
 duplicate(N, X, L) -> duplicate(N-1, X, [X|L]).
-
 
 %% min(L) -> returns the minimum element of the list L
 
@@ -168,17 +168,17 @@ max([],    Max)              -> Max.
 %% sublist(List, Start, Length)
 %%  Returns the sub-list starting at Start of length Length.
 
-sublist(List, S, L) when integer(L), L >= 0 ->
+sublist(List, S, L) when is_integer(L), L >= 0 ->
     sublist(nthtail(S-1, List), L).
 
-sublist(List, L) when integer(L), list(List) ->
+sublist(List, L) when is_integer(L), is_list(List) ->
     sublist_2(List, L).
 
 sublist_2([H|T], L) when L > 0 ->
     [H|sublist_2(T, L-1)];
 sublist_2(_, 0) ->
     [];
-sublist_2(List, L) when list(List), L > 0 ->
+sublist_2(List, L) when is_list(List), L > 0 ->
     [].
 
 %% delete(Item, List) -> List'
@@ -231,7 +231,6 @@ zipwith(F, [], []) when is_function(F, 2) -> [].
 zipwith3(F, [X | Xs], [Y | Ys], [Z | Zs]) ->
     [F(X, Y, Z) | zipwith3(F, Xs, Ys, Zs)];
 zipwith3(F, [], [], []) when is_function(F, 3) -> [].
-
 
 %% sort(List) -> L
 %%  sorts the list L
@@ -328,22 +327,22 @@ rmerge(T1, [H2 | T2]) ->
 concat(List) ->
     flatmap(fun thing_to_list/1, List).
 
-thing_to_list(X) when integer(X) -> integer_to_list(X);
-thing_to_list(X) when float(X)	 -> float_to_list(X);
-thing_to_list(X) when atom(X)	 -> atom_to_list(X);
-thing_to_list(X) when list(X)	 -> X.		%Assumed to be a string
+thing_to_list(X) when is_integer(X) -> integer_to_list(X);
+thing_to_list(X) when is_float(X)   -> float_to_list(X);
+thing_to_list(X) when is_atom(X)    -> atom_to_list(X);
+thing_to_list(X) when is_list(X)    -> X.	%Assumed to be a string
 
 %% flatten(List)
 %% flatten(List, Tail)
 %%  Flatten a list, adding optional tail.
 
-flatten(List) when list(List) ->
+flatten(List) when is_list(List) ->
     do_flatten(List, []).
 
-flatten(List, Tail) when list(List), list(Tail) ->
+flatten(List, Tail) when is_list(List), is_list(Tail) ->
     do_flatten(List, Tail).
 
-do_flatten([H|T], Tail) when list(H) ->
+do_flatten([H|T], Tail) when is_list(H) ->
     do_flatten(H, do_flatten(T, Tail));
 do_flatten([H|T], Tail) ->
     [H|do_flatten(T, Tail)];
@@ -361,7 +360,7 @@ flat_length(List) -> flatlength(List).
 flatlength(List) ->
     flatlength(List, 0).
 
-flatlength([H|T], L) when list(H) ->
+flatlength([H|T], L) when is_list(H) ->
     flatlength(H, flatlength(T, L));
 flatlength([_|T], L) ->
     flatlength(T, L + 1);
@@ -378,7 +377,7 @@ flatlength([], L) -> L.
 %% keymap(Function, Index, [Tuple])
 %% keymap(Function, ExtraArgs, Index, [Tuple])
 
-%keymember(K,N,L) when integer(N), N > 0 ->
+%keymember(K,N,L) when is_integer(N), N > 0 ->
 %    keymember3(K,N,L).
 
 %keymember3(Key, N, [T|Ts]) when element(N, T) == Key -> true;
@@ -386,7 +385,7 @@ flatlength([], L) -> L.
 %    keymember3(Key, N, Ts);
 %keymember3(Key, N, []) -> false.
 
-%keysearch(K,N,L) when integer(N), N > 0 ->
+%keysearch(K,N,L) when is_integer(N), N > 0 ->
 %    keysearch3(K,N,L).
 
 %keysearch3(Key, N, [H|T]) when element(N, H) == Key ->
@@ -395,7 +394,7 @@ flatlength([], L) -> L.
 %    keysearch3(Key, N, T);
 %keysearch3(Key, N, []) -> false.
 
-keydelete(K,N,L) when integer(N), N > 0 ->
+keydelete(K,N,L) when is_integer(N), N > 0 ->
     keydelete3(K,N,L).
 
 keydelete3(Key, N, [H|T]) when element(N, H) == Key -> T;
@@ -403,7 +402,7 @@ keydelete3(Key, N, [H|T]) ->
     [H|keydelete3(Key, N, T)];
 keydelete3(_, _, []) -> [].
 
-keyreplace(K,N,L,New) when integer(N), N > 0 ->
+keyreplace(K,N,L,New) when is_integer(N), N > 0 ->
     keyreplace3(K,N,L,New).
 
 keyreplace3(Key, Pos, [Tup|Tail], New) when element(Pos, Tup) == Key ->
@@ -412,7 +411,7 @@ keyreplace3(Key, Pos, [H|T], New) ->
     [H|keyreplace3(Key, Pos, T, New)];
 keyreplace3(_, _, [], _) -> [].
 
-keysort(I, L) when integer(I), I > 0 ->
+keysort(I, L) when is_integer(I), I > 0 ->
     case L of
 	[] -> L;
 	[_] -> L;
@@ -467,7 +466,7 @@ keysort_1(I, X, EX, [Y | L], R) ->
 keysort_1(_I, X, _EX, [], R) ->
     [X | R].
 
-keymerge(Index, T1, L2) when integer(Index), Index > 0 -> 
+keymerge(Index, T1, L2) when is_integer(Index), Index > 0 -> 
     case L2 of
 	[] ->
 	    T1;
@@ -478,7 +477,7 @@ keymerge(Index, T1, L2) when integer(Index), Index > 0 ->
     end.
 
 %% reverse(rkeymerge(I,reverse(A),reverse(B))) is equal to keymerge(I,A,B).
-rkeymerge(Index, T1, L2) when integer(Index), Index > 0 -> 
+rkeymerge(Index, T1, L2) when is_integer(Index), Index > 0 -> 
     case L2 of
 	[] ->
 	    T1;
@@ -488,7 +487,7 @@ rkeymerge(Index, T1, L2) when integer(Index), Index > 0 ->
 	    lists:reverse(M, [])
     end.
 
-ukeysort(I, L) when integer(I), I > 0 ->
+ukeysort(I, L) when is_integer(I), I > 0 ->
     case L of
 	[] -> L;
 	[_] -> L;
@@ -551,7 +550,7 @@ ukeysort_1(I, X, EX, [Y | L]) ->
 ukeysort_1(_I, X, _EX, []) ->
     [X].
 
-ukeymerge(Index, L1, T2) when integer(Index), Index > 0 ->
+ukeymerge(Index, L1, T2) when is_integer(Index), Index > 0 ->
     case L1 of
 	[] ->
 	    T2;
@@ -562,7 +561,7 @@ ukeymerge(Index, L1, T2) when integer(Index), Index > 0 ->
     end.
 
 %% reverse(rukeymerge(I,reverse(A),reverse(B))) is equal to ukeymerge(I,A,B).
-rukeymerge(Index, T1, L2) when integer(Index), Index > 0 ->
+rukeymerge(Index, T1, L2) when is_integer(Index), Index > 0 ->
     case L2 of
 	[] ->
 	    T1;
@@ -574,7 +573,8 @@ rukeymerge(Index, T1, L2) when integer(Index), Index > 0 ->
 
 keymap(Fun, Index, [Tup|Tail]) ->
    [setelement(Index, Tup, Fun(element(Index, Tup)))|keymap(Fun, Index, Tail)];
-keymap(Fun, _, []) when is_function(Fun, 1) -> [].
+keymap(Fun, Index, []) when is_integer(Index), Index >= 1, 
+                            is_function(Fun, 1) -> [].
 
 keymap(Fun, ExtraArgs, Index, [Tup|Tail]) ->
    [setelement(Index, Tup, apply(Fun, [element(Index, Tup)|ExtraArgs]))|
@@ -595,22 +595,22 @@ sort(Fun, [X, Y | T]) ->
 	    lists_sort:fsplit_2(Y, X, Fun, T, [], [])
     end.
 
-merge(Fun, T1, [H2 | T2]) ->
+merge(Fun, T1, [H2 | T2]) when is_function(Fun, 2) ->
     lists:reverse(lists_sort:fmerge2_1(T1, H2, Fun, T2, []), []);
 merge(Fun, T1, []) when is_function(Fun, 2) ->
     T1.
 
 %% reverse(rmerge(F,reverse(A),reverse(B))) is equal to merge(F,A,B).
-rmerge(Fun, T1, [H2 | T2]) ->
+rmerge(Fun, T1, [H2 | T2]) when is_function(Fun, 2) ->
     lists:reverse(lists_sort:rfmerge2_1(T1, H2, Fun, T2, []), []);
 rmerge(Fun, T1, []) when is_function(Fun, 2) ->
     T1.
 
-usort(_Fun, [_] = L) ->
+usort(Fun, [_] = L) when is_function(Fun, 2) ->
     L;
-usort(_Fun, [] = L) ->
+usort(Fun, [] = L) when is_function(Fun, 2) ->
     L;
-usort(Fun, [X | L]) ->
+usort(Fun, [X | L]) when is_function(Fun, 2) ->
     usort_1(Fun, X, L).
 
 usort_1(Fun, X, [Y | L]) when X == Y ->
@@ -628,15 +628,15 @@ usort_1(Fun, X, [Y | L]) ->
 	    lists_sort:ufsplit_2(Y, L, Fun, [X])
     end.
 
-umerge(_Fun, [], T2) ->
+umerge(Fun, [], T2) when is_function(Fun, 2) ->
     T2;
-umerge(Fun, [H1 | T1], T2) ->
+umerge(Fun, [H1 | T1], T2) when is_function(Fun, 2) ->
     lists:reverse(lists_sort:ufmerge2_2(H1, T1, Fun, T2, []), []).
 
 %% reverse(rumerge(F,reverse(A),reverse(B))) is equal to umerge(F,A,B).
-rumerge(_Fun, T1, []) ->
+rumerge(Fun, T1, []) when is_function(Fun, 2) ->
     T1;
-rumerge(Fun, T1, [H2 | T2]) ->
+rumerge(Fun, T1, [H2 | T2]) when is_function(Fun, 2) ->
     lists:reverse(lists_sort:rufmerge2_1(T1, H2, Fun, T2, []), []).
 
 %% usort(List) -> L
@@ -863,15 +863,15 @@ splitwith(Pred, [Hd|Tail], Taken) ->
     end;
 splitwith(_, [], Taken) -> {reverse(Taken),[]}.
 
-split(N, List) when integer(N), N >= 0, list(List) ->
+split(N, List) when is_integer(N), N >= 0, is_list(List) ->
     case split(N, List, []) of
-	Fault when atom(Fault) ->
-	    erlang:fault(Fault, [N,List]);
+	Fault when is_atom(Fault) ->
+	    erlang:error(Fault, [N,List]);
 	Result ->
 	    Result
     end;
 split(N, List) ->
-    erlang:fault(badarg, [N,List]).
+    erlang:error(badarg, [N,List]).
 
 split(0, L, R) ->
     {lists:reverse(R, []), L};

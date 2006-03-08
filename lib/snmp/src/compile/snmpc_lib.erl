@@ -1600,13 +1600,23 @@ check_sub_ids([], _Name, _Line) ->
 %%    and update_trap_oids/2.
 %%-----------------------------------------------------------------
 register_oid(Line, Name, FatherName, SubIndex) when Name /= '$no_name$' ->
+    t("register_oid -> entry with"
+      "~n   Line:       ~w"
+      "~n   Name:       ~p"
+      "~n   FatherName: ~p"
+      "~n   SubIndex:   ~p", [Line, Name, FatherName, SubIndex]),
     check_sub_ids(SubIndex, Name, Line),
     OidEts = (get(cdata))#cdata.oid_ets,
     %% Lookup Father - if it doesn't already exist, create it
     {_FatherName, HisFatherName, HisLine, HisSubIndex, Children} = 
 	case ets:lookup(OidEts, FatherName) of
-	    [Found] -> Found;
-	    [] -> {FatherName, undef, undef, [], []}
+	    [Found] -> 
+		t("register_oid -> father found: ~n~p", [Found]),
+		Found;
+	    [] -> 
+		t("register_oid -> father not found: ~n~p", 
+		  [ets:tab2list(OidEts)]),
+		{FatherName, undef, undef, [], []}
 	end,
     %% Update Father with a pointer to us
     NChildren = case lists:member(Name, Children) of
@@ -1614,15 +1624,21 @@ register_oid(Line, Name, FatherName, SubIndex) when Name /= '$no_name$' ->
 		    false -> [Name | Children]
 		end,
     NFather = {FatherName, HisFatherName, HisLine, HisSubIndex,NChildren},
+    t("register_oid -> NFather: ~n~p", [NFather]),
     ets:insert(OidEts, NFather),
     %% Lookup ourselves - if we don't exist, create us
     MyChildren =
 	case ets:lookup(OidEts, Name) of
-	    [Found2] -> element(5, Found2);
-	    [] -> []
+	    [Found2] ->
+		t("register_oid -> child found: ~n~p", [Found2]),
+		element(5, Found2);
+	    [] -> 
+		t("register_oid -> child not found", []),
+		[]
 	end,
     %% Update ourselves
     NSelf = {Name, FatherName, Line, SubIndex, MyChildren},
+    t("register_oid -> NSelf: ~n~p", [NSelf]),
     ets:insert(OidEts, NSelf);
 register_oid(_Line, _Name, _FatherName, _SubIndex) ->
     ok.
@@ -1659,6 +1675,8 @@ update_me_oids([], _OidEts, Acc) ->
 update_me_oids([#me{aliasname = '$no_name$'} | Mes], OidEts, Acc) ->
     update_me_oids(Mes, OidEts, Acc);
 update_me_oids([Me | Mes], OidEts, Acc) ->
+    t("update_me_oids -> entry with"
+      "~n   Me: ~p", [Me]),
     Oid = tr_oid(Me#me.aliasname, OidEts),
     NMe = resolve_oid_defval(Me, OidEts),
     update_me_oids(Mes, OidEts, [NMe#me{oid = Oid} | Acc]).
@@ -1668,6 +1686,8 @@ update_trap_oids([], _OidEts, Acc) ->
 update_trap_oids([#trap{enterpriseoid = EOid, 
 			oidobjects    = OidObjs} = Trap | Traps], 
 		 OidEts, Acc) ->
+    t("update_trap_oids -> entry with"
+      "~n   EOid: ~p", [EOid]),
     NEnter   = tr_oid(EOid, OidEts),
     NOidObjs = tr_oid_objs(OidObjs, OidEts),
     NTrap = Trap#trap{enterpriseoid = NEnter,
@@ -1676,27 +1696,37 @@ update_trap_oids([#trap{enterpriseoid = EOid,
 update_trap_oids([#notification{trapname   = Name,
 				oidobjects = OidObjs} = Notif | Traps], 
 		 OidEts, Acc) ->
+    t("update_trap_oids -> entry with"
+      "~n   Name: ~p", [Name]),
     Oid      = tr_oid(Name, OidEts),
     NOidObjs = tr_oid_objs(OidObjs, OidEts),
     NNotif   = Notif#notification{oid = Oid, oidobjects = NOidObjs},
     update_trap_oids(Traps, OidEts, [NNotif|Acc]).
 
 tr_oid(Name, OidEts) ->
+    t("tr_oid -> entry with"
+      "~n   Name: ~p", [Name]),
     case ets:lookup(OidEts, Name) of
 	[{Name, MyOid, _MyLine}] ->
 	    MyOid;
-	[{_Natrap, Father, Line, SubIndex, _Children}] ->
-	    print_error("OBJECT IDENTIFIER defined in terms "
+	[{_Natrap, Parent, Line, SubIndex, _Children}] ->
+	    print_error("OBJECT IDENTIFIER [~w] defined in terms "
 			"of undefined parent object. Parent: '~w'."
 			"(Sub-indexes: ~w.)",
-			[Father, SubIndex],Line),
+			[Name, Parent, SubIndex], Line),
+	    t("tr_oid -> ets:tab2list(~w): "
+	      "~n~p", [OidEts, ets:tab2list(OidEts)]),
 	    rnd_oid()
     end.
 
 tr_oid_objs([{{variable, Name}, Type} | T], OidEts) ->
+    t("tr_oid_objs(variable) -> entry with"
+      "~n   Name: ~p", [Name]),
     Oid = tr_oid(Name, OidEts) ++ [0],
     [{Oid, Type} | tr_oid_objs(T, OidEts)];
 tr_oid_objs([{{column, Name}, Type} | T], OidEts) ->
+    t("tr_oid_objs(column) -> entry with"
+      "~n   Name: ~p", [Name]),
     Oid = tr_oid(Name, OidEts),
     [{Oid, Type} | tr_oid_objs(T, OidEts)];
 tr_oid_objs([], _OidEts) ->

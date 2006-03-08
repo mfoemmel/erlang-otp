@@ -24,11 +24,9 @@ insn_def(I) ->
   case I of
     #alu{dst=Dst} -> dst_def(Dst);
     #cmovcc{dst=Dst} -> dst_def(Dst);
-    #dec{dst=Dst} -> dst_def(Dst);
     #fmove{dst=Dst} -> dst_def(Dst);
     #fp_binop{dst=Dst} -> dst_def(Dst);
     #fp_unop{arg=Arg} -> dst_def(Arg);
-    #inc{dst=Dst} -> dst_def(Dst);
     #lea{temp=Temp} -> [Temp];
     #move{dst=Dst} -> dst_def(Dst);
     #move64{dst=Dst} -> dst_def(Dst);
@@ -38,7 +36,7 @@ insn_def(I) ->
     #pseudo_tailcall_prepare{} -> tailcall_clobbered();
     #shift{dst=Dst} -> dst_def(Dst);
     %% call, cmp, comment, jcc, jmp_fun, jmp_label, jmp_switch, label
-    %% nop, pseudo_jcc, pseudo_tailcall, push, ret
+    %% pseudo_jcc, pseudo_tailcall, push, ret
     _ -> []
   end.
 
@@ -67,11 +65,9 @@ insn_use(I) ->
     #call{'fun'=Fun} -> addtemp(Fun, []);
     #cmovcc{src=Src, dst=Dst} -> addtemp(Src, dst_use(Dst));
     #cmp{src=Src, dst=Dst} -> addtemp(Src, addtemp(Dst, []));
-    #dec{dst=Dst} -> addtemp(Dst, []);
     #fmove{src=Src,dst=Dst} -> addtemp(Src, dst_use(Dst));
     #fp_unop{arg=Arg} -> addtemp(Arg, []);
     #fp_binop{src=Src,dst=Dst} -> addtemp(Src, addtemp(Dst, []));
-    #inc{dst=Dst} -> addtemp(Dst, []);
     #jmp_fun{'fun'=Fun} -> addtemp(Fun, []);
     #jmp_switch{temp=Temp, jtab=JTab} -> addtemp(Temp, addtemp(JTab, []));
     #lea{mem=Mem} -> addtemp(Mem, []);
@@ -87,7 +83,7 @@ insn_use(I) ->
     #push{src=Src} -> addtemp(Src, []);
     #ret{} -> [hipe_x86:mk_temp(?HIPE_X86_REGISTERS:?RV(), 'tagged')];
     #shift{src=Src,dst=Dst} -> addtemp(Src, addtemp(Dst, []));
-    %% comment, jcc, jmp_label, label, nop, pseudo_jcc, pseudo_tailcall_prepare
+    %% comment, jcc, jmp_label, label, pseudo_jcc, pseudo_tailcall_prepare
     _ -> []
   end.
 

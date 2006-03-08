@@ -71,15 +71,13 @@ send_response(_Socket, _SocketType, Path, ModData, FileInfo, LastModified)->
 	    Headers = case ModData#mod.http_version of
 			 "HTTP/1.1" ->
 			      [{content_type, MimeType},
-			       LastModified,
 			       {etag, httpd_util:create_etag(FileInfo)},
-			       {content_length, Size}];
+			       {content_length, Size}|LastModified];
 			  %% OTP-4935
 			 _ ->
 			     %% i.e http/1.0 and http/0.9
-			      [LastModified,
-			       {content_type, MimeType},
-			       {content_length, Size}]
+			      [{content_type, MimeType},
+			       {content_length, Size}|LastModified]
 			  end,
 	    send(ModData, 200, Headers, FileDescriptor),
 	    file:close(FileDescriptor),
@@ -140,5 +138,8 @@ open_error(StatusCode,ModData,Path,Reason) ->
 
 get_modification_date(Path)->
     {ok, FileInfo0} = file:read_file_info(Path), 
-    Date = httpd_util:rfc1123_date(FileInfo0#file_info.mtime),
-    {FileInfo0, {last_modified, Date}}.
+    LastModified = case catch httpd_util:rfc1123_date(FileInfo0#file_info.mtime) of
+		       Date when is_list(Date) -> [{last_modified, Date}];
+		       _ -> []
+		   end,
+    {FileInfo0, LastModified}.

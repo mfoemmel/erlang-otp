@@ -17,7 +17,7 @@ rtl_to_amd64(MFA, RTL, Options) ->
 			    "amd64 register allocation", Options),
   Framed     = ?option_time(hipe_amd64_frame:frame(Allocated, Options), 
 			    "amd64 frame", Options),
-  Finalised  = ?option_time(hipe_amd64_postpass:postpass(Framed, Options),
+  Finalised  = ?option_time(hipe_x86_postpass:postpass(Framed, Options),
 			    "amd64 finalise", Options),
   hipe_amd64_pp:optional_pp(Finalised, MFA, Options),
   {native, amd64, {unprofiled, Finalised}}.

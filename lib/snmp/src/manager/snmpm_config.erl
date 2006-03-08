@@ -74,7 +74,9 @@
 	 system_start_time/0,
 
 	 info/0, 
-	 verbosity/1 
+	 verbosity/1,
+
+	 backup/1
 
 	]).
 
@@ -100,11 +102,14 @@
 %% Types:
 -record(user, {id, mod, data}).
 
--record(state, {}).
+-record(state, {backup}).
 
 
 %% Macros and Constants:
--define(SERVER, ?MODULE).
+-define(SERVER,    ?MODULE).
+-define(BACKUP_DB, snmpm_config_backup).
+-define(CONFIG_DB, snmpm_config_db).
+
 
 -define(IRB_DEFAULT, auto).
 %% -define(IRB_DEFAULT, {user, timer:seconds(15)}).
@@ -136,6 +141,9 @@ stop() ->
 
 is_started() ->
     call(is_started, 1000).
+
+backup(BackupDir) when is_list(BackupDir) ->
+    call({backup, BackupDir}).
 
 register_user(UserId, UserMod, UserData) when UserId =/= default_user ->
     case (catch verify_user_behaviour(UserMod)) of
@@ -332,7 +340,7 @@ get_engine_max_message_size() ->
     system_info(max_message_size).
 
 get_engine_boots() ->
-    case dets:lookup(snmpm_config_db, snmp_engine_boots) of
+    case dets:lookup(?CONFIG_DB, snmp_engine_boots) of
 	[{_, Boots}] ->
 	    {ok, Boots};
 	_ ->
@@ -344,7 +352,7 @@ set_engine_boots(Boots) ->
 	false ->
 	    call({set_engine_boots, Boots});
 	true ->
-	    dets:insert(snmpm_config_db, {snmp_engine_boots, Boots}),
+	    dets:insert(?CONFIG_DB, {snmp_engine_boots, Boots}),
 	    ok
     end.
     
@@ -682,6 +690,7 @@ init([Opts]) ->
     end.
 
 do_init(Opts) ->
+    process_flag(trap_exit, true),
     %% Mandatory = [versions, {config, [dir]}],
     Mandatory = [{config, [dir, db_dir]}],
     verify_options(Opts, Mandatory),
@@ -698,23 +707,25 @@ do_init(Opts) ->
     ets:insert(snmpm_config_table, {system_start_time, snmp_misc:now(cs)}),
     
     %% --- Own options (dir and db_dir mandatory) ---
-    ConfOpts  = get_opt(config,    Opts,      []),
-    ConfVerb  = get_opt(verbosity, ConfOpts, silence),
-    ConfDir   = get_opt(dir,       ConfOpts),
-    ConfDbDir = get_opt(db_dir,    ConfOpts),
-    ConfRep   = get_opt(repair,    ConfOpts, true),
-    ConfAs    = get_opt(auto_save, ConfOpts, 5000),
-    ets:insert(snmpm_config_table, {config_verbosity, ConfVerb}),
-    ets:insert(snmpm_config_table, {config_dir,       ConfDir}),
-    ets:insert(snmpm_config_table, {config_db_dir,    ConfDbDir}),
-    ets:insert(snmpm_config_table, {config_repair,    ConfRep}),
-    ets:insert(snmpm_config_table, {config_auto_save, ConfAs}),
+    ConfOpts      = get_opt(config,        Opts,     []),
+    ConfVerb      = get_opt(verbosity,     ConfOpts, silence),
+    ConfDir       = get_opt(dir,           ConfOpts),
+    ConfDbDir     = get_opt(db_dir,        ConfOpts),
+    ConfDbInitErr = get_opt(db_init_error, ConfOpts, terminate),
+    ConfRep       = get_opt(repair,        ConfOpts, true),
+    ConfAs        = get_opt(auto_save,     ConfOpts, 5000),
+    ets:insert(snmpm_config_table, {config_verbosity,     ConfVerb}),
+    ets:insert(snmpm_config_table, {config_dir,           ConfDir}),
+    ets:insert(snmpm_config_table, {config_db_dir,        ConfDbDir}),
+    ets:insert(snmpm_config_table, {config_db_init_error, ConfDbInitErr}),
+    ets:insert(snmpm_config_table, {config_repair,        ConfRep}),
+    ets:insert(snmpm_config_table, {config_auto_save,     ConfAs}),
     put(sname, mconf),
     put(verbosity, ConfVerb),
     ?vlog("starting", []),
 
     %% -- Create dets file used for storing persistent data --
-    dets_open(ConfDbDir, ConfRep, ConfAs),
+    dets_open(ConfDbDir, ConfDbInitErr, ConfRep, ConfAs),
     
     %% -- Prio (optional) --
     Prio = get_opt(priority, Opts, normal),
@@ -823,22 +834,55 @@ do_init(Opts) ->
     ok.
 
 
-dets_open(Dir, Repair, AutoSave) ->
-    Name     = snmpm_config_db,
+dets_open(Dir, DbInitError, Repair, AutoSave) ->
+    Name     = ?CONFIG_DB, 
     Filename = dets_filename(Name, Dir),
-    Opts     = [{repair, Repair}, {auto_save, AutoSave}, {file, Filename}],
-    case dets:open_file(Name, Opts) of
-	{ok, _Dets} ->
-	    ok;
-	{error, Reason} ->
-	    error({failed_open_dets, Reason})
+    case file:read_file_info(Filename) of
+	{ok, _} ->
+	    %% File exists
+	    case do_dets_open(Name, Filename, Repair, AutoSave) of
+		{ok, _Dets} ->
+		    ok;
+		{error, Reason1} ->
+                    info_msg("Corrupt local database: ~p", [Filename]),
+		    case DbInitError of
+			terminate ->
+			    error({failed_reopen_dets, Filename, Reason1});
+			_ ->
+			    Saved = Filename ++ ".saved",
+			    file:rename(Filename, Saved),
+			    case do_dets_open(Name, Filename, 
+					      Repair, AutoSave) of
+				{ok, _Dets} ->
+				    ok;
+				{error, Reason2} ->
+				    error({failed_open_dets, Filename, 
+					   Reason1, Reason2})
+			    end
+		    end
+	    end;
+	_ ->
+	    case do_dets_open(Name, Filename, Repair, AutoSave) of
+		{ok, _Dets} ->
+		    ok;
+		{error, Reason} ->
+		    error({failed_open_dets, Filename, Reason})
+	    end
     end.
+		
+do_dets_open(Name, Filename, Repair, AutoSave) ->
+    Opts = [{repair,    Repair}, 
+	    {auto_save, AutoSave}, 
+	    {file,      Filename}],
+    dets:open_file(Name, Opts).
+
 
 dets_filename(Name, Dir) ->
     filename:join(dets_filename1(Dir), Name).
-                                                                                                 
+
 dets_filename1([])  -> ".";
 dets_filename1(Dir) -> Dir.
+
 
 %% ------------------------------------------------------------------------
 
@@ -855,6 +899,7 @@ init_engine() ->
 
 reset_engine_base() ->
     ets:insert(snmpm_config_table, {snmp_engine_base, snmp_misc:now(sec)}).
+
 
 %% ------------------------------------------------------------------------
 
@@ -967,6 +1012,9 @@ verify_config_opts([{dir, Dir}|Opts]) ->
 verify_config_opts([{db_dir, Dir}|Opts]) ->
     verify_conf_db_dir(Dir),
     verify_config_opts(Opts);
+verify_config_opts([{db_init_error, DbInitErr}|Opts]) ->
+    verify_conf_db_init_error(DbInitErr),
+    verify_config_opts(Opts);
 verify_config_opts([{repair, Repair}|Opts]) ->
     verify_conf_repair(Repair),
     verify_config_opts(Opts);
@@ -1049,6 +1097,14 @@ verify_conf_db_dir(Dir) ->
 	_ ->
 	    error({invalid_conf_db_dir, Dir})
     end.
+
+
+verify_conf_db_init_error(terminate) ->
+    ok;
+verify_conf_db_init_error(create) ->
+    ok;
+verify_conf_db_init_error(InvalidDbInitError) ->
+    error({invalid_conf_db_init_error, InvalidDbInitError}).
 
 
 verify_conf_repair(true) ->
@@ -1861,6 +1917,30 @@ handle_call(info, _From, State) ->
     Reply = get_info(),
     {reply, Reply, State};
 
+handle_call({backup, BackupDir}, From, State) ->
+    ?vlog("backup to ~p", [BackupDir]),
+    Pid = self(),
+    V   = get(verbosity),
+    case file:read_file_info(BackupDir) of
+        {ok, #file_info{type = directory}} ->
+            BackupServer =
+                erlang:spawn_link(
+                  fun() ->
+                          put(sname, mcbs),
+                          put(verbosity, V),
+                          Dir   = filename:join([BackupDir]),
+                          Reply = handle_backup(?CONFIG_DB, Dir),
+                          Pid ! {backup_done, Reply},
+                          unlink(Pid)
+                  end),
+            ?vtrace("backup server: ~p", [BackupServer]),
+            {noreply, State#state{backup = {BackupServer, From}}};
+        {ok, _} ->
+            {reply, {error, not_a_directory}, State};
+        Error ->
+            {reply, Error, State}
+    end;
+
 
 handle_call(is_started, _From, State) ->
     ?vlog("received is_started request", []),
@@ -1893,6 +1973,22 @@ handle_cast(Msg, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
+handle_info({'EXIT', Pid, Reason}, #state{backup = {Pid, From}} = S) ->
+    ?vlog("backup server (~p) exited for reason ~n~p", [Pid, Reason]),
+    gen_server:reply(From, {error, Reason}),
+    {noreply, S#state{backup = undefined}};
+
+handle_info({'EXIT', Pid, Reason}, S) ->
+    %% The only other processes we should be linked to are
+    %% either the server or our supervisor, so die...
+    {stop, {received_exit, Pid, Reason}, S};
+
+handle_info({backup_done, Reply}, #state{backup = {_, From}} = S) ->
+    ?vlog("backup done:"
+          "~n   Reply: ~p", [Reply]),
+    gen_server:reply(From, Reply),
+    {noreply, S#state{backup = undefined}};
+
 handle_info(Info, State) ->
     info_msg("received unknown info: ~n~p", [Info]),
     {noreply, State}.
@@ -1913,9 +2009,115 @@ terminate(Reason, _State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 
-code_change(_Vsn, S, _Extra) ->
-    ?d("code_change -> entry [do nothing]", []),
-    {ok, S}.
+%% downgrade
+%%
+code_change({down, _Vsn}, S1, downgrade_to_pre_4_7) ->
+    #state{backup = B} = S1,
+    stop_backup_server(B),
+    S2 = {state},
+    {ok, S2};
+
+%% upgrade
+%%
+code_change(_Vsn, _S1, upgrade_from_pre_4_7) ->
+    %% {state} = S1,
+    S2 = #state{},
+    {ok, S2};
+
+code_change(_Vsn, State, _Extra) ->
+    {ok, State}.
+
+
+stop_backup_server(undefined) ->
+    ok;
+stop_backup_server({Pid, _}) when pid(Pid) ->
+    exit(Pid, kill).
+
+
+%%----------------------------------------------------------
+%% Backup
+%%----------------------------------------------------------
+
+handle_backup(D, BackupDir) ->
+    %% First check that we do not wrote to the corrent db-dir...
+    ?vtrace("handle_backup -> entry with"
+        "~n   D:         ~p"
+        "~n   BackupDir: ~p", [D, BackupDir]),
+    case dets:info(D, filename) of
+        undefined ->
+            ?vinfo("handle_backup -> no file to backup", []),
+            {error, no_file};
+        Filename ->
+            ?vinfo("handle_backup -> file to backup: ~n   ~p", [Filename]),
+            case filename:dirname(Filename) of
+                BackupDir ->
+                    ?vinfo("handle_backup -> backup dir and db dir the same",
+                           []),
+                    {error, db_dir};
+                _ ->
+                    case file:read_file_info(BackupDir) of
+                        {ok, #file_info{type = directory}} ->
+                            ?vdebug("handle_backup -> backup dir ok", []),
+                            %% All well so far...
+                            Type = dets:info(D, type),
+                            KP   = dets:info(D, keypos),
+                            dets_backup(D,
+                                        filename:basename(Filename),
+                                        BackupDir, Type, KP);
+                        {ok, _} ->
+                            ?vinfo("handle_backup -> backup dir not a dir",
+                                   []),
+                            {error, not_a_directory};
+                        Error ->
+                            ?vinfo("handle_backup -> Error: ~p", [Error]),
+                            Error
+                    end
+            end
+    end.
+
+dets_backup(D, Filename, BackupDir, Type, KP) ->
+    ?vtrace("dets_backup -> entry with"
+            "~n   D:         ~p"
+            "~n   Filename:  ~p"
+            "~n   BackupDir: ~p", [D, Filename, BackupDir]),
+    BackupFile = filename:join(BackupDir, Filename),
+    ?vtrace("dets_backup -> "
+            "~n   BackupFile: ~p", [BackupFile]),
+    Opts = [{file, BackupFile}, {type, Type}, {keypos, KP}],
+    case dets:open_file(?BACKUP_DB, Opts) of
+        {ok, B} ->
+            ?vtrace("dets_backup -> create fun", []),
+            F = fun(Arg) ->
+                        dets_backup(Arg, start, D, B)
+                end,
+            dets:safe_fixtable(D, true),
+            Res = dets:init_table(?BACKUP_DB, F, [{format, bchunk}]),
+            dets:safe_fixtable(D, false),
+            ?vtrace("dets_backup -> Res: ~p", [Res]),
+            Res;
+        Error ->
+            ?vinfo("dets_backup -> open_file failed: "
+                   "~n   ~p", [Error]),
+            Error
+    end.
+
+
+dets_backup(close, _Cont, _D, B) ->
+    dets:close(B),
+    ok;
+dets_backup(read, Cont1, D, B) ->
+    case dets:bchunk(D, Cont1) of
+        {Cont2, Data} ->
+            F = fun(Arg) ->
+                        dets_backup(Arg, Cont2, D, B)
+                end,
+            {Data, F};
+        '$end_of_table' ->
+            dets:close(B),
+            end_of_input;
+        Error ->
+            Error
+    end.
 
 
 %%%-------------------------------------------------------------------

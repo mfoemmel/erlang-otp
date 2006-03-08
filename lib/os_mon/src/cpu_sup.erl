@@ -17,24 +17,17 @@
 %%
 -module(cpu_sup).
 
-%%% Purpose : Obtain cpu statistics
-
-%%-compile(export_all).
-
--export([nprocs/0,avg1/0,avg5/0,avg15/0,ping/0,util/0,util/1]).
-
-%% External exports
+%% API
 -export([start_link/0, start/0, stop/0]).
+-export([nprocs/0, avg1/0, avg5/0, avg15/0, util/0, util/1]).
+-export([dummy_reply/1]).
+
+%% For testing
+-export([ping/0]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
-
--define(APPLICATION, "os_mon").
--ifndef(PORT_PROG_BIN_DIR).
--define(PORT_PROG_BIN_DIR, "bin"). %% This is relative priv_dir
--endif.
--define(PORT_PROG, "cpu_sup").
--define(NAME,cpu_sup).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+	 terminate/2, code_change/3]).
 
 %% Internal protocol with the port program
 -define(nprocs,"n").
@@ -54,20 +47,31 @@
 
 -record(state, {port = not_used, util = [], os_type}).
 
-%%%----------------------------------------------------------------------
-%%% API
-%%%----------------------------------------------------------------------
+%%----------------------------------------------------------------------
+%% API
+%%----------------------------------------------------------------------
 
-start()  -> gen_server:start({local, cpu_sup}, cpu_sup, [], []).
-start_link() -> gen_server:start_link({local, cpu_sup}, cpu_sup, [], []).
-stop()   -> gen_server:call(?NAME,?quit).
+start() ->
+    gen_server:start({local, cpu_sup}, cpu_sup, [], []).
 
-nprocs() -> gen_server:call(?NAME,?nprocs).
-avg1()   -> gen_server:call(?NAME,?avg1).
-avg5()   -> gen_server:call(?NAME,?avg5).
-avg15()  -> gen_server:call(?NAME,?avg15).
-ping()   -> gen_server:call(?NAME,?ping).
-util(ArgList) when list(ArgList) ->
+start_link() ->
+    gen_server:start_link({local, cpu_sup}, cpu_sup, [], []).
+
+stop() ->
+    gen_server:call(cpu_sup,?quit).
+
+nprocs() ->
+    os_mon:call(cpu_sup,?nprocs).
+avg1() ->
+    os_mon:call(cpu_sup,?avg1).
+
+avg5() ->
+    os_mon:call(cpu_sup,?avg5).
+
+avg15() ->
+    os_mon:call(cpu_sup,?avg15).
+
+util(ArgList) when is_list(ArgList) ->
     case lists:foldl(fun (detailed, {_, PC}) -> {true, PC};
 			 (per_cpu,  {D, _}) ->  {D,    true};
 			 (_, _) ->              badarg
@@ -75,11 +79,13 @@ util(ArgList) when list(ArgList) ->
 		     {false, false},
 		     ArgList) of
 	badarg ->
-	    erlang:fault(badarg, ArgList);
+	    erlang:error(badarg);
 	{Detailed, PerCpu} ->
-	    gen_server:call(?NAME, {?util, Detailed, PerCpu})
+	    os_mon:call(cpu_sup, {?util, Detailed, PerCpu})
     end;
-util(Arg) -> erlang:fault(badarg, Arg).
+util(_Arg) ->
+    erlang:error(badarg).
+
 util() ->
     case util([]) of
 	{all, Busy, _, _} ->
@@ -88,62 +94,42 @@ util() ->
 	    Error
     end.
 
-%%%----------------------------------------------------------------------
-%%% Callback functions from gen_server
-%%%----------------------------------------------------------------------
+dummy_reply(?nprocs) -> 0;
+dummy_reply(?avg1) ->   0;
+dummy_reply(?avg5) ->   0;
+dummy_reply(?avg15) ->  0;
+dummy_reply({?util,_,_}) -> {all, 0, 0, []}.
 
 %%----------------------------------------------------------------------
-%% Func: init/1
-%% Returns: {ok, State}          |
-%%          {ok, State, Timeout} |
-%%          {stop, Reason}
+%% For testing
 %%----------------------------------------------------------------------
+
+ping() ->
+    gen_server:call(cpu_sup,?ping).
+
+%%----------------------------------------------------------------------
+%% gen_server callbacks
+%%----------------------------------------------------------------------
+
 init([]) ->
-    case os:type() of
-	{unix, sunos} = OsType ->
-	    Prog = filename:join([code:priv_dir(?APPLICATION),
-				  ?PORT_PROG_BIN_DIR, ?PORT_PROG]),
-	    Port = open_port({spawn, Prog}, [stream,exit_status]),
-	    Port ! {self(), {command, ?ping}},
-	    case receive_int(Port) of
-		4711 ->
-		    {ok, #state{port=Port, os_type = OsType}};
-		_ ->
-		    {stop, {port_program_not_available, Prog}}
-	    end;
-	{unix, linux} = OsType ->
-	    case file:read_file_info("/proc/loadavg") of
-		{ok, _} ->
-		    {ok,#state{os_type = OsType}};
-		_ ->
-		    {stop, proc_file_system_not_accessible}
-	    end;
-	{unix, Flavor} = OsType when Flavor == freebsd;
-				     Flavor == openbsd;
-				     Flavor == darwin ->
-	    {ok,#state{os_type = OsType}};
-	OsType ->
-	    {stop, {os_type_not_supported,OsType}}
-    end.
+    process_flag(trap_exit, true),
+    process_flag(priority, low),
+    OS = os:type(),
+    Port = case OS of
+	       {unix, sunos} ->
+		   start_portprogram();
+	       {unix, Flavor} when Flavor==darwin;
+				   Flavor==freebsd;
+				   Flavor==linux;
+				   Flavor==openbsd ->
+		   not_used;
+	       _ ->
+		   exit({unsupported_os, OS})
+	   end,
+    {ok, #state{port=Port, os_type=OS}}.
 
-%%----------------------------------------------------------------------
-%% Func: handle_call/3
-%% Returns: {reply, Reply, State}          |
-%%          {reply, Reply, State, Timeout} |
-%%          {noreply, State}               |
-%%          {noreply, State, Timeout}      |
-%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%          {stop, Reason, Reply, State}     (terminate/2 is called)
-%%----------------------------------------------------------------------
 handle_call(?quit, _From, State) ->
-    case State#state.port of
-	not_used ->
-	    ok;
-	Port when port(Port) ->
-	    Port ! {self(), {command, ?quit}},
-	    Port ! {self(), close}
-    end,
-    {stop, shutdown, ok, State};
+    {stop, normal, ok, State};
 handle_call({?util, Detailed, PerCpu}, {Client, _Tag},
 	    #state{port = Port, os_type = {unix, sunos}} = State) ->
     Port ! {self(), {command, ?util}},
@@ -165,52 +151,65 @@ handle_call({?util, Detailed, PerCpu}, {Client, _Tag},
 			       PerCpu,
 			       fun () -> linux_read_cpu_util() end,
 			       State);
-handle_call({?util, _Detailed, _PerCpu}, _From,
-	    #state{os_type = OsType} = State) ->
-    {reply, {error, {os_type_not_supported, OsType}}, State};
-handle_call(Request, _From, State) ->
-    case get_int_measurement(Request, State) of
-	{error, Error} ->
-	    {stop, Error, Error, State};
-	Result ->
-	    {reply, Result, State}
-    end.
+handle_call({?util, _Detailed, _PerCpu}, _From, State) ->
+    String = "OS_MON (cpu_sup), util/1 unavailable for this OS~n",
+    error_logger:warning_msg(String),
+    {reply, dummy_reply(?util), State};
+handle_call(Request, _From, State) when Request==?nprocs;
+					Request==?avg1;
+					Request==?avg5;
+					Request==?avg15;
+					Request==?ping ->
+    Result = get_int_measurement(Request, State),
+    {reply, Result, State}.
 
-%%----------------------------------------------------------------------
-%% Func: handle_cast/2
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
-%%----------------------------------------------------------------------
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-%%----------------------------------------------------------------------
-%% Func: handle_info/2
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
-%%----------------------------------------------------------------------
-handle_info({Port, {exit_status, Status}}, #state{port = Port} = State) ->
-    {stop, {port_program_exited, Status}, State#state{port=closed}};
-handle_info({Port,closed}, #state{port = Port} = State) ->
-    {stop, port_closed, State#state{port=closed}};
+handle_info({'EXIT', _Port, Reason}, State) ->
+    {stop, {port_died, Reason}, State#state{port=not_used}};
 handle_info({'DOWN',Monitor,process,_,_}, #state{util = Utils} = State) ->
     {noreply, State#state{util = lists:keydelete(Monitor, 2, Utils)}};
 handle_info(_Info, State) ->
     {noreply, State}.
 
-%%----------------------------------------------------------------------
-%% Func: terminate/2
-%% Purpose: Shutdown the server
-%% Returns: any (ignored by gen_server)
-%%----------------------------------------------------------------------
-terminate(_Reason, _State) ->
+terminate(_Reason, State) ->
+    case State#state.port of
+	not_used ->
+	    ok;
+	Port ->
+	    Port ! {self(), {command, ?quit}},
+	    port_close(Port)
+    end,
     ok.
 
-%%%----------------------------------------------------------------------
-%%% Internal functions
-%%%----------------------------------------------------------------------
+%% os_mon-2.0
+%% For live downgrade to/upgrade from os_mon-1.8[.1]
+code_change(Vsn, PrevState, "1.8") ->
+    case Vsn of
+
+	%% Downgrade from this version
+	{down, _Vsn} ->
+	    process_flag(trap_exit, false);
+
+	%% Upgrade to this version
+	_Vsn ->
+	    process_flag(trap_exit, true)
+    end,
+    {ok, PrevState};
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%----------------------------------------------------------------------
+%% Internal functions
+%%----------------------------------------------------------------------
+
+start_portprogram() ->
+    Command = filename:join([code:priv_dir(os_mon), "bin", "cpu_sup"]),
+    Port = open_port({spawn, Command}, [stream]),
+    Port ! {self(), {command, ?ping}},
+    4711 = receive_int(Port),
+    Port.
 
 get_util_measurement_reply(Client, Detailed, PerCpu, NewCpuUtilFun,
 			   #state{util = Utils} = State) ->
@@ -256,8 +255,9 @@ get_int_measurement(Request, #state{os_type = {unix, freebsd}}) ->
 	?avg15 -> sunify(Load15);
 	?ping -> 4711;
 	?nprocs ->
-	    {ok, DirList} = file:list_dir("/proc"),
-	    length(DirList)
+	    Ps = os:cmd("/bin/ps -ax | /usr/bin/wc -l"),
+	    {ok, [N], _} = io_lib:fread("~d", Ps),
+	    N-1
     end;
 get_int_measurement(Request, #state{os_type = {unix, openbsd}}) ->
     D = os:cmd("/sbin/sysctl -n vm.loadavg") -- "\n",
@@ -291,9 +291,7 @@ get_int_measurement(Request, #state{os_type = {unix, darwin}}) ->
 	    Ps = os:cmd("/bin/ps -ax | /usr/bin/wc -l"),
 	    {ok, [N], _} = io_lib:fread("~d", Ps),
 	    N-1
-    end;
-get_int_measurement(_Request, #state{os_type = OsType}) ->
-    {error, {os_type_not_supported, OsType}}.
+    end.
 
 sunify(Val)  ->
     round(Val*256). % Note that Solaris and Linux load averages are
@@ -306,13 +304,13 @@ receive_int(Port) ->
 receive_int(_Port, [D3,D2,D1,D0]) ->
     ?INT32(D3,D2,D1,D0);
 receive_int(_, [_,_,_,_|Garbage]) ->
-    {error, {garbage_from_port_program, Garbage}};
+    exit({port_error, Garbage});
 receive_int(Port, Data) ->
     receive
 	{Port, {data, NxtData}} ->
 	    receive_int(Port, Data ++ NxtData);
-	{Port, {exit_status, Status}} ->
-	    {error, {port_program_exited, Status}}
+	{'EXIT', Port, Reason} ->
+	    exit({port_died, Reason})
     end.
 
 keysearchdelete(_, _, []) ->
@@ -323,7 +321,7 @@ keysearchdelete(K, N, [T|Ts]) ->
     {X, NTs} = keysearchdelete(K, N, Ts),
     {X, [T|NTs]}.
 
-%%% Internal cpu utilization functions 
+%% Internal cpu utilization functions 
 
 %% cpu_util_diff(New, Old) takes a list of new cpu_util records as first
 %% argument and a list of old cpu_util records as second argument. The
@@ -460,10 +458,7 @@ state_list_diff([],[]) ->
 state_list_diff([{State,ValueNew}|RestNew], []) ->
     state_list_diff([{State, ValueNew} | RestNew], [{State, 0}]);
 state_list_diff([{State,ValueNew}|RestNew], [{State,ValueOld}|RestOld]) ->
-    ValDiff = case val_diff(ValueNew, ValueOld) of
-		  Int when Int >= 0 -> Int;
-		  Int -> negative_diff(State, Int)
-	      end,
+    ValDiff = val_diff(State, ValueNew, ValueOld),
     {RestStateDiff, FoundDiff} = state_list_diff(RestNew, RestOld),
     {[{State, ValDiff} | RestStateDiff], FoundDiff orelse ValDiff /= 0}.
 
@@ -474,49 +469,54 @@ state_list_add([{State, ValueA}|RestA], []) ->
 state_list_add([{State, ValueA} | RestA], [{State, ValueB} | RestB]) ->
     [{State, ValueA + ValueB} | state_list_add(RestA, RestB)].
 
+one_step_backwards(State, New, Old) ->
+    case State#state.os_type of
+	{unix, linux} ->
+	    %% This should never happen! But values sometimes takes a step
+	    %% backwards on linux. We'll ignore it as long as it's only
+	    %% one step...
+	    0;
+	_ ->
+	    val_diff2(State, New, Old)
+    end.
 
+val_diff(State, New, Old) when New == Old - 1 ->
+    one_step_backwards(State, New, Old);
+val_diff(State, ?MAX_UINT32, 0) ->
+    one_step_backwards(State, ?MAX_UINT32, 0);
+val_diff(State, New, Old) ->
+    val_diff2(State, New, Old).
 
-val_diff(New, Old) when New > ?MAX_UINT32; Old > ?MAX_UINT32 ->
-    New - Old; %% We obviously got uints > 32 bits
-val_diff(New, Old) when New < Old ->
-    uint32_range_diff((?MAX_UINT32 + 1) + New - Old);
-val_diff(New, Old) ->
-    uint32_range_diff(New - Old).
+val_diff2(State, New, Old) when New > ?MAX_UINT32; Old > ?MAX_UINT32 ->
+    %% We obviously got uints > 32 bits
+    ensure_positive_diff(State, New - Old);
+val_diff2(State, New, Old) when New < Old ->
+    %% 32-bit integer wrapped
+    ensure_positive_diff(State, (?MAX_UINT32 + 1) + New - Old);
+val_diff2(_State, New, Old) ->
+    New - Old.
 
-%% We expect a maximal increment of (?MAX_UINT32 div 2); a larger
-%% difference is interpreted as a decrement
-uint32_range_diff(Diff) when Diff =< (?MAX_UINT32 div 2) ->
+ensure_positive_diff(_State, Diff) when Diff >= 0 ->
     Diff;
-uint32_range_diff(Diff) ->
-    Diff - (?MAX_UINT32 + 1).
-
-negative_diff(State, Diff) ->
-    negative_diff(State, Diff, os:type()).
-
-negative_diff(_State, Diff, {unix, linux}) when Diff >= -1 ->
-    %% This should never happen! But values sometimes takes a step
-    %% backwards on linux. We'll ignore it as long as it's only
-    %% one step...
-    0;
-negative_diff(State, Diff, _) ->
+ensure_positive_diff(State, Diff) ->
     throw({error, {negative_diff, State, Diff}}).
 
-%%%
-%%% Sunos specific functions...
-%%%
+%%
+%% Sunos specific functions...
+%%
 
 sunos_receive_cpu_util(Port) ->
     receive
 	{Port, {data, [N3,N2,N1,N0|CpuUtilData]}} ->
 	    sunos_receive_cpu_util(Port, ?INT32(N3,N2,N1,N0), CpuUtilData, []);
-	{Port, {exit_status, Status}} ->
-	    {error, {port_program_exited, Status}}
+	{'EXIT', Port, Reason} ->
+	    exit({port_died, Reason})
     end.
 
 sunos_receive_cpu_util(_, 0, [], Acc) ->
     lists:reverse(Acc); % Now sorted in ascending order on cpu index.
 sunos_receive_cpu_util(_, 0, Garbage, _) ->
-    {error, {garbage_from_port_program, Garbage}};
+    exit({port_error, Garbage});
 sunos_receive_cpu_util(Port, N, [C3,C2,C1,C0,
 				 U3,U2,U1,U0,
 				 K3,K2,K1,K0,
@@ -535,13 +535,13 @@ sunos_receive_cpu_util(Port, N, CpuSD, Acc) ->
     receive
 	{Port, {data, NxtCpuSD}} ->
 	    sunos_receive_cpu_util(Port, N, CpuSD ++ NxtCpuSD, Acc);
-	{Port, {exit_status, Status}} ->
-	    {error, {port_program_exited, Status}}
+	{'EXIT', Port, Reason} ->
+	    exit({port_died, Reason})
     end.
 
-%%%
-%%% Linux specific functions...
-%%%
+%%
+%% Linux specific functions...
+%%
 
 linux_get_cpu(all, Data, MoreDataFun) ->
     linux_get_cpu([], Data, MoreDataFun, "cpu ~d ~d ~d ~d");
@@ -617,5 +617,4 @@ linux_read_cpu_util() ->
 	    {error, {file_open_failed, "/proc/stat"}}
     end.
 
-%%%----------------------------------------------------------------------
-
+%%----------------------------------------------------------------------

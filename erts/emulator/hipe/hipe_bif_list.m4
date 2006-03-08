@@ -42,6 +42,7 @@
  * nofail_primop_interface_0(nbif_name, cbif_name)
  * nofail_primop_interface_1(nbif_name, cbif_name)
  * nofail_primop_interface_2(nbif_name, cbif_name)
+ * nofail_primop_interface_3(nbif_name, cbif_name)
  *
  * A primop or guard BIF with no failure mode, otherwise
  * identical to standard_bif_interface_N.
@@ -100,6 +101,14 @@ expensive_bif_interface_1(nbif_unlink_1, unlink_1)
 expensive_bif_interface_1(nbif_hipe_bifs_test_reschedule_1, hipe_bifs_test_reschedule_1)
 
 /*
+ * BIFs that may trigger a native stack walk with p->hipe.narity != 0.
+ * Relevant when NR_ARG_REGS < the arity of the BIF.
+ */
+standard_bif_interface_2(nbif_check_process_code_2, hipe_check_process_code_2)
+standard_bif_interface_1(nbif_garbage_collect_1, hipe_garbage_collect_1)
+standard_bif_interface_1(nbif_hipe_bifs_show_nstack_1, hipe_show_nstack_1)
+
+/*
  * Arithmetic operators called indirectly by the HiPE compiler.
  */
 standard_bif_interface_2(nbif_add_2, erts_mixed_plus)
@@ -151,6 +160,29 @@ nofail_primop_interface_0(nbif_bs_final, erts_bs_final)
  * These cannot CONS or gc.
  */
 noproc_primop_interface_1(nbif_bs_allocate, hipe_bs_allocate)
+
+/*
+ * Bit-syntax primops. The ERTS_SMP runtime system requires P,
+ * hence the use of nocons_nofail_primop_interface_N().
+ * When ERTS_SMP is disabled, noproc_primop_interface_N()
+ * should be used instead.
+ */
+ifelse(ERTS_SMP,1,`
+nocons_nofail_primop_interface_1(nbif_bs_start_match, hipe_bs_start_match)
+nocons_nofail_primop_interface_1(nbif_bs_skip_bits, hipe_bs_skip_bits)
+nocons_nofail_primop_interface_0(nbif_bs_skip_bits_all, hipe_bs_skip_bits_all)
+nocons_nofail_primop_interface_1(nbif_bs_test_tail, hipe_bs_test_tail)
+nocons_nofail_primop_interface_1(nbif_bs_save, hipe_bs_save)
+nocons_nofail_primop_interface_1(nbif_bs_restore, hipe_bs_restore)
+nocons_nofail_primop_interface_0(nbif_bs_init, hipe_bs_init)
+nocons_nofail_primop_interface_3(nbif_bs_put_integer, hipe_bs_put_integer)
+nocons_nofail_primop_interface_2(nbif_bs_put_binary, hipe_bs_put_binary)
+nocons_nofail_primop_interface_1(nbif_bs_put_binary_all, hipe_bs_put_binary_all)
+nocons_nofail_primop_interface_3(nbif_bs_put_float, hipe_bs_put_float)
+nocons_nofail_primop_interface_2(nbif_bs_put_string, hipe_bs_put_string)
+nocons_nofail_primop_interface_5(nbif_bs_put_big_integer, hipe_bs_put_big_integer)
+nocons_nofail_primop_interface_5(nbif_bs_put_small_float, hipe_bs_put_small_float)
+',`
 noproc_primop_interface_1(nbif_bs_start_match, erts_bs_start_match)
 noproc_primop_interface_1(nbif_bs_skip_bits, erts_bs_skip_bits)
 noproc_primop_interface_0(nbif_bs_skip_bits_all, erts_bs_skip_bits_all)
@@ -165,6 +197,17 @@ noproc_primop_interface_3(nbif_bs_put_float, erts_bs_put_float)
 noproc_primop_interface_2(nbif_bs_put_string, erts_bs_put_string)
 noproc_primop_interface_5(nbif_bs_put_big_integer, hipe_bs_put_big_integer)
 noproc_primop_interface_5(nbif_bs_put_small_float, hipe_bs_put_small_float)
+')dnl
+
+/*
+ * SMP-specific stuff
+ */
+ifelse(ERTS_SMP,1,`
+nocons_nofail_primop_interface_0(nbif_clear_timeout, hipe_clear_timeout)
+nocons_nofail_primop_interface_0(nbif_check_get_msg, hipe_check_get_msg)
+nocons_nofail_primop_interface_0(nbif_next_msg, hipe_next_msg)
+noproc_primop_interface_1(nbif_atomic_inc, hipe_atomic_inc)
+',)dnl
 
 /*
  * Standard BIFs.

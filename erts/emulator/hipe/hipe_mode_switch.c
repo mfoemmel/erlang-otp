@@ -127,6 +127,8 @@ static void hipe_check_nstack(Process *p, unsigned nwords);
 #include "hipe_amd64_glue.h"
 #elif defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__)
 #include "hipe_ppc_glue.h"
+#elif defined(__arm__)
+#include "hipe_arm_glue.h"
 #endif
 
 #define BeamOpCode(Op)		((Uint)BeamOp(Op))
@@ -438,6 +440,14 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
       case HIPE_MODE_SWITCH_RES_WAIT:
       case HIPE_MODE_SWITCH_RES_WAIT_TIMEOUT: {
 	  /* same semantics, different debug trace messages */
+#ifdef ERTS_SMP
+	  /* XXX: BEAM has different entries for the locked and unlocked
+	     cases. HiPE doesn't, so we must check dynamically. */
+	  if (p->hipe.have_receive_locks)
+	      p->hipe.have_receive_locks = 0;
+	  else
+	      erts_smp_proc_lock(p, ERTS_PROC_LOCKS_MSG_RECEIVE);
+#endif
 	  p->i = hipe_beam_pc_resume;
 	  p->arity = 0;
 	  p->status = P_WAITING;
@@ -448,6 +458,7 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 #endif
 	      p = schedule(p, reds_in - p->fcalls);
 #ifdef ERTS_SMP
+	      p->hipe.have_receive_locks = 0;
 	      reg = p->scheduler_data->save_reg;
 #endif
 	  }

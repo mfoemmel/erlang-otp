@@ -25,6 +25,7 @@
 
 -define(DEFAULT_PACKET_SIZE, 32768).
 -define(DEFAULT_WINDOW_SIZE, 2*?DEFAULT_PACKET_SIZE).
+-define(DEFAULT_TIMEOUT, 5000).
 
 -behaviour(gen_server).
 
@@ -34,8 +35,6 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
 	 code_change/3]).
 
-
-
 -export([connect/1, connect/2, connect/3]).
 -export([listen/2, listen/3, listen/4, stop_listener/1]).
 -export([stop/1]).
@@ -43,17 +42,17 @@
 -export([encode_ip/1]).
 
 %% API
--export([adjust_window/3, attach/1, detach/1,
-	 tcpip_forward/3, cancel_tcpip_forward/3, direct_tcpip/5, direct_tcpip/7, 
+-export([adjust_window/3, attach/2, detach/2,
+	 tcpip_forward/3, cancel_tcpip_forward/3, direct_tcpip/6,
+	 direct_tcpip/8, 
 	 close/2,
-	 shell/2, exec/3, i/1, i/2, info/1, info/2, 
-	 open_pty/2,
-	 recv_window/2, send/3, send/4, renegotiate/1, renegotiate/2,
+	 shell/2, exec/4, i/1, i/2, info/1, info/2, 
+	 recv_window/3, send/3, send/4, renegotiate/1, renegotiate/2,
 	 request_success/2, send_ack/3, send_ack/4, send_ack/5, send_eof/2,
-	 send_window/2, session_open/1, session_open/3, subsystem/3,
-	 open_pty/2, open_pty/6, open_pty/8,
-	 set_user_ack/3, set_user/3,
-	 setenv/4, signal/3, winch/4]).
+	 send_window/3, session_open/2, session_open/4, subsystem/4,
+	 open_pty/3, open_pty/7, open_pty/9,
+	 set_user_ack/4, set_user/4,
+	 setenv/5, signal/3, winch/4]).
 
 %% Special for ssh_userauth (and similar)
 %%-export([set_ssh_msg_handler/2, reset_ssh_msg_handler/1]).
@@ -125,6 +124,10 @@ listen(UserFun, Port, Opts) ->
     listen(UserFun, any, Port, Opts).
 listen(UserFun, Addr, Port, Opts) ->
     Self = self(),
+    case proplists:get_value(reg_users, Opts, false) of
+	true -> ssh_userauth:reg_user_auth_server();
+	_ -> ok
+    end,
     ssh_transport:listen(
       fun(SSH) ->
 	      {ok, CM} =
@@ -188,7 +191,7 @@ init([server, Caller, UserFun, SSH, Opts]) ->
     SSH ! {ssh_install, connect_messages()},
     process_flag(trap_exit, true),
     User = UserFun(),
-    Caller ! {self(), {ok, self()}},
+    %% Caller ! {self(), {ok, self()}},
     CTab = ets:new(cm_tab, [set,{keypos, #channel.local_id}]),
     State = #state{role = server, ctab = CTab, ssh = SSH, opts = Opts,
 		   requests = []},
@@ -244,22 +247,22 @@ info(CM, User) ->
     gen_server:call(CM, {info, User}).
 
 %% CM Client commands
-session_open(CM) ->
-    session_open(CM, ?DEFAULT_WINDOW_SIZE, ?DEFAULT_PACKET_SIZE).
+session_open(CM, TMO) ->
+    session_open(CM, ?DEFAULT_WINDOW_SIZE, ?DEFAULT_PACKET_SIZE, TMO).
 
-session_open(CM, InitialWindowSize, MaxPacketSize) ->
+session_open(CM, InitialWindowSize, MaxPacketSize, TMO) ->
     case gen_server:call(CM, {open, self(), "session",
-			      InitialWindowSize, MaxPacketSize, <<>>}) of
+			      InitialWindowSize, MaxPacketSize, <<>>}, TMO) of
 	{open, C} -> {ok, C};
 	Error -> Error
     end.
 
-direct_tcpip(CM, RemoteHost, RemotePort, OrigIP, OrigPort)                 ->
+direct_tcpip(CM, RemoteHost, RemotePort, OrigIP, OrigPort, TMO) ->
     direct_tcpip(CM, RemoteHost, RemotePort, OrigIP, OrigPort,
-		 ?DEFAULT_WINDOW_SIZE, ?DEFAULT_PACKET_SIZE).
+		 ?DEFAULT_WINDOW_SIZE, ?DEFAULT_PACKET_SIZE, TMO).
 
 direct_tcpip(CM, RemoteIP, RemotePort, OrigIP, OrigPort,
-	     InitialWindowSize, MaxPacketSize) ->
+	     InitialWindowSize, MaxPacketSize, TMO) ->
     case {encode_ip(RemoteIP), encode_ip(OrigIP)} of
 	{false, _} -> {error, einval};
 	{_, false} -> {error, einval};
@@ -267,7 +270,7 @@ direct_tcpip(CM, RemoteIP, RemotePort, OrigIP, OrigPort,
 	    gen_server:call(CM, {open, self(), "direct-tcpip", 
 				 InitialWindowSize, MaxPacketSize,
 				 [?string(RIP), ?uint32(RemotePort),
-				  ?string(OIP), ?uint32(OrigPort)] })
+				  ?string(OIP), ?uint32(OrigPort)] }, TMO)
 %%% 	    receive
 %%% 		{ssh_cm, CM, {open, Channel}} ->
 %%% 		    {ok, Channel};
@@ -294,48 +297,48 @@ cancel_tcpip_forward(CM, BindIP, Port) ->
 			    ?uint32(Port)])
     end.
 
-open_pty(CM, Channel) ->
-    open_pty(CM, Channel, os:getenv("TERM"), 80, 24, []).
+open_pty(CM, Channel, TMO) ->
+    open_pty(CM, Channel, os:getenv("TERM"), 80, 24, [], TMO).
 
-open_pty(CM, Channel, Term, Width, Height, PtyOpts)                        ->
-    open_pty(CM, Channel, Term, Width, Height, 0, 0, PtyOpts).
+open_pty(CM, Channel, Term, Width, Height, PtyOpts, TMO) ->
+    open_pty(CM, Channel, Term, Width, Height, 0, 0, PtyOpts, TMO).
 
 
-open_pty(CM, Channel, Term, Width, Height, PixWidth, PixHeight, PtyOpts) ->
+open_pty(CM, Channel, Term, Width, Height, PixWidth, PixHeight, PtyOpts, TMO) ->
     request(CM, Channel, "pty-req", true, 
 	    [?string(Term),
 	     ?uint32(Width), ?uint32(Height),
 	     ?uint32(PixWidth),?uint32(PixHeight),
-	     encode_pty_opts(PtyOpts)]).
+	     encode_pty_opts(PtyOpts)], TMO).
 
-setenv(CM, Channel, Var, Value)                                            ->
-    request(CM, Channel, "env", true, [?string(Var), ?string(Value)]).
+setenv(CM, Channel, Var, Value, TMO) ->
+    request(CM, Channel, "env", true, [?string(Var), ?string(Value)], TMO).
 
-shell(CM, Channel)                                                         ->
-    request(CM, Channel, "shell", false, <<>>).
+shell(CM, Channel) ->
+    request(CM, Channel, "shell", false, <<>>, 0).
 
-exec(CM, Channel, Command)                                                 ->
-    request(CM, Channel, "exec", true, [?string(Command)]).
+exec(CM, Channel, Command, TMO) ->
+    request(CM, Channel, "exec", true, [?string(Command)], TMO).
 
-subsystem(CM, Channel, SubSystem)                                          ->
-    request(CM, Channel, "subsystem", true, [?string(SubSystem)]).
+subsystem(CM, Channel, SubSystem, TMO) ->
+    request(CM, Channel, "subsystem", true, [?string(SubSystem)], TMO).
 
-winch(CM, Channel, Width, Height)                                          ->
+winch(CM, Channel, Width, Height) ->
     winch(CM, Channel, Width, Height, 0, 0).
 winch(CM, Channel, Width, Height, PixWidth, PixHeight)                     ->
     request(CM, Channel, "window-change", false, 
 	    [?uint32(Width), ?uint32(Height),
-	     ?uint32(PixWidth), ?uint32(PixHeight)]).
+	     ?uint32(PixWidth), ?uint32(PixHeight)], 0).
 
 signal(CM, Channel, Sig)                                                   ->
     request(CM, Channel, "signal", false,
-	    [?string(Sig)]).
+	    [?string(Sig)], 0).
 
-attach(CM) ->
-    gen_server:call(CM, {attach, self()}).
+attach(CM, TMO) ->
+    gen_server:call(CM, {attach, self()}, TMO).
 
-detach(CM) ->
-    gen_server:call(CM, {detach, self()}).
+detach(CM, TMO) ->
+    gen_server:call(CM, {detach, self()}, TMO).
 
 
 renegotiate(CM) ->
@@ -344,22 +347,22 @@ renegotiate(CM,Opts) ->
     gen_server:cast(CM, {renegotiate,Opts}).
 
 %% Setup user ack on data messages (i.e signal when the data has been sent)
-set_user_ack(CM, Channel, Ack)                                             ->
-    gen_server:call(CM, {set_user_ack, Channel, Ack}).
+set_user_ack(CM, Channel, Ack, TMO) ->
+    gen_server:call(CM, {set_user_ack, Channel, Ack}, TMO).
 
-set_user(CM, Channel, User)                                                ->
-    gen_server:call(CM, {set_user, Channel, User}).
+set_user(CM, Channel, User, TMO) ->
+    gen_server:call(CM, {set_user, Channel, User}, TMO).
 
-send_window(CM, Channel) ->
-    gen_server:call(CM, {send_window, Channel}).
+send_window(CM, Channel, TMO) ->
+    gen_server:call(CM, {send_window, Channel}, TMO).
 
-recv_window(CM, Channel)                                                   ->
-    gen_server:call(CM, {recv_window, Channel}).
+recv_window(CM, Channel, TMO) ->
+    gen_server:call(CM, {recv_window, Channel}, TMO).
 
-adjust_window(CM, Channel, Bytes)                                          ->
+adjust_window(CM, Channel, Bytes) ->
     gen_server:cast(CM, {adjust_window, Channel, Bytes}).
 
-close(CM, Channel)                                                         ->
+close(CM, Channel) ->
     gen_server:cast(CM, {close, Channel}).
 
 stop(CM) ->
@@ -374,13 +377,13 @@ send(CM, Channel, Data)                                                    ->
 send(CM, Channel, Type, Data)                                              ->
     CM ! {ssh_cm, self(), {data, Channel, Type, Data}}.
 
-send_ack(CM, Channel, Data)                                                ->
+send_ack(CM, Channel, Data) ->
     send_ack(CM, Channel, 0, Data, infinity).
 
-send_ack(CM, Channel, Type, Data)                                          ->
+send_ack(CM, Channel, Type, Data) ->
     send_ack(CM, Channel, Type, Data, infinity).
 
-send_ack(CM, Channel, Type, Data, Timeout)                                 ->
+send_ack(CM, Channel, Type, Data, Timeout) ->
     send(CM, Channel, Type, Data),
     receive
 	{ssh_cm, CM, {ack, Channel}} ->
@@ -389,13 +392,13 @@ send_ack(CM, Channel, Type, Data, Timeout)                                 ->
 	    {error, timeout}
     end.
 
-request(CM, Channel, Type, Reply, Data)                                    ->    
+request(CM, Channel, Type, Reply, Data, TMO) ->
     case Reply of
-	true -> gen_server:call(CM, {request, Channel, Type, Data});
+	true -> gen_server:call(CM, {request, Channel, Type, Data}, TMO);
 	false -> gen_server:cast(CM, {request, Channel, Type, Data})
     end.
 
-global_request(CM, Type, Reply, Data)                                      ->
+global_request(CM, Type, Reply, Data) ->
     CM ! {ssh_cm, self(), {global_request,self(),Type,Reply,Data}},
     if Reply == true ->
 	    receive
@@ -414,7 +417,7 @@ global_request(CM, Type, Reply, Data)                                      ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-connect_messages()                                                         ->
+connect_messages() ->
     [ {ssh_msg_global_request, ?SSH_MSG_GLOBAL_REQUEST,
        [string, 
 	boolean,

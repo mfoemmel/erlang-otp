@@ -92,7 +92,9 @@ release_docs_spec:
 $(EBIN)/hipe_ppc_assemble.beam: ../main/hipe.hrl ../../kernel/src/hipe_ext_format.hrl ../rtl/hipe_literals.hrl ../misc/hipe_sdi.hrl
 $(EBIN)/hipe_ppc_cfg.beam: ../flow/cfg.inc
 $(EBIN)/hipe_ppc_frame.beam: ../rtl/hipe_literals.hrl
-$(EBIN)/hipe_ppc_liveness.beam: ../flow/liveness.inc
+$(EBIN)/hipe_ppc_liveness_all.beam: ../flow/liveness.inc
+$(EBIN)/hipe_ppc_liveness_fpr.beam: ../flow/liveness.inc
+$(EBIN)/hipe_ppc_liveness_gpr.beam: ../flow/liveness.inc
 $(EBIN)/hipe_ppc_registers.beam: ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_rtl_to_ppc.beam: ../rtl/hipe_rtl.hrl
 

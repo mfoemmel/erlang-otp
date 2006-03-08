@@ -54,6 +54,8 @@
 
 	 mk_load/4,
 	 mk_loadx/4,
+	 mk_load/6,
+	 ldop_to_ldxop/1,
 
 	 mk_mcrxr/0,
 
@@ -80,8 +82,6 @@
 	 pseudo_move_dst/1,
 	 pseudo_move_src/1,
 
-	 mk_pseudo_ret/1,
-
 	 mk_pseudo_tailcall/4,
 	 pseudo_tailcall_func/1,
 	 pseudo_tailcall_stkargs/1,
@@ -91,16 +91,18 @@
 
 	 mk_store/4,
 	 mk_storex/4,
+	 mk_store/6,
+	 stop_to_stxop/1,
 
 	 mk_unary/3,
 
 	 mk_lfd/3,
 	 mk_lfdx/3,
-	 mk_fload/3,
+	 mk_fload/4,
 
-	 mk_stfd/3,
+	 %% mk_stfd/3,
 	 mk_stfdx/3,
-	 mk_fstore/3,
+	 mk_fstore/4,
 
 	 mk_fp_binary/4,
 
@@ -214,11 +216,63 @@ simm16sext(Value) ->
      true -> Value
   end.
 
+mk_li_new(Dst, Value, Tail) -> % Dst may be R0
+  R0 = mk_temp(0, 'untagged'),
+  case at_ha(Value) of
+    0 ->
+      %% Value[31:16] are the sign-extension of Value[15].
+      %% Use a single addi to load and sign-extend 16 bits.
+      [mk_alu('addi', Dst, R0, mk_simm16(at_l(Value))) |
+       Tail];
+    _ ->
+      %% Use addis to load the high 16 bits, followed by an
+      %% optional ori to load non sign-extended low 16 bits.
+      High = simm16sext((Value bsr 16) band 16#FFFF),
+      [mk_alu('addis', Dst, R0, mk_simm16(High)) |
+       case (Value band 16#FFFF) of
+	 0 -> Tail;
+	 Low ->
+	   [mk_alu('ori', Dst, Dst, mk_uimm16(Low)) |
+	    Tail]
+       end]
+  end.
+
 mk_load(LDop, Dst, Disp, Base) ->
   #load{ldop=LDop, dst=Dst, disp=Disp, base=Base}.
 
 mk_loadx(LdxOp, Dst, Base1, Base2) ->
   #loadx{ldxop=LdxOp, dst=Dst, base1=Base1, base2=Base2}.
+
+mk_load(LdOp, Dst, Offset, Base, Scratch, Rest) ->
+  if Offset >= -32768, Offset =< 32767 ->
+      [mk_load(LdOp, Dst, Offset, Base) | Rest];
+     true ->
+      LdxOp = ldop_to_ldxop(LdOp),
+      Index =
+	begin
+	  DstReg = temp_reg(Dst),
+	  BaseReg = temp_reg(Base),
+	  if DstReg =/= BaseReg -> Dst;
+	     true -> mk_scratch(Scratch)
+	  end
+	end,
+      mk_li_new(Index, Offset,
+		[mk_loadx(LdxOp, Dst, Base, Index) | Rest])
+  end.
+
+ldop_to_ldxop(LdOp) ->
+  case LdOp of
+    'lbz' -> 'lbzx';
+    'lha' -> 'lhax';
+    'lhz' -> 'lhzx';
+    'lwz' -> 'lwzx'
+  end.
+
+mk_scratch(Scratch) ->
+  case Scratch of
+    0 -> mk_temp(0, 'untagged');
+    'new' -> mk_new_temp('untagged')
+  end.
 
 mk_mcrxr() -> #mcrxr{}.
 
@@ -269,8 +323,6 @@ is_pseudo_move(I) -> case I of #pseudo_move{} -> true; _ -> false end.
 pseudo_move_dst(#pseudo_move{dst=Dst}) -> Dst.
 pseudo_move_src(#pseudo_move{src=Src}) -> Src.
 
-mk_pseudo_ret(NPop) -> #pseudo_ret{npop=NPop}.
-
 mk_pseudo_tailcall(FunC, Arity, StkArgs, Linkage) ->
   #pseudo_tailcall{func=FunC, arity=Arity, stkargs=StkArgs, linkage=Linkage}.
 pseudo_tailcall_func(#pseudo_tailcall{func=FunC}) -> FunC.
@@ -285,28 +337,43 @@ mk_store(STop, Src, Disp, Base) ->
 mk_storex(StxOp, Src, Base1, Base2) ->
   #storex{stxop=StxOp, src=Src, base1=Base1, base2=Base2}.
 
+mk_store(StOp, Src, Offset, Base, Scratch, Rest) ->
+  if Offset >= -32768, Offset =< 32767 ->
+      [mk_store(StOp, Src, Offset, Base) | Rest];
+     true ->
+      StxOp = stop_to_stxop(StOp),
+      Index = mk_scratch(Scratch),
+      mk_li_new(Index, Offset,
+		[mk_storex(StxOp, Src, Base, Index) | Rest])
+  end.
+
+stop_to_stxop(StOp) ->
+  case StOp of
+    'stb' -> 'stbx';
+    'sth' -> 'sthx';
+    'stw' -> 'stwx'
+  end.
+
 mk_unary(UnOp, Dst, Src) -> #unary{unop=UnOp, dst=Dst, src=Src}.
 
 mk_lfd(Dst, Disp, Base) -> #lfd{dst=Dst, disp=Disp, base=Base}.
 mk_lfdx(Dst, Base1, Base2) -> #lfdx{dst=Dst, base1=Base1, base2=Base2}.
-mk_fload(Dst, Offset, Base) -> % may clobber hipe_ppc_registers:temp2()
+mk_fload(Dst, Offset, Base, Scratch) ->
   if Offset >= -32768, Offset =< 32767 ->
       [mk_lfd(Dst, Offset, Base)];
      true ->
-      Index = mk_temp(hipe_ppc_registers:temp2(), 'untagged'),
-      [mk_li(Index, Offset),
-       mk_lfdx(Dst, Base, Index)]
+      Index = mk_scratch(Scratch),
+      mk_li_new(Index, Offset, [mk_lfdx(Dst, Base, Index)])
   end.
 
 mk_stfd(Src, Disp, Base) -> #stfd{src=Src, disp=Disp, base=Base}.
 mk_stfdx(Src, Base1, Base2) -> #stfdx{src=Src, base1=Base1, base2=Base2}.
-mk_fstore(Src, Offset, Base) -> % may clobber hipe_ppc_registers:temp2()
+mk_fstore(Src, Offset, Base, Scratch) ->
   if Offset >= -32768, Offset =< 32767 ->
       [mk_stfd(Src, Offset, Base)];
      true ->
-      Index = mk_temp(hipe_ppc_registers:temp2(), 'untagged'),
-      [mk_li(Index, Offset),
-       mk_stfdx(Src, Base, Index)]
+      Index = mk_scratch(Scratch),
+      mk_li_new(Index, Offset, [mk_stfdx(Src, Base, Index)])
   end.
 
 mk_fp_binary(FpBinOp, Dst, Src1, Src2) ->

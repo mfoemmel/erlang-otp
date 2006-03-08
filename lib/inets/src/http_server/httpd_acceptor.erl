@@ -20,10 +20,10 @@
 -include("httpd.hrl").
 
 %% External API
--export([start_link/5]).
+-export([start_link/5, start_link/6]).
 
 %% Other exports (for spawn's etc.)
--export([acceptor/4, acceptor/6]).
+-export([acceptor/5, acceptor/6, acceptor/7]).
 
 
 %%
@@ -33,15 +33,19 @@
 %% start_link
 
 start_link(Manager, SocketType, Addr, Port, ConfigDb) ->
-    Args = [self(), Manager, SocketType, Addr, Port, ConfigDb],
+    start_link(Manager, SocketType, Addr, Port, ConfigDb, 15000).
+
+start_link(Manager, SocketType, Addr, Port, ConfigDb,AcceptTimeout) ->
+    Args = [self(), Manager, SocketType, Addr, Port, ConfigDb, AcceptTimeout],
     proc_lib:start_link(?MODULE, acceptor, Args).
 
-
 acceptor(Parent, Manager, SocketType, Addr, Port, ConfigDb) ->
+    acceptor(Parent, Manager, SocketType, Addr, Port, ConfigDb, 15000).
+acceptor(Parent, Manager, SocketType, Addr, Port, ConfigDb, AcceptTimeout) ->
     case (catch do_init(SocketType, Addr, Port)) of
 	{ok, ListenSocket} ->
 	    proc_lib:init_ack(Parent, {ok, self()}),
-	    acceptor(Manager, SocketType, ListenSocket, ConfigDb);
+	    acceptor(Manager, SocketType, ListenSocket, ConfigDb, AcceptTimeout);
 	Error ->
 	    proc_lib:init_ack(Parent, Error),
 	    error
@@ -73,22 +77,22 @@ do_socket_listen(SocketType, Addr, Port) ->
 
 %% acceptor 
 
-acceptor(Manager, SocketType, ListenSocket, ConfigDb) ->
+acceptor(Manager, SocketType, ListenSocket, ConfigDb, AcceptTimeout) ->
     case (catch http_transport:accept(SocketType, ListenSocket, 50000)) of
 	{ok, Socket} ->
-	    handle_connection(Manager, ConfigDb, SocketType, Socket),
-	    ?MODULE:acceptor(Manager, SocketType, ListenSocket, ConfigDb);
+	    handle_connection(Manager, ConfigDb, AcceptTimeout, SocketType, Socket),
+	    ?MODULE:acceptor(Manager, SocketType, ListenSocket, ConfigDb,AcceptTimeout);
 	{error, Reason} ->
 	    handle_error(Reason, ConfigDb, SocketType),
-	    ?MODULE:acceptor(Manager, SocketType, ListenSocket, ConfigDb);
+	    ?MODULE:acceptor(Manager, SocketType, ListenSocket, ConfigDb, AcceptTimeout);
 	{'EXIT', Reason} ->
 	    handle_error({'EXIT', Reason}, ConfigDb, SocketType),
-	    ?MODULE:acceptor(Manager, SocketType, ListenSocket, ConfigDb)
+	    ?MODULE:acceptor(Manager, SocketType, ListenSocket, ConfigDb, AcceptTimeout)
     end.
 
 
-handle_connection(Manager, ConfigDb, SocketType, Socket) ->
-    {ok, Pid} = httpd_request_handler:start(Manager, ConfigDb),
+handle_connection(Manager, ConfigDb, AcceptTimeout, SocketType, Socket) ->
+    {ok, Pid} = httpd_request_handler:start(Manager, ConfigDb, AcceptTimeout),
     http_transport:controlling_process(SocketType, Socket, Pid),
     httpd_request_handler:socket_ownership_transfered(Pid, SocketType, Socket).
 

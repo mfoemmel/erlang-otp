@@ -217,13 +217,13 @@ rex_([{b, OtherRegister}| Rest]) ->     % ModRM r/m, SIB base or opcode reg
 le16(Word, Tail) ->
     [Word band 16#FF, (Word bsr 8) band 16#FF | Tail].
 
-le32(Word, Tail) when integer(Word) ->
+le32(Word, Tail) when is_integer(Word) ->
     [Word band 16#FF, (Word bsr 8) band 16#FF,
      (Word bsr 16) band 16#FF, (Word bsr 24) band 16#FF | Tail];
 le32({Tag,Val}, Tail) ->	% a relocatable datum
     [{le32,Tag,Val} | Tail].
 
-le64(Word, Tail) when integer(Word) ->
+le64(Word, Tail) when is_integer(Word) ->
      [ Word         band 16#FF, (Word bsr  8) band 16#FF,
       (Word bsr 16) band 16#FF, (Word bsr 24) band 16#FF,
       (Word bsr 32) band 16#FF, (Word bsr 40) band 16#FF,

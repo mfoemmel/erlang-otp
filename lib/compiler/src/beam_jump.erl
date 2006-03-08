@@ -20,7 +20,8 @@
 -module(beam_jump).
 
 -export([module/2,module_labels/1,
-	 is_unreachable_after/1,remove_unused_labels/1]).
+	 is_unreachable_after/1,remove_unused_labels/1,
+	 is_label_used_in/2]).
 
 %%% The following optimisations are done:
 %%%
@@ -412,6 +413,22 @@ is_exit_instruction_1(erlang, error, 2) -> true;
 is_exit_instruction_1(erlang, fault, 1) -> true;
 is_exit_instruction_1(erlang, fault, 2) -> true;
 is_exit_instruction_1(_, _, _) -> false.
+
+%% is_label_used_in(LabelNumber, [Instruction]) -> true|false
+%%  Check whether the labels is used in the instruction sequence.
+
+is_label_used_in(Lbl, Is) ->
+    is_label_used_in_1(Is, Lbl, gb_sets:empty()).
+
+is_label_used_in_1([I|Is], Lbl, Empty) ->
+    Used = ulbl(I, Empty),
+    case gb_sets:is_member(Lbl, Used) of
+	false ->
+	    is_label_used_in_1(Is, Lbl, Empty);
+	true ->
+	    true
+    end;
+is_label_used_in_1([], _, _) -> false.
 
 %% remove_unused_labels(Instructions0) -> Instructions
 %%  Remove all unused labels.

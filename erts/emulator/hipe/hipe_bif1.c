@@ -174,14 +174,19 @@ BIF_RETTYPE hipe_bifs_trap_count_clear_0(BIF_ALIST_0)
  *                       Used shared heap,
  *                       Allocated shared heap,
  *                       Max used shared heap,
- *                       Max allocated shared heap,
- *                       N.o. complete incremental GC cycles }
+ *                       Max allocated shared heap }
  *
  *   The same as above, but for the shared heap / message area. Note,
  *   that in a shared heap system the max used heap and max allocated
  *   heap are mostly the same, since the heap allways is filled before
  *   a garbage collection, and most garbage collections do not enlarge
  *   the heap. The private heap numbers are much more interesting.
+ *
+ *
+ * incremental_gc_info/0 -> { Complete minor GC cycles,
+ *                            Complete major GC cycles,
+ *                            Minor GC stages,
+ *                            Major GC stages }
  *
  *
  * gc_info_clear/0 -> true
@@ -394,8 +399,8 @@ BIF_RETTYPE hipe_bifs_gc_info_0(BIF_ALIST_0)
 {
 #ifdef __BENCHMARK__
 #ifndef BM_COUNTERS
-    Uint minor_garbage_cols = 0;
-    Uint major_garbage_cols = 0;
+    Uint minor_gc = 0;
+    Uint major_gc = 0;
 #endif
 #ifndef BM_HEAP_SIZES
     Uint max_used_heap      = 0;
@@ -415,8 +420,8 @@ BIF_RETTYPE hipe_bifs_gc_info_0(BIF_ALIST_0)
                       MBUF_SIZE(BIF_P);
 
     hp = HAlloc(BIF_P, 7);
-    BIF_RET(TUPLE6(hp,make_small((Uint)minor_garbage_cols),
-                      make_small((Uint)major_garbage_cols),
+    BIF_RET(TUPLE6(hp,make_small((Uint)minor_gc),
+                      make_small((Uint)major_gc),
                       make_small((Uint)used_heap),
                       make_small((Uint)alloc_heap),
                       make_small(max_used_heap),
@@ -429,9 +434,9 @@ BIF_RETTYPE hipe_bifs_gc_info_0(BIF_ALIST_0)
 BIF_RETTYPE hipe_bifs_shared_gc_info_0(BIF_ALIST_0)
 {
 #ifdef __BENCHMARK__
-#ifndef BM_COUNTERS
-    Uint minor_global_garbage_cols = 0;
-    Uint major_global_garbage_cols = 0;
+#if !(defined(BM_COUNTERS) && defined(HYBRID))
+    Uint minor_global_gc = 0;
+    Uint major_global_gc = 0;
 #endif
 #ifndef BM_HEAP_SIZES
     Uint max_used_global_heap      = 0;
@@ -441,12 +446,12 @@ BIF_RETTYPE hipe_bifs_shared_gc_info_0(BIF_ALIST_0)
 
 #if defined(SHARED_HEAP) || defined(HYBRID)
     Uint tmp_used_heap = (Uint)((BIF_P->htop - BIF_P->heap) +
-#if !(defined(NOMOVE) && defined(SHARED_HEAP))
+#if !(defined(INCREMENTAL) && defined(SHARED_HEAP))
                                 (OLD_HTOP(BIF_P) - OLD_HEAP(BIF_P)) +
 #endif
                                 MBUF_SIZE(BIF_P));
     Uint tmp_allocated_heap = (Uint)((BIF_P->hend - BIF_P->heap) +
-#if !(defined(NOMOVE) && defined(SHARED_HEAP))
+#if !(defined(INCREMENTAL) && defined(SHARED_HEAP))
                                      (OLD_HEND(BIF_P) - OLD_HEAP(BIF_P)) +
 #endif
                                      MBUF_SIZE(BIF_P));
@@ -454,14 +459,34 @@ BIF_RETTYPE hipe_bifs_shared_gc_info_0(BIF_ALIST_0)
     Uint tmp_used_heap = 0;
     Uint tmp_allocated_heap = 0;
 #endif
-    hp = HAlloc(BIF_P, 8);
-    BIF_RET(TUPLE7(hp,make_small((uint)minor_global_garbage_cols),
-                      make_small((uint)major_global_garbage_cols),
+    hp = HAlloc(BIF_P, 7);
+    BIF_RET(TUPLE6(hp,make_small((uint)minor_global_gc),
+                      make_small((uint)major_global_gc),
                       make_small(tmp_used_heap),
                       make_small(tmp_allocated_heap),
                       make_small(max_used_global_heap),
-                      make_small(max_allocated_global_heap),
-                      make_small(gc_cycles)));
+                      make_small(max_allocated_global_heap)));
+#else
+    BIF_RET(am_false);
+#endif
+}
+
+BIF_RETTYPE hipe_bifs_incremental_gc_info_0(BIF_ALIST_0)
+{
+#ifdef __BENCHMARK__
+#if !(defined(BM_COUNTERS) && defined(INCREMENTAL))
+    Uint minor_gc_cycles = 0;
+    Uint major_gc_cycles = 0;
+    Uint minor_gc_stages = 0;
+    Uint major_gc_stages = 0;
+#endif
+    Eterm *hp;
+
+    hp = HAlloc(BIF_P, 5);
+    BIF_RET(TUPLE4(hp,make_small(minor_gc_cycles),
+                      make_small(major_gc_cycles),
+                      make_small(minor_gc_stages),
+                      make_small(major_gc_stages)));
 #else
     BIF_RET(am_false);
 #endif
@@ -470,18 +495,30 @@ BIF_RETTYPE hipe_bifs_shared_gc_info_0(BIF_ALIST_0)
 BIF_RETTYPE hipe_bifs_gc_info_clear_0(BIF_ALIST_0)
 {
 #ifdef __BENCHMARK__
+
 #ifdef BM_COUNTERS
-    minor_garbage_cols        = 0;
-    major_garbage_cols        = 0;
-    minor_global_garbage_cols = 0;
-    major_global_garbage_cols = 0;
+    minor_gc        = 0;
+    major_gc        = 0;
+#ifdef HYBRID
+    minor_global_gc = 0;
+    major_global_gc = 0;
+    gc_in_copy      = 0;
+#ifdef INCREMENTAL
+    minor_gc_cycles = 0;
+    major_gc_cycles = 0;
+    minor_gc_stages = 0;
+    major_gc_stages = 0;
 #endif
+#endif
+#endif
+
 #ifdef BM_HEAP_SIZES
     max_used_heap             = 0;
     max_allocated_heap        = 0;
     max_used_global_heap      = 0;
     max_allocated_global_heap = 0;
 #endif
+
     BIF_RET(am_true);
 #else
     BIF_RET(am_false);
@@ -499,7 +536,7 @@ BIF_RETTYPE hipe_bifs_pause_times_0(BIF_ALIST_0)
     for (i = 0; i < MAX_PAUSE_TIME; i++)
     {
         if (pause_times[i] > 0) {
-            printf("%d: %d\r\n",i,pause_times[i]);
+            printf("%d: %ld\r\n",i,pause_times[i]);
             total_time += pause_times[i] * i;
             n += pause_times[i];
 
@@ -526,7 +563,7 @@ BIF_RETTYPE hipe_bifs_pause_times_0(BIF_ALIST_0)
     for (i = 0; i < MAX_PAUSE_TIME; i++)
     {
         if (pause_times_old[i] > 0) {
-            printf("%d: %d\r\n",i,pause_times_old[i]);
+            printf("%d: %ld\r\n",i,pause_times_old[i]);
             total_time += pause_times_old[i] * i;
             n += pause_times_old[i];
         }

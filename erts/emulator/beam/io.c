@@ -2759,6 +2759,7 @@ int driver_set_timer(ErlDrvPort ix, Uint t)
 	return -1;
     if (prt->drv_ptr->timeout == NULL)
 	return -1;
+    erl_cancel_timer(&prt->tm);
     erl_set_timer(&prt->tm, (ErlTimeoutProc) port_timeout_proc, NULL, prt, t);
     return 0;
 }

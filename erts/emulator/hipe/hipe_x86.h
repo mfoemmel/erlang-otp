@@ -36,4 +36,7 @@ static __inline__ void hipe_set_narity(Process *p, unsigned int arity)
 
 #define hipe_arch_name	am_x86
 
+extern void nbif_inc_stack_0(void);
+extern void nbif_handle_fp_exception(void);
+
 #endif /* HIPE_X86_H */

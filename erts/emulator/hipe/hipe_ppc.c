@@ -11,10 +11,8 @@
 #include "hipe_bif0.h"
 
 #if !defined(__powerpc64__)
-static const unsigned int fconv_constant[2] = { 0x43300000, 0x80000000 };
+const unsigned int fconv_constant[2] = { 0x43300000, 0x80000000 };
 #endif
-
-AEXTERN(void,hipe_ppc_inc_stack,(void));
 
 /* Flush dcache and invalidate icache for a range of addresses. */
 void hipe_flush_icache_range(void *address, unsigned int nbytes)
@@ -47,18 +45,6 @@ void hipe_flush_icache_range(void *address, unsigned int nbytes)
 	p += L1_CACHE_BYTES;
     } while (--n != 0);
     asm volatile("sync\n\tisync");
-}
-
-/* called from hipe_bif0.c:hipe_bifs_primop_address_1() */
-const void *hipe_arch_primop_address(Eterm key)
-{
-    switch (key) {
-#if !defined(__powerpc64__)
-      case am_fconv_constant: return &fconv_constant;
-#endif
-      case am_inc_stack_0: return &hipe_ppc_inc_stack;
-      default: return NULL;
-    }
 }
 
 /*
@@ -178,6 +164,7 @@ static unsigned int *try_alloc(Uint nrwords, int nrcallees, Eterm callees, Eterm
 	if (!in_area(trampoline, base, SEGMENT_NRBYTES)) {
 	    if (nrfreewords < 4)
 		return NULL;
+	    nrfreewords -= 4;
 	    tramp_pos = trampoline = tramp_pos - 4;
 #if defined(__powerpc64__)
 	    trampoline[0] = 0x3D600000; /* addis r11,0,0 */

@@ -166,6 +166,9 @@ obsolete(snmp, N, A) ->
 	     integer_to_list(A)++" instead"}
     end;
 
+obsolete(megaco, format_versions, 1) ->
+    {true, "Deprecated; use megaco:print_version_info/0,1 instead"};
+
 obsolete(os_mon_mib, init, 1) ->
     {true, {os_mon_mib, load, 1}};
 obsolete(os_mon_mib, stop, 1) ->

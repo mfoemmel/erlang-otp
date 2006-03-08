@@ -693,6 +693,41 @@ insert_op(Tid, _, {op, clear_table, TabDef}, InPlace, InitBy) ->
 
 insert_op(Tid, _, {op, merge_schema, TabDef}, InPlace, InitBy) ->
     Cs = mnesia_schema:list2cs(TabDef),
+    case Cs#cstruct.name of
+	schema ->
+	    %% If we bootstrap an empty (diskless) mnesia from another node
+	    %% we might have changed the storage_type of schema.
+	    %% I think this is a good place to do it.
+	    Update = fun(NS = {Node,Storage}) -> 
+			     case mnesia_lib:cs_to_storage_type(Node, Cs) of
+				 Storage -> NS;
+				 disc_copies when Node == node() -> 
+				     mnesia_lib:set(use_dir, true),	     
+				     mnesia_log:init(),
+				     Ns = val({current, db_nodes}),
+				     F = fun(U) -> mnesia_recover:log_mnesia_up(U) end,
+				     lists:foreach(F, Ns),
+				     raw_named_dump_table(schema, dat),
+				     temp_set_master_nodes(),
+				     {Node,disc_copies};
+				 CSstorage -> 
+				     {Node,CSstorage}
+			     end
+		     end,
+	    
+	    W2C0 = val({schema, where_to_commit}),
+	    W2C = case W2C0 of
+		      {blocked, List} ->
+			  {blocked,lists:map(Update,List)};
+		      List ->
+			  lists:map(Update,List)
+		  end,
+	    if W2C == W2C0 -> ignore;
+	       true -> mnesia_lib:set({schema, where_to_commit}, W2C)
+	    end;
+	_ ->
+	    ignore
+    end,
     insert_cstruct(Tid, Cs, false, InPlace, InitBy);
 
 insert_op(Tid, _, {op, del_table_copy, Storage, Node, TabDef}, InPlace, InitBy) ->
@@ -988,6 +1023,19 @@ delete_cstruct(Tid, Cs, InPlace, InitBy) ->
     S = val({schema, storage_type}),
     disc_insert(Tid, S, schema, Tab, Val, delete, InPlace, InitBy),
     Tab.
+
+
+temp_set_master_nodes() ->
+    Tabs = val({schema, local_tables}),
+    Masters = [{Tab, (val({Tab, disc_copies}) ++ 
+		      val({Tab, ram_copies}) ++ 
+		      val({Tab, disc_only_copies})) -- [node()]} 
+	       || Tab <- Tabs],
+    %% UseDir = false since we don't want to remember these
+    %% masternodes and we are running (really soon anyway) since we want this
+    %% to be known during table loading.
+    mnesia_recover:log_master_nodes(Masters, false, yes),
+    ok.    
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Raw dump of table. Dumper must have unique access to the ets table.

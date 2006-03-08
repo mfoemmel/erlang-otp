@@ -9,8 +9,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2003/12/07 23:18:49 $
-%%              $Revision: 1.3 $
+%%              $Date: 2005/12/12 21:58:04 $
+%%              $Revision: 1.4 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -195,5 +195,3 @@ total_calls(Mod) ->
 	end,
   lists:foldl(Sum,0,Funs).
 
-
-  

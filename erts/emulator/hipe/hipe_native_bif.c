@@ -18,6 +18,46 @@
 #include "hipe_stack.h"
 
 /*
+ * These are wrappers for BIFs that may trigger a native
+ * stack walk with p->hipe.narity != 0.
+ */
+
+/* for -Wmissing-prototypes :-( */
+extern Eterm hipe_check_process_code_2(Process*, Eterm, Eterm);
+extern Eterm hipe_garbage_collect_1(Process*, Eterm);
+extern Eterm hipe_show_nstack_1(Process*, Eterm);
+
+Eterm hipe_check_process_code_2(BIF_ALIST_2)
+{
+    Eterm ret;
+
+    hipe_set_narity(BIF_P, 2);
+    ret = check_process_code_2(BIF_P, BIF_ARG_1, BIF_ARG_2);
+    hipe_set_narity(BIF_P, 0);
+    return ret;
+}
+
+Eterm hipe_garbage_collect_1(BIF_ALIST_1)
+{
+    Eterm ret;
+
+    hipe_set_narity(BIF_P, 1);
+    ret = garbage_collect_1(BIF_P, BIF_ARG_1);
+    hipe_set_narity(BIF_P, 0);
+    return ret;
+}
+
+Eterm hipe_show_nstack_1(BIF_ALIST_1)
+{
+    Eterm ret;
+
+    hipe_set_narity(BIF_P, 1);
+    ret = hipe_bifs_show_nstack_1(BIF_P, BIF_ARG_1);
+    hipe_set_narity(BIF_P, 0);
+    return ret;
+}
+
+/*
  * This is called when inlined heap allocation in native code fails.
  * The 'need' parameter is the number of heap words needed.
  * The value is tagged as a fixnum to avoid untagged data on
@@ -96,6 +136,12 @@ Eterm hipe_set_timeout(Process *p, Eterm timeout_value)
 	set_timer(p, time_val);
 #endif
     } else {
+#ifdef ERTS_SMP
+	if (p->hipe.have_receive_locks) {
+	    p->hipe.have_receive_locks = 0;
+	    erts_smp_proc_unlock(p, ERTS_PROC_LOCKS_MSG_RECEIVE);
+	}
+#endif
 	BIF_ERROR(p, EXC_TIMEOUT_VALUE);
     }
     return NIL;	/* caller had better call nbif_suspend ASAP! */
@@ -256,7 +302,11 @@ char *hipe_bs_allocate(int len)
   return bptr->orig_bytes;
 }
 
-int hipe_bs_put_big_integer(Eterm arg, Uint num_bits, byte* base, unsigned offset, unsigned flags)
+int hipe_bs_put_big_integer(
+#ifdef ERTS_SMP
+    Process *p,
+#endif
+    Eterm arg, Uint num_bits, byte* base, unsigned offset, unsigned flags)
 { 
   byte* save_bin_buf;
   unsigned save_bin_offset, save_bin_buf_len;
@@ -273,7 +323,12 @@ int hipe_bs_put_big_integer(Eterm arg, Uint num_bits, byte* base, unsigned offse
   erts_bin_buf_len=save_bin_buf_len;
   return res;
 }
-int hipe_bs_put_small_float(Eterm arg, Uint num_bits, byte* base, unsigned offset, unsigned flags)
+
+int hipe_bs_put_small_float(
+#ifdef ERTS_SMP
+    Process *p,
+#endif
+    Eterm arg, Uint num_bits, byte* base, unsigned offset, unsigned flags)
 { 
   byte* save_bin_buf;
   unsigned save_bin_offset, save_bin_buf_len;
@@ -290,3 +345,211 @@ int hipe_bs_put_small_float(Eterm arg, Uint num_bits, byte* base, unsigned offse
   erts_bin_buf_len=save_bin_buf_len;
   return res;
 }
+
+/*
+ * SMP-specific stuff
+ */
+#ifdef ERTS_SMP
+/*
+ * This is like the timeout BEAM instruction.
+ */
+void hipe_clear_timeout(Process *c_p)
+{
+    /*
+     * A timeout has occurred.  Reset the save pointer so that the next
+     * receive statement will examine the first message first.
+     */
+#ifdef ERTS_SMP
+    /* XXX: BEAM has different entries for the locked and unlocked
+       cases. HiPE doesn't, so we must check dynamically. */
+    if (c_p->hipe.have_receive_locks) {
+	c_p->hipe.have_receive_locks = 0;
+	erts_smp_proc_unlock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
+    }
+#endif
+    if (IS_TRACED_FL(c_p, F_TRACE_RECEIVE)) {
+	trace_receive(c_p, am_timeout);
+    }
+    c_p->flags &= ~F_TIMO;
+    JOIN_MESSAGE(c_p);
+}
+
+/* This is like the loop_rec_fr BEAM instruction
+ */
+#ifdef ERTS_SMP
+
+#if defined(HEAP_FRAG_ELIM_TEST) /* Shallow copy to heap if possible;
+				    otherwise, move to heap via garbage
+				    collection. */
+
+#define MV_MSG_MBUF_INTO_PROC(M)					\
+do {									\
+    if ((M)->bp) {							\
+	Uint need = (M)->bp->size;					\
+	if (E - HTOP >= need) {						\
+	    Uint *htop = HTOP;						\
+	    erts_move_msg_mbuf_to_heap(&htop, &MSO(c_p), (M));		\
+	    ASSERT(htop - HTOP == need);				\
+	    HTOP = htop;						\
+	}								\
+	else {								\
+	    SWAPOUT;							\
+	    reg[0] = r(0);						\
+	    FCALLS -= erts_garbage_collect(c_p, 0, NULL, 0);		\
+	    r(0) = reg[0];						\
+	    SWAPIN;							\
+	    ASSERT(!(M)->bp);						\
+	}								\
+    }									\
+    ASSERT(!(M)->bp);							\
+} while (0)
+
+#elif 0 /* Shallow copy to heap if possible; otherwise,
+	   move to proc mbuf list. */
+
+#define MV_MSG_MBUF_INTO_PROC(M)					\
+do {									\
+    if ((M)->bp) {							\
+	Uint need = (M)->bp->size;					\
+	if (E - HTOP < need)						\
+	    erts_move_msg_mbuf_to_proc_mbufs(c_p, (M));			\
+	else {								\
+	    Uint *htop = HTOP;						\
+	    erts_move_msg_mbuf_to_heap(&htop, &MSO(c_p), (M));		\
+	    ASSERT(htop - HTOP == need);				\
+	    HTOP = htop;						\
+	}								\
+    }									\
+    ASSERT(!(M)->bp);							\
+} while (0)
+
+#else /* Move to proc mbuf list. */
+
+#define MV_MSG_MBUF_INTO_PROC(M)					\
+do {									\
+    if ((M)->bp) erts_move_msg_mbuf_to_proc_mbufs(c_p, (M));		\
+    ASSERT(!(M)->bp);							\
+} while (0)
+
+#endif
+
+#else 
+#define MV_MSG_MBUF_INTO_PROC(M)
+#endif
+
+Eterm hipe_check_get_msg(Process *c_p)
+{
+    Eterm ret;
+    ErlMessage *msgp;
+
+    msgp = PEEK_MESSAGE(c_p);
+
+    if (!msgp) {
+#ifdef ERTS_SMP
+	erts_smp_proc_lock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
+	ERTS_SMP_MSGQ_MV_INQ2PRIVQ(c_p);
+	msgp = PEEK_MESSAGE(c_p);
+	if (msgp)
+	    erts_smp_proc_unlock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
+	else {
+	    /* XXX: BEAM doesn't need this */
+	    c_p->hipe.have_receive_locks = 1;
+#endif
+	    return THE_NON_VALUE;
+#ifdef ERTS_SMP
+	}
+#endif
+    }
+    MV_MSG_MBUF_INTO_PROC(msgp);
+    ret = ERL_MESSAGE_TERM(msgp);
+    return ret;
+}
+
+/* This is like the loop_rec_end_f BEAM instruction.
+ */
+void hipe_next_msg(Process *c_p)
+{
+    /*
+     * Advance the save pointer to the next message (the current
+     * message didn't match), then jump to the loop_rec instruction.
+     */
+    SAVE_MESSAGE(c_p);
+}
+
+void hipe_atomic_inc(int *counter)
+{
+    erts_smp_atomic_inc((erts_smp_atomic_t*)counter);
+}
+
+int hipe_bs_start_match(Process *p, Eterm Bin)
+{
+    ERL_BITS_DEFINE_STATEP(p);
+    return erts_bs_start_match(ERL_BITS_ARGS_1(Bin));
+}
+
+int hipe_bs_skip_bits(Process *p, Uint num_bits)
+{
+    ERL_BITS_DEFINE_STATEP(p);
+    return erts_bs_skip_bits(ERL_BITS_ARGS_1(num_bits));
+}
+
+int hipe_bs_skip_bits_all(Process *p)
+{
+    ERL_BITS_DEFINE_STATEP(p);
+    return erts_bs_skip_bits_all(ERL_BITS_ARGS_0);
+}
+
+int hipe_bs_test_tail(Process *p, Uint num_bits)
+{
+    ERL_BITS_DEFINE_STATEP(p);
+    return erts_bs_test_tail(ERL_BITS_ARGS_1(num_bits));
+}
+
+void hipe_bs_save(Process *p, int index)
+{
+    ERL_BITS_DEFINE_STATEP(p);
+    return erts_bs_save(ERL_BITS_ARGS_1(index));
+}
+
+void hipe_bs_restore(Process *p, int index)
+{
+    ERL_BITS_DEFINE_STATEP(p);
+    return erts_bs_restore(ERL_BITS_ARGS_1(index));
+}
+
+void hipe_bs_init(Process *p)
+{
+    ERL_BITS_DEFINE_STATEP(p);
+    return erts_bs_init(ERL_BITS_ARGS_0);
+}
+
+int hipe_bs_put_integer(Process *p, Eterm Integer, Uint num_bits, unsigned flags)
+{
+    ERL_BITS_DEFINE_STATEP(p);
+    return erts_bs_put_integer(ERL_BITS_ARGS_3(Integer, num_bits, flags));
+}
+
+int hipe_bs_put_binary(Process *p, Eterm Bin, Uint num_bits)
+{
+    ERL_BITS_DEFINE_STATEP(p);
+    return erts_bs_put_binary(ERL_BITS_ARGS_2(Bin, num_bits));
+}
+
+int hipe_bs_put_binary_all(Process *p, Eterm Bin)
+{
+    ERL_BITS_DEFINE_STATEP(p);
+    return erts_bs_put_binary_all(ERL_BITS_ARGS_1(Bin));
+}
+
+int hipe_bs_put_float(Process *p, Eterm Float, Uint num_bits, int flags)
+{
+    ERL_BITS_DEFINE_STATEP(p);
+    return erts_bs_put_float(ERL_BITS_ARGS_3(Float, num_bits, flags));
+}
+
+void hipe_bs_put_string(Process *p, byte* iptr, Uint num_bytes)
+{
+    ERL_BITS_DEFINE_STATEP(p);
+    return erts_bs_put_string(ERL_BITS_ARGS_2(iptr, num_bytes));
+}
+#endif

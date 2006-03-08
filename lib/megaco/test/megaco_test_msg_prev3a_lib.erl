@@ -4613,8 +4613,8 @@ chk_WildcardField(WF1, WF2) ->
 is_TerminationID(#'TerminationID'{wildcard = W, 
 				  id       = ID}) ->
     is_TerminationID_wildcard(W) andalso is_TerminationID_id(ID);
-is_TerminationID(#megaco_term_id{contains_wildcards = W,
-				 id                 = ID}) ->
+is_TerminationID(#megaco_term_id{contains_wildcards = _W,
+				 id                 = _ID}) ->
     true; % What are the types?
 is_TerminationID(_) ->
     false.

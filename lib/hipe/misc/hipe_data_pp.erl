@@ -9,9 +9,9 @@
 %%  History  :	* 2001-02-25 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: mikpe $
-%%              $Date: 2004/03/12 10:10:36 $
-%%              $Revision: 1.5 $
+%%              $Author: kostis $
+%%              $Date: 2005/12/12 23:20:16 $
+%%              $Revision: 1.6 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -32,7 +32,6 @@ pp(Dev, Table, CodeType, Pre) ->
 	    [{L,hipe_consttab:lookup(L, Table)} || L <- Ls]).
 
 pp_element(Dev, Name, Element, CodeType, Prefix) ->
-  
   %% Alignment
   case hipe_consttab:const_align(Element) of
     4 -> ok; %% Wordalignment is assumed

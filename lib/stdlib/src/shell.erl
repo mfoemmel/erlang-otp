@@ -469,7 +469,7 @@ exprs([E0|Es], Bs1, RT, Lf, Ef, Bs0) ->
             E1 = expand_records(UsedRecords, E0),
             {value,V,Bs2} = erl_eval:expr(E1, Bs1, Lf, Ef),
             Bs = orddict:from_list([VV || {X,_}=VV <- erl_eval:bindings(Bs2),
-                                          not is_sys_pre_expand_variable(X)]),
+                                          not is_expand_variable(X)]),
             if
                 Es =:= [] ->
                     {{value,V,Bs,get()},Bs};
@@ -480,9 +480,9 @@ exprs([E0|Es], Bs1, RT, Lf, Ef, Bs0) ->
             {{command_error,Error},Bs0}
     end.
 
-is_sys_pre_expand_variable(V) ->
+is_expand_variable(V) ->
     case catch atom_to_list(V) of
-        "pre" ++ _Integer -> true;
+        "rec" ++ _Integer -> true;
         _ -> false
     end.
 
@@ -651,27 +651,20 @@ prep_check(E) ->
 expand_records([], E0) ->
     E0;
 expand_records(UsedRecords, E0) ->
-    try
-        RecordDefs = [Def || {{record,_Name},Def} <- UsedRecords],
-        L = 1,
-        E = prep_rec(E0),
-        Forms = RecordDefs ++ [{function,L,foo,0,[{clause,L,[],[],[E]}]}],
-        {_,_,[F|_],_} = sys_pre_expand:module(Forms, []), 
-        {function,L,foo,0,[{clause,L,[],[],[NE]}]} = F,
-        prep_rec(NE)
-    catch _:_ ->
-        E0
-    end.                               
+    RecordDefs = [Def || {{record,_Name},Def} <- UsedRecords],
+    L = 1,
+    E = prep_rec(E0),
+    Forms = RecordDefs ++ [{function,L,foo,0,[{clause,L,[],[],[E]}]}],
+    [{function,L,foo,0,[{clause,L,[],[],[NE]}]}] = 
+        erl_expand_records:module(Forms, []), 
+    prep_rec(NE).
 
 prep_rec({value,L,V}) ->
-    %% sys_pre_expand cannot handle the history expansion {value,_,_}.
+    %% erl_expand_records cannot handle the history expansion {value,_,_}.
     {atom,{value,L,V},ok};
 prep_rec({atom,{value,L,V},ok}) -> 
     %% Undo the effect of the previous clause...
     {value,L,V};
-prep_rec({'fun',L,Cls,_AddedBySysPreExpand}) -> 
-    %% Undo what sys_pre_expand does to the 'fun' tuple.
-    {'fun',L,prep_rec(Cls)};
 prep_rec(T) when is_tuple(T) -> list_to_tuple(prep_rec(tuple_to_list(T)));
 prep_rec([E | Es]) -> [prep_rec(E) | prep_rec(Es)];
 prep_rec(E) -> E.

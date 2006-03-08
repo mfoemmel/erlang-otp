@@ -23,13 +23,14 @@
 %%----------------------------------------------------------------------
 
 %% Application exports
--export([start/0,
+-export([start/0, start/1,
 	 start_agent/0,   start_agent/1, 
 	 start_manager/0, start_manager/1, 
 	 config/0,
 	 
          versions1/0,      versions2/0,
 	 print_versions/1, print_versions/2, 
+	 print_version_info/0, print_version_info/1, 
  
 	 date_and_time/0, 
 	 universal_time_to_date_and_time/1,
@@ -135,7 +136,16 @@
 %%-----------------------------------------------------------------
 
 start() ->
-    application:start(snmp).
+    application:start(?APPLICATION).
+
+start(p) ->
+    start(permanent);
+start(tr) ->
+    start(transient);
+start(te) ->
+    start(temporary);
+start(Type) ->
+    application:start(?APPLICATION, Type).
 
 
 start_agent() ->
@@ -156,6 +166,14 @@ config() -> snmp_config:config().
 
 %%-----------------------------------------------------------------
 %% {ok, Vs} = snmp:versions1(), snmp:print_versions(Vs).
+
+print_version_info() ->
+    {ok, Vs} = versions1(),
+    print_versions(Vs).
+
+print_version_info(Prefix) ->
+    {ok, Vs} = versions1(),
+    print_versions(Prefix, Vs).
 
 print_versions(Versions) ->
     print_versions("", Versions).

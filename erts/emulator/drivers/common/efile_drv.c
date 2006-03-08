@@ -258,7 +258,7 @@ struct t_preadv {
     unsigned n;
     unsigned cnt;
     size_t   size;
-    size_t   offsets[1];
+    off_t    offsets[1];
 };
 
 struct t_data
@@ -710,6 +710,30 @@ static int reply_Uint(file_descriptor *desc, Uint result) {
 
     tmp[0] = FILE_RESP_NUMBER;
 #if SIZEOF_VOID_P == 4
+    put_int32(0, tmp+1);
+#else
+    put_int32(result>>32, tmp+1);
+#endif
+    put_int32((Uint32)result, tmp+1+4);
+    driver_output2(desc->port, tmp, sizeof(tmp), NULL, 0);
+    return 0;
+}
+
+static int reply_off_t(file_descriptor *desc, off_t result) {
+    uchar tmp[1+4+4];
+
+    /*
+     * Contents of buffer sent back:
+     *
+     * +-----------------------------------------------+
+     * | FILE_RESP_NUMBER | 64-bit number (big-endian) |
+     * +-----------------------------------------------+
+     */
+
+    TRACE_C('R');
+
+    tmp[0] = FILE_RESP_NUMBER;
+#if SIZEOF_OFF_T == 4
     put_int32(0, tmp+1);
 #else
     put_int32(result>>32, tmp+1);
@@ -1566,7 +1590,7 @@ file_async_ready(ErlDrvData e, ErlDrvThreadData data)
       case FILE_LSEEK:
 	  if (d->reply) {
 	      if (d->result_ok)
-		  reply_Uint(desc, d->c.lseek.location);
+		  reply_off_t(desc, d->c.lseek.location);
 	      else
 		  reply_error(desc, &d->errInfo);
 	  }
@@ -2399,9 +2423,10 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	/* Create the thread data structure with the contained ErlIOVec 
 	 * and corresponding binaries for the response 
 	 */
-	d = EF_ALLOC(sizeof(struct t_data) 
-		     + (n * sizeof(size_t))
-		     + ((1+n) * (sizeof(SysIOVec) + sizeof(ErlDrvBinary*))));
+	d = EF_ALLOC(sizeof(*d)
+		     + (n * sizeof(*d->c.preadv.offsets))
+		     + ((1+n) * (sizeof(*res_ev->iov)
+				 + sizeof(*res_ev->binv))));
 	if (! d) {
 	    reply_posix_error(desc, ENOMEM);
 	    goto done;
@@ -2649,8 +2674,8 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	/* Create the thread data structure with the contained ErlIOVec 
 	 * and corresponding binaries for the response 
 	 */
-	d = EF_ALLOC(sizeof(struct t_data)
-		     + 2*(sizeof(SysIOVec) + sizeof(ErlDrvBinary*)));
+	d = EF_ALLOC(sizeof(*d) + sizeof(*d->c.preadv.offsets)
+		     + 2*(sizeof(*res_ev->iov) + sizeof(*res_ev->binv)));
 	if (! d) {
 	    reply_posix_error(desc, ENOMEM);
 	    goto done;

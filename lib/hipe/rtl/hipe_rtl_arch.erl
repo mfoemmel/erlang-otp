@@ -1,13 +1,13 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Copyright (c) 2001 by Erik Johansson.  
+%% Copyright (c) 2001 by Erik Johansson.
 %%=====================================================================
 %%  Filename : 	hipe_rtl_arch.erl
 %%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
 %%              $Author: mikpe $
-%%              $Date: 2005/09/15 08:23:37 $
-%%              $Revision: 1.56 $
+%%              $Date: 2005/12/13 12:28:02 $
+%%              $Revision: 1.58 $
 %%=====================================================================
 %% @doc
 %%
@@ -18,7 +18,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_rtl_arch).
--export([first_virtual_reg/0, 
+-export([first_virtual_reg/0,
 	 heap_pointer/0,
 	 heap_limit/0,
 	 fcalls/0,
@@ -53,10 +53,10 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% ____________________________________________________________________
-%%      
+%%
 %% ARCH-specific stuff
 %% ____________________________________________________________________
-%% 
+%%
 %%
 %% XXX: x86 might not _have_ real registers for some of these things
 %%
@@ -67,6 +67,8 @@ first_virtual_reg() ->
       hipe_sparc_registers:first_virtual();
     powerpc ->
       hipe_ppc_registers:first_virtual();
+    arm ->
+      hipe_arm_registers:first_virtual();
     x86 ->
       hipe_x86_registers:first_virtual();
     amd64 ->
@@ -79,6 +81,8 @@ heap_pointer() ->	% {GetHPInsn, HPReg, PutHPInsn}
       heap_pointer_from_reg(hipe_sparc_registers:heap_pointer());
     powerpc ->
       heap_pointer_from_reg(hipe_ppc_registers:heap_pointer());
+    arm ->
+      heap_pointer_from_reg(hipe_arm_registers:heap_pointer());
     x86 ->
       x86_heap_pointer();
     amd64 ->
@@ -120,6 +124,8 @@ heap_limit() ->	% {GetHLIMITInsn, HLIMITReg}
       heap_limit_from_reg(hipe_sparc_registers:heap_limit());
     powerpc ->
       heap_limit_from_pcb();
+    arm ->
+      heap_limit_from_pcb();
     x86 ->
       heap_limit_from_reg(hipe_x86_registers:heap_limit());
     amd64 ->
@@ -139,6 +145,8 @@ fcalls() ->	% {GetFCallsInsn, FCallsReg, PutFCallsInsn}
     ultrasparc ->
       fcalls_from_reg(hipe_sparc_registers:fcalls());
     powerpc ->
+      fcalls_from_pcb();
+    arm ->
       fcalls_from_pcb();
     x86 ->
       fcalls_from_reg(hipe_x86_registers:fcalls());
@@ -162,6 +170,8 @@ add_ra_reg(Rest) ->
       [hipe_rtl:mk_var(hipe_sparc_registers:return_address()) | Rest];
     powerpc ->
       Rest;	% do not include LR: it's not a normal register
+    arm ->
+      [hipe_rtl:mk_reg(hipe_arm_registers:lr()) | Rest];
     x86 ->
       Rest;
     amd64 ->
@@ -174,6 +184,8 @@ reg_name(Reg) ->
       hipe_sparc_registers:reg_name(Reg);
     powerpc ->
       hipe_ppc_registers:reg_name_gpr(Reg);
+    arm ->
+      hipe_arm_registers:reg_name_gpr(Reg);
     x86 ->
       hipe_x86_registers:reg_name(Reg);
     amd64 ->
@@ -203,6 +215,8 @@ is_precolored_regnum(RegNum) ->
       hipe_sparc_registers:is_precoloured(RegNum);
     powerpc ->
       hipe_ppc_registers:is_precoloured_gpr(RegNum);
+    arm ->
+      hipe_arm_registers:is_precoloured_gpr(RegNum);
     x86 ->
       hipe_x86_registers:is_precoloured(RegNum);
     amd64 ->
@@ -217,6 +231,9 @@ live_at_return() ->
     powerpc ->
       ordsets:from_list([hipe_rtl:mk_reg(R)
 			 || {R,_} <- hipe_ppc_registers:live_at_return()]);
+    arm ->
+      ordsets:from_list([hipe_rtl:mk_reg(R)
+			 || {R,_} <- hipe_arm_registers:live_at_return()]);
     x86 ->
       ordsets:from_list([hipe_rtl:mk_reg(R)
 			 || {R,_} <- hipe_x86_registers:live_at_return()]);
@@ -231,6 +248,8 @@ safe_handling_of_registers() ->
       false;
     powerpc ->
       true;
+    arm ->
+      true;
     x86 ->
       true;
     amd64 ->
@@ -244,6 +263,7 @@ word_size() ->
   case get(hipe_target_arch) of
     ultrasparc -> 4;
     powerpc    -> 4;
+    arm	       -> 4;
     x86        -> 4;
     amd64      -> 8
   end.
@@ -251,7 +271,8 @@ word_size() ->
 %% alignment() ->
 %%   case get(hipe_target_arch) of
 %%     ultrasparc -> 4;
-%%     powerpc    -> 4;                                                
+%%     powerpc    -> 4;
+%%     arm	  -> 4;
 %%     x86        -> 4;
 %%     amd64      -> 8
 %%   end.
@@ -263,7 +284,8 @@ word_size() ->
 log2_word_size() ->
   case get(hipe_target_arch) of
     ultrasparc -> 2;
-    powerpc    -> 2;                                                
+    powerpc    -> 2;
+    arm	       -> 2;
     x86        -> 2;
     amd64      -> 3
   end.
@@ -276,6 +298,7 @@ endianess() ->
   case get(hipe_target_arch) of
     ultrasparc -> big;
     powerpc -> big;
+    arm -> big; % XXX: arm is bi-endian
     x86 -> little;
     amd64 -> little
   end.
@@ -346,6 +369,11 @@ load_big_4(Dst, Base, Offset, Signedness) ->
     %% Note: x86 could use a "load;bswap" sequence here.
     %% This has been implemented, but unfortunately didn't
     %% make any noticeable improvements in our benchmarks.
+    arm ->
+      %% When loading 4 bytes into a 32-bit register, the
+      %% signedness of the high-order byte doesn't matter.
+      %% ARM prefers unsigned byte loads so we'll use that.
+      load_big_4_in_pieces(Dst, Base, Offset, unsigned);
     _ ->
       load_big_4_in_pieces(Dst, Base, Offset, Signedness)
   end.
@@ -359,46 +387,14 @@ load_little_4(Dst, Base, Offset, Signedness) ->
     powerpc ->
       [hipe_rtl:mk_call([Dst], 'lwbrx', [Base,Offset], [], [], not_remote),
        hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(4))];
+    arm ->
+      %% When loading 4 bytes into a 32-bit register, the
+      %% signedness of the high-order byte doesn't matter.
+      %% ARM prefers unsigned byte loads so we'll use that.
+      load_little_4_in_pieces(Dst, Base, Offset, unsigned);
     _ ->
       load_little_4_in_pieces(Dst, Base, Offset, Signedness)
   end.
-
-store_4(Base, Offset, Src) ->
-  case get(hipe_target_arch) of
-    x86 ->
-      store_4_directly(Base, Offset, Src);
-    powerpc ->
-      store_4_directly(Base, Offset, Src);
-    ultrasparc ->
-       [hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(3)),
-       hipe_rtl:mk_store(Base, Offset, Src, byte),
-       hipe_rtl:mk_alu(Offset, Offset, sub, hipe_rtl:mk_imm(1)),
-       hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(8)),
-       hipe_rtl:mk_store(Base, Offset, Src, byte),
-       hipe_rtl:mk_alu(Offset, Offset, sub, hipe_rtl:mk_imm(1)),
-       hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(8)),
-       hipe_rtl:mk_store(Base, Offset, Src, byte),
-       hipe_rtl:mk_alu(Offset, Offset, sub, hipe_rtl:mk_imm(1)),
-       hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(8)),
-       hipe_rtl:mk_store(Base, Offset, Src, byte),
-       hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(4))];
-    amd64 -> %perhaps this can be done in a better way
-      [hipe_rtl:mk_store(Base, Offset, Src, byte),
-       hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(1)),
-       hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(8)),
-       hipe_rtl:mk_store(Base, Offset, Src, byte),
-       hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(1)),
-       hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(8)),
-       hipe_rtl:mk_store(Base, Offset, Src, byte),
-       hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(1)),
-       hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(8)),
-       hipe_rtl:mk_store(Base, Offset, Src, byte),
-       hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(1))]
-  end.
-
-store_4_directly(Base, Offset, Src) ->
-  [hipe_rtl:mk_store(Base, Offset, Src),
-   hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(4))].
 
 load_4_directly(Dst, Base, Offset, Signedness) ->
   [hipe_rtl:mk_load(Dst, Base, Offset, word, Signedness),
@@ -438,20 +434,48 @@ load_little_4_in_pieces(Dst, Base, Offset, Signedness) ->
    hipe_rtl:mk_alu(Dst, Dst, 'or', Tmp1),
    hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(1))].
 
+store_4(Base, Offset, Src) ->
+  case get(hipe_target_arch) of
+    x86 ->
+      store_4_directly(Base, Offset, Src);
+    powerpc ->
+      store_4_directly(Base, Offset, Src);
+    arm ->
+      store_big_4_in_pieces(Base, Offset, Src);
+    ultrasparc ->
+      store_big_4_in_pieces(Base, Offset, Src);
+    amd64 ->
+      store_4_directly(Base, Offset, Src)
+  end.
+
+store_4_directly(Base, Offset, Src) ->
+  [hipe_rtl:mk_store(Base, Offset, Src, int32),
+   hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(4))].
+
+store_big_4_in_pieces(Base, Offset, Src) ->
+  [hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(3)),
+   hipe_rtl:mk_store(Base, Offset, Src, byte),
+   hipe_rtl:mk_alu(Offset, Offset, sub, hipe_rtl:mk_imm(1)),
+   hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(8)),
+   hipe_rtl:mk_store(Base, Offset, Src, byte),
+   hipe_rtl:mk_alu(Offset, Offset, sub, hipe_rtl:mk_imm(1)),
+   hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(8)),
+   hipe_rtl:mk_store(Base, Offset, Src, byte),
+   hipe_rtl:mk_alu(Offset, Offset, sub, hipe_rtl:mk_imm(1)),
+   hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(8)),
+   hipe_rtl:mk_store(Base, Offset, Src, byte),
+   hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(4))].
+
 %%----------------------------------------------------------------------
 %% Handling of arithmetic -- depends on the size of word.
 %%----------------------------------------------------------------------
 
 eval_alu(Op, Arg1, Arg2) ->
   %% io:format("Evaluated alu: ~w ~w ~w = ",[Arg1, Op, Arg2]),
-  Res = case get(hipe_target_arch) of
-	  ultrasparc ->
+  Res = case word_size() of
+	  4 ->
 	    hipe_rtl_arith_32:eval_alu(Op, Arg1, Arg2);
-	  powerpc ->
-	    hipe_rtl_arith_32:eval_alu(Op, Arg1, Arg2);
-	  x86 ->
-	    hipe_rtl_arith_32:eval_alu(Op, Arg1, Arg2);
-	  amd64 ->
+	  8 ->
 	    hipe_rtl_arith_64:eval_alu(Op, Arg1, Arg2)
 	end,
   %% io:format("~w~n ",[Res]),
@@ -459,14 +483,10 @@ eval_alu(Op, Arg1, Arg2) ->
 
 eval_alub(Op, Cond, Arg1, Arg2) ->
   %% io:format("Evaluated alub: ~w ~w ~w cond ~w = ",[Arg1, Op, Arg2, Cond]),
-  Res = case get(hipe_target_arch) of
-	  ultrasparc ->
+  Res = case word_size() of
+	  4 ->
 	    hipe_rtl_arith_32:eval_alub(Op, Cond, Arg1, Arg2);
-	  powerpc ->
-	    hipe_rtl_arith_32:eval_alub(Op, Cond, Arg1, Arg2);
-	  x86 ->
-	    hipe_rtl_arith_32:eval_alub(Op, Cond, Arg1, Arg2);
-	  amd64 ->
+	  8 ->
 	    hipe_rtl_arith_64:eval_alub(Op, Cond, Arg1, Arg2)
 	end,
   %% io:format("~w~n ",[Res]),
@@ -474,14 +494,10 @@ eval_alub(Op, Cond, Arg1, Arg2) ->
 
 eval_cond(Cond, Arg1, Arg2) ->
   %%io:format("Evaluated cond: ~w ~w ~w = ",[Arg1, Cond, Arg2]),
-  Res = case get(hipe_target_arch) of
-	  ultrasparc ->
+  Res = case word_size() of
+	  4 ->
 	    hipe_rtl_arith_32:eval_cond(Cond, Arg1, Arg2);
-	  powerpc ->
-	    hipe_rtl_arith_32:eval_cond(Cond, Arg1, Arg2);
-	  x86 ->
-	    hipe_rtl_arith_32:eval_cond(Cond, Arg1, Arg2);
-	  amd64 ->
+	  8 ->
 	    hipe_rtl_arith_64:eval_cond(Cond, Arg1, Arg2)
 	end,
   %%io:format("~w~n ",[Res]),
@@ -489,19 +505,14 @@ eval_cond(Cond, Arg1, Arg2) ->
 
 eval_cond_bits(Cond, N, Z, V, C) ->
   %%io:format("Evaluated cond: ~w ~w ~w = ",[Arg1, Cond, Arg2]),
-  Res = case get(hipe_target_arch) of
-	  ultrasparc ->
+  Res = case word_size() of
+	  4 ->
 	    hipe_rtl_arith_32:eval_cond_bits(Cond, N, Z, V, C);
-	  powerpc ->
-	    hipe_rtl_arith_32:eval_cond_bits(Cond, N, Z, V, C);
-	  x86 ->
-	    hipe_rtl_arith_32:eval_cond_bits(Cond, N, Z, V, C);
-	  amd64 ->
+	  8 ->
 	    hipe_rtl_arith_64:eval_cond_bits(Cond, N, Z, V, C)
 	end,
   %%io:format("~w~n ",[Res]),
   Res.
-
 
 %%----------------------------------------------------------------------
 
@@ -509,6 +520,7 @@ fwait() ->
   case get(hipe_target_arch) of
     x86 -> [hipe_rtl:mk_call([], 'fwait', [], [], [], not_remote)];
     amd64 -> [hipe_rtl:mk_call([], 'fwait', [], [], [], not_remote)];
+    arm -> [];
     powerpc -> [];
     ultrasparc -> []
   end.
@@ -530,6 +542,8 @@ handle_fp_exception() ->
       [hipe_rtl:mk_call([], handle_fp_exception, [],
 			hipe_rtl:label_name(ContLbl), [], not_remote),
        ContLbl];
+    arm ->
+      [];
     powerpc ->
       [];
     ultrasparc ->
@@ -556,6 +570,8 @@ proc_pointer() ->	% must not be exported
       hipe_rtl:mk_reg_gcsafe(hipe_sparc_registers:proc_pointer());
     powerpc ->
       hipe_rtl:mk_reg_gcsafe(hipe_ppc_registers:proc_pointer());
+    arm ->
+      hipe_rtl:mk_reg_gcsafe(hipe_arm_registers:proc_pointer());
     x86 ->
       hipe_rtl:mk_reg_gcsafe(hipe_x86_registers:proc_pointer());
     amd64 ->
@@ -579,6 +595,8 @@ nr_of_return_regs() ->
     powerpc ->
       1;
     %% hipe_ppc_registers:nr_rets();
+    arm ->
+      1;
     x86 ->
       hipe_x86_registers:nr_rets();
     amd64 ->

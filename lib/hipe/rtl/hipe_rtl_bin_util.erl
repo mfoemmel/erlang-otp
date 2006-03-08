@@ -150,7 +150,7 @@ get_little_unknown_int(Dst1, Base, Offset, NewOffset, Shiftr, Type, TrueLblName)
    TagLbl] ++
     do_bignum_code(64, Type, LoadDst, Dst1, TrueLblName).
 
-do_bignum_code(Size, {Signedness,_}, Src, Dst1, TrueLblName) when integer(Size)->
+do_bignum_code(Size, {Signedness,_}, Src, Dst1, TrueLblName) when is_integer(Size)->
   case {Size>?MAX_SMALL_BITS, Signedness} of
     {false, _} ->
       [hipe_tagscheme:tag_fixnum(Dst1, Src),

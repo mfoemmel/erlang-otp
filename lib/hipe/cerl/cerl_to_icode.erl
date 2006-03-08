@@ -154,7 +154,7 @@ module(E, Options) ->
 
 module_1(E, Options) ->
     M = cerl:atom_val(cerl:module_name(E)),
-    if atom(M) ->
+    if is_atom(M) ->
 	    ok;
        true ->
 	    error_msg("bad module name: ~P.", [M, 5]),
@@ -410,7 +410,7 @@ exprs(_, [], _Ctxt, _Env, _S) ->
     error_high_degree(),
     throw(error).
 
-get_line([L | _As]) when integer(L) ->
+get_line([L | _As]) when is_integer(L) ->
     L;
 get_line([_ | As]) ->
     get_line(As);
@@ -430,7 +430,7 @@ expr_var(E, Ts, Ctxt, Env, S) ->
 	    %% Either an undefined variable or an attempt to use a local
 	    %% function name as a value.
 	    case Name of
-		{N,A} when atom(N), integer(A) ->
+		{N,A} when is_atom(N), is_integer(A) ->
 		    %% error_fun_value(Name);
 		    error_msg("cannot handle fun-values outside call context; "
 			      "must be closure converted: ~P.",
@@ -838,7 +838,7 @@ expr_apply(E, Ts, Ctxt, Env, S) ->
     case cerl:is_c_var(Op) of
 	true ->
 	    case cerl:var_name(Op) of
-		{N, A} = V when atom(N), integer(A) ->
+		{N, A} = V when is_atom(N), is_integer(A) ->
 		    case env__lookup(V, Env) of
 			error ->
 			    %% Assumed to be a function in the
@@ -1664,13 +1664,13 @@ literal_pattern(P, V, Fail, S) ->
 
 literal_pattern_1(P, V, Fail, Next, S) ->
     case cerl:concrete(P) of
-	X when atom(X) ->
+	X when is_atom(X) ->
 	    add_code([make_type([V], ?TYPE_ATOM(X), Next, Fail)],
 		     S);
-	X when integer(X) ->
+	X when is_integer(X) ->
 	    add_code([make_type([V], ?TYPE_INTEGER(X), Next, Fail)],
 		     S);
-	X when float(X) ->
+	X when is_float(X) ->
 	    V1 = make_var(),
 	    L = new_label(),
 	    %% First doing an "is float" test here might allow later
@@ -2905,9 +2905,9 @@ translate_value(Val) ->
 
 is_ok_val(Val) ->
     case cerl:concrete(Val) of
-	X when integer(X) ->
+	X when is_integer(X) ->
 	    true;
-	X when float(X) ->
+	X when is_float(X) ->
 	    true;
 	_ ->
 	    false
@@ -2918,10 +2918,10 @@ translate_match(Instr, VarList, SL, FL, S) ->
     V = cerl_binary_pattern_match:match_tag(Instr),
     ResVar = get_resvar(V, VarList),
     case cerl:concrete(Val) of
-	X when integer(X) ->
+	X when is_integer(X) ->
 	    add_code([make_type([ResVar], ?TYPE_INTEGER(X), SL, FL)],
 		     S);
-	X when float(X) ->
+	X when is_float(X) ->
 	    V1 = make_var(),
 	    L = new_label(),
 	    %% First doing an "is float" test here might allow later

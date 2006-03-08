@@ -7,23 +7,23 @@
 %%% Created : 23 Apr 2003 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%
 %%% CVS      :
-%%%              $Author: kostis $
-%%%              $Date: 2005/11/06 13:10:55 $
-%%%              $Revision: 1.29 $
+%%%              $Author: tobiasl $
+%%%              $Date: 2006/02/16 10:00:01 $
+%%%              $Revision: 1.30 $
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_fp).
 
--export([cfg/2]).
+-export([cfg/1]).
 
 -include("hipe_icode.hrl").
 
--record(state, {info, info_map, block_map, edge_map, cfg}).
+-record(state, {info, block_map, edge_map, cfg}).
 
-cfg(Cfg, InfoMap) ->
+cfg(Cfg) ->
   %%hipe_icode_cfg:pp(Cfg),
   NewCfg = annotate_fclearerror(Cfg),
-  State = new_state(NewCfg, InfoMap),
+  State = new_state(NewCfg),
   NewState = place_fp_blocks(State),
   %%hipe_icode_cfg:pp(state__cfg(NewState)),
   NewState2 = finalize(NewState),
@@ -139,7 +139,6 @@ transform_block(WorkList, State)->
       %%io:format("Handling ~w \n", [Label]),
       BB = state__bb(State, Label),
       Code = hipe_bb:code(BB),
-      Info = state__info_out(State, Label),
       NofPreds = length(state__pred(State, Label)),
       Map = state__map(State, Label),
       FilteredMap = filter_map(Map, NofPreds),
@@ -147,7 +146,7 @@ transform_block(WorkList, State)->
       %%	[Label, gb_trees:to_list(Map), gb_trees:to_list(FilteredMap)]),
       {Prelude, NewFilteredMap} = do_prelude(FilteredMap),
       {NewMap, NewCode} = 
-	transform_instrs(Code, Map, NewFilteredMap, Info, []),
+	transform_instrs(Code, Map, NewFilteredMap, []),
       NewBB = hipe_bb:code_update(BB, Prelude++NewCode),
       NewState = state__bb_add(State, Label, NewBB),
       case state__map_update(NewState, Label, NewMap) of
@@ -161,7 +160,7 @@ transform_block(WorkList, State)->
   end.
 
 
-transform_instrs([I|Left], PhiMap, Map, Info, Acc)->
+transform_instrs([I|Left], PhiMap, Map, Acc)->
   Defines = defines(I),
   NewMap = delete_all(Defines, Map),
   NewPhiMap = delete_all(Defines, PhiMap),
@@ -172,19 +171,19 @@ transform_instrs([I|Left], PhiMap, Map, Info, Acc)->
       case [X||X<-Uses,lookup(X, PhiMap)/=none] of
 	[] ->
 	  %% No ordinary variables from the argument has been untagged.
-	  transform_instrs(Left, NewPhiMap, NewMap, Info, [I|Acc]);
+	  transform_instrs(Left, NewPhiMap, NewMap, [I|Acc]);
 	Uses ->
 	  %% All arguments are untagged. Let's untag the destination.
 	  Dst = hipe_icode:phi_dst(I),
 	  NewDst = hipe_icode:mk_new_fvar(),
 	  NewMap1 = gb_trees:enter(Dst, NewDst, NewMap),
 	  NewI = subst_phi_uncond(I, NewDst, PhiMap),
-	  transform_instrs(Left, NewPhiMap, NewMap1, Info, [NewI|Acc]);
+	  transform_instrs(Left, NewPhiMap, NewMap1, [NewI|Acc]);
 	_ ->
 	  %% Some arguments are untagged. Keep the destination.
 	  Dst = hipe_icode:phi_dst(I),
 	  NewI = subst_phi(I, Dst, PhiMap),
-	  transform_instrs(Left, NewPhiMap, NewMap, Info, [NewI|Acc])
+	  transform_instrs(Left, NewPhiMap, NewMap, [NewI|Acc])
       end;
     #call{} ->
       case hipe_icode:call_fun(I) of
@@ -192,26 +191,26 @@ transform_instrs([I|Left], PhiMap, Map, Info, Acc)->
 	  [Dst] = defines(I),
 	  case uses(I) of
 	    [] -> %% Constant
-	      transform_instrs(Left, NewPhiMap, NewMap, Info, [I|Acc]);
+	      transform_instrs(Left, NewPhiMap, NewMap, [I|Acc]);
 	    [Src] ->
 	      case lookup(Src, Map) of
 		none ->
 		  NewMap1 = gb_trees:enter(Src, {assigned, Dst}, NewMap),
-		  transform_instrs(Left, NewPhiMap, NewMap1, Info, [I|Acc]);
+		  transform_instrs(Left, NewPhiMap, NewMap1, [I|Acc]);
 		Dst ->
 		  %% This is the instruction that untagged the variable.
 		  %% Use old maps.
-		  transform_instrs(Left, NewPhiMap, Map, Info, [I|Acc]);
+		  transform_instrs(Left, NewPhiMap, Map, [I|Acc]);
 		FVar -> 
 		  %% The variable was already untagged. 
 		  %% This instruction can be changed to a fmove.
 		  NewI = hipe_icode:mk_fmove(Dst, FVar),
 		  case hipe_icode:call_continuation(I) of
 		    [] ->
-		      transform_instrs(Left,NewPhiMap,NewMap,Info,[NewI|Acc]);
+		      transform_instrs(Left,NewPhiMap,NewMap,[NewI|Acc]);
 		    ContLbl ->
 		      Goto = hipe_icode:mk_goto(ContLbl),
-		      transform_instrs(Left, NewPhiMap, NewMap, Info, 
+		      transform_instrs(Left, NewPhiMap, NewMap, 
 				       [Goto, NewI|Acc])
 		  end
 	      end
@@ -220,20 +219,20 @@ transform_instrs([I|Left], PhiMap, Map, Info, Acc)->
 	  [Dst] = defines(I),
 	  [Src] = uses(I),
 	  NewMap1 = gb_trees:enter(Dst, {assigned, Src}, NewMap),
-	  transform_instrs(Left, NewPhiMap, NewMap1, Info,[I|Acc]);
+	  transform_instrs(Left, NewPhiMap, NewMap1,[I|Acc]);
 	_ ->
-	  {NewMap1, NewAcc} = check_for_fop_candidates(I, NewMap, Info, Acc),
-	  transform_instrs(Left, NewPhiMap, NewMap1, Info, NewAcc)
+	  {NewMap1, NewAcc} = check_for_fop_candidates(I, NewMap, Acc),
+	  transform_instrs(Left, NewPhiMap, NewMap1, NewAcc)
       end;
     _ ->
       NewIns = handle_untagged_arguments(I, NewMap),
-      transform_instrs(Left, NewPhiMap, NewMap, Info, NewIns ++ Acc)
+      transform_instrs(Left, NewPhiMap, NewMap, NewIns ++ Acc)
   end;
-transform_instrs([], _PhiMap, Map, _Info, Acc) ->
+transform_instrs([], _PhiMap, Map, Acc) ->
   {Map, lists:reverse(Acc)}.
 
-check_for_fop_candidates(I, Map, Info, Acc)->
-  case is_fop_cand(I, Info) of
+check_for_fop_candidates(I, Map, Acc)->
+  case is_fop_cand(I) of
     false ->
       NewIs = handle_untagged_arguments(I, Map),
       {Map, NewIs ++ Acc};
@@ -258,7 +257,7 @@ check_for_fop_candidates(I, Map, Info, Acc)->
 	      Convs = [X||X <- remove_duplicates(Uses), lookup(X, Map)==none],
 	      NewMap0 = add_new_bindings_assigned(Convs, Map),
 	      NewMap = add_new_bindings_unassigned(Defines, NewMap0),
-	      ConvIns = get_conv_instrs(Convs, NewMap, Info),
+	      ConvIns = get_conv_instrs(Convs, NewMap),
 	      NewI = hipe_icode:mk_primop(lookup_list(Defines, NewMap), Op,
 					  lookup_list_keep_consts(Args,NewMap),
 					  Cont, Fail),
@@ -648,19 +647,13 @@ lookup_keep_consts(Key, Tree) ->
       end
   end.
 
-lookup_type(Var, Tree) ->
-  case gb_trees:lookup(Var, Tree) of
-    none ->
-      case hipe_icode:is_const(Var) of
-	true -> hipe_icode_type:const_type(Var);
-	false -> erl_types:t_none()
-      end;
-    {value, Val} ->
-      case hipe_icode:is_var(Val) of
-	true ->
-	  lookup(Val, Tree);
-	false ->
-	  Val
+get_type(Var) ->
+  case hipe_icode:is_const(Var) of
+    true -> erl_types:t_from_term(hipe_icode:const_value(Var));
+    false ->
+      case hipe_icode:is_annotated_var(Var) of
+	true -> hipe_icode:var_annotation(Var)
+%%%     false -> erl_types:t_any()
       end
   end.
 
@@ -780,22 +773,22 @@ strip_of_assigned([], Acc) ->
 %% Help functions for the transformation from ordinary instruction to
 %% fp-instruction
 
-is_fop_cand(I, Info) ->
+is_fop_cand(I) ->
   case hipe_icode:call_fun(I) of
     '/' -> true;
     Fun ->
       case fun_to_fop(Fun) of
 	false -> false;
-	_ -> any_is_float(args(I), Info)
+	_ -> any_is_float(args(I))
       end
   end.
 
-any_is_float([Var|Left], Info) ->
-  case erl_types:t_is_float(lookup_type(Var, Info)) of
+any_is_float([Var|Left]) ->
+  case erl_types:t_is_float(get_type(Var)) of
     true -> true;
-    false -> any_is_float(Left, Info)
+    false -> any_is_float(Left)
   end;
-any_is_float([], _Info) ->
+any_is_float([]) ->
   false.
 
 remove_duplicates(List) ->
@@ -839,20 +832,20 @@ must_be_tagged(Var, Map) ->
 
 %% Converting to floating point variables
 
-get_conv_instrs(Vars, Map, Info) ->
-  get_conv_instrs(Vars, Map, Info, []).
+get_conv_instrs(Vars, Map) ->
+  get_conv_instrs(Vars, Map, []).
 
-get_conv_instrs([Var|Left], Map, Info, Acc) ->
+get_conv_instrs([Var|Left], Map, Acc) ->
   {_, Dst} = gb_trees:get(Var, Map),
   NewI = 
-    case erl_types:t_is_float(lookup_type(Var, Info)) of
+    case erl_types:t_is_float(get_type(Var)) of
       true ->
 	[hipe_icode:mk_primop([Dst],unsafe_untag_float,[Var])];
       false ->
 	[hipe_icode:mk_primop([Dst],conv_to_float,[Var])] 
     end,
-  get_conv_instrs(Left, Map, Info, NewI++Acc);
-get_conv_instrs([], _, _, Acc) ->
+  get_conv_instrs(Left, Map, NewI++Acc);
+get_conv_instrs([], _, Acc) ->
   Acc.
 
 
@@ -884,11 +877,11 @@ uses(I)->
 %% Handling the state
 %%
 
-new_state(Cfg, InfoMap)->
+new_state(Cfg)->
   Start = hipe_icode_cfg:start_label(Cfg),  
   BlockMap = gb_trees:insert({inblock, Start}, false, empty()),
   EdgeMap = gb_trees:empty(),
-  #state{info_map=InfoMap, cfg=Cfg, block_map=BlockMap, edge_map=EdgeMap}.
+  #state{cfg=Cfg, block_map=BlockMap, edge_map=EdgeMap}.
 
 state__cfg(#state{cfg=Cfg})->
   Cfg.
@@ -909,16 +902,6 @@ state__bb(#state{cfg=Cfg}, Label)->
 state__bb_add(S=#state{cfg=Cfg}, Label, BB)->
   NewCfg = hipe_icode_cfg:bb_add(Cfg, Label, BB),
   S#state{cfg=NewCfg}.
-
-state__info_out(S, Label)->
-  state__info(S, {Label, out}).
-
-state__info(#state{info_map=IM}, Label)->
-  case gb_trees:lookup(Label, IM) of
-    {value, Info}-> Info;
-    none -> empty()
-  end.
-
 
 state__map(S=#state{block_map=BM}, Label)->
   join_maps(state__pred(S, Label), BM).

@@ -12,37 +12,6 @@ AEXTERN(void,nbif_fail,(void));
 AEXTERN(void,nbif_stack_trap_ra,(void));
 
 /*
- * These are C-wrappers for non-HiPE BIFs that may trigger a native
- * stack walk with p->hipe.narity != 0.
- */
-extern Eterm check_process_code_2(Process*, Eterm, Eterm);
-extern Eterm garbage_collect_1(Process*, Eterm);
-
-/* for -Wmissing-prototypes :-( */
-extern Eterm hipe_check_process_code_2(Process*, Eterm, Eterm);
-extern Eterm hipe_garbage_collect_1(Process*, Eterm);
-
-Eterm hipe_check_process_code_2(BIF_ALIST_2)
-{
-    Eterm ret;
-
-    BIF_P->hipe.narity = 2;
-    ret = check_process_code_2(BIF_P, BIF_ARG_1, BIF_ARG_2);
-    BIF_P->hipe.narity = 0;
-    return ret;
-}
-
-Eterm hipe_garbage_collect_1(BIF_ALIST_1)
-{
-    Eterm ret;
-
-    BIF_P->hipe.narity = 1;
-    ret = garbage_collect_1(BIF_P, BIF_ARG_1);
-    BIF_P->hipe.narity = 0;
-    return ret;
-}
-
-/*
  * hipe_print_nstack() is called from hipe_bifs:show_nstack/1.
  */
 static void print_slot(Eterm *sp, unsigned int live)
@@ -105,6 +74,12 @@ void hipe_print_nstack(Process *p)
     printf(" | %*s | 0x%0*lx |\r\n",
 	   2+2*(int)sizeof(long), "nstgraylim",
 	   2*(int)sizeof(long), (unsigned long)p->hipe.nstgraylim);
+    printf(" | %*s | 0x%0*lx |\r\n",
+	   2+2*(int)sizeof(long), "nra",
+	   2*(int)sizeof(long), (unsigned long)p->hipe.nra);
+    printf(" | %*s | 0x%0*x |\r\n",
+	   2+2*(int)sizeof(long), "narity",
+	   2*(int)sizeof(long), p->hipe.narity);
     printf(" |%s|%s|\r\n", dashes, dashes);
     printf(" | %*s | %*s |\r\n",
 	   2+2*(int)sizeof(long), "Address",

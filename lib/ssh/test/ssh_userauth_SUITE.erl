@@ -86,7 +86,7 @@ publickey_rsa(Config) when list(Config) ->
 		      ssh_cm:connect("localhost", [{user_dir, UsrDir},
 						   silently_accept_hosts,
 						   {user_interaction, false}]),
-		  ?line {ok, Channel} = ssh_cm:session_open(CM),
+		  ?line {ok, Channel} = ssh_cm:session_open(CM, infinity),
 		  ?line ok = ssh_cm:close(CM, Channel),
 		  ?line ok = ssh_cm:stop(CM),
 		  ?line ok = file:delete(filename:join(UsrDir, "id_rsa"));
@@ -110,7 +110,7 @@ publickey_dsa(Config) when list(Config) ->
 						   silently_accept_hosts,
 						   {public_key_alg, ssh_dsa},
 						   {user_interaction, false}]),
-		  ?line {ok, Channel} = ssh_cm:session_open(CM),
+		  ?line {ok, Channel} = ssh_cm:session_open(CM, infinity),
 		  ?line ok = ssh_cm:close(CM, Channel),
 		  ?line ok = ssh_cm:stop(CM),
 		  ?line ok = file:delete(filename:join(UsrDir, "id_dsa"));

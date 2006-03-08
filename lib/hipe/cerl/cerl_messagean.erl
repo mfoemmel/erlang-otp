@@ -157,9 +157,9 @@
 
 % markup(Doc, Start, End) ->
 %     prettypr:beside(
-%       prettypr:markup([$# | Start]),
+%       prettypr:null_text([$# | Start]),
 %       prettypr:beside(Doc,
-% 		      prettypr:markup([$# | End]))).
+% 		      prettypr:null_text([$# | End]))).
 
 
 %% =====================================================================
@@ -379,9 +379,9 @@ visit(T, L, St) ->
 	    %% so it's bugger all whether it is sent or not.
 	    case cerl:concrete(T) of
 		[] -> {[empty()], St};
-		X when atom(X) -> {[empty()], St};
-		X when integer(X) -> {[empty()], St};
-		X when float(X) -> {[empty()], St};
+		X when is_atom(X) -> {[empty()], St};
+		X when is_integer(X) -> {[empty()], St};
+		X when is_float(X) -> {[empty()], St};
 		_ ->
 		    exit({not_literal, T})
 	    end;
@@ -715,7 +715,7 @@ bind_arg(L, X, Vars, Limit, Ch) ->
 escape(Xs, Ns, St) ->
     escape(Xs, Ns, 1, St).
 
-escape([_ | Xs], Ns=[N1 | _], N, St) when integer(N1), N1 > N ->
+escape([_ | Xs], Ns=[N1 | _], N, St) when is_integer(N1), N1 > N ->
     escape(Xs, Ns, N + 1, St);
 escape([X | Xs], [N | Ns], N, St) ->
     Vars = St#state.vars,

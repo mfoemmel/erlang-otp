@@ -27,9 +27,9 @@ alloc(Defun, SpillLimit, SpillIndex, Options, RegAllocMod, TargetMod) ->
   CFG = TargetMod:defun_to_cfg(Defun),
   {Coloring, _NewSpillIndex} =
     RegAllocMod:regalloc(CFG, SpillIndex, SpillLimit, TargetMod, Options),
-  {NewDefun, DontSpill} = TargetMod:check_and_rewrite(Defun, Coloring),
-  case DontSpill of
-    [] -> %% No new temps, we are done.
+  {NewDefun, DidSpill} = TargetMod:check_and_rewrite(Defun, Coloring),
+  case DidSpill of
+    false -> %% No new temps, we are done.
       ?add_spills(Options, _NewSpillIndex),
       TempMap = hipe_temp_map:cols2tuple(Coloring, TargetMod),
       {TempMap2, NewSpillIndex2} = 

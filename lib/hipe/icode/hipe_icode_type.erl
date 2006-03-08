@@ -12,7 +12,7 @@
 
 -module(hipe_icode_type).
 
--export([cfg/3, const_type/1]).
+-export([cfg/3, unannotate_cfg/1]).
 
 -include("hipe_icode.hrl").
 -include("hipe_icode_type.hrl").
@@ -42,21 +42,11 @@ cfg(Cfg, IcodeFun, Options) ->
   OldSig = init_mfa_info(IcodeFun, Options),
   State = analyse(Cfg),
   pp(State, IcodeFun, Options, "Pre-specialization"),
-  NewState = cfg_loop(State, IcodeFun),
+  NewState = cfg_loop(State, IcodeFun),  
   pp(NewState, IcodeFun, Options, "Post-specialization"),
-
   warn_on_type_errors(Cfg, State, NewState, IcodeFun, Options),
-
   Fixpoint = update_mfa_info(NewState, IcodeFun, OldSig, Options),
-
-  case proplists:get_bool(inline_fp, Options) of
-    true ->
-      {Fixpoint, hipe_icode_fp:cfg(state__cfg(NewState), 
-				   state__info_map(NewState))};
-    false ->
-      {Fixpoint, state__cfg(NewState)}
-  end.
-
+  {Fixpoint, state__cfg(annotate_cfg(NewState))}.
 
 cfg_loop(State, IcodeFun) ->
   NewState0 = specialize(State),
@@ -656,7 +646,7 @@ test_type0({tuple, N}, T) ->
     true -> 
       case t_tuple_arities(T) of
 	[N] -> true;
-	[X] when integer(X) -> false;
+	[X] when is_integer(X) -> false;
 	List when is_list(List) ->
 	  case lists:member(N, List) of
 	    true -> maybe;
@@ -1325,27 +1315,63 @@ join_list([], _, Acc) ->
   Acc.
 
 join_info_in(Vars, OldInfo, NewInfo)->
-  NewInfo2 = join_info_in(Vars, OldInfo, NewInfo, gb_trees:empty()),
+  NewInfo2 = join_info_in(Vars, Vars, OldInfo, NewInfo, gb_trees:empty()),
   case info_is_equal(NewInfo2, OldInfo) of
     true -> fixpoint;
     false -> NewInfo2
   end.
-      
-join_info_in([Var|Left], Info1, Info2, Acc)->
+
+
+%% NOTE: Variables can be bound to other variables. Joining these is
+%% only possible if the binding is the same from both traces and this
+%% variable is still live.
+
+join_info_in([Var|Left], LiveIn, Info1, Info2, Acc)->
   Type1 = gb_trees:lookup(Var, Info1),
   Type2 = gb_trees:lookup(Var, Info2),
   case {Type1, Type2} of
     {none, none} ->
-      join_info_in(Left, Info1, Info2, Acc);
+      join_info_in(Left, LiveIn, Info1, Info2, Acc);
     {none, {value, Val}} ->
-      join_info_in(Left, Info1, Info2, gb_trees:insert(Var, Val, Acc));
+      NewVal =
+	case hipe_icode:is_var(Val) of
+	  true -> lookup(Val, Info2);
+	  false -> Val
+	end,
+      NewTree = gb_trees:insert(Var, NewVal, Acc),
+      join_info_in(Left, LiveIn, Info1, Info2, NewTree);
     {{value, Val}, none} ->
-      join_info_in(Left, Info1, Info2, gb_trees:insert(Var, Val, Acc));
+      NewVal =
+	case hipe_icode:is_var(Val) of
+	  true -> lookup(Val, Info2);
+	  false -> Val
+	end,
+      NewTree = gb_trees:insert(Var, NewVal, Acc),
+      join_info_in(Left, LiveIn, Info1, Info2, NewTree);
+    {{value, Val}, {value, Val}} ->
+      NewVal =
+	case hipe_icode:is_var(Val) of
+	  false -> Val;
+	  true ->
+	    case ordsets:is_element(Val, LiveIn) of
+	      true -> Val;
+	      false -> t_sup(lookup(Val, Info1), lookup(Val, Info2))
+	    end
+	end,
+      NewTree = gb_trees:insert(Var, NewVal, Acc),
+      join_info_in(Left, LiveIn, Info1, Info2, NewTree);
     {{value, Val1}, {value, Val2}} ->
-      NewVal = t_sup(Val1, Val2),
-      join_info_in(Left, Info1, Info2, gb_trees:insert(Var, NewVal, Acc))
+      NewVal = 
+	case {hipe_icode:is_var(Val1), hipe_icode:is_var(Val2)} of
+	  {false, false} -> t_sup(Val1, Val2);
+	  {true, true} -> t_sup(lookup(Val1, Info1), lookup(Val2, Info2));
+	  {false, true} -> t_sup(Val1, lookup(Val2, Info2));
+	  {true, false} -> t_sup(lookup(Val1, Info1), Val2)
+	end,
+      NewTree = gb_trees:insert(Var, NewVal, Acc),
+      join_info_in(Left, LiveIn, Info1, Info2, NewTree)
   end;
-join_info_in([], _Info1, _Info2, Acc) ->
+join_info_in([], _LiveIn, _Info1, _Info2, Acc) ->
   gb_trees:balance(Acc).
 
 info_is_equal(Info1, Info2) ->
@@ -1411,7 +1437,7 @@ uses(I)->
   keep_vars(hipe_icode:uses(I)).
 
 keep_vars(Vars)->
-  lists:filter(fun(X)->hipe_icode:is_var(X)end, Vars).
+  [V || V <- Vars, hipe_icode:is_var(V)].
 
 butlast([_]) ->
   [];
@@ -1495,9 +1521,6 @@ state__info(#state{info_map=IM}, Label)->
     none -> gb_trees:empty()
   end.
 
-state__info_map(#state{info_map=IM})->
-  IM.
-
 state__info_in_update(S=#state{info_map=IM, liveness=Liveness}, Label, Info)->
   Pred = state__pred(S, Label),
   RawLiveIn = [hipe_icode_ssa:ssa_liveness__livein(Liveness, Label, X) ||
@@ -1509,23 +1532,15 @@ state__info_in_update(S=#state{info_map=IM, liveness=Liveness}, Label, Info)->
       case join_info_in(LiveIn, OldInfo, Info) of
 	fixpoint -> 
 	  %% If the bb has not been handled we ignore the fixpoint.
-%	  io:format("Label: ~w\First handling\nNewInfo: ~p\n", 
-%		    [Label, OldInfo]),
 	  S#state{info_map=gb_trees:enter({Label, in}, OldInfo, IM)};
 	NewInfo ->
-%	  io:format("Label: ~w\nFirst handling\nNewInfo: ~p\n", 
-%		    [Label, NewInfo]),
 	  S#state{info_map=gb_trees:enter({Label, in}, NewInfo, IM)}
       end;
     {value, OldInfo} ->
       case join_info_in(LiveIn, OldInfo, Info) of
 	fixpoint -> 
-%	  io:format("Label: ~w\nLiveIn: ~p\nOldInfo: ~p\nInfo: ~p\nFixpoint\n", 
-%		    [Label, LiveIn, OldInfo, Info]),
 	  fixpoint;
 	NewInfo ->
-%	  io:format("Label: ~w\nOldInfo: ~p\nNewInfo: ~p\n", 
-%		    [Label, OldInfo, NewInfo]),
 	  S#state{info_map=gb_trees:enter({Label, in}, NewInfo, IM)}
       end
   end.
@@ -1587,7 +1602,6 @@ call_always_fails(I, Info)->
     {erlang, halt, 0} -> false;
     {erlang, halt, 1} -> false;
     {erlang, exit, 1} -> false;
-    {erlang, exit, 2} -> false;
     {erlang, error, 1} -> false;
     {erlang, error, 2} -> false;
     {erlang, fault, 1} -> false;
@@ -2263,6 +2277,36 @@ annotate_instr(I, DefInfo, UseInfo)->
       hipe_icode:subst(Subst, I)
   end.
 
+unannotate_cfg(Cfg) ->
+  Labels = hipe_icode_cfg:labels(Cfg),
+  unannotate_bbs(Labels, Cfg).
+  
+unannotate_bbs([Label|Left], Cfg)->
+  BB = hipe_icode_cfg:bb(Cfg, Label),
+  Code = hipe_bb:code(BB),
+  NewCode = unannotate_instr_list(Code, []),
+  NewBB = hipe_bb:code_update(BB, NewCode),
+  NewCfg = hipe_icode_cfg:bb_add(Cfg, Label, NewBB),
+  unannotate_bbs(Left, NewCfg);
+unannotate_bbs([], Cfg) ->
+  Cfg.
+
+unannotate_instr_list([I|Left], Acc)->
+  NewI = unannotate_instr(I),
+  unannotate_instr_list(Left, [NewI|Acc]);
+unannotate_instr_list([], Acc) ->
+  lists:reverse(Acc).
+
+unannotate_instr(I) ->
+  DefUses = hipe_icode:defines(I) ++ hipe_icode:uses(I),
+  Subst = [{X, hipe_icode:unannotate_var(X)}
+	   || X <- DefUses,
+	      hipe_icode:is_annotated_var(X) =:= true],
+  if Subst =:= [] -> I;
+     true -> hipe_icode:subst(Subst, I)
+  end.
+
+
 
 %% _________________________________________________________________
 %%
@@ -2459,8 +2503,6 @@ plt_lookup(MFA) ->
       case lookup_mfa(Plt, MFA) of
 	none ->
 	  t_fun();
-%	{value, {_, RetType}} ->
-%	  t_fun(RetType);
 	{value, {_, RetType, ArgTypes}} ->
 	  t_fun(ArgTypes, RetType)
       end

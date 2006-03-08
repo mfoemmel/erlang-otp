@@ -25,6 +25,16 @@ AC_ARG_ENABLE(threads,
     *)  enable_threads=yes ;;
   esac ], enable_threads=no)
  
+if test $enable_threads = no; then
+
+  AC_ARG_ENABLE(smp-support,
+  [  --enable-smp-support    enable smp support],
+  [ case "$enableval" in
+      no) ;;
+      *)  enable_threads=yes ;;
+    esac ])
+
+fi
 
 dnl ----------------------------------------------------------------------
 dnl Checks for programs.

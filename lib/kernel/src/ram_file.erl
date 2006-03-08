@@ -38,6 +38,8 @@
 %% Includes and defines
 
 -define(RAM_FILE_DRV, "ram_file_drv").
+-define(MAX_I32, (1 bsl 31)).
+-define(G_I32(X), integer(X), X >= -?MAX_I32, X < ?MAX_I32).
 
 -include("file.hrl").
 
@@ -121,13 +123,13 @@ open(Data, Mode) ->
 close(#file_descriptor{module = ?MODULE, data = Port}) -> 
     ll_close(Port).
 
-read(#file_descriptor{module = ?MODULE, data = Port}, Size) 
-  when integer(Size), Size > 0 -> 
-    Cmd = [?RAM_FILE_READ | i32(Size)],
+read(#file_descriptor{module = ?MODULE, data = Port}, Sz)
+  when ?G_I32(Sz) ->
+    Cmd = [?RAM_FILE_READ | i32(Sz)],
     case call_port(Port, Cmd) of
-	{ok, {0, _Data}} ->
+	{ok, {0, _Data}} when Sz =/= 0 ->
 	    eof;
-	{ok, {_Size, Data}} ->
+	{ok, {_Sz, Data}} ->
 	    {ok, Data};
 	{error, enomem} ->
 	    %% Garbage collecting here might help if the current processes
@@ -136,7 +138,7 @@ read(#file_descriptor{module = ?MODULE, data = Port}, Size)
 	    case call_port(Port, Cmd) of
 		{ok, {0, _Data}} ->
 		    eof;
-		{ok, {_Size, Data}} ->
+		{ok, {_Sz, Data}} ->
 		    {ok, Data};
 		Error ->
 		    Error
@@ -149,7 +151,7 @@ read(#file_descriptor{module = ?MODULE}, _) ->
 
 write(#file_descriptor{module = ?MODULE, data = Port}, Bytes) -> 
     case call_port(Port, [?RAM_FILE_WRITE | Bytes]) of
-	{ok, _Size} ->
+	{ok, _Sz} ->
 	    ok;
 	Error ->
 	    Error
@@ -188,31 +190,39 @@ position(#file_descriptor{module = ?MODULE, data = Port}, Pos) ->
 
 
 pread(#file_descriptor{module = ?MODULE, data = Port}, L) when list(L) ->
-    pread_int(Port, L, []);
-pread(#file_descriptor{module = ?MODULE}, _) ->
-    {error, einval}.
-
-pread_int(_Port, [], R) ->
-    {ok, lists:reverse(R)};
-pread_int(Port, [{At, Sz} | T], R)
-  when integer(At), At >= 0, integer(Sz), Sz >= 0 -> 
-    case call_port(Port, [?RAM_FILE_PREAD, i32(At), i32(Sz)]) of
-	{ok, {0,_Data}} -> 
-	    pread_int(Port, T, [eof | R]);
-	{ok, {_Size,Data}} -> 
-	    pread_int(Port, T, [Data | R]);
+    case pread_1(L) of
+	Commands when list(Commands) ->
+	    pread_2(Port, Commands, []);
 	Error -> 
 	    Error
     end;
-pread_int(_, _, _) ->
+pread(#file_descriptor{module = ?MODULE}, _) ->
     {error, einval}.
 
+pread_1([]) -> [];
+pread_1([{At, Sz} | T]) when ?G_I32(At), ?G_I32(Sz) ->
+    [{Sz,[?RAM_FILE_PREAD, i32(At), i32(Sz)]} | pread_1(T)];
+pread_1(_) ->
+   {error, einval}.
+
+pread_2(_Port, [], R) ->
+    {ok, lists:reverse(R)};
+pread_2(Port, [{Sz,Command}|Commands], R) ->
+    case call_port(Port, Command) of
+	{ok, {0,_Data}} when Sz =/= 0 -> 
+	    pread_2(Port, Commands, [eof | R]);
+	{ok, {_Sz,Data}} -> 
+	    pread_2(Port, Commands, [Data | R]);
+	Error -> 
+	    Error
+    end.
+
 pread(#file_descriptor{module = ?MODULE, data = Port}, At, Sz) 
-  when integer(At), At >= 0, integer(Sz), Sz >= 0 -> 
+  when ?G_I32(At), ?G_I32(Sz) ->
     case call_port(Port, [?RAM_FILE_PREAD, i32(At), i32(Sz)]) of
-	{ok, {0,_Data}} -> 
+	{ok, {0,_Data}} when Sz =/= 0 -> 
 	    eof;
-	{ok, {_Size,Data}} -> 
+	{ok, {_Sz,Data}} -> 
 	    {ok, Data};
 	Error -> 
 	    Error
@@ -223,27 +233,35 @@ pread(#file_descriptor{module = ?MODULE}, _, _) ->
 
 
 pwrite(#file_descriptor{module = ?MODULE, data = Port}, L) when list(L) ->
-    pwrite_int(Port, L, 0);
+    case pwrite_1(L) of
+	Commands when list(Commands) ->
+	    pwrite_2(Port, Commands, 0);
+	Error ->
+	    Error
+    end;
 pwrite(#file_descriptor{module = ?MODULE}, _) ->
     {error, einval}.
 
-pwrite_int(_Port, [], _R) ->
-    ok;
-pwrite_int(Port, [{At, Bytes} | T], R)
-  when integer(At), At >= 0 -> 
-    case call_port(Port, [?RAM_FILE_PWRITE, i32(At) | Bytes]) of
-	{ok, _Size} -> 
-	    pwrite_int(Port, T, R+1);
-	{error, Reason} -> 
-	    {error, {R, Reason}}
-    end;
-pwrite_int(_, _, _) ->
+pwrite_1([]) -> [];
+pwrite_1([{At, Bytes} | T]) when ?G_I32(At) ->
+    [[?RAM_FILE_PWRITE, i32(At) | Bytes] | pwrite_1(T)];
+pwrite_1(_) ->
     {error, einval}.
 
+pwrite_2(_Port, [], _R) ->
+    ok;
+pwrite_2(Port, [Command|Commands], R) ->     
+    case call_port(Port, Command) of
+	{ok, _Sz} ->
+	    pwrite_2(Port, Commands, R+1);
+	{error, Reason} ->
+	    {error, {R, Reason}}
+    end.
+
 pwrite(#file_descriptor{module = ?MODULE, data = Port}, At, Bytes) 
-  when integer(At), At >= 0 -> 
+  when ?G_I32(At) ->
     case call_port(Port, [?RAM_FILE_PWRITE, i32(At), Bytes]) of
-	{ok, _Size} ->
+	{ok, _Sz} ->
 	    ok;
 	Error ->
 	    Error
@@ -253,8 +271,8 @@ pwrite(#file_descriptor{module = ?MODULE}, _, _) ->
 
 
 
-ipread_s32bu_p32bu(#file_descriptor{module = ?MODULE} = Handle, Pos, MaxSize) ->
-    file:ipread_s32bu_p32bu_int(Handle, Pos, MaxSize).
+ipread_s32bu_p32bu(#file_descriptor{module = ?MODULE} = Handle, Pos, MaxSz) ->
+    file:ipread_s32bu_p32bu_int(Handle, Pos, MaxSz).
 
 
 
@@ -446,11 +464,11 @@ lseek_position(cur) ->
     lseek_position({cur, 0});
 lseek_position(eof) ->
     lseek_position({eof, 0});
-lseek_position({bof, Offset}) when integer(Offset) ->
+lseek_position({bof, Offset}) when ?G_I32(Offset) ->
     {ok, Offset, ?RAM_FILE_SEEK_SET};
-lseek_position({cur, Offset}) when integer(Offset) ->
+lseek_position({cur, Offset}) when ?G_I32(Offset) ->
     {ok, Offset, ?RAM_FILE_SEEK_CUR};
-lseek_position({eof, Offset}) when integer(Offset) ->
+lseek_position({eof, Offset}) when ?G_I32(Offset) ->
     {ok, Offset, ?RAM_FILE_SEEK_END};
 lseek_position(_) ->
     {error, einval}.

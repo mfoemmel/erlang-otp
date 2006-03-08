@@ -59,9 +59,6 @@ ra_insn(I, Map, FpMap) ->
       I#cmp{src=Src,dst=Dst};
     #comment{} ->
       I;
-    #dec{dst=Dst0} ->
-      Dst = ra_opnd(Dst0, Map),
-      I#dec{dst=Dst};
     #fmove{src=Src0,dst=Dst0} ->
       Src = ra_opnd(Src0, Map, FpMap),
       Dst = ra_opnd(Dst0, Map, FpMap),
@@ -73,9 +70,6 @@ ra_insn(I, Map, FpMap) ->
       Src = ra_opnd(Src0, Map, FpMap),
       Dst = ra_opnd(Dst0, Map, FpMap),
       I#fp_binop{src=Src,dst=Dst};
-    #inc{dst=Dst0} ->
-      Dst = ra_opnd(Dst0, Map),
-      I#inc{dst=Dst};
     #jcc{} ->
       I;
     #jmp_fun{'fun'=Fun0} ->
@@ -108,8 +102,6 @@ ra_insn(I, Map, FpMap) ->
       Src = ra_opnd(Src0, Map),
       Dst = ra_opnd(Dst0, Map),
       I#movzx{src=Src,dst=Dst};
-    #nop{} ->
-      I;
     #pseudo_call{'fun'=Fun0} ->
       Fun = ra_opnd(Fun0, Map),
       I#pseudo_call{'fun'=Fun};

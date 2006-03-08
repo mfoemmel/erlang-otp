@@ -35,11 +35,11 @@
 %%%-------------------------------------------------------------------
 %%% API
 %%%-------------------------------------------------------------------
-start_link(_Type, Opts) ->
+start_link(Type, Opts) ->
     ?d("start_link -> entry with"
        "~n   Opts: ~p", [Opts]),
     SupName = {local, ?MODULE}, 
-    supervisor:start_link(SupName, ?MODULE, [Opts]).
+    supervisor:start_link(SupName, ?MODULE, [Type, Opts]).
 
 stop() ->
     ?d("stop -> entry", []),
@@ -65,14 +65,18 @@ stop() ->
 %%          ignore                          |
 %%          {error, Reason}   
 %%--------------------------------------------------------------------
-init([Opts]) ->
+init([Opts]) when is_list(Opts) ->    %% OTP-5963: Due to the addition
+    init([normal, Opts]);             %% OTP-5963: of server_sup
+init([Type, Opts]) ->
     ?d("init -> entry with"
-       "~n   Opts: ~p", [Opts]),
-    Flags   = {one_for_all, 2, 500},
-    Config  = worker_spec(snmpm_config, [Opts], [gen_server]),
-    MiscSup = sup_spec(snmpm_misc_sup, []),
-    Server  = worker_spec(snmpm_server, [], [gen_server]),
-    Sups    = [Config, MiscSup, Server],
+       "~n   Type: ~p"
+       "~n   Opts: ~p", [Type, Opts]),
+    Restart   = get_restart(Opts), 
+    Flags     = {one_for_all, 0, 3600},
+    Config    = worker_spec(snmpm_config, [Opts], Restart, [gen_server]),
+    MiscSup   = sup_spec(snmpm_misc_sup, [], Restart),
+    ServerSup = sup_spec(snmpm_server_sup, [Type, Opts], Restart),
+    Sups      = [Config, MiscSup, ServerSup],
     {ok, {Flags, Sups}}.
 
 
@@ -80,15 +84,30 @@ init([Opts]) ->
 %%% Internal functions
 %%%-------------------------------------------------------------------
 
-sup_spec(Name, Args) ->
-    {Name, 
-     {Name, start_link, Args}, 
-     transient, 2000, supervisor, [Name,supervisor]}.
+get_restart(Opts) ->
+    get_opt(Opts, restart_type, transient).
 
-worker_spec(Name, Args, Modules) ->
+get_opt(Opts, Key, Def) ->
+    snmp_misc:get_option(Key, Opts, Def).
+	
+sup_spec(Name, Args, Restart) ->
+    ?d("sup_spec -> entry with"
+       "~n   Name:    ~p"
+       "~n   Args:    ~p"
+       "~n   Restart: ~p", [Name, Args, Restart]),
     {Name, 
      {Name, start_link, Args}, 
-     transient, 2000, worker, [Name] ++ Modules}.
+     Restart, 2000, supervisor, [Name,supervisor]}.
+
+worker_spec(Name, Args, Restart, Modules) ->
+    ?d("worker_spec -> entry with"
+       "~n   Name:    ~p"
+       "~n   Args:    ~p"
+       "~n   Restart: ~p"
+       "~n   Modules: ~p", [Name, Args, Restart, Modules]),
+    {Name, 
+     {Name, start_link, Args}, 
+     Restart, 2000, worker, [Name] ++ Modules}.
 
 
 

@@ -28,6 +28,7 @@
 	 encode_command_request/2,
 	 encode_action_reply/2]).
 
+-export([token_tag2string/1]).
 
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_prev3b.hrl").
@@ -145,6 +146,140 @@ encode_action_reply(_EC, ActRep)
 	DeepIoList ->
 	    {ok, DeepIoList}
     end.
+
+
+%%----------------------------------------------------------------------
+%% A utility function to pretty print the tags found in a megaco message
+%%----------------------------------------------------------------------
+
+token_tag2string(addReq)                 -> ?CompactAddToken;
+token_tag2string(addReply)               -> ?CompactAddToken;
+token_tag2string(auditDescriptor)        -> ?CompactAuditToken;
+token_tag2string(auditCapRequest)        -> ?CompactAuditCapToken;
+token_tag2string(auditCapReply)          -> ?CompactAuditCapToken;
+token_tag2string(auditValueRequest)      -> ?CompactAuditValueToken;
+token_tag2string(auditValueReply)        -> ?CompactAuditValueToken;
+%% token_tag2string(X) -> ?CompactAuthToken;
+token_tag2string(both)                   -> ?CompactBothToken;
+token_tag2string(bothway)                -> ?CompactBothwayToken;
+token_tag2string(brief)                  -> ?CompactBriefToken;
+%% token_tag2string(X) -> ?CompactBufferToken;
+%% token_tag2string(X) -> ?CompactCtxToken;
+%% token_tag2string(X) -> ?CompactContextAttrToken;
+%% token_tag2string(X) -> ?CompactContextAuditToken;
+%% token_tag2string(X) -> ?CompactContextListToken;
+token_tag2string(digitMapDescriptor)     -> ?CompactDigitMapToken;
+token_tag2string(digitMapToken)          -> ?CompactDigitMapToken;
+%% token_tag2string(X) -> ?CompactDirectionToken;
+%% token_tag2string(X) -> ?CompactDiscardToken;
+%% token_tag2string(X) -> ?CompactDisconnectedToken;
+%% token_tag2string(X) -> ?CompactDelayToken;
+token_tag2string(duration)               -> ?CompactDurationToken;
+%% token_tag2string(X) -> ?CompactEmbedToken;
+token_tag2string(emergencyAudit)         -> ?CompactEmergencyToken;
+%% token_tag2string(X)         -> ?CompactEmergencyOffToken;
+token_tag2string(errorDescriptor)        -> ?CompactErrorToken;
+token_tag2string(eventBufferDescriptor)  -> ?CompactEventBufferToken;
+token_tag2string(eventBufferToken)       -> ?CompactEventBufferToken;
+token_tag2string(eventsDescriptor)       -> ?CompactEventsToken;
+token_tag2string(eventsToken)            -> ?CompactEventsToken;
+token_tag2string(external)               -> ?CompactExternalToken;
+%% token_tag2string(X) -> ?CompactFailoverToken;
+%% token_tag2string(X) -> ?CompactForcedToken;
+%% token_tag2string(X) -> ?CompactGracefulToken;
+%% token_tag2string(X) -> ?CompactH221Token;
+%% token_tag2string(X) -> ?CompactH223Token;
+%% token_tag2string(X) -> ?CompactH226Token;
+%% token_tag2string(X) -> ?CompactHandOffToken;
+token_tag2string(iepsCallind)                 -> ?CompactIEPSToken;
+%% token_tag2string(X) -> ?CompactImmAckRequiredToken;
+token_tag2string(inactive)                    -> ?CompactInactiveToken;
+token_tag2string(internal)                    -> ?CompactInternalToken;
+token_tag2string(onInterruptByEvent)          -> ?CompactInterruptByEventToken;
+token_tag2string(onInterruptByNewSignalDescr) -> ?CompactInterruptByNewSignalsDescrToken;
+token_tag2string(isolate)        	 -> ?CompactIsolateToken;
+token_tag2string(inSvc)          	 -> ?CompactInSvcToken;
+token_tag2string(keepActive)     	 -> ?CompactKeepActiveToken;
+token_tag2string(localDescriptor)        -> ?CompactLocalToken;
+token_tag2string(localControlDescriptor) -> ?CompactLocalControlToken;
+token_tag2string(lockStep)          	 -> ?CompactLockStepToken;
+token_tag2string(loopBack)          	 -> ?CompactLoopbackToken;
+token_tag2string(mediaDescriptor)   	 -> ?CompactMediaToken;
+token_tag2string(mediaToken)        	 -> ?CompactMediaToken;
+%% token_tag2string(X) -> ?CompactMegacopToken;
+%% token_tag2string(X) -> ?CompactMethodToken;
+%% token_tag2string(X) -> ?CompactMgcIdToken;
+%% token_tag2string(X) -> ?CompactModeToken;
+token_tag2string(modReq)               -> ?CompactModifyToken;
+token_tag2string(modReply)             -> ?CompactModifyToken;
+token_tag2string(modemDescriptor)      -> ?CompactModemToken;
+token_tag2string(modemToken)           -> ?CompactModemToken;
+token_tag2string(moveReq)              -> ?CompactMoveToken;
+token_tag2string(moveReply)            -> ?CompactMoveToken;
+%% token_tag2string(X) -> ?CompactMtpToken;
+token_tag2string(muxDescriptor)        -> ?CompactMuxToken;
+token_tag2string(muxToken)             -> ?CompactMuxToken;
+token_tag2string(notifyReq)            -> ?CompactNotifyToken;
+%% token_tag2string(X) -> ?CompactNotifyCompletionToken;
+%% token_tag2string(X) -> ?CompactNx64kToken;
+token_tag2string(observedEventsDescriptor) -> ?CompactObservedEventsToken;
+token_tag2string(observedEventsToken)      -> ?CompactObservedEventsToken;
+token_tag2string(false)                -> ?CompactOffToken;
+token_tag2string(off)                  -> ?CompactOffToken;
+token_tag2string(oneway)               -> ?CompactOnewayToken;
+token_tag2string(onOff)                -> ?CompactOnOffToken;
+token_tag2string(true)                 -> ?CompactOnToken;
+token_tag2string(otherReason)          -> ?CompactOtherReasonToken;
+token_tag2string(outOfSvc)             -> ?CompactOutOfSvcToken;
+token_tag2string(packagesDescriptor)   -> ?CompactPackagesToken;
+token_tag2string(packagesToken)        -> ?CompactPackagesToken;
+%% token_tag2string(X) -> ?CompactPendingToken;
+token_tag2string(priorityAudit)        -> ?CompactPriorityToken;
+%% token_tag2string(X) -> ?CompactProfileToken;
+%% token_tag2string(X) -> ?CompactReasonToken;
+token_tag2string(recvOnly)             -> ?CompactRecvonlyToken;
+%% token_tag2string(X) -> ?CompactReplyToken;
+%% token_tag2string(X) -> ?CompactRequestIDToken;
+%% token_tag2string(X) -> ?CompactResponseAckToken;
+%% token_tag2string(X) -> ?CompactRestartToken;
+token_tag2string(remoteDescriptor)     -> ?CompactRemoteToken;
+%% token_tag2string(X) -> ?CompactReservedGroupToken;
+%% token_tag2string(X) -> ?CompactReservedValueToken;
+token_tag2string(sendOnly)             -> ?CompactSendonlyToken;
+token_tag2string(sendRecv)             -> ?CompactSendrecvToken;
+%% token_tag2string(X) -> ?CompactServicesToken;
+%% token_tag2string(X) -> ?CompactServiceStatesToken;
+token_tag2string(serviceChangeReq)     -> ?CompactServiceChangeToken;
+%% token_tag2string(X) -> ?CompactServiceChangeAddressToken;
+token_tag2string(incomplete)           -> ?CompactServiceChangeIncompleteToken;
+%% token_tag2string(X) -> ?CompactSignalListToken;
+token_tag2string(signalsDescriptor)    -> ?CompactSignalsToken;
+token_tag2string(signalsToken)         -> ?CompactSignalsToken; 
+%% token_tag2string(X) -> ?CompactSignalTypeToken;
+token_tag2string(statisticsDescriptor) -> ?CompactStatsToken;
+token_tag2string(statsToken)           -> ?CompactStatsToken;
+%% token_tag2string(X) -> ?CompactStreamToken;
+token_tag2string(subtractReq)          -> ?CompactSubtractToken;
+token_tag2string(subtractReply)        -> ?CompactSubtractToken;
+%% token_tag2string(X) -> ?CompactSynchISDNToken;
+%% token_tag2string(X) -> ?CompactTerminationStateToken;
+token_tag2string(test)                 -> ?CompactTestToken;
+token_tag2string(timeOut)              -> ?CompactTimeOutToken;
+token_tag2string(onTimeOut)            -> ?CompactTimeOutToken;
+token_tag2string(topologyAudit)        -> ?CompactTopologyToken;
+%% token_tag2string(X) -> ?CompactTransToken;
+%% token_tag2string(X) -> ?CompactV18Token;
+%% token_tag2string(X) -> ?CompactV22Token;
+%% token_tag2string(X) -> ?CompactV22bisToken;
+%% token_tag2string(X) -> ?CompactV32Token;
+%% token_tag2string(X) -> ?CompactV32bisToken;
+%% token_tag2string(X) -> ?CompactV34Token;
+%% token_tag2string(X) -> ?CompactV76Token;
+%% token_tag2string(X) -> ?CompactV90Token;
+%% token_tag2string(X) -> ?CompactV91Token;
+%% token_tag2string(X) -> ?CompactVersionToken;
+token_tag2string(_) -> [].
+
 
 
 %%----------------------------------------------------------------------

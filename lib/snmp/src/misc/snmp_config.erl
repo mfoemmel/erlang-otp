@@ -189,7 +189,7 @@ config_agent_sys() ->
 		ets;
 	    dets ->
 		DetsDir = ask("6b. Mib storage directory (absolute path)?",
-			      DefDir, fun verify_dir/1),
+			      DbDir, fun verify_dir/1),
 		DetsAction = ask("6c. Mib storage [dets] database start "
 				 "action "
 				 "(default/clear/keep)?", 

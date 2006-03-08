@@ -460,16 +460,24 @@ cr_clause({clause,_,[T],G,B}, I, Hook) ->
 
 try_clauses(Cs, I, Hook) -> clauses(fun try_clause/3, I, Hook, Cs).
 
-try_clause({clause,_,[{tuple,_,[{atom,_,throw},V]}],G,B}, I, Hook) ->
-    [expr(V, I, 0, Hook),
+try_clause({clause,_,[{tuple,_,[{atom,_,throw},V,S]}],G,B}, I, Hook) ->
+    Vs = expr(V, I, 0, Hook),
+    [Vs,
+     stack_backtrace(S, I, Vs, Hook),
      guard(G, I, Hook),
      body(B, I+4, Hook)];
 try_clause({clause,_,[{tuple,_,[C,V,S]}],G,B}, I, Hook) ->
     Cs = expr(C, I, 0, Hook),
-    [Cs, ":", expr(V, indentation(Cs, I)+1, 0, Hook),
-     ":", expr(S, indentation(Cs, I)+1, 0, Hook),
+    Es = expr(V, indentation(Cs, I)+1, 0, Hook),
+    [Cs, ":", Es,
+     stack_backtrace(S, I, Es, Hook),
      guard(G, I, Hook),
      body(B, I+4, Hook)].
+
+stack_backtrace({var,_,'_'}, _Es, _I, _Hook) ->
+    [];
+stack_backtrace(S, Es, I, Hook) ->
+    [":", expr(S, indentation(Es, I)+1, 0, Hook)].
 
 %% fun_clauses(Clauses, Indentation, Hook) -> [Char].
 %%  Print 'fun' clauses.

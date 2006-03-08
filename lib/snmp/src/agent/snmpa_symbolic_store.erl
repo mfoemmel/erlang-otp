@@ -29,6 +29,8 @@
 %% snmp_agent_table, owned by the snmpa_supervisor.
 %%
 %%----------------------------------------------------------------------
+
+-include_lib("kernel/include/file.hrl").
 -include("snmp_types.hrl").
 -include("snmp_debug.hrl").
 -include("snmp_verbosity.hrl").
@@ -39,6 +41,7 @@
 -export([start_link/2, 
 	 stop/0,
 	 info/0, 
+	 backup/1, 
 	 aliasname_to_oid/1, oid_to_aliasname/1, 
 	 add_aliasnames/2, delete_aliasnames/1,
 	 which_aliasnames/0,
@@ -73,8 +76,8 @@
         gen_server:start_link({local, ?SERVER}, ?MODULE, [Prio, Opts], [])).
 -endif.
   
--record(state, {db}).
--record(symbol,{key,mib_name,info}).
+-record(state,  {db, backup}).
+-record(symbol, {key, mib_name, info}).
 
 
 %%-----------------------------------------------------------------
@@ -96,12 +99,17 @@ stop() ->
 info() ->
     call(info).
 
+backup(BackupDir) ->
+    call({backup, BackupDir}).
+
 
 %%----------------------------------------------------------------------
 %% Returns: Db
 %%----------------------------------------------------------------------
+
 get_db() ->
     call(get_db).
+
 
 %%----------------------------------------------------------------------
 %% Returns: {value, Oid} | false
@@ -293,6 +301,7 @@ init([Prio,Opts]) ->
 
 do_init(Prio, Opts) ->
     process_flag(priority, Prio),
+    process_flag(trap_exit, true),
     put(sname,ss),
     put(verbosity,get_verbosity(Opts)),
     ?vlog("starting",[]),
@@ -385,6 +394,30 @@ handle_call(info, _From, #state{db = DB} = S) ->
     ?vlog("info",[]),
     Info = get_info(DB), 
     {reply, Info, S};
+
+handle_call({backup, BackupDir}, From, #state{db = DB} = S) ->
+    ?vlog("info to ~p",[BackupDir]),
+    Pid = self(),
+    V   = get(verbosity),
+    case file:read_file_info(BackupDir) of
+	{ok, #file_info{type = directory}} ->
+	    BackupServer = 
+		erlang:spawn_link(
+		  fun() ->
+			  put(sname, albs),
+			  put(verbosity, V),
+			  Dir   = filename:join([BackupDir]), 
+			  Reply = snmpa_general_db:backup(DB, Dir),
+			  Pid ! {backup_done, Reply},
+			  unlink(Pid)
+		  end),	
+	    ?vtrace("backup server: ~p", [BackupServer]),
+	    {noreply, S#state{backup = {BackupServer, From}}};
+	{ok, _} ->
+	    {reply, {error, not_a_directory}, S};
+	Error ->
+	    {reply, Error, S}
+    end;
 
 handle_call(stop, _From, S) -> 
     ?vlog("stop",[]),
@@ -494,6 +527,22 @@ handle_cast(Msg, S) ->
     {noreply, S}.
     
 
+handle_info({'EXIT', Pid, Reason}, #state{backup = {Pid, From}} = S) ->
+    ?vlog("backup server (~p) exited for reason ~n~p", [Pid, Reason]),
+    gen_server:reply(From, {error, Reason}),
+    {noreply, S#state{backup = undefined}};
+
+handle_info({'EXIT', Pid, Reason}, S) ->
+    %% The only other processes we should be linked to are
+    %% either the master agent or our supervisor, so die...
+    {stop, {received_exit, Pid, Reason}, S};
+
+handle_info({backup_done, Reply}, #state{backup = {_, From}} = S) ->
+    ?vlog("backup done:"
+	  "~n   Reply: ~p", [Reply]),
+    gen_server:reply(From, Reply),
+    {noreply, S#state{backup = undefined}};
+
 handle_info(Info, S) ->
     info_msg("received unknown info: ~n~p", [Info]),    
     {noreply, S}.
@@ -509,41 +558,28 @@ terminate(Reason, S) ->
 %%----------------------------------------------------------
 
 % downgrade
-code_change({down, _Vsn}, #state{db = DB} = S, downgrade_to_404) ->
+code_change({down, _Vsn}, #state{db = DB, backup = B}, downgrade_to_pre_4_7) ->
     ?d("code_change(down) -> entry", []),
-    Pat   = #symbol{key = {oid, '_'}, _ = '_'},
-    Syms = snmpa_general_db:match_object(DB, Pat),
-    F = fun(#symbol{key = {oid, Oid} = Key} = Sym0) -> 
-		?d("code_change(down) -> downgrading oid ~w", [Oid]),
-		snmpa_general_db:delete(DB, Key),
-		Sym1 = Sym0#symbol{key = {alias, Oid}},
-		snmpa_general_db:write(DB, Sym1)
-	end,
-    lists:foreach(F, Syms),
-    ?d("code_change(down) -> done", []),
+    stop_backup_server(B),
+    S = {state, DB},
     {ok, S};
 
 % upgrade
-code_change(_Vsn, #state{db = DB} = S, upgrade_from_404) ->
+code_change(_Vsn, S, upgrade_from_pre_4_7) ->
     ?d("code_change(up) -> entry", []),
-    Pat   = #symbol{key = {alias, '_'}, _ = '_'},
-    Syms0 = snmpa_general_db:match_object(DB, Pat),
-    Syms  = [Sym || #symbol{key = {alias, Oid}} = Sym <- Syms0, list(Oid)],
-    F = fun(#symbol{key = {alias, Oid} = Key} = Sym0) -> 
-		?d("code_change(up) -> upgrading oid ~w", [Oid]),
-		snmpa_general_db:delete(DB, Key),
-		Sym1 = Sym0#symbol{key = {oid, Oid}},
-		snmpa_general_db:write(DB, Sym1)
-	end,
-    lists:foreach(F, Syms),
-    ?d("code_change(up) -> done", []),
-    {ok, S};
+    {state, DB} = S,
+    S1 = #state{db = DB},
+    {ok, S1};
 
 code_change(_Vsn, S, _Extra) ->
     ?d("code_change -> entry [do nothing]", []),
     {ok, S}.
 
 
+stop_backup_server(undefined) ->
+    ok;
+stop_backup_server({Pid, _}) when pid(Pid) ->
+    exit(Pid, kill).
 
 
     

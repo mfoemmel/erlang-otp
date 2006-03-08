@@ -810,7 +810,7 @@ next(Tab,Key) ->
 	{?DEFAULT_ACCESS,Tid,Ts} ->
 	    next(Tid,Ts,Tab,Key);
 	{Mod,Tid,Ts} ->
-	    Mod:next(Tid,Ts,Tab);
+	    Mod:next(Tid,Ts,Tab,Key);
 	_ ->
 	    abort(no_transaction)
     end.
@@ -836,7 +836,7 @@ prev(Tab,Key) ->
 	{?DEFAULT_ACCESS,Tid,Ts} ->
 	    prev(Tid,Ts,Tab,Key);
 	{Mod,Tid,Ts} ->
-	    Mod:prev(Tid,Ts,Tab);
+	    Mod:prev(Tid,Ts,Tab,Key);
 	_ ->
 	    abort(no_transaction)
     end.

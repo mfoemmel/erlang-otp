@@ -65,6 +65,7 @@
              snmpm_net_if,
              snmpm_network_interface,
              snmpm_server,
+             snmpm_server_sup,
              snmpm_supervisor,
              snmpm_user,
              snmpm_user_default,

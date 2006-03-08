@@ -496,6 +496,42 @@ dnl On ofs1 the '-pthread' switch should be used
 		    ETHR_DEFS="$ETHR_DEFS -DETHR_UNUSABLE_SIGALTSTACK"
 		fi
 
+		AC_MSG_CHECKING(for Native POSIX Thread Library)
+		case `getconf GNU_LIBPTHREAD_VERSION 2>/dev/null` in
+		    nptl*) nptl=yes;;
+		    NPTL*) nptl=yes;;
+		    *)  nptl=no;;
+		esac
+		AC_MSG_RESULT($nptl)
+		if test $nptl = yes; then
+		    need_nptl_incldir=no
+		    AC_CHECK_HEADER(nptl/pthread.h, need_nptl_incldir=yes)
+		    if test $need_nptl_incldir = yes; then
+			# Ahh...
+			nptl_path="$C_INCLUDE_PATH:$CPATH:/usr/local/include:/usr/include"
+			nptl_ws_path=
+			save_ifs="$IFS"; IFS=":"
+			for dir in $nptl_path; do
+			    if test "x$dir" != "x"; then
+				nptl_ws_path="$nptl_ws_path $dir"
+			    fi
+			done
+			IFS=$save_ifs
+			nptl_incldir=
+			for dir in $nptl_ws_path; do
+		            AC_CHECK_HEADER($dir/nptl/pthread.h,
+					    nptl_incldir=$dir/nptl)
+			    if test "x$nptl_incldir" != "x"; then
+				ETHR_DEFS="$ETHR_DEFS -isystem $nptl_incldir"
+				break
+			    fi
+			done
+			if test "x$nptl_incldir" = "x"; then
+			    AC_MSG_ERROR(Failed to locate nptl system include directory)
+			fi
+		    fi
+		fi
+
 		AC_DEFINE(ETHR_INIT_MUTEX_IN_CHILD_AT_FORK, 1, \
 [Define if mutexes should be reinitialized (instead of unlocked) in child at fork.]) ;;
 	    *) ;;

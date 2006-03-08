@@ -34,6 +34,8 @@
 	 encode_command_request/3,
 	 encode_action_reply/3]).
 
+-export([token_tag2string/1, token_tag2string/2]).
+
 %% Backward compatible funcs:
 -export([encode_message/2, decode_message/2]).
 
@@ -405,6 +407,36 @@ encode_action_reply(EC, 3, ActRep) ->
     megaco_compact_text_encoder_v3:encode_action_reply(EC, ActRep);
 encode_action_reply(EC, V, ActRep) ->
     {error, {bad_version, V, EC, ActRep}}.
+
+
+
+%%----------------------------------------------------------------------
+%% A utility function to pretty print the tags found in a megaco message
+%%----------------------------------------------------------------------
+
+-define(TT2S_BEST_VERSION, prev3b).
+
+token_tag2string(Tag) ->
+    token_tag2string(Tag, ?TT2S_BEST_VERSION).
+
+token_tag2string(Tag, 1) ->
+    token_tag2string(Tag, v1);
+token_tag2string(Tag, v1) ->
+    megaco_compact_text_encoder_v1:token_tag2string(Tag);
+token_tag2string(Tag, 2) ->
+    token_tag2string(Tag, v2);
+token_tag2string(Tag, v2) ->
+    megaco_compact_text_encoder_v2:token_tag2string(Tag);
+token_tag2string(Tag, 3) ->
+    token_tag2string(Tag, prev3b);
+token_tag2string(Tag, v3) ->
+    token_tag2string(Tag, prev3b);
+token_tag2string(Tag, prev3b) ->
+    megaco_compact_text_encoder_prev3b:token_tag2string(Tag);
+token_tag2string(Tag, _Vsn) ->
+    token_tag2string(Tag, ?TT2S_BEST_VERSION).
+
+
 
 
 % d(F) ->

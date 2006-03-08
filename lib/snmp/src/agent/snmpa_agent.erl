@@ -17,6 +17,7 @@
 %%
 -module(snmpa_agent).
 
+-include_lib("kernel/include/file.hrl").
 -include("snmp_types.hrl").
 -include("snmp_debug.hrl").
 -include("snmp_verbosity.hrl").
@@ -35,7 +36,8 @@
 -export([validate_err/3, make_value_a_correct_value/3, do_get/3, 
 	 get/2, get/3, get_next/2, get_next/3]).
 -export([mib_of/1, mib_of/2, me_of/1, me_of/2]).
--export([get_agent_mib_storage/0, db/1]).
+-export([get_agent_mib_storage/0, db/1, 
+	 backup/2]).
 
 %% Internal exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -103,7 +105,8 @@
 		note_store,
 		mib_server,   %% Currently unused
 		net_if,       %% Currently unused
-		net_if_mod}). %% Currently unused
+		net_if_mod,   %% Currently unused
+		backup}).
 
 %%%-----------------------------------------------------------------
 %%% This module implements the agent machinery; both for the master
@@ -181,6 +184,7 @@ init([Prio, Parent, Ref, Options]) ->
 	"~n   Options: ~p", [Prio, Parent, Ref, Options]),
     case (catch do_init(Prio, Parent, Ref, Options)) of
 	{ok, State} ->
+	    ?vdebug("started",[]),
 	    {ok, State};
 	{error, Reason} ->
 	    config_err("failed starting agent: ~n~p", [Reason]),
@@ -443,12 +447,18 @@ get_next(Agent, Vars, Context) ->
 
 
 %%-----------------------------------------------------------------
+
+backup(Agent, BackupDir) when is_list(BackupDir) ->
+    call(Agent, {backup, BackupDir}).
+
+
+%%-----------------------------------------------------------------
 %% Runtime debug support.
 %%-----------------------------------------------------------------
 dump_mibs(Agent) -> 
     call(Agent, dump_mibs).
-dump_mibs(Agent,File) when list(File) -> 
-    call(Agent,{dump_mibs,File}).
+dump_mibs(Agent, File) when list(File) -> 
+    call(Agent, {dump_mibs, File}).
 
 
 %%-----------------------------------------------------------------
@@ -574,6 +584,12 @@ handle_info({forward_trap, TrapRecord, NotifyName, ContextName,
 	    {noreply, S}
     end;
 
+handle_info({backup_done, Reply}, #state{backup = {_, From}} = S) ->
+    ?vlog("backup done:"
+	  "~n   Reply: ~p", [Reply]),
+    gen_server:reply(From, Reply),
+    {noreply, S#state{backup = undefined}};
+
 
 %%-----------------------------------------------------------------
 %% If a process crashes, we first check to see if it was the mib,
@@ -596,9 +612,18 @@ handle_info({'EXIT', Pid, Reason}, #state{set_worker = Pid} = S) ->
 handle_info({'EXIT', Pid, Reason}, #state{parent = Pid} = S) ->
     ?vlog("parent (~p) exited for reason ~n~p", [Pid,Reason]),
     {stop, {parent_died, Reason}, S};
+handle_info({'EXIT', Pid, Reason}, #state{backup = {Pid, From}} = S) ->
+    ?vlog("backup server (~p) exited for reason ~n~p", [Pid, Reason]),
+    case Reason of
+	normal ->
+	    {noreply, S};
+	_ ->
+	    gen_server:reply(From, {error, Reason}),
+	    {noreply, S#state{backup = undefined}}
+    end;
 handle_info({'EXIT', Pid, Reason}, S) ->
     ?vlog("~p exited for reason ~p", [Pid,Reason]),
-    Mib = get(mibserver),
+    Mib   = get(mibserver),
     NetIf = get(net_if),
     case Pid of
 	Mib ->
@@ -741,6 +766,7 @@ handle_call({whereis_mib, Mib}, _From, S) ->
     {reply, snmpa_mib:whereis_mib(get(mibserver), Mib), S};
 
 handle_call(info, _From, S) ->
+    ?vlog("info", []),
     Vsns  = S#state.vsns,
     Stats = get_stats_counters(), 
     AI    = agent_info(S),
@@ -762,6 +788,24 @@ handle_call(info, _From, S) ->
 handle_call(get_net_if, _From, S) ->
     {reply, get(net_if), S};
 
+handle_call({backup, BackupDir}, From, S) ->
+    ?vlog("backup: ~p", [BackupDir]),
+    Pid = self(),
+    V   = get(verbosity),
+    MS  = get(mibserver),
+    BackupServer = 
+	erlang:spawn_link(
+	  fun() ->
+		  put(sname, abs),
+		  put(verbosity, V),
+		  Dir   = filename:join([BackupDir]),
+		  Reply = handle_backup(Dir, MS),
+		  Pid ! {backup_done, Reply},
+		  unlink(Pid)
+	  end),
+    ?vtrace("backup server: ~p", [BackupServer]),
+    {noreply, S#state{backup = {BackupServer, From}}};
+    
 handle_call(dump_mibs, _From, S) ->
     Reply = snmpa_mib:dump(get(mibserver)),
     {reply, Reply, S};
@@ -861,9 +905,8 @@ terminate(_Reason, _S) ->
 %%-----------------------------------------------------------------
 
 %% Downgrade
-%% The net_if_mod field was added as of version 4.4
 %%
-code_change({down, _Vsn}, S, _Extra) ->
+code_change({down, _Vsn}, S, downgrade_to_pre_4_7) ->
     S1 = worker_restart(S),
     #state{type           = T, 
 	   parent         = P, 
@@ -876,14 +919,17 @@ code_change({down, _Vsn}, S, _Extra) ->
 	   nfilters       = NF,
 	   note_store     = NS,
 	   mib_server     = MS,   
-	   net_if         = NI} = S1,
+	   net_if         = NI,
+	   backup         = B} = S1,
+    %% There is no way to stop a running backup server in a controlled
+    %% way, so we has to use brute force...
+    stop_backup_server(B),
     NS = {state, T, P, W, WS, SW, MT, R, V, NF, NS, MS, NI},
     {ok, NS};
 
 %% Upgrade
-%% The net_if_mod field was added as of version 4.4
 %%
-code_change(_Vsn, S, _Extra) ->
+code_change(_Vsn, S, upgrade_from_pre_4_7) ->
     {state, T, P, W, WS, SW, MT, R, V, NF, NS, MS, NI} = S,
     S1 = #state{type           = T, 
 		parent         = P, 
@@ -898,7 +944,16 @@ code_change(_Vsn, S, _Extra) ->
 		mib_server     = MS,   
 		net_if         = NI},
     NS = worker_restart(S1),
-    {ok, NS}.
+    {ok, NS};
+
+code_change(_Vsn, S, _Extra) ->
+    {ok, S}.
+
+
+stop_backup_server(undefined) ->
+    ok;
+stop_backup_server({Pid, _}) when pid(Pid) ->
+    exit(Pid, kill).
 
 
 worker_restart(S) ->
@@ -915,6 +970,64 @@ restart_worker(Pid) when pid(Pid) ->
     proc_lib:spawn_link(?MODULE,worker,[self(),get()]);
 restart_worker(Any) ->
     Any.
+
+
+%%-----------------------------------------------------------------
+
+handle_backup(BackupDir, MibServer) ->
+    ?vlog("handle_backup -> entry with"
+	  "~n   BackupDir: ~p", [BackupDir]),
+    case ets:lookup(snmp_agent_table, db_dir) of
+	[{db_dir, BackupDir}] ->
+	    ?vinfo("handle_backup -> backup dir and db dir the same", []),
+	    {error, db_dir};
+	_ ->
+	    case file:read_file_info(BackupDir) of
+		{ok, #file_info{type = directory}} ->
+		    ?vdebug("handle_backup -> backup dir ok", []),
+
+		    VacmRes = (catch snmpa_vacm:backup(BackupDir)),
+		    ?vtrace("handle_backup -> "
+			    "~n   VacmRes: ~p", [VacmRes]),
+
+		    LdbRes  = (catch snmpa_local_db:backup(BackupDir)),
+		    ?vtrace("handle_backup -> "
+			    "~n   LdbRes: ~p", [LdbRes]),
+
+		    MsRes   = (catch snmpa_mib:backup(MibServer, BackupDir)),
+		    ?vtrace("handle_backup -> "
+			    "~n   MsRes: ~p", [MsRes]),
+
+		    SsRes   = (catch snmpa_symbolic_store:backup(BackupDir)),
+		    ?vtrace("handle_backup -> "
+			    "~n   SsRes: ~p", [SsRes]),
+		    handle_backup_res([{vacm,           VacmRes}, 
+				       {local_db,       LdbRes},
+				       {mib_server,     MsRes},
+				       {symbolic_store, SsRes}]);
+		{ok, _} ->
+		    ?vinfo("handle_backup -> backup dir not a dir", []),
+		    {error, not_a_directory};
+		Error ->
+		    ?vinfo("handle_backup -> Error: ~p", [Error]),
+		    Error
+	    end
+    end.
+
+
+handle_backup_res(Results) ->
+    handle_backup_res(Results, []).
+
+handle_backup_res([], []) ->
+    ok;
+handle_backup_res([], Acc) ->
+    {error, lists:reverse(Acc)};
+handle_backup_res([{_, ok}|Results], Acc) ->
+    handle_backup_res(Results, Acc);
+handle_backup_res([{Who, {error, Reason}}|Results], Acc) ->
+    handle_backup_res(Results, [{Who, Reason}|Acc]);
+handle_backup_res([{Who, Crap}|Results], Acc) ->
+    handle_backup_res(Results, [{Who, Crap}|Acc]).
 
 
 %%-----------------------------------------------------------------

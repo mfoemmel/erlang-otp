@@ -25,7 +25,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/2, start_acceptor/4, stop_acceptor/2]).
+-export([start_link/2, start_acceptor/4, start_acceptor/5, stop_acceptor/2]).
 
 %% Supervisor callback
 -export([init/1]).
@@ -42,8 +42,10 @@ start_link(Addr, Port) ->
 %% Description: Starts/stops an [auth | security] worker (child) process
 %%----------------------------------------------------------------------
 start_acceptor(SocketType, Addr, Port, ConfigDb) ->
+    start_acceptor(SocketType, Addr, Port, ConfigDb,15000).
+start_acceptor(SocketType, Addr, Port, ConfigDb, AcceptTimeout) ->
     start_worker(httpd_acceptor, SocketType, Addr, Port,
-		 ConfigDb, self(), []).
+		 ConfigDb, AcceptTimeout, self(), []).
 
 stop_acceptor(Addr, Port) ->
     stop_worker(httpd_acceptor, Addr, Port).
@@ -63,9 +65,9 @@ init(_) ->
 make_name(Addr,Port) ->
     httpd_util:make_name("httpd_acc_sup", Addr, Port).
 
-start_worker(M, SocketType, Addr, Port, ConfigDB, Manager, Modules) ->
+start_worker(M, SocketType, Addr, Port, ConfigDB, AcceptTimeout, Manager, Modules) ->
     SupName = make_name(Addr, Port),
-    Args    = [Manager, SocketType, Addr, Port, ConfigDB],
+    Args    = [Manager, SocketType, Addr, Port, ConfigDB, AcceptTimeout],
     Spec    = {{M, Addr, Port},
 	       {M, start_link, Args}, 
 	       permanent, timer:seconds(1), worker, [M] ++ Modules},

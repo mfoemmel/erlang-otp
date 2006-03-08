@@ -50,33 +50,12 @@ start_net_if(Mod, NoteStore) ->
        "~n   Mod:       ~p"
        "~n   NoteStore: ~p", [Mod, NoteStore]),
     SupName = ?SUP, 
-    start_net_if(SupName, Mod, [self(), NoteStore]).
-
-start_net_if(SupName, Mod, Args) ->
-    %% make sure we start from scratch...
-    Children = supervisor:which_children(SupName),
-    case lists:keysearch(net_if, 1, Children) of
-	{value, {_, _Pid, _, _}} ->
-	    stop_net_if(SupName);
-	_ ->
-	    ok
-    end,
-    NetIf = {net_if, 
-	     {Mod, start_link, Args},
-	     permanent, 2000, worker, [Mod]},
-    supervisor:start_child(SupName, NetIf).
+    Name    = net_if, 
+    Args    = [self(), NoteStore],
+    start_sup_child(SupName, Name, Mod, Args).
 
 stop_net_if() ->
-    stop_net_if(?SUP).
-
-stop_net_if(SupName) ->
-    case whereis(SupName) of
-	undefined ->
-	    ok;
-	_ ->
-	    supervisor:terminate_child(SupName, net_if),
-	    supervisor:delete_child(SupName, net_if)
-    end.
+    stop_sup_child(?SUP, net_if).
 
 
 %% The note store is a common code component, so we must
@@ -88,37 +67,44 @@ start_note_store(Prio, Opts) ->
        "~n   Prio: ~p"
        "~n   Opts: ~p", [Prio, Opts]),
     SupName = ?MODULE, 
-    start_note_store(SupName, Prio, Opts).
+    Name    = note_store, 
+    Mod     = snmp_note_store, 
+    Args    = [Prio, snmpm, Opts], 
+    start_sup_child(SupName, Name, Mod, Args).
 
-start_note_store(SupName, Prio, Opts) ->
+stop_note_store() ->
+    stop_sup_child(?SUP, note_store).
+
+
+%% ---------------------------------------------------------------
+
+start_sup_child(SupName, Name, Mod, Args) ->
     %% make sure we start from scratch...
     Children = supervisor:which_children(SupName),
-    case lists:keysearch(note_cache, 1, Children) of
+    case lists:keysearch(Name, 1, Children) of
 	{value, {_, _Pid, _, _}} ->
-	    stop_note_store(SupName);
+	    stop_sup_child(SupName, Name);
 	_ ->
 	    ok
     end,
-    Mod = snmp_note_store,
-    Note = {note_store, 
-	    {Mod, start_link, [Prio, snmpm, Opts]},
-	    permanent, 2000, worker, [Mod]},
-    supervisor:start_child(SupName, Note).
+    Spec = {Name, 
+	    {Mod, start_link, Args},
+	    temporary, 2000, worker, [Mod]},
+    supervisor:start_child(SupName, Spec).
 
-stop_note_store() ->
-    stop_note_store(?SUP).
-
-stop_note_store(SupName) ->
+stop_sup_child(SupName, Name) ->
     case whereis(SupName) of
 	undefined ->
 	    ok;
 	_ ->
-	    supervisor:terminate_child(SupName, note_store),
-	    supervisor:delete_child(SupName, note_store)
+	    supervisor:terminate_child(SupName, Name),
+	    supervisor:delete_child(SupName, Name)
     end.
 
 
+
 init([]) ->
+    ?d("init -> entry", []),
     SupFlags = {one_for_all, 0, 3600},
     {ok, {SupFlags, []}}.
 

@@ -46,6 +46,11 @@
 
 -define(WARN_DUPLICATED_NAME, global_multi_name_action).
 
+%% Undocumented Kernel variable. Set this to 0 (zero) to get the old
+%% behaviour.
+-define(N_CONNECT_RETRIES, global_connect_retries).
+-define(DEFAULT_N_CONNECT_RETRIES, 5).
+
 %%% In certain places in the server, calling io:format hangs everything,
 %%% so we'd better use erlang:display/1.
 %%% my_tracer is used in testsuites
@@ -756,12 +761,21 @@ trans_all_known(Fun) ->
 set_lock_known(Id, Times) -> 
     Known = get_known(),
     Nodes = [node() | Known],
-    case lock_on_known_nodes(Id, Known, Nodes) of
+    Boss = lists:max(Nodes),
+    %% Use the  same convention (a boss) as lock_nodes_safely. Optimization.
+    case set_lock_on_nodes(Id, [Boss]) of
         true ->
-            Nodes;
-        false -> 
-	    random_sleep(Times),
-	    set_lock_known(Id, Times+1)
+            case lock_on_known_nodes(Id, Known, Nodes) of
+                true ->
+                    Nodes;
+                false -> 
+                    del_lock(Id, [Boss]),
+                    random_sleep(Times),
+                    set_lock_known(Id, Times+1)
+            end;
+        false ->
+            random_sleep(Times),
+            set_lock_known(Id, Times+1)
     end.
 
 lock_on_known_nodes(Id, Known, Nodes) ->
@@ -1066,13 +1080,19 @@ do_ops(Ops, Names_ext) ->
 %% case that a nodedown message is received _before_ the operations
 %% are run.
 sync_others(Nodes) ->
+    N = case application:get_env(kernel, ?N_CONNECT_RETRIES) of
+            {ok, NRetries} when NRetries >= 0 -> NRetries;
+            _ -> ?DEFAULT_N_CONNECT_RETRIES
+        end,
     lists:foreach(fun(Node) -> 
-                          spawn(fun() -> sync_other(Node) end)
+                          spawn(fun() -> sync_other(Node, N) end)
                   end, Nodes).
 
-sync_other(Node) ->
+sync_other(Node, N) ->
     monitor_node(Node, true),
     receive
+        {nodedown, Node} when N > 0 ->
+            sync_other(Node, N - 1);
         {nodedown, Node} ->
             ?trace({missing_nodedown, {node, Node}}),
             error_logger:warning_msg("global: ~w failed to connect to ~w\n",
@@ -1080,9 +1100,9 @@ sync_other(Node) ->
             global_name_server ! {nodedown, Node}
     after 0 ->
             gen_server:cast({global_name_server,Node}, {in_sync,node(),true})
-    end,
+    end.
     % monitor_node(Node, false),
-    exit(normal).
+    % exit(normal).
 
 insert_global_name_with_check(Name, Pid, Method, Node) ->
     true = ets:insert(global_pid_names, {Pid, Name}),

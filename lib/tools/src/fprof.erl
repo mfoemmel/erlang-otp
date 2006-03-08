@@ -69,12 +69,13 @@
 
 
 -define(debug, 9).
-
 -ifdef(debug).
--define(dbg(Level, F, A), 
-	if Level >= ?debug -> io:format(F, A), ok;
-	   true -> ok
-	end).
+dbg(Level, F, A) when Level >= ?debug ->
+    io:format(F, A),
+    ok;
+dbg(_, _, _) ->
+    ok.
+-define(dbg(Level, F, A), dbg((Level), (F), (A))).
 -else.
 -define(dbg(Level, F, A), ok).
 -endif.
@@ -1834,11 +1835,7 @@ trace_call(Table, Pid, Func, TS, CP) ->
 		end,
 	    %% Regard this call as a stack push.
 	    init_log(Table, Pid, Func), % will lookup Pid in Table
-	    put(Pid, trace_call_push(Table, Pid, Func, TS, OldStack));
-	_ ->
-	    %% Should not happen since all cases are covered above. (?)
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Pid, Func, TS, CP, Stack]})
+	    put(Pid, trace_call_push(Table, Pid, Func, TS, OldStack))
     end,
     ok.
 
@@ -1847,7 +1844,7 @@ trace_call_push(Table, Pid, Func, TS, Stack) ->
     case Stack of
 	[] ->
 	    ok;
-	_ ->
+	[_ | _] ->
 	    trace_clock(Table, Pid, TS, Stack, #clocks.own)
     end,
     NewStack = [[{Func, TS}] | Stack],
@@ -1927,10 +1924,7 @@ trace_return_to(Table, Pid, Func, TS) ->
 	[_ | _] ->
 	    put(Pid, trace_return_to_int(Table, Pid, Func, TS, Stack));
 	[] ->
-	    put(Pid, trace_return_to_int(Table, Pid, Func, TS, Stack));
-	_ ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Pid, Func, TS, Stack]})
+	    put(Pid, trace_return_to_int(Table, Pid, Func, TS, Stack))
     end,
     ok.
 
@@ -2036,10 +2030,7 @@ trace_exit(Table, Pid, TS) ->
 	    ok;
 	[_ | _] = Stack ->
 	    trace_return_to_int(Table, Pid, undefined, TS, Stack),
-	    ok;
-	_ ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Pid, TS, Stack]})
+	    ok
     end,
     ok.
 
@@ -2050,25 +2041,12 @@ trace_out(Table, Pid, Func, TS) ->
     ?dbg(0, "trace_out(~p, ~p, ~p)~n~p~n", [Pid, Func, TS, Stack]),
     case Stack of
 	[] ->
-	    put(Pid, trace_call_push(Table, Pid, suspend, TS, Stack));
-	[[{suspend, _} | _] | _] ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Pid, Func, TS, Stack]});
-% 	[[{Func, _} | _] | _] ->
-% 	    trace_clock(Table, Pid, TS, Stack, #clocks.own),
-% 	    NewStack = push(suspend, TS, Stack),
-% 	    trace_clock(Table, Pid, 1, NewStack, #clocks.cnt),
-% 	    put(Pid, NewStack);
-% 	[[{garbage_collect, _} | _] | _] ->
-% 	    trace_clock(Table, Pid, TS, Stack, #clocks.own),
-% 	    NewStack = push(suspend, TS, Stack),
-% 	    trace_clock(Table, Pid, 1, NewStack, #clocks.cnt),
-% 	    put(Pid, NewStack);
+	    put(Pid, trace_call_push(Table, Pid, suspend, TS, [[{Func,TS}]]));
+	[[{suspend,_}] | _] ->
+	    %% No stats update for a suspend on suspend
+	    put(Pid, [[{suspend,TS}] | Stack]);
 	[_ | _] ->
-	    put(Pid, trace_call_push(Table, Pid, suspend, TS, Stack));
-	_ ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Pid, Func, TS, Stack]})
+	    put(Pid, trace_call_push(Table, Pid, suspend, TS, Stack))
     end.
 
 
@@ -2081,10 +2059,13 @@ trace_in(Table, Pid, Func, TS) ->
 	    %% First activity on a process which existed at the time
 	    %% the fprof trace was started.
 	    put(Pid, [[{Func,TS}]]);
-%	[] ->
-%	    ok;
+	[] ->
+	    put(Pid, [[{Func,TS}]]);
 	[[{suspend, _}]] ->
 	    put(Pid, trace_return_to_int(Table, Pid, undefined, TS, Stack));
+	[[{suspend,_}] | [[{suspend,_}] | _]=NewStack] ->
+	    %% No stats update for a suspend on suspend
+	    put(Pid, NewStack);
 	[[{suspend, _}] | [[{Func1, _} | _] | _]] ->
 	    %% This is a new process (suspend and Func1 was inserted
 	    %% by trace_spawn) or any process that has just been
@@ -2100,13 +2081,7 @@ trace_in(Table, Pid, Func, TS) ->
 trace_gc_start(Table, Pid, TS) ->    
     Stack = get_stack(Pid),
     ?dbg(0, "trace_gc_start(~p, ~p)~n~p~n", [Pid, TS, Stack]),
-    case Stack of
-	_ when list(Stack) ->
-	    put(Pid, trace_call_push(Table, Pid, garbage_collect, TS, Stack));
-	_ ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Pid, TS, Stack]})
-    end.
+    put(Pid, trace_call_push(Table, Pid, garbage_collect, TS, Stack)).
 
 
 
@@ -2171,6 +2146,11 @@ init_log(Table, Id, Entry) ->
     init_log(Table,Proc,Entry).
 
 
+trace_clock(_Table, _Pid, _T, 
+	    [[{suspend, _}], [{suspend, _}] | _]=_Stack, _Clock) ->
+    ?dbg(9, "trace_clock(Table, ~w, ~w, ~w, ~w)~n",
+	 [_Pid, _T, _Stack, _Clock]),
+    void;
 trace_clock(Table, Pid, T, 
 	    [[{garbage_collect, TS0}], [{suspend, _}]], Clock) ->
     trace_clock_1(Table, Pid, T, TS0, undefined, garbage_collect, Clock);
@@ -2204,8 +2184,8 @@ clock_add(Table, Id, Clock, T) ->
 	    ets:insert(Table, #clocks{id = Id}),
 	    case ets:update_counter(Table, Id, {Clock, T}) of
 		X when X >= 0 -> ok;
-		X -> ?dbg(0, "Negative counter value ~p ~p ~p ~p~n",
-			  [X, Id, Clock, T])
+		_X -> ?dbg(0, "Negative counter value ~p ~p ~p ~p~n",
+			  [_X, Id, Clock, T])
 	    end;
 	V ->
 	    V
@@ -2238,11 +2218,11 @@ clocks_sum(#clocks{id = _Id1,
 
 
 
-ts_sub({A, B, C} = T, {A0, B0, C0} = T0) ->
+ts_sub({A, B, C} = _T, {A0, B0, C0} = _T0) ->
     X = ((((A-A0)*1000000) + (B-B0))*1000000) + C - C0,
     if X >= 0 -> ok;
        true -> ?dbg(9, "Negative counter value ~p ~p ~p~n",
-		    [X, T, T0])
+		    [X, _T, _T0])
     end,
     X;
 ts_sub(_, _) ->
@@ -2263,8 +2243,8 @@ do_analyse(Table,
 		    callers = PrintCallers,
 		    sort = Sort,
 		    totals = PrintTotals,
-		    details = PrintDetails} = Analyse) ->
-    ?dbg(5, "do_analyse(~p, ~p)~n", [Table, Analyse]),
+		    details = PrintDetails} = _Analyse) ->
+    ?dbg(5, "do_analyse(~p, ~p)~n", [Table, _Analyse]),
     Waste = 11,
     MinCols = Waste + 12, %% We need Width >= 1
     Cols = if Cols0 < MinCols -> MinCols; true -> Cols0 end,
@@ -2280,8 +2260,8 @@ do_analyse(Table,
     %%
     %% Clean out the process dictionary before the next step
     %%
-    Erase = erase(),
-    ?dbg(2, "erase() -> ~p~n", [Erase]),
+    _Erase = erase(),
+    ?dbg(2, "erase() -> ~p~n", [_Erase]),
     %%
     %% Process the collected data and spread it to 3 places:
     %% * Per {process, caller, func}. Stored in the process dictionary.

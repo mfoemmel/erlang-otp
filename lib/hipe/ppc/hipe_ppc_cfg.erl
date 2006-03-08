@@ -43,7 +43,6 @@ is_branch(I) ->
     #blr{} -> true;
     #pseudo_bc{} -> true;
     #pseudo_call{} -> true;
-    #pseudo_ret{} -> true;    
     #pseudo_tailcall{} -> true;
     _ -> false
   end.
@@ -60,7 +59,6 @@ branch_successors(Branch) ->
 	[] -> [ContLab];
 	_ -> [ContLab,ExnLab]
       end;
-    #pseudo_ret{} -> [];
     #pseudo_tailcall{} -> []
   end.
 

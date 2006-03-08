@@ -28,12 +28,14 @@
 	 lookup/2, next/3, which_mib/2, which_mibs/1, whereis_mib/2, 
 	 load_mibs/2, unload_mibs/2, 
 	 register_subagent/3, unregister_subagent/2, info/1, info/2, 
-	 verbosity/2, dump/1, dump/2]).
+	 verbosity/2, dump/1, dump/2,
+	 backup/2]).
 
 %% Internal exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
 	 code_change/3]).
 
+-include_lib("kernel/include/file.hrl").
 -include("snmp_types.hrl").
 -include("snmp_verbosity.hrl").
 -include("snmp_debug.hrl").
@@ -58,7 +60,7 @@
 %%       meo  - mib entry override
 %%       teo  - trap (notification) entry override
 %%-----------------------------------------------------------------
--record(state, {data, meo, teo}).
+-record(state, {data, meo, teo, backup}).
 
 
 
@@ -163,8 +165,11 @@ info(MibServer, Type) ->
 dump(MibServer) ->
     call(MibServer, dump).
 
-dump(MibServer,File) when list(File) ->
-    call(MibServer, {dump,File}).
+dump(MibServer, File) when list(File) ->
+    call(MibServer, {dump, File}).
+
+backup(MibServer, BackupDir) when list(BackupDir) ->
+    call(MibServer, {backup, BackupDir}).
 
 
 %%--------------------------------------------------
@@ -202,8 +207,8 @@ do_init(Prio, Mibs, Opts) ->
 			       MeOverride, TeOverride, true)) of
 	{ok, Data2} ->
 	    ?vdebug("started",[]),
-	    snmpa_mib_data:store(Data2),
-	    ?vdebug("mib data stored",[]),
+	    snmpa_mib_data:sync(Data2),
+	    ?vdebug("mib data synced",[]),
 	    {ok, #state{data = Data2, teo = TeOverride, meo = MeOverride}};
 	{'aborted at', Mib, _NewData, Reason} ->
 	    ?vinfo("failed loading mib ~p: ~p",[Mib,Reason]),
@@ -286,7 +291,7 @@ handle_call({load_mibs, Mibs}, _From,
 	    {ok, NewData} ->
 		{NewData,ok}
 	end,
-    snmpa_mib_data:store(NData),
+    snmpa_mib_data:sync(NData),
     {reply, Reply, State#state{data = NData}};
 
 handle_call({unload_mibs, Mibs}, _From, 
@@ -301,7 +306,7 @@ handle_call({unload_mibs, Mibs}, _From,
 	    {ok, NewData} ->
 		{NewData,ok}
 	end,
-    snmpa_mib_data:store(NData),
+    snmpa_mib_data:sync(NData),
     {reply, Reply, State#state{data = NData}};
 
 handle_call(which_mibs, _From, #state{data = Data} = State) ->
@@ -355,10 +360,34 @@ handle_call(dump, _From, State) ->
     Reply = snmpa_mib_data:dump(State#state.data),
     {reply, Reply, State};
     
-handle_call({dump,File}, _From, #state{data = Data} = State) ->
+handle_call({dump, File}, _From, #state{data = Data} = State) ->
     ?vlog("dump on ~s",[File]),    
-    Reply = snmpa_mib_data:dump(Data,File),
+    Reply = snmpa_mib_data:dump(Data, File),
     {reply, Reply, State};
+    
+handle_call({backup, BackupDir}, From, #state{data = Data} = State) ->
+    ?vlog("backup to ~s",[BackupDir]),
+    Pid = self(),
+    V   = get(verbosity),
+    case file:read_file_info(BackupDir) of
+	{ok, #file_info{type = directory}} ->
+	    BackupServer = 
+		erlang:spawn_link(
+		  fun() ->
+			  put(sname, ambs),
+			  put(verbosity, V),
+			  Dir   = filename:join([BackupDir]),
+			  Reply = snmpa_mib_data:backup(Data, Dir),
+			  Pid ! {backup_done, Reply},
+			  unlink(Pid)
+		  end),	
+	    ?vtrace("backup server: ~p", [BackupServer]),
+	    {noreply, State#state{backup = {BackupServer, From}}};
+	{ok, _} ->
+	    {reply, {error, not_a_directory}, State};
+	Error ->
+	    {reply, Error, State}
+    end;
     
 handle_call(stop, _From, State) ->
     ?vlog("stop",[]),    
@@ -378,6 +407,22 @@ handle_cast(Msg, State) ->
     info_msg("received unknown message: ~n~p", [Msg]),
     {noreply, State}.
     
+handle_info({'EXIT', Pid, Reason}, #state{backup = {Pid, From}} = S) ->
+    ?vlog("backup server (~p) exited for reason ~n~p", [Pid, Reason]),
+    gen_server:reply(From, {error, Reason}),
+    {noreply, S#state{backup = undefined}};
+
+handle_info({'EXIT', Pid, Reason}, S) ->
+    %% The only other processes we should be linked to are
+    %% either the master agent or our supervisor, so die...
+    {stop, {received_exit, Pid, Reason}, S};
+
+handle_info({backup_done, Reply}, #state{backup = {_, From}} = S) ->
+    ?vlog("backup done:"
+	  "~n   Reply: ~p", [Reply]),
+    gen_server:reply(From, Reply),
+    {noreply, S#state{backup = undefined}};
+
 handle_info(Info, State) ->
     info_msg("received unknown info: ~n~p", [Info]),
     {noreply, State}.
@@ -393,20 +438,30 @@ terminate(_Reason, #state{data = Data}) ->
 %%----------------------------------------------------------
 
 %% downgrade
-code_change({down, _Vsn}, #state{data = Data} = State, _Extra) ->
-    ?d("code_change(down) -> entry with~n"
-	"  Vsn: ~p", [_Vsn]),
+%% 
+code_change({down, _Vsn}, S1, downgrade_to_pre_4_7) ->
+    #state{data = Data, meo = MEO, teo = TEO, backup = B} = S1, 
+    stop_backup_server(B),
     NData = snmpa_mib_data:code_change(down, Data),
-    {ok, State#state{data = NData}};
+    S2 = {state, NData, MEO, TEO},
+    {ok, S2};
 
 %% upgrade
-code_change(_Vsn, #state{data = Data} = State, _Extra) ->
-    ?d("code_change(up) -> entry with~n"
-	"  Vsn: ~p",
-	[_Vsn]),
+%% 
+code_change(_Vsn, S1, upgrade_from_pre_4_7) ->
+    {state, Data, MEO, TEO} = S1,
     NData = snmpa_mib_data:code_change(up, Data),
-    ?d("code_change(up) -> New Mib data created~n",[]),
-    {ok, State#state{data = NData}}.
+    S2 = #state{data = NData, meo = MEO, teo = TEO},
+    {ok, S2};
+
+code_change(_Vsn, State, _Extra) ->
+    {ok, State}.
+
+
+stop_backup_server(undefined) ->
+    ok;
+stop_backup_server({Pid, _}) when pid(Pid) ->
+    exit(Pid, kill).
 
 
 

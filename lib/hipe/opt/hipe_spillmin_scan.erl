@@ -20,9 +20,9 @@
 %%              * 2002-10-08, Happi: Cleanup and speedup
 %%
 %% CVS:
-%%    $Author: kt2_spill $
-%%    $Date: 2005/08/29 13:19:24 $
-%%    $Revision: 1.1 $
+%%    $Author: kostis $
+%%    $Date: 2005/12/12 23:20:17 $
+%%    $Revision: 1.2 $
 %% =====================================================================
 %% Exported functions (short description):
 %%   stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) -> 
@@ -377,7 +377,7 @@ empty_interval(_) ->
 interval_to_list(Intervals) ->
   lists:flatten(
     lists:map(
-      fun({T, I}) when list(I) ->
+      fun({T, I}) when is_list(I) ->
 	  lists:map(
 	    fun ({none, End}) -> 
 		{T,End,End};
@@ -476,7 +476,7 @@ interval_to_list(Intervals) ->
 
 add_indices([{B,E}|Xs],N) ->
   [{N,B,E}|add_indices(Xs,N+1)];
-add_indices([List|Xs],N) when list(List) ->
+add_indices([List|Xs],N) when is_list(List) ->
   flatten(List,N,Xs);
 add_indices([none|Xs],N) ->
   add_indices(Xs,N+1);

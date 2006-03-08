@@ -152,13 +152,7 @@ mk_fload_ii(Dst, Base1, Base2) ->
 	mk_fload_ri(Dst, Tmp, Base2)).
 
 mk_fload_ri(Dst, Base, Disp) ->
-  if Disp >= -32768, Disp < 32768 ->
-      [hipe_ppc:mk_lfd(Dst, Disp, Base)];
-     true ->
-      Tmp = new_untagged_temp(),
-      mk_li(Tmp, Disp,
-	    mk_fload_rr(Dst, Base, Tmp))
-  end.
+  hipe_ppc:mk_fload(Dst, Disp, Base, 'new').
 
 mk_fload_rr(Dst, Base1, Base2) ->
   [hipe_ppc:mk_lfdx(Dst, Base1, Base2)].
@@ -180,13 +174,7 @@ mk_fstore(Src, Base1, Base2) ->
   end.
 
 mk_fstore_ri(Src, Base, Disp) ->
-  if Disp >= -32768, Disp < 32768 ->
-      [hipe_ppc:mk_stfd(Src, Disp, Base)];
-     true ->
-      Tmp = new_untagged_temp(),
-      mk_li(Tmp, Disp,
-	    mk_fstore_rr(Src, Base, Tmp))
-  end.
+  hipe_ppc:mk_fstore(Src, Disp, Base, 'new').
 
 mk_fstore_rr(Src, Base1, Base2) ->
   [hipe_ppc:mk_stfdx(Src, Base1, Base2)].
@@ -825,73 +813,7 @@ conv_load(I, Map, Data) ->
   {I2, Map2, Data}.
 
 mk_load(Dst, Base1, Base2, LoadSize, LoadSign) ->
-  case hipe_ppc:is_temp(Base1) of
-    true ->
-      case hipe_ppc:is_temp(Base2) of
-	true ->
-	  mk_load_rr(Dst, Base1, Base2, LoadSize, LoadSign);
-	_ ->
-	  mk_load_ri(Dst, Base1, Base2, LoadSize, LoadSign)
-      end;
-    _ ->
-      case hipe_ppc:is_temp(Base2) of
-	true ->
-	  mk_load_ri(Dst, Base2, Base1, LoadSize, LoadSign);
-	_ ->
-	  mk_load_ii(Dst, Base1, Base2, LoadSize, LoadSign)
-      end
-  end.
-
-mk_load_ii(Dst, Base1, Base2, LoadSize, LoadSign) ->
-  io:format("~w: RTL load with two immediates\n", [?MODULE]),
-  Tmp = new_untagged_temp(),
-  mk_li(Tmp, Base1,
-	mk_load_ri(Dst, Tmp, Base2, LoadSize, LoadSign)).
-   
-mk_load_ri(Dst, Base, Disp, LoadSize, LoadSign) ->
-  if Disp >= -32768, Disp < 32768 ->
-      LdOp =
-	case LoadSize of
-	  byte -> 'lbz';
-	  int32 -> 'lwz';
-	  word -> 'lwz';
-	  int16 ->
-	    case LoadSign of
-	      signed -> 'lha';
-	      unsigned -> 'lhz'
-	    end
-	end,
-      I1 = hipe_ppc:mk_load(LdOp, Dst, Disp, Base),
-      I2 =
-	case LoadSize of
-	  byte ->
-	    case LoadSign of
-	      signed -> [hipe_ppc:mk_unary('extsb', Dst, Dst)];
-	      _ -> []
-	    end;
-	  _ -> []
-	end,
-      [I1 | I2];
-     true ->
-      Tmp = new_untagged_temp(),
-      mk_li(Tmp, Disp,
-	    mk_load_rr(Dst, Base, Tmp, LoadSize, LoadSign))
-  end.
-
-mk_load_rr(Dst, Base1, Base2, LoadSize, LoadSign) ->
-  LdxOp =
-    case LoadSize of
-      byte -> 'lbzx';
-      int32 -> 'lwzx';
-      word -> 'lwzx';
-      int16 ->
-	case LoadSign of
-	  signed -> 'lhax';
-	  unsigned -> 'lhzx'
-	end
-    end,
-  I1 = hipe_ppc:mk_loadx(LdxOp, Dst, Base1, Base2),
-  I2 =
+  Rest =
     case LoadSize of
       byte ->
 	case LoadSign of
@@ -900,7 +822,46 @@ mk_load_rr(Dst, Base1, Base2, LoadSize, LoadSign) ->
 	end;
       _ -> []
     end,
-  [I1 | I2].
+  LdOp =
+    case LoadSize of
+      byte -> 'lbz';
+      int32 -> 'lwz';
+      word -> 'lwz';
+      int16 ->
+	case LoadSign of
+	  signed -> 'lha';
+	  unsigned -> 'lhz'
+	end
+    end,
+  case hipe_ppc:is_temp(Base1) of
+    true ->
+      case hipe_ppc:is_temp(Base2) of
+	true ->
+	  mk_load_rr(Dst, Base1, Base2, LdOp, Rest);
+	_ ->
+	  mk_load_ri(Dst, Base1, Base2, LdOp, Rest)
+      end;
+    _ ->
+      case hipe_ppc:is_temp(Base2) of
+	true ->
+	  mk_load_ri(Dst, Base2, Base1, LdOp, Rest);
+	_ ->
+	  mk_load_ii(Dst, Base1, Base2, LdOp, Rest)
+      end
+  end.
+
+mk_load_ii(Dst, Base1, Base2, LdOp, Rest) ->
+  io:format("~w: RTL load with two immediates\n", [?MODULE]),
+  Tmp = new_untagged_temp(),
+  mk_li(Tmp, Base1,
+	mk_load_ri(Dst, Tmp, Base2, LdOp, Rest)).
+   
+mk_load_ri(Dst, Base, Disp, LdOp, Rest) ->
+  hipe_ppc:mk_load(LdOp, Dst, Disp, Base, 'new', Rest).
+
+mk_load_rr(Dst, Base1, Base2, LdOp, Rest) ->
+  LdxOp = hipe_ppc:ldop_to_ldxop(LdOp),
+  [hipe_ppc:mk_loadx(LdxOp, Dst, Base1, Base2) | Rest].
 
 conv_load_address(I, Map, Data) ->
   {Dst, Map0} = conv_dst(hipe_rtl:load_address_dst(I), Map),
@@ -932,7 +893,7 @@ conv_return(I, Map, Data) ->
   %% TODO: multiple-value returns
   {[Arg], Map0} = conv_src_list(hipe_rtl:return_varlist(I), Map),
   I2 = mk_move(mk_rv(), Arg,
-	       [hipe_ppc:mk_pseudo_ret(-1)]), % frame fills in npop later
+	       [hipe_ppc:mk_blr()]),
   {I2, Map0, Data}.
 
 conv_store(I, Map, Data) ->
@@ -944,47 +905,35 @@ conv_store(I, Map, Data) ->
   {I2, Map2, Data}.
 
 mk_store(Src, Base1, Base2, StoreSize) ->
+  StOp =
+    case StoreSize of
+      byte -> 'stb';
+      int16 -> 'sth';
+      int32 -> 'stw';
+      word -> 'stw'
+    end,
   case hipe_ppc:is_temp(Src) of
     true ->
-      mk_store2(Src, Base1, Base2, StoreSize);
+      mk_store2(Src, Base1, Base2, StOp);
     _ ->
       Tmp = new_untagged_temp(),
       mk_li(Tmp, Src,
-	    mk_store2(Tmp, Base1, Base2, StoreSize))
+	    mk_store2(Tmp, Base1, Base2, StOp))
   end.
 
-mk_store2(Src, Base1, Base2, StoreSize) ->
+mk_store2(Src, Base1, Base2, StOp) ->
   case hipe_ppc:is_temp(Base2) of
     true ->
-      mk_store_rr(Src, Base1, Base2, StoreSize);
+      mk_store_rr(Src, Base1, Base2, StOp);
     _ ->
-      mk_store_ri(Src, Base1, Base2, StoreSize)
+      mk_store_ri(Src, Base1, Base2, StOp)
   end.
   
-mk_store_ri(Src, Base, Disp, StoreSize) ->
-  if Disp >= -32768, Disp < 32768 ->
-      StOp =
-	case StoreSize of
-	  byte -> 'stb';
-	  int16 -> 'sth';
-	  int32 -> 'stw';
-	  word -> 'stw'
-	end,
-      [hipe_ppc:mk_store(StOp, Src, Disp, Base)];
-     true ->
-      Tmp = new_untagged_temp(),
-      mk_li(Tmp, Disp,
-	    mk_store_rr(Src, Base, Tmp, StoreSize))
-  end.
-   
-mk_store_rr(Src, Base1, Base2, StoreSize) ->
-  StxOp =
-    case StoreSize of
-      byte -> 'stbx';
-      int16 -> 'sthx';
-      int32 -> 'stwx';
-      word -> 'stwx'
-    end,
+mk_store_ri(Src, Base, Disp, StOp) ->
+  hipe_ppc:mk_store(StOp, Src, Disp, Base, 'new', []).
+
+mk_store_rr(Src, Base1, Base2, StOp) ->
+  StxOp = hipe_ppc:stop_to_stxop(StOp),
   [hipe_ppc:mk_storex(StxOp, Src, Base1, Base2)].
 
 conv_switch(I, Map, Data) ->

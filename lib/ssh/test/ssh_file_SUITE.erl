@@ -76,7 +76,7 @@ known_hosts(Config) when list(Config) ->
 	ssh_cm:connect("localhost", [{user_dir, UsrDir},
 				     {user_interaction, false},
 				     silently_accept_hosts]),
-    ?line {ok, Channel} = ssh_cm:session_open(CM),
+    ?line {ok, Channel} = ssh_cm:session_open(CM, infinity),
     ?line ok = ssh_cm:close(CM, Channel),
     ?line ok = ssh_cm:stop(CM),
     ?line {ok, Binary} = file:read_file(KnownHosts),

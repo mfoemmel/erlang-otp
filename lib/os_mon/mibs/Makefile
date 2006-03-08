@@ -40,7 +40,10 @@ BIN_TARGETS= $(MIB_FILES:%.mib=$(SNMP_BIN_TARGET_DIR)/%.bin)
 HRL_TARGETS= $(MIB_FILES:%.mib=$(SNMP_HRL_TARGET_DIR)/%.hrl)
 V1_MIB_FILES= $(MIB_FILES:%.mib=v1/%.mib.v1)
 
-TARGET_FILES= $(SNMP_BIN_TARGET_DIR)/OTP-REG.bin $(SNMP_BIN_TARGET_DIR)/OTP-TC.bin $(SNMP_BIN_TARGET_DIR)/OTP-MIB.bin $(SNMP_BIN_TARGET_DIR)/OTP-EVA-MIB.bin  $(BIN_TARGETS) $(HRL_TARGETS) $(V1_MIB_FILES)
+TARGET_FILES= $(SNMP_BIN_TARGET_DIR)/OTP-REG.bin \
+  $(SNMP_BIN_TARGET_DIR)/OTP-TC.bin \
+  $(SNMP_BIN_TARGET_DIR)/OTP-MIB.bin \
+  $(BIN_TARGETS) $(HRL_TARGETS) $(V1_MIB_FILES)
 
 # ----------------------------------------------------
 # FLAGS
@@ -69,9 +72,6 @@ $(SNMP_BIN_TARGET_DIR)/OTP-TC.bin:     $(ERL_TOP)/lib/$(OTP_MIBDIR)/mibs/OTP-TC.
 	$(ERLC) -pa $(SNMP_TOOLKIT)/ebin -I $(SNMP_TOOLKIT)/priv/mibs $(SNMP_FLAGS) -o $(SNMP_BIN_TARGET_DIR) $<
 
 $(SNMP_BIN_TARGET_DIR)/OTP-MIB.bin:     $(ERL_TOP)/lib/$(OTP_MIBDIR)/mibs/OTP-MIB.mib
-	$(ERLC) -pa $(SNMP_TOOLKIT)/ebin -I $(SNMP_TOOLKIT)/priv/mibs $(SNMP_FLAGS) -o $(SNMP_BIN_TARGET_DIR) $<
-
-$(SNMP_BIN_TARGET_DIR)/OTP-EVA-MIB.bin:     $(ERL_TOP)/lib/$(OTP_MIBDIR)/mibs/OTP-EVA-MIB.mib
 	$(ERLC) -pa $(SNMP_TOOLKIT)/ebin -I $(SNMP_TOOLKIT)/priv/mibs $(SNMP_FLAGS) -o $(SNMP_BIN_TARGET_DIR) $<
 
 v1/%.mib.v1: %.mib

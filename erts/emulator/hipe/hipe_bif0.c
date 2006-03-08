@@ -754,80 +754,105 @@ BIF_RETTYPE hipe_bifs_bif_address_3(BIF_ALIST_3)
 }
 
 /*
+ * Hash table mapping primops to their addresses.
+ */
+struct primop {
+    HashBucket bucket;	/* bucket.hvalue == atom_val(name) */
+    const void *address;
+#if defined(__arm__)
+    void *trampoline;
+#endif
+};
+
+static struct primop primops[] = {
+#define PRIMOP_LIST(ATOM,ADDRESS)	{ {0,_unchecked_atom_val(ATOM)}, ADDRESS },
+#include "hipe_primops.h"
+#undef PRIMOP_LIST
+};
+
+static Hash primop_table;
+
+static HashValue primop_hash(void *tmpl)
+{
+    return ((struct primop*)tmpl)->bucket.hvalue;	/* pre-initialised */
+}
+
+static int primop_cmp(void *tmpl, void *bucket)
+{
+    return 0;	/* hvalue matched so nothing further to do */
+}
+
+static void *primop_alloc(void *tmpl)
+{
+    return tmpl;	/* pre-allocated */
+}
+
+static void init_primop_table(void)
+{
+    HashFunctions f;
+    int i;
+    static int init_done = 0;
+
+    if (init_done)
+	return;
+    init_done = 1;
+
+    f.hash = (H_FUN) primop_hash;
+    f.cmp = (HCMP_FUN) primop_cmp;
+    f.alloc = (HALLOC_FUN) primop_alloc;
+    f.free = NULL;
+
+    hash_init(ERTS_ALC_T_HIPE, &primop_table, "primop_table", 50, f);
+
+    for(i = 0; i < sizeof(primops)/sizeof(primops[0]); ++i)
+	hash_put(&primop_table, &primops[i]);
+}
+
+static struct primop *primop_table_get(Eterm name)
+{
+    struct primop tmpl;
+
+    init_primop_table();
+    tmpl.bucket.hvalue = atom_val(name);
+    return hash_get(&primop_table, &tmpl);
+}
+
+#if defined(__arm__)
+static struct primop *primop_table_put(Eterm name)
+{
+    struct primop tmpl;
+
+    init_primop_table();
+    tmpl.bucket.hvalue = atom_val(name);
+    return hash_put(&primop_table, &tmpl);
+}
+
+void *hipe_primop_get_trampoline(Eterm name)
+{
+    struct primop *primop = primop_table_get(name);
+    return primop ? primop->trampoline : NULL;
+}
+
+void hipe_primop_set_trampoline(Eterm name, void *trampoline)
+{
+    struct primop *primop = primop_table_put(name);
+    primop->trampoline = trampoline;
+}
+#endif
+
+/*
  * hipe_bifs_primop_address(Atom) -> address or false
  */
 BIF_RETTYPE hipe_bifs_primop_address_1(BIF_ALIST_1)
 {
-    const void *res;
+    const struct primop *primop;
 
-    switch( BIF_ARG_1 ) {
-#define check_bif(Name,Address)	case Name: res = Address; break
-        check_bif(am_erl_fp_exception, (int*)&erl_fp_exception); /* ignore volatile */
-#if !defined(ERTS_SMP)
-        check_bif(am_erts_mb, &erts_mb);
-#endif
-#ifdef SHARED_HEAP
-	check_bif(am_erts_global_mso, &erts_global_offheap);
-#endif
-	check_bif(am_suspend_msg, &nbif_suspend_msg);
-	check_bif(am_suspend_msg_timeout, &nbif_suspend_msg_timeout);
-	check_bif(am_suspend_0, &nbif_suspend_0);
-
-	check_bif(am_Plus, &nbif_add_2);
-	check_bif(am_Minus, &nbif_sub_2);
-	check_bif(am_Times, &nbif_mul_2);
-	check_bif(am_Div, &nbif_div_2);
-	check_bif(am_div, &nbif_intdiv_2);
-	check_bif(am_rem, &nbif_rem_2);
-	check_bif(am_bsl, &nbif_bsl_2);
-	check_bif(am_bsr, &nbif_bsr_2);
-	check_bif(am_band, &nbif_band_2);
-	check_bif(am_bor, &nbif_bor_2);
-	check_bif(am_bxor, &nbif_bxor_2);
-	check_bif(am_bnot, &nbif_bnot_1);
-
-	check_bif(am_gc_1, &nbif_gc_1);
-	check_bif(am_select_msg, &nbif_select_msg);
-	check_bif(am_set_timeout, &nbif_set_timeout);
-	check_bif(am_rethrow, &nbif_rethrow);
-
-	check_bif(am_bs_init, &nbif_bs_init);
-	check_bif(am_bs_final, &nbif_bs_final);
-	check_bif(am_bs_start_match, &nbif_bs_start_match);
-	check_bif(am_bs_get_integer, &nbif_bs_get_integer);
-	check_bif(am_bs_get_float, &nbif_bs_get_float);
-	check_bif(am_bs_get_binary, &nbif_bs_get_binary);
-	check_bif(am_bs_get_binary_all, &nbif_bs_get_binary_all);
-	check_bif(am_bs_skip_bits, &nbif_bs_skip_bits);
-	check_bif(am_bs_skip_bits_all, &nbif_bs_skip_bits_all);
-	check_bif(am_bs_test_tail, &nbif_bs_test_tail);
-	check_bif(am_bs_save, &nbif_bs_save);
-	check_bif(am_bs_restore, &nbif_bs_restore);
-	check_bif(am_bs_put_integer, &nbif_bs_put_integer);
-	check_bif(am_bs_put_binary, &nbif_bs_put_binary);
-	check_bif(am_bs_put_binary_all, &nbif_bs_put_binary_all);
-	check_bif(am_bs_put_float, &nbif_bs_put_float);
-	check_bif(am_bs_put_string, &nbif_bs_put_string);
-	check_bif(am_bs_allocate, &nbif_bs_allocate);
-	check_bif(am_bs_put_big_integer, &nbif_bs_put_big_integer);
-	check_bif(am_bs_put_small_float, &nbif_bs_put_small_float);
-
-	check_bif(am_cmp_2, &nbif_cmp_2);
-	check_bif(am_op_exact_eqeq_2, &nbif_eq_2);
-
-	check_bif(am_hipe_apply, &nbif_apply);
-	check_bif(am_find_na_or_make_stub, &nbif_find_na_or_make_stub);
-
-	check_bif(am_conv_big_to_float, &nbif_conv_big_to_float);
-
-#undef check_bif
-      default:
-	res = hipe_arch_primop_address(BIF_ARG_1);
-	if( res )
-	    break;
+    if (is_not_atom(BIF_ARG_1))
 	BIF_RET(am_false);
-    }
-    BIF_RET(address_to_term(res, BIF_P));
+    primop = primop_table_get(BIF_ARG_1);
+    if (!primop)
+	BIF_RET(am_false);
+    BIF_RET(address_to_term(primop->address, BIF_P));
 }
 
 #if 0 /* XXX: unused */
@@ -1032,7 +1057,7 @@ BIF_RETTYPE hipe_bifs_make_fe_3(BIF_ALIST_3)
     char atom_buf[256];
 
     atom_buf[0] = '\0';
-    strncat(atom_buf, atom_tab(i)->name, atom_tab(i)->len);
+    strncat(atom_buf, (char*)atom_tab(i)->name, atom_tab(i)->len);
     printf("no fun entry for %s %ld:%ld\n", atom_buf, uniq, index);
     BIF_ERROR(BIF_P, BADARG);
   }
@@ -1061,7 +1086,7 @@ BIF_RETTYPE hipe_bifs_make_native_stub_2(BIF_ALIST_2)
  * - maps MFA to native code entry point
  * - the MFAs it calls (refers_to)
  * - the references to it (referred_from)
- * - maps MFA to most recent trampoline [if powerpc]
+ * - maps MFA to most recent trampoline [if powerpc or arm]
  */
 struct hipe_mfa_info {
     struct {
@@ -1077,7 +1102,7 @@ struct hipe_mfa_info {
     Uint orig_beam_op;
     struct hipe_mfa_info_list *refers_to;
     struct ref *referred_from;
-#if defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__)
+#if defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__) || defined(__arm__)
     void *trampoline;
 #endif
 };
@@ -1140,7 +1165,7 @@ static struct hipe_mfa_info *hipe_mfa_info_table_alloc(Eterm m, Eterm f, unsigne
     res->orig_beam_op = 0;
     res->refers_to = NULL;
     res->referred_from = NULL;
-#if defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__)
+#if defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__) || defined(__arm__)
     res->trampoline = NULL;
 #endif
 
@@ -1223,7 +1248,7 @@ static void hipe_mfa_set_na(Eterm m, Eterm f, unsigned int arity, void *address,
 	p->remote_address = address;
 }
 
-#if defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__)
+#if defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__) || defined(__arm__)
 void *hipe_mfa_get_trampoline(Eterm m, Eterm f, unsigned int arity)
 {
     struct hipe_mfa_info *p = hipe_mfa_info_table_put(m, f, arity);
@@ -1612,10 +1637,9 @@ BIF_RETTYPE hipe_bifs_check_crc_1(BIF_ALIST_1)
 {
     Uint crc;
 
-    term_to_Uint(BIF_ARG_1, &crc);
-    if( !crc )
+    if (!term_to_Uint(BIF_ARG_1, &crc))
 	BIF_ERROR(BIF_P, BADARG);
-    if( crc == HIPE_SYSTEM_CRC )
+    if (crc == HIPE_SYSTEM_CRC)
 	BIF_RET(am_true);
     BIF_RET(am_false);
 }
@@ -1624,8 +1648,7 @@ BIF_RETTYPE hipe_bifs_system_crc_1(BIF_ALIST_1)
 {
     Uint crc;
 
-    term_to_Uint(BIF_ARG_1, &crc);
-    if( !crc )
+    if (!term_to_Uint(BIF_ARG_1, &crc))
 	BIF_ERROR(BIF_P, BADARG);
     crc ^= (HIPE_SYSTEM_CRC ^ HIPE_LITERALS_CRC);
     BIF_RET(Uint_to_term(crc, BIF_P));

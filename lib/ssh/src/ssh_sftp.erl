@@ -151,10 +151,10 @@ stop(Pid) ->
     gen_server:call(Pid, stop).
 
 send_window(Pid) ->
-    gen_server:call(Pid, send_window).
+    gen_server:call(Pid, send_window, ?FILEOP_TIMEOUT).
 
 recv_window(Pid) ->
-    gen_server:call(Pid, recv_window).
+    gen_server:call(Pid, recv_window, ?FILEOP_TIMEOUT).
 
 
 list_dir(Pid, Name) ->
@@ -277,7 +277,7 @@ connect(Host, Port, Opts) ->
 %%          {stop, Reason}
 %%--------------------------------------------------------------------
 init([CM]) ->
-    case ssh_xfer:attach(CM) of
+    case ssh_xfer:attach(CM, ?FILEOP_TIMEOUT) of
 	{ok,Xf,RBuf} ->
 	    {ok, #state { req_id = 0, xf = Xf, rep_buf=RBuf }};
 	Error ->
@@ -500,11 +500,13 @@ handle_call({write_file_info,Async,Name,Info}, From, St) ->
 
 handle_call(send_window, _From, St) ->
     XF = St#state.xf,
-    {reply, ssh_cm:send_window(XF#ssh_xfer.cm, XF#ssh_xfer.channel), St};
+    {reply, ssh_cm:send_window(XF#ssh_xfer.cm, XF#ssh_xfer.channel,
+			      ?FILEOP_TIMEOUT), St};
 
 handle_call(recv_window, _From, St) ->
     XF = St#state.xf,
-    {reply, ssh_cm:recv_window(XF#ssh_xfer.cm, XF#ssh_xfer.channel), St};
+    {reply, ssh_cm:recv_window(XF#ssh_xfer.cm, XF#ssh_xfer.channel,
+			       ?FILEOP_TIMEOUT), St};
 
 handle_call(stop, _From, St) ->
     XF = St#state.xf,

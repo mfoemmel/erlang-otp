@@ -1,0 +1,5 @@
+# $Id$
+# ARM-specific atoms and bifs
+
+atom arm
+atom inc_stack_0

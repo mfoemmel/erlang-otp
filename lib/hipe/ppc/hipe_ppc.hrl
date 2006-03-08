@@ -75,7 +75,6 @@
 -record(pseudo_call_prepare, {nrstkargs}).
 -record(pseudo_li, {dst, imm}).
 -record(pseudo_move, {dst, src}).
--record(pseudo_ret, {npop}).
 -record(pseudo_tailcall, {func, arity, stkargs, linkage}).
 -record(pseudo_tailcall_prepare, {}).
 -record(store, {stop, src, disp, base}).	% non-indexed, non-update form

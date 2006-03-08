@@ -20,7 +20,7 @@
 
 -module(ssh_xfer).
 
--export([attach/1, connect/3]).
+-export([attach/2, connect/3]).
 -export([open/6, opendir/3, readdir/3, close/3, read/5, write/5,
 	 rename/5, remove/3, mkdir/4, rmdir/3, realpath/3, extended/4,
 	 stat/4, fstat/4, lstat/4, setstat/4,
@@ -43,27 +43,28 @@
 
 -define(XFER_PACKET_SIZE, 32768).
 -define(XFER_WINDOW_SIZE, 4*?XFER_PACKET_SIZE).
+-define(DEFAULT_TIMEOUT, 5000).
 
-
-attach(CM) ->
-    case ssh_cm:attach(CM) of
-	{ok,CMPid} ->  open_xfer(CMPid);
+attach(CM, Opts) ->
+    case ssh_cm:attach(CM, connect_timeout(Opts)) of
+	{ok,CMPid} ->  open_xfer(CMPid, Opts);
 	Error ->  Error
     end.
 
 connect(Host, Port, Opts) ->
     case ssh_cm:connect(Host, Port, Opts) of
-	{ok, CM} -> open_xfer(CM);
+	{ok, CM} -> open_xfer(CM, Opts);
 	Error -> Error
     end.
 
 %% xfer_channel(XF, Channel) ->
 %%     XF#ssh_xfer{channel = Channel}.
 
-open_xfer(CM) ->
-    case ssh_cm:session_open(CM, ?XFER_WINDOW_SIZE, ?XFER_PACKET_SIZE) of
+open_xfer(CM, Opts) ->
+    TMO = connect_timeout(Opts),
+    case ssh_cm:session_open(CM, ?XFER_WINDOW_SIZE, ?XFER_PACKET_SIZE, TMO) of
 	{ok, Channel} ->
-	    case ssh_cm:subsystem(CM, Channel, "sftp") of
+	    case ssh_cm:subsystem(CM, Channel, "sftp", TMO) of
 		success ->
 		    case init(CM, Channel) of
 			{ok, {Vsn,Ext}, Rest} ->
@@ -210,7 +211,7 @@ mkdir(XF, ReqID, Path, Attrs) ->
 %% Remove a directory
 rmdir(XF, ReqID, Dir) ->
     Dir1 = list_to_binary(Dir),
-    xf_request(XF, ?SSH_FXP_REMOVE, 
+    xf_request(XF, ?SSH_FXP_RMDIR,
 	       [?uint32(ReqID),
 		?binary(Dir1)]).
 
@@ -661,12 +662,14 @@ encode_attr_flags(Vsn, Flags) ->
       end, Flags).
 
 encode_file_type(Type) ->
+    ?dbg(true, "encode_file_type(~p)\n", [Type]),
     case Type of
 	regular -> ?SSH_FILEXFER_TYPE_REGULAR;
 	directory -> ?SSH_FILEXFER_TYPE_DIRECTORY;
 	symlink -> ?SSH_FILEXFER_TYPE_SYMLINK;
 	special -> ?SSH_FILEXFER_TYPE_SPECIAL;
 	unknown -> ?SSH_FILEXFER_TYPE_UNKNOWN;
+	other -> ?SSH_FILEXFER_TYPE_UNKNOWN;
 	socket -> ?SSH_FILEXFER_TYPE_SOCKET;
 	char_device -> ?SSH_FILEXFER_TYPE_CHAR_DEVICE;
 	block_device -> ?SSH_FILEXFER_TYPE_BLOCK_DEVICE;
@@ -680,7 +683,7 @@ decode_file_type(Type) ->
 	?SSH_FILEXFER_TYPE_DIRECTORY -> directory;
 	?SSH_FILEXFER_TYPE_SYMLINK -> symlink;
 	?SSH_FILEXFER_TYPE_SPECIAL -> special;
-	?SSH_FILEXFER_TYPE_UNKNOWN -> unknown;
+	?SSH_FILEXFER_TYPE_UNKNOWN -> other; % unknown
 	?SSH_FILEXFER_TYPE_SOCKET -> socket;
 	?SSH_FILEXFER_TYPE_CHAR_DEVICE -> char_device;
 	?SSH_FILEXFER_TYPE_BLOCK_DEVICE -> block_device;
@@ -740,8 +743,8 @@ encode_ATTR(Vsn, A) ->
 		   {extended, A#ssh_xfer_attr.extensions}],
 		  0, []),
     Type = encode_file_type(A#ssh_xfer_attr.type),
-    %% ?dbg(true, "encode_ATTR: Vsn=~p A=~p As=~p Flags=~p Type=~p",
-    %% 	 [Vsn, A, As, Flags, Type]),
+    ?dbg(true, "encode_ATTR: Vsn=~p A=~p As=~p Flags=~p Type=~p",
+    	 [Vsn, A, As, Flags, Type]),
     Result = list_to_binary([?uint32(Flags),
 			     if Vsn >= 5 ->
 				     ?byte(Type);
@@ -1022,3 +1025,5 @@ decode_bits(_F, []) ->
 %% bsize([A|B], S) ->
 %%     bsize(B, S + bsize(A)).
 
+connect_timeout(Opts) ->
+    proplists:get_value(connect_timeout, Opts, ?DEFAULT_TIMEOUT).

@@ -124,7 +124,7 @@ reverse_preorder([Node], _Edges) ->
 reverse_preorder(Nodes0 = [H|_], Edges) ->
   Nodes = sets:from_list(Nodes0),
   {PreOrder, _} = dfs(H, Edges),
-  DFS = lists:filter(fun(X) -> sets:is_element(X, Nodes)end, PreOrder),
+  DFS = [X || X <- PreOrder, sets:is_element(X, Nodes)],
   lists:reverse(DFS).
 
 reverse_preorder_sccs(DG) ->

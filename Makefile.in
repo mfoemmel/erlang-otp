@@ -265,11 +265,6 @@ secondary_bootstrap_build:
 		$(MAKE) opt SECONDARY_BOOTSTRAP=true
 
 secondary_bootstrap_copy:
-	if test ! -d $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel ; then mkdir $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel ; fi
-	if test ! -d $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/ebin ; then mkdir $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/ebin ; fi
-	if test ! -d $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/include ; then mkdir $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/include ; fi
-	cp -f lib/kernel/ebin/*.beam $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/ebin
-	cp -f lib/kernel/include/*.hrl $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/include
 	if test ! -d $(BOOTSTRAP_ROOT)/bootstrap/lib/hipe ; then mkdir $(BOOTSTRAP_ROOT)/bootstrap/lib/hipe ; fi
 	if test ! -d $(BOOTSTRAP_ROOT)/bootstrap/lib/hipe/ebin ; then mkdir $(BOOTSTRAP_ROOT)/bootstrap/lib/hipe/ebin ; fi
 	if test -f lib/hipe/ebin/hipe.beam ; then cp lib/hipe/ebin/*.beam $(BOOTSTRAP_ROOT)/bootstrap/lib/hipe/ebin; fi
@@ -366,10 +361,11 @@ primary_bootstrap_copy:
 # the modules in kernel which are needed for an emulator build
 KERNEL_PRELOAD_BEAMS=$(KERNEL_PRELOAD:%=$(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/ebin/%.beam)
 primary_bootstrap_cleanup:
+	rm -rf $(BOOTSTRAP_COMPILER)
 	cd lib && $(MAKE) BOOTSTRAP=1 clean
 	cd lib/kernel/src && $(MAKE) BOOTSTRAP=1 clean
-	cp $(KERNEL_PRELOAD_BEAMS) lib/kernel/ebin
-	rm -rf $(BOOTSTRAP_COMPILER)
+	rm -rf $(KERNEL_PRELOAD:%=lib/kernel/ebin/%.beam)
+	cd lib/kernel/src && $(MAKE) $(KERNEL_PRELOAD:%=../ebin/%.beam)
 
 # Creates "erl" and "erlc" scripts in bin/erl which uses the libraries in lib
 local_setup:

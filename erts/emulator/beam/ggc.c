@@ -973,6 +973,7 @@ erts_shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj)
 
 #ifdef SHARED_HEAP
     ASSERT(new_sz < HEAP_SIZE(p));
+    ASSERT(new_sz != 0);
     new_heap = (Eterm *) ERTS_HEAP_REALLOC(ERTS_ALC_T_HEAP,
 					   (void*)HEAP_START(p),
 					   sizeof(Eterm)*(HEAP_SIZE(p)),
@@ -982,6 +983,7 @@ erts_shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj)
     int stack_size = p->hend - p->stop;
 
     ASSERT(new_sz < p->heap_sz);
+    ASSERT(new_sz != 0);
     sys_memmove(p->heap + new_sz - stack_size, p->stop, stack_size *
                                                         sizeof(Eterm));
     new_heap = (Eterm *) ERTS_HEAP_REALLOC(ERTS_ALC_T_HEAP,

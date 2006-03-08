@@ -3,7 +3,6 @@
 %%% HiPE/x86 assembler
 %%%
 %%% TODO:
-%%% - Migrate old resolve_arg users to translate_src/dst.
 %%% - Simplify combine_label_maps and mk_data_relocs.
 %%% - Move find_const to hipe_pack_constants?
 
@@ -17,7 +16,6 @@
 -define(RMArch, rm32).
 -define(EA_DISP32_ABSOLUTE, ea_disp32).
 -define(IMM_MOVE_ARGS, {temp_to_reg32(Dst),{imm32,Imm}}).
--define(REG64, {reg64, _Reg64} -> exit({?MODULE, reg64_on_x86})).
 -define(MOVE64, #move64{} -> exit({?MODULE, no_move64_on_x86})).
 -endif.
 
@@ -87,19 +85,19 @@ translate(Code, ConstMap, Options) ->
 
 translate_mfas([{MFA,Insns,_Data}|Code], ConstMap, NewCode, Options) ->
   {NewInsns,CodeSize,LabelMap} =
-    translate_insns(Insns, MFA, ConstMap, hipe_sdi:pass1_init(), 0, [], Options),
+    translate_insns(Insns, {MFA,ConstMap}, hipe_sdi:pass1_init(), 0, [], Options),
   translate_mfas(Code, ConstMap, [{MFA,NewInsns,CodeSize,LabelMap}|NewCode], Options);
 translate_mfas([], _ConstMap, NewCode, _Options) ->
   lists:reverse(NewCode).
 
-translate_insns([I|Insns], MFA, ConstMap, SdiPass1, Address, NewInsns, Options) ->
-  NewIs = translate_insn(I, MFA, ConstMap, Options),
-  add_insns(NewIs, Insns, MFA, ConstMap, SdiPass1, Address, NewInsns, Options);
-translate_insns([], _MFA, _ConstMap, SdiPass1, Address, NewInsns, _Options) ->
+translate_insns([I|Insns], Context, SdiPass1, Address, NewInsns, Options) ->
+  NewIs = translate_insn(I, Context, Options),
+  add_insns(NewIs, Insns, Context, SdiPass1, Address, NewInsns, Options);
+translate_insns([], _Context, SdiPass1, Address, NewInsns, _Options) ->
   {LabelMap,CodeSizeIncr} = hipe_sdi:pass2(SdiPass1),
   {lists:reverse(NewInsns), Address+CodeSizeIncr, LabelMap}.
 
-add_insns([I|Is], Insns, MFA, ConstMap, SdiPass1, Address, NewInsns, Options) ->
+add_insns([I|Is], Insns, Context, SdiPass1, Address, NewInsns, Options) ->
   NewSdiPass1 =
     case I of
       {'.label',L,_} ->
@@ -114,9 +112,9 @@ add_insns([I|Is], Insns, MFA, ConstMap, SdiPass1, Address, NewInsns, Options) ->
 	SdiPass1
     end,
   Address1 = Address + insn_size(I),
-  add_insns(Is, Insns, MFA, ConstMap, NewSdiPass1, Address1, [I|NewInsns], Options);
-add_insns([], Insns, MFA, ConstMap, SdiPass1, Address, NewInsns, Options) ->
-  translate_insns(Insns, MFA, ConstMap, SdiPass1, Address, NewInsns, Options).
+  add_insns(Is, Insns, Context, NewSdiPass1, Address1, [I|NewInsns], Options);
+add_insns([], Insns, Context, SdiPass1, Address, NewInsns, Options) ->
+  translate_insns(Insns, Context, SdiPass1, Address, NewInsns, Options).
 
 insn_size(I) ->
   case I of
@@ -127,28 +125,25 @@ insn_size(I) ->
     {Op,Arg,_Orig} -> ?HIPE_X86_ENCODE:insn_sizeof(Op, Arg)
   end.
 
-translate_insn(I, MFA, ConstMap, Options) ->
+translate_insn(I, Context, Options) ->
   case I of
     #alu{} ->
-      Arg = resolve_alu_args(hipe_x86:alu_src(I), hipe_x86:alu_dst(I)),
+      Arg = resolve_alu_args(hipe_x86:alu_src(I), hipe_x86:alu_dst(I), Context),
       [{hipe_x86:alu_op(I), Arg, I}];
     #call{} ->
       translate_call(I);
     #cmovcc{} ->
       {Dst,Src} = resolve_move_args(
 		    hipe_x86:cmovcc_src(I), hipe_x86:cmovcc_dst(I),
-				    {MFA,ConstMap}),
+		    Context),
       CC = {cc,?HIPE_X86_ENCODE:cc(hipe_x86:cmovcc_cc(I))},
       Arg = {CC,Dst,Src},
       [{cmovcc, Arg, I}];
     #cmp{} ->
-      Arg = resolve_alu_args(hipe_x86:cmp_src(I), hipe_x86:cmp_dst(I)),
+      Arg = resolve_alu_args(hipe_x86:cmp_src(I), hipe_x86:cmp_dst(I), Context),
       [{cmp, Arg, I}];
     #comment{} ->
       [];
-    #dec{} ->
-      Arg = translate_dst(hipe_x86:dec_dst(I)),
-      [{dec, {Arg}, I}];
     #fmove{} ->
       {Op,Arg} = resolve_sse2_fmove_args(hipe_x86:fmove_src(I),
 					 hipe_x86:fmove_dst(I)),
@@ -178,9 +173,6 @@ translate_insn(I, MFA, ConstMap, Options) ->
 	      []
 	  end
       end;
-    #inc{} ->
-      Arg = translate_dst(hipe_x86:inc_dst(I)),
-      [{inc, {Arg}, I}];
     #jcc{} ->
       Cc = {cc,?HIPE_X86_ENCODE:cc(hipe_x86:jcc_cc(I))},
       Label = translate_label(hipe_x86:jcc_label(I)),
@@ -199,7 +191,7 @@ translate_insn(I, MFA, ConstMap, Options) ->
       Arg = translate_label(hipe_x86:jmp_label_label(I)),
       [{jmp_sdi, {Arg}, I}];
     #jmp_switch{} ->
-      RM32 = resolve_jmp_switch_arg(I, {MFA,ConstMap}),
+      RM32 = resolve_jmp_switch_arg(I, Context),
       [{jmp, {RM32}, I}];
     #label{} ->
       [{'.label', hipe_x86:label_label(I), I}];
@@ -208,7 +200,7 @@ translate_insn(I, MFA, ConstMap, Options) ->
       [{lea, Arg, I}];
     #move{} ->
       Arg = resolve_move_args(hipe_x86:move_src(I), hipe_x86:move_dst(I),
-			      {MFA,ConstMap}),
+			      Context),
       [{mov, Arg, I}];
     ?MOVE64;
     #movsx{} ->
@@ -217,9 +209,6 @@ translate_insn(I, MFA, ConstMap, Options) ->
     #movzx{} ->
       Arg = resolve_movx_args(hipe_x86:movzx_src(I), hipe_x86:movzx_dst(I)),
       [{movzx, Arg, I}];
-    %% nop: we shouldn't have any as input
-    #prefix_fs{} ->
-      [{prefix_fs, {}, I}];
     %% pseudo_call: eliminated before assembly
     %% pseudo_jcc: eliminated before assembly
     %% pseudo_tailcall: eliminated before assembly
@@ -228,15 +217,15 @@ translate_insn(I, MFA, ConstMap, Options) ->
       Arg = translate_dst(hipe_x86:pop_dst(I)),
       [{pop, {Arg}, I}];
     #push{} ->
-      Arg = translate_src(hipe_x86:push_src(I), MFA, ConstMap),
+      Arg = translate_src(hipe_x86:push_src(I), Context),
       [{push, {Arg}, I}];
     #ret{} ->
       translate_ret(I);
     #shift{} ->
-      Arg = resolve_shift_args(hipe_x86:shift_src(I), hipe_x86:shift_dst(I)),
+      Arg = resolve_shift_args(hipe_x86:shift_src(I), hipe_x86:shift_dst(I), Context),
       [{hipe_x86:shift_op(I), Arg, I}];
     #test{} ->
-      Arg = resolve_test_args(hipe_x86:test_src(I), hipe_x86:test_dst(I)),
+      Arg = resolve_test_args(hipe_x86:test_src(I), hipe_x86:test_dst(I), Context),
       [{test, Arg, I}]
   end.
 
@@ -335,33 +324,45 @@ translate_fun(Arg, PatchTypeExt) ->
       {rel32,{PatchTypeExt,Prim}}
   end.
 
-translate_src(Src, MFA, ConstMap) ->
+translate_src(Src, Context) ->
   case Src of
-    #x86_imm{value=Imm} ->
-      if is_atom(Imm) ->
-	  {imm32,{?PATCH_TYPE2EXT(load_atom),Imm}};
-	 is_integer(Imm) ->
-	  case (Imm =< 127) and (Imm >= -128) of
-	    true ->
-	      {imm8,Imm band 16#FF};
-	    false ->
-	      {imm32,Imm}
-	  end;
-	 true ->
-	  Val =
-	    case Imm of
-	      {Label,constant} ->
-		ConstNo = find_const({MFA,Label}, ConstMap),
-		{constant,ConstNo};
-	      {Label,closure} ->
-		{closure,Label};
-	      {Label,c_const} ->
-		{c_const,Label}
-	    end,
-	  {imm32,{?PATCH_TYPE2EXT(load_address),Val}}
-      end;
+    #x86_imm{} ->
+      translate_imm(Src, Context, true);
     _ ->
       translate_dst(Src)
+  end.
+
+%%% MayTrunc8 controls whether negative Imm8s should be truncated
+%%% to 8 bits or not. Truncation should always be done, except when
+%%% the caller will widen the Imm8 to an Imm32 or Imm64.
+translate_imm(#x86_imm{value=Imm}, Context, MayTrunc8) ->
+  if is_atom(Imm) ->
+      {imm32,{?PATCH_TYPE2EXT(load_atom),Imm}};
+     is_integer(Imm) ->
+      case (Imm =< 127) and (Imm >= -128) of
+	true ->
+	  Imm8 =
+	    case MayTrunc8 of
+	      true -> Imm band 16#FF;
+	      false -> Imm
+	    end,
+	  {imm8,Imm8};
+	false ->
+	  {imm32,Imm}
+      end;
+     true ->
+      Val =
+	case Imm of
+	  {Label,constant} ->
+	    {MFA,ConstMap} = Context,
+	    ConstNo = find_const({MFA,Label}, ConstMap),
+	    {constant,ConstNo};
+	  {Label,closure} ->
+	    {closure,Label};
+	  {Label,c_const} ->
+	    {c_const,Label}
+	end,
+      {imm32,{?PATCH_TYPE2EXT(load_address),Val}}
   end.
 
 translate_dst(Dst) ->
@@ -608,16 +609,9 @@ mem_to_ea_common(#x86_mem{base=#x86_temp{reg=Base}, off=#x86_imm{value=Off}}) ->
 
 %% jmp_switch
 -ifndef(RESOLVE_JMP_SWITCH_ARG).
-%% Context = [] when no relocs are expected, {MFA,ConstMap} otherwise
-resolve_jmp_switch_arg(I, Context) ->
-  Disp32 =
-    case Context of
-    %%   [] ->
-    %%	0;
-      {MFA,ConstMap} ->
-	ConstNo = find_const({MFA,hipe_x86:jmp_switch_jtab(I)}, ConstMap),
-	{?PATCH_TYPE2EXT(load_address),{constant,ConstNo}}
-    end,
+resolve_jmp_switch_arg(I, {MFA,ConstMap}) ->
+  ConstNo = find_const({MFA,hipe_x86:jmp_switch_jtab(I)}, ConstMap),
+  Disp32 = {?PATCH_TYPE2EXT(load_address),{constant,ConstNo}},
   SINDEX = ?HIPE_X86_ENCODE:sindex(2, hipe_x86:temp_reg(hipe_x86:jmp_switch_temp(I))),
   EA = ?HIPE_X86_ENCODE:ea_disp32_sindex(Disp32, SINDEX), % this creates a SIB implicitly
   {rm32,?HIPE_X86_ENCODE:rm_mem(EA)}.
@@ -675,15 +669,25 @@ resolve_move_args(#x86_imm{value=ImmSrc}, Dst=#x86_mem{type=Type}, Context) ->
     byte ->
       ByteImm = ImmSrc band 255, %to ensure that it is a bytesized imm
       {mem_to_rm8(Dst),{imm8,ByteImm}};
+    int16 ->
+      {mem_to_rm16(Dst),{imm16,ImmSrc band 16#FFFF}};
+    int32 ->
+      {_,Imm} = translate_imm(#x86_imm{value=ImmSrc}, Context, false),
+      {mem_to_rm32(Dst),{imm32,Imm}};
     _ ->
       RMArch = mem_to_rmArch(Dst),
-      {_,Imm} = resolve_arg(#x86_imm{value=ImmSrc}, Context, false),
+      {_,Imm} = translate_imm(#x86_imm{value=ImmSrc}, Context, false),
       {RMArch,{imm32,Imm}}
   end;
 
 %% mov reg,mem
-resolve_move_args(Src=#x86_mem{}, Dst=#x86_temp{}, _Context) ->
-  {temp_to_regArch(Dst),mem_to_rmArch(Src)};
+resolve_move_args(Src=#x86_mem{type=Type}, Dst=#x86_temp{}, _Context) ->
+  case Type of
+    int32 -> % must be unsigned
+      {temp_to_reg32(Dst),mem_to_rm32(Src)};
+    _ ->
+      {temp_to_regArch(Dst),mem_to_rmArch(Src)}
+  end;
 
 %% mov mem,reg
 resolve_move_args(Src=#x86_temp{}, Dst=#x86_mem{type=Type}, _Context) ->
@@ -693,7 +697,7 @@ resolve_move_args(Src=#x86_temp{}, Dst=#x86_mem{type=Type}, _Context) ->
     int16 ->
       {mem_to_rm16(Dst),temp_to_reg16(Src)};
     int32 ->
-      {mem_to_rmArch(Dst),temp_to_regArch(Src)};
+      {mem_to_rm32(Dst),temp_to_reg32(Src)};
     tagged -> % tagged, untagged
       {mem_to_rmArch(Dst),temp_to_regArch(Src)};
     untagged -> % tagged, untagged
@@ -706,7 +710,7 @@ resolve_move_args(Src=#x86_temp{}, Dst=#x86_temp{}, _Context) ->
 
 %% mov reg,imm
 resolve_move_args(Src=#x86_imm{value=_ImmSrc}, Dst=#x86_temp{}, Context) ->
-  {_,Imm} = resolve_arg(Src, Context, false),
+  {_,Imm} = translate_imm(Src, Context, false),
   ?IMM_MOVE_ARGS.
 
 -ifdef(RESOLVE_MOVE64_ARGS).
@@ -726,10 +730,10 @@ resolve_movx_args(Src=#x86_mem{type=Type}, Dst=#x86_temp{}) ->
    end}.
 
 %%% alu/cmp (_not_ test)
-resolve_alu_args(Src, Dst) ->
+resolve_alu_args(Src, Dst, Context) ->
   case {Src,Dst} of
     {#x86_imm{}, #x86_mem{}} ->
-      {mem_to_rmArch(Dst), resolve_arg(Src, [], true)};
+      {mem_to_rmArch(Dst), translate_imm(Src, Context, true)};
     {#x86_mem{}, #x86_temp{}} ->
       {temp_to_regArch(Dst), mem_to_rmArch(Src)};
     {#x86_temp{}, #x86_mem{}} ->
@@ -737,7 +741,7 @@ resolve_alu_args(Src, Dst) ->
     {#x86_temp{}, #x86_temp{}} ->
       {temp_to_regArch(Dst), temp_to_rmArch(Src)};
     {#x86_imm{}, #x86_temp{reg=0}} -> % eax,imm
-      NewSrc = resolve_arg(Src, [], true),
+      NewSrc = translate_imm(Src, Context, true),
       NewDst =
 	case NewSrc of
 	  {imm8,_} -> temp_to_rmArch(Dst);
@@ -745,14 +749,14 @@ resolve_alu_args(Src, Dst) ->
 	end,
       {NewDst, NewSrc};
     {#x86_imm{}, #x86_temp{}} ->
-      {temp_to_rmArch(Dst), resolve_arg(Src, [], true)}
+      {temp_to_rmArch(Dst), translate_imm(Src, Context, true)}
   end.
 
 %%% test
-resolve_test_args(Src, Dst) ->
+resolve_test_args(Src, Dst, Context) ->
   case Src of
     #x86_imm{} -> % imm8 not allowed
-      {_ImmSize,ImmValue} = resolve_arg(Src, [], false),
+      {_ImmSize,ImmValue} = translate_imm(Src, Context, false),
       NewDst =
 	case Dst of
 	  #x86_temp{reg=0} -> ?EAX;
@@ -770,7 +774,7 @@ resolve_test_args(Src, Dst) ->
   end.
 
 %%% shifts
-resolve_shift_args(Src, Dst) ->
+resolve_shift_args(Src, Dst, Context) ->
   RM32 =
     case Dst of
       #x86_temp{} -> temp_to_rmArch(Dst);
@@ -779,7 +783,7 @@ resolve_shift_args(Src, Dst) ->
   Count =
     case Src of
       #x86_imm{value=1} -> 1;
-      #x86_imm{} -> resolve_arg(Src, [], true); % must be imm8
+      #x86_imm{} -> translate_imm(Src, Context, true); % must be imm8
       #x86_temp{reg=1} -> cl	% temp must be ecx
     end,
   {RM32, Count}.
@@ -802,63 +806,6 @@ resolve_x87_binop_args(Src=#x86_fpreg{}, Dst=#x86_mem{})->
 %% x87_binop st(0), st(i)
 resolve_x87_binop_args(Src=#x86_fpreg{}, Dst=#x86_fpreg{})->
   {fpreg_to_stack(Dst),fpreg_to_stack(Src)}.
-
-
-%% return arg for encoding
-%% Context=[] when no relocs are expected, {MFA,ConstMap} otherwise
-resolve_arg(Arg, Context, MayTrunc8) ->
-  case Arg of
-    {reg32,_Reg32} ->
-      Arg;
-    ?REG64;
-    #x86_imm{value=Imm} ->
-      if is_atom(Imm) ->
-	  %%print("Atom:~w added to patchlist at addr:~w - ",[Imm,Addr+BytesToImm32]),
-	  {imm32,{?PATCH_TYPE2EXT(load_atom),Imm}};
-	 is_integer(Imm) ->
-	  case (Imm =< 127) and (Imm >= -128) of
-	    true ->
-	      %% XXX: A negative Imm8 should be truncated to 8 bits,
-	      %% except when it is to be converted to an Imm32/Imm64,
-	      %% since truncation + widening doesn't preserve the value.
-	      Imm8 =
-		case MayTrunc8 of
-		  true -> Imm band 16#FF;
-		  false -> Imm
-		end,
-	      {imm8,Imm8};
-	    false ->
-	      {imm32,Imm}
-	  end;
-	 true ->
-	  case Context of
-	    [] ->
-	      {imm32,0};
-	    {MFA,ConstMap} ->
-	      Val =
-		case Imm of
-		  {ConstLabel, constant} ->
-		    ConstNo = find_const({MFA,ConstLabel}, ConstMap),
-		    {constant,ConstNo};
-		  {ClosureLabel, closure} ->
-		    {closure,ClosureLabel};
-		  {C_constLabel,c_const} ->
-		    {c_const, C_constLabel}
-		end,
-	      {imm32,{?PATCH_TYPE2EXT(load_address),Val}}
-	  end
-      end;
-    #x86_temp{} ->
-      temp_to_regArch(Arg);
-    %% Push uses this, and goes via ESP so the SIB byte stays...
-    #x86_mem{type=Type} ->
-      case Type of
-	'double'-> mem_to_rm64fp(Arg);
-	_ -> mem_to_rmArch(Arg)
-      end;
-    #x86_fpreg{} ->
-      fpreg_to_stack(Arg)
-  end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

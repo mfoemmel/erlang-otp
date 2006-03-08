@@ -33,7 +33,7 @@
 
 -export([client_init/4, server_init/4]).
 
--export([ssh_init/3, server_hello/3]).
+-export([ssh_init/3]). % , server_hello/4]).
 
 -export([service_request/2, service_accept/2]).
 
@@ -42,6 +42,10 @@
 %% io wrappers
 -export([yes_no/2, read_password/2]).
 
+
+-define(DEFAULT_TIMEOUT, 5000).
+
+%% debug flags
 -define(DBG_ALG,     true).
 -define(DBG_KEX,     false).
 -define(DBG_CRYPTO,  false).
@@ -178,7 +182,7 @@ kex_dh_gex_messages()                                                    ->
        [mpint]},
       
       {ssh_msg_kex_dh_gex_reply, ?SSH_MSG_KEX_DH_GEX_REPLY,
-       [binary, mping, binary]}
+       [binary, mpint, binary]}
      ].
 
 yes_no(SSH, Prompt) when pid(SSH)                                        ->
@@ -290,7 +294,7 @@ service_request(SSH, Name)                                               ->
     
 client_init(User, Host, Port, Opts) ->
     IfAddr = proplists:get_value(ifaddr, Opts, any),
-    Tmo    = proplists:get_value(connect_timeout, Opts, infinity),
+    Tmo    = proplists:get_value(connect_timeout, Opts, ?DEFAULT_TIMEOUT),
     case gen_tcp:connect(Host, Port, [{packet,line},
 				      {active,once},
 				      {ifaddr,IfAddr}], Tmo) of
@@ -300,7 +304,7 @@ client_init(User, Host, Port, Opts) ->
 		      atom(Host) -> atom_to_list(Host);
 		      list(Host) -> Host
 		   end,
-	    client_hello(S, User, SSH#ssh { peer = Peer });
+	    client_hello(S, User, SSH#ssh { peer = Peer }, Tmo);
 	Error ->
 	    User ! {self(), Error}
     end.
@@ -311,7 +315,9 @@ server_init(UserFun, Addr, Port, Opts) ->
 		   SSH = ssh_init(S, server, Opts),
 		   Self = self(),
 		   User = UserFun(Self),
-		   server_hello(S, User, SSH)
+		   server_hello(S, User, SSH,
+				proplists:get_value(timeout, Opts,
+						    ?DEFAULT_TIMEOUT))
 	   end,
     ssh_tcp_wrap:server(Port, [{packet,line}, {active,once},
 			       {ifaddr,Addr}, {reuseaddr,true}],
@@ -400,7 +406,7 @@ kex_init(SSH)                                                            ->
     end.
 
 
-server_hello(S, User, SSH)                                               ->
+server_hello(S, User, SSH, Timeout) ->
     receive
 	{tcp, S, V = "SSH-"++_} ->
 	    Version = trim_tail(V),
@@ -421,14 +427,14 @@ server_hello(S, User, SSH)                                               ->
 	{tcp, S, _Line} ->
 	    ?dbg(true, "info: ~p\n", [_Line]),
 	    inet:setopts(S, [{active, once}]),
-	    server_hello(S, User, SSH)
-    after 5000 ->
-	    ?dbg(true, "timeout 5s\n", []),
+	    server_hello(S, User, SSH, Timeout)
+    after Timeout ->
+	    ?dbg(true, "server_hello timeout ~p\n", [Timeout]),
 	    gen_tcp:close(S),
 	    {error, timeout}
     end.
 
-client_hello(S, User, SSH)                                               ->
+client_hello(S, User, SSH, Timeout) ->
     receive
 	{tcp, S, V = "SSH-"++_} ->
 	    Version = trim_tail(V),
@@ -452,9 +458,9 @@ client_hello(S, User, SSH)                                               ->
 	{tcp, S, _Line} ->
 	    ?dbg(true, "info: ~p\n", [_Line]),
 	    inet:setopts(S, [{active, once}]),
-	    client_hello(S, User, SSH)
-    after 5000 ->
-	    ?dbg(true, "timeout 5s\n", []),
+	    client_hello(S, User, SSH, Timeout)
+    after Timeout ->
+	    ?dbg(true, "client_hello timeout ~p\n", [Timeout]),
 	    gen_tcp:close(S),
 	    {error, timeout}
     end.
@@ -670,10 +676,10 @@ server_kex(S, SSH, 'diffie-hellman-group-exchange-sha1')                 ->
 	Error ->
 	    Error
     end;
-server_kex(_S, _SSH, Kex)                                                ->
+server_kex(_S, _SSH, Kex) ->
     {error, {bad_kex_algorithm, Kex}}.
 
-ssh_main(S, User, SSH)                                                   ->
+ssh_main(S, User, SSH) ->
     receive
 	{tcp, S, Data} ->
 	    %% This is a lazy way of gettting events without block

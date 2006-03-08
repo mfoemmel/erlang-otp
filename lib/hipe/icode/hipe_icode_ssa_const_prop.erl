@@ -77,9 +77,11 @@ visit_expression(Instruction, Environment) ->
     #begin_handler{} ->
       visit_begin_handler     (Instruction, EvaluatedArguments, Environment);
     #begin_try{} ->
-      visit_begin_try        (Instruction, EvaluatedArguments, Environment);
+      visit_begin_try         (Instruction, EvaluatedArguments, Environment);
+    #fail{} ->                
+      visit_fail              (Instruction, EvaluatedArguments, Environment);
     _ ->
-      %% label, end_try, comment, return, fail
+      %% label, end_try, comment, return,
       {[], [], Environment}
   end.
 
@@ -186,8 +188,14 @@ visit_goto(Instruction, _Arguments, Environment) ->
   GotoLabel = hipe_icode:goto_label(Instruction),
   FlowWork  = [GotoLabel],
   {FlowWork, [], Environment}.
-
+              
 %%-----------------------------------------------------------------------------
+
+visit_fail(Instruction, _Arguments, Environment) ->
+  FlowWork = hipe_icode:successors(Instruction),
+  {FlowWork, [], Environment}.
+
+%%-----------------------------------------------------------------------------              
 
 visit_type(Instruction, Values, Environment) ->
   case evaluate_type(hipe_icode:type_type(Instruction), Values) of

@@ -8,7 +8,8 @@
 
 %% our command functions
 -export([cli_prime/1, cli_primes/1, cli_gcd/2, cli_lcm/2,
-	 cli_factors/1, cli_exit/0, cli_rho/1, cli_help/0]).
+	 cli_factors/1, cli_exit/0, cli_rho/1, cli_help/0,
+	 cli_crash/0, cli_users/0]).
 
 %% imports
 -import(lists, [reverse/1, reverse/2, seq/2, prefix/2]).
@@ -20,19 +21,21 @@ listen(Port) ->
 
 listen(Port, Options) ->
     ssh_cli:listen({?MODULE, start_our_shell, []},
-		   Port, [{expand_fun, fun(Bef) -> expand(Bef) end} | Options]).
+		   Port, Options).
 
 %% our_routines
 our_routines() ->
     [
+     {"crash", cli_crash,    "            crash the cli"},
      {"exit", cli_exit,      "            exit application"},
      {"factors", cli_factors,"<int>       prime factors of <int>"},
      {"gcd", cli_gcd,        "<int> <int> greatest common divisor"},
      {"help", cli_help,      "            help text"},
      {"lcm", cli_lcm,        "<int> <int> least common multiplier"},
+     {"prime", cli_prime,    "<int>       check for primality"},
      {"primes", cli_primes,  "<int>       print all primes up to <int>"},
      {"rho", cli_rho,        "<int>       prime factors using rho's alg."},
-     {"prime", cli_prime,    "<int>       check for primality"}
+     {"users", cli_users,    "            lists users"}
     ].
 
 %% (we could of course generate this from module_info() something like this)
@@ -102,6 +105,7 @@ expand(RevBefore) ->
 %%% care of sending input to the ssh_sample_cli server)
 start_our_shell() ->
     spawn(fun() ->
+		  io:setopts(expand_fun, fun(Bef) -> expand(Bef) end),
 		  io:format("Enter command\n"),
 		  our_shell_loop()
 	  end).
@@ -109,13 +113,14 @@ start_our_shell() ->
 %%% an ordinary Read-Eval-Print-loop
 our_shell_loop() ->
     % Read
-    Line = io:get_line('CLI> '),
+    Line = io:get_line({format, "CLI> ", []}),
     % Eval
     Result = eval_cli(Line),
     % Print
-    io:format("---> ~w\n", [Result]),
+    io:format("---> ~p\n", [Result]),
     case Result of
 	done -> exit(normal);
+	crash -> 1 / 0;
 	_ -> our_shell_loop()
     end.
 
@@ -171,6 +176,17 @@ cli_lcm(A, B) when is_integer(A), is_integer(B) ->
 
 cli_factors(A) when A < 1000000 ->
     factors(A).
+
+cli_users() ->
+    case ssh_userauth:get_auth_users() of
+	{ok, UsersPids} ->
+	    UsersPids; % [U || {U, _} <- UsersPids];
+	E ->
+	    E
+    end.
+
+cli_crash() ->
+    crash.
     
 cli_rho(A) ->
     rho(A).

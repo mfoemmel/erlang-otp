@@ -1465,7 +1465,7 @@ pp_instr(Dev, I) ->
 	      io:format(Dev, "~w(", [F]);
 	    {M,F,A} when is_atom(M), is_atom(F), is_integer(A), A >= 0 ->
 	      io:format(Dev, "~w:~w(", [M, F]);
-	    {F,A} when atom(F), is_integer(A), A >= 0 ->
+	    {F,A} when is_atom(F), is_integer(A), A >= 0 ->
 	      io:format(Dev, "~w(", [F])
 	  end;
 	false ->

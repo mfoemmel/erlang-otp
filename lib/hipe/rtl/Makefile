@@ -43,7 +43,7 @@ HIPE_MODULES = hipe_rtl hipe_rtl_cfg hipe_rtl_ebb \
 	  hipe_rtl_arith_32 hipe_rtl_arith_64 \
 	  hipe_rtl_ssa hipe_rtl_ssa_const_prop hipe_rtl_bin_util \
 	  hipe_rtl_cleanup_const hipe_rtl_symbolic hipe_rtl_lcm \
-	  hipe_rtl_ssapre
+	  hipe_rtl_ssapre hipe_rtl_binary
 else
 HIPE_MODULES =
 endif
@@ -130,6 +130,7 @@ $(EBIN)/hipe_rtl_lcm.beam: hipe_rtl.hrl
 $(EBIN)/hipe_rtl_prop.beam: hipe_rtl.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_symbolic.beam: hipe_rtl.hrl
 $(EBIN)/hipe_rtl_varmap.beam: ../main/hipe.hrl
+$(EBIN)/hipe_rtl_binary.beam: hipe_literals.hrl
 
 $(EBIN)/hipe_rtl_ssa.beam: ../ssa/hipe_ssa.inc ../main/hipe.hrl ../ssa/hipe_ssa_liveness.inc
 $(EBIN)/hipe_rtl_ssa_const_prop.beam: hipe_rtl.hrl ../main/hipe.hrl ../ssa/hipe_ssa_const_prop.inc

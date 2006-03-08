@@ -42,9 +42,7 @@ BIF_RETTYPE hipe_bifs_show_nstack_1(BIF_ALIST_1)
     Process *rp = pid2proc(BIF_ARG_1);
     if( !rp )
 	BIF_ERROR(BIF_P, BADARG);
-    hipe_set_narity(BIF_P, 1);
     hipe_print_nstack(rp);
-    hipe_set_narity(BIF_P, 0);
     BIF_RET(am_true);
 }
 

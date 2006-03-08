@@ -77,10 +77,10 @@ endif
 
 ifdef BOOTSTRAP
   SUB_DIRECTORIES = \
-    stdlib compiler orber/include
+    kernel stdlib compiler orber/include
 else
   ifdef SECONDARY_BOOTSTRAP
-    SUB_DIRECTORIES = kernel parsetools asn1/src hipe
+    SUB_DIRECTORIES = parsetools asn1/src hipe
   else
     ifdef TERTIARY_BOOTSTRAP
       SUB_DIRECTORIES = snmp

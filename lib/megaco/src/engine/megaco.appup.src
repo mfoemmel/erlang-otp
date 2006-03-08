@@ -1,154 +1,30 @@
 {"%VSN%",
- [{"3.2.2",
+ [{"3.2.7",
    [
-    {load_module, megaco_digit_map, soft_purge, soft_purge, []},
-    {load_module, megaco_messenger, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_prev3b, soft_purge, soft_purge, []},
-
-    {update, megaco_config, {advanced, upgrade_from_pre_3_2_3},
-     soft_purge, soft_purge, []}
-
-   ]
-  },
-  {"3.2.1",
-   [
-    {load_module, megaco_digit_map, soft_purge, soft_purge, []},
-    {load_module, megaco_messenger, soft_purge, soft_purge, [megaco_messenger_misc]},
-    {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
-    {load_module, megaco_flex_scanner, soft_purge, soft_purge, 
-     [megaco_flex_scanner_handler]},
-    {load_module, megaco_text_scanner, soft_purge, soft_purge, []},
-    {load_module, megaco_pretty_text_encoder, 
-     soft_purge, soft_purge, 
-     [megaco_compact_text_encoder_prev3b, megaco_text_scanner]},
-    {load_module, megaco_compact_text_encoder, 
-     soft_purge, soft_purge, 
-     [megaco_pretty_text_encoder_prev3b, megaco_text_scanner]},
-    {load_module, megaco_pretty_text_encoder_prev3b, 
-     soft_purge, soft_purge, [megaco_text_parser_prev3b]},
-    {load_module, megaco_compact_text_encoder_prev3b, 
-     soft_purge, soft_purge, [megaco_text_parser_prev3b]},
-    {load_module, megaco_text_mini_parser, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_prev3b, soft_purge, soft_purge, []},
-
-    {update, megaco_flex_scanner_handler, {advanced, flex_scanner_321},
-     soft_purge, soft_purge, []},
-
-    {update, megaco_config, {advanced, upgrade_from_pre_3_2_3},
-     soft_purge, soft_purge, []}
-
-   ]
-  },
-  {"3.2",
-   [
-    {load_module, megaco_digit_map, soft_purge, soft_purge, []},
-    {load_module, megaco_messenger, soft_purge, soft_purge, [megaco_messenger_misc]},
-    {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
-    {load_module, megaco_flex_scanner, soft_purge, soft_purge, 
-     [megaco_flex_scanner_handler]},
-    {load_module, megaco_text_scanner, soft_purge, soft_purge, []},
-    {load_module, megaco_pretty_text_encoder, 
-     soft_purge, soft_purge, 
-     [megaco_compact_text_encoder_prev3b, megaco_text_scanner]},
-    {load_module, megaco_compact_text_encoder, 
-     soft_purge, soft_purge, 
-     [megaco_pretty_text_encoder_prev3b, megaco_text_scanner]},
-
-    {load_module, megaco_pretty_text_encoder_prev3b, 
-     soft_purge, soft_purge, [megaco_text_parser_prev3b]},
-    {load_module, megaco_compact_text_encoder_prev3b, 
-     soft_purge, soft_purge, [megaco_text_parser_prev3b]},
-    {load_module, megaco_compact_text_encoder_prev3a, 
-     soft_purge, soft_purge, []},
-    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder, soft_purge, soft_purge, []},
     {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
-
-    {load_module, megaco_text_mini_parser, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_prev3b, soft_purge, soft_purge, []},
-
-    {update, megaco_flex_scanner_handler, {advanced, flex_scanner_321},
-     soft_purge, soft_purge, []},
-
-    {update, megaco_config, {advanced, upgrade_from_pre_3_2_3},
-     soft_purge, soft_purge, []}
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3b, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_prev3b, soft_purge, soft_purge, []}
    ]
   }
  ],
 
- [{"3.2.2",
+ [{"3.2.7",
    [
-    {load_module, megaco_digit_map, soft_purge, soft_purge, []},
-    {load_module, megaco_messenger, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_prev3b, soft_purge, soft_purge, []},
-
-    {update, megaco_config, {advanced, downgrade_to_pre_3_2_3},
-     soft_purge, soft_purge, []}
-
-   ]
-  },
-  {"3.2.1",
-   [
-    {load_module, megaco_messenger, soft_purge, soft_purge, 
-     [megaco_messenger_misc, megaco_text_mini_parser]},
-    {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
-    {load_module, megaco_digit_map, soft_purge, soft_purge, []},
-    {load_module, megaco_flex_scanner, soft_purge, soft_purge, 
-     [megaco_flex_scanner_handler]},
-    {load_module, megaco_text_scanner, soft_purge, soft_purge, []},
-    {load_module, megaco_pretty_text_encoder, 
-     soft_purge, soft_purge, 
-     [megaco_compact_text_encoder_prev3b, megaco_text_scanner]},
-    {load_module, megaco_compact_text_encoder, 
-     soft_purge, soft_purge, 
-     [megaco_pretty_text_encoder_prev3b, megaco_text_scanner]},
-    {load_module, megaco_compact_text_encoder_prev3b, 
-     soft_purge, soft_purge, [megaco_text_parser_prev3b]},
-    {load_module, megaco_pretty_text_encoder_prev3b, 
-     soft_purge, soft_purge, [megaco_text_parser_prev3b]},
-    {load_module, megaco_text_mini_parser, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_prev3b, soft_purge, soft_purge, []},
-
-    {update, megaco_flex_scanner_handler, {advanced, flex_scanner_321},
-     soft_purge, soft_purge, []},
-
-    {update, megaco_config, {advanced, downgrade_to_pre_3_2_3},
-     soft_purge, soft_purge, []}
-
-   ]
-  },
-  {"3.2",
-   [
-    {load_module, megaco_digit_map, soft_purge, soft_purge, []},
-    {load_module, megaco_messenger, soft_purge, soft_purge, [megaco_messenger_misc]},
-    {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
-    {load_module, megaco_flex_scanner, soft_purge, soft_purge, 
-     [megaco_flex_scanner_handler]},
-    {load_module, megaco_text_scanner, soft_purge, soft_purge, []},
-    {load_module, megaco_pretty_text_encoder, 
-     soft_purge, soft_purge, 
-     [megaco_compact_text_encoder_prev3b, megaco_text_scanner]},
-    {load_module, megaco_compact_text_encoder, 
-     soft_purge, soft_purge, 
-     [megaco_pretty_text_encoder_prev3b, megaco_text_scanner]},
-
-    {load_module, megaco_pretty_text_encoder_prev3b, 
-     soft_purge, soft_purge, [megaco_text_parser_prev3b]},
-    {load_module, megaco_compact_text_encoder_prev3b, 
-     soft_purge, soft_purge, [megaco_text_parser_prev3b]},
-    {load_module, megaco_compact_text_encoder_prev3a, 
-     soft_purge, soft_purge, []},
-    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder, soft_purge, soft_purge, []},
     {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
-
-    {load_module, megaco_text_mini_parser, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_prev3b, soft_purge, soft_purge, []},
-
-    {update, megaco_flex_scanner_handler, {advanced, flex_scanner_321},
-     soft_purge, soft_purge, []},
-
-    {update, megaco_config, {advanced, downgrade_to_pre_3_2_3},
-     soft_purge, soft_purge, []}
-
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3b, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_prev3b, soft_purge, soft_purge, []}
    ]
   }
  ]

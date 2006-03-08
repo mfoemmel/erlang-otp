@@ -409,12 +409,12 @@ enc_TransactionReply(#'TransactionReply'{transactionId     = Tid,
 enc_TransactionReply(Bin, _State) when binary(Bin) ->
     [Bin].
 
-enc_immAckRequired(Val, State) ->
+enc_immAckRequired(Val, _State) ->
     case Val of
 	asn1_NOVALUE -> 
 	    [];
 	'NULL'       -> 
-	    [?ImmAckRequiredToken, ?COMMA_INDENT(?INC_INDENT(State))]
+	    [?ImmAckRequiredToken, ?COMMA_INDENT(?INC_INDENT(_State))]
     end.
 
 enc_TransactionReply_transactionResult({'TransactionReply_transactionResult',
@@ -1124,22 +1124,22 @@ enc_IndAudMediaDescriptor_streams({Tag, Val}, State) ->
 enc_IndAudTerminationStateDescriptor(
   #'IndAudTerminationStateDescriptor'{propertyParms = [],
 				      eventBufferControl = asn1_NOVALUE,
-				      serviceState       = 'NULL'}, State) ->
+				      serviceState       = 'NULL'}, _State) ->
     [
      ?TerminationStateToken,
-     ?LBRKT_INDENT(State),
+     ?LBRKT_INDENT(_State),
      ?ServiceStatesToken,
-     ?RBRKT_INDENT(State)
+     ?RBRKT_INDENT(_State)
     ];
 enc_IndAudTerminationStateDescriptor(
   #'IndAudTerminationStateDescriptor'{propertyParms = [],
 				      eventBufferControl = 'NULL',
-				      serviceState = asn1_NOVALUE}, State) ->
+				      serviceState = asn1_NOVALUE}, _State) ->
     [
      ?TerminationStateToken,
-     ?LBRKT_INDENT(State),
+     ?LBRKT_INDENT(_State),
      ?BufferToken,
-     ?RBRKT_INDENT(State)
+     ?RBRKT_INDENT(_State)
     ];
 enc_IndAudTerminationStateDescriptor(
   #'IndAudTerminationStateDescriptor'{propertyParms = [Parms],
@@ -1533,11 +1533,11 @@ enc_ServiceChangeResult({Tag, Val}, State) ->
 		    [
 		     ?LBRKT_INDENT(State),
 		     ?ServicesToken,
-		     fun(S) ->
+		     fun(_S) ->
 			     [
-			      ?LBRKT_INDENT(S),
+			      ?LBRKT_INDENT(_S),
 			      ResParms,
-			      ?RBRKT_INDENT(S)
+			      ?RBRKT_INDENT(_S)
 			     ]
 		     end(?INC_INDENT(State)),
 		     ?RBRKT_INDENT(State)
@@ -1653,20 +1653,24 @@ enc_StreamDescriptor(Val, State)
 %% reservedMode	     = ReservedToken EQUAL ( "ON" / "OFF" )
 %% 
 %% streamMode           = ModeToken EQUAL streamModes
-enc_LocalControlDescriptor(Val, State)
-  when record(Val, 'LocalControlDescriptor') ->
+enc_LocalControlDescriptor(
+  #'LocalControlDescriptor'{streamMode    = asn1_NOVALUE, 
+			    reserveValue  = asn1_NOVALUE, 
+			    reserveGroup  = asn1_NOVALUE, 
+			    propertyParms = []}, _State) ->
+    error({invalid_LocalControlDescriptor, empty});
+enc_LocalControlDescriptor(
+  #'LocalControlDescriptor'{streamMode    = SM, 
+			    reserveValue  = RV, 
+			    reserveGroup  = RG, 
+			    propertyParms = PPs}, State) ->
     [
      ?LocalControlToken,
      ?LBRKT_INDENT(State),
-     enc_list([{[Val#'LocalControlDescriptor'.streamMode],
-		fun enc_StreamMode/2},
-	       {[Val#'LocalControlDescriptor'.reserveGroup],
-		fun enc_reservedGroupMode/2},
-	       {[Val#'LocalControlDescriptor'.reserveValue],
-		fun enc_reservedValueMode/2},
-	       {Val#'LocalControlDescriptor'.propertyParms,
-		fun enc_PropertyParm/2}],
-	      ?INC_INDENT(State)),
+     enc_list([{[SM], fun enc_StreamMode/2},
+	       {[RG], fun enc_reservedGroupMode/2},
+	       {[RV], fun enc_reservedValueMode/2},
+	       {PPs,  fun enc_PropertyParm/2}], ?INC_INDENT(State)),
      ?RBRKT_INDENT(State)
     ].
 
@@ -2041,7 +2045,7 @@ enc_embedFirst(RID, Evs, State)
      enc_list([{Evs, fun enc_SecondRequestedEvent/2}], ?INC_INDENT(State)),
      ?RBRKT_INDENT(State)
     ];
-enc_embedFirst(_RID, _Evs, State) ->
+enc_embedFirst(_RID, _Evs, _State) ->
     %%     d("enc_embedFirst -> entry"),
     [
      ?EventsToken
@@ -2634,7 +2638,7 @@ enc_integer(Val, _State, Min, Max) ->
 %% the elements. Optional asn1_NOVALUE values are ignored.
 
 enc_list(List, State) ->
-    enc_list(List, State, fun(S) -> ?COMMA_INDENT(S) end, false).
+    enc_list(List, State, fun(_S) -> ?COMMA_INDENT(_S) end, false).
 
 enc_list([{Elems, ElemEncoder} | Tail], State, SepEncoder, NeedsSep) ->
     case do_enc_list(Elems, State, ElemEncoder, SepEncoder, NeedsSep) of
@@ -2673,8 +2677,8 @@ do_enc_list([H | T], State, ElemEncoder, SepEncoder, NeedsSep)
 %% Add brackets if list is non-empty
 enc_opt_brackets([], _State) ->
     [];
-enc_opt_brackets(List, State) when list(List) ->
-    [?LBRKT_INDENT(State), List, ?RBRKT_INDENT(State)].
+enc_opt_brackets(List, _State) when list(List) ->
+    [?LBRKT_INDENT(_State), List, ?RBRKT_INDENT(_State)].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

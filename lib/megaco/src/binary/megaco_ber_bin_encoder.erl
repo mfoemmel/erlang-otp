@@ -544,8 +544,8 @@ decode_message([{version3,v3},driver|EC], 3, Binary) ->
     TransMod = ?V3_TRANS_MOD, 
     ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 decode_message([{version3,prev3b}|EC], 3, Binary) ->
-    AsnMod   = ?PREV3A_ASN1_MOD, 
-    TransMod = ?PREV3A_TRANS_MOD, 
+    AsnMod   = ?PREV3B_ASN1_MOD, 
+    TransMod = ?PREV3B_TRANS_MOD, 
     ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 decode_message([{version3,prev3a}|EC], 3, Binary) ->
     AsnMod   = ?PREV3A_ASN1_MOD, 

@@ -57,7 +57,6 @@
 	 del_path/1,
 	 replace_path/2,
 	 rehash/0,
-	 start/0, start/1,
 	 start_link/0, start_link/1,
 	 which/1,
 	 where_is_file/1,
@@ -143,19 +142,13 @@ rehash()          ->   call(rehash).
      
 
 call(Req) ->
-    code_server:call(code_server,Req,infinity).
-
-start() ->
-    start([stick]).
-
-start(Flags) ->
-    do_start(start,Flags).
+    code_server:call(code_server, Req).
 
 start_link() ->
     start_link([stick]).
 
 start_link(Flags) ->
-    do_start(start_link,Flags).
+    do_start(Flags).
     
 %%-----------------------------------------------------------------
 %% In the init phase, code must not use any modules not yet loaded,
@@ -166,7 +159,7 @@ start_link(Flags) ->
 %% file is used in init - this is ok; file has been started before
 %% us, so the module is loaded.
 %%-----------------------------------------------------------------
-do_start(F,Flags) ->    
+do_start(Flags) ->    
 
     %% The following module_info/1 calls are here to ensure
     %% that the modules are loaded prior to their use elsewhere in 
@@ -190,7 +183,7 @@ do_start(F,Flags) ->
     case init:get_argument(root) of 
 	{ok,[[Root0]]} ->
 	    Root = filename:join([Root0]), % Normalize.  Use filename
-	    case code_server:F(code_server,code_server,[Root,Mode],[]) of
+	    case code_server:start_link([Root,Mode]) of
 		{ok,Pid} ->
 		    case Mode of
 			interactive ->

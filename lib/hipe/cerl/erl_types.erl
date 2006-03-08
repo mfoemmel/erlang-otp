@@ -146,6 +146,7 @@
 	 t_fun/0, t_fun/1, t_fun/2,
 	 t_fun_args/1, t_fun_arity/1,
 	 t_fun_range/1, t_identifier/0,
+	 t_has_var/1,
 	 t_inf/2, t_inf_lists/2,
 	 t_integer/0, t_integer/1, t_integers/1,
 	 t_improper_list/0,
@@ -164,7 +165,7 @@
 	 t_is_tuple/1,
 	 t_is_var/1,
 	 t_limit/2,
-	 t_list/0, t_list/1, t_list_elements/1, t_nil/0,
+	 t_list/0, t_list/1, t_list_elements/1, t_mfa/0, t_nil/0,	 
 	 t_number/0, t_number/1, t_number_vals/1,
 	 t_nonempty_list/0, t_nonempty_list/1,
 	 t_pid/0, t_port/0, t_product/1, t_ref/0, t_string/0,
@@ -179,7 +180,7 @@
 -ifndef(NO_UNUSED).
 -export([t_bool/1, t_byte/1, t_char/1, t_cons/1, t_data_arity/1,
 	 t_degree/1, t_data_args/1, t_from_term/2,
-	 t_improper_list/1, t_inf/1, t_is_atom/2, t_is_data/1,
+	 t_improper_list/1, t_inf/1, t_is_data/1,
 	 t_is_identifier/1, t_is_number/2, t_is_string/1,
 	 t_is_n_tuple/2, t_is_nonempty_list/1,
 	 t_nonempty_improper_list/0, t_nonempty_improper_list/1,
@@ -763,7 +764,6 @@ t_is_constant(X) ->
     not t_is_none(t_inf(t_constant(), X)).
 
 
-
 %% @spec t_byte() -> type()
 %%
 %% @doc Returns the <code>byte()</code> type. This is a subset of the
@@ -1147,6 +1147,15 @@ t_tuple_arities(?is_tuple(?any)) -> any;
 t_tuple_arities(?is_tuple(?tuple_arities(Ts))) ->
     [N || ?tuple_arity(N, _) <- Ts];
 t_tuple_arities(_) -> [].
+
+
+%% @spec t_mfa() -> type
+%%
+%% @doc Just a shorthand for the common type {atom(), atom(), integer()}
+%%
+
+t_mfa() ->
+    t_tuple([t_atom(), t_atom(), t_integer()]).
 
 
 %% ---------------------------------------------------------------------
@@ -2754,6 +2763,26 @@ t_subst(T = #var{n = N}, Subs) ->
 	error -> T
     end.
 
+%% @spec t_has_var(T::type()) -> bool()
+%%
+%% @doc Checks if type descriptor <code>T</code> contains any type
+%% variables.
+%%
+%% @see t_var/1
+
+t_has_var(#var{}) ->      true;
+t_has_var(?none) ->       false;
+t_has_var(?any) ->        false;
+t_has_var(?dunion(As)) -> t_any_has_var(As);
+t_has_var(#c{as = As}) -> t_any_has_var(As).
+
+t_any_has_var([H|T]) ->
+    case t_has_var(H) of
+	true -> true;
+	false -> t_any_has_var(T)
+    end;
+t_any_has_var([]) ->
+    false.
 
 %% ---------------------------------------------------------------------
 

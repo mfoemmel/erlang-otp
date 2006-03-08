@@ -482,42 +482,50 @@ int ei_connect_init(ei_cnode* ec, const char* this_node_name,
 	EI_TRACE_ERR1("ei_connect_init","Failed to get host name: %d",
 		      WSAGetLastError());
 #else
-	EI_TRACE_ERR1("ei_connect_init","Failed to get host name: %d",errno);
+	EI_TRACE_ERR1("ei_connect_init","Failed to get host name: %d", errno);
 #endif /* win32 */
 	return ERL_ERROR;
     }
-    
+
     if (this_node_name == NULL)
 	sprintf(thisalivename, "c%d", (int) getpid());
     else
 	strcpy(thisalivename, this_node_name);
     
     if ((hp = ei_gethostbyname(thishostname)) == 0) {
+	/* Looking up IP given hostname fails. We must be on a standalone
+	   host so let's use loopback for communication instead. */
+	if ((hp = ei_gethostbyname("localhost")) == 0) {
 #ifdef __WIN32__
-	char reason[1024];
+	    char reason[1024];
 	
-	win32_error(reason,sizeof(reason));
-	EI_TRACE_ERR2("ei_connect_init",
-		      "Can't get ip address for host %s: %s",
-		      thishostname, reason);
+	    win32_error(reason,sizeof(reason));
+	    EI_TRACE_ERR2("ei_connect_init",
+			  "Can't get ip address for host %s: %s",
+			  thishostname, reason);
 #else
-	EI_TRACE_ERR2("ei_connect_init",
-		      "Can't get ip address for host %s: %d",
-		      thishostname,h_errno);
+	    EI_TRACE_ERR2("ei_connect_init",
+			  "Can't get ip address for host %s: %d",
+			  thishostname, h_errno);
 #endif /* win32 */
-	return ERL_ERROR;
+	    return ERL_ERROR;
+	}
     }
-
-    /* We use a short node name */    
     {
 	char* ct;
-	if ((ct = strchr(hp->h_name, '.')) != NULL) *ct = '\0';
+	if (strcmp(hp->h_name, "localhost") == 0) {
+	    /* We use a short node name */    
+	    if ((ct = strchr(thishostname, '.')) != NULL) *ct = '\0';
+	    sprintf(thisnodename, "%s@%s", this_node_name, thishostname);
+	} else {
+	    /* We use a short node name */    
+	    if ((ct = strchr(hp->h_name, '.')) != NULL) *ct = '\0';
+	    strcpy(thishostname, hp->h_name);
+	    sprintf(thisnodename, "%s@%s", this_node_name, hp->h_name);
+	}
     }
-    strcpy(thishostname, hp->h_name);
-    sprintf(thisnodename, "%s@%s", this_node_name, hp->h_name);
-    
     return ei_connect_xinit(ec, thishostname, thisalivename, thisnodename,
-	(struct in_addr *)*hp->h_addr_list, cookie, creation);
+			    (struct in_addr *)*hp->h_addr_list, cookie, creation);
 }
 
 
@@ -580,23 +588,54 @@ int ei_connect_tmo(ei_cnode* ec, char *nodename, unsigned ms)
 #ifndef __WIN32__
     hp = ei_gethostbyname_r(hostname,&host,buffer,1024,&ei_h_errno);
     if (hp == NULL) {
-	EI_TRACE_ERR2("ei_connect",
-		      "Can't find host for %s: %d\n",nodename,ei_h_errno);
-	erl_errno = EHOSTUNREACH;
-	return ERL_ERROR;
+	char thishostname[EI_MAXHOSTNAMELEN+1];
+	if (gethostname(thishostname,EI_MAXHOSTNAMELEN) < 0) {
+	    EI_TRACE_ERR0("ei_connect_tmo",
+			  "Failed to get name of this host");
+	    erl_errno = EHOSTUNREACH;
+	    return ERL_ERROR;
+	} else {
+	    char *ct;
+	    /* We use a short node name */    
+	    if ((ct = strchr(thishostname, '.')) != NULL) *ct = '\0';
+	}
+	if (strcmp(hostname,thishostname) == 0)
+	    /* Both nodes on same standalone host, use loopback */
+	    hp = ei_gethostbyname_r("localhost",&host,buffer,1024,&ei_h_errno);
+	if (hp == NULL) {
+	    EI_TRACE_ERR2("ei_connect",
+			  "Can't find host for %s: %d\n",nodename,ei_h_errno);
+	    erl_errno = EHOSTUNREACH;
+	    return ERL_ERROR;
+	}
     }
-    
 #else /* __WIN32__ */
     if ((hp = ei_gethostbyname(hostname)) == NULL) {
-	char reason[1024];
-	win32_error(reason,sizeof(reason));
-	EI_TRACE_ERR2("ei_connect",
-		      "Can't find host for %s: %s",nodename,reason);
-	erl_errno = EHOSTUNREACH;
-	return ERL_ERROR;
+	char thishostname[EI_MAXHOSTNAMELEN+1];
+	if (gethostname(thishostname,EI_MAXHOSTNAMELEN) < 0) {
+	    EI_TRACE_ERR1("ei_connect_tmo",
+			  "Failed to get name of this host: %d", 
+			  WSAGetLastError());
+	    erl_errno = EHOSTUNREACH;
+	    return ERL_ERROR;
+	} else {
+	    char *ct;
+	    /* We use a short node name */    
+	    if ((ct = strchr(thishostname, '.')) != NULL) *ct = '\0';
+	}
+	if (strcmp(hostname,thishostname) == 0)
+	    /* Both nodes on same standalone host, use loopback */
+	    hp = ei_gethostbyname("localhost");
+	if (hp == NULL) {
+	    char reason[1024];
+	    win32_error(reason,sizeof(reason));
+	    EI_TRACE_ERR2("ei_connect",
+			  "Can't find host for %s: %s",nodename,reason);
+	    erl_errno = EHOSTUNREACH;
+	    return ERL_ERROR;
+	}
     }
 #endif /* win32 */
-    
     return ei_xconnect_tmo(ec, (Erl_IpAddr) *hp->h_addr_list, alivename, ms);
 } /* ei_connect */
 

@@ -160,6 +160,7 @@
 	 pretty_otp5803_msg02/1,
 	 pretty_otp5805_msg01/1,
 	 pretty_otp5836_msg01/1, 
+	 pretty_otp5882_msg01/1, 
 
 	 flex_pretty_tickets/1, 
 	 flex_pretty_otp5042_msg1/1, 
@@ -488,7 +489,8 @@ pretty_tickets(suite) ->
      pretty_otp5803_msg01,
      pretty_otp5803_msg02,
      pretty_otp5805_msg01,
-     pretty_otp5836_msg01
+     pretty_otp5836_msg01,
+     pretty_otp5882_msg01
     ].
 
 flex_pretty_tickets(suite) ->
@@ -582,7 +584,7 @@ flex_pretty_otp5042_msg1(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msg0 = pretty_otp5042_msg1(),
     Bin0 = list_to_binary(Msg0),
-    case decode_message(megaco_pretty_text_encoder, false, ?EC, Bin0) of
+    case pretty_decode_message(false, ?EC, Bin0) of
 	{error, [{reason, Reason}|_]} ->
 	    case Reason of
 		{_, _Mod, {bad_timeStamp, TimeStamp}} ->
@@ -1775,10 +1777,10 @@ compact_otp5186_msg06(Config) when list(Config) ->
 
 compact_otp5186_msg_1(M1, DecodeExpect, EncodeExpect) ->
     Bin1 = list_to_binary(M1),
-    case decode_message(megaco_compact_text_encoder, false, ?EC, Bin1) of
+    case compact_decode_message(false, ?EC, Bin1) of
 	{ok, Msg} when DecodeExpect == ok ->
  	    io:format(" decoded", []),
-	    case encode_message(megaco_compact_text_encoder, ?EC, Msg) of
+	    case compact_encode_message(?EC, Msg) of
 		{ok, Bin1} when EncodeExpect == ok ->
 		    io:format(", encoded - equal:", []),
 		    ok;
@@ -2302,7 +2304,7 @@ pretty_otp4632_msg1(Config) when list(Config) ->
     d("pretty_otp4632_msg1 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     Msg0 = pretty_otp4632_msg1(),
-    case encode_message(megaco_pretty_text_encoder, ?EC, Msg0) of
+    case pretty_encode_message(?EC, Msg0) of
 	{ok, BinMsg} when binary(BinMsg) ->
 	    {ok, Msg1} = decode_message(megaco_pretty_text_encoder, false, 
 					?EC, BinMsg),
@@ -3635,6 +3637,52 @@ pretty_otp5836(Msg, Conf) ->
     expect_codec_e(ok, megaco_pretty_text_encoder, Msg, Conf).
     
 
+pretty_otp5882_msg01(suite) ->
+    [];
+pretty_otp5882_msg01(Config) when is_list(Config) ->
+    d("pretty_otp5882_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    %% put(severity,trc),
+    %% put(dbg,true),
+    pretty_otp5882().
+
+pretty_otp5882() ->	
+    otp5882(megaco_pretty_text_encoder, []).
+
+otp5882(Codec, Conf) ->		 
+    Msg  = pretty_otp5882_msg01(),
+    case (catch encode_message(Codec, [?EC_V3|Conf], Msg)) of
+	{error, {message_encode_failed, {error, {ActualReason, _}}, _}} ->
+	    case ActualReason of
+		{invalid_LocalControlDescriptor, empty} ->
+		    ok;
+		_ ->
+		    exit({unexpected_error_actual_reason, ActualReason})
+	    end;
+	{error, Reason} ->
+	    exit({unexpected_error_reason, Reason});
+	{ok, Bin} ->
+	    exit({unexpected_encode_sucess, binary_to_list(Bin)})
+    end.
+    
+pretty_otp5882_msg01() ->
+    LCD = #'LocalControlDescriptor'{}, % Create illegal LCD
+    Parms      = cre_StreamParms(LCD),
+    StreamDesc = cre_StreamDesc(1, Parms),
+    MediaDesc  = cre_MediaDesc(StreamDesc),
+    AmmReq     = cre_AmmReq([#megaco_term_id{id = ?A4445}],
+			    [{mediaDescriptor, MediaDesc}]),
+    CmdReq     = cre_CmdReq({modReq, AmmReq}),
+    CID        = cre_CtxID(7301),
+    ActReq     = cre_ActReq(CID, [CmdReq]),
+    Actions    = [ActReq],
+    TransId    = cre_TransId(7302),
+    TransReq   = cre_TransReq(TransId, Actions),
+    Trans      = cre_Trans(TransReq),
+    Mid        = ?MG1_MID,
+    Mess       = cre_Msg(Mid, [Trans]),
+    cre_MegacoMessage(Mess).
+    
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -6382,9 +6430,22 @@ flex_scanner_handler(Pid, Port) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+pretty_decode_message(DynamicDecode, Conf, Bin) ->
+    decode_message(megaco_pretty_text_encoder, DynamicDecode, Conf, Bin).
+
+compact_decode_message(DynamicDecode, Conf, Bin) ->
+    decode_message(megaco_compact_text_encoder, DynamicDecode, Conf, Bin).
+
 decode_message(Codec, DynamicDecode, Conf, Bin) ->
     megaco_codec_test_lib:decode_message(Codec, DynamicDecode, ?VERSION, 
 					 Conf, Bin).
+
+pretty_encode_message(Conf, Msg) ->
+    encode_message(megaco_pretty_text_encoder, Conf, Msg).
+
+compact_encode_message(Conf, Msg) ->
+    encode_message(megaco_compact_text_encoder, Conf, Msg).
+
 encode_message(Codec, Conf, Msg) ->
     megaco_codec_test_lib:encode_message(Codec, ?VERSION, Conf, Msg).
 

@@ -25,6 +25,9 @@ extern void *hipe_make_native_stub(void *beamAddress, unsigned int beamArity);
 #if defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__)
 #include "hipe_ppc.h"
 #endif
+#if defined(__arm__)
+#include "hipe_arm.h"
+#endif
 
 #if !defined(AEXTERN)
 #define AEXTERN(RET,NAME,PROTO)	extern RET NAME PROTO

@@ -469,8 +469,8 @@ compile(Name, File, Opts) ->
 	  _ ->
 	    case Name of
 	      {_M,_F,_A} ->
-		?WARNING_MSG("The option use_callgraph cannot be used when "
-			     "compiling a single function\n", []),
+		%% There is no point in using the callgraph when
+		%% analyzing just one function.
 		[no_use_callgraph|Opts];
 	      _ -> Opts
 	    end
@@ -514,7 +514,7 @@ compile({M,F,A}, _Core, _File, _Opts) ->
   ?WARNING_MSG("Cannot compile single functions from source code. (~p}.\n",[{M,F,A}]),
   {ok, <<>>};  % dummy
 %  compile(M, Core, File, Opts);
-compile(Name, Core, File, Opts) when atom(Name) ->
+compile(Name, Core, File, Opts) when is_atom(Name) ->
   DisasmFun = fun (_) -> {false, []} end,
   IcodeFun = fun (_, Opts) ->
 		 get_core_icode(Name, Core, File, Opts)
@@ -724,8 +724,14 @@ finalize(OrigList, Mod, Exports, WholeModule, Opts) ->
 	[finalize_fun({MFA, Icode}, Opts)
 	 || {MFA, Icode} <- OrdList];
       fixpoint ->
+	%% Check that there is a plt, otherwise make one.
+	NewOpts =
+	  case proplists:get_value(icode_type, Opts) of
+	    {plt, _Plt} -> Opts;
+	    _ -> [{icode_type, {plt, ets:new(hipe_icode_type_plt, [])}}|Opts]
+	  end,
 	CallGraph = hipe_icode_callgraph:construct(List),
-	finalize_fun_fixpoint(CallGraph, Opts);
+	finalize_fun_fixpoint(CallGraph, NewOpts);
       _ -> 
 	%% Compiling the functions bottom-up by reversing the list
 	OrdList = lists:reverse(List),
@@ -775,6 +781,7 @@ finalize_fun({MFA, Icode}, Opts) ->
       case Platform of
 	ultrasparc -> {Entry,Ct} = Code, {MFA,Entry,Ct};
 	powerpc -> {MFA, Code};
+	arm -> {MFA, Code};
 	x86 -> {MFA, Code};
         amd64 -> {MFA, Code}
       end;
@@ -782,6 +789,8 @@ finalize_fun({MFA, Icode}, Opts) ->
       io:format("~p~n", [LinearRtl]),
       {MFA, LinearRtl};
     {type_only, Fixpoint} ->
+      ?when_option(verbose, Opts,
+		   ?debug_untagged_msg("\n", [])),
       {MFA, Fixpoint};
     {dialyzer, IcodeSSA} ->
       {MFA, IcodeSSA};
@@ -815,9 +824,10 @@ finalize_fun_fixpoint(CallGraph, Opts, Acc) ->
 	  %% One function
 	  finalize_fun_fixpoint(NewCallGraph, Opts, 
 				[finalize_fun(SCC, Opts)|Acc]);
-	{SCC, NewCallGraph} ->
-	  %% Ensure that this is only used with the option type_only
-	  Res = plt_fixpoint_loop(SCC, [type_only|Opts]),
+	{SCC, NewCallGraph} ->	  
+	  plt_fixpoint_loop(SCC, Opts),
+	  %% Now generate the result.
+	  Res = [finalize_fun(X, Opts) || X <- SCC],
 	  finalize_fun_fixpoint(NewCallGraph, Opts, [Res|Acc])
       end
   end.
@@ -828,35 +838,30 @@ plt_fixpoint_loop(SCC, Opts) ->
       %% Ensure warnings are only sent once.
       TmpOpts = proplists:normalize([no_type_warnings|Opts], 
 				    [{negations, opt_negations()}]),
-      {_Res, Redo} = plt_fixpoint_loop(SCC, false, TmpOpts, []),
+      Redo = plt_fixpoint_loop(SCC, false, TmpOpts),
       case Redo of
-	true ->
-	  plt_fixpoint_loop(SCC, Opts);
-	false -> 
-	  %% Additional pass to emit warnings.
-	  {Res1, _} = plt_fixpoint_loop(SCC, false, Opts, []),
-	  Res1
+	true -> plt_fixpoint_loop(SCC, Opts);
+	false -> ok
       end;
     _ ->
-      {Res, Redo} = plt_fixpoint_loop(SCC, false, Opts, []),
+      %% Ensure that this is only used with the option type_only
+      Redo = plt_fixpoint_loop(SCC, false, [type_only|Opts]),
       case Redo of
-	true ->
-	  plt_fixpoint_loop(SCC, Opts);
-	false -> 
-	  Res
+	true -> plt_fixpoint_loop(SCC, Opts);
+	false -> ok
       end
   end.
 
-plt_fixpoint_loop([Fun = {MFA, _}|Left], Redo, Opts, Acc) ->
+plt_fixpoint_loop([Fun = {MFA, _}|Left], Redo, Opts) ->
   Res = finalize_fun(Fun, Opts),
   case Res of
     {MFA, fixpoint} ->
-      plt_fixpoint_loop(Left, Redo, Opts, [Res|Acc]);
+      plt_fixpoint_loop(Left, Redo, Opts);
     {MFA, not_fixpoint} -> 
-      plt_fixpoint_loop(Left, true, Opts, [Res|Acc])
+      plt_fixpoint_loop(Left, true, Opts)
   end;
-plt_fixpoint_loop([], Redo, _Opts, Acc) ->
-  {Acc, Redo}.
+plt_fixpoint_loop([], Redo, _Opts) ->
+  Redo.
 
 
 maybe_load(Mod, Bin, WholeModule, Opts) ->
@@ -905,6 +910,8 @@ assemble(CompiledCode, Closures, Exports, Options) ->
       hipe_sparc_assemble:assemble(CompiledCode, Closures, Exports, Options);
     powerpc ->
       hipe_ppc_assemble:assemble(CompiledCode, Closures, Exports, Options);
+    arm ->
+      hipe_arm_assemble:assemble(CompiledCode, Closures, Exports, Options);
     x86 ->
       hipe_x86_assemble:assemble(CompiledCode, Closures, Exports, Options);
     amd64 ->
@@ -1370,6 +1377,8 @@ o1_opts() ->
       [sparc_peephole, fill_delayslot | Common];
     powerpc ->
       Common;
+    arm ->
+      Common -- [inline_fp]; % it's pointless optimising for absent/emulated hardware
     x86 ->
       [x87 | Common]; %% XXX: Temporary until x86 has sse2
     amd64 ->
@@ -1387,12 +1396,14 @@ o2_opts() ->
       [sparc_prop | Common];	% no rtl_lcm here; untagged values over GC...
     powerpc ->
       [rtl_lcm | Common];
+    arm ->
+      [rtl_lcm | Common];
     x86 ->
       [rtl_lcm | Common];
       % [rtl_ssapre | Common];
     amd64 ->
       [rtl_lcm | Common];
-    Arch -> 
+    Arch ->
       ?EXIT({executing_on_an_unsupported_architecture,Arch})
   end.
 
@@ -1402,6 +1413,8 @@ o3_opts() ->
     ultrasparc ->
       Common;
     powerpc ->
+      Common;
+    arm ->
       Common;
     x86 ->
       Common;
@@ -1487,6 +1500,7 @@ opt_expansions() ->
   [{{'O', 1}, [{'O', 1} | o1_opts()]},
    {{'O', 2}, [{'O', 2} | o2_opts()]},
    {{'O', 3}, [{'O', 3} | o3_opts()]},
+   {kt2_type, [{use_callgraph, fixpoint}, core, {core_transform, cerl_typean}]},
    {x87, [x87, inline_fp]},
    {inline_fp, case get(hipe_target_arch) of %% XXX: Temporary until x86
 		 x86 -> [x87, inline_fp];    %%       has sse2

@@ -74,15 +74,16 @@
 		   tree,    % The actual tree
 		   subagents = []}).
 
--record(mib_info,{name,symbolic,file_name}).
--record(node_info,{oid, mib_name, me}).
+-record(mib_info,  {name, symbolic, file_name}).
+-record(node_info, {oid, mib_name, me}).
 
 
 %% API
--export([new/0, new/1, store/1, close/1, 
+-export([new/0, new/1, sync/1, close/1, 
 	 load_mib/4, unload_mib/4, which_mibs/1, whereis_mib/2, 
 	 info/1, info/2,
 	 dump/1, dump/2, 
+	 backup/2, 
 	 lookup/2, next/3, which_mib/2, 
 	 register_subagent/3, unregister_subagent/2]).
 
@@ -232,9 +233,20 @@ do_read_mib(ActualFileName) ->
             Mib
     end.
 
-store(#mib_data{tree_db = Db, tree = Tree, subagents = []}) ->
-    snmpa_general_db:write(Db, Tree);
-store(#mib_data{tree_db = Db, tree = Tree, subagents = SAs}) ->
+%% The Tree DB is handled in a special way since it can be very large.
+sync(#mib_data{mib_db  = M, 
+	       node_db = N, 
+	       tree_db = T, tree = Tree, subagents = []}) ->
+    snmpa_general_db:sync(M),
+    snmpa_general_db:sync(N),
+    snmpa_general_db:write(T, Tree),
+    snmpa_general_db:sync(T);
+sync(#mib_data{mib_db  = M, 
+	       node_db = N, 
+	       tree_db = T, tree = Tree, subagents = SAs}) ->
+
+    snmpa_general_db:sync(M),
+    snmpa_general_db:sync(N),
 
     %% Ouch. Since the subagent info is dynamic we do not 
     %% want to store the tree containing subagent info. So, we 
@@ -242,7 +254,8 @@ store(#mib_data{tree_db = Db, tree = Tree, subagents = SAs}) ->
 
     case delete_subagents(Tree, SAs) of
 	{ok, TreeWithoutSAs} ->
-	    snmpa_general_db:write(Db, TreeWithoutSAs);
+	    snmpa_general_db:write(T, TreeWithoutSAs),
+	    snmpa_general_db:sync(T);
 	Error ->
 	    Error
     end.
@@ -493,6 +506,27 @@ dump(#mib_data{mib_db = MibDb, node_db = NodeDb, tree = Tree}, File) ->
 		   [File,Reason]),
 	    {error,Reason}
     end.
+
+
+backup(#mib_data{mib_db = M, node_db = N, tree_db = T}, BackupDir) ->
+    MRes = snmpa_general_db:backup(M, BackupDir),
+    NRes = snmpa_general_db:backup(N, BackupDir),
+    TRes = snmpa_general_db:backup(T, BackupDir),
+    handle_backup_res([{mib_db, MRes}, {node_db, NRes}, {tree_db, TRes}]).
+
+handle_backup_res(Res) ->
+    handle_backup_res(Res, []).
+
+handle_backup_res([], []) ->
+    ok;
+handle_backup_res([], Err) ->
+    {error, lists:reverse(Err)};
+handle_backup_res([{_, ok}|Res], Err) ->
+    handle_backup_res(Res, Err);
+handle_backup_res([{Tag, {error, Reason}}|Res], Err) ->
+    handle_backup_res(Res, [{Tag, Reason}|Err]);
+handle_backup_res([{Tag, Error}|Res], Err) ->
+    handle_backup_res(Res, [{Tag, Error}|Err]).
 
 
 %%%======================================================================
@@ -1308,8 +1342,6 @@ drop_internal_and_imported(_) -> true.
 %% Code change functions
 %%----------------------------------------------------------------------
 
-%% Note that up/down-grade will only be supported from/to 
-%% 3.4 versions of SNMP.
 code_change(down, State) ->
     ?d("code_change(down) -> entry",[]),
     State;

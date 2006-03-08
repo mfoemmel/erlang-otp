@@ -19,10 +19,8 @@
 
 %% This file holds the server part of the code_server.
 
--export([start/4,
-	 start_link/4,
-	 init/2,
-	 call/3,
+-export([start_link/1,
+	 call/2,
 	 system_continue/3, 
 	 system_terminate/4,
 	 system_code_change/4,
@@ -41,21 +39,13 @@
 	       cache = no_cache,
 	       mode=interactive}).
 
-
-start(_Name, _Mod, Args, _) ->
-    Init = fun() -> init(self(),Args) end,
-    spawn_link(Init),
-    receive 
-	Msg -> Msg
-    end.
-
-start_link(_Name, _Mod, Args, _) ->
+start_link(Args) ->
+    Ref = make_ref(),
     Parent = self(),
-    Init = fun() -> init(Parent,Args) end,
+    Init = fun() -> init(Ref, Parent, Args) end,
     spawn_link(Init),
     receive 
-	Res ->     
-	    Res
+	{Ref,Res} -> Res
     end.
 
 
@@ -63,10 +53,9 @@ start_link(_Name, _Mod, Args, _) ->
 %% Init the code_server process.
 %% -----------------------------------------------------------
 
-init(Parent, [Root, Mode]) ->
+init(Ref, Parent, [Root,Mode]) ->
     register(?MODULE, self()),
     process_flag(trap_exit, true),
-
 
     IPath = if Mode == interactive ; Mode == minimal ->
 		    LibDir = filename:append(Root, "lib"),
@@ -99,16 +88,14 @@ init(Parent, [Root, Mode]) ->
 		    create_cache(State0)
 	    end,
     
-    Parent ! {ok, self()},
+    Parent ! {Ref,{ok,self()}},
     loop(State#state{supervisor=Parent}).
 
-call(Name, Req, Timeout) ->
+call(Name, Req) ->
     Name ! {code_call, self(), Req},
     receive 
 	{?MODULE, Reply} ->
 	    Reply
-    after Timeout ->
-	    exit({timeout, ?MODULE, Req})
     end.
 
 reply(Pid, Res) ->

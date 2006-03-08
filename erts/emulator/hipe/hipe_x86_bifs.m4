@@ -247,9 +247,10 @@ $1:
  * nofail_primop_interface_0(nbif_name, cbif_name)
  * nofail_primop_interface_1(nbif_name, cbif_name)
  * nofail_primop_interface_2(nbif_name, cbif_name)
+ * nofail_primop_interface_3(nbif_name, cbif_name)
  *
  * Generate native interface for a primop with implicit P
- * parameter, 0-2 ordinary parameters and no failure mode.
+ * parameter, 0-3 ordinary parameters and no failure mode.
  * Also used for guard BIFs.
  */
 define(nofail_primop_interface_0,
@@ -332,6 +333,37 @@ $1:
 
 	/* return */
 	NBIF_RET(2)
+	.size	$1,.-$1
+	.type	$1,@function
+#endif')
+
+define(nofail_primop_interface_3,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	.section ".text"
+	.align	4
+	.global	$1
+$1:
+	/* copy native stack pointer */
+	NBIF_COPY_NSP(3)
+
+	/* switch to C stack */
+	SWITCH_ERLANG_TO_C
+
+	/* make the call on the C stack */
+	pushl	NBIF_ARG(3,2)
+	pushl	NBIF_ARG(3,1)
+	pushl	NBIF_ARG(3,0)
+	pushl	P
+	call	$2
+	addl	`$'16, %esp
+
+	/* switch to native stack */
+	SWITCH_C_TO_ERLANG
+
+	/* return */
+	NBIF_RET(3)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -495,7 +527,7 @@ $1:
 	.type	$1,@function
 #endif')
 
-/* 
+/*
  * noproc_primop_interface_0(nbif_name, cbif_name)
  * noproc_primop_interface_1(nbif_name, cbif_name)
  * noproc_primop_interface_2(nbif_name, cbif_name)
@@ -652,13 +684,6 @@ $1:
  * x86-specific primops.
  */
 noproc_primop_interface_0(nbif_handle_fp_exception, erts_restore_fpu)
-
-/*
- * BIFs that may trigger a native stack walk with p->narity != 0.
- * Relevant on x86 when NR_ARG_REGS < 2.
- */
-standard_bif_interface_2(nbif_check_process_code_2, hipe_x86_check_process_code_2)
-standard_bif_interface_1(nbif_garbage_collect_1, hipe_x86_garbage_collect_1)
 
 /*
  * Implement gc_nofail_primop_interface_1 as nofail_primop_interface_1.

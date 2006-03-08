@@ -39,12 +39,18 @@ static __inline__ void hipe_set_narity(Process *p, unsigned int arity)
 #if defined(__powerpc64__)
 #define hipe_arch_name	am_ppc64
 #define AEXTERN(RET,NAME,PROTO)	extern const int NAME
+AEXTERN(void,hipe_ppc_inc_stack,(void));
 #else
 #define hipe_arch_name	am_powerpc
+extern void hipe_ppc_inc_stack(void); /* we don't have the AEXTERN() fallback :-( */
 #endif
 
 /* for hipe_bifs_enter_code_2 */
 extern void *hipe_alloc_code(Uint nrbytes, Eterm callees, Eterm *trampolines, Process *p);
 #define HIPE_ALLOC_CODE(n,c,t,p) hipe_alloc_code((n),(c),(t),(p))
+
+#if !defined(__powerpc64__)
+extern const unsigned int fconv_constant[];
+#endif
 
 #endif /* HIPE_PPC_H */

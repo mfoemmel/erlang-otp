@@ -51,6 +51,7 @@ MODULES= \
 	erl_bits \
 	erl_compile \
 	erl_eval \
+	erl_expand_records \
 	erl_internal \
 	erl_lint \
 	erl_parse \

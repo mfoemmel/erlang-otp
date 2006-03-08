@@ -85,10 +85,10 @@
 
 %%----------------------------------------------------------------------
 
-start_link(Name) when list(Name) ->
+start_link(Name) when is_list(Name) ->
     start(Name, self()).
 
-start_link(Name, Node) when list(Name), Node /= node() ->
+start_link(Name, Node) when is_list(Name) and (Node /= node()) ->
     case rpc:call(Node, ?MODULE, start, [Name, self()]) of
 	{ok, Pid} ->
 	    link(Pid),
@@ -96,7 +96,7 @@ start_link(Name, Node) when list(Name), Node /= node() ->
 	Error ->
 	    Error
     end;
-start_link(Name, Node) when list(Name), Node == node() ->
+start_link(Name, Node) when is_list(Name) and (Node == node()) ->
     case start(Name, self()) of
 	{ok, Pid} ->
 	    link(Pid),
@@ -105,7 +105,7 @@ start_link(Name, Node) when list(Name), Node == node() ->
 	    Error
     end.	    
 
-start(Name, Pid) when pid(Pid) ->
+start(Name, Pid) when is_pid(Pid) ->
     proc_lib:start(?MODULE, init, [Name, self(), Pid]).
 
 
@@ -235,7 +235,7 @@ loop(#state{parent = Parent} = State) ->
 
 %%% ----------------------------------------------------------------
 
-abort(#state{handler = Pid}) when pid(Pid) ->    
+abort(#state{handler = Pid}) when is_pid(Pid) ->    
     Pid ! {stop, self()};
 abort(_) ->
     ok.
@@ -271,7 +271,7 @@ tcp_handler_main(Name, Instructions, Parent) ->
 %%                 {accept, {Addr, Port}} |
 %%                 {sleep, To} |
 %%                 
-handle_tcp(Instructions0) when list(Instructions0) ->
+handle_tcp(Instructions0) when is_list(Instructions0) ->
     case (catch parse_tcp(Instructions0, [])) of
 	{ok, Instructions} ->
 	    (catch handle_tcp1(Instructions));
@@ -287,7 +287,7 @@ handle_tcp1([], #tcp{result = Res} = Tcp) ->
     {Tcp, Reply};
 handle_tcp1([Instruction|Instructions], Tcp0) ->
     case (catch do_tcp(Instruction, Tcp0)) of
-	Tcp when record(Tcp, tcp) ->
+	Tcp when is_record(Tcp, tcp) ->
 	    handle_tcp1(Instructions, Tcp);
 	Error ->
 	    {Tcp0, Error}
@@ -411,7 +411,7 @@ do_tcp({expect_receive, Desc, {Verify, To}},
 	{tcp, Sock, <<3:8, _X:8, Length:16, Msg/binary>>} ->
 	    d("expect_receive -> received message: Length = ~p", [Length]),
 	    case (catch Decode(Msg)) of
-		{ok, MegaMsg} when tuple(MegaMsg) ->
+		{ok, MegaMsg} when is_tuple(MegaMsg) ->
 		    d("expect_receive -> decode successfull, now verify"),
 		    case (catch Verify(MegaMsg)) of
 			{ok, Res} ->
@@ -471,25 +471,25 @@ parse_tcp([{debug, Debug}|Instrs], RevInstrs)
 %% 
 
 parse_tcp([{encode, Encode}|Instrs], RevInstrs) 
-  when function(Encode) ->
+  when is_function(Encode) ->
     parse_tcp(Instrs, [{encode, Encode}|RevInstrs]);
 
 parse_tcp([{decode, Decode}|Instrs], RevInstrs) 
-  when function(Decode) ->
+  when is_function(Decode) ->
     parse_tcp(Instrs, [{decode, Decode}|RevInstrs]);
 
 parse_tcp([disconnect|Instrs], RevInstrs) ->
     parse_tcp(Instrs, [disconnect|RevInstrs]);
 
 parse_tcp([{listen, Port}|Instrs], RevInstrs) 
-  when integer(Port), Port > 0 ->
+  when is_integer(Port), Port > 0 ->
     parse_tcp(Instrs, [{listen, Port}|RevInstrs]);
 
 parse_tcp([{expect_accept, any}|Instrs], RevInstrs) ->
     parse_tcp(Instrs, [{expect_accept, {any, infinity}}|RevInstrs]);
 
 parse_tcp([{expect_accept, {any, To}}|Instrs], RevInstrs) 
-  when integer(To), To >= 0 ->
+  when is_integer(To), To >= 0 ->
     parse_tcp(Instrs, [{expect_accept, {any, To}}|RevInstrs]);
 
 parse_tcp([{expect_accept, {Host, infinity}}|Instrs], RevInstrs) ->
@@ -497,7 +497,7 @@ parse_tcp([{expect_accept, {Host, infinity}}|Instrs], RevInstrs) ->
     parse_tcp(Instrs, [{expect_accept, {Addr, infinity}}|RevInstrs]);
 
 parse_tcp([{expect_accept, {Host, To}}|Instrs], RevInstrs) 
-  when integer(To), To >= 0 ->
+  when is_integer(To), To >= 0 ->
     {ok, Addr} = inet:getaddr(Host, inet),
     parse_tcp(Instrs, [{expect_accept, {Addr, To}}|RevInstrs]);
 
@@ -506,46 +506,46 @@ parse_tcp([{expect_accept, Host}|Instrs], RevInstrs) ->
     parse_tcp(Instrs, [{expect_accept, {Addr, infinity}}|RevInstrs]);
 
 parse_tcp([{connect, Port}|Instrs], RevInstrs) 
-  when integer(Port), Port > 0 ->
+  when is_integer(Port), Port > 0 ->
     {ok, Host} = inet:gethostname(),
     {ok, Addr} = inet:getaddr(Host, inet),
     parse_tcp(Instrs, [{connect, {Addr, Port, infinity}}|RevInstrs]);
 
 parse_tcp([{connect, {Port, infinity}}|Instrs], RevInstrs) 
-  when integer(Port), Port > 0 ->
+  when is_integer(Port), Port > 0 ->
     {ok, Host} = inet:gethostname(),
     {ok, Addr} = inet:getaddr(Host, inet),
     parse_tcp(Instrs, [{connect, {Addr, Port, infinity}}|RevInstrs]);
 
 parse_tcp([{connect, {Port, To}}|Instrs], RevInstrs) 
-  when integer(Port), Port > 0,
-       integer(To), To > 0 ->
+  when is_integer(Port) and (Port > 0) and 
+       is_integer(To) and (To > 0) ->
     {ok, Host} = inet:gethostname(),
     {ok, Addr} = inet:getaddr(Host, inet),
     parse_tcp(Instrs, [{connect, {Addr, Port, To}}|RevInstrs]);
 
 parse_tcp([{connect, {Host, Port}}|Instrs], RevInstrs) 
-  when integer(Port), Port > 0 ->
+  when is_integer(Port) and (Port > 0) ->
     {ok, Addr} = inet:getaddr(Host, inet),
     parse_tcp(Instrs, [{connect, {Addr, Port, infinity}}|RevInstrs]);
 
 parse_tcp([{connect, {Host, Port, infinity}}|Instrs], RevInstrs) 
-  when integer(Port), Port > 0 ->
+  when is_integer(Port) and (Port > 0) ->
     {ok, Addr} = inet:getaddr(Host, inet),
     parse_tcp(Instrs, [{connect, {Addr, Port, infinity}}|RevInstrs]);
 
 parse_tcp([{connect, {Host, Port, To}}|Instrs], RevInstrs) 
-  when integer(Port), Port > 0,
-       integer(To), To > 0 ->
+  when is_integer(Port) and (Port > 0) and
+       is_integer(To) and (To > 0) ->
     {ok, Addr} = inet:getaddr(Host, inet),
     parse_tcp(Instrs, [{connect, {Addr, Port, To}}|RevInstrs]);
 
 parse_tcp([{sleep, To}|Instrs], RevInstrs) 
-  when integer(To), To > 0 ->
+  when is_integer(To) and (To > 0) ->
     parse_tcp(Instrs, [{sleep, To}|RevInstrs]);
 
 parse_tcp([{expect_nothing, To}|Instrs], RevInstrs) 
-  when integer(To), To > 0 ->
+  when is_integer(To) and (To > 0) ->
     parse_tcp(Instrs, [{expect_nothing, To}|RevInstrs]);
 
 parse_tcp([{send, Desc, Msg}|Instrs], RevInstrs) 
@@ -553,15 +553,13 @@ parse_tcp([{send, Desc, Msg}|Instrs], RevInstrs)
     parse_tcp(Instrs, [{send, Desc, Msg}|RevInstrs]);
 
 parse_tcp([{expect_receive, Desc, Verify}|Instrs], RevInstrs) 
-  when list(Desc), 
-       function(Verify) ->
+  when is_list(Desc) and is_function(Verify) ->
     ExpRecv = {expect_receive, Desc, {Verify, infinity}},
     parse_tcp(Instrs, [ExpRecv|RevInstrs]);
 
 parse_tcp([{expect_receive, Desc, {Verify, To}}|Instrs], RevInstrs) 
-  when list(Desc), 
-       function(Verify),
-       integer(To), To > 0 ->
+  when is_list(Desc) and is_function(Verify) and 
+       is_integer(To) and (To > 0) ->
     ExpRecv = {expect_receive, Desc, {Verify, To}},
     parse_tcp(Instrs, [ExpRecv|RevInstrs]);
 
@@ -589,7 +587,7 @@ megaco_handler_main(Name, Instructions, Parent) ->
 %% instruction() = {debug,  Debug}  |
 %%                 {sleep, To} |
 %%                 
-handle_megaco(Instructions0) when list(Instructions0) ->
+handle_megaco(Instructions0) when is_list(Instructions0) ->
     case (catch parse_megaco(Instructions0, [])) of
 	{ok, Instructions} ->
 	    (catch handle_megaco1(Instructions));
@@ -608,9 +606,9 @@ handle_megaco1([Instruction|Instructions], State0) ->
     d("handle_megaco1 -> entry with"
       "~n   Instruction: ~p", [Instruction]),
     case (catch do_megaco(Instruction, State0)) of
-	State when record(State, megaco) ->
+	State when is_record(State, megaco) ->
 	    handle_megaco1(Instructions, State);
-	{error, State} when record(State, megaco) ->
+	{error, State} when is_record(State, megaco) ->
 	    p("handle_megaco1 -> error"), 
 	    Reply = {error, {{instruction_failed, Instruction, Instructions},
 			     lists:reverse(State#megaco.result)}},
@@ -715,20 +713,28 @@ do_megaco({connect, Host, Opts0},
     case TM of
 	megaco_tcp ->
 	    Opts = [{host, Host}, {port, Port}, {receive_handle, RH}|Opts0],
-	    {ok, SH, ControlPid} = megaco_tcp:connect(Sup, Opts),
-	    d("tcp connected: ~p, ~p", [SH, ControlPid]),
-	    megaco_connector_start(RH, PrelMid, SH, ControlPid),
-	    State#megaco{send_handle = SH,
-			 ctrl_pid    = ControlPid};
+	    case (catch megaco_tcp:connect(Sup, Opts)) of
+		{ok, SH, ControlPid} ->
+		    d("tcp connected: ~p, ~p", [SH, ControlPid]),
+		    megaco_connector_start(RH, PrelMid, SH, ControlPid),
+		    State#megaco{send_handle = SH,
+				 ctrl_pid    = ControlPid};
+		Error ->
+		    megaco_error({connect, tcp, Host, Opts0}, Error)
+	    end;
 	megaco_udp ->
 	    Opts = [{port, 0}, {receive_handle, RH}|Opts0],
             d("udp open", []),
-	    {ok, Handle, ControlPid} = megaco_udp:open(Sup, Opts),
-	    d("udp opened: ~p, ~p", [Handle, ControlPid]),
-	    SH = megaco_udp:create_send_handle(Handle, Host, Port),
-	    megaco_connector_start(RH, PrelMid, SH, ControlPid),
-	    State#megaco{send_handle = SH,
-			 ctrl_pid    = ControlPid}
+	    case (catch megaco_udp:open(Sup, Opts)) of
+		{ok, Handle, ControlPid} ->
+		    d("udp opened: ~p, ~p", [Handle, ControlPid]),
+		    SH = megaco_udp:create_send_handle(Handle, Host, Port),
+		    megaco_connector_start(RH, PrelMid, SH, ControlPid),
+		    State#megaco{send_handle = SH,
+				 ctrl_pid    = ControlPid};
+		Error ->
+		    megaco_error({connect, udp, Host, Opts0}, Error)
+	    end
     end;
 
 do_megaco(megaco_connect, State) ->
@@ -911,7 +917,7 @@ megaco_callback_verify(Verifiers0, Type, Msg, Pid, State0) ->
     Tag = element(1,Msg),
     d("megaco_callback_verify -> Tag: ~w",[Tag]),
     case lists:keysearch(Tag, 1, Verifiers0) of
-	{value, {Tag, N, Verify}} when N > 0, function(Verify) ->
+	{value, {Tag, N, Verify}} when (N > 0) and is_function(Verify) ->
 	    d("megaco_callback_verify -> N: ~w",[N]),
 	    case Verify(Msg) of
 		{VRes, Res, Reply} ->
@@ -1028,12 +1034,12 @@ parse_megaco([{megaco_trace, Level}|Instrs], RevInstrs)
     parse_megaco(Instrs, [Trace|RevInstrs]);
 
 parse_megaco([{megaco_trace, Level}|Instrs], RevInstrs) 
-  when integer(Level) ->
+  when is_integer(Level) ->
     Trace = {megaco_trace, Level},
     parse_megaco(Instrs, [Trace|RevInstrs]);
 
 parse_megaco([{sleep, To}|Instrs], RevInstrs) 
-  when integer(To), To > 0 ->
+  when is_integer(To) and (To > 0) ->
     parse_megaco(Instrs, [{sleep, To}|RevInstrs]);
 
 parse_megaco([megaco_start|Instrs], RevInstrs) ->
@@ -1043,7 +1049,7 @@ parse_megaco([megaco_stop|Instrs], RevInstrs) ->
     parse_megaco(Instrs, [megaco_stop|RevInstrs]);
 
 parse_megaco([{megaco_start_user, Mid, RecvInfo, Conf}|Instrs], RevInstrs) 
-  when list(Conf) ->
+  when is_list(Conf) ->
     Start = {megaco_start_user, Mid, RecvInfo, Conf},
     parse_megaco(Instrs, [Start|RevInstrs]);
 
@@ -1051,27 +1057,27 @@ parse_megaco([megaco_stop_user|Instrs], RevInstrs) ->
     parse_megaco(Instrs, [megaco_stop_user|RevInstrs]);
 
 parse_megaco([{megaco_system_info, Tag}|Instrs], RevInstrs) 
-  when atom(Tag) ->
+  when is_atom(Tag) ->
     Info = {megaco_system_info, Tag},
     parse_megaco(Instrs, [Info|RevInstrs]);
 
 parse_megaco([{megaco_user_info, Tag}|Instrs], RevInstrs) 
-  when atom(Tag) ->
+  when is_atom(Tag) ->
     Info = {megaco_user_info, Tag},
     parse_megaco(Instrs, [Info|RevInstrs]);
 
 parse_megaco([{megaco_update_user_info, Tag, Val}|Instrs], RevInstrs) 
-  when atom(Tag) ->
+  when is_atom(Tag) ->
     Update = {megaco_update_user_info, Tag, Val},
     parse_megaco(Instrs, [Update|RevInstrs]);
 
 parse_megaco([{megaco_conn_info, Tag}|Instrs], RevInstrs) 
-  when atom(Tag) ->
+  when is_atom(Tag) ->
     Info = {megaco_conn_info, Tag},
     parse_megaco(Instrs, [Info|RevInstrs]);
 
 parse_megaco([{megaco_update_conn_info, Tag, Val}|Instrs], RevInstrs) 
-  when atom(Tag) ->
+  when is_atom(Tag) ->
     Update = {megaco_update_conn_info, Tag, Val},
     parse_megaco(Instrs, [Update|RevInstrs]);
 
@@ -1082,7 +1088,7 @@ parse_megaco([listen|Instrs], RevInstrs) ->
     Listen = {listen, []},
     parse_megaco(Instrs, [Listen|RevInstrs]);
 
-parse_megaco([{listen, Opts}|Instrs], RevInstrs) when list(Opts) ->
+parse_megaco([{listen, Opts}|Instrs], RevInstrs) when is_list(Opts) ->
     Listen = {listen, Opts},
     parse_megaco(Instrs, [Listen|RevInstrs]);
 
@@ -1092,7 +1098,7 @@ parse_megaco([connect|Instrs], RevInstrs) ->
     parse_megaco(Instrs, [Conn|RevInstrs]);
 
 parse_megaco([{connect, [{Key, _Val}|_] = Opts}|Instrs], RevInstrs) 
-  when atom(Key) ->
+  when is_atom(Key) ->
     {ok, LocalHost} = inet:gethostname(),
     Conn = {connect, LocalHost, Opts},
     parse_megaco(Instrs, [Conn|RevInstrs]);
@@ -1122,42 +1128,42 @@ parse_megaco([{megaco_disconnect, Reason}|Instrs], RevInstrs) ->
     parse_megaco(Instrs, [Disco|RevInstrs]);
 
 parse_megaco([{megaco_call, ARs, Opts}|Instrs], RevInstrs) 
-  when list(ARs), list(Opts) ->
+  when is_list(ARs) and is_list(Opts) ->
     Call = {megaco_call, ARs, Opts},
     parse_megaco(Instrs, [Call|RevInstrs]);
 
 parse_megaco([{megaco_call, Mid, ARs, Opts}|Instrs], RevInstrs) 
-  when list(ARs), list(Opts) ->
+  when is_list(ARs) and is_list(Opts) ->
     Call = {megaco_call, Mid, ARs, Opts},
     parse_megaco(Instrs, [Call|RevInstrs]);
 
 parse_megaco([{megaco_call, Mid, ARs, Opts}|Instrs], RevInstrs) 
-  when binary(ARs), list(Opts) ->
+  when is_binary(ARs) and is_list(Opts) ->
     Call = {megaco_call, Mid, ARs, Opts},
     parse_megaco(Instrs, [Call|RevInstrs]);
 
 parse_megaco([{megaco_call, ARs, Opts}|Instrs], RevInstrs) 
-  when binary(ARs), list(Opts) ->
+  when is_binary(ARs) and is_list(Opts) ->
     Call = {megaco_call, ARs, Opts},
     parse_megaco(Instrs, [Call|RevInstrs]);
 
 parse_megaco([{megaco_cast, ARs, Opts}|Instrs], RevInstrs) 
-  when list(ARs), list(Opts) ->
+  when is_list(ARs) and is_list(Opts) ->
     Cast = {megaco_cast, ARs, Opts},
     parse_megaco(Instrs, [Cast|RevInstrs]);
 
 parse_megaco([{megaco_cast, Mid, ARs, Opts}|Instrs], RevInstrs) 
-  when list(ARs), list(Opts) ->
+  when is_list(ARs) and is_list(Opts) ->
     Cast = {megaco_cast, Mid, ARs, Opts},
     parse_megaco(Instrs, [Cast|RevInstrs]);
 
 parse_megaco([{megaco_cast, ARs, Opts}|Instrs], RevInstrs) 
-  when binary(ARs), list(Opts) ->
+  when is_binary(ARs) and is_list(Opts) ->
     Cast = {megaco_cast, ARs, Opts},
     parse_megaco(Instrs, [Cast|RevInstrs]);
 
 parse_megaco([{megaco_cast, Mid, ARs, Opts}|Instrs], RevInstrs) 
-  when binary(ARs), list(Opts) ->
+  when is_binary(ARs) and is_list(Opts) ->
     Cast = {megaco_cast, Mid, ARs, Opts},
     parse_megaco(Instrs, [Cast|RevInstrs]);
 
@@ -1166,17 +1172,17 @@ parse_megaco([{megaco_cancel, CH, Reason}|Instrs], RevInstrs) ->
     parse_megaco(Instrs, [Cancel|RevInstrs]);
 
 parse_megaco([{megaco_callback, nocall = Tag, Timeout}|Instrs], RevInstrs)  
-  when integer(Timeout) ->
+  when is_integer(Timeout) ->
     C = {megaco_callback, Tag, Timeout},
     parse_megaco(Instrs, [C|RevInstrs]);
 
 parse_megaco([{megaco_callback, Tag, Verify}|Instrs], RevInstrs)  
-  when atom(Tag), function(Verify) ->
+  when is_atom(Tag) and is_function(Verify) ->
     C = {megaco_callback, Tag, Verify},
     parse_megaco(Instrs, [C|RevInstrs]);
 
 parse_megaco([{megaco_callback, Verifiers}|Instrs], RevInstrs)  
-  when list(Verifiers) ->
+  when is_list(Verifiers) ->
     C = {megaco_callback, Verifiers},
     parse_megaco(Instrs, [C|RevInstrs]);
 
@@ -1247,7 +1253,7 @@ handle_megaco_callback_call(P, Msg) ->
 	{handle_megaco_callback_reply, Reply} ->
 	    p("handle_megaco_callback_call -> received reply: ~n~p", [Reply]),
 	    Reply;
-	{handle_megaco_callback_reply, Delay, Reply} when integer(Delay) ->
+	{handle_megaco_callback_reply, Delay, Reply} when is_integer(Delay) ->
 	    p("handle_megaco_callback_call -> received reply [~w]: ~n~p", 
 	      [Delay, Reply]),
 	    sleep(Delay),
@@ -1275,20 +1281,20 @@ close(undefined) ->
 close(Sock) ->
     (catch gen_tcp:close(Sock)).
 
-add_tpkt_header(Bin) when binary(Bin) ->
+add_tpkt_header(Bin) when is_binary(Bin) ->
     L = size(Bin) + 4,
     SZ1 = ((L) bsr 8) band 16#ff,
     SZ2 = (L) band 16#ff,
     <<3, 0, SZ1, SZ2, Bin/binary>>;
-add_tpkt_header(IOList) when list(IOList) ->
+add_tpkt_header(IOList) when is_list(IOList) ->
     add_tpkt_header(list_to_binary(IOList)).
 
-sleep(X) when integer(X), X =< 0 -> ok;
+sleep(X) when is_integer(X), X =< 0 -> ok;
 sleep(X) -> receive after X -> ok end.
 
-sz(Bin) when binary(Bin) ->
+sz(Bin) when is_binary(Bin) ->
     size(Bin);
-sz(L) when list(L) ->
+sz(L) when is_list(L) ->
     lists:length(L);
 sz(_) ->
     -1.

@@ -130,14 +130,20 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 				    FailLabelName, ConstTab)
       end,
       {[Code1,FailCode], NewTab};
+    {hipe_bs_primop2, BsOP} ->
+      {FailLabelName, FailCode} = 
+	gen_fail_code(Fail, badarg, IsGuard),
+      Code1 =
+	hipe_rtl_binary:gen_rtl(BsOP, Dst, Args, Cont, FailLabelName),
+      {[Code1,FailCode], ConstTab};
     
     {hipe_bsi_primop, BsOP} ->
       {FailLabelName, FailCode} = 
 	gen_fail_code(Fail, badarg, IsGuard),
       Code1 = hipe_rtl_cerl_bs_ops:gen_rtl(BsOP, Args, Dst, Cont,
 					   FailLabelName),
-      
       {[Code1,FailCode], ConstTab};
+    
     %%
     %% Other primops
     %%
@@ -146,6 +152,7 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	case Op of
 	  %% Arithmetic
 	  '+' ->
+	    %gen_extra_unsafe_add_2(Dst, Args, Cont);
 	    gen_add_sub_2(Dst, Args, Cont, Fail, Op, add);
 	  '-' ->
 	    gen_add_sub_2(Dst, Args, Cont, Fail, Op, sub);
@@ -156,6 +163,7 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	    %% BIF call: am_Div -> nbif_div_2 -> erts_mixed_div
 	    [hipe_rtl:mk_call(Dst, '/', Args, Cont, Fail, not_remote)];
 	  'unsafe_add' ->
+	    %gen_extra_unsafe_add_2(Dst, Args, Cont);
 	    gen_unsafe_add_sub_2(Dst, Args, Cont, Fail, '+', add);
 	  'extra_unsafe_add' ->
 	    gen_extra_unsafe_add_2(Dst, Args, Cont);
@@ -175,7 +183,7 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	    gen_bitop_2(Dst, Args, Cont, Fail, Op, 'xor');
 	  'bnot' ->
 	    gen_bnot_2(Dst, Args, Cont, Fail, Op);
-	  'bsr' -> 
+	  'bsr'->
 	    %% BIF call: am_bsr -> nbif_bsr_2 -> bsr_2
 	    gen_bsr_2(Dst, Args, Cont, Fail, Op);
 	    %[hipe_rtl:mk_call(Dst, 'bsr', Args, Cont, Fail, not_remote)];
@@ -184,7 +192,7 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	    [hipe_rtl:mk_call(Dst, 'bsl', Args, Cont, Fail, not_remote)];
 	  'unsafe_band' ->
 	    gen_unsafe_bitop_2(Dst, Args, Cont, 'and');
-	  'unsafe_bor' ->
+	  'unsafe_bor' -> 
 	    gen_unsafe_bitop_2(Dst, Args, Cont, 'or');
 	  'unsafe_bxor' ->
 	    gen_unsafe_bitop_2(Dst, Args, Cont, 'xor');

@@ -2,50 +2,44 @@
 %%% $Id$
 
 -module(hipe_amd64_ra_sse2_postconditions).
--export([check_and_rewrite/4]).
+-export([check_and_rewrite/2]).
 -include("../x86/hipe_x86.hrl").
 -define(HIPE_INSTRUMENT_COMPILER, true).
 -include("../main/hipe.hrl").
 -define(count_temp(T), ?cons_counter(counter_mfa_mem_temps, T)).
 
 
-check_and_rewrite(AMD64Defun, Coloring, DontSpill, _Options) ->  
+check_and_rewrite(AMD64Defun, Coloring) ->
   %%io:format("Converting\n"),
   TempMap = hipe_temp_map:cols2tuple(Coloring,hipe_amd64_specific_sse2),
   %%io:format("Rewriting\n"),
   #defun{code=Code0} = AMD64Defun,
-  {Code1, NewDontSpill} = do_insns(Code0, TempMap, [], DontSpill),
+  {Code1, DidSpill} = do_insns(Code0, TempMap, [], false),
   {AMD64Defun#defun{code=Code1,
 		  var_range={0, hipe_gensym:get_var(x86)}}, 
-   Coloring, NewDontSpill}.
+   DidSpill}.
 
-do_insns([I|Insns], TempMap, Is, DontSpill) ->
-  {NewIs, NewDontSpill} = do_insns(Insns, TempMap, Is, DontSpill),
-  {NewI, FinalDontSpill} = do_insn(I, TempMap, NewDontSpill),
-%%%   case [I] of
-%%%     NewI -> ok;
-%%%     _ ->
-%%%       io:format("\n~w ->\n ~w\n------------\n",[I,NewI])
-%%%   end,
-  {NewI ++ NewIs, FinalDontSpill};
-do_insns([],_, Is, DontSpill) ->
-  {Is, DontSpill}.
+do_insns([I|Insns], TempMap, Accum, DidSpill0) ->
+  {NewIs, DidSpill1} = do_insn(I, TempMap),
+  do_insns(Insns, TempMap, lists:reverse(NewIs, Accum), DidSpill0 or DidSpill1);
+do_insns([], _TempMap, Accum, DidSpill) ->
+  {lists:reverse(Accum), DidSpill}.
 
-do_insn(I, TempMap, DontSpill) ->	% Insn -> Insn list
+do_insn(I, TempMap) ->	% Insn -> {Insn list, DidSpill}
   case I of
     #fmove{} ->
-      do_fmove(I, TempMap, DontSpill);
+      do_fmove(I, TempMap);
     #fp_unop{} ->
-      do_fp_unop(I, TempMap, DontSpill);
+      do_fp_unop(I, TempMap);
     #fp_binop{} ->
-      do_fp_binop(I, TempMap, DontSpill);
+      do_fp_binop(I, TempMap);
     _ ->
       %% All non sse2 ops
-      {[I], DontSpill}
+      {[I], false}
   end.
 
 %%% Fix an fp_binop.
-do_fp_binop(I, TempMap, DontSpill) ->
+do_fp_binop(I, TempMap) ->
   #fp_binop{src=Src,dst=Dst} = I,
   case is_mem_opnd(Dst, TempMap) of
     true ->
@@ -53,12 +47,12 @@ do_fp_binop(I, TempMap, DontSpill) ->
       {[#fmove{src=Dst, dst=Tmp},
 	I#fp_binop{src=Src,dst=Tmp},
 	#fmove{src=Tmp,dst=Dst}],
-       [Tmp|DontSpill]};
+       true};
     false ->
-      {[I], DontSpill}
+      {[I], false}
   end.
 
-do_fp_unop(I, TempMap, DontSpill) ->
+do_fp_unop(I, TempMap) ->
   #fp_unop{arg=Arg} = I,
   case is_mem_opnd(Arg, TempMap) of
     true ->
@@ -66,21 +60,21 @@ do_fp_unop(I, TempMap, DontSpill) ->
       {[#fmove{src=Arg, dst=Tmp},
 	I#fp_unop{arg=Tmp},
 	#fmove{src=Tmp,dst=Arg}],
-       [Tmp|DontSpill]};
+       true};
     false ->
-      {[I], DontSpill}
+      {[I], false}
   end.
 
 %%% Fix an fmove op.
-do_fmove(I, TempMap, DontSpill) ->
+do_fmove(I, TempMap) ->
   #fmove{src=Src,dst=Dst} = I,
   case is_mem_opnd(Dst, TempMap) and is_mem_opnd(Src, TempMap) of
     true ->
       Tmp = clone(Src),
       {[#fmove{src=Src, dst=Tmp},I#fmove{src=Tmp,dst=Dst}],
-       [Tmp|DontSpill]};
+       true};
     false ->
-      {[I], DontSpill}
+      {[I], false}
   end.
 
 %%% Check if an operand denotes a memory cell (mem or pseudo).

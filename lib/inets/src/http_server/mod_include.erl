@@ -468,16 +468,19 @@ send_in(_Info , _Path, _Head,{error,Reason}) ->
 send_in1(Info, Data, Head, FileInfo) ->
     {ok, _Context, Err, ParsedBody} = parse(Info,Data,?DEFAULT_CONTEXT,[],[]),
     Size = length(ParsedBody),
-    Date = httpd_util:rfc1123_date(FileInfo#file_info.mtime),
+    LastModified = case catch httpd_util:rfc1123_date(FileInfo#file_info.mtime) of
+		       Date when list(Date) -> [{last_modified,Date}];
+		       _ -> []
+		   end,
     Head1 = case Info#mod.http_version of 
 		"HTTP/1.1"->
 		    Head ++ [{content_length, integer_to_list(Size)},  
-			     {etag, httpd_util:create_etag(FileInfo,Size)},
-			     {last_modified, Date}];
+			     {etag, httpd_util:create_etag(FileInfo,Size)}|
+			     LastModified];
 		_->
 		    %% i.e http/1.0 and http/0.9
-		    Head ++  [{content_length, integer_to_list(Size)},  
-			      {last_modified, Date}]
+		    Head ++  [{content_length, integer_to_list(Size)}|  
+			      LastModified]
 	    end,
     httpd_response:send_header(Info, 200, Head1),
     httpd_socket:deliver(Info#mod.socket_type,Info#mod.socket, ParsedBody),

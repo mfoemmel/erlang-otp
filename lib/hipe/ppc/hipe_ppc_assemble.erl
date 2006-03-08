@@ -116,7 +116,6 @@ translate_insn(I, MFA, ConstMap) ->	% -> [{Op,Opnd,OrigI}]
     %% pseudo_call_prepare: eliminated before assembly
     #pseudo_li{} -> do_pseudo_li(I, MFA, ConstMap);
     %% pseudo_move: eliminated before assembly
-    %% pseudo_ret: eliminated before assembly
     %% pseudo_tailcall: eliminated before assembly
     %% pseudo_tailcall_prepare: eliminated before assembly
     #store{} -> do_store(I);

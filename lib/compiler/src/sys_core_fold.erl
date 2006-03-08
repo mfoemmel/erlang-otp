@@ -833,9 +833,9 @@ is_atom_or_var(_) -> false.
 
 %% clause(Clause, Sub) -> Clause.
 
-clause(#c_clause{pats=Ps0,guard=G0,body=B0}=Cl, Cexpr, #sub{t=Types}=Sub0) ->
+clause(#c_clause{pats=Ps0,guard=G0,body=B0}=Cl, Cexpr, Sub0) ->
     {Ps1,Sub1} = pattern_list(Ps0, Sub0),
-    Sub2 = Sub1#sub{t=update_types(Cexpr, Ps1, Types)},
+    Sub2 = update_types(Cexpr, Ps1, Sub1),
     GSub = case {Cexpr,Ps1} of
 	       {#c_var{name='_'},_} ->
 		   %% In a 'receive', Cexpr is the variable '_', which represents the
@@ -916,7 +916,7 @@ pattern(#c_var{name=V0}=Pat, Isub, Osub) ->
 	false -> {Pat,sub_del_var(Pat, Osub)}
     end;
 pattern(#c_char{}=Pat, _, Osub) -> {Pat,Osub};
-pattern(#c_int{}=Pat, Osub, _) -> {Pat,Osub};
+pattern(#c_int{}=Pat, _, Osub) -> {Pat,Osub};
 pattern(#c_float{}=Pat, _, Osub) -> {Pat,Osub};
 pattern(#c_atom{}=Pat, _, Osub) -> {Pat,Osub};
 pattern(#c_string{}=Pat, _, Osub) -> {Pat,Osub};
@@ -1481,21 +1481,25 @@ tuple_to_values(#c_clause{body=B0}=Clause, Arity) ->
     B = tuple_to_values(B0, Arity),
     Clause#c_clause{body=B}.
 
-%% update_types(Expr, Pattern, Types) -> Types'
-%%  Updates the type database.
-update_types(#c_var{name=V}, [#c_tuple{}=P], Types) ->
+%% update_types(Expr, Pattern, Sub) -> Sub'
+%%  Update the type database.
+update_types(Expr, Pat, #sub{t=Tdb0}=Sub) ->
+    Tdb = update_types_1(Expr, Pat, Tdb0),
+    Sub#sub{t=Tdb}.
+
+update_types_1(#c_var{name=V}, [#c_tuple{}=P], Types) ->
     orddict:store(V, P, Types);
-update_types(_, _, Types) -> Types.
+update_types_1(_, _, Types) -> Types.
 
 %% update_types(V, Tdb) -> Tdb'
 %%  Kill any entries that references the variable,
 %%  either in the key or in the value.
 kill_types(V, [{V,_}|Tdb]) ->
     kill_types(V, Tdb);
-kill_types(V, [{_,#c_tuple{es=Vars}}=Entry|Tdb]) ->
-    case v_is_value(V, Vars) of
-	true -> kill_types(V, Tdb);
-	false -> [Entry|kill_types(V, Tdb)]
+kill_types(V, [{_,#c_tuple{}=Tuple}=Entry|Tdb]) ->
+    case core_lib:is_var_used(V, Tuple) of
+	false -> [Entry|kill_types(V, Tdb)];
+	true -> kill_types(V, Tdb)
     end;
 kill_types(_, []) -> [].
 

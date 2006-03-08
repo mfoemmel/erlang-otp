@@ -28,7 +28,7 @@
 
 -export([tr_message/3, tr_transaction/3]).
 
--define(DEFAULT_NAME_RESOLVER, megaco_binary_name_resolver_prev3a).
+-define(DEFAULT_NAME_RESOLVER, megaco_binary_name_resolver_prev3b).
 
 -record(state, {mode,                 % verify | encode | decode
                 resolver_module,      % 

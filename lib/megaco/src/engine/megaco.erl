@@ -49,6 +49,8 @@
 
 	 encode_actions/3,
 
+	 token_tag2string/1, token_tag2string/2, token_tag2string/3, 
+
 	 parse_digit_map/1,
 	 eval_digit_map/1,
 	 eval_digit_map/2,
@@ -59,7 +61,7 @@
 	 decode_binary_term_id/2,
 
 	 versions1/0, versions2/0, 
-	 format_versions/1, 
+	 print_version_info/0, print_version_info/1, 
 	 ms/0, nc/0, nc/1, ni/0, ni/1,
 
 	 enable_trace/2, disable_trace/0, set_trace/1,
@@ -75,8 +77,15 @@
 	 reset_stats/0, reset_stats/1
 	]).
 
+%% Deprecated
+-export([format_versions/1]).
+
 %% Internal
 -export([format_timestamp/1]).
+
+%% This is for XREF
+-deprecated([{format_versions, 1, eventually}]).
+
 
 -include_lib("megaco/include/megaco.hrl").
 -include("megaco_message_internal.hrl").
@@ -162,6 +171,7 @@ update_conn_info(ConnHandle, Item, Value) ->
 system_info(Item) ->
     megaco_config:system_info(Item).
 
+
 %%-----------------------------------------------------------------
 %% Establish a "virtual" connection
 %%-----------------------------------------------------------------
@@ -210,7 +220,6 @@ test_reply(ConnHandle, Version, EncodingMod, EncodingConfig,
 	   Reply) ->
     megaco_messenger:test_reply(ConnHandle, Version, 
 				EncodingMod, EncodingConfig, Reply).
-
 
 %%-----------------------------------------------------------------
 %% Func: get_stats/0, get_stats/1, get_stats/2
@@ -264,6 +273,29 @@ receive_message(ReceiveHandle, ControlPid, SendHandle, BinMsg) ->
 
 encode_actions(ConnHandle, ActionRequests, Options) ->
     megaco_messenger:encode_actions(ConnHandle, ActionRequests, Options).
+
+
+%%-----------------------------------------------------------------
+%% Convert the (token) tags found in a decoded message into a 
+%% printable string.
+%%-----------------------------------------------------------------
+
+token_tag2string(Tag) ->
+    token_tag2string(Tag, pretty).
+
+token_tag2string(Tag, pretty) ->
+    token_tag2string(Tag, megaco_pretty_text_encoder);
+token_tag2string(Tag, compact) ->
+    token_tag2string(Tag, megaco_compact_text_encoder);
+token_tag2string(Tag, Mod) when is_atom(Tag) and is_atom(Mod) ->
+    Mod:token_tag2string(Tag).
+
+token_tag2string(Tag, pretty, V) ->
+    token_tag2string(Tag, megaco_pretty_text_encoder, V);
+token_tag2string(Tag, compact, V) ->
+    token_tag2string(Tag, megaco_compact_text_encoder, V);
+token_tag2string(Tag, Mod, V) when is_atom(Tag) and is_atom(Mod) ->
+    Mod:token_tag2string(Tag, V).
 
 
 %%-----------------------------------------------------------------
@@ -332,12 +364,19 @@ decode_binary_term_id(Config, TermId) ->
 %%-----------------------------------------------------------------
 %% {ok, Vs} = megaco:versions1(), megaco:format_versions(Vs).
 
-format_versions(Versions) when list(Versions) ->
+print_version_info() ->
+    {ok, Versions} = megaco:versions1(),
+    print_version_info(Versions).
+
+print_version_info(Versions) when is_list(Versions) ->
     print_sys_info(Versions),
     print_os_info(Versions),
     print_mods_info(Versions);
-format_versions(BadVersions) ->
+print_version_info(BadVersions) ->
     {error, {bad_versions, BadVersions}}.
+
+format_versions(Versions) ->
+    print_version_info(Versions).
 
 print_sys_info(Versions) ->
     case key1search(sys_info, Versions) of
@@ -418,6 +457,19 @@ print_mods_info(Versions) ->
     end.
 
 print_mod_info({Module, Info}) ->
+    % Maybe a asn1 generated module
+    Asn1Vsn = 
+	case (catch Module:info()) of
+	    AI when is_list(AI) ->
+		case (catch key1search(vsn, AI)) of
+		    {value, V} when is_atom(V) ->
+			atom_to_list(V);
+		    _ ->
+			"-"
+		end;
+	    _ ->
+		"-"
+	end,
     Vsn = 
 	case key1search(vsn, Info) of
 	    {value, I} when integer(I) ->
@@ -451,9 +503,10 @@ print_mod_info({Module, Info}) ->
     io:format("   ~w:~n"
 	      "      Vsn:          ~s~n"
 	      "      App vsn:      ~s~n"
+	      "      ASN.1 vsn:    ~s~n"
 	      "      Compiler ver: ~s~n"
 	      "      Compile time: ~s~n", 
-	      [Module, Vsn, AppVsn, CompVer, CompDate]),
+	      [Module, Vsn, AppVsn, Asn1Vsn, CompVer, CompDate]),
     ok.
     
     

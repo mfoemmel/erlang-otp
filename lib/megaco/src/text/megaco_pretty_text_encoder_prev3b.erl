@@ -28,6 +28,7 @@
 	 encode_command_request/2,
 	 encode_action_reply/2]).
 
+-export([token_tag2string/1]).
 
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_prev3b.hrl").
@@ -148,6 +149,139 @@ encode_action_reply(_EC, ActRep)
         DeepIoList ->
             {ok, DeepIoList}
     end.
+
+
+%%----------------------------------------------------------------------
+%% A utility function to pretty print the tags found in a megaco message
+%%----------------------------------------------------------------------
+
+token_tag2string(addReq)                 -> ?PrettyAddToken;
+token_tag2string(addReply)               -> ?PrettyAddToken;
+token_tag2string(auditDescriptor)        -> ?PrettyAuditToken;
+token_tag2string(auditCapRequest)        -> ?PrettyAuditCapToken;
+token_tag2string(auditCapReply)          -> ?PrettyAuditCapToken;
+token_tag2string(auditValueRequest)      -> ?PrettyAuditValueToken;
+token_tag2string(auditValueReply)        -> ?PrettyAuditValueToken;
+%% token_tag2string(X) -> ?PrettyAuthToken;
+token_tag2string(both)                   -> ?PrettyBothToken;
+token_tag2string(bothway)                -> ?PrettyBothwayToken;
+token_tag2string(brief)                  -> ?PrettyBriefToken;
+%% token_tag2string(X) -> ?PrettyBufferToken;
+%% token_tag2string(X) -> ?PrettyCtxToken;
+%% token_tag2string(X) -> ?PrettyContextAttrToken;
+%% token_tag2string(X) -> ?PrettyContextAuditToken;
+%% token_tag2string(X) -> ?PrettyContextListToken;
+token_tag2string(digitMapDescriptor)     -> ?PrettyDigitMapToken;
+token_tag2string(digitMapToken)          -> ?PrettyDigitMapToken;
+%% token_tag2string(X) -> ?PrettyDirectionToken;
+%% token_tag2string(X) -> ?PrettyDiscardToken;
+%% token_tag2string(X) -> ?PrettyDisconnectedToken;
+%% token_tag2string(X) -> ?PrettyDelayToken;
+token_tag2string(duration)               -> ?PrettyDurationToken;
+%% token_tag2string(X) -> ?PrettyEmbedToken;
+token_tag2string(emergencyAudit)         -> ?PrettyEmergencyToken;
+%% token_tag2string(X)         -> ?PrettyEmergencyOffToken;
+token_tag2string(errorDescriptor)        -> ?PrettyErrorToken;
+token_tag2string(eventBufferDescriptor)  -> ?PrettyEventBufferToken;
+token_tag2string(eventBufferToken)       -> ?PrettyEventBufferToken;
+token_tag2string(eventsDescriptor)       -> ?PrettyEventsToken;
+token_tag2string(eventsToken)            -> ?PrettyEventsToken;
+token_tag2string(external)               -> ?PrettyExternalToken;
+%% token_tag2string(X) -> ?PrettyFailoverToken;
+%% token_tag2string(X) -> ?PrettyForcedToken;
+%% token_tag2string(X) -> ?PrettyGracefulToken;
+%% token_tag2string(X) -> ?PrettyH221Token;
+%% token_tag2string(X) -> ?PrettyH223Token;
+%% token_tag2string(X) -> ?PrettyH226Token;
+%% token_tag2string(X) -> ?PrettyHandOffToken;
+token_tag2string(iepsCallind)                 -> ?PrettyIEPSToken;
+%% token_tag2string(X) -> ?PrettyImmAckRequiredToken;
+token_tag2string(inactive)                    -> ?PrettyInactiveToken;
+token_tag2string(internal)                    -> ?PrettyInternalToken;
+token_tag2string(onInterruptByEvent)          -> ?PrettyInterruptByEventToken;
+token_tag2string(onInterruptByNewSignalDescr) -> ?PrettyInterruptByNewSignalsDescrToken;
+token_tag2string(isolate)        	 -> ?PrettyIsolateToken;
+token_tag2string(inSvc)          	 -> ?PrettyInSvcToken;
+token_tag2string(keepActive)     	 -> ?PrettyKeepActiveToken;
+token_tag2string(localDescriptor)        -> ?PrettyLocalToken;
+token_tag2string(localControlDescriptor) -> ?PrettyLocalControlToken;
+token_tag2string(lockStep)          	 -> ?PrettyLockStepToken;
+token_tag2string(loopBack)          	 -> ?PrettyLoopbackToken;
+token_tag2string(mediaDescriptor)   	 -> ?PrettyMediaToken;
+token_tag2string(mediaToken)        	 -> ?PrettyMediaToken;
+%% token_tag2string(X) -> ?PrettyMegacopToken;
+%% token_tag2string(X) -> ?PrettyMethodToken;
+%% token_tag2string(X) -> ?PrettyMgcIdToken;
+%% token_tag2string(X) -> ?PrettyModeToken;
+token_tag2string(modReq)               -> ?PrettyModifyToken;
+token_tag2string(modReply)             -> ?PrettyModifyToken;
+token_tag2string(modemDescriptor)      -> ?PrettyModemToken;
+token_tag2string(modemToken)           -> ?PrettyModemToken;
+token_tag2string(moveReq)              -> ?PrettyMoveToken;
+token_tag2string(moveReply)            -> ?PrettyMoveToken;
+%% token_tag2string(X) -> ?PrettyMtpToken;
+token_tag2string(muxDescriptor)        -> ?PrettyMuxToken;
+token_tag2string(muxToken)             -> ?PrettyMuxToken;
+token_tag2string(notifyReq)            -> ?PrettyNotifyToken;
+%% token_tag2string(X) -> ?PrettyNotifyCompletionToken;
+%% token_tag2string(X) -> ?PrettyNx64kToken;
+token_tag2string(observedEventsDescriptor) -> ?PrettyObservedEventsToken;
+token_tag2string(observedEventsToken)      -> ?PrettyObservedEventsToken;
+token_tag2string(false)                -> ?PrettyOffToken;
+token_tag2string(off)                  -> ?PrettyOffToken;
+token_tag2string(oneway)               -> ?PrettyOnewayToken;
+token_tag2string(onOff)                -> ?PrettyOnOffToken;
+token_tag2string(true)                 -> ?PrettyOnToken;
+token_tag2string(otherReason)          -> ?PrettyOtherReasonToken;
+token_tag2string(outOfSvc)             -> ?PrettyOutOfSvcToken;
+token_tag2string(packagesDescriptor)   -> ?PrettyPackagesToken;
+token_tag2string(packagesToken)        -> ?PrettyPackagesToken;
+%% token_tag2string(X) -> ?PrettyPendingToken;
+token_tag2string(priorityAudit)        -> ?PrettyPriorityToken;
+%% token_tag2string(X) -> ?PrettyProfileToken;
+%% token_tag2string(X) -> ?PrettyReasonToken;
+token_tag2string(recvOnly)             -> ?PrettyRecvonlyToken;
+%% token_tag2string(X) -> ?PrettyReplyToken;
+%% token_tag2string(X) -> ?PrettyRequestIDToken;
+%% token_tag2string(X) -> ?PrettyResponseAckToken;
+%% token_tag2string(X) -> ?PrettyRestartToken;
+token_tag2string(remoteDescriptor)     -> ?PrettyRemoteToken;
+%% token_tag2string(X) -> ?PrettyReservedGroupToken;
+%% token_tag2string(X) -> ?PrettyReservedValueToken;
+token_tag2string(sendOnly)             -> ?PrettySendonlyToken;
+token_tag2string(sendRecv)             -> ?PrettySendrecvToken;
+%% token_tag2string(X) -> ?PrettyServicesToken;
+%% token_tag2string(X) -> ?PrettyServiceStatesToken;
+token_tag2string(serviceChangeReq)     -> ?PrettyServiceChangeToken;
+%% token_tag2string(X) -> ?PrettyServiceChangeAddressToken;
+token_tag2string(incomplete)           -> ?PrettyServiceChangeIncompleteToken;
+%% token_tag2string(X) -> ?PrettySignalListToken;
+token_tag2string(signalsDescriptor)    -> ?PrettySignalsToken;
+token_tag2string(signalsToken)         -> ?PrettySignalsToken; 
+%% token_tag2string(X) -> ?PrettySignalTypeToken;
+token_tag2string(statisticsDescriptor) -> ?PrettyStatsToken;
+token_tag2string(statsToken)           -> ?PrettyStatsToken;
+%% token_tag2string(X) -> ?PrettyStreamToken;
+token_tag2string(subtractReq)          -> ?PrettySubtractToken;
+token_tag2string(subtractReply)        -> ?PrettySubtractToken;
+%% token_tag2string(X) -> ?PrettySynchISDNToken;
+%% token_tag2string(X) -> ?PrettyTerminationStateToken;
+token_tag2string(test)                 -> ?PrettyTestToken;
+token_tag2string(timeOut)              -> ?PrettyTimeOutToken;
+token_tag2string(onTimeOut)            -> ?PrettyTimeOutToken;
+token_tag2string(topologyAudit)        -> ?PrettyTopologyToken;
+%% token_tag2string(X) -> ?PrettyTransToken;
+%% token_tag2string(X) -> ?PrettyV18Token;
+%% token_tag2string(X) -> ?PrettyV22Token;
+%% token_tag2string(X) -> ?PrettyV22bisToken;
+%% token_tag2string(X) -> ?PrettyV32Token;
+%% token_tag2string(X) -> ?PrettyV32bisToken;
+%% token_tag2string(X) -> ?PrettyV34Token;
+%% token_tag2string(X) -> ?PrettyV76Token;
+%% token_tag2string(X) -> ?PrettyV90Token;
+%% token_tag2string(X) -> ?PrettyV91Token;
+%% token_tag2string(X) -> ?PrettyVersionToken;
+token_tag2string(_) -> [].
 
 
 %%----------------------------------------------------------------------

@@ -701,7 +701,7 @@ calc_later_fixpoint(Work, CFG, NodeInfo, EdgeInfo, AllExpr) ->
 
 calc_later_node(Label, CFG) ->
   Succs = hipe_rtl_cfg:succ(hipe_rtl_cfg:succ_map(CFG), Label),
-  lists:map((fun(Succ) -> {edge, Label, Succ} end), Succs).
+  [{edge, Label, Succ} || Succ <- Succs].
 
 calc_later_edge(From, To, _CFG, NodeInfo, EdgeInfo, AllExpr) ->  
   %% Instead of pre-calculating earliest, we calculate it when needed here
@@ -797,9 +797,7 @@ calc_up_exp(CFG, ExprMap, NodeInfo, [Label|Labels]) ->
 %% Given a list of expression instructions, gets a list of expression ids
 %% from an expression map.
 get_expr_ids(ExprMap, Instrs) ->
-  lists:map(fun(Instr) -> 
-		expr_map_get_id(ExprMap, expr_clear_dst(Instr))
-	    end, Instrs).
+  [expr_map_get_id(ExprMap, expr_clear_dst(I)) || I <- Instrs].
 
 %%=============================================================================
 %% Does the work of the calc_*_exp functions.
@@ -808,7 +806,7 @@ exp_work(Code) ->
 
 exp_work([], [Instr|Instrs]) ->
   case is_expr(Instr) of
-    true->
+    true ->
       exp_work([Instr], Instrs);
     false ->
       exp_work([], Instrs)

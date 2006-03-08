@@ -1464,20 +1464,26 @@ Eterm db_prog_match(Process *p, Binary *bprog, Eterm term,
     ** b) this function is called again.
     */
 #ifndef SHARED_HEAP
+    if (psp->mbuf
+	|| psp->off_heap.mso
 #ifndef HYBRID /* FIND ME! */
-    if (psp->mbuf || psp->off_heap.mso || psp->off_heap.funs
+	|| psp->off_heap.funs
+#endif
 	|| psp->off_heap.externals) {
 	ErlHeapFragment *bp = psp->mbuf;
 	ErlHeapFragment *sbp;
+	erts_cleanup_offheap(&MSO(psp)); /* Need to be done before
+					    free_message_buffer()... */
 	while (bp != NULL) {
 	    sbp = bp->next;
 	    free_message_buffer(bp);
 	    bp = sbp;
 	}
 	psp->mbuf = NULL;
-	erts_cleanup_offheap(&MSO(psp));
 	MSO(psp).mso = NULL;
+#ifndef HYBRID /* FIND ME! */
 	MSO(psp).funs = NULL;
+#endif
 	MSO(psp).externals = NULL;
 	MSO(psp).overhead = 0;
 	/* Never GC'ed, dont touch old_mso */
@@ -1487,7 +1493,6 @@ Eterm db_prog_match(Process *p, Binary *bprog, Eterm term,
 	p->arith_check_me = NULL;
 #endif
     }
-#endif
 #endif
 
     *return_flags = 0U;

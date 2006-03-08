@@ -46,7 +46,7 @@ pp(Icode) ->
 %%      three stars "***".</p>
 pp(Dev, Icode) ->
   {Mod, Fun, Arity} = hipe_icode:icode_fun(Icode),
-  Args =  hipe_icode:icode_params(Icode),
+  Args = hipe_icode:icode_params(Icode),
   io:format(Dev, "~w:~w/~w(", [Mod, Fun, Arity]),
   pp_args(Dev, Args),
   io:format(Dev, ") ->~n", []),

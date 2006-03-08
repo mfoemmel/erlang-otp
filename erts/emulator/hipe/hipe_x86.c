@@ -14,19 +14,6 @@
 #undef ERL_FUN_SIZE
 #include "hipe_literals.h"
 
-extern void nbif_inc_stack_0(void);
-extern void nbif_handle_fp_exception(void);
-
-/* called from hipe_bif0.c:hipe_bifs_primop_address_1() */
-const void *hipe_arch_primop_address(Eterm key)
-{
-    switch( key ) {
-      case am_inc_stack_0: return nbif_inc_stack_0;
-      case am_handle_fp_exception: return nbif_handle_fp_exception;
-      default: return NULL;
-    }
-}
-
 void hipe_patch_load_fe(Uint32 *address, Uint32 value)
 {
     /* address points to a disp32 or imm32 operand */

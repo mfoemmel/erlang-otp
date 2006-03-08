@@ -40,9 +40,7 @@ defun_to_cfg(Defun) ->
   hipe_ppc_cfg:init(Defun).
 
 check_and_rewrite(Defun, Coloring) ->
-  {NewDefun, _, NewSpillIndex} =
-    hipe_ppc_ra_postconditions_fp:check_and_rewrite(Defun, Coloring, [], []),
-  {NewDefun, NewSpillIndex}.
+  hipe_ppc_ra_postconditions_fp:check_and_rewrite(Defun, Coloring).
 
 reverse_postorder(CFG) ->
   hipe_ppc_cfg:reverse_postorder(CFG).

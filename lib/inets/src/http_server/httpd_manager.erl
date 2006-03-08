@@ -23,7 +23,7 @@
 -behaviour(gen_server).
 
 %% External API
--export([start/2, start_link/2, stop/1, restart/1]).
+-export([start/2, start_link/2, start_link/3, stop/1, restart/1]).
 
 %% Internal API
 -export([new_connection/1, done_connection/1]).
@@ -72,14 +72,16 @@ start(ConfigFile, ConfigList) ->
     Addr = httpd_util:key1search(ConfigList,bind_address),
     Name = make_name(Addr,Port),
     gen_server:start({local,Name},?MODULE,
-		     [ConfigFile, ConfigList, Addr, Port],[]).
+		     [ConfigFile, ConfigList, 15000, Addr, Port],[]).
     
 start_link(ConfigFile, ConfigList) ->
+    start_link(ConfigFile, ConfigList, 15000).
+start_link(ConfigFile, ConfigList, AcceptTimeout) ->
     Port = httpd_util:key1search(ConfigList,port,80),
     Addr = httpd_util:key1search(ConfigList,bind_address),
     Name = make_name(Addr,Port),
     gen_server:start_link({local, Name},?MODULE,
-			  [ConfigFile, ConfigList, Addr, Port],[]).
+			  [ConfigFile, ConfigList, AcceptTimeout, Addr, Port],[]).
     
 stop(ServerRef) ->
     gen_server:call(ServerRef, stop).
@@ -220,9 +222,9 @@ config_match(Addr, Port, Pattern) ->
 
 %% init
 
-init([ConfigFile, ConfigList, Addr, Port]) ->
+init([ConfigFile, ConfigList, AcceptTimeout, Addr, Port]) ->
     process_flag(trap_exit, true),
-    case (catch do_init(ConfigFile, ConfigList, Addr, Port)) of
+    case (catch do_init(ConfigFile, ConfigList, AcceptTimeout, Addr, Port)) of
 	{error, Reason} ->
 	    String = lists:flatten(io_lib:format("Failed initiating web server: ~n~p~n~p~n",[ConfigFile,Reason])),
 	    error_logger:error_report(String),
@@ -232,11 +234,11 @@ init([ConfigFile, ConfigList, Addr, Port]) ->
     end.
    
 
-do_init(ConfigFile, ConfigList, Addr, Port) ->
+do_init(ConfigFile, ConfigList, AcceptTimeout, Addr, Port) ->
     ConfigDB   = do_initial_store(ConfigList),
     SocketType = httpd_conf:config(ConfigDB),
     case httpd_acceptor_sup:start_acceptor(SocketType, Addr,
-					   Port, ConfigDB) of
+					   Port, ConfigDB, AcceptTimeout) of
 	{ok, _Pid} ->
 	    Status = [{max_conn,0}, {last_heavy_load,never}, 
 		      {last_connection,never}],

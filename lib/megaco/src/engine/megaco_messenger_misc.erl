@@ -79,7 +79,7 @@ encode_trans(#conn_data{protocol_version = V,
 	    ?SIM({ok, Bin}, encode_trans);
 	Error ->
 	    incNumErrors(CD#conn_data.conn_handle),	    
-            {error,{EM, encode_transaction, [EC, Trans], Error}}
+            {error, {EM, encode_trans, [EC, Trans], Error}}
     end.
 
 
@@ -96,9 +96,12 @@ encode_actions(#conn_data{protocol_version = V} = CD, TraceLabel, ARs) ->
     case (catch EM:encode_action_requests(EC, V, ARs)) of
         {ok, Bin} when binary(Bin) ->
             ?SIM({ok, Bin}, encode_actions);
+        {error, Reason} ->
+	    incNumErrors(CD#conn_data.conn_handle),	    
+            {error, {EM, encode_actions, [EC, ARs], Reason}};
         Error ->
 	    incNumErrors(CD#conn_data.conn_handle),	    
-            {error, {EM, encode_action_requests, [EC, ARs], Error}}
+            {error, {EM, encode_actions, [EC, ARs], Error}}
     end.
 
 
@@ -114,14 +117,17 @@ encode_body(#conn_data{protocol_version = V} = ConnData,
     ?report_debug(ConnData, TraceLabel, [MegaMsg]),
 
     %% Encode the message
-    EncodingMod    = ConnData#conn_data.encoding_mod,
-    EncodingConfig = ConnData#conn_data.encoding_config,
-    case (catch EncodingMod:encode_message(EncodingConfig, V, MegaMsg)) of
+    EM = ConnData#conn_data.encoding_mod,
+    EC = ConnData#conn_data.encoding_config,
+    case (catch EM:encode_message(EC, V, MegaMsg)) of
         {ok, Bin} when binary(Bin) ->
             ?SIM({ok, Bin}, encode_body);
+        {error, Reason} ->
+	    incNumErrors(ConnData#conn_data.conn_handle),	    
+            {error, {EM, [EC, MegaMsg], Reason}};
         Error ->
 	    incNumErrors(ConnData#conn_data.conn_handle),	    
-            {error,{EncodingMod,encode_message,[EncodingConfig,MegaMsg],Error}}
+            {error, {EM, [EC, MegaMsg], Error}}
     end.
 
 

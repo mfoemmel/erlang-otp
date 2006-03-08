@@ -37,6 +37,7 @@ is_safe(unsafe_tag_float) -> true;
 is_safe(unsafe_tl) -> true;
 is_safe(unsafe_untag_float) -> true;
 is_safe({closure_element,_}) -> true;
+is_safe({hipe_bs_primop, {bs_init,_,_}}) -> true;
 is_safe({hipe_bsi_primop, bs_get_orig_offset}) -> true;
 is_safe({hipe_bsi_primop, bs_get_size}) -> true;
 is_safe({hipe_bsi_primop,{bs_get_binary,_Offset,_Flags}}) -> true;
@@ -46,6 +47,8 @@ is_safe({hipe_bsi_primop,{bs_get_float,_Offset,_Flags}}) -> true;
 is_safe({hipe_bsi_primop,{bs_get_float,_Size,_Offset,_Flags}}) -> true;
 is_safe({hipe_bsi_primop,{bs_get_integer,_Offset,_Flags}}) -> true;
 is_safe({hipe_bsi_primop,{bs_get_integer,_Size,_Offset,_Flags}}) -> true;
+is_safe({hipe_bs_primop2,{bs_restore_2,_}}) -> true;
+is_safe({hipe_bs_primop2,{bs_save_2,_}}) -> true;
 is_safe({mkfun,_,_,_}) -> true;
 is_safe({unsafe_element,_}) -> true;
 is_safe({unsafe_update_element, _}) -> true;
@@ -78,7 +81,7 @@ fails(_) -> true.
 
 pp(Op, Dev) ->
   case Op of
-    {hipe_bs_primop, BsOp} ->
+    {X, BsOp} when X == hipe_bs_primop; X == hipe_bs_primop2 ->
       case BsOp of 
 	{bs_create_space, Size, _} ->
 	  io:format(Dev, "bs_create_space<~w>", [Size]);
@@ -100,8 +103,14 @@ pp(Op, Dev) ->
 	  io:format(Dev, "bs_skip_bits_all<~w>", [Flags]);
 	{bs_skip_bits, Unit} ->
 	  io:format(Dev, "bs_skip_bits<~w>", [Unit]);
+	{bs_skip_bits_all_2, Flags} ->
+	  io:format(Dev, "bs_skip_bits_all<~w>", [Flags]);
+	{bs_skip_bits_2, Unit} ->
+	  io:format(Dev, "bs_skip_bits<~w>", [Unit]);
 	bs_start_match ->
 	  io:format(Dev, "bs_start_match", []);
+	{bs_start_match_2, Max} ->
+	  io:format(Dev, "bs_start_match<~w>", [Max]);
 	{bs_get_integer,Size,Flags} ->
 	  io:format(Dev, "bs_get_integer<~w, ~w>", [Size, Flags]);
 	{bs_get_float,Size,Flags} ->
@@ -115,6 +124,20 @@ pp(Op, Dev) ->
 	{bs_restore, Index} ->
 	  io:format(Dev, "bs_restore<~w>", [Index]);
 	{bs_save, Index} ->
+	  io:format(Dev, "bs_save<~w>", [Index]);
+	{bs_get_integer_2,Size,Flags} ->
+	  io:format(Dev, "bs_get_integer<~w, ~w>", [Size, Flags]);
+	{bs_get_float_2,Size,Flags} ->
+	  io:format(Dev, "bs_get_float<~w, ~w>", [Size, Flags]);
+	{bs_get_binary_2,Size,Flags} ->
+	  io:format(Dev, "bs_get_binary<~w, ~w>", [Size, Flags]);
+	{bs_get_binary_all_2,Flags} ->
+	  io:format(Dev, "bs_get_binary_all<~w>", [Flags]);
+	{bs_test_tail_2,NumBits} ->
+	  io:format(Dev, "bs_test_tail<~w>", [NumBits]);
+	{bs_restore_2, Index} ->
+	  io:format(Dev, "bs_restore<~w>", [Index]);
+	{bs_save_2, Index} ->
 	  io:format(Dev, "bs_save<~w>", [Index]);
 	{bs_init,_,_} ->
 	  io:format(Dev, "bs_init", []);
@@ -302,6 +325,21 @@ type(Primop, Args) ->
     {hipe_bs_primop, {bs_get_binary, _, _}} ->
       erl_types:t_binary();
     {hipe_bs_primop, {bs_get_binary_all, _}} ->
+      erl_types:t_binary();
+    {hipe_bs_primop2, {bs_get_integer_2, Size, Flags}} ->
+      Signed = Flags band 4,
+      if length(Args) == 1 -> %% No variable part of the size parameter.
+	  if Size < 9, Signed == 0 -> erl_types:t_byte();
+	     Size < 21, Signed == 0 -> erl_types:t_char();
+	     true -> erl_types:t_integer()
+	  end;
+	 true -> erl_types:t_integer()
+      end;
+    {hipe_bs_primop2, {bs_get_float_2, _, _}} ->
+      erl_types:t_float();
+    {hipe_bs_primop2, {bs_get_binary_2, _, _}} ->
+      erl_types:t_binary();
+    {hipe_bs_primop2, {bs_get_binary_all_2, _}} ->
       erl_types:t_binary();
     {hipe_bs_primop, bs_final} ->
       erl_types:t_binary();

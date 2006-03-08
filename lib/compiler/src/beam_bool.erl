@@ -53,7 +53,7 @@ bopt([{block,Bl0}=Block|
        {label,Fail},
        {block,[{set,[Dst],[{atom,false}],move},{'%live',Live}]},
        {label,Succ}|Is]=Is0], Acc0, St) ->
-    case split_block(Bl0, Dst, Fail) of
+    case split_block(Bl0, Dst, Fail, Acc0) of
 	failed ->
 	    bopt(Is0, [Block|Acc0], St);
 	{Bl,PreBlock} ->
@@ -88,7 +88,7 @@ bopt_reverse([], Acc) -> Acc.
 %%  Attempt to optimized a block of guard BIFs followed by a test
 %%  instruction.
 bopt_block(Reg, Fail, OldIs, [{block,Bl0}|Acc0], St0) ->
-    case split_block(Bl0, Reg, Fail) of
+    case split_block(Bl0, Reg, Fail, Acc0) of
 	failed ->
 	    %% Reason for failure: The block either contained no
 	    %% guard BIFs with the failure label Fail, or the final
@@ -206,13 +206,22 @@ extend_block_1([{set,[_],As,{bif,Bif,_}}=I|Is]=Is0, Fail, Acc) ->
 extend_block_1([_|_]=Is, _, Acc) -> {Acc,reverse(Is)};
 extend_block_1([], _, Acc) -> {Acc,[]}.
 
-split_block(Is0, Dst, Fail) ->
-    case reverse(Is0) of
-	[{'%live',_}|[{set,[Dst],_,_}|_]=Is] ->
-	    split_block_1(Is, Fail);
-	[{set,[Dst],_,_}|_]=Is ->
-	    split_block_1(Is, Fail);
-	_ -> failed
+split_block(Is0, Dst, Fail, PreIs) ->
+    case beam_jump:is_label_used_in(Fail, PreIs) of
+	true ->
+	    %% The failure label was used in one of the instructions (most
+	    %% probably bit syntax construction) preceeding the block.
+	    %% We cannot allow that because the failure label will be
+	    %% eliminated.
+	    failed;
+	false ->
+	    case reverse(Is0) of
+		[{'%live',_}|[{set,[Dst],_,_}|_]=Is] ->
+		    split_block_1(Is, Fail);
+		[{set,[Dst],_,_}|_]=Is ->
+		    split_block_1(Is, Fail);
+		_ -> failed
+	    end
     end.
 
 split_block_1(Is, Fail) ->

@@ -16,7 +16,31 @@
 #include "error.h"
 #include "erl_bits.h"
 #include "erl_message.h"
-/* this sucks, but the loaders need data for all platforms */
+/* this sucks, but the compiler needs data for all platforms */
+#include "hipe_arm_asm.h"
+#undef P
+#undef NSP
+#undef HP
+#undef TEMP_LR
+#undef TEMP_RV
+#undef SAVE_CACHED_STATE
+#undef RESTORE_CACHED_STATE
+#undef SAVE_CONTEXT_QUICK
+#undef RESTORE_CONTEXT_QUICK
+#undef SAVE_CONTEXT
+#undef RESTORE_CONTEXT
+#undef NR_ARG_REGS
+#undef LOAD_ARG_REGS
+#undef STORE_ARG_REGS
+#undef TEMP_ARG0
+#undef TEMP_ARG1
+#undef ARG0
+#undef ARG1
+#undef ARG2
+#undef ARG3
+#undef ARG4
+#undef ARG5
+#undef WSIZE /* crap from erl_bits.h */
 #include "hipe_ppc_asm.h"
 #undef P
 #undef NSP
@@ -248,7 +272,7 @@ static const struct literal {
     { "P_NSP_LIMIT", offsetof(struct process, hipe.nstack) },
     { "P_CSP", offsetof(struct process, hipe.ncsp) },
     { "P_NARITY", offsetof(struct process, hipe.narity) },
-#elif defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__)
+#elif defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__) || defined(__arm__)
     { "P_NSP_LIMIT", offsetof(struct process, hipe.nstack) },
     { "P_NRA", offsetof(struct process, hipe.nra) },
     { "P_NARITY", offsetof(struct process, hipe.narity) },
@@ -296,10 +320,16 @@ static const struct literal {
     { "MAX_HEAP_BIN_SIZE", ERL_ONHEAP_BIN_LIMIT},
 
     /* messages */
+#if !defined(ERTS_SMP)
     { "P_MSG_FIRST", offsetof(struct process, msg.first) },
     { "P_MSG_SAVE", offsetof(struct process, msg.save) },
     { "MSG_NEXT", offsetof(struct erl_mesg, next) },
     { "MSG_MESSAGE", offsetof(struct erl_mesg, m[0]) },
+#endif
+
+    /* ARM */
+    { "ARM_LEAF_WORDS", ARM_LEAF_WORDS },
+    { "ARM_NR_ARG_REGS", ARM_NR_ARG_REGS },
 
     /* PowerPC */
     { "PPC_LEAF_WORDS", PPC_LEAF_WORDS },

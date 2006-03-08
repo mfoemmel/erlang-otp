@@ -12,6 +12,7 @@ MODULES = \
 	snmpm_misc_sup \
 	snmpm_net_if \
 	snmpm_server \
+	snmpm_server_sup \
 	snmpm_supervisor \
 	snmpm_user_default \
 	snmpm_usm

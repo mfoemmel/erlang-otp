@@ -412,6 +412,7 @@ call_to_primop(erlang, is_port, 1) -> {yes, ?PRIMOP_IS_PORT};
 call_to_primop(erlang, is_reference, 1) -> {yes, ?PRIMOP_IS_REFERENCE};
 call_to_primop(erlang, is_tuple, 1) -> {yes, ?PRIMOP_IS_TUPLE};
 call_to_primop(erlang, internal_is_record, 3) -> {yes, ?PRIMOP_IS_RECORD};
+call_to_primop(erlang, is_record, 3) -> {yes, ?PRIMOP_IS_RECORD};
 call_to_primop(erlang, element, 2) -> {yes, ?PRIMOP_ELEMENT};
 call_to_primop(erlang, exit, 1) -> {yes, ?PRIMOP_EXIT};
 call_to_primop(erlang, throw, 1) -> {yes, ?PRIMOP_THROW};

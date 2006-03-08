@@ -23,7 +23,7 @@
 -behaviour(gen_server).
 
 %% Application internal API
--export([start/2, socket_ownership_transfered/3]).
+-export([start/2, start/3, socket_ownership_transfered/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -53,7 +53,9 @@
 %% called by the httpd acceptor process.
 %%--------------------------------------------------------------------
 start(Manager, ConfigDB) ->
-    proc_lib:start(?MODULE, init, [[Manager, ConfigDB]]).
+    start(Manager, ConfigDB, 15000).
+start(Manager, ConfigDB, AcceptTimeout) ->
+    proc_lib:start(?MODULE, init, [[Manager, ConfigDB,AcceptTimeout]]).
 
 %%--------------------------------------------------------------------
 %% socket_ownership_transfered(Pid, SocketType, Socket) -> void()
@@ -78,14 +80,14 @@ socket_ownership_transfered(Pid, SocketType, Socket) ->
 %% gen_server callback init, as a more complex init than the
 %% gen_server provides is needed. 
 %%--------------------------------------------------------------------
-init([Manager, ConfigDB]) ->
+init([Manager, ConfigDB,AcceptTimeout]) ->
     %% Make sure this process terminates if the httpd manager process
     %% should die!
     link(Manager), 
     %% At this point the function httpd_request_handler:start/2 will return.
     proc_lib:init_ack({ok, self()}),
     
-    {SocketType, Socket} = await_socket_ownership_transfer(),
+    {SocketType, Socket} = await_socket_ownership_transfer(AcceptTimeout),
     
     Resolve = http_transport:resolve(),
     Peername = httpd_socket:peername(SocketType, Socket),
@@ -188,8 +190,13 @@ handle_info(timeout, #state{mod = ModData} = State) ->
     httpd_response:send_status(ModData, 408, "Request timeout"),
     error_log("The client did not send the whole request before the"
 	      "server side timeout", ModData),
-    {stop, normal, State#state{response_sent = true}}.
-    
+    {stop, normal, State#state{response_sent = true}};
+
+%% Default case
+handle_info(Unexpected,State) ->
+    error_log("Unexpected message received",Unexpected),
+    {noreply,State}.
+
 %%--------------------------------------------------------------------
 %% terminate(Reason, State) -> void()
 %%
@@ -201,8 +208,8 @@ handle_info(timeout, #state{mod = ModData} = State) ->
 terminate(normal, State) ->
     do_terminate(State);
 terminate(Reason, #state{response_sent = false, mod = ModData} = State) ->
-    httpd_response:send_status(ModData, 500, "Internal server error"),
-    error_log("Internal server error", ModData),
+    httpd_response:send_status(ModData, 500, none),
+    error_log(httpd_util:reason_phrase(500), ModData),
     terminate(Reason, State#state{response_sent = true, mod = ModData});
 terminate(_, State) ->
     do_terminate(State).
@@ -224,11 +231,11 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-await_socket_ownership_transfer() ->
+await_socket_ownership_transfer(AcceptTimeout) ->
     receive
 	{socket_ownership_transfered, SocketType, Socket} ->
 	    {SocketType, Socket}
-    after 15000 ->
+    after AcceptTimeout ->
 	    exit(accept_socket_timeout)
     end.
 

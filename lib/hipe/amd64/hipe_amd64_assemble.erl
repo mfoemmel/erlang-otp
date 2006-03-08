@@ -16,17 +16,16 @@
 			   {temp_to_reg32(Dst),{imm32,Imm}};      
 			  true -> {temp_to_rm64(Dst),{imm32,Imm}}
 		       end).
--define(REG64, {reg64, _Reg64} -> Arg).
 
 -define(MOVE64, #move64{} ->
 	   Arg = resolve_move64_args(hipe_x86:move64_src(I),
 				     hipe_x86:move64_dst(I),
-				     {MFA,ConstMap}),
+				     Context),
 	   [{mov, Arg, I}]).
 
 -define(RESOLVE_MOVE64_ARGS, %% mov reg,imm64
 	resolve_move64_args(Src=#x86_imm{}, Dst=#x86_temp{}, Context) ->
-	   {_,Imm} = resolve_arg(Src, Context, false),
+	   {_,Imm} = translate_imm(Src, Context, false),
 	   {temp_to_reg64(Dst),{imm64,Imm}}).
 
 -define(TEMP_TO_REG64, temp_to_reg64(#x86_temp{reg=Reg}) ->
@@ -36,7 +35,7 @@
 	   {rm64, hipe_amd64_encode:rm_reg(Reg)}).
 
 -define(RESOLVE_JMP_SWITCH_ARG,
-resolve_jmp_switch_arg(I, _) ->
+resolve_jmp_switch_arg(I, _Context) ->
   Base = hipe_x86:temp_reg(hipe_x86:jmp_switch_jtab(I)),
   Index = hipe_x86:temp_reg(hipe_x86:jmp_switch_temp(I)),
   SINDEX = hipe_amd64_encode:sindex(3, Index),

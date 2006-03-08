@@ -28,6 +28,8 @@
 -export([is_guard_expr/1]).
 -export([bool_option/4,value_option/3,value_option/7]).
 
+-export([modify_line/2]).
+
 -import(lists, [member/2,map/2,foldl/3,foldr/3,mapfoldl/3,all/2,reverse/1]).
 
 %% bool_option(OnOpt, OffOpt, Default, Options) -> true | false.
@@ -712,10 +714,16 @@ check_inlines(Forms, St0) ->
           end, St0, Bad).
 
 check_deprecated(Forms, St0) ->
-    #lint{module = Mod, exports = X} = St0,
+    %% Get the correct list of exported functions.
+    Exports = case member(export_all, St0#lint.compile) of
+		  true -> St0#lint.defined;
+		  false -> St0#lint.exports
+	      end,
+    X = gb_sets:to_list(Exports),
+    #lint{module = Mod} = St0,
     Bad = [{E,L} || {attribute, L, deprecated, Depr} <- Forms,
                     D <- lists:flatten([Depr]),
-                    E <- depr_cat(D, gb_sets:to_list(X), Mod)],
+                    E <- depr_cat(D, X, Mod)],
     foldl(fun ({E,L}, St1) -> 
                   add_error(L, E, St1)
           end, St0, Bad).
@@ -1697,7 +1705,14 @@ def_fields(Fs0, Name, St0) ->
     foldl(fun ({record_field,Lf,{atom,La,F},V}, {Fs,St}) ->
                   case exist_field(F, Fs) of
                       true -> {Fs,add_error(Lf, {redefine_field,Name,F}, St)};
-                      false -> {[{record_field,Lf,{atom,La,F},V}|Fs],St}
+                      false -> 
+                          St1 = St#lint{errors = []},
+                          {_,#lint{errors = Errors}} = expr(V, [], St1),
+                          Es = [E || {_,_,{undefined_record,_}}=E <- Errors],
+                          St3 = foldl(fun (E, St2) -> 
+                                             add_warning(E, St2)
+                                      end, St, Es),
+                          {[{record_field,Lf,{atom,La,F},V}|Fs],St3}
                   end
           end, {[],St0}, Fs0).
 
@@ -2211,34 +2226,42 @@ vintersection([Vs|Vss]) ->
 vintersection([]) ->
     [].
 
-%% copy_expr(Expr, Line) -> Expr.
-%%  Make a copy of Expr converting all line numbers to Line.
+copy_expr(Expr, Line) ->
+    modify_line(Expr, fun(_L) -> Line end).
 
-copy_expr({clauses,Cs}, Line) -> {clauses,copy_expr(Cs, Line)};
-copy_expr({function,F,A}, _Line) -> {function,F,A};
-copy_expr({function,M,F,A}, _Line) -> {function,M,F,A};
-copy_expr({Tag,_L}, Line) -> {Tag,Line};
-copy_expr({Tag,_L,E1}, Line) ->
-    {Tag,Line,copy_expr(E1, Line)};
-copy_expr({Tag,_L,E1,E2}, Line) ->
-    {Tag,Line,copy_expr(E1, Line),copy_expr(E2, Line)};
-copy_expr({bin_element,_L,E1,E2,TSL}, Line) ->
-    {bin_element,Line,copy_expr(E1, Line),copy_expr(E2, Line), TSL};
-copy_expr({Tag,_L,E1,E2,E3}, Line) ->
-    {Tag,Line,
-     copy_expr(E1, Line),
-     copy_expr(E2, Line),
-     copy_expr(E3, Line)};
-copy_expr({Tag,_L,E1,E2,E3,E4}, Line) ->
-    {Tag,Line,
-     copy_expr(E1, Line),
-     copy_expr(E2, Line),
-     copy_expr(E3, Line),
-     copy_expr(E4, Line)};
-copy_expr([H|T], Line) ->
-    [copy_expr(H, Line)|copy_expr(T, Line)];
-copy_expr([], _Line) -> [];
-copy_expr(E, _Line) when constant(E) -> E.
+%% modify_line(Form, Fun) -> Form
+%% modify_line(Expression, Fun) -> Expression
+%%  Applies Fun to each line number occurrence.
+
+%% Forms.
+modify_line({function,F,A}, _Mf) -> {function,F,A};
+modify_line({function,M,F,A}, _Mf) -> {function,M,F,A};
+modify_line({attribute,L,record,{Name,Fields}}, Mf) -> 
+    {attribute,Mf(L),record,{Name,modify_line(Fields, Mf)}};
+modify_line({attribute,L,Attr,Val}, Mf) -> {attribute,Mf(L),Attr,Val};
+modify_line({warning,W}, _Mf) -> {warning,W};
+modify_line({error,W}, _Mf) -> {error,W};
+%% Expressions.
+modify_line({clauses,Cs}, Mf) -> {clauses,modify_line(Cs, Mf)};
+modify_line({Tag,L}, Mf) -> {Tag,Mf(L)};
+modify_line({Tag,L,E1}, Mf) ->
+    {Tag,Mf(L),modify_line(E1, Mf)};
+modify_line({Tag,L,E1,E2}, Mf) ->
+    {Tag,Mf(L),modify_line(E1, Mf),modify_line(E2, Mf)};
+modify_line({bin_element,L,E1,E2,TSL}, Mf) ->
+    {bin_element,Mf(L),modify_line(E1, Mf),modify_line(E2, Mf), TSL};
+modify_line({Tag,L,E1,E2,E3}, Mf) ->
+    {Tag,Mf(L),modify_line(E1, Mf),modify_line(E2, Mf),modify_line(E3, Mf)};
+modify_line({Tag,L,E1,E2,E3,E4}, Mf) ->
+    {Tag,Mf(L),
+     modify_line(E1, Mf),
+     modify_line(E2, Mf),
+     modify_line(E3, Mf),
+     modify_line(E4, Mf)};
+modify_line([H|T], Mf) ->
+    [modify_line(H, Mf)|modify_line(T, Mf)];
+modify_line([], _Mf) -> [];
+modify_line(E, _Mf) when constant(E) -> E.
 
 %% Check a record_info call. We have already checked that it is not
 %% shadowed by an import.

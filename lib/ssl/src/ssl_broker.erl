@@ -41,7 +41,7 @@
 %% Permitted status transitions: 
 %%
 %%		nil	->	open 
-%%		open	->	closing
+%%		open	->	closing | closed (termination)
 %%		closing	->	closed (termination)
 %%
 %% We are rather sloppy about nil, and consider open/closing == !closed,
@@ -70,8 +70,8 @@
 %%	info							
 %%	----							
 %%	tcp		open			active		ditto
-%%	tcp_closed	open			active		closing
-%%	tcp_error	open			active		closing
+%%	tcp_closed	open | closing		active		closing
+%%	tcp_error	open | closing		active		closing
 %%
 %%	(1) We just terminate.
 %%
@@ -150,7 +150,7 @@ start_link(Client, Type, GenOpts) ->
 %% 	    Timeout = integer() | infinity
 %%
 accept(Pid, ListenSocket, Timeout) 
-  when pid(Pid), record(ListenSocket, sslsocket) ->
+  when is_pid(Pid), is_record(ListenSocket, sslsocket) ->
     Req = {accept, self(), ListenSocket, Timeout},
     gen_server:call(Pid, Req, infinity).
 
@@ -158,9 +158,9 @@ accept(Pid, ListenSocket, Timeout)
 %%  
 %% Types:   Socket = sslsocket() | pid()
 %%
-close(Socket) when record(Socket, sslsocket) ->
+close(Socket) when is_record(Socket, sslsocket) ->
     close(Socket#sslsocket.pid);
-close(Pid) when pid(Pid) ->
+close(Pid) when is_pid(Pid) ->
     gen_server:call(Pid, {close, self()}, infinity).
 
 %% connect(Pid, Address, Port, Opts, Timeout) -> {ok, Socket} | 
@@ -173,7 +173,7 @@ close(Pid) when pid(Pid) ->
 %% 	    Timeout = integer() | infinity
 %%          Socket = sslsocket()
 %%
-connect(Pid, Address, Port, Opts, Timeout) when pid(Pid), list(Opts) ->
+connect(Pid, Address, Port, Opts, Timeout) when is_pid(Pid), is_list(Opts) ->
     case are_connect_opts(Opts) of
 	true ->
 	    Req = {connect, self(), Address, Port, Opts, Timeout},
@@ -185,14 +185,14 @@ connect(Pid, Address, Port, Opts, Timeout) when pid(Pid), list(Opts) ->
 %%
 %% connection_info(Socket) -> {ok, {Protocol, Cipher} | {error, Reason}
 %%
-connection_info(Socket) when record(Socket, sslsocket) ->
+connection_info(Socket) when is_record(Socket, sslsocket) ->
     Req = {connection_info, self()},
     gen_server:call(Socket#sslsocket.pid, Req, infinity).
 
 %% controlling_process(Socket, NewOwner) -> ok | {error, Reason}
 
 controlling_process(Socket, NewOwner) 
-  when record(Socket, sslsocket), pid(NewOwner) ->
+  when is_record(Socket, sslsocket), is_pid(NewOwner) ->
     Pid = Socket#sslsocket.pid, 
     case gen_server:call(Pid, {inhibit_msgs, self()}, infinity) of
 	ok ->
@@ -209,7 +209,7 @@ controlling_process(Socket, NewOwner)
 %%          Opts = options()
 %%          ListenSocket = sslsocket()
 %%
-listen(Pid, Port, Opts) when pid(Pid) ->
+listen(Pid, Port, Opts) when is_pid(Pid) ->
     case are_listen_opts(Opts) of
 	true ->
 	    Req = {listen, self(), Port, Opts}, 
@@ -222,7 +222,7 @@ listen(Pid, Port, Opts) when pid(Pid) ->
 %%
 %% peername(Socket) -> {ok, {Address, Port}} | {error, Reason}
 %%
-peername(Socket) when record(Socket, sslsocket) ->
+peername(Socket) when is_record(Socket, sslsocket) ->
     Req = {peername, self()},
     gen_server:call(Socket#sslsocket.pid, Req, infinity).
 
@@ -233,7 +233,7 @@ peername(Socket) when record(Socket, sslsocket) ->
 %%          Length = Timeout = integer()
 %%          Data = bytes() | binary()
 %%
-recv(Socket, Length, Timeout) when record(Socket, sslsocket) ->
+recv(Socket, Length, Timeout) when is_record(Socket, sslsocket) ->
     Req = {recv, self(), Length, Timeout}, 
     gen_server:call(Socket#sslsocket.pid, Req, infinity).
 
@@ -242,7 +242,7 @@ recv(Socket, Length, Timeout) when record(Socket, sslsocket) ->
 %%  
 %% Types:   Socket = sslsocket()
 %%
-send(Socket, Data) when record(Socket, sslsocket) ->
+send(Socket, Data) when is_record(Socket, sslsocket) ->
     gen_server:call(Socket#sslsocket.pid, {send, self(), Data}, infinity).
 
 
@@ -256,8 +256,8 @@ send(Socket, Data) when record(Socket, sslsocket) ->
 getopts(Socket, OptTags) ->
     getopts(Socket, OptTags, infinity).
 
-getopts(Socket, OptTags, Timeout) when record(Socket, sslsocket), 
-				       list(OptTags) ->
+getopts(Socket, OptTags, Timeout) when is_record(Socket, sslsocket), 
+				       is_list(OptTags) ->
     Req = {getopts, self(), OptTags}, 
     gen_server:call(Socket#sslsocket.pid, Req, Timeout).
 
@@ -265,14 +265,14 @@ getopts(Socket, OptTags, Timeout) when record(Socket, sslsocket),
 %%
 %% setopts(Socket, Opts) -> ok | {error, Reason}
 %%
-setopts(Socket, Opts) when record(Socket, sslsocket) ->
+setopts(Socket, Opts) when is_record(Socket, sslsocket) ->
     Req = {setopts, self(), Opts},
     gen_server:call(Socket#sslsocket.pid, Req, infinity).
 
 %%
 %% sockname(Socket) -> {ok, {Address, Port}} | {error, Reason}
 %%
-sockname(Socket) when record(Socket, sslsocket) ->
+sockname(Socket) when is_record(Socket, sslsocket) ->
     Req = {sockname, self()},
     gen_server:call(Socket#sslsocket.pid, Req, infinity).
 
@@ -280,7 +280,7 @@ sockname(Socket) when record(Socket, sslsocket) ->
 %%
 %% peercert(Socket) -> {ok, Cert} | {error, Reason}
 %%
-peercert(Socket) when record(Socket, sslsocket) ->
+peercert(Socket) when is_record(Socket, sslsocket) ->
     Req = {peercert, self()},
     gen_server:call(Socket#sslsocket.pid, Req, infinity).
 
@@ -590,32 +590,30 @@ St#st.active =/= false ->
 %%
 %%
 handle_info({tcp_closed, Socket}, St) 
-  when St#st.proxysock == Socket, St#st.status == open,
-St#st.active =/= false ->
+  when St#st.proxysock == Socket, St#st.active =/= false ->
     debug(St, "tcp_closed: socket = ~w~n", [Socket]),
     Msg = {ssl_closed, St#st.thissock},
     St#st.collector ! Msg,
     if
 	St#st.active == once -> 
-	    {noreply, St#st{status = closed, active = false}};
+	    {noreply, St#st{status = closing, active = false}};
 	true ->
-	    {noreply, St#st{status = closed}}
+	    {noreply, St#st{status = closing}}
     end;
 
 %% tcp_error - from proxy socket, active mode
 %%
 %%
 handle_info({tcp_error, Socket, Reason}, St) 
-  when St#st.proxysock == Socket, St#st.status == open, 
-St#st.active =/= false ->
+  when St#st.proxysock == Socket, St#st.active =/= false ->
     debug(St, "tcp_error: socket = ~w, reason = ~w~n", [Socket, Reason]),
     Msg = {ssl_error, St#st.thissock, Reason},
     St#st.collector ! Msg,
     if
 	St#st.active == once -> 
-	    {noreply, St#st{status = closed, active = false}};
+	    {noreply, St#st{status = closing, active = false}};
 	true ->
-	    {noreply, St#st{status = closed}}
+	    {noreply, St#st{status = closing}}
     end;
 
 
@@ -865,11 +863,11 @@ debug1(_, _, _, _) ->
 %%
 %% what(Reason) -> What
 %% 
-what(Reason) when atom(Reason) ->
+what(Reason) when is_atom(Reason) ->
     Reason;
 what({'EXIT', Reason}) ->
     what(Reason);
-what({What, _Where}) when atom(What) ->
+what({What, _Where}) when is_atom(What) ->
     What;
 what(Reason) ->
     Reason.
@@ -1029,8 +1027,8 @@ is_tcp_listen_opt(Opt) ->
 %% `deliver'.
 is_tcp_gen_opt({mode, list}) -> true;
 is_tcp_gen_opt({mode, binary}) -> true;
-is_tcp_gen_opt({header, Sz}) when integer(Sz), 0 =< Sz -> true; 
-is_tcp_gen_opt({packet, Sz}) when integer(Sz), 0 =< Sz, Sz =< 4-> true;
+is_tcp_gen_opt({header, Sz}) when is_integer(Sz), 0 =< Sz -> true; 
+is_tcp_gen_opt({packet, Sz}) when is_integer(Sz), 0 =< Sz, Sz =< 4-> true;
 is_tcp_gen_opt({packet, sunrm}) -> true;
 is_tcp_gen_opt({packet, asn1}) -> true;
 is_tcp_gen_opt({packet, cdr}) -> true;
@@ -1047,10 +1045,11 @@ is_tcp_gen_opt({active, once}) -> true;
 is_tcp_gen_opt({ip, Addr}) -> is_ip_address(Addr);
 is_tcp_gen_opt(_Opt) -> false.
 
-is_tcp_listen_only_opt({backlog, Size}) when integer(Size), 0 =< Size -> true;
+is_tcp_listen_only_opt({backlog, Size}) when is_integer(Size), 0 =< Size -> 
+    true;
 is_tcp_listen_only_opt(_Opt) -> false.
 
-is_tcp_connect_only_opt({port, Port}) when integer(Port), 0 =< Port -> true;
+is_tcp_connect_only_opt({port, Port}) when is_integer(Port), 0 =< Port -> true;
 is_tcp_connect_only_opt(_Opt) -> false.
 
 %% SSL options
@@ -1066,16 +1065,16 @@ is_ssl_opt({cachetimeout, Timeout}) when Timeout >= 0 -> true;
 is_ssl_opt(_Opt) -> false.
 
 %% Various types
-is_string(String) when list(String) ->
-    lists:all(fun (C) when integer(C), 0 =< C, C =< 255 -> true; 
+is_string(String) when is_list(String) ->
+    lists:all(fun (C) when is_integer(C), 0 =< C, C =< 255 -> true; 
 		  (_C) -> false end, 
 	      String);
 is_string(_) ->
     false.
 
-is_ip_address(Addr) when tuple(Addr), size(Addr) == 4 ->
+is_ip_address(Addr) when is_tuple(Addr), size(Addr) == 4 ->
     is_string(tuple_to_list(Addr));
-is_ip_address(Addr) when list(Addr) ->
+is_ip_address(Addr) when is_list(Addr) ->
     is_string(Addr);
 is_ip_address(_) ->
     false.

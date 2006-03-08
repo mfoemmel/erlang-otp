@@ -354,9 +354,6 @@ erts_is_count_break(Uint *pc, Sint *count_ret) {
     return 0;
 }
 
-
-
-/* Arity -1 means return any arity. Used by raise_3. */
 Uint *
 erts_find_local_func(Eterm mfa[3]) {
     Module *modp;
@@ -366,16 +363,15 @@ erts_find_local_func(Eterm mfa[3]) {
 
     if ((modp = erts_get_module(mfa[0])) == NULL)
 	return NULL;
-    
-    code_base = (Uint **) modp->code;
+    if ((code_base = (Uint **) modp->code) == NULL)
+	return NULL;
     n = (Uint) code_base[MI_NUM_FUNCTIONS];
     for (i = 0; i < n; ++i) {
 	code_ptr = code_base[MI_FUNCTIONS+i];
 	ASSERT(((Uint) BeamOp(op_i_func_info_IaaI)) == code_ptr[0]);
 	ASSERT(mfa[0] == ((Eterm) code_ptr[2]));
 	if (mfa[1] == ((Eterm) code_ptr[3]) &&
-	    ((mfa[2] == ((Eterm) -1)) ||
-	     ((Uint) mfa[2]) == code_ptr[4])) {
+	    ((Uint) mfa[2]) == code_ptr[4]) {
 	    return code_ptr + 5;
 	}
     }

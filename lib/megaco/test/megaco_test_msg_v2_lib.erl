@@ -4226,8 +4226,8 @@ chk_WildcardField(WF1, WF2) ->
 is_TerminationID(#'TerminationID'{wildcard = W, 
 				  id       = ID}) ->
     is_TerminationID_wildcard(W) andalso is_TerminationID_id(ID);
-is_TerminationID(#megaco_term_id{contains_wildcards = W,
-				 id                 = ID}) ->
+is_TerminationID(#megaco_term_id{contains_wildcards = _W,
+				 id                 = _ID}) ->
     true; % What are the types?
 is_TerminationID(_) ->
     false.
@@ -6736,15 +6736,15 @@ is_IA5String(S, _) when list(S) ->
 is_IA5String(_, _) ->
     false.
 
-chk_IA5String(S, S) ->
-    chk_type(fun is_IA5String/1, 'IA5String', S);
-chk_IA5String(S1, S2) ->
-    case (is_IA5String(S1) andalso is_IA5String(S2)) of
-	true ->
-	    not_equal('IA5String', S1, S2);
-	false ->
-	    wrong_type('IA5String', S1, S2)
-    end.
+%% chk_IA5String(S, S) ->
+%%     chk_type(fun is_IA5String/1, 'IA5String', S);
+%% chk_IA5String(S1, S2) ->
+%%     case (is_IA5String(S1) andalso is_IA5String(S2)) of
+%% 	true ->
+%% 	    not_equal('IA5String', S1, S2);
+%% 	false ->
+%% 	    wrong_type('IA5String', S1, S2)
+%%     end.
 
 chk_IA5String(S, S, R) ->
     chk_type(fun is_IA5String/2, 'IA5String', S, R);

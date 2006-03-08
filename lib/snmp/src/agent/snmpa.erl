@@ -63,6 +63,8 @@
  
  	 sys_up_time/0, system_start_time/0,
 
+	 backup/1, backup/2, 
+
 	 convert_config/1]).
 
 %% USM functions:
@@ -214,6 +216,15 @@ old_info_format(Info) when list(Info) ->
     {value, DbMem}        = lists:keysearch(db_memory,       1, MibInfo),
     [Vsns, SAa, LoadedMibs, TreeSz, ProcMem, DbMem].
     
+
+%% -
+
+backup(BackupDir) ->
+    backup(snmp_master_agent, BackupDir).
+
+backup(Agent, BackupDir) ->
+    snmpa_agent:backup(Agent, BackupDir).
+
 
 %% -
 

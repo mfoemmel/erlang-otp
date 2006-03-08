@@ -98,13 +98,8 @@ compile_icode(MFA, LinearIcode0, Options, DebugState) ->
   
   case icode_ssa(IcodeCfg2, MFA, Options) of
     {dialyzer, IcodeSSA} -> {dialyzer, IcodeSSA};
-    {Fixpoint, IcodeCfg3} -> 
-      case proplists:get_bool(type_only, Options) of
-	false ->
-	  compile_icode_2(MFA, IcodeCfg3, Options, DebugState);
-	true ->
-	  {type_only, Fixpoint}
-      end
+    {type_only, Fixpoint} -> {type_only, Fixpoint};
+    IcodeCfg3 -> compile_icode_2(MFA, IcodeCfg3, Options, DebugState)
   end.
 
 compile_icode_2(MFA, IcodeCfg3, Options, DebugState) ->  
@@ -244,13 +239,22 @@ icode_ssa(IcodeCfg0, MFA, Options) ->
     true ->
       {dialyzer, IcodeSSA3};
     false ->
-      {Fixpoint, IcodeSSA4} = icode_ssa_type_info(IcodeSSA3, MFA, Options),
-      IcodeSSA5 = icode_ssa_dead_code_elimination(IcodeSSA4, Options),
-      icode_ssa_check(IcodeSSA5, Options), %% just for sanity
-      icode_pp(IcodeSSA5, MFA, proplists:get_value(pp_icode_ssa,Options)),
-      IcodeCfg = icode_ssa_unconvert(IcodeSSA5, Options),
-      ?opt_stop_timer("Icode SSA-passes"),
-      {Fixpoint, IcodeCfg}
+      case icode_ssa_type_info(IcodeSSA3, MFA, Options) of
+	{type_only, Fixpoint} -> {type_only, Fixpoint};
+	AnnIcode1 ->
+	  AnnIcode2 = 
+	    case proplists:get_bool(inline_fp, Options) of
+	      true -> hipe_icode_fp:cfg(AnnIcode1);
+	      false -> AnnIcode1
+	    end,
+	  IcodeSSA4 = hipe_icode_type:unannotate_cfg(AnnIcode2),
+	  IcodeSSA5 = icode_ssa_dead_code_elimination(IcodeSSA4, Options),
+	  icode_ssa_check(IcodeSSA5, Options), %% just for sanity
+	  icode_pp(IcodeSSA5, MFA, proplists:get_value(pp_icode_ssa,Options)),
+	  IcodeCfg = icode_ssa_unconvert(IcodeSSA5, Options),
+	  ?opt_stop_timer("Icode SSA-passes"),
+	  IcodeCfg
+      end
   end.
 
 icode_ssa_convert(IcodeCfg, Options) ->
@@ -287,17 +291,22 @@ icode_ssa_copy_prop(IcodeSSA, Options) ->
   end.
 
 icode_ssa_type_info(IcodeSSA, MFA, Options) ->
-  case proplists:get_value(icode_type, Options) of
-    false ->
-      {ok, IcodeSSA};
-    undefined -> 
-      {ok, IcodeSSA};
-    true ->
-      ?option_time(hipe_icode_type:cfg(IcodeSSA, MFA, Options),
-		   "Icode type info", Options);
-    {plt, _Plt} ->
-      ?option_time(hipe_icode_type:cfg(IcodeSSA, MFA, Options),
-		   "Icode type info", Options)
+  {Fixpoint, AnnIcode} =
+    case proplists:get_value(icode_type, Options) of
+      false ->
+	{ok, IcodeSSA};
+      undefined -> 
+	{ok, IcodeSSA};
+      true ->
+	?option_time(hipe_icode_type:cfg(IcodeSSA, MFA, Options),
+		     "Icode type info", Options);
+      {plt, _Plt} ->
+	?option_time(hipe_icode_type:cfg(IcodeSSA, MFA, Options),
+		     "Icode type info", Options)
+    end,
+  case proplists:get_bool(type_only, Options) of
+    true -> {type_only, Fixpoint};
+    false -> AnnIcode
   end.
 
 icode_ssa_dead_code_elimination(IcodeSSA, Options) ->
@@ -562,6 +571,8 @@ rtl_to_native(MFA, LinearRTL, Options, DebugState) ->
 	hipe_sparc_main:rtl_to_sparc(MFA, LinearRTL, Options);
       powerpc ->
 	hipe_ppc_main:rtl_to_ppc(MFA, LinearRTL, Options);
+      arm ->
+	hipe_arm_main:rtl_to_arm(MFA, LinearRTL, Options);
       x86 ->
 	hipe_x86_main:rtl_to_x86(MFA, LinearRTL, Options);
       amd64 ->

@@ -2754,12 +2754,12 @@ do_make_merge_schema(Node, RemoteCs)
 		    throw(Str)
 	    end;
 	
-	StCsLocal /= StRcsLocal, StRcsLocal /= unknown ->
+	StCsLocal /= StRcsLocal, StRcsLocal /= unknown, StCsLocal /= ram_copies ->
 	    Str = io_lib:format("Incompatible schema storage types (local). "
 				"on ~w storage ~w, on ~w storage ~w~n",
 				[node(), StCsLocal, Node, StRcsLocal]),
 	    throw(Str);    
-	StCsRemote /= StRcsRemote, StCsRemote /= unknown ->
+	StCsRemote /= StRcsRemote, StCsRemote /= unknown, StRcsRemote /= ram_copies ->
 	    Str = io_lib:format("Incompatible schema storage types (remote). "
 				"on ~w cs ~w, on ~w rcs ~w~n",
 				[node(), cs2list(Cs), Node, cs2list(RemoteCs)]),

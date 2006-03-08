@@ -3184,7 +3184,7 @@ void process_main(void)
  do_bits_to_bytes:
      {
 	 if (is_not_valid_bit_size(tmp_arg1)) {
-	     goto lb_Cl_error;
+	     goto badarg;
 	 }
 	 tmp_arg1 = make_small(unsigned_val(tmp_arg1) >> 3);
 	 StoreBifResult(1, tmp_arg1);
@@ -4819,6 +4819,7 @@ hibernate(Process* c_p, Eterm module, Eterm function, Eterm args, Eterm* reg)
 	c_p->fvalue = NIL;
 	erts_garbage_collect(c_p, 0, c_p->arg_reg, c_p->arity);
 	new_sz = HEAP_TOP(c_p) - HEAP_START(c_p);
+	if (new_sz == 0) new_sz = 1; /* We want a heap... */
 	erts_shrink_new_heap(c_p, new_sz, c_p->arg_reg, c_p->arity);
 	c_p->status = P_WAITING;
     }

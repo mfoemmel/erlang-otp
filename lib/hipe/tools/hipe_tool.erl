@@ -9,9 +9,9 @@
 %%  History  :	* 2002-03-13 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2004/01/15 16:48:24 $
-%%              $Revision: 1.9 $
+%%              $Author: kostis $
+%%              $Date: 2005/12/12 21:58:04 $
+%%              $Revision: 1.11 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -427,7 +427,7 @@ get_version(Comp) ->
   end.
 get_cwd(Options) ->
   case lists:keysearch(cwd,1,Options) of
-    {value,{_,V}} when atom(V) -> atom_to_list(V);
+    {value,{_,V}} when is_atom(V) -> atom_to_list(V);
     {value,{_,V}} -> V; 
     _ -> ""
   end.
@@ -445,9 +445,8 @@ get_compile(Info) ->
 
 is_profiled(Mod) ->
   case hipe_bifs:call_count_get({Mod,module_info,0}) of
-    false ->
-      false;
-    _ -> true
+    false -> false;
+    C when is_integer(C) -> true
   end.
 
 compile(State) ->
@@ -480,7 +479,6 @@ get_edoc(Mod) ->
 	   {'EXIT',_} -> "error";
 	   T -> T
 	 end,
-  
   gs:config(edoc,{enable, true}),
   gs:config(edoc,clear),
   gs:config(edoc,{insert, {insert, Text}}),
@@ -488,9 +486,7 @@ get_edoc(Mod) ->
 
 
 edoc(Name, Opts) -> 
-  %% Hide the calls to EDoc from xref, for now.
-  M = edoc,
-  Doc = apply(M, get_doc, [Name, Opts]),
-%  Comments = edoc:read_comments(Name, Opts),
-%  Text = edoc:forms(Forms, Comments, Name, Opts),
-  apply(M, layout, [Doc, Opts]).
+  Doc = edoc:get_doc([Name, Opts]),
+  %% Comments = edoc:read_comments(Name, Opts),
+  %% Text = edoc:forms(Forms, Comments, Name, Opts),
+  edoc:layout([Doc, Opts]).

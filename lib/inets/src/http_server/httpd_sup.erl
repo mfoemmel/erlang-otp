@@ -39,7 +39,7 @@ start_link(HttpdServices) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, [HttpdServices]).
 
 start_child(ConfigFile) ->
-    {ok, Spec} = httpd_child_spec(ConfigFile),
+    {ok, Spec} = httpd_child_spec(ConfigFile, 15000, []),
     supervisor:start_child(?MODULE, Spec).
     
 stop_child(Addr, Port) ->
@@ -64,36 +64,74 @@ init([HttpdServices]) ->
 %%%=========================================================================
 %%%  Internal functions
 %%%=========================================================================
+%% The format of the httpd service is:
+%% httpd_service() -> {httpd,httpd()}
+%% httpd()         -> [httpd_config()] | file()
+%% httpd_config()  -> {file,file()} |
+%%                    {debug,debug()} |
+%%                    {accept_timeout,integer()}
+%% debug()         -> disable | [debug_options()]
+%% debug_options() -> {all_functions,modules()} | 
+%%                    {exported_functions,modules()} |
+%%                    {disable,modules()}
+%% modules()       -> [atom()]
 child_spec([], Acc) ->
     Acc;
-child_spec([{httpd, ConfigFile} | Rest], Acc) ->
-    case httpd_child_spec(ConfigFile) of
-	{ok, Spec} ->
-	    child_spec(Rest, [Spec | Acc]);
-	{error, Reason} ->
-	    error_msg("Failed creating child spec "
-		      "using ~p for reason: ~p", [ConfigFile, Reason]),
-	    child_spec(Rest, Acc)
-    end.
+child_spec([{httpd, HttpdService} | Rest], Acc) ->
+    NewHttpdService = mk_tuple_list(HttpdService),
+    %%    Acc2 = child_spec2(NewHttpdService,Acc),
+    NewAcc=
+	case catch child_spec2(NewHttpdService) of
+	    {ok,Acc2} ->
+		[Acc2|Acc];
+	    {error,Reason} ->
+		error_msg("failed to create child spec for ~n~p~ndue to: ~p",
+			  [HttpdService,Reason]),
+%		exit({error,Reason})
+		Acc
+	end,
+    child_spec(Rest,NewAcc).
 
-httpd_child_spec(ConfigFile) ->
+child_spec2(HttpdService) ->
+    Debug = http_util:key1search(HttpdService,debug,[]),
+    AcceptTimeout = http_util:key1search(HttpdService,accept_timeout,15000),
+    ConfigFile =
+    case http_util:key1search(HttpdService,file) of
+	undefined -> throw({error,{mandatory_conf_file_missed}});
+	File -> File
+    end,
+    httpd_util:valid_options(Debug,AcceptTimeout,ConfigFile),
+    httpd_child_spec(ConfigFile,AcceptTimeout,Debug).
+
+
+httpd_child_spec(ConfigFile,AcceptTimeout,Debug) ->
     case httpd_conf:load(ConfigFile) of
 	{ok, ConfigList} ->
 	    Port = httpd_util:key1search(ConfigList, port, 80),
 	    Addr = httpd_util:key1search(ConfigList, bind_address),
-	    {ok, httpd_child_spec(ConfigFile, Addr, Port)};
+	    {ok, httpd_child_spec(ConfigFile, AcceptTimeout, 
+				  Debug, Addr, Port)};
 	Error ->
 	    Error
     end.
 
-httpd_child_spec(ConfigFile, Addr, Port) ->
+httpd_child_spec(ConfigFile, AcceptTimeout, Debug, Addr, Port) ->
     Name = {httpd_instance_sup, Addr, Port},
-    StartFunc = {httpd_instance_sup, start_link, [ConfigFile]},
+    StartFunc = {httpd_instance_sup, start_link,
+		 [ConfigFile,AcceptTimeout,Debug]},
     Restart = permanent, 
     Shutdown = infinity,
     Modules = [httpd_instance_sup],
     Type = supervisor,
     {Name, StartFunc, Restart, Shutdown, Type, Modules}.
+
+
+mk_tuple_list([]) ->
+    [];
+mk_tuple_list([H={_,_}|T]) ->
+    [H|mk_tuple_list(T)];
+mk_tuple_list(F) ->
+    [{file,F}].
 
 error_msg(F, A) ->
     error_logger:error_msg(F ++ "~n", A).

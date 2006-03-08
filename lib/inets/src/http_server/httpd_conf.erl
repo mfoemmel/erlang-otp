@@ -210,6 +210,13 @@ load("BindAddress " ++ Address, []) ->
 	    {ok, [], {bind_address,any}};
 	CAddress ->
 	    case (catch inet:getaddr(CAddress,inet6)) of
+		{ok, {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
+		    case inet:getaddr(CAddress, inet) of
+			{ok, IPAddr} ->
+			    {ok, [], {bind_address,IPAddr}};
+			{error, _} ->
+			    {error, ?NICE(CAddress++" is an invalid address")}
+		    end;
 		{ok, IPAddr} ->
 		    {ok, [], {bind_address, IPAddr}};
 		_ ->

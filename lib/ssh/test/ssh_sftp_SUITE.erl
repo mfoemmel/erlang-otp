@@ -87,6 +87,7 @@ sftp(Config) when list(Config) ->
     %% close
     ?line ok = ssh_sftp:close(S, Hreadx),
     ?line ok = ssh_sftp:close(S, Hdirx),
+    ?line ok = ssh_sftp:close(S, Hwritebin),
     %% readdir
     ?line {ok, Hdir} = ssh_sftp:opendir(S, DataDir),
     ?line {ok, Files0} = ssh_sftp:readdir(S, Hdir),
@@ -118,57 +119,16 @@ sftp(Config) when list(Config) ->
     io:format("C ~p\n", [file:read_file(F)]),
     ?line B = list_to_binary([lists:seq(0, 253), [1, 2]]),
     ?line {ok, B} = file:read_file(F),
+    %% mkdir
+    ?line Dir = "/tmp/ssh_sftp_test_dir1",
+    ?line file:del_dir(Dir),			% in case we got leftovers
+    ?line ok = ssh_sftp:make_dir(S, Dir),
+    %% rmdir
+    ?line ok = ssh_sftp:del_dir(S, Dir),
+    %% close
+    ?line ok = ssh_sftp:stop(S),
     ?line ok.
 
 %% ssh_cmd(Dir) ->
 %%     ssh_ssh:connect("localhost", [{user_dir, Dir}, {system_dir, Dir}]).
-
-expect_data(Port) ->
-    receive
-	{Port, {data, Data}} ->
-	    p_expect(Data),
-	    Data
-    after ?EXPECT_TIMEOUT ->
-	    timeout
-    end.
-
-expect_regexp_data(Port, Regexp) ->
-    receive
-	{Port, {data, Data}} ->
-	    p_expect(Data),
-	    regexp:match(Data, Regexp)
-    after ?EXPECT_TIMEOUT ->
-	    timeout
-    end.
-
-p_expect(Data) when is_list(Data)->
-    ?PRINT_EXPECT andalso ok == io:format("#Expect \"~s\"\n", [Data]);
-p_expect(Data) ->
-    ?PRINT_EXPECT andalso ok == io:format("#Expect \"~w\"\n", [Data]).
-
-p_flush(Data) ->
-    ?PRINT_FLUSH andalso ok == io:format("#Flushed \"~s\"\n", [Data]).
-
-flush_debug_print_msgs(Port) ->
-    receive
-	{Port, {data, [$# | D]}} ->
-	    p_flush([$# | D]),
-	    flush_debug_print_msgs(Port)
-    after ?FLUSH_TIMEOUT ->
-	    ok
-    end.
-
-erl_program() ->
-    atom_to_list(lib:progname()).
-
-flush_all_data(Port) ->
-    receive
-	{Port, {data, Data}} ->
-	    p_flush(Data),
-	    flush_all_data(Port);
-	_ ->
-	    ok
-    after ?FLUSH_TIMEOUT ->
-	    timeout
-    end.
 

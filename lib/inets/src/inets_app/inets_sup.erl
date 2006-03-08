@@ -90,6 +90,8 @@ tftpd_child_spec(TftpServices) ->
 
 is_httpd({httpd, _}) ->
     true;
+is_httpd({httpd, _, _}) ->
+    true;
 is_httpd(_) ->
     false.
 

@@ -181,7 +181,7 @@ weight_func(_Core, Acc) -> Acc + 1.
 %% function_clause match_fail (if they have one).
 
 match_fail_fun() ->
-    fun (#c_primop{name=match_fail,
+    fun (#c_primop{name=#c_atom{val=match_fail},
 		   args=[#c_tuple{es=[#c_atom{val=function_clause}|As]}]}=P) ->
 	    Fail = #c_tuple{es=[#c_atom{val=case_clause},
 				#c_tuple{es=As}]},

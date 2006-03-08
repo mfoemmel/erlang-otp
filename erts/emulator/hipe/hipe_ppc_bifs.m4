@@ -206,9 +206,10 @@ ASYM($1):
  * nofail_primop_interface_0(nbif_name, cbif_name)
  * nofail_primop_interface_1(nbif_name, cbif_name)
  * nofail_primop_interface_2(nbif_name, cbif_name)
+ * nofail_primop_interface_3(nbif_name, cbif_name)
  *
  * Generate native interface for a primop with implicit P
- * parameter, 0-2 ordinary parameters and no failure mode.
+ * parameter, 0-3 ordinary parameters and no failure mode.
  * Also used for guard BIFs.
  */
 define(nofail_primop_interface_0,
@@ -270,6 +271,29 @@ ASYM($1):
 	/* Restore registers. */
 	RESTORE_CONTEXT
 	NBIF_RET(2)
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
+#endif')
+
+define(nofail_primop_interface_3,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	GLOBAL(ASYM($1))
+ASYM($1):
+	/* Set up C argument registers. */
+	mr	r3, P
+	NBIF_ARG(r4,3,0)
+	NBIF_ARG(r5,3,1)
+	NBIF_ARG(r6,3,2)
+
+	/* Save caller-save registers and call the C function. */
+	SAVE_CONTEXT
+	bl	CSYM($2)
+
+	/* Restore registers. */
+	RESTORE_CONTEXT
+	NBIF_RET(3)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -396,14 +420,15 @@ ASYM($1):
 	TYPE_FUNCTION(ASYM($1))
 #endif')
 
-/* 
+/*
  * noproc_primop_interface_0(nbif_name, cbif_name)
  * noproc_primop_interface_1(nbif_name, cbif_name)
  * noproc_primop_interface_2(nbif_name, cbif_name)
  * noproc_primop_interface_3(nbif_name, cbif_name)
+ * noproc_primop_interface_5(nbif_name, cbif_name)
  *
  * Generate native interface for a primop with no implicit P
- * parameter, 0-3 ordinary parameters, and no failure mode.
+ * parameter, 0-3 or 5 ordinary parameters, and no failure mode.
  * The primop cannot CONS or gc.
  */
 define(noproc_primop_interface_0,
@@ -509,13 +534,6 @@ ASYM($1):
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
-
-/*
- * BIFs that may trigger a native stack walk with p->narity != 0.
- * Relevant on PPC when NR_ARG_REGS < 2.
- */
-standard_bif_interface_2(nbif_check_process_code_2, hipe_check_process_code_2)
-standard_bif_interface_1(nbif_garbage_collect_1, hipe_garbage_collect_1)
 
 /*
  * Implement gc_nofail_primop_interface_1 as nofail_primop_interface_1.

@@ -31,6 +31,8 @@
 	 monitor/0, demonitor/1, 
 	 notify_started/1, cancel_notify_started/1, 
 
+	 backup/1, 
+
 	 load_mib/1, unload_mib/1, 
 	 which_mibs/0, 
 	 name_to_oid/1, oid_to_name/1, 
@@ -195,6 +197,12 @@ snmpm_start_verify(Parent, Ref, To) ->
 t(T0, T)  -> T - (t() - T0).
 t()       -> snmp_misc:now(ms).
 sleep(To) -> snmp_misc:sleep(To).
+
+
+%% -- Misc --
+
+backup(BackupDir) ->
+    snmpm_config:backup(BackupDir).
 
 
 %% -- Mibs --

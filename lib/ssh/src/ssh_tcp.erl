@@ -37,10 +37,14 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, 
+-record(state,
 	{
-	  cm   %% connection manager
+	  cm,     % connection manager
+	  opts    % options
 	 }).
+
+-define(DEFAULT_TIMEOUT, 5000).
+
 
 %%====================================================================
 %% External functions
@@ -63,10 +67,10 @@ start(CM) ->
     gen_server:start(?MODULE, [CM], []).
 
 start(Host, Opts) ->
-    gen_server:start(?MODULE, [Host,22,Opts], []).
+    gen_server:start(?MODULE, [Host, 22, Opts], []).
     
-start(Host, Port, Auth) ->
-    gen_server:start(?MODULE, [Host,Port,Auth], []).
+start(Host, Port, Opts) ->
+    gen_server:start(?MODULE, [Host, Port, Opts], []).
 
 
 forward(Pid, LocalIP, LocalPort, RemoteIP, RemotePort) ->
@@ -78,7 +82,7 @@ backward(Pid, LocalIP, LocalPort, RemoteIP, RemotePort) ->
     gen_server:call(Pid, {backward,
 			  LocalIP, LocalPort,
 			  RemoteIP, RemotePort}).
-    
+
 %%====================================================================
 %% Server functions
 %%====================================================================
@@ -92,16 +96,16 @@ backward(Pid, LocalIP, LocalPort, RemoteIP, RemotePort) ->
 %%          {stop, Reason}
 %%--------------------------------------------------------------------
 init([CM]) ->
-    case ssh_cm:attach(CM) of
+    case ssh_cm:attach(CM, ?DEFAULT_TIMEOUT) of
 	{ok,CMPid} ->
-	    {ok, #state { cm = CMPid }};
+	    {ok, #state{cm = CMPid, opts = []}};
 	Error ->
 	    {stop, Error }
     end;
-init([Host,Port,Auth]) ->
-    case ssh_cm:connect(Host, Port, Auth) of
+init([Host, Port, Opts]) ->
+    case ssh_cm:connect(Host, Port, Opts) of
 	{ok, CM} ->
-	    {ok, #state { cm = CM }};
+	    {ok, #state {cm = CM, opts = Opts}};
 	Error ->
 	    {stop, Error}
     end.
@@ -158,12 +162,15 @@ handle_cast({forward, S, RemoteIP, RemotePort}, State) ->
 	{ok,{OrigIP, OrigPort}} ->
 	    ?dbg(true, "peer ~p ~p remote ~p ~p\n", 
 		 [OrigIP, OrigPort, RemoteIP, RemotePort]),
-	    case ssh_cm:direct_tcpip(State#state.cm, 
+	    #state{opts = Opts, cm = CM} = State,
+	    TMO = proplists:get_value(connect_timeout,
+				      Opts, ?DEFAULT_TIMEOUT),
+	    case ssh_cm:direct_tcpip(CM,
 				     RemoteIP, RemotePort,
-				     OrigIP, OrigPort) of
+				     OrigIP, OrigPort, TMO) of
 		{ok, Channel} ->
 		    ?dbg(true, "got channel ~p\n", [Channel]),
-		    ssh_cm:set_user_ack(State#state.cm, Channel, true),
+		    ssh_cm:set_user_ack(CM, Channel, true, TMO),
 		    put({channel,S}, Channel),
 		    put({socket,Channel}, S),
 		    inet:setopts(S, [{active, once}]),
@@ -249,24 +256,28 @@ handle_info({ssh_cm, _CM, {eof, Channel}}, State) ->
 
 handle_info({open, Channel, {forwarded_tcpip,
 			     RemoteAddr, RemotePort,
-			     _OrigIp, _OrigPort}}, State) ->
+			     _OrigIp, _OrigPort}},
+	    #state{opts = Opts, cm = CM} = State) ->
+    TMO = proplists:get_value(connect_timeout,
+			      Opts, ?DEFAULT_TIMEOUT),
     case get({ipmap,{RemoteAddr,RemotePort}}) of
 	undefined ->
-	    ssh_cm:close(State#state.cm, Channel),
+	    ssh_cm:close(CM, Channel),
 	    {noreply, State};
 	{LocalIP, LocalPort} ->
 	    case gen_tcp:connect(LocalIP, LocalPort, [{active,once},
 						      {mode,binary},
-						      {packet,0}]) of
+						      {packet,0},
+						      {connect_timeout, TMO}]) of
 		{ok, S} ->
 		    %% We want ack on send!
-		    ssh_cm:set_user_ack(State#state.cm, Channel, true),
+		    ssh_cm:set_user_ack(CM, Channel, true, TMO),
 		    %% FIXME: set fake peer and port?
 		    put({channel, S}, Channel),
 		    put({socket,Channel}, S),
 		    {noreply, State};
 		_Error ->
-		    ssh_cm:close(State#state.cm, Channel),
+		    ssh_cm:close(CM, Channel),
 		    {noreply, State}
 	    end
     end;

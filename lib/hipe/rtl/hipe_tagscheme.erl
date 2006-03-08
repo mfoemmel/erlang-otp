@@ -368,11 +368,23 @@ test_fixnums_1([Arg1, Arg2|Args], Acc)->
   test_fixnums_1([Tmp|Args], [hipe_rtl:mk_alu(Tmp, Arg1, 'and', Arg2)|Acc]).
 
 test_two_fixnums(Arg1, Arg2, FalseLab) ->
-  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   TrueLab = hipe_rtl:mk_new_label(),
-  [hipe_rtl:mk_alu(Tmp, Arg1, 'and', Arg2),
-   test_fixnum(Tmp, hipe_rtl:label_name(TrueLab), FalseLab, 0.99),
-   TrueLab].
+  case hipe_rtl:is_imm(Arg2) of
+    true ->
+      Value = hipe_rtl:imm_value(Arg2),
+      case Value band ?TAG_IMMED1_MASK of
+	?TAG_IMMED1_SMALL ->
+	  [test_fixnum(Arg1, hipe_rtl:label_name(TrueLab), FalseLab, 0.99),
+	   TrueLab];
+	_ ->
+	  [hipe_rtl:mk_goto(FalseLab)]
+      end;
+    false ->
+      Tmp = hipe_rtl:mk_new_reg_gcsafe(),
+      [hipe_rtl:mk_alu(Tmp, Arg1, 'and', Arg2),
+       test_fixnum(Tmp, hipe_rtl:label_name(TrueLab), FalseLab, 0.99),
+       TrueLab]
+  end.
 
 fixnum_cmp(Arg1, Arg2, TrueLab, FalseLab, Pred, CmpOp) ->
   hipe_rtl:mk_branch(Arg1, CmpOp, Arg2, TrueLab, FalseLab, Pred).

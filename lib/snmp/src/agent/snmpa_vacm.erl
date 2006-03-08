@@ -18,7 +18,7 @@
 -module(snmpa_vacm).
 
 -export([get_mib_view/5]).
--export([init/1]).
+-export([init/1, init/2, backup/1]).
 -export([delete/1, get_row/1, get_next_row/1, insert/1, insert/2,
 	 dump_table/0]).
 
@@ -99,9 +99,9 @@ auth(ViewType, SecModel, SecName, SecLevel, ContextName) ->
     ?vdebug("find the corresponding mib view (for ~p)",[ViewName]),
     get_mib_view(ViewName).
 
-check_auth({'EXIT', Error}) -> exit(Error);
+check_auth({'EXIT',    Error})  -> exit(Error);
 check_auth({discarded, Reason}) -> {discarded, Reason};
-check_auth(Res) -> {ok, Res}.
+check_auth(Res)                 -> {ok, Res}.
 
 %%-----------------------------------------------------------------
 %% Returns a list of {ViewSubtree, ViewMask, ViewType}
@@ -145,7 +145,8 @@ loop_mib_view(ViewName, Subtree, Indexes, MibView) ->
 	    _ ->
 		MibView
 	end,
-    case snmp_view_based_acm_mib:table_next(vacmViewTreeFamilyTable, Indexes) of
+    case snmp_view_based_acm_mib:table_next(vacmViewTreeFamilyTable, 
+					    Indexes) of
 	endOfTable -> NextMibView;
 	NextIndexes ->
 	    case split_prefix(ViewName, NextIndexes) of
@@ -160,8 +161,12 @@ loop_mib_view(ViewName, Subtree, Indexes, MibView) ->
 %%%-----------------------------------------------------------------
 %%%  1b.  The ordered ets table that implements vacmAccessTable
 %%%-----------------------------------------------------------------
-init(DbDir) ->
-    FName = filename:join(DbDir, "snmpa_vacm.db"),
+
+init(Dir) ->
+    init(Dir, terminate).
+
+init(Dir, InitError) ->
+    FName = filename:join(Dir, "snmpa_vacm.db"),
     case file:read_file_info(FName) of
 	{ok, _} -> 
 	    %% File exists - we must check this, since ets doesn't tell
@@ -171,13 +176,27 @@ init(DbDir) ->
 		    gc_tab([]);
 		{error, Reason} ->
 		    user_err("Corrupt VACM database ~p", [FName]),
-		    throw({error, {file2tab, FName, Reason}})
+		    case InitError of
+			terminate ->
+			    throw({error, {file2tab, FName, Reason}});
+			_ ->
+			    %% Rename old file (for later analyzes)
+			    Saved = FName ++ ".saved",
+			    file:rename(FName, Saved),
+			    ets:new(snmpa_vacm, 
+				    [public, ordered_set, named_table])
+		    end
 	    end;
 	{error, _} ->
 	    ets:new(snmpa_vacm, [public, ordered_set, named_table])
     end,
     ets:insert(snmp_agent_table, {snmpa_vacm_file, FName}),
     {ok, FName}.
+
+
+backup(BackupDir) ->
+    BackupFile = filename:join(BackupDir, "snmpa_vacm.db"),
+    ets:tab2file(snmpa_vacm, BackupFile).
 
 
 %% Ret: {ok, ViewName} | {error, Reason}
@@ -228,16 +247,18 @@ get_next_row(Key) ->
 
 insert(Entries) -> insert(Entries, true).
 
-insert(Entries, ShouldWrite) ->
+insert(Entries, Dump) ->
     lists:foreach(fun(Entry) -> ets:insert(snmpa_vacm, Entry) end, Entries),
-    case ShouldWrite of
-	true -> dump_table();
-	_ -> ok
-    end.
+    dump_table(Dump).
 
 delete(Key) ->
     ets:delete(snmpa_vacm, Key),
     dump_table().
+
+dump_table(true) ->
+    dump_table();
+dump_table(_) ->
+    ok.
 
 dump_table() ->
     [{_, FName}] = ets:lookup(snmp_agent_table, snmpa_vacm_file),
@@ -255,6 +276,7 @@ dump_table() ->
 	    user_err("Warning: could not save vacm db ~p (~p)",
 		     [FName, Reason])
     end.
+
 
 %%-----------------------------------------------------------------
 %% Alg.

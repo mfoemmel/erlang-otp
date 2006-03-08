@@ -200,8 +200,8 @@ validate_uri(RequestURI) ->
 	end,
 
     Path = format_request_uri(UriNoQueryNoHex),
-    
-    validate_path(string:tokens(Path, "/"), 0, RequestURI).
+    Path2=[X||X<-string:tokens(Path, "/"),X=/="."], %% OTP-5938
+    validate_path( Path2,0, RequestURI).
 
 validate_path([], _, _) ->
     ok;

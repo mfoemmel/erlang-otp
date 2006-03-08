@@ -9,24 +9,6 @@
 #include "hipe_arch.h"
 #include "hipe_native_bif.h"	/* nbif_callemu() */
 
-extern void nbif_inc_stack_0args(void);
-extern void nbif_inc_stack_1args(void);
-extern void nbif_inc_stack_2args(void);
-extern void nbif_inc_stack_3args(void);
-extern void nbif_inc_stack_4args(void);
-extern void nbif_inc_stack_5args(void);
-extern void nbif_inc_stack_6args(void);
-extern void nbif_inc_stack_7args(void);
-extern void nbif_inc_stack_8args(void);
-extern void nbif_inc_stack_9args(void);
-extern void nbif_inc_stack_10args(void);
-extern void nbif_inc_stack_11args(void);
-extern void nbif_inc_stack_12args(void);
-extern void nbif_inc_stack_13args(void);
-extern void nbif_inc_stack_14args(void);
-extern void nbif_inc_stack_15args(void);
-extern void nbif_inc_stack_16args(void);
-
 /* Flush dcache and invalidate icache for a range of addresses. */
 void hipe_flush_icache_range(void *address, unsigned int nbytes)
 {
@@ -37,31 +19,6 @@ void hipe_flush_icache_range(void *address, unsigned int nbytes)
 	hipe_flush_icache_word(a);
 	a += 4;
 	n -= 4;
-    }
-}
-
-/* called from hipe_bif0.c:hipe_bifs_primop_address_1() */
-const void *hipe_arch_primop_address(Eterm key)
-{
-    switch( key ) {
-      case am_inc_stack_0args_0: return nbif_inc_stack_0args;
-      case am_inc_stack_1args_0: return nbif_inc_stack_1args;
-      case am_inc_stack_2args_0: return nbif_inc_stack_2args;
-      case am_inc_stack_3args_0: return nbif_inc_stack_3args;
-      case am_inc_stack_4args_0: return nbif_inc_stack_4args;
-      case am_inc_stack_5args_0: return nbif_inc_stack_5args;
-      case am_inc_stack_6args_0: return nbif_inc_stack_6args;
-      case am_inc_stack_7args_0: return nbif_inc_stack_7args;
-      case am_inc_stack_8args_0: return nbif_inc_stack_8args;
-      case am_inc_stack_9args_0: return nbif_inc_stack_9args;
-      case am_inc_stack_10args_0: return nbif_inc_stack_10args;
-      case am_inc_stack_11args_0: return nbif_inc_stack_11args;
-      case am_inc_stack_12args_0: return nbif_inc_stack_12args;
-      case am_inc_stack_13args_0: return nbif_inc_stack_13args;
-      case am_inc_stack_14args_0: return nbif_inc_stack_14args;
-      case am_inc_stack_15args_0: return nbif_inc_stack_15args;
-      case am_inc_stack_16args_0: return nbif_inc_stack_16args;
-      default: return NULL;
     }
 }
 

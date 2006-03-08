@@ -90,7 +90,7 @@ open_session(Config) when list(Config) ->
 	ssh_cm:connect("localhost", [{user_dir, UsrDir},
 				     {user_interaction, false},
 				     silently_accept_hosts]),
-    ?line {ok, Channel} = ssh_cm:session_open(CM),
+    ?line {ok, Channel} = ssh_cm:session_open(CM, infinity),
     ?line ok = ssh_cm:close(CM, Channel),
     ?line ok = ssh_cm:stop(CM).
 
@@ -107,7 +107,7 @@ open_session_compressed(Config) when list(Config) ->
 				     {user_interaction, false},
 				     silently_accept_hosts,
 				     {compression, zlib}]),
-    ?line {ok, Channel} = ssh_cm:session_open(CM),
+    ?line {ok, Channel} = ssh_cm:session_open(CM, infinity),
     ?line ok = ssh_cm:close(CM, Channel),
     ?line ok = ssh_cm:stop(CM).
 
@@ -183,8 +183,8 @@ exec(Config) when list(Config) ->
 	ssh_cm:connect("localhost", [{user_dir, UsrDir},
 				     {user_interaction, false},
 				     silently_accept_hosts]),
-    ?line {ok, Channel} = ssh_cm:session_open(CM),
-    ?line success = ssh_cm:exec(CM, Channel, "echo testing"),
+    ?line {ok, Channel} = ssh_cm:session_open(CM, infinity),
+    ?line success = ssh_cm:exec(CM, Channel, "echo testing", infinity),
     ?line Data = {ssh_cm, CM, {data, Channel, 0, <<"testing\n">>}},
     ?line EOF = {ssh_cm, CM, {eof, Channel}},
     ?line ExitStatus = {ssh_cm, CM, {exit_status, Channel, 0}},
@@ -201,12 +201,13 @@ exec(Config) when list(Config) ->
 	ssh_cm:connect("localhost", [{user_dir, UsrDir},
 				     {user_interaction, false},
 				     silently_accept_hosts]),
-    ?line {ok, Channel2} = ssh_cm:session_open(CM2),
-    ?line D2 = case ssh_cm:setenv(CM2, Channel2, "ENV_TEST", "testing_setenv") of
+    ?line {ok, Channel2} = ssh_cm:session_open(CM2, infinity),
+    ?line D2 = case ssh_cm:setenv(CM2, Channel2, "ENV_TEST", "testing_setenv",
+				  infinity) of
 		   success -> <<"tesing_setenv\n">>;
 		   failure -> <<"\n">>
 	       end,
-    ?line success = ssh_cm:exec(CM2, Channel2, "echo $ENV_TEST"),
+    ?line success = ssh_cm:exec(CM2, Channel2, "echo $ENV_TEST", infinity),
     ?line Data2 = {ssh_cm, CM2, {data, Channel2, 0, D2}},
     ?line EOF2 = {ssh_cm, CM2, {eof, Channel2}},
     ?line ExitStatus2 = {ssh_cm, CM2, {exit_status, Channel2, 0}},
@@ -244,13 +245,13 @@ api(Config) when list(Config) ->
 				     {user_interaction, false},
 				     silently_accept_hosts]),
     %% session_open/3,
-    ?line {ok, Channel} = ssh_cm:session_open(CM, 10000, 20000),
+    ?line {ok, Channel} = ssh_cm:session_open(CM, 10000, 20000, infinity),
 %%     %% renegotiate/1,
 %%     ?line ok = ssh_cm:renegotiate(CM),
 %%     %% renegotiate/2,
 %%     ?line ok = ssh_cm:renegotiate(CM, []),
     %% subsystem/3,
-    ?line success = ssh_cm:subsystem(CM, Channel, "sftp"),
+    ?line success = ssh_cm:subsystem(CM, Channel, "sftp", infinity),
     %% close/2,
     ?line ok = ssh_cm:close(CM, Channel),
     ?line ok = ssh_cm:stop(CM),
@@ -272,15 +273,15 @@ api(Config) when list(Config) ->
 				   timeout
 			   end,
     %% session_open/1, (when not user)
-    ?line {error, einval} = ssh_cm:session_open(CM2),
+    ?line {error, einval} = ssh_cm:session_open(CM2, infinity),
     %% set_user/3 (when not user)
-    ?line {error, einval} = ssh_cm:set_user(CM2, Channel, Self),
+    ?line {error, einval} = ssh_cm:set_user(CM2, Channel, Self, infinity),
     %% attach/1,
-    ?line ok = ssh_cm:attach(CM2),
+    ?line ok = ssh_cm:attach(CM2, infinity),
     %% session_open/1, (when user)
-    ?line {ok, Channel2} = ssh_cm:session_open(CM2),
+    ?line {ok, Channel2} = ssh_cm:session_open(CM2, infinity),
     %% set_user/3 (when user)
-    ?line ok = ssh_cm:set_user(CM2, Channel2, self()),
+    ?line ok = ssh_cm:set_user(CM2, Channel2, self(), infinity),
     ?line ok = ssh_cm:close(CM2, Channel2),
     ?line ok = ssh_cm:stop(CM2),
     ?line Ref = erlang:monitor(process, Pid),
@@ -307,7 +308,7 @@ shell(Config) when list(Config) ->
 	ssh_cm:connect("localhost", [{user_dir, UsrDir},
 				     {user_interaction, false},
 				     silently_accept_hosts]),
-    ?line {ok, Channel} = ssh_cm:session_open(CM),
+    ?line {ok, Channel} = ssh_cm:session_open(CM, infinity),
     ?line ok = ssh_cm:shell(CM, Channel),
     ?line flush_data_msgs(CM),
     ?line ssh_cm:send(CM, Channel, "echo testing\n"),

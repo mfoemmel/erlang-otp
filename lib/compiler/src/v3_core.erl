@@ -81,6 +81,8 @@
 %% Internal core expressions and help functions.
 %% N.B. annotations fields in place as normal Core expressions.
 
+-record(a, {us=[],ns=[],anno=[]}).		%Internal annotation
+
 -record(iset, {anno=#a{},var,arg}).
 -record(iletrec, {anno=#a{},defs,body}).
 -record(imatch, {anno=#a{},pat,guard=[],arg,fc}).
@@ -100,7 +102,6 @@
 -record(core, {vcount=0,			%Variable counter
 	       fcount=0,			%Function counter
 	       ws=[]}).				%Warnings.
--record(a, {us=[],ns=[],anno=[]}).		%Internal annotation
 
 module({Mod,Exp,Forms}, _Opts) ->
     Cexp = map(fun ({N,A}) -> #c_fname{id=N,arity=A} end, Exp),
@@ -564,13 +565,24 @@ lc_tq(Line, E, [{generate,Lg,P,G}|Qs0], More, St0) ->
     {Gc,Gps,St10} = safe(G, St9),		%Will be a function argument!
     Fc = fail_clause([Arg], #c_tuple{anno=LA,
 				     es=[#c_atom{val=function_clause},Arg]}),
-    Cs0 = [#iclause{anno=#a{anno=[compiler_generated|LA]},
-		    pats=[#c_cons{anno=LA,hd=Head,tl=Tail}],
-		    guard=[],
-		    body=Nps ++ [Nc]},
-	   #iclause{anno=LAnno,
-		    pats=[#c_nil{anno=LA}],guard=[],
-		    body=Mps ++ [Mc]}],
+    %% Avoid constructing a default clause if the list comprehension
+    %% only has a variable as generator and there are no guard
+    %% tests. In other words, if the comprehension is equivalent to
+    %% lists:map/2.
+    case {Guardc, Pc} of
+	{[], #c_var{}} ->
+	    Cs0 = [#iclause{anno=LAnno,
+			    pats=[#c_nil{anno=LA}],guard=[],
+			    body=Mps ++ [Mc]}];
+	_ ->
+	    Cs0 = [#iclause{anno=#a{anno=[compiler_generated|LA]},
+			    pats=[#c_cons{anno=LA,hd=Head,tl=Tail}],
+			    guard=[],
+			    body=Nps ++ [Nc]},
+		   #iclause{anno=LAnno,
+			    pats=[#c_nil{anno=LA}],guard=[],
+			    body=Mps ++ [Mc]}]
+    end,
     Cs = case Pc of
 	     nomatch -> Cs0;
 	     _ ->
@@ -748,6 +760,7 @@ pattern({char,L,C}) -> #c_char{anno=[L],val=C};
 pattern({integer,L,I}) -> #c_int{anno=[L],val=I};
 pattern({float,L,F}) -> #c_float{anno=[L],val=F};
 pattern({atom,L,A}) -> #c_atom{anno=[L],val=A};
+pattern({string,L,[]}) -> #c_nil{anno=[L]};
 pattern({string,L,S}) -> #c_string{anno=[L],val=S};
 pattern({nil,L}) -> #c_nil{anno=[L]};
 pattern({cons,L,H,T}) ->

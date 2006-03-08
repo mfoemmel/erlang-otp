@@ -128,12 +128,10 @@ pp_insn(Dev, I, Pre) ->
       io:format(Dev, ", ", []),
       pp_temp(Dev, Src),
       io:format(Dev, "\n", []);
-    #pseudo_ret{npop=NPop} ->
-      io:format(Dev, "\tpseudo_ret # ~w\n", [NPop]);
     #pseudo_tailcall{func=FunC, arity=Arity, stkargs=StkArgs, linkage=Linkage} ->
       io:format(Dev, "\tpseudo_tailcall ", []),
       pp_func(Dev, FunC),
-      io:format(Dev, "~w (", [Arity]),
+      io:format(Dev, "/~w (", [Arity]),
       pp_args(Dev, StkArgs),
       io:format(Dev, ") ~w\n", [Linkage]);
     #pseudo_tailcall_prepare{} ->
@@ -311,15 +309,23 @@ pp_src(Dev, Src) ->
       pp_uimm16(Dev, Src)
   end.
 
+pp_arg(Dev, Arg) ->
+  case Arg of
+    #ppc_temp{} ->
+      pp_temp(Dev, Arg);
+    _ ->
+      pp_hex(Dev, Arg)
+  end.
+
 pp_args(Dev, [A|As]) ->
-  pp_temp(Dev, A),
+  pp_arg(Dev, A),
   pp_comma_args(Dev, As);
 pp_args(_, []) ->
   [].
 
 pp_comma_args(Dev, [A|As]) ->
   io:format(Dev, ", ", []),
-  pp_temp(Dev, A),
+  pp_arg(Dev, A),
   pp_comma_args(Dev, As);
 pp_comma_args(_, []) ->
   [].

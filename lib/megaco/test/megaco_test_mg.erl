@@ -258,19 +258,23 @@ mg(Parent, Verbosity, Config) ->
     put(verbosity, Verbosity),
     put(sname,   "MG"),
     i("mg -> starting"),
-    Mid = init(Config),
-    notify_started(Parent),
-    MG = #mg{parent = Parent, mid = Mid},
-    i("mg -> started"),
-    case (catch loop(MG)) of
-	{'EXIT', normal} ->
-	    exit(normal);
-	{'EXIT', Reason} ->
-	    i("mg failed with reason:~n   ~p", [Reason]),
-	    exit(Reason);
-	Else ->
-	    i("mg terminated: ~n   ~p", [Else]),
-	    exit({unexpected, Else})
+    case (catch init(Config)) of
+	{error, _} = Error ->
+	    exit(Error);
+	Mid ->
+	    notify_started(Parent),
+	    MG = #mg{parent = Parent, mid = Mid},
+	    i("mg -> started"),
+	    case (catch loop(MG)) of
+		{'EXIT', normal} ->
+		    exit(normal);
+		{'EXIT', Reason} ->
+		    i("mg failed with reason:~n   ~p", [Reason]),
+		    exit(Reason);
+		Else ->
+		    i("mg terminated: ~n   ~p", [Else]),
+		    exit({unexpected, Else})
+	    end
     end.
 
 init(Config) ->
@@ -587,6 +591,13 @@ do_reset_stats1(CH) ->
 %%
 %% Get user info for user
 %%
+do_get_user_info(Mid, all = Tag) ->
+    case (catch megaco:user_info(Mid, Tag)) of
+	L when is_list(L) ->
+	    lists:sort(L);
+	Else ->
+	    Else
+    end;
 do_get_user_info(Mid, Tag) ->
     (catch megaco:user_info(Mid, Tag)).
 
@@ -601,9 +612,22 @@ do_update_user_info(Mid, Tag, Val) ->
 %%
 %% Get conn info 
 %%
+do_get_conn_info(CH, all = Tag) when record(CH, megaco_conn_handle) ->
+    case (catch megaco:conn_info(CH, Tag)) of
+	L when is_list(L) ->
+	    lists:sort(L);
+	Else ->
+	    Else
+    end;
+do_get_conn_info(CH, Tag) when record(CH, megaco_conn_handle) ->
+    (catch megaco:conn_info(CH, Tag));
 do_get_conn_info(Mid, Tag) ->
-    [CH] = megaco:user_info(Mid, connections),
-    (catch megaco:conn_info(CH, Tag)).
+    case megaco:user_info(Mid, connections) of
+	[CH|_] ->
+	    do_get_conn_info(CH, Tag);
+	[] ->
+	    []
+    end.
 
 %%
 %% Update conn info for user

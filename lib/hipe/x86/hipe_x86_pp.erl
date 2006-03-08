@@ -85,14 +85,6 @@ pp_insn(Dev, I, Pre) ->
       io:format(Dev, "\n", []);
     #comment{term=Term} ->
       io:format(Dev, "\t# ~p\n", [Term]);
-    #dec{dst=Dst} ->
-      io:format(Dev, "\tdec ", []),
-      pp_dst(Dev, Dst),
-      io:format(Dev, "\n", []);
-    #inc{dst=Dst} ->
-      io:format(Dev, "\tinc ", []),
-      pp_dst(Dev, Dst),
-      io:format(Dev, "\n", []);
     #jcc{cc=Cc, label=Label} ->
       io:format(Dev, "\tj~s .~s_~w\n", [cc_name(Cc), Pre, Label]);
     #jmp_fun{'fun'=Fun, linkage=Linkage} ->
@@ -135,10 +127,6 @@ pp_insn(Dev, I, Pre) ->
       io:format(Dev, ", ", []),
       pp_dst(Dev, Dst),
       io:format(Dev, "\n", []);
-    #nop{} ->
-      io:format(Dev, "\tnop\n", []);
-    #prefix_fs{} ->
-      io:format(Dev, "\t.byte 0x64 ! FS segment override prefix\n", []);
     #pseudo_call{'fun'=Fun, sdesc=SDesc, contlab=ContLab, linkage=Linkage} ->
       io:format(Dev, "\tpseudo_call ", []),
       pp_fun(Dev, Fun),

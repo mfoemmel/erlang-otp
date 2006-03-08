@@ -54,15 +54,50 @@ AEXTERN(void,nbif_select_msg,(Process*));
 AEXTERN(Eterm,nbif_cmp_2,(void));
 AEXTERN(Eterm,nbif_eq_2,(void));
 
+Eterm hipe_conv_big_to_float(Process*, Eterm);
 void hipe_select_msg(Process*);
 void hipe_gc(Process*, Eterm);
 Eterm hipe_set_timeout(Process*, Eterm);
 void hipe_handle_exception(Process*);
 Eterm hipe_rethrow(Process *c_p, Eterm exc, Eterm value);
 char *hipe_bs_allocate(int);
+
+/*
+ * Stuff that is different in SMP and non-SMP.
+ */
+#ifdef ERTS_SMP
+int hipe_bs_put_big_integer(Process*, Eterm, Uint, byte*, unsigned, unsigned);
+int hipe_bs_put_small_float(Process*, Eterm, Uint, byte*, unsigned, unsigned);
+#else
 int hipe_bs_put_big_integer(Eterm, Uint, byte*, unsigned, unsigned);
 int hipe_bs_put_small_float(Eterm, Uint, byte*, unsigned, unsigned);
-Eterm hipe_conv_big_to_float(Process*, Eterm);
+#endif
+
+/*
+ * SMP-specific stuff
+ */
+#ifdef ERTS_SMP
+AEXTERN(void,nbif_atomic_inc,(void));
+AEXTERN(void,nbif_clear_timeout,(Process*));
+AEXTERN(Eterm,nbif_check_get_msg,(Process*));
+AEXTERN(void,nbif_next_msg,(Process*));
+void hipe_atomic_inc(int*);
+void hipe_clear_timeout(Process*);
+Eterm hipe_check_get_msg(Process*);
+void hipe_next_msg(Process*);
+int hipe_bs_start_match(Process *p, Eterm Bin);
+int hipe_bs_skip_bits(Process *p, Uint num_bits);
+int hipe_bs_skip_bits_all(Process *p);
+int hipe_bs_test_tail(Process *p, Uint num_bits);
+void hipe_bs_save(Process *p, int index);
+void hipe_bs_restore(Process *p, int index);
+void hipe_bs_init(Process *p);
+int hipe_bs_put_integer(Process *p, Eterm Integer, Uint num_bits, unsigned flags);
+int hipe_bs_put_binary(Process *p, Eterm Bin, Uint num_bits);
+int hipe_bs_put_binary_all(Process *p, Eterm Bin);
+int hipe_bs_put_float(Process *p, Eterm Float, Uint num_bits, int flags);
+void hipe_bs_put_string(Process *p, byte* iptr, Uint num_bytes);
+#endif
 
 #define BIF_LIST(M,F,A,C,I)	AEXTERN(Eterm,nbif_##C,(void));
 #include "erl_bif_list.h"

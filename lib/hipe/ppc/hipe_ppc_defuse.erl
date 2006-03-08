@@ -55,8 +55,6 @@ insn_use_gpr(I) ->
     #mtspr{src=Src} -> [Src];
     #pseudo_call{sdesc=#ppc_sdesc{arity=Arity}} -> arity_use_gpr(Arity);
     #pseudo_move{src=Src} -> [Src];
-    #pseudo_ret{} ->
-      [hipe_ppc:mk_temp(hipe_ppc_registers:return_value(), 'tagged')];
     #pseudo_tailcall{arity=Arity,stkargs=StkArgs} ->
       addsrcs(StkArgs, addtemps(tailcall_clobbered_gpr(), arity_use_gpr(Arity)));
     #store{src=Src,base=Base} -> addtemp(Src, [Base]);

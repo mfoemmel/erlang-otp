@@ -23,9 +23,9 @@ alloc(Defun, SpillIndex, SpillLimit, Options) ->
       [hipe_ppc_cfg:start_label(CFG)],
       SpillIndex, SpillLimit, Options,
       hipe_ppc_specific),
-  {NewDefun, _, _DontSpill} =
+  {NewDefun, _DidSpill} =
     hipe_ppc_ra_postconditions:check_and_rewrite(
-      Defun, Coloring, 'linearscan', [], Options),
+      Defun, Coloring, 'linearscan'),
   TempMap = hipe_temp_map:cols2tuple(Coloring, hipe_ppc_specific),
   {TempMap2,_NewSpillIndex2} =
     hipe_spillmin:stackalloc(CFG, [], SpillIndex, Options,

@@ -48,7 +48,7 @@ start_link() ->
 
 
 stop() ->
-    gen_server:call(erl_epmd, stop).
+    gen_server:call(erl_epmd, stop, infinity).
 
 
 %% Lookup a node "Name" at Host
@@ -100,7 +100,7 @@ names1(HostName) ->
 
 
 register_node(Name, PortNo) ->
-    gen_server:call(erl_epmd, {register, Name, PortNo}, 15000).
+    gen_server:call(erl_epmd, {register, Name, PortNo}, infinity).
 
 %%%----------------------------------------------------------------------
 %%% Callback functions from gen_server

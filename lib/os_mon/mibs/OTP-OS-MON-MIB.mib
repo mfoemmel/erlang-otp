@@ -12,8 +12,6 @@ IMPORTS
         FROM OTP-REG
     erlNodeId
         FROM OTP-MIB
-    currentAlarmObject, currentAlarmSeverity, currentAlarmTime
-	FROM OTP-EVA-MIB
     ;
 
 otpOsMonModule MODULE-IDENTITY
@@ -26,6 +24,9 @@ otpOsMonModule MODULE-IDENTITY
         "This MIB is part of the OTP MIB.  It defines MIB objects
         for the os_mon application in OTP."
 
+    REVISION	"0508260900Z"
+    DESCRIPTION		
+        "Removed dependeny on EVA."
     REVISION	"0305090900Z"
     DESCRIPTION		
         "Changed CONTACT-INFO as it was outdated, made it more generic
@@ -259,51 +260,6 @@ diskCapacity OBJECT-TYPE
     ::= { diskEntry 4 }
 
 
--- Alarms
-
-loadSystemMemoryHighAlarm NOTIFICATION-TYPE
-    OBJECTS {
-        currentAlarmTime,
-        currentAlarmSeverity,
-        currentAlarmObject
-        }
-    STATUS  current
-    DESCRIPTION
-        "This alarm is sent when the used system memory exceeds
-        loadMemorySystemWatermark of the total available memory.
-	currentAlarmObject points to the loadSystemUsedMemory of the
-        system.
-        Default severity is Major."
-    ::= { otpOsMonMIBAlarmsV2 1 }
-
-loadErlProcMemoryHighAlarm NOTIFICATION-TYPE
-    OBJECTS {
-        currentAlarmTime,
-        currentAlarmSeverity,
-        currentAlarmObject
-        }
-    STATUS  current
-    DESCRIPTION
-        "This alarm is sent when an Erlang process exceeds
-        loadMemoryErlProcWatermark of the total available memory.
-	currentAlarmObject points to the loadLargestErlProcess that
-        is too big.
-        Default severity is Minor."
-    ::= { otpOsMonMIBAlarmsV2 2 }
-
-diskAlmostFullAlarm NOTIFICATION-TYPE
-    OBJECTS {
-        currentAlarmTime,
-        currentAlarmSeverity,
-        currentAlarmObject
-        }
-    STATUS  current
-    DESCRIPTION
-        "Alarm which is sent if the log wraps too quickly.
-        currentAlarmObject points to the diskDescr of the faulty disk.
-        Default severity is Major."
-    ::= { otpOsMonMIBAlarmsV2 3 }
-
 -- conformance information
 
 otpOsMonMIBCompliances
@@ -357,14 +313,6 @@ loadGroup OBJECT-GROUP
             of the load of the OTP system."
     ::= { otpOsMonMIBGroups 1 }
 
-loadAlarmsGroup NOTIFICATION-GROUP
-    NOTIFICATIONS { loadSystemMemoryHighAlarm, loadErlProcMemoryHighAlarm }
-    STATUS        current
-    DESCRIPTION
-        "The notifications which is generated from the load functionality
-        of the OS MON application."
-    ::= { otpOsMonMIBGroups 2 }
-
 diskGroup OBJECT-GROUP
     OBJECTS { diskAlmostFullThreshold,
               diskDescr,
@@ -375,13 +323,5 @@ diskGroup OBJECT-GROUP
             "A collection of objects providing basic instrumentation
             of the disks in the OTP system."
     ::= { otpOsMonMIBGroups 3 }
-
-diskAlarmsGroup NOTIFICATION-GROUP
-    NOTIFICATIONS { diskAlmostFullAlarm }
-    STATUS        current
-    DESCRIPTION
-        "The notifications which is generated from the disk functionality
-        of the OS MON application."
-    ::= { otpOsMonMIBGroups 4 }
 
 END

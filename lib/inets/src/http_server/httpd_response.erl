@@ -143,6 +143,8 @@ send_header(#mod{socket_type = Type, socket = Sock,
 		     %% will be able to handle it, probably the
 		     %% sensible thing to do!
 		     "HTTP/0.9";
+		 {undefined,_} ->
+		     "HTTP/1.0"; %% See rfc2145 2.3 last paragraph
 		 _ ->
 		     Ver
 	     end,

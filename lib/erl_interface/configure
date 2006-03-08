@@ -2662,6 +2662,108 @@ fi
 			case $host_os in
 			    solaris*)
 				THR_DEFS="$THR_DEFS -D_POSIX_PTHREAD_SEMANTICS";;
+			    linux*)
+								echo $ac_n "checking for Native POSIX Thread Library""... $ac_c" 1>&6
+echo "configure:2668: checking for Native POSIX Thread Library" >&5
+				case `getconf GNU_LIBPTHREAD_VERSION 2>/dev/null` in
+				    nptl*) nptl=yes;;
+				    NPTL*) nptl=yes;;
+				    *)  nptl=no;;
+				esac
+				echo "$ac_t""$nptl" 1>&6
+				if test $nptl = yes; then
+				    need_nptl_incldir=no
+				    ac_safe=`echo "nptl/pthread.h" | sed 'y%./+-%__p_%'`
+echo $ac_n "checking for nptl/pthread.h""... $ac_c" 1>&6
+echo "configure:2679: checking for nptl/pthread.h" >&5
+if eval "test \"`echo '$''{'ac_cv_header_$ac_safe'+set}'`\" = set"; then
+  echo $ac_n "(cached) $ac_c" 1>&6
+else
+  cat > conftest.$ac_ext <<EOF
+#line 2684 "configure"
+#include "confdefs.h"
+#include <nptl/pthread.h>
+EOF
+ac_try="$ac_cpp conftest.$ac_ext >/dev/null 2>conftest.out"
+{ (eval echo configure:2689: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }
+ac_err=`grep -v '^ *+' conftest.out | grep -v "^conftest.${ac_ext}\$"`
+if test -z "$ac_err"; then
+  rm -rf conftest*
+  eval "ac_cv_header_$ac_safe=yes"
+else
+  echo "$ac_err" >&5
+  echo "configure: failed program was:" >&5
+  cat conftest.$ac_ext >&5
+  rm -rf conftest*
+  eval "ac_cv_header_$ac_safe=no"
+fi
+rm -f conftest*
+fi
+if eval "test \"`echo '$ac_cv_header_'$ac_safe`\" = yes"; then
+  echo "$ac_t""yes" 1>&6
+  need_nptl_incldir=yes
+else
+  echo "$ac_t""no" 1>&6
+fi
+
+				    if test $need_nptl_incldir = yes; then
+					# Ahh...
+					nptl_path="$C_INCLUDE_PATH:$CPATH:/usr/local/include:/usr/include"
+					nptl_ws_path=
+					save_ifs="$IFS"; IFS=":"
+					for dir in $nptl_path; do
+					    if test "x$dir" != "x"; then
+						nptl_ws_path="$nptl_ws_path $dir"
+					    fi
+					done
+					IFS=$save_ifs
+					nptl_incldir=
+					for dir in $nptl_ws_path; do
+				            ac_safe=`echo "$dir/nptl/pthread.h" | sed 'y%./+-%__p_%'`
+echo $ac_n "checking for $dir/nptl/pthread.h""... $ac_c" 1>&6
+echo "configure:2725: checking for $dir/nptl/pthread.h" >&5
+if eval "test \"`echo '$''{'ac_cv_header_$ac_safe'+set}'`\" = set"; then
+  echo $ac_n "(cached) $ac_c" 1>&6
+else
+  cat > conftest.$ac_ext <<EOF
+#line 2730 "configure"
+#include "confdefs.h"
+#include <$dir/nptl/pthread.h>
+EOF
+ac_try="$ac_cpp conftest.$ac_ext >/dev/null 2>conftest.out"
+{ (eval echo configure:2735: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }
+ac_err=`grep -v '^ *+' conftest.out | grep -v "^conftest.${ac_ext}\$"`
+if test -z "$ac_err"; then
+  rm -rf conftest*
+  eval "ac_cv_header_$ac_safe=yes"
+else
+  echo "$ac_err" >&5
+  echo "configure: failed program was:" >&5
+  cat conftest.$ac_ext >&5
+  rm -rf conftest*
+  eval "ac_cv_header_$ac_safe=no"
+fi
+rm -f conftest*
+fi
+if eval "test \"`echo '$ac_cv_header_'$ac_safe`\" = yes"; then
+  echo "$ac_t""yes" 1>&6
+  nptl_incldir=$dir/nptl
+else
+  echo "$ac_t""no" 1>&6
+fi
+
+					    if test "x$nptl_incldir" != "x"; then
+						THR_DEFS="$THR_DEFS -isystem $nptl_incldir"
+						break
+					    fi
+					done
+					if test "x$nptl_incldir" = "x"; then
+					    { echo "configure: error: Failed to locate nptl system include directory" 1>&2; exit 1; }
+					fi
+				    fi
+				fi
+
+				;;
 			    *)
 				;;
 			esac

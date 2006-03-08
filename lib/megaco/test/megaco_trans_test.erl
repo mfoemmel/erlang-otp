@@ -17,6 +17,9 @@
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Verify that the transaction sender works with acks.
+%% 
+%% Test:    ts:run(megaco, megaco_trans_test, [batch]).
+%% 
 %%----------------------------------------------------------------------
 -module(megaco_trans_test).
 
@@ -6333,7 +6336,7 @@ multi_trans_req_and_ack_and_reply(Config) when list(Config) ->
 	{error, MgcReply} ->
 	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
 	    ?ERROR(mgc_failed)
-		end,
+    end,
 
     d("[MG] await the generator reply"),
     case megaco_test_generator:megaco_await_reply(Mg, 30000) of
@@ -6343,7 +6346,7 @@ multi_trans_req_and_ack_and_reply(Config) when list(Config) ->
 	{error, MgReply} ->
 	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
 	    ?ERROR(mg_failed)
-		end,
+    end,
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
@@ -6380,7 +6383,8 @@ mtraaar_mgc_event_sequence(text, tcp) ->
     DiscoVerify = fun mtraaar_mgc_verify_handle_disconnect/1,
     EvSeq = [
 	     {debug, true},
-	     {megaco_trace, disable},
+	     %% {megaco_trace, max}, 
+	     {megaco_trace, disable}, 
 	     megaco_start,
 	     {megaco_start_user, Mid, RI, []},
 	     start_transport,
@@ -6390,7 +6394,7 @@ mtraaar_mgc_event_sequence(text, tcp) ->
 	     {megaco_callback, handle_trans_request, NotifyReqVerify},
 	     {megaco_callback, handle_trans_request, NotifyReqVerify},
 	     {megaco_callback, handle_trans_request, NotifyReqVerify},
-	     {megaco_update_conn_info, request_timer,      500},
+	     {megaco_update_conn_info, request_timer,      1000},
 	     {megaco_cast, NR(1,1), []},
 
 	     {megaco_callback, [{handle_trans_ack,     3, AckVerify},
@@ -6522,10 +6526,15 @@ mtraaar_mgc_verify_notify_reply({handle_trans_reply, _CH, ?VERSION,
     io:format("mtraaar_mgc_verify_notify_reply -> ok"
 	      "~n   AR: ~p~n", [AR]),
     {ok, AR, ok};
+mtraaar_mgc_verify_notify_reply({handle_trans_reply, CH, ?VERSION, 
+				 UnknownResult, _}) ->
+    io:format("mtraaar_mgc_verify_notify_reply -> unknown result"
+	      "~n   UnknownResult: ~p~n", [UnknownResult]),
+    {error, {unknown_reply_result, UnknownResult, CH}, ok};
 mtraaar_mgc_verify_notify_reply(Else) ->
     io:format("mtraaar_mgc_verify_notify_reply -> unknown"
 	      "~n   Else: ~p~n", [Else]),
-    {error, Else, ok}.
+    {error, {unknown_reply, Else}, ok}.
 
 mtraaar_mgc_verify_ack({handle_trans_ack, CH, ?VERSION, ok, kalle}) -> 
     io:format("mtraaar_mgc_verify_ack -> ok"
@@ -6613,6 +6622,7 @@ mtraaar_mg_event_sequence(text, tcp) ->
 	     megaco_start,
 	     {megaco_start_user, Mid, RI, []},
 	     start_transport,
+	     %% {megaco_trace, max},
 	     {megaco_trace, disable},
 	     {megaco_system_info, users},
 	     {megaco_system_info, connections},

@@ -168,14 +168,19 @@ init([AgentType, Opts]) ->
     ?d("init -> entry with"
       "~n   AgentType: ~p"
       "~n   Opts:      ~p", [AgentType, Opts]),
-    put(sname,asup),
+    put(sname, asup),
     put(verbosity,get_verbosity(Opts)),
     ?vlog("starting",[]),
 
     ?vdebug("create agent table",[]),
     ets:new(snmp_agent_table, [set, public, named_table]),
+
     ?vdebug("create community cache",[]),
     ets:new(snmp_community_cache, [bag, public, named_table]),
+
+    %% Get restart type for the agent
+    Restart = get_opt(restart_type, Opts, permanent),
+    ?vdebug("agent restart type:  w", [Restart]),
 
     %% -- Agent type --
     ets:insert(snmp_agent_table, {agent_type, AgentType}),
@@ -193,7 +198,11 @@ init([AgentType, Opts]) ->
     %% -- DB-directory --
     DbDir = get_opt(db_dir, Opts),
     ?vdebug("[agent table] store db_dir: ~n   ~p",[DbDir]),
-    ets:insert(snmp_agent_table, {db_dir, DbDir}),
+    ets:insert(snmp_agent_table, {db_dir, filename:join([DbDir])}),
+
+    DbInitError = get_opt(db_init_error, Opts, terminate),
+    ?vdebug("[agent table] store db_init_error: ~n   ~p",[DbInitError]),
+    ets:insert(snmp_agent_table, {db_init_error, DbInitError}),
 
     %% -- Error report module --
     ErrorReportMod = get_opt(error_report_mod, Opts, snmpa_error_logger),
@@ -201,7 +210,25 @@ init([AgentType, Opts]) ->
     ets:insert(snmp_agent_table, {error_report_mod, ErrorReportMod}),
 
     %% -- mib storage --
-    MibStorage = get_opt(mib_storage, Opts, ets),
+    MibStorage = 
+	case get_opt(mib_storage, Opts, ets) of
+	    dets ->
+		{dets, DbDir};
+	    {dets, default} ->
+		{dets, DbDir};
+	    {dets, default, Act} ->
+		{dets, DbDir, Act};
+	    {ets, default} ->
+		{ets, DbDir};
+	    mnesia ->
+		{mnesia, erlang:nodes()};
+	    {mnesia, visible} ->
+		{mnesia, erlang:nodes(visible)};
+	    {mnesia, connected} ->
+		{mnesia, erlang:nodes(connected)};
+	    Other ->
+		Other
+	end,
     ?vdebug("[agent table] store mib storage: ~w",[MibStorage]),
     ets:insert(snmp_agent_table, {mib_storage, MibStorage}),
 
@@ -228,17 +255,17 @@ init([AgentType, Opts]) ->
     SupFlags = {one_for_all, 0, 3600},
 
     MiscSupSpec = 
-	sup_spec(snmpa_misc_sup, [], permanent, infinity),
+	sup_spec(snmpa_misc_sup, [], Restart, infinity),
     SymStoreOpts = [{mib_storage, MibStorage} | SsOpts], 
     SymStoreArgs = [Prio, SymStoreOpts],
     SymStoreSpec = 
-	worker_spec(snmpa_symbolic_store, SymStoreArgs, permanent, 2000),
+	worker_spec(snmpa_symbolic_store, SymStoreArgs, Restart, 2000),
     LdbArgs = [Prio, DbDir, LdbOpts],
     LocalDbSpec = 
-	worker_spec(snmpa_local_db, LdbArgs, permanent, 5000),
+	worker_spec(snmpa_local_db, LdbArgs, Restart, 5000),
 
     ?vdebug("init VACM",[]),
-    snmpa_vacm:init(DbDir),
+    snmpa_vacm:init(DbDir, DbInitError),
 
     Rest =
 	case AgentType of
@@ -331,15 +358,15 @@ init([AgentType, Opts]) ->
 		AgentSpec =
 		    worker_spec(snmpa_agent, 
 				[Prio,snmp_master_agent,none,Ref,AgentOpts],
-				permanent, 15000),
+				Restart, 15000),
 		AgentSupSpec = 
 		    sup_spec(snmpa_agent_sup, [AgentSpec], 
-			     permanent, infinity), 
+			     Restart, infinity), 
 		[ConfigSpec, AgentSupSpec];
 	    _ ->
 		?vdebug("[sub agent] spec for the agent supervisor",[]),
 		AgentSupSpec = 
-		    sup_spec(snmpa_agent_sup, [], permanent, infinity), 
+		    sup_spec(snmpa_agent_sup, [], Restart, infinity), 
 		[AgentSupSpec]
 	end,
     ?vdebug("init done",[]),
@@ -444,6 +471,11 @@ conf1(Dir, Vsns, Func) ->
 %% -------------------------------------
 
 sup_spec(Name, Args, Type, Time) ->
+    ?d("sup_spec -> entry with"
+       "~n   Name: ~p"
+       "~n   Args: ~p"
+       "~n   Type: ~p"
+       "~n   Time: ~p", [Name, Args, Type, Time]),
     {Name, 
      {Name, start_link, Args}, 
      Type, Time, supervisor, [Name, supervisor]}.
@@ -458,8 +490,16 @@ worker_spec(Name, Mod, Args, Type, Time, Modules) ->
     worker_spec(Name, Mod, start_link, Args, Type, Time, Modules).
 
 worker_spec(Name, Mod, Func, Args, Type, Time, Modules) 
-  when atom(Name), atom(Mod), atom(Func), list(Args), 
-       atom(Type), list(Modules) ->
+  when is_atom(Name) and is_atom(Mod) and is_atom(Func) and is_list(Args) and 
+       is_atom(Type) and is_list(Modules) ->
+    ?d("worker_spec -> entry with"
+       "~n   Name:    ~p"
+       "~n   Mod:     ~p"
+       "~n   Func:    ~p"
+       "~n   Args:    ~p"
+       "~n   Type:    ~p"
+       "~n   Time:    ~p"
+       "~n   Modules: ~p", [Name, Mod, Func, Args, Type, Time, Modules]),
     {Name, 
      {Mod, Func, Args}, 
      Type, Time, worker, [Name] ++ Modules}.

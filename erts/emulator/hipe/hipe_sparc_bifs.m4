@@ -22,7 +22,7 @@ changecom(`/*', `*/')dnl
  * - Can a BIF with arity 0 fail? beam_emu doesn't think so ...
  * - Can a bif change the native stack pointer?
  * - Can a bif change p->fcalls?
- * - If only some bifs change nsp and fcalls, can these be 
+ * - If only some bifs change nsp and fcalls, can these be
  *   be handled separately?
  * - All standard BIF interfaces save RA in the PCB now. This
  *   is needed for those BIFs that can trigger a walk of the
@@ -294,8 +294,9 @@ $1:
  * nofail_primop_interface_0(nbif_name, cbif_name)
  * nofail_primop_interface_1(nbif_name, cbif_name)
  * nofail_primop_interface_2(nbif_name, cbif_name)
+ * nofail_primop_interface_3(nbif_name, cbif_name)
  *
- * Generate native interface for a guard BIF with 0-2 arguments.
+ * Generate native interface for a guard BIF with 0-3 arguments.
  * (Like standard_bif_interface without the error check at return.)
  */
 define(nofail_primop_interface_0,
@@ -385,7 +386,37 @@ $1:
 	.type $1,#function
 #endif')
 
-/* 
+define(nofail_primop_interface_3,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	.section ".text"
+	.align 4
+	.global $1
+$1:
+	!! Make room for P in the first arg
+	!! mov ARG1,ARG2
+	!! mov ARG0,ARG1
+	mov P,%o0
+
+	!! Save registers and call the C function
+	st RA,[P+P_NRA]
+	st FCALLS,[P+P_FCALLS]
+	st HP,[P+P_HP]
+	mov RA,TEMP3
+	call $2
+	st NSP,[P+P_NSP]
+
+	!! Restore registers and return
+	ld [P+P_FCALLS],FCALLS
+	ld [P+P_HP],HP
+	jmpl TEMP3+8,%g0
+	ld [P+P_NSP],NSP
+	.size $1,.-$1
+	.type $1,#function
+#endif')
+
+/*
  * noproc_primop_interface_0(nbif_name, cbif_name)
  * noproc_primop_interface_1(nbif_name, cbif_name)
  * noproc_primop_interface_2(nbif_name, cbif_name)

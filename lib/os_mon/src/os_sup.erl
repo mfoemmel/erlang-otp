@@ -16,96 +16,237 @@
 %%     $Id$
 %%
 -module(os_sup).
+-behaviour(gen_server).
 
-%% Purpose : Supervising the system log.
-
-
-%% External exports
--export([start/0,start_link/0,stop/0]).
+%% API
+-export([start_link/1, start/0, stop/0]).
+-export([error_report/2]).
+-export([enable/0, enable/2, disable/0, disable/2]).
+-export([param_type/2, param_default/1]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+	 terminate/2, code_change/3]).
 
--record(state, {port, tag}).
+-record(state, {port, mfa, config, path, conf}).
 
-%%%----------------------------------------------------------------------
-%%% API
-%%%----------------------------------------------------------------------
-start() ->  gen_server:start({local, os_sup_server}, os_sup, [], []).
+%%----------------------------------------------------------------------
+%% API
+%%----------------------------------------------------------------------
 
-start_link() ->  gen_server:start_link({local, os_sup_server}, os_sup, [], []).
+start_link({win32, _OSname}) ->
+    Identifier = os_sup,
+    MFA = os_mon:get_env(os_sup, os_sup_mfa),
+    gen_server:start_link({local, os_sup_server}, nteventlog,
+			  [Identifier, MFA], []);
+start_link(_OS) ->
+    gen_server:start_link({local, os_sup_server}, os_sup, [], []).
 
-stop() -> gen_server:call(os_sup_server, stop).
+start() -> % for testing
+    gen_server:start({local, os_sup_server}, os_sup, [], []).
 
-%%%----------------------------------------------------------------------
-%%% Callback functions from gen_server
-%%%----------------------------------------------------------------------
+stop() ->
+    gen_server:call(os_sup_server, stop).
+
+error_report(LogData, Tag) ->
+    error_logger:error_report(Tag, LogData).
+
+enable() ->
+    command(enable).
+enable(Path, Conf) ->
+    command(enable, Path, Conf).
+
+disable() ->
+    command(disable).
+disable(Path, Conf) ->
+    command(disable, Path, Conf).
+
+param_type(os_sup_errortag, Val) when is_atom(Val) -> true;
+param_type(os_sup_own, Val) -> io_lib:printable_list(Val);
+param_type(os_sup_syslogconf, Val) -> io_lib:printable_list(Val);
+param_type(os_sup_enable, Val) when Val==true; Val==false -> true;
+param_type(os_sup_mfa, {Mod,Func,Args}) when is_atom(Mod),
+					     is_atom(Func),
+					     is_list(Args) -> true;
+param_type(_Param, _Val) -> false.
+
+param_default(os_sup_errortag) -> std_error;
+param_default(os_sup_own) -> "/etc";
+param_default(os_sup_syslogconf) -> "/etc/syslog.conf";
+param_default(os_sup_enable) -> true;
+param_default(os_sup_mfa) -> {os_sup, error_report, [std_error]}.
+
+%%----------------------------------------------------------------------
+%% gen_server callbacks
+%%----------------------------------------------------------------------
 
 init([]) ->
     process_flag(trap_exit, true),
-    case os:cmd(cmd_str(enable)) of
-	"0" ->
-	    Port = open_port({spawn, cmd_str(port)}, [{packet, 2}]),
-	    Tag = get_env(os_sup_errortag),
-	    {ok, #state{port = Port, tag = Tag}};
-	Error ->
-	    {stop, {mod_syslog, Error}}
+    process_flag(priority, low),
+
+    case os:type() of
+	{unix, sunos} ->
+	    init2();
+	OS -> {stop, {unsupported_os, OS}}
     end.
 
+init2() -> % Enable service if configured to do so
+    ConfigP = os_mon:get_env(os_sup, os_sup_enable),
+    case ConfigP of
+	true -> % ..yes -- do enable
+	    Path = os_mon:get_env(os_sup, os_sup_own),
+	    Conf = os_mon:get_env(os_sup, os_sup_syslogconf),
+	    case enable(Path, Conf) of
+		ok ->
+		    init3(#state{config=ConfigP, path=Path, conf=Conf});
+		{error, Error} ->
+		    {stop, {mod_syslog, Error}}
+	    end;
+	false -> % ..no -- skip directly to init3/1
+	    init3(#state{config=ConfigP})
+    end.
+
+init3(State0) ->
+    Port = start_portprogram(),
+
+    %% Read the values of some configuration parameters
+    MFA = case os_mon:get_env(os_sup, os_sup_mfa) of
+	      {os_sup, error_report, _} ->
+		  Tag = os_mon:get_env(os_sup, os_sup_errortag),
+		  {os_sup, error_report, [Tag]};
+	      MFA0 ->
+		  MFA0
+	  end,
+
+    {ok, State0#state{port=Port, mfa=MFA}}.
+
 handle_call(stop, _From, State) ->
-    Port = State#state.port,
-    Reason = stop_port(Port),
-    {stop, Reason, ok, State#state{port = noport}}.
+    {stop, normal, ok, State}.
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info({Port, {data, Msg}}, State) when Port == State#state.port ->
-    error_logger:error_report(State#state.tag, Msg),
+handle_info({_Port, {data, Data}}, #state{mfa={M,F,A}} = State) ->
+    apply(M, F, [Data | A]),
     {noreply, State};
-handle_info({'EXIT', Port, Why}, State) when Port == State#state.port ->
-    error_logger:error_msg("os_sup:server_body:port died"),	
-    {stop, {port_died, Why}, State#state{port = noport}};
-handle_info(_, State) ->
+handle_info({'EXIT', _Port, Reason}, State) ->
+    {stop, {port_died, Reason}, State#state{port=not_used}};
+handle_info(_Info, State) ->
     {noreply, State}.
 
-terminate(_Reason, State) when port(State#state.port) ->
-    stop_port(State#state.port),
-    ok;
-terminate(_Reason, _State) -> % The port is already stopped !!
-    ok.
-
-%%%----------------------------------------------------------------------
-%%% Internal functions
-%%%----------------------------------------------------------------------
-
-stop_port(Port) ->
-    Port ! {self(), {command, "only_stdin"}},
-    case os:cmd(cmd_str(disable)) of
-	"0" ->
-	    Port ! {self(), {command, "die"}},
-	    receive
-		{'EXIT', Port, _} ->
-		    normal
-	    after 1000 ->
-		    error_logger:error_msg("os_sup:server_stop:port not dead"),
-		    {error,port_not_stopped}
+terminate(_Reason, #state{port=Port} = State) ->
+    case State#state.config of
+	true when is_port(Port) ->
+	    Port ! {self(), {command, "only_stdin"}},
+	    Res = disable(State#state.path, State#state.conf),
+	    port_close(Port),
+	    if
+		Res/="0" -> exit({mod_syslog, Res});
+		true -> ok
 	    end;
+	true ->
+	    Res = disable(State#state.path, State#state.conf),
+	    if
+		Res/="0" -> exit({mod_syslog, Res});
+		true -> ok
+	    end;
+	false when is_port(Port) ->
+	    Port ! {self(), {command, "only_stdin"}},
+	    port_close(Port);
+	false ->
+	    ok
+    end.
+
+%% os_mon-2.0
+%% For live downgrade to/upgrade from os_mon-1.8[.1]
+code_change(Vsn, PrevState, "1.8") ->
+    case Vsn of
+
+	%% Downgrade from this version
+	{down, _Vsn} ->
+
+	    %% Find out the error tag used
+	    {DefM, DefF, _} = param_default(os_sup_mfa),
+	    Tag = case PrevState#state.mfa of
+
+		      %% Default callback function is used, then use
+		      %% the corresponding tag
+		      {DefM, DefF, [Tag0]} ->
+			  Tag0;
+
+		      %% Default callback function is *not* used
+		      %% (before the downgrade, that is)
+		      %% -- check the configuration parameter
+		      _ ->
+			  case application:get_env(os_mon,
+						   os_sup_errortag) of
+			      {ok, Tag1} ->
+				  Tag1;
+
+			      %% (actually, if it has no value,
+			      %%  the process should terminate
+			      %%  according to 1.8.1 version, but that
+			      %%  seems too harsh here)
+			      _ ->
+				  std_error
+			  end
+		  end,
+		      
+	    %% Downgrade to old state record
+	    State = {state, PrevState#state.port, Tag},
+	    {ok, State};
+
+	%% Upgrade to this version
+	_Vsn ->
+
+	    {state, Port, Tag} = PrevState,
+
+	    {DefM, DefF, _} = param_default(os_sup_mfa),
+	    MFA  = {DefM, DefF, [Tag]},
+
+	    %% We can safely assume the following configuration
+	    %% parameters are defined, otherwise os_sup would never had
+	    %% started in the first place.
+	    %% (We can *not* safely assume they haven't been changed,
+	    %%  but that's a weakness inherited from the 1.8.1 version)
+	    Path = application:get_env(os_mon, os_sup_own),
+	    Conf = application:get_env(os_mon, os_sup_syslogconf),
+
+	    %% Upgrade to this state record
+	    State = #state{port=Port, mfa=MFA, config=true,
+			   path=Path, conf=Conf},
+	    {ok, State}
+    end;
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%----------------------------------------------------------------------
+%% Internal functions
+%%----------------------------------------------------------------------
+
+start_portprogram() ->
+    OwnPath = os_mon:get_env(os_sup, os_sup_own),
+    Command =
+	filename:join([code:priv_dir(os_mon), "bin", "ferrule"]) ++
+	" " ++ OwnPath,
+    open_port({spawn, Command}, [{packet, 2}]).
+
+%% os:cmd(cmd_str(enable)) should be done BEFORE starting os_sup
+%% os:cmd(cmd_str(disable)) should be done AFTER os_sup is terminated
+%% Both commands return "0" if successful
+command(Mode) ->
+    command(Mode, "/etc", "/etc/syslog.conf").
+command(Mode, Path, Conf) ->
+    case os:cmd(cmd_str(Mode, Path, Conf)) of
+	"0" ->
+	    ok;
 	Error ->
-	    error_logger:error_msg("os_sup:server_stop:mod_syslog: ~p", [Error]),
 	    {error, Error}
     end.
 
-cmd_str(port)->
-    %% portpgm ownpath
-    PrivDir = code:priv_dir(os_mon),
-    OwnPath = get_env(os_sup_own),
-    PrivDir ++ "/bin/ferrule " ++ OwnPath;
-cmd_str(Mode)->
+cmd_str(Mode, Path, Conf) ->
     %% modpgm modesw ownpath syslogconf
     PrivDir = code:priv_dir(os_mon),
-    OwnPath = get_env(os_sup_own),
-    SyslogConf = get_env(os_sup_syslogconf),
     ModeSw =
 	case Mode of
 	    enable ->
@@ -113,13 +254,4 @@ cmd_str(Mode)->
 	    disable ->
 		" nootp "
 	end,
-    PrivDir ++ "/bin/mod_syslog" ++ ModeSw ++ OwnPath ++ " " ++ SyslogConf.
-
-get_env(Atom) ->
-    case application:get_env(os_mon, Atom) of
-	{ok, Value} ->
-	    Value;
-	undefined ->
-	    error_logger:error_msg("os_sup:get_env:unknown config.param."),
-	    exit({unknown_config_param, {os_sup, get_env, [Atom]}})
-    end.
+    PrivDir ++ "/bin/mod_syslog" ++ ModeSw ++ Path ++ " " ++ Conf.

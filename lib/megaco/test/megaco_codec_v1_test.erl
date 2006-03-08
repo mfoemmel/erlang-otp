@@ -153,6 +153,7 @@
          pretty_otp5600_msg2/1,
          pretty_otp5601_msg1/1,
          pretty_otp5793_msg01/1,
+	 pretty_otp5882_msg01/1, 
 	 
 	 flex_pretty_tickets/1, 
 	 flex_pretty_otp5042_msg1/1, 
@@ -479,7 +480,8 @@ pretty_tickets(suite) ->
      pretty_otp5600_msg1,
      pretty_otp5600_msg2,
      pretty_otp5601_msg1,
-     pretty_otp5793_msg01
+     pretty_otp5793_msg01,
+     pretty_otp5882_msg01
     ].
 
 flex_pretty_tickets(suite) ->
@@ -3215,6 +3217,53 @@ pretty_otp5793_msg1() ->
 		   "2",
 		   "19"]}]}}]}]}}}]}}}.
 
+
+pretty_otp5882_msg01(suite) ->
+    [];
+pretty_otp5882_msg01(Config) when is_list(Config) ->
+    d("pretty_otp5882_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    %% put(severity,trc),
+    %% put(dbg,true),
+    pretty_otp5882().
+
+pretty_otp5882() ->	
+    otp5882(megaco_pretty_text_encoder, []).
+
+otp5882(Codec, Conf) ->		 
+    Msg  = pretty_otp5882_msg01(),
+    case (catch encode_message(Codec, Conf, Msg)) of
+	{error, {message_encode_failed, {error, {ActualReason, _}}, _}} ->
+	    case ActualReason of
+		{invalid_LocalControlDescriptor, empty} ->
+		    ok;
+		_ ->
+		    exit({unexpected_error_actual_reason, ActualReason})
+	    end;
+	{error, Reason} ->
+	    exit({unexpected_error_reason, Reason});
+	{ok, Bin} ->
+	    exit({unexpected_encode_sucess, binary_to_list(Bin)})
+    end.
+    
+pretty_otp5882_msg01() ->
+    LCD = #'LocalControlDescriptor'{}, % Create illegal LCD
+    Parms      = cre_streamParms(LCD),
+    StreamDesc = cre_streamDesc(1, Parms),
+    MediaDesc  = cre_mediaDesc(StreamDesc),
+    AmmReq     = cre_ammReq([#megaco_term_id{id = ?A4445}],
+			    [{mediaDescriptor, MediaDesc}]),
+    CmdReq     = cre_commandReq({modReq, AmmReq}),
+    ActReq     = #'ActionRequest'{contextId       = 5882,
+				  commandRequests = [CmdReq]}, 
+    Actions    = [ActReq],
+    TransReq   = #'TransactionRequest'{transactionId = 5882,
+				       actions       = Actions}, 
+    Trans      = {transactionRequest, TransReq}, 
+    Body       = {transactions, [Trans]},
+    Mid        = ?MG1_MID,
+    megaco_message(?VERSION, Mid, Body).
+    
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

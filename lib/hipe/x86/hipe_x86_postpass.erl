@@ -166,6 +166,16 @@ peep([B = #alu{aluop=Op,src=#x86_imm{value=Val},dst=Dst}|Insns], Res, Lst) ->
 	false ->
 	    peep(Insns, [B|Res], Lst)
     end;
+
+%% SubToDec
+%% This rule turns "subl $1,Dst; jl Lab" into "decl Dst; jl Lab", which
+%% changes reduction counter tests to use decl instead of subl.
+%% However, on Athlon64 this leads to a small but measurable decrease
+%% in performance. The use of dec is also not recommended on P4, so
+%% this transformation is disabled.
+%% peep([#alu{aluop='sub',src=#x86_imm{value=1},dst=Dst},J=#jcc{cc='l'}|Insns], Res, Lst) ->
+%%   peep(Insns, [J, #dec{dst=Dst} | Res], [subToDec|Lst]);
+
 %% Standard list recursion clause
 %% ------------------------------
 peep([I | Insns], Res, Lst) ->

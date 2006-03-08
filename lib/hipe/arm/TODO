@@ -1,0 +1,25 @@
+Loader:
+- Must implement trampoline handling for primops
+  before code loading can have a chance of working.
+
+Assembler:
+- Improve pseudo_li implementation. Load from previous
+  instances (if available and close enough), otherwise
+  emit at end of current extended basic block. (End ==
+  unconditional branch.) Break the block if the distance
+  for the furthest load would get too large.
+- Peephole? Could e.g. turn "ldr lr,[sp,#OFF]; mov pc,lr"
+  into "ldr pc,[sp#OFF]", but then the LR save slot must
+  be in the caller's frame not the callee's.
+
+hipe_arm:
+- Handle more non-trivial immediates in mk_li/mk_load/mk_store.
+
+Floating point:
+- Drop no_inline_fp. Implement FP ops as calls to C or ASM
+  primops. All FP values passed by reference in memory.
+  This should at least reduce consing costs.
+
+Linear scan:
+- Do not hardcode temp1/temp2/temp3. Instead just take three
+  regs from (All\Fixed)\Params. (Ditto in PowerPC.)

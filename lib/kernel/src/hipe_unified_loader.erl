@@ -52,6 +52,7 @@
 -define(HS8P_TAG,"HS8P").
 -define(HPPC_TAG,"HPPC").
 -define(HP64_TAG,"HP64").
+-define(HARM_TAG,"HARM").
 -define(HX86_TAG,"HX86").
 -define(HA64_TAG,"HA64").
 
@@ -66,6 +67,7 @@ chunk_name(Architecture) ->
     ultrasparc -> ?HS8P_TAG; %% HiPE, SPARC, V8+ (implicit: 32-bit)
     powerpc ->    ?HPPC_TAG; %% HiPE, PowerPC (implicit: 32-bit, Linux)
     ppc64 ->	  ?HP64_TAG; %% HiPE, ppc64 (implicit: 64-bit, Linux)
+    arm ->	  ?HARM_TAG; %% HiPE, arm, v5 (implicit: 32-bit, Linux)
     x86 ->        ?HX86_TAG; %% HiPE, x86, (implicit: Unix)
     amd64 ->      ?HA64_TAG  %% HiPE, x86_64, (implicit: 64-bit, Unix)
     %% Future:     HSV9      %% HiPE, SPARC, V9 (implicit: 64-bit)
@@ -137,7 +139,7 @@ system_check(CRC, Mod) ->
 		 "runtime system\n",
 		 [Mod]),
       ?EXIT({bad_crc,Mod});
-    _ -> true
+    true -> true
   end.
 
 %%========================================================================
@@ -218,34 +220,42 @@ load_common(Mod, Bin, Beam, OldReferencesToPatch) ->
 %%
 find_callee_mfas(Patches) ->
   case erlang:system_info(hipe_architecture) of
-    powerpc -> find_callee_mfas(Patches, gb_sets:empty());
-    ppc64 -> find_callee_mfas(Patches, gb_sets:empty());
+    powerpc -> find_callee_mfas(Patches, gb_sets:empty(), true);
+    ppc64 -> find_callee_mfas(Patches, gb_sets:empty(), true);
+    arm -> find_callee_mfas(Patches, gb_sets:empty(), false);
     _ -> []
   end.
 
-find_callee_mfas([{Type,Data}|Patches], MFAs) ->
+find_callee_mfas([{Type,Data}|Patches], MFAs, SkipErtsSyms) ->
   NewMFAs =
     case ?EXT2PATCH_TYPE(Type) of
-      call_local -> add_callee_mfas(Data, MFAs);
-      call_remote -> add_callee_mfas(Data, MFAs);
+      call_local -> add_callee_mfas(Data, MFAs, SkipErtsSyms);
+      call_remote -> add_callee_mfas(Data, MFAs, SkipErtsSyms);
       %% load_address(function) deliberately ignored
       _ -> MFAs
     end,
-  find_callee_mfas(Patches, NewMFAs);
-find_callee_mfas([], MFAs) ->
+  find_callee_mfas(Patches, NewMFAs, SkipErtsSyms);
+find_callee_mfas([], MFAs, _SkipErtsSyms) ->
   list_to_tuple(gb_sets:to_list(MFAs)).
 
-add_callee_mfas([{DestMFA,_Offsets}|Refs], MFAs) ->
+add_callee_mfas([{DestMFA,_Offsets}|Refs], MFAs, SkipErtsSyms) ->
   NewMFAs =
-    %% Ignoring BIFs and primops is correct for PowerPC,
-    %% since we put the runtime system below the 32M boundary.
-    %% This test may not work for other RISCs.
-    case bif_address(DestMFA) of
-      false -> gb_sets:add_element(DestMFA, MFAs);
-      BifAddress when integer(BifAddress) -> MFAs
+    case SkipErtsSyms of
+      true ->
+	%% On PowerPC we put the runtime system below the
+	%% 32M boundary, which allows BIFs and primops to
+	%% be called with ba/bla instructions. Hence we do
+	%% not need trampolines for BIFs or primops.
+	case bif_address(DestMFA) of
+	  false -> gb_sets:add_element(DestMFA, MFAs);
+	  BifAddress when integer(BifAddress) -> MFAs
+	end;
+      false ->
+	%% On ARM we also need trampolines for BIFs and primops.
+	gb_sets:add_element(DestMFA, MFAs)
     end,
-  add_callee_mfas(Refs, NewMFAs);
-add_callee_mfas([], MFAs) -> MFAs.
+  add_callee_mfas(Refs, NewMFAs, SkipErtsSyms);
+add_callee_mfas([], MFAs, _SkipErtsSyms) -> MFAs.
 
 %%----------------------------------------------------------------
 %%
@@ -264,6 +274,13 @@ mk_trampoline_map(_, _, _, Map) -> Map.
 %%
 trampoline_map_get(_, []) -> []; % archs not using trampolines
 trampoline_map_get(MFA, Map) -> gb_trees:get(MFA, Map).
+
+trampoline_map_lookup(_, []) -> []; % archs not using trampolines
+trampoline_map_lookup(Primop, Map) ->
+  case gb_trees:lookup(Primop, Map) of
+    {value,X} -> X;
+    _ -> []
+  end.
 
 %%------------------------------------------------------------------------
 
@@ -386,18 +403,19 @@ patch_call([{DestMFA,Offsets}|SortedRefs], BaseAddress, Addresses, RemoteOrLocal
       Trampoline = trampoline_map_get(DestMFA, TrampolineMap),
       patch_mfa_call_list(Offsets, BaseAddress, DestMFA, DestAddress, Addresses, RemoteOrLocal, Trampoline);
     BifAddress when integer(BifAddress) ->
-      patch_bif_call_list(Offsets, BaseAddress, BifAddress)
+      Trampoline = trampoline_map_lookup(DestMFA, TrampolineMap),
+      patch_bif_call_list(Offsets, BaseAddress, BifAddress, Trampoline)
   end,
   patch_call(SortedRefs, BaseAddress, Addresses, RemoteOrLocal, TrampolineMap);
 patch_call([], _, _, _, _) ->
   true.
 
-patch_bif_call_list([Offset|Offsets], BaseAddress, BifAddress) ->
+patch_bif_call_list([Offset|Offsets], BaseAddress, BifAddress, Trampoline) ->
   CallAddress = BaseAddress+Offset,
   ?ASSERT(assert_local_patch(CallAddress)),
-  patch_call_insn(CallAddress, BifAddress, []),
-  patch_bif_call_list(Offsets, BaseAddress, BifAddress);
-patch_bif_call_list([], _, _) -> [].
+  patch_call_insn(CallAddress, BifAddress, Trampoline),
+  patch_bif_call_list(Offsets, BaseAddress, BifAddress, Trampoline);
+patch_bif_call_list([], _, _, _) -> [].
 
 patch_mfa_call_list([Offset|Offsets], BaseAddress, DestMFA, DestAddress, Addresses, RemoteOrLocal, Trampoline) ->
   CallAddress = BaseAddress+Offset,
@@ -542,8 +560,11 @@ sort_on_representation(List) ->
 
 %%----------------------------------------------------------------
 %% Update an instruction to refer to a value of a given type.
+%%
 %% Type ::= 'call' | 'load_mfa' | 'x86_abs_pcrel' | 'atom'
 %%	  | 'constant' | 'c_const' | 'closure'
+%%
+%% Note: the values of this Type are hard-coded in file erl_bif_types.erl
 %%
 patch_instr(Address, Value, Type) ->
   hipe_bifs:patch_insn(Address, Value, Type).
@@ -803,7 +824,8 @@ get_native_address(MFA, Addresses, RemoteOrLocal) ->
       hipe_bifs:find_na_or_make_stub(MFA, IsRemote)
   end.
 
-mfa_to_address(MFA, [#fundef{address=Adr, mfa=MFA, is_exported=IsExported}|_Rest], RemoteOrLocal) ->
+mfa_to_address(MFA, [#fundef{address=Adr, mfa=MFA,
+			     is_exported=IsExported}|_Rest], RemoteOrLocal) ->
   case RemoteOrLocal of
     local ->
       Adr;
@@ -815,11 +837,14 @@ mfa_to_address(MFA, [#fundef{address=Adr, mfa=MFA, is_exported=IsExported}|_Rest
 	  false
       end
   end;
-mfa_to_address(MFA, [_ | Rest], RemoteOrLocal) -> mfa_to_address(MFA, Rest, RemoteOrLocal);
+mfa_to_address(MFA, [_ | Rest], RemoteOrLocal) ->
+  mfa_to_address(MFA, Rest, RemoteOrLocal);
 mfa_to_address(_, [], _) -> false.
 
 %% ____________________________________________________________________
 %% 
+
+%% Beam: t_nil() | t_binary()  (used as a flag)
 
 enter_code(CodeSize, CodeBinary, CalleeMFAs, Mod, Beam) ->
   true = size(CodeBinary) =:= CodeSize,

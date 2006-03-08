@@ -32,7 +32,6 @@ MODULES=hipe_amd64_assemble \
 	hipe_amd64_frame \
 	hipe_amd64_liveness \
 	hipe_amd64_main \
-	hipe_amd64_postpass \
 	hipe_amd64_pp \
 	hipe_amd64_ra \
 	hipe_amd64_ra_finalise \
@@ -91,7 +90,6 @@ $(EBIN)/hipe_amd64_defuse.beam: ../x86/hipe_x86.hrl ../x86/hipe_x86_defuse.erl
 $(EBIN)/hipe_amd64_frame.beam: ../main/hipe.hrl ../x86/hipe_x86.hrl ../x86/hipe_x86_frame.erl ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_amd64_liveness.beam: ../flow/liveness.inc ../x86/hipe_x86_liveness.erl
 $(EBIN)/hipe_amd64_main.beam: ../main/hipe.hrl
-$(EBIN)/hipe_amd64_postpass.beam: ../x86/hipe_x86.hrl ../x86/hipe_x86_postpass.erl
 $(EBIN)/hipe_amd64_pp.beam: ../x86/hipe_x86.hrl ../x86/hipe_x86_pp.erl
 $(EBIN)/hipe_amd64_ra.beam: ../main/hipe.hrl
 $(EBIN)/hipe_amd64_ra_dummy.beam: ../main/hipe.hrl ../x86/hipe_x86.hrl

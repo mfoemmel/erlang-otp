@@ -72,10 +72,6 @@
 	 %% is_comment/1,
 	 %% comment_term/1,
 
-	 %% mk_dec/1,
-	 %% is_dec/1,
-	 dec_dst/1,
-
 	 mk_fmove/2,
 	 is_fmove/1,
 	 fmove_src/1,
@@ -91,10 +87,6 @@
 	 fp_binop_src/1,
 	 fp_binop_dst/1,
 	 fp_binop_op/1,
-
-	 %% mk_inc/1,
-	 %% is_inc/1,
-	 inc_dst/1,
 
 	 mk_jcc/2,
 	 %% is_jcc/1,
@@ -143,9 +135,6 @@
 	 %% is_movzx/1,
 	 movzx_src/1,
 	 movzx_dst/1,
-
-	 %% mk_nop/0,
-	 %% is_nop/1,
 
 	 mk_pseudo_call/4,
  	 %% is_pseudo_call/1,
@@ -299,10 +288,6 @@ mk_comment(Term) -> #comment{term=Term}.
 %% is_comment(Insn) -> is_insn_type(Insn, comment).
 %% comment_term(#comment{term=Term}) -> Term.
 
-%% mk_dec(Dst) -> #dec{dst=Dst}.
-%% is_dec(Insn) -> is_insn_type(Insn, dec).
-dec_dst(#dec{dst=Dst}) -> Dst.
-
 mk_fmove(Src, Dst) -> #fmove{src=Src, dst=Dst}.
 is_fmove(F) -> is_insn_type(F, fmove).
 fmove_src(#fmove{src=Src}) -> Src.
@@ -318,10 +303,6 @@ mk_fp_binop(Op, Src, Dst) -> #fp_binop{op=Op, src=Src, dst=Dst}.
 fp_binop_src(#fp_binop{src=Src}) -> Src.
 fp_binop_dst(#fp_binop{dst=Dst}) -> Dst.
 fp_binop_op(#fp_binop{op=Op}) -> Op.
-
-%% mk_inc(Dst) -> #inc{dst=Dst}.
-%% is_inc(Insn) -> is_insn_type(Insn, inc).
-inc_dst(#inc{dst=Dst}) -> Dst.
 
 mk_jcc(Cc, Label) -> #jcc{cc=Cc, label=Label}.
 %% is_jcc(Insn) -> is_insn_type(Insn, jcc).
@@ -374,9 +355,6 @@ mk_movzx(Src, Dst) -> #movzx{src=Src, dst=Dst}.
 %% is_movzx(Insn) -> is_insn_type(Insn, movzx).
 movzx_src(#movzx{src=Src}) -> Src.
 movzx_dst(#movzx{dst=Dst}) -> Dst.
-
-%% mk_nop() -> #nop{}.
-%% is_nop(Insn) -> is_insn_type(Insn, nop).
 
 mk_pseudo_call(Fun, SDesc, ContLab, Linkage) ->
     check_linkage(Linkage),

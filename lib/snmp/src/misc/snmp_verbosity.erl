@@ -46,20 +46,20 @@ print1(Verbosity,Format,Arguments) ->
     V = image_of_verbosity(Verbosity),
     S = image_of_sname(get(sname)),
     A = process_args(Arguments, []),
-    io:format("** SNMP ~s ~s: " ++ Format ++ "~n",[S,V]++A).
+    (catch io:format("** SNMP ~s ~s: " ++ Format ++ "~n",[S,V]++A)).
 
 print1(false,_Module,_Format,_Arguments) -> ok;
 print1(Verbosity,Module,Format,Arguments) ->
     V = image_of_verbosity(Verbosity),
     S = image_of_sname(get(sname)),
     A = process_args(Arguments, []),
-    io:format("** SNMP ~s ~s ~s: " ++ Format ++ "~n",[S,Module,V]++A).
+    (catch io:format("** SNMP ~s ~s ~s: " ++ Format ++ "~n",[S,Module,V]++A)).
 
 
 print2(false,_Format,_Arguments) -> ok;
 print2(_Verbosity,Format,Arguments) ->
     A = process_args(Arguments, []),
-    io:format(Format ++ "~n",A).
+    (catch io:format(Format ++ "~n",A)).
 
 
 process_args([], Acc) ->
@@ -111,6 +111,12 @@ image_of_sname(ss)        -> "A-SYMBOLIC-STORE";
 image_of_sname(asup)      -> "A-SUPERVISOR";
 image_of_sname(ms)        -> "A-MIB-SERVER";
 image_of_sname(conf)      -> "A-CONF";
+
+image_of_sname(abs)       -> "A-BKP";
+image_of_sname(albs)      -> "A-LDB-BKP";
+image_of_sname(ambs)      -> "A-MS-BKP";
+image_of_sname(asbs)      -> "A-SS-BKP";
+image_of_sname(mcbs)      -> "M-C-BKP";
 
 image_of_sname(mse)       -> "M-SERVER";
 image_of_sname(msew)      -> io_lib:format("M-SERVER-worker(~p)", [self()]);

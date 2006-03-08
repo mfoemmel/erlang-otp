@@ -261,7 +261,7 @@ call_clobbered() ->
     ].
 
 fp_call_clobbered() -> %% sse2 since it has more registers than x87
-  lists:map(fun(Reg) -> {Reg,double} end, allocatable_sse2()).
+  [{Reg,double} || Reg <- allocatable_sse2()].
 
 tailcall_clobbered() ->		% tailcall crapola needs two temps
   [{?TEMP0,tagged},{?TEMP0,untagged},

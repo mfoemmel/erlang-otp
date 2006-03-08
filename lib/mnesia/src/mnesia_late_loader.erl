@@ -65,10 +65,18 @@ loop(State) ->
 	    loop(State);
 
 	{_From, {maybe_async_late_disc_load, Tabs, Reason}} ->
-	    GoodTabs =
-		[T || T <- Tabs,
-		      lists:member(node(),
-				   mnesia_recover:get_master_nodes(T))],
+	    CheckMaster =
+		fun(Tab, Good) ->			
+			case mnesia_recover:get_master_nodes(Tab) of
+			    [] -> [Tab|Good];
+			    Masters -> 
+				case lists:member(node(),Masters) of
+				    true -> [Tab|Good];
+				    false -> Good
+				end
+			end
+		end,
+	    GoodTabs = lists:foldl(CheckMaster, [], Tabs),
 	    mnesia_controller:schedule_late_disc_load(GoodTabs, Reason),
 	    loop(State);
 

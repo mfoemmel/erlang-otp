@@ -30,17 +30,15 @@
  *
  *      Port = open_port({spawn, 'memsup'}, [{packet,1}]) for UNIX and VxWorks
  *
- *  Erlang sends one of the request condes defined in memsup.h (which
- *  is input for the IG generation of memsup.hrl) and this program
+ *  Erlang sends one of the request condes defined in memsup.h and this program
  *  answers in one of two ways:
  *  * If the request is for simple memory data (which is used periodically
- *    for monitoring) the answer is simply sent in two packets, where 
- *    all numbers are divided by 256 (shifted right 8 steps) to avoid
- *    problems with HUGE memories.
+ *    for monitoring) the answer is simply sent in two packets.
  *  * If the request is for the system specific data, the answer is delivered
  *    in two packets per value, first a tag value, then the actual
  *    value. The values are delivered "as is", this interface is
  *    mainly for VxWorks.
+ *  All numbers are sent as strings of hexadecimal digits.
  *
  *  SUNOS FAKING
  *
@@ -134,17 +132,26 @@ static unsigned long latest_system_total; /* does not fit in the struct */
 static char *program_name;
 
 static void
-send(unsigned long value)
+send(unsigned long value, unsigned long pagesize)
 {
-    char buf[20];
+    char buf[32];
     int left, bytes, res;
+    int hex_zeroes;
+
+    for (hex_zeroes = 0; (pagesize % 16) == 0; pagesize /= 16) {
+	hex_zeroes++;
+    }
     
-    sprintf(buf+1, "%lu", value);
-    bytes = (char) strlen(buf+1); 
-    buf[0] = bytes;		
+    sprintf(buf+1, "%lx", value*pagesize);
+    bytes = strlen(buf+1);
+    while (hex_zeroes-- > 0) {
+	bytes++;
+	buf[bytes] = '0';
+    }
+    buf[0] = (char) bytes;
     left = ++bytes;
 
-    while (left > 0){
+    while (left > 0) {
 	res = write(ERLOUT_FD, buf+bytes-left, left);
 	if (res <= 0){
 	    perror("Error writing to pipe");
@@ -192,28 +199,29 @@ get_vmtotal(struct vmtotal *vt)
 
 
 static void 
-get_basic_mem(unsigned long *tot, unsigned long *used, int shiftleft){
+get_basic_mem(unsigned long *tot, unsigned long *used, unsigned long *pagesize){
 #if defined(VXWORKS)
     load_statistics();
-    *tot = (latest.numBytesFree + latest.numBytesAlloc) >> shiftleft;
-    *used = latest.numBytesAlloc >> shiftleft;
+    *tot = (latest.numBytesFree + latest.numBytesAlloc);
+    *used = latest.numBytesAlloc;
+    *pagsize = 1;
 #elif defined(_SC_AVPHYS_PAGES)	/* Does this exist on others than Solaris2? */
     unsigned long avPhys, phys, pgSz;
     
     phys = sysconf(_SC_PHYS_PAGES);
     avPhys = sysconf(_SC_AVPHYS_PAGES);
-    pgSz = sysconf(_SC_PAGESIZE) >> shiftleft;
-    *used = (phys - avPhys) * pgSz;
-    *tot = phys * pgSz;
+    *used = (phys - avPhys);
+    *tot = phys;
+    *pagesize = sysconf(_SC_PAGESIZE);
 #elif defined(BSD4_4)
     struct vmtotal vt;
     long pgsz;
 
     if (!get_vmtotal(&vt)) goto fail;
     if ((pgsz = sysconf(_SC_PAGESIZE)) == -1) goto fail;
-    pgsz >>= shiftleft;
-    *tot = (vt.t_free + vt.t_rm) * pgsz;
-    *used = vt.t_rm * pgsz;
+    *tot = (vt.t_free + vt.t_rm);
+    *used = vt.t_rm;
+    *pagesize = pgsz;
     return;
 fail:
     print_error("%s", strerror(errno));
@@ -221,53 +229,35 @@ fail:
 #else  /* SunOS4 */
     *used = (1<<27) >> shiftleft;	       	/* Fake! 128 MB used */
     *tot = (1<<28) >> shiftleft;		/* Fake! 256 MB total */
+    *pagesize = 1;
 #endif
 }    
 
-/*
-** The simple memory showing 
-** sends data divided by 256 to avoid integer overflow on extreme
-** large memory systems.
-*/
 static void
 simple_show_mem(void){
-    unsigned long tot, used;
-    get_basic_mem(&tot,&used,8); /* Shift pagesize left by 8 before 
-				    multiplying (or simply shift the
-				    results on systems where 
-				    "pagesize" has no meaning) */
-    send(used);
-    send(tot);
+    unsigned long tot, used, pagesize;
+    get_basic_mem(&tot, &used, &pagesize);
+    send(used, pagesize);
+    send(tot, pagesize);
 }
 
-/*
-** The system memory showing sends data as expected (in bytes)
-** and also tags values as output may be different on different 
-** OS:es. Actually I expect this protocol to be really useful
-** only on non paged systems like VxWorks, OSE/Delta etc.
-** The possibilities of 4GB+ memories on these
-** systems are not counted for...
-*/
 static void 
 extended_show_mem(void){
-    unsigned long tot, used;
-    get_basic_mem(&tot,&used,0); /* We don't care about extremely
-				    large memories here, we 
-				    report to erlang as 
-				    bytes */
+    unsigned long tot, used, pagesize;
+    get_basic_mem(&tot, &used, &pagesize);
     send_tag(TOTAL_MEMORY);
-    send(tot);
+    send(tot, pagesize);
     send_tag(FREE_MEMORY);
-    send(tot - used);
+    send(tot - used, pagesize);
     send_tag(SYSTEM_TOTAL_MEMORY);
 #ifdef VXWORKS
-    send(latest_system_total);
+    send(latest_system_total, 1);
     send_tag(LARGEST_FREE);
-    send(latest.maxBlockSizeFree);
+    send(latest.maxBlockSizeFree, 1);
     send_tag(NUMBER_OF_FREE);
-    send(latest.numBlocksFree);
+    send(latest.numBlocksFree, 1);
 #else
-    send(tot);
+    send(tot, pagesize);
 #endif
     send_tag(SYSTEM_MEM_SHOW_END);
 }    

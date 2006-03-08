@@ -7,9 +7,9 @@
 %%  History  :	*2001-06-14 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: pergu $
-%%              $Date: 2005/07/07 14:05:09 $
-%%              $Revision: 1.54 $
+%%              $Author: kostis $
+%%              $Date: 2005/12/12 23:20:17 $
+%%              $Revision: 1.55 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -1366,7 +1366,7 @@ initializations(BaseTmp1, BaseTmp2, BothOffset, CopyOffset, Offset, CopyBase, Ba
    hipe_rtl:mk_alu(BaseTmp2, Base, add, OffsetTmp2),
    hipe_rtl:mk_move(BothOffset, hipe_rtl:mk_imm(0))].
 
-copy_int_little(Base, Offset, NewOffset, Size, Tmp1) when integer(Size) ->
+copy_int_little(Base, Offset, NewOffset, Size, Tmp1) when is_integer(Size) ->
   Tmp2 = hipe_rtl:mk_new_reg(),
   TmpOffset = hipe_rtl:mk_new_reg(),
   ByteSize = Size div ?BYTE_SIZE, 
@@ -1458,7 +1458,7 @@ copy_int_big(Base, Offset, NewOffset, 24, Tmp1) ->
      hipe_rtl:mk_alu(NewOffset, Offset, add, hipe_rtl:mk_imm(24))];
 copy_int_big(Base, Offset,NewOffset, 32, Tmp1) ->
     copy_big_word(Base, Offset, NewOffset, Tmp1);
-copy_int_big(Base, Offset, NewOffset, Size, Tmp1) when integer(Size) ->
+copy_int_big(Base, Offset, NewOffset, Size, Tmp1) when is_integer(Size) ->
   OldOffset = hipe_rtl:mk_new_reg(),
   TmpOffset = hipe_rtl:mk_new_reg(),
   Bits = hipe_rtl:mk_new_reg(),
@@ -1533,7 +1533,7 @@ copy_little_word(Base, Offset, NewOffset, Word) ->
      hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
      hipe_rtl:mk_alu(NewOffset, Offset, add, hipe_rtl:mk_imm(32))].
 
-copy_offset_int_big(Base, Offset, NewOffset, Size, Tmp1) when integer(Size) ->
+copy_offset_int_big(Base, Offset, NewOffset, Size, Tmp1) when is_integer(Size) ->
   Tmp2 = hipe_rtl:mk_new_reg(),
   Tmp3 = hipe_rtl:mk_new_reg(),
   Tmp4 = hipe_rtl:mk_new_reg(),

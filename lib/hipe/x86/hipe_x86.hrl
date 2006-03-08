@@ -62,11 +62,9 @@
 -record(cmovcc, {cc, src, dst}).
 -record(cmp, {src, dst}).       	% a 'sub' alu which doesn't update dst
 -record(comment, {term}).
--record(dec, {dst}).
 -record(fmove, {src, dst}).
 -record(fp_binop, {op, src, dst}).
 -record(fp_unop, {op, arg}).		% arg may be [] :-(
--record(inc, {dst}).
 -record(jcc, {cc, label}).
 -record(jmp_fun, {'fun', linkage}).	% tailcall, direct or indirect
 -record(jmp_label, {label}).		% local jmp, direct
@@ -77,8 +75,6 @@
 -record(move64, {imm, dst}).
 -record(movsx, {src, dst}).
 -record(movzx, {src, dst}).
--record(nop, {}).
--record(prefix_fs, {}).
 -record(pseudo_call, {'fun', sdesc, contlab, linkage}).
 -record(pseudo_jcc, {cc, true_label, false_label, pred}).
 -record(pseudo_tailcall, {'fun', arity, stkargs, linkage}).
@@ -88,6 +84,7 @@
 -record(ret, {npop}).			% EAX is live-in
 -record(shift, {shiftop, src, dst}).
 -record(test, {src, dst}).
+
 %%% Function definitions.
 
 -record(defun, {mfa, formals, code, data, isclosure, isleaf,

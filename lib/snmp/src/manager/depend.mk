@@ -38,6 +38,9 @@ $(EBIN)/snmpm_server.$(EMULATOR): \
 	../misc/snmp_verbosity.hrl \
 	snmpm_server.erl
 
+$(EBIN)/snmpm_server_sup.$(EMULATOR): \
+	snmpm_server_sup.erl
+
 $(EBIN)/snmpm_supervisor.$(EMULATOR): \
 	snmpm_supervisor.erl
 

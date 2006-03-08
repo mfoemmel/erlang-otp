@@ -61,14 +61,16 @@ start_agent(Type, Opts) ->
     ?d("start_agent -> entry with"
 	"~n   Type: ~p"
 	"~n   Opts: ~p", [Type, Opts]),
-    start_sup_child(snmpa_supervisor, permanent, [Type, Opts]).
+    Restart = get_restart(Opts, permanent), 
+    start_sup_child(snmpa_supervisor, Restart, [Type, Opts]).
 
 
 start_manager(Type, Opts) ->
     ?d("start_manager -> entry with"
 	"~n   Type: ~p"
 	"~n   Opts: ~p", [Type, Opts]),
-    start_sup_child(snmpm_supervisor, transient, [Type, Opts]).
+    Restart = get_restart(Opts, transient), 
+    start_sup_child(snmpm_supervisor, Restart, [Type, Opts]).
 
 
 %%%-------------------------------------------------------------------
@@ -92,6 +94,11 @@ init(_Args) ->
 %%% Internal functions
 %%%-------------------------------------------------------------------
 
+get_restart(Opts, Def) ->
+    get_opt(Opts, restart_type, Def).
+
+get_opt(Opts, Key, Def) ->
+    snmp_misc:get_option(Key, Opts, Def).
 
 start_sup_child(Mod, Type, Args) ->
     Spec = sup_spec(Mod, Type, Args), 

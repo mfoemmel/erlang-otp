@@ -278,8 +278,9 @@ sock_opt2(Opt) ->
 
 has_inet6_supported() ->
     case (catch inet:getaddr("localhost", inet6)) of
-	{ok, _} ->
-	    yes;
+	{ok, {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
+	    no;
+	{ok,_} -> yes;
 	_ ->
 	    no
     end.

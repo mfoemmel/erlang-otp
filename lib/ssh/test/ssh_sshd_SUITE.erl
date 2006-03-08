@@ -68,11 +68,11 @@ ssh(Config) when list(Config) ->
     ?line flush_debug_print_msgs(P),
     ?line D1 = collect_data_upto(P, "1> "),
     ?line rx(D1, "^Eshell.*\n.*1> $"),
-    ?line port_command(P, "abc.\n"),
+    ?line true = port_command(P, "abc.\n"),
     ?line flush_debug_print_msgs(P),
     ?line D2 = collect_data_upto(P, "2> "),
     ?line rx(D2, "^abc.*\nabc.*\n.*2> $"),
-    ?line port_command(P, "exit().\n"),
+    ?line true = port_command(P, "exit().\n"),
     ?line flush_all_data(P),
     ?line ok = ssh_sshd:stop(Pid).
 
@@ -90,11 +90,11 @@ ssh_compressed(Config) when list(Config) ->
     ?line flush_debug_print_msgs(P),
     ?line D1 = collect_data_upto(P, "1> "),
     ?line rx(D1, "^Eshell.*\n.*1> $"),
-    ?line port_command(P, "abc.\n"),
+    ?line true = port_command(P, "abc.\n"),
     ?line flush_debug_print_msgs(P),
     ?line D2 = collect_data_upto(P, "2> "),
     ?line rx(D2, "^abc.*\nabc.*\n.*2> $"),
-    ?line port_command(P, "exit().\n"),
+    ?line true = port_command(P, "exit().\n"),
     ?line flush_all_data(P),
     ?line ok = ssh_sshd:stop(Pid).
 

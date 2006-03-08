@@ -172,6 +172,7 @@ dnl
 extra_flags="-I${ERL_TOP}/erts/$host $OTP_EXTRA_FLAGS"
 CFLAGS="$CFLAGS $extra_flags"
 DEBUG_CFLAGS="-g $CPPFLAGS $extra_flags"
+DEBUG_FLAGS=-g
 
 CFLAG_RUNTIME_LIBRARY_PATH="-Wl,-R"
 case $host_os in
@@ -189,7 +190,18 @@ case $host_os in
 	;;
 esac
 
-DEBUG_FLAGS=-g
+
+dnl
+dnl Use the getconf utility if it exists
+dnl to find large file support flags.
+dnl
+if type getconf >/dev/null 2>&1; then
+	CFLAGS="$CFLAGS `getconf LFS_CFLAGS 2>/dev/null`"
+	DEBUG_CFLAGS="$DEBUG_CFLAGS `getconf LFS_CFLAGS 2>/dev/null`"
+	LDFLAGS="$LDFLAGS `getconf LFS_LDLAGS 2>/dev/null`"
+	LIBS="$LIBS `getconf LFS_LIBS 2>/dev/null`"
+fi
+
 if test "x$GCC" = xyes; then
   # until the emulator can handle this, I suggest we turn it off!
   #WFLAGS="-Wall -Wshadow -Wcast-qual -Wmissing-declarations"
@@ -227,6 +239,7 @@ x86_64) ARCH=amd64;;
 ppc)	ARCH=ppc;;
 ppc64)	ARCH=ppc64;;
 "Power Macintosh")	ARCH=ppc;;
+armv5b)	ARCH=arm;;
 esac
 AC_SUBST(OPSYS)
 AC_SUBST(ARCH)
@@ -1079,6 +1092,15 @@ dnl
 AC_MSG_CHECKING([if gethrvtime works and how to use it])
 AC_TRY_RUN([
 /* gethrvtime procfs ioctl test */
+/* These need to be undef:ed to not break activation of
+ * micro level process accounting on /proc/self 
+ */
+#ifdef _LARGEFILE_SOURCE
+#  undef _LARGEFILE_SOURCE
+#endif
+#ifdef _FILE_OFFSET_BITS
+#  undef _FILE_OFFSET_BITS
+#endif
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>

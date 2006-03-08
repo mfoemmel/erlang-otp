@@ -48,7 +48,7 @@ DOC_MODULES = hipe_icode hipe_icode_cfg hipe_icode_liveness \
 
 MODULES = $(DOC_MODULES) hipe_icode_ebb hipe_icode_mulret
 
-HRL_FILES=hipe_icode_type.hrl
+HRL_FILES=hipe_icode.hrl hipe_icode_type.hrl
 ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 DOC_FILES= $(DOC_MODULES:%=$(DOCS)/%.html)

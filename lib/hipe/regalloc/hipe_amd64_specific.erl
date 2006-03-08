@@ -46,9 +46,7 @@ defun_to_cfg(Defun) ->
   hipe_x86_cfg:init(Defun).
 
 check_and_rewrite(Defun, Coloring) ->
-  {NewDefun, _, NewSpillIndex} =
-    hipe_amd64_ra_postconditions:check_and_rewrite(Defun, Coloring, 'normal', [], []),
-  {NewDefun, NewSpillIndex}.
+  hipe_amd64_ra_postconditions:check_and_rewrite(Defun, Coloring, 'normal').
 
 reverse_postorder(CFG) ->
   hipe_x86_cfg:reverse_postorder(CFG).

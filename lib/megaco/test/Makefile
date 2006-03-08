@@ -123,6 +123,11 @@ info:
 
 make: $(TARGET_FILES)
 
+config: make
+	$(MERL) -noshell -sname megaco_config $(ERL_PATH) \
+            -s megaco_test_lib t megaco_config_test \
+            $(EHALT)
+
 time1: make
 	$(MERL) -noshell -sname megaco_time1 $(ERL_PATH) \
             -run megaco_codec_v1_test tt $(TT_DIR) \

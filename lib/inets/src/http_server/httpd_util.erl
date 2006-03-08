@@ -26,7 +26,7 @@
 	 make_name/2,make_name/3,make_name/4,strip/1,
 	 hexlist_to_integer/1,integer_to_hexlist/1,
 	 convert_request_date/1,create_etag/1,create_etag/2,
-	 convert_netscapecookie_date/1]).
+	 convert_netscapecookie_date/1, enable_debug/1, valid_options/3]).
 
 -export([encode_hex/1]).
 -include_lib("kernel/include/file.hrl").
@@ -195,7 +195,7 @@ message(414,ReasonPhrase,_) ->
 message(416,ReasonPhrase,_) ->
     ReasonPhrase;
 
-message(500,none,ConfigDB) ->
+message(500,_,ConfigDB) ->
     ServerAdmin=lookup(ConfigDB,server_admin,"unknown@unknown"),
     "The server encountered an internal error or "
 	"misconfiguration and was unable to complete "
@@ -315,6 +315,8 @@ rfc1123_date() ->
       io_lib:format("~s, ~2.2.0w ~3.s ~4.4.0w ~2.2.0w:~2.2.0w:~2.2.0w GMT",
 		    [day(DayNumber),DD,month(MM),YYYY,Hour,Min,Sec])).
 
+rfc1123_date(undefined) ->
+    undefined;
 rfc1123_date(LocalTime) ->
     {{YYYY,MM,DD},{Hour,Min,Sec}} = 
 	case calendar:local_time_to_universal_time_dst(LocalTime) of
@@ -638,3 +640,80 @@ create_part(Values)->
 				  Val-3
 			  end
 	      end,Values).
+
+
+%%----------------------------------------------------------------------
+%% Enable debugging, validate httpd options
+%%----------------------------------------------------------------------
+
+enable_debug(Debug) ->
+    dbg:tracer(),
+    dbg:p(all, [call]),
+    do_enable_debug(Debug).
+
+do_enable_debug(disable) ->
+    dbg:stop();
+do_enable_debug([]) ->
+    ok;
+do_enable_debug([{Level,Modules}|Rest]) when atom(Level),list(Modules) ->
+    case Level of
+	all_functions ->
+	    io:format("Tracing on all functions set on modules: ~p~n",
+		      [Modules]),
+	    lists:foreach(fun(X)->dbg:tpl(X, [{'_', [], [{return_trace}]}]) end,Modules);
+	exported_functions -> 
+	    io:format("Tracing on exported functions set on modules: ~p~n",[Modules]),
+	    lists:foreach(fun(X)->dbg:tp(X, [{'_', [], [{return_trace}]}]) end,Modules);
+	disable ->
+	    io:format("Tracing disabled on modules: ~p~n",[Modules]),
+	    lists:foreach(fun(X)->dbg:ctp(X) end,Modules);
+	_ ->
+	    ok
+    end,
+    do_enable_debug(Rest).
+
+
+
+valid_options(Debug,AcceptTimeout,ConfigFile) ->
+    valid_debug(Debug),
+    valid_accept_timeout(AcceptTimeout),
+    valid_config_file(ConfigFile).
+valid_debug([]) ->
+    ok;
+valid_debug(disable) ->
+    ok;
+valid_debug(L) when list(L) ->
+    valid_debug2(L);
+valid_debug(D) ->
+    throw({error,{bad_debug_option,D}}).
+valid_debug2([{all_functions,L}|Rest]) when list(L) ->
+    test_load_modules(L),
+    valid_debug2(Rest);
+valid_debug2([{exported_functions,L}|Rest]) when list(L) ->
+    test_load_modules(L),
+    valid_debug2(Rest);
+valid_debug2([{disable,L}|Rest]) when list(L) ->
+    test_load_modules(L),
+    valid_debug2(Rest);
+valid_debug2([H|T]) ->
+    throw({error,{bad_debug_option,H}});
+valid_debug2([]) ->
+    ok.
+valid_accept_timeout(I) when is_integer(I) ->
+    ok;
+valid_accept_timeout(A) ->
+    throw({error,{bad_debug_option,A}}).
+valid_config_file(_) ->
+    ok.
+
+test_load_modules([H|T]) when atom(H) ->
+    case code:which(H) of
+	non_existing ->
+	    throw({error,{module_does_not_exist,H}});
+	_ -> ok
+    end,
+    test_load_modules(T);
+test_load_modules([H|T]) ->
+    throw({error,{module_name_not_atom,H}});
+test_load_modules([]) ->
+    ok.

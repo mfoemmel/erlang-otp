@@ -2380,7 +2380,8 @@ send_reply(#conn_data{serial       = Serial,
 	    TR2 =  TR#'TransactionReply'{transactionResult = Reply},
 	    TraceLabel = "<ERROR> encode trans reply failed",
 	    ?report_important(CD, TraceLabel, [TR, TR2, ED, Error]),
-	    error_msg("encode trans reply body failed: ~w", [Reason]),
+	    error_msg("encode trans reply body failed: ~s", 
+		      [format_encode_error_reason(Reason)]),
 	    Body2 = {transactions, [{transactionReply, TR2}]},
 	    megaco_messenger_misc:send_body(CD, TraceLabel, Body2)
     end;
@@ -2400,11 +2401,65 @@ send_reply(#conn_data{serial = Serial} = CD, Result, ImmAck) ->
             TR2        =  TR#'TransactionReply'{transactionResult = Reply},
             TraceLabel = "<ERROR> encode trans reply body failed",
             ?report_important(CD, TraceLabel, [TR, TR2, ED, Error]),
-	    error_msg("encode trans reply body failed: ~w", [Reason]),
+	    error_msg("encode trans reply body failed: ~s", 
+		      [format_encode_error_reason(Reason)]),
             Body2 = {transactions, [{transactionReply, TR2}]},
             megaco_messenger_misc:send_body(CD, TraceLabel, Body2)
     end.
 
+format_encode_error_reason(Reason) ->
+    FS = 
+	case Reason of
+	    {Mod, Func, [EC, Msg], {AE, CS}} when is_atom(Mod)  and 
+						  is_atom(Func) and
+						  is_list(EC)   and
+						  is_tuple(Msg) and
+						  is_list(CS) ->
+		io_lib:format("~n   Encode module: ~w"
+			      "~n   Func:          ~w"
+			      "~n   Encode config: ~w"
+			      "~n   Message part:  ~p"
+			      "~n   Actual error:  ~p" 
+			      "~n   Call stack:    ~w", 
+			      [Mod, Func, EC, Msg, AE, CS]);
+
+	    {Mod, Func, [EC, Msg], AE} when is_atom(Mod)  and 
+					    is_atom(Func) and
+					    is_list(EC)   and
+					    is_tuple(Msg) ->
+		io_lib:format("~n   Encode module: ~w"
+			      "~n   Func:          ~w"
+			      "~n   Encode config: ~w"
+			      "~n   Message part:  ~p"
+			      "~n   Actual error:  ~p", 
+			      [Mod, Func, EC, Msg, AE]);
+
+	    {Mod, [EC, Msg], {AE, CS}} when is_atom(Mod)  and 
+					    is_list(EC)   and
+					    is_tuple(Msg) and
+					    is_list(CS) ->
+		io_lib:format("~n   Encode module: ~w"
+			      "~n   Encode config: ~w"
+			      "~n   Message part:  ~p"
+			      "~n   Actual error:  ~p" 
+			      "~n   Call stack:    ~w", 
+			      [Mod, EC, Msg, AE, CS]);
+
+	    {Mod, [EC, Msg], AE} when is_atom(Mod)  and 
+				      is_list(EC)   and
+				      is_tuple(Msg) ->
+		io_lib:format("~n   Encode module: ~w"
+			      "~n   Encode config: ~w"
+			      "~n   Message part:  ~p"
+			      "~n   Actual error:  ~p", 
+			      [Mod, EC, Msg, AE]);
+
+	    Error ->
+		io_lib:format("~n   ~w", [Error])
+	end,
+    lists:flatten(FS).
+
+			  
 %% Presumably the user would return immediately (with {pending, Data}) if it 
 %% knows or suspects a request to take a long time to process. 
 %% For this reason we assume that handling a resent request 
@@ -3021,8 +3076,9 @@ recalc_timer(Timer) when record(Timer, megaco_incr_timer) ->
 recalc_timer({Timer, timeout}) when record(Timer, megaco_incr_timer) ->
     recalc_timer(Timer).
 
-decr(infinity) -> infinity;
-decr(Int)      -> Int - 1.
+decr(infinity = V)             -> V;
+decr(infinity_restartable = V) -> V;
+decr(Int) when is_integer(Int) -> Int - 1.
 
 
 warning_msg(F, A) ->

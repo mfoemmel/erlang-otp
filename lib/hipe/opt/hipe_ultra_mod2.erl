@@ -119,7 +119,7 @@ instr_type(I) ->
 	#comment{} ->
 	    none;
 	_ ->
-	    exit(ultrasparc_instr_type,{cant_schedule,I})
+	    exit({ultrasparc_instr_type,{cant_schedule,I}})
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

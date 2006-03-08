@@ -280,12 +280,11 @@ update_block_labels(ConstTab, DataLbl, OldLbl, NewLbl) ->
     end.
 
 update_data(Data, Old, New) ->
-    lists:map(
-      fun(Lbl) when Lbl =:= Old ->
-	  {label, New};
-	 (Lbl) -> Lbl
-	    end,
-	    Data).
+    lists:map(fun(Lbl) when Lbl =:= Old ->
+	            {label, New};
+	         (Lbl) -> Lbl
+	      end,
+	      Data).
 
 %% update_global_block(ConstTab, Label, Align, ElementType, InitList) ->
 %%    ByteList = decompose(size_of(ElementType), InitList),
@@ -379,7 +378,7 @@ update_referred_labels(Table, LabelMap) ->
 %% @spec (Type::ct_type(), Alignment::alignment(), Exported::bool(), Data::data())
 %%  -> ctdata()
 mk_const(Type, Alignment, Exported, Data) ->
-   {ctdata, Type, Alignment, Exported, Data}.
+  {ctdata, Type, Alignment, Exported, Data}.
 %% @spec (ctdata()) -> ct_type()
 const_type({ctdata, Type, _Alignment, _Exported, _Data}) -> Type.
 %% @spec (ctdata()) -> alignment()

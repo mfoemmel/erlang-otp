@@ -5542,7 +5542,7 @@ static int tcp_remain(tcp_descriptor* desc, int* len)
 		  if (plen < n) {
 		      if (SP(ptr2+1)) {
 			  ptr1 = ptr2+1;
-			  len -= plen;
+			  len = n - plen;
 		      }
 		      else
 			  goto done;

@@ -27,29 +27,33 @@
 -include("ssh.hrl").
 -include("ssh_connect.hrl").
 
-connect(CM) when is_pid(CM) ->
-    case ssh_cm:attach(CM) of
+-define(default_timeout, 10000).
+
+connect(A) ->
+    connect(A, []).
+
+connect(CM, Opts) when is_pid(Opts) ->
+    Timeout = proplists:get_value(connect_timeout, Opts, ?default_timeout),
+    case ssh_cm:attach(CM, Timeout) of
 	{ok,CMPid} ->
-	    session(CMPid);
+	    session(CMPid, Timeout);
 	Error ->
 	    Error
     end;
-connect(Host) when is_list(Host) ->
-    connect(Host, []).
-
 connect(Host, Opts) ->
     connect(Host, 22, Opts).
 
 connect(Host, Port, Opts) ->
     case ssh_cm:connect(Host, Port, Opts) of
 	{ok, CM} ->
-	    session(CM);
+	    session(CM, proplists:get_value(connect_timeout,
+					    Opts, ?default_timeout));
 	Error ->
 	    Error
     end.
 
-session(CM) ->
-    case ssh_cm:session_open(CM) of
+session(CM, Timeout) ->
+    case ssh_cm:session_open(CM, Timeout) of
 	{ok,Channel}  ->
 	    case ssh_cm:shell(CM, Channel) of
 		ok ->
@@ -113,7 +117,7 @@ shell_loop(CM, Channel, IO, SentClose) ->
 	    ?MODULE:shell_loop(CM, Channel, IO, true);
 
 	{ssh_cm, CM, {closed, Channel}} ->
-	    ssh_cm:detach(CM),
+	    ssh_cm:detach(CM, ?default_timeout),
 	    exit(IO, kill);
 
 	Other ->

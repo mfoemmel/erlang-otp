@@ -18,17 +18,14 @@
 -module(memsup).
 -behaviour(gen_server).
 
-%% NOTE: Contains code for live upgrade from 1.7.8 to 1.8 (and live
-%% downgrade from 1.8 to 1.7.8) -- this code can be removed when
-%% the module is updated next time.
-%% Look for "% vsn 1.7.8"
-
 %% API
--export([start_link/0]).
--export([get_check_interval/0,
-	 get_memory_data/0, get_system_memory_data/0,
-	 get_procmem_high_watermark/0, get_sysmem_high_watermark/0,
+-export([start_link/0]). % for supervisor
+-export([get_memory_data/0, get_system_memory_data/0,
+	 get_check_interval/0, set_check_interval/1,
+	 get_procmem_high_watermark/0, set_procmem_high_watermark/1,
+	 get_sysmem_high_watermark/0, set_sysmem_high_watermark/1,
 	 get_helper_timeout/0, set_helper_timeout/1]).
+-export([dummy_reply/1, param_type/2, param_default/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -37,354 +34,511 @@
 %% Other exports
 -export([format_status/2]).
 
-%%%-----------------------------------------------------------------
-%%% This is a rewrite of memsup from BS.3 by Peter Högfeldt.
-%%%
-%%% This module implements a server process that checks the memory
-%%% usage.
-%%%-----------------------------------------------------------------
-
 -include("memsup.hrl").
 
 -record(state,
-	{timeout,             % int()   memory_check_interval, ms
+	{os,                  % {OSfamily,OSname} | OSfamily
+	 port_mode,           % bool()
 
 	 mem_usage,           % undefined | {Alloc, Total}
 	 worst_mem_user,      % undefined | {Pid, Alloc}
 
+	 sys_only,            % bool()  memsup_system_only
+	 timeout,             % int()   memory_check_interval, ms
+	 helper_timeout,      % int()   memsup_helper_timeout, ms
 	 sys_mem_watermark,   % float() system_memory_high_watermark, %
 	 proc_mem_watermark,  % float() process_memory_high_watermark, %
-                              % | undefined
-	 collect_procmem,     % bool()  memsup_system_only
 
+	 pid,                 % undefined | pid()
 	 wd_timer,            % undefined | TimerRef
-	 pending = [],        % [From]
-
 	 ext_wd_timer,        % undefined | TimerRef
-	 ext_pending = [],    % [From]
-
-	 helper_timeout       % int()   memsup_helper_timeout, ms
+	 pending = [],        % [reg | {reg,From} | {ext,From}]
+	 ext_pending = []     % [{ext,From}]
 	}).
 
-%%====================================================================
+%%----------------------------------------------------------------------
 %% API
-%%====================================================================
+%%----------------------------------------------------------------------
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-%% get_check_interval() -> Time (in ms)
-%% Returns the time interval which defines how often memory is checked.
-%% The value is actually initiated by the configuration parameter
-%% 'memory_check_interval', but although this parameter has a value in
-%% minutes, for some unknown reason, the value returned here is in ms.
-get_check_interval() ->
-    call(get_check_interval).
-
-%% get_memory_data() -> MemData
-%%   MemData = {TotMemSize, AllBytes, {Pid, PidAllBytes}}
-%% Returns the latest result of the data collection.
 get_memory_data() ->
-    call(get_memory_data).
+    os_mon:call(memsup, get_memory_data, infinity).
 
-%% get_system_memory_data() -> [MemData]
-%%   MemData = {Tag, Val}
-%% Initiates a data collection and returns the result.
 get_system_memory_data() ->
-    call(get_system_memory_data).
+    os_mon:call(memsup, get_system_memory_data, infinity).
 
-%% get_procmem_high_watermark() -> Threshold (percent)
-%% Returns the process memory threshold in percent.
-%% The value is actually initiated by the configuration parameter
-%% 'process_memory_high_watermark', but although this parameter has
-%% float value, for some unknown reason, the value returned here is in
-%% percent.
+get_check_interval() ->
+    os_mon:call(memsup, get_check_interval, infinity).
+set_check_interval(Minutes) ->
+    case param_type(memory_check_interval, Minutes) of
+	true ->
+	    MS = minutes_to_ms(Minutes), % for backwards compatibility
+	    os_mon:call(memsup, {set_check_interval, MS}, infinity);
+	false ->
+	    erlang:error(badarg)
+    end.
+
 get_procmem_high_watermark() ->
-    call(get_procmem_high_watermark).
+    os_mon:call(memsup, get_procmem_high_watermark, infinity).
+set_procmem_high_watermark(Float) ->
+    case param_type(process_memory_high_watermark, Float) of
+	true ->
+	    os_mon:call(memsup, {set_procmem_high_watermark, Float},
+			infinity);
+	false ->
+	    erlang:error(badarg)
+    end.
 
-%% get_sysmem_high_watermark() -> Threshold (percent)
-%% Returns the system memory threshold in percent.
-%% The value is actually initiated by the configuration parameter
-%% 'system_memory_high_watermark', but although this parameter has
-%% float value, for some unknown reason, the value returned here is in
-%% percent.
 get_sysmem_high_watermark() ->
-    call(get_sysmem_high_watermark).
+    os_mon:call(memsup, get_sysmem_high_watermark, infinity).
+set_sysmem_high_watermark(Float) ->
+    case param_type(system_memory_high_watermark, Float) of
+	true ->
+	    os_mon:call(memsup, {set_sysmem_high_watermark, Float},
+			infinity);
+	false ->
+	    erlang:error(badarg)
+    end.
 
-%% get_helper_timeout() -> Seconds
-%% The timeout value initiated by the configuration paramter
-%% 'memsup_helper_timeout'.
 get_helper_timeout() ->
-    call(get_helper_timeout).
+    os_mon:call(memsup, get_helper_timeout, infinity).
+set_helper_timeout(Seconds) ->
+    case param_type(memsup_helper_timeout, Seconds) of
+	true ->
+	    os_mon:call(memsup, {set_helper_timeout, Seconds});
+	false ->
+	    erlang:error(badarg)
+    end.
 
-%% set_helper_timeout(Seconds) -> ok
-%% The timeout value initiated by the configuration paramter
-%% 'memsup_helper_timeout'.
-set_helper_timeout(Seconds) when is_integer(Seconds), Seconds>0 ->
-    call({set_helper_timeout, Seconds});
-set_helper_timeout(Other) ->
-    erlang:error(badarg, [Other]).
+dummy_reply(get_memory_data) ->
+    dummy_reply(get_memory_data,
+		os_mon:get_env(memsup, memsup_system_only));
+dummy_reply(get_system_memory_data) ->
+    [];
+dummy_reply(get_check_interval) ->
+    minutes_to_ms(os_mon:get_env(memsup, memory_check_interval));
+dummy_reply({set_check_interval, _}) ->
+    ok;
+dummy_reply(get_procmem_high_watermark) ->
+    trunc(100 * os_mon:get_env(memsup, process_memory_high_watermark));
+dummy_reply({set_procmem_high_watermark, _}) ->
+    ok;
+dummy_reply(get_sysmem_high_watermark) ->
+    trunc(100 * os_mon:get_env(memsup, system_memory_high_watermark));
+dummy_reply({set_sysmem_high_watermark, _}) ->
+    ok;
+dummy_reply(get_helper_timeout) ->
+    os_mon:get_env(memsup, memsup_helper_timeout);
+dummy_reply({set_helper_timeout, _}) ->
+    ok.
+dummy_reply(get_memory_data, true) ->
+    {0,0,undefined};
+dummy_reply(get_memory_data, false) ->
+    {0,0,{self(),0}}.
 
-call(Req) ->
-    gen_server:call(memsup, Req, infinity).
+param_type(memsup_system_only, Val) when Val==true; Val==false -> true;
+param_type(memory_check_interval, Val) when is_integer(Val),
+                                            Val>0 -> true;
+param_type(memsup_helper_timeout, Val) when is_integer(Val),
+                                            Val>0 -> true;
+param_type(system_memory_high_watermark, Val) when is_number(Val),
+						   0=<Val,
+						   Val=<1 -> true;
+param_type(process_memory_high_watermark, Val) when is_number(Val),
+						    0=<Val,
+						    Val=<1 -> true;
+param_type(_Param, _Val) -> false.
 
-%%====================================================================
-%% process initiation
-%%====================================================================
+param_default(memsup_system_only) -> false;
+param_default(memory_check_interval) -> 1;
+param_default(memsup_helper_timeout) -> 30;
+param_default(system_memory_high_watermark) -> 0.80;
+param_default(process_memory_high_watermark) -> 0.05.
+
+%%----------------------------------------------------------------------
+%% gen_server callbacks
+%%----------------------------------------------------------------------
 
 init([]) ->
     process_flag(trap_exit, true),
     process_flag(priority, low),
 
-    %% Read the values of some configuration parameters
-    CollectProcmem =
-	case application:get_env(os_mon, memsup_system_only) of
-	    {ok, true} ->
-		false;
-	    _ ->
-		true
-	end,
-    Timeout = get_timeout(),
-    HelperTimeout = get_memsup_helper_timeout(),
-    SysMem = get_system_memory_high_watermark(),
-    ProcMem = case CollectProcmem of
-		  false ->
-		      undefined;
-		  true ->
-		      get_process_memory_high_watermark()
-	      end,
+    OS = os:type(),
+    PortMode = case OS of
+		   {unix, darwin} -> false;
+		   {unix, freebsd} -> false;
+		   {unix, linux} -> false;
+		   {unix, openbsd} -> true;
+		   {unix, sunos} -> true;
+		   {win32, _OSname} -> false;
+		   vxworks -> true;
+		   _ ->
+		       exit({unsupported_os, OS})
+	       end,
+    Pid = if
+	      PortMode ->
+		  spawn_link(fun() -> port_init() end);
+	      not PortMode ->
+		  undefined
+	  end,
 
+    %% Read the values of some configuration parameters
+    SysOnly = os_mon:get_env(memsup, memsup_system_only),
+    Timeout = os_mon:get_env(memsup, memory_check_interval),
+    HelperTimeout = os_mon:get_env(memsup, memsup_helper_timeout),
+    SysMem = os_mon:get_env(memsup, system_memory_high_watermark),
+    ProcMem = os_mon:get_env(memsup, process_memory_high_watermark),
+
+    %% Clear any alarms set by a previous incarnation of memsup
+    clear_alarms(),
+    
     %% Initiate first data collection
     self() ! time_to_collect,
 
-    {ok, #state{timeout=Timeout,
-		sys_mem_watermark=SysMem,
-		proc_mem_watermark=ProcMem,
-		collect_procmem=CollectProcmem,
-		helper_timeout=HelperTimeout}}.
+    {ok, #state{os=OS, port_mode=PortMode,
 
-%%====================================================================
-%% gen_server callbacks
-%%====================================================================
+		sys_only           = SysOnly,
+		timeout            = minutes_to_ms(Timeout),
+		helper_timeout     = sec_to_ms(HelperTimeout),
+		sys_mem_watermark  = SysMem,
+		proc_mem_watermark = ProcMem,
 
-handle_call(get_check_interval, _From, State) ->
-    {reply, State#state.timeout, State};
+		pid=Pid}}.
 
 handle_call(get_memory_data, From, State) ->
-    MemUsage = State#state.mem_usage,
-    Worst = State#state.worst_mem_user,
-
-    %% Special case: get_memory_data called before first data collection
-    %% is ready, wait with the reply
-    if
-	Worst==undefined, State#state.collect_procmem==true ->
-	    {noreply, State#state{pending=[From|State#state.pending]}};
-	MemUsage==undefined ->
-	    {noreply, State#state{pending=[From|State#state.pending]}};
-	true ->
-	    {Alloc, Total} = MemUsage,
-	    {reply, {Total, Alloc, Worst}, State}
+    %% Return result of latest memory check
+    case State#state.mem_usage of
+	{Alloc, Total} ->
+	    Worst = State#state.worst_mem_user,
+	    {reply, {Total, Alloc, Worst}, State};
+	
+	%% Special case: get_memory_data called before any memory data
+	%% has been collected
+	undefined ->
+	    case State#state.wd_timer of
+		undefined ->
+		    WDTimer = erlang:send_after(State#state.timeout,
+						self(),
+						reg_collection_timeout),
+		    Pending = [{reg,From}],
+		    if
+			State#state.port_mode ->
+			    State#state.pid ! {self(), collect_sys},
+			    {noreply, State#state{wd_timer=WDTimer,
+						  pending=Pending}};
+			true ->
+			    OS = State#state.os,
+			    Self = self(),
+			    Pid = spawn_link(fun() ->
+						     MU = get_memory_usage(OS),
+						     Self ! {collected_sys,MU}
+					     end),
+			    {noreply, State#state{pid=Pid,
+						  wd_timer=WDTimer,
+						  pending=Pending}}
+		    end;
+		_TimerRef ->
+		    Pending = [{reg,From} | State#state.pending],
+		    {noreply, State#state{pending=Pending}}
+	    end
     end;
 
-handle_call(get_system_memory_data, From, State) ->
+handle_call(get_system_memory_data,From,#state{port_mode=true}=State) ->
+    %% When using a port, the extensive memory collection is slightly
+    %% different than a regular one
     case State#state.ext_wd_timer of
 	undefined ->
 	    WDTimer = erlang:send_after(State#state.helper_timeout,
 					self(),
 					ext_collection_timeout),
-	    catch memsup_helper ! {self(), collect_ext_sys},
-	    Pending = [From | State#state.ext_pending],
+	    State#state.pid ! {self(), collect_ext_sys},
 	    {noreply, State#state{ext_wd_timer=WDTimer,
-				  ext_pending=Pending}};
-	_TimerRef -> % we've already ordered ext data collection
-	    Pending = [From | State#state.ext_pending],
+				  ext_pending=[{ext,From}]}};
+	_TimerRef ->
+	    Pending = [{ext,From} | State#state.ext_pending],
 	    {noreply, State#state{ext_pending=Pending}}
     end;
+handle_call(get_system_memory_data, From, State) ->
+    %% When not using a port, the regular memory collection is used
+    %% for extensive memory data as well
+    case State#state.wd_timer of
+	undefined ->
+	    WDTimer = erlang:send_after(State#state.helper_timeout,
+					self(),
+					reg_collection_timeout),
+	    OS = State#state.os,
+	    Self = self(),
+	    Pid = spawn_link(fun() ->
+				     MemUsage = get_memory_usage(OS),
+				     Self ! {collected_sys, MemUsage}
+			     end),
+	    {noreply, State#state{pid=Pid, wd_timer=WDTimer,
+				  pending=[{ext,From}]}};
+	_TimerRef ->
+	    Pending = [{ext,From} | State#state.pending],
+	    {noreply, State#state{pending=Pending}}
+    end;
+
+handle_call(get_check_interval, _From, State) ->
+    {reply, State#state.timeout, State};
+handle_call({set_check_interval, MS}, _From, State) ->
+    {reply, ok, State#state{timeout=MS}};
 
 handle_call(get_procmem_high_watermark, _From, State) ->
     {reply, trunc(100 * State#state.proc_mem_watermark), State};
+handle_call({set_procmem_high_watermark, Float}, _From, State) ->
+    {reply, ok, State#state{proc_mem_watermark=Float}};
 
 handle_call(get_sysmem_high_watermark, _From, State) ->
     {reply, trunc(100 * State#state.sys_mem_watermark), State};
+handle_call({set_sysmem_high_watermark, Float}, _From, State) ->
+    {reply, ok, State#state{sys_mem_watermark=Float}};
 
 handle_call(get_helper_timeout, _From, State) ->
     {reply, ms_to_sec(State#state.helper_timeout), State};
-
-handle_call({set_helper_timeout, Secs}, _From, State) ->
-    {reply, ok, State#state{helper_timeout=sec_to_ms(Secs)}};
+handle_call({set_helper_timeout, Seconds}, _From, State) ->
+    {reply, ok, State#state{helper_timeout=sec_to_ms(Seconds)}};
 
 %% The following are only for test purposes (whitebox testing).
 handle_call({set_sys_hw, HW}, _From, State) ->
     {reply, ok, State#state{sys_mem_watermark=HW}};
 handle_call({set_pid_hw, HW}, _From, State) ->
     {reply, ok, State#state{proc_mem_watermark=HW}};
-handle_call({set_check_interval, Timeout}, _From, State) ->
-    {reply, ok, State#state{timeout=Timeout}};
 handle_call(get_state, _From, State) ->
     {reply, State, State}.
 
-handle_cast(nothing_should_match, State) ->
+handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% It's time to check memory
-%% Ask memsup_handler for system data
 handle_info(time_to_collect, State) ->
-    WDTimer = erlang:send_after(State#state.helper_timeout,
-				self(),
-				reg_collection_timeout),
-    catch memsup_helper ! {self(), collect_sys},
-    {noreply, State#state{wd_timer=WDTimer}};
-
-%% System memory collected, if necessary set the system alarm
-%% Note that the collected data is {0,0} collection was temporarily
-%% impossible to make.
-handle_info({collected_sys, {Alloc,Total}=Sys}, State) ->
-    if
-	Alloc > State#state.sys_mem_watermark*Total ->
-	    set_alarm(system_memory_high_watermark, []);
-	Alloc==0 -> % no correct data collected
-	    ignore;
-	true ->
-	    reset_alarm(system_memory_high_watermark)
-    end,
-    State2 = State#state{mem_usage=Sys},
-    case State2#state.collect_procmem of
-	true ->
-	    %% Ask memsup_handler for process data as well
-	    catch memsup_helper ! {self(), collect_proc},
-	    {noreply, State2};
-	false ->
-	    %% No process data should be collected, proceed immediately
-	    %% to next function clause
-	    handle_info({collected_proc, undefined}, State2)
+    case State#state.wd_timer of
+	undefined ->
+	    WDTimer = erlang:send_after(State#state.helper_timeout,
+					self(),
+					reg_collection_timeout),
+	    if
+		State#state.port_mode ->
+		    State#state.pid ! {self(), collect_sys},
+		    {noreply, State#state{wd_timer=WDTimer,
+					  pending=[reg]}};
+		true ->
+		    OS = State#state.os,
+		    Self = self(),
+		    Pid = spawn_link(fun() ->
+					     MU = get_memory_usage(OS),
+					     Self ! {collected_sys,MU}
+				     end),
+		    {noreply, State#state{pid=Pid, wd_timer=WDTimer,
+					  pending=[reg]}}
+	    end;
+	_TimerRef ->
+	    {noreply, State#state{pending=[reg|State#state.pending]}}
     end;
 
-%% Process memory collected, if necessary set the process alarm
-handle_info({collected_proc, Worst}, State) ->
+%% Memory data collected
+handle_info({collected_sys, {Alloc,Total}}, State) ->
+
+    %% Cancel watchdog timer (and as a security measure,
+    %% also flush any reg_collection_timeout message)
     TimeSpent = case erlang:cancel_timer(State#state.wd_timer) of
 		    false ->
 			State#state.helper_timeout;
-		   TimeLeft ->
+		    TimeLeft ->
 			State#state.helper_timeout-TimeLeft
-	       end,
+		end,
+    flush(reg_collection_timeout),
 
-    {SysAlloc, Total} = State#state.mem_usage,
-    %% Special case: if this is the first data collection, Pending may
-    %% be a non-empty list of pending clients. (Later it will always be
-    %% the empty list).
-    reply(State#state.pending, {Total, SysAlloc, Worst}),
-    Threshold = State#state.proc_mem_watermark*Total,
-    case Worst of
-	{Pid, PidAlloc} when Threshold/=0, PidAlloc>Threshold ->
-	    set_alarm(process_memory_high_watermark, Pid);
-	{_Pid, PidAlloc} when Threshold/=0, PidAlloc=<Threshold ->
-	    reset_alarm(process_memory_high_watermark);
-	_ ->
-	    %% Either
-	    %%   Threshold==0, ie no system data could be collected, or
-	    %%   Worst==undefined, ie no process data was collected
-	    %% In either case, don't touch the process alarm
+    %% First check if this is the result of a periodic memory check
+    %% and update alarms and State if this is the case
+    State2 =
+	case lists:member(reg, State#state.pending) of
+	    true ->
+
+		%% Check if system alarm should be set/cleared
+		if
+		    Alloc > State#state.sys_mem_watermark*Total ->
+			set_alarm(system_memory_high_watermark, []);
+		    true ->
+			clear_alarm(system_memory_high_watermark)
+		end,
+
+		%% Check if process data should be collected
+		case State#state.sys_only of
+		    false ->
+			{Pid, Bytes} = get_worst_memory_user(),
+			Threshold= State#state.proc_mem_watermark*Total,
+
+			%% Check if process alarm should be set/cleared
+			if
+			    Bytes > Threshold ->
+				set_alarm(process_memory_high_watermark,
+					  Pid);
+			    true ->
+				clear_alarm(process_memory_high_watermark)
+			end,
+			
+			State#state{mem_usage={Alloc, Total},
+				    worst_mem_user={Pid, Bytes}};
+		    true ->
+			State#state{mem_usage={Alloc, Total}}
+		end;
+	    false ->
+		State
+	end,
+
+    %% Then send a reply to all waiting clients, in preserved time order
+    Worst = State2#state.worst_mem_user,
+    SysMemUsage = get_ext_memory_usage(State2#state.os, {Alloc,Total}),
+    reply(State2#state.pending, {Total,Alloc,Worst}, SysMemUsage),
+
+    %% Last, if this was a periodic check, start a timer for the next
+    %% one. New timeout = interval-time spent collecting,
+    case lists:member(reg, State#state.pending) of
+	true ->
+	    Time = case State2#state.timeout - TimeSpent of
+		       MS when MS<0 ->
+			   0;
+		       MS ->
+			   MS
+		   end,
+	    erlang:send_after(Time, self(), time_to_collect);
+	false ->
 	    ignore
     end,
+    {noreply, State2#state{wd_timer=undefined, pending=[]}};
+handle_info({'EXIT', Pid, normal}, State) when is_pid(Pid) ->
+    %% Temporary pid terminating when job is done
+    {noreply, State};
 
-    %% Set the new timeout (interval-time spent collecting),
-    Time = case State#state.timeout - TimeSpent of
-		  MS when MS<0 ->
-		      0;
-		  MS ->
-		      MS
-	   end,
-    erlang:send_after(Time, self(), time_to_collect),
-
-    {noreply, State#state{worst_mem_user=Worst,
-			  wd_timer=undefined, pending=[]}};
-
-%% Timeout during regular data collection
+%% Timeout during data collection
 handle_info(reg_collection_timeout, State) ->
+
+    %% Cancel memory collection (and as a security measure,
+    %% also flush any collected_sys message)
+    if
+	State#state.port_mode -> State#state.pid ! cancel;
+	true -> exit(State#state.pid, cancel)
+    end,
+    flush(collected_sys),
+
+    %% Issue a warning message
     Str = "OS_MON (memsup) timeout, no data collected~n",
     error_logger:warning_msg(Str),
 
-    %% Special case: First data collection has failed, use dummy
-    %% values and send reply to pending clients
-    {Alloc, Total} = case State#state.mem_usage of
-			 undefined ->
-			     {0, 0};
-			 MemUsage ->
-			     MemUsage
-		     end,
-    Worst = case State#state.worst_mem_user of
-		undefined when State#state.collect_procmem==true ->
-		    {self(), 0};
-		Else ->
-		    Else
-	    end,
-    reply(State#state.pending, {Total, Alloc, Worst}),
+    %% Send a dummy reply to all waiting clients, preserving time order
+    reply(State#state.pending,
+	  dummy_reply(get_memory_data, State#state.sys_only),
+	  dummy_reply(get_system_memory_data)),
 
-    %% Set the new timeout (interval-time spent collecting)
-    Time = case State#state.timeout - State#state.helper_timeout of
-	       MS when MS<0 ->
-		   0;
-	       MS ->
-		   MS
-	   end,
-    erlang:send_after(Time, self(), time_to_collect),
+    %% If it is a periodic check which has timed out, start a timer for
+    %% the next one
+    %% New timeout = interval-helper timeout
+    case lists:member(reg, State#state.pending) of
+	true ->
+	    Time =
+		case State#state.timeout-State#state.helper_timeout of
+		    MS when MS<0 -> 0;
+		    MS -> MS
+		end,
+	    erlang:send_after(Time, self(), time_to_collect);
+	false ->
+	    ignore
+    end,
+    {noreply, State#state{wd_timer=undefined, pending=[]}};
+handle_info({'EXIT', Pid, cancel}, State) when is_pid(Pid) ->
+    %% Temporary pid terminating as ordered
+    {noreply, State};
 
-    {noreply, State#state{mem_usage={Alloc,Total}, worst_mem_user=Worst,
-			  wd_timer=undefined, pending=[]}};
+%% Extensive memory data collected (port_mode==true only)
+handle_info({collected_ext_sys, SysMemUsage}, State) ->
 
-%% Extensive data collected
-handle_info({collected_ext_sys, ExtSys}, State) ->
+    %% Cancel watchdog timer (and as a security mearure,
+    %% also flush any ext_collection_timeout message)
     erlang:cancel_timer(State#state.ext_wd_timer),
-    reply(State#state.ext_pending, ExtSys),
+    flush(ext_collection_timeout),
+
+    %% Send the reply to all waiting clients, preserving time order
+    reply(State#state.ext_pending, undef, SysMemUsage),
+
     {noreply, State#state{ext_wd_timer=undefined, ext_pending=[]}};
 
-%% Timeout during extensive data collection
+%% Timeout during ext memory data collection (port_mode==true only)
 handle_info(ext_collection_timeout, State) ->
+
+    %% Cancel memory collection (and as a security measure,
+    %% also flush any collected_ext_sys message)
+    State#state.pid ! ext_cancel,
+    flush(collected_ext_sys),
+
+    %% Issue a warning message
     Str = "OS_MON (memsup) timeout, no data collected~n",
     error_logger:warning_msg(Str),
-    reply(State#state.ext_pending, []),
+
+    %% Send a dummy reply to all waiting clients, preserving time order
+    SysMemUsage = dummy_reply(get_system_memory_data),
+    reply(State#state.ext_pending, undef, SysMemUsage),
+
     {noreply, State#state{ext_wd_timer=undefined, ext_pending=[]}};
 
-%% vsn 1.7.8
-%% This clause is only needed for backwards compatibility with 1.7.8
-%% to take care of a timer set before the release upgrade was made
-%% which expired before it was cancelled (in code_change/3)
-handle_info(collection_timeout, State) -> % vsn 1.7.8
+%% Error in data collecting (port connected or temporary) process
+handle_info({'EXIT', Pid, Reason}, State) when is_pid(Pid) ->
+    {stop, Reason, State};
+	    
+handle_info(_Info, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, State) ->
+    if
+	State#state.port_mode -> State#state.pid ! close;
+	true -> ok
+    end,
+    clear_alarms(),
     ok.
 
-%% vsn 1.7.8
-%% For live upgrade/downgrade to/from 1.8
-code_change(Vsn, PrevState, _Extra) ->
+%% os_mon-2.0
+%% For live downgrade to/upgrade from os_mon-1.8[.1]
+code_change(Vsn, PrevState, "1.8") ->
     case Vsn of
 
 	%% Downgrade from this version
 	{down, _Vsn} ->
 
-	    %% Cancel timers unknown to 1.7.8 version and send dummy
-	    %% replies to any pending clients
+	    %% Kill the helper process, if there is one,
+	    %% and flush messages from it
+	    case PrevState#state.pid of
+		Pid when is_pid(Pid) ->
+		    unlink(Pid), % to prevent 'EXIT' message
+		    exit(Pid, cancel);
+		undefined -> ignore
+	    end,
+	    flush(collected_sys),
+	    flush(collected_ext_sys),
+
+	    %% Cancel timers, flush timeout messages
+	    %% and send dummy replies to any pending clients
 	    case PrevState#state.wd_timer of
 		undefined ->
 		    ignore;
 		TimerRef1 ->
 		    erlang:cancel_timer(TimerRef1),
-		    Reply = case PrevState#state.collect_procmem of
-				true ->
-				    {0, 0, {self(), 0}};
-				false ->
-				    {0, 0, undefined}
-			    end,
-		    reply(PrevState#state.pending, Reply)
+		    SysOnly = PrevState#state.sys_only,
+		    MemUsage = dummy_reply(get_memory_data, SysOnly),
+		    SysMemUsage1 = dummy_reply(get_system_memory_data),
+		    reply(PrevState#state.pending,MemUsage,SysMemUsage1)
 	    end,
 	    case PrevState#state.ext_wd_timer of
 		undefined ->
 		    ignore;
 		TimerRef2 ->
 		    erlang:cancel_timer(TimerRef2),
-		    reply(PrevState#state.ext_pending, [])
+		    SysMemUsage2 = dummy_reply(get_system_memory_data),
+		    reply(PrevState#state.pending, undef, SysMemUsage2)
 	    end,
+	    flush(reg_collection_timeout),
+	    flush(ext_collection_timeout),
 
 	    %% Downgrade to old state record
 	    State = {state,
@@ -393,9 +547,9 @@ code_change(Vsn, PrevState, _Extra) ->
 		     PrevState#state.worst_mem_user,
 		     PrevState#state.sys_mem_watermark,
 		     PrevState#state.proc_mem_watermark,
-		     PrevState#state.collect_procmem,
-		     0, % last_timeout,
+		     not PrevState#state.sys_only, % collect_procmem
 		     undefined, % wd_timer
+		     [],        % pending
 		     undefined, % ext_wd_timer
 		     [],        % ext_pending
 		     PrevState#state.helper_timeout},
@@ -406,50 +560,80 @@ code_change(Vsn, PrevState, _Extra) ->
 
 	    %% Old state record
 	    {state,
-	     Timeout,
-	     MemUsage, WorstMemUser,
-	     SysMemWatermark, ProcMemWatermark,
-	     CollectProcMem,
-	     _LastTimeout,
-	     WdTimer,
-	     ExtWdTimer,
-	     ExtPending,
+	     Timeout, MemUsage, WorstMemUser,
+	     SysMemWatermark, ProcMemWatermark, CollProc,
+	     WDTimer, Pending, ExtWDTimer, ExtPending,
 	     HelperTimeout} = PrevState,
+	    SysOnly = not CollProc,
 
-	    %% Cancel timers and send dummy replies to any pending
-	    %% clients
-	    if
-		WdTimer/=undefined ->
-		    timer:cancel(WdTimer);
-		true ->
-		    ignore
+	    %% Flush memsup_helper messages
+	    flush(collected_sys),
+	    flush(collected_proc),
+	    flush(collected_ext_sys),
+		     
+	    %% Cancel timers, flush timeout messages
+	    %% and send dummy replies to any pending clients
+	    case WDTimer of
+		undefined ->
+		    ignore;
+		TimerRef1 ->
+		    erlang:cancel_timer(TimerRef1),
+		    MemUsage = dummy_reply(get_memory_data, SysOnly),
+		    Pending2 = lists:map(fun(From) -> {reg,From} end,
+					 Pending),
+		    reply(Pending2, MemUsage, undef)
 	    end,
-	    if
-		ExtWdTimer/=undefined ->
-		    timer:cancel(ExtWdTimer),
-		    reply(ExtPending, []);
-		true ->
-		    ignore
+	    case ExtWDTimer of
+		undefined ->
+		    ignore;
+		TimerRef2 ->
+		    erlang:cancel_timer(TimerRef2),
+		    SysMemUsage = dummy_reply(get_system_memory_data),
+		    ExtPending2 = lists:map(fun(From) -> {ext,From} end,
+					    ExtPending),
+		    reply(ExtPending2, undef, SysMemUsage)
 	    end,
+	    flush(reg_collection_timeout),
+	    flush(ext_collection_timeout),
+
+	    OS = os:type(),
+	    PortMode = case OS of
+			   {unix, darwin} -> false;
+			   {unix, freebsd} -> false;
+			   {unix, linux} -> false;
+			   {unix, openbsd} -> true;
+			   {unix, sunos} -> true;
+			   {win32, _OSname} -> false;
+			   vxworks -> true
+		       end,
+	    Pid = if
+		      PortMode -> spawn_link(fun() -> port_init() end);
+		      not PortMode -> undefined
+		  end,
 
 	    %% Upgrade to this state record
-	    State = #state{timeout=Timeout,
-			   mem_usage=MemUsage,
-			   worst_mem_user=WorstMemUser,
-			   sys_mem_watermark=SysMemWatermark,
-			   proc_mem_watermark=ProcMemWatermark,
-			   collect_procmem=CollectProcMem,
-			   wd_timer=undefined,
-			   pending=[],
-			   ext_wd_timer=undefined,
-			   ext_pending=[],
-			   helper_timeout=HelperTimeout},
+	    State = #state{os = OS,
+			   port_mode = PortMode,
+			   mem_usage = MemUsage,
+			   worst_mem_user = WorstMemUser,
+			   sys_only  = SysOnly,
+			   timeout         = Timeout,
+			   helper_timeout  = HelperTimeout,
+			   sys_mem_watermark = SysMemWatermark,
+			   proc_mem_watermark = ProcMemWatermark,
+			   pid                = Pid,
+			   wd_timer           = undefined,
+			   ext_wd_timer       = undefined,
+			   pending            = [],
+			   ext_pending        = []},
 	    {ok, State}
-    end.
+    end;
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
-%%====================================================================
+%%----------------------------------------------------------------------
 %% Other exports
-%%====================================================================
+%%----------------------------------------------------------------------
 
 format_status(_Opt, [_PDict, #state{timeout=Timeout, mem_usage=MemUsage,
 				    worst_mem_user=WorstMemUser}]) ->
@@ -466,91 +650,342 @@ format_status(_Opt, [_PDict, #state{timeout=Timeout, mem_usage=MemUsage,
      {items, {"Worst Memory User", WorstMemFormat}}].
 
 
-%%-----------------------------------------------------------------
+%%----------------------------------------------------------------------
 %% Internal functions
-%%-----------------------------------------------------------------
+%%----------------------------------------------------------------------
 
-%%--Get application configuration parameter values-----------------
+%%--Replying to pending clients-----------------------------------------
 
-%% memory_check_interval, minutes
-get_timeout() ->
-    case application:get_env(os_mon, memory_check_interval) of
-	{ok, Value} when is_number(Value), Value>=1 -> % FIXME int()
-	    minutes_to_ms(Value);
-	{ok, BadValue} ->
-	    exit({bad_config_parameter,
-		  {memory_check_interval, BadValue}});
-	undefined ->
-	    minutes_to_ms(1) % default value = 1 minute
+reply(Pending, MemUsage, SysMemUsage) ->
+    lists:foreach(fun(reg) ->
+			  ignore;
+		     ({reg, From}) ->
+			  gen_server:reply(From, MemUsage);
+		     ({ext, From}) ->
+			  gen_server:reply(From, SysMemUsage)
+		  end,
+		  lists:reverse(Pending)).
+
+%%--Collect memory data, no port----------------------------------------
+
+%% get_memory_usage(OS) -> {Alloc, Total}
+
+%% Darwin:
+%% Uses vm_stat command. This appears to lie about the page size in
+%% Mac OS X 10.2.2 - the pages given are based on 4000 bytes, but
+%% the vm_stat command tells us that it is 4096...
+get_memory_usage({unix,darwin}) ->
+    Str = os:cmd("/usr/bin/vm_stat"),
+    {ok, [Free],Str2} = io_lib:fread("Pages free:~d.",skip_to_eol(Str)),
+    {ok, [Active],Str3} =
+	io_lib:fread("Pages active:~d.", skip_to_eol(Str2)),
+    {ok, [Inactive],Str4} =
+	io_lib:fread("Pages inactive:~d.", skip_to_eol(Str3)),
+    {ok, [Wired],_} =
+	io_lib:fread("Pages wired down:~d.", skip_to_eol(Str4)),
+    NMemUsed  = (Wired + Active + Inactive) * 4000,
+    NMemTotal = NMemUsed + Free * 4000,
+    {NMemUsed,NMemTotal};
+
+%% FreeBSD: Look in /usr/include/sys/vmmeter.h for the format of struct
+%% vmmeter
+get_memory_usage({unix,freebsd}) ->
+    PageSize  = freebsd_sysctl("vm.stats.vm.v_page_size"),
+    PageCount = freebsd_sysctl("vm.stats.vm.v_page_count"),
+    FreeCount = freebsd_sysctl("vm.stats.vm.v_free_count"),
+    NMemUsed  = (PageCount - FreeCount) * PageSize,
+    NMemTotal = PageCount * PageSize,
+    {NMemUsed, NMemTotal};
+
+%% Linux: see below
+get_memory_usage({unix,linux}) ->
+    get_memory_usage_linux();
+
+%% Win32: Find out how much memory is in use by asking
+%% the os_mon_sysinfo process.
+get_memory_usage({win32,_OSname}) ->
+    [Result|_] = os_mon_sysinfo:get_mem_info(),
+    {ok, [_MemLoad, TotPhys, AvailPhys,
+	  _TotPage, _AvailPage, _TotV, _AvailV], _RestStr} =
+	io_lib:fread("~d~d~d~d~d~d~d", Result),
+    {TotPhys-AvailPhys, TotPhys}.
+
+%% Linux: Read pseudo file /proc/meminfo
+%% If unavailable, wait and try again (until success or killed due
+%% to a reg_collection_timeout in memsup)
+get_memory_usage_linux() ->
+    Res = os:cmd("cat /proc/meminfo"),
+    case get_memory_usage_linux(Res, undef, undef) of
+	{MemTotal, MemFree} ->
+	    {MemTotal-MemFree, MemTotal};
+	error ->
+	    timer:sleep(1000),
+	    get_memory_usage_linux()
     end.
 
-%% memsup_helper_timeout, seconds
-get_memsup_helper_timeout() ->
-    case application:get_env(os_mon, memsup_helper_timeout) of
-	{ok, Value} when is_integer(Value), Value>=0 ->
-	    sec_to_ms(Value);
-	{ok, BadValue} ->
-	    exit({bad_config_parameter,
-		  {memsup_helper_timeout, BadValue}});
-	undefined ->
-	    30000 % default value = 30 seconds
+get_memory_usage_linux(_Str, Tot, Free) when is_integer(Tot),
+					     is_integer(Free) ->
+    {Tot, Free};
+get_memory_usage_linux("MemTotal:"++T, _Tot0, Free0) ->
+    {ok, [N], Rest} = io_lib:fread("~d", T),
+    Tot = N*1024,
+    get_memory_usage_linux(skip_to_eol(Rest), Tot, Free0);
+get_memory_usage_linux("MemFree:"++T, Tot0, _Free0) ->
+    {ok, [N], Rest} = io_lib:fread("~d", T),
+    Free = N*1024,
+    get_memory_usage_linux(skip_to_eol(Rest), Tot0, Free);
+get_memory_usage_linux("", _Tot0, _Free0) ->
+    error;
+get_memory_usage_linux(Str, Tot0, Free0) ->
+    get_memory_usage_linux(skip_to_eol(Str), Tot0, Free0).
+
+skip_to_eol([]) ->
+    [];
+skip_to_eol([$\n | T]) ->
+    T;
+skip_to_eol([_ | T]) ->
+    skip_to_eol(T).
+
+freebsd_sysctl(Def) ->
+    list_to_integer(os:cmd("/sbin/sysctl -n " ++ Def) -- "\n").
+
+%% get_ext_memory_usage(OS, {Alloc, Total}) -> [{Tag, Bytes}]
+get_ext_memory_usage(OS, {Alloc, Total}) ->
+    case OS of
+	{win32, _} ->
+	    [{total_memory, Total}, {free_memory, Total-Alloc},
+	     {system_total_memory, Total}];
+	{unix, linux} ->
+	    [{total_memory, Total}, {free_memory, Total-Alloc},
+	     %% corr. unless setrlimit() set
+	     {system_total_memory, Total}];
+	{unix, freebsd} ->
+	    [{total_memory, Total}, {free_memory, Total-Alloc},
+	     {system_total_memory, Total}];
+	{unix, darwin} ->
+	    [{total_memory, Total}, {free_memory, Total-Alloc},
+	     {system_total_memory, Total}];
+	_ -> % OSs using a port
+	    dummy % not sent anyway
     end.
 
-%% system_memory_high_watermark, percent (given as a float)
-get_system_memory_high_watermark() ->
-    case application:get_env(os_mon, system_memory_high_watermark) of
-	{ok, Value} when is_number(Value) -> % FIXME range 0<x<1
-	    Value;
-	{ok, BadValue} ->
-	    exit({bad_config_parameter,
-		  {system_memory_high_watermark, BadValue}});
-	undefined ->
-	    0.80 % default value = 80%
+%%--Collect memory data, using port-------------------------------------
+
+port_init() ->
+    process_flag(trap_exit, true),
+    Port = start_portprogram(),
+    port_idle(Port).
+
+start_portprogram() ->
+    Command = filename:join([code:priv_dir("os_mon"), "bin", "memsup"]),
+    open_port({spawn, Command}, [{packet, 1}]).
+
+%% The connected process loops are a bit awkward (several different
+%% functions doing almost the same thing) as
+%%   a) strategies for receiving regular memory data and extensive
+%%      memory data are different
+%%   b) memory collection can be cancelled, in which case the process
+%%      should still wait for port response (which should come
+%%      eventually!) but not receive any requests or cancellations
+%%      meanwhile to prevent getting out of synch.
+port_idle(Port) ->
+    receive
+	{Memsup, collect_sys} ->
+	    Port ! {self(), {command, [?MEM_SHOW]}},
+	    get_memory_usage(Port, undefined, Memsup);
+	{Memsup, collect_ext_sys} ->
+	    Port ! {self(), {command, [?SYSTEM_MEM_SHOW]}},
+	    get_ext_memory_usage(Port, [], Memsup);
+	cancel ->
+	    %% Received after reply already has been delivered...
+	    port_idle(Port);
+	ext_cancel ->
+	    %% Received after reply already has been delivered...
+	    port_idle(Port);
+	close ->
+	    port_close(Port);
+	{Port, {data, Data}} ->
+	    exit({port_error, Data});
+	{'EXIT', Port, Reason} ->
+	    exit({port_died, Reason});
+	{'EXIT', _Memsup, _Reason} ->
+	    port_close(Port)
     end.
 
-%% process_memory_high_watermark, percent (given as a float)
-get_process_memory_high_watermark() ->
-    case application:get_env(os_mon, process_memory_high_watermark) of
-	{ok, Value} when is_number(Value) -> % FIXME range 0<x<1
-	    Value;
-	{ok, BadValue} ->
-	    exit({bad_config_parameter,
-		  {process_memory_high_watermark, BadValue}});
-	undefined ->
-	    0.05 % default value = 5%
+get_memory_usage(Port, Alloc, Memsup) ->
+    receive
+	{Port, {data, Data}} when Alloc==undefined ->
+	    get_memory_usage(Port, erlang:list_to_integer(Data, 16), Memsup);
+	{Port, {data, Data}} ->
+	    Total = erlang:list_to_integer(Data, 16),
+	    Memsup ! {collected_sys, {Alloc, Total}},
+	    port_idle(Port);
+	cancel ->
+	    get_memory_usage_cancelled(Port, Alloc);
+	close ->
+	    port_close(Port);
+	{'EXIT', Port, Reason} ->
+	    exit({port_died, Reason});
+	{'EXIT', _Memsup, _Reason} ->
+	    port_close(Port)
+    end.
+get_memory_usage_cancelled(Port, Alloc) ->
+    receive
+	{Port, {data, _Data}} when Alloc==undefined ->
+	    get_memory_usage_cancelled(Port, 0);
+	{Port, {data, _Data}} ->
+	    port_idle(Port);
+	close ->
+	    port_close(Port);
+	{'EXIT', Port, Reason} ->
+	    exit({port_died, Reason});
+	{'EXIT', _Memsup, _Reason} ->
+	    port_close(Port)
     end.
 
-%%--Alarm handling-------------------------------------------------
+get_ext_memory_usage(Port, Accum, Memsup) ->
+    Tab = [{?SYSTEM_TOTAL_MEMORY, system_total_memory},
+	   {?TOTAL_MEMORY, total_memory},
+	   {?FREE_MEMORY, free_memory},
+	   {?LARGEST_FREE, largest_free},
+	   {?NUMBER_OF_FREE, number_of_free}],
+    receive
+	{Port, {data, [?SYSTEM_MEM_SHOW_END]}} ->
+	    Memsup ! {collected_ext_sys, Accum},
+	    port_idle(Port);
+	{Port, {data, [Tag]}} ->
+	    case lists:keysearch(Tag, 1, Tab) of
+		{value, {Tag, ATag}} ->
+		    get_ext_memory_usage(ATag, Port, Accum, Memsup);
+		_ ->
+		    exit({memsup_port_error, {Port,[Tag]}})
+	    end;
+	ext_cancel ->
+	    get_ext_memory_usage_cancelled(Port);
+	close ->
+	    port_close(Port);
+	{'EXIT', Port, Reason} ->
+	    exit({port_died, Reason});
+	{'EXIT', _Memsup, _Reason} ->
+	    port_close(Port)
+    end.
+get_ext_memory_usage_cancelled(Port) ->
+    Tab = [{?SYSTEM_TOTAL_MEMORY, system_total_memory},
+	   {?TOTAL_MEMORY, total_memory},
+	   {?FREE_MEMORY, free_memory},
+	   {?LARGEST_FREE, largest_free},
+	   {?NUMBER_OF_FREE, number_of_free}],
+    receive
+	{Port, {data, [?SYSTEM_MEM_SHOW_END]}} ->
+	    port_idle(Port);
+	{Port, {data, [Tag]}} ->
+	    case lists:keysearch(Tag, 1, Tab) of
+		{value, {Tag, ATag}} ->
+		    get_ext_memory_usage_cancelled(ATag, Port);
+		_ ->
+		    exit({memsup_port_error, {Port,[Tag]}})
+	    end;
+	close ->
+	    port_close(Port);
+	{'EXIT', Port, Reason} ->
+	    exit({port_died, Reason});
+	{'EXIT', _Memsup, _Reason} ->
+	    port_close(Port)
+    end.
 
-set_alarm(AlarmCode, AddInfo) ->
-    case get({alarm_status, AlarmCode}) of
+get_ext_memory_usage(ATag, Port, Accum0, Memsup) ->
+    receive
+	{Port, {data, Data}} ->
+	    Accum = [{ATag,erlang:list_to_integer(Data, 16)}|Accum0],
+	    get_ext_memory_usage(Port, Accum, Memsup);
+	cancel ->
+	    get_ext_memory_usage_cancelled(ATag, Port);
+	close ->
+	    port_close(Port);
+	{'EXIT', Port, Reason} ->
+	    exit({port_died, Reason});
+	{'EXIT', _Memsup, _Reason} ->
+	    port_close(Port)
+    end.
+get_ext_memory_usage_cancelled(_ATag, Port) ->
+    receive
+	{Port, {data, _Data}} ->
+	    get_ext_memory_usage_cancelled(Port);
+	close ->
+	    port_close(Port);
+	{'EXIT', Port, Reason} ->
+	    exit({port_died, Reason});
+	{'EXIT', _Memsup, _Reason} ->
+	    port_close(Port)
+    end.
+
+%%--Collect process data------------------------------------------------
+
+%% get_worst_memory_user() -> {Pid, Bytes}
+get_worst_memory_user()  ->
+    get_worst_memory_user(processes(), self(), 0).
+
+get_worst_memory_user([Pid|Pids], MaxPid, MaxMemBytes) ->
+    case process_memory(Pid) of
+	undefined ->
+	    get_worst_memory_user(Pids, MaxPid, MaxMemBytes);
+	MemoryBytes when MemoryBytes>MaxMemBytes ->
+	    get_worst_memory_user(Pids, Pid, MemoryBytes);
+	_MemoryBytes ->
+	    get_worst_memory_user(Pids, MaxPid, MaxMemBytes)
+    end;
+get_worst_memory_user([], MaxPid, MaxMemBytes) ->
+    {MaxPid, MaxMemBytes}.
+
+process_memory(Pid) ->
+    case process_info(Pid, memory) of
+	{memory, Bytes} ->
+	    Bytes;
+	undefined -> % Pid must have died
+	    undefined
+    end.
+
+%%--Alarm handling------------------------------------------------------
+
+set_alarm(AlarmId, AlarmDescr) ->
+    case get(AlarmId) of
 	set ->
 	    ok;
-	_ ->
-	    alarm_handler:set_alarm({AlarmCode, AddInfo}),
-	    put({alarm_status, AlarmCode}, set)
-    end,
-    ok.
+	undefined ->
+	    alarm_handler:set_alarm({AlarmId, AlarmDescr}),
+	    put(AlarmId, set)
+    end.
 
-reset_alarm(AlarmCode) ->
-    case get({alarm_status, AlarmCode}) of
+clear_alarm(AlarmId) ->
+    case get(AlarmId) of
 	set ->
-	    alarm_handler:clear_alarm(AlarmCode),
-	    erase({alarm_status, AlarmCode});
+	    alarm_handler:clear_alarm(AlarmId),
+	    erase(AlarmId);
 	_ ->
 	    ok
-    end,
-    ok.
+    end.
 
-%%--Auxiliary------------------------------------------------------
+clear_alarms() ->
+    lists:foreach(fun({system_memory_high_watermark = Id, _}) ->
+			  alarm_handler:clear_alarm(Id);
+		     ({process_memory_high_watermark = Id, _}) ->
+			  alarm_handler:clear_alarm(Id);
+		     (_Alarm) ->
+			  ignore
+		  end,
+		  alarm_handler:get_alarms()).
+
+%%--Auxiliary-----------------------------------------------------------
 
 %% Type conversions
 minutes_to_ms(Minutes) -> trunc(60000*Minutes).
 sec_to_ms(Sec) -> trunc(1000*Sec).
 ms_to_sec(MS) -> MS div 1000.
 
-reply([], _Reply) ->
-    ignore;
-reply(Pending, Reply) ->
-    lists:foreach(fun(From) -> gen_server:reply(From, Reply) end,
-		  Pending).
+flush(Msg) ->
+    receive
+	{Msg, _} -> true;
+	Msg -> true
+    after 0 ->
+	    true
+    end.

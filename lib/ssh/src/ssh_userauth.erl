@@ -20,7 +20,7 @@
 
 -module(ssh_userauth).
 
--export([auth/3, auth_remote/3]).
+-export([auth/3, auth_remote/3, reg_user_auth_server/0, get_auth_users/0]).
 
 -include("ssh.hrl").
 -include("ssh_userauth.hrl").
@@ -42,7 +42,8 @@ auth(SSH, Service, Opts) ->
 		{failure, _F} ->
 		    case public_key(SSH, Service, User, Opts,
 				    other_alg(AlgM)) of
-			ok -> ok;
+			ok ->
+			    ok;
 			{failure, _F} ->
 			    passwd(SSH, Service, User, Opts);
 			Error -> Error
@@ -105,7 +106,6 @@ none(SSH, Service, User) ->
     passwd_reply(SSH).
 
 %% Password authentication for ssh-connection
-
 passwd(SSH, Service, User, Opts) -> 
     SSH ! {ssh_install, 
 	   userauth_messages() ++ userauth_passwd_messages()},
@@ -180,6 +180,10 @@ auth_remote(SSH, Service, Opts) ->
     ssh_transport:service_accept(SSH, "ssh-userauth"),
     do_auth_remote(SSH, Service, Opts).
 
+validate_password(User, Password, Opts) ->
+    OurPwd = get_password_option(Opts, User),
+    Password == OurPwd.
+
 do_auth_remote(SSH, Service, Opts) ->
     receive
 	{ssh_msg, SSH, #ssh_msg_userauth_request { user = User,
@@ -188,12 +192,11 @@ do_auth_remote(SSH, Service, Opts) ->
 						   data = Data}} ->
 	    <<_:8, ?UINT32(Sz), BinPwd:Sz/binary>> = Data,
 	    Password = binary_to_list(BinPwd),
-	    ?dbg(false, "received pwd: ~p   '~p'\n",
-		 [Password, lists:keysearch(password, 1, Opts)]),
-	    OurPw = get_password_option(Opts, User),
-	    case OurPw of		
-		Password ->
+	    F = proplists:get_value(user_auth, Opts, fun validate_password/3),
+	    case F(User, Password, Opts) of
+		true ->
 		    SSH ! {ssh_msg, self(), #ssh_msg_userauth_success{}},
+		    reg_user_auth(self(), User, Opts),
 		    ok;
 		_ ->
 		    SSH ! {ssh_msg, self(), #ssh_msg_userauth_failure {
@@ -220,10 +223,12 @@ do_auth_remote(SSH, Service, Opts) ->
 	    %% shouldn't this fun be in a ssh_key.erl?
  	    case HaveSig of
  		?TRUE ->
-		    case verify_sig(SSH, User, Service, Alg, KeyBlob, SigWLen, Opts) of
+		    case verify_sig(SSH, User, Service, Alg,
+				    KeyBlob, SigWLen, Opts) of
 			ok ->
 			    SSH ! {ssh_msg, self(),
 				   #ssh_msg_userauth_success{}},
+			    reg_user_auth(self(), User, Opts),
 			    ok;
 			_ ->
 			    SSH ! {ssh_msg, self(),
@@ -259,6 +264,7 @@ alg_to_module("ssh-dss") ->
 alg_to_module("ssh-rsa") ->
     ssh_rsa.
 
+%% make a signature for PGP user auth
 build_sig_data(SSH, User, Service, Alg, KeyBlob) ->
     %% {P1,P2} = Key#ssh_key.public,
     %% EncKey = ssh_bits:encode([Alg,P1,P2], [string, mpint, mpint]),
@@ -273,6 +279,7 @@ build_sig_data(SSH, User, Service, Alg, KeyBlob) ->
 	   ?binary(KeyBlob)],
     list_to_binary(Sig).
 
+%% verify signature for PGP user auth
 verify_sig(SSH, User, Service, Alg, KeyBlob, SigWLen, Opts) ->
     {ok, Key} = ssh_file:decode_public_key_v2(KeyBlob, Alg),
     case ssh_file:lookup_user_key(Alg, Opts) of
@@ -291,6 +298,7 @@ verify_sig(SSH, User, Service, Alg, KeyBlob, SigWLen, Opts) ->
 	Error -> Error
     end.
 
+%% the messages for userauth
 userauth_messages() ->
     [ {ssh_msg_userauth_request, ?SSH_MSG_USERAUTH_REQUEST,
        [string, 
@@ -322,3 +330,51 @@ userauth_pk_messages() ->
 	string]} % key blob
      ].
 
+%% user registry (which is a really simple server)
+reg_user_auth(Pid, User, Opts) ->
+    case proplists:get_value(reg_users, Opts, false)
+	andalso whereis(?MODULE) =/= undefined of
+	true ->
+	    reg_user_auth(Pid, User);
+	false ->
+	    ok
+    end.
+
+reg_user_auth(Pid, User) ->
+    case whereis(?MODULE) of
+	undefined ->
+	    ok;
+	UPid ->
+	    UPid ! {reg, User, Pid, self()}
+    end.
+
+get_auth_users() ->
+    Self = self(),
+    case whereis(?MODULE) of
+	undefined ->
+	    {error, no_user_auth_reg};
+	Pid ->
+	    Pid ! {get, Self},
+	    receive
+		{Self, R} -> R
+	    end
+    end.
+
+reg_user_auth_server() ->
+    Pid = spawn(fun() -> reg_user_auth_server_loop([]) end),
+    register(?MODULE, Pid).
+
+reg_user_auth_server_loop(Users) ->
+    receive
+	{get, From} ->
+	    NewUsers = [{U, P} || {U, P} <- Users,
+				  erlang:is_process_alive(P)],
+	    From ! {From, {ok, NewUsers}},
+	    reg_user_auth_server_loop(NewUsers);
+	{reg, User, Pid, From} ->
+	    NewUsers = [{User, Pid} | Users],
+	    From ! {From, ok},
+	    reg_user_auth_server_loop(NewUsers);
+	_ ->
+	    ok
+    end.

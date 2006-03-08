@@ -299,6 +299,7 @@ HIPE_GENERATE = $(BINDIR)/hipe_mkliterals$(TYPEMARKER)
 generate: $(TARGET)/hipe_x86_asm.h
 generate: $(TARGET)/hipe_amd64_asm.h
 generate: $(TARGET)/hipe_ppc_asm.h
+generate: $(TARGET)/hipe_arm_asm.h
 generate: $(TARGET_TYPE_DIR)/hipe_literals.h
 
 endif
@@ -324,6 +325,7 @@ HIPE_x86_TAB=hipe/hipe_x86.tab
 HIPE_amd64_TAB=hipe/hipe_amd64.tab
 HIPE_ppc_TAB=hipe/hipe_ppc.tab
 HIPE_ppc64_TAB=hipe/hipe_ppc64.tab
+HIPE_arm_TAB=hipe/hipe_arm.tab
 HIPE_ARCH_TAB=$(HIPE_$(ARCH)_TAB)
 BIFS += hipe/hipe_bif0.tab hipe/hipe_bif1.tab hipe/hipe_bif2.tab $(HIPE_ARCH_TAB)
 ifdef USE_PERFCTR
@@ -590,7 +592,8 @@ ifeq ($(findstring vxworks,$(TARGET)),vxworks)
                     $(OBJDIR)/int64.o 
 else
 	OS_OBJS += $(OBJDIR)/unix_ddll_drv.o \
-                   $(OBJDIR)/sys_float.o
+                   $(OBJDIR)/sys_float.o \
+                   $(OBJDIR)/sys_time.o
 endif
 endif
 DRV_OBJS = \
@@ -616,6 +619,7 @@ HIPE_x86_OBJS=$(OBJDIR)/hipe_x86.o $(OBJDIR)/hipe_x86_glue.o $(OBJDIR)/hipe_x86_
 HIPE_amd64_OBJS=$(OBJDIR)/hipe_amd64.o $(OBJDIR)/hipe_amd64_glue.o $(OBJDIR)/hipe_amd64_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o
 HIPE_ppc_OBJS=$(OBJDIR)/hipe_ppc.o $(OBJDIR)/hipe_ppc_glue.o $(OBJDIR)/hipe_ppc_bifs.o $(OBJDIR)/hipe_ppc_stack.o
 HIPE_ppc64_OBJS=$(HIPE_ppc_OBJS)
+HIPE_arm_OBJS=$(OBJDIR)/hipe_arm.o $(OBJDIR)/hipe_arm_glue.o $(OBJDIR)/hipe_arm_bifs.o $(OBJDIR)/hipe_arm_stack.o
 HIPE_noarch_OBJS=
 HIPE_ARCH_OBJS=$(HIPE_$(ARCH)_OBJS)
 
@@ -653,11 +657,13 @@ OBJS_ELIB = 	$(patsubst %.o,%.elib.o,$(MOD_OBJS_ELIB)) \
 ########################################
 # HiPE section
 
+M4FLAGS=-DTARGET=$(TARGET) -DOPSYS=$(OPSYS) -DARCH=$(ARCH)
+
 $(TARGET)/%.S: hipe/%.m4
-	m4 -DTARGET=$(TARGET) -DOPSYS=$(OPSYS) -DARCH=$(ARCH) $< > $@
+	m4 $(M4FLAGS) $< > $@
 
 $(TARGET)/%.h: hipe/%.m4
-	m4 -DTARGET=$(TARGET) -DOPSYS=$(OPSYS) -DARCH=$(ARCH) $< > $@
+	m4 $(M4FLAGS) $< > $@
 
 $(OBJDIR)/%.o: $(TARGET)/%.S
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
@@ -691,6 +697,10 @@ $(OBJDIR)/hipe_amd64_bifs.o:	$(TARGET)/hipe_amd64_bifs.S $(TARGET_TYPE_DIR)/hipe
 $(OBJDIR)/hipe_ppc_glue.o:	hipe/hipe_ppc_glue.S $(TARGET)/hipe_ppc_asm.h hipe/hipe_mode_switch.h $(TARGET_TYPE_DIR)/hipe_literals.h
 $(TARGET)/hipe_ppc_bifs.S:	hipe/hipe_ppc_bifs.m4 hipe/hipe_ppc_asm.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
 $(OBJDIR)/hipe_ppc_bifs.o:	$(TARGET)/hipe_ppc_bifs.S $(TARGET_TYPE_DIR)/hipe_literals.h
+
+$(OBJDIR)/hipe_arm_glue.o:	hipe/hipe_arm_glue.S $(TARGET)/hipe_arm_asm.h hipe/hipe_mode_switch.h $(TARGET_TYPE_DIR)/hipe_literals.h
+$(TARGET)/hipe_arm_bifs.S:	hipe/hipe_arm_bifs.m4 hipe/hipe_arm_asm.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
+$(OBJDIR)/hipe_arm_bifs.o:	$(TARGET)/hipe_arm_bifs.S $(TARGET_TYPE_DIR)/hipe_literals.h
 
 # end of HiPE section
 ########################################

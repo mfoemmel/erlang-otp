@@ -99,8 +99,16 @@ stop_user(UserMid) ->
     call({stop_user, UserMid}).
 
 user_info(UserMid, all) ->
-    All = ets:match_object(megaco_config, {{UserMid, '_'}, '_'}),
-    [{Item, Val} || {{_, Item}, Val} <- All, Item /= trans_sender];
+    All0 = ets:match_object(megaco_config, {{UserMid, '_'}, '_'}),
+    All1 = [{Item, Val} || {{_, Item}, Val} <- All0, Item /= trans_sender],
+    case lists:keysearch(trans_id_counter, 1, All1) of
+	{value, {_, Val}} ->
+	    lists:keyreplace(trans_id_counter, 1, All1, {trans_id, Val});
+	false when UserMid /= default ->
+	    [{trans_id, undefined_serial}|All1];
+	false ->
+	    All1
+    end;
 user_info(UserMid, receive_handle) ->
     case call({receive_handle, UserMid}) of
 	{ok, RH} ->
@@ -154,6 +162,24 @@ user_info(UserMid, mid) ->
     ets:lookup_element(megaco_config, {UserMid, mid}, 2);
 user_info(UserMid, orig_pending_limit) ->
     user_info(UserMid, sent_pending_limit);
+user_info(UserMid, trans_id) ->
+    case (catch user_info(UserMid, trans_id_counter)) of
+	{'EXIT', _} ->
+	    %% There is only two cases where this can occure:
+	    %% 1) The user does not exist
+	    %% 2) Called before the first message is sent, use 
+	    %%    undefined_serial, since there is no 
+	    %%    "current transaction id"
+	    case (catch user_info(UserMid, mid)) of
+		{'EXIT', _} ->
+		    %% case 1:
+		    exit({no_such_user, UserMid});
+		_ ->
+		    undefined_serial
+	    end;
+	Else ->
+	    Else
+    end;
 user_info(UserMid, Item) ->
     ets:lookup_element(megaco_config, {UserMid, Item}, 2).
 
@@ -202,7 +228,35 @@ conn_info(CD, Item) when record(CD, conn_data) ->
         mid                -> (CD#conn_data.conn_handle)#megaco_conn_handle.local_mid;
         local_mid          -> (CD#conn_data.conn_handle)#megaco_conn_handle.local_mid;
         remote_mid         -> (CD#conn_data.conn_handle)#megaco_conn_handle.remote_mid;
-        trans_id           -> CD#conn_data.serial;
+        trans_id           -> CH       = CD#conn_data.conn_handle, 
+			      LocalMid = CH#megaco_conn_handle.local_mid,
+			      Item2    = {LocalMid, trans_id_counter},
+			      case (catch ets:lookup(megaco_config, Item2)) of
+				  {'EXIT', _} ->
+				      undefined_serial;
+				  [] ->
+				      user_info(LocalMid, min_trans_id);
+				  [{_, Serial}] ->
+				      Max = CD#conn_data.max_serial,
+				      if
+					  Max == infinity, 
+					  integer(Serial), 
+					  Serial < 4294967295 ->
+					      Serial + 1;
+					  Max == infinity, 
+					  integer(Serial), 
+					  Serial == 4294967295 ->
+					      user_info(LocalMid, 
+							min_trans_id);
+					  Serial < Max ->
+					      Serial  + 1;
+					  Serial == 4294967295 ->
+					      user_info(LocalMid, 
+							min_trans_id);
+					  true ->
+					      undefined_serial
+				      end
+			      end;
         max_trans_id       -> CD#conn_data.max_serial;
         request_timer      -> CD#conn_data.request_timer;
         long_request_timer -> CD#conn_data.long_request_timer;

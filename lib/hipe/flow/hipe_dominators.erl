@@ -91,7 +91,7 @@ domTree_getNode(Node, DomTree) ->
 %% Returns   : A map containing the nodes of the dominator tree.
 %%>----------------------------------------------------------------------<
 
-domTree_getNodes(DomTree) when record(DomTree, domTree) ->
+domTree_getNodes(DomTree) when is_record(DomTree, domTree) ->
   DomTree#domTree.nodes.
 
 %%>----------------------------------------------------------------------<
@@ -103,7 +103,7 @@ domTree_getNodes(DomTree) when record(DomTree, domTree) ->
 %% Returns   : DomTree
 %%>----------------------------------------------------------------------<
 
-domTree_setNodes(Nodes, DomTree) when record(DomTree, domTree) ->
+domTree_setNodes(Nodes, DomTree) when is_record(DomTree, domTree) ->
   DomTree#domTree{nodes = Nodes}.
 
 %%>----------------------------------------------------------------------<
@@ -115,7 +115,7 @@ domTree_setNodes(Nodes, DomTree) when record(DomTree, domTree) ->
 %% Returns   : A dominator tree
 %%>----------------------------------------------------------------------<
 
-domTree_setSize(Size, DomTree) when record(DomTree, domTree) ->
+domTree_setSize(Size, DomTree) when is_record(DomTree, domTree) ->
   DomTree#domTree{size = Size}.
 
 %%>----------------------------------------------------------------------<
@@ -125,7 +125,7 @@ domTree_setSize(Size, DomTree) when record(DomTree, domTree) ->
 %% Returns   : DomTree
 %%>----------------------------------------------------------------------<
 
-domTree_incSize(DomTree) when record(DomTree, domTree) ->
+domTree_incSize(DomTree) when is_record(DomTree, domTree) ->
   Size = domTree_getSize(DomTree),
   domTree_setSize(Size + 1, DomTree).
 
@@ -246,14 +246,14 @@ setIDom(Node, IDom, DomTree) ->
 lookup({Field, Key}, Table) ->
   WD = lookup(Key, Table),
   lookup(Field, WD);
-lookup(Node, DomTree) when record(DomTree, domTree) ->
+lookup(Node, DomTree) when is_record(DomTree, domTree) ->
   case gb_trees:lookup(Node, domTree_getNodes(DomTree)) of
     {value, Data} ->
       Data;
     none ->
       {none, []}
   end;
-lookup(Field, WD) when record(WD, workDataCell) ->
+lookup(Field, WD) when is_record(WD, workDataCell) ->
   case Field of
     dfnum    -> WD#workDataCell.dfnum; 
     dfparent -> WD#workDataCell.dfparent; 
@@ -264,7 +264,7 @@ lookup(Field, WD) when record(WD, workDataCell) ->
     bucket   -> WD#workDataCell.bucket;
     _Other    -> {error, {idom, lookup, 2}}
   end;
-lookup(N, Table) when integer(N) ->
+lookup(N, Table) when is_integer(N) ->
   case gb_trees:lookup(N, Table) of
     {value, Data} ->
       Data;
@@ -369,7 +369,7 @@ dfsTraverse([], _, _, N, WorkData, DFS) -> {WorkData, DFS, N}.
 %%>----------------------------------------------------------------------<
 
 getIdoms(CFG, DomData, WorkData, Index, DFS, PredMap)
-     when integer(Index), Index > 1 ->
+     when is_integer(Index), Index > 1 ->
   Node = lookup(Index, DFS),
   PredLst = hipe_gen_cfg:pred(PredMap, Node),
   Par = lookup({dfparent, Node}, WorkData),
@@ -521,7 +521,7 @@ finalize(WorkData, DomData, N, Max, DFS) when N =< Max ->
       finalize(WorkData, DomData, N + 1, Max, DFS);
     SameDomN -> 
       case domTree_getIDom(SameDomN, DomData) of
-	IdomSameDomN when integer(IdomSameDomN)->
+	IdomSameDomN when is_integer(IdomSameDomN)->
 	  DomData2 = setIDom(Node, IdomSameDomN, DomData),
 	  finalize(WorkData, DomData2, N + 1, Max, DFS)
       end

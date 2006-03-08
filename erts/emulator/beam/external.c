@@ -1537,6 +1537,14 @@ decode_size2(byte *ep, byte* endp)
         } else {return -1; };			\
     } while (0)
 
+#define SKIP2(sz1, sz2)				\
+    do {					\
+	Uint sz = (sz1) + (sz2);		\
+	if (sz1 < sz && (sz) <= endp-ep) {	\
+	    ep += (sz);				\
+        } else {return -1; }			\
+    } while (0)
+
 #define CHKSIZE(sz)				\
     do {					\
 	 if ((sz) > endp-ep) { return -1; }	\
@@ -1559,13 +1567,13 @@ decode_size2(byte *ep, byte* endp)
 	    case SMALL_BIG_EXT:
 		CHKSIZE(1);
 		n = ep[0];		/* number of bytes */
-		SKIP(1+1+n);		/* skip size,sign,digits */
+		SKIP2(n, 1+1);		/* skip size,sign,digits */
 		heap_size += 1+(n+sizeof(Eterm)-1)/sizeof(Eterm); /* XXX: 1 too much? */
 		break;
 	    case LARGE_BIG_EXT:
 		CHKSIZE(4);
 		n = (ep[0] << 24) | (ep[1] << 16) | (ep[2] << 8) | ep[3];
-		SKIP(4+1+n);		/* skip, size,sign,digits */
+		SKIP2(n,4+1);		/* skip, size,sign,digits */
 		heap_size += 1+1+(n+sizeof(Eterm)-1)/sizeof(Eterm); /* XXX: 1 too much? */
 		break;
 	    case ATOM_EXT:
@@ -1659,7 +1667,7 @@ decode_size2(byte *ep, byte* endp)
 	    case BINARY_EXT:
 		CHKSIZE(4);
 		n = (ep[0] << 24) | (ep[1] << 16) | (ep[2] << 8) | ep[3];
-		SKIP(4+n);
+		SKIP2(n, 4);
 		if (n <= ERL_ONHEAP_BIN_LIMIT) {
 		    heap_size += heap_bin_size(n);
 		} else {
@@ -1703,6 +1711,7 @@ decode_size2(byte *ep, byte* endp)
 	terms = ESTACK_POP(s);
     }
 #undef SKIP
+#undef SKIP2
 #undef CHKSIZE
 }
 

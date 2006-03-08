@@ -15,7 +15,7 @@ include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 ifdef HIPE_ENABLED
-HIPE_SUBDIRS = regalloc sparc ppc x86 amd64 opt tools
+HIPE_SUBDIRS = regalloc sparc ppc x86 amd64 arm opt tools
 else
 HIPE_SUBDIRS =
 endif

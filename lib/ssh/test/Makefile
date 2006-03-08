@@ -17,6 +17,7 @@ MODULES= \
 	ssh_cm_SUITE \
 	ssh_file_SUITE \
 	ssh_sftp_SUITE \
+	ssh_sftpd_SUITE \
 	ssh_ssh_SUITE \
 	ssh_sshd_SUITE \
 	ssh_transport_SUITE \

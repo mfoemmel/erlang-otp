@@ -157,6 +157,7 @@
 	 pretty_otp5600_msg2/1, 
 	 pretty_otp5601_msg1/1, 
          pretty_otp5793_msg01/1,
+	 pretty_otp5882_msg01/1, 
 	 
 	 flex_pretty_tickets/1, 
 	 flex_pretty_otp5042_msg1/1, 
@@ -463,7 +464,8 @@ pretty_tickets(suite) ->
      pretty_otp5600_msg1,
      pretty_otp5600_msg2,
      pretty_otp5601_msg1,
-     pretty_otp5793_msg01
+     pretty_otp5793_msg01,
+     pretty_otp5882_msg01
     ].
 
 flex_pretty_tickets(suite) ->
@@ -3288,8 +3290,8 @@ pretty_otp5793_msg01(suite) ->
 pretty_otp5793_msg01(Config) when list(Config) ->
     d("pretty_otp5793_msg01 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
-    put(severity,trc),
-    put(dbg,true),
+%%     put(severity,trc),
+%%     put(dbg,true),
     pretty_otp5793(ok, pretty_otp5793_msg1()).
 
 pretty_otp5793(Expected, Msg) ->
@@ -3330,6 +3332,54 @@ pretty_otp5793_msg1() ->
 		   "2",
 		   "19"]}]}}]}]}}}]}}}.
 
+
+pretty_otp5882_msg01(suite) ->
+    [];
+pretty_otp5882_msg01(Config) when is_list(Config) ->
+    d("pretty_otp5882_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    %% put(severity,trc),
+    %% put(dbg,true),
+    pretty_otp5882().
+
+pretty_otp5882() ->	
+    otp5882(megaco_pretty_text_encoder, []).
+
+otp5882(Codec, Conf) ->		 
+    Msg  = pretty_otp5882_msg01(),
+    case (catch encode_message(Codec, Conf, Msg)) of
+	{error, {message_encode_failed, {error, {ActualReason, _}}, _}} ->
+	    case ActualReason of
+		{invalid_LocalControlDescriptor, empty} ->
+		    ok;
+		_ ->
+		    exit({unexpected_error_actual_reason, ActualReason})
+	    end;
+	{error, Reason} ->
+	    exit({unexpected_error_reason, Reason});
+	{ok, Bin} ->
+	    exit({unexpected_encode_sucess, binary_to_list(Bin)})
+    end.
+    
+pretty_otp5882_msg01() ->
+    LCD = #'LocalControlDescriptor'{}, % Create illegal LCD
+    Parms      = ?MSG_LIB:cre_StreamParms(LCD),
+    StreamDesc = ?MSG_LIB:cre_StreamDescriptor(1, Parms),
+    MediaDesc  = ?MSG_LIB:cre_MediaDescriptor([StreamDesc]),
+    AmmReq     = ?MSG_LIB:cre_AmmRequest([#megaco_term_id{id = ?A4445}],
+					 [{mediaDescriptor, MediaDesc}]),
+    Cmd        = ?MSG_LIB:cre_Command(modReq, AmmReq),
+    CmdReq     = ?MSG_LIB:cre_CommandRequest(Cmd),
+    CID        = ?MSG_LIB:cre_ContextID(5882),
+    ActReq     = ?MSG_LIB:cre_ActionRequest(CID, [CmdReq]),
+    Actions    = [ActReq],
+    TransId    = ?MSG_LIB:cre_TransactionId(7302),
+    TransReq   = ?MSG_LIB:cre_TransactionRequest(TransId, Actions),
+    Trans      = ?MSG_LIB:cre_Transaction(TransReq),
+    Mid        = ?MG1_MID,
+    Mess       = ?MSG_LIB:cre_Message(?VERSION, Mid, [Trans]),
+    ?MSG_LIB:cre_MegacoMessage(Mess).
+    
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -3564,11 +3614,11 @@ msgs5() ->
 	end,
     
     [
-     {msg61a, msg61a(), Plain,       [{dbg, true}]},
-     {msg61b, msg61b(), Plain,       [{dbg, true}]},
-     {msg61c, msg61c(), Plain,       [{dbg, true}]},
-     {msg62a, msg62a(), PlainEDFail, [{dbg, true}]},
-     {msg62b, msg62b(), PlainDE,     [{dbg, true}]}
+     {msg61a, msg61a(), Plain,       [{dbg, false}]},
+     {msg61b, msg61b(), Plain,       [{dbg, false}]},
+     {msg61c, msg61c(), Plain,       [{dbg, false}]},
+     {msg62a, msg62a(), PlainEDFail, [{dbg, false}]},
+     {msg62b, msg62b(), PlainDE,     [{dbg, false}]}
     ].
     
    

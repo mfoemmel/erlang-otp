@@ -17,6 +17,7 @@
 %%
 -module(snmpa_local_db).
 
+-include_lib("kernel/include/file.hrl").
 -include("snmp_types.hrl").
 -include("STANDARD-MIB.hrl").
 
@@ -24,8 +25,9 @@
 
 
 %% External exports
--export([start_link/3, stop/0, info/0, verbosity/1]).
--export([dump/0, register_notify_client/2, unregister_notify_client/1]).
+-export([start_link/3, start_link/4, stop/0, info/0, verbosity/1]).
+-export([dump/0, backup/1, 
+	 register_notify_client/2, unregister_notify_client/1]).
 -export([table_func/2, table_func/4,
 	 variable_get/1, variable_set/2, variable_delete/1, variable_inc/2,
 	 table_create/1, table_exists/1, table_delete/1,
@@ -47,23 +49,27 @@
 	 code_change/3]).
 
 
--define(SERVER, ?MODULE).
+-define(BACKUP_TAB, snmpa_local_backup).
+-define(DETS_TAB,   snmpa_local_db1).
+-define(ETS_TAB,    snmpa_local_db2).
+-define(SERVER,     ?MODULE).
 
--record(state,{dets, ets, notify_clients = []}).
+-record(state,{dets, ets, notify_clients = [], backup}).
 
 
-%% Debugging (develop)
 %% -define(snmp_debug,true).
 -include("snmp_debug.hrl").
 
 
 -ifdef(snmp_debug).
--define(GS_START_LINK(Prio, Dir, Opts),
-        gen_server:start_link({local, ?SERVER}, ?MODULE, [Prio, Dir, Opts],
+-define(GS_START_LINK(Prio, Dir, DbInitError, Opts),
+        gen_server:start_link({local, ?SERVER}, ?MODULE, 
+			      [Prio, Dir, DbInitError, Opts],
                               [{debug,[trace]}])).
 -else.
--define(GS_START_LINK(Prio, Dir, Opts),
-        gen_server:start_link({local, ?SERVER}, ?MODULE, [Prio, Dir, Opts], 
+-define(GS_START_LINK(Prio, Dir, DbInitError, Opts),
+        gen_server:start_link({local, ?SERVER}, ?MODULE, 
+			      [Prio, Dir, DbInitError, Opts], 
 			      [])).
 -endif.
  
@@ -77,13 +83,16 @@
 %%% Opt = {auto_repair, false | true | true_verbose} |
 %%%       {verbosity,silence | log | debug}
 %%%-----------------------------------------------------------------
-start_link(Prio, Dir, Opts) when list(Opts) ->
+start_link(Prio, DbDir, Opts) when list(Opts) ->
+    start_link(Prio, DbDir, terminate, Opts).
+
+start_link(Prio, DbDir, DbInitError, Opts) when list(Opts) ->
     ?d("start_link -> entry with"
-	"~n   Prio: ~p"
-	"~n   Dir:  ~p"
-	"~n   Opts: ~p", [Prio, Dir, Opts]),
-    %% gen_server:start_link({local, ?SERVER}, ?MODULE, [Prio,Dir,Opts],[]).
-    ?GS_START_LINK(Prio,Dir,Opts).
+	"~n   Prio:        ~p"
+	"~n   DbDir:       ~p"
+	"~n   DbInitError: ~p"
+	"~n   Opts:        ~p", [Prio, DbDir, DbInitError, Opts]),
+    ?GS_START_LINK(Prio, DbDir, DbInitError, Opts).
 
 stop() ->
     call(stop).
@@ -94,6 +103,9 @@ register_notify_client(Client,Module) ->
 
 unregister_notify_client(Client) ->
     call({unregister_notify_client,Client}).
+
+backup(BackupDir) ->
+    call({backup, BackupDir}).
 
 dump() ->
     call(dump).
@@ -107,13 +119,15 @@ verbosity(Verbosity) ->
 
 %%%-----------------------------------------------------------------
 
-init([Prio, Dir, Opts]) ->
+init([Prio, DbDir, DbInitError, Opts]) ->
     ?d("init -> entry with"
-	"~n   Prio: ~p"
-	"~n   Dir:  ~p"
-	"~n   Opts: ~p", [Prio, Dir, Opts]),
-    case (catch do_init(Prio, Dir, Opts)) of
+	"~n   Prio:        ~p"
+	"~n   DbDir:       ~p"
+	"~n   DbInitError: ~p"
+	"~n   Opts:        ~p", [Prio, DbDir, DbInitError, Opts]),
+    case (catch do_init(Prio, DbDir, DbInitError, Opts)) of
 	{ok, State} ->
+	    ?vdebug("started",[]),
 	    {ok, State};
 	{error, Reason} ->
 	    config_err("failed starting local-db: ~n~p", [Reason]),
@@ -123,41 +137,65 @@ init([Prio, Dir, Opts]) ->
 	    {stop, {error, Error}}
     end.
 
-do_init(Prio, Dir, Opts) ->
+do_init(Prio, DbDir, DbInitError, Opts) ->
     process_flag(priority, Prio),
+    process_flag(trap_exit, true),
     put(sname,ldb),
     put(verbosity,get_opt(verbosity, Opts, ?default_verbosity)),
     ?vlog("starting",[]),
-    Dets = do_dets_open(Dir, Opts),
-    Ets  = ets:new(snmpa_local_db2, [set, protected]),
-    ?vdebug("started",[]),
+    Dets = dets_open(DbDir, DbInitError, Opts),
+    Ets  = ets:new(?ETS_TAB, [set, protected]),
     {ok, #state{dets = Dets, ets = Ets}}.
 
-do_dets_open(Dir, Opts) ->
-    Name     = snmpa_local_db1, 
-    Repair   = get_opt(repair, Opts, true),
-    Filename = dets_filename(Name, Dir),
-    case dets:info(Filename, size) of
-	undefined ->
-	    Args = 
-		case lists:keysearch(auto_save, 1, Opts) of
-		    false ->
-			[{auto_save, 5000},
-			 {file, Filename}, {repair, Repair}];
-		    {value, AS} ->
-			[AS, {file, Filename}, {repair, Repair}]
-		end,
-	    case dets:open_file(Name, Args) of
+dets_open(DbDir, DbInitError, Opts) ->
+    Name     = ?DETS_TAB, 
+    Filename = dets_filename(Name, DbDir),
+    case file:read_file_info(Filename) of
+	{ok, _} ->
+	    %% File exists
+	    case do_dets_open(Name, Filename, Opts) of
 		{ok, Dets} ->
-		    ?vdebug("dets open done",[]),
+		    Dets;
+		{error, Reason1} ->
+                    user_err("Corrupt local database: ~p", [Filename]),
+		    case DbInitError of
+			terminate ->
+			    throw({error, {failed_open_dets, Reason1}});
+			_ ->
+			    Saved = Filename ++ ".saved",
+			    file:rename(Filename, Saved),
+			    case do_dets_open(Name, Filename, Opts) of
+				{ok, Dets} ->
+				    Dets;
+				{error, Reason2} ->
+				    user_err("Could not create local "
+					     "database: ~p"
+					     "~n   ~p"
+					     "~n   ~p", 
+					     [Filename, Reason1, Reason2]),
+				    throw({error, {failed_open_dets, Reason2}})
+			    end
+		    end
+	    end;
+	_ ->
+	    case do_dets_open(Name, Filename, Opts) of
+		{ok, Dets} ->
 		    Dets;
 		{error, Reason} ->
+		    user_err("Could not create local database ~p"
+			     "~n   ~p", [Filename, Reason]),
 		    throw({error, {failed_open_dets, Reason}})
-	    end;
-	
-	Else ->
-	    Else
+	    end
     end.
+
+do_dets_open(Name, Filename, Opts) ->
+    Repair   = get_opt(repair, Opts, true),
+    AutoSave = get_opt(auto_save, Opts, 5000),
+    Args = [{auto_save, AutoSave},
+	    {file,      Filename},
+	    {repair,    Repair}],
+    dets:open_file(Name, Args).
+
     
 dets_filename(Name, Dir) ->
     filename:join(dets_filename1(Dir), Name).
@@ -412,6 +450,30 @@ handle_call({match, Name, Db, Pattern}, _From, State) ->
     L1 = match(Db, Name, Pattern, State),
     {reply, lists:delete([undef], L1), State};
 
+handle_call({backup, BackupDir}, From, #state{dets = Dets} = State) ->
+    ?vlog("backup: ~p",[BackupDir]),
+    Pid = self(),
+    V   = get(verbosity),
+    case file:read_file_info(BackupDir) of
+	{ok, #file_info{type = directory}} ->
+	    BackupServer = 
+		erlang:spawn_link(
+		  fun() ->
+			  put(sname, albs),
+			  put(verbosity, V),
+			  Dir   = filename:join([BackupDir]), 
+			  Reply = handle_backup(Dets, Dir),
+			  Pid ! {backup_done, Reply},
+			  unlink(Pid)
+		  end),	
+	    ?vtrace("backup server: ~p", [BackupServer]),
+	    {noreply, State#state{backup = {BackupServer, From}}};
+	{ok, _} ->
+	    {reply, {error, not_a_directory}, State};
+	Error ->
+	    {reply, Error, State}
+    end;
+
 handle_call(dump, _From, #state{dets = Dets} = State) ->
     ?vlog("dump",[]),
     dets:sync(Dets),
@@ -489,6 +551,22 @@ handle_cast(Msg, State) ->
     {noreply, State}.
     
 
+handle_info({'EXIT', Pid, Reason}, #state{backup = {Pid, From}} = S) ->
+    ?vlog("backup server (~p) exited for reason ~n~p", [Pid, Reason]),
+    gen_server:reply(From, {error, Reason}),
+    {noreply, S#state{backup = undefined}};
+
+handle_info({'EXIT', Pid, Reason}, S) ->
+    %% The only other processes we should be linked to are
+    %% either the master agent or our supervisor, so die...
+    {stop, {received_exit, Pid, Reason}, S};
+
+handle_info({backup_done, Reply}, #state{backup = {_, From}} = S) ->
+    ?vlog("backup done:"
+	  "~n   Reply: ~p", [Reply]),
+    gen_server:reply(From, Reply),
+    {noreply, S#state{backup = undefined}};
+
 handle_info(Info, State) ->
     info_msg("received unknown info: ~n~p", [Info]),
     {noreply, State}.
@@ -503,23 +581,118 @@ terminate(Reason, State) ->
 %% Code change
 %%----------------------------------------------------------
 
-%% downgrade to 3.4
-code_change({down, _Vsn}, State, _Extra) ->
-%     ?debug("code_change(down) -> entry with~n"
-%            "  Vsn:   ~p~n"
-%            "  State: ~p~n"
-%            "  Extra: ~p",
-%            [Vsn,State,Extra]),
-    {ok, State};
+%% downgrade
+%% 
+code_change({down, _Vsn}, S1, downgrade_to_pre_4_7) ->
+    #state{dets = D, ets = E, notify_clients = NC, backup = B} = S1,
+    stop_backup_server(B),
+    S2 = {state, D, E, NC},
+    {ok, S2};
 
-%% upgrade from 3.4
+%% upgrade
+%% 
+code_change(_Vsn, S1, upgrade_from_pre_4_7) ->
+    {state, D, E, NC} = S1,
+    S2 = #state{dets = D, ets = E, notify_clients = NC}, 
+    {ok, S2};
+
 code_change(_Vsn, State, _Extra) ->
-%     ?debug("code_change(up) -> entry with~n"
-%            "  Vsn:   ~p~n"
-%            "  State: ~p~n"
-%            "  Extra: ~p",
-%            [Vsn,State,Extra]),
     {ok, State}.
+
+
+stop_backup_server(undefined) ->
+    ok;
+stop_backup_server({Pid, _}) when pid(Pid) ->
+    exit(Pid, kill).
+
+
+
+%%----------------------------------------------------------
+%% Backup
+%%----------------------------------------------------------
+
+handle_backup(D, BackupDir) ->
+    %% First check that we do not wrote to the corrent db-dir...
+    ?vtrace("handle_backup -> entry with"
+	"~n   D:         ~p"
+	"~n   BackupDir: ~p", [D, BackupDir]),
+    case dets:info(D, filename) of
+	undefined ->
+	    ?vinfo("handle_backup -> no file to backup", []),
+	    {error, no_file};
+	Filename ->
+	    ?vinfo("handle_backup -> file to backup: ~n   ~p", [Filename]),
+	    case filename:dirname(Filename) of
+		BackupDir ->
+		    ?vinfo("handle_backup -> backup dir and db dir the same", 
+			   []),
+		    {error, db_dir};
+		_ ->
+		    case file:read_file_info(BackupDir) of
+			{ok, #file_info{type = directory}} ->
+			    ?vdebug("handle_backup -> backup dir ok", []),
+			    %% All well so far...
+			    Type = dets:info(D, type),
+			    KP   = dets:info(D, keypos),
+			    dets_backup(D, 
+					filename:basename(Filename), 
+					BackupDir, Type, KP);
+			{ok, _} ->
+			    ?vinfo("handle_backup -> backup dir not a dir", 
+				   []),
+			    {error, not_a_directory};
+			Error ->
+			    ?vinfo("handle_backup -> Error: ~p", [Error]),
+			    Error
+		    end
+	    end
+    end.
+
+dets_backup(D, Filename, BackupDir, Type, KP) ->
+    ?vtrace("dets_backup -> entry with"
+	    "~n   D:         ~p"
+	    "~n   Filename:  ~p"
+	    "~n   BackupDir: ~p", [D, Filename, BackupDir]),
+    BackupFile = filename:join(BackupDir, Filename),
+    ?vtrace("dets_backup -> "
+	    "~n   BackupFile: ~p", [BackupFile]),
+    Opts = [{file, BackupFile}, {type, Type}, {keypos, KP}], 
+    case dets:open_file(?BACKUP_TAB, Opts) of
+	{ok, B} ->
+	    F = fun(Arg) -> 
+			dets_backup(Arg, start, D, B)
+		end,
+	    ?vtrace("dets_backup -> fix table", []),
+	    dets:safe_fixtable(D, true),
+	    ?vtrace("dets_backup -> copy table", []),
+	    Res = dets:init_table(?BACKUP_TAB, F, [{format, bchunk}]),
+	    ?vtrace("dets_backup -> unfix table", []),
+	    dets:safe_fixtable(D, false),
+	    ?vtrace("dets_backup -> Res: ~p", [Res]),
+	    Res;
+	Error ->
+	    ?vinfo("dets_backup -> open_file failed: "
+		   "~n   ~p", [Error]),
+	    Error
+    end.
+
+
+dets_backup(close, _Cont, _D, B) ->
+    dets:close(B),
+    ok;
+dets_backup(read, Cont1, D, B) ->
+    case dets:bchunk(D, Cont1) of
+	{Cont2, Data} ->
+	    F = fun(Arg) ->
+			dets_backup(Arg, Cont2, D, B)
+		end,
+	    {Data, F};
+	'$end_of_table' ->
+	    dets:close(B),
+	    end_of_input;
+	Error ->
+	    Error
+    end.
 
 
 %%-----------------------------------------------------------------
@@ -969,6 +1142,9 @@ error_msg(F, A) ->
 
 info_msg(F, A) ->
     (catch error_logger:info_msg("~w: " ++ F ++ "~n", [?MODULE|A])).
+
+user_err(F, A) ->
+    snmpa_error:user_err(F, A).
 
 config_err(F, A) ->
     snmpa_error:config_err(F, A).

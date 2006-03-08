@@ -175,7 +175,7 @@ int main(argc, argv)
 {
     struct sock_list *sl = NULL, *sltmp = NULL;
     int count = 0;
-    char c;
+    int c;
 
     while ((c = getopt(argc, argv, "s:d:r:")) != EOF)
 	switch (c) {

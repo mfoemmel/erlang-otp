@@ -11,9 +11,10 @@ frame(Defun) ->
   Temps0 = all_temps(hipe_ppc:defun_code(Defun), Formals),
   MinFrame = defun_minframe(Defun),
   Temps = ensure_minframe(MinFrame, Temps0),
+  ClobbersLR = clobbers_lr(hipe_ppc:defun_code(Defun)),
   CFG0 = hipe_ppc_cfg:init(Defun),
   Liveness = hipe_ppc_liveness_all:analyse(CFG0),
-  CFG1 = do_body(CFG0, Liveness, Formals, Temps),
+  CFG1 = do_body(CFG0, Liveness, Formals, Temps, ClobbersLR),
   hipe_ppc_cfg:linearise(CFG1).
 
 fix_formals(Formals) ->
@@ -22,8 +23,8 @@ fix_formals(Formals) ->
 fix_formals(N, [_|Rest]) when N > 0 -> fix_formals(N-1, Rest);
 fix_formals(_, Formals) -> Formals.
 
-do_body(CFG0, Liveness, Formals, Temps) ->
-  Context = mk_context(Liveness, Formals, Temps),
+do_body(CFG0, Liveness, Formals, Temps, ClobbersLR) ->
+  Context = mk_context(Liveness, Formals, Temps, ClobbersLR),
   CFG1 = do_blocks(CFG0, Context),
   do_prologue(CFG1, Context).
 
@@ -58,14 +59,14 @@ do_block([], _, Context, FPoff, RevCode) ->
 
 do_insn(I, LiveOut, Context, FPoff) ->
   case I of
+    #blr{} ->
+      {do_blr(I, Context, FPoff), context_framesize(Context)};
     #pseudo_call{} ->
       do_pseudo_call(I, LiveOut, Context, FPoff);
     #pseudo_call_prepare{} ->
       do_pseudo_call_prepare(I, FPoff);
     #pseudo_move{} ->
       {do_pseudo_move(I, Context, FPoff), FPoff};
-    #pseudo_ret{} ->
-      {do_pseudo_ret(I, Context, FPoff), context_framesize(Context)};
     #pseudo_tailcall{} ->
       {do_pseudo_tailcall(I, Context), context_framesize(Context)};
     #pseudo_fmove{} ->
@@ -101,12 +102,12 @@ do_pseudo_fmove(I, Context, FPoff) ->
   case temp_is_pseudo(Dst) of
     true ->
       Offset = pseudo_offset(Dst, FPoff, Context),
-      hipe_ppc:mk_fstore(Src, Offset, mk_sp());
+      hipe_ppc:mk_fstore(Src, Offset, mk_sp(), 0);
     _ ->
       case temp_is_pseudo(Src) of
 	true ->
 	  Offset = pseudo_offset(Src, FPoff, Context),
-	  hipe_ppc:mk_fload(Dst, Offset, mk_sp());
+	  hipe_ppc:mk_fload(Dst, Offset, mk_sp(), 0);
 	_ ->
 	  [hipe_ppc:mk_fp_unary('fmr', Dst, Src)]
       end
@@ -119,20 +120,24 @@ pseudo_offset(Temp, FPoff, Context) ->
 %%% Return - deallocate frame and emit 'ret $N' insn.
 %%%
 
-do_pseudo_ret(_I, Context, FPoff) ->
+do_blr(I, Context, FPoff) ->
   %% XXX: perhaps use explicit pseudo_move;mtlr,
   %% avoiding the need to hard-code Temp1 here
   %% XXX: typically only one instruction between
   %% the mtlr and the blr, ouch
-  restore_lr(FPoff,
+  restore_lr(FPoff, Context,
 	     adjust_sp(FPoff + word_size() * context_arity(Context),
-		       [hipe_ppc:mk_blr()])).
+		       [I])).
 
-restore_lr(FPoff, Rest) ->
-  Temp = mk_temp1(),
-  mk_load('lwz', Temp, FPoff - word_size(), mk_sp(),
-	  [hipe_ppc:mk_mtspr('lr', Temp) |
-	   Rest]).
+restore_lr(FPoff, Context, Rest) ->
+  case context_clobbers_lr(Context) of
+    false -> Rest;
+    true ->
+      Temp = mk_temp1(),
+      mk_load('lwz', Temp, FPoff - word_size(), mk_sp(),
+	      [hipe_ppc:mk_mtspr('lr', Temp) |
+	       Rest])
+  end.
 
 adjust_sp(N, Rest) ->
   if N =:= 0 ->
@@ -225,8 +230,8 @@ do_pseudo_tailcall(I, Context) -> % always at FPoff=context_framesize(Context)
       Fun ->
 	hipe_ppc:mk_b_fun(Fun, Linkage)
     end,
-  %% XXX: break out the LR restore, just like for pseudo_ret?
-  restore_lr(context_framesize(Context),
+  %% XXX: break out the LR restore, just like for blr?
+  restore_lr(context_framesize(Context), Context,
 	     Insns ++ adjust_sp(FPoff2, [I2])).
 
 do_tailcall_args(Args, Context) ->
@@ -328,16 +333,15 @@ store_moves([], _, _, Rest) ->
 %%% Contexts
 %%%
 
--record(context, {liveness, framesize, arity, map, ra, ref_maxstack}).
+-record(context, {liveness, framesize, arity, map, clobbers_lr, ref_maxstack}).
 
-mk_context(Liveness, Formals, Temps) ->
-  RA = hipe_ppc:mk_new_temp('untagged'),
-  {Map, MinOff} = mk_temp_map(Formals, RA, Temps),
+mk_context(Liveness, Formals, Temps, ClobbersLR) ->
+  {Map, MinOff} = mk_temp_map(Formals, ClobbersLR, Temps),
   FrameSize = (-MinOff),
   RefMaxStack = hipe_bifs:ref(FrameSize),
   Context = #context{liveness=Liveness,
 		     framesize=FrameSize, arity=length(Formals),
-		     map=Map, ra=RA, ref_maxstack=RefMaxStack},
+		     map=Map, clobbers_lr=ClobbersLR, ref_maxstack=RefMaxStack},
   Context.
 
 context_need_stack(#context{ref_maxstack=RM}, N) ->
@@ -361,13 +365,20 @@ context_liveness(#context{liveness=Liveness}) ->
 context_offset(#context{map=Map}, Temp) ->
   tmap_lookup(Map, Temp).
 
-%%%context_ra(#context{ra=RA}) ->
-%%%  RA.
+context_clobbers_lr(#context{clobbers_lr=ClobbersLR}) -> ClobbersLR.
 
-mk_temp_map(Formals, RA, Temps) ->
+mk_temp_map(Formals, ClobbersLR, Temps) ->
   {Map, 0} = enter_vars(Formals, word_size() * length(Formals),
 			tmap_empty()),
-  enter_vars([RA|tset_to_list(Temps)], 0, Map).
+  TempsList = tset_to_list(Temps),
+  AllTemps =
+    case ClobbersLR of
+      false -> TempsList;
+      true ->
+	RA = hipe_ppc:mk_new_temp('untagged'),
+	[RA|TempsList]
+    end,
+  enter_vars(AllTemps, 0, Map).
 
 enter_vars([V|Vs], PrevOff, Map) ->
   Off =
@@ -394,23 +405,24 @@ tmap_lookup(Map, Key) ->
 %%% NewStart:
 %%%	temp1 = *(P + P_SP_LIMIT)
 %%%	temp2 = SP - MaxStack
-%%%	if( temp2 < temp1 ) goto IncStack else goto AllocFrame
+%%%	cmp temp2, temp1
+%%%	temp1 = LR				[if ClobbersLR][hoisted]
+%%%	if (ltu) goto IncStack else goto AllocFrame
 %%% AllocFrame:
 %%%	SP -= FrameSize
-%%%	temp1 = LR
-%%%	*(SP + FrameSize-WordSize) = temp1
+%%%	*(SP + FrameSize-WordSize) = temp1	[if ClobbersLR]
 %%%	goto OldStart
 %%% OldStart:
 %%%	...
 %%% IncStack:
-%%%	temp1 = LR
+%%%	temp1 = LR				[if not ClobbersLR]
 %%%	bl inc_stack
 %%%	LR = temp1
 %%%	goto NewStart
 
 do_prologue(CFG, Context) ->
   MaxStack = context_maxstack(Context),
-  if MaxStack > 0 -> % XXX: this will always be true
+  if MaxStack > 0 ->
       FrameSize = context_framesize(Context),
       OldStartLab = hipe_ppc_cfg:start_label(CFG),
       NewStartLab = hipe_gensym:get_next_label(ppc),
@@ -419,9 +431,13 @@ do_prologue(CFG, Context) ->
       Temp1 = mk_temp1(),
       SP = mk_sp(),
       %%
+      ClobbersLR = context_clobbers_lr(Context),
+      GotoOldStartCode = [hipe_ppc:mk_b_label(OldStartLab)],
       AllocFrameCodeTail =
-	mk_store('stw', Temp1, FrameSize-word_size(), SP,
-		 [hipe_ppc:mk_b_label(OldStartLab)]),
+	case ClobbersLR of
+	  false -> GotoOldStartCode;
+	  true -> mk_store('stw', Temp1, FrameSize-word_size(), SP, GotoOldStartCode)
+	end,
       %%
       Arity = context_arity(Context),
       Guaranteed = max(0, (?PPC_LEAF_WORDS - Arity) * word_size()),
@@ -429,9 +445,12 @@ do_prologue(CFG, Context) ->
       {CFG1,NewStartCode} =
 	if MaxStack =< Guaranteed ->
 	    %% io:format("~w: MaxStack ~w =< Guaranteed ~w :-)\n", [?MODULE,MaxStack,Guaranteed]),
+	    AllocFrameCode = adjust_sp(-FrameSize, AllocFrameCodeTail),
 	    NewStartCode0 =
-	      [hipe_ppc:mk_mfspr(Temp1, 'lr') |
-	       adjust_sp(-FrameSize, AllocFrameCodeTail)],
+	      case ClobbersLR of
+		false -> AllocFrameCode;
+		true -> [hipe_ppc:mk_mfspr(Temp1, 'lr') | AllocFrameCode]
+	      end,
 	    {CFG,NewStartCode0};
 	   true ->
 	    %% io:format("~w: MaxStack ~w > Guaranteed ~w :-(\n", [?MODULE,MaxStack,Guaranteed]),
@@ -439,13 +458,18 @@ do_prologue(CFG, Context) ->
 	    IncStackLab = hipe_gensym:get_next_label(ppc),
 	    Temp2 = mk_temp2(),
 	    %%
+	    NewStartCodeTail2 =
+	      [hipe_ppc:mk_pseudo_bc('lt', IncStackLab, AllocFrameLab, 0.01)],
+	    NewStartCodeTail1 =
+	      case ClobbersLR of
+		false -> NewStartCodeTail2;
+		true -> [hipe_ppc:mk_mfspr(Temp1, 'lr') | NewStartCodeTail2]
+	      end,
 	    NewStartCode0 =
 	      [hipe_ppc:mk_load('lwz', Temp1, ?P_NSP_LIMIT, P) |
 	       hipe_ppc:mk_addi(Temp2, SP, -MaxStack,
-				[hipe_ppc:mk_cmp('cmpl', Temp2, Temp1),
-				 hipe_ppc:mk_mfspr(Temp1, 'lr'), % hoisted
-				 hipe_ppc:mk_pseudo_bc('lt', IncStackLab,
-						       AllocFrameLab, 0.01)])],
+				[hipe_ppc:mk_cmp('cmpl', Temp2, Temp1) |
+				 NewStartCodeTail1])],
 	    %%
 	    AllocFrameCode =
 	      if MaxStack =:= FrameSize ->
@@ -457,11 +481,16 @@ do_prologue(CFG, Context) ->
 		  adjust_sp(-FrameSize, AllocFrameCodeTail)
 	      end,
 	    %%
-	    IncStackCode =
+	    IncStackCodeTail =
 	      [hipe_ppc:mk_bl(hipe_ppc:mk_prim('inc_stack_0'),
 			      mk_minimal_sdesc(Context), not_remote),
 	       hipe_ppc:mk_mtspr('lr', Temp1),
 	       hipe_ppc:mk_b_label(NewStartLab)],
+	    IncStackCode =
+	      case ClobbersLR of
+		true -> IncStackCodeTail;
+		false -> [hipe_ppc:mk_mfspr(Temp1, 'lr') | IncStackCodeTail]
+	      end,
 	    %%
 	    CFG0a = hipe_ppc_cfg:bb_add(CFG, AllocFrameLab,
 					hipe_bb:mk_bb(AllocFrameCode)),
@@ -474,42 +503,22 @@ do_prologue(CFG, Context) ->
       CFG2 = hipe_ppc_cfg:bb_add(CFG1, NewStartLab,
                                  hipe_bb:mk_bb(NewStartCode)),
       hipe_ppc_cfg:start_label_update(CFG2, NewStartLab);
-     true -> % XXX: this will never happen
-      exit({?MODULE,do_prologue,MaxStack}),
+     true ->
       CFG
   end.
 
 %%% Create a load instruction.
-%%% May clobber TEMP2 for large offsets.
+%%% May clobber Dst early for large offsets. In principle we could
+%%% clobber R0 if Dst =:= Base, but Dst =/= Base here in frame.
 
 mk_load(LdOp, Dst, Offset, Base, Rest) ->
-  if Offset >= -32768, Offset =< 32767 ->
-      [hipe_ppc:mk_load(LdOp, Dst, Offset, Base) | Rest];
-     true ->
-      LdxOp =
-	case LdOp of
-	  'lwz' -> 'lwzx'
-	end,
-      Index = mk_temp2(),
-      [hipe_ppc:mk_li(Index, Offset),
-       hipe_ppc:mk_loadx(LdxOp, Dst, Base, Index) | Rest]
-  end.
+  hipe_ppc:mk_load(LdOp, Dst, Offset, Base, 'error', Rest).
 
 %%% Create a store instruction.
-%%% May clobber TEMP2 for large offsets.
+%%% May clobber R0 for large offsets.
 
 mk_store(StOp, Src, Offset, Base, Rest) ->
-  if Offset >= -32768, Offset =< 32767 ->
-      [hipe_ppc:mk_store(StOp, Src, Offset, Base) | Rest];
-     true ->
-      StxOp =
-	case StOp of
-	  'stw' -> 'stwx'
-	end,
-      Index = mk_temp2(),
-      [hipe_ppc:mk_li(Index, Offset),
-       hipe_ppc:mk_storex(StxOp, Src, Base, Index) | Rest]
-  end.
+  hipe_ppc:mk_store(StOp, Src, Offset, Base, 0, Rest).
 
 %%% typeof_temp -- what's temp's type?
 
@@ -541,6 +550,18 @@ src_is_pseudo(Src) ->
 
 temp_is_pseudo(Temp) ->
   not(hipe_ppc:temp_is_precoloured(Temp)).
+
+%%%
+%%% Detect if a Defun's body clobbers LR.
+%%%
+
+clobbers_lr([I|Insns]) ->
+  case I of
+    #pseudo_call{} -> true;
+    %% mtspr to lr cannot occur yet
+    _ -> clobbers_lr(Insns)
+  end;
+clobbers_lr([]) -> false.
 
 %%%
 %%% Build the set of all temps used in a Defun's body.

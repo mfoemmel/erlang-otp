@@ -43,8 +43,7 @@
 	  pty,
 	  group,
 	  buf,
-	  shell,
-	  expand_fun
+	  shell
 	 }).
 
 %%====================================================================
@@ -70,7 +69,7 @@ listen(Shell, Addr, Port, Opts) ->
     ssh_cm:listen(
       fun() ->
 	      {ok, Pid} =
-		  gen_server:start_link(?MODULE, [Shell, Opts], []),
+		  gen_server:start_link(?MODULE, [Shell], []),
 	      Pid
       end, Addr, Port, Opts).
 
@@ -92,9 +91,8 @@ stop(Pid) ->
 %%                         {stop, Reason}
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
-init([Shell, Opts]) ->
-    {ok, #state{shell = Shell,
-		expand_fun = proplists:get_value(expand_fun, Opts)}}.
+init([Shell]) ->
+    {ok, #state{shell = Shell}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -132,11 +130,7 @@ handle_cast(_Msg, State) ->
 handle_info({ssh_cm, CM, {open, Channel, {session}}}, State) ->
     ?dbg(true, "session open: self()=~p CM=~p Channel=~p\n",
 	 [self(), CM, Channel]),
-    GroupOpts = case State#state.expand_fun of
-		    false -> [];
-		    Fun -> [{expand_fun, Fun}]
-		end,
-    Group = group:start(self(), State#state.shell, GroupOpts),
+    Group = group:start(self(), State#state.shell, []),
     process_flag(trap_exit, true),
     {noreply,
      State#state{cm = CM, channel = Channel,
@@ -171,9 +165,9 @@ handle_info({ssh_cm, _CM, {eof, _Channel}}, State) ->
     {stop, normal, State};
 handle_info({'EXIT', Group, normal}, State) when Group==State#state.group ->
     {stop, normal, State};
-handle_info(_Info, State) ->
-    ?dbg(true, "~p:handle_info: BAD info ~p\n(State ~p)\n", [?MODULE, _Info, State]),
-    {noreply, State}.
+handle_info(Info, State) ->
+    ?dbg(true, "~p:handle_info: BAD info ~p\n(State ~p)\n", [?MODULE, Info, State]),
+    {stop, {bad_info, Info}, State}.
 
 %%--------------------------------------------------------------------
 %% Function: terminate(Reason, State) -> void()
