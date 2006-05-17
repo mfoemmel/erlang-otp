@@ -201,11 +201,11 @@ inv(false) -> true.
 %% WantedVariables is ordset of variable names.
 %% returns list of the record disj_alt.
 
--record(dbd, {bs=[],
-	      constr_vars=ordsets:new_set(),
-	      remove_vars=ordsets:new_set(),
-	      wanted_vars,
-	      goals=[]}).
+%% -record(dbd, {bs=[],
+%% 	      constr_vars=ordsets:new(),
+%% 	      remove_vars=ordsets:new(),
+%% 	      wanted_vars,
+%% 	      goals=[]}).
 
 
 deduce_bindings_bind(Disj, WantedVariables) ->

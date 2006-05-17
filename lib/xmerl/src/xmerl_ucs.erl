@@ -401,39 +401,6 @@ char_to_utf8(Ch) when integer(Ch), Ch >= 0 ->
 	     128+(Ch band 16#3F)]
     end.
 
-from_utf8(<<0:1, A:7, Rest/binary>>, Acc, Tail) ->
-    %% 7 bits: 0yyyyyyy
-    from_utf8(Rest,[A|Acc],Tail);
-from_utf8(<<>>, Acc, Tail) ->
-    lists:reverse(Acc,Tail);
-from_utf8(<<6:3, A: 5, 2:2, B:6, Rest/binary>>, Acc, Tail)
-  when A >= 2 ->
-    %% 11 bits: 110xxxxy 10yyyyyy
-    from_utf8(Rest, [A*64+B|Acc], Tail);
-from_utf8(<<14:4, A: 4, 2:2, B:6, 2:2, C:6, Rest/binary>>, Acc, Tail)
-  when A > 0; B >= 32 ->
-    %% 16 bits: 1110xxxx 10xyyyyy 10yyyyyy
-    Ch = (A*64+B)*64+C,
-    if Ch < 16#D800; Ch > 16#DFFF, Ch < 16#FFFE ->
-	    from_utf8(Rest, [Ch|Acc], Tail)
-    end;
-from_utf8(<<30:5, A:3, 2:2, B:6, 2:2, C:6, 2:2, D:6, Rest/binary>>, Acc, Tail)
-  when A > 0; B >= 16 ->
-    %% 21 bits: 11110xxx 10xxyyyy 10yyyyyy 10yyyyyy
-    from_utf8(Rest, [((A*64+B)*64+C)*64+D|Acc], Tail);
-from_utf8(<<62:6, A:2, 2:2, B:6, 2:2, C:6, 2:2, D:6, 2:2, E:6, Rest/binary>>,
-	  Acc, Tail)
-  when A > 0; B >= 8 ->
-    %% 26 bits: 111110xx 10xxxyyy 10yyyyyy 10yyyyyy 10yyyyyy
-    from_utf8(Rest, [(((A*64+B)*64+C)*64+D)*64+E|Acc], Tail);
-from_utf8(<<126:7, A:1, 2:2, B:6, 2:2, C:6, 2:2, D:6, 2:2, E:6, 2:2, F:6,
-	    Rest/binary>>, Acc, Tail)
-  when A > 0; B >= 4 ->
-    %% 31 bits: 1111110x 10xxxxyy 10yyyyyy 10yyyyyy 10yyyyyy 10yyyyyy
-    from_utf8(Rest, [((((A*64+B)*64+C)*64+D)*64+E)*64+F|Acc], Tail);
-from_utf8(Bin,Acc,Tail) ->
-    io:format("ucs Error: Bin=~p~n     Acc=~p~n     Tail=~p~n",[Bin,Acc,Tail]),
-    {error,not_utf8}.
 
 
 

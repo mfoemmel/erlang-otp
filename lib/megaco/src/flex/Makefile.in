@@ -36,7 +36,8 @@ VSN=$(MEGACO_VSN)
 # be set for that system only.
 # ----------------------------------------------------
 CC      = @CC@
-CFLAGS  = @DED_CFLAGS@
+CFLAGS  = @DED_CFLAGS@ 
+CFLAGS_MT = $(CFLAGS) -D_THREAD_SAFE -D_REENTRANT
 LD      = @DED_LD@
 LDFLAGS = @DED_LDFLAGS@
 LEX     = @LEX@
@@ -78,12 +79,6 @@ DRIVER_INCLUDES = $(SYSINCLUDE)
 PRIVDIR = ../../priv
 LIBDIR  = $(PRIVDIR)/lib/$(TARGET)
 
-R7_DRIVER_H = $(ERL_TOP)/erts/emulator/beam/driver.h
-DRIVER_H    = $(wildcard $(R7_DRIVER_H))
-
-ifeq ($(DRIVER_H),$(R7_DRIVER_H))
-DRV_FLAGS = -DOTP_R7
-endif
 
 # ----------------------------------------------------
 # Release directory specification
@@ -112,6 +107,9 @@ C_TARGETS  = $(FLEX_MODULES:%=%.c)
 # Misc Macros
 # ----------------------------------------------------
 
+STD_DRV_NAME=-DMEGACO_DRV_NAME=\"megaco_flex_scanner_drv\"
+MT_DRV_NAME=-DMEGACO_DRV_NAME=\"megaco_flex_scanner_drv_mt\"
+
 ifeq ($(findstring win32,$(TARGET)), win32)
 FLEX_SCANNER_SO = 
 SOLIBS = $(FLEX_SCANNER_SO)
@@ -121,7 +119,8 @@ FLEX_SCANNER_SO =
 SOLIBS = $(FLEX_SCANNER_SO)
 else
 FLEX_SCANNER_SO = $(LIBDIR)/megaco_flex_scanner_drv.so 
-SOLIBS = $(FLEX_SCANNER_SO)
+FLEX_SCANNER_MT_SO = $(LIBDIR)/megaco_flex_scanner_drv_mt.so 
+SOLIBS = $(FLEX_SCANNER_SO) $(FLEX_SCANNER_MT_SO) 
 endif
 endif
 
@@ -183,7 +182,8 @@ info:
 	@echo "ENABLE_MEGACO_FLEX_SCANNER        = $(ENABLE_MEGACO_FLEX_SCANNER)"
 	@echo "ENABLE_MEGACO_FLEX_SCANNER_LINENO = $(ENABLE_MEGACO_FLEX_SCANNER_LINENO)"
 	@echo ""
-	@echo "DRIVER_H     = $(DRIVER_H)"
+	@echo "CFLAGS       = $(CFLAGS)"
+	@echo "CFLAGS_MT    = $(CFLAGS_MT)"
 	@echo "DRV_FLAGS    = $(DRV_FLAGS)"
 	@echo "MODULES      = $(MODULES)"
 	@echo "ERL_FILES    = $(ERL_FILES)"
@@ -242,7 +242,12 @@ megaco_flex_scanner_drv.c: megaco_flex_scanner_drv.flex
 # No need to link with -lfl as we have also defined %option noyywrap - 
 # and having -lfl doesn't work under Darwin for some reason. - Sean
 $(LIBDIR)/megaco_flex_scanner_drv.so: megaco_flex_scanner_drv.c $(LIBDIR)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $(LIBDIR)/megaco_flex_scanner_drv.so $< 
+	@echo "std driver:"
+	$(CC) $(STD_DRV_NAME) $(CFLAGS) $(LDFLAGS) -o $(LIBDIR)/megaco_flex_scanner_drv.so $< 
+
+$(LIBDIR)/megaco_flex_scanner_drv_mt.so: megaco_flex_scanner_drv.c $(LIBDIR)
+	@echo "multi-threaded driver:"
+	$(CC) $(MT_DRV_NAME) $(CFLAGS_MT) $(LDFLAGS) -o $(LIBDIR)/megaco_flex_scanner_drv_mt.so $< 
 
 $(LIBDIR):
 	-mkdir -p $(LIBDIR)

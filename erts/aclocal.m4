@@ -201,7 +201,8 @@ if test ${ac_cv_decl_inaddr_loopback} = no; then
       * )
   	AC_CACHE_CHECK([for INADDR_LOOPBACK in winsock2.h],
                    ac_cv_decl_inaddr_loopback_winsock2,
-                   AC_TRY_COMPILE([#include <winsock2.h>],
+                   AC_TRY_COMPILE([#define WIN32_LEAN_AND_MEAN
+				   #include <winsock2.h>],
                                    [int i = INADDR_LOOPBACK;],
                                    ac_cv_decl_inaddr_loopback_winsock2=yes,
                                    ac_cv_decl_inaddr_loopback_winsock2=no))
@@ -410,6 +411,7 @@ dnl Name of lib where ethread implementation is located
 ethr_lib_name=ethread
 
 ETHR_THR_LIB_BASE=
+ETHR_THR_LIB_BASE_NAME=
 ETHR_X_LIBS=
 ETHR_LIBS=
 ETHR_LIB_NAME=
@@ -422,11 +424,35 @@ dnl fi
 dnl win32?
 AC_MSG_CHECKING([for native win32 threads])
 if test "X$host_os" = "Xwin32"; then
+    AC_MSG_RESULT(yes)
     ETHR_X_LIBS=
     ETHR_DEFS=
     ETHR_THR_LIB_BASE=win32_threads
     AC_DEFINE(ETHR_WIN32_THREADS, 1, [Define if you have win32 threads])
-    AC_MSG_RESULT(yes)
+
+    AC_CACHE_CHECK([for InitializeCriticalSectionAndSpinCount],
+		ethr_cv_func_initializecriticalsectionandspincount,
+		AC_TRY_LINK([#include <windows.h>],
+			[CRITICAL_SECTION cs;
+			InitializeCriticalSectionAndSpinCount(&cs, 1000);],
+			ethr_cv_func_initializecriticalsectionandspincount=yes,
+			ethr_cv_func_initializecriticalsectionandspincount=no))
+    if test $ethr_cv_func_initializecriticalsectionandspincount = yes; then
+    	AC_DEFINE(ETHR_HAVE_INITIALIZECRITICALSECTIONANDSPINCOUNT, 1, \
+[Define if you have the InitializeCriticalSectionAndSpinCount function])
+    fi
+
+    AC_CACHE_CHECK([for TryEnterCriticalSection],
+		ethr_cv_func_tryentercriticalsection,
+		AC_TRY_LINK([#include <windows.h>],
+			[CRITICAL_SECTION cs;
+			TryEnterCriticalSection(&cs);],
+			ethr_cv_func_tryentercriticalsection=yes,
+			ethr_cv_func_tryentercriticalsection=no))
+    if test $ethr_cv_func_tryentercriticalsection = yes; then
+    	AC_DEFINE(ETHR_HAVE_TRYENTERCRITICALSECTION, 1, \
+[Define if you have the TryEnterCriticalSection function])
+    fi
 else
     AC_MSG_RESULT(no)
 
@@ -465,7 +491,7 @@ dnl On ofs1 the '-pthread' switch should be used
 	    solaris*)
 		ETHR_DEFS="$ETHR_DEFS -D_POSIX_PTHREAD_SEMANTICS" ;;
 	    linux*)
-		ETHR_DEFS="$ETHR_DEFS -D_GNU_SOURCE"
+		ETHR_DEFS="$ETHR_DEFS -D_POSIX_THREAD_SAFE_FUNCTIONS -D_GNU_SOURCE"
 		linux_kernel_vsn_=`uname -r` # FIXME: for cross compilation.
 
 		usable_sigusrx=no
@@ -473,9 +499,9 @@ dnl On ofs1 the '-pthread' switch should be used
 
 		# FIXME: Test for actual problems instead of kernel versions.
 		case $linux_kernel_vsn_ in
-		    0.*|1.*|2.0|2.0.*|2.1|2.1.*)
+		    [[0-1]].*|2.[[0-1]]|2.[[0-1]].*)
 			;;
-		    2.2|2.2.*|2.3|2.3.*)
+		    2.[[2-3]]|2.[[2-3]].*)
 			usable_sigusrx=yes
 			;;
 		    *)
@@ -503,6 +529,9 @@ dnl On ofs1 the '-pthread' switch should be used
 		    *)  nptl=no;;
 		esac
 		AC_MSG_RESULT($nptl)
+		if test $nptl = yes; then
+		    ETHR_THR_LIB_BASE_NAME=nptl
+		fi
 		if test $nptl = yes; then
 		    need_nptl_incldir=no
 		    AC_CHECK_HEADER(nptl/pthread.h, need_nptl_incldir=yes)
@@ -597,6 +626,7 @@ dnl On ofs1 the '-pthread' switch should be used
 fi
 
 if test "x$ETHR_THR_LIB_BASE" != "x"; then
+	ETHR_DEFS="-DUSE_THREADS $ETHR_DEFS"
 	ETHR_LIBS="-l$ethr_lib_name $ETHR_X_LIBS"
 	ETHR_LIB_NAME=$ethr_lib_name
 fi
@@ -609,6 +639,7 @@ AC_SUBST(ETHR_LIBS)
 AC_SUBST(ETHR_LIB_NAME)
 AC_SUBST(ETHR_DEFS)
 AC_SUBST(ETHR_THR_LIB_BASE)
+AC_SUBST(ETHR_THR_LIB_BASE_NAME)
 
 ])
 

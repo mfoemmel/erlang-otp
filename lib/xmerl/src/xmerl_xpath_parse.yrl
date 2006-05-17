@@ -31,14 +31,14 @@ Nonterminals
 	'AbsoluteLocationPath'
 	'RelativeLocationPath'
 	'Step'
-	'AxisSpecifier'
+%%	'AxisSpecifier'
 	'NodeTest'
 	'Predicate'
 	'PredicateExpr'
 	'AbbreviatedAbsoluteLocationPath'
 	'AbbreviatedRelativeLocationPath'
 	'AbbreviatedStep'
-	'AbbreviatedAxisSpecifier'
+%%	'AbbreviatedAxisSpecifier'
 	'Expr'
 	'PrimaryExpr'
 	'FunctionCall'
@@ -53,8 +53,8 @@ Nonterminals
 	'AdditiveExpr'
 	'MultiplicativeExpr'
 	'UnaryExpr'
-	'Operator'
-	'OperatorName'
+%%	'Operator'
+%%	'OperatorName'
 	'MultiplyOperator'
 	'NameTest'
 	'<PredicateList>'
@@ -93,6 +93,8 @@ Left 400 '>=' .
 Left 400 '>' .
 Left 400 '<=' .
 Unary 500 '-' .
+
+Expect 2.
 
 %%------------------------------------------------------------
 %% Clauses
@@ -139,8 +141,8 @@ Unary 500 '-' .
 
 
 %% [5]
-'AxisSpecifier' -> 'axis' '::' : '$1' .
-'AxisSpecifier' -> 'AbbreviatedAxisSpecifier' : '$1' .
+%% 'AxisSpecifier' -> 'axis' '::' : '$1' .
+%% 'AxisSpecifier' -> 'AbbreviatedAxisSpecifier' : '$1' .
 
 
 %% [7]
@@ -169,8 +171,8 @@ Unary 500 '-' .
 'AbbreviatedStep' -> '..' : '$1' .
 
 %% [13]
-'AbbreviatedAxisSpecifier' ->  '$empty' : 'child' .
-'AbbreviatedAxisSpecifier' ->  '@' : '$1' .
+%% 'AbbreviatedAxisSpecifier' ->  '$empty' : 'child' .
+%% 'AbbreviatedAxisSpecifier' ->  '@' : '$1' .
 
 %% [14]
 'Expr' -> 'OrExpr' : '$1' .
@@ -270,24 +272,24 @@ Unary 500 '-' .
 
 
 %% [32]
-'Operator' -> 'OperatorName' : '$1' .
-'Operator' -> 'MultiplyOperator' : '$1' .
-'Operator' -> '/' : '$1' .
-'Operator' -> '//' : '$1' .
-'Operator' -> '|' : '$1' .
-'Operator' -> '+' : '$1' .
-'Operator' -> '-' : '$1' .
-'Operator' -> '=' : '$1' .
-'Operator' -> '!=' : '$1' .
-'Operator' -> '<' : '$1' .
-'Operator' -> '<=' : '$1' .
-'Operator' -> '>' : '$1' .
-'Operator' -> '>=' : '$1' .
+%% 'Operator' -> 'OperatorName' : '$1' .
+%% 'Operator' -> 'MultiplyOperator' : '$1' .
+%% 'Operator' -> '/' : '$1' .
+%% 'Operator' -> '//' : '$1' .
+%% 'Operator' -> '|' : '$1' .
+%% 'Operator' -> '+' : '$1' .
+%% 'Operator' -> '-' : '$1' .
+%% 'Operator' -> '=' : '$1' .
+%% 'Operator' -> '!=' : '$1' .
+%% 'Operator' -> '<' : '$1' .
+%% 'Operator' -> '<=' : '$1' .
+%% 'Operator' -> '>' : '$1' .
+%% 'Operator' -> '>=' : '$1' .
 
 %% [33]
-'OperatorName' -> 'and' : '$1' .
-'OperatorName' -> 'mod' : '$1' .
-'OperatorName' -> 'div' : '$1' .
+%% 'OperatorName' -> 'and' : '$1' .
+%% 'OperatorName' -> 'mod' : '$1' .
+%% 'OperatorName' -> 'div' : '$1' .
 
 %% [34]
 'MultiplyOperator' -> '*' : '*' .

@@ -82,7 +82,7 @@
 	    mquery_next = 0
 	    }).
 
--record(rec_def, {name, fields=[]}).  %% Field <- {name, init}
+%% -record(rec_def, {name, fields=[]}).  %% Field <- {name, init}
 
 format_error(Msg) ->
     lists:concat(

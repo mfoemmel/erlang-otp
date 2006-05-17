@@ -66,6 +66,7 @@
 	 add_active_replica/2,
 	 add_active_replica/3,
 	 add_active_replica/4,
+	 update/1,
 	 change_table_access_mode/1,
 	 del_active_replica/2,
 	 wait_for_tables/2,
@@ -103,26 +104,28 @@
 -record(state, {supervisor,
 		schema_is_merged = false,
 		early_msgs = [],
-		loader_pid,
-		loader_queue = [],
-		sender_pid = [],     %% Was a pid or undef is now a list pids.
+		loader_pid = [],     %% Was Pid is now [{Pid,Work}|..] 
+		loader_queue,        %% Was list is now gb_tree
+		sender_pid = [],     %% Was a pid or undef is now [{Pid,Work}|..] 
 		sender_queue =  [],
-		late_loader_queue = [],
-		dumper_pid,          % Dumper or schema commit pid
-		dumper_queue = [],   % Dumper or schema commit queue
-		others = [],         % Processes that needs the copier_done msg
+		late_loader_queue,   %% Was list is now gb_tree
+		dumper_pid,          %% Dumper or schema commit pid
+		dumper_queue = [],   %% Dumper or schema commit queue
+		others = [],         %% Processes that needs the copier_done msg
 		dump_log_timer_ref,
 		is_stopping = false
 	       }).
 %% Backwards Comp. Sender_pid is now a list of senders..
-get_senders(#state{sender_pid = undefined}) -> [];
-get_senders(#state{sender_pid = Pid}) when pid(Pid) -> [Pid];
 get_senders(#state{sender_pid = Pids}) when list(Pids) -> Pids.    
-
--record(worker_reply, {what,
-		       pid,
-		       result
-		      }).
+%% Backwards Comp. loader_pid is now a list of loaders..
+get_loaders(#state{loader_pid = Pids}) when list(Pids) -> Pids.    
+max_loaders() ->
+    case ?catch_val(no_table_loaders) of
+	{'EXIT', _} -> 
+	    mnesia_lib:set(no_table_loaders,1),
+	    1;
+	Val -> Val
+    end.
 
 -record(schema_commit_lock, {owner}).
 -record(block_controller, {owner}).
@@ -271,6 +274,10 @@ rec_tabs([], _, _, Init) ->
 get_cstructs() ->
     call(get_cstructs).
 
+update(Fun) ->
+    call({update,Fun}).
+
+
 mnesia_down(Node) ->
     case cast({mnesia_down, Node}) of
 	{error, _} -> mnesia_monitor:mnesia_down(?SERVER_NAME, Node);
@@ -303,7 +310,8 @@ get_network_copy(Tab, Cs) ->
     %% I'll need this cause it's linked trough the subscriber
     %% might be solved by using monitor in subscr instead.
     process_flag(trap_exit, true),
-    Res = (catch load_table(Work)),
+    Load = load_table_fun(Work),
+    Res = (catch Load()),
     process_flag(trap_exit, false),
     call({del_other, self()}),
     case Res of
@@ -579,7 +587,10 @@ init([Parent]) ->
     {ok, Ref} = timer:send_interval(Interval, Msg),
     mnesia_dumper:start_regulator(),
     
-    {ok, #state{supervisor = Parent, dump_log_timer_ref = Ref}}.
+    Empty = gb_trees:empty(),
+    {ok, #state{supervisor = Parent, dump_log_timer_ref = Ref, 
+		loader_queue = Empty,
+		late_loader_queue = Empty}}.
 
 %%----------------------------------------------------------------------
 %% Func: handle_call/3
@@ -607,6 +618,11 @@ handle_call(block_controller, From, State) ->
     Worker = #block_controller{owner = From},
     State2 = add_worker(Worker, State),
     noreply(State2);
+
+handle_call({update,Fun}, From, State) ->
+    Res = (catch Fun()),
+    reply(From, Res), 
+    noreply(State);
 
 handle_call(get_cstructs, From, State) ->
     Tabs = val({schema, tables}),
@@ -637,11 +653,11 @@ handle_call({schema_is_merged, TabsR, Reason, RemoteLoaders}, From, State) ->
     State3 = State2#state{early_msgs = [], schema_is_merged = true},
     handle_early_msgs(lists:reverse(Msgs), State3);
 
-handle_call(disc_load_intents, From, State) ->
-    Tabs = disc_load_intents(State#state.loader_queue) ++
-           disc_load_intents(State#state.late_loader_queue),
-    ActiveTabs = mnesia_lib:local_active_tables(),
-    reply(From, {ok, node(), mnesia_lib:union(Tabs, ActiveTabs)}),
+handle_call(disc_load_intents,From,State = #state{loader_queue=LQ,late_loader_queue=LLQ}) ->
+    LQTabs  = gb_trees:keys(LQ),
+    LLQTabs = gb_trees:keys(LLQ),
+    ActiveTabs = lists:sort(mnesia_lib:local_active_tables()),
+    reply(From, {ok, node(), ordsets:union([LQTabs,LLQTabs,ActiveTabs])}),
     noreply(State);
 
 handle_call({update_where_to_write, [add, Tab, AddNode], _From}, _Dummy, State) ->
@@ -650,7 +666,7 @@ handle_call({update_where_to_write, [add, Tab, AddNode], _From}, _Dummy, State) 
 	case lists:member(AddNode, Current) and 
 	    (State#state.schema_is_merged == true) of
 	    true ->
-		mnesia_lib:add({Tab, where_to_write}, AddNode);
+		mnesia_lib:add_lsort({Tab, where_to_write}, AddNode);
 	    false ->
 		ignore
 	end,
@@ -665,7 +681,12 @@ handle_call({add_active_replica, [Tab, ToNode, RemoteS, AccessMode], From},
 	    reply(ReplyTo, ignore),
 	    noreply(State);
 	Merged == true ->
-	    Res = add_active_replica(Tab, ToNode, RemoteS, AccessMode),
+	    Res = case ?catch_val({Tab, cstruct}) of
+		      {'EXIT', _} ->  %% Tab deleted
+			  deleted;
+		      _ ->
+			  add_active_replica(Tab, ToNode, RemoteS, AccessMode)
+		  end,
 	    reply(ReplyTo, Res),
 	    noreply(State);
 	true -> %% Schema is not merged
@@ -752,17 +773,8 @@ handle_call(Msg, _From, State) ->
     error("~p got unexpected call: ~p~n", [?SERVER_NAME, Msg]),
     noreply(State).
 
-disc_load_intents([H | T]) when record(H, disc_load) ->
-    [H#disc_load.table | disc_load_intents(T)];
-disc_load_intents([H | T]) when record(H, late_load) ->
-    [H#late_load.table | disc_load_intents(T)];
-disc_load_intents([H | T]) when record(H, net_load) ->
-    disc_load_intents(T);
-disc_load_intents([]) ->
-    [].
-
 late_disc_load(TabsR, Reason, RemoteLoaders, From, 
-	       State = #state{loader_queue = LQ}) ->
+	       State = #state{loader_queue = LQ, late_loader_queue = LLQ}) ->
     verbose("Intend to load tables: ~p~n", [TabsR]),
     ?eval_debug_fun({?MODULE, late_disc_load},
 		    [{tabs, TabsR}, 
@@ -773,22 +785,21 @@ late_disc_load(TabsR, Reason, RemoteLoaders, From,
     %% RemoteLoaders is a list of {ok, Node, Tabs} tuples
 
     %% Remove deleted tabs and queued/loaded
-    LocalTabs = mnesia_lib:val({schema, local_tables}),
+    LocalTabs = gb_sets:from_ordset(lists:sort(mnesia_lib:val({schema,local_tables}))),
     Filter = fun(TabInfo0, Acc) -> 
 		     TabInfo = {Tab,_} = 
 			 case TabInfo0 of 
 			     {_,_} -> TabInfo0;
 			     TabN -> {TabN,Reason}
 			 end,
-		     case lists:member(Tab, LocalTabs) of
+		     case gb_sets:is_member(Tab, LocalTabs) of
 			 true -> 
 			     case ?catch_val({Tab, where_to_read}) == node() of
 				 true -> Acc;
 				 false ->
-				     case lists:keymember(Tab, 2, LQ) of
-					 true -> Acc;
-					 false ->
-					     [TabInfo | Acc]
+				     case gb_trees:is_defined(Tab,LQ) of
+					 true ->  Acc;
+					 false -> [TabInfo | Acc]
 				     end
 			     end;
 			 false -> Acc
@@ -798,23 +809,24 @@ late_disc_load(TabsR, Reason, RemoteLoaders, From,
     Tabs = lists:foldl(Filter, [], TabsR),
     
     Nodes = val({current, db_nodes}),
-    LateLoaders = late_loaders(Tabs, RemoteLoaders, Nodes),
-    LateQueue = State#state.late_loader_queue ++ LateLoaders,
-    State#state{late_loader_queue = LateQueue}.
+    LateQueue = late_loaders(Tabs, RemoteLoaders, Nodes, LLQ),
+    State#state{late_loader_queue = LateQueue}. 
 
-late_loaders([{Tab, Reason} | Tabs], RemoteLoaders, Nodes) ->
-    LoadNodes = late_load_filter(RemoteLoaders, Tab, Nodes, []),
-    case LoadNodes of
-	[] ->
-	    cast({disc_load, Tab, Reason}); % Ugly cast
-	_ ->
-	    ignore
-    end,
-    LateLoad = #late_load{table = Tab, loaders = LoadNodes, reason = Reason},
-    [LateLoad | late_loaders(Tabs, RemoteLoaders, Nodes)];
-
-late_loaders([], _RemoteLoaders, _Nodes) ->
-    [].
+late_loaders([{Tab, Reason} | Tabs], RemoteLoaders, Nodes, LLQ) ->
+    case gb_trees:is_defined(Tab, LLQ) of
+	false ->
+	    LoadNodes = late_load_filter(RemoteLoaders, Tab, Nodes, []),
+	    case LoadNodes of
+		[] ->  cast({disc_load, Tab, Reason}); % Ugly cast
+		_ ->   ignore
+	    end,
+	    LateLoad = #late_load{table=Tab,loaders=LoadNodes,reason=Reason},
+	    late_loaders(Tabs, RemoteLoaders, Nodes, gb_trees:insert(Tab,LateLoad,LLQ));
+	true ->
+	    late_loaders(Tabs, RemoteLoaders, Nodes, LLQ)	     
+    end;
+late_loaders([], _RemoteLoaders, _Nodes, LLQ) ->
+    LLQ.
 
 late_load_filter([{error, _} | RemoteLoaders], Tab, Nodes, Acc) ->
     late_load_filter(RemoteLoaders, Tab, Nodes, Acc);
@@ -908,15 +920,11 @@ handle_cast({mnesia_down, Node}, State) ->
     %% Fix internal stuff
     LateQ = remove_loaders(Alltabs, Node, State#state.late_loader_queue),
     
-    case State#state.loader_pid of
-	undefined -> ignore;
-	Pid2 when pid(Pid2) -> Pid2 ! {copier_done, Node}
-    end,
-    case get_senders(State) of
+    case get_senders(State) ++ get_loaders(State) of
 	[] -> ignore;
-	Pids -> 
+	Senders -> 
 	    lists:foreach(fun({Pid,_}) -> Pid ! {copier_done, Node} end,
-			  Pids)
+			  Senders)
     end,
     lists:foreach(fun(Pid) -> Pid ! {copier_done,Node} end, 
 		  State#state.others),
@@ -1025,7 +1033,7 @@ handle_cast({adopt_orphans, Node, Tabs}, State) ->
     
     %% Register the other node as up and running
     mnesia_recover:log_mnesia_up(Node),
-    verbose("Logging mnesia_up ~w~n", [Node]),
+    verbose("Logging mnesia_up ~w~n",[Node]),
     mnesia_lib:report_system_event({mnesia_up, Node}),
     
     %% Load orphan tables
@@ -1044,16 +1052,13 @@ handle_cast({adopt_orphans, Node, Tabs}, State) ->
 		mnesia_late_loader:maybe_async_late_disc_load(N, RemoteOrphans, Reason)
 	end,
     lists:foreach(Fun, Nodes),
-    
-    Queue = State2#state.loader_queue,
-    State3 = State2#state{loader_queue = Queue},
-    noreply(State3);
+    noreply(State2);
 
 handle_cast(Msg, State) ->
     error("~p got unexpected cast: ~p~n", [?SERVER_NAME, Msg]),
     noreply(State).
 
-handle_sync_tabs([Tab | Tabs], From) ->
+handle_sync_tabs([Tab | Tabs], From) ->    
     case val({Tab, where_to_read}) of
 	nowhere ->
 	    case get({sync_tab, Tab}) of
@@ -1099,18 +1104,15 @@ handle_info(Done, State) when record(Done, dumper_done) ->
 	    {stop, fatal, State}
     end;
 
-handle_info(Done, State) when record(Done, loader_done) ->
-    if
-	%% Assertion
-	Done#loader_done.worker_pid == State#state.loader_pid -> ok
-    end,
-	    
-    [_Worker | Rest] = State#state.loader_queue,
-    LateQueue0 = State#state.late_loader_queue,
-    {LoadQ, LateQueue} =
+handle_info(Done, State0) when record(Done, loader_done) ->    
+    WPid = Done#loader_done.worker_pid,
+    LateQueue0 = State0#state.late_loader_queue,
+    Tab = Done#loader_done.table_name,
+    State1 = State0#state{loader_pid = lists:keydelete(WPid,1,get_loaders(State0))},
+
+    State2 =
 	case Done#loader_done.is_loaded of
 	    true ->
-		Tab = Done#loader_done.table_name,
 		%% Optional table announcement
 		if 
 		    Done#loader_done.needs_announce == true,
@@ -1143,8 +1145,10 @@ handle_info(Done, State) when record(Done, loader_done) ->
 		    true -> user_sync_tab(Tab);
 		    false -> ignore
 		end,
-		{Rest, reply_late_load(Tab, LateQueue0)};
+		State1#state{late_loader_queue=gb_trees:delete_any(Tab, LateQueue0)};
 	    false ->
+		%% Either the node went down or table was not
+		%% loaded remotly yet 
 		case Done#loader_done.needs_reply of
 		    true ->
 			reply(Done#loader_done.reply_to,
@@ -1152,13 +1156,14 @@ handle_info(Done, State) when record(Done, loader_done) ->
 		    false ->
 			ignore
 		end,
-		{Rest, LateQueue0}
+		case ?catch_val({Tab, active_replicas}) of
+		    [_|_] -> % still available elsewhere
+			{value,{_,Worker}} = lists:keysearch(WPid,1,get_loaders(State0)),
+			add_loader(Tab,Worker,State1);
+		    _ ->
+			State1
+		end
 	end,
-
-    State2 = State#state{loader_pid = undefined,
-			 loader_queue = LoadQ,
-			 late_loader_queue = LateQueue},
-
     State3 = opt_start_worker(State2),
     noreply(State3);
 
@@ -1201,10 +1206,6 @@ handle_info({'EXIT', Pid, R}, State) when Pid == State#state.dumper_pid ->
 	    {stop, fatal, State}
     end;
 
-handle_info({'EXIT', Pid, R}, State) when Pid == State#state.loader_pid ->
-    fatal("Loader crashed: ~p~n state: ~p~n", [R, State]),
-    {stop, fatal, State};
-
 handle_info(Msg = {'EXIT', Pid, R}, State) when R /= wait_for_tables_timeout ->
     case lists:keymember(Pid, 1, get_senders(State)) of
 	true ->
@@ -1213,8 +1214,14 @@ handle_info(Msg = {'EXIT', Pid, R}, State) when R /= wait_for_tables_timeout ->
 	    fatal("Sender crashed: ~p~n state: ~p~n", [{Pid,R}, State]),
 	    {stop, fatal, State};
 	false ->
-	    error("~p got unexpected info: ~p~n", [?SERVER_NAME, Msg]),
-	    noreply(State)
+	    case lists:keymember(Pid, 1, get_loaders(State)) of
+		true -> 
+		    fatal("Loader crashed: ~p~n state: ~p~n", [R, State]),
+		    {stop, fatal, State};
+		false ->
+		    error("~p got unexpected info: ~p~n", [?SERVER_NAME, Msg]),
+		    noreply(State)
+	    end
     end;
 
 handle_info({From, get_state}, State) ->
@@ -1235,14 +1242,6 @@ handle_info(Msg, State) ->
     error("~p got unexpected info: ~p~n", [?SERVER_NAME, Msg]),
     noreply(State).
 
-reply_late_load(Tab, [H | T]) when H#late_load.table == Tab ->
-    reply(H#late_load.opt_reply_to, ok),
-    reply_late_load(Tab, T);
-reply_late_load(Tab, [H | T])  ->
-    [H | reply_late_load(Tab, T)];
-reply_late_load(_Tab, []) ->
-    [].
-
 sync_tab_timeout(Pid, [{{sync_tab, Tab}, Pids} | Tail]) ->
     case lists:delete(Pid, Pids) of
 	[] ->
@@ -1259,26 +1258,32 @@ sync_tab_timeout(_Pid, []) ->
 %% Pick the load record that has the highest load order
 %% Returns {BestLoad, RemainingQueue} or {none, []} if queue is empty
 pick_next(Queue) ->
-    pick_next(Queue, none, none, []).
+    List = gb_trees:values(Queue),
+    case pick_next(List, none, none) of
+	none -> {none, gb_trees:empty()};
+	{Tab, Worker} -> {Worker, gb_trees:delete(Tab,Queue)}
+    end.
 
-pick_next([Head | Tail], Load, Order, Rest) when record(Head, net_load) ->
+pick_next([Head | Tail], Load, Order) when record(Head, net_load) ->
     Tab = Head#net_load.table,
-    select_best(Head, Tail, ?catch_val({Tab, load_order}), Load, Order, Rest);
-pick_next([Head | Tail], Load, Order, Rest) when record(Head, disc_load) ->
+    select_best(Head, Tail, ?catch_val({Tab, load_order}), Load, Order);
+pick_next([Head | Tail], Load, Order) when record(Head, disc_load) ->
     Tab = Head#disc_load.table,
-    select_best(Head, Tail, ?catch_val({Tab, load_order}), Load, Order, Rest);
-pick_next([], Load, _Order, Rest) ->
-    {Load, Rest}.
+    select_best(Head, Tail, ?catch_val({Tab, load_order}), Load, Order);
+pick_next([], none, _Order) ->
+    none;
+pick_next([], Load, _Order) ->
+    {element(2,Load), Load}.
 
-select_best(_Head, Tail, {'EXIT', _WHAT}, Load, Order, Rest) ->
+select_best(_Head, Tail, {'EXIT', _WHAT}, Load, Order) ->
     %% Table have been deleted drop it.
-    pick_next(Tail, Load, Order, Rest);
-select_best(Load, Tail, Order, none, none, Rest) ->
-    pick_next(Tail, Load, Order, Rest);
-select_best(Load, Tail, Order, OldLoad, OldOrder, Rest) when Order > OldOrder ->
-    pick_next(Tail, Load, Order, [OldLoad | Rest]);
-select_best(Load, Tail, _Order, OldLoad, OldOrder, Rest) ->
-    pick_next(Tail, OldLoad, OldOrder, [Load | Rest]).
+    pick_next(Tail, Load, Order);
+select_best(Load, Tail, Order, none, none) ->
+    pick_next(Tail, Load, Order);
+select_best(Load, Tail, Order, _OldLoad, OldOrder) when Order > OldOrder ->
+    pick_next(Tail, Load, Order);
+select_best(_Load, Tail, _Order, OldLoad, OldOrder) ->
+    pick_next(Tail, OldLoad, OldOrder).
 
 %%----------------------------------------------------------------------
 %% Func: terminate/2
@@ -1293,9 +1298,29 @@ terminate(Reason, State) ->
 %% Purpose: Upgrade process when its code is to be changed
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change(_OldVsn, State, _Extra) ->
+code_change(_OldVsn, State0, _Extra) ->
+    %% Loader Queue
+    State1 = case State0#state.loader_pid of
+		 Pids when is_list(Pids) -> State0;
+		 undefined -> State0#state{loader_pid = [],loader_queue=gb_trees:empty()};
+		 Pid when is_pid(Pid) -> 
+		     [Loader|Rest] = State0#state.loader_queue,
+		     LQ0 = [{element(2,Rec),Rec} || Rec <- Rest],
+		     LQ1 = lists:sort(LQ0),
+		     LQ  = gb_trees:from_orddict(LQ1),
+		     State0#state{loader_pid=[{Pid,Loader}], loader_queue=LQ}
+	     end,
+    %% LateLoaderQueue
+    State = if is_list(State1#state.late_loader_queue) -> 
+		    LLQ0 = State1#state.late_loader_queue,
+		    LLQ1 = lists:sort([{element(2,Rec),Rec} || Rec <- LLQ0]),
+		    LLQ  = gb_trees:from_orddict(LLQ1),
+		    State1#state{late_loader_queue=LLQ};
+	       true ->
+		    State1
+	    end,
     {ok, State}.
-
+ 
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
@@ -1387,15 +1412,11 @@ orphan_tables([], _, _, LocalOrphans, RemoteMasters) ->
 node_has_tabs([Tab | Tabs], Node, State) when Node /= node() ->
     State2 = 
 	case catch update_whereabouts(Tab, Node, State) of
-	    State1 = #state{} ->
-		State1;
-	    {'EXIT', R} -> 
-		%% Tab was just deleted?
+	    State1 = #state{} -> State1;
+	    {'EXIT', R} ->  %% Tab was just deleted?
 		case ?catch_val({Tab, cstruct}) of
-		    {'EXIT', _} -> % yes, it doesn't exist
-			State;     % Just ignore it
-		    _ ->   %% Hmm it exists, thats bad
-			erlang:fault(R) %% Lets die
+		    {'EXIT', _} -> State; % yes
+		    _ ->  erlang:fault(R) 
 		end
 	end,
     node_has_tabs(Tabs, Node, State2);
@@ -1584,22 +1605,23 @@ remove_early_messages([M|R],Node) ->
     [M|remove_early_messages(R,Node)].
 
 %% Drop loader from late load queue and possibly trigger a disc_load
-drop_loaders(Tab, Node, [H | T]) when H#late_load.table == Tab ->
-    %% Check if it is time to issue a disc_load request
-    case H#late_load.loaders of
-	[Node] ->
-	    Reason = {H#late_load.reason, last_loader_down, Node},
-	    cast({disc_load, Tab, Reason});  % Ugly cast
-	_ ->
-	    ignore
-    end,
-    %% Drop the node from the list of loaders
-    H2 = H#late_load{loaders = H#late_load.loaders -- [Node]},
-    [H2 | drop_loaders(Tab, Node, T)];
-drop_loaders(Tab, Node, [H | T]) ->
-    [H | drop_loaders(Tab, Node, T)];
-drop_loaders(_, _, []) ->
-    [].
+drop_loaders(Tab, Node, LLQ) ->
+    case gb_trees:lookup(Tab,LLQ) of
+	none ->
+	    LLQ;
+	{value, H} ->
+	    %% Check if it is time to issue a disc_load request
+	    case H#late_load.loaders of
+		[Node] ->
+		    Reason = {H#late_load.reason, last_loader_down, Node},
+		    cast({disc_load, Tab, Reason});  % Ugly cast
+		_ ->
+		    ignore
+	    end,
+	    %% Drop the node from the list of loaders
+	    H2 = H#late_load{loaders = H#late_load.loaders -- [Node]},
+	    gb_trees:update(Tab, H2, LLQ)
+    end.
 
 add_active_replica(Tab, Node) ->
     add_active_replica(Tab, Node, val({Tab, cstruct})).
@@ -1640,7 +1662,7 @@ add_active_replica(Tab, Node, Storage, AccessMode) ->
 	read_write ->
 	    New = lists:sort([{Node, Storage} | Del]),
 	    set(Var, mark_blocked_tab(Blocked, New)), % where_to_commit
-	    add({Tab, where_to_write}, Node);
+	    mnesia_lib:add_lsort({Tab, where_to_write}, Node);
 	read_only ->
 	    set(Var, mark_blocked_tab(Blocked, Del)),
 	    mnesia_lib:del({Tab, where_to_write}, Node)
@@ -1657,9 +1679,13 @@ del_active_replica(Tab, Node) ->
     mnesia_lib:del({Tab, where_to_write}, Node).
 
 change_table_access_mode(Cs) ->
-    Tab = Cs#cstruct.name,
-    lists:foreach(fun(N) -> add_active_replica(Tab, N, Cs) end,
-		  val({Tab, active_replicas})).
+    W = fun() -> 
+		Tab = Cs#cstruct.name,
+		lists:foreach(fun(N) -> add_active_replica(Tab, N, Cs) end,
+			      val({Tab, active_replicas}))
+	end,
+    update(W).
+	    
 
 %% node To now has tab loaded, but this must be undone
 %% This code is rpc:call'ed from the tab_copier process
@@ -1727,8 +1753,9 @@ get_info(Timeout) ->
 	Pid ->
 	    Pid ! {self(), get_state},
 	    receive
-		{?SERVER_NAME, State} when record(State, state) ->
-		    {info,State}
+		{?SERVER_NAME, State = #state{loader_queue=LQ,late_loader_queue=LLQ}} ->
+		    {info,State#state{loader_queue=gb_trees:to_list(LQ),
+				      late_loader_queue=gb_trees:to_list(LLQ)}}
 	    after Timeout ->
 		    {timeout, Timeout}
 	    end
@@ -1742,7 +1769,7 @@ get_workers(Timeout) ->
 	    Pid ! {self(), get_state},
 	    receive
 		{?SERVER_NAME, State} when record(State, state) ->
-		    {workers, State#state.loader_pid, get_senders(State), State#state.dumper_pid}
+		    {workers, get_loaders(State), get_senders(State), State#state.dumper_pid}
 	    after Timeout ->
 		    {timeout, Timeout}
 	    end
@@ -1839,23 +1866,27 @@ add_worker(Worker, State) when record(Worker, schema_commit_lock) ->
     State2 = State#state{dumper_queue = Queue2},
     opt_start_worker(State2);
 add_worker(Worker, State) when record(Worker, net_load) ->
-    Queue = State#state.loader_queue,
-    State2 = State#state{loader_queue = Queue ++ [Worker]},
-    opt_start_worker(State2);
+    opt_start_worker(add_loader(Worker#net_load.table,Worker,State));
 add_worker(Worker, State) when record(Worker, send_table) ->
     Queue = State#state.sender_queue,
     State2 = State#state{sender_queue = Queue ++ [Worker]},
     opt_start_worker(State2);
 add_worker(Worker, State) when record(Worker, disc_load) ->
-    Queue = State#state.loader_queue,
-    State2 = State#state{loader_queue = Queue ++ [Worker]},
-    opt_start_worker(State2);
+    opt_start_worker(add_loader(Worker#disc_load.table,Worker,State));
 % Block controller should be used for upgrading mnesia.
 add_worker(Worker, State) when record(Worker, block_controller) -> 
     Queue = State#state.dumper_queue,
     Queue2 = [Worker | Queue],
     State2 = State#state{dumper_queue = Queue2},
     opt_start_worker(State2).
+
+add_loader(Tab,Worker,State = #state{loader_queue=LQ0}) ->
+    case gb_trees:is_defined(Tab, LQ0) of
+	true -> State;
+	false -> 
+	    LQ=gb_trees:insert(Tab, Worker, LQ0),
+	    State#state{loader_queue=LQ}
+    end.
 
 %% Optionally start a worker
 %% 
@@ -1892,8 +1923,8 @@ opt_start_worker(State) ->
 		    opt_start_loader(State3);
 		
 		record(Worker, block_controller) ->
-		    case {get_senders(State), State#state.loader_pid} of
-			{[], undefined} ->
+		    case {get_senders(State), get_loaders(State)} of
+			{[], []} ->
 			    ReplyTo = Worker#block_controller.owner,
 			    reply(ReplyTo, granted),
 			    {Owner, _Tag} = ReplyTo,
@@ -1910,12 +1941,10 @@ opt_start_worker(State) ->
 
 opt_start_sender(State) ->
     case State#state.sender_queue of
-	[]->
-	    %% No need
-	    State;
+	[]->   State; 	    %% No need
 	SenderQ -> 
 	    {NewS,Kept} = opt_start_sender2(SenderQ, get_senders(State), 
-					    [], State#state.loader_queue),
+					    [], get_loaders(State)),
 	    State#state{sender_pid = NewS, sender_queue = Kept}
     end.
 
@@ -1923,57 +1952,65 @@ opt_start_sender2([], Pids,Kept, _) -> {Pids,Kept};
 opt_start_sender2([Sender|R], Pids, Kept, LoaderQ) ->
     Tab = Sender#send_table.table,
     Active = val({Tab, active_replicas}),
-    IgotIt = lists:member(node(), Active),
+    IgotIt = lists:member(node(), Active),    
+    IsLoading = lists:any(fun({_Pid,Loader}) -> 
+				  Tab == element(#net_load.table, Loader)
+			  end, LoaderQ),
     if 
-	(hd(LoaderQ))#net_load.table == Tab ->
-	    %% I'm currently loading the table let him wait
+	IgotIt, IsLoading  ->
+	    %% I'm currently finishing loading the table let him wait
 	    opt_start_sender2(R,Pids, [Sender|Kept], LoaderQ);
 	IgotIt ->
 	    %% Start worker but keep him in the queue
-	    Pid = spawn_link(?MODULE, send_and_reply,
-			     [self(), Sender]),
+	    Pid = spawn_link(?MODULE, send_and_reply,[self(), Sender]),
 	    opt_start_sender2(R,[{Pid,Sender}|Pids],Kept,LoaderQ);
-	length(Active) > 0 ->
-	    %% Someone else has loaded the table redirect him with a fail msg.
-	    Sender#send_table.receiver_pid ! {copier_done, node()},
-	    opt_start_sender2(R,Pids, Kept, LoaderQ);
 	true ->
-	    %% No one else is active and the remote loader has decided 
-	    %% that I should load the table first => Keep him in queue
-	    opt_start_sender2(R,Pids, [Sender|Kept], LoaderQ)
+	    verbose("Send table failed ~p not active on this node ~n", [Tab]),
+	    Sender#send_table.receiver_pid ! {copier_done, node()},
+	    opt_start_sender2(R,Pids, Kept, LoaderQ)
     end.
 
-opt_start_loader(State) ->
-    LoaderQueue = State#state.loader_queue,
-    if
-	LoaderQueue == [] ->
-	    %% No need
+opt_start_loader(State = #state{loader_queue = LoaderQ}) ->
+    Current = get_loaders(State),
+    Max = max_loaders(),
+    case gb_trees:is_empty(LoaderQ) of
+	true -> 
 	    State;
-
-	State#state.loader_pid /= undefined ->
-	    %% Bad luck, an loader is already running
+	_ when length(Current) >= Max -> 
 	    State;
-	
-	true ->
+	false -> 
 	    SchemaQueue = State#state.dumper_queue,
-	    case lists:keymember(schema_commit, 1, SchemaQueue) of
+	    case lists:keymember(schema_commit_lock, 1, SchemaQueue) of
 		false ->
-		    case pick_next(LoaderQueue) of
-			{none, []} ->
-			    State#state{loader_queue = []};
-
-			{Worker, Rest} ->
-			    %% Start worker but keep him in the queue
-			    Pid = spawn_link(?MODULE, load_and_reply, 
-					     [self(), Worker]),
-			    State#state{loader_pid = Pid,
-					loader_queue = [Worker | Rest]}
+		    case pick_next(LoaderQ) of
+			{none,Rest} ->
+			    State#state{loader_queue=Rest};
+			{Worker,Rest} ->
+			    case already_loading(Worker, get_loaders(State)) of
+				true ->
+				    opt_start_loader(State#state{loader_queue = Rest});
+				false ->
+				    %% Start worker but keep him in the queue
+				    Pid = load_and_reply(self(), Worker),
+				    State#state{loader_pid=[{Pid,Worker}|get_loaders(State)],
+						loader_queue = Rest}
+			    end
 		    end;
 		true ->
 		    %% Bad luck, we must wait for the schema commit
 		    State
 	    end
     end.
+
+already_loading(#net_load{table=Tab},Loaders) ->
+    already_loading2(Tab,Loaders);
+already_loading(#disc_load{table=Tab},Loaders) ->
+    already_loading2(Tab,Loaders).
+
+already_loading2(Tab, [{_,#net_load{table=Tab}}|_]) -> true;
+already_loading2(Tab, [{_,#disc_load{table=Tab}}|_]) -> true;
+already_loading2(Tab, [_|Rest]) -> already_loading2(Tab,Rest);     
+already_loading2(_,[]) -> false.
 
 start_remote_sender(Node, Tab, Receiver, Storage) ->
     Msg = #send_table{table = Tab,
@@ -1999,17 +2036,21 @@ send_and_reply(ReplyTo, Worker) ->
     unlink(ReplyTo),
     exit(normal).
 
-
 load_and_reply(ReplyTo, Worker) ->
-    process_flag(trap_exit, true),
-    Done = load_table(Worker),
-    ReplyTo ! Done#loader_done{worker_pid = self()},
-    unlink(ReplyTo),
-    exit(normal).
+    Load = load_table_fun(Worker),
+    SendAndReply = 
+	fun() -> 
+		process_flag(trap_exit, true),
+		Done = Load(),
+		ReplyTo ! Done#loader_done{worker_pid = self()},
+		unlink(ReplyTo),
+		exit(normal)
+	end,
+    spawn_link(SendAndReply).
 
 %% Now it is time to load the table
 %% but first we must check if it still is neccessary
-load_table(Load) when record(Load, net_load) ->
+load_table_fun(Load) when record(Load, net_load) ->
     Tab = Load#net_load.table,
     ReplyTo = Load#net_load.opt_reply_to,
     Reason =  Load#net_load.reason,
@@ -2028,29 +2069,32 @@ load_table(Load) when record(Load, net_load) ->
     if
 	ReadNode == node() ->
 	    %% Already loaded locally
-	    Done;
+	    fun() -> Done end;
 	LocalC == true ->
-	    Res = mnesia_loader:disc_load_table(Tab, load_local_content),
-	    Done#loader_done{reply = Res, needs_announce = true, needs_sync = true};
+	    fun() ->
+		    Res = mnesia_loader:disc_load_table(Tab, load_local_content),
+		    Done#loader_done{reply = Res, needs_announce = true, needs_sync = true}
+	    end;
 	AccessMode == read_only, Reason /= {dumper,add_table_copy} ->
-	    disc_load_table(Tab, Reason, ReplyTo);
+	    fun() -> disc_load_table(Tab, Reason, ReplyTo) end;
 	true ->
-	    %% Either we cannot read the table yet
-	    %% or someone is moving a replica between
-	    %% two nodes
-	    Cs =  Load#net_load.cstruct,
-	    Res = mnesia_loader:net_load_table(Tab, Reason, Active, Cs),
-	    case Res of
-		{loaded, ok} ->
-		    Done#loader_done{needs_sync = true,
-				     reply = Res};
-		{not_loaded, _} ->
-		    Done#loader_done{is_loaded = false,
-				     reply = Res}
+	    fun() ->
+		    %% Either we cannot read the table yet
+		    %% or someone is moving a replica between
+		    %% two nodes
+		    Cs =  Load#net_load.cstruct,
+		    Res = mnesia_loader:net_load_table(Tab, Reason, Active, Cs),
+		    case Res of
+			{loaded, ok} ->
+			    Done#loader_done{needs_sync = true,
+					     reply = Res};
+			{not_loaded, _} ->
+			    Done#loader_done{is_loaded = false,
+					     reply = Res}
+		    end
 	    end
     end;
-
-load_table(Load) when record(Load, disc_load) ->
+load_table_fun(Load) when record(Load, disc_load) ->
     Tab = Load#disc_load.table,
     Reason =  Load#disc_load.reason,
     ReplyTo = Load#disc_load.opt_reply_to,
@@ -2065,22 +2109,24 @@ load_table(Load) when record(Load, disc_load) ->
     if
 	Active == [], ReadNode == nowhere ->
 	    %% Not loaded anywhere, lets load it from disc
-	    disc_load_table(Tab, Reason, ReplyTo);
+	    fun() -> disc_load_table(Tab, Reason, ReplyTo) end;
 	ReadNode == nowhere ->
 	    %% Already loaded on other node, lets get it
 	    Cs = val({Tab, cstruct}),
-	    case mnesia_loader:net_load_table(Tab, Reason, Active, Cs) of
-		{loaded, ok} ->
-		    Done#loader_done{needs_sync = true};
-		{not_loaded, storage_unknown} ->
-		    Done#loader_done{is_loaded = false};
-		{not_loaded, ErrReason} ->
-		    Done#loader_done{is_loaded = false,
-				     reply = {not_loaded,ErrReason}}
+	    fun() -> 
+		    case mnesia_loader:net_load_table(Tab, Reason, Active, Cs) of
+			{loaded, ok} ->
+			    Done#loader_done{needs_sync = true};
+			{not_loaded, storage_unknown} ->
+			    Done#loader_done{is_loaded = false};
+			{not_loaded, ErrReason} ->
+			    Done#loader_done{is_loaded = false,
+					     reply = {not_loaded,ErrReason}}
+		    end
 	    end;
 	true ->
 	    %% Already readable, do not worry be happy
-	    Done
+	    fun() -> Done end
     end.
 
 disc_load_table(Tab, Reason, ReplyTo) ->
@@ -2107,7 +2153,7 @@ disc_load_table(Tab, Reason, ReplyTo) ->
 
 filter_active(Tab) ->
     ByForce = val({Tab, load_by_force}),
-    Active = val({Tab, active_replicas}),
+    Active  = val({Tab, active_replicas}),
     Masters = mnesia_recover:get_master_nodes(Tab),
     Ns = do_filter_active(ByForce, Active, Masters),
     %% Reorder the so that we load from fastest first 

@@ -30,6 +30,7 @@
 -include_lib("orber/include/ifr_types.hrl").
 %% cosEvent files.
 -include_lib("cosEvent/include/CosEventChannelAdmin.hrl").
+-include_lib("cosEvent/include/CosEventComm.hrl").
 %% Application files
 -include("CosNotification.hrl").
 -include("CosNotifyChannelAdmin.hrl").
@@ -120,7 +121,11 @@
 		subscribeType = false,
 		subscribeData = true,
 		etsR,
-		eventDB}).
+		eventDB,
+		this,
+		maxCache,
+		cacheTimeout,
+		cacheInterval}).
 
 %% Data structures constructors
 -define(get_InitState(_MyT, _MyA, _MyAP, _QS, _LQS, _Ch, _MyOp, _GT, _GL, _TR), 
@@ -132,7 +137,8 @@
 	       myChannel = _Ch,
 	       myOperator=_MyOp,
 	       etsR      = ets:new(oe_ets, [set, protected]),
-	       eventDB   = cosNotification_eventDB:create_db(_LQS, _GT, _GL, _TR)}).
+	       eventDB   = cosNotification_eventDB:create_db(_LQS, _GT, _GL, _TR),
+	       maxCache = cosNotificationApp:max_events()}).
 
 %% Data structures selectors
 %%-------------- Data structures selectors -----------------
@@ -167,8 +173,16 @@
 -define(get_IdCounter(S),        S#state.idCounter).
 -define(get_SubscribeDB(S),      S#state.etsR).
 %% Event
--define(get_Event(S),            cosNotification_eventDB:get_event(S#state.eventDB)).
--define(get_Events(S,M),         cosNotification_eventDB:get_events(S#state.eventDB, M)).
+-define(is_PersistentConnection(S),
+	(?not_GetConnectionReliability((S#state.qosLocal)) == ?not_Persistent)).
+-define(is_PersistentEvent(S),
+	(?not_GetEventReliability((S#state.qosLocal)) == ?not_Persistent)).
+
+-define(get_Event(S),            cosNotification_eventDB:get_event(S#state.eventDB, 
+								   false)).
+%								   (not ?is_PersistentEvent(S)))).
+-define(get_Events(S,M),         cosNotification_eventDB:get_events(S#state.eventDB, M, false)).
+%								    (not ?is_PersistentEvent(S)))).
 
 %%-------------- Data structures modifiers -----------------
 %% Attributes
@@ -205,7 +219,9 @@
 -define(add_Event(S,E),          catch cosNotification_eventDB:
 	add_event(S#state.eventDB, E, S#state.lifetFil, S#state.prioFil)).
 -define(addAndGet_Event(S,E),    catch cosNotification_eventDB:
-	add_and_get_event(S#state.eventDB, E, S#state.lifetFil, S#state.prioFil)).
+	add_and_get_event(S#state.eventDB, E, S#state.lifetFil, S#state.prioFil,
+			  false)).
+%			  ?is_PersistentEvent(S))).
 -define(update_EventDB(S,Q),     S#state{eventDB=
 					 cosNotification_eventDB:update(S#state.eventDB, Q)}).
 
@@ -223,10 +239,6 @@
 								{batchLimit, 
 								 ?not_GetMaximumBatchSize((S#state.qosLocal))})).
 -define(has_Filters(S),          S#state.myFilters =/= []).
--define(is_PersistentConnection(S),
-	?not_GetConnectionReliability((S#state.qosLocal)) == ?not_Persistent).
--define(is_PersistentEvent(S),
-	?not_GetEventReliability((S#state.qosLocal)) == ?not_Persistent).
 
 %%----------------------------------------------------------%
 %% function : handle_info, code_change
@@ -238,7 +250,8 @@
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-handle_info(Info, State) ->
+handle_info(Info, #state{cacheTimeout = Timeout, 
+			 cacheInterval = Interval} = State) ->
     ?DBG("INFO: ~p~n", [Info]),
     case Info of
         {'EXIT', Pid, Reason} when ?get_MyAdminPid(State)==Pid ->
@@ -249,6 +262,17 @@ handle_info(Info, State) ->
             {noreply, State};
         pacing ->
 	    lookup_and_push(State, true);
+        cacheInterval ->
+	    lookup_and_push(State, true);
+	cacheTimeout when Timeout == undefined, Interval == undefined ->
+	    %% Late message, do not terminate
+	    {noreply, State};
+	cacheTimeout ->
+	    'CosNotification_Common':notify([{proxy, State#state.this},
+					     {client, State#state.client}, 
+					     {reason, 
+					      {timer, "Reached upper limit"}}]),
+	    {stop, normal, State};
         _ ->
             {noreply, State}
     end.
@@ -271,21 +295,29 @@ init([MyType, MyAdmin, MyAdminPid, InitQoS, LQS, MyChannel, Options, Operator]) 
 			InitQoS, LQS, MyChannel, Operator, GCTime, GCLimit, TimeRef)}.
 
 terminate(_Reason, State) when ?is_UnConnected(State) ->
-    stop_timer(State),
+    stop_timer(State#state.cacheTimeout),
+    stop_timer(State#state.cacheInterval),
+    stop_timer(State#state.pacingTimer),
     %% We are not connected to a Client. Hence, no need to invoke disconnect.
     ok;
 terminate(_Reason, State) when ?is_ANY(State) ->
-    stop_timer(State),
+    stop_timer(State#state.cacheTimeout),
+    stop_timer(State#state.cacheInterval),
+    stop_timer(State#state.pacingTimer),
     'CosNotification_Common':disconnect('CosEventComm_PushConsumer', 
 					disconnect_push_consumer, 
 					?get_Client(State));
 terminate(_Reason, State) when ?is_SEQUENCE(State) ->
-    stop_timer(State),
+    stop_timer(State#state.cacheTimeout),
+    stop_timer(State#state.cacheInterval),
+    stop_timer(State#state.pacingTimer),
     'CosNotification_Common':disconnect('CosNotifyComm_SequencePushConsumer',
 					disconnect_sequence_push_consumer,
 					?get_Client(State));
 terminate(_Reason, State) when ?is_STRUCTURED(State) ->
-    stop_timer(State),
+    stop_timer(State#state.cacheTimeout),
+    stop_timer(State#state.cacheInterval),
+    stop_timer(State#state.pacingTimer),
     'CosNotification_Common':disconnect('CosNotifyComm_StructuredPushConsumer', 
 					disconnect_structured_push_consumer, 
 					?get_Client(State)).
@@ -351,13 +383,13 @@ connect_push_consumer(OE_THIS, OE_FROM, State, Client) ->
 %%            {'EXCEPTION', #'TypeError'{}}
 %%            Both exceptions from CosEventChannelAdmin!!!!
 %%-----------------------------------------------------------
-connect_any_push_consumer(_OE_THIS, _OE_FROM, State, Client) when ?is_ANY(State) ->
+connect_any_push_consumer(OE_THIS, _OE_FROM, State, Client) when ?is_ANY(State) ->
     'CosNotification_Common':type_check(Client, 'CosEventComm_PushConsumer'),
     if
 	?is_Connected(State) ->
 	    corba:raise(#'CosEventChannelAdmin_AlreadyConnected'{});
 	true ->
-	    {reply, ok, ?set_Client(State, Client)}
+	    {reply, ok, State#state{client = Client, this = OE_THIS}}
     end;
 connect_any_push_consumer(_, _, _, _) ->
     corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
@@ -369,7 +401,7 @@ connect_any_push_consumer(_, _, _, _) ->
 %% Returns  :  ok | {'EXCEPTION', #'AlreadyConnected'{}} |
 %%            {'EXCEPTION', #'TypeError'{}}
 %%-----------------------------------------------------------
-connect_sequence_push_consumer(_OE_THIS, _OE_FROM, State, Client) when ?is_SEQUENCE(State) ->
+connect_sequence_push_consumer(OE_THIS, _OE_FROM, State, Client) when ?is_SEQUENCE(State) ->
     'CosNotification_Common':type_check(Client, 
 					'CosNotifyComm_SequencePushConsumer'),
     if
@@ -377,7 +409,7 @@ connect_sequence_push_consumer(_OE_THIS, _OE_FROM, State, Client) when ?is_SEQUE
 	    corba:raise(#'CosEventChannelAdmin_AlreadyConnected'{});
 	true ->
 	    NewState = start_timer(State),
-	    {reply, ok, ?set_Client(NewState, Client)}
+	    {reply, ok, NewState#state{client = Client, this = OE_THIS}}
     end;
 connect_sequence_push_consumer(_, _, _, _) ->
     corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
@@ -389,14 +421,14 @@ connect_sequence_push_consumer(_, _, _, _) ->
 %% Returns  :  ok | {'EXCEPTION', #'AlreadyConnected'{}} |
 %%            {'EXCEPTION', #'TypeError'{}}
 %%-----------------------------------------------------------
-connect_structured_push_consumer(_OE_THIS, _OE_FROM, State, Client) when ?is_STRUCTURED(State) ->
+connect_structured_push_consumer(OE_THIS, _OE_FROM, State, Client) when ?is_STRUCTURED(State) ->
     'CosNotification_Common':type_check(Client, 
 					'CosNotifyComm_StructuredPushConsumer'),
     if
 	?is_Connected(State) ->
 	    corba:raise(#'CosEventChannelAdmin_AlreadyConnected'{});
 	true ->
-	    {reply, ok, ?set_Client(State, Client)}
+	    {reply, ok, State#state{client = Client, this = OE_THIS}}
     end;
 connect_structured_push_consumer(_, _, _, _) ->
     corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
@@ -413,8 +445,9 @@ suspend_connection(_OE_THIS, _OE_FROM, State) when ?is_Connected(State) ->
 	?is_Suspended(State) ->
 	    corba:raise(#'CosNotifyChannelAdmin_ConnectionAlreadyInactive'{});
 	true ->
-	    NewState = stop_timer(State),
-	    {reply, ok, ?set_Suspended(NewState)}
+	    stop_timer(State#state.pacingTimer),
+	    {reply, ok, State#state{pacingTimer = undefined,
+				    suspended=true}}
     end;
 suspend_connection(_,_,_)->
       corba:raise(#'CosNotifyChannelAdmin_NotConnected'{}).
@@ -743,20 +776,32 @@ lookup_and_push(State, false) when ?is_SEQUENCE(State) ->
     case ?is_BatchLimitReached(State) of
 	true ->
 	    case ?get_Events(State, ?get_BatchLimit(State)) of
-		{[], _} ->
+		{[], _, _} ->
 		    ?DBG("BATCHLIMIT (~p) REACHED BUT NO EVENTS FOUND~n",
 				 [?get_BatchLimit(State)]),
 		    {noreply, State};
-		{Events, _} ->
+		{Events, _, Keys} ->
 		    ?DBG("BATCHLIMIT (~p) REACHED, EVENTS FOUND: ~p~n",
 				 [?get_BatchLimit(State), Events]),
 		    case catch 'CosNotifyComm_SequencePushConsumer':
 			push_structured_events(?get_Client(State), Events) of
 			ok ->
-			    lookup_and_push(State);
-			{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
+			    cosNotification_eventDB:delete_events(Keys),
+			    lookup_and_push(reset_cache(State), false);
+			{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ;
+					      record(E, 'NO_PERMISSION') ;
+					      record(E, 'CosEventComm_Disconnected') ->
 			    ?DBG("PUSH SUPPLIER CLIENT NO LONGER EXIST~n", []),
+			    'CosNotification_Common':notify([{proxy, State#state.this},
+							     {client, ?get_Client(State)}, 
+							     {reason, {'EXCEPTION', E}}]),
 			    {stop, normal, State};
+			What when ?is_PersistentEvent(State),
+				  ?is_PersistentConnection(State) ->
+			    orber:dbg("[~p] PusherSupplier:lookup_and_push();~n"
+				      "Client respond incorrect: ~p", 
+				      [?LINE, What], ?DEBUG_LEVEL),
+			    check_cache(State);
 			What when ?is_PersistentConnection(State) ->
 			    %% Here we should do something when we want to handle
 			    %% Persistent EventReliability.
@@ -764,12 +809,16 @@ lookup_and_push(State, false) when ?is_SEQUENCE(State) ->
 				      "Client respond incorrect: ~p~n"
 				      "Dropping events: ~p", 
 				      [?LINE, What, Events], ?DEBUG_LEVEL),
+			    cosNotification_eventDB:delete_events(Keys),
 			    {noreply, State};
 			WhatII ->
 			    orber:dbg("[~p] PusherSupplier:lookup_and_push();~n"
 				      "Client respond incorrect: ~p~n"
 				      "Terminating and dropping events: ~p",
 				      [?LINE, WhatII, Events], ?DEBUG_LEVEL),
+			    'CosNotification_Common':notify([{proxy, State#state.this},
+							     {client, ?get_Client(State)}, 
+							     {reason, WhatII}]),
 			    {stop, normal, State}
 		    end
 	    end;
@@ -779,20 +828,32 @@ lookup_and_push(State, false) when ?is_SEQUENCE(State) ->
     end;
 lookup_and_push(State, true) when ?is_SEQUENCE(State) ->
     case ?get_Events(State, ?get_BatchLimit(State)) of
-	{[], _} ->
+	{[], _, _} ->
 	    ?DBG("PACELIMIT REACHED BUT NO EVENTS FOUND~n", []),
 	    {noreply, State};
-	{Events, _} ->
+	{Events, _, Keys} ->
 	    ?DBG("PACELIMIT REACHED, EVENTS FOUND: ~p~n", [Events]),
 	    case catch 'CosNotifyComm_SequencePushConsumer':
 		push_structured_events(?get_Client(State), Events) of
 		ok ->
-		    lookup_and_push(State, false);
-		{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
+		    cosNotification_eventDB:delete_events(Keys),
+		    lookup_and_push(reset_cache(State), false);
+		{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ;
+				      record(E, 'NO_PERMISSION') ;
+				      record(E, 'CosEventComm_Disconnected') ->
 		    orber:dbg("[~p] PusherSupplier:lookup_and_push();~n"
 			      "Client no longer exists; terminating and dropping events: ~p", 
 			      [?LINE, Events], ?DEBUG_LEVEL),
+		    'CosNotification_Common':notify([{proxy, State#state.this},
+						     {client, ?get_Client(State)}, 
+						     {reason, {'EXCEPTION', E}}]),
 		    {stop, normal, State};
+		What when ?is_PersistentEvent(State),
+			  ?is_PersistentConnection(State) ->
+		    orber:dbg("[~p] PusherSupplier:lookup_and_push();~n"
+			      "Client respond incorrect: ~p", 
+			      [?LINE, What], ?DEBUG_LEVEL),
+		    check_cache(State);
 		What when ?is_PersistentConnection(State) ->
 		    %% Here we should do something when we want to handle
 		    %% Persistent EventReliability.
@@ -800,12 +861,16 @@ lookup_and_push(State, true) when ?is_SEQUENCE(State) ->
 			      "Client respond incorrect: ~p~n"
 			      "Dropping events: ~p", 
 			      [?LINE, What, Events], ?DEBUG_LEVEL),
+		    cosNotification_eventDB:delete_events(Keys),
 		    {noreply, State};
 		WhatII ->
 		    orber:dbg("[~p] PusherSupplier:lookup_and_push();~n"
 			      "Client respond incorrect: ~p~n"
 			      "Terminating and dropping events: ~p", 
 			      [?LINE, WhatII, Events], ?DEBUG_LEVEL),
+		    'CosNotification_Common':notify([{proxy, State#state.this},
+						     {client, ?get_Client(State)}, 
+						     {reason, WhatII}]),
 		    {stop, normal, State}
 	    end
     end;
@@ -814,18 +879,31 @@ lookup_and_push(State, _) ->
 
 
 %% Push all events stored while not connected or received in sequence.
-empty_db(State, {[], _}) ->
+empty_db(State, {[], _, _}) ->
     {noreply, State};
-empty_db(State, {Event, _}) when ?is_STRUCTURED(State) ->
+empty_db(State, {Event, _, Keys}) when ?is_STRUCTURED(State) ->
     case catch 'CosNotifyComm_StructuredPushConsumer':
 	push_structured_event(?get_Client(State), Event) of
 	ok ->
-	    empty_db(State, ?get_Event(State));
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
+	    cosNotification_eventDB:delete_events(Keys),
+	    NewState = reset_cache(State),
+	    empty_db(NewState, ?get_Event(NewState));
+	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ;
+			      record(E, 'NO_PERMISSION') ;
+			      record(E, 'CosEventComm_Disconnected') ->
 	    orber:dbg("[~p] PusherSupplier:empty_db();~n"
 		      "Client no longer exists; terminating and dropping: ~p", 
 		      [?LINE, Event], ?DEBUG_LEVEL),
+	    'CosNotification_Common':notify([{proxy, State#state.this},
+					     {client, ?get_Client(State)}, 
+					     {reason, {'EXCEPTION', E}}]),
 	    {stop, normal, State};
+	What when ?is_PersistentEvent(State),
+		  ?is_PersistentConnection(State) ->
+	    orber:dbg("[~p] PusherSupplier:lookup_and_push();~n"
+		      "Client respond incorrect: ~p", 
+		      [?LINE, What], ?DEBUG_LEVEL),
+	    check_cache(State);
 	What when ?is_PersistentConnection(State) ->
 	    %% Here we should do something when we want to handle
 	    %% Persistent EventReliability.
@@ -833,23 +911,40 @@ empty_db(State, {Event, _}) when ?is_STRUCTURED(State) ->
 		      "Client respond incorrect: ~p~n"
 		      "Dropping event: ~p", 
 		      [?LINE, What, Event], ?DEBUG_LEVEL),
+	    cosNotification_eventDB:delete_events(Keys),
 	    {noreply, State};
 	WhatII ->
 	    orber:dbg("[~p] PusherSupplier:empty_db();~n"
 		      "Client respond incorrect: ~p~n"
 		      "Terminating and dropping: ~p", 
 		      [?LINE, WhatII, Event], ?DEBUG_LEVEL),
+	    'CosNotification_Common':notify([{proxy, State#state.this},
+					     {client, ?get_Client(State)}, 
+					     {reason, WhatII}]),
 	    {stop, normal, State}
     end;
-empty_db(State, {Event, _}) when ?is_ANY(State) ->
+empty_db(State, {Event, _, Keys}) when ?is_ANY(State) ->
     case catch 'CosEventComm_PushConsumer':push(?get_Client(State), Event) of
 	ok ->
-	    empty_db(State, ?get_Event(State));
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
+	    cosNotification_eventDB:delete_events(Keys),
+	    NewState = reset_cache(State),
+	    empty_db(NewState, ?get_Event(NewState));
+	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ;
+			      record(E, 'NO_PERMISSION') ;
+			      record(E, 'CosEventComm_Disconnected') ->
 	    orber:dbg("[~p] PusherSupplier:empty_db();~n"
 		      "Client no longer exists; terminating and dropping: ~p", 
 		      [?LINE, Event], ?DEBUG_LEVEL),
+	    'CosNotification_Common':notify([{proxy, State#state.this},
+					     {client, ?get_Client(State)}, 
+					     {reason, {'EXCEPTION', E}}]),
 	    {stop, normal, State};
+	What when ?is_PersistentEvent(State),
+		  ?is_PersistentConnection(State) ->
+	    orber:dbg("[~p] PusherSupplier:lookup_and_push();~n"
+		      "Client respond incorrect: ~p", 
+		      [?LINE, What], ?DEBUG_LEVEL),
+	    check_cache(State);
 	What when ?is_PersistentConnection(State) ->
 	    %% Here we should do something when we want to handle
 	    %% Persistent EventReliability.
@@ -857,13 +952,57 @@ empty_db(State, {Event, _}) when ?is_ANY(State) ->
 		      "Client respond incorrect: ~p~n"
 		      "Dropping Event: ~p", 
 		      [?LINE, What, Event], ?DEBUG_LEVEL),
+	    cosNotification_eventDB:delete_events(Keys),
 	    {noreply, State};
 	WhatII ->
 	    orber:dbg("[~p] PusherSupplier:empty_db();~n"
 		      "Client respond incorrect: ~p~n"
 		      "Terminating and dropping: ~p", 
 		      [?LINE, WhatII, Event], ?DEBUG_LEVEL),
+	    'CosNotification_Common':notify([{proxy, State#state.this},
+					     {client, ?get_Client(State)}, 
+					     {reason, WhatII}]),
 	    {stop, normal, State}
+    end.
+
+reset_cache(#state{cacheTimeout = undefined, 
+		   cacheInterval = undefined} = State) ->
+    State;
+reset_cache(State) ->
+    stop_timer(State#state.cacheTimeout),
+    stop_timer(State#state.cacheInterval),
+    State#state{cacheTimeout = undefined, 
+		cacheInterval = undefined}.
+
+check_cache(#state{maxCache = Max, cacheTimeout = Timeout, 
+		   cacheInterval = Interval} = State) ->
+    case cosNotification_eventDB:status(State#state.eventDB, eventCounter) of
+	Count when Count > Max ->
+	    %% Reached the upper limit, terminate.
+	    'CosNotification_Common':notify([{proxy, State#state.this},
+					     {client, State#state.client}, 
+					     {reason, {max_events, Max}}]),
+	    {stop, normal, State};
+	_ when Timeout == undefined, Interval == undefined ->
+	    case {timer:send_interval(cosNotificationApp:interval_events(), 
+				      cacheInterval),
+		  timer:send_after(cosNotificationApp:timeout_events(), 
+				   cacheTimeout)} of
+		{{ok, IntervalRef}, {ok, TimeoutRef}} ->
+		    {noreply, State#state{cacheTimeout = TimeoutRef, 
+					  cacheInterval = IntervalRef}};
+		Error ->
+		    orber:dbg("[~p] PusherSupplier:check_cache();~n"
+			      "Unable to start timers: ~p", 
+			      [?LINE, Error], ?DEBUG_LEVEL),
+		    'CosNotification_Common':notify([{proxy, State#state.this},
+						     {client, State#state.client}, 
+						     {reason, {timer, Error}}]),
+		    {stop, normal, State}
+	    end;
+	_ ->
+	    %% Timers already started.
+	    {noreply, State}
     end.
 
 store_events(_State, []) ->
@@ -899,16 +1038,13 @@ start_timer(State) ->
 	    end
     end.
 
-stop_timer(State) ->
-    case ?get_PacingTimer(State) of
-	undefined ->
-	    ?DBG("PUSH SUPPLIER HAVE NO TIMER TO STOP~n",[]),
-	    State;
-	Timer ->
-	    ?DBG("PUSH SUPPLIER STOPPED TIMER~n",[]),
-	    timer:cancel(Timer),
-	    ?set_PacingTimer(State, undefined)
-    end.
+stop_timer(undefined) ->
+    ?DBG("PUSH SUPPLIER HAVE NO TIMER TO STOP~n",[]),
+    ok;
+stop_timer(Timer) ->
+    ?DBG("PUSH SUPPLIER STOPPED TIMER~n",[]),
+    timer:cancel(Timer),
+    ok.
 
 	    
 %%--------------- MISC FUNCTIONS, E.G. DEBUGGING -------------

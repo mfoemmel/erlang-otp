@@ -138,16 +138,19 @@ exit_button(_ProcVars) ->
 
 
 help_button(ProcVars) ->
+    WinP = ProcVars#process_variables.window_params,
     HelpFile = filename:join([code:lib_dir(tv), "doc", "html", "index.html"]),
-    tool_utils:open_help(gs:start([{kernel, true}]), HelpFile),
+    tool_utils:open_help(WinP#window_params.window_id, HelpFile),
     ProcVars.
 
 
 
 
 otp_help_button(ProcVars) ->
+    WinP = ProcVars#process_variables.window_params,
     IndexFile = filename:join([code:root_dir(), "doc", "index.html"]),
-    tool_utils:open_help(gs:start([{kernel, true}]), IndexFile),
+    
+    tool_utils:open_help(WinP#window_params.window_id, IndexFile),
     ProcVars.
 
 

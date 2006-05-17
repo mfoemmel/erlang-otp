@@ -191,9 +191,6 @@ init([]) ->
     SysMem = os_mon:get_env(memsup, system_memory_high_watermark),
     ProcMem = os_mon:get_env(memsup, process_memory_high_watermark),
 
-    %% Clear any alarms set by a previous incarnation of memsup
-    clear_alarms(),
-    
     %% Initiate first data collection
     self() ! time_to_collect,
 
@@ -498,8 +495,8 @@ terminate(_Reason, State) ->
     clear_alarms(),
     ok.
 
-%% os_mon-2.0
-%% For live downgrade to/upgrade from os_mon-1.8[.1]
+%% os_mon-2.0.1
+%% For live downgrade to/upgrade from os_mon-1.8[.1] and -2.0
 code_change(Vsn, PrevState, "1.8") ->
     case Vsn of
 
@@ -628,6 +625,18 @@ code_change(Vsn, PrevState, "1.8") ->
 			   ext_pending        = []},
 	    {ok, State}
     end;
+code_change(_Vsn, State, "2.0") ->
+
+    %% Restart the port process (it must use new memsup code)
+    Pid = case State#state.port_mode of
+	      true ->
+		  State#state.pid ! close,
+		  spawn_link(fun() -> port_init() end);
+	      false ->
+		  State#state.pid
+	  end,
+    {ok, State#state{pid=Pid}};
+	  
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -966,14 +975,14 @@ clear_alarm(AlarmId) ->
     end.
 
 clear_alarms() ->
-    lists:foreach(fun({system_memory_high_watermark = Id, _}) ->
+    lists:foreach(fun({system_memory_high_watermark = Id, set}) ->
 			  alarm_handler:clear_alarm(Id);
-		     ({process_memory_high_watermark = Id, _}) ->
+		     ({process_memory_high_watermark = Id, set}) ->
 			  alarm_handler:clear_alarm(Id);
-		     (_Alarm) ->
+		     (_Other) ->
 			  ignore
 		  end,
-		  alarm_handler:get_alarms()).
+		  get()).
 
 %%--Auxiliary-----------------------------------------------------------
 

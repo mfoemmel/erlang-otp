@@ -18,36 +18,46 @@
 -module(tool_utils).
 -include_lib("kernel/include/file.hrl").
 
-%%%----------------------------------------------------------------------
+%%%---------------------------------------------------------------------
 %%% Auxiliary functions to be used by the tools (internal module)
-%%%----------------------------------------------------------------------
+%%%---------------------------------------------------------------------
 
 %% External exports
 -export([open_help/2]).
 -export([file_dialog/1]).
 -export([notify/2, confirm/2, confirm_yesno/2, request/2]).
 
+-record(state, {type,        % notify | confirm[_yesno] | request
+		win,         % gsobj(), window
+		entry,       % gsobj(), entry
+		in_focus,    % 0 | 1 | undefined  Entry is in focus
+		is_cursor,   % bool() | undefined  Cursor is over Entry
+		buttons,     % [gsobj()], buttons
+		highlighted  % int() highlighted buttone
+	       }).
+
+
 %%----------------------------------------------------------------------
-%% open_help(GS, File)
-%%   GS = gsobj()  (GS root object returned by gs:start/0,1)
+%% open_help(Parent, File)
+%%   Parent = gsobj()  (GS root object or parent window)
 %%   File = string() | nofile
 %% View the help file File, which can be an URL, an HTML file or a text
 %% file.
 %% This function is OS dependant.
-%% Unix: Assumes Netscape is up & running, and use Netscape remote commands
-%%   to display the file.
+%% Unix: Assumes Netscape is up & running, and use Netscape remote
+%%   commands to display the file.
 %% NT: If File is a file, use the NT command 'start' which will open the
 %%   default tool for viewing the file.
-%%   If File is an URL, try to view it using Netscape.exe which requires that
-%%   the path Netscape.exe must be in TBD.
+%%   If File is an URL, try to view it using Netscape.exe which 
+%%   requires that the path Netscape.exe must be in TBD.
 %%   (TEMPORARY solution..., can be done better)
 %%----------------------------------------------------------------------
-open_help(S, nofile) ->
-    notify(S, "Sorry, no help information exists");
-open_help(S, File) ->
+open_help(Parent, nofile) ->
+    notify(Parent, "Sorry, no help information exists");
+open_help(Parent, File) ->
     case application:get_env(kernel, browser_cmd) of
 	undefined ->
-	    open_help_default(S, File);
+	    open_help_default(Parent, File);
 	{ok, Cmd} when is_list(Cmd) ->
 	    spawn(os, cmd, [Cmd ++ " " ++ File]);
 	{ok, {M, F, A}} ->
@@ -55,10 +65,10 @@ open_help(S, File) ->
 	_Other ->
 	    Str = ["Bad Kernel configuration parameter browser_cmd",
 		   "Do not know how to display help file"],
-	    notify(S, Str)
+	    notify(Parent, Str)
     end.
 
-open_help_default(S, File) ->
+open_help_default(Parent, File) ->
     Cmd = case file_type(File) of
 
 	      %% Local file
@@ -100,11 +110,11 @@ open_help_default(S, File) ->
 	Cmd==unknown ->
 	    Str = ["Sorry, do not know how to",
 		   "display HTML files at this platform"],
-	    notify(S, Str);
+	    notify(Parent, Str);
 	true ->
 	    {error, Reason} = Cmd,
 	    Str = file:format_error(Reason),
-	    notify(S, [File,Str])
+	    notify(Parent, [File,Str])
     end.
 
 %% file_type(File) -> local | remote | {error,Reason}
@@ -148,14 +158,16 @@ file_dialog(Options) ->
 
 
 %%----------------------------------------------------------------------
-%% notify(GS, Strings) -> ok
-%% confirm(GS, Strings) -> ok | cancel
-%% confirm_yesno(GS, Strings) -> yes | no | cancel
-%% request(GS, Strings) -> {ok,string()} | cancel
-%%   GS = gsobj()  (GS root object returned by gs:start/0,1)
+%% notify(Parent, Strings) -> ok
+%% confirm(Parent, Strings) -> ok | cancel
+%% confirm_yesno(Parent, Strings) -> yes | no | cancel
+%% request(Parent, Strings) -> {ok,string()} | cancel
+%%   Parent = gsobj()  (GS root object or parent window)
 %%   Strings = string() | [string()]
 %% Opens a window with the specified message (Strings) and locks the GUI
 %% until the user confirms the message.
+%% If the Parent argument is the parent window, the help window will be
+%% centered above it, otherwise it can end up anywhere on the screen.
 %% A 'notify' window contains an 'Ok' button.
 %% A 'confirm' window contains an 'Ok' and a 'Cancel' button.
 %% A 'confirm_yesno' window contains a 'Yes', a 'No', and a 'Cancel'
@@ -169,37 +181,40 @@ file_dialog(Options) ->
 -define(Hbtn, 30).
 -define(PAD,  10).
 
-notify(S, Strings) ->
-    help_win(notify, S, Strings).
-confirm(S, Strings) ->
-    help_win(confirm, S, Strings).
-confirm_yesno(S, Strings) ->
-    help_win(confirm_yesno, S, Strings).
-request(S, Strings) ->
-    help_win(request, S, Strings).
+notify(Parent, Strings) ->
+     help_win(notify, Parent, Strings).
+confirm(Parent, Strings) ->
+    help_win(confirm, Parent, Strings).
+confirm_yesno(Parent, Strings) ->
+    help_win(confirm_yesno, Parent, Strings).
+request(Parent, Strings) ->
+    help_win(request, Parent, Strings).
 
-help_win(Type, S, Strings) ->
-    GenOpts = [{data,Type}, {keypress,true}],
+help_win(Type, Parent, Strings) ->
+    GenOpts = [{keypress,true}],
     GenOpts2 = [{font,{screen,12}} | GenOpts],
     Buttons = buttons(Type),
     Nbtn = length(Buttons),
 
     %% Create the window and its contents
-    Win = gs:create(window, S, [{title,title(Type)} | GenOpts]),
+    Win = gs:create(window, Parent, [{title,title(Type)} | GenOpts]),
     Top = gs:create(frame, Win, GenOpts),
-    Lbl = gs:create(label, Top, [{align,c}, {justify,center} |GenOpts2]),
+    Lbl = gs:create(label, Top, [{align,c}, {justify,center}|GenOpts2]),
     Mid = if
 	      Type==request -> gs:create(frame, Win, GenOpts);
 	      true -> ignore
 	  end,
     Ent = if
-	      Type==request -> gs:create(entry, Mid, GenOpts2);
+	      Type==request ->
+		  Events = [{setfocus,true},
+			    {focus,true},{enter,true},{leave,true}],
+		  gs:create(entry, Mid, GenOpts2++Events);
 	      true -> ignore
 	  end,
     Bot = gs:create(frame, Win, GenOpts),
 
     %% Find out minimum size required for label, entry and buttons
-    Font = gs:read(S, {choose_font, {screen,12}}),
+    Font = gs:read(Parent, {choose_font, {screen,12}}),
     Text = insert_newlines(Strings),
     {Wlbl0,Hlbl0} = gs:read(Lbl, {font_wh,{Font,Text}}),
     {_Went0,Hent0} = gs:read(Lbl, {font_wh,{Font,"Entry"}}),
@@ -219,33 +234,50 @@ help_win(Type, S, Strings) ->
     Hbot = ?PAD+Hbtn+?PAD,
     Hwin = Htop+Hmid+Hbot,
 
-    gs:config(Win, [                        {width,Wwin},{height,Hwin}]),
+    case catch get_coords(Parent, Wwin, Hwin) of
+	{Xw, Yw} when is_integer(Xw), is_integer(Yw) ->
+	    gs:config(Win, [{x,Xw}, {y,Yw}]);
+	_ ->
+	    ignore
+    end,
+	    
+    gs:config(Win, [                       {width,Wwin},{height,Hwin}]),
 
-    gs:config(Top, [{x,0},   {y,0},         {width,Wwin},{height,Htop}]),
-    gs:config(Lbl, [{x,?PAD},{y,?PAD},      {width,Wlbl},{height,Hlbl}]),
+    gs:config(Top, [{x,0},   {y,0},        {width,Wwin},{height,Htop}]),
+    gs:config(Lbl, [{x,?PAD},{y,?PAD},     {width,Wlbl},{height,Hlbl}]),
 
-    gs:config(Mid, [{x,0},   {y,Htop},      {width,Wwin},{height,Hmid}]),
-    gs:config(Ent, [{x,?PAD},{y,?PAD},      {width,Wlbl},{height,Hent}]),
+    gs:config(Mid, [{x,0},   {y,Htop},     {width,Wwin},{height,Hmid}]),
+    gs:config(Ent, [{x,?PAD},{y,?PAD},     {width,Wlbl},{height,Hent}]),
 
-    gs:config(Bot, [{x,0},   {y,Htop+Hmid}, {width,Wwin},{height,Hbot}]),
+    gs:config(Bot, [{x,0},   {y,Htop+Hmid},{width,Wwin},{height,Hbot}]),
 
     %% Insert the label text
     gs:config(Lbl, {label,{text,Text}}),
 
     %% Add the buttons
-    Xbtns = xbuttons(Nbtn, Wbtn, Wwin, Wlbl),
-    foreach2(fun(Button, X) ->
-		     gs:create(button, Bot, [{x,X}, {y,?PAD},
-					     {width,Wbtn}, {height,Hbtn},
-					     {label,{text,Button}}
-					     | GenOpts2])
-	     end,
-	     Buttons,
-	     Xbtns),
+    Xbtns = xbuttons(Buttons, Wbtn, Wwin, Wlbl),
+    BtnObjs =
+	lists:map(fun({Btext,BX}) ->
+			  gs:create(button, Bot, [{x,BX-1}, {y,?PAD-1},
+						  {width,Wbtn+2},
+						  {height,Hbtn+2},
+						  {label,{text,Btext}},
+						  {data,data(Btext)}
+						  | GenOpts2])
+		  end,
+		  Xbtns),
+    Highlighted = highlight(undef, 1, BtnObjs),
 
-    gs:config(Win, {map,true}),
+    gs:config(Win, [{map,true}]),
 
-    event_loop(Win, Ent).
+    State = if
+		Type==request ->
+		    #state{in_focus=1, is_cursor=false};
+		true ->
+		    #state{}
+	    end,
+    event_loop(State#state{type=Type, win=Win, entry=Ent,
+			   buttons=BtnObjs, highlighted=Highlighted}).
 
 title(notify) ->        "Notification";
 title(confirm) ->       "Confirmation";
@@ -257,79 +289,134 @@ buttons(confirm) ->       ["Ok", "Cancel"];
 buttons(confirm_yesno) -> ["Yes", "No", "Cancel"];
 buttons(request) ->       ["Ok", "Cancel"].
 
+data("Ok") ->     {helpwin,ok};
+data("Yes") ->    {helpwin,yes};
+data("No") ->     {helpwin,no};
+data("Cancel") -> {helpwin,cancel}.
+
 max(X, Y) when X>Y -> X;
 max(_X, Y) -> Y.
 
-xbuttons(1, Wbtn, Wwin, _Wlbl) ->
-    [round(Wwin/2-Wbtn/2)];
-xbuttons(2, Wbtn, Wwin, Wlbl) ->
-    Margin = (Wwin-Wlbl)/2,
-    [round(Margin), round(Wwin-Margin-Wbtn)];
-xbuttons(3, Wbtn, Wwin, Wlbl) ->
-    Margin = (Wwin-Wlbl)/2,
-    [round(Margin), round(Wwin/2-Wbtn/2), round(Wwin-Margin-Wbtn)].
-
-foreach2(Fun, [H1|T1], [H2|T2]) ->
-    Fun(H1, H2),
-    foreach2(Fun, T1, T2);
-foreach2(_Fun, [], []) ->
-    true.
-
-event_loop(Win,Entry) ->
-    receive
-
-	{gs,_Obj,_Event,Type,["Ok"|_]} when Type/=request ->
-	    gs:destroy(Win),
-	    ok;
-
-	{gs,_Obj,_Event,request,["Ok"|_]} ->
-	    case gs:read(Entry, text) of
-		"" ->
-		    event_loop(Win, Entry);
-		Info ->
-		    gs:destroy(Win),
-		    {ok, Info}
+get_coords(Parent, W, H) ->
+    case gs:read(Parent, x) of
+	X when is_integer(X) ->
+	    case gs:read(Parent, y) of
+		Y when is_integer(Y) ->
+		    case gs:read(Parent, width) of
+			W0 when is_integer(W0) ->
+			    case gs:read(Parent, height) of
+				H0 when is_integer(H0) ->
+				    {round((X+W0/2)-W/2),
+				     round((Y+H0/2)-H/2)};
+				_ -> error
+			    end;
+			_ -> error
+		    end;
+		_ -> error
 	    end;
-
-	{gs,_Obj,_Event,_Type,["Yes"|_]} ->
-	    gs:destroy(Win),
-	    yes;
-
-	{gs,_Obj,_Event,_Type,["No"|_]} ->
-	    gs:destroy(Win),
-	    no;
-
-	{gs,_Obj,_Event,_Type,["Cancel"|_]} ->
-	    gs:destroy(Win),
-	    cancel;
-
-	{gs,_Obj,_Event,Type,['Return'|_]} when Type/=request ->
-	    gs:destroy(Win),
-	    if
-		Type==notify -> ok;
-		Type==confirm -> ok;
-		Type==confirm_yesno -> yes
-	    end;
-
-	{gs,_Obj,_Event,request,['Return'|_]} ->
-	    case gs:read(Entry, text) of
-		"" ->
-		    event_loop(Win, Entry);
-		Info ->
-		    gs:destroy(Win),
-		    {ok, Info}
-	    end;
-
-	{gs,_Obj,destroy,Type,_Args} ->
-	    if
-		Type==notify -> ok;
-		true -> cancel
-	    end;
-
-	%% Flush any other GS events
-	{gs,_Obj,_Event,_Data,_Arg} ->
-            event_loop(Win, Entry)
+	_ -> error
     end.
+
+xbuttons([B], Wbtn, Wwin, _Wlbl) ->
+    [{B, round(Wwin/2-Wbtn/2)}];
+xbuttons([B1,B2], Wbtn, Wwin, Wlbl) ->
+    Margin = (Wwin-Wlbl)/2,
+    [{B1,round(Margin)}, {B2,round(Wwin-Margin-Wbtn)}];
+xbuttons([B1,B2,B3], Wbtn, Wwin, Wlbl) ->
+    Margin = (Wwin-Wlbl)/2,
+    [{B1,round(Margin)},
+     {B2,round(Wwin/2-Wbtn/2)},
+     {B3,round(Wwin-Margin-Wbtn)}].
+
+highlight(Prev, New, BtnObjs) when New>0, New=<length(BtnObjs) ->
+    if
+	Prev==undef -> ignore;
+	true ->
+	    gs:config(lists:nth(Prev, BtnObjs), [{highlightbw,0}])
+    end,
+    gs:config(lists:nth(New, BtnObjs), [{highlightbw,1},
+					{highlightbg,black}]),
+    New;
+highlight(Prev, _New, _BtnObjs) -> % New is outside allowed range
+    Prev.
+
+event_loop(State) ->
+    receive
+	GsEvent when element(1, GsEvent)==gs ->
+	    case handle_event(GsEvent, State) of
+		{continue, NewState} ->
+		    event_loop(NewState);
+
+		{return, Result} ->
+		    gs:destroy(State#state.win),
+		    Result
+	    end
+    end.
+
+handle_event({gs,_,click,{helpwin,Result},_}, State) ->
+    if
+	State#state.type/=request; Result==cancel ->
+	    {return, Result};
+
+	State#state.type==request, Result==ok ->
+	    case gs:read(State#state.entry, text) of
+		"" ->
+		    {continue, State};
+		Info ->
+		    {return, {ok, Info}}
+	    end
+    end;
+
+%% When the entry (Type==request) is in focus and the mouse pointer is
+%% over it, don't let 'Left'|'Right' keypresses affect which button is
+%% selected
+handle_event({gs,Ent,enter,_,_}, #state{entry=Ent}=State) ->
+    {continue, State#state{is_cursor=true}};
+handle_event({gs,Ent,leave,_,_}, #state{entry=Ent}=State) ->
+    {continue, State#state{is_cursor=false}};
+handle_event({gs,Ent,focus,_,[Int|_]}, #state{entry=Ent}=State) ->
+    {continue, State#state{in_focus=Int}};
+
+handle_event({gs,Win,keypress,_,['Right'|_]}, #state{win=Win}=State) ->
+    if
+	State#state.type==request,
+	State#state.in_focus==1, State#state.is_cursor==true ->
+	    {continue, State};
+	true ->
+	    Prev = State#state.highlighted,
+	    New = highlight(Prev, Prev+1, State#state.buttons),
+	    {continue, State#state{highlighted=New}}
+    end;
+handle_event({gs,Win,keypress,_,['Left'|_]}, #state{win=Win}=State) ->
+    if
+	State#state.type==request,
+	State#state.in_focus==1, State#state.is_cursor==true ->
+	    {continue, State};
+	true ->
+	    Prev = State#state.highlighted,
+	    New = highlight(Prev, Prev-1, State#state.buttons),
+	    {continue, State#state{highlighted=New}}
+    end;
+
+handle_event({gs,Ent,keypress,_,['Tab'|_]}, #state{entry=Ent}=State) ->
+    gs:config(hd(State#state.buttons), {setfocus,true}),
+    gs:config(Ent, {select,clear}),
+    {continue, State#state{in_focus=0}};
+
+handle_event({gs,Win,keypress,_,['Return'|_]}, #state{win=Win}=State) ->
+    Selected = lists:nth(State#state.highlighted, State#state.buttons),
+    Data = gs:read(Selected, data),
+    handle_event({gs,Win,click,Data,undef}, State);
+
+handle_event({gs,Win,destroy,_,_}, #state{win=Win}=State) ->
+    if
+	State#state.type==notify -> {return, ok};
+	true -> {return, cancel}
+    end;
+
+%% Flush any other GS events
+handle_event({gs,_Obj,_Event,_Data,_Arg}, State) ->
+    {continue, State}.
 
 %% insert_newlines(Strings) => string()
 %%   Strings - string() | [string()]

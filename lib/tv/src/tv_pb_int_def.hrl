@@ -31,6 +31,21 @@
 
 
 
+-record(col_mark_params, {col_btn_id,
+			  virtual_col_marked,
+			  sort_btn_id,
+			  virtual_sort_col
+			 }).
+
+
+
+-record(row_mark_params, {virtual_row_marked,
+			  real_row_marked
+			 }).
+
+
+
+
 -record(process_variables, {parent_pid,
 			    grid_frame_id,
 			    grid_frame_width,
@@ -52,21 +67,6 @@
 			    col_mark_params  = #col_mark_params{},
 			    row_mark_params  = #row_mark_params{}
 			   }).
-
-
-
--record(col_mark_params, {col_btn_id,
-			  virtual_col_marked,
-			  sort_btn_id,
-			  virtual_sort_col
-			 }).
-
-
-
--record(row_mark_params, {virtual_row_marked,
-			  real_row_marked
-			 }).
-
 
 
 

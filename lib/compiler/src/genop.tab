@@ -198,7 +198,7 @@ BEAM_FORMAT_NUMBER=0
 # New fun construction (R8).
 103: make_fun2/1
 
-# Try/catch/raise (R9C).
+# Try/catch/raise (R10B).
 104: try/2
 105: try_end/1
 106: try_case/1
@@ -215,3 +215,18 @@ BEAM_FORMAT_NUMBER=0
 
 # New instructions in R10B-6.
 115: is_function2/3
+
+# New bit syntax matching in R11B.
+
+116: bs_start_match2/5
+117: bs_get_integer2/7
+118: bs_get_float2/7
+119: bs_get_binary2/7
+120: bs_skip_bits2/5
+121: bs_test_tail2/3
+122: bs_save2/2
+123: bs_restore2/2
+
+# New GC bifs introduced in R11B.
+124: gc_bif1/5
+125: gc_bif2/6

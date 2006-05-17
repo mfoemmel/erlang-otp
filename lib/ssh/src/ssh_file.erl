@@ -28,7 +28,7 @@
 	 public_host_rsa_key/2,private_host_rsa_key/2,
 	 public_host_key/2,private_host_key/2,
 	 lookup_host_key/3, add_host_key/3, del_host_key/2,
-	 lookup_user_key/2, ssh_dir/2, file_name/3]).
+	 lookup_user_key/3, ssh_dir/2, file_name/3]).
 
 -export([private_identity_key/2]).
 %% , public_identity_key/2,
@@ -412,7 +412,7 @@ read_pem64(Cs, Acc, Type) ->
 		[Type, "PRIVATE", "KEY-----"] ->
 		    {ok,ssh_bits:b64_decode(append(reverse(Acc)))};
 		Toks ->
-		    io:format("TOKENS=~p\n", [Toks]),
+		    error_logger:format("ssh: TOKENS=~p\n", [Toks]),
 		    {error, bad_format}
 	    end;
 	{B64, Cs1} when Cs1 =/= "" ->
@@ -428,22 +428,28 @@ read_line([$\n|T], Acc) -> {reverse(Acc), T};
 read_line([C|T], Acc) -> read_line(T,[C|Acc]);
 read_line([], Acc) -> {reverse(Acc),[]}.
 
-lookup_user_key(Alg, Opts) ->
-    case lookup_user_key_f(Alg, "authorized_keys", Opts) of
+lookup_user_key(User, Alg, Opts) ->
+    SshDir = ssh_dir({remoteuser,User}, Opts),
+    case lookup_user_key_f(User, SshDir, Alg, "authorized_keys", Opts) of
 	{ok, Key} ->
 	    {ok, Key};
 	_ ->
-	    lookup_user_key_f(Alg,  "authorized_keys2", Opts)
+	    lookup_user_key_f(User, SshDir, Alg,  "authorized_keys2", Opts)
     end.
 
-lookup_user_key_f(Alg, F, Opts) ->
-    case file:open(file_name(user, F, Opts), [read]) of
+lookup_user_key_f(_User, [], _Alg, _F, _Opts) ->
+    {error, nouserdir};
+lookup_user_key_f(_User, nouserdir, _Alg, _F, _Opts) ->
+    {error, nouserdir};
+lookup_user_key_f(_User, Dir, Alg, F, _Opts) ->
+    FileName = filename:join(Dir, F),
+    case file:open(FileName, [read]) of
 	{ok, Fd} ->
 	    Res = lookup_user_key_fd(Fd, Alg),
 	    file:close(Fd),
 	    Res;
-	Error ->
-	    Error
+	{error, Reason} ->
+	    {error, {{openerr, Reason}, {file, FileName}}}
     end.
 
 lookup_user_key_fd(Fd, Alg) ->
@@ -474,9 +480,22 @@ encode_public_key(#ssh_key{type = dsa, public = {P,Q,G,Y}}) ->
 %% Utils
 %%
 
+%% server use this to find individual keys for
+%% an individual user when user tries to login
+%% with publickey
+ssh_dir({remoteuser, User}, Opts) ->
+    case proplists:get_value(user_dir_fun, Opts) of
+	undefined ->
+	    filename:join(["/home/",User,".ssh"]);
+	FUN ->
+	    FUN(User)
+    end;
+
+%% client use this to find client ssh keys
 ssh_dir(user, Opts) ->
     Default = filename:join(os:getenv("HOME"), ".ssh"),
     proplists:get_value(user_dir, Opts, Default);
+%% server use this to find server host keys
 ssh_dir(system, Opts) ->
     proplists:get_value(system_dir, Opts, "/etc/ssh").
 

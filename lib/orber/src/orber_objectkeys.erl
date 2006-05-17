@@ -42,7 +42,7 @@
 %% Internal exports
 %%-----------------------------------------------------------------
 -export([init/1, terminate/2, install/2, handle_call/3, handle_info/2, code_change/3]).
--export([handle_cast/2, dump/0, get_key_from_pid/1, code_change/3, gc/1]).
+-export([handle_cast/2, dump/0, get_key_from_pid/1, gc/1]).
 
 %%-----------------------------------------------------------------
 %% Mnesia Table definition record

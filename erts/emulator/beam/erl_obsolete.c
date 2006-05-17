@@ -23,8 +23,10 @@
 #include "../obsolete/driver.h"
 
 #include "sys.h"
-#include "erl_threads.h"
 #include "erl_alloc.h"
+#ifdef USE_THREADS
+#include "ethread.h"
+#endif
 
 /* We declare these prototypes since we can't include global.h
    (as we should). This because global.h conflicts with
@@ -32,12 +34,57 @@
 void erts_init_obsolete(void);
 void erl_exit(int n, char*, ...);
 
+#define DO_ABORT erl_exit(1, "%s:%d: Internal error\n", __FILE__, __LINE__)
+
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
  *                                                                           *
  * ------------------------- OBSOLETE! DO NOT USE! ------------------------- *
  *                                                                           *
 \*                                                                           */
 
+#ifdef USE_THREADS
+
+typedef struct {
+    int detached;
+    ethr_tid tid;
+    void* (*func)(void*);
+    void* arg;
+} erl_thread_t_;
+
+static ethr_tsd_key tid_key;
+
+static void
+thread_exit_handler(void)
+{
+    void *etid = ethr_tsd_get(tid_key);
+    if (etid && ((erl_thread_t_ *) etid)->detached)
+	driver_free(etid);
+}
+
+static void *
+thread_wrapper_func(void *vetid)
+{
+    erl_thread_t_ *etid = (erl_thread_t_ *) vetid;
+    if (ethr_tsd_set(tid_key, vetid) != 0)
+	DO_ABORT;
+    return (*etid->func)(etid->arg);
+}
+
+#endif /* #ifdef USE_THREADS */
+
+void erts_init_obsolete(void)
+{
+#ifdef USE_THREADS
+    int res;
+    res = ethr_tsd_key_create(&tid_key);
+    if (res != 0)
+	DO_ABORT;
+    res = ethr_install_exit_handler(thread_exit_handler);
+    if (res != 0)
+	DO_ABORT;
+#endif
+
+}
 
 /*
  * These functions implement the thread interface in ../obsolete/driver.h.
@@ -186,48 +233,6 @@ erts_cond_timedwait(erl_cond_t cnd, erl_mutex_t mtx, long ms)
 #endif
 }
 
-#ifdef USE_THREADS
-
-typedef struct thread_id_elem__ thread_id_elem_;
-
-struct thread_id_elem__ {
-    thread_id_elem_ *prev;
-    thread_id_elem_ *next;
-    int in_list;
-    int detached;
-    ethr_tid tid;
-    void* (*func)(void*);
-    void* arg;
-};
-
-static thread_id_elem_ *tid_list;
-static ethr_mutex tid_list_mtx;
-
-static void free_tid_el(thread_id_elem_ *tid_el)
-{
-    if (tid_el) {
-	if (tid_el->in_list) {
-	    if (tid_el->prev)
-		tid_el->prev->next = tid_el->next;
-	    else
-		tid_list = tid_el->next;
-	    if (tid_el->next)
-		tid_el->next->prev = tid_el->prev;
-	}
-	driver_free((void *) tid_el);
-    }
-}
-
-static void *
-thread_wrapper_func(void *vtid_el)
-{
-    thread_id_elem_ *tid_el = (thread_id_elem_ *) vtid_el;
-    erts_thread_exit((*tid_el->func)(tid_el->arg));
-    return NULL;
-}
-
-#endif /* #ifdef USE_THREADS */
-
 int
 erts_thread_create(erl_thread_t *tid,
 		   void* (*func)(void*),
@@ -236,45 +241,22 @@ erts_thread_create(erl_thread_t *tid,
 {
 #ifdef USE_THREADS
     int res;
-    thread_id_elem_ *tid_el;
+    erl_thread_t_ *etid = driver_alloc(sizeof(erl_thread_t_));
+    if (!etid)
+	return ENOMEM;
 
-    erts_mtx_lock(&tid_list_mtx);
+    etid->func = func;
+    etid->arg = arg;
+    etid->detached = detached;
 
-    tid_el = (thread_id_elem_ *) driver_alloc(sizeof(thread_id_elem_));
-    if (!tid_el) {
-	res = ENOMEM;
-    error:
-	free_tid_el(tid_el);
-	(void) ethr_mutex_unlock(&tid_list_mtx);
+    res = ethr_thr_create(&etid->tid, thread_wrapper_func, etid, detached);
+
+    if (res != 0) {
+	driver_free(etid);
 	return res;
     }
 
-
-    tid_el->in_list = 0;
-    tid_el->func = func;
-    tid_el->arg = arg;
-    tid_el->detached = detached;
-
-    res = ethr_thr_create(&tid_el->tid,
-			  thread_wrapper_func,
-			  (void *) tid_el,
-			  detached);
-
-    if (res)
-	goto error;
-
-    tid_el->next = tid_list;
-    tid_el->prev = NULL;
-    tid_el->in_list = 1;
-
-    if (tid_list)
-	tid_list->prev = tid_el;
-
-    tid_list = tid_el;
-
-    *tid = (erl_thread_t) tid_el;
-
-    erts_mtx_unlock(&tid_list_mtx);
+    *tid = (erl_thread_t) etid;
     return 0;
 #else
     return ENOTSUP;
@@ -285,19 +267,21 @@ erl_thread_t
 erts_thread_self(void)
 {
 #ifdef USE_THREADS
-    thread_id_elem_ *tid_el;
-
-    erts_mtx_lock(&tid_list_mtx);
-
-    for (tid_el = tid_list; tid_el; tid_el = tid_el->next) {
-	ethr_tid tid = ethr_self();
-	if (ethr_equal_tids(tid_el->tid, tid))
-	    break;
+    erl_thread_t_ *etid = ethr_tsd_get(tid_key);
+    if (!etid) {
+	/* This is a thread not spawned by this interface. thread_exit_handler()
+	   will clean it up when it terminates. */
+	etid = driver_alloc(sizeof(erl_thread_t_));
+	if (!etid)
+	    erts_alloc_enomem(ERTS_ALC_T_DRV, sizeof(erl_thread_t_));
+	etid->detached = 1; /* Detached from threads using this interface. */
+	etid->tid = ethr_self();
+	etid->func = NULL;
+	etid->arg = NULL;
+	if (ethr_tsd_set(tid_key, (void *) etid) != 0)
+	    DO_ABORT;
     }
-
-    erts_mtx_unlock(&tid_list_mtx);
-    ASSERT(tid_el);
-    return (erl_thread_t) tid_el;
+    return (erl_thread_t) etid;
 #else
     return NULL;
 #endif
@@ -307,24 +291,8 @@ void
 erts_thread_exit(void *res)
 {
 #ifdef USE_THREADS
-    thread_id_elem_ *tid_el;
-
-    erts_mtx_lock(&tid_list_mtx);
-
-    for (tid_el = tid_list; tid_el; tid_el = tid_el->next) {
-	ethr_tid tid = ethr_self();
-	if (ethr_equal_tids(tid_el->tid, tid))
-	    break;
-    }
-
-    ASSERT(tid_el);
-
-    if (tid_el->detached)
-	free_tid_el(tid_el);
-
-    erts_mtx_unlock(&tid_list_mtx);
-
-    erts_thr_exit(res);
+    ethr_thr_exit(res);
+    DO_ABORT;
 #else
     erl_exit(0, "");
 #endif
@@ -335,19 +303,16 @@ erts_thread_join(erl_thread_t tid, void **respp)
 {
 #ifdef USE_THREADS
     int res;
-    thread_id_elem_ *tid_el = (thread_id_elem_ *) tid;
+    erl_thread_t_ *etid = (erl_thread_t_ *) tid;
 
-    ASSERT(tid_el);
+    ASSERT(etid);
 
-    if (tid_el->detached)
+    if (etid->detached)
 	return EINVAL;
 
-    res = ethr_thr_join(tid_el->tid, respp);
-    if (res == 0) {
-	erts_mtx_lock(&tid_list_mtx);
-	free_tid_el(tid_el);
-	erts_mtx_unlock(&tid_list_mtx);
-    }
+    res = ethr_thr_join(etid->tid, respp);
+    if (res == 0)
+	driver_free(etid);
     return res;
 #else
     return ENOTSUP;
@@ -360,21 +325,3 @@ erts_thread_kill(erl_thread_t tid)
     return ENOTSUP;
 }
 
-void erts_init_obsolete(void)
-{
-#ifdef USE_THREADS
-    tid_list = (thread_id_elem_ *) driver_alloc(sizeof(thread_id_elem_));
-    if (!tid_list)
-	erts_alloc_enomem(ERTS_ALC_T_DRV, sizeof(thread_id_elem_));
-
-    tid_list->prev = NULL;
-    tid_list->next = NULL;
-    tid_list->in_list = 1;
-    tid_list->detached = 1;
-    tid_list->tid = ethr_self();
-
-    erts_mtx_init(&tid_list_mtx);
-    erts_mtx_set_forksafe(&tid_list_mtx);
-#endif
-
-}

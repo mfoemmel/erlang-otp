@@ -320,9 +320,8 @@ loop(ProcVars) ->
 		    
 
 		check_node ->
-		    %% XXX Probably wrong.
 		    NewProcVars  = check_node(ProcVars),
-		    loop(ProcVars);
+		    loop(NewProcVars);
 
 
 		raise ->

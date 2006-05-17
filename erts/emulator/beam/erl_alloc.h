@@ -18,10 +18,19 @@
 
 #ifndef ERL_ALLOC_H__
 #define ERL_ALLOC_H__
- 
+
 #include "erl_alloc_types.h"
-#include "erl_mtrace.h"
 #include "erl_alloc_util.h"
+#ifdef ERTS_ALC_THR_SPEC_ALLOCS
+#ifdef USE_THREADS
+#include "erl_threads.h"
+#endif
+#endif
+
+#ifdef DEBUG
+#  undef ERTS_ALC_WANT_INLINE
+#  define ERTS_ALC_WANT_INLINE 0
+#endif
 
 #ifndef ERTS_ALC_WANT_INLINE
 #  define ERTS_ALC_WANT_INLINE 1
@@ -35,14 +44,13 @@
 #  define ERTS_ALC_INLINE
 #endif
 
-#ifdef ERTS_ALC_N_MIN_A_FIXED_SIZE
+#define ERTS_FIX_CORE_ALLOCATOR ERTS_ALC_A_LONG_LIVED
+extern ErtsAlcType_t erts_fix_core_allocator_ix;
 
 typedef struct {
     Uint total;
     Uint used;
 } ErtsFixInfo;
-
-#endif
 
 void erts_sys_alloc_init(void);
 void *erts_sys_alloc(ErtsAlcType_t, void *, Uint);
@@ -59,10 +67,10 @@ void *erts_fix_realloc(ErtsAlcType_t, void *, void*, Uint);
 void erts_fix_free(ErtsAlcType_t, void *, void*);
 
 
-Eterm erts_memory(CIO *ciop, void *proc, Eterm earg);
-Eterm erts_allocated_areas(CIO *ciop, void *proc);
+Eterm erts_memory(int *, void *, void *, Eterm);
+Eterm erts_allocated_areas(int *, void *, void *);
 
-void erts_allocator_info(CIO to);
+void erts_allocator_info(int, void *);
 Eterm erts_allocator_info_term(void *proc, Eterm which_alloc);
 Eterm erts_allocator_options(void *proc);
 
@@ -102,6 +110,19 @@ typedef struct {
 extern ErtsAllocatorFunctions_t erts_allctrs[ERTS_ALC_A_MAX+1];
 extern ErtsAllocatorInfo_t erts_allctrs_info[ERTS_ALC_A_MAX+1];
 
+#ifdef ERTS_ALC_THR_SPEC_ALLOCS
+#ifdef USE_THREADS
+
+typedef struct {
+    erts_tsd_key_t key;
+    void * (*start)(void);
+} ErtsAllocatorThrSpec_t;
+
+extern ErtsAllocatorThrSpec_t erts_allctr_thr_spec[ERTS_ALC_A_MAX+1];
+
+#endif
+#endif
+
 void erts_alloc_enomem(ErtsAlcType_t,Uint)		__noreturn;
 void erts_alloc_n_enomem(ErtsAlcType_t,Uint)		__noreturn;
 void erts_realloc_enomem(ErtsAlcType_t,void*,Uint)	__noreturn;
@@ -134,7 +155,7 @@ void *sys_realloc(void *, Uint)      __deprecated; /* erts_realloc_fnf() */
  *            be reallocated or deallocated as type X.
  */
 
-#if !ERTS_ALC_DO_INLINE && !defined(ERTS_ALC_INTERNAL__)
+#if !ERTS_ALC_DO_INLINE
 
 void *erts_alloc(ErtsAlcType_t type, Uint size);
 void *erts_realloc(ErtsAlcType_t type, void *ptr, Uint size);
@@ -142,7 +163,9 @@ void erts_free(ErtsAlcType_t type, void *ptr);
 void *erts_alloc_fnf(ErtsAlcType_t type, Uint size);
 void *erts_realloc_fnf(ErtsAlcType_t type, void *ptr, Uint size);
 
-#else
+#endif /* #if !ERTS_ALC_DO_INLINE */
+
+#if ERTS_ALC_DO_INLINE || defined(ERTS_ALC_INTERNAL__)
 
 ERTS_ALC_INLINE
 void *erts_alloc(ErtsAlcType_t type, Uint size)
@@ -201,7 +224,7 @@ void *erts_realloc_fnf(ErtsAlcType_t type, void *ptr, Uint size)
 	size);
 }
 
-#endif
+#endif /* #if ERTS_ALC_DO_INLINE || defined(ERTS_ALC_INTERNAL__) */
 
 #ifdef DEBUG
 #define ERTS_ALC_DBG_BLK_SZ(PTR) (*(((Uint *) (PTR)) - 2))

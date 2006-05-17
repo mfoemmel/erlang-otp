@@ -19,6 +19,7 @@
 
 -export([put_chars/1,put_chars/2,nl/0,nl/1,
 	 get_chars/2,get_chars/3,get_line/1,get_line/2,
+	 get_password/0, get_password/1,
 	 setopts/1, setopts/2]).
 -export([write/1,write/2,read/1,read/2,read/3]).
 -export([fwrite/1,fwrite/2,fwrite/3,fread/2,fread/3,
@@ -106,6 +107,12 @@ get_line(Prompt) ->
 
 get_line(Io, Prompt) ->
     request(Io, {get_line,Prompt}).
+
+get_password() ->
+    get_password(default_input()).
+
+get_password(Io) ->
+    request(Io, get_password).
 
 setopts(Opts) ->
     setopts(default_input(), Opts).

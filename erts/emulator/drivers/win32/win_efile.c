@@ -37,6 +37,10 @@
 #define IS_DOT_OR_DOTDOT(s) \
     (s[0] == '.' && (s[1] == '\0' || (s[1] == '.' && s[2] == '\0')))
 
+#ifndef INVALID_FILE_ATTRIBUTES
+#define INVALID_FILE_ATTRIBUTES ((DWORD) 0xFFFFFFFF)
+#endif
+
 static int check_error(int result, Efile_error* errInfo);
 static int set_error(Efile_error* errInfo);
 static int IsRootUNCName(const char* path);
@@ -692,7 +696,7 @@ off_t* pSize;			/* Where to store the size of the file. */
      */
 
     if (fd == INVALID_HANDLE_VALUE) {
-	struct stat statbuf;
+	DWORD attr;
 
 	set_error(errInfo);
 
@@ -701,7 +705,9 @@ off_t* pSize;			/* Where to store the size of the file. */
 	 * open a directory.  In that case, we'll change the error code
 	 * to EISDIR.
 	 */
-	if (errInfo->posix_errno && stat(name, &statbuf) == 0 && ISDIR(statbuf)) {
+	if (errInfo->posix_errno && 
+	    (attr = GetFileAttributes(name)) != INVALID_FILE_ATTRIBUTES && 
+	    (attr & FILE_ATTRIBUTE_DIRECTORY)) {
 	    errInfo->posix_errno = EISDIR;
 	}
 	return 0;
@@ -720,6 +726,18 @@ off_t* pSize;			/* Where to store the size of the file. */
 
 int 
 efile_may_openfile(Efile_error* errInfo, char *name) {
+    DWORD attr;
+
+    if ((attr = GetFileAttributes(name)) == INVALID_FILE_ATTRIBUTES) {
+	return check_error(-1, errInfo);
+    }
+
+    if (attr & FILE_ATTRIBUTE_DIRECTORY) {
+	errno = EISDIR;
+	return check_error(-1, errInfo);
+    }
+    return 1;
+#if 0
     struct stat statbuf;
     
     if (stat(name, &statbuf)) {
@@ -730,6 +748,7 @@ efile_may_openfile(Efile_error* errInfo, char *name) {
 	return check_error(-1, errInfo);
     }
     return 1;
+#endif
 }
 
 void

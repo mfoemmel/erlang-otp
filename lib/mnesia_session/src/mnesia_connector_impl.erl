@@ -36,7 +36,7 @@ init([]) ->
 code_change(_Vsn, State, _Extra) ->
     {ok, State}.
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 connect(State) ->

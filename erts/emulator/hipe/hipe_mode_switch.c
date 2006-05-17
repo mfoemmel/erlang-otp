@@ -97,12 +97,7 @@ void hipe_check_pcb(Process *p, const char *file, unsigned line)
     }
 #endif
     HIPE_ASSERT3(p != NULL, file, line);
-#ifdef SHARED_HEAP
-    HIPE_ASSERT3(p->htop <= p->hend, file, line);
-    HIPE_ASSERT3(p->stop >= p->send, file, line);
-#else
     HIPE_ASSERT3(p->htop <= p->stop, file, line);
-#endif
     HIPE_ASSERT3(p->hipe.nstack <= p->hipe.nstend, file, line);
     HIPE_ASSERT3(p->hipe.nsp >= p->hipe.nstack, file, line);
     HIPE_ASSERT3(p->hipe.nsp <= p->hipe.nstend, file, line);
@@ -168,30 +163,10 @@ static __inline__ void
 hipe_push_beam_trap_frame(Process *p, Eterm reg[], unsigned arity)
 {
     /* ensure that at least 2 words are available on the BEAM stack */
-#ifdef SHARED_HEAP
-    if (p->stop - 2 < p->send) {
-      int used_stack = p->stack - p->stop;
-      int new_sz = erts_next_heap_size(p->stack_sz + 2, 0);
-      Eterm *new_stack =
-        (Eterm*) erts_alloc(ERTS_ALC_T_STACK, sizeof(Eterm) * new_sz);
-      DPRINTF("Enlarging stack. This is untested in unified heap!");
-      sys_memmove((new_stack + new_sz) - used_stack, p->stop,
-                  used_stack * sizeof(Eterm));
-#ifdef DEBUG
-      sys_memset(p->send, 0xff, p->stack_sz * sizeof(Eterm));
-#endif
-      erts_free(ERTS_ALC_T_STACK, (void *) p->send);
-      p->stack_sz = new_sz;
-      p->send = new_stack;
-      p->stop = new_stack + new_sz - used_stack;
-      p->stack = new_stack + new_sz;
-    }
-#else
     if( (p->stop - 2) < p->htop ) {
 	DPRINTF("calling gc to increase BEAM stack size");
 	p->fcalls -= erts_garbage_collect(p, 2, reg, arity);
     }
-#endif
     p->stop -= 2;
     p->stop[1] = hipe_beam_catch_throw;
     p->stop[0] = make_cp(p->cp);
@@ -434,7 +409,9 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
       case HIPE_MODE_SWITCH_RES_SUSPEND: {
 	  p->i = hipe_beam_pc_resume;
 	  p->arity = 0;
+	  erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
 	  add_to_schedule_q(p);
+	  erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
 	  goto do_schedule;
       }
       case HIPE_MODE_SWITCH_RES_WAIT:
@@ -443,14 +420,15 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 #ifdef ERTS_SMP
 	  /* XXX: BEAM has different entries for the locked and unlocked
 	     cases. HiPE doesn't, so we must check dynamically. */
-	  if (p->hipe.have_receive_locks)
-	      p->hipe.have_receive_locks = 0;
+	  if (p->hipe_smp.have_receive_locks)
+	      p->hipe_smp.have_receive_locks = 0;
 	  else
 	      erts_smp_proc_lock(p, ERTS_PROC_LOCKS_MSG_RECEIVE);
 #endif
 	  p->i = hipe_beam_pc_resume;
 	  p->arity = 0;
 	  p->status = P_WAITING;
+	  erts_smp_proc_unlock(p, ERTS_PROC_LOCKS_MSG_RECEIVE);
       do_schedule:
 	  {
 #if !(NR_ARG_REGS > 5)
@@ -458,7 +436,7 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 #endif
 	      p = schedule(p, reds_in - p->fcalls);
 #ifdef ERTS_SMP
-	      p->hipe.have_receive_locks = 0;
+	      p->hipe_smp.have_receive_locks = 0;
 	      reg = p->scheduler_data->save_reg;
 #endif
 	  }

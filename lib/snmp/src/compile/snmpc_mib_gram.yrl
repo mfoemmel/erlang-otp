@@ -20,6 +20,15 @@
 %% erl44: yecc:yecc(snmpc_mib_gram,snmpc_mib_gram,false,snmpc_mib_gram), c(snmpc_mib_gram).
 %% erl431: yecc:yecc(snmpc_mib_gram,snmpc_mib_gram,snmpc_mib_gram), c(snmpc_mib_gram).
 %% erl45: yecc:yecc("snmpc_mib_gram","snmpc_mib_gram"), c(snmpc_mib_gram).
+
+%%----------------------------------------------------------------------
+%% Number of expected shift/reduce warnings
+%% This is ugly but...
+%%----------------------------------------------------------------------
+
+Expect 2.
+
+
 %% ----------------------------------------------------------------------
 Nonterminals 
 %% ----------------------------------------------------------------------

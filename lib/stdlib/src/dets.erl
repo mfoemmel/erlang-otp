@@ -191,7 +191,7 @@ bchunk(Tab, #dets_cont{bin = eof, tab = Tab}) ->
 bchunk(Tab, #dets_cont{what = bchunk, tab = Tab} = State) ->
     badarg(treq(Tab, {bchunk, State}), [Tab, State]);
 bchunk(Tab, Term) ->
-    erlang:fault(badarg, [Tab, Term]).
+    erlang:error(badarg, [Tab, Term]).
 
 close(Tab) ->  
     case dets_server:close(Tab) of
@@ -207,7 +207,7 @@ delete(Tab, Key) ->
 delete_all_objects(Tab) ->
     case treq(Tab, delete_all_objects) of
 	badarg ->
-	    erlang:fault(badarg, [Tab]);
+	    erlang:error(badarg, [Tab]);
 	fixed ->
 	    match_delete(Tab, '_');
 	Reply ->
@@ -241,7 +241,7 @@ first(Tab) ->
 fixtable(Tab, Bool) when Bool == true; Bool == false ->
     badarg(treq(Tab, {fixtable, Bool}), [Tab, Bool]);
 fixtable(Tab, Term) ->
-    erlang:fault(badarg, [Tab, Term]).
+    erlang:error(badarg, [Tab, Term]).
 
 foldr(Fun, Acc, Tab) ->
     foldl(Fun, Acc, Tab).
@@ -308,7 +308,7 @@ init_table(Tab, InitFun) ->
 init_table(Tab, InitFun, Options) when function(InitFun) ->
     case options(Options, [format, min_no_slots]) of
 	{badarg,_} -> 
-	    erlang:fault(badarg, [Tab, InitFun, Options]);
+	    erlang:error(badarg, [Tab, InitFun, Options]);
 	[Format, MinNoSlots] ->
 	    case treq(Tab, {initialize, InitFun, Format, MinNoSlots}) of
 		{thrown, Thrown} -> throw(Thrown);
@@ -316,7 +316,7 @@ init_table(Tab, InitFun, Options) when function(InitFun) ->
 	    end
     end;
 init_table(Tab, InitFun, Options) ->
-    erlang:fault(badarg, [Tab, InitFun, Options]).
+    erlang:error(badarg, [Tab, InitFun, Options]).
 
 insert(Tab, Objs) when list(Objs) ->
     badarg(treq(Tab, {insert, Objs}), [Tab, Objs]);
@@ -359,7 +359,7 @@ lookup_keys(Tab, Keys) ->
 	UKeys when list(UKeys), UKeys =/= [] ->
 	    badarg(treq(Tab, {lookup_keys, UKeys}), [Tab, Keys]);
 	_Else ->
-	    erlang:fault(badarg, [Tab, Keys])
+	    erlang:error(badarg, [Tab, Keys])
     end.
 
 match(Tab, Pat) ->
@@ -371,7 +371,7 @@ match(Tab, Pat, N) ->
 match(State) when State#dets_cont.what == bindings ->
     badarg(chunk_match(State), [State]);
 match(Term) ->
-    erlang:fault(badarg, [Term]).
+    erlang:error(badarg, [Term]).
 
 match_delete(Tab, Pat) ->
     badarg(match_delete(Tab, Pat, delete), [Tab, Pat]).
@@ -408,7 +408,7 @@ match_object(Tab, Pat, N) ->
 match_object(State) when State#dets_cont.what == object ->
     badarg(chunk_match(State), [State]);
 match_object(Term) ->
-    erlang:fault(badarg, [Term]).
+    erlang:error(badarg, [Term]).
 
 member(Tab, Key) ->
     badarg(treq(Tab, {member, Key}), [Tab, Key]).    
@@ -422,7 +422,7 @@ next(Tab, Key) ->
 open_file(File) ->
     case dets_server:open_file(to_list(File)) of
         badarg -> % Should not happen.
-            erlang:fault(dets_process_died, [File]);
+            erlang:error(dets_process_died, [File]);
         Reply -> 
             einval(Reply, [File])
     end.
@@ -432,12 +432,12 @@ open_file(Tab, Args) when list(Args) ->
         OpenArgs when record(OpenArgs, open_args) ->
             case dets_server:open_file(Tab, OpenArgs) of
                 badarg -> % Should not happen.
-                    erlang:fault(dets_process_died, [Tab, Args]);
+                    erlang:error(dets_process_died, [Tab, Args]);
                 Reply -> 
                     einval(Reply, [Tab, Args])
             end;
 	_ ->
-	    erlang:fault(badarg, [Tab, Args])
+	    erlang:error(badarg, [Tab, Args])
     end;
 open_file(Tab, Arg) ->
     open_file(Tab, [Arg]).
@@ -459,12 +459,12 @@ repair_continuation(#dets_cont{match_program = B}=Cont, MS)
 repair_continuation(#dets_cont{}=Cont, _MS) ->
     Cont;
 repair_continuation(T, MS) ->
-    erlang:fault(badarg, [T, MS]).
+    erlang:error(badarg, [T, MS]).
 
 safe_fixtable(Tab, Bool) when Bool == true; Bool == false ->
     badarg(treq(Tab, {safe_fixtable, Bool}), [Tab, Bool]);
 safe_fixtable(Tab, Term) ->
-    erlang:fault(badarg, [Tab, Term]).
+    erlang:error(badarg, [Tab, Term]).
 
 select(Tab, Pat) ->
     badarg(safe_match(Tab, Pat, select), [Tab, Pat]).
@@ -475,7 +475,7 @@ select(Tab, Pat, N) ->
 select(State) when State#dets_cont.what == select ->
     badarg(chunk_match(State), [State]);
 select(Term) ->
-    erlang:fault(badarg, [Term]).
+    erlang:error(badarg, [Term]).
 
 select_delete(Tab, Pat) ->
     badarg(match_delete(Tab, Pat, select), [Tab, Pat]).
@@ -483,7 +483,7 @@ select_delete(Tab, Pat) ->
 slot(Tab, Slot) when integer(Slot), Slot >= 0 ->
     badarg(treq(Tab, {slot, Slot}), [Tab, Slot]);
 slot(Tab, Term) ->
-    erlang:fault(badarg, [Tab, Term]).
+    erlang:error(badarg, [Tab, Term]).
 
 start() ->
     dets_server:start().
@@ -503,7 +503,7 @@ table(Tab) ->
 table(Tab, Opts) ->
     case options(Opts, [traverse, n_objects]) of
         {badarg,_} ->
-            erlang:fault(badarg, [Tab, Opts]);
+            erlang:error(badarg, [Tab, Opts]);
         [Traverse, NObjs] ->
             TF = case Traverse of
                      first_next -> 
@@ -552,12 +552,20 @@ table(Tab, Opts) ->
 qlc_next(_Tab, '$end_of_table') ->
     [];
 qlc_next(Tab, Key) ->
-    lookup(Tab, Key) ++ fun() -> qlc_next(Tab, next(Tab, Key)) end.
+    case lookup(Tab, Key) of
+        Objects when is_list(Objects) ->
+            Objects ++ fun() -> qlc_next(Tab, next(Tab, Key)) end;
+        Error ->
+            %% Do what first and next do.
+            exit(Error)
+    end.
 
 qlc_select('$end_of_table') -> 
     [];
-qlc_select({Objects, Cont}) -> 
-    Objects ++ fun() -> qlc_select(select(Cont)) end.
+qlc_select({Objects, Cont}) when is_list(Objects) -> 
+    Objects ++ fun() -> qlc_select(select(Cont)) end;
+qlc_select(Error) ->
+    Error.
 
 table_info(Tab, num_of_objects) ->
     info(Tab, size);
@@ -573,7 +581,7 @@ table_info(_Tab, _) ->
 to_ets(DTab, ETab) ->
     case ets:info(ETab, protection) of
 	undefined ->
-	    erlang:fault(badarg, [DTab, ETab]);
+	    erlang:error(badarg, [DTab, ETab]);
         _ ->
 	    Fun = fun(X, T) -> true = ets:insert(T, X), T end,
 	    foldl(Fun, ETab, DTab)
@@ -619,47 +627,44 @@ where(Tab, Object) ->
 do_traverse(Fun, Acc, Tab, Ref) ->
     safe_fixtable(Tab, true),    
     Proc = dets_server:get_pid(Tab),
-    R = (catch do_trav(Proc, Acc, Fun, Ref)),
-    safe_fixtable(Tab, false),
-    case R of
-	{Ref, Result} ->
-	    Result;
-	{'EXIT', Reason} ->
-	    erlang:fault(Reason);
-	Thrown ->
-	    throw(Thrown)
+    try
+        do_trav(Proc, Acc, Fun)
+    catch {Ref, Result} ->
+        Result
+    after 
+        safe_fixtable(Tab, false)
     end.
 
-do_trav(Proc, Acc, Fun, Ref) ->
+do_trav(Proc, Acc, Fun) ->
     {Spec, MP} = compile_match_spec(object, '_'),
     %% MP not used
     case req(Proc, {match, MP, Spec, default}) of
 	{cont, State} ->
-	    do_trav(State, Proc, Acc, Fun, Ref);
+	    do_trav(State, Proc, Acc, Fun);
 	Error ->
-	    {Ref, Error}
+	    Error
     end.
     
-do_trav(#dets_cont{bin = eof}, _Proc, Acc, _Fun, Ref) ->
-    {Ref, Acc};
-do_trav(State, Proc, Acc, Fun, Ref) ->
+do_trav(#dets_cont{bin = eof}, _Proc, Acc, _Fun) ->
+    Acc;
+do_trav(State, Proc, Acc, Fun) ->
     case req(Proc, {match_init, State}) of
 	{cont, {Bins, NewState}} ->
-	    do_trav_bins(NewState, Proc, Acc, Fun, Ref, lists:reverse(Bins));
+	    do_trav_bins(NewState, Proc, Acc, Fun, lists:reverse(Bins));
 	Error ->
-	    {Ref, Error}
+	    Error
     end.
 
-do_trav_bins(State, Proc, Acc, Fun, Ref, []) ->
-    do_trav(State, Proc, Acc, Fun, Ref);
-do_trav_bins(State, Proc, Acc, Fun, Ref, [Bin | Bins]) ->
+do_trav_bins(State, Proc, Acc, Fun, []) ->
+    do_trav(State, Proc, Acc, Fun);
+do_trav_bins(State, Proc, Acc, Fun, [Bin | Bins]) ->
     %% Unpack one binary at a time, using the client's heap.
     case catch binary_to_term(Bin) of 
 	{'EXIT', _} ->
-	    {Ref, req(Proc, {corrupt, bad_object})};
+	    req(Proc, {corrupt, bad_object});
 	Term ->
 	    NewAcc = Fun(Term, Acc),
-	    do_trav_bins(State, Proc, NewAcc, Fun, Ref, Bins)
+	    do_trav_bins(State, Proc, NewAcc, Fun, Bins)
     end.
 
 safe_match(Tab, Pat, What) ->
@@ -931,13 +936,13 @@ req(Proc, R) ->
 
 %% Inlined.
 einval({error, {file_error, _, einval}}, A) ->
-    erlang:fault(badarg, A);
+    erlang:error(badarg, A);
 einval(Reply, _A) ->
     Reply.
 
 %% Inlined.
 badarg(badarg, A) ->
-    erlang:fault(badarg, A);
+    erlang:error(badarg, A);
 badarg(Reply, _A) ->
     Reply.
 
@@ -949,7 +954,7 @@ undefined(Reply) ->
 
 %% Inlined.
 badarg_exit(badarg, A) ->
-    erlang:fault(badarg, A);
+    erlang:error(badarg, A);
 badarg_exit({ok, Reply}, _A) ->
     Reply;
 badarg_exit(Reply, _A) ->
@@ -1031,23 +1036,25 @@ open_file_loop2(Head, N) ->
     end.
 
 do_apply_op(Op, From, Head, N) ->
-    case catch apply_op(Op, From, Head, N) of
+    try apply_op(Op, From, Head, N) of
         ok -> 
             open_file_loop(Head, N);
         {N2, H2} when record(H2, head), integer(N2) ->
             open_file_loop(H2, N2);
         H2 when record(H2, head) ->
-            open_file_loop(H2, N);
-        {'EXIT', normal} ->
+            open_file_loop(H2, N)
+    catch 
+        exit:normal -> 
             exit(normal);
-        Bad ->
+        _:Bad -> 
             %% If stream_op/5 found more requests, this is not
             %% the last operation.
             Name = Head#head.name,
             error_logger:format
               ("** dets: Bug was found when accessing table ~w,~n"
-               "** dets: operation was ~p and reply was ~w.~n",
-               [Name, Op, Bad]),
+               "** dets: operation was ~p and reply was ~w.~n"
+               "** dets: Stacktrace: ~w~n",
+               [Name, Op, Bad, erlang:get_stacktrace()]),
             if
                 From =/= self() ->
                     From ! {self(), {error, {dets_bug, Name, Op, Bad}}};

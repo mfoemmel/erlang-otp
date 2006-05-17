@@ -265,17 +265,33 @@ i_put_big w d
 
 # Receive operations.
 
-wait_timeout Fail Src=iow => gen_literal_timeout(Fail, Src)
-wait_timeout Fail Src=o => i_put_float Src x | wait_timeout Fail x
+loop_rec Fail Src | smp_mark_target_label(Fail) => i_loop_rec Fail Src
+
+label L | wait_timeout Fail Src | smp_already_locked(L) => label L | i_wait_timeout_locked Fail Src
+wait_timeout Fail Src => i_wait_timeout Fail Src
+i_wait_timeout Fail Src=aiow => gen_literal_timeout(Fail, Src)
+i_wait_timeout_locked Fail Src=aiow => gen_literal_timeout_locked(Fail, Src)
+
+label L | wait Fail | smp_already_locked(L) => label L | wait_locked Fail
+wait Fail | smp() => wait_unlocked Fail
+
+label L | timeout | smp_already_locked(L) => label L | timeout_locked
 
 remove_message
 timeout
-loop_rec f r
+timeout_locked
+i_loop_rec f r
 loop_rec_end f
 wait f
-wait_timeout f I
-wait_timeout f s
+wait_locked f
+wait_unlocked f
+i_wait_timeout f I
+i_wait_timeout f s
+i_wait_timeout_locked f I
+i_wait_timeout_locked f s
 i_wait_error
+i_wait_error_locked
+
 
 #
 # Arithmethic operations.
@@ -682,9 +698,6 @@ init Y1 | init Y2 => init2 Y1 Y2
 %macro: allocate_init AllocateInit -pack
 allocate_init t I y
 
-%macro: init2 Init2 -pack
-init2 y y
-
 #################################################################
 # External function and bif calls.
 #################################################################
@@ -867,8 +880,8 @@ call_bif3 e
 # Calls to non-building and guard BIFs.
 #
 
-bif0 Bif=u$bif:erlang:self/0 Dst=d => self Dst
-bif0 Bif=u$bif:erlang:node/0 Dst=d => node Dst
+bif0 u$bif:erlang:self/0 Dst=d => self Dst
+bif0 u$bif:erlang:node/0 Dst=d => node Dst
 
 bif1 Fail Bif=u$bif:erlang:get/1 Src=s Dst=d => i_get Src Dst
 
@@ -905,6 +918,35 @@ bif1 f b s d
 bif1_body b s d
 i_bif2 f b d
 i_bif2_body b d
+
+#
+# New guard Bifs that may garbage collect (instead of building heap fragments).
+#
+
+gc_bif1 Fail I Bif=u$bif:erlang:bnot/1 Src Dst=d => int_bnot Fail Src Dst
+gc_bif1 Fail I Bif=u$bif:erlang:length/1 Src Dst=d => bif1 Fail Bif Src Dst
+gc_bif1 Fail I Bif=u$bif:erlang:size/1 Src Dst=d => bif1 Fail Bif Src Dst
+gc_bif1 Fail I Bif=u$bif:erlang:abs/1 Src Dst=d => bif1 Fail Bif Src Dst
+gc_bif1 Fail I Bif=u$bif:erlang:float/1 Src Dst=d => bif1 Fail Bif Src Dst
+gc_bif1 Fail I Bif=u$bif:erlang:round/1 Src Dst=d => bif1 Fail Bif Src Dst
+gc_bif1 Fail I Bif=u$bif:erlang:trunc/1 Src Dst=d => bif1 Fail Bif Src Dst
+
+gc_bif1 Fail I u$bif:erlang:sminus/1 Src Dst=d => m_minus Fail i Src Dst
+gc_bif1 Fail I u$bif:erlang:splus/1 Src Dst=d => m_plus Fail i Src Dst
+
+gc_bif2 Fail I u$bif:erlang:splus/2 S1 S2 Dst=d => m_plus Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:sminus/2 S1 S2 Dst=d => m_minus Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:stimes/2 S1 S2 Dst=d => m_times Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:div/2 S1 S2 Dst=d => m_div Fail S1 S2 Dst
+
+gc_bif2 Fail I u$bif:erlang:intdiv/2 S1 S2 Dst=d => int_div Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:rem/2 S1 S2 Dst=d => int_rem Fail S1 S2 Dst
+
+gc_bif2 Fail I u$bif:erlang:band/2 S1 S2 Dst=d => int_band Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:bor/2 S1 S2 Dst=d => int_bor Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:bxor/2 S1 S2 Dst=d => int_bxor Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:bsl/2 S1 S2 Dst=d => int_bsl Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:bsr/2 S1 S2 Dst=d => int_bsr Fail S1 S2 Dst
 
 #
 # Internal calls.
@@ -984,89 +1026,92 @@ func_info M=a a==am_module_info A=u==0 | label L | move n r => gen_func_info_mi(
 func_info M=a a==am_module_info A=u==1 | label L | move n r => gen_func_info_mi(M, A, L)
 func_info M=a F=a A=u | label L => gen_func_info(M, F, A, L)
 
-#
-# Matching binaries: Getting started.
-#
+# ================================================================
+# New bit syntax matching (R11B).
+# ================================================================
+
 %cold
-%macro: bs_start_match BsStartMatch -fail_action
-bs_start_match f x
-bs_start_match f y
-bs_start_match f r
-bs_start_match Fail=f icwoa => jump Fail
+%macro: bs_start_match2 BsStartMatch2 -fail_action -gen_dest
+bs_start_match2 f r I I d
+bs_start_match2 f x I I d
+bs_start_match2 f y I I d
+bs_start_match2 Fail=f icwoa X Y D => jump Fail
 
-bs_save I
-bs_restore I
+bs_save2 r I
+bs_save2 x I
+bs_restore2 r I
+bs_restore2 x I
 
-#
 # Fetching integers from binaries.
-#
-bs_get_integer Fail=f Sz=s Unit=u Flags=u Dst=d => \
-			gen_get_integer(Fail, Sz, Unit, Flags, Dst)
-%macro: i_bs_get_integer_imm BsGetIntegerImm -fail_action -gen_dest
-%macro: i_bs_get_integer BsGetInteger -fail_action -gen_dest
-%macro: i_bs_get_integer8 BsGetInteger8 -fail_action -gen_dest
-%macro: i_bs_get_integer16 BsGetInteger16 -fail_action -gen_dest
-%macro: i_bs_get_integer32 BsGetInteger32 -fail_action -gen_dest
-i_bs_get_integer_imm f I I d
-i_bs_get_integer f s I d
-i_bs_get_integer8 f d
-i_bs_get_integer16 f d
-i_bs_get_integer32 f d
+bs_get_integer2 Fail=f Ms=rx Live=u Sz=s Unit=u Flags=u Dst=d => \
+			gen_get_integer2(Fail, Ms, Live, Sz, Unit, Flags, Dst)
+%macro: i_bs_get_integer_imm2 BsGetIntegerImm2 -fail_action -gen_dest
+%macro: i_bs_get_integer2 BsGetInteger2 -fail_action -gen_dest
+%macro: i_bs_get_integer2_8 BsGetInteger2_8 -fail_action -gen_dest
+%macro: i_bs_get_integer2_16 BsGetInteger2_16 -fail_action -gen_dest
+%macro: i_bs_get_integer2_32 BsGetInteger2_32 -fail_action -gen_dest
+i_bs_get_integer_imm2 f r I I I d
+i_bs_get_integer_imm2 f x I I I d
+i_bs_get_integer2 f r I s I d
+i_bs_get_integer2 f x I s I d
+i_bs_get_integer2_8 f r d
+i_bs_get_integer2_8 f x d
+i_bs_get_integer2_16 f r d
+i_bs_get_integer2_16 f x d
+i_bs_get_integer2_32 f r I d
+i_bs_get_integer2_32 f x I d
 
-#
-# Fetching integers from binaries.
-#
-bs_get_binary Fail=f Sz=s Unit=u Flags=u Dst=d => \
-			gen_get_binary(Fail, Sz, Unit, Flags, Dst)
-%macro: i_bs_get_binary_imm BsGetBinaryImm -fail_action -gen_dest
-%macro: i_bs_get_binary BsGetBinary -fail_action -gen_dest
-%macro: i_bs_get_binary_all BsGetBinaryAll -fail_action -gen_dest
-i_bs_get_binary_imm f I I d
-i_bs_get_binary f s I d
-i_bs_get_binary_all f d
+# Fetching binaries from binaries.
+bs_get_binary2 Fail=f Ms=rx Live=u Sz=s Unit=u Flags=u Dst=d => \
+			gen_get_binary2(Fail, Ms, Live, Sz, Unit, Flags, Dst)
+%macro: i_bs_get_binary_imm2 BsGetBinaryImm_2 -fail_action -gen_dest
+%macro: i_bs_get_binary2 BsGetBinary_2 -fail_action -gen_dest
+%macro: i_bs_get_binary_all2 BsGetBinaryAll_2 -fail_action -gen_dest
+i_bs_get_binary_imm2 f r I I I d
+i_bs_get_binary_imm2 f x I I I d
+i_bs_get_binary2 f r I s I d
+i_bs_get_binary2 f x I s I d
+i_bs_get_binary_all2 f r I d
+i_bs_get_binary_all2 f x I d
 
-#
-# Fetching floats from binaries.
-#
-bs_get_float Fail=f Sz=s Unit=u Flags=u Dst=d => \
-			gen_get_float(Fail, Sz, Unit, Flags, Dst)
+# Fetching float from binaries.
+bs_get_float2 Fail=f Ms=rx Live=u Sz=s Unit=u Flags=u Dst=d => \
+		gen_get_float2(Fail, Ms, Live, Sz, Unit, Flags, Dst)
 
-%macro: i_bs_get_float BsGetFloat -fail_action -gen_dest
-i_bs_get_float f s I d
+%macro: i_bs_get_float2 BsGetFloat2 -fail_action -gen_dest
+i_bs_get_float2 f r I s I d
+i_bs_get_float2 f x I s I d
 
-#
-# Skipping uninteresting bits.
-#
-bs_skip_bits Fail=f Sz=s Unit=u Flags=u => gen_skip_bits(Fail, Sz, Unit, Flags)
+# Miscellanous
 
-%macro: i_bs_skip_bits_imm BsSkipBitsImm -fail_action
-i_bs_skip_bits_imm f I
+bs_skip_bits2 Fail=f Ms=rx Sz=s Unit=u Flags=u => \
+			gen_skip_bits2(Fail, Ms, Sz, Unit, Flags)
 
-%macro: i_bs_skip_bits BsSkipBits -fail_action
-i_bs_skip_bits f x I
-i_bs_skip_bits f r I
-i_bs_skip_bits f y I
+%macro: i_bs_skip_bits_imm2 BsSkipBitsImm2 -fail_action
+i_bs_skip_bits_imm2 f r I
+i_bs_skip_bits_imm2 f x I
 
-%macro: i_bs_skip_bits_all BsSkipBitsAll -fail_action
-i_bs_skip_bits_all f
+%macro: i_bs_skip_bits2 BsSkipBits2 -fail_action
+i_bs_skip_bits2 f r x I
+i_bs_skip_bits2 f r r I
+i_bs_skip_bits2 f r y I
+i_bs_skip_bits2 f x x I
+i_bs_skip_bits2 f x r I
+i_bs_skip_bits2 f x y I
 
-%macro: i_bs_skip_bits_all_aligned BsSkipBitsAllAligned -fail_action
-i_bs_skip_bits_all_aligned
+%macro: i_bs_skip_bits_all2 BsSkipBitsAll2 -fail_action
+i_bs_skip_bits_all2 f r
+i_bs_skip_bits_all2 f x
 
-#
-# Testing the tail.
-#
-bs_test_tail Fail=f Bits=u==0 => bs_test_zero_tail Fail
-bs_test_tail Fail=f Bits=u => bs_test_tail_imm Fail Bits
-bs_test_zero_tail f
-bs_test_tail_imm f I
+bs_test_tail2 Fail=f Ms=rx Bits=u==0 => bs_test_zero_tail2 Fail Ms
+bs_test_tail2 Fail=f Ms=rx Bits=u => bs_test_tail_imm2 Fail Ms Bits
+bs_test_zero_tail2 f r
+bs_test_zero_tail2 f x
+bs_test_tail_imm2 f r I
+bs_test_tail_imm2 f x I
 
-#
-# Some optimisations.
-#
-i_bs_get_binary_all Fail Dst | bs_test_tail f u==0 => i_bs_get_binary_all Fail Dst
-i_bs_skip_bits_all_aligned | bs_test_tail f u==0 =>
-i_bs_skip_bits_all Fail | bs_test_tail f u==0 => i_bs_skip_bits_all Fail
+
+%hot
 
 #
 # Constructing binaries

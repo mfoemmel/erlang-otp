@@ -32,10 +32,12 @@
 -export([init/1, handle_call/3, handle_info/2, terminate/2, code_change/3]).
 -export([handle_cast/2]).
 
+-define(DICT, dict).
+
 -record(state, {name,
 		strategy,
 		children = [],
-		dynamics = [],
+		dynamics = ?DICT:new(),
 		intensity,
 		period,
 		restarts = [],
@@ -218,11 +220,11 @@ handle_call({start_child, EArgs}, _From, State) when ?is_simple(State) ->
     case do_start_child_i(M, F, Args) of
 	{ok, Pid} ->
 	    NState = State#state{dynamics = 
-				 [{Pid, Args}|State#state.dynamics]},
+				 ?DICT:store(Pid, Args, State#state.dynamics)},
 	    {reply, {ok, Pid}, NState};
 	{ok, Pid, Extra} ->
 	    NState = State#state{dynamics = 
-				 [{Pid, Args}|State#state.dynamics]},
+				 ?DICT:store(Pid, Args, State#state.dynamics)},
 	    {reply, {ok, Pid, Extra}, NState};
 	What ->
 	    {reply, What, State}
@@ -284,7 +286,7 @@ handle_call({terminate_child, Name}, _From, State) ->
 handle_call(which_children, _From, State) when ?is_simple(State) ->
     [#child{child_type = CT, modules = Mods}] = State#state.children,
     Reply = lists:map(fun({Pid, _}) -> {undefined, Pid, CT, Mods} end,
-		      State#state.dynamics),
+		      ?DICT:to_list(State#state.dynamics)),
     {reply, Reply, State};
 
 handle_call(which_children, _From, State) ->
@@ -439,14 +441,14 @@ handle_start_child(Child, State) ->
 %%% ---------------------------------------------------
 
 restart_child(Pid, Reason, State) when ?is_simple(State) ->
-    case lists:keysearch(Pid, 1, State#state.dynamics) of
-	{value, {_Pid, Args}} ->
+    case ?DICT:find(Pid, State#state.dynamics) of
+	{ok, Args} ->
 	    [Child] = State#state.children,
 	    RestartType = Child#child.restart_type,
 	    {M, F, _} = Child#child.mfa,
 	    NChild = Child#child{pid = Pid, mfa = {M, F, Args}},
 	    do_restart(RestartType, Reason, NChild, State);
-	_ ->
+	error ->
 	    {ok, State}
     end;
 restart_child(Pid, Reason, State) ->
@@ -488,13 +490,13 @@ restart(Child, State) ->
 
 restart(simple_one_for_one, Child, State) ->
     #child{mfa = {M, F, A}} = Child,
-    Dynamics = lists:keydelete(Child#child.pid,1,State#state.dynamics),
+    Dynamics = ?DICT:erase(Child#child.pid, State#state.dynamics),
     case do_start_child_i(M, F, A) of
 	{ok, Pid} ->
-	    NState = State#state{dynamics = [{Pid, A} | Dynamics]},
+	    NState = State#state{dynamics = ?DICT:store(Pid, A, Dynamics)},
 	    {ok, NState};
 	{ok, Pid, _Extra} ->
-	    NState = State#state{dynamics = [{Pid, A} | Dynamics]},
+	    NState = State#state{dynamics = ?DICT:store(Pid, A, Dynamics)},
 	    {ok, NState};
 	{error, Error} ->
 	    report_error(start_error, Error, Child, State#state.name),
@@ -638,7 +640,7 @@ monitor_child(Pid) ->
 %% Child/State manipulating functions.
 %%-----------------------------------------------------------------
 state_del_child(#child{pid = Pid}, State) when ?is_simple(State) ->
-    NDynamics = lists:keydelete(Pid, 1, State#state.dynamics),
+    NDynamics = ?DICT:erase(Pid, State#state.dynamics),
     State#state{dynamics = NDynamics};
 state_del_child(Child, State) ->
     NChildren = del_child(Child#child.name, State#state.children),

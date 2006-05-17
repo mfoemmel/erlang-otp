@@ -48,7 +48,9 @@
 
 #define INCL_WINSOCK_API_TYPEDEFS 1
 
+#ifndef WINDOWS_H_INCLUDES_WINSOCK2_H
 #include <winsock2.h>
+#endif
 #include <windows.h>
 
 #include <winsock_func.h>
@@ -57,6 +59,9 @@
 
 #undef WANT_NONBLOCKING
 #include "sys.h"
+
+#undef EWOULDBLOCK
+#undef ETIMEDOUT
 
 #define HAVE_MULTICAST_SUPPORT
 
@@ -410,7 +415,7 @@ static int my_strncasecmp(const char *s1, const char *s2, size_t n)
 #define INET_REQ_BIND          6
 #define INET_REQ_SETOPTS       7
 #define INET_REQ_GETOPTS       8
-#define INET_REQ_GETIX         9
+/* #define INET_REQ_GETIX         9  NOT USED ANY MORE */
 /* #define INET_REQ_GETIF         10 REPLACE BY NEW STUFF */
 #define INET_REQ_GETSTAT       11
 #define INET_REQ_GETHOSTNAME   12
@@ -490,7 +495,7 @@ static int my_strncasecmp(const char *s1, const char *s2, size_t n)
 #define INET_STAT_SEND_OCT   10     /* sent octets */
 
 
-#define INET_DEF_BUFFER     1024        /* default buffer size */
+#define INET_DEF_BUFFER     1460        /* default buffer size */
 #define INET_MIN_BUFFER     1           /* internal min buffer */
 #define INET_MAX_BUFFER     (1024*64)   /* internal max buffer */
 
@@ -503,7 +508,7 @@ static int my_strncasecmp(const char *s1, const char *s2, size_t n)
 
 #define INET_INFINITY  0xffffffff  /* infinity value */
 
-#define INET_MAX_ASYNC 1           /* max number of async queueu ops */
+#define INET_MAX_ASYNC 1           /* max number of async queue ops */
 
 /* INET_UDP_POLL could be an option !! */
 #define INET_UDP_POLL   5        /* maximum number of packets to poll */
@@ -604,7 +609,6 @@ typedef struct {
     int   sfamily;              /* address family */
     int   htype;                /* header type (tcp only?) */
     unsigned int psize;         /* max packet size (tcp only?) */
-    int   ix;                   /* descriptor index */
     int   bit8;                 /* set if bit8f==true and data some data
 				   seen had the 7th bit set */
     inet_address remote;        /* remote address for connected sockets */
@@ -642,9 +646,8 @@ typedef struct {
 #define TCP_STATE_BOUND      (TCP_STATE_OPEN | INET_F_BOUND)
 #define TCP_STATE_CONNECTED  (TCP_STATE_BOUND | INET_F_ACTIVE)
 #define TCP_STATE_LISTEN     (TCP_STATE_BOUND | INET_F_LISTEN)
-#define TCP_STATE_LISTENING  (TCP_STATE_LISTEN | INET_F_LST)
 #define TCP_STATE_CONNECTING (TCP_STATE_BOUND | INET_F_CON)
-#define TCP_STATE_ACCEPTING  (INET_F_ACC)
+#define TCP_STATE_ACCEPTING  (TCP_STATE_LISTEN | INET_F_ACC)
 
 #define TCP_PB_RAW     0
 #define TCP_PB_1       1
@@ -660,7 +663,7 @@ typedef struct {
 #define TCP_PB_HTTPH   11
 
 
-#define TCP_MAX_PACKET_SIZE 0x1000000  /* 16 M */
+#define TCP_MAX_PACKET_SIZE 0x4000000  /* 64 M */
 
 #define MAX_VSIZE 16		/* Max number of entries allowed in an I/O
 				 * vector sock_sendv().
@@ -746,7 +749,6 @@ typedef struct {
     int   low;                  /* low watermark */
     int   send_timeout;         /* timeout to use in send */
     int   busy_on_send;         /* busy on send with timeout! */
-    int   i_ix;                 /* accept descriptor index / read indicator */
     int   i_bufsz;              /* current input buffer size (<= bufsz) */
     ErlDrvBinary* i_buf;        /* current binary buffer */
     char*         i_ptr;        /* current pos in buf */
@@ -775,14 +777,6 @@ static int udp_inet_input(udp_descriptor* desc, HANDLE event);
 
 /* convert descriptor poiner to inet_descriptor pointer */
 #define INETP(d) (&(d)->inet)
-
-static inet_descriptor** inet_desc_table;
-static int inet_desc_ix;
-static int inet_desc_size;         /* number of descriptors */
-
-#ifndef INET_MAX_DESCRIPTOR
-#define INET_MAX_DESCRIPTOR sys_max_files()
-#endif
 
 static int async_ref = 0;          /* async reference id generator */
 #define NEW_ASYNC_ID() ((async_ref++) & 0xffff)
@@ -823,7 +817,6 @@ struct erl_drv_entry inet_driver_entry =
 
 /* XXX: is this a driver interface function ??? */
 extern void erl_exit(int n, char*, _DOTS_);
-extern int send_error_to_logger(int);
 
 /*
  * Malloc wrapper,
@@ -1035,7 +1028,9 @@ static void release_buffer(ErlDrvBinary* buf)
     }
     else {
 #ifdef CHECK_DOUBLE_RELEASE
+#ifdef __GNUC__
 #warning CHECK_DOUBLE_RELEASE is enabled, this is a custom build emulator
+#endif
 	int i;
 	for (i = 0; i < buffer_stack_pos; ++i) {
 	    if (buffer_stack[i] == buf) {
@@ -1073,7 +1068,7 @@ static void free_buffer(ErlDrvBinary* buf)
     DEBUGF(("free_buffer: %ld\r\n", (buf==NULL) ? 0 : buf->orig_size));
 
     if (buf != NULL) {
-	if (buf->refc == 1)
+	if (driver_binary_get_refc(buf) == 1)
 	    release_buffer(buf);
 	else {
 	    COUNT_BUF_FREE(buf->orig_size);
@@ -1246,18 +1241,43 @@ static int deq_async(inet_descriptor* desc, int* ap, ErlDrvTermData* cp, int* rp
 **     {inet_async, Port, Ref, ok} 
 */
 static int 
-send_async_ok(ErlDrvPort port, ErlDrvTermData sender, int aid, ErlDrvTermData recipient)
+send_async_ok(ErlDrvPort port, ErlDrvTermData Port, int Ref, 
+	      ErlDrvTermData recipient)
 {
     ErlDrvTermData spec[10];
     int i = 0;
 
     i = LOAD_ATOM(spec, i, am_inet_async);
-    i = LOAD_PORT(spec, i, sender);
-    i = LOAD_INT(spec, i, aid);
+    i = LOAD_PORT(spec, i, Port);
+    i = LOAD_INT(spec, i, Ref);
     i = LOAD_ATOM(spec, i, am_ok);
     i = LOAD_TUPLE(spec, i, 4);
 
     ASSERT(i == 10);
+
+    return driver_send_term(port, recipient, spec, i);
+}
+
+/* send message:
+**     {inet_async, Port, Ref, {ok,Port2}} 
+*/
+static int 
+send_async_ok_port(ErlDrvPort port, ErlDrvTermData Port, int Ref, 
+		   ErlDrvTermData recipient, ErlDrvTermData Port2)
+{
+    ErlDrvTermData spec[15];
+    int i = 0;
+
+    i = LOAD_ATOM(spec, i, am_inet_async);
+    i = LOAD_PORT(spec, i, Port);
+    i = LOAD_INT(spec, i, Ref);
+    {
+	i = LOAD_ATOM(spec, i, am_ok);
+	i = LOAD_PORT(spec, i, Port2);
+	i = LOAD_TUPLE(spec, i, 2);
+    }
+    i = LOAD_TUPLE(spec, i, 4);
+    ASSERT(i == 14);
 
     return driver_send_term(port, recipient, spec, i);
 }
@@ -1299,6 +1319,16 @@ static int async_ok(inet_descriptor* desc)
     return send_async_ok(desc->port, desc->dport, aid, caller);
 }
 
+static int async_ok_port(inet_descriptor* desc, ErlDrvTermData Port2)
+{
+    int req;
+    int aid;
+    ErlDrvTermData caller;
+
+    if (deq_async(desc, &aid, &caller, &req) < 0)
+	return -1;
+    return send_async_ok_port(desc->port, desc->dport, aid, caller, Port2);
+}
 
 static int async_error_am(inet_descriptor* desc, ErlDrvTermData reason)
 {
@@ -1560,7 +1590,7 @@ static void http_hash(char* name, http_atom_t* entry,
   hash[ix] = entry;
 }
 
-static http_atom_t* http_hash_lookup(unsigned char* name, int len,
+static http_atom_t* http_hash_lookup(char* name, int len,
 				     unsigned long h,
 				     http_atom_t** hash, int hsize)
 {
@@ -1587,7 +1617,7 @@ static int http_init(void)
     tspecial[i] = 1;
   for (i = 33; i < 127; i++)
     tspecial[i] = 0;
-  for (ptr = "()<>@,;:\\\"/[]?={} \t"; *ptr != '\0'; ptr++)
+  for (ptr = (unsigned char*)"()<>@,;:\\\"/[]?={} \t"; *ptr != '\0'; ptr++)
     tspecial[*ptr] = 1;
 
   am_http_eoh      = driver_mk_atom("http_eoh");
@@ -2631,8 +2661,6 @@ sock_init(void) /* May be called multiple times. */
 
 static int inet_init()
 {
-    int sz;
-
     if (!sock_init())
 	goto error;
 
@@ -2657,15 +2685,6 @@ static int inet_init()
     am_closed       = driver_mk_atom("closed");
     am_empty_out_q  = driver_mk_atom("empty_out_q");
 
-    inet_desc_size = INET_MAX_DESCRIPTOR;
-    sz = sizeof(inet_descriptor*) * inet_desc_size;
-
-    if ((inet_desc_table = (inet_descriptor**) ALLOC(sz)) == NULL)
-	goto error;
-
-    sys_memzero(inet_desc_table, sz);
-    inet_desc_ix = 0;
-
     /* add tcp and udp drivers */
 #ifdef _OSE_
     add_ose_tcp_drv_entry(&tcp_inet_driver_entry);
@@ -2686,14 +2705,16 @@ static int inet_init()
     if (winSock.WSACleanup) {
 	(*winSock.WSACleanup)();
     }
-    sys_printf(CBUF,
-	       "Failed to load or start Winsock2 (ws2_32.dll).\r\n\r\n"
-	       "Erlang modules using TCP/IP (gen_tcp, ftp, and others),\r\n"
-	       "will not work.  Furthermore, this Erlang node will not be able to\r\n"
-	       "communicate with other Erlang nodes.\r\n\r\n"
-	       "Refer to the Installation Guide for instructions about installing\r\n"
-	       "Winsock2 on Windows 95.\r\n\r\n");
-    send_error_to_logger(0);
+    {
+	char *msg =
+	    "Failed to load or start Winsock2 (ws2_32.dll).\r\n\r\n"
+	    "Erlang modules using TCP/IP (gen_tcp, ftp, and others),\r\n"
+	    "will not work.  Furthermore, this Erlang node will not be able to\r\n"
+	    "communicate with other Erlang nodes.\r\n\r\n"
+	    "Refer to the Installation Guide for instructions about installing\r\n"
+	    "Winsock2 on Windows 95.\r\n\r\n";
+	erts_send_error_to_logger_str_nogl(msg);
+    }
     add_driver_entry(&dummy_tcp_driver_entry);
     add_driver_entry(&dummy_udp_driver_entry);
 #endif
@@ -2701,27 +2722,6 @@ static int inet_init()
     return -1;
 }
 
-/* XXX add this as a finish routine */
-#if 0
-static void inet_finish(arg)
-void* arg;
-{
-    int i;
-    int found = 0;
-    inet_descriptor* desc;
-
-    for (i = 0; i < inet_desc_size; i++) {
-	if ((desc = inet_desc_table[i]) != NULL) {
-	    found++;
-	    if (desc->stype == SOCK_STREAM)
-		tcp_inet_stop((tcp_descriptor*) desc);
-	    else if (desc->stype == SOCK_DGRAM)
-		udp_inet_stop((tcp_descriptor*) desc);
-	}
-    }
-    FREE(inet_desc_table);
-}
-#endif
 
 /*
 ** Set a inaddr structure:
@@ -2769,7 +2769,7 @@ static char* inet_set_address(int family, inet_address* dst, char* src, int* len
 ** and *len is the length of dst on return 
 ** (suitable to deliver to erlang)
 */
-static int inet_get_address(int family, char* dst, inet_address* src, int* len)
+static int inet_get_address(int family, char* dst, inet_address* src, unsigned int* len)
 {
     short port;
 
@@ -2865,7 +2865,7 @@ static int inet_ctl_fdopen(inet_descriptor* desc, int domain, int type,
 			   SOCKET s, char** rbuf, int rsize)
 {
     inet_address name;
-    int sz = sizeof(name);
+    unsigned int sz = sizeof(name);
 
     /* check that it is a socket and that the socket is bound */
     if (sock_name(s, (struct sockaddr*) &name, &sz) == SOCKET_ERROR)
@@ -3948,7 +3948,7 @@ static int inet_fill_opts(inet_descriptor* desc,
     struct linger li_val;
     int ival;
     char* arg_ptr;
-    int arg_sz;
+    unsigned int arg_sz;
     char* save_ptr = ptr;
 
     *ptr++ = INET_REP_OK;
@@ -4246,7 +4246,6 @@ static int inet_subscribe(inet_descriptor* desc, char* src, int len, char* dst)
 static void inet_stop(inet_descriptor* desc)
 {
     erl_inet_close(desc);
-    inet_desc_table[desc->ix] = NULL;  /* detach from table */
     FREE(desc);
 }
 
@@ -4255,21 +4254,6 @@ static void inet_stop(inet_descriptor* desc)
 static ErlDrvData inet_start(ErlDrvPort port, int size)
 {
     inet_descriptor* desc;
-    int ix = inet_desc_ix;
-    int save_ix = ix;
-
-    do {
-	if (inet_desc_table[ix] == NULL)
-	    break;
-	ix = (ix + 1) % inet_desc_size;
-    } while(ix != save_ix);
-
-    if (inet_desc_table[ix] != NULL) {
-	DEBUGF(("ran out of inet descriptors max = %d\r\r\n", inet_desc_size));
-	errno = EMFILE;
-	return NULL;
-    }
-    inet_desc_ix = (ix + 1) % inet_desc_size;
 
     if ((desc = (inet_descriptor*) ALLOC(size)) == NULL)
 	return NULL;
@@ -4284,7 +4268,6 @@ static ErlDrvData inet_start(ErlDrvPort port, int size)
     desc->dport = driver_mk_port(port);
     desc->state = INET_STATE_CLOSED;
     desc->prebound = 0;
-    desc->ix = ix;
     desc->bufsz = INET_DEF_BUFFER; 
     desc->hsz = 0;                     /* list header size */
     desc->htype = TCP_PB_RAW;          /* default packet type */
@@ -4317,8 +4300,6 @@ static ErlDrvData inet_start(ErlDrvPort port, int size)
     desc->empty_out_q_subs.next = NULL;
 
     sys_memzero((char *)&desc->remote,sizeof(desc->remote));
-
-    inet_desc_table[ix] = desc;
 
     return (ErlDrvData)desc;
 }
@@ -4434,14 +4415,6 @@ static int inet_ctl(inet_descriptor* desc, int cmd, char* buf, int len,
 	}
     }
 
-    case INET_REQ_GETIX: {          /* get internal index (listen/accept) */
-	char tbuf[4];
-
-	DEBUGF(("inet_ctl(%ld): GETIX\r\n", (long)desc->port)); 
-	put_int32(desc->ix, tbuf);
-	return ctl_reply(INET_REP_OK, tbuf, 4, rbuf, rsize);
-    }
-
     case INET_REQ_GETSTATUS: {
 	char tbuf[4];
 
@@ -4503,7 +4476,7 @@ static int inet_ctl(inet_descriptor* desc, int cmd, char* buf, int len,
 	char tbuf[sizeof(inet_address)];
 	inet_address peer;
 	inet_address* ptr;
-	int sz = sizeof(peer);
+	unsigned int sz = sizeof(peer);
 
 	DEBUGF(("inet_ctl(%ld): PEER\r\n", (long)desc->port)); 
 
@@ -4539,7 +4512,7 @@ static int inet_ctl(inet_descriptor* desc, int cmd, char* buf, int len,
 	char tbuf[sizeof(inet_address)];
 	inet_address name;
 	inet_address* ptr;
-	int sz = sizeof(name);
+	unsigned int sz = sizeof(name);
 
 	DEBUGF(("inet_ctl(%ld): NAME\r\n", (long)desc->port)); 
 
@@ -4594,7 +4567,7 @@ static int inet_ctl(inet_descriptor* desc, int cmd, char* buf, int len,
 
 	if ((port = inet_address_port(&local)) == 0) {
 	    len = sizeof(local);
-	    sock_name(desc->s, (struct sockaddr*) &local, &len);
+	    sock_name(desc->s, (struct sockaddr*) &local, (unsigned int*)&len);
 	    port = inet_address_port(&local);
 	}
 	port = sock_ntohs(port);
@@ -4846,7 +4819,6 @@ static ErlDrvData tcp_inet_start(ErlDrvPort port, char* args)
     desc->low  = INET_LOW_WATERMARK;
     desc->send_timeout = INET_INFINITY;
     desc->busy_on_send = 0;
-    desc->i_ix = -1;
     desc->i_buf = NULL;
     desc->i_ptr = NULL;
     desc->i_ptr_start = NULL;
@@ -4860,31 +4832,56 @@ static ErlDrvData tcp_inet_start(ErlDrvPort port, char* args)
     return (ErlDrvData) desc;
 }
 
-/*
-** Given a accepting port, restore the state on the listener port
-*/
-static void tcp_clear_listener(tcp_descriptor* a_desc)
+/* Copy a descriptor, by creating a new port with same settings
+ * as the descriptor desc.
+ * return NULL on error (ENFILE no ports avail)
+ */
+static tcp_descriptor* tcp_inet_copy(tcp_descriptor* desc,SOCKET s,
+				     ErlDrvTermData owner, int* err)
 {
-    int i;
-    int ix = a_desc->inet.ix;
-    tcp_descriptor* l_desc;
+    ErlDrvPort port;
+    tcp_descriptor* copy_desc;
 
-    ASSERT(a_desc->inet.state ==  TCP_STATE_ACCEPTING);
+    copy_desc = (tcp_descriptor*) tcp_inet_start(desc->inet.port, NULL);
 
-    for (i = 0; i < inet_desc_size; i++) {
-	inet_descriptor* inp = inet_desc_table[i];
-	if ((inp != NULL) && (inp->stype == SOCK_STREAM)) {
-	    l_desc = (tcp_descriptor*) inp;
-	    if (l_desc->i_ix == ix) {
-		if (l_desc->inet.state == TCP_STATE_LISTENING) {
-		    l_desc->inet.state = TCP_STATE_LISTEN;
-		    sock_select(INETP(l_desc), FD_ACCEPT, 0);
-		}
-		l_desc->i_ix = -1;
-		return;
-	    }
+    /* Setup event if needed */
+    if ((copy_desc->inet.s = s) != INVALID_SOCKET) {
+	if ((copy_desc->inet.event = sock_create_event(INETP(copy_desc))) ==
+	    INVALID_EVENT) {
+	    *err = sock_errno();
+	    FREE(copy_desc);
+	    return NULL;
 	}
     }
+
+    /* Some flags must be inherited at this point */
+    copy_desc->inet.mode    = desc->inet.mode;
+    copy_desc->inet.exitf   = desc->inet.exitf;
+    copy_desc->inet.bit8f   = desc->inet.bit8f;
+    copy_desc->inet.deliver = desc->inet.deliver;
+    copy_desc->inet.htype   = desc->inet.htype; 
+    copy_desc->inet.psize   = desc->inet.psize; 
+    copy_desc->inet.stype   = desc->inet.stype;
+    copy_desc->inet.sfamily = desc->inet.sfamily;
+    copy_desc->inet.hsz     = desc->inet.hsz;
+    copy_desc->inet.bufsz   = desc->inet.bufsz;
+    copy_desc->high         = desc->high;
+    copy_desc->low          = desc->low;
+    copy_desc->send_timeout = desc->send_timeout;
+    
+    /* The new port will be linked and connected to the original caller */
+    port = driver_create_port(&tcp_inet_driver_entry, owner,
+			      "tcp_inet",
+			      (ErlDrvData) copy_desc);
+    if ((long)port == -1) {
+	*err = ENFILE;
+	FREE(copy_desc);
+	return NULL;
+    }
+    copy_desc->inet.port = port;
+    copy_desc->inet.dport = driver_mk_port(port);
+    *err = 0;
+    return copy_desc;
 }
 
 /*
@@ -4894,17 +4891,9 @@ static void tcp_clear_listener(tcp_descriptor* a_desc)
 */
 static void tcp_close_check(tcp_descriptor* desc)
 {
-    if ((desc->inet.state == TCP_STATE_LISTENING) && (desc->i_ix != -1)) {
-	tcp_descriptor* a_desc = 
-	    (tcp_descriptor*) inet_desc_table[desc->i_ix];
-	if ((a_desc != NULL) && (a_desc->inet.state == TCP_STATE_ACCEPTING)) {
-	    DEBUGF(("tcp_close_check(%ld): s=%d\r\n",
-		    (long)a_desc->inet.port, a_desc->inet.s));
-	    async_error_am(INETP(a_desc), am_closed);
-	}
-    }
-    else if (desc->inet.state == TCP_STATE_ACCEPTING) {
-	tcp_clear_listener(desc);
+    if (desc->inet.state == TCP_STATE_ACCEPTING) {
+	sock_select(INETP(desc), FD_ACCEPT, 0);
+	desc->inet.state = TCP_STATE_LISTEN;
 	async_error_am(INETP(desc), am_closed);
     }
     else if (desc->inet.state == TCP_STATE_CONNECTING) {
@@ -5040,53 +5029,27 @@ static int tcp_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
     case TCP_REQ_ACCEPT: {  /* do async accept */
 	char tbuf[2];
 	unsigned timeout;
-	int ix;
-	tcp_descriptor* l_desc;
-	int n;
+	inet_address remote;
+	unsigned int n;
 	SOCKET s;
 
-
 	DEBUGF(("tcp_inet_ctl(%ld): ACCEPT\r\n", (long)desc->inet.port)); 
-	/* INPUT: Timeout(4), ListenIndex(2) */
+	/* INPUT: Timeout(4) */
 
-	if (desc->inet.state != TCP_STATE_CLOSED)
-	    return ctl_xerror(EXBADPORT, rbuf, rsize);
-	if (len != 6)
+	/* FIXME implement ACCEPT queue ! */
+	if (desc->inet.state != TCP_STATE_LISTEN)
+	    return ctl_error(EINVAL, rbuf, rsize);
+	if (len != 4)
 	    return ctl_error(EINVAL, rbuf, rsize);
 	timeout = get_int32(buf);
-	buf += 4;
-	ix = get_int16(buf);
-	if ((ix >= inet_desc_size) || 
-	    ((l_desc = (tcp_descriptor*)inet_desc_table[ix]) == NULL))
-	    return ctl_error(EINVAL, rbuf, rsize);
-	if (l_desc->inet.state != TCP_STATE_LISTEN)
-	    return ctl_error(EINVAL, rbuf, rsize);
-	/* Some flags must be inherited at this point */
-	desc->inet.mode    = l_desc->inet.mode;
-	desc->inet.exitf   = l_desc->inet.exitf;
-	desc->inet.bit8f   = l_desc->inet.bit8f;
-	desc->inet.deliver = l_desc->inet.deliver;
-	desc->inet.htype   = l_desc->inet.htype; 
-	desc->inet.psize   = l_desc->inet.psize; 
-	desc->inet.stype   = l_desc->inet.stype;
-	desc->inet.sfamily = l_desc->inet.sfamily;
-	desc->inet.hsz     = l_desc->inet.hsz;
-	desc->inet.bufsz   = l_desc->inet.bufsz;
-	desc->high         = l_desc->high;
-	desc->low          = l_desc->low;
-	desc->send_timeout = l_desc->send_timeout;
 
 	n = sizeof(desc->inet.remote);
-	s = sock_accept(l_desc->inet.s, 
-			(struct sockaddr*) &desc->inet.remote, &n);
+	s = sock_accept(desc->inet.s, (struct sockaddr*) &remote, &n);
 	if (s == INVALID_SOCKET) {
 	    if (sock_errno() == ERRNO_BLOCK) {
 		enq_async(INETP(desc), tbuf, TCP_REQ_ACCEPT);
-
 		desc->inet.state = TCP_STATE_ACCEPTING;
-		l_desc->inet.state = TCP_STATE_LISTENING;
-		l_desc->i_ix = desc->inet.ix;
-		sock_select(INETP(l_desc),FD_ACCEPT,1);
+		sock_select(INETP(desc),FD_ACCEPT,1);
 		if (timeout != INET_INFINITY)
 		    driver_set_timer(desc->inet.port, timeout);
 	    }
@@ -5094,17 +5057,27 @@ static int tcp_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 		return ctl_error(sock_errno(), rbuf, rsize);
 	}
 	else {
-	    desc->inet.s = s;
-	    if ((desc->inet.event = sock_create_event(INETP(desc))) == 
-		INVALID_EVENT)
-		return ctl_error(sock_errno(), rbuf, rsize);
-	    SET_NONBLOCKING(desc->inet.s);
+	    ErlDrvTermData caller = driver_caller(desc->inet.port);
+	    tcp_descriptor* accept_desc;
+	    int err;
+
+	    if ((accept_desc = tcp_inet_copy(desc,s,caller,&err)) == NULL) {
+		sock_close(s);
+		return ctl_error(err, rbuf, rsize);
+	    }
+	    /* FIXME: may MUST lock access_port 
+	     * 1 - Port is accessible via the erlang:ports()
+	     * 2 - Port is accessible via callers process_info(links)
+	     */
+	    accept_desc->inet.remote = remote;
+	    SET_NONBLOCKING(accept_desc->inet.s);
 #ifdef __WIN32__
-	    driver_select(desc->inet.port, desc->inet.event, DO_READ, 1);
+	    driver_select(accept_desc->inet.port, accept_desc->inet.event, 
+			  DO_READ, 1);
 #endif
-	    desc->inet.state = TCP_STATE_CONNECTED;
+	    accept_desc->inet.state = TCP_STATE_CONNECTED;
 	    enq_async(INETP(desc), tbuf, TCP_REQ_ACCEPT);
-	    async_ok(INETP(desc));
+	    async_ok_port(INETP(desc), accept_desc->inet.dport);
 	}
 	return ctl_reply(INET_REP_OK, tbuf, 2, rbuf, rsize);
     }
@@ -5223,8 +5196,9 @@ static void tcp_inet_timeout(ErlDrvData e)
 	async_error_am(INETP(desc), am_timeout);
     }
     else if ((state & TCP_STATE_ACCEPTING) == TCP_STATE_ACCEPTING) {
-	/* timer is set on accepting port */
-	tcp_clear_listener(desc);
+	/* timer is set on accept */
+	sock_select(INETP(desc), FD_ACCEPT, 0);
+	desc->inet.state = TCP_STATE_LISTEN;
 	async_error_am(INETP(desc), am_timeout);
     }
     DEBUGF(("tcp_inet_timeout(%ld) }\r\n", (long)desc->inet.port)); 
@@ -5677,11 +5651,14 @@ static int tcp_deliver(tcp_descriptor* desc, int len)
 	}
 	else {
 	    code = tcp_reply_data(desc, desc->i_ptr_start, len);
+	    /* XXX The buffer gets thrown away on error  (code < 0)    */
+	    /* Windows needs workaround for this in tcp_inet_event...  */
 	    desc->i_ptr_start += len;
 	    if (desc->i_ptr_start == desc->i_ptr)
 		tcp_clear_input(desc);
 	    else
 		desc->i_remain = 0;
+
 	}
 
 	if (code < 0)
@@ -5940,6 +5917,11 @@ static void tcp_inet_event(ErlDrvData e, ErlDrvEvent event)
 	     */
 	    for (;;) {
 		DEBUGF(("Retrying read due to closed port\r\n"));
+		/* XXX The buffer will be thrown away on error (empty que).
+		   Possible SMP FIXME. */
+		if (!desc->inet.active && (desc->inet.opt) == NULL) {
+		    goto error;
+		}
 		if (tcp_inet_input(desc, event) < 0) {
 		    goto error;
 		}
@@ -5985,50 +5967,55 @@ static void tcp_inet_event(ErlDrvData e, ErlDrvEvent event)
 static int tcp_inet_input(tcp_descriptor* desc, HANDLE event)
 {
     int ret = 0;
-    int len;
-    int ix;
-    SOCKET s;
-    tcp_descriptor* a_desc;
 
     DEBUGF(("tcp_inet_input(%ld) {s=%d\r\n", 
 	    (long)desc->inet.port, desc->inet.s));
-    if (desc->inet.state == TCP_STATE_LISTENING) {
+    if (desc->inet.state == TCP_STATE_ACCEPTING) {
+	SOCKET s;
+	unsigned int len;
+	inet_address remote;
+	
 	sock_select(INETP(desc),FD_ACCEPT,0);
-	ix = desc->i_ix;
 	desc->inet.state = TCP_STATE_LISTEN; /* restore state */
-	desc->i_ix = -1;
 
-	/* port closed? */
-	if (((a_desc = (tcp_descriptor*)inet_desc_table[ix]) == NULL) || 
-	    (a_desc->inet.state != TCP_STATE_ACCEPTING))
-	    goto done;
+	len = sizeof(desc->inet.remote);
+	s = sock_accept(desc->inet.s, (struct sockaddr*) &remote, &len);
 
-	len = sizeof(a_desc->inet.remote);
-	s = sock_accept(desc->inet.s, 
-			(struct sockaddr*) &a_desc->inet.remote, &len);
-
-	driver_cancel_timer(a_desc->inet.port); /* posssibly cancel a timer */
+	driver_cancel_timer(desc->inet.port); /* posssibly cancel a timer */
 
 	if (s == INVALID_SOCKET) {
-	    a_desc->inet.state = TCP_STATE_CLOSED;
-	    ret = async_error(INETP(a_desc), sock_errno());
+	    ret = async_error(INETP(desc), sock_errno());
 	    goto done;
 	}
 	else {
-	    a_desc->inet.s = s;
-	    if ((a_desc->inet.event = sock_create_event(INETP(a_desc))) ==
-		INVALID_EVENT) {
+	    ErlDrvTermData caller;
+	    tcp_descriptor* accept_desc;
+	    int err;
+
+	    if (desc->inet.opt == NULL) {
+		/* No caller setup */
 		sock_close(s);
-		a_desc->inet.s = INVALID_SOCKET;
-		ret =  async_error(INETP(a_desc), sock_errno());
+		ret = async_error(INETP(desc), EINVAL);
 		goto done;
 	    }
-	    SET_NONBLOCKING(a_desc->inet.s);
+	    caller = desc->inet.opt->caller;
+	    if ((accept_desc = tcp_inet_copy(desc,s,caller,&err)) == NULL) {
+		sock_close(s);
+		ret = async_error(INETP(desc), err);
+		goto done;
+	    }
+	    /* FIXME: may MUST lock port 
+	     * 1 - Port is accessible via the erlang:ports()
+	     * 2 - Port is accessible via callers process_info(links)
+	     */
+	    accept_desc->inet.remote = remote;
+	    SET_NONBLOCKING(accept_desc->inet.s);
 #ifdef __WIN32__
-	    driver_select(a_desc->inet.port, a_desc->inet.event, DO_READ, 1);
+	    driver_select(accept_desc->inet.port, accept_desc->inet.event, 
+			  DO_READ, 1);
 #endif
-	    a_desc->inet.state = TCP_STATE_CONNECTED;
-	    ret =  async_ok(INETP(a_desc));
+	    accept_desc->inet.state = TCP_STATE_CONNECTED;
+	    ret =  async_ok_port(INETP(desc), accept_desc->inet.dport);
 	    goto done;
 	}
     }
@@ -6050,7 +6037,7 @@ static int tcp_inet_input(tcp_descriptor* desc, HANDLE event)
 static int tcp_send_error(tcp_descriptor* desc, int err)
 {
     inet_address other;
-    int sz = sizeof(other);
+    unsigned int sz = sizeof(other);
     int code;
 
     if (IS_BUSY(INETP(desc))) {
@@ -6318,7 +6305,7 @@ static int tcp_inet_output(tcp_descriptor* desc, HANDLE event)
 #else
 	{
 	    int error = 0;	/* Has to be initiated, we check it */
-	    int sz = sizeof(error); /* even if we get -1 */
+	    unsigned int sz = sizeof(error); /* even if we get -1 */
 	    int code = sock_getopt(desc->inet.s, SOL_SOCKET, SO_ERROR, 
 				   (void *)&error, &sz);
 
@@ -6395,6 +6382,7 @@ static int tcp_inet_output(tcp_descriptor* desc, HANDLE event)
 #include <sys/utsname.h>
 static int should_use_so_bsdcompat(void)
 {
+    /* SMP: FIXME this is probably not SMP safe but may be ok anyway? */
     static int init_done;
     static int so_bsdcompat_is_obsolete;
 
@@ -6706,7 +6694,7 @@ static void udp_inet_drv_input(ErlDrvData e, ErlDrvEvent event)
 static int udp_inet_input(udp_descriptor* desc, HANDLE event)
 {
     int n;
-    int len;
+    unsigned int len;
     inet_address other;
     char abuf[sizeof(inet_address)];  /* buffer address */
     int sz;
@@ -7042,7 +7030,7 @@ void erts_sock_close(erts_sock_t socket)
 int erts_sock_connect(erts_sock_t socket, byte *ip_addr, int len, Uint16 port)
 {
     SOCKET s = (SOCKET) socket;
-    byte buf[2 + 4];
+    char buf[2 + 4];
     int blen = 6;
     inet_address addr;
 
@@ -7066,6 +7054,15 @@ Sint erts_sock_send(erts_sock_t socket, const void *buf, Sint len)
 {
     return (Sint) sock_send((SOCKET) socket, buf, (size_t) len, 0);
 }
+
+
+int erts_sock_gethostname(char *buf, int bufsz)
+{
+    if (sock_hostname(buf, bufsz) == SOCKET_ERROR)
+	return -1;
+    return 0;
+}
+
 
 int erts_sock_errno()
 {

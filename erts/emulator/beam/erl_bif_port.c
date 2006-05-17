@@ -44,7 +44,6 @@ extern ErlDrvEntry vanilla_driver_entry;
 extern ErlDrvEntry spawn_driver_entry;
 
 static int open_port(Process* p, Eterm name, Eterm settings);
-static Port* id_or_name2port(Eterm id);
 static byte* convert_environment(Process* p, Eterm env);
 
 BIF_RETTYPE open_port_2(BIF_ALIST_2)
@@ -53,7 +52,14 @@ BIF_RETTYPE open_port_2(BIF_ALIST_2)
     Eterm port_val;
     char *str;
 
+#ifdef ERTS_SMP
+    if (erts_smp_io_safe_lock_x(BIF_P, ERTS_PROC_LOCK_MAIN))
+	ERTS_BIF_EXITED(BIF_P);
+#endif
+
     if ((port_num = open_port(BIF_P, BIF_ARG_1, BIF_ARG_2)) < 0) {
+	erts_smp_io_unlock();
+	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
        if (port_num == -3) {
 	  BIF_ERROR(BIF_P, BADARG);
        }
@@ -65,32 +71,18 @@ BIF_RETTYPE open_port_2(BIF_ALIST_2)
        BIF_ERROR(BIF_P, EXC_ERROR);
     }
 
+    erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_LINK);
+
     port_val = erts_port[port_num].id;
     erts_add_link(&(erts_port[port_num].nlinks), LINK_PID, BIF_P->id);
     erts_add_link(&(BIF_P->nlinks), LINK_PID, port_val);
+
+    erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
+
+    erts_smp_io_unlock();
+    ERTS_SMP_BIF_CHK_EXITED(BIF_P);
+
     BIF_RET(port_val);
-}
-
-BIF_RETTYPE port_to_list_1(BIF_ALIST_1)
-{
-   int n;
-   char* tmpp;
-   Eterm obj = BIF_ARG_1;
-   Eterm* hp;
-
-   tmpp = (char*) tmp_buf;
-
-   if (is_port(obj)) {
-      sprintf(tmpp,
-	      "#Port<%lu.%lu>",
-	      port_channel_no(obj),
-	      port_number(obj));
-   } else
-      BIF_ERROR(BIF_P, BADARG);
-
-   n = strlen(tmp_buf);
-   hp = HAlloc(BIF_P, n*2);	/* we need length * 2 heap words */
-   BIF_RET(buf_to_intlist(&hp, tmp_buf, n, NIL));
 }
 
 /****************************************************************************
@@ -114,58 +106,49 @@ BIF_RETTYPE port_to_list_1(BIF_ALIST_1)
               when port(Port), pid(Pid)
 
  ***************************************************************************/
-Port*
-id2port(Eterm id)
-{
-    int ix;
-
-    if (is_not_internal_port(id))
-	return NULL;
-    ix = internal_port_index(id);
-    if ((erts_port[ix].status == FREE) || (erts_port[ix].status & CLOSING))
-	return NULL;
-    return &erts_port[ix];
-}
 
 static Port*
-id_or_name2port(Eterm id)
+id_or_name2port(Process *c_p, Eterm id)
 {
-    if (is_not_atom(id)) {
-	return id2port(id);
-    } else {
-	Port* pt;
-
-	whereis_name(id, NULL, &pt);
-	return pt;
-    }
+    Port *port;
+    if (is_not_atom(id))
+	port = erts_id2port(id, c_p, ERTS_PROC_LOCK_MAIN);
+    else
+	erts_whereis_name(c_p,ERTS_PROC_LOCK_MAIN,0,0,id,NULL,0,0,&port);
+    return port;
 }
 
 BIF_RETTYPE port_command_2(BIF_ALIST_2)
 {
-    Port* p;
+    BIF_RETTYPE res;
+    Port *p;
 
-    if ((p = id_or_name2port(BIF_ARG_1)) == NULL) {
-    error:
+    p = id_or_name2port(BIF_P, BIF_ARG_1);
+    if (!p) {
+	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_ERROR(BIF_P, BADARG);
     }
 
+    ERTS_BIF_PREP_RET(res, am_true);
+
     if (p->status & PORT_BUSY) {
-	erl_suspend(BIF_P, p->id);
+	erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, p->id);
 	if (erts_system_monitor_flags.busy_port) {
 	    monitor_generic(BIF_P, am_busy_port, p->id);
 	}
-	BIF_ERROR(BIF_P, RESCHEDULE);
+	ERTS_BIF_PREP_ERROR(res, BIF_P, RESCHEDULE);
+    }
+    else if (write_port(BIF_P->id,internal_port_index(p->id),BIF_ARG_2) != 0) {
+	ERTS_BIF_PREP_ERROR(res, BIF_P, BADARG);
     }
 
-    if (write_port(BIF_P->id, internal_port_index(p->id), BIF_ARG_2) != 0) {
-	goto error;
+    erts_smp_io_unlock();
+    
+    if (ERTS_PROC_IS_EXITING(BIF_P)) {
+	KILL_CATCHES(BIF_P);	/* Must exit */
+	ERTS_BIF_PREP_ERROR(res, BIF_P, EXC_ERROR);
     }
-
-    if (BIF_P->status == P_EXITING) {
-       KILL_CATCHES(BIF_P);	/* Must exit */
-       BIF_ERROR(BIF_P, EXC_ERROR);
-    }
-    BIF_RET(am_true);
+    return res;
 }
 
 static byte *erts_port_call_buff;
@@ -210,16 +193,30 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
     Eterm *hp;
     Eterm *hp_end;              /* To satisfy hybrid heap architecture */
     unsigned ret_flags = 0U;
+#ifdef ERTS_SMP
+    int have_io_lock = 0;
+#endif
 
     port_resp = port_result;
-    if ((p = id_or_name2port(BIF_ARG_1)) == NULL) {
+    p = id_or_name2port(BIF_P, BIF_ARG_1);
+    if (!p) {
     error:
+	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	if (port_resp != port_result && 
 	    !(ret_flags & DRIVER_CALL_KEEP_BUFFER)) {
 	    driver_free(port_resp);
 	}
+#ifdef ERTS_SMP
+	if (have_io_lock)
+	    erts_smp_io_unlock();
+#endif
 	BIF_ERROR(BIF_P, BADARG);
     }
+
+#ifdef ERTS_SMP
+    have_io_lock = 1;
+#endif
+
     if ((drv = p->drv_ptr) == NULL) {
 	goto error;
     }
@@ -233,7 +230,7 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
     bytes = ensure_buff(size);
     
     endp = bytes;
-    if (erts_to_external_format(NULL, BIF_ARG_3, &endp) || endp == NULL) {
+    if (erts_to_external_format(NULL, BIF_ARG_3, &endp, NULL, NULL) || !endp) {
 	erl_exit(1, "%s, line %d: bad term: %x\n",
 		 __FILE__, __LINE__, BIF_ARG_3);
     }
@@ -286,6 +283,13 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
     if (port_resp != port_result && !(ret_flags & DRIVER_CALL_KEEP_BUFFER)) {
 	driver_free(port_resp);
     }
+
+#ifdef ERTS_SMP
+    ASSERT(have_io_lock);
+    erts_smp_io_unlock();
+#endif
+    ERTS_SMP_BIF_CHK_EXITED(BIF_P);
+
     return res;
 }
     
@@ -293,31 +297,37 @@ BIF_RETTYPE port_control_3(BIF_ALIST_3)
 {
     Port* p;
     Uint op;
-    Eterm res;
+    Eterm res = THE_NON_VALUE;
 
-    if ((p = id_or_name2port(BIF_ARG_1)) == NULL) {
-    error:
+    p = id_or_name2port(BIF_P, BIF_ARG_1);
+    if (!p) {
+	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if (!term_to_Uint(BIF_ARG_2, &op)) {
-	goto error;
-    }
-    res = erts_port_control(BIF_P, p, op, BIF_ARG_3);
+
+    if (term_to_Uint(BIF_ARG_2, &op))
+	res = erts_port_control(BIF_P, p, op, BIF_ARG_3);
+    erts_smp_io_unlock();
+    ERTS_SMP_BIF_CHK_EXITED(BIF_P);
     if (is_non_value(res)) {
-	goto error;
+	BIF_ERROR(BIF_P, BADARG);
     }
     BIF_RET(res);
 }
 
 BIF_RETTYPE port_close_1(BIF_ALIST_1)
 {
-    Port* p;
-    if ((p = id_or_name2port(BIF_ARG_1)) == NULL)
+    Port* p = id_or_name2port(BIF_P, BIF_ARG_1);
+    if (!p) {
+	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_ERROR(BIF_P, BADARG);
-    do_exit_port(p->id, p->connected, am_normal);
-    /* since we terminate port with reason normal 
+    }
+    erts_do_exit_port(BIF_P, p->id, p->connected, am_normal);
+    /* if !ERTS_SMP: since we terminate port with reason normal 
        we SHOULD never get an exit signal ourselves
        */
+    erts_smp_io_unlock();
+    ERTS_SMP_BIF_CHK_EXITED(BIF_P);
     BIF_RET(am_true);
 }
 
@@ -326,25 +336,32 @@ BIF_RETTYPE port_connect_2(BIF_ALIST_2)
     Port* prt;
     Process* rp;
     Eterm pid = BIF_ARG_2;
-    int ix;
 
-    if (is_not_internal_pid(pid)
-	|| (prt = id_or_name2port(BIF_ARG_1)) == NULL) {
+    if (is_not_internal_pid(pid)) {
     error:
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if ((ix = internal_pid_index(pid)) >= erts_max_processes) {
+    prt = id_or_name2port(BIF_P, BIF_ARG_1);
+    if (!prt) {
+	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	goto error;
     }
-    rp = process_tab[ix];
-    if (INVALID_PID(rp, pid)) {
+
+    rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
+		       pid, ERTS_PROC_LOCK_LINK);
+    if (!rp) {
+	erts_smp_io_unlock();
+	ERTS_SMP_ASSERT_IS_NOT_EXITING(BIF_P);
 	goto error;
     }
-    
+
     erts_add_link(&(rp->nlinks), LINK_PID, prt->id);
     erts_add_link(&(prt->nlinks), LINK_PID, pid);
 
+    erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_LINK);
+
     prt->connected = pid; /* internal pid */
+    erts_smp_io_unlock();
     BIF_RET(am_true);
 }
 
@@ -354,7 +371,9 @@ BIF_RETTYPE port_set_data_2(BIF_ALIST_2)
     Eterm portid = BIF_ARG_1;
     Eterm data   = BIF_ARG_2;
 
-    if ((prt = id_or_name2port(portid)) == NULL) {
+    prt = id_or_name2port(BIF_P, portid);
+    if (!prt) {
+	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_ERROR(BIF_P, BADARG);
     }
     if (prt->bp != NULL) {
@@ -373,25 +392,30 @@ BIF_RETTYPE port_set_data_2(BIF_ALIST_2)
 	hp = bp->mem;
 	prt->data = copy_struct(data, size, &hp, &bp->off_heap);
     }
+    erts_smp_io_unlock();
     BIF_RET(am_true);
 }
 
 
 BIF_RETTYPE port_get_data_1(BIF_ALIST_1)
 {
+    BIF_RETTYPE res;
     Port* prt;
     Eterm portid = BIF_ARG_1;
 
-    if ((prt = id_or_name2port(portid)) == NULL) {
+    prt = id_or_name2port(BIF_P, portid);
+    if (!prt) {
+	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_ERROR(BIF_P, BADARG);
     }
     if (prt->bp == NULL) {	/* MUST be CONST! */
-	BIF_RET(prt->data);
+	res = prt->data;
     } else {
 	Eterm* hp = HAlloc(BIF_P, prt->bp->size);
-	Eterm res = copy_struct(prt->data, prt->bp->size, &hp, &MSO(BIF_P));
-	BIF_RET(res);
+	res = copy_struct(prt->data, prt->bp->size, &hp, &MSO(BIF_P));
     }
+    erts_smp_io_unlock();
+    BIF_RET(res);
 }
 
 /* 
@@ -404,13 +428,14 @@ BIF_RETTYPE port_get_data_1(BIF_ALIST_1)
 static int
 open_port(Process* p, Eterm name, Eterm settings)
 {
+#define OPEN_PORT_ERROR(VAL) do { port_num = (VAL); goto do_return; } while (0)
     int i, port_num;
     Eterm option;
     Uint arity;
     Eterm* tp;
     Uint* nargs;
     ErlDrvEntry* driver;
-    char* name_buf;
+    char* name_buf = NULL;
     SysDriverOpts opts;
     int binary_io;
     int soft_eof;
@@ -435,7 +460,7 @@ open_port(Process* p, Eterm name, Eterm settings)
     linebuf = 0;
 
     if (is_not_list(settings) && is_not_nil(settings))
-	return -3;
+	OPEN_PORT_ERROR(-3);
 
     /*
      * Parse the settings.
@@ -448,11 +473,11 @@ open_port(Process* p, Eterm name, Eterm settings)
 		tp = tuple_val(*nargs);
 		arity = *tp++;
 		if (arity != make_arityval(2))
-		    return -3;
+		    OPEN_PORT_ERROR(-3);
 		option = *tp++;
 		if (option == am_packet) {
 		   if (is_not_small(*tp))
-		      return -3;
+		      OPEN_PORT_ERROR(-3);
 		   opts.packet_bytes = signed_val(*tp);
 		   switch (opts.packet_bytes) {
 		    case 1:
@@ -460,18 +485,18 @@ open_port(Process* p, Eterm name, Eterm settings)
 		    case 4:
 		      break;
 		    default:
-		      return -3;
+		      OPEN_PORT_ERROR(-3);
 		   }
 		} else if (option == am_line) {
 		    if (is_not_small(*tp))
-			return -3;
+			OPEN_PORT_ERROR(-3);
 		    linebuf = signed_val(*tp);
 		    if(linebuf <= 0)
-			return -3;
+			OPEN_PORT_ERROR(-3);
 		} else if (option == am_env) {
 		    byte* bytes;
 		    if ((bytes = convert_environment(p, *tp)) == NULL) {
-			return -3;
+			OPEN_PORT_ERROR(-3);
 		    }
 		    opts.envir = (char *) bytes;
 		} else if (option == am_cd) {
@@ -486,11 +511,11 @@ open_port(Process* p, Eterm name, Eterm settings)
 		    iolist = make_list(heap);
 		    r = io_list_to_buf(iolist, (char*) dir, MAXPATHLEN);
 		    if (r < 0) {
-			return -3;
+			OPEN_PORT_ERROR(-3);
 		    }
 		    opts.wd = (char *) dir;
 		} else {
-		   return -3;
+		   OPEN_PORT_ERROR(-3);
 	       }
 	    } else if (*nargs == am_stream) {
 		opts.packet_bytes = 0;
@@ -518,29 +543,29 @@ open_port(Process* p, Eterm name, Eterm settings)
 #ifdef _OSE_
 	    else if (option == am_ose_process_type) {
 	      if (is_not_atom(*tp))
-		return -3;
+		OPEN_PORT_ERROR(-3);
 	      if (*tp == am_ose_pri_proc)      opts.process_type = OS_PRI_PROC;
 	      else if (*tp == am_ose_int_proc) opts.process_type = OS_INT_PROC;
 	      else if (*tp == am_ose_bg_proc)  opts.process_type = OS_BG_PROC;
 	      else if (*tp == am_ose_ti_proc)  opts.process_type = OS_TI_PROC;
 	      else if (*tp == am_ose_phantom)  opts.process_type = OS_PHANTOM;
-	      else return -3;
+	      else OPEN_PORT_ERROR(-3);
 	    } 
 	    else if (option == am_ose_process_prio) {
 	      if (is_not_small(*tp))
-		return -3;
+		  OPEN_PORT_ERROR(-3);
 	      opts.priority = signed_val(*tp);
 	      if((opts.priority <= 0) || (opts.priority > 31))
-		return -3;		
+		  OPEN_PORT_ERROR(-3);		
 	    }  
 #endif
 	    else {
-	      return -3;
+		OPEN_PORT_ERROR(-3);
 	    }
 	    if (is_nil(*++nargs)) 
 		break;
 	    if (is_not_list(*nargs)) 
-		return -3;
+		OPEN_PORT_ERROR(-3);
 	    nargs = list_val(*nargs);
 	}
     }
@@ -550,49 +575,54 @@ open_port(Process* p, Eterm name, Eterm settings)
     /* Mutually exclusive arguments. */
     if((linebuf && opts.packet_bytes) || 
        (opts.redir_stderr && !opts.use_stdio))
-	return -3; 
+	OPEN_PORT_ERROR(-3); 
 
     /*
      * Parse the first argument and start the appropriate driver.
      */
 
-    if (is_atom(name) || is_string(name)) {
+    
+    if (is_atom(name) || (i = is_string(name))) {
 	/* a vanilla port */
 	if (is_atom(name)) {
-	    if (atom_tab(atom_val(name))->len >= TMP_BUF_SIZE)
-		return -3;
-	    sys_memcpy(tmp_buf, atom_tab(atom_val(name))->name, 
+	    name_buf = (char *) erts_alloc(ERTS_ALC_T_TMP,
+					   atom_tab(atom_val(name))->len+1);
+	    sys_memcpy((void *) name_buf,
+		       (void *) atom_tab(atom_val(name))->name, 
 		       atom_tab(atom_val(name))->len);
-	    tmp_buf[atom_tab(atom_val(name))->len] = '\0';
+	    name_buf[atom_tab(atom_val(name))->len] = '\0';
 	} else {
-	    i = intlist_to_buf(name, tmp_buf, TMP_BUF_SIZE);
-	    tmp_buf[i] = '\0';
+	    name_buf = (char *) erts_alloc(ERTS_ALC_T_TMP, i + 1);
+	    if (intlist_to_buf(name, name_buf, i) != i)
+		erl_exit(1, "%s:%d: Internal error\n", __FILE__, __LINE__);
+	    name_buf[i] = '\0';
 	}
-	name_buf = tmp_buf;
 	driver = &vanilla_driver_entry;
     } else {   
 	if (is_not_tuple(name))
-	    return -3;		/* Not a process or fd port */
+	    OPEN_PORT_ERROR(-3);		/* Not a process or fd port */
 	tp = tuple_val(name);
 	arity = *tp++;
 
 	if (*tp == am_spawn) {	/* A process port */
 	    if (arity != make_arityval(2)) {
-		return -3;
+		OPEN_PORT_ERROR(-3);
 	    }
 	    name = tp[1];
 	    if (is_atom(name)) {
-		if (atom_tab(atom_val(name))->len >= TMP_BUF_SIZE)
-		    return -3;
-		sys_memcpy(tmp_buf, atom_tab(atom_val(name))->name,
+		name_buf = (char *) erts_alloc(ERTS_ALC_T_TMP,
+					       atom_tab(atom_val(name))->len+1);
+		sys_memcpy((void *) name_buf,
+			   (void *) atom_tab(atom_val(name))->name, 
 			   atom_tab(atom_val(name))->len);
-		tmp_buf[atom_tab(atom_val(name))->len] = '\0';
-	    } else  if (is_string(name)) {
-		 i = intlist_to_buf(name,tmp_buf, TMP_BUF_SIZE);
-		 tmp_buf[i] = '\0';
+		name_buf[atom_tab(atom_val(name))->len] = '\0';
+	    } else  if ((i = is_string(name))) {
+		name_buf = (char *) erts_alloc(ERTS_ALC_T_TMP, i + 1);
+		if (intlist_to_buf(name, name_buf, i) != i)
+		    erl_exit(1, "%s:%d: Internal error\n", __FILE__, __LINE__);
+		name_buf[i] = '\0';
 	    } else
-		return -3;
-	    name_buf = tmp_buf;
+		OPEN_PORT_ERROR(-3);
 	    driver = &spawn_driver_entry;
 	} else if (*tp == am_fd) { /* An fd port */
 	    int n;
@@ -600,16 +630,17 @@ open_port(Process* p, Eterm name, Eterm settings)
 	    char* p;
 
 	    if (arity != make_arityval(3)) {
-		return -3;
+		OPEN_PORT_ERROR(-3);
 	    }
 	    if (is_not_small(tp[1]) || is_not_small(tp[2])) {
-		return -3;
+		OPEN_PORT_ERROR(-3);
 	    }
 	    opts.ifd = unsigned_val(tp[1]);
 	    opts.ofd = unsigned_val(tp[2]);
 
 	    /* Syntesize name from input and output descriptor. */
-	    name_buf = tmp_buf;
+	    name_buf = erts_alloc(ERTS_ALC_T_TMP,
+				  2*sizeof(struct Sint_buf) + 2); 
 	    p = Sint_to_buf(opts.ifd, &sbuf);
 	    n = sys_strlen(p);
 	    sys_strncpy(name_buf, p, n);
@@ -619,16 +650,16 @@ open_port(Process* p, Eterm name, Eterm settings)
 
 	    driver = &fd_driver_entry;
 	} else
-	    return -3;
+	    OPEN_PORT_ERROR(-3);
     }
 
     if (driver != &spawn_driver_entry && opts.exit_status) {
-       return -3;
+	OPEN_PORT_ERROR(-3);
    }
 
     if ((port_num = open_driver(driver, p->id, name_buf, &opts)) < 0) {
 	DEBUGF(("open_driver returned %d\n", port_num));
-	return port_num;
+	OPEN_PORT_ERROR(port_num);
     }
 
     if (binary_io) {
@@ -642,7 +673,11 @@ open_port(Process* p, Eterm name, Eterm settings)
 	erts_port[port_num].status |= LINEBUF_IO;
     }
 
+ do_return:
+    if (name_buf)
+	erts_free(ERTS_ALC_T_TMP, (void *) name_buf);
     return port_num;
+#undef OPEN_PORT_ERROR
 }
 
 static byte* convert_environment(Process* p, Eterm env)
@@ -706,7 +741,7 @@ static byte* convert_environment(Process* p, Eterm env)
      * Put the result in a binary (no risk for a memory leak that way).
      */
     (void) erts_new_heap_binary(p, NULL, n, &bytes);
-    io_list_to_buf(all, bytes, n);
+    io_list_to_buf(all, (char*)bytes, n);
 
  done:
     erts_free(ERTS_ALC_T_TMP, temp_heap);

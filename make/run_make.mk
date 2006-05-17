@@ -27,7 +27,7 @@
 
 include $(ERL_TOP)/make/target.mk
 
-debug opt shared hybrid purify quantify purecov:
+debug opt smp debug.smp purify.smp quantify.smp purecov.smp nofrag hybrid purify quantify purecov:
 	$(MAKE) -f $(TARGET)/Makefile TYPE=$@
 
 clean generate depend docs release release_spec release_docs release_docs_spec \

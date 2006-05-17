@@ -22,7 +22,16 @@
 
 -module(gs_frontend).
 
--compile(export_all).
+-export([create/2,
+	 config/2,
+	 read/2,
+	 destroy/2,
+	 info/1,
+	 start/1,
+	 stop/0,
+	 init/1,
+	 event/3]).
+
 
 -include("gstk.hrl").
 
@@ -105,11 +114,11 @@ init(_Opts) ->
     process_flag(trap_exit, true),
     DB=ets:new(gs_names,[set,public]),
     loop(#state{db=DB,self=self()}).
-    
+
 loop(State) ->
     receive
 	X ->
-%	    io:format("frontend received: ~p~n",[X]),
+						%	    io:format("frontend received: ~p~n",[X]),
 	    case catch (doit(X,State)) of
 		done -> loop(State);
 		NewState when record(NewState,state) ->
@@ -155,21 +164,21 @@ doit({FromOwner,{create,Args}}, State) ->
 		   end,
     if NameOccupied == true ->
 	    reply(FromOwner, {error,{name_occupied,Name}});
-	true -> 
+       true -> 
 	    case idOrName_to_id(DB,Parent,FromOwner) of
 		undefined ->
 		    reply(FromOwner, {error,{no_such_parent,Parent}});
 		ParentObj ->
 		    {Id,NewState} = inc(ParentObj,State),
 		    case gstk:create(backend(State,ParentObj),
-				    {FromOwner,{Objtype,Id,ParentObj,Opts}}) of
+				     {FromOwner,{Objtype,Id,ParentObj,Opts}}) of
 			ok ->
 			    link(FromOwner),
 			    if Name == undefined ->
 				    ets:insert(DB,{Id,lives}),
 				    reply(FromOwner, Id),
 				    NewState;
-				true -> % it's a real name, register it
+			       true -> % it's a real name, register it
 				    NamePid = {Name,FromOwner},
 				    ets:insert(DB,{NamePid,Id}),
 				    ets:insert(DB,{Id,NamePid}),
@@ -292,8 +301,8 @@ doit({From,{info,Unknown}},_State) ->
 terminate(_Reason,#state{db=DB}) ->
     if DB==undefined -> ok;
        true ->
-%	    io:format("frontend db:~p~n",[ets:tab2list(DB)])
-         ok
+						%	    io:format("frontend db:~p~n",[ets:tab2list(DB)])
+	    ok
     end.
 
 
@@ -336,7 +345,7 @@ remove_objs(DB,[Obj|Objs]) ->
     end,
     remove_objs(DB,Objs);
 remove_objs(_DB,[]) -> done.
-	    
+
 idOrName_to_id(DB,IdOrName,Pid) when atom(IdOrName) ->
     case ets:lookup(DB,{IdOrName,Pid}) of
 	[{_,Obj}] -> Obj;
@@ -347,7 +356,7 @@ idOrName_to_id(DB,Obj,_Pid) ->
 	[_] -> Obj;
 	_ -> undefined
     end.
-    
+
 
 
 

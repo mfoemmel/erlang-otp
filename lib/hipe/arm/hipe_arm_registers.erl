@@ -19,11 +19,11 @@
 	 %% heap_limit/0,
 	 %% fcalls/0,
 	 allocatable_gpr/0, % for coalescing
-	 %% is_fixed/1,	% for graph coloring
+	 is_fixed/1,	% for graph coloring
 	 nr_args/0,
 	 arg/1,
 	 args/1,
-	 %% is_arg/1,	% for linear scan
+	 is_arg/1,	% for linear scan
 	 call_clobbered/0,
 	 tailcall_clobbered/0,
 	 live_at_return/0
@@ -44,7 +44,7 @@
 -define(R10, 10).
 -define(R11, 11).
 -define(R12, 12).
-%%-define(R13, 13).
+-define(R13, 13). % XXX: see all_precoloured()
 -define(R14, 14).
 -define(R15, 15).
 -define(LAST_PRECOLOURED, 15). % must handle both GPR and FPR ranges
@@ -75,9 +75,14 @@ first_virtual() -> ?LAST_PRECOLOURED + 1.
 is_precoloured_gpr(R) -> R =< ?LAST_PRECOLOURED.
 
 all_precoloured() ->
-  %% R13 is skipped. It should never occur anywhere.
+  %% XXX: R13 should be skipped as it never is used anywhere.
+  %% Unfortunately, gaps in the list of precoloured registers
+  %% cause the graph_color register allocator to create bogus
+  %% assignments for those "registers", which in turn causes
+  %% the "precoloured reg must map to itself" sanity check in
+  %% the frame module to signal errors.
   [ ?R0,  ?R1,  ?R2,  ?R3,  ?R4,  ?R5,  ?R6,  ?R7,
-    ?R8,  ?R9, ?R10, ?R11, ?R12,        ?R14, ?R15].
+    ?R8,  ?R9, ?R10, ?R11, ?R12, ?R13, ?R14, ?R15].
 
 return_value() -> ?RETURN_VALUE.
 
@@ -105,7 +110,6 @@ allocatable_gpr() ->
 
 %% Needed for hipe_graph_coloring_regalloc.
 %% Presumably true for Reg in AllPrecoloured \ Allocatable.
--ifdef(notdef).
 is_fixed(Reg) ->
   case Reg of
     ?HEAP_POINTER -> true;
@@ -116,11 +120,10 @@ is_fixed(Reg) ->
     %% neither allocatable nor global (fixed or one of
     %% the scratch registers set aside for linear scan).
     ?R15 -> true;
-    %% ?R13 -> true;
+    ?R13 -> true; % XXX: see all_precoloured()
     ?R12 -> true;
     _ -> false
   end.
--endif.
 
 nr_args() -> ?ARM_NR_ARG_REGS.
 
@@ -147,7 +150,6 @@ arg(N) ->
       exit({?MODULE, arg, N})
   end.
 
--ifdef(notdef).
 is_arg(R) ->
   case R of
     ?ARG0 -> ?ARM_NR_ARG_REGS > 0;
@@ -158,7 +160,6 @@ is_arg(R) ->
     ?ARG5 -> ?ARM_NR_ARG_REGS > 5;
     _ -> false
   end.
--endif.
 
 call_clobbered() ->		% does the RA strip the type or not?
   [{?R0,tagged},{?R0,untagged},

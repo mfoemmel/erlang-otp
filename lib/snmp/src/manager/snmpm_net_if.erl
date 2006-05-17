@@ -402,6 +402,11 @@ code_change(_Vsn, State, _Extra) ->
 %%% Internal functions
 %%%-------------------------------------------------------------------
 
+handle_recv_msg(Addr, Port, Bytes, #state{server = Pid}) 
+  when is_binary(Bytes) and (size(Bytes) == 0) ->
+    Pid ! {snmp_error, {empty_message, Addr, Port}, Addr, Port},
+    ok;
+
 handle_recv_msg(Addr, Port, Bytes, 
 		#state{server     = Pid, 
 		       note_store = NoteStore, 

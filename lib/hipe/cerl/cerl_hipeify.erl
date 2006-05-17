@@ -361,6 +361,19 @@ rewrite_call(E, M, F, As, S) ->
 				cerl:atom_val(F),
 				length(As))
 		of
+	        {yes, ?PRIMOP_IS_RECORD} ->
+		    %% Needs additional testing
+		    [_, Tag, Arity] = As,
+		    case (cerl:is_c_atom(Tag) andalso 
+			  cerl:is_c_int(Arity)) of
+		        true ->
+			    %% The primop might need further handling
+			    N1 = cerl:c_atom(?PRIMOP_IS_RECORD),
+			    E1 = cerl:update_c_primop(E, N1, As),
+			    rewrite_primop(E1, N1, As, S);
+		        false ->
+			    cerl:update_c_call(E, M, F, As)
+		    end;
 		{yes, N} ->
 		    %% The primop might need further handling
 		    N1 = cerl:c_atom(N),

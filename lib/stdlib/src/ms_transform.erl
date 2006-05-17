@@ -96,6 +96,8 @@ format_error({?ERR_GUARDBINCONSTRUCT, Var}) ->
 		    "cannot be translated "
 		    "into match_spec", [Var]));
 format_error({?ERR_GUARDDISALLOWEDOP, Operator}) ->
+    %% There is presently no operators that are allowed in bodies but
+    %% not in guards.
     lists:flatten(
       io_lib:format("the operator ~w is not allowed in guards", [Operator]));
 format_error(?ERR_BODYMATCH) ->	    
@@ -395,12 +397,7 @@ tg0(Line,[H|T],B) ->
 tg({match,Line,_,_},B) -> 
     throw({error,Line,?ERR_GENMATCH+B#tgd.eb});
 tg({op, Line, Operator, O1, O2}, B) ->
-    case {B#tgd.p,disallowed_in_guard(Operator,2)} of
-	{guard, true} ->
-	   throw({error,Line,{?ERR_GUARDDISALLOWEDOP,Operator}});
-	_ ->
-	    {tuple, Line, [{atom, Line, Operator}, tg(O1,B), tg(O2,B)]}
-    end;
+    {tuple, Line, [{atom, Line, Operator}, tg(O1,B), tg(O2,B)]};
 tg({op, Line, Operator, O1}, B) ->
     {tuple, Line, [{atom, Line, Operator}, tg(O1,B)]};
 tg({call, _Line, {atom, Line2, bindings},[]},_B) ->
@@ -857,13 +854,6 @@ bool_operator('andalso',2) ->
 bool_operator('orelse',2) ->
     true;
 bool_operator(_,_) ->
-    false.
-
-disallowed_in_guard('andalso',2) ->
-    true;
-disallowed_in_guard('orelse',2) ->
-    true;
-disallowed_in_guard(_,_) ->
     false.
 
 arith_operator('+',1) ->

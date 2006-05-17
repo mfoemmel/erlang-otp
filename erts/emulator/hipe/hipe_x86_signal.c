@@ -22,12 +22,19 @@
  * XXX: This code only supports Linux with glibc-2.1 or above,
  * and Solaris 8.
  */
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef ERTS_SMP
+#include "sys.h"
+#include "erl_alloc.h"
+#endif
 #include "hipe_signal.h"
 
-#if __GLIBC__ == 2 && __GLIBC_MINOR__ == 3
+#if __GLIBC__ == 2 && (__GLIBC_MINOR__ == 3 || __GLIBC_MINOR__ == 4)
 /* See comment below for glibc 2.2. */
 #ifndef __USE_GNU
 #define __USE_GNU		/* to un-hide RTLD_NEXT */
@@ -212,29 +219,59 @@ int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
 }
 
 /*
- * 1. Set up alternate signal stack.
+ * Set alternate signal stack for the invoking thread.
+ */
+static void hipe_sigaltstack(void *ss_sp)
+{
+    struct sigaltstack ss;
+
+    ss.ss_sp = ss_sp;
+    ss.ss_flags = SS_ONSTACK;
+    ss.ss_size = SIGSTKSZ;
+    if (sigaltstack(&ss, NULL) < 0) {
+	/* might be a broken pre-2.4 Linux kernel, try harder */
+	ss.ss_flags = 0;
+	if (sigaltstack(&ss, NULL) < 0) {
+	    perror("sigaltstack");
+	    abort();
+	}
+    }
+}
+
+#ifdef ERTS_SMP
+/*
+ * Set up alternate signal stack for an Erlang process scheduler thread.
+ */
+void hipe_thread_signal_init(void)
+{
+    hipe_sigaltstack(erts_alloc(ERTS_ALC_T_HIPE, SIGSTKSZ));
+}
+#endif
+
+/*
+ * Set up alternate signal stack for the main thread,
+ * unless this is a multithreaded runtime system.
+ */
+static void hipe_sigaltstack_init(void)
+{
+#if !defined(ERTS_SMP)
+    static unsigned long my_sigstack[SIGSTKSZ/sizeof(long)];
+    hipe_sigaltstack(my_sigstack);
+#endif
+}
+
+/*
+ * 1. Set up alternate signal stack for the main thread.
  * 2. Add SA_ONSTACK to existing user-defined signal handlers.
  */
 void hipe_signal_init(void)
 {
-    static unsigned long my_sigstack[SIGSTKSZ/sizeof(long)];
-    struct sigaltstack ss;
     struct sigaction sa;
     int i;
 
     INIT();
 
-    ss.ss_sp = &my_sigstack[0];
-    ss.ss_flags = SS_ONSTACK;
-    ss.ss_size = sizeof my_sigstack;
-    if( sigaltstack(&ss, NULL) < 0 ) {
-	/* might be a broken pre-2.4 Linux kernel, try harder */
-	ss.ss_flags = 0;
-	if( sigaltstack(&ss, NULL) < 0 ) {
-	    perror("sigaltstack");
-	    abort();
-	}
-    }
+    hipe_sigaltstack_init();
 
     for(i = 1; i < _NSIG; ++i) {
 	if( sigaction(i, NULL, &sa) ) {

@@ -40,10 +40,15 @@ endif
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 include ../../vsn.mk
 
+ERTS_INCL = -I$(ERL_TOP)/erts/include \
+            -I$(ERL_TOP)/erts/include/$(TARGET) \
+            -I$(ERL_TOP)/erts/include/internal \
+            -I$(ERL_TOP)/erts/include/internal/$(TARGET)
+
 CC        = @CC@
 WFLAGS    = @WFLAGS@
 CFLAGS    = @CFLAGS@ @DEFS@ $(TYPE_FLAGS) @WFLAGS@ -I$(SYSDIR) -I$(EMUDIR) \
-            -DOTP_SYSTEM_VERSION=\"$(SYSTEM_VSN)\"
+            $(ERTS_INCL) -DOTP_SYSTEM_VERSION=\"$(SYSTEM_VSN)\"
 LD        = @LD@
 LIBS      = @LIBS@
 LDFLAGS   = @LDFLAGS@
@@ -51,7 +56,7 @@ LDFLAGS   = @LDFLAGS@
 ifeq ($(TARGET),win32)
 ifeq ($(TYPE),debug)
 CFLAGS = $(subst -O2,-g,@CFLAGS@ @DEFS@ $(TYPE_FLAGS) @WFLAGS@ -I$(SYSDIR) \
-		-I$(EMUDIR) -DOTP_SYSTEM_VERSION=\"$(SYSTEM_VSN)\")
+		-I$(EMUDIR) $(ERTS_INCL) -DOTP_SYSTEM_VERSION=\"$(SYSTEM_VSN)\")
 LDFLAGS += -g
 endif
 endif
@@ -146,7 +151,7 @@ ERLSRV_HEADERS= \
 MC_OUTPUTS= \
 	$(OBJDIR)/erlsrv_logmess.h $(OBJDIR)/erlsrv_logmess.rc
 INET_GETHOST = $(BINDIR)/inet_gethost.exe
-INSTALL_EMBEDDED_PROGS += $(BINDIR)/erlc.exe $(BINDIR)/start_erl.exe
+INSTALL_EMBEDDED_PROGS += $(BINDIR)/dialyzer.exe $(BINDIR)/erlc.exe $(BINDIR)/start_erl.exe
 INSTALL_SRC = $(WINETC)/start_erl.c $(WINETC)/Nmakefile.start_erl
 ERLEXECDIR=.
 INSTALL_LIBS =
@@ -174,7 +179,8 @@ ENTRY_OBJ=
 ERLSRV_OBJECTS= 
 MC_OUTPUTS=
 INET_GETHOST = $(BINDIR)/inet_gethost
-INSTALL_EMBEDDED_PROGS += $(BINDIR)/erlc $(BINDIR)/run_erl $(BINDIR)/to_erl
+INSTALL_EMBEDDED_PROGS += $(BINDIR)/dialyzer $(BINDIR)/erlc \
+ $(BINDIR)/run_erl $(BINDIR)/to_erl
 INSTALL_EMBEDDED_DATA = ../unix/start.src ../unix/start_erl.src
 INSTALL_TOP = Install
 INSTALL_TOP_BIN = 
@@ -206,6 +212,7 @@ clean:
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/win_erlexec.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/init_file.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/start_erl.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/dialyzer.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erlexec.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erl_io.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erlc.o
@@ -270,6 +277,12 @@ $(BINDIR)/erlc@EXEEXT@: $(OBJDIR)/erlc.o
 
 $(OBJDIR)/erlc.o: erlc.c
 	$(CC) $(CFLAGS) -o $@ -c erlc.c
+
+$(BINDIR)/dialyzer@EXEEXT@: $(OBJDIR)/dialyzer.o
+	$(PURIFY) $(LD) $(LDFLAGS) -o $@ $(OBJDIR)/dialyzer.o -L$(OBJDIR) $(LIBS)
+
+$(OBJDIR)/dialyzer.o: dialyzer.c
+	$(CC) $(CFLAGS) -o $@ -c dialyzer.c
 
 
 #------------------------------------------------------------------------

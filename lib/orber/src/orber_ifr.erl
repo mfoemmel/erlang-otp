@@ -601,31 +601,22 @@ add_exception(Id, Module, BaseId, Transaction) ->
 %%----------------------------------------------------------------------
 add_it(Id, Module, BaseId, Type, true) ->
     F = fun() ->
-		case mnesia:wread({orber_light_ifr, Id}) of
-		    [] ->
-			D = #orber_light_ifr{id = Id, module = Module,
-					     type = Type, base_id = BaseId},
-			mnesia:write(D);
-		    _ ->
-			mnesia:abort("duplicate")
-		end
+		D = #orber_light_ifr{id = Id, module = Module,
+				     type = Type, base_id = BaseId},
+		mnesia:write(D)
 	end,
     case mnesia:transaction(F) of 
-        {aborted, "duplicate"} ->
-	    %% Must keep the misspelled word (must match IC generated code).
-            exit({allready_registered, Id});
+        {aborted, Reason} ->
+	    orber:dbg("[~p] orber_ifr:add_it(~p). aborted:~n~p~n", 
+		      [?LINE, Id, Reason], ?DEBUG_LEVEL),
+	    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO});
 	{atomic, _} ->
 	    ok
     end;
 add_it(Id, Module, BaseId, Type, false) ->
-    case mnesia:read({orber_light_ifr, Id}) of
-	[] ->
-	    D = #orber_light_ifr{id = Id, module = Module,
-				 type = Type, base_id = BaseId},
-	    mnesia:write(D);
-	_ ->
-	    mnesia:abort({allready_registered, Id})
-    end.
+    D = #orber_light_ifr{id = Id, module = Module,
+			 type = Type, base_id = BaseId},
+    mnesia:write(D).
 
 %%----------------------------------------------------------------------
 %% Function   : remove
@@ -638,8 +629,7 @@ add_it(Id, Module, BaseId, Type, false) ->
 %%----------------------------------------------------------------------
 remove(ContainerId, _Options) ->
     F = fun() -> 
-%%		MatchHead = #orber_light_ifr{id='$1', base_id=Id, _='_'},
-		MatchHead = {orber_light_ifr, '$1', '_', '_', ContainerId},
+		MatchHead = #orber_light_ifr{id = '$1', base_id = ContainerId, _='_'},
 		Result = '$1',
 		IdList = mnesia:select(orber_light_ifr, 
 				       [{MatchHead, [], [Result]}], 
@@ -676,8 +666,6 @@ add_items(ContainerId, _Options, Items) ->
 		add_items_helper(Items, ContainerId)
 	end,
     case mnesia:transaction(F) of
-	{aborted, {allready_registered, Id}} ->
-            exit({allready_registered, Id});
 	{aborted, Reason} ->
 	    orber:dbg("[~p] orber_ifr:add_items(~p). aborted:~n~p~n", 
 		      [?LINE, ContainerId, Reason], ?DEBUG_LEVEL),
@@ -1430,8 +1418,7 @@ get_def_kind(Objref) ->
 %% Light IFR Operations
 destroy(#orber_light_ifr_ref{data = #lightdata{id = Id}}) ->
     F = fun() -> 
-%%		MatchHead = #orber_light_ifr{id='$1', base_id=Id, _='_'},
-		MatchHead = {orber_light_ifr, '$1', '_', '_', Id},
+		MatchHead = #orber_light_ifr{id = '$1', base_id = Id, _='_'},
 		Result = '$1',
 		IdList = mnesia:select(orber_light_ifr, 
 				       [{MatchHead, [], [Result]}], 

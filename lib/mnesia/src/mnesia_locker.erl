@@ -510,9 +510,20 @@ release_locks([]) ->
     ok.
 
 release_lock({Tid, Oid, {queued, _}}) ->
-    ?ets_match_delete(mnesia_lock_queue, 
-		      #queue{oid=Oid, tid = Tid, op = '_',
-			     pid = '_', lucky = '_'});
+    ?ets_match_delete(mnesia_lock_queue, #queue{oid=Oid, tid = Tid, op = '_',
+						pid = '_', lucky = '_'});
+%% case     ?ets_match_object(mnesia_lock_queue, #queue{oid=Oid, tid = Tid, op = '_',
+%% 							    pid = '_', lucky = '_'}) of
+
+%% 	[] ->  ok;
+%% 	Objs -> 
+%% 	    lists:foreach(fun(Q=#queue{pid=Pid,op=Op,oid=Oid,lucky=L}) -> 
+%% 				  ets:delete_object(mnesia_lock_queue,Q),
+%% 				  Reply = {not_granted,
+%% 					   #cyclic{op=Op,lock=Op,oid=Oid,lucky=Lucky}},
+%% 				  Pid ! {?MODULE,node(),Reply}
+%% 			  end, Objs)
+%%     end;
 release_lock({Tid, Oid, Op}) ->
     if
 	Op == write ->
@@ -645,7 +656,7 @@ rwlock(Tid, Store, Oid) ->
 	    case need_lock(Store, Tab, Key, Lock)  of
 		yes ->
 		    Ns = w_nodes(Tab),
-		    Res = get_rwlocks_on_nodes(Ns, Ns, Node, Store, Tid, Oid),
+		    Res = get_rwlocks_on_nodes(Ns, rwlock, Node, Store, Tid, Oid),
 		    ?ets_insert(Store, {{locks, Tab, Key}, Lock}),
 		    Res;
 		no ->
@@ -659,21 +670,6 @@ rwlock(Tid, Store, Oid) ->
 		    end
 	    end
     end.
-
-get_rwlocks_on_nodes([Node | Tail], Orig, Node, Store, Tid, Oid) ->
-    Op = {self(), {read_write, Tid, Oid}},
-    {?MODULE, Node} ! Op,
-    ?ets_insert(Store, {nodes, Node}),
-    add_debug(Node),
-    get_rwlocks_on_nodes(Tail, Orig, Node, Store, Tid, Oid);
-get_rwlocks_on_nodes([Node | Tail], Orig, OtherNode, Store, Tid, Oid) ->
-    Op = {self(), {write, Tid, Oid}},
-    {?MODULE, Node} ! Op,
-    add_debug(Node),
-    ?ets_insert(Store, {nodes, Node}),
-    get_rwlocks_on_nodes(Tail, Orig, OtherNode, Store, Tid, Oid);
-get_rwlocks_on_nodes([], Orig, _Node, Store, _Tid, Oid) ->
-    receive_wlocks(Orig, read_write_lock, Store, Oid).
 
 %% Return a list of nodes or abort transaction
 %% WE also insert any additional where_to_write nodes
@@ -762,7 +758,7 @@ dirty_sticky_lock(Tab, Key, Nodes, Lock) ->
 	    Nodes;
 	true ->
 	    ok
-    end.	   
+    end.
 
 sticky_wlock_table(Tid, Store, Tab) ->
     sticky_lock(Tid, Store, {Tab, ?ALL}, write).
@@ -812,58 +808,90 @@ need_lock(Store, Tab, Key, LockPattern) ->
 	    no
     end.
 
-add_debug(Node) ->  % Use process dictionary for debug info
-    case get(mnesia_wlock_nodes) of       
-	undefined -> 
-	    put(mnesia_wlock_nodes, [Node]);
-	NodeList  ->
-	    put(mnesia_wlock_nodes, [Node|NodeList])
-    end.
+add_debug(Nodes) ->  % Use process dictionary for debug info
+    put(mnesia_wlock_nodes, Nodes).
 
-del_debug(Node) ->
-    case get(mnesia_wlock_nodes) of
-	undefined ->  % Shouldn't happen
-	    ignore;
-	[Node] ->
-	    erase(mnesia_wlock_nodes);
-	List -> 
-	    put(mnesia_wlock_nodes, lists:delete(Node, List))
-    end.
+del_debug() ->
+    erase(mnesia_wlock_nodes).
 
-%% We first send lock requests to the lockmanagers on all 
+%% We first send lock request to the local node if it is part of the lockers
+%% then the first sorted node then to the rest of the lockmanagers on all 
 %% nodes holding a copy of the table
 
 get_wlocks_on_nodes([Node | Tail], Orig, Store, Request, Oid) ->
     {?MODULE, Node} ! Request,
     ?ets_insert(Store, {nodes, Node}),
-    add_debug(Node),
-    get_wlocks_on_nodes(Tail, Orig, Store, Request, Oid);
-get_wlocks_on_nodes([], Orig, Store, _Request, Oid) ->
-    receive_wlocks(Orig, Orig, Store, Oid).
+    receive_wlocks([Node], undefined, Store, Oid),
+    case node() of
+	Node -> %% Local done try one more
+	    get_wlocks_on_nodes(Tail, Orig, Store, Request, Oid);
+	_ ->    %% The first succeded cont with the rest  
+	    get_wlocks_on_nodes(Tail, Store, Request),
+	    receive_wlocks(Tail, Orig, Store, Oid)
+    end;
+get_wlocks_on_nodes([], Orig, _Store, _Request, _Oid) -> 
+    Orig.
 
-receive_wlocks([Node | Tail], Res, Store, Oid) ->
+get_wlocks_on_nodes([Node | Tail], Store, Request) ->
+    {?MODULE, Node} ! Request,
+    ?ets_insert(Store,{nodes, Node}),
+    get_wlocks_on_nodes(Tail, Store, Request);
+get_wlocks_on_nodes([], _, _) -> 
+    ok.
+
+get_rwlocks_on_nodes([ReadNode|Tail], _Res, ReadNode, Store, Tid, Oid) ->
+    Op = {self(), {read_write, Tid, Oid}},
+    {?MODULE, ReadNode} ! Op,
+    ?ets_insert(Store, {nodes, ReadNode}),
+    Res = receive_wlocks([ReadNode], undefined, Store, Oid),
+    case node() of
+	ReadNode -> 
+	    get_rwlocks_on_nodes(Tail, Res, ReadNode, Store, Tid, Oid);
+	_ ->
+	    get_wlocks_on_nodes(Tail, Store, {self(), {write, Tid, Oid}}),
+	    receive_wlocks(Tail, Res, Store, Oid)
+    end;
+get_rwlocks_on_nodes([Node | Tail], Res, ReadNode, Store, Tid, Oid) ->
+    Op = {self(), {write, Tid, Oid}},
+    {?MODULE, Node} ! Op,
+    ?ets_insert(Store, {nodes, Node}),
+    receive_wlocks([Node], undefined, Store, Oid),
+    if node() == Node ->
+	    get_rwlocks_on_nodes(Tail, Res, ReadNode, Store, Tid, Oid);
+       Res == rwlock -> %% Hmm	    
+	    Rest = lists:delete(ReadNode, Tail),
+	    Op2 = {self(), {read_write, Tid, Oid}},
+	    {?MODULE, ReadNode} ! Op2,
+	    ?ets_insert(Store, {nodes, ReadNode}),
+	    get_wlocks_on_nodes(Rest, Store, {self(), {write, Tid, Oid}}),
+	    receive_wlocks([ReadNode|Rest], undefined, Store, Oid);
+       true ->
+	    get_wlocks_on_nodes(Tail, Store, {self(), {write, Tid, Oid}}),
+	    receive_wlocks(Tail, Res, Store, Oid)
+    end;
+get_rwlocks_on_nodes([],Res,_,_,_,_) ->
+    Res.
+
+receive_wlocks([], Res, _Store, _Oid) ->
+    del_debug(),
+    Res;
+receive_wlocks(Nodes = [This|Ns], Res, Store, Oid) ->
+    add_debug(Nodes),
     receive
 	{?MODULE, Node, granted} ->
-	    del_debug(Node),
-	    receive_wlocks(Tail, Res, Store, Oid);
+	    receive_wlocks(lists:delete(Node,Nodes), Res, Store, Oid);
 	{?MODULE, Node, {granted, Val}} -> %% for rwlocks
-	    del_debug(Node),
 	    case opt_lookup_in_client(Val, Oid, write) of
 		C when record(C, cyclic) ->
-		    flush_remaining(Tail, Node, {aborted, C});
+		    flush_remaining(Nodes, Node, {aborted, C});
 		Val2 ->
-		    receive_wlocks(Tail, Val2, Store, Oid)
+		    receive_wlocks(lists:delete(Node,Nodes), Val2, Store, Oid)
 	    end;
 	{?MODULE, Node, {not_granted, Reason}} ->
-	    del_debug(Node),
 	    Reason1 = {aborted, Reason},
-	    flush_remaining(Tail, Node, Reason1);
-	{mnesia_down, Node} ->
-	    del_debug(Node),
-	    Reason1 = {aborted, {node_not_running, Node}},
-	    flush_remaining(Tail, Node, Reason1);
+	    flush_remaining(Nodes,Node,Reason1);
 	{?MODULE, Node, {switch, Sticky, _Req}} -> %% for rwlocks
-	    del_debug(Node),
+	    Tail = lists:delete(Node,Nodes),
 	    Nonstuck = lists:delete(Sticky,Tail),
 	    [?ets_insert(Store, {nodes, NSNode}) || NSNode <- Nonstuck],
 	    case lists:member(Sticky,Tail) of		
@@ -873,36 +901,36 @@ receive_wlocks([Node | Tail], Res, Store, Oid) ->
 		false ->
 		    sticky_flush(Nonstuck,Store),
 		    Res
-	    end
-    end;
-receive_wlocks([], Res, _Store, _Oid) ->
-    Res.
+	    end;
+	{mnesia_down, This} ->  % Only look for down from Nodes in list
+	    Reason1 = {aborted, {node_not_running, This}},
+	    flush_remaining(Ns, This, Reason1)
+    end.
 
-sticky_flush([], _) -> ok;
-sticky_flush([Node | Tail], Store) ->
+sticky_flush([], _) -> 
+    del_debug(),
+    ok;
+sticky_flush(Ns=[Node | Tail], Store) ->
+    add_debug(Ns),
     receive
 	{?MODULE, Node, _} ->
-	    del_debug(Node),
 	    sticky_flush(Tail, Store);
 	{mnesia_down, Node} ->
-	    del_debug(Node),
 	    ?ets_delete(Store, {nodes, Node}),
 	    sticky_flush(Tail, Store)
     end.
 
-
 flush_remaining([], _SkipNode, Res) ->
+    del_debug(),
     exit(Res);
 flush_remaining([SkipNode | Tail ], SkipNode, Res) ->
-    del_debug(SkipNode),
     flush_remaining(Tail, SkipNode, Res);
-flush_remaining([Node | Tail], SkipNode, Res) ->
+flush_remaining(Ns=[Node | Tail], SkipNode, Res) ->
+    add_debug(Ns),
     receive
 	{?MODULE, Node, _} ->
-	    del_debug(Node),
 	    flush_remaining(Tail, SkipNode, Res);
 	{mnesia_down, Node} ->
-	    del_debug(Node),
 	    flush_remaining(Tail, SkipNode, {aborted, {node_not_running, Node}})
     end.
 

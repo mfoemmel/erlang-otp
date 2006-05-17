@@ -56,7 +56,6 @@ EXTERN_FUNCTION(void, output_ready, (int, int));
 EXTERN_FUNCTION(int, driver_interrupt, (int, int));
 EXTERN_FUNCTION(void, increment_time, (int));
 EXTERN_FUNCTION(int, next_time, (_VOID_));
-EXTERN_FUNCTION(int, send_error_to_logger, (Uint));
 EXTERN_FUNCTION(int, erl_dbg_fputc, (char, FILE*));
 EXTERN_FUNCTION(int, erl_dbg_vfprintf, (FILE*, char*, va_list));
 EXTERN_FUNCTION(int, erl_dbg_fprintf, (FILE*, char*, ...));
@@ -118,6 +117,13 @@ static Uint ose_sig_freed;
 void erts_sys_alloc_init(void) {
   /* initialize heap memory handler */
   initialize_allocation();
+}
+
+
+Uint
+erts_sys_misc_mem_sz(void)
+{
+    return (Uint) 0 /* FIXME */;
 }
 
 void
@@ -458,7 +464,6 @@ static SigEntry *sig_buf_last = NULL;
 
 static byte *tmp_buf;
 static Uint tmp_buf_size;
-int cerr_pos;
 
 
 /*-------------------------- Drivers -----------------------------*/
@@ -1301,7 +1306,7 @@ static void check_io(int wait)
       timeout = 0;		
     }
   }
-  erts_deliver_time(NULL);		/* sync the machine's idea of time */
+  erts_deliver_time();		/* sync the machine's idea of time */
 }
 
 /* add signal to be processed by check_io */
@@ -1733,92 +1738,15 @@ int sys_putenv(char *buffer) {
   return result;
 }
 
-void sys_init_io(byte *buf, Uint size) 
+void sys_init_io(void) 
 {
-  tmp_buf = buf;
-  tmp_buf_size = size;
-  printf("buf size set to %d\n", size);
+  tmp_buf = (byte *) erts_alloc(ERTS_ALC_T_SYS_TMP_BUF, SYS_TMP_BUF_SIZE);
+  tmp_buf_size = SYS_TMP_BUF_SIZE;
+  printf("buf size set to %d\n", tmp_buf_size);
 }
 
 extern const char pre_loaded_code[];
 extern char* const pre_loaded[];
-
-
-#ifndef __STDC__
-void sys_printf(va_alist)
-     va_dcl
-{
-  va_list va;
-  CIO where;
-  char   *format;
-  va_start(va);
-  where = va_arg(va, CIO);
-  format = va_arg(va, char *);
-#else
-void sys_printf(CIO where, char* format, ...)
-{
-  va_list va;
-  va_start(va,format);
-#endif
-  
-  if (where == CERR) {
-#ifndef USE_ERL_DEBUG_PRINTF
-    erl_error(format, va);
-#else
-    erl_dbg_vfprintf(stderr, format, va);
-#endif
-  }
-  else if (where == COUT) {
-#ifndef USE_ERL_DEBUG_PRINTF
-    vfprintf(stdout, format, va);
-#else
-    erl_dbg_vfprintf(stdout, format, va);
-#endif
-  }
-  else if (where == CBUF) {
-    if (cerr_pos < TMP_BUF_MAX) {
-      vsprintf((char*)&tmp_buf[cerr_pos],format,va);
-      cerr_pos += sys_strlen((char*)&tmp_buf[cerr_pos]);
-      if (cerr_pos >= tmp_buf_size)
-	erl_exit(1, "Internal buffer overflow in erl_printf\n");
-      if (cerr_pos >= TMP_BUF_MAX) {
-	strcpy((char*)&tmp_buf[TMP_BUF_MAX - 3], "...");
-	cerr_pos = TMP_BUF_MAX;
-      }
-    }
-  } else {
-    /* Seems only to be used in crash_dumping... */
-    vsprintf(tmp_buf, format, va);
-    if(sys_strlen(tmp_buf) >= TMP_BUF_MAX)
-      erl_exit(1, "Internal buffer overflow in erl_printf\n");
-    write((int) where, tmp_buf, strlen(tmp_buf));
-  }
-  va_end(va);
-}
-
-    
-void sys_putc(int ch, CIO where)
-{
-  if (where == CBUF) {
-    if (cerr_pos < TMP_BUF_MAX) {
-      tmp_buf[cerr_pos++] = ch;
-      if (cerr_pos == TMP_BUF_MAX) {
-	strcpy((char*)&tmp_buf[TMP_BUF_MAX - 3], "...");
-	cerr_pos = TMP_BUF_MAX;
-      }
-    }
-    else if (cerr_pos >= tmp_buf_size)
-      erl_exit(1, "Internal buffer overflow in erl_printf\n");
-  }
-  else if (where == COUT)
-#ifndef USE_ERL_DEBUG_PRINTF
-    fputc(ch, stdout);
-#else
-    erl_dbg_fputc(ch, stdout);
-#endif
-  else
-    sys_printf(where, "%c", ch);
-}
 
 /* Return a pointer to a vector of names of preloaded modules */
 
@@ -2013,8 +1941,9 @@ erts_sys_free(ErtsAlcType_t type, void *extra, void *ptr)
 int erl_set_memory_block(int isize, int iptr, int warn_save, 
 			 int realloc_moves, int reclaim_in_supplied) {
     if(isize < 8 * 1024 *1024)
-	erl_printf(CERR,"Warning, the memory pool of %dMb may be to small to "
-		   "run erlang in!\n", isize / (1024 * 1024));
+	erts_fprintf(stderr,
+		     "Warning, the memory pool of %dMb may be to small to "
+		     "run erlang in!\n", isize / (1024 * 1024));
     alloc_pool_size = (size_t) isize;
     alloc_pool_ptr = (void *) iptr;
     alloc_flags = 0;
@@ -2033,40 +1962,40 @@ int erl_set_memory_block(int isize, int iptr, int warn_save,
 /* External statistics interface */
 int erl_memory_show() {
     struct elib_stat statistics;
-    erl_printf(COUT,"Allocation settings:\n");
-    erl_printf(COUT,"Using elib_malloc with memory pool size of %lu bytes.\n",
+    erts_printf("Allocation settings:\n");
+    erts_printf("Using elib_malloc with memory pool size of %lu bytes.\n",
 	       (unsigned long) alloc_pool_size);
-    erl_printf(COUT,"Realloc-always-moves is %s\n", 
+    erts_printf("Realloc-always-moves is %s\n", 
 	       (alloc_flags & REALLOC_MOVES) ? "on" : "off");
-    erl_printf(COUT,"Warnings about mixed malloc/free's are %s\n", 
+    erts_printf("Warnings about mixed malloc/free's are %s\n", 
 	       (alloc_flags & WARN_MALLOC_MIX) ? "on" : "off");
     if(alloc_flags & USER_POOL){
-	erl_printf(COUT,"The memory block used by elib is user supplied "
+	erts_printf("The memory block used by elib is user supplied "
 		   "at 0x%08x.\n", (unsigned int) alloc_pool_ptr);
 	if(alloc_flags & RECLAIM_USER_POOL)
-	    erl_printf(COUT,"Allocated memory within the user supplied pool\n"
+	    erts_printf("Allocated memory within the user supplied pool\n"
 		       "  will be automatically reclaimed at task exit.\n");
     } else {
-	erl_printf(COUT,"The memory block used by elib is save_malloc'ed "
+	erts_printf("The memory block used by elib is save_malloc'ed "
 		   "at 0x%08x.\n", (unsigned int) alloc_pool_ptr);
     }
 #ifdef NO_FIX_ALLOC
-    erl_printf(COUT,"Fix_alloc is disabled in this build\n");
+    erts_printf("Fix_alloc is disabled in this build\n");
 #endif
-    erl_printf(COUT,"Statistics from elib_malloc:\n");
+    erts_printf("Statistics from elib_malloc:\n");
     elib_stat(&statistics);
-    erl_printf(COUT,"Type          Size (bytes) Number of blocks\n");
-    erl_printf(COUT,"============= ============ ================\n");
-    erl_printf(COUT,"Total:        %12lu %16lu\n",
+    erts_printf("Type          Size (bytes) Number of blocks\n");
+    erts_printf("============= ============ ================\n");
+    erts_printf("Total:        %12lu %16lu\n",
 	       (unsigned long) statistics.mem_total*4,
 	       (unsigned long) statistics.mem_blocks);
-    erl_printf(COUT,"Allocated:    %12lu %16lu\n",
+    erts_printf("Allocated:    %12lu %16lu\n",
 	       (unsigned long) statistics.mem_alloc*4,
 	       (unsigned long) statistics.mem_blocks-statistics.free_blocks);
-    erl_printf(COUT,"Free:         %12lu %16lu\n",
+    erts_printf("Free:         %12lu %16lu\n",
 	       (unsigned long) statistics.mem_free*4,
 	       (unsigned long) statistics.free_blocks);
-    erl_printf(COUT,"Largest free: %12lu                -\n\n",
+    erts_printf("Largest free: %12lu                -\n\n",
 	       (unsigned long) statistics.max_free*4);
     return 0;
 }

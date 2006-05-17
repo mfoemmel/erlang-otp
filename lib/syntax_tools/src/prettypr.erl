@@ -1,16 +1,4 @@
 %% =====================================================================
-%% Generic pretty printer: a strict-style context passing implementation
-%% of John Hughes algorithm, described in ``The design of a
-%% Pretty-printing Library''. The "paragraph-style" formatting, empty
-%% documents and "floating" documents are my own additions to the
-%% algorithm. A note on hacking: it's fairly easy to break this thing
-%% (in particular, to muck up the complexity) if you don't understand
-%% how it works.
-%%
-%% $Id: prettypr.erl,v 1.24 2004/11/08 17:46:33 richardc Exp $
-%% ---------------------------------------------------------------------
-%% Copyright (C) 2000-2001 Richard Carlsson
-%%
 %% This library is free software; you can redistribute it and/or modify
 %% it under the terms of the GNU Lesser General Public License as
 %% published by the Free Software Foundation; either version 2 of the
@@ -26,17 +14,40 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@csd.uu.se
+%% $Id$
+%%
+%% @copyright 2000-2006 Richard Carlsson
+%% @author Richard Carlsson <richardc@csd.uu.se>
+%%   [http://www.csd.uu.se/~richardc/]
+%% @end
 %% =====================================================================
 
-%% TODO: EDoc-ify the documentation.
-%% TODO: can floats be moved in/out of sep:s without too much pain?
+%% @doc A generic pretty printer library. This module uses a
+%% strict-style context passing implementation of John Hughes algorithm,
+%% described in "The design of a Pretty-printing Library". The
+%% paragraph-style formatting, empty documents, floating documents, and
+%% null strings are my own additions to the algorithm.
+%%
+%% To get started, you should read about the {@link document()} data
+%% type; the main constructor functions: {@link text/1}, {@link
+%% above/2}, {@link beside/2}, {@link nest/2}, {@link sep/1}, and {@link
+%% par/2}; and the main layout function {@link format/3}.
+%%
+%% If you simply want to format a paragraph of plain text, you probably
+%% want to use the {@link text_par/2} function, as in the following
+%% example:
+%% ```
+%% prettypr:format(prettypr:text_par("Lorem ipsum dolor sit amet"), 20)
+%% '''
+
+%% @TODO can floats be moved in/out of sep:s without too much pain?
 
 -module(prettypr).
 
 -export([above/2, beside/2, best/3, break/1, empty/0, floating/1,
 	 floating/3, follow/2, follow/3, format/1, format/2, format/3,
-	 layout/1, nest/2, par/1, par/2, sep/1, text/1, markup/1]).
+	 nest/2, par/1, par/2, sep/1, text/1, null_text/1, text_par/1,
+	 text_par/2]).
 
 -record(text, {s}).
 -record(nest, {n, d}).
@@ -45,21 +56,58 @@
 -record(sep, {ds, i = 0, p = false}).
 
 
+%% ---------------------------------------------------------------------
+%% A small note of warning for hackers: it's fairly easy to break this
+%% thing (in particular, to muck up the complexity) if you don't
+%% understand how it works.
+%% ---------------------------------------------------------------------
+
+
 %% =====================================================================
-%% text(string()) -> document()
+%% @type document(). An abstract character-based "document" representing
+%% a number of possible layouts, which can be processed to produce a
+%% single concrete layout. A concrete layout can then be rendered as a
+%% sequence of characters containing linebreaks, which can be passed to
+%% a printer or terminal that uses a fixed-width font.
 %%
-%%	Yields a document representing a fixed sequence of characters.
-%%	The string should contain only *printable* characters (tabs
-%%	allowed but not recommended), and not newline, line feed,
-%%	vertical tab, etc. A tab character (`$\t') is interpreted as
-%%	padding of 1-8 space characters to the next column of 8
-%%	characters *within the string*.
+%% For example, a document `sep([text("foo"), text("bar")])' 
+%% represents the two layouts
+%% ```foo bar'''
+%% and
+%% ```foo
+%%    bar'''
+%%
+%% Which layout is chosen depends on the available horizontal space.
+%% When processing a document, the main parameters are the <em>paper
+%% width</em> and the <em>line width</em> (also known as the "ribbon
+%% width"). In the resulting layout, no text should be printed beyond
+%% the paper width (which by default is 80 characters) as long as it can
+%% be avoided, and each single line of text (its indentation not
+%% counted, hence "ribbon") should preferably be no wider than the
+%% specified line width (which by default is 65).
+%%
+%% Documents can be joined into a single new document using the
+%% constructor functions of this module. Note that the new document
+%% often represents a larger number of possible layouts than just the
+%% sum of the components.
+
+
+%% =====================================================================
+%% @spec text(Characters::string()) -> document()
+%%
+%% @doc Yields a document representing a fixed, unbreakable sequence of
+%% characters. The string should contain only <em>printable</em>
+%% characters (tabs allowed but not recommended), and <em>not</em>
+%% newline, line feed, vertical tab, etc. A tab character (`\t') is
+%% interpreted as padding of 1-8 space characters to the next column of
+%% 8 characters <em>within the string</em>.
+%%
+%% @see empty/0
+%% @see null_text/1
+%% @see text_par/2
 
 text(S) ->
     mktext(string(S)).	  % convert to internal representation
-
-markup(S) ->
-    mktext(zerostring(S)).    % convert to internal representation
 
 %% This function is used internally only, and expects a string on
 %% the internal representation:
@@ -69,36 +117,123 @@ mktext(S) ->
 
 
 %% =====================================================================
-%% empty() -> document()
-%% break(Doc) -> Doc1
+%% @spec null_text(Characters::string()) -> document()
 %%
-%%	    Doc = Doc1 = document()
+%% @doc Similar to {@link text/1}, but the result is treated as having
+%% zero width. This is regardless of the actual length of the string.
+%% Null text is typically used for markup, which is supposed to have no
+%% effect on the actual layout.
 %%
-%%	`empty' yields the empty document, which has neither height nor
-%%	width (it is thus different from an empty `text' string, which
-%%	has zero width but height 1). Empty documents are occasionally
-%%	useful; in particular, they have the property that |above(X,
-%%	empty())| will force a new line after `X' without leaving an
-%%	empty line below it; since this is a common idiom, the utility
-%%	function `break' will place a given document in such a context.
+%% The standard example is when formatting source code as HTML to be
+%% placed within `<pre>...</pre>' markup, and using e.g. `<i>' and `<b>'
+%% to make parts of the source code stand out. In this case, the markup
+%% does not add to the width of the text when viewed in an HTML browser,
+%% so the layout engine should simply pretend that the markup has zero
+%% width.
+%%
+%% @see text/1
+%% @see empty/0
+
+null_text(S) ->
+    mktext(null_string(S)).    % convert to internal representation
+
+
+%% =====================================================================
+%% @spec text_par(Text::string()) -> document()
+%% @equiv text_par(Text, 0)
+
+text_par(S) ->
+    text_par(S, 0).
+
+
+%% =====================================================================
+%% @spec text_par(Text::string(), Indentation::integer()) -> document()
+%%
+%% @doc Yields a document representing paragraph-formatted plain text.
+%% The optional `Indentation' parameter specifies the extra indentation
+%% of the first line of the paragraph. For example, `text_par("Lorem
+%% ipsum dolor sit amet", N)' could represent
+%% ```Lorem ipsum dolor
+%%    sit amet'''
+%% if `N' = 0, or
+%% ```  Lorem ipsum
+%%    dolor sit amet'''
+%% if `N' = 2, or
+%% ```Lorem ipsum dolor
+%%      sit amet'''
+%% if `N' = -2.
+%% 
+%% (The sign of the indentation is thus reversed compared to the {@link
+%% par/2} function, and the behaviour varies slightly depending on the
+%% sign in order to match the expected layout of a paragraph of text.)
+%%
+%% Note that this is just a utility function, which does all the work of
+%% splitting the given string into words separated by whitespace and
+%% setting up a {@link par/2. `par'} with the proper indentation,
+%% containing a list of {@link text/1. `text'} elements.
+%%
+%% @see text_par/1
+%% @see text/1
+%% @see par/2
+
+text_par(S, 0) ->
+    par(words(S));
+text_par(S, N) when N > 0 ->
+    nest(N, par(words(S), -N));
+text_par(S, N) when N < 0 ->
+    par(words(S), -N).
+
+words(S) ->
+    words(S, [], []).
+
+words([$\s | Cs], As, Ws) -> words_1(Cs, As, Ws);
+words([$\t | Cs], As, Ws) -> words_1(Cs, As, Ws);
+words([$\n | Cs], As, Ws) -> words_1(Cs, As, Ws);
+words([C | Cs], As, Ws) -> words(Cs, [C | As], Ws);
+words([], [], Ws) -> lists:reverse(Ws);
+words([], As, Ws) -> words_1([], As, Ws).
+
+words_1(Cs, [], Ws) ->
+    words(Cs, [], Ws);
+words_1(Cs, As, Ws) ->
+    words(Cs, [], [text(lists:reverse(As)) | Ws]).
+
+
+%% =====================================================================
+%% @spec empty() -> document()
+%%
+%% @doc Yields the empty document, which has neither height nor width.
+%% (`empty' is thus different from an empty {@link text/1. `text'}
+%% string, which has zero width but height 1.)
+%% 
+%% Empty documents are occasionally useful; in particular, they have the
+%% property that `above(X, empty())' will force a new line after `X'
+%% without leaving an empty line below it; since this is a common idiom,
+%% the utility function {@link break/1} will place a given document in
+%% such a context.
+%%
+%% @see text/1
 
 empty() ->
     null.
+
+
+%% =====================================================================
+%% @spec break(document()) -> document()
+%%
+%% @doc Forces a line break at the end of the given document. This is a
+%% utility function; see {@link empty/0} for details.
 
 break(D) ->
     above(D, empty()).
 
 
 %% =====================================================================
-%% nest(N, Doc) -> Doc1
+%% @spec nest(N::integer(), D::document()) -> document()
 %%
-%%	    N = integer()
-%%	    Doc = Doc1 = document()
-%%
-%%	`Doc1' is the document `Doc' with an additional indentation of
-%%	`N' character positions to the right. Note that N may be
-%%	negative, shifting the text to the left, or zero, in which case
-%%	D is not affected.
+%% @doc Indents a document a number of character positions to the right.
+%% Note that `N' may be negative, shifting the text to the left, or
+%% zero, in which case `D' is returned unchanged.
 
 nest(N, D) ->
     if N == 0 ->
@@ -109,106 +244,127 @@ nest(N, D) ->
 
 
 %% =====================================================================
-%% beside(Doc1, Doc2) -> Doc
+%% @spec beside(D1::document(), D2::document()) -> document()
 %%
-%%	    Doc1 = Doc2 = Doc = document()
+%% @doc Concatenates documents horizontally. Returns a document
+%% representing the concatenation of the documents `D1' and `D2' such
+%% that the last character of `D1' is horizontally adjacent to the first
+%% character of `D2', in all possible layouts. (Note: any indentation of
+%% `D2' is lost.)
 %%
-%%	`Doc' is a document representing the horizontal concatenation of
-%%	the documents `Doc1' and `Doc2' such that the last character of
-%%	`Doc1' is directly adjacent to the first character of `Doc2', in
-%%	all possible layouts of `Doc'.
+%% Examples:
+%% ```ab  cd  =>  abcd
 %%
-%%	Note: any indentation of `Doc2' by `nest' is dropped.
+%%    ab  ef      ab
+%%    cd  gh  =>  cdef
+%%                  gh'''
 
 beside(D1, D2) ->
     #beside{d1 = D1, d2 = D2}.
 
 
 %% =====================================================================
-%% above(Doc1, Doc2) -> Doc
+%% @spec above(D1::document(), D2::document()) -> document()
 %%
-%%	    Doc1 = Doc2 = Doc = document()
+%% @doc Concatenates documents vertically. Returns a document
+%% representing the concatenation of the documents `D1' and `D2' such
+%% that the first line of `D2' follows directly below the last line of
+%% `D1', and the first character of `D2' is in the same horizontal
+%% column as the first character of `D1', in all possible layouts.
 %%
-%%	`Doc' is a document representing the vertical concatenation of
-%%	the documents `Doc1' and `Doc2' such that the first line of
-%%	`Doc2' follows directly below the last line of `Doc1', and the
-%%	first character of `Doc1' is in the same horizontal column as
-%%	the first character of `Doc2', in all possible layouts of `Doc'.
+%% Examples:
+%% ```ab  cd  =>  ab
+%%                cd
+%%
+%%                   abc
+%%    abc   fgh  =>   de
+%%     de    ij      fgh
+%%                    ij'''
 
 above(D1, D2) ->
     #above{d1 = D1, d2 = D2}.
 
 
 %% =====================================================================
-%% sep(Docs) -> Doc
+%% @spec sep(Docs::[document()]) -> document()
 %%
-%%	    Docs = [document()] \ []
-%%	    Doc = document()
+%% @doc Arranges documents horizontally or vertically, separated by
+%% whitespace. Returns a document representing two alternative layouts
+%% of the (nonempty) sequence `Docs' of documents, such that either all
+%% elements in `Docs' are concatenated horizontally, and separated by a
+%% space character, or all elements are concatenated vertically (without
+%% extra separation).
 %%
-%%	`Doc' is a document representing two alternative layouts of the
-%%	(nonempty) sequence `Docs' of documents, such that either all
-%%	elements in `Docs' are concatenated horizontally, and separated
-%%	by a space character, or all elements are concatenated
-%%	vertically (without extra separation).
+%% Note: If some document in `Docs' contains a line break, the vertical
+%% layout will always be selected.
 %%
-%%	Note: If some document in `Docs' contains a line break, the
-%%	vertical layout will always be selected.
+%% Examples:
+%% ```                             ab
+%%    ab  cd  ef  =>  ab cd ef  |  cd
+%%                                 ef
+%%
+%%    ab           ab
+%%    cd  ef  =>   cd
+%%                 ef'''
+%%
+%% @see par/2
 
 sep(Ds) ->
     #sep{ds = Ds}.
 
 
 %% =====================================================================
-%% par(Docs) -> Doc
-%% par(Docs, Offset) -> Doc
-%% follow(Doc1, Doc2) -> Doc
-%% follow(Doc1, Doc2, Offset) -> Doc
-%%
-%%	    Docs = [document()] \ []
-%%	    Doc = Doc1 = Doc2 = document()
-%%	    Offset = integer()
-%%
-%%	`Doc' is a document representing all possible alternative
-%%	left-aligned "paragraph-style" layouts of the (nonempty)
-%%	sequence `Docs' of documents. Elements in `Docs' are separated
-%%	horizontally by a single space character and vertically with a
-%%	single line break. All new lines are indented to the same left
-%%	column. The optional `Offset' parameter specifies the
-%%	indentation of the following lines (if any) relative to the
-%%	position of the first element in `Docs'. For example, with an
-%%	offset of -4, the following layout can be produced:
-%%
-%%		    1 2 3 4
-%%		5 6 7 8 9 10
-%%		11 12 13 14
-%%		15 16 17
-%%
-%%	Note: whenever a document in `Docs' contains a line break, it
-%%	will be placed on a separate line. Thus, neither
-%%
-%%		(foo) (bar
-%%		       baz)
-%%	nor
-%%		(bar
-%%		 baz) (foo)
-%%
-%%	will be generated. However, a useful idiom for making the former
-%%	variant possible for two documents `D1' and `D2' is:
-%%	|beside(par([D1, text("")], N), D2)|. This will break the line
-%%	between `D1' and `D2' if `D1' contains a line break, or
-%%	otherwise if necessary, and (optionally) further indent `D2' by
-%%	`N' character positions; i.e.:
-%%
-%%		D1 D2
-%%	or
-%%		D1
-%%		--N-->D2
-%%
-%%	The utility function `follow' creates this context for two
-%%	documents `D1' and `D2', and an optional integer `N'.
+%% @spec par(Docs::[document()]) -> document()
+%% @equiv par(Ds, 0)
 
 par(Ds) ->
     par(Ds, 0).
+
+
+%% =====================================================================
+%% @spec par(Docs::[document()], Offset::integer()) -> document()
+%%
+%% @doc Arranges documents in a paragraph-like layout. Returns a
+%% document representing all possible left-aligned paragraph-like
+%% layouts of the (nonempty) sequence `Docs' of documents. Elements in
+%% `Docs' are separated horizontally by a single space character and
+%% vertically with a single line break. All lines following the first
+%% (if any) are indented to the same left column, whose indentation is
+%% specified by the optional `Offset' parameter relative to the position
+%% of the first element in `Docs'. For example, with an offset of -4,
+%% the following layout can be produced, for a list of documents
+%% representing the numbers 0 to 15:
+%%
+%% ```    0 1 2 3
+%%    4 5 6 7 8 9
+%%    10 11 12 13
+%%    14 15'''
+%% or with an offset of +2:
+%% ```0 1 2 3 4 5 6
+%%      7 8 9 10 11
+%%      12 13 14 15'''
+%%
+%% The utility function {@link text_par/2} can be used to easily
+%% transform a string of text into a `par' representation by splitting
+%% it into words.
+%%
+%% Note that whenever a document in `Docs' contains a line break, it
+%% will be placed on a separate line. Thus, neither a layout such as
+%% ```ab cd
+%%       ef'''
+%% nor
+%% ```ab
+%%    cd ef'''
+%% will be generated. However, a useful idiom for making the former
+%% variant possible (when wanted) is `beside(par([D1, text("")], N),
+%% D2)' for two documents `D1' and `D2'. This will break the line
+%% between `D1' and `D2' if `D1' contains a line break (or if otherwise
+%% necessary), and optionally further indent `D2' by `N' character
+%% positions. The utility function {@link follow/3} creates this context
+%% for two documents `D1' and `D2', and an optional integer `N'.
+%%
+%% @see par/1
+%% @see text_par/2
 
 par(Ds, N) ->
     mksep(Ds, N, true).
@@ -218,84 +374,116 @@ par(Ds, N) ->
 mksep(Ds, N, P) ->
     #sep{ds = Ds, i = N, p = P}.
 
+
+%% =====================================================================
+%% @spec follow(D1::document(), D2::document()) -> document()
+%% @equiv follow(D1, D2, 0)
+
 follow(D1, D2) ->
     follow(D1, D2, 0).
+
+
+%% =====================================================================
+%% @spec follow(D1::document(), D2::document(), Offset::integer()) ->
+%%           document()
+%% 
+%% @doc Separates two documents by either a single space, or a line
+%% break and intentation. In other words, one of the layouts
+%% ```abc def'''
+%% or
+%% ```abc
+%%     def'''
+%% will be generated, using the optional offset in the latter case. This
+%% is often useful for typesetting programming language constructs.
+%%
+%% This is a utility function; see {@link par/2} for further details.
+%%
+%% @see follow/2
 
 follow(D1, D2, N) ->
     beside(par([D1, nil()], N), D2).
 
 
 %% =====================================================================
-%% floating(Doc) -> Doc1
-%% floating(Doc, HPri, VPri) -> Doc1
-%%
-%%	    Doc = Doc1 = document()
-%%	    HPri = VPri = integer()
-%%
-%%	`Doc1' is a "floating" document representing the same set of
-%%	layouts as `Doc'. A floating document may be moved relative to
-%%	other floating documents immediately beside or above it,
-%%	according to their relative horizontal and vertical priorities.
-%%	These priorities are set with the `HPri' and `VPri' parameters;
-%%	if left out, both default to zero.
-%%
-%%	Notes: Floating documents seem to be working well, but are less
-%%	general than one could wish, losing effect when embedded in
-%%	certain contexts. It is possible to nest "floating" operators
-%%	(even with different priorities), but the effects may be
-%%	difficult to predict. In any case, note that the way the
-%%	algorithm reorders floating documents amounts to a "bubblesort",
-%%	so don't expect it to be able to sort large sequences of
-%%	floating documents quickly.
-
--record(float, {d, h, v}).
+%% @spec floating(document()) -> document()
+%% @equiv floating(D, 0, 0)
 
 floating(D) ->
     floating(D, 0, 0).
+
+
+%% =====================================================================
+%% @spec floating(D::document(), Hp::integer(), Vp::integer()) ->
+%%           document()
+%%
+%% @doc Creates a "floating" document. The result represents the same
+%% set of layouts as `D'; however, a floating document may be moved
+%% relative to other floating documents immediately beside or above it,
+%% according to their relative horizontal and vertical priorities. These
+%% priorities are set with the `Hp' and `Vp' parameters; if omitted,
+%% both default to zero.
+%%
+%% Notes: Floating documents appear to work well, but are currently less
+%% general than you might wish, losing effect when embedded in certain
+%% contexts. It is possible to nest floating-operators (even with
+%% different priorities), but the effects may be difficult to predict.
+%% In any case, note that the way the algorithm reorders floating
+%% documents amounts to a "bubblesort", so don't expect it to be able to
+%% sort large sequences of floating documents quickly.
+
+-record(float, {d, h, v}).
 
 floating(D, H, V) ->
     #float{d = D, h = H, v = V}.
 
 
 %% =====================================================================
-%% format(Document) -> string()
-%% format(Document, PaperWidth) -> string()
-%% format(Document, PaperWidth, LineWidth) -> string()
-%%
-%%	    Document = document()
-%%	    PaperWidth = LineWidth = int()
-%%
-%%	`Document' specifies a set of possible layouts of a text; see
-%%	the corresponding constructor functions for details. `format'
-%%	selects a "best" layout for the document (cf. `best') and
-%%	returns the corresponding text.
-%%
-%%	`PaperWidth' specifies the width (in number of characters) of
-%%	the field for which the text is to be laid out. `LineWidth'
-%%	specifies the desired maximum width (in number of characters) of
-%%	the text printed on any single line, disregarding leading and
-%%	trailing white space. For instance, formatting with a
-%%	`PaperWidth' of 120, it could be desirable to use a `LineWidth'
-%%	of no greater than 70 in order to avoid getting too much text on
-%%	individual lines. By default, `PaperWidth' is 80 and `LineWidth'
-%%	is 65.
+%% @spec format(D::document()) -> string()
+%% @equiv format(D, 80)
 
 format(D) ->
     format(D, 80).
 
+
+%% =====================================================================
+%% @spec format(D::document(), PaperWidth::integer()) -> string()
+%% @equiv format(D, PaperWidth, 65)
+
 format(D, W) ->
     format(D, W, 65).
+
+
+%% =====================================================================
+%% @spec format(D:: document(), PaperWidth::integer(),
+%%              LineWidth::integer()) -> string()
+%% @throws no_layout
+%%
+%% @doc Computes a layout for a document and returns the corresponding
+%% text. See {@link document()} for further information. Throws
+%% `no_layout' if no layout could be selected.
+%%
+%% `PaperWidth' specifies the total width (in character positions) of
+%% the field for which the text is to be laid out. `LineWidth' specifies
+%% the desired maximum width (in number of characters) of the text
+%% printed on any single line, disregarding leading and trailing white
+%% space. These parameters need to be properly balanced in order to
+%% produce good layouts. By default, `PaperWidth' is 80 and `LineWidth'
+%% is 65.
+%%
+%% @see best/3
 
 format(D, W, R) ->
     case best(D, W, R) of
 	empty ->
-	    exit(no_layout);
+	    throw(no_layout);
 	L -> layout(L)
     end.
 
+
+%% =====================================================================
 %% Representation:
 %%
-%%	document() = #text{s = string()},
+%%	document() = #text{s = string()}
 %%		   | #nest{n = int(), d = document()}
 %%		   | #beside{d1 = document(), d2 = document()}
 %%		   | #above{d1 = document(), d2 = document()}
@@ -317,13 +505,13 @@ format(D, W, R) ->
 %% suitable for direct conversion to text, having the following
 %% restricted form:
 %%
-%%	layout() = {text, string()}
-%%		 | {above, {text, string()}, layout()}
-%%		 | {nest, int(), layout()}
+%%	layout() = #text{s = string()}
+%%		 | #above{d1 = #text{s = string()}, d2 = layout()}
+%%		 | #nest{n = int(), d = layout()}
 %%		 | null
 %%
-%% the function `layout/1' performs the final transformation to a single
-%% flat string.
+%% The function `layout/1' performs the final transformation to a single
+%% flat string from the restricted document form.
 
 layout(L) ->
     lists:reverse(layout(0, L, [])).
@@ -360,29 +548,25 @@ flatrev([], As, []) ->
 
 
 %% =====================================================================
-%% best(Doc, PaperWidth, LineWidth) -> empty | Doc1
+%% @spec best(document(), PaperWidth::integer(),
+%%            LineWidth::integer()) -> empty | document()
 %%
-%%	    Doc = Doc1 = document()
-%%	    PaperWidth = LineWidth = int()
+%% @doc Selects a "best" layout for a document, creating a corresponding
+%% fixed-layout document. If no layout could be produced, the atom
+%% `empty' is returned instead. For details about `PaperWidth' and
+%% `LineWidth', see {@link format/3}. The function is idempotent.
 %%
-%%	`Doc' specifies a set of possible layouts of a text; see
-%%	`format' for more information. This function selects a "best"
-%%	layout for the document and returns the corresponding `Doc1'
-%%	representing that single layout, or the atom `empty' if no
-%%	layout could be produced. For information on `PaperWidth' and
-%%	`LineWidth', see `format'.
+%% One possible use of this function is to compute a fixed layout for a
+%% document, which can then be included as part of a larger document.
+%% For example:
+%% ```above(text("Example:"), nest(8, best(D, W - 12, L - 6)))'''
+%% will format `D' as a displayed-text example indented by 8, whose
+%% right margin is indented by 4 relative to the paper width `W' of the
+%% surrounding document, and whose maximum individual line length is
+%% shorter by 6 than the line length `L' of the surrounding document.
 %%
-%%	This function is useful for computing a fixed layout for a
-%%	document, which can then be included as part of a larger
-%%	document. For example:
-%%
-%%	    best( ...above(text("Example:"),
-%%			   nest(8, best(D, W - 12, L - 6))) ...,
-%%		 W, L)
-%%
-%%	will include `D' as a displayed-text example indented by 8 and
-%%	with a right margin indentation of 4, the maximum length of
-%%	individual lines shorter by 6 than in the surrounding document.
+% This function is used by the {@link format/3} function to prepare a
+%% document before being laid out as text.
 
 %% Recall that a document represents a set of possible layouts. `best'
 %% selects the "best" layout of a document, returning a simplified
@@ -696,7 +880,7 @@ rewrite(#nest{n = N, d = D}, C) ->
 	    rewrite(D, #c_float_above_nest{d = D1, h = H, v = V,
 					   i = N + N1, c = C1});
 	#c_best_nest_or{} ->
-	    exit(undefined)    % this can't happen
+	    exit(badarg)    % this can't happen
     end;
 rewrite(#above{d1 = D1, d2 = D2}, C) ->
     case C of
@@ -1018,13 +1202,13 @@ foldr1(F, [H | T]) ->
 %% Internal representation of strings; stores the field width and does
 %% not perform list concatenation until the text is requested. Strings
 %% are thus deep lists whose first element is the length of the string.
-%% Zerostrings are strings whose "official width" is zero, typically
+%% Null strings are strings whose "official width" is zero, typically
 %% used for markup that is not supposed to affect the indentation.
 
 string(S) ->
     [strwidth(S) | S].
 
-zerostring(S) ->
+null_string(S) ->
     [0 | S].
 
 concat([_ | []], [_ | _] = S) ->

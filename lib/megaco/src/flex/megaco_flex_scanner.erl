@@ -22,9 +22,6 @@
 
 -export([start/0, stop/1, scan/2]).
 
--define(DRV_NAME, "megaco_flex_scanner_drv").
-
-
 start() ->
     (catch do_start()).
 
@@ -47,7 +44,7 @@ lib_dir() ->
     
 
 load_driver(Path) ->
-    case erl_ddll:load_driver(Path, ?DRV_NAME) of
+    case erl_ddll:load_driver(Path, drv_name()) of
 	ok ->
 	    ok;
 	 {error, Reason} ->
@@ -56,18 +53,25 @@ load_driver(Path) ->
 
 
 open_drv_port() ->
-    case (catch erlang:open_port({spawn, ?DRV_NAME}, [binary])) of
+    case (catch erlang:open_port({spawn, drv_name()}, [binary])) of
 	Port when port(Port) ->
 	    Port;
 	{'EXIT', Reason} ->
-	    erl_ddll:unload_driver(?DRV_NAME),
+	    erl_ddll:unload_driver(drv_name()),
 	    throw({error, {open_port, Reason}})
     end.
 
+drv_name() ->
+    case erlang:system_info(threads) of
+	true ->
+	    "megaco_flex_scanner_drv_mt";
+	false ->
+	    "megaco_flex_scanner_drv"
+    end.
 
 stop(Port) ->
     erlang:port_close(Port), 
-    erl_ddll:unload_driver(?DRV_NAME),
+    erl_ddll:unload_driver(drv_name()),
     stopped.
 
 

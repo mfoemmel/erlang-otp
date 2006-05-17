@@ -1,0 +1,98 @@
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+# 
+#     $Id$
+#
+
+#
+# This file contains obsolete instructions that may implicitly build
+# heap fragments.
+#
+
+# ================================================================
+# Old bit syntax matching.
+# ================================================================
+
+#
+# Matching binaries: Getting started.
+#
+%cold
+%macro: bs_start_match BsStartMatch -fail_action
+bs_start_match f x
+bs_start_match f y
+bs_start_match f r
+bs_start_match Fail=f icwoa => jump Fail
+
+bs_save I
+bs_restore I
+
+#
+# Fetching integers from binaries.
+#
+bs_get_integer Fail=f Sz=s Unit=u Flags=u Dst=d => \
+			gen_get_integer(Fail, Sz, Unit, Flags, Dst)
+%macro: i_bs_get_integer BsGetInteger -fail_action -gen_dest
+i_bs_get_integer f s I d
+
+#
+# Fetching integers from binaries.
+#
+bs_get_binary Fail=f Sz=s Unit=u Flags=u Dst=d => \
+			gen_get_binary(Fail, Sz, Unit, Flags, Dst)
+%macro: i_bs_get_binary_imm BsGetBinaryImm -fail_action -gen_dest
+%macro: i_bs_get_binary BsGetBinary -fail_action -gen_dest
+%macro: i_bs_get_binary_all BsGetBinaryAll -fail_action -gen_dest
+i_bs_get_binary_imm f I I d
+i_bs_get_binary f s I d
+i_bs_get_binary_all f d
+
+#
+# Fetching floats from binaries.
+#
+bs_get_float Fail=f Sz=s Unit=u Flags=u Dst=d => \
+			gen_get_float(Fail, Sz, Unit, Flags, Dst)
+
+%macro: i_bs_get_float BsGetFloat -fail_action -gen_dest
+i_bs_get_float f s I d
+
+#
+# Skipping uninteresting bits.
+#
+bs_skip_bits Fail=f Sz=s Unit=u Flags=u => gen_skip_bits(Fail, Sz, Unit, Flags)
+
+%macro: i_bs_skip_bits_imm BsSkipBitsImm -fail_action
+i_bs_skip_bits_imm f I
+
+%macro: i_bs_skip_bits BsSkipBits -fail_action
+i_bs_skip_bits f x I
+i_bs_skip_bits f r I
+i_bs_skip_bits f y I
+
+%macro: i_bs_skip_bits_all BsSkipBitsAll -fail_action
+i_bs_skip_bits_all f
+
+#
+# Testing the tail.
+#
+bs_test_tail Fail=f Bits=u==0 => bs_test_zero_tail Fail
+bs_test_tail Fail=f Bits=u => bs_test_tail_imm Fail Bits
+bs_test_zero_tail f
+bs_test_tail_imm f I
+
+#
+# Some optimisations.
+#
+i_bs_get_binary_all Fail Dst | bs_test_tail f u==0 => i_bs_get_binary_all Fail Dst
+i_bs_skip_bits_all Fail | bs_test_tail f u==0 => i_bs_skip_bits_all Fail

@@ -225,7 +225,6 @@ do_chunk_read_only(FdC, FileName, Pos, NoBytes, N) ->
                  end,
     case read_chunk_ro(FdC, FileName, Pos, MaxNoBytes) of
 	{NewFdC, {ok, Bin}} when size(Bin) < ?HEADERSZ ->
-            %% FIXME. Inte längre någon test på denna.
 	    NewCont = #continuation{pos = Pos+size(Bin), b = []},
 	    {NewFdC, {NewCont, [], size(Bin)}};
 	{NewFdC, {ok, Bin}} when NoBytes == []; size(Bin) >= NoBytes ->
@@ -1092,9 +1091,8 @@ write_index_file(read_write, FName, NewFile, OldFile, OldCnt) ->
 			    {ok, <<_CurF, Tail/binary>>} ->
 				position_close2(Fd, FileName, bof),
 				Bin = <<0, 0:32, ?VERSION, NewFile:32>>,
-				fwrite_close2(Fd, FileName, Bin),
 				NewTail = to_8_bytes(Tail, [], FileName, Fd),
-				fwrite_close2(Fd, FileName, NewTail),
+				fwrite_close2(Fd, FileName, [Bin | NewTail]),
 				{10, 8};
 			    Error ->
 				file_error_close(Fd, FileName, Error)

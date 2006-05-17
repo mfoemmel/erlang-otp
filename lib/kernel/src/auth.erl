@@ -15,23 +15,24 @@
 %% 
 %%     $Id$
 %%
-
 -module(auth).
 -behaviour(gen_server).
--export([start_link/0, init/1, is_auth/1, 
-	 print/3]).
--export([get_cookie/0, get_cookie/1, set_cookie/1, 
-	 set_cookie/2, sync_cookie/0]).
-%-define(DBG,io:format("~p:~p~n",[?MODULE,?LINE])).
--define(DBG,erlang:display([?MODULE,?LINE])).
-%%
-%% Backward compatibility.
-%% 
--export([cookie/0, cookie/1, node_cookie/1, 
-	 node_cookie/2]).
 
--export([handle_call/3,handle_cast/2,handle_info/2,terminate/2,
-	 code_change/3]).
+-export([start_link/0]).
+
+%% Old documented interface - deprecated
+-export([is_auth/1, cookie/0, cookie/1, node_cookie/1, node_cookie/2]).
+-deprecated([{is_auth,1}, {cookie,'_'}, {node_cookie, '_'}]).
+
+%% New interface - meant for internal use within kernel only
+-export([get_cookie/0, get_cookie/1,
+	 set_cookie/1, set_cookie/2,
+	 sync_cookie/0,
+	 print/3]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+	 terminate/2, code_change/3]).
 
 -define(COOKIE_ETS_PROTECTION, protected). 
 
@@ -42,71 +43,63 @@
 
 -include("../include/file.hrl").
 
-%% -----------------------------------------------------
-%% Interface functions.
-%% -----------------------------------------------------
+%%----------------------------------------------------------------------
+%% Exported functions
+%%----------------------------------------------------------------------
+
+start_link() ->
+    gen_server:start_link({local, auth}, auth, [], []).
+
+%%--Deprecated interface------------------------------------------------
 
 is_auth(Node) ->
-    case catch gen:call({net_kernel, Node},
-			'$gen_call',
-			{is_auth, node()},
-			infinity) of
-	{ok,Res} -> Res;
-	{'EXIT',_} -> no;
-	{error, _} -> no
+    case net_adm:ping(Node) of
+	pong -> yes;
+	pang -> no
     end.
-
-
-set_cookie(_Node, _Cookie) when node() =:= nonode@nohost ->
-    erlang:fault(distribution_not_started);
-
-set_cookie(Node, Cookie) ->
-    gen_server:call(auth,{set_cookie, Node, Cookie}).
-
-set_cookie(Cookie) ->
-    set_cookie(node(),Cookie).
-    
-get_cookie(_Node) when node() =:= nonode@nohost ->
-    nocookie;
-
-get_cookie(Node) ->
-    gen_server:call(auth,{get_cookie, Node}).
-    
-get_cookie() ->
-    get_cookie(node()).
-
-sync_cookie() ->
-    gen_server:call(auth,sync_cookie).
-    
-
-print(Node,Format,Args) ->
-    (catch gen_server:cast({auth,Node},{print,Format,Args})).
-%%
-%% These are for backward compatibility.
-%%
-
-cookie([Cookie]) ->
-    set_cookie(Cookie);
-
-cookie(Cookie) ->
-    set_cookie(Cookie).
 
 cookie() ->
     get_cookie().
 
+cookie([Cookie]) ->
+    set_cookie(Cookie);
+cookie(Cookie) ->
+    set_cookie(Cookie).
+
+node_cookie([Node, Cookie]) ->
+    node_cookie(Node, Cookie).
 node_cookie(Node, Cookie) ->
     set_cookie(Node, Cookie),
     is_auth(Node).
 
-node_cookie([Node, Cookie]) ->
-    node_cookie(Node, Cookie).
+%%--"New" interface-----------------------------------------------------
 
-%% -----------------------------------------------------
+get_cookie() ->
+    get_cookie(node()).
 
-start_link() -> gen_server:start_link({local,auth}, auth, [], []).
+get_cookie(_Node) when node() =:= nonode@nohost ->
+    nocookie;
+get_cookie(Node) ->
+    gen_server:call(auth, {get_cookie, Node}).
+
+set_cookie(Cookie) ->
+    set_cookie(node(), Cookie).
+
+set_cookie(_Node, _Cookie) when node()=:=nonode@nohost ->
+    erlang:fault(distribution_not_started);
+set_cookie(Node, Cookie) ->
+    gen_server:call(auth, {set_cookie, Node, Cookie}).
+
+sync_cookie() ->
+    gen_server:call(auth, sync_cookie).
+
+print(Node,Format,Args) ->
+    (catch gen_server:cast({auth,Node},{print,Format,Args})).
+
+%%--gen_server callbacks------------------------------------------------
 
 init([]) ->
-    process_flag(trap_exit,true),
+    process_flag(trap_exit, true),
     {ok, init_cookie()}.
 
 %% Opened is a list of servers we have opened up
@@ -148,7 +141,7 @@ handle_call(echo, _From, O) ->
     {reply, hello, O}.
 
 handle_cast({print,What,Args}, O) ->
-  %% allways allow print outs
+  %% always allow print outs
   error_logger:error_msg(What,Args), 
   {noreply, O}.
 
@@ -198,7 +191,7 @@ handle_info({From,badcookie,Name,Mess}, Opened) ->
 	    end
     end, 
     {noreply, Opened};
-handle_info(_, O)->   %% Ignore anything else especially EXIT signals
+handle_info(_, O)->   % Ignore anything else especially EXIT signals
     {noreply, O}.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -207,10 +200,10 @@ code_change(_OldVsn, State, _Extra) ->
 terminate(_Reason, _State) ->
     ok.
 
-getnode(P) when pid(P) -> node(P);
+getnode(P) when is_pid(P) -> node(P);
 getnode(P) -> P.
 
-
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%
 %%% 	Cookie functions

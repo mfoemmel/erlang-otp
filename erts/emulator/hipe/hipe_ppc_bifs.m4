@@ -318,13 +318,8 @@ ASYM($1):
 	/* Set up C argument registers. */
 	mr	r3, P
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	CSYM($2)
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(0)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET(CSYM($2),0)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -339,13 +334,8 @@ ASYM($1):
 	mr	r3, P
 	NBIF_ARG(r4,1,0)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	CSYM($2)
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(1)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET(CSYM($2),1)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -361,13 +351,8 @@ ASYM($1):
 	NBIF_ARG(r4,2,0)
 	NBIF_ARG(r5,2,1)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	CSYM($2)
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(2)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET(CSYM($2),2)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -384,13 +369,8 @@ ASYM($1):
 	NBIF_ARG(r5,3,1)
 	NBIF_ARG(r6,3,2)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	CSYM($2)
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(3)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET(CSYM($2),3)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -409,13 +389,8 @@ ASYM($1):
 	NBIF_ARG(r7,5,3)
 	NBIF_ARG(r8,5,4)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	CSYM($2)
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(5)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET(CSYM($2),5)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -437,13 +412,9 @@ define(noproc_primop_interface_0,
 #`define' HAVE_$1
 	GLOBAL(ASYM($1))
 ASYM($1):
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	CSYM($2)
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(0)
+	/* XXX: this case is always trivial; how to suppress the branch? */
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET(CSYM($2),0)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -457,13 +428,8 @@ ASYM($1):
 	/* Set up C argument registers. */
 	NBIF_ARG(r3,1,0)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	CSYM($2)
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(1)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET(CSYM($2),1)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -478,13 +444,8 @@ ASYM($1):
 	NBIF_ARG(r3,2,0)
 	NBIF_ARG(r4,2,1)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	CSYM($2)
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(2)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET(CSYM($2),2)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -500,13 +461,8 @@ ASYM($1):
 	NBIF_ARG(r4,3,1)
 	NBIF_ARG(r5,3,2)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	CSYM($2)
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(3)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET(CSYM($2),3)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -524,13 +480,8 @@ ASYM($1):
 	NBIF_ARG(r6,5,3)
 	NBIF_ARG(r7,5,4)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	CSYM($2)
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(5)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET(CSYM($2),5)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')

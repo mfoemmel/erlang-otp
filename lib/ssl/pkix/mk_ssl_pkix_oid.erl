@@ -35,7 +35,15 @@ get_atom_ids([M| Ms], AIdss) ->
     As = lists:zf(
 	   fun ({info, 0}) -> false;
 	       ({module_info, 0}) -> false;
-	       ({F, 0}) -> {true, F}; 
+	       ({encoding_rule, 0}) -> false;
+	       ({F, 0}) -> 
+		   case atom_to_list(F) of
+		   %% Remove upper-bound (ub-) functions
+		       "ub-" ++ _Rest ->
+			   false;
+		       _ ->
+			   {true, F}
+		   end;
 	       (_) -> false 
 	   end, Exports),
     AIds = lists:map(fun(F) -> {F, M:F()} end, As),
@@ -44,20 +52,6 @@ get_atom_ids([M| Ms], AIdss) ->
 modify_atoms(AIds) ->
     F = fun({A, I}) ->
 		NAS = case atom_to_list(A) of
-			  "id-ad-" ++ Rest ->
-			      Rest;
-			  "id-at-" ++ Rest ->
-			      Rest;
-			  "id-ce-" ++ Rest ->
-			      Rest;
-			  "id-kp-" ++ Rest ->
-			      Rest;
-			  "id-pe-" ++ Rest ->
-			      Rest;
-			  "id-pkix-" ++ Rest ->
-			      Rest;
-			  "id-qt-" ++ Rest ->
-			      Rest;
 			  "id-" ++ Rest ->
 			      Rest;
 			  Any ->

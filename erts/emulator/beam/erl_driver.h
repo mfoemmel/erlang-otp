@@ -93,7 +93,6 @@ typedef struct {
 
 typedef struct erl_drv_binary {
     long orig_size;        /* total length of binary */
-    long refc;             /* number of references to this binary */
     char orig_bytes[1];   /* the data (char instead of byte!) */
 } ErlDrvBinary;
 
@@ -283,6 +282,11 @@ EXTERN ErlDrvBinary* driver_alloc_binary(int size);
 EXTERN ErlDrvBinary* driver_realloc_binary(ErlDrvBinary *bin, int size);
 EXTERN void driver_free_binary(ErlDrvBinary *bin);
 
+/* Referenc count on driver binaries */
+EXTERN long driver_binary_get_refc(ErlDrvBinary *dbp);
+EXTERN long driver_binary_inc_refc(ErlDrvBinary *dbp);
+EXTERN long driver_binary_dec_refc(ErlDrvBinary *dbp);
+
 /* Allocation interface */
 EXTERN void *driver_alloc(size_t size);
 EXTERN void *driver_realloc(void *ptr, size_t size);
@@ -362,6 +366,11 @@ EXTERN ErlDrvTermData driver_connected(ErlDrvPort);
 EXTERN ErlDrvTermData driver_caller(ErlDrvPort);
 extern const ErlDrvTermData driver_term_nil;
 EXTERN ErlDrvTermData driver_mk_term_nil(void);
+EXTERN ErlDrvPort driver_create_port(ErlDrvEntry* driver, 
+				     ErlDrvTermData connected, /* pid */
+				     char* name, /* driver name */
+				     ErlDrvData drv_data);
+					 
 
 /* output term data to the port owner */
 EXTERN int driver_output_term(ErlDrvPort ix, ErlDrvTermData* data, int len);

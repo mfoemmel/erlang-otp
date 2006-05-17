@@ -132,13 +132,17 @@ static BpData *is_break(Uint *pc, Uint break_op);
 ** External interfaces
 */
 
+erts_smp_spinlock_t erts_bp_lock;
+
 void 
 erts_bp_init(void) {
+    erts_smp_spinlock_init(&erts_bp_lock, "breakpoints");
 }
 
 int 
 erts_set_trace_break(Eterm mfa[3], int specified, Binary *match_spec,
 		     Eterm tracer_pid) {
+    ERTS_SMP_LC_ASSERT(erts_smp_is_system_blocked(0));
     return set_break(mfa, specified, match_spec,
 		     (Uint) BeamOp(op_i_trace_breakpoint), 0, tracer_pid);
 }
@@ -146,6 +150,7 @@ erts_set_trace_break(Eterm mfa[3], int specified, Binary *match_spec,
 int 
 erts_set_mtrace_break(Eterm mfa[3], int specified, Binary *match_spec,
 		      Eterm tracer_pid) {
+    ERTS_SMP_LC_ASSERT(erts_smp_is_system_blocked(0));
     return set_break(mfa, specified, match_spec,
 		     (Uint) BeamOp(op_i_mtrace_breakpoint), 0, tracer_pid);
 }
@@ -153,7 +158,8 @@ erts_set_mtrace_break(Eterm mfa[3], int specified, Binary *match_spec,
 void
 erts_set_mtrace_bif(Uint *pc, Binary *match_spec, Eterm tracer_pid) {
     BpDataTrace *bdt;
-    
+    ERTS_SMP_LC_ASSERT(erts_smp_is_system_blocked(0));
+
     bdt = (BpDataTrace *) pc[-4];
     if (bdt) {
 	MatchSetUnref(bdt->match_spec);
@@ -172,12 +178,14 @@ erts_set_mtrace_bif(Uint *pc, Binary *match_spec, Eterm tracer_pid) {
 
 int 
 erts_set_debug_break(Eterm mfa[3], int specified) {
+    ERTS_SMP_LC_ASSERT(erts_smp_is_system_blocked(0));
     return set_break(mfa, specified, NULL, 
 		     (Uint) BeamOp(op_i_debug_breakpoint), 0, NIL);
 }
 
 int 
 erts_set_count_break(Eterm mfa[3], int specified, enum erts_break_op count_op) {
+    ERTS_SMP_LC_ASSERT(erts_smp_is_system_blocked(0));
     return set_break(mfa, specified, NULL, 
 		     (Uint) BeamOp(op_i_count_breakpoint), count_op, NIL);
 }
@@ -186,12 +194,14 @@ erts_set_count_break(Eterm mfa[3], int specified, enum erts_break_op count_op) {
 
 int
 erts_clear_trace_break(Eterm mfa[3], int specified) {
+    ERTS_SMP_LC_ASSERT(erts_smp_is_system_blocked(0));
     return clear_break(mfa, specified, 
 		       (Uint) BeamOp(op_i_trace_breakpoint));
 }
 
 int
 erts_clear_mtrace_break(Eterm mfa[3], int specified) {
+    ERTS_SMP_LC_ASSERT(erts_smp_is_system_blocked(0));
     return clear_break(mfa, specified, 
 		       (Uint) BeamOp(op_i_mtrace_breakpoint));
 }
@@ -199,6 +209,7 @@ erts_clear_mtrace_break(Eterm mfa[3], int specified) {
 void
 erts_clear_mtrace_bif(Uint *pc) {
     BpDataTrace *bdt;
+    ERTS_SMP_LC_ASSERT(erts_smp_is_system_blocked(0));
     
     bdt = (BpDataTrace *) pc[-4];
     if (bdt) {
@@ -212,38 +223,47 @@ erts_clear_mtrace_bif(Uint *pc) {
 
 int
 erts_clear_debug_break(Eterm mfa[3], int specified) {
+    ERTS_SMP_LC_ASSERT(erts_smp_is_system_blocked(0));
     return clear_break(mfa, specified, 
 		       (Uint) BeamOp(op_i_debug_breakpoint));
 }
 
 int
 erts_clear_count_break(Eterm mfa[3], int specified) {
+    ERTS_SMP_LC_ASSERT(erts_smp_is_system_blocked(0));
     return clear_break(mfa, specified, 
 		       (Uint) BeamOp(op_i_count_breakpoint));
 }
 
 int
 erts_clear_break(Eterm mfa[3], int specified) {
+    ERTS_SMP_LC_ASSERT(erts_smp_is_system_blocked(0));
     return clear_break(mfa, specified, 0);
 }
 
 int 
 erts_clear_module_break(Module *modp) {
+    ERTS_SMP_LC_ASSERT(erts_smp_is_system_blocked(0));
     ASSERT(modp);
     return clear_module_break(modp, NULL, 0, 0);
 }
 
 int
 erts_clear_function_break(Module *modp, Uint *pc) {
+    ERTS_SMP_LC_ASSERT(erts_smp_is_system_blocked(0));
     ASSERT(modp);
     return clear_function_break(modp, pc, 0);
 }
 
 
 
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
 Uint 
 erts_trace_break(Process *p, Uint *pc, Eterm *args, 
 		 Uint32 *ret_flags, Eterm *tracer_pid) {
+    Eterm tpid1, tpid2;
     BpDataTrace *bdt = (BpDataTrace *) pc[-4];
     
     ASSERT(pc[-5] == (Uint) BeamOp(op_i_func_info_IaaI));
@@ -252,15 +272,28 @@ erts_trace_break(Process *p, Uint *pc, Eterm *args,
     ASSERT(bdt);
     ASSERT(ret_flags);
     ASSERT(tracer_pid);
-    *ret_flags = erts_call_trace(p, pc-3/*mfa*/, bdt->match_spec, args, 
-				 1, &bdt->tracer_pid);
-    *tracer_pid = bdt->tracer_pid;
+
+    ErtsSmpBPLock(bdt);
+    tpid1 = tpid2 = bdt->tracer_pid;
+    ErtsSmpBPUnlock(bdt);
+
+    *ret_flags = erts_call_trace(p, pc-3/*mfa*/, bdt->match_spec, args,
+				 1, &tpid2);
+    *tracer_pid = tpid2;
+    if (tpid1 != tpid2) {
+	ErtsSmpBPLock(bdt);
+	bdt->tracer_pid = tpid2;
+	ErtsSmpBPUnlock(bdt);
+    }
     pc[-4] = (Uint) bdt;
     return bdt->orig_instr;
 }
 
 
 
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
 Uint32
 erts_bif_mtrace(Process *p, Uint *pc, Eterm *args, int local, 
 		Eterm *tracer_pid) {
@@ -268,9 +301,21 @@ erts_bif_mtrace(Process *p, Uint *pc, Eterm *args, int local,
     
     ASSERT(tracer_pid);
     if (bdt) {
-	Uint32 flags = erts_call_trace(p, pc-3/*mfa*/, bdt->match_spec, args,
-				      local, &bdt->tracer_pid);
-	*tracer_pid = bdt->tracer_pid;
+	Eterm tpid1, tpid2;
+	Uint32 flags;
+
+	ErtsSmpBPLock(bdt);
+	tpid1 = tpid2 = bdt->tracer_pid;
+	ErtsSmpBPUnlock(bdt);
+
+	flags = erts_call_trace(p, pc-3/*mfa*/, bdt->match_spec, args,
+				local, &tpid2);
+	*tracer_pid = tpid2;
+	if (tpid1 != tpid2) {
+	    ErtsSmpBPLock(bdt);
+	    bdt->tracer_pid = tpid2;
+	    ErtsSmpBPUnlock(bdt);
+	}
 	return flags;
     }
     *tracer_pid = NIL;
@@ -289,7 +334,9 @@ erts_is_trace_break(Uint *pc, Binary **match_spec_ret, Eterm *tracer_pid_ret) {
 	    *match_spec_ret = bdt->match_spec;
 	}
 	if (tracer_pid_ret) {
+	    ErtsSmpBPLock(bdt);
 	    *tracer_pid_ret = bdt->tracer_pid;
+	    ErtsSmpBPUnlock(bdt);
 	}
 	return !0;
     }
@@ -306,7 +353,9 @@ erts_is_mtrace_break(Uint *pc, Binary **match_spec_ret, Eterm *tracer_pid_ret) {
 	    *match_spec_ret = bdt->match_spec;
 	}
 	if (tracer_pid_ret) {
+	    ErtsSmpBPLock(bdt);
 	    *tracer_pid_ret = bdt->tracer_pid;
+	    ErtsSmpBPUnlock(bdt);
 	}
 	return !0;
     }
@@ -322,7 +371,9 @@ erts_is_mtrace_bif(Uint *pc, Binary **match_spec_ret, Eterm *tracer_pid_ret) {
 	    *match_spec_ret = bdt->match_spec;
 	}
 	if (tracer_pid_ret) {
+	    ErtsSmpBPLock(bdt);
 	    *tracer_pid_ret = bdt->tracer_pid;
+	    ErtsSmpBPUnlock(bdt);
 	}
 	return !0;
     }
@@ -347,7 +398,9 @@ erts_is_count_break(Uint *pc, Sint *count_ret) {
     
     if (bdc) {
 	if (count_ret) {
+	    ErtsSmpBPLock(bdc);
 	    *count_ret = bdc->count;
+	    ErtsSmpBPUnlock(bdc);
 	}
 	return !0;
     }
@@ -393,7 +446,7 @@ static int set_break(Eterm mfa[3], int specified,
     if (!specified) {
 	/* Find and process all modules in the system... */
 	int current = -1;
-	while ((current = index_iter(&module_table,current)) >= 0) {
+	while ((current = module_iter(current)) >= 0) {
 	    if ((modp = module_code(current)) != NULL) {
 		num_processed += 
 		    set_module_break(modp, mfa, specified, 
@@ -464,18 +517,23 @@ static int set_function_break(Module *modp, Uint *pc,
 	if (break_op == (Uint) BeamOp(op_i_trace_breakpoint) 
 	    || break_op == (Uint) BeamOp(op_i_mtrace_breakpoint)) {
 	    BpDataTrace *bdt = (BpDataTrace *) bd;
+	    Binary *old_match_spec;
 	    
 	    /* Update match spec and tracer */
-	    MatchSetUnref(bdt->match_spec);
 	    MatchSetRef(match_spec);
+	    ErtsSmpBPLock(bdt);
+	    old_match_spec = bdt->match_spec;
 	    bdt->match_spec = match_spec;
 	    bdt->tracer_pid = tracer_pid;
+	    ErtsSmpBPUnlock(bdt);
+	    MatchSetUnref(old_match_spec);
 	} else {
 	    ASSERT(! match_spec);
 	    ASSERT(is_nil(tracer_pid));
 	    if (break_op == (Uint) BeamOp(op_i_count_breakpoint)) {
 		BpDataCount *bdc = (BpDataCount *) bd;
 		
+		ErtsSmpBPLock(bdc);
 		if (count_op == erts_break_stop) {
 		    if (bdc->count >= 0) {
 			bdc->count = -bdc->count-1; /* Stop call counter */
@@ -483,6 +541,7 @@ static int set_function_break(Module *modp, Uint *pc,
 		} else {
 		    bdc->count = 0; /* Reset call counter */
 		}
+		ErtsSmpBPUnlock(bdc);
 	    } else {
 		ASSERT (! count_op);
 	    }
@@ -557,7 +616,7 @@ static int set_function_break(Module *modp, Uint *pc,
 	bdt->tracer_pid = tracer_pid;
     } else if (break_op == (Uint) BeamOp(op_i_count_breakpoint)) {
 	BpDataCount *bdc = (BpDataCount *) bd;
-		
+
 	bdc->count = 0;
     }
     ++(*(Uint*)&code_base[MI_NUM_BREAKPOINTS]);
@@ -570,7 +629,7 @@ static int clear_break(Eterm mfa[3], int specified, Uint break_op) {
     if (!specified) {
 	/* Iterate over all modules */
 	int current = -1;
-	while ((current = index_iter(&module_table,current)) >= 0) {
+	while ((current = module_iter(current)) >= 0) {
 	    if ((modp = module_code(current)) != NULL) {
 		num_processed += 
 		    clear_module_break(modp, mfa, specified, break_op);

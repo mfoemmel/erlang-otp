@@ -136,6 +136,8 @@ atom endian
 atom env
 atom eof
 atom eol
+atom exception_from
+atom exception_trace
 atom Eq='=:='
 atom Eqeq='=='
 atom erlang
@@ -143,6 +145,7 @@ atom ERROR='ERROR'
 atom error_handler
 atom error_logger
 atom ets
+atom exact_reductions
 atom exit_status
 atom existing
 atom exiting
@@ -151,12 +154,14 @@ atom external
 atom false
 atom fd
 atom flags
+atom free
 atom fullsweep_after
 atom fullsweep_if_old_binaries
 atom fun
 atom function
 atom functions
 atom function_clause
+atom garbage_collecting
 atom garbage_collection
 atom gc_end
 atom gc_start
@@ -186,6 +191,7 @@ atom in
 atom index
 atom infinity
 atom info
+atom info_msg
 atom initial_call
 atom input
 atom internal_error
@@ -203,7 +209,6 @@ atom large_heap
 atom last_calls
 atom Le='=<'
 atom line
-atom link_list
 atom links
 atom little
 atom local
@@ -219,6 +224,7 @@ atom mbuf_size
 atom memory
 atom memory_types
 atom message
+atom message_binary
 atom message_queue_len
 atom messages
 atom meta
@@ -227,7 +233,6 @@ atom min_heap_size
 atom Minus='-'
 atom module
 atom module_info
-atom monitor_list
 atom monitored_by
 atom monitor
 atom monitors
@@ -258,6 +263,7 @@ atom not
 atom not_a_list
 atom not_purged
 atom notalive
+atom notify
 atom nouse_stdio
 atom objects
 atom ok
@@ -381,6 +387,7 @@ atom visible
 atom waiting
 atom wall_clock
 atom warning
+atom warning_msg
 atom wordsize
 atom xor
 atom yield

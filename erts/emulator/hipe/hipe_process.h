@@ -33,9 +33,6 @@ struct hipe_process_state {
     void (*nra)(void);		/* Native code return address. */
     unsigned int narity;	/* Arity of BIF call, for stack walks. */
 #endif
-#ifdef ERTS_SMP
-    int have_receive_locks;
-#endif
 };
 
 extern void hipe_arch_print_pcb(struct hipe_process_state *p);
@@ -59,9 +56,6 @@ static __inline__ void hipe_init_process(struct hipe_process_state *p)
 #if defined(__i386__) || defined(__x86_64__) || defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__) || defined(__arm__)
     p->narity = 0;
 #endif
-#ifdef ERTS_SMP
-    p->have_receive_locks = 0;
-#endif
 }
 
 static __inline__ void hipe_delete_process(struct hipe_process_state *p)
@@ -69,5 +63,16 @@ static __inline__ void hipe_delete_process(struct hipe_process_state *p)
     if( p->nstack )
 	erts_free(ERTS_ALC_T_HIPE, (void*)p->nstack);
 }
+
+#ifdef ERTS_SMP
+struct hipe_process_state_smp {
+    int have_receive_locks;
+};
+
+static __inline__ void hipe_init_process_smp(struct hipe_process_state_smp *p)
+{
+    p->have_receive_locks = 0;
+}
+#endif
 
 #endif /* HIPE_PROCESS_H */

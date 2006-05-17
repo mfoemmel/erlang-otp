@@ -173,8 +173,8 @@ control($P, [A,Depth], F, Adj, P, Pad, I) when integer(Depth) ->
     print(A, Depth, F, Adj, P, Pad, I);
 control($s, [A], F, Adj, P, Pad, _I) when atom(A) ->
     string(atom_to_list(A), F, Adj, P, Pad);
-control($s, [L], F, Adj, P, Pad, _I) ->
-    true = io_lib:deep_char_list(L),		%Check if L a character list
+control($s, [L0], F, Adj, P, Pad, _I) ->
+    L = iolist_to_chars(L0),
     string(L, F, Adj, P, Pad);
 control($e, [A], F, Adj, P, Pad, _I) when float(A) ->
     fwrite_e(A, F, Adj, P, Pad);
@@ -224,7 +224,7 @@ base(B) ->
 term(T, none, _Adj, none, _Pad) -> T;
 term(T, none, Adj, P, Pad) -> term(T, P, Adj, P, Pad);
 term(T, F, Adj, P0, Pad) ->
-    L = lists:flat_length(T),
+    L = lists:flatlength(T),
     P = case P0 of none -> min(L, F); _ -> P0 end,
     if
 	L > P ->
@@ -359,17 +359,28 @@ fwrite_g(Fl, F, Adj, P, Pad) when P >= 1 ->
     end.
 
 
+%% iolist_to_chars(iolist()) -> deep_char_list()
+
+iolist_to_chars([C|Cs]) when is_integer(C), C >= $\000, C =< $\377 ->
+    [C | iolist_to_chars(Cs)];
+iolist_to_chars([I|Cs]) ->
+    [iolist_to_chars(I) | iolist_to_chars(Cs)];
+iolist_to_chars([]) ->
+    [];
+iolist_to_chars(B) when is_binary(B) ->
+    binary_to_list(B).
+
 %% string(String, Field, Adjust, Precision, PadChar)
 
 string(S, none, _Adj, none, _Pad) -> S;
 string(S, F, Adj, none, Pad) ->
-    N = lists:flat_length(S),
+    N = lists:flatlength(S),
     if N > F  -> flat_trunc(S, F);
        N == F -> S;
        true   -> adjust(S, chars(Pad, F-N), Adj)
     end;
 string(S, none, _Adj, P, Pad) ->
-    N = lists:flat_length(S),
+    N = lists:flatlength(S),
     if N > P  -> flat_trunc(S, P);
        N == P -> S;
        true   -> [S|chars(Pad, P-N)]
@@ -377,7 +388,7 @@ string(S, none, _Adj, P, Pad) ->
 string(S, F, Adj, F, Pad) ->
     string(S, none, Adj, F, Pad);
 string(S, F, Adj, P, Pad) when F > P ->
-    N = lists:flat_length(S),
+    N = lists:flatlength(S),
     if N > F  -> flat_trunc(S, F);
        N == F -> S;
        N > P  -> adjust(flat_trunc(S, P), chars(Pad, F-P), Adj);

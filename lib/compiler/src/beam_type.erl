@@ -53,25 +53,91 @@ opt([], _, Acc, _) -> reverse(Acc).
 %%  Simplify an instruction using type information (this is
 %%  technically a "strength reduction").
 
-simplify(Is, TypeDb, false) ->
-    simplify(Is, TypeDb, no_float_opt, []);
-simplify(Is, TypeDb, true) ->
-    case are_live_regs_determinable(Is) of
-	false -> simplify(Is, TypeDb, no_float_opt, []);
-	true -> simplify(Is, TypeDb, [], [])
+simplify(Is0, TypeDb0, AllowFloats) ->
+    case simplify_basic(Is0, TypeDb0) of
+	{Is,_}=BasicRes when AllowFloats ->
+	    case simplify_float(Is, TypeDb0) of
+		not_possible -> BasicRes;
+		{_,_}=Res -> Res
+	    end;
+	{_,_}=Res -> Res
     end.
 
-simplify([{set,[D],[{integer,Index},Reg],{bif,element,_}}=I0|Is]=Is0, Ts0, Rs0, Acc0) ->
+%% simplify_basic([Instruction], TypeDatabase) -> {[Instruction],TypeDatabase'}
+%%  Basic simplification, mostly tuples, no floating point optimizations.
+
+simplify_basic(Is, Ts) ->
+    simplify_basic_1(Is, Ts, []).
+    
+simplify_basic_1([{set,[D],[{integer,Index},Reg],{bif,element,_}}=I0|Is], Ts0, Acc) ->
     I = case max_tuple_size(Reg, Ts0) of
 	    Sz when 0 < Index, Index =< Sz ->
 		{set,[D],[Reg],{get_tuple_element,Index-1}};
 	    _Other -> I0
     end,
     Ts = update(I, Ts0),
-    {Rs,Acc} = flush(Rs0, Is0, Acc0),
-    simplify(Is, Ts, Rs, [I|checkerror(Acc)]);
-simplify([{set,[D0],[A],{bif,'-',{f,0}}}=I|Is]=Is0, Ts0, Rs0, Acc0)
-  when Rs0 =/= no_float_opt ->
+    simplify_basic_1(Is, Ts, [I|Acc]);
+simplify_basic_1([{set,[_],[_],{bif,_,{f,0}}}=I|Is], Ts0, Acc) ->
+    Ts = update(I, Ts0),
+    simplify_basic_1(Is, Ts, [I|Acc]);
+simplify_basic_1([{set,[D],[TupleReg],{get_tuple_element,0}}=I|Is0], Ts0, Acc) ->
+    case tdb_find(TupleReg, Ts0) of
+	{tuple,_,[Contents]} ->
+	    Ts = tdb_update([{D,Contents}], Ts0),
+	    simplify_basic_1(Is0, Ts, [{set,[D],[Contents],move}|Acc]);
+	_ ->
+	    Ts = update(I, Ts0),
+	    simplify_basic_1(Is0, Ts, [I|Acc])
+    end;
+simplify_basic_1([{set,_,_,{'catch',_}}=I|Is], _Ts, Acc) ->
+    simplify_basic_1(Is, tdb_new(), [I|Acc]);
+simplify_basic_1([{test,is_tuple,_,[R]}=I|Is], Ts, Acc) ->
+    case tdb_find(R, Ts) of
+	{tuple,_,_} -> simplify_basic_1(Is, Ts, Acc);
+	_ -> simplify_basic_1(Is, Ts, [I|Acc])
+    end;
+simplify_basic_1([{test,test_arity,_,[R,Arity]}=I|Is], Ts0, Acc) ->
+    case tdb_find(R, Ts0) of
+	{tuple,Arity,_} ->
+	    simplify_basic_1(Is, Ts0, Acc);
+	_Other ->
+	    Ts = update(I, Ts0),
+	    simplify_basic_1(Is, Ts, [I|Acc])
+    end;
+simplify_basic_1([{test,is_eq_exact,Fail,[R,{atom,_}=Atom]}=I|Is0], Ts0, Acc0) ->
+    Acc = case tdb_find(R, Ts0) of
+	      {atom,_}=Atom -> Acc0;
+	      {atom,_} -> [{jump,Fail}|Acc0];
+	      _ -> [I|Acc0]
+	  end,
+    Ts = update(I, Ts0),
+    simplify_basic_1(Is0, Ts, Acc);
+simplify_basic_1([I|Is], Ts0, Acc) ->
+    Ts = update(I, Ts0),
+    simplify_basic_1(Is, Ts, [I|Acc]);
+simplify_basic_1([], Ts, Acc) ->
+    Is = reverse(Acc),
+    {Is,Ts}.
+
+%% simplify_float([Instruction], TypeDatabase) ->
+%%                 {[Instruction],TypeDatabase'} | not_possible
+%%  Simplify floating point operations.
+
+simplify_float(Is0, Ts0) ->
+    case beam_block:live_at_entry(Is0) of
+	unknown -> not_possible;
+	Live ->
+	    {Is1,Ts} = simplify_float_1(Is0, Ts0, [], []),
+	    Is2 = flt_need_heap(Is1),
+	    try
+		Is = flt_liveness(Is2, Live),
+		{Is,Ts}
+	    catch
+		throw:not_possible -> not_possible
+	    end
+    end.
+
+simplify_float_1([{set,[D0],[A],{alloc,_,{gc_bif,'-',{f,0}}}}=I|Is]=Is0, Ts0, Rs0, Acc0) ->
     case tdb_find(A, Ts0) of
 	float ->
 	    {Rs1,Acc1} = load_reg(A, Ts0, Rs0, Acc0),
@@ -79,23 +145,18 @@ simplify([{set,[D0],[A],{bif,'-',{f,0}}}=I|Is]=Is0, Ts0, Rs0, Acc0)
 	    Areg = fetch_reg(A, Rs),
 	    Acc = [{set,[D],[Areg],{bif,fnegate,{f,0}}}|clearerror(Acc1)],
 	    Ts = tdb_update([{D0,float}], Ts0),
-	    simplify(Is, Ts, Rs, Acc);
+	    simplify_float_1(Is, Ts, Rs, Acc);
 	_Other ->
 	    Ts = update(I, Ts0),
 	    {Rs,Acc} = flush(Rs0, Is0, Acc0),
-	    simplify(Is, Ts, Rs, [I|checkerror(Acc)])
+	    simplify_float_1(Is, Ts, Rs, [I|checkerror(Acc)])
     end;
-simplify([{set,[_],[_],{bif,_,{f,0}}}=I|Is]=Is0, Ts0, Rs0, Acc0) ->
-    Ts = update(I, Ts0),
-    {Rs,Acc} = flush(Rs0, Is0, Acc0),
-    simplify(Is, Ts, Rs, [I|checkerror(Acc)]);
-simplify([{set,[D0],[A,B],{bif,Op0,{f,0}}}=I|Is]=Is0, Ts0, Rs0, Acc0)
-  when Rs0 =/= no_float_opt ->
+simplify_float_1([{set,[D0],[A,B],{alloc,_,{gc_bif,Op0,{f,0}}}}=I|Is]=Is0, Ts0, Rs0, Acc0) ->
     case float_op(Op0, A, B, Ts0) of
 	no ->
 	    Ts = update(I, Ts0),
 	    {Rs,Acc} = flush(Rs0, Is0, Acc0),
-	    simplify(Is, Ts, Rs, [I|checkerror(Acc)]);
+	    simplify_float_1(Is, Ts, Rs, [I|checkerror(Acc)]);
 	{yes,Op} ->
 	    {Rs1,Acc1} = load_reg(A, Ts0, Rs0, Acc0),
 	    {Rs2,Acc2} = load_reg(B, Ts0, Rs1, Acc1),
@@ -104,59 +165,24 @@ simplify([{set,[D0],[A,B],{bif,Op0,{f,0}}}=I|Is]=Is0, Ts0, Rs0, Acc0)
 	    Breg = fetch_reg(B, Rs),
 	    Acc = [{set,[D],[Areg,Breg],{bif,Op,{f,0}}}|clearerror(Acc2)],
 	    Ts = tdb_update([{D0,float}], Ts0),
-	    simplify(Is, Ts, Rs, Acc)
+	    simplify_float_1(Is, Ts, Rs, Acc)
     end;
-simplify([{set,[D],[TupleReg],{get_tuple_element,0}}=I|Is0], Ts0, Rs0, Acc0) ->
-    case tdb_find(TupleReg, Ts0) of
-	{tuple,_,[Contents]} ->
-	    Ts = tdb_update([{D,Contents}], Ts0),
-	    {Rs,Acc} = flush(Rs0, Is0, Acc0),
-	    simplify(Is0, Ts, Rs, [{set,[D],[Contents],move}|Acc]);
-	_ ->
-	    Ts = update(I, Ts0),
-	    {Rs,Acc} = flush(Rs0, Is0, Acc0),
-	    simplify(Is0, Ts, Rs, [I|checkerror(Acc)])
-    end;
-simplify([{set,_,_,{'catch',_}}=I|Is]=Is0, _Ts, Rs0, Acc0) ->
+simplify_float_1([{set,_,_,{'catch',_}}=I|Is]=Is0, _Ts, Rs0, Acc0) ->
     Acc = flush_all(Rs0, Is0, Acc0),
-    simplify(Is, tdb_new(), Rs0, [I|Acc]);
-simplify([{test,is_tuple,_,[R]}=I|Is], Ts, Rs, Acc) ->
-    case tdb_find(R, Ts) of
-	{tuple,_,_} -> simplify(Is, Ts, Rs, Acc);
-	_ ->
-	    simplify(Is, Ts, Rs, [I|Acc])
-    end;
-simplify([{test,test_arity,_,[R,Arity]}=I|Is], Ts0, Rs, Acc) ->
-    case tdb_find(R, Ts0) of
-	{tuple,Arity,_} ->
-	    simplify(Is, Ts0, Rs, Acc);
-	_Other ->
-	    Ts = update(I, Ts0),
-	    simplify(Is, Ts, Rs, [I|Acc])
-    end;
-simplify([{test,is_eq_exact,Fail,[R,{atom,_}=Atom]}=I|Is0], Ts0, Rs0, Acc0) ->
-    Acc1 = case tdb_find(R, Ts0) of
-	       {atom,_}=Atom -> Acc0;
-	       {atom,_} -> [{jump,Fail}|Acc0];
-	       _ -> [I|Acc0]
-	   end,
-    Ts = update(I, Ts0),
-    {Rs,Acc} = flush(Rs0, Is0, Acc1),
-    simplify(Is0, Ts, Rs, Acc);
-simplify([{'%live',_}=I|Is]=Is0, Ts0, Rs0, Acc0) ->
+    simplify_float_1(Is, tdb_new(), Rs0, [I|Acc]);
+simplify_float_1([{'%live',_}=I|Is]=Is0, Ts0, Rs0, Acc0) ->
     Acc1 = checkerror(Acc0),
     Ts = update(I, Ts0),
     {Rs,Acc} = flush(Rs0, Is0, Acc1),
-    simplify(Is, Ts, Rs, [I|Acc]);
-simplify([I|Is]=Is0, Ts0, Rs0, Acc0) ->
+    simplify_float_1(Is, Ts, Rs, [I|Acc]);
+simplify_float_1([I|Is]=Is0, Ts0, Rs0, Acc0) ->
     Ts = update(I, Ts0),
     {Rs,Acc} = flush(Rs0, Is0, Acc0),
-    simplify(Is, Ts, Rs, [I|Acc]);
-simplify([], Ts, Rs, Acc0) ->
+    simplify_float_1(Is, Ts, Rs, [I|checkerror(Acc)]);
+simplify_float_1([], Ts, Rs, Acc0) ->
     Acc = checkerror(Acc0),
     Is0 = reverse(flush_all(Rs, [], Acc)),
-    Is1 = opt_fmoves(Is0, []),
-    Is = add_ftest_heap(Is1),
+    Is = opt_fmoves(Is0, []),
     {Is,Ts}.
 
 opt_fmoves([{set,[{x,_}=R],[{fr,_}]=Src,fmove}=I1,
@@ -176,6 +202,117 @@ clearerror([{set,[],[],fclearerror}|_], OrigIs) -> OrigIs;
 clearerror([{set,[],[],fcheckerror}|_], OrigIs) -> [{set,[],[],fclearerror}|OrigIs];
 clearerror([_|Is], OrigIs) -> clearerror(Is, OrigIs);
 clearerror([], OrigIs) -> [{set,[],[],fclearerror}|OrigIs].
+
+%% flt_need_heap([Instruction]) -> [Instruction]
+%%  Insert need heap allocation instructions in the instruction stream
+%%  to properly account for both inserted floating point operations and
+%%  normal term build operations (such a put_list/3).
+%%
+%%  Ignore old heap allocation instructions (except if they allocate a stack
+%%  frame too), as they may be in the wrong place (because gc_bif instructions
+%%  could have been converted to floating point operations).
+
+flt_need_heap(Is) ->
+    flt_need_heap_1(reverse(Is), 0, 0, []).
+
+flt_need_heap_1([{set,[],[],{alloc,_,Alloc}}|Is], H, Fl, Acc) ->
+    case Alloc of
+	{_,nostack,_,_} ->
+	    %% Remove any existing test_heap/2 instruction.
+	    flt_need_heap_1(Is, H, Fl, Acc);
+	{Z,Stk,_,Inits} when is_integer(Stk) ->
+	    %% Keep any allocate*/2 instruction and add our float need.
+	    I = {set,[],[],{alloc,regs,{Z,Stk,H,Fl,Inits}}},
+	    flt_need_heap_1(Is, 0, 0, [I|Acc]);
+	{Z,Stk,_,_,Inits} when is_integer(Stk) ->
+	    %% Keep any allocate*/2 instruction and add our float need.
+	    I = {set,[],[],{alloc,regs,{Z,Stk,H,Fl,Inits}}},
+	    flt_need_heap_1(Is, 0, 0, [I|Acc])
+    end;
+flt_need_heap_1([I|Is], H0, Fl0, Acc) ->
+    {Ns,H1,Fl1} = flt_need_heap_2(I, H0, Fl0),
+    flt_need_heap_1(Is, H1, Fl1, [I|Ns]++Acc);
+flt_need_heap_1([], H, Fl, Acc) ->
+    flt_alloc(H, Fl) ++ Acc.
+
+%% First come all instructions that build. We pass through, while we
+%% add to the need for heap words and floats on the heap.
+flt_need_heap_2({set,[_],[{fr,_}],fmove}, H, Fl) ->
+    {[],H,Fl+1};
+flt_need_heap_2({set,_,_,put_list}, H, Fl) ->
+    {[],H+2,Fl};
+flt_need_heap_2({set,_,_,{put_tuple,_}}, H, Fl) ->
+    {[],H+1,Fl};
+flt_need_heap_2({set,_,_,put}, H, Fl) ->
+    {[],H+1,Fl};
+flt_need_heap_2({set,_,_,{put_string,L,_Str}}, H, Fl) ->
+    {[],H+2*L,Fl};
+%% Then the "neutral" instructions. We just pass them.
+flt_need_heap_2({set,[{fr,_}],_,_}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,[],[],fclearerror}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,[],[],fcheckerror}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,_,_,{bif,_}}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,_,_,{bif,_,_}}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,_,_,move}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,_,_,{get_tuple_element,_}}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,_,_,get_list}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,_,_,{'catch',_}}, H, Fl) ->
+    {[],H,Fl};
+%% All other instructions should cause the insertion of an allocation
+%% instruction if needed.
+flt_need_heap_2(_, H, Fl) ->
+    {flt_alloc(H, Fl),0,0}.
+
+flt_alloc(0, 0) -> [];
+flt_alloc(H, Fl) -> [{set,[],[],{alloc,regs,{nozero,nostack,H,Fl,[]}}}].
+
+%% flt_liveness([Instruction], LiveAtEntry) -> [Instruction]
+%%  (Re)calculate the number of live registers for each heap allocation
+%%  function. We base liveness of the number of live registers at
+%%  entry to the instruction sequence.
+%%
+%%  An 'not_possible' term will be thrown if the set of live registers
+%%  is not continous at a allocation function (e.g. if {x,0} and {x,2}
+%%  are live, but not {x,1}).
+
+flt_liveness(Is, Live) ->
+    flt_liveness_1(Is, init_regs(Live), []).
+
+flt_liveness_1([{set,Ds,Ss,{alloc,_,Alloc}}|Is], Regs0, Acc) ->
+    Live = live_regs(Regs0),
+    I = {set,Ds,Ss,{alloc,Live,Alloc}},
+    Regs = foldl(fun(R, A) -> set_live(R, A) end, Regs0, Ds),
+    flt_liveness_1(Is, Regs, [I|Acc]);
+flt_liveness_1([{set,Ds,_,_}=I|Is], Regs0, Acc) ->
+    Regs = foldl(fun(R, A) -> set_live(R, A) end, Regs0, Ds),
+    flt_liveness_1(Is, Regs, [I|Acc]);
+flt_liveness_1([I|Is], Regs, Acc) ->
+    flt_liveness_1(Is, Regs, [I|Acc]);
+flt_liveness_1([], _Regs, Acc) -> reverse(Acc).
+
+init_regs(Live) ->
+    (1 bsl Live) - 1.
+
+live_regs(Regs) ->
+    live_regs_1(Regs, 0).
+
+live_regs_1(0, N) -> N;
+live_regs_1(R, N) ->
+    case R band 1 of
+	0 -> throw(not_possible);
+	1 -> live_regs_1(R bsr 1, N+1)
+    end.
+
+set_live({x,X}, Regs) -> Regs bor (1 bsl X);
+set_live(_, Regs) -> Regs.
 
 %% update(Instruction, TypeDb) -> NewTypeDb
 %%  Update the type database to account for executing an instruction.
@@ -217,7 +354,6 @@ update({set,[D],_Src,_Op}, Ts0) ->
     tdb_update([{D,kill}], Ts0);
 update({set,[D1,D2],_Src,_Op}, Ts0) ->
     tdb_update([{D1,kill},{D2,kill}], Ts0);
-update({allocate,_,_}, Ts) -> Ts;
 update({init,D}, Ts) ->
     tdb_update([{D,kill}], Ts);
 update({kill,D}, Ts) ->
@@ -351,7 +487,6 @@ arith_op('*') -> {yes,fmul};
 arith_op('/') -> {yes,fdiv};
 arith_op(_) -> no.
 
-flush(no_float_opt, _, Acc) -> {no_float_opt,Acc};
 flush(Rs, [{set,[_],[],{put_tuple,_}}|_]=Is0, Acc0) ->
     Acc = flush_all(Rs, Is0, Acc0),
     {[],Acc};
@@ -366,7 +501,6 @@ flush(Rs0, Is, Acc0) ->
     Acc = flush_all(Rs0, Is, Acc0),
     {[],Acc}.
 
-flush_all(no_float_opt, _, Acc) -> Acc;
 flush_all([{_,{float,_},_}|Rs], Is, Acc) ->
     flush_all(Rs, Is, Acc);
 flush_all([{I,V,dirty}|Rs], Is, Acc0) ->
@@ -431,28 +565,6 @@ checkerror_1([], OrigIs) -> OrigIs.
 
 checkerror_2(OrigIs) -> [{set,[],[],fcheckerror}|OrigIs].
 
-add_ftest_heap(Is) ->
-    add_ftest_heap_1(reverse(Is), 0, []).
-
-add_ftest_heap_1([{set,_,[{fr,_}],fmove}=I|Is], Floats, Acc) ->
-    add_ftest_heap_1(Is, Floats+1, [I|Acc]);
-add_ftest_heap_1([{allocate,_,_}=I|Is], 0, Acc) ->
-    reverse(Is, [I|Acc]);
-add_ftest_heap_1([{allocate,Regs,{Z,Stk,Heap,Inits}}|Is], Floats, Acc) ->
-    reverse(Is, [{allocate,Regs,{Z,Stk,Heap,Floats,Inits}}|Acc]);
-add_ftest_heap_1([I|Is], Floats, Acc) ->
-    add_ftest_heap_1(Is, Floats, [I|Acc]);
-add_ftest_heap_1([], 0, Acc) ->
-    Acc;
-add_ftest_heap_1([], Floats, Is) ->
-    Regs = beam_block:live_at_entry(Is),
-    [{allocate,Regs,{nozero,nostack,0,Floats,[]}}|Is].
-
-are_live_regs_determinable([{allocate,_,_}|_]) -> true;
-are_live_regs_determinable([{'%live',_}|_]) -> true;
-are_live_regs_determinable([_|Is]) -> are_live_regs_determinable(Is);
-are_live_regs_determinable([]) -> false.
-    
 
 %%% Routines for maintaining a type database.  The type database 
 %%% associates type information with registers.

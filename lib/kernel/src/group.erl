@@ -74,6 +74,8 @@ start_shell({Node,Mod,Func,Args}) ->
     start_shell1(net, call, [Node,Mod,Func,Args]);
 start_shell(Shell) when atom(Shell) ->
     start_shell1(Shell, start, []);
+start_shell(Shell) when is_function(Shell) ->
+    start_shell1(Shell);
 start_shell(Shell) when pid(Shell) ->
     group_leader(self(), Shell),		% we are the shells group leader
     link(Shell),				% we're linked to it.
@@ -85,6 +87,18 @@ start_shell1(M, F, Args) ->
     G = group_leader(),
     group_leader(self(), self()),
     case catch apply(M, F, Args) of
+	Shell when pid(Shell) ->
+	    group_leader(G, self()),
+	    link(Shell),			% we're linked to it.
+	    put(shell, Shell);
+	Error ->				% start failure
+	    exit(Error)				% let the group process crash
+    end.
+
+start_shell1(Fun) ->
+    G = group_leader(),
+    group_leader(self(), self()),
+    case catch Fun() of
 	Shell when pid(Shell) ->
 	    group_leader(G, self()),
 	    link(Shell),			% we're linked to it.
@@ -174,6 +188,8 @@ io_request({get_until,Prompt,M,F,As}, Drv, Buf) ->
     get_chars(Prompt, io_lib, get_until, {M,F,As}, Drv, Buf);
 io_request({requests,Reqs}, Drv, Buf) ->
     io_requests(Reqs, {ok,ok,Buf}, Drv);
+io_request(get_password,Drv,Buf) ->
+    get_password_chars(Drv, Buf);
 io_request(_, _Drv, Buf) ->
     {error,{error,request},Buf}.
 
@@ -207,6 +223,7 @@ send_drv_reqs(Drv, Rs) ->
 %% setopts
 setopts(Opts0,_Drv, Buf) ->
     Opts = proplists:substitute_negations([{list,binary}], Opts0),
+    put(expand_fun, proplists:get_value(expand_fun, Opts, get(expand_fun))),
     case proplists:get_value(binary, Opts) of
 	true ->
 	    put(read_mode,binary),
@@ -225,6 +242,16 @@ setopts(Opts0,_Drv, Buf) ->
 %%  Returns:
 %%	{Result,NewSaveBuffer}
 %%	{error,What,NewSaveBuffer}
+
+get_password_chars(Drv,Buf) ->
+    case get_password_line(Buf, Drv) of
+	{done, Line, Buf1} ->
+	    {ok, Line, Buf1};
+	interrupted ->
+	    {error, {error, interrupted}, []};
+	terminated ->
+	    {exit, terminated}
+    end.
 
 get_chars(Prompt, M, F, Xa, Drv, Buf) ->
     Pbs = prompt_bytes(Prompt),
@@ -387,6 +414,45 @@ down_stack({stack,U,{},[]}) ->
 down_stack({stack,U,C,[]}) ->
     {none,{stack,U,{},[C]}}.
 
+%% This is get_line without line editing (except for backspace) and
+%% without echo.
+get_password_line(Chars, Drv) ->
+    get_password1(edit_password(Chars,[]),Drv).
+
+get_password1({Chars,[]}, Drv) ->
+    receive
+	{Drv,{data,Cs}} ->
+	    get_password1(edit_password(Cs,Chars),Drv);
+	{io_request,From,ReplyAs,Req} when pid(From) ->
+	    %send_drv_reqs(Drv, [{delete_chars, -length(Pbs)}]),
+	    io_request(Req, From, ReplyAs, Drv, []), %WRONG!!!
+	    %% I guess the reason the above line is wrong is that Buf is
+	    %% set to []. But do we expect anything but plain output?
+
+	    send_drv_reqs(Drv, [{put_chars, Chars}]),
+	    get_password1({Chars, []}, Drv);
+	{'EXIT',Drv,interrupt} ->
+	    interrupted;
+	{'EXIT',Drv,_} ->
+	    terminated
+    end;
+get_password1({Chars,Rest},Drv) ->
+    send_drv_reqs(Drv,[{put_chars, "\n"}]),
+    {done,lists:reverse(Chars),case Rest of done -> []; _ -> Rest end}.
+
+edit_password([],Chars) ->
+    {Chars,[]};
+edit_password([$\r],Chars) ->
+    {Chars,done};
+edit_password([$\r|Cs],Chars) ->
+    {Chars,Cs};
+edit_password([$\177|Cs],[]) ->       %% Being able to erase characters is
+    edit_password(Cs,[]);             %% the least we should offer, but
+edit_password([$\177|Cs],[_|Chars]) ->%% is backspace enough?
+   edit_password(Cs,Chars);
+edit_password([Char|Cs],Chars) ->
+    edit_password(Cs,[Char|Chars]).
+
 %% prompt_bytes(Prompt)
 %%  Return a list of bytes for the Prompt.
 
@@ -415,4 +481,3 @@ append(L1, L2) when list(L1) ->
     L1++L2;
 append(_Eof, L) ->
     L.
-

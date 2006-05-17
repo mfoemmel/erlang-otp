@@ -229,18 +229,27 @@ flatten([H|T], Tail) ->
 flatten([], Tail) ->
     Tail.
 
-    
 things_to_string([X|Rest]) ->
     " (" ++ to_string(X) ++ ")" ++ things_to_string(Rest);
 things_to_string([]) ->
     "".
 
-halt_string(String, List) when is_list(List) ->
-    String ++ things_to_string(List);
-%% Just in case someone forgot to listify the argument:
 halt_string(String, List) ->
-    String ++ things_to_string([List]).
+    HaltString = String ++ things_to_string(List),
+    if
+	length(HaltString)<199 -> HaltString;
+	true -> first198(HaltString, 198)
+    end.
 
+first198([H|T], N) when N>0 ->
+    [H|first198(T, N-1)];
+first198(_, 0) ->
+    [].
+
+%% String = string()
+%% List = [string() | atom() | pid() | number()]
+%% Any other items in List, such as tuples, are ignored when creating
+%% the string used as argument to erlang:halt/1.
 crash(String, List) ->
     halt(halt_string(String, List)).
 
@@ -573,8 +582,8 @@ kill_em([]) ->
 %% Kill all existing ports in the system (except the heart port),
 %% i.e. ports still existing after all processes have been killed.
 %%
-%% If we are running the threaded system with the async driver,
-%% then let the port (created by the system) stays around.
+%% System ports like the async driver port will nowadays be immortal;
+%% therefore, it is ok to send them exit signals...
 %%
 kill_all_ports(Heart) ->
     kill_all_ports(Heart,erlang:ports()).
@@ -584,13 +593,8 @@ kill_all_ports(Heart,[P|Ps]) ->
 	{connected,Heart} ->
 	    kill_all_ports(Heart,Ps);
 	_ ->
-	    case erlang:port_info(P, name) of
-		{name, "async"} ->
-		    kill_all_ports(Heart,Ps);
-		_ ->
-		    exit(P,kill),
-		    kill_all_ports(Heart,Ps)
-	    end
+	    exit(P,kill),
+	    kill_all_ports(Heart,Ps)
     end;
 kill_all_ports(_,_) ->
     ok.
@@ -1201,7 +1205,7 @@ reverse([H|T], Y) ->
     reverse(T, [H|Y]);
 reverse([], X) -> X.
 			
-search(Key, [H|_T]) when tuple(H), element(1, H) == Key ->
+search(Key, [H|_T]) when is_tuple(H), element(1, H) == Key ->
     {value, H};
 search(Key, [_|T]) -> search(Key, T);
 search(_Key, []) -> false.

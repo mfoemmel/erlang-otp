@@ -23,6 +23,8 @@
 %% @end
 %% =====================================================================
 
+%% @TODO check weirdness in name generation for @spec f(TypeName, ...) -> ...
+%% @TODO option for ignoring functions matching some pattern ('..._test_'/0)
 %% @TODO @private_type tag, opaque unless generating private docs?
 %% @TODO document the record type syntax
 %% @TODO document the @docfile and @headerfile tags, with includes-option
@@ -659,7 +661,7 @@ read_source_1(Name, Opts) ->
 	true ->
 	    read_source_2(Name, Opts);
 	false ->
-	    epp_dodger:quick_parse_file(Name)
+	    epp_dodger:quick_parse_file(Name, Opts ++ [{no_fail, false}])
     end.
 
 read_source_2(Name, Opts) ->

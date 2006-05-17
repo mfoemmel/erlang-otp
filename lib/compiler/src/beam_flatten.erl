@@ -37,7 +37,7 @@ block([{block,Is0}|Is1], Acc) -> block(Is1, norm_block(Is0, Acc));
 block([I|Is], Acc) -> block(Is, [I|Acc]);
 block([], Acc) -> reverse(Acc).
 
-norm_block([{allocate,R,Alloc}|Is], Acc0) ->
+norm_block([{set,[],[],{alloc,R,Alloc}}|Is], Acc0) ->
     case insert_alloc_in_bs_init(Acc0, Alloc) of
 	not_possible ->
 	    norm_block(Is, reverse(norm_allocate(Alloc, R), Acc0));
@@ -49,6 +49,7 @@ norm_block([], Acc) -> Acc.
     
 norm({set,[D],As,{bif,N}})        -> {bif,N,nofail,As,D};
 norm({set,[D],As,{bif,N,F}})      -> {bif,N,F,As,D};
+norm({set,[D],As,{alloc,R,{gc_bif,N,F}}}) -> {gc_bif,N,F,R,As,D};
 norm({set,[D],[S],move})          -> {move,S,D};
 norm({set,[D],[S],fmove})         -> {fmove,S,D};
 norm({set,[D],[S],fconv})         -> {fconv,S,D};
@@ -75,9 +76,13 @@ norm_allocate({zero,0,Nh,Nf,[]}, Regs) ->
     norm_allocate({nozero,0,Nh,Nf,[]}, Regs);
 norm_allocate({zero,Ns,0,[]}, Regs) ->
     [{allocate_zero,Ns,Regs}];
+norm_allocate({zero,Ns,0,0,[]}, Regs) ->
+    [{allocate_zero,Ns,Regs}];
 norm_allocate({zero,Ns,Nh,[]}, Regs) ->
     [{allocate_heap_zero,Ns,Nh,Regs}];
 norm_allocate({nozero,Ns,0,Inits}, Regs) ->
+    [{allocate,Ns,Regs}|Inits];
+norm_allocate({nozero,Ns,0,0,Inits}, Regs) ->
     [{allocate,Ns,Regs}|Inits];
 norm_allocate({nozero,Ns,Nh,Inits}, Regs) ->
     [{allocate_heap,Ns,Nh,Regs}|Inits];

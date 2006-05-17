@@ -34,7 +34,9 @@ module({Mod,Exp,Attr,Fs,Lc}, _Opt) ->
 
 function({function,Name,Arity,CLabel,Is0}) ->
     %% Collect basic blocks and optimize them.
-    Is = blockify(Is0),
+    Is1 = beam_jump:remove_unused_labels(Is0),	%Extra labels may thwart optimizations.
+    Is2 = blockify(Is1),
+    Is = bsm_opt(Is2),
 
     %% Done.
     {function,Name,Arity,CLabel,Is}.
@@ -50,6 +52,15 @@ blockify(Is) ->
 blockify([{loop_rec,{f,Fail},{x,0}},{loop_rec_end,_Lbl},{label,Fail}|Is], Acc) ->
     %% Useless instruction sequence.
     blockify(Is, Acc);
+
+%% New bit syntax matching.
+blockify([{bs_save2,R,Point}=I,{bs_restore2,R,Point}|Is], Acc) ->
+    blockify([I|Is], Acc);
+blockify([{bs_save2,R,Point}=I,{test,is_eq_exact,_,_}=Test,
+	  {bs_restore2,R,Point}|Is], Acc) ->
+    blockify([I,Test|Is], Acc);
+
+%% Old bit syntax matching.
 blockify([{test,bs_test_tail,F,[Bits]}|Is],
 	 [{test,bs_skip_bits,F,[{integer,I},Unit,_Flags]}|Acc]) ->
     blockify(Is, [{test,bs_test_tail,F,[Bits+I*Unit]}|Acc]);
@@ -57,28 +68,8 @@ blockify([{test,bs_skip_bits,F,[{integer,I1},Unit1,_]}|Is],
 	 [{test,bs_skip_bits,F,[{integer,I2},Unit2,Flags]}|Acc]) ->
     blockify(Is, [{test,bs_skip_bits,F,
 		   [{integer,I1*Unit1+I2*Unit2},1,Flags]}|Acc]);
-%% XXX NOT now - breaks hipe.
-%% blockify([{test,bs_test_tail,_,[0]}|Is],
-%% 	 [{test,bs_skip_bits,_,[{atom,all},8,{field_flags,Fl}]}|Acc1]=Acc0) ->
-%%     %% The bs_test_tail/2 instruction is not needed here - it can't fail
-%%     %% because the bs_skip_bits/4 instruction will fail if the binary
-%%     %% is not aligned at this point.
-%%     case member(aligned, Fl) of
-%% 	false ->
-%% 	    blockify(Is, Acc0);
-%% 	true ->
-%% 	    %% Since the bs_skip_bits/4 instruction is aligned, it can't fail.
-%% 	    %% We can also get rid of any bs_restore/1 instruction.
-%% 	    case Acc1 of
-%% 		[{bs_restore,_}|Acc] -> ok;
-%% 		Acc -> ok
-%% 	    end,
-%% 	    blockify(Is, Acc)
-%%     end;
-%% blockify([{test,bs_test_tail,_,[0]}|Is],
-%% 	 [{test,bs_get_binary,_,[{atom,all},8,_,_]}|_]=Acc) ->
-%%     %% The bs_test_tail/2 instruction is not needed here - it can't fail.
-%%     blockify(Is, Acc);
+
+%% Do other peep-hole optimizations.
 blockify([{test,is_atom,{f,Fail},[Reg]}=I|
 	  [{select_val,Reg,{f,Fail},
 	    {list,[{atom,false},{f,_}=BrFalse,
@@ -133,7 +124,7 @@ collect_block(Is) ->
     collect_block(Is, []).
 
 collect_block([{allocate_zero,Ns,R},{test_heap,Nh,R}|Is], Acc) ->
-    collect_block(Is, [{allocate,R,{no_opt,Ns,Nh,[]}}|Acc]);
+    collect_block(Is, [{set,[],[],{alloc,R,{no_opt,Ns,Nh,[]}}}|Acc]);
 collect_block([I|Is]=Is0, Acc) ->
     case collect(I) of
 	error -> {reverse(Acc),Is0};
@@ -141,10 +132,11 @@ collect_block([I|Is]=Is0, Acc) ->
     end;
 collect_block([], Acc) -> {reverse(Acc),[]}.
 
-collect({allocate_zero,N,R}) -> {allocate,R,{zero,N,0,[]}};
-collect({test_heap,N,R})     -> {allocate,R,{nozero,nostack,N,[]}};
+collect({allocate_zero,N,R}) -> {set,[],[],{alloc,R,{zero,N,0,[]}}};
+collect({test_heap,N,R})     -> {set,[],[],{alloc,R,{nozero,nostack,N,[]}}};
 collect({bif,N,nofail,As,D}) -> {set,[D],As,{bif,N}};
 collect({bif,N,F,As,D})      -> {set,[D],As,{bif,N,F}};
+collect({gc_bif,N,F,R,As,D}) -> {set,[D],As,{alloc,R,{gc_bif,N,F}}};
 collect({move,S,D})          -> {set,[D],[S],move};
 collect({put_list,S1,S2,D})  -> {set,[D],[S1,S2],put_list};
 collect({put_tuple,A,D})     -> {set,[D],[],{put_tuple,A}};
@@ -162,10 +154,9 @@ opt_block(Is0) ->
     %% We explicitly move any allocate instruction upwards before optimising
     %% moves, to avoid any potential problems with the calculation of live
     %% registers.
-    Is1 = find_fixpoint(fun move_allocates/1, Is0),
-    Is2 = find_fixpoint(fun opt/1, Is1),
-    Is = opt_alloc(Is2),
-    share_floats(Is).
+    Is1 = move_allocates(Is0),
+    Is = find_fixpoint(fun opt/1, Is1),
+    opt_alloc(Is).
 
 find_fixpoint(OptFun, Is0) ->
     case OptFun(Is0) of
@@ -173,22 +164,49 @@ find_fixpoint(OptFun, Is0) ->
 	Is1 -> find_fixpoint(OptFun, Is1)
     end.
 
-move_allocates([{set,_Ds,_Ss,{set_tuple_element,_}}|_]=Is) -> Is;
-move_allocates([{set,Ds,Ss,_Op}=Set,{allocate,R,Alloc}|Is]) when is_integer(R) ->
-    [{allocate,live_regs(Ds, Ss, R),Alloc},Set|Is];
-move_allocates([{allocate,R1,Alloc1},{allocate,R2,Alloc2}|Is]) ->
-    R1 = R2,					% Assertion.
-    move_allocates([{allocate,R1,combine_alloc(Alloc1, Alloc2)}|Is]);
-move_allocates([I|Is]) ->
-    [I|move_allocates(Is)];
-move_allocates([]) -> [].
+%% move_allocates(Is0) -> Is
+%%  Move allocates upwards in the instruction stream, in the hope of
+%%  getting more possibilities for optimizing away moves later.
 
+move_allocates(Is) ->
+    move_allocates_1(reverse(Is), []).
+
+move_allocates_1([{set,[],[],{alloc,_,_}=Alloc}|Is0], Acc0) ->
+    {Is,Acc} = move_allocates_2(Alloc, Is0, Acc0),
+    move_allocates_1(Is, Acc);
+move_allocates_1([I|Is], Acc) ->
+    move_allocates_1(Is, [I|Acc]);
+move_allocates_1([], Is) -> Is.
+
+move_allocates_2({alloc,Live,Info}, [{set,[],[],{alloc,Live0,Info0}}|Is], Acc) ->
+    Live = Live0,				% Assertion.
+    Alloc = {alloc,Live,combine_alloc(Info0, Info)},
+    move_allocates_2(Alloc, Is, Acc);
+move_allocates_2({alloc,Live,Info}=Alloc0, [I|Is]=Is0, Acc) ->
+    case alloc_may_pass(I) of
+	false ->
+	    {Is0,[{set,[],[],Alloc0}|Acc]};
+	true ->
+	    Alloc = {alloc,alloc_live_regs(I, Live),Info},
+	    move_allocates_2(Alloc, Is, [I|Acc])
+    end;
+move_allocates_2(Alloc, [], Acc) ->
+    {[],[{set,[],[],Alloc}|Acc]}.
+
+alloc_may_pass({set,_,_,{alloc,_,_}}) -> false;
+alloc_may_pass({set,_,_,{set_tuple_element,_}}) -> false;
+alloc_may_pass({set,_,_,put_list}) -> false;
+alloc_may_pass({set,_,_,{put_tuple,_}}) -> false;
+alloc_may_pass({set,_,_,put}) -> false;
+alloc_may_pass({set,_,_,{put_string,_,_}}) -> false;
+alloc_may_pass({set,_,_,_}) -> true.
+    
 combine_alloc({_,Ns,Nh1,Init}, {_,nostack,Nh2,[]}) ->
     {zero,Ns,Nh1+Nh2,Init}.
 
-merge_blocks([{allocate,R,{Attr,Ns,Nh1,Init}}|B1],
-	     [{allocate,_,{_,nostack,Nh2,[]}}|B2]) ->
-    Alloc = {allocate,R,{Attr,Ns,Nh1+Nh2,Init}},
+merge_blocks([{set,[],[],{allocate,R,{Attr,Ns,Nh1,Init}}}|B1],
+	     [{set,[],[],{allocate,_,{_,nostack,Nh2,[]}}}|B2]) ->
+    Alloc = {set,[],[],{allocate,R,{Attr,Ns,Nh1+Nh2,Init}}},
     [Alloc|merge_blocks(B1, B2)];
 merge_blocks(B1, B2) -> merge_blocks_1(B1++[{set,[],[],stop_here}|B2]).
 
@@ -199,6 +217,9 @@ merge_blocks_1([{set,[D],_,move}=I|Is]) ->
 	false -> [I|merge_blocks_1(Is)]
     end;
 merge_blocks_1([I|Is]) -> [I|merge_blocks_1(Is)].
+
+%% opt([Instruction]) -> [Instruction]
+%%  Optimize the instruction stream inside a basic block.
 
 opt([{set,[Dst],As,{bif,Bif,Fail}}=I1,
      {set,[Dst],[Dst],{bif,'not',Fail}}=I2|Is]) ->
@@ -213,40 +234,85 @@ opt([{set,[D1],[{integer,Idx1},Reg],{bif,element,{f,0}}}=I1,
   when Idx1 < Idx2, D1 =/= D2, D1 =/= Reg, D2 =/= Reg ->
     opt([I2,I1|Is]);
 opt([{set,Ds0,Ss,Op}|Is0]) ->	
-    {Ds,Is} =  opt_moves(Ds0, Is0),
+    {Ds,Is} = opt_moves(Ds0, Is0),
     [{set,Ds,Ss,Op}|opt(Is)];
 opt([I|Is]) -> [I|opt(Is)];
 opt([]) -> [].
 
+%% opt_moves([Dest], [Instruction], SafeRegs) -> {[Dest],[Instruction]}
+%%  For each Dest, does the optimization described in opt_move/2.
+
 opt_moves([], Is0) -> {[],Is0};
-opt_moves([D0], Is0) ->
-    {D1,Is1} = opt_move(D0, Is0),
-    {[D1],Is1};
-opt_moves([X0,Y0]=Ds, Is0) ->
-    {X1,Is1} = opt_move(X0, Is0),
-    case opt_move(Y0, Is1) of
-	{Y1,Is2} when X1 =/= Y1 -> {[X1,Y1],Is2};
-	_Other when X1 =/= Y0 -> {[X1,Y0],Is1};
-	_Other -> {Ds,Is0}
+opt_moves([D0]=Ds, Is0) ->
+    case opt_move(D0, Is0) of
+	not_possible -> {Ds,Is0};
+	{D1,Is} -> {[D1],Is}
+    end;
+opt_moves([X0,Y0], Is0) ->
+    {X,Is2} = case opt_move(X0, Is0) of
+		  not_possible -> {X0,Is0};
+		  {Y0,_} -> {X0,Is0};
+		  {X1,Is1} -> {X1,Is1}
+	      end,
+    case opt_move(Y0, Is2) of
+	not_possible -> {[X,Y0],Is2};
+	{X,_} -> {[X,Y0],Is2};
+	{Y,Is} -> {[X,Y],Is}
     end.
 
-opt_move(R, [{set,[D],[R],move}|Is]=Is0) ->
-    case is_killed(R, Is) of
-	true -> {D,Is};
-	false -> {R,Is0}
-    end;
-opt_move(R, [I|Is0]) ->
-    case is_transparent(R, I) of
-	true ->
-	    {D,Is1} = opt_move(R, Is0),
-	    case is_transparent(D, I) of
-		true ->  {D,[I|Is1]};
-		false -> {R,[I|Is0]}
-	    end;
-	false -> {R,[I|Is0]}
-    end;
-opt_move(R, []) -> {R,[]}.
+%% opt_move(Dest, [Instruction]) -> {UpdatedDest,[Instruction]} | not_possible
+%%  If there is a {move,Dest,FinalDest} instruction
+%%  in the instruction stream, remove the move instruction
+%%  and let FinalDest be the destination.
+%%
+%%  For this optimization to be safe, we must be sure that
+%%  Dest will not be referenced in any other by other instructions
+%%  in the rest of the instruction stream. Not even the indirect
+%%  reference by an instruction that may allocate (such as
+%%  test_heap/2 or a GC Bif) is allowed.
 
+opt_move(Dest, Is) ->
+    opt_move_1(Dest, Is, ?MAXREG, []).
+
+opt_move_1(R, [{set,_,_,{alloc,Live,_}}|_]=Is, SafeRegs, Acc) when Live < SafeRegs ->
+    %% Downgrade number of safe regs and rescan the instruction, as it most probably
+    %% is a gc_bif instruction.
+    opt_move_1(R, Is, Live, Acc);
+opt_move_1(R, [{set,[{x,X}=D],[R],move}|Is], SafeRegs, Acc) ->
+    case X < SafeRegs andalso is_killed(R, Is) of
+	true -> opt_move_2(D, Acc, Is);
+	false -> not_possible
+    end;
+opt_move_1(R, [{set,[D],[R],move}|Is], _SafeRegs, Acc) ->
+    case is_killed(R, Is) of
+	true -> opt_move_2(D, Acc, Is);
+	false -> not_possible
+    end;
+opt_move_1(R, [I|Is], SafeRegs, Acc) ->
+    case is_transparent(R, I) of
+	false -> not_possible;
+	true -> opt_move_1(R, Is, SafeRegs, [I|Acc])
+    end;
+opt_move_1(_, [], _, _) -> not_possible.
+
+%% Reverse the instructions, while checking that there are no instructions that
+%% would interfere with using the new destination register chosen.
+
+opt_move_2(D, [I|Is], Acc) ->
+    case is_transparent(D, I) of
+	false -> not_possible;
+	true -> opt_move_2(D, Is, [I|Acc])
+    end;
+opt_move_2(D, [], Acc) -> {D,Acc}.
+
+%% is_transparent(Register, Instruction) -> true | false
+%%  Returns true if Instruction does not in any way references Register
+%%  (even indirectly by an allocation instruction).
+%%  Returns false if Instruction does reference Register, or we are
+%%  not sure.
+
+is_transparent({x,X}, {set,_,_,{alloc,Live,_}}) ->
+    X >= Live;
 is_transparent(R, {set,Ds,Ss,_Op}) ->
     case member(R, Ds) of
 	true -> false;
@@ -268,18 +334,18 @@ is_killed({x,N}=R, [{block,Blk}|Is]) ->
 	    %% Before looking beyond the block, we must be
 	    %% sure that the register is not referenced by
 	    %% any allocate instruction in the block.
-	    case all(fun({allocate,Live,_}) when N < Live -> false;
+	    case all(fun({set,_,_,{alloc,Live,_}}) when N < Live -> false;
 			(_) -> true
 		     end, Blk) of
 		true -> is_killed(R, Is);
 		false -> false
 	    end
     end;
-is_killed(R, [{block,Blk}|Is]) ->
-    case is_killed(R, Blk) of
-	true -> true;
-	false -> is_killed(R, Is)
-    end;
+is_killed({x,X}, [{set,_,_,{alloc,Live,_}}|_]) ->
+    %% Note: To be safe here, we must return either true or false,
+    %% not looking further at the instructions beyond the allocate
+    %% instruction. 
+    X >= Live;
 is_killed(R, [{set,Ds,Ss,_Op}|Is]) ->
     case member(R, Ss) of
 	true -> false;
@@ -288,6 +354,11 @@ is_killed(R, [{set,Ds,Ss,_Op}|Is]) ->
 		true -> true;
 		false -> is_killed(R, Is)
 	    end
+    end;
+is_killed(R, [{block,Blk}|Is]) ->
+    case is_killed(R, Blk) of
+	true -> true;
+	false -> is_killed(R, Is)
     end;
 is_killed(R, [{case_end,Used}|_]) -> R =/= Used;
 is_killed(R, [{badmatch,Used}|_]) -> R =/= Used;
@@ -307,11 +378,6 @@ is_killed(R, [{bs_init2,_,_,_,_,_,Dst}|Is]) ->
 is_killed(R, [{bs_put_string,_,_}|Is]) -> is_killed(R, Is);
 is_killed({x,R}, [{'%live',Live}|_]) when R >= Live -> true;
 is_killed({x,R}, [{'%live',_}|Is]) -> is_killed(R, Is);
-is_killed({x,R}, [{allocate,Live,_}|_]) ->
-    %% Note: To be safe here, we must return either true or false,
-    %% not looking further at the instructions beyond the allocate
-    %% instruction.
-    R >= Live;
 is_killed({x,R}, [{call,Live,_}|_]) when R >= Live -> true;
 is_killed({x,R}, [{call_last,Live,_,_}|_]) when R >= Live -> true;
 is_killed({x,R}, [{call_only,Live,_}|_]) when R >= Live -> true;
@@ -351,8 +417,8 @@ is_not_used(R, Is) -> is_killed(R, Is).
 %% opt_alloc(Instructions) -> Instructions'
 %%  Optimises all allocate instructions.
 
-opt_alloc([{allocate,R,{_,Ns,Nh,[]}}|Is]) ->
-    [opt_alloc(Is, Ns, Nh, R)|opt(Is)];
+opt_alloc([{set,[],[],{alloc,R,{_,Ns,Nh,[]}}}|Is]) ->
+    [{set,[],[],opt_alloc(Is, Ns, Nh, R)}|opt(Is)];
 opt_alloc([I|Is]) -> [I|opt_alloc(Is)];
 opt_alloc([]) -> [].
 	
@@ -361,21 +427,21 @@ opt_alloc([]) -> [].
 %%  allocating and initalizing the stack frame and needed heap.
 
 opt_alloc(_Is, nostack, Nh, LivingRegs) ->
-    {allocate,LivingRegs,{nozero,nostack,Nh,[]}};
+    {alloc,LivingRegs,{nozero,nostack,Nh,[]}};
 opt_alloc(Is, Ns, Nh, LivingRegs) ->
     InitRegs = init_yreg(Is, 0),
     case count_ones(InitRegs) of
 	N when N*2 > Ns ->
-	    {allocate,LivingRegs,{nozero,Ns,Nh,gen_init(Ns, InitRegs)}};
+	    {alloc,LivingRegs,{nozero,Ns,Nh,gen_init(Ns, InitRegs)}};
 	_ ->
-	    {allocate,LivingRegs,{zero,Ns,Nh,[]}}
+	    {alloc,LivingRegs,{zero,Ns,Nh,[]}}
     end.
 
 gen_init(Fs, Regs) -> gen_init(Fs, Regs, 0, []).
 
 gen_init(SameFs, _Regs, SameFs, Acc) -> reverse(Acc);
 gen_init(Fs, Regs, Y, Acc) when Regs band 1 == 0 ->
-    gen_init(Fs, Regs bsr 1, Y+1, [{init, {y,Y}}|Acc]);
+    gen_init(Fs, Regs bsr 1, Y+1, [{init,{y,Y}}|Acc]);
 gen_init(Fs, Regs, Y, Acc) ->
     gen_init(Fs, Regs bsr 1, Y+1, Acc).
 
@@ -383,6 +449,7 @@ gen_init(Fs, Regs, Y, Acc) ->
 %%  Calculate the set of initialized y registers.
 
 init_yreg([{set,_,_,{bif,_,_}}|_], Reg) -> Reg;
+init_yreg([{set,_,_,{alloc,_,{gc_bif,_,_}}}|_], Reg) -> Reg;
 init_yreg([{set,Ds,_,_}|Is], Reg) -> init_yreg(Is, add_yregs(Ds, Reg));
 init_yreg(_Is, Reg) -> Reg.
 
@@ -400,31 +467,24 @@ count_ones(Bits, Acc) ->
 %%  Calculate the number of register live at the entry to the code
 %%  sequence.
 
-live_at_entry([{block,[{allocate,R,_}|_]}|_]) ->
-    R;
-live_at_entry([{label,_}|Is]) ->
-    live_at_entry(Is);
-live_at_entry([{block,Bl}|_]) ->
-    live_at_entry(Bl);
-live_at_entry([{func_info,_,_,Ar}|_]) ->
-    Ar;
+live_at_entry([{set,_,_,{alloc,R,_}}|_]) -> R;
 live_at_entry(Is0) ->
     case reverse(Is0) of
 	[{'%live',Regs}|Is] -> live_at_entry_1(Is, (1 bsl Regs)-1);
 	_ -> unknown
     end.
 
+live_at_entry_1([{set,[],[],{alloc,_,_}}|Is], Rset) ->
+    live_at_entry_1(Is, Rset);
 live_at_entry_1([{set,Ds,Ss,_}|Is], Rset0) ->
     Rset = x_live(Ss, x_dead(Ds, Rset0)),
-    live_at_entry_1(Is, Rset);
-live_at_entry_1([{allocate,_,_}|Is], Rset) ->
     live_at_entry_1(Is, Rset);
 live_at_entry_1([], Rset) -> live_regs_1(0, Rset).
 
 %% Calculate the new number of live registers when we move an allocate
 %% instruction upwards, passing a 'set' instruction.
 
-live_regs(Ds, Ss, Regs0) ->
+alloc_live_regs({set,Ds,Ss,_}, Regs0) ->
     Rset = x_live(Ss, x_dead(Ds, (1 bsl Regs0)-1)),
     live_regs_1(0, Rset).
 
@@ -438,63 +498,6 @@ x_dead([], Regs) -> Regs.
 x_live([{x,N}|Rs], Regs) -> x_live(Rs, Regs bor (1 bsl N));
 x_live([_|Rs], Regs) -> x_live(Rs, Regs);
 x_live([], Regs) -> Regs.
-
-%%
-%% If a floating point literal occurs more than once, move it into
-%% a free register and re-use it.
-%%
-
-share_floats([{allocate,_,_}=Alloc|Is]) ->
-    [Alloc|share_floats(Is)];
-share_floats(Is0) ->
-    All = get_floats(Is0, []),
-    MoreThanOnce0 =  more_than_once(sort(All), gb_sets:empty()),
-    case gb_sets:is_empty(MoreThanOnce0) of
-	true -> Is0;
-	false ->
-	    MoreThanOnce = gb_sets:to_list(MoreThanOnce0),
-	    FreeX = highest_used(Is0, -1) + 1,
-	    Regs0 = make_reg_map(MoreThanOnce, FreeX, []),
-	    Regs = gb_trees:from_orddict(Regs0),
-	    Is = map(fun({set,Ds,[{float,F}],Op}=I) ->
-			     case gb_trees:lookup(F, Regs) of
-				 none -> I;
-				 {value,R} -> {set,Ds,[R],Op}
-			     end;
-			(I) -> I
-		     end, Is0),
-	    [{set,[R],[{float,F}],move} || {F,R} <- Regs0] ++ Is
-    end.
-
-get_floats([{set,_,[{float,F}],_}|Is], Acc) ->
-    get_floats(Is, [F|Acc]);
-get_floats([_|Is], Acc) ->
-    get_floats(Is, Acc);
-get_floats([], Acc) -> Acc.
-
-more_than_once([F,F|Fs], Set) ->
-    more_than_once(Fs, gb_sets:add(F, Set));
-more_than_once([_|Fs], Set) ->
-    more_than_once(Fs, Set);
-more_than_once([], Set) -> Set.
-
-highest_used([{set,Ds,Ss,_}|Is], High) ->
-    highest_used(Is, highest(Ds, highest(Ss, High)));
-highest_used([{'%live',Live}|Is], High) when Live > High ->
-    highest_used(Is, Live);
-highest_used([_|Is], High) ->
-    highest_used(Is, High);
-highest_used([], High) -> High.
-
-highest([{x,R}|Rs], High) when R > High ->
-    highest(Rs, R);
-highest([_|Rs], High) ->
-    highest(Rs, High);
-highest([], High) -> High.
-
-make_reg_map([F|Fs], R, Acc) when R < ?MAXREG ->
-    make_reg_map(Fs, R+1, [{F,{x,R}}|Acc]);
-make_reg_map(_, _, Acc) -> sort(Acc).
 
 %% inverse_comp_op(Op) -> none|RevOp
 
@@ -623,3 +626,70 @@ bs_split_int_1(N, ByteSz, Sz, Fail, Acc) when Sz > 0 ->
 	 {field_flags,[big]},{integer,N band Mask}},
     bs_split_int_1(N bsr ByteSz, 8, Sz-ByteSz, Fail, [I|Acc]);
 bs_split_int_1(_, _, _, _, Acc) -> Acc.
+
+
+%%%
+%%% Optimization of new bit syntax matching: get rid
+%%% of redundant bs_restore2/2 instructions across select_val
+%%% instructions.
+%%%
+
+bsm_opt(Is0) ->
+    D0 = bsm_scan(Is0, []),
+    D = gb_trees:from_orddict(ordsets:from_list(D0)),
+    Is1 = bsm_opt_1(Is0, D, []),
+    Is = beam_clean:bs_clean_saves(Is1),
+    bsm_opt_2(Is, []).
+
+bsm_scan([{bs_save2,_,Save},{test,is_integer,{f,F0},[_]},
+	  {select_val,_,{f,F1},{list,Lbls}}|Is], Acc0) ->
+    Acc = [{F,Save} || {f,F} <- Lbls] ++ [{F0,Save},{F1,Save}|Acc0],
+    bsm_scan(Is, Acc);
+bsm_scan([{bs_save2,_,Save},{test,bs_test_tail2,{f,F},[_,_]}|Is], Acc) ->
+    bsm_scan(Is, [{F,Save}|Acc]);
+bsm_scan([_|Is], Acc) ->
+    bsm_scan(Is, Acc);
+bsm_scan([], Acc) -> Acc.
+
+bsm_opt_1([{label,L}=I,{bs_restore2,_,Save}=R|Is], D, [PrevI|_]=Acc) ->
+    %% The call to beam_jump:is_unreachable_after/1 is probably
+    %% over-conservative. We want to be absolutely sure that the label
+    %% L cannot be reached in any other way (the way the code is generated
+    %% should ensure that anyway, but better safe than sorry).
+    case {beam_jump:is_unreachable_after(PrevI),gb_trees:lookup(L, D)} of
+	{true,{value,Save}} ->
+	    bsm_opt_1(Is, D, [I|Acc]);
+	_ ->
+	    bsm_opt_1(Is, D, [R,I|Acc])
+    end;
+bsm_opt_1([I|Is], D, Acc) ->
+    bsm_opt_1(Is, D, [I|Acc]);
+bsm_opt_1([], _, Acc) -> reverse(Acc).
+
+bsm_opt_2([{test,bs_test_tail2,F,[Ctx,Bits]}|Is],
+	  [{test,bs_skip_bits2,F,[Ctx,{integer,I},Unit,_Flags]}|Acc]) ->
+    bsm_opt_2(Is, [{test,bs_test_tail2,F,[Ctx,Bits+I*Unit]}|Acc]);
+bsm_opt_2([{test,bs_skip_bits2,F,[Ctx,{integer,I1},Unit1,_]}|Is],
+	  [{test,bs_skip_bits2,F,[Ctx,{integer,I2},Unit2,Flags]}|Acc]) ->
+    bsm_opt_2(Is, [{test,bs_skip_bits2,F,
+		    [Ctx,{integer,I1*Unit1+I2*Unit2},1,Flags]}|Acc]);
+bsm_opt_2([{test,bs_test_tail2,_,[Ctx,0]}|Is],
+	  [{test,bs_skip_bits2,_,[Ctx,{atom,all},8,{field_flags,Fl}]}|Acc]=Acc0) ->
+    %% The bs_test_tail/2 instruction is not needed here - it can't possibly 
+    %% fail after a bs_skip_bits/4 instruction.
+    case member(aligned, Fl) of
+	false ->
+	    bsm_opt_2(Is, Acc0);
+	true ->
+	    %% Since the bs_skip_bits/4 instruction is aligned, it can't
+	    %% fail and we can remove that instruction too.
+	    bsm_opt_2(Is, Acc)
+    end;
+bsm_opt_2([{test,bs_test_tail2,_,[Ctx,0]}|Is],
+	  [{test,bs_get_binary2,_,[Ctx,_,{atom,all},8,_,_]}|_]=Acc) ->
+    %% The bs_test_tail/2 instruction is not needed here - it can't fail.
+    bsm_opt_2(Is, Acc);
+bsm_opt_2([I|Is], Acc) ->
+    bsm_opt_2(Is, [I|Acc]);
+bsm_opt_2([], Acc) -> reverse(Acc).
+

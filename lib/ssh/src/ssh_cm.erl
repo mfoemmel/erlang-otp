@@ -52,7 +52,8 @@
 	 send_window/3, session_open/2, session_open/4, subsystem/4,
 	 open_pty/3, open_pty/7, open_pty/9,
 	 set_user_ack/4, set_user/4,
-	 setenv/5, signal/3, winch/4]).
+	 setenv/5, signal/3, winch/4,
+	 get_authhandle/1]).
 
 %% Special for ssh_userauth (and similar)
 %%-export([set_ssh_msg_handler/2, reset_ssh_msg_handler/1]).
@@ -96,7 +97,8 @@
 	  users = [],
 	  channel_id = 0,
 	  opts,
-	  requests = [] %% [{Channel, Pid}...] awaiting reply on request
+	  requests = [], %% [{Channel, Pid}...] awaiting reply on request
+	  authhandle     %% for session termination
 	 }).
 
 %%====================================================================
@@ -124,10 +126,7 @@ listen(UserFun, Port, Opts) ->
     listen(UserFun, any, Port, Opts).
 listen(UserFun, Addr, Port, Opts) ->
     Self = self(),
-    case proplists:get_value(reg_users, Opts, false) of
-	true -> ssh_userauth:reg_user_auth_server();
-	_ -> ok
-    end,
+    ssh_userauth:reg_user_auth_server(),
     ssh_transport:listen(
       fun(SSH) ->
 	      {ok, CM} =
@@ -187,7 +186,7 @@ stop_listener(Pid) ->
 %%                         {stop, Reason}
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
-init([server, Caller, UserFun, SSH, Opts]) ->
+init([server, _Caller, UserFun, SSH, Opts]) ->
     SSH ! {ssh_install, connect_messages()},
     process_flag(trap_exit, true),
     User = UserFun(),
@@ -349,6 +348,9 @@ renegotiate(CM,Opts) ->
 %% Setup user ack on data messages (i.e signal when the data has been sent)
 set_user_ack(CM, Channel, Ack, TMO) ->
     gen_server:call(CM, {set_user_ack, Channel, Ack}, TMO).
+
+get_authhandle(CM) ->
+    gen_server:call(CM, get_authhandle).
 
 set_user(CM, Channel, User, TMO) ->
     gen_server:call(CM, {set_user, Channel, User}, TMO).
@@ -534,18 +536,21 @@ handle_cast(_Cast, State) ->
 handle_info({ssh_msg,SSH,#ssh_msg_service_request{name="ssh-userauth"}},
 	    State) when State#state.role == server->
     case ssh_userauth:auth_remote(SSH, "ssh-connection", State#state.opts) of
-	ok ->
-	    {noreply, State};
-	Error ->
+	{ok, Handle} ->
+	    {noreply, State#state{authhandle = Handle}};
+	_Error ->
 	    ssh_transport:disconnect(SSH, ?SSH_DISCONNECT_BY_APPLICATION),
-	    {stop, {error, Error}, State}
+	    %{stop, {error, Error}, State}
+	    {stop, shutdown, State}
     end;
 handle_info({ssh_msg, SSH, Msg}, State)                                    ->
     %%SSH = State#state.ssh,
     ?dbg(?DBG_SSHMSG, "handle_info<~p>: ssh_msg ~p\n", [SSH, Msg]),
     case ssh_message(SSH, Msg, State) of
-	{disconnected, Reason} ->
-	    {stop, {error, {disconnected, Reason}}, State};
+	{disconnected, _Reason} ->
+	    ssh_userauth:disconnect(State#state.authhandle, State#state.opts),
+	    %{stop, {error, {disconnected, Reason}}, State};
+	    {stop, shutdown, State};
 	NewState ->
 	    {noreply, NewState}
     end;
@@ -561,15 +566,25 @@ handle_info({ssh_cm, Sender, Msg}, State)                                  ->
 	       end,
     {noreply, NewState};
 handle_info({'EXIT', SSH, Reason}, State) when SSH == State#state.ssh      ->
-    io:format("SSH_CM ~p EXIT ~p\n", [SSH, Reason]),
+    error_logger:format("SSH_CM ~p EXIT ~p\n", [SSH, Reason]),
+    {noreply, State};
+handle_info({'EXIT', _Pid, normal}, State)                                  ->
+    {noreply, State};
+handle_info({'EXIT', _Pid, shutdown}, State)                                  ->
     {noreply, State};
 handle_info({'EXIT', Pid, Reason}, State)                                  ->
-    io:format("Pid ~p EXIT ~p\n", [Pid, Reason]),
+    error_logger:format("ssh_cm: Pid ~p EXIT ~p\n", [Pid, Reason]),
     {noreply, State};
-handle_info({'DOWN', _Ref, process, Pid, Reason}, State)                   ->
-    io:format("Pid ~p DOWN ~p\n", [Pid, Reason]),
+
+handle_info({'DOWN', _Ref, process, Pid, normal}, State)                   ->
     NewState = down_user(Pid, State),
     {noreply, NewState};
+handle_info({'DOWN', _Ref, process, Pid, Reason}, State)                   ->
+    error_logger:format("Pid ~p DOWN ~p\n", [Pid, Reason]),
+    NewState = down_user(Pid, State),
+    {noreply, NewState};
+
+
 handle_info(_Info, State)                                                   ->
     ?dbg(true, "ssh_cm:handle_info: BAD info ~p\n(State ~p)\n", [_Info, State]),
     {noreply, State}.
@@ -621,6 +636,8 @@ handle_call({set_user, Channel, User}, _From, State) ->
 		    end
 	    end,
     {reply, Reply, State};
+handle_call(get_authhandle, _From, State) ->
+    {reply, {State#state.authhandle,State#state.ssh}, State};
 handle_call({set_user_ack, Channel,Ack}, _From, State) ->
     CTab = State#state.ctab,
     Reply = case ets:lookup(CTab, Channel) of
@@ -658,6 +675,7 @@ handle_call({open, User, Type, InitialWindowSize, MaxPacketSize, Data}, From, St
 		{noreply, State2}
 	end;
 handle_call(stop, _From, State) ->
+    ssh_userauth:disconnect(State#state.authhandle, State#state.opts),
     ssh_transport:close(State#state.ssh),
     {stop, normal, ok, State};
 handle_call(_Call, _From, State) ->
@@ -804,7 +822,7 @@ ssh_message(SSH, Msg, State) ->
 			    ets:insert(CTab, C),
 			    channel_open_confirmation(SSH, RID, Channel,
 						      LWindowSz, LPacketSz),
-			    send_user(C, {open, Channel, {session}}),
+			    send_user(C, {open, Channel, RID, {session}}),
 			    NewState;
 			_ ->
 			    channel_open_failure(SSH, RID, 
@@ -887,11 +905,13 @@ ssh_message(SSH, Msg, State) ->
 		    send_user(CTab, Channel, {subsystem,Channel, WantReply,
 					      binary_to_list(SsName)});
 		"pty-req" ->
-		    <<?UINT32(TermLen), TermName:TermLen/binary,
+		    <<?UINT32(TermLen), BTermName:TermLen/binary,
 		     ?UINT32(Width),?UINT32(Height),
 		     ?UINT32(PixWidth), ?UINT32(PixHeight),
 		     Modes/binary>> = Data,
-		    Pty = #ssh_pty{term = binary_to_list(TermName),
+		    TermName = binary_to_list(BTermName),
+		    ?dbg(?DBG_USER, "ssh_msg pty-req: TermName=~p Modes=~p\n", [TermName, Modes]),
+		    Pty = #ssh_pty{term = TermName,
 				   width = not_zero(Width, 80),
 				   height = not_zero(Height, 24),
 				   pixel_width = PixWidth,

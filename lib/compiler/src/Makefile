@@ -93,7 +93,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += +warn_unused_vars +inline
+ERL_FLAGS += +inline
 ERL_COMPILE_FLAGS += -I../../stdlib/include -W
 
 # ----------------------------------------------------

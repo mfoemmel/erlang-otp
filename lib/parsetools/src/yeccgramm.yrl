@@ -13,7 +13,7 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id $
 %%
 
 %% This is the syntax (metagrammar) of grammar definitions of the yecc
@@ -24,7 +24,8 @@ grammar declaration rule head symbol symbols attached_code
 token tokens.
 
 Terminals
-atom float integer reserved_symbol string var '->' ':' 'dot'.
+atom float integer reserved_symbol reserved_word string char var
+'->' ':' 'dot'.
 
 Rootsymbol grammar.
 
@@ -39,20 +40,28 @@ attached_code -> ':' tokens : {erlang_code, '$2'}.
 attached_code -> '$empty' : {erlang_code, [{atom, 0, '$undefined'}]}.
 tokens -> token : ['$1'].
 tokens -> token tokens : ['$1' | '$2'].
-symbol -> var : value_of('$1').
-symbol -> atom : value_of('$1').
-symbol -> integer : value_of('$1').
+symbol -> var : symbol('$1').
+symbol -> atom : symbol('$1').
+symbol -> integer : symbol('$1').
+symbol -> reserved_word : symbol('$1').
 token -> var : '$1'.
 token -> atom : '$1'.
 token -> float : '$1'.
 token -> integer : '$1'.
 token -> string : '$1'.
+token -> char : '$1'.
 token -> reserved_symbol : {value_of('$1'), line_of('$1')}.
+token -> reserved_word : {value_of('$1'), line_of('$1')}.
 token -> '->' : {'->', line_of('$1')}. % Have to be treated in this
 token -> ':' : {':', line_of('$1')}.   % manner, because they are also
 				       % special symbols of the metagrammar
 
 Erlang code.
+
+-record(symbol, {line, name}).
+
+symbol(Symbol) ->
+    #symbol{line = line_of(Symbol), name = value_of(Symbol)}.
 
 value_of(Token) ->
     element(3, Token).

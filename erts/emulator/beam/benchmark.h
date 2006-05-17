@@ -42,7 +42,7 @@
  * (--with-perfctr=PATH), the Solaris hrtime_t will be used.
  * To add new timers look below.
  */
-/* #define BM_TIMERS */
+#define BM_TIMERS
 
 /* BM_COUNTERS count all kinds of events that occurs in the system.
  * Among other things it counts the number of messages, then number of
@@ -96,12 +96,19 @@ extern unsigned long long processes_spawned;
 extern unsigned long long messages_sent;
 extern unsigned long long messages_copied;
 extern unsigned long long messages_ego;
-extern unsigned long long minor_garbage_cols;
-extern unsigned long long major_garbage_cols;
-extern unsigned long long minor_global_garbage_cols;
-extern unsigned long long major_global_garbage_cols;
+extern unsigned long long minor_gc;
+extern unsigned long long major_gc;
+#ifdef HYBRID
+extern unsigned long long minor_global_gc;
+extern unsigned long long major_global_gc;
 extern unsigned long long gc_in_copy;
-extern unsigned long long gc_cycles;
+#ifdef INCREMENTAL
+extern unsigned long long minor_gc_cycles;
+extern unsigned long long major_gc_cycles;
+extern unsigned long long minor_gc_stages;
+extern unsigned long long major_gc_stages;
+#endif
+#endif
 
 #define BM_COUNT(var) (var)++;
 
@@ -109,9 +116,9 @@ extern unsigned long long gc_cycles;
     if ((send) == (rec))             \
         BM_COUNT(messages_ego);      }
 
-#define BM_LAZY_COPY_START int gcs = minor_global_garbage_cols + major_global_garbage_cols;
-#define BM_LAZY_COPY_STOP gcs -= minor_global_garbage_cols + major_global_garbage_cols; \
-    if (gcs > gc_in_copy) gc_in_copy = gcs;
+#define BM_LAZY_COPY_START long long gcs = minor_global_gc + major_global_gc;
+#define BM_LAZY_COPY_STOP { gcs = (minor_global_gc + major_global_gc) - gcs; \
+    if (gcs > gc_in_copy) gc_in_copy = gcs; }
 
 #else /* !BM_COUNTERS */
 #  define BM_COUNT(var)
@@ -145,7 +152,7 @@ extern unsigned long long gc_cycles;
  * meassure (send time in shared heap for instance).
  */
 
-#if defined(__i386__) && USE_PERFCTR
+#if (defined(__i386__) || defined(__x86_64__)) && USE_PERFCTR
 #include "libperfctr.h"
 
 #define BM_TIMER_T double
@@ -173,7 +180,7 @@ extern BM_TIMER_T start_time;
     tmp /= 1000;                                                       \
     sec = (uint)(tmp - ((int)(tmp / 60)) * 60);                        \
     min = (uint)tmp / 60;                                              \
-    fprintf(file,"##str##: %d:%02d.%03d %03d\n",min,sec,milli,micro);  \
+    erts_fprintf(file,str": %d:%02d.%03d %03d\n",min,sec,milli,micro);  \
 } while(0)
 
 #else /* !USE_PERFCTR  (Assuming Solaris) */
@@ -195,7 +202,7 @@ extern BM_TIMER_T start_time;
     tmp /= 1000;                                                     \
     sec = tmp % 60;                                                  \
     min = tmp / 60;                                                  \
-    fprintf(file,str##": %d:%02d.%03d %03d\n",min,sec,milli,micro);  \
+    erts_fprintf(file,str": %d:%02d.%03d %03d\n",min,sec,milli,micro);  \
 } while(0)
 
 extern BM_TIMER_T system_clock;
@@ -236,13 +243,13 @@ extern BM_TIMER_T mmu;
     while (gc > 0) {                                                    \
         if (gc > MMU_INTERVAL) {                                        \
             gc -= MMU_INTERVAL - mmu_counter;                           \
-            printf("%d\n",(int)((mmu / MMU_INTERVAL) * 100));           \
+            erts_printf("%d\n",(int)((mmu / MMU_INTERVAL) * 100));      \
             mmu_counter = 0; mmu = 0;                                   \
         } else {                                                        \
             mmu_counter += gc;                                          \
             if (mmu_counter >= MMU_INTERVAL) {                          \
                 mmu_counter -= MMU_INTERVAL;                            \
-                printf("%d\n",(int)((mmu / MMU_INTERVAL) * 100));       \
+                erts_printf("%d\n",(int)((mmu / MMU_INTERVAL) * 100));  \
                 mmu = 0;                                                \
             }                                                           \
             gc = 0;                                                     \
@@ -260,14 +267,14 @@ extern BM_TIMER_T mmu;
         if (mut > MMU_INTERVAL) {                                       \
             BM_TIMER_T tmp = MMU_INTERVAL - mmu_counter;                \
             mmu += tmp; mut -= tmp;                                     \
-            printf("%d\n",(int)((mmu / MMU_INTERVAL) * 100));           \
+            erts_printf("%d\n",(int)((mmu / MMU_INTERVAL) * 100));      \
             mmu_counter = 0; mmu = 0;                                   \
         } else {                                                        \
             mmu_counter += mut; mmu += mut;                             \
             if (mmu_counter >= MMU_INTERVAL) {                          \
                 mmu_counter -= MMU_INTERVAL;                            \
                 mmu -= mmu_counter;                                     \
-                printf("%d\n",(int)((mmu / MMU_INTERVAL) * 100));       \
+                erts_printf("%d\n",(int)((mmu / MMU_INTERVAL) * 100));  \
                 mmu = mmu_counter;                                      \
             }                                                           \
             mut = 0;                                                    \

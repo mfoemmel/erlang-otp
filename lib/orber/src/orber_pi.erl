@@ -176,6 +176,8 @@
 %%--------------- DEFINES ------------------------------------
 -define(DEBUG_LEVEL, 9).
 
+-define(EFORMAT(_F, _A), exit(lists:flatten(io_lib:format(_F, _A)))).
+
 %%------------------------------------------------------------
 %%------------- NATIVE INTERCEPTOR FUNCTIONS------------------
 %%------------------------------------------------------------
@@ -190,11 +192,13 @@ new_in_connection(PIs, Host, Port, SHost, SPort) ->
 	{'EXIT', R} ->
 	    orber:dbg("[~p] orber_pi:new_in_connection(~p); exit(~p)", 
 		      [?LINE, PIs, R], ?DEBUG_LEVEL),
-	    exit("Supplied Interceptors unable to create a valid new_in_connection");
+	    ?EFORMAT("Supplied Interceptors unable to create a valid new_in_connection"
+		     "Reason: ~p", [{'EXIT', R}]);
 	{'EXCEPTION', E} ->
 	    orber:dbg("[~p] orber_pi:new_in_connection(~p); exception(~p)", 
 		      [?LINE, PIs, E], ?DEBUG_LEVEL),
-	    exit("Supplied Interceptors unable to create a valid new_in_connection");
+	    ?EFORMAT("Supplied Interceptors unable to create a valid new_in_connection"
+		     "Reason: ~p", [{'EXCEPTION', E}]);
 	Ref ->
 	    Ref
     end.
@@ -269,11 +273,13 @@ new_out_connection(PIs, Host, Port, SHost, SPort) ->
 	{'EXIT', R} ->
 	    orber:dbg("[~p] orber_pi:new_out_connection(~p); exit(~p)", 
 		      [?LINE, PIs, R], ?DEBUG_LEVEL),
-	    exit("Supplied Interceptors unable to create a valid new_out_connection");
+	    ?EFORMAT("Supplied Interceptors unable to create a valid new_out_connection"
+		     "Reason: ~p", [{'EXIT', R}]);
 	{'EXCEPTION', E} ->
 	    orber:dbg("[~p] orber_pi:new_out_connection(~p); exception(~p)", 
 		      [?LINE, PIs, E], ?DEBUG_LEVEL),
-	    exit("Supplied Interceptors unable to create a valid new_out_connection");
+	    ?EFORMAT("Supplied Interceptors unable to create a valid new_out_connection"
+		     "Reason: ~p", [{'EXCEPTION', E}]);
 	Ref ->
 	    Ref
     end.

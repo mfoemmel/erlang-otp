@@ -26,73 +26,8 @@
 #include "config.h"
 #endif
 
-#include "ethread.h"
-
-#ifndef ETHR_HAVE_ETHREAD_DEFINES
-#error Missing configure defines
-#endif
-
-#if defined(DEBUG)
-#  undef ETHR_XCHK
-#  define  ETHR_XCHK 1
-#elif defined(PURIFY)
-#  ifndef ETHR_XCHK
-#    define ETHR_XCHK 1
-#  endif
-#else
-#  ifndef ETHR_XCHK
-#    define ETHR_XCHK 0
-#  endif
-#endif
-
-#ifdef DEBUG
-#define ASSERT(A) ((void) ((A) ? 1 : assert_failed(__FILE__, __LINE__, #A)))
-static int assert_failed(char *f, int l, char *a);
-#else
-#define ASSERT(A) ((void) 1)
-#endif
-
-#if defined(__GNUC__)
-#  undef inline
-#  define inline __inline__
-#elif defined(__WIN32__)
-#  undef inline
-#  define inline __forceinline
-#else
-#  ifndef inline
-#    define inline
-#  endif
-#endif
-
-/*
- * ----------------------------------------------------------------------------
- * Common stuff
- * ----------------------------------------------------------------------------
- */
-
-#define ETHR_MAX_THREADS 2048 /* Has to be an even power of 2 */
-
-static int ethr_not_inited = 1;
-
-void *(*thread_create_prepare_func)(void) = NULL;
-void (*thread_create_parent_func)(void *) = NULL;
-void (*thread_create_child_func)(void *) = NULL;
-
-static void
-init_create_thread_funcs(ethr_init_data *id)
-{
-    if (id) {
-	thread_create_prepare_func	= id->thread_create_prepare_func;
-	thread_create_parent_func	= id->thread_create_parent_func;
-	thread_create_child_func	= id->thread_create_child_func;
-    }
-}
-
-
 #if defined(ETHR_PTHREADS)
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
- * pthread implementation                                                    *
-\*                                                                           */
+
 #ifdef ETHR_TIME_WITH_SYS_TIME
 #  include <time.h>
 #  include <sys/time.h>
@@ -105,6 +40,171 @@ init_create_thread_funcs(ethr_init_data *id)
 #endif
 #include <sys/types.h>
 #include <unistd.h>
+
+#elif defined(ETHR_WIN32_THREADS)
+
+#undef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <process.h>
+#ifdef __GNUC__
+#include <Windows32/errors.h>
+#else
+#include <winerror.h>
+#endif
+
+#else
+#error "Missing thread implementation"
+#endif
+
+#undef ETHR_TRY_INLINE_FUNCS
+#include "ethread.h"
+
+#ifndef ETHR_HAVE_ETHREAD_DEFINES
+#error Missing configure defines
+#endif
+
+/*
+ * ----------------------------------------------------------------------------
+ * Common stuff
+ * ----------------------------------------------------------------------------
+ */
+
+#define ETHR_MAX_THREADS 2048 /* Has to be an even power of 2 */
+
+#if ETHR_XCHK
+#  if defined(EDEADLK)
+#    define ETHR_XCHK_ERROR_DEADLOCK EDEADLK
+#  elif defined(EDEADLOCK)
+#    define ETHR_XCHK_ERROR_DEADLOCK EDEADLOCK
+#  else
+#    define ETHR_XCHK_ERROR_DEADLOCK EINVAL
+#  endif
+static int xchk_locking_mutex(ethr_mutex *mutex);
+static int xchk_unlocking_mutex(ethr_mutex *mutex);
+static long xchk_get_my_mutex_lock_count(ethr_mutex *mutex);
+static int xchk_init(void);
+#endif
+
+static int ethr_not_inited = 1;
+
+#ifdef DEBUG
+#define ASSERT(A) ((void) ((A) ? 1 : assert_failed(__FILE__, __LINE__, #A)))
+static int assert_failed(char *f, int l, char *a);
+#else
+#define ASSERT(A) ((void) 1)
+#endif
+
+static void *(*allocp)(size_t) = malloc;
+static void *(*reallocp)(void *, size_t) = realloc;
+static void (*freep)(void *) = free;
+
+void *(*thread_create_prepare_func)(void) = NULL;
+void (*thread_create_parent_func)(void *) = NULL;
+void (*thread_create_child_func)(void *) = NULL;
+
+typedef struct ethr_xhndl_list_ ethr_xhndl_list;
+struct ethr_xhndl_list_ {
+    ethr_xhndl_list *next;
+    void (*funcp)(void);
+};
+
+ethr_mutex xhndl_mtx;
+ethr_xhndl_list *xhndl_list;
+
+static int
+init_common(ethr_init_data *id)
+{
+    int res;
+    if (id) {
+	allocp				= id->alloc;
+	reallocp			= id->realloc;
+	freep				= id->free;
+	thread_create_prepare_func	= id->thread_create_prepare_func;
+	thread_create_parent_func	= id->thread_create_parent_func;
+	thread_create_child_func	= id->thread_create_child_func;
+    }
+    if (!allocp || !reallocp || !freep)
+	return EINVAL;
+
+    xhndl_list = NULL;
+
+    res = ethr_mutex_init(&xhndl_mtx);
+    if (res != 0)
+	return res;
+
+    res = ethr_mutex_set_forksafe(&xhndl_mtx);
+    if (res != 0 && res != ENOTSUP)
+	return res;
+
+#if ETHR_XCHK
+    return xchk_init();
+#else
+    return 0;
+#endif
+}
+
+int
+ethr_install_exit_handler(void (*funcp)(void))
+{
+    ethr_xhndl_list *xhp;
+    int res;
+
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+#endif
+
+    if (!funcp)
+	return EINVAL;
+
+    xhp = (ethr_xhndl_list *) (*allocp)(sizeof(ethr_xhndl_list));
+    if (!xhp)
+	return ENOMEM;
+
+    res = ethr_mutex_lock(&xhndl_mtx);
+    if (res != 0) {
+	(*freep)((void *) xhp);
+	return res;
+    }
+
+    xhp->funcp = funcp;
+    xhp->next = xhndl_list;
+    xhndl_list = xhp;
+
+    res = ethr_mutex_unlock(&xhndl_mtx);
+    if (res != 0)
+	abort();
+
+    return res;
+}
+
+static void
+run_exit_handlers(void)
+{
+    int res;
+    ethr_xhndl_list *xhp;
+
+    res = ethr_mutex_lock(&xhndl_mtx);
+    if (res != 0)
+	abort();
+
+    xhp = xhndl_list;
+
+    res = ethr_mutex_unlock(&xhndl_mtx);
+    if (res != 0)
+	abort();
+
+    for (; xhp; xhp = xhp->next)
+	(*xhp->funcp)();
+}
+
+#if defined(ETHR_PTHREADS)
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
+ * pthread implementation                                                    *
+\*                                                                           */
 
 typedef struct {
     pthread_mutex_t mtx;
@@ -126,6 +226,10 @@ static ethr_mutex no_ethrs_mtx;
 #warning "Cannot enforce fork-safety"
 #endif
 
+#ifndef ETHR_HAVE_OPTIMIZED_ATOMIC_OPS
+pthread_mutex_t ethr_atomic_mutex[1 << ETHR_ATOMIC_ADDR_BITS];
+#endif
+
 /*
  * ----------------------------------------------------------------------------
  * Static functions
@@ -137,7 +241,7 @@ static ethr_mutex no_ethrs_mtx;
  * we cannot recover after failure.
  */
 
-static inline void
+static ETHR_INLINE void
 safe_mutex_lock(pthread_mutex_t *mtxp)
 {
     int res = pthread_mutex_lock(mtxp);
@@ -145,7 +249,7 @@ safe_mutex_lock(pthread_mutex_t *mtxp)
 	abort();
 }
 
-static inline void
+static ETHR_INLINE void
 safe_mutex_unlock(pthread_mutex_t *mtxp)
 {
     int res = pthread_mutex_unlock(mtxp);
@@ -153,7 +257,7 @@ safe_mutex_unlock(pthread_mutex_t *mtxp)
 	abort();
 }
 
-static inline void
+static ETHR_INLINE void
 safe_cond_signal(pthread_cond_t *cndp)
 {
     int res = pthread_cond_signal(cndp);
@@ -303,12 +407,17 @@ init_rec_mtx_attr(void)
 
 #endif /* #if ETHR_HAVE_ETHR_REC_MUTEX_INIT */
 
-static inline void thr_exit_cleanup(void)
+static ETHR_INLINE void thr_exit_cleanup(void)
 {
+    run_exit_handlers();
     safe_mutex_lock(&no_ethrs_mtx.pt_mtx);
     ASSERT(no_ethreads > 0);
     no_ethreads--;
     safe_mutex_unlock(&no_ethrs_mtx.pt_mtx);
+#if ETHR_XCHK
+    if (ethr_xchk_have_locked_mutexes())
+	abort();
+#endif
 }
 
 static void *thr_wrapper(void *vtwd)
@@ -344,13 +453,20 @@ int
 ethr_init(ethr_init_data *id)
 {
     int res;
-    init_create_thread_funcs(id);
+
+    if (!ethr_not_inited)
+	return EINVAL;
+
+    ethr_not_inited = 0;
+
+    res = init_common(id);
+    if (res != 0)
+	goto error;
 
 #if ETHR_HAVE_PTHREAD_ATFORK
     init_forksafe();
 #endif
 
-    ethr_not_inited = 0;
     no_ethreads = 1;
     res = ethr_mutex_init(&no_ethrs_mtx);
     if (res != 0)
@@ -359,7 +475,19 @@ ethr_init(ethr_init_data *id)
     if (res != 0 && res != ENOTSUP)
 	goto error;
 
+#ifndef ETHR_HAVE_OPTIMIZED_ATOMIC_OPS
+    {
+	int i;
+	for (i = 0; i < (1 << ETHR_ATOMIC_ADDR_BITS); i++) {
+	    res = pthread_mutex_init(&ethr_atomic_mutex[i], NULL);
+	    if (res != 0)
+		goto error;
+	}
+    }
+#endif
+
     return 0;
+
  error:
     ethr_not_inited = 1;
     return res;
@@ -544,6 +672,7 @@ ethr_mutex_init(ethr_mutex *mtx)
 	ASSERT(0);
 	return EINVAL;
     }
+    mtx->initialized = ETHR_MUTEX_INITIALIZED;
 #endif
     mtx->prev = NULL;
     mtx->next = NULL;
@@ -565,6 +694,7 @@ ethr_rec_mutex_init(ethr_mutex *mtx)
 	ASSERT(0);
 	return EINVAL;
     }
+    mtx->initialized = ETHR_MUTEX_INITIALIZED;
 #endif
     if (rec_mtx_attr_need_init)
 	init_rec_mtx_attr();
@@ -585,15 +715,20 @@ ethr_mutex_destroy(ethr_mutex *mtx)
 	ASSERT(0);
 	return EACCES;
     }
-    if (!mtx) {
+    if (!mtx || mtx->initialized != ETHR_MUTEX_INITIALIZED) {
 	ASSERT(0);
 	return EINVAL;
     }
+    if (xchk_get_my_mutex_lock_count(mtx) != 0)
+	return EINVAL;
 #endif
     if (mtx->next) {
 	ASSERT(mtx->prev);
 	ethr_mutex_unset_forksafe(mtx);
     }
+#if ETHR_XCHK
+    mtx->initialized = 0;
+#endif
     return pthread_mutex_destroy(&mtx->pt_mtx);
 }
 
@@ -605,7 +740,7 @@ int ethr_mutex_set_forksafe(ethr_mutex *mtx)
 	ASSERT(0);
 	return EACCES;
     }
-    if (!mtx) {
+    if (!mtx || mtx->initialized != ETHR_MUTEX_INITIALIZED) {
 	ASSERT(0);
 	return EINVAL;
     }
@@ -645,7 +780,7 @@ int ethr_mutex_unset_forksafe(ethr_mutex *mtx)
 	ASSERT(0);
 	return EACCES;
     }
-    if (!mtx) {
+    if (!mtx || mtx->initialized != ETHR_MUTEX_INITIALIZED) {
 	ASSERT(0);
 	return EINVAL;
     }
@@ -677,35 +812,79 @@ int ethr_mutex_unset_forksafe(ethr_mutex *mtx)
 }
 
 int
-ethr_mutex_lock(ethr_mutex *mtx)
+ethr_mutex_trylock(ethr_mutex *mtx)
 {
+    int res;
 #if ETHR_XCHK
     if (ethr_not_inited) {
 	ASSERT(0);
 	return EACCES;
     }
-    if (!mtx) {
+    if (!mtx || mtx->initialized != ETHR_MUTEX_INITIALIZED) {
 	ASSERT(0);
 	return EINVAL;
     }
+    res = xchk_locking_mutex(mtx);
+    if (res != 0)
+	return res;
 #endif
-    return pthread_mutex_lock(&mtx->pt_mtx);
+    res = pthread_mutex_trylock(&mtx->pt_mtx);
+#if ETHR_XCHK
+    if (res != 0)
+	(void) xchk_unlocking_mutex(mtx);
+#endif
+    return res;
+}
+
+int
+ethr_mutex_lock(ethr_mutex *mtx)
+{
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!mtx || mtx->initialized != ETHR_MUTEX_INITIALIZED) {
+	ASSERT(0);
+	return EINVAL;
+    }
+    res = xchk_locking_mutex(mtx);
+    if (res != 0)
+	return res;
+#endif
+    res = pthread_mutex_lock(&mtx->pt_mtx);
+#if ETHR_XCHK
+    if (res != 0)
+	(void) xchk_unlocking_mutex(mtx);
+#endif
+    return res;
 }
 
 int
 ethr_mutex_unlock(ethr_mutex *mtx)
 {
+    int res;
 #if ETHR_XCHK
     if (ethr_not_inited) {
 	ASSERT(0);
 	return EACCES;
     }
-    if (!mtx) {
+    if (!mtx || mtx->initialized != ETHR_MUTEX_INITIALIZED) {
 	ASSERT(0);
 	return EINVAL;
     }
+    res = xchk_unlocking_mutex(mtx);
+    if (res != 0)
+	return res;
 #endif
-    return pthread_mutex_unlock(&mtx->pt_mtx);
+
+    res = pthread_mutex_unlock(&mtx->pt_mtx);
+#if ETHR_XCHK
+    if (res != 0)
+	(void) xchk_locking_mutex(mtx);
+#endif
+    return res;
 }
 
 /*
@@ -724,8 +903,9 @@ ethr_cond_init(ethr_cond *cnd)
 	ASSERT(0);
 	return EINVAL;
     }
+    cnd->initialized = ETHR_COND_INITIALIZED;
 #endif
-    return pthread_cond_init((pthread_cond_t *) cnd, NULL);
+    return pthread_cond_init(&cnd->pt_cnd, NULL);
 }
 
 int
@@ -736,12 +916,13 @@ ethr_cond_destroy(ethr_cond *cnd)
 	ASSERT(0);
 	return EACCES;
     }
-    if (!cnd) {
+    if (!cnd || cnd->initialized != ETHR_COND_INITIALIZED) {
 	ASSERT(0);
 	return EINVAL;
     }
+    cnd->initialized = 0;
 #endif
-    return pthread_cond_destroy((pthread_cond_t *) cnd);
+    return pthread_cond_destroy(&cnd->pt_cnd);
 }
 
 int
@@ -752,12 +933,12 @@ ethr_cond_signal(ethr_cond *cnd)
 	ASSERT(0);
 	return EACCES;
     }
-    if (!cnd) {
+    if (!cnd || cnd->initialized != ETHR_COND_INITIALIZED) {
 	ASSERT(0);
 	return EINVAL;
     }
 #endif
-    return pthread_cond_signal((pthread_cond_t *) cnd);
+    return pthread_cond_signal(&cnd->pt_cnd);
 }
 
 int
@@ -768,52 +949,540 @@ ethr_cond_broadcast(ethr_cond *cnd)
 	ASSERT(0);
 	return EACCES;
     }
-    if (!cnd) {
+    if (!cnd || cnd->initialized != ETHR_COND_INITIALIZED) {
 	ASSERT(0);
 	return EINVAL;
     }
 #endif
-    return pthread_cond_broadcast((pthread_cond_t *) cnd);
+    return pthread_cond_broadcast(&cnd->pt_cnd);
 }
 
 int
 ethr_cond_wait(ethr_cond *cnd, ethr_mutex *mtx)
 {
+    int res;
 #if ETHR_XCHK
     if (ethr_not_inited) {
 	ASSERT(0);
 	return EACCES;
     }
-    if (!cnd || !mtx) {
+    if (!cnd
+	|| cnd->initialized != ETHR_COND_INITIALIZED
+	|| !mtx
+	|| mtx->initialized != ETHR_MUTEX_INITIALIZED) {
 	ASSERT(0);
 	return EINVAL;
     }
+    res = xchk_unlocking_mutex(mtx);
+    if (res != 0)
+	return res;
+    if (xchk_get_my_mutex_lock_count(mtx) != 0)
+	return EINVAL;
 #endif
-    return pthread_cond_wait((pthread_cond_t *) cnd, &mtx->pt_mtx);
+
+    res = pthread_cond_wait(&cnd->pt_cnd, &mtx->pt_mtx);
+
+#if ETHR_XCHK
+    (void) xchk_locking_mutex(mtx);
+#endif
+
+    return res;
 }
 
 int
 ethr_cond_timedwait(ethr_cond *cnd, ethr_mutex *mtx, ethr_timeval *timeout)
 {
+    int res;
     struct timespec to;
 #if ETHR_XCHK
     if (ethr_not_inited) {
 	ASSERT(0);
 	return EACCES;
     }
-    if (!cnd || !mtx || !timeout) {
+    if (!cnd
+	|| cnd->initialized != ETHR_COND_INITIALIZED
+	|| !mtx
+	|| mtx->initialized != ETHR_MUTEX_INITIALIZED
+	|| !timeout) {
 	ASSERT(0);
 	return EINVAL;
     }
+    res = xchk_unlocking_mutex(mtx);
+    if (res != 0)
+	return res;
+    if (xchk_get_my_mutex_lock_count(mtx) != 0)
+	return EINVAL;
 #endif
 
     to.tv_sec = timeout->tv_sec;
     to.tv_nsec = timeout->tv_nsec;
 
-    return pthread_cond_timedwait((pthread_cond_t *) cnd,
-				  &mtx->pt_mtx,
-				  &to);
+    res = pthread_cond_timedwait(&cnd->pt_cnd, &mtx->pt_mtx, &to);
+
+#if ETHR_XCHK
+    (void) xchk_locking_mutex(mtx);
+#endif
+    return res;
 }
+
+
+#ifdef ETHR_EXTENDED_LIB
+
+int
+ethr_rwmutex_init(ethr_rwmutex *rwmtx)
+{
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!rwmtx) {
+	ASSERT(0);
+	return EINVAL;
+    }
+    rwmtx->initialized = ETHR_RWMUTEX_INITIALIZED;
+#endif
+    return pthread_rwlock_init(&rwmtx->pt_rwlock, NULL);
+}
+
+int
+ethr_rwmutex_destroy(ethr_rwmutex *rwmtx)
+{
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!rwmtx || rwmtx->initialized != ETHR_RWMUTEX_INITIALIZED) {
+	ASSERT(0);
+	return EINVAL;
+    }
+    /* TODO: if (xchk_get_my_mutex_lock_count(rwmtx) != 0) return EINVAL; */
+#endif
+    res = pthread_rwlock_destroy(&rwmtx->pt_rwlock);
+#if ETHR_XCHK
+    rwmtx->initialized = 0;
+#endif
+    return res;
+}
+
+int
+ethr_rwmutex_tryrlock(ethr_rwmutex *rwmtx)
+{
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!rwmtx || rwmtx->initialized != ETHR_RWMUTEX_INITIALIZED) {
+	ASSERT(0);
+	return EINVAL;
+    }
+    /* TODO: res = xchk_rlocking_rwwmutex(rwmtx); if (res != 0) return res; */
+#endif
+    res = pthread_rwlock_tryrdlock(&rwmtx->pt_rwlock);
+#if ETHR_XCHK
+    /* TODO: if (res != 0) (void) xchk_runlocking_rwmutex(rwmtx); */
+#endif
+    return res;
+}
+
+int
+ethr_rwmutex_rlock(ethr_rwmutex *rwmtx)
+{
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!rwmtx || rwmtx->initialized != ETHR_RWMUTEX_INITIALIZED) {
+	ASSERT(0);
+	return EINVAL;
+    }
+    /* TODO: res = xchk_rlocking_rwwmutex(rwmtx); if (res != 0) return res; */
+#endif
+    res = pthread_rwlock_rdlock(&rwmtx->pt_rwlock);
+#if ETHR_XCHK
+    /* TODO: if (res != 0) (void) xchk_runlocking_mutex(rwmtx); */
+#endif
+    return res;
+}
+
+int
+ethr_rwmutex_runlock(ethr_rwmutex *rwmtx)
+{
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!rwmtx || rwmtx->initialized != ETHR_RWMUTEX_INITIALIZED) {
+	ASSERT(0);
+	return EINVAL;
+    }
+    /* TODO: res = xchk_runlocking_rwmutex(rwmtx); if (res != 0) return res; */
+#endif
+    res = pthread_rwlock_unlock(&rwmtx->pt_rwlock);
+#if ETHR_XCHK
+    /* TODO: if (res != 0) (void) xchk_rlocking_rwmutex(rwmtx); */
+#endif
+    return res;
+}
+
+int
+ethr_rwmutex_tryrwlock(ethr_rwmutex *rwmtx)
+{
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!rwmtx || rwmtx->initialized != ETHR_RWMUTEX_INITIALIZED) {
+	ASSERT(0);
+	return EINVAL;
+    }
+    /* TODO: res = xchk_rwlocking_rwwmutex(rwmtx); if (res != 0) return res; */
+#endif
+    res = pthread_rwlock_trywrlock(&rwmtx->pt_rwlock);
+#if ETHR_XCHK
+    /* TODO: if (res != 0) (void) xchk_rwunlocking_rwmutex(rwmtx); */
+#endif
+    return res;
+}
+
+int
+ethr_rwmutex_rwlock(ethr_rwmutex *rwmtx)
+{
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!rwmtx || rwmtx->initialized != ETHR_RWMUTEX_INITIALIZED) {
+	ASSERT(0);
+	return EINVAL;
+    }
+    /* TODO: res = xchk_rwlocking_rwmutex(rwmtx); if (res != 0)	return res; */
+#endif
+    res = pthread_rwlock_wrlock(&rwmtx->pt_rwlock);
+#if ETHR_XCHK
+    /* TODO: if (res != 0) (void) xchk_rwunlocking_rwmutex(rwmtx); */
+#endif
+    return res;
+}
+
+int
+ethr_rwmutex_rwunlock(ethr_rwmutex *rwmtx)
+{
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!rwmtx || rwmtx->initialized != ETHR_RWMUTEX_INITIALIZED) {
+	ASSERT(0);
+	return EINVAL;
+    }
+    /* TODO: res = xchk_rwunlocking_rwmutex(rwmtx); if (res != 0) return res; */
+#endif
+    res = pthread_rwlock_unlock(&rwmtx->pt_rwlock);
+#if ETHR_XCHK
+    /* TODO: if (res != 0) (void) xchk_rwlocking_rwmutex(rwmtx); */
+#endif
+    return res;
+}
+
+#endif /* #ifdef ETHR_EXTENDED_LIB */
+
+
+#ifndef ETHR_HAVE_OPTIMIZED_ATOMIC_OPS
+
+
+int
+ethr_atomic_init(ethr_atomic_t *var, long i)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+       ASSERT(0);
+       return EACCES;
+    }  
+    if (!var) {
+       ASSERT(0);
+       return EINVAL;
+    }  
+#endif 
+    res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *var = (ethr_atomic_t) i;
+    return pthread_mutex_unlock(mtxp);
+}
+
+int
+ethr_atomic_set(ethr_atomic_t *var, long i)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+       ASSERT(0);
+       return EACCES;
+    }  
+    if (!var) {
+       ASSERT(0);
+       return EINVAL;
+    }  
+#endif
+    res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *var = (ethr_atomic_t) i;
+    return pthread_mutex_unlock(mtxp);
+}
+
+int
+ethr_atomic_read(ethr_atomic_t *var, long *i)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+       ASSERT(0);
+       return EACCES;
+    }  
+    if (!var || !i) {
+       ASSERT(0);
+       return EINVAL;
+    }  
+#endif
+    res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *i = (long) *var;
+    return pthread_mutex_unlock(mtxp);
+}
+
+
+int
+ethr_atomic_addtest(ethr_atomic_t *var, long incr, long *testp)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+       ASSERT(0);
+       return EACCES;
+    }  
+    if (!var) {
+       ASSERT(0);
+       return EINVAL;
+    }  
+#endif 
+    res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+       return res;
+    *testp = *var += incr; 
+    return pthread_mutex_unlock(mtxp);
+}   
+    
+int
+ethr_atomic_inctest(ethr_atomic_t *incp, long *testp)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(incp);
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!incp || !testp) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+    res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *testp = ++(*incp);
+#ifdef DEBUG
+    if (*testp > 0)
+	*testp = 4711;
+    else if (*testp < 0)
+	*testp = -4711;
+#endif
+    return pthread_mutex_unlock(mtxp);
+}
+
+int
+ethr_atomic_dectest(ethr_atomic_t *decp, long *testp)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(decp);
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!decp || !testp) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+    res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *testp = --(*decp);
+#ifdef DEBUG
+    if (*testp > 0)
+	*testp = 4711;
+    else if (*testp < 0)
+	*testp = -4711;
+#endif
+    return pthread_mutex_unlock(mtxp);
+}
+
+int
+ethr_atomic_add(ethr_atomic_t *var, long incr)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+       ASSERT(0);
+       return EACCES;
+    }  
+    if (!var) {
+       ASSERT(0);
+       return EINVAL;
+    }  
+#endif 
+    res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+       return res;
+    *var += incr; 
+    return pthread_mutex_unlock(mtxp);
+}   
+    
+int 
+ethr_atomic_inc(ethr_atomic_t *incp)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(incp);
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!incp) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+    res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    ++(*incp);
+    return pthread_mutex_unlock(mtxp);
+}
+
+int
+ethr_atomic_dec(ethr_atomic_t *decp)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(decp);
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!decp) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+    res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    --(*decp);
+    return pthread_mutex_unlock(mtxp);
+}
+
+int
+ethr_atomic_and_old(ethr_atomic_t *var, long mask, long *old)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res = pthread_mutex_lock(mtxp);
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!var || !old) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+    if (res != 0)
+	return res;
+    *old = *var;
+    *var &= mask;
+    return pthread_mutex_unlock(mtxp);
+}
+
+int
+ethr_atomic_or_old(ethr_atomic_t *var, long mask, long *old)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res = pthread_mutex_lock(mtxp);
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!var || !old) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+    if (res != 0)
+	return res;
+    *old = *var;
+    *var |= mask;
+    return pthread_mutex_unlock(mtxp);
+}
+
+int
+ethr_atomic_xchg(ethr_atomic_t *var, long new, long *old)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res = pthread_mutex_lock(mtxp);
+#if ETHR_XCHK 
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }  
+    if (!var || !old) {
+	ASSERT(0);
+	return EINVAL;
+    }  
+#endif 
+    if (res != 0)
+	return res;
+    *old = *var;  
+    *var = new;   
+    return pthread_mutex_unlock(mtxp);
+}   
+    
+#endif /* #ifndef ETHR_HAVE_OPTIMIZED_ATOMIC_OPS */
 
 /*
  * Current time
@@ -839,6 +1508,62 @@ ethr_time_now(ethr_timeval *time)
     time->tv_sec = (long) tv.tv_sec;
     time->tv_nsec = ((long) tv.tv_usec)*1000;
     return res;
+}
+
+/*
+ * Thread specific data
+ */
+
+int
+ethr_tsd_key_create(ethr_tsd_key *keyp)
+{
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!keyp) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+    return pthread_key_create((pthread_key_t *) keyp, NULL);
+}
+
+int
+ethr_tsd_key_delete(ethr_tsd_key key)
+{
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+#endif
+    return pthread_key_delete((pthread_key_t) key);
+}
+
+int
+ethr_tsd_set(ethr_tsd_key key, void *value)
+{
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+#endif
+    return pthread_setspecific((pthread_key_t) key, value);
+}
+
+void *
+ethr_tsd_get(ethr_tsd_key key)
+{
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return NULL;
+    }
+#endif
+    return pthread_getspecific((pthread_key_t) key);
 }
 
 /*
@@ -886,15 +1611,11 @@ int ethr_sigwait(const sigset_t *set, int *sig)
  * Native win32 threads implementation                                       *
 \*                                                                           */
 
-#include <process.h>
-
-#ifdef __GNUC__
-#include <Windows32/errors.h>
-#else
-#include <winerror.h>
-#endif
-
 #define INVALID_TID -1
+
+/* The spin count values are more or less taken out of the blue */
+#define ETHR_MUTEX_SPIN_COUNT	5000
+#define ETHR_COND_SPIN_COUNT	1000
 
 ethr_tid serial_shift; /* Bits to shift serial when constructing a tid */
 ethr_tid last_serial; /* Last thread table serial used */
@@ -939,6 +1660,8 @@ static CRITICAL_SECTION fake_static_init_cs; /* Critical section used to protect
 static thr_data_ * thr_table[ETHR_MAX_THREADS]; /* The thread table */
 
 static DWORD tls_own_thr_data;
+
+static thr_data_ main_thr_data;
 
 #define THR_IX(TID)	((TID) & thr_ix_mask)
 #define OWN_THR_DATA	((thr_data_ *) TlsGetValue(tls_own_thr_data))
@@ -1033,7 +1756,7 @@ get_errno(void)
     }
 }
 
-static inline thr_data_ *
+static ETHR_INLINE thr_data_ *
 tid2thr(ethr_tid tid)
 {
     ethr_tid ix;
@@ -1052,7 +1775,7 @@ tid2thr(ethr_tid tid)
     return td;
 }
 
-static inline void
+static ETHR_INLINE void
 new_tid(ethr_tid *new_tid, ethr_tid *new_serial, ethr_tid *new_ix)
 {
     ethr_tid tmp_serial = last_serial;
@@ -1088,6 +1811,8 @@ static void thr_exit_cleanup(thr_data_ *td, void *res)
 
     ASSERT(td == OWN_THR_DATA);
 
+    run_exit_handlers();
+
     EnterCriticalSection(&thr_table_cs);
     CloseHandle(td->wait_event.handle);
     if (td->thr_handle == INVALID_HANDLE_VALUE) {
@@ -1095,13 +1820,18 @@ static void thr_exit_cleanup(thr_data_ *td, void *res)
 	ASSERT(td->joiner == INVALID_TID);
 	ASSERT(td == thr_table[THR_IX(td->thr_id)]);
 	thr_table[THR_IX(td->thr_id)] = NULL;
-	free((void *) td);
+	if (td != &main_thr_data)
+	    (*freep)((void *) td);
     }
     else {
 	/* Save result and let joining thread cleanup */
 	td->result = res;
     }
     LeaveCriticalSection(&thr_table_cs);
+#if ETHR_XCHK
+    if (ethr_xchk_have_locked_mutexes())
+	abort();
+#endif
 }
 
 static unsigned thr_wrapper(void* args)
@@ -1137,36 +1867,49 @@ static unsigned thr_wrapper(void* args)
     return 0;
 }
 
-
-static inline void
-fake_static_mutex_init(ethr_mutex *mtx)
+int
+ethr_fake_static_mutex_init(ethr_mutex *mtx)
 {
     EnterCriticalSection((CRITICAL_SECTION *) &fake_static_init_cs);
     /* Got here under race conditions; check again... */
     if (!mtx->initialized) {
+#ifdef ETHR_HAVE_INITIALIZECRITICALSECTIONANDSPINCOUNT
+	if (!InitializeCriticalSectionAndSpinCount(&mtx->cs,
+						   ETHR_MUTEX_SPIN_COUNT))
+	    return get_errno();
+#else
 	InitializeCriticalSection(&mtx->cs);
-	mtx->initialized = 1;
+#endif
+	mtx->initialized = ETHR_MUTEX_INITIALIZED;
     }
     LeaveCriticalSection((CRITICAL_SECTION *) &fake_static_init_cs);
+    return 0;
 }
 
-static inline void
+static int
 fake_static_cond_init(ethr_cond *cnd)
 {
     EnterCriticalSection((CRITICAL_SECTION *) &fake_static_init_cs);
     /* Got here under race conditions; check again... */
     if (!cnd->initialized) {
+#ifdef ETHR_HAVE_INITIALIZECRITICALSECTIONANDSPINCOUNT
+	if (!InitializeCriticalSectionAndSpinCount(&cnd->cs,
+						   ETHR_COND_SPIN_COUNT))
+	    return get_errno();
+#else
 	InitializeCriticalSection(&cnd->cs);
+#endif
 	cnd->queue = NULL;
 	cnd->queue_end = NULL;
-	cnd->initialized = 1;
+	cnd->initialized = ETHR_COND_INITIALIZED;
     }
     LeaveCriticalSection((CRITICAL_SECTION *) &fake_static_init_cs);
+    return 0;
 }
 
 #define EPOCH_JULIAN_DIFF 11644473600i64
 
-static inline void
+static ETHR_INLINE void
 get_curr_time(long *sec, long *nsec)
 {
     SYSTEMTIME t;
@@ -1180,7 +1923,7 @@ get_curr_time(long *sec, long *nsec)
     *sec = (long) ((lft / 10000000i64) - EPOCH_JULIAN_DIFF);
 }
 
-static inline int
+static ETHR_INLINE int
 condwait(ethr_cond *cnd,
 	 ethr_mutex *mtx,
 	 int with_timeout,
@@ -1192,25 +1935,34 @@ condwait(ethr_cond *cnd,
     DWORD code;
     long time; /* time until timeout in milli seconds */
 
+    td = OWN_THR_DATA;
+
 #if ETHR_XCHK
     if (ethr_not_inited) {
 	ASSERT(0);
 	return EACCES;
     }
-#endif
-    td = OWN_THR_DATA;
-#if ETHR_XCHK
+
     if (!td) {
 	ASSERT(0);
 	return EACCES;
     }
-#endif
 
-#if ETHR_XCHK
-    if (!mtx || !cnd || (with_timeout && !timeout)) {
+    if (!mtx
+	|| mtx->initialized != ETHR_MTX_INITIALIZED
+	|| !cnd
+	|| (cnd->initialized && cnd->initialized != ETHR_COND_INITIALIZED)
+	|| (with_timeout && !timeout)) {
 	ASSERT(0);
 	return EINVAL;
     }
+
+    res = xchk_unlocking_mutex(mtx);
+    if (res != 0)
+	return res;
+    if (xchk_get_my_mutex_lock_count(mtx) != 0)
+	return EINVAL;
+
 #endif
 
     if (!cnd->initialized)
@@ -1238,7 +1990,6 @@ condwait(ethr_cond *cnd,
     LeaveCriticalSection(&cnd->cs);
  
     LeaveCriticalSection(&mtx->cs);
-
 
     if (!with_timeout)
 	time = INFINITE;
@@ -1302,6 +2053,10 @@ condwait(ethr_cond *cnd,
 
     }
 
+#if ETHR_XCHK
+    (void) xchk_locking_mutex(mtx);
+#endif
+
     return res;
 
 }
@@ -1316,11 +2071,31 @@ condwait(ethr_cond *cnd,
 int
 ethr_init(ethr_init_data *id)
 {
+#ifdef _WIN32_WINNT
+    DWORD major = (_WIN32_WINNT >> 8) & 0xff;
+    DWORD minor = _WIN32_WINNT & 0xff;
+    OSVERSIONINFO os_version;
+#endif
     int err = 0;
-    thr_data_ *td = NULL;
+    thr_data_ *td = &main_thr_data;
     unsigned long i;
 
-    init_create_thread_funcs(id);
+    if (!ethr_not_inited)
+	return EINVAL;
+
+#ifdef _WIN32_WINNT
+    os_version.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+    GetVersionEx(&os_version);
+    if (os_version.dwPlatformId != VER_PLATFORM_WIN32_NT
+	|| os_version.dwMajorVersion < major
+	|| (os_version.dwMajorVersion == major
+	    && os_version.dwMinorVersion < minor))
+	return ENOTSUP;
+#endif
+
+    err = init_common(id);
+    if (err)
+	goto error;
 
     ASSERT(ETHR_MAX_THREADS > 0);
     for (i = ETHR_MAX_THREADS - 1, serial_shift = 0;
@@ -1329,14 +2104,8 @@ ethr_init(ethr_init_data *id)
     thr_ix_mask = ~(~((ethr_tid) 0) << serial_shift);
 
     tls_own_thr_data = TlsAlloc();
-    if (tls_own_thr_data == -1)
+    if (tls_own_thr_data == TLS_OUT_OF_INDEXES)
 	goto error;
-
-    td = (thr_data_ *) malloc(sizeof(thr_data_));
-    if (!td) {
-	err = ENOMEM;
-	goto error;
-    }
 
     last_serial = 0;
     last_ix = 0;
@@ -1361,22 +2130,29 @@ ethr_init(ethr_init_data *id)
     for (i = 1; i < ETHR_MAX_THREADS; i++)
 	thr_table[i] = NULL;
 
+#ifdef ETHR_HAVE_INITIALIZECRITICALSECTIONANDSPINCOUNT
+    if (!InitializeCriticalSectionAndSpinCount(&thr_table_cs,
+					       ETHR_MUTEX_SPIN_COUNT))
+	goto error;
+    if (!InitializeCriticalSectionAndSpinCount(&fake_static_init_cs,
+					       ETHR_MUTEX_SPIN_COUNT))
+	goto error;
+#else
     InitializeCriticalSection(&thr_table_cs);
     InitializeCriticalSection(&fake_static_init_cs);
+#endif
     ethr_not_inited = 0;
+
     return 0;
 
  error:
     if (err == 0)
 	err = get_errno();
     ASSERT(err != 0);
-    if (td) {
-	if (td->thr_handle != INVALID_HANDLE_VALUE)
-	    CloseHandle(td->thr_handle);
-	if (td->wait_event.handle != INVALID_HANDLE_VALUE)
-	    CloseHandle(td->wait_event.handle);
-	free((void *) td);
-    }
+    if (td->thr_handle != INVALID_HANDLE_VALUE)
+	CloseHandle(td->thr_handle);
+    if (td->wait_event.handle != INVALID_HANDLE_VALUE)
+	CloseHandle(td->wait_event.handle);
     return err;
 }
 
@@ -1435,7 +2211,7 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg, int detached)
     ASSERT(!thr_table[child_ix]);
 
     /* Alloc thread data */
-    thr_table[child_ix] = child_td = (thr_data_ *) malloc(sizeof(thr_data_));
+    thr_table[child_ix] = child_td = (thr_data_ *) (*allocp)(sizeof(thr_data_));
     if (!child_td) {
 	err = ENOMEM;
 	goto error;
@@ -1518,7 +2294,7 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg, int detached)
 		CloseHandle(child_td->thr_handle);
 	    }
 
-	    free((void *) child_td);
+	    (*freep)((void *) child_td);
 	    thr_table[child_ix] = NULL;
 	}
     }
@@ -1587,7 +2363,8 @@ int ethr_thr_join(ethr_tid tid, void **res)
     CloseHandle(td->thr_handle);
     ASSERT(td == thr_table[THR_IX(td->thr_id)]);
     thr_table[THR_IX(td->thr_id)] = NULL;
-    free((void *) td);
+    if (td != &main_thr_data)
+	(*freep)((void *) td);
 
     LeaveCriticalSection(&thr_table_cs);
 
@@ -1698,15 +2475,28 @@ ethr_mutex_init(ethr_mutex *mtx)
 	return EINVAL;
     }
 #endif
+#ifdef ETHR_HAVE_INITIALIZECRITICALSECTIONANDSPINCOUNT
+    if (!InitializeCriticalSectionAndSpinCount(&mtx->cs, ETHR_MUTEX_SPIN_COUNT))
+	return get_errno();
+#else
     InitializeCriticalSection(&mtx->cs);
-    mtx->initialized = 1;
+#endif
+    mtx->initialized = ETHR_MUTEX_INITIALIZED;
+#if ETHR_XCHK
+    mtx->is_rec_mtx = 0;
+#endif
     return 0;
 }
 
 int
 ethr_rec_mutex_init(ethr_mutex *mtx)
 {
-    return ethr_mutex_init(mtx);
+    int res;
+    res = ethr_mutex_init(mtx);
+#if ETHR_XCHK
+    mtx->is_rec_mtx = 1;
+#endif
+    return res;
 }
 
 int
@@ -1717,10 +2507,12 @@ ethr_mutex_destroy(ethr_mutex *mtx)
 	ASSERT(0);
 	return EACCES;
     }
-    if (!mtx || !mtx->initialized) {
+    if (!mtx || mtx->initialized != ETHR_MUTEX_INITIALIZED) {
 	ASSERT(0);
 	return EINVAL;
     }
+    if (xchk_get_my_mutex_lock_count(mtx) != 0)
+	return EINVAL;
 #endif
     DeleteCriticalSection(&mtx->cs);
     mtx->initialized = 0;
@@ -1749,22 +2541,70 @@ int ethr_mutex_unset_forksafe(ethr_mutex *mtx)
     return 0; /* No fork() */
 }
 
+#ifdef ETHR_HAVE_TRYENTERCRITICALSECTION
+
 int
-ethr_mutex_lock(ethr_mutex *mtx)
+ethr_mutex_trylock(ethr_mutex *mtx)
 {
-#if ETHR_XCHK 
+#if ETHR_XCHK
     if (ethr_not_inited || !OWN_THR_DATA) {
 	ASSERT(0);
 	return EACCES;
     }
-    if (!mtx) {
+    if (!mtx
+	|| (mtx->initialized && mtx->initialized != ETHR_MUTEX_INITIALIZED)) {
 	ASSERT(0);
 	return EINVAL;
     }
 #endif
     if (!mtx->initialized) {
-	fake_static_mutex_init(mtx);
+	int res = ethr_fake_static_mutex_init(mtx);
+	if (res != 0)
+	    return res;
     }
+
+#if ETHR_XCHK
+    res = xchk_locking_mutex(mtx);
+    if (res != 0)
+	return res;
+#endif
+    if (TryEnterCriticalSection(&mtx->cs))
+	return 0;
+    else {
+#if ETHR_XCHK
+	(void) xchk_unlocking_mutex(mtx);
+#endif
+	return EBUSY;
+    }
+}
+
+#endif
+
+int
+ethr_mutex_lock(ethr_mutex *mtx)
+{
+    int res;
+#if ETHR_XCHK
+    if (ethr_not_inited || !OWN_THR_DATA) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!mtx
+	|| (mtx->initialized && mtx->initialized != ETHR_MUTEX_INITIALIZED)) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+    if (!mtx->initialized) {
+	res = ethr_fake_static_mutex_init(mtx);
+	if (res != 0)
+	    return res;
+    }
+#if ETHR_XCHK
+    res = xchk_locking_mutex(mtx);
+    if (res != 0)
+	return res;
+#endif
     EnterCriticalSection(&mtx->cs);
     return 0;
 }
@@ -1772,15 +2612,19 @@ ethr_mutex_lock(ethr_mutex *mtx)
 int
 ethr_mutex_unlock(ethr_mutex *mtx)
 {
-#if ETHR_XCHK 
+#if ETHR_XCHK
+    int res;
     if (ethr_not_inited || !OWN_THR_DATA) {
 	ASSERT(0);
 	return EACCES;
     }
-    if (!mtx || !mtx->initialized) {
+    if (!mtx || mtx->initialized != ETHR_MUTEX_INITIALIZED) {
 	ASSERT(0);
 	return EINVAL;
     }
+    res = xchk_unlocking_mutex(mtx);
+    if (res != 0)
+	return res;
 #endif
     LeaveCriticalSection(&mtx->cs);
     return 0;
@@ -1803,10 +2647,15 @@ ethr_cond_init(ethr_cond *cnd)
 	return EINVAL;
     }
 #endif
+#ifdef ETHR_HAVE_INITIALIZECRITICALSECTIONANDSPINCOUNT
+    if (!InitializeCriticalSectionAndSpinCount(&cnd->cs, ETHR_COND_SPIN_COUNT))
+	return get_errno();
+#else
     InitializeCriticalSection(&cnd->cs);
+#endif
     cnd->queue = NULL;
     cnd->queue_end = NULL;
-    cnd->initialized = 1;
+    cnd->initialized = ETHR_COND_INITIALIZED;
     return 0;
 }
 
@@ -1818,7 +2667,9 @@ ethr_cond_destroy(ethr_cond *cnd)
 	ASSERT(0);
 	return EACCES;
     }
-    if (!cnd || !cnd->initialized || cnd->queue) {
+    if (!cnd
+	|| (cnd->initialized && cnd->initialized != ETHR_COND_INITIALIZED)
+	|| cnd->queue) {
 	ASSERT(0);
 	return EINVAL;
     }
@@ -1837,13 +2688,17 @@ ethr_cond_signal(ethr_cond *cnd)
 	ASSERT(0);
 	return EACCES;
     }
-    if (!cnd) {
+    if (!cnd
+	|| (cnd->initialized && cnd->initialized != ETHR_COND_INITIALIZED)) {
 	ASSERT(0);
 	return EINVAL;
     }
 #endif
-    if (!cnd->initialized)
-	fake_static_cond_init(cnd);
+    if (!cnd->initialized) {
+	int res = fake_static_cond_init(cnd);
+	if (res != 0)
+	    return res;
+    }
     EnterCriticalSection(&cnd->cs);
     cwe = cnd->queue;
     if (cwe) {
@@ -1872,13 +2727,17 @@ ethr_cond_broadcast(ethr_cond *cnd)
 	ASSERT(0);
 	return EACCES;
     }
-    if (!cnd) {
+    if (!cnd
+	|| (cnd->initialized && cnd->initialized != ETHR_COND_INITIALIZED)) {
 	ASSERT(0);
 	return EINVAL;
     }
 #endif
-    if (!cnd->initialized)
-	fake_static_cond_init(cnd);
+    if (!cnd->initialized) {
+	int res = fake_static_cond_init(cnd);
+	if (res != 0)
+	    return res;
+    }
     EnterCriticalSection(&cnd->cs);
     for (cwe = cnd->queue; cwe; cwe = cwe->next) {
 	ASSERT(cwe->in_queue);
@@ -1904,6 +2763,87 @@ ethr_cond_timedwait(ethr_cond *cnd, ethr_mutex *mtx, ethr_timeval *timeout)
     return condwait(cnd, mtx, 1, timeout);
 }
 
+
+int
+ethr_atomic_inctest(ethr_atomic_t *incp, long *testp)
+{
+#if ETHR_XCHK 
+    if (ethr_not_inited || !OWN_THR_DATA) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!incp || !testp) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+    *testp = (long) InterlockedIncrement(incp);
+#ifdef DEBUG
+    if (*testp > 0)
+	*testp = 4711;
+    else if (*testp < 0)
+	*testp = -4711;
+#endif
+    return 0;
+}
+
+int
+ethr_atomic_dectest(ethr_atomic_t *decp, long *testp)
+{
+#if ETHR_XCHK 
+    if (ethr_not_inited || !OWN_THR_DATA) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!decp || !testp) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+    *testp = (long) InterlockedDecrement(decp);
+#ifdef DEBUG
+    if (*testp > 0)
+	*testp = 4711;
+    else if (*testp < 0)
+	*testp = -4711;
+#endif
+    return 0;
+}
+
+int
+ethr_atomic_inc(ethr_atomic_t *incp)
+{
+#if ETHR_XCHK 
+    if (ethr_not_inited || !OWN_THR_DATA) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!incp) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+    (void) InterlockedIncrement(incp);
+    return 0;
+}
+
+int
+ethr_atomic_dec(ethr_atomic_t *decp)
+{
+#if ETHR_XCHK 
+    if (ethr_not_inited || !OWN_THR_DATA) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!decp) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+    (void) InterlockedDecrement(decp);
+    return 0;
+}
+
 int
 ethr_time_now(ethr_timeval *time)
 {
@@ -1921,11 +2861,190 @@ ethr_time_now(ethr_timeval *time)
     return 0;
 }
 
+/*
+ * Thread specific data
+ */
+
+int
+ethr_tsd_key_create(ethr_tsd_key *keyp)
+{
+    DWORD key;
+#if ETHR_XCHK
+    if (ethr_not_inited || !OWN_THR_DATA) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!keyp) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+    key = TlsAlloc();
+    if (key == TLS_OUT_OF_INDEXES)
+	return get_errno();
+    *keyp = (ethr_tsd_key) key;
+    return 0;
+}
+
+int
+ethr_tsd_key_delete(ethr_tsd_key key)
+{
+#if ETHR_XCHK
+    if (ethr_not_inited || !OWN_THR_DATA) {
+	ASSERT(0);
+	return EACCES;
+    }
+#endif
+    if (!TlsFree((DWORD) key))
+	return get_errno();
+    return 0;
+}
+
+int
+ethr_tsd_set(ethr_tsd_key key, void *value)
+{
+#if ETHR_XCHK
+    if (ethr_not_inited || !OWN_THR_DATA) {
+	ASSERT(0);
+	return EACCES;
+    }
+#endif
+    if (!TlsSetValue((DWORD) key, (LPVOID) value))
+	return get_errno();
+    return 0;
+}
+
+void *
+ethr_tsd_get(ethr_tsd_key key)
+{
+#if ETHR_XCHK
+    if (ethr_not_inited || !OWN_THR_DATA) {
+	ASSERT(0);
+	return EACCES;
+    }
+#endif
+    return (void *) TlsGetValue((DWORD) key);
+}
+
 #else
 #error "Missing thread implementation"
 #endif
 
+
+#if ETHR_XCHK
+
+static ethr_tsd_key mutex_check_key;
+
+typedef struct ethr_xchk_lckd_mtx_ ethr_xchk_lckd_mtx;
+struct ethr_xchk_lckd_mtx_ {
+    ethr_xchk_lckd_mtx *next;
+    ethr_mutex *mutex;
+    long lock_count;
+};
+
+#define GET_MY_LOCKED_MUTEXES					\
+  ((ethr_xchk_lckd_mtx *) ethr_tsd_get(mutex_check_key))
+#define SET_MY_LOCKED_MUTEXES(PLP)				\
+do {								\
+    int res = ethr_tsd_set(mutex_check_key, (void *) (PLP));	\
+    if (res != 0)						\
+	abort();						\
+} while (0)
+
+static int
+xchk_locking_mutex(ethr_mutex *mutex)
+{
+    ethr_xchk_lckd_mtx *lmp = GET_MY_LOCKED_MUTEXES;
+    ethr_xchk_lckd_mtx *tlmp;
+    
+    for (tlmp = lmp; tlmp; tlmp = tlmp->next)
+	if (tlmp->mutex == mutex)
+	    break;
+
+    if (tlmp) {
+	if (!mutex->is_rec_mtx) {
+	    /* Thread tries to lock a non-recursive mutex twice */
+	    return ETHR_XCHK_ERROR_DEADLOCK;
+	}
+	else {
+	    ASSERT(tlmp->lock_count > 0);
+	    tlmp->lock_count++;
+	}
+    }
+    else {
+	tlmp = (ethr_xchk_lckd_mtx *) malloc(sizeof(ethr_xchk_lckd_mtx));
+	tlmp->next = lmp;
+	tlmp->mutex = mutex;
+	tlmp->lock_count = 1;
+	SET_MY_LOCKED_MUTEXES(tlmp);
+    }
+    return 0;
+}
+
+static int
+xchk_unlocking_mutex(ethr_mutex *mutex)
+{
+    ethr_xchk_lckd_mtx *lmp = GET_MY_LOCKED_MUTEXES;
+    ethr_xchk_lckd_mtx *ptlmp;
+    ethr_xchk_lckd_mtx *tlmp;
+    
+    for (ptlmp = NULL, tlmp = lmp; tlmp; ptlmp = tlmp, tlmp = tlmp->next)
+	if (tlmp->mutex == mutex)
+	    break;
+
+    if (!tlmp) {
+	/* Thread tries to unlock a mutex that it hasn't locked */
+	return EINVAL;
+    }
+
+    tlmp->lock_count--;
+    if (mutex->is_rec_mtx && tlmp->lock_count > 0)
+	return 0;
+
+    ASSERT(tlmp->lock_count == 0);
+
+    if (!ptlmp) {
+	ASSERT(lmp == tlmp);
+	SET_MY_LOCKED_MUTEXES(tlmp->next);
+    }
+    else {
+	ASSERT(ptlmp->next == tlmp);
+	ptlmp->next = tlmp->next;
+    }
+    free((void *) tlmp);
+
+    return 0;
+}
+
+static long
+xchk_get_my_mutex_lock_count(ethr_mutex *mutex)
+{
+    ethr_xchk_lckd_mtx *lmp;
+    
+    for (lmp = GET_MY_LOCKED_MUTEXES; lmp; lmp = lmp->next)
+	if (lmp->mutex == mutex)
+	    break;
+
+    return lmp ? lmp->lock_count : ((long) 0);
+}
+
+int
+ethr_xchk_have_locked_mutexes(void)
+{
+    ethr_xchk_lckd_mtx *lmp = GET_MY_LOCKED_MUTEXES;
+    return lmp != NULL;
+}
+
+static int
+xchk_init(void)
+{
+    return ethr_tsd_key_create((void *) &mutex_check_key);
+}
+
+#endif /* #if ETHR_XCHK */
+
 #ifdef DEBUG
+
 #include <stdio.h>
 static int assert_failed(char *f, int l, char *a)
 {
@@ -1933,4 +3052,7 @@ static int assert_failed(char *f, int l, char *a)
     abort();
     return 0;
 }
+
 #endif
+
+

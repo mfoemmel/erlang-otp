@@ -1,0 +1,89 @@
+==============================================================================
+	Major features, additions and changes between Dialyzer versions
+		(in reversed chronological order)
+==============================================================================
+
+Version 1.4.0
+-------------
+ - Changes for Dialyzer to work with Erlang/OTP R10B-10.
+ - Dialyzer's analysis is significantly faster as it uses a global function
+   call-graph for obtaining type signatures for all analyzed functions
+ - ...
+ - Many more other changes; in fact too many to mention
+
+Version 1.3.1 (mostly internal)
+-------------
+ - Small changes for Dialyzer to work with Erlang/OTP R10B-5.
+ - Modified setup script for execution under Cygwin (patch by Vlad Dumitrescu)
+ - Added command line option --no_warn_on_inline
+ - Fixed a small buglet in the analysis; this affected one of HiPE's files
+ - Dialyzer now explicitly warns when modules with the same name
+   but from different dirs are being analyzed (contribution by Ulf Wiger)
+
+Version 1.3.0
+-------------
+ - Requires the presence of an Erlang/OTP R10B-4 system.
+ - Dialyzer is significantly (approx 40%) faster since it now uses 'ets'
+   rather than 'dets' for its PLT.
+ - Slightly improved the precision of the analysis.
+ - Fixed a number of false positives that Dialyzer 1.2.0 was spitting out.
+ - In the GUI version, Dialyzer now reports the list of modules that should
+   be included in the modules to analyze in order to possibly improve
+   the accuracy of the reported results.
+ - Some more information is displayed when calling a function or closure
+   with arguments of the wrong type.
+ - The record guard now allows discrepancies involving tuples that are known
+   to be records to be displayed as #rec{} rather than {'rec',_,...,_}
+ - Added -q option which makes the command-line version of Dialyzer
+   a bit more silent.
+
+Version 1.2.0
+-------------
+ - Dialyzer works with the open source and commercial versions of Erlang/OTP
+   R10B-2 on all platforms (i.e., HiPE support is not a prerequisite anymore).
+ - Whenever a .beam file contains abstract code (i.e., has been compiled
+   with the +debug_info option), the analysis starts from this code rather
+   than from BEAM bytecode -- this makes the results identical to those
+   obtained by analysis starting from source code.
+   (This is a contribution from Bjorn Gustavsson - Thanks!)
+ - Added -pa command line option for easier handling of -include_lib()
+   directives in source code.
+ - Includes all changes added in v1.1.1; see below.  The "Add Recursively"
+   functionality is also available in the command-line mode (-r option).
+
+Version 1.1.1 (internal, not released to the masses :-)
+-------------
+ - The command-line mode of Dialyzer spits discrepancies in stdout
+   by default and returns a numeric value indicating its exit status.
+ - Fixed problems using the shell script on Solaris machines.
+ - Fixed small inconsistencies in Dialyzer's documentation and help.
+ - Added "Add Recursively" button contributed by Martin Bjorklund (thanks!).
+
+Version 1.1.0
+-------------
+ - Dialyzer works with the open source version of Erlang/OTP R10B-1 (on
+   platforms where HiPE support is available) and it does not require
+   installation of a customized Erlang/OTP system anymore.
+ - Dialyzer comes with an extensive command-line interface, in addition
+   to an enhanced GUI.
+ - Analysis can start from source code (through Core Erlang) as well as
+   from BEAM bytecode.
+ - Dialyzer finds considerably more discrepancies in Erlang code than
+   previous versions.
+ - Added ability to selectively turn on/off different warning categories.
+
+Version 1.0.1
+-------------
+ - Fixed major bug of v1.0.0 which caused the analysis to stop prematurely
+   (i.e., without properly reaching fixpoint) when analyzing more than one
+   module.  This did not affect correctness of the results, but lost many
+   opportunities to detect discrepancies.
+ - Performance improvements in the analysis.
+
+Version 1.0.0
+-------------
+ Initial Dialyzer version: Analysis starts from BEAM bytecode only and 
+ only a GUI version is available. Dialyzer reports discrepancies in the
+ use of the "sequential" part of Erlang. To be used, Dialyzer requires
+ the presence of a specific snapshot of Erlang/OTP which can be obtained
+ from Dialyzer's homepage.

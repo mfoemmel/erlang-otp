@@ -70,7 +70,7 @@ void ei_init_resolve(void)
 #ifdef _REENTRANT
 static ei_mutex_t *ei_gethost_sem = NULL;
 #endif /* _REENTRANT */
-static ei_resolve_initialized = 0;
+static int ei_resolve_initialized = 0;
 #ifndef __WIN32__
 int h_errno;
 #endif

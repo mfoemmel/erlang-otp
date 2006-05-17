@@ -1175,7 +1175,7 @@ is_equal(G, XPath, X, YPath, Y) ->
 %% Y and Y shadows X.
 collision(G, XPath, X, YPath, Y) ->
     I1 = get_beef(X),
-    I2 = get_beef(Y),
+%    I2 = get_beef(Y),
     if record(I1, op) -> %%, record(I2, op) ->
 	    ic_error:error(G, {inherit_name_collision, 
 			    {YPath, Y}, {XPath, X}});

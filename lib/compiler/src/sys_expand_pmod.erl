@@ -245,15 +245,16 @@ gexpr({bin,Line,Fs},St) ->
     Fs2 = pattern_grp(Fs,St),
     {bin,Line,Fs2};
 gexpr({op,Line,Op,A0},St) ->
-    case erl_internal:arith_op(Op, 1) or 
-	 erl_internal:bool_op(Op, 1) of
+    case erl_internal:arith_op(Op, 1) orelse
+	erl_internal:bool_op(Op, 1) of
 	true -> A1 = gexpr(A0,St),
 		{op,Line,Op,A1}
     end;
 gexpr({op,Line,Op,L0,R0},St) ->
-    case erl_internal:arith_op(Op, 2) or
-	  erl_internal:bool_op(Op, 2) or 
-	  erl_internal:comp_op(Op, 2) of
+    case Op =:= 'andalso' orelse Op =:= 'orelse' orelse
+	erl_internal:arith_op(Op, 2) orelse
+	erl_internal:bool_op(Op, 2) orelse
+	erl_internal:comp_op(Op, 2) of
 	true ->
 	    L1 = gexpr(L0,St),
 	    R1 = gexpr(R0,St),

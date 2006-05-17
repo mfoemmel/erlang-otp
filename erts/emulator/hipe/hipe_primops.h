@@ -3,12 +3,8 @@
 #ifndef HIPE_PRIMOPS_H
 #define HIPE_PRIMOPS_H
 
-PRIMOP_LIST(am_erl_fp_exception, (int*)&erl_fp_exception) /* ignore volatile */
 #if !defined(ERTS_SMP)
 PRIMOP_LIST(am_erts_mb, &erts_mb)
-#endif
-#ifdef SHARED_HEAP
-PRIMOP_LIST(am_erts_global_mso, &erts_global_offheap)
 #endif
 PRIMOP_LIST(am_suspend_msg, &nbif_suspend_msg)
 PRIMOP_LIST(am_suspend_msg_timeout, &nbif_suspend_msg_timeout)
@@ -42,8 +38,11 @@ PRIMOP_LIST(am_bs_init, &nbif_bs_init)
 PRIMOP_LIST(am_bs_final, &nbif_bs_final)
 PRIMOP_LIST(am_bs_start_match, &nbif_bs_start_match)
 PRIMOP_LIST(am_bs_get_integer, &nbif_bs_get_integer)
+PRIMOP_LIST(am_bs_get_integer_2, &nbif_bs_get_integer_2)
 PRIMOP_LIST(am_bs_get_float, &nbif_bs_get_float)
+PRIMOP_LIST(am_bs_get_float_2, &nbif_bs_get_float_2)
 PRIMOP_LIST(am_bs_get_binary, &nbif_bs_get_binary)
+PRIMOP_LIST(am_bs_get_binary_2, &nbif_bs_get_binary_2)
 PRIMOP_LIST(am_bs_get_binary_all, &nbif_bs_get_binary_all)
 PRIMOP_LIST(am_bs_skip_bits, &nbif_bs_skip_bits)
 PRIMOP_LIST(am_bs_skip_bits_all, &nbif_bs_skip_bits_all)

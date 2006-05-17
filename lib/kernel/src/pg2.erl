@@ -308,6 +308,6 @@ ensure_started() ->
 	    C = {pg2, {?MODULE, start_link, []}, permanent,
 		 1000, worker, [?MODULE]},
 	    supervisor:start_child(kernel_safe_sup, C);
-	_ ->
-	    ok
+	Pg2Pid ->
+	    {ok, Pg2Pid}
     end.

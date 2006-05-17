@@ -26,11 +26,16 @@ HIPE_ENABLED=@HIPE_ENABLED@
 # Different versions of the emulator for different uses. The default
 # is "debug". For a normal version use "opt".
 #
-THR_LIB_SFX=
+PURIFY_TYPE_FLAGS=-DPURIFY -DNO_JUMP_TABLE -DERTS_MSEG_FAKE_SEGMENTS
+THR_DEFS=@EMU_THR_DEFS@
+M4FLAGS=
+CS_TYPEMARKER=.$(TYPE)
+ERTS_LIB_TYPE=$(TYPE)
+ERTS_LIB_SFX=
 ifeq ($(TYPE),debug)
 PURIFY =
 TYPEMARKER = .debug
-THR_LIB_SFX = .debug
+ERTS_LIB_SFX = .debug
 TYPE_FLAGS = @DEBUG_CFLAGS@ -DDEBUG
 ENABLE_ALLOC_TYPE_VARS += debug
 ifeq ($(TARGET),win32)
@@ -38,11 +43,72 @@ TYPE_FLAGS += -DNO_JUMP_TABLE
 LDFLAGS += -g
 endif
 else
-ifeq ($(TYPE),shared)
+ifeq ($(TYPE),nofrag)
 PURIFY =
-TYPEMARKER = .shared
-TYPE_FLAGS = @CFLAGS@ -DSHARED_HEAP
-ENABLE_ALLOC_TYPE_VARS += shared_heap
+TYPEMARKER = .nofrag
+TYPE_FLAGS = @CFLAGS@ -DHEAP_FRAG_ELIM_TEST
+ENABLE_ALLOC_TYPE_VARS += nofrag
+else
+ifeq ($(TYPE),smp)
+PURIFY =
+TYPEMARKER = .smp
+TYPE_FLAGS = @CFLAGS@
+THR_DEFS += -DERTS_SMP
+ENABLE_ALLOC_TYPE_VARS += smp
+M4FLAGS += -DERTS_SMP=1
+else
+ifeq ($(TYPE),debug.smp)
+PURIFY =
+TYPEMARKER=.debug.smp
+CS_TYPEMARKER=.debug
+ERTS_LIB_TYPE=debug
+ERTS_LIB_SFX=.debug
+TYPE_FLAGS = @DEBUG_CFLAGS@ -DDEBUG
+THR_DEFS += -DERTS_SMP
+ENABLE_ALLOC_TYPE_VARS += debug smp
+M4FLAGS += -DERTS_SMP=1
+ifeq ($(TARGET),win32)
+TYPE_FLAGS += -DNO_JUMP_TABLE
+LDFLAGS += -g
+endif
+else
+ifeq ($(TYPE),purify.smp)
+PURIFY = purify $(PURIFY_BUILD_OPTIONS)
+TYPEMARKER=.purify.smp
+CS_TYPEMARKER=.purify
+ERTS_LIB_TYPE=purify
+ERTS_LIB_SFX=.purify
+TYPE_FLAGS = @CFLAGS@ $(PURIFY_TYPE_FLAGS)
+THR_DEFS += -DERTS_SMP
+ENABLE_ALLOC_TYPE_VARS += purify smp
+M4FLAGS += -DERTS_SMP=1
+else
+
+ifeq ($(TYPE),quantify.smp)
+PURIFY = quantify $(QUANTIFY_BUILD_OPTIONS)
+TYPEMARKER=.quantify.smp
+CS_TYPEMARKER=.quantify
+ERTS_LIB_TYPE=quantify
+ERTS_LIB_SFX=.quantify
+THR_DEFS += -DERTS_SMP
+ENABLE_ALLOC_TYPE_VARS += quantify smp
+ifeq ($(findstring ose,$(TARGET)),ose)
+  TYPE_FLAGS = @CFLAGS@ -DQUANTIFY
+else
+  TYPE_FLAGS = @CFLAGS@ -g -O2 -DQUANTIFY -DNO_JUMP_TABLE
+endif
+M4FLAGS += -DERTS_SMP=1
+else
+ifeq ($(TYPE),purecov.smp)
+PURIFY = purecov --follow-child-processes=yes $(PURECOV_BUILD_OPTIONS)
+TYPEMARKER = .purecov.smp
+CS_TYPEMARKER=.purecov
+ERTS_LIB_TYPE=purecov
+ERTS_LIB_SFX=.purecov
+THR_DEFS += -DERTS_SMP
+TYPE_FLAGS = @DEBUG_CFLAGS@ -DPURECOV -DNO_JUMP_TABLE
+ENABLE_ALLOC_TYPE_VARS += purecov smp
+M4FLAGS += -DERTS_SMP=1
 else
 ifeq ($(TYPE),hybrid)
 PURIFY =
@@ -53,14 +119,14 @@ else
 ifeq ($(TYPE),purify)
 PURIFY = purify $(PURIFY_BUILD_OPTIONS)
 TYPEMARKER = .purify
-THR_LIB_SFX = .purify
-TYPE_FLAGS = @CFLAGS@ -DPURIFY -DNO_JUMP_TABLE -DERTS_MSEG_FAKE_SEGMENTS
+ERTS_LIB_SFX = .purify
+TYPE_FLAGS = @CFLAGS@ $(PURIFY_TYPE_FLAGS)
 ENABLE_ALLOC_TYPE_VARS += purify
 else
 ifeq ($(TYPE),quantify)
 PURIFY = quantify $(QUANTIFY_BUILD_OPTIONS)
 TYPEMARKER = .quantify
-THR_LIB_SFX = .quantify
+ERTS_LIB_SFX = .quantify
 ENABLE_ALLOC_TYPE_VARS += quantify
 ifeq ($(findstring ose,$(TARGET)),ose)
   TYPE_FLAGS = @CFLAGS@ -DQUANTIFY
@@ -71,14 +137,20 @@ else
 ifeq ($(TYPE),purecov)
 PURIFY = purecov --follow-child-processes=yes $(PURECOV_BUILD_OPTIONS)
 TYPEMARKER = .purecov
-THR_LIB_SFX = .purecov
+ERTS_LIB_SFX = .purecov
 TYPE_FLAGS = @DEBUG_CFLAGS@ -DPURECOV -DNO_JUMP_TABLE
 ENABLE_ALLOC_TYPE_VARS += purecov
 else
 TYPE=opt
 PURIFY =
 TYPEMARKER =
+CS_TYPEMARKER=
 TYPE_FLAGS = @CFLAGS@
+endif
+endif
+endif
+endif
+endif
 endif
 endif
 endif
@@ -120,7 +192,7 @@ else
 EMU_CC  = @EMU_CC@
 endif
 WFLAGS  = @WFLAGS@
-CFLAGS  = @STATIC_CFLAGS@ $(TYPE_FLAGS) @DEFS@ $(WFLAGS) @EMU_THR_DEFS@ $(ARCHCFLAGS)
+CFLAGS  = @STATIC_CFLAGS@ $(TYPE_FLAGS) @DEFS@ $(WFLAGS) $(THR_DEFS) $(ARCHCFLAGS)
 HCC     = @HCC@
 LD      = @LD@
 DEXPORT = @DEXPORT@
@@ -129,7 +201,11 @@ STRIP   = strip
 PERL    = @PERL@
 
 ifeq ($(CC), gcc)
+ifeq (@EMU_LOCK_CHECKING@,yes)
+GEN_OPT_FLGS = -O3 -fno-inline-functions
+else
 GEN_OPT_FLGS = -O3 -fomit-frame-pointer
+endif
 UNROLL_FLG = -funroll-loops
 else
 ifeq ($(TARGET), win32)
@@ -182,9 +258,19 @@ endif
 ORG_THR_LIBS=@EMU_THR_LIBS@
 THR_LIB_NAME=@EMU_THR_LIB_NAME@
 
-THR_LIBS=$(subst -l$(THR_LIB_NAME),-l$(THR_LIB_NAME)$(THR_LIB_SFX),$(ORG_THR_LIBS))
+THR_LIBS=$(subst -l$(THR_LIB_NAME),-l$(THR_LIB_NAME)$(ERTS_LIB_SFX),$(ORG_THR_LIBS))
 
-LIBS += $(THR_LIBS)
+ifeq ($(findstring vxworks,$(TARGET)),vxworks)
+ERTS_INTERNAL_LIB=erts_internal
+else
+ifneq ($(strip $(THR_LIB_NAME)),)
+ERTS_INTERNAL_LIB=erts_internal_r
+else
+ERTS_INTERNAL_LIB=erts_internal
+endif
+endif
+
+LIBS += $(THR_LIBS) -l$(ERTS_INTERNAL_LIB)$(ERTS_LIB_SFX)
 
 LIBS += @LIBRT@
 
@@ -204,7 +290,7 @@ EMULATOR_EXECUTABLE = beam$(TYPEMARKER).dll
 else
 EMULATOR_EXECUTABLE = beam$(TYPEMARKER)
 endif
-CS_EXECUTABLE = child_setup$(TYPEMARKER)
+CS_EXECUTABLE = child_setup$(CS_TYPEMARKER)
 
 # ----------------------------------------------------------------------
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
@@ -215,13 +301,18 @@ else
 UNIX_ONLY_BUILDS =
 endif
 
+ifeq ($(TYPE)-@ERTS_BUILD_SMP_EMU@,smp-no)
+all:
+	@echo '*** Omitted build of emulator with smp support'
+else
 all: generate erts_lib zlib $(BINDIR)/$(EMULATOR_EXECUTABLE) $(UNIX_ONLY_BUILDS)
+endif
 
 zlib:
 	@set -e ; cd zlib && $(MAKE) $(TYPE)
 
 erts_lib:
-	cd $(ERL_TOP)/erts/lib_src && $(MAKE) $(TYPE)
+	cd $(ERL_TOP)/erts/lib_src && $(MAKE) $(ERTS_LIB_TYPE)
 
 clean:
 	rm -f $(TARGET)/*/*.c $(TARGET)/*/*.h
@@ -248,6 +339,10 @@ RELEASE_INCLUDES += sys/$(ERLANG_OSTYPE)/erl_port_signals.sig \
 
 endif
 
+ifeq ($(TYPE)-@ERTS_BUILD_SMP_EMU@,smp-no)
+release_spec:
+	@echo '*** No emulator with smp support to install'
+else
 release_spec: all
 	$(INSTALL_DIR) $(RELSYSDIR)
 	$(INSTALL_DIR) $(RELSYSDIR)/src
@@ -264,6 +359,7 @@ ifeq ($(ERLANG_OSTYPE), unix)
 endif
 	$(INSTALL_DIR) $(RELEASE_PATH)/usr/include/obsolete
 	$(INSTALL_DATA) obsolete/driver.h $(RELEASE_PATH)/usr/include/obsolete
+endif
 
 release_docs_spec:
 
@@ -274,13 +370,13 @@ release_docs_spec:
 .PHONY : generate
 
 ifeq ($(TARGET),win32)
-generate: $(TARGET)/beam_opcodes.h $(TARGET)/erl_bif_table.c \
+generate: $(TARGET)/$(TYPE)/beam_opcodes.h $(TARGET)/erl_bif_table.c \
 		$(TARGET)/erl_version.h \
 		$(TARGET)/driver_tab.c $(TARGET)/beams.rc \
 		$(TARGET_TYPE_DIR)/erl_alloc_types.h \
 		$(HIPE_GENERATE)
 else
-generate: $(TARGET)/beam_opcodes.h $(TARGET)/erl_bif_table.c \
+generate: $(TARGET)/$(TYPE)/beam_opcodes.h $(TARGET)/erl_bif_table.c \
 		$(TARGET)/erl_version.h \
 		$(TARGET)/driver_tab.c $(TARGET)/preload.c \
 		$(TARGET_TYPE_DIR)/erl_alloc_types.h \
@@ -296,10 +392,10 @@ else
 
 HIPE_GENERATE = $(BINDIR)/hipe_mkliterals$(TYPEMARKER)
 
-generate: $(TARGET)/hipe_x86_asm.h
-generate: $(TARGET)/hipe_amd64_asm.h
-generate: $(TARGET)/hipe_ppc_asm.h
-generate: $(TARGET)/hipe_arm_asm.h
+generate: $(TARGET_TYPE_DIR)/hipe_x86_asm.h
+generate: $(TARGET_TYPE_DIR)/hipe_amd64_asm.h
+generate: $(TARGET_TYPE_DIR)/hipe_ppc_asm.h
+generate: $(TARGET_TYPE_DIR)/hipe_arm_asm.h
 generate: $(TARGET_TYPE_DIR)/hipe_literals.h
 
 endif
@@ -308,12 +404,19 @@ endif
 # opcode table
 
 OPCODE_TABLES = $(ERL_TOP)/lib/compiler/src/genop.tab beam/ops.tab
+ifeq ($(TYPE),nofrag)
+  OPCODE_TABLES += beam/nofrag_ops.tab
+else
+  OPCODE_TABLES += beam/frag_ops.tab
+endif
+
+
 ifdef HIPE_ENABLED
 OPCODE_TABLES += hipe/hipe_ops.tab
 endif
 
-$(TARGET)/beam_opcodes.h $(TARGET)/beam_opcodes.c: $(OPCODE_TABLES)
-	LANG=C $(PERL) utils/beam_makeops -outdir $(TARGET) \
+$(TARGET)/$(TYPE)/beam_opcodes.h $(TARGET)/$(TYPE)/beam_opcodes.c: $(OPCODE_TABLES)
+	LANG=C $(PERL) utils/beam_makeops -outdir $(TARGET)/$(TYPE) \
 		-emulator $(OPCODE_TABLES)
 
 # bif and atom table
@@ -376,7 +479,7 @@ endif
 # ----------------------------------------------------------------------
 # Pattern rules
 #
-INCLUDES  = -Ibeam -Isys/$(ERLANG_OSTYPE) -Isys/common -I$(TARGET) -I$(TARGET_TYPE_DIR) -Izlib -Ihipe -I../include/internal -I../include/internal/$(TARGET)
+INCLUDES  = -Ibeam -Isys/$(ERLANG_OSTYPE) -Isys/common -I$(TARGET_TYPE_DIR) -I$(TARGET) -Izlib -Ihipe -I../include/internal -I../include/internal/$(TARGET)
 
 ifdef PERFCTR_PATH
 INCLUDES += -I$(PERFCTR_PATH)/usr.lib -I$(PERFCTR_PATH)/linux/include
@@ -416,7 +519,7 @@ else
 
 VXCC=@VXCC@
 VXCFLAGS=@VXCFLAGS@
-CFLAGS_NOOPT=@CFLAGS_NOOPT@ @DEFS@ $(WFLAGS) @EMU_THR_DEFS@ $(ARCHCFLAGS)
+CFLAGS_NOOPT=@CFLAGS_NOOPT@ @DEFS@ $(WFLAGS) $(THR_DEFS) $(ARCHCFLAGS)
 
 # we want to use jump table
 $(OBJDIR)/beam_emu.o: beam/beam_emu.c
@@ -436,6 +539,9 @@ endif
 
 $(OBJDIR)/%.o: $(TARGET)/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -c $< -o $@
+
+$(OBJDIR)/%.o: $(TARGET_TYPE_DIR)/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(OBJDIR)/%.o: sys/$(ERLANG_OSTYPE)/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
@@ -528,7 +634,7 @@ RUN_OBJS = \
 	$(OBJDIR)/erl_bif_trace.o	$(OBJDIR)/erl_bif_wrap.o \
 	$(OBJDIR)/erl_trace.o		$(OBJDIR)/copy.o \
 	$(OBJDIR)/utils.o		$(OBJDIR)/bif.o \
-	$(OBJDIR)/io.o			$(OBJDIR)/erl_bif_timer.o \
+	$(OBJDIR)/io.o 			$(OBJDIR)/erl_printf_term.o\
 	$(OBJDIR)/erl_debug.o		$(OBJDIR)/erl_md5.o \
 	$(OBJDIR)/erl_message.o		$(OBJDIR)/erl_process.o \
 	$(OBJDIR)/erl_process_dict.o	$(OBJDIR)/erl_arith.o \
@@ -541,14 +647,14 @@ RUN_OBJS = \
 	$(OBJDIR)/index.o		$(OBJDIR)/atom.o \
 	$(OBJDIR)/module.o		$(OBJDIR)/export.o \
 	$(OBJDIR)/register.o		$(OBJDIR)/break.o \
-	$(OBJDIR)/erl_async.o \
+	$(OBJDIR)/erl_async.o		$(OBJDIR)/erl_lock_check.o \
 	$(OBJDIR)/ggc.o 		$(OBJDIR)/erl_gc.o \
 	$(OBJDIR)/erl_nmgc.o		$(OBJDIR)/erl_posix_str.o \
 	$(OBJDIR)/erl_bits.o 		$(OBJDIR)/erl_math.o \
 	$(OBJDIR)/erl_fun.o             $(OBJDIR)/erl_bif_port.o \
 	$(OBJDIR)/erl_term.o 		$(OBJDIR)/erl_node_tables.o \
 	$(OBJDIR)/erl_monitors.o	$(OBJDIR)/erl_process_dump.o \
-	$(OBJDIR)/erl_obsolete.o 
+	$(OBJDIR)/erl_obsolete.o	$(OBJDIR)/erl_bif_timer.o
 
 ifeq ($(TARGET),win32)
 DRV_OBJS = \
@@ -612,7 +718,8 @@ ifneq ($(findstring vxworks,$(TARGET)),vxworks)
   endif
 endif
 
-OS_OBJS += $(OBJDIR)/erl_mseg.o
+OS_OBJS +=	$(OBJDIR)/erl_mseg.o \
+		$(OBJDIR)/erl_mtrace_sys_wrap.o
 
 HIPE_ultrasparc_OBJS=$(OBJDIR)/hipe_sparc.o $(OBJDIR)/hipe_sparc_glue.o $(OBJDIR)/hipe_sparc_bifs.o $(OBJDIR)/hipe_sparc_stack.o
 HIPE_x86_OBJS=$(OBJDIR)/hipe_x86.o $(OBJDIR)/hipe_x86_glue.o $(OBJDIR)/hipe_x86_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o
@@ -657,15 +764,15 @@ OBJS_ELIB = 	$(patsubst %.o,%.elib.o,$(MOD_OBJS_ELIB)) \
 ########################################
 # HiPE section
 
-M4FLAGS=-DTARGET=$(TARGET) -DOPSYS=$(OPSYS) -DARCH=$(ARCH)
+M4FLAGS += -DTARGET=$(TARGET) -DOPSYS=$(OPSYS) -DARCH=$(ARCH)
 
-$(TARGET)/%.S: hipe/%.m4
+$(TARGET_TYPE_DIR)/%.S: hipe/%.m4
 	m4 $(M4FLAGS) $< > $@
 
-$(TARGET)/%.h: hipe/%.m4
+$(TARGET_TYPE_DIR)/%.h: hipe/%.m4
 	m4 $(M4FLAGS) $< > $@
 
-$(OBJDIR)/%.o: $(TARGET)/%.S
+$(OBJDIR)/%.o: $(TARGET_TYPE_DIR)/%.S
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(OBJDIR)/%.o: hipe/%.S
@@ -677,30 +784,30 @@ $(OBJDIR)/%.o: hipe/%.c
 $(BINDIR)/hipe_mkliterals$(TYPEMARKER):	$(OBJDIR)/hipe_mkliterals.o
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $<
 
-$(OBJDIR)/hipe_mkliterals.o:	$(TARGET)/hipe_x86_asm.h $(TARGET)/hipe_ppc_asm.h
+$(OBJDIR)/hipe_mkliterals.o:	$(TARGET_TYPE_DIR)/hipe_x86_asm.h $(TARGET_TYPE_DIR)/hipe_ppc_asm.h
 
 $(TARGET_TYPE_DIR)/hipe_literals.h:	$(BINDIR)/hipe_mkliterals$(TYPEMARKER)
 	$(BINDIR)/hipe_mkliterals$(TYPEMARKER) -c > $@
 
 $(OBJDIR)/hipe_sparc_glue.o:	hipe/hipe_sparc_glue.S hipe/hipe_sparc_asm.h hipe/hipe_mode_switch.h $(TARGET_TYPE_DIR)/hipe_literals.h
-$(TARGET)/hipe_sparc_bifs.S:	hipe/hipe_sparc_bifs.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
-$(OBJDIR)/hipe_sparc_bifs.o:	$(TARGET)/hipe_sparc_bifs.S hipe/hipe_sparc_asm.h hipe/hipe_mode_switch.h $(TARGET_TYPE_DIR)/hipe_literals.h
+$(TARGET_TYPE_DIR)/hipe_sparc_bifs.S:	hipe/hipe_sparc_bifs.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
+$(OBJDIR)/hipe_sparc_bifs.o:	$(TARGET_TYPE_DIR)/hipe_sparc_bifs.S hipe/hipe_sparc_asm.h hipe/hipe_mode_switch.h $(TARGET_TYPE_DIR)/hipe_literals.h
 
-$(OBJDIR)/hipe_x86_glue.o:	hipe/hipe_x86_glue.S $(TARGET)/hipe_x86_asm.h $(TARGET_TYPE_DIR)/hipe_literals.h hipe/hipe_mode_switch.h
-$(TARGET)/hipe_x86_bifs.S:	hipe/hipe_x86_bifs.m4 hipe/hipe_x86_asm.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
-$(OBJDIR)/hipe_x86_bifs.o:	$(TARGET)/hipe_x86_bifs.S $(TARGET_TYPE_DIR)/hipe_literals.h
+$(OBJDIR)/hipe_x86_glue.o:	hipe/hipe_x86_glue.S $(TARGET_TYPE_DIR)/hipe_x86_asm.h $(TARGET_TYPE_DIR)/hipe_literals.h hipe/hipe_mode_switch.h
+$(TARGET_TYPE_DIR)/hipe_x86_bifs.S:	hipe/hipe_x86_bifs.m4 hipe/hipe_x86_asm.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
+$(OBJDIR)/hipe_x86_bifs.o:	$(TARGET_TYPE_DIR)/hipe_x86_bifs.S $(TARGET_TYPE_DIR)/hipe_literals.h
 
-$(OBJDIR)/hipe_amd64_glue.o:	hipe/hipe_amd64_glue.S $(TARGET)/hipe_amd64_asm.h $(TARGET_TYPE_DIR)/hipe_literals.h hipe/hipe_mode_switch.h
-$(TARGET)/hipe_amd64_bifs.S:	hipe/hipe_amd64_bifs.m4 hipe/hipe_amd64_asm.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
-$(OBJDIR)/hipe_amd64_bifs.o:	$(TARGET)/hipe_amd64_bifs.S $(TARGET_TYPE_DIR)/hipe_literals.h
+$(OBJDIR)/hipe_amd64_glue.o:	hipe/hipe_amd64_glue.S $(TARGET_TYPE_DIR)/hipe_amd64_asm.h $(TARGET_TYPE_DIR)/hipe_literals.h hipe/hipe_mode_switch.h
+$(TARGET_TYPE_DIR)/hipe_amd64_bifs.S:	hipe/hipe_amd64_bifs.m4 hipe/hipe_amd64_asm.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
+$(OBJDIR)/hipe_amd64_bifs.o:	$(TARGET_TYPE_DIR)/hipe_amd64_bifs.S $(TARGET_TYPE_DIR)/hipe_literals.h
 
-$(OBJDIR)/hipe_ppc_glue.o:	hipe/hipe_ppc_glue.S $(TARGET)/hipe_ppc_asm.h hipe/hipe_mode_switch.h $(TARGET_TYPE_DIR)/hipe_literals.h
-$(TARGET)/hipe_ppc_bifs.S:	hipe/hipe_ppc_bifs.m4 hipe/hipe_ppc_asm.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
-$(OBJDIR)/hipe_ppc_bifs.o:	$(TARGET)/hipe_ppc_bifs.S $(TARGET_TYPE_DIR)/hipe_literals.h
+$(OBJDIR)/hipe_ppc_glue.o:	hipe/hipe_ppc_glue.S $(TARGET_TYPE_DIR)/hipe_ppc_asm.h hipe/hipe_mode_switch.h $(TARGET_TYPE_DIR)/hipe_literals.h
+$(TARGET_TYPE_DIR)/hipe_ppc_bifs.S:	hipe/hipe_ppc_bifs.m4 hipe/hipe_ppc_asm.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
+$(OBJDIR)/hipe_ppc_bifs.o:	$(TARGET_TYPE_DIR)/hipe_ppc_bifs.S $(TARGET_TYPE_DIR)/hipe_literals.h
 
-$(OBJDIR)/hipe_arm_glue.o:	hipe/hipe_arm_glue.S $(TARGET)/hipe_arm_asm.h hipe/hipe_mode_switch.h $(TARGET_TYPE_DIR)/hipe_literals.h
-$(TARGET)/hipe_arm_bifs.S:	hipe/hipe_arm_bifs.m4 hipe/hipe_arm_asm.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
-$(OBJDIR)/hipe_arm_bifs.o:	$(TARGET)/hipe_arm_bifs.S $(TARGET_TYPE_DIR)/hipe_literals.h
+$(OBJDIR)/hipe_arm_glue.o:	hipe/hipe_arm_glue.S $(TARGET_TYPE_DIR)/hipe_arm_asm.h hipe/hipe_mode_switch.h $(TARGET_TYPE_DIR)/hipe_literals.h
+$(TARGET_TYPE_DIR)/hipe_arm_bifs.S:	hipe/hipe_arm_bifs.m4 hipe/hipe_arm_asm.m4 hipe/hipe_bif_list.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
+$(OBJDIR)/hipe_arm_bifs.o:	$(TARGET_TYPE_DIR)/hipe_arm_bifs.S $(TARGET_TYPE_DIR)/hipe_literals.h
 
 # end of HiPE section
 ########################################
@@ -713,7 +820,7 @@ GCCLIBFLAGS=@GCCLIBFLAGS@
 STRIP=@STRIP@
 SYMPREFIX=@SYMPREFIX@
 
-NEEDFUNCTIONS=__divdi3 __moddi3
+NEEDFUNCTIONS=__divdi3 __moddi3 __udivdi3
 KEEPSYMS=$(NEEDFUNCTIONS:%=-K $(SYMPREFIX)%)
 
 $(OBJDIR)/int64.o: $(TARGET)/int64.c

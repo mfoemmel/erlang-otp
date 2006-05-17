@@ -19,9 +19,13 @@
 
 -module(gstk_gs).
 
+-export([mk_create_opts_for_child/4,
+	 config/3,
+	 read/3,
+	 read_option/5,
+	 option/5]).
+
 -include("gstk.hrl").
--compile(export_all).
-%%-export([Function/Arity, ...]).
 
 %%----------------------------------------------------------------------
 %% The GS object implementation

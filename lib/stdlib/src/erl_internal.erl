@@ -82,6 +82,7 @@ guard_bif(is_port, 1) -> true;
 guard_bif(is_reference, 1) -> true;
 guard_bif(is_tuple, 1) -> true;
 guard_bif(is_record, 2) -> true;
+guard_bif(is_record, 3) -> true;
 guard_bif(_, _) -> false.
 
 %% -type type_test(Name, Arity) -> bool()
@@ -110,6 +111,7 @@ new_type_test(is_port, 1) -> true;
 new_type_test(is_reference, 1) -> true;
 new_type_test(is_tuple, 1) -> true;
 new_type_test(is_record, 2) -> true;
+new_type_test(is_record, 3) -> true;
 new_type_test(_, _) -> false.
 
 %% -type old_type_test(Name, Arity) -> bool()
@@ -275,6 +277,7 @@ bif(is_port, 1) -> true;
 bif(is_reference, 1) -> true;
 bif(is_tuple, 1) -> true;
 bif(is_record, 2) -> true;
+bif(is_record, 3) -> true;
 bif(length, 1) -> true;
 bif(link, 1) -> true;
 bif(list_to_atom, 1) -> true;

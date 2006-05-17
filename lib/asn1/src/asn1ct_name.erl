@@ -62,6 +62,7 @@ name_server_loop(Vars) ->
 	    From ! {asn1_ns,get_next(Vars,Variable)},
 	    name_server_loop(Vars);
 	{From,stop} ->
+	    unregister(asn1_ns),
 	    From ! {asn1_ns,stopped},
 	    exit(normal)
     end.

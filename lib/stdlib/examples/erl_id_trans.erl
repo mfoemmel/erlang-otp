@@ -253,8 +253,8 @@ guard_test(Any) ->
     gexpr(Any).
 
 %% Before R9, there were special rules regarding the expressions on
-%% top level in guards. Those limitations are now lifted, why a special clause
-%% for the toplevel expressions is no longer needed.
+%% top level in guards. Those limitations are now lifted - therefore
+%% there is no need for a special clause for the toplevel expressions.
 %% -type gexpr(GuardExpr) -> GuardExpr.
 
 gexpr({var,Line,V}) -> {var,Line,V};
@@ -313,6 +313,11 @@ gexpr({op,Line,Op,A0}) ->
 	true -> A1 = gexpr(A0),
 		{op,Line,Op,A1}
     end;
+gexpr({op,Line,Op,L0,R0}) when Op =:= 'andalso'; Op =:= 'orelse' ->
+    %% R11B: andalso/orelse are now allowed in guards.
+    L1 = gexpr(L0),
+    R1 = gexpr(R0),			%They see the same variables
+    {op,Line,Op,L1,R1};
 gexpr({op,Line,Op,L0,R0}) ->
     case erl_internal:arith_op(Op, 2) or
 	  erl_internal:bool_op(Op, 2) or 

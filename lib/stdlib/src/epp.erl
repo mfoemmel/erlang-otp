@@ -22,6 +22,7 @@
 -export([open/2,open/3,close/1,format_error/1]).
 -export([scan_erl_form/1,parse_erl_form/1,macro_defs/1]).
 -export([parse_file/3]).
+-export([interpret_file_attribute/1]).
 
 %% Epp state record.
 -record(epp, {file,				%Current file
@@ -29,6 +30,7 @@
 	      name="",				%Current file name
 	      istk=[],				%Ifdef stack
 	      sstk=[],				%State stack
+	      path=[],				%Include-path
 	      macs=dict:new(),			%Macros
 	      uses=dict:new()			%Macro use structure
 	     }).
@@ -133,14 +135,13 @@ server(Pid, Name, Path, Pdm) ->
     process_flag(trap_exit, true),
     case file:open(Name, read) of
 	{ok,File} ->
-	    put(user_path, Path),
 	    Ms0 = predef_macros(Name),
 	    case user_predef(Pdm, Ms0) of
 		{ok,Ms1} ->
 		    epp_reply(Pid, {ok,self()}),
-		    St = #epp{file=File,name=Name,macs=Ms1},
+		    St = #epp{file=File,name=Name,path=Path,macs=Ms1},
 		    From = wait_request(St),
-		    enter_file_reply(From, Name, 1),
+		    enter_file_reply(From, Name, 1, 1),
 		    wait_req_scan(St);
 		{error,E} ->
 		    epp_reply(Pid, {error,E})
@@ -218,7 +219,7 @@ wait_req_skip(St, Sis) ->
 	
 %% enter_file(Path, FileName, IncludeLine, From, EppState)
 %% leave_file(From, EppState)
-%%  Handle antering and leaving included files. Notify caller when the
+%%  Handle entering and leaving included files. Notify caller when the
 %%  current file is changed. Note it is an error to exit a file if we are
 %%  in a conditional. These functions never return.
 
@@ -229,24 +230,28 @@ enter_file(_Path, _NewName, Li, From, St)
 enter_file(Path, NewName, Li, From, St) ->
     case file:path_open(Path, NewName, read) of
 	{ok,NewF,Pname} ->
-	    wait_req_scan(enter_file(NewF, Pname, From, St));
+	    wait_req_scan(enter_file2(NewF, Pname, From, St, 1));
 	{error,_E} ->
 	    epp_reply(From, {error,{Li,epp,{include,file,NewName}}}),
 	    wait_req_scan(St)
     end.
 
-%% enter_file(File, FullName, From, EppState) -> EppState.
+%% enter_file2(File, FullName, From, EppState, AtLine) -> EppState.
 %%  Set epp to use this file and "enter" it.
 
-enter_file(NewF, Pname, From, St) ->
-    enter_file_reply(From, Pname, 1),
-    Ms = dict:store({atom,'FILE'}, {none,[{string,1,Pname}]}, St#epp.macs),
-    #epp{file=NewF,name=Pname,sstk=[St|St#epp.sstk],macs=Ms}.
+enter_file2(NewF, Pname, From, St, AtLine) ->
+    enter_file2(NewF, Pname, From, St, AtLine, []).
 
-enter_file_reply(From, Name, Line) ->
-    Rep = {ok, [{'-',Line},{atom,Line,file},{'(',Line},
-		{string,Line,file_name(Name)},{',',Line},
-		{integer,Line,Line},{')',Line},{dot,Line}]},
+enter_file2(NewF, Pname, From, St, AtLine, ExtraPath) ->
+    enter_file_reply(From, Pname, 1, AtLine),
+    Ms = dict:store({atom,'FILE'}, {none,[{string,1,Pname}]}, St#epp.macs),
+    Path = St#epp.path ++ ExtraPath,
+    #epp{file=NewF,name=Pname,sstk=[St|St#epp.sstk],path=Path,macs=Ms}.
+
+enter_file_reply(From, Name, Line, AtLine) ->
+    Rep = {ok, [{'-',AtLine},{atom,AtLine,file},{'(',AtLine},
+		{string,AtLine,file_name(Name)},{',',AtLine},
+		{integer,AtLine,Line},{')',Line},{dot,AtLine}]},
     epp_reply(From, Rep).
 
 %% Flatten filename to a string. Must be a valid filename.
@@ -270,7 +275,8 @@ leave_file(From, St) ->
 	    case St#epp.sstk of
 		[OldSt|Sts] ->
 		    file:close(St#epp.file),
-		    enter_file_reply(From, OldSt#epp.name, OldSt#epp.line),
+		    enter_file_reply(From, OldSt#epp.name, 
+                                     OldSt#epp.line, OldSt#epp.line),
 		    Ms = dict:store({atom,'FILE'},
 				    {none,
 				     [{string,OldSt#epp.line,OldSt#epp.name}]},
@@ -304,9 +310,9 @@ scan_toks([{'-',_Lh},{atom,Ld,define}|Toks], From, St) ->
 scan_toks([{'-',_Lh},{atom,Ld,undef}|Toks], From, St) ->
     scan_undef(Toks, Ld, From, St);
 scan_toks([{'-',_Lh},{atom,Li,include}|Toks], From, St) ->
-    scan_include(Toks, Li, From, St);
+    scan_include(Toks, abs(Li), From, St);
 scan_toks([{'-',_Lh},{atom,Li,include_lib}|Toks], From, St) ->
-    scan_include_lib(Toks, Li, From, St);
+    scan_include_lib(Toks, abs(Li), From, St);
 scan_toks([{'-',_Lh},{atom,Li,ifdef}|Toks], From, St) ->
     scan_ifdef(Toks, Li, From, St);
 scan_toks([{'-',_Lh},{atom,Li,ifndef}|Toks], From, St) ->
@@ -319,6 +325,14 @@ scan_toks([{'-',_Lh},{atom,Le,elif}|Toks], From, St) ->
     scan_elif(Toks, Le, From, St);
 scan_toks([{'-',_Lh},{atom,Le,endif}|Toks], From, St) ->
     scan_endif(Toks, Le, From, St);
+scan_toks([{'-',_Lh},{atom,Lf,file}|Toks0], From, St) ->
+    case catch expand_macros(Toks0, {St#epp.macs, St#epp.uses}) of
+	Toks1 when list(Toks1) ->
+            scan_file(Toks1, Lf, From, St);
+	{error,ErrL,What} ->
+	    epp_reply(From, {error,{ErrL,epp,What}}),
+	    wait_req_scan(St)
+    end;
 scan_toks(Toks0, From, St) ->
     case catch expand_macros(Toks0, {St#epp.macs, St#epp.uses}) of
 	Toks1 when list(Toks1) ->
@@ -463,7 +477,7 @@ scan_undef(_Toks, Lu, From,St) ->
 scan_include([{'(',_Llp},{string,_Lf,NewName0},{')',_Lrp},{dot,_Ld}], Li, 
 	     From, St) ->
     NewName = expand_var(NewName0),
-    enter_file(get(user_path), NewName, Li, From, St);
+    enter_file(St#epp.path, NewName, Li, From, St);
 scan_include(_Toks, Li, From, St) ->
     epp_reply(From, {error,{Li,epp,{bad,include}}}),
     wait_req_scan(St).
@@ -485,16 +499,18 @@ scan_include_lib([{'(',_Llp},{string,_Lf,_NewName0},{')',_Lrp},{dot,_Ld}], Li,
 scan_include_lib([{'(',_Llp},{string,_Lf,NewName0},{')',_Lrp},{dot,_Ld}], Li,
 		 From, St) ->
     NewName = expand_var(NewName0),
-    case file:path_open(get(user_path), NewName, read) of
+    case file:path_open(St#epp.path, NewName, read) of
 	{ok,NewF,Pname} ->
-	    wait_req_scan(enter_file(NewF, Pname, From, St));
+	    wait_req_scan(enter_file2(NewF, Pname, From, St, 1));
 	{error,_E1} ->
 	    case catch find_lib_dir(NewName) of
 		{LibDir, Rest} when list(LibDir) ->
 		    LibName = filename:join([LibDir | Rest]),
 		    case file:open(LibName, read) of
 			{ok,NewF} ->
-			    wait_req_scan(enter_file(NewF, LibName, From, St));
+			    ExtraPath = [filename:dirname(LibName)],
+			    wait_req_scan(enter_file2(NewF, LibName, From, 
+                                                      St, 1, ExtraPath));
 			{error,_E2} ->
 			    epp_reply(From,
 				      {error,{Li,epp,{include,lib,NewName}}}),
@@ -598,6 +614,19 @@ scan_endif([{dot,_Ld}], Le, From, St) ->
     end;
 scan_endif(_Toks, Le, From, St) ->
     epp_reply(From, {error,{Le,epp,{bad,endif}}}),
+    wait_req_scan(St).
+
+%% scan_file(Tokens, FileLine, From, EppState)
+%%  Set the current file and line to the given file and line.
+%%  Note that the line of the attribute itself is kept.
+
+scan_file([{'(',_Llp},{string,_Ls,Name},{',',_Lc},{integer,_Li,Ln},{')',_Lrp},
+           {dot,_Ld}], Lf, From, St) ->
+    enter_file_reply(From, Name, Ln, -abs(Lf)),
+    Ms = dict:store({atom,'FILE'}, {none,[{string,1,Name}]}, St#epp.macs),
+    scan_toks(From, St#epp{name=Name,line=Ln+(St#epp.line-Lf),macs=Ms});
+scan_file(_Toks, Lf, From, St) ->
+    epp_reply(From, {error,{Lf,epp,{bad,file}}}),
     wait_req_scan(St).
 
 %% skip_toks(From, EppState, SkipIstack)
@@ -762,6 +791,10 @@ macro_arg([{'case',Lc}|Toks], E, Arg) ->
     macro_arg(Toks, ['end'|E], [{'case',Lc}|Arg]);
 macro_arg([{'receive',Lr}|Toks], E, Arg) ->
     macro_arg(Toks, ['end'|E], [{'receive',Lr}|Arg]);
+macro_arg([{'try',Lr}|Toks], E, Arg) ->
+    macro_arg(Toks, ['end'|E], [{'try',Lr}|Arg]);
+macro_arg([{'cond',Lr}|Toks], E, Arg) ->
+    macro_arg(Toks, ['end'|E], [{'cond',Lr}|Arg]);
 macro_arg([{Rb,Lrb}|Toks], [Rb|E], Arg) ->	%Found matching close
     macro_arg(Toks, E, [{Rb,Lrb}|Arg]);
 macro_arg([T|Toks], E, Arg) ->
@@ -870,3 +903,59 @@ expand_var1(NewName) ->
     Value = os:getenv(Var),
     true = Value =/= false,
     {ok, filename:join([Value | Rest])}.
+
+%% epp has always output -file attributes when entering and leaving
+%% included files (-include, -include_lib). Starting with R11B the
+%% -file attribute is also recognized in the input file. This is
+%% mainly aimed at yecc, the parser generator, which uses the -file
+%% attribute to get correct lines in messages referring to code
+%% supplied by the user (actions etc in .yrl files).
+%% 
+%% In a perfect world (read: perfectly implemented applications such
+%% as Xref, Cover, Debugger, etc.) it would not be necessary to
+%% distinguish -file attributes from epp and the input file. The
+%% Debugger for example could have one window for each referred file,
+%% each window with its own set of breakpoints etc. The line numbers
+%% of the abstract code would then point into different windows
+%% depending on the -file attribute. [Note that if, as is the case for
+%% yecc, code has been copied into the file, then it is possible that
+%% the copied code differ from the one referred to by the -file
+%% attribute, which means that line numbers can mismatch.] In practice
+%% however it is very rare with Erlang functions in included files, so
+%% only one window is used per module. This means that the line
+%% numbers of the abstract code have to be adjusted to refer to the
+%% top-most source file. The function interpret_file_attributes/1
+%% below interprets the -file attribute and returns forms where line
+%% numbers refer to the top-most file. The -file attribute forms that
+%% have been output by epp (corresponding to -include and
+%% -include_lib) are kept, but the user's -file attributes are
+%% removed. This seems sufficient for now.
+%% 
+%% It turns out to be difficult to distinguish -file attributes in the
+%% input file from the ones added by epp unless some action is taken.
+%% The (less than perfect) solution employed is to let epp assign
+%% negative line number to user supplied -file attributes.
+
+interpret_file_attribute(Forms) ->
+    interpret_file_attr(Forms, 0, []).
+
+interpret_file_attr([{attribute,L,file,{_File,Line}} | Forms], 
+                    Delta, Fs) when L < 0 ->
+    %% -file attribute
+    interpret_file_attr(Forms, (abs(L) + Delta) - Line, Fs);
+interpret_file_attr([{attribute,_AL,file,{File,_Line}}=Form | Forms], 
+                    Delta, Fs) ->
+    %% -include or -include_lib
+    % true = _AL =:= _Line,
+    case Fs of
+        [_, Delta1, File | Fs1] -> % end of included file
+            [Form | interpret_file_attr(Forms, Delta1, [File | Fs1])];
+        _ -> % start of included file
+            [Form | interpret_file_attr(Forms, 0, [File, Delta | Fs])]
+    end;
+interpret_file_attr([Form0 | Forms], Delta, Fs) ->
+    Form = erl_lint:modify_line(Form0, fun(L) -> abs(L) + Delta end),
+    [Form | interpret_file_attr(Forms, Delta, Fs)];
+interpret_file_attr([], _Delta, _Fs) ->
+    [].
+

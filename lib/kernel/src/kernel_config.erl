@@ -23,6 +23,7 @@
 -export([start_link/0]).
 %% Internal exports
 -export([init/1, handle_info/2, terminate/2, send_timeout/2]).
+-export([handle_call/3, handle_cast/2, code_change/3]).
 
 %%%-----------------------------------------------------------------
 %%% This module implements a process that configures the kernel
@@ -62,6 +63,15 @@ handle_info(_, State) ->
 
 terminate(_Reason, _State) ->
     ok.
+
+handle_call('__not_used', _From, State) ->
+    {reply, ok, State}.
+
+handle_cast('__not_used', State) ->
+    {noreply, State}.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 %%-----------------------------------------------------------------
 %% Internal functions

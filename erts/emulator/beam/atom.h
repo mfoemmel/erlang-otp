@@ -36,21 +36,17 @@ typedef struct atom {
     byte* name;      /* name of atom */
 } Atom;
 
-extern Uint reserved_atom_space;
-extern Uint atom_space;
+Atom *atom_tab(int i);
+int atom_table_size(void);	/* number of elements */
+int atom_table_sz(void);	/* table size in bytes, excluding stored objects */
 
-extern IndexTable atom_table;
-
-#define atom_tab(i)       ((Atom*) atom_table.table[i])
-#define atom_table_size   atom_table.sz
-
-Eterm am_atom_put(byte*, int);
-int erts_atom_get(byte* name, int len, Eterm* ap);
+Eterm am_atom_put(const char*, int); /* most callers pass plain char*'s */
 int atom_erase(byte*, int);
 int atom_static_put(byte*, int);
 void init_atom_table(void);
-void atom_info(CIO);
-void dump_atoms(CIO);
-
+void atom_info(int, void *);
+void dump_atoms(int, void *);
+int erts_atom_get(byte* name, int len, Eterm* ap);
+void erts_atom_get_text_space_sizes(Uint *reserved, Uint *used);
 #endif
 

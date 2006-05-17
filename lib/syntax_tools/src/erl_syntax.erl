@@ -672,11 +672,12 @@ is_leaf(Node) ->
 %%   <td><code>comment</code></td>
 %%   <td><code>error_marker</code></td>
 %%   <td><code>eof_marker</code></td>
-%%  </tr><tr>
 %%   <td><code>form_list</code></td>
+%%  </tr><tr>
 %%   <td><code>function</code></td>
 %%   <td><code>rule</code></td>
 %%   <td><code>warning_marker</code></td>
+%%   <td><code>text</code></td>
 %%  </tr>
 %% </table></center></p>
 %% @see type/1
@@ -699,6 +700,7 @@ is_form(Node) ->
 	form_list -> true;
 	rule -> true;
 	warning_marker -> true;
+	text -> true;
 	_ -> false
     end.
 
@@ -1281,7 +1283,7 @@ comment(Pad, Strings) ->
 
 
 %% =====================================================================
-%% @spec comment_text(Node::syntaxTree()) -> [string()]
+%% @spec comment_text(syntaxTree()) -> [string()]
 %%
 %% @doc Returns the lines of text of the abstract comment.
 %%
@@ -1292,7 +1294,7 @@ comment_text(Node) ->
 
 
 %% =====================================================================
-%% @spec comment_padding(Node::syntaxTree()) -> none | integer()
+%% @spec comment_padding(syntaxTree()) -> none | integer()
 %%
 %% @doc Returns the amount of padding before the comment, or
 %% <code>none</code>. The latter means that a default padding may be
@@ -2186,7 +2188,7 @@ list_head(Node) ->
 
 
 %% =====================================================================
-%% list_tail(Node::syntaxTree()) -> syntaxTree()
+%% @spec list_tail(Node::syntaxTree()) -> syntaxTree()
 %%
 %% @doc Returns the tail of a <code>list</code> node. If
 %% <code>Node</code> represents a single-element list
@@ -2303,7 +2305,7 @@ list_elements(Node, As) ->
 
 
 %% =====================================================================
-%% list_length(Node::syntaxTree()) -> integer()
+%% @spec list_length(Node::syntaxTree()) -> integer()
 %%
 %% @doc Returns the number of element subtrees of a list skeleton.
 %% <code>Node</code> must represent a proper list. E.g., if
@@ -3360,10 +3362,7 @@ revert_function(Node) ->
 
 
 %% =====================================================================
-%% function_name(Node) -> Name
-%%
-%%	    Node = Name = syntaxTree()
-%%	    type(Node) = function
+%% @spec function_name(syntaxTree()) -> syntaxTree()
 %%
 %% @doc Returns the name subtree of a <code>function</code> node.
 %%
@@ -3379,11 +3378,7 @@ function_name(Node) ->
 
 
 %% =====================================================================
-%% function_clauses(Node) -> Clauses
-%%
-%%	    Node = syntaxTree()
-%%	    Clauses = [syntaxTree()]
-%%	    type(Node) = function
+%% @spec function_clauses(syntaxTree()) -> [syntaxTree()]
 %%
 %% @doc Returns the list of clause subtrees of a <code>function</code>
 %% node.
@@ -4385,10 +4380,7 @@ record_expr_argument(Node) ->
 
 
 %% =====================================================================
-%% record_expr_type(Node) -> Type
-%%
-%%	    Node = Type = syntaxTree()
-%%	    type(Node) = record_expr
+%% @spec record_expr_type(syntaxTree()) -> syntaxTree()
 %%
 %% @doc Returns the type subtree of a <code>record_expr</code> node.
 %%
@@ -4406,11 +4398,7 @@ record_expr_type(Node) ->
 
 
 %% =====================================================================
-%% record_expr_fields(Node) -> Fields
-%%
-%%	    Node = syntaxTree()
-%%	    Fields = [syntaxTree()]
-%%	    type(Node) = record_expr
+%% @spec record_expr_fields(syntaxTree()) -> [syntaxTree()]
 %%
 %% @doc Returns the list of field subtrees of a
 %% <code>record_expr</code> node.
@@ -4906,11 +4894,7 @@ revert_if_expr(Node) ->
 
 
 %% =====================================================================
-%% if_expr_clauses(Node) -> Clauses
-%%
-%%	    Node = syntaxTree()
-%%	    Clauses = [syntaxTree()]
-%%	    type(Node) = if_expr
+%% @spec if_expr_clauses(syntaxTree()) -> [syntaxTree()]
 %%
 %% @doc Returns the list of clause subtrees of an <code>if_expr</code>
 %% node.
@@ -5046,11 +5030,7 @@ revert_cond_expr(Node) ->
 
 
 %% =====================================================================
-%% cond_expr_clauses(Node) -> Clauses
-%%
-%%	    Node = syntaxTree()
-%%	    Clauses = [syntaxTree()]
-%%	    type(Node) = cond_expr
+%% @spec cond_expr_clauses(syntaxTree()) -> [syntaxTree()]
 %%
 %% @doc Returns the list of clause subtrees of a <code>cond_expr</code>
 %% node.

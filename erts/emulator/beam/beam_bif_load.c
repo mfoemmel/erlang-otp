@@ -33,7 +33,7 @@
 #include "erl_binary.h"
 
 static Eterm check_process_code(Process* rp, Module* modp);
-static void delete_code(Module* modp);
+static void delete_code(Process *c_p, Uint32 c_p_locks, Module* modp);
 static void delete_export_references(Eterm module);
 static int purge_module(int module);
 static int is_native(Eterm* code);
@@ -46,15 +46,31 @@ load_module_2(BIF_ALIST_2)
     int      i;
     int      sz;
     byte*    code;
-    
+    int trace_pattern_is_on;
+    Binary *match_spec;
+    Binary *meta_match_spec;
+    struct trace_pattern_flags trace_pattern_flags;
+    Eterm meta_tracer_pid;
+    Eterm res;
+
     if (is_not_atom(BIF_ARG_1) || is_not_binary(BIF_ARG_2)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    
+
+#ifdef ERTS_SMP
+    erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
+    erts_smp_block_system(0);
+    if (BIF_P->is_exiting) {
+	res = NIL; /* Not used */
+	goto done;
+    }
+#endif
+
     hp = HAlloc(BIF_P, 3);
     GET_BINARY_BYTES(BIF_ARG_2, code);
     sz = binary_size(BIF_ARG_2);
-    if ((i = erts_load_module(BIF_P->group_leader, &BIF_ARG_1, code, sz)) < 0) { 
+    if ((i = erts_load_module(BIF_P, 0,
+			      BIF_P->group_leader, &BIF_ARG_1, code, sz)) < 0) { 
 	switch (i) {
 	case -1: reason = am_badfile; break; 
 	case -2: reason = am_nofile; break;
@@ -64,26 +80,64 @@ load_module_2(BIF_ALIST_2)
 	    break;
 	default: reason = am_badfile; break;
 	}
-	BIF_RET(TUPLE2(hp, am_error, reason));
+	res = TUPLE2(hp, am_error, reason);
+	goto done;
     }
-    if (erts_default_trace_pattern_is_on) {
+
+    erts_get_default_trace_pattern(&trace_pattern_is_on,
+				   &match_spec,
+				   &meta_match_spec,
+				   &trace_pattern_flags,
+				   &meta_tracer_pid);
+    if (trace_pattern_is_on) {
 	Eterm mfa[1];
 	mfa[0] = BIF_ARG_1;
 	(void) erts_set_trace_pattern(mfa, 1, 
-				      erts_default_match_spec, 
-				      erts_default_meta_match_spec,
-				      1, erts_default_trace_pattern_flags, 
-				      erts_default_meta_tracer_pid);
+				      match_spec, 
+				      meta_match_spec,
+				      1, trace_pattern_flags, 
+				      meta_tracer_pid);
     }
-    BIF_RET(TUPLE2(hp, am_module, BIF_ARG_1));
+
+    res = TUPLE2(hp, am_module, BIF_ARG_1);
+
+ done:
+
+#ifdef ERTS_SMP
+    erts_smp_release_system();
+    erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
+    ERTS_SMP_BIF_CHK_EXITED(BIF_P);
+#endif
+
+    BIF_RET(res);
 }
 
 BIF_RETTYPE purge_module_1(BIF_ALIST_1)
 {
+    int purge_res;
+
     if (is_not_atom(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if (purge_module(atom_val(BIF_ARG_1)) < 0) {
+
+#ifdef ERTS_SMP
+    erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
+    erts_smp_block_system(0);
+    if (BIF_P->is_exiting)
+	purge_res = -1;
+    else {
+#endif
+
+	purge_res = purge_module(atom_val(BIF_ARG_1));
+
+#ifdef ERTS_SMP
+    }
+    erts_smp_release_system();
+    erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
+    ERTS_SMP_BIF_CHK_EXITED(BIF_P);
+#endif
+
+    if (purge_res < 0) {
 	BIF_ERROR(BIF_P, BADARG);
     }
     BIF_RET(am_true);
@@ -114,14 +168,23 @@ check_process_code_2(BIF_ALIST_2)
 	goto error;
     }
     if (is_internal_pid(BIF_ARG_1)) {
+	Eterm res;
 	if (internal_pid_index(BIF_ARG_1) >= erts_max_processes)
 	    goto error;
-	rp = process_tab[internal_pid_index(BIF_ARG_1)];
-	if (INVALID_PID(rp, BIF_ARG_1)) {
+	rp = erts_pid2proc_not_running(BIF_P, ERTS_PROC_LOCK_MAIN,
+				       BIF_ARG_1, ERTS_PROC_LOCK_MAIN);
+	if (!rp) {
+	    ERTS_BIF_CHK_EXITED(BIF_P);
+	    ERTS_SMP_BIF_CHK_RESCHEDULE(BIF_P);
 	    BIF_RET(am_false);
 	}
 	modp = erts_get_module(BIF_ARG_2);
-	BIF_RET(check_process_code(rp, modp));
+	res = check_process_code(rp, modp);
+#ifdef ERTS_SMP
+	if (BIF_P != rp)
+	    erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_MAIN);
+#endif
+	BIF_RET(res);
     }
     else if (is_external_pid(BIF_ARG_1)
 	     && external_pid_dist_entry(BIF_ARG_1) == erts_this_dist_entry) {
@@ -135,28 +198,50 @@ check_process_code_2(BIF_ALIST_2)
 
 BIF_RETTYPE delete_module_1(BIF_ALIST_1)
 {
-    Module* modp;
+    int res;
 
-    if (is_not_atom(BIF_ARG_1)) {
-    error:
+    if (is_not_atom(BIF_ARG_1))
+	goto badarg;
+
+#ifdef ERTS_SMP
+    erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
+    erts_smp_block_system(0);
+    if (BIF_P->is_exiting) {
+	res = am_badarg;
+    }
+    else
+#endif
+
+    {
+	Module *modp = erts_get_module(BIF_ARG_1);
+	if (!modp) {
+	    res = am_undefined;
+	}
+	else if (modp->old_code != 0) {
+	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+	    erts_dsprintf(dsbufp, "Module %T must be purged before loading\n",
+			  BIF_ARG_1);
+	    erts_send_error_to_logger(BIF_P->group_leader, dsbufp);
+	    res = am_badarg;
+	}
+	else {
+	    delete_export_references(BIF_ARG_1);
+	    delete_code(BIF_P, 0, modp);
+	    res = am_true;
+	}
+    }
+
+#ifdef ERTS_SMP
+    erts_smp_release_system();
+    erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
+    ERTS_SMP_BIF_CHK_EXITED(BIF_P);
+#endif
+
+    if (res == am_badarg) {
+    badarg:
 	BIF_ERROR(BIF_P, BADARG);
     }
-    modp = erts_get_module(BIF_ARG_1);
-    if (modp == NULL) {
-	return am_undefined;
-    }
-    if (modp->old_code != 0) {
-	cerr_pos = 0;
-	erl_printf(CBUF, "Module ");
-	print_atom(atom_val(BIF_ARG_1), CBUF);
-	erl_printf(CBUF, " must be purged before loading\n");
-	send_error_to_logger(BIF_P->group_leader);
-	goto error;
-    }
-
-    delete_export_references(BIF_ARG_1);
-    delete_code(modp);
-    return am_true;
+    BIF_RET(res);
 }
 
 BIF_RETTYPE module_loaded_1(BIF_ALIST_1)
@@ -184,7 +269,7 @@ BIF_RETTYPE loaded_0(BIF_ALIST_0)
     int i;
     int j = 0;
     
-    for (i = 0; i < module_code_size; i++) {
+    for (i = 0; i < module_code_size(); i++) {
 	if (module_code(i) != NULL &&
 	    ((module_code(i)->code_length != 0) ||
 	     (module_code(i)->old_code_length != 0))) {
@@ -194,7 +279,7 @@ BIF_RETTYPE loaded_0(BIF_ALIST_0)
     if (j > 0) {
 	hp = HAlloc(BIF_P, j*2);
 
-	for (i = 0; i < module_code_size; i++) {
+	for (i = 0; i < module_code_size(); i++) {
 	    if (module_code(i) != NULL &&
 		((module_code(i)->code_length != 0) ||
 		 (module_code(i)->old_code_length != 0))) {
@@ -213,11 +298,9 @@ check_process_code(Process* rp, Module* modp)
     Eterm* start;
     Eterm* end;
     Eterm* sp;
-#ifndef SHARED_HEAP
 #ifndef HYBRID /* FIND ME! */
     ErlFunThing* funp;
     int done_gc = 0;
-#endif
 #endif
 
 #define INSIDE(a) (start <= (a) && (a) < end)
@@ -280,7 +363,6 @@ check_process_code(Process* rp, Module* modp)
      * See if there are funs that refer to the old version of the module.
      */
 
-#ifndef SHARED_HEAP
 #ifndef HYBRID /* FIND ME! */
  rescan:
     for (funp = MSO(rp).funs; funp; funp = funp->next) {
@@ -308,7 +390,6 @@ check_process_code(Process* rp, Module* modp)
 	}
     }
 #endif
-#endif
     return am_false;
 #undef INSIDE
 }
@@ -335,9 +416,7 @@ purge_module(int module)
      */
     if (modp->old_code == 0) {
 	if (display_loads) {
-	    erl_printf(COUT,"No code to purge for ");
-	    print_atom(module, COUT);
-	    erl_printf(COUT,"\n");
+	    erts_printf("No code to purge for %T\n", make_atom(module));
 	}
 	return -1;
     }
@@ -382,14 +461,29 @@ purge_module(int module)
  */
 
 static void 
-delete_code(Module* modp)
+delete_code(Process *c_p, Uint32 c_p_locks, Module* modp)
 {
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+#ifdef ERTS_SMP
+    if (c_p && c_p_locks)
+	erts_proc_lc_chk_only_proc_main(c_p);
+    else
+#endif
+	erts_lc_check_exact(NULL, 0);
+#endif
     /*
      * Clear breakpoints if any
      */
     if (modp->code != NULL && modp->code[MI_NUM_BREAKPOINTS] > 0) {
+	if (c_p && c_p_locks)
+	    erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_MAIN);
+	erts_smp_block_system(0);
 	erts_clear_module_break(modp);
 	modp->code[MI_NUM_BREAKPOINTS] = 0;
+	erts_smp_release_system();
+	if (c_p && c_p_locks)
+	    erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_MAIN);
     }
     modp->old_code = modp->code;
     modp->old_code_length = modp->code_length;
@@ -410,26 +504,28 @@ delete_export_references(Eterm module)
 
     ASSERT(is_atom(module));
 
-    for (i = 0; i < export_list_size; i++) {
-        if (export_list(i) != NULL && (export_list(i)->code[0] == module)) {
-	    if (export_list(i)->address == beam_debug_apply+5) {
+    for (i = 0; i < export_list_size(); i++) {
+	Export *ep = export_list(i);
+        if (ep != NULL && (ep->code[0] == module)) {
+	    if (ep->address == ep->code+3 &&
+		(ep->code[3] == (Eterm) em_apply_bif)) {
 		continue;
 	    }
-	    if (export_list(i)->address == export_list(i)->code+3 &&
-		(export_list(i)->code[3] == (Eterm) em_apply_bif)) {
-		continue;
-	    }
-	    export_list(i)->address = export_list(i)->code+3;
-	    export_list(i)->code[3] = (Uint) em_call_error_handler;
-	    export_list(i)->code[4] = 0;
-	    MatchSetUnref(export_list(i)->match_prog_set);
-	    export_list(i)->match_prog_set = NULL;
+	    ep->address = ep->code+3;
+	    ep->code[3] = (Uint) em_call_error_handler;
+	    ep->code[4] = 0;
+	    MatchSetUnref(ep->match_prog_set);
+	    ep->match_prog_set = NULL;
 	}
     }
 }
 
+
+/*
+ * SMP NOTE: Process c_p may have become exiting on return!
+ */
 int
-beam_make_current_old(Eterm module)
+beam_make_current_old(Process *c_p, Uint32 c_p_locks, Eterm module)
 {
     Module* modp = erts_put_module(module);
 
@@ -442,9 +538,9 @@ beam_make_current_old(Eterm module)
 	return -3;
     } else if (modp->old_code == NULL) { /* Make the current version old. */
 	if (display_loads) {
-	    erl_printf(COUT, "saving old code\n");
+	    erts_printf("saving old code\n");
 	}
-	delete_code(modp);
+	delete_code(c_p, c_p_locks, modp);
 	delete_export_references(module);
     }
     return 0;
@@ -455,4 +551,5 @@ is_native(Eterm* code)
 {
     return ((Eterm *)code[MI_FUNCTIONS])[1] != 0;
 }
+
 

@@ -32,13 +32,6 @@
 
 
 
--record(process_variables, {master_pid,
-			    window_params  = #window_params{},
-			    menu_params    = #menu_params{}
-			   }).
-
-
-
 -record(window_params, {window_id,
 			window_title,
 			window_width,
@@ -56,3 +49,7 @@
 
 
 
+-record(process_variables, {master_pid,
+			    window_params  = #window_params{},
+			    menu_params    = #menu_params{}
+			   }).

@@ -44,11 +44,8 @@ static void print_beam_pc(Uint *pc)
     } else {
 	Eterm *mfa = find_function_from_pc(pc);
 	if( mfa ) {
-	    display(mfa[0], COUT);
-	    printf(":");
-	    display(mfa[1], COUT);
-	    printf("/%ld", mfa[2]);
-	    printf(" + 0x%x", (int)(pc - &mfa[3]));
+	    erts_printf("%T:%T/%bpu + 0x%bpx",
+			mfa[0], mfa[1], mfa[2], pc - &mfa[3]);
 	} else {
 	    printf("?");
 	}
@@ -98,7 +95,7 @@ static void print_stack(Eterm *sp, Eterm *end)
 	    printf(" | 0x%0*lx | 0x%0*lx | ",
 		   2*(int)sizeof(long), (unsigned long)sp,
 		   2*(int)sizeof(long), (unsigned long)val);
-	    ldisplay(val, COUT, 30);
+	    erts_printf("%.30T", val);
 	    printf("\r\n");
 	}
 	sp += 1;
@@ -141,7 +138,7 @@ static void print_heap(Eterm *pos, Eterm *end)
 		--ari;
 	    }
 	} else
-	    ldisplay(val, COUT, 30);
+	    erts_printf("%.30T", val);
 	printf("\r\n");
     }
     printf(" |%s|%s|\r\n", dashes, dashes);
@@ -167,17 +164,12 @@ void hipe_print_pcb(Process *p)
     U("heap       ", heap);
     U("heap_sz    ", heap_sz);
     U("stop       ", stop);
-#ifdef SHARED_HEAP
-    U("stack      ", stack);
-    U("send       ", send);
-#else
     U("gen_gcs    ", gen_gcs);
     U("max_gen_gcs", max_gen_gcs);
     U("high_water ", high_water);
     U("old_hend   ", old_hend);
     U("old_htop   ", old_htop);
     U("old_head   ", old_heap);
-#endif
     U("min_heap_..", min_heap_size);
     U("status     ", status);
     U("rstatus    ", rstatus);
@@ -187,6 +179,7 @@ void hipe_print_pcb(Process *p)
     U("reds       ", reds);
     U("error_han..", error_handler);
     U("tracer_pr..", tracer_proc);
+    U("trace_fla..", trace_flags);
     U("group_lea..", group_leader);
     U("flags      ", flags);
     U("fvalue     ", fvalue);
@@ -197,11 +190,9 @@ void hipe_print_pcb(Process *p)
     /*XXX: ErlOffHeap off_heap; */
     U("reg        ", reg);
     U("nlinks     ", nlinks);
-#ifndef SHARED_HEAP
     /*XXX: ErlMessageQueue msg; */
     U("mbuf       ", mbuf);
     U("mbuf_sz    ", mbuf_sz);
-#endif
     U("dictionary ", dictionary);
     U("debug_dic..", debug_dictionary);
     U("ct         ", ct);
@@ -215,14 +206,12 @@ void hipe_print_pcb(Process *p)
     P("cp         ", cp);
     P("i          ", i);
     U("catches    ", catches);
-#ifndef SHARED_HEAP
     U("arith_heap ", arith_heap);
     U("arith_avail", arith_avail);
 #ifdef DEBUG
     U("arith_file ", arith_file);
     U("arith_line ", arith_line);
     P("arith_che..", arith_check_me);
-#endif
 #endif
     U("arity      ", arity);
     P("arg_reg    ", arg_reg);

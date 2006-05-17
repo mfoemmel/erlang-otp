@@ -62,36 +62,6 @@
 -define(ANTIQUE_WHITE, {255,255,235}).
 
 
--record(process_variables, {master_pid,
-			    pg_pid,
-			    pb_pid,
-			    rec_pid,
-			    window_id,
-			    window_width,
-			    window_height,
-			    initialising     = true,
-			    table_type,
-			    table_name,
-			    record_name,
-			    writable         = false,
-			    lists_as_strings = true,
-			    sorting_on       = false,
-			    first_col_shown  = 1,
-			    first_row_shown  = 1,
-			    nof_rows_shown,
-			    cols_shown       = [],
-			    data_list        = [],
-			    color_list       = [],
-			    frame_params     = #frame_params{},
-			    scale_params     = #scale_params{},
-			    mark_params      = #mark_params{},
-			    toolbar_params   = #toolbar_params{}
-			   }).
-
-
-
-
-
 -record(frame_params, {display_id,
 		       toolbar_frame_id,
 		       toolbar_frame_width,
@@ -140,3 +110,30 @@
 			 editor_frame_id,
 			 editor_id
 			}).
+
+
+-record(process_variables, {master_pid,
+			    pg_pid,
+			    pb_pid,
+			    rec_pid,
+			    window_id,
+			    window_width,
+			    window_height,
+			    initialising     = true,
+			    table_type,
+			    table_name,
+			    record_name,
+			    writable         = false,
+			    lists_as_strings = true,
+			    sorting_on       = false,
+			    first_col_shown  = 1,
+			    first_row_shown  = 1,
+			    nof_rows_shown,
+			    cols_shown       = [],
+			    data_list        = [],
+			    color_list       = [],
+			    frame_params     = #frame_params{},
+			    scale_params     = #scale_params{},
+			    mark_params      = #mark_params{},
+			    toolbar_params   = #toolbar_params{}
+			   }).

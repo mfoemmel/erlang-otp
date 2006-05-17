@@ -19,30 +19,28 @@
 	 size_const/1, size_all/1, size_vars/1,size_def_vars/1,
 	 instr_type/1, label_name/1, goto_label/1]).
 
-%% Exactly one of these four macros should be defined
-%% they decide which heuristic is used to select the next
-%% segment
+%% Exactly one of these four macros should be defined;
+%% they decide which heuristic is used to select the next segment
 
 -define(USES_MATCH, true).
 %-define(USES_READ, true).
 %-define(INDEXNESS, true).
 %-define(LEFT, true).
 
-
-
 %-define(BIN_PMATCH_DEBUG,true).
 %-define(DOT_FILE, '/tmp/out.dot').
 -ifdef(BIN_PMATCH_DEBUG).
--export([pp/1, full_size/1, a_height/1, max_height/1, read_seg/4,
-	dot/1]).
+-export([pp/1, full_size/1, a_height/1, max_height/1, read_seg/4, dot/1]).
 -endif.
+
 -include("cerl_hipe_primops.hrl").
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Record definitions and access functions 
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% @type instr()= size() | read_seg() | match() | label() | goto() | bin_guard() .
+%% @type instr() = size() | read_seg() | match() | label() | goto() | bin_guard()
 %% All these data types can be used as instructions 
 
 %% @type read_seg(). an abstract data type containing type,
@@ -108,7 +106,9 @@ binary_match_max_tag(#binary_match{max_tag=X}) -> X.
 %% each node contains an instruction and a pointer to the success tree
 %% and one to the fail tree
 -record(clause_tree, {instr, success=[], fail=[]}).
+-ifdef(BIN_PMATCH_DEBUG).
 -record(ann_clause_tree, {instr, success=[], fail=[], ann}).
+-endif.
 %% @spec clause_tree_instr(binary_match()) -> instr()
 %% @doc Returns the instr field from a clause tree 
 clause_tree_instr(#clause_tree{instr=X}) -> X.

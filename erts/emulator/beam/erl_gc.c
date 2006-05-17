@@ -36,6 +36,10 @@
 
 #ifdef HEAP_FRAG_ELIM_TEST
 
+static erts_smp_spinlock_t info_lck;
+static Uint garbage_cols;		/* no of garbage collections */
+static Uint reclaimed;			/* no of words reclaimed in GCs */
+
 #define IS_MOVED(x)	(!is_header((x)))
 
 #define MOVE_CONS(PTR,CAR,HTOP,ORIG)					\
@@ -73,19 +77,11 @@ do {									\
 #define in_area(ptr,start,nbytes) \
  ((unsigned long)((char*)(ptr) - (char*)(start)) < (nbytes))
 
-#ifdef SHARED_HEAP
-# define STACK_SZ_ON_HEAP(p) 0
-# define OverRunCheck() \
-    if (HEAP_END(p) < HEAP_TOP(p)) { \
-        erl_exit(1, "%s: Overrun heap at line %d\n", print_pid(p),__LINE__); \
-    }
-#else
 # define STACK_SZ_ON_HEAP(p) ((p)->hend - (p)->stop)
 # define OverRunCheck() \
     if (p->stop < p->htop) { \
-        erl_exit(1, "%s: Overrun stack and heap at line %d\n", print_pid(p),__LINE__); \
+        erl_exit(1, "%T: Overrun stack and heap at line %d\n", p->id,__LINE__); \
     }
-#endif
 
 /*
  * This structure describes the rootset for the GC.
@@ -126,7 +122,6 @@ static void offset_rootset(Process *p, Sint offs, char* area, Uint area_size,
 			   Eterm* objv, int nobj);
 static void offset_off_heap(Process* p, Sint offs, char* area, Uint area_size);
 static void offset_mqueue(Process *p, Sint offs, char* area, Uint area_size);
-static char* print_pid(Process *p);
 #ifdef DEBUG
 static int within(Eterm *ptr, Process *p);
 #endif
@@ -141,6 +136,11 @@ static int within(Eterm *ptr, Process *p);
 static Sint heap_sizes[MAX_HEAP_SIZES];	/* Suitable heap sizes. */
 static int num_heap_sizes;	/* Number of heap sizes. */
 
+
+#ifndef HEAP_FRAG_ELIM_TEST
+extern void erts_init_ggc(void);
+#endif
+
 /*
  * Initialize GC global data.
  */
@@ -148,6 +148,14 @@ void
 erts_init_gc(void)
 {
     int i = 0;
+
+#ifdef HEAP_FRAG_ELIM_TEST
+    erts_smp_spinlock_init(&info_lck, "gc_info");
+    garbage_cols = 0;
+    reclaimed = 0;
+#else
+    erts_init_ggc();
+#endif
 
     /*
      * Heap sizes start growing in a Fibonacci sequence.
@@ -251,6 +259,54 @@ erts_heap_sizes(Process* p)
 
 #ifdef HEAP_FRAG_ELIM_TEST
 
+void
+erts_gc_info(ErtsGCInfo *gcip)
+{
+    if (gcip) {
+	erts_smp_spin_lock(&info_lck);
+	gcip->garbage_collections = garbage_cols;
+	gcip->reclaimed = reclaimed;
+	erts_smp_spin_unlock(&info_lck);
+    }
+}
+
+void 
+erts_offset_heap(Eterm* hp, Uint sz, Sint offs, Eterm* low, Eterm* high)
+{
+    return offset_heap(hp, sz, offs, (char*) low, high-low);
+}
+
+void 
+erts_offset_heap_ptr(Eterm* hp, Uint sz, Sint offs, 
+		     Eterm* low, Eterm* high)
+{
+    return offset_heap_ptr(hp, sz, offs, (char *) low, high-low);
+}
+
+#define ptr_within(ptr, low, high) ((ptr) < (high) && (ptr) >= (low))
+
+void
+erts_offset_off_heap(ErlOffHeap *ohp, Sint offs, Eterm* low, Eterm* high)
+{
+    if (ohp->mso && ptr_within((Eterm *)ohp->mso, low, high)) {
+        Eterm** uptr = (Eterm**) &ohp->mso;
+        *uptr += offs;
+    }
+
+#ifndef HYBRID /* FIND ME! */
+    if (ohp->funs && ptr_within((Eterm *)ohp->funs, low, high)) {
+        Eterm** uptr = (Eterm**) &ohp->funs;
+        *uptr += offs;
+    }
+#endif
+
+    if (ohp->externals && ptr_within((Eterm *)ohp->externals, low, high)) {
+        Eterm** uptr = (Eterm**) &ohp->externals;
+        *uptr += offs;
+    }
+}
+#undef ptr_within
+
 /*
  * Garbage collect a process.
  *
@@ -262,6 +318,7 @@ erts_heap_sizes(Process* p)
 int
 erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 {
+    Uint reclaimed_now = 0;
     int done = 0;
     Uint saved_status = p->status;
     Uint ms1, s1, us1;
@@ -285,9 +342,9 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
      */
     while (!done) {
 	if ((FLAGS(p) & F_NEED_FULLSWEEP) != 0) {
-	    done = major_collection(p, need, objv, nobj);
+	    done = major_collection(p, need, objv, nobj, &reclaimed_now);
 	} else {
-	    done = minor_collection(p, need, objv, nobj);
+	    done = minor_collection(p, need, objv, nobj, &reclaimed_now);
 	}
     }
 
@@ -307,7 +364,12 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 	}
     }
 
+
+    erts_smp_spin_lock(&info_lck);
     garbage_cols++;
+    reclaimed += reclaimed_now;
+    erts_smp_spin_unlock(&info_lck);
+
     ARITH_LOWEST_HTOP(p) = (Eterm *) 0;
     ARITH_AVAIL(p) = 0;
     ARITH_HEAP(p) = NULL;
@@ -319,7 +381,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 }
 
 static int
-minor_collection(Process* p, int need, Eterm* objv, int nobj)
+minor_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
 {
     /*
      * Allocate an old heap if we don't have one and if we'll need one.
@@ -358,7 +420,7 @@ minor_collection(Process* p, int need, Eterm* objv, int nobj)
         GEN_GCS(p)++;
         size_after = HEAP_TOP(p) - HEAP_START(p);
         need_after = size_after + need + stack_size;
-        reclaimed += (size_before - size_after);
+        *recl += (size_before - size_after);
 	
         /*
          * Excessively large heaps should be shrunk, but
@@ -581,7 +643,7 @@ do_minor(Process *p, int new_sz, Eterm* objv, int nobj)
 }
 
 static int
-major_collection(Process* p, int need, Eterm* objv, int nobj)
+major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
 {
     Rootset rootset;
     Roots* roots;
@@ -804,19 +866,20 @@ major_collection(Process* p, int need, Eterm* objv, int nobj)
     GEN_GCS(p) = 0;
     HIGH_WATER(p) = HEAP_TOP(p);
 
-    adjust_after_fullsweep(p, size_before, need, objv, nobj);
+    *recl += adjust_after_fullsweep(p, size_before, need, objv, nobj);
     OverRunCheck();
     return 1;			/* We are done. */
 }
 
-static void
+static Uint
 adjust_after_fullsweep(Process *p, int size_before, int need, Eterm *objv, int nobj)
 {
     int wanted, sz, size_after, need_after;
     int stack_size = STACK_SZ_ON_HEAP(p);
-    
+    Uint reclaimed_now;
+
     size_after = (HEAP_TOP(p) - HEAP_START(p));
-    reclaimed += (size_before - size_after);
+    reclaimed_now = (size_before - size_after);
     
     /*
      * Resize the heap if needed.
@@ -846,6 +909,7 @@ adjust_after_fullsweep(Process *p, int size_before, int need, Eterm *objv, int n
             erts_shrink_new_heap(p, sz, objv, nobj);
         }
     }
+    return reclaimed_now;
 }
 
 /*
@@ -1387,7 +1451,7 @@ sweep_proc_externals(Process *p, int fullsweep)
             prev = &ptr->next;
             ptr = ptr->next;
         } else {                /* Object has not been moved - deref it */
-	    DEREF_ERL_NODE(ptr->node);
+	    erts_deref_node_entry(ptr->node);
             *prev = ptr = ptr->next;
         }
     }
@@ -1430,7 +1494,7 @@ sweep_proc_funs(Process *p, int fullsweep)
             ErlFunEntry* fe = ptr->fe;
 
             *prev = ptr = ptr->next;
-            if (--(fe->refc) == 0) {
+	    if (erts_refc_dectest(&fe->refc, 0) == 0) {
                 erts_erase_fun_entry(fe);
             }
         }
@@ -1482,8 +1546,7 @@ sweep_proc_bins(Process *p, int fullsweep)
         } else {                /* Object has not been moved - deref it */
             *prev = ptr->next;
             bptr = ptr->val;
-            bptr->refc--;
-            if (bptr->refc == 0) {
+            if (erts_refc_dectest(&bptr->refc, 0) == 0) {
                 if (bptr->flags & BIN_FLAG_MATCH_PROG) {
                     erts_match_set_free(bptr);
                 } else {
@@ -1677,20 +1740,6 @@ offset_rootset(Process *p, Sint offs, char* area, Uint area_size,
 	       Eterm* objv, int nobj)
 {
     offset_one_rootset(p, offs, area, area_size, objv, nobj);
-}
-
-static char*
-print_pid(Process *p)
-{
-    char static buf[64];
-
-    Eterm obj = p->id;
-    sprintf(buf,
-	    "<%lu.%lu.%lu>",
-	    internal_pid_channel_no(obj),
-	    internal_pid_number(obj),
-	    internal_pid_serial(obj));
-    return buf;
 }
 
 #ifdef DEBUG

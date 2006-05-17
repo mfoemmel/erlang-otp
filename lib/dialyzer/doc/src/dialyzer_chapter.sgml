@@ -1,0 +1,199 @@
+<!doctype chapter PUBLIC "-//Stork//DTD chapter//EN">
+<!-- 
+ ``The contents of this file are subject to the Erlang Public License,
+ Version 1.1, (the "License"); you may not use this file except in
+ compliance with the License. You should have received a copy of the
+ Erlang Public License along with this software. If not, it can be
+ retrieved via the world wide web at http://www.erlang.org/.
+ 
+ Software distributed under the License is distributed on an "AS IS"
+ basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ the License for the specific language governing rights and limitations
+ under the License.
+ 
+ The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+ Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+ AB. All Rights Reserved.''
+ 
+     $Id$
+-->
+<CHAPTER>
+  <HEADER>
+    <TITLE>Dialyzer</TITLE>
+    <PREPARED>Tobias Lindahl and Kostis Sagonas</PREPARED>
+    <RESPONSIBLE></RESPONSIBLE>
+    <DOCNO></DOCNO>
+    <APPROVED></APPROVED>
+    <CHECKED></CHECKED>
+    <DATE></DATE>
+    <REV></REV>
+    <FILE></FILE>
+  </HEADER>
+
+
+<SECTION>
+    <TITLE>Introduction</TITLE>
+
+    <P><EM>Dialyzer</EM> is a static analysis tool that identifies software discrepancies 
+      such as type errors, unreachable code, unnecessary tests, etc in single Erlang modules 
+      or entire (sets of) applications.</P>
+</SECTION>  
+
+
+<SECTION>
+<TITLE>Using the Dialyzer from the GUI</TITLE>
+
+<SECTION>
+<TITLE>Choosing the applications or modules</TITLE>
+
+<P>In the "File" window you will find a listing of the current directory.
+Click your way to the directories/modules you want to add or type the
+correct path in the entry.</P>
+
+<P>Mark the directories/modules you want to analyze for discrepancies and
+click "Add". You can either add the .beam and .erl-files directly, or
+you can add directories that contain these kinds of files. Note that
+you are only allowed to add the type of files that can be analyzed in
+the current mode of operation (see below), and that you cannot mix
+.beam and .erl-files.</P>
+</SECTION>
+
+<SECTION>
+<TITLE>The analysis modes</TITLE>
+<P>Dialyzer has several modes of analysis. These are controlled by the
+buttons in the top-middle part of the main window, under "Analysis Options".</P>
+
+<P>The parameters are:</P>
+<LIST>
+
+<ITEM><P>Analyze:</P>
+   <LIST>
+
+    <ITEM><P>Byte code:</P>
+	<P>The analysis starts from .beam bytecode files.
+	Whenever the .beam file has been generated with the +debug_info
+	compiler option on, analysis automatically starts from abstract
+	code (via Core Erlang) and the results are identical to those
+	obtained starting from source code.</P></ITEM>
+    <ITEM><P>Source code:</P>
+	<P>The analysis starts from .erl files.</P></ITEM>
+	</LIST></ITEM>
+
+
+<ITEM><P>Granularity:</P>
+    <P>You can choose to Analyze each module locally, or to make the
+    analysis global over all modules. The default (and recommended
+    mode) is a global analysis, but the module-local variant can be
+    handy when the interfaces between modules are not yet fully
+    implemented and you are simply interested in some quick-and-dirty
+    feedback.</P></ITEM>
+
+<ITEM><P>Iteration:</P>
+    <P>Here you can specify if the analysis should perform a fixpoint
+    iteration over the chosen granularity, or make just one pass.</P>
+    <LIST>
+    <ITEM><P>One Pass:</P>
+	<P>One pass iteration analyzes all modules in an unspecified
+	order. Each module is still analyzed to fixpoint, but no
+	fixpoint iteration is performed over module boundaries.</P></ITEM>
+
+    <ITEM><P>Fixpoint: </P>
+        <P>All specified modules are analyzed until fixpoint. To speed up
+        the iteration, a static call graph for inter-modular calls is
+        constructed after the first pass of the analysis. This
+        call graph is then used to order the modules for the second
+        (and final) run of the analysis.</P></ITEM>
+    </LIST></ITEM>
+</LIST>
+</SECTION>
+
+<SECTION>
+<TITLE>Controlling the discrepancies reported by the Dialyzer</TITLE>
+<P>Under the "Warnings" pull-down menu, there are buttons that control
+which discrepancies are reported to the user in the "Warnings" window.
+By clicking on these buttons, one can enable/disable a whole class of
+warnings.  Information about the classes of warnings can be found on
+the "Warnings" item under the "Help" menu (at the rightmost top corner).</P>
+
+<P>If modules are compiled with inlining, spurious warnings may be emitted.
+In the "Options" menu you can choose to ignore inline-compiled modules
+when analyzing byte code. When starting from source code this is not a
+problem since the inlining is explicitly turned off by Dialyzer. The
+option causes Dialyzer to supress all warnings from inline-compiled
+modules, since there is currently no way for Dialyzer to find what
+parts of the code have been produced by inlining. </P>
+</SECTION>
+
+
+<SECTION>
+<TITLE>Running the analysis</TITLE>
+<P>Once you have chosen the modules or directories you want to analyze,
+click the "Run" button to start the analysis. If for some reason you
+want to stop the analysis while it is running, push the "Stop" button.</P>
+
+<P>The information from the analysis will be displayed in the Log and the
+Warnings windows.</P>
+</SECTION>
+
+<SECTION>
+<TITLE>Include directories and macro definitions</TITLE>
+<P>When analyzing from source you might have to supply Dialyzer with a
+list of include directories and macro definitions (as you can do with
+the erlc flags -I and -D). This can be done either by starting Dialyzer
+with these flags from the command line as in:</P>
+
+<PRE>
+    <INPUT>./dialyzer -I my_includes -DDEBUG -Dvsn=42 -I one_more_dir</INPUT>
+</PRE>
+
+<P>or by adding these explicitly using the "Manage Macro Definitions" or
+"Manage Include Directories" sub-menus in the "Options" menu.</P>
+</SECTION>
+
+<SECTION>
+<TITLE>Saving the information on the Log and Warnings windows</TITLE>
+<P>In the "File" menu there are options to save the contents of the Log
+and the Warnings window. Just choose the options and enter the file to
+save the contents in.</P>
+
+<P>There are also buttons to clear the contents of each window.</P>
+</SECTION>
+
+<SECTION>
+<TITLE>Inspecting the inferred types of the analyzed functions</TITLE>
+<P>Dialyzer stores the information of the analyzed functions in a
+Persistent Lookup Table (PLT). After an analysis you can inspect this
+information. In the PLT menu you can choose to either search the PLT
+or inspect the contents of the whole PLT. The information is presented
+in edoc format.</P>
+
+<NOTE> 
+<P>Currently, the information which is displayed is NOT the type
+signatures of the functions. The return values are the least upper
+bound of the returned type from the function and the argument types
+are the least upper bound of the types that the function is called
+with. In other words, the argument types is not what the function can
+accept, but rather a description of how the function is used.</P>
+</NOTE>
+
+<P>We are working on finding the type signatures of the function, and
+this will (hopefully) be included in a future version of Dialyzer.</P>
+</SECTION>
+
+<SECTION>
+<TITLE>More on the Persistent Lookup Table (PLT)</TITLE>
+<P>During setup, a Persistent Lookup Table will automatically be created
+for the Erlang/OTP standard library (stdlib). This table will be the
+starting point for later analyses. At each startup of Dialyzer the
+validity of the PLT will be checked, and if something has changed in
+stdlib a new PLT will be constructed.</P>
+
+<P>If you want to start from a completely fresh table at each analysis
+choose "Init with empty plt" from the same menu.</P>
+</SECTION>
+</SECTION>
+
+
+
+
+</CHAPTER>

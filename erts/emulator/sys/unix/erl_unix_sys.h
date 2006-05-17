@@ -185,59 +185,68 @@ extern void sys_stop_cat(void);
  * Handling of floating point exceptions.
  */
 
-extern volatile int erl_fp_exception;
-
 #ifdef USE_ISINF_ISNAN		/* simulate finite() */
 #  define finite(f) (!isinf(f) && !isnan(f))
 #  define HAVE_FINITE
 #endif
 
 #ifdef NO_FPE_SIGNALS
-#  define ERTS_FP_CHECK_INIT() do {} while (0)
-#  define ERTS_FP_ERROR(f, Action) if (!finite(f)) { Action; } else {}
-#  define ERTS_FP_ERROR_THOROUGH(f, Action) ERTS_FP_ERROR(f, Action)
-#  define ERTS_SAVE_FP_EXCEPTION()
-#  define ERTS_RESTORE_FP_EXCEPTION()
+#define erts_get_current_fp_exception() NULL
+#ifdef ERTS_SMP
+#define erts_thread_init_fp_exception() do{}while(0)
+#endif
+#  define __ERTS_FP_CHECK_INIT(fpexnp) do {} while (0)
+#  define __ERTS_FP_ERROR(fpexnp, f, Action) if (!finite(f)) { Action; } else {}
+#  define __ERTS_FP_ERROR_THOROUGH(fpexnp, f, Action) __ERTS_FP_ERROR(fpexnp, f, Action)
+#  define __ERTS_SAVE_FP_EXCEPTION(fpexnp)
+#  define __ERTS_RESTORE_FP_EXCEPTION(fpexnp)
 #else
-#  define ERTS_FP_CHECK_INIT() do {erl_fp_exception = 0;} while (0)
+extern volatile int *erts_get_current_fp_exception(void);
+#ifdef ERTS_SMP
+extern void erts_thread_init_fp_exception(void);
+#endif
+#  define __ERTS_FP_CHECK_INIT(fpexnp) do { *(fpexnp) = 0; } while (0)
 #  if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
 extern void erts_restore_fpu(void);
-static __inline__ int erts_check_fpe(double f)
+static __inline__ int erts_check_fpe(volatile int *fp_exception, double f)
 {
-    __asm__ __volatile__("fwait" : "=m"(erl_fp_exception) : "m"(f));
-    if( !erl_fp_exception )
+    __asm__ __volatile__("fwait" : "=m"(*fp_exception) : "m"(f));
+    if (!*fp_exception)
        return 0;
     erts_restore_fpu();
     return 1;
 }
-#  define ERTS_FP_ERROR(f, Action) do { if( erts_check_fpe((f)) ) { Action; } } while (0)
 #  elif (defined(__powerpc__) || defined(__ppc__)) && defined(__GNUC__)
-static __inline__ int erts_check_fpe(double f)
+static __inline__ int erts_check_fpe(volatile int *fp_exception, double f)
 {
-    __asm__ __volatile__("" : "=m"(erl_fp_exception) : "fm"(f));
-    return erl_fp_exception;
+    __asm__ __volatile__("" : "=m"(*fp_exception) : "fm"(f));
+    return *fp_exception;
 }
-#  define ERTS_FP_ERROR(f, Action) do { if( erts_check_fpe((f)) ) { Action; } } while (0)
 #  else
-static __inline__ int erts_check_fpe(double f)
+static __inline__ int erts_check_fpe(volatile int *fp_exception, double f)
 {
-    __asm__ __volatile__("" : "=m"(erl_fp_exception) : "g"(f));
-    return erl_fp_exception;
+    __asm__ __volatile__("" : "=m"(*fp_exception) : "g"(f));
+    return *fp_exception;
 }
-#  define ERTS_FP_ERROR(f, Action) do { if( erts_check_fpe((f)) ) { Action; } } while (0)
 #  endif
-#  define ERTS_SAVE_FP_EXCEPTION() int old_erl_fp_exception = erl_fp_exception
-#  define ERTS_RESTORE_FP_EXCEPTION() \
-              do {erl_fp_exception = old_erl_fp_exception;} while (0)
+#  define __ERTS_FP_ERROR(fpexnp, f, Action) do { if (erts_check_fpe((fpexnp),(f))) { Action; } } while (0)
+#  define __ERTS_SAVE_FP_EXCEPTION(fpexnp) int old_erl_fp_exception = *(fpexnp)
+#  define __ERTS_RESTORE_FP_EXCEPTION(fpexnp) \
+              do { *(fpexnp) = old_erl_fp_exception; } while (0)
    /* This is for library calls where we don't trust the external
       code to always throw floating-point exceptions on errors. */
-static __inline__ int erts_check_fpe_thorough(double f)
+static __inline__ int erts_check_fpe_thorough(volatile int *fp_exception, double f)
 {
-    return erts_check_fpe(f) || !finite(f);
+    return erts_check_fpe(fp_exception, f) || !finite(f);
 }
-#  define ERTS_FP_ERROR_THOROUGH(f, Action) \
-  do { if (erts_check_fpe_thorough((f))) { Action; } } while (0)
+#  define __ERTS_FP_ERROR_THOROUGH(fpexnp, f, Action) \
+  do { if (erts_check_fpe_thorough((fpexnp),(f))) { Action; } } while (0)
 #endif
+#define ERTS_FP_CHECK_INIT(p)		__ERTS_FP_CHECK_INIT(&(p)->fp_exception)
+#define ERTS_FP_ERROR(p, f, A)		__ERTS_FP_ERROR(&(p)->fp_exception, f, A)
+#define ERTS_SAVE_FP_EXCEPTION(p)	__ERTS_SAVE_FP_EXCEPTION(&(p)->fp_exception)
+#define ERTS_RESTORE_FP_EXCEPTION(p)	__ERTS_RESTORE_FP_EXCEPTION(&(p)->fp_exception)
+#define ERTS_FP_ERROR_THOROUGH(p, f, A)	__ERTS_FP_ERROR_THOROUGH(&(p)->fp_exception, f, A)
 
 
 #ifdef NEED_CHILD_SETUP_DEFINES
@@ -259,5 +268,12 @@ extern int exit_async(void);
 #endif
 
 #define ERTS_EXIT_AFTER_DUMP _exit
+
+#ifdef ERTS_TIMER_THREAD
+struct erts_iwait; /* opaque for clients */
+extern struct erts_iwait *erts_iwait_init(void);
+extern void erts_iwait_wait(struct erts_iwait *iwait, struct timeval *delay);
+extern void erts_iwait_interrupt(struct erts_iwait *iwait);
+#endif /* ERTS_TIMER_THREAD */
 
 #endif /* #ifndef _ERL_UNIX_SYS_H */

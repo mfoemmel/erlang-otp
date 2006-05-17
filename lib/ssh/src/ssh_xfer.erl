@@ -105,7 +105,7 @@ reply(CM,Channel,RBuf) ->
 		    reply(CM,Channel,RBuf2)
 	    end;
 	{ssh_cm, CM, {data, Channel, _, Data}} ->
-	    io:format("STDERR: ~s\n", [binary_to_list(Data)]),
+	    error_logger:format("ssh: STDERR: ~s\n", [binary_to_list(Data)]),
 	    reply(CM,Channel,RBuf);
 	{ssh_cm, CM, {exit_signal,Channel,_SIG,Err,_Lang}} ->
 	    ssh_cm:close(CM, Channel),
@@ -118,9 +118,9 @@ reply(CM,Channel,RBuf) ->
 	{ssh_cm, CM, {closed, Channel}} ->
 	    {error, closed};
 	{ssh_cm, CM, Msg} ->
-	    io:format("GOT: ssh_cm ~p\n", [Msg]);
+	    error_logger:format("GOT: ssh_cm ~p\n", [Msg]);
 	Msg ->
-	    io:format("GOT: ~p\n", [Msg])
+	    error_logger:format("GOT: ~p\n", [Msg])
     end.
 
 
@@ -357,10 +357,8 @@ xf_send_names(#ssh_xfer{cm = CM, channel = Channel, vsn = Vsn},
 	 [Size, size(list_to_binary(ToSend))]),
     ssh_cm:send(CM, Channel, ToSend).
 
-xf_send_status(#ssh_xfer{cm = CM, channel = Channel}, ReqId, ErrorCode) ->
-    Size = 1 + 4 + 4,
-    ssh_cm:send(CM, Channel, <<?UINT32(Size), ?SSH_FXP_STATUS, ?UINT32(ReqId),
-			      ?UINT32(ErrorCode)>>).
+xf_send_status(XF, ReqId, ErrorCode) ->
+    xf_send_status(XF, ReqId, ErrorCode, "").
 
 xf_send_status(XF, ReqId, ErrorCode, ErrorMsg) ->
     xf_send_status(XF, ReqId, ErrorCode, ErrorMsg, <<>>).
@@ -376,7 +374,7 @@ xf_send_status(#ssh_xfer{cm = CM, channel = Channel},
 	      <<?UINT32(ELen)>>, ErrorMsg,
 	      <<?UINT32(TLen)>>, LangTag,
 	      Data],
-    ssh_cm:send(CM, Channel, ToSend).			       			       
+    ssh_cm:send(CM, Channel, ToSend).
 
 xf_send_attr(#ssh_xfer{cm = CM, channel = Channel, vsn = Vsn}, ReqId, Attr) ->
     EncAttr = encode_ATTR(Vsn, Attr),

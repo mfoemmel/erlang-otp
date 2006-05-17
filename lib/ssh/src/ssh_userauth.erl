@@ -20,7 +20,9 @@
 
 -module(ssh_userauth).
 
--export([auth/3, auth_remote/3, reg_user_auth_server/0, get_auth_users/0]).
+-export([auth/3, auth_remote/3, disconnect/2,
+	 reg_user_auth_server/0, get_auth_users/0,
+	 get_user_from_cm/1]).
 
 -include("ssh.hrl").
 -include("ssh_userauth.hrl").
@@ -111,6 +113,62 @@ passwd(SSH, Service, User, Opts) ->
 	   userauth_messages() ++ userauth_passwd_messages()},
     do_password(SSH, Service, User, Opts).
 
+
+check_password(User, Password, Opts) ->
+    case proplists:get_value(pwdfun, Opts) of
+	undefined ->
+	    Static = get_password_option(Opts, User),
+	    if
+		Password == Static ->
+		    true;
+		true ->
+		    {false, "Bad password"}
+	    end;
+	PW ->
+	    PW(User, Password)
+    end.
+
+
+disconnect(Handle, Opts) ->
+     case proplists:get_value(disconnectfun, Opts) of
+	undefined ->
+	     ok;
+	 DF ->
+	     DF(Handle)
+     end.
+
+connected_fun(User, PeerAddr, Opts, Method) ->
+     case proplists:get_value(connectfun, Opts) of
+	undefined ->
+	     ok;
+	 CF ->
+	     CF(User, PeerAddr, Method)
+     end.
+
+%% Reason for failfun() is a structured tuple, the following values are 
+%% possible
+
+% {passwd, Str}   - if the password was bad 
+% {authmethod, none}  - if the client attempted to use none as method
+% {authmethod, OtherStr} - if the client tried to use an unknown authmeth
+% {error, key_unacceptable} - if a the key sent to us wasn't verifiable
+% {error, inconsistent_key} - we got a broken DSA key
+% {error, invalid_signature} - again, broken key
+% {error, {{openerr, PosixAtom}, {file, Filename}}} - if we failed to open the 
+%                                                     file containing the user keys
+% {error, nouserdir}   - No dir configured for user which contains keys
+
+
+failfun(User, Opts, Reason) ->
+     case proplists:get_value(failfun, Opts) of
+	undefined ->
+	     error_logger:format("~p failed to login: ~p~n", [User, Reason]);
+	 FF ->
+	     FF(User, Reason)
+     end.
+
+
+
 get_password_option(Opts, User) ->
     Passwords = proplists:get_value(user_passwords, Opts, []),
     case lists:keysearch(User, 1, Passwords) of
@@ -149,8 +207,8 @@ public_key_reply(SSH) ->
 	    public_key_reply(SSH);
 	{ssh_msg, SSH, R} when record(R, ssh_msg_disconnect) ->
 	    {error, disconnected};
-	Other ->
-	    io:format("public_key_reply: Other=~w\n", [Other]),
+	_Other ->
+	    ?dbg(true, "public_key_reply: Other=~w\n", [_Other]),
 	    {error, unknown_msg}
     end.
 
@@ -169,7 +227,7 @@ passwd_reply(SSH) ->
 	{ssh_msg, SSH, R} when record(R, ssh_msg_disconnect) ->
 	    {error, disconnected};
 	Other ->
-	    io:format("passwd_reply: Other=~w\n", [Other]),
+	    ?dbg(true, "passwd_reply: Other=~w\n", [Other]),
 	    self() ! Other,
 	    {error, unknown_msg}
     end.
@@ -180,9 +238,9 @@ auth_remote(SSH, Service, Opts) ->
     ssh_transport:service_accept(SSH, "ssh-userauth"),
     do_auth_remote(SSH, Service, Opts).
 
-validate_password(User, Password, Opts) ->
-    OurPwd = get_password_option(Opts, User),
-    Password == OurPwd.
+%% validate_password(User, Password, Opts) ->
+%%     OurPwd = get_password_option(Opts, User),
+%%     Password == OurPwd.
 
 do_auth_remote(SSH, Service, Opts) ->
     receive
@@ -192,22 +250,34 @@ do_auth_remote(SSH, Service, Opts) ->
 						   data = Data}} ->
 	    <<_:8, ?UINT32(Sz), BinPwd:Sz/binary>> = Data,
 	    Password = binary_to_list(BinPwd),
-	    F = proplists:get_value(user_auth, Opts, fun validate_password/3),
-	    case F(User, Password, Opts) of
-		true ->
-		    SSH ! {ssh_msg, self(), #ssh_msg_userauth_success{}},
-		    reg_user_auth(self(), User, Opts),
-		    ok;
-		_ ->
+ 	    %% If we need to support PAM session mgmt this
+ 	    %% function needs to return an opaque handle back to
+ 	    %% to ssh_cm so that the session can be ended properly
+ 	    %% at logout
+ 	    Ret =  check_password(User, Password, Opts),
+ 	    case Ret of
+ 		true ->
+ 		    {ok, Peer} = ssh_transport:peername(SSH),
+ 		    connected_fun(User, Peer, Opts, "password"),
+ 		    SSH ! {ssh_msg, self(), #ssh_msg_userauth_success{}},
+ 		    {ok, {undefined, User}};
+ 		{true, Handle} ->
+ 		    {ok, Peer} = ssh_transport:peername(SSH),
+ 		    connected_fun(User, Peer, Opts, "password"),
+ 		    SSH ! {ssh_msg, self(), #ssh_msg_userauth_success{}},
+ 		    {ok, Handle};
+ 		{false, Str} ->
+ 		    failfun(User, Opts, {passwd, Str}),
 		    SSH ! {ssh_msg, self(), #ssh_msg_userauth_failure {
 					  authentications = "",
 					  partial_success = false}},
 		    do_auth_remote(SSH, Service, Opts)
 	    end;
-	{ssh_msg, SSH, #ssh_msg_userauth_request { user = _User,
+	{ssh_msg, SSH, #ssh_msg_userauth_request { user = User,
 						   service = Service,
 						   method = "none",
 						   data = _Data}} ->
+	    failfun(User, Opts, {authmethod, none}),
 	    SSH ! {ssh_msg, self(), #ssh_msg_userauth_failure {
 				  authentications = "publickey,password",
 				  partial_success = false}},
@@ -226,11 +296,15 @@ do_auth_remote(SSH, Service, Opts) ->
 		    case verify_sig(SSH, User, Service, Alg,
 				    KeyBlob, SigWLen, Opts) of
 			ok ->
+ 			    {ok, Peer} = ssh_transport:peername(SSH),
 			    SSH ! {ssh_msg, self(),
 				   #ssh_msg_userauth_success{}},
-			    reg_user_auth(self(), User, Opts),
-			    ok;
-			_ ->
+ 			    connected_fun(User, Peer, Opts, "publickey"),
+			    reg_user_auth(self(), User),
+ 			    {ok, {undefined, User}};
+ 			{error, ERR} ->
+ 			    %% we have a file, but failed to open/read it
+ 			    failfun(User, Opts, ERR),
 			    SSH ! {ssh_msg, self(),
 				   #ssh_msg_userauth_failure{
 						  authentications="publickey,password",
@@ -245,17 +319,18 @@ do_auth_remote(SSH, Service, Opts) ->
 					  key_blob = KeyBlob}},
 		    do_auth_remote(SSH, Service, Opts)
 	    end;
-	{ssh_msg, SSH, #ssh_msg_userauth_request  { user = _User,
+	{ssh_msg, SSH, #ssh_msg_userauth_request  { user = User,
 						    service = Service,
-						    method = _Other,
+						    method = Other,
 						    data = _Data}} ->
+	    failfun(User, Opts, {authmethod, Other}),
 	    SSH ! {ssh_msg, self(),
 		   #ssh_msg_userauth_failure {
 				  authentications = "publickey,password",
 				  partial_success = false}},
 	    do_auth_remote(SSH, Service, Opts);
 	Other ->
-	    io:format("Other ~p~n", [Other]),
+	    ?dbg(true, "Other ~p~n", [Other]),
 	    {error, Other}
     end.
 
@@ -282,7 +357,7 @@ build_sig_data(SSH, User, Service, Alg, KeyBlob) ->
 %% verify signature for PGP user auth
 verify_sig(SSH, User, Service, Alg, KeyBlob, SigWLen, Opts) ->
     {ok, Key} = ssh_file:decode_public_key_v2(KeyBlob, Alg),
-    case ssh_file:lookup_user_key(Alg, Opts) of
+    case ssh_file:lookup_user_key(User, Alg, Opts) of
 	{ok, OurKey} ->
 	    case OurKey of
 		Key ->
@@ -331,15 +406,6 @@ userauth_pk_messages() ->
      ].
 
 %% user registry (which is a really simple server)
-reg_user_auth(Pid, User, Opts) ->
-    case proplists:get_value(reg_users, Opts, false)
-	andalso whereis(?MODULE) =/= undefined of
-	true ->
-	    reg_user_auth(Pid, User);
-	false ->
-	    ok
-    end.
-
 reg_user_auth(Pid, User) ->
     case whereis(?MODULE) of
 	undefined ->
@@ -360,7 +426,21 @@ get_auth_users() ->
 	    end
     end.
 
+get_user_from_cm(CM) ->
+    case get_auth_users() of
+	{ok, UsersCMs} ->
+	    case lists:keysearch(CM, 2, UsersCMs) of
+		{value, {User, CM}} ->
+		    User;
+		_ ->
+		    error
+	    end;
+	_ ->
+	    error
+    end.
+
 reg_user_auth_server() ->
+    is_pid(whereis(?MODULE)) andalso unregister(?MODULE),
     Pid = spawn(fun() -> reg_user_auth_server_loop([]) end),
     register(?MODULE, Pid).
 

@@ -5,7 +5,7 @@
 %%% Created : 18 May 2004 by Hakan Mattsson <hakan@erix.ericsson.se>
 %%%-------------------------------------------------------------------
 %%% 
-%%% This is a complete imlementation of the following IETF standards:
+%%% This is a complete implementation of the following IETF standards:
 %%%
 %%%    RFC 1350, The TFTP Protocol (revision 2).
 %%%    RFC 2347, TFTP Option Extension.
@@ -30,6 +30,7 @@
 %%%   {debug, Level}
 %%%
 %%%     Level = none | brief | normal | verbose | all
+%%%     
 %%%     Controls the level of debug printouts. The default is none.
 %%%     
 %%%   {host, Host}
@@ -41,6 +42,7 @@
 %%%   {port, Port}
 %%%
 %%%     Port = integer()
+%%%     
 %%%     The TFTP port where the daemon listens. It defaults to the
 %%%     standardized number 69. On the server side it may sometimes
 %%%     make sense to set it to 0, which means that the daemon just
@@ -51,6 +53,7 @@
 %%%
 %%%     Policy = random | Port | {range, MinPort, MaxPort}
 %%%     Port = MinPort = MaxPort = integer()
+%%%     
 %%%     Policy for the selection of the temporary port which is used
 %%%     by the server/client during the file transfer. It defaults to
 %%%     'random' which is the standardized policy. With this policy a
@@ -64,6 +67,7 @@
 %%%   {use_tsize, Bool}
 %%%
 %%%     Bool = boolean()
+%%%     
 %%%     Flag for automated usage of the "tsize" option. With this set
 %%%     to true, the write_file/3 client will determine the filesize
 %%%     and send it to the server as the standardized "tsize" option.
@@ -73,6 +77,7 @@
 %%%   {max_tsize, MaxTsize}
 %%%
 %%%     MaxTsize = integer() | infinity
+%%%     
 %%%     Threshold for the maximal filesize in bytes. The transfer will
 %%%     be aborted if the limit is exceeded. It defaults to
 %%%     'infinity'.
@@ -80,6 +85,7 @@
 %%%   {max_conn, MaxConn}
 %%%   
 %%%     MaxConn = integer() | infinity
+%%%     
 %%%     Threshold for the maximal number of active connections. The
 %%%     daemon will reject the setup of new connections if the limit
 %%%     is exceeded. It defaults to 'infinity'.
@@ -96,6 +102,7 @@
 %%%      Feature = Mode | TftpKey
 %%%      Mode    = read | write
 %%%      TftpKey = string()
+%%%      
 %%%      Control which features that should be rejected.
 %%%      This is mostly useful for the server as it may restrict
 %%%      usage of certain TFTP options or read/write access.
@@ -105,6 +112,7 @@
 %%%    	 RegExp = string()
 %%%    	 Module = atom()
 %%%    	 State  = term()
+%%%    	 
 %%%      Registration of a callback module. When a file is to be
 %%%      transferred, its local filename will be matched to the
 %%%      regular expressions of the registered callbacks. The first
@@ -218,10 +226,9 @@ write_file(RemoteFilename, LocalFilename, Options) ->
     tftp_engine:client_start(write, RemoteFilename, LocalFilename, Options).
 
 %%-------------------------------------------------------------------
-%% start(Options) -> {ok, Port, Pid} | {error, Reason}
+%% start(Options) -> {ok, Pid} | {error, Reason}
 %% 
 %% Options = [option()]
-%% Port    = port()
 %% Pid     = pid()
 %% Reason  = term()
 %%

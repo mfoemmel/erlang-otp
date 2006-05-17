@@ -26,7 +26,7 @@
 
 -export([start_link/0, start/0, 
 	 handle_call/3,  handle_info/2,  
-	 init/1, start_link/0,
+	 init/1,
 	 code_change/3, handle_cast/2, terminate/2]).
 
 %% internal exports for test purposes only
@@ -380,21 +380,14 @@ get_pid(_) ->
 %% get_status() -> 
 %%    {{TimerTabName,TotalNumTimers},{IntervalTabName,NumIntervalTimers}}
 %%
-%% This function is for test purposes only, it is used by the test suite
+%% This function is for test purposes only; it is used by the test suite.
 %% There is a small possibility that there is a mismatch of one entry 
 %% between the 2 tables if this call is made when the timer server is 
 %% in the middle of a transaction
  
 get_status() ->
-    Tup1 = ets:info(?TIMER_TAB),
-    {size,TotalNumTimers} = element(4,Tup1),
-    Tup2 = ets:info(?INTERVAL_TAB),
-    {size,NumIntervalTimers} = element(4,Tup2),
-    {{?TIMER_TAB,TotalNumTimers}, {?INTERVAL_TAB,NumIntervalTimers}}.
-
-    
-
-
-
-
-
+    Info1 = ets:info(?TIMER_TAB),
+    {value,{size,TotalNumTimers}} = lists:keysearch(size, 1, Info1),
+    Info2 = ets:info(?INTERVAL_TAB),
+    {value,{size,NumIntervalTimers}} = lists:keysearch(size, 1, Info2),
+    {{?TIMER_TAB,TotalNumTimers},{?INTERVAL_TAB,NumIntervalTimers}}.

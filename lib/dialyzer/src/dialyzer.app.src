@@ -1,0 +1,20 @@
+% This is an -*- erlang -*- file.
+
+{application, dialyzer,
+ [{description, "DIscrepancy AnaLYZer of ERlang programs, version %VSN%"},
+  {vsn, "%VSN%"},
+  {modules, [dialyzer,
+	     dialyzer_analysis_callgraph,
+	     dialyzer_callgraph,
+	     dialyzer_cl,
+	     dialyzer_codeserver,
+	     dialyzer_dataflow,
+	     dialyzer_dep,
+	     dialyzer_gui,
+	     dialyzer_icode,
+	     dialyzer_options,
+	     dialyzer_plt,
+	     dialyzer_typesig]},
+  {registered, []},
+  {applications, [compiler, gs, hipe, kernel, stdlib]},
+  {env, []}]}.

@@ -42,7 +42,7 @@ static void print_slot(Process *p, Eterm *sp, unsigned int live,
 
     case SLOT_TYPE_ARG:
       printf(" | 0x%08lx | 0x%08lx | ARG ", (long)sp, val);
-      ldisplay(val, COUT, 30);
+      erts_printf("%.30T", val);
       break;
 
     case SLOT_TYPE_TRAP: /* RA */
@@ -67,7 +67,7 @@ static void print_slot(Process *p, Eterm *sp, unsigned int live,
     default:
       printf(" | 0x%08lx | 0x%08lx | ", (long)sp, val);
       if( live )
-	ldisplay(val, COUT, 30);
+	erts_printf("%.30T", val);
       else
 	printf("DEAD");
       break;
@@ -93,14 +93,10 @@ void hipe_print_nstack(Process *p)
     printf(" |      NATIVE  STACK      |\r\n");
     printf(" |------------|------------|\r\n");
     printf(" | heap       | 0x%08lx |\r\n", (unsigned long)p->heap);
-#ifndef SHARED_HEAP
     printf(" | high_water | 0x%08lx |\r\n", (unsigned long)p->high_water);
-#endif
     printf(" | hend       | 0x%08lx |\r\n", (unsigned long)p->htop);
-#ifndef SHARED_HEAP
     printf(" | old_heap   | 0x%08lx |\r\n", (unsigned long)p->old_heap);
     printf(" | old_hend   | 0x%08lx |\r\n", (unsigned long)p->old_hend);
-#endif
     printf(" | nstack     | 0x%08lx |\r\n", (unsigned long)p->hipe.nstack);
     printf(" | nsp        | 0x%08lx |\r\n", (unsigned long)p->hipe.nsp);
     printf(" | nstend     | 0x%08lx |\r\n", (unsigned long)p->hipe.nstend);

@@ -197,7 +197,7 @@ init({NodeName, AppName, AppId}) ->
     {ok, Client} = appmon_info:start_link(NodeName, self(), []),
     init_ref(),
     init_foreign_places(),
-    DG = digraph:new([cyclic, public]),
+    DG = digraph:new([cyclic, private]),
     State = #astate{app=AppId, name=AppName, client=Client, digraph=DG},
     refresh(State),
     setup_base_win(NodeName, AppName),
@@ -235,7 +235,7 @@ handle_info({gs, _, click, _, [?REFRESHTXT|_]}, State) ->
 handle_info({gs, _, click, _, [?HELPTXT|_]}, State) ->
     HelpFile = filename:join([code:lib_dir(appmon),
 			      "doc", "html", "part_frame.html"]),
-    tool_utils:open_help(gs:start(), HelpFile),
+    tool_utils:open_help(win(), HelpFile),
     {noreply, State};
 handle_info({gs, Id, click, {mode, Mode}, _}, State) ->
     %%io:format("handle_info: Setting mode: ~p~n", [Mode]),

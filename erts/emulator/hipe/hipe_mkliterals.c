@@ -234,6 +234,8 @@ static const struct literal {
 } literals[] = {
     /* Field offsets in a process struct */
     { "P_HP", offsetof(struct process, htop) },
+    { "P_HP_LIMIT", offsetof(struct process, stop) },
+    { "P_OFF_HEAP_MSO", offsetof(struct process, off_heap.mso) },
     { "P_ID", offsetof(struct process, id) },
     { "P_FLAGS", offsetof(struct process, flags) },
     { "P_FVALUE", offsetof(struct process, fvalue) },
@@ -318,15 +320,10 @@ static const struct literal {
     { "HEAP_BIN_DATA", offsetof(struct erl_heap_bin, data) },
     { "BINARY_ORIG_BYTES", offsetof(struct binary, orig_bytes) },
     { "MAX_HEAP_BIN_SIZE", ERL_ONHEAP_BIN_LIMIT},
-
-    /* messages */
-#if !defined(ERTS_SMP)
-    { "P_MSG_FIRST", offsetof(struct process, msg.first) },
-    { "P_MSG_SAVE", offsetof(struct process, msg.save) },
-    { "MSG_NEXT", offsetof(struct erl_mesg, next) },
-    { "MSG_MESSAGE", offsetof(struct erl_mesg, m[0]) },
-#endif
-
+    { "MS_THING_WORD", offsetof(struct erl_bin_match_struct, thing_word)},
+    { "MS_MATCHBUFFER", offsetof(struct erl_bin_match_struct, mb)},
+    { "MS_SAVEOFFSET", offsetof(struct erl_bin_match_struct, save_offset)},
+    
     /* ARM */
     { "ARM_LEAF_WORDS", ARM_LEAF_WORDS },
     { "ARM_NR_ARG_REGS", ARM_NR_ARG_REGS },
@@ -413,34 +410,14 @@ static const struct rts_param {
     unsigned int is_defined;
     unsigned int value;
 } rts_params[] = {
-    { 0, "P_HP_LIMIT",
-#if defined(SHARED_HEAP)
-      1, offsetof(struct process, hend)
-#else
-      1, offsetof(struct process, stop)
-#endif
-    },
-
     { 1, "P_OFF_HEAP_FUNS",
-#if !defined(SHARED_HEAP) && !defined(HYBRID)
+#if !defined(HYBRID)
       1, offsetof(struct process, off_heap.funs)
 #endif
     },
 
-    { 2, "P_OFF_HEAP_MSO",
-#if !defined(SHARED_HEAP)
-      1, offsetof(struct process, off_heap.mso)
-#endif
-    },
-
-    { 3, "OFF_HEAP_MSO",
-#if defined(SHARED_HEAP)
-      1, offsetof(struct erl_off_heap, mso)
-#endif
-    },
-
     { 4, "EFT_NEXT",
-#if !defined(SHARED_HEAP) && !defined(HYBRID)
+#if !defined(HYBRID)
       1, offsetof(struct erl_fun_thing, next)
 #endif
     },
@@ -465,6 +442,41 @@ static const struct rts_param {
     { 13, "SCHED_DATA_ERTS_MB_OFFS",
 #ifdef ERTS_SMP
       1, offsetof(ErtsSchedulerData, erl_bits_state.erts_mb_)
+#endif
+    },
+    { 14, "P_FP_EXCEPTION",
+#if !defined(NO_FPE_SIGNALS)
+      1, offsetof(struct process, fp_exception)
+#endif
+    },
+    /* This flag is always defined, but its value is configuration-dependent. */
+    { 15, "ERTS_IS_SMP",
+      1,
+#if defined(ERTS_SMP)
+      1
+#else
+      0
+#endif
+    },
+    /* messages */
+    { 16, "P_MSG_FIRST",
+#if !defined(ERTS_SMP)
+      1, offsetof(struct process, msg.first)
+#endif
+    },
+    { 17, "P_MSG_SAVE",
+#if !defined(ERTS_SMP)
+      1, offsetof(struct process, msg.save)
+#endif
+    },
+    { 18, "MSG_NEXT",
+#if !defined(ERTS_SMP)
+      1, offsetof(struct erl_mesg, next)
+#endif
+    },
+    { 19, "MSG_MESSAGE",
+#if !defined(ERTS_SMP)
+      1, offsetof(struct erl_mesg, m[0])
 #endif
     },
 };

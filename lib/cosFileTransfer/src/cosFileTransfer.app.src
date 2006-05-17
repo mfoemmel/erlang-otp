@@ -9,6 +9,7 @@
 	'CosFileTransfer_VirtualFileSystem_impl',
 	'CosFileTransfer_FileTransferSession_impl',
 	'CosFileTransfer_FileIterator_impl',
+	'cosFileTransferNATIVE_file',
 	'oe_CosFileTransfer',
 	'CosFileTransfer',
 	'CosFileTransfer_AccessLevel',

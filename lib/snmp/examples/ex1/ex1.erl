@@ -35,6 +35,7 @@
 start() ->
     spawn(ex1, init, []).
 
+
 %%----------------------------------------------------------------
 %% Instrumentation function for variable myName.
 %% Returns: (get) {value, Name}
@@ -147,7 +148,7 @@ get_next_cols([], _Row) ->
 %%----------------------------------------------------------------
 %% Make a list of endOfTable with as many elems as Cols list.
 %%----------------------------------------------------------------
-end_of_table([Col | Cols]) ->
+end_of_table([_Col | Cols]) ->
     [endOfTable | end_of_table(Cols)];
 end_of_table([]) ->
     [].
@@ -190,7 +191,7 @@ loop(MyName, Table) ->
 	{From, get_my_name} ->
 	    From ! {ex1_server, MyName},
 	    loop(MyName, Table);
-	{From, {set_my_name, NewName}} ->
+	{_From, {set_my_name, NewName}} ->
 	    loop(NewName, Table);
 	{From, {get_row, RowIndex}} ->
 	    Res = table_get_row(Table, RowIndex),
@@ -200,10 +201,10 @@ loop(MyName, Table) ->
 	    Res = table_get_next_row(Table, RowIndex),
 	    From ! {ex1_server, Res},
 	    loop(MyName, Table);
-	{From, {delete_row, RowIndex}} ->
+	{_From, {delete_row, RowIndex}} ->
 	    NewTable = table_delete_row(Table, RowIndex),
 	    loop(MyName, NewTable);
-	{From, {add_row, NewRow}} ->
+	{_From, {add_row, NewRow}} ->
 	    NewTable = table_add_row(Table, NewRow),
 	    loop(MyName, NewTable)
     end.
@@ -214,18 +215,18 @@ loop(MyName, Table) ->
 %%-----------------------------------------------------------------
 table_get_row([{Index, Name, Address, Status} | _], [Index]) ->
     {ok, {Index, Name, Address, Status}};
-table_get_row([H | T], RowIndex) ->
+table_get_row([_H | T], RowIndex) ->
     table_get_row(T, RowIndex);
 table_get_row([], _RowIndex) ->
     no_such_row.
 
-table_get_next_row([Row | T], []) ->
+table_get_next_row([Row | _T], []) ->
     {ok, Row};
-table_get_next_row([Row | T], [Index | _]) when element(1, Row) > Index ->
+table_get_next_row([Row | _T], [Index | _]) when element(1, Row) > Index ->
     {ok, Row};
-table_get_next_row([Row | T], RowIndex) ->
+table_get_next_row([_Row | T], RowIndex) ->
     table_get_next_row(T, RowIndex);
-table_get_next_row([], RowIndex) ->
+table_get_next_row([], _RowIndex) ->
     endOfTable.
 
 table_delete_row([{Index, _, _, _} | T], [Index]) ->

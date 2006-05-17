@@ -21,7 +21,7 @@ run_1(NS) ->
     NC = lname_component:set_id(lname_component:create(), "StackFactory"),
     N = lname:insert_component(lname:create(), 1, NC),
     case catch 'CosNaming_NamingContext':resolve(NS, N) of
-	{'EXCEPTION', E} ->
+	{'EXCEPTION', _E} ->
 	    io:format("The stack factory server is not registered~n",[]);
 	SF ->
 	    %% Create the stack

@@ -49,13 +49,6 @@
 -define(REGULATOR_NAME, mnesia_dumper_load_regulator).
 -define(DumpToEtsMultiplier, 4).
 
--record(state, {initiated_by = nobody,
-		dumper = nopid,
-		regulator_pid,
-		supervisor_pid,
-		queue = [],
-		timeout}).
-
 get_log_writes() ->
     Max = mnesia_monitor:get_env(dump_log_write_threshold),
     Prev = mnesia_lib:read_counter(trans_log_writes),

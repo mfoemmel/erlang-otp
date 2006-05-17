@@ -48,7 +48,6 @@
 
 -import(lists, [reverse/1,all/2,foldl/3]).
 -import(ordsets, [add_element/2,is_element/2,union/2]).
-%-import(ordsets, [subtract/2]).
 
 -include("core_parse.hrl").
 
@@ -58,12 +57,6 @@
 	       func=[],				%Current function
 	       errors=[],			%Errors
 	       warnings=[]}).			%Warnings
-
-%% Keep track of defined
--record(def, {vars=[],
-	      funs=[]}).
-
-%%-deftype retcount() -> any | unknown | int().
 
 %% format_error(Error)
 %%  Return a string describing the error.

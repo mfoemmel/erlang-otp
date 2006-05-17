@@ -30,7 +30,7 @@ start() ->
 init() ->
     I= gs:start(),
     W= gs:window(I,[{title,"Color Demo"},{width,300},{height,195}]), 
-    B=gs:button(W,[{bitmap,"die_icon"},{x,271},{y,166},{width,30}]),
+    B=gs:button(W,[{label,{text,"Quit"}},{x,261},{y,166},{width,40}]),
     gs:config(B,[{bg,yellow},{fg,hotpink1},{data,quit}]),
     gs:scale(W,[{text,"Red"},{y,0},{range,{0,255}},{orient,horizontal},
 		{height,65},{data,red},{pos,42}]),

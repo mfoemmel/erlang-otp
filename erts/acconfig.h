@@ -222,7 +222,7 @@
 #define FD_SETSIZE 1024
 #endif
 
-#if !defined(USE_SELECT)
+#if !defined(USE_SELECT) && !defined(ERTS_SMP)
 #  if defined(ENABLE_KERNEL_POLL)
 #    if defined(HAVE_SYS_DEVPOLL_H) || defined(HAVE_LINUX_KPOLL_H) || defined(HAVE_SYS_EVENT_H)
 #      define USE_KERNEL_POLL
@@ -238,4 +238,9 @@
 # if defined(HAVE_ISINF) && defined(HAVE_ISNAN)
 #  define USE_ISINF_ISNAN
 # endif
+#endif
+
+#if defined(DEBUG) && defined(USE_THREADS)
+#undef ERTS_ENABLE_LOCK_CHECK
+#define ERTS_ENABLE_LOCK_CHECK 1
 #endif

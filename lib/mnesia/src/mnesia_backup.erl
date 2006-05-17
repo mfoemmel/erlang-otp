@@ -15,6 +15,8 @@
 %% 
 %%     $Id$
 %%
+
+%%-behaviour(mnesia_backup).
 %0
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -46,7 +48,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(mnesia_backup).
--behaviour(mnesia_backup).
 
 -include_lib("kernel/include/file.hrl").
 

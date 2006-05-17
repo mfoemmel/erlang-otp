@@ -22,7 +22,6 @@
 -export([size/1,df/1,df/2,df/3]).
 
 %% This module contains the following *experimental* BIFs:
-%%   apply/4 
 %%   disassemble/1
 %%   breakpoint/2
 %%   same/2
@@ -88,9 +87,9 @@ is_term_seen(_, []) -> false.
 %% df(Mod, Func)         -- Disassemble Mod:Func/Any to file Mod_Func.dis.
 %% df(Mod, Func, Arity)  -- Disassemble Mod:Func/Arity to file Mod_Func_Arity.dis.
 
-df(Mod) when atom(Mod) ->
+df(Mod) when is_atom(Mod) ->
     case catch Mod:module_info(functions) of
-	Fs0 when list(Fs0) ->
+	Fs0 when is_list(Fs0) ->
 	    Name = lists:concat([Mod, ".dis"]),
 	    Fs = [{Mod,Func,Arity} || {Func,Arity} <- Fs0],
 	    dff(Name, Fs);
@@ -98,9 +97,9 @@ df(Mod) when atom(Mod) ->
 	    {undef,Mod}
     end.
 
-df(Mod, Func) when atom(Mod), atom(Func) ->
+df(Mod, Func) when is_atom(Mod), is_atom(Func) ->
     case catch Mod:module_info(functions) of
-	Fs0 when list(Fs0) ->
+	Fs0 when is_list(Fs0) ->
 	    Name = lists:concat([Mod,"_",Func,".dis"]),
 	    Fs = [{Mod,Func1,Arity} || {Func1,Arity} <- Fs0, Func1 == Func],
 	    dff(Name, Fs);
@@ -108,9 +107,9 @@ df(Mod, Func) when atom(Mod), atom(Func) ->
 	    {undef,Mod}
     end.
 
-df(Mod, Func, Arity) when atom(Mod), atom(Func) ->
+df(Mod, Func, Arity) when is_atom(Mod), is_atom(Func) ->
     case catch Mod:module_info(functions) of
-	Fs0 when list(Fs0) ->
+	Fs0 when is_list(Fs0) ->
 	    Name = lists:concat([Mod,"_",Func,"_",Arity,".dis"]),
 	    Fs = [{Mod,Func1,Arity1} || {Func1,Arity1} <- Fs0,
 					Func1 == Func, Arity1 == Arity],
@@ -119,13 +118,19 @@ df(Mod, Func, Arity) when atom(Mod), atom(Func) ->
 	    {undef,Mod}
     end.
 
-dff(File, Fs) when pid(File), list(Fs) ->
-    lists:foreach(fun(Mfa) -> disassemble_function(File, Mfa),
-			      io:nl(File) end, Fs);
-dff(Name, Fs) when list(Name) ->
+dff(File, Fs) when is_pid(File), is_list(Fs) ->
+    lists:foreach(fun(Mfa) ->
+			  disassemble_function(File, Mfa),
+			  io:nl(File)
+		  end, Fs);
+dff(Name, Fs) when is_list(Name) ->
     case file:open(Name, [write]) of
 	{ok,F} ->
-	    dff(F, Fs);
+	    try
+		dff(F, Fs)
+	    after
+		file:close(F)
+	    end;
 	{error,Reason} ->
 	    {error,{badopen,Reason}}
     end.

@@ -174,6 +174,8 @@ nbif_ccallemu1:
 	.align	4
 	.global nbif_ccallemu0
 nbif_ccallemu0:
+	/* We use %eax not ARG0 here because ARG0 is not
+	   defined when NR_ARG_REGS == 0. */
 #if X86_NR_ARG_REGS == 0
 	movl	4(NSP), %eax
 #endif
@@ -201,7 +203,7 @@ nbif_suspend_msg:
 
 /*
  * Suspend from a receive with a timeout (waiting for a message)
- *	if( !(p->flags & F_TIMO) ) { suspend }
+ *	if (!(p->flags & F_TIMO)) { suspend }
  *	else { return 0; }
  */
 	.align	4
@@ -260,23 +262,6 @@ x86_throw_to_native:
 	jmp	*P_NCALLEE(P)		# set by hipe_find_handler()
 
 /*
- * Find and invoke catch handler (it must exist).
- * The stack/heap registers were just read from P.
- * - %eax should contain the current call's arity
- */
-	.align	4
-.find_exn_handler:
-	movl	%eax, P_NARITY(P)
-	/* find and prepare to invoke the handler */
-	SWITCH_ERLANG_TO_C_QUICK	# The cached state is clean and need not be saved.
-	pushl	P
-	call	hipe_handle_exception	# Note: hipe_handle_exception() conses
-	addl	$4, %esp
-	SWITCH_C_TO_ERLANG		# %esp updated by hipe_find_handler()
-	/* now invoke the handler */
-	jmp	*P_NCALLEE(P)		# set by hipe_find_handler()
-
-/*
  * This is the default exception handler for native code.
  */
 	.align	4
@@ -313,7 +298,22 @@ nbif_3_simple_exception:
 	.align	4
 .nbif_simple_exception:
 	cmpl	$FREASON_TRAP, P_FREASON(P)
-	jne	.find_exn_handler
+	je	.handle_trap
+	/*
+	 * Find and invoke catch handler (it must exist).
+	 * The stack/heap registers were just read from P.
+	 * - %eax should contain the current call's arity
+	 */
+	movl	%eax, P_NARITY(P)
+	/* find and prepare to invoke the handler */
+	SWITCH_ERLANG_TO_C_QUICK	# The cached state is clean and need not be saved.
+	pushl	P
+	call	hipe_handle_exception	# Note: hipe_handle_exception() conses
+	addl	$4, %esp
+	SWITCH_C_TO_ERLANG		# %esp updated by hipe_find_handler()
+	/* now invoke the handler */
+	jmp	*P_NCALLEE(P)		# set by hipe_find_handler()
+
 	/*
 	 * A BIF failed with freason TRAP:
 	 * - the BIF stored the callee's Export* in p->def_arg_reg[0]
@@ -321,6 +321,7 @@ nbif_3_simple_exception:
 	 * - the BIF's arity is in %eax
 	 * - the native heap/stack/reds registers are saved in P
 	 */
+.handle_trap:
 	movl	%eax, P_ARITY(P)
 	movl	$HIPE_MODE_SWITCH_RES_TRAP, %eax
 	jmp	.nosave_exit

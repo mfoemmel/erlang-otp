@@ -223,7 +223,7 @@ int big_ucomp (Eterm, Eterm);
 int big_to_double(Eterm x, double* resp);
 Eterm small_to_big(Sint, Eterm*);
 Eterm uint_to_big(Uint, Eterm*);
-Eterm make_small_or_big(Uint, Process*);
+Eterm erts_make_integer(Uint, Process *);
 
 dsize_t big_bytes(Eterm);
 #if 0	/* XXX: unused */

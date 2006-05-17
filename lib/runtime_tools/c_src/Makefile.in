@@ -38,7 +38,11 @@ LDFLAGS = @DED_LDFLAGS@
 ERLANG_OSTYPE = @ERLANG_OSTYPE@
 
 SYSINCLUDE = 	-I$(ERL_TOP)/erts/emulator/beam \
-		-I$(ERL_TOP)/erts/emulator/sys/$(ERLANG_OSTYPE)
+		-I$(ERL_TOP)/erts/emulator/sys/$(ERLANG_OSTYPE) \
+		-I$(ERL_TOP)/erts/include/internal \
+		-I$(ERL_TOP)/erts/include/internal/$(ERLANG_OSTYPE) \
+		-I$(ERL_TOP)/erts/include \
+		-I$(ERL_TOP)/erts/include/$(ERLANG_OSTYPE)
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 	SYSINCLUDE += -I$(ERL_TOP)/erts/etc/vxworks
 endif

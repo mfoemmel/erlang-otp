@@ -59,7 +59,7 @@ DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += +nowarn_shadow_vars +inline
+ERL_COMPILE_FLAGS += +nowarn_shadow_vars +warn_unused_import +inline
 
 # ----------------------------------------------------
 # Targets

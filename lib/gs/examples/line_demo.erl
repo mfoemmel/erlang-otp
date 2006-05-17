@@ -31,9 +31,7 @@ init() ->
     I= gs:start(),
     W= gs:window(I,[{title,"Line Demo"},{width,300},{height,300},{map,true}]), 
     C= gs:canvas(W,[{width,300},{height,300},{bg,blue}]),
-    gs:button(W,[{bitmap,"die_icon"},{width,30},{bg,yellow}]),
-%    Line1 = gs:line(C,[{coords,[{0,0},{100,100}]},{fg,green},{width,3}]),
-%    spawn(line_demo,line, [Line1,{0,0,9.5,5},{100,100,-6,-8.4}]),
+    gs:button(W,[{label,{text,"Quit"}},{width,40},{bg,yellow}]),
     Line2 = gs:line(C,[{coords,[{0,0},{50,50}]},{fg,white},{width,3}]),
     line(Line2,{100,100,9.5,5},{0,0,-6,-8.4}).
     

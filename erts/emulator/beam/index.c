@@ -26,14 +26,14 @@
 #include "index.h"
 
 
-void index_info(CIO to, IndexTable *t)
+void index_info(int to, void *arg, IndexTable *t)
 {
-    hash_info(to, &t->htable);
-    erl_printf(to, "=index_table:%s\n", t->htable.name);
-    erl_printf(to, "size: %d\n",	t->size);
-    erl_printf(to, "limit: %d\n",	t->limit);
-    erl_printf(to, "used: %d\n",	t->sz);
-    erl_printf(to, "rate: %d\n",	t->rate);
+    hash_info(to, arg, &t->htable);
+    erts_print(to, arg, "=index_table:%s\n", t->htable.name);
+    erts_print(to, arg, "size: %d\n",	t->size);
+    erts_print(to, arg, "limit: %d\n",	t->limit);
+    erts_print(to, arg, "used: %d\n",	t->sz);
+    erts_print(to, arg, "rate: %d\n",	t->rate);
 }
 
 

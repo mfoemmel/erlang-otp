@@ -44,7 +44,6 @@ static Eterm shift(Process* p, Eterm arg1, Eterm arg2, int right);
 
 static ERTS_INLINE void maybe_shrink(Process* p, Eterm* hp, Eterm res, Uint alloc)
 {
-#ifndef SHARED_HEAP
     Uint actual;
 
     if (is_small(res)) {
@@ -52,7 +51,6 @@ static ERTS_INLINE void maybe_shrink(Process* p, Eterm* hp, Eterm res, Uint allo
     } else if ((actual = bignum_header_arity(*hp)+1) < alloc) {
 	erts_arith_shrink(p, hp+actual);
     }
-#endif
 }
 
 /*
@@ -99,7 +97,9 @@ BIF_RETTYPE intdiv_2(BIF_ALIST_2)
 	BIF_ERROR(BIF_P, BADARITH);
     }
     if (is_both_small(BIF_ARG_1,BIF_ARG_2)){
-	BIF_RET(make_small(signed_val(BIF_ARG_1) / signed_val(BIF_ARG_2)));
+	Sint ires = signed_val(BIF_ARG_1) / signed_val(BIF_ARG_2);
+	if (MY_IS_SSMALL(ires))
+	    BIF_RET(make_small(ires));
     } 
     BIF_RET(erts_int_div(BIF_P, BIF_ARG_1, BIF_ARG_2));
 } 
@@ -273,7 +273,7 @@ erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
     Eterm* hp;
     Sint ires;
 
-    ERTS_FP_CHECK_INIT();
+    ERTS_FP_CHECK_INIT(p);
     switch (arg1 & _TAG_PRIMARY_MASK) {
     case TAG_PRIMARY_IMMED1:
 	switch ((arg1 & _TAG_IMMED1_MASK) >> _TAG_PRIMARY_SIZE) {
@@ -392,7 +392,7 @@ erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
 
 		do_float:
 		    f1.fd = f1.fd + f2.fd;
-		    ERTS_FP_ERROR(f1.fd, goto badarith);
+		    ERTS_FP_ERROR(p, f1.fd, goto badarith);
 		    hp = ArithAlloc(p, FLOAT_SIZE_OBJECT);
 		    res = make_float(hp);
 		    ArithCheck(p);
@@ -423,7 +423,7 @@ erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2)
     Eterm* hp;
     Sint ires;
 
-    ERTS_FP_CHECK_INIT();
+    ERTS_FP_CHECK_INIT(p);
     switch (arg1 & _TAG_PRIMARY_MASK) {
     case TAG_PRIMARY_IMMED1:
 	switch ((arg1 & _TAG_IMMED1_MASK) >> _TAG_PRIMARY_SIZE) {
@@ -540,7 +540,7 @@ erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2)
 
 		do_float:
 		    f1.fd = f1.fd - f2.fd;
-		    ERTS_FP_ERROR(f1.fd, goto badarith);
+		    ERTS_FP_ERROR(p, f1.fd, goto badarith);
 		    hp = ArithAlloc(p, FLOAT_SIZE_OBJECT);
 		    res = make_float(hp);
 		    ArithCheck(p);
@@ -570,7 +570,7 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
     int need_heap;
     Eterm* hp;
 
-    ERTS_FP_CHECK_INIT();
+    ERTS_FP_CHECK_INIT(p);
     switch (arg1 & _TAG_PRIMARY_MASK) {
     case TAG_PRIMARY_IMMED1:
 	switch ((arg1 & _TAG_IMMED1_MASK) >> _TAG_PRIMARY_SIZE) {
@@ -733,7 +733,7 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 
 		do_float:
 		    f1.fd = f1.fd * f2.fd;
-		    ERTS_FP_ERROR(f1.fd, goto badarith);
+		    ERTS_FP_ERROR(p, f1.fd, goto badarith);
 		    hp = ArithAlloc(p, FLOAT_SIZE_OBJECT);
 		    res = make_float(hp);
 		    ArithCheck(p);
@@ -758,7 +758,7 @@ erts_mixed_div(Process* p, Eterm arg1, Eterm arg2)
     Eterm* hp;
     Eterm hdr;
 
-    ERTS_FP_CHECK_INIT();
+    ERTS_FP_CHECK_INIT(p);
     switch (arg1 & _TAG_PRIMARY_MASK) {
     case TAG_PRIMARY_IMMED1:
 	switch ((arg1 & _TAG_IMMED1_MASK) >> _TAG_PRIMARY_SIZE) {
@@ -860,7 +860,7 @@ erts_mixed_div(Process* p, Eterm arg1, Eterm arg2)
 
 		do_float:
 		    f1.fd = f1.fd / f2.fd;
-		    ERTS_FP_ERROR(f1.fd, goto badarith);
+		    ERTS_FP_ERROR(p, f1.fd, goto badarith);
 		    hp = ArithAlloc(p, FLOAT_SIZE_OBJECT);
 		    PUT_DOUBLE(f1, hp);
 		    ArithCheck(p);
@@ -880,10 +880,16 @@ erts_mixed_div(Process* p, Eterm arg1, Eterm arg2)
 Eterm
 erts_int_div(Process* p, Eterm arg1, Eterm arg2)
 {
+    Eterm tmp_big1[2];
     Eterm tmp_big2[2];
     int ires;
 
     switch (NUMBER_CODE(arg1, arg2)) {
+    case SMALL_SMALL:
+	/* This case occurs if the most negative fixnum is divided by -1. */
+	ASSERT(arg2 == make_small(-1));
+	arg1 = small_to_big(signed_val(arg1), tmp_big1);
+	/*FALLTHROUGH*/
     case BIG_SMALL:
 	arg2 = small_to_big(signed_val(arg2), tmp_big2);
 	goto L_big_div;

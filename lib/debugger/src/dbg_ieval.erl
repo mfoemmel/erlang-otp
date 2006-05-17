@@ -866,6 +866,30 @@ expr({'case',Line,E,Cs}, Bs0, Ieval) ->
 expr({'if',Line,Cs}, Bs, Ieval) ->
     if_clauses(Cs, Bs, Ieval#ieval{line=Line});
 
+%% Andalso/orelse
+expr({'andalso',Line,E1,E2}, Bs, Ieval) ->
+    case expr(E1, Bs, Ieval#ieval{line=Line, last_call=false}) of
+	{value,false,_}=Res -> Res;
+	{value,true,_} ->
+	    case expr(E2, Bs, Ieval#ieval{line=Line, last_call=false}) of
+		{value,Bool,_}=Res when is_boolean(Bool) -> Res;
+		{value,Val,_} -> exception(error, {badarg,Val}, Bs, Ieval)
+	    end;
+	{value,Val,Bs} ->
+	    exception(error, {badarg,Val}, Bs, Ieval)
+    end;
+expr({'orelse',Line,E1,E2}, Bs, Ieval) ->
+    case expr(E1, Bs, Ieval#ieval{line=Line, last_call=false}) of
+	{value,true,_}=Res -> Res;
+	{value,false,_} ->
+	    case expr(E2, Bs, Ieval#ieval{line=Line, last_call=false}) of
+		{value,Bool,_}=Res when is_boolean(Bool) -> Res;
+		{value,Val,_} -> exception(error, {badarg,Val}, Bs, Ieval)
+	    end;
+	{value,Val,_} ->
+	    exception(error, {badarg,Val}, Bs, Ieval)
+    end;
+
 %% Matching expression
 expr({match,Line,Lhs,Rhs0}, Bs0, Ieval0) ->
     Ieval = Ieval0#ieval{line=Line},
@@ -1015,9 +1039,16 @@ expr({op,Line,Op,As0}, Bs0, Ieval0) ->
     end;
 
 %% apply/2 (fun)
-expr({apply_fun,Line,Fun0,As0}, Bs0, Ieval0) ->
+expr({apply_fun,Line,Fun0,As0}, Bs0, #ieval{level=Le}=Ieval0) ->
     Ieval = Ieval0#ieval{line=Line},
-    case expr(Fun0, Bs0, Ieval) of
+    FunValue = case expr(Fun0, Bs0, Ieval) of
+		   {value,{dbg_apply,Mx,Fx,Asx},Bsx} ->
+		       debugged_cmd({apply,Mx,Fx,Asx},
+				    Bsx, Ieval#ieval{level=Le+1});
+		   OtherFunValue ->
+		       OtherFunValue
+	       end,
+    case FunValue of
 	{value,Fun,Bs1} when is_function(Fun) ->
 	    {As,Bs} = eval_list(As0, Bs1, Ieval),
 	    eval_function(undefined, Fun, As, Bs, extern, Ieval);
@@ -1416,6 +1447,22 @@ guard_exprs([A0|As0], Bs) ->
 guard_exprs([], _) ->
     {values,[]}.
 
+guard_expr({'andalso',_,E1,E2}, Bs) ->
+    case guard_expr(E1, Bs) of
+	{value,false}=Res -> Res;
+	{value,true} ->
+	    case guard_expr(E2, Bs) of
+		{value,Bool}=Res when is_boolean(Bool) -> Res
+	    end
+    end;
+guard_expr({'orelse',_,E1,E2}, Bs) ->
+    case guard_expr(E1, Bs) of
+	{value,true}=Res -> Res;
+	{value,false} ->
+	    case guard_expr(E2, Bs) of
+		{value,Bool}=Res when is_boolean(Bool) -> Res
+	    end
+    end;
 guard_expr({dbg,_,self,[]}, _) ->
     {value,get(self)};
 guard_expr({safe_bif,_,erlang,'not',As0}, Bs) ->

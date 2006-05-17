@@ -53,15 +53,15 @@ typedef struct export
 
 
 void init_export_table(void);
-void export_info(CIO);
+void export_info(int, void *);
 
 Export* erts_find_export_entry(Eterm m, Eterm f, unsigned int a);
 Export* erts_export_put(Eterm mod, Eterm func, unsigned int arity);
 
-extern IndexTable export_table;
-
-#define export_list(i)    ((Export*)export_table.table[i])
-#define export_list_size  export_table.sz
+Export *export_list(int);
+int export_list_size(void);
+int export_table_sz(void);
+Export *export_get(Export*);
 
 #include "beam_load.h" /* For em_* extern declarations */ 
 #define ExportIsBuiltIn(EntryPtr) 			\

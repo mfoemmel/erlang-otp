@@ -96,5 +96,8 @@
   {env, []},
   %% If v3 authentication or encryption is used, 'crypto' must be started
   %% before snmp.
+  %% The SNMP application _may_ also depend on mnesia (depends on the
+  %% configuration and use), and in that case mnesia must also be started,
+  %% before snmp.
   {applications, [kernel, stdlib]},
   {mod, {snmp_app, []}}]}.

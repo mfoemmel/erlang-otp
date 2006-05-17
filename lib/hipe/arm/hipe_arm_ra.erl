@@ -20,12 +20,12 @@ ra(Defun0, Options) ->
     = case proplists:get_value(regalloc, Options, coalescing) of
 	coalescing ->
 	  ra(Defun1, SpillIndex, Options, hipe_coalescing_regalloc);
-%%	optimistic ->
-%%	  ra(Defun1, SpillIndex, Options, hipe_optimistic_regalloc);
-%%	graph_color ->
-%%	  ra(Defun1, SpillIndex, Options, hipe_graph_coloring_regalloc);
-%%	linear_scan ->
-%%	  hipe_arm_ra_ls:ra(Defun1, SpillIndex, Options);
+	optimistic ->
+	  ra(Defun1, SpillIndex, Options, hipe_optimistic_regalloc);
+	graph_color ->
+	  ra(Defun1, SpillIndex, Options, hipe_graph_coloring_regalloc);
+	linear_scan ->
+	  hipe_arm_ra_ls:ra(Defun1, SpillIndex, Options);
 	naive ->
 	  hipe_arm_ra_naive:ra(Defun1, Coloring_fp, Options);
         _ ->

@@ -50,7 +50,28 @@ sign(_Private=#ssh_key { private={P,Q,G,X} },Mb) ->
     <<R:160/big-unsigned-integer, S:160/big-unsigned-integer>>.
 
 
-verify(_Public=#ssh_key { public={P,Q,G,Y} },Mb,Sb) ->
+%% the paramiko client sends a bad sig sometimes, 
+%% instead of crashing, we nicely return error, the
+%% typcally manifests itself as Sb being 39 bytes
+%% instead of 40.
+
+verify(Public, Mb, Sb) ->
+    case catch xverify(Public, Mb, Sb) of
+	{'EXIT', _Reason} ->
+            %store({Public, Mb, Sb, _Reason}),
+	    {error, inconsistent_key};
+	ok ->
+  	    %store({Public, Mb, Sb, ok})
+	    ok
+    end.
+
+%% store(Term) ->
+%%     {ok, Fd} = file:open("/tmp/dsa", [append]),
+%%     io:format(Fd, "~p~n~n~n", [Term]),
+%%     file:close(Fd).
+
+
+xverify(_Public=#ssh_key { public={P,Q,G,Y} },Mb,Sb) ->
     <<R0:160/big-unsigned-integer, S0:160/big-unsigned-integer>> = Sb,
     ?ssh_assert(R0 >= 0 andalso R0 < Q andalso
 		S0 >= 0 andalso S0 < Q, out_of_range),
@@ -64,7 +85,7 @@ verify(_Public=#ssh_key { public={P,Q,G,Y} },Mb,Sb) ->
     if V == R0 ->
 	    ok;
        true ->
-	    exit(inconsistent)
+	    {error, inconsistent_key}
     end.
 
 alg_name() ->

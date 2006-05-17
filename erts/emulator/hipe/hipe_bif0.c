@@ -501,10 +501,7 @@ static int term_to_mfa(Eterm term, struct mfa *mfa)
 #ifdef DEBUG_LINKER
 static void print_mfa(Eterm mod, Eterm fun, unsigned int ari)
 {
-    display(mod, COUT);
-    printf(":");
-    display(fun, COUT);
-    printf("/%u", ari);
+    erts_printf("%T:%T/%u", mod, fun, ari);
 }
 #endif
 
@@ -878,7 +875,7 @@ BIF_RETTYPE hipe_bifs_gbif_address_2(BIF_ALIST_2)
 #undef GBIF_LIST
 	printf("\r\n%s: guard BIF ", __FUNCTION__);
 	fflush(stdout);
-	print_atom(atom_val(BIF_ARG_1), COUT);
+	erts_printf("%T", BIF_ARG_1);
 	printf("/%lu isn't listed in hipe_gbif_list.h\r\n", arity);
 	BIF_RET(am_false);
     } while(0);
@@ -999,11 +996,9 @@ BIF_RETTYPE hipe_bifs_make_fun_3(BIF_ALIST_3)
     BIF_ERROR(BIF_P, BADARG);
   }
 
-#ifndef SHARED_HEAP
 #ifndef HYBRID /* FIND ME! */
   funp->next = MSO(BIF_P).funs;
   MSO(BIF_P).funs = funp;
-#endif
 #endif
 
   BIF_RET(make_fun(funp));
@@ -1062,6 +1057,8 @@ BIF_RETTYPE hipe_bifs_make_fe_3(BIF_ALIST_3)
     BIF_ERROR(BIF_P, BADARG);
   }
   fe->native_address = native_address;
+  if (erts_refc_dectest(&fe->refc, 0) == 0)
+      erts_erase_fun_entry(fe);
   BIF_RET(address_to_term((void *)fe, BIF_P));
 }
 

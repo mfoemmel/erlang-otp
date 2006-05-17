@@ -223,7 +223,7 @@ static int reply(RamFile *f, int ok, int err)
     if (!ok)
 	error_reply(f, err);
     else {
-	uchar c = RAM_FILE_RESP_OK;
+	char c = RAM_FILE_RESP_OK;
         driver_output2(f->port, &c, 1, NULL, 0);
     }
     return 0;
@@ -231,7 +231,7 @@ static int reply(RamFile *f, int ok, int err)
 
 static int numeric_reply(RamFile *f, int result)
 {
-    uchar tmp[5];
+    char tmp[5];
 
     /*
      * Contents of buffer sent back:
@@ -258,7 +258,7 @@ static void ram_file_set(RamFile *f, ErlDrvBinary *bin, int bsize, int len)
     f->bin = bin;
 }
 
-static int ram_file_init(RamFile *f, uchar *buf, int count, int *error)
+static int ram_file_init(RamFile *f, char *buf, int count, int *error)
 {
     int bsize;
     ErlDrvBinary* bin;
@@ -417,7 +417,7 @@ static int ram_file_uuencode(RamFile *f)
 
     if ((bin = driver_alloc_binary(usize)) == NULL)
 	return error_reply(f, ENOMEM);
-    outp = bin->orig_bytes;
+    outp = (unsigned char*)bin->orig_bytes;
     inp = f->buf;
 
     while(len > 0) {
@@ -475,7 +475,7 @@ static int ram_file_uudecode(RamFile *f)
 
     if ((bin = driver_alloc_binary(usize)) == NULL)
 	return error_reply(f, ENOMEM);
-    outp = bin->orig_bytes;
+    outp = (unsigned char*)bin->orig_bytes;
     inp  = f->buf;
 
     while(len > 0) {

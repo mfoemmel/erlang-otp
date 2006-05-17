@@ -141,17 +141,12 @@ file(Mod) when is_atom(Mod) ->
     dbg_iserver:safe_call({file, Mod}).
 
 %%--------------------------------------------------------------------
-%% interpretable(File) -> true | {error, Reason}
-%%   File = string()
-%%   Reason = no_src | no_beam | no_debug_info | badarg
+%% interpretable(AbsMod) -> true | {error, Reason}
+%%   AbsMod = Mod | File
+%%   Reason = no_src | no_beam | no_debug_info | badarg | {app, App}
 %%--------------------------------------------------------------------
-interpretable(File) when is_list(File) ->
-    case check_file(File) of
-	{ok, _Res} -> true;
-	Error -> Error
-    end;
-interpretable(Mod) when is_atom(Mod) ->
-    case check_module(Mod) of
+interpretable(AbsMod) ->
+    case check(AbsMod) of
 	{ok, _Res} -> true;
 	Error -> Error
     end.
@@ -483,14 +478,18 @@ eval(Mod, Func, Args) ->
 int_mod(AbsMod, Dist) ->
     case check(AbsMod) of
 	{ok, Res} -> load(Res, Dist);
+	{error, {app, App}} ->
+	    io:format("** Cannot interpret ~p module: ~p~n",
+		      [App, AbsMod]),
+	    error;
 	_Error ->
 	    io:format("** Invalid beam file or no abstract code: ~p\n",
 		      [AbsMod]),
 	    error
     end.
 
-check(Mod) when is_atom(Mod) -> check_module(Mod);
-check(File) when is_list(File) -> check_file(File).
+check(Mod) when is_atom(Mod) -> catch check_module(Mod);
+check(File) when is_list(File) -> catch check_file(File).
 
 load({Mod, Src, Beam, Exp, Abst}, Dist) ->
     everywhere(Dist,
@@ -516,6 +515,7 @@ check_module(Mod) ->
 	Beam when is_list(Beam) ->
 	    case find_src(Beam) of
 		Src when is_list(Src) ->
+		    check_application(Src),
 		    case check_beam(Beam) of
 			{ok, Exp, Abst} ->
 			    {ok, {Mod, Src, Beam, Exp, Abst}};
@@ -538,6 +538,7 @@ check_file(Name0) ->
 	  end,
     if
 	is_list(Src) ->
+	    check_application(Src),
 	    Mod = scan_module_name(Src),
 	    case find_beam(Mod, Src) of
 		Beam when is_list(Beam) ->
@@ -550,6 +551,19 @@ check_file(Name0) ->
 	    end;
 	true -> {error, badarg}
     end.
+
+%% Try to avoid interpreting a kernel, stdlib, gs or debugger module.
+check_application(Src) ->
+    case lists:reverse(filename:split(filename:absname(Src))) of
+	[_Mod,"src",AppS|_] ->
+	    check_application2(AppS);
+	_ -> ok
+    end.
+check_application2("kernel-"++_) -> throw({error,{app,kernel}});
+check_application2("stdlib-"++_) -> throw({error,{app,stdlib}});
+check_application2("gs-"++_) -> throw({error,{app,gs}});
+check_application2("debugger-"++_) -> throw({error,{app,debugger}});
+check_application2(_) -> ok.
 
 find_src(Beam) ->
     Src0 = filename:rootname(Beam) ++ ".erl",

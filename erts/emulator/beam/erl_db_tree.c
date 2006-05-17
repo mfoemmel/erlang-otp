@@ -45,7 +45,9 @@
 
 #include "erl_db_tree.h"
 
-#define GETKEY(dtt, tplp)   (*((tplp) +  (dtt)->keypos))
+
+
+#define GETKEY(dtt, tplp)   (*((tplp) +  (dtt)->common.keypos))
 #define GETKEY_WITH_POS(Keypos, Tplp) (*((Tplp) + Keypos))
 
 /*
@@ -108,13 +110,14 @@ static int check_table_tree(TreeDbTerm *t);
 /*
 ** Primitive trace macro
 */
-#define DBG erl_printf(CERR,"%d\r\n",__LINE__)
+#define DBG erts_fprintf(stderr,"%d\n",__LINE__)
 
 /*
 ** Debugging dump
 */
 
-static void do_dump_tree2(CIO fd, int show, TreeDbTerm *t, int offset);
+static void do_dump_tree2(int to, void *to_arg, int show, TreeDbTerm *t,
+			  int offset);
 
 #else
 
@@ -262,7 +265,7 @@ static int doit_select_delete(DbTableTree *tb,
 			      TreeDbTerm *this,
 			      void *ptr,
 			      int forward);
-static void do_dump_tree(CIO fd, TreeDbTerm *t);
+static void do_dump_tree(int to, void *to_arg, TreeDbTerm *t);
 
 static int partly_bound_can_match_lesser(Eterm partly_bound_1, 
 					 Eterm partly_bound_2);
@@ -275,6 +278,67 @@ static int do_partly_bound_can_match_greater(Eterm a, Eterm b,
 static BIF_RETTYPE ets_select_reverse(Process *p, Eterm a1, 
 				      Eterm a2, Eterm a3);
 
+/* Method interface functions */
+static int db_first_tree(Process *p, DbTable *tbl, 
+		  Eterm *ret);
+static int db_next_tree(Process *p, DbTable *tbl, 
+			Eterm key, Eterm *ret);
+static int db_last_tree(Process *p, DbTable *tbl, 
+			Eterm *ret);
+static int db_prev_tree(Process *p, DbTable *tbl, 
+			Eterm key,
+			Eterm *ret);
+static int db_update_counter_tree(Process *p, DbTable *tbl, 
+				  Eterm key, Eterm incr,
+				  int warp, int counterpos,
+				  Eterm *ret);
+static int db_put_tree(Process *p, DbTable *tbl, 
+		       Eterm obj, Eterm *ret);
+static int db_get_tree(Process *p, DbTable *tbl, 
+		       Eterm key,  Eterm *ret);
+static int db_member_tree(Process *p, DbTable *tbl, 
+			  Eterm key,
+			  Eterm *ret);
+static int db_get_element_tree(Process *p, DbTable *tbl, 
+			       Eterm key,int ndex,
+			       Eterm *ret);
+static int db_erase_tree(Process *p, DbTable *tbl, 
+			 Eterm key, Eterm *ret);
+static int db_erase_object_tree(Process *p, DbTable *tbl, 
+				Eterm object,Eterm *ret);
+static int db_slot_tree(Process *p, DbTable *tbl, 
+			Eterm slot_term,  Eterm *ret);
+static int db_select_tree(Process *p, DbTable *tbl, 
+			  Eterm pattern, int reversed, Eterm *ret);
+static int db_select_count_tree(Process *p, DbTable *tbl, 
+				Eterm pattern,  Eterm *ret);
+static int db_select_chunk_tree(Process *p, DbTable *tbl, 
+				Eterm pattern, Sint chunk_size,
+				int reversed, Eterm *ret);
+static int db_select_continue_tree(Process *p, DbTable *tbl,
+				   Eterm continuation, Eterm *ret);
+static int db_select_count_continue_tree(Process *p, DbTable *tbl,
+					 Eterm continuation, Eterm *ret);
+static int db_select_delete_tree(Process *p, DbTable *tbl, 
+				 Eterm pattern,  Eterm *ret);
+static int db_select_delete_continue_tree(Process *p, DbTable *tbl, 
+					  Eterm continuation, Eterm *ret);
+static void db_print_tree(int to, void *to_arg,
+			  int show, DbTable *tbl);
+static int db_free_table_tree(DbTable *tbl);
+
+static int db_free_table_continue_tree(DbTable *tbl, int first);
+
+static void db_foreach_offheap_tree(DbTable *,
+				    void (*)(ErlOffHeap *, void *),
+				    void *);
+
+static int db_delete_all_objects_tree(Process* p, DbTable* tbl);
+
+#ifdef HARDDEBUG
+static void db_check_table_tree(DbTable *tbl);
+#endif
+
 /*
 ** Static variables
 */
@@ -284,6 +348,44 @@ Export ets_select_reverse_exp;
 /*
 ** External interface 
 */
+DbTableMethod db_tree =
+{
+    db_create_tree,
+    db_first_tree,
+    db_next_tree,
+    db_last_tree,
+    db_prev_tree,
+    db_put_tree,
+    db_get_tree,
+    db_get_element_tree,
+    db_member_tree,
+    db_erase_tree,
+    db_erase_object_tree,
+    db_slot_tree,
+    db_update_counter_tree,
+    db_select_chunk_tree,
+    db_select_tree, /* why not chunk size=0 ??? */
+    db_select_delete_tree,
+    db_select_continue_tree,
+    db_select_delete_continue_tree,
+    db_select_count_tree,
+    db_select_count_continue_tree,
+    db_delete_all_objects_tree,
+    db_free_table_tree,
+    db_free_table_continue_tree,
+    db_print_tree,
+    db_foreach_offheap_tree,
+#ifdef HARDDEBUG
+    db_check_table_tree,
+#else
+    NULL,
+#endif
+};
+
+
+
+
+
 void db_initialize_tree(void)
 {
     memset(&ets_select_reverse_exp, 0, sizeof(Export));
@@ -303,8 +405,9 @@ void db_initialize_tree(void)
 ** Table interface routines ie what's called by the bif's 
 */
 
-int db_create_tree(Process *p, DbTableTree *tb)
+int db_create_tree(Process *p, DbTable *tbl)
 {
+    DbTableTree *tb = &tbl->tree;
     tb->root = NULL;
     tb->stack = erts_db_alloc(ERTS_ALC_T_DB_STK,
 			      (DbTable *) tb,
@@ -315,8 +418,9 @@ int db_create_tree(Process *p, DbTableTree *tb)
     return DB_ERROR_NONE;
 }
 
-int db_first_tree(Process *p, DbTableTree *tb, Eterm *ret)
+static int db_first_tree(Process *p, DbTable *tbl, Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     TreeDbTerm *this;
     Eterm e;
     Eterm *hp;
@@ -346,9 +450,9 @@ int db_first_tree(Process *p, DbTableTree *tb, Eterm *ret)
     return DB_ERROR_NONE;
 }
 
-int db_next_tree(Process *p, DbTableTree *tb, 
-		 Eterm key, Eterm *ret)
+static int db_next_tree(Process *p, DbTable *tbl, Eterm key, Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     TreeDbTerm *this;
     Eterm e;
     Eterm *hp;
@@ -371,8 +475,9 @@ int db_next_tree(Process *p, DbTableTree *tb,
     return DB_ERROR_NONE;
 }
 
-int db_last_tree(Process *p, DbTableTree *tb, Eterm *ret)
+static int db_last_tree(Process *p, DbTable *tbl, Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     TreeDbTerm *this;
     Eterm e;
     Eterm *hp;
@@ -394,7 +499,7 @@ int db_last_tree(Process *p, DbTableTree *tb, Eterm *ret)
 
     hp = HAlloc(p, sz);
 
-    tb->slot_pos = tb->nitems; /* Slot pos is position in order, 
+    tb->slot_pos = tb->common.nitems; /* Slot pos is position in order, 
 				  if it's other than 0 */
 
     *ret = copy_struct(e,sz,&hp,&MSO(p));
@@ -402,9 +507,9 @@ int db_last_tree(Process *p, DbTableTree *tb, Eterm *ret)
     return DB_ERROR_NONE;
 }
 
-int db_prev_tree(Process *p, DbTableTree *tb, 
-		 Eterm key, Eterm *ret)
+static int db_prev_tree(Process *p, DbTable *tbl, Eterm key, Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     TreeDbTerm *this;
     Eterm e;
     Eterm *hp;
@@ -427,10 +532,15 @@ int db_prev_tree(Process *p, DbTableTree *tb,
     return DB_ERROR_NONE;
 }
 
-int db_update_counter_tree(Process *p, DbTableTree *tb, 
-			   Eterm key, Eterm incr, int warp, int counterpos, 
-			   Eterm *ret)
+static int db_update_counter_tree(Process *p,
+				  DbTable *tbl, 
+				  Eterm key,
+				  Eterm incr,
+				  int warp,
+				  int counterpos,
+				  Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     TreeDbTerm **bp = find_node2(tb, key);
     TreeDbTerm *b;
     int res;
@@ -438,7 +548,7 @@ int db_update_counter_tree(Process *p, DbTableTree *tb,
 	return DB_ERROR_BADKEY;
     b = *bp;
     if (counterpos <= 0)
-	counterpos = tb->keypos + 1;
+	counterpos = tb->common.keypos + 1;
     res = db_do_update_counter(p, (DbTableCommon *) tb, 
 			       (void *) bp, (*bp)->dbterm.tpl,
 			       counterpos, 
@@ -454,9 +564,9 @@ int db_update_counter_tree(Process *p, DbTableTree *tb,
     return res;
 }
 
-int db_put_tree(Process *proc, DbTableTree *tb, 
-		Eterm obj, Eterm *ret)
+static int db_put_tree(Process *proc, DbTable *tbl, Eterm obj, Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     /* Non recursive insertion in AVL tree, building our own stack */
     TreeDbTerm **tstack[STACK_NEED];
     int tpos = 0;
@@ -477,8 +587,8 @@ int db_put_tree(Process *proc, DbTableTree *tb,
     for (;;)
 	if (!*this) { /* Found our place */
 	    state = 1;
-	    if (tb->nitems < TREE_MAX_ELEMENTS)
-		tb->nitems++;
+	    if (tb->common.nitems < TREE_MAX_ELEMENTS)
+		tb->common.nitems++;
 	    else
 		return DB_ERROR_SYSRES;
 	    *this = get_term(tb, NULL, obj);
@@ -567,9 +677,9 @@ int db_put_tree(Process *proc, DbTableTree *tb,
     return DB_ERROR_NONE;
 }
 
-int db_get_tree(Process *p, DbTableTree *tb, 
-		Eterm key, Eterm *ret)
+static int db_get_tree(Process *p, DbTable *tbl, Eterm key, Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     Eterm copy;
     Eterm *hp;
     TreeDbTerm *this;
@@ -594,9 +704,9 @@ int db_get_tree(Process *p, DbTableTree *tb,
     return DB_ERROR_NONE;
 }
 
-int db_member_tree(Process *p, DbTableTree *tb, 
-		   Eterm key, Eterm *ret)
+static int db_member_tree(Process *p, DbTable *tbl, Eterm key, Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     TreeDbTerm *this;
 
     /*
@@ -614,9 +724,10 @@ int db_member_tree(Process *p, DbTableTree *tb,
     return DB_ERROR_NONE;
 }
 
-int db_get_element_tree(Process *p, DbTableTree *tb, 
-			Eterm key, int ndex, Eterm *ret)
+static int db_get_element_tree(Process *p, DbTable *tbl,
+			       Eterm key, int ndex, Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     /*
      * Look the node up:
      */
@@ -650,9 +761,9 @@ int db_get_element_tree(Process *p, DbTableTree *tb,
     return DB_ERROR_NONE;
 }
 
-int db_erase_tree(Process *p, DbTableTree *tb, 
-		  Eterm key, Eterm *ret)
+static int db_erase_tree(Process *p, DbTable *tbl, Eterm key, Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     TreeDbTerm *res;
 
     *ret = am_true;
@@ -663,9 +774,10 @@ int db_erase_tree(Process *p, DbTableTree *tb,
     return DB_ERROR_NONE;
 }
 
-int db_erase_object_tree(Process *p, DbTableTree *tb, 
-			 Eterm object, Eterm *ret)
+static int db_erase_object_tree(Process *p, DbTable *tbl,
+				Eterm object, Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     TreeDbTerm *res;
 
     *ret = am_true;
@@ -677,9 +789,10 @@ int db_erase_object_tree(Process *p, DbTableTree *tb,
 }
 
 
-int db_slot_tree(Process *p, DbTableTree *tb, 
-		 Eterm slot_term, Eterm *ret)
+static int db_slot_tree(Process *p, DbTable *tbl, 
+			Eterm slot_term, Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     Sint slot;
     TreeDbTerm *st;
     Eterm *hp;
@@ -695,10 +808,10 @@ int db_slot_tree(Process *p, DbTableTree *tb,
 
     if (is_not_small(slot_term) ||
 	((slot = signed_val(slot_term)) < 0) ||
-	(slot > tb->nitems))
+	(slot > tb->common.nitems))
 	return DB_ERROR_BADPARAM;
 
-    if (slot == tb->nitems) {
+    if (slot == tb->common.nitems) {
 	*ret = am_EOT;
 	return DB_ERROR_NONE;
     }
@@ -790,11 +903,15 @@ static BIF_RETTYPE bif_trap3(Export *bif,
 ** trap to itself again (via the ets:select/1 bif).
 ** Note that this is common for db_select_tree and db_select_chunk_tree.
 */
-int db_select_tree_continue(Process *p, 
-			    DbTableTree *tb,
-			    Eterm continuation,
-			    Eterm *ret)
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
+static int db_select_continue_tree(Process *p, 
+				   DbTable *tbl,
+				   Eterm continuation,
+				   Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     struct select_context sc;
     unsigned sz;
     Eterm *hp; 
@@ -837,7 +954,7 @@ int db_select_tree_continue(Process *p,
     sc.end_condition = NIL;
     sc.lastobj = NULL;
     sc.max = 1000;
-    sc.keypos = tb->keypos;
+    sc.keypos = tb->common.keypos;
     sc.all_objects = mp->flags & BIN_FLAG_ALL_OBJECTS;
     sc.chunk_size = chunk_size;
     reverse = unsigned_val(tptr[7]);
@@ -942,9 +1059,13 @@ int db_select_tree_continue(Process *p,
 }
 
 
-int db_select_tree(Process *p, DbTableTree *tb, 
-		   Eterm pattern, int reverse, Eterm *ret)
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
+static int db_select_tree(Process *p, DbTable *tbl, 
+			  Eterm pattern, int reverse, Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     struct select_context sc;
     struct mp_info mpi;
     Eterm lastkey = NIL;
@@ -972,7 +1093,7 @@ int db_select_tree(Process *p, DbTableTree *tb,
     sc.p = p;
     sc.max = 1000; 
     sc.end_condition = NIL;
-    sc.keypos = tb->keypos;
+    sc.keypos = tb->common.keypos;
     sc.got = 0;
     sc.chunk_size = 0;
 
@@ -1014,11 +1135,8 @@ int db_select_tree(Process *p, DbTableTree *tb,
 	traverse_backwards(tb, lastkey, &doit_select, &sc);
     }
 #ifdef HARDDEBUG
-	erl_printf(CERR,"Least: ");
-	display(mpi.least,CERR);
-	erl_printf(CERR,"\r\nMost: ");
-	display(mpi.most,CERR);
-	erl_printf(CERR,"\r\n");
+	erts_fprintf(stderr,"Least: %T\n", mpi.least);
+	erts_fprintf(stderr,"Most: %T\n", mpi.most);
 #endif
     BUMP_REDS(p, 1000 - sc.max);
     if (sc.max > 0) {
@@ -1035,7 +1153,7 @@ int db_select_tree(Process *p, DbTableTree *tb,
 	    
     continuation = TUPLE8
 	(hp,
-	 tb->id,
+	 tb->common.id,
 	 key,
 	 sc.end_condition, /* From the match program, needn't be copied */
 	 make_small(0), /* Chunk size of zero means not chunked to the
@@ -1057,11 +1175,15 @@ int db_select_tree(Process *p, DbTableTree *tb,
 /*
 ** This is called either when the select_count bif traps.
 */
-int db_select_count_tree_continue(Process *p, 
-				  DbTableTree *tb,
-				  Eterm continuation,
-				  Eterm *ret)
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
+static int db_select_count_continue_tree(Process *p, 
+					 DbTable *tbl,
+					 Eterm continuation,
+					 Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     struct select_count_context sc;
     unsigned sz;
     Eterm *hp; 
@@ -1099,7 +1221,7 @@ int db_select_count_tree_continue(Process *p,
     sc.end_condition = NIL;
     sc.lastobj = NULL;
     sc.max = 1000;
-    sc.keypos = tb->keypos;
+    sc.keypos = tb->common.keypos;
     if (is_big(tptr[5])) {
 	sc.got = big_to_uint32(tptr[5]);
     } else {
@@ -1111,7 +1233,7 @@ int db_select_count_tree_continue(Process *p,
     BUMP_REDS(p, 1000 - sc.max);
 
     if (sc.max > 0) {
-	RET_TO_BIF(make_small_or_big(sc.got,p), DB_ERROR_NONE);
+	RET_TO_BIF(erts_make_integer(sc.got,p), DB_ERROR_NONE);
     }	
     key = GETKEY(tb, sc.lastobj);
     if (end_condition != NIL && 
@@ -1120,9 +1242,16 @@ int db_select_count_tree_continue(Process *p,
 	RET_TO_BIF(make_small(sc.got),DB_ERROR_NONE);
     }
     /* Not done yet, let's trap. */
-    egot = make_small_or_big(sc.got,p);
     sz = size_object(key);
-    hp = HAlloc(p, 6 + sz);
+    if (IS_USMALL(0, sc.got)) {
+	hp = HAlloc(p, sz + 6);
+	egot = make_small(sc.got);
+    }
+    else {
+	hp = HAlloc(p, BIG_UINT_HEAP_SIZE + sz + 6);
+	egot = uint_to_big(sc.got, hp);
+	hp += BIG_UINT_HEAP_SIZE;
+    }
     key = copy_struct(key, sz, &hp, &MSO(p));
     continuation = TUPLE5
 	(hp,
@@ -1138,9 +1267,13 @@ int db_select_count_tree_continue(Process *p,
 }
 
 
-int db_select_count_tree(Process *p, DbTableTree *tb, 
-			 Eterm pattern, Eterm *ret)
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
+static int db_select_count_tree(Process *p, DbTable *tbl, 
+				Eterm pattern, Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     struct select_count_context sc;
     struct mp_info mpi;
     Eterm lastkey = NIL;
@@ -1168,7 +1301,7 @@ int db_select_count_tree(Process *p, DbTableTree *tb,
     sc.p = p;
     sc.max = 1000; 
     sc.end_condition = NIL;
-    sc.keypos = tb->keypos;
+    sc.keypos = tb->common.keypos;
     sc.got = 0;
 
     if ((errcode = analyze_pattern(tb, pattern, &mpi)) != DB_ERROR_NONE) {
@@ -1186,7 +1319,7 @@ int db_select_count_tree(Process *p, DbTableTree *tb,
     if (!mpi.got_partial && mpi.some_limitation && 
 	cmp(mpi.least,mpi.most) == 0) {
 	doit_select_count(tb,mpi.save_term,&sc,0 /* dummy */);
-	RET_TO_BIF(make_small_or_big(sc.got,p),DB_ERROR_NONE);
+	RET_TO_BIF(erts_make_integer(sc.got,p),DB_ERROR_NONE);
     }
 
     if (mpi.some_limitation) {
@@ -1199,13 +1332,20 @@ int db_select_count_tree(Process *p, DbTableTree *tb,
     traverse_backwards(tb, lastkey, &doit_select_count, &sc);
     BUMP_REDS(p, 1000 - sc.max);
     if (sc.max > 0) {
-	RET_TO_BIF(make_small_or_big(sc.got,p),DB_ERROR_NONE);
+	RET_TO_BIF(erts_make_integer(sc.got,p),DB_ERROR_NONE);
     }
 
-    egot = make_small_or_big(sc.got,p);
     key = GETKEY(tb, sc.lastobj);
     sz = size_object(key);
-    hp = HAlloc(p, 6 + sz + PROC_BIN_SIZE);
+    if (IS_USMALL(0, sc.got)) {
+	hp = HAlloc(p, sz + PROC_BIN_SIZE + 6);
+	egot = make_small(sc.got);
+    }
+    else {
+	hp = HAlloc(p, BIG_UINT_HEAP_SIZE + sz + PROC_BIN_SIZE + 6);
+	egot = uint_to_big(sc.got, hp);
+	hp += BIG_UINT_HEAP_SIZE;
+    }
     key = copy_struct(key, sz, &hp, &MSO(p));
     if (mpi.all_objects)
 	(mpi.mp)->flags |= BIN_FLAG_ALL_OBJECTS;
@@ -1213,7 +1353,7 @@ int db_select_count_tree(Process *p, DbTableTree *tb,
 	    
     continuation = TUPLE5
 	(hp,
-	 tb->id,
+	 tb->common.id,
 	 key,
 	 sc.end_condition, /* From the match program, needn't be copied */
 	 mpb,
@@ -1227,11 +1367,15 @@ int db_select_count_tree(Process *p, DbTableTree *tb,
 
 }
 
-int db_select_chunk_tree(Process *p, DbTableTree *tb, 
-			 Eterm pattern, Sint chunk_size,
-			 int reverse,
-			 Eterm *ret)
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
+static int db_select_chunk_tree(Process *p, DbTable *tbl, 
+				Eterm pattern, Sint chunk_size,
+				int reverse,
+				Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     struct select_context sc;
     struct mp_info mpi;
     Eterm lastkey = NIL;
@@ -1259,7 +1403,7 @@ int db_select_chunk_tree(Process *p, DbTableTree *tb,
     sc.p = p;
     sc.max = 1000; 
     sc.end_condition = NIL;
-    sc.keypos = tb->keypos;
+    sc.keypos = tb->common.keypos;
     sc.got = 0;
     sc.chunk_size = chunk_size;
 
@@ -1336,7 +1480,7 @@ int db_select_chunk_tree(Process *p, DbTableTree *tb,
 	
 	continuation = TUPLE8
 	    (hp,
-	     tb->id,
+	     tb->common.id,
 	     key,
 	     sc.end_condition, /* From the match program, 
 				  needn't be copied */
@@ -1361,7 +1505,7 @@ int db_select_chunk_tree(Process *p, DbTableTree *tb,
     mpb = db_make_mp_binary(p,mpi.mp,&hp);    
     continuation = TUPLE8
 	(hp,
-	 tb->id,
+	 tb->common.id,
 	 key,
 	 sc.end_condition, /* From the match program, needn't be copied */
 	 make_small(chunk_size),
@@ -1380,11 +1524,15 @@ int db_select_chunk_tree(Process *p, DbTableTree *tb,
 /*
 ** This is called when select_delete traps
 */
-int db_select_delete_continue_tree(Process *p, 
-				   DbTableTree *tb,
-				   Eterm continuation,
-				   Eterm *ret)
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
+static int db_select_delete_continue_tree(Process *p, 
+					  DbTable *tbl,
+					  Eterm continuation,
+					  Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     struct select_delete_context sc;
     unsigned sz;
     Eterm *hp; 
@@ -1393,6 +1541,7 @@ int db_select_delete_continue_tree(Process *p,
     Binary *mp;
     Eterm key;
     Eterm *tptr;
+    Eterm eaccsum;
 
 
 #define RET_TO_BIF(Term, State) do { 		\
@@ -1425,23 +1574,31 @@ int db_select_delete_continue_tree(Process *p,
     sc.mp = mp;
     sc.end_condition = NIL;
     sc.max = 1000;
-    sc.keypos = tb->keypos;
+    sc.keypos = tb->common.keypos;
 
     traverse_backwards(tb, lastkey, &doit_select_delete, &sc);
 
     BUMP_REDS(p, 1000 - sc.max);
 
     if (sc.max > 0) {
-	RET_TO_BIF(make_small_or_big(sc.accum, p), DB_ERROR_NONE);
+	RET_TO_BIF(erts_make_integer(sc.accum, p), DB_ERROR_NONE);
     }	
     key = GETKEY(tb, (sc.lastterm)->dbterm.tpl);
     if (end_condition != NIL && 
 	cmp_partly_bound(end_condition,key) > 0) { /* done anyway */
-	RET_TO_BIF(make_small_or_big(sc.accum,p),DB_ERROR_NONE);
+	RET_TO_BIF(erts_make_integer(sc.accum,p),DB_ERROR_NONE);
     }
     /* Not done yet, let's trap. */
     sz = size_object(key);
-    hp = HAlloc(p, 6 + sz);
+    if (IS_USMALL(0, sc.accum)) {
+	hp = HAlloc(p, sz + 6);
+	eaccsum = make_small(sc.accum);
+    }
+    else {
+	hp = HAlloc(p, BIG_UINT_HEAP_SIZE + sz + 6);
+	eaccsum = uint_to_big(sc.accum, hp);
+	hp += BIG_UINT_HEAP_SIZE;
+    }
     key = copy_struct(key, sz, &hp, &MSO(p));
     continuation = TUPLE5
 	(hp,
@@ -1449,16 +1606,20 @@ int db_select_delete_continue_tree(Process *p,
 	 key,
 	 tptr[3], 
 	 tptr[4],
-	 make_small_or_big(sc.accum,p));
+	 eaccsum);
     RET_TO_BIF(bif_trap1(&ets_select_delete_continue_exp, p, continuation), 
 	       DB_ERROR_NONE);
 
 #undef RET_TO_BIF
 }
 
-int db_select_delete_tree(Process *p, DbTableTree *tb, 
-			  Eterm pattern, Eterm *ret)
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
+static int db_select_delete_tree(Process *p, DbTable *tbl, 
+				 Eterm pattern, Eterm *ret)
 {
+    DbTableTree *tb = &tbl->tree;
     struct select_delete_context sc;
     struct mp_info mpi;
     Eterm lastkey = NIL;
@@ -1469,6 +1630,7 @@ int db_select_delete_tree(Process *p, DbTableTree *tb,
     TreeDbTerm *this;
     int errcode;
     Eterm mpb;
+    Eterm eaccsum;
 
 #define RET_TO_BIF(Term,RetVal) do { 	       	\
 	if (mpi.mp != NULL) {			\
@@ -1489,7 +1651,7 @@ int db_select_delete_tree(Process *p, DbTableTree *tb,
     sc.p = p;
     sc.max = 1000; 
     sc.end_condition = NIL;
-    sc.keypos = tb->keypos;
+    sc.keypos = tb->common.keypos;
     sc.tb = tb;
     
     if ((errcode = analyze_pattern(tb, pattern, &mpi)) != DB_ERROR_NONE) {
@@ -1507,7 +1669,7 @@ int db_select_delete_tree(Process *p, DbTableTree *tb,
 	cmp(mpi.least,mpi.most) == 0) {
 	doit_select_delete(tb,mpi.save_term,&sc, 0 /* direction doesn't 
 						      matter */);
-	RET_TO_BIF(make_small_or_big(sc.accum,p),DB_ERROR_NONE);
+	RET_TO_BIF(erts_make_integer(sc.accum,p),DB_ERROR_NONE);
     }
 
     if (mpi.some_limitation) {
@@ -1521,22 +1683,30 @@ int db_select_delete_tree(Process *p, DbTableTree *tb,
     BUMP_REDS(p, 1000 - sc.max);
 
     if (sc.max > 0) {
-	RET_TO_BIF(make_small_or_big(sc.accum,p), DB_ERROR_NONE);
+	RET_TO_BIF(erts_make_integer(sc.accum,p), DB_ERROR_NONE);
     }
 
     key = GETKEY(tb, (sc.lastterm)->dbterm.tpl);
     sz = size_object(key);
-    hp = HAlloc(p, 6 + sz + PROC_BIN_SIZE);
+    if (IS_USMALL(0, sc.accum)) {
+	hp = HAlloc(p, sz + PROC_BIN_SIZE + 6);
+	eaccsum = make_small(sc.accum);
+    }
+    else {
+	hp = HAlloc(p, BIG_UINT_HEAP_SIZE + sz + PROC_BIN_SIZE + 6);
+	eaccsum = uint_to_big(sc.accum, hp);
+	hp += BIG_UINT_HEAP_SIZE;
+    }
     key = copy_struct(key, sz, &hp, &MSO(p));
     mpb = db_make_mp_binary(p,mpi.mp,&hp);
     
     continuation = TUPLE5
 	(hp,
-	 tb->id,
+	 tb->common.id,
 	 key,
 	 sc.end_condition, /* From the match program, needn't be copied */
 	 mpb,
-	 make_small_or_big(sc.accum, p));
+	 eaccsum);
 
     /* Don't free mpi.mp, so don't use macro */
     if (sc.erase_lastterm) {
@@ -1554,29 +1724,29 @@ int db_select_delete_tree(Process *p, DbTableTree *tb,
 */
 
 /* Display hash table contents (for dump) */
-void db_print_tree(CIO fd, 
-		   int show,
-		   DbTableTree *tb)
+static void db_print_tree(int to, void *to_arg, 
+			  int show,
+			  DbTable *tbl)
 {
+    DbTableTree *tb = &tbl->tree;
 #ifdef TREE_DEBUG
     if (show)
-	erl_printf(fd, "\r\nTree data dump:\r\n"
-		   "------------------------------------------------\r\n");
-    do_dump_tree2(fd, show, tb->root, 0);
+	erts_print(to, to_arg, "\nTree data dump:\n"
+		   "------------------------------------------------\n");
+    do_dump_tree2(to, to_arg, show, tb->root, 0);
     if (show)
-	erl_printf(fd, "\r\n"
-		   "------------------------------------------------\r\n");
+	erts_print(to, to_arg, "\n"
+		   "------------------------------------------------\n");
 #else
-    erl_printf(fd,"Ordered set (AVL tree), Elements: %d\n", tb->nitems);
-    if (show) {
-	do_dump_tree(fd, tb->root);
-    }
+    erts_print(to, to_arg, "Ordered set (AVL tree), Elements: %d\n", tb->common.nitems);
+    do_dump_tree(to, to_arg, tb->root);
 #endif
 }
 
 /* release all memory occupied by a single table */
-void free_tree_table(DbTableTree *tb)
+static int db_free_table_tree(DbTable *tbl)
 {
+    DbTableTree *tb = &tbl->tree;
     if (!tb->deletion) {
 	tb->stack_pos = 0;
 	tb->deletion = 1;
@@ -1587,11 +1757,13 @@ void free_tree_table(DbTableTree *tb)
 		 (DbTable *) tb,
 		 (void *) tb->stack,
 		 sizeof(TreeDbTerm *) * STACK_NEED);
-    ASSERT(tb->memory_size == sizeof(DbTable));
+    ASSERT(erts_smp_atomic_read(&tb->common.memory_size) == sizeof(DbTable));
+    return 1;
 }
 
-int erts_free_tree_table_cont(DbTableTree *tb, int first)
+static int db_free_table_continue_tree(DbTable *tbl, int first)
 {
+    DbTableTree *tb = &tbl->tree;
     int result;
 
     if (first) {
@@ -1605,22 +1777,29 @@ int erts_free_tree_table_cont(DbTableTree *tb, int first)
 		     (DbTable *) tb,
 		     (void *) tb->stack,
 		     sizeof(TreeDbTerm *) * STACK_NEED);
-	ASSERT(tb->memory_size == sizeof(DbTable));
+	ASSERT(erts_smp_atomic_read(&tb->common.memory_size)
+	       == sizeof(DbTable));
     }
     return result;
 }
 
+static int db_delete_all_objects_tree(Process* p, DbTable* tbl)
+{
+    db_free_table_tree(tbl);
+    db_create_tree(p, tbl);
+    tbl->tree.common.nitems = 0;
+    return 0;
+}
 
 static void do_db_tree_foreach_offheap(TreeDbTerm *,
 				       void (*)(ErlOffHeap *, void *),
 				       void *);
 
-void
-erts_db_tree_foreach_offheap(DbTableTree *tab,
-			     void (*func)(ErlOffHeap *, void *),
-			     void * arg)
+static void db_foreach_offheap_tree(DbTable *tbl,
+				    void (*func)(ErlOffHeap *, void *),
+				    void * arg)
 {
-    do_db_tree_foreach_offheap(tab->root, func, arg);
+    do_db_tree_foreach_offheap(tbl->tree.root, func, arg);
 }
 
 
@@ -1686,7 +1865,7 @@ static TreeDbTerm *linkout_tree(DbTableTree *tb,
 		tstack[tpos++] = this;
 		state = delsub(this);
 	    }
-	    --(tb->nitems);
+	    --(tb->common.nitems);
 	    break;
 	}
     }
@@ -1753,7 +1932,7 @@ static TreeDbTerm *linkout_object_tree(DbTableTree *tb,
 		tstack[tpos++] = this;
 		state = delsub(this);
 	    }
-	    --(tb->nitems);
+	    --(tb->common.nitems);
 	    break;
 	}
     }
@@ -1886,13 +2065,12 @@ static int analyze_pattern(DbTableTree *tb, Eterm pattern,
     return DB_ERROR_NONE;
 }
 
-static void do_dump_tree(CIO fd, TreeDbTerm *t)
+static void do_dump_tree(int to, void *to_arg, TreeDbTerm *t)
 {
     if (t != NULL) {
-	do_dump_tree(fd, t->left);
-	display(make_tuple(t->dbterm.tpl), fd);
-	erl_printf(fd, "\n");
-	do_dump_tree(fd, t->right);
+	do_dump_tree(to, to_arg, t->left);
+	erts_print(to, to_arg, "%T\n", make_tuple(t->dbterm.tpl));
+	do_dump_tree(to, to_arg, t->right); 
     }
 }
 
@@ -2489,7 +2667,7 @@ static int key_given(DbTableTree *tb, Eterm pattern, TreeDbTerm **ret,
 
     if (pattern == am_Underscore || db_is_variable(pattern) != -1)
 	return 0;
-    key = db_getkey(tb->keypos, pattern);
+    key = db_getkey(tb->common.keypos, pattern);
     if (is_non_value(key))
 	return -1;  /* can't possibly match anything */
     if (!db_has_variable(key)) {   /* Bound key */
@@ -2575,16 +2753,14 @@ static Sint cmp_partly_bound(Eterm partly_bound_key, Eterm bound_key)
     int done = 0;
     Sint ret = do_cmp_partly_bound(partly_bound_key, bound_key, &done);
 #ifdef HARDDEBUG
-    erl_printf(CERR,"\r\ncmp_partly_bound: ");
-    display(partly_bound_key,CERR);
+    erts_fprintf(stderr,"\ncmp_partly_bound: %T", partly_bound_key);
     if (ret < 0)
-	erl_printf(CERR," < ");
+	erts_fprintf(stderr," < ");
     else if (ret > 0)
-	erl_printf(CERR," > ");
+	erts_fprintf(stderr," > ");
     else
-	erl_printf(CERR," == ");
-    display(bound_key,CERR);
-    erl_printf(CERR,"\r\n");
+	erts_fprintf(stderr," == ");
+    erts_fprintf(stderr,"%T\n",bound_key);
 #endif
     return ret;
 }
@@ -2615,14 +2791,12 @@ static int partly_bound_can_match_lesser(Eterm partly_bound_1,
 					       partly_bound_2, 
 					       &done);
 #ifdef HARDDEBUG
-    erl_printf(CERR,"\r\npartly_bound_can_match_lesser: ");
-    display(partly_bound_1,CERR);
+    erts_fprintf(stderr,"\npartly_bound_can_match_lesser: %T",partly_bound_1);
     if (ret)
-	erl_printf(CERR," can match lesser than ");
+	erts_fprintf(stderr," can match lesser than ");
     else
-	erl_printf(CERR," can not match lesser than ");
-    display(partly_bound_2,CERR);
-    erl_printf(CERR,"\r\n");
+	erts_fprintf(stderr," can not match lesser than ");
+    erts_fprintf(stderr,"%T\n",partly_bound_2);
 #endif
     return ret;
 }
@@ -2635,14 +2809,12 @@ static int partly_bound_can_match_greater(Eterm partly_bound_1,
 						partly_bound_2, 
 						&done);
 #ifdef HARDDEBUG
-    erl_printf(CERR,"\r\npartly_bound_can_match_greater: ");
-    display(partly_bound_1,CERR);
+    erts_fprintf(stderr,"\npartly_bound_can_match_greater: %T",partly_bound_1);
     if (ret)
-	erl_printf(CERR," can match greater than ");
+	erts_fprintf(stderr," can match greater than ");
     else
-	erl_printf(CERR," can not match greater than ");
-    display(partly_bound_2,CERR);
-    erl_printf(CERR,"\r\n");
+	erts_fprintf(stderr," can not match greater than ");
+    erts_fprintf(stderr,"%T\n",partly_bound_2);
 #endif
     return ret;
 }
@@ -2950,27 +3122,28 @@ static int doit_select_delete(DbTableTree *tb, TreeDbTerm *this, void *ptr,
 }
 
 #ifdef TREE_DEBUG
-static void do_dump_tree2(CIO fd, int show, TreeDbTerm *t, int offset)
+static void do_dump_tree2(int to, void *to_arg, int show, TreeDbTerm *t,
+			  int offset)
 {
     if (t == NULL)
 	return 0;
-    do_dump_tree2(fd, show, t->right, offset + 4);
+    do_dump_tree2(to, to_arg, show, t->right, offset + 4);
     if (show) {
-	int i;
-	for (i = 0; i < offset; ++i)
-	    erl_printf(fd, " ");
-	display(make_tuple(t->dbterm.tpl), fd);
-	erl_printf(fd, "(addr = 0x%08X, bal = %d)\r\n", t, t->balance);
+	erts_print(to, to_arg, "%*s%T (addr = %p, bal = %d)\n"
+		   offset, "", make_tuple(t->dbterm.tpl),
+		   t, t->balance);
     }
-    do_dump_tree2(fd, show, t->left, offset + 4); 
+    do_dump_tree2(to, to_arg, show, t->left, offset + 4); 
     return sum;
 }
 
 #endif
 
 #ifdef HARDDEBUG
-void db_check_table_tree(DbTableTree *tb)
+
+void db_check_table_tree(DbTable *tbl)
 {
+    DbTableTree *tb = &tbl->tree;
     check_table_tree(tb->root);
     check_saved_stack(tb);
     check_slot_pos(tb);
@@ -2998,11 +3171,11 @@ static void check_slot_pos(DbTableTree *tb)
 	return;
     t = traverse_until(tb->root, &pos, tb->slot_pos);
     if (t != tb->stack[tb->stack_pos - 1]) {
-	erl_printf(CERR, "Slot position does not correspont with stack, "
+	erts_fprintf(stderr, "Slot position does not correspont with stack, "
 		   "element position %d is really 0x%08X, when stack says "
-		   "it's 0x%08X\r\n", tb->slot_pos, t, 
+		   "it's 0x%08X\n", tb->slot_pos, t, 
 		   tb->stack[tb->stack_pos - 1]);
-	do_dump_tree2(CERR, 1, tb->root, 0);
+	do_dump_tree2(ERTS_PRINT_STDERR, NULL, 1, tb->root, 0);
     }
 }
 	
@@ -3014,16 +3187,16 @@ static void check_saved_stack(DbTableTree *tb)
      if (tb->stack_pos == 0)
 	 return;
      if (t != tb->stack[n]) {
-	 erl_printf(CERR,"tb->stack[0] is 0x%08X, should be 0x%08X\r\n",
+	 erts_fprintf(stderr,"tb->stack[0] is 0x%08X, should be 0x%08X\n",
 		    tb->stack[0], t);
-	 do_dump_tree2(CERR, 1, tb->root, 0);
+	 do_dump_tree2(ERTS_PRINT_STDERR, NULL, 1, tb->root, 0);
 	 return;
      }
      while (n < tb->stack_pos) {
 	 if (t == NULL) {
-	     erl_printf(CERR, "NULL pointer in tree when stack not empty,"
-			" stack depth is %d\r\n", n);
-	     do_dump_tree2(CERR, 1, tb->root, 0);
+	     erts_fprintf(stderr, "NULL pointer in tree when stack not empty,"
+			" stack depth is %d\n", n);
+	     do_dump_tree2(ERTS_PRINT_STDERR, NULL, 1, tb->root, 0);
 	     return;
 	 }
 	 n++;
@@ -3033,11 +3206,11 @@ static void check_saved_stack(DbTableTree *tb)
 	     else if (tb->stack[n] == t->right)
 		 t = t->right;
 	     else {
-		 erl_printf(CERR, "tb->stack[%d] == 0x%08X does not "
+		 erts_fprintf(stderr, "tb->stack[%d] == 0x%08X does not "
 			    "represent child pointer in tree!"
-			    "(left == 0x%08X, right == 0x%08X\r\n", 
+			    "(left == 0x%08X, right == 0x%08X\n", 
 			    n, tb->stack[n], t->left, t->right);
-		 do_dump_tree2(CERR, 1, tb->root, 0);
+		 do_dump_tree2(ERTS_PRINT_STDERR, NULL, 1, tb->root, 0);
 		 return;
 	     }
 	 }
@@ -3052,14 +3225,14 @@ static int check_table_tree(TreeDbTerm *t)
     lh = check_table_tree(t->left);
     rh = check_table_tree(t->right);
     if ((rh - lh) != t->balance) {
-	erl_printf(CERR, "Invalid tree balance for this node:\r\n");
-	erl_printf(CERR,"balance = %d, left = 0x%08X, right = 0x%08X\r\n"
-		   "data =",
-		   t->balance, t->left, t->right);
-	display(make_tuple(t->dbterm.tpl),CERR);
-	erl_printf(CERR,"\r\nDump:\r\n---------------------------------\r\n");
-	do_dump_tree2(CERR, 1, t, 0);
-	erl_printf(CERR,"\r\n---------------------------------\r\n");
+	erts_fprintf(stderr, "Invalid tree balance for this node:\n");
+	erts_fprintf(stderr,"balance = %d, left = 0x%08X, right = 0x%08X\n"
+		     "data = %T",
+		     t->balance, t->left, t->right,
+		     make_tuple(t->dbterm.tpl));
+	erts_fprintf(stderr,"\nDump:\n---------------------------------\n");
+	do_dump_tree2(ERTS_PRINT_STDERR, NULL, 1, t, 0);
+	erts_fprintf(stderr,"\n---------------------------------\n");
     }
     return ((rh > lh) ? rh : lh) + 1;
 }

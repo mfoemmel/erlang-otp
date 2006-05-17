@@ -19,7 +19,7 @@
 
 %% External exports
 -export([start_link/2, start_type/0, stop/1]).
--export([here_i_am/2, spawn_request/1, get_child/1]).
+-export([get_child/1]).
 
 %% Internal exports
 -export([init/4, start_it/4]).
@@ -58,25 +58,19 @@ start_type() ->
 %%          is also stopped.
 %% Returns: ok
 %%-----------------------------------------------------------------
-stop(Application) -> call(Application, stop).
+stop(AppMaster) -> call(AppMaster, stop).
 
 %%-----------------------------------------------------------------
-%% Purpose: Check if this application can start another process.
-%% Returns: true | false
+%% Func: get_child/1
+%% Purpose: Get the topmost supervisor of an application.
+%% Returns: {pid(), App}
 %%-----------------------------------------------------------------
-spawn_request(Application) -> call(Application, spawn_request).
-
-%%-----------------------------------------------------------------
-%% Purpose: Tell an application master that a new process exists.
-%%-----------------------------------------------------------------
-here_i_am(Application, Pid) -> Application ! {here_i_am, Pid}.
-
-get_child(Application) -> call(Application, get_child).
+get_child(AppMaster) -> call(AppMaster, get_child).
     
-call(Application, Req) ->
+call(AppMaster, Req) ->
     Tag = make_ref(),
-    Ref = erlang:monitor(process, Application),
-    Application ! {Req, Tag, self()},
+    Ref = erlang:monitor(process, AppMaster),
+    AppMaster ! {Req, Tag, self()},
     receive 
 	{'DOWN', Ref, process, _, _Info} ->
 	    ok;
@@ -108,10 +102,10 @@ call(Application, Req) ->
 %%%                                --------
 %%%
 %%% Where AM(GL) == Application Master (Group Leader)
-%%%       Appl P == The application specific 'root' process (child to AM)
+%%%       Appl P == The application specific root process (child to AM)
 %%%       X      == A special 'invisible' process
-%%% The reason for not using the logical structrure is that the
-%%% application start function is synchronous, and 
+%%% The reason for not using the logical structrure is that
+%%% the application start function is synchronous, and 
 %%% that the AM is GL.  This means that if AM executed the start
 %%% function, and this function uses spawn_request/1
 %%% or io, deadlock would occur.  Therefore, this function is
@@ -128,8 +122,8 @@ init(Parent, Starter, ApplData, Type) ->
     process_flag(trap_exit, true),
     OldGleader = group_leader(),
     group_leader(self(), self()),
-    % Insert ourselves as master for the process.  This ensures that
-    % the processes in the application can use get_env/1 at startup.
+    %% Insert ourselves as master for the process.  This ensures that
+    %% the processes in the application can use get_env/1 at startup.
     Name = ApplData#appl_data.name,
     ets:insert(ac_tab, {{application_master, Name}, self()}),
     State = #state{appl_data = ApplData, gleader = OldGleader},
@@ -185,13 +179,13 @@ main_loop(Parent, State) ->
 	{'EXIT', Parent, Reason} ->
 	    terminate(Reason, State);
 	{'EXIT', Child, Reason} when State#state.child == Child ->
-	    terminate(Reason, State#state{child = undefined});
+	    terminate(Reason, State#state{child=undefined});
 	{'EXIT', _, timeout} ->
 	    terminate(normal, State);
 	{'EXIT', Pid, _Reason} ->
 	    Children = lists:delete(Pid, State#state.children),
 	    Procs = State#state.procs - 1,
-	    main_loop(Parent, State#state{children = Children, procs=Procs});
+	    main_loop(Parent, State#state{children=Children, procs=Procs});
 	{start_type, From} ->
 	    From ! {start_type, local},
 	    main_loop(Parent, State);
@@ -217,23 +211,6 @@ terminate_loop(Child, State) ->
 %% The Application Master is linked to *all* processes in the group
 %% (application).  
 %%-----------------------------------------------------------------
-handle_msg({spawn_request, Tag, From}, State) ->
-    ApplData = State#state.appl_data,
-    Procs = State#state.procs,
-    MaxP = ApplData#appl_data.maxP,
-    Reply = 
-	if 
-	    MaxP == infinity -> true;
-	    MaxP > Procs -> true;
-	    true -> false
-	end,
-    From ! {Tag, Reply},
-    State;
-handle_msg({here_i_am, Pid}, State) ->
-    link(Pid),
-    Children = State#state.children,
-    Procs = State#state.procs + 1,
-    State#state{children = [Pid | Children], procs = Procs};
 handle_msg({get_child, Tag, From}, State) ->
     From ! {Tag, get_child_i(State#state.child)},
     State;
@@ -253,21 +230,22 @@ terminate(Reason, State) ->
 
 
 
-%%%=============================================================================
-%%%=============================================================================
-%%%=============================================================================
+%%======================================================================
+%%======================================================================
+%%======================================================================
 %% This is the process X above...
-%%%=============================================================================
-%%%=============================================================================
-%%%=============================================================================
+%%======================================================================
+%%======================================================================
+%%======================================================================
 
-%%%=============================================================================
-%%% Start an application.
-%%% If the start_phases is defined in the .app file the application is to be
-%%% started in one or several start phases.
-%%% If the Module in the mod-key is set to application_starter then the
-%%% geniric help module application_starter is used to control the start.
-%%%=============================================================================
+%%======================================================================
+%% Start an application.
+%% If the start_phases is defined in the .app file, the application is
+%% to be started in one or several start phases.
+%% If the Module in the mod-key is set to application_starter then
+%% the generic help module application_starter is used to control
+%% the start.
+%%======================================================================
 
 start_it(Tag, State, From, Type) ->
     process_flag(trap_exit, true),
@@ -304,13 +282,11 @@ start_it_old(Tag, From, Type, ApplData) ->
 	    From ! {Tag, {ok, self()}},
 	    loop_it(From, Pid, M, AppState);
 	{'EXIT', normal} ->
-	    From ! {Tag, {error, "application exited with reason: normal"}};
+	    From ! {Tag, {error, {{'EXIT',normal},{M,start,[Type,A]}}}};
 	{error, Reason} ->
 	    From ! {Tag, {error, {Reason, {M,start,[Type,A]}}}};
 	Other ->
-	    Call = io_lib:format("~p:start(~p,~p) -> ~p",[M, Type, A, Other]), 
-	    From ! {Tag, {error, "invalid return value from " ++ 
-			  lists:flatten(Call)}}
+	    From ! {Tag, {error, {bad_return,{{M,start,[Type,A]},Other}}}}
     end.
 
 
@@ -325,7 +301,6 @@ start_it_new(Tag, From, Type, M, A, Phases, Apps) ->
 	Error ->
 	    From ! {Tag, Error}
     end.
-
 
 
 %%%=====================================================
@@ -359,7 +334,7 @@ start_supervisor(Type, M, A) ->
 	{error, Reason} ->
 	    {error, {Reason, {M, start, [Type, A]}}};
 	{'EXIT', normal} ->
-	    {error, "application exited with reason: normal"};
+	    {error, {{'EXIT', normal}, {M, start, [Type, A]}}};
 	Other ->
 	    {error, {bad_return, {{M, start, [Type, A]}, Other}}}
     end.
@@ -367,9 +342,9 @@ start_supervisor(Type, M, A) ->
 
 
 
-%%%=============================================================================
-%%%
-%%%=============================================================================
+%%======================================================================
+%%
+%%======================================================================
 
 loop_it(Parent, Child, Mod, AppState) ->
     receive

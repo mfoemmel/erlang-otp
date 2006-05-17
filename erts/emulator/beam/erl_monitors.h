@@ -123,8 +123,7 @@ typedef struct erts_link {
 
 #define ERTS_LINK_ROOT_AS_UINT(Linkp) (*((Uint *) &((Linkp)->root)))
 
-extern Sint erts_tot_nlink_lh_size;
-extern Sint erts_tot_monitor_lh_size;
+Uint erts_tot_link_lh_size(void);
 
 
 /* Prototypes */
@@ -146,6 +145,7 @@ ErtsLink *erts_lookup_link(ErtsLink *root, Eterm pid);
 void erts_sweep_links(ErtsLink *root, 
 		      void (*doit)(ErtsLink *, void *),
 		      void *context);
+void erts_init_monitors(void);
 
 #define erts_doforall_monitors erts_sweep_monitors
 #define erts_doforall_links erts_sweep_links

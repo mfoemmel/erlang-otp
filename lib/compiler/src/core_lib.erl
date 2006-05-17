@@ -26,6 +26,7 @@
 -export([make_values/1]).
 -export([map/2, fold/3, mapfold/3]).
 -export([is_var_used/2]).
+-export([free_vars/1]).
 
 %% -compile([export_all]).
 
@@ -524,3 +525,117 @@ vu_pat_seg_list(V, Ss, St) ->
 
 vu_var_list(V, Vs) ->
     lists:any(fun (#c_var{name=V2}) -> V =:= V2 end, Vs).
+
+%% free_vars(Expr) -> [FreeVar].
+%%  Return a list of the variables occurring free in Expr.
+
+free_vars(E) ->
+    Free = free(E, gb_sets:empty(), gb_sets:empty()),
+    gb_sets:to_list(Free).
+
+free(#c_fname{}, _, Free) -> Free;
+free(#c_atom{}, _, Free) -> Free;
+free(#c_char{}, _, Free) -> Free;
+free(#c_float{}, _, Free) -> Free;
+free(#c_int{}, _, Free) -> Free;
+free(#c_nil{}, _, Free) -> Free;
+free(#c_string{}, _, Free) -> Free;
+free(#c_tuple{es=Es}, Scope, Free) ->
+    free_list(Es, Scope, Free);
+free(#c_values{es=Es}, Scope, Free) ->
+    free_list(Es, Scope, Free);
+free(#c_cons{hd=Hd,tl=Tl}, Scope, Free0) ->
+    Free = free(Hd, Scope, Free0),
+    free(Tl, Scope, Free);
+free(#c_binary{segments=Ss}, Scope, Free) ->
+    free_segs(Ss, Scope, Free);
+free(#c_var{name=V}, Scope, Free) ->
+    case gb_sets:is_member(V, Scope) of
+	false -> gb_sets:add(V, Free);
+	true -> Free
+    end;
+free(#c_apply{op=Op,args=Args}, Scope, Free0) ->
+    Free = free(Op, Scope, Free0),
+    free_list(Args, Scope, Free);
+free(#c_primop{name=Name,args=Args}, Scope, Free0) ->
+    Free = free(Name, Scope, Free0),
+    free_list(Args, Scope, Free);
+free(#c_call{module=M,name=Name,args=Args}, Scope, Free0) ->
+    Free1 = free(M, Scope, Free0),
+    Free = free(Name, Scope, Free1),
+    free_list(Args, Scope, Free);
+free(#c_case{arg=Arg,clauses=Cs}, Scope, Free0) ->
+    Free = free(Arg, Scope, Free0),
+    free_cs(Cs, Scope, Free);
+free(#c_seq{arg=Arg,body=B}, Scope, Free0) ->
+    Free = free(Arg, Scope, Free0),
+    free(B, Scope, Free);
+free(#c_let{vars=Vs,arg=Arg,body=B}, Scope0, Free0) ->
+    Free = free(Arg, Scope0, Free0),
+    Scope = lists:foldl(fun(#c_var{name=V}, Sc) -> gb_sets:add(V, Sc) end, Scope0, Vs),
+    free(B, Scope, Free);
+free(#c_letrec{defs=Defs,body=B}, Scope0, Free0) ->
+    Free = free_list(Defs, Scope0, Free0),
+    free(B, Scope0, Free);
+free(#c_def{name=_Name,val=Val}, Scope0, Free0) ->
+    free(Val, Scope0, Free0);
+free(#c_fun{vars=Vs,body=B}, Scope, Free) ->
+    free(#c_let{arg=#c_nil{},vars=Vs,body=B}, Scope, Free);
+free(#c_try{arg=Arg,vars=Vs,body=B,evars=Evs,handler=H}, Scope, Free) ->
+    free(#c_let{vars=Vs,arg=Arg,body=#c_let{arg=B,vars=Evs,body=H}}, Scope, Free);
+free(#c_catch{body=B}, Scope, Free) ->
+    free(B, Scope, Free);
+free(#c_receive{clauses=Cs,timeout=To,action=Action}, Scope, Free0) ->
+    Free1 = free_cs(Cs, Scope, Free0),
+    Free = free(To, Scope, Free1),
+    free(Action, Scope, Free).
+
+free_list([E|Es], Scope, Free0) ->
+    Free = free(E, Scope, Free0),
+    free_list(Es, Scope, Free);
+free_list([], _, Free) -> Free.
+
+free_segs([#c_bitstr{val=Val,size=Size}|Bs], Scope, Free0) ->
+    Free1 = free(Val, Scope, Free0),
+    Free = free(Size, Scope, Free1),
+    free_segs(Bs, Scope, Free);
+free_segs([], _, Free) -> Free.
+
+free_cs([C|Cs], Scope, Free0) ->
+    Free = free_clause(C, Scope, Free0),
+    free_cs(Cs, Scope, Free);
+free_cs([], _, Free) -> Free.
+
+free_clause(#c_clause{pats=Pats,guard=G,body=B}, Scope0, Free0) ->
+    {Scope,Free1} = free_pat_list(Pats, Scope0, Free0),
+    Free = free(G, Scope, Free1),
+    free(B, Scope, Free).
+
+free_pat_list([P|Ps], Scope0, Free0) ->
+    {Scope,Free} = free_pat(P, Scope0, Free0),
+    free_pat_list(Ps, Scope, Free);
+free_pat_list([], Scope, Free) -> {Scope,Free}.
+
+free_pat(#c_var{name=V}, Scope, Free) ->
+    {gb_sets:add(V, Scope),Free};
+free_pat(#c_alias{var=#c_var{name=V},pat=Pat}, Scope, Free) ->
+    free_pat(Pat, gb_sets:add(V, Scope), Free);
+free_pat(#c_atom{}, Scope, Free) -> {Scope,Free};
+free_pat(#c_binary{segments=Ss}, Scope, Free) ->
+    free_seg_pats(Ss, Scope, Free);
+free_pat(#c_char{}, Scope, Free) -> {Scope,Free};
+free_pat(#c_float{}, Scope, Free) -> {Scope,Free};
+free_pat(#c_int{}, Scope, Free) -> {Scope,Free};
+free_pat(#c_nil{}, Scope, Free) -> {Scope,Free};
+free_pat(#c_string{}, Scope, Free) -> {Scope,Free};
+free_pat(#c_cons{hd=Hd,tl=Tl}, Scope0, Free0) ->
+    {Scope,Free} = free_pat(Hd, Scope0, Free0),
+    free_pat(Tl, Scope, Free);
+free_pat(#c_tuple{es=Ps}, Scope, Free) ->
+    free_pat_list(Ps, Scope, Free).
+
+free_seg_pats([#c_bitstr{val=Val,size=Size}|Bs], Scope0, Free0) ->
+    {Scope1,Free1} = free_pat(Val, Scope0, Free0),
+    {Scope,Free} = free_pat(Size, Scope1, Free1),
+    free_seg_pats(Bs, Scope, Free);
+free_seg_pats([], Scope, Free) -> {Scope,Free}.

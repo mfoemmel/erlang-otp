@@ -72,7 +72,7 @@
 
 -export([module/2,format_error/1]).
 
--import(lists, [map/2,foldl/3,foldr/3,mapfoldl/3,splitwith/2]).
+-import(lists, [reverse/1,map/2,foldl/3,foldr/3,mapfoldl/3,splitwith/2]).
 -import(ordsets, [add_element/2,del_element/2,is_element/2,
 		  union/1,union/2,intersection/2,subtract/2]).
 
@@ -101,26 +101,31 @@
 
 -record(core, {vcount=0,			%Variable counter
 	       fcount=0,			%Function counter
-	       ws=[]}).				%Warnings.
+	       in_guard=false,			%In guard or not.
+	       ws=[],				%Warnings.
+               file=[{file,""}]}).              %File
 
 module({Mod,Exp,Forms}, _Opts) ->
     Cexp = map(fun ({N,A}) -> #c_fname{id=N,arity=A} end, Exp),
-    {Kfs,As,Ws} = foldr(fun form/2, {[],[],[]}, Forms),
+    {Kfs0,As,Ws,_File} = foldl(fun form/2, {[],[],[],[]}, Forms),
+    Kfs = reverse(Kfs0),
     {ok,#c_module{name=#c_atom{val=Mod},exports=Cexp,attrs=As,defs=Kfs},Ws}.
 
-form({function,_,_,_,_}=F0, {Fs,As,Ws0}) ->
-    {F,Ws} = function(F0, Ws0),
-    {[F|Fs],As,Ws};
-form({attribute,_,_,_}=F, {Fs,As,Ws}) ->
-    {Fs,[attribute(F)|As],Ws}.
+form({function,_,_,_,_}=F0, {Fs,As,Ws0,File}) ->
+    {F,Ws} = function(F0, Ws0, File),
+    {[F|Fs],As,Ws,File};
+form({attribute,_,file,{File,_Line}}, {Fs,As,Ws,_}) ->
+    {Fs,As,Ws,File};
+form({attribute,_,_,_}=F, {Fs,As,Ws,File}) ->
+    {Fs,[attribute(F)|As],Ws,File}.
 
 attribute({attribute,_,Name,Val}) ->
     #c_def{name=core_lib:make_literal(Name),
 	   val=core_lib:make_literal(Val)}.
 
-function({function,_,Name,Arity,Cs0}, Ws0) ->
+function({function,_,Name,Arity,Cs0}, Ws0, File) ->
     %%ok = io:fwrite("~p - ", [{Name,Arity}]),
-    St0 = #core{vcount=0,ws=Ws0},
+    St0 = #core{vcount=0,ws=Ws0,file=[{file,File}]},
     {B0,St1} = body(Cs0, Arity, St0),
     %%ok = io:fwrite("1", []),
     %%ok = io:fwrite("~w:~p~n", [?LINE,B0]),
@@ -132,7 +137,7 @@ function({function,_,Name,Arity,Cs0}, Ws0) ->
     {#c_def{name=#c_fname{id=Name,arity=Arity},val=B2},Ws}.
 
 body(Cs0, Arity, St0) ->
-    Anno = [element(2, hd(Cs0))],
+    Anno = lineno_anno(element(2, hd(Cs0)), St0),
     {Args,St1} = new_vars(Anno, Arity, St0),
     {Cs1,St2} = clauses(Cs0, St1),
     {Ps,St3} = new_vars(Arity, St2),    %Need new variables here
@@ -154,7 +159,7 @@ clauses([C0|Cs0], St0) ->
 clauses([], St) -> {[],St}.
 
 clause({clause,Lc,H0,G0,B0}, St0) ->
-    case catch head(H0) of
+    case catch head(H0, St0) of
 	{'EXIT',_}=Exit -> exit(Exit);		%Propagate error
 	nomatch ->
 	    St = add_warning(Lc, nomatch, St0),
@@ -162,25 +167,27 @@ clause({clause,Lc,H0,G0,B0}, St0) ->
 	H1 ->
 	    {G1,St1} = guard(G0, St0),
 	    {B1,St2} = exprs(B0, St1),
-	    {#iclause{anno=#a{anno=[Lc]},pats=H1,guard=G1,body=B1},St2}
+            Anno = lineno_anno(Lc, St2),
+	    {#iclause{anno=#a{anno=Anno},pats=H1,guard=G1,body=B1},St2}
     end.
 
-%% head([P]) -> [P].
+%% head([P], State) -> [P].
 
-head(Ps) -> pattern_list(Ps).
+head(Ps, St) -> pattern_list(Ps, St).
 
 %% guard([Expr], State) -> {[Cexpr],State}.
 %%  Build an explict and/or tree of guard alternatives, then traverse
 %%  top-level and/or tree and "protect" inner tests.
 
 guard([], St) -> {[],St};
-guard(Gs0, St) ->
-    Gs = foldr(fun (Gt0, Rhs) ->
-		       Gt1 = guard_tests(Gt0),
-		       L = element(2, Gt1),
-		       {op,L,'or',Gt1,Rhs}
-	       end, guard_tests(last(Gs0)), first(Gs0)),
-    gexpr_top(Gs, St).
+guard(Gs0, St0) ->
+    Gs1 = foldr(fun (Gt0, Rhs) ->
+			Gt1 = guard_tests(Gt0),
+			L = element(2, Gt1),
+			{op,L,'or',Gt1,Rhs}
+		end, guard_tests(last(Gs0)), first(Gs0)),
+    {Gs,St} = gexpr_top(Gs1, St0#core{in_guard=true}),
+    {Gs,St#core{in_guard=false}}.
     
 guard_tests([]) -> [];
 guard_tests(Gs) ->
@@ -207,8 +214,26 @@ gexpr({protect,Line,Arg}, Bools0, St0) ->
 	    {E,Eps,Bools0,St};
 	{E0,Eps0,Bools,St1} ->
 	    {E,Eps,St} = force_booleans(Bools, E0, Eps0, St1),
-	    {#iprotect{anno=#a{anno=[Line]},body=Eps++[E]},[],Bools0,St}
+            Anno = lineno_anno(Line, St),
+	    {#iprotect{anno=#a{anno=Anno},body=Eps++[E]},[],Bools0,St}
     end;
+gexpr({op,L,'andalso',E1,E2}, Bools, St0) ->
+    {#c_var{name=V0},St} = new_var(L, St0),
+    V = {var,L,V0},
+    False = {atom,L,false},
+    E = make_bool_switch_guard(L, E1, V,
+			       make_bool_switch_guard(L, E2, V,
+						      {atom,L,true}, False),
+			       False),
+    gexpr(E, Bools, St);
+gexpr({op,L,'orelse',E1,E2}, Bools, St0) ->
+    {#c_var{name=V0},St} = new_var(L, St0),
+    V = {var,L,V0},
+    True = {atom,L,true},
+    E = make_bool_switch_guard(L, E1, V, True,
+			       make_bool_switch_guard(L, E2, V,
+						     True, {atom,L,false})),
+    gexpr(E, Bools, St);
 gexpr({op,Line,Op,L,R}=Call, Bools0, St0) ->
     case erl_internal:bool_op(Op, 2) of
 	true ->
@@ -216,7 +241,7 @@ gexpr({op,Line,Op,L,R}=Call, Bools0, St0) ->
 	    {Ll,Llps,St2} = force_safe(Le, St1),
 	    {Re,Rps,Bools,St3} = gexpr(R, Bools1, St2),
 	    {Rl,Rlps,St4} = force_safe(Re, St3),
-	    Anno = [Line],
+	    Anno = lineno_anno(Line, St4),
 	    {#icall{anno=#a{anno=Anno},	%Must have an #a{}
 		    module=#c_atom{anno=Anno,val=erlang},name=#c_atom{anno=Anno,val=Op},
 		    args=[Ll,Rl]},Lps ++ Llps ++ Rps ++ Rlps,Bools,St4};
@@ -228,7 +253,7 @@ gexpr({op,Line,Op,A}=Call, Bools0, St0) ->
 	true ->
 	    {Ae,Aps,Bools,St1} = gexpr(A, Bools0, St0),
 	    {Al,Alps,St2} = force_safe(Ae, St1),
-	    Anno = [Line],
+	    Anno = lineno_anno(Line, St2),
 	    {#icall{anno=#a{anno=Anno},	%Must have an #a{}
 		    module=#c_atom{anno=Anno,val=erlang},name=#c_atom{anno=Anno,val=Op},
 		    args=[Al]},Aps ++ Alps,Bools,St2};
@@ -244,9 +269,9 @@ gexpr(E0, Bools, St0) ->
 %%  don't know, i.e. if it is not a comparison or a type test.
 
 gexpr_test({atom,L,true}, Bools, St0) ->
-    {#c_atom{anno=[L],val=true},[],Bools,St0};
+    {#c_atom{anno=lineno_anno(L, St0),val=true},[],Bools,St0};
 gexpr_test({atom,L,false}, Bools, St0) ->
-    {#c_atom{anno=[L],val=false},[],Bools,St0};
+    {#c_atom{anno=lineno_anno(L, St0),val=false},[],Bools,St0};
 gexpr_test(E0, Bools0, St0) ->
     {E1,Eps0,St1} = expr(E0, St0),
     %% Generate "top-level" test and argument calls.
@@ -254,8 +279,7 @@ gexpr_test(E0, Bools0, St0) ->
 	#icall{anno=Anno,module=#c_atom{val=erlang},name=#c_atom{val=N},args=As} ->
 	    Ar = length(As),
 	    case erl_internal:type_test(N, Ar) orelse
-		erl_internal:comp_op(N, Ar) orelse
-		(N == internal_is_record andalso Ar == 3) of
+		erl_internal:comp_op(N, Ar) of
 		true -> {E1,Eps0,Bools0,St1};
 		false ->
 		    Lanno = Anno#a.anno,
@@ -317,31 +341,31 @@ exprs([], St) -> {[],St}.
 %% expr(Expr, State) -> {Cexpr,[PreExp],State}.
 %%  Generate an internal core expression.
 
-expr({var,L,V}, St) -> {#c_var{anno=[L],name=V},[],St};
-expr({char,L,C}, St) -> {#c_char{anno=[L],val=C},[],St};
-expr({integer,L,I}, St) -> {#c_int{anno=[L],val=I},[],St};
-expr({float,L,F}, St) -> {#c_float{anno=[L],val=F},[],St};
-expr({atom,L,A}, St) -> {#c_atom{anno=[L],val=A},[],St};
-expr({nil,L}, St) -> {#c_nil{anno=[L]},[],St};
-expr({string,L,[]}, St) -> {#c_nil{anno=[L]},[],St};
-expr({string,L,S}, St) -> {#c_string{anno=[L],val=S},[],St};
+expr({var,L,V}, St) -> {#c_var{anno=lineno_anno(L, St),name=V},[],St};
+expr({char,L,C}, St) -> {#c_char{anno=lineno_anno(L, St),val=C},[],St};
+expr({integer,L,I}, St) -> {#c_int{anno=lineno_anno(L, St),val=I},[],St};
+expr({float,L,F}, St) -> {#c_float{anno=lineno_anno(L, St),val=F},[],St};
+expr({atom,L,A}, St) -> {#c_atom{anno=lineno_anno(L, St),val=A},[],St};
+expr({nil,L}, St) -> {#c_nil{anno=lineno_anno(L, St)},[],St};
+expr({string,L,[]}, St) -> {#c_nil{anno=lineno_anno(L, St)},[],St};
+expr({string,L,S}, St) -> {#c_string{anno=lineno_anno(L, St),val=S},[],St};
 expr({cons,L,H0,T0}, St0) ->
     {H1,Hps,St1} = safe(H0, St0),
     {T1,Tps,St2} = safe(T0, St1),
-    {#c_cons{anno=[L],hd=H1,tl=T1},Hps ++ Tps,St2};
+    {#c_cons{anno=lineno_anno(L, St2),hd=H1,tl=T1},Hps ++ Tps,St2};
 expr({lc,L,E,Qs}, St) ->
     lc_tq(L, E, Qs, {nil,L}, St);
 expr({tuple,L,Es0}, St0) ->
     {Es1,Eps,St1} = safe_list(Es0, St0),
-    {#c_tuple{anno=[L],es=Es1},Eps,St1};
+    {#c_tuple{anno=lineno_anno(L, St1),es=Es1},Eps,St1};
 expr({bin,L,Es0}, St0) ->
     try expr_bin(Es0, St0) of
 	{Es1,Eps,St1} ->
-	    {#ibinary{anno=#a{anno=[L]},segments=Es1},Eps,St1}
+	    {#ibinary{anno=#a{anno=lineno_anno(L, St1)},segments=Es1},Eps,St1}
     catch
 	throw:bad_binary ->
 	    St1 = add_warning(L, bad_binary, St0),
-	    LineAnno = [L],
+	    LineAnno = lineno_anno(L, St1),
 	    As = [#c_atom{anno=LineAnno,val=badarg}],
 	    {#icall{anno=#a{anno=LineAnno},	%Must have an #a{}
 		    module=#c_atom{anno=LineAnno,val=erlang},
@@ -356,28 +380,31 @@ expr({block,_,Es0}, St0) ->
 expr({'if',L,Cs0}, St0) ->
     {Cs1,St1} = clauses(Cs0, St0),
     Fc = fail_clause([], #c_atom{val=if_clause}),
-    {#icase{anno=#a{anno=[L]},args=[],clauses=Cs1,fc=Fc},[],St1};
+    Lanno = lineno_anno(L, St1),
+    {#icase{anno=#a{anno=Lanno},args=[],clauses=Cs1,fc=Fc},[],St1};
 expr({'case',L,E0,Cs0}, St0) ->
     {E1,Eps,St1} = novars(E0, St0),
     {Cs1,St2} = clauses(Cs0, St1),
     {Fpat,St3} = new_var(St2),
     Fc = fail_clause([Fpat], #c_tuple{es=[#c_atom{val=case_clause},Fpat]}),
-    {#icase{anno=#a{anno=[L]},args=[E1],clauses=Cs1,fc=Fc},Eps,St3};
+    Lanno = lineno_anno(L, St3),
+    {#icase{anno=#a{anno=Lanno},args=[E1],clauses=Cs1,fc=Fc},Eps,St3};
 expr({'receive',L,Cs0}, St0) ->
     {Cs1,St1} = clauses(Cs0, St0),
-    {#ireceive1{anno=#a{anno=[L]},clauses=Cs1}, [], St1};
+    {#ireceive1{anno=#a{anno=lineno_anno(L, St1)},clauses=Cs1}, [], St1};
 expr({'receive',L,Cs0,Te0,Tes0}, St0) ->
     {Te1,Teps,St1} = novars(Te0, St0),
     {Tes1,St2} = exprs(Tes0, St1),
     {Cs1,St3} = clauses(Cs0, St2),
-    {#ireceive2{anno=#a{anno=[L]},
+    {#ireceive2{anno=#a{anno=lineno_anno(L, St3)},
 		clauses=Cs1,timeout=Te1,action=Tes1},Teps,St3};
 expr({'try',L,Es0,[],Ecs,[]}, St0) ->
     %% 'try ... catch ... end'
     {Es1,St1} = exprs(Es0, St0),
     {V,St2} = new_var(St1),		%This name should be arbitrary
     {Evs,Hs,St3} = try_exception(Ecs, St2),
-    {#itry{anno=#a{anno=[L]},args=Es1,vars=[V],body=[V],
+    Lanno = lineno_anno(L, St3),
+    {#itry{anno=#a{anno=Lanno},args=Es1,vars=[V],body=[V],
 	   evars=Evs,handler=Hs},
      [],St3};
 expr({'try',L,Es0,Cs0,Ecs,[]}, St0) ->
@@ -388,7 +415,7 @@ expr({'try',L,Es0,Cs0,Ecs,[]}, St0) ->
     {Fpat,St4} = new_var(St3),
     Fc = fail_clause([Fpat], #c_tuple{es=[#c_atom{val=try_clause},Fpat]}),
     {Evs,Hs,St5} = try_exception(Ecs, St4),
-    {#itry{anno=#a{anno=[L]},args=Es1,
+    {#itry{anno=#a{anno=lineno_anno(L, St5)},args=Es1,
 	   vars=[V],body=[#icase{anno=#a{},args=[V],clauses=Cs1,fc=Fc}],
 	   evars=Evs,handler=Hs},
      [],St5};
@@ -399,7 +426,8 @@ expr({'try',L,Es0,[],[],As0}, St0) ->
     {Evs,Hs,St3} = try_after(As1,St2),
     {V,St4} = new_var(St3),		% (must not exist in As1)
     %% TODO: this duplicates the 'after'-code; should lift to function.
-    {#itry{anno=#a{anno=[L]},args=Es1,vars=[V],body=As1++[V],
+    Lanno = lineno_anno(L, St4),
+    {#itry{anno=#a{anno=Lanno},args=Es1,vars=[V],body=As1++[V],
 	   evars=Evs,handler=Hs},
      [],St4};
 expr({'try',L,Es,Cs,Ecs,As}, St0) ->
@@ -407,59 +435,100 @@ expr({'try',L,Es,Cs,Ecs,As}, St0) ->
     expr({'try',L,[{'try',L,Es,Cs,Ecs,[]}],[],[],As}, St0);
 expr({'catch',L,E0}, St0) ->
     {E1,Eps,St1} = expr(E0, St0),
-    {#icatch{anno=#a{anno=[L]},body=Eps ++ [E1]},[],St1};
+    Lanno = lineno_anno(L, St1),
+    {#icatch{anno=#a{anno=Lanno},body=Eps ++ [E1]},[],St1};
 expr({'fun',L,{function,F,A},{_,_,_}=Id}, St) ->
-    {#c_fname{anno=[L,{id,Id}],id=F,arity=A},[],St};
+    Lanno = lineno_anno(L, St),
+    {#c_fname{anno=Lanno++[{id,Id}],id=F,arity=A},[],St};
 expr({'fun',L,{clauses,Cs},Id}, St) ->
     fun_tq(Id, Cs, L, St);
-expr({call,L0,{remote,_,{atom,_,erlang},{atom,_,is_record}},[_,_,_]=As}, St)
-  when L0 < 0 ->
-    %% Compiler-generated erlang:is_record/3 should be converted to
-    %% erlang:internal_is_record/3.
-    L = -L0,
-    expr({call,L,{remote,L,{atom,L,erlang},{atom,L,internal_is_record}},As}, St);
 expr({call,L,{remote,_,M,F},As0}, St0) ->
     {[M1,F1|As1],Aps,St1} = safe_list([M,F|As0], St0),
-    {#icall{anno=#a{anno=[L]},module=M1,name=F1,args=As1},Aps,St1};
+    Lanno = lineno_anno(L, St1),
+    {#icall{anno=#a{anno=Lanno},module=M1,name=F1,args=As1},Aps,St1};
 expr({call,Lc,{atom,Lf,F},As0}, St0) ->
     {As1,Aps,St1} = safe_list(As0, St0),
-    Op = #c_fname{anno=[Lf],id=F,arity=length(As1)},
-    {#iapply{anno=#a{anno=[Lc]},op=Op,args=As1},Aps,St1};
+    Op = #c_fname{anno=lineno_anno(Lf, St1),id=F,arity=length(As1)},
+    {#iapply{anno=#a{anno=lineno_anno(Lc, St1)},op=Op,args=As1},Aps,St1};
 expr({call,L,FunExp,As0}, St0) ->
     {Fun,Fps,St1} = safe(FunExp, St0),
     {As1,Aps,St2} = safe_list(As0, St1),
-    {#iapply{anno=#a{anno=[L]},op=Fun,args=As1},Fps ++ Aps,St2};
+    Lanno = lineno_anno(L, St2),
+    {#iapply{anno=#a{anno=Lanno},op=Fun,args=As1},Fps ++ Aps,St2};
 expr({match,L,P0,E0}, St0) ->
     %% First fold matches together to create aliases.
     {P1,E1} = fold_match(E0, P0),
     {E2,Eps,St1} = novars(E1, St0),
-    P2 = (catch pattern(P1)),
+    P2 = (catch pattern(P1, St1)),
     {Fpat,St2} = new_var(St1),
     Fc = fail_clause([Fpat], #c_tuple{es=[#c_atom{val=badmatch},Fpat]}),
+    Lanno = lineno_anno(L, St2),
     case P2 of
 	{'EXIT',_}=Exit -> exit(Exit);		%Propagate error
 	nomatch ->
 	    St = add_warning(L, nomatch, St2),
-	    {#icase{anno=#a{anno=[L]},
+	    {#icase{anno=#a{anno=Lanno},
 		    args=[E2],clauses=[],fc=Fc},Eps,St};
 	_Other ->
-	    {#imatch{anno=#a{anno=[L]},pat=P2,arg=E2,fc=Fc},Eps,St2}
+	    {#imatch{anno=#a{anno=Lanno},pat=P2,arg=E2,fc=Fc},Eps,St2}
     end;
 expr({op,_,'++',{lc,Llc,E,Qs},L2}, St) ->
     %%  Optimise this here because of the list comprehension algorithm.
     lc_tq(Llc, E, Qs, L2, St);
+expr({op,L,'andalso',E1,E2}, St0) ->
+    {#c_var{name=V0},St} = new_var(L, St0),
+    V = {var,L,V0},
+    False = {atom,L,false},
+    E = make_bool_switch(L, E1, V,
+			 make_bool_switch(L, E2, V,
+					  {atom,L,true}, False, St0),
+			 False, St0),
+    expr(E, St);
+expr({op,L,'orelse',E1,E2}, St0) ->
+    {#c_var{name=V0},St} = new_var(L, St0),
+    V = {var,L,V0},
+    True = {atom,L,true},
+    E = make_bool_switch(L, E1, V, True,
+			 make_bool_switch(L, E2, V,
+					  True, {atom,L,false}, St0), St0),
+    expr(E, St);
 expr({op,L,Op,A0}, St0) ->
     {A1,Aps,St1} = safe(A0, St0),
-    LineAnno = [L],
+    LineAnno = lineno_anno(L, St1),
     {#icall{anno=#a{anno=LineAnno},		%Must have an #a{}
 	    module=#c_atom{anno=LineAnno,val=erlang},
 	    name=#c_atom{anno=LineAnno,val=Op},args=[A1]},Aps,St1};
 expr({op,L,Op,L0,R0}, St0) ->
     {As,Aps,St1} = safe_list([L0,R0], St0),
-    LineAnno = [L],
+    LineAnno = lineno_anno(L, St1),
     {#icall{anno=#a{anno=LineAnno},		%Must have an #a{}
 	    module=#c_atom{anno=LineAnno,val=erlang},
 	    name=#c_atom{anno=LineAnno,val=Op},args=As},Aps,St1}.
+
+make_bool_switch(L, E, V, T, F, #core{in_guard=true}) ->
+    make_bool_switch_guard(L, E, V, T, F);
+make_bool_switch(L, E, V, T, F, #core{}) ->
+    make_bool_switch_body(L, E, V, T, F).
+
+make_bool_switch_body(L, E, V, T, F) ->
+    NegL = -abs(L),
+    Error = {tuple,NegL,[{atom,NegL,badarg},V]},
+    {'case',NegL,E,
+     [{clause,NegL,[{atom,NegL,true}],[],[T]},
+      {clause,NegL,[{atom,NegL,false}],[],[F]},
+      {clause,NegL,[V],[],
+       [{call,NegL,{remote,NegL,{atom,NegL,erlang},{atom,NegL,error}},
+	 [Error]}]}]}.
+
+make_bool_switch_guard(_, E, _, [{atom,_,true}], [{atom,_,false}]) -> E;
+make_bool_switch_guard(L, E, V, T, F) ->
+    NegL = -abs(L),
+    {'case',NegL,E,
+     [{clause,NegL,[{atom,NegL,true}],[],[T]},
+      {clause,NegL,[{atom,NegL,false}],[],[F]},
+      {clause,NegL,[V],[],[V]}
+     ]}.
+
 
 %% try_exception([ExcpClause], St) -> {[ExcpVar],Handler,St}.
 
@@ -524,7 +593,7 @@ fun_tq(Id, Cs0, L, St0) ->
     {Args,St2} = new_vars(Arity, St1),
     {Ps,St3} = new_vars(Arity, St2),		%Need new variables here
     Fc = fail_clause(Ps, #c_tuple{es=[#c_atom{val=function_clause}|Ps]}),
-    Fun = #ifun{anno=#a{anno=[L]},
+    Fun = #ifun{anno=#a{anno=lineno_anno(L, St3)},
 		id=[{id,Id}],				%We KNOW!
 		vars=Args,clauses=Cs1,fc=Fc},
     {Fun,[],St3}.
@@ -551,7 +620,7 @@ lc_tq(Line, E, [{generate,Lg,P,G}|Qs0], More, St0) ->
     {Lc,Lps,St6} = lc_tq(Line, E, Qs1, NewMore, St5),
     {Mc,Mps,St7} = expr(More, St6),
     {Nc,Nps,St8} = expr(NewMore, St7),
-    case catch pattern(P) of
+    case catch pattern(P, St8) of
 	{'EXIT',_}=Exit ->
 	    St9 = St8,
 	    Pc = nomatch,
@@ -751,35 +820,35 @@ fold_match({match,L,P0,E0}, P) ->
     {{match,L,P0,P1},E1};
 fold_match(E, P) -> {P,E}.
 
-%% pattern(Pattern) -> CorePat.
+%% pattern(Pattern, State) -> CorePat.
 %% Transform a pattern by removing line numbers.  We also normalise
 %% aliases in patterns to standard form, {alias,Pat,[Var]}.
 
-pattern({var,L,V}) -> #c_var{anno=[L],name=V};
-pattern({char,L,C}) -> #c_char{anno=[L],val=C};
-pattern({integer,L,I}) -> #c_int{anno=[L],val=I};
-pattern({float,L,F}) -> #c_float{anno=[L],val=F};
-pattern({atom,L,A}) -> #c_atom{anno=[L],val=A};
-pattern({string,L,[]}) -> #c_nil{anno=[L]};
-pattern({string,L,S}) -> #c_string{anno=[L],val=S};
-pattern({nil,L}) -> #c_nil{anno=[L]};
-pattern({cons,L,H,T}) ->
-    #c_cons{anno=[L],hd=pattern(H),tl=pattern(T)};
-pattern({tuple,L,Ps}) ->
-    #c_tuple{anno=[L],es=pattern_list(Ps)};
-pattern({bin,L,Ps}) ->
+pattern({var,L,V}, St) -> #c_var{anno=lineno_anno(L, St),name=V};
+pattern({char,L,C}, St) -> #c_char{anno=lineno_anno(L, St),val=C};
+pattern({integer,L,I}, St) -> #c_int{anno=lineno_anno(L, St),val=I};
+pattern({float,L,F}, St) -> #c_float{anno=lineno_anno(L, St),val=F};
+pattern({atom,L,A}, St) -> #c_atom{anno=lineno_anno(L, St),val=A};
+pattern({string,L,[]}, St) -> #c_nil{anno=lineno_anno(L, St)};
+pattern({string,L,S}, St) -> #c_string{anno=lineno_anno(L, St),val=S};
+pattern({nil,L}, St) -> #c_nil{anno=lineno_anno(L, St)};
+pattern({cons,L,H,T}, St) ->
+    #c_cons{anno=lineno_anno(L, St),hd=pattern(H, St),tl=pattern(T, St)};
+pattern({tuple,L,Ps}, St) ->
+    #c_tuple{anno=lineno_anno(L, St),es=pattern_list(Ps, St)};
+pattern({bin,L,Ps}, St) ->
     %% We don't create a #ibinary record here, since there is
     %% no need to hold any used/new annoations in a pattern.
-    #c_binary{anno=[L],segments=pat_bin(Ps)};
-pattern({match,_,P1,P2}) ->
-    pat_alias(pattern(P1), pattern(P2)).
+    #c_binary{anno=lineno_anno(L, St),segments=pat_bin(Ps, St)};
+pattern({match,_,P1,P2}, St) ->
+    pat_alias(pattern(P1, St), pattern(P2, St)).
 
-%% bin_pattern_list([BinElement]) -> [BinSeg].
+%% pat_bin([BinElement], State) -> [BinSeg].
 
-pat_bin(Ps) -> map(fun pat_segment/1, Ps).
+pat_bin(Ps, St) -> map(fun(P) -> pat_segment(P, St) end, Ps).
 
-pat_segment({bin_element,_,Term,Size,[Type,{unit,Unit}|Flags]}) ->
-    #c_bitstr{val=pattern(Term),size=pattern(Size),
+pat_segment({bin_element,_,Term,Size,[Type,{unit,Unit}|Flags]}, St) ->
+    #c_bitstr{val=pattern(Term, St),size=pattern(Size, St),
 	      unit=core_lib:make_literal(Unit),
 	      type=core_lib:make_literal(Type),
 	      flags=core_lib:make_literal(Flags)}.
@@ -834,9 +903,9 @@ pat_alias_list([A1|A1s], [A2|A2s]) ->
 pat_alias_list([], []) -> [];
 pat_alias_list(_, _) -> throw(nomatch).
 
-%% pattern_list([P]) -> [P].
+%% pattern_list([P], State) -> [P].
 
-pattern_list(Ps) -> map(fun pattern/1, Ps).
+pattern_list(Ps, St) -> map(fun(P) -> pattern(P, St) end, Ps).
 
 %% first([A]) -> [A].
 %% last([A]) -> A.
@@ -1336,6 +1405,9 @@ bitstr_vars(Segs, Vs) ->
  		  lit_vars(V, lit_vars(S, Vs0))
 	  end, Vs, Segs).
 
+lineno_anno(L, St) when is_integer(L) ->
+    [L] ++ St#core.file.
+
 get_ianno(Ce) ->
     case core_lib:get_anno(Ce) of
 	#a{}=A -> A;
@@ -1358,7 +1430,7 @@ format_error(nomatch) ->
 format_error(bad_binary) ->
     "binary construction will fail because of a type mismatch".
 
-add_warning(Line, Term, #core{ws=Ws}=St) when Line >= 0 ->
-    St#core{ws=[{Line,?MODULE,Term}|Ws]};
+add_warning(Line, Term, #core{ws=Ws,file=[{file,File}]}=St) when Line >= 0 ->
+    St#core{ws=[{File,[{Line,?MODULE,Term}]}|Ws]};
 add_warning(_, _, St) -> St.
 

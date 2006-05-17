@@ -64,7 +64,6 @@ start_link(Config) ->
 	    error_logger:error_report(Reason),
 	    {stop, Reason};
 	{ConfigFile,AcceptTimeout,Debug} -> 
-	    io:format("ConfigFile: ~p~n,AcceptTimeout: ~p~n,Debug: ~p~n",[ConfigFile,AcceptTimeout,Debug]),
 	    start_link(ConfigFile, AcceptTimeout, Debug)
     end.
 start_link(ConfigFile, AcceptTimeout, Debug) ->

@@ -1248,7 +1248,7 @@ encode_bit_string_bits(C, BitListVal, _NamedBitList, DoTag) when list(BitListVal
 	case get_constraint(C,'SizeConstraint') of 
 	    no -> 
 		encode_bitstring(BitListVal);  
-	    Constr={Min,Max} when integer(Min),integer(Max) -> 
+	    Constr={Min,_Max} when integer(Min) -> 
 		encode_constr_bit_str_bits(Constr,BitListVal,DoTag);
 	    {Constr={_,_},[]} ->
 		%% constraint with extension mark
@@ -1297,12 +1297,15 @@ encode_constr_bit_str_bits({{_Min1,Max1},{Min2,Max2}},BitListVal,_DoTag) ->
 	_ ->
 	    encode_bitstring(BitListVal)
     end;
-encode_constr_bit_str_bits({_Min,Max},BitListVal,_DoTag) ->
+encode_constr_bit_str_bits({Min,Max},BitListVal,_DoTag) ->
     BitLen = length(BitListVal), 
     if  
 	BitLen > Max -> 
 	    exit({error,{asn1,{bitstring_length,{{was,BitLen},
 						 {maximum,Max}}}}}); 
+	BitLen < Min ->
+	    exit({error,{asn1,{bitstring_length,{{was,BitLen},
+						 {minimum,Min}}}}});
 	true -> 
 	    encode_bitstring(BitListVal)  
     end.

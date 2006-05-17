@@ -20,6 +20,7 @@
 #define ERL_MSEG_H_
 
 #include "sys.h"
+#include "erl_alloc_types.h"
 
 #ifndef HAVE_MMAP
 #  define HAVE_MMAP 0
@@ -68,13 +69,13 @@ typedef struct {
     0			/* Relative shrink threshold		*/	\
 }
 
-void *erts_mseg_alloc(Uint *size_p);
-void *erts_mseg_alloc_opt(Uint *size_p, const ErtsMsegOpt_t *opt);
-void  erts_mseg_dealloc(void *seg, Uint size);
-void  erts_mseg_dealloc_opt(void *seg, Uint size, const ErtsMsegOpt_t *opt);
-void *erts_mseg_realloc(void *seg, Uint old_size, Uint *new_size_p);
-void *erts_mseg_realloc_opt(void *seg, Uint old_size, Uint *new_size_p,
-			    const ErtsMsegOpt_t *opt);
+void *erts_mseg_alloc(ErtsAlcType_t, Uint *);
+void *erts_mseg_alloc_opt(ErtsAlcType_t, Uint *, const ErtsMsegOpt_t *);
+void  erts_mseg_dealloc(ErtsAlcType_t, void *, Uint);
+void  erts_mseg_dealloc_opt(ErtsAlcType_t, void *, Uint, const ErtsMsegOpt_t *);
+void *erts_mseg_realloc(ErtsAlcType_t, void *, Uint, Uint *);
+void *erts_mseg_realloc_opt(ErtsAlcType_t, void *, Uint, Uint *,
+			    const ErtsMsegOpt_t *);
 void  erts_mseg_clear_cache(void);
 Uint  erts_mseg_no(void);
 Uint  erts_mseg_unit_size(void);
@@ -82,8 +83,8 @@ void  erts_mseg_init(ErtsMsegInit_t *init);
 void  erts_mseg_late_init(void); /* Have to be called after all allocators,
 				   threads and timers have been initialized. */
 void  erts_mseg_exit(void);
-Eterm erts_mseg_info_options(CIO *ciop, Uint **hpp, Uint *szp);
-Eterm erts_mseg_info(CIO *ciop, Uint **hpp, Uint *szp);
+Eterm erts_mseg_info_options(int *, void*, Uint **, Uint *);
+Eterm erts_mseg_info(int *, void*, Uint **, Uint *);
 
 #endif /* #if HAVE_ERTS_MSEG */
 

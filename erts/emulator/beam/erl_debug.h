@@ -7,69 +7,30 @@
 #include "hipe_debug.h"
 #endif
 
-/*
- * Verbose - To print debug messages
- * ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
- * There are six levels of verbose at this moment:
- *
- * 0. VERBOSE_SILENT    - Normal mode. This means a debug compiled system
- *                        started without any -v flag.
- *
- * 1. VERBOSE_CHATTY    - This is the level previously used when verbose
- *                        was turned on, that is messages about configuration
- *                        at startup time etc.
- *
- * 2. VERBOSE_NOISY     - Adds messages about garbage collection traces.
- *
- * 3. VERBOSE_MORE_MEM  - Adds more messages about garbage collection.
- *
- * 4. VERBOSE_SCREAMING - Adds messages about heap sanity checks.
- *
- * 5. VERBOSE_OVERKILL  - Nothing so far...
- *
- * There are two methods to print debug messages, verbose_message and
- * verbose_error, which produces output to stdout and stderr
- * respectively. Both functions share the same syntax:
- *
- * (void) verbose_message( Level, Message, ... );
- *
- * The message is a standard printf-format string and ... is replaced
- * by optional arguments to satisfy the format string.
+/* Heap areas will be filled with this value when they are deallocated
+ * after a garbage collection. This value used to be 0xff, but that is
+ * an immediate and might not crash the system if it is encountered.
+ * The value is now 0x01, the cons of death.
  */
+#define DEBUG_BAD_BYTE 0x01
+#define DEBUG_BAD_WORD 0x01010101
 
-typedef enum {
-    VERBOSE_SILENT,
-    VERBOSE_CHATTY,
-    VERBOSE_NOISY,
-    VERBOSE_MORE_MEM,
-    VERBOSE_SCREAMING,
-    VERBOSE_OVERKILL
-} verbose_level;
+/*
+ * VERBOSE. Use the -v option to enable the different categories.
+ */
+#define VERBOSE(flag, format) (flag & verbose ? erts_printf format : 0)
 
-extern verbose_level verbose;
+#define DEBUG_DEFAULT      0x0000    /* No flags are set per default         */
+#define DEBUG_SYSTEM       0x0001    /* Misc system info at startup and end  */
+#define DEBUG_PRIVATE_GC   0x0002    /* GC of private heaps                  */
+#define DEBUG_HYBRID_GC    0x0004    /* GC of the message area               */
+#define DEBUG_ALLOCATION   0x0008    /* HAlloc. To find holes in the heap    */
+#define DEBUG_MESSAGES     0x0010    /* Message passing                      */
+#define DEBUG_THREADS      0x0020    /* Thread-related stuff                 */
+#define DEBUG_PROCESSES    0x0040    /* Process creation and removal         */
+#define DEBUG_MEMORY       0x0080    /* Display results of memory checks     */
 
-#define VERBOSE(x) verbose_error(VERBOSE_SILENT,"The macro VERBOSE() is deprecated! See erl_debug.h for more information.");
-
-static ERTS_INLINE void verbose_message(verbose_level level, char *message, ...)
-{
-    if (level <= verbose) {
-        va_list ap;
-        va_start(ap,message);
-        vfprintf(stdout,message,ap);
-        va_end(ap);
-        fprintf(stdout,"\r");
-    }
-}
-
-static ERTS_INLINE void verbose_error(verbose_level level, char *message, ...)
-{
-    if (level <= verbose) {
-        va_list ap;
-        va_start(ap,message);
-        vfprintf(stderr,message,ap);
-        va_end(ap);
-    }
-}
+extern Uint32 verbose;
 
 void upp(byte*, int);
 void pat(Eterm);
@@ -80,22 +41,9 @@ void pba(Process*, int);
 void td(Eterm);
 void ps(Process*, Eterm*);
 
-#if 0
-# define VERBOSE_MESSAGE(Args) verbose_message Args
-# define VERBOSE_ERROR(Args) verbose_error Args
-#else
-# define VERBOSE_MESSAGE(Args)
-# define VERBOSE_ERROR(Args)
-#endif
-void verbose_message(verbose_level level, char *message, ...);
-void verbose_error(verbose_level level, char *message, ...);
-
 #else /* Non-debug mode */
 
-#define CHECK_HEAP(p)
-#define CHECK_MEMORY(start, end)
-#define VERBOSE_MESSAGE(Args)
-#define VERBOSE_ERROR(Args)
+#define VERBOSE(flag,format)
 
 #endif /* DEBUG */
 
@@ -103,16 +51,20 @@ void verbose_error(verbose_level level, char *message, ...);
  * These functions can be handy when developing, and perhaps useful
  * even outside debugging.
  */
+extern void erts_check_stack(Process *p);
+extern void erts_check_heap(Process *p);
+extern void erts_check_memory(Process *p, Eterm *start, Eterm *end);
+extern void verify_process(Process *p);
+extern void verify_everything(void);
 extern void print_tagged_memory(Eterm *start, Eterm *end);
 extern void print_untagged_memory(Eterm *start, Eterm *end);
+extern void print_memory(Process *p);
 extern void print_memory_info(Process *p);
+
 #ifdef HYBRID
 extern void print_ma_info(void);
 extern void print_message_area(void);
 extern void check_message_area(void);
-#endif
-#ifdef INCREMENTAL_GC
-extern void print_active_procs(void);
 #endif
 
 #endif /* _ERL_DEBUG_H_ */

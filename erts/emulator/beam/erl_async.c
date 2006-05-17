@@ -26,21 +26,29 @@ typedef struct _erl_async {
 } ErlAsync;
 
 typedef struct {
-    ethr_mutex mtx;
-    ethr_cond cv;
-    ethr_tid thr;
+    erts_mtx_t mtx;
+    erts_cnd_t cv;
+    erts_tid_t thr;
     int   len;
+#ifndef ERTS_SMP
     int   hndl;
+#endif
     ErlAsync* head;
     ErlAsync* tail;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    int no;
+#endif
 } AsyncQueue;
 
 static long async_id = 0;
 
 
-ethr_mutex async_ready_mtx;
+#ifndef ERTS_SMP
+
+erts_mtx_t async_ready_mtx;
 static ErlAsync* async_ready_list = NULL;
 
+#endif
 
 /*
 ** Initialize worker threads (if supported)
@@ -72,8 +80,11 @@ int init_async(int hndl)
     AsyncQueue* q;
     int i;
 
-    erts_mtx_init(&async_ready_mtx);
+#ifndef ERTS_SMP
+    erts_mtx_init(&async_ready_mtx, "async_ready");
     async_ready_list = NULL;
+#endif
+
     async_id = 0;
 
     async_q = q = (AsyncQueue*)
@@ -85,8 +96,13 @@ int init_async(int hndl)
 	q->head = NULL;
 	q->tail = NULL;
 	q->len = 0;
+#ifndef ERTS_SMP
 	q->hndl = hndl;
-	erts_mtx_init(&q->mtx);
+#endif
+#ifdef ERTS_ENABLE_LOCK_CHECK
+	q->no = i;
+#endif
+	erts_mtx_init(&q->mtx, "asyncq");
 	erts_cnd_init(&q->cv);
 	erts_thr_create(&q->thr, async_main, (void*)q, 0);
 	q++;
@@ -112,7 +128,9 @@ int exit_async()
 	erts_mtx_destroy(&async_q[i].mtx);
 	erts_cnd_destroy(&async_q[i].cv);
     }
+#ifndef ERTS_SMP
     erts_mtx_destroy(&async_ready_mtx);
+#endif
     if (async_q)
 	erts_free(ERTS_ALC_T_ASYNC_Q, (void *) async_q);
     return 0;
@@ -141,14 +159,40 @@ static void async_add(ErlAsync* a, AsyncQueue* q)
     erts_mtx_unlock(&q->mtx);
 }
 
+static void
+prepare_for_block(void *vmtxp)
+{
+    erts_mtx_unlock((erts_mtx_t *) vmtxp);
+}
+
+static void
+resume_after_block(void *vmtxp)
+{
+    erts_mtx_lock((erts_mtx_t *) vmtxp);
+}
+
+
 static ErlAsync* async_get(AsyncQueue* q)
 {
     ErlAsync* a;
 
     erts_mtx_lock(&q->mtx);
+    erts_smp_activity_change(ERTS_ACTIVITY_IO,
+			     ERTS_ACTIVITY_WAIT,
+			     prepare_for_block,
+			     resume_after_block,
+			     (void *) &q->mtx);
     while((a = q->tail) == NULL) {
 	erts_cnd_wait(&q->cv, &q->mtx);
     }
+    erts_smp_activity_change(ERTS_ACTIVITY_WAIT,
+			     ERTS_ACTIVITY_IO,
+			     prepare_for_block,
+			     resume_after_block,
+			     (void *) &q->mtx);
+#ifdef ERTS_SMP
+    ASSERT(a && q->tail == a);
+#endif
     if (q->head == q->tail) {
 	q->head = q->tail = NULL;
 	q->len = 0;
@@ -201,6 +245,20 @@ static void* async_main(void* arg)
 {
     AsyncQueue* q = (AsyncQueue*) arg;
 
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    {
+	char buf[27];
+	erts_snprintf(&buf[0], 27, "async %d", q->no);
+	erts_lc_set_thread_name(&buf[0]);
+    }
+#endif
+
+#ifdef ERTS_SMP
+    erts_register_blockable_thread();
+#endif
+
+    erts_smp_activity_begin(ERTS_ACTIVITY_IO, NULL, NULL, NULL);
+
     while(1) {
 	ErlAsync* a = async_get(q);
 
@@ -212,14 +270,27 @@ static void* async_main(void* arg)
 	    (*a->async_invoke)(a->async_data);
 	    /* Major problem if the code for async_invoke
 	       or async_free is removed during a blocking operation */
+#ifdef ERTS_SMP
+	    erts_smp_io_lock();
+	    if (async_ready(a->port, a->async_data)) {
+		if (a->async_free)
+		    (*a->async_free)(a->async_data);
+	    }
+	    async_detach(a->hndl);
+	    erts_smp_io_unlock();
+	    erts_free(ERTS_ALC_T_ASYNC, (void *) a);
+#else
 	    erts_mtx_lock(&async_ready_mtx);
 	    a->next = async_ready_list;
 	    async_ready_list = a;
 	    erts_mtx_unlock(&async_ready_mtx);
 
 	    sys_async_ready(q->hndl);
+#endif
 	}
     }
+
+    erts_smp_activity_end(ERTS_ACTIVITY_IO, NULL, NULL, NULL);
 
     return NULL;
 }
@@ -227,7 +298,7 @@ static void* async_main(void* arg)
 
 #endif
 
-
+#ifndef ERTS_SMP
 
 int check_async_ready()
 {
@@ -253,6 +324,9 @@ int check_async_ready()
     return count;
 }
 
+#endif
+
+
 /*
 ** Schedule async_invoke on a worker thread
 ** NOTE will be syncrounous when threads are unsupported
@@ -275,6 +349,8 @@ long driver_async(ErlDrvPort ix, unsigned int* key,
     Port* ptr;
     long id;
     unsigned int qix;
+
+    ERTS_SMP_LC_ASSERT(erts_smp_lc_io_is_locked());
 
     if ((ix < 0) || (ix >= erts_max_ports) || erts_port[ix].status == FREE)
 	return -1;
@@ -329,3 +405,8 @@ int driver_async_cancel(unsigned int id)
 #endif
     return 0;
 }
+
+
+
+
+

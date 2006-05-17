@@ -62,6 +62,23 @@
 #
 #		<ALLOCATOR>	<MULTI_THREAD>	<DESCRIPTION>
 
++if smp
+
+allocator	SYSTEM		true		sys_alloc
+allocator	TEMPORARY	true		temp_alloc
+allocator	SHORT_LIVED	true		sl_alloc
+allocator	STANDARD	true		std_alloc
+allocator	LONG_LIVED	true		ll_alloc
+allocator	EHEAP		true		eheap_alloc
+
+				# Binary alloc has its own thread
+				# safety implementation
+allocator	BINARY		false		binary_alloc
+allocator	ETS		true		ets_alloc
+allocator	FIXED_SIZE	true		fix_alloc
+
++else # Non smp build
+
 allocator	SYSTEM		true		sys_alloc
 allocator	TEMPORARY	false		temp_alloc
 allocator	SHORT_LIVED	false		sl_alloc
@@ -69,11 +86,13 @@ allocator	STANDARD	false		std_alloc
 allocator	LONG_LIVED	false		ll_alloc
 allocator	EHEAP		false		eheap_alloc
 
-				# binary_alloc has to be thread safe since
-				# other threads in drivers may use it
-allocator	BINARY		true		binary_alloc
+				# Binary alloc has its own thread
+				# safety implementation
+allocator	BINARY		false		binary_alloc
 allocator	ETS		false		ets_alloc
 allocator	FIXED_SIZE	false		fix_alloc
+
++endif
 
 # --- Class declarations -----------------------------------------------------
 #
@@ -141,14 +160,12 @@ type	MODULE_REFS	STANDARD	CODE		module_refs
 type	NC_TMP		TEMPORARY	SYSTEM		nc_tmp
 type	TMP		TEMPORARY	SYSTEM		tmp
 type	UNDEF		SYSTEM		SYSTEM		undefined
-type	DMSG_BLD_BUF	LONG_LIVED	SYSTEM		dmsg_buf
 type	DCACHE		STANDARD	SYSTEM		dcache
 type	DCTRL_BUF	TEMPORARY	SYSTEM		dctrl_buf
 type	DIST_ENTRY	STANDARD	SYSTEM		dist_entry
 type	NODE_ENTRY	STANDARD	SYSTEM		node_entry
 type	PROC_TABLE	LONG_LIVED	PROCESSES	proc_tab
 type	PORT_TABLE	LONG_LIVED	SYSTEM		port_tab
-type	TMP_BUF		LONG_LIVED	SYSTEM		tmp_buf
 type	TIMER_WHEEL	LONG_LIVED	SYSTEM		timer_wheel
 type	DRV		SYSTEM		SYSTEM		drv_internal
 type	DRV_BINARY	BINARY		BINARIES	drv_binary
@@ -164,7 +181,7 @@ type	PORT_NAME	STANDARD	SYSTEM		port_name
 type	LINEBUF		STANDARD	SYSTEM		line_buf
 type	IOQ		STANDARD	SYSTEM		io_queue
 type	BITS_BUF	STANDARD	SYSTEM		bits_buf
-type	DIST_BUF	STANDARD	SYSTEM		dist_buf
+type	TMP_DIST_BUF	TEMPORARY	SYSTEM		tmp_dist_buf
 type	ASYNC		SYSTEM		SYSTEM		async
 type	ASYNC_Q		LONG_LIVED	SYSTEM		async_queue
 type	ESTACK		TEMPORARY	SYSTEM		estack
@@ -175,7 +192,9 @@ type	DB_FIX_DEL	SHORT_LIVED	ETS		fixed_del
 type	DB_TABLES	LONG_LIVED	ETS		db_tabs
 type	DB_TMP		TEMPORARY	ETS		db_tmp
 type	DB_MC_STK	TEMPORARY	ETS		db_mc_stack
-type	DB_MPROG_HEAP	TEMPORARY	ETS		db_match_prog_heap
+type	DB_MS_PSDO_PROC	LONG_LIVED	ETS		db_match_pseudo_proc
+type	DB_MS_RUN_HEAP	SHORT_LIVED	ETS		db_match_spec_run_heap
+type	DB_MS_CMPL_HEAP	TEMPORARY	ETS		db_match_spec_cmpl_heap
 type	DB_SEG		ETS		ETS		db_segment
 type	DB_SEG_TAB	ETS		ETS		db_segment_tab
 type	DB_STK		ETS		ETS		db_stack
@@ -185,10 +204,21 @@ type	DB_DMC_ERROR	ETS		ETS		db_dmc_error
 type	DB_DMC_ERR_INFO	ETS		ETS		db_dmc_error_info
 type	DB_TERM		ETS		ETS		db_term
 type	INSTR_INFO	LONG_LIVED	SYSTEM		instr_info
+type	LOGGER_DSBUF	TEMPORARY	SYSTEM		logger_dsbuf
+type	TMP_DSBUF	TEMPORARY	SYSTEM		tmp_dsbuf
+type	INFO_DSBUF	SYSTEM		SYSTEM		info_dsbuf
+# INFO_DSBUF have to use the SYSTEM allocator; otherwise, a deadlock might occur
+type	SCHDLR_DATA	LONG_LIVED	PROCESSES	scheduler_data
 
 #
 # Types used for special emulators
 #
+
++if threads
+
+type	ETHR_INTERNAL	SYSTEM		SYSTEM		ethread_internal
+
++endif
 
 +if shared_heap
 
@@ -199,9 +229,22 @@ type	ACTIVE_PROCS	STANDARD	PROCESSES	active_procs
 
 +if hybrid
 
-type	OBJECT_STACK	STANDARD	PROCESSES	object_stack
 type	ACTIVE_PROCS	STANDARD	PROCESSES	active_procs
 
+# Used for all memory involved in incremental gc of the message area
+# that is, young (x2) and old generation, forwarding pointers and blackmap
+type	MESSAGE_AREA	LONG_LIVED	PROCESSES	message_area
+
+# Used in MA_STACK (global.h) and INC_STORAGE (erl_nmgc.h)
+type	OBJECT_STACK	STANDARD	PROCESSES	object_stack
+
++endif
+
++if smp
+type	SL_PTIMER	SHORT_LIVED	SYSTEM		ptimer_sl
+type	LL_PTIMER	STANDARD	SYSTEM		ptimer_ll
+type	SYS_MSG_Q	SHORT_LIVED	PROCESSES	system_messages_queue
+type	FP_EXCEPTION	LONG_LIVED	SYSTEM		fp_exception
 +endif
 
 +if hipe
@@ -226,6 +269,7 @@ type	DRV_TAB		LONG_LIVED	SYSTEM		drv_tab
 
 +if unix
 
+type	SYS_READ_BUF	TEMPORARY	SYSTEM		sys_read_buf
 type	FD_TAB		LONG_LIVED	SYSTEM		fd_tab
 type	FD_ENTRY_BUF	STANDARD	SYSTEM		fd_entry_buf
 type	POLL_FDS	LONG_LIVED	SYSTEM		poll_fds
@@ -233,6 +277,10 @@ type	READY_FDS	LONG_LIVED	SYSTEM		ready_fds
 type	CS_PROG_PATH	LONG_LIVED	SYSTEM		cs_prog_path
 type	ENVIRONMENT	SYSTEM		SYSTEM		environment
 type	PUTENV_STR	SYSTEM		SYSTEM		putenv_string
+
++if smp
+type	SELECT_ENTRY	SHORT_LIVED	SYSTEM		select_entry
++endif
 
 +endif
 
@@ -243,11 +291,13 @@ type	PRELOADED	LONG_LIVED	SYSTEM		preloaded
 type	PUTENV_STR	SYSTEM		SYSTEM		putenv_string
 type	WAITER_OBJ	LONG_LIVED	SYSTEM		waiter_object
 type	ENVIRONMENT	SYSTEM		SYSTEM		environment
+type	CON_VPRINTF_BUF	TEMPORARY	SYSTEM		con_vprintf_buf
 
 +endif
 
 +if vxworks
 
+type	SYS_TMP_BUF	LONG_LIVED	SYSTEM		sys_tmp_buf
 type	PEND_DATA	SYSTEM		SYSTEM		pending_data
 type	FD_TAB		LONG_LIVED	SYSTEM		fd_tab
 type	FD_ENTRY_BUF	SYSTEM		SYSTEM		fd_entry_buf
@@ -256,6 +306,7 @@ type	FD_ENTRY_BUF	SYSTEM		SYSTEM		fd_entry_buf
 
 +if ose
 
+type	SYS_TMP_BUF	LONG_LIVED	SYSTEM		sys_tmp_buf
 type	PUTENV_STR	SYSTEM		SYSTEM		putenv_string
 type	GETENV_STR	SYSTEM		SYSTEM		getenv_string
 type	GETENV_STATE	SYSTEM		SYSTEM		getenv_state

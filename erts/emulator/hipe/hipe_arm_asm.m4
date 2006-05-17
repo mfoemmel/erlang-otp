@@ -184,4 +184,17 @@ define(NBIF_SAVE_RESCHED_ARGS,`NBIF_SVA_N(eval(NBIF_MIN($1,NR_ARG_REGS)-1))')dnl
 `/* #define NBIF_SAVE_RESCHED_ARGS_1 'NBIF_SAVE_RESCHED_ARGS(1)` */'
 `/* #define NBIF_SAVE_RESCHED_ARGS_2 'NBIF_SAVE_RESCHED_ARGS(2)` */'
 
+dnl
+dnl QUICK_CALL_RET(CFUN,ARITY)
+dnl Used in nocons_nofail and noproc primop interfaces to optimise
+dnl SAVE_CONTEXT_QUICK; bl CFUN; RESTORE_CONTEXT_QUICK; NBIF_RET(ARITY).
+dnl
+define(NBIF_POP_N,`ifelse(eval($1),0,`',`add NSP, NSP, #$1 ; ')')dnl
+define(QUICK_CALL_RET,`NBIF_POP_N(eval(RET_POP($2)))b $1')dnl
+`/* #define QUICK_CALL_RET_F_0 'QUICK_CALL_RET(F,0)` */'
+`/* #define QUICK_CALL_RET_F_1 'QUICK_CALL_RET(F,1)` */'
+`/* #define QUICK_CALL_RET_F_2 'QUICK_CALL_RET(F,2)` */'
+`/* #define QUICK_CALL_RET_F_3 'QUICK_CALL_RET(F,3)` */'
+`/* #define QUICK_CALL_RET_F_5 'QUICK_CALL_RET(F,5)` */'
+
 `#endif /* HIPE_ARM_ASM_H */'

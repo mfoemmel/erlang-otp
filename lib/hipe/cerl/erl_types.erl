@@ -149,7 +149,7 @@
 	 t_has_var/1,
 	 t_inf/2, t_inf_lists/2,
 	 t_integer/0, t_integer/1, t_integers/1,
-	 t_improper_list/0,
+	 t_improper_list/0, t_improper_list/1,
 	 t_is_any/1, t_is_atom/1, t_is_atom/2,
 	 t_is_binary/1, t_is_bool/1, t_is_byte/1,
 	 t_is_char/1,
@@ -167,10 +167,12 @@
 	 t_limit/2,
 	 t_list/0, t_list/1, t_list_elements/1, t_mfa/0, t_nil/0,	 
 	 t_number/0, t_number/1, t_number_vals/1,
+	 t_nonempty_improper_list/0, t_nonempty_improper_list/1,
 	 t_nonempty_list/0, t_nonempty_list/1,
+	 t_nonempty_string/0,
 	 t_pid/0, t_port/0, t_product/1, t_ref/0, t_string/0,
 	 t_subst/2, t_subtract/2, t_sup/1, t_sup/2,
-	 t_to_string/1,
+	 t_to_string/1, t_to_string/2,
 	 t_tuple/0, t_tuple/1, t_tuple_args/1,
 	 t_tuple_arity/1, t_tuple_arities/1, t_tuple_subtypes/1,
 	 t_unify/2,
@@ -180,11 +182,9 @@
 -ifndef(NO_UNUSED).
 -export([t_bool/1, t_byte/1, t_char/1, t_cons/1, t_data_arity/1,
 	 t_degree/1, t_data_args/1, t_from_term/2,
-	 t_improper_list/1, t_inf/1, t_is_data/1,
+	 t_inf/1, t_is_data/1,
 	 t_is_identifier/1, t_is_number/2, t_is_string/1,
 	 t_is_n_tuple/2, t_is_nonempty_list/1,
-	 t_nonempty_improper_list/0, t_nonempty_improper_list/1,
-	 t_nonempty_string/0,
 	 t_tuple_max_arity/1, t_tuple_min_arity/1]).
 -endif.
 
@@ -1365,10 +1365,7 @@ t_nil() -> ?nil.
 %% @see t_cons/2
 %% @see t_list/0
 
--ifndef(NO_UNUSED).
 t_nonempty_improper_list() -> ?cons(?any, ?any).
--endif.
-%% @clear
 
 
 %% @spec t_nonempty_improper_list(T::type()) -> type()
@@ -1380,10 +1377,7 @@ t_nonempty_improper_list() -> ?cons(?any, ?any).
 %% 
 %% @see t_cons/2
 
--ifndef(NO_UNUSED).
 t_nonempty_improper_list(T) -> ?cons(T, ?any).
--endif.
-%% @clear
 
 
 %% @spec t_cons() -> type()
@@ -1492,10 +1486,7 @@ t_improper_list() -> ?improper_list(?any, ?any).
 %% @see t_nil/0
 %% @see t_list/1
 
--ifndef(NO_UNUSED).
 t_improper_list(T) -> ?improper_list(T, ?any).
--endif.
-%% @clear
 
 
 %% @spec t_nonempty_list() -> type()
@@ -1540,10 +1531,7 @@ t_string() -> ?proper_list(t_char(), ?any).
 %% @see t_char/0
 %% @see t_string/0
 
--ifndef(NO_UNUSED).
 t_nonempty_string() -> ?nonempty_proper_list(t_char()).
--endif.
-%% @clear
 
 
 %% ---------------------------------------------------------------------
@@ -2879,19 +2867,22 @@ t_from_term(T, _K) when is_reference(T) -> t_ref().
 
 -define(UNION_SEP, " | ").
 
-t_to_string(?any) ->
+t_to_string(Anything) ->
+    t_to_string(Anything, dict:new()).
+
+t_to_string(?any, _) ->
     "any()";
-t_to_string(?none) ->
+t_to_string(?none, _) ->
     "none()";
-t_to_string(#var{n = N}) ->
+t_to_string(#var{n = N}, _) ->
     ID =
 	if is_atom(N) -> atom_to_list(N);
 	   is_number(N) -> integer_to_list(N)
 	end,
     "Var("++ID++")";
-t_to_string(?product(_, As)) ->
-    "<" ++ seq(fun t_to_string/1, As) ++ ">";
-t_to_string(?union([A, N, L, T, F, B, I])) ->
+t_to_string(?product(_, As), RecordDict) ->
+    "<" ++ seq(fun t_to_string/2, RecordDict, As) ++ ">";
+t_to_string(?union([A, N, L, T, F, B, I]), RecordDict) ->
     Es = [?sel(F, ?u_fun(?none, F)),
 	  ?sel(I, ?u_identifier(?none, I)),
 	  ?sel(B, ?u_binary(?none, B)),
@@ -2901,102 +2892,101 @@ t_to_string(?union([A, N, L, T, F, B, I])) ->
 	  ?sel(A, ?u_atom(?none, A))],
     Ts = [T || T <- Es, T =/= ?none],
     if Ts == [] -> "<** bad type **>";
-       true -> seq(fun t_to_string_1/1, Ts, ?UNION_SEP)
+       true -> seq(fun t_to_string_1/2, RecordDict, Ts, ?UNION_SEP)
     end.
 
 
-t_to_string_1(?is_number(?singleton(V), _)) ->
+t_to_string_1(?is_number(?singleton(V), _), _) ->
     lists:flatten(io_lib:write(V));
-t_to_string_1(?is_number(?value_set(S), _)) ->
-    seq(fun t_to_string/1,
+t_to_string_1(?is_number(?value_set(S), _), RecordDict) ->
+    seq(fun t_to_string/2, RecordDict,
 	[t_number(V) || V <- set_to_list(S)], ?UNION_SEP);
-t_to_string_1(?is_byte(_)) ->
+t_to_string_1(?is_byte(_), _) ->
     "byte()";
-t_to_string_1(?is_char(_, _)) ->
+t_to_string_1(?is_char(_, _), _) ->
     "char()";
-t_to_string_1(?is_integer(_, _)) ->
+t_to_string_1(?is_integer(_, _), _) ->
     "integer()";
-t_to_string_1(?is_float) ->
+t_to_string_1(?is_float, _) ->
     "float()";
-t_to_string_1(?is_number(_, _)) ->
+t_to_string_1(?is_number(_, _), _) ->
     "number()";
-t_to_string_1(?is_atom(?singleton(V), _)) ->
+t_to_string_1(?is_atom(?singleton(V), _), _) ->
     io_lib:write_string(atom_to_list(V), $'); % stupid Emacs '
-t_to_string_1(?is_bool) ->
+t_to_string_1(?is_bool, _) ->
     "bool()";
-t_to_string_1(?is_atom(?value_set(S), _)) ->
-    seq(fun t_to_string/1,
+t_to_string_1(?is_atom(?value_set(S), _), RecordDict) ->
+    seq(fun t_to_string/2, RecordDict,
 	[t_atom(V) || V <- set_to_list(S)], ?UNION_SEP);
-t_to_string_1(?is_atom(_, _)) ->
+t_to_string_1(?is_atom(_, _), _) ->
     "atom()";
-t_to_string_1(?is_tuple(?tuple_arities(As))) ->
-    seq(fun (?tuple_types(_, _, As)) ->
-		seq(fun (?tuple_type(_, _, As)) ->
-			    "{" ++ seq(fun(?any)->"_";(X) -> t_to_string(X)end,
-				       As) ++ "}"
-		    end,
-		    As, ?UNION_SEP)
-	end,
-	As, ?UNION_SEP);
-t_to_string_1(?is_tuple(_)) ->
+%% Modified for typer
+t_to_string_1(?is_tuple(?tuple_arities(As)), RecordDict) ->
+    seq(fun 
+	    (?tuple_types(_, _, As), RecordDict) ->
+		seq(fun gen_tuple_nicely/2,
+		    RecordDict, As, ?UNION_SEP)
+	end, 
+	RecordDict, As, ?UNION_SEP);
+t_to_string_1(?is_tuple(_), _) ->
     "tuple()";
-t_to_string_1(?is_nil) ->
+t_to_string_1(?is_nil, _) ->
     "[]";
-t_to_string_1(?is_nonempty_proper_list(?any)) ->
+t_to_string_1(?is_nonempty_proper_list(?any), _) ->
     "[any(),...]";
-t_to_string_1(?is_nonempty_proper_list(T)) ->
+t_to_string_1(?is_nonempty_proper_list(T), RecordDict) ->
     case t_is_char(T) andalso not t_is_byte(T) of
 	true ->
 	    "nonempty_string()";
 	false ->
-	    "[" ++ t_to_string(T) ++ ",...]"
+	    "[" ++ t_to_string(T, RecordDict) ++ ",...]"
     end;
-t_to_string_1(?is_cons(?any, _)) ->
+t_to_string_1(?is_cons(?any, _), _) ->
     "nonempty_possibly_improper_list()";
-t_to_string_1(?is_cons(T, _)) ->
-    S = t_to_string(T),
+t_to_string_1(?is_cons(T, _), RecordDict) ->
+    S = t_to_string(T, RecordDict),
     "nonempty_possibly_improper_list(" ++ S ++ ")";
-t_to_string_1(?is_proper_list(?any)) ->
+t_to_string_1(?is_proper_list(?any), _) ->
     "[any()]";
-t_to_string_1(?is_proper_list(T)) ->
+t_to_string_1(?is_proper_list(T), RecordDict) ->
     case t_is_char(T) andalso not t_is_byte(T) of
 	true ->
 	    "string()";
 	false ->
-	    "[" ++ t_to_string(T) ++ "]"
+	    "[" ++ t_to_string(T, RecordDict) ++ "]"
     end;
-t_to_string_1(?is_improper_list(?any)) ->
+t_to_string_1(?is_improper_list(?any), _) ->
     "possibly_improper_list()";
-t_to_string_1(?is_improper_list(T)) ->
-    "possibly_improper_list(" ++ t_to_string(T) ++ ")";
-t_to_string_1(?is_fun(?any, ?any)) ->
+t_to_string_1(?is_improper_list(T), RecordDict) ->
+    "possibly_improper_list(" ++ t_to_string(T, RecordDict) ++ ")";
+t_to_string_1(?is_fun(?any, ?any), _) ->
     "function()";
-t_to_string_1(?is_fun(?any, R)) ->
-    "((...) -> " ++ t_to_string(R) ++ ")";
-t_to_string_1(?is_fun(?fun_domain_args(_, As), R)) ->
-    Fun = fun(?any) -> "_";
-	     (X) -> t_to_string(X)
+t_to_string_1(?is_fun(?any, R), RecordDict) ->
+    "((...) -> " ++ t_to_string(R, RecordDict) ++ ")";
+t_to_string_1(?is_fun(?fun_domain_args(_, As), R), RecordDict) ->
+    Fun = fun(?any, _) -> "_";
+	     (X, RecordDict) -> t_to_string(X, RecordDict)
 	  end,
-    "((" ++ seq(Fun, As) ++ ") -> " ++ t_to_string(R) ++ ")";
-t_to_string_1(?is_binary) ->
+    "((" ++ seq(Fun, RecordDict, As) ++ ") -> " ++ t_to_string(R, RecordDict) ++ ")";
+t_to_string_1(?is_binary, _) ->
     "binary()";
-t_to_string_1(?is_identifier(?identifier_class_is_pid)) ->
+t_to_string_1(?is_identifier(?identifier_class_is_pid), _) ->
     "pid()";
-t_to_string_1(?is_identifier(?identifier_class_is_port)) ->
+t_to_string_1(?is_identifier(?identifier_class_is_port), _) ->
     "port()";
-t_to_string_1(?is_identifier(?identifier_class_is_ref)) ->
+t_to_string_1(?is_identifier(?identifier_class_is_ref), _) ->
     "reference()";
-t_to_string_1(?is_identifier(_)) ->
+t_to_string_1(?is_identifier(_), _) ->
     "identifier()".
 
-seq(F, Ts) ->
-    seq(F, Ts, ",").
+seq(F, RecordDict, Ts) ->
+    seq(F, RecordDict, Ts, ",").
 
-seq(F, [T], _Sep) ->
-    F(T);
-seq(F, [T | Ts], Sep) ->
-    F(T) ++ Sep ++ seq(F, Ts, Sep);
-seq(_F, [], _Sep) ->
+seq(F, RecordDict, [T], _Sep) ->
+    F(T, RecordDict);
+seq(F, RecordDict, [T | Ts], Sep) ->
+    F(T, RecordDict) ++ Sep ++ seq(F, RecordDict, Ts, Sep);
+seq(_F, _, [], _Sep) ->
     "".
 
 %% ---------------------------------------------------------------------
@@ -3059,3 +3049,51 @@ set_subtract(S1, S2) ->
 
 set_filter(F, S) ->
     list_to_set([X || X <- set_to_list(S), F(X)]).
+
+%% ---------------------------------------------------------------------
+
+%% Function for printing a record-tuple as record instead of tuple
+
+gen_tuple_nicely(?tuple_type(_, _, As), RecordDict) ->
+    case As of
+	[] -> "{}";
+	[TmpTag|Rest] ->
+	    Fun=fun (?any, _)->"_";
+		    (X, RecordDict) -> t_to_string(X, RecordDict)
+		end,
+	    case t_is_atom(TmpTag) of
+		true ->
+		    case t_atom_vals(TmpTag) of
+			[Tag] ->
+			    %% io:format("A tag ~p\n",[Tag]),
+			    case dict:find({Tag,length(Rest)},RecordDict) of
+				error -> 
+				    %% io:format("Not a record ~p\n",[length(Rest)]),
+				    "{" ++ seq(Fun, RecordDict, As) ++"}";
+				{ok,NameList} ->
+				    %% io:format("A record\n"),
+				    Fun2 = fun (_X,Y) when Y=="'undefined'"->undef;
+					       (_X,Y) when Y=="_"->undef;
+					       (X,Y)->
+						   lists:flatten(io_lib:write(X))
+						       ++"="++Y
+					   end,
+				    ValueList=[seq(Fun, RecordDict,[OneElem])||OneElem<- Rest],
+				    FieldList = lists:zipwith(Fun2,NameList, ValueList),
+				    case [", "++F || F <-FieldList, F=/=undef] of
+					[] -> %% Nothing is defined in this record
+					    "#"++lists:flatten(io_lib:write(Tag))++"{}";
+					[[_,_|Head]|TmpAcc] ->
+					    "#"++lists:flatten(io_lib:write(Tag))
+						++"{"++Head++TmpAcc++"}"
+				    end
+			    end;
+			_ -> %% for the case like {'a'|'b'|'c',_,_}
+			    "{" ++ seq(Fun, RecordDict, As) ++"}"
+		    end;
+		false ->
+		%    io:format("Not a tag\n"),
+		    "{" ++ seq(Fun, RecordDict, As) ++"}"
+	    end
+    end.
+

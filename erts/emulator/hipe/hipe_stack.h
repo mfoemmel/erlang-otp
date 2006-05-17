@@ -98,9 +98,11 @@ extern Eterm *fullsweep_nstack(Process *p, Eterm *n_htop);
 extern void gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop, Eterm *objv, int nobj);
 
 #ifdef HYBRID
-#ifndef NOMOVE
+#ifdef INCREMENTAL
+extern Eterm *ma_fullsweep_nstack(Process *p, Eterm *n_htop, Eterm *n_hend);
+#else
 extern Eterm *ma_fullsweep_nstack(Process *p, Eterm *n_htop);
-#endif /* NOMOVE */
+#endif
 extern void ma_gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop, Eterm *objv, int nobj);
 #endif /* HYBRID */
 

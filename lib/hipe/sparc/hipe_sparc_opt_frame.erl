@@ -27,8 +27,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2005/11/06 13:10:51 $
-%%              $Revision: 1.16 $
+%%              $Date: 2006/03/15 22:07:18 $
+%%              $Revision: 1.17 $
 %% ====================================================================
 %%  Exports  : cfg/1 - Takes a SPARC CFG and rewrites it.
 %%
@@ -46,8 +46,7 @@
 -include("hipe_sparc.hrl").
 
 -import(hipe_sparc_prop_env,
-	[bind_hpos/3, inc_hp/2, inc_sp/2,
-	 end_of_bb/1, find_hpos/2, find_spos/2,
+	[end_of_bb/1, find_hpos/2, find_spos/2,
 	 kill/2, kill_all/2, kill_hp/1, kill_phys_regs/1, kill_sp/1,
 	 kill_uses/2, lookup/2, new_genv/1, set_active_block/2, succ/1,
 	 zap_heap/1, zap_stack/1, bind_spos/3]).
@@ -370,7 +369,7 @@ prop_heap_store(I,Env,Offset,Src) ->
 	    {I, zap_heap(Env)};
 	  true ->
 	    Pos = hipe_sparc:imm_value(Offset) + HOff,
-	    NewEnv = bind_hpos(Pos, Src, Env),
+	    NewEnv = hipe_sparc_prop_env:bind_hpos(Pos, Src, Env),
 	    %% TODO: Indicate that Src is copied on heap.
 	    {I, NewEnv}
 	end
@@ -484,16 +483,16 @@ prop_alu(I,Env) ->
 prop_sp_op(I,Env,'+',Src) ->
   case hipe_sparc:is_imm(Src) of
     true ->
-      {I, inc_sp(Env,hipe_sparc:imm_value(Src))};
+      {I, hipe_sparc_prop_env:inc_sp(Env,hipe_sparc:imm_value(Src))};
     false ->
-      {I,kill_sp(zap_stack(Env))}
+      {I, kill_sp(zap_stack(Env))}
   end;
 prop_sp_op(I,Env,'-',Src) ->
   case hipe_sparc:is_imm(Src) of
     true ->
-      {I, inc_sp(Env, - hipe_sparc:imm_value(Src))};
+      {I, hipe_sparc_prop_env:inc_sp(Env, - hipe_sparc:imm_value(Src))};
     false ->
-      {I,kill_sp(zap_stack(Env))}
+      {I, kill_sp(zap_stack(Env))}
   end;
 prop_sp_op(I,Env,_Op,_Src) ->
   %% Dont know how to handle other ops...
@@ -502,16 +501,16 @@ prop_sp_op(I,Env,_Op,_Src) ->
 prop_hp_op(I,Env,'+',Src) ->
   case hipe_sparc:is_imm(Src) of
     true ->
-      {I,inc_hp(Env,hipe_sparc:imm_value(Src))};
+      {I, hipe_sparc_prop_env:inc_hp(Env,hipe_sparc:imm_value(Src))};
     false ->
-      {I,kill_sp(zap_stack(Env))}
+      {I, kill_sp(zap_stack(Env))}
   end;
 prop_hp_op(I,Env,'-',Src) ->
   case hipe_sparc:is_imm(Src) of
     true ->
-      {I, inc_hp(Env, - hipe_sparc:imm_value(Src))};
+      {I, hipe_sparc_prop_env:inc_hp(Env, - hipe_sparc:imm_value(Src))};
     false ->
-      {I,kill_sp(zap_stack(Env))}
+      {I, kill_sp(zap_stack(Env))}
   end;
 prop_hp_op(I,Env,_Op,_Src) ->
   %% Dont know how to handle other ops...
@@ -527,7 +526,7 @@ prop_call_link(I,Env) ->
   case NoArgs > ArgsInRegs of
     true ->
       StackAdjust = NoArgs - ArgsInRegs,
-      Env2 = inc_sp(Env1, - StackAdjust*4),
+      Env2 = hipe_sparc_prop_env:inc_sp(Env1, - StackAdjust*4),
       {I,Env2};
     false ->
       {I,Env1}

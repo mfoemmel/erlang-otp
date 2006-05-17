@@ -97,7 +97,7 @@ gen(G, N, [X|Xs]) when record(X, interface) ->
     gen(G3, N, Xs);
 
 gen(G, N, [X|Xs]) when record(X, const) ->
-    N2 = [get_id2(X) | N],
+%    N2 = [get_id2(X) | N],
     emit_constant_func(G, X#const.id, X#const.val),
     gen(G, N, Xs); %% N2 or N?
 

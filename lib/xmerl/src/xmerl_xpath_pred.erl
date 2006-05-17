@@ -70,8 +70,8 @@
 -include("xmerl.hrl").
 -include("xmerl_xpath.hrl").
 
--record(obj, {type,
-	      value}).
+%% -record(obj, {type,
+%% 	      value}).
 
 
 -define(string(X), #xmlObj{type = string,
@@ -91,6 +91,8 @@ eval(Expr, C = #xmlContext{context_node = #xmlNode{pos = Pos}}) ->
     Res = case Obj#xmlObj.type of
 	      number when Obj#xmlObj.value == Pos ->
 		  true;
+	      number ->
+		  false;
 	      boolean ->
 		  Obj#xmlObj.value;
 	      _ ->
@@ -157,22 +159,82 @@ arith_expr('mod', E1, E2, C) ->
     ?number(mk_number(C, E1) rem mk_number(C, E2)).
 
 comp_expr('>', E1, E2, C) ->
-    ?boolean(mk_number(C, E1) > mk_number(C, E2));
+    N1 = expr(E1,C),
+    N2 = expr(E2,C),
+    ?boolean(compare_ineq_format(N1,N2,C) > compare_ineq_format(N2,N1,C));
 comp_expr('<', E1, E2, C) ->
-    ?boolean(mk_number(C, E1) < mk_number(C, E2));
+    N1 = expr(E1,C),
+    N2 = expr(E2,C),
+    ?boolean(compare_ineq_format(N1,N2,C) > compare_ineq_format(N2,N1,C));
 comp_expr('>=', E1, E2, C) ->
-    ?boolean(mk_number(C, E1) >= mk_number(C, E2));
+    N1 = expr(E1,C),
+    N2 = expr(E2,C),
+    ?boolean(compare_ineq_format(N1,N2,C) > compare_ineq_format(N2,N1,C));
 comp_expr('<=', E1, E2, C) ->
-    ?boolean(mk_number(C, E1) =< mk_number(C, E2));
+    N1 = expr(E1,C),
+    N2 = expr(E2,C),
+    ?boolean(compare_ineq_format(N1,N2,C) > compare_ineq_format(N2,N1,C));
 comp_expr('=', E1, E2, C) ->
-    ?boolean(mk_number(C, E1) == mk_number(C, E2));
+    N1 = expr(E1,C),
+    N2 = expr(E2,C),
+    ?boolean(compare_eq_format(N1,N2,C) == compare_eq_format(N2,N1,C));
 comp_expr('!=', E1, E2, C) ->
-    ?boolean(mk_number(C, E1) /= mk_number(C, E2)).
+    N1 = expr(E1,C),
+    N2 = expr(E2,C),
+    ?boolean(compare_eq_format(N1,N2,C) == compare_eq_format(N2,N1,C)).
 
 bool_expr('or', E1, E2, C) ->
     ?boolean(mk_boolean(C, E1) or mk_boolean(C, E2));
 bool_expr('and', E1, E2, C) ->
     ?boolean(mk_boolean(C, E1) and mk_boolean(C, E2)).
+
+%% According to chapter 3.4 in XML Path Language ver 1.0 the format of
+%% the compared objects are depending on the type of the other
+%% object. 
+%% 1. Comparisons involving node-sets is treated equally despite
+%% of which comparancy operand is used. In this case:
+%% - node-set comp node-set: string values are used
+%% - node-set comp number : ((node-set string value) -> number) 
+%% - node-set comp boolean : (node-set string value) -> boolean
+%% 2. Comparisons when neither object is a node-set and the operand
+%% is = or != the following transformation is done before comparison:
+%% - if one object is a boolean the other is converted to a boolean.
+%% - if one object is a number the other is converted to a number.
+%% - otherwise convert both to the string value.
+%% 3. Comparisons when neither object is a node-set and the operand is
+%% <=, <, >= or > both objects are converted to a number.
+compare_eq_format(N1=#xmlObj{type=T1},N2=#xmlObj{type=T2},C) when T1==nodeset;
+							      T2==nodeset ->
+    compare_nseq_format(N1,N2,C);
+compare_eq_format(N1=#xmlObj{type=T1},#xmlObj{type=T2},C) when T1==boolean;
+							      T2==boolean ->
+    mk_boolean(C,N1);
+compare_eq_format(N1=#xmlObj{type=T1},#xmlObj{type=T2},C) when T1==number;
+							      T2==number ->
+    mk_number(C,N1);
+compare_eq_format(N1,_,C) ->
+    mk_string(C,string_value(N1)).
+
+compare_ineq_format(N1=#xmlObj{type=T1},
+		    N2=#xmlObj{type=T2},C) when T1==nodeset;
+						T2==nodeset ->
+    compare_nseq_format(N1,N2,C);
+compare_ineq_format(N1,_N2,C) ->
+    mk_number(C,N1).
+
+compare_nseq_format(N1=#xmlObj{type = number},_N2,C) ->
+    mk_number(C,N1);
+compare_nseq_format(N1=#xmlObj{type = boolean},_N2,C) ->
+    mk_boolean(C,N1);
+compare_nseq_format(N1=#xmlObj{type = string},_N2,C) ->
+    mk_string(C,N1);
+compare_nseq_format(N1=#xmlObj{type = nodeset},_N2=#xmlObj{type=number},C) ->
+    %% transform nodeset value to its string-value
+    mk_number(C,string_value(N1));
+compare_nseq_format(N1=#xmlObj{type = nodeset},_N2=#xmlObj{type=boolean},C) ->
+    mk_boolean(C,N1);
+compare_nseq_format(N1=#xmlObj{type = nodeset},_N2,C) ->
+    mk_string(C,string_value(N1)).
 
 
 core_function('last') ->		true;
@@ -253,7 +315,7 @@ id_tokens(Str) ->
 
 attribute_test(#xmlNode{node = #xmlElement{attributes = Attrs}}, 
 	       Key, Vals) ->
-    case lists:keymember(Key, #xmlAttribute.name, Attrs) of
+    case lists:keysearch(Key, #xmlAttribute.name, Attrs) of
 	{value, #xmlAttribute{value = V}} ->
 	    lists:member(V, Vals);
 	_ ->
@@ -314,11 +376,28 @@ string(C, []) ->
 string(C, [Arg]) ->
     string_value(mk_object(C, Arg)).
 
-% ns_string([]) ->
-%     ?string([]);
 ns_string([Obj|_]) ->
     string_value(Obj).
 
+string_value(#xmlObj{type=nodeset,value=[]}) ->
+    ?string("");
+string_value(N=#xmlObj{type=nodeset}) ->
+    string_value(hd(N#xmlObj.value));
+string_value(N=#xmlObj{}) ->
+    string_value(N#xmlObj.value);
+%% Needed also string_value for root_nodes, elements (concatenation of
+%% al decsendant text nodes) and attribute nodes (normalized value).
+string_value(A=#xmlNode{type=attribute}) ->
+    #xmlAttribute{value=AttVal}=A#xmlNode.node,
+    ?string(AttVal);
+string_value(El=#xmlNode{type=element}) ->
+    #xmlElement{content=C} = El#xmlNode.node,
+    TextValue = fun(#xmlText{value=T},_Fun) -> T;
+			(#xmlElement{content=Cont},Fun) -> Fun(Cont,Fun);
+			(_,_) -> []
+		     end,
+    TextDecendants=fun(X) -> TextValue(X,TextValue) end,
+    ?string(lists:flatten(lists:map(TextDecendants,C)));
 string_value(infinity) -> ?string("Infinity");
 string_value(neg_infinity) -> ?string("-Infinity");
 string_value(A) when atom(A) ->
@@ -585,6 +664,12 @@ mk_number(_C, #xmlObj{type = string, value = V}) ->
     scan_number(V);
 mk_number(_C, #xmlObj{type = number, value = V}) ->
     V;
+mk_number(C, N=#xmlObj{type = nodeset}) ->
+    mk_number(C,string_value(N));
+mk_number(_C, #xmlObj{type = boolean, value = false}) ->
+    0;
+mk_number(_C, #xmlObj{type = boolean, value = true}) ->
+    1;
 mk_number(C, Expr) ->
     mk_number(C, expr(Expr, C)).
 

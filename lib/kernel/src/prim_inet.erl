@@ -241,13 +241,12 @@ accept(L, Time)      -> accept0(L, Time).
 
 accept0(L, Time) when port(L), integer(Time) ->
     case async_accept(L, Time) of
-	{ok, S, Ref} ->
+	{ok, Ref} ->
 	    receive 
-		{inet_async, S, Ref, Status} ->
-		    case Status of
-			ok -> accept_opts(L, S);
-			Error -> close(S), Error
-		    end
+		{inet_async, L, Ref, {ok,S}} ->
+		    accept_opts(L, S);
+		{inet_async, L, Ref, Error} ->
+		    Error
 	    end;
 	Error -> Error
     end.
@@ -265,21 +264,8 @@ accept_opts(L, S) ->
     end.
 
 async_accept(L, Time) ->
-    case getindex(L) of
-	{ok, IX} ->
-	    case gettype(L) of
-		{ok, {_, Type}} ->
-		    case open0(Type) of
-			{ok,S} ->
-			    case ctl_cmd(S,?TCP_REQ_ACCEPT,
-					 [enc_time(Time),?int16(IX)]) of
-				{ok, [R1,R0]} -> {ok, S, ?u16(R1,R0)};
-				Error -> close(S), Error
-			    end;
-			Error -> Error
-		    end;
-		Error -> Error
-	    end;
+    case ctl_cmd(L,?TCP_REQ_ACCEPT, [enc_time(Time)]) of
+	{ok, [R1,R0]} -> {ok, ?u16(R1,R0)};
 	Error -> Error
     end.
 
@@ -620,10 +606,8 @@ getfd(S) when port(S) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 getindex(S) when port(S) ->
-    case ctl_cmd(S, ?INET_REQ_GETIX, []) of
-	{ok, [I3,I2,I1,I0]} -> {ok, ?u32(I3,I2,I1,I0)};
-	Error -> Error
-    end.
+    %% NOT USED ANY MORE
+    {error, einval}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -1227,7 +1211,7 @@ dec_status(Flags) ->
     enum_names(Flags,
 	       [
 		{busy, ?INET_F_BUSY},
-		{listening, ?INET_F_LST},
+		%% {listening, ?INET_F_LST}, NOT USED ANY MORE
 		{accepting, ?INET_F_ACC},
 		{connecting, ?INET_F_CON},
 		{listen, ?INET_F_LISTEN},

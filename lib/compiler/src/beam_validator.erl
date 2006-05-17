@@ -26,7 +26,7 @@
 
 -define(MAXREG, 1024).
 
-%-define(DEBUG, 1).
+%%-define(DEBUG, 1).
 -ifdef(DEBUG).
 -define(DBG_FORMAT(F, D), (io:format((F), (D)))).
 -else.
@@ -72,6 +72,18 @@ format_error([{{M,F,A},{I,Off,Desc}}|Es]) ->
 		   [M,F,A,Off,I,Desc])|format_error(Es)];
 format_error([Error|Es]) ->
     [format_error(Error)|format_error(Es)];
+format_error({{_M,F,A},{I,Off,limit}}) ->
+    io_lib:format(
+      "function ~p/~p+~p:~n"
+      "  An implementation limit was reached.~n"
+      "  Try reducing the complexity of this function.~n~n"
+      "  Instruction: ~p~n", [F,A,Off,I]);
+format_error({{_M,F,A},{undef_labels,Lbls}}) ->
+    io_lib:format(
+      "function ~p/~p:~n"
+      "  Internal consistency check failed - please report this bug.~n"
+      "  The following label(s) were referenced but not defined:~n", [F,A]) ++
+	"  " ++ [[integer_to_list(L)," "] || L <- Lbls] ++ "\n";
 format_error({{_M,F,A},{I,Off,Desc}}) ->
     io_lib:format(
       "function ~p/~p+~p:~n"
@@ -129,7 +141,6 @@ beam_file(Name) ->
 
 %%% Things currently not checked. XXX
 %%%
-%%% - Heap allocation for floating point numbers.
 %%% - Heap allocation for binaries.
 %%% - That put_tuple is followed by the correct number of
 %%%   put instructions.
@@ -166,6 +177,7 @@ validate_error_1(Error, Module, Name, Ar) ->
 	 f=init_fregs(),                %
 	 numy=none,			%Number of y registers.
 	 h=0,				%Available heap size.
+	 hf=0,				%Available heap size for floats.
 	 fls=undefined,			%Floating point state.
 	 ct=[],				%List of hot catch/try labels
 	 bsm=undefined,			%Bit syntax matching state.
@@ -175,7 +187,8 @@ validate_error_1(Error, Module, Name, Ar) ->
 
 -record(vst,				%Validator state
 	{current=none,			%Current state
-	 branched=gb_trees:empty()	%States at jumps
+	 branched=gb_trees:empty(),	%States at jumps
+	 labels=gb_sets:empty()
 	}).
 
 -ifdef(DEBUG).
@@ -204,7 +217,8 @@ validate_3({Ls2,Is}, Name, Arity, Entry, Mod, Ls1) ->
     if  EntryOK ->
 	    St = init_state(Arity),
 	    Vst = #vst{current=St,
-		       branched=gb_trees_from_list([{L,St} || L <- Ls1])},
+		       branched=gb_trees_from_list([{L,St} || L <- Ls1]),
+		       labels=gb_sets:from_list(Ls1++Ls2)},
 	    valfun(Is, {Mod,Name,Arity}, Offset, Vst);
 	true ->
 	    error({{Mod,Name,Arity},{first(Is),Offset,no_entry_label}})
@@ -224,14 +238,22 @@ labels_1(Is, R) ->
 init_state(Arity) ->
     Xs = init_regs(Arity, term),
     Ys = init_regs(0, initialized),
-    #st{x=Xs,y=Ys,numy=none,h=0,ct=[]}.
+    #st{x=Xs,y=Ys,numy=none,h=0,hf=0,ct=[]}.
 
 init_regs(0, _) ->
     gb_trees:empty();
 init_regs(N, Type) ->
     gb_trees_from_list([{R,Type} || R <- lists:seq(0, N-1)]).
 
-valfun([], _MFA, _Offset, Vst) -> Vst;
+valfun([], MFA, _Offset, #vst{branched=Targets0,labels=Labels0}=Vst) ->
+    Targets = gb_trees:keys(Targets0),
+    Labels = gb_sets:to_list(Labels0),
+    case Targets -- Labels of
+	[] -> Vst;
+	Undef ->
+	    Error = {undef_labels,Undef},
+	    error({MFA,Error})
+    end;
 valfun([I|Is], MFA, Offset, Vst0) ->
     ?DBG_FORMAT("    ~p.\n", [I]),
     valfun(Is, MFA, Offset+1,
@@ -244,9 +266,10 @@ valfun([I|Is], MFA, Offset, Vst0) ->
 
 %% Instructions that are allowed in dead code or when failing,
 %% that is while the state is undecided in some way.
-valfun_1({label,Lbl}, #vst{current=St0,branched=B}=Vst) ->
+valfun_1({label,Lbl}, #vst{current=St0,branched=B,labels=Lbls}=Vst) ->
     St = merge_states(Lbl, St0, B),
-    Vst#vst{current=St,branched=gb_trees:enter(Lbl, St, B)};
+    Vst#vst{current=St,branched=gb_trees:enter(Lbl, St, B),
+	    labels=gb_sets:add(Lbl, Lbls)};
 valfun_1(_I, #vst{current=none}=Vst) ->
     %% Ignore instructions after erlang:error/1,2, which
     %% the original R10B compiler thought would return.
@@ -270,9 +293,10 @@ valfun_1({move,Src,Dst}, Vst) ->
 valfun_1({fmove,Src,{fr,_}=Dst}, Vst) ->
     assert_type(float, Src, Vst),
     set_freg(Dst, Vst);
-valfun_1({fmove,{fr,_}=Src,Dst}, Vst) ->
-    assert_freg_set(Src, Vst),
-    assert_fls(checked, Vst),
+valfun_1({fmove,{fr,_}=Src,Dst}, Vst0) ->
+    assert_freg_set(Src, Vst0),
+    assert_fls(checked, Vst0),
+    Vst = eat_heap_float(Vst0),
     set_type_reg({float,[]}, Dst, Vst);
 valfun_1({kill,{y,_}=Reg}, Vst) ->
     set_type_y(initialized, Reg, Vst);
@@ -465,6 +489,15 @@ valfun_4({bif,Op,{f,Fail},Src,Dst}, Vst0) ->
     Vst = branch_state(Fail, Vst0),
     Type = bif_type(Op, Src, Vst),
     set_type_reg(Type, Dst, Vst);
+valfun_4({gc_bif,Op,{f,Fail},Live,Src,Dst}, #vst{current=St0}=Vst0) ->
+    St = St0#st{h=0,hf=0},
+    Vst1 = Vst0#vst{current=St},
+    verify_live(Live, Vst1),
+    Vst2 = prune_x_regs(Live, Vst1),
+    validate_src(Src, Vst2),
+    Vst = branch_state(Fail, Vst2),
+    Type = bif_type(Op, Src, Vst),
+    set_type_reg(Type, Dst, Vst);
 valfun_4(return, #vst{current=#st{numy=none}}=Vst) ->
     kill_state(Vst);
 valfun_4(return, #vst{current=#st{numy=NumY}}) ->
@@ -509,12 +542,38 @@ valfun_4({get_tuple_element,Src,I,Dst}, Vst) ->
     assert_type({tuple_element,I+1}, Src, Vst),
     set_type_reg(term, Dst, Vst);
 
+%% New bit syntax matching instructions.
+valfun_4({test,bs_start_match2,{f,Fail},[Src,Live,Slots,Dst]}, Vst0) ->
+    assert_term(Src, Vst0),
+    verify_live(Live, Vst0),
+    Vst1 = prune_x_regs(Live, Vst0),
+    Vst = branch_state(Fail, Vst1),
+    set_type_reg(bsm_match_state(Slots), Dst, Vst);
+valfun_4({test,_Test,{f,Fail},[Ctx,Live,_,_,_,Dst]}, Vst0) ->
+    bsm_validate_context(Ctx, Vst0),
+    verify_live(Live, Vst0),
+    Vst1 = prune_x_regs(Live, Vst0),
+    Vst = branch_state(Fail, Vst1),
+    set_type_reg(term, Dst, Vst);
+valfun_4({test,bs_skip_bits2,{f,Fail},[Ctx,Src,_,_]}, Vst) ->
+    bsm_validate_context(Ctx, Vst),
+    assert_term(Src, Vst),
+    branch_state(Fail, Vst);
+valfun_4({test,bs_test_tail2,{f,Fail},[Ctx,_]}, Vst) ->
+    bsm_validate_context(Ctx, Vst),
+    branch_state(Fail, Vst);
+valfun_4({bs_save2,Ctx,SavePoint}, Vst) ->
+    bsm_save(Ctx, SavePoint, Vst);
+valfun_4({bs_restore2,Ctx,SavePoint}, Vst) ->
+    bsm_restore(Ctx, SavePoint, Vst);
+
 %% Bit syntax instructions.
 valfun_4({bs_start_match,{f,Fail},Src}, Vst) ->
     valfun_4({test,bs_start_match,{f,Fail},[Src]}, Vst);
 valfun_4({test,bs_start_match,{f,Fail},[Src]}, Vst) ->
     assert_term(Src, Vst),
     bs_start_match(branch_state(Fail, Vst));
+
 valfun_4({bs_save,SavePoint}, Vst) ->
     bs_assert_state(Vst),
     bs_save(SavePoint, Vst);
@@ -533,6 +592,7 @@ valfun_4({test,_,{f,Fail},[_,_,_,Dst]}, Vst0) ->
     bs_assert_state(Vst0),
     Vst = branch_state(Fail, Vst0),
     set_type_reg({integer,[]}, Dst, Vst);
+
 %% Other test instructions.
 valfun_4({test,is_float,{f,Lbl},[Float]}, Vst) ->
     assert_term(Float, Vst),
@@ -657,7 +717,7 @@ allocate(Zero, Stk, Heap, Live, #vst{current=#st{numy=none}=St}=Vst0) ->
 			    true -> initialized;
 			    false -> uninitialized
 			end),
-    Vst#vst{current=St#st{y=Ys,numy=Stk,h=heap_alloc_1(Heap),bsm=undefined}};
+    heap_alloc(Heap, Vst#vst{current=St#st{y=Ys,numy=Stk}});
 allocate(_, _, _, _, #vst{current=#st{numy=Numy}}) ->
     error({existing_stack_frame,{size,Numy}}).
 
@@ -670,12 +730,21 @@ test_heap(Heap, Live, Vst0) ->
     heap_alloc(Heap, Vst).
 
 heap_alloc(Heap, #vst{current=St}=Vst) ->
-    Vst#vst{current=St#st{h=heap_alloc_1(Heap),bsm=undefined}}.
+    Words = heap_alloc_1(Heap),
+    Floats = heap_float_alloc(Heap),
+    Vst#vst{current=St#st{h=Words,hf=Floats,bsm=undefined}}.
     
 heap_alloc_1({alloc,Alloc}) ->
     {value,{_,Heap}} = lists:keysearch(words, 1, Alloc),
     Heap;
 heap_alloc_1(Heap) when is_integer(Heap) -> Heap.
+
+heap_float_alloc({alloc,Alloc}) ->
+    case lists:keysearch(floats, 1, Alloc) of
+	false -> 0;
+	{value,{_,Floats}} -> Floats
+    end;
+heap_float_alloc(Words) when is_integer(Words) -> 0.
 
 prune_x_regs(Live, #vst{current=#st{x=Xs0}=St0}=Vst) when is_integer(Live) ->
     Xs1 = gb_trees:to_list(Xs0),
@@ -690,11 +759,11 @@ prune_x_regs(Live, #vst{current=#st{x=Xs0}=St0}=Vst) when is_integer(Live) ->
 %%%
 %%% undefined 	- Undefined (initial state). No float operations allowed.
 %%%
-%%% cleared	- fcheckerror/0 has been executed. Float operations
+%%% cleared	- fclearerror/0 has been executed. Float operations
 %%%		  are allowed (such as fadd).
 %%%
 %%% checked	- fcheckerror/1 has been executed. It is allowed to
-%%%                move values out of floating point registers.
+%%%               move values out of floating point registers.
 %%%
 %%% The following instructions may be executed in any state:
 %%%
@@ -722,7 +791,8 @@ get_fls(#vst{current=#st{fls=Fls}}) when is_atom(Fls) -> Fls.
 init_fregs() -> 0.
 
 set_freg({fr,Fr}, #vst{current=#st{f=Fregs0}=St}=Vst)
-  when is_integer(Fr), 0 =< Fr, Fr < ?MAXREG ->
+  when is_integer(Fr), 0 =< Fr ->
+    limit_check(Fr),
     Bit = 1 bsl Fr,
     if
 	Fregs0 band Bit =:= 0 ->
@@ -732,9 +802,11 @@ set_freg({fr,Fr}, #vst{current=#st{f=Fregs0}=St}=Vst)
     end;
 set_freg(Fr, _) -> error({bad_target,Fr}).
 
-assert_freg_set({fr,Fr}=Freg, #vst{current=#st{f=Fregs}}) when is_integer(Fr) ->
+assert_freg_set({fr,Fr}=Freg, #vst{current=#st{f=Fregs}})
+  when is_integer(Fr), 0 =< Fr ->
     if
-	0 =< Fr, Fr < ?MAXREG, Fregs band (1 bsl Fr) =/= 0 -> ok;
+	Fregs band (1 bsl Fr) =/= 0 ->
+	    limit_check(Fr);
 	true -> error({uninitialized_reg,Freg})
     end;
 assert_freg_set(Fr, _) -> error({bad_source,Fr}).
@@ -771,6 +843,44 @@ bs_assert_savepoint(Reg, #vst{current=#st{bsm=Saved}}) ->
 bs_assert_state(#vst{current=#st{bsm=undefined}}) ->
     error(no_bs_match_state);
 bs_assert_state(_) -> ok.
+
+
+%%%
+%%% New binary matching instructions.
+%%%
+
+bsm_match_state(Slots) ->
+    {match_context,0,Slots}.
+
+bsm_validate_context(Reg, Vst) ->
+    bsm_get_context(Reg, Vst),
+    ok.
+
+bsm_get_context({x,X}=Reg, #vst{current=#st{x=Xs}}=_Vst) when is_integer(X) ->
+    case gb_trees:lookup(X, Xs) of
+	{value,{match_context,_,_}=Ctx} -> Ctx;
+	_ -> error({no_bsm_context,Reg})
+    end;
+bsm_get_context(Reg, _) -> error({bad_source,Reg}).
+    
+bsm_save(Reg, SavePoint, Vst) ->
+    case bsm_get_context(Reg, Vst) of
+	{match_context,Bits,Slots} when SavePoint < Slots ->
+	    Ctx = {match_context,Bits bor (1 bsl SavePoint),Slots},
+	    set_type_reg(Ctx, Reg, Vst);
+	_ -> error({illegal_save,SavePoint})
+    end.
+
+bsm_restore(Reg, SavePoint, Vst) ->
+    case bsm_get_context(Reg, Vst) of
+	{match_context,Bits,Slots} when SavePoint < Slots ->
+	    case Bits band (1 bsl SavePoint) of
+		0 -> error({illegal_restore,SavePoint,not_set});
+		_ -> Vst
+	    end;
+	_ -> error({illegal_restore,SavePoint,range})
+    end.
+    
 
 %%%
 %%% Validation of alignment in the bit syntax. (Currently, construction only.)
@@ -819,13 +929,15 @@ set_type(Type, {y,_}=Reg, Vst) -> set_type_y(Type, Reg, Vst);
 set_type(_, _, #vst{}=Vst) -> Vst.
 
 set_type_reg(Type, {x,X}, #vst{current=#st{x=Xs}=St}=Vst) 
-  when 0 =< X, X < ?MAXREG ->
+  when is_integer(X), 0 =< X ->
+    limit_check(X),
     Vst#vst{current=St#st{x=gb_trees:enter(X, Type, Xs)}};
 set_type_reg(Type, Reg, Vst) ->
     set_type_y(Type, Reg, Vst).
 
 set_type_y(Type, {y,Y}=Reg, #vst{current=#st{y=Ys0,numy=NumY}=St}=Vst) 
-  when is_integer(Y), 0 =< Y, Y < ?MAXREG ->
+  when is_integer(Y), 0 =< Y ->
+    limit_check(Y),
     case {Y,NumY} of
 	{_,none} ->
 	    error({no_stack_frame,Reg});
@@ -878,6 +990,10 @@ assert_term(Src, Vst) ->
 %%			(which gives the type of the value returned by a BIF).
 %%			Thus 'exception' is never stored as type descriptor
 %%			for a register.
+%%
+%% match_context	Only for X registers. A matching context for bit syntax
+%% 			matching; must only be used by bit syntax instructions.
+%%
 %%
 %% Normal terms:
 %%
@@ -1101,6 +1217,8 @@ merge_types(bool, {atom,A}) ->
     merge_bool(A);
 merge_types({atom,A}, bool) ->
     merge_bool(A);
+merge_types({match_context,B0,Slots},{match_context,B1,Slots}) ->
+    {match_context,B0 bor B1,Slots};
 merge_types(T1, T2) when T1 =/= T2 ->
     %% Too different. All we know is that the type is a 'term'.
     term.
@@ -1131,12 +1249,13 @@ verify_live(N, #vst{current=#st{x=Xs}}) ->
     verify_live_1(N, Xs).
 
 verify_live_1(0, _) -> ok;
-verify_live_1(N, Xs) ->
+verify_live_1(N, Xs) when is_integer(N) ->
     X = N-1,
     case gb_trees:is_defined(X, Xs) of
 	false -> error({{x,X},not_live});
 	true -> verify_live_1(X, Xs)
-    end.
+    end;
+verify_live_1(N, _) -> error({bad_number_of_live_regs,N}).
 
 verify_no_ct(#vst{current=#st{numy=none}}) -> ok;
 verify_no_ct(#vst{current=#st{numy=undecided}}) ->
@@ -1156,6 +1275,14 @@ eat_heap(N, #vst{current=#st{h=Heap0}=St}=Vst) ->
 	    error({heap_overflow,{left,Heap0},{wanted,N}});
 	Heap ->
 	    Vst#vst{current=St#st{h=Heap}}
+    end.
+
+eat_heap_float(#vst{current=#st{hf=HeapFloats0}=St}=Vst) ->
+    case HeapFloats0-1 of
+	Neg when Neg < 0 ->
+	    error({heap_overflow,{left,{HeapFloats0,floats}},{wanted,{1,floats}}});
+	HeapFloats ->
+	    Vst#vst{current=St#st{hf=HeapFloats}}
     end.
 
 bif_type('-', Src, Vst) ->
@@ -1279,6 +1406,10 @@ return_type_math(atan2, 2) -> {float,[]};
 return_type_math(pow, 2) -> {float,[]};
 return_type_math(pi, 0) -> {float,[]};
 return_type_math(_, _) -> term.
+
+limit_check(Num) when is_integer(Num), Num >= ?MAXREG ->
+    error(limit);
+limit_check(_) -> ok.
 
 min(A, B) when is_integer(A), is_integer(B), A < B -> A;
 min(A, B) when is_integer(A), is_integer(B) -> B.

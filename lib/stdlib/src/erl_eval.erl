@@ -191,6 +191,8 @@ expr({'if',_,Cs}, Bs, Lf, Ef, RBs) ->
 expr({'case',_,E,Cs}, Bs0, Lf, Ef, RBs) ->
     {value,Val,Bs} = expr(E, Bs0, Lf, Ef, none),
     case_clauses(Val, Cs, Bs, Lf, Ef, RBs);
+expr({'cond',_,Cs}, Bs, Lf, Ef, RBs) ->
+    cond_clauses(Cs, Bs, Lf, Ef, RBs);
 expr({'try',_,Es,Ocs,Ccs,As}, Bs0, Lf, Ef, RBs) ->
     %% When variable bindings between the different parts of a try-catch
     %% expression this will have to be rewritten. Some thoughts about
@@ -248,7 +250,9 @@ expr({'fun',_Line,{function,Name,Arity}}, _Bs0, _Lf, _Ef, _RBs) -> % R8
     erlang:raise(error, undef, [{erl_eval,Name,Arity}|stacktrace()]);
 expr({'fun',Line,{clauses,Cs}} = Ex, Bs, Lf, Ef, RBs) ->
     %% Save only used variables in the function environment.
-    {ok,Used} = erl_lint:used_vars([Ex], Bs),
+    %% {value,L,V} are hidden while lint finds used variables.
+    {Ex1, _} = hide_calls(Ex, 0),
+    {ok,Used} = erl_lint:used_vars([Ex1], Bs),
     En = orddict:filter(fun(K,_V) -> member(K,Used) end, Bs),
     %% This is a really ugly hack!
     F = 
@@ -298,9 +302,12 @@ expr({'fun',Line,{clauses,Cs}} = Ex, Bs, Lf, Ef, RBs) ->
 expr({call,_,{remote,_,{atom,_,qlc},{atom,_,q}},[{lc,_,_E,_Qs}=LC | As0]}, 
      Bs0, Lf, Ef, RBs) when length(As0) =< 1 ->
     %% No expansion or evaluation of module name or function name.
-    case qlc:transform_from_evaluator(LC, Bs0) of
+    MaxLine = find_maxline(LC),
+    {LC1, D} = hide_calls(LC, MaxLine),
+    case qlc:transform_from_evaluator(LC1, Bs0) of
         {ok,{call,L,Remote,[QLC]}} ->
-            expr({call,L,Remote,[QLC | As0]}, Bs0, Lf, Ef, RBs);
+            QLC1 = unhide_calls(QLC, MaxLine, D),
+            expr({call,L,Remote,[QLC1 | As0]}, Bs0, Lf, Ef, RBs);
         {not_ok,Error} ->
             ret_expr(Error, Bs0, RBs)
     end;
@@ -384,6 +391,55 @@ expr({remote,_,_,_}, _Bs, _Lf, _Ef, _RBs) ->
     erlang:raise(error, {badexpr,':'}, stacktrace());
 expr({value,_,Val}, Bs, _Lf, _Ef, RBs) ->    % Special case straight values.
     ret_expr(Val, Bs, RBs).
+
+find_maxline(LC) ->
+    put('$erl_eval_max_line', 0),
+    F = fun(L) ->
+                case is_integer(L) and (L > get('$erl_eval_max_line')) of
+                    true -> put('$erl_eval_max_line', L);
+                    false -> ok
+                end end,
+    _ = erl_lint:modify_line(LC, F),
+    erase('$erl_eval_max_line').
+
+hide_calls(LC, MaxLine) ->
+    LineId0 = MaxLine + 1,
+    {NLC, _, D} = hide(LC, LineId0, dict:new()),
+    {NLC, D}.
+
+%% v/1 and local calls are hidden.
+hide({value,L,V}, Id, D) ->
+    {{atom,Id,ok}, Id+1, dict:store(Id, {value,L,V}, D)};
+hide({call,L,{atom,_,N}=Atom,Args}, Id0, D0) ->
+    {NArgs, Id, D} = hide(Args, Id0, D0),
+    C = case erl_internal:bif(N, length(Args)) of
+            true ->
+                {call,L,Atom,NArgs};
+            false -> 
+                {call,Id,{remote,L,{atom,L,m},{atom,L,f}},NArgs}
+        end,
+    {C, Id+1, dict:store(Id, {call,Atom}, D)};
+hide(T0, Id0, D0) when is_tuple(T0) -> 
+    {L, Id, D} = hide(tuple_to_list(T0), Id0, D0),
+    {list_to_tuple(L), Id, D};
+hide([E0 | Es0], Id0, D0) -> 
+    {E, Id1, D1} = hide(E0, Id0, D0),
+    {Es, Id, D} = hide(Es0, Id1, D1),
+    {[E | Es], Id, D};
+hide(E, Id, D) -> 
+    {E, Id, D}.
+
+unhide_calls({atom,Id,ok}, MaxLine, D) when Id > MaxLine ->
+    dict:fetch(Id, D);
+unhide_calls({call,Id,{remote,L,_M,_F},Args}, MaxLine, D) when Id > MaxLine ->
+    {call,Atom} = dict:fetch(Id, D),
+    {call,L,Atom,unhide_calls(Args, MaxLine, D)};
+unhide_calls(T, MaxLine, D) when is_tuple(T) -> 
+    list_to_tuple(unhide_calls(tuple_to_list(T), MaxLine, D));
+unhide_calls([E | Es], MaxLine, D) -> 
+    [unhide_calls(E, MaxLine, D) | unhide_calls(Es, MaxLine, D)];
+unhide_calls(E, _MaxLine, _D) -> 
+    E.
 
 %% local_func(Function, Arguments, Bindings, LocalFuncHandler, RBs) ->
 %%	{value,Value,Bindings} | Value when
@@ -637,6 +693,17 @@ case_clauses(Val, Cs, Bs, Lf, Ef, RBs) ->
 	    erlang:raise(error, {case_clause,Val}, stacktrace())
     end.
 
+%% cond_clauses(Clauses, Bindings, LocalFuncHandler, ExtFuncHandler, RBs)
+
+cond_clauses([{clause,_,[],[[E]],B}|Cs], Bs0, Lf, Ef, RBs) ->
+    {value,V,Bs1} = expr(E, Bs0, Lf, Ef, RBs),
+    case V of
+	true -> exprs(B, Bs1, Lf, Ef, RBs);
+	false -> cond_clauses(Cs, Bs1, Lf, Ef, RBs)
+    end;
+cond_clauses([], _Bs, _Lf, _Ef, _RBs) ->
+    exit({cond_clause,[{erl_eval,expr,3}]}).
+
 %%
 %% receive_clauses(Clauses, Bindings, LocalFuncHnd,ExtFuncHnd, Messages, RBs) 
 %%
@@ -734,10 +801,10 @@ guard1([], _Bs, _Lf, _Ef) -> false.
 
 %% guard conjunction
 guard0([G|Gs], Bs0, Lf, Ef) ->
-    case is_guard_test(G) of
+    case erl_lint:is_guard_test(G) of
 	true ->
 	    case guard_test(G, Bs0, Lf, Ef) of
-		{value,true,Bs} -> guard0(Gs, Bs, Lf, Ef);
+                {value,true,Bs} -> guard0(Gs, Bs, Lf, Ef);
                 {value,false,_} -> false
 	    end;
 	false ->
@@ -745,12 +812,6 @@ guard0([G|Gs], Bs0, Lf, Ef) ->
     end;
 guard0([], _Bs, _Lf, _Ef) -> true.
 
-is_guard_test({call,_,{remote,_,{atom,_,erlang},{atom,_,is_record}},[_,_,_]}) ->
-    %% The new compiler internally uses erlang:is_record/3, which is not
-    %% currently allowed in guards.
-    true;
-is_guard_test(G) -> erl_lint:is_guard_test(G).
-	
 %% guard_test(GuardTest, Bindings, LocalFuncHandler, ExtFuncHandler) ->
 %%	{value,bool(),NewBindings}.
 %%  Evaluate one guard test. Never fails, returns bool().
@@ -770,6 +831,16 @@ guard_test({op,_,Op,A0}, Bs0, Lf, Ef) ->
 	       end of
 	{value,true,Bs2} -> {value,true,Bs2};
 	_Other -> {value,false,Bs0}
+    end;
+guard_test({op,_,'andalso',_Lhs0,_Rhs0}=G, Bs0, Lf, Ef) ->
+    case catch expr(G, Bs0, Lf, Ef, none) of
+        {value,true,Bs1} -> {value,true,Bs1};
+        _Other -> {value,false,Bs0}
+    end;
+guard_test({op,_,'orelse',_Lhs0,_Rhs0}=G, Bs0, Lf, Ef) ->
+    case catch expr(G, Bs0, Lf, Ef, none) of
+        {value,true,Bs1} -> {value,true,Bs1};
+        _Other -> {value,false,Bs0}
     end;
 guard_test({op,_,Op,Lhs0,Rhs0}, Bs0, Lf, Ef) ->
     case catch begin
@@ -811,10 +882,7 @@ type_test(reference, [A]) -> erlang:is_reference(A);
 type_test(port, [A]) -> erlang:is_port(A);
 type_test(function, [A]) -> erlang:is_function(A);
 type_test(binary, [A]) -> erlang:is_binary(A);
-type_test(record, As) -> type_test(is_record, As);
-type_test(is_record, [R,A]) when tuple(R), atom(A) ->
-    erlang:is_record(R, A, size(R));
-type_test(is_record, [_,_]) -> false;
+type_test(record, [R,A]) -> erlang:is_record(R, A);
 type_test(Test, As) -> erlang:apply(erlang, Test, As).
 
 

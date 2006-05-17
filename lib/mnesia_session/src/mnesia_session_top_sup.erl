@@ -53,7 +53,7 @@ start() ->
     SupName = {local,?MODULE},
     supervisor:start_link(SupName, ?MODULE, []).
 
-stop(StartArgs) ->
+stop(_StartArgs) ->
     ok.
 
 init([]) -> % Supervisor
@@ -64,7 +64,7 @@ init(BadArg) ->
     {error, {badarg, BadArg}}.
 
 init() ->
-    Debug = mnesia_session_lib:get_initial_debug(),
+    mnesia_session_lib:get_initial_debug(),
     Flags = {one_for_one, 4, 3600},
     KillAfter = timer:seconds(1),
     KA = supervisor_timeout(KillAfter),

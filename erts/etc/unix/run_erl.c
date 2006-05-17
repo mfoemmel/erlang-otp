@@ -174,7 +174,7 @@ do {									   \
     if ((Need) >= FILENAME_BUFSIZ) {					   \
 	ERROR((LOG_ERR,"%s: Filename length (%d) exceeds maximum length "  \
 	      "of %d characters, exiting.",				   \
-	      program_name, (Need), FILENAME_BUFSIZ));			   \
+	      program_name, (int)(Need), FILENAME_BUFSIZ));		   \
 	exit(1);							   \
     }									   \
 } while (0)
@@ -657,7 +657,7 @@ static int prev_log(int log_num) {
  * number for the last log in the log sequence. If there is no hole, index
  * 1 is returned.
  */
-static int find_next_log_num() {
+static int find_next_log_num(void) {
   int i, next_gen, log_gen;
   DIR *dirp;
   struct dirent *direntp;
@@ -781,7 +781,7 @@ static void write_to_log(int* lfd, int* log_num, char* buf, int len) {
   }
 
 #if USE_FSYNC
-  fsync(lfd);
+  fsync(*lfd);
 #endif
 }
 

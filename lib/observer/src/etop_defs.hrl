@@ -15,7 +15,6 @@
 %% 
 %%     $Id$
 %%
--define(debug_out, false).
 -define(SYSFORM,
 	" ~-72w~10s~n"
 	" Load:  cpu  ~8w               Memory:  total    ~8w    binary   ~8w~n"

@@ -115,21 +115,21 @@ int init_malloc()
 	      void *waste;
 	      if (where == to) 
 		  where -= 0x10000;
-	      erl_printf(COUT,"Trying to reserve memory below 0x%08x.\n",
+	      erts_printf("Trying to reserve memory below 0x%08x.\n",
 			 howmuch);
-	      erl_printf(COUT,"maxErlangAddress = 0x%08x.\n", (unsigned long) 
+	      erts_printf("maxErlangAddress = 0x%08x.\n", (unsigned long) 
 			 maxErlangAddress);
 	      for (;;) {
 		  if (VirtualAlloc((void *) where, to - where, 
 				   MEM_RESERVE, PAGE_NOACCESS) == NULL) {
-		      erl_printf(COUT, "Reservation stopped at 0x%08x.\n",
+		      erts_printf( "Reservation stopped at 0x%08x.\n",
 				 where);
 		      break;
 		  }
 		  to = where;
 		  where -= 0x10000;
 	      }
-	      erl_printf(COUT,"Mallocing the rest...\n");
+	      erts_printf("Mallocing the rest...\n");
 	      while ((unsigned long) (waste = malloc(1024)) < howmuch)
 		  ;
 	      free(waste);

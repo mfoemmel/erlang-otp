@@ -34,6 +34,14 @@ RELSYSDIR = $(RELEASE_PATH)/lib/runtime_tools-$(VSN)
 # ----------------------------------------------------
 
 MODULES= \
+	inviso_rt \
+	inviso_rt_meta \
+	inviso_rt_lib \
+	inviso_as_lib \
+	inviso_autostart \
+	inviso_autostart_server \
+	runtime_tools \
+	runtime_tools_sup \
 	dbg \
 	observer_backend
 HRL_FILES= ../include/observer_backend.hrl

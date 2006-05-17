@@ -248,20 +248,20 @@ static int check_buf_size(byte *s, int n)
 static void ttysl_from_erlang(ErlDrvData ttysl_data, char* buf, int count)
 {
     if (lpos > MAXSIZE) 
-	put_chars("\n", 1);
+	put_chars((byte*)"\n", 1);
 
-    if (check_buf_size(buf+1, count-1) == 0)
+    if (check_buf_size((byte*)buf+1, count-1) == 0)
 	return; /*(-1); */
 
     switch (buf[0]) {
     case OP_PUTC:
-	put_chars(buf+1, count-1);
+	put_chars((byte*)buf+1, count-1);
 	break;
     case OP_MOVE:
 	move_rel(get_sint16(buf+1));
 	break;
     case OP_INSC:
-	ins_chars(buf+1, count-1);
+	ins_chars((byte*)buf+1, count-1);
 	break;
     case OP_DELC:
 	del_chars(get_sint16(buf+1));
@@ -561,7 +561,7 @@ static int start_termcap(void)
 {
     char *c;
 
-    if (!(c = getenv("TERM")) || tgetent(lbuf, c) <= 0)
+    if (!(c = getenv("TERM")) || tgetent((char*)lbuf, c) <= 0)
       return FALSE;
     if (!(capbuf = driver_alloc(1024)))
       return FALSE;

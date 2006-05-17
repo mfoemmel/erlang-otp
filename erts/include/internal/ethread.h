@@ -26,7 +26,7 @@
 #define ETHREAD_H__
 
 #ifndef ETHR_HAVE_ETHREAD_DEFINES
-#include "ethread_header_config.h"
+#  include "ethread_header_config.h"
 #endif
 
 #include <stdlib.h>
@@ -36,6 +36,29 @@ typedef struct {
     long tv_sec;
     long tv_nsec;
 } ethr_timeval;
+
+#if defined(DEBUG)
+#  undef ETHR_XCHK
+#  define  ETHR_XCHK 1
+#else
+#  ifndef ETHR_XCHK
+#    define ETHR_XCHK 0
+#  endif
+#endif
+
+#undef ETHR_INLINE
+#if defined(__GNUC__)
+#  define ETHR_INLINE __inline__
+#elif defined(__WIN32__)
+#  define ETHR_INLINE __forceinline
+#endif
+#if defined(DEBUG) || !defined(ETHR_INLINE) || ETHR_XCHK
+#  undef ETHR_TRY_INLINE_FUNCS
+#endif
+
+#define ETHR_RWMUTEX_INITIALIZED 	0x99999999
+#define ETHR_MUTEX_INITIALIZED		0x77777777
+#define ETHR_COND_INITIALIZED		0x55555555
 
 #if defined(ETHR_PTHREADS)
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
@@ -52,6 +75,8 @@ typedef struct {
 #include <pthread.h>
 #endif
 
+#define ETHR_HAVE_ETHR_MUTEX_TRYLOCK 1
+
 /* Types */
 
 typedef pthread_t ethr_tid;
@@ -62,13 +87,42 @@ struct ethr_mutex_ {
     int is_rec_mtx;
     ethr_mutex *prev;
     ethr_mutex *next;
+#if ETHR_XCHK
+    int initialized;
+#endif
 };
 
-typedef pthread_cond_t ethr_cond;
+typedef struct ethr_cond_ ethr_cond;
+struct ethr_cond_ {
+    pthread_cond_t pt_cnd;
+#if ETHR_XCHK
+    int initialized;
+#endif
+};
+
+#ifdef ETHR_EXTENDED_LIB
+
+typedef struct ethr_rwmutex_ ethr_rwmutex;
+struct ethr_rwmutex_ {
+    pthread_rwlock_t pt_rwlock;
+#if ETHR_XCHK
+    int initialized;
+#endif
+};
+
+#endif
 
 /* Static initializers */
-#define ETHR_MUTEX_INITER {PTHREAD_MUTEX_INITIALIZER, 0, NULL, NULL}
-#define ETHR_COND_INITER PTHREAD_COND_INITIALIZER
+#if ETHR_XCHK
+#define ETHR_MUTEX_XCHK_INITER	, ETHR_MUTEX_INITIALIZED
+#define ETHR_COND_XCHK_INITER	, ETHR_COND_INITIALIZED
+#else
+#define ETHR_MUTEX_XCHK_INITER
+#define ETHR_COND_XCHK_INITER
+#endif
+
+#define ETHR_MUTEX_INITER {PTHREAD_MUTEX_INITIALIZER, 0, NULL, NULL ETHR_MUTEX_XCHK_INITER}
+#define ETHR_COND_INITER {PTHREAD_COND_INITIALIZER ETHR_COND_XCHK_INITER}
 
 #if defined(ETHR_HAVE_PTHREAD_MUTEXATTR_SETTYPE) \
     || defined(ETHR_HAVE_PTHREAD_MUTEXATTR_SETKIND_NP)
@@ -85,14 +139,441 @@ typedef pthread_cond_t ethr_cond;
 #  define ETHR_NO_FORKSAFETY 1
 #endif
 
+typedef pthread_key_t ethr_tsd_key;
+
 #define ETHR_HAVE_ETHR_SIG_FUNCS 1
+
+#ifdef ETHR_EXTENDED_LIB
+
+#if (!defined(__builtin_expect) \
+     || !defined(__GNUC__) \
+     || (__GNUC__ < 3 && __GNUC_MINOR__ < 96))
+#define __builtin_expect(X, Y) (X)
+#endif
+
+/* For CPU-optimised atomics, spinlocks, and rwlocks. */
+#if defined(__GNUC__)
+#if defined(__i386__)
+#include "i386/ethread.h"
+#elif defined(__x86_64__)
+#include "x86_64/ethread.h"
+#elif (defined(__powerpc__) || defined(__ppc__)) && !defined(__powerpc64__)
+#include "ppc32/ethread.h"
+#elif defined(__sparc__)
+#include "sparc32/ethread.h"
+#endif
+#endif /* __GNUC__ */
+
+#ifdef PURIFY
+#undef ETHR_HAVE_NATIVE_ATOMICS
+#endif
+
+#ifdef ETHR_HAVE_NATIVE_ATOMICS
+/*
+ * Map ethread native atomics to ethread API atomics.
+ */
+typedef ethr_native_atomic_t ethr_atomic_t;
+
+static ETHR_INLINE int
+ethr_atomic_init(ethr_atomic_t *var, long i)
+{
+    ethr_native_atomic_init(var, i);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_atomic_set(ethr_atomic_t *var, long i)
+{
+    ethr_native_atomic_set(var, i);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_atomic_read(ethr_atomic_t *var, long *i)
+{
+    *i = ethr_native_atomic_read(var);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_atomic_add(ethr_atomic_t *var, long incr)
+{
+    ethr_native_atomic_add(var, incr);
+    return 0;
+}   
+    
+static ETHR_INLINE int
+ethr_atomic_addtest(ethr_atomic_t *var, long i, long *testp)
+{
+    *testp = ethr_native_atomic_add_return(var, i);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_atomic_inc(ethr_atomic_t *var)
+{
+    ethr_native_atomic_inc(var);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_atomic_dec(ethr_atomic_t *var)
+{
+    ethr_native_atomic_dec(var);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_atomic_inctest(ethr_atomic_t *var, long *testp)
+{
+    *testp = ethr_native_atomic_inc_return(var);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_atomic_dectest(ethr_atomic_t *var, long *testp)
+{
+    *testp = ethr_native_atomic_dec_return(var);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_atomic_and_old(ethr_atomic_t *var, long mask, long *old)
+{
+    *old = ethr_native_atomic_and_retold(var, mask);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_atomic_or_old(ethr_atomic_t *var, long mask, long *old)
+{
+    *old = ethr_native_atomic_or_retold(var, mask);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_atomic_xchg(ethr_atomic_t *var, long new, long *old)
+{
+    *old = ethr_native_atomic_xchg(var, new);
+    return 0;
+}   
+
+#define ETHR_HAVE_OPTIMIZED_ATOMIC_OPS 1
+#endif /* ETHR_HAVE_NATIVE_ATOMICS */
+
+#ifdef ETHR_HAVE_NATIVE_LOCKS
+/*
+ * Map ethread native spinlocks to ethread API spinlocks.
+ */
+typedef ethr_native_spinlock_t ethr_spinlock_t;
+
+static ETHR_INLINE int
+ethr_spinlock_init(ethr_spinlock_t *lock)
+{
+    ethr_native_spinlock_init(lock);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_spin_unlock(ethr_spinlock_t *lock)
+{
+    ethr_native_spin_unlock(lock);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_spin_lock(ethr_spinlock_t *lock)
+{
+    ethr_native_spin_lock(lock);
+    return 0;
+}
+
+/*
+ * Map ethread native rwlocks to ethread API rwlocks.
+ */
+typedef ethr_native_rwlock_t ethr_rwlock_t;
+
+static ETHR_INLINE int
+ethr_rwlock_init(ethr_rwlock_t *lock)
+{
+    ethr_native_rwlock_init(lock);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_read_unlock(ethr_rwlock_t *lock)
+{
+    ethr_native_read_unlock(lock);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_read_lock(ethr_rwlock_t *lock)
+{
+    ethr_native_read_lock(lock);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_write_unlock(ethr_rwlock_t *lock)
+{
+    ethr_native_write_unlock(lock);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_write_lock(ethr_rwlock_t *lock)
+{
+    ethr_native_write_lock(lock);
+    return 0;
+}
+
+#define ETHR_HAVE_OPTIMIZED_LOCKS 1
+#endif /* ETHR_HAVE_NATIVE_LOCKS */
+
+#endif /* #ifdef ETHR_EXTENDED_LIB */
+
+#ifndef ETHR_HAVE_OPTIMIZED_ATOMIC_OPS
+
+#define ETHR_ATOMIC_ADDR_BITS 4
+#define ETHR_ATOMIC_ADDR_SHIFT 3
+
+extern pthread_mutex_t ethr_atomic_mutex[1 << ETHR_ATOMIC_ADDR_BITS];
+
+#define ETHR_ATOMIC_PTR2MTX(PTR) \
+    (&ethr_atomic_mutex[((((unsigned long) (PTR)) >> ETHR_ATOMIC_ADDR_SHIFT) \
+			 & ((1 << ETHR_ATOMIC_ADDR_BITS) - 1))])
+
+typedef long ethr_atomic_t;
+
+#endif
+
+#ifdef ETHR_TRY_INLINE_FUNCS
+
+static ETHR_INLINE int
+ethr_mutex_trylock(ethr_mutex *mtx)
+{
+    return pthread_mutex_trylock(&mtx->pt_mtx);
+}
+
+static ETHR_INLINE int
+ethr_mutex_lock(ethr_mutex *mtx)
+{
+    return pthread_mutex_lock(&mtx->pt_mtx);
+}
+
+static ETHR_INLINE int
+ethr_mutex_unlock(ethr_mutex *mtx)
+{
+    return pthread_mutex_unlock(&mtx->pt_mtx);
+}
+
+#ifdef ETHR_EXTENDED_LIB
+
+static ETHR_INLINE int
+ethr_rwmutex_tryrlock(ethr_rwmutex *rwmtx)
+{
+    return pthread_rwlock_tryrdlock(&rwmtx->pt_rwlock);
+}
+
+static ETHR_INLINE int
+ethr_rwmutex_rlock(ethr_rwmutex *rwmtx)
+{
+    return pthread_rwlock_rdlock(&rwmtx->pt_rwlock);
+}
+
+static ETHR_INLINE int
+ethr_rwmutex_runlock(ethr_rwmutex *rwmtx)
+{
+    return pthread_rwlock_unlock(&rwmtx->pt_rwlock);
+}
+
+static ETHR_INLINE int
+ethr_rwmutex_tryrwlock(ethr_rwmutex *rwmtx)
+{
+    return pthread_rwlock_trywrlock(&rwmtx->pt_rwlock);
+}
+
+static ETHR_INLINE int
+ethr_rwmutex_rwlock(ethr_rwmutex *rwmtx)
+{
+    return pthread_rwlock_wrlock(&rwmtx->pt_rwlock);
+}
+
+static ETHR_INLINE int
+ethr_rwmutex_rwunlock(ethr_rwmutex *rwmtx)
+{
+    return pthread_rwlock_unlock(&rwmtx->pt_rwlock);
+}
+
+#endif
+
+#ifndef ETHR_HAVE_OPTIMIZED_ATOMIC_OPS
+
+
+static ETHR_INLINE int
+ethr_atomic_init(ethr_atomic_t *var, long i)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *var = (ethr_atomic_t) i;
+    return pthread_mutex_unlock(mtxp);
+}
+
+static ETHR_INLINE int
+ethr_atomic_set(ethr_atomic_t *var, long i)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *var = (ethr_atomic_t) i;
+    return pthread_mutex_unlock(mtxp);
+}
+
+static ETHR_INLINE int
+ethr_atomic_read(ethr_atomic_t *var, long *i)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *i = (long) *var;
+    return pthread_mutex_unlock(mtxp);
+}
+
+static ETHR_INLINE int
+ethr_atomic_inctest(ethr_atomic_t *incp, long *testp)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(incp);
+    int res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *testp = (long) ++(*incp);
+    return pthread_mutex_unlock(mtxp);
+}
+
+static ETHR_INLINE int
+ethr_atomic_dectest(ethr_atomic_t *decp, long *testp)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(decp);
+    int res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *testp = (long) --(*decp);
+    return pthread_mutex_unlock(mtxp);
+}
+
+static ETHR_INLINE int
+ethr_atomic_add(ethr_atomic_t *var, long incr)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *var += incr; 
+    return pthread_mutex_unlock(mtxp);
+}   
+    
+static ETHR_INLINE int
+ethr_atomic_addtest(ethr_atomic_t *incp, long i, long *testp)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(incp);
+    int res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *incp += i;
+    *testp = *incp;
+    return pthread_mutex_unlock(mtxp);
+}
+
+static ETHR_INLINE int
+ethr_atomic_inc(ethr_atomic_t *incp)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(incp);
+    int res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    ++(*incp);
+    return pthread_mutex_unlock(mtxp);
+}
+
+static ETHR_INLINE int
+ethr_atomic_dec(ethr_atomic_t *decp)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(decp);
+    int res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    --(*decp);
+    return pthread_mutex_unlock(mtxp);
+}
+
+static ETHR_INLINE int
+ethr_atomic_and_old(ethr_atomic_t *var, long mask, long *old)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *old = *var;
+    *var &= mask;
+    return pthread_mutex_unlock(mtxp);
+}
+
+static ETHR_INLINE int
+ethr_atomic_or_old(ethr_atomic_t *var, long mask, long *old)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *old = *var;
+    *var |= mask;
+    return pthread_mutex_unlock(mtxp);
+}
+
+static ETHR_INLINE int
+ethr_atomic_xchg(ethr_atomic_t *var, long new, long *old)
+{
+    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
+    int res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	return res;
+    *old = *var;  
+    *var = new;   
+    return pthread_mutex_unlock(mtxp);
+}   
+    
+#endif /* #ifndef ETHR_HAVE_OPTIMIZED_ATOMIC_OPS */
+
+
+#endif /* #ifdef ETHR_TRY_INLINE_FUNCS */
 
 #elif defined(ETHR_WIN32_THREADS)
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
  * The native win32 threads implementation                                   *
 \*                                                                           */
 
+#ifdef WIN32_LEAN_AND_MEAN
+#  define ETHR_WIN32_LEAN_AND_MEAN_ALREADY_DEFINED
+#else
+#  define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
+#ifndef ETHR_WIN32_LEAN_AND_MEAN_ALREADY_DEFINED
+#  undef WIN32_LEAN_AND_MEAN
+#endif
+
+#ifdef ETHR_HAVE_TRYENTERCRITICALSECTION
+#  define ETHR_HAVE_ETHR_MUTEX_TRYLOCK ETHR_HAVE_TRYENTERCRITICALSECTION
+#endif
+
+#ifdef ETHR_EXTENDED_LIB
+#error "extended functionallity not implemented yet..."
+#endif
 
 #ifndef EWOULDBLOCK
 #  define EWOULDBLOCK (10035) /* WSAEWOULDBLOCK */
@@ -106,6 +587,9 @@ typedef long ethr_tid; /* thread id type */
 typedef struct {
     int initialized;
     CRITICAL_SECTION cs;
+#if ETHR_XCHK
+    int is_rec_mtx;
+#endif
 } ethr_mutex;
 
 typedef struct cnd_wait_event__ cnd_wait_event_;
@@ -126,7 +610,82 @@ typedef struct {
 
 #define ETHR_HAVE_ETHR_REC_MUTEX_INIT 1
 
+typedef DWORD ethr_tsd_key;
+
 #undef ETHR_HAVE_ETHR_SIG_FUNCS
+
+typedef LONG ethr_atomic_t;
+
+#ifdef ETHR_TRY_INLINE_FUNCS
+int ethr_fake_static_mutex_init(ethr_mutex *mtx);
+
+#ifdef ETHR_HAVE_ETHR_MUTEX_TRYLOCK
+
+static ETHR_INLINE int
+ethr_mutex_trylock(ethr_mutex *mtx)
+{
+    if (!mtx->initialized) {
+	int res = ethr_fake_static_mutex_init(mtx);
+	if (res != 0)
+	    return res;
+    }
+    if (TryEnterCriticalSection(&mtx->cs))
+	return 0;
+    else
+	return EBUSY;
+}
+
+#endif
+
+static ETHR_INLINE int
+ethr_mutex_lock(ethr_mutex *mtx)
+{
+    if (!mtx->initialized) {
+	int res = ethr_fake_static_mutex_init(mtx);
+	if (res != 0)
+	    return res;
+    }
+    EnterCriticalSection(&mtx->cs);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_mutex_unlock(ethr_mutex *mtx)
+{
+    LeaveCriticalSection(&mtx->cs);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_atomic_inctest(ethr_atomic_t *incp, long *testp)
+{
+    *testp = (long) InterlockedIncrement(incp);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_atomic_dectest(ethr_atomic_t *decp, long *testp)
+{
+    *testp = (long) InterlockedDecrement(decp);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_atomic_inc(ethr_atomic_t *incp)
+{
+    (void) InterlockedIncrement(incp);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_atomic_dec(ethr_atomic_t *decp)
+{
+    (void) InterlockedDecrement(decp);
+    return 0;
+}
+
+#endif /* #ifdef ETHR_TRY_INLINE_FUNCS */
+
 
 #else /* No supportet thread lib found */
 
@@ -154,14 +713,18 @@ typedef struct {
 #endif
 
 typedef struct {
+    void *(*alloc)(size_t);
+    void *(*realloc)(void *, size_t);
+    void (*free)(void *);
     void *(*thread_create_prepare_func)(void);
     void (*thread_create_parent_func)(void *);
     void (*thread_create_child_func)(void *);
 } ethr_init_data;
 
-#define ETHR_INIT_DATA_DEFAULT_INITER {0}
+#define ETHR_INIT_DATA_DEFAULT_INITER {malloc, realloc, free, NULL, NULL, NULL}
 
 int ethr_init(ethr_init_data *);
+int ethr_install_exit_handler(void (*funcp)(void));
 int ethr_thr_create(ethr_tid *, void * (*)(void *), void *, int);
 int ethr_thr_join(ethr_tid, void **);
 int ethr_thr_detach(ethr_tid);
@@ -175,20 +738,61 @@ int ethr_rec_mutex_init(ethr_mutex *);
 int ethr_mutex_destroy(ethr_mutex *);
 int ethr_mutex_set_forksafe(ethr_mutex *);
 int ethr_mutex_unset_forksafe(ethr_mutex *);
+#ifndef ETHR_TRY_INLINE_FUNCS
+#ifdef ETHR_HAVE_ETHR_MUTEX_TRYLOCK
+int ethr_mutex_trylock(ethr_mutex *);
+#endif
 int ethr_mutex_lock(ethr_mutex *);
 int ethr_mutex_unlock(ethr_mutex *);
+#endif
 int ethr_cond_init(ethr_cond *);
 int ethr_cond_destroy(ethr_cond *);
 int ethr_cond_signal(ethr_cond *);
 int ethr_cond_broadcast(ethr_cond *);
 int ethr_cond_wait(ethr_cond *, ethr_mutex *);
 int ethr_cond_timedwait(ethr_cond *, ethr_mutex *, ethr_timeval *);
+
+#ifdef ETHR_EXTENDED_LIB
+int ethr_rwmutex_init(ethr_rwmutex *);
+int ethr_rwmutex_destroy(ethr_rwmutex *);
+#ifndef ETHR_TRY_INLINE_FUNCS
+int ethr_rwmutex_tryrlock(ethr_rwmutex *);
+int ethr_rwmutex_rlock(ethr_rwmutex *);
+int ethr_rwmutex_runlock(ethr_rwmutex *);
+int ethr_rwmutex_tryrwlock(ethr_rwmutex *);
+int ethr_rwmutex_rwlock(ethr_rwmutex *);
+int ethr_rwmutex_rwunlock(ethr_rwmutex *);
+#endif
+#endif
+
+#ifndef ETHR_TRY_INLINE_FUNCS
+int ethr_atomic_init(ethr_atomic_t *var, long i);
+int ethr_atomic_set(ethr_atomic_t *var, long i);
+int ethr_atomic_read(ethr_atomic_t *var, long *i);
+int ethr_atomic_inctest(ethr_atomic_t *, long *);
+int ethr_atomic_dectest(ethr_atomic_t *, long *);
+int ethr_atomic_inc(ethr_atomic_t *);
+int ethr_atomic_dec(ethr_atomic_t *);
+int ethr_atomic_addtest(ethr_atomic_t *, long, long *);
+int ethr_atomic_add(ethr_atomic_t *, long);
+int ethr_atomic_and_old(ethr_atomic_t *, long, long *);
+int ethr_atomic_or_old(ethr_atomic_t *, long, long *);
+int ethr_atomic_xchg(ethr_atomic_t *, long, long *);
+#endif
 int ethr_time_now(ethr_timeval *);
+int ethr_tsd_key_create(ethr_tsd_key *);
+int ethr_tsd_key_delete(ethr_tsd_key);
+int ethr_tsd_set(ethr_tsd_key, void *);
+void *ethr_tsd_get(ethr_tsd_key);
 
 #ifdef ETHR_HAVE_ETHR_SIG_FUNCS
 #include <signal.h>
 int ethr_sigmask(int how, const sigset_t *set, sigset_t *oset);
 int ethr_sigwait(const sigset_t *set, int *sig);
+#endif
+
+#ifdef ETHR_XCHK
+int ethr_xchk_have_locked_mutexes(void);
 #endif
 
 #endif /* #ifndef ETHREAD_H__ */

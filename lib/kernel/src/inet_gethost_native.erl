@@ -485,7 +485,6 @@ getit(Req) ->
 			   {error, Reason}
 		   end,
 	    catch erlang:demonitor(Ref2),
-	    erlang:yield(),
 	    receive {'DOWN',Ref2,_,_,_} -> ok after 0 -> ok end,
 	    Res2
     end.

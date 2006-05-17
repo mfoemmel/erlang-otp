@@ -288,11 +288,13 @@ gui_cmd({shortcut, Key}, State) ->
 
 %% File Menu
 gui_cmd('Load Settings...', State) ->
-    dbg_ui_settings:start(State#state.gs, State#state.coords,
+    Window = dbg_ui_mon_win:get_window(State#state.win),
+    dbg_ui_settings:start(Window, State#state.coords,
 			  load, State#state.sfile),
     State;
 gui_cmd('Save Settings...', State) ->
-    dbg_ui_settings:start(State#state.gs, State#state.coords,
+    Window = dbg_ui_mon_win:get_window(State#state.win),
+    dbg_ui_settings:start(Window, State#state.coords,
 			  save, State#state.sfile),
     State;
 gui_cmd('Exit', State) ->
@@ -428,7 +430,8 @@ gui_cmd('Back Trace Size...', State) ->
 gui_cmd('Debugger', State) ->
     HelpFile = filename:join([code:lib_dir(debugger),
 			      "doc", "html", "part_frame.html"]),
-    tool_utils:open_help(State#state.gs, HelpFile),
+    Window = dbg_ui_mon_win:get_window(State#state.win),
+    tool_utils:open_help(Window, HelpFile),
     State;
 
 gui_cmd({focus, Pid, Win}, State) ->

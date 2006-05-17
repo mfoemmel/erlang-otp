@@ -113,22 +113,6 @@ hipe_arm_throw_to_native:
 	ldr	pc, [P, #P_NCALLEE]	/* set by hipe_find_handler() */
 
 /*
- * Find and invoke catch handler (it must exist).
- * The stack/heap registers were just read from P.
- * TEMP_LR should contain the current call's return address.
- * r1 should contain the current call's arity.
- */
-.find_exn_handler:
-	str	TEMP_LR, [P, #P_NRA]
-	str	r1, [P, #P_NARITY]
-	/* find and prepare to invoke the handler */
-	mov	r0, P
-	bl	hipe_handle_exception	/* Note: hipe_handle_exception() conses */
-	RESTORE_CACHED_STATE		/* NSP updated by hipe_find_handler() */
-	/* now invoke the handler */
-	ldr	pc, [P, #P_NCALLEE]	/* set by hipe_find_handler() */
-
-/*
  * Native code calls emulated code via a stub
  * which should look as follows:
  *
@@ -266,8 +250,8 @@ nbif_suspend_msg:
 
 /*
  * Suspend from a receive with a timeout (waiting for a message)
- *	if( !(p->flags & F_TIMO) ) { suspend }
- *	else { p->flags ^= F_TIMO; return 0; }
+ *	if (!(p->flags & F_TIMO)) { suspend }
+ *	else { return 0; }
  */
 	.global	nbif_suspend_msg_timeout
 nbif_suspend_msg_timeout:
@@ -275,12 +259,8 @@ nbif_suspend_msg_timeout:
 	mov	r0, #HIPE_MODE_SWITCH_RES_WAIT_TIMEOUT
 	/* this relies on F_TIMO (1<<2) fitting in a uimm16 */
 	tst	r1, #F_TIMO
-	/* XXX: The process will immediately execute 'clear_timeout',
-	   repeating this statement. Remove it? */
-	eor	r1, r1, #F_TIMO			/* F_TIMO was set, clear it */
-	beq	.suspend_exit			/* sees the CPSR state from tst above */
+	beq	.suspend_exit
 	/* timeout has occurred */
-	str	r1, [P, #P_FLAGS]
 	mov	r0, #0
 	mov	pc, lr
 
@@ -317,7 +297,22 @@ nbif_3_simple_exception:
 .nbif_simple_exception:
 	ldr	r0, [P, #P_FREASON]
 	cmp	r0, #FREASON_TRAP
-	bne	.find_exn_handler
+	beq	.handle_trap
+	/*
+	 * Find and invoke catch handler (it must exist).
+	 * The stack/heap registers were just read from P.
+	 * TEMP_LR should contain the current call's return address.
+	 * r1 should contain the current call's arity.
+	 */
+	str	TEMP_LR, [P, #P_NRA]
+	str	r1, [P, #P_NARITY]
+	/* find and prepare to invoke the handler */
+	mov	r0, P
+	bl	hipe_handle_exception	/* Note: hipe_handle_exception() conses */
+	RESTORE_CACHED_STATE		/* NSP updated by hipe_find_handler() */
+	/* now invoke the handler */
+	ldr	pc, [P, #P_NCALLEE]	/* set by hipe_find_handler() */
+
 	/*
 	 * A BIF failed with freason TRAP:
 	 * - the BIF stored the callee's Export* in p->def_arg_reg[0]
@@ -326,6 +321,7 @@ nbif_3_simple_exception:
 	 * - the native RA was saved in TEMP_LR before the BIF call
 	 * - the native heap/stack/reds registers are saved in P
 	 */
+.handle_trap:
 	mov	r0, #HIPE_MODE_SWITCH_RES_TRAP
 .bif_exit:
 	str	r1, [P, #P_ARITY]

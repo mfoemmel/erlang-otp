@@ -127,6 +127,12 @@
 	 compact_otp5290_msg01/1, 
 	 compact_otp5290_msg02/1, 
 	 compact_otp5793_msg01/1,
+	 compact_otp5993_msg01/1, 
+	 compact_otp5993_msg02/1, 
+	 compact_otp5993_msg03/1, 
+         compact_otp6017_msg01/1,
+         compact_otp6017_msg02/1,
+         compact_otp6017_msg03/1,
 
 	 pretty_tickets/1, 
 	 pretty_otp4632_msg1/1, 
@@ -432,7 +438,13 @@ compact_tickets(suite) ->
      compact_otp5186_msg06,
      compact_otp5290_msg01,
      compact_otp5290_msg02,
-     compact_otp5793_msg01
+     compact_otp5793_msg01,
+     compact_otp5993_msg01,
+     compact_otp5993_msg02,
+     compact_otp5993_msg03,
+     compact_otp6017_msg01,
+     compact_otp6017_msg02,
+     compact_otp6017_msg03
     ].
 
 pretty_tickets(suite) ->
@@ -2196,8 +2208,141 @@ compact_otp5793(Expected, Msg) ->
 
 
 %% --------------------------------------------------------------
-%% 
-%% 
+
+compact_otp5993_msg01(suite) ->
+    [];
+compact_otp5993_msg01(Config) when list(Config) ->
+    d("compact_otp5993_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5993(ok, compact_otp5993_msg01()).
+
+compact_otp5993_msg02(suite) ->
+    [];
+compact_otp5993_msg02(Config) when list(Config) ->
+    d("compact_otp5993_msg02 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5993(ok, compact_otp5993_msg02()).
+
+compact_otp5993_msg03(suite) ->
+    [];
+compact_otp5993_msg03(Config) when list(Config) ->
+    d("compact_otp5993_msg03 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5993(ok, compact_otp5993_msg03()).
+
+compact_otp5993(Expected, Msg) ->
+    expect_codec(Expected, megaco_compact_text_encoder, Msg, []).
+
+compact_otp5993_msg01() ->
+    MT = h221,
+    T  = #megaco_term_id{id = ?A4444},
+    TL = [T], 
+    MD = #'MuxDescriptor'{muxType  = MT,
+			  termList = TL},
+    compact_otp5993_msg(MD).
+
+compact_otp5993_msg02() ->
+    MT = h223,
+    T1 = #megaco_term_id{id = ?A4445},
+    T2 = #megaco_term_id{id = ?A5556},
+    TL = [T1, T2], 
+    MD = #'MuxDescriptor'{muxType  = MT,
+			  termList = TL},
+    compact_otp5993_msg(MD).
+
+compact_otp5993_msg(MD) when is_record(MD, 'MuxDescriptor') ->
+    AmmDesc  = {muxDescriptor, MD},
+    AmmReq   = #'AmmRequest'{terminationID = [hd(MD#'MuxDescriptor'.termList)], 
+			     descriptors   = [AmmDesc]},
+    Cmd      = {addReq, AmmReq},
+    CmdReq   = #'CommandRequest'{command = Cmd},
+    ActReq   = #'ActionRequest'{contextId       = 5993,
+				commandRequests = [CmdReq]},
+    TransReq = #'TransactionRequest'{transactionId = 3995,
+				     actions       = [ActReq]},
+    Trans    = {transactionRequest, TransReq},
+    Body     = {transactions, [Trans]}, 
+    Msg      = #'Message'{version = ?VERSION,
+			  mId     = ?MG1_MID,
+			  messageBody = Body},
+    #'MegacoMessage'{mess = Msg}.
+
+compact_otp5993_msg03() ->
+    T1       = #megaco_term_id{id = ?A4445},
+    T2       = #megaco_term_id{id = ?A5556},
+    TIDs     = [T1, T2], 
+    AudRep   = {contextAuditResult, TIDs}, 
+    CmdRep   = {auditValueReply, AudRep}, 
+    ActRep   = #'ActionReply'{contextId    = 5993,
+			      commandReply = [CmdRep]},
+    TransRes = {actionReplies, [ActRep]},
+    TransRep = #'TransactionReply'{transactionId     = 3995,
+				   transactionResult = TransRes},
+    Trans    = {transactionReply, TransRep}, 
+    Body     = {transactions, [Trans]},
+    Msg      = #'Message'{version     = ?VERSION,
+			  mId         = ?MG1_MID,
+			  messageBody = Body},
+    #'MegacoMessage'{mess = Msg}.
+
+
+%% --------------------------------------------------------------
+
+compact_otp6017_msg01(suite) ->
+    [];
+compact_otp6017_msg01(Config) when list(Config) ->
+    d("compact_otp6017_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    ok = compact_otp6017(0),
+    ok.
+
+compact_otp6017_msg02(suite) ->
+    [];
+compact_otp6017_msg02(Config) when list(Config) ->
+    d("compact_otp6017_msg02 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    ok = compact_otp6017(16#FFFFFFFE),
+    ok.
+
+compact_otp6017_msg03(suite) ->
+    [];
+compact_otp6017_msg03(Config) when list(Config) ->
+    d("compact_otp6017_msg03 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    ok = compact_otp6017(16#FFFFFFFF),
+    ok.
+
+compact_otp6017(BadCID) ->
+    M   = compact_otp6017_msg(BadCID),
+    Bin = list_to_binary(M),
+    case decode_message(megaco_compact_text_encoder, false, [], Bin) of
+        {ok, Msg} ->
+            exit({unexpected_decode_success, {Msg, M}});
+        {error, Reason} when is_list(Reason) -> % Expected result
+            case lists:keysearch(reason, 1, Reason) of
+                {value, {reason, {_Line, _Mod, {bad_ContextID, BadCID}}}} ->
+		    io:format(" ~w", [BadCID]),
+                    ok;
+                {value, {reason, ActualReason}} ->
+                    exit({unexpected_reason, ActualReason});
+                false ->
+                    exit({reason_not_found, Reason})
+            end;
+        Crap ->
+            exit({unexpected_decode_result, Crap})
+    end.
+
+compact_otp6017_msg(CID) when is_integer(CID) ->
+    "MEGACO/" ?VERSION_STR " MG1 T=12345678{C=" ++
+        integer_to_list(CID) ++
+        "{SC=root{SV{MT=RS,RE=901}}}}".
+
+
+%% ==============================================================
+%%
+%% P r e t t y   T e s t c a s e s
+%%
+
 pretty_otp4632_msg1(suite) ->
     [];
 pretty_otp4632_msg1(Config) when list(Config) ->

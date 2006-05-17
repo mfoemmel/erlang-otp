@@ -78,11 +78,11 @@
 #endif
 
 #if USE_RECURSIVE_MALLOC_MUTEX
-static ethr_mutex malloc_mutex = ETHR_REC_MUTEX_INITER;
+static erts_mtx_t malloc_mutex = ERTS_REC_MTX_INITER;
 #else /* #if USE_RECURSIVE_MALLOC_MUTEX */
-static ethr_mutex malloc_mutex = ETHR_MUTEX_INITER;
+static erts_mtx_t malloc_mutex = ERTS_MTX_INITER;
 #if THREAD_SAFE_ELIB_MALLOC
-static ethr_cond  malloc_cond  = ETHR_COND_INITER;
+static erts_cnd_t  malloc_cond  = ERTS_CND_INITER;
 #endif
 #endif  /* #if USE_RECURSIVE_MALLOC_MUTEX */
 
@@ -416,7 +416,7 @@ static void locked_elib_init(EWord* addr, EWord sz)
 
 #if !USE_RECURSIVE_MALLOC_MUTEX
     {
-	static ethr_tid initer_tid;
+	static erts_tid_t initer_tid;
 
 	if(elib_is_initing) {
 

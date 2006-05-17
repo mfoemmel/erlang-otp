@@ -93,13 +93,18 @@
 	 create_db/4,
 	 destroy_db/1,
 	 get_event/1,
+	 get_event/2,
 	 get_events/2,
+	 get_events/3,
+	 delete_events/1,
 	 update/2,
 	 update/4,
 	 add_event/2,
 	 add_event/4,
 	 add_and_get_event/2,
+	 add_and_get_event/3,
 	 add_and_get_event/4,
+	 add_and_get_event/5,
 	 gc_events/2,
 	 gc_events_local/4,
 	 gc_start/2,
@@ -430,11 +435,17 @@ extract_value([_H|T], ID, Other) ->
 %% Returns  : 
 %%------------------------------------------------------------
 get_event(DBRef) ->
-    case get_events(DBRef, 1) of
+    get_event(DBRef, true).
+get_event(DBRef, Delete) ->
+    case get_events(DBRef, 1, Delete) of
 	{[], false} ->
 	    {[], false};
+	{[], false, Keys} ->
+	    {[], false, Keys};
 	{[Event], Bool} ->
-	    {Event, Bool}
+	    {Event, Bool};
+	{[Event], Bool, Keys} ->
+	    {Event, Bool, Keys}
     end.
 
 %%------------------------------------------------------------
@@ -445,71 +456,116 @@ get_event(DBRef) ->
 %% Comments : Try to extract Max events from the database.
 %%------------------------------------------------------------
 get_events(#dbRef{orderRef = ORef, discardRef = DRef}, Max) ->
-    event_loop(ets:last(ORef), ORef, DRef, Max, []).
+    event_loop(ets:last(ORef), ORef, DRef, Max, [], [], true).
 
-event_loop('$end_of_table', _, _, _, []) ->
+get_events(#dbRef{orderRef = ORef, discardRef = DRef}, Max, Delete) ->
+    event_loop(ets:last(ORef), ORef, DRef, Max, [], [], Delete).
+
+event_loop('$end_of_table', _, _, _, [], _, true) ->
     {[], false};
-event_loop('$end_of_table', _ORef, _, _, Accum) ->
+event_loop('$end_of_table', _, _, _, [], [], _) ->
+    {[], false, []};
+event_loop('$end_of_table', _ORef, _, _, Accum, _Keys, true) ->
     {lists:reverse(Accum), true};
-event_loop(_, _ORef, _, 0, []) ->
+event_loop('$end_of_table', _ORef, _, _, Accum, Keys, _) ->
+    {lists:reverse(Accum), true, Keys};
+event_loop(_, _ORef, _, 0, [], _Keys, true) ->
     %% Only possible if some tries to pull a sequence of 0 events.
     %% Should we really test for this case?
     {[], false};
-event_loop(_, _ORef, _, 0, Accum) ->
+event_loop(_, _ORef, _, 0, [], Keys, _) ->
+    {[], false, Keys};
+event_loop(_, _ORef, _, 0, Accum, _Keys, true) ->
     {lists:reverse(Accum), true};
-event_loop(Key, ORef, undefined, Left, Accum) ->
+event_loop(_, _ORef, _, 0, Accum, Keys, _) ->
+    {lists:reverse(Accum), true, Keys};
+event_loop(Key, ORef, undefined, Left, Accum, Keys, Delete) ->
     [{_,DL,ST,_PO,Event}]=ets:lookup(ORef, Key),
     case check_deadline(DL) of
 	true ->
 	    ets:delete(ORef, Key),
-	    event_loop(ets:prev(ORef, Key), ORef, undefined, Left, Accum);
+	    event_loop(ets:prev(ORef, Key), ORef, undefined, 
+		       Left, Accum, Keys, Delete);
 	false ->
 	    case check_start_time(ST) of
-		true ->
+		true when Delete == true ->
 		    ets:delete(ORef, Key),
 		    event_loop(ets:prev(ORef, Key), ORef, undefined, 
-			       Left-1, [Event|Accum]);
+			       Left-1, [Event|Accum], Keys, Delete);
+		true ->
+		    event_loop(ets:prev(ORef, Key), ORef, undefined, 
+			       Left-1, [Event|Accum], [{ORef, Key}|Keys], Delete);
 		false ->
-		    event_loop(ets:prev(ORef, Key), ORef, undefined, Left, Accum)
+		    event_loop(ets:prev(ORef, Key), ORef, undefined, 
+			       Left, Accum, Keys, Delete)
 	    end
     end;
-event_loop({Key1, Key2}, ORef, DRef, Left, Accum) ->
+event_loop({Key1, Key2}, ORef, DRef, Left, Accum, Keys, Delete) ->
     [{_,DL,ST,_PO,Event}]=ets:lookup(ORef, {Key1, Key2}),
     case check_deadline(DL) of
 	true ->
 	    ets:delete(ORef, {Key1, Key2}),
 	    ets:delete(DRef, {Key2, Key1}),
-	    event_loop(ets:prev(ORef, {Key1, Key2}), ORef, DRef, Left, Accum);
+	    event_loop(ets:prev(ORef, {Key1, Key2}), ORef, DRef, 
+		       Left, Accum, Keys, Delete);
 	false ->
 	    case check_start_time(ST) of
-		true ->
+		true when Delete == true ->
 		    ets:delete(ORef, {Key1, Key2}),
 		    ets:delete(DRef, {Key2, Key1}),
 		    event_loop(ets:prev(ORef, {Key1, Key2}), ORef, DRef, 
-			       Left-1, [Event|Accum]);
+			       Left-1, [Event|Accum], Keys, Delete);
+		true ->
+		    event_loop(ets:prev(ORef, {Key1, Key2}), ORef, DRef, 
+			       Left-1, [Event|Accum], 
+			       [{ORef, {Key1, Key2}}, {DRef, {Key2, Key1}}|Keys], 
+			       Delete);
 		false ->
-		    event_loop(ets:prev(ORef, {Key1, Key2}), ORef, DRef, Left, Accum)
+		    event_loop(ets:prev(ORef, {Key1, Key2}), ORef, DRef, 
+			       Left, Accum, Keys, Delete)
 	    end
     end;    
-event_loop({Key1, Key2, Key3}, ORef, DRef, Left, Accum) ->
+event_loop({Key1, Key2, Key3}, ORef, DRef, Left, Accum, Keys, Delete) ->
     [{_,DL,ST,_PO,Event}]=ets:lookup(ORef, {Key1, Key2, Key3}),
     case check_deadline(DL) of
 	true ->
 	    ets:delete(ORef, {Key1, Key2, Key3}),
 	    ets:delete(DRef, {Key3, Key2, Key1}),
-	    event_loop(ets:prev(ORef, {Key1, Key2, Key3}), ORef, DRef, Left, Accum);
+	    event_loop(ets:prev(ORef, {Key1, Key2, Key3}), ORef, DRef, 
+		       Left, Accum, Keys, Delete);
 	false ->
 	    case check_start_time(ST) of
-		true ->
+		true when Delete  == true ->
 		    ets:delete(ORef, {Key1, Key2, Key3}),
 		    ets:delete(DRef, {Key3, Key2, Key1}),
 		    event_loop(ets:prev(ORef, {Key1, Key2, Key3}), ORef, DRef, 
-			       Left-1, [Event|Accum]);
+			       Left-1, [Event|Accum], Keys, Delete);
+		true ->
+		    event_loop(ets:prev(ORef, {Key1, Key2, Key3}), ORef, DRef, 
+			       Left-1, [Event|Accum], 
+			       [{ORef, {Key1, Key2, Key3}}, 
+				{DRef, {Key3, Key2, Key1}}|Keys], Delete);
 		false ->
 		    event_loop(ets:prev(ORef, {Key1, Key2, Key3}), ORef, DRef, 
-			       Left, Accum)
+			       Left, Accum, Keys, Delete)
 	    end
     end.
+
+%%------------------------------------------------------------
+%% function : delete_events
+%% Arguments: EventList - what's returned by get_event, get_events
+%%                        and add_and_get_event.
+%% Returns  : 
+%% Comment  : Shall be invoked when it's safe to premanently remove
+%%            the events found in the EventList.
+%%            
+%%------------------------------------------------------------
+delete_events([]) ->
+    ok;
+delete_events([{DB, Key}|T]) ->
+    ets:delete(DB, Key),
+    delete_events(T).
+
 %%------------------------------------------------------------
 %% function : update
 %% Arguments: 
@@ -783,13 +839,23 @@ index_loop_backward({Key1, Key2, Key3}, DRef, ORef, Left) ->
 %%            not necessary.
 %%------------------------------------------------------------
 add_and_get_event(DBRef, Event) ->
-    add_and_get_event(DBRef, Event, undefined, undefined).
+    add_and_get_event(DBRef, Event, undefined, undefined, true).
+
+add_and_get_event(DBRef, Event, Delete) ->
+    add_and_get_event(DBRef, Event, undefined, undefined, Delete).
 
 add_and_get_event(DBRef, Event, LifeFilter, PrioFilter) ->
+    add_and_get_event(DBRef, Event, LifeFilter, PrioFilter, true).
+
+add_and_get_event(DBRef, Event, LifeFilter, PrioFilter, Delete) ->
     case ets:info(?get_OrderRef(DBRef), size) of
-	0 when ?is_StartTNotSupported(DBRef), ?is_StopTNotSupported(DBRef) ->
+	0 when ?is_StartTNotSupported(DBRef), ?is_StopTNotSupported(DBRef),
+	       Delete == true ->
 	    %% No stored events and no timeouts used; just return the event.
 	    {Event, false};
+	0 when ?is_StartTNotSupported(DBRef), ?is_StopTNotSupported(DBRef) ->
+	    %% No stored events and no timeouts used; just return the event.
+	    {Event, false, []};
 	0 when ?is_StartTNotSupported(DBRef) ->
 	    %% Only deadline supported, lookup values and cehck if ok.
 	    DOverride = get_life_mapping_value(DBRef, LifeFilter, Event),
@@ -797,19 +863,24 @@ add_and_get_event(DBRef, Event, LifeFilter, PrioFilter) ->
 				  ?get_StopTsupport(DBRef), ?get_TimeRef(DBRef), 
 				  DOverride),
 	    case check_deadline(DL) of
-		true ->
+		true when Delete == true ->
 		    %% Expired, just discard the event.
 		    {[], false};
+		true ->
+		    {[], false, []};
+		_ when Delete == true ->
+		    %% Not expired, we can safely return the event.
+		    {Event, false};
 		_ ->
 		    %% Not expired, we can safely return the event.
-		    {Event, false}
+		    {Event, false, []}
 	    end;
 	0 when ?is_StopTNotSupported(DBRef) ->
 	    %% Only starttime allowed, test if we can deliver the event now.
 	    ST = extract_start_time(Event, ?get_StartTsupport(DBRef), 
 				    ?get_TimeRef(DBRef)),
 	    case check_start_time(ST) of
-		false ->
+		false when Delete == true ->
 		    DOverride = get_life_mapping_value(DBRef, LifeFilter, Event),
 		    POverride = get_prio_mapping_value(DBRef, PrioFilter, Event),
 		    DL = extract_deadline(Event, ?get_DefStopT(DBRef), 
@@ -817,9 +888,20 @@ add_and_get_event(DBRef, Event, LifeFilter, PrioFilter) ->
 					  ?get_TimeRef(DBRef), DOverride),
 		    do_add_event(DBRef, Event, create_FIFO_Key(), DL, ST, POverride),
 		    {[], true};
+		false ->
+		    DOverride = get_life_mapping_value(DBRef, LifeFilter, Event),
+		    POverride = get_prio_mapping_value(DBRef, PrioFilter, Event),
+		    DL = extract_deadline(Event, ?get_DefStopT(DBRef), 
+					  ?get_StopTsupport(DBRef), 
+					  ?get_TimeRef(DBRef), DOverride),
+		    do_add_event(DBRef, Event, create_FIFO_Key(), DL, ST, POverride),
+		    {[], true, []};
+		_ when Delete == true ->
+		    %% Starttime ok, just return the event.
+		    {Event, false};
 		_ ->
 		    %% Starttime ok, just return the event.
-		    {Event, false}
+		    {Event, false, []}
 	    end;
 	_->
 	    %% Event already stored, just have to accept the overhead.
@@ -831,7 +913,7 @@ add_and_get_event(DBRef, Event, LifeFilter, PrioFilter) ->
 				  ?get_StopTsupport(DBRef), 
 				  ?get_TimeRef(DBRef), DOverride),
 	    do_add_event(DBRef, Event, create_FIFO_Key(), DL, ST, POverride),
-	    get_event(DBRef)
+	    get_event(DBRef, Delete)
     end.
 	    
 %%------------------------------------------------------------

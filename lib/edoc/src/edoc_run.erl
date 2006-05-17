@@ -27,9 +27,16 @@
 %% The following is an example of typical usage in a Makefile:
 %% ```docs:
 %%            erl -noshell -run edoc_run application "'$(APP_NAME)'" \
-%%              '"."' '[{def,{vsn,"$(VSN)"}}]' -s init stop'''
+%%              '"."' '[{def,{vsn,"$(VSN)"}}]'
+%% '''
 %% (note the single-quotes to avoid shell expansion, and the
 %% double-quotes enclosing the strings).
+%%
+%% <strong>New feature in version 0.6.9</strong>: It is no longer
+%% necessary to write `-s init stop' last on the command line in order
+%% to make the execution terminate. The termination (signalling success
+%% or failure to the operating system) is now built into these
+%% functions.
 
 -module(edoc_run).
 
@@ -38,7 +45,7 @@
 -import(edoc_report, [report/2, error/1]).
 
 
-%% @spec application([string()]) -> ok | error
+%% @spec application([string()]) -> none()
 %%
 %% @doc Calls {@link edoc:application/3} with the corresponding
 %% arguments. The strings in the list are parsed as Erlang constant
@@ -46,6 +53,10 @@
 %% Dir, Options]'. In the first case {@link edoc:application/1} is
 %% called instead; in the second case, {@link edoc:application/2} is
 %% called.
+%%
+%% The function call never returns; instead, the emulator is
+%% automatically terminated when the call has completed, signalling
+%% success or failure to the operating system.
 
 application(Args) ->
     F = fun () ->
@@ -59,12 +70,16 @@ application(Args) ->
 	end,
     run(F).
 
-%% @spec files([string()]) -> ok | error
+%% @spec files([string()]) -> none()
 %%
 %% @doc Calls {@link edoc:files/2} with the corresponding arguments. The
 %% strings in the list are parsed as Erlang constant terms. The list can
 %% be either `[Files]' or `[Files, Options]'. In the first case, {@link
 %% edoc:files/1} is called instead.
+%%
+%% The function call never returns; instead, the emulator is
+%% automatically terminated when the call has completed, signalling
+%% success or failure to the operating system.
 
 files(Args) ->
     F = fun () ->
@@ -77,12 +92,16 @@ files(Args) ->
 	end,
     run(F).
 
-%% @spec packages([string()]) -> ok | error
+%% @spec packages([string()]) -> none()
 %%
 %% @doc Calls {@link edoc:application/2} with the corresponding
 %% arguments. The strings in the list are parsed as Erlang constant
 %% terms. The list can be either `[Packages]' or `[Packages, Options]'.
 %% In the first case {@link edoc:application/1} is called instead.
+%%
+%% The function call never returns; instead, the emulator is
+%% automatically terminated when the call has completed, signalling
+%% success or failure to the operating system.
 
 packages(Args) ->
     F = fun () ->
@@ -108,7 +127,7 @@ toc(Args) ->
     run(F).
 
 
-%% @spec file([string()]) -> ok | error
+%% @spec file([string()]) -> none()
 %%
 %% @deprecated This is part of the old interface to EDoc and is mainly
 %% kept for backwards compatibility. The preferred way of generating
@@ -124,6 +143,10 @@ toc(Args) ->
 %% ```$(DOCDIR)/%.html:%.erl
 %%            erl -noshell -run edoc_run file '"$<"' '[{dir,"$(DOCDIR)"}]' \
 %%              -s init stop'''
+%%
+%% The function call never returns; instead, the emulator is
+%% automatically terminated when the call has completed, signalling
+%% success or failure to the operating system.
 
 file(Args) ->
     F = fun () ->
@@ -136,19 +159,22 @@ file(Args) ->
 	end,
     run(F).
 
+invalid_args(Where, Args) ->
+    report("invalid arguments to ~s: ~w.", [Where, Args]),
+    shutdown(error).
 
 run(F) ->
     wait_init(),
     case catch {ok, F()} of
 	{ok, _} ->
-	    ok;
+	    shutdown(ok);
 	{'EXIT', E} ->
 	    report("edoc terminated abnormally: ~P.", [E, 10]),
-	    error;
+	    shutdown(error);
 	Thrown ->
 	    report("internal error: throw without catch in edoc: ~P.",
 		   [Thrown, 15]),
-	    error
+	    shutdown(error)
     end.
 
 wait_init() ->
@@ -159,6 +185,18 @@ wait_init() ->
 	_ ->
 	    ok
     end.
+
+%% When and if a function init:stop/1 becomes generally available, we
+%% can use that instead of delay-and-pray when there is an error.
+
+shutdown(ok) ->
+    %% shut down emulator nicely, signalling "normal termination"
+    init:stop();
+shutdown(error) ->
+    %% delay 1 second to allow I/O to finish
+    receive after 1000 -> ok end,
+    %% stop emulator the hard way with a nonzero exit value
+    halt(1).
 
 parse_args([A | As]) when atom(A) ->
     [parse_arg(atom_to_list(A)) | parse_args(As)];
@@ -182,7 +220,3 @@ parse_arg(A) ->
 	    error(D),
 	    exit(error)
     end.
-
-invalid_args(Where, Args) ->
-    report("invalid arguments to ~s: ~w.", [Where, Args]),
-    error.

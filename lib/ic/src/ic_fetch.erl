@@ -20,8 +20,12 @@
 
 -include("icforms.hrl").
 
--compile(export_all).
+-export([member2type/3]).
 
+-export([fetchTk/3, isArray/3, isBasicType/1, isBasicType/2,
+	 isBasicType/3, isBasicTypeOrEterm/3, isEterm/3, isString/3,
+	 isStruct/3, isUnion/3, name2type/2, searchIncludedTk/2,
+	 searchInsideTks/2, searchTk/2, searchTk/3]).
 
 name2type(G, Name) ->
     S = ic_genobj:tktab(G),

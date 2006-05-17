@@ -9,6 +9,14 @@
 # This is the general part that is common for all architectures.
 #
 
+# Size of data types.
+s|^#undef SIZEOF_CHAR|#define SIZEOF_CHAR 1|
+s|^#undef SIZEOF_SHORT|#define SIZEOF_SHORT 2|
+s|^#undef SIZEOF_INT|#define SIZEOF_INT 4|
+s|^#undef SIZEOF_LONG_LONG|#define SIZEOF_LONG_LONG 8|
+s|^#undef SIZEOF_LONG$|#define SIZEOF_LONG 4|
+
+# General stuff.
 s|@erts_rootdir@|/clearcase/otp/erts|
 
 s|@LIBOBJS@|$(OBJDIR)/elib_malloc.o|
@@ -33,12 +41,15 @@ s|@ETHR_DEFS@||
 s|@ETHR_THR_LIB_BASE@||
 s|@EMU_THR_DEFS@||
 s|@EMU_THR_LIBS@||
+s|@EMU_THR_LIB_NAME@|ethread|
 s|@cc_root@|/clearcase/otp/|
 # Define VxWorks even though cross-compiling. 
 s|@HCFLAGS@|-DVXWORKS|
 s|@HCLIBS@||
 s|@ENABLE_ALLOC_TYPE_VARS@||
 s|@TERMCAP_LIB@||
+s|@ERTS_BUILD_SMP_EMU@|no|
+s|@EXEEXT@||
 
 # HiPE
 s|@HIPE_ENABLED@||
@@ -73,7 +84,7 @@ s|@erlexec@|erl.exec|
 s|@EMU_LIBOBJS@||
 
 # General CFLAGS
-s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R -DENABLE_ELIB_MALLOC -DELIB_HEAP_USER -DELIB_SORTED_BLOCKS -DWORDS_BIGENDIAN -DELIB_DONT_INITIALIZE|g
+s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R -DENABLE_ELIB_MALLOC -DELIB_HEAP_USER -DELIB_SORTED_BLOCKS -DWORDS_BIGENDIAN -DELIB_DONT_INITIALIZE -DSIZEOF_CHAR=1 -DSIZEOF_SHORT=2 -DSIZEOF_INT=4 -DSIZEOF_LONG=4 -DSIZEOF_LONG_LONG=8 -DSIZEOF_VOID_P=4|g
 s|@WFLAGS@||
 
 # Thread flags for eidefs.mk (erl_interface)

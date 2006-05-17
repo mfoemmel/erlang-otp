@@ -55,7 +55,6 @@
 	 get_usm_eboots/1, get_usm_etime/1, get_usm_eltime/1, 
 	 set_usm_eboots/2, set_usm_etime/2, set_usm_eltime/2, 
 	 reset_usm_cache/1, 
-	 set_engine_time/1, 
 	 
 
 	 cre_counter/2,
@@ -116,6 +115,9 @@
 
 -define(USER_MOD_DEFAULT,  snmpm_user_default).
 -define(USER_DATA_DEFAULT, undefined).
+
+-define(DEF_ADDR_TAG, default_addr_tag).
+-define(DEF_PORT_TAG, default_port_tag).
 
 -ifdef(snmp_debug).
 -define(GS_START_LINK(Opts),
@@ -193,6 +195,8 @@ user_info(UserId) ->
     end.
 
 
+register_agent(_UserId, ?DEF_ADDR_TAG = Addr, _Port, _Config) ->
+    {error, {invalid_address, Addr}};
 register_agent(UserId, Addr0, Port, Config) ->
     %% Check: 
     %%   1) That the mandatory configs (none at the moment) are present
@@ -245,8 +249,13 @@ unregister_agent(UserId, Addr0, Port) ->
     Addr = normalize_address(Addr0),
     call({unregister_agent, UserId, Addr, Port}).
 
-agent_info(Addr0, Port, all) ->
+agent_info(?DEF_ADDR_TAG = Addr, Port, Item) ->
+    do_agent_info(Addr, Port, Item);
+agent_info(Addr0, Port, Item) ->
     Addr = normalize_address(Addr0),
+    do_agent_info(Addr, Port, Item).
+
+do_agent_info(Addr, Port, all) ->
     case ets:match_object(snmpm_agent_table, {{Addr, Port, '_'}, '_'}) of
 	[] ->
 	    {error, not_found};
@@ -254,8 +263,7 @@ agent_info(Addr0, Port, all) ->
 	    {ok, [{Item, Val} || {{_, _, Item}, Val} <- All,
 				Item /= address, Item /= port]}
     end;
-agent_info(Addr0, Port, Item) ->
-    Addr = normalize_address(Addr0),
+do_agent_info(Addr, Port, Item) ->
     case ets:lookup(snmpm_agent_table, {Addr, Port, Item}) of
 	[{_, Val}] ->
 	    {ok, Val};
@@ -1268,7 +1276,7 @@ init_agent_default() ->
 
 init_agent_default(Item, Val) 
   when Item /= address; Item /= port; Item /= user_id ->
-    case do_update_agent_info(default, default, Item, Val) of
+    case do_update_agent_info(?DEF_ADDR_TAG, ?DEF_PORT_TAG, Item, Val) of
 	ok ->
 	    ok;
 	{error, Reason} ->
@@ -1344,6 +1352,8 @@ init_agents_config([Agent|Agents]) ->
     init_agent_config(Agent),
     init_agents_config(Agents).
 
+init_agent_config({_UserId, ?DEF_ADDR_TAG = Addr, _Port, _Config}) ->
+    throw({error, {invalid_address, Addr}});
 init_agent_config({UserId, Addr, Port, Config}) ->
     case handle_register_agent(UserId, Addr, Port, Config) of
 	ok ->
@@ -2152,7 +2162,7 @@ handle_register_agent(UserId, Addr, Port, Config) ->
 	    "~n   Config: ~p", [UserId, Addr, Port, Config]),
     case (catch agent_info(Addr, Port, address)) of
 	{error, _} ->
-	    {ok, DefConfig} = agent_info(default, default, all),
+	    {ok, DefConfig} = agent_info(?DEF_ADDR_TAG, ?DEF_PORT_TAG, all),
 	    do_handle_register_agent(Addr, Port, DefConfig),
 	    do_handle_register_agent(Addr, Port, [{user_id, UserId}|Config]);
 	Error ->

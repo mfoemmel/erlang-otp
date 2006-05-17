@@ -12,6 +12,22 @@ ac_help=
 ac_default_prefix=/usr/local
 # Any additions from configure.in:
 ac_help="$ac_help
+  --enable-threads        enable async thread support
+  --disable-threads       disable async thread support"
+ac_help="$ac_help
+  --enable-smp-support    enable smp support
+  --disable-smp-support   disable smp support"
+ac_help="$ac_help
+  --enable-kernel-poll    enable kernel poll support"
+ac_help="$ac_help
+  --disable-hipe          disable hipe support"
+ac_help="$ac_help
+  --disable-megaco-flex-scanner-lineno disable megaco flex scanner lineno"
+ac_help="$ac_help
+  --with-ssl=PATH         specify location of OpenSSL include and lib
+  --with-ssl              use SSL (default)
+  --without-ssl           don't use SSL"
+ac_help="$ac_help
   --disable-erlang-mandir do not install Erlang man pages in a private directory"
 
 # Initialize some variables set by options.
@@ -572,7 +588,7 @@ else { echo "configure: error: can not run $ac_config_sub" 1>&2; exit 1; }
 fi
 
 echo $ac_n "checking host system type""... $ac_c" 1>&6
-echo "configure:576: checking host system type" >&5
+echo "configure:592: checking host system type" >&5
 
 host_alias=$host
 case "$host_alias" in
@@ -603,7 +619,7 @@ TARGET=$host
 # We need GNU make, complain if we can't find it
 #
 echo $ac_n "checking for GNU make""... $ac_c" 1>&6
-echo "configure:607: checking for GNU make" >&5
+echo "configure:623: checking for GNU make" >&5
 # If there is a Makefile created we don't want make to start making, run
 # in a subdirectory and -f /dev/null
 MAKE_PROG=x
@@ -652,7 +668,7 @@ esac
 # SVR4 /usr/ucb/install, which tries to use the nonexistent group "staff"
 # ./install, which can be erroneously created by make from ./install.sh.
 echo $ac_n "checking for a BSD compatible install""... $ac_c" 1>&6
-echo "configure:656: checking for a BSD compatible install" >&5
+echo "configure:672: checking for a BSD compatible install" >&5
 if test -z "$INSTALL"; then
 if eval "test \"`echo '$''{'ac_cv_path_install'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
@@ -712,7 +728,7 @@ if test X"${INSTALL}" = "X${ac_aux_dir}/install-sh -c" && test -f /usr/ucb/insta
 fi
 
 echo $ac_n "checking whether ln -s works""... $ac_c" 1>&6
-echo "configure:716: checking whether ln -s works" >&5
+echo "configure:732: checking whether ln -s works" >&5
 if eval "test \"`echo '$''{'ac_cv_prog_LN_S'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -735,7 +751,7 @@ fi
 # Extract the first word of "ranlib", so it can be a program name with args.
 set dummy ranlib; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:739: checking for $ac_word" >&5
+echo "configure:755: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_prog_RANLIB'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -767,6 +783,49 @@ fi
 # Get erts version from erts/vsn.mk
 #
 ERTS=erts-`sed -n 's/^VSN[ ]*=[ ]*\([0-9.]\)/\1/p' < erts/vsn.mk`
+
+
+
+# Check whether --enable-threads or --disable-threads was given.
+if test "${enable_threads+set}" = set; then
+  enableval="$enable_threads"
+  :
+fi
+
+
+# Check whether --enable-smp-support or --disable-smp-support was given.
+if test "${enable_smp_support+set}" = set; then
+  enableval="$enable_smp_support"
+  :
+fi
+
+
+# Check whether --enable-kernel-poll or --disable-kernel-poll was given.
+if test "${enable_kernel_poll+set}" = set; then
+  enableval="$enable_kernel_poll"
+  :
+fi
+
+
+# Check whether --enable-hipe or --disable-hipe was given.
+if test "${enable_hipe+set}" = set; then
+  enableval="$enable_hipe"
+  :
+fi
+
+
+# Check whether --enable-megaco_flex_scanner_lineno or --disable-megaco_flex_scanner_lineno was given.
+if test "${enable_megaco_flex_scanner_lineno+set}" = set; then
+  enableval="$enable_megaco_flex_scanner_lineno"
+  :
+fi
+
+
+# Check whether --with-ssl or --without-ssl was given.
+if test "${with_ssl+set}" = set; then
+  withval="$with_ssl"
+  :
+fi
 
 
 #

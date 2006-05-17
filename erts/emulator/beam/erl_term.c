@@ -41,7 +41,7 @@ et_abort(const char *expr, const char *file, unsigned line)
 	erl_exit(1, "TYPE ASSERTION FAILED, file %s, line %u: %s\n", file, line, expr);
     }
 #else
-    erl_printf(CERR, "TYPE ASSERTION FAILED, file %s, line %u: %s\n", file, line, expr);
+    erts_fprintf(stderr, "TYPE ASSERTION FAILED, file %s, line %u: %s\n", file, line, expr);
     abort();
 #endif
 }

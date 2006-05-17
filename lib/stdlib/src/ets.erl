@@ -265,13 +265,13 @@ local_info(T, Node) ->
 	undefined -> undefined;
 	{'EXIT', _} -> undefined;
 	Mem ->
-	    {{memory, Mem}, {owner, info(T, owner)}, 
+	    [{memory, Mem}, {owner, info(T, owner)}, 
 	     {name,info(T, name)},
 	     {size, info(T, size)}, {node, Node},
 	     {named_table, info(T, named_table)},
 	     {type, info(T, type)}, 
 	     {keypos, info(T, keypos)},
-	     {protection, info(T, protection)}}
+	     {protection, info(T, protection)}]
     end.
 
 info(T, What) when atom(T) ; integer(T) ->
@@ -348,7 +348,9 @@ tab2file(Tab, File) ->
 	    {error, badtab};
 	{_, undefined} ->
 	    {error, badtab};
-	{{ok, Name}, Info} ->
+	{{ok, Name}, Info0} ->
+	    %% For backwards compatibility, the table parameters should be a tuple.
+	    Info = list_to_tuple(Info0),
 	    ok = disk_log:log(Name, Info),
 	    tab2file(Tab, ets:first(Tab), Name)
     end.

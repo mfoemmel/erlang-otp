@@ -50,7 +50,7 @@ typedef struct index_table
 IndexTable *index_new(ErtsAlcType_t,char*,int,int,int,HashFunctions);
 IndexTable *index_init(ErtsAlcType_t,IndexTable*,char*,int,int,int,HashFunctions);
 void index_delete(IndexTable*);
-void index_info(CIO,IndexTable*);
+void index_info(int, void *, IndexTable*);
 int index_table_sz(IndexTable *);
 
 int index_get(IndexTable*, void*);

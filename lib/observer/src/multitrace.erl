@@ -135,7 +135,7 @@ handle_gc(Out,{trace_ts,P,gc_end,Info,Ts},_TI,S) ->
 		      "end\t~w\t~w\t~w\t~w\t~w\t~w\t~w\t~w~n~n", 
 		      [SM,SR,SS,SO,SH,SOB,SB,P,EM,ER,ES,EO,EH,EOB,EB,diff(StartTime,Ts)]),
 	    dict:erase(P,S);
-	false ->
+	error ->
 	    S
     end.
 

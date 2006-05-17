@@ -30,17 +30,24 @@ unsigned long long processes_spawned;
 unsigned long long messages_sent;
 unsigned long long messages_copied;
 unsigned long long messages_ego;
-unsigned long long minor_garbage_cols;
-unsigned long long major_garbage_cols;
-unsigned long long minor_global_garbage_cols;
-unsigned long long major_global_garbage_cols;
+unsigned long long minor_gc;
+unsigned long long major_gc;
+#ifdef HYBRID
+unsigned long long minor_global_gc;
+unsigned long long major_global_gc;
 unsigned long long gc_in_copy;
-unsigned long long gc_cycles;
+#ifdef INCREMENTAL
+unsigned long long minor_gc_cycles;
+unsigned long long major_gc_cycles;
+unsigned long long minor_gc_stages;
+unsigned long long major_gc_stages;
+#endif
+#endif
 #endif /* BM_COUNTERS */
 
 #ifdef BM_TIMERS
 
-#if defined(__i386__) && USE_PERFCTR
+#if (defined(__i386__) || defined(__x86_64__)) && USE_PERFCTR
 
 #include "libperfctr.h"
 struct vperfctr *system_clock;
@@ -49,26 +56,22 @@ BM_NEW_TIMER(start);
 
 static double get_hrvtime(void)
 {
-#if defined(__i386__) && USE_PERFCTR
     unsigned long long ticks;
     double milli_seconds;
 
     ticks = vperfctr_read_tsc(system_clock);
     milli_seconds = (double)ticks / cpu_khz;
     return milli_seconds;
-#endif
 }
 
 static void stop_hrvtime(void)
 {
-#if defined(__i386__) && USE_PERFCTR
     if(system_clock)
     {
 	vperfctr_stop(system_clock);
 	vperfctr_close(system_clock);
 	system_clock = NULL;
     }
-#endif
 }
 
 #else /* not perfctr, asuming Solaris */
@@ -124,7 +127,7 @@ unsigned long long message_sizes[1000];
 void init_benchmarking()
 {
 #ifdef BM_TIMERS
-#if defined(__i386__) && USE_PERFCTR
+#if (defined(__i386__) || defined(__x86_64__)) && USE_PERFCTR
     /* pass `--with-perfctr=/path/to/perfctr' when configuring */
     struct perfctr_info info;
     struct vperfctr_control control;
@@ -177,21 +180,27 @@ void init_benchmarking()
     mmu_counter = 0;
 
     BM_MMU_INIT();
-
 #endif /* BM_TIMERS */
 
 #ifdef BM_COUNTERS
-    minor_garbage_cols        = 0;
-    major_garbage_cols        = 0;
-    minor_global_garbage_cols = 0;
-    major_global_garbage_cols = 0;
-    gc_in_copy         = 0;
-    gc_cycles          = 0;        /* N.o. complete cycles (Incremental GC) */
     processes_busy     = 0;
     processes_spawned  = 0;
     messages_sent      = 0;
     messages_copied    = 0;
     messages_ego       = 0;
+    minor_gc           = 0;
+    major_gc           = 0;
+#ifdef HYBRID
+    minor_global_gc    = 0;
+    major_global_gc    = 0;
+    gc_in_copy         = 0;
+#ifdef INCREMENTAL
+    minor_gc_cycles    = 0;
+    major_gc_cycles    = 0;
+    minor_gc_stages    = 0;
+    major_gc_stages    = 0;
+#endif
+#endif
 #endif /* BM_COUNTERS */
 
 #ifdef BM_HEAP_SIZES
@@ -221,64 +230,61 @@ void save_statistics()
 
     if (file)
     {
-        fprintf(file,"-------------------------------------------------------------------------\n");
-        fprintf(file,"The counters are reset at system start and are sums over the entire node.\n");
-        fprintf(file,"You may reset them manually using the BIFs in the module hipe_bifs.\n");
-        fprintf(file,"All times are given in milliseconds.\n");
-        fprintf(file,"-------------------------------------------------------------------------\n");
+        erts_fprintf(file,"-------------------------------------------------------------------------\n");
+        erts_fprintf(file,"The counters are reset at system start and are sums over the entire node.\n");
+        erts_fprintf(file,"You may reset them manually using the BIFs in the module hipe_bifs.\n");
+        erts_fprintf(file,"All times are given in milliseconds.\n");
+        erts_fprintf(file,"-------------------------------------------------------------------------\n");
 
-        if (!tmp_buf)
-        {
-            fprintf(file,"Boot problems?\n");
-        }
-        else
-        {
-            display(erts_this_node->sysname,CBUF);
-            while (tmp_buf[++i] != '\'' && tmp_buf[i] != '\0');
-            if (tmp_buf[i] == '\'')
-                tmp_buf[i+1] = '\0';
-            fprintf(file,"Node: %s\n",tmp_buf);
-        }
+	erts_fprintf(file,"Node: %T\n",erts_this_node->sysname);
 
 #ifdef BM_COUNTERS
-        fprintf(file,"Number of processes spawned: %lld\n",processes_spawned);
-        fprintf(file,"Number of local minor GCs: %lld\n",minor_garbage_cols);
-        fprintf(file,"Number of local major GCs: %lld\n",major_garbage_cols);
-        fprintf(file,"Number of global minor GCs: %lld\n",minor_global_garbage_cols);
-        fprintf(file,"Number of global major GCs: %lld\n",major_global_garbage_cols);
-        fprintf(file,"Number of messages sent: %lld\n",messages_sent);
-        fprintf(file,"Number of messages copied: %lld\n",messages_copied);
-        fprintf(file,"Number of messages sent to self: %lld\n",messages_ego);
+        erts_fprintf(file,"Number of processes spawned: %lld\n",processes_spawned);
+        erts_fprintf(file,"Number of local minor GCs: %lld\n",minor_gc);
+        erts_fprintf(file,"Number of local major GCs: %lld\n",major_gc);
+#ifdef HYBRID
+        erts_fprintf(file,"Number of global minor GCs: %lld\n",minor_global_gc);
+        erts_fprintf(file,"Number of global major GCs: %lld\n",major_global_gc);
+#ifdef INCREMENTAL
+        erts_fprintf(file,"Number of minor GC-cycles: %lld\n",minor_gc_cycles);
+        erts_fprintf(file,"Number of major GC-cycles: %lld\n",major_gc_cycles);
+        erts_fprintf(file,"Number of minor GC-stages: %lld\n",minor_gc_stages);
+        erts_fprintf(file,"Number of major GC-stages: %lld\n",major_gc_stages);
+#endif
+#endif
+        erts_fprintf(file,"Number of messages sent: %lld\n",messages_sent);
+        erts_fprintf(file,"Number of messages copied: %lld\n",messages_copied);
+        erts_fprintf(file,"Number of messages sent to self: %lld\n",messages_ego);
 #endif /* BM_COUNTERS */
 
 #ifdef BM_MESSAGE_SIZES
-        fprintf(file,"Number of words sent: %lld\n",words_sent);
-        fprintf(file,"Number of words copied: %lld\n",words_copied);
-        fprintf(file,"Number of words preallocated: %lld\n",words_prealloc);
+        erts_fprintf(file,"Number of words sent: %lld\n",words_sent);
+        erts_fprintf(file,"Number of words copied: %lld\n",words_copied);
+        erts_fprintf(file,"Number of words preallocated: %lld\n",words_prealloc);
 #endif /* BM_MESSAGE_SIZES */
 
 #ifdef BM_HEAP_SIZES
-        fprintf(file,"Biggest local heap used (in words): %lld\n",max_used_heap);
-        fprintf(file,"Biggest local heap allocated (in words): %lld\n",max_allocated_heap);
-        fprintf(file,"Biggest global heap used (in words): %lld\n",max_used_global_heap);
-        fprintf(file,"Biggest global heap allocated (in words): %lld\n",max_allocated_global_heap);
+        erts_fprintf(file,"Biggest local heap used (in words): %lld\n",max_used_heap);
+        erts_fprintf(file,"Biggest local heap allocated (in words): %lld\n",max_allocated_heap);
+        erts_fprintf(file,"Biggest global heap used (in words): %lld\n",max_used_global_heap);
+        erts_fprintf(file,"Biggest global heap allocated (in words): %lld\n",max_allocated_global_heap);
 #endif /* BM_HEAP_SIZES */
 
 #ifdef BM_TIMERS
-        fprintf(file,"--- The total active system time is the sum of all times below ---\n");
-        BM_TIME_PRINTER(Mutator time,system_time);
-        BM_TIME_PRINTER(Time spent in send (excluding size & copy),send_time);
-        BM_TIME_PRINTER(Time spent in size,size_time);
-        BM_TIME_PRINTER(Time spent in copy,copy_time);
-        BM_TIME_PRINTER(Time spent in local minor GC,minor_gc_time);
-        BM_TIME_PRINTER(Time spent in local major GC,major_gc_time);
-        BM_TIME_PRINTER(Time spent in global minor GC,minor_global_gc_time);
-        BM_TIME_PRINTER(Time spent in global major GC,major_global_gc_time);
-        fprintf(file,"---\n");
-        BM_TIME_PRINTER(Maximum time spent in one separate local minor GC,max_minor_time);
-        BM_TIME_PRINTER(Maximum time spent in one separate local major GC,max_major_time);
-        BM_TIME_PRINTER(Maximum time spent in one separate global minor GC,max_global_minor_time);
-        BM_TIME_PRINTER(Maximum time spent in one separate global major GC,max_global_major_time);
+        erts_fprintf(file,"--- The total active system time is the sum of all times below ---\n");
+        BM_TIME_PRINTER("Mutator time",system_time);
+        BM_TIME_PRINTER("Time spent in send (excluding size & copy)",send_time);
+        BM_TIME_PRINTER("Time spent in size",size_time);
+        BM_TIME_PRINTER("Time spent in copy",copy_time);
+        BM_TIME_PRINTER("Time spent in local minor GC",minor_gc_time);
+        BM_TIME_PRINTER("Time spent in local major GC",major_gc_time);
+        BM_TIME_PRINTER("Time spent in global minor GC",minor_global_gc_time);
+        BM_TIME_PRINTER("Time spent in global major GC",major_global_gc_time);
+        erts_fprintf(file,"---\n");
+        BM_TIME_PRINTER("Maximum time spent in one separate local minor GC",max_minor_time);
+        BM_TIME_PRINTER("Maximum time spent in one separate local major GC",max_major_time);
+        BM_TIME_PRINTER("Maximum time spent in one separate global minor GC",max_global_minor_time);
+        BM_TIME_PRINTER("Maximum time spent in one separate global major GC",max_global_major_time);
 #endif /* BM_TIMERS */
 
 #if 0
@@ -288,8 +294,8 @@ void save_statistics()
         long left, right, mid;
 
 #ifdef BM_COUNTERS
-        fprintf(file,"Spawns\tLocalGC\tMAGC\tMessages\tMutator_t\tLocalGC_t\tMAGC_t\tLocMaxP\tLocMeanP\tLocGeoMP\tMAMaxP\tMAMeanP\tMAGeoMP\t\tCMAGC\tCMAGC_t\n");
-        fprintf(file,"%lld\t%lld\t%lld\t%lld\t",
+        erts_fprintf(file,"Spawns\tLocalGC\tMAGC\tMessages\tMutator_t\tLocalGC_t\tMAGC_t\tLocMaxP\tLocMeanP\tLocGeoMP\tMAMaxP\tMAMeanP\tMAGeoMP\t\tCMAGC\tCMAGC_t\n");
+        erts_fprintf(file,"%lld\t%lld\t%lld\t%lld\t",
                 processes_spawned,
                 minor_garbage_cols + major_garbage_cols,
                 minor_global_garbage_cols + major_global_garbage_cols,
@@ -297,7 +303,7 @@ void save_statistics()
 #endif /* BM_COUNTERS */
 
 #ifdef BM_TIMERS
-        fprintf(file,"%lld\t%lld\t%lld\t",
+        erts_fprintf(file,"%lld\t%lld\t%lld\t",
                 (long long)(system_time + send_time + size_time + copy_time),
                 (long long)(minor_gc_time + major_gc_time),
                 (long long)(minor_global_gc_time + major_global_gc_time));
@@ -314,7 +320,7 @@ void save_statistics()
                 right -= local_pause_times[mid];
             }
         }
-        fprintf(file,"%lld\t%lld\t%ld\t",
+        erts_fprintf(file,"%lld\t%lld\t%ld\t",
                 (long long)((max_minor_time > max_major_time ?
                              max_minor_time :
                              max_major_time)*1000),
@@ -335,19 +341,19 @@ void save_statistics()
                 }
             }
         }
-        fprintf(file,"%lld\t%lld\t%ld\t",
+        erts_fprintf(file,"%lld\t%lld\t%ld\t",
                 (long long)((max_global_minor_time > max_global_major_time ?
                              max_global_minor_time :
                              max_global_major_time)*1000),
                 (n > 0 ? total_time / n : 0),
                 mid);
 
-        fprintf(file,"\t%lld\t%lld\n",n,total_time);
+        erts_fprintf(file,"\t%lld\t%lld\n",n,total_time);
 
-        fprintf(file,"\nMinor:\n");
+        erts_fprintf(file,"\nMinor:\n");
         for (i = 0; i < MAX_PAUSE_TIME; i++) {
             if (i < 1000 || pause_times[i] > 0) {
-                fprintf(file,"%d\t%ld\n",i,pause_times[i]);
+                erts_fprintf(file,"%d\t%ld\n",i,pause_times[i]);
             }
         }
 
@@ -365,7 +371,7 @@ void save_statistics()
         fprintf(file,"\nLocal:\n");
         for (i = 0; i < MAX_PAUSE_TIME; i++) {
             if (local_pause_times[i] > 0) {
-                fprintf(file,"%d\t%ld\n",i,local_pause_times[i]);
+                erts_fprintf(file,"%d\t%ld\n",i,local_pause_times[i]);
                 total_time += local_pause_times[i] * i;
                 n += local_pause_times[i];
                 if (i > mid)
@@ -376,7 +382,7 @@ void save_statistics()
                 }
             }
         }
-        fprintf(file,"Mid: %ld  Mean: %ld\n",(long)mid,
+        erts_fprintf(file,"Mid: %ld  Mean: %ld\n",(long)mid,
                 (long)(n > 0 ? total_time / n : 0));
 #endif
 #endif /* 0 */

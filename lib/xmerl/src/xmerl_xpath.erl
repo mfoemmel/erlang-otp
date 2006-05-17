@@ -101,9 +101,9 @@
 
 -record(state, {context = #xmlContext{},
 		acc = []}).
--record(node, {node,
-	       pos,
-	       parents}).
+%% -record(node, {node,
+%% 	       pos,
+%% 	       parents}).
 
 -define(nodeset(NS), #state{context = #xmlContext{nodeset = NS}}).
 -define(context(C), #state{context = C}).
@@ -251,9 +251,13 @@ pred_expr([{pred, Pred}|Preds], S = #state{}) ->
 %% No need to iterate over all nodes in the nodeset; we know what to do.
 %%
 eval_pred({number, N}, S = #state{context = C = #xmlContext{nodeset = NS}}) ->
-    NewNodeSet = [lists:nth(N, NS)],
-    NewContext = C#xmlContext{nodeset = NewNodeSet},
-    S#state{context = NewContext};
+    case length(NS)>=N of
+	true ->
+	    NewNodeSet = [lists:nth(N, NS)],
+	    NewContext = C#xmlContext{nodeset = NewNodeSet},
+	    S#state{context = NewContext};
+	false -> S#state{context = C#xmlContext{nodeset = []}}
+    end;
 eval_pred(Predicate, S = #state{context = C = 
 				#xmlContext{nodeset = NodeSet}}) ->
     NewNodeSet = 
@@ -388,7 +392,8 @@ match_self(Tok, N, Acc, Context) ->
 match_descendant(Tok, N, Acc, Context) ->
     #xmlNode{parents = Ps, node = Node, type = Type} = N,
     case Type of
-	element ->
+	El when El == element; El == root_node ->
+%	element ->
 	    NewPs = [N|Ps],
 	    match_desc(get_content(Node), NewPs, Tok, Acc, Context);
 	_Other ->
@@ -443,7 +448,7 @@ match_child(Tok, N, Acc, Context) ->
     %io:format("match_child(~p)~n", [write_node(N)]),
     #xmlNode{parents = Ps, node = Node, type = Type} = N,
     case Type of
-	element ->
+	El when El == element; El == root_node ->
 	    NewPs = [N|Ps],
 	    lists:foldr(
 	      fun(E, AccX) ->
@@ -692,7 +697,8 @@ forward([], _Pos) ->
 
 node_test(F, N, Context) when function(F) ->
     F(N, Context);
-node_test({wildcard, _}, _N, _Context) -> 
+node_test({wildcard, _}, #xmlNode{type=ElAt}, _Context) 
+  when ElAt==element; ElAt==attribute -> 
     true;
 node_test({prefix_test, Prefix}, #xmlNode{node = N}, _Context) ->
     case N of
@@ -785,4 +791,8 @@ get_content(#xmlElement{content = F} = E) when function(F) ->
 	    C;
 	_Other ->
 	    exit({bad_content, E})
-    end.
+    end;
+get_content(#xmlDocument{content = C}) when list(C) ->
+    C;
+get_content(#xmlDocument{content = C}) ->
+    [C].

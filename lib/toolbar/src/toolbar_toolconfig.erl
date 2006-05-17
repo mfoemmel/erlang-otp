@@ -127,12 +127,14 @@ loop(S,Window) ->
 				
 				%% Erronous version number -- Notify user
 				{error,version} ->
-				    tool_utils:notify(S,[FileName,
+				    Win = Window#tfwindow.window,
+				    tool_utils:notify(Win,[FileName,
 				       "File has wrong version number"]);
 
 				%% Other error -- Notify user
 				_Error ->
-				    tool_utils:notify(S,[FileName,
+				    Win = Window#tfwindow.window,
+				    tool_utils:notify(Win,[FileName,
 				       "File is on erronous format"])
 			    end;
 				
@@ -177,7 +179,9 @@ loop(S,Window) ->
 		
 		%% No file name specified, notify user
 		"" ->
-		    tool_utils:notify(S,"A file name must be specified");
+		    Win = Window#tfwindow.window,
+		    tool_utils:notify(Win,
+				      "A file name must be specified");
 
 		%% A name is specified
 		String ->
@@ -194,7 +198,8 @@ loop(S,Window) ->
 			%% If given info is correct, try to save
 			%% it to the file
 			{ok,ToolInfo} ->
-			    case save_info(S,FileName,ToolInfo) of
+			    Win = Window#tfwindow.window,
+			    case save_info(Win,FileName,ToolInfo) of
 
 				%% Ok, display confirmation
 				ok ->
@@ -215,8 +220,9 @@ loop(S,Window) ->
 
 			%% Given info incorrect, notify user
 			{error,Reason} ->
+			    Win = Window#tfwindow.window,
 			    Str = toolbar_lib:error_string(Reason),
-			    tool_utils:notify(S,Str)
+			    tool_utils:notify(Win,Str)
 		    end
 	    end,
 	    loop(S,Window);
@@ -462,13 +468,13 @@ check_info(Window) ->
 %=============================================================================
 
 %----------------------------------------
-% save_info(S,File,ToolInfo) => ok | cancel | {error,waccess}
-%   S - pid() GS
+% save_info(Win,File,ToolInfo) => ok | cancel | {error,waccess}
+%   Win - GS object
 %   File - string()
 %   ToolInfo - toolinfo()
 % Saves the information in ToolInfo to File on a predefined format.
 %----------------------------------------
-save_info(S,File,ToolInfo) ->
+save_info(Win,File,ToolInfo) ->
 
     %% First check if file already exists
     case file:read_file_info(File) of
@@ -476,8 +482,8 @@ save_info(S,File,ToolInfo) ->
 
 	    %% Request the user to confirm that the file should
 	    %% be overwritten
-	    case tool_utils:confirm(S,[File,
-				       "exists, will be overwritten"]) of
+	    case tool_utils:confirm(Win,[File,
+					 "exists, will be overwritten"]) of
 		ok ->
 		    save_info2(File,ToolInfo);
 		cancel ->

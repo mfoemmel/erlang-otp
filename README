@@ -23,23 +23,19 @@ At Ericsson we have a "Daily Build and Test" that runs on:
     Operating system        Version
     -----------------------------------------------------------
     Solaris/Sparc           2.8      (1)
-    Linux/RedHat x86        9
-    Linux/Debian x86        2.2
-    Linux/Sparc	    	    Kernel 2.4.19, libc 2.1.3
-    Linux/Debian PowerPC    2.2      (2)
-    Linux/Suse x86          8.2
     Linux/Suse x86	    9.2
     Linux/Suse Amd64	    9.2
+    Linux/Suse Amd64	    10.0
     Linux/Montavista PPC    3.1
     FreeBSD x86             5.0
-    OpenBSD x86		    3.6
-    Mac OS X                10.3.8   (3)
+    Mac OS X                10.3.9 (2)
+    Mac OS X                10.4.6 (2)
     Windows 		    XP
+    Windows 		    2003
 
 (1) Older versions of Solaris should work as well, but we don't test them 
     any longer.
-(2) Runs on an old Apple iMac G3.
-(3) Runs on an Apple eMac. See notes below.
+(2) Runs on an Apple eMac. See notes below.
 
 
 Required utilities
@@ -52,7 +48,7 @@ These are the tools you will need in order to unpack and build Erlang/OTP.
 
   GNU unzip, or a modern uncompress.
 
-  A TAR program that understand the GNU TAR format for long
+  A TAR program that understands the GNU TAR format for long
   filenames (such as GNU TAR).
   
 
@@ -103,12 +99,12 @@ How to build and install Erlang/OTP
 Start by unpacking the Erlang/OTP distribution file with your
 GNU compatible TAR
 
-  1)    gunzip -c otp_src_R10B-0.tar.gz | tar xf -
-  1)    zcat otp_src_R10B-0.tar.gz | tar xf -
+  1)    gunzip -c otp_src_R11B-0.tar.gz | tar xf -
+  1)    zcat otp_src_R11B-0.tar.gz | tar xf -
 
 Now cd into the base directory
 
-  2)    cd otp_src_R10B-0
+  2)    cd otp_src_R11B-0
 
 On some platforms Perl may behave strangely if certain locales are set,
 so optionally you may need to set the LANG variable:
@@ -148,13 +144,22 @@ located, or else disable the use of SSL and Crypto.
 
 Other options are:
 
+	--enable-smp-support	See the next section.
+
+	--disable-smp-support	See the next section.
+
+	--disable-threads	Disable support for threaded I/O;
+				this option also disables building
+				of the SMP emulator. (See the next section.)
+
+	--enable-threads	Enable support for threaded I/O.
+				(This is the default is SMP support is enabled.
+				See the next section.)
+				
 	--disable-hipe   	Disable HiPE (High-Performance Erlang).
 				HiPE will automatically be enabled on
-				supported platforms (Ultra Sparc and
-				x86-based machines running Linux or
-				Solaris/x86).
-	--enable-threads	Enable threaded I/O support in
-				the Erlang emulator.
+				supported platforms.
+	
 
     Step 5 first builds the Erlang emulator, this will take
 approximately five minutes on a reasonably fast machine. It then
@@ -174,6 +179,28 @@ If you or your system has special requirements please read the
 Makefile for additional configuration information.
 
 
+Support for SMP (Symmetric Multi Processing)
+--------------------------------------------
+
+New for this release is support for SMP (Symmetric Multi Processing).
+For more details, see the release notes for ERTS application and the
+documentation. Here follows some brief information.
+
+For platforms that are known by us to support the SMP emulator, the
+SMP emulator will be built automatically. Use "erl -smp" to start it.
+See the release notes for a list of the platforms.
+
+To force building of an SMP emulator, use "./configure --enable-smp-support".
+For more details about this, see the release notes.
+
+Use "./configure --disable-smp-support" if you for some reason don't
+want to have the SMP emulator built.
+
+
+If SMP support is enabled, support for threaded I/O will also be turned on
+(even in the standard, non-SMP emulator).
+
+
 How to install the Erlang/OTP documentation
 -------------------------------------------
 
@@ -181,13 +208,13 @@ For some graphical tools to find the on-line help you have to install
 the HTML documentation on top of the installed OTP applications, i.e.
 
         cd <PrefixDir>/lib/erlang
-        gunzip -c otp_html_R10B-0.tar.gz | tar xf -
+        gunzip -c otp_html_R11B-0.tar.gz | tar xf -
 
 For "erl -man <page>" to work the Unix manual pages have to be
 installed in the same way, i.e.
 
         cd <PrefixDir>/lib/erlang
-        gunzip -c otp_man_R10B-0.tar.gz | tar xf -
+        gunzip -c otp_man_R11B-0.tar.gz | tar xf -
 
 
 GS (Graphic System)
@@ -199,7 +226,7 @@ Using HiPE
 ----------
 
 If you are running on a platform supporting HiPE and if
-you have not disabled HiPE, you can compile an module into
+you have not disabled HiPE, you can compile a module into
 native code like this from the Erlang shell:
 
 	c(Module, native).
@@ -229,15 +256,12 @@ to print out the available options.
 Mac OS X (Darwin)
 -----------------
 
-Mac OS X version 10.3.5 (Panther) is recommended.
+Mac OS X version 10.3.9 (Panther) or later is recommended.
 
 Earlier releases of Mac OS X might work, but we have not
-tested them.
-
-IMPORTANT! Use the "gnutar" command to unpack the sources,
-especially on earlier releases of Mac OS X. On Mac OS X 10.3.5,
-"tar" is also a GNU tar. (If a non-GNU tar is used, some files
-will not be corrected extracted and the build will fail.)
+tested them. On earlier releases, use the "gnutar" command
+to unpack the sources. (If a non-GNU tar is used, some files
+will not be correctly extracted and the build will fail.)
 
 Erlang/OTP will read the network configuration files in "/etc" at
 startup.  In Darwin these are normally not used by the operating
@@ -248,22 +272,13 @@ is to put the line (including the ending '.')
 
 into the "$HOME/.inetrc" file.
 
-Make sure that the command "hostname" return a valid fully qualified
+Make sure that the command "hostname" returns a valid fully qualified
 host name (this is configured in "/etc/hostconfig").
 
 If you develop linked in drivers (shared library) you need to link
 using "cc" and the flags "-bundle -flat_namespace -undefined
 suppress". You also include "-fno-common" in CFLAGS when
 compiling. Use ".so" as the library suffix.
-
-
-Caveats
--------
-
-There are currently incorrect dependencies in the Makefiles, which
-means that if you modify any source code the system might not build
-properly. Also "make clean" does not clean out everything that should
-be cleaned.
 
 
 Make and the variable "ERL_TOP"
@@ -278,9 +293,9 @@ subdirectory. To do this you must set the ERL_TOP variable
 before you run make.
 
 For example, assume your GNU make program is called "make" and you
-want to rebuild the Erlang/OTP part of stdlib, then you could do:
+want to rebuild the application STDLIB, then you could do:
 
-  cd lib/stdlib/src ; env ERL_TOP=<Dir> make
+  cd lib/stdlib; env ERL_TOP=<Dir> make
 
 where <Dir> would be what you find ERL_TOP is set to in the top level
 Makefile.

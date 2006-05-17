@@ -20,6 +20,7 @@
 %% Utilities to use from shell.
 
 -export([help/0,lc/1,c/1,c/2,nc/1,nc/2, nl/1,l/1,i/0,i/1,ni/0,
+         y/1, y/2,
 	 lc_batch/0, lc_batch/1,
 	 i/3,pid/3,m/0,m/1,
 	 bt/1, q/0,
@@ -659,3 +660,14 @@ memory(TypeSpec) -> erlang:memory(TypeSpec).
 
 xm(M) ->
     xref:m(M).
+
+%%
+%% Call yecc 
+%% 
+
+y(File) ->
+    yecc:file(File).
+
+y(File, Opts) ->
+    yecc:file(File, Opts).
+

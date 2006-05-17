@@ -22,6 +22,7 @@
 #include "erl_version.h"
 #include <commdlg.h>
 #include <commctrl.h>
+#include "erl_alloc.h"
 
 #define WM_CONTEXT      (0x0401)
 #define WM_CONBEEP      (0x0402)
@@ -141,6 +142,57 @@ static BOOL (WINAPI *ctrl_handler)(DWORD);
 static HWND InitToolBar(HWND hwndParent); 
 static char* window_title(void);
 
+#define CON_VPRINTF_BUF_INC_SIZE 1024
+
+static erts_dsprintf_buf_t *
+grow_con_vprintf_buf(erts_dsprintf_buf_t *dsbufp, size_t need)
+{
+    char *buf;
+    size_t size;
+
+    ASSERT(dsbufp);
+
+    if (!dsbufp->str) {
+	size = (((need + CON_VPRINTF_BUF_INC_SIZE - 1)
+		 / CON_VPRINTF_BUF_INC_SIZE)
+		* CON_VPRINTF_BUF_INC_SIZE);
+	buf = (char *) erts_alloc_fnf(ERTS_ALC_T_CON_VPRINTF_BUF, size);
+    }
+    else {
+	size_t free_size = dsbufp->size - dsbufp->str_len;
+
+	if (need <= free_size)
+	    return dsbufp;
+
+	size = need - free_size + CON_VPRINTF_BUF_INC_SIZE;
+	size = (((size + CON_VPRINTF_BUF_INC_SIZE - 1)
+		 / CON_VPRINTF_BUF_INC_SIZE)
+		* CON_VPRINTF_BUF_INC_SIZE);
+	size += dsbufp->size;
+	buf = (char *) erts_realloc_fnf(ERTS_ALC_T_CON_VPRINTF_BUF,
+					(void *) dsbufp->str,
+					size);
+    }
+    if (!buf)
+	return NULL;
+    if (buf != dsbufp->str)
+	dsbufp->str = buf;
+    dsbufp->size = size;
+    return dsbufp;
+}
+
+static int con_vprintf(char *format, va_list arg_list)
+{
+    int res;
+    erts_dsprintf_buf_t dsbuf = ERTS_DSPRINTF_BUF_INITER(grow_con_vprintf_buf);
+    res = erts_vdsprintf(&dsbuf, format, arg_list);
+    if (res > 0)
+	write_outbuf(dsbuf.str, dsbuf.str_len);
+    if (dsbuf.str)
+	erts_free(ERTS_ALC_T_CON_VPRINTF_BUF, (void *) dsbuf.str);
+    return res;
+}
+
 void
 ConInit(void)
 {
@@ -151,6 +203,10 @@ ConInit(void)
     console_input_event = CreateManualEvent(FALSE);
     console_thread = (HANDLE *) _beginthreadex(NULL, 0, ConThreadInit,
 					       0, 0, &tid);
+
+    /* Make all erts_*printf on stdout and stderr use con_vprintf */
+    erts_printf_stdout_func = con_vprintf;
+    erts_printf_stderr_func = con_vprintf;
 }
 
 /*
@@ -206,16 +262,13 @@ void ConPrintf(char *format, ...)
     va_list va;
 
     va_start(va, format);
-    ConVprintf(format, va);
+    (void) con_vprintf(format, va);
     va_end(va);
 }
 
 void ConVprintf(char *format, va_list va)
 {
-    char sbuf[1024];
-
-    vsprintf(sbuf, format, va);
-    write_outbuf(sbuf, strlen(sbuf));
+    (void) con_vprintf(format, va);
 }
 
 void ConBeep(void)

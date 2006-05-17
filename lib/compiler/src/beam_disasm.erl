@@ -894,6 +894,49 @@ resolve_inst({is_function2=I,Args0},_,_,_) ->
     {test,I,L,Args};
 
 %%
+%% New bit syntax matching added in Dec 2005 (R11B).
+%%
+resolve_inst({bs_start_match2=I,[F,Reg,{u,Live},{u,Max},Ms]},_,_,_) ->
+    {test,I,F,[Reg,Live,Max,Ms]};
+resolve_inst({bs_get_integer2=I,[Lbl,Ms,{u,Live},Arg2,{u,N},{u,U},Arg5]},_,_,_) ->
+    [A2,A5] = resolve_args([Arg2,Arg5]),
+    {test,I,Lbl,[Ms, Live,A2,N,decode_field_flags(U),A5]};
+resolve_inst({bs_get_binary2=I,[Lbl,Ms,{u,Live},Arg2,{u,N},{u,U},Arg5]},_,_,_) ->
+    [A2,A5] = resolve_args([Arg2,Arg5]),
+    {test,I,Lbl,[Ms, Live,A2,N,decode_field_flags(U),A5]};
+resolve_inst({bs_get_float2=I,[Lbl,Ms,{u,Live},Arg2,{u,N},{u,U},Arg5]},_,_,_) ->
+    [A2,A5] = resolve_args([Arg2,Arg5]),
+    {test,I,Lbl,[Ms, Live,A2,N,decode_field_flags(U),A5]};
+resolve_inst({bs_skip_bits2=I,[Lbl,Ms,Arg2,{u,N},{u,U}]},_,_,_) ->
+    [A2] = resolve_args([Arg2]),
+    {test,I,Lbl,[Ms,A2,N,decode_field_flags(U)]};
+resolve_inst({bs_test_tail2=I,[F,Ms,{u,N}]},_,_,_) ->
+    {test,I,F,[Ms,N]};
+resolve_inst({bs_save2=I,[Ms,{u,N}]},_,_,_) ->
+    {I,Ms,N};
+resolve_inst({bs_restore2=I,[Ms,{u,N}]},_,_,_) ->
+    {I,Ms,N};
+
+%%
+%% New instructions for guard BIFs that may GC. Added in Jan 2006 (R11B).
+%%
+resolve_inst({gc_bif0,Args},Imports,_,_) ->
+    [F,Live,Bif,Reg] = resolve_args(Args),
+    {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
+    %?NO_DEBUG('bif0(~p, ~p)~n',[BifName,Reg]),
+    {gc_bif,BifName,F,Live,[],Reg};
+resolve_inst({gc_bif1,Args},Imports,_,_) ->
+    [F,Live,Bif,A1,Reg] = resolve_args(Args),
+    {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
+    %?NO_DEBUG('bif1(~p, ~p, ~p, ~p, ~p)~n',[Bif,BifName,F,[A1],Reg]),
+    {gc_bif,BifName,F,Live,[A1],Reg};
+resolve_inst({gc_bif2,Args},Imports,_,_) ->
+    [F,Live,Bif,A1,A2,Reg] = resolve_args(Args),
+    {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
+    %?NO_DEBUG('bif2(~p, ~p, ~p, ~p, ~p)~n',[Bif,BifName,F,[A1,A2],Reg]),
+    {gc_bif,BifName,F,Live,[A1,A2],Reg};
+
+%%
 %% Catches instructions that are not yet handled.
 %%
 

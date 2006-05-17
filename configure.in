@@ -113,6 +113,29 @@ AC_PROG_RANLIB
 [ERTS=erts-`sed -n 's/^VSN[ ]*=[ ]*\([0-9.]\)/\1/p' < erts/vsn.mk`]
 AC_SUBST(ERTS)
 
+
+AC_ARG_ENABLE(threads,
+[  --enable-threads        enable async thread support
+  --disable-threads       disable async thread support])
+
+AC_ARG_ENABLE(smp-support,
+[  --enable-smp-support    enable smp support
+  --disable-smp-support   disable smp support])
+
+AC_ARG_ENABLE(kernel-poll,
+[  --enable-kernel-poll    enable kernel poll support])
+
+AC_ARG_ENABLE(hipe,
+[  --disable-hipe          disable hipe support])
+
+AC_ARG_ENABLE(megaco_flex_scanner_lineno,
+[  --disable-megaco-flex-scanner-lineno disable megaco flex scanner lineno])
+
+AC_ARG_WITH(ssl,
+[  --with-ssl=PATH         specify location of OpenSSL include and lib
+  --with-ssl              use SSL (default)
+  --without-ssl           don't use SSL])
+
 #
 # Set Erlang man page directory
 #

@@ -71,11 +71,31 @@
 -import(lists, [map/2,foldl/3,foldr/3,mapfoldl/3,all/2,any/2,reverse/1,member/2]).
 -include("core_parse.hrl").
 
+%%-define(DEBUG, 1).
+
+-ifdef(DEBUG).
+-define(ASSERT(E),
+	case E of
+	    true -> ok;
+	    false -> 
+		io:format("~p, line ~p: assertion failed\n", [?MODULE,?LINE]),
+		exit(assertion_failed)
+	end).
+-else.
+-define(ASSERT(E), ignore).
+-endif.
+
 %% Variable value info.
--record(sub, {v=[],t=[]}).		%Variable substitutions
+-record(sub, {v=[],				%Variable substitutions
+	      s=[],				%Variables in scope
+	      t=[]}).				%Types
 
 module(#c_module{defs=Ds0}=Mod, Opts) ->
     put(no_inline_list_funcs, not member(inline_list_funcs, Opts)),
+    case get(new_var_num) of
+	undefined -> put(new_var_num, 0);
+	_ -> ok
+    end,
     init_warnings(),
     Ds1 = map(fun function_1/1, Ds0),
     erase(no_inline_list_funcs),
@@ -83,6 +103,7 @@ module(#c_module{defs=Ds0}=Mod, Opts) ->
 
 function_1(#c_def{val=B0}=Def) ->
     %%ok = io:fwrite("~w:~p~n", [?LINE,{Def#c_def.name}]),
+    ?ASSERT([] =:= core_lib:free_vars(B0)),
     B1 = expr(B0, sub_new()),			%This must be a fun!
     Def#c_def{val=B1}.
 
@@ -92,7 +113,9 @@ function_1(#c_def{val=B0}=Def) ->
 body(#c_values{anno=A,es=Es0}, Sub) ->
     Es1 = expr_list(Es0, Sub),
     #c_values{anno=A,es=Es1};
-body(E, Sub) -> expr(E, Sub).
+body(E, Sub) ->
+    ?ASSERT(verify_scope(E, Sub)),
+    expr(E, Sub).
 
 %% guard(Expr, Sub) -> Expr.
 %%  Do guard expression.  These are boolean expressions with values
@@ -100,35 +123,39 @@ body(E, Sub) -> expr(E, Sub).
 %%  that guards are side-effect free we can optimise the boolean
 %%  expressions.
 
-guard(#c_call{module=#c_atom{val=erlang},
+guard(Expr, Sub) ->
+    ?ASSERT(verify_scope(Expr, Sub)),
+    guard_1(Expr, Sub).
+
+guard_1(#c_call{module=#c_atom{val=erlang},
 	      name=#c_atom{val='not'},
 	      args=[A]}=Call, Sub) ->
-    case guard(A, Sub) of
+    case guard_1(A, Sub) of
 	#c_atom{val=true} -> #c_atom{val=false};
 	#c_atom{val=false} -> #c_atom{val=true};
 	Arg -> Call#c_call{args=[Arg]}
     end;
-guard(#c_call{module=#c_atom{val=erlang},
+guard_1(#c_call{module=#c_atom{val=erlang},
 	      name=#c_atom{val='and'},
 	      args=[A1,A2]}=Call, Sub) ->
-    case {guard(A1, Sub),guard(A2, Sub)} of
+    case {guard_1(A1, Sub),guard_1(A2, Sub)} of
 	{#c_atom{val=true},Arg2} -> Arg2;
 	{#c_atom{val=false},_} -> #c_atom{val=false};
 	{Arg1,#c_atom{val=true}} -> Arg1;
 	{_,#c_atom{val=false}} -> #c_atom{val=false};
 	{Arg1,Arg2} -> Call#c_call{args=[Arg1,Arg2]}
     end;
-guard(#c_call{module=#c_atom{val=erlang},
+guard_1(#c_call{module=#c_atom{val=erlang},
 	      name=#c_atom{val='or'},
 	      args=[A1,A2]}=Call, Sub) ->
-    case {guard(A1, Sub),guard(A2, Sub)} of
+    case {guard_1(A1, Sub),guard_1(A2, Sub)} of
 	{#c_atom{val=true},_} -> #c_atom{val=true};
 	{#c_atom{val=false},Arg2} -> Arg2;
 	{_,#c_atom{val=true}} -> #c_atom{val=true};
 	{Arg1,#c_atom{val=false}} -> Arg1;
 	{Arg1,Arg2} -> Call#c_call{args=[Arg1,Arg2]}
     end;
-guard(#c_try{arg=E0,vars=[#c_var{name=X}],body=#c_var{name=X},
+guard_1(#c_try{arg=E0,vars=[#c_var{name=X}],body=#c_var{name=X},
 	     handler=#c_atom{val=false}=False}=Prot, Sub) ->
     E1 = body(E0, Sub),
     case will_fail(E1) of
@@ -142,7 +169,7 @@ guard(#c_try{arg=E0,vars=[#c_var{name=X}],body=#c_var{name=X},
 	    %% Expression will always fail.
 	    False
     end;
-guard(E0, Sub) ->
+guard_1(E0, Sub) ->
     E = expr(E0, Sub),
     case will_fail(E) of
 	true -> #c_atom{val=false};
@@ -187,27 +214,16 @@ expr(#c_seq{arg=Arg0,body=B0}=Seq, Sub) ->
 		false -> Seq#c_seq{arg=Arg1,body=B1}
 	    end
     end;
-expr(#c_let{vars=Vs0,arg=Arg0,body=B0}=Let, Sub0) ->
-    Arg1 = body(Arg0, Sub0),			%This is a body
-    case will_fail(Arg1) of
-	true -> Arg1;
-	false ->
-	    %% Optimise let and add new substitutions.
-	    {Vs1,Args,Sub1} = let_substs(Vs0, Arg1, Sub0),
-	    B1 = body(B0, Sub1),
-
-	    %% Optimise away let if the body consists of a single variable or
-	    %% if no values remain to be set.
-	    case {Vs1,Args,B1} of
-		{[#c_var{name=Vname}],Args,#c_var{name=Vname}} ->
-		    core_lib:make_values(Args);
-		{[],[],Body} ->
-		    Body;
-		_Other ->
-		    opt_case_in_let(Let#c_let{vars=Vs1,
-					      arg=core_lib:make_values(Args),
-					      body=B1})
-	    end
+expr(#c_let{}=Let, Sub) ->
+    case simplify_let(Let, Sub) of
+	impossible ->
+	    %% The argument for the let is "simple", i.e. has no
+	    %% complex structures such as let or seq that can be entered.
+	    opt_simple_let(Let, Sub);
+	Expr ->
+	    %% The let body was successfully moved into the let argument.
+	    %% Now recursively re-process the new expression.
+	    expr(Expr, sub_new(Sub))
     end;
 expr(#c_letrec{defs=Fs0,body=B0}=Letrec, Sub) ->
     Fs1 = map(fun (#c_def{val=Fb}=Fd) ->
@@ -318,6 +334,8 @@ will_fail(#c_call{module=#c_atom{val=erlang},name=#c_atom{val=error},args=[_,_]}
 will_fail(#c_call{module=#c_atom{val=erlang},name=#c_atom{val=fault},args=[_]}) ->
     true;
 will_fail(#c_call{module=#c_atom{val=erlang},name=#c_atom{val=fault},args=[_,_]}) ->
+    true;
+will_fail(#c_primop{name=#c_atom{val=match_fail},args=[_]}) ->
     true;
 will_fail(_) -> false.
 
@@ -699,14 +717,6 @@ fold_call_1(Call, erlang, setelement, [Arg1,Arg2,Arg3]) ->
 	{Ref,Val} -> Val;
 	_Other -> Call
     end;
-fold_call_1(Call, erlang, internal_is_record, [_,_,_]=Args) ->
-    try
-	[A1,A2,A3] = [core_lib:literal_value(A) || A <- Args],
-	Val = erlang:is_record(A1, A2, A3),
-	core_lib:make_literal(Val)
-    catch
-	error:_ -> Call
-    end;
 fold_call_1(Call, erlang, apply, [Mod,Func,Args]) ->
     simplify_apply(Call, Mod, Func, Args);
 fold_call_1(Call, erlang, N, Args) ->
@@ -877,8 +887,9 @@ clause(#c_clause{pats=Ps0,guard=G0,body=B0}=Cl, Cexpr, Sub0) ->
 let_substs(Vs0, As0, Sub0) ->
     {Vs1,Sub1} = pattern_list(Vs0, Sub0),
     {Vs2,As1,Ss} = let_substs_1(Vs1, As0, Sub1),
-    {Vs2,As1,
-     foldl(fun ({V,S}, Sub) -> sub_set_name(V, S, Sub) end, Sub1, Ss)}.
+    Sub2 = scope_add([V || #c_var{name=V} <- Vs2], Sub1),
+    {Vs2,As1, 
+     foldl(fun ({V,S}, Sub) -> sub_set_name(V, S, Sub) end, Sub2, Ss)}.
 
 let_substs_1(Vs, #c_values{es=As}, Sub) ->
     let_subst_list(Vs, As, Sub);
@@ -909,11 +920,11 @@ let_subst_list([], [], _) -> {[],[],[]}.
 pattern(#c_var{name=V0}=Pat, Isub, Osub) ->
     case sub_is_val(Pat, Isub) of
 	true ->
-	    %% Nesting saves us from using unique variable names.
-	    V1 = list_to_atom("fol" ++ atom_to_list(V0)),
+	    V1 = make_var_name(),
 	    Pat1 = #c_var{name=V1},
-	    {Pat1,sub_set_var(Pat, Pat1, Osub)};
-	false -> {Pat,sub_del_var(Pat, Osub)}
+	    {Pat1,sub_set_var(Pat, Pat1, scope_add([V1], Osub))};
+	false ->
+	    {Pat,sub_del_var(Pat, scope_add([V0], Osub))}
     end;
 pattern(#c_char{}=Pat, _, Osub) -> {Pat,Osub};
 pattern(#c_int{}=Pat, _, Osub) -> {Pat,Osub};
@@ -970,12 +981,21 @@ is_subst(E) -> core_lib:is_atomic(E).
 %% sub_del_var(Var, #sub{}) -> #sub{}.
 %% sub_subst_var(Var, Value, #sub{}) -> [{Name,Value}].
 %% sub_is_val(Var, #sub{}) -> bool().
+%% sub_subst_scope(#sub{}) -> #sub{}
+%%
 %%  We use the variable name as key so as not have problems with
 %%  annotations.  When adding a new substitute we fold substitute
 %%  chains so we never have to search more than once.  Use orddict so
 %%  we know the format.
+%%
+%%  sub_subst_scope/1 adds dummy substitutions for all variables
+%%  in the scope in order to force renaming if variables in the
+%%  scope occurs as pattern variables.
 
-sub_new() -> #sub{v=orddict:new(),t=[]}.
+sub_new() -> #sub{v=orddict:new(),s=gb_trees:empty(),t=[]}.
+
+%%sub_new(#sub{}=Sub) -> Sub#sub{v=orddict:new()}.
+sub_new(#sub{}=Sub) -> Sub#sub{v=orddict:new(),t=[]}.
 
 sub_get_var(#c_var{name=V}=Var, #sub{v=S}) ->
     case orddict:find(V, S) of
@@ -986,15 +1006,20 @@ sub_get_var(#c_var{name=V}=Var, #sub{v=S}) ->
 sub_set_var(#c_var{name=V}, Val, Sub) ->
     sub_set_name(V, Val, Sub).
 
-sub_set_name(V, Val, #sub{v=S,t=Tdb}=Sub) ->
-    Sub#sub{v=orddict:store(V, Val, S),t=kill_types(V, Tdb)}.
+sub_set_name(V, Val, #sub{v=S,s=Scope,t=Tdb}=Sub) ->
+    Sub#sub{v=orddict:store(V, Val, S),s=gb_sets:add(V, Scope),
+	    t=kill_types(V, Tdb)}.
 
 sub_del_var(#c_var{name=V}, #sub{v=S,t=Tdb}=Sub) ->
     Sub#sub{v=orddict:erase(V, S),t=kill_types(V, Tdb)}.
 
 sub_subst_var(#c_var{name=V}, Val, #sub{v=S0}) ->
     %% Fold chained substitutions.
-    [{V,Val}] ++ [ {K,Val} || {K,#c_var{name=V1}} <- S0, V1 =:= V ].
+    [{V,Val}] ++ [ {K,Val} || {K,#c_var{name=V1}} <- S0, V1 =:= V].
+
+sub_subst_scope(#sub{v=S0,s=Scope}=Sub) ->
+    S = [{-1,#c_var{name=Sv}} || Sv <- gb_sets:to_list(Scope)]++S0,
+    Sub#sub{v=S}.
 
 sub_is_val(#c_var{name=V}, #sub{v=S}) ->
     v_is_value(V, S).
@@ -1189,25 +1214,25 @@ move_to_guard_2(Call, #c_case{clauses=[A,B|Cs]}=Case) ->
 
 eval_case(#c_case{arg=#c_var{name=V},
 		  clauses=[#c_clause{pats=[P],guard=G,body=B}|_]}=Case,
-	  #sub{t=Tdb}) ->
+	  #sub{t=Tdb}=Sub) ->
     case orddict:find(V, Tdb) of
 	{ok,Type} ->
 	    case {will_match_type(P, Type),will_succeed(G)} of
 		{yes,yes} ->
 		    {Ps,Es} = remove_non_vars(P, Type),
-		    expr(#c_let{vars=Ps,arg=#c_values{es=Es},body=B}, sub_new());
-		{_,_} -> eval_case_1(Case)
+		    expr(#c_let{vars=Ps,arg=#c_values{es=Es},body=B}, sub_new(Sub));
+		{_,_} -> eval_case_1(Case, Sub)
 	    end;
-	error -> eval_case_1(Case)
+	error -> eval_case_1(Case, Sub)
     end;
-eval_case(Case, _) -> eval_case_1(Case).
+eval_case(Case, Sub) -> eval_case_1(Case, Sub).
 
-eval_case_1(#c_case{arg=E,clauses=[#c_clause{pats=Ps,body=B}]}=Case) ->
+eval_case_1(#c_case{arg=E,clauses=[#c_clause{pats=Ps,body=B}]}=Case, Sub) ->
     case is_var_pat(Ps) of
-	true -> expr(#c_let{vars=Ps,arg=E,body=B}, sub_new());
+	true -> expr(#c_let{vars=Ps,arg=E,body=B}, sub_new(Sub));
 	false -> eval_case_2(E, Ps, B, Case)
     end;
-eval_case_1(Case) -> Case.
+eval_case_1(Case, _) -> Case.
 
 eval_case_2(E, [P], B, Case) ->
     %% Recall that there is only one clause and that it is guaranteed to match.
@@ -1335,11 +1360,16 @@ unalias_pat(Atomic) -> Atomic.
 unalias_pat_list(Ps) -> map(fun unalias_pat/1, Ps).
 
 make_vars(A, I, Max) when I =< Max ->
-    [make_var(A, I)|make_vars(A, I+1, Max)];
+    [make_var(A)|make_vars(A, I+1, Max)];
 make_vars(_, _, _) -> [].
     
-make_var(A, N) ->
-    #c_var{anno=A,name=list_to_atom("fol" ++ integer_to_list(N))}.
+make_var(A) ->
+    #c_var{anno=A,name=make_var_name()}.
+
+make_var_name() ->
+    N = get(new_var_num),
+    put(new_var_num, N+1),
+    list_to_atom("fol"++integer_to_list(N)).
 
 letify(#c_var{name=Vname}=Var, Val, Body) ->
     case core_lib:is_var_used(Vname, Body) of
@@ -1352,6 +1382,7 @@ letify(#c_var{name=Vname}=Var, Val, Body) ->
 %% opt_case_in_let(LetExpr) -> LetExpr'
 
 opt_case_in_let(#c_let{vars=Vs,arg=Arg,body=B}=Let) ->
+%%    Let.
     case catch opt_case_in_let(Vs, Arg, B) of
 	{'EXIT',_} -> Let;			%Optimisation not possible.
 	Other -> Other
@@ -1481,6 +1512,110 @@ tuple_to_values(#c_clause{body=B0}=Clause, Arity) ->
     B = tuple_to_values(B0, Arity),
     Clause#c_clause{body=B}.
 
+%% simplify_let(Let, Sub) -> Expr | impossible
+%%  If the argument part of an let contains a complex expression, such
+%%  as a let or a sequence, move the original let body into the complex
+%%  expression.
+
+simplify_let(#c_let{arg=Arg}=Let, Sub) ->
+    move_let_into_expr(Let, Arg, Sub).
+
+move_let_into_expr(#c_let{vars=InnerVs0,body=InnerBody0}=Inner,
+		   #c_let{vars=OuterVs0,arg=Arg0,body=OuterBody0}=Outer, Sub0) ->
+    %%
+    %% let <InnerVars> = let <OuterVars> = <Arg>
+    %%                   in <OuterBody>
+    %% in <InnerBody>
+    %%
+    %%       ==>
+    %%
+    %% let <OuterVars> = <Arg>
+    %% in let <InnerVars> = <OuterBody>
+    %%    in <InnerBody>
+    %%
+    Arg = body(Arg0, Sub0),
+    ScopeSub0 = sub_subst_scope(Sub0#sub{t=[]}),
+    {OuterVs,ScopeSub} = pattern_list(OuterVs0, ScopeSub0),
+    OuterBody = body(OuterBody0, ScopeSub),
+
+    {InnerVs,Sub} = pattern_list(InnerVs0, Sub0),
+    InnerBody = body(InnerBody0, Sub),
+    Outer#c_let{vars=OuterVs,arg=Arg,
+		body=Inner#c_let{vars=InnerVs,arg=OuterBody,body=InnerBody}};
+move_let_into_expr(#c_let{vars=Lvs0,body=Lbody0}=Let,
+		   #c_case{arg=Cexpr0,clauses=[Ca0,Cb0]}=Case, Sub0) ->
+    case {is_failing_clause(Ca0),is_failing_clause(Cb0)} of
+	{false,true} ->
+	    %% let <Lvars> = case <Case-expr> of
+	    %%                  <Cvars> -> <Clause-body>;
+	    %%                  <OtherCvars> -> erlang:error(...)
+	    %%               end
+	    %% in <Let-body>
+	    %%
+	    %%     ==>
+	    %%
+	    %% case <Case-expr> of
+	    %%   <Cvars> ->
+	    %%       let <Lvars> = <Clause-body>
+	    %%       in <Let-body>;
+	    %%   <OtherCvars> -> erlang:error(...)
+	    %% end
+
+	    Cexpr = body(Cexpr0, Sub0),
+	    CaVars0 = Ca0#c_clause.pats,
+	    G0 = Ca0#c_clause.guard,
+	    B0 = Ca0#c_clause.body,
+	    ScopeSub0 = sub_subst_scope(Sub0#sub{t=[]}),
+	    {CaVars,ScopeSub} = pattern_list(CaVars0, ScopeSub0),
+	    G = guard(G0, ScopeSub),
+	    B1 = body(B0, ScopeSub),
+
+	    {Lvs,B2,Sub1} = let_substs(Lvs0, B1, Sub0),
+	    Lbody = body(Lbody0, Sub1),
+	    B = Let#c_let{vars=Lvs,arg=core_lib:make_values(B2),body=Lbody},
+
+	    Ca = Ca0#c_clause{pats=CaVars,guard=G,body=B},
+	    Cb = clause(Cb0, Cexpr, Sub0),
+	    Case#c_case{arg=Cexpr,clauses=[Ca,Cb]};
+	{_,_} -> impossible
+    end;
+%% move_let_into_expr(#c_let{}=Let, #c_seq{body=B}=Seq, Sub0) ->
+%%     io:format("~p\n", [?LINE]),
+%%     Seq#c_seq{body=Let#c_let{arg=B}};
+move_let_into_expr(_Let, _Expr, _Sub) -> impossible.
+
+is_failing_clause(#c_clause{body=B}) ->
+    will_fail(B).
+
+scope_add(Vs, #sub{s=Scope0}=Sub) ->
+    Scope = foldl(fun(V, S) when is_integer(V); is_atom(V) ->
+			  gb_sets:add(V, S)
+		  end, Scope0, Vs),
+    Sub#sub{s=Scope}.
+
+opt_simple_let(#c_let{vars=Vs0,arg=Arg0,body=B0}=Let, Sub0) ->
+    Arg1 = body(Arg0, Sub0),			%This is a body
+    case will_fail(Arg1) of
+	true -> Arg1;
+	false ->
+	    %% Optimise let and add new substitutions.
+	    {Vs1,Args,Sub1} = let_substs(Vs0, Arg1, Sub0),
+	    B1 = body(B0, Sub1),
+
+	    %% Optimise away let if the body consists of a single variable or
+	    %% if no values remain to be set.
+	    case {Vs1,Args,B1} of
+		{[#c_var{name=Vname}],Args,#c_var{name=Vname}} ->
+		    core_lib:make_values(Args);
+		{[],[],Body} ->
+		    Body;
+		_Other ->
+		    opt_case_in_let(Let#c_let{vars=Vs1,
+					      arg=core_lib:make_values(Args),
+					      body=B1})
+	    end
+    end.
+
 %% update_types(Expr, Pattern, Sub) -> Sub'
 %%  Update the type database.
 update_types(Expr, Pat, #sub{t=Tdb0}=Sub) ->
@@ -1517,9 +1652,10 @@ add_warning(Core, Term) ->
 	false ->
 	    case get_line(Anno) of
 		Line when Line >= 0 ->		%Must be positive.
+                    File = get_file(Anno),
 		    Key = {?MODULE,warnings},
 		    Ws = get(Key),
-		    put(Key, [{Line,?MODULE,Term}|Ws]);
+		    put(Key, [{File,[{Line,?MODULE,Term}]}|Ws]);
 		_ -> ok				%Compiler-generated code.
 	    end
     end.
@@ -1527,6 +1663,10 @@ add_warning(Core, Term) ->
 get_line([Line|_]) when is_integer(Line) -> Line;
 get_line([_|T]) -> get_line(T);
 get_line([]) -> none.
+
+get_file([{file,File}|_]) -> File;
+get_file([_|T]) -> get_file(T);
+get_file([]) -> "no_file". % should not happen
 
 is_compiler_generated(Core) ->
     Anno = core_lib:get_anno(Core),
@@ -1558,3 +1698,20 @@ format_error(no_clause_match) ->
 format_error(no_match_clause_type) ->
     "this clause cannot match because of different types/sizes".
 
+-ifdef(DEBUG).
+%% In order for simplify_let/2 to work correctly, the list of
+%% in-scope variables must always be a superset of the free variables
+%% in the current expression (otherwise we might fail to rename a variable
+%% when needed and get a name capture bug).
+
+verify_scope(E, #sub{s=Scope}) ->
+    Free = core_lib:free_vars(E),
+    case ordsets:is_subset(core_lib:free_vars(E), gb_sets:to_list(Scope)) of
+	true -> true;
+	false ->
+	    io:format("~p\n", [E]),
+	    io:format("~p\n", [Free]),
+	    io:format("~p\n", [gb_sets:to_list(Scope)]),
+	    false
+    end.
+-endif.

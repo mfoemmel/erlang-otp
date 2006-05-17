@@ -292,8 +292,7 @@ split_key([$\\|Rest], Current, Result) ->
 split_key([C|Rest], Current, Result) ->
     split_key(Rest, [C|Current], Result);
 split_key([], [], Result) ->
-    %%% XXX Is this really correct?
-    [];
+    Result;
 split_key([], Current, Result) ->
     [lists:reverse(Current)|Result].
 

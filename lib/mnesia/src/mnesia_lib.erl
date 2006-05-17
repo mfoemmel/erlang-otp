@@ -29,6 +29,7 @@
 	 active_tables/0,
 	 add/2,
 	 add_list/2,
+	 add_lsort/2,
 	 all_nodes/0,
 %%	 catch_val/1,
 	 cleanup_tmp_files/1,	 
@@ -423,6 +424,25 @@ del(Var, Val) ->
     L = val(Var),
     set(Var, lists:delete(Val, L)).
 
+%% LSort -> [node()| Sorted] == Locker sorted
+
+add_lsort(Var, Val) when node() == Val ->
+    L = val(Var),
+    set(Var, [Val | lists:delete(Val, L)]);
+add_lsort(Var,Val) ->
+    case val(Var) of
+	[Head|Rest] when Head == node() ->
+	    set(Var,[Head|lsort_add(Val,Rest)]);
+	List ->
+	    set(Var,lsort_add(Val,List))
+    end.
+
+lsort_add(Val,List) ->
+    case ordsets:is_element(Val,List) of
+	true -> List;
+	false -> ordsets:add_element(Val,List)
+    end.
+	    
 %% This function is needed due to the fact
 %% that the application_controller enters
 %% a deadlock now and then. ac is implemented
@@ -639,20 +659,23 @@ relatives() ->
 	   end,
     lists:zf(Info, mnesia:ms()).
 
-workers({workers, Loader, Senders, Dumper}) ->
+workers({workers, Loaders, Senders, Dumper}) ->
     Info = fun({Pid, {send_table, Tab, _Receiver, _St}}) ->
 		   case Pid of
 		       undefined -> false;
 		       Pid -> {true, {Pid, Tab, catch process_info(Pid)}}
 		   end;
-	       ({Name, Pid}) ->
+	      ({Pid, What}) when is_pid(Pid) ->
+		   {true, {Pid, What, catch process_info(Pid)}};
+	      ({Name, Pid}) ->
 		   case Pid of
 		       undefined -> false;
 		       Pid -> {true, {Name, Pid, catch process_info(Pid)}}
 		   end
 	   end,
     SInfo = lists:zf(Info, Senders),
-    [{senders, SInfo} | lists:zf(Info, [{loader, Loader}, {dumper, Dumper}])].
+    Linfo = lists:zf(Info, Loaders),
+    [{senders, SInfo},{loader, Linfo}|lists:zf(Info, [{dumper, Dumper}])].
 
 locking_procs(LockList) when list(LockList) ->
     Tids = [element(1, Lock) || Lock <- LockList],

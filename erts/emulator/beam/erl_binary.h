@@ -19,6 +19,8 @@
 #ifndef __ERL_BINARY_H
 #define __ERL_BINARY_H
 
+#include "erl_threads.h"
+
 /*
  * Maximum number of bytes to place in a heap binary.
  */
@@ -124,31 +126,63 @@ do {								\
 
 void erts_init_binary(void);
 extern Uint erts_allocated_binaries;
+extern erts_mtx_t erts_bin_alloc_mtx;
 
-static ERTS_INLINE Binary *
+#define ERTS_CHK_BIN_ALIGNMENT(B) \
+  ASSERT((((Uint) &((Binary *)(B))->orig_bytes[0]) & ((Uint)7)) == ((Uint)0))
+
+ERTS_GLB_INLINE Uint erts_get_binaries_size(void);
+ERTS_GLB_INLINE Binary *erts_bin_drv_alloc_fnf(Uint size);
+ERTS_GLB_INLINE Binary *erts_bin_nrml_alloc(Uint size);
+ERTS_GLB_INLINE Binary *erts_bin_realloc_fnf(Binary *bp, Uint size);
+ERTS_GLB_INLINE Binary *erts_bin_realloc(Binary *bp, Uint size);
+ERTS_GLB_INLINE void erts_bin_free(Binary *bp);
+
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+
+ERTS_GLB_INLINE Uint
+erts_get_binaries_size(void)
+{
+    Uint res;
+    erts_mtx_lock(&erts_bin_alloc_mtx);
+    res = erts_allocated_binaries;
+    erts_mtx_unlock(&erts_bin_alloc_mtx);
+    return res;
+}
+
+ERTS_GLB_INLINE Binary *
 erts_bin_drv_alloc_fnf(Uint size)
 {
     Uint bsize = sizeof(Binary) + size;
-    void *res = erts_alloc_fnf(ERTS_ALC_T_DRV_BINARY, bsize);
+    void *res;
+    erts_mtx_lock(&erts_bin_alloc_mtx);
+    res = erts_alloc_fnf(ERTS_ALC_T_DRV_BINARY, bsize);
     if (res)
 	erts_allocated_binaries += bsize;
+    ERTS_CHK_BIN_ALIGNMENT(res);
+    erts_mtx_unlock(&erts_bin_alloc_mtx);
     return (Binary *) res;
 }
 
-static ERTS_INLINE Binary *
+ERTS_GLB_INLINE Binary *
 erts_bin_nrml_alloc(Uint size)
 {
     Uint bsize = sizeof(Binary) + size;
-    void *res = erts_alloc(ERTS_ALC_T_BINARY, bsize);
+    void *res;
+    erts_mtx_lock(&erts_bin_alloc_mtx);
+    res = erts_alloc(ERTS_ALC_T_BINARY, bsize);
     erts_allocated_binaries += bsize;
+    ERTS_CHK_BIN_ALIGNMENT(res);
+    erts_mtx_unlock(&erts_bin_alloc_mtx);
     return (Binary *) res;
 }
 
-static ERTS_INLINE Binary *
+ERTS_GLB_INLINE Binary *
 erts_bin_realloc_fnf(Binary *bp, Uint size)
 {
     Uint bsize = sizeof(Binary) + size;
     void *res;
+    erts_mtx_lock(&erts_bin_alloc_mtx);
     if (bp->flags & BIN_FLAG_DRV)
 	res = erts_realloc_fnf(ERTS_ALC_T_DRV_BINARY, (void *) bp, bsize);
     else
@@ -158,16 +192,19 @@ erts_bin_realloc_fnf(Binary *bp, Uint size)
 	ASSERT(erts_allocated_binaries >= sizeof(Binary) + nbp->orig_size);
 	erts_allocated_binaries -= sizeof(Binary) + nbp->orig_size;
 	erts_allocated_binaries += bsize;
+	ERTS_CHK_BIN_ALIGNMENT(res);
     }
+    erts_mtx_unlock(&erts_bin_alloc_mtx);
     return (Binary *) res;
 }
 
-static ERTS_INLINE Binary *
+ERTS_GLB_INLINE Binary *
 erts_bin_realloc(Binary *bp, Uint size)
 {
     Binary *nbp;
     Uint bsize = sizeof(Binary) + size;
     void *res;
+    erts_mtx_lock(&erts_bin_alloc_mtx);
     if (bp->flags & BIN_FLAG_DRV)
 	res = erts_realloc(ERTS_ALC_T_DRV_BINARY, (void *) bp, bsize);
     else
@@ -176,18 +213,24 @@ erts_bin_realloc(Binary *bp, Uint size)
     ASSERT(erts_allocated_binaries >= sizeof(Binary) + nbp->orig_size);
     erts_allocated_binaries -= sizeof(Binary) + nbp->orig_size;
     erts_allocated_binaries += bsize;
+    ERTS_CHK_BIN_ALIGNMENT(res);
+    erts_mtx_unlock(&erts_bin_alloc_mtx);
     return (Binary *) res;
 }
 
-static ERTS_INLINE void
+ERTS_GLB_INLINE void
 erts_bin_free(Binary *bp)
 {
+    erts_mtx_lock(&erts_bin_alloc_mtx);
     ASSERT(erts_allocated_binaries >= sizeof(Binary) + bp->orig_size);
     erts_allocated_binaries -= sizeof(Binary) + bp->orig_size;
     if (bp->flags & BIN_FLAG_DRV)
 	erts_free(ERTS_ALC_T_DRV_BINARY, (void *) bp);
     else
 	erts_free(ERTS_ALC_T_BINARY, (void *) bp);
+    erts_mtx_unlock(&erts_bin_alloc_mtx);
 }
+
+#endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
 
 #endif

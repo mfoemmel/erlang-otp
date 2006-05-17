@@ -689,18 +689,22 @@ gen_fun_thing_skeleton(FunP, FunName={_Mod,_FunId,Arity}, NumFree,
    store_struct_field(FunP, ?EFT_CREATOR, PidVar),
    store_struct_field(FunP, ?EFT_THING, hipe_tagscheme:mk_fun_header())].
 
--ifdef(P_MSG_SAVE). % not SMP, we can inline (XXX: bogus test)
 gen_inc_refc(Ptr, Offset) ->
+  case ?ERTS_IS_SMP of
+    0 -> gen_inc_refc_notsmp(Ptr, Offset);
+    1 -> gen_inc_refc_smp(Ptr, Offset)
+  end.
+
+gen_inc_refc_notsmp(Ptr, Offset) ->
   Refc = hipe_rtl:mk_new_reg(),
   [load_struct_field(Refc, Ptr, Offset, int32),
    hipe_rtl:mk_alu(Refc, Refc, add, hipe_rtl:mk_imm(1)),
    store_struct_field(Ptr, Offset, Refc, int32)].
--else.
-gen_inc_refc(Ptr, Offset) ->
+
+gen_inc_refc_smp(Ptr, Offset) ->
   Refc = hipe_rtl:mk_new_reg(),
   [hipe_rtl:mk_alu(Refc, Ptr, 'add', hipe_rtl:mk_imm(Offset)),
    hipe_rtl:mk_call([], 'atomic_inc', [Refc], [], [], not_remote)].
--endif.
 
 gen_link_closure(FUNP) ->
   case ?P_OFF_HEAP_FUNS of
@@ -931,7 +935,23 @@ gen_tuple_header(Ptr, Arity) ->
 %%%
 %%% Receives
 
--ifdef(P_MSG_SAVE). % not SMP, we can inline
+gen_check_get_msg(Dsts, GotoCont, Fail) ->
+  case ?ERTS_IS_SMP of
+    0 -> gen_check_get_msg_notsmp(Dsts, GotoCont, Fail);
+    1 -> gen_check_get_msg_smp(Dsts, GotoCont, Fail)
+  end.
+
+gen_next_msg([], GotoCont) ->
+  case ?ERTS_IS_SMP of
+    0 -> gen_next_msg_notsmp(GotoCont);
+    1 -> gen_next_msg_smp(GotoCont)
+  end.
+
+gen_clear_timeout([], GotoCont) ->
+  case ?ERTS_IS_SMP of
+    0 -> gen_clear_timeout_notsmp(GotoCont);
+    1 -> gen_clear_timeout_smp(GotoCont)
+  end.
 
 %%% check_get_msg is:
 %%%	if (!PEEK_MESSAGE(p)) goto Fail;
@@ -941,7 +961,7 @@ gen_tuple_header(Ptr, Arity) ->
 %%%	ErlMessage *msg = *save;
 %%%	if (!msg) goto Fail;
 %%%	Dst = msg->m[0];
-gen_check_get_msg(Dsts, GotoCont, Fail) ->
+gen_check_get_msg_notsmp(Dsts, GotoCont, Fail) ->
   Save = hipe_rtl:mk_new_reg(),
   Msg = hipe_rtl:mk_new_reg(),
   TrueLbl = hipe_rtl:mk_new_label(),
@@ -965,7 +985,7 @@ gen_check_get_msg(Dsts, GotoCont, Fail) ->
 %%%	ErlMessage *msg = *save;
 %%%	ErlMessage **next = &msg->next;
 %%%	p->msg.save = next;
-gen_next_msg([], GotoCont) ->
+gen_next_msg_notsmp(GotoCont) ->
   Save = hipe_rtl:mk_new_reg(),
   Msg = hipe_rtl:mk_new_reg(),
   Rest1 = [GotoCont],
@@ -994,7 +1014,7 @@ gen_next_msg([], GotoCont) ->
 %%% i.e.,
 %%%	p->flags &= ~F_TIMO;
 %%%	p->msg.save = &p->msg.first;
-gen_clear_timeout([], GotoCont) ->
+gen_clear_timeout_notsmp(GotoCont) ->
   Flags1 = hipe_rtl:mk_new_reg(),
   Flags2 = hipe_rtl:mk_new_reg_gcsafe(),
   First = hipe_rtl:mk_new_reg_gcsafe(),
@@ -1005,9 +1025,7 @@ gen_clear_timeout([], GotoCont) ->
    store_p_field(First, ?P_MSG_SAVE),
    GotoCont].
 
--else.	% SMP, too icky to inline
-
-gen_check_get_msg(Dsts, GotoCont, Fail) ->
+gen_check_get_msg_smp(Dsts, GotoCont, Fail) ->
   RetLbl = hipe_rtl:mk_new_label(),
   TrueLbl = hipe_rtl:mk_new_label(),
   Tmp = hipe_rtl:mk_new_reg(),
@@ -1026,21 +1044,19 @@ gen_check_get_msg(Dsts, GotoCont, Fail) ->
        [GotoCont]
    end].
 
-gen_next_msg([], GotoCont) ->
+gen_next_msg_smp(GotoCont) ->
   RetLbl = hipe_rtl:mk_new_label(),
   [hipe_rtl_arch:call_bif([], next_msg, [],
 			  hipe_rtl:label_name(RetLbl), []),
    RetLbl,
    GotoCont].
 
-gen_clear_timeout([], GotoCont) ->
+gen_clear_timeout_smp(GotoCont) ->
   RetLbl = hipe_rtl:mk_new_label(),
   [hipe_rtl_arch:call_bif([], clear_timeout, [],
 			  hipe_rtl:label_name(RetLbl), []),
    RetLbl,
    GotoCont].
-
--endif. % SMP
 
 gen_select_msg([], Cont) ->
   [hipe_rtl_arch:call_bif([], select_msg, [], Cont, [])].
@@ -1054,20 +1070,26 @@ gen_suspend_msg([], Cont) ->
 %%
 
 gen_fclearerror() ->
-  Addr = hipe_rtl:mk_new_reg_gcsafe(),
-  [hipe_rtl:mk_load_address(Addr, erl_fp_exception, c_const),
-   hipe_rtl:mk_store(Addr, hipe_rtl:mk_imm(0), hipe_rtl:mk_imm(0), int32)].
+  case ?P_FP_EXCEPTION of
+    [] ->
+      [];
+    Offset ->
+      [hipe_rtl_arch:pcb_store(Offset, hipe_rtl:mk_imm(0), int32)]
+  end.
 
 gen_fcheckerror(ContLbl, FailLbl)->
   Tmp = hipe_rtl:mk_new_reg(),
   TmpFailLbl0 = hipe_rtl:mk_new_label(),
-  Addr = hipe_rtl:mk_new_reg_gcsafe(),
   FailCode = fp_fail_code(TmpFailLbl0, FailLbl),
   hipe_rtl_arch:fwait() ++
-  [hipe_rtl:mk_load_address(Addr, erl_fp_exception, c_const),
-   hipe_rtl:mk_load(Tmp, Addr, hipe_rtl:mk_imm(0), int32, unsigned),
-   hipe_rtl:mk_branch(Tmp, eq, hipe_rtl:mk_imm(0), 
-		      ContLbl, hipe_rtl:label_name(TmpFailLbl0), 0.9)] ++
+    case ?P_FP_EXCEPTION of
+      [] ->
+	[];
+      Offset ->
+	[hipe_rtl_arch:pcb_load(Tmp, Offset, int32)]
+    end ++
+    [hipe_rtl:mk_branch(Tmp, eq, hipe_rtl:mk_imm(0), 
+		       ContLbl, hipe_rtl:label_name(TmpFailLbl0), 0.9)] ++
     FailCode.
 
 gen_conv_to_float(Dst, [Src], ContLbl, FailLbl) ->

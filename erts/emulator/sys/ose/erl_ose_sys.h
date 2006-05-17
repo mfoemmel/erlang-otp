@@ -192,6 +192,11 @@ clock_t sys_times(SysTimes *t);
 #define SIZEOF_SIZE_T  4
 #define SIZEOF_OFF_T   4
 
+/*
+ * Temporary buffer *only* used in sys code.
+ */
+#define SYS_TMP_BUF_SIZE 65536
+
 /***************** trace & debug ***********************/
 
 /* only for testing, use compile flag later */

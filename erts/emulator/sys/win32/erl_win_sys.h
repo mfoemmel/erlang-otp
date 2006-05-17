@@ -172,11 +172,18 @@ int _finite(double x);
 #endif
 
 /*#define NO_FPE_SIGNALS*/
-#define ERTS_FP_CHECK_INIT() do {} while (0)
-#define ERTS_FP_ERROR(f, Action) if (!_finite(f)) { Action; } else {}
-#define ERTS_FP_ERROR_THOROUGH(f, Action) ERTS_FP_ERROR(f, Action)
-#define ERTS_SAVE_FP_EXCEPTION()
-#define ERTS_RESTORE_FP_EXCEPTION()
+#define erts_get_current_fp_exception() NULL
+#define __ERTS_FP_CHECK_INIT(fpexnp) do {} while (0)
+#define __ERTS_FP_ERROR(fpexnp, f, Action) if (!_finite(f)) { Action; } else {}
+#define __ERTS_FP_ERROR_THOROUGH(fpexnp, f, Action) __ERTS_FP_ERROR(fpexnp, f, Action)
+#define __ERTS_SAVE_FP_EXCEPTION(fpexnp)
+#define __ERTS_RESTORE_FP_EXCEPTION(fpexnp)
+
+#define ERTS_FP_CHECK_INIT(p)		__ERTS_FP_CHECK_INIT(&(p)->fp_exception)
+#define ERTS_FP_ERROR(p, f, A)		__ERTS_FP_ERROR(&(p)->fp_exception, f, A)
+#define ERTS_SAVE_FP_EXCEPTION(p)	__ERTS_SAVE_FP_EXCEPTION(&(p)->fp_exception)
+#define ERTS_RESTORE_FP_EXCEPTION(p)	__ERTS_RESTORE_FP_EXCEPTION(&(p)->fp_exception)
+#define ERTS_FP_ERROR_THOROUGH(p, f, A)	__ERTS_FP_ERROR_THOROUGH(&(p)->fp_exception, f, A)
 
 #define SIZEOF_SHORT   2
 #define SIZEOF_INT     4

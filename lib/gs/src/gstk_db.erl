@@ -23,9 +23,37 @@
 
 -module(gstk_db).
 
--compile(export_all).
-%-export([init/0, insert/3, lookup/3, counter/2]).
-%-export([insert_widget/8, insert_event/3]).
+-export([init/1,
+	 insert/3,
+	 lookup/2,
+	 lookup_event/3,
+	 insert_bgrp/2,
+	 delete_bgrp/2,
+	 insert_gs/2,
+	 insert_widget/2,
+	 delete_kid/3,
+	 insert_opts/3,
+	 lookup_def/3,
+	 opt_or_not/3,
+	 lookup_gstkid/3,
+	 lookup_ids/2,
+	 lookup_item/3,
+	 delete_widget/2,
+	 delete_gstkid/2,
+	 get_deleted/1,
+	 delete_event/3,
+	 insert_event/4,
+	 update_widget/2,
+	 is_inserted/3,
+	 lookup_kids/2,
+	 insert_def/3,
+	 opt/4,
+	 opt/3,
+	 insert_opt/3,
+	 default_container_opts/3,
+	 default_opts/3,
+	 counter/2,
+	 lookup_gstkid/2]).
 
 -include("gstk.hrl").
 
@@ -61,10 +89,6 @@ lookup(DB, Key) ->
 
 delete(DB, Key) ->
     ets:delete(DB, Key).
-
-
-dump(DB) ->
-    ets:match(DB, '$1').
 
 
 
@@ -117,7 +141,7 @@ lookup_events(_DB, ID) ->
 	undefined -> [];
 	Events -> Events
     end.
-   
+
 lookup_event(DB, ID, Etag) ->
     case lists:keysearch(Etag, 1, lookup_events(DB, ID)) of
 	{value, {Etag, Etype, Edata}} ->
@@ -146,16 +170,6 @@ insert_bgrp(DB, Key) ->
     end.
 
 
-lookup_bgrp(DB, Key) ->
-    case ets:lookup(DB, Key) of
-	[{_, {_, RG}}] ->
-	    RG;
-	Other ->
-	    gs:error("Something strange in lookup_bgrp ~p~n", [Other]),
-	    true
-    end.
-
-
 delete_bgrp(DB, Key) ->
     case ets:lookup(DB, Key) of
 	[] ->
@@ -179,14 +193,10 @@ update_widget(DB, Gstkid) ->
 
 insert_gs(DB,Gstkid) ->
     update_widget(DB,Gstkid).
-    
+
 insert_widget(DB, Gstkid) ->
     ID = Gstkid#gstkid.id,
     insert_kid(DB, Gstkid#gstkid.parent, ID),
-    insert(DB, ID, Gstkid),
-    Gstkid.
-
-insert_widget(DB, ID, Gstkid) ->
     insert(DB, ID, Gstkid),
     Gstkid.
 
@@ -229,7 +239,7 @@ lookup_def(ID,ObjType,Key) ->
 
 opt(DB,#gstkid{id=Id},Opt) -> opt(DB,Id,Opt);
 opt(_DB,Id,Opt) ->
-     [{_, Value}] = ets:lookup(get(options), {Id,Opt}),
+    [{_, Value}] = ets:lookup(get(options), {Id,Opt}),
     Value.
 
 opt_or_not(DB,#gstkid{id=Id},Opt) -> opt_or_not(DB,Id,Opt);
@@ -250,14 +260,10 @@ opt(_DB,Id,Opt,ElseVal) ->
 %%----------------------------------------------------------------------
 %% Returns: list of {Key,Val}
 %%----------------------------------------------------------------------
-lookup_opts(_DB,Id) ->
-    lists:sort(lists:map(fun(L) -> list_to_tuple(L) end,
-			 ets:match(get(options),{{Id,'$1'},'$2'}))).
-
 default_container_opts(_DB,Id,ChildType) ->
     L =	ets:match(get(defaults),{{Id,'$1'},'$2'}),
     lists:sort(fix_def_for_container(L,ChildType)).
-    
+
 default_opts(_DB,Id,ChildType) ->
     L1 = ets:lookup(get(defaults),{Id,ChildType}),
     L2 = ets:lookup(get(defaults),{Id,all}),
@@ -268,7 +274,7 @@ fix_def([{_,Opt}|Opts],Opts2) ->
 fix_def([],[]) -> [];
 fix_def([],Opts) ->
     fix_def(Opts,[]).
-    
+
 %%----------------------------------------------------------------------
 %% Purpose: Extracs {default,ObjType,DefsultOpt} for the ChildType
 %% and keeps default options since it is a container object.
@@ -286,13 +292,6 @@ fix_def_for_container([],_) -> [].
 
 %% -----------------------------------------------------------------
 %%  lookup things
-
-lookup_id(DB, Name, Owner) when atom(Name) ->
-    lookup(DB, {Owner, Name});
-
-lookup_id(_DB, ID, _Owner) ->
-    ID.
-
 
 lookup_gstkid(DB, Name, Owner) when atom(Name) ->
     ID = lookup(DB, {Owner, Name}),
@@ -313,8 +312,8 @@ lookup_ids(DB, Pid) ->
     ril(ets:match(DB, {'$1', {gstkid,'_','_','_',Pid,'_','_'}})).
 
 lookup_item(DB, TkW, Item) ->
-%    [[Id]] = ets:match(DB, {'$1', {gstkid,'_',TkW, Item,'_','_','_'}}),
-%    Id.
+						%    [[Id]] = ets:match(DB, {'$1', {gstkid,'_',TkW, Item,'_','_','_'}}),
+						%    Id.
     %% OTP-4167 Gif images gstkids are stored differently from other objects
     case ets:match(DB, {'$1', {gstkid,'_',TkW, Item,'_','_','_'}}) of
 	[[Id]] ->
@@ -364,14 +363,14 @@ delete_id(DB, ID) ->
 	    true;
 	_Gstkid     ->
 	    gstk:worker_do({match_delete,[{get(options),[{{ID,'_'},'_'}]},
-					 {get(defaults),[{{ID,'_'},'_'}]}]}),
+					  {get(defaults),[{{ID,'_'},'_'}]}]}),
 	    ets:insert(get(deleted),{deleted,ID}),
 	    delete(DB, ID)
     end,
     ets:delete(get(kids), {kids, ID}),
     delete(get(events), {events, ID}),
     true.
-    
+
 get_deleted(_DB) ->
     Dd = get(deleted),
     R=fix_deleted(ets:lookup(Dd,deleted)),
@@ -397,7 +396,7 @@ is_inserted(_DB, ID, What) ->
 		_Other      -> false
 	    end
     end.
-    
+
 %% -----------------------------------------------------------------
 %%                    PRIMITIVES
 %% -----------------------------------------------------------------

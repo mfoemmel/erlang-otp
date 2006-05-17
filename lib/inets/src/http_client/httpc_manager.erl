@@ -171,7 +171,7 @@ cookies(Url) ->
 %%                       {ok, State, Timeout} | ignore |{stop, Reason}
 %% Description: Initiates the httpc_manger process
 %%--------------------------------------------------------------------
-init([CookiesConf|Options]) ->
+init([CookiesConf|_Options]) ->
     process_flag(trap_exit, true),
     ets:new(httpc_manager_session_db, 
 	    [public, set, named_table, {keypos, #tcp_session.id}]),

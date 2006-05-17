@@ -76,7 +76,7 @@ date_macro(_S, _Line, _Env) ->
 
 time_macro(_S, _Line, _Env) ->
     {H,M,Sec} = time(),
-    lists:flatten(io_lib:fwrite("~w:~w:~w",[H,M,Sec])).
+    lists:flatten(io_lib:fwrite("~2.2.0w:~2.2.0w:~2.2.0w",[H,M,Sec])).
 
 link_macro(S, Line, Env) ->
     {S1, S2} = edoc_lib:split_at_stop(S),

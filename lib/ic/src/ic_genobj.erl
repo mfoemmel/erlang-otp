@@ -24,7 +24,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([new/1, free_table_space/1, table_space/1, process_space/0]).
+-export([new/1, free_table_space/1, process_space/0]).
 -export([skelfiled/1, stubfiled/1, hrlfiled/1, includefiled/1]).
 -export([interfacefiled/1, helperfiled/1, holderfiled/1]).
 -export([is_skelfile_open/1, is_stubfile_open/1, is_hrlfile_open/1]).
@@ -135,37 +135,6 @@ file_close(empty) -> ok;
 file_close(ignore) -> ok;
 file_close(Fd) -> 
     file:close(Fd).
-
-
-
-
-
-%%--------------------------------------------------------------------
-%%
-%% Table memory usage
-%%
-%% 
-%%
-%%--------------------------------------------------------------------
-
-table_space(G) ->
-    OptT=4*element(2,element(1,ets:info(G#genobj.options))),
-    SymT=4*element(2,element(1,ets:info(G#genobj.symtab))),
-    WarT=4*element(2,element(1,ets:info(G#genobj.warnings))),
-    AuxT=4*element(2,element(1,ets:info(G#genobj.auxtab))),
-    TkT=4*element(2,element(1,ets:info(G#genobj.tktab))),
-    PraT=4*element(2,element(1,ets:info(G#genobj.pragmatab))),
-    TypT=4*element(2,element(1,ets:info(G#genobj.c_typedeftab))),
-    io:format("Option table ends at    ~p bytes\n",[OptT]),
-    io:format("Symbol table ends at    ~p bytes\n",[SymT]),
-    io:format("Warning table ends at   ~p bytes\n",[WarT]),
-    io:format("Aux table ends at       ~p bytes\n",[AuxT]),
-    io:format("Typecode table ends at  ~p bytes\n",[TkT]),
-    io:format("Pragma table ends at    ~p bytes\n",[PraT]),
-    io:format("Typedef table ends at   ~p bytes\n",[TypT]),
-    io:format("-----------------------------------------------\n"),
-    io:format("Totally used  ~p bytes\n",[OptT+SymT+WarT+AuxT+TkT+PraT+TypT]).
-
 
 
 %%--------------------------------------------------------------------

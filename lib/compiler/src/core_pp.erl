@@ -75,6 +75,8 @@ maybe_anno(Node, Fun, Ctxt, As) ->
 
 strip_line([A | As]) when integer(A) ->
     strip_line(As);
+strip_line([{file,_File} | As]) ->
+    strip_line(As);
 strip_line([A | As]) ->
     [A | strip_line(As)];
 strip_line([]) ->
@@ -145,17 +147,31 @@ format_1(#c_values{es=Es}, Ctxt) ->
 format_1(#c_alias{var=V,pat=P}, Ctxt) ->
     Txt = [format(V, Ctxt)|" = "],
     [Txt|format(P, add_indent(Ctxt, width(Txt, Ctxt)))];
-format_1(#c_let{vars=Vs,arg=A,body=B}, Ctxt) ->
-    Ctxt1 = add_indent(Ctxt, Ctxt#ctxt.body_indent),
-    ["let ",
-     format_values(Vs, add_indent(Ctxt, 4)),
-     " =",
-     nl_indent(Ctxt1),
-     format(A, Ctxt1),
-     nl_indent(Ctxt),
-     "in  "
-     | format(B, add_indent(Ctxt, 4))
-    ];
+format_1(#c_let{vars=Vs0,arg=A,body=B}, Ctxt) ->
+    Vs = [core_lib:set_anno(V, []) || V <- Vs0],
+    case is_simple_term(A) of
+	false ->
+	    Ctxt1 = add_indent(Ctxt, Ctxt#ctxt.body_indent),
+	    ["let ",
+	     format_values(Vs, add_indent(Ctxt, 4)),
+	     " =",
+	     nl_indent(Ctxt1),
+	     format(A, Ctxt1),
+	     nl_indent(Ctxt),
+	     "in  "
+	     | format(B, add_indent(Ctxt, 4))
+	    ];
+	true ->
+	    Ctxt1 = add_indent(Ctxt, Ctxt#ctxt.body_indent),
+	    ["let ",
+	     format_values(Vs, add_indent(Ctxt, 4)),
+	     " = ",
+	     format(core_lib:set_anno(A, []), Ctxt1),
+	     nl_indent(Ctxt),
+	     "in  "
+	     | format(B, add_indent(Ctxt, 4))
+	    ]
+    end;
 format_1(#c_letrec{defs=Fs,body=B}, Ctxt) ->
     Ctxt1 = add_indent(Ctxt, Ctxt#ctxt.body_indent),
     ["letrec",
@@ -428,3 +444,12 @@ set_class(Ctxt, Class) ->
     Ctxt#ctxt{class = Class}.
 
 core_atom(A) -> io_lib:write_string(atom_to_list(A), $').
+
+
+is_simple_term(#c_values{es=Es}) ->
+    length(Es) < 3 andalso lists:all(fun is_simple_term/1, Es);
+is_simple_term(#c_tuple{es=Es}) ->
+    length(Es) < 4 andalso lists:all(fun is_simple_term/1, Es);
+is_simple_term(#c_var{}) -> true;
+is_simple_term(#c_string{}) -> false;
+is_simple_term(Term) -> core_lib:is_atomic(Term).

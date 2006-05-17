@@ -1,5 +1,8 @@
 #! /bin/sh
 
+# clearmake command to use
+clearmake=false
+
 # Global configuration variables
 if [ -z "$ONLY_ERTS" ]; then
     AUTOCONF_SUBDIRS=". lib lib/* erts"
@@ -62,9 +65,9 @@ set_config_flags ()
 		CONFIG_FLAGS="--build=$BUILDSYS --host=win32 --target=win32" 
 	fi
 	if target_contains solaris; then 
-		CONFIG_FLAGS="--enable-threads --enable-kernel-poll"
+		CONFIG_FLAGS="--enable-kernel-poll"
 	elif target_contains linux; then 
-		CONFIG_FLAGS="--enable-threads --disable-hipe"
+		CONFIG_FLAGS="--disable-hipe"
 	fi
 	if target_contains "univel-sysv4"; then
 		CONFIG_FLAGS="--x-libraries=/usr/lib/X11"
@@ -329,7 +332,8 @@ setup_make ()
 		if [ "X$CLEARCASE_MAKE_COMPAT" = "Xgnu" -a \
 		     X"$CLEARCASE_ROOT" != X"" -a \
 		    -n "`lookup_prog_in_path clearmake`"  ]; then
-		    MAKE="clearmake -V"
+		    clearmake="clearmake -V"
+		    MAKE=$clearmake
 		else 
 		    if [ -n "`lookup_prog_in_path gmake`" ]; then
 			MAKE=gmake
@@ -346,6 +350,9 @@ do_noboot_lib_and_erts ()
 {
     setup_make
     EMULATORS=emulator
+    if [ "x$MAKE" != "x$clearmake" ]; then
+	$MAKE MAKE="$MAKE" TARGET=$TARGET OTP_SMALL_BUILD=$OTP_SMALL_BUILD depend || exit 1;
+    fi
     $MAKE MAKE="$MAKE" TARGET=$TARGET OTP_SMALL_BUILD=$OTP_SMALL_BUILD TYPE=$TYPE noboot || exit 1
 }
 

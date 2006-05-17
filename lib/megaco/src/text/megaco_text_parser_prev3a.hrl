@@ -52,13 +52,23 @@ ensure_auth_header(SpiToken, SnToken, AdToken) ->
     Ad  = ensure_hex(AdToken, 24, 64),
     #'AuthenticationHeader'{secParmIndex = Spi, seqNum = Sn, ad = Ad}.
 
+%% The values 0x0, 0xFFFFFFFE and 0xFFFFFFFF are reserved.
 %% ContextID         = (UINT32 / "*" / "-" / "$")
-ensure_contextID({_TokenTag, _Line, Text}) ->
+ensure_contextID({_TokenTag, Line, Text}) ->
     case Text of
         "*"  -> ?megaco_all_context_id;
         "-"  -> ?megaco_null_context_id;
         "\$" -> ?megaco_choose_context_id;
-        Int  -> ensure_uint32(Int)
+        Int  ->
+            CID = ensure_uint32(Int),
+            if
+                (CID =/= 0) and
+                (CID =/= 16#FFFFFFFE) and
+                (CID =/= 16#FFFFFFFF) ->
+                    CID;
+                true ->
+                    return_error(Line, {bad_ContextID, CID})
+            end
     end.
 
 ensure_domainAddress([{_T, _L, _A} = Addr0], Port) ->

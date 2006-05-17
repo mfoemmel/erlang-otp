@@ -12,12 +12,13 @@ Table of contents
 Introduction
 ------------
 
-This file describes how to build the Erlang emulator and the OTP libraries on 
-Windows. The instructions apply to versions of Windows supporting the
-Cygwin emulated gnuish environment for Windows. We've built on the
-following platforms: Windows NT 4 (SP6), Windows 2000 Professional,
-Windows XP Home/Professional. Any Windows95'ish platform will surely
-get you into trouble, what I'm not sure of, but it certainly will...
+This file describes how to build the Erlang emulator and the OTP
+libraries on Windows. The instructions apply to versions of Windows
+supporting the Cygwin emulated gnuish environment for Windows. We've
+built on the following platforms: Windows NT 4 (SP6), Windows 2000
+Professional, Windows 2003 server, Windows XP Home/Professional. Any
+Windows95'ish platform will surely get you into trouble, what I'm not
+sure of, but it certainly will...
 
 The procedure described uses Cygwin as a build environment, you run
 the bash shell in Cygwin and uses gnu make/configure/autoconf etc to
@@ -55,18 +56,16 @@ resides in the $ERL_TOP/erts/emulator/sys/win32 and $ERL_etc/win32
 directories mostly. The  $ERL_TOP/erts/emulator/beam directory is for
 common code.
 
-Before the R9C release of Erlang/OTP, the Windows release was
-built partly on a Unix (Solaris) box and partly on a Windows box,
-using Perl hacks to communicate and sync between the two
-machines. R9C is the first release ever built solely on Windows, where
-no Unix machine is needed at all. That's the reason this is the first
-time the procedure is described, the old way of building was such a
-hassle I didn't dare to expose it to the community... Still, this new
-build system still is in it's infancy. There might be all sorts of
-troubles on different machines and with different setups. I'll try to
-give hints wherever I've encountered difficulties, but please share
-your experiences by using the mailing list
-Erlang_questions@erlang.org. I cannot of course help everyone with all
+Before the R9C release of Erlang/OTP, the Windows release was built
+partly on a Unix (Solaris) box and partly on a Windows box, using Perl
+hacks to communicate and sync between the two machines. R9C was the
+first release ever built solely on Windows, where no Unix machine is
+needed at all. Now we'we used this build procedure for a couple of
+releases, and it has worked fine for us. Still, there might be all
+sorts of troubles on different machines and with different
+setups. I'll try to give hints wherever I've encountered difficulties,
+but please share your experiences by using the mailing list
+erlang_questions@erlang.org. I cannot of course help everyone with all
 their problems, please try to solve the problems and submit
 solutions/workarounds. Remember, it's all about sharing, not about
 demanding :-)
@@ -113,7 +112,7 @@ it's not possible to make a Cygwin binary yet. That is of course
 something desirable, but there are still some problems with the
 dynamic linking (dynamic Erlang driver loading) as well as the TCP/IP
 emulation in Cygwin, which, I'm sure of, will improve, but still has
-some problems. Fixing those problems might be easy or might be hard. I
+some problems. Fixing those problems might be easy or might be hard.
 I suggest you try yourself and share your experience. No one would be
 happier if a simple ./configure && make would produce a fully fledged
 Cygwin binary. Ericsson does however not pay me to... Well, you know
@@ -193,7 +192,7 @@ building. What versions you use shouldn't really matter, I try to
 include workarounds for the bugs I've found in different Cygwin
 releases, please help me to add workarounds for new Cygwin-related
 bugs as soon as you encounter them. Also please do submit bug reports
-to the appropriate Cygwin developers. The Cygwin GCC we used for R9C was 
+to the appropriate Cygwin developers. The Cygwin GCC we used for R11B was 
 version 3.3.1. We used VC++ 6.0, Sun's JDK 1.2.2, NSIS 2.01, and
 Win32 OpenSSL 0.9.7b. Please reed the next section for details
 on what you need.
@@ -218,7 +217,7 @@ impatient is:
 * Get and install complete Cygwin (latest)
 * (Buy and) Install Microsoft Visual C++ 6.0 (or higher)
 * Get and install Sun's JDK 1.2.2
-* Get and install NSIS 2.0 Beta 3
+* Get and install NSIS 2.01 or higher (up to 2.16 tried and working)
 * Get and install OpenSSL 0.9.7b or higher
 * Get and unpack the erlang source distribution with Cygwins tar.
 * Modify PATH and other environment variables so that all these tools
@@ -249,7 +248,7 @@ Well' here's the list:
 tools and of course all the basic ditto. In fact getting the complete
 package might be a good idea, as you'll start to love Cygwin after a
 while if you're accustomed to Unix. Make sure to get jar and also make
-sure *not* to install a Cygwin'ish Java... The Cygwin jar command i s
+sure *not* to install a Cygwin'ish Java... The Cygwin jar command is
 used but Sun's Java compiler and virtual machine...
 
 URL: http://www.cygwin.com
@@ -333,9 +332,9 @@ backslashes in your path environment variable in Cygwin bash, but LIB
 and INCLUDE should contain Windows style paths with semicolon,
 drive letters and backslashes.
 
-* Sun's Java JDK 1.2.2. Our Java code (jinterface, ic) is written for
-JDK 1.2.2. Get it for Windows and install it, the JRE is not
-enough. If you don't care about Java, you can skip this step, the
+* Sun's Java JDK 1.2.2 or higher. Our Java code (jinterface, ic) is
+written for JDK 1.2.2. Get it for Windows and install it, the JRE is
+not enough. If you don't care about Java, you can skip this step, the
 result will be that jinterface is not built.
 
 URL: http://java.sun.com
@@ -388,13 +387,13 @@ archives (.a, not .lib).
 
 * The Erlang source distribution. The same as for Unix
 platforms. Preferably use tar from within Cygwin to unpack the source
-tar.gz (tar zxf otp_src_R10B-0.tar.gz). 
+tar.gz (tar zxf otp_src_R11B-0.tar.gz). 
 
 set the environment ERL_TOP to point to the root directory of the
 source distribution. Let's say I stood in $HOME/src and unpacked 
-otp_src_R10B-0.tar.gz, I then add the following to .profile:
+otp_src_R11B-0.tar.gz, I then add the following to .profile:
 --------------------------------------------------------
-ERL_TOP=$HOME/src/otp_src_R10B-0
+ERL_TOP=$HOME/src/otp_src_R11B-0
 export $ERL_TOP
 --------------------------------------------------------
 
@@ -468,7 +467,7 @@ $ ./otp_build boot -a
 $ ./otp_build release -a <installation directory>
 $ ./otp_build installer_win32 <installation directory> # optional
 
-Now you will have a file called otp_win32_R9C.exe in the <installation
+Now you will have a file called otp_win32_R11B.exe in the <installation
 directory>, i.e. $ERL_TOP/release/win32.
 
 Lets get into more detail:
@@ -529,7 +528,7 @@ $ release/win32/otp_win32_R9C /S
 .....
 ------------------------------------------------------
 - and after a while Erlang will have been installed in 
-C:\Program Files\erl5.3, with shortcuts in the menu etc.
+C:\Program Files\erl5.5, with shortcuts in the menu etc.
 
 *NOTE* Beginning with R9C, the Windows installer does *not* add Erlang
 to the system wide path. If one wants to have Erlang in the path, one
@@ -579,8 +578,7 @@ $ make TESTROOT=/tmp/erl_release release
 That will copy the emulator executables.
 
 To make a debug build of the emulator, you need to recompile both
-beam.dll (the actual runtime system) and erlexec.dll (that should be
-fixed, but it's release time now and...). Do like this
+beam.dll (the actual runtime system) and erlexec.dll. Do like this
 
 $ cd $ERL_TOP
 $ rm bin/win32/erlexec.dll
@@ -614,7 +612,7 @@ $ cd $ERL_TOP/lib/stdlib/src
 $ make opt
 
 Note that you're expected o have a fresh erlang in your path when
-doing this, preferably the plain R9C you have built in the previous
+doing this, preferably the plain R11B you have built in the previous
 steps. You could also add $ERL_TOP/bootstrap/bin to your PATH before
 rebuilding specific libraries, that would give you a good enough
 Erlang system to compile any OTP erlang code.
@@ -641,7 +639,7 @@ case os:type() of
 		do_fallback_or_exit()
 end,
 
-Thats basically all you need to get going.
+That's basically all you need to get going.
 
 Final words
 -----------
@@ -650,7 +648,7 @@ will open up for free development on this platform too. There are many
 things one might want to do better in the Windows version, like the
 window-style command prompt as well as pure Cygwin porting. Although i
 realize it's a much larger step to start building on Windows (with all
-the software you need) than for instance on Windows, I sincerely hope
+the software you need) than for instance on Linux, I sincerely hope
 that some of you will make the effort and start submitting Windows
 friendly patches.
 

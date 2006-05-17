@@ -382,9 +382,6 @@ res_send2(Id, Buffer, Ns, Timer) ->
 	length(Buffer) > ?PACKETSZ ->
 	    res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns);
 	UseVc == true ->
-	    %% XXX This seems to be a bug. Timeout is not used here,
-	    %% but it should probably be used to change the timer.
-	    Timeout = inet:timeout(Tm*5, Timer),
 	    res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns);
 	true ->
 	    res_send_udp2(Id, Buffer, Retry, Tm, Timer, Ns)

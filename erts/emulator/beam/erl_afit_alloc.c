@@ -46,8 +46,9 @@ static void		link_free_block		(Allctr_t *, Block_t *);
 static void		unlink_free_block	(Allctr_t *, Block_t *);
 
 
-static Eterm		info_options		(Allctr_t *, char *, CIO *,
-						 Uint **, Uint *);
+static Eterm		info_options		(Allctr_t *, char *, int *,
+						 void *arg, Uint **, Uint *);
+static void		init_atoms		(void);
 
 static int atoms_initialized = 0;
 
@@ -86,11 +87,14 @@ erts_afalc_start(AFAllctr_t *afallctr,
     allctr->get_next_mbc_size		= NULL;
     allctr->creating_mbc		= NULL;
     allctr->destroying_mbc		= NULL;
+    allctr->init_atoms			= init_atoms;
 
 #ifdef ERTS_ALLOC_UTIL_HARD_DEBUG
     allctr->check_block			= NULL;
     allctr->check_mbc			= NULL;
 #endif
+
+    allctr->atoms_initialized		= 0;
 
     if (!erts_alcu_start(allctr, init))
 	return NULL;
@@ -170,10 +174,17 @@ init_atoms(void)
 {
 #ifdef DEBUG
     Eterm *atom;
+#endif
+
+    if (atoms_initialized)
+	return;
+
+#ifdef DEBUG
     for (atom = (Eterm *) &am; atom <= &am.end_of_atoms; atom++) {
 	*atom = THE_NON_VALUE;
     }
 #endif
+
     AM_INIT(as);
     AM_INIT(af);
 
@@ -200,20 +211,22 @@ add_2tup(Uint **hpp, Uint *szp, Eterm *lp, Eterm el1, Eterm el2)
 static Eterm
 info_options(Allctr_t *allctr,
 	     char *prefix,
-	     CIO *ciop,
+	     int *print_to_p,
+	     void *print_to_arg,
 	     Uint **hpp,
 	     Uint *szp)
 {
     Eterm res = THE_NON_VALUE;
 
-    if (ciop) {
-	erl_printf(*ciop, "%sas: af\n", prefix);
+    if (print_to_p) {
+	erts_print(*print_to_p, print_to_arg, "%sas: af\n", prefix);
     }
 
     if (hpp || szp) {
 	
 	if (!atoms_initialized)
-	    init_atoms();
+	    erl_exit(1, "%s:%d: Internal error: Atoms not initialized",
+		     __FILE__, __LINE__);;
 
 	res = NIL;
 	add_2tup(hpp, szp, &res, am.as, am.af);

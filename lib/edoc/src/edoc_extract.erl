@@ -353,6 +353,8 @@ preprocess_forms_2(F, Fs) ->
 	    [F | preprocess_forms_1(Fs)];
 	{attribute, {module, _}} ->
 	    [F | preprocess_forms_1(Fs)];
+  	text ->
+  	    [F | preprocess_forms_1(Fs)];
 	_ ->
 	    preprocess_forms_1(Fs)
     end.

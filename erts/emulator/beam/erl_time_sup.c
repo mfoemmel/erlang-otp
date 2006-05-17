@@ -79,13 +79,13 @@
 #include "erl_vm.h"
 #include "global.h"
 
+static erts_smp_mtx_t erts_timeofday_mtx;
+
 static SysTimeval inittv; /* Used everywhere, the initial time-of-day */
 
 static SysTimes t_start; /* Used in elapsed_time_both */
 static SysTimeval gtv; /* Used in wall_clock_elapsed_time_both */
 static SysTimeval then; /* Used in get_now */
-
-static SysTimeval last_delivered; 
 
 #ifdef HAVE_GETHRTIME
 
@@ -353,9 +353,48 @@ static int clock_resolution;
 ** instead of something like select.
 */
 
+#if defined(ERTS_TIMER_THREAD)
+static ERTS_INLINE void init_erts_deliver_time(const SysTimeval *inittv) { }
+static ERTS_INLINE void do_erts_deliver_time(const SysTimeval *current) { }
+#else
+static SysTimeval last_delivered; 
+
+static void init_erts_deliver_time(const SysTimeval *inittv)
+{
+    /* We set the initial values for deliver_time here */
+    last_delivered = *inittv;
+    last_delivered.tv_usec = 1000 * (last_delivered.tv_usec / 1000); 
+                                                   /* ms resolution */
+}
+
+static void do_erts_deliver_time(const SysTimeval *current)
+{
+    SysTimeval cur_time;
+    long elapsed;
+    
+    /* calculate and deliver appropriate number of ticks */
+    cur_time = *current;
+    cur_time.tv_usec = 1000 * (cur_time.tv_usec / 1000); /* ms resolution */
+    elapsed = (1000 * (cur_time.tv_sec - last_delivered.tv_sec) +
+	       (cur_time.tv_usec - last_delivered.tv_usec) / 1000) / 
+	CLOCK_RESOLUTION;
+
+    /* Sometimes the time jump backwards,
+       resulting in a negative elapsed time. We compensate for
+       this by simply pretend as if the time stood still. :) */
+
+    if (elapsed > 0) {
+	do_time_add(elapsed);
+	last_delivered = cur_time;
+    }
+}
+#endif
+
 int 
 erts_init_time_sup(void)
 {
+    erts_smp_mtx_init(&erts_timeofday_mtx, "timeofday");
+
 #ifndef SYS_CLOCK_RESOLUTION
     clock_resolution = sys_init_time();
 #else
@@ -368,10 +407,7 @@ erts_init_time_sup(void)
 #endif
     init_tolerant_timeofday();
 
-    /* We set the initial values for deliver_time here */
-    last_delivered = inittv;
-    last_delivered.tv_usec = 1000 * (last_delivered.tv_usec / 1000); 
-                                                   /* ms resolution */
+    init_erts_deliver_time(&inittv);
     gtv = inittv;
     then.tv_sec = then.tv_usec = 0;
 
@@ -396,15 +432,19 @@ elapsed_time_both(unsigned long *ms_user, unsigned long *ms_sys,
     if (ms_sys != NULL)
 	*ms_sys = total_sys;
 
+    erts_smp_mtx_lock(&erts_timeofday_mtx);
+    
     prev_total_user = (t_start.tms_utime * 1000) / SYS_CLK_TCK;
     prev_total_sys = (t_start.tms_stime * 1000) / SYS_CLK_TCK;
+    t_start = now;
+    
+    erts_smp_mtx_unlock(&erts_timeofday_mtx);
 
     if (ms_user_diff != NULL)
 	*ms_user_diff = total_user - prev_total_user;
 	  
     if (ms_sys_diff != NULL)
 	*ms_sys_diff = total_sys - prev_total_sys;
-    t_start = now;
 }
 
 
@@ -415,6 +455,8 @@ wall_clock_elapsed_time_both(unsigned long *ms_total, unsigned long *ms_diff)
 {
     unsigned long prev_total;
     SysTimeval tv;
+
+    erts_smp_mtx_lock(&erts_timeofday_mtx);
 
     get_tolerant_timeofday(&tv);
 
@@ -427,7 +469,9 @@ wall_clock_elapsed_time_both(unsigned long *ms_total, unsigned long *ms_diff)
     gtv = tv;
 
     /* must sync the machine's idea of time here */
-    erts_deliver_time(&tv);
+    do_erts_deliver_time(&tv);
+
+    erts_smp_mtx_unlock(&erts_timeofday_mtx);
 }
 
 /* get current time */
@@ -440,7 +484,6 @@ get_time(int *hour, int *minute, int *second)
     struct tm tmbuf;
 #endif
     
-
     the_clock = time((time_t *)0);
 #ifdef HAVE_LOCALTIME_R
     localtime_r(&the_clock, (tm = &tmbuf));
@@ -656,8 +699,10 @@ get_now(Uint* megasec, Uint* sec, Uint* microsec)
 {
     SysTimeval now;
     
+    erts_smp_mtx_lock(&erts_timeofday_mtx);
+    
     get_tolerant_timeofday(&now);
-    erts_deliver_time(&now);
+    do_erts_deliver_time(&now);
 
     /* Make sure time is later than last */
     if (then.tv_sec > now.tv_sec ||
@@ -670,10 +715,13 @@ get_now(Uint* megasec, Uint* sec, Uint* microsec)
 	now.tv_usec = 0;
 	now.tv_sec++;
     }
+    then = now;
+    
+    erts_smp_mtx_unlock(&erts_timeofday_mtx);
+    
     *megasec = (Uint) (now.tv_sec / 1000000);
     *sec = (Uint) (now.tv_sec % 1000000);
     *microsec = (Uint) (now.tv_usec);
-    then = now;
 }
 
 
@@ -681,31 +729,18 @@ get_now(Uint* megasec, Uint* sec, Uint* microsec)
    to a struct timeval representing current time (to save
    a gettimeofday() where possible) or NULL */
 
-void erts_deliver_time(SysTimeval *current)
-{
-    SysTimeval cur_time;
-    long elapsed;
-
-    /* calculate and deliver appropriate number of ticks */
-    if (current != NULL)
-	cur_time = *current;
-    else
-	get_tolerant_timeofday(&cur_time);
-    cur_time.tv_usec = 1000 * (cur_time.tv_usec / 1000); /* ms resolution */
-    elapsed = (1000 * (cur_time.tv_sec - last_delivered.tv_sec) +
-	       (cur_time.tv_usec - last_delivered.tv_usec) / 1000) / 
-	CLOCK_RESOLUTION;
-
-    /* Sometimes the time jump backwards,
-       resulting in a negative elapsed time. We compensate for
-       this by simply pretend as if the time stood still. :) */
-
-    if (elapsed > 0) {
-	increment_time(elapsed);
-	last_delivered = cur_time;
-    }
+#if !defined(ERTS_TIMER_THREAD)
+void erts_deliver_time(void) {
+    SysTimeval now;
+    
+    erts_smp_mtx_lock(&erts_timeofday_mtx);
+    
+    get_tolerant_timeofday(&now);
+    do_erts_deliver_time(&now);
+    
+    erts_smp_mtx_unlock(&erts_timeofday_mtx);
 }
-
+#endif
 
 /* get *real* time (not ticks) remaining until next timeout - if there
    isn't one, give a "long" time, that is guaranteed
@@ -714,7 +749,9 @@ void erts_deliver_time(SysTimeval *current)
 void erts_time_remaining(SysTimeval *rem_time)
 {
     int ticks;
+#if !defined(ERTS_TIMER_THREAD)
     SysTimeval cur_time;
+#endif
     long elapsed;
 
     /* next_time() returns no of ticks to next timeout or -1 if none */
@@ -727,15 +764,25 @@ void erts_time_remaining(SysTimeval *rem_time)
     } else {
 	/* next timeout after ticks ticks */
 	ticks *= CLOCK_RESOLUTION;
+	
+#if defined(ERTS_TIMER_THREAD)
+	elapsed = 0;
+#else
+	erts_smp_mtx_lock(&erts_timeofday_mtx);
+	
 	get_tolerant_timeofday(&cur_time);
 	cur_time.tv_usec = 1000 * 
 	    (cur_time.tv_usec / 1000);/* ms resolution*/
 	elapsed = 1000 * (cur_time.tv_sec - last_delivered.tv_sec) +
 	    (cur_time.tv_usec - last_delivered.tv_usec) / 1000;
+	
+	erts_smp_mtx_unlock(&erts_timeofday_mtx);
+	
 	if (ticks <= elapsed) { /* Ooops, better hurry */
 	    rem_time->tv_sec = rem_time->tv_usec = 0;
 	    return;
 	}
+#endif
 	rem_time->tv_sec = (ticks - elapsed) / 1000;
 	rem_time->tv_usec = 1000 * ((ticks - elapsed) % 1000);
     }
@@ -745,8 +792,13 @@ long
 erts_get_time(void)
 {
     SysTimeval sys_tv;
-
+    
+    erts_smp_mtx_lock(&erts_timeofday_mtx);
+    
     get_tolerant_timeofday(&sys_tv);
+    
+    erts_smp_mtx_unlock(&erts_timeofday_mtx);
+    
     return sys_tv.tv_sec;
 }
 

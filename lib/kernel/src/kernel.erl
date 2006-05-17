@@ -126,6 +126,8 @@ init([]) ->
 		  [File, OldFile, Code, User,
 		   Config, SafeSupervisor]}};
 	_ ->
+	    ErlDdll = {ddll_server, {erl_ddll, start_link, []},
+		       permanent, 2000, worker, [erl_ddll]},
 	    Rpc = {rex, {rpc, start_link, []}, 
 		   permanent, 2000, worker, [rpc]},
 	    Global = {global_name_server, {global, start_link, []}, 
@@ -148,7 +150,7 @@ init([]) ->
 			      permanent, infinity, supervisor, [?MODULE]},	    
 
 	    {ok, {SupFlags,
-		  [Rpc, Global, InetDb | DistAC] ++ 
+		  [ErlDdll, Rpc, Global, InetDb | DistAC] ++ 
 		  [NetSup, Glo_grp, File, OldFile, Code, 
 		   User, Config, SafeSupervisor] ++
 		  Ddll ++ Timer}}

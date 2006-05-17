@@ -29,6 +29,7 @@
 -include_lib("orber/include/ifr_types.hrl").
 %% cosEvent files.
 -include_lib("cosEvent/include/CosEventChannelAdmin.hrl").
+-include_lib("cosEvent/include/CosEventComm.hrl").
 %% Application files
 -include("CosNotification.hrl").
 -include("CosNotifyChannelAdmin.hrl").
@@ -533,7 +534,7 @@ disconnect_push_consumer(_OE_THIS, _OE_FROM, State) ->
 %% Arguments: AnyEvent
 %% Returns  : ok | 
 %%-----------------------------------------------------------
-push(_OE_THIS, OE_FROM, State, Event) when ?is_ANY(State) ->
+push(OE_THIS, OE_FROM, State, Event) when ?is_ANY(State) ->
     corba:reply(OE_FROM, ok),
     case {?not_isConvertedStructured(Event),
 	  cosNotification_eventDB:filter_events([Event], ?get_AllFilter(State))} of
@@ -541,22 +542,25 @@ push(_OE_THIS, OE_FROM, State, Event) when ?is_ANY(State) ->
 	    {noreply, State};
 	{true, {[],[_]}} ->
 	    %% Is OR and converted, change back and forward to Admin
-	    forward(seq, ?get_MyAdmin(State), State, [any:get_value(Event)], 'MATCH');
+	    forward(seq, ?get_MyAdmin(State), State, [any:get_value(Event)], 
+		    'MATCH', OE_THIS);
 	{_, {[],[_]}} ->
 	    %% Is OR and not converted, forward to Admin
-	    forward(any, ?get_MyAdmin(State), State, Event, 'MATCH');
+	    forward(any, ?get_MyAdmin(State), State, Event, 'MATCH', OE_THIS);
 	{true, {[_],_}} when ?is_ANDOP(State) ->
 	    %% Is AND and converted, change back and forward to Admin
-	    forward(seq, ?get_MyAdmin(State), State, [any:get_value(Event)], 'MATCH');
+	    forward(seq, ?get_MyAdmin(State), State, [any:get_value(Event)], 
+		    'MATCH', OE_THIS);
 	{true, {[_],_}} ->
 	    %% Is OR and converted, change back and forward to Channel
-	    forward(seq, ?get_MyChannel(State), State, [any:get_value(Event)], 'MATCHED');
+	    forward(seq, ?get_MyChannel(State), State, [any:get_value(Event)], 
+		    'MATCHED', OE_THIS);
 	{_, {[_],_}} when ?is_ANDOP(State) ->
 	    %% Is AND and not converted, forward to Admin
-	    forward(any, ?get_MyAdmin(State), State, Event, 'MATCH');
+	    forward(any, ?get_MyAdmin(State), State, Event, 'MATCH', OE_THIS);
 	_ ->
 	    %% Is OR and not converted, forward to Channel
-	    forward(any, ?get_MyChannel(State), State, Event, 'MATCHED')
+	    forward(any, ?get_MyChannel(State), State, Event, 'MATCHED', OE_THIS)
     end;
 push(_, _, _, _) ->
     corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
@@ -575,7 +579,7 @@ disconnect_sequence_push_consumer(_OE_THIS, _OE_FROM, State) ->
 %% Arguments: CosNotification::EventBatch
 %% Returns  : ok | 
 %%-----------------------------------------------------------
-push_structured_events(_OE_THIS, OE_FROM, State, Events) when ?is_SEQUENCE(State) ->
+push_structured_events(OE_THIS, OE_FROM, State, Events) when ?is_SEQUENCE(State) ->
     corba:reply(OE_FROM, ok),
     %% We cannot convert parts of the sequence to any, event though they
     %% are converted from any to structured. Would be 'impossible' to send.
@@ -583,15 +587,15 @@ push_structured_events(_OE_THIS, OE_FROM, State, Events) when ?is_SEQUENCE(State
 	{[],_} when ?is_ANDOP(State) ->
 	    {noreply, State};
 	{[],Failed} ->
-	    forward(seq, ?get_MyAdmin(State), State, Failed, 'MATCH');
+	    forward(seq, ?get_MyAdmin(State), State, Failed, 'MATCH', OE_THIS);
 	{Passed, _} when ?is_ANDOP(State) ->
-	    forward(seq, ?get_MyAdmin(State), State, Passed, 'MATCH');
+	    forward(seq, ?get_MyAdmin(State), State, Passed, 'MATCH', OE_THIS);
 	{Passed, []} ->
-	    forward(seq, ?get_MyChannel(State), State, Passed, 'MATCHED');
+	    forward(seq, ?get_MyChannel(State), State, Passed, 'MATCHED', OE_THIS);
 	{Passed, Failed} ->
 	    %% Is OR, send Passed to channel and Failed to Admin.
-	    forward(seq, ?get_MyChannel(State), State, Passed, 'MATCHED'),
-	    forward(seq, ?get_MyAdmin(State), State, Failed, 'MATCH')
+	    forward(seq, ?get_MyChannel(State), State, Passed, 'MATCHED', OE_THIS),
+	    forward(seq, ?get_MyAdmin(State), State, Failed, 'MATCH', OE_THIS)
     end;
 push_structured_events(_,_,_,_) ->
     corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
@@ -610,7 +614,7 @@ disconnect_structured_push_consumer(_OE_THIS, _OE_FROM, State) ->
 %% Arguments: CosNotification::StructuredEvent
 %% Returns  : ok | 
 %%-----------------------------------------------------------
-push_structured_event(_OE_THIS, OE_FROM, State, Event) when ?is_STRUCTURED(State) ->
+push_structured_event(OE_THIS, OE_FROM, State, Event) when ?is_STRUCTURED(State) ->
     corba:reply(OE_FROM, ok),
     case {?not_isConvertedAny(Event),
 	  cosNotification_eventDB:filter_events([Event], ?get_AllFilter(State))} of
@@ -619,24 +623,27 @@ push_structured_event(_OE_THIS, OE_FROM, State, Event) when ?is_STRUCTURED(State
 	{true, {[],[_]}} ->
 	    %% Is OR and converted, change back and forward to Admin
 	    forward(any, ?get_MyAdmin(State), State, 
-		    Event#'CosNotification_StructuredEvent'.remainder_of_body, 'MATCH');
+		    Event#'CosNotification_StructuredEvent'.remainder_of_body, 
+		    'MATCH', OE_THIS);
 	{_, {[],[_]}} ->
 	    %% Is OR and not converted, forward to Admin
-	    forward(seq, ?get_MyAdmin(State), State, [Event], 'MATCH');
+	    forward(seq, ?get_MyAdmin(State), State, [Event], 'MATCH', OE_THIS);
 	{true, {[_],_}} when ?is_ANDOP(State) ->
 	    %% Is AND and converted, change back and forward to Admin
 	    forward(any, ?get_MyAdmin(State), State, 
-		    Event#'CosNotification_StructuredEvent'.remainder_of_body, 'MATCH');
+		    Event#'CosNotification_StructuredEvent'.remainder_of_body, 
+		    'MATCH', OE_THIS);
 	{true, {[_],_}} ->
 	    %% Is OR and converted, change back and forward to Channel
 	    forward(any, ?get_MyChannel(State), State, 
-		    Event#'CosNotification_StructuredEvent'.remainder_of_body, 'MATCHED');
+		    Event#'CosNotification_StructuredEvent'.remainder_of_body, 
+		    'MATCHED', OE_THIS);
 	{_, {[_],_}} when ?is_ANDOP(State) ->
 	    %% Is AND and not converted, forward to Admin
-	    forward(seq, ?get_MyAdmin(State), State, [Event], 'MATCH');
+	    forward(seq, ?get_MyAdmin(State), State, [Event], 'MATCH', OE_THIS);
 	_ ->
 	    %% Is OR and not converted, forward to Channel
-	    forward(seq, ?get_MyChannel(State), State, [Event], 'MATCHED')
+	    forward(seq, ?get_MyChannel(State), State, [Event], 'MATCHED', OE_THIS)
     end;
 push_structured_event(_,_,_,_) ->
     corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
@@ -659,15 +666,20 @@ delete_obj(List,List) -> corba:raise(#'CosNotifyFilter_FilterNotFound'{});
 delete_obj(List,_) -> List.
 
 %% Forward events
-forward(any, SendTo, State, Event, Status) ->
+forward(any, SendTo, State, Event, Status, OE_THIS) ->
     case catch oe_CosNotificationComm_Event:callAny(SendTo, Event, Status) of
 	ok ->
 	    ?DBG("PROXY FORWARD ANY: ~p~n",[Event]),
 	    {noreply, State};
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
+	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ;
+			      record(E, 'NO_PERMISSION') ;
+			      record(E, 'CosEventComm_Disconnected') ->
 	    orber:dbg("[~p] PusherConsumer:forward();~n"
 		      "Admin/Channel no longer exists; terminating and dropping: ~p", 
 		      [?LINE, Event], ?DEBUG_LEVEL),
+	    'CosNotification_Common':notify([{proxy, OE_THIS},
+					     {client, ?get_Client(State)}, 
+					     {reason, {'EXCEPTION', E}}]),
 	    {stop, normal, State};
 	R when ?is_PersistentConnection(State) ->
 	    orber:dbg("[~p] PusherConsumer:forward();~n"
@@ -679,14 +691,22 @@ forward(any, SendTo, State, Event, Status) ->
 		      "Admin/Channel respond incorrect: ~p~n"
 		      "Terminating and dropping: ~p", 
 		      [?LINE, R, Event], ?DEBUG_LEVEL),
+	    'CosNotification_Common':notify([{proxy, OE_THIS},
+					     {client, ?get_Client(State)}, 
+					     {reason, R}]),
 	    {stop, normal, State}
     end;
-forward(seq, SendTo, State, Event, Status) ->
+forward(seq, SendTo, State, Event, Status, OE_THIS) ->
     case catch oe_CosNotificationComm_Event:callSeq(SendTo, Event, Status) of
 	ok ->
 	    {noreply, State};
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
+	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ;
+			      record(E, 'NO_PERMISSION') ;
+			      record(E, 'CosEventComm_Disconnected') ->
 	    ?DBG("ADMIN NO LONGER EXIST; DROPPING: ~p~n", [Event]),
+	    'CosNotification_Common':notify([{proxy, OE_THIS},
+					     {client, ?get_Client(State)}, 
+					     {reason, {'EXCEPTION', E}}]),
 	    {stop, normal, State};
 	R when ?is_PersistentConnection(State) ->
 	    orber:dbg("[~p] PusherConsumer:forward();~n"
@@ -698,6 +718,9 @@ forward(seq, SendTo, State, Event, Status) ->
 		      "Admin/Channel respond incorrect: ~p~n"
 		      "Terminating and dropping: ~p", 
 		      [?LINE, R, Event], ?DEBUG_LEVEL),
+	    'CosNotification_Common':notify([{proxy, OE_THIS},
+					     {client, ?get_Client(State)}, 
+					     {reason, R}]),
 	    {stop, normal, State}
     end.
 

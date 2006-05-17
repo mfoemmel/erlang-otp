@@ -72,7 +72,7 @@ EMULATOR = beam
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 # VxWorks object files should be compressed.
 # Other object files should have debug_info.
-  ERL_COMPILE_FLAGS += +compressed
+  ERL_COMPILE_FLAGS += +compressed +strict_record_tests
 else
   ifeq ($(findstring ose_ppc750,$(TARGET)),ose_ppc750)
     ERL_COMPILE_FLAGS += +compressed
@@ -80,7 +80,7 @@ else
     ifdef BOOTSTRAP
       ERL_COMPILE_FLAGS += +slim
     else
-      ERL_COMPILE_FLAGS += +debug_info
+      ERL_COMPILE_FLAGS += +debug_info +strict_record_tests
     endif
   endif
 endif

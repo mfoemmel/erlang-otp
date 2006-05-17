@@ -52,10 +52,7 @@
 
 %% Main codegen structure.
 -record(cg, {lcount=1,				%Label counter
-	     mod,				%Current module
-	     func,				%Current function
 	     finfo,				%Function info label
-	     fcode,				%Function code label
 	     btype,				%Type of bif used.
 	     bfail,				%Fail label of bif
 	     break,				%Break label
@@ -64,33 +61,31 @@
 	     functable=gb_trees:empty(),	%Gb tree of local functions:
 						% {{Name,Arity},Label}
 	     in_catch=false,			%Inside a catch or not.
-	     need_frame,			%Need a stack frame.
-	     new_funs=true}).			%Generate new fun instructions.
+	     need_frame				%Need a stack frame.
+	    }).			
 
 %% Stack/register state record.
 -record(sr, {reg=[],				%Register table
 	     stk=[],				%Stack table
 	     res=[]}).				%Reserved regs: [{reserved,I,V}]
 
-module({Mod,Exp,Attr,Forms}, Options) ->
-    NewFunsFlag = not member(no_new_funs, Options),
-    {Fs,St} = functions(Forms, #cg{mod={atom,Mod},new_funs=NewFunsFlag}),
+module({Mod,Exp,Attr,Forms}, _Options) ->
+    {Fs,St} = functions(Forms, {atom,Mod}),
     {ok,{Mod,Exp,Attr,Fs,St#cg.lcount}}.
 
-functions(Forms, St0) ->
-    mapfoldl(fun (F, St) -> function(F, St) end, St0#cg{lcount=1}, Forms).
+functions(Forms, AtomMod) ->
+    mapfoldl(fun (F, St) -> function(F, AtomMod, St) end, #cg{lcount=1}, Forms).
 
-function({function,Name,Arity,As0,Vb,Vdb}, St0) ->
+function({function,Name,Arity,As0,Vb,Vdb}, AtomMod, St0) ->
     %%ok = io:fwrite("cg ~w:~p~n", [?LINE,{Name,Arity}]),
-    St1 = St0#cg{func={Name,Arity}},
-    {Fun,St2} = cg_fun(Vb, As0, Vdb, St1),
-    Func0 = {function,Name,Arity,St2#cg.fcode,Fun},
-    Func = bs_function(Func0),
-    {Func,St2}.
+    {Asm0,EntryLabel,St} = cg_fun(Vb, As0, Vdb, AtomMod, {Name,Arity}, St0),
+    Asm = bs_function(Asm0),
+    Func = {function,Name,Arity,EntryLabel,Asm},
+    {Func,St}.
 
 %% cg_fun([Lkexpr], [HeadVar], Vdb, State) -> {[Ainstr],State}
 
-cg_fun(Les, Hvs, Vdb, #cg{mod=AtomMod,func=NameArity}=St0) ->
+cg_fun(Les, Hvs, Vdb, AtomMod, NameArity, St0) ->
     {Fi,St1} = new_label(St0),			%FuncInfo label
     {Fl,St2} = local_func_label(NameArity, St1),
 
@@ -100,14 +95,13 @@ cg_fun(Les, Hvs, Vdb, #cg{mod=AtomMod,func=NameArity}=St0) ->
 				   end, [], Hvs),
 			stk=[]}, 0, Vdb),
     {B2,_Aft,St3} = cg_list(Les, 0, Vdb, Bef, St2#cg{btype=exit,
-						    bfail=Fi,
-						    finfo=Fi,
-						    fcode=Fl,
-						    is_top_block=true}),
+						     bfail=Fi,
+						     finfo=Fi,
+						     is_top_block=true}),
     {Name,Arity} = NameArity,
     A = [{label,Fi},{func_info,AtomMod,{atom,Name},Arity},
 	 {label,Fl}|B2],
-    {A,St3}.
+    {A,Fl,St3}.
 
 %% cg(Lkexpr, Vdb, StackReg, State) -> {[Ainstr],StackReg,State}.
 %%  Generate code for a kexpr.
@@ -128,6 +122,8 @@ cg({enter,Func,As}, Le, Vdb, Bef, St) ->
     enter_cg(Func, As, Le, Vdb, Bef, St);
 cg({bif,Bif,As,Rs}, Le, Vdb, Bef, St) ->
     bif_cg(Bif, As, Rs, Le, Vdb, Bef, St);
+cg({gc_bif,Bif,As,Rs}, Le, Vdb, Bef, St) ->
+    gc_bif_cg(Bif, As, Rs, Le, Vdb, Bef, St);
 cg({receive_loop,Te,Rvar,Rm,Tes,Rs}, Le, Vdb, Bef, St) ->
     recv_loop_cg(Te, Rvar, Rm, Tes, Rs, Le, Vdb, Bef, St);
 cg(receive_next, Le, Vdb, Bef, St) ->
@@ -135,13 +131,13 @@ cg(receive_next, Le, Vdb, Bef, St) ->
 cg(receive_accept, _Le, _Vdb, Bef, St) -> {[remove_message],Bef,St};
 cg({'try',Ta,Vs,Tb,Evs,Th,Rs}, Le, Vdb, Bef, St) ->
     try_cg(Ta, Vs, Tb, Evs, Th, Rs, Le, Vdb, Bef, St);
+cg({try_enter,Ta,Vs,Tb,Evs,Th}, Le, Vdb, Bef, St) ->
+    try_enter_cg(Ta, Vs, Tb, Evs, Th, Le, Vdb, Bef, St);
 cg({'catch',Cb,R}, Le, Vdb, Bef, St) ->
     catch_cg(Cb, R, Le, Vdb, Bef, St);
 cg({set,Var,Con}, Le, Vdb, Bef, St) -> set_cg(Var, Con, Le, Vdb, Bef, St);
 cg({return,Rs}, Le, Vdb, Bef, St) -> return_cg(Rs, Le, Vdb, Bef, St);
 cg({break,Bs}, Le, Vdb, Bef, St) -> break_cg(Bs, Le, Vdb, Bef, St);
-cg({need_heap,0}, _Le, _Vdb, Bef, St) ->
-    {[],Bef,St};
 cg({need_heap,H}, _Le, _Vdb, Bef, St) ->
     {[{test_heap,H,max_reg(Bef#sr.reg)}],Bef,St}.
 
@@ -150,65 +146,50 @@ cg({need_heap,H}, _Le, _Vdb, Bef, St) ->
 cg_list(Kes, I, Vdb, Bef, St0) ->
     {Keis,{Aft,St1}} =
 	flatmapfoldl(fun (Ke, {Inta,Sta}) ->
-%			     ok = io:fwrite("    %% ~p\n", [Inta]),
-%			     ok = io:fwrite("cgl:~p\n", [Ke]),
 			     {Keis,Intb,Stb} = cg(Ke, Vdb, Inta, Sta),
-%			     ok = io:fwrite("    ~p\n", [Keis]),
-%			     ok = io:fwrite("    %% ~p\n", [Intb]),
 			     {comment(Inta) ++ Keis,{Intb,Stb}}
 		     end, {Bef,St0}, need_heap(Kes, I)),
     {Keis,Aft,St1}.
 
-%% need_heap([Lkexpr], I, BifType) -> [Lkexpr].
+%% need_heap([Lkexpr], I, St) -> [Lkexpr].
 %%  Insert need_heap instructions in Kexpr list.  Try to be smart and
 %%  collect them together as much as possible.
 
 need_heap(Kes0, I) ->
-    {Kes1,{H,F}} = flatmapfoldr(fun (Ke, {H0,F0}) ->
-					{Ns,H1,F1} = need_heap_1(Ke, H0, F0),
-					{[Ke|Ns],{H1,F1}}
-				end, {0,false}, Kes0),
+    {Kes,H} = flatmapfoldr(fun (Ke, H0) ->
+				    {Ns,H1} = need_heap_1(Ke, H0),
+				    {[Ke|Ns],H1}
+			    end, 0, Kes0),
     %% Prepend need_heap if necessary.
-    Kes2 = need_heap_need(I, H, F) ++ Kes1,
-%     ok = io:fwrite("need_heap: ~p~n",
-% 		   [{{H,F},
-% 		     map(fun (#l{ke={match,M,Rs}}) -> match;
-% 			     (Lke) -> Lke#l.ke end, Kes2)}]),
-    Kes2.
+    need_heap_need(I, H) ++ Kes.
 
-need_heap_1(#l{ke={set,_,{binary,_}},i=I}, H, F) ->
-    {need_heap_need(I, H, F),0,false};
-need_heap_1(#l{ke={set,_,Val}}, H, F) ->
+need_heap_1(#l{ke={set,_,{binary,_}},i=I}, H) ->
+    {need_heap_need(I, H),0};
+need_heap_1(#l{ke={set,_,Val}}, H) ->
     %% Just pass through adding to needed heap.
     {[],H + case Val of
 		{cons,_} -> 2;
 		{tuple,Es} -> 1 + length(Es);
 		{string,S} -> 2 * length(S);
 		_Other -> 0
-	    end,F};
-need_heap_1(#l{ke={call,_Func,_As,_Rs},i=I}, H, F) ->
-    %% Calls generate a need if necessary and also force one.
-    {need_heap_need(I, H, F),0,true};
-need_heap_1(#l{ke={bif,dsetelement,_As,_Rs},i=I}, H, F) ->
-    {need_heap_need(I, H, F),0,true};
-need_heap_1(#l{ke={bif,{make_fun,_,_,_,_},_As,_Rs},i=I}, H, F) ->
-    {need_heap_need(I, H, F),0,true};
-need_heap_1(#l{ke={bif,_Bif,_As,_Rs}}, H, F) ->
-    {[],H,F};
-need_heap_1(#l{i=I}, H, F) ->
-    %% Others kexprs generate a need if necessary but don't force.
-    {need_heap_need(I, H, F),0,false}.
+	    end};
+need_heap_1(#l{ke={bif,dsetelement,_As,_Rs},i=I}, H) ->
+    {need_heap_need(I, H),0};
+need_heap_1(#l{ke={bif,{make_fun,_,_,_,_},_As,_Rs},i=I}, H) ->
+    {need_heap_need(I, H),0};
+need_heap_1(#l{ke={bif,_Bif,_As,_Rs}}, H) ->
+    {[],H};
+need_heap_1(#l{i=I}, H) ->
+    {need_heap_need(I, H),0}.
 
-need_heap_need(_I, 0, false) -> [];
-need_heap_need(I, H, _F) -> [#l{ke={need_heap,H},i=I}].
-
+need_heap_need(_I, 0) -> [];
+need_heap_need(I, H) -> [#l{ke={need_heap,H},i=I}].
 
 %% match_cg(Match, [Ret], Le, Vdb, StackReg, State) ->
 %%	{[Ainstr],StackReg,State}.
 %%  Generate code for a match.  First save all variables on the stack
 %%  that are to survive after the match.  We leave saved variables in
 %%  their registers as they might actually be in the right place.
-%%  Should test this.
 
 match_cg(M, Rs, Le, Vdb, Bef, St0) ->
     I = Le#l.i,
@@ -287,16 +268,13 @@ match_fail_cg({try_clause,Reason}, Le, Vdb, Bef, St) ->
 block_cg(Es, Le, _Vdb, Bef, St) ->
     block_cg(Es, Le, Bef, St).
 
+block_cg(Es, Le, Bef, #cg{is_top_block=false}=St) ->
+    cg_block(Es, Le#l.i, Le#l.vdb, Bef, St);
 block_cg(Es, Le, Bef, St0) ->
-    case St0#cg.is_top_block of
-	false ->
-	    cg_block(Es, Le#l.i, Le#l.vdb, Bef, St0);
-	true ->
-	    {Keis,Aft,St1} = cg_block(Es, Le#l.i, Le#l.vdb, Bef,
-				      St0#cg{is_top_block=false,
-					     need_frame=false}),
-	    top_level_block(Keis, Aft, max_reg(Bef#sr.reg), St1)
-    end.
+    {Is0,Aft,St} = cg_block(Es, Le#l.i, Le#l.vdb, Bef,
+			    St0#cg{is_top_block=false,need_frame=false}),
+    Is = top_level_block(Is0, Aft, max_reg(Bef#sr.reg), St),
+    {Is,Aft,St#cg{is_top_block=true}}.
 
 cg_block([], _I, _Vdb, Bef, St0) ->
     {[],Bef,St0};
@@ -319,7 +297,15 @@ basic_block([], Acc) -> {reverse(Acc),[]};
 basic_block([Le|Les], Acc) ->
     case collect_block(Le#l.ke) of
 	include -> basic_block(Les, [Le|Acc]);
-	{block_end,As} -> {reverse(Acc, [Le]),Le#l.i,As,Les};
+	{block_end,As} ->
+	    case Acc of
+		[] ->
+		    %% If the basic block does not contain any set instructions,
+		    %% it serves no useful purpose to do basic block optimizations.
+		    {[Le],Les};
+		_ ->
+		    {reverse(Acc, [Le]),Le#l.i,As,Les}
+	    end;
 	no_block -> {reverse(Acc, [Le]),Les}
     end.
 	
@@ -331,7 +317,7 @@ collect_block({enter,{var,_}=Var,As})-> {block_end,As++[Var]};
 collect_block({enter,Func,As})       -> {block_end,As++func_vars(Func)};
 collect_block({return,Rs})           -> {block_end,Rs};
 collect_block({break,Bs})            -> {block_end,Bs};
-collect_block({bif,_Bif,_As,_Rs})    -> include;
+%%collect_block({bif,_Bif,_As,_Rs})    -> include;
 collect_block(_)                     -> no_block.
 
 func_vars({remote,M,F}) when element(1, M) == var;
@@ -353,7 +339,7 @@ cg_basic_block(Kes, Fb, Lf, As, Vdb, Bef, St0) ->
 		     {Int0,X0_v0,St0}, need_heap(Kes, Fb)),
     {Keis,Aft,St1}.
 
-cg_basic_block(Ke, {Inta,X0v,Sta}, _Lf, Vdb) when element(1, Ke#l.ke) =:= need_heap ->
+cg_basic_block(#l{ke={need_heap,_}}=Ke, {Inta,X0v,Sta}, _Lf, Vdb) ->
     {Keis,Intb,Stb} = cg(Ke, Vdb, Inta, Sta),
     {comment(Inta) ++ Keis, {Intb,X0v,Stb}};
 cg_basic_block(Ke, {Inta,X0_v1,Sta}, Lf, Vdb) ->
@@ -435,18 +421,9 @@ allocate_x0([{V,_F,_L}=VFL|Vs], _, Bef) ->
 reserve_x0(V, [_|Res]) -> [{0,V}|Res];
 reserve_x0(V, []) -> [{0,V}].
 
-top_level_block(Keis, Bef, _MaxRegs, St0) when St0#cg.need_frame =:= false,
-					      length(Bef#sr.stk) =:= 0 ->
-    %% This block need no stack frame.  However, we still need to turn the
-    %% stack frame upside down.
-    MaxY = length(Bef#sr.stk)-1,
-    Keis1 = flatmap(fun (Tuple) when is_tuple(Tuple) ->
-			    [turn_yregs(size(Tuple), Tuple, MaxY)];
-			(Other) ->
-			    [Other]
-		    end, Keis),
-    {Keis1,Bef,St0#cg{is_top_block=true}};
-top_level_block(Keis, Bef, MaxRegs, St0) ->
+top_level_block(Keis, #sr{stk=[]}, _MaxRegs, #cg{need_frame=false}) ->
+    Keis;
+top_level_block(Keis, Bef, MaxRegs, _St) ->
     %% This top block needs an allocate instruction before it, and a
     %% deallocate instruction before each return.
     FrameSz = length(Bef#sr.stk),
@@ -457,14 +434,16 @@ top_level_block(Keis, Bef, MaxRegs, St0) ->
 			    [{call_ext_last,Arity,Func,FrameSz}];
 			({apply_only,Arity}) ->
 			    [{apply_last,Arity,FrameSz}];
+			({break,Fail}) ->
+			    [{deallocate,FrameSz},{jump,Fail}];
 			(return) ->
-			    [{deallocate,FrameSz}, return];
+			    [{deallocate,FrameSz},return];
 			(Tuple) when is_tuple(Tuple) ->
 			    [turn_yregs(size(Tuple), Tuple, MaxY)];
 			(Other) ->
 			    [Other]
 		    end, Keis),
-    {[{allocate_zero,FrameSz,MaxRegs}|Keis1], Bef, St0#cg{is_top_block=true}}.
+    [{allocate_zero,FrameSz,MaxRegs}|Keis1].
 
 %% turn_yregs(Size, Tuple, MaxY) -> Tuple'
 %%   Renumber y register so that {y,0} becomes {y,FrameSize-1},
@@ -496,8 +475,12 @@ select_cg(#l{ke={type_clause,nil,[S]}}, {var,V}, Tf, Vf, Bef, St) ->
     select_nil(S, V, Tf, Vf, Bef, St);
 select_cg(#l{ke={type_clause,binary,[S]}}, {var,V}, Tf, Vf, Bef, St) ->
     select_binary(S, V, Tf, Vf, Bef, St);
+select_cg(#l{ke={type_clause,old_bin_seg,S}}, {var,V}, Tf, _Vf, Bef, St) ->
+    old_select_bin_segs(S, V, Tf, Bef, St);
 select_cg(#l{ke={type_clause,bin_seg,S}}, {var,V}, Tf, _Vf, Bef, St) ->
     select_bin_segs(S, V, Tf, Bef, St);
+select_cg(#l{ke={type_clause,old_bin_end,[S]}}, {var,V}, Tf, _Vf, Bef, St) ->
+    old_select_bin_end(S, V, Tf, Bef, St);
 select_cg(#l{ke={type_clause,bin_end,[S]}}, {var,V}, Tf, _Vf, Bef, St) ->
     select_bin_end(S, V, Tf, Bef, St);
 select_cg(#l{ke={type_clause,Type,Scs}}, {var,V}, Tf, Vf, Bef, St0) ->
@@ -553,30 +536,38 @@ select_nil(#l{ke={val_clause,nil,B}}, V, Tf, Vf, Bef, St0) ->
     {Bis,Aft,St1} = match_cg(B, Vf, Bef, St0),
     {[{test,is_nil,{f,Tf},[fetch_var(V, Bef)]}] ++ Bis,Aft,St1}.
 
-select_binary(#l{ke={val_clause,{old_binary,Var},B}}=L,
-	      V, Tf, Vf, Bef, St) ->
-    %% Currently handled in the same way as new binaries.
-    select_binary(L#l{ke={val_clause,{binary,Var},B}}, V, Tf, Vf, Bef, St);
-select_binary(#l{ke={val_clause,{binary,{var,Ivar}},B},i=I,vdb=Vdb},
+select_binary(#l{ke={val_clause,{old_binary,{var,Ivar}},B},i=I,vdb=Vdb},
 	      V, Tf, Vf, Bef, St0) ->
     Int0 = clear_dead(Bef, I, Vdb),
     {Bis,Aft,St1} = match_cg(B, Vf, Int0, St0),
     {[{test,bs_start_match,{f,Tf},[fetch_var(V, Bef)]},{bs_save,Ivar}|Bis],
+     Aft,St1};
+select_binary(#l{ke={val_clause,{binary,{var,Ivar}},B},i=I,vdb=Vdb},
+	      V, Tf, Vf, Bef, St0) ->
+    Regs = put_reg(Ivar, Bef#sr.reg),
+    Int0 = clear_dead(Bef#sr{reg=Regs}, I, Vdb),
+    {Bis,Aft,St1} = match_cg(B, Vf, Int0, St0),
+    CtxReg = fetch_var(Ivar, Int0),
+    Live = max_reg(Bef#sr.reg),
+    {[{test,bs_start_match2,{f,Tf},[fetch_var(V, Bef),Live,Ivar,CtxReg]},
+      {bs_save2,CtxReg,{Ivar,Ivar}}|Bis],
      Aft,St1}.
 
-select_bin_segs(Scs, Ivar, Tf, Bef, St) ->
+%% Old selection of binary segments follow.
+
+old_select_bin_segs(Scs, Ivar, Tf, Bef, St) ->
     match_fmf(fun(S, Fail, Sta) ->
-		      select_bin_seg(S, Ivar, Fail, Bef, Sta) end,
+		      old_select_bin_seg(S, Ivar, Fail, Bef, Sta) end,
 	      Tf, St, Scs).
 
-select_bin_seg(#l{ke={val_clause,{bin_seg,Size,U,T,Fs,Es},B},i=I,vdb=Vdb},
+old_select_bin_seg(#l{ke={val_clause,{old_bin_seg,Size,U,T,Fs,Es},B},i=I,vdb=Vdb},
 		   Ivar, Fail, Bef, St0) ->
-    {Mis,Int,St1} = select_extract_bin(Es, Size, U, T, Fs, Fail,
-				       I, Vdb, Bef, St0),
+    {Mis,Int,St1} = old_select_extract_bin(Es, Size, U, T, Fs, Fail,
+					   I, Vdb, Bef, St0),
     {Bis,Aft,St2} = match_cg(B, Fail, Int, St1),
     {[{bs_restore,Ivar}|Mis] ++ Bis,Aft,St2}.
 
-select_extract_bin([{var,Hd},{var,Tl}], Size0, Unit, Type, Flags, Vf,
+old_select_extract_bin([{var,Hd},{var,Tl}], Size0, Unit, Type, Flags, Vf,
 		   I, Vdb, Bef, St) ->
     SizeReg = get_bin_size_reg(Size0, Bef),
     {Es,Aft} =
@@ -588,25 +579,71 @@ select_extract_bin([{var,Hd},{var,Tl}], Size0, Unit, Type, Flags, Vf,
 		Reg0 = put_reg(Hd, Bef#sr.reg),
 		Int1 = Bef#sr{reg=Reg0},
 		Rhd = fetch_reg(Hd, Reg0),
-		Name = get_bits_instr(Type),
+		Name = old_get_bits_instr(Type),
 		{[{test,Name,{f,Vf},[SizeReg,Unit,{field_flags,Flags},Rhd]},
 		  {bs_save,Tl}],Int1}
 	end,
     {Es,clear_dead(Aft, I, Vdb),St}.
+
+old_select_bin_end(#l{ke={val_clause,old_bin_end,B}},
+	       Ivar, Tf, Bef, St0) ->
+    {Bis,Aft,St2} = match_cg(B, Tf, Bef, St0),
+    {[{bs_restore,Ivar},{test,bs_test_tail,{f,Tf},[0]}|Bis],Aft,St2}.
+
+old_get_bits_instr(integer) -> bs_get_integer;
+old_get_bits_instr(float)   -> bs_get_float;
+old_get_bits_instr(binary)  -> bs_get_binary.
+
+%% New instructions for selection of binary segments.
+
+select_bin_segs(Scs, Ivar, Tf, Bef, St) ->
+    match_fmf(fun(S, Fail, Sta) ->
+		      select_bin_seg(S, Ivar, Fail, Bef, Sta) end,
+	      Tf, St, Scs).
+
+select_bin_seg(#l{ke={val_clause,{bin_seg,Ctx,Size,U,T,Fs,Es},B},i=I,vdb=Vdb},
+	       Ivar, Fail, Bef, St0) ->
+    {Mis,Int,St1} = select_extract_bin(Es, Size, U, T, Fs, Fail,
+				       I, Vdb, Bef, Ctx, St0),
+    {Bis,Aft,St2} = match_cg(B, Fail, Int, St1),
+    CtxReg = fetch_var(Ctx, Bef),
+    {[{bs_restore2,CtxReg,{Ctx,Ivar}}|Mis] ++ Bis,Aft,St2}.
+
+select_extract_bin([{var,Hd},{var,Tl}], Size0, Unit, Type, Flags, Vf,
+		   I, Vdb, Bef, Ctx, St) ->
+    SizeReg = get_bin_size_reg(Size0, Bef),
+    {Es,Aft} =
+	case vdb_find(Hd, Vdb) of
+	    {_,_,Lhd} when Lhd =< I ->
+		CtxReg = fetch_var(Ctx, Bef),
+		{[{test,bs_skip_bits2,{f,Vf},[CtxReg,SizeReg,Unit,{field_flags,Flags}]},
+		  {bs_save2,CtxReg,{Ctx,Tl}}],Bef};
+	    {_,_,_} ->
+		Reg = put_reg(Hd, Bef#sr.reg),
+		Int1 = Bef#sr{reg=Reg},
+		Rhd = fetch_reg(Hd, Reg),
+		CtxReg = fetch_reg(Ctx, Reg),
+		Name = get_bits_instr(Type),
+		Live = max_reg(Bef#sr.reg),
+		{[{test,Name,{f,Vf},[CtxReg,Live,SizeReg,Unit,{field_flags,Flags},Rhd]},
+		  {bs_save2,CtxReg,{Ctx,Tl}}],Int1}
+	end,
+    {Es,clear_dead(Aft, I, Vdb),St}.
+
+select_bin_end(#l{ke={val_clause,{bin_end,Ctx},B}},
+	       Ivar, Tf, Bef, St0) ->
+    {Bis,Aft,St2} = match_cg(B, Tf, Bef, St0),
+    CtxReg = fetch_var(Ctx, Bef),
+    {[{bs_restore2,CtxReg,{Ctx,Ivar}},{test,bs_test_tail2,{f,Tf},[CtxReg,0]}|Bis],Aft,St2}.
 
 get_bin_size_reg({var,V}, Bef) ->
     fetch_var(V, Bef);
 get_bin_size_reg(Literal, _Bef) ->
     Literal.
 
-select_bin_end(#l{ke={val_clause,bin_end,B}},
-	       Ivar, Tf, Bef, St0) ->
-    {Bis,Aft,St2} = match_cg(B, Tf, Bef, St0),
-    {[{bs_restore,Ivar},{test,bs_test_tail,{f,Tf},[0]}|Bis],Aft,St2}.
-    
-get_bits_instr(integer) -> bs_get_integer;
-get_bits_instr(float)   -> bs_get_float;
-get_bits_instr(binary)  -> bs_get_binary.
+get_bits_instr(integer) -> bs_get_integer2;
+get_bits_instr(float)   -> bs_get_float2;
+get_bits_instr(binary)  -> bs_get_binary2.
 
 select_val(#l{ke={val_clause,{tuple,Es},B},i=I,vdb=Vdb}, V, Vf, Bef, St0) ->
     {Eis,Int,St1} = select_extract_tuple(V, Es, I, Vdb, Bef, St0),
@@ -658,10 +695,82 @@ select_extract_cons(Src, [{var,Hd}, {var,Tl}], I, Vdb, Bef, St) ->
     {Es,Aft,St}.
     
 
-guard_clause_cg(#l{ke={guard_clause,G,B},vdb=Vdb}, Fail, Bef, St0) ->
-    {Gis,Int,St1} = guard_cg(G, Fail, Vdb, Bef, St0),
-    {Bis,Aft,St2} = match_cg(B, Fail, Int, St1),
-    {Gis ++ Bis,Aft,St2}.
+guard_clause_cg(#l{ke={guard_clause,G,B},vdb=Vdb,i=I}, Fail, Bef, St0) ->
+    case is_matching_guard(G) of
+	false ->
+	    %% The basic case without the complication of matching
+	    %% in the guard.
+
+	    {Gis,Int,St1} = guard_cg(G, Fail, Vdb, Bef, St0),
+	    {Bis,Aft,St} = match_cg(B, Fail, Int, St1),
+	    {Gis ++ Bis,Aft,St};
+	true ->
+	    %% This top-level guard contains code that matches
+	    %% (because the original source code used andalso/orelse).
+	    %%   We must set up a stack frame. Furthermore
+	    %% we must restore all X registers before leaving the guard.
+	    %% This is messy, so we do it in a separate function.
+
+	    saving_guard_cg(G, B, I, Vdb, Fail, Bef, St0)
+    end.
+
+saving_guard_cg(G, B, _I, Vdb, Fail, Bef, St0) ->
+    {RestoreL,St1} = new_label(St0),
+    {Gis,Int,St2} = guard_cg(G, RestoreL, Vdb, Bef,
+			     St1#cg{is_top_block=false}),
+    Hvs = hvs(Bef, Int),
+    {Bis,Aft,St} = match_cg(B, Fail, Int, St2),
+    {RestoreRegsIs,_} = cg_setup_call(Hvs, Int, 1, Vdb),
+    Break = case St0#cg.is_top_block of
+		false -> [{jump,{f,Fail}}];
+		true -> [{break,{f,Fail}}]
+	    end,
+    Is0 = Gis++Bis++[{label,RestoreL}] ++
+	RestoreRegsIs ++ Break,
+    Is = case St0#cg.is_top_block of
+	     false -> Is0;
+	     true -> top_level_block(Is0, Aft, max_reg(Bef#sr.reg), St)
+	 end,
+    {Is,Aft,St#cg{is_top_block=St0#cg.is_top_block}}.
+
+hvs(#sr{reg=Reg}, #sr{stk=Saved0}) ->
+    Saved = ordsets:from_list([V || {V} <- Saved0]),
+    hvs_1(Reg, Saved, []).
+
+hvs_1([{_,V}|Rs], Saved, Acc) ->
+    case ordsets:is_element(V, Saved) of
+	false -> hvs_1(Rs, Saved, [nil|Acc]);
+	true ->  hvs_1(Rs, Saved, [{var,V}|Acc])
+    end;
+hvs_1([_|Rs], Saved, Acc) ->
+    hvs_1(Rs, Saved, [nil|Acc]);
+hvs_1([], _, Acc) -> hvs_2(Acc).
+
+hvs_2([nil|Vs]) -> hvs_2(Vs);
+hvs_2(Vs) -> reverse(Vs).
+
+
+%% is_matching_guard(GuardExpr) -> true|false
+%%  Determine whether a guard expression contains a match expression.
+
+is_matching_guard(#l{ke={protected,T,_}}) -> is_matching_guard_list(T);
+is_matching_guard(#l{ke={test,_,_}}) -> false;
+is_matching_guard(#l{ke={bif,_,_,_}}) -> false;
+is_matching_guard(#l{ke={gc_bif,_,_,_}}) -> false;
+is_matching_guard(#l{ke={set,_,_}}) -> false;
+is_matching_guard(#l{ke={seq,F,T}}) ->
+    case is_matching_guard(F) of
+	false -> is_matching_guard(T);
+	true -> true
+    end;
+is_matching_guard(#l{ke={match,_,_}}) -> true.
+
+is_matching_guard_list([T|Ts]) ->
+    case is_matching_guard(T) of
+	false -> is_matching_guard_list(Ts);
+	true -> true
+    end;
+is_matching_guard_list([]) -> false.
 
 %% guard_cg(Guard, Fail, Vdb, StackReg, State) ->
 %%      {[Ainstr],StackReg,State}.
@@ -690,12 +799,28 @@ guard_cg(G, _Fail, Vdb, Bef, St) ->
 %%  return values then these must be set to 'false' on failure,
 %%  control always passes to the next instruction.
 
-protected_cg(Ts, [], Fail, I, Vdb, Bef, St0) ->
+protected_cg(Ts, Rs, Fail, I, Vdb, Bef, St0) ->
+    case is_matching_guard_list(Ts) of
+	false ->
+	    protected_cg_1(Ts, Rs, Fail, I, Vdb, Bef, St0);
+	true ->
+	    %% A match construct inside a protected means that there was
+	    %% an andalso/orelse in the source code.
+	    %% We must save all variables that are to survive the protected
+	    %% before entering it (i.e. before executing any
+	    %% instruction that could fail, such as a guard BIF).
+
+	    {Sis,Int} = adjust_stack(Bef, I, I+1, Vdb),
+	    {Tis,Aft,St} = protected_cg_1(Ts, Rs, Fail, I, Vdb, Int, St0),
+	    {Sis++Tis,Aft,St}
+    end.
+
+protected_cg_1(Ts, [], Fail, I, Vdb, Bef, St0) ->
     %% Protect these calls, revert when done.
     {Tis,Aft,St1} = guard_cg_list(Ts, Fail, I, Vdb, Bef,
 				  St0#cg{btype=fail,bfail=Fail}),
     {Tis,Aft,St1#cg{btype=St0#cg.btype,bfail=St0#cg.bfail}};
-protected_cg(Ts, Rs, _Fail, I, Vdb, Bef, St0) ->
+protected_cg_1(Ts, Rs, _Fail, I, Vdb, Bef, St0) ->
     {Pfail,St1} = new_label(St0),
     {Psucc,St2} = new_label(St1),
     {Tis,Aft,St3} = guard_cg_list(Ts, Pfail, I, Vdb, Bef,
@@ -749,7 +874,7 @@ test_type('==', 2)  -> {cond_op,is_eq};
 test_type('/=', 2)  -> {cond_op,is_ne};
 test_type('=:=', 2) -> {cond_op,is_eq_exact};
 test_type('=/=', 2) -> {cond_op,is_ne_exact};
-test_type(internal_is_record, 3) -> {cond_op,internal_is_record}.
+test_type(is_record, 3) -> {cond_op,is_record}.
 
 %% guard_cg_list([Kexpr], Fail, I, Vdb, StackReg, St) ->
 %%      {[Ainstr],StackReg,St}.
@@ -775,8 +900,7 @@ match_fmf(F, LastFail, St0, [H|T]) ->
     {Fail,St1} = new_label(St0),
     {R,Aft1,St2} = F(H, Fail, St1),
     {Rs,Aft2,St3} = match_fmf(F, LastFail, St2, T),
-    {R ++ [{label,Fail}] ++ Rs,sr_merge(Aft1, Aft2),St3};
-match_fmf(_, _, St, []) -> {[],void,St}.
+    {R ++ [{label,Fail}] ++ Rs,sr_merge(Aft1, Aft2),St3}.
 
 %% call_cg(Func, [Arg], [Ret], Le, Vdb, StackReg, State) ->
 %%      {[Ainstr],StackReg,State}.
@@ -923,10 +1047,17 @@ bif_cg({make_fun,Func,Arity,Index,Uniq}, As, Rs, Le, Vdb, Bef, St0) ->
     {Sis,Int} = cg_setup_call(As, Bef, Le#l.i, Vdb),
     Reg = load_vars(Rs, clear_regs(Int#sr.reg)),
     {FuncLbl,St1} = local_func_label(Func, Arity, St0),
-    MakeFun = case St0#cg.new_funs of
-		  true -> {make_fun2,{f,FuncLbl},Index,Uniq,length(As)};
-		  false -> {make_fun,{f,FuncLbl},Uniq,length(As)}
-	      end,
+    MakeFun = {make_fun2,{f,FuncLbl},Index,Uniq,length(As)},
+    {comment({make_fun,{Func,Arity,Uniq},As}) ++ Sis ++
+     [MakeFun],
+     clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb),
+     St1};
+bif_cg({old_make_fun,Func,Arity,Uniq}, As, Rs, Le, Vdb, Bef, St0) ->
+    %% This behaves more like a function call.
+    {Sis,Int} = cg_setup_call(As, Bef, Le#l.i, Vdb),
+    Reg = load_vars(Rs, clear_regs(Int#sr.reg)),
+    {FuncLbl,St1} = local_func_label(Func, Arity, St0),
+    MakeFun = {make_fun,{f,FuncLbl},Uniq,length(As)},
     {comment({make_fun,{Func,Arity,Uniq},As}) ++ Sis ++
      [MakeFun],
      clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb),
@@ -945,12 +1076,43 @@ bif_cg(Bif, As, [{var,V}], Le, Vdb, Bef, St0) ->
 	    true -> adjust_stack(Bef, Le#l.i, Le#l.i+1, Vdb);
 	    false -> {[],Bef}
 	end,
+    Int1 = clear_dead(Int0, Le#l.i, Vdb),
+    Reg = put_reg(V, Int1#sr.reg),
+    Int = Int1#sr{reg=Reg},
+    Arity = length(Ars),
+    Dst = fetch_reg(V, Reg),
+    BifFail = bif_fail(St0#cg.btype, St0#cg.bfail, Arity),
+    {Sis++[{bif,Bif,BifFail,Ars,Dst}],
+     clear_dead(Int, Le#l.i, Vdb), St0}.
+
+
+%% gc_bif_cg(Bif, [Arg], [Ret], Le, Vdb, StackReg, State) ->
+%%      {[Ainstr],StackReg,State}.
+
+gc_bif_cg(Bif, As, [{var,V}], Le, Vdb, Bef, St0) ->
+    Ars = cg_reg_args(As, Bef),
+
+    %% If we are inside a catch, we must save everything that will
+    %% be alive after the catch (because the BIF might fail and there
+    %% will be a jump to the code after the catch).
+    %%   Currently, we are somewhat pessimistic in
+    %% that we save any variable that will be live after this BIF call.
+
+    {Sis,Int0} =
+	case St0#cg.in_catch of
+	    true -> adjust_stack(Bef, Le#l.i, Le#l.i+1, Vdb);
+	    false -> {[],Bef}
+	end,
 
     Int1 = clear_dead(Int0, Le#l.i, Vdb),
     Reg = put_reg(V, Int1#sr.reg),
     Int = Int1#sr{reg=Reg},
     Dst = fetch_reg(V, Reg),
-    {Sis ++ [{bif,Bif,bif_fail(St0#cg.btype, St0#cg.bfail, length(Ars)),Ars,Dst}],
+    BifFail = case St0#cg.btype of
+		  exit -> {f,0};
+		  fail -> {f,St0#cg.bfail}
+	      end,
+    {Sis++[{gc_bif,Bif,BifFail,max_reg(Bef#sr.reg),Ars,Dst}],
      clear_dead(Int, Le#l.i, Vdb), St0}.
 
 bif_fail(_, _, 0) -> nofail;
@@ -1038,6 +1200,25 @@ try_cg(Ta, Vs, Tb, Evs, Th, Rs, Le, Vdb, Bef, St0) ->
      clear_dead(Aft, Le#l.i, Vdb),
      St7#cg{break=St0#cg.break}}.     
 
+try_enter_cg(Ta, Vs, Tb, Evs, Th, Le, Vdb, Bef, St0) ->
+    {B,St1} = new_label(St0),			%Body label
+    {H,St2} = new_label(St1),			%Handler label
+    TryTag = Ta#l.i,
+    Int1 = Bef#sr{stk=put_catch(TryTag, Bef#sr.stk)},
+    TryReg = fetch_stack({catch_tag,TryTag}, Int1#sr.stk),
+    {Ais,Int2,St3} = cg(Ta, Vdb, Int1, St2#cg{break=B,in_catch=true}),
+    Int3 = Int2#sr{stk=drop_catch(TryTag, Int2#sr.stk)},
+    St4 = St3#cg{in_catch=St2#cg.in_catch},
+    {Bis,Baft,St5} = cg(Tb, Vdb, Int3#sr{reg=load_vars(Vs, Int3#sr.reg)}, St4),
+    {His,Haft,St6} = cg(Th, Vdb, Int3#sr{reg=load_vars(Evs, Int3#sr.reg)}, St5),
+    Int4 = sr_merge(Baft, Haft),		%Merge stack/registers
+    Aft = Int4,
+    {[{'try',TryReg,{f,H}}] ++ Ais ++ 
+     [{label,B},{try_end,TryReg}] ++ Bis ++
+     [{label,H},{try_case,TryReg}] ++ His,
+     clear_dead(Aft, Le#l.i, Vdb),
+     St6#cg{break=St0#cg.break}}.     
+
 %% catch_cg(CatchBlock, Ret, Le, Vdb, Bef, St) -> {[Ainstr],Aft,St}.
 
 catch_cg(C, {var,R}, Le, Vdb, Bef, St0) ->
@@ -1072,14 +1253,19 @@ set_cg([{var,R}], {cons,Es}, Le, Vdb, Bef, St) ->
     Int1 = Int0#sr{reg=put_reg(R, Int0#sr.reg)},
     Ret = fetch_reg(R, Int1#sr.reg),
     {[{put_list,S1,S2,Ret}], Int1, St};
-set_cg([{var,R}], {old_binary,Segs}, Le, Vdb, Bef, St) ->
+set_cg([{var,R}], {old_binary,Segs}, Le, Vdb, Bef, #cg{in_catch=InCatch}=St) ->
     Fail = bif_fail(St#cg.btype, St#cg.bfail, 42),
     PutCode = cg_bin_put(Segs, Fail, Bef),
+    {Sis,Int0} =
+	case InCatch of
+	    true -> adjust_stack(Bef, Le#l.i, Le#l.i+1, Vdb);
+	    false -> {[],Bef}
+	end,
     Code = cg_binary_old(PutCode),
-    Int0 = clear_dead(Bef, Le#l.i, Vdb),
-    Aft = Int0#sr{reg=put_reg(R, Int0#sr.reg)},
+    Int1 = clear_dead(Int0, Le#l.i, Vdb),
+    Aft = Int0#sr{reg=put_reg(R, Int1#sr.reg)},
     Ret = fetch_reg(R, Aft#sr.reg),
-    {Code ++ [{bs_final,Fail,Ret}],Aft,St};
+    {Sis ++ Code ++ [{bs_final,Fail,Ret}],Aft,St};
 set_cg([{var,R}], {binary,Segs}, Le, Vdb, Bef, #cg{in_catch=InCatch}=St) ->
     Int0 = Bef#sr{reg=put_reg(R, Bef#sr.reg)},
     Target = fetch_reg(R, Int0#sr.reg),
@@ -1239,7 +1425,9 @@ cg_bo_newregs(R, _) -> R.
 
 %% Common for new and old binary code generation.
 
-cg_bin_put({bin_seg,S0,U,T,Fs,[E0,Next]}, Fail, Bef) ->
+cg_bin_put({old_bin_seg,S,U,T,Fs,L}, Fail, Bef) ->
+    cg_bin_put({bin_seg,[],S,U,T,Fs,L}, Fail, Bef);
+cg_bin_put({bin_seg,[],S0,U,T,Fs,[E0,Next]}, Fail, Bef) ->
     S1 = case S0 of
 	     {var,Sv} -> fetch_var(Sv, Bef);
 	     _ -> S0
@@ -1254,7 +1442,8 @@ cg_bin_put({bin_seg,S0,U,T,Fs,[E0,Next]}, Fail, Bef) ->
 	     float   -> bs_put_float
 	 end,
     [{Op,Fail,S1,U,{field_flags,Fs},E1}|cg_bin_put(Next, Fail, Bef)];
-cg_bin_put(bin_end, _, _) -> [].
+cg_bin_put({bin_end,[]}, _, _) -> [];
+cg_bin_put(old_bin_end, _, _) -> [].
 
 %% Old style.
 
@@ -1516,10 +1705,9 @@ save_stack(Stk0, Fb, Lf, Vdb) ->
 %%  stack/reg info used is that after the new stack has been made.
 
 saves(Ss, Reg, Stk) ->
-    Res = map(fun (V) ->
-		      {move,fetch_reg(V, Reg),fetch_stack(V, Stk)}
-	      end, Ss),
-    Res.
+    map(fun (V) ->
+		{move,fetch_reg(V, Reg),fetch_stack(V, Stk)}
+	end, Ss).
 
 %% comment(C) -> ['%'{C}].
 
@@ -1663,26 +1851,23 @@ drop_catch(Tag, [Other|Stk]) -> [Other|drop_catch(Tag, Stk)].
 %%% Finish the code generation for the bit syntax matching.
 %%%
 
-bs_function({function,Name,Arity,CLabel,Asm0}=Func) ->
-    case bs_needed(Asm0, 0, false, []) of
-	{false,[]} -> Func;
+bs_function(Asm) ->
+    case bs_needed(Asm, 0, false, []) of
+	{false,[]} ->
+	    %% No bit syntax is used in this function.
+	    Asm;
 	{true,Dict} ->
-	    Asm = bs_replace(Asm0, Dict, []),
-	    {function,Name,Arity,CLabel,Asm}
+	    %% Old bit syntax matching or new bit syntax construction.
+	    bs_replace(Asm, Dict, [])
     end.
 
 %%%
 %%% Pass 1: Found out which bs_restore's that are needed. We are very
-%%% conservative of which bs_restore's are needed.
+%%% conservative about which bs_restore's are needed.
 %%%
 
 bs_needed([{bs_save,Name},{bs_restore,Name}|T], N, _BsUsed, Dict) ->
     bs_needed(T, N, true, Dict);
-%% XXX NOT now - breaks hipe.
-%% bs_needed([{bs_save,Name},{test,is_eq_exact,_,_},
-%% 	   {bs_restore,Name}|T], N, _BsUsed, Dict) ->
-%%     %% This instruction sequence is common. No bs_restore/1 is needed here.
-%%     bs_needed(T, N, true, Dict);
 bs_needed([{bs_save,_Name}|T], N, _BsUsed, Dict) ->
     bs_needed(T, N, true, Dict);
 bs_needed([{bs_restore,Name}|T], N, _BsUsed, Dict) ->
@@ -1693,8 +1878,6 @@ bs_needed([{bs_restore,Name}|T], N, _BsUsed, Dict) ->
 bs_needed([{bs_init,_,_}|T], N, _, Dict) ->
     bs_needed(T, N, true, Dict);
 bs_needed([{bs_init2,_,_,_,_,_}|T], N, _, Dict) ->
-    bs_needed(T, N, true, Dict);
-bs_needed([{bs_start_match,_,_}|T], N, _, Dict) ->
     bs_needed(T, N, true, Dict);
 bs_needed([_|T], N, BsUsed, Dict) ->
     bs_needed(T, N, BsUsed, Dict);

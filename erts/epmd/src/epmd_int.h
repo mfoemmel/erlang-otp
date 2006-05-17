@@ -57,7 +57,9 @@
 #include <string.h>
 
 #ifdef __WIN32__
-#  include <winsock2.h>
+#  ifndef WINDOWS_H_INCLUDES_WINSOCK2_H
+#    include <winsock2.h>
+#  endif
 #  include <windows.h>
 #  include <process.h>
 #endif

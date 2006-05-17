@@ -1326,8 +1326,8 @@ handle_snmp_error(#pdu{request_id = ReqId} = Pdu, Reason, State) ->
 
 	    Remaining = 
 		case (catch cancel_timer(Ref)) of
-		    R when integer(R) ->
-			R;
+		    Rem when integer(Rem) ->
+			Rem;
 		    _ ->
 			0
 		end,
@@ -1382,8 +1382,8 @@ handle_snmp_error(Addr, Port, ReqId, Reason, State) ->
 		_Error ->
 		    case snmpm_config:user_info() of
 			{ok, DefUserId, DefMod, DefData} ->
-			    handle_error(DefUserId, DefMod, ReqId, 
-					 Reason, DefData, State);
+			    handle_error(DefUserId, DefMod, Reason, 
+					 ReqId, DefData, State);
 			_Error ->
 			    error_msg("failed retreiving the default user "
 				      "info handling snmp error "
@@ -1394,8 +1394,8 @@ handle_snmp_error(Addr, Port, ReqId, Reason, State) ->
 	_Error ->
 	    case snmpm_config:user_info() of
 		{ok, DefUserId, DefMod, DefData} ->
-		    handle_error(DefUserId, DefMod, ReqId, 
-				 Reason, DefData, State);
+		    handle_error(DefUserId, DefMod, Reason, 
+				 ReqId, DefData, State);
 		_Error ->
 		    error_msg("failed retreiving the default user "
 			      "info handling snmp error "
@@ -1480,8 +1480,8 @@ handle_snmp_pdu(#pdu{type = 'get-response', request_id = ReqId} = Pdu,
 
 	    Remaining = 
 		case (catch cancel_timer(Ref)) of
-		    R when integer(R) ->
-			R;
+		    Rem when integer(Rem) ->
+			Rem;
 		    _ ->
 			0
 		end,
@@ -1937,7 +1937,7 @@ handle_snmp_report(ReqId,
 		   #pdu{error_status = EStatus, 
 			error_index  = EIndex, 
 			varbinds     = Varbinds} = Pdu, 
-		   {ReportReason, Info} = R, 
+		   {ReportReason, Info} = Rep, 
 		   Addr, Port, State) 
   when integer(ReqId) ->
 
@@ -1945,8 +1945,8 @@ handle_snmp_report(ReqId,
 	    "~n   Addr:   ~p"
 	    "~n   Port:   ~p"
 	    "~n   ReqId:  ~p"
-	    "~n   R:      ~p"
-	    "~n   Pdu:    ~p", [Addr, Port, ReqId, R, Pdu]),
+	    "~n   Rep:    ~p"
+	    "~n   Pdu:    ~p", [Addr, Port, ReqId, Rep, Pdu]),
 
     SnmpReport = {EStatus, EIndex, Varbinds},
     Reason     = {ReportReason, Info, SnmpReport},
@@ -1969,8 +1969,8 @@ handle_snmp_report(ReqId,
 
 	    Remaining = 
 		case (catch cancel_timer(Ref)) of
-		    R when integer(R) ->
-			R;
+		    Rem when integer(Rem) ->
+			Rem;
 		    _ ->
 			0
 		end,

@@ -14,6 +14,7 @@
  * Create a new frame on the C stack.
  * Save C callee-save registers (r14-r31) in the frame.
  * Save r0 (C return address) in the caller's LR save slot.
+ * Retrieve the process pointer from the C argument registers.
  * Return to LR.
  * Do not clobber the C argument registers (r3-r10).
  *
@@ -48,6 +49,7 @@
 	std	r30, 240(r1)
 	std	r31, 248(r1)
 	std	r0,  256+16(r1)	/* caller saved LR in r0 */
+	mr	P, r3		/* get the process pointer */
 	blr
 
 /*
@@ -95,6 +97,7 @@
  * Create a new frame on the C stack.
  * Save C callee-save registers (r14-r31) in the frame.
  * Save r0 (C return address) in the frame's LR save slot.
+ * Retrieve the process pointer from the C argument registers.
  * Return to LR.
  * Do not clobber the C argument registers (r3-r10).
  *
@@ -129,6 +132,7 @@
 	stw	r30, 116(r1)
 	stw	r31, 120(r1)
 	stw	r0,  124(r1)	/* caller saved LR in r0 */
+	mr	P, r3		/* get the process pointer */
 	blr
 
 /*
@@ -181,8 +185,6 @@ CSYM(hipe_ppc_call_to_native):
 	/* save C context */
 	mflr	r0
 	bl	.enter
-	/* get the process pointer */
-	mr	P, r3
 	/* prepare to call the target */
 	LOAD	r0, P_NCALLEE(P)
 	mtctr	r0
@@ -214,8 +216,6 @@ CSYM(hipe_ppc_return_to_native):
 	/* save C context */
 	mflr	r0
 	bl	.enter
-	/* get the process pointer */
-	mr	P, r3
 	/* restore return address */
 	LOAD	r0, P_NRA(P)
 	mtlr	r0
@@ -239,8 +239,6 @@ CSYM(hipe_ppc_tailcall_to_native):
 	/* save C context */
 	mflr	r0
 	bl	.enter
-	/* get the process pointer */
-	mr	P, r3
 	/* prepare to call the target */
 	LOAD	r0, P_NCALLEE(P)
 	mtctr	r0
@@ -263,33 +261,12 @@ CSYM(hipe_ppc_throw_to_native):
 	/* save C context */
 	mflr	r0
 	bl	.enter
-	/* get the process pointer */
-	mr	P, r3
 	/* prepare to invoke handler */
 	LOAD	r0, P_NCALLEE(P)	/* set by hipe_find_handler() */
 	mtctr	r0
 	/* cache some P state in registers */
 	RESTORE_CACHED_STATE
 	/* invoke the handler */
-	bctr
-
-/*
- * Find and invoke catch handler (it must exist).
- * The stack/heap registers were just read from P.
- * TEMP_LR should contain the current call's return address.
- * r4 should contain the current call's arity.
- */
-.find_exn_handler:
-	STORE	TEMP_LR, P_NRA(P)
-	stw	r4, P_NARITY(P)	/* Note: narity is a 32-bit field */
-	/* find and prepare to invoke the handler */
-	mr	r3, P
-	bl	CSYM(hipe_handle_exception)	/* Note: hipe_handle_exception() conses */
-	/* prepare to invoke handler */
-	LOAD	r0, P_NCALLEE(P)	/* set by hipe_find_handler() */
-	mtctr	r0
-	RESTORE_CACHED_STATE		/* NSP updated by hipe_find_handler() */
-	/* now invoke the handler */
 	bctr
 
 /*
@@ -411,6 +388,8 @@ ASYM(nbif_ccallemu1):
 
 	GLOBAL(ASYM(nbif_ccallemu0))
 ASYM(nbif_ccallemu0):
+	/* We use r4 not ARG0 here because ARG0 is not
+	   defined when NR_ARG_REGS == 0. */
 #if NR_ARG_REGS == 0
 	LOAD	r4, 0(NSP)		/* get the closure */
 #endif
@@ -436,7 +415,7 @@ ASYM(nbif_suspend_msg):
 
 /*
  * Suspend from a receive with a timeout (waiting for a message)
- *	if( !(p->flags & F_TIMO) ) { suspend }
+ *	if (!(p->flags & F_TIMO)) { suspend }
  *	else { return 0; }
  */
 	GLOBAL(ASYM(nbif_suspend_msg_timeout))
@@ -483,7 +462,25 @@ CSYM(nbif_3_simple_exception):
 .nbif_simple_exception:
 	LOAD	r3, P_FREASON(P)
 	CMPI	r3, FREASON_TRAP
-	bne+	.find_exn_handler
+	beq-	.handle_trap
+	/*
+	 * Find and invoke catch handler (it must exist).
+	 * The stack/heap registers were just read from P.
+	 * TEMP_LR should contain the current call's return address.
+	 * r4 should contain the current call's arity.
+	 */
+	STORE	TEMP_LR, P_NRA(P)
+	stw	r4, P_NARITY(P)	/* Note: narity is a 32-bit field */
+	/* find and prepare to invoke the handler */
+	mr	r3, P
+	bl	CSYM(hipe_handle_exception)	/* Note: hipe_handle_exception() conses */
+	/* prepare to invoke handler */
+	LOAD	r0, P_NCALLEE(P)	/* set by hipe_find_handler() */
+	mtctr	r0
+	RESTORE_CACHED_STATE		/* NSP updated by hipe_find_handler() */
+	/* now invoke the handler */
+	bctr
+
 	/*
 	 * A BIF failed with freason TRAP:
 	 * - the BIF stored the callee's Export* in p->def_arg_reg[0]
@@ -492,6 +489,7 @@ CSYM(nbif_3_simple_exception):
 	 * - the native RA was saved in TEMP_LR before the BIF call
 	 * - the native heap/stack/reds registers are saved in P
 	 */
+.handle_trap:
 	li	r3, HIPE_MODE_SWITCH_RES_TRAP
 .bif_exit:
 	STORE	r4, P_ARITY(P)

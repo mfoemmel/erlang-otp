@@ -21,28 +21,40 @@
 
 BIF_RETTYPE hipe_bifs_show_estack_1(BIF_ALIST_1)
 {
-    Process *rp = pid2proc(BIF_ARG_1);
-    if( !rp )
+    Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
+				BIF_ARG_1, ERTS_PROC_LOCKS_ALL);
+    if( !rp ) {
+	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_ERROR(BIF_P, BADARG);
+    }
     hipe_print_estack(rp);
+    erts_smp_proc_unlock(rp, ERTS_PROC_LOCKS_ALL);
     BIF_RET(am_true);
 }
 
 BIF_RETTYPE hipe_bifs_show_heap_1(BIF_ALIST_1)
 {
-    Process *rp = pid2proc(BIF_ARG_1);
-    if( !rp )
+    Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
+				BIF_ARG_1, ERTS_PROC_LOCKS_ALL);
+    if( !rp ) {
+	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_ERROR(BIF_P, BADARG);
+    }
     hipe_print_heap(rp);
+    erts_smp_proc_unlock(rp, ERTS_PROC_LOCKS_ALL);
     BIF_RET(am_true);
 }
 
 BIF_RETTYPE hipe_bifs_show_nstack_1(BIF_ALIST_1)
 {
-    Process *rp = pid2proc(BIF_ARG_1);
-    if( !rp )
+    Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
+				BIF_ARG_1, ERTS_PROC_LOCKS_ALL);
+    if( !rp ) {
+	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_ERROR(BIF_P, BADARG);
+    }
     hipe_print_nstack(rp);
+    erts_smp_proc_unlock(rp, ERTS_PROC_LOCKS_ALL);
     BIF_RET(am_true);
 }
 
@@ -53,10 +65,14 @@ BIF_RETTYPE hipe_bifs_nstack_used_size_0(BIF_ALIST_0)
 
 BIF_RETTYPE hipe_bifs_show_pcb_1(BIF_ALIST_1)
 {
-    Process *rp = pid2proc(BIF_ARG_1);
-    if( !rp )
+    Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
+				BIF_ARG_1, ERTS_PROC_LOCKS_ALL);
+    if( !rp ) {
+	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_ERROR(BIF_P, BADARG);
+    }
     hipe_print_pcb(rp);
+    erts_smp_proc_unlock(rp, ERTS_PROC_LOCKS_ALL);
     BIF_RET(am_true);
 }
 
@@ -93,7 +109,7 @@ BIF_RETTYPE hipe_bifs_show_term_1(BIF_ALIST_1)
 		   2*(int)sizeof(long), (unsigned long)&objp[i],
 		   2*(int)sizeof(long), objp[i]);
     } while( 0 );
-    display(obj, COUT);
+    erts_printf("%T", obj);
     printf("\r\n");
     BIF_RET(am_true);
 }
@@ -135,7 +151,7 @@ Eterm hipe_bifs_test_reschedule_1(BIF_ALIST_1)
     // fflush(stdout);
     if( !flag && BIF_ARG_1 != am_false ) {
 	flag = 1;
-	erl_suspend(BIF_P, NIL);
+	erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, NIL);
 	BIF_ERROR(BIF_P, RESCHEDULE);
     }
     flag = !flag;

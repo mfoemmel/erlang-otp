@@ -30,48 +30,56 @@
 /* #define HEAP_FRAG_ELIM_TEST 1 */
 
 #if defined(HYBRID)
-/* #  define NOMOVE 1 */
-/* #  define INCREMENTAL_GC 1 */ /* Requires NOMOVE */
-/* #  define INC_TIME_BASED 1 */ /* Time based incremental GC (vs Work based) */
+/* #  define INCREMENTAL 1    */ /* Incremental garbage collection */
+/* #  define INC_TIME_BASED 1 */ /* Time-based incremental GC (vs Work-based) */
 #endif
 
-#if defined(HEAP_FRAG_ELIM_TEST) && (defined(HIPE) || defined(SHARED_HEAP))
-#  undef HEAP_FRAG_ELIM_TEST
+#if defined(HEAP_FRAG_ELIM_TEST) && defined(HIPE)
+#error Heap-fragment elimination (nofrag) cannot be combined with HIPE yet
 #endif
 
 #define BEAM 1
 #define EMULATOR "BEAM"
 #define SEQ_TRACE 1
 
-#define CONTEXT_REDS 1000	/* Swap process out after this number */
-#define MAX_ARG 256		/* Max number of arguments allowed */
+#define CONTEXT_REDS 2000	/* Swap process out after this number */
+#define MAX_ARG 256	        /* Max number of arguments allowed */
 #define MAX_REG 1024            /* Max number of x(N) registers used */
 
-#define INPUT_REDUCTIONS   (2 * CONTEXT_REDS)
-
-#define H_DEFAULT_SIZE  233	/* default (heap + stack) min size */
-
-#ifdef SHARED_HEAP
-#define S_DEFAULT_SIZE  233     /* default stack size */
-#define SH_DEFAULT_SIZE 121393  /* default shared heap min size */
+#ifndef ERTS_SMP
+#define INPUT_REDUCTIONS (2 * CONTEXT_REDS)
 #endif
+
+#define H_DEFAULT_SIZE  233     /* default (heap + stack) min size */
 
 #ifdef HYBRID
-#define SH_DEFAULT_SIZE 121393  /* default message area min size */
+#  define SH_DEFAULT_SIZE  2629425 /* default message area min size */
 #endif
 
-#define CP_SIZE			1
+#ifdef INCREMENTAL
+#  define INC_NoPAGES       256   /* Number of pages in the old generation */
+#  define INC_PAGESIZE      32768 /* The size of each page */
+#  define INC_STORAGE_SIZE  1024  /* The size of gray stack and similar */
+#endif
+
+#define CP_SIZE 1
 
 #ifdef DEBUG
 /*
  * Debug HAlloc that initialize all memory to bad things.
+ *
+ * To get information about where memory is allocated, insert the two
+ * lines below directly after the memset line and use the flag +va.
+ *
+         VERBOSE(DEBUG_ALLOCATION,("HAlloc @ 0x%08lx (%d) %s:%d\n",     \
+                 (unsigned long)HEAP_TOP(p),(sz),__FILE__,__LINE__)),   \
  */
-#define HAlloc(p, sz)                                   \
-  (ASSERT_EXPR((sz) >= 0),                              \
-   ((((HEAP_LIMIT(p) - HEAP_TOP(p)) <= (sz)))           \
-    ? erts_heap_alloc((p),(sz))                         \
-    : (memset(HEAP_TOP(p),1,(sz)*sizeof(Eterm*)),       \
-       HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
+#define HAlloc(p, sz)                                                   \
+    (ASSERT_EXPR((sz) >= 0),                                            \
+     ((((HEAP_LIMIT(p) - HEAP_TOP(p)) <= (sz)))                         \
+      ? erts_heap_alloc((p),(sz))                                       \
+      : (memset(HEAP_TOP(p),DEBUG_BAD_BYTE,(sz)*sizeof(Eterm*)),        \
+         HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
 
 #else
 
@@ -79,11 +87,11 @@
  * Allocate heap memory, first on the ordinary heap;
  * failing that, in a heap fragment.
  */
-#define HAlloc(p, sz)                                   \
-  (ASSERT_EXPR((sz) >= 0),                              \
-   ((((HEAP_LIMIT(p) - HEAP_TOP(p)) <= (sz)))           \
-    ? erts_heap_alloc((p),(sz))                         \
-    : (HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
+#define HAlloc(p, sz)                                                   \
+    (ASSERT_EXPR((sz) >= 0),                                            \
+     ((((HEAP_LIMIT(p) - HEAP_TOP(p)) <= (sz)))                         \
+      ? erts_heap_alloc((p),(sz))                                       \
+      : (HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
 
 #endif /* DEBUG */
 
@@ -96,27 +104,13 @@
      erts_arith_shrink(p, ptr);					\
   }
 
-#define HeapWordsLeft(p)				\
-  (HEAP_LIMIT(p) - HEAP_TOP(p))
+#define HeapWordsLeft(p) (HEAP_LIMIT(p) - HEAP_TOP(p))
 
-#ifdef SHARED_HEAP
-#  define ARITH_HEAP(p)     erts_global_arith_heap
-#  define ARITH_AVAIL(p)    erts_global_arith_avail
-#  define ARITH_LOWEST_HTOP(p) erts_global_arith_lowest_htop
-extern Eterm* erts_global_arith_heap;
-extern Uint erts_global_arith_avail;
-extern Eterm* erts_global_arith_lowest_htop;
-#  ifdef DEBUG
-#    define ARITH_CHECK_ME(p) erts_global_arith_check_me
-extern Eterm* erts_global_arith_check_me;
-#  endif
-#else
-#  define ARITH_HEAP(p)     (p)->arith_heap
-#  define ARITH_AVAIL(p)    (p)->arith_avail
-#  define ARITH_LOWEST_HTOP(p) (p)->arith_lowest_htop
-#  ifdef DEBUG
-#    define ARITH_CHECK_ME(p) (p)->arith_check_me
-#  endif
+#define ARITH_HEAP(p)     (p)->arith_heap
+#define ARITH_AVAIL(p)    (p)->arith_avail
+#define ARITH_LOWEST_HTOP(p) (p)->arith_lowest_htop
+#ifdef DEBUG
+#  define ARITH_CHECK_ME(p) (p)->arith_check_me
 #endif
 
 /* Allocate memory on secondary arithmetic heap. */
@@ -154,7 +148,7 @@ extern Eterm* erts_global_arith_check_me;
 
 typedef struct op_entry {
    char* name;			/* Name of instruction. */
-   unsigned mask[2];		/* Signature mask. */
+   unsigned mask[3];		/* Signature mask. */
    int sz;			/* Number of loaded words. */
    char* pack;			/* Instructions for packing engine. */
    char* sign;			/* Signature string. */
@@ -164,19 +158,9 @@ typedef struct op_entry {
 extern OpEntry opc[];		/* Description of all instructions. */
 extern int num_instructions;	/* Number of instruction in opc[]. */
 
-/* some constants for various  table sizes etc */
+/* some constants for various table sizes etc */
 
 #define ATOM_TEXT_SIZE  32768	/* Increment for allocating atom text space */
-
-/*
- * Temporary buffer used in a lot of places.  In some cases, this size
- * will be an absolute resource limit (buffers for pathnames, for instance).
- * In others, memory must be allocated if the buffer is not enough.
- * 
- * Decreasing the size of it below 16384 is not allowed.
- */
-
-#define TMP_BUF_SIZE 65536
 
 #define ITIME 100		/* Number of milliseconds per clock tick    */
 #define MAX_PORT_LINK 8		/* Maximum number of links to a port        */
@@ -198,8 +182,6 @@ extern int H_MIN_SIZE;		/* minimum (heap + stack) */
 
 #define make_signed_24(x,y,z) ((sint32) (((x) << 24) | ((y) << 16) | ((z) << 8)) >> 8)
 #define make_signed_32(x3,x2,x1,x0) ((sint32) (((x3) << 24) | ((x2) << 16) | ((x1) << 8) | (x0)))
-
-int big_to_double(Eterm x, double* resp);
 
 #include "erl_term.h"
 

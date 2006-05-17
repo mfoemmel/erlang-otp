@@ -156,12 +156,25 @@ write_event({Time, {warning_msg, _GL, {Pid, Format, Args}}}) ->
     end;
 write_event({_Time, _Error}) ->
     ok.
+
 maybe_utc(Time) ->
-    case application:get_env(stdlib,utc_log) of
-	{ok,true} ->
-	    {utc,calendar:local_time_to_universal_time(Time)};
-	_ ->
-	    Time
+    UTC = case application:get_env(sasl, utc_log) of
+              {ok, Val} ->
+                  Val;
+              undefined ->
+                  %% Backwards compatible:
+                  case application:get_env(stdlib, utc_log) of
+                      {ok, Val} ->
+                          Val;
+                      undefined ->
+                          false
+                  end
+          end,
+    if
+        UTC =:= true ->
+            {utc, calendar:local_time_to_universal_time(Time)};
+        true -> 
+            Time
     end.
 
 format(String)       -> io:format(user, String, []).

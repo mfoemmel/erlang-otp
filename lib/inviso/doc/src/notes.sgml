@@ -1,0 +1,17 @@
+<!doctype chapter PUBLIC "-//Stork//DTD chapter//EN">
+<chapter>
+  <header>
+    <title>Inviso Release Notes</title>
+    <prepared></prepared>
+    <docno></docno>
+    <date></date>
+    <rev></rev>
+  </header>
+  
+  <p>This document describes the changes made to the Inviso application.
+  </p>
+
+  <section><title>Inviso 0.1</title>
+    <p>First version.</p>
+  </section>
+</chapter>

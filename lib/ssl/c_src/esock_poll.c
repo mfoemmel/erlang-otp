@@ -68,15 +68,18 @@
 
 static void poll_fd_set(EsockPoll *ep, FD fd, short events)
 {
-    unsigned i;
+    int i, j;
+    int prev_num_fds = ep->num_fds;
 
     if (ep->num_fds <= fd) {
 	ep->num_fds = fd + 64;
 	ep->fd_to_poll = (int *) esock_realloc(ep->fd_to_poll,
 					       ep->num_fds*sizeof(int));
+	for (j = prev_num_fds; j < ep->num_fds; j++)
+	    ep->fd_to_poll[j] = -1;
     }
     i = ep->fd_to_poll[fd];
-    if (i < ep->active && ep->fds[i].fd == fd) {
+    if (i > 0 && i < ep->active && ep->fds[i].fd == fd) {
 	/* Already present in poll array */
 	ep->fds[i].events |= events;
     } else {
@@ -99,8 +102,8 @@ static int poll_is_set(EsockPoll *ep, FD fd, short mask)
     if (fd >= ep->num_fds) {
 	return 0;
     } else {
-	unsigned i = ep->fd_to_poll[fd];
-	return i < ep->active && ep->fds[i].fd == fd &&
+	int i = ep->fd_to_poll[fd];
+	return 0 <= i && i < ep->active && ep->fds[i].fd == fd &&
 	    (ep->fds[i].revents & mask) != 0;
     }
 }
@@ -126,6 +129,10 @@ void esock_poll_zero(EsockPoll *ep)
     FD_ZERO(&ep->writemask);
     FD_ZERO(&ep->exceptmask);
 #else
+    int i;
+
+    for (i = 0; i < ep->num_fds; i++)
+	ep->fd_to_poll[i] = -1;
     ep->active = 0;
 #endif    
 }

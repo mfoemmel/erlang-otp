@@ -36,6 +36,7 @@
 
 %% Internal exports
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2]).
+-export([code_change/3]).
 -export([boot_init/1, boot_accept/3]).
 
 
@@ -214,6 +215,9 @@ handle_info(_Info, S0) ->
 
 terminate(_Reason, _S0) ->
     ok.
+
+code_change(_Vsn, State, _Extra) ->
+    {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%

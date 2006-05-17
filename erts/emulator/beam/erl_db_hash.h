@@ -18,7 +18,7 @@
 #ifndef _DB_HASH_H
 #define _DB_HASH_H
 
-#include "erl_db_util.h" /* DbTerm */
+#include "erl_db_util.h" /* DbTerm & DbTableCommon */
 
 typedef struct fixed_deletion {
     int slot;
@@ -32,20 +32,7 @@ typedef struct hash_db_term {
 } HashDbTerm;
 
 typedef struct db_table_hash {
-    Eterm  owner;             /* Pid of the creator */
-    Eterm  the_name;          /* an atom   */
-    Eterm  id;                /* atom | integer */
-    Uint nitems;              /* Total number of items */
-    Uint memory_size;         /* Total memory size. NOTE: in bytes! */
-    Uint megasec,sec,microsec; /* Last fixation time */
-    DbFixation *fixations;     /* List of processes who have fixed 
-				  the table */
-
-    /* Common 32-bit fields */
-    Uint32 status;            /* bit masks defining type etc */
-    int slot;                 /* slot in db_tables */
-    int keypos;               /* defaults to 1 */
-    int kept_items;           /* always 0 for trees */
+    DbTableCommon common;
 
     /* Hash-specific fields */
     FixedDeletion *fixdel;	/*
@@ -67,90 +54,28 @@ typedef struct db_table_hash {
 ** table types. The process is always an [in out] parameter.
 */
 void db_initialize_hash(void);
-int db_fixtable_hash(DbTableHash *tb /* [in out] */, Eterm arg);
-int db_create_hash(Process *p, DbTableHash *tb /* [in out] */);
-int db_first_hash(Process *p, DbTableHash *tb /* [in out] */, 
-		  Eterm *ret /* [out] */);
-int db_next_hash(Process *p, DbTableHash *tb /* [in out] */, 
-		 Eterm key /* [in] */,
-		 Eterm *ret /* [out] */);
-int db_update_counter_hash(Process *p, DbTableHash *tb /* [in out] */, 
-			   Eterm key /* [in] */,
-			   Eterm incr, /* [in] */
-			   int warp, /* [in] */
-			   int counterpos, /* [in] */
-			   Eterm *ret /* [out] */);
-int db_put_hash(Process *p, DbTableHash *tb /* [in out] */, 
-		Eterm obj /* [in] */,
-		Eterm *ret /* [out] */);
-int db_get_hash(Process *p, DbTableHash *tb /* [in out] */, 
-		Eterm key /* [in] */,
-		Eterm *ret /* [out] */);
-int db_member_hash(Process *p, DbTableHash *tb /* [in out] */, 
-		   Eterm key /* [in] */,
-		   Eterm *ret /* [out] */);
-int db_get_element_array(DbTableHash *tb, 
+void db_unfix_table_hash(DbTableHash *tb /* [in out] */);
+
+/* Interface for meta pid table */
+int db_create_hash(Process *p, 
+		   DbTable *tbl /* [in out] */);
+
+int db_put_hash(Process *p, DbTable *tbl, Eterm obj, Eterm *ret);
+
+int db_get_hash(Process *p, DbTable *tbl, Eterm key, Eterm *ret);
+
+int db_erase_hash(Process *p, DbTable *tbl, Eterm key, Eterm *ret);
+
+int db_get_element_array(DbTable *tbl, 
 			 Eterm key,
 			 int ndex, 
 			 Eterm *ret,
-			 int *num_ret); /* Interface for meta pid table */
-int db_get_element_hash(Process *p, DbTableHash *tb /* [in out] */, 
-			Eterm key /* [in] */,
-			int ndex, /* [in] */
-			Eterm *ret /* [out] */);
-int db_erase_bag_exact2(DbTableHash *tb, 
-			Eterm key,
-			Eterm value); /* Internal interface for meta PID 
-					 table */
-int db_mark_all_deleted_hash(DbTableHash *tb /* [in out] */);
-int db_erase_hash(Process *p, DbTableHash *tb /* [in out] */, 
-		  Eterm key /* [in] */,
-		  Eterm *ret /* [out] */);
-int db_erase_object_hash(Process *p, DbTableHash *tb /* [in out] */, 
-			 Eterm object /* [in] */,
-			 Eterm *ret /* [out] */);
-int db_slot_hash(Process *p, DbTableHash *tb /* [in out] */, 
-		  Eterm slot_term /* [in] */,
-		  Eterm *ret /* [out] */);
-int db_select_hash(Process *p, DbTableHash *tb /* [in out] */, 
-		   Eterm pattern /* [in] */,
-		   Sint chunk_size /* [in] */,
-		   Eterm *ret /* [out] */);
-int db_select_count_hash(Process *p, DbTableHash *tb /* [in out] */, 
-			 Eterm pattern /* [in] */,
-			 Eterm *ret /* [out] */);
-int db_select_delete_hash(Process *p, DbTableHash *tb /* [in out] */, 
-			  Eterm pattern /* [in] */,
-			  Eterm *ret /* [out] */);
+			 int *num_ret); 
 
-int db_select_hash_continue(Process *p, DbTableHash *tb /* [in out] */, 
-			    Eterm continuation /* [in] */,
-			    Eterm *ret /* [out] */);
+int db_erase_bag_exact2(DbTable *tbl, Eterm key, Eterm value);
 
-int db_select_count_hash_continue(Process *p, 
-				  DbTableHash *tb /* [in out] */, 
-				  Eterm continuation /* [in] */,
-				  Eterm *ret /* [out] */);
+/* not yet in method table */
+int db_mark_all_deleted_hash(DbTable *tbl);
 
-int db_select_delete_continue_hash(Process *p ,/* [in out] */ 
-				   DbTableHash *tb /* [in out] */,
-				   Eterm continuation /* [in] */,
-				   Eterm *ret /* [out] */,
-				   int force_delete /* [in] */);
-void db_print_hash(CIO fd /* [in] */, 
-		   int show /* [in] */,
-		   DbTableHash *tb /* [in] */);
-void free_hash_table(DbTableHash *tb /* [in out] */);
-
-int erts_free_hash_table_cont(DbTableHash *tb, int first);
-
-
-void erts_db_hash_foreach_offheap(DbTableHash *,
-				  void (*)(ErlOffHeap *, void *),
-				  void *);
-
-#ifdef HARDDEBUG
-void db_check_table_hash(DbTableHash *tb);
-#endif
 
 #endif /* _DB_HASH_H */

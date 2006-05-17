@@ -60,7 +60,7 @@ insert(Title, Win) ->
 %%   Title = string()
 %%--------------------------------------------------------------------
 is_started(Title) ->
-    case gen_server:call(?MODULE, {is_started, Title}) of
+    case gen_server:call(?MODULE, {is_started, Title}, infinity) of
 	{true, Win} ->
 	    raise(Win),
 	    true;

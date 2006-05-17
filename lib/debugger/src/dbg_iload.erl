@@ -67,7 +67,8 @@ store_module(Mod, File, Binary, Db) ->
     Forms = case abstr(Abst) of
 		{abstract_v1,Forms0} -> Forms0;
 		{abstract_v2,Forms0} -> Forms0;
-		{raw_abstract_v1,Code} ->
+		{raw_abstract_v1,Code0} ->
+                    Code = interpret_file_attribute(Code0),
 		    {_,_,Forms0,_} = sys_pre_expand:module(Code, []),
 		    Forms0
 	    end,
@@ -91,6 +92,14 @@ store_module(Mod, File, Binary, Db) ->
     NewBinary = store_mod_line_no(Mod, Db, binary_to_list(Src)),
     dbg_idb:insert(Db, mod_bin, NewBinary),
     dbg_idb:insert(Db, module, Mod).
+%% Adjust line numbers using the file/2 attribute. 
+%% Also take the absolute value of line numbers.
+%% This simple fix will make the marker point at the correct line
+%% (assuming the file attributes are correct) in the source; it will
+%% not point at code in included files.
+interpret_file_attribute(Code) ->
+    epp:interpret_file_attribute(Code).
+
 
 abstr(Bin) when binary(Bin) -> binary_to_term(Bin);
 abstr(Term) -> Term.
@@ -248,6 +257,10 @@ guard_test({op,Line,Op,L0}) ->
 	erl_internal:bool_op(Op, 1),
     L1 = gexpr(L0),
     {safe_bif,Line,erlang,Op,[L1]};
+guard_test({op,Line,Op,L0,R0}) when Op =:= 'andalso'; Op =:= 'orelse' ->
+    L1 = gexpr(L0),
+    R1 = gexpr(R0),				%They see the same variables
+    {Op,Line,L1,R1};
 guard_test({op,Line,Op,L0,R0}) ->
     true = erl_internal:comp_op(Op, 2) orelse	%Assertion.
 	erl_internal:bool_op(Op, 2) orelse
@@ -309,6 +322,10 @@ gexpr({op,Line,Op,A0}) ->
     erl_internal:arith_op(Op, 1),
     A1 = gexpr(A0),
     {safe_bif,Line,erlang,Op,[A1]};
+gexpr({op,Line,Op,L0,R0}) when Op =:= 'andalso'; Op =:= 'orelse' ->
+    L1 = gexpr(L0),
+    R1 = gexpr(R0),			%They see the same variables
+    {Op,Line,L1,R1};
 gexpr({op,Line,Op,L0,R0}) ->
     true = erl_internal:arith_op(Op, 2) orelse erl_internal:comp_op(Op, 2)
 	orelse erl_internal:bool_op(Op, 2),
@@ -466,6 +483,10 @@ expr({op,Line,'!',L0,R0}) ->
     L1 = expr(L0),
     R1 = expr(R0),				%They see the same variables
     {send,Line,L1,R1};
+expr({op,Line,Op,L0,R0}) when Op =:= 'andalso'; Op =:= 'orelse' ->
+    L1 = expr(L0),
+    R1 = expr(R0),				%They see the same variables
+    {Op,Line,L1,R1};
 expr({op,Line,Op,L0,R0}) ->
     L1 = expr(L0),
     R1 = expr(R0),				%They see the same variables

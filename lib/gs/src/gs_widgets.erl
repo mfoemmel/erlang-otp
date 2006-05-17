@@ -24,25 +24,9 @@
 
 
 %% ----- Exports -----
--compile(export_all).
+-export([default_options/1,
+	 container/1]).
 
-
-options(ObjType, Options) ->
-    options_impl(default_options(ObjType), Options).
-
-options_impl([], Options) -> Options;
-options_impl([{DefaultOption, Value} | T], Options) ->
-    case lists:keymember(DefaultOption, 1, Options) of
-	true -> options_impl(T, Options);
-	false ->
-	    [{DefaultOption,Value}|options_impl(T,Options)]
-    end;
-options_impl([DefaultOption | T], Options) ->
-    case lists:member(DefaultOption, Options) of
-	true -> options_impl(T, Options);
-	false ->
-	    [DefaultOption|options_impl(T,Options)]
-    end.
 
 %% ------------------------------------------------------------
 %% default_options for widgets
@@ -99,39 +83,6 @@ default_options(text)        -> [{anchor,nw}, {coords,[{0,0}]}, {justify,left}];
 default_options(window)      -> [{configure,false}, {cursor,arrow}, {destroy,true},
 				 {height,200}, {map,false}, {width,300}];
 default_options(_)           -> [].
-
-%%
-%% Map primitive types to true and soft types to {soft, module} or false
-%%
-
-primitive(arc)         -> true;
-primitive(button)      -> true;
-primitive(canvas)      -> true;
-primitive(checkbutton) -> true;
-primitive(editor)      -> true;
-primitive(entry)       -> true;
-primitive(frame)       -> true;
-primitive(grid)        -> true;
-primitive(gridline)    -> true;
-primitive(image)       -> true;
-primitive(label)       -> true;
-primitive(line)        -> true;
-primitive(listbox)     -> true;
-primitive(menu)        -> true;
-primitive(menubar)     -> true;
-primitive(menubutton)  -> true;
-primitive(menuitem)    -> true;
-primitive(message)     -> true;
-primitive(oval)        -> true;
-primitive(polygon)     -> true;
-primitive(prompter)    -> true;
-primitive(radiobutton) -> true;
-primitive(rectangle)   -> true;
-primitive(scale)       -> true;
-primitive(scrollbar)   -> true;
-primitive(text)        -> true;
-primitive(window)      -> true;
-primitive(_)           -> false.
 
 container(canvas)      -> true;
 container(frame)       -> true;

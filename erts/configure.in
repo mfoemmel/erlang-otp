@@ -66,19 +66,44 @@ else
 fi
 AC_ISC_POSIX
 
-AC_CONFIG_HEADER($host/config.h:config.h.in include/internal/$host/ethread_header_config.h:include/internal/ethread_header_config.h.in)
-
+AC_CONFIG_HEADER($host/config.h:config.h.in include/internal/$host/ethread_header_config.h:include/internal/ethread_header_config.h.in include/$host/erl_int_sizes_config.h:include/erl_int_sizes_config.h.in)
 dnl ----------------------------------------------------------------------
 dnl Optional features.
 dnl ----------------------------------------------------------------------
+enable_child_waiter_thread=no
 ENABLE_ALLOC_TYPE_VARS=
 AC_SUBST(ENABLE_ALLOC_TYPE_VARS)
 
 dnl Defined in libraries/megaco/configure.in but we need it here
 dnl also in order to show it to the "top user"
 
-AC_ARG_ENABLE(megaco_flex_scanner_lineno,
-[  --disable-megaco-flex-scanner-lineno    disable megaco flex scanner lineno])
+AC_ARG_ENABLE(threads,
+[  --enable-threads        enable async thread support
+  --disable-threads       disable async thread support],
+[ case "$enableval" in
+    no) enable_threads=no ;;
+    *)  enable_threads=yes ;;
+  esac ], enable_threads=unknown)
+
+AC_ARG_ENABLE(smp-support,
+[  --enable-smp-support    enable smp support
+  --disable-smp-support   disable smp support],
+[ case "$enableval" in
+    no) enable_smp_support=no ;;
+    *)  enable_smp_support=yes ;;
+  esac ], enable_smp_support=unknown)
+
+AC_ARG_ENABLE(lock-checking,
+[  --enable-lock-checking  enable lock checking],
+[ case "$enableval" in
+    no) enable_lock_check=no ;;
+    *)  enable_lock_check=yes ;;
+  esac
+],
+  enable_lock_check=no)
+
+AC_ARG_ENABLE(kernel-poll,
+[  --enable-kernel-poll    enable kernel poll support])
 
 AC_ARG_ENABLE(hipe,
 [  --disable-hipe          disable hipe support])
@@ -95,16 +120,6 @@ if test x${enable_fixalloc} = xno ; then
   AC_DEFINE(NO_FIX_ALLOC)
 fi
 
-AC_ARG_ENABLE(threads,
-[  --enable-threads        use threads],
-[ case "$enableval" in
-    no) enable_threads=no ;;
-    *)  enable_threads=yes ;;
-  esac ], enable_threads=no)
-
-AC_ARG_ENABLE(kernel-poll,
-[  --enable-kernel-poll    enable kernel poll support])
-
 AC_SUBST(PERFCTR_PATH)
 AC_ARG_WITH(perfctr,
 [  --with-perfctr=PATH     specify location of perfctr include and lib
@@ -119,6 +134,9 @@ else
     PERFCTR_PATH="$with_perfctr"
     AC_DEFINE(USE_PERFCTR)
 fi
+
+AC_ARG_ENABLE(megaco_flex_scanner_lineno,
+[  --disable-megaco-flex-scanner-lineno disable megaco flex scanner lineno])
 
 dnl Magic test for clearcase.
 OTP_RELEASE=
@@ -220,6 +238,10 @@ dnl
 dnl Figure out operating system and cpu architecture
 dnl
 OPSYS=noopsys
+case $host_os in
+win32) OPSYS=win32;;
+*) ;;
+esac
 case `uname -s` in
 SunOS)	case `uname -r` in
 	5.*)	OPSYS=sol2;;
@@ -230,6 +252,7 @@ esac
 ARCH=noarch
 case `uname -m` in
 sun4u)	ARCH=ultrasparc;;
+sun4v)	ARCH=ultrasparc;;
 i86pc)	ARCH=x86;;
 i386)	ARCH=x86;;
 i486)	ARCH=x86;;
@@ -249,7 +272,6 @@ dnl can't handle those tests being done conditionally at runtime
 AC_PROG_CPP
 
 AC_PROG_RANLIB
-
 
 AC_PROG_YACC
 LM_PROG_PERL5
@@ -408,6 +430,142 @@ dnl ETHR_LIB_NAME, ETHR_LIBS, ETHR_X_LIBS, ETHR_THR_LIB_BASE and ETHR_DEFS
 dnl are set by LM_FIND_ETHR_LIB
 LM_FIND_ETHR_LIB
 
+if test "X$ETHR_LIB_NAME" = "X"; then
+    found_threads=no
+else
+    found_threads=yes
+fi
+
+
+AC_CHECK_SIZEOF(void *, 4) # Needed for smp check below
+ERTS_BUILD_SMP_EMU=$enable_smp_support
+AC_MSG_CHECKING(whether an emulator with smp support should be built)
+case $ERTS_BUILD_SMP_EMU in
+    yes)
+	AC_MSG_RESULT(yes; enabled by user)
+	;;
+    no)
+	AC_MSG_RESULT(no; disabled by user)
+	;;
+    unknown)
+	AC_TRY_COMPILE([],[
+			#if __GNUC__ >= 3 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 95)
+			;
+			#else
+			#error old or no gcc
+			#endif
+			],
+			gcc_smp=okgcc,
+			gcc_smp=oldornogcc)
+	ERTS_BUILD_SMP_EMU=yes
+	case "$enable_threads-$gcc_smp-$found_threads-$ARCH-$OPSYS-$ac_cv_sizeof_void_p" in
+
+	    no-*)
+		AC_MSG_RESULT(no; threads disabled by user)
+		ERTS_BUILD_SMP_EMU=no
+		;;
+
+	    *-okgcc-yes-ultrasparc-sol2-4|*-okgcc-yes-ppc-darwin-4)
+		case $host_os in
+		    solaris2.[[0-7]]|solaris2.[[0-7]].*)
+			ERTS_BUILD_SMP_EMU=no;;
+		    darwin[[0-7]]|darwin[[0-7]].*)
+			ERTS_BUILD_SMP_EMU=no;;
+		    *)
+			;;
+		esac
+		AC_MSG_RESULT($ERTS_BUILD_SMP_EMU; default on this platform)
+		;;
+
+	    *-okgcc-yes-x86-linux-4|*-okgcc-yes-amd64-linux-4|*-okgcc-yes-amd64-linux-8|*-okgcc-yes-ppc-linux-4)
+		if test "x$ETHR_THR_LIB_BASE_NAME" != "xnptl"; then
+		    ERTS_BUILD_SMP_EMU=no
+		else
+		    linux_kernel_vsn_=`uname -r` # FIXME: for cross compilation.
+
+		    # FIXME: Test for actual problems instead of kernel versions.
+		    case $linux_kernel_vsn_ in
+			[[0-1]].*|2.[[0-5]]|2.[[0-5]].*)
+			    ERTS_BUILD_SMP_EMU=no;;
+			*) ;;
+		    esac
+		fi
+		AC_MSG_RESULT($ERTS_BUILD_SMP_EMU; default on this platform)
+		;;
+
+	    *-win32-*)
+		AC_MSG_RESULT(no; default on this platform)
+		ERTS_BUILD_SMP_EMU=no
+		;;
+
+	    *-oldornogcc-*)
+		AC_MSG_RESULT(no; old gcc or no gcc found)
+		ERTS_BUILD_SMP_EMU=no
+		;;
+
+	    *)
+		AC_MSG_RESULT(no; default on this platform)
+		ERTS_BUILD_SMP_EMU=no
+		;;
+	esac
+	;;
+esac
+
+if test $ERTS_BUILD_SMP_EMU = yes; then
+
+	if test $found_threads = no; then
+	    AC_MSG_ERROR([cannot build smp enabled emulator since no thread library was found])
+	fi
+
+	case "$ARCH-$ac_cv_sizeof_void_p" in
+	    x86-4|amd64-4|amd64-8|ppc-4|ultrasparc-4)
+		;;
+	    *)
+		AC_MSG_ERROR([cannot build smp enabled emulator since hardware platform ($ARCH wordsize=$ac_cv_sizeof_void_p) is not supported]) ;;
+	esac
+
+	case $host_os in
+	    win32)
+		dnl * _WIN32_WINNT >= 0x0400 is needed for
+		dnl   TryEnterCriticalSection
+		dnl * _WIN32_WINNT >= 0x0403 is needed for
+		dnl   InitializeCriticalSectionAndSpinCount
+		AC_DEFINE(_WIN32_WINNT, 0x0403, \
+[Define NT version if you want to turn on some NT features])
+		AC_MSG_ERROR([smp enabled emulator not supported for windows yet])
+		;;
+	    linux*)
+		
+		if test "x$ETHR_THR_LIB_BASE_NAME" != "xnptl"; then
+		    # Child waiter thread cannot be enabled
+		    AC_MSG_ERROR([smp enabled emulator not supported on linux systems without the Native POSIX Thread Library (not found)])
+		fi
+
+		linux_kernel_vsn_=`uname -r` # FIXME: for cross compilation.
+
+		# FIXME: Test for actual problems instead of kernel versions.
+		case $linux_kernel_vsn_ in
+		    [[0-1]].*|2.[[0-3]]|2.[[0-3]].*)
+			# Child waiter thread cannot be enabled.
+			AC_MSG_ERROR([smp enabled emulator not supported for linux kernels < 2.4])
+			;;
+		    *)
+			;;
+		esac
+		;;
+	    *)
+		;;
+	esac
+
+	AC_DEFINE(ETHR_EXTENDED_LIB, 1, \
+[Define if you want to enable extended functionality in the ethread library])
+
+	enable_threads=force
+fi
+
+AC_SUBST(ERTS_BUILD_SMP_EMU)
+
+
 #
 # Figure out if the emulator should use threads. The default is set above
 # in the enable_threads variable. It can have the following values:
@@ -430,12 +588,6 @@ EMU_THR_LIBS=
 EMU_THR_DEFS=
 emu_threads=no
 
-if test "X$ETHR_LIB_NAME" = "X"; then
-    found_threads=no
-else
-    found_threads=yes
-fi
-
 case "$enable_threads"-"$host_os" in
 	*-win32)
 		# The windows erlang emulator can never run without threads.
@@ -454,28 +606,48 @@ case "$enable_threads"-"$found_threads" in
 	AC_MSG_RESULT(yes; thread support required and therefore forced) ;;
     yes-yes)
 	emu_threads=yes
-	AC_MSG_RESULT(yes; thread support requested) ;;
+	AC_MSG_RESULT(yes; enabled by user) ;;
+    unknown-yes)
+	case $host_os in
+	    solaris*|linux*|darwin*|win32)
+		emu_threads=yes
+		AC_MSG_RESULT(yes; default on this platform)
+		;;
+	    *)
+		AC_MSG_RESULT(no; default on this platform)
+		;;
+	esac
+	;;
     no-yes)
-	AC_MSG_RESULT(no; thread support found but not requested) ;;
-    no-no)
+	AC_MSG_RESULT(no; thread support found but disabled by user) ;;
+    unknown-no|no-no)
 	AC_MSG_RESULT(no) ;;
     force-no)
 	AC_MSG_ERROR(thread support required but not found) ;;
     yes-no)
-	AC_MSG_ERROR(thread support requested but not found) ;;
+	AC_MSG_ERROR(thread support enabled by user but not found) ;;
     *)
 	AC_MSG_ERROR(internal error) ;;
 esac
 
-if test $emu_threads = yes; then
+if test $emu_threads != yes; then
+	enable_lock_check=no
+else
 	# Threads enabled for emulator
 	EMU_THR_LIB_NAME=$ETHR_LIB_NAME
 	EMU_THR_X_LIBS=$ETHR_X_LIBS
 	EMU_THR_LIBS=$ETHR_LIBS
-	EMU_THR_DEFS="$ETHR_DEFS -DUSE_THREADS"
+	EMU_THR_DEFS=$ETHR_DEFS
 	ENABLE_ALLOC_TYPE_VARS="$ENABLE_ALLOC_TYPE_VARS threads"
+	AC_MSG_CHECKING(whether lock checking should be enabled)
+	AC_MSG_RESULT($enable_lock_check)
+	if test "x$enable_lock_check" != "xno"; then
+	    EMU_THR_DEFS="$EMU_THR_DEFS -DERTS_ENABLE_LOCK_CHECK"
+	fi
 	case $host_os in
-	    solaris*) AC_DEFINE(ENABLE_CHILD_WAITER_THREAD) ;;
+	    solaris*)
+		enable_child_waiter_thread=yes
+		;;
 	    linux*)
 		AC_DEFINE(USE_RECURSIVE_MALLOC_MUTEX)
 		# -D_GNU_SOURCE already defined in CFLAGS remove it
@@ -492,14 +664,32 @@ if test $emu_threads = yes; then
 		done
 		EMU_THR_DEFS=$new_emu_thr_defs
 		;;
-	    *) ;;
+	    *)
+		;;
 	esac
+
+	AC_MSG_CHECKING(whether child waiter thread should be enabled in the emulator without smp support)
+	if test $enable_child_waiter_thread = yes; then
+	    AC_DEFINE(ENABLE_CHILD_WAITER_THREAD)
+	    AC_MSG_RESULT(yes)
+	else
+	    AC_MSG_RESULT(no)
+	fi
 fi
 
 AC_SUBST(EMU_THR_LIB_NAME)
 AC_SUBST(EMU_THR_X_LIBS)
 AC_SUBST(EMU_THR_LIBS)
 AC_SUBST(EMU_THR_DEFS)
+
+
+if test "x$enable_lock_check" = "xno"; then
+    EMU_LOCK_CHECKING=no
+else
+    EMU_LOCK_CHECKING=yes
+fi
+
+AC_SUBST(EMU_LOCK_CHECKING)
 
 
 dnl THR_LIBS and THR_DEFS are only used by odbc
@@ -669,6 +859,22 @@ LM_DECL_SO_BSDCOMPAT
 LM_DECL_INADDR_LOOPBACK
 LM_DECL_SYS_ERRLIST
 
+AC_CACHE_CHECK([if windows.h includes winsock2.h],
+		erts_cv_windows_h_includes_winsock2_h,
+		AC_TRY_COMPILE([#include <windows.h>
+				],
+			       [#ifndef _WINSOCK2API_
+				#error winsock2.h not included
+				#endif
+				int i = 1;
+				],
+			       erts_cv_windows_h_includes_winsock2_h=yes,
+			       erts_cv_windows_h_includes_winsock2_h=no))
+if test $erts_cv_windows_h_includes_winsock2_h = yes; then
+	AC_DEFINE(WINDOWS_H_INCLUDES_WINSOCK2_H, 1, \
+[Define if windows.h includes winsock2.h])
+fi
+
 dnl restore CPPFLAGS
 CPPFLAGS=$saved_cppflags
 
@@ -766,7 +972,7 @@ dnl ----------------------------------------------------------------------
 dnl Checks for library functions.
 dnl ----------------------------------------------------------------------
 
-dnl We may need the thread library in order to find some functions
+dnl We may need the thread library and thread flags in order to find right stuff
 saved_cppflags=$CPPFLAGS
 CPPFLAGS="$CPPFLAGS $EMU_THR_DEFS"
 saved_libs=$LIBS
@@ -778,7 +984,9 @@ AC_CHECK_FUNCS([getipnodebyname getipnodebyaddr])
 
 AC_CHECK_FUNCS([ieee_handler fpsetmask finite isnan isinf res_gethostbyname dlopen \
 		pread pwrite writev memmove strerror strerror_r strncasecmp \
-		gethrtime localtime_r gmtime_r mremap memcpy mallopt])
+		gethrtime localtime_r gmtime_r mremap memcpy mallopt \
+		sbrk _sbrk __sbrk brk _brk __brk \
+		flockfile])
 AC_FUNC_SETVBUF_REVERSED
 
 disable_vfork=false
@@ -812,14 +1020,451 @@ dnl for gzio
 LM_CHECK_FUNC_DECL(fread, [extern int fread();],,
                    AC_DEFINE(HAVE_CONFLICTING_FREAD_DECLARATION))
 
-dnl Restore LIBS
-LIBS=$saved_libs
-dnl restore CPPFLAGS
-CPPFLAGS=$saved_cppflags
+dnl Checking with TRY_LINK since putc_unlocked might be (probably is) a macro
+AC_CACHE_CHECK([for putc_unlocked],
+	erts_cv_putc_unlocked,
+	AC_TRY_LINK([#include <stdio.h>],
+		[int res = putc_unlocked('x',stdout);],
+		erts_cv_putc_unlocked=yes,
+             	erts_cv_putc_unlocked=no))
+if test $erts_cv_putc_unlocked = yes; then
+	AC_DEFINE(HAVE_PUTC_UNLOCKED, 1, [Define if you have putc_unlocked])
+fi
+
+dnl Checking with TRY_LINK since fwrite_unlocked might be a macro
+AC_CACHE_CHECK([for fwrite_unlocked],
+	erts_cv_fwrite_unlocked,
+	AC_TRY_LINK([#include <stdio.h>],
+		[size_t res = fwrite_unlocked(NULL,sizeof(char),0,stdout);],
+		erts_cv_fwrite_unlocked=yes,
+             	erts_cv_fwrite_unlocked=no))
+if test $erts_cv_fwrite_unlocked = yes; then
+	AC_DEFINE(HAVE_FWRITE_UNLOCKED, 1, [Define if you have fwrite_unlocked])
+fi
 
 dnl ----------------------------------------------------------------------
 dnl Checks for features/quirks in the system that affects Erlang.
 dnl ----------------------------------------------------------------------
+
+AC_CACHE_CHECK([for 'end' symbol],
+		erts_cv_have_end_symbol,
+		[AC_TRY_LINK([],
+			[extern char end; {char *x = &end; *x= 0;}],
+			erts_cv_have_end_symbol=yes,
+			erts_cv_have_end_symbol=no)])
+if test $erts_cv_have_end_symbol = yes; then
+	AC_DEFINE(HAVE_END_SYMBOL, 1, [Define if you have the 'end' symbol])
+fi
+
+AC_CACHE_CHECK([for '_end' symbol],
+		erts_cv_have__end_symbol,
+		[AC_TRY_LINK([],
+			[extern char _end; {char *x = &_end; *x= 0;}],
+			erts_cv_have__end_symbol=yes,
+			erts_cv_have__end_symbol=no)])
+if test $erts_cv_have__end_symbol = yes; then
+	AC_DEFINE(HAVE__END_SYMBOL, 1, [Define if you have the '_end' symbol])
+fi
+
+AC_CACHE_CHECK([if __after_morecore_hook can track malloc()s core memory use],
+		erts_cv___after_morecore_hook_can_track_malloc,
+		[AC_TRY_RUN([
+#include <stdlib.h>
+#ifdef HAVE_MALLOC_H
+#  include <malloc.h>
+#endif
+#if defined(HAVE_END_SYMBOL)
+extern char end;
+#elif defined(HAVE__END_SYMBOL)
+extern char _end;
+#endif
+#ifndef USE_THREADS
+#undef ETHR_PTHREADS
+#endif
+
+#ifdef ETHR_PTHREADS
+#  ifdef ETHR_HAVE_PTHREAD_H
+#    include <pthread.h>
+#  else
+#    ifdef ETHR_HAVE_MIT_PTHREAD_H
+#      include <pthread/mit/pthread.h>
+#    endif
+#  endif
+#  define N_THR 5
+#else
+#  define N_THR 1
+#endif
+
+static char *heap_start = NULL;
+static char *heap_end = NULL;
+
+void update_heap_size(void)
+{
+    heap_end = (char *) sbrk(0);
+}
+
+void init_hook(void)
+{
+#if defined(HAVE_END_SYMBOL)
+    heap_start = &end;
+#elif defined(HAVE__END_SYMBOL)
+    heap_start = &_end;
+#else
+    heap_start = sbrk(0);
+#endif
+    __after_morecore_hook = update_heap_size;
+}
+
+void (*__malloc_initialize_hook) (void) = init_hook;
+
+static int
+check_malloc(int size)
+{
+    char *p = (char *) malloc(size);
+    if (!heap_start || !heap_end) return 0;
+    if (!p) return 0;
+    if (p < heap_start || heap_end <= p) return 0;
+    if (p + size < heap_start || heap_end < p + size) return 0;
+    return 1;
+}
+
+#ifdef ETHR_PTHREADS
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+#endif
+
+static void *
+do_tests(void *vresp)
+{
+    int i, ok = 0;
+#ifdef ETHR_PTHREADS
+    if (pthread_mutex_lock(&mutex) != 0)
+	return NULL;
+#endif
+
+    for (i = 0; i < 10; i++)
+	if (!check_malloc(1000))
+	    goto failed;
+    for (i = 0; i < 100; i++)
+	if (!check_malloc(1))
+	    goto failed;
+    if (!check_malloc(1024*1024+1))
+	goto failed;
+    if (!check_malloc(10*1024*1024+1))
+	goto failed;
+    ok = 1;
+
+ failed:
+#ifdef ETHR_PTHREADS
+    if (pthread_mutex_unlock(&mutex) != 0)
+	return NULL;
+#endif
+    if (ok)
+	*((int *) vresp) = 0;
+    return NULL;
+}
+
+
+int main(void)
+{
+    int res[N_THR], i;
+#ifdef ETHR_PTHREADS
+    pthread_t tid[N_THR];
+#endif
+
+#if defined(HAVE_MALLOPT) && defined(M_MMAP_MAX)
+    (void) mallopt(M_MMAP_MAX, 0);
+#endif
+
+    for (i = 0; i < N_THR; i++)
+	res[i] = 1;
+#ifdef ETHR_PTHREADS
+    for (i = 1; i < N_THR; i++)
+	if (pthread_create(&tid[i], NULL, do_tests, &res[i]) != 0)
+	    return 1;
+#endif
+    (void) do_tests(&res[0]);
+#ifdef ETHR_PTHREADS
+    for (i = 1; i < N_THR; i++)
+	if (pthread_join(tid[i], NULL) != 0)
+	    return 1;
+#endif
+    for (i = 0; i < N_THR; i++)
+	if (res[i])
+	    return 1;
+    return 0;
+}
+	],
+	erts_cv___after_morecore_hook_can_track_malloc=yes,
+	erts_cv___after_morecore_hook_can_track_malloc=no,
+	erts_cv___after_morecore_hook_can_track_malloc=no)])
+
+if test $erts_cv___after_morecore_hook_can_track_malloc = yes; then
+	AC_DEFINE(ERTS___AFTER_MORECORE_HOOK_CAN_TRACK_MALLOC, 1, \
+[Define if __after_morecore_hook can track malloc()s core memory use.])
+fi
+
+if test $ac_cv_func_sbrk = yes; then
+    AC_CACHE_CHECK([types of sbrk()s return value and argument],
+		    erts_cv_sbrk_ret_arg_types,
+		    [
+
+	erts_cv_sbrk_ret_arg_types=unknown
+	ret_types="void *,char *"
+	arg_types="intptr_t,ptrdiff_t,int,long"
+	save_ifs="$IFS"; IFS=","
+	for rtype in $ret_types; do
+	    for atype in $arg_types; do
+		IFS=$save_ifs
+		AC_TRY_COMPILE([#include <sys/types.h>
+				#include <unistd.h>],
+				[$rtype sbrk($atype incr);],
+				[erts_cv_sbrk_ret_arg_types="$rtype,$atype"])
+		IFS=","
+		if test "$erts_cv_sbrk_ret_arg_types" != "unknown"; then
+		    break 2
+		fi
+	    done
+	done
+	IFS=$save_ifs])
+    
+    if test "$erts_cv_sbrk_ret_arg_types" != "unknown"; then
+	save_ifs="$IFS"; IFS=","
+	read ret_type arg_type <<EOF
+$erts_cv_sbrk_ret_arg_types
+EOF
+	IFS=$save_ifs
+	AC_DEFINE_UNQUOTED(SBRK_RET_TYPE, $ret_type, \
+[Define the sbrk() return type.])
+	AC_DEFINE_UNQUOTED(SBRK_ARG_TYPE, $arg_type, \
+[Define the sbrk() argument type.])
+    fi
+fi
+
+if test $ac_cv_func_brk = yes; then
+    AC_CACHE_CHECK([types of brk()s return value and argument],
+		    erts_cv_brk_ret_arg_types,
+		    [
+
+	erts_cv_brk_ret_arg_types=unknown
+	ret_types="int,long,char *,void *"
+	arg_types="void *,const void *,char *,const char *"
+	save_ifs="$IFS"; IFS=","
+	for rtype in $ret_types; do
+	    for atype in $arg_types; do
+		IFS=$save_ifs
+		AC_TRY_COMPILE([#include <sys/types.h>
+				#include <unistd.h>],
+				[$rtype brk($atype endds);],
+				[erts_cv_brk_ret_arg_types="$rtype,$atype"])
+		IFS=","
+		if test "$erts_cv_brk_ret_arg_types" != "unknown"; then
+		    break 2
+		fi
+	    done
+	done
+	IFS=$save_ifs])
+    
+    if test "$erts_cv_brk_ret_arg_types" != "unknown"; then
+	save_ifs="$IFS"; IFS=","
+	read ret_type arg_type <<EOF
+$erts_cv_brk_ret_arg_types
+EOF
+	IFS=$save_ifs
+	AC_DEFINE_UNQUOTED(BRK_RET_TYPE, $ret_type, \
+[Define the brk() return type.])
+	AC_DEFINE_UNQUOTED(BRK_ARG_TYPE, $arg_type, \
+[Define the brk() argument type.])
+    fi
+
+fi
+
+if test $ac_cv_func_sbrk = yes; then
+
+    AC_CACHE_CHECK([if sbrk()/brk() wrappers can track malloc()s core memory use],
+		    erts_cv_brk_wrappers_can_track_malloc,
+		    [AC_TRY_RUN([
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
+#ifdef HAVE_DLFCN_H
+#  include <dlfcn.h>
+#endif
+
+/*
+ * Our implementation requires that we have sbrk(), and 'end' or '_end'.
+ */
+
+#if !defined(HAVE_SBRK)
+#  error no sbrk()
+#endif
+#if defined(HAVE_END_SYMBOL)
+extern char end;
+#elif defined(HAVE__END_SYMBOL)
+extern char _end;
+#else
+#  error no 'end' nor '_end'
+#endif
+
+#ifndef USE_THREADS
+#undef ETHR_PTHREADS
+#endif
+
+#ifdef ETHR_PTHREADS
+#  ifdef ETHR_HAVE_PTHREAD_H
+#    include <pthread.h>
+#  else
+#    ifdef ETHR_HAVE_MIT_PTHREAD_H
+#      include <pthread/mit/pthread.h>
+#    endif
+#  endif
+#  define N_THR 5
+#else
+#  define N_THR 1
+#endif
+
+#define SBRK_IMPL(RET_TYPE, SBRK, ARG_TYPE)				\
+RET_TYPE SBRK (ARG_TYPE);						\
+static RET_TYPE (*real_ ## SBRK)(ARG_TYPE) = NULL;			\
+RET_TYPE								\
+SBRK (ARG_TYPE arg)							\
+{									\
+    RET_TYPE res;							\
+    if (!real_ ## SBRK) real_ ## SBRK = dlsym(RTLD_NEXT, #SBRK);	\
+    res = (*real_ ## SBRK)(arg);					\
+    if (res != (RET_TYPE) -1) heap_end = (char *) (*real_ ## SBRK)(0);	\
+    return res;								\
+}
+
+#define BRK_IMPL(RET_TYPE, BRK, ARG_TYPE)				\
+RET_TYPE BRK (ARG_TYPE);						\
+static RET_TYPE (*real_ ## BRK)(ARG_TYPE) = NULL;			\
+RET_TYPE								\
+BRK (ARG_TYPE arg)							\
+{									\
+    RET_TYPE res;							\
+    if (!real_ ## BRK) real_ ## BRK = dlsym(RTLD_NEXT, #BRK);		\
+    res = (*real_ ## BRK)(arg);						\
+    if (res != (RET_TYPE) -1) heap_end = (char *) arg;			\
+    return res;								\
+}
+
+static char *heap_start = NULL;
+static char *heap_end = NULL;
+
+SBRK_IMPL(SBRK_RET_TYPE, sbrk, SBRK_ARG_TYPE)
+#ifdef HAVE_BRK
+   BRK_IMPL(BRK_RET_TYPE, brk, BRK_ARG_TYPE)
+#endif
+
+#ifdef HAVE__SBRK
+   SBRK_IMPL(SBRK_RET_TYPE, _sbrk, SBRK_ARG_TYPE)
+#endif
+#ifdef HAVE__BRK
+   BRK_IMPL(BRK_RET_TYPE, _brk, BRK_ARG_TYPE)
+#endif
+
+#ifdef HAVE___SBRK
+   SBRK_IMPL(SBRK_RET_TYPE, __sbrk, SBRK_ARG_TYPE)
+#endif
+#ifdef HAVE___BRK
+   BRK_IMPL(BRK_RET_TYPE, __brk, BRK_ARG_TYPE)
+#endif
+
+static int
+check_malloc(int size)
+{
+    char *p = (char *) malloc(size);
+    if (!heap_start || !heap_end) return 0;
+    if (!p) return 0;
+    if (p < heap_start || heap_end <= p) return 0;
+    if (p + size < heap_start || heap_end < p + size) return 0;
+    return 1;
+}
+
+#ifdef ETHR_PTHREADS
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+#endif
+
+static void *
+do_tests(void *vresp)
+{
+    int i, ok = 0;
+#ifdef ETHR_PTHREADS
+    if (pthread_mutex_lock(&mutex) != 0)
+	return NULL;
+#endif
+
+    for (i = 0; i < 10; i++)
+	if (!check_malloc(1000))
+	    goto failed;
+    for (i = 0; i < 100; i++)
+	if (!check_malloc(1))
+	    goto failed;
+    if (!check_malloc(1024*1024+1))
+	goto failed;
+    if (!check_malloc(10*1024*1024+1))
+	goto failed;
+    ok = 1;
+
+ failed:
+#ifdef ETHR_PTHREADS
+    if (pthread_mutex_unlock(&mutex) != 0)
+	return NULL;
+#endif
+    if (ok)
+	*((int *) vresp) = 0;
+    return NULL;
+}
+
+
+int main(void)
+{
+    int res[N_THR], i;
+#ifdef ETHR_PTHREADS
+    pthread_t tid[N_THR];
+#endif
+#if defined(HAVE_END_SYMBOL)
+    heap_start = &end;
+#elif defined(HAVE__END_SYMBOL)
+    heap_start = &_end;
+#endif
+
+#if defined(HAVE_MALLOPT) && defined(M_MMAP_MAX)
+    (void) mallopt(M_MMAP_MAX, 0);
+#endif
+
+    for (i = 0; i < N_THR; i++)
+	res[i] = 1;
+#ifdef ETHR_PTHREADS
+    for (i = 1; i < N_THR; i++)
+	if (pthread_create(&tid[i], NULL, do_tests, &res[i]) != 0)
+	    return 1;
+#endif
+    (void) do_tests(&res[0]);
+#ifdef ETHR_PTHREADS
+    for (i = 1; i < N_THR; i++)
+	if (pthread_join(tid[i], NULL) != 0)
+	    return 1;
+#endif
+    for (i = 0; i < N_THR; i++)
+	if (res[i])
+	    return 1;
+    return 0;
+}
+	],
+	    erts_cv_brk_wrappers_can_track_malloc=yes,
+	    erts_cv_brk_wrappers_can_track_malloc=no,
+	    erts_cv_brk_wrappers_can_track_malloc=no)])
+	if test $erts_cv_brk_wrappers_can_track_malloc = yes; then
+		AC_DEFINE(ERTS_BRK_WRAPPERS_CAN_TRACK_MALLOC, 1, \
+[Define if sbrk()/brk() wrappers can track malloc()s core memory use])
+	fi
+fi
+
+dnl Restore LIBS
+LIBS=$saved_libs
+dnl restore CPPFLAGS
+CPPFLAGS=$saved_cppflags
 
 LM_SYS_IPV6
 LM_SYS_MULTICAST
@@ -1333,6 +1978,140 @@ true)
 	;;
 esac
 
+saved_cppflags=$CPPFLAGS
+CPPFLAGS="$CPPFLAGS $EMU_THR_DEFS"
+saved_libs=$LIBS
+LIBS="$LIBS $EMU_THR_X_LIBS"
+
+AC_CACHE_CHECK([for presens of poll()/select() bug when another thread closes fd],
+    erts_cv_selecter_thr_closed_fd_bug,
+    [
+	case $enable_threads-$ETHR_THR_LIB_BASE in
+	    no-*|*-win32_threads|*-pthread) ;;
+	    *) AC_MSG_ERROR([Unexpected thread lib $ETHR_THR_LIB_BASE]);;
+	esac
+	case $enable_threads-$host_os in
+	    *-win32)
+		erts_cv_selecter_thr_closed_fd_bug=no;;
+	    no-*)
+		erts_cv_selecter_thr_closed_fd_bug=irrelevant;;
+	    *)
+		AC_TRY_RUN([
+#ifndef USE_SELECT
+#include <poll.h>
+#endif
+#ifdef SYS_SELECT_H
+#include <sys/select.h>
+#else
+#include <sys/time.h>
+#include <sys/types.h>
+#endif
+#include <unistd.h>
+#include <pthread.h>
+#include <stdlib.h>
+#include <errno.h>
+
+#define EXIT exit(__LINE__)
+
+#ifndef ETHR_PTHREADS
+#error "This test expects pthreads being used"
+#endif
+
+static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t cnd = PTHREAD_COND_INITIALIZER;
+static int timeout = 0;
+static int result = -1;
+static int fd;
+
+void my_usleep(long usecs) {
+    struct timeval tv; tv.tv_sec = usecs/1000000; tv.tv_usec = usecs%1000000;
+    if (select (0, NULL, NULL, NULL, &tv) != 0) EXIT;
+}
+
+void *watchdog(void *unused) {
+    my_usleep(200000);
+    if (pthread_mutex_lock(&mtx) != 0) EXIT;
+    timeout = 1;
+    if (pthread_cond_signal(&cnd) != 0) EXIT;
+    if (pthread_mutex_unlock(&mtx) != 0) EXIT;
+    return NULL;
+}
+
+#ifdef USE_SELECT
+void *
+selecter(void *unused) {
+    int sres;
+    int select_errno;
+    fd_set rfds;
+    fd_set efds;
+    FD_ZERO(&rfds);
+    FD_ZERO(&efds);
+    FD_SET(fd, &rfds);
+    FD_SET(fd, &efds);
+    sres = select(fd+1, &rfds, NULL, &efds, NULL);
+    select_errno = sres < 0 ? errno : 0;
+    if (sres > 1) EXIT;
+    if (pthread_mutex_lock(&mtx) != 0) EXIT;
+    result = select_errno;
+    if (pthread_cond_signal(&cnd) != 0) EXIT;
+    if (pthread_mutex_unlock(&mtx) != 0) EXIT;
+    return NULL;
+}
+#else
+void *
+selecter(void *unused) {
+    int poll_errno;
+    int pres;
+    static struct pollfd poll_fd;
+    poll_fd.fd = fd;
+    poll_fd.events = POLLIN;
+    poll_fd.revents = 0;
+    pres = poll(&poll_fd, 1, -1);
+    poll_errno = pres < 0 ? errno : 0;
+    if (pres > 1) EXIT;
+    if (pthread_mutex_lock(&mtx) != 0) EXIT;
+    result = poll_errno;
+    if (pthread_cond_signal(&cnd) != 0) EXIT;
+    if (pthread_mutex_unlock(&mtx) != 0) EXIT;
+    return NULL;
+}
+#endif
+
+int main(void) {
+    int fds[2];
+    pthread_t wd_tid;
+    pthread_t p_tid;
+    if (pipe(fds) != 0) EXIT;
+    fd = fds[1];
+    if (pthread_create(&wd_tid, NULL, watchdog, NULL) != 0) EXIT;
+    if (pthread_create(&p_tid, NULL, selecter, NULL) != 0) EXIT;
+    my_usleep(100000);
+    if (close(fds[1]) != 0) EXIT;
+    if (pthread_mutex_lock(&mtx) != 0) EXIT;
+    while (!timeout && result < 0) {
+	int res = pthread_cond_wait(&cnd, &mtx);
+	if (res != 0 && res != EINTR) EXIT;
+    }
+    if (timeout) exit(1); /* poll()/select() did not return on close! */
+    if (pthread_mutex_unlock(&mtx) != 0) EXIT;
+    return 0;
+}
+			    ],
+			    erts_cv_selecter_thr_closed_fd_bug=no,
+			    erts_cv_selecter_thr_closed_fd_bug=yes,
+			    erts_cv_selecter_thr_closed_fd_bug=unknown)
+	esac
+    ])
+
+dnl Restore LIBS
+LIBS=$saved_libs
+dnl restore CPPFLAGS
+CPPFLAGS=$saved_cppflags
+
+if test $erts_cv_selecter_thr_closed_fd_bug = yes; then
+   AC_DEFINE(ERTS_SELECTER_THR_CLOSED_FD_BUG, 1, \
+[Define if poll()/select() bug when another thread closes fd is present.])
+fi
 
 dnl ----------------------------------------------------------------------
 dnl Stuff that should be moved into their respective application
@@ -1491,7 +2270,8 @@ elif test "x$with_ssl" = "xyes" -o "x$with_ssl" = "x" ;then
     SSH_APP=ssh
 
     AC_MSG_CHECKING(for OpenSSL >= 0.9.7 in standard locations) 
-    for dir in $extra_dir /cygdrive/c/OpenSSL /usr/local /usr /usr/pkg \
+    for dir in $extra_dir /cygdrive/c/OpenSSL /usr/sfw \
+		/usr/local /usr /usr/pkg \
 		/usr/local/openssl /usr/lib/openssl /usr/openssl \
 		/usr/local/ssl /usr/lib/ssl /usr/ssl
 	do
@@ -1724,7 +2504,6 @@ fi
 AC_SUBST(CC32)
 AC_SUBST(CFLAGS32)
 
-
 dnl ----------------------------------------------------------------------
 dnl Directories needed for the build
 dnl ----------------------------------------------------------------------
@@ -1740,11 +2519,26 @@ erts_dirs="
   $erts/obj.beam
   $erts/obj.beam/$host
 
+  $erts/obj.smp.beam
+  $erts/obj.smp.beam/$host
+
+  $erts/obj.debug.smp.beam
+  $erts/obj.debug.smp.beam/$host
+
+  $erts/obj.purify.smp.beam
+  $erts/obj.purify.smp.beam/$host
+
+  $erts/obj.quantify.smp.beam
+  $erts/obj.quantify.smp.beam/$host
+
+  $erts/obj.purecov.smp.beam
+  $erts/obj.purecov.smp.beam/$host
+
   $erts/obj.debug.beam
   $erts/obj.debug.beam/$host						
 
-  $erts/obj.shared.beam
-  $erts/obj.shared.beam/$host
+  $erts/obj.nofrag.beam
+  $erts/obj.nofrag.beam/$host
 
   $erts/obj.hybrid.beam
   $erts/obj.hybrid.beam/$host
@@ -1759,8 +2553,13 @@ erts_dirs="
   $erts/obj.purecov.beam/$host
     									
   $erts/emulator/$host/opt
+  $erts/emulator/$host/smp
+  $erts/emulator/$host/debug.smp
+  $erts/emulator/$host/purify.smp
+  $erts/emulator/$host/quantify.smp
+  $erts/emulator/$host/purecov.smp
   $erts/emulator/$host/debug
-  $erts/emulator/$host/shared
+  $erts/emulator/$host/nofrag
   $erts/emulator/$host/hybrid
   $erts/emulator/$host/purify
   $erts/emulator/$host/quantify
@@ -1799,6 +2598,7 @@ dnl
   ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in
   ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in
   ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in
+  ../lib/tools/c_src/$host/Makefile:../lib/tools/c_src/Makefile.in
   ../lib/asn1/c_src/$host/Makefile:../lib/asn1/c_src/Makefile.in
   )
     

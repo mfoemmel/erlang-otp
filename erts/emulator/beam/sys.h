@@ -20,6 +20,22 @@
 
 /* xxxP __VXWORKS__ */
 
+#ifdef ERTS_SMP
+/*
+ * Currently we always need the child waiter thread when smp support
+ * is enabled...
+ */
+#undef ENABLE_CHILD_WAITER_THREAD
+#define ENABLE_CHILD_WAITER_THREAD 1
+#endif
+
+/* The ERTS_TIMER_TREAD #define must be visible to the
+   erl_${OS}_sys.h #include files: it controls whether
+   certain optional facilities should be defined or not. */
+#ifdef ERTS_SMP
+#define ERTS_TIMER_THREAD /* optional */
+#endif
+
 #if defined (__WIN32__)
 #  include "erl_win_sys.h"
 #elif defined (VXWORKS) 
@@ -60,6 +76,23 @@
 #    define ERTS_INLINE
 #  endif
 #endif
+
+#if defined(DEBUG) || defined(ERTS_ENABLE_LOCK_CHECK)
+#  undef ERTS_CAN_INLINE
+#  define ERTS_CAN_INLINE 0
+#  undef ERTS_INLINE
+#  define ERTS_INLINE
+#endif
+
+#if ERTS_CAN_INLINE
+#define ERTS_GLB_INLINE static ERTS_INLINE
+#else
+#define ERTS_GLB_INLINE
+#endif
+
+#define ERTS_GLB_INLINE_INCL_FUNC_DEF \
+  (ERTS_CAN_INLINE || defined(ERTS_DO_INCL_GLB_INLINE_FUNC_DEF))
+
 
 #ifndef ERTS_EXIT_AFTER_DUMP
 #  define ERTS_EXIT_AFTER_DUMP exit
@@ -134,6 +167,11 @@ EXTERN_FUNCTION(int, real_printf, (const char *fmt, ...));
 #else
 #  define __noreturn
 #  define __deprecated
+#endif
+
+#ifdef ERTS_SMP
+int erts_sys_no_processors(void);
+void erts_wake_io_thread(void);
 #endif
 
 /*
@@ -218,6 +256,9 @@ typedef unsigned char byte;
 #if defined(ARCH_64) && !HAVE_INT64
 #error 64-bit architecture, but no appropriate type to use for Uint64 and Sint64 found 
 #endif
+
+#include "erl_lock_check.h"
+#include "erl_smp.h"
 
 /* Deal with memcpy() vs bcopy() etc. We want to use the mem*() functions,
    but be able to fall back on bcopy() etc on systems that don't have
@@ -318,25 +359,93 @@ static const int zero_value = 0, one_value = 1;
 #  endif /* !__WIN32__ */
 # endif /* _OSE_ */
 #endif /* WANT_NONBLOCKING */
-     
+
+
+void __noreturn erl_exit(int n, char*, ...);
+
+/* Some special erl_exit() codes: */
+#define ERTS_INTR_EXIT	INT_MIN		/* called from signal handler */
+#define ERTS_ABORT_EXIT	(INT_MIN + 1)	/* no crash dump; only abort() */
+#define ERTS_DUMP_EXIT	(127)		/* crash dump; then exit() */
+
+
+#ifndef ERTS_SMP
 EXTERN_FUNCTION(int, check_async_ready, (_VOID_));
-
 #ifdef USE_THREADS
-
 EXTERN_FUNCTION(void, sys_async_ready, (int hndl));
+#endif
+#endif
+
+#ifdef ERTS_SMP
+void erts_io_lock(void);
+void erts_io_unlock(void);
+#endif
+
+ERTS_GLB_INLINE void erts_smp_io_lock(void);
+ERTS_GLB_INLINE void erts_smp_io_unlock(void);
+
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+
+ERTS_GLB_INLINE void
+erts_smp_io_lock(void)
+{
+#ifdef ERTS_SMP
+    erts_io_lock();
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_io_unlock(void)
+{
+#ifdef ERTS_SMP
+    erts_io_unlock();
+#endif
+}
 
 #endif
 
-/* Memory allocated from system dependent code (declared in utils.c) */
-extern Uint erts_sys_misc_mem_sz;
+/* Size of misc memory allocated from system dependent code */
+Uint erts_sys_misc_mem_sz(void);
 
-/* Io constants to sys_printf and sys_putc */
+/* print stuff is declared here instead of in global.h, so sys stuff won't
+   have to include global.h */
+#include "erl_printf.h"
 
-typedef enum {
-    CBUF = 0,
-    COUT = 1,
-    CERR = 2
-} CIO;
+/* Io constants to erts_print and erts_putc */
+#define ERTS_PRINT_STDERR	(2)
+#define ERTS_PRINT_STDOUT	(1)
+#define ERTS_PRINT_INVALID	(0) /* Don't want to use 0 since CBUF was 0 */
+#define ERTS_PRINT_FILE		(-1)
+#define ERTS_PRINT_SBUF		(-2)
+#define ERTS_PRINT_SNBUF	(-3)
+#define ERTS_PRINT_DSBUF	(-4)
+
+#define ERTS_PRINT_MIN		ERTS_PRINT_DSBUF
+
+typedef struct {
+    char *buf;
+    size_t size;
+} erts_print_sn_buf;
+
+int erts_print(int to, void *arg, char *format, ...);	/* in utils.c */
+int erts_putc(int to, void *arg, char);			/* in utils.c */
+
+/* logger stuff is declared here instead of in global.h, so sys files
+   won't have to include global.h */
+
+erts_dsprintf_buf_t *erts_create_logger_dsbuf(void);
+int erts_send_info_to_logger(Eterm, erts_dsprintf_buf_t *);
+int erts_send_warning_to_logger(Eterm, erts_dsprintf_buf_t *);
+int erts_send_error_to_logger(Eterm, erts_dsprintf_buf_t *);
+int erts_send_info_to_logger_str(Eterm, char *); 
+int erts_send_warning_to_logger_str(Eterm, char *);
+int erts_send_error_to_logger_str(Eterm, char *);
+int erts_send_info_to_logger_nogl(erts_dsprintf_buf_t *);
+int erts_send_warning_to_logger_nogl(erts_dsprintf_buf_t *);
+int erts_send_error_to_logger_nogl(erts_dsprintf_buf_t *);
+int erts_send_info_to_logger_str_nogl(char *);
+int erts_send_warning_to_logger_str_nogl(char *);
+int erts_send_error_to_logger_str_nogl(char *);
 
 typedef struct preload {
     char *name;			/* Name of module */
@@ -373,15 +482,18 @@ typedef struct _SysDriverOpts {
 } SysDriverOpts;
 
 
-extern int cerr_pos;
-
 extern char os_type[];
 
 extern int sys_init_time(void);
-extern void erts_deliver_time(SysTimeval *);
+#if defined(ERTS_TIMER_THREAD)
+#define erts_deliver_time()
+#else
+extern void erts_deliver_time(void);
+#endif
 extern void erts_time_remaining(SysTimeval *);
 extern int erts_init_time_sup(void);
 extern void erts_sys_init_float(void);
+extern void erts_thread_init_float(void);
 
 /*
  * System interfaces for startup/sae code (functions found in respective sys.c)
@@ -397,9 +509,12 @@ extern void erl_sys_init_final(void);
 void sys_tty_reset(void);
 #endif
 
+#ifdef ERTS_SMP
+extern erts_smp_tid_t erts_io_thr_tid; /* io.c */
+#endif
 
 EXTERN_FUNCTION(int, sys_max_files, (_VOID_));
-void sys_init_io(byte*, Uint);
+void sys_init_io(void);
 Preload* sys_preloaded(void);
 EXTERN_FUNCTION(unsigned char*, sys_preload_begin, (Preload*));
 EXTERN_FUNCTION(void, sys_preload_end, (Preload*));
@@ -434,10 +549,10 @@ EXTERN_FUNCTION(char *, getenv_string, (GETENV_STATE *));
 EXTERN_FUNCTION(void, init_sys_float, (void));
 EXTERN_FUNCTION(int, sys_chars_to_double, (char*, double*));
 EXTERN_FUNCTION(int, sys_double_to_chars, (double, char*));
-EXTERN_FUNCTION(void, sys_printf, (CIO, char*, _DOTS_));
-EXTERN_FUNCTION(void, sys_putc, (int, CIO));
 EXTERN_FUNCTION(void, sys_get_pid, (char *));
 EXTERN_FUNCTION(int, sys_putenv, (char *));
+
+/* utils.c */
 
 /* Options to sys_alloc_opt */
 #define SYS_ALLOC_OPT_TRIM_THRESHOLD 0
@@ -461,6 +576,374 @@ typedef struct {
 } SysAllocStat;
 
 EXTERN_FUNCTION(void, sys_alloc_stat, (SysAllocStat *));
+
+/* Block the whole system... */
+
+#define ERTS_BS_FLG_ALLOW_GC				(((Uint32) 1) << 0)
+#define ERTS_BS_FLG_ALLOW_IO				(((Uint32) 1) << 1)
+
+/* Activities... */
+typedef enum {
+    ERTS_ACTIVITY_UNDEFINED,	/* Undefined activity */
+    ERTS_ACTIVITY_WAIT,		/* Waiting */
+    ERTS_ACTIVITY_GC,		/* Garbage collecting */
+    ERTS_ACTIVITY_IO		/* I/O including message passing to erl procs */
+} erts_activity_t;
+
+#ifdef ERTS_SMP
+
+typedef enum {
+    ERTS_ACT_ERR_LEAVE_WAIT_UNLOCKED,
+    ERTS_ACT_ERR_LEAVE_UNKNOWN_ACTIVITY,
+    ERTS_ACT_ERR_ENTER_UNKNOWN_ACTIVITY
+} erts_activity_error_t;
+
+typedef struct {
+    erts_smp_atomic_t do_block;
+    struct {
+	erts_smp_atomic_t wait;
+	erts_smp_atomic_t gc;
+	erts_smp_atomic_t io;
+    } in_activity;
+} erts_system_block_state_t;
+
+extern erts_system_block_state_t erts_system_block_state;
+
+int erts_is_system_blocked(erts_activity_t allowed_activities);
+void erts_block_me(void (*prepare)(void *), void (*resume)(void *), void *arg);
+void erts_register_blockable_thread(void);
+void erts_unregister_blockable_thread(void);
+void erts_note_activity_begin(erts_activity_t activity);
+void
+erts_check_block(erts_activity_t old_activity,
+		 erts_activity_t new_activity,
+		 int locked,
+		 void (*prepare)(void *),
+		 void (*resume)(void *),
+		 void *arg);
+void erts_block_system(Uint32 allowed_activities);
+int erts_emergency_block_system(long timeout, Uint32 allowed_activities);
+void erts_release_system(void);
+void erts_system_block_init(void);
+void erts_set_activity_error(erts_activity_error_t, char *, int);
+#ifdef ERTS_ENABLE_LOCK_CHECK
+void erts_lc_activity_change_begin(void);
+void erts_lc_activity_change_end(void);
+#endif
+#endif
+
+#define erts_smp_activity_begin(NACT, PRP, RSM, ARG)		\
+  erts_smp_set_activity(ERTS_ACTIVITY_UNDEFINED,		\
+			(NACT),					\
+			0,					\
+			(PRP),					\
+			(RSM),					\
+			(ARG),					\
+			__FILE__,				\
+			__LINE__)
+#define erts_smp_activity_change(OACT, NACT, PRP, RSM, ARG)	\
+  erts_smp_set_activity((OACT),					\
+			(NACT),					\
+			0,					\
+			(PRP),					\
+			(RSM),					\
+			(ARG),					\
+			__FILE__,				\
+			__LINE__)
+#define erts_smp_activity_end(OACT, PRP, RSM, ARG)		\
+  erts_smp_set_activity((OACT),					\
+			ERTS_ACTIVITY_UNDEFINED,		\
+			0,					\
+			(PRP),					\
+			(RSM),					\
+			(ARG),					\
+			__FILE__,				\
+			__LINE__)
+
+#define erts_smp_locked_activity_begin(NACT)			\
+  erts_smp_set_activity(ERTS_ACTIVITY_UNDEFINED,		\
+			(NACT),					\
+			1,					\
+			NULL,					\
+			NULL,					\
+			NULL,					\
+			__FILE__,				\
+			__LINE__)
+#define erts_smp_locked_activity_change(OACT, NACT)		\
+  erts_smp_set_activity((OACT),					\
+			(NACT),					\
+			1,					\
+			NULL,					\
+			NULL,					\
+			NULL,					\
+			__FILE__,				\
+			__LINE__)
+#define erts_smp_locked_activity_end(OACT)			\
+  erts_smp_set_activity((OACT),					\
+			ERTS_ACTIVITY_UNDEFINED,		\
+			1,					\
+			NULL,					\
+			NULL,					\
+			NULL,					\
+			__FILE__,				\
+			__LINE__)
+
+
+ERTS_GLB_INLINE int erts_smp_is_system_blocked(erts_activity_t allowed_activities);
+ERTS_GLB_INLINE void erts_smp_block_system(Uint32 allowed_activities);
+ERTS_GLB_INLINE int erts_smp_emergency_block_system(long timeout,
+						    Uint32 allowed_activities);
+ERTS_GLB_INLINE void erts_smp_release_system(void);
+ERTS_GLB_INLINE int erts_smp_pending_system_block(void);
+ERTS_GLB_INLINE void erts_smp_chk_system_block(void (*prepare)(void *),
+					       void (*resume)(void *),
+					       void *arg);
+ERTS_GLB_INLINE void
+erts_smp_set_activity(erts_activity_t old_activity,
+		      erts_activity_t new_activity,
+		      int locked,
+		      void (*prepare)(void *),
+		      void (*resume)(void *),
+		      void *arg,
+		      char *file,
+		      int line);
+
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+
+
+ERTS_GLB_INLINE int
+erts_smp_is_system_blocked(erts_activity_t allowed_activities)
+{
+#ifdef ERTS_SMP
+    return erts_is_system_blocked(allowed_activities);
+#else
+    return 1;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_block_system(Uint32 allowed_activities)
+{
+#ifdef ERTS_SMP
+    erts_block_system(allowed_activities);
+#endif
+}
+
+ERTS_GLB_INLINE int
+erts_smp_emergency_block_system(long timeout, Uint32 allowed_activities)
+{
+#ifdef ERTS_SMP
+    return erts_emergency_block_system(timeout, allowed_activities);
+#else
+    return 0;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_release_system(void)
+{
+#ifdef ERTS_SMP
+    erts_release_system();
+#endif
+}
+
+ERTS_GLB_INLINE int
+erts_smp_pending_system_block(void)
+{
+#ifdef ERTS_SMP
+    return erts_smp_atomic_read(&erts_system_block_state.do_block);
+#else
+    return 0;
+#endif
+}
+
+
+ERTS_GLB_INLINE void
+erts_smp_chk_system_block(void (*prepare)(void *),
+			  void (*resume)(void *),
+			  void *arg)
+{
+#ifdef ERTS_SMP
+    if (erts_smp_pending_system_block())
+	erts_block_me(prepare, resume, arg);
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_set_activity(erts_activity_t old_activity,
+		      erts_activity_t new_activity,
+		      int locked,
+		      void (*prepare)(void *),
+		      void (*resume)(void *),
+		      void *arg,
+		      char *file,
+		      int line)
+{
+#ifdef ERTS_SMP
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_activity_change_begin();
+#endif
+    switch (old_activity) {
+    case ERTS_ACTIVITY_UNDEFINED:
+	break;
+    case ERTS_ACTIVITY_WAIT:
+	erts_smp_atomic_dec(&erts_system_block_state.in_activity.wait);
+	if (locked) {
+	    /* You are not allowed to leave activity waiting
+	     * without supplying the possibility to block
+	     * unlocked.
+	     */
+	    erts_set_activity_error(ERTS_ACT_ERR_LEAVE_WAIT_UNLOCKED,
+				    file, line);
+	}
+	break;
+    case ERTS_ACTIVITY_GC:
+	erts_smp_atomic_dec(&erts_system_block_state.in_activity.gc);
+	break;
+    case ERTS_ACTIVITY_IO:
+	erts_smp_atomic_dec(&erts_system_block_state.in_activity.io);
+	break;
+    default:
+	erts_set_activity_error(ERTS_ACT_ERR_LEAVE_UNKNOWN_ACTIVITY,
+				file, line);
+	break;
+    }
+
+    if (erts_smp_pending_system_block())
+	erts_check_block(old_activity,new_activity,locked,prepare,resume,arg);
+
+    switch (new_activity) {
+    case ERTS_ACTIVITY_UNDEFINED:
+	break;
+    case ERTS_ACTIVITY_WAIT:
+	erts_smp_atomic_inc(&erts_system_block_state.in_activity.wait);
+	break;
+    case ERTS_ACTIVITY_GC:
+	erts_smp_atomic_inc(&erts_system_block_state.in_activity.gc);
+	break;
+    case ERTS_ACTIVITY_IO:
+	erts_smp_atomic_inc(&erts_system_block_state.in_activity.io);
+	break;
+    default:
+	erts_set_activity_error(ERTS_ACT_ERR_ENTER_UNKNOWN_ACTIVITY,
+				file, line);
+	break;
+    }
+
+    switch (new_activity) {
+    case ERTS_ACTIVITY_WAIT:
+    case ERTS_ACTIVITY_GC:
+    case ERTS_ACTIVITY_IO:
+	if (erts_smp_pending_system_block())
+	    erts_note_activity_begin(new_activity);
+	break;
+    default:
+	break;
+    }
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_activity_change_end();
+#endif
+
+#endif
+}
+
+#endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
+
+#if defined(DEBUG) || defined(ERTS_ENABLE_LOCK_CHECK)
+#undef ERTS_REFC_DEBUG
+#define ERTS_REFC_DEBUG
+#endif
+
+typedef erts_smp_atomic_t erts_refc_t;
+
+ERTS_GLB_INLINE void erts_refc_init(erts_refc_t *refcp, long val);
+ERTS_GLB_INLINE void erts_refc_inc(erts_refc_t *refcp, long min_val);
+ERTS_GLB_INLINE long erts_refc_inctest(erts_refc_t *refcp, long min_val);
+ERTS_GLB_INLINE void erts_refc_dec(erts_refc_t *refcp, long min_val);
+ERTS_GLB_INLINE long erts_refc_dectest(erts_refc_t *refcp, long min_val);
+ERTS_GLB_INLINE long erts_refc_read(erts_refc_t *refcp, long min_val);
+
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+
+ERTS_GLB_INLINE void
+erts_refc_init(erts_refc_t *refcp, long val)
+{
+    erts_smp_atomic_init((erts_smp_atomic_t *) refcp, val);
+}
+
+ERTS_GLB_INLINE void
+erts_refc_inc(erts_refc_t *refcp, long min_val)
+{
+#ifdef ERTS_REFC_DEBUG
+    long val = erts_smp_atomic_inctest((erts_smp_atomic_t *) refcp);
+    if (val < min_val)
+	erl_exit(ERTS_ABORT_EXIT,
+		 "erts_refc_inc(): Bad refc found (refc=%ld < %ld)!\n",
+		 val, min_val);
+#else
+    erts_smp_atomic_inc((erts_smp_atomic_t *) refcp);
+#endif
+}
+
+ERTS_GLB_INLINE long
+erts_refc_inctest(erts_refc_t *refcp, long min_val)
+{
+    long val = erts_smp_atomic_inctest((erts_smp_atomic_t *) refcp);
+#ifdef ERTS_REFC_DEBUG
+    if (val < min_val)
+	erl_exit(ERTS_ABORT_EXIT,
+		 "erts_refc_inctest(): Bad refc found (refc=%ld < %ld)!\n",
+		 val, min_val);
+#endif
+    return val;
+}
+
+ERTS_GLB_INLINE void
+erts_refc_dec(erts_refc_t *refcp, long min_val)
+{
+#ifdef ERTS_REFC_DEBUG
+    long val = erts_smp_atomic_dectest((erts_smp_atomic_t *) refcp);
+    if (val < min_val)
+	erl_exit(ERTS_ABORT_EXIT,
+		 "erts_refc_dec(): Bad refc found (refc=%ld < %ld)!\n",
+		 val, min_val);
+#else
+    erts_smp_atomic_dec((erts_smp_atomic_t *) refcp);
+#endif
+}
+
+ERTS_GLB_INLINE long
+erts_refc_dectest(erts_refc_t *refcp, long min_val)
+{
+    long val = erts_smp_atomic_dectest((erts_smp_atomic_t *) refcp);
+#ifdef ERTS_REFC_DEBUG
+    if (val < min_val)
+	erl_exit(ERTS_ABORT_EXIT,
+		 "erts_refc_dectest(): Bad refc found (refc=%ld < %ld)!\n",
+		 val, min_val);
+#endif
+    return val;
+}
+
+ERTS_GLB_INLINE long
+erts_refc_read(erts_refc_t *refcp, long min_val)
+{
+    long val = erts_smp_atomic_read((erts_smp_atomic_t *) refcp);
+#ifdef ERTS_REFC_DEBUG
+    if (val < min_val)
+	erl_exit(ERTS_ABORT_EXIT,
+		 "erts_refc_read(): Bad refc found (refc=%ld < %ld)!\n",
+		 val, min_val);
+#endif
+    return val;
+}
+
+#endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
+
+#ifdef USE_KERNEL_POLL
+extern int erts_use_kernel_poll;
+#endif
 
 void elib_ensure_initialized(void);
 

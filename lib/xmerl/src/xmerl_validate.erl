@@ -514,16 +514,22 @@ choice([CH|CHS],[_XML|_T]=XMLS,Rules,WSaction,S)->
 	{error,_R} ->
 	    choice(CHS,XMLS,Rules,WSaction,S);
 	{error,_R,_N} ->
-	    choice(CHS,XMLS,Rules,WSaction,S);
+	    choice(CHS,XMLS,Rules,WSaction,S); %% XXX add a case {[],XML}
+	{[],XMLS1} -> %% Maybe a sequence with * or ? elements that
+                      %% didn't match
+	    choice(CHS,XMLS1,Rules,WSaction,S);
 	{Tree,XMLS2}->
-	    {WS++[Tree],XMLS2}
+	    {WS2,XMLS3} = whitespace_action(XMLS2,ws_action(WSaction,remove)),
+	    {WS2++[Tree]++WS,XMLS3}
     end;
 choice([],XMLS,_,WSaction,_S)->
     case whitespace_action(XMLS,ws_action(WSaction,remove)) of
 	Res={_,[]} -> Res;
 	_ ->
 	    {error,element_unauthorize_in_choice,{{next,XMLS},{act,[]}}}
-    end.
+    end;
+choice(_,[],_,_,_S) ->
+    {[],[]}.
 
 plus(Rule,XMLS,Rules,WSaction,S) ->
     %% 1 or more
@@ -557,6 +563,8 @@ star(Rule,XMLS,Rules,WSaction,Tree,S) ->
 	    star(Rule,XMLS2,Rules,WSaction,Tree++WS++[Tree1],S)
     end.
 
+question(_Rule, [],_Rules,_S) ->
+    {[],[]};
 question(Rule, Toks,Rules,S) ->
     %% 0 or 1
     case parse(Rule, Toks,Rules,preserve,S) of

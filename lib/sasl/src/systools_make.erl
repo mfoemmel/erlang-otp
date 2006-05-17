@@ -55,15 +55,17 @@
 %%              exref | {exref, [AppName]}
 %%-----------------------------------------------------------------
 
-make_script(RelName) when list(RelName) ->
+make_script(RelName) when is_list(RelName) ->
     make_script(RelName, []);
 make_script(RelName) ->
     badarg(RelName,[RelName]).
 
-make_script(RelName, Flags) when list(RelName), list(Flags) ->
+make_script(RelName, Flags) when is_list(RelName), is_list(Flags) ->
     make_script(RelName, RelName, Flags).
     
-make_script(RelName, Output, Flags) when list(RelName), list(Output), list(Flags) ->
+make_script(RelName, Output, Flags) when is_list(RelName),
+					 is_list(Output),
+					 is_list(Flags) ->
     case check_args_script(Flags) of
 	[] ->
 	    Path0 = get_path(Flags),
@@ -81,7 +83,7 @@ make_script(RelName, Output, Flags) when list(RelName), list(Output), list(Flags
 	    badarg(ErrorVars, [RelName, Flags])
     end;
 
-make_script(RelName, _Output, Flags) when list(Flags) ->
+make_script(RelName, _Output, Flags) when is_list(Flags) ->
     badarg(RelName,[RelName, Flags]);
 make_script(RelName, _Output, Flags) ->
     badarg(Flags,[RelName, Flags]).
@@ -92,14 +94,14 @@ badarg(BadArg, Args) ->
 
 machine(Flags) ->
     case get_flag(machine,Flags) of
-	{machine, Machine} when atom(Machine) -> Machine;
-	_                                     -> false
+	{machine, Machine} when is_atom(Machine) -> Machine;
+	_                                        -> false
     end.
 
 get_path(Flags) ->
     case get_flag(path,Flags) of
-	{path,Path} when list(Path) -> Path;
-	_                           -> []
+	{path,Path} when is_list(Path) -> Path;
+	_                              -> []
     end.
 
 return(ok,Warnings,Flags) ->
@@ -153,12 +155,12 @@ return({error,Mod,Error},_,Flags) ->
 %%         erts-EVsn[/bin]
 %%-----------------------------------------------------------------
 
-make_tar(RelName) when list(RelName) ->
+make_tar(RelName) when is_list(RelName) ->
     make_tar(RelName, []);
 make_tar(RelName) ->
     badarg(RelName,[RelName]).
 
-make_tar(RelName, Flags) when list(RelName), list(Flags) ->
+make_tar(RelName, Flags) when is_list(RelName), is_list(Flags) ->
     case check_args_tar(Flags) of
 	[] ->
 	    Path0 = get_path(Flags),
@@ -179,7 +181,7 @@ make_tar(RelName, Flags) when list(RelName), list(Flags) ->
 	ErrorVars ->
 	    badarg(ErrorVars, [RelName, Flags])
     end;
-make_tar(RelName, Flags) when list(Flags) ->
+make_tar(RelName, Flags) when is_list(Flags) ->
     badarg(RelName,[RelName, Flags]);
 make_tar(RelName, Flags) ->
     badarg(Flags,[RelName, Flags]).
@@ -239,7 +241,7 @@ check_rel(Release) ->
 	    throw({error,?MODULE,Error})
     end.
 
-check_rel1({release, {Name,Vsn}, {erts,EVsn}, Appl}) when list(Appl) ->
+check_rel1({release,{Name,Vsn},{erts,EVsn},Appl}) when is_list(Appl) ->
     check_name(Name),
     check_vsn(Vsn),
     check_evsn(EVsn),
@@ -273,19 +275,21 @@ check_evsn(Vsn) ->
     end.
 
 check_appl(Appl) ->
-    case filter(fun({App,Vsn}) when atom(App) ->
+    case filter(fun({App,Vsn}) when is_atom(App) ->
 			not string_p(Vsn);
-		   ({App,Vsn,Incl}) when atom(App), list(Incl) ->
+		   ({App,Vsn,Incl}) when is_atom(App), is_list(Incl) ->
 			case {string_p(Vsn), a_list_p(Incl)} of
 			    {true, true} -> false;
 			    _            -> true
 			end;
-		   ({App,Vsn,Type}) when atom(App), atom(Type) ->
+		   ({App,Vsn,Type}) when is_atom(App), is_atom(Type) ->
 			case {string_p(Vsn), is_app_type(Type)} of
 			    {true, true} -> false;
 			    _            -> true
 			end;
-		   ({App,Vsn,Type,Incl}) when atom(App),atom(Type),list(Incl) ->
+		   ({App,Vsn,Type,Incl}) when is_atom(App),
+					      is_atom(Type),
+					      is_list(Incl) ->
 			case {string_p(Vsn),is_app_type(Type),a_list_p(Incl)} of
 			    {true, true, true} -> false;
 			    _                  -> true
@@ -319,11 +323,11 @@ split_app_incl(Appl) -> split_app_incl(Appl, [], []).
 
 split_app_incl([{App,Vsn}|Appls], Apps, Incls) ->
     split_app_incl(Appls, [{App,Vsn,permanent}|Apps], Incls);
-split_app_incl([{App,Vsn,Incl}|Appls], Apps, Incls) when list(Incl) ->
+split_app_incl([{App,Vsn,Incl}|Appls], Apps,Incls) when is_list(Incl) ->
     split_app_incl(Appls, [{App,Vsn,permanent}|Apps], [{App,Incl}|Incls]);
 split_app_incl([{App,Vsn,Type}|Appls], Apps, Incls) ->
     split_app_incl(Appls, [{App,Vsn,Type}|Apps], Incls);
-split_app_incl([{App,Vsn,Type,Incl}|Appls], Apps, Incls) when list(Incl) ->
+split_app_incl([{App,Vsn,Type,Incl}|Appls], Apps, Incls) when is_list(Incl) ->
     split_app_incl(Appls, [{App,Vsn,Type}|Apps], [{App,Incl}|Incls]);
 split_app_incl([], Apps, Incls) ->
     {reverse(Apps),reverse(Incls)}.
@@ -397,8 +401,8 @@ read_application(_Name, _, [], _, _, FirstError) ->
     {error, FirstError}.
 
 parse_application({application, Name, Dict}, File, Vsn, Incls)
-  when atom(Name),
-       list(Dict) ->
+  when is_atom(Name),
+       is_list(Dict) ->
     Items = [vsn,id,description,modules,registered,
 	     applications,included_applications,mod,start_phases,env,maxT,maxP],
     case catch get_items(Items, Dict) of
@@ -462,7 +466,7 @@ get_items([H|T], Dict) ->
 get_items([], _Dict) ->
     [].
 
-check_item({_,{mod,{M,A}}},_) when atom(M) ->
+check_item({_,{mod,{M,A}}},_) when is_atom(M) ->
     {M,A};
 check_item({_,{vsn,Vsn}},I) ->
     case string_p(Vsn) of
@@ -511,13 +515,13 @@ check_item({_,{env,Env}},I) ->
     end;
 check_item({_,{maxT,MaxT}},I) ->
     case MaxT of
-	MaxT when integer(MaxT), MaxT > 0 -> MaxT;
+	MaxT when is_integer(MaxT), MaxT > 0 -> MaxT;
 	infinity -> infinity;
 	_ -> throw({bad_param, I})
     end;
 check_item({_,{maxP,MaxP}},I) ->
     case MaxP of
-	MaxP when integer(MaxP), MaxP > 0 -> MaxP;
+	MaxP when is_integer(MaxP), MaxP > 0 -> MaxP;
 	infinity -> infinity;
 	_ -> throw({bad_param, I})
     end;
@@ -673,7 +677,7 @@ undefined_applications(Appls) ->
 %% the boot script, and consequently release upgrade instructions in
 %% relup, may end up in the wrong order.
 
-sort_included_applications(Applications, Release) when tuple(Release) ->
+sort_included_applications(Applications, Release) when is_tuple(Release) ->
     {ok,
      sort_included_applications(Applications, Release#release.applications)};
 
@@ -851,7 +855,7 @@ xref_p(Flags) ->
 	    exists_xref(true);
 	_ ->
 	    case get_flag(exref, Flags) of
-		{exref, Appls} when list(Appls) ->
+		{exref, Appls} when is_list(Appls) ->
 		    case a_list_p(Appls) of
 			true -> exists_xref({true, Appls});
 			_    -> false
@@ -976,15 +980,15 @@ path_flag(Flags) ->
 
 get_variables(Flags) ->
     case get_flag(variables, Flags) of
-	{variables, Variables} when list(Variables) ->
+	{variables, Variables} when is_list(Variables) ->
 	    valid_variables(Variables);
 	_ ->
 	    []
     end.
 
-valid_variables([{Var,Path}|Variables]) when list(Var), list(Path) ->
+valid_variables([{Var,Path}|Variables]) when is_list(Var), is_list(Path) ->
     [{Var,rm_tlsl(Path)}|valid_variables(Variables)];
-valid_variables([{Var,Path}|Variables]) when atom(Var), list(Path) ->
+valid_variables([{Var,Path}|Variables]) when is_atom(Var), is_list(Path) ->
     [{to_list(Var),rm_tlsl(Path)}|valid_variables(Variables)];
 valid_variables([_|Variables]) ->
     valid_variables(Variables);
@@ -1305,7 +1309,7 @@ kernel_processes() ->
 %% Create the kernel processes.
 
 create_kernel_procs(Appls) ->
-    map(fun({Name,Mod,Func,Args}) when function(Args) ->
+    map(fun({Name,Mod,Func,Args}) when is_function(Args) ->
                 {kernelProcess, Name, {Mod, Func, Args(Appls)}};
            ({Name,Mod,Func,Args}) ->
                 {kernelProcess, Name, {Mod, Func, Args}}
@@ -1599,12 +1603,12 @@ make_set([H|T]) ->
     [H | [ Y || Y<- make_set(T),
 		Y =/= H]].
 
-to_list(A) when atom(A) -> atom_to_list(A);
-to_list(L)              -> L.
+to_list(A) when is_atom(A) -> atom_to_list(A);
+to_list(L)                 -> L.
 
 mk_path(Path0) ->
-    Path1 = map(fun(Dir) when atom(Dir) -> atom_to_list(Dir);
-		   (Dir)                -> Dir
+    Path1 = map(fun(Dir) when is_atom(Dir) -> atom_to_list(Dir);
+		   (Dir)                   -> Dir
 		end, Path0),
     Path = systools_lib:get_path(Path1),
     make_set(Path ++ code:get_path()).  % Use code path as well !
@@ -1703,7 +1707,7 @@ is_app_type(_) -> false.
 
 % check if a term is a string.
 
-string_p([H|T]) when integer(H), H >= $ , H < 255 ->
+string_p([H|T]) when is_integer(H), H >= $ , H < 255 ->
     string_p(T);
 string_p([$\n|T]) -> string_p(T);
 string_p([$\r|T]) -> string_p(T);
@@ -1718,23 +1722,23 @@ string_p(_) ->  false.
 % check if a term is a list of two tuples with the first
 % element as an atom.
 
-t_list_p([{A,_}|T]) when atom(A) -> t_list_p(T);
-t_list_p([])                     -> true;
-t_list_p(_)                      -> false.
+t_list_p([{A,_}|T]) when is_atom(A) -> t_list_p(T);
+t_list_p([])                        -> true;
+t_list_p(_)                         -> false.
 
 % check if a term is a list of atoms or two-tuples with the first
 % element as an atom.
 
-mod_list_p([{A,_}|T]) when atom(A) -> mod_list_p(T);
-mod_list_p([A|T]) when atom(A)     -> mod_list_p(T);
-mod_list_p([])                     -> true;
-mod_list_p(_)                      -> false.
+mod_list_p([{A,_}|T]) when is_atom(A) -> mod_list_p(T);
+mod_list_p([A|T]) when is_atom(A)     -> mod_list_p(T);
+mod_list_p([])                        -> true;
+mod_list_p(_)                         -> false.
 
 % check if a term is a list of atoms.
 
-a_list_p([A|T]) when atom(A) -> a_list_p(T);
-a_list_p([])                 -> true;
-a_list_p(_)                  -> false.
+a_list_p([A|T]) when is_atom(A) -> a_list_p(T);
+a_list_p([])                    -> true;
+a_list_p(_)                     -> false.
 
 %% Get a key-value tuple flag from a list.
 
@@ -1751,7 +1755,7 @@ cas([], {_Path,_Sil,_Loc,_Test,_Var,_Mach,_Xref,_XrefApps, X}) ->
     X;
 %%% path ---------------------------------------------------------------
 cas([{path, P} | Args], {Path, Sil, Loc, Test, Var, Mach, 
-			 Xref, XrefApps, X}) when list(P) -> 
+			 Xref, XrefApps, X}) when is_list(P) -> 
     case check_path(P) of
 	ok ->
 	    cas(Args, {P, Sil, Loc, Test, Var, Mach, Xref, XrefApps,X});
@@ -1774,7 +1778,7 @@ cas([no_module_tests | Args], {Path, Sil, Loc, _Test, Var, Mach,
 	{Path, Sil, Loc, no_module_tests, Var, Mach, Xref, XrefApps,X});
 %%% variables ----------------------------------------------------------
 cas([{variables, V} | Args], {Path, Sil, Loc, Test, Var, Mach, 
-				 Xref, XrefApps, X}) when list(V) ->
+				 Xref, XrefApps, X}) when is_list(V) ->
     case check_vars(V) of
 	ok ->
 	    cas(Args,
@@ -1785,7 +1789,7 @@ cas([{variables, V} | Args], {Path, Sil, Loc, Test, Var, Mach,
     end;
 %%% machine ------------------------------------------------------------
 cas([{machine, M} | Args], {Path, Sil, Loc, Test, Var, Mach, 
-			    Xref, XrefApps, X}) when atom(M) ->
+			    Xref, XrefApps, X}) when is_atom(M) ->
     cas(Args, {Path, Sil, Loc, Test, Var, Mach, Xref, XrefApps, X});
 %%% exref --------------------------------------------------------------
 cas([exref | Args], {Path, Sil, Loc, Test, Var, Mach,
@@ -1793,7 +1797,7 @@ cas([exref | Args], {Path, Sil, Loc, Test, Var, Mach,
     cas(Args, {Path, Sil, Loc, Test, Var, Mach, exref, XrefApps, X});
 %%% exref Apps ---------------------------------------------------------
 cas([{exref, Apps} | Args], {Path, Sil, Loc, Test, Var, Mach, 
-			     Xref, XrefApps, X}) when list(Apps) ->
+			     Xref, XrefApps, X}) when is_list(Apps) ->
     case check_apps(Apps) of 
 	ok ->
 	    cas(Args, {Path, Sil, Loc, Test, Var, Mach, 
@@ -1820,7 +1824,7 @@ cat([], {_Path,_Sil,_Dirs,_Erts,_Test,_Var,_VarTar,_Mach,_Xref,_XrefApps, X}) ->
     X;
 %%% path ---------------------------------------------------------------
 cat([{path, P} | Args], {Path, Sil, Dirs, Erts, Test, 
-			 Var, VarTar, Mach, Xref, XrefApps, X}) when list(P) -> 
+			 Var, VarTar, Mach, Xref, XrefApps, X}) when is_list(P) -> 
     case check_path(P) of
 	ok ->
 	    cat(Args, {P, Sil, Dirs, Erts, Test, Var, VarTar, Mach, Xref, XrefApps, X});
@@ -1843,14 +1847,14 @@ cat([{dirs, D} | Args], {Path, Sil, Dirs, Erts, Test,
     end;
 %%% erts ---------------------------------------------------------------
 cat([{erts, E} | Args], {Path, Sil, Dirs, _Erts, Test, 
-			 Var, VarTar, Mach, Xref, XrefApps, X}) when list(E)->
+			 Var, VarTar, Mach, Xref, XrefApps, X}) when is_list(E)->
     cat(Args, {Path, Sil, Dirs, E, Test, Var, VarTar, Mach, Xref, XrefApps, X});
 %%% no_module_tests ----------------------------------------------------
 cat([no_module_tests | Args], {Path, Sil, Dirs, Erts, _Test, Var, VarTar, Mach, Xref, XrefApps, X}) ->
     cat(Args, {Path, Sil, Dirs, Erts, no_module_tests, Var, VarTar, Mach, 
 		     Xref, XrefApps, X});
 %%% variables ----------------------------------------------------------
-cat([{variables, V} | Args], {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach, Xref, XrefApps, X}) when list(V) ->
+cat([{variables, V} | Args], {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach, Xref, XrefApps, X}) when is_list(V) ->
     case check_vars(V) of
 	ok ->
 	    cat(Args, {Path, Sil, Dirs, Erts, Test, V, VarTar, Mach, Xref, XrefApps, X});
@@ -1870,13 +1874,13 @@ cat([{var_tar, VT} | Args], {Path, Sil, Dirs, Erts, Test,
     cat(Args, {Path, Sil, Dirs, Erts, Test, Var, omit, Mach, Xref, XrefApps, X});
 %%% machine ------------------------------------------------------------
 cat([{machine, M} | Args], {Path, Sil, Dirs, Erts, Test, 
-			    Var, VarTar, Mach, Xref, XrefApps, X}) when atom(M) ->
+			    Var, VarTar, Mach, Xref, XrefApps, X}) when is_atom(M) ->
     cat(Args, {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach, Xref, XrefApps, X});
 %%% exref --------------------------------------------------------------
 cat([exref | Args], {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach, _Xref, XrefApps, X})  ->
     cat(Args, {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach, exref, XrefApps, X});
 %%% exref Apps ---------------------------------------------------------
-cat([{exref, Apps} | Args], {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach, Xref, XrefApps, X}) when list(Apps) ->
+cat([{exref, Apps} | Args], {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach, Xref, XrefApps, X}) when is_list(Apps) ->
     case check_apps(Apps) of 
 	ok ->
 	    cat(Args, {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach, 
@@ -1894,14 +1898,14 @@ cat([Y | Args], {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach, Xref, XrefApps,
 
 check_path([]) ->
     ok;
-check_path([H|T]) when list(H) ->
+check_path([H|T]) when is_list(H) ->
     check_path(T);
 check_path([_H|_T]) ->
     error.
 
 check_dirs([]) ->
     ok;
-check_dirs([H|T]) when atom(H) ->
+check_dirs([H|T]) when is_atom(H) ->
     check_dirs(T);
 check_dirs([_H|_T]) ->
     error.
@@ -1909,12 +1913,12 @@ check_dirs([_H|_T]) ->
 check_vars([]) ->
     ok;
 check_vars([{Name, Dir} | T]) ->
-    case {Name, Dir} of
-	_ when atom(name), list(Dir) ->
+    if
+	is_atom(Name), is_list(Dir) ->
 	    check_vars(T);
-	_ when list(name), list(Dir) ->
+	is_list(Name), is_list(Dir) ->
 	    check_vars(T);
-	_ ->
+	true ->
 	    error
     end;
 check_vars(_) ->
@@ -1922,7 +1926,7 @@ check_vars(_) ->
 
 check_apps([]) ->
     ok;
-check_apps([H|T]) when atom(H) ->
+check_apps([H|T]) when is_atom(H) ->
     check_apps(T);
 check_apps(_) ->
     error.
@@ -1981,7 +1985,7 @@ format_error({open,File,Error}) ->
     io_lib:format("Cannot open ~p - ~p~n",[File,Error]);
 format_error({tar_error,What}) ->
     form_tar_err(What);
-format_error(ListOfErrors) when list(ListOfErrors) ->
+format_error(ListOfErrors) when is_list(ListOfErrors) ->
     format_errors(ListOfErrors);
 format_error(E) -> io_lib:format("~p~n",[E]).
 

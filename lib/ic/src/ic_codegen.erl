@@ -304,9 +304,9 @@ hrl_header(G, Name) ->
 %%--------------------------------------------------------------------
 %% Emit include file footer
 %%--------------------------------------------------------------------
-emit_hrl_foot(G, erlang_template) ->
+emit_hrl_foot(_G, erlang_template) ->
     ok;
-emit_hrl_foot(G, erlang_template_no_gen) ->
+emit_hrl_foot(_G, erlang_template_no_gen) ->
     ok;
 emit_hrl_foot(G, erlang) ->
     case ic_genobj:is_hrlfile_open(G) of

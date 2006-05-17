@@ -39,9 +39,10 @@
 	 terminate/2, code_change/3]).
 
 -record(state, {
-	  xf,   				% [{channel,ssh_xfer states}...]
-	  cwd,					% current dir (on first connect)
-	  handles				% list of open handles
+	  xf,   			% [{channel,ssh_xfer states}...]
+	  cwd,				% current dir (on first connect)
+	  remote_channel,		% remote channel
+	  handles			% list of open handles
 	  %% handle is either {<int>, directory, {Path, unread|eof}} or
 	  %% {<int>, file, {Path, IoDevice}}
 	 }).
@@ -82,8 +83,9 @@ stop(Pid) ->
 %%                         {stop, Reason}
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
-init([_Options]) ->
-    {ok, CWD} = file:get_cwd(),
+init([Options]) ->
+    {ok, D} = file:get_cwd(),
+    CWD = proplists:get_value(cwd, Options, D),
     State = #state{cwd = CWD, handles = []},
     {ok, State}.
 
@@ -115,18 +117,18 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-handle_info({ssh_cm, CM, {open, Channel, _}}, State) ->
+handle_info({ssh_cm, CM, {open, Channel, RemoteChannel, _}}, State) ->
     XF = #ssh_xfer{vsn = 5, ext = [], cm = CM, channel = Channel},
-    State1 = State#state{xf = XF},
+    State1 = State#state{xf = XF, remote_channel = RemoteChannel},
     {noreply, State1};
 handle_info({ssh_cm, CM, {data, Channel, Type, Data}}, State) ->
     ssh_cm:adjust_window(CM, Channel, size(Data)),
     State1 = handle_data(Type, Data, State),
     {noreply, State1};
-handle_info({ssh_cm, CM, {subsystem, Channel, WantsReply, "sftp"}}, State) ->
+handle_info({ssh_cm, CM, {subsystem, _Channel, WantsReply, "sftp"}}, State) ->
     CM = (State#state.xf)#ssh_xfer.cm, 		% hmmm going through xf...
     case WantsReply of
-	true -> CM ! {ssh_cm, self(), {success, Channel}}
+	true -> CM ! {ssh_cm, self(), {success, State#state.remote_channel}}
     end,
     {noreply, State};
 handle_info(_Info, State) ->
@@ -137,7 +139,7 @@ handle_data(0, <<?UINT32(_Len), Op, ?UINT32(ReqId), Data/binary>>, State) ->
     ?dbg(true, "handle_op: Op=~p ReqId=~p Data=~p\n", [Op, ReqId, Data]),
     handle_op(Op, ReqId, Data, State);
 handle_data(_, Data, State) ->
-    io:format("STDERR: ~s\n", [binary_to_list(Data)]),
+    error_logger:format("ssh: STDERR: ~s\n", [binary_to_list(Data)]),
     State.
 
 handle_op(?SSH_FXP_INIT, Version, <<>>, State) ->

@@ -21,7 +21,6 @@
 
 %header_doc_include
 -module(mnesia_frag_hash).
--behaviour(mnesia_frag_hash).
 
 %% Fragmented Table Hashing callback functions
 -export([
@@ -33,6 +32,7 @@
 	]).
 
 %header_doc_include
+%%-behaviour(mnesia_frag_hash).
 
 %impl_doc_include
 -record(hash_state, {n_fragments, next_n_to_split, n_doubles}).

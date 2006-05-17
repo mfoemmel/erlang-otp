@@ -23,7 +23,28 @@
 
 -module(tcl2erl).
 
--compile(export_all).
+-export([parse_event/1,
+	 ret_int/1,
+	 ret_atom/1,
+	 ret_str/1,
+	 ret_tuple/1,
+	 ret_pack/2,
+	 ret_place/2,
+	 ret_x/1,
+	 ret_y/1,
+	 ret_width/1,
+	 ret_height/1,
+	 ret_list/1,
+	 ret_str_list/1,
+	 ret_label/1,
+	 ret_mapped/1,
+	 ret_iconified/1,
+	 ret_focus/2,
+	 ret_file/1,
+	 ret_bool/1,
+	 ret_enable/1,
+	 ret_color/1,
+	 ret_stipple/1]).
 
 -include("gstk.hrl").
 
@@ -75,30 +96,6 @@ str_to_term(Str) ->
     end.
 
  
-%% ---------------------------------------------
-%% term_to_str()
-%% Transforms the Erlang term T into a Tcl-string.
-%% Note that complex Erlang terms, e.g {hello,[1,2]}
-%% will be transformed to: {hello {1 2}} , i.e an
-%% "isomorph" Tcl-string.
-%%
-
-term_to_str(Term) when atom(Term)    -> atom_to_list(Term);
-term_to_str(Term) when tuple(Term)   -> list_to_str(tuple_to_list(Term));
-term_to_str(Term) when float(Term)   -> float_to_list(Term);
-term_to_str(Term) when integer(Term) -> integer_to_list(Term);
-term_to_str(Term) when list(Term)    -> list_to_str(Term);
-term_to_str(Term) when pid(Term)     -> pid_to_list(Term).
-
-list_to_str(List) when list(List) -> 
-    lists:concat(["{",tlist(List),"}"]).
-
-tlist([]) -> [];
-tlist([H]) -> term_to_str(H);
-tlist([H|T]) ->
-    lists:concat([term_to_str(H)," ",tlist(T)]).
-
-
 %% ---------------------------------------------
 %% Simple Parser.  ;-)
 %% Parses tokens or fails.
@@ -152,25 +149,6 @@ cont_tuple({_Tag, Term,[','|C]},Ack) ->
     tuple_args(C,[Term|Ack]);
 cont_tuple({_Tag, Term,['}'|C]},Ack) ->
     {tuple,list_to_tuple(lists:reverse([Term|Ack])),C}.
-
-%%--- parse call ---
-parse_call([{atom,Mod},':',{atom,Func}|R]) ->
-    {fun_args,Args,C} = parse_fun_args(R),
-    {call,Mod,Func,Args,C}.
-
-%%--- parse arglist ---
-parse_fun_args(['(',')'|C]) ->
-    {fun_args,[],C};
-parse_fun_args(['('|R]) ->
-    {fun_args,_Fun_args,_C}=fun_args(R,[]).
-
-fun_args(Toks,Ack) ->
-    cont_fun(parse_term(Toks),Ack).
-
-cont_fun({_Type,Term,[','|C]},Ack) -> 
-    fun_args(C,[Term|Ack]);
-cont_fun({_Type,Term,[')'|C]},Ack) ->
-    {fun_args,lists:reverse([Term|Ack]),C}.
 
 %%--- parse sequence of terms ---
 parse_term_seq(Toks) ->
@@ -297,30 +275,10 @@ ret_tuple(Str) ->
 	    end;
 	Bad_result -> Bad_result
     end.
-
-ret_coords(Str) ->
-    case gstk:call(Str) of
-        {result,S} ->
-            case parse_coords(S, []) of
-                error -> 
-                    {error,'bad result from ret_coords.'};
-                Coords -> Coords
-            end;
-        Bad_result -> Bad_result
-    end.
  
 %%----------------------------------------------------------------------
 %% Returns: Coords or error.
 %%----------------------------------------------------------------------
-parse_coords([], Coords) -> Coords;
-parse_coords(S, Coords) ->
-    case io_lib:fread("~f ~f", S) of
-        {ok, [X, Y], []} -> [{round(X), round(Y)}|Coords];
-        {ok, [X,Y], Rest} ->
-            parse_coords(Rest, [{round(X), round(Y)}|Coords]);
-        _ -> error
-    end.
-
 ret_pack(Key, TkW) ->
     Str = ret_list(["pack info ", TkW]),
     pick_out(Str, Key).
@@ -416,13 +374,6 @@ ret_iconified(Str) ->
     end.
 
 
-ret_disabled(Str) ->
-    case ret_atom(Str) of
-	normal -> false;
-	disabled -> true;
-	X -> X
-    end.
-
 ret_focus(W, Str) ->
     case gstk:call(Str) of
 	{result, W} -> true;
@@ -444,14 +395,6 @@ ret_bool(Str) ->
 	0     -> false;
 	Bad_Result -> Bad_Result
     end.
-
-ret_menuitemtype(Str) ->
-    case ret_atom(Str) of
-	command              -> normal;
-	Type when atom(Type) -> Type;
-	Bad_Result           -> Bad_Result
-    end.
-
 
 ret_enable(Str) ->
     case ret_atom(Str) of

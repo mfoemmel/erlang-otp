@@ -87,6 +87,9 @@ WDD_TYPEDEF(unsigned long, erts_alc_test, (unsigned long,
 					   unsigned long,
 					   unsigned long,
 					   unsigned long));
+WDD_TYPEDEF(long, driver_binary_get_refc, (ErlDrvBinary *dbp));
+WDD_TYPEDEF(long, driver_binary_inc_refc, (ErlDrvBinary *dbp));
+WDD_TYPEDEF(long, driver_binary_dec_refc, (ErlDrvBinary *dbp));
 
 
 
@@ -145,6 +148,9 @@ typedef struct {
     WDD_FTYPE(driver_dl_close) *driver_dl_close;
     WDD_FTYPE(driver_dl_error) *driver_dl_error;
     WDD_FTYPE(erts_alc_test) *erts_alc_test;
+    WDD_FTYPE(driver_binary_get_refc) *driver_binary_get_refc;
+    WDD_FTYPE(driver_binary_inc_refc) *driver_binary_inc_refc;
+    WDD_FTYPE(driver_binary_dec_refc) *driver_binary_dec_refc;
   /* Add new calls here */
 } TWinDynDriverCallbacks;   
 
@@ -207,6 +213,9 @@ extern TWinDynDriverCallbacks WinDynDriverCallbacks;
 #define driver_dl_close (WinDynDriverCallbacks.driver_dl_close)
 #define driver_dl_error (WinDynDriverCallbacks.driver_dl_error)
 #define erts_alc_test (WinDynDriverCallbacks.erts_alc_test)
+#define driver_binary_get_refc (WinDynDriverCallbacks.driver_binary_get_refc)
+#define driver_binary_inc_refc (WinDynDriverCallbacks.driver_binary_inc_refc)
+#define driver_binary_dec_refc (WinDynDriverCallbacks.driver_binary_dec_refc)
 
 /* The only variable in the interface... */
 #define driver_term_nil (driver_mk_term_nil())
@@ -286,6 +295,9 @@ do {				                        \
 ((W).driver_dl_close) =  driver_dl_close;		\
 ((W).driver_dl_error) =  driver_dl_error;		\
 ((W).erts_alc_test) = erts_alc_test;			\
+((W).driver_binary_get_refc) = driver_binary_get_refc;	\
+((W).driver_binary_inc_refc) = driver_binary_inc_refc;	\
+((W).driver_binary_dec_refc) = driver_binary_dec_refc;	\
 } while (0)
 
 

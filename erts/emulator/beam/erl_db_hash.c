@@ -43,6 +43,7 @@
 
 #include "erl_db_hash.h"
 
+
 /* 
  * The following symbols can be manipulated to "tune" the linear hash array 
  */
@@ -85,7 +86,7 @@
  * tplp is an untagged pointer to a tuple we know is large enough 
  * and dth is a pointer to a DbTableHash.   
  */
-#define GETKEY(dth, tplp)   (*((tplp) +  (dth)->keypos))
+#define GETKEY(dth, tplp)   (*((tplp) +  (dth)->common.keypos))
 
 /*
  * Some special binary flags
@@ -136,6 +137,75 @@ static HashDbTerm* get_term(DbTableHash* tb, HashDbTerm* old,
 			    Eterm obj, HashValue hval);
 static int analyze_pattern(DbTableHash *tb, Eterm pattern, 
 			   struct mp_info *mpi);
+/*
+ *  Method interface functions
+ */
+static int db_first_hash(Process *p, 
+			 DbTable *tbl, 
+			 Eterm *ret);
+
+static int db_next_hash(Process *p, 
+			DbTable *tbl, 
+			Eterm key,
+			Eterm *ret);
+
+static int db_update_counter_hash(Process *p, 
+				  DbTable *tbl, 
+				  Eterm key,
+				  Eterm incr,
+				  int warp,
+				  int counterpos,
+				  Eterm *ret);
+
+
+static int db_member_hash(Process *p, DbTable *tbl, 
+			  Eterm key, Eterm *ret);
+
+static int db_get_element_hash(Process *p, DbTable *tbl, 
+			       Eterm key, int ndex, Eterm *ret);
+
+static int db_erase_object_hash(Process *p, DbTable *tbl, 
+				Eterm object,Eterm *ret);
+
+static int db_slot_hash(Process *p, DbTable *tbl, 
+			Eterm slot_term, Eterm *ret);
+
+static int db_select_chunk_hash(Process *p, DbTable *tbl, 
+				Eterm pattern, Sint chunk_size,
+				int reverse, Eterm *ret);
+static int db_select_hash(Process *p, DbTable *tbl, 
+			  Eterm pattern, int reverse, Eterm *ret);
+static int db_select_count_hash(Process *p, DbTable *tbl, 
+				Eterm pattern, Eterm *ret);
+static int db_select_delete_hash(Process *p, DbTable *tbl, 
+				 Eterm pattern, Eterm *ret);
+
+static int db_select_continue_hash(Process *p, DbTable *tbl, 
+				   Eterm continuation, Eterm *ret);
+
+static int db_select_count_continue_hash(Process *p, DbTable *tbl, 
+					 Eterm continuation, Eterm *ret);
+
+static int db_select_delete_continue_hash(Process *p, DbTable *tbl,
+					  Eterm continuation, Eterm *ret);
+static void db_print_hash(int to,
+			  void *to_arg,
+			  int show,
+			  DbTable *tbl);
+static int db_free_table_hash(DbTable *tbl);
+
+static int db_free_table_continue_hash(DbTable *tbl, int first);
+
+
+static void db_foreach_offheap_hash(DbTable *,
+				    void (*)(ErlOffHeap *, void *),
+				    void *);
+
+static int db_delete_all_objects_hash(Process* p, DbTable* tbl);
+#ifdef HARDDEBUG
+static void db_check_table_hash(DbTableHash *tb);
+#endif
+
 
 /*
 ** Static variables
@@ -144,21 +214,47 @@ static int analyze_pattern(DbTableHash *tb, Eterm pattern,
 /*
 ** External interface 
 */
+DbTableMethod db_hash =
+{
+    db_create_hash,
+    db_first_hash,
+    db_next_hash,
+    db_first_hash,   /* last == first  */
+    db_next_hash,    /* prev == next   */
+    db_put_hash,
+    db_get_hash,
+    db_get_element_hash,
+    db_member_hash,
+    db_erase_hash,
+    db_erase_object_hash,
+    db_slot_hash,
+    db_update_counter_hash,
+    db_select_chunk_hash,
+    db_select_hash,
+    db_select_delete_hash,
+    db_select_continue_hash, /* hmm continue_hash? */
+    db_select_delete_continue_hash,
+    db_select_count_hash,
+    db_select_count_continue_hash,
+    db_delete_all_objects_hash,
+    db_free_table_hash,
+    db_free_table_continue_hash,
+    db_print_hash,
+    db_foreach_offheap_hash,
+#ifdef HARDDEBUG
+    db_check_table_hash,
+#else
+    NULL,
+#endif
+
+};
 
 /*
 ** Table interface routines ie what's called by the bif's 
 */
 
-int db_fixtable_hash(DbTableHash *tb, Eterm arg) 
+void db_unfix_table_hash(DbTableHash *tb)
 {
-
-    if (arg == am_true) {
-	return DB_ERROR_NONE;
-    } 
-    if (arg != am_false) {
-	return DB_ERROR_BADPARAM;
-    }
-    /* arg == am_false */
     while (tb->fixdel != NULL) {
 	FixedDeletion *fx = tb->fixdel;
 	int ix = fx->slot;
@@ -182,12 +278,12 @@ int db_fixtable_hash(DbTableHash *tb, Eterm arg)
 	    }
 	}
     }
-    tb->kept_items = 0;
-    return DB_ERROR_NONE;
+    tb->common.kept_items = 0;
 }
 
-int db_create_hash(Process *p, DbTableHash *tb)
+int db_create_hash(Process *p, DbTable *tbl)
 {
+    DbTableHash *tb = &tbl->hash;
     tb->szm = SZMASK;
     tb->nslots = SEGSZ;
     tb->nactive = SEGSZ;
@@ -202,9 +298,9 @@ int db_create_hash(Process *p, DbTableHash *tb)
     return DB_ERROR_NONE;
 }
 
-int db_first_hash(Process *p, DbTableHash *tb, 
-		  Eterm *ret)
+static int db_first_hash(Process *p, DbTable *tbl, Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     int i = 0;
     while (i < tb->nactive) {
 	HashDbTerm* list = BUCKET(tb, i);
@@ -220,10 +316,9 @@ int db_first_hash(Process *p, DbTableHash *tb,
     return DB_ERROR_NONE;
 }
 
-int db_next_hash(Process *p, DbTableHash *tb,
-		 Eterm key,
-		 Eterm *ret)
+static int db_next_hash(Process *p, DbTable *tbl, Eterm key, Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     HashValue hval;
     Uint ix;
     HashDbTerm* b1;
@@ -236,7 +331,8 @@ int db_next_hash(Process *p, DbTableHash *tb,
 	if (((b1->hvalue == hval) || b1->hvalue == INVALID_HASH) 
 	    && EQ(key, GETKEY(tb, b1->dbterm.tpl))) {
 	    HashDbTerm* b2 = next(tb, &ix, b1);
-	    if ((tb->status & DB_BAG) || (tb->status & DB_DUPLICATE_BAG)) {
+	    if ((tb->common.status & DB_BAG) || 
+		(tb->common.status & DB_DUPLICATE_BAG)) {
 		while (b2 != 0) {
 		    Eterm key2 = GETKEY(tb, b2->dbterm.tpl);
 		    if (EQ(key, key2)) {
@@ -260,13 +356,14 @@ int db_next_hash(Process *p, DbTableHash *tb,
     return DB_ERROR_BADKEY;
 }    
 
-int db_update_counter_hash(Process *p, DbTableHash *tb,
-			   Eterm key,
-			   Eterm incr, 
-			   int warp,
-			   int counterpos,
-			   Eterm *ret)
+static int db_update_counter_hash(Process *p, DbTable *tbl,
+				  Eterm key,
+				  Eterm incr, 
+				  int warp,
+				  int counterpos,
+				  Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     HashDbTerm* b;
     HashDbTerm** bp;
     int ix;
@@ -288,7 +385,7 @@ int db_update_counter_hash(Process *p, DbTableHash *tb,
 	return DB_ERROR_BADKEY;
 
     if (counterpos <= 0)
-	counterpos = tb->keypos + 1;
+	counterpos = tb->common.keypos + 1;
 
     return db_do_update_counter(p, (DbTableCommon *) tb,
 				(void *) bp, b->dbterm.tpl,
@@ -301,10 +398,9 @@ int db_update_counter_hash(Process *p, DbTableHash *tb,
 				&realloc_counter, incr, warp, ret);
 }
 
-int db_put_hash(Process *proc, DbTableHash *tb,
-		Eterm obj,
-		Eterm *ret)
+int db_put_hash(Process *proc, DbTable *tbl, Eterm obj, Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     HashValue hval;
     int ix;
     Eterm key;
@@ -321,10 +417,10 @@ int db_put_hash(Process *proc, DbTableHash *tb,
     while(b != 0) {
 	if (((b->hvalue == hval) || b->hvalue == INVALID_HASH)
 	    && EQ(key, GETKEY(tb, b->dbterm.tpl))) {
-	    if (tb->status & DB_SET) {
+	    if (tb->common.status & DB_SET) {
 		HashDbTerm* bnext = b->next;
 		if (b->hvalue == INVALID_HASH) {
-		    tb->nitems++;
+		    tb->common.nitems++;
 		}
 		q = get_term(tb, b, obj, hval);
 		q->next = bnext;
@@ -333,13 +429,13 @@ int db_put_hash(Process *proc, DbTableHash *tb,
 		*ret = am_true;
 		return DB_ERROR_NONE;
 	    }
-	    else if (tb->status & DB_BAG) {
+	    else if (tb->common.status & DB_BAG) {
 		HashDbTerm** tp = bp;
                 HashDbTerm* p = b;
 		
                 if (eq(make_tuple(b->dbterm.tpl), obj)) {
 		    if (b->hvalue == INVALID_HASH) {
-			tb->nitems++;
+			tb->common.nitems++;
 		    }
 		    b->hvalue = hval;
 		    *ret = am_true;
@@ -352,7 +448,7 @@ int db_put_hash(Process *proc, DbTableHash *tb,
                        EQ(key, GETKEY(tb, b->dbterm.tpl))) {
                     if (eq(make_tuple(b->dbterm.tpl), obj)) {
 			if (b->hvalue == INVALID_HASH) {
-			    tb->nitems++;
+			    tb->common.nitems++;
 			}
 			b->hvalue = hval;
 			*ret = am_true;
@@ -383,20 +479,19 @@ int db_put_hash(Process *proc, DbTableHash *tb,
     *bp = q;
 
  Lupdate:
-    tb->nitems++;
+    tb->common.nitems++;
 
-    if ( ((tb->nitems / tb->nactive) > CHAIN_LEN) && 
-	((tb->status & DB_FIXED) == 0))
+    if ( ((tb->common.nitems / tb->nactive) > CHAIN_LEN) && 
+	((tb->common.status & DB_FIXED) == 0))
 	grow(tb);
     CHECK_TABLES();
     *ret = am_true;
     return DB_ERROR_NONE;
 }
 
-int db_get_hash(Process *p, DbTableHash *tb,
-		Eterm key,
-		Eterm *ret)
+int db_get_hash(Process *p, DbTable *tbl, Eterm key, Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     HashValue hval;
     int ix;
     HashDbTerm* b1;
@@ -410,7 +505,8 @@ int db_get_hash(Process *p, DbTableHash *tb,
 	    HashDbTerm* b2 = b1->next;
 	    Eterm copy;
 
-	    if ((tb->status & DB_BAG) || (tb->status & DB_DUPLICATE_BAG)) {
+	    if ((tb->common.status & DB_BAG) || 
+		(tb->common.status & DB_DUPLICATE_BAG)) {
 		while((b2 != 0) && ((b2->hvalue == hval) || 
 				    (b2->hvalue == INVALID_HASH)) &&
 		      EQ(key, GETKEY(tb, b2->dbterm.tpl)))
@@ -427,12 +523,13 @@ int db_get_hash(Process *p, DbTableHash *tb,
     return DB_ERROR_NONE;
 }
 
-int db_get_element_array(DbTableHash *tb, 
+int db_get_element_array(DbTable *tbl, 
 			 Eterm key,
 			 int ndex, 
 			 Eterm *ret,
 			 int *num_ret)
 {
+    DbTableHash *tb = &tbl->hash;
     HashValue hval;
     int ix;
     HashDbTerm* b1;
@@ -444,7 +541,8 @@ int db_get_element_array(DbTableHash *tb,
 
     while(b1 != 0) {
 	if ((b1->hvalue == hval) && EQ(key, GETKEY(tb, b1->dbterm.tpl))) {
-	    if ((tb->status & DB_BAG) || (tb->status & DB_DUPLICATE_BAG)) {
+	    if ((tb->common.status & DB_BAG) || 
+		(tb->common.status & DB_DUPLICATE_BAG)) {
 		HashDbTerm* b;
 		HashDbTerm* b2 = b1->next;
 
@@ -481,10 +579,9 @@ int db_get_element_array(DbTableHash *tb,
 }
     
     
-int db_member_hash(Process *p, DbTableHash *tb,
-		   Eterm key,
-		   Eterm *ret)
+static int db_member_hash(Process *p, DbTable *tbl, Eterm key, Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     HashValue hval;
     int ix;
     HashDbTerm* b1;
@@ -504,11 +601,12 @@ int db_member_hash(Process *p, DbTableHash *tb,
     return DB_ERROR_NONE;
 }
     
-int db_get_element_hash(Process *p, DbTableHash *tb, 
-			Eterm key,
-			int ndex, 
-			Eterm *ret)
+static int db_get_element_hash(Process *p, DbTable *tbl, 
+			       Eterm key,
+			       int ndex, 
+			       Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     HashValue hval;
     int ix;
     HashDbTerm* b1;
@@ -524,7 +622,8 @@ int db_get_element_hash(Process *p, DbTableHash *tb,
 	    if (ndex > arityval(b1->dbterm.tpl[0]))
 		return DB_ERROR_BADITEM;
 
-	    if ((tb->status & DB_BAG) || (tb->status & DB_DUPLICATE_BAG)) {
+	    if ((tb->common.status & DB_BAG) || 
+		(tb->common.status & DB_DUPLICATE_BAG)) {
 		HashDbTerm* b;
 		HashDbTerm* b2 = b1->next;
 		Eterm elem_list = NIL;
@@ -565,10 +664,9 @@ int db_get_element_hash(Process *p, DbTableHash *tb,
  * Very internal interface, removes elements of arity two from 
  * BAG. Used for the PID meta table
  */
-int db_erase_bag_exact2(DbTableHash *tb, 
-			Eterm key,
-			Eterm value)
+int db_erase_bag_exact2(DbTable *tbl, Eterm key, Eterm value)
 {
+    DbTableHash *tb = &tbl->hash;
     HashValue hval;
     int ix;
     HashDbTerm** bp;
@@ -580,8 +678,8 @@ int db_erase_bag_exact2(DbTableHash *tb,
     bp = &BUCKET(tb, ix);
     b = *bp;
 
-    ASSERT(!(tb->status & DB_FIXED));
-    ASSERT((tb->status & DB_BAG));
+    ASSERT(!(tb->common.status & DB_FIXED));
+    ASSERT((tb->common.status & DB_BAG));
 
     while(b != 0) {
 	if ((b->hvalue == hval) && EQ(key, GETKEY(tb, b->dbterm.tpl))) {
@@ -590,7 +688,7 @@ int db_erase_bag_exact2(DbTableHash *tb,
 		EQ(value, b->dbterm.tpl[2])) {
 		*bp = b->next;
 		free_term(tb, b);
-		tb->nitems--;
+		tb->common.nitems--;
 		b = *bp;
 		break;
 	    }
@@ -601,7 +699,7 @@ int db_erase_bag_exact2(DbTableHash *tb,
 	b = b->next;
     }
 
-    if (found && ((tb->nitems / tb->nactive) < CHAIN_LEN))
+    if (found && ((tb->common.nitems / tb->nactive) < CHAIN_LEN))
 	shrink(tb);
     return DB_ERROR_NONE;
 }
@@ -609,10 +707,11 @@ int db_erase_bag_exact2(DbTableHash *tb,
 /*
 ** NB, this is for the db_erase/2 bif.
 */
-int db_erase_hash(Process *p, DbTableHash *tb, 
+int db_erase_hash(Process *p, DbTable *tbl, 
 		  Eterm key,
 		  Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     HashValue hval;
     int ix;
     HashDbTerm** bp;
@@ -626,7 +725,7 @@ int db_erase_hash(Process *p, DbTableHash *tb,
 
     while(b != 0) {
 	if ((b->hvalue == hval) && EQ(key, GETKEY(tb, b->dbterm.tpl))) {
-	    if (tb->status & DB_FIXED) {
+	    if (tb->common.status & DB_FIXED) {
 		/* Pseudo remove */
 		FixedDeletion *fixd = (FixedDeletion *) 
 		    erts_db_alloc(ERTS_ALC_T_DB_FIX_DEL,
@@ -635,15 +734,15 @@ int db_erase_hash(Process *p, DbTableHash *tb,
 		fixd->slot = ix;
 		fixd->next = tb->fixdel;
 		tb->fixdel = fixd;
-		tb->nitems--;
-		tb->kept_items++;
+		tb->common.nitems--;
+		tb->common.kept_items++;
 		b->hvalue = INVALID_HASH;
 		bp = &b->next;
 		b = b->next;
 	    } else {
 		*bp = b->next;
 		free_term(tb, b);
-		tb->nitems--;
+		tb->common.nitems--;
 		b = *bp;
 	    }
 	    found = 1;
@@ -656,8 +755,8 @@ int db_erase_hash(Process *p, DbTableHash *tb,
 	}
     }
 
-    if (found && ((tb->nitems / tb->nactive) < CHAIN_LEN) &&
-	((tb->status & DB_FIXED) == 0))
+    if (found && ((tb->common.nitems / tb->nactive) < CHAIN_LEN) &&
+	((tb->common.status & DB_FIXED) == 0))
 	shrink(tb);
 
     *ret = am_true;
@@ -667,10 +766,10 @@ int db_erase_hash(Process *p, DbTableHash *tb,
 /*
 ** This is for the ets:delete_object BIF
 */
-int db_erase_object_hash(Process *p, DbTableHash *tb, 
-			 Eterm object,
-			 Eterm *ret)
+static int db_erase_object_hash(Process *p, DbTable *tbl, 
+				Eterm object, Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     HashValue hval;
     int ix;
     HashDbTerm** bp;
@@ -686,7 +785,7 @@ int db_erase_object_hash(Process *p, DbTableHash *tb,
 
     while(b != 0) {
 	if ((b->hvalue == hval) && eq(object, make_tuple(b->dbterm.tpl))) {
-	    if (tb->status & DB_FIXED) {
+	    if (tb->common.status & DB_FIXED) {
 		/* Pseudo remove */
 		FixedDeletion *fixd = (FixedDeletion *) 
 		    erts_db_alloc(ERTS_ALC_T_DB_FIX_DEL,
@@ -695,15 +794,15 @@ int db_erase_object_hash(Process *p, DbTableHash *tb,
 		fixd->slot = ix;
 		fixd->next = tb->fixdel;
 		tb->fixdel = fixd;
-		tb->nitems--;
-		tb->kept_items++;
+		tb->common.nitems--;
+		tb->common.kept_items++;
 		b->hvalue = INVALID_HASH;
 		bp = &b->next;
 		b = b->next;
 	    } else {
 		*bp = b->next;
 		free_term(tb, b);
-		tb->nitems--;
+		tb->common.nitems--;
 		b = *bp;
 	    }
 	    found = 1;
@@ -716,8 +815,8 @@ int db_erase_object_hash(Process *p, DbTableHash *tb,
 	}
     }
 
-    if (found && ((tb->nitems / tb->nactive) < CHAIN_LEN) &&
-	((tb->status & DB_FIXED) == 0))
+    if (found && ((tb->common.nitems / tb->nactive) < CHAIN_LEN) &&
+	((tb->common.status & DB_FIXED) == 0))
 	shrink(tb);
 
     *ret = am_true;
@@ -725,10 +824,9 @@ int db_erase_object_hash(Process *p, DbTableHash *tb,
 }    
 
 
-int db_slot_hash(Process *p, DbTableHash *tb, 
-		  Eterm slot_term,
-		  Eterm *ret)
+static int db_slot_hash(Process *p, DbTable *tbl, Eterm slot_term, Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     Sint slot;
 
     if (is_not_small(slot_term) ||
@@ -762,11 +860,15 @@ static BIF_RETTYPE bif_trap1(Export *bif,
  * Continue collecting select matches, this may happen either due to a trap
  * or when the user calls ets:select/1
  */
-int db_select_hash_continue(Process *p, 
-			    DbTableHash *tb, 
-			    Eterm continuation, 
-			    Eterm *ret)
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
+static int db_select_continue_hash(Process *p, 
+				   DbTable *tbl, 
+				   Eterm continuation, 
+				   Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     Sint chain_pos; 
     Sint save_chain_pos;
     Sint chunk_size;
@@ -916,10 +1018,22 @@ trap:
 
 }
 
-int db_select_hash(Process *p, DbTableHash *tb, 
-		   Eterm pattern, Sint chunk_size,
-		   Eterm *ret)
+static int db_select_hash(Process *p, DbTable *tbl, 
+			  Eterm pattern, int reverse,
+			  Eterm *ret)
 {
+    return db_select_chunk_hash(p, tbl, pattern, 0, reverse, ret);
+}
+
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
+static int db_select_chunk_hash(Process *p, DbTable *tbl, 
+				Eterm pattern, Sint chunk_size, 
+				int reverse, /* not used */
+				Eterm *ret)
+{
+    DbTableHash *tb = &tbl->hash;
     struct mp_info mpi;
     Uint chain_pos;
     Uint save_chain_pos;
@@ -1067,7 +1181,7 @@ done:
 	    mpb =db_make_mp_binary(p,(mpi.mp),&hp);
 	    if (mpi.all_objects)
 		(mpi.mp)->flags |= BIN_FLAG_ALL_OBJECTS;
-	    continuation = TUPLE6(hp, tb->id,make_small(chain_pos), 
+	    continuation = TUPLE6(hp, tb->common.id,make_small(chain_pos), 
 				  make_small(chunk_size),  
 				  mpb, rest, 
 				  make_small(rest_size));
@@ -1091,7 +1205,7 @@ trap:
 	(mpi.mp)->flags |= BIN_FLAG_ALL_OBJECTS;
     hp = HAlloc(p,7+PROC_BIN_SIZE);
     mpb =db_make_mp_binary(p,(mpi.mp),&hp);
-    continuation = TUPLE6(hp, tb->id, make_small(chain_pos), 
+    continuation = TUPLE6(hp, tb->common.id, make_small(chain_pos), 
 			  make_small(chunk_size), 
 			  mpb, match_list, 
 			  make_small(got));
@@ -1104,11 +1218,15 @@ trap:
 
 }
 
-int db_select_count_hash(Process *p, 
-			 DbTableHash *tb, 
-			 Eterm pattern,
-			 Eterm *ret)
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
+static int db_select_count_hash(Process *p, 
+				DbTable *tbl, 
+				Eterm pattern,
+				Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     struct mp_info mpi;
     Uint chain_pos = 0;
     HashDbTerm **current_list = NULL;
@@ -1207,16 +1325,25 @@ int db_select_count_hash(Process *p,
     }
 done:
     BUMP_REDS(p, 1000 - num_left);
-    if (got && ((tb->nitems / tb->nactive) < CHAIN_LEN) &&
-	((tb->status & DB_FIXED) == 0))
+    if (got && ((tb->common.nitems / tb->nactive) < CHAIN_LEN) &&
+	((tb->common.status & DB_FIXED) == 0))
 	shrink(tb);
-    RET_TO_BIF(make_small_or_big(got,p),DB_ERROR_NONE);
+    RET_TO_BIF(erts_make_integer(got,p),DB_ERROR_NONE);
 trap:
-    egot = make_small_or_big(got,p);
     BUMP_ALL_REDS(p);
+    if (IS_USMALL(0, got)) {
+	hp = HAlloc(p,  PROC_BIN_SIZE + 5);
+	egot = make_small(got);
+    }
+    else {
+	hp = HAlloc(p, BIG_UINT_HEAP_SIZE + PROC_BIN_SIZE + 5);
+	egot = uint_to_big(got, hp);
+	hp += BIG_UINT_HEAP_SIZE;
+    }
+
     hp = HAlloc(p,5+PROC_BIN_SIZE);
     mpb = db_make_mp_binary(p,mpi.mp,&hp);
-    continuation = TUPLE4(hp, tb->id, make_small(chain_pos), 
+    continuation = TUPLE4(hp, tb->common.id, make_small(chain_pos), 
 			  mpb, 
 			  egot);
     mpi.mp = NULL; /*otherwise the return macro will destroy it */
@@ -1228,11 +1355,15 @@ trap:
 
 }
 
-int db_select_delete_hash(Process *p, 
-			  DbTableHash *tb, 
-			  Eterm pattern,
-			  Eterm *ret)
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
+static int db_select_delete_hash(Process *p,
+				 DbTable *tbl,
+				 Eterm pattern,
+				 Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     struct mp_info mpi;
     Uint chain_pos = 0;
     HashDbTerm **current_list = NULL;
@@ -1294,7 +1425,7 @@ int db_select_delete_hash(Process *p,
 	     db_prog_match(p,mpi.mp,
 			   make_tuple((*current_list)->dbterm.tpl),
 			   0,&dummy)) == am_true) {
-	    if (tb->status & DB_FIXED) {
+	    if (tb->common.status & DB_FIXED) {
 		FixedDeletion *fixd = (FixedDeletion *)
 		    erts_db_alloc(ERTS_ALC_T_DB_FIX_DEL,
 				  (DbTable *) tb,
@@ -1304,14 +1435,14 @@ int db_select_delete_hash(Process *p,
 		fixd->slot = ix;
 		fixd->next = tb->fixdel;
 		tb->fixdel = fixd;
-		tb->kept_items++;
-		tb->nitems--;
+		tb->common.kept_items++;
+		tb->common.nitems--;
 		(*current_list)->hvalue = INVALID_HASH;
 	    } else {
 		HashDbTerm *del = *current_list;
 		*current_list = (*current_list)->next;
 		free_term(tb, del);
-		tb->nitems--;
+		tb->common.nitems--;
 		did_erase = 1;
 	    }
 	    ++got;
@@ -1354,16 +1485,23 @@ int db_select_delete_hash(Process *p,
     }
 done:
     BUMP_REDS(p, 1000 - num_left);
-    if (got && ((tb->nitems / tb->nactive) < CHAIN_LEN) &&
-	((tb->status & DB_FIXED) == 0))
+    if (got && ((tb->common.nitems / tb->nactive) < CHAIN_LEN) &&
+	((tb->common.status & DB_FIXED) == 0))
 	shrink(tb);
-    RET_TO_BIF(make_small_or_big(got,p),DB_ERROR_NONE);
+    RET_TO_BIF(erts_make_integer(got,p),DB_ERROR_NONE);
 trap:
     BUMP_ALL_REDS(p);
-    egot = make_small_or_big(got,p);
-    hp = HAlloc(p,5+PROC_BIN_SIZE);
+    if (IS_USMALL(0, got)) {
+	hp = HAlloc(p,  PROC_BIN_SIZE + 5);
+	egot = make_small(got);
+    }
+    else {
+	hp = HAlloc(p, BIG_UINT_HEAP_SIZE + PROC_BIN_SIZE + 5);
+	egot = uint_to_big(got, hp);
+	hp += BIG_UINT_HEAP_SIZE;
+    }
     mpb = db_make_mp_binary(p,mpi.mp,&hp);
-    continuation = TUPLE4(hp, tb->id, make_small(chain_pos), 
+    continuation = TUPLE4(hp, tb->common.id, make_small(chain_pos), 
 			  mpb, 
 			  egot);
     mpi.mp = NULL; /*otherwise the return macro will destroy it */
@@ -1377,12 +1515,15 @@ trap:
 /*
 ** This is called when select_delete traps
 */
-int db_select_delete_continue_hash(Process *p, 
-				   DbTableHash *tb,
-				   Eterm continuation,
-				   Eterm *ret,
-				   int force_delete)
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
+static int db_select_delete_continue_hash(Process *p, 
+					  DbTable *tbl,
+					  Eterm continuation,
+					  Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     Uint chain_pos;
     HashDbTerm **current_list = NULL;
     Uint32 dummy;
@@ -1392,8 +1533,15 @@ int db_select_delete_continue_hash(Process *p,
     Uint got;
     Eterm *tptr;
     Binary *mp;
-    int do_delete = (!(tb->status & DB_FIXED) || force_delete);
+    int force_delete;
+    int do_delete;
+    DbFixation *fix = tb->common.fixations;
+    Eterm egot;
 
+    force_delete = (tb->common.status & DB_FIXED) && 
+	!ONLY_READER(p,tb) && SOLE_LOCKER(p,fix);
+    do_delete = (!(tb->common.status & DB_FIXED) || force_delete);
+    
 
 #define RET_TO_BIF(Term,RetVal) do {		\
 	*ret = (Term);				\
@@ -1434,7 +1582,7 @@ int db_select_delete_continue_hash(Process *p,
 		HashDbTerm *del = *current_list;
 		*current_list = (*current_list)->next;
 		free_term(tb, del);
-		tb->nitems--;
+		tb->common.nitems--;
 		did_erase = 1;
 	    } else {
 		FixedDeletion *fixd = (FixedDeletion *) 
@@ -1444,8 +1592,8 @@ int db_select_delete_continue_hash(Process *p,
 		fixd->slot = chain_pos;
 		fixd->next = tb->fixdel;
 		tb->fixdel = fixd;
-		tb->kept_items++;
-		tb->nitems--;
+		tb->common.kept_items++;
+		tb->common.nitems--;
 		(*current_list)->hvalue = INVALID_HASH;
 	    }
 	    ++got;
@@ -1480,16 +1628,24 @@ int db_select_delete_continue_hash(Process *p,
     }
 done:
     BUMP_REDS(p, 1000 - num_left);
-    if (got && ((tb->nitems / tb->nactive) < CHAIN_LEN) &&
-	((tb->status & DB_FIXED) == 0))
+    if (got && ((tb->common.nitems / tb->nactive) < CHAIN_LEN) &&
+	((tb->common.status & DB_FIXED) == 0))
 	shrink(tb);
-    RET_TO_BIF(make_small_or_big(got,p),DB_ERROR_NONE);
+    RET_TO_BIF(erts_make_integer(got,p),DB_ERROR_NONE);
 trap:
     BUMP_ALL_REDS(p);
-    hp = HAlloc(p,5);
-    continuation = TUPLE4(hp, tb->id, make_small(chain_pos), 
+    if (IS_USMALL(0, got)) {
+	hp = HAlloc(p,  5);
+	egot = make_small(got);
+    }
+    else {
+	hp = HAlloc(p, BIG_UINT_HEAP_SIZE + 5);
+	egot = uint_to_big(got, hp);
+	hp += BIG_UINT_HEAP_SIZE;
+    }
+    continuation = TUPLE4(hp, tb->common.id, make_small(chain_pos), 
 			  tptr[3], 
-			  make_small_or_big(got,p));
+			  egot);
     RET_TO_BIF(bif_trap1(&ets_select_delete_continue_exp, p, 
 			 continuation), 
 	       DB_ERROR_NONE);
@@ -1501,11 +1657,15 @@ trap:
 /*
 ** This is called when select_delete traps
 */
-int db_select_count_hash_continue(Process *p, 
-				  DbTableHash *tb,
-				  Eterm continuation,
-				  Eterm *ret)
+/*
+ * SMP NOTE: Process p may have become exiting on return!
+ */
+static int db_select_count_continue_hash(Process *p, 
+					 DbTable *tbl,
+					 Eterm continuation,
+					 Eterm *ret)
 {
+    DbTableHash *tb = &tbl->hash;
     Uint chain_pos;
     HashDbTerm **current_list = NULL;
     Uint32 dummy;
@@ -1581,15 +1741,22 @@ int db_select_count_hash_continue(Process *p,
     }
 done:
     BUMP_REDS(p, 1000 - num_left);
-    if (got && ((tb->nitems / tb->nactive) < CHAIN_LEN) &&
-	((tb->status & DB_FIXED) == 0))
+    if (got && ((tb->common.nitems / tb->nactive) < CHAIN_LEN) &&
+	((tb->common.status & DB_FIXED) == 0))
 	shrink(tb);
-    RET_TO_BIF(make_small_or_big(got,p),DB_ERROR_NONE);
+    RET_TO_BIF(erts_make_integer(got,p),DB_ERROR_NONE);
 trap:
-    egot = make_small_or_big(got,p);
     BUMP_ALL_REDS(p);
-    hp = HAlloc(p,5);
-    continuation = TUPLE4(hp, tb->id, make_small(chain_pos), 
+    if (IS_USMALL(0, got)) {
+	hp = HAlloc(p, 5);
+	egot = make_small(got);
+    }
+    else {
+	hp = HAlloc(p, BIG_UINT_HEAP_SIZE + 5);
+	egot = uint_to_big(got, hp);
+	hp += BIG_UINT_HEAP_SIZE;
+    }
+    continuation = TUPLE4(hp, tb->common.id, make_small(chain_pos), 
 			  tptr[3], 
 			  egot);
     RET_TO_BIF(bif_trap1(&ets_select_count_continue_exp, p, 
@@ -1607,8 +1774,9 @@ trap:
 void db_initialize_hash(void) {
 };
 
-int db_mark_all_deleted_hash(DbTableHash *tb)
+int db_mark_all_deleted_hash(DbTable *tbl)
 {
+    DbTableHash *tb = &tbl->hash;
     HashDbTerm* list;
     int i;
     FixedDeletion *fixd;
@@ -1628,41 +1796,42 @@ int db_mark_all_deleted_hash(DbTableHash *tb)
 	    }
 	}
     }
-    tb->kept_items = tb->nitems;
-    tb->nitems = 0;
+    tb->common.kept_items = tb->common.nitems;
+    tb->common.nitems = 0;
     return DB_ERROR_NONE;
 }
 
 /* Display hash table contents (for dump) */
-void db_print_hash(CIO fd, int show, DbTableHash *tb)
+static void db_print_hash(int to, void *to_arg, int show, DbTable *tbl)
 {
+    DbTableHash *tb = &tbl->hash;
     int i;
     
-    erl_printf(fd, "Buckets: %d ", tb->nactive);
-    erl_printf(fd, "\n");
-
+    erts_print(to, to_arg, "Buckets: %d \n", tb->nactive);
+    
     if (show) {
 	for (i = 0; i < tb->nactive; i++) {
 	    HashDbTerm* list = BUCKET(tb,i);
 	    if (list == NULL)
 		continue;
-	    erl_printf(fd,"%d: [", i);
+	    erts_print(to, to_arg, "%d: [", i);
 	    while(list != 0) {
 		if (list->hvalue == INVALID_HASH)
-		    erl_printf(fd,"*");
-		display(make_tuple(list->dbterm.tpl), fd);
+		    erts_print(to, to_arg, "*");
+		erts_print(to, to_arg, "%T", make_tuple(list->dbterm.tpl));
 		if (list->next != 0)
-		    erl_printf(fd, ",");
+		    erts_print(to, to_arg, ",");
 		list = list->next;
 	    }
-	    erl_printf(fd, "]\n");
+	    erts_print(to, to_arg, "]\n");
 	}
     }
-}    
+}
 
 /* release all memory occupied by a single table */
-void free_hash_table(DbTableHash *tb)
+static int db_free_table_hash(DbTable *tbl)
 {
+    DbTableHash *tb = &tbl->hash;
     HashDbTerm*** sp = tb->seg;
     int n = tb->nsegs;
 
@@ -1700,11 +1869,13 @@ void free_hash_table(DbTableHash *tb)
 		 (void *) tb->seg,
 		 sizeof(HashDbTerm**)*tb->nsegs);
 
-    ASSERT(tb->memory_size == sizeof(DbTable));
+    ASSERT(erts_smp_atomic_read(&tb->common.memory_size) == sizeof(DbTable));
+    return 0;
 }
 
-int erts_free_hash_table_cont(DbTableHash *tb, int first)
+static int db_free_table_continue_hash(DbTable *tbl, int first)
 {
+    DbTableHash *tb = &tbl->hash;
     HashDbTerm*** sp = tb->seg;
     int n = tb->nsegs;
     int done;
@@ -1747,7 +1918,7 @@ int erts_free_hash_table_cont(DbTableHash *tb, int first)
 		while (p != 0) {
 		    HashDbTerm* nxt = p->next;
 		    free_term(tb, p);
-		    tb->nitems--; /* Needed for correct reduction counting */
+		    tb->common.nitems--; /* Needed for correct reduction counting */
 		    p = nxt;
 		}
 	    }
@@ -1777,7 +1948,7 @@ int erts_free_hash_table_cont(DbTableHash *tb, int first)
 		 (void *) tb->seg,
 		 sizeof(HashDbTerm**)*tb->nsegs);
 
-    ASSERT(tb->memory_size == sizeof(DbTable));
+    ASSERT(erts_smp_atomic_read(&tb->common.memory_size) == sizeof(DbTable));
     return 1;			/* Done */
 }
 
@@ -1860,7 +2031,7 @@ static int analyze_pattern(DbTableHash *tb, Eterm pattern,
 	    (mpi->key_given) = 0;
 	    (mpi->something_can_match) = 1;
 	} else {
-	    key = db_getkey(tb->keypos, tpl);
+	    key = db_getkey(tb->common.keypos, tpl);
 	    if (is_value(key)) {
 		if (!db_has_variable(key)) {   /* Bound key */
 		    int ix;
@@ -2143,17 +2314,28 @@ static int realloc_counter(DbTableCommon *tb, HashDbTerm** bp, Uint sz,
 			      sz, new_counter, counterpos);
 }
 
+int db_delete_all_objects_hash(Process* p, DbTable* tbl)
+{
+    if (tbl->hash.common.status & DB_FIXED) {
+	db_mark_all_deleted_hash(tbl);
+    } else {
+	db_free_table_hash(tbl);
+	db_create_hash(p, tbl);
+	tbl->hash.common.nitems = 0;
+    }
+    return 0;
+}
 
-void
-erts_db_hash_foreach_offheap(DbTableHash *tab,
+void db_foreach_offheap_hash(DbTable *tbl,
 			     void (*func)(ErlOffHeap *, void *),
 			     void * arg)
 {
+    DbTableHash *tb = &tbl->hash;
     HashDbTerm* list;
     int i;
 
-    for (i = 0; i < tab->nactive; i++) {
-	list = BUCKET(tab,i);
+    for (i = 0; i < tb->nactive; i++) {
+	list = BUCKET(tb,i);
 	while(list != 0) {
 	    (*func)(&(list->dbterm.off_heap), arg);
 	    list = list->next;
@@ -2163,8 +2345,9 @@ erts_db_hash_foreach_offheap(DbTableHash *tab,
 
 #ifdef HARDDEBUG
 
-void db_check_table_hash(DbTableHash *tb)
+void db_check_table_hash(DbTable *tbl)
 {
+    DbTableHash *tb = &tbl->hash;
     HashDbTerm* list;
     int j;
     

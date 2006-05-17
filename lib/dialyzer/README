@@ -1,0 +1,80 @@
+##----------------------------------------------------------------------------
+## File:      README
+## Author(s): Tobias Lindahl <tobias.lindahl@it.uu.se>
+##	      Kostis Sagonas <kostis@it.uu.se>
+##
+## Copyright: Held by the authors; all rights reserved (2004, 2005, 2006).
+##
+## $Id$
+##----------------------------------------------------------------------------
+
+The DIALYZER, a DIscrepany AnaLYZer for ERlang programs.
+
+
+======================================================================
+| NOTE: The Dialyzer is distributed with its complete source and its |
+|	USE IS FREE FOR OPEN-SOURCE PROJECTS OR NON-COMMERCIAL USES. |
+|								     |
+|	For use in commercial projects, AN EXPLICIT PERMISSION FROM  |
+|	ITS AUTHORS AND COPYRIGHT OWNERS IS REQUIRED.		     |
+======================================================================
+
+
+-----------------------------------------------
+--
+-- Starting the Dialyzer
+--
+-----------------------------------------------
+
+You can use Dialyzer either in its GUI mode, simply by:
+
+	./dialyzer
+
+or in its command-line mode, as e.g. by:
+
+	./dialyzer -r OTP_DIR/lib/inets
+
+which analyzes all the bytecode (.beam) files of the "inets" application of
+the Erlang/OTP installation for discrepancies.
+
+The complete set of Dialyzer options is:
+
+	dialyzer [--help] [--version] [--shell] [--plt plt]
+                 [-pa dir]* [-Ddefine]* [-I include_dir]* [-Wwarn]*
+                 [--src] [-c applications] [-r applications] [-o outfile] [-q]
+
+Use "./dialyzer --help" to see an explanation of these options.
+
+
+The Persistent Lookup Table
+===========================
+Dialyzer comes with a Persistent Lookup Table containing type information
+for functions in some of the Erlang/OTP standard libraries. This table is
+the starting point for later analyses. At each startup of Dialyzer the
+validity of this PLT is checked, and if something has changed in the OTP
+libraries, a new PLT will be constructed.
+
+It is possible to setup user-specified PLTs.
+
+
+-----------------------------------------------
+--
+-- More information about using the Dialyzer
+--
+-----------------------------------------------
+
+Start up the Dialyzer and click on its Help menu (in the upmost right corner)
+to read a brief overview and a user manual.
+
+
+-----------------------------------------------
+--
+-- Feedback & bug reports
+--
+-----------------------------------------------
+
+At this point, we welcome user feedback (even wish-lists!). If you notice
+something weird, please send an error report describing the symptoms and
+how to reproduce them to:
+
+	tobias.lindahl@it.uu.se, kostis@it.uu.se

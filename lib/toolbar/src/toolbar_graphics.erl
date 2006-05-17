@@ -73,6 +73,7 @@
 %
 -export([event/4]).
 -export([draw_window/1,redraw_window/2,already_added/2,add_icon/2]).
+-export([get_window/1]).
 -export([cursor/2]).
 -export([listen_configure/1]).
 -export([display_show/2,display_clear/1]).
@@ -340,6 +341,13 @@ add_icon(Window,ToolInfo) ->
     MinWidth = gs:read(Window#tbwindow.window,width),
     Window#tbwindow{no_of_buttons=N+1,min_width=MinWidth,
 		    icons=[ToolInfo|Window#tbwindow.icons]}.
+
+%----------------------------------------
+% get_window(Window) -> gs_obj()
+%   Window - tbwindow record
+%----------------------------------------
+get_window(Window) ->    
+    Window#tbwindow.window.
 
 %----------------------------------------
 % cursor(Window,Cursor)

@@ -443,8 +443,6 @@ find_beam(Module) when atom(Module) ->
 	preloaded ->
 	    {_M, _Bin, File} = code:get_object_code(Module),
 	    {ok, File};
-	interpreted ->
-	    error({interpreted, Module});
         cover_compiled ->
 	    error({cover_compiled, Module});
 	File ->

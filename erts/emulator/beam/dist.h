@@ -68,20 +68,23 @@ extern Export* dgroup_leader_trap;
 extern Export* dexit_trap;
 extern Export* dmonitor_p_trap;
 
-extern int dist_link(DistEntry*, Eterm, Eterm);
-extern int dist_send(Process*, DistEntry*, Eterm, Eterm);
-extern int dist_exit_tt(DistEntry*, Eterm, Eterm, Eterm, Eterm);
-extern int dist_unlink(DistEntry*, Eterm, Eterm);
-extern int dist_reg_send(Process*, DistEntry*, Eterm, Eterm);
-extern int dist_group_leader(DistEntry*, Eterm, Eterm);
-extern int dist_exit(DistEntry*, Eterm, Eterm, Eterm);
-extern int dist_exit2(DistEntry*, Eterm, Eterm, Eterm);
+
+
+extern int dist_link(Process*, Uint32, DistEntry*, Eterm, Eterm);
+extern int dist_send(Process*, Uint32, DistEntry*, Eterm, Eterm);
+extern int dist_exit_tt(Process*, Uint32, DistEntry*, Eterm, Eterm, Eterm, Eterm);
+extern int dist_unlink(Process*, Uint32, DistEntry*, Eterm, Eterm);
+extern int dist_reg_send(Process*, Uint32, DistEntry*, Eterm, Eterm);
+extern int dist_group_leader(Process*, Uint32, DistEntry*, Eterm, Eterm);
+extern int dist_exit(Process*, Uint32, DistEntry*, Eterm, Eterm, Eterm);
+extern int dist_exit2(Process*, Uint32, DistEntry*, Eterm, Eterm, Eterm);
 #endif
 
-extern int dist_demonitor(DistEntry*, Eterm, Eterm, Eterm, int);
-extern int dist_monitor(DistEntry*, Eterm, Eterm, Eterm);
-extern int dist_m_exit(DistEntry*, Eterm, Eterm, Eterm, Eterm);
+extern int dist_demonitor(Process*, Uint32, DistEntry*, Eterm, Eterm, Eterm, int);
+extern int dist_monitor(Process*, Uint32, DistEntry*, Eterm, Eterm, Eterm);
+extern int dist_m_exit(Process*, Uint32, DistEntry*, Eterm, Eterm, Eterm, Eterm);
 
 extern Uint erts_dist_cache_size(void);
+extern int erts_is_alive(void);
 
 #endif

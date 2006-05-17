@@ -13,7 +13,7 @@
 # Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 # AB. All Rights Reserved.''
 # 
-#     $Id: Makefile,v 1.31 2004/11/08 17:47:19 richardc Exp $
+#     $Id$
 #
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
@@ -39,7 +39,7 @@ endif
 
 APP_DIR = $(APP_RELEASE_DIR)/$(DIR_NAME)
 
-# APPNAME = syntax_tools
+APPNAME = syntax_tools
 # BINDIR = ebin
 DOC_OPTS = [{def,{vsn,"$(VSN)"}}]
 

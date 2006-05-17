@@ -19,18 +19,14 @@
 #ifndef ERL_INSTRUMENT_H__
 #define ERL_INSTRUMENT_H__
 
+#include "erl_mtrace.h"
+
 #define ERTS_INSTR_VSN 2
 
 extern int erts_instr_memory_map;
 extern int erts_instr_stat;
-#define ERTS_INSTR_SET_CURR_PROC(PID) \
-do { if (erts_instr_memory_map) erts_instr_set_curr_proc((PID)); } while (0)
-#define ERTS_INSTR_RESET_CURR_PROC() \
-do { if (erts_instr_memory_map) erts_instr_reset_curr_proc(); } while (0)
 
 Uint  erts_instr_init(int stat, int map_stat);
-void  erts_instr_set_curr_proc(Eterm pid);
-void  erts_instr_reset_curr_proc(void);
 int   erts_instr_dump_memory_map_to_fd(int fd);
 int   erts_instr_dump_memory_map(const char *name);
 Eterm erts_instr_get_memory_map(Process *process);

@@ -1,8 +1,8 @@
-README, Erlang/OTP R9C for VxWorks on PPC860 and PPC603
+README, Erlang/OTP R11B for VxWorks on PPC860 and PPC603
 -----------------------------------------------------------------------
-20020801 -- Patrik Nyblom, support@erlang.ericsson.se
+20060515 -- Patrik Nyblom, support@erlang.ericsson.se
 
-R9C is a libraries only release for VxWorks. Only the libraries of
+R11B is a libraries only release for VxWorks. Only the libraries of
 erl_interface (ei+erl_inteface) and ic are expected to be used. Still
 the whole erlang system is distributed, although no support will be
 given for anything else but the libraries. The information in this

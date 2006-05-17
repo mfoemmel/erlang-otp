@@ -34,18 +34,28 @@
 #  include "config.h"
 #endif
 
-#define ERTS_MTRACE_INTERNAL__
 #include "sys.h"
 #include "global.h"
 #include "erl_sock.h"
 #include "erl_threads.h"
+#include "erl_memory_trace_protocol.h"
+#include "erl_mtrace.h"
+
+#if defined(MAXHOSTNAMELEN) && MAXHOSTNAMELEN > 255
+#  undef MAXHOSTNAMELEN
+#endif
+
+#ifndef MAXHOSTNAMELEN
+#  define MAXHOSTNAMELEN 255
+#endif
 
 #define TRACE_PRINTOUTS 0
 #ifdef TRACE_PRINTOUTS
 #define MSB2BITS(X) ((((unsigned)(X))+1)*8)
 #endif
 
-static ethr_mutex mtrace_mutex;
+static erts_mtx_t mtrace_op_mutex;
+static erts_mtx_t mtrace_buf_mutex;
 
 #define TRACE_BUF_SZ 				(16*1024)
 
@@ -174,12 +184,16 @@ static int send_trace_buffer(void);
 #ifdef DEBUG
 void
 check_alloc_entry(byte *sp, byte *ep,
+		  byte tag,
+		  Uint16 ct_no, int ct_no_n,
 		  Uint16 type, int type_n,
 		  Uint res, int res_n,
 		  Uint size, int size_n,
 		  Uint32 ti,int ti_n);
 void
-check_realloc_entry(byte *sp, byte *ep, int no_previous_block, int moved,
+check_realloc_entry(byte *sp, byte *ep,
+		    byte tag,
+		    Uint16 ct_no, int ct_no_n,
 		    Uint16 type, int type_n,
 		    Uint res, int res_n,
 		    Uint ptr, int ptr_n,
@@ -187,6 +201,9 @@ check_realloc_entry(byte *sp, byte *ep, int no_previous_block, int moved,
 		    Uint32 ti,int ti_n);
 void
 check_free_entry(byte *sp, byte *ep,
+		 byte tag,
+		 Uint16 ct_no, int ct_no_n,
+		 Uint16 t_no, int t_no_n,
 		 Uint ptr, int ptr_n,
 		 Uint32 ti,int ti_n);
 void
@@ -203,6 +220,10 @@ static byte trace_buffer[TRACE_BUF_SZ];
 static byte *tracep;
 static byte *endp;
 static SysTimeval last_tv;
+
+#if ERTS_MTRACE_SEGMENT_ID >= ERTS_ALC_A_MIN || ERTS_MTRACE_SEGMENT_ID < 0
+#error ERTS_MTRACE_SEGMENT_ID >= ERTS_ALC_A_MIN || ERTS_MTRACE_SEGMENT_ID < 0
+#endif
 
 char* erl_errno_id(int error);
 
@@ -239,10 +260,12 @@ get_time_inc(void)
     else {
 	/* Increment too large to fit in a 32-bit integer;
 	   put a time inc entry in trace ... */
-	if (MAKE_TBUF_SZ(UI16_SZ + 2*UI32_SZ)) {
+	if (MAKE_TBUF_SZ(UI8_SZ + UI16_SZ + 2*UI32_SZ)) {
 	    byte *hdrp;
 	    Uint16 hdr;
 	    int secs_n, usecs_n;
+
+	    *(tracep++) = ERTS_MT_TIME_INC_BDY_TAG;
 
 	    hdrp = tracep;
 	    tracep += 2;
@@ -255,12 +278,9 @@ get_time_inc(void)
 	    hdr <<= UI32_MSB_EHF_SZ;
 	    hdr |= secs_n;
 
-	    hdr <<= TAG_EHF_SZ;
-	    hdr |= ERTS_MT_TIME_INC_TAG;
-
 	    WRITE_UI16(hdrp, hdr);
 #ifdef DEBUG
-	    check_time_inc_entry(hdrp, tracep,
+	    check_time_inc_entry(hdrp-1, tracep,
 				 (Uint32) secs, secs_n,
 				 (Uint32) usecs, usecs_n);
 #endif
@@ -279,40 +299,22 @@ get_time_inc(void)
 static void
 disable_trace(int error, char *reason, int eno)
 {
-#define ENO_BUF_SZ 100
-    char buf[ENO_BUF_SZ];
+    char *mt_dis = "Memory trace disabled";
     char *eno_str;
-
-    if (eno) {
-	eno_str = erl_errno_id(eno);
-
-	if (strcmp(eno_str, "unknown") == 0)
-	    sprintf(buf, ": %d", eno);
-	else {
-	    int i;
-	    buf[0] = ':'; buf[1] = ' ';
-	    for (i = 2; i < ENO_BUF_SZ && eno_str[i-2]; i++)
-		buf[i] = eno_str[i-2];
-	}
-	eno_str = buf;
-    }
-    else
-	eno_str = "";
 
     erts_mtrace_enabled = 0;
     erts_sock_close(socket_desc);
     socket_desc = ERTS_SOCK_INVALID_SOCKET;
-    cerr_pos = 0;
-    erl_printf(erts_initialized ? CBUF : CERR,
-	       "Memory trace disabled: %s%s\n", reason, eno_str);
-    if (erts_initialized) {
-	if (error)
-	    send_error_to_logger(NIL);
-	else
-	    send_error_to_logger(NIL);
-    }
 
-#undef ENO_BUF_SZ
+    if (eno == 0)
+	erts_fprintf(stderr, "%s: %s\n", mt_dis, reason);
+    else {
+	eno_str = erl_errno_id(eno);
+	if (strcmp(eno_str, "unknown") == 0)
+	    erts_fprintf(stderr, "%s: %s: %d\n", mt_dis, reason, eno);
+	else
+	    erts_fprintf(stderr, "%s: %s: %s\n", mt_dis, reason, eno_str);
+    }
 }
 
 static int
@@ -354,35 +356,116 @@ send_trace_buffer(void)
 
 
 static int
-write_trace_header(void)
+write_trace_header(char *nodename, char *pid, char *hostname)
 {
-    Uint32 flags;
-    Uint32 hdr_sz;
-    byte *hdr_szp;
+#ifdef DEBUG
+    byte *startp;
+#endif
+    Uint16 entry_sz;
+    Uint32 flags, n_len, h_len, p_len, hdr_prolog_len;
     int i, no, str_len;
     const char *str;
+    struct {
+	Uint32 gsec;
+	Uint32 sec;
+	Uint32 usec;
+    } start_time;
 
-    if (!MAKE_TBUF_SZ(5*UI32_SZ + 2*UI16_SZ))
+    sys_gettimeofday(&last_tv);
+
+    start_time.gsec = (Uint32) (last_tv.tv_sec / 1000000000);
+    start_time.sec  = (Uint32) (last_tv.tv_sec % 1000000000);
+    start_time.usec = (Uint32) last_tv.tv_usec;
+
+    if (!MAKE_TBUF_SZ(3*UI32_SZ))
 	return 0;
 
     flags = 0;
 #ifdef ARCH_64
     flags |= ERTS_MT_64_BIT_FLAG;
 #endif
+    flags |= ERTS_MT_CRR_INFO;
+#ifdef ERTS_CAN_TRACK_MALLOC
+    flags |= ERTS_MT_SEG_CRR_INFO;
+#endif
 
+    /*
+     * The following 3 ui32 words *always* have to come
+     * first in the trace.
+     */
     PUT_UI32(tracep, ERTS_MT_START_WORD);
     PUT_UI32(tracep, ERTS_MT_MAJOR_VSN);
     PUT_UI32(tracep, ERTS_MT_MINOR_VSN);
-    PUT_UI32(tracep, flags);
-    hdr_szp = tracep;
-    tracep += UI32_SZ;
 
+    n_len = strlen(nodename);
+    h_len = strlen(hostname);
+    p_len = strlen(pid);
+    hdr_prolog_len = (2*UI32_SZ
+		      + 3*UI16_SZ
+		      + 3*UI32_SZ
+		      + 3*UI8_SZ
+		      + n_len
+		      + h_len
+		      + p_len);
+
+    if (!MAKE_TBUF_SZ(hdr_prolog_len))
+	return 0;
+
+    /*
+     * New stuff can be added at the end the of header prolog
+     * (EOHP). The reader should skip stuff at the end, that it
+     * doesn't understand.
+     */
+
+#ifdef DEBUG
+    startp = tracep;
+#endif
+
+    PUT_UI32(tracep, hdr_prolog_len);
+    PUT_UI32(tracep, flags);
+    PUT_UI16(tracep, ERTS_MTRACE_SEGMENT_ID);
     PUT_UI16(tracep, ERTS_ALC_A_MAX);
     PUT_UI16(tracep, ERTS_ALC_N_MAX);
 
-    hdr_sz = 5*UI32_SZ + 2*UI16_SZ;
+    PUT_UI32(tracep, start_time.gsec);
+    PUT_UI32(tracep, start_time.sec);
+    PUT_UI32(tracep, start_time.usec);
+
+    PUT_UI8(tracep, (byte) n_len);
+    memcpy((void *) tracep, (void *) nodename, n_len);
+    tracep += n_len;
+
+    PUT_UI8(tracep, (byte) h_len);
+    memcpy((void *) tracep, (void *) hostname, h_len);
+    tracep += h_len;
+
+    PUT_UI8(tracep, (byte) p_len);
+    memcpy((void *) tracep, (void *) pid, p_len);
+    tracep += p_len;
+
+    ASSERT(startp + hdr_prolog_len == tracep);
+
+    /*
+     * EOHP
+     */
+
+    /*
+     * All tags from here on should be followed by an Uint16 size
+     * field containing the total size of the entry.
+     *
+     * New stuff can eigther be added at the end of an entry, or
+     * as a new tagged entry. The reader should skip stuff at the
+     * end, that it doesn't understand.
+     */
 
     for (i = ERTS_ALC_A_MIN; i <= ERTS_ALC_A_MAX; i++) {
+	Uint16 aflags = 0;
+
+#ifndef ERTS_CAN_TRACK_MALLOC
+	if (i != ERTS_ALC_A_SYSTEM)
+#endif
+	    aflags |= ERTS_MT_ALLCTR_USD_CRR_INFO;
+
 	str = ERTS_ALC_A2AD(i);
 	ASSERT(str);
 	str_len = strlen(str);
@@ -390,19 +473,51 @@ write_trace_header(void)
 	    disable_trace(1, "Excessively large allocator string", 0);
 	    return 0;
 	}
-	    
-	if (!MAKE_TBUF_SZ(UI8_SZ + 2*UI16_SZ + str_len))
-	    return 0;
-	hdr_sz += UI8_SZ + 2*UI16_SZ + str_len;
 
-	PUT_UI16(tracep, ERTS_MT_ALLOCATOR_TAG);
+	entry_sz = UI8_SZ + 3*UI16_SZ + UI8_SZ;
+	entry_sz += (erts_allctrs_info[i].alloc_util ? 2 : 1)*UI16_SZ;
+	entry_sz += UI8_SZ + str_len;
+
+	if (!MAKE_TBUF_SZ(entry_sz))
+	    return 0;
+
+#ifdef DEBUG
+	startp = tracep;
+#endif
+	PUT_UI8(tracep, ERTS_MT_ALLOCATOR_HDR_TAG);
+	PUT_UI16(tracep, entry_sz);
+	PUT_UI16(tracep, aflags);
 	PUT_UI16(tracep, (Uint16) i);
 	PUT_UI8( tracep, (byte) str_len);
 	memcpy((void *) tracep, (void *) str, str_len);
 	tracep += str_len;
+	if (erts_allctrs_info[i].alloc_util) {
+	    PUT_UI8(tracep, 2);
+	    PUT_UI16(tracep, ERTS_MTRACE_SEGMENT_ID);
+	    PUT_UI16(tracep, ERTS_ALC_A_SYSTEM);
+	}
+	else {
+	    PUT_UI8(tracep, 1);
+	    switch (i) {
+	    case ERTS_ALC_A_SYSTEM:
+		PUT_UI16(tracep, ERTS_MTRACE_SEGMENT_ID);
+		break;
+	    case ERTS_ALC_A_FIXED_SIZE:
+		if (erts_allctrs_info[ERTS_FIX_CORE_ALLOCATOR].enabled)
+		    PUT_UI16(tracep, ERTS_FIX_CORE_ALLOCATOR);
+		else
+		    PUT_UI16(tracep, ERTS_ALC_A_SYSTEM);
+		break;
+	    default:
+		PUT_UI16(tracep, ERTS_MTRACE_SEGMENT_ID);
+		break;
+	    }
+	}
+	ASSERT(startp + entry_sz == tracep);
     }
 
     for (i = ERTS_ALC_N_MIN; i <= ERTS_ALC_N_MAX; i++) {
+	Uint16 nflags = 0;
 	str = ERTS_ALC_N2TD(i);
 	ASSERT(str);
 
@@ -417,20 +532,30 @@ write_trace_header(void)
 	    no = ERTS_ALC_A_SYSTEM;
 	ASSERT(ERTS_ALC_A_MIN <= no && no <= ERTS_ALC_A_MAX);
 
-	if (!MAKE_TBUF_SZ(UI8_SZ + 3*UI16_SZ + str_len))
+	entry_sz = UI8_SZ + 3*UI16_SZ + UI8_SZ + str_len + UI16_SZ;
+
+	if (!MAKE_TBUF_SZ(entry_sz))
 	    return 0;
 
-	hdr_sz += UI8_SZ + 3*UI16_SZ + str_len;
-
-	PUT_UI16(tracep, ERTS_MT_BLOCK_TYPE_TAG);
+#ifdef DEBUG
+	startp = tracep;
+#endif
+	PUT_UI8(tracep, ERTS_MT_BLOCK_TYPE_HDR_TAG);
+	PUT_UI16(tracep, entry_sz);
+	PUT_UI16(tracep, nflags);
 	PUT_UI16(tracep, (Uint16) i);
-	PUT_UI8( tracep, (byte) str_len);
+	PUT_UI8(tracep, (byte) str_len);
 	memcpy((void *) tracep, (void *) str, str_len);
 	tracep += str_len;
 	PUT_UI16(tracep, no);
+	ASSERT(startp + entry_sz == tracep);
     }
 
-    WRITE_UI32(hdr_szp,   hdr_sz);
+    entry_sz = UI8_SZ + UI16_SZ;
+    if (!MAKE_TBUF_SZ(entry_sz))
+	return 0;
+    PUT_UI8(tracep, ERTS_MT_END_OF_HDR_TAG);
+    PUT_UI16(tracep, entry_sz);
 
     return 1;
 }
@@ -441,33 +566,27 @@ static void mtrace_free(ErtsAlcType_t, void *, void *);
 
 static ErtsAllocatorFunctions_t real_allctrs[ERTS_ALC_A_MAX+1];
 
-void erts_mtrace_init(char *receiver)
+void erts_mtrace_pre_init(void)
 {
+}
+
+void erts_mtrace_init(char *receiver, char *nodename)
+{
+    char hostname[MAXHOSTNAMELEN];
+    char pid[21]; /* enough for a 64 bit number */
+
     socket_desc = ERTS_SOCK_INVALID_SOCKET;
     erts_mtrace_enabled = receiver != NULL;
 
     if (erts_mtrace_enabled) {
-	int i;
 	unsigned a, b, c, d, p;
 	byte ip_addr[4];
 	Uint16 port;
-	
-	/* Install trace functions */
-	ASSERT(sizeof(erts_allctrs) == sizeof(real_allctrs));
 
-	sys_memcpy((void *) real_allctrs,
-		   (void *) erts_allctrs,
-		   sizeof(erts_allctrs));
-
-	for (i = ERTS_ALC_A_MIN; i <= ERTS_ALC_A_MAX; i++) {
-	    erts_allctrs[i].alloc	= mtrace_alloc;
-	    erts_allctrs[i].realloc	= mtrace_realloc;
-	    erts_allctrs[i].free	= mtrace_free;
-	    erts_allctrs[i].extra	= (void *) &real_allctrs[i];
-	}
-
-	erts_mtx_init(&mtrace_mutex);
-	erts_mtx_set_forksafe(&mtrace_mutex);
+	erts_mtx_init(&mtrace_buf_mutex, "mtrace_buf");
+	erts_mtx_set_forksafe(&mtrace_buf_mutex);
+	erts_mtx_init(&mtrace_op_mutex, "mtrace_op");
+	erts_mtx_set_forksafe(&mtrace_op_mutex);
 
 	socket_desc = erts_sock_open();
 	if (socket_desc == ERTS_SOCK_INVALID_SOCKET) {
@@ -494,24 +613,53 @@ void erts_mtrace_init(char *receiver)
 			  erts_sock_errno());
 	    return;
 	}
-	sys_gettimeofday(&last_tv);
 	tracep = trace_buffer;
 	endp = trace_buffer + TRACE_BUF_SZ;
-	write_trace_header();
+	if (erts_sock_gethostname(hostname, MAXHOSTNAMELEN) != 0)
+	    hostname[0] = '\0';
+	hostname[MAXHOSTNAMELEN-1] = '\0';
+	sys_get_pid(pid);
+	write_trace_header(nodename ? nodename : "", pid, hostname);
+	erts_mtrace_update_heap_size();
+    }
+}
+
+void
+erts_mtrace_install_wrapper_functions(void)
+{
+    if (erts_mtrace_enabled) {
+	int i;
+	/* Install trace functions */
+	ASSERT(sizeof(erts_allctrs) == sizeof(real_allctrs));
+
+	sys_memcpy((void *) real_allctrs,
+		   (void *) erts_allctrs,
+		   sizeof(erts_allctrs));
+
+	for (i = ERTS_ALC_A_MIN; i <= ERTS_ALC_A_MAX; i++) {
+	    erts_allctrs[i].alloc	= mtrace_alloc;
+	    erts_allctrs[i].realloc	= mtrace_realloc;
+	    erts_allctrs[i].free	= mtrace_free;
+	    erts_allctrs[i].extra	= (void *) &real_allctrs[i];
+	}
     }
 }
 
 void
 erts_mtrace_stop(void)
 {
-    erts_mtx_lock(&mtrace_mutex);
+    erts_mtx_lock(&mtrace_op_mutex);
+    erts_mtx_lock(&mtrace_buf_mutex);
     if (erts_mtrace_enabled) {
 	Uint32 ti = get_time_inc();
     
-	if (ti != INVALID_TIME_INC && MAKE_TBUF_SZ(UI16_SZ + UI32_SZ)) {
+	if (ti != INVALID_TIME_INC
+	    && MAKE_TBUF_SZ(UI8_SZ + UI16_SZ + UI32_SZ)) {
 	    byte *hdrp;
 	    Uint16 hdr;
 	    int ti_n;
+
+	    *(tracep++) = ERTS_MT_STOP_BDY_TAG;
 
 	    hdrp = tracep;
 	    tracep += 2;
@@ -519,9 +667,6 @@ erts_mtrace_stop(void)
 	    PUT_VSZ_UI32(tracep, ti_n,  ti);
 
 	    hdr = ti_n;
-
-	    hdr <<= TAG_EHF_SZ;
-	    hdr |= ERTS_MT_STOP_TAG;
 
 	    WRITE_UI16(hdrp, hdr);
 
@@ -532,20 +677,25 @@ erts_mtrace_stop(void)
 	    }
 	}
     }
-    erts_mtx_unlock(&mtrace_mutex);
+    erts_mtx_unlock(&mtrace_buf_mutex);
+    erts_mtx_unlock(&mtrace_op_mutex);
 }
 
 void
 erts_mtrace_exit(Uint32 exit_value)
 {
-    erts_mtx_lock(&mtrace_mutex);
+    erts_mtx_lock(&mtrace_op_mutex);
+    erts_mtx_lock(&mtrace_buf_mutex);
     if (erts_mtrace_enabled) {
 	Uint32 ti = get_time_inc();
     
-	if (ti != INVALID_TIME_INC && MAKE_TBUF_SZ(UI16_SZ + 2*UI32_SZ)) {
+	if (ti != INVALID_TIME_INC
+	    && MAKE_TBUF_SZ(UI8_SZ + UI16_SZ + 2*UI32_SZ)) {
 	    byte *hdrp;
 	    Uint16 hdr;
 	    int ti_n, exit_value_n;
+
+	    *(tracep++) = ERTS_MT_EXIT_BDY_TAG;
 
 	    hdrp = tracep;
 	    tracep += 2;
@@ -558,9 +708,6 @@ erts_mtrace_exit(Uint32 exit_value)
 	    hdr <<= UI32_MSB_EHF_SZ;
 	    hdr |= exit_value_n;
 
-	    hdr <<= TAG_EHF_SZ;
-	    hdr |= ERTS_MT_EXIT_TAG;
-
 	    WRITE_UI16(hdrp, hdr);
 
 	    if(send_trace_buffer()) {
@@ -570,33 +717,35 @@ erts_mtrace_exit(Uint32 exit_value)
 	    }
 	}
     }
-    erts_mtx_unlock(&mtrace_mutex);
+    erts_mtx_unlock(&mtrace_buf_mutex);
+    erts_mtx_unlock(&mtrace_op_mutex);
 }
 
-static void *
-mtrace_alloc(ErtsAlcType_t n, void *extra, Uint size)
+static ERTS_INLINE void
+write_alloc_entry(byte tag,
+		  void *res,
+		  ErtsAlcType_t x,
+		  ErtsAlcType_t y,
+		  Uint size)
 {
-    ErtsAllocatorFunctions_t *real_af = (ErtsAllocatorFunctions_t *) extra;
-    void *res;
-    Uint32 ti;
-
-    erts_mtx_lock(&mtrace_mutex);
-
-    res = (*real_af->alloc)(n, real_af->extra, size);
-
+    erts_mtx_lock(&mtrace_buf_mutex);
     if (erts_mtrace_enabled) {
-	Uint16 t_no = (Uint16) n;
-	ti = get_time_inc();
+	Uint32 ti = get_time_inc();
 
 	if (ti != INVALID_TIME_INC
-	    && MAKE_TBUF_SZ(UI8_SZ + UI16_SZ + 2*UI_SZ + UI32_SZ)) {
+	    && MAKE_TBUF_SZ(UI8_SZ + 2*UI16_SZ + 2*UI_SZ + UI32_SZ)) {
+	    Uint16 hdr, t_no = (Uint16) x, ct_no = (Uint16) y;
 	    byte *hdrp;
-	    Uint16 hdr;
-	    int t_no_n, res_n, size_n, ti_n;
+	    int t_no_n, ct_no_n = 0, res_n, size_n, ti_n;
+
+	    *(tracep++) = tag;
 
 	    hdrp = tracep;
 	    tracep += 2;
 
+	    if (tag == ERTS_MT_CRR_ALLOC_BDY_TAG) {
+		PUT_VSZ_UI16(tracep, ct_no_n, ct_no);
+	    }
 	    PUT_VSZ_UI16(tracep, t_no_n, t_no);
 	    PUT_VSZ_UI(  tracep, res_n, res);
 	    PUT_VSZ_UI(  tracep, size_n, size);
@@ -613,24 +762,27 @@ mtrace_alloc(ErtsAlcType_t n, void *extra, Uint size)
 	    hdr <<= UI16_MSB_EHF_SZ;
 	    hdr |= t_no_n;
 
-	    hdr <<= TAG_EHF_SZ;
-	    hdr |= ERTS_MT_ALLOC_TAG;
+	    if (tag == ERTS_MT_CRR_ALLOC_BDY_TAG) {
+		hdr <<= UI16_MSB_EHF_SZ;
+		hdr |= ct_no_n;
+	    }
 
 	    WRITE_UI16(hdrp, hdr);
 
 #if TRACE_PRINTOUTS
-	    fprintf(stderr,
-		    "{alloc, {%u, %u, %u}, {%u, %u, %u, %u}}\n",
-
-		    (unsigned) t_no, (unsigned) res, (unsigned) size,
-
-		    MSB2BITS(t_no_n), MSB2BITS(res_n),
-		    MSB2BITS(size_n), MSB2BITS(ti_n));
-	    fflush(stderr);
+	    print_trace_entry(tag,
+			      ct_no, ct_no_n,
+			      t_no, t_no_n,
+			      (Uint) res, res_n,
+			      0, 0,
+			      size, size_n,
+			      ti, ti_n);
 #endif
 
 #ifdef DEBUG
-	    check_alloc_entry(hdrp, tracep,
+	    check_alloc_entry(hdrp-1, tracep,
+			      tag,
+			      ct_no, ct_no_n,
 			      t_no, t_no_n,
 			      (Uint) res, res_n,
 			      size, size_n,
@@ -640,54 +792,39 @@ mtrace_alloc(ErtsAlcType_t n, void *extra, Uint size)
 	}
 
     }
+    erts_mtx_unlock(&mtrace_buf_mutex);
 
-    erts_mtx_unlock(&mtrace_mutex);
-
-    return res;
 }
 
-static void *
-mtrace_realloc(ErtsAlcType_t n, void *extra, void *ptr, Uint size)
+static ERTS_INLINE void
+write_realloc_entry(byte tag,
+		    void *res,
+		    ErtsAlcType_t x,
+		    ErtsAlcType_t y,
+		    void *ptr,
+		    Uint size)
 {
-    ErtsAllocatorFunctions_t *real_af = (ErtsAllocatorFunctions_t *) extra;
-    void *res;
-    Uint32 ti;
-
-    erts_mtx_lock(&mtrace_mutex);
-
-    res = (*real_af->realloc)(n, real_af->extra, ptr, size);
-
+    erts_mtx_lock(&mtrace_buf_mutex);
     if (erts_mtrace_enabled) {
-	Uint16 t_no;
-	int no_previous_block;
-	int moved;
-	ti = get_time_inc();
-
-	no_previous_block = (ptr == NULL);
-	moved = (!no_previous_block && res != ptr);
+	Uint32 ti = get_time_inc();
 
 	if (ti != INVALID_TIME_INC
-	    && MAKE_TBUF_SZ(2*UI16_SZ + (moved ? 3 : 2)*UI_SZ + UI32_SZ)) {
+	    && MAKE_TBUF_SZ(UI8_SZ + 2*UI16_SZ + 3*UI_SZ + UI32_SZ)) {
+	    Uint16 hdr, t_no = (Uint16) x, ct_no = (Uint16) y;
 	    byte *hdrp;
-	    Uint16 hdr;
-	    int t_no_n, res_n, ptr_n, size_n, ti_n;
+	    int t_no_n, ct_no_n = 0, res_n, ptr_n, size_n, ti_n;
+
+	    *(tracep++) = tag;
 
 	    hdrp = tracep;
 	    tracep += 2;
 
-	    if (no_previous_block) {
-		t_no = (Uint16) n;
-		PUT_VSZ_UI16(tracep, t_no_n, t_no);
+	    if (tag == ERTS_MT_CRR_REALLOC_BDY_TAG) {
+		PUT_VSZ_UI16(tracep, ct_no_n, ct_no);
 	    }
-	    else {
-		t_no = 0;
-		t_no_n = 0;
-	    }
+	    PUT_VSZ_UI16(tracep, t_no_n, t_no);
 	    PUT_VSZ_UI(  tracep, res_n, res);
-	    if (moved)
-		PUT_VSZ_UI(  tracep, ptr_n, ptr);
-	    else
-		ptr_n = 0;
+	    PUT_VSZ_UI(  tracep, ptr_n, ptr);
 	    PUT_VSZ_UI(  tracep, size_n, size);
 	    PUT_VSZ_UI32(tracep, ti_n, ti);
 
@@ -696,54 +833,36 @@ mtrace_realloc(ErtsAlcType_t n, void *extra, void *ptr, Uint size)
 	    hdr <<= UI_MSB_EHF_SZ;
 	    hdr |= size_n;
 
-	    if (moved) {
-		hdr <<= UI_MSB_EHF_SZ;
-		hdr |= ptr_n;
-	    }
+	    hdr <<= UI_MSB_EHF_SZ;
+	    hdr |= ptr_n;
 
 	    hdr <<= UI_MSB_EHF_SZ;
 	    hdr |= res_n;
 
-	    if (no_previous_block) {
-		hdr <<= UI16_MSB_EHF_SZ;
-		hdr |= t_no_n;
-	    }
+	    hdr <<= UI16_MSB_EHF_SZ;
+	    hdr |= t_no_n;
 
-	    hdr <<= TAG_EHF_SZ;
-	    if (no_previous_block)
-		hdr |= ERTS_MT_REALLOC_NPB_TAG;
-	    else if (moved)
-		hdr |= ERTS_MT_REALLOC_MV_TAG;
-	    else
-		hdr |= ERTS_MT_REALLOC_NMV_TAG;
+	    if (tag == ERTS_MT_CRR_REALLOC_BDY_TAG) {
+		hdr <<= UI16_MSB_EHF_SZ;
+		hdr |= ct_no_n;
+	    }
 
 	    WRITE_UI16(hdrp, hdr);
 
 #if TRACE_PRINTOUTS
-	    if (moved)
-		fprintf(stderr,
-			"{realloc_mv, {%u, %u, %u, %u}, {%u, %u, %u, %u, %u}}\n",
-
-			(unsigned) t_no, (unsigned) res,
-			(unsigned) ptr, (unsigned) size,
-
-			MSB2BITS(t_no_n), MSB2BITS(res_n),
-			MSB2BITS(ptr_n), MSB2BITS(size_n),
-			MSB2BITS(ti_n));
-	    else
-		fprintf(stderr,
-			"{realloc_nmv, {%u, %u, %u}, {%u, %u, %u, %u}}\n",
-
-			(unsigned) t_no, (unsigned) ptr, (unsigned) size,
-
-			MSB2BITS(t_no_n), MSB2BITS(ptr_n),
-			MSB2BITS(size_n), MSB2BITS(ti_n));
-		
-	    fflush(stderr);
+	    print_trace_entry(tag,
+			      ct_no, ct_no_n,
+			      t_no, t_no_n,
+			      (Uint) res, res_n,
+			      (Uint) ptr, ptr_n,
+			      size, size_n,
+			      ti, ti_n);
 #endif
 
 #ifdef DEBUG
-	    check_realloc_entry(hdrp, tracep, no_previous_block, moved,
+	    check_realloc_entry(hdrp-1, tracep,
+				tag,
+				ct_no, ct_no_n,
 				t_no, t_no_n,
 				(Uint) res, res_n,
 				(Uint) ptr, ptr_n,
@@ -753,8 +872,104 @@ mtrace_realloc(ErtsAlcType_t n, void *extra, void *ptr, Uint size)
 
 	}
     }
+    erts_mtx_unlock(&mtrace_buf_mutex);
+}
 
-    erts_mtx_unlock(&mtrace_mutex);
+static ERTS_INLINE void
+write_free_entry(byte tag,
+		 ErtsAlcType_t x,
+		 ErtsAlcType_t y,
+		 void *ptr)
+{
+    erts_mtx_lock(&mtrace_buf_mutex);
+    if (erts_mtrace_enabled) {
+	Uint32 ti = get_time_inc();
+
+	if (ti != INVALID_TIME_INC
+	    && MAKE_TBUF_SZ(UI8_SZ + 2*UI16_SZ + UI_SZ + UI32_SZ)) {
+	    Uint16 hdr, t_no = (Uint16) x, ct_no = (Uint16) y;
+	    byte *hdrp;
+	    int t_no_n, ct_no_n = 0, ptr_n, ti_n;
+
+	    *(tracep++) = tag;
+
+	    hdrp = tracep;
+	    tracep += 2;
+
+	    if (tag == ERTS_MT_CRR_FREE_BDY_TAG) {
+		PUT_VSZ_UI16(tracep, ct_no_n, ct_no);
+	    }
+	    PUT_VSZ_UI16(tracep, t_no_n, t_no);
+	    PUT_VSZ_UI(  tracep, ptr_n,  ptr);
+	    PUT_VSZ_UI32(tracep, ti_n,   ti);
+
+	    hdr = ti_n;
+
+	    hdr <<= UI_MSB_EHF_SZ;
+	    hdr |= ptr_n;
+
+	    hdr <<= UI16_MSB_EHF_SZ;
+	    hdr |= t_no_n;
+
+	    if (tag == ERTS_MT_CRR_FREE_BDY_TAG) {
+		hdr <<= UI16_MSB_EHF_SZ;
+		hdr |= ct_no_n;
+	    }
+
+	    WRITE_UI16(hdrp, hdr);
+
+#if TRACE_PRINTOUTS
+	    print_trace_entry(tag,
+			      ct_no, ct_no_n,
+			      t_no, t_no_n,
+			      (Uint) 0, 0,
+			      (Uint) ptr, ptr_n,
+			      0, 0,
+			      ti, ti_n);
+#endif
+
+#ifdef DEBUG
+	    check_free_entry(hdrp-1, tracep,
+			     tag,
+			     ct_no, ct_no_n,
+			     t_no, t_no_n,
+			     (Uint) ptr, ptr_n,
+			     ti, ti_n);
+#endif
+	}
+
+    }
+    erts_mtx_unlock(&mtrace_buf_mutex);
+}
+
+static void *
+mtrace_alloc(ErtsAlcType_t n, void *extra, Uint size)
+{
+    ErtsAllocatorFunctions_t *real_af = (ErtsAllocatorFunctions_t *) extra;
+    void *res;
+
+    erts_mtx_lock(&mtrace_op_mutex);
+
+    res = (*real_af->alloc)(n, real_af->extra, size);
+    write_alloc_entry(ERTS_MT_ALLOC_BDY_TAG, res, n, 0, size);
+
+    erts_mtx_unlock(&mtrace_op_mutex);
+
+    return res;
+}
+
+static void *
+mtrace_realloc(ErtsAlcType_t n, void *extra, void *ptr, Uint size)
+{
+    ErtsAllocatorFunctions_t *real_af = (ErtsAllocatorFunctions_t *) extra;
+    void *res;
+
+    erts_mtx_lock(&mtrace_op_mutex);
+
+    res = (*real_af->realloc)(n, real_af->extra, ptr, size);
+    write_realloc_entry(ERTS_MT_REALLOC_BDY_TAG, res, n, 0, ptr, size);
+
+    erts_mtx_unlock(&mtrace_op_mutex);
 
     return res;
 
@@ -764,57 +979,116 @@ static void
 mtrace_free(ErtsAlcType_t n, void *extra, void *ptr)
 {
     ErtsAllocatorFunctions_t *real_af = (ErtsAllocatorFunctions_t *) extra;
-    Uint32 ti;
 
-    erts_mtx_lock(&mtrace_mutex);
+    erts_mtx_lock(&mtrace_op_mutex);
 
     (*real_af->free)(n, real_af->extra, ptr);
+    write_free_entry(ERTS_MT_FREE_BDY_TAG, n, 0, ptr);
 
-    if (erts_mtrace_enabled) {
-	ti = get_time_inc();
+    erts_mtx_unlock(&mtrace_op_mutex);
+}
 
-	if (ti != INVALID_TIME_INC
-	    && MAKE_TBUF_SZ(2*UI16_SZ + UI_SZ + UI32_SZ)) {
-	    byte *hdrp;
-	    Uint16 hdr;
-	    int ptr_n, ti_n;
 
-	    hdrp = tracep;
-	    tracep += 2;
+void
+erts_mtrace_crr_alloc(void *res, ErtsAlcType_t n, ErtsAlcType_t m, Uint size)
+{
+    write_alloc_entry(ERTS_MT_CRR_ALLOC_BDY_TAG, res, n, m, size);
+}
 
-	    PUT_VSZ_UI(  tracep, ptr_n,  ptr);
-	    PUT_VSZ_UI32(tracep, ti_n,   ti);
+void
+erts_mtrace_crr_realloc(void *res, ErtsAlcType_t n, ErtsAlcType_t m, void *ptr,
+			Uint size)
+{
+    write_realloc_entry(ERTS_MT_CRR_REALLOC_BDY_TAG, res, n, m, ptr, size);
+}
 
-	    hdr = ti_n;
-
-	    hdr <<= UI_MSB_EHF_SZ;
-	    hdr |= ptr_n;
-
-	    hdr <<= TAG_EHF_SZ;
-	    hdr |= ERTS_MT_FREE_TAG;
-
-	    WRITE_UI16(hdrp, hdr);
+void
+erts_mtrace_crr_free(ErtsAlcType_t n, ErtsAlcType_t m, void *ptr)
+{
+    write_free_entry(ERTS_MT_CRR_FREE_BDY_TAG, n, m, ptr);
+}
 
 
 #if TRACE_PRINTOUTS
-	    fprintf(stderr,
-		    "{free, {%u}, {%u, %u}}\n",
-		    (unsigned) ptr, MSB2BITS(ptr_n), MSB2BITS(ti_n));
-		
-	    fflush(stderr);
-#endif
+static void
+print_trace_entry(byte tag,
+		  Uint16 t_no, int t_no_n,
+		  Uint16 ct_no, int ct_no_n,
+		  Uint res, int res_n,
+		  Uint ptr, int ptr_n,
+		  Uint size, int size_n,
+		  Uint32 ti,int ti_n)
+{
+    switch (tag) {
+    case ERTS_MT_ALLOC_BDY_TAG:
+	fprintf(stderr,
+		"{alloc, {%lu, %lu, %lu}, {%u, %u, %u, %u}}\n\r",
 
-#ifdef DEBUG
-	    check_free_entry(hdrp, tracep,
-			     (Uint) ptr, ptr_n,
-			     ti, ti_n);
-#endif
-	}
+		(unsigned long) t_no, (unsigned long) res,
+		(unsigned long) size,
+	    
+		MSB2BITS(t_no_n), MSB2BITS(res_n),
+		MSB2BITS(size_n), MSB2BITS(ti_n));
+	break;
+    case ERTS_MT_REALLOC_BDY_TAG:
+	fprintf(stderr,
+		"{realloc, {%lu, %lu, %lu, %lu}, {%u, %u, %u, %u, %u}}\n\r",
 
+		(unsigned long) t_no, (unsigned long) res,
+		(unsigned long) ptr, (unsigned long) size,
+	    
+		MSB2BITS(t_no_n), MSB2BITS(res_n),
+		MSB2BITS(ptr_n), MSB2BITS(size_n), MSB2BITS(ti_n));
+	break;
+    case ERTS_MT_FREE_BDY_TAG:
+	fprintf(stderr,
+		"{free, {%lu, %lu}, {%u, %u, %u, %u, %u}}\n\r",
+
+		(unsigned long) t_no, (unsigned long) ptr,
+	    
+		MSB2BITS(t_no_n), MSB2BITS(ptr_n), MSB2BITS(ti_n));
+	break;
+    case ERTS_MT_CRR_ALLOC_BDY_TAG:
+	fprintf(stderr,
+		"{crr_alloc, {%lu, %lu, %lu, %lu}, {%u, %u, %u, %u, %u}}\n\r",
+
+		(unsigned long) ct_no, (unsigned long) t_no,
+		(unsigned long) res, (unsigned long) size,
+	    
+		MSB2BITS(ct_no_n), MSB2BITS(t_no_n),
+		MSB2BITS(res_n), MSB2BITS(size_n),
+		MSB2BITS(ti_n));
+	break;
+    case ERTS_MT_CRR_REALLOC_BDY_TAG:
+	fprintf(stderr,
+		"{crr_realloc, {%lu, %lu, %lu, %lu, %lu}, "
+		"{%u, %u, %u, %u, %u, %u}}\n\r",
+
+		(unsigned long) ct_no, (unsigned long) t_no,
+		(unsigned long) res, (unsigned long) ptr,
+		(unsigned long) size,
+	    
+		MSB2BITS(ct_no_n), MSB2BITS(t_no_n),
+		MSB2BITS(res_n), MSB2BITS(ptr_n),
+		MSB2BITS(size_n), MSB2BITS(ti_n));
+	break;
+    case ERTS_MT_CRR_FREE_BDY_TAG:
+	fprintf(stderr,
+		"{crr_free, {%lu, %lu, %lu}, {%u, %u, %u, %u}}\n\r",
+
+		(unsigned long) ct_no, (unsigned long) t_no,
+		(unsigned long) ptr,
+	    
+		MSB2BITS(ct_no_n), MSB2BITS(t_no_n),
+		MSB2BITS(ptr_n), MSB2BITS(ti_n));
+	break;
+    default:
+	fprintf(stderr, "{'\?\?\?'}\n\r");
+	break;
     }
-
-    erts_mtx_unlock(&mtrace_mutex);
 }
+
+#endif /* #if TRACE_PRINTOUTS */
 
 #ifdef DEBUG
 
@@ -857,6 +1131,8 @@ check_ui(Uint16 *hdrp, byte **pp, Uint ui, int msb,
 
 void
 check_alloc_entry(byte *sp, byte *ep,
+		  byte tag,
+		  Uint16 ct_no, int ct_no_n,
 		  Uint16 t_no, int t_no_n,
 		  Uint res, int res_n,
 		  Uint size, int size_n,
@@ -865,12 +1141,13 @@ check_alloc_entry(byte *sp, byte *ep,
     byte *p = sp;
     Uint16 hdr;
 
-    ASSERT((ERTS_MT_ALLOC_TAG & ~TAG_EHF_MSK) == 0);
+    ASSERT(*p == tag);
+    p++;
 
     hdr = GET_UI16(p);
-    ASSERT((hdr & TAG_EHF_MSK) == ERTS_MT_ALLOC_TAG);
-    hdr >>= TAG_EHF_SZ;
 
+    if (tag == ERTS_MT_CRR_ALLOC_BDY_TAG)
+	check_ui(&hdr, &p, ct_no, ct_no_n, UI16_MSB_EHF_MSK, UI16_MSB_EHF_SZ);
     check_ui(&hdr, &p, t_no, t_no_n, UI16_MSB_EHF_MSK, UI16_MSB_EHF_SZ);
     check_ui(&hdr, &p, res,  res_n,  UI_MSB_EHF_MSK,   UI_MSB_EHF_SZ);
     check_ui(&hdr, &p, size, size_n, UI_MSB_EHF_MSK,   UI_MSB_EHF_SZ);
@@ -881,7 +1158,9 @@ check_alloc_entry(byte *sp, byte *ep,
 }
 
 void
-check_realloc_entry(byte *sp, byte *ep, int no_previous_block, int moved,
+check_realloc_entry(byte *sp, byte *ep,
+		    byte tag,
+		    Uint16 ct_no, int ct_no_n,
 		    Uint16 t_no, int t_no_n,
 		    Uint res, int res_n,
 		    Uint ptr, int ptr_n,
@@ -891,26 +1170,16 @@ check_realloc_entry(byte *sp, byte *ep, int no_previous_block, int moved,
     byte *p = sp;
     Uint16 hdr;
 
-    ASSERT((ERTS_MT_REALLOC_MV_TAG & ~TAG_EHF_MSK) == 0);
-    ASSERT((ERTS_MT_REALLOC_NMV_TAG & ~TAG_EHF_MSK) == 0);
+    ASSERT(*p == tag);
+    p++;
 
     hdr = GET_UI16(p);
-    if (no_previous_block) {
-	ASSERT((hdr & TAG_EHF_MSK) == ERTS_MT_REALLOC_NPB_TAG);
-    }
-    if (moved) {
-	ASSERT((hdr & TAG_EHF_MSK) == ERTS_MT_REALLOC_MV_TAG);
-    }
-    else {
-	ASSERT((hdr & TAG_EHF_MSK) == ERTS_MT_REALLOC_NMV_TAG);
-    }
-    hdr >>= TAG_EHF_SZ;
 
-    if (no_previous_block)
-	check_ui(&hdr, &p, t_no, t_no_n, UI16_MSB_EHF_MSK, UI16_MSB_EHF_SZ);
+    if (tag == ERTS_MT_CRR_REALLOC_BDY_TAG)
+	check_ui(&hdr, &p, ct_no, ct_no_n, UI16_MSB_EHF_MSK, UI16_MSB_EHF_SZ);
+    check_ui(&hdr, &p, t_no, t_no_n, UI16_MSB_EHF_MSK, UI16_MSB_EHF_SZ);
     check_ui(&hdr, &p, res,  res_n,  UI_MSB_EHF_MSK,   UI_MSB_EHF_SZ);
-    if (moved)
-	check_ui(&hdr, &p, ptr,  ptr_n,  UI_MSB_EHF_MSK,   UI_MSB_EHF_SZ);
+    check_ui(&hdr, &p, ptr,  ptr_n,  UI_MSB_EHF_MSK,   UI_MSB_EHF_SZ);
     check_ui(&hdr, &p, size, size_n, UI_MSB_EHF_MSK,   UI_MSB_EHF_SZ);
     check_ui(&hdr, &p, ti,   ti_n,   UI32_MSB_EHF_MSK, UI32_MSB_EHF_SZ);
 
@@ -920,18 +1189,23 @@ check_realloc_entry(byte *sp, byte *ep, int no_previous_block, int moved,
 
 void
 check_free_entry(byte *sp, byte *ep,
+		 byte tag,
+		 Uint16 ct_no, int ct_no_n,
+		 Uint16 t_no, int t_no_n,
 		 Uint ptr, int ptr_n,
 		 Uint32 ti,int ti_n)
 {
     byte *p = sp;
     Uint16 hdr;
 
-    ASSERT((ERTS_MT_FREE_TAG & ~TAG_EHF_MSK) == 0);
+    ASSERT(*p == tag);
+    p++;
 
     hdr = GET_UI16(p);
-    ASSERT((hdr & TAG_EHF_MSK) == ERTS_MT_FREE_TAG);
-    hdr >>= TAG_EHF_SZ;
 
+    if (tag == ERTS_MT_CRR_FREE_BDY_TAG)
+	check_ui(&hdr, &p, ct_no, ct_no_n, UI16_MSB_EHF_MSK, UI16_MSB_EHF_SZ);
+    check_ui(&hdr, &p, t_no, t_no_n, UI16_MSB_EHF_MSK, UI16_MSB_EHF_SZ);
     check_ui(&hdr, &p, ptr,  ptr_n,  UI_MSB_EHF_MSK,   UI_MSB_EHF_SZ);
     check_ui(&hdr, &p, ti,   ti_n,   UI32_MSB_EHF_MSK, UI32_MSB_EHF_SZ);
 
@@ -948,11 +1222,10 @@ check_time_inc_entry(byte *sp, byte *ep,
     byte *p = sp;
     Uint16 hdr;
 
-    ASSERT((ERTS_MT_TIME_INC_TAG & ~TAG_EHF_MSK) == 0);
+    ASSERT(*p == ERTS_MT_TIME_INC_BDY_TAG);
+    p++;
 
     hdr = GET_UI16(p);
-    ASSERT((hdr & TAG_EHF_MSK) == ERTS_MT_TIME_INC_TAG);
-    hdr >>= TAG_EHF_SZ;
 
     check_ui(&hdr, &p, secs,  secs_n,  UI32_MSB_EHF_MSK, UI32_MSB_EHF_SZ);
     check_ui(&hdr, &p, usecs, usecs_n, UI32_MSB_EHF_MSK, UI32_MSB_EHF_SZ);

@@ -775,7 +775,7 @@ gzdeflate_buffer(start, size)
 	driver_free_binary(bin);
 	return NULL;	
     }
-    crc = crc32(crc, start, size);
+    crc = crc32(crc, (unsigned char*)start, size);
     ptr = c_stream.next_out;
     szIn = c_stream.total_in;
 
@@ -819,7 +819,7 @@ gzbufopen(bytes, size)
     s->stream.zalloc = (alloc_func)0;
     s->stream.zfree = (free_func)0;
     s->stream.opaque = (voidpf)0;
-    s->stream.next_in = s->inbuf = bytes;
+    s->stream.next_in = s->inbuf = (unsigned char*)bytes;
     s->stream.next_out = s->outbuf = Z_NULL;
     s->stream.avail_in = size;
     s->stream.avail_out = 0;

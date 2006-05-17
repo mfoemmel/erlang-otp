@@ -38,6 +38,7 @@ MODULES=hipe_arm \
 	hipe_arm_pp \
 	hipe_arm_ra \
 	hipe_arm_ra_finalise \
+	hipe_arm_ra_ls \
 	hipe_arm_ra_naive \
 	hipe_arm_ra_postconditions \
 	hipe_arm_registers \

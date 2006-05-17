@@ -1,0 +1,9 @@
+	This is DIALYZER version 1.3.0
+	DIALYZER is a DIscrepany AnaLYZer for ERlang programs.
+
+	Copyright (C) Tobias Lindahl <tobiasl@it.uu.se>
+		      Kostis Sagonas <kostis@it.uu.se>
+
+DIALYZER is distributed together with its complete source code and its use
+is free for all non-commercial uses. Its use in commercial projects requires
+an explicit permission by the copyright holders.

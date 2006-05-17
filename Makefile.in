@@ -52,8 +52,13 @@ exec_prefix = @exec_prefix@
 #INSTALL_PREFIX =
 # Naah...override `prefix' instead.
 
-# The directory in which user executables (erl, erlc and erl_call) are put
+# The directory in which user executables (ERL_BASE_PUB_FILES) are put
 BINDIR      = $(INSTALL_PREFIX)@bindir@
+
+#
+# Erlang base public files
+#
+ERL_BASE_PUB_FILES=erl erlc epmd run_erl to_erl dialyzer 
 
 # The directory which will contain installed Erlang version.
 # (ILIBDIR is supposed to be LIBDIR *without* the install prefix)
@@ -144,7 +149,7 @@ endif
 #   * use the bootstrap erl and erlc to build all the libs
 #
 all: all_bootstraps \
-     libs local_setup
+     libs local_setup dialyzer
 
 # With all bootstraps we mean all bootstrapping that is done when
 # the system is delivered in open source, the primary
@@ -177,6 +182,9 @@ ifeq ($(OTP_SMALL_BUILD),true)
 	cd $(ERL_TOP)/lib  && $(MAKE) TESTROOT=$(RELEASE_ROOT) release
 else
 	cd $(ERL_TOP)/lib  && $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release
+ifneq ($(findstring vxworks,$(TARGET)),vxworks)
+	cd $(ERL_TOP)/lib/dialyzer && $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release
+endif
 endif
 	cd $(ERL_TOP)/erts && $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release
 
@@ -188,6 +196,7 @@ ifeq ($(OTP_SMALL_BUILD),true)
 	cd $(ERL_TOP)/lib  && $(MAKE) TESTROOT=$(RELEASE_ROOT) release_docs
 else
 	cd $(ERL_TOP)/lib  && $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release_docs
+	cd $(ERL_TOP)/lib/dialyzer && $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release_docs
 endif
 	cd $(ERL_TOP)/erts && $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release_docs
 
@@ -221,6 +230,13 @@ hlib:
 	cd lib/hipe && \
 	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 		$(MAKE) opt BUILD_ALL=true
+
+dialyzer:
+ifneq ($(OTP_SMALL_BUILD),true)
+	cd lib/dialyzer && \
+	ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
+	    $(MAKE) opt BUILD_ALL=true
+endif
 
 dep depend:
 	cd erts/emulator && ERL_TOP=$(ERL_TOP) $(MAKE) generate depend
@@ -517,23 +533,22 @@ else
 	cd lib && \
 	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 	  $(MAKE) TESTROOT=$(ERLANG_LIBDIR) BUILD_ALL=true release 
+	cd lib/dialyzer && \
+	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
+	  $(MAKE) TESTROOT=$(ERLANG_LIBDIR) BUILD_ALL=true release 
 endif
 
 install.Install:
 	cd $(ERLANG_LIBDIR) && ./Install -minimal $(ERLANG_LIBDIR)
 
 #
-# Erlang base public files
+# Install erlang base public files
 #
 install.bin:
-	rm -f $(BINDIR)/erl $(BINDIR)/erlc \
-	      $(BINDIR)/ecc $(BINDIR)/elink $(BINDIR)/ear $(BINDIR)/escript
-	${LN_S} $(ERLANG_BINDIR)/erl      $(BINDIR)/erl
-	${LN_S} $(ERLANG_BINDIR)/erlc     $(BINDIR)/erlc
-	${LN_S} $(ERLANG_BINDIR)/ecc      $(BINDIR)/ecc
-	${LN_S} $(ERLANG_BINDIR)/elink    $(BINDIR)/elink
-	${LN_S} $(ERLANG_BINDIR)/ear      $(BINDIR)/ear
-	${LN_S} $(ERLANG_BINDIR)/escript  $(BINDIR)/escript
+	for file in $(ERL_BASE_PUB_FILES); do \
+		rm -f $(BINDIR)/$$file; \
+		${LN_S} $(ERLANG_BINDIR)/$$file $(BINDIR)/$$file; \
+	done
 
 #
 # Directories needed before we can install
@@ -554,6 +569,7 @@ clean:
 	find . -type f -name SKIP -print | xargs $(RM)
 	cd erts && ERL_TOP=$(ERL_TOP) $(MAKE) clean
 	cd lib  && ERL_TOP=$(ERL_TOP) $(MAKE) clean BUILD_ALL=true
+	cd lib/dialyzer && ERL_TOP=$(ERL_TOP) $(MAKE) clean
 
 #
 # Just wipe out emulator, not libraries

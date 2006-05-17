@@ -112,9 +112,6 @@ init([]) ->
     Threshold = os_mon:get_env(disksup, disk_almost_full_threshold),
     Timeout = os_mon:get_env(disksup, disk_space_check_interval),
 
-    %% Clear any alarms set by a previous incarnation of disksup
-    clear_alarms(),
-
     %% Initiation first disk check
     self() ! timeout,
 
@@ -163,7 +160,7 @@ terminate(_Reason, State) ->
     end,
     ok.
 
-%% os_mon-2.0
+%% os_mon-2.0.1
 %% For live downgrade to/upgrade from os_mon-1.8[.1]
 code_change(Vsn, PrevState, "1.8") ->
     case Vsn of
@@ -327,12 +324,12 @@ clear_alarm(AlarmId) ->
     end.
 
 clear_alarms() ->
-    lists:foreach(fun({{disk_almost_full, _MntOn} = AlarmId, _Descr}) ->
+    lists:foreach(fun({{disk_almost_full, _MntOn} = AlarmId, set}) ->
 			  alarm_handler:clear_alarm(AlarmId);
-		     (_Alarm) ->
+		     (_Other) ->
 			  ignore
 		  end,
-		  alarm_handler:get_alarms()).
+		  get()).
 
 %%--Auxiliary-----------------------------------------------------------
 

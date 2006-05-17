@@ -43,7 +43,7 @@
 
 %%
 %% Type is a list of
-%%  protected | private | public
+%%  protected | private
 %%  acyclic | cyclic
 %%
 %%  default is [cyclic,protected]
@@ -74,8 +74,6 @@ check_type([protected | Ts], _, L) ->
     check_type(Ts, protected, L);
 check_type([private | Ts], _, L) ->
     check_type(Ts, private, L);
-check_type([public | Ts], _, L) ->
-    check_type(Ts, public, L);
 check_type([T | _], _, _) -> 
     {error, {unknown_type, T}};
 check_type([], A, L) -> {A,L}.
@@ -380,7 +378,7 @@ get_path(G, V1, V2) ->
 
 %%
 %% prune_short_path (evaluate conditions on path)
-%% short : if path is to short
+%% short : if path is too short
 %% ok    : if path is ok
 %%
 prune_short_path(Counter, Min) when Counter < Min ->

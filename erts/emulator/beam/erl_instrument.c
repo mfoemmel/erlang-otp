@@ -56,13 +56,11 @@ typedef struct {
     Uint max_blocks_ever;
 } Stat_t;
 
-static ethr_mutex instr_mutex;
-static ethr_mutex instr_x_mutex;
+static erts_mtx_t instr_mutex;
+static erts_mtx_t instr_x_mutex;
 
 int erts_instr_memory_map;
 int erts_instr_stat;
-
-static Eterm current_pid;
 
 static ErtsAllocatorFunctions_t real_allctrs[ERTS_ALC_A_MAX+1];
 
@@ -367,7 +365,7 @@ map_stat_alloc(ErtsAlcType_t n, void *extra, Uint size)
 
 	mb->size = size;
 	mb->type_no = n;
-	mb->pid = current_pid;
+	mb->pid = erts_get_current_pid();
 
 	mb->prev = NULL;
 	mb->next = mem_anchor;
@@ -411,7 +409,7 @@ map_stat_realloc(ErtsAlcType_t n, void *extra, void *ptr, Uint size)
 
 	mb->size = size;
 	mb->type_no = n;
-	mb->pid = current_pid;
+	mb->pid = erts_get_current_pid();
 
 	stat_upd_realloc(n, size, old_size);
 
@@ -481,30 +479,13 @@ map_stat_free(ErtsAlcType_t n, void *extra, void *ptr)
 
 }
 
-void
-erts_instr_set_curr_proc(Eterm pid)
-{
-    erts_mtx_lock(&instr_mutex);
-    current_pid = pid;
-    erts_mtx_unlock(&instr_mutex);
-}
-
-void
-erts_instr_reset_curr_proc(void)
-{
-    erts_mtx_lock(&instr_mutex);
-    current_pid = THE_NON_VALUE;
-    erts_mtx_unlock(&instr_mutex);
-}
-
 static void dump_memory_map_to_stream(FILE *fp)
 {
     ErtsAlcType_t n;
     MapStatBlock_t *bp;
-
-    if (!erts_writing_erl_crash_dump) {
+    int lock = !ERTS_IS_CRASH_DUMPING;
+    if (lock)
 	erts_mtx_lock(&instr_mutex);
-    }
 
     /* Write header */
 
@@ -561,9 +542,8 @@ static void dump_memory_map_to_stream(FILE *fp)
 		    (Uint) bp->size);
     }
 
-    if (!erts_writing_erl_crash_dump) {
+    if (lock)
 	erts_mtx_unlock(&instr_mutex);
-    }
 }
 
 int erts_instr_dump_memory_map_to_fd(int fd)
@@ -832,9 +812,8 @@ Eterm
 erts_instr_get_stat(Process *proc, Eterm what, int begin_max_period)
 {
     int i, len, max, min, allctr;
-    byte *bufp;
     Eterm *names, *values, res;
-    Uint arr_size, buf_size, stat_size, hsz, *hszp, *hp, **hpp;
+    Uint arr_size, stat_size, hsz, *hszp, *hp, **hpp;
     Stat_t *stat_src, *stat;
 
     if (!erts_instr_stat)
@@ -887,39 +866,14 @@ erts_instr_get_stat(Process *proc, Eterm what, int begin_max_period)
 	return THE_NON_VALUE;
     }
 
-    bufp = tmp_buf;
-    buf_size = TMP_BUF_SIZE;
-
-    if (buf_size >= stat_size) {
-	stat = (Stat_t *) bufp;
-	bufp += stat_size;
-	buf_size -= stat_size;
-	ASSERT(stat_size % sizeof(Uint) == 0);
-    }
-    else
-	stat = (Stat_t *) erts_alloc(ERTS_ALC_T_TMP, stat_size);
+    stat = (Stat_t *) erts_alloc(ERTS_ALC_T_TMP, stat_size);
 
     arr_size = (max - min + 1)*sizeof(Eterm);
 
-    if (allctr) {
-	if (buf_size >= arr_size) {
-	    names = (Eterm *) bufp;
-	    bufp += arr_size;
-	    buf_size -= arr_size;
-	    ASSERT(arr_size % sizeof(Uint) == 0);
-	}
-	else
-	    names = (Eterm *) erts_alloc(ERTS_ALC_T_TMP, arr_size);
-    }
+    if (allctr)
+	names = (Eterm *) erts_alloc(ERTS_ALC_T_TMP, arr_size);
 
-    if (buf_size >= arr_size) {
-        values = (Eterm *) bufp;
-	bufp += arr_size;
-	buf_size -= arr_size;
-	ASSERT(arr_size % sizeof(Uint) == 0);
-    }
-    else
-	values = (Eterm *) erts_alloc(ERTS_ALC_T_TMP, arr_size);
+    values = (Eterm *) erts_alloc(ERTS_ALC_T_TMP, arr_size);
 
     erts_mtx_lock(&instr_mutex);
 
@@ -973,13 +927,9 @@ erts_instr_get_stat(Process *proc, Eterm what, int begin_max_period)
 	goto restart_bld;
     }
 
-    if ((byte *) stat > tmp_buf + TMP_BUF_SIZE || (byte *) stat < tmp_buf)
-	erts_free(ERTS_ALC_T_TMP, (void *) stat);
-    if ((byte *) values > tmp_buf + TMP_BUF_SIZE || (byte *) values < tmp_buf)
-	erts_free(ERTS_ALC_T_TMP, (void *) values);
-    if (allctr
-	&& ((byte *) names > tmp_buf + TMP_BUF_SIZE
-	    || (byte *) names < tmp_buf))
+    erts_free(ERTS_ALC_T_TMP, (void *) stat);
+    erts_free(ERTS_ALC_T_TMP, (void *) values);
+    if (allctr)
 	erts_free(ERTS_ALC_T_TMP, (void *) names);
 
     return res;
@@ -1151,12 +1101,9 @@ erts_instr_get_type_info(Process *proc)
     if (!am_c)
 	init_am_c();
 
-    if (TMP_BUF_SIZE >= (ERTS_ALC_N_MAX-ERTS_ALC_N_MIN+1)*sizeof(Eterm))
-	tpls = (Eterm *) tmp_buf;
-    else
-	tpls = (Eterm *) erts_alloc(ERTS_ALC_T_TMP,
-				    (ERTS_ALC_N_MAX-ERTS_ALC_N_MIN+1)
-				    * sizeof(Eterm));
+    tpls = (Eterm *) erts_alloc(ERTS_ALC_T_TMP,
+				(ERTS_ALC_N_MAX-ERTS_ALC_N_MIN+1)
+				* sizeof(Eterm));
     hsz = 0;
     hszp = &hsz;
     hpp = NULL;
@@ -1188,8 +1135,7 @@ erts_instr_get_type_info(Process *proc)
 	goto restart_bld;
     }
 
-    if (tpls != (Eterm *) tmp_buf)
-	erts_free(ERTS_ALC_T_TMP, tpls);
+    erts_free(ERTS_ALC_T_TMP, tpls);
 
     return res;
 }
@@ -1213,11 +1159,10 @@ erts_instr_init(int stat, int map_stat)
 
     stats = erts_alloc(ERTS_ALC_T_INSTR_INFO, sizeof(struct stats_));
 
-    erts_mtx_init(&instr_mutex);
+    erts_mtx_init(&instr_mutex, "instr");
     erts_mtx_set_forksafe(&instr_mutex);
 
     mem_anchor = NULL;
-    current_pid = THE_NON_VALUE;
 
     /* Install instrumentation functions */
     ASSERT(sizeof(erts_allctrs) == sizeof(real_allctrs));
@@ -1238,7 +1183,7 @@ erts_instr_init(int stat, int map_stat)
 
     if (map_stat) {
 
-	erts_mtx_init(&instr_x_mutex);
+	erts_mtx_init(&instr_x_mutex, "instr_x");
 	erts_mtx_set_forksafe(&instr_x_mutex);
 
 	erts_instr_memory_map = 1;

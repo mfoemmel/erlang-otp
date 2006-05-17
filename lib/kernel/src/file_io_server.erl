@@ -66,7 +66,8 @@ do_start(Spawn, Owner, FileName, ModeList) ->
 			      {list,[binary|ModeList]}
 		      end,
 		  case ?PRIM_FILE:open(FileName, Opts) of
-		      {error, Reason} ->
+		      {error, Reason} = Error ->
+			  Self ! {Ref, Error},
 			  exit(Reason);
 		      {ok, Handle} ->
 			  %% XXX must I handle R6 nodes here?
@@ -82,6 +83,10 @@ do_start(Spawn, Owner, FileName, ModeList) ->
 	  end),
     Mref = erlang:monitor(process, Pid),
     receive
+	{Ref, {error, _Reason} = Error} ->
+	    erlang:demonitor(Mref),
+	    receive {'DOWN', Mref, _, _, _} -> ok after 0 -> ok end,
+	    Error;
 	{Ref, ok} ->
 	    erlang:demonitor(Mref),
 	    receive

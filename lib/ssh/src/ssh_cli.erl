@@ -127,10 +127,23 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-handle_info({ssh_cm, CM, {open, Channel, {session}}}, State) ->
-    ?dbg(true, "session open: self()=~p CM=~p Channel=~p\n",
-	 [self(), CM, Channel]),
-    Group = group:start(self(), State#state.shell, []),
+handle_info({ssh_cm, CM, {open, Channel, _RemoteChannel, {session}}}, State) ->
+    Shell = State#state.shell,
+    ?dbg(true, "session open: self()=~p CM=~p Channel=~p Shell=~p\n",
+	 [self(), CM, Channel, Shell]),
+    ShellFun = case is_function(Shell) of
+		   true ->
+		       case erlang:fun_info(Shell, arity) of
+			   {arity, 1} ->
+			       User = ssh_userauth:get_user_from_cm(CM),
+			       fun() -> Shell(User) end;
+			   _ ->
+			       Shell
+		       end;
+		   _ ->
+		       Shell
+	       end,
+    Group = group:start(self(), ShellFun, []),
     process_flag(trap_exit, true),
     {noreply,
      State#state{cm = CM, channel = Channel,
@@ -143,12 +156,17 @@ handle_info({ssh_cm, _CM, {pty, _Channel, _WantReply, Pty}}, State) ->
 handle_info({ssh_cm, _CM,
 	     {window_change, _Channel, Width, Height, PixWidth, PixHeight}},
 	    State) ->
+    erlang:display(?LINE),
     #state{buf = Buf, pty = Pty, cm = CM, channel = Channel} = State,
+    erlang:display(?LINE),
     NewPty = Pty#ssh_pty{width = Width, height = Height,
 			 pixel_width = PixWidth,
 			 pixel_height = PixHeight},
+    erlang:display(?LINE),
     {Chars, NewBuf} = io_request({window_change, Pty}, Buf, NewPty),
+    erlang:display(?LINE),
     write_chars(CM, Channel, Chars),
+    erlang:display(?LINE),
     {noreply, State#state{pty = NewPty, buf = NewBuf}};
 handle_info({Group, Req}, State) when Group==State#state.group ->
     ?dbg(?DBG_IO_REQUEST, "io_request: ~w\n", [Req]),
@@ -161,9 +179,15 @@ handle_info({ssh_cm, _CM, {shell}}, State) ->
 handle_info({ssh_cm, _CM, {exec, Cmd}}, State) ->
     State#state.group ! {self(), {data, Cmd ++ "\n"}},
     {noreply, State};
+handle_info({get_cm, From}, #state{cm=CM} = State) ->
+    From ! {From, cm, CM},
+    {noreply, State};
 handle_info({ssh_cm, _CM, {eof, _Channel}}, State) ->
     {stop, normal, State};
-handle_info({'EXIT', Group, normal}, State) when Group==State#state.group ->
+handle_info({'EXIT', Group, normal},
+	    #state{cm=CM, channel=Channel, group=Group} = State) ->
+    ssh_cm:close(CM, Channel),
+    ssh_cm:stop(CM),
     {stop, normal, State};
 handle_info(Info, State) ->
     ?dbg(true, "~p:handle_info: BAD info ~p\n(State ~p)\n", [?MODULE, Info, State]),
@@ -192,7 +216,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%% io_request, handle io requests from the user process
 io_request({window_change, OldTty}, Buf, Tty) ->
-    window_change(Buf, OldTty, Tty);
+    window_change(Tty, OldTty, Buf);
 io_request({put_chars, Cs}, Buf, Tty) ->
     put_chars(bin_to_list(Cs), Buf, Tty);
 io_request({insert_chars, Cs}, Buf, Tty) ->
@@ -294,10 +318,10 @@ delete_chars(N, {Buf, BufTail, Col}, Tty) -> % N < 0
 
 %%% Window change, redraw the current line (and clear out after it
 %%% if current window is wider than previous)
-window_change({Buf, BufTail, Col}, OldTty, Tty)
+window_change(Tty, OldTty, Buf)
   when OldTty#ssh_pty.width == Tty#ssh_pty.width ->
-    {Buf, BufTail, Col};
-window_change({Buf, BufTail, Col}, OldTty, Tty) ->
+    {[], Buf};
+window_change(Tty, OldTty, {Buf, BufTail, Col}) ->
     M1 = move_cursor(Col, 0, OldTty),
     N = max(Tty#ssh_pty.width - OldTty#ssh_pty.width, 0) * 2,
     S = lists:reverse(Buf, [BufTail | lists:duplicate(N, $ )]),

@@ -45,6 +45,7 @@ core=
 GDB=
 GDBBP=
 TYPE=
+EMU_TYPE=
 debug=
 
 # Default rootdir
@@ -97,6 +98,16 @@ while [ $# -gt 0 ]; do
 	"-nox")
 	    shift
 	    unset DISPLAY
+	    ;;
+	"-smp")
+	    shift
+	    cargs="$cargs -smp"
+	    EMU_TYPE=.smp
+	    ;;
+	"-hybrid")
+	    shift
+	    cargs="$cargs -hybrid"
+	    EMU_TYPE=.hybrid
 	    ;;
 	"-debug")
 	    shift
@@ -154,7 +165,7 @@ PATH=$BINDIR:$ROOTDIR/bin:$PATH
 EXEC=$BINDIR/erlexec
 
 PROGNAME="$PROGNAME $cargs"
-EMU=$EMU$TYPE
+EMU=$EMU$TYPE$EMU_TYPE
 
 if [ "x$GDB" = "x" ]; then
     exec $EXEC $xargs ${1+"$@"}

@@ -355,7 +355,7 @@ token([$<|File], L, [{command,"include"}|Result], Gen, BsNl) ->
 %% CR (just remove these)
 %%---------------------------------------
 token([$\r|File], L, Result, Gen, BsNl) ->
-    Bs = lists:duplicate(BsNl+1,{nl,L}),
+%    Bs = lists:duplicate(BsNl+1,{nl,L}),
     token(File, L, Result, Gen, BsNl); %% Bs or BsNl?
 
 %%---------------------------------------
@@ -1269,8 +1269,8 @@ if_zero([{number,Num}, space]) ->
 if_zero([{number,Num} | Rem]) ->
     {Removed, Rem2, Nl} = read_to_nl(Rem),
     {ok, Rem2, Num, Removed, Nl};
-if_zero([{number,Num}, {nl,_X} | Rem]) ->
-    {ok, Rem, Num, [], 1};
+%if_zero([{number,Num}, {nl,_X} | Rem]) ->
+%    {ok, Rem, Num, [], 1};
 if_zero(Rem) ->
     {Removed, Rem2, Nl} = read_to_nl(Rem),
     {error, Rem2, Removed, Nl}.

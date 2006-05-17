@@ -19,7 +19,7 @@
 #ifndef __ERLFUNTABLE_H__
 #define __ERLFUNTABLE_H__
 
-extern Hash erts_fun_table;
+#include "erl_smp.h"
 
 /*
  * Fun entry.
@@ -40,7 +40,7 @@ typedef struct erl_fun_entry {
 
     Uint arity;			/* The arity of the fun. */
     Eterm module;		/* Tagged atom for module. */
-    int refc;			/* Reference count: One for code + one for each
+    erts_refc_t refc;		/* Reference count: One for code + one for each
 				   fun object in each process. */
 } ErlFunEntry;
 
@@ -52,10 +52,8 @@ typedef struct erl_fun_entry {
 
 typedef struct erl_fun_thing {
     Eterm thing_word;		/* Subtag FUN_SUBTAG. */
-#ifndef SHARED_HEAP
 #ifndef HYBRID /* FIND ME! */
     struct erl_fun_thing* next;	/* Next fun in mso list. */
-#endif
 #endif
     ErlFunEntry* fe;		/* Pointer to fun entry. */
 #ifdef HIPE
@@ -72,7 +70,8 @@ typedef struct erl_fun_thing {
 #define ERL_FUN_SIZE ((sizeof(ErlFunThing)/sizeof(Eterm))-1)
 
 void erts_init_fun_table(void);
-void erts_fun_info(CIO to);
+void erts_fun_info(int, void *);
+int erts_fun_table_sz(void);
 
 ErlFunEntry* erts_put_fun_entry(Eterm mod, int uniq, int index);
 ErlFunEntry* erts_get_fun_entry(Eterm mod, int uniq, int index);
@@ -83,12 +82,10 @@ ErlFunEntry* erts_get_fun_entry2(Eterm mod, int old_uniq, int old_index,
 				byte* uniq, int index, int arity);
 
 void erts_erase_fun_entry(ErlFunEntry* fe);
-#ifndef SHARED_HEAP
 #ifndef HYBRID /* FIND ME! */
 void erts_cleanup_funs(ErlFunThing* funp);
 #endif
-#endif
 void erts_cleanup_funs_on_purge(Eterm* start, Eterm* end);
-void erts_dump_fun_entries(CIO fd);
+void erts_dump_fun_entries(int, void *);
 
 #endif

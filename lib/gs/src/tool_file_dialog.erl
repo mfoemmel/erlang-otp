@@ -18,7 +18,8 @@
 -module(tool_file_dialog).
 -include_lib("kernel/include/file.hrl").
 
--compile(export_all).
+-export([start/1]).
+-export([open_save_init/2, multiselect_init/2]).
 
 -define(WIDTH,250).
 -define(HEIGHT,400).

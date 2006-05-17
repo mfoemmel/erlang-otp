@@ -86,9 +86,7 @@ atom x86_abs_pcrel
 atom load_fe
 
 # atoms used by hipe_bifs:primop_address/1
-atom erl_fp_exception
 atom erts_mb
-atom erts_global_mso
 
 atom suspend_msg
 atom suspend_msg_timeout
@@ -97,6 +95,10 @@ atom gc_1
 atom hipe_apply
 atom rethrow
 atom find_na_or_make_stub
+atom atomic_inc
+atom clear_timeout
+atom check_get_msg
+atom next_msg
 atom select_msg
 atom set_timeout
 atom cmp_2
@@ -123,3 +125,6 @@ atom bs_put_float
 atom bs_put_big_integer
 atom bs_put_small_float
 atom bs_allocate
+atom bs_get_integer_2
+atom bs_get_float_2
+atom bs_get_binary_2

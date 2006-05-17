@@ -40,7 +40,6 @@
 -export([open_mode/2]).
 
 %% API
--export([get_file_info/2]).
 -export([open/3, opendir/2, close/2, readdir/2, pread/4, read/3,
 	 apread/4, aread/3, pwrite/4, write/3, apwrite/4, awrite/3,
 	 position/3, real_path/2, read_file_info/2, get_file_info/2,
@@ -542,7 +541,7 @@ handle_info({ssh_cm, CM, {data,Channel,Type,Data}}, St) ->
 	    St1 = handle_reply(St,CM,Channel,<<Data0/binary,Data/binary>>),
 	    {noreply, St1};
        true ->
-	    io:format("STDERR: ~s\n", [binary_to_list(Data)]),
+	    error_logger:format("ssh: STDERR: ~s\n", [binary_to_list(Data)]),
 	    {noreply, St}
     end;
 handle_info({ssh_cm, CM, {exit_signal,Channel,_SIG,Err,_Lang}},St) ->
@@ -563,8 +562,8 @@ handle_info({ssh_cm, CM, {closed, Channel}},St) ->
     St1 = reply_all(St, CM, Channel, {error, closed}),
     ?dbg(true, "handle_info: closed\n", []),
     {stop, normal, St1};
-handle_info(Info, State) ->
-    io:format("sftp: got info ~p\n", [Info]),
+handle_info(_Info, State) ->
+    ?dbg(true, "sftp: got info ~p\n", [_Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -688,8 +687,8 @@ handle_reply(St, Cm, Channel, Data) ->
     case Data of
 	<<?UINT32(Len), RData:Len/binary, RBuf/binary>> ->
 	    case catch ssh_xfer:xf_reply(?XF(St), RData) of
-		{'EXIT', Reason} ->
-		    io:format("handle_reply: error ~p\n", [Reason]),
+		{'EXIT', _Reason} ->
+		    ?dbg(true, "handle_reply: error ~p\n", [_Reason]),
 		    handle_reply(St, Cm, Channel, RBuf);
 		XfReply={_, ReqID, _} ->
 		    St1 = handle_req_reply(St, ReqID, XfReply),
@@ -702,8 +701,8 @@ handle_reply(St, Cm, Channel, Data) ->
 handle_req_reply(St, ReqID, XfReply) ->
     case lists:keysearch(ReqID, 1, St#state.req_list) of
 	false ->
-	    io:format("handle_req_reply: req_id=~p not found\n",
-		      [ReqID]),
+	    error_logger:format("handle_req_reply: req_id=~p not found\n",
+				[ReqID]),
 	    St;
 	{value,{_,Fun}} ->
 	    List = lists:keydelete(ReqID, 1, St#state.req_list),

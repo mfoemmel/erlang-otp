@@ -132,13 +132,10 @@ statements([Expr], Table, L, UV) ->
 	     {_Type, edge_closure} -> 
 		 %% Fake a closure usage, just to make sure it is destroyed.
 		 E2 = {fun graph_access/2, E1, E1},
-		 {fun graph_quote/1, E2};
+                 {fun(_E) -> 'closure()' end, E2};
 	     _Else -> E1
 	 end,
     {ok, UV, stats(L, NE)}.
-
-graph_quote(_E) ->
-    'closure()'.
 
 stats([{put, V, X} | Ss], E) ->
     stats(Ss, {put, V, X, E});

@@ -46,14 +46,6 @@
 
 
 
--record(process_variables, {parent_pid,
-			    grid_parent_id,
-			    grid_params = #grid_params{},
-			    mark_params = #mark_params{}
-			   }).
-
-
-
 -record(grid_params, {bg_frame,
 		      fg_frame,
 		      grid_width,
@@ -93,3 +85,8 @@
 
 
 
+-record(process_variables, {parent_pid,
+			    grid_parent_id,
+			    grid_params = #grid_params{},
+			    mark_params = #mark_params{}
+			   }).

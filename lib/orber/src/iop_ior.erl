@@ -239,10 +239,20 @@ get_key({Module, Type, Key, _UserDef, OrberDef, Flags}) ->
 	    {'internal_registered', {pseudo, Key}, OrberDef, Flags, Module};
 	atom(Key) ->
 	    {'internal_registered', Key, OrberDef, Flags, Module}
-    end.
+    end;
+get_key(What) ->
+    orber:dbg("[~p] iop_ior:get_key(~p); Invalid IOR", 
+	      [?LINE, What], ?DEBUG_LEVEL),
+    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
+    
 
 get_key(#'IOP_IOR'{profiles=P}, Exclude)  ->
-    get_key_1(P, true, 0, Exclude, #host_data{}).
+    get_key_1(P, true, 0, Exclude, #host_data{});
+get_key(What, _Exclude) ->
+    orber:dbg("[~p] iop_ior:get_key(~p); Invalid IOR", 
+	      [?LINE, What], ?DEBUG_LEVEL),
+    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
+
 
 get_key_1([], false, _, _, _)  ->
     orber:dbg("[~p] iop_ior:get_key_1([]); bad object reference, profile not found.", 

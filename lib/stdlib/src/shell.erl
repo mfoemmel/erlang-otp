@@ -326,6 +326,11 @@ expand_expr({op,L,Op,Larg,Rarg}, C) ->
     {op,L,Op,expand_expr(Larg, C),expand_expr(Rarg, C)};
 expand_expr({remote,L,M,F}, C) ->
     {remote,L,expand_expr(M, C),expand_expr(F, C)};
+expand_expr({'fun',L,{clauses,Cs}}, C) ->
+    {'fun',L,{clauses,expand_exprs(Cs, C)}};
+expand_expr({clause,L,H,G,B}, C) ->
+    %% Could expand H and G, but then erl_eval has to be changed as well.
+    {clause,L,H, G, expand_exprs(B, C)};
 expand_expr(E, _C) ->	 % Constants, including binaries.
     E.
 
@@ -519,6 +524,8 @@ used_records({call,_,{remote,_,{atom,_,erlang},{atom,_,is_record}},
     {name, Name, A};
 used_records({call,_,{atom,_,record_info},[A,{atom,_,Name}]}) ->
     {name, Name, A};
+used_records({call,Line,{tuple,_,[M,F]},As}) ->
+    used_records({call,Line,{remote,Line,M,F},As});
 used_records(T) when is_tuple(T) ->
     {expr, tuple_to_list(T)};
 used_records(E) ->
@@ -656,7 +663,7 @@ expand_records(UsedRecords, E0) ->
     E = prep_rec(E0),
     Forms = RecordDefs ++ [{function,L,foo,0,[{clause,L,[],[],[E]}]}],
     [{function,L,foo,0,[{clause,L,[],[],[NE]}]}] = 
-        erl_expand_records:module(Forms, []), 
+        erl_expand_records:module(Forms, [strict_record_tests]), 
     prep_rec(NE).
 
 prep_rec({value,L,V}) ->

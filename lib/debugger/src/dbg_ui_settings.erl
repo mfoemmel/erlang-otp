@@ -25,6 +25,8 @@
 %% Internal exports
 -export([init/6]).
 
+%% OTP-6011 What's denoted gs="Graphics system id" is now in fact
+%% the object id of the monitor window.
 -record(state, {gs,      % term() Graphics system id
 		win,     % term() Settings dialog window data
 		monitor, % pid()  Monitor pid

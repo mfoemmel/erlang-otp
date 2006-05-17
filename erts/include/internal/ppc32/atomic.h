@@ -1,0 +1,163 @@
+/*
+ * Native ethread atomics on PowerPC.
+ * Author: Mikael Pettersson.
+ *
+ * Based on the examples in Appendix E of Motorola's
+ * "Programming Environments Manual For 32-Bit Implementations
+ * of the PowerPC Architecture".
+ */
+#ifndef ETHREAD_PPC_ATOMIC_H
+#define ETHREAD_PPC_ATOMIC_H
+
+typedef struct {
+    volatile int counter;
+} ethr_native_atomic_t;
+
+static ETHR_INLINE void
+ethr_native_atomic_init(ethr_native_atomic_t *var, int i)
+{
+    var->counter = i;
+}
+#define ethr_native_atomic_set(v, i)	ethr_native_atomic_init((v), (i))
+
+static ETHR_INLINE int
+ethr_native_atomic_read(ethr_native_atomic_t *var)
+{
+    return var->counter;
+}
+
+static ETHR_INLINE int
+ethr_native_atomic_add_return(ethr_native_atomic_t *var, int incr)
+{
+    int tmp;
+
+    __asm__ __volatile__(
+	"eieio\n\t"
+	"1:\t"
+	"lwarx	%0,0,%1\n\t"
+	"add	%0,%2,%0\n\t"
+	"stwcx.	%0,0,%1\n\t"
+	"bne-	1b\n\t"
+	"isync"
+	: "=&r"(tmp)
+	: "r"(&var->counter), "r"(incr)
+	: "cc", "memory");
+    return tmp;
+}
+
+static ETHR_INLINE void
+ethr_native_atomic_add(ethr_native_atomic_t *var, int incr)
+{
+    /* XXX: could use weaker version here w/o eieio+isync */
+    (void)ethr_native_atomic_add_return(var, incr);
+}
+
+static ETHR_INLINE int
+ethr_native_atomic_inc_return(ethr_native_atomic_t *var)
+{
+    int tmp;
+
+    __asm__ __volatile__(
+	"eieio\n\t"
+	"1:\t"
+	"lwarx	%0,0,%1\n\t"
+	"addic	%0,%0,1\n\t" /* due to addi's (rA|0) behaviour */
+	"stwcx.	%0,0,%1\n\t"
+	"bne-	1b\n\t"
+	"isync"
+	: "=&r"(tmp)
+	: "r"(&var->counter)
+	: "cc", "memory");
+    return tmp;
+}
+
+static ETHR_INLINE void
+ethr_native_atomic_inc(ethr_native_atomic_t *var)
+{
+    /* XXX: could use weaker version here w/o eieio+isync */
+    (void)ethr_native_atomic_inc_return(var);
+}
+
+static ETHR_INLINE int
+ethr_native_atomic_dec_return(ethr_native_atomic_t *var)
+{
+    int tmp;
+
+    __asm__ __volatile__(
+	"eieio\n\t"
+	"1:\t"
+	"lwarx	%0,0,%1\n\t"
+	"addic	%0,%0,-1\n\t"
+	"stwcx.	%0,0,%1\n\t"
+	"bne-	1b\n\t"
+	"isync"
+	: "=&r"(tmp)
+	: "r"(&var->counter)
+	: "cc", "memory");
+    return tmp;
+}
+
+static ETHR_INLINE void
+ethr_native_atomic_dec(ethr_native_atomic_t *var)
+{
+    /* XXX: could use weaker version here w/o eieio+isync */
+    (void)ethr_native_atomic_dec_return(var);
+}
+
+static ETHR_INLINE int
+ethr_native_atomic_and_retold(ethr_native_atomic_t *var, int mask)
+{
+    int old, new;
+
+    __asm__ __volatile__(
+	"eieio\n\t"
+	"1:\t"
+	"lwarx	%0,0,%2\n\t"
+	"and	%1,%0,%3\n\t"
+	"stwcx.	%1,0,%2\n\t"
+	"bne-	1b\n\t"
+	"isync"
+	: "=&r"(old), "=&r"(new)
+	: "r"(&var->counter), "r"(mask)
+	: "cc", "memory");
+    return old;
+}
+
+static ETHR_INLINE int
+ethr_native_atomic_or_retold(ethr_native_atomic_t *var, int mask)
+{
+    int old, new;
+
+    __asm__ __volatile__(
+	"eieio\n\t"
+	"1:\t"
+	"lwarx	%0,0,%2\n\t"
+	"or	%1,%0,%3\n\t"
+	"stwcx.	%1,0,%2\n\t"
+	"bne-	1b\n\t"
+	"isync"
+	: "=&r"(old), "=&r"(new)
+	: "r"(&var->counter), "r"(mask)
+	: "cc", "memory");
+    return old;
+}
+
+static ETHR_INLINE int
+ethr_native_atomic_xchg(ethr_native_atomic_t *var, int val)
+{
+    int tmp;
+
+    __asm__ __volatile__(
+	"eieio\n\t"
+	"1:\t"
+	"lwarx	%0,0,%1\n\t"
+	"stwcx.	%2,0,%1\n\t"
+	"bne-	1b\n\t"
+	"isync"
+	: "=&r"(tmp)
+	: "r"(&var->counter), "r"(val)
+	: "cc", "memory");
+    return tmp;
+}
+
+#endif /* ETHREAD_PPC_ATOMIC_H */

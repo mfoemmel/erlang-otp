@@ -6,8 +6,8 @@
 %%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
 %%              $Author: mikpe $
-%%              $Date: 2005/12/13 12:28:02 $
-%%              $Revision: 1.58 $
+%%              $Date: 2006/03/30 12:38:40 $
+%%              $Revision: 1.59 $
 %%=====================================================================
 %% @doc
 %%
@@ -40,7 +40,9 @@
 	 fwait/0,
 	 handle_fp_exception/0,
 	 pcb_load/2,
+	 pcb_load/3,
 	 pcb_store/2,
+	 pcb_store/3,
 	 pcb_address/2,
 	 call_bif/5,
 %%         alignment/0,
@@ -555,11 +557,15 @@ handle_fp_exception() ->
 %% Wrapped to avoid leaking the PCB pointer to the wrong places.
 %%
 
-pcb_load(Dst, Off) ->
-  hipe_rtl:mk_load(Dst, proc_pointer(), hipe_rtl:mk_imm(Off)).
+pcb_load(Dst, Off) -> pcb_load(Dst, Off, word).
 
-pcb_store(Off, Src) ->
-  hipe_rtl:mk_store(proc_pointer(), hipe_rtl:mk_imm(Off), Src).
+pcb_load(Dst, Off, Size) ->
+  hipe_rtl:mk_load(Dst, proc_pointer(), hipe_rtl:mk_imm(Off), Size, unsigned).
+
+pcb_store(Off, Src) -> pcb_store(Off, Src, word).
+
+pcb_store(Off, Src, Size) ->
+  hipe_rtl:mk_store(proc_pointer(), hipe_rtl:mk_imm(Off), Src, Size).
 
 pcb_address(Dst, Off) ->
   hipe_rtl:mk_alu(Dst, proc_pointer(), 'add', hipe_rtl:mk_imm(Off)).

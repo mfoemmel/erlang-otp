@@ -24,6 +24,7 @@
 -export([help/0,lc/1,c/1,c/2,nc/1,nl/1,l/1,i/0,pid/3,i/3,m/0,m/1,
          memory/0,memory/1,
 	 erlangrc/1,bi/1, regs/0, flush/0,pwd/0,ls/0,ls/1,cd/1, 
+         y/1, y/2,
 	 xm/1, bt/1, q/0,
 	 ni/0, nregs/0]).
 
@@ -90,6 +91,8 @@ pwd()           -> c:pwd().
 q()		-> c:q().
 regs()          -> c:regs().
 xm(Mod)         -> c:xm(Mod).
+y(File)         -> c:y(File).
+y(File, Opts)   -> c:y(File, Opts).
 
 iaa(Flag)       -> i:iaa(Flag).
 iaa(Flag,Fnk)   -> i:iaa(Flag,Fnk).

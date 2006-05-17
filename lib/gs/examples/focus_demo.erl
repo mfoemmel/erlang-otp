@@ -31,19 +31,31 @@ start() ->
 
 init() ->
     S=gs:start(),
+    Font = case gs:read(S,{choose_font,{screen,12}}) of
+	       {screen,_,12} = Screen ->
+		   Screen;
+	       _ ->
+		   gs:read(S,{choose_font,{courier,12}})
+	   end,
     Win=gs:window(S,[{title,"Focus Demo"},{width,200},{height,150}]),
-    gs:create(entry,e1,Win,[{focus,true}]),
+    gs:create(entry,e1,Win,[{y,0},{focus,true}]),
     gs:create(entry,e2,Win,[{y,30},{focus,true}]),
     gs:create(entry,e3,Win,[{y,60},{focus,true}]),
     gs:create(entry,e4,Win,[{y,90},{focus,true}]),
-    gs:create(button,b1,Win,[{x,100},{width,40},{label,{text,"e1"}}]),
-    gs:create(button,b2,Win,[{y,30},{x,100},{width,40},{label,{text,"e2"}}]),
-    gs:create(button,b3,Win,[{y,60},{x,100},{width,40},{label,{text,"e3"}}]),
-    gs:create(button,b4,Win,[{y,90},{x,100},{width,40},{label,{text,"e4"}}]),
-    gs:create(button,clear,Win,[{y,120},{x,100},{width,40},{label,{text,"Clear"}}]),
-    gs:create(button,ask,Win,[{y,120},{x,140},{width,30},{label,{text,"?"}}]),
-    gs:create(button,quit,Win,[{y,120},{x,170},{width,30},{bg,yellow},
-			       {label,{image,"die_icon"}}]),
+    gs:create(button,b1,Win,[{x,100},{width,30},
+			     {label,{text,"e1"}},{font,Font}]),
+    gs:create(button,b2,Win,[{y,30},{x,100},{width,30},
+			     {label,{text,"e2"}},{font,Font}]),
+    gs:create(button,b3,Win,[{y,60},{x,100},{width,30},
+			     {label,{text,"e3"}},{font,Font}]),
+    gs:create(button,b4,Win,[{y,90},{x,100},{width,30},
+			     {label,{text,"e4"}},{font,Font}]),
+    gs:create(button,clear,Win,[{y,120},{x,35},{width,50},
+				{label,{text,"Clear"}},{font,Font}]),
+    gs:create(button,ask,Win,[{y,120},{x,85},{width,30},
+			      {label,{text,"?"}},{font,Font}]),
+    gs:create(button,quit,Win,[{y,120},{x,115},{width,50},
+			       {label,{text,"Quit"}},{font,Font}]),
     gs:config(Win,{map,true}),
     loop().
 
@@ -61,10 +73,7 @@ loop() ->
 	       end,
 	    io:format("Focus status: ~w has focus.~n",[R]);
 	{gs,clear,_,_,_} -> 
-	    gs:config(e1,{setfocus,false}), 
-	    gs:config(e2,{setfocus,false}), 
-	    gs:config(e3,{setfocus,false}), 
-	    gs:config(e4,{setfocus,false}),
+	    gs:config(clear,{setfocus,true}),
 	    io:format("Focus is cleared.~n",[]);
 	{gs,b1,_,_,_} -> gs:config(e1,{setfocus,true});
 	{gs,b2,_,_,_} -> gs:config(e2,{setfocus,true});

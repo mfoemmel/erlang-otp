@@ -21,7 +21,6 @@
 %% necessary.
 %% Files to be checked are contained in a file 'Emakefile' 
 %% If Emakefile is missing the current directory is used.
-
 -module(make).
 
 -export([all/0,all/1,files/1,files/2]).
@@ -36,7 +35,7 @@ all() ->
 all(Options) ->
     {MakeOpts,CompileOpts} = sort_options(Options,[],[]),
     case read_emakefile('Emakefile',CompileOpts) of
-	Files when list(Files) ->
+	Files when is_list(Files) ->
 	    do_make_files(Files,MakeOpts);
 	error ->
 	    error
@@ -46,10 +45,10 @@ files(Fs) ->
     files(Fs, []).
 
 files(Fs0, Options) ->
-    Fs = [filename:basename(F,".erl") || F <- Fs0],
+    Fs = [filename:rootname(F,".erl") || F <- Fs0],
     {MakeOpts,CompileOpts} = sort_options(Options,[],[]),
     case get_opts_from_emakefile(Fs,'Emakefile',CompileOpts) of
-	Files when list(Files) ->
+	Files when is_list(Files) ->
 	    do_make_files(Files,MakeOpts);	    
 	error -> error
     end.
@@ -111,9 +110,9 @@ transform([Mod|Emake],Opts,Files,Already) ->
 transform([],_Opts,Files,_Already) ->
     lists:reverse(Files).
 
-expand(Mod,Already) when atom(Mod) ->
+expand(Mod,Already) when is_atom(Mod) ->
     expand(atom_to_list(Mod),Already);
-expand(Mods,Already) when list(Mods), not is_integer(hd(Mods)) ->
+expand(Mods,Already) when is_list(Mods), not is_integer(hd(Mods)) ->
     lists:concat([expand(Mod,Already) || Mod <- Mods]);
 expand(Mod,Already) ->
     case lists:member($*,Mod) of
@@ -127,9 +126,10 @@ expand(Mod,Already) ->
 		  end,
 	    lists:foldl(Fun, [], filelib:wildcard(Mod++".erl"));
 	false ->
-	    case lists:member(Mod,Already) of
+	    Mod2 = filename:rootname(Mod, ".erl"),
+	    case lists:member(Mod2,Already) of
 		true -> [];
-		false -> [Mod]
+		false -> [Mod2]
 	    end
     end.
 
@@ -229,7 +229,7 @@ recompilep1(File, NoExec, Load, Opts, ObjFile) ->
     end.
 
 recompilep1(#file_info{mtime=Te},
-	    #file_info{mtime=To}, File, NoExec, Load, Opts) when Te > To ->
+	    #file_info{mtime=To}, File, NoExec, Load, Opts) when Te>To ->
     recompile(File, NoExec, Load, Opts);
 recompilep1(_Erl, #file_info{mtime=To}, File, NoExec, Load, Opts) ->
     recompile2(To, File, NoExec, Load, Opts).
@@ -284,7 +284,7 @@ writable(#file_info{access=read_write}) -> true;
 writable(#file_info{access=write})      -> true;
 writable(_) -> false.
 
-coerce_2_list(X) when atom(X) ->
+coerce_2_list(X) when is_atom(X) ->
     atom_to_list(X);
 coerce_2_list(X) ->
     X.
@@ -307,7 +307,7 @@ check_includes2(Epp, File, ObjMTime) ->
 	    check_includes2(Epp, File, ObjMTime);
 	{ok, {attribute, 1, file, {IncFile, 1}}} ->
 	    case file:read_file_info(IncFile) of
-		{ok, #file_info{mtime=MTime}} when MTime > ObjMTime ->
+		{ok, #file_info{mtime=MTime}} when MTime>ObjMTime ->
 		    epp:close(Epp),
 		    true;
 		_ ->

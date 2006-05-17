@@ -105,13 +105,15 @@ MODULES= \
 	supervisor_bridge \
 	sys \
 	timer \
-	win32reg
+	win32reg \
+	zip
 
 HRL_FILES= \
 	../include/erl_compile.hrl \
 	../include/erl_bits.hrl \
 	../include/ms_transform.hrl \
-	../include/qlc.hrl
+	../include/qlc.hrl \
+	../include/zip.hrl
 
 INTERNAL_HRL_FILES= dets.hrl
 

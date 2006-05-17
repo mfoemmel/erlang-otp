@@ -35,7 +35,13 @@
 -define(DEFAULT_MIN_WINDOW_HEIGHT, 250).
 
 
+-record(window_params, {window_id,
+			window_width,
+			window_height
+			}).
 
+
+		 
 -record(process_variables, {parent_pid,
 			    pw_pid,
 			    pd_pid,
@@ -54,13 +60,3 @@
 			    poll_interval = infinity,   % seconds or 'infinity'
 			    window_params = #window_params{}
 			   }).
-
-
-
--record(window_params, {window_id,
-			window_width,
-			window_height
-			}).
-
-
-		 

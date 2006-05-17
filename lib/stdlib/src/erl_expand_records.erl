@@ -19,7 +19,7 @@
 
 %% N.B. Although structs (tagged tuples) are not yet allowed in the
 %% language there is code included in pattern/2 and expr/3 (commented out)
-%% that handles them by transforming them to tuples.
+%% that handles them.
 
 -module(erl_expand_records).
 
@@ -30,16 +30,22 @@
 -record(exprec, {compile=[],          % Compile flags
                  vcount=0,            % Variable counter
                  imports=[],          % Imports
-                 records=dict:new()   % Record definitions
+                 records=dict:new(),  % Record definitions
+                 strict_ra=[],        % strict record accesses
+                 checked_ra=[]        % succesfully accessed records
                 }).
 
-%% Is is assumed that Fs is a valid list of forms. It should pass pass
+%% Is is assumed that Fs is a valid list of forms. It should pass
 %% erl_lint without errors.
-module(Fs0, Opts) ->
+module(Fs0, Opts0) ->
+    Opts = compiler_options(Fs0) ++ Opts0,
     St0 = #exprec{compile = Opts},
     {Fs,_St} = forms(Fs0, St0),
     Fs.
 
+compiler_options(Forms) ->
+    lists:flatten([C || {attribute,_,compile,C} <- Forms]).
+    
 forms([{attribute,_L,record,{Name,Defs}} | Fs], St0) ->
     NDefs = normalise_fields(Defs),
     St = St0#exprec{records=dict:store(Name, NDefs, St0#exprec.records)},
@@ -92,7 +98,7 @@ pattern({tuple,Line,Ps}, St0) ->
     {{tuple,Line,TPs},St1};
 %%pattern({struct,Line,Tag,Ps}, St0) ->
 %%    {TPs,TPsvs,St1} = pattern_list(Ps, St0),
-%%    {{tuple,Line,[{atom,Line,Tag} | TPs]},TPsvs,St1};
+%%    {{struct,Line,Tag,TPs},TPsvs,St1};
 pattern({record_field,_,_,_}=M, St) ->
     {M,St};  % must be a package name
 pattern({record_index,Line,Name,Field}, St) ->
@@ -128,16 +134,44 @@ guard([G0 | Gs0], St0) ->
     {[G | Gs],St2};
 guard([], St) -> {[],St}.
 
-guard_tests([Gt0 | Gts0], St0) ->
-    {Gt1,St1} = guard_test(Gt0, St0),
-    {Gts1,St2} = guard_tests(Gts0, St1),
-    {[Gt1 | Gts1],St2};
-guard_tests([], St) -> {[],St}.
+guard_tests(Gts0, St0) ->
+    {Gts1,St1} = guard_tests1(Gts0, St0),
+    {Gts1,St1#exprec{checked_ra = []}}.
 
-guard_test({call,Line,{atom,_,record},[A,{atom,_,Name}]}, St) ->
-    in_guard(fun() -> record_test_in_guard(Line, A, Name, St) end);
-guard_test(Test, St) ->
-    in_guard(fun() -> expr(Test, St) end).
+guard_tests1([Gt0 | Gts0], St0) ->
+    {Gt1,St1} = guard_test(Gt0, St0),
+    {Gts1,St2} = guard_tests1(Gts0, St1),
+    {[Gt1 | Gts1],St2};
+guard_tests1([], St) -> {[],St}.
+
+guard_test(G0, St0) ->
+    in_guard(fun() ->
+                     {G1,St1} = guard_test1(G0, St0),
+                     strict_record_access(G1, St1)
+             end).
+
+%% Normalising guard tests ensures that none of the Boolean operands
+%% created by strict_record_access/2 calls any of the old guard tests.
+guard_test1({call,Line,{atom,Lt,Tname},As}, St) ->
+    Test = {atom,Lt,normalise_test(Tname, length(As))},
+    expr({call,Line,Test,As}, St);
+guard_test1(Test, St) ->
+    expr(Test, St).
+
+normalise_test(atom, 1)      -> is_atom;
+normalise_test(binary, 1)    -> is_binary;
+normalise_test(constant, 1)  -> is_constant;
+normalise_test(float, 1)     -> is_float;
+normalise_test(function, 1)  -> is_function;
+normalise_test(integer, 1)   -> is_integer;
+normalise_test(list, 1)      -> is_list;
+normalise_test(number, 1)    -> is_number;
+normalise_test(pid, 1)       -> is_pid; 
+normalise_test(port, 1)      -> is_port; 
+normalise_test(record, 2)    -> is_record;
+normalise_test(reference, 1) -> is_reference;
+normalise_test(tuple, 1)     -> is_tuple;
+normalise_test(Name, _) -> Name.
 
 is_in_guard() ->
     get(erl_expand_records_in_guard) =/= undefined.
@@ -160,19 +194,6 @@ record_test(Line, Term, Name, St) ->
     end.
 
 record_test_in_guard(Line, Term, Name, St) ->
-    %% Notes: (1) To keep is_record/2 properly atomic (e.g. when inverted
-    %%            using 'not'), we cannot convert it to an instruction
-    %%            sequence here. It must remain a single call.
-    %%        (2) Later passes assume that the last argument (the size)
-    %%            is a literal.
-    %%        (3) We don't want calls to erlang:is_record/3 (in the source code)
-    %%            confused with the internal instruction. (Reason: (2) above +
-    %%            code bloat.)
-    %%        (4) Xref may be run on the abstract code, so the name in the
-    %%            abstract code must be erlang:is_record/3.
-    %%        (5) To achive both (3) and (4) at the same time, set the name
-    %%            here to erlang:is_record/3, but mark it as compiler-generated.
-    %%            The v3_core pass will change the name to erlang:internal_is_record/3.
     case not_a_tuple(Term) of
         true ->
             %% In case that later optimization passes have been turned off.
@@ -243,7 +264,7 @@ expr({tuple,Line,Es0}, St0) ->
     {{tuple,Line,Es1},St1};
 %%expr({struct,Line,Tag,Es0}, Vs, St0) ->
 %%    {Es1,Esvs,Esus,St1} = expr_list(Es0, Vs, St0),
-%%    {{tuple,Line,[{atom,Line,Tag} | Es1]},Esvs,Esus,St1};
+%%    {{struct,Line,Tag,Es1},Esvs,Esus,St1};
 expr({record_field,_,_,_}=M, St) ->
     {M,St};  % must be a package name
 expr({record_index,Line,Name,F}, St) ->
@@ -288,7 +309,13 @@ expr({'fun',Line,{clauses,Cs0}}, St0) ->
     {{'fun',Line,{clauses,Cs}},St1};
 expr({call,Line,{atom,_,is_record},[A,{atom,_,Name}]}, St) ->
     record_test(Line, A, Name, St);
+expr({'cond',Line,Cs0}, St0) ->
+    {Cs,St1} = expr(Cs0, St0),
+    {{'cond',Line,Cs},St1};
 expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,is_record}},
+      [A,{atom,_,Name}]}, St) ->
+    record_test(Line, A, Name, St);
+expr({call,Line,{tuple,_,[{atom,_,erlang},{atom,_,is_record}]},
       [A,{atom,_,Name}]}, St) ->
     record_test(Line, A, Name, St);
 expr({call,Line,{atom,La,N},As0}, St0) ->
@@ -335,9 +362,22 @@ expr({match,Line,P0,E0}, St0) ->
     {E,St1} = expr(E0, St0),
     {P,St2} = pattern(P0, St1),
     {{match,Line,P,E},St2};
+expr({op,Line,'not',A0}, St0) ->
+    {A,St1} = bool_operand(A0, St0),
+    {{op,Line,'not',A},St1};
 expr({op,Line,Op,A0}, St0) ->
     {A,St1} = expr(A0, St0),
     {{op,Line,Op,A},St1};
+expr({op,Line,Op,L0,R0}, St0) when Op =:= 'and'; 
+                                   Op =:= 'or' ->
+    {L,St1} = bool_operand(L0, St0),
+    {R,St2} = bool_operand(R0, St1),
+    {{op,Line,Op,L,R},St2};
+expr({op,Line,Op,L0,R0}, St0) when Op =:= 'andalso';
+                                   Op =:= 'orelse' ->
+    {L,St1} = bool_operand(L0, St0),
+    {R,St2} = bool_operand(R0, St1),
+    {{op,Line,Op,L,R},St2#exprec{checked_ra = St1#exprec.checked_ra}};
 expr({op,Line,Op,L0,R0}, St0) ->
     {L,St1} = expr(L0, St0),
     {R,St2} = expr(R0, St1),
@@ -348,6 +388,38 @@ expr_list([E0 | Es0], St0) ->
     {Es,St2} = expr_list(Es0, St1),
     {[E | Es],St2};
 expr_list([], St) -> {[],St}.
+
+bool_operand(E0, St0) ->
+    {E1,St1} = expr(E0, St0),
+    strict_record_access(E1, St1).
+
+strict_record_access(E, #exprec{strict_ra = []} = St) ->
+    {E, St};
+strict_record_access(E0, St0) ->
+    #exprec{strict_ra = StrictRA, checked_ra = CheckedRA} = St0,
+    {New,NC} = lists:foldl(fun ({Key,_L,_R,_Sz}=A, {L,C}) ->
+                                   case lists:keymember(Key, 1, C) of
+                                       true -> {L,C};
+                                       false -> {[A|L],[A|C]}
+                                   end
+                           end, {[],CheckedRA}, StrictRA),
+    E1 = if New =:= [] -> E0; true -> conj(New, E0) end,
+    St1 = St0#exprec{strict_ra = [], checked_ra = NC},
+    expr(E1, St1).
+
+%% Make it look nice (?) when compiled with the 'E' flag 
+%% ('and'/2 is left recursive).
+conj([], _E) ->
+    empty;
+conj([{{Name,_Rp},L,R,Sz} | AL], E) ->
+    T1 = {op,L,'orelse',
+          {call,L,{atom,L,is_record},[R,{atom,L,Name},{integer,L,Sz}]},
+          {atom,L,fail}},
+    T2 = case conj(AL, none) of
+        empty -> T1;
+        C -> {op,L,'and',C,T1}
+    end,
+    if E =:= none -> T2; true -> {op,L,'and',T2,E} end.
 
 %% lc_tq(Line, Qualifiers, State) ->
 %%      {[TransQual],State'}
@@ -361,16 +433,16 @@ lc_tq(Line, [F0 | Qs0], St0) ->
     %% Allow record/2 and expand out as guard test.
     case erl_lint:is_guard_test(F0) of
         true ->
-            {F1,St1} = guard_tests([F0], St0),
+            {F1,St1} = guard_test(F0, St0),
             {Qs1,St2} = lc_tq(Line, Qs0, St1),
-            {F1++Qs1,St2};
+            {[F1|Qs1],St2};
         false ->
             {F1,St1} = expr(F0, St0),
             {Qs1,St2} = lc_tq(Line, Qs0, St1),
             {[F1 | Qs1],St2}
     end;
 lc_tq(_Line, [], St0) ->
-    {[],St0}.
+    {[],St0#exprec{checked_ra = []}}.
 
 %% normalise_fields([RecDef]) -> [Field].
 %%  Normalise the field definitions to always have a default value. If
@@ -427,12 +499,23 @@ strict_get_record_field(Line, R, {atom,_,F}=Index, Name, St0) ->
             Fs = record_fields(Name, St),
             I = index_expr(F, Fs, 2),
             P = record_pattern(2, I, Var, length(Fs)+1, Line, [{atom,Line,Name}]),
-            E = {block,Line,[{match,Line,{tuple,Line,P},R},Var]},
+	    E = {'case',Line,R,
+		     [{clause,Line,[{tuple,Line,P}],[],[Var]},
+		      {clause,Line,[{var,Line,'_'}],[],
+		       [{call,Line,{remote,Line,
+				    {atom,Line,erlang},
+				    {atom,Line,error}},
+			 [{tuple,Line,[{atom,Line,badrecord},{atom,Line,Name}]}]}]}]},
             expr(E, St);
         true ->                                 %In a guard.
             Fs = record_fields(Name, St0),
             I = index_expr(Line, Index, Name, Fs),
-            expr({call,Line,{atom,Line,element},[I,R]}, St0)
+            {ExpR,St1}  = expr(R, St0),
+            %% Just to make comparison simple:
+            ExpRp = erl_lint:modify_line(ExpR, fun(_L) -> 0 end),
+            RA = {{Name,ExpRp},Line,ExpR,length(Fs)+1},
+            St2 = St1#exprec{strict_ra = [RA | St1#exprec.strict_ra]},
+            {{call,Line,{atom,Line,element},[I,ExpR]},St2}
     end.
 
 record_pattern(I, I, Var, Sz, Line, Acc) ->

@@ -4,7 +4,7 @@
 
 
 @author Richard Carlsson <richardc@csd.uu.se>
-@copyright 2003-2005 Richard Carlsson
+@copyright 2003-2006 Richard Carlsson
 @version {@vsn}
 @title Welcome to EDoc
 
@@ -904,3 +904,7 @@ initial public release (EDoc version 0.1), but most of the central
 points were addressed in the new system, such as better modularization
 and possibility to plug in different layout engines, and making EDoc
 understand the application directory layout.
+
+It is now getting too hard to keep track of all the people who have made
+further suggestions or submitted bug reports, but your input is always
+appreciated. Thank you.

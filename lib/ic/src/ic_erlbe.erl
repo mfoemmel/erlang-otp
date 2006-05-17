@@ -130,7 +130,7 @@ gen(G, N, [X|Xs]) when record(X, interface) ->
     gen(G3, N, Xs);
 
 gen(G, N, [X|Xs]) when record(X, const) ->
-    N2 = [get_id2(X) | N],
+%    N2 = [get_id2(X) | N],
     emit_constant_func(G, X#const.id, X#const.val),
     gen(G, N, Xs); %% N2 or N?
 
@@ -570,12 +570,13 @@ emit_skel_footer(erl_genserv, G, N, X) ->
     Fd = ic_genobj:stubfiled(G),
     nl(Fd), nl(Fd),
     ic_codegen:mcomment_light(Fd, ["Standard gen_server handles"]),
-    emit(Fd, "handle_info(Info, State) ->\n"),
     case use_impl_handle_info(G, N, X) of
 	true ->
+	    emit(Fd, "handle_info(Info, State) ->\n"),
 	    emit(Fd, "    ~p:handle_info(Info, State).\n\n", 
 		 [list_to_atom(ic_genobj:impl(G))]);
 	false ->
+	    emit(Fd, "handle_info(_, State) ->\n"),
 	    emit(Fd, "    {noreply, State}.\n\n")
     end,
     nl(Fd), nl(Fd),

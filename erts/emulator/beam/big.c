@@ -1034,21 +1034,24 @@ static int I_lg(digit_t* x, dsize_t xl)
 }
 
 /*
-** create bigint on heap if necessary
-** or a small_int which uses no heap
-** allocates new heap if necssary
+** Create bigint on heap if necessary. Like the previously existing
+** make_small_or_big(), except for a HAlloc() instead of an
+** ArithAlloc().
+** NOTE: Only use erts_make_integer(), when order of heap fragments is
+**       guaranteed to be correct.
 */
-Eterm make_small_or_big(Uint x, Process *p)
+Eterm
+erts_make_integer(Uint x, Process *p)
 {
     Eterm* hp;
     if (IS_USMALL(0,x))
 	return make_small(x);
     else {
-	/* Called from guard BIFs - must use ArithAlloc() here */
-	hp = ArithAlloc(p, BIG_UINT_HEAP_SIZE);
+	hp = HAlloc(p, BIG_UINT_HEAP_SIZE);
 	return uint_to_big(x,hp);
     }
 }
+
 /*
 ** convert uint32 to bigint
 ** 32UPDATE (as macro?)
@@ -1092,18 +1095,19 @@ big_to_double(Eterm x, double* resp)
     dsize_t xl = BIG_SIZE(xp);
     digit_t* s = BIG_V(xp) + xl;
     short xsgn = BIG_SIGN(xp);
-    ERTS_SAVE_FP_EXCEPTION();
+    volatile int *fpexnp = erts_get_current_fp_exception();
+    __ERTS_SAVE_FP_EXCEPTION(fpexnp);
 
-    ERTS_FP_CHECK_INIT();
+    __ERTS_FP_CHECK_INIT(fpexnp);
     while (xl--) {
 	d = d * D_BASE + *--s;
 
-	ERTS_FP_ERROR(d, ERTS_RESTORE_FP_EXCEPTION(); return -1);
+	__ERTS_FP_ERROR(fpexnp, d, __ERTS_RESTORE_FP_EXCEPTION(fpexnp); return -1);
     }
 
     *resp = xsgn ? -d : d;
-    ERTS_FP_ERROR(*resp,;);
-    ERTS_RESTORE_FP_EXCEPTION();
+    __ERTS_FP_ERROR(fpexnp,*resp,;);
+    __ERTS_RESTORE_FP_EXCEPTION(fpexnp);
     return 0;
 }
 
@@ -1120,75 +1124,6 @@ int big_decimal_estimate(Eterm x)
     if (BIG_SIGN(xp)) lg10++;	/* add sign */
     return lg10+1;		/* add null */
 }
-
-/*
- ** Convert a bignum into a string of decimal numbers
- */
-#if 0	/* XXX: unused */
-char* big_to_decimal(Eterm y, char *p, int n)
-{
-    char* q = p+(n-1);
-    Eterm* yp = big_val(y);
-
-    digit_t* x = BIG_V(yp);
-    dsize_t xl = BIG_SIZE(yp);
-    short sign = BIG_SIGN(yp);
-    digit_t rem;
-
-    *q-- = '\0';
-
-    if (xl == 1 && *x < D_DECIMAL_BASE) {
-	rem = *x;
-	if (rem == 0)
-	    *q-- = '0';
-	else {
-	    while(rem) {
-		*q-- = (rem % 10) + '0';
-		rem /= 10;
-	    }
-	}
-    }
-    else {
-	digit_t* tmp  = (digit_t*) erts_alloc(ERTS_ALC_T_TMP,
-					      sizeof(digit_t)*xl);
-	dsize_t tmpl = xl;
-
-	MOVE_DIGITS(tmp, x, xl);
-
-	while(1) {
-	    tmpl = D_div(tmp, tmpl, D_DECIMAL_BASE, tmp, &rem);
-	    if (tmpl == 1 && *tmp == 0) {
-		while(rem) {
-		    *q-- = (rem % 10) + '0';
-		    rem /= 10;
-		}
-		break;
-	    }
-	    else {
-		int i = D_DECIMAL_EXP;
-		while(i--) {
-		    *q-- = (rem % 10) + '0';
-		    rem /= 10;
-		}
-	    }
-	}
-	erts_free(ERTS_ALC_T_TMP, (void *) tmp);
-    }
-    if (sign)
-	*q-- = '-';
-
-    /* move to beginning of p */
-    q++;
-    if (p != q) {
-	char *p0 = p;
-
-	while(*q != 0)
-	    *p0++ = *q++;
-	*p0 = '\0';
-    }
-    return p;
-}
-#endif /* 0 */
 
 /*
 ** Convert a bignum into a string of decimal numbers

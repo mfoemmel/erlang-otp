@@ -96,15 +96,16 @@ shell_loop(CM, Channel, IO, SentClose) ->
 	    if Type == 0 ->
 		    io:format("~s", [binary_to_list(Data)]);
 	       Type == ?SSH_EXTENDED_DATA_STDERR ->
-		    io:format("STDERR: ~s", [binary_to_list(Data)]);
+		    error_logger:format("ssh: STDERR: ~s", 
+					[binary_to_list(Data)]);
 	       true ->
 		    ok
 	    end,
 	    ssh_cm:adjust_window(CM, Channel, size(Data)),
 	    ?MODULE:shell_loop(CM, Channel, IO, SentClose);
 
-	{ssh_cm, CM, {exit_signal,Channel,SIG, Err, _Lang}} ->
-	    io:format("SIGNAL: ~s (~s)\n", [SIG, Err]),
+	{ssh_cm, CM, {exit_signal, Channel, _SIG, _Err, _Lang}} ->
+	    ?dbg(true, "SIGNAL: ~s (~s)\n", [_SIG, _Err]),
 	    send_close(SentClose, CM, Channel),
 	    ?MODULE:shell_loop(CM, Channel, IO, true);
 
@@ -121,7 +122,7 @@ shell_loop(CM, Channel, IO, SentClose) ->
 	    exit(IO, kill);
 
 	Other ->
-	    io:format("ssh_ssh:shell_loop: unexpected msg ~p\n", [Other])
+	    error_logger:format("ssh_ssh:shell_loop: unexpected msg ~p\n", [Other])
     end.
 
 send_close(false, CM, Channel) ->

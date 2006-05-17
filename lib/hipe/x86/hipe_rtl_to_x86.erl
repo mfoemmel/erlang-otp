@@ -197,14 +197,14 @@ conv_insn(I, Map, Data) ->
       {Dst, Map0} = conv_dst(hipe_rtl:fp_dst(I), Map),
       {[], Src1, Map1} = conv_src(hipe_rtl:fp_src1(I), Map0),
       {[], Src2, Map2} = conv_src(hipe_rtl:fp_src2(I), Map1),
-      Op = hipe_rtl:fp_op(I),
-      I2 = conv_fp_binop(Dst, Src1, Op, Src2),
+      FpBinOp = conv_fp_binop(hipe_rtl:fp_op(I)),
+      I2 = conv_fp_binary(Dst, Src1, FpBinOp, Src2),
       {I2, Map2, Data};
     #fp_unop{} ->
       {Dst, Map0} = conv_dst(hipe_rtl:fp_unop_dst(I), Map),
       {[], Src, Map1} = conv_src(hipe_rtl:fp_unop_src(I), Map0),
-      Op = hipe_rtl:fp_unop_op(I),
-      I2 = conv_fp_unop(Dst, Src, Op),
+      FpUnOp = conv_fp_unop(hipe_rtl:fp_unop_op(I)),
+      I2 = conv_fp_unary(Dst, Src, FpUnOp),
       {I2, Map1, Data};
     #fmove{} ->
       {Dst, Map0} = conv_dst(hipe_rtl:fmove_dst(I), Map),
@@ -321,8 +321,6 @@ binop_commutes(BinOp) ->
     'or'	-> true;
     'and'	-> true;
     'xor'	-> true;
-    'fadd'	-> true;
-    'fmul'	-> true;
     _		-> false
   end.
 
@@ -653,37 +651,63 @@ vmap_lookup(Map, Key) ->
 vmap_bind(Map, Key, Val) ->
   gb_trees:insert(Key, Val, Map).
 
-conv_fp_unop(Dst, Src, Op) ->
+%%% Finalise the conversion of a 2-address FP operation.
+
+conv_fp_unary(Dst, Src, FpUnOp) ->
   case same_opnd(Dst, Src) of
     true ->
-      [hipe_x86:mk_fp_unop(Op, Dst)];
+      [hipe_x86:mk_fp_unop(FpUnOp, Dst)];
     _ ->
       [hipe_x86:mk_fmove(Src, Dst),
-       hipe_x86:mk_fp_unop(Op, Dst)]
+       hipe_x86:mk_fp_unop(FpUnOp, Dst)]
   end.
 
-conv_fp_binop(Dst, Src1, Op, Src2) ->
+conv_fp_unop(RtlFpUnOp) ->
+  case RtlFpUnOp of
+    'fchs' -> 'fchs'
+  end.
+
+%%% Finalise the conversion of a 3-address FP operation.
+
+conv_fp_binary(Dst, Src1, FpBinOp, Src2) ->
   case same_opnd(Dst, Src1) of
     true ->		% x = x op y
-      [hipe_x86:mk_fp_binop(Op, Src2, Dst)];		% x op= y
+      [hipe_x86:mk_fp_binop(FpBinOp, Src2, Dst)];		% x op= y
     false ->		% z = x op y, where z != x
       case same_opnd(Dst, Src2) of
 	false ->	% z = x op y, where z != x && z != y
-	  [hipe_x86:mk_fmove(Src1, Dst),		% z = x
-	   hipe_x86:mk_fp_binop(Op, Src2, Dst)];	% z op= y
+	  [hipe_x86:mk_fmove(Src1, Dst),			% z = x
+	   hipe_x86:mk_fp_binop(FpBinOp, Src2, Dst)];		% z op= y
 	true ->		% y = x op y, where y != x
-	  case binop_commutes(Op) of
+	  case fp_binop_commutes(FpBinOp) of
 	    true ->	% y = y op x
-	      [hipe_x86:mk_fp_binop(Op, Src1, Dst)];	% y op= x
+	      [hipe_x86:mk_fp_binop(FpBinOp, Src1, Dst)];	% y op= x
 	    false ->	% y = x op y, where op doesn't commute
-	      Op0 = reverse_op(Op),
-	      [hipe_x86:mk_fp_binop(Op0, Src1, Dst)]
+	      RevFpBinOp = reverse_fp_binop(FpBinOp),
+	      [hipe_x86:mk_fp_binop(RevFpBinOp, Src1, Dst)]
 	  end
       end
   end.
 
-reverse_op(Op) ->
-  case Op of
+%%% Convert an RTL FP binary operator.
+
+conv_fp_binop(RtlFpBinOp) ->
+  case RtlFpBinOp of
+    'fadd' -> 'fadd';
+    'fdiv' -> 'fdiv';
+    'fmul' -> 'fmul';
+    'fsub' -> 'fsub'
+  end.
+
+fp_binop_commutes(FpBinOp) ->
+  case FpBinOp of
+    'fadd'	-> true;
+    'fmul'	-> true;
+    _		-> false
+  end.
+
+reverse_fp_binop(FpBinOp) ->
+  case FpBinOp of
     'fsub' -> 'fsubr';
     'fdiv' -> 'fdivr'
   end.

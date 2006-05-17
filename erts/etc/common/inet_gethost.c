@@ -1340,7 +1340,7 @@ static void domaincopy(AddrByte *out, AddrByte *in)
     case OP_GETHOSTBYNAME:
 	while(*in != '\0' && *in != '.')
 	    ++in;
-	strncpy(ptr, in, DOMAINNAME_MAX-2);
+	strncpy((char*)ptr, (char*)in, DOMAINNAME_MAX-2);
 	ptr[DOMAINNAME_MAX-3] = '\0';
 	DEBUGF(4,("Saved domainname %s.", ptr));
 	return;
@@ -1363,7 +1363,7 @@ static int domaineq(AddrByte *d1, AddrByte *d2)
     }
     switch (d1[0]) {
     case OP_GETHOSTBYNAME:
-	return !strcmp(d1+2,d2+2);
+	return !strcmp((char*)d1+2,(char*)d2+2);
     case OP_GETHOSTBYADDR:
 	return !memcmp(d1+2,d2+2, ((d1[1] == PROTO_IPV4) 
 				   ? UNIT_IPV4 : UNIT_IPV6) - 1);
@@ -1629,7 +1629,7 @@ static int worker_loop(void)
 #endif
 	    } else {
 		DEBUGF(4,("Starting gethostbyname(%s)",data));
-		he = gethostbyname(data);
+		he = gethostbyname((char*)data);
 		error_num = he ? 0 : map_netdb_error(h_errno);
 		if (error_num) {
 		    DEBUGF(4,("gethostbyname(%s) gave error: %d", 
@@ -1800,7 +1800,7 @@ static size_t build_error_reply(SerialType serial, int errnum,
     put_int32(ptr,serial);
     ptr +=4;
     *ptr++ = (AddrByte) 0; /* 4 or 16 */
-    strcpy(ptr, errstring);
+    strcpy((char*)ptr, errstring);
     return need;
 }
     
@@ -1856,10 +1856,10 @@ static size_t build_reply(SerialType serial, struct hostent *he,
     }
     put_int32(ptr, num_strings);
     ptr += 4;
-    strcpy(ptr, he->h_name);
+    strcpy((char*)ptr, he->h_name);
     ptr += 1 + strlen(he->h_name);
     for (i = 0; i < (num_strings - 1); ++i) {
-	strcpy(ptr, he->h_aliases[i]);
+	strcpy((char*)ptr, he->h_aliases[i]);
 	ptr += 1 + strlen(he->h_aliases[i]);
     }
     return need;

@@ -18,7 +18,7 @@
 #ifndef _DB_TREE_H
 #define _DB_TREE_H
 
-#include "erl_db_util.h" /* DbTerm */
+#include "erl_db_util.h"
 
 typedef struct tree_db_term {
     struct  tree_db_term *left, *right;  /* left and right child */
@@ -27,20 +27,7 @@ typedef struct tree_db_term {
 } TreeDbTerm;
 
 typedef struct db_table_tree {
-    Eterm  owner;             /* Pid of the creator */
-    Eterm  the_name;          /* an atom   */
-    Eterm  id;                /* atom | integer */
-    Uint nitems;              /* Total number of items */
-    Uint memory_size;         /* Total memory size. NOTE: in bytes! */
-    Uint megasec,sec,microsec; /* Last fixation time */
-    DbFixation *fixations;     /* List of processes who have fixed 
-				  the table */
-
-    /* Common 32-bit fields */
-    Uint32 status;            /* bit masks defining type etc */
-    int slot;                 /* slot in db_tables */
-    int keypos;               /* defaults to 1 */
-    int kept_items;           /* Always empty for trees */
+    DbTableCommon common;
 
     /* Tree-specific fields */
     TreeDbTerm *root;         /* The tree root */
@@ -55,85 +42,7 @@ typedef struct db_table_tree {
 ** table types. The process is always an [in out] parameter.
 */
 void db_initialize_tree(void);
-int db_create_tree(Process *p, DbTableTree *tb /* [in out] */);
-int db_first_tree(Process *p, DbTableTree *tb /* [in out] */, 
-		  Eterm *ret /* [out] */);
-int db_next_tree(Process *p, DbTableTree *tb /* [in out] */, 
-		 Eterm key /* [in] */,
-		 Eterm *ret /* [out] */);
-int db_last_tree(Process *p, DbTableTree *tb /* [in out] */, 
-		  Eterm *ret /* [out] */);
-int db_prev_tree(Process *p, DbTableTree *tb /* [in out] */, 
-		 Eterm key /* [in] */,
-		 Eterm *ret /* [out] */);
-int db_update_counter_tree(Process *p, DbTableTree *tb /* [in out] */, 
-			   Eterm key /* [in] */,
-			   Eterm incr, /* [in] */
-			   int warp, /* [in] */
-			   int counterpos, /* [in] */
-			   Eterm *ret /* [out] */);
-int db_put_tree(Process *p, DbTableTree *tb /* [in out] */, 
-		Eterm obj /* [in] */,
-		Eterm *ret /* [out] */);
-int db_get_tree(Process *p, DbTableTree *tb /* [in out] */, 
-		Eterm key /* [in] */,
-		Eterm *ret /* [out] */);
-int db_member_tree(Process *p, DbTableTree *tb /* [in out] */, 
-		   Eterm key /* [in] */,
-		   Eterm *ret /* [out] */);
-int db_get_element_tree(Process *p, DbTableTree *tb /* [in out] */, 
-			Eterm key /* [in] */,
-			int ndex, /* [in] */
-			Eterm *ret /* [out] */);
-int db_erase_tree(Process *p, DbTableTree *tb /* [in out] */, 
-		  Eterm key /* [in] */,
-		  Eterm *ret /* [out] */);
-int db_erase_object_tree(Process *p, DbTableTree *tb /* [in out] */, 
-			 Eterm object /* [in] */,
-			 Eterm *ret /* [out] */);
-int db_slot_tree(Process *p, DbTableTree *tb /* [in out] */, 
-		  Eterm slot_term /* [in] */,
-		  Eterm *ret /* [out] */);
-int db_select_tree(Process *p, DbTableTree *tb /* [in out] */, 
-		   Eterm pattern /* [in] */, 
-		   int reversed /* [in] */,
-		   Eterm *ret /* [out] */);
-int db_select_count_tree(Process *p, DbTableTree *tb /* [in out] */, 
-			 Eterm pattern /* [in] */, 
-			 Eterm *ret /* [out] */);
-int db_select_chunk_tree(Process *p, DbTableTree *tb /* [in out] */, 
-			 Eterm pattern /* [in] */, 
-			 Sint chunk_size /* [in] */,
-			 int reversed /* [in] */,
-			 Eterm *ret /* [out] */);
-int db_select_tree_continue(Process *p, 
-			    DbTableTree *tb /* [in out] */,
-			    Eterm continuation /* [in] */,
-			    Eterm *ret /* [out] */);
-int db_select_count_tree_continue(Process *p, 
-				  DbTableTree *tb /* [in out] */,
-				  Eterm continuation /* [in] */,
-				  Eterm *ret /* [out] */);
-int db_select_delete_tree(Process *p, DbTableTree *tb /* [in out] */, 
-			  Eterm pattern /* [in] */, 
-			  Eterm *ret /* [out] */);
-int db_select_delete_continue_tree(Process *p, 
-				   DbTableTree *tb /* [in out] */, 
-				   Eterm continuation /* [in] */,
-				   Eterm *ret);
-void db_print_tree(CIO fd /* [in] */, 
-		   int show /* [in] */,
-		   DbTableTree *tb /* [in] */);
-void free_tree_table(DbTableTree *tb /* [in out] */);
 
-int erts_free_tree_table_cont(DbTableTree *tb, int first);
-
-void erts_db_tree_foreach_offheap(DbTableTree *tab,
-				  void (*)(ErlOffHeap *, void *),
-				  void *);
-
-#ifdef HARDDEBUG
-void db_check_table_tree(DbTableTree *tb);
-#endif
+int db_create_tree(Process *p, DbTable *tbl);
 
 #endif /* _DB_TREE_H */

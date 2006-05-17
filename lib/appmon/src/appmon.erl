@@ -450,7 +450,12 @@ handle_info({gs, _Button, click, Data, _Arg}, State) ->
 	help ->
 	    HelpFile = filename:join([code:lib_dir(appmon),
 				     "doc", "html", "part_frame.html"]),
-	    tool_utils:open_help(State#state.gs, HelpFile),
+	    case State#state.wins of
+		[Win] ->
+		    tool_utils:open_help(Win#win.window, HelpFile);
+		_ ->
+		    tool_utils:open_help(State#state.gs, HelpFile)
+	    end,
 	    {noreply, State};
 		
 	_Other ->

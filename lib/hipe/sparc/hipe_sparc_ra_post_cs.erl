@@ -9,9 +9,9 @@
 %%  History  :	* 2001-11-01 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2004/01/19 17:45:03 $
-%%              $Revision: 1.6 $
+%%              $Author: kostis $
+%%              $Date: 2006/04/13 13:04:15 $
+%%              $Revision: 1.7 $
 %% ====================================================================
 %%  Exports  :
 %%hipe:c({test13,test,0},[late_frames,{regalloc,lfls},pp_sparc]).
@@ -67,7 +67,7 @@ rewrite_instr(I, TempMap, DontSpill) ->
 	  %%      {NewI ++ [hipe_sparc:pseudo_spill_create(NewTemp,
 	  %%					       hipe_temp_map:find(
 	  %%						 hipe_sparc:reg_nr(Spill),TempMap)) ||
-	  {NewI ++ [hipe_sparc:move_create(SpillR,NewTemp,[]) ||
+	  {NewI ++ [hipe_sparc:move_create(SpillR,NewTemp) ||
 		     {SpillR,NewTemp} <- NewTemps],
 	   DontSpill}
       end
@@ -81,14 +81,14 @@ rewrite_uses(I, TempMap, DontSpill) ->
       
       NewTemps  = [{Spill1,hipe_sparc:mk_reg(hipe_sparc_registers:temp1())},
 		   {Spill2,hipe_sparc:mk_reg(hipe_sparc_registers:temp2())}],
-      { [hipe_sparc:move_create(NewTemp, Spill,[]) ||
+      { [hipe_sparc:move_create(NewTemp, Spill) ||
 	  {Spill,NewTemp} <- NewTemps] ++ 
 	[remap(I, NewTemps)],
 	DontSpill};
     [Spill1] ->
       
       NewTemps  = [{Spill1,hipe_sparc:mk_reg(hipe_sparc_registers:temp1())}],
-      { [hipe_sparc:move_create(NewTemp, Spill,[]) ||
+      { [hipe_sparc:move_create(NewTemp, Spill) ||
 	  {Spill,NewTemp} <- NewTemps] ++ 
 	[remap(I, NewTemps)],
 	DontSpill};

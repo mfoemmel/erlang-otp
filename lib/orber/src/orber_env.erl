@@ -35,7 +35,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/1, iiop_acl/0, configure/2, configure/3, configure_override/2,
+-export([start/1, configure/2, configure/3, configure_override/2,
 	 multi_configure/1, get_env/1, set_env/2, get_keys/0, env/1,
 	 info/0, info/1]).
 
@@ -206,9 +206,9 @@ info(IoDevice) ->
 	string ->
 	    Info;
 	io ->
-	    io:format(Info); 
+	    io:format("~s", [Info]); 
 	{io, Dev} ->
-	    io:format(Dev, Info, []);
+	    io:format(Dev, "~s", [Info]);
 	_ ->
 	    exit("Bad parameter")
     end.
@@ -1095,9 +1095,6 @@ configure(orber_debug_level, Value, Status) when integer(Value) ->
     do_configure(orber_debug_level, Value, Status);
 
 %%------ Keys we cannot change if Orber is running -----
-%% Set the bootstrap port
-configure(bootstrap_port, Value, Status) when integer(Value), Value > 0 ->
-    do_safe_configure(bootstrap_port, Value, Status);
 %% Set the listen port
 configure(iiop_port, Value, Status) when integer(Value) ->
     do_safe_configure(iiop_port, Value, Status);
@@ -1299,17 +1296,17 @@ init_env() ->
 %	    ets:insert(?ENV_DB, #parameters{key = H, value = D, flags = 0}),
 %	    init_env(T)
 %    end;
-init_env([H|T]) ->
-    case application:get_env(orber, H) of
-	{ok, V} ->
-	    ets:insert(?ENV_DB, #parameters{key = H, value = V, flags = 0}),
-	    init_env(T);
-	_ ->
-	    ets:insert(?ENV_DB, #parameters{key = H, value = undefined, flags = 0}),
-	    init_env(T)
-    end;
-init_env([]) ->
-    ok.
+%init_env([H|T]) ->
+%    case application:get_env(orber, H) of
+%	{ok, V} ->
+%	    ets:insert(?ENV_DB, #parameters{key = H, value = V, flags = 0}),
+%	    init_env(T);
+%	_ ->
+%	    ets:insert(?ENV_DB, #parameters{key = H, value = undefined, flags = 0}),
+%	    init_env(T)
+%    end;
+%init_env([]) ->
+%    ok.
 
 %%-----------------------------------------------------------------
 %%------------- END OF MODULE -------------------------------------

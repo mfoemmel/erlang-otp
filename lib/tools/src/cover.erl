@@ -891,13 +891,14 @@ reload_originals([]) ->
 do_reload_original(Module) ->
     case code:which(Module) of
 	?TAG ->
-	    code:purge(Module),
-	    case code:load_file(Module) of
-		{module, Module} ->
-		    ignore;
-		{error, _Reason2} ->
-		    code:delete(Module)
-				  end;
+	    code:purge(Module),     % remove code marked as 'old'
+	    code:delete(Module),    % mark cover compiled code as 'old'
+	    %% Note: original beam code must be loaded before the cover
+	    %% compiled code is purged, in order to for references to
+	    %% 'fun M:F/A' and %% 'fun F/A' funs to be correct (they
+	    %% refer to (M:)F/A in the *latest* version  of the module)
+	    code:load_file(Module), % load original code
+	    code:purge(Module);     % remove cover compiled code
 	_ ->
 	    ignore
     end.
@@ -1231,7 +1232,8 @@ do_compile_beam(Module,Beam) ->
 	encrypted_abstract_code=E ->
 	    {error,E};
 	{Vsn,Code} ->
-	    {Forms,Vars} = transform(Vsn, Code, Module, Beam),
+            Forms0 = epp:interpret_file_attribute(Code),
+	    {Forms,Vars} = transform(Vsn, Forms0, Module, Beam),
 
 	    %% Compile and load the result
 	    %% It's necessary to check the result of loading since it may

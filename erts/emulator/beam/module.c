@@ -29,11 +29,27 @@
 #define MODULE_LIMIT  64*1024
 #define MODULE_RATE   10
 
-IndexTable module_table;
+static IndexTable module_table;
 
-void module_info(CIO to)
+#include "erl_smp.h"
+
+static erts_smp_rwmtx_t module_table_lock;
+
+#define module_read_lock()	erts_smp_rwmtx_rlock(&module_table_lock)
+#define module_read_unlock()	erts_smp_rwmtx_runlock(&module_table_lock)
+#define module_write_lock()	erts_smp_rwmtx_rwlock(&module_table_lock)
+#define module_write_unlock()	erts_smp_rwmtx_rwunlock(&module_table_lock)
+#define module_init_lock()	erts_smp_rwmtx_init(&module_table_lock, \
+						    "module_tab")
+
+void module_info(int to, void *to_arg)
 {
-    index_info(to, &module_table);
+    int lock = !ERTS_IS_CRASH_DUMPING;
+    if (lock)
+	module_read_lock();
+    index_info(to, to_arg, &module_table);
+    if (lock)
+	module_read_unlock();
 }
 
 
@@ -75,6 +91,7 @@ void init_module_table(void)
 {
     HashFunctions f;
 
+    module_init_lock();
     f.hash = (H_FUN) module_hash;
     f.cmp  = (HCMP_FUN) module_cmp;
     f.alloc = (HALLOC_FUN) module_alloc;
@@ -89,15 +106,19 @@ erts_get_module(Eterm mod)
 {
     Module e;
     int index;
+    Module *ret;
 
     ASSERT(is_atom(mod));
     e.module = atom_val(mod);
+    module_read_lock();
     index = index_get(&module_table, (void*) &e);
     if (index == -1) {
-	return NULL;
+	ret = NULL;
     } else {
-	return module_code(index);
+	ret = (Module*)module_table.table[index];
     }
+    module_read_unlock();
+    return ret;
 }
 
 Module*
@@ -105,10 +126,61 @@ erts_put_module(Eterm mod)
 {
     Module e;
     int index;
+    Module *ret;
 
     ASSERT(is_atom(mod));
     e.module = atom_val(mod);
+    module_write_lock();
     index = index_put(&module_table, (void*) &e);
-    return module_code(index);
+    ret = (Module*)module_table.table[index];
+    module_write_unlock();
+    return ret;
 }
 
+Module *module_code(int i)
+{
+    Module *ret;
+    int lock = !ERTS_IS_CRASH_DUMPING;
+
+    if (lock)
+	module_read_lock();
+    ret = (Module*)module_table.table[i];
+    if (lock)
+	module_read_unlock();
+    return ret;
+}
+
+int module_code_size(void)
+{
+    int size;
+    int lock = !ERTS_IS_CRASH_DUMPING;
+
+    if (lock)
+	module_read_lock();
+    size = module_table.sz;
+    if (lock)
+	module_read_unlock();
+    return size;
+}
+
+int module_table_sz(void)
+{
+    int sz;
+    int lock = !ERTS_IS_CRASH_DUMPING;
+    if (lock)
+	module_read_lock();
+    sz = index_table_sz(&module_table);
+    if (lock)
+	module_read_unlock();
+    return sz;
+}
+
+int module_iter(int i)
+{
+    int index;
+
+    module_read_lock();
+    index = index_iter(&module_table, i);
+    module_read_unlock();
+    return index;
+}

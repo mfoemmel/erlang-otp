@@ -20,6 +20,7 @@ erts_sock_t erts_sock_open(void);
 void erts_sock_close(erts_sock_t);
 int erts_sock_connect(erts_sock_t, byte *, int, Uint16);
 Sint erts_sock_send(erts_sock_t, const void *, Sint);
+int erts_sock_gethostname(char *, int);
 int erts_sock_errno(void);
 
 #endif

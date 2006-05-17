@@ -19,17 +19,19 @@
 -->
 <part>
   <header>
-    <title>Jinterface Release Notes
-    <prepared>Gordon Beaton
-    <docno>
-    <date>1999-10-25
-    <rev>A
-    <file>part_notes.sgml
+    <title>Jinterface Release Notes</title>
+    <prepared>Gordon Beaton</prepared>
+    <docno></docno>
+    <date>1999-10-25</date>
+    <rev>A</rev>
   </header>
   <description>
-    <p>The Jinterface application allows Java and Erlang to communicate.
-    <p>There are also release notes for
-      <seealso marker="notes_history">older versions</seealso>.
+    <p>The <em>Jinterface</em> application is a Java-Erlang
+      communication tool package.</p>
+
+    <p>For information about older versions, see 
+      <url href="part_notes_history_frame.html">Release Notes
+	History</url>.</p>
   </description>
   <include file="notes">
 </part>

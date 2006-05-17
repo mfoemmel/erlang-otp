@@ -44,11 +44,6 @@
 
 -include("dist.hrl").
 -include("dist_util.hrl").
--record(tick, {read = 0,
-               write = 0,
-               tick = 0,
-               ticked = 0
-               }).
 
 %% ------------------------------------------------------------
 %%  Select this protocol based on node name

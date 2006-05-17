@@ -26,7 +26,18 @@
 #include "erl_fun.h"
 #include "hash.h"
 
-Hash erts_fun_table;
+static Hash erts_fun_table;
+
+#include "erl_smp.h"
+
+static erts_smp_rwmtx_t erts_fun_table_lock;
+
+#define erts_fun_read_lock()	erts_smp_rwmtx_rlock(&erts_fun_table_lock)
+#define erts_fun_read_unlock()	erts_smp_rwmtx_runlock(&erts_fun_table_lock)
+#define erts_fun_write_lock()	erts_smp_rwmtx_rwlock(&erts_fun_table_lock)
+#define erts_fun_write_unlock()	erts_smp_rwmtx_rwunlock(&erts_fun_table_lock)
+#define erts_fun_init_lock()	erts_smp_rwmtx_init(&erts_fun_table_lock, \
+						    "fun_tab")
 
 static HashValue fun_hash(ErlFunEntry* obj);
 static int fun_cmp(ErlFunEntry* obj1, ErlFunEntry* obj2);
@@ -46,6 +57,7 @@ erts_init_fun_table(void)
 {
     HashFunctions f;
 
+    erts_fun_init_lock();
     f.hash = (H_FUN) fun_hash;
     f.cmp  = (HCMP_FUN) fun_cmp;
     f.alloc = (HALLOC_FUN) fun_alloc;
@@ -55,9 +67,26 @@ erts_init_fun_table(void)
 }
 
 void
-erts_fun_info(CIO to)
+erts_fun_info(int to, void *to_arg)
 {
-    hash_info(to, &erts_fun_table);
+    int lock = !ERTS_IS_CRASH_DUMPING;
+    if (lock)
+	erts_fun_read_lock();
+    hash_info(to, to_arg, &erts_fun_table);
+    if (lock)
+	erts_fun_read_unlock();
+}
+
+int erts_fun_table_sz(void)
+{
+    int sz;
+    int lock = !ERTS_IS_CRASH_DUMPING;
+    if (lock)
+	erts_fun_read_lock();
+    sz = hash_table_sz(&erts_fun_table);
+    if (lock)
+	erts_fun_read_unlock();
+    return sz;
 }
 
 ErlFunEntry*
@@ -70,10 +99,12 @@ erts_put_fun_entry(Eterm mod, int uniq, int index)
     template.old_uniq = uniq;
     template.old_index = index;
     template.module = mod;
+    erts_fun_write_lock();
     fe = (ErlFunEntry *) hash_put(&erts_fun_table, (void*) &template);
     sys_memset(fe->uniq, 0, sizeof(fe->uniq));
     fe->index = 0;
-    fe->refc++;
+    erts_refc_inc(&fe->refc, 1);
+    erts_fun_write_unlock();
     return fe;
 }
 
@@ -88,11 +119,13 @@ erts_put_fun_entry2(Eterm mod, int old_uniq, int old_index,
     template.old_uniq = old_uniq;
     template.old_index = old_index;
     template.module = mod;
+    erts_fun_write_lock();
     fe = (ErlFunEntry *) hash_put(&erts_fun_table, (void*) &template);
     sys_memcpy(fe->uniq, uniq, sizeof(fe->uniq));
     fe->index = index;
     fe->arity = arity;
-    fe->refc++;
+    erts_refc_inc(&fe->refc, 1);
+    erts_fun_write_unlock();
     return fe;
 }
 
@@ -107,44 +140,73 @@ ErlFunEntry*
 erts_get_fun_entry(Eterm mod, int uniq, int index)
 {
     ErlFunEntry template;
+    ErlFunEntry *ret;
 
     ASSERT(is_atom(mod));
     template.old_uniq = uniq;
     template.old_index = index;
     template.module = mod;
-    return (ErlFunEntry *) hash_get(&erts_fun_table, (void*) &template);
+    erts_fun_read_lock();
+    ret = (ErlFunEntry *) hash_get(&erts_fun_table, (void*) &template);
+    erts_refc_inc(&ret->refc, 1);
+    erts_fun_read_unlock();
+    return ret;
+}
+
+static void
+erts_erase_fun_entry_unlocked(ErlFunEntry* fe)
+{
+    hash_erase(&erts_fun_table, (void *) fe);
 }
 
 void
 erts_erase_fun_entry(ErlFunEntry* fe)
 {
-    hash_erase(&erts_fun_table, (void *) fe);
+    erts_fun_write_lock();
+#ifdef ERTS_SMP
+    /*
+     * We have to check refc again since someone might have looked up
+     * the fun entry and incremented refc after last check.
+     */
+    if (erts_refc_read(&fe->refc, 0) == 0)
+#endif
+    {
+	if (fe->address != unloaded_fun)
+	    erl_exit(1,
+		     "Internal error: "
+		     "Invalid reference count found on #Fun<%T.%d.%d>: "
+		     " About to erase fun still referred by code.\n",
+		     fe->module, fe->old_index, fe->old_uniq);
+	erts_erase_fun_entry_unlocked(fe);
+    }
+    erts_fun_write_unlock();
 }
 
-#ifndef SHARED_HEAP
 #ifndef HYBRID /* FIND ME! */
 void
 erts_cleanup_funs(ErlFunThing* funp)
 {
     while (funp) {
 	ErlFunEntry* fe = funp->fe;
-	if (--(fe->refc) == 0) {
+	if (erts_refc_dectest(&fe->refc, 0) == 0) {
 	    erts_erase_fun_entry(fe);
 	}
 	funp = funp->next;
     }
 }
 #endif
-#endif
 
 void
 erts_cleanup_funs_on_purge(Eterm* start, Eterm* end)
 {
-    int limit = erts_fun_table.size;
-    HashBucket** bucket = erts_fun_table.bucket;
+    int limit;
+    HashBucket** bucket;
     ErlFunEntry* to_delete = NULL;
     int i;
 
+    erts_fun_write_lock();
+    limit = erts_fun_table.size;
+    bucket = erts_fun_table.bucket;
     for (i = 0; i < limit; i++) {
 	HashBucket* b = bucket[i];
 
@@ -154,8 +216,7 @@ erts_cleanup_funs_on_purge(Eterm* start, Eterm* end)
 
 	    if (start <= addr && addr < end) {
 		fe->address = unloaded_fun;
-		fe->refc--;
-		if (fe->refc == 0) {
+		if (erts_refc_dectest(&fe->refc, 0) == 0) {
 		    fe->address = (void *) to_delete;
 		    to_delete = fe;
 		}
@@ -166,37 +227,44 @@ erts_cleanup_funs_on_purge(Eterm* start, Eterm* end)
 
     while (to_delete != NULL) {
 	ErlFunEntry* next = (ErlFunEntry *) to_delete->address;
-	erts_erase_fun_entry(to_delete);
+	erts_erase_fun_entry_unlocked(to_delete);
 	to_delete = next;
     }
+    erts_fun_write_unlock();
 }
 
 void
-erts_dump_fun_entries(CIO fd)
+erts_dump_fun_entries(int to, void *to_arg)
 {
-    int limit = erts_fun_table.size;
-    HashBucket** bucket = erts_fun_table.bucket;
+    int limit;
+    HashBucket** bucket;
     int i;
+    int lock = !ERTS_IS_CRASH_DUMPING;
 
+
+    if (lock)
+	erts_fun_read_lock();
+    limit = erts_fun_table.size;
+    bucket = erts_fun_table.bucket;
     for (i = 0; i < limit; i++) {
 	HashBucket* b = bucket[i];
 
 	while (b) {
 	    ErlFunEntry* fe = (ErlFunEntry *) b;
-	    sys_printf(fd, "=fun\n");
-	    sys_printf(fd, "Module: ");
-	    print_atom(atom_val(fe->module), fd);
-	    sys_printf(fd, "\n");
-	    sys_printf(fd, "Uniq: %d\n", fe->old_uniq);
-	    sys_printf(fd, "Index: %d\n",fe->old_index);
-	    sys_printf(fd, "Address: %p\n", fe->address);
+	    erts_print(to, to_arg, "=fun\n");
+	    erts_print(to, to_arg, "Module: %T\n", fe->module);
+	    erts_print(to, to_arg, "Uniq: %d\n", fe->old_uniq);
+	    erts_print(to, to_arg, "Index: %d\n",fe->old_index);
+	    erts_print(to, to_arg, "Address: %p\n", fe->address);
 #ifdef HIPE
-	    sys_printf(fd, "Native_address: %p\n", fe->native_address);
+	    erts_print(to, to_arg, "Native_address: %p\n", fe->native_address);
 #endif
-	    sys_printf(fd, "Refc: %d\n", fe->refc);
+	    erts_print(to, to_arg, "Refc: %d\n", erts_refc_read(&fe->refc, 1));
 	    b = b->next;
 	}
     }
+    if (lock)
+	erts_fun_read_unlock();
 }
 
 static HashValue
@@ -222,7 +290,7 @@ fun_alloc(ErlFunEntry* template)
     obj->old_uniq = template->old_uniq;
     obj->old_index = template->old_index;
     obj->module = template->module;
-    obj->refc = 0;
+    erts_refc_init(&obj->refc, 0);
     obj->address = unloaded_fun;
 #ifdef HIPE
     obj->native_address = NULL;

@@ -60,13 +60,16 @@ MKDIRS="${ERL_TOP}/lib/os_mon/priv/bin/$target
         ${ERL_TOP}/lib/runtime_tools/priv/obj/$target
 	${ERL_TOP}/erts/obj/$target
 	${ERL_TOP}/erts/obj.debug/$target
-	${ERL_TOP}/erts/obj.instr.beam/$target
-	${ERL_TOP}/erts/obj.shared.beam/$target
 	${ERL_TOP}/erts/obj.purify.beam/$target
 	${ERL_TOP}/erts/obj.quantify.beam/$target
 	${ERL_TOP}/erts/obj.purecov.beam/$target
+	${ERL_TOP}/erts/obj.nofrag.beam
+	${ERL_TOP}/erts/obj.nofrag.beam/$target
+	${ERL_TOP}/erts/emulator/$target/opt
+	${ERL_TOP}/erts/emulator/$target/debug
+	${ERL_TOP}/erts/emulator/$target/nofrag
 	${ERL_TOP}/bin/$target"
-for tag in '' '.debug' '.instr' '.purify' '.quantify' '.purecov'; do
+for tag in '' '.debug' '.purify' '.quantify' '.purecov'; do
    MKDIRS="$MKDIRS ${ERL_TOP}/erts/obj$tag.beam/$target"
 done
 
@@ -81,6 +84,7 @@ my_root=${ERL_TOP}/erts/emulator
 emu_test=$my_root/test
 beam=$my_root/beam
 erts_lib_src=${ERL_TOP}/erts/lib_src
+erts_incl=${ERL_TOP}/erts/include
 erts_incl_intrnl=${ERL_TOP}/erts/include/internal
 etcdir=${ERL_TOP}/erts/etc/common
 erlint_dir=${ERL_TOP}/lib/erl_interface/src
@@ -94,9 +98,11 @@ libdir=${ERL_TOP}/lib
 tsdir=$libdir/test_server/src
 zlibdir=${ERL_TOP}/erts/emulator/zlib
 runtime_tools_dir=${ERL_TOP}/lib/runtime_tools/c_src
+tools_dir=${ERL_TOP}/lib/tools/c_src
 
 CONFIG_FILES="${ERL_TOP}/erts/emulator/$host/Makefile
 	    $erts_lib_src/$host/Makefile
+	    $erts_incl/$host/erl_int_sizes_config.h
 	    $erts_incl_intrnl/$host/ethread.mk
 	    $erts_incl_intrnl/$host/ethread_header_config.h
 	    $etcdir/$host/Makefile
@@ -109,6 +115,7 @@ CONFIG_FILES="${ERL_TOP}/erts/emulator/$host/Makefile
 	    $ic_dir/$host/Makefile
 	    $asn1_dir/$host/Makefile
 	    $runtime_tools_dir/$host/Makefile
+	    $tools_dir/$host/Makefile
 	    $orber_dir/$host/Makefile"
 
 for file in $CONFIG_FILES; do

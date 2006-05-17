@@ -26,15 +26,11 @@
 	]).
 
 %% for hipe_graph_coloring_regalloc:
--ifdef(notdef).
 -export([is_fixed/1]).
--endif.
 
 %% for hipe_ls_regalloc:
--ifdef(notdef).
 -export([args/1, is_arg/1, is_global/1, new_spill_index/1]).
 -export([breadthorder/1, postorder/1]).
--endif.
 
 %% callbacks for hipe_regalloc_loop
 -export([defun_to_cfg/1,
@@ -79,10 +75,8 @@ all_precoloured() ->
 is_precoloured(Reg) ->
   hipe_arm_registers:is_precoloured_gpr(Reg).
 
--ifdef(notdef).
 is_fixed(R) ->
   hipe_arm_registers:is_fixed(R).
--endif.
 
 physical_name(Reg) ->
   Reg.
@@ -137,7 +131,6 @@ reg_nr(Reg) ->
 
 %%% Linear Scan stuff
 
--ifdef(notdef).
 new_spill_index(SpillIndex)->
   SpillIndex+1.
 
@@ -158,4 +151,3 @@ is_arg(R) ->
 
 args(CFG) ->
   hipe_arm_registers:args(hipe_arm_cfg:arity(CFG)).
--endif.

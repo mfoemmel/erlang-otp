@@ -10,11 +10,11 @@
 -export([postorder/1]).
 -export([linearise/1]).
 -export([params/1, reverse_postorder/1]).
-%%-export([arity/1]). % for linear scan
+-export([arity/1]). % for linear scan
 %%-export([redirect_jmp/3]).
 
 %%% these tell cfg.inc what to define (ugly as hell)
-%%-define(BREADTH_ORDER,true). % for linear scan
+-define(BREADTH_ORDER,true). % for linear scan
 -define(PARAMS_NEEDED,true).
 -define(START_LABEL_UPDATE_NEEDED,true).
 -include("../flow/cfg.inc").
@@ -109,8 +109,6 @@ linearise(CFG) ->	% -> defun, not insn list
   hipe_arm:mk_defun(Fun, Formals, IsClosure, IsLeaf,
 		    Code, Data, VarRange, LabelRange).
 
--ifdef(notdef). % for linear scan
 arity(CFG) ->
   #arm_mfa{a=Arity} = function(CFG),
   Arity.
--endif.

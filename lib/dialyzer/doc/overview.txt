@@ -1,0 +1,27 @@
+##----------------------------------------------------------------------------
+## File:      doc/overview.txt
+## Author(s): Tobias Lindahl <tobiasl@it.uu.se>
+##	      Kostis Sagonas <kostis@it.uu.se>
+##----------------------------------------------------------------------------
+
+The DIALYZER, a DIscrepany AnaLYZer for ERlang programs.
+
+The Dialyzer is a static analysis tool that identifies software discrepancies
+such as type errors, unreachable code, unnecessary tests, etc in single Erlang
+modules or entire (sets of) applications. Currently, Dialyzer starts its
+analysis from either BEAM bytecode or from Erlang source code and reports
+to its user the functions where the discrepancies occur and an indication
+of what the discrepancy is about. Dialyzer currently supports various modes
+of operation and its analysis is precise (in particular, there are no false
+positives) and quite fast.
+
+For more information on how to use the Dialyzer consult the "Manual" section
+of the "Help" menu.
+
+
+Planned Future Extensions
+=========================
+ 1. Provide more precise information (e.g. line number) about the place
+    where the discrepancies occur.
+ 2. Automatically annotate the programs with the inferred type information.
+ 3. Extend the analysis to the concurrent part of Erlang.

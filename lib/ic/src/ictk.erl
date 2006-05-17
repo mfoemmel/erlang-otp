@@ -265,7 +265,7 @@ check_include_regs(G) ->
     case ic_pragma:get_incl_refs(G) of
 	none ->
 	    io_lib:format("\n%% No included idl-files detected.\n", []) ++
-	    io_lib:format("include_reg_test(~s) -> true.\n",[IfrId]);
+	    io_lib:format("include_reg_test(_~s) -> true.\n",[IfrId]);
 	IMs ->
 	    io_lib:format("\n%% IFR registration checks for included idl files.\n", []) ++
 	    io_lib:format("include_reg_test(~s) ->\n",[IfrId]) ++
@@ -350,8 +350,8 @@ do_except(G, S, N, C, V, X, {tk_except, _IFRID, _Name, ElemList}) ->
 
 %% new_var finds an unused Erlang variable name by increasing a
 %% counter.
-new_var(G) ->
-    mk_name(G, integer_to_list(put(var_count, get(var_count) + 1))).
+new_var(_G) ->
+    lists:flatten(["_OE_", integer_to_list(put(var_count, get(var_count) + 1))]).
 init_var() ->
     put(var_count, 1).
 

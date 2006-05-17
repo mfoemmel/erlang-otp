@@ -21,8 +21,7 @@
 	 snmpTargetSpinLock/1, snmpTargetSpinLock/2,
 	 snmpTargetAddrTable/1, snmpTargetAddrTable/3,
 	 snmpTargetParamsTable/1, snmpTargetParamsTable/3,
-	 table_next/2, get_target_addrs/0, 
-	 get_target_engine_id/1, set_target_engine_id/2,
+	 get_target_addrs/0, get_target_engine_id/1, set_target_engine_id/2,
 	 is_valid_tag/3, get/3, table_next/2]).
 -export([add_addr/10,  delete_addr/1,
 	 add_params/5, delete_params/1]).

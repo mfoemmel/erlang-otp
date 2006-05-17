@@ -39,7 +39,7 @@
 
 -define(RAM_FILE_DRV, "ram_file_drv").
 -define(MAX_I32, (1 bsl 31)).
--define(G_I32(X), integer(X), X >= -?MAX_I32, X < ?MAX_I32).
+-define(G_I32(X), is_integer(X), X >= -?MAX_I32, X < ?MAX_I32).
 
 -include("file.hrl").
 
@@ -94,27 +94,23 @@
 %%
 %% Supposed to be called by applications through module file.
 
-open(Data, ModeList) when list(ModeList) ->
-    case load_driver() of
-	{ok, _Drv} ->
-	    case open_mode(ModeList) of
-		{error, _} = Error ->
-		    Error;
-		{Mode, Opts} ->
-		    case ll_open(Data, Mode, Opts) of
-			{ok, Port} ->
-			    {ok, 
-			     #file_descriptor{module = ?MODULE, data = Port}};
-			Error ->
-			    Error
-		    end
-	    end;
-	Error -> Error
+open(Data, ModeList) when is_list(ModeList) ->
+    case open_mode(ModeList) of
+	{error, _} = Error ->
+	    Error;
+	{Mode, Opts} ->
+	    case ll_open(Data, Mode, Opts) of
+		{ok, Port} ->
+		    {ok, 
+		     #file_descriptor{module = ?MODULE, data = Port}};
+		Error ->
+		    Error
+	    end
     end;
 %% Old obsolete mode specification
 open(Data, Mode) ->
     case mode_list(Mode) of
-	ModeList when list(ModeList) ->
+	ModeList when is_list(ModeList) ->
 	    open(Data, ModeList);
 	Error ->
 	    Error
@@ -163,7 +159,7 @@ write(#file_descriptor{module = ?MODULE, data = Port}, Bytes) ->
 copy(#file_descriptor{module = ?MODULE} = Source,
      #file_descriptor{module = ?MODULE} = Dest,
      Length)
-  when integer(Length), Length >= 0;
+  when is_integer(Length), Length >= 0;
        atom(Length) ->
     %% XXX Should be moved down to the driver for optimization.
     file:copy_opened(Source, Dest, Length);
@@ -189,9 +185,9 @@ position(#file_descriptor{module = ?MODULE, data = Port}, Pos) ->
 
 
 
-pread(#file_descriptor{module = ?MODULE, data = Port}, L) when list(L) ->
+pread(#file_descriptor{module = ?MODULE, data = Port}, L) when is_list(L) ->
     case pread_1(L) of
-	Commands when list(Commands) ->
+	Commands when is_list(Commands) ->
 	    pread_2(Port, Commands, []);
 	Error -> 
 	    Error
@@ -232,9 +228,9 @@ pread(#file_descriptor{module = ?MODULE}, _, _) ->
 
 
 
-pwrite(#file_descriptor{module = ?MODULE, data = Port}, L) when list(L) ->
+pwrite(#file_descriptor{module = ?MODULE, data = Port}, L) when is_list(L) ->
     case pwrite_1(L) of
-	Commands when list(Commands) ->
+	Commands when is_list(Commands) ->
 	    pwrite_2(Port, Commands, 0);
 	Error ->
 	    Error
@@ -335,32 +331,6 @@ uudecode(#file_descriptor{}) ->
 %%%-----------------------------------------------------------------
 %%% Functions to communicate with the driver
 
-
-
--ifdef(LOADABLE).
-driver_dir() ->
-    code:lib_dir(?MODULE).
-
-load_driver() ->
-    erl_ddll:start(),
-    {ok,DrvList} = erl_ddll:loaded_drivers(),
-    case lists:member(?RAM_FILE_DRV, DrvList) of
-	true -> 
-	    {ok, ?RAM_FILE_DRV};
-	false ->
-	    case erl_ddll:load_driver(driver_dir(), ?RAM_FILE_DRV) of
-		ok -> 
-		    {ok, ?RAM_FILE_DRV};
-		{error, _} = Error -> 
-		    Error
-	    end
-    end.
--else.
-load_driver() ->
-    {ok, ?RAM_FILE_DRV}.
-
--endif.
-
 ll_open(Data, Mode, Opts) ->
     case (catch erlang:open_port({spawn, ?RAM_FILE_DRV}, Opts)) of
 	{'EXIT', _Reason} ->
@@ -377,7 +347,7 @@ ll_open(Data, Mode, Opts) ->
     
 call_port(Port, Command) ->
     case (catch list_to_binary(Command)) of
-	Cmd when binary(Cmd) ->
+	Cmd when is_binary(Cmd) ->
 	    case (catch erlang:port_command(Port, Cmd)) of
 		{'EXIT', _} ->
 		    {error, einval};
@@ -427,7 +397,7 @@ mode_list(_) ->
 %% Returns {Mode, Opts} wher Opts is a list of options for 
 %% erlang:open_port/2, or {error, einval} upon failure.
 
-open_mode(List) when list(List) ->
+open_mode(List) when is_list(List) ->
     case open_mode(List, {0, []}) of
 	{Mode, Opts} when Mode band 
 			  (?RAM_FILE_MODE_READ bor ?RAM_FILE_MODE_WRITE) 
@@ -456,7 +426,7 @@ open_mode(_, _) ->
 %% {ok, Offset, OriginCode} for the driver.
 %% Returns {error, einval} upon failure.
 
-lseek_position(Pos) when integer(Pos) ->
+lseek_position(Pos) when is_integer(Pos) ->
     lseek_position({bof, Pos});
 lseek_position(bof) ->
     lseek_position({bof, 0});
@@ -479,7 +449,7 @@ translate_response(?RAM_FILE_RESP_OK, []) ->
     ok;
 translate_response(?RAM_FILE_RESP_OK, Data) ->
     {ok, Data};
-translate_response(?RAM_FILE_RESP_ERROR, List) when list(List) ->
+translate_response(?RAM_FILE_RESP_ERROR, List) when is_list(List) ->
     {error, list_to_atom(List)};
 translate_response(?RAM_FILE_RESP_NUMBER, [X1, X2, X3, X4]) ->
     {ok, i32(X1, X2, X3, X4)};
@@ -488,13 +458,14 @@ translate_response(?RAM_FILE_RESP_DATA, [X1, X2, X3, X4|Data]) ->
 translate_response(X, Data) ->
     {error, {bad_response_from_port, X, Data}}.
 
-i32(Int) when binary(Int) ->
+i32(Int) when is_binary(Int) ->
     i32(binary_to_list(Int));
 
-i32(Int)  when integer(Int) -> [(Int bsr 24) band 255,
-				(Int bsr 16) band 255,
-				(Int bsr  8) band 255,
-				Int band 255];
+i32(Int) when is_integer(Int) ->
+    [(Int bsr 24) band 255,
+     (Int bsr 16) band 255,
+     (Int bsr  8) band 255,
+     Int band 255];
 i32([X1,X2,X3,X4]) ->
     (X1 bsl 24) bor (X2 bsl 16) bor (X3 bsl 8) bor X4.
 

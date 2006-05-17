@@ -167,11 +167,23 @@ write_event(_, _) ->
     ok.
 
 maybe_utc(Time) ->
-    case application:get_env(stdlib,utc_log) of
-	{ok,true} ->
-	    {utc,calendar:local_time_to_universal_time(Time)};
-	_ ->
-	    Time
+    UTC = case application:get_env(sasl, utc_log) of
+              {ok, Val} ->
+                  Val;
+              undefined ->
+                  %% Backwards compatible:
+                  case application:get_env(stdlib, utc_log) of
+                      {ok, Val} ->
+                          Val;
+                      undefined ->
+                          false
+                  end
+          end,
+    if
+        UTC =:= true ->
+            {utc, calendar:local_time_to_universal_time(Time)};
+        true -> 
+            Time
     end.
 
 format_report(Rep) when list(Rep) ->

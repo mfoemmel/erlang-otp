@@ -36,6 +36,8 @@
 #include "erl_nmgc.h"
 #include "erl_threads.h"
 #include "erl_bif_timer.h"
+#include "erl_instrument.h"
+#include "erl_printf_term.h"
 
 #ifdef HIPE
 #include "hipe_mode_switch.h"	/* for hipe_mode_switch_init() */
@@ -56,10 +58,16 @@ extern void ConWaitForExit(void);
 
 #define ERTS_MIN_COMPAT_REL 7
 
+#ifdef ERTS_SMP
+erts_smp_atomic_t erts_writing_erl_crash_dump;
+#else
 volatile int erts_writing_erl_crash_dump = 0;
+#endif
 int erts_initialized = 0;
 
-static ethr_tid main_thread;
+#if defined(USE_THREADS) && !defined(ERTS_SMP)
+static erts_tid_t main_thread;
+#endif
 
 /*
  * Configurable parameters.
@@ -70,13 +78,15 @@ Uint display_loads;		/* print info about loaded modules */
 int H_MIN_SIZE;			/* The minimum heap grain */
 
 Uint32 erts_debug_flags;	/* Debug flags. */
+#ifndef ERTS_SMP /* Not supported with smp emulator */
 int count_instructions;
+#endif
 int erts_backtrace_depth;	/* How many functions to show in a backtrace
 				 * in error codes.
 				 */
 
 int erts_async_max_threads;  /* number of threads for async support */
-Uint16 erts_max_gen_gcs = (Uint16) -1;
+erts_smp_atomic_t erts_max_gen_gcs;
 
 Eterm erts_error_logger_warnings; /* What to map warning logs to, am_error, 
 				     am_info or am_warning, am_error is 
@@ -85,13 +95,16 @@ Eterm erts_error_logger_warnings; /* What to map warning logs to, am_error,
 int erts_compat_rel;
 
 #ifdef DEBUG
-verbose_level verbose;     /* See erl_debug.h for information about verbose */
+Uint32 verbose;             /* See erl_debug.h for information about verbose */
 #endif
 
 int erts_disable_tolerant_timeofday; /* Time correction can be disabled it is
 				      * not and/or it is too slow.
 				      */
 
+#ifdef ERTS_SMP
+Uint no_of_schedulers;
+#endif
 
 /*
  * Other global variables.
@@ -99,51 +112,27 @@ int erts_disable_tolerant_timeofday; /* Time correction can be disabled it is
 
 int erts_use_r9_pids_ports;
 
-#if defined(SHARED_HEAP) || defined(HYBRID)
+#ifdef HYBRID
 Eterm *global_heap;
 Eterm *global_hend;
 Eterm *global_htop;
 Eterm *global_saved_htop;
+Eterm *global_old_heap;
+Eterm *global_old_hend;
 ErlOffHeap erts_global_offheap;
 Uint   global_heap_sz = SH_DEFAULT_SIZE;
 
-#ifndef INCREMENTAL_GC
+#ifndef INCREMENTAL
 Eterm *global_high_water;
-#endif
-
-#ifndef NOMOVE
-Eterm *global_old_hend;
 Eterm *global_old_htop;
-Eterm *global_old_heap;
 #endif
 
 Uint16 global_gen_gcs;
 Uint16 global_max_gen_gcs;
 Uint   global_gc_flags;
-#endif
 
-#ifdef SHARED_HEAP
-ErlHeapFragment *global_mbuf;
-ErlHeapFragment *global_halloc_mbuf;
-Uint   global_mbuf_sz;
-Eterm *erts_global_arith_heap;
-Uint   erts_global_arith_avail;
-Eterm *erts_global_arith_lowest_htop;
-#ifdef DEBUG
-Eterm *erts_global_arith_check_me;
-#endif
-#endif
-
-#ifdef HYBRID
 Uint   global_heap_min_sz = SH_DEFAULT_SIZE;
 #endif
-
-byte* tmp_buf;
-Uint do_time;			/* set at clock interupt */
-Uint garbage_cols;		/* no of garbage collections */
-Uint reclaimed;			/* no of words reclaimed in GCs */
-
-Eterm system_seq_tracer;
 
 int ignore_break;
 int replace_intr;
@@ -187,28 +176,17 @@ this_rel_num(void)
  * that don't go to the error logger go through here.
  */
 
-void erl_error(fmt, args)
-char *fmt;
-va_list args;
+void erl_error(char *fmt, va_list args)
 {
-    vfprintf(stderr, fmt, args);
+    erts_vfprintf(stderr, fmt, args);
 }
+
+static void early_init(int *argc, char **argv);
 
 void
 erts_short_init(void)
 {
-    erts_initialized = 0;
-    erts_writing_erl_crash_dump = 0;
-
-    erts_compat_rel = this_rel_num();
-
-    erts_use_r9_pids_ports = 0;
-
-    erts_sys_pre_init();
-    main_thread = erts_thr_self();
-    erts_alloc_init(NULL, NULL);
-    erts_init_utils();
-    erl_sys_init();
+    early_init(NULL, NULL);
     erl_init();
     erts_initialized = 1;
 }
@@ -218,14 +196,17 @@ erl_init(void)
 {
     init_benchmarking();
 
-    ASSERT(TMP_BUF_SIZE >= 16384);
-    tmp_buf = (byte *) erts_alloc(ERTS_ALC_T_TMP_BUF, TMP_BUF_SIZE);
+#ifdef ERTS_SMP
+    erts_system_block_init();
+#endif
 
+    erts_init_monitors();
     erts_init_gc();
-    init_scheduler();
+    erts_init_process();
 
     H_MIN_SIZE = erts_next_heap_size(H_MIN_SIZE, 0);
 
+    erts_init_trace();
     erts_bif_info_init();
     erts_init_binary();
     erts_init_bits();
@@ -246,7 +227,6 @@ erl_init(void)
     init_copy();
     init_load();
     erts_init_bif();
-    erts_init_trace();
     erts_init_obsolete();
 #if HAVE_ERTS_MSEG
     erts_mseg_late_init(); /* Must be after timer (init_time()) and thread
@@ -263,7 +243,7 @@ erl_init(void)
 static void
 init_shared_memory(int argc, char **argv)
 {
-#if defined(SHARED_HEAP) || defined(HYBRID)
+#ifdef HYBRID
     int arg_size = 0;
 
     global_heap_sz = erts_next_heap_size(global_heap_sz,0);
@@ -274,36 +254,19 @@ init_shared_memory(int argc, char **argv)
     if (global_heap_sz < arg_size)
         global_heap_sz = erts_next_heap_size(arg_size,1);
 
+#ifndef INCREMENTAL
     global_heap = (Eterm *) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP,
 					    sizeof(Eterm) * global_heap_sz);
     global_hend = global_heap + global_heap_sz;
     global_htop = global_heap;
-
-#ifndef INCREMENTAL_GC
     global_high_water = global_heap;
-#endif
-    global_gen_gcs = 0;
-    global_max_gen_gcs = erts_max_gen_gcs;
-    global_gc_flags = erts_default_process_flags;
-
-#ifndef NOMOVE
     global_old_hend = global_old_htop = global_old_heap = NULL;
 #endif
-#endif
 
-#ifdef SHARED_HEAP
-    global_mbuf = NULL;
-    global_mbuf_sz = 0;
-    global_halloc_mbuf = NULL;
-    erts_global_arith_heap = NULL;
-    erts_global_arith_avail = 0;
-    erts_global_arith_lowest_htop = NULL;
-#ifdef DEBUG
-    erts_global_arith_check_me = NULL;
-#endif
-#endif
+    global_gen_gcs = 0;
+    global_max_gen_gcs = erts_smp_atomic_read(&erts_max_gen_gcs);
+    global_gc_flags = erts_default_process_flags;
 
-#ifdef HYBRID
     erts_global_offheap.mso = NULL;
 #ifndef HYBRID /* FIND ME! */
     erts_global_offheap.funs = NULL;
@@ -311,8 +274,8 @@ init_shared_memory(int argc, char **argv)
     erts_global_offheap.overhead = 0;
 #endif
 
-#ifdef NOMOVE
-    erts_init_nmgc();
+#ifdef INCREMENTAL
+    erts_init_incgc();
 #endif
 }
 
@@ -346,29 +309,16 @@ erts_first_process(Eterm modname, void* code, unsigned size, int argc, char** ar
      * We need a dummy parent process to be able to call erl_create_process().
      */
     erts_init_empty_process(&parent);
-#if defined(SHARED_HEAP)
-    parent.heap_sz = global_heap_sz;
-    parent.heap = global_heap;
-    parent.hend = global_hend;
-    parent.htop = global_htop;
-    parent.stop = global_hend;
-#endif
     hp = HAlloc(&parent, argc*2 + 4);
     args = NIL;
     for (i = argc-1; i >= 0; i--) {
 	int len = sys_strlen(argv[i]);
-	args = CONS(hp, new_binary(&parent, argv[i], len), args);
+	args = CONS(hp, new_binary(&parent, (byte*)argv[i], len), args);
 	hp += 2;
     }
     args = CONS(hp, new_binary(&parent, code, size), args);
     hp += 2;
     args = CONS(hp, args, NIL);
-#if defined(SHARED_HEAP)
-    global_heap = parent.heap;
-    global_htop = parent.htop;
-    global_hend = parent.hend;
-    global_heap_sz = parent.heap_sz;
-#endif
 
     so.flags = 0;
     pid = erl_create_process(&parent, modname, am_start, args, &so);
@@ -388,10 +338,8 @@ erl_first_process_otp(char* modname, void* code, unsigned size, int argc, char**
     int i;
     Eterm start_mod;
     Eterm args;
-    Eterm pid;
     Eterm* hp;
     Process parent;
-    Process* p;
     ErlSpawnOpts so;
     Eterm env;
     
@@ -405,36 +353,20 @@ erl_first_process_otp(char* modname, void* code, unsigned size, int argc, char**
      */
 
     erts_init_empty_process(&parent);
-#if defined(SHARED_HEAP)
-    parent.heap_sz = global_heap_sz;
-    parent.heap = global_heap;
-    parent.hend = global_hend;
-    parent.htop = global_htop;
-    parent.stop = global_hend;
-#endif
     hp = HAlloc(&parent, argc*2 + 4);
     args = NIL;
     for (i = argc-1; i >= 0; i--) {
 	int len = sys_strlen(argv[i]);
-	args = CONS(hp, new_binary(&parent, argv[i], len), args);
+	args = CONS(hp, new_binary(&parent, (byte*)argv[i], len), args);
 	hp += 2;
     }
     env = new_binary(&parent, code, size);
     args = CONS(hp, args, NIL);
     hp += 2;
     args = CONS(hp, env, args);
-#if defined(SHARED_HEAP)
-    global_heap = parent.heap;
-    global_htop = parent.htop;
-    global_hend = parent.hend;
-    global_heap_sz = parent.heap_sz;
-#endif
 
     so.flags = 0;
-    pid = erl_create_process(&parent, start_mod, am_start, args, &so);
-    ASSERT(internal_pid_index(pid) < erts_max_processes);
-    p = process_tab[internal_pid_index(pid)];
-    p->group_leader = pid; /* internal pid */
+    (void) erl_create_process(&parent, start_mod, am_start, args, &so);
     erts_cleanup_empty_process(&parent);
 }
 
@@ -479,7 +411,7 @@ get_arg(char* rest, char* next, int* ip)
 {
     if (*rest == '\0') {
 	if (next == NULL) {
-	    erl_printf(CERR, "too few arguments\n");
+	    erts_fprintf(stderr, "too few arguments\n");
 	    erts_usage();
 	}
 	(*ip)++;
@@ -509,7 +441,7 @@ load_preloaded(void)
 	if ((code = sys_preload_begin(&preload_p[i])) == 0)
 	    erl_exit(1, "Failed to find preloaded code for module %s\n", 
 		     name);
-	res = erts_load_module(NIL, &module_name, code, length);
+	res = erts_load_module(NULL, 0, NIL, &module_name, code, length);
 	sys_preload_end(&preload_p[i]);
 	if (res < 0)
 	    erl_exit(1,"Failed loading preloaded module %s\n", name);
@@ -520,60 +452,122 @@ load_preloaded(void)
 /* be helpful (or maybe downright rude:-) */
 void erts_usage(void)
 {
-    erl_printf(CERR, "Usage: %s [flags] [ -- [init_args] ]\n", progname(program));
-    erl_printf(CERR, "The flags are:\n\n");
+    erts_fprintf(stderr, "Usage: %s [flags] [ -- [init_args] ]\n", progname(program));
+    erts_fprintf(stderr, "The flags are:\n\n");
 
-    /*    erl_printf(CERR, "-# number  set the number of items to be used in traces etc\n"); */
+    /*    erts_fprintf(stderr, "-# number  set the number of items to be used in traces etc\n"); */
 
-    erl_printf(CERR, "-A number  set number of threads in async thread pool,\n");
-    erl_printf(CERR, "           valid range is [0-256]\n");
+    erts_fprintf(stderr, "-A number  set number of threads in async thread pool,\n");
+    erts_fprintf(stderr, "           valid range is [0-%d]\n",
+		 ERTS_MAX_NO_OF_ASYNC_THREADS);
 
-    erl_printf(CERR, "-B[c|d|i]  c to have Ctrl-c interrupt the Erlang shell,\n");
-    erl_printf(CERR, "           d (or no extra option) to disable the break\n");
-    erl_printf(CERR, "           handler, i to ignore break signals\n");
+    erts_fprintf(stderr, "-B[c|d|i]  c to have Ctrl-c interrupt the Erlang shell,\n");
+    erts_fprintf(stderr, "           d (or no extra option) to disable the break\n");
+    erts_fprintf(stderr, "           handler, i to ignore break signals\n");
 
-    /*    erl_printf(CERR, "-b func    set the boot function (default boot)\n"); */
+    /*    erts_fprintf(stderr, "-b func    set the boot function (default boot)\n"); */
 
-    erl_printf(CERR, "-c         disable continuous date/time correction with\n");
-    erl_printf(CERR, "           respect to uptime\n");
-#ifdef SHARED_HEAP
-    erl_printf(CERR, "-h number  set minimum heap size in words (default %d)\n",
-	       SH_DEFAULT_SIZE);
-#else
-    erl_printf(CERR, "-h number  set minimum heap size in words (default %d)\n",
+    erts_fprintf(stderr, "-c         disable continuous date/time correction with\n");
+    erts_fprintf(stderr, "           respect to uptime\n");
+    erts_fprintf(stderr, "-h number  set minimum heap size in words (default %d)\n",
 	       H_DEFAULT_SIZE);
-#endif
 
-    /*    erl_printf(CERR, "-i module  set the boot module (default init)\n"); */
+    /*    erts_fprintf(stderr, "-i module  set the boot module (default init)\n"); */
 
-    erl_printf(CERR, "-K boolean enable or disable kernel poll\n");
+    erts_fprintf(stderr, "-K boolean enable or disable kernel poll\n");
 
-    erl_printf(CERR, "-l         turn on auto load tracing\n");
+    erts_fprintf(stderr, "-l         turn on auto load tracing\n");
 
-    erl_printf(CERR, "-M<X> <Y>  memory allocator switches,\n");
-    erl_printf(CERR, "           see the erts_alloc(3) man page for more info.\n");
+    erts_fprintf(stderr, "-M<X> <Y>  memory allocator switches,\n");
+    erts_fprintf(stderr, "           see the erts_alloc(3) man page for more info.\n");
 
-    erl_printf(CERR, "-P number  set maximum number of processes on this node,\n");
-    erl_printf(CERR, "           valid range is [%d-%d]\n",
+    erts_fprintf(stderr, "-P number  set maximum number of processes on this node,\n");
+    erts_fprintf(stderr, "           valid range is [%d-%d]\n",
 	       ERTS_MIN_PROCESSES, ERTS_MAX_PROCESSES);
-    erl_printf(CERR, "-R number  set compatibility release number,\n");
-    erl_printf(CERR, "           valid range [%d-%d]\n",
+    erts_fprintf(stderr, "-R number  set compatibility release number,\n");
+    erts_fprintf(stderr, "           valid range [%d-%d]\n",
 	       ERTS_MIN_COMPAT_REL, this_rel_num());
 
-    erl_printf(CERR, "-r         force ets memory block to be moved on realloc\n");
+    erts_fprintf(stderr, "-r         force ets memory block to be moved on realloc\n");
 
-    erl_printf(CERR, "-V         print Erlang version\n");
+    erts_fprintf(stderr, "-S number  set number of schedulers on this node,\n");
+    erts_fprintf(stderr, "           valid range is [1-%d]\n",
+		 ERTS_MAX_NO_OF_SCHEDULERS);
+    erts_fprintf(stderr, "-V         print Erlang version\n");
 
-    erl_printf(CERR, "-v         turn on chatty mode (GCs will be reported etc)\n");
+    erts_fprintf(stderr, "-v         turn on chatty mode (GCs will be reported etc)\n");
 
-    erl_printf(CERR, "-W<i|w>    set error logger warnings mapping,\n");
-    erl_printf(CERR, "           see error_logger documentation for details\n");
+    erts_fprintf(stderr, "-W<i|w>    set error logger warnings mapping,\n");
+    erts_fprintf(stderr, "           see error_logger documentation for details\n");
 
-    erl_printf(CERR, "\n");
-    erl_printf(CERR, "Note that if the emulator is started with erlexec (typically\n");
-    erl_printf(CERR, "from the erl script), these flags should be specified with +.\n");
-    erl_printf(CERR, "\n\n");
+    erts_fprintf(stderr, "\n");
+    erts_fprintf(stderr, "Note that if the emulator is started with erlexec (typically\n");
+    erts_fprintf(stderr, "from the erl script), these flags should be specified with +.\n");
+    erts_fprintf(stderr, "\n\n");
     erl_exit(-1, "");
+}
+
+static void
+early_init(int *argc, char **argv) /*
+				   * Only put things here which are
+				   * really important initialize
+				   * early!
+				   */
+{
+    erts_printf_eterm_func = erts_printf_term;
+    erts_disable_tolerant_timeofday = 0;
+    display_items = 200;
+    display_loads = 0;
+    erts_backtrace_depth = DEFAULT_BACKTRACE_SIZE;
+    erts_async_max_threads = 0;
+    H_MIN_SIZE = H_DEFAULT_SIZE;
+
+    erts_initialized = 0;
+    ignore_break = 0;
+    replace_intr = 0;
+    program = argv[0];
+
+    erts_compat_rel = this_rel_num();
+
+    erts_use_r9_pids_ports = 0;
+
+    erts_sys_pre_init();
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_init();
+#endif
+#ifdef ERTS_SMP
+    erts_smp_atomic_init(&erts_writing_erl_crash_dump, 0L);
+#else
+    erts_writing_erl_crash_dump = 0;
+#endif
+
+    erts_smp_atomic_init(&erts_max_gen_gcs, (long)((Uint16) -1));
+
+    erts_pre_init_process();
+#if defined(USE_THREADS) && !defined(ERTS_SMP)
+    main_thread = erts_thr_self();
+#endif
+
+    erts_init_utils();
+
+    erts_alloc_init(argc, argv); /* Handles (and removes) -M flags */
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_late_init();
+#endif
+
+#if defined(HIPE)
+    hipe_signal_init();	/* must be done very early */
+#endif
+    erl_sys_init();
+#ifdef ERTS_SMP
+    no_of_schedulers = erts_sys_no_processors();
+#endif
+    erl_sys_args(argc, argv);
+
+    erts_ets_realloc_always_moves = 0;
+
 }
 
 void
@@ -585,40 +579,7 @@ erl_start(int argc, char **argv)
     int have_break_handler = 1;
     char* tmpenvbuf;
 
-    erts_disable_tolerant_timeofday = 0;
-    display_items = 200;
-    display_loads = 0;
-    erts_backtrace_depth = DEFAULT_BACKTRACE_SIZE;
-    erts_async_max_threads = 0;
-    erts_max_gen_gcs = (Uint16) -1;
-    H_MIN_SIZE = H_DEFAULT_SIZE;
-    garbage_cols = 0;
-    reclaimed = 0;
-
-    erts_writing_erl_crash_dump = 0;
-    erts_initialized = 0;
-    ignore_break = 0;
-    replace_intr = 0;
-    program = argv[0];
-
-    erts_compat_rel = this_rel_num();
-
-    erts_use_r9_pids_ports = 0;
-
-    erts_sys_pre_init();
-    main_thread = erts_thr_self();
-
-    erts_alloc_init(&argc, argv); /* Handles (and removes) -M flags */
-
-    erts_init_utils();
-
-#if defined(HIPE)
-    hipe_signal_init();	/* must be done very early */
-#endif
-    erl_sys_init();
-    erl_sys_args(&argc, argv);
-
-    erts_ets_realloc_always_moves = 0;
+    early_init(&argc, argv);
 
     tmpenvbuf = getenv(ERL_MAX_ETS_TABLES_ENV);
     if (tmpenvbuf != NULL) 
@@ -628,7 +589,8 @@ erl_start(int argc, char **argv)
 
     tmpenvbuf = getenv("ERL_FULLSWEEP_AFTER");
     if (tmpenvbuf != NULL) {
-	erts_max_gen_gcs = atoi(tmpenvbuf);
+	Uint16 max_gen_gcs = atoi(tmpenvbuf);
+	erts_smp_atomic_set(&erts_max_gen_gcs, (long) max_gen_gcs);
     }
 
     tmpenvbuf = getenv("ERL_THREAD_POOL_SIZE");
@@ -638,11 +600,10 @@ erl_start(int argc, char **argv)
     
 
 #ifdef DEBUG
-    verbose = VERBOSE_SILENT;
+    verbose = DEBUG_DEFAULT;
 #endif
 
     erts_error_logger_warnings = am_error;
-    system_seq_tracer = NIL;
 
     while (i < argc) {
 	if (argv[i][0] != '-') {
@@ -665,11 +626,11 @@ erl_start(int argc, char **argv)
 	case '#' :
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
 	    if ((display_items = atoi(arg)) == 0) {
-		erl_printf(CERR, "bad display items%s\n", arg);
+		erts_fprintf(stderr, "bad display items%s\n", arg);
 		erts_usage();
 	    }
-	    VERBOSE_MESSAGE((VERBOSE_CHATTY,"using display items %d\n",
-			     display_items));
+	    VERBOSE(DEBUG_SYSTEM,
+                    ("using display items %d\n",display_items));
 	    break;
 
 	case 'l':
@@ -678,9 +639,36 @@ erl_start(int argc, char **argv)
 	    
 	case 'v':
 #ifdef DEBUG
-	    verbose++;
+	    if (argv[i][2] == '\0') {
+		verbose |= DEBUG_SYSTEM;
+	    } else {
+		char *ch;
+		for (ch = argv[i]+2; *ch != '\0'; ch++) {
+		    switch (*ch) {
+		    case 's': verbose |= DEBUG_SYSTEM; break;
+		    case 'g': verbose |= DEBUG_PRIVATE_GC; break;
+		    case 'h': verbose |= DEBUG_HYBRID_GC; break;
+		    case 'M': verbose |= DEBUG_MEMORY; break;
+		    case 'a': verbose |= DEBUG_ALLOCATION; break;
+		    case 't': verbose |= DEBUG_THREADS; break;
+		    case 'p': verbose |= DEBUG_PROCESSES; break;
+		    case 'm': verbose |= DEBUG_MESSAGES; break;
+		    default : erts_fprintf(stderr,"Unknown verbose option: %c\n",*ch);
+		    }
+		}
+	    }
+            erts_printf("Verbose level: ");
+            if (verbose & DEBUG_SYSTEM) erts_printf("SYSTEM ");
+            if (verbose & DEBUG_PRIVATE_GC) erts_printf("PRIVATE_GC ");
+            if (verbose & DEBUG_HYBRID_GC) erts_printf("HYBRID_GC ");
+            if (verbose & DEBUG_MEMORY) erts_printf("PARANOID_MEMORY ");
+	    if (verbose & DEBUG_ALLOCATION) erts_printf("ALLOCATION ");
+	    if (verbose & DEBUG_THREADS) erts_printf("THREADS ");
+	    if (verbose & DEBUG_PROCESSES) erts_printf("PROCESSES ");
+	    if (verbose & DEBUG_MESSAGES) erts_printf("MESSAGES ");
+            erts_printf("\n");
 #else
-	    erl_printf(CERR, "warning: -v (only in debug compiled code)\n");
+	    erts_fprintf(stderr, "warning: -v (only in debug compiled code)\n");
 #endif
 	    break;
 	case 'V' :
@@ -691,23 +679,26 @@ erl_start(int argc, char **argv)
 #ifdef DEBUG
 		strcat(tmp, ",DEBUG");
 #endif
+#ifdef ERTS_SMP
+		strcat(tmp, ",SMP");
+#endif
 #ifdef USE_THREADS
-		strcat(tmp, ",THREADS");
+		strcat(tmp, ",ASYNC_THREADS");
 #endif
 #ifdef HIPE
 		strcat(tmp, ",HIPE");
 #endif
-#ifdef SHARED_HEAP
-                strcat(tmp, ",SHARED_HEAP");
+#ifdef INCREMENTAL
+		strcat(tmp, ",INCREMENTAL_GC");
 #endif
 #ifdef HYBRID
                 strcat(tmp, ",HYBRID");
 #endif
-		erl_printf(CERR, "Erlang ");
+		erts_fprintf(stderr, "Erlang ");
 		if (tmp[1]) {
-		    erl_printf(CERR, "(%s) ", tmp+1);
+		    erts_fprintf(stderr, "(%s) ", tmp+1);
 		}
-		erl_printf(CERR, "(" EMULATOR ") emulator version "
+		erts_fprintf(stderr, "(" EMULATOR ") emulator version "
 			   ERLANG_VERSION "\n");
 		erl_exit(0, "");
 	    }
@@ -721,25 +712,23 @@ erl_start(int argc, char **argv)
 	    /* set default heap size */
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
 	    if ((H_MIN_SIZE = atoi(arg)) <= 0) {
-		erl_printf(CERR, "bad heap size %s\n", arg);
+		erts_fprintf(stderr, "bad heap size %s\n", arg);
 		erts_usage();
 	    }
-#ifdef SHARED_HEAP
-            global_heap_sz = H_MIN_SIZE;
-#endif
-	    VERBOSE_MESSAGE((VERBOSE_CHATTY, "using minimum heap size %d\n",
-			     H_MIN_SIZE));
+	    VERBOSE(DEBUG_SYSTEM,
+                    ("using minimum heap size %d\n",H_MIN_SIZE));
 	    break;
 
 	case 'e':
 	    /* set maximum number of ets tables */
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
 	    if (( user_requested_db_max_tabs = atoi(arg) ) < 0) {
-		erl_printf(CERR, "bad maximum number of ets tables %s\n", arg);
+		erts_fprintf(stderr, "bad maximum number of ets tables %s\n", arg);
 		erts_usage();
 	    }
-	    VERBOSE_MESSAGE((VERBOSE_CHATTY, "using maximum number of ets tables %d\n",
-			     user_requested_db_max_tabs));
+	    VERBOSE(DEBUG_SYSTEM,
+                    ("using maximum number of ets tables %d\n",
+                     user_requested_db_max_tabs));
 	    break;
 
 	case 'i':
@@ -780,7 +769,7 @@ erl_start(int argc, char **argv)
 	       erl_sys_args() will remove the K parameter
 	       and value */
 	    get_arg(argv[i]+2, argv[i+1], &i);
-	    erl_printf(CERR,
+	    erts_fprintf(stderr,
 		       "kernel-poll not supported; \"K\" parameter ignored\n",
 		       arg);
 	    break;
@@ -793,6 +782,23 @@ erl_start(int argc, char **argv)
 	       may be given after +P. */
 	    break;
 
+	case 'S' : {
+	    int no;
+	    arg = get_arg(argv[i]+2, argv[i+1], &i);
+	    no = atoi(arg);
+	    if (no < 1 || ERTS_MAX_NO_OF_SCHEDULERS < no) {
+		erts_fprintf(stderr, "bad number of scheduler threads %s\n",
+			     arg);
+		erts_usage();
+	    }
+	    VERBOSE(DEBUG_SYSTEM,
+                    ("using %d scheduler(s)\n", no));
+#ifdef ERTS_SMP
+	    no_of_schedulers = (Uint) no;
+#endif
+	    break;
+	}
+
 	case 'R': {
 	    /* set compatibility release */
 
@@ -801,7 +807,7 @@ erl_start(int argc, char **argv)
 
 	    if (erts_compat_rel < ERTS_MIN_COMPAT_REL
 		|| erts_compat_rel > this_rel_num()) {
-		erl_printf(CERR, "bad compatibility release number %s\n", arg);
+		erts_fprintf(stderr, "bad compatibility release number %s\n", arg);
 		erts_usage();
 	    }
 
@@ -821,9 +827,9 @@ erl_start(int argc, char **argv)
 	case 'A':
 	    /* set number of threads in thread pool */
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
-	    if (((erts_async_max_threads = atoi(arg)) < -1) ||
-		(erts_async_max_threads > 256)) {
-		erl_printf(CERR, "bad number of threads %s\n", arg);
+	    if (((erts_async_max_threads = atoi(arg)) < 0) ||
+		(erts_async_max_threads > ERTS_MAX_NO_OF_ASYNC_THREADS)) {
+		erts_fprintf(stderr, "bad number of async threads %s\n", arg);
 		erts_usage();
 	    }
 	    break;
@@ -836,9 +842,12 @@ erl_start(int argc, char **argv)
 	case 'c':
 	    if (argv[i][2] == 0) { /* -c: documented option */
 		erts_disable_tolerant_timeofday = 1;
-	    } else if (argv[i][2] == 'i') { /* -ci: undcoumented option */
+	    }
+#ifndef ERTS_SMP /* Not supported with smp emulator */
+	    else if (argv[i][2] == 'i') { /* -ci: undcoumented option */
 		count_instructions = 1;
 	    }
+#endif
 	    break;
 	case 'W':
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
@@ -852,13 +861,13 @@ erl_start(int argc, char **argv)
 	    case 'e': /* The default */
 		erts_error_logger_warnings = am_error;
 	    default:
-		erl_printf(CERR, "unrecognized warning_map option %s\n", arg);
+		erts_fprintf(stderr, "unrecognized warning_map option %s\n", arg);
 		erts_usage();
 	    }
 	    break;
 
 	default:
-	    erl_printf(CERR, "%s unknown flag %s\n", progname(argv[0]), argv[i]);
+	    erts_fprintf(stderr, "%s unknown flag %s\n", argv[0], argv[i]);
 	    erts_usage();
 	}
 	i++;
@@ -869,7 +878,7 @@ erl_start(int argc, char **argv)
 	|| erts_max_processes > ERTS_MAX_PROCESSES
 	|| (erts_use_r9_pids_ports
 	    && erts_max_processes > ERTS_MAX_R9_PROCESSES)) {
-	erl_printf(CERR, "bad number of processes %s\n", Parg);
+	erts_fprintf(stderr, "bad number of processes %s\n", Parg);
 	erts_usage();
     }
 
@@ -901,7 +910,21 @@ erl_start(int argc, char **argv)
     load_preloaded();
 
     erl_first_process_otp("otp_ring0", NULL, 0, boot_argc, boot_argv);
+
+#ifdef ERTS_SMP
+    erts_start_schedulers(no_of_schedulers);
+    /* Become io thread... */
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_set_thread_name("io");
+#endif
+    erts_register_blockable_thread();
+    erts_io_thr_tid = erts_smp_thr_self();
+    erts_thread_init_fp_exception();
+    erl_sys_schedule(0); /* Never returns... */
+    ASSERT(0);
+#else
     process_main();
+#endif
 }
 
 
@@ -910,12 +933,13 @@ erl_start(int argc, char **argv)
 void erts_thr_fatal_error(int err, char *what)
 {
     char *errstr = err ? strerror(err) : NULL;
-    erl_exit(1,
-	     "Failed to %s: %s%s(%d)\n",
-	     what,
-	     errstr ? errstr : "",
-	     errstr ? " " : "",
-	     err);
+    erts_fprintf(stderr,
+		 "Failed to %s: %s%s(%d)\n",
+		 what,
+		 errstr ? errstr : "",
+		 errstr ? " " : "",
+		 err);
+    abort();
 }
 
 #endif
@@ -923,38 +947,42 @@ void erts_thr_fatal_error(int err, char *what)
 static void
 system_cleanup(int exit_code)
 {
-
     /* No cleanup wanted if ...
-     * 1. we are about to dump core,
+     * 1. we are about to do an abnormal exit
      * 2. we haven't finished initializing, or
-     * 3. another thread than the main thread is performing the exit.
+     * 3. another thread than the main thread is performing the exit
+     *    (in threaded non smp case).
      */
-    if (exit_code > 0
+
+    if (exit_code != 0
 	|| !erts_initialized
-	|| !erts_equal_tids(main_thread, erts_thr_self()))
+#if defined(USE_THREADS) && !defined(ERTS_SMP)
+	|| !erts_equal_tids(main_thread, erts_thr_self())
+#endif
+	)
 	return;
 
+#ifdef ERTS_SMP
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_check_exact(NULL, 0);
+#endif
+    erts_smp_block_system(ERTS_BS_FLG_ALLOW_GC); /* We never release it... */
+#endif
+
 #ifdef HYBRID
-    if (copy_src_stack) erts_free(ERTS_ALC_T_OBJECT_STACK,
-                                  (void *)copy_src_stack);
-    if (copy_dst_stack) erts_free(ERTS_ALC_T_OBJECT_STACK,
-                                  (void *)copy_dst_stack);
-    copy_src_stack = copy_dst_stack = NULL;
+    if (ma_src_stack) erts_free(ERTS_ALC_T_OBJECT_STACK,
+                                (void *)ma_src_stack);
+    if (ma_dst_stack) erts_free(ERTS_ALC_T_OBJECT_STACK,
+                                (void *)ma_dst_stack);
+    if (ma_offset_stack) erts_free(ERTS_ALC_T_OBJECT_STACK,
+                                   (void *)ma_offset_stack);
+    ma_src_stack = NULL;
+    ma_dst_stack = NULL;
+    ma_offset_stack = NULL;
     erts_cleanup_offheap(&erts_global_offheap);
 #endif
 
-#ifdef SHARED_HEAP
-    {
-      ErlHeapFragment *tmp;
-      while (global_mbuf != NULL) {
-        tmp = global_mbuf->next;
-        free_message_buffer(global_mbuf);
-        global_mbuf = tmp;
-      }
-    }
-#endif
-
-#if defined(SHARED_HEAP) || defined(HYBRID)
+#if defined(HYBRID) && !defined(INCREMENTAL)
     if (global_heap) {
 	ERTS_HEAP_FREE(ERTS_ALC_T_HEAP,
 		       (void*) global_heap,
@@ -963,14 +991,11 @@ system_cleanup(int exit_code)
     global_heap = NULL;
 #endif
 
-#ifdef NOMOVE
-    erts_cleanup_nmgc();
-#endif
-#ifdef INCREMENTAL_GC
+#ifdef INCREMENTAL
     erts_cleanup_incgc();
 #endif
 
-#ifdef USE_THREADS
+#if defined(USE_THREADS) && !defined(ERTS_SMP)
     exit_async();
 #endif
 #if HAVE_ERTS_MSEG
@@ -1001,6 +1026,11 @@ void erl_exit0(char *file, int line, int n, char *fmt,...)
 
     system_cleanup(n);
 
+    an = abs(n);
+
+    if (erts_mtrace_enabled)
+	erts_mtrace_exit((Uint32) an);
+
     /* Produce an Erlang core dump if error */
     if(n > 0 && erts_initialized) erl_crash_dump_v(file,line,fmt,args); 
 
@@ -1019,14 +1049,11 @@ void erl_exit0(char *file, int line, int n, char *fmt,...)
     sys_tty_reset();
 #endif
 
-    an = abs(n);
-
-    if (erts_mtrace_enabled)
-	erts_mtrace_exit((Uint32) an);
-
-    if (n == 127)
+    if (n == ERTS_INTR_EXIT)
+	exit(0);
+    else if (n == 127)
 	ERTS_EXIT_AFTER_DUMP(1);
-    else if (n > 0)
+    else if (n > 0 || n == ERTS_ABORT_EXIT)
         abort();
     exit(an);
 }
@@ -1041,6 +1068,11 @@ void erl_exit(int n, char *fmt,...)
     save_statistics();
 
     system_cleanup(n);
+
+    an = abs(n);
+
+    if (erts_mtrace_enabled)
+	erts_mtrace_exit((Uint32) an);
 
     /* Produce an Erlang core dump if error */
     if(n > 0 && erts_initialized) erl_crash_dump_v((char*) NULL,0,fmt,args); 
@@ -1060,14 +1092,11 @@ void erl_exit(int n, char *fmt,...)
     sys_tty_reset();
 #endif
 
-    an = abs(n);
-
-    if (erts_mtrace_enabled)
-	erts_mtrace_exit((Uint32) an);
-
-    if (n == 127)
+    if (n == ERTS_INTR_EXIT)
+	exit(0);
+    else if (n == ERTS_DUMP_EXIT)
 	ERTS_EXIT_AFTER_DUMP(1);
-    else if (n > 0)
+    else if (n > 0 || n == ERTS_ABORT_EXIT)
         abort();
     exit(an);
 }

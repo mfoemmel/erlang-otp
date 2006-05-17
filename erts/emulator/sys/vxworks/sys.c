@@ -87,7 +87,6 @@ EXTERN_FUNCTION(void, output_ready, (int, int));
 EXTERN_FUNCTION(int, driver_interrupt, (int, int));
 EXTERN_FUNCTION(void, increment_time, (int));
 EXTERN_FUNCTION(int, next_time, (_VOID_));
-EXTERN_FUNCTION(int, send_error_to_logger, (Eterm));
 EXTERN_FUNCTION(void, set_reclaim_free_function, (FreeFunction));
 EXTERN_FUNCTION(int, erl_mem_info_get, (MEM_PART_STATS *));
 EXTERN_FUNCTION(void, erl_crash_dump, (char* file, int line, char* fmt, ...));
@@ -147,6 +146,12 @@ static volatile int break_requested = 0;
 
 /********************* General functions ****************************/
 
+Uint
+erts_sys_misc_mem_sz(void)
+{
+    return (Uint) 0 /* FIXME */;
+}
+
 /*
  * XXX This declaration should not be here.
  */
@@ -178,7 +183,7 @@ void erts_sys_alloc_init(void)
 
     if (erlang_id != 0) {
 	/* NOTE: This particular case must *not* call erl_exit() */
-	sys_printf(CERR, "Sorry, erlang is already running (as task %d)\n",
+	erts_fprintf(stderr, "Sorry, erlang is already running (as task %d)\n",
 		   erlang_id);
 	exit(1);
     }
@@ -479,7 +484,6 @@ char *getenv_string(GETENV_STATE *state0)
 #define TMP_BUF_MAX (tmp_buf_size - 1024)
 static byte *tmp_buf;
 static Uint tmp_buf_size;
-int cerr_pos;
 
 /* II. The spawn/fd/vanilla drivers */
 
@@ -1215,7 +1219,7 @@ static int port_inp_failure(int port_num, int ready_fd, int res)
 		tmpexit = driver_data[ready_fd].exitcode;
 	    semGive(driver_data_sem);
 	    if (reported) {
-		erl_printf(CERR,"Exitcode %d reported\r\n", tmpexit);
+		erts_fprintf(stderr,"Exitcode %d reported\r\n", tmpexit);
 		driver_report_exit(port_num, tmpexit);
 	    }
 	}
@@ -1472,7 +1476,7 @@ static void check_io(int wait)
     writefds = output_fds;
     i = select(max_fd + 1, &readfds, &writefds, NULLFDS, &wait_time);
 
-    erts_deliver_time(NULL);		/* sync the machine's idea of time */
+    erts_deliver_time();		/* sync the machine's idea of time */
 
     /* break handling moved here, signal handler just sets flag */
     if (break_requested) {
@@ -1519,10 +1523,10 @@ int sys_putenv(char *buffer){
 
 
 void
-sys_init_io(byte *buf, Uint size)
+sys_init_io(void)
 {
-  tmp_buf = buf;
-  tmp_buf_size = size;
+  tmp_buf = (byte *) erts_alloc(ERTS_ALC_T_SYS_TMP_BUF, SYS_TMP_BUF_SIZE);
+  tmp_buf_size = SYS_TMP_BUF_SIZE;
   FD_ZERO(&input_fds);
   FD_ZERO(&output_fds);
   fd_data = (struct fd_data *)
@@ -1629,59 +1633,6 @@ static void fix_registers(void){
 }
 #endif
 
-
-/* XXX It isn't possible to do this safely without "*nsprintf"
-   (i.e. something that puts a limit on the number of chars printed)
-   - the below is probably the best we can do...    */
-
-void sys_printf(CIO where, char* format, ...)
-{
-  va_list va;
-  va_start(va,format);
-
-  if (where == CERR)
-      erl_error(format, va);
-  else if (where == COUT) 
-    vfprintf(stdout, format, va);
-  else if (where == CBUF) {
-    if (cerr_pos < TMP_BUF_MAX) {
-      vsprintf((char*)&tmp_buf[cerr_pos],format,va);
-      cerr_pos += sys_strlen((char*)&tmp_buf[cerr_pos]);
-      if (cerr_pos >= tmp_buf_size)
-	erl_exit(1, "Internal buffer overflow in erl_printf\n");
-      if (cerr_pos >= TMP_BUF_MAX) {
-	strcpy((char*)&tmp_buf[TMP_BUF_MAX - 3], "...");
-	cerr_pos = TMP_BUF_MAX;
-      }
-    }
-  } else {
-      /* Seems only to be used in crash_dumping... */
-      vsprintf(tmp_buf, format, va);
-      if(sys_strlen(tmp_buf) >= TMP_BUF_MAX)
-	  erl_exit(1, "Internal buffer overflow in erl_printf\n");
-      write((int) where, tmp_buf, strlen(tmp_buf));
-  }
-  va_end(va);
-}
-  
-void sys_putc(int ch, CIO where)
-{
-  if (where == CBUF) {
-    if (cerr_pos < TMP_BUF_MAX) {
-      tmp_buf[cerr_pos++] = ch;
-      if (cerr_pos == TMP_BUF_MAX) {
-	strcpy((char*)&tmp_buf[TMP_BUF_MAX - 3], "...");
-	cerr_pos = TMP_BUF_MAX;
-      }
-    }
-    else if (cerr_pos >= tmp_buf_size)
-      erl_exit(1, "Internal buffer overflow in erl_printf\n");
-  }
-  else if (where == COUT)
-    fputc(ch, stdout);
-  else
-    sys_printf(where, "%c", ch);
-}
 
 /* Return a pointer to a vector of names of preloaded modules */
 
@@ -1953,7 +1904,7 @@ erts_sys_realloc(ErtsAlcType_t type, void *extra, void *ptr, Uint size)
     if(use_save_free(ptr)){
 	if((alloc_flags & WARN_MALLOC_MIX) && 
 	   (alloc_flags & USING_ELIB_MALLOC))
-	    erl_printf(CERR,"Warning, save_malloced data realloced "
+	    erts_fprintf(stderr,"Warning, save_malloced data realloced "
 		       "by sys_realloc2\n");
 	return save_realloc(ptr, (size_t) size);
     } else {	
@@ -1996,7 +1947,7 @@ erts_sys_free(ErtsAlcType_t type, void *extra, void *ptr)
 	 */
 	if((alloc_flags & WARN_MALLOC_MIX) && 
 	   (alloc_flags & USING_ELIB_MALLOC))
-	    erl_printf(CERR,"Warning, save_malloced data freed by "
+	    erts_fprintf(stderr,"Warning, save_malloced data freed by "
 		       "sys_free2\n");
 	save_free(ptr);
     } else {
@@ -2030,13 +1981,14 @@ int erl_set_memory_block(int isize, int iptr, int warn_save,
 			 int realloc_moves, int reclaim_in_supplied, int p5,
 			 int p6, int p7, int p8, int p9){
     if(erlang_id != 0){
-	erl_printf(CERR,"Error, cannot set erlang memory block while an "
-		   "erlang task is running!\n");
+	erts_fprintf(stderr,"Error, cannot set erlang memory block while an "
+		     "erlang task is running!\n");
 	return 1;
     }
     if(isize < 8 * 1024 *1024)
-	erl_printf(CERR,"Warning, the memory pool of %dMb may be to small to "
-		   "run erlang in!\n", isize / (1024 * 1024));
+	erts_fprintf(stderr,
+		     "Warning, the memory pool of %dMb may be to small to "
+		     "run erlang in!\n", isize / (1024 * 1024));
     alloc_pool_size = (size_t) isize;
     alloc_pool_ptr = (void *) iptr;
     alloc_flags = 0;
@@ -2057,52 +2009,52 @@ int erl_memory_show(int p0, int p1, int p2, int p3, int p4, int p5,
 		    int p6, int p7, int p8, int p9){
     struct elib_stat statistics;
     if(!(alloc_flags & USING_ELIB_MALLOC) && erlang_id != 0){
-	erl_printf(COUT,"Using plain save_alloc, use memShow instead.\n");
+	erts_printf("Using plain save_alloc, use memShow instead.\n");
 	return 1;
     }
     if(erlang_id == 0 && !((alloc_flags & USER_POOL) && 
 			   !(alloc_flags & NEW_USER_POOL))){
-	erl_printf(COUT,"Sorry, no allocation statistics until erlang "
+	erts_printf("Sorry, no allocation statistics until erlang "
 		   "is started.\n");
 	return 1;
     }
-    erl_printf(COUT,"Allocation settings:\n");
-    erl_printf(COUT,"Using elib_malloc with memory pool size of %lu bytes.\n",
+    erts_printf("Allocation settings:\n");
+    erts_printf("Using elib_malloc with memory pool size of %lu bytes.\n",
 	       (unsigned long) alloc_pool_size);
-    erl_printf(COUT,"Realloc-always-moves is %s\n", 
+    erts_printf("Realloc-always-moves is %s\n", 
 	       (alloc_flags & REALLOC_MOVES) ? "on" : "off");
-    erl_printf(COUT,"Warnings about mixed malloc/free's are %s\n", 
+    erts_printf("Warnings about mixed malloc/free's are %s\n", 
 	       (alloc_flags & WARN_MALLOC_MIX) ? "on" : "off");
     if(alloc_flags & USER_POOL){
-	erl_printf(COUT,"The memory block used by elib is user supplied "
+	erts_printf("The memory block used by elib is user supplied "
 		   "at 0x%08x.\n", (unsigned int) alloc_pool_ptr);
 	if(alloc_flags & RECLAIM_USER_POOL)
-	    erl_printf(COUT,"Allocated memory within the user supplied pool\n"
+	    erts_printf("Allocated memory within the user supplied pool\n"
 		       "  will be automatically reclaimed at task exit.\n");
     } else {
-	erl_printf(COUT,"The memory block used by elib is save_malloc'ed "
+	erts_printf("The memory block used by elib is save_malloc'ed "
 		   "at 0x%08x.\n", (unsigned int) alloc_pool_ptr);
     }
 #ifdef NO_FIX_ALLOC
-    erl_printf(COUT,"Fix_alloc is disabled in this build\n");
+    erts_printf("Fix_alloc is disabled in this build\n");
 #endif
-    erl_printf(COUT,"Statistics from elib_malloc:\n");
+    erts_printf("Statistics from elib_malloc:\n");
     ELIB_LOCK;
 
     elib_stat(&statistics);
     ELIB_UNLOCK;
-    erl_printf(COUT,"Type          Size (bytes) Number of blocks\n");
-    erl_printf(COUT,"============= ============ ================\n");
-    erl_printf(COUT,"Total:        %12lu %16lu\n",
+    erts_printf("Type          Size (bytes) Number of blocks\n");
+    erts_printf("============= ============ ================\n");
+    erts_printf("Total:        %12lu %16lu\n",
 	       (unsigned long) statistics.mem_total*4,
 	       (unsigned long) statistics.mem_blocks);
-    erl_printf(COUT,"Allocated:    %12lu %16lu\n",
+    erts_printf("Allocated:    %12lu %16lu\n",
 	       (unsigned long) statistics.mem_alloc*4,
 	       (unsigned long) statistics.mem_blocks-statistics.free_blocks);
-    erl_printf(COUT,"Free:         %12lu %16lu\n",
+    erts_printf("Free:         %12lu %16lu\n",
 	       (unsigned long) statistics.mem_free*4,
 	       (unsigned long) statistics.free_blocks);
-    erl_printf(COUT,"Largest free: %12lu                -\n\n",
+    erts_printf("Largest free: %12lu                -\n\n",
 	       (unsigned long) statistics.max_free*4);
     return 0;
 }
@@ -2587,52 +2539,52 @@ uxPipeShow(int fd)
   int drvValue;
 
   if ((drvValue = iosFdValue(fd)) == ERROR) {
-    sys_printf(CERR, "Error: file descriptor invalid\n");
+    erts_fprintf(stderr, "Error: file descriptor invalid\n");
     return;
   }
   pDev = (UXPIPE_DEV *)drvValue;
   pajp = pDev->pipe;
   if (pajp->drvNum != uxPipeDrvNum) {
-    sys_printf(CERR, "Error: Not a ux pipe device\n");
+    erts_fprintf(stderr, "Error: Not a ux pipe device\n");
     return;
   }
-  sys_printf(CERR, "Device              : 0x%x\n", (int) pDev);
-  sys_printf(CERR, "Buffer size         : %d\n", UXPIPE_SIZE);
-  sys_printf(CERR, "Bytes in buffer     : %d\n\n", rngNBytes(pajp->ringId));
-  sys_printf(CERR, "READ END\n\n");
+  erts_fprintf(stderr, "Device              : 0x%x\n", (int) pDev);
+  erts_fprintf(stderr, "Buffer size         : %d\n", UXPIPE_SIZE);
+  erts_fprintf(stderr, "Bytes in buffer     : %d\n\n", rngNBytes(pajp->ringId));
+  erts_fprintf(stderr, "READ END\n\n");
   if (pajp->reader != NULL) {
-    sys_printf(CERR, "Mode                : ");
-    sys_printf(CERR, "%s\n", 
+    erts_fprintf(stderr, "Mode                : ");
+    erts_fprintf(stderr, "%s\n", 
 	       (pajp->reader->blocking) ? "blocking" : "non-blocking");
   }
-  sys_printf(CERR, "Status              : ");
+  erts_fprintf(stderr, "Status              : ");
   if (pajp->reader != NULL) {
-    sys_printf(CERR, "OPEN\n");
-    sys_printf(CERR, "Wake-up list        : %d\n\n", 
+    erts_fprintf(stderr, "OPEN\n");
+    erts_fprintf(stderr, "Wake-up list        : %d\n\n", 
 	       selWakeupListLen(&pajp->reader->wakeupList));
-    sys_printf(CERR, "Exclusion Semaphore\n");
+    erts_fprintf(stderr, "Exclusion Semaphore\n");
     semShow(pajp->reader->semExcl, 1);
-    sys_printf(CERR, "Blocking Semaphore\n");
+    erts_fprintf(stderr, "Blocking Semaphore\n");
     semShow(pajp->reader->semBlock, 1);
   } else 
-    sys_printf(CERR, "CLOSED\n\n");
-  sys_printf(CERR, "WRITE END\n\n");
+    erts_fprintf(stderr, "CLOSED\n\n");
+  erts_fprintf(stderr, "WRITE END\n\n");
   if (pajp->writer != NULL) {
-    sys_printf(CERR, "Mode                : ");
-    sys_printf(CERR, "%s\n", 
+    erts_fprintf(stderr, "Mode                : ");
+    erts_fprintf(stderr, "%s\n", 
 	       (pajp->writer->blocking) ? "blocking" : "non-blocking");
   }
-  sys_printf(CERR, "Status              : ");
+  erts_fprintf(stderr, "Status              : ");
   if (pajp->writer != NULL) {
-    sys_printf(CERR, "OPEN\n");
-    sys_printf(CERR, "Wake-up list        : %d\n\n", 
+    erts_fprintf(stderr, "OPEN\n");
+    erts_fprintf(stderr, "Wake-up list        : %d\n\n", 
 	       selWakeupListLen(&pajp->writer->wakeupList));
-    sys_printf(CERR, "Exclusion Semaphore\n");
+    erts_fprintf(stderr, "Exclusion Semaphore\n");
     semShow(pajp->writer->semExcl, 1);
-    sys_printf(CERR, "Blocking Semaphore\n");
+    erts_fprintf(stderr, "Blocking Semaphore\n");
     semShow(pajp->writer->semBlock, 1);
   } else 
-    sys_printf(CERR, "CLOSED\n\n");
+    erts_fprintf(stderr, "CLOSED\n\n");
 }
 
 #ifdef DEBUG

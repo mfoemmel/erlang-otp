@@ -20,7 +20,7 @@
 %%
 %% Author contact: richardc@csd.uu.se
 %%
-%% $Id: erl_syntax_lib.erl,v 1.25 2004/11/22 07:22:52 richardc Exp $
+%% $Id$
 %%
 %% =====================================================================
 %%
@@ -262,21 +262,43 @@ mapfoldl(_, S, []) ->
 %%        set(T) = sets:set(T)
 %%
 %% @doc Returns the names of variables occurring in a syntax tree, The
-%% result is a set of variable names represented by atoms.
+%% result is a set of variable names represented by atoms. Macro names
+%% are not included.
 %%
 %% @see sets
 
 variables(Tree) ->
-    F = fun (T, S) ->
-                case erl_syntax:type(T) of
-                    variable ->
-                        sets:add_element(erl_syntax:variable_name(T),
-                                         S);
-                    _ ->
-                        S
-                end
-        end,
-    fold(F, sets:new(), Tree).
+    variables(Tree, sets:new()).
+
+variables(T, S) ->
+    case erl_syntax:type(T) of
+	variable ->
+	    sets:add_element(erl_syntax:variable_name(T), S);
+	macro ->
+	    %% macro names are ignored, even if represented by variables
+	    case erl_syntax:macro_arguments(T) of
+		none -> S;
+		As ->
+		    variables_2(As, S)
+	    end;
+	_ ->
+	    case erl_syntax:subtrees(T) of
+		[] ->
+		    S;
+		Gs ->
+		    variables_1(Gs, S)
+	    end
+    end.
+
+variables_1([L | Ls], S) ->
+    variables_1(Ls, variables_2(L, S));
+variables_1([], S) ->
+    S.
+
+variables_2([T | Ts], S) ->
+    variables_2(Ts, variables(T, S));
+variables_2([], S) ->
+    S.
 
 
 -define(MINIMUM_RANGE, 100).
@@ -1816,10 +1838,24 @@ function_name_expansions(A, Name, Ack) ->
 %%
 %% @doc Removes all comments from all nodes of a syntax tree. All other
 %% attributes (such as position information) remain unchanged.
+%% Standalone comments in form lists are removed; any other standalone
+%% comments are changed into null-comments (no text, no indentation).
 
 strip_comments(Tree) ->
-    map(fun (T) -> erl_syntax:remove_comments(T) end, Tree).
+    map(fun strip_comments_1/1, Tree).
 
+strip_comments_1(T) ->
+    case erl_syntax:type(T) of
+	form_list ->
+	    Es = erl_syntax:form_list_elements(T),
+	    Es1 = [E || E <- Es, erl_syntax:type(E) /= comment],
+	    T1 = erl_syntax:copy_attrs(T, erl_syntax:form_list(Es1)),
+	    erl_syntax:remove_comments(T1);
+	comment ->
+	    erl_syntax:comment([]);
+	_ ->
+	    erl_syntax:remove_comments(T)
+    end.
 
 %% =====================================================================
 %% @spec to_comment(Tree) -> syntaxTree()

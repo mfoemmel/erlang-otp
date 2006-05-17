@@ -15,45 +15,44 @@
 %% 
 %%     $Id$
 %%
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                                                                     %%
-%%The general idea is:                                                 %%
-%%                                                                     %%
-%%                                                                     %%
-%% 1. Scan through the  path for *.tool files and find all the         %%
-%%    web based tools. Query each tool for configuration data          %%
-%% 2. Add Alias for Erlscript and html for each tool to the            %%
-%%    webserver configuration data.                                    %%
-%% 3. Start the webserver                                              %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -module(webtool).
+-behaviour(gen_server).
 
-%%Export the api functions
--export([start/0,start/2,stop/0]).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%                                                                    %%
+%% The general idea is:                                               %%
+%%                                                                    %%
+%%                                                                    %%
+%% 1. Scan through the path for *.tool files and find all the web     %%
+%%    based tools. Query each tool for configuration data.            %%
+%% 2. Add Alias for Erlscript and html for each tool to               %%
+%%    the webserver configuration data.                               %%
+%% 3. Start the webserver.                                            %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%Starting webtool from a shell script
--export([script_start/0,script_start/1]).
+%% API functions
+-export([start/0, start/2, stop/0]).
 
-%%The Web api
--export([started_tools/2,toolbar/2,start_tools/2,stop_tools/2]).
+%% Starting Webtool from a shell script
+-export([script_start/0, script_start/1]).
 
-%%API against other tools
+%% Web api
+-export([started_tools/2, toolbar/2, start_tools/2, stop_tools/2]).
+
+%% API against other tools
 -export([is_localhost/0]).
 
-%%Debug export 
+%% Debug export s
 -export([get_tools1/1]).
--export([debug/1,stop_debug/0,debug_app/1]).
+-export([debug/1, stop_debug/0, debug_app/1]).
 
-
-%%Export the callback functions for the webTool
--export([init/1,handle_call/3,handle_cast/2]).
--export([handle_info/2,terminate/2,code_change/3]).
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+	 terminate/2, code_change/3]).
 
 -include_lib("kernel/include/file.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
 
--behaviour(gen_server).
 -record(state,{priv_dir,app_data,supvis,web_data,started=[]}).
 
 -define(MAX_NUMBER_OF_WEBTOOLS,256).
@@ -336,30 +335,26 @@ code_change(_,State,_)->
 %----------------------------------------------------------------------
 init({Path,Config})->
     case filelib:is_dir(Path) of
-	true->
-	    case get_data() of
-		{ok,Data}->
-		    insert_app(?WEBTOOL_ALIAS,Data),
-		    case webtool_sup:start_link() of
-			{ok, Pid} ->
-			    case start_webserver(Data,Path,Config) of
-				{ok,_}->
-				    print_url(Config),	
-				    {ok,#state{priv_dir=Path,
-					       app_data=Data,
-					       supvis=Pid,
-					       web_data=Config}};
-				{error,Error} ->
-				    {stop,{error,Error}}
-			    end;
-			Error ->
-			    {stop,Error}
+	true ->
+	    {ok, Table} = get_tool_files_data(),
+	    insert_app(?WEBTOOL_ALIAS, Table),
+	    case webtool_sup:start_link() of
+		{ok, Pid} ->
+		    case start_webserver(Table, Path, Config) of
+			{ok, _} ->
+			    print_url(Config),	
+			    {ok,#state{priv_dir=Path,
+				       app_data=Table,
+				       supvis=Pid,
+				       web_data=Config}};
+			{error, Error} ->
+			    {stop, {error, Error}}
 		    end;
-	       {error,Error}->
-		    {stop,{error,Error}}
+		Error ->
+		    {stop,Error}
 	    end;
-	_ ->
-	   {stop,{error,error_dir}}
+	false ->
+	   {stop, {error, error_dir}}
     end.
 
 terminate(_Reason,Data)->
@@ -425,17 +420,6 @@ stop_tools_page(_Env,Input,State)->
 %% 1. Collect the config data
 %% 2. Start webserver
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%----------------------------------------------------------------------
-%Collects the tool specific config data data from all tools
-%----------------------------------------------------------------------
-get_data()->
-    case get_tool_files_data() of
-	{error,Reason}->
-	    {error,Reason};
-	{ok,Ets_table} ->
-	    {ok,Ets_table}
-    end.
 
 %----------------------------------------------------------------------
 % Start the webserver

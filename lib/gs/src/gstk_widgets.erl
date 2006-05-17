@@ -22,9 +22,11 @@
 
 -module(gstk_widgets).
 
+-export([type2mod/1, objmod/1, suffix/1]).
+
 -include("gstk.hrl").
-%% ----- Exports -----
--compile(export_all).
+
+
 
 
 %%

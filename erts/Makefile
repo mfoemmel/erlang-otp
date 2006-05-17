@@ -44,7 +44,7 @@ endif
 endif
 endif
 
-all: shared hybrid opt
+all: hybrid smp opt
 
 debug opt docs clean:
 	@for d in $(ERTSDIRS); do \
@@ -72,6 +72,11 @@ else
 	@echo '*** since target is $(TARGET)'
 endif
 
+smp:
+	( cd emulator && $(MAKE) $@ )
+
+
+
 # Make erl script and erlc in $(ERL_TOP)/bin which runs the compiled version
 # Note that erlc is not a script and requires extra handling on cygwin.
 # also note that this file is not created by autoconf, that's why @EXEEXT@
@@ -83,8 +88,10 @@ local_setup:
 	@cd start_scripts && $(MAKE)
 	@rm -f $(ERL_TOP)/bin/erl $(ERL_TOP)/bin/erlc $(ERL_TOP)/bin/cerl \
 		$(ERL_TOP)/bin/erl.exe $(ERL_TOP)/bin/erlc.exe \
+		$(ERL_TOP)/bin/dialyzer $(ERL_TOP)/bin/dialyzer.exe \
 		$(ERL_TOP)/bin/start*.boot $(ERL_TOP)/bin/start*.script
 	@if [ "X$(TARGET)" = "Xwin32" ]; then \
+		cp $(ERL_TOP)/bin/$(TARGET)/dialyzer.exe $(ERL_TOP)/bin/dialyzer.exe; \
 		cp $(ERL_TOP)/bin/$(TARGET)/erlc.exe $(ERL_TOP)/bin/erlc.exe; \
 		cp $(ERL_TOP)/bin/$(TARGET)/erl.exe $(ERL_TOP)/bin/erl.exe; \
 		cp $(ERL_TOP)/bin/$(TARGET)/werl.exe $(ERL_TOP)/bin/werl.exe; \
@@ -101,6 +108,7 @@ local_setup:
 		-e "s;%TARGET%;$(TARGET);"    \
 		-e "s;%VSN%;$(VSN);"    \
 	        $(ERL_TOP)/erts/etc/unix/cerl.src > $(ERL_TOP)/bin/cerl; \
+		cp $(ERL_TOP)/bin/$(TARGET)/dialyzer $(ERL_TOP)/bin/dialyzer; \
 		cp $(ERL_TOP)/bin/$(TARGET)/erlc $(ERL_TOP)/bin/erlc; \
 	 	chmod 755 $(ERL_TOP)/bin/erl $(ERL_TOP)/bin/erlc \
 			$(ERL_TOP)/bin/cerl; \
@@ -128,6 +136,7 @@ ifeq ($(BUILD_HYBRID_EMU),true)
 else
 	@if test $@ = release; then ( $(MAKE) hybrid ) fi
 endif
+	@if test $@ = release; then ( cd emulator && $(MAKE) $@ TYPE=smp) fi
 	@for d in $(ERTSDIRS); do \
 		 if test -d $$d; then ( cd $$d && $(MAKE) $@ )fi ; \
 	 done

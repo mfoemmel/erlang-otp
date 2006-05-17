@@ -321,7 +321,7 @@ evaluate_call_or_enter([Argument1,Argument2], Fun) ->
     'bsl' ->
       hipe_icode:mk_const(Argument1 bsl Argument2);
     'bsr' ->
-      hipe_icode:mk_const(Argument1 bsl Argument2);
+      hipe_icode:mk_const(Argument1 bsr Argument2);
     'band' ->
       hipe_icode:mk_const(Argument1 band Argument2);
     'bor' ->

@@ -297,11 +297,14 @@ delete_cstruct(Tid, Cs) ->
     Val = {schema, Tab, TabDef},
     mnesia_checkpoint:tm_retain(Tid, schema, Tab, delete),
     mnesia_subscr:report_table_event(schema, Tid, Val, delete),
-    ?ets_match_delete(mnesia_gvar, {{Tab, '_'}, '_'}),
-    ?ets_match_delete(mnesia_gvar, {{Tab, '_', '_'}, '_'}),
-    del({schema, local_tables}, Tab),
-    del({schema, tables}, Tab),
-    ?ets_delete(schema, Tab),
+    mnesia_controller:update(
+      fun() ->
+	      ?ets_match_delete(mnesia_gvar, {{Tab, '_'}, '_'}),
+	      ?ets_match_delete(mnesia_gvar, {{Tab, '_', '_'}, '_'}),
+	      del({schema, local_tables}, Tab),
+	      del({schema, tables}, Tab),
+	      ?ets_delete(schema, Tab)
+      end),
     Val.
 
 %% Delete the Mnesia directory on all given nodes

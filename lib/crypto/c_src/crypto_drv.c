@@ -542,25 +542,9 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
       rsa = RSA_new();
       rsa->n = rsa_n;
       rsa->e = rsa_e;
-/*       RSA_print_fp(stderr, rsa, 0); */
-/*       fprintf(stderr, "data is "); */
-/*       for (j = 0; j < SHA_DIGEST_LENGTH; j++) */
-/*       { */
-/* 	fprintf(stderr, "%.2x", (unsigned char) hmacbuf[j]); */
-/*       } */
-/*       fprintf(stderr, "\n"); */
-/*       fprintf(stderr, "signature is "); */
-/*       for (j = 0; j < rsa_s_len; j++) */
-/*       { */
-/* 	fprintf(stderr, "%.2x", (unsigned char) rsa_s[j]); */
-/*       } */
-/*       fprintf(stderr, "\n"); */
-/*       i =  RSA_verify(NID_sha1, (unsigned char *)(buf + 4), data_len, */
-/*  		      rsa_s, rsa_s_len, rsa); */
       i =  RSA_verify(NID_sha1, hmacbuf, SHA_DIGEST_LENGTH,
  		      rsa_s, rsa_s_len, rsa);
       *rbuf = (char *)(bin = driver_alloc_binary(1));
-/*       fprintf(stderr, "i = %d\n", i); */
       (bin->orig_bytes)[0] = (char)(i & 0xff);
       RSA_free(rsa);
       /* Apparently, the RSA_verify operation allocates some space

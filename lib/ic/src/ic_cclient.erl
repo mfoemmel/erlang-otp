@@ -718,7 +718,7 @@ emit_encodings_1(G, N, Fd, X, TypeAttrArgs) ->
 	    ok
     end,
     emit(Fd, "  if (oe_ei_encode_atom(oe_env, ~p) < 0) {\n", [Name]), 
-    emit_c_dec_rpt(Fd, "    ", "ei_decode_tuple_header", []),
+    emit_c_enc_rpt(Fd, "    ", "oe_ei_encode_atom", []),
     emit(Fd, "    return -1;\n  }\n"),
 
     foreach(fun({{'void', _}, _, _}) ->

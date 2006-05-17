@@ -30,18 +30,34 @@
 %%    agreement/contract under which the program have been supplied.
 %%
 %%--------------------------------------------------------------------
+%% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%% 
+%%     $Id$
+%%
+%%-----------------------------------------------------------------
 %% File: tracer.erl
-%% Author: Lars Thorsen
 %% 
 %% Description:
-%%    This file contains an example of pre and post conditions for the corba backend.
+%%    This file contains an example of pre and post conditions for 
+%%    the corba backend.
 %%
 %% Creation date: 990125
 %%
 %%-----------------------------------------------------------------
 -module(tracer).
--copyright('Copyright (c) 1991-98 Ericsson Telecom AB').
--author('lars@erix.ericsson.se').
 -include("m.hrl").
 
 %%-----------------------------------------------------------------
@@ -60,7 +76,7 @@
 pre(M, F, [State, I]) when integer(I) ->
     io:format("Precond called in process ~p: ~s:~s() ~p\n", [self(), M, F,  [State, I]]),
     ok;
-pre(M, F, A) -> %% Just an silly example to get an exception case
+pre(_M, _F, _A) -> %% Just an silly example to get an exception case
     corba:raise(#'m_NotAnInteger'{}).
 
 post(M, F, A, R) ->

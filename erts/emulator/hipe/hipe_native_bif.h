@@ -43,6 +43,9 @@ AEXTERN(int,nbif_bs_skip_bits,(void));
 AEXTERN(Eterm,nbif_bs_get_integer,(void));
 AEXTERN(Eterm,nbif_bs_get_float,(void));
 AEXTERN(Eterm,nbif_bs_get_binary,(void));
+AEXTERN(Eterm,nbif_bs_get_integer_2,(void));
+AEXTERN(Eterm,nbif_bs_get_float_2,(void));
+AEXTERN(Eterm,nbif_bs_get_binary_2,(void));
 AEXTERN(Eterm,nbif_bs_get_binary_all,(void));
 AEXTERN(int,nbif_bs_test_tail,(void));
 AEXTERN(void,nbif_bs_restore,(void));
@@ -61,16 +64,15 @@ Eterm hipe_set_timeout(Process*, Eterm);
 void hipe_handle_exception(Process*);
 Eterm hipe_rethrow(Process *c_p, Eterm exc, Eterm value);
 char *hipe_bs_allocate(int);
+int hipe_bs_put_small_float(Process*, Eterm, Uint, byte*, unsigned, unsigned);
 
 /*
  * Stuff that is different in SMP and non-SMP.
  */
 #ifdef ERTS_SMP
 int hipe_bs_put_big_integer(Process*, Eterm, Uint, byte*, unsigned, unsigned);
-int hipe_bs_put_small_float(Process*, Eterm, Uint, byte*, unsigned, unsigned);
 #else
 int hipe_bs_put_big_integer(Eterm, Uint, byte*, unsigned, unsigned);
-int hipe_bs_put_small_float(Eterm, Uint, byte*, unsigned, unsigned);
 #endif
 
 /*
@@ -95,7 +97,6 @@ void hipe_bs_init(Process *p);
 int hipe_bs_put_integer(Process *p, Eterm Integer, Uint num_bits, unsigned flags);
 int hipe_bs_put_binary(Process *p, Eterm Bin, Uint num_bits);
 int hipe_bs_put_binary_all(Process *p, Eterm Bin);
-int hipe_bs_put_float(Process *p, Eterm Float, Uint num_bits, int flags);
 void hipe_bs_put_string(Process *p, byte* iptr, Uint num_bytes);
 #endif
 

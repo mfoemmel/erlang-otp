@@ -685,7 +685,8 @@ env() ->
      max_wait_for_decision,
      schema_location,
      core_dir,
-     pid_sort_order
+     pid_sort_order,
+     no_table_loaders
     ].
 
 default_env(access_module) -> 
@@ -724,7 +725,9 @@ default_env(schema_location) ->
 default_env(core_dir) ->
     false;
 default_env(pid_sort_order) ->
-    false.
+    false;
+default_env(no_table_loaders) ->
+    2.
 
 check_type(Env, Val) ->
     case catch do_check_type(Env, Val) of
@@ -768,7 +771,8 @@ do_check_type(pid_sort_order, r9b_plain) -> r9b_plain;
 do_check_type(pid_sort_order, "r9b_plain") -> r9b_plain;
 do_check_type(pid_sort_order, standard) -> standard;
 do_check_type(pid_sort_order, "standard") -> standard;
-do_check_type(pid_sort_order, _) -> false.
+do_check_type(pid_sort_order, _) -> false;
+do_check_type(no_table_loaders, N) when is_integer(N), N > 0 -> N.
 
 
 bool(true) -> true;

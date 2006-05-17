@@ -20,6 +20,8 @@
 #  include "config.h"
 #endif
 
+#define ERTS_DO_INCL_GLB_INLINE_FUNC_DEF
+
 #include "sys.h"
 #include "erl_vm.h"
 #include "global.h"
@@ -27,10 +29,15 @@
 #include "big.h"
 #include "bif.h"
 #include "erl_binary.h"
+#define ERTS_WANT_DB_INTERNAL__
 #include "erl_db.h"
 #include "erl_threads.h"
 #include "register.h"
 #include "dist.h"
+#include "erl_printf.h"
+#include "erl_threads.h"
+#include "erl_smp.h"
+#include "erl_time.h"
 
 #undef M_TRIM_THRESHOLD
 #undef M_TOP_PAD
@@ -45,9 +52,6 @@
 #undef  HAVE_MALLOPT
 #define HAVE_MALLOPT 0
 #endif
-
-/* Forward */
-static int is_printable_string(Eterm);
 
 static Eterm*
 do_alloc(Process* p, Eterm* last_htop, Uint need)
@@ -141,10 +145,8 @@ do_alloc(Process* p, Eterm* last_htop, Uint need)
     bp->size = n;
     MBUF_SIZE(p) += n;
     bp->off_heap.mso = NULL;
-#ifndef SHARED_HEAP
 #ifndef HYBRID /* FIND ME! */
     bp->off_heap.funs = NULL;
-#endif
 #endif
     bp->off_heap.externals = NULL;
     bp->off_heap.overhead = 0;
@@ -189,48 +191,6 @@ erts_heap_alloc(Process* p, Uint need)
     }
 #endif
 
-#ifdef SHARED_HEAP
-    if (p->htop == NULL) {
-	if (need <= global_hend - global_htop) {
-	    hp = global_htop;
-	    global_htop += need;
-	    return hp;
-	} else if (global_htop != NULL) {
-	    /*
-	     * Garbage collect the global heap.
-	     */
-	    Process p;
-
-	    p.htop = global_htop;
-	    p.heap = global_heap;
-	    p.hend = global_hend;
-	    p.heap_sz = global_heap_sz;
-	    p.send = NULL;
-	    p.stop = NULL;
-	    p.fvalue = NIL;
-	    p.group_leader = NIL;
-	    p.seq_trace_token = NIL;
-	    p.dictionary = NULL;
-	    p.debug_dictionary = NULL;
-#ifdef HEAP_FRAG_ELIM_TEST
-	    p.ssb = NULL;
-#endif
-	    p.status = 0;
-	    p.flags = 0;
-	    p.tracer_proc = NIL;
-	    (void) erts_garbage_collect(&p, need, NULL, 0);
-	    global_htop = p.htop;
-	    global_heap = p.heap;
-	    global_hend = p.hend;
-	    global_heap_sz = p.heap_sz;
-	    hp = global_htop;
-	    global_htop += need;
-	    return hp;
-	} else {
-	    return erts_global_alloc(need);
-	}
-    }
-#endif
     hp = do_alloc(p, p->htop, need);
 
 #ifdef HEAP_FRAG_ELIM_TEST
@@ -300,54 +260,6 @@ void erts_arith_shrink(Process* p, Eterm* hp)
 	}
     }
 }
-
-#ifdef SHARED_HEAP
-Eterm*
-erts_global_alloc(Uint need)
-{
-    if (need <= global_hend - global_htop) {
-	Eterm* hp = global_htop;
-	global_htop += need;
-	return hp;
-    } else {
-	/*
-	 * Either there is not enough room on the global heap, or the
-	 * heap pointers are "owned" by the running process.
-	 */
-	ErlHeapFragment* bp;
-#ifdef DEBUG
-        need++;
-#endif
-        bp = (ErlHeapFragment*) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP_FRAG,
-                                                sizeof(ErlHeapFragment) +
-                                                ((need-1)*sizeof(Eterm)));
-#ifdef DEBUG
-        need--;
-#endif
-	bp->next = MBUF(dummy);
-	MBUF(dummy) = bp;
-	if (HALLOC_MBUF(dummy) == NULL) {
-	    HALLOC_MBUF(dummy) = bp;
-	}
-	bp->size = need;
-	MBUF_SIZE(dummy) += need;
-	bp->off_heap.mso = NULL;
-	bp->off_heap.externals = NULL;
-	bp->off_heap.overhead = 0;
-	MSO(dummy).overhead += (sizeof(ErlHeapFragment)/sizeof(Eterm) - 1); 
-#ifdef DEBUG
-        {
-            int i;
-            for (i = 0; i <= need; i++) {
-                bp->mem[i] = ERTS_HOLE_MARKER;
-            }
-            ARITH_CHECK_ME(p) = ARITH_HEAP(p);
-        }
-#endif
-	return bp->mem;
-    }
-}
-#endif
 
 /*
  * Helper function for the ESTACK macros defined in global.h.
@@ -487,6 +399,57 @@ Uint erts_fit_in_bits(Uint n)
       n >>= 1;
    }
    return i;
+}
+
+int
+erts_print(int to, void *arg, char *format, ...)
+{
+    int res;
+    va_list arg_list;
+    va_start(arg_list, format);
+
+    if (to < ERTS_PRINT_MIN)
+	res = -EINVAL;
+    else {
+	switch (to) {
+	case ERTS_PRINT_STDOUT:
+	    res = erts_vprintf(format, arg_list);
+	    break;
+	case ERTS_PRINT_STDERR:
+	    res = erts_vfprintf(stderr, format, arg_list);
+	    break;
+	case ERTS_PRINT_FILE:
+	    res = erts_vfprintf((FILE *) arg, format, arg_list);
+	    break;
+	case ERTS_PRINT_SBUF:
+	    res = erts_vsprintf((char *) arg, format, arg_list);
+	    break;
+	case ERTS_PRINT_SNBUF:
+	    res = erts_vsnprintf(((erts_print_sn_buf *) arg)->buf,
+				 ((erts_print_sn_buf *) arg)->size,
+				 format,
+				 arg_list);
+	    break;
+	case ERTS_PRINT_DSBUF:
+	    res = erts_vdsprintf((erts_dsprintf_buf_t *) arg, format, arg_list);
+	    break;
+	case ERTS_PRINT_INVALID:
+	    res = -EINVAL;
+	    break;
+	default:
+	    res = erts_vfdprintf((int) to, format, arg_list);
+	    break;
+	}
+    }
+
+    va_end(arg_list);
+    return res;
+}
+
+int
+erts_putc(int to, void *arg, char c)
+{
+    return erts_print(to, arg, "%c", c);
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
@@ -1443,98 +1406,286 @@ make_broken_hash(Eterm term, Uint hash)
     }
 }
 
-static int do_send_to_logger(char *tag, Eterm gleader, char *buf, int len)
+static int do_send_to_logger(Eterm tag, Eterm gleader, char *buf, int len)
 {
     /* error_logger ! 
        {notify,{info_msg,gleader,{emulator,"~s~n",[<message as list>]}}} |
        {notify,{error,gleader,{emulator,"~s~n",[<message as list>]}}} |
        {notify,{warning_msg,gleader,{emulator,"~s~n",[<message as list>}]}} */
-    Process *p;
-    Eterm atom_tag, atom_notify;
     Eterm* hp;
     Uint sz;
     Uint gl_sz;
     Eterm gl;
     Eterm list,plist,format,tuple1,tuple2,tuple3;
-    
+    ErlOffHeap *ohp;
+#ifdef ERTS_SMP
+    ErlHeapFragment *bp;
+#else
+    Process *p;
+#endif
+
+    ASSERT(is_atom(tag));
+
     if (len <= 0) {
 	return -1;
     }
-    if ((p = whereis_process(am_error_logger)) == NULL ||
-	p->status == P_EXITING || p->status == P_RUNNING)  {
-	/* Now, buf might not be null-terminated and it might be tmp_buf... */
-	if (len >= TMP_BUF_SIZE) {
-	    len = TMP_BUF_SIZE - 1;
-	}
-	sys_memmove(tmp_buf,buf,len);
-	tmp_buf[len] = '\0';
-	erl_printf(CERR,"(no error logger present) %s: %s\r\n",
-		   tag,tmp_buf);
+
+#ifndef ERTS_SMP
+    if (
+#ifdef USE_THREADS
+	!erts_get_scheduler_data() || /* Must be scheduler thread */
+#endif
+	(p = erts_whereis_process(NULL, 0, 0, am_error_logger, 0, 0)) == NULL
+	|| p->status == P_RUNNING) {
+	/* buf *always* points to a null terminated string */
+	erts_fprintf(stderr, "(no error logger present) %T: \"%s\"\n",
+		     tag, buf);
 	return 0;
     }
-
     /* So we have an error logger, lets build the message */
-    atom_tag = am_atom_put(tag,strlen(tag));
-    atom_notify = am_atom_put("notify",6);
+#endif
     gl_sz = IS_CONST(gleader) ? 0 : size_object(gleader);
     sz = len * 2 /* message list */+ 2 /* cons surrounding message list */
 	+ gl_sz + 
 	3 /*outher 2-tuple*/ + 4 /* middle 3-tuple */ + 4 /*inner 3-tuple */ +
 	8 /* "~s~n" */;
-    hp = HAlloc(p,sz);
+#ifdef ERTS_SMP
+    bp = new_message_buffer(sz);
+    ohp = &bp->off_heap;
+    hp = bp->mem;
+#else
+    ohp = &MSO(p);
+    hp = HAlloc(p, sz);
+#endif
     gl = (is_nil(gleader)
 	  ? am_noproc
 	  : (IS_CONST(gleader)
 	     ? gleader
-	     : copy_struct(gleader,gl_sz,&hp,&MSO(p))));
+	     : copy_struct(gleader,gl_sz,&hp,ohp)));
     list = buf_to_intlist(&hp, buf, len, NIL);
     plist = CONS(hp,list,NIL);
     hp += 2;
     format = buf_to_intlist(&hp, "~s~n", 4, NIL);
     tuple1 = TUPLE3(hp, am_emulator, format, plist);
     hp += 4;
-    tuple2 = TUPLE3(hp, atom_tag, gl, tuple1);
+    tuple2 = TUPLE3(hp, tag, gl, tuple1);
     hp += 4;
-    tuple3 = TUPLE2(hp, atom_notify, tuple2);
+    tuple3 = TUPLE2(hp, am_notify, tuple2);
 #ifdef HARDDEBUG
-    display(tuple3,CERR);
+    erts_fprintf(stderr, "%T\n", tuple3);
 #endif
-    queue_message_tt(p, NULL, tuple3, NIL);
+#ifdef ERTS_SMP
+    {
+	Eterm from = erts_get_current_pid();
+	if (is_not_internal_pid(from))
+	    from = NIL;
+	erts_queue_error_logger_message(from, tuple3, bp);
+    }
+#else
+    erts_queue_message(p, 0/* only used for smp build */, NULL, tuple3, NIL);
+#endif
     return 0;
 }
 
-int erts_send_info_to_logger(Eterm gleader, char *buf, int len) 
+static ERTS_INLINE int
+send_info_to_logger(Eterm gleader, char *buf, int len) 
 {
-    return do_send_to_logger("info_msg",gleader,buf,len);
+    return do_send_to_logger(am_info_msg, gleader, buf, len);
 }
 
-int erts_send_warning_to_logger(Eterm gleader, char *buf, int len) 
+static ERTS_INLINE int
+send_warning_to_logger(Eterm gleader, char *buf, int len) 
 {
-    char *tag;
+    Eterm tag;
     switch (erts_error_logger_warnings) {
-    case am_info:
-	tag = "info_msg";
-	break;
-    case am_warning:
-	tag = "warning_msg";
-	break;
-    default:
-	tag = "error";
-	break;
+    case am_info:	tag = am_info_msg;	break;
+    case am_warning:	tag = am_warning_msg;	break;
+    default:		tag = am_error;		break;
     }
-    return do_send_to_logger(tag,gleader,buf,len);
+    return do_send_to_logger(tag, gleader, buf, len);
 }
 
-int erts_send_error_to_logger(Eterm gleader, char *buf, int len) 
+static ERTS_INLINE int
+send_error_to_logger(Eterm gleader, char *buf, int len) 
 {
-    return do_send_to_logger("error",gleader,buf,len);
+    return do_send_to_logger(am_error, gleader, buf, len);
 }
 
-/* To be removed, old obsolete interface */
-int send_error_to_logger(Eterm gleader)
+#define LOGGER_DSBUF_INC_SZ 256
+
+static erts_dsprintf_buf_t *
+grow_logger_dsbuf(erts_dsprintf_buf_t *dsbufp, size_t need)
 {
-    return erts_send_error_to_logger(gleader,tmp_buf,cerr_pos) == 0;
+    size_t size;
+    size_t free_size = dsbufp->size - dsbufp->str_len;
+
+    ASSERT(dsbufp && dsbufp->str);
+
+    if (need <= free_size)
+	return dsbufp;
+
+    size = need - free_size + LOGGER_DSBUF_INC_SZ;
+    size = (((size + LOGGER_DSBUF_INC_SZ - 1) / LOGGER_DSBUF_INC_SZ)
+	    * LOGGER_DSBUF_INC_SZ);
+    size += dsbufp->size;
+    ASSERT(dsbufp->str_len + need <= size);
+    dsbufp->str = (char *) erts_realloc(ERTS_ALC_T_LOGGER_DSBUF,
+					(void *) dsbufp->str,
+					size);
+    dsbufp->size = size;
+    return dsbufp;
 }
+
+erts_dsprintf_buf_t *
+erts_create_logger_dsbuf(void)
+{
+    erts_dsprintf_buf_t init = ERTS_DSPRINTF_BUF_INITER(grow_logger_dsbuf);
+    erts_dsprintf_buf_t *dsbufp = erts_alloc(ERTS_ALC_T_LOGGER_DSBUF,
+					     sizeof(erts_dsprintf_buf_t));
+    sys_memcpy((void *) dsbufp, (void *) &init, sizeof(erts_dsprintf_buf_t));
+    dsbufp->str = (char *) erts_alloc(ERTS_ALC_T_LOGGER_DSBUF,
+				      LOGGER_DSBUF_INC_SZ);
+    dsbufp->str[0] = '\0';
+    dsbufp->size = LOGGER_DSBUF_INC_SZ;
+    return dsbufp;
+}
+
+static ERTS_INLINE void
+destroy_logger_dsbuf(erts_dsprintf_buf_t *dsbufp)
+{
+    ASSERT(dsbufp && dsbufp->str);
+    erts_free(ERTS_ALC_T_LOGGER_DSBUF, (void *) dsbufp->str);
+    erts_free(ERTS_ALC_T_LOGGER_DSBUF, (void *) dsbufp);
+}
+
+int
+erts_send_info_to_logger(Eterm gleader, erts_dsprintf_buf_t *dsbufp)
+{
+    int res;
+    res = send_info_to_logger(gleader, dsbufp->str, dsbufp->str_len);
+    destroy_logger_dsbuf(dsbufp);
+    return res;
+}
+
+int
+erts_send_warning_to_logger(Eterm gleader, erts_dsprintf_buf_t *dsbufp)
+{
+    int res;
+    res = send_warning_to_logger(gleader, dsbufp->str, dsbufp->str_len);
+    destroy_logger_dsbuf(dsbufp);
+    return res;
+}
+
+int
+erts_send_error_to_logger(Eterm gleader, erts_dsprintf_buf_t *dsbufp)
+{
+    int res;
+    res = send_error_to_logger(gleader, dsbufp->str, dsbufp->str_len);
+    destroy_logger_dsbuf(dsbufp);
+    return res;
+}
+
+int
+erts_send_info_to_logger_str(Eterm gleader, char *str)
+{
+    return send_info_to_logger(gleader, str, sys_strlen(str));
+}
+
+int
+erts_send_warning_to_logger_str(Eterm gleader, char *str)
+{
+    return send_warning_to_logger(gleader, str, sys_strlen(str));
+}
+
+int
+erts_send_error_to_logger_str(Eterm gleader, char *str)
+{
+    return send_error_to_logger(gleader, str, sys_strlen(str));
+}
+
+int
+erts_send_info_to_logger_nogl(erts_dsprintf_buf_t *dsbuf)
+{
+    return erts_send_info_to_logger(NIL, dsbuf);
+}
+
+int
+erts_send_warning_to_logger_nogl(erts_dsprintf_buf_t *dsbuf)
+{
+    return erts_send_warning_to_logger(NIL, dsbuf);
+}
+
+int
+erts_send_error_to_logger_nogl(erts_dsprintf_buf_t *dsbuf)
+{
+    return erts_send_error_to_logger(NIL, dsbuf);
+}
+
+int
+erts_send_info_to_logger_str_nogl(char *str)
+{
+    return erts_send_info_to_logger_str(NIL, str);
+}
+
+int
+erts_send_warning_to_logger_str_nogl(char *str)
+{
+    return erts_send_warning_to_logger_str(NIL, str);
+}
+
+int
+erts_send_error_to_logger_str_nogl(char *str)
+{
+    return erts_send_error_to_logger_str(NIL, str);
+}
+
+
+#define TMP_DSBUF_INC_SZ 256
+
+static erts_dsprintf_buf_t *
+grow_tmp_dsbuf(erts_dsprintf_buf_t *dsbufp, size_t need)
+{
+    size_t size;
+    size_t free_size = dsbufp->size - dsbufp->str_len;
+
+    ASSERT(dsbufp);
+
+    if (need <= free_size)
+	return dsbufp;
+    size = need - free_size + TMP_DSBUF_INC_SZ;
+    size = ((size + TMP_DSBUF_INC_SZ - 1)/TMP_DSBUF_INC_SZ)*TMP_DSBUF_INC_SZ;
+    size += dsbufp->size;
+    ASSERT(dsbufp->str_len + need <= size);
+    dsbufp->str = (char *) erts_realloc(ERTS_ALC_T_TMP_DSBUF,
+					(void *) dsbufp->str,
+					size);
+    dsbufp->size = size;
+    return dsbufp;
+}
+
+erts_dsprintf_buf_t *
+erts_create_tmp_dsbuf(Uint size)
+{
+    Uint init_size = size ? size : TMP_DSBUF_INC_SZ;
+    erts_dsprintf_buf_t init = ERTS_DSPRINTF_BUF_INITER(grow_tmp_dsbuf);
+    erts_dsprintf_buf_t *dsbufp = erts_alloc(ERTS_ALC_T_TMP_DSBUF,
+					     sizeof(erts_dsprintf_buf_t));
+    sys_memcpy((void *) dsbufp, (void *) &init, sizeof(erts_dsprintf_buf_t));
+    dsbufp->str = (char *) erts_alloc(ERTS_ALC_T_TMP_DSBUF, init_size);
+    dsbufp->str[0] = '\0';
+    dsbufp->size = init_size;
+    return dsbufp;
+}
+
+void
+erts_destroy_tmp_dsbuf(erts_dsprintf_buf_t *dsbufp)
+{
+    if (dsbufp->str)
+	erts_free(ERTS_ALC_T_TMP_DSBUF, (void *) dsbufp->str);
+    erts_free(ERTS_ALC_T_TMP_DSBUF, (void *) dsbufp);
+}
+
+
 /* eq and cmp are written as separate functions a eq is a little faster */
 
 /*
@@ -2230,22 +2381,6 @@ cmp(Eterm a, Eterm b)
 
 }
 
-Process*
-pid2proc(Eterm pid)
-{
-    Uint pix;
-    Process *rp;
-    if (is_not_internal_pid(pid))
-	return NULL;
-    pix = internal_pid_index(pid);
-    if(pix >= erts_max_processes)
-	return NULL;
-    rp = process_tab[pix];
-    if (INVALID_PID(rp, pid))
-	return NULL;
-    return rp;
-}
-
 void
 erts_cleanup_externals(ExternalThing *etp)
 {
@@ -2254,7 +2389,7 @@ erts_cleanup_externals(ExternalThing *etp)
     tetp = etp;
 
     while(tetp) {
-	DEREF_ERL_NODE(tetp->node);
+	erts_deref_node_entry(tetp->node);
 	tetp = tetp->next;
     }
 }
@@ -2277,7 +2412,7 @@ store_external_or_ref_(Uint **hpp, ExternalThing **etpp, Eterm ns)
 	for(i = 0; i < size; i++)
 	    to_hp[i] = from_hp[i];
 
-	((ExternalThing *) to_hp)->node->refc++;
+	erts_refc_inc(&((ExternalThing *) to_hp)->node->refc, 2);
 
 	((ExternalThing *) to_hp)->next = *etpp;
 	*etpp = (ExternalThing *) to_hp;
@@ -2312,282 +2447,6 @@ store_external_or_ref_in_proc_(Process *proc, Eterm ns)
     return store_external_or_ref_(&hp, &MSO(proc).externals, ns);
 }
 
-static int dcount;
-
-/* 
- * Display a term.
- */
-
-static int 
-display1(Eterm obj, CIO fd)
-{
-    int i, k;
-    Uint32 *ref_num;
-    Eterm* nobj;
-
-    if (dcount-- <= 0) return(1);
-
-#ifdef HYBRID___NOT_ACTIVE
-    /* Color coded output based on memory location */
-    if(ptr_val(obj) >= global_heap && ptr_val(obj) < global_hend)
-        erl_printf(fd,"\033[32m");
-#ifdef INCREMENTAL_GC
-    else if(ptr_val(obj) >= inc_n2 && ptr_val(obj) < inc_n2_end)
-        erl_printf(fd,"\033[33m");
-#endif
-    else if(IS_CONST(obj))
-        erl_printf(fd,"\033[34m");
-    else
-        erl_printf(fd,"\033[31m");
-#endif
-
-    if (is_CP(obj)) {
-	erl_printf(fd, "<cp/header:%08lX>", (unsigned long) obj);
-	return 0;
-    }
-
-    switch (tag_val_def(obj)) {
-    case NIL_DEF:
-	erl_printf(fd, "[]");
-	break;
-    case ATOM_DEF:
-	print_atom((int)atom_val(obj),fd);
-	break;
-    case SMALL_DEF:
-	erl_printf(fd, "%ld", signed_val(obj));
-	break;
-    case BIG_DEF:
-	nobj = big_val(obj);
-	i = BIG_SIZE(nobj);
-	if (BIG_SIGN(nobj)) {
-	    erl_printf(fd, "-16#", i);
-	} else {
-	    erl_printf(fd, "16#", i);
-	}
-	for (k = i-1; k >= 0; k--) {
-	    erl_printf(fd, "%0*X", D_EXP/4, BIG_DIGIT(nobj, k));
-	}
-	break;
-    case REF_DEF:
-	erl_printf(fd, "#Ref<%lu", internal_ref_channel_no(obj));
-	ref_num = internal_ref_numbers(obj);
-	for (i = internal_ref_no_of_numbers(obj)-1; i >= 0; i--)
-	    erl_printf(fd, ".%lu", (unsigned long) ref_num[i]);
-	erl_printf(fd, ">");
-	break;
-    case EXTERNAL_REF_DEF:
-	erl_printf(fd, "#Ref<%lu", external_ref_channel_no(obj));
-	ref_num = external_ref_numbers(obj);
-	for (i = external_ref_no_of_numbers(obj)-1; i >= 0; i--)
-	    erl_printf(fd, ".%lu", (unsigned long) ref_num[i]);
-	erl_printf(fd, ">");
-	break;
-    case PID_DEF:
-    case EXTERNAL_PID_DEF:
-	erl_printf(fd, "<%lu.%lu.%lu>",
-		   (unsigned long) pid_channel_no(obj),
-		   (unsigned long) pid_number(obj),
-		   (unsigned long) pid_serial(obj));
-	break;
-    case PORT_DEF:
-    case EXTERNAL_PORT_DEF:
-	erl_printf(fd, "#Port<%lu.%lu>",
-		   (unsigned long) port_channel_no(obj),
-		   (unsigned long) port_number(obj));
-	break;
-    case LIST_DEF:
-	if (is_printable_string(obj)) {
-	   int c;
-	   erl_putc('"', fd);
-	   nobj = list_val(obj);
-	   while (1) {
-	      if (dcount-- <= 0) return(1);
-	      c = signed_val(*nobj++);
-	      if (c == '\n') {
-		 erl_putc('\\', fd);
-		 erl_putc('n', fd);
-	      } else {
-		 if (c == '"')
-		    erl_putc('\\', fd);
-		 erl_putc(c, fd);
-	      }
-	      if (is_not_list(*nobj)) break;
-	      nobj = list_val(*nobj);
-	   }
-	   erl_putc('"', fd);
-	} else {
-	   erl_putc('[', fd);
-	   nobj = list_val(obj);
-	   while (1) {
-	      if (display1(*nobj++, fd) != 0) return(1);
-	      if (is_not_list(*nobj)) break;
-	      erl_putc(',',fd);
-	      nobj = list_val(*nobj);
-	   }
-	   if (is_not_nil(*nobj)) {
-	      erl_putc('|', fd);
-	      if (display1(*nobj, fd) != 0) return(1);
-	   }
-	   erl_putc(']', fd);
-	}
-	break;
-    case TUPLE_DEF:
-	nobj = tuple_val(obj);	/* pointer to arity */
-	i = arityval(*nobj);	/* arity */
-	erl_putc('{', fd);
-	while (i--) {
-	    if (display1(*++nobj,fd) != 0) return(1);
-	    if (i >= 1) erl_putc(',',fd);
-	}
-	erl_putc('}',fd);
-	break;
-    case FLOAT_DEF: {
-	    FloatDef ff;
-	    GET_DOUBLE(obj, ff);
-#ifdef _OSE_
-	    erl_printf(fd, "%e", ff.fd);
-#else
-	    erl_printf(fd, "%e", ff.fd);
-#endif
-	}
-	break;
-    case BINARY_DEF:
-	{
-	    ProcBin* pb = (ProcBin *) binary_val(obj);
-	    erl_printf(fd, pb->size == 1 ? "<<%lu byte>>" : "<<%lu bytes>>",
-		       (unsigned long) pb->size);
-	}
-	break;
-    case EXPORT_DEF:
-	{
-	    Export* ep = (Export *) (export_val(obj))[1];
-	    Atom* ap;
-
-	    erl_printf(fd, "#Fun<");
-	    ap = atom_tab(atom_val(ep->code[0]));
-	    for (i = 0; i < ap->len; i++) {
-		erl_putc(ap->name[i], fd);
-	    }
-	    erl_putc('.', fd);
-	    ap = atom_tab(atom_val(ep->code[1]));
-	    for (i = 0; i < ap->len; i++) {
-		erl_putc(ap->name[i], fd);
-	    }
-	    erl_printf(fd, ".%d>", (int) ep->code[2]);
-	}
-	break;
-    case FUN_DEF:
-	{
-	    ErlFunThing* funp = (ErlFunThing *) fun_val(obj);
-	    Atom* ap;
-
-	    erl_printf(fd, "#Fun<");
-	    ap = atom_tab(atom_val(funp->fe->module));
-	    for (i = 0; i < ap->len; i++) {
-		erl_putc(ap->name[i], fd);
-	    }
-	    erl_printf(fd, ".%d.%d>", funp->fe->old_index,
-		       funp->fe->old_uniq);
-	}
-	break;
-    default:
-	erl_printf(fd, "<unknown:%lx>", (unsigned long) obj);
-    }
-    return(0);
-}
-
-
-/*
- * Display a term on file fd.
- * Only used by debugging rountines as Erlang formatting is 
- * done in the io module.
- */
-
-void
-display(Eterm obj, CIO fd)
-{
-    dcount = 100000;
-    display1(obj, fd);
-}
-
-
-/* as above, but limit the number of items printed */
-void ldisplay(Eterm obj, CIO fd, int count)
-{
-    dcount = count;
-    display1(obj, fd);
-    if (dcount <= 0) erl_printf(fd, "... "); /* Show that more items exist */
-}
-
-
-/* print a name doing what quoting is necessary */
-static void print_name(byte *s, int n, CIO fd)
-{
-    
-    int need_quote;
-    int pos;
-    byte *cpos;
-    int c;
-
-    if (n == 0) {
-	erl_printf(fd, "''");
-	return;
-    }
-
-    need_quote = 0;
-    cpos = s;
-    pos = n - 1;
-
-    c = *cpos++;
-    if (!IS_LOWER(c))
-	need_quote++;
-    else {
-	while (pos--) {
-	    c = *cpos++;
-	    if (!IS_ALNUM(c) && (c != '_')) {
-		need_quote++;
-		break;
-	    }
-	}
-    }
-    cpos = s;
-    pos = n;
-    if (need_quote)
-	erl_putc('\'',fd);
-    while(pos--) {
-	c = *cpos++;
-	switch(c) {
-	case '\'': erl_printf(fd, "\\'"); break;
-	case '\\': erl_printf(fd, "\\\\"); break;
-	case '\n': erl_printf(fd, "\\n"); break;
-	case '\f': erl_printf(fd, "\\f"); break;
-	case '\t': erl_printf(fd, "\\t"); break;
-	case '\r': erl_printf(fd, "\\r"); break;
-	case '\b': erl_printf(fd, "\\b"); break;
-	case '\v': erl_printf(fd, "\\v"); break;
-	default:
-	    if (IS_CNTRL(c))
-		erl_printf(fd, "\\%03o", c);
-	    else
-		erl_putc(c, fd);
-	    break;
-	}
-    }
-    if (need_quote) 
-	erl_putc('\'',fd);
-}
-
-/* print the text of an atom with number i on open file descriptor fd */
-void
-print_atom(int i, CIO fd)
-{
-    if ((i < 0) || (i >= atom_table_size) ||  (atom_tab(i) == NULL)) {
-	erl_printf(fd, "<bad atom index: %d>", i);
-    }
-    print_name(atom_tab(i)->name, atom_tab(i)->len, fd);
-    dcount -= atom_tab(i)->len;
-}
-
 /* 
  *  member(X,Y)
  *  returns 0 if X is a member of list Y
@@ -2610,30 +2469,27 @@ member(Eterm x, Eterm y)
     }
 }
 
-void bin_write(fp,buf,sz)
-CIO fp; byte* buf;
-int sz;
+void bin_write(int to, void *to_arg, byte* buf, int sz)
 {
     int i;
 
     for (i=0;i<sz;i++) {
 	if (IS_DIGIT(buf[i]))
-	    erl_printf(fp, "%d,", buf[i]);
+	    erts_print(to, to_arg, "%d,", buf[i]);
 	else if (IS_PRINT(buf[i])) {
-	    erl_putc(buf[i],fp);
-	    erl_putc(',',fp);
+	    erts_print(to, to_arg, "%c,", buf[i]);
 	}
 	else
-	    erl_printf(fp,"%d,", buf[i]);
+	    erts_print(to, to_arg, "%d,", buf[i]);
     }
-    erl_putc('\n',fp);
+    erts_putc(to, to_arg, '\n');
 }
 
 /* Fill buf with the contents of bytelist list 
    return number of chars in list or -1 for error */
 
 int
-intlist_to_buf(Eterm list, byte *buf, int len)
+intlist_to_buf(Eterm list, char *buf, int len)
 {
     Eterm* listptr;
     int sz = 0;
@@ -2690,7 +2546,7 @@ char* Sint_to_buf(Sint n, struct Sint_buf *buf)
 */
 
 Eterm
-buf_to_intlist(Eterm** hpp, byte *buf, int len, Eterm tail)
+buf_to_intlist(Eterm** hpp, char *buf, int len, Eterm tail)
 {
     Eterm* hp = *hpp;
 
@@ -2920,33 +2776,158 @@ is_string(Eterm list)
     return 0;
 }
 
-/* return 0 if item is not a non-empty flat list of printable characters */
+#ifdef ERTS_SMP
 
-static int
-is_printable_string(Eterm list)
+/*
+ * Process and Port timers in smp case
+ */
+
+#define ERTS_PREALLOCED_PTIMERS 1000
+
+static ErtsSmpPTimer prealloced_ptimers[ERTS_PREALLOCED_PTIMERS];
+static ErtsSmpPTimer *free_ptimers;
+
+static erts_smp_spinlock_t ptimers_lock;
+
+#define ERTS_PTMR_FLGS_ALLCD_SIZE \
+  2
+#define ERTS_PTMR_FLGS_ALLCD_MASK \
+  ((((Uint32) 1) << ERTS_PTMR_FLGS_ALLCD_SIZE) - 1)
+
+#define ERTS_PTMR_FLGS_PREALLCD	((Uint32) 1)
+#define ERTS_PTMR_FLGS_SLALLCD	((Uint32) 2)
+#define ERTS_PTMR_FLGS_LLALLCD	((Uint32) 3)
+#define ERTS_PTMR_FLG_CANCELLED	(((Uint32) 1) << (ERTS_PTMR_FLGS_ALLCD_SIZE+0))
+
+static void
+init_ptimers(void)
 {
-    int len = 0;
-    int c;
-
-    while(is_list(list)) {
-	Eterm* consp = list_val(list);
-	Eterm hd = CAR(consp);
-
-	if (!is_byte(hd))
-	    return 0;
-	c = signed_val(hd);
-	/* IS_PRINT || IS_SPACE would be another way to put it */
-	if (IS_CNTRL(c) && !IS_SPACE(c))
-	   return 0;
-	len++;
-	list = CDR(consp);
-    }
-    if (is_nil(list))
-	return len;
-    return 0;
+    int i;
+    erts_smp_spinlock_init(&ptimers_lock, "ptimers");
+    for (i = 0; i < ERTS_PREALLOCED_PTIMERS - 1; i++)
+	prealloced_ptimers[i].next = &prealloced_ptimers[i+1];
+    free_ptimers = &prealloced_ptimers[0];
+    prealloced_ptimers[ERTS_PREALLOCED_PTIMERS - 1].next = NULL;
 }
 
-Uint erts_sys_misc_mem_sz;
+static ERTS_INLINE void
+free_ptimer(ErtsSmpPTimer *ptimer)
+{
+    switch (ptimer->timer.flags & ERTS_PTMR_FLGS_ALLCD_MASK) {
+    case ERTS_PTMR_FLGS_PREALLCD:
+	erts_smp_spin_lock(&ptimers_lock);
+	ptimer->next = free_ptimers;
+	free_ptimers = ptimer;
+	erts_smp_spin_unlock(&ptimers_lock);
+	break;
+    case ERTS_PTMR_FLGS_SLALLCD:
+	erts_free(ERTS_ALC_T_SL_PTIMER, (void *) ptimer);
+	break;
+    case ERTS_PTMR_FLGS_LLALLCD:
+	erts_free(ERTS_ALC_T_LL_PTIMER, (void *) ptimer);
+	break;
+    default:
+	erl_exit(ERTS_ABORT_EXIT,
+		 "Internal error: Bad ptimer alloc type\n");
+	break;
+    }
+}
+
+/* Callback for process timeout cancelled */
+static void
+ptimer_cancelled(ErtsSmpPTimer *ptimer)
+{
+    free_ptimer(ptimer);
+}
+
+/* Callback for process timeout */
+static void
+ptimer_timeout(ErtsSmpPTimer *ptimer)
+{
+    if (!(ptimer->timer.flags & ERTS_PTMR_FLG_CANCELLED)) {
+	if (is_internal_pid(ptimer->timer.id)) {
+	    Process *p;
+	    p = erts_pid2proc(NULL,
+			      0,
+			      ptimer->timer.id,
+			      ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
+	    if (p) {
+		if (!(ptimer->timer.flags & ERTS_PTMR_FLG_CANCELLED)) {
+		    (*ptimer->timer.timeout_func)(p);
+		    *ptimer->timer.timer_ref = NULL;
+		}
+		erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
+	    }
+	}
+	else {
+	    Port *p;
+	    ASSERT(is_internal_port(ptimer->timer.id));
+	    p = erts_id2port(ptimer->timer.id, NULL, 0);
+	    if (p) {
+		if (!(ptimer->timer.flags & ERTS_PTMR_FLG_CANCELLED)) {
+		    (*ptimer->timer.timeout_func)(p);
+		    *ptimer->timer.timer_ref = NULL;
+		}
+		erts_smp_io_unlock();
+	    }
+	}
+    }
+    free_ptimer(ptimer);
+}
+
+void
+erts_create_smp_ptimer(ErtsSmpPTimer **timer_ref,
+		       Eterm id,
+		       ErlTimeoutProc timeout_func,
+		       Uint timeout)
+{
+    ErtsSmpPTimer *res;
+    erts_smp_spin_lock(&ptimers_lock);
+    if (free_ptimers) {
+	res = free_ptimers;
+	free_ptimers = free_ptimers->next;
+	res->timer.flags = ERTS_PTMR_FLGS_PREALLCD;
+	erts_smp_spin_unlock(&ptimers_lock);
+    }
+    else {
+	erts_smp_spin_unlock(&ptimers_lock);
+	if (timeout < ERTS_ALC_MIN_LONG_LIVED_TIME) {
+	    res = erts_alloc(ERTS_ALC_T_SL_PTIMER, sizeof(ErtsSmpPTimer));
+	    res->timer.flags = ERTS_PTMR_FLGS_SLALLCD;
+	}
+	else {
+	    res = erts_alloc(ERTS_ALC_T_SL_PTIMER, sizeof(ErtsSmpPTimer));
+	    res->timer.flags = ERTS_PTMR_FLGS_LLALLCD;
+	}
+    }
+    res->timer.timeout_func = timeout_func;
+    res->timer.timer_ref = timer_ref;
+    res->timer.id = id;
+    res->timer.tm.active = 0; /* MUST be initalized */
+
+    ASSERT(!*timer_ref);
+
+    *timer_ref = res;
+
+    erl_set_timer(&res->timer.tm,
+		  (ErlTimeoutProc) ptimer_timeout,
+		  (ErlCancelProc) ptimer_cancelled,
+		  (void*) res,
+		  timeout);
+}
+
+void
+erts_cancel_smp_ptimer(ErtsSmpPTimer *ptimer)
+{
+    if (ptimer) {
+	ASSERT(*ptimer->timer.timer_ref == ptimer);
+	*ptimer->timer.timer_ref = NULL;
+	ptimer->timer.flags |= ERTS_PTMR_FLG_CANCELLED;
+	erl_cancel_timer(&ptimer->timer.tm);
+    }
+}
+
+#endif
 
 static Sint trim_threshold;
 static Sint top_pad;
@@ -2957,12 +2938,13 @@ Uint tot_bin_allocated;
 
 void erts_init_utils(void)
 {
-
+#ifdef ERTS_SMP
+    init_ptimers();
+#endif
 }
 
 void erts_init_utils_mem(void) 
 {
-    erts_sys_misc_mem_sz = 0;
     trim_threshold = -1;
     top_pad = -1;
     mmap_threshold = -1;
@@ -3033,6 +3015,569 @@ sys_alloc_stat(SysAllocStat *sasp)
 
 }
 
+#ifdef ERTS_SMP
+
+/* Local system block state */
+struct {
+    int emergency;
+    int threads_to_block;
+    int have_blocker;
+    erts_smp_tid_t blocker_tid;
+    int recursive_block;
+    Uint32 allowed_activities;
+    erts_smp_tsd_key_t blockable_key;
+    erts_smp_mtx_t mtx;
+    erts_smp_cnd_t cnd;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    int activity_changing;
+    int checking;
+#endif
+} system_block_state;
+
+/* Global system block state */
+erts_system_block_state_t erts_system_block_state;
+
+
+static ERTS_INLINE int
+is_blockable_thread(void)
+{
+    return erts_smp_tsd_get(system_block_state.blockable_key) != NULL;
+}
+
+static ERTS_INLINE int
+is_blocker(void)
+{
+    return (system_block_state.have_blocker
+	    && erts_smp_equal_tids(system_block_state.blocker_tid,
+				   erts_smp_thr_self()));
+}
+
+static ERTS_INLINE void
+block_me(void (*prepare)(void *),
+	 void (*resume)(void *),
+	 void *arg,
+	 int mtx_locked,
+	 int want_to_block,
+	 int update_act_changing)
+{
+
+    if (prepare)
+	(*prepare)(arg);
+
+    /* Locks might be held... */
+
+    if (!mtx_locked)
+	erts_smp_mtx_lock(&system_block_state.mtx);
+
+    if (erts_smp_pending_system_block() && !is_blocker()) {
+	int is_blockable = is_blockable_thread();
+	ASSERT(is_blockable);
+
+	if (is_blockable)
+	    system_block_state.threads_to_block--;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+	if (update_act_changing)
+	    system_block_state.activity_changing--;
+#endif
+	erts_smp_cnd_broadcast(&system_block_state.cnd);
+
+	do {
+	    erts_smp_cnd_wait(&system_block_state.cnd, &system_block_state.mtx);
+	} while (erts_smp_pending_system_block()
+		 && !(want_to_block && !system_block_state.have_blocker));
+#ifdef ERTS_ENABLE_LOCK_CHECK
+	if (update_act_changing)
+	    system_block_state.activity_changing++;
+#endif
+	if (is_blockable)
+	    system_block_state.threads_to_block++;
+    }
+
+    if (!mtx_locked)
+	erts_smp_mtx_unlock(&system_block_state.mtx);
+
+    if (resume)
+	(*resume)(arg);
+}
+
+void
+erts_block_me(void (*prepare)(void *),
+	      void (*resume)(void *),
+	      void *arg)
+{
+    if (prepare)
+	(*prepare)(arg);
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_check_exact(NULL, 0); /* No locks should be locked */
+#endif
+
+    block_me(NULL, NULL, NULL, 0, 0, 0);
+
+    if (resume)
+	(*resume)(arg);
+}
+
+void
+erts_register_blockable_thread(void)
+{
+    if (!is_blockable_thread()) {
+	erts_smp_mtx_lock(&system_block_state.mtx);
+	system_block_state.threads_to_block++;
+	erts_smp_tsd_set(system_block_state.blockable_key,
+			 (void *) &erts_system_block_state);
+
+	/* Someone might be waiting for us to block... */
+	if (erts_smp_pending_system_block())
+	    block_me(NULL, NULL, NULL, 1, 0, 0);
+	erts_smp_mtx_unlock(&system_block_state.mtx);
+    }
+}
+
+void
+erts_unregister_blockable_thread(void)
+{
+    if (is_blockable_thread()) {
+	erts_smp_mtx_lock(&system_block_state.mtx);
+	system_block_state.threads_to_block--;
+	ASSERT(system_block_state.threads_to_block >= 0);
+	erts_smp_tsd_set(system_block_state.blockable_key, NULL);
+
+	/* Someone might be waiting for us to block... */
+	if (erts_smp_pending_system_block())
+	    erts_smp_cnd_broadcast(&system_block_state.cnd);
+	erts_smp_mtx_unlock(&system_block_state.mtx);
+    }
+}
+
+void
+erts_note_activity_begin(erts_activity_t activity)
+{
+    erts_smp_mtx_lock(&system_block_state.mtx);
+    if (erts_smp_pending_system_block()) {
+	Uint32 broadcast = 0;
+	switch (activity) {
+	case ERTS_ACTIVITY_GC:
+	    broadcast = (system_block_state.allowed_activities
+			 & ERTS_BS_FLG_ALLOW_GC);
+	    break;
+	case ERTS_ACTIVITY_IO:
+	    broadcast = (system_block_state.allowed_activities
+			 & ERTS_BS_FLG_ALLOW_IO);
+	    break;
+	case ERTS_ACTIVITY_WAIT:
+	    broadcast = 1;
+	    break;
+	default:
+	    abort();
+	    break;
+	}
+	if (broadcast)
+	    erts_smp_cnd_broadcast(&system_block_state.cnd);
+    }
+    erts_smp_mtx_unlock(&system_block_state.mtx);
+}
+
+void
+erts_check_block(erts_activity_t old_activity,
+		 erts_activity_t new_activity,
+		 int locked,
+		 void (*prepare)(void *),
+		 void (*resume)(void *),
+		 void *arg)
+{
+    int do_block;
+
+    if (!locked && prepare)
+	(*prepare)(arg);
+
+    erts_smp_mtx_lock(&system_block_state.mtx);
+
+    /* First check if it is ok to block... */
+    if (!locked)
+	do_block = 1;
+    else {
+	switch (old_activity) {
+	case ERTS_ACTIVITY_UNDEFINED:
+	    do_block = 0;
+	    break;
+	case ERTS_ACTIVITY_GC:
+	    do_block = (system_block_state.allowed_activities
+			& ERTS_BS_FLG_ALLOW_GC);
+	    break;
+	case ERTS_ACTIVITY_IO:
+	    do_block = (system_block_state.allowed_activities
+			& ERTS_BS_FLG_ALLOW_IO);
+	    break;
+	case ERTS_ACTIVITY_WAIT:
+	    /* You are not allowed to leave activity waiting
+	     * without supplying the possibility to block
+	     * unlocked.
+	     */
+	    erts_set_activity_error(ERTS_ACT_ERR_LEAVE_WAIT_UNLOCKED,
+				    __FILE__, __LINE__);
+	    do_block = 0;
+	    break;
+	default:
+	    erts_set_activity_error(ERTS_ACT_ERR_LEAVE_UNKNOWN_ACTIVITY,
+				    __FILE__, __LINE__);
+	    do_block = 0;
+	    break;
+	}
+    }
+
+    if (do_block) {
+	/* ... then check if it is necessary to block... */
+
+	switch (new_activity) {
+	case ERTS_ACTIVITY_UNDEFINED:
+	    do_block = 1;
+	    break;
+	case ERTS_ACTIVITY_GC:
+	    do_block = !(system_block_state.allowed_activities
+			 & ERTS_BS_FLG_ALLOW_GC);
+	break;
+	case ERTS_ACTIVITY_IO:
+	    do_block = !(system_block_state.allowed_activities
+			 & ERTS_BS_FLG_ALLOW_IO);
+	    break;
+	case ERTS_ACTIVITY_WAIT:
+	    /* No need to block if we are going to wait */
+	    do_block = 0;
+	    break;
+	default:
+	    erts_set_activity_error(ERTS_ACT_ERR_ENTER_UNKNOWN_ACTIVITY,
+				    __FILE__, __LINE__);
+	    break;
+	}
+    }
+
+    if (do_block) {
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+	if (!locked) {
+	    /* Only system_block_state.mtx should be held */
+	    erts_lc_check_exact(&system_block_state.mtx.lc, 1);
+	}
+#endif
+
+	block_me(NULL, NULL, NULL, 1, 0, 1);
+
+    }
+
+    erts_smp_mtx_unlock(&system_block_state.mtx);
+
+    if (!locked && resume)
+	(*resume)(arg);
+}
+
+
+
+void
+erts_set_activity_error(erts_activity_error_t error, char *file, int line)
+{
+    switch (error) {
+    case ERTS_ACT_ERR_LEAVE_WAIT_UNLOCKED:
+	erl_exit(1, "%s:%d: Fatal error: Leaving activity waiting without "
+		 "supplying the possibility to block unlocked.",
+		 file, line);
+	break;
+    case ERTS_ACT_ERR_LEAVE_UNKNOWN_ACTIVITY:
+	erl_exit(1, "%s:%d: Fatal error: Leaving unknown activity.",
+		 file, line);
+	break;
+    case ERTS_ACT_ERR_ENTER_UNKNOWN_ACTIVITY:
+	erl_exit(1, "%s:%d: Fatal error: Leaving unknown activity.",
+		 file, line);
+	break;
+    default:
+	erl_exit(1, "%s:%d: Internal error in erts_smp_set_activity()",
+		 file, line);
+	break;
+    }
+
+}
+
+
+static ERTS_INLINE int
+threads_not_under_control(void)
+{
+    int res = system_block_state.threads_to_block;
+
+    /* Waiting is allways an allowed activity... */
+    res -= erts_smp_atomic_read(&erts_system_block_state.in_activity.wait);
+
+    if (system_block_state.allowed_activities & ERTS_BS_FLG_ALLOW_GC)
+	res -= erts_smp_atomic_read(&erts_system_block_state.in_activity.gc);
+
+    if (system_block_state.allowed_activities & ERTS_BS_FLG_ALLOW_IO)
+	res -= erts_smp_atomic_read(&erts_system_block_state.in_activity.io);
+
+    if (res < 0) {
+	ASSERT(0);
+	return 0;
+    }
+    return res;
+}
+
+/*
+ * erts_block_system() blocks all threads registered as blockable.
+ * It doesn't return until either all threads have blocked (0 is returned)
+ * or it has timed out (ETIMEDOUT) is returned.
+ *
+ * If allowed activities == 0, blocked threads will release all locks
+ * before blocking.
+ *
+ * If allowed_activities is != 0, erts_block_system() will allow blockable
+ * threads to continue executing as long as they are doing an allowed
+ * activity. When they are done with the allowed activity they will block,
+ * *but* they will block holding locks. Therefore, the thread calling
+ * erts_block_system() must *not* try to aquire any locks that might be
+ * held by blocked threads holding locks from allowed activities.
+ *
+ * Currently allowed_activities are:
+ *	* ERTS_BS_FLG_ALLOW_GC		Thread continues with garbage
+ *					collection and blocks with
+ *					main process lock on current
+ *					process locked.
+ *	* ERTS_BS_FLG_ALLOW_IO		Thread continues with I/O
+ */
+
+void
+erts_block_system(Uint32 allowed_activities)
+{
+    int do_block;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_check_exact(NULL, 0); /* No locks should be locked */
+#endif
+
+    erts_smp_mtx_lock(&system_block_state.mtx);
+
+    do_block = erts_smp_pending_system_block();
+    if (do_block
+	&& system_block_state.have_blocker
+	&& erts_smp_equal_tids(system_block_state.blocker_tid,
+			       erts_smp_thr_self())) {
+	ASSERT(system_block_state.recursive_block >= 0);
+	system_block_state.recursive_block++;
+
+	/* You are not allowed to restrict allowed activites
+	   in a recursive block! */
+	ERTS_SMP_LC_ASSERT((system_block_state.allowed_activities
+			    & ~allowed_activities) == 0);
+    }
+    else {
+
+	erts_smp_atomic_inc(&erts_system_block_state.do_block);
+
+	/* Someone else might be waiting for us to block... */
+	if (do_block) {
+	do_block_me:
+	    block_me(NULL, NULL, NULL, 1, 1, 0);
+	}
+
+	ASSERT(!system_block_state.have_blocker);
+	system_block_state.have_blocker = 1;
+	system_block_state.blocker_tid = erts_smp_thr_self();
+	system_block_state.allowed_activities = allowed_activities;
+
+	if (is_blockable_thread())
+	    system_block_state.threads_to_block--;
+
+	while (threads_not_under_control() && !system_block_state.emergency)
+	    erts_smp_cnd_wait(&system_block_state.cnd, &system_block_state.mtx);
+
+	if (system_block_state.emergency) {
+	    system_block_state.have_blocker = 0;
+	    goto do_block_me;
+	}
+    }
+
+    erts_smp_mtx_unlock(&system_block_state.mtx);
+}
+
+/*
+ * erts_emergency_block_system() should only be called when we are
+ * about to write a crash dump...
+ */
+
+int
+erts_emergency_block_system(long timeout, Uint32 allowed_activities)
+{
+    int res = 0;
+    long another_blocker;
+
+    erts_smp_mtx_lock(&system_block_state.mtx);
+
+    if (system_block_state.emergency) {
+	 /* Argh... */
+	res = EINVAL;
+	goto done;
+    }
+
+    another_blocker = erts_smp_pending_system_block();
+    system_block_state.emergency = 1;
+    erts_smp_atomic_inc(&erts_system_block_state.do_block);
+
+    if (another_blocker) {
+	if (is_blocker()) {
+	    erts_smp_atomic_dec(&erts_system_block_state.do_block);
+	    res = 0;
+	    goto done;
+	}
+	/* kick the other blocker */
+	erts_smp_cnd_broadcast(&system_block_state.cnd);
+	while (system_block_state.have_blocker)
+	    erts_smp_cnd_wait(&system_block_state.cnd, &system_block_state.mtx);
+    }
+
+    ASSERT(!system_block_state.have_blocker);
+    system_block_state.have_blocker = 1;
+    system_block_state.blocker_tid = erts_smp_thr_self();
+    system_block_state.allowed_activities = allowed_activities;
+
+    if (is_blockable_thread())
+	system_block_state.threads_to_block--;
+
+    if (timeout < 0) {
+	while (threads_not_under_control())
+	    erts_smp_cnd_wait(&system_block_state.cnd, &system_block_state.mtx);
+    }
+    else {
+	erts_thr_timeval_t to;
+	erts_thr_time_now(&to);
+
+	to.tv_sec += timeout / 1000;
+	to.tv_nsec += timeout % 1000;
+	if (to.tv_nsec >= 1000000000) {
+	    to.tv_sec++;
+	    to.tv_nsec -= 1000000000;
+	}
+
+	while (res != ETIMEDOUT && threads_not_under_control()) {
+	    res = erts_smp_cnd_timedwait(&system_block_state.cnd,
+					 &system_block_state.mtx,
+					 &to);
+	}
+    }
+ done:
+    erts_smp_mtx_unlock(&system_block_state.mtx);
+    return res;
+}
+
+void
+erts_release_system(void)
+{
+    long do_block;
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_check_exact(NULL, 0); /* No locks should be locked */
+#endif
+
+    erts_smp_mtx_lock(&system_block_state.mtx);
+    ASSERT(is_blocker());
+
+    ASSERT(system_block_state.recursive_block >= 0);
+
+    if (system_block_state.recursive_block)
+	system_block_state.recursive_block--;
+    else {
+	do_block = erts_smp_atomic_dectest(&erts_system_block_state.do_block);
+	system_block_state.have_blocker = 0;
+	if (is_blockable_thread())
+	    system_block_state.threads_to_block++;
+	else
+	    do_block = 0;
+
+	/* Someone else might be waiting for us to block... */
+	if (do_block)
+	    block_me(NULL, NULL, NULL, 1, 0, 0);
+	else
+	    erts_smp_cnd_broadcast(&system_block_state.cnd);
+    }
+
+    erts_smp_mtx_unlock(&system_block_state.mtx);
+    
+}
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+
+void
+erts_lc_activity_change_begin(void)
+{
+    erts_smp_mtx_lock(&system_block_state.mtx);
+    system_block_state.activity_changing++;
+    erts_smp_mtx_unlock(&system_block_state.mtx);
+}
+
+void
+erts_lc_activity_change_end(void)
+{
+    erts_smp_mtx_lock(&system_block_state.mtx);
+    system_block_state.activity_changing--;
+    if (system_block_state.checking && !system_block_state.activity_changing)
+	erts_smp_cnd_broadcast(&system_block_state.cnd);
+    erts_smp_mtx_unlock(&system_block_state.mtx);
+}
+
+#endif
+
+int
+erts_is_system_blocked(erts_activity_t allowed_activities)
+{
+    int blkd;
+
+    erts_smp_mtx_lock(&system_block_state.mtx);
+    blkd = (erts_smp_pending_system_block()
+	    && system_block_state.have_blocker
+	    && erts_smp_equal_tids(system_block_state.blocker_tid,
+				   erts_smp_thr_self())
+	    && !(system_block_state.allowed_activities & ~allowed_activities));
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    if (blkd) {
+	system_block_state.checking = 1;
+	while (system_block_state.activity_changing)
+	    erts_smp_cnd_wait(&system_block_state.cnd, &system_block_state.mtx);
+	system_block_state.checking = 0;
+	blkd = !threads_not_under_control();
+    }
+#endif
+    erts_smp_mtx_unlock(&system_block_state.mtx);
+    return blkd;
+}
+
+void
+erts_system_block_init(void)
+{
+    /* Local state... */
+    system_block_state.emergency = 0;
+    system_block_state.threads_to_block = 0;
+    system_block_state.have_blocker = 0;
+    /* system_block_state.block_tid */
+    system_block_state.recursive_block = 0;
+    system_block_state.allowed_activities = 0;
+    erts_smp_tsd_key_create(&system_block_state.blockable_key);
+    erts_smp_mtx_init(&system_block_state.mtx, "system_block");
+    erts_smp_cnd_init(&system_block_state.cnd);
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    system_block_state.activity_changing = 0;
+    system_block_state.checking = 0;
+#endif
+
+    /* Global state... */
+
+    erts_smp_atomic_init(&erts_system_block_state.do_block, 0L);
+    erts_smp_atomic_init(&erts_system_block_state.in_activity.wait, 0L);
+    erts_smp_atomic_init(&erts_system_block_state.in_activity.gc, 0L);
+    erts_smp_atomic_init(&erts_system_block_state.in_activity.io, 0L);
+
+    /* Make sure blockable threads unregister when exiting... */
+    erts_smp_install_exit_handler(erts_unregister_blockable_thread);
+}
+
+
+#endif /* #ifdef ERTS_SMP */
+
 #ifdef DEBUG
 /*
  * Handy functions when using a debugger - don't use in the code!
@@ -3042,7 +3587,7 @@ void upp(buf,sz)
 byte* buf;
 int sz;
 {
-    bin_write(CERR,buf,sz);
+    bin_write(ERTS_PRINT_STDERR,NULL,buf,sz);
 }
 
 void pat(Eterm atom)
@@ -3054,7 +3599,7 @@ void pat(Eterm atom)
 
 void pinfo()
 {
-    process_info(COUT);
+    process_info(ERTS_PRINT_STDOUT, NULL);
 }
 
 
@@ -3062,18 +3607,17 @@ void pp(p)
 Process *p;
 {
     if(p)
-	print_process_info(p,CERR);
+	print_process_info(ERTS_PRINT_STDERR, NULL, p);
 }
     
 void ppi(Eterm pid)
 {
-    pp(pid2proc(pid));
+    pp(erts_pid2proc_unlocked(pid));
 }
 
 void td(Eterm x)
 {
-    display(x, CERR);
-    erl_putc('\n', CERR);
+    erts_fprintf(stderr, "%T\n", x);
 }
 
 void
@@ -3086,11 +3630,10 @@ ps(Process* p, Eterm* stop)
     }
 
     while(sp >= stop) {
-	erl_printf(COUT,"%08lx: ", (unsigned long) (Eterm) sp);
-	ldisplay(*sp, COUT, 75);
-	erl_putc('\r', COUT);
-	erl_putc('\n', COUT);
+	erts_printf("%p: %.75T\n", sp, *sp);
 	sp--;
     }
 }
 #endif
+
+

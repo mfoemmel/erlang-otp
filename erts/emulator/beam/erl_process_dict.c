@@ -125,7 +125,6 @@ static int hdebugf_line;
 #ifdef DEBUG 
 
 static void pd_check(ProcDict *pd);
-static char* print_pid(Process *p);
 
 #define PD_CHECK(PD) pd_check(PD)
 
@@ -143,7 +142,7 @@ static char* print_pid(Process *p);
  * Called from break handler
  */
 void
-erts_dictionary_dump(ProcDict *pd, CIO to)
+erts_dictionary_dump(int to, void *to_arg, ProcDict *pd)
 {
     unsigned int i;
 #ifdef DEBUG
@@ -151,13 +150,12 @@ erts_dictionary_dump(ProcDict *pd, CIO to)
     /*PD_CHECK(pd);*/
     if (pd == NULL)
 	return;
-    erl_printf(to, "(size = %d, used = %d, homeSize = %d, splitPosition = %d, "
-	       "numElements = %d)\n", pd->size, pd->used, pd->homeSize, 
+    erts_print(to, to_arg, "(size = %d, used = %d, homeSize = %d, "
+	       "splitPosition = %d, numElements = %d)\n",
+	       pd->size, pd->used, pd->homeSize, 
 	       pd->splitPosition, (unsigned int) pd->numElements);
     for (i = 0; i < HASH_RANGE(pd); ++i) {
-	erl_printf(to, "%d: ", i);
-	display(ARRAY_GET(pd, i), to);
-	erl_printf(to, "\n");
+	erts_print(to, to_arg, "%d: %T\n", i, ARRAY_GET(pd, i));
     }
 
 #else /* !DEBUG */
@@ -165,34 +163,27 @@ erts_dictionary_dump(ProcDict *pd, CIO to)
     int written = 0;
     Eterm t;
 
-    erl_printf(to, "[");
+    erts_print(to, to_arg, "[");
     if (pd != NULL) {
 	for (i = 0; i < HASH_RANGE(pd); ++i) {
 	    t = ARRAY_GET(pd, i);
 	    if (is_list(t)) {
 		for (; t != NIL; t = TCDR(t)) {
-		    if (written)
-			erl_printf(to, ",");
-		    else
-			++written;
-		    display(TCAR(t), to);
+		    erts_print(to, to_arg, written++ ? ",%T" : "%T", TCAR(t));
 		}
 	    } else if (is_tuple(t)) {
-		if (written)
-		    erl_printf(to, ",");
-		else
-		    ++written;
-		display(t, to);
+		erts_print(to, to_arg, written++ ? ",%T" : "%T", t);
 	    }
 	}
     }
-    erl_printf(to, "]");
+    erts_print(to, to_arg, "]");
 
 #endif /* DEBUG (else) */
 }
 
 void
-erts_deep_dictionary_dump(ProcDict* pd, void (*cb)(Eterm obj, CIO fd), CIO to)
+erts_deep_dictionary_dump(int to, void *to_arg,
+			  ProcDict* pd, void (*cb)(int, void *, Eterm))
 {
     unsigned int i;
     Eterm t;
@@ -202,10 +193,10 @@ erts_deep_dictionary_dump(ProcDict* pd, void (*cb)(Eterm obj, CIO fd), CIO to)
 	    t = ARRAY_GET(pd, i);
 	    if (is_list(t)) {
 		for (; t != NIL; t = TCDR(t)) {
-		    cb(TCAR(t), to);
+		    (*cb)(to, to_arg, TCAR(t));
 		}
 	    } else if (is_tuple(t)) {
-		cb(t, to);
+		(*cb)(to, to_arg, t);
 	    }
 	}
     }
@@ -236,12 +227,42 @@ erts_erase_dicts(Process *p)
 }
 
 /* 
- * Called from process_info
+ * Called from process_info/1,2.
  */
 Eterm erts_dictionary_copy(Process *p, ProcDict *pd) 
 {
+    Eterm* hp;
+    Eterm* heap_start;
+    Eterm res = NIL;
+    Eterm tmp, tmp2;
+    unsigned int i, num;
+
+    if (pd == NULL) {
+	return res;
+    }
+
     PD_CHECK(pd);
-    return copy_object(pd_hash_get_all(p, pd), p);
+    num = HASH_RANGE(pd);
+    heap_start = hp = (Eterm *) erts_alloc(ERTS_ALC_T_TMP,
+					   sizeof(Eterm) * pd->numElements * 2);
+    for (i = 0; i < num; ++i) {
+	tmp = ARRAY_GET(pd, i);
+	if (is_boxed(tmp)) {
+	    ASSERT(is_tuple(tmp));
+	    res = CONS(hp, tmp, res);
+	    hp += 2;
+	} else if (is_list(tmp)) {
+	    while (tmp != NIL) {
+		tmp2 = TCAR(tmp);
+		res = CONS(hp, tmp2, res);
+		hp += 2;
+		tmp = TCDR(tmp);
+	    }
+	}
+    }
+    res = copy_object(res, p);
+    erts_free(ERTS_ALC_T_TMP, (void *) heap_start);
+    return res;
 }
 
 
@@ -432,10 +453,10 @@ static int pd_hash_erase(Process *p, Eterm id, Eterm *ret)
 	}
     } else if (is_not_nil(old)) {
 #ifdef DEBUG
-	erl_printf(CERR,"Process dictionary for process %s is broken, trying to "
-		   "display term found in line %d:\n", print_pid(p),__LINE__);
-	display(old,CERR);
-	erl_printf(CERR,"\n");
+	erts_fprintf(stderr,
+		     "Process dictionary for process %T is broken, trying to "
+		     "display term found in line %d:\n"
+		     "%T\n", p->id, __LINE__, old);
 #endif
 	erl_exit(1, "Damaged process dictionary found during erase/1.");
     }
@@ -478,11 +499,10 @@ Eterm erts_pd_hash_get(Process *p, Eterm id)
 	}
     } else if (is_not_nil(tmp)) {
 #ifdef DEBUG
-	erl_printf(CERR,"Process dictionary for process %s is broken, "
-		   "trying to "
-		   "display term found in line %d:\n", print_pid(p),__LINE__);
-	display(tmp,CERR);
-	erl_printf(CERR,"\n");
+	erts_fprintf(stderr,
+		     "Process dictionary for process %T is broken, trying to "
+		     "display term found in line %d:\n"
+		     "%T\n", p->id, __LINE__, tmp);
 #endif
 	erl_exit(1, "Damaged process dictionary found during get/1.");
     }
@@ -532,7 +552,6 @@ static Eterm
 pd_hash_get_all(Process *p, ProcDict *pd)
 {
     Eterm* hp;
-    Eterm* heap_start;
     Eterm res = NIL;
     Eterm tmp, tmp2;
     unsigned int i, num;
@@ -541,7 +560,7 @@ pd_hash_get_all(Process *p, ProcDict *pd)
 	return res;
     }
     num = HASH_RANGE(pd);
-    heap_start = hp = HAlloc(p, pd->numElements * 2);
+    hp = HAlloc(p, pd->numElements * 2);
     
     for (i = 0; i < num; ++i) {
 	tmp = ARRAY_GET(pd, i);
@@ -621,10 +640,10 @@ static int pd_hash_put(Process *p, Eterm id, Eterm value, Eterm *ret)
 	}
     } else {
 #ifdef DEBUG
-	erl_printf(CERR,"Process dictionary for process %s is broken, trying to "
-		   "display term found in line %d:\n", print_pid(p),__LINE__);
-	display(old,CERR);
-	erl_printf(CERR,"\n");
+	erts_fprintf(stderr,
+		     "Process dictionary for process %T is broken, trying to "
+		     "display term found in line %d:\n"
+		     "%T\n", p->id, __LINE__, old);
 #endif
 
 	erl_exit(1, "Damaged process dictionary found during put/2.");
@@ -819,7 +838,7 @@ static Eterm array_put(ProcDict **ppdict, unsigned int ndx, Eterm term)
 #ifdef HARDDEBUG
     HDEBUGF(("array_put: (*ppdict)->size = %d, (*ppdict)->used = %d, ndx = %d",
 	     (*ppdict)->size, (*ppdict)->used, ndx));
-    display(term, CERR);
+    erts_fprintf(stderr, "%T", term);
 #endif /* HARDDEBUG */
     return ret;
 }
@@ -929,22 +948,6 @@ static void pd_check(ProcDict *pd)
     ASSERT(pd->splitPosition <= pd->homeSize);
 }
 
-
-
-static char*
-print_pid(Process *p)
-{
-    char static buf[64];
-
-    Uint obj = p->id;
-    sprintf(buf,
-	    "<%lu.%lu.%lu>",
-	    pid_channel_no(obj),
-	    pid_number(obj),
-	    pid_serial(obj));
-    return buf;
-}
-
 #endif /* DEBUG */
 
 
@@ -954,11 +957,11 @@ static int hdebugf(char *format, ...)
 {
     va_list ap;
 
+    erts_fprintf(stderr, "DEBUG: %s:%d :", hdebugf_file, hdebugf_line);
     va_start(ap, format);
-    fprintf(stderr, "DEBUG: %s:%d :", hdebugf_file, hdebugf_line);
-    vfprintf(stderr, format, ap);
-    fprintf(stderr, "\r\n");
+    erts_vfprintf(stderr, format, ap);
     va_end(ap);
+    erts_fprintf(stderr, "\n");
     return 0;
 } 
 

@@ -47,7 +47,7 @@
 -compile({inline,
           [{ukeymerge3_12,13}, {ukeymerge3_21,13},
 	   {rukeymerge3_12a,11}, {rukeymerge3_21a,13},
-	   {rukeymerge3_12b,13}, {rukeymerge3_21b,12}]}).
+	   {rukeymerge3_12b,12}, {rukeymerge3_21b,12}]}).
 
 %% sort/1
 
@@ -802,15 +802,15 @@ rkeymerge2_2(_I, _E1, T1, HdM, [], M, H1) ->
 %% ukeysort/2
 
 %% Ascending.
-ukeysplit_1(I, X, EX, Y, EY, [Z | L], R, Rs) when Y == Z ->
-    ukeysplit_1(I, X, EX, Y, EY, L, R, Rs);
 ukeysplit_1(I, X, EX, Y, EY, [Z | L], R, Rs) ->
     case element(I, Z) of
-	EZ when EY =< EZ ->
-            ukeysplit_1(I, Y, EY, Z, EZ, L, [X | R], Rs);
-        _EZ when X == Z ->
+        EZ when EY == EZ ->
             ukeysplit_1(I, X, EX, Y, EY, L, R, Rs);
-        EZ when EX =< EZ ->
+	EZ when EY < EZ ->
+            ukeysplit_1(I, Y, EY, Z, EZ, L, [X | R], Rs);
+        EZ when EX == EZ ->
+            ukeysplit_1(I, X, EX, Y, EY, L, R, Rs);
+        EZ when EX < EZ ->
             ukeysplit_1(I, Z, EZ, Y, EY, L, [X | R], Rs);
         _EZ when R == [] ->
             ukeysplit_1(I, X, EX, Y, EY, L, [Z], Rs);
@@ -820,19 +820,19 @@ ukeysplit_1(I, X, EX, Y, EY, [Z | L], R, Rs) ->
 ukeysplit_1(I, X, _EX, Y, _EY, [], R, Rs) ->
     rukeymergel(I, [[Y, X | R] | Rs], []).
 
-ukeysplit_1_1(I, X, EX, Y, EY, [Z | L], R, Rs, S, ES) when Y == Z ->
-    ukeysplit_1_1(I, X, EX, Y, EY, L, R, Rs, S, ES);
 ukeysplit_1_1(I, X, EX, Y, EY, [Z | L], R, Rs, S, ES) ->
     case element(I, Z) of
-        EZ when EY =< EZ ->
+        EZ when EY == EZ ->
+            ukeysplit_1_1(I, X, EX, Y, EY, L, R, Rs, S, ES);
+        EZ when EY < EZ ->
             ukeysplit_1_1(I, Y, EY, Z, EZ, L, [X | R], Rs, S, ES);
-        _EZ when X == Z ->
+        EZ when EX == EZ ->
             ukeysplit_1_1(I, X, EX, Y, EY, L, R, Rs, S, ES);
-        EZ when EX =< EZ ->
+        EZ when EX < EZ ->
             ukeysplit_1_1(I, Z, EZ, Y, EY, L, [X | R], Rs, S, ES);
-        _EZ when S == Z ->
+        EZ when ES == EZ ->
             ukeysplit_1_1(I, X, EX, Y, EY, L, R, Rs, S, ES);
-        EZ when ES =< EZ ->
+        EZ when ES < EZ ->
             ukeysplit_1(I, S, ES, Z, EZ, L, [], [[Y, X | R] | Rs]);
         EZ ->
             ukeysplit_1(I, Z, EZ, S, ES, L, [], [[Y, X | R] | Rs])
@@ -841,11 +841,11 @@ ukeysplit_1_1(I, X, _EX, Y, _EY, [], R, Rs, S, _ES) ->
     rukeymergel(I, [[S], [Y, X | R] | Rs], []).
 
 %% Descending.
-ukeysplit_2(I, Y, EY, [Z | L], R) when Y == Z ->
-    ukeysplit_2(I, Y, EY, L, R);
 ukeysplit_2(I, Y, EY, [Z | L], R) ->
     case element(I, Z) of
-	EZ when EY =< EZ ->
+	EZ when EY == EZ ->
+            ukeysplit_2(I, Y, EY, L, R);
+	EZ when EY < EZ ->
             ukeysplit_1(I, Y, EY, Z, EZ, L, [], [lists:reverse(R, [])]);
         EZ ->
             ukeysplit_2(I, Z, EZ, L, [Y | R])
@@ -887,16 +887,16 @@ ukeymerge3_1(I, [H1 | T1], D, HdM, E2, H2, T2, M, E3, H3, T3) ->
     case element(I, H1) of
 	E1 when E1 =< E2 ->
             ukeymerge3_12(I, E1, T1, H1, E2, H2, T2, E3, H3, T3, M, HdM, D);
-        E1 when H2 == HdM ->
+        E1 when E2 == HdM ->
             ukeymerge3_2(I, E1, T1, H1, T2, HdM, T2, M, E3, H3, T3);
         E1 ->
             ukeymerge3_21(I, E1, T1, H1, E2, H2, T2, E3, H3, T3, M, HdM, T2)
     end;
-ukeymerge3_1(I, [], _D, HdM, _E2, H2, T2, M, E3, H3, T3) when H2 == HdM ->
+ukeymerge3_1(I, [], _D, HdM, E2, _H2, T2, M, E3, H3, T3) when E2 == HdM ->
     ukeymerge2_1(I, T2, E3, HdM, T3, M, H3);
 ukeymerge3_1(I, [], _D, _HdM, E2, H2, T2, M, E3, H3, T3) when E2 =< E3 ->
-    ukeymerge2_1(I, T2, E3, H2, T3, [H2 | M], H3);
-ukeymerge3_1(I, [], _D, HdM, E2, H2, T2, M, _E3, H3, T3) when H3 == HdM ->
+    ukeymerge2_1(I, T2, E3, E2, T3, [H2 | M], H3);
+ukeymerge3_1(I, [], _D, HdM, E2, H2, T2, M, E3, _H3, T3) when E3 == HdM ->
     ukeymerge2_2(I, T2, E2, H2, T3, M);
 ukeymerge3_1(I, [], _D, _HdM, E2, H2, T2, M, _E3, H3, T3) ->
     ukeymerge2_2(I, T2, E2, H2, T3, [H3 | M]).
@@ -910,8 +910,8 @@ ukeymerge3_2(I, E1, T1, H1, [H2 | T2], HdM, D, M, E3, H3, T3) ->
             ukeymerge3_21(I, E1, T1, H1, E2, H2, T2, E3, H3, T3, M, HdM, D)
     end;
 ukeymerge3_2(I, E1, T1, H1, [], _HdM, _D, M, E3, H3, T3) when E1 =< E3 ->
-    ukeymerge2_1(I, T1, E3, H1, T3, [H1 | M], H3);
-ukeymerge3_2(I, E1, T1, H1, [], HdM, _D, M, _E3, H3, T3) when H3 == HdM ->
+    ukeymerge2_1(I, T1, E3, E1, T3, [H1 | M], H3);
+ukeymerge3_2(I, E1, T1, H1, [], HdM, _D, M, E3, _H3, T3) when E3 == HdM ->
     ukeymerge2_2(I, T1, E1, H1, T3, M);
 ukeymerge3_2(I, E1, T1, H1, [], _HdM, _D, M, _E3, H3, T3) ->
     ukeymerge2_2(I, T1, E1, H1, T3, [H3 | M]).
@@ -919,9 +919,9 @@ ukeymerge3_2(I, E1, T1, H1, [], _HdM, _D, M, _E3, H3, T3) ->
 % E1 =< E2. Inlined.
 ukeymerge3_12(I, E1, T1, H1, E2, H2, T2, E3, H3, T3, M, _HdM, D) 
                                                              when E1 =< E3 ->
-    ukeymerge3_1(I, T1, D, H1, E2, H2, T2, [H1 | M], E3, H3, T3);
-ukeymerge3_12(I, E1, T1, H1, E2, H2, T2, _E3, H3, T3, M, HdM, _D) 
-                                                             when H3 == HdM ->
+    ukeymerge3_1(I, T1, D, E1, E2, H2, T2, [H1 | M], E3, H3, T3);
+ukeymerge3_12(I, E1, T1, H1, E2, H2, T2, E3, _H3, T3, M, HdM, _D) 
+                                                             when E3 == HdM ->
     ukeymerge3_12_3(I, E1, T1, H1, E2, H2, T2, M, T3);
 ukeymerge3_12(I, E1, T1, H1, E2, H2, T2, _E3, H3, T3, M, _HdM, _D) ->
     ukeymerge3_12_3(I, E1, T1, H1, E2, H2, T2, [H3 | M], T3).
@@ -930,19 +930,19 @@ ukeymerge3_12(I, E1, T1, H1, E2, H2, T2, _E3, H3, T3, M, _HdM, _D) ->
 ukeymerge3_12_3(I, E1, T1, H1, E2, H2, T2, M, [H3 | T3]) ->
     case element(I, H3) of
 	E3 when E1 =< E3 ->
-            ukeymerge3_1(I, T1, T1, H1, E2, H2, T2, [H1 | M], E3, H3, T3);
+            ukeymerge3_1(I, T1, T1, E1, E2, H2, T2, [H1 | M], E3, H3, T3);
         _E3 ->
             ukeymerge3_12_3(I, E1, T1, H1, E2, H2, T2, [H3 | M], T3)
     end;
-ukeymerge3_12_3(I, _E1, T1, H1, E2, H2, T2, M, []) ->
-    ukeymerge2_1(I, T1, E2, H1, T2, [H1 | M], H2).
+ukeymerge3_12_3(I, E1, T1, H1, E2, H2, T2, M, []) ->
+    ukeymerge2_1(I, T1, E2, E1, T2, [H1 | M], H2).
 
 % E1 > E2. Inlined.
 ukeymerge3_21(I, E1, T1, H1, E2, H2, T2, E3, H3, T3, M, _HdM, D) 
                                                              when E2 =< E3 ->
-    ukeymerge3_2(I, E1, T1, H1, T2, H2, D, [H2 | M], E3, H3, T3);
-ukeymerge3_21(I, E1, T1, H1, E2, H2, T2, _E3, H3, T3, M, HdM, _D) 
-                                                             when H3 == HdM ->
+    ukeymerge3_2(I, E1, T1, H1, T2, E2, D, [H2 | M], E3, H3, T3);
+ukeymerge3_21(I, E1, T1, H1, E2, H2, T2, E3, _H3, T3, M, HdM, _D) 
+                                                             when E3 == HdM ->
     ukeymerge3_21_3(I, E1, T1, H1, E2, H2, T2, M, T3);
 ukeymerge3_21(I, E1, T1, H1, E2, H2, T2, _E3, H3, T3, M, _HdM, _D) ->
     ukeymerge3_21_3(I, E1, T1, H1, E2, H2, T2, [H3 | M], T3).
@@ -951,7 +951,7 @@ ukeymerge3_21(I, E1, T1, H1, E2, H2, T2, _E3, H3, T3, M, _HdM, _D) ->
 ukeymerge3_21_3(I, E1, T1, H1, E2, H2, T2, M, [H3 | T3]) ->
     case element(I, H3) of
         E3 when E2 =< E3 ->
-            ukeymerge3_2(I, E1, T1, H1, T2, H2, T2, [H2 | M], E3, H3, T3);
+            ukeymerge3_2(I, E1, T1, H1, T2, E2, T2, [H2 | M], E3, H3, T3);
         _E3 ->
             ukeymerge3_21_3(I, E1, T1, H1, E2, H2, T2, [H3 | M], T3)
     end;
@@ -966,86 +966,86 @@ rukeymerge3_1(I, [H1 | T1], D1, D2, E2, H2, T2, M, E3, H3, T3) ->
 	E1 when E1 =< E2 ->
 	    rukeymerge3_12a(I, E1, H1, T1, E2, H2, T2, E3, H3, T3, M);
         E1 ->
-             rukeymerge3_21a(I, E1, H1, T1, E2, H2, T2, E3, H3, T3, M, D1, D2)
+            rukeymerge3_21a(I, E1, H1, T1, E2, H2, T2, E3, H3, T3, M, D1, D2)
     end;
 rukeymerge3_1(I, [], _D1, _D2, E2, H2, T2, M, E3, H3, T3) when E2 =< E3 ->
-    rukeymerge2_2(I, T2, E2, T3, M, H3, H2);
+    rukeymerge2_2(I, T2, E2, T3, M, E3, H3, H2);
 rukeymerge3_1(I, [], _D1, _D2, _E2, H2, T2, M, E3, H3, T3) ->
     rukeymerge2_1(I, T2, E3, T3, [H2 | M], H3).
 
 % E1 =< E2. Inlined.
 rukeymerge3_12a(I, E1, H1, T1, E2, H2, T2, E3, H3, T3, M) when E2 =< E3 ->
-    rukeymerge3_12_3(I, E1, H1, T1, E2, H2, T2, M, T3, H3);
-rukeymerge3_12a(I, E1, H1, T1, _E2, H2, T2, E3, H3, T3, M) ->
-    rukeymerge3_2(I, E1, H1, T1, T2, H2, T2, M, E3, H3, T3).
+    rukeymerge3_12_3(I, E1, H1, T1, E2, H2, T2, M, E3, H3, T3);
+rukeymerge3_12a(I, E1, H1, T1, E2, H2, T2, E3, H3, T3, M) ->
+    rukeymerge3_2(I, E1, H1, T1, T2, H2, E2, M, E3, H3, T3).
 
 % E1 > E2. Inlined
 rukeymerge3_21a(I, E1, H1, T1, E2, H2, T2, E3, H3, T3, M, _D1, _D2) 
                                                               when E1 =< E3 ->
-    rukeymerge3_21_3(I, E1, H1, T1, E2, H2, T2, M, T3, H3);
+    rukeymerge3_21_3(I, E1, H1, T1, E2, H2, T2, M, E3, H3, T3);
 rukeymerge3_21a(I, _E1, H1, T1, E2, H2, T2, E3, H3, T3, M, D1, D2) ->
     rukeymerge3_1(I, T1, D1, D2, E2, H2, T2, [H1 | M], E3, H3, T3).
 
-%% Take L2 apart. element(I, H2M) > E3. element(I, H2M) > E2.
-rukeymerge3_2(I, E1, H1, T1, [H2 | T2], H2M, D, M, E3, H3, T3) ->
+%% Take L2 apart. E2M > E3. E2M > E2.
+rukeymerge3_2(I, E1, H1, T1, [H2 | T2], H2M, E2M, M, E3, H3, T3) ->
     case element(I, H2) of
 	E2 when E1 =< E2 ->
-            % element(I, H2M) > E1.
-	    rukeymerge3_12b(I, E1, H1, T1, E2, H2, T2, E3, H3, T3, M, H2M, D);
-        E2 when H1 == H2M ->
+            % E2M > E1.
+	    rukeymerge3_12b(I, E1, H1, T1, E2, H2, T2, E3, H3, T3, M, H2M);
+        E2 when E1 == E2M ->
             rukeymerge3_1(I, T1, H1, T1, E2, H2, T2, [H1 | M], E3, H3, T3);
         E2 ->
-            % element(I, H2M) > E1.
+            % E2M > E1.
 	    rukeymerge3_21b(I, E1, H1, T1, E2, H2, T2, E3, H3, T3, M, H2M)
     end;
-rukeymerge3_2(I, _E1, H1, T1, [], H2M, _D, M, E3, H3, T3) when H1 == H2M ->
+rukeymerge3_2(I, E1, H1, T1, [], _H2M, E2M, M, E3, H3, T3) when E1 == E2M ->
     rukeymerge2_1(I, T1, E3, T3, [H1 | M], H3);
-rukeymerge3_2(I, E1, H1, T1, [], H2M, _D, M, E3, H3, T3) when E1 =< E3 ->
-    rukeymerge2_2(I, T1, E1, T3, [H2M | M], H3, H1);
-rukeymerge3_2(I, _E1, H1, T1, [], H2M, _D, M, E3, H3, T3) ->
+rukeymerge3_2(I, E1, H1, T1, [], H2M, _E2M, M, E3, H3, T3) when E1 =< E3 ->
+    rukeymerge2_2(I, T1, E1, T3, [H2M | M], E3, H3, H1);
+rukeymerge3_2(I, _E1, H1, T1, [], H2M, _E2M, M, E3, H3, T3) ->
     rukeymerge2_1(I, T1, E3, T3, [H1, H2M | M], H3).
 
 % E1 =< E2. Inlined.
-rukeymerge3_12b(I, E1, H1, T1, E2, H2, T2, E3, H3, T3, M, H2M, _D) 
+rukeymerge3_12b(I, E1, H1, T1, E2, H2, T2, E3, H3, T3, M, H2M) 
                                                              when E2 =< E3 ->
-    rukeymerge3_12_3(I, E1, H1, T1, E2, H2, T2, [H2M | M], T3, H3);
-rukeymerge3_12b(I, E1, H1, T1, _E2, H2, T2, E3, H3, T3, M, H2M, D) ->
-    rukeymerge3_2(I, E1, H1, T1, T2, H2, D, [H2M | M], E3, H3, T3).
+    rukeymerge3_12_3(I, E1, H1, T1, E2, H2, T2, [H2M | M], E3, H3, T3);
+rukeymerge3_12b(I, E1, H1, T1, E2, H2, T2, E3, H3, T3, M, H2M) ->
+    rukeymerge3_2(I, E1, H1, T1, T2, H2, E2, [H2M | M], E3, H3, T3).
 
 % E1 > E2. Inlined
 rukeymerge3_21b(I, E1, H1, T1, E2, H2, T2, E3, H3, T3, M,H2M) when E1 =< E3 ->
-    rukeymerge3_21_3(I, E1, H1, T1, E2, H2, T2, [H2M | M], T3, H3);
+    rukeymerge3_21_3(I, E1, H1, T1, E2, H2, T2, [H2M | M], E3, H3, T3);
 rukeymerge3_21b(I, _E1, H1, T1, E2, H2, T2, E3, H3, T3, M, H2M) ->
     rukeymerge3_1(I, T1, H1, T1, E2, H2, T2, [H1, H2M | M], E3, H3, T3).
 
 % E1 =< E2, take L3 apart.
-rukeymerge3_12_3(I, E1, H1, T1, E2, H2, T2, M, [H3 | T3], H3M) ->
+rukeymerge3_12_3(I, E1, H1, T1, E2, H2, T2, M, E3M, H3M, [H3 | T3]) ->
     case element(I, H3) of
 	E3 when E2 =< E3 ->
-            rukeymerge3_12_3(I, E1, H1, T1, E2, H2, T2, [H3M | M], T3, H3);
-        E3 when H2 == H3M ->
-            rukeymerge3_2(I, E1, H1, T1, T2, H2, T2, M, E3, H3, T3);
+            rukeymerge3_12_3(I, E1, H1, T1, E2, H2, T2, [H3M | M], E3, H3, T3);
+        E3 when E2 == E3M ->
+            rukeymerge3_2(I, E1, H1, T1, T2, H2, E2, M, E3, H3, T3);
         E3 ->
-            rukeymerge3_2(I, E1, H1, T1, T2, H2, T2, [H3M | M], E3, H3, T3)
+            rukeymerge3_2(I, E1, H1, T1, T2, H2, E2, [H3M | M], E3, H3, T3)
     end;
-rukeymerge3_12_3(I, E1, H1, T1, _E2, H2, T2, M, [], H3M) when H2 == H3M ->
-    rukeymerge2_2(I, T1, E1, T2, M, H2, H1);
-rukeymerge3_12_3(I, E1, H1, T1, _E2, H2, T2, M, [], H3M) ->
-    rukeymerge2_2(I, T1, E1, T2, [H3M | M], H2, H1).
+rukeymerge3_12_3(I, E1, H1, T1, E2, H2, T2, M, E3M, _H3M, []) when E2 == E3M ->
+    rukeymerge2_2(I, T1, E1, T2, M, E2, H2, H1);
+rukeymerge3_12_3(I, E1, H1, T1, E2, H2, T2, M, _E3M, H3M, []) ->
+    rukeymerge2_2(I, T1, E1, T2, [H3M | M], E2, H2, H1).
 
 % E1 > E2, take L3 apart.
-rukeymerge3_21_3(I, E1, H1, T1, E2, H2, T2, M, [H3 | T3], H3M) ->
+rukeymerge3_21_3(I, E1, H1, T1, E2, H2, T2, M, E3M, H3M, [H3 | T3]) ->
     case element(I, H3) of
 	E3 when E1 =< E3 ->
-            rukeymerge3_21_3(I, E1, H1, T1, E2, H2, T2, [H3M | M], T3, H3);
-        E3 when H1 == H3M ->
+            rukeymerge3_21_3(I, E1, H1, T1, E2, H2, T2, [H3M | M], E3, H3, T3);
+        E3 when E1 == E3M ->
             rukeymerge3_1(I, T1, H1, T1, E2, H2, T2, [H1 | M], E3, H3, T3);
         E3 ->
             rukeymerge3_1(I, T1, H1, T1, E2, H2, T2, [H1,H3M | M], E3, H3, T3)
     end;
-rukeymerge3_21_3(I, _E1, H1, T1, E2, H2, T2, M, [], H3M) when H1 == H3M ->
+rukeymerge3_21_3(I, E1, H1, T1, E2, H2, T2, M, E3M, _H3M, []) when E1 == E3M ->
     rukeymerge2_1(I, T1, E2, T2, [H1 | M], H2);
-rukeymerge3_21_3(I, _E1, H1, T1, E2, H2, T2, M, [], H3M) ->
+rukeymerge3_21_3(I, _E1, H1, T1, E2, H2, T2, M, _E3M, H3M, []) ->
     rukeymerge2_1(I, T1, E2, T2, [H1, H3M | M], H2).
 
 %% ukeymerge/3
@@ -1054,13 +1054,13 @@ rukeymerge3_21_3(I, _E1, H1, T1, E2, H2, T2, M, [], H3M) ->
 ukeymerge2_1(I, [H1 | T1], E2, HdM, T2, M, H2) ->
     case element(I, H1) of
 	E1 when E1 =< E2 ->
-            ukeymerge2_1(I, T1, E2, H1, T2, [H1 | M], H2);
-        E1 when H2 == HdM ->
+            ukeymerge2_1(I, T1, E2, E1, T2, [H1 | M], H2);
+        E1 when E2 == HdM ->
             ukeymerge2_2(I, T1, E1, H1, T2, M);
         E1 ->
             ukeymerge2_2(I, T1, E1, H1, T2, [H2 | M])
     end;
-ukeymerge2_1(_I, [], _E2, HdM, T2, M, H2) when H2 == HdM ->
+ukeymerge2_1(_I, [], E2, HdM, T2, M, _H2) when E2 == HdM ->
     lists:reverse(T2, M);
 ukeymerge2_1(_I, [], _E2, _HdM, T2, M, H2) ->
     lists:reverse(T2, [H2 | M]).
@@ -1068,7 +1068,7 @@ ukeymerge2_1(_I, [], _E2, _HdM, T2, M, H2) ->
 ukeymerge2_2(I, T1, E1, H1, [H2 | T2], M) ->
     case element(I, H2) of
 	E2 when E1 =< E2 ->
-            ukeymerge2_1(I, T1, E2, H1, T2, [H1 | M], H2);
+            ukeymerge2_1(I, T1, E2, E1, T2, [H1 | M], H2);
         _E2 ->
             ukeymerge2_2(I, T1, E1, H1, T2, [H2 | M])
     end;
@@ -1080,25 +1080,25 @@ ukeymerge2_2(_I, T1, _E1, H1, [], M) ->
 rukeymerge2_1(I, [H1 | T1], E2, T2, M, H2) ->
     case element(I, H1) of
 	E1 when E1 =< E2 ->
-            rukeymerge2_2(I, T1, E1, T2, M, H2, H1);
+            rukeymerge2_2(I, T1, E1, T2, M, E2, H2, H1);
         _E1 ->
             rukeymerge2_1(I, T1, E2, T2, [H1 | M], H2)
     end;
 rukeymerge2_1(_I, [], _E2, T2, M, H2) ->
     lists:reverse(T2, [H2 | M]).
 
-rukeymerge2_2(I, T1, E1, [H2 | T2], M, H2M, H1) ->
+rukeymerge2_2(I, T1, E1, [H2 | T2], M, E2M, H2M, H1) ->
     case element(I, H2) of
 	E2 when E1 =< E2 ->
-            rukeymerge2_2(I, T1, E1, T2, [H2M | M], H2, H1);
-        E2 when H1 == H2M ->
+            rukeymerge2_2(I, T1, E1, T2, [H2M | M], E2, H2, H1);
+        E2 when E1 == E2M ->
             rukeymerge2_1(I, T1, E2, T2, [H1 | M], H2);
         E2 ->
             rukeymerge2_1(I, T1, E2, T2, [H1, H2M | M], H2)
     end;
-rukeymerge2_2(_I, T1, _E1, [], M, H2M, H1) when H1 == H2M ->
+rukeymerge2_2(_I, T1, E1, [], M, E2M, _H2M, H1) when E1 == E2M ->
     lists:reverse(T1, [H1 | M]);
-rukeymerge2_2(_I, T1, _E1, [], M, H2M, H1) ->
+rukeymerge2_2(_I, T1, _E1, [], M, _E2M, H2M, H1) ->
     lists:reverse(T1, [H1, H2M | M]).
 
 %% sort/2
@@ -1246,19 +1246,25 @@ rfmerge2_2(H1, T1, _Fun, [], M) ->
 
 %% usort/2
 
-%% Ascending.
+%% Ascending. X < Y
 ufsplit_1(Y, X, Fun, [Z | L], R, Rs) ->
     case Fun(Y, Z) of
-	true when Y == Z ->
-	    ufsplit_1(Y, X, Fun, L, R, Rs);
         true ->
-            ufsplit_1(Z, Y, Fun, L, [X | R], Rs);
-        false when X == Z ->
-            ufsplit_1(Y, X, Fun, L, R, Rs);
+            case Fun(Z, Y) of
+                true -> % Z equal to Y
+                    ufsplit_1(Y, X, Fun, L, R, Rs);
+                false ->
+                    ufsplit_1(Z, Y, Fun, L, [X | R], Rs)
+            end;
         false ->
             case Fun(X, Z) of
                 true ->
-                    ufsplit_1(Y, Z, Fun, L, [X | R], Rs);
+                    case Fun(Z, X) of
+                        true -> % Z equal to X
+                            ufsplit_1(Y, X, Fun, L, R, Rs);
+                        false ->
+                            ufsplit_1(Y, Z, Fun, L, [X | R], Rs)
+                    end;
                 false when R == [] ->
                     ufsplit_1(Y, X, Fun, L, [Z], Rs);
                 false ->
@@ -1268,24 +1274,34 @@ ufsplit_1(Y, X, Fun, [Z | L], R, Rs) ->
 ufsplit_1(Y, X, Fun, [], R, Rs) ->
     rufmergel([[Y, X | R] | Rs], [], Fun).
 
+%% X < Y
 ufsplit_1_1(Y, X, Fun, [Z | L], R, Rs, S) ->
     case Fun(Y, Z) of
-	true when Y == Z ->
-            ufsplit_1_1(Y, X, Fun, L, R, Rs, S);
-        true -> 
-            ufsplit_1_1(Z, Y, Fun, L, [X | R], Rs, S);
-        false when X == Z ->
-            ufsplit_1_1(Y, X, Fun, L, R, Rs, S);
+        true ->
+            case Fun(Z, Y) of
+                true -> % Z equal to Y
+                    ufsplit_1_1(Y, X, Fun, L, R, Rs, S);
+                false ->
+                    ufsplit_1_1(Z, Y, Fun, L, [X | R], Rs, S)
+            end;
         false ->
             case Fun(X, Z) of
                 true ->
-                    ufsplit_1_1(Y, Z, Fun, L, [X | R], Rs, S);
-                false when S == Z ->
-                    ufsplit_1_1(Y, X, Fun, L, R, Rs, S);
+                    case Fun(Z, X) of
+                        true -> % Z equal to X
+                            ufsplit_1_1(Y, X, Fun, L, R, Rs, S);
+                        false ->
+                            ufsplit_1_1(Y, Z, Fun, L, [X | R], Rs, S)
+                    end;
                 false ->
                     case Fun(S, Z) of
                         true ->
-                            ufsplit_1(Z, S, Fun, L, [], [[Y, X | R] | Rs]);
+                            case Fun(Z, S) of
+                                true -> % Z equal to S
+                                    ufsplit_1_1(Y, X, Fun, L, R, Rs, S);
+                                false ->
+                                    ufsplit_1(Z, S, Fun, L, [], [[Y, X | R] | Rs])
+                            end;
                         false ->
                             ufsplit_1(S, Z, Fun, L, [], [[Y, X | R] | Rs])
                     end
@@ -1297,10 +1313,13 @@ ufsplit_1_1(Y, X, Fun, [], R, Rs, S) ->
 %% Descending.
 ufsplit_2(Y, [Z | L], Fun, R) ->
     case Fun(Y, Z) of
-	true when Y == Z ->
-	    ufsplit_2(Y, L, Fun, R);
         true ->
-            ufsplit_1(Z, Y, Fun, L, [], [lists:reverse(R, [])]);
+            case Fun(Z, Y) of
+                true -> % Z equal to Y
+                    ufsplit_2(Y, L, Fun, R);
+                false ->
+                    ufsplit_1(Z, Y, Fun, L, [], [lists:reverse(R, [])])
+            end;
         false ->
             ufsplit_2(Z, L, Fun, [Y | R])
     end;
@@ -1326,19 +1345,26 @@ rufmergel([], Acc, Fun) ->
 %% umerge/3
 
 %% Elements from the first list are kept and prioritized.
+%% HdM before H2.
 ufmerge2_1([H1 | T1], H2, Fun, T2, M, HdM) ->
     case Fun(H1, H2) of
         true ->
             ufmerge2_1(T1, H2, Fun, T2, [H1 | M], H1);
-        false when H2 == HdM ->
-            ufmerge2_2(H1, T1, Fun, T2, M);
         false ->
-            ufmerge2_2(H1, T1, Fun, T2, [H2 | M])
+            case Fun(H2, HdM) of
+                true -> % HdM equal to H2
+                    ufmerge2_2(H1, T1, Fun, T2, M);
+                false ->
+                    ufmerge2_2(H1, T1, Fun, T2, [H2 | M])
+            end
     end;
-ufmerge2_1([], H2, _Fun, T2, M, HdM) when H2 == HdM ->
-    lists:reverse(T2, M);
-ufmerge2_1([], H2, _Fun, T2, M, _HdM) ->
-    lists:reverse(T2, [H2 | M]).
+ufmerge2_1([], H2, Fun, T2, M, HdM) ->
+    case Fun(H2, HdM) of
+        true -> % HdM equal to H2
+            lists:reverse(T2, M);
+        false ->
+            lists:reverse(T2, [H2 | M])
+    end.
 
 ufmerge2_2(H1, T1, Fun, [H2 | T2], M) ->
     case Fun(H1, H2) of
@@ -1362,16 +1388,24 @@ rufmerge2_1([H1 | T1], H2, Fun, T2, M) ->
 rufmerge2_1([], H2, _Fun, T2, M) ->
     lists:reverse(T2, [H2 | M]).
 
+%% H1 before H2M
 rufmerge2_2(H1, T1, Fun, [H2 | T2], M, H2M) ->
     case Fun(H1, H2) of
         true ->
             rufmerge2_2(H1, T1, Fun, T2, [H2M | M], H2);
-        false when H1 == H2M ->
-            rufmerge2_1(T1, H2, Fun, T2, [H1 | M]);
         false ->
-            rufmerge2_1(T1, H2, Fun, T2, [H1, H2M | M])
+            case Fun(H2M, H1) of
+                true -> % H2M equal to H1
+                    rufmerge2_1(T1, H2, Fun, T2, [H1 | M]);
+                false ->
+                    rufmerge2_1(T1, H2, Fun, T2, [H1, H2M | M])
+            end
     end;
-rufmerge2_2(H1, T1, _Fun, [], M, H2M) when H1 == H2M ->
-    lists:reverse(T1, [H1 | M]);
-rufmerge2_2(H1, T1, _Fun, [], M, H2M) ->
-    lists:reverse(T1, [H1, H2M | M]).
+rufmerge2_2(H1, T1, Fun, [], M, H2M) ->
+    case Fun(H2M, H1) of
+        true -> 
+            lists:reverse(T1, [H1 | M]);
+        false ->
+            lists:reverse(T1, [H1, H2M | M])
+    end.
+

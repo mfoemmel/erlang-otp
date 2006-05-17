@@ -1,7 +1,3 @@
-Loader:
-- Must implement trampoline handling for primops
-  before code loading can have a chance of working.
-
 Assembler:
 - Improve pseudo_li implementation. Load from previous
   instances (if available and close enough), otherwise

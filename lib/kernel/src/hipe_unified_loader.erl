@@ -107,7 +107,7 @@ load_native_code(Mod, Bin) ->
       %% patch_to_emu(Mod),
       case code:get_chunk(Bin, ChunkTag) of
 	undefined -> no_native;
-	NativeCode when binary(NativeCode) ->
+	NativeCode when is_binary(NativeCode) ->
 	  OldReferencesToPatch = patch_to_emu_step1(Mod),
 	  load_module(Mod, NativeCode, Bin, OldReferencesToPatch)
       end
@@ -197,13 +197,13 @@ load_common(Mod, Bin, Beam, OldReferencesToPatch) ->
   case Beam of
     [] ->
       export_funs(Addresses);
-    _BeamBinary ->
+    BeamBinary when is_binary(BeamBinary) ->
       %% Find all closures in the code.
       ClosurePatches = find_closure_patches(Refs),
       AddressesOfClosuresToPatch =
 	calculate_addresses(ClosurePatches, CodeAddress, Addresses),
       export_funs(Addresses),
-      export_funs(Mod, Beam, Addresses, AddressesOfClosuresToPatch)
+      export_funs(Mod, BeamBinary, Addresses, AddressesOfClosuresToPatch)
   end,
   %% Redirect references to the old module to the new module's BEAM stub.
   patch_to_emu_step2(OldReferencesToPatch),
@@ -221,7 +221,7 @@ load_common(Mod, Bin, Beam, OldReferencesToPatch) ->
 find_callee_mfas(Patches) ->
   case erlang:system_info(hipe_architecture) of
     powerpc -> find_callee_mfas(Patches, gb_sets:empty(), true);
-    ppc64 -> find_callee_mfas(Patches, gb_sets:empty(), true);
+    %% ppc64 -> find_callee_mfas(Patches, gb_sets:empty(), true);
     arm -> find_callee_mfas(Patches, gb_sets:empty(), false);
     _ -> []
   end.
@@ -248,7 +248,7 @@ add_callee_mfas([{DestMFA,_Offsets}|Refs], MFAs, SkipErtsSyms) ->
 	%% not need trampolines for BIFs or primops.
 	case bif_address(DestMFA) of
 	  false -> gb_sets:add_element(DestMFA, MFAs);
-	  BifAddress when integer(BifAddress) -> MFAs
+	  BifAddress when is_integer(BifAddress) -> MFAs
 	end;
       false ->
 	%% On ARM we also need trampolines for BIFs and primops.
@@ -402,7 +402,7 @@ patch_call([{DestMFA,Offsets}|SortedRefs], BaseAddress, Addresses, RemoteOrLocal
       DestAddress = get_native_address(DestMFA, Addresses, RemoteOrLocal),
       Trampoline = trampoline_map_get(DestMFA, TrampolineMap),
       patch_mfa_call_list(Offsets, BaseAddress, DestMFA, DestAddress, Addresses, RemoteOrLocal, Trampoline);
-    BifAddress when integer(BifAddress) ->
+    BifAddress when is_integer(BifAddress) ->
       Trampoline = trampoline_map_lookup(DestMFA, TrampolineMap),
       patch_bif_call_list(Offsets, BaseAddress, BifAddress, Trampoline)
   end,
@@ -527,7 +527,7 @@ patch_load_mfa(CodeAddress, DestMFA, Addresses, RemoteOrLocal) ->
 	NativeAddress = get_native_address(DestMFA, Addresses, RemoteOrLocal),
 	add_ref(DestMFA, CodeAddress, Addresses, 'load_mfa', [], RemoteOrLocal),
 	NativeAddress;
-      BifAddress when integer(BifAddress) ->
+      BifAddress when is_integer(BifAddress) ->
 	BifAddress
     end,
   ?ASSERT(assert_local_patch(CodeAddress)),
@@ -581,9 +581,9 @@ write_word(DataAddress, DataWord) ->
     amd64 ->
       hipe_bifs:write_u64(DataAddress, DataWord),
       DataAddress+8;
-    ppc64 ->
-      hipe_bifs:write_u64(DataAddress, DataWord),
-      DataAddress+8;
+    %% ppc64 ->
+    %%   hipe_bifs:write_u64(DataAddress, DataWord),
+    %%   DataAddress+8;
     _ ->
       hipe_bifs:write_u32(DataAddress, DataWord),
       DataAddress+4
@@ -594,7 +594,7 @@ write_word(DataAddress, DataWord) ->
 
 bif_address({M,F,A}) ->
   hipe_bifs:bif_address(M,F,A);
-bif_address(Name) ->
+bif_address(Name) when is_atom(Name) ->
   hipe_bifs:primop_address(Name).
 
 %%----------------------------------------------------------------
@@ -680,7 +680,10 @@ find_const(ConstNo, []) ->
 %%
 %% RemoteOrLocal ::= 'remote' | 'local'.
 %%
--record(ref, {caller_mfa, address, ref_type, trampoline, remote_or_local}).
+
+%%
+%% -record(ref, {caller_mfa, address, ref_type, trampoline, remote_or_local}).
+%%
 
 add_ref(CalleeMFA, Address, Addresses, RefType, Trampoline, RemoteOrLocal) ->
   CallerMFA = address_to_mfa(Address, Addresses),
@@ -741,7 +744,7 @@ patch_to_emu_step2(ReferencesToPatch) ->
 %% @doc Checks whether a module is loaded or not.
 is_loaded(M) ->
   case catch hipe_bifs:fun_to_address({M,module_info,0}) of
-    I when integer(I) ->
+    I when is_integer(I) ->
       true;
     _ -> false
   end.
@@ -814,7 +817,7 @@ remove_refs_from([]) ->
 %%  If all else fails create a native stub for the MFA 
 get_native_address(MFA, Addresses, RemoteOrLocal) ->
   case mfa_to_address(MFA, Addresses, RemoteOrLocal) of
-    Adr when integer(Adr) -> Adr;
+    Adr when is_integer(Adr) -> Adr;
     false ->
       IsRemote =
 	case RemoteOrLocal of

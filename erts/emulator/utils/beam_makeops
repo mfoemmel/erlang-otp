@@ -43,7 +43,10 @@ $pack_shift[3] = ['0', 'BEAM_TIGHT_SHIFT', '(2*BEAM_TIGHT_SHIFT)'];
 $pack_mask[2]  = ['BEAM_LOOSE_MASK', $WHOLE_WORD];
 $pack_mask[3]  = ['BEAM_TIGHT_MASK', 'BEAM_TIGHT_MASK', 'BEAM_TIGHT_MASK'];
 
-my $max_args = 4;
+# Maximum number of operands for a specific instruction.
+# Must be even. The beam_load.c file must be updated, too.
+my $max_operands = 6;
+
 my %gen_opnum;
 my %num_specific;
 my %gen_to_spec;
@@ -203,6 +206,8 @@ while (<>) {
 	foreach (@flags) {
 	    /^-/ or &error("Flags for macros should start with a hyphen");
 	}
+	error("Macro for '$op' is already defined")
+	    if defined $macro{$op};
 	$macro{$op} = $macro;
 	$macro_flags{$op} = join('', @flags);
 	next;
@@ -259,8 +264,8 @@ while (<>) {
     #    Name Arg1 Arg2...
     #
     my($name, @args) = split;
-    &error("too many arguments")
-	if @args > $max_args;
+    &error("too many operands")
+	if @args > $max_operands;
     &syntax_check($name, @args);
     my $arity = @args;
     push(@{$specific_op{"$name/$arity"}}, [$name, $hot, @args]);
@@ -399,10 +404,10 @@ sub emulator_output {
 	    # instruction.
 	    #
 
-	    my(@bits) = (0, 0);
+	    my(@bits) = (0) x ($max_operands/2);
 	    my($shift) = 16;
 	    my($i);
-	    for ($i = 0; $i < 4 && defined $args[$i]; $i++) {
+	    for ($i = 0; $i < $max_operands && defined $args[$i]; $i++) {
 		my $t = $args[$i];
 		if (defined $type_bit{$t}) {
 		    $bits[int($i/2)] |= $type_bit{$t} << (16*($i%2));
@@ -411,8 +416,14 @@ sub emulator_output {
 
 	    printf "/* %3d */  ", $spec_opnum;
 	    my $print_name = $sign ne '' ? "${name}_$sign" : $name;
-	    &init_item($print_name, sprintf("{0x%X, 0x%X}", @bits),
-		       $size, $pack, $sign, 0);
+	    my $init = "{";
+	    my $sep = "";
+	    foreach (@bits) {
+		$init .= sprintf("%s0x%X", $sep, $_);
+		$sep = ",";
+	    }
+	    $init .= "}";
+	    &init_item($print_name, $init, $size, $pack, $sign, 0);
 	    $op_to_name[$spec_opnum] = $instr;
 	    $spec_opnum++;
 	}
@@ -1184,6 +1195,9 @@ sub tr_gen {
 	}
 	print "\n";
     }
+    print "/*\n";
+    print " * Total number of words: $offset\n";
+    print " */\n";
     print "};\n\n";
 }
 
@@ -1267,7 +1281,14 @@ sub tr_gen_from {
 		    push(@code, &make_op($var, 'set_var', $var{$var}));
 		}
 	    }
-	    push(@code, &make_op('', 'next_arg'));
+	    if (is_set_var_instr($code[$#code])) {
+		my $ref = pop @code;
+		my $comment = $ref->[2];
+		my $var = $ref->[1][1];
+		push(@code, make_op($comment, 'set_var_next_arg', $var));
+	    } else {
+		push(@code, &make_op('', 'next_arg'));
+	    }
 	}
 	push(@code, &make_op('', 'next_instr'));
 	pop(@code) if $code[$#code]->[1][0] eq 'next_arg';
@@ -1415,6 +1436,12 @@ sub tr_code_len {
 sub make_op {
     my($comment, @op) = @_;
     [scalar(@op), [@op], $comment];
+}
+
+sub is_set_var_instr {
+    my($ref) = @_;
+    return 0 unless ref($ref) eq 'ARRAY';
+    $ref->[1][0] eq 'set_var';
 }
 
 sub tr_gen_call {

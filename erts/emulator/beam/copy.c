@@ -24,43 +24,25 @@
 #include "erl_vm.h"
 #include "global.h"
 #include "erl_process.h"
+#include "ggc.h"
+#include "erl_nmgc.h"
 #include "big.h"
 #include "erl_binary.h"
 
 
 #ifdef HYBRID
-Eterm *copy_src_stack;
-Uint   copy_src_top;
-Uint   copy_src_size;
-Eterm *copy_dst_stack;
-Uint   copy_dst_top;
-Uint   copy_dst_size;
-
-Eterm *copy_offset_stack;
-Uint   copy_offset_top;
-Uint   copy_offset_size;
+MA_STACK_DECLARE(src);
+MA_STACK_DECLARE(dst);
+MA_STACK_DECLARE(offset);
 #endif
 
 void
 init_copy(void)
 {
 #ifdef HYBRID
-    copy_src_top = 0;
-    copy_src_size = 512;
-    copy_src_stack = (Eterm *)erts_alloc(ERTS_ALC_T_OBJECT_STACK,
-                                         sizeof(Eterm) * copy_src_size);
-    ERTS_PROC_MORE_MEM(sizeof(Eterm) * copy_src_size);
-    copy_dst_top = 0;
-    copy_dst_size = 512;
-    copy_dst_stack = (Eterm *)erts_alloc(ERTS_ALC_T_OBJECT_STACK,
-                                         sizeof(Eterm) * copy_dst_size);
-    ERTS_PROC_MORE_MEM(sizeof(Eterm) * copy_dst_size);
-
-    copy_offset_top = 0;
-    copy_offset_size = 512;
-    copy_offset_stack = (Eterm *)erts_alloc(ERTS_ALC_T_OBJECT_STACK,
-                                            sizeof(Eterm) * copy_offset_size);
-    ERTS_PROC_MORE_MEM(sizeof(Eterm) * copy_offset_size);
+    MA_STACK_ALLOC(src);
+    MA_STACK_ALLOC(dst);
+    MA_STACK_ALLOC(offset);
 #endif
 }
 
@@ -70,9 +52,6 @@ init_copy(void)
 Eterm
 copy_object(Eterm obj, Process* to)
 {
-#ifdef SHARED_HEAP
-    return obj;
-#else
     Uint size = size_object(obj);
     Eterm* hp = HAlloc(to, size);
     Eterm res;
@@ -80,11 +59,10 @@ copy_object(Eterm obj, Process* to)
     res = copy_struct(obj, size, &hp, &to->off_heap);
 #ifdef DEBUG
     if (eq(obj, res) == 0) {
-	erl_exit(1, "copy not equal to source\n");
+	erl_exit(ERTS_ABORT_EXIT, "copy not equal to source\n");
     }
 #endif
     return res;
-#endif
 }
 
 /*
@@ -164,6 +142,9 @@ size_object(Eterm obj)
 			goto size_common;
 		    }
 		    break;
+		case BIN_MATCHSTATE_SUBTAG:
+		    erl_exit(ERTS_ABORT_EXIT,
+			     "size_object: matchstate term not allowed");
 		default:
 		    sum += thing_arityval(hdr) + 1;
 		    /* Fall through */
@@ -185,7 +166,7 @@ size_object(Eterm obj)
 	    obj = ESTACK_POP(s);
 	    break;
 	default:
-	    erl_exit(1, "size_object: bad tag for %#x\n", obj);
+	    erl_exit(ERTS_ABORT_EXIT, "size_object: bad tag for %#x\n", obj);
 	}
     }
 }
@@ -212,6 +193,10 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
     Eterm* const_tuple;
     Eterm hdr;
     int i;
+#ifdef DEBUG
+    Eterm org_obj = obj;
+    Uint org_sz = sz;
+#endif
 
     if (IS_CONST(obj))
 	return obj;
@@ -227,7 +212,8 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
     case TAG_PRIMARY_LIST: argp = &res; goto L_copy_list;
     case TAG_PRIMARY_BOXED: argp = &res; goto L_copy_boxed;
     default:
-	erl_exit(1, "%s, line %d: Internal error in copy_struct: 0x%08x\n",
+	erl_exit(ERTS_ABORT_EXIT,
+		 "%s, line %d: Internal error in copy_struct: 0x%08x\n",
 		 __FILE__, __LINE__,obj);
     }
 
@@ -271,7 +257,8 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 	    case TAG_PRIMARY_IMMED1: *tailp = obj; goto L_copy;
 	    case TAG_PRIMARY_BOXED: argp = tailp; goto L_copy_boxed;
 	    default:
-		erl_exit(1, "%s, line %d: Internal error in copy_struct: 0x%08x\n",
+		erl_exit(ERTS_ABORT_EXIT,
+			 "%s, line %d: Internal error in copy_struct: 0x%08x\n",
 			 __FILE__, __LINE__,obj);
 	    }
 	    
@@ -317,7 +304,7 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 		    }
 		    *argp = make_binary(hbot);
 		    pb = (ProcBin*) hbot;
-		    pb->val->refc++;
+		    erts_refc_inc(&pb->val->refc, 2);
 		    pb->next = off_heap->mso;
 		    off_heap->mso = pb;
 		    off_heap->overhead += pb->size /
@@ -351,7 +338,7 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 			to->thing_word = HEADER_PROC_BIN;
 			to->size = size;
 			to->val = from->val;
-			to->val->refc++;
+			erts_refc_inc(&to->val->refc, 2);
 			to->bytes = from->bytes + offset;
 			to->next = off_heap->mso;
 			off_heap->mso = to;
@@ -371,13 +358,11 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 		    while (i--)  {
 			*htop++ = *objp++;
 		    }
-#ifndef SHARED_HEAP
 #ifndef HYBRID /* FIND ME! */
 		    funp = (ErlFunThing *) tp;
 		    funp->next = off_heap->funs;
 		    off_heap->funs = funp;
-		    funp->fe->refc++;
-#endif
+		    erts_refc_inc(&funp->fe->refc, 2);
 #endif
 		    *argp = make_fun(tp);
 		}
@@ -397,11 +382,14 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 
 		  etp->next = off_heap->externals;
 		  off_heap->externals = etp;
-		  etp->node->refc++;
+		  erts_refc_inc(&etp->node->refc, 2);
 
 		  *argp = make_external(tp);
 		}
 		break;
+	    case BIN_MATCHSTATE_SUBTAG:
+		erl_exit(ERTS_ABORT_EXIT,
+			 "copy_struct: matchstate term not allowed");
 	    default:
 		i = thing_arityval(hdr)+1;
 		hbot -= i;
@@ -422,145 +410,188 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 	}
     }
 
+#ifdef DEBUG
+    if (htop != hbot)
+	erl_exit(ERTS_ABORT_EXIT,
+		 "Internal error in copy_struct() when copying %T:"
+		 " htop=%p != hbot=%p (sz=%bpu)\n",
+		 org_obj, htop, hbot, org_sz); 
+#else
     if (htop > hbot) {
-	erl_exit(1, "Internal error: copy_struct: htop, hbot overrun\n");
+	erl_exit(ERTS_ABORT_EXIT,
+		 "Internal error in copy_struct(): htop, hbot overrun\n");
     }
-    ASSERT(htop == hbot);
+#endif
     *hpp = (Eterm *) (hstart+hsize);
     return res;
 #undef in_area
 }
 
 #ifdef HYBRID
+
 #ifdef BM_MESSAGE_SIZES
-#define BM_ADD(var,val) (var) += (val);
+#  define BM_ADD(var,val) (var) += (val);
 #else
-#define BM_ADD(var,val)
+#  define BM_ADD(var,val)
 #endif
 
-#ifdef INCREMENTAL_GC
+#ifdef DEBUG
+#  define CLEARMEM(PTR,SIZE) memset(PTR,0,SIZE*sizeof(Eterm))
+#else
+#  define CLEARMEM(PTR,SIZE)
+#endif
+
+#ifdef INCREMENTAL
 #define GlobalAlloc(p, need, hp)                                        \
 do {                                                                    \
     Uint n = (need);                                                    \
     BM_ADD(words_copied,n);                                             \
     BM_SWAP_TIMER(copy,system);                                         \
-    (hp) = IncAlloc((p),n,NULL,0);                                      \
-    BM_SWAP_TIMER(system,copy);                                         \
-    if ((hp) == global_heap && obj != orig) {                           \
-        global_htop = global_heap;                                      \
-        copy_src_top = 0;                                               \
-        copy_dst_top = 0;                                               \
-        copy_offset_top = 0;                                            \
-        goto copy_start;                                                \
+    /* If a new collection cycle is started during copy, the message *  \
+     * will end up in the old generation and all allocations         *  \
+     * thereafter must go directly into the old generation.          */ \
+    if (alloc_old) {                                                    \
+        erts_incremental_gc((p),n,&dest,1);                             \
+        (hp) = erts_inc_alloc(n);                                       \
+    } else {                                                            \
+        (hp) = IncAlloc((p),n,&dest,1);                                 \
+        if (ma_gc_flags & GC_CYCLE_START) {                             \
+            alloc_old = 1;                                              \
+            global_htop = global_heap;                                  \
+            (hp) = erts_inc_alloc(n);                                   \
+        }                                                               \
     }                                                                   \
+    CLEARMEM((hp),(n));                                                 \
+    BM_SWAP_TIMER(system,copy);                                         \
 } while(0)
 
-#else /* no INCREMELNTAL_GC */
+#else /* no INCREMELNTAL */
 
 #define GlobalAlloc(p, need, hp)                                        \
 do {                                                                    \
     Uint n = (need);                                                    \
     total_need += n;                                                    \
-    BM_ADD(words_copied,n);                                             \
+    if (total_need >= global_heap_sz)                                   \
+        erl_exit(ERTS_ABORT_EXIT, "Copying a message (%d words) larger than the nursery simply won't work...\n", total_need); \
     if (global_hend - n < global_htop) {                                \
         BM_SWAP_TIMER(copy,system);                                     \
         erts_global_garbage_collect((p),total_need,NULL,0);             \
         BM_SWAP_TIMER(system,copy);                                     \
-        copy_src_top = 0;                                               \
-        copy_dst_top = 0;                                               \
-        copy_offset_top = 0;                                            \
+        total_need = 0;                                                 \
+        ma_src_top = 0;                                                 \
+        ma_dst_top = 0;                                                 \
+        ma_offset_top = 0;                                              \
         goto copy_start;                                                \
     }                                                                   \
     (hp) = global_htop;                                                 \
     global_htop += n;                                                   \
+    BM_ADD(words_copied,n);                                             \
 } while(0)
-#endif /* INCREMENTAL_GC */
+#endif /* INCREMENTAL */
 
-
+/* Copy a message to the message area. */
 Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
 {
-    Eterm obj = orig;
+    Eterm obj;
     Eterm dest;
+#ifdef INCREMENTAL
+    int alloc_old = 0;
+#else
     int total_need = 0;
-
-#ifdef DEBUG_COPY
-#ifndef BM_COUNTERS
-    static int messages_sent = 0;
-    messages_sent++;
-#endif
-    printf("COPY START %d; %s is sending a message\n\r", messages_sent,
-           (is_internal_pid(from->id) ? print_pid(from) : "NO PID" ));
-    display(orig,COUT);
-    printf("\n\r");
 #endif
 
+    VERBOSE(DEBUG_MESSAGES,
+            ("COPY START; %T is sending a message @ 0x%016x\n%T\n",
+             from->id, orig, orig));
+
+#ifndef INCREMENTAL
  copy_start:
+#endif
+    MA_STACK_PUSH(src,orig);
+    MA_STACK_PUSH(dst,&dest);
+    MA_STACK_PUSH(offset,offs);
 
-    ROOT_PUSH(src,orig);
-    ROOT_PUSH(dst,(Eterm)&dest);
-    ROOT_PUSH(offset,offs);
+    while (ma_src_top > 0) {
+        obj = MA_STACK_POP(src);
 
-    while (copy_src_top > 0) {
-
-        obj = ROOT_POP(src);
-
-        if (NO_COPY(obj)) {
-            ROOT_UPDATE(dst,ROOT_POP(offset),obj);
-            ROOT_POP(dst);
-            continue;
-        }
+        /* copy_struct_lazy should never be called with something that
+         * do not need to be copied. Within the loop, nothing that do
+         * not need copying should be placed in the src-stack.
+         */
+        ASSERT(!NO_COPY(obj));
 
         switch (primary_tag(obj)) {
         case TAG_PRIMARY_LIST: {
             Eterm *hp;
-            Eterm *objp = list_val(obj);
+            Eterm *objp;
 
             GlobalAlloc(from,2,hp);
-            ROOT_UPDATE(dst,ROOT_POP(offset),make_list(hp));
-            ROOT_POP(dst);
+            objp = list_val(obj);
 
-            if (NO_COPY(*objp))
+            MA_STACK_UPDATE(dst,MA_STACK_POP(offset),make_list(hp));
+            MA_STACK_POP(dst);
+
+            /* TODO: Byt ordningen nedan så att CDR pushas först. */
+
+            if (NO_COPY(*objp)) {
                 hp[0] = *objp;
-            else {
-                ROOT_PUSH(src,*objp);
-                ROOT_PUSH(dst,make_list(hp));
-                ROOT_PUSH(offset,0);
+#ifdef INCREMENTAL
+                if (ptr_within(ptr_val(*objp),inc_fromspc,inc_fromend))
+                    INC_STORE(gray,hp,2);
+#endif
+            } else {
+                MA_STACK_PUSH(src,*objp);
+                MA_STACK_PUSH(dst,hp);
+                MA_STACK_PUSH(offset,0);
             }
 
             objp++;
-            if (NO_COPY(*objp))
+
+            if (NO_COPY(*objp)) {
                 hp[1] = *objp;
+#ifdef INCREMENTAL
+                if (ptr_within(ptr_val(*objp),inc_fromspc,inc_fromend))
+                    INC_STORE(gray,hp,2);
+#endif
+            }
             else {
-                ROOT_PUSH(src,*objp);
-                ROOT_PUSH(dst,make_list(hp));
-                ROOT_PUSH(offset,1);
+                MA_STACK_PUSH(src,*objp);
+                MA_STACK_PUSH(dst,hp);
+                MA_STACK_PUSH(offset,1);
             }
             continue;
         }
 
         case TAG_PRIMARY_BOXED: {
             Eterm *objp = boxed_val(obj);
-            Eterm hdr = *objp;
 
-            switch (hdr & _TAG_HEADER_MASK) {
+            switch (*objp & _TAG_HEADER_MASK) {
             case ARITYVAL_SUBTAG: {
-                Uint ari = arityval(hdr);
+                Uint ari = arityval(*objp);
                 Uint i;
                 Eterm *hp;
                 GlobalAlloc(from,ari + 1,hp);
-                ROOT_UPDATE(dst,ROOT_POP(offset),make_tuple(hp));
-                ROOT_POP(dst);
+                /* A GC above might invalidate the value of objp */
+                objp = boxed_val(obj);
+                MA_STACK_UPDATE(dst,MA_STACK_POP(offset),make_tuple(hp));
+                MA_STACK_POP(dst);
                 *hp = *objp++;
                 for (i = 1; i <= ari; i++) {
                     switch (primary_tag(*objp)) {
                     case TAG_PRIMARY_LIST:
                     case TAG_PRIMARY_BOXED:
-                        if (NO_COPY(*objp))
-                            hp[i] = *objp++;
-                        else {
-                            ROOT_PUSH(src,*objp++);
-                            ROOT_PUSH(dst,make_tuple(hp));
-                            ROOT_PUSH(offset,i);
+                        if (NO_COPY(*objp)) {
+                            hp[i] = *objp;
+#ifdef INCREMENTAL
+                            if (ptr_within(ptr_val(*objp),
+                                           inc_fromspc,inc_fromend))
+                                INC_STORE(gray,hp,BOXED_NEED(hp,*hp));
+#endif
+                            objp++;
+                        } else {
+                            MA_STACK_PUSH(src,*objp++);
+                            MA_STACK_PUSH(dst,hp);
+                            MA_STACK_PUSH(offset,i);
                         }
                         break;
                     default:
@@ -575,13 +606,15 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
                 Uint i = thing_arityval(*objp) + 1;
                 Eterm *hp;
                 GlobalAlloc(from,i,hp);
-                ROOT_UPDATE(dst,ROOT_POP(offset),make_binary(hp));
-                ROOT_POP(dst);
+                /* A GC above might invalidate the value of objp */
+                objp = boxed_val(obj);
+                MA_STACK_UPDATE(dst,MA_STACK_POP(offset),make_binary(hp));
+                MA_STACK_POP(dst);
                 pb = (ProcBin*) hp;
                 while (i--) {
                     *hp++ = *objp++;
                 }
-                pb->val->refc++;
+                erts_refc_inc(&pb->val->refc, 2);
                 pb->next = erts_global_offheap.mso;
                 erts_global_offheap.mso = pb;
                 erts_global_offheap.overhead += pb->size /
@@ -596,9 +629,11 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
                 Uint k = i;
                 Eterm *hp, *hp_start;
                 GlobalAlloc(from,j,hp);
+                /* A GC above might invalidate the value of objp */
+                objp = boxed_val(obj);
                 hp_start = hp;
-                ROOT_UPDATE(dst,ROOT_POP(offset),make_fun(hp));
-                ROOT_POP(dst);
+                MA_STACK_UPDATE(dst,MA_STACK_POP(offset),make_fun(hp));
+                MA_STACK_POP(dst);
                 funp = (ErlFunThing*) hp;
                 while (i--) {
                     *hp++ = *objp++;
@@ -606,18 +641,23 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
 #ifndef HYBRID // FIND ME!
                 funp->next = erts_global_offheap.funs;
                 erts_global_offheap.funs = funp;
-                funp->fe->refc++;
+                erts_refc_inc(&funp->fe->refc, 2);
 #endif
                 for (i = k; i < j; i++) {
                     switch (primary_tag(*objp)) {
                     case TAG_PRIMARY_LIST:
                     case TAG_PRIMARY_BOXED:
-                        if (NO_COPY(*objp))
+                        if (NO_COPY(*objp)) {
+#ifdef INCREMENTAL
+                            if (ptr_within(ptr_val(*objp),
+                                           inc_fromspc,inc_fromend))
+                                INC_STORE(gray,hp,BOXED_NEED(hp,*hp));
+#endif
                             *hp++ = *objp++;
-                        else {
-                            ROOT_PUSH(src,*objp++);
-                            ROOT_PUSH(dst,make_fun(hp_start));
-                            ROOT_PUSH(offset,i);
+                        } else {
+                            MA_STACK_PUSH(src,*objp++);
+                            MA_STACK_PUSH(dst,hp_start);
+                            MA_STACK_PUSH(offset,i);
                             hp++;
                         }
                         break;
@@ -635,8 +675,10 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
                 Uint i =  thing_arityval(*objp) + 1;
                 Eterm *hp;
                 GlobalAlloc(from,i,hp);
-                ROOT_UPDATE(dst,ROOT_POP(offset),make_external(hp));
-                ROOT_POP(dst);
+                /* A GC above might invalidate the value of objp */
+                objp = boxed_val(obj);
+                MA_STACK_UPDATE(dst,MA_STACK_POP(offset),make_external(hp));
+                MA_STACK_POP(dst);
                 etp = (ExternalThing*) hp;
                 while (i--)  {
                     *hp++ = *objp++;
@@ -644,7 +686,7 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
 
                 etp->next = erts_global_offheap.externals;
                 erts_global_offheap.externals = etp;
-                etp->node->refc++;
+		erts_refc_inc(&etp->node->refc, 2);
                 continue;
             }
 
@@ -661,8 +703,8 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
                     Uint i = heap_bin_size(size);
                     Eterm *hp;
                     GlobalAlloc(from,i,hp);
-                    ROOT_UPDATE(dst,ROOT_POP(offset),make_binary(hp));
-                    ROOT_POP(dst);
+                    MA_STACK_UPDATE(dst,MA_STACK_POP(offset),make_binary(hp));
+                    MA_STACK_POP(dst);
                     from_bin = (ErlHeapBin *) objp;
                     to_bin = (ErlHeapBin *) hp;
                     to_bin->thing_word = header_heap_bin(size);
@@ -676,14 +718,14 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
 
                     ASSERT(thing_subtag(*objp) == REFC_BINARY_SUBTAG);
                     GlobalAlloc(from,PROC_BIN_SIZE,hp);
-                    ROOT_UPDATE(dst,ROOT_POP(offset),make_binary(hp));
-                    ROOT_POP(dst);
+                    MA_STACK_UPDATE(dst,MA_STACK_POP(offset),make_binary(hp));
+                    MA_STACK_POP(dst);
                     from_bin = (ProcBin *) objp;
                     to_bin = (ProcBin *) hp;
                     to_bin->thing_word = HEADER_PROC_BIN;
                     to_bin->size = size;
                     to_bin->val = from_bin->val;
-                    to_bin->val->refc++;
+                    erts_refc_inc(&to_bin->val->refc, 2);
                     to_bin->bytes = from_bin->bytes + sub_offset;
                     to_bin->next = erts_global_offheap.mso;
                     erts_global_offheap.mso = to_bin;
@@ -693,12 +735,18 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
                 continue;
             }
 
+	    case BIN_MATCHSTATE_SUBTAG:
+		erl_exit(ERTS_ABORT_EXIT,
+			 "copy_struct_lazy: matchstate term not allowed");
+
             default: {
-                Uint size = thing_arityval(hdr) + 1;
+                Uint size = thing_arityval(*objp) + 1;
                 Eterm *hp;
                 GlobalAlloc(from,size,hp);
-                ROOT_UPDATE(dst,ROOT_POP(offset),make_boxed(hp));
-                ROOT_POP(dst);
+                /* A GC above might invalidate the value of objp */
+                objp = boxed_val(obj);
+                MA_STACK_UPDATE(dst,MA_STACK_POP(offset),make_boxed(hp));
+                MA_STACK_POP(dst);
                 while (size--) {
                     *hp++ = *objp++;
                 }
@@ -716,19 +764,23 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
             Uint i;
             Eterm *hp;
             GlobalAlloc(from,ari + 1,hp);
-            ROOT_UPDATE(dst,ROOT_POP(offset),make_tuple(hp));
-            ROOT_POP(dst);
+            MA_STACK_UPDATE(dst,MA_STACK_POP(offset),make_tuple(hp));
+            MA_STACK_POP(dst);
             *hp = *objp++;
             for (i = 1; i <= ari; i++) {
                 switch (primary_tag(*objp)) {
                 case TAG_PRIMARY_LIST:
                 case TAG_PRIMARY_BOXED:
-                    if (NO_COPY(*objp))
+                    if (NO_COPY(*objp)) {
+#ifdef INCREMENTAL
+                        if (ptr_within(ptr_val(*objp),inc_fromspc,inc_fromend))
+                            INC_STORE(gray,hp,ari + 1);
+#endif
                         hp[i] = *objp++;
-                    else {
-                        ROOT_PUSH(src,*objp++);
-                        ROOT_PUSH(dst,make_tuple(hp));
-                        ROOT_PUSH(offset,i);
+                    } else {
+                        MA_STACK_PUSH(src,*objp++);
+                        MA_STACK_PUSH(dst,hp);
+                        MA_STACK_PUSH(offset,i);
                     }
                     break;
                 default:
@@ -739,23 +791,22 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
         }
 
         default:
-            erl_exit(1, "%s, line %d: Internal error in copy_struct_lazy: 0x%08x\n",
+            erl_exit(ERTS_ABORT_EXIT,
+		     "%s, line %d: Internal error in copy_struct_lazy: 0x%08x\n",
                      __FILE__, __LINE__,obj);
         }
     }
 
-#ifdef DEBUG_COPY
-    printf("After: ");
-    display(dest,COUT);
-    printf("\n\r");
+    VERBOSE(DEBUG_MESSAGES,
+            ("Copy allocated @ 0x%08lx:\n%T\n",
+             (unsigned long)ptr_val(dest),dest));
 
-    //print_tagged_memory(global_heap,global_htop);
-#endif
+    ma_gc_flags &= ~GC_CYCLE_START;
 
-    ASSERT(copy_src_top == 0);
-    ASSERT(copy_dst_top == 0);
-    ASSERT(copy_offset_top == 0);
-
+    ASSERT(eq(orig, dest));
+    ASSERT(ma_src_top == 0);
+    ASSERT(ma_dst_top == 0);
+    ASSERT(ma_offset_top == 0);
     return dest;
 }
 
@@ -768,6 +819,8 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
  * pointers are offsetted to point correctly in the new location.
  *
  * Typically used to copy a term from an ets table.
+ *
+ * NOTE: Assumes that term is a tuple (ptr is an untagged tuple ptr).
  */
 Eterm
 copy_shallow(Eterm* ptr, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
@@ -801,17 +854,15 @@ copy_shallow(Eterm* ptr, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 		    while (tari--) {
 			*hp++ = *tp++;
 		    }
-		    pb->val->refc++;
+		    erts_refc_inc(&pb->val->refc, 2);
 		    pb->next = off_heap->mso;
 		    off_heap->mso = pb;
 		}
 		break;
 	    case FUN_SUBTAG:
 		{
-#ifndef SHARED_HEAP
 #ifndef HYBRID /* FIND ME! */
 		    ErlFunThing* funp = (ErlFunThing *) (hp-1);
-#endif
 #endif
 		    int tari = thing_arityval(val);
 
@@ -820,11 +871,9 @@ copy_shallow(Eterm* ptr, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 			*hp++ = *tp++;
 		    }
 #ifndef HYBRID /* FIND ME! */
-#ifndef SHARED_HEAP
 		    funp->next = off_heap->funs;
 		    off_heap->funs = funp;
-		    funp->fe->refc++;
-#endif
+		    erts_refc_inc(&funp->fe->refc, 2);
 #endif
 		}
 		break;
@@ -841,7 +890,7 @@ copy_shallow(Eterm* ptr, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 		    }
 		    etp->next = off_heap->externals;
 		    off_heap->externals = etp;
-		    etp->node->refc++;
+		    erts_refc_inc(&etp->node->refc, 2);
 		}
 		break;
 	    default:

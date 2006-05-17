@@ -19,7 +19,7 @@
 
 -export([len/1,equal/2,concat/2,chr/2,rchr/2,str/2,rstr/2,index/2,
 	 span/2,cspan/2,substr/2,substr/3,tokens/2,chars/2,chars/3]).
--export([copies/2,words/1,words/2,strip/1,strip/2,strip/3,index/2,
+-export([copies/2,words/1,words/2,strip/1,strip/2,strip/3,
 	 sub_word/2,sub_word/3,left/2,left/3,right/2,right/3,
 	 sub_string/2,sub_string/3,centre/2,centre/3]).
 -export([re_sh_to_awk/1,re_parse/1,re_match/2,re_sub/3,re_gsub/3,re_split/2]).

@@ -160,7 +160,10 @@ compile_inline(Name,DirName,Modules,Options) ->
     case catch igor:merge(Name,Modules++RTmodule,[{preprocess,true},{stubs,false}]++IgorOptions) of
 	{'EXIT',{undef,Reason}} -> %% module igor first in R10B
 	    io:format("Module igor in syntax_tools must be available:~n~p~n",
-		      [Reason]);
+		      [Reason]),
+	    {error,'no_compilation'};
+	{'EXIT',_Reason} ->
+	    {error,'no_compilation'};
 	_ ->
 	    io:format("compiling output module: ~p~n",[Name]),
 	    erl_compile(generated_file(Name,IgorOptions),Options1)

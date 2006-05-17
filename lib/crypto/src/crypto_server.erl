@@ -39,8 +39,17 @@ init([]) ->
     process_flag(trap_exit, true),
     erl_ddll:start(),
     PrivDir = code:priv_dir(crypto),
-    LibDir = filename:join([PrivDir, "lib"]),
-    erl_ddll:load_driver(LibDir, crypto_drv),
+    LibDir1 = filename:join([PrivDir, "lib"]),
+    LibDir =
+	case erl_ddll:load_driver(LibDir1, crypto_drv) of
+	    ok -> LibDir1;
+	    {error,_} ->
+		LibDir2 = 
+		    filename:join(LibDir1, 
+				  erlang:system_info(system_architecture)),
+		erl_ddll:load_driver(LibDir2, crypto_drv),
+		LibDir2
+	end,
     Cmd = "crypto_drv elibcrypto " ++ filename:join([LibDir, "elibcrypto"]),
     Port = open_port({spawn, Cmd}, []),
     T = ets:new(crypto_server_table, [set, protected, named_table]),

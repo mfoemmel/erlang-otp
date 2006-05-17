@@ -150,7 +150,7 @@ APP_TARGET = $(EBIN)/$(APP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa ../../ic/ebin
+ERL_FLAGS += -pa ../../ic/ebin 
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += +'{parse_transform,sys_pre_attributes}' \
@@ -179,7 +179,7 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 ../ebin/icparse.beam: icparse.erl
-	$(ERLC) $(ERL_COMPILE_FLAGS) -o$(EBIN) +pj $<
+	$(ERLC) $(ERL_COMPILE_FLAGS) +nowarn_unused_vars +nowarn_unused_function -o$(EBIN) +pj $<
 
 icparse.erl: icparse.yrl icyeccpre.hrl
 

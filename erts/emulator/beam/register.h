@@ -45,15 +45,16 @@ typedef struct reg_proc
     Eterm name;         /* Atom name */
 } RegProc;
 
-extern Hash process_reg;
-
+int process_reg_size(void);
+int process_reg_sz(void);
 void init_register_table(void);
-void register_info(CIO to);
-Process *register_process(Process *c_p, Eterm name, Process *p);
-struct port *register_port(Eterm name, struct port *pt);
-Process *whereis_process(Eterm name);
-void whereis_name(Eterm name, Process **p, struct port **pt);
-int unregister_name(Process *c_p, Eterm name);
-
+void register_info(int, void *);
+int erts_register_name(Process *, Eterm, Eterm);
+Eterm erts_whereis_name_to_id(Process *, Eterm);
+void erts_whereis_name(Process *, Uint32, int, int,
+		       Eterm, Process**, Uint32, int,
+		       struct port**);
+Process *erts_whereis_process(Process *, Uint32, int, Eterm, Uint32, int);
+int erts_unregister_name(Process *, Uint32, int, Eterm);
 
 #endif

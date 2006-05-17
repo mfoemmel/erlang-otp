@@ -137,8 +137,8 @@ Eterm hipe_set_timeout(Process *p, Eterm timeout_value)
 #endif
     } else {
 #ifdef ERTS_SMP
-	if (p->hipe.have_receive_locks) {
-	    p->hipe.have_receive_locks = 0;
+	if (p->hipe_smp.have_receive_locks) {
+	    p->hipe_smp.have_receive_locks = 0;
 	    erts_smp_proc_unlock(p, ERTS_PROC_LOCKS_MSG_RECEIVE);
 	}
 #endif
@@ -298,7 +298,7 @@ char *hipe_bs_allocate(int len)
   bptr = erts_bin_nrml_alloc(len);
   bptr->flags = 0;
   bptr->orig_size = len;
-  bptr->refc = 1;
+  erts_smp_atomic_init(&bptr->refc, 1);
   return bptr->orig_bytes;
 }
 
@@ -311,13 +311,14 @@ int hipe_bs_put_big_integer(
   byte* save_bin_buf;
   unsigned save_bin_offset, save_bin_buf_len;
   int res;
+  ERL_BITS_DEFINE_STATEP(p);
   save_bin_buf=erts_bin_buf;
   save_bin_offset=erts_bin_offset;
   save_bin_buf_len=erts_bin_buf_len;
   erts_bin_buf=base;
   erts_bin_offset=offset;
   erts_bin_buf_len=(offset+num_bits+7) >> 3;
-  res = erts_bs_put_integer(arg, num_bits, flags);
+  res = erts_bs_put_integer(ERL_BITS_ARGS_3(arg, num_bits, flags));
   erts_bin_buf=save_bin_buf;
   erts_bin_offset=save_bin_offset;
   erts_bin_buf_len=save_bin_buf_len;
@@ -325,21 +326,20 @@ int hipe_bs_put_big_integer(
 }
 
 int hipe_bs_put_small_float(
-#ifdef ERTS_SMP
     Process *p,
-#endif
     Eterm arg, Uint num_bits, byte* base, unsigned offset, unsigned flags)
 { 
   byte* save_bin_buf;
   unsigned save_bin_offset, save_bin_buf_len;
   int res;
+  ERL_BITS_DEFINE_STATEP(p);
   save_bin_buf=erts_bin_buf;
   save_bin_offset=erts_bin_offset;
   save_bin_buf_len=erts_bin_buf_len;
   erts_bin_buf=base;
   erts_bin_offset=offset;
   erts_bin_buf_len=(offset+num_bits+7) >> 3;
-  res = erts_bs_put_float(arg, num_bits, flags);
+  res = erts_bs_put_float(p, arg, num_bits, flags);
   erts_bin_buf=save_bin_buf;
   erts_bin_offset=save_bin_offset;
   erts_bin_buf_len=save_bin_buf_len;
@@ -362,8 +362,8 @@ void hipe_clear_timeout(Process *c_p)
 #ifdef ERTS_SMP
     /* XXX: BEAM has different entries for the locked and unlocked
        cases. HiPE doesn't, so we must check dynamically. */
-    if (c_p->hipe.have_receive_locks) {
-	c_p->hipe.have_receive_locks = 0;
+    if (c_p->hipe_smp.have_receive_locks) {
+	c_p->hipe_smp.have_receive_locks = 0;
 	erts_smp_proc_unlock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
     }
 #endif
@@ -453,7 +453,7 @@ Eterm hipe_check_get_msg(Process *c_p)
 	    erts_smp_proc_unlock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
 	else {
 	    /* XXX: BEAM doesn't need this */
-	    c_p->hipe.have_receive_locks = 1;
+	    c_p->hipe_smp.have_receive_locks = 1;
 #endif
 	    return THE_NON_VALUE;
 #ifdef ERTS_SMP
@@ -539,12 +539,6 @@ int hipe_bs_put_binary_all(Process *p, Eterm Bin)
 {
     ERL_BITS_DEFINE_STATEP(p);
     return erts_bs_put_binary_all(ERL_BITS_ARGS_1(Bin));
-}
-
-int hipe_bs_put_float(Process *p, Eterm Float, Uint num_bits, int flags)
-{
-    ERL_BITS_DEFINE_STATEP(p);
-    return erts_bs_put_float(ERL_BITS_ARGS_3(Float, num_bits, flags));
 }
 
 void hipe_bs_put_string(Process *p, byte* iptr, Uint num_bytes)

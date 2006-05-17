@@ -20,12 +20,11 @@
 
 %%-compile(export_all).
 -export([setup_tracer/1,stop_tracer/1,reader/1]).
--import(etop,[getopt/2,dbgout/2]).
+-import(etop,[getopt/2]).
 
 -include("etop_defs.hrl").
 
 setup_tracer(Config) ->
-    dbgout("Config = ~p ~n", [Config]),
     TraceNode = getopt(node,Config),
     RHost = rpc:call(TraceNode, net_adm, localhost, []),
     Store  = ets:new(?MODULE, [set, public]),
@@ -58,8 +57,6 @@ reader(Config) ->
     Host = getopt(host, Config),
     Port = getopt(port, Config),    
     
-    dbgout("Connecting ~p ~p ~n",[Host, Port]),
-
     {ok, Sock} = gen_tcp:connect(Host, Port, [{active, false}]),
     spawn_link(fun() -> reader_init(Sock,getopt(store,Config),nopid) end).
 
@@ -72,7 +69,6 @@ reader_init(Sock, Store, Last) ->
 
 reader(Sock, Store, Last) ->
     Data = get_data(Sock),
-    %% dbgout("Slave tracer IP ~p ~n", [Data]),	    
     New = handle_data(Last, Data, Store),
     reader(Sock, Store, New).
 

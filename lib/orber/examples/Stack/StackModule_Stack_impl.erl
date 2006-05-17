@@ -6,10 +6,10 @@
 -export([pop/1, push/2, empty/1, init/1, terminate/2]).
 
 
-init(Env) ->
+init(_Env) ->
     {ok, []}.
 
-terminate(From, Reason) ->
+terminate(_From, _Reason) ->
     ok.
 
 push(Stack, Val)  ->

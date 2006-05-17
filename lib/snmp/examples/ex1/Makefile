@@ -35,33 +35,51 @@ endif
 
 ERL_FLAGS += 
 ERL_COMPILE_FLAGS += -I../include \
+                     -Dversion=\"$(VSN)$(PRE_VSN)\" \
+                     +'{parse_transform,sys_pre_attributes}' \
+                     +'{attribute,insert,app_vsn,$(APP_VSN)}' \
                      -I$(ERL_TOP)/lib/stdlib \
                      $(SNMP_FLAGS)
 
 # ----------------------------------------------------
 # Release directory specification
 # ----------------------------------------------------
-RELSYSDIR = $(RELEASE_PATH)/lib/snmp-$(VSN)
+RELSYSDIR         = $(RELEASE_PATH)/lib/snmp-$(VSN)
+EXAMPLE_RELSYSDIR = $(RELSYSDIR)/examples
+EX1_RELSYSDIR     = $(EXAMPLE_RELSYSDIR)/ex1
 
 # ----------------------------------------------------
 # Common macros
 # ----------------------------------------------------
-BUILD_MIBS = EX1-MIB
-TARGET_FILES= $(BUILD_MIBS:%=%.bin)
 
-EXAMPLE_FILES = EX1-MIB.funcs snmp_mgr_tests.erl EX1-MIB.mib ex1.erl
+ERL_FILES  = ex1.erl
+MIB_FILES  = EX1-MIB.funcs EX1-MIB.mib
+BUILD_MIBS = EX1-MIB
+
+TARGET_FILES= \
+	$(BUILD_MIBS:%=%.bin) \
+	$(ERL_FILES:%.erl=%.$(EMULATOR))
+
 
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
 
-debug opt:
+debug opt: build
 
 clean:
+	rm -f $(TARGET_FILES)
+	rm -f core *~
 
 docs:
 
 build: $(TARGET_FILES)
+
+
+info: 
+	@echo "TARGET_FILES:  $(TARGET_FILES)"
+	@echo "EXAMPLE_FILES: $(EXAMPLE_FILES)"
+
 
 # ----------------------------------------------------
 # Release Target
@@ -69,8 +87,10 @@ build: $(TARGET_FILES)
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
-	$(INSTALL_DIR) $(RELSYSDIR)/examples
-	$(INSTALL_DIR) $(RELSYSDIR)/examples/ex1
-	$(INSTALL_DATA) $(EXAMPLE_FILES) $(RELSYSDIR)/examples/ex1
+	$(INSTALL_DIR) $(EXAMPLE_RELSYSDIR)
+	$(INSTALL_DIR) $(EX1_RELSYSDIR)
+	$(INSTALL_DATA) $(MIB_FILES) $(EX1_RELSYSDIR)
+	$(INSTALL_DATA) $(ERL_FILES) $(EX1_RELSYSDIR)
+	$(INSTALL_DATA) $(TARGET_FILES) $(EX1_RELSYSDIR)
 
 release_docs_spec:

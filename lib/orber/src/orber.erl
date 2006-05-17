@@ -34,7 +34,7 @@
 %% External exports
 %%-----------------------------------------------------------------
 -export([start/0, start/1, stop/0, install/1, install/2, orber_nodes/0, iiop_port/0,
-	 domain/0, bootstrap_port/0, iiop_ssl_port/0, iiop_out_ports/0,
+	 domain/0, iiop_ssl_port/0, iiop_out_ports/0,
 	 ssl_server_certfile/0, ssl_client_certfile/0, set_ssl_client_certfile/1,
 	 ssl_server_verify/0, ssl_client_verify/0, set_ssl_client_verify/1,
 	 ssl_server_depth/0, ssl_client_depth/0, set_ssl_client_depth/1,
@@ -49,7 +49,7 @@
 	 get_ORBDefaultInitRef/0, get_ORBInitRef/0,
 	 get_interceptors/0, get_local_interceptors/0, 
 	 get_cached_interceptors/0, set_interceptors/1,
-	 jump_start/0, jump_start/1, jump_start/2, jump_stop/0,
+	 jump_start/0, jump_start/1, jump_stop/0,
 	 iiop_connections/0, iiop_connections/1, iiop_connections_pending/0, 
 	 typechecking/0,
 	 exclude_codeset_ctx/0, exclude_codeset_component/0, bidir_context/0, use_FT/0,
@@ -84,7 +84,8 @@
 		  local_content = false,
 		  nameservice_storage_type = ram_copies,
 		  initialreferences_storage_type = ram_copies,
-		  type = temporary}).
+		  type = temporary,
+		  load_order = 0}).
 
 -define(ORBER_TABS, [orber_CosNaming, orber_objkeys, orber_references]).
 
@@ -105,37 +106,46 @@ jump_stop() ->
 
 js() ->
     application:load(orber),
-    jump_start(iiop_port(), [{interceptors, {native, [orber_iiop_tracer_silent]}},
-			     {orber_debug_level, 10}, 
-			     {flags, (?ORB_ENV_LOCAL_TYPECHECKING bor get_flags())}]).
+    jump_start([{iiop_port, iiop_port()},
+		{interceptors, {native, [orber_iiop_tracer_silent]}},
+		{orber_debug_level, 10}, 
+		{flags, (?ORB_ENV_LOCAL_TYPECHECKING bor get_flags())}]).
 
-js(Port) ->
+js(Port) when integer(Port) ->
     application:load(orber),
-    jump_start(Port, [{interceptors, {native, [orber_iiop_tracer_silent]}},
-		      {orber_debug_level, 10}, 
-		      {flags, (?ORB_ENV_LOCAL_TYPECHECKING bor get_flags())}]).
+    jump_start([{iiop_port, Port},
+		{interceptors, {native, [orber_iiop_tracer_silent]}},
+		{orber_debug_level, 10}, 
+		{flags, (?ORB_ENV_LOCAL_TYPECHECKING bor get_flags())}]).
 
 jump_start() ->
     application:load(orber),
-    jump_start(iiop_port(), []).
+    jump_start([{iiop_port, iiop_port()}]).
 
 
-jump_start(Port) ->
+jump_start(Port) when integer(Port) ->
     application:load(orber),
-    jump_start(Port, []).
-
-jump_start(Port, InitOptions) when integer(Port), list(InitOptions) ->
-    Options = lists:keydelete(iiop_port, 1, InitOptions),
+    jump_start([{iiop_port, Port}]);
+jump_start(Options) when list(Options) ->
+    application:load(orber),
     mnesia:start(),
+    Port = case lists:keysearch(iiop_port, 1, Options) of
+	       {value, {iiop_port, Value}} ->
+		   Value;
+	       _ ->
+		   iiop_port()
+	   end,
     corba:orb_init([{iiop_port, Port}|Options]),
     install([node()], [{ifr_storage_type, ram_copies}]),
     start(),
+    %% We need to use this operation if Port == 0 to see what the OS
+    %% assigned.
     NewPort = orber_env:iiop_port(),
     Domain = orber_env:ip_address() ++ [$:|integer_to_list(NewPort)],
     orber_env:configure_override(domain, Domain),
     info();
-jump_start(Port, Options) ->
-    exit({error, Port, Options}). 
+jump_start(Options) ->
+    exit({error, Options}). 
 
 
 mjs(Nodes) ->
@@ -265,18 +275,9 @@ start_lightweight() ->
     application:start(orber).
 
 start_lightweight(Nodes) when list(Nodes) ->
-    %%------- WARNING!!! -------
-    %% Here we use an undocumented function, i.e., set_env/3. IF it stops
-    %% being exported we must solve this problem in another way!!!
-    case orber_tb:is_loaded() of
-	false ->
-	    application:load(orber),
-	    application_controller:set_env(orber, lightweight, Nodes),
-	    application:start(orber);
-	true ->
-	    application_controller:set_env(orber, lightweight, Nodes),
-	    application:start(orber)
-    end;
+    configure(lightweight, Nodes),
+    application:set_env(orber, lightweight, Nodes),
+    application:start(orber);
 start_lightweight(_) ->
     exit({error,"Argument not correct; must be a list of nodes."}).
 
@@ -300,11 +301,6 @@ nat_iiop_port() ->
 
 iiop_out_ports() ->
     orber_env:iiop_out_ports().
-
-%% No longer supported.
-bootstrap_port() ->
-    iiop_port().
-
 
 orber_nodes() ->
     case catch mnesia:table_info(orber_objkeys,ram_copies) of
@@ -731,9 +727,11 @@ install(Nodes, Options) when list(Nodes), list(Options)->
 install_orber(Nodes, Options) ->
     #options{ifr_storage_type = IFRType, install_timeout = Timeout,
 	     local_content = LocalContent, nameservice_storage_type = NSType,
-	     initialreferences_storage_type = InitType}
+	     initialreferences_storage_type = InitType,
+	     load_order = LoadOrder}
 	= check_options(Options, #options{}),
-    MnesiaOptions = [{local_content, LocalContent}],
+    MnesiaOptions = [{local_content, LocalContent}, 
+		     {load_order, LoadOrder}],
     TableTest = test_tables(),
     case lists:member(is_member, TableTest) of
 	true ->
@@ -790,6 +788,9 @@ check_options([{local_content, Bool}|T], Options)
 check_options([{type, Type}|T], Options) 
   when Type == temporary; Type == permanent ->
     check_options(T, Options#options{type = Type});
+check_options([{load_order, LoadOrder}|T], Options) 
+  when integer(LoadOrder) ->
+    check_options(T, Options#options{load_order = LoadOrder});
 check_options([H|_], _) ->
     ?EFORMAT("Option unknown or incorrect value: ~w", [H]).
 

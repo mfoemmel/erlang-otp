@@ -240,6 +240,10 @@ add_to_container(ContainerRef,Object, Id, Table, Index) ->
         {aborted, "duplicate"} ->
 	    %% Must keep the misspelled word (must match IC generated code).
             exit({allready_registered, Id});
+	{aborted, Reason} ->
+	    orber:dbg("[~p] orber_ifr_container:add_to_container(~p). aborted:~n~p~n", 
+		      [?LINE, Id, Reason], ?DEBUG_LEVEL),
+	    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO});
 	{atomic, _} ->
 	    ok
     end.
@@ -248,20 +252,16 @@ add_to_light(#orber_light_ifr_ref{data = Data} = LRef, Id, Type, Name) ->
     BaseId = get_base_id(Data#lightdata.id, Id),
     NewScope = scoped_name(Data#lightdata.scope, Name, Type),
     F = fun() ->
-		case mnesia:wread({orber_light_ifr, Id}) of
-		    [] ->
-			D = #orber_light_ifr{id = Id, 
-					     module = list_to_atom(NewScope),
-					     type = Type, base_id = BaseId},
-			mnesia:write(D);
-		    _ ->
-			mnesia:abort("duplicate")
-		end
+		D = #orber_light_ifr{id = Id, 
+				     module = list_to_atom(NewScope),
+				     type = Type, base_id = BaseId},
+		mnesia:write(D)
 	end,
     case mnesia:transaction(F) of 
-        {aborted, "duplicate"} ->
-	    %% Must keep the misspelled word (must match IC generated code).
-            exit({allready_registered, Id});
+	{aborted, Reason} ->
+	    orber:dbg("[~p] orber_ifr_container:add_to_light(~p). aborted:~n~p~n", 
+		      [?LINE, Id, Reason], ?DEBUG_LEVEL),
+	    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO});
 	{atomic, _} ->
 	    LRef#orber_light_ifr_ref{data = Data#lightdata{scope = NewScope,
 							   id = BaseId}}

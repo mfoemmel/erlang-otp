@@ -19,7 +19,9 @@
 #endif
 
 #ifdef __WIN32__
+#ifndef WINDOWS_H_INCLUDES_WINSOCK2_H
 #include <winsock2.h>
+#endif
 #include <windows.h>
 #endif
 
@@ -432,7 +434,7 @@ erl_errno_id(error)
 #if defined(ETIME) && (!defined(ELOOP) || (ETIME != ELOOP))
     case ETIME: return "etime";
 #endif
-#if defined(ETIMEDOUT) && (!defined(ENOSTR) || (ETIMEDOUT != ENOSTR))
+#if defined(ETIMEDOUT) && (!defined(ENOSTR) || (ETIMEDOUT != ENOSTR)) && (!defined(EAGAIN) || (ETIMEDOUT != EAGAIN)) && (!defined(WSAETIMEDOUT) || (ETIMEDOUT != WSAETIMEDOUT))
     case ETIMEDOUT: return "etimedout";
 #endif
 #ifdef ETOOMANYREFS
@@ -453,7 +455,7 @@ erl_errno_id(error)
 #ifdef EVERSION
     case EVERSION: return "eversion";
 #endif
-#if defined(EWOULDBLOCK) && (!defined(EAGAIN) || (EWOULDBLOCK != EAGAIN))
+#if defined(EWOULDBLOCK) && (!defined(EAGAIN) || (EWOULDBLOCK != EAGAIN)) && (!defined(WSAEWOULDBLOCK) || (EWOULDBLOCK != WSAEWOULDBLOCK))
     case EWOULDBLOCK: return "ewouldblock";
 #endif
 #ifdef EXDEV

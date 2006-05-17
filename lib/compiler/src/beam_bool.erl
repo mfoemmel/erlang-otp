@@ -243,6 +243,8 @@ split_block_2(Is, Fail, Acc) ->
 
 split_block_3([{set,[_],_,{bif,_,{f,Fail}}}|_], Fail, _) ->
     failed;
+split_block_3([{set,[_],_,{alloc,_,{gc_bif,_,{f,Fail}}}}|_], Fail, _) ->
+    failed;
 split_block_3([_|Is], Fail, Res) ->
     split_block_3(Is, Fail, Res);
 split_block_3([], _, Res) -> Res.
@@ -316,7 +318,6 @@ bopt_tree_1([{set,[Dst],As,{bif,N,_}}=Bif|Is], Forest0, Pre) ->
 bopt_tree_1([], Forest, Pre) ->
     {Pre,[R || {_,V}=R <- gb_trees:to_list(Forest), V =/= any]}.
 
-safe_bool_op(internal_is_record, 3) -> true;
 safe_bool_op(N, Ar) ->
     erl_internal:new_type_test(N, Ar) orelse erl_internal:comp_op(N, Ar).
 
@@ -345,8 +346,6 @@ bopt_good_arg(_, _) -> ok.
 bif_to_test(_, N, As) ->
     bif_to_test(N, As).
 
-bif_to_test(internal_is_record, [_,_,_]=As) ->
-    {test,internal_is_record,fail,As};
 bif_to_test('=:=', As) -> {test,is_eq_exact,fail,As};
 bif_to_test('=/=', As) -> {test,is_ne_exact,fail,As};
 bif_to_test('==', As) -> {test,is_eq,fail,As};

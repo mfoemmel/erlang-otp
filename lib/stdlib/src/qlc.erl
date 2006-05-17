@@ -109,30 +109,18 @@ get_handle(_) ->
          max_lookup = -1  % int() >= 0 | -1 (infinity)
         }).
 
--record(setup, {parent, ref = make_ref()}).
+-record(setup, {parent}).
+
+-define(THROWN_ERROR, {?MODULE, throw_error, _}).
 
 %%%
 %%% Exported functions
 %%%
 
--define(EXIT(_R), 
-        case _R of 
-            {_Reason,_Wh} ->
-                case looks_like_Where(_Wh) of
-                    true ->
-                        {'EXIT',{foo,_Wh2}} = (catch erlang:fault(foo)),
-                        exit({_Reason,_Wh++_Wh2});
-                    false ->
-                        exit(_R)
-                end;
-            _ ->
-                exit(_R)
-        end).
-
 append(QHs) ->
     Hs = lists:map(fun(QH) -> 
                            case get_handle(QH) of
-                               badarg -> erlang:fault(badarg, [QHs]);
+                               badarg -> erlang:error(badarg, [QHs]);
                                H -> H
                            end end, QHs),
     #qlc_handle{h = #qlc_append{hl = Hs}}.
@@ -140,7 +128,7 @@ append(QHs) ->
 append(QH1, QH2) ->
     Hs = lists:map(fun(QH) -> 
                            case get_handle(QH) of
-                               badarg -> erlang:fault(badarg, [QH1, QH2]);
+                               badarg -> erlang:error(badarg, [QH1, QH2]);
                                H -> H
                            end end, [QH1, QH2]),
     #qlc_handle{h = #qlc_append{hl = Hs}}.
@@ -152,7 +140,7 @@ cursor(QH, Options) ->
     case {options(Options, [unique_all, cache_all, spawn_options]),
           get_handle(QH)} of
         {B1, B2} when B1 =:= badarg; B2 =:= badarg ->
-            erlang:fault(badarg, [QH, Options]);
+            erlang:error(badarg, [QH, Options]);
         {[GUnique, GCache, SpawnOptions0], H} ->
             SpawnOptions = ensure_link(SpawnOptions0),
             case cursor_process(H, GUnique, GCache, SpawnOptions) of
@@ -164,11 +152,11 @@ cursor(QH, Options) ->
     end.
 
 delete_cursor(#qlc_cursor{c = {_, Owner}}=C) when Owner =/= self() ->
-    erlang:fault(not_cursor_owner, [C]);
+    erlang:error(not_cursor_owner, [C]);
 delete_cursor(#qlc_cursor{c = {Pid, _}}) ->
     stop_cursor(Pid);
 delete_cursor(T) ->
-    erlang:fault(badarg, [T]).
+    erlang:error(badarg, [T]).
 
 e(QH) ->
     eval(QH, []).
@@ -182,28 +170,28 @@ eval(QH) ->
 eval(QH, Options) ->
     case {options(Options, [unique_all, cache_all]), get_handle(QH)} of
         {B1, B2} when B1 =:= badarg; B2 =:= badarg ->
-            erlang:fault(badarg, [QH, Options]);
+            erlang:error(badarg, [QH, Options]);
         {[GUnique, GCache], Handle} ->
-            Prep = prepare_qlc(Handle, [], GUnique, GCache, exit),
-            case setup_qlc(Prep, exit, #setup{parent = self()}) of
-                {L, Post} when is_list(L) ->
-                    table_post(Post),
-                    L;
-                {Objs, Post} when is_function(Objs) ->
-                    H = ensure_collecting(Prep, Objs),
-                    Ref = make_ref(),
-                    Ret = (catch {H(), Ref}),
-                    table_post(Post),
-                    case Ret of
-                        {Reply, Ref} ->
-                            Reply;
-                        {'EXIT', Reason} ->
-                            exit(Reason);
-                        Thrown ->
-                            throw(Thrown)
-                    end;
-                Error ->
-                    Error
+            try 
+                Prep = prepare_qlc(Handle, [], GUnique, GCache),
+                case setup_qlc(Prep, #setup{parent = self()}) of
+                    {L, Post} when is_list(L) ->
+                        table_post(Post),
+                        L;
+                    {Objs, Post} when is_function(Objs) ->
+                        try
+                            (ensure_collecting(Prep, Objs))()
+                        after
+                            table_post(Post)
+                        end
+                end
+            catch Term ->
+                case erlang:get_stacktrace() of
+                    [?THROWN_ERROR | _] ->
+                        Term;
+                    Stacktrace ->
+                        erlang:raise(throw, Term, Stacktrace)
+                end
             end
     end.
 
@@ -213,24 +201,25 @@ fold(Fun, Acc0, QH) ->
 fold(Fun, Acc0, QH, Options) ->
     case {options(Options, [unique_all, cache_all]), get_handle(QH)} of
         {B1, B2} when B1 =:= badarg; B2 =:= badarg ->
-            erlang:fault(badarg, [Fun, Acc0, QH, Options]);
+            erlang:error(badarg, [Fun, Acc0, QH, Options]);
         {[GUnique, GCache], Handle} ->
-            Prep = prepare_qlc(Handle, not_a_list, GUnique, GCache, exit),
-            case setup_qlc(Prep, exit, #setup{parent = self()}) of
-                {Objs, Post} when is_function(Objs); is_list(Objs) ->
-                    Ref = make_ref(),
-                    Ret = (catch {fold_loop(Fun, Objs, Acc0), Ref}),
-                    table_post(Post),
-                    case Ret of
-                        {Reply, Ref} ->
-                            Reply;
-                        {'EXIT', Reason} ->
-                            exit(Reason);
-                        Thrown ->
-                            throw(Thrown)
-                    end;
-                Error ->
-                    Error
+            try
+                Prep = prepare_qlc(Handle, not_a_list, GUnique, GCache),
+                case setup_qlc(Prep, #setup{parent = self()}) of
+                    {Objs, Post} when is_function(Objs); is_list(Objs) ->
+                        try
+                            fold_loop(Fun, Objs, Acc0)
+                        after
+                            table_post(Post)
+                        end
+                end
+            catch Term ->
+                case erlang:get_stacktrace() of
+                    [?THROWN_ERROR | _] ->
+                        Term;
+                    Stacktrace ->
+                        erlang:raise(throw, Term, Stacktrace)
+                end
             end
     end.
 
@@ -268,9 +257,9 @@ info(QH, Options) ->
     case {options(Options, [unique_all, cache_all, flat, format, n_elements]),
           get_handle(QH)} of
         {B1, B2} when B1 =:= badarg; B2 =:= badarg ->
-            erlang:fault(badarg, [QH, Options]);
+            erlang:error(badarg, [QH, Options]);
         {[GUnique, GCache, Flat, Format, NElements], H} ->
-            Prep = prepare_qlc(H, [], GUnique, GCache, exit),
+            Prep = prepare_qlc(H, [], GUnique, GCache),
             Info = le_info(Prep),
             AbstractCode = abstract(Info, Flat, NElements),
             case Format of
@@ -297,7 +286,7 @@ keysort(KeyPos, QH, Options) ->
                                       order = Order, opts = listify(Options), 
                                       tmpdir = TmpDir}};
         _ ->
-            erlang:fault(badarg, [KeyPos, QH, Options])
+            erlang:error(badarg, [KeyPos, QH, Options])
     end.
 
 -define(DEFAULT_NUM_OF_ANSWERS, 10).
@@ -307,21 +296,22 @@ next_answers(C) ->
 
 next_answers(#qlc_cursor{c = {_, Owner}}=C, 
              NumOfAnswers) when Owner =/= self() ->
-    erlang:fault(not_cursor_owner, [C, NumOfAnswers]);
+    erlang:error(not_cursor_owner, [C, NumOfAnswers]);
 next_answers(#qlc_cursor{c = {Pid, _}}=C, NumOfAnswers) ->
     N = case NumOfAnswers of
             all_remaining -> -1;
             _ when is_integer(NumOfAnswers), NumOfAnswers > 0 -> NumOfAnswers;
-            _ -> erlang:fault(badarg, [C, NumOfAnswers])
+            _ -> erlang:error(badarg, [C, NumOfAnswers])
         end,
     next_loop(Pid, [], N);
 next_answers(T1, T2) ->
-    erlang:fault(badarg, [T1, T2]).
+    erlang:error(badarg, [T1, T2]).
 
 parse_transform(Forms, Options) ->
     qlc_pt:parse_transform(Forms, Options).
 
-%% The funcspecs qlc:q/1 and qlc:q/2 are known by erl_eval.erl.
+%% The funcspecs qlc:q/1 and qlc:q/2 are known by erl_eval.erl and
+%% erl_lint.erl.
 q(QLC_lc) ->
     q(QLC_lc, []).
 
@@ -331,10 +321,10 @@ q(#qlc_lc{}=QLC_lc, Options) ->
             Opt = #qlc_opt{unique = Unique, cache = Cache, max_lookup = Max},
             #qlc_handle{h = QLC_lc#qlc_lc{opt = Opt}};
         _ ->
-            erlang:fault(badarg, [QLC_lc, Options])
+            erlang:error(badarg, [QLC_lc, Options])
     end;
 q(T1, T2) ->
-    erlang:fault(badarg, [T1, T2]).
+    erlang:error(badarg, [T1, T2]).
 
 sort(QH) ->
     sort(QH, []).
@@ -343,7 +333,7 @@ sort(QH, Options) ->
     case {options(Options, [tmpdir, order, unique, compressed, 
                             size, no_files]), get_handle(QH)} of
         {B1, B2} when B1 =:= badarg; B2 =:= badarg ->
-            erlang:fault(badarg, [QH, Options]);
+            erlang:error(badarg, [QH, Options]);
         {[TD, Order, Unique, Compressed | _], H} ->
             #qlc_handle{h = #qlc_sort{h = H, keypos = sort, unique = Unique, 
                                       compressed = Compressed, order = Order,
@@ -361,7 +351,7 @@ string_to_handle(Str, Options, Bindings) when is_list(Str),
                                               is_list(Bindings) ->
     case options(Options, [unique, cache, max_lookup]) of
         badarg ->
-            erlang:fault(badarg, [Str, Options, Bindings]);
+            erlang:error(badarg, [Str, Options, Bindings]);
         [Unique, Cache, MaxLookup] ->
             case erl_scan:string(Str) of
                 {ok, Tokens, _} ->
@@ -379,7 +369,7 @@ string_to_handle(Str, Options, Bindings) when is_list(Str),
                                     error(Error)
                             end;
                         {ok, _ExprList} ->
-                            erlang:fault(badarg, [Str, Options, Bindings]);
+                            erlang:error(badarg, [Str, Options, Bindings]);
                         {error, ErrorInfo} ->
                             error(ErrorInfo)
                     end;
@@ -388,27 +378,30 @@ string_to_handle(Str, Options, Bindings) when is_list(Str),
             end
     end;
 string_to_handle(T1, T2, T3) ->    
-    erlang:fault(badarg, [T1, T2, T3]).
+    erlang:error(badarg, [T1, T2, T3]).
 
-table(TraverseFun, Options) ->
-    case catch erlang:fun_info(TraverseFun, arity) of
-        {arity, Arity} when Arity =< 1 ->
+table(TraverseFun, Options) when is_function(TraverseFun) ->
+    case {is_function(TraverseFun, 0), 
+          IsFun1 = is_function(TraverseFun, 1)} of
+        {false, false} ->
+            erlang:error(badarg, [TraverseFun, Options]);
+        _ ->
             case options(Options, [pre_fun, post_fun, info_fun, format_fun, 
                                    lookup_fun, parent_fun]) of
                 [PreFun, PostFun, InfoFun, FormatFun, LookupFun, ParentFun] ->
                     T = #qlc_table{trav_fun = TraverseFun, pre_fun = PreFun,
                                    post_fun = PostFun, info_fun = InfoFun, 
                                    parent_fun = ParentFun,
-                                   trav_MS = Arity =:= 1,
+                                   trav_MS = IsFun1,
                                    format_fun = FormatFun, 
                                    lookup_fun = LookupFun},
                     #qlc_handle{h = T};
                 badarg ->
-                    erlang:fault(badarg, [TraverseFun, Options])
-            end;
-        _ ->
-            erlang:fault(badarg, [TraverseFun, Options])
-    end.
+                    erlang:error(badarg, [TraverseFun, Options])
+            end
+    end;
+table(T1, T2) ->
+    erlang:error(badarg, [T1, T2]).
 
 transform_from_evaluator(LC, Bs0) ->
     qlc_pt:transform_from_evaluator(LC, Bs0).
@@ -437,45 +430,28 @@ options(Options0, [Key | Keys], L) when is_list(Options0) ->
                                              Tag =:= post_fun;
                                              Tag =:= pre_fun ->
                 {ok, U};
-            {value, {Tag, Fun}} when Tag =:= info_fun; Tag =:= pre_fun ->
-                case catch erlang:fun_info(Fun, arity) of
-                    {arity, 1} ->
-                        {ok, Fun};
-                    _ ->
-                        badarg
-                end;
-            {value, {post_fun, Fun}}  ->
-                case catch erlang:fun_info(Fun, arity) of
-                    {arity, 0} ->
-                        {ok, Fun};
-                    _ ->
-                        badarg
-                end;
-            {value, {lookup_fun, Fun}}  ->
-                case catch erlang:fun_info(Fun, arity) of
-                    {arity, 2} ->
-                        {ok, Fun};
-                    _ ->
-                        badarg
-                end;
+            {value, {info_fun, Fun}} when is_function(Fun), 
+                                          is_function(Fun, 1) ->
+                {ok, Fun};
+            {value, {pre_fun, Fun}} when is_function(Fun),
+                                         is_function(Fun, 1) ->
+                {ok, Fun};
+            {value, {post_fun, Fun}} when is_function(Fun), 
+                                          is_function(Fun, 0) ->
+                {ok, Fun};
+            {value, {lookup_fun, Fun}} when is_function(Fun),
+                                            is_function(Fun, 2) ->
+                {ok, Fun};
             {value, {max_lookup, Max}} when is_integer(Max), Max >= 0 ->
                 {ok, Max};
             {value, {max_lookup, infinity}} ->
                 {ok, -1};
-            {value, {format_fun, Fun}} ->
-                case catch erlang:fun_info(Fun, arity) of
-                    {arity, 1} ->
-                        {ok, Fun};
-                    _ ->
-                        badarg
-                end;
-            {value, {parent_fun, Fun}}  ->
-                case catch erlang:fun_info(Fun, arity) of
-                    {arity, 0} ->
-                        {ok, Fun};
-                    _ ->
-                        badarg
-                end;
+            {value, {format_fun, Fun}} when is_function(Fun),
+                                            is_function(Fun, 1) ->
+                {ok, Fun};
+            {value, {parent_fun, Fun}} when is_function(Fun),
+                                            is_function(Fun, 0) ->
+                {ok, Fun};
             {value, {unique, Unique}} when Unique =:= true; 
                                            Unique =:= false ->
                 {ok, Unique};
@@ -505,7 +481,8 @@ options(Options0, [Key | Keys], L) when is_list(Options0) ->
             {value, {n_elements, NElements}} when NElements =:= infinity; 
                                           integer(NElements), NElements > 0 ->
                 {ok, NElements};
-            {value, {order, Order}} when is_function(Order);
+            {value, {order, Order}} when is_function(Order), 
+                                           is_function(Order);
                                          (Order =:= ascending);
                                          (Order =:= descending) ->
                 {ok, Order};
@@ -644,56 +621,64 @@ cursor_process(H, GUnique, GCache, SpawnOptions) ->
     Setup = #setup{parent = Parent},
     CF = fun() -> 
                  process_flag(trap_exit, true),
-                 case prepare_qlc(H, not_a_list, GUnique, GCache, no_exit) of
-                     #prepared{} = Prep ->
-                         case setup_qlc(Prep, no_exit, Setup) of
-                             {Objs, Post} when is_function(Objs); 
-                                               is_list(Objs) ->
-                                 Parent ! {self(), ok},
-                                 wait_for_request(Parent, Post), 
-                                 Ref = make_ref(),
-                                 reply(Parent, Post, Ref, Objs);
-                             ErrorOrExitOrThrown ->
-                                 Parent ! {self(), ErrorOrExitOrThrown}
-                         end;
-                     ErrorOrExitOrThrown ->
-                         Parent ! {self(), ErrorOrExitOrThrown}
-                 end
+                 {Objs, Post} = 
+                     try 
+                         Prep = prepare_qlc(H, not_a_list, GUnique, GCache),
+                         setup_qlc(Prep, Setup)
+                     catch Class:Reason ->
+                           Parent ! {self(), {caught, Class, Reason, 
+                                     erlang:get_stacktrace()}},
+                           exit(normal)
+                     end,
+                 Parent ! {self(), ok},
+                 wait_for_request(Parent, Post), 
+                 reply(Parent, Post, Objs)
          end,
     Pid = spawn_opt(CF, SpawnOptions),
-    parent_fun(Pid, Parent, Setup#setup.ref).
+    parent_fun(Pid, Parent).
 
 %% Expect calls from tables calling the parent_fun and finally an 'ok'.
-parent_fun(Pid, Parent, ParentRef) ->
+parent_fun(Pid, Parent) ->
     receive 
         {Pid, ok} -> Pid;
-        {TPid, {parent_fun, ParentRef, Fun}} ->
-            TPid ! {Parent, (catch {ParentRef, Fun()})},
-            parent_fun(Pid, Parent, ParentRef);
-        {Pid, {throw, Thrown}} -> throw(Thrown);
-        {Pid, {exit, Reason}} -> ?EXIT(Reason);
-        {Pid, Error} -> Error
+        {TPid, {parent_fun, Fun}} ->
+            V = try 
+                    {value, Fun()}
+                catch Class:Reason ->
+                    {parent_fun_caught, Class, Reason, erlang:get_stacktrace()}
+            end,
+            TPid ! {Parent, V},
+            parent_fun(Pid, Parent);
+        {Pid, {caught, throw, Error, [?THROWN_ERROR | _]}} ->
+            Error;
+        {Pid, {caught, Class, Reason, Stacktrace}} ->
+            erlang:raise(Class, Reason, Stacktrace);
+        _Ignored ->
+            parent_fun(Pid, Parent)
     end.
 
-reply(Parent, Post, _Ref, []) ->
+reply(Parent, Post, []) ->
     no_more(Parent, Post);
-reply(Parent, Post, Ref, [Answer | Cont]) ->
+reply(Parent, Post, [Answer | Cont]) ->
     Parent ! {self(), {answer, Answer}},    
     wait_for_request(Parent, Post),
-    reply(Parent, Post, Ref, Cont);
-reply(Parent, Post, Ref, Cont) ->
-    case catch {Ref, Cont()} of
-        {Ref, Reply} ->
-            reply(Parent, Post, Ref, Reply);
-        {'EXIT', Reason} ->
-            table_post(Post),
-            Parent ! {self(), {exit, Reason}},
-            exit(normal);
-        Thrown ->
-            table_post(Post),
-            Parent ! {self(), {throw, Thrown}},
-            exit(normal)
-    end.
+    reply(Parent, Post, Cont);
+reply(Parent, Post, Cont) ->
+    Reply = try 
+                if 
+                    is_function(Cont) ->
+                        Cont();
+                    true ->
+                        throw_error(Cont)
+                end
+            catch 
+                Class:Reason ->
+                   table_post(Post),
+                   Message = {caught, Class, Reason, erlang:get_stacktrace()},
+                   Parent ! {self(), Message},
+                   exit(normal)
+            end,
+    reply(Parent, Post, Reply).
 
 no_more(Parent, Post) ->
     Parent ! {self(), no_more},
@@ -817,15 +802,19 @@ collect([], L) ->
     lists:reverse(L);
 collect([Answer | Cont], L) ->
     collect(Cont, [Answer | L]);
-collect(Cont, L) ->
-    collect(Cont(), L).
+collect(Cont, L) when is_function(Cont) ->
+    collect(Cont(), L);
+collect(Term, _L) ->
+    throw_error(Term).
 
 fold_loop(Fun, [Obj | Cont], Acc) ->
     fold_loop(Fun, Cont, Fun(Obj, Acc));
 fold_loop(_Fun, [], Acc) ->
     Acc;
-fold_loop(Fun, Cont, Acc) ->
-    fold_loop(Fun, Cont(), Acc).
+fold_loop(Fun, Cont, Acc) when is_function(Cont) ->
+    fold_loop(Fun, Cont(), Acc);
+fold_loop(_Fun, Term, _Acc) ->
+    throw_error(Term).
 
 next_loop(Pid, L, N) when N =/= 0 ->
     case monitor_request(Pid, more) of
@@ -833,12 +822,13 @@ next_loop(Pid, L, N) when N =/= 0 ->
             lists:reverse(L);
         {answer, Answer} ->
             next_loop(Pid, [Answer | L], N - 1);
-        {throw, Thrown} ->
-            throw(Thrown);
-        {exit, Reason} ->
-            ?EXIT(Reason);
+        {caught, throw, Error, [?THROWN_ERROR | _]} ->
+            Error;
+        {caught, Class, Reason, Stacktrace} ->
+            _ = (catch erlang:error(foo)),
+            erlang:raise(Class, Reason, Stacktrace ++ erlang:get_stacktrace());
         error ->
-            erlang:fault({qlc_cursor_pid_no_longer_exists, Pid})
+            erlang:error({qlc_cursor_pid_no_longer_exists, Pid})
     end;
 next_loop(_Pid, L, _N) ->
     lists:reverse(L).
@@ -877,11 +867,6 @@ monitor_request(Pid, Req) ->
                 {'DOWN', Ref, process, Pid, _Reason} -> Reply
             after 0 -> Reply end
     end.
-
-looks_like_Where([{M,F,_A} | L]) when is_atom(M), is_atom(F) ->
-    looks_like_Where(L);
-looks_like_Where(T) ->
-    T =:= [].
 
 -define(TEMPLATE_STATE, 1).
 
@@ -968,24 +953,15 @@ opt_info(#optz{unique = Unique, cache = Cache}) ->
         false -> [{cache, Cache} | L1]
     end.
 
-prepare_qlc(H, InitialValue, GUnique, GCache, ActionOnError) ->
+prepare_qlc(H, InitialValue, GUnique, GCache) ->
     GOpt = #qlc_opt{unique = GUnique, cache = GCache},
-    case catch prep_le(H, GOpt) of
-        {exit, Reason} when ActionOnError =:= exit ->
-            exit(Reason);
-        {throw, Thrown} when ActionOnError =:= exit ->
-            throw(Thrown);
-        #prepared{} = Prep0 ->
-            case opt_le(Prep0, 1) of
-                #prepared{qh = #qlc{} = QLC}=Prep ->
-                    Prep#prepared{qh = QLC#qlc{init_value = InitialValue}};
-                #prepared{qh = #simple_qlc{}=SimpleQLC}=Prep ->
-                    Prep#prepared{qh = SimpleQLC#simple_qlc{init_value = InitialValue}};
-                Prep ->
-                    Prep
-            end;
-        Reply ->
-            Reply
+    case opt_le(prep_le(H, GOpt), 1) of
+        #prepared{qh = #qlc{} = QLC}=Prep ->
+            Prep#prepared{qh = QLC#qlc{init_value = InitialValue}};
+        #prepared{qh = #simple_qlc{}=SimpleQLC}=Prep ->
+            Prep#prepared{qh = SimpleQLC#simple_qlc{init_value = InitialValue}};
+        Prep ->
+            Prep
     end.
 
 %%% The options given to append, q and table (unique and cache) as well
@@ -1000,7 +976,7 @@ prep_le(#qlc_lc{lc = LC_fun, opt = Opt0}, GOpt) ->
                        cache = Opt0#qlc_opt.cache or GOpt#qlc_opt.cache},
     prep_qlc_lc(LC_fun(), Opt, GOpt);
 prep_le(#qlc_table{info_fun = IF}=T, GOpt) ->
-    case call(IF, num_of_objects, -1) of
+    case call(IF, num_of_objects, -1, []) of
         0 -> 
             short_list([]);
         _ -> 
@@ -1039,15 +1015,19 @@ prep_le([_, _ | _]=L, GOpt) ->
 prep_le(L, _GOpt) when is_list(L) ->
     short_list(L);
 prep_le(T, _GOpt) ->
-    test_reply(foo, catch {foo, erlang:fault(badarg, [T])}, #post{}).
+    erlang:error(badarg, [T]).
 
 eval_le(LE_fun, GOpt) ->
-    Ref = make_ref(),
-    case get_handle(test_reply(Ref, catch {Ref, LE_fun()}, [])) of
-        badarg -> 
-            test_reply(Ref, catch {Ref, erlang:fault(badarg, [LE_fun])}, []);
-        H -> 
-            prep_le(H, GOpt)
+    case LE_fun() of
+        {error, ?MODULE, _} = Error ->
+            throw_error(Error);
+        R -> 
+            case get_handle(R) of
+                badarg ->
+                    erlang:error(badarg, [R]);
+                H -> 
+                    prep_le(H, GOpt)
+            end
     end.
 
 prep_qlc_lc({simple_v1, PVar, LE_fun, L}, Opt, GOpt) ->
@@ -1121,10 +1101,11 @@ short_list(L) ->
     
 find_const_positions(#qlc_table{info_fun = IF, lookup_fun = LU_fun}, 
                      PosFun, #qlc_opt{max_lookup = Max}) 
-           when is_function(LU_fun), is_function(PosFun),is_function(IF) ->
-    case IF(keypos) of
+           when is_function(LU_fun), is_function(PosFun), is_function(IF) ->
+    case call(IF, keypos, undefined, [])  of
         undefined ->
-            find_const_position_idx(IF(indices), PosFun, Max, []);
+            Indices = call(IF, indices, undefined, []),
+            find_const_position_idx(Indices, PosFun, Max, []);
         KeyPos ->
             case pos_vals(KeyPos, PosFun(KeyPos), Max) of
                 false ->
@@ -1202,15 +1183,8 @@ opt_le(#prepared{qh = #qlc_sort{h = H}=Sort}=Prep, GenNum) ->
 opt_le(Prep, _GenNum) ->
     Prep.
 
-setup_qlc(Prep, ActionOnError, Setup) ->
-    case catch setup_le(Prep, #post{}, Setup) of
-        {exit, Reason} when ActionOnError =:= exit ->
-            exit(Reason);
-        {throw, Thrown} when ActionOnError =:= exit ->
-            throw(Thrown);
-        Reply ->
-            Reply
-    end.
+setup_qlc(Prep, Setup) ->
+    setup_le(Prep, #post{}, Setup).
 
 setup_le(#prepared{qh = #simple_qlc{le = LE, opt = Opt}}, Post0, Setup) ->
     {Objs, Post} = setup_le(LE, Post0, Setup),
@@ -1248,9 +1222,12 @@ setup_le(#prepared{qh = #qlc_sort{h = Prep, keypos = Kp,
                         end,
                     {F, Post#post{other = [P | Post#post.other]}};
                 {terms, BTerms} ->
-                    Ref = make_ref(),
-                    R = (catch {Ref, lists:map(fun binary_to_term/1, BTerms)}),
-                    {test_reply(Ref, R, Post), Post}
+                    try 
+                        {lists:map(fun binary_to_term/1, BTerms), Post}
+                    catch Class:Reason ->
+                        table_post(Post),
+                        erlang:raise(Class, Reason, erlang:get_stacktrace())
+                    end
             end
     end;
 setup_le(#prepared{qh = #qlc_list{l = L, ms = MS}}, Post, _Setup) 
@@ -1302,22 +1279,29 @@ table_handle(#qlc_table{trav_fun = TraverseFun, trav_MS = TravMS,
                         pre_fun = PreFun, lookup_fun = LuF, 
                         parent_fun = ParentFun, lu_vals = LuVals, ms = MS}, 
              Post, Setup) ->
-    Ref = make_ref(),
-    #setup{parent = Parent, ref = ParentRef} = Setup,
+    #setup{parent = Parent} = Setup,
     ParentValue = 
         if 
             ParentFun =:= undefined ->
                 undefined;
             Parent =:= self() ->
-                test_reply(Ref, catch {Ref, ParentFun()}, Post);
+                try
+                    ParentFun() 
+                catch Class:Reason ->
+                    table_post(Post),
+                    erlang:raise(Class, Reason, erlang:get_stacktrace())
+                end;
             true ->
-                M = {parent_fun, ParentRef, ParentFun},
-                case monitor_request(Parent, M) of
+                case monitor_request(Parent, {parent_fun, ParentFun}) of
                     error -> % parent has died
                         table_post(Post),
                         exit(normal);
-                    Reply ->
-                        test_reply(ParentRef, Reply, Post)
+                    {value, Value} ->
+                        Value;
+                    {parent_fun_caught, Class, Reason, Stacktrace} ->
+                        %% No use augmenting Stacktrace here.
+                        table_post(Post),
+                        erlang:raise(Class, Reason, Stacktrace)
                 end
         end,
     StopFun = 
@@ -1329,8 +1313,7 @@ table_handle(#qlc_table{trav_fun = TraverseFun, trav_MS = TravMS,
                 fun() -> delete_cursor(Cursor) end
         end,
     PreFunArgs = [{parent_value, ParentValue}, {stop_fun, StopFun}],
-    %% The functions in Post are normally called from table_post().
-    _ = test_reply(Ref, catch {Ref, call(PreFun, PreFunArgs, ok)}, Post),
+    _ = call(PreFun, PreFunArgs, ok, Post),
     case LuVals of
         {Pos, Vals} when MS =:= no_match_spec ->
             fun() -> LuF(Pos, Vals) end;
@@ -1339,9 +1322,11 @@ table_handle(#qlc_table{trav_fun = TraverseFun, trav_MS = TravMS,
                     case LuF(Pos, Vals) of
                         [] -> 
                             [];
-                        Objs -> 
+                        Objs when is_list(Objs) -> 
                             ets:match_spec_run(Objs, 
-                                               ets:match_spec_compile(MS))
+                                               ets:match_spec_compile(MS));
+                        Error ->
+                            Error
                     end
             end;
         _ when not TravMS ->
@@ -1370,13 +1355,13 @@ open_file(FileName, Compressed, Post) ->
     end.
 
 file_loop(<<Size:4/unit:8, B:Size/binary, Bin/binary>>, Fd_FileName, Ts) ->
-    case catch binary_to_term(B) of
-        {'EXIT', _} ->
-            {_Fd, FileName} = Fd_FileName,
-            throw_error({bad_object, FileName});
-        Term -> 
-            file_loop(Bin, Fd_FileName, [Term | Ts])
-    end;
+    Term = try
+               binary_to_term(B)
+           catch _:_ ->
+               {_Fd, FileName} = Fd_FileName,
+               throw_reason({bad_object, FileName})
+           end,
+    file_loop(Bin, Fd_FileName, [Term | Ts]);
 file_loop(<<Size:4/unit:8, B/binary>>=Bin, Fd_FileName, []) ->
     file_loop_read(Bin, Size - size(B) + 4, Fd_FileName);
 file_loop(<<Size:4/unit:8, _/binary>>=Bin, Fd_FileName, Ts) ->
@@ -1408,7 +1393,7 @@ file_loop_read(B, BytesToRead, {Fd, FileName}=Fd_FileName) ->
         eof when size(B) =:= 0 ->
             [];
         eof ->
-            throw_error({bad_object, FileName});
+            throw_reason({bad_object, FileName});
         Error ->
             file_error(FileName, Error)
     end.
@@ -1422,7 +1407,7 @@ sort_cursor_input(H, NoObjects) ->
                     
 sort_cursor_list_output(TmpDir, Z) ->
     fun(close) ->
-            {terms, []}; % cannot happen
+            {terms, []};
        ({value, NoObjects}) ->
             fun(BTerms) when length(BTerms) =:= NoObjects ->
                     {terms, BTerms};
@@ -1476,8 +1461,10 @@ sort_cursor_input_read([], NoObjects) ->
     {end_of_input, NoObjects};
 sort_cursor_input_read([Object | Cont], NoObjects) ->
     {[term_to_binary(Object)], sort_cursor_input(Cont, NoObjects + 1)};
-sort_cursor_input_read(F, NoObjects) ->
-    sort_cursor_input_read(F(), NoObjects).
+sort_cursor_input_read(F, NoObjects) when is_function(F) ->
+    sort_cursor_input_read(F(), NoObjects);
+sort_cursor_input_read(Term, _NoObjects) ->
+    throw_error(Term).
 
 unique_cache(L, Post, Opt) when is_list(L) ->
     true = Opt#optz.unique, %% assertion
@@ -1556,20 +1543,21 @@ sort_list_output(L) ->
             sort_list_output([Terms | L])
     end.
 
-do_sort(In, Out, sort, SortOptions, Post) ->
-    Ref = make_ref(),
-    fs_reply(Ref, catch {Ref, file_sorter:sort(In, Out, SortOptions)}, Post);
-do_sort(In, Out, {keysort, KeyPos}, SortOptions, Post) ->
-    Ref = make_ref(),
-    fs_reply(Ref, 
-             catch {Ref, file_sorter:keysort(KeyPos, In, Out, SortOptions)}, 
-             Post).
+do_sort(In, Out, Sort, SortOptions, Post) ->
+    try
+        case do_sort(In, Out, Sort, SortOptions) of
+            {error, Reason} -> throw_reason(Reason);
+            Reply -> Reply
+        end
+    catch Class:Term ->
+        table_post(Post),
+        erlang:raise(Class, Term, erlang:get_stacktrace())
+    end.
 
-fs_reply(Ref, {Ref, {error, Reason}}, Post) ->
-    table_post(Post),
-    throw_error(Reason);
-fs_reply(Ref, Reply, Post) ->
-    test_reply(Ref, Reply, Post).
+do_sort(In, Out, sort, SortOptions) ->
+    file_sorter:sort(In, Out, SortOptions);
+do_sort(In, Out, {keysort, KeyPos}, SortOptions) ->
+    file_sorter:keysort(KeyPos, In, Out, SortOptions).
 
 del_table(Ets) ->
     fun() -> true = ets:delete(Ets) end.
@@ -1588,8 +1576,10 @@ append_loop([], Hs) ->
     append_loop(Hs);
 append_loop([Object | Cont], Hs) ->    
     [Object | fun() -> append_loop(Cont, Hs) end];
-append_loop(F, Hs) ->
-    append_loop(F(), Hs).
+append_loop(F, Hs) when is_function(F) ->
+    append_loop(F(), Hs);
+append_loop(Term, _Hs) ->
+    throw_error(Term).
 
 no_dups([]=Cont, UTab) ->
     true = ets:delete_all_objects(UTab),
@@ -1602,8 +1592,10 @@ no_dups([Object | Cont], UTab) ->
         true ->
             no_dups(Cont, UTab)
     end;
-no_dups(F, UTab) ->
-    no_dups(F(), UTab).
+no_dups(F, UTab) when is_function(F) ->
+    no_dups(F(), UTab);
+no_dups(Term, _UTab) ->
+    throw_error(Term).
 
 %% When all objects have been returned from a cached QLC expression,
 %% the generators of the expression will never be called again, and so
@@ -1624,8 +1616,10 @@ cache([]=Cont, _MTab, _SeqNo, PostL) ->
 cache([Object | Cont], MTab, SeqNo, PostL) ->
     true = ets:insert(MTab, {SeqNo, Object}),
     [Object | fun() -> cache(Cont, MTab, SeqNo + 1, PostL) end];
-cache(F, MTab, SeqNo, PostL) ->
-    cache(F(), MTab, SeqNo, PostL).
+cache(F, MTab, SeqNo, PostL) when is_function(F) ->
+    cache(F(), MTab, SeqNo, PostL);
+cache(Term, _MTab, _SeqNo, _PostL) ->
+    throw_error(Term).
 
 cache_recall(MTab, SeqNo) ->
     case ets:lookup(MTab, SeqNo) of
@@ -1659,8 +1653,10 @@ ucache([Object | Cont], UTab, MTab, SeqNo, PostL) ->
                 false -> ucache3(Object, Cont, Hash, UTab, MTab, SeqNo, PostL)
             end
     end;
-ucache(F, UTab, MTab, SeqNo, PostL) ->
-    ucache(F(), UTab, MTab, SeqNo, PostL).
+ucache(F, UTab, MTab, SeqNo, PostL) when is_function(F) ->
+    ucache(F(), UTab, MTab, SeqNo, PostL);
+ucache(Term, _UTab, _MTab, _SeqNo, _PostL) ->
+    throw_error(Term).
 
 ucache3(Object, Cont, Hash, UTab, MTab, SeqNo, PostL) ->
     true = ets:insert(UTab, {Hash, SeqNo, Object}),
@@ -1682,15 +1678,6 @@ ucache_recall(UTab, MTab, SeqNo) ->
             [Object | fun() -> ucache_recall(UTab, MTab, SeqNo + 1) end]
     end.
 
-test_reply(Ref, {Ref, Reply}, _Post) ->
-    Reply;
-test_reply(_Ref, {'EXIT', Reason}, Post) ->
-    table_post(Post),
-    throw({exit, Reason});
-test_reply(_Ref, Thrown, Post) ->
-    table_post(Post),
-    throw({throw, Thrown}).
-
 %% The pre fun has been called from table_handle().
 table_post(#post{local = Local, other = Other}) ->
     table_post(Local),
@@ -1699,10 +1686,15 @@ table_post(L) ->
     lists:foreach(fun(undefined) -> ok;
                      (F) -> catch (F)() end, L).
 
-call(undefined, _Arg, Default) ->
+call(undefined, _Arg, Default, _Post) ->
     Default;
-call(Fun, Arg, _Default) ->
-    Fun(Arg).
+call(Fun, Arg, _Default, Post) ->
+    try
+        Fun(Arg) 
+    catch Class:Reason ->
+        table_post(Post),
+        erlang:raise(Class, Reason, erlang:get_stacktrace())
+    end.
 
 grd(undefined, _Arg) ->
     false;
@@ -1715,10 +1707,13 @@ grd(Fun, Arg) ->
     end.
 
 file_error(File, {error, Reason}) ->
-    throw_error({file_error, File, Reason}).
+    throw_reason({file_error, File, Reason}).
 
-throw_error(Reason) ->
-    throw(error(Reason)).
+throw_reason(Reason) ->
+    throw_error(error(Reason)).
+
+throw_error(Error) ->
+    throw(Error).
 
 error(Reason) ->
     {error, ?MODULE, Reason}.

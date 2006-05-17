@@ -113,7 +113,13 @@ expand_opt(report, Os) ->
 expand_opt(return, Os) ->
     [return_errors,return_warnings|Os];
 expand_opt(r7, Os) ->
-    [no_float_opt,no_new_funs,no_new_binaries,no_new_apply|Os];
+    [no_float_opt,no_new_funs,no_new_binaries,no_new_apply,no_gc_bifs|Os];
+expand_opt(r8, Os) ->
+    [no_float_opt,no_new_binaries,no_new_apply,no_gc_bifs|Os];
+expand_opt(r9, Os) ->
+    [no_float_opt,no_new_binaries,no_new_apply,no_gc_bifs|Os];
+expand_opt(r10, Os) ->
+    [no_new_binaries,no_gc_bifs|Os];
 expand_opt({debug_info_key,_}=O, Os) ->
     [encrypt_debug_info,O|Os];
 expand_opt(O, Os) -> [O|Os].
@@ -262,8 +268,9 @@ run_tc({Name,Fun}, St) ->
 	      [Name,(After_c-Before_c) / 1000,Mem,Sz]),
     Val.
 
-comp_ret_ok(#compile{code=Code,warnings=Warn,module=Mod,options=Opts}=St) ->
-    report_warnings(St),
+comp_ret_ok(#compile{code=Code,warnings=Warn0,module=Mod,options=Opts}=St) ->
+    Warn = messages_per_file(Warn0),
+    report_warnings(St#compile{warnings = Warn}),
     Ret1 = case member(binary, Opts) andalso not member(no_code_generation, Opts) of
 	       true -> [Code];
 	       false -> []
@@ -274,13 +281,29 @@ comp_ret_ok(#compile{code=Code,warnings=Warn,module=Mod,options=Opts}=St) ->
 	   end,
     list_to_tuple([ok,Mod|Ret2]).
 
-comp_ret_err(St) ->
-    report_errors(St),
-    report_warnings(St),
+comp_ret_err(#compile{warnings=Warn0,errors=Err0}=St) ->
+    Warn = messages_per_file(Warn0),
+    Err = messages_per_file(Err0),
+    report_errors(St#compile{errors=Err}),
+    report_warnings(St#compile{warnings=Warn}),
     case member(return_errors, St#compile.options) of
-	true -> {error,St#compile.errors,St#compile.warnings};
+	true -> {error,Err,Warn};
 	false -> error
     end.
+
+%% messages_per_file([{File,[Message]}]) -> [{File,[Message]}]
+messages_per_file(Ms) ->
+    T = lists:sort([{File,M} || {File,Messages} <- Ms, M <- Messages]),
+    PMs = [epp, erl_parse],
+    {Prio, Rest} = lists:partition(fun({_,{_,M,_}}) -> 
+                                           member(M, PMs);
+                                      (_) -> false
+                                   end, T),
+    mpf(Prio) ++ mpf(Rest).
+
+mpf(Ms) ->
+    [{File,[M || {F,M} <- Ms, F =:= File]} || 
+        File <- lists:usort([F || {F,_} <- Ms])].
 
 %% passes(form|file, [Option]) -> [{Name,PassFun}]
 %%  Figure out which passes that need to be run.
@@ -433,8 +456,10 @@ core_passes() ->
     %% Optimization and transforms of Core Erlang code.
     [{unless,no_copt,
       [{core_old_inliner,fun test_old_inliner/1,fun core_old_inliner/1},
+       {iff,doldinline,{listing,"oldinline"}},
        ?pass(core_fold_module),
        {core_inline_module,fun test_core_inliner/1,fun core_inline_module/1},
+       {iff,dinline,{listing,"inline"}},
        {core_fold_after_inline,fun test_core_inliner/1,fun core_fold_module/1},
        ?pass(core_transforms)]},
      {iff,dcopt,{listing,"copt"}},
@@ -588,10 +613,7 @@ parse_module(St) ->
     Opts = St#compile.options,
     Cwd = ".",
     IncludePath = [Cwd, St#compile.dir|inc_paths(Opts)],
-    Tab = ets:new(compiler__tab, [protected,named_table]),
-    ets:insert(Tab, {compiler_options,Opts}),
     R =  epp:parse_file(St#compile.ifile, IncludePath, pre_defs(Opts)),
-    ets:delete(Tab),
     case R of
 	{ok,Forms} ->
 	    {ok,St#compile{code=Forms}};
@@ -730,13 +752,13 @@ expand_module(#compile{code=Code,options=Opts0}=St0) ->
     Opts = filter_opts(Opts2),
     {ok,St0#compile{module=Mod,options=Opts,code={Mod,Exp,Forms}}}.
 
-core_module(#compile{code=Code0,options=Opts,ifile=File}=St) ->
+core_module(#compile{code=Code0,options=Opts}=St) ->
     {ok,Code,Ws} = v3_core:module(Code0, Opts),
-    {ok,St#compile{code=Code,warnings=St#compile.warnings ++ [{File,Ws}]}}.
+    {ok,St#compile{code=Code,warnings=St#compile.warnings ++ Ws}}.
 
-core_fold_module(#compile{code=Code0,options=Opts,ifile=File}=St) ->
+core_fold_module(#compile{code=Code0,options=Opts}=St) ->
     {ok,Code,Ws} = sys_core_fold:module(Code0, Opts),
-    {ok,St#compile{code=Code,warnings=St#compile.warnings ++ [{File,Ws}]}}.
+    {ok,St#compile{code=Code,warnings=St#compile.warnings ++ Ws}}.
 
 test_old_inliner(#compile{options=Opts}) ->
     %% The point of this test is to avoid loading the old inliner
@@ -778,9 +800,9 @@ core_dsetel_module(#compile{code=Code0,options=Opts}=St) ->
     {ok,Code} = sys_core_dsetel:module(Code0, Opts),
     {ok,St#compile{code=Code}}.
 
-kernel_module(#compile{code=Code0,options=Opts,ifile=File}=St) ->
+kernel_module(#compile{code=Code0,options=Opts}=St) ->
     {ok,Code,Ws} = v3_kernel:module(Code0, Opts),
-    {ok,St#compile{code=Code,warnings=St#compile.warnings ++ [{File,Ws}]}}.
+    {ok,St#compile{code=Code,warnings=St#compile.warnings ++ Ws}}.
 
 save_abstract_code(#compile{ifile=File}=St) ->
     case abstract_code(St) of

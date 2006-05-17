@@ -33,7 +33,18 @@
 #define ATOM_LIMIT (1024*1024)
 #define ATOM_RATE  100
 
-IndexTable atom_table;    /* The index table */
+static IndexTable atom_table;    /* The index table */
+
+#include "erl_smp.h"
+
+static erts_smp_rwmtx_t atom_table_lock;
+
+#define atom_read_lock()	erts_smp_rwmtx_rlock(&atom_table_lock)
+#define atom_read_unlock()	erts_smp_rwmtx_runlock(&atom_table_lock)
+#define atom_write_lock()	erts_smp_rwmtx_rwlock(&atom_table_lock)
+#define atom_write_unlock()	erts_smp_rwmtx_rwunlock(&atom_table_lock)
+#define atom_init_lock()	erts_smp_rwmtx_init(&atom_table_lock, \
+						    "atom_tab")
 
 /* Functions for allocating space for the ext of atoms. We do not
  * use malloc for each atom to prevent excessive memory fragmentation
@@ -41,22 +52,26 @@ IndexTable atom_table;    /* The index table */
 
 typedef struct _atom_text {
     struct _atom_text* next;
-    char text[ATOM_TEXT_SIZE];
+    unsigned char text[ATOM_TEXT_SIZE];
 } AtomText;
 
 static AtomText* text_list;	/* List of text buffers */
 static byte *atom_text_pos;
 static byte *atom_text_end;
-Uint reserved_atom_space;	/* Total amount of atom text space */
-Uint atom_space;		/* Amount of atom text space used */
+static Uint reserved_atom_space;	/* Total amount of atom text space */
+static Uint atom_space;		/* Amount of atom text space used */
 
 /*
  * Print info about atom tables
  */
-void atom_info(to)
-CIO to;
+void atom_info(int to, void *to_arg)
 {
-    index_info(to, &atom_table);
+    int lock = !ERTS_IS_CRASH_DUMPING;
+    if (lock)
+	atom_read_lock();
+    index_info(to, to_arg, &atom_table);
+    if (lock)
+	atom_read_unlock();
 }
 
 /*
@@ -76,8 +91,7 @@ more_atom_space(void)
     atom_text_end = atom_text_pos + ATOM_TEXT_SIZE;
     reserved_atom_space += sizeof(AtomText);
 
-    VERBOSE_MESSAGE((VERBOSE_CHATTY,"Allocated %d atom space\n",
-		     ATOM_TEXT_SIZE));
+    VERBOSE(DEBUG_SYSTEM,("Allocated %d atom space\n",ATOM_TEXT_SIZE));
 }
 
 /*
@@ -173,13 +187,55 @@ atom_free(Atom* obj)
 }
 
 Eterm
-am_atom_put(byte* name, int len)
+am_atom_put(const char* name, int len)
 {
     Atom a;
+    Eterm ret;
 
     a.len = len;
-    a.name = name;
-    return make_atom(index_put(&atom_table, (void*) &a));
+    a.name = (byte*)name;
+    atom_write_lock();
+    ret = make_atom(index_put(&atom_table, (void*) &a));
+    atom_write_unlock();
+    return ret;
+}
+
+Atom *atom_tab(int i)
+{
+    Atom *ret;
+    int lock = !ERTS_IS_CRASH_DUMPING;
+    if (lock)
+	atom_read_lock();
+    ret = (Atom*) atom_table.table[i];
+    if (lock)
+	atom_read_unlock();
+    return ret;
+}
+
+int atom_table_size(void)
+{
+    int ret;
+    int lock = !ERTS_IS_CRASH_DUMPING;
+    /* XXX: taking a lock for this is excessive,
+       change .sz field to be an atomic_t */
+    if (lock)
+	atom_read_lock();
+    ret = atom_table.sz;
+    if (lock)
+	atom_read_unlock();
+    return ret;
+}
+
+int atom_table_sz(void)
+{
+    int ret;
+    int lock = !ERTS_IS_CRASH_DUMPING;
+    if (lock)
+	atom_read_lock();
+    ret = index_table_sz(&atom_table);
+    if (lock)
+	atom_read_unlock();
+    return ret;
 }
 
 int
@@ -187,16 +243,29 @@ erts_atom_get(byte* name, int len, Eterm* ap)
 {
     Atom a;
     int i;
+    int res;
 
     a.len = len;
     a.name = name;
+    atom_read_lock();
     i = index_get(&atom_table, (void*) &a);
-    if (i < 0) {
-	return 0;
-    } else {
-	*ap = make_atom(i);
-	return 1;
-    }
+    res = i < 0 ? 0 : (*ap = make_atom(i), 1);
+    atom_read_unlock();
+    return res;
+}
+
+void
+erts_atom_get_text_space_sizes(Uint *reserved, Uint *used)
+{
+    int lock = !ERTS_IS_CRASH_DUMPING;
+    if (lock)
+	atom_read_lock();
+    if (reserved)
+	*reserved = reserved_atom_space;
+    if (used)
+	*used = atom_space;
+    if (lock)
+	atom_read_unlock();
 }
 
 void
@@ -206,6 +275,7 @@ init_atom_table(void)
     int i;
     Atom a;
 
+    atom_init_lock();
     f.hash = (H_FUN) atom_hash;
     f.cmp  = (HCMP_FUN) atom_cmp;
     f.alloc = (HALLOC_FUN) atom_alloc;
@@ -225,27 +295,24 @@ init_atom_table(void)
     for (i = 0; erl_atom_names[i] != 0; i++) {
 	int ix;
 	a.len = strlen(erl_atom_names[i]);
-	a.name = erl_atom_names[i];
+	a.name = (byte*)erl_atom_names[i];
 	a.slot.index = i;
 	ix = index_put(&atom_table, (void*) &a);
 	atom_text_pos -= a.len;
 	atom_space -= a.len;
-	atom_tab(ix)->name = erl_atom_names[i];
+	atom_tab(ix)->name = (byte*)erl_atom_names[i];
     }
 }
 
 void
-dump_atoms(CIO fd)
+dump_atoms(int to, void *to_arg)
 {
     int i = atom_table.size;
 
     /*
      * Print out the atom table starting from the end.
      */
-    while (--i >= 0) {
-	if (atom_table.table[i] != NULL) {
-	    print_atom(i, fd);
-	    erl_putc('\n', fd);
-	}
-    }
+    while (--i >= 0)
+	if (atom_table.table[i])
+	    erts_print(to, to_arg, "%T\n", make_atom(i));
 }

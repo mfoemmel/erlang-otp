@@ -40,7 +40,11 @@
 
 -export([list_to_integer/2,integer_to_list/2]).
 
+-export([demonitor/2]).
+
 -deprecated([{old_binary_to_term,1},{info,1},{hash,2}]).
+
+-compile(nowarn_bif_clash).
 
 apply(Fun, Args) ->
     apply(Fun, Args).
@@ -462,3 +466,26 @@ list_to_integer([], _, I) ->
     I;
 list_to_integer(_, _, _) ->
     badarg.
+
+demonitor(MRef, Opts) ->
+    Flush = case catch get_demonitor_opts(Opts, false) of
+		Bool when Bool == true; Bool == false -> Bool;
+		_ -> erlang:error(badarg, [MRef, Opts])
+	    end,
+    Res = case catch erlang:demonitor(MRef) of
+	      {'EXIT', {Error, _}} -> erlang:error(Error, [MRef, Opts]);
+	      R -> R
+	  end,
+    case Flush of
+	true -> receive {'DOWN', MRef, _, _, _} -> ok after 0 -> ok end;
+	_ -> ok
+    end,
+    Res.
+
+%% Currently 'flush' is the only valid option...
+get_demonitor_opts([], Flush) ->
+    Flush;
+get_demonitor_opts([flush|Opts], _Flush) ->
+    get_demonitor_opts(Opts, true).
+
+

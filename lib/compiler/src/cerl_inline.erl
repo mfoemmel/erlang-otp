@@ -2668,8 +2668,6 @@ st__new_opnd_loc(S) ->
 %% resulting counter value would exceed the limit for the counter in
 %% question (`Type' and `Data' are given by the user).
 
--record(counter, {active, value, limit}).
-
 counter__new_passive(Limit) when Limit > 0 ->
     {0, Limit}.
 

@@ -402,7 +402,7 @@ keydelete3(Key, N, [H|T]) ->
     [H|keydelete3(Key, N, T)];
 keydelete3(_, _, []) -> [].
 
-keyreplace(K,N,L,New) when is_integer(N), N > 0 ->
+keyreplace(K,N,L,New) when is_integer(N), N > 0, is_tuple(New) ->
     keyreplace3(K,N,L,New).
 
 keyreplace3(Key, Pos, [Tup|Tail], New) when element(Pos, Tup) == Key ->
@@ -491,58 +491,58 @@ ukeysort(I, L) when is_integer(I), I > 0 ->
     case L of
 	[] -> L;
 	[_] -> L;
-	[X, Y | T] when X == Y ->
-	    ukeysort_1(I, X, element(I, X), T);
 	[X, Y | T] ->
-	    case {element(I, X), element(I, Y)} of
-		{EX, EY} when EX =< EY ->
-		    case T of
-			[] ->
-			    L;
-			[Z] when Z == Y ->
-			    [X, Y];
-			[Z] ->
-			    case element(I, Z) of
-				EZ when EY =< EZ ->
-				    L;
-				_EZ when X == Z ->
-				    [X, Y];
-				EZ when EX =< EZ ->
-				    [X, Z, Y];
-				_EZ ->
-				    [Z, X, Y]
-			    end;
-			_ ->
-			    lists_sort:ukeysplit_1(I, X, EX, Y, EY, T, [], [])
-		    end;
-		{EX, EY} ->
-		    case T of
-			[] ->
-			    [Y, X];
-			[Z] when Z == X ->
-			    [Y, X];
-			[Z] ->
-			    case element(I, Z) of
-				EZ when EX =< EZ ->
-				    [Y, X, Z];
-				_EZ when Y == Z ->
-				    [Y, X];
-				EZ when EY =< EZ ->
-				    [Y, Z, X];
-				_EZ ->
-				    [Z, Y, X]
-			    end;
-			_ ->
+            case {element(I, X), element(I, Y)} of
+                {EX, EY} when EX == EY ->
+                    ukeysort_1(I, X, EX, T);
+                {EX, EY} when EX < EY ->
+                    case T of
+                        [] ->
+                            L;
+                        [Z] ->
+                            case element(I, Z) of
+                                EZ when EY == EZ ->
+                                    [X, Y];
+                                EZ when EY < EZ ->
+                                    [X, Y, Z];
+                                EZ when EZ == EX ->
+                                    [X, Y];
+                                EZ when EX =< EZ ->
+                                    [X, Z, Y];
+                                _EZ ->
+                                    [Z, X, Y]
+                            end;
+                        _ ->
+                            lists_sort:ukeysplit_1(I, X, EX, Y, EY, T, [], [])
+                    end;
+                {EX, EY} ->
+                    case T of
+                        [] ->
+                            [Y, X];
+                        [Z] ->
+                            case element(I, Z) of
+                                EZ when EX == EZ ->
+                                    [Y, X];
+                                EZ when EX < EZ ->
+                                    [Y, X, Z];
+                                EZ when EY == EZ ->
+                                    [Y, X];
+                                EZ when EY =< EZ ->
+                                    [Y, Z, X];
+                                _EZ ->
+                                    [Z, Y, X]
+                            end;
+                        _ ->
 			    lists_sort:ukeysplit_2(I, Y, EY, T, [X])
-		    end
+                    end
 	    end
     end.
 
-ukeysort_1(I, X, EX, [Y | L]) when X == Y ->
-    ukeysort_1(I, X, EX, L);
 ukeysort_1(I, X, EX, [Y | L]) ->
     case element(I, Y) of
-	EY when EX =< EY ->
+        EY when EX == EY ->
+            ukeysort_1(I, X, EX, L);
+	EY when EX < EY ->
 	    lists_sort:ukeysplit_1(I, X, EX, Y, EY, L, [], []);
 	EY ->
 	    lists_sort:ukeysplit_2(I, Y, EY, L, [X])
@@ -579,7 +579,7 @@ keymap(Fun, Index, []) when is_integer(Index), Index >= 1,
 keymap(Fun, ExtraArgs, Index, [Tup|Tail]) ->
    [setelement(Index, Tup, apply(Fun, [element(Index, Tup)|ExtraArgs]))|
     keymap(Fun, ExtraArgs, Index, Tail)];
-keymap( _, _ , _, []) -> [].
+keymap(Fun, _ , _, []) when is_function(Fun) -> [].
 
 
 %%% Suggestion from OTP-2948: sort and merge with Fun.
@@ -613,21 +613,24 @@ usort(Fun, [] = L) when is_function(Fun, 2) ->
 usort(Fun, [X | L]) when is_function(Fun, 2) ->
     usort_1(Fun, X, L).
 
-usort_1(Fun, X, [Y | L]) when X == Y ->
-    case L of
-	[] ->
-	    [X];
-	_ ->
-	    usort_1(Fun, X, L)
-    end;
 usort_1(Fun, X, [Y | L]) ->
     case Fun(X, Y) of
-	true ->
-	    lists_sort:ufsplit_1(Y, X, Fun, L, [], []);
-	false ->
+        true ->
+            case Fun(Y, X) of
+                true -> % X equal to Y
+                    case L of
+                        [] ->
+                            [X];
+                        _ ->
+                            usort_1(Fun, X, L)
+                    end;
+                false ->
+                    lists_sort:ufsplit_1(Y, X, Fun, L, [], [])
+            end;
+        false  ->
 	    lists_sort:ufsplit_2(Y, L, Fun, [X])
     end.
-
+                    
 umerge(Fun, [], T2) when is_function(Fun, 2) ->
     T2;
 umerge(Fun, [H1 | T1], T2) when is_function(Fun, 2) ->
@@ -800,7 +803,7 @@ filter(Pred, List) when is_function(Pred, 1) ->
 %% Equivalent to {filter(F, L), filter(NotF, L)}, if NotF = 'fun(X) ->
 %% not F(X) end'.
 
-partition(Pred, L) when is_function(Pred, 1) ->
+partition(Pred, L) ->
     partition(Pred, L, [], []).
 
 partition(Pred, [H | T], As, Bs) ->
@@ -808,7 +811,7 @@ partition(Pred, [H | T], As, Bs) ->
 	true -> partition(Pred, T, [H | As], Bs);
 	false -> partition(Pred, T, As, [H | Bs])
     end;
-partition(_Pred, [], As, Bs) ->
+partition(Pred, [], As, Bs) when is_function(Pred, 1) ->
     {reverse(As), reverse(Bs)}.
 
 zf(F, [Hd|Tail]) ->
@@ -861,14 +864,14 @@ splitwith(Pred, [Hd|Tail], Taken) ->
 	true -> splitwith(Pred, Tail, [Hd|Taken]);
 	false -> {reverse(Taken), [Hd|Tail]}
     end;
-splitwith(_, [], Taken) -> {reverse(Taken),[]}.
+splitwith(Pred, [], Taken) when is_function(Pred, 1) ->
+    {reverse(Taken),[]}.
 
 split(N, List) when is_integer(N), N >= 0, is_list(List) ->
     case split(N, List, []) of
+	{_, _} = Result -> Result;
 	Fault when is_atom(Fault) ->
-	    erlang:error(Fault, [N,List]);
-	Result ->
-	    Result
+	    erlang:error(Fault, [N,List])
     end;
 split(N, List) ->
     erlang:error(badarg, [N,List]).
@@ -887,28 +890,28 @@ all(Pred, Eas, [Hd|Tail]) ->
 	true -> all(Pred, Eas, Tail);
 	false -> false
     end;
-all(_, _, []) -> true. 
+all(Pred, _, []) when is_function(Pred) -> true.
 
 any(Pred, Eas, [Hd|Tail]) ->
     case apply(Pred, [Hd|Eas]) of
 	true -> true;
 	false -> any(Pred, Eas, Tail)
     end;
-any(_, _, []) -> false. 
+any(Pred, _, []) when is_function(Pred) -> false. 
 
 map(F, Eas, List) -> [ apply(F, [E|Eas]) || E <- List ].
 
 flatmap(F, Eas, [Hd|Tail]) ->
     apply(F, [Hd|Eas]) ++ flatmap(F, Eas, Tail);
-flatmap(_, _, []) -> [].
+flatmap(F, _, []) when is_function(F) -> [].
 
 foldl(F, Eas, Accu, [Hd|Tail]) ->
     foldl(F, Eas, apply(F, [Hd,Accu|Eas]), Tail);
-foldl(_, _, Accu, []) -> Accu.
+foldl(F, _, Accu, []) when is_function(F) -> Accu.
 
 foldr(F, Eas, Accu, [Hd|Tail]) ->
     apply(F, [Hd,foldr(F, Eas, Accu, Tail)|Eas]);
-foldr(_, _, Accu, []) -> Accu.
+foldr(F, _, Accu, []) when is_function(F) -> Accu.
 
 filter(Pred, Eas, List) -> [ E || E <- List, apply(Pred, [E|Eas]) ].
 
@@ -921,24 +924,25 @@ zf(F, Eas, [Hd|Tail]) ->
 	false ->
 	    zf(F, Eas, Tail)
     end;
-zf(_, _, []) -> [].
+zf(F, _, []) when is_function(F) -> [].
 
 foreach(F, Eas, [Hd|Tail]) ->
     apply(F, [Hd|Eas]),
     foreach(F, Eas, Tail);
-foreach(_, _, []) -> ok.
+foreach(F, _, []) when is_function(F) -> ok.
 
 mapfoldl(F, Eas, Accu0, [Hd|Tail]) ->
     {R,Accu1} = apply(F, [Hd,Accu0|Eas]),
     {Rs,Accu2} = mapfoldl(F, Eas, Accu1, Tail),
     {[R|Rs],Accu2};
-mapfoldl(_, _, Accu, []) -> {[],Accu}.
+mapfoldl(F, _, Accu, []) when is_function(F) -> {[],Accu}.
 
 mapfoldr(F, Eas, Accu0, [Hd|Tail]) ->
     {Rs,Accu1} = mapfoldr(F, Eas, Accu0, Tail),
     {R,Accu2} = apply(F, [Hd,Accu1|Eas]),
     {[R|Rs],Accu2};
-mapfoldr(_, _, Accu, []) -> {[],Accu}.
+mapfoldr(F, _, Accu, []) when is_function(F) -> {[],Accu}.
 
 %% takewhile/2, dropwhile/2 and splitwith/2 do not have versions with
 %% extra arguments as this going to be discontinued.
+

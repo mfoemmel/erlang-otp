@@ -24,8 +24,12 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([error/2, fatal_error/2, init_errors/1, return/1, warn/2, get_error_count/1,
-	 return/1]).
+-export([error/2, 
+	 fatal_error/2, 
+	 init_errors/1, 
+	 return/1, 
+	 warn/2, 
+	 get_error_count/1]).
 
 %%-----------------------------------------------------------------
 %% Internal exports

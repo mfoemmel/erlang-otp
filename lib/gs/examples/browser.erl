@@ -21,8 +21,6 @@
 
 -module(browser).
 
--export([start/2,init/3]).
-
 -export([start/0,start/2,init/3]).
 
 start() ->

@@ -29,7 +29,7 @@
 
 %% External exports
 -export([format_error/1]).
--export([start/0, start_link/0, stop/0, init/1]).
+-export([start/0, start_link/0, stop/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, 

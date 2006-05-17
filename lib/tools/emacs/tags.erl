@@ -116,34 +116,37 @@ collect_dirs(Dirs, Recursive) ->
 
 collect_dirs([], _Recursive, Acc) -> Acc;
 collect_dirs([Dir | Dirs], Recursive, Acc) ->
-    case file:list_dir(Dir) of
-	{ok, Entries} ->
-	    NewAcc = collect_files(Dir, Entries, Recursive, Acc);
-	_ ->
-	    NewAcc = Acc
-    end,
+    NewAcc = case file:list_dir(Dir) of
+		 {ok, Entries} ->
+		     collect_files(Dir, Entries, Recursive, Acc);
+		 _ ->
+		     Acc
+	     end,
     collect_dirs(Dirs, Recursive, NewAcc).
 
 collect_files(_Dir,[],_Recursive, Acc) -> Acc;
 collect_files(Dir, [File | Files], Recursive, Acc) ->
     FullFile = addfile(Dir, File),
-    case file:file_info(FullFile) of
-	{ok, {_,directory,_,_,_,_,_}} when Recursive == true ->
-	    NewAcc = collect_dirs([FullFile], Recursive, Acc);
-	{ok, {_,directory,_,_,_,_,_}} ->
-	    NewAcc = Acc;
-	{ok, {_,regular,_,_,_,_,_}} ->
-	    case lists:reverse(File) of
-		[$l, $r, $e, $. | _] ->
-		    NewAcc = [FullFile | Acc];
-		[$l, $r, $h, $. | _] ->
-		    NewAcc = [FullFile | Acc];
-		_ ->
-		    NewAcc = Acc
-	    end;
-	_ ->
-	    NewAcc = Acc
-    end,
+    NewAcc = case filelib:is_dir(FullFile) of
+		 true when Recursive == true ->
+		     collect_dirs([FullFile], Recursive, Acc);
+		 true ->
+		     Acc;
+		 false ->
+		     case filelib:is_regular(FullFile) of
+			 true ->
+			     case filename:extension(File) of
+				 ".erl" ->
+				     [FullFile | Acc];
+				 ".hrl" ->
+				     [FullFile | Acc];
+				 _ ->
+				     Acc
+			     end;
+			 false ->
+			     Acc
+		     end
+	     end,
     collect_files(Dir, Files, Recursive, NewAcc).
 
 

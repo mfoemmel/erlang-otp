@@ -58,10 +58,10 @@ find() ->
     global:whereis_name(?MODULE).
 
 call(Request) ->
-    gen_server:call(?MODULE, Request).
+    gen_server:call(?MODULE, Request, infinity).
 
 call(Int, Request) ->
-    gen_server:call(Int, Request).
+    gen_server:call(Int, Request, infinity).
 
 cast(Request) ->
     gen_server:cast(?MODULE, Request).

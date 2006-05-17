@@ -200,11 +200,29 @@
 /* The number of bytes in a void *.  */
 #undef SIZEOF_VOID_P
 
+/* Define if you have the __brk function.  */
+#undef HAVE___BRK
+
+/* Define if you have the __sbrk function.  */
+#undef HAVE___SBRK
+
+/* Define if you have the _brk function.  */
+#undef HAVE__BRK
+
+/* Define if you have the _sbrk function.  */
+#undef HAVE__SBRK
+
+/* Define if you have the brk function.  */
+#undef HAVE_BRK
+
 /* Define if you have the dlopen function.  */
 #undef HAVE_DLOPEN
 
 /* Define if you have the finite function.  */
 #undef HAVE_FINITE
+
+/* Define if you have the flockfile function.  */
+#undef HAVE_FLOCKFILE
 
 /* Define if you have the fpsetmask function.  */
 #undef HAVE_FPSETMASK
@@ -256,6 +274,9 @@
 
 /* Define if you have the res_gethostbyname function.  */
 #undef HAVE_RES_GETHOSTBYNAME
+
+/* Define if you have the sbrk function.  */
+#undef HAVE_SBRK
 
 /* Define if you have the strerror function.  */
 #undef HAVE_STRERROR
@@ -341,6 +362,12 @@
 /* Define if you have win32 threads */
 #undef ETHR_WIN32_THREADS
 
+/* Define if you have the InitializeCriticalSectionAndSpinCount function */
+#undef ETHR_HAVE_INITIALIZECRITICALSECTIONANDSPINCOUNT
+
+/* Define if you have the TryEnterCriticalSection function */
+#undef ETHR_HAVE_TRYENTERCRITICALSECTION
+
 /* Define if you have pthreads */
 #undef ETHR_PTHREADS
 
@@ -371,8 +398,50 @@
 /* Define if you have all ethread defines */
 #undef ETHR_HAVE_ETHREAD_DEFINES
 
+/* Define NT version if you want to turn on some NT features */
+#undef _WIN32_WINNT
+
+/* Define if you want to enable extended functionality in the ethread library */
+#undef ETHR_EXTENDED_LIB
+
+/* Define if windows.h includes winsock2.h */
+#undef WINDOWS_H_INCLUDES_WINSOCK2_H
+
 /* Define if you want to disable vfork. */
 #undef DISABLE_VFORK
+
+/* Define if you have putc_unlocked */
+#undef HAVE_PUTC_UNLOCKED
+
+/* Define if you have fwrite_unlocked */
+#undef HAVE_FWRITE_UNLOCKED
+
+/* Define if you have the 'end' symbol */
+#undef HAVE_END_SYMBOL
+
+/* Define if you have the '_end' symbol */
+#undef HAVE__END_SYMBOL
+
+/* Define if __after_morecore_hook can track malloc()s core memory use. */
+#undef ERTS___AFTER_MORECORE_HOOK_CAN_TRACK_MALLOC
+
+/* Define the sbrk() return type. */
+#undef SBRK_RET_TYPE
+
+/* Define the sbrk() argument type. */
+#undef SBRK_ARG_TYPE
+
+/* Define the brk() return type. */
+#undef BRK_RET_TYPE
+
+/* Define the brk() argument type. */
+#undef BRK_ARG_TYPE
+
+/* Define if sbrk()/brk() wrappers can track malloc()s core memory use */
+#undef ERTS_BRK_WRAPPERS_CAN_TRACK_MALLOC
+
+/* Define if poll()/select() bug when another thread closes fd is present. */
+#undef ERTS_SELECTER_THR_CLOSED_FD_BUG
 
 
 /* Redefine in6_addr. XXX this should be moved to the files where it's used? */
@@ -397,7 +466,7 @@
 #define FD_SETSIZE 1024
 #endif
 
-#if !defined(USE_SELECT)
+#if !defined(USE_SELECT) && !defined(ERTS_SMP)
 #  if defined(ENABLE_KERNEL_POLL)
 #    if defined(HAVE_SYS_DEVPOLL_H) || defined(HAVE_LINUX_KPOLL_H) || defined(HAVE_SYS_EVENT_H)
 #      define USE_KERNEL_POLL
@@ -413,4 +482,9 @@
 # if defined(HAVE_ISINF) && defined(HAVE_ISNAN)
 #  define USE_ISINF_ISNAN
 # endif
+#endif
+
+#if defined(DEBUG) && defined(USE_THREADS)
+#undef ERTS_ENABLE_LOCK_CHECK
+#define ERTS_ENABLE_LOCK_CHECK 1
 #endif

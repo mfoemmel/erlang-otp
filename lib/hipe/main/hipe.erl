@@ -225,8 +225,8 @@
  	 file/1,
  	 file/2,
 	 load/1,
-	 load/2,
 	 help/0,
+	 help_hiper/0,
 	 help_options/0,
 	 help_option/1,
 	 help_debug_options/0,
@@ -269,9 +269,9 @@ load(Mod) ->
 %%
 %% @see load/1
 
-load(Mod, Bin) when is_binary(Bin) ->
-  do_load(Mod, Bin, false);
-load(Mod, File) ->
+%% load(Mod, Bin) when is_binary(Bin) ->
+%%   do_load(Mod, Bin, false);
+load(Mod, File) when is_atom(File) ->
   Architecture = erlang:system_info(hipe_architecture),
   ChunkName = hipe_unified_loader:chunk_name(Architecture),
   case beam_lib:chunks(File, [ChunkName]) of
@@ -359,7 +359,8 @@ f(File) ->
 %%     Reason = term()
 %%
 %% @doc Like <code>c/3</code>, but takes the module name from the
-%% specified <code>File</code>. This always compiles the whole module.
+%% specified <code>File</code>. This always compiles the whole module;
+%% there is no possibility to compile just a single function.
 %%
 %% @see c/3
 
@@ -408,7 +409,7 @@ compile(Name) ->
 compile(Name, Options) ->
   compile(Name, beam_file(Name), Options).
 
-beam_file({M,_F,_A}) ->
+beam_file({M,F,A}) when is_atom(M), is_atom(F), is_integer(A), A >= 0 ->
   beam_file(M);
 beam_file(Module) when is_atom(Module) ->
   case code:which(Module) of
@@ -430,7 +431,8 @@ beam_file(Module) when is_atom(Module) ->
 %%
 %% @see compile/2
 
-compile(Name, File, Opts) ->
+compile(Name, File, Opts0) ->
+  Opts = expand_kt2(Opts0),
   case proplists:get_value(core, Opts) of
     true when is_binary(File) ->
       ?error_msg("Cannot get Core Erlang code from BEAM binary.",[]),
@@ -441,9 +443,9 @@ compile(Name, File, Opts) ->
 	  ?error_msg("Cannot find source code for ~p.",[File]),
 	  ?EXIT({cant_find_source_code});
 	{Source, CompOpts} ->
-	  CoreOpts = [X || X = {core_transform, _} <-Opts],
+	  CoreOpts = [X || X = {core_transform, _} <- Opts],
 	  %%io:format("Using: ~w\n", [CoreOpts]),
-	  case compile:file(Source, CoreOpts ++ [to_core, binary | CompOpts]) of
+	  case compile:file(Source, CoreOpts ++ [to_core, binary|CompOpts]) of
 	    {ok, _, Core} ->
 	      compile_core(Name, Core, File, Opts);
 	    Error ->
@@ -545,7 +547,7 @@ file(File) ->
 %% @see file/1
 %% @see compile/2
 
-file(File, Options) ->
+file(File, Options) when is_atom(File) ->
   case beam_lib:info(File) of
     L when is_list(L) ->
       {value,{module,Mod}} = lists:keysearch(module,1,L),
@@ -589,6 +591,7 @@ disasm(File) ->
 
 fix_beam_exports(BeamExports) ->
   fix_beam_exports(BeamExports, []).
+
 fix_beam_exports([{F,A,_}|BeamExports], Exports) ->
   fix_beam_exports(BeamExports, [{F,A} | Exports]);
 fix_beam_exports([], Exports) ->
@@ -1032,56 +1035,61 @@ version() ->
 %% @spec () -> ok
 %% @doc Prints on-line documentation to the standard output.
 help() ->
-  io:put_chars("The HiPE Compiler (Version " ++ ?VERSION_STRING() ++ ")\n" ++
-	       " The normal way to native-compile Erlang code " ++
-	       "using HiPE is to\n" ++
-	       " include `native' in the Erlang compiler " ++
-	       "options, as in:\n" ++
-	       "     1> c(my_module, [native]).\n" ++
-	       " Options to the HiPE compiler must then be passed " ++
-	       "as follows:\n" ++
-	       "     1> c(my_module, [native,{hipe,Options}]).\n" ++
-	       " Use `help_options()' for details.\n" ++
-	       " Utility functions:\n" ++
-	       "   help()\n" ++
-	       "     Prints this message.\n" ++
-	       "   help_options()\n" ++
-	       "     Prints a description of options recognized by the\n" ++
-	       "     HiPE compiler.\n" ++
-	       "   help_option(Option)\n" ++
-	       "     Prints a description of that option.\n" ++
-	       "   help_debug_options()\n" ++
-	       "     Prints a description of debug options.\n" ++
-	       "   version() ->\n" ++
-	       "     Returns the HiPE version as a string'.\n" ++
-	       " The following functions are for advanced users only!\n" ++
-	       " Note that all options are specific to the HiPE compiler.\n" ++
-	       "   c(Name,Options)\n" ++ 
-	       "     Compiles the module or function Name and loads it\n" ++
-	       "     to memory. Name is an atom or a tuple {M,F,A}.\n" ++
-	       "   c(Name)\n" ++
-	       "     As above, but using only default options.\n" ++
-	       "   f(File,Options)\n" ++ 
-	       "     As c(Name,File,Options), but taking the module name\n" ++
-	       "     from File.\n" ++
-	       "   f(File)\n" ++ 
-	       "     As above, but using only default options.\n" ++
-	       "   compile(Name,Options)\n" ++
-	       "     Compiles the module or function Name to a binary.\n" ++
-	       "     By default, this does not load to memory.\n" ++
-	       "   compile(Name)\n" ++ 
-	       "     As above, but using only default options.\n" ++
-	       "   file(File,Options)\n" ++ 
-	       "     As compile(Name,File,Options), but taking the\n" ++
-	       "     module name from File.\n" ++
-	       "   file(File)\n" ++ 
-	       "     As above, but using only default options.\n" ++
-	       "   load(Module)\n" ++
-	       "     Loads the named module into memory.\n" ++
-	       "   load(Module,Source)\n" ++
-	       "     As above, but taking the code from Source.\n" ++
-	       "     Source is either the name of a BEAM file\n" ++
-	       "     or a binary containing native code.\n"),
+  M =
+    "The HiPE Compiler (Version " ++ ?VERSION_STRING() ++ ")\n" ++
+    "\n" ++
+    " The normal way to native-compile Erlang code using HiPE is to\n" ++
+    " include `native' in the Erlang compiler options, as in:\n" ++
+    "     1> c(my_module, [native]).\n" ++
+    " Options to the HiPE compiler must then be passed as follows:\n" ++
+    "     1> c(my_module, [native,{hipe,Options}]).\n" ++
+    " Use `help_options()' for details.\n" ++
+    "\n" ++
+    " Utility functions:\n" ++
+    "   help()\n" ++
+    "     Prints this message.\n" ++
+    "   help_options()\n" ++
+    "     Prints a description of options recognized by the\n" ++
+    "     HiPE compiler.\n" ++
+    "   help_option(Option)\n" ++
+    "     Prints a description of that option.\n" ++
+    "   help_debug_options()\n" ++
+    "     Prints a description of debug options.\n" ++
+    "   version() ->\n" ++
+    "     Returns the HiPE version as a string'.\n" ++
+    "\n" ++
+    " For HiPE developers only:\n" ++
+    "  Use `help_hiper()' for information about HiPE's low-level interface\n",
+  io:put_chars(M),
+  ok.
+
+help_hiper() ->
+  M =
+    " This interface is supposed to be used by HiPE-developers only!\n" ++
+    " Note that all options are specific to the HiPE compiler.\n" ++
+    "   c(Name,Options)\n" ++ 
+    "     Compiles the module or function Name and loads it\n" ++
+    "     to memory. Name is an atom or a tuple {M,F,A}.\n" ++
+    "   c(Name)\n" ++
+    "     As above, but using only default options.\n" ++
+    "   f(File,Options)\n" ++ 
+    "     As c(Name,File,Options), but taking the module name\n" ++
+    "     from File.\n" ++
+    "   f(File)\n" ++ 
+    "     As above, but using only default options.\n" ++
+    "   compile(Name,Options)\n" ++
+    "     Compiles the module or function Name to a binary.\n" ++
+    "     By default, this does not load to memory.\n" ++
+    "   compile(Name)\n" ++ 
+    "     As above, but using only default options.\n" ++
+    "   file(File,Options)\n" ++ 
+    "     As compile(Name,File,Options), but taking the\n" ++
+    "     module name from File.\n" ++
+    "   file(File)\n" ++ 
+    "     As above, but using only default options.\n" ++
+    "   load(Module)\n" ++
+    "     Loads the named module into memory.\n",
+  io:put_chars(M),
   ok.
 
 %% TODO: it should be possible to specify the target somehow when asking
@@ -1201,13 +1209,13 @@ option_text(type_warnings) ->
 option_text(use_indexing) ->
   "Use indexing for multiple-choice branch selection.";
 option_text(use_callgraph) ->
-  "Compile the functions in a module according to a reversed topological "
-    "sorted order to gain more information when using a persistent lookup "
-    "table for storing intra-modular type information.";
+  "Compile the functions in a module according to a reversed topological " ++
+  "sorted order to gain more information when using a persistent lookup " ++
+  "table for storing intra-modular type information.";
 option_text(verbose) ->
   "Output information about what is being done.";
-option_text(_) ->
-  [].
+option_text(Opt) when is_atom(Opt) ->
+  "".
 
 %% @spec (option()) -> ok
 %% @doc Prints documentation about a specific option to the standard
@@ -1220,7 +1228,7 @@ help_option(Opt) ->
 		true -> Opt
 	     end,
       case option_text(Name) of
-	[] ->  
+	"" ->  
 	  case lists:member(Name, opt_keys()) of
 	    true ->
 	      io:format("~w - Sorry, this option is not documented yet.\n",
@@ -1233,7 +1241,8 @@ help_option(Opt) ->
       end;
     Opts ->
       io:fwrite("This is an alias for: ~p.\n", [Opts])
-  end.
+  end,
+  ok.
 
 %% @spec () -> ok
 %% @doc Prints documentation about debugging options to the standard
@@ -1473,9 +1482,8 @@ opt_negations() ->
    {no_use_inline_atom_search, use_inline_atom_search},
    {no_use_indexing, use_indexing}].
 
-%% Don't use negative forms in right-hand sides of aliases and
-%% expansions! We only expand negations once, before the other
-%% expansions are done.
+%% Don't use negative forms in right-hand sides of aliases and expansions!
+%% We only expand negations once, before the other expansions are done.
 
 opt_aliases() ->
   [{'O0', o0},
@@ -1500,7 +1508,6 @@ opt_expansions() ->
   [{{'O', 1}, [{'O', 1} | o1_opts()]},
    {{'O', 2}, [{'O', 2} | o2_opts()]},
    {{'O', 3}, [{'O', 3} | o3_opts()]},
-   {kt2_type, [{use_callgraph, fixpoint}, core, {core_transform, cerl_typean}]},
    {x87, [x87, inline_fp]},
    {inline_fp, case get(hipe_target_arch) of %% XXX: Temporary until x86
 		 x86 -> [x87, inline_fp];    %%       has sse2
@@ -1513,6 +1520,11 @@ expand_basic_options(Opts) ->
   proplists:normalize(Opts, [{negations, opt_negations()},
 			     {aliases, opt_aliases()},
 			     {expand, opt_basic_expansions()}]).
+
+expand_kt2(Opts) -> 
+  proplists:normalize(Opts, [{expand, [{kt2_type,
+					[{use_callgraph, fixpoint}, core, 
+					 {core_transform, cerl_typean}]}]}]).
 
 %% Note that set_architecture/1 must be called first, and that the given
 %% list should contain the total set of options, since things like 'o2'

@@ -37,7 +37,8 @@
 %%-----------------------------------------------------------------
 -export([start/0, connect/4, listen/3, listen/4, accept/2, write/3,
 	 controlling_process/3, close/2, peername/2, sockname/2, 
-	 peerdata/2, sockdata/2, setopts/3, clear/2, shutdown/3]).
+	 peerdata/2, peercert/2, peercert/3, sockdata/2, setopts/3, 
+	 clear/2, shutdown/3]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -273,6 +274,25 @@ peername(normal, Socket) ->
     inet:peername(Socket);
 peername(ssl, Socket) ->
     ssl:peername(Socket).
+
+%%-----------------------------------------------------------------
+%% Get peercert
+%% 
+peercert(ssl, Socket) ->
+    ssl:peercert(Socket);
+peercert(Type, _Socket) ->
+    orber:dbg("[~p] orber_socket:peercert(~p);~n"
+	      "Only available for SSL sockets.", 
+	      [?LINE, Type], ?DEBUG_LEVEL),
+    {error, ebadsocket}.
+
+peercert(ssl, Socket, Opts) ->
+    ssl:peercert(Socket, Opts);
+peercert(Type, _Socket, Opts) ->
+    orber:dbg("[~p] orber_socket:peercert(~p, ~p);~n"
+	      "Only available for SSL sockets.", 
+	      [?LINE, Type, Opts], ?DEBUG_LEVEL),
+    {error, ebadsocket}.
 
 %%-----------------------------------------------------------------
 %% Get peerdata

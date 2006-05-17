@@ -25,7 +25,7 @@
 %% Exported to qlc.erl only:
 -export([vars/1, aux_name1/3]).
 
--import(lists, [foldl/3, map/2, sort/1]).
+-import(lists, [map/2, sort/1]).
 
 -include_lib("stdlib/include/ms_transform.hrl").
 
@@ -108,9 +108,9 @@ transform_expression(LC, Bs0, WithLintErrors) ->
             {ok,NF};
         {E0,Errors,_Warnings} when WithLintErrors =:= true ->
             {not_ok,sort(E0 ++ mforms(error, Errors))};
-        {E0,Errors,Warnings} ->
-            {EForms,_} = no_duplicates(Forms, Errors, Warnings, Options),
-            [{error, Reason} | _] = sort(E0 ++ EForms),
+        {E0,Errors0,_Warnings} ->
+            Errors = mforms(error, Errors0),
+            [{error,Reason} | _] = sort(E0 ++ Errors),
             {not_ok, {error, ?APIMOD, Reason}}
     end.
 
@@ -173,8 +173,6 @@ badarg(Forms, State) ->
     {_,E0} = qlc_mapfold(F, [], Forms, State),
     E0.
 
-%% Adopted from erl_lint:copy_expr/2.
-
 tag_lines(E, No) ->
     map_lines(fun(Id) -> 
                       case is_lcid(Id) of
@@ -183,25 +181,8 @@ tag_lines(E, No) ->
                       end
               end, E).
 
-map_lines(F, {clauses,Cs}) -> {clauses,map_lines(F, Cs)};
-map_lines(_F, {function,Fun,A}) -> {function,Fun,A};
-map_lines(_F, {function,Mod,Fun,A}) -> {function,Mod,Fun,A};
-map_lines(F, {Tag,L}) -> {Tag,F(L)};
-map_lines(F, {Tag,L,E1}) ->
-    {Tag,F(L),map_lines(F, E1)};
-map_lines(F, {Tag,L,E1,E2}) ->
-    {Tag,F(L),map_lines(F, E1),map_lines(F, E2)};
-map_lines(F, {bin_element,L,E1,E2,TSL}) ->
-    {bin_element,F(L),map_lines(F, E1), map_lines(F, E2), TSL};
-map_lines(F, {Tag,L,E1,E2,E3}) ->
-    {Tag,F(L),map_lines(F, E1),map_lines(F, E2),map_lines(F, E3)};
-map_lines(F, {Tag,L,E1,E2,E3,E4}) -> % not used
-    {Tag,F(L),map_lines(F, E1), map_lines(F, E2),
-     map_lines(F, E3), map_lines(F, E4)};
-map_lines(F, [H | T]) ->
-    [map_lines(F, H) | map_lines(F, T)];
-map_lines(_F, []) -> [];
-map_lines(_F, E) when is_constant(E) -> E.
+map_lines(F, E) ->
+    erl_lint:modify_line(E, F).
 
 tagged_messages(MsL) ->
     [{File,
@@ -277,11 +258,21 @@ compile_errors(Forms) ->
 compile_forms(Forms0, Options) ->
     Forms1 = no_qlc_transform(Forms0),
     Forms = [F || F <- Forms1, element(1, F) =/= eof] ++ [{eof,999999}],
-    case compile:forms(Forms, compile_options(Options)) of
-        {ok, _ModName, _Binary, Ws0} -> 
-            {[], Ws0};
-        {error, Es0, Ws0} -> 
-            {Es0, Ws0}
+    try 
+        case compile:forms(Forms, compile_options(Options)) of
+            {ok, _ModName, Ws0} ->
+                {[], Ws0};
+            {error, Es0, Ws0} -> 
+                {Es0, Ws0}
+        end
+    catch _:_ ->
+        %% The compiler is not available. Use the linter instead.
+        case erl_lint:module(Forms, Options) of
+            {ok, Warnings} ->
+                {[], Warnings};
+            {error, Errors, Warnings} ->
+                {Errors, Warnings}
+        end
     end.
 
 no_qlc_transform([{attribute, _, compile, {parse_transform,?APIMOD}} | Fs]) ->
@@ -293,7 +284,7 @@ no_qlc_transform([]) ->
 
 compile_options(Options) ->
     No = [report,report_errors,report_warnings],
-    [O || O <- [return | Options], not lists:member(O, No)].
+    [strong_validation,return | [O || O <- Options, not lists:member(O, No)]].
 
 %% In LCs it is possible to use variables introduced in filters and
 %% generator patterns in the right hand side of generators (ListExpr),
@@ -357,7 +348,7 @@ q_intro_vars(QId, [{QId, IVs} | QsIVs], IVsSoFar) -> {QsIVs, IVs ++ IVsSoFar}.
 %%
 %% The syntax of the value Val returned from the fun is:
 %% Val = [] | [term() | Val] | fun() -> Val
-%% Note: the fun must not return a fun if it to be called by
+%% Note: the fun must not return a fun if it is to be called by
 %% the function outlined below.
 %%
 %% An outline of the generated fun:
@@ -423,7 +414,7 @@ q_intro_vars(QId, [{QId, IVs} | QsIVs], IVsSoFar) -> {QsIVs, IVs ++ IVsSoFar}.
 %%   every position (column) of the pattern P the constant values (or
 %%   'false' if there are no constant values). MatchSpec is a match
 %%   specification that can be used instead of the QLC, or
-%%   'no_match_spec' if there no such match specification.
+%%   'no_match_spec' if there is no such match specification.
 
 transform(Forms, State) ->
     IntroVars = intro_variables(Forms, State),
@@ -455,8 +446,8 @@ transform(Forms, State) ->
     F2 = fun(Id, {lc,_L,E,Qs}, IntroVs0) ->
                  LcNo = get_lcid_no(Id),
                  LcL = get_lcid_line(Id),
-                 [RL,Fun,Go,NGV,S0,RL0,Go0,AT] = 
-                     aux_vars(['RL','Fun','Go','C','S0','RL0','Go0','AT'], 
+                 [RL,Fun,Go,NGV,S0,RL0,Go0,AT,Err] = 
+                     aux_vars(['RL','Fun','Go','C','S0','RL0','Go0','AT','E'],
                               LcNo, AllVars),
                  ?DEBUG("RL = ~p, Fun = ~p, Go = ~p~n", [RL, Fun, Go]),
                  F = fun({QId,GoI,SI,{gen,P,LE}}, 
@@ -473,7 +464,7 @@ transform(Forms, State) ->
                  {QCs,{IntroVs,AllIVs}} = 
                       lists:mapfoldl(F, {IntroVs0,[]}, Qs),
 
-                 Cs0 = clauses(QCs, RL, Fun, Go, NGV, AllIVs, State),
+                 Cs0 = clauses(QCs, RL, Fun, Go, NGV, Err, AllIVs, State),
                  L = no_compiler_warning(LcL),
                  Template = template(E, RL, Fun, Go, AT, L, AllIVs, State),
                  Fin = final(RL, AllIVs, L, State),
@@ -491,7 +482,7 @@ transform(Forms, State) ->
                  Qdata = qdata(QCs, L),
                  QOpt = ?A(undefined), %% no optimization data yet
                  LCTuple = 
-                     case qlc_kind(OrigE, E, Qs, L, State) of
+                     case qlc_kind(OrigE, E, Qs, L, AllIVs, State) of
                          qlc ->
                              {tuple,L,[?A(qlc_v1),FunW,QCode,Qdata,QOpt]};
                          {simple, PL, LE, V} ->
@@ -510,14 +501,14 @@ transform(Forms, State) ->
     display_forms(NForms),
     restore_line_numbers(NForms).
 
-qlc_kind(OrigE, E, Qs, LcL, State) ->
+qlc_kind(OrigE, E, Qs, LcL, AllIVs, State) ->
     case {OrigE, qlc_kind2(undo_no_shadows(Qs))} of
         {{var,_,V}, {{var,PatternL,V},{atom,_,true}}} ->
             [{_,_,_,{gen,_,LE}} | _] = Qs,
             {simple, PatternL, LE, V};
         {_, {_P, _F}} ->
             {Pattern, Filter} = qlc_kind2(Qs),
-            ColumnFun = column_fun(Pattern, Filter, LcL, State),
+            ColumnFun = column_fun(Pattern, Filter, LcL, AllIVs, State),
             case try_ms(E, Pattern, Filter, State) of
                 no when ColumnFun =:= false ->
                     qlc;
@@ -560,7 +551,7 @@ qlc_kind2(_, _Pattern, _) ->
 -define(PATTERN_VAR, top).
 -define(ANON_VAR(N), N).
 
-column_fun(Pattern0, Filter0, LcL, State) ->
+column_fun(Pattern0, Filter0, LcL, AllIVs, State) ->
     %% Makes test for equality simple:
     P1 = map_lines(fun(_L) -> 0 end, Pattern0), 
     Fil1 = map_lines(fun(_L) -> 0 end, Filter0), 
@@ -570,13 +561,18 @@ column_fun(Pattern0, Filter0, LcL, State) ->
                                     (Var, N) -> {Var, N}
                                  end, 0, {P2,Fil1}),
     F0 = [],
-    Imported = ordsets:subtract(vars(Fil), vars(P3)), % anonymous too
-    %% Partial evaluation, among other things:
+    Imported = ordsets:subtract(vars(Fil), % anonymous too
+                                lists:sort(AllIVs)), 
     {P4, F1} = element_calls(tuple2cons(P3), F0, Imported), 
     {P, F2} = match_in_pattern(P4, F1),
     F = unify('=:=', {var,0,?PATTERN_VAR}, P, F2, []),
+    %% It is possible a guard filter cannot be turned into a match
+    %% spec, namely if =/2 occurs below top level...
+    IsGuardTest = erl_lint:is_guard_test(Filter0, State#state.records),
     case filter(Fil, F, Imported, State) of
         [] ->
+            false;
+        _ when not IsGuardTest ->
             false;
         Columns ->
             ColCls0 = 
@@ -641,6 +637,29 @@ filter1({op, _, Op, L, R}, Fs, Imp, S) when Op =:= 'or';
                                             Op =:= 'orelse';
                                             Op =:= 'xor' ->
     filter1(L, Fs, Imp, S) ++ filter1(R, Fs, Imp, S);
+filter1({atom,_,Atom}, _Fs, _Imp, _S) when Atom =/= true ->
+    [];
+%% erlang:is_record/2
+filter1({call,L,{atom,_,is_record},[T,R]}, Fs, Imp, S) ->
+    filter1({op,L,'=:=',{call,L,{atom,L,element},[{integer,L,1},T]},R},
+            Fs, Imp, S);
+filter1({call,L,{atom,_,record},[_, _]=As}, Fs, Imp, S) ->
+    filter1({call,L,{atom,L,is_record},As}, Fs, Imp, S);
+filter1({call,L,{remote,_,{atom,_,erlang},{atom,_,is_record}},[_, _]=As},
+        Fs, Imp, S) ->
+    filter1({call,L,{atom,L,is_record},As}, Fs, Imp, S);
+filter1({call,L,{tuple,_,[{atom,_,erlang},{atom,_,is_record}]},[_, _]=As}, 
+        Fs, Imp, S) ->
+    filter1({call,L,{atom,L,is_record},As}, Fs, Imp, S);
+%% erlang:is_record/3 (the size information is skipped)
+filter1({call,L,{atom,_,is_record},[T,R,_Sz]}, Fs, Imp, S) ->
+    filter1({call,L,{atom,L,is_record},[T,R]}, Fs, Imp, S);
+filter1({call,L,{remote,_,{atom,_,erlang},{atom,_,is_record}},[_, _, _]=As},
+        Fs, Imp, S) ->
+    filter1({call,L,{atom,L,is_record},As}, Fs, Imp, S);
+filter1({call,L,{tuple,_,[{atom,_,erlang},{atom,_,is_record}]},[_, _, _]=As}, 
+        Fs, Imp, S) ->
+    filter1({call,L,{atom,L,is_record},As}, Fs, Imp, S);
 filter1(_E, Fs, _Imp, _S) ->
     Fs.
 
@@ -676,12 +695,16 @@ column_vars(_, _Col, _Imp) ->
 %% Tuple tails are variables, never constants.
 is_const(E, Imp) ->
     %% add_binding/5 has checked that E is normalisable. 
-    [] == ordsets:to_list(ordsets:subtract(vars(E), Imp)).
+    [] =:= ordsets:to_list(ordsets:subtract(vars(E), Imp)).
 
 prep_expr(E, F, S, Imp) ->
     element_calls(tuple2cons(expand_expr_records(E, S)), F, Imp).
 
 %% cons_tuple is used for representing {V1, ..., Vi | TupleTail}.
+%%
+%% Tests like "element(X, 2) =:= a" are represented by "tuple tails":
+%% {_, a | _}. The tail may be unified later, when more information
+%% about the size of the tuple is known.
 element_calls({call,_,{remote,_,{atom,_,erlang},{atom,_,element}},
                [{integer,_,I},Term0]}, F0, Imp) when I > 0 ->
     VarI = {var, 0, make_ref()},
@@ -689,6 +712,12 @@ element_calls({call,_,{remote,_,{atom,_,erlang},{atom,_,element}},
     Tuple = element_tuple(I, [VarI | TupleTail]),
     {Term, F} = element_calls(Term0, F0, Imp),    
     {VarI, unify('=:=', Tuple, Term, F, Imp)};
+element_calls({call,L1,{atom,L2,element}=E,As}, F0, Imp) ->
+    element_calls({call,L1,{remote,L2,{atom,L2,erlang},E},As}, F0, Imp);
+element_calls({call,L,{cons_tuple,{cons,_,{atom,_,erlang}=M,
+                                   {cons,_,{atom,_,element}=F,{nil,_}}}},As},
+              F0, Imp) ->
+    element_calls({call,L,{remote,L,M,F},As}, F0, Imp);
 element_calls(T, F0, Imp) when is_tuple(T) ->
     {L, F} = element_calls(tuple_to_list(T), F0, Imp),
     {list_to_tuple(L), F};
@@ -711,10 +740,22 @@ expand_pattern_records(P, State) ->
 
 expand_expr_records(E, State) ->
     RecordDefs = State#state.records,
-    Forms = RecordDefs ++ [{function,1,foo,0,[{clause,1,[],[],[E]}]}],
-    {_,_,[F|_],_} = sys_pre_expand:module(Forms, []), 
-    {function,_,foo,0,[{clause,_,[],[],[NE]}]} = F,
+    Forms = RecordDefs ++ [{function,1,foo,0,[{clause,1,[],[],[pe(E)]}]}],
+    [{function,_,foo,0,[{clause,_,[],[],[NE]}]}] = 
+        erl_expand_records:module(Forms, [no_strict_record_tests]),
     NE.
+
+%% Partial evaluation.
+pe({op,Line,Op,A}) ->
+    erl_eval:partial_eval({op,Line,Op,pe(A)});
+pe({op,Line,Op,L,R}) ->
+    erl_eval:partial_eval({op,Line,Op,pe(L),pe(R)});
+pe(T) when is_tuple(T) ->
+    list_to_tuple(pe(tuple_to_list(T)));
+pe([E | Es]) ->
+    [pe(E) | pe(Es)];
+pe(E) ->
+    E.
 
 unify(_Op, _E1, _E2, failed, _Imp) -> % contradiction
     failed;
@@ -905,7 +946,8 @@ try_ms(E, P, Fltr, State) ->
     L = 1,
     Fun =  {'fun',L,{clauses,[{clause,L,[P],[[Fltr]],[E]}]}},
     Expr = {call,L,{remote,L,{atom,L,ets},{atom,L,fun2ms}},[Fun]},
-    Form = {function,L,foo,0,[{clause,L,[],[],[Expr]}]},
+    Form0 = {function,L,foo,0,[{clause,L,[],[],[Expr]}]},
+    Form = restore_line_numbers(Form0),
     X = ms_transform:parse_transform(State#state.records ++ [Form], []),
     case catch 
         begin
@@ -960,19 +1002,19 @@ qcode([], _Source) ->
 closure(Code, L) ->
     {'fun',L,{clauses,[{clause,L,[],[],[Code]}]}}.
 
-clauses([{QId,{QIVs,{QualData,GoI,S}}} | QCs], RL, Fun, Go, NGV, IVs, St) ->
+clauses([{QId,{QIVs,{QualData,GoI,S}}} | QCs], RL, Fun, Go, NGV, E, IVs,St) ->
     ?DEBUG("QIVs = ~p~n", [QIVs]),
     ?DEBUG("IVs = ~p~n", [IVs]),
     ?DEBUG("GoI = ~p, S = ~p~n", [GoI, S]),
     L = no_compiler_warning(get_lcid_line(QId#qid.lcid)),
     Cs = case QualData of
              {gen,P,_LE,GV} ->
-                 generator(S, QIVs, P, GV, NGV, IVs, RL, Fun, Go, GoI, L, St);
+                 generator(S, QIVs, P, GV, NGV, E, IVs, RL, Fun, Go,GoI,L,St);
              {fil,F} ->
                  filter(F, L, QIVs, S, RL, Fun, Go, GoI, IVs, St)
          end,
-    Cs ++ clauses(QCs, RL, Fun, Go, NGV, IVs, St);
-clauses([], _RL, _Fun, _Go, _NGV, _IVs, _St) ->
+    Cs ++ clauses(QCs, RL, Fun, Go, NGV, E, IVs, St);
+clauses([], _RL, _Fun, _Go, _NGV, _IVs, _E, _St) ->
     [].
 
 final(RL, IVs, L, State) ->
@@ -1008,7 +1050,7 @@ template(E, RL, Fun, Go, AT, L, IVs, State) ->
     CF = {clause,L,As,[],[?ABST_MORE(E, F)]},
     [CL,CF].
 
-generator(S, QIVs, P, GV, NGV, IVs, RL, Fun, Go, GoI, L, State) ->
+generator(S, QIVs, P, GV, NGV, E, IVs, RL, Fun, Go, GoI, L, State) ->
     ComAs = abst_vars([RL, Fun, Go], L),
     InitC = generator_init(S, L, GV, RL, Fun, Go, GoI, IVs, State),
     As = [?I(S + 1)| ComAs ++ abst_vars(replace(QIVs -- [GV], IVs, '_'), L)],
@@ -1027,7 +1069,7 @@ generator(S, QIVs, P, GV, NGV, IVs, RL, Fun, Go, GoI, L, State) ->
     AsD = pack_args(AsD0, L, State),
 
     CsL = generator_list(P, GV, NGV, As, AsM, AsC, AsD, Fun, L, State),
-    CsF = generator_cont(P, GV, NGV, As, AsM, AsC, AsD, Fun, L, State),
+    CsF = generator_cont(P, GV, NGV, E, As, AsM, AsC, AsD, Fun, L, State),
     [InitC | CsL ++ CsF].
     
 generator_init(S, L, GV, RL, Fun, Go, GoI, IVs, State) ->
@@ -1046,15 +1088,19 @@ generator_list(P, GV, NGV, As, AsM, AsC, AsD, Fun, L, State) ->
     CD = {clause,L,As3,[],[{call,L,?V(Fun),AsD}]},
     [CM, CC, CD].
 
-generator_cont(P, GV, NGV, As0, AsM, AsC, AsD, Fun, L, State) ->
+%% The clause 'CE' was added in R11B. The version of the generated was
+%% however not incremented.
+generator_cont(P, GV, NGV, E, As0, AsM, AsC, AsD, Fun, L, State) ->
     As = pack_args(As0, L, State),
     CF1 = ?ABST_MORE(P, ?V(NGV)),
     CF2 = ?ABST_MORE(?V('_'), ?V(NGV)),
     CF3 = ?ABST_NO_MORE,
+    CF4 = ?V(E),
     CM = {clause,L,[CF1],[],[{call,L,?V(Fun),AsM}]},
     CC = {clause,L,[CF2],[],[{call,L,?V(Fun),AsC}]},
     CD = {clause,L,[CF3],[],[{call,L,?V(Fun),AsD}]},
-    Cls = [CM, CC, CD],
+    CE = {clause,L,[CF4],[],[CF4]},
+    Cls = [CM, CC, CD, CE],
     B = {'case',L,{call,L,?V(GV),[]},Cls},
     [{clause,L,As,[],[B]}].
     
@@ -1342,16 +1388,21 @@ restore_line_numbers1({var, L, _}=Var) when is_integer(L) ->
 %% The first one encountered in the file has No=1.
 
 make_lcid(Line, No) when is_integer(Line), is_integer(No), No > 0 ->
-    (No bsl ?MAX_NUM_OF_LINES) + Line.
+    sgn(Line) * ((No bsl ?MAX_NUM_OF_LINES) + sgn(Line) * Line).
 
 is_lcid(Id) ->
-  is_integer(Id) and (Id > (1 bsl ?MAX_NUM_OF_LINES)).
+    is_integer(Id) andalso (abs(Id) > (1 bsl ?MAX_NUM_OF_LINES)).
 
 get_lcid_no(Id) ->
-    Id bsr ?MAX_NUM_OF_LINES.
+    abs(Id) bsr ?MAX_NUM_OF_LINES.
 
 get_lcid_line(Id) ->
-    Id band ((1 bsl ?MAX_NUM_OF_LINES) - 1).
+    sgn(Id) * (abs(Id) band ((1 bsl ?MAX_NUM_OF_LINES) - 1)).
+
+sgn(X) when X >= 0 ->
+    1;
+sgn(X) when X < 0 ->
+    -1.
 
 qid(LCId, No) ->
     #qid{no = No, lcid = LCId}.

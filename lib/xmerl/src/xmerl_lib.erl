@@ -36,11 +36,14 @@
 	 empty_tag/1, empty_tag/2,is_empty_data/1, find_attribute/2,
 	 remove_whitespace/1,to_lower/1]).
 
--export([is_letter/1,is_namechar/1,
+-export([is_letter/1,is_namechar/1,is_ncname/1,
 	 detect_charset/1,detect_charset/2,is_name/1,is_char/1]).
 
 
 -export([mapxml/2, foldxml/3, mapfoldxml/3]).
+
+%% exports for XSD
+-export([is_facet/1,is_builtin_simple_type/1]).
 
 -include("xmerl.hrl").
 
@@ -502,6 +505,17 @@ autodetect(ExtCharset,Content) ->
     {ExtCharset, Content}.
 
 
+is_ncname(A) when atom(A) ->
+    is_ncname(atom_to_list(A));
+is_ncname([$_|T]) ->
+    is_name1(T);
+is_ncname([H|T]) ->
+    case is_letter(H) of
+	true ->
+	    is_name1(T);
+	_ -> false
+    end.
+
 is_name(A) when atom(A) ->
     is_name(atom_to_list(A));
 is_name([$_|T]) ->
@@ -920,3 +934,66 @@ to_lower([C|Cs], Acc) ->
     to_lower(Cs, [C| Acc]);
 to_lower([], Acc) ->
     lists:reverse(Acc).
+
+%%% XSD helpers
+
+is_facet(length) -> true;
+is_facet(minLength) -> true;
+is_facet(maxLength) -> true;
+is_facet(pattern) -> true;
+is_facet(enumeration) -> true;
+is_facet(whiteSpace) -> true;
+is_facet(maxInclusive) -> true;
+is_facet(maxExclusive) -> true;
+is_facet(minInclusive) -> true;
+is_facet(minExclusive) -> true;
+is_facet(totalDigits) -> true;
+is_facet(fractionDigits) -> true;
+is_facet(_) -> false.
+    
+
+is_builtin_simple_type("string") -> true;
+is_builtin_simple_type("normalizedString") -> true;
+is_builtin_simple_type("token") -> true;
+is_builtin_simple_type("base64Binary") -> true;
+is_builtin_simple_type("hexBinary") -> true;
+is_builtin_simple_type("integer") -> true;
+is_builtin_simple_type("positiveInteger") -> true;
+is_builtin_simple_type("negativeInteger") -> true;
+is_builtin_simple_type("nonNegativeInteger") -> true;
+is_builtin_simple_type("nonPositiveInteger") -> true;
+is_builtin_simple_type("long") -> true;
+is_builtin_simple_type("unsignedLong") -> true;
+is_builtin_simple_type("int") -> true;
+is_builtin_simple_type("unsignedInt") -> true;
+is_builtin_simple_type("short") -> true;
+is_builtin_simple_type("unsignedShort") -> true;
+is_builtin_simple_type("decimal") -> true;
+is_builtin_simple_type("float") -> true;
+is_builtin_simple_type("double") -> true;
+is_builtin_simple_type("boolean") -> true;
+is_builtin_simple_type("duration") -> true;
+is_builtin_simple_type("dateTime") -> true;
+is_builtin_simple_type("date") -> true;
+is_builtin_simple_type("time") -> true;
+is_builtin_simple_type("gYear") -> true;
+is_builtin_simple_type("gYearMonth") -> true;
+is_builtin_simple_type("gMonth") -> true;
+is_builtin_simple_type("gMonthDay") -> true;
+is_builtin_simple_type("gDay") -> true;
+is_builtin_simple_type("Name") -> true;
+is_builtin_simple_type("QName") -> true;
+is_builtin_simple_type("NCName") -> true;
+is_builtin_simple_type("anyURI") -> true;
+is_builtin_simple_type("language") -> true;
+is_builtin_simple_type("ID") -> true;
+is_builtin_simple_type("IDREF") -> true;
+is_builtin_simple_type("IDREFS") -> true;
+is_builtin_simple_type("ENTITY") -> true;
+is_builtin_simple_type("ENTITIES") ->true;
+is_builtin_simple_type("NOTATION") -> true;
+is_builtin_simple_type("NMTOKEN") -> true;
+is_builtin_simple_type("NMTOKENS") -> true;
+is_builtin_simple_type("byte") -> true;
+is_builtin_simple_type("unsignedByte") -> true;
+is_builtin_simple_type(_) -> false.

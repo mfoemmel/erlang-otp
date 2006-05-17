@@ -17,19 +17,8 @@
 %%
 %% Dynamic Driver Loader and Linker
 %%
-%% Simple interface for dynamic library/shared object driver loader/linker.
+%% Interface for dynamic library/shared object driver loader/linker.
 %% Provides methods for loading, unloading and listing drivers.
-%%
-%% XXX To do:
-%%  - When starting, should place itself under a supervisor.
-%%  - After restart, must find out which drivers are loaded and
-%%    which ports use them.  Alternative, if killed, should take
-%%    down the whole OTP.
-%%  = As a fix now, it sets its group leader to 'user' to not get
-%%    killed by the application_master that happens to start
-%%    ddll_server, and when started unloads all dynamically loaded
-%%    drivers, and thereby kills all ports belonging to them. This
-%%    should be done by the driver when its port owner disappears.
 
 -module(erl_ddll).
 
@@ -42,12 +31,6 @@
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,
 	 terminate/2,code_change/3]).
 
-%% Defines for ddll_drv.
-
--define(LOAD_DRIVER,$l).
--define(UNLOAD_DRIVER,$u).
--define(GET_DRIVERS,$g).
-
 %%% --------------------------------------------------------
 %%% Interface Functions. 
 %%% --------------------------------------------------------
@@ -58,41 +41,23 @@ start() ->
 start_link() ->
     gen_server:start_link({local,ddll_server}, erl_ddll, [], []).
 
-init([]) ->
-    process_flag(trap_exit, true),
-    %% Must set group leader to something harmless. Otherwise this
-    %% server will be terminated (kill) when the application_master of the
-    %% invoking application is terminated.
-    case whereis(user) of
-	Pid when pid(Pid) ->
-	    group_leader(Pid, self());
-	_ -> ok
-    end,
-    Port = open_port({spawn, ddll}, []),
-    {ok,Drivers} = loaded_drivers(Port),
-    DynDrivers = [D || D <- Drivers, unload_driver(Port, D) == ok],
-    case DynDrivers of
-	[] -> ok;
-	_ -> error_logger:error_msg(?MODULE_STRING" ~p forced unload of ~p~n", 
-				    [self(),DynDrivers])
-    end,
-    {ok, {Port, []}}.
-
-load_driver(Path, Driver) when atom(Path) ->
+load_driver(Path, Driver) when is_atom(Path) ->
     load_driver(atom_to_list(Path), Driver);
-load_driver(Path, Driver) when atom(Driver) ->
+load_driver(Path, Driver) when is_atom(Driver) ->
     load_driver(Path, atom_to_list(Driver));
-load_driver(Path, Driver) when list(Path), list(Driver) ->
+load_driver(Path, Driver) when is_list(Path), is_list(Driver) ->
     FullName = filename:join(Path, Driver),
     req({load_driver, FullName, Driver}).
 
-unload_driver(Path) when atom(Path) ->
+unload_driver(Path) when is_atom(Path) ->
     unload_driver(atom_to_list(Path));
-unload_driver(Path) when list(Path) ->
+unload_driver(Path) when is_list(Path) ->
     req({unload_driver, Path}).
 
 stop() ->
-    req(stop).
+    %% No-op since this process is never supposed to be stopped.
+    %% This function is kept for backwards compatibility.
+    ok.
 
 loaded_drivers() ->
     req(loaded_drivers).
@@ -110,15 +75,24 @@ format_error(not_loaded) -> "Driver not loaded";
 format_error(not_loaded_by_this_process) -> "Driver not loaded by this process";
 format_error(_) -> "Unknown error".
 
+
+%%% --------------------------------------------------------
+%%% Miscellanous functions.
+%%% --------------------------------------------------------
+
+%% Defines for ddll_drv.
+
+-define(LOAD_DRIVER,$l).
+-define(UNLOAD_DRIVER,$u).
+-define(GET_DRIVERS,$g).
+
+init([]) ->
+    process_flag(trap_exit, true),
+    Port = open_port({spawn, ddll}, []),
+    {ok, {Port, []}}.
+
 req(Req) ->
-    case catch gen_server:call(ddll_server, Req, infinity) of
-	{'EXIT',{noproc,_}} ->
-	    erlang:yield(), % Give server time to die properly if dying
-	    start(),
-	    gen_server:call(ddll_server, Req, infinity);
-	{'EXIT',Reason} -> exit(Reason);
-	Reply -> Reply
-    end.
+    gen_server:call(ddll_server, Req, infinity).
 
 
 %%% --------------------------------------------------------
@@ -134,10 +108,7 @@ handle_call({unload_driver, Driver}, {From, _}, Data) ->
     {reply, Result, NewData};
 
 handle_call(loaded_drivers, _From, {Port, Drivers}) ->
-    {reply, loaded_drivers(Port), {Port, Drivers}};
-
-handle_call(stop, _, Data) ->
-    {stop, normal, ok, Data}.
+    {reply, loaded_drivers(Port), {Port, Drivers}}.
 
 handle_cast(_, Data) ->
     {noreply, Data}.
@@ -148,19 +119,18 @@ handle_info({'EXIT', Pid, _Reason}, {Port, Drivers}) ->
     NewDrivers = unload_drivers(Drivers, Pid, Port, []),
     {noreply, {Port, NewDrivers}};
 handle_info(Other, Data) ->
-    error_logger:info_msg(?MODULE_STRING" received:~n"
+    error_logger:info_msg(?MODULE_STRING ++ " received:~n"
 			  "   ~p~n", [Other]),
     {noreply, Data}.
 
 terminate(_Reason, {Port, Drivers}) ->
     unload_all_drivers(Drivers, Port),
-    Port ! {self, close}.
+    port_close(Port).
 
-code_change(_OldVsn, State, _Extra) -> 
+code_change(_OldVsn, State, _Extra) ->
     %% I doubt that changing the code for this module will work,
     %% but at least we avoid a compilation warning.
     {ok,State}.
-
 
 
 %%% --------------------------------------------------------
@@ -210,7 +180,6 @@ unload_command(Driver, From, {Port, Drivers}) ->
 	{unload, NewDrivers} ->
 	    {unload_driver(Port, Driver), {Port, NewDrivers}};
 	Error0 ->
-	    %% XXX This is a problem -- this driver will never be unloaded.
 	    Error = transform_static_driver_error(Error0, Driver, Port),
 	    {Error, {Port, Drivers}}
     end.
@@ -224,6 +193,8 @@ transform_static_driver_error({error, not_loaded}, Driver, Port) ->
     {ok, All} = loaded_drivers(Port),
     case lists:member(Driver, All) of
 	true ->
+	    %% Statically linked-in driver, or not loaded through
+	    %% this module.
 	    {error, linked_in_driver};
 	false ->
 	    {error, not_loaded}
@@ -265,7 +236,7 @@ unload_drivers([{Driver, Processes}|Rest], Pid, Port, Result) ->
 		ok -> ok;
 		Error ->
 		    error_logger:error_msg(
-		      ?MODULE_STRING" unload_driver(~p, ~p)~n"
+		      ?MODULE_STRING ++ " unload_driver(~p, ~p)~n"
 		      "-> ~p~n"
 		      "From ~p~n",
 		      [Port,Driver,Error,Pid])
@@ -291,7 +262,7 @@ unload_all_drivers([{Driver, _}|Rest], Port) ->
 	ok -> ok;
 	Error ->
 	    error_logger:error_msg(
-	      ?MODULE_STRING" unload_driver(~p, ~p)~n"
+	      ?MODULE_STRING ++ " unload_driver(~p, ~p)~n"
 	      "-> ~p~n",
 	      [Port,Driver,Error])
     end,
@@ -321,7 +292,7 @@ loaded_drivers(_Port, Status, []) ->
     Status.
 
 command(Port, Command) ->
-    Port ! {self(), {command, Command}},
+    port_command(Port, Command),
     get_response(Port).
 
 get_response(Port) ->

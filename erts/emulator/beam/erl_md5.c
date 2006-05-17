@@ -195,7 +195,7 @@ update(MD5_CTX* context, Eterm obj)
     DECLARE_ESTACK(s);
     Eterm* objp;
     unsigned int csize = 0;
-    char* cptr = buf;
+    unsigned char* cptr = buf;
     byte* bytes;
 
     goto L_jump_start;		/* Avoid push */

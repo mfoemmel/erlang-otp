@@ -37,12 +37,12 @@ typedef struct module {
 Module* erts_get_module(Eterm mod);
 Module* erts_put_module(Eterm mod);
 
-EXTERN_FUNCTION(void, init_module_table, (_VOID_));
-EXTERN_FUNCTION(void, module_info, (CIO));
+void init_module_table(void);
+void module_info(int, void *);
 
-extern IndexTable module_table;
-
-#define module_code(i)     ((Module*)module_table.table[i])
-#define module_code_size   module_table.sz
+Module *module_code(int);
+int module_code_size(void);
+int module_table_sz(void);
+int module_iter(int);
 
 #endif

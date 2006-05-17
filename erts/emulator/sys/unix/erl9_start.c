@@ -108,7 +108,7 @@ main(int argc, char** argv)
 		init_break_handler();
 	    }
 
-	    if ((rval = erts_load_module(NIL, &mod, bins[0].p, bins[0].sz)) < 0) {
+	    if ((rval = erts_load_module(NULL, 0, NIL, &mod, bins[0].p, bins[0].sz)) < 0) {
 		fprintf(stderr, "%s: Load of initial module failed: %d\n",
 			progname, rval);
 		abort();

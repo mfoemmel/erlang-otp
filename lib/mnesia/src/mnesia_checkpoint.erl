@@ -66,8 +66,6 @@
 -import(mnesia_lib, [add/2, del/2, set/2, unset/1]).
 -import(mnesia_lib, [dbg_out/2]).
 
--record(tm, {log, pending, transactions, checkpoints}).
-
 -record(checkpoint_args, {name = {now(), node()},
 			  allow_remote = true,
 			  ram_overrides_dump = false,
@@ -589,15 +587,21 @@ cast(Name, Msg) ->
     end.
 
 call(Name, Msg) ->
-    case cast(Name, Msg) of
-	{ok, Pid} ->
-	    catch link(Pid), % Always local
+    case ?catch_val({checkpoint, Name}) of
+	{'EXIT', _} ->
+	    {error, {no_exists, Name}};
+
+	Pid when pid(Pid) ->
+	    Monitor = erlang:monitor(process, Pid), %catch link(Pid), % Always local
+	    Pid ! {self(), Msg},
 	    Self = self(),
 	    receive
 		{'EXIT', Pid, Reason} ->
 		    {error, {"Got exit", [Name, Reason]}};
+		{'DOWN', Monitor, _, Pid, Reason} ->
+		    {error, {"Got exit", [Name, Reason]}};
 		{Name, Self, Reply} ->
-		    unlink(Pid),
+		    erlang:demonitor(Monitor),
 		    Reply
 	    end;
 	Error ->
@@ -663,7 +667,8 @@ prepare_tab(Cp, R, Storage) ->
 	true ->
 	    R2 = retainer_create(Cp, R, Tab, Name, Storage),
 	    set({Tab, {retainer, Name}}, R2),
-	    add({Tab, checkpoints}, Name), %% Keep checkpoint info for table_info & mnesia_session 
+	    %% Keep checkpoint info for table_info & mnesia_session 
+	    add({Tab, checkpoints}, Name), 
 	    add_chkp_info(Tab, Name),
 	    R2;
 	false ->
@@ -924,17 +929,20 @@ do_stop(Cp) ->
 deactivate_tab(R) ->
     Name = R#retainer.cp_name,
     Tab = R#retainer.tab_name,
-    del({Tab, checkpoints}, Name),   %% Keep checkpoint info for table_info & mnesia_session 
-    del_chkp_info(Tab, Name),
-    unset({Tab, {retainer, Name}}),
-    Active = lists:member(node(), R#retainer.writers),
-    case R#retainer.store of
-	undefined ->
-	    ignore;
-	Store when Active == true ->
-	    retainer_delete(Store);
-	_ ->
-	    ignore
+    try
+	Active = lists:member(node(), R#retainer.writers),
+	case R#retainer.store of
+	    undefined ->
+		ignore;
+	    Store when Active == true ->
+		retainer_delete(Store);
+	    _ ->
+		ignore
+	end,
+	unset({Tab, {retainer, Name}}),
+	del({Tab, checkpoints}, Name),   %% Keep checkpoint info for table_info & mnesia_session 
+	del_chkp_info(Tab, Name)
+    catch _:_ -> ignore
     end.
 
 del_chkp_info(Tab, Name) ->   
@@ -1006,8 +1014,8 @@ do_add_copy(Cp, Tab, Node) when Node /= node()->
 				true ->
 				    %% We need to send schema retainer somewhere
 				    RS0 = val({schema, {retainer, Name}}),
-				    W = RS0#retainer.writers,
-				    RS1 = RS0#retainer{writers = W ++ [Node]},
+				    WS = RS0#retainer.writers,
+				    RS1 = RS0#retainer{writers = WS ++ [Node]},
 				    case send_retainer(Cp, RS1, Node) of
 					{ok, Cp1} ->
 					    send_retainer(Cp1, R, Node);
@@ -1051,11 +1059,11 @@ find_retainer(Ret, [H|R], Acc) ->
 send_retainer(Cp, R, Node) ->
     Name = Cp#checkpoint_args.name,
     Nodes0 = Cp#checkpoint_args.nodes -- [Node],
-    Nodes1 = Nodes0 ++ [Node],
-    Nodes = Nodes1 -- [node()],
-    abcast(Nodes, Name, {add_retainer, R, Node}),
+    Nodes = Nodes0 -- [node()],
+    Msg = {add_retainer, R, Node},
+    abcast(Nodes, Name, Msg),
+    {ok, _} = rpc:call(Node, ?MODULE, cast, [Name, Msg]),
     Store = R#retainer.store,
-%%    send_retainer2(Node, Name, Store, retainer_next_slot(Store, 0)),
     send_retainer2(Node, Name, Store, retainer_first(Store)),
     Cp2 = do_add_retainer(Cp, R, Node),
     {ok, Cp2}.

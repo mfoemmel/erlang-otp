@@ -47,11 +47,13 @@ SGML_APP_FILES = application.sgml
 SGML_REF3_FILES = jinterface.sgml
 
 SGML_PART_FILES = \
-	part.sgml\
-	part_notes.sgml
+	part.sgml \
+	part_notes.sgml \
+	part_notes_history.sgml
 
 SGML_CHAPTER_FILES = \
 	notes.sgml \
+	notes_history.sgml \
 	jinterface_users_guide.sgml
 
 BOOK_FILES = book.sgml
@@ -69,7 +71,7 @@ TEX_FILES_BOOK = \
 TEX_FILES_REF_MAN = $(SGML_REF3_FILES:%.sgml=%.tex) \
 	$(SGML_APP_FILES:%.sgml=%.tex)
 TEX_FILES_USERS_GUIDE = \
-	$(SGML_CHAPTER_FILES:%.sgml=%.tex)
+	part.tex $(SGML_CHAPTER_FILES:%.sgml=%.tex)
 
 
 TOP_PDF_FILE = jinterface-$(VSN).pdf
@@ -125,7 +127,6 @@ HTML_FILES = \
 
 
 EXTRA_FILES = \
-	notes_history.html \
 	summary.html.src \
 	$(DEFAULT_GIF_FILES) \
 	$(DEFAULT_HTML_FILES) \
@@ -184,7 +185,7 @@ clean clean_docs clean_tex:
 	rm -f $(TEX_FILES_USERS_GUIDE) $(TEX_FILES_REF_MAN) $(TEX_FILES_BOOK)
 	rm -f $(HTML_FILES) $(MAN3_FILES)
 	rm -f $(TOP_HTML_FILES) $(TOP_PDF_FILE) $(TOP_PS_FILE)
-	rm -f errs core *~ *sgmls_output *sgmls_errs *dump $(LATEX_CLEAN)
+	rm -f errs core *~ *sgmls_output *sgmls_errs *dump min_head.gif $(LATEX_CLEAN)
 	rm -f $(JAVA_GEN_FILES)
 
 

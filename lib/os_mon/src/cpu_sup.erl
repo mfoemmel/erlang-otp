@@ -470,7 +470,7 @@ state_list_add([{State, ValueA} | RestA], [{State, ValueB} | RestB]) ->
     [{State, ValueA + ValueB} | state_list_add(RestA, RestB)].
 
 one_step_backwards(State, New, Old) ->
-    case State#state.os_type of
+    case os:type() of
 	{unix, linux} ->
 	    %% This should never happen! But values sometimes takes a step
 	    %% backwards on linux. We'll ignore it as long as it's only

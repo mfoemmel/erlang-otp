@@ -174,6 +174,17 @@ obsolete(os_mon_mib, init, 1) ->
 obsolete(os_mon_mib, stop, 1) ->
     {true, {os_mon_mib, unload, 1}};
 
+obsolete(auth, is_auth, 1) ->
+    {true, {net_adm, ping, 1}};
+obsolete(auth, cookie, 0) ->
+    {true, {erlang, get_cookie, 0}};
+obsolete(auth, cookie, 1) ->
+    {true, {erlang, set_cookie, 2}};
+obsolete(auth, node_cookie, 1) ->
+    {true, "Deprecated; use erlang:set_cookie/2 and net_adm:ping/1 instead"};
+obsolete(auth, node_cookie, 2) ->
+    {true, "Deprecated; use erlang:set_cookie/2 and net_adm:ping/1 instead"};
+
 obsolete(_, _, _) ->
     false.
 

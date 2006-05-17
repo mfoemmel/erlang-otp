@@ -21,7 +21,7 @@ static void print_slot(Eterm *sp, unsigned int live)
 	   2*(int)sizeof(long), (unsigned long)sp,
 	   2*(int)sizeof(long), val);
     if( live )
-	ldisplay(val, COUT, 30);
+	erts_printf("%.30T", val);
     printf("\r\n");
 }
 
@@ -46,22 +46,18 @@ void hipe_print_nstack(Process *p)
     printf(" | %*s | 0x%0*lx |\r\n",
 	   2+2*(int)sizeof(long), "heap",
 	   2*(int)sizeof(long), (unsigned long)p->heap);
-#ifndef SHARED_HEAP
     printf(" | %*s | 0x%0*lx |\r\n",
 	   2+2*(int)sizeof(long), "high_water",
 	   2*(int)sizeof(long), (unsigned long)p->high_water);
-#endif
     printf(" | %*s | 0x%0*lx |\r\n",
 	   2+2*(int)sizeof(long), "hend",
 	   2*(int)sizeof(long), (unsigned long)p->htop);
-#ifndef SHARED_HEAP
     printf(" | %*s | 0x%0*lx |\r\n",
 	   2+2*(int)sizeof(long), "old_heap",
 	   2*(int)sizeof(long), (unsigned long)p->old_heap);
     printf(" | %*s | 0x%0*lx |\r\n",
 	   2+2*(int)sizeof(long), "old_hend",
 	   2*(int)sizeof(long), (unsigned long)p->old_hend);
-#endif
     printf(" | %*s | 0x%0*lx |\r\n",
 	   2+2*(int)sizeof(long), "nsp",
 	   2*(int)sizeof(long), (unsigned long)p->hipe.nsp);

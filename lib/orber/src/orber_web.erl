@@ -52,7 +52,6 @@
 	 {iiop_connection_timeout, "IIOP Connection Timeout"},
 	 {iiop_setup_connection_timeout, "IIOP Setup Connection Timeout"},
 	 {iiop_port, "IIOP Port"},
-	 {bootstrap_port, "Bootstrap Port"},
 	 {domain, "Orber Domain"},
 	 {orber_nodes, "Nodes in Domain"},
 	 {giop_version, "Default GIOP Version"},

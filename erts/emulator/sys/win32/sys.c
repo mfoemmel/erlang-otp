@@ -20,6 +20,10 @@
  *
  */
 
+#ifdef HAVE_CONFIG_H
+#  include "config.h"
+#endif
+
 #include "sys.h"
 #include "erl_alloc.h"
 #include "erl_sys_driver.h"
@@ -34,7 +38,6 @@ void win_check_io(int wait);
 void erl_start(int, char**);
 void erl_exit(int n, char*, _DOTS_);
 void erl_error(char*, va_list);
-int send_error_to_logger(Eterm);
 void erl_crash_dump(char*, int, char*, ...);
 
 /*
@@ -123,6 +126,8 @@ static OSVERSIONINFO int_os_version;	/* Version information for Win32. */
    - call erl_start() to parse arguments and do other init
 */
 
+static erts_smp_atomic_t sys_misc_mem_sz;
+
 HMODULE beam_module = NULL;
 
 void erl_sys_init();
@@ -130,6 +135,12 @@ void erl_sys_init();
 void erl_sys_args(int* argc, char** argv);
 
 int nohup;
+
+Uint
+erts_sys_misc_mem_sz(void)
+{
+    return (Uint) erts_smp_atomic_read(&sys_misc_mem_sz);
+}
 
 void erl_sys_args(int* argc, char** argv)
 {
@@ -150,9 +161,9 @@ void erl_sys_args(int* argc, char** argv)
 						      "-service_event"))) {
 	if ((erts_service_event = 
 	     OpenEvent(EVENT_ALL_ACCESS,FALSE,event_name)) == NULL) {
-	    sys_printf(CERR,
-		       "Warning: could not open service event: %s\r\n", 
-		       event_name);
+	    erts_fprintf(stderr,
+			 "Warning: could not open service event: %s\r\n", 
+			 event_name);
 	}	    
     } else {
 	erts_service_event = NULL;
@@ -169,6 +180,7 @@ void erl_sys_args(int* argc, char** argv)
     }
 #endif
 }
+
 
 static void
 init_console()
@@ -325,11 +337,6 @@ GETENV_STATE *state0;
 /************************** Port I/O *******************************/
 
 /* I. Common stuff */
-
-#define TMP_BUF_MAX (tmp_buf_size - 1024)
-static byte *tmp_buf;
-static int tmp_buf_size;
-int cerr_pos;
 
 /* II. The spawn/fd/vanilla drivers */
 
@@ -542,7 +549,7 @@ new_driver_data(port_num, packet_bytes, wait_objs_required, use_threads)
 	    dp->inbuf = DRV_BUF_ALLOC(dp->inBufSize);
 	    if (dp->inbuf == NULL)
 		return NULL;
-	    erts_sys_misc_mem_sz += dp->inBufSize;
+	    erts_smp_atomic_add(&sys_misc_mem_sz, dp->inBufSize);
 	    dp->outBufSize = 0;
 	    dp->outbuf = NULL;
 	    dp->port_num = port_num;
@@ -572,8 +579,8 @@ static void
 release_driver_data(DriverData* dp)
 {
     if (dp->inbuf != NULL) {
-	ASSERT(erts_sys_misc_mem_sz >= dp->inBufSize);
-	erts_sys_misc_mem_sz -= dp->inBufSize;
+	ASSERT(erts_smp_atomic_read(&sys_misc_mem_sz) >= dp->inBufSize);
+	erts_smp_atomic_add(&sys_misc_mem_sz, -1*dp->inBufSize);
 	DRV_BUF_FREE(dp->inbuf);
 	dp->inBufSize = 0;
 	dp->inbuf = NULL;
@@ -581,8 +588,8 @@ release_driver_data(DriverData* dp)
     ASSERT(dp->inBufSize == 0);
 
     if (dp->outbuf != NULL) {
-	ASSERT(erts_sys_misc_mem_sz >= dp->outBufSize);
-	erts_sys_misc_mem_sz -= dp->outBufSize;
+	ASSERT(erts_smp_atomic_read(&sys_misc_mem_sz) >= dp->outBufSize);
+	erts_smp_atomic_add(&sys_misc_mem_sz, -1*dp->outBufSize);
 	DRV_BUF_FREE(dp->outbuf);
 	dp->outBufSize = 0;
 	dp->outbuf = NULL;
@@ -855,7 +862,7 @@ spawn_init()
   
     driver_data = (struct driver_data *)
 	erts_alloc(ERTS_ALC_T_DRV_TAB, max_files * sizeof(struct driver_data));
-    erts_sys_misc_mem_sz += max_files * sizeof(struct driver_data);
+    erts_smp_atomic_add(&sys_misc_mem_sz, max_files*sizeof(struct driver_data));
     for (i = 0; i < max_files; i++)
 	driver_data[i].port_num = PORT_FREE;
     return 0;
@@ -1817,7 +1824,7 @@ output(ErlDrvData drv_data, char* buf, int len)
     }
 
     dp->outBufSize = pb+len;
-    erts_sys_misc_mem_sz += dp->outBufSize;
+    erts_smp_atomic_add(&sys_misc_mem_sz, dp->outBufSize);
 
     /*
      * Store header bytes (if any).
@@ -1846,8 +1853,8 @@ output(ErlDrvData drv_data, char* buf, int len)
     } else {
 	dp->out.ov.Offset += pb+len; /* For vanilla driver. */
 	/* XXX OffsetHigh should be changed too. */
-	ASSERT(erts_sys_misc_mem_sz >= dp->outBufSize);
-	erts_sys_misc_mem_sz -= dp->outBufSize;
+	ASSERT(erts_smp_atomic_read(&sys_misc_mem_sz) >= dp->outBufSize);
+	erts_smp_atomic_add(&sys_misc_mem_sz, -1*dp->outBufSize);
 	DRV_BUF_FREE(dp->outbuf);
 	dp->outBufSize = 0;
 	dp->outbuf = NULL;
@@ -1948,10 +1955,10 @@ ready_input(ErlDrvData drv_data, ErlDrvEvent ready_event)
 			    error = ERROR_NOT_ENOUGH_MEMORY;
 			    break; /* Break out of loop into error handler. */
 			}
-			ASSERT(erts_sys_misc_mem_sz >= dp->inBufSize);
-			erts_sys_misc_mem_sz -= dp->inBufSize;
+			ASSERT(erts_smp_atomic_read(&sys_misc_mem_sz) >= dp->inBufSize);
+			erts_smp_atomic_add(&sys_misc_mem_sz,
+					    dp->totalNeeded - dp->inBufSize);
 			dp->inBufSize = dp->totalNeeded;
-			erts_sys_misc_mem_sz += dp->inBufSize;
 			dp->inbuf = new_buf;
 		    }
 		}
@@ -2042,19 +2049,19 @@ ready_output(ErlDrvData drv_data, ErlDrvEvent ready_event)
 #ifdef DEBUG
     /* Temporary!!! */
     if (!(dp->outbuf)) {
-	erl_printf(COUT,"WARNING: Unexpected call to ready_output with outbuf "
-		   "set to NULL!\r\n");
+	erts_printf("WARNING: Unexpected call to ready_output with outbuf "
+		    "set to NULL!\r\n");
     } else {
-	ASSERT(erts_sys_misc_mem_sz >= dp->outBufSize);
-	erts_sys_misc_mem_sz -= dp->outBufSize;
+	ASSERT(erts_smp_atomic_read(&sys_misc_mem_sz) >= dp->outBufSize);
+	erts_smp_atomic_add(&sys_misc_mem_sz, -1*dp->outBufSize);
 	DRV_BUF_FREE(dp->outbuf);
 	dp->outBufSize = 0;
 	dp->outbuf = NULL;
     }
 #else
     ASSERT(dp->outbuf != NULL);
-    ASSERT(erts_sys_misc_mem_sz >= dp->outBufSize);
-    erts_sys_misc_mem_sz -= dp->outBufSize;
+    ASSERT(erts_smp_atomic_read(&sys_misc_mem_sz) >= dp->outBufSize);
+    erts_smp_atomic_add(&sys_misc_mem_sz, -1*dp->outBufSize);
     DRV_BUF_FREE(dp->outbuf);
     dp->outBufSize = 0;
     dp->outbuf = NULL;
@@ -2083,17 +2090,14 @@ void sys_get_pid(char *buffer){
 int sys_putenv(char *buffer){
     Uint sz = strlen(buffer)+1;
     char *env = erts_alloc(ERTS_ALC_T_PUTENV_STR, sz);
-    erts_sys_misc_mem_sz += sz;
+    erts_smp_atomic_add(&sys_misc_mem_sz, sz);
     strcpy(env,buffer);
     return(_putenv(env));
 }
 
 void
-sys_init_io(byte *buf, Uint size)
+sys_init_io(void)
 {
-    tmp_buf = buf;
-    tmp_buf_size = size;
-    cerr_pos = 0;
     
     /* Now heres an icky one... This is called before drivers are, so we
        can change our view of the number of open files possible.
@@ -2112,9 +2116,11 @@ sys_init_io(byte *buf, Uint size)
 
 	sys_memset((void*)&dopts, 0, sizeof(SysDriverOpts));
 	add_driver_entry(&async_driver_entry);
-	/* FIXME: 7 == NIL */
-	ret = open_driver(&async_driver_entry, 7, "async", &dopts);
+	ret = open_driver(&async_driver_entry, NIL, "async", &dopts);
 	DEBUGF(("open_driver = %d\n", ret));
+	if (ret < 0)
+	    erl_exit(1, "Failed to open async driver\n");
+	erts_port[ret].status |= ERTS_IMMORTAL_PORT;
     }
 #endif
 }
@@ -2137,66 +2143,6 @@ void *erts_sys_realloc(ErtsAlcType_t t, void *x, void *p, Uint sz)
 void erts_sys_free(ErtsAlcType_t t, void *x, void *p)
 {
     free(p);
-}
-
-/* XXX It isn't possible to do this safely without "*nsprintf"
-   (i.e. something that puts a limit on the number of chars printed)
-   - the below is probably the best we can do...    */
-    
-/*VARARGS*/
-
-void sys_printf(CIO where, char* format, ...)
-{
-    va_list va;
-
-    va_start(va, format);
-    if (where == CBUF) {
-	if (cerr_pos < TMP_BUF_MAX) {
-	    vsprintf((char*)&tmp_buf[cerr_pos],format,va);
-	    cerr_pos += sys_strlen((char*)&tmp_buf[cerr_pos]);
-	    if (cerr_pos >= tmp_buf_size)
-		erl_exit(1, "Internal buffer overflow in erl_printf\n");
-	    if (cerr_pos >= TMP_BUF_MAX) {
-		strcpy((char*)&tmp_buf[TMP_BUF_MAX - 3], "...");
-		cerr_pos = TMP_BUF_MAX;
-	    }
-	}
-    }
-    else if (win_console && (where == COUT || where == CERR))
-	ConVprintf(format, va);
-    else if (where == CERR) {
-	erl_error(format, va);
-    } else if (where == COUT) {
-	vprintf(format, va);
-	fflush(stdout);
-    } else {
-	/* where indicates which fd to write to */
-	vsprintf((char*)tmp_buf, format, va);
-	write(where, tmp_buf, sys_strlen((char*)tmp_buf));
-    }
-    va_end(va);
-}
-
-void sys_putc(ch, where)
-int ch; CIO where;
-{
-    if (where == CBUF) {
-	if (cerr_pos < TMP_BUF_MAX) {
-	    tmp_buf[cerr_pos++] = ch;
-	    if (cerr_pos == TMP_BUF_MAX) {
-		strcpy((char*)&tmp_buf[TMP_BUF_MAX - 3], "...");
-		cerr_pos = TMP_BUF_MAX;
-	    }
-	}
-	else if (cerr_pos >= tmp_buf_size)
-	    erl_exit(1, "Internal buffer overflow in erl_printf\n");
-    } else if (where == COUT && win_console) {
-	ConPutChar(ch);
-    } else if (where == COUT) {
-	putchar(ch);
-	fflush(stdout);
-    } else
-	sys_printf(where, "%c", ch);
 }
 
 static Preload* preloaded = NULL;
@@ -2245,8 +2191,9 @@ Preload* sys_preloaded(void)
 			       (num_preloaded+1)*sizeof(Preload));
 	res_name = erts_alloc(ERTS_ALC_T_PRELOADED,
 			      (num_preloaded+1)*sizeof(unsigned));
-	erts_sys_misc_mem_sz += (num_preloaded+1)*sizeof(Preload);
-	erts_sys_misc_mem_sz += (num_preloaded+1)*sizeof(unsigned);
+	erts_smp_atomic_add(&sys_misc_mem_sz,
+			    (num_preloaded+1)*sizeof(Preload)
+			    + (num_preloaded+1)*sizeof(unsigned));
 	for (i = 0; i < num_preloaded; i++) {
 	    int n;
 
@@ -2257,7 +2204,7 @@ Preload* sys_preloaded(void)
 	    n = GETWORD(data);
 	    data += 2;
 	    preloaded[i].name = erts_alloc(ERTS_ALC_T_PRELOADED, n+1);
-	    erts_sys_misc_mem_sz += n+1;
+	    erts_smp_atomic_add(&sys_misc_mem_sz, n+1);
 	    sys_memcpy(preloaded[i].name, data, n);
 	    preloaded[i].name[n] = '\0';
 	    data += n;
@@ -2503,11 +2450,71 @@ erl_assert_error(char* expr, char* file, int line)
 }
 
 #endif /* DEBUG */
+	    
+static void
+check_supported_os_version(void)
+{
+#if defined(_WIN32_WINNT)
+    {
+	DWORD major = (_WIN32_WINNT >> 8) & 0xff;
+	DWORD minor = _WIN32_WINNT & 0xff;
+
+	if (int_os_version.dwPlatformId != VER_PLATFORM_WIN32_NT
+	    || int_os_version.dwMajorVersion < major
+	    || (int_os_version.dwMajorVersion == major
+		&& int_os_version.dwMinorVersion < minor))
+	    erl_exit(-1,
+		     "Windows version not supported "
+		     "(min required: winnt %d.%d)\n",
+		     major, minor);
+    }
+#elif defined(_WIN32_WINDOWS)
+    {
+	DWORD major = (_WIN32_WINDOWS >> 8) & 0xff;
+	DWORD minor = _WIN32_WINDOWS & 0xff;
+
+	if (int_os_version.dwMajorVersion < major
+	    || (int_os_version.dwMajorVersion == major
+		&& int_os_version.dwMinorVersion < minor))
+	    erl_exit(-1,
+		     "Windows version not supported "
+		     "(min required: win %d.%d)\n",
+		     nt_major, nt_minor);
+    }
+#endif
+}
+
+#ifdef USE_THREADS
+static void *ethr_internal_alloc(size_t size)
+{
+    return erts_alloc_fnf(ERTS_ALC_T_ETHR_INTERNAL, (Uint) size);
+}
+static void *ethr_internal_realloc(void *ptr, size_t size)
+{
+    return erts_realloc_fnf(ERTS_ALC_T_ETHR_INTERNAL, ptr, (Uint) size);
+}
+static void ethr_internal_free(void *ptr)
+{
+    erts_free(ERTS_ALC_T_ETHR_INTERNAL, ptr);
+}
+#endif
 
 void
 erts_sys_pre_init(void)
 {
-    erts_thr_init(NULL);
+    int_os_version.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+    GetVersionEx(&int_os_version);
+    check_supported_os_version();
+#ifdef USE_THREADS
+    {
+	erts_thr_init_data_t eid = ERTS_THR_INIT_DATA_DEF_INITER;
+	eid.alloc = ethr_internal_alloc;
+	eid.realloc = ethr_internal_realloc;
+	eid.free = ethr_internal_free;
+	erts_thr_init(&eid);
+    }
+#endif
+    erts_smp_atomic_init(&sys_misc_mem_sz, 0);
 }
 
 /*
@@ -2524,7 +2531,6 @@ void noinherit_std_handle(DWORD type)
     }
 }
 	    
-    
 
 void erl_sys_init(void)
 {
@@ -2533,9 +2539,6 @@ void erl_sys_init(void)
     noinherit_std_handle(STD_OUTPUT_HANDLE);
     noinherit_std_handle(STD_INPUT_HANDLE);
     noinherit_std_handle(STD_ERROR_HANDLE);
-
-    int_os_version.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-    GetVersionEx(&int_os_version);
 
     /*
      * Test if we have named pipes or not.

@@ -1380,7 +1380,8 @@ encode_bit_string_bits(C, BitListVal, _NamedBitList, TagIn) when list(BitListVal
 	    {Len, Unused, OctetList} = encode_bitstring(BitListVal),  
 	    %%add unused byte to the Len 
 	    encode_tags(TagIn, [Unused | OctetList], Len+1);
-	Constr={Min,Max} when integer(Min),integer(Max) -> 
+	Constr={Min,_Max} when integer(Min) ->
+	    %% Max may be an integer or 'MAX'
 	    encode_constr_bit_str_bits(Constr,BitListVal,TagIn);
 	{Constr={_,_},[]} ->%Constr={Min,Max}
 	    %% constraint with extension mark
@@ -1421,12 +1422,15 @@ encode_constr_bit_str_bits({{_Min1,Max1},{Min2,Max2}},BitListVal,TagIn) ->
 	    %%add unused byte to the Len 
 	    encode_tags(TagIn, [Unused, OctetList], Len+1)  
     end;
-encode_constr_bit_str_bits({_Min,Max},BitListVal,TagIn) ->
+encode_constr_bit_str_bits({Min,Max},BitListVal,TagIn) ->
     BitLen = length(BitListVal), 
     if  
 	BitLen > Max -> 
 	    exit({error,{asn1,{bitstring_length,{{was,BitLen},
 						 {maximum,Max}}}}}); 
+	BitLen < Min ->
+	    exit({error,{asn1,{bitstring_length,{{was,BitLen},
+						 {minimum,Max}}}}});
 	true -> 
 	    {Len, Unused, OctetList} = encode_bitstring(BitListVal),  
 	    %%add unused byte to the Len 

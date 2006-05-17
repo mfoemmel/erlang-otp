@@ -83,6 +83,8 @@
 		member/2,reverse/1,reverse/2]).
 -import(ordsets, [add_element/2,del_element/2,union/2,union/1,subtract/2]).
 
+-compile({nowarn_deprecated_function, {erlang,hash,2}}).
+
 -include("core_parse.hrl").
 -include("v3_kernel.hrl").
 
@@ -171,10 +173,6 @@ wrap_guard(Core, St0) ->
 %%  Must enter try blocks and isets and find the last Kexpr in them.
 %%  This must end in a recognised BEAM test!
 
-gexpr_test(#k_bif{anno=A,op=#k_remote{mod=#k_atom{val=erlang},
-				      name=#k_atom{val=internal_is_record},arity=3}=Op,
-		  args=Kargs}, St) ->
-    {#k_test{anno=A,op=Op,args=Kargs},St};
 gexpr_test(#k_bif{anno=A,op=#k_remote{mod=#k_atom{val=erlang},
 				      name=#k_atom{val=F},arity=Ar}=Op,
 		  args=Kargs}=Ke, St) ->
@@ -290,16 +288,16 @@ expr(#c_let{anno=A,vars=Cvs,arg=Ca,body=Cb}, Sub0, St0) ->
 expr(#c_letrec{anno=A,defs=Cfs,body=Cb}, Sub0, St0) ->
     %% Make new function names and store substitution.
     {Fs0,{Sub1,St1}} =
-	mapfoldl(fun (#c_def{name=#c_fname{id=F,arity=Ar},val=B}, {Sub,St0}) ->
+	mapfoldl(fun (#c_def{name=#c_fname{id=F,arity=Ar},val=B}, {Sub,S0}) ->
 			 {N,St1} = new_fun_name(atom_to_list(F)
 						++ "/" ++
 						integer_to_list(Ar),
-						St0),
+						S0),
 			 {{N,B},{set_fsub(F, Ar, N, Sub),St1}}
 		 end, {Sub0,St0}, Cfs),
     %% Run translation on functions and body.
-    {Fs1,St2} = mapfoldl(fun ({N,Fd0}, St1) ->
-				 {Fd1,[],St2} = expr(Fd0, Sub1, St1),
+    {Fs1,St2} = mapfoldl(fun ({N,Fd0}, S1) ->
+				 {Fd1,[],St2} = expr(Fd0, Sub1, S1),
 				 Fd = set_kanno(Fd1, A),
 				 {{N,Fd},St2}
 			 end, St1, Fs0),
@@ -329,13 +327,26 @@ expr(#c_receive{anno=A,clauses=Ccs0,timeout=Ce,action=Ca}, Sub, St0) ->
      Pe,St5};
 expr(#c_apply{anno=A,op=Cop,args=Cargs}, Sub, St) ->
     c_apply(A, Cop, Cargs, Sub, St);
+expr(#c_call{anno=A,module=#c_atom{val=erlang},name=#c_atom{val=is_record},
+	     args=[_,Tag,Sz]=Args0}, Sub, St0) ->
+    {Args,Ap,St} = atomic_list(Args0, Sub, St0),
+    Remote = #k_remote{mod=#k_atom{val=erlang},name=#k_atom{val=is_record},arity=3},
+    case {Tag,Sz} of
+	{#c_atom{},#c_int{}} ->
+	    %% Tag and size are literals. Make it a BIF, which will actually
+	    %% be expanded out in a later pass.
+	    {#k_bif{anno=A,op=Remote,args=Args},Ap,St};
+	{_,_} ->
+	    %% (Only in bodies.) Make it into an actual call to the BIF.
+	    {#k_call{anno=A,op=Remote,args=Args},Ap,St}
+    end;
 expr(#c_call{anno=A,module=M0,name=F0,args=Cargs}, Sub, #kern{extinstr=NI}=St0) ->
     Ar = length(Cargs),
     {Type,St1} = case call_type(M0, F0, Ar) of
 		     error ->
 			 %% Invalid call (e.g. M:42/3). Issue a warning,
 			 %% and let the generated code use the old explict apply.
-			 {old_apply,add_warning(get_line(A), bad_call, St0)};
+			 {old_apply,add_warning(get_line(A), bad_call, A, St0)};
 		     apply when NI == false ->
 			 %% Requested compatibility with an earlier version.
 			 {old_apply,St0};
@@ -698,7 +709,6 @@ add_var_def(V, St) ->
 %% is_remote_bif(Mod, Name, Arity) -> true | false.
 %%  Test if function is really a BIF.
 
-is_remote_bif(erlang, internal_is_record, 3) -> true;
 is_remote_bif(erlang, get, 1) -> true;
 is_remote_bif(erlang, N, A) ->
     case erl_internal:guard_bif(N, A) of
@@ -848,13 +858,16 @@ maybe_add_warning(Ke, MatchLine, St) ->
 		       none -> nomatch_shadow;
 		       _ -> {nomatch_shadow,MatchLine}
 		   end,
-	    add_warning(Line, Warn, St)
+	    add_warning(Line, Warn, Anno, St)
     end.
     
 get_line([Line|_]) when is_integer(Line) -> Line;
 get_line([_|T]) -> get_line(T);
 get_line([]) -> none.
     
+get_file([{file,File}|_]) -> File;
+get_file([_|T]) -> get_file(T);
+get_file([]) -> "no_file". % should not happen
 
 %% is_true_guard(Guard) -> bool().
 %% is_false_guard(Guard) -> bool().
@@ -1255,6 +1268,7 @@ is_exit_expr(_) -> false.
 %%  Test whether Kexpr is "enterable", i.e. can handle return from
 %%  within itself without extra #k_return{}.
 
+is_enter_expr(#k_try{}) -> true;
 is_enter_expr(#k_call{}) -> true;
 is_enter_expr(#k_match{}) -> true;
 is_enter_expr(#k_receive{}) -> true;
@@ -1385,6 +1399,19 @@ uexpr(#k_try{anno=A,arg=A0,vars=Vs,body=B0,evars=Evs,handler=H0},
 		  subtract(Hu, lit_list_vars(Evs))]),
     {#k_try{anno=#k{us=Used,ns=lit_list_vars(Rs1),a=A},
 	    arg=A1,vars=Vs,body=B1,evars=Evs,handler=H1,ret=Rs1},
+     Used,St5};
+uexpr(#k_try{anno=A,arg=A0,vars=Vs,body=B0,evars=Evs,handler=H0},
+      return, St0) ->
+    {Avs,St1} = new_vars(length(Vs), St0),	%Need dummy names here
+    {A1,Au,St2} = ubody(A0, {break,Avs}, St1),	%Must break to clean up here!
+    {B1,Bu,St3} = ubody(B0, return, St2),
+    {H1,Hu,St4} = ubody(H0, return, St3),
+    NumNew = 1,
+    {Ns,St5} = new_vars(NumNew, St4),
+    Used = union([Au,subtract(Bu, lit_list_vars(Vs)),
+		  subtract(Hu, lit_list_vars(Evs))]),
+    {#k_try_enter{anno=#k{us=Used,ns=Ns,a=A},
+		  arg=A1,vars=Vs,body=B1,evars=Evs,handler=H1},
      Used,St5};
 uexpr(#k_catch{anno=A,body=B0}, {break,Rs0}, St0) ->
     {Rb,St1} = new_var(St0),
@@ -1591,8 +1618,10 @@ format_error(nomatch_shadow) ->
 format_error(bad_call) ->
     "invalid module and/or function name; this call will always fail".
 
-add_warning(none, Term, #kern{ws=Ws}=St) ->
-    St#kern{ws=[{?MODULE,Term}|Ws]};
-add_warning(Line, Term, #kern{ws=Ws}=St) when Line >= 0 ->
-    St#kern{ws=[{Line,?MODULE,Term}|Ws]};
-add_warning(_, _, St) -> St.
+add_warning(none, Term, Anno, #kern{ws=Ws}=St) ->
+    File = get_file(Anno),
+    St#kern{ws=[{File,[{?MODULE,Term}]}|Ws]};
+add_warning(Line, Term, Anno, #kern{ws=Ws}=St) when Line >= 0 ->
+    File = get_file(Anno),
+    St#kern{ws=[{File,[{Line,?MODULE,Term}]}|Ws]};
+add_warning(_, _, _, St) -> St.

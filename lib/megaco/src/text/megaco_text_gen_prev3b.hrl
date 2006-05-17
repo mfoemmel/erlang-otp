@@ -931,9 +931,7 @@ enc_AuditReply({Tag, Val}, State) ->
 	    [
 	     ?EQUAL,
 	     ?CtxToken,
-	     ?LBRKT_INDENT(State), 
-	     enc_TerminationIDListN(Val, State),
-	     ?RBRKT_INDENT(State)
+	     enc_TerminationIDListN(Val, State)
 	    ];
 	error ->
 	    %% d("enc_AuditReply -> error"),
@@ -1578,8 +1576,18 @@ enc_TerminationIDList1([Singleton], State) ->
 %% No required length of termination ID list
 enc_TerminationIDListN({'TerminationIDList',Val}, State) ->
     enc_TerminationIDListN(Val, State);
-enc_TerminationIDListN(TidList, State) ->
-    enc_list([{TidList, fun enc_TerminationID/2}], State).
+enc_TerminationIDListN([TID], State) ->
+    [
+     ?LBRKT_INDENT(State),
+     enc_TerminationID(TID, State),
+     ?RBRKT_INDENT(State)
+    ];
+enc_TerminationIDListN(TIDs, State) ->
+    [
+     ?LBRKT_INDENT(State),
+     enc_list([{TIDs, fun enc_TerminationID/2}], State),
+     ?RBRKT_INDENT(State)
+    ].
 
 %% TerminationID        = "ROOT" / pathNAME / "$" / "*"
 %% ; Total length of pathNAME must not exceed 64 chars.
@@ -1899,7 +1907,7 @@ enc_MuxDescriptor(Val, State)
      ?MuxToken,
      ?EQUAL,
      enc_MuxType(Val#'MuxDescriptor'.muxType, State),
-     enc_TerminationIDList1(Val#'MuxDescriptor'.termList, State)
+     enc_TerminationIDListN(Val#'MuxDescriptor'.termList, State)
     ].
 
 enc_MuxType({'MuxType',Val}, State) ->

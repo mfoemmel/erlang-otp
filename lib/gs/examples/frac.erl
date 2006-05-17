@@ -75,11 +75,10 @@ rule(_,X) -> X.
 step(a) -> 1.0;
 step(b) -> 0.8;
 step(c) -> 0.6;
-step(g) -> 0.75;
 step(d) -> 0.7;
 step(e) -> 0.6;
 step(f) -> 0.65;
-step(g) -> 0.7;
+step(g) -> 0.75;
 step(_) -> 1.0.
 
 start_coords(1) -> {0.8,0.8};
@@ -140,10 +139,7 @@ drawit([Symbol|T],Id,X0,Y0,Ang,Scale,Stack) ->
     Size = step(Symbol),
     L = Size * Scale,
     {X1, Y1} = plotit(Id,X0,Y0,L,Ang),
-    drawit(T,Id,X1,Y1,Ang,Scale,Stack);
-drawit([Symbol|T],Id,X0,Y0,Ang,Scale,Stack) ->
-    io:format("cannot process:~w~n",[Symbol]),
-    drawit(T,Id,X0,Y0,Ang,Scale,Stack).
+    drawit(T,Id,X1,Y1,Ang,Scale,Stack).
 
 plotit(Id,X0,Y0,L,A) ->
     CosA = math:cos(A),

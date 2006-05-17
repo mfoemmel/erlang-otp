@@ -76,195 +76,118 @@
 #include "erl_vm.h"
 #include "global.h"
 
+#ifdef ERTS_ENABLE_LOCK_CHECK
+#define ASSERT_NO_LOCKED_LOCKS		erts_lc_check_exact(NULL, 0)
+#else
+#define ASSERT_NO_LOCKED_LOCKS
+#endif
+
+
+#if defined(ERTS_TIMER_THREAD) || 1
+/* I don't yet know why, but using a mutex instead of a spinlock
+   or spin-based rwlock avoids excessive delays at startup. */
+static erts_smp_rwmtx_t tiw_lock;
+#define tiw_read_lock()		erts_smp_rwmtx_rlock(&tiw_lock)
+#define tiw_read_unlock()	erts_smp_rwmtx_runlock(&tiw_lock)
+#define tiw_write_lock()	erts_smp_rwmtx_rwlock(&tiw_lock)
+#define tiw_write_unlock()	erts_smp_rwmtx_rwunlock(&tiw_lock)
+#define tiw_init_lock()		erts_smp_rwmtx_init(&tiw_lock, "timer_wheel")
+#else
+static erts_smp_rwlock_t tiw_lock;
+#define tiw_read_lock()		erts_smp_read_lock(&tiw_lock)
+#define tiw_read_unlock()	erts_smp_read_unlock(&tiw_lock)
+#define tiw_write_lock()	erts_smp_write_lock(&tiw_lock)
+#define tiw_write_unlock()	erts_smp_write_unlock(&tiw_lock)
+#define tiw_init_lock()		erts_smp_rwlock_init(&tiw_lock, "timer_wheel")
+#endif
+
+/* BEGIN tiw_lock protected variables 
+**
+** The individual timer cells in tiw are also protected by the same mutex.
+*/
+
 #ifdef SMALL_MEMORY
 #define TIW_SIZE 8192
 #else
-#define TIW_SIZE 65536	/* timing wheel size (should be a power of 2) */
+#define TIW_SIZE 65536		/* timing wheel size (should be a power of 2) */
 #endif
 static ErlTimer** tiw;		/* the timing wheel, allocated in init_time() */
 static Uint tiw_pos;		/* current position in wheel */
 static Uint tiw_nto;		/* number of timeouts in wheel */
-static ErlTimer* tm_list;	/* new timers created while bumping */
+
+/* END tiw_lock protected variables */
 
 /* Actual interval time chosen by sys_init_time() */
-static int itime;
-static int bump_lock;  /* set while bumping */
+static int itime; /* Constant after init */
 
-void
-increment_time(int ticks)
+#if defined(ERTS_TIMER_THREAD)
+static SysTimeval time_start;	/* start of current time interval */
+static long ticks_end;		/* time_start+ticks_end == time_wakeup */
+static long ticks_latest;	/* delta from time_start at latest time update*/
+
+static ERTS_INLINE long time_gettimeofday(SysTimeval *now)
 {
-    do_time += ticks;
+    long elapsed;
+
+    sys_gettimeofday(now);
+    now->tv_usec = 1000 * (now->tv_usec / 1000); /* ms resolution */
+    elapsed = (1000 * (now->tv_sec - time_start.tv_sec) +
+	       (now->tv_usec - time_start.tv_usec) / 1000);
+    // elapsed /= CLOCK_RESOLUTION;
+    return elapsed;
 }
 
-static void
-insert_timer(ErlTimer* p, Uint t)
+static long do_time_update(void)
 {
-    Uint tm;
-    Uint ticks;
+    SysTimeval now;
+    long elapsed;
 
-    /* The current slot (tiw_pos) in timing wheel is the next slot to be
-     * be processed. Hence no extra time tick is needed.
-     *
-     * (x + y - 1)/y is precisely the "number of bins" formula.
-     */
-    ticks = (t + itime - 1) / itime;
-    ticks += do_time;		/* Add backlog of unprocessed time */
-    
-    /* calculate slot */
-    tm = (ticks + tiw_pos) % TIW_SIZE;
-    p->slot = (Uint) tm;
-    p->count = (Uint) (ticks / TIW_SIZE);
-  
-    /* insert at head of list at slot */
-    p->next = tiw[tm];
-    tiw[tm] = p;
-    tiw_nto++;
+    elapsed = time_gettimeofday(&now);
+    ticks_latest = elapsed;
+    return elapsed;
 }
 
-void
-bump_timer(void)
+static ERTS_INLINE long do_time_read(void)
 {
-    Uint keep_pos;
-    Uint count;
-    ErlTimer* p;
-    ErlTimer** prev;
-    Uint dtime = do_time;  /* local copy */
-
-    do_time = 0;
-    /* no need to bump the position if there aren't any timeouts */
-    if (tiw_nto == 0) {
-	return;
-    }
-
-    bump_lock = 1; /* avoid feedback loops in timeout proc */
-
-    /* if do_time > TIW_SIZE we want to go around just once */
-    count = (Uint)(dtime / TIW_SIZE) + 1;
-    keep_pos = (tiw_pos + dtime) % TIW_SIZE;
-    if (dtime > TIW_SIZE) dtime = TIW_SIZE;
-  
-    while (dtime > 0) {
-	/* this is to decrease the counters with the right amount */
-	/* when dtime >= TIW_SIZE */
-	if (tiw_pos == keep_pos) count--;
-	prev = &tiw[tiw_pos];
-	while ((p = *prev) != NULL) {
-	    if (p->count < count) {     /* we have a timeout */
-		*prev = p->next;	/* Remove from list */
-		tiw_nto--;
-		p->next = NULL;
-		p->slot = 0;
-		p->active = 0;
-		(*p->timeout)(p->arg);  /* call timeout callback */
-	    }
-	    else {
-		/* no timeout, just decrease counter */
-		p->count -= count;
-		prev = &p->next;
-	    }
-	}
-	tiw_pos = (tiw_pos + 1) % TIW_SIZE;
-	dtime--;
-    }
-    bump_lock = 0;
-    tiw_pos = keep_pos;
-
-    /* do_time should be 0 during timeout/set_timer feedback 
-     ** tiw_pos is also updated before inserting new timers 
-     */
-    if ((p = tm_list) != NULL) {
-	tm_list = NULL;
-	while (p != NULL) {
-	    ErlTimer* p_next = p->next;
-	    insert_timer(p, p->count);
-	    p = p_next;
-	}
-    }
+    return ticks_latest;
 }
 
-Uint
-erts_timer_wheel_memory_size(void)
+static long do_time_reset(void)
 {
-    return (Uint) TIW_SIZE * sizeof(ErlTimer*);
+    SysTimeval now;
+    long elapsed;
+
+    elapsed = time_gettimeofday(&now);
+    time_start = now;
+    ticks_end = LONG_MAX;
+    ticks_latest = 0;
+    return elapsed;
 }
 
-/* this routine links the time cells into a free list at the start
-   and sets the time queue as empty */
-void
-init_time(void)
+static ERTS_INLINE void do_time_init(void)
 {
-    int i;
-
-    tiw = (ErlTimer**) erts_alloc(ERTS_ALC_T_TIMER_WHEEL,
-				  TIW_SIZE * sizeof(ErlTimer*));
-    for(i = 0; i < TIW_SIZE; i++)
-	tiw[i] = NULL;
-    do_time = tiw_pos = tiw_nto = 0;
-    tm_list = NULL;
-    bump_lock = 0;
-
-    /* system dependent init */
-    itime = erts_init_time_sup();
+    (void)do_time_reset();
 }
 
-/*
-** Insert a process into the time queue, with a timeout 't'
-*/
-void
-erl_set_timer(ErlTimer* p, ErlTimeoutProc timeout, ErlCancelProc cancel,
-	      void* arg, Uint t)
-{
-    erts_deliver_time(NULL);
-    if (p->active)  /* XXX assert ? */
-	return;
-    p->timeout = timeout;
-    p->cancel = cancel;
-    p->arg = arg;
-    p->active = 1;
-    if (bump_lock) {
-	p->next = tm_list;
-	tm_list = p;
-	p->count = t;  /* time is saved here used by bump */
-    } else {
-	insert_timer(p, t);
-    }
-}
-
-void
-erl_cancel_timer(ErlTimer* p)
-{
-    ErlTimer *tp;
-    ErlTimer **prev;
-
-    if (!p->active)  /* allow repeated cancel (drivers) */
-	return;
-    /* find p in linked list at slot p->slot and remove it */
-    prev = &tiw[p->slot];
-    while ((tp = *prev) != NULL) {
-	if (tp == p) {
-	    *prev = p->next;	/* Remove from list */
-	    tiw_nto--;
-	    p->next = NULL;
-	    p->slot = p->count = 0;
-	    p->active = 0;
-	    if (p->cancel != NULL)
-		(*p->cancel)(p->arg);
-	    break;
-	}
-	prev = &tp->next;
-    }
-}
+#else
+erts_smp_atomic_t do_time;	/* set at clock interrupt */
+static ERTS_INLINE long do_time_read(void) { return erts_smp_atomic_read(&do_time); }
+static ERTS_INLINE long do_time_update(void) { return do_time_read(); }
+static ERTS_INLINE void do_time_init(void) { erts_smp_atomic_init(&do_time, 0L); }
+#endif
 
 /* get the time (in units of itime) to the next timeout,
    or -1 if there are no timeouts                     */
- 
-int next_time()
+
+static int next_time_internal(void) /* PRE: tiw_lock taken by caller */
 {
     int i, tm, nto;
     unsigned int min;
     ErlTimer* p;
+    long dt;
   
-    if (tiw_nto == 0) return -1;        /* no timeouts in wheel */
+    if (tiw_nto == 0)
+	return -1;	/* no timeouts in wheel */
   
     /* start going through wheel to find next timeout */
     tm = nto = 0;
@@ -276,7 +199,8 @@ int next_time()
 	    nto++;
 	    if (p->count == 0) {
 		/* found next timeout */
-		return ((tm >= do_time) ? (tm - do_time) : 0);
+		dt = do_time_read();
+		return ((tm >= dt) ? (tm - dt) : 0);
 	    } else {
 		/* keep shortest time in 'min' */
 		if (tm + p->count*TIW_SIZE < min)
@@ -289,7 +213,280 @@ int next_time()
 	tm++;
 	i = (i + 1) % TIW_SIZE;
     } while (i != tiw_pos);
-    return ((min >= do_time) ? (min - do_time) : 0);
+    dt = do_time_read();
+    return ((min >= dt) ? (min - dt) : 0);
+}
+
+/* Private export to erl_time_sup.c */
+int next_time(void)
+{
+    int ret;
+
+    tiw_write_lock();
+    (void)do_time_update();
+    ret = next_time_internal();
+    tiw_write_unlock();
+    return ret;
+}
+
+static ERTS_INLINE void bump_timer_internal(long dt) /* PRE: tiw_lock is write-locked */
+{
+    Uint keep_pos;
+    Uint count;
+    ErlTimer *p, **prev, *timeout_head, **timeout_tail;
+    Uint dtime = (unsigned long)dt;  
+
+    /* no need to bump the position if there aren't any timeouts */
+    if (tiw_nto == 0) {
+	tiw_write_unlock();
+	return;
+    }
+
+    /* if do_time > TIW_SIZE we want to go around just once */
+    count = (Uint)(dtime / TIW_SIZE) + 1;
+    keep_pos = (tiw_pos + dtime) % TIW_SIZE;
+    if (dtime > TIW_SIZE) dtime = TIW_SIZE;
+  
+    timeout_head = NULL;
+    timeout_tail = &timeout_head;
+    while (dtime > 0) {
+	/* this is to decrease the counters with the right amount */
+	/* when dtime >= TIW_SIZE */
+	if (tiw_pos == keep_pos) count--;
+	prev = &tiw[tiw_pos];
+	while ((p = *prev) != NULL) {
+	    if (p->count < count) {     /* we have a timeout */
+		*prev = p->next;	/* Remove from list */
+		tiw_nto--;
+		p->next = NULL;
+		p->active = 0;		/* Make sure cancel callback
+					   isn't called */
+		*timeout_tail = p;	/* Insert in timeout queue */
+		timeout_tail = &p->next;
+	    }
+	    else {
+		/* no timeout, just decrease counter */
+		p->count -= count;
+		prev = &p->next;
+	    }
+	}
+	tiw_pos = (tiw_pos + 1) % TIW_SIZE;
+	dtime--;
+    }
+    tiw_pos = keep_pos;
+    
+    tiw_write_unlock();
+    
+    /* Call timedout timers callbacks */
+    while (timeout_head) {
+	p = timeout_head;
+	timeout_head = p->next;
+	/* Here comes hairy use of the timer fields!
+	 * They are reset without having the lock.
+	 * It is assumed that no code but this will
+	 * accesses any field until the ->timeout
+	 * callback is called.
+	 */
+	p->next = NULL;
+	p->slot = 0;
+	(*p->timeout)(p->arg);
+    }
+}
+
+#if defined(ERTS_TIMER_THREAD)
+static void timer_thread_bump_timer(void)
+{
+    tiw_write_lock();
+    bump_timer_internal(do_time_reset());
+}
+#else
+void bump_timer(long dt) /* dt is value from do_time */
+{
+    tiw_write_lock();
+    bump_timer_internal(dt);
+}
+#endif
+
+Uint
+erts_timer_wheel_memory_size(void)
+{
+    return (Uint) TIW_SIZE * sizeof(ErlTimer*);
+}
+
+#if defined(ERTS_TIMER_THREAD)
+static struct erts_iwait *timer_thread_iwait;
+
+static int timer_thread_setup_delay(SysTimeval *rem_time)
+{
+    long elapsed;
+    int ticks;
+
+    tiw_write_lock();
+    elapsed = do_time_update();
+    ticks = next_time_internal();
+    if (ticks == -1)	/* timer queue empty */
+	ticks = 100*1000*1000;
+    if (elapsed > ticks)
+	elapsed = ticks;
+    ticks -= elapsed;
+    //ticks *= CLOCK_RESOLUTION;
+    rem_time->tv_sec = ticks / 1000;
+    rem_time->tv_usec = 1000 * (ticks % 1000);
+    ticks_end = ticks;
+    tiw_write_unlock();
+    return ticks;
+}
+
+static void *timer_thread_start(void *ignore)
+{
+    SysTimeval delay;
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_set_thread_name("timer");
+#endif
+    erts_register_blockable_thread();
+
+    for(;;) {
+	if (timer_thread_setup_delay(&delay)) {
+	    erts_smp_activity_begin(ERTS_ACTIVITY_WAIT, NULL, NULL, NULL);
+	    ASSERT_NO_LOCKED_LOCKS;
+	    erts_iwait_wait(timer_thread_iwait, &delay);
+	    ASSERT_NO_LOCKED_LOCKS;
+	    erts_smp_activity_end(ERTS_ACTIVITY_WAIT, NULL, NULL, NULL);
+	}
+	else
+	    erts_smp_chk_system_block(NULL, NULL, NULL);
+	timer_thread_bump_timer();
+	ASSERT_NO_LOCKED_LOCKS;
+    }
+    /*NOTREACHED*/
+    return NULL;
+}
+
+static ERTS_INLINE void timer_thread_post_insert(Uint ticks)
+{
+    if ((Sint)ticks < ticks_end)
+	erts_iwait_interrupt(timer_thread_iwait);
+}
+
+static void timer_thread_init(void)
+{
+    erts_tid_t tid;
+
+    timer_thread_iwait = erts_iwait_init();
+    erts_thr_create(&tid, timer_thread_start, NULL, 1);
+}
+
+#else
+static ERTS_INLINE void timer_thread_post_insert(Uint ticks) { }
+static ERTS_INLINE void timer_thread_init(void) { }
+#endif
+
+/* this routine links the time cells into a free list at the start
+   and sets the time queue as empty */
+void
+init_time(void)
+{
+    int i;
+
+    tiw_init_lock();
+
+    tiw = (ErlTimer**) erts_alloc(ERTS_ALC_T_TIMER_WHEEL,
+				  TIW_SIZE * sizeof(ErlTimer*));
+    for(i = 0; i < TIW_SIZE; i++)
+	tiw[i] = NULL;
+    do_time_init();
+    tiw_pos = tiw_nto = 0;
+
+    /* system dependent init */
+    itime = erts_init_time_sup();
+
+    timer_thread_init();
+}
+
+/*
+** Insert a process into the time queue, with a timeout 't'
+*/
+static void
+insert_timer(ErlTimer* p, Uint t)
+{
+    Uint tm;
+    Uint ticks;
+
+    /* The current slot (tiw_pos) in timing wheel is the next slot to be
+     * be processed. Hence no extra time tick is needed.
+     *
+     * (x + y - 1)/y is precisely the "number of bins" formula.
+     */
+    ticks = (t + itime - 1) / itime;
+    ticks += do_time_update(); /* Add backlog of unprocessed time */
+    
+    /* calculate slot */
+    tm = (ticks + tiw_pos) % TIW_SIZE;
+    p->slot = (Uint) tm;
+    p->count = (Uint) (ticks / TIW_SIZE);
+  
+    /* insert at head of list at slot */
+    p->next = tiw[tm];
+    tiw[tm] = p;
+    tiw_nto++;
+
+    timer_thread_post_insert(ticks);
+}
+
+void
+erl_set_timer(ErlTimer* p, ErlTimeoutProc timeout, ErlCancelProc cancel,
+	      void* arg, Uint t)
+{
+    erts_deliver_time();
+    tiw_write_lock();
+    if (p->active) { /* XXX assert ? */
+	tiw_write_unlock();
+	return;
+    }
+    p->timeout = timeout;
+    p->cancel = cancel;
+    p->arg = arg;
+    p->active = 1;
+    insert_timer(p, t);
+    tiw_write_unlock();
+#ifdef ERTS_SMP
+    erts_wake_io_thread();
+#endif
+}
+
+void
+erl_cancel_timer(ErlTimer* p)
+{
+    ErlTimer *tp;
+    ErlTimer **prev;
+
+    tiw_write_lock();
+    if (!p->active) { /* allow repeated cancel (drivers) */
+	tiw_write_unlock();
+	return;
+    }
+    /* find p in linked list at slot p->slot and remove it */
+    prev = &tiw[p->slot];
+    while ((tp = *prev) != NULL) {
+	if (tp == p) {
+	    *prev = p->next;	/* Remove from list */
+	    tiw_nto--;
+	    p->next = NULL;
+	    p->slot = p->count = 0;
+	    p->active = 0;
+	    if (p->cancel != NULL) {
+		tiw_write_unlock();
+		(*p->cancel)(p->arg);
+	    } else {
+		tiw_write_unlock();
+	    }
+	    return;
+	} else {
+	    prev = &tp->next;
+	}
+    }
+    tiw_write_unlock();
 }
 
 /*
@@ -302,18 +499,26 @@ Uint
 time_left(ErlTimer *p)
 {
     Uint left;
+    long dt;
 
-    if (!p->active)
+    tiw_read_lock();
+
+    if (!p->active) {
+	tiw_read_unlock();
 	return 0;
+    }
 
     if (p->slot < tiw_pos)
 	left = (p->count + 1) * TIW_SIZE + p->slot - tiw_pos;
     else
 	left = p->count * TIW_SIZE + p->slot - tiw_pos;
-    if (left < do_time)
+    dt = do_time_read();
+    if (left < dt)
 	left = 0;
     else
-	left -= do_time;
+	left -= dt;
+
+    tiw_read_unlock();
 
     return left * itime;
 }
@@ -325,25 +530,29 @@ void p_slpq()
     int i;
     ErlTimer* p;
   
+    tiw_read_lock();
+
     /* print the whole wheel, starting at the current position */
-    erl_printf(COUT, "\ntiw_pos = %d tiw_nto %d\n\r", tiw_pos, tiw_nto);
+    erts_printf("\ntiw_pos = %d tiw_nto %d\n", tiw_pos, tiw_nto);
     i = tiw_pos;
     if (tiw[i] != NULL) {
-	erl_printf(COUT, "%d:\n\r", i);
+	erts_printf("%d:\n", i);
 	for(p = tiw[i]; p != NULL; p = p->next) {
-	    erl_printf(COUT, " (count %d, slot %d)\n\r",
-		       p->count, p->slot);
+	    erts_printf(" (count %d, slot %d)\n",
+			p->count, p->slot);
 	}
     }
     for(i = (i+1)%TIW_SIZE; i != tiw_pos; i = (i+1)%TIW_SIZE) {
 	if (tiw[i] != NULL) {
-	    erl_printf(COUT, "%d:\n\r", i);
+	    erts_printf("%d:\n", i);
 	    for(p = tiw[i]; p != NULL; p = p->next) {
-		erl_printf(COUT, " (count %d, slot %d)\n\r",
-			   p->count, p->slot);
+		erts_printf(" (count %d, slot %d)\n",
+			    p->count, p->slot);
 	    }
 	}
     }
+
+    tiw_read_unlock();
 }
 
 #endif /* DEBUG */

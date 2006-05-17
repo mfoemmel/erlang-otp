@@ -51,13 +51,6 @@ PRE_LOADED_MODULES = \
 	otp_ring0 \
 	erlang
 
-ifndef HIPE_ENABLED
-HIPE_MODULES =
-else
-HIPE_MODULES = \
-	hipe_unified_loader
-endif
-
 MODULES = \
 	application \
 	application_controller \
@@ -92,6 +85,7 @@ MODULES = \
 	global_search \
 	group \
 	heart \
+	hipe_unified_loader \
 	inet \
 	inet6_tcp \
 	inet6_tcp_dist \
@@ -129,10 +123,9 @@ INTERNAL_HRL_FILES= application_master.hrl disk_log.hrl \
         inet_boot.hrl inet_config.hrl inet_int.hrl \
 	dist.hrl dist_util.hrl
 
-ERL_FILES= $(PRE_LOADED_MODULES:%=%.erl) $(MODULES:%=%.erl) $(HIPE_MODULES:%=%.erl)
+ERL_FILES= $(PRE_LOADED_MODULES:%=%.erl) $(MODULES:%=%.erl)
 
 NON_PRECIOUS_TARGETS = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) \
-		       $(HIPE_MODULES:%=$(EBIN)/%.$(EMULATOR)) \
 		       $(APP_TARGET) $(APPUP_TARGET)
 
 TARGET_FILES = $(PRE_LOADED_MODULES:%=$(EBIN)/%.$(EMULATOR)) $(NON_PRECIOUS_TARGETS)
@@ -176,13 +169,8 @@ docs:
 ../../hipe/main/hipe.hrl: ../../hipe/vsn.mk ../../hipe/main/hipe.hrl.src
 	sed -e "s;%VSN%;$(HIPE_VSN);" ../../hipe/main/hipe.hrl.src > ../../hipe/main/hipe.hrl
 
-ifdef HIPE_ENABLED
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(KERNEL_VSN);' $< > $@
-else
-$(APP_TARGET): $(APP_SRC) ../vsn.mk
-	sed -e 's;%VSN%;$(KERNEL_VSN);' -e '/hipe/d' $< > $@
-endif
 
 $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(KERNEL_VSN);' $< > $@
@@ -198,14 +186,7 @@ $(EBIN)/erl_epmd.beam: $(ESRC)/erl_epmd.erl
 	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) $(EPMD_FLAGS) \
 		-o$(EBIN) $<
 
-ifdef HIPE_ENABLED
 $(EBIN)/hipe_unified_loader.beam: ../../hipe/main/hipe.hrl hipe_ext_format.hrl
-$(EBIN)/hipe_sparc_loader.beam: ../../hipe/main/hipe.hrl
-$(EBIN)/hipe_ppc_loader.beam: ../../hipe/main/hipe.hrl
-$(EBIN)/hipe_ppc64_loader.beam: ../../hipe/main/hipe.hrl
-$(EBIN)/hipe_x86_loader.beam: ../../hipe/main/hipe.hrl
-$(EBIN)/hipe_amd64_loader.beam: ../../hipe/main/hipe.hrl
-endif
 
 # ----------------------------------------------------
 # Release Target
@@ -224,3 +205,5 @@ release_spec: opt
 release_docs_spec:
 
 
+list_preloaded:
+	@echo $(PRE_LOADED_MODULES)

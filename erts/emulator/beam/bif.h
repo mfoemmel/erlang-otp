@@ -56,10 +56,44 @@
 
 #define BIF_RET(x) return (x)
 
+#define ERTS_BIF_PREP_RET(Ret, Val) ((Ret) = (Val))
+
 #define BIF_ERROR(p,r) do { 			\
     (p)->freason = r; 				\
     return THE_NON_VALUE; 			\
 } while(0)
+
+#define ERTS_BIF_PREP_ERROR(Ret, Proc, Reason)	\
+do {						\
+    (Proc)->freason = (Reason);			\
+    (Ret) = THE_NON_VALUE;			\
+} while (0)
+
+
+#define ERTS_BIF_PREP_TRAP0(Ret, Trap, Proc)				\
+do {									\
+    (Proc)->def_arg_reg[0] = (Eterm) (Trap);				\
+    (Proc)->freason = TRAP;						\
+    (Ret) = THE_NON_VALUE;						\
+} while (0)
+
+#define ERTS_BIF_PREP_TRAP1(Ret, Trap, Proc, A0)			\
+do {									\
+    (Proc)->def_arg_reg[1] = (Eterm) (A0);				\
+    ERTS_BIF_PREP_TRAP0((Ret), (Trap), (Proc));				\
+} while (0)
+
+#define ERTS_BIF_PREP_TRAP2(Ret, Trap, Proc, A0, A1)			\
+do {									\
+    (Proc)->def_arg_reg[2] = (Eterm) (A1);				\
+    ERTS_BIF_PREP_TRAP1((Ret), (Trap), (Proc), (A0));			\
+} while (0)
+
+#define ERTS_BIF_PREP_TRAP3(Ret, Trap, Proc, A0, A1, A2)		\
+do {									\
+    (Proc)->def_arg_reg[3] = (Eterm) (A2);				\
+    ERTS_BIF_PREP_TRAP2((Ret), (Trap), (Proc), (A0), (A1));		\
+} while (0)
 
 #define BIF_TRAP(p, Trap_) do { \
       (p)->def_arg_reg[0] = (Eterm) (Trap_); \
@@ -77,6 +111,31 @@
 
 #define BIF_TRAP3(Trap_,p,a0,a1,a2) do { (p)->def_arg_reg[3] = (a2); \
 					  BIF_TRAP2(Trap_, p, a0, a1); } while (0)
+
+#define ERTS_BIF_EXITED(PROC)		\
+do {					\
+    KILL_CATCHES((PROC));		\
+    BIF_ERROR((PROC), EXC_EXIT);	\
+} while (0)
+
+#define ERTS_BIF_CHK_EXITED(PROC)	\
+do {					\
+    if (ERTS_PROC_IS_EXITING((PROC)))	\
+	ERTS_BIF_EXITED((PROC));	\
+} while (0)
+
+#ifdef ERTS_SMP
+/* "Call" ERTS_SMP_BIF_CHK_EXITED(PROC) when current process might have
+   exited (while we released main lock) */
+#define ERTS_SMP_BIF_CHK_EXITED(PROC)	ERTS_BIF_CHK_EXITED((PROC))
+/* "Call" ERTS_SMP_BIF_CHK_RESCHEDULE(P) when current process might have
+   to be rescheduled in order to avoid deadlock */
+#define ERTS_SMP_BIF_CHK_RESCHEDULE(P) \
+do { if ((P)->freason == RESCHEDULE) return THE_NON_VALUE; } while (0)
+#else
+#define ERTS_SMP_BIF_CHK_EXITED(PROC)
+#define ERTS_SMP_BIF_CHK_RESCHEDULE(P)
+#endif
 
 #include "erl_bif_table.h"
 

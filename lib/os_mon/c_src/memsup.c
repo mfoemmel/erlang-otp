@@ -204,7 +204,7 @@ get_basic_mem(unsigned long *tot, unsigned long *used, unsigned long *pagesize){
     load_statistics();
     *tot = (latest.numBytesFree + latest.numBytesAlloc);
     *used = latest.numBytesAlloc;
-    *pagsize = 1;
+    *pagesize = 1;
 #elif defined(_SC_AVPHYS_PAGES)	/* Does this exist on others than Solaris2? */
     unsigned long avPhys, phys, pgSz;
     

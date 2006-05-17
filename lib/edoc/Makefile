@@ -13,7 +13,7 @@
 # Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 # AB. All Rights Reserved.''
 # 
-#     $Id: Makefile,v 1.13 2004/11/08 16:44:34 richardc Exp $
+#     $Id$
 #
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
@@ -89,7 +89,7 @@ INCDIR=$(XMERL_DIR)/include
 docs:
 	erl -noshell -pa $(BINDIR) -pa $(SYNTAX_TOOLS_DIR)/ebin \
 	    -pa $(XMERL_DIR)/ebin -run edoc_run application \
-	    "'$(APPNAME)'" '"."' '$(DOC_OPTS)' -s init stop
+	    "'$(APPNAME)'" '"."' '$(DOC_OPTS)'
 
 edocs: docs
 

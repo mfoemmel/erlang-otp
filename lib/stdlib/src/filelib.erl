@@ -141,17 +141,17 @@ file_size(File) ->
     end.
 
 %%----------------------------------------------------------------------
-%% +type ensure_dir(X) -> true.
+%% +type ensure_dir(X) -> ok | {error, Reason}.
 %% +type X = filename() | dirname()
 %% ensures that the directory name required to create D exists
 
 ensure_dir("/") ->
-    true;
+    ok;
 ensure_dir(F) ->
     Dir = filename:dirname(F),
     case is_dir(Dir) of
 	true ->
-	    true;
+	    ok;
 	false ->
 	    ensure_dir(Dir),
 	    file:make_dir(Dir)

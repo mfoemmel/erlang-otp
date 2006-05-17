@@ -21,6 +21,8 @@
 
 #define ERTS_ALCU_VSN_STR "2.1"
 
+#include "erl_alloc_types.h"
+
 typedef struct Allctr_t_ Allctr_t;
 
 typedef struct {
@@ -30,6 +32,7 @@ typedef struct {
 
 typedef struct {
     char *name_prefix;
+    ErtsAlcType_t alloc_no;
     int ts;
     Uint sbct;
     Uint asbcst;
@@ -52,6 +55,7 @@ typedef struct {
 
 #define ERTS_DEFAULT_ALLCTR_INIT {                                         \
     NULL,                                                                  \
+    ERTS_ALC_A_INVALID,	/* (number) alloc_no: allocator number           */\
     1,			/* (bool)   ts:     thread safe                  */\
     512*1024,		/* (bytes)  sbct:   sbc threshold                */\
     2*1024*2024,	/* (amount) asbcst: abs sbc shrink threshold     */\
@@ -74,6 +78,7 @@ typedef struct {
 
 #define ERTS_DEFAULT_ALLCTR_INIT {                                         \
     NULL,                                                                  \
+    ERTS_ALC_A_INVALID,	/* (number) alloc_no: allocator number           */\
     1,			/* (bool)   ts:     thread safe                  */\
     64*1024,		/* (bytes)  sbct:   sbc threshold                */\
     2*1024*2024,	/* (amount) asbcst: abs sbc shrink threshold     */\
@@ -92,12 +97,19 @@ typedef struct {
 void *	erts_alcu_alloc(ErtsAlcType_t, void *, Uint);
 void *	erts_alcu_realloc(ErtsAlcType_t, void *, void *, Uint);
 void	erts_alcu_free(ErtsAlcType_t, void *, void *);
+#ifdef USE_THREADS
 void *	erts_alcu_alloc_ts(ErtsAlcType_t, void *, Uint);
 void *	erts_alcu_realloc_ts(ErtsAlcType_t, void *, void *, Uint);
 void	erts_alcu_free_ts(ErtsAlcType_t, void *, void *);
-Eterm	erts_alcu_au_info_options(CIO *, Uint **, Uint *);
-Eterm	erts_alcu_info_options(Allctr_t *, CIO *, Uint **, Uint *);
-Eterm	erts_alcu_info(Allctr_t *, int, CIO *, Uint **, Uint *);
+#ifdef ERTS_ALC_THR_SPEC_ALLOCS
+void *	erts_alcu_alloc_thr_spec(ErtsAlcType_t, void *, Uint);
+void *	erts_alcu_realloc_thr_spec(ErtsAlcType_t, void *, void *, Uint);
+void	erts_alcu_free_thr_spec(ErtsAlcType_t, void *, void *);
+#endif
+#endif
+Eterm	erts_alcu_au_info_options(int *, void *, Uint **, Uint *);
+Eterm	erts_alcu_info_options(Allctr_t *, int *, void *, Uint **, Uint *);
+Eterm	erts_alcu_info(Allctr_t *, int, int *, void *, Uint **, Uint *);
 void	erts_alcu_init(AlcUInit_t *);
 
 #endif
@@ -193,6 +205,9 @@ struct Allctr_t_ {
     /* Allocator name prefix */
     char *		name_prefix;
 
+    /* Allocator number */
+    ErtsAlcType_t	alloc_no;
+
     /* Alloc, realloc and free names as atoms */
     struct {
 	Eterm		alloc;
@@ -233,12 +248,13 @@ struct Allctr_t_ {
     Block_t *		(*get_free_block)	(Allctr_t *, Uint);
     void		(*link_free_block)	(Allctr_t *, Block_t *);
     void		(*unlink_free_block)	(Allctr_t *, Block_t *);
-    Eterm		(*info_options)		(Allctr_t *, char *, CIO *,
-						 Uint **, Uint *);
+    Eterm		(*info_options)		(Allctr_t *, char *, int *,
+						 void *, Uint **, Uint *);
 
     Uint		(*get_next_mbc_size)	(Allctr_t *);
     void		(*creating_mbc)		(Allctr_t *, Carrier_t *);
     void		(*destroying_mbc)	(Allctr_t *, Carrier_t *);
+    void		(*init_atoms)		(void);
 
 #ifdef ERTS_ALLOC_UTIL_HARD_DEBUG
     void		(*check_block)		(Allctr_t *, Block_t *,  int);
@@ -247,13 +263,15 @@ struct Allctr_t_ {
 
 #ifdef USE_THREADS
     /* Mutex for this allocator */
-    ethr_mutex		mutex;
+    erts_mtx_t		mutex;
     int			thread_safe;
     struct {
 	Allctr_t	*prev;
 	Allctr_t	*next;
     } ts_list;
 #endif
+
+    int			atoms_initialized;
 
     int			stopped;
 

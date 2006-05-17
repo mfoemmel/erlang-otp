@@ -49,17 +49,22 @@ format(Node, Ctxt) ->
     case canno(Node) of
 	[] ->
 	    format_1(Node, Ctxt);
+	%% Comment out the following clause to have
+	%% line number annotations shown.
+	[L] when is_integer(L) ->
+	    format_1(Node, Ctxt);
 	List ->
 	    format_anno(List, Ctxt, fun (Ctxt1) -> format_1(Node, Ctxt1) end)
     end.
 
-format_anno(Anno, Ctxt, ObjFun) ->
-    Ctxt1 = ctxt_bump_indent(Ctxt, 2),
+format_anno(Anno, Ctxt0, ObjFun) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt0, 1),
     ["( ",
-     ObjFun(Ctxt1),
+     ObjFun(Ctxt0),
      nl_indent(Ctxt1),
      "-| ",io_lib:write(Anno),
      " )"].
+    
 
 %% format_1(Kexpr, Context) -> string().
 
@@ -184,7 +189,7 @@ format_1(#k_put{arg=A,ret=Rs}, Ctxt) ->
     [format(A, Ctxt),
      format_ret(Rs, ctxt_bump_indent(Ctxt, 1))
     ];
-format_1(#k_try{arg=A,vars=Vs,body=B,evars=Evs,handler=H,ret=Rs}, Ctxt) ->
+format_1(#k_try{arg=A,vars=Vs,body=B,evars=Evs,handler=H}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
     ["try",
      nl_indent(Ctxt1),
@@ -200,8 +205,25 @@ format_1(#k_try{arg=A,vars=Vs,body=B,evars=Evs,handler=H,ret=Rs}, Ctxt) ->
      nl_indent(Ctxt1),
      format(H, Ctxt1),
      nl_indent(Ctxt),
-     "end",
-     format_ret(Rs, Ctxt1)
+     "end"
+    ];
+format_1(#k_try_enter{arg=A,vars=Vs,body=B,evars=Evs,handler=H}, Ctxt) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
+    ["try_enter",
+     nl_indent(Ctxt1),
+     format(A, Ctxt1),
+     nl_indent(Ctxt),
+     "of ",
+     format_hseq(Vs, ", ", ctxt_bump_indent(Ctxt, 3), fun format/2),
+     nl_indent(Ctxt1),
+     format(B, Ctxt1),
+     nl_indent(Ctxt),
+     "catch ",
+     format_hseq(Evs, ", ", ctxt_bump_indent(Ctxt, 6), fun format/2),
+     nl_indent(Ctxt1),
+     format(H, Ctxt1),
+     nl_indent(Ctxt),
+     "end"
     ];
 format_1(#k_catch{body=B,ret=Rs}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),

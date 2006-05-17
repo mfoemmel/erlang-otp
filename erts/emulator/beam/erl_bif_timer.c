@@ -67,6 +67,53 @@ struct ErtsBifTimer_ {
 static ErtsBifTimer **bif_timer_tab;  
 static Uint no_bif_timers;
 
+
+static erts_smp_rwmtx_t bif_timer_lock;
+
+#define erts_smp_safe_btm_rwlock(P, L) \
+	safe_btm_lock((P), (L), 1)
+#define erts_smp_safe_btm_rlock(P, L) \
+	safe_btm_lock((P), (L), 0)
+#define erts_smp_btm_rwlock() \
+	erts_smp_rwmtx_rwlock(&bif_timer_lock)
+#define erts_smp_btm_tryrwlock() \
+	erts_smp_rwmtx_tryrwlock(&bif_timer_lock)
+#define erts_smp_btm_rwunlock() \
+	erts_smp_rwmtx_rwunlock(&bif_timer_lock)
+#define erts_smp_btm_rlock() \
+	erts_smp_rwmtx_rlock(&bif_timer_lock)
+#define erts_smp_btm_tryrlock() \
+	erts_smp_rwmtx_tryrlock(&bif_timer_lock)
+#define erts_smp_btm_runlock() \
+	erts_smp_rwmtx_runlock(&bif_timer_lock)
+#define erts_smp_btm_lock_init() \
+	erts_smp_rwmtx_init(&bif_timer_lock, "bif_timers")
+
+
+static ERTS_INLINE int
+safe_btm_lock(Process *c_p, Uint32 c_p_locks, int rw_lock)
+{
+    ASSERT(c_p && c_p_locks);
+#ifdef ERTS_SMP
+    if ((rw_lock ? erts_smp_btm_tryrwlock() : erts_smp_btm_tryrlock()) != EBUSY)
+	return 0;
+    erts_smp_proc_unlock(c_p, c_p_locks);
+    if (rw_lock)
+	erts_smp_btm_rwlock();
+    else
+	erts_smp_btm_rlock();
+    erts_smp_proc_lock(c_p, c_p_locks);
+    if (ERTS_PROC_IS_EXITING(c_p)) {
+	if (rw_lock)
+	    erts_smp_btm_rwunlock();
+	else
+	    erts_smp_btm_runlock();
+	return 1;
+    }
+#endif
+    return 0;
+}
+
 static ERTS_INLINE int
 get_index(Uint32 *ref_numbers, Uint32 len)
 {
@@ -249,25 +296,49 @@ bif_timer_timeout(ErtsBifTimer* btm)
 {
     ASSERT(btm);
 
+
+    erts_smp_btm_rwlock();
+
     if (btm->flags & BTM_FLG_CANCELED) {
+    /*
+     * A concurrent cancel is ongoing. Do not send the timeout message,
+     * but cleanup here since the cancel call-back won't be called.
+     */
+#ifndef ERTS_SMP
 	ASSERT(0);
+#endif
     }
     else {
 	Process* rp;
 
 	tab_remove(btm);
 
+	ASSERT(!erts_get_current_process());
+
 	if (btm->flags & BTM_FLG_BYNAME)
-	    rp = whereis_process(btm->receiver.name);
+	    rp = erts_whereis_process(NULL,
+				      0,
+				      0,
+				      btm->receiver.name,
+				      ERTS_PROC_LOCKS_MSG_SEND,
+				      0);
 	else {
 	    rp = btm->receiver.proc.ess;
-	    if (rp->status == P_EXITING)
-		rp = NULL;
+	    erts_smp_proc_lock(rp, ERTS_PROC_LOCKS_MSG_SEND);
 	    unlink_proc(btm);
+	    if (ERTS_PROC_IS_EXITING(rp)) {
+		erts_smp_proc_unlock(rp, ERTS_PROC_LOCKS_MSG_SEND);
+		rp = NULL;
+	    }
 	}
 
 	if (rp) {
 	    Eterm message;
+	    ErlHeapFragment *bp;
+	    Uint32 rp_locks = ERTS_PROC_LOCKS_MSG_SEND;
+
+	    bp = btm->bp;
+	    btm->bp = NULL; /* Prevent cleanup of message buffer... */
 
 	    if (!(btm->flags & BTM_FLG_WRAP))
 		message = btm->message;
@@ -276,20 +347,44 @@ bif_timer_timeout(ErtsBifTimer* btm)
 #error "ERTS_REF_NUMBERS changed. Update me..."
 #endif
 		Eterm ref;
-		Uint *hp = HAlloc(rp, REF_THING_SIZE + 4);
+		Uint *hp;
+		Uint wrap_size = REF_THING_SIZE + 4;
+		message = btm->message;
+#ifdef ERTS_SMP
+		if (erts_smp_proc_trylock(rp, ERTS_PROC_LOCK_MAIN) == 0) {
+		    rp_locks |= ERTS_PROC_LOCK_MAIN;
+#endif
+		    hp = HAlloc(rp, wrap_size);
+#ifdef ERTS_SMP
+		}
+		else if (!bp) {
+		    ASSERT(is_immed(message));
+		    bp = new_message_buffer(wrap_size);
+		    hp = bp->mem;
+		}
+		else {
+		    Eterm old_size = bp->size;
+		    bp = erts_resize_message_buffer(bp, old_size + wrap_size,
+						    &message, 1);
+		    hp = &bp->mem[0] + old_size;
+		}
+#endif
 		write_ref_thing(hp,
 				btm->ref_numbers[0],
 				btm->ref_numbers[1],
 				btm->ref_numbers[2]);
 		ref = make_internal_ref(hp);
 		hp += REF_THING_SIZE;
-		message = TUPLE3(hp, am_timeout, ref, btm->message);
+		message = TUPLE3(hp, am_timeout, ref, message);
 	    }
 
-	    queue_message_tt(rp, btm->bp, message, NIL);
-	    btm->bp = NULL; /* Prevent cleanup of message buffer... */
+	    erts_queue_message(rp, rp_locks, bp, message, NIL);
+	    erts_smp_proc_unlock(rp, rp_locks);
 	}
     }
+
+    erts_smp_btm_rwunlock();
+
     bif_timer_cleanup(btm);
 }
 
@@ -320,7 +415,8 @@ setup_bif_timer(Uint32 xflags,
     if (is_atom(receiver))
 	rp = NULL;
     else {
-	rp = pid2proc(receiver);
+	rp = erts_pid2proc(c_p, ERTS_PROC_LOCK_MAIN,
+			   receiver, ERTS_PROC_LOCK_MSGQ);
 	if (!rp)
 	    return ref;
     }
@@ -335,6 +431,16 @@ setup_bif_timer(Uint32 xflags,
 	btm = (ErtsBifTimer *) erts_alloc(ERTS_ALC_T_LL_BIF_TIMER,
 					 sizeof(ErtsBifTimer));
 	btm->flags = 0;
+    }
+
+    if (rp) {
+	link_proc(rp, btm);
+	erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_MSGQ);
+    }
+    else {
+	ASSERT(is_atom(receiver));
+	btm->receiver.name = receiver;
+	btm->flags |= BTM_FLG_BYNAME;
     }
 
     btm->flags |= xflags;
@@ -366,13 +472,6 @@ setup_bif_timer(Uint32 xflags,
 	btm->message = copy_struct(message, size, &hp, &bp->off_heap);
     }
 
-    if (rp)
-	link_proc(rp, btm);
-    else {
-	ASSERT(is_atom(receiver));
-	btm->receiver.name = receiver;
-	btm->flags |= BTM_FLG_BYNAME;
-    }
     tab_insert(btm);
     ASSERT(btm == tab_find(ref));
     btm->tm.active = 0; /* MUST be initalized */
@@ -389,7 +488,12 @@ BIF_RETTYPE send_after_3(BIF_ALIST_3)
 {
     Eterm res;
 
+    if (erts_smp_safe_btm_rwlock(BIF_P, ERTS_PROC_LOCK_MAIN))
+	ERTS_BIF_EXITED(BIF_P);
+
     res = setup_bif_timer(0, BIF_P, BIF_ARG_1, BIF_ARG_2, BIF_ARG_3);
+
+    erts_smp_btm_rwunlock();
 
     if (is_non_value(res)) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -405,7 +509,12 @@ BIF_RETTYPE start_timer_3(BIF_ALIST_3)
 {
     Eterm res;
 
+    if (erts_smp_safe_btm_rwlock(BIF_P, ERTS_PROC_LOCK_MAIN))
+	ERTS_BIF_EXITED(BIF_P);
+
     res = setup_bif_timer(BTM_FLG_WRAP, BIF_P, BIF_ARG_1, BIF_ARG_2, BIF_ARG_3);
+
+    erts_smp_btm_rwunlock();
 
     if (is_non_value(res)) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -429,18 +538,26 @@ BIF_RETTYPE cancel_timer_1(BIF_ALIST_1)
 	BIF_ERROR(BIF_P, BADARG);
     }
 
+    if (erts_smp_safe_btm_rwlock(BIF_P, ERTS_PROC_LOCK_MAIN))
+	ERTS_BIF_EXITED(BIF_P);
+
     btm = tab_find(BIF_ARG_1);
     if (!btm || btm->flags & BTM_FLG_CANCELED) {
+	erts_smp_btm_rwunlock();
 	res = am_false;
     }
     else {
 	Uint left = time_left(&btm->tm);
-	if (!(btm->flags & BTM_FLG_BYNAME))
+	if (!(btm->flags & BTM_FLG_BYNAME)) {
+	    erts_smp_proc_lock(btm->receiver.proc.ess, ERTS_PROC_LOCK_MSGQ);
 	    unlink_proc(btm);
+	    erts_smp_proc_unlock(btm->receiver.proc.ess, ERTS_PROC_LOCK_MSGQ);
+	}
 	tab_remove(btm);
 	ASSERT(!tab_find(BIF_ARG_1));
 	erl_cancel_timer(&btm->tm);
-	res = make_small_or_big(left, BIF_P);
+	erts_smp_btm_rwunlock();
+	res = erts_make_integer(left, BIF_P);
     }
 
     BIF_RET(res);
@@ -459,44 +576,59 @@ BIF_RETTYPE read_timer_1(BIF_ALIST_1)
 	BIF_ERROR(BIF_P, BADARG);
     }
 
+    if (erts_smp_safe_btm_rlock(BIF_P, ERTS_PROC_LOCK_MAIN))
+	ERTS_BIF_EXITED(BIF_P);
+
     btm = tab_find(BIF_ARG_1);
     if (!btm || btm->flags & BTM_FLG_CANCELED) {
 	res = am_false;
     }
     else {
 	Uint left = time_left(&btm->tm);
-	res = make_small_or_big(left, BIF_P);
+	res = erts_make_integer(left, BIF_P);
     }
+
+    erts_smp_btm_runlock();
 
     BIF_RET(res);
 }
 
 void
-erts_print_bif_timer_info(CIO to)
+erts_print_bif_timer_info(int to, void *to_arg)
 {
     int i;
+    int lock = !ERTS_IS_CRASH_DUMPING;
+
+    if (lock)
+	erts_smp_btm_rlock();
 
     for (i = 0; i < TIMER_HASH_VEC_SZ; i++) {
 	ErtsBifTimer *btm;
 	for (btm = bif_timer_tab[i]; btm; btm = btm->tab.next) {
-	    erl_printf(to, "=timer:");
-	    display(btm->flags & BTM_FLG_BYNAME
-		    ? btm->receiver.name
-		    : btm->receiver.proc.ess->id, to);
-	    erl_printf(to, "\n");
-	    erl_printf(to, "Message: ");
-	    display(btm->message, to);
-	    erl_printf(to, "\n");
-	    erl_printf(to, "Time left: %d ms\n", time_left(&btm->tm));
+	    Eterm receiver = (btm->flags & BTM_FLG_BYNAME
+			      ? btm->receiver.name
+			      : btm->receiver.proc.ess->id);
+	    erts_print(to, to_arg, "=timer:%T\n", receiver);
+	    erts_print(to, to_arg, "Message: %T\n", btm->message);
+	    erts_print(to, to_arg, "Time left: %d ms\n", time_left(&btm->tm));
 	}
     }
+
+    if (lock)
+	erts_smp_btm_runlock();
 }
 
 
 void
-erts_cancel_bif_timers(struct process *p)
+erts_cancel_bif_timers(struct process *p, Uint32 plocks)
 {
     ErtsBifTimer *btm;
+
+    if (erts_smp_btm_tryrwlock() == EBUSY) {
+	erts_smp_proc_unlock(p, plocks);
+	erts_smp_btm_rwlock();
+	erts_smp_proc_lock(p, plocks);
+    }
 
     btm = p->bif_timers;
     while (btm) {
@@ -509,12 +641,16 @@ erts_cancel_bif_timers(struct process *p)
     }
 
     p->bif_timers = NULL;
+
+    erts_smp_btm_rwunlock();
 }
 
 void erts_bif_timer_init(void)
 {
     int i;
     no_bif_timers = 0;
+
+    erts_smp_btm_lock_init();
     bif_timer_tab = erts_alloc(ERTS_ALC_T_BIF_TIMER_TABLE,
 			       sizeof(ErtsBifTimer *)*TIMER_HASH_VEC_SZ);
     for (i = 0; i < TIMER_HASH_VEC_SZ; ++i)
@@ -525,10 +661,38 @@ Uint
 erts_bif_timer_memory_size(void)
 {
     Uint res;
+    int lock = !ERTS_IS_CRASH_DUMPING;
+
+    if (lock)
+	erts_smp_btm_rlock();
 
     res = (sizeof(ErtsBifTimer *)*TIMER_HASH_VEC_SZ
 	   + no_bif_timers*sizeof(ErtsBifTimer));
 
+    if (lock)
+	erts_smp_btm_runlock();
+
     return res;
 }
 
+
+void
+erts_bif_timer_foreach(void (*func)(Eterm, Eterm, ErlHeapFragment *, void *),
+		       void *arg)
+{
+    int i;
+
+    ERTS_SMP_LC_ASSERT(erts_smp_is_system_blocked(0));
+
+    for (i = 0; i < TIMER_HASH_VEC_SZ; i++) {
+	ErtsBifTimer *btm;
+	for (btm = bif_timer_tab[i]; btm; btm = btm->tab.next) {
+	    (*func)((btm->flags & BTM_FLG_BYNAME
+		     ? btm->receiver.name
+		     : btm->receiver.proc.ess->id),
+		    btm->message,
+		    btm->bp,
+		    arg);
+	}
+    }
+}

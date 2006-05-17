@@ -20,7 +20,13 @@
 -module(tool_genfd).
 -include_lib("kernel/include/file.hrl").
 
--compile(export_all).
+-export([create/2,
+	 close/1,
+	 hide/3,
+	 get_files/1,
+	 set_dir/2,
+	 init/3,
+	 get_all/1]).
 
 %% Trick: Store Dir without trailing "/" => then up (cd ..) becomes
 %%        easy, just: filename:dirname(Dir)!
@@ -44,9 +50,6 @@ close(FD) ->
 
 hide(FD,Dir,File) ->
     FD ! {hide,Dir,File}.
-
-show(FD,Dir,File) ->
-    FD ! {show,Dir,File}.
 
 get_files(FD) ->
     req(FD,get_files).

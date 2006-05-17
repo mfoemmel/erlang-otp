@@ -81,8 +81,23 @@ print(Rec, Col, Ll, D, Ind, RF) when atom(element(1, Rec)), function(RF) ->
     end;
 print(Tuple, Col, Ll, D, Ind, RF) when tuple(Tuple) ->
     print_tuple(Tuple, Col, Ll, D, Ind, RF);
-print(Binary, _Col, _Ll, D, _Ind, _RF) when binary(Binary) ->
-    io_lib:write(Binary, D);
+print(Binary, Col, Ll, D, _Ind, RF) when binary(Binary) ->
+    List = binary_to_list(Binary),
+    case io_lib:printable_list(List) of
+        true ->
+	    Len = write_length(List, D, 0, Ll - Col, RF),
+            if
+                Len + Col < Ll; D < 0 ->
+                    [$<, $<, io_lib:write_string(List, $"), $>, $>];
+                D == 1 ->
+                    ["<<...>>"];
+                true -> 
+                    Prefix = binary_to_list(Binary, 1, D),
+                    [$<, $<, io_lib:write_string(Prefix, $"), "...>>"]
+            end;
+        false ->
+            io_lib:write(Binary, D)
+    end;
 print(Term, _Col, _Ll, D, _Ind, _RF) -> io_lib:write(Term, D).
 
 print_record(Rec, RDefs, Col, Ll, D, Ind, RF) ->
@@ -205,7 +220,14 @@ write(R, D, RF) when atom(element(1, R)), function(RF) ->
     end;
 write(T, D, RF) when tuple(T) ->
     write_tuple(T, D, RF);
-write(Bin, D, _RF) when binary(Bin) -> io_lib:write(Bin, D);
+write(Bin, D, _RF) when binary(Bin) -> 
+    List = binary_to_list(Bin),
+    case io_lib:printable_list(List) of
+        true ->
+            [$<, $<, io_lib:write_string(List, $"), $>, $>];
+        false ->
+            io_lib:write(Bin, D)
+    end;
 write(Term, D, _RF) -> io_lib:write(Term, D).
 
 write_tuple(T, D, RF) ->
@@ -265,8 +287,14 @@ write_length(R, D, Acc, Max, RF) when atom(element(1, R)), function(RF) ->
 write_length(Tuple, D, Acc, Max, RF) when tuple(Tuple) ->
     write_length_list(tuple_to_list(Tuple), D, Acc, Max, RF);
 write_length(Bin, D, Acc, _Max, _RF) when binary(Bin) ->
-    if  D < 0 ->                                %Used to print all
-            Acc + 4 + 4*size(Bin);		%Acc + << 4*size >>
+    List = binary_to_list(Bin),
+    Printable = io_lib:printable_list(List),
+    if 
+        Printable ->                    % All is printed, regardless of size
+            Acc + 4 + length(io_lib:write_string(List, $"));
+        D < 0;                          % Print all
+        size(Bin) =< D ->  
+            Acc + 4 + 4*size(Bin);      % Overestimation
         true ->
             Acc + 4 + 4*(D+1)
     end;

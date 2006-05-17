@@ -750,7 +750,8 @@ abst(File, Builtins, Mode) when Mode == functions ->
 	{ok, {M, [{abstract_code, {raw_abstract_v1, Code}},
                   {exports,X0}, {attributes,A}]}} ->
 	    %% R9C-
-	    {_,_,Forms,_} = sys_pre_expand:module(Code, []),
+            Forms0 = epp:interpret_file_attribute(Code),
+	    {_,_,Forms,_} = sys_pre_expand:module(Forms0, []),
 	    X = mfa_exports(X0, A, M),
             D = deprecated(A, X, M),
 	    xref_reader:module(M, Forms, Builtins, X, D);

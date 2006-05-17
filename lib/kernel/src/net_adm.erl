@@ -42,9 +42,12 @@ host_file() ->
 %%% side effect: set up a connection to Node if there 
 %%  not yet is one.
 
-ping(Node) when atom(Node) ->
-    case auth:is_auth(Node) of
-	yes -> pong;
+ping(Node) when is_atom(Node) ->
+    case catch gen:call({net_kernel, Node},
+			'$gen_call',
+			{is_auth, node()},
+			infinity) of
+	{ok, yes} -> pong;
 	_ ->
 	    erlang:disconnect_node(Node),
 	    pang

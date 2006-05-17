@@ -51,8 +51,8 @@
 #define DIR_LEFT 0
 #define DIR_RIGHT 1
 #define DIR_END 2 
-Sint erts_tot_nlink_lh_size;
-Sint erts_tot_monitor_lh_size;
+
+static erts_smp_atomic_t tot_link_lh_size;
 
 /* Implements the sort order in monitor trees, which is different from 
    the ordinary term order.
@@ -103,7 +103,7 @@ do {								\
 	    (*((Hp)++)) = boxed_val((From))[i__];		\
 	if (is_external((To))) {				\
 	    external_thing_ptr((To))->next = NULL;		\
-	    external_thing_ptr((To))->node->refc++;		\
+	    erts_refc_inc(&(external_thing_ptr((To))->node->refc), 2);\
 	}							\
     }								\
 } while (0)
@@ -125,7 +125,7 @@ static ErtsMonitor *create_monitor(Uint type, Eterm ref, Eterm pid, Eterm name)
      } else {
 	 n = (ErtsMonitor *) erts_alloc(ERTS_ALC_T_MONITOR_LH,
 					mon_size*sizeof(Uint));
-	 erts_tot_monitor_lh_size += 	mon_size*sizeof(Uint);
+	 erts_smp_atomic_add(&tot_link_lh_size, mon_size*sizeof(Uint));
      } 
      hp = n->heap;
 
@@ -154,11 +154,11 @@ static ErtsLink *create_link(Uint type, Eterm pid)
 
      if (lnk_size <= ERTS_LINK_SH_SIZE) {
 	 n = (ErtsLink *) erts_alloc(ERTS_ALC_T_NLINK_SH,
-					lnk_size*sizeof(Uint));
+				     lnk_size*sizeof(Uint));
      } else {
 	 n = (ErtsLink *) erts_alloc(ERTS_ALC_T_NLINK_LH,
-					lnk_size*sizeof(Uint));
-	 erts_tot_nlink_lh_size += 	lnk_size*sizeof(Uint);
+				     lnk_size*sizeof(Uint));
+	 erts_smp_atomic_add(&tot_link_lh_size, lnk_size*sizeof(Uint));
      } 
      hp = n->heap;
 
@@ -180,6 +180,18 @@ static ErtsLink *create_link(Uint type, Eterm pid)
 
 #undef CP_LINK_VAL
 
+void
+erts_init_monitors(void)
+{
+    erts_smp_atomic_init(&tot_link_lh_size, 0);
+}
+
+Uint
+erts_tot_link_lh_size(void)
+{
+    return (Uint) erts_smp_atomic_read(&tot_link_lh_size);
+}
+
 void erts_destroy_monitor(ErtsMonitor *mon)
 {
     Uint mon_size = ERTS_MONITOR_SIZE;
@@ -189,21 +201,20 @@ void erts_destroy_monitor(ErtsMonitor *mon)
     mon_size +=  NC_HEAP_SIZE(mon->ref);
     if (is_external(mon->ref)) {
 	node = external_thing_ptr(mon->ref)->node;
-	DEREF_ERL_NODE(node);
+	erts_deref_node_entry(node);
     }
     if (!IS_CONST(mon->pid)) {
 	mon_size += NC_HEAP_SIZE(mon->pid);
 	if (is_external(mon->pid)) {
 	    node = external_thing_ptr(mon->pid)->node;
-	    DEREF_ERL_NODE(node);
+	    erts_deref_node_entry(node);
 	}
     }
     if (mon_size <= ERTS_MONITOR_SH_SIZE) {
 	erts_free(ERTS_ALC_T_MONITOR_SH, (void *) mon);
     } else {
 	erts_free(ERTS_ALC_T_MONITOR_LH, (void *) mon);
-	erts_tot_monitor_lh_size -= mon_size*sizeof(Uint);
-
+	erts_smp_atomic_add(&tot_link_lh_size, -1*mon_size*sizeof(Uint));
     }
     ERTS_PROC_LESS_MEM(mon_size);
 }
@@ -219,14 +230,14 @@ void erts_destroy_link(ErtsLink *lnk)
 	lnk_size += NC_HEAP_SIZE(lnk->pid);
 	if (is_external(lnk->pid)) {
 	    node = external_thing_ptr(lnk->pid)->node;
-	    DEREF_ERL_NODE(node);
+	    erts_deref_node_entry(node);
 	}
     }
     if (lnk_size <= ERTS_LINK_SH_SIZE) {
 	erts_free(ERTS_ALC_T_NLINK_SH, (void *) lnk);
     } else {
 	erts_free(ERTS_ALC_T_NLINK_LH, (void *) lnk);
-	erts_tot_nlink_lh_size -= lnk_size*sizeof(Uint);
+	erts_smp_atomic_add(&tot_link_lh_size, -1*lnk_size*sizeof(Uint));
     }
     ERTS_PROC_LESS_MEM(lnk_size);
 }
@@ -750,63 +761,65 @@ static void erts_dump_monitors(ErtsMonitor *root, int indent)
     if (root == NULL)
 	return;
     erts_dump_monitors(root->right,indent+2);
-    erl_printf(COUT,"%*s[%d:%d:",indent,"",(int) root->balance,
-	       (int) root->type);
-    display(root->ref,COUT);
-    erl_printf(COUT,":");
-    display(root->pid,COUT);
-    erl_printf(COUT,":");
-    display(root->name,COUT);
-    erl_printf(COUT,"]\r\n");
+    erts_printf("%*s[%b16d:%b16u:%T:%T:%T]\n", indent, "", root->balance,
+		root->type, root->ref, root->pid, root->name);
     erts_dump_monitors(root->left,indent+2);
+}
+
+static void erts_dump_links_aux(ErtsLink *root, int indent,
+				erts_dsprintf_buf_t *dsbufp)
+{
+    if (root == NULL)
+	return;
+    erts_dump_links_aux(root->right, indent+2, dsbufp);
+    dsbufp->str_len = 0;
+    erts_dsprintf(dsbufp, "%*s[%b16d:%b16u:%T:%p]", indent, "",
+		  root->balance, root->type, root->pid, root->root);
+    if (root->root != NULL) {
+	ErtsLink *sub = root->root;
+	int len = dsbufp->str_len;
+	erts_dump_links_aux(sub->right, indent+len+5, dsbufp);
+	erts_dsprintf(dsbufp, "-> %*s[%b16d:%b16u:%T:%p]", indent, "",
+		      sub->balance, sub->type, sub->pid, sub->root);
+	erts_printf("%s\n", dsbufp->str);
+	erts_dump_links_aux(sub->left, indent+len+5, dsbufp);
+    } else {
+	erts_printf("%s\n", dsbufp->str);
+    }
+    erts_dump_links_aux(root->left, indent+2, dsbufp);
 }
 
 static void erts_dump_links(ErtsLink *root, int indent)
 {
-    if (root == NULL)
-	return;
-    erts_dump_links(root->right,indent+2);
-    cerr_pos = 0;
-    erl_printf(CBUF,"%*s[%d:%d:",indent,"",(int) root->balance,
-	       (int) root->type);
-    display(root->pid,CBUF);
-    erl_printf(CBUF,":");
-    erl_printf(CBUF,"0x%08X]", (Uint) root->root);
-    if (root->root != NULL) {
-	ErtsLink *sub = root->root;
-	int len = strlen(tmp_buf);
-	erts_dump_links(sub->right,indent+len+5);
-	erl_printf(CBUF,"-> %*s[%d:%d:",indent,"",(int) sub->balance,
-		   (int) sub->type);
-	display(sub->pid,CBUF);
-	erl_printf(CBUF,":");
-	erl_printf(CBUF,"0x%08X]", (Uint) sub->root);
-	erl_printf(COUT,"%s\r\n",tmp_buf);
-	erts_dump_links(sub->left,indent+len+5);
-    } else {
-	erl_printf(COUT,"%s\r\n",tmp_buf);
-    }
-    erts_dump_links(root->left,indent+2);
+    erts_dsprintf_buf_t *dsbufp = erts_create_tmp_dsbuf(0);
+    erts_dump_links_aux(root, indent, dsbufp);
+    erts_destroy_tmp_dsbuf(dsbufp);
 }
 
 Eterm erts_debug_dump_monitors_1(Process *p, Eterm pid)
 {
     Process *rp;
     DistEntry *dep;
-    if (!is_pid(pid) || (rp = pid2proc(pid)) == NULL) {
+    rp = erts_pid2proc(p, ERTS_PROC_LOCK_MAIN, pid, ERTS_PROC_LOCK_LINK);
+    if (!rp) {
+	ERTS_SMP_ASSERT_IS_NOT_EXITING(p);
 	if (is_atom(pid) && is_node_name_atom(pid) &&
 	    (dep = erts_find_dist_entry(pid)) != NULL) {
-	    erl_printf(COUT,"Dumping dist monitors-------------------\r\n");
+	    erts_printf("Dumping dist monitors-------------------\n");
+	    erts_smp_dist_entry_lock(dep);
 	    erts_dump_monitors(dep->monitors,0);
-	    erl_printf(COUT,"Monitors dumped-------------------------\r\n");
+	    erts_smp_dist_entry_unlock(dep);
+	    erts_printf("Monitors dumped-------------------------\n");
+	    erts_deref_dist_entry(dep);
 	    BIF_RET(am_true);
 	} else {
 	    BIF_ERROR(p,BADARG);
 	}
     } else {
-	erl_printf(COUT,"Dumping pid monitors--------------------\r\n");
+	erts_printf("Dumping pid monitors--------------------\n");
 	erts_dump_monitors(rp->monitors,0);
-	erl_printf(COUT,"Monitors dumped-------------------------\r\n");
+	erts_printf("Monitors dumped-------------------------\n");
+	erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_LINK);
 	BIF_RET(am_true);
     }
 }
@@ -816,29 +829,40 @@ Eterm erts_debug_dump_links_1(Process *p, Eterm pid)
     Process *rp;
     DistEntry *dep;
     if (is_internal_port(pid)) {
-	Port *rport = erts_port+internal_port_index(pid);
-	if (! INVALID_PORT(rport, pid)) {
-	    erl_printf(COUT,"Dumping port links----------------------\r\n");
+	Port *rport = erts_id2port(pid, p, ERTS_PROC_LOCK_MAIN);
+	if (rport) {
+	    erts_printf("Dumping port links----------------------\n");
 	    erts_dump_links(rport->nlinks,0);
-	    erl_printf(COUT,"Links dumped----------------------------\r\n");
+	    erts_printf("Links dumped----------------------------\n");
+	    erts_smp_io_unlock();
 	    BIF_RET(am_true);
 	} else {
-	    BIF_ERROR(p,BADARG);
-	}
-    } else if (!is_pid(pid) || (rp = pid2proc(pid)) == NULL) {
-	if (is_atom(pid) && is_node_name_atom(pid) &&
-	    (dep = erts_find_dist_entry(pid)) != NULL) {
-	    erl_printf(COUT,"Dumping dist links----------------------\r\n");
-	    erts_dump_links(dep->nlinks,0);
-	    erl_printf(COUT,"Links dumped----------------------------\r\n");
-	    BIF_RET(am_true);
-	} else {
+	    ERTS_SMP_BIF_CHK_EXITED(p);
 	    BIF_ERROR(p,BADARG);
 	}
     } else {
-	erl_printf(COUT,"Dumping pid links-----------------------\r\n");
-	erts_dump_links(rp->nlinks,0);
-	erl_printf(COUT,"Links dumped----------------------------\r\n");
-	BIF_RET(am_true);
+	rp = erts_pid2proc(p, ERTS_PROC_LOCK_MAIN, pid, ERTS_PROC_LOCK_LINK);
+	if (!rp) {
+	    ERTS_SMP_ASSERT_IS_NOT_EXITING(p);
+	    if (is_atom(pid) && is_node_name_atom(pid) &&
+		(dep = erts_find_dist_entry(pid)) != NULL) {
+		erts_printf("Dumping dist links----------------------\n");
+		erts_smp_dist_entry_lock(dep);
+		erts_dump_links(dep->nlinks,0);
+		erts_smp_dist_entry_unlock(dep);
+		erts_printf("Links dumped----------------------------\n");
+		erts_deref_dist_entry(dep);
+		BIF_RET(am_true);
+	    } else {
+		BIF_ERROR(p,BADARG);
+	    }
+
+	} else {
+	    erts_printf("Dumping pid links-----------------------\n");
+	    erts_dump_links(rp->nlinks,0);
+	    erts_printf("Links dumped----------------------------\n");
+	    erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_LINK);
+	    BIF_RET(am_true);
+	}
     }
 }

@@ -44,7 +44,8 @@
 	 install/0, install/1, uninstall/0, uninstall/1,
 	 install_event/0, install_event/1, uninstall_event/0, uninstall_event/1,
 	 install_typed/0, install_typed/1, uninstall_typed/0, uninstall_typed/1,
-	 create_structured_event/6, type_check/0]).
+	 create_structured_event/6, type_check/0, notify/0, max_events/0,
+	 timeout_events/0, interval_events/0]).
  
 %% Application callbacks
 -export([start/2, init/1, stop/1]).
@@ -322,6 +323,63 @@ type_check() ->
 	    Boolean;
 	_ ->
 	    true
+    end.
+  
+%%------------------------------------------------------------
+%% function : notify
+%% Arguments: 
+%% Returns  : 
+%% Effect   : 
+%%------------------------------------------------------------
+notify() ->
+    case application:get_env(cosNotification, notify) of
+	{ok, Module} when atom(Module) ->
+	    Module;
+	_ ->
+	    false
+    end.
+
+%%------------------------------------------------------------
+%% function : max_events
+%% Arguments: 
+%% Returns  : 
+%% Effect   : 
+%%------------------------------------------------------------
+max_events() ->
+    case application:get_env(cosNotification, max_events) of
+	{ok, Max} when integer(Max) ->
+	    Max;
+	_ ->
+	    50
+    end.
+
+%%------------------------------------------------------------
+%% function : timeout_events
+%% Arguments: 
+%% Returns  : 
+%% Effect   : 
+%%------------------------------------------------------------
+timeout_events() ->
+    case application:get_env(cosNotification, timeout_events) of
+	{ok, Max} when integer(Max) ->
+	    Max;
+	_ ->
+	    3000000 %% 5 minutes
+    end.
+
+
+%%------------------------------------------------------------
+%% function : interval_events
+%% Arguments: 
+%% Returns  : 
+%% Effect   : 
+%%------------------------------------------------------------
+interval_events() ->
+    case application:get_env(cosNotification, interval_events) of
+	{ok, Max} when integer(Max) ->
+	    Max;
+	_ ->
+	    10000 %% 10 seconds
     end.
   
 

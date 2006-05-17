@@ -646,6 +646,8 @@ create_part(Values)->
 %% Enable debugging, validate httpd options
 %%----------------------------------------------------------------------
 
+enable_debug([]) ->
+    ok;
 enable_debug(Debug) ->
     dbg:tracer(),
     dbg:p(all, [call]),
@@ -695,7 +697,7 @@ valid_debug2([{exported_functions,L}|Rest]) when list(L) ->
 valid_debug2([{disable,L}|Rest]) when list(L) ->
     test_load_modules(L),
     valid_debug2(Rest);
-valid_debug2([H|T]) ->
+valid_debug2([H|_T]) ->
     throw({error,{bad_debug_option,H}});
 valid_debug2([]) ->
     ok.
@@ -713,7 +715,7 @@ test_load_modules([H|T]) when atom(H) ->
 	_ -> ok
     end,
     test_load_modules(T);
-test_load_modules([H|T]) ->
+test_load_modules([H|_T]) ->
     throw({error,{module_name_not_atom,H}});
 test_load_modules([]) ->
     ok.

@@ -61,6 +61,114 @@ typedef struct db_term {
     Eterm v[1];			/* Beginning of buffer for the terms */
 } DbTerm;
 
+union db_table;
+typedef union db_table DbTable;
+
+typedef struct db_table_method
+{
+    int (*db_create)(Process *p, DbTable* tb);
+    int (*db_first)(Process* p, 
+		    DbTable* tb, /* [in out] */ 
+		    Eterm* ret   /* [out] */);
+    int (*db_next)(Process* p, 
+		   DbTable* tb, /* [in out] */
+		   Eterm key,   /* [in] */
+		   Eterm* ret /* [out] */);
+    int (*db_last)(Process* p, 
+		   DbTable* tb, /* [in out] */
+		   Eterm* ret   /* [out] */);
+    int (*db_prev)(Process* p, 
+		   DbTable* tb, /* [in out] */
+		   Eterm key, 
+		   Eterm* ret);
+    int (*db_put)(Process* p, 
+		  DbTable* tb, /* [in out] */ 
+		  Eterm obj, 
+		  Eterm* ret);
+    int (*db_get)(Process* p, 
+		  DbTable* tb, /* [in out] */ 
+		  Eterm key, 
+		  Eterm* ret);
+    int (*db_get_element)(Process* p, 
+			  DbTable* tb, /* [in out] */ 
+			  Eterm key, 
+			  int index, 
+			  Eterm* ret);
+    int (*db_member)(Process* p, 
+		     DbTable* tb, /* [in out] */ 
+		     Eterm key, 
+		     Eterm* ret);
+    int (*db_erase)(Process* p,
+		    DbTable* tb,  /* [in out] */ 
+		    Eterm key, 
+		    Eterm* ret);
+    int (*db_erase_object)(Process* p,
+			   DbTable* tb, /* [in out] */ 
+			   Eterm obj,
+			   Eterm* ret);
+    int (*db_slot)(Process* p, 
+		   DbTable* tb, /* [in out] */ 
+		   Eterm slot, 
+		   Eterm* ret);
+    int (*db_update_counter)(Process* p,
+			     DbTable* tb, /* [in out] */ 
+			     Eterm key,
+			     Eterm increment, 
+			     int warp, 
+			     int position,
+			     Eterm* ret);
+
+    int (*db_select_chunk)(Process* p, 
+			   DbTable* tb, /* [in out] */ 
+			   Eterm pattern,
+			   Sint chunk_size,
+			   int reverse, 
+			   Eterm* ret);
+    int (*db_select)(Process* p, 
+		     DbTable* tb, /* [in out] */ 
+		     Eterm pattern,
+		     int reverse, 
+		     Eterm* ret);
+    int (*db_select_delete)(Process* p, 
+			    DbTable* tb, /* [in out] */ 
+			    Eterm pattern,
+			    Eterm* ret);
+    int (*db_select_continue)(Process* p, 
+			      DbTable* tb, /* [in out] */ 
+			      Eterm continuation,
+			      Eterm* ret);
+    int (*db_select_delete_continue)(Process* p, 
+				     DbTable* tb, /* [in out] */ 
+				     Eterm continuation,
+				     Eterm* ret);
+    int (*db_select_count)(Process* p, 
+			   DbTable* tb, /* [in out] */ 
+			   Eterm pattern, 
+			   Eterm* ret);
+    int (*db_select_count_continue)(Process* p, 
+				    DbTable* tb, /* [in out] */ 
+				    Eterm continuation, 
+				    Eterm* ret);
+
+    int (*db_delete_all_objects)(Process* p,
+				 DbTable* db /* [in out] */ );
+
+    int (*db_free_table)(DbTable* db /* [in out] */ );
+    int (*db_free_table_continue)(DbTable* db, /* [in out] */  
+				  int first);
+    
+    void (*db_print)(int to, 
+		     void* to_arg, 
+		     int show, 
+		     DbTable* tb /* [in out] */ );
+
+    void (*db_foreach_offheap)(DbTable* db,  /* [in out] */ 
+			       void (*func)(ErlOffHeap *, void *),
+			       void *arg);
+    void (*db_check_table)(DbTable* tb);
+    
+} DbTableMethod;
+
 /*
  * This structure contains data for all different types of database
  * tables. Note that these fields must match the same fields
@@ -75,12 +183,18 @@ typedef struct db_fixation {
     struct db_fixation *next;
 } DbFixation;
 
+
 typedef struct db_table_common {
+    erts_refc_t ref;    /* ref count ro prevent table deletion */
+#ifdef ERTS_SMP
+    erts_smp_rwmtx_t rwlock;  /* rw lock on table */
+#endif
     Eterm owner;              /* Pid of the creator */
     Eterm the_name;           /* an atom   */
     Eterm id;                 /* atom | integer | DB_USED | DB_NOTUSED */
+    DbTableMethod* meth;      /* table methods */
     Uint nitems;               /* Total number of items */
-    Uint memory_size;         /* Total memory size. NOTE: in bytes! */
+    erts_smp_atomic_t memory_size;/* Total memory size. NOTE: in bytes! */
     Uint megasec,sec,microsec; /* Last fixation time */
     DbFixation *fixations;   /* List of processes who have fixed 
 				 the table */
@@ -103,7 +217,7 @@ typedef struct db_table_common {
 #define DB_PUBLIC        (1 << 3)
 #define DB_BAG           (1 << 4)
 #define DB_SET           (1 << 5)
-#define DB_LHASH         (1 << 6)
+#define DB_LHASH         (1 << 6)  /* not really used!!! */
 #define DB_FIXED         (1 << 7)
 #define DB_DUPLICATE_BAG (1 << 8)
 #define DB_ORDERED_SET   (1 << 9)
@@ -128,6 +242,16 @@ Eterm erts_ets_copy_object(Eterm, Process*);
 
 /* tb is an DbTableCommon and obj is an Eterm (tagged) */
 #define TERM_GETKEY(tb, obj) db_getkey((tb)->common.keypos, (obj)) 
+
+#define ONLY_WRITER(P,T) (((T)->common.status & DB_PRIVATE) || \
+(((T)->common.status & DB_PROTECTED) && (T)->common.owner == (P)->id))
+
+#define ONLY_READER(P,T) (((T)->common.status & DB_PRIVATE) && \
+(T)->common.owner == (P)->id)
+
+#define SOLE_LOCKER(P,Fixations) ((Fixations) != NULL && \
+(Fixations)->next == NULL && (Fixations)->pid == (P)->id && \
+(Fixations)->counter == 1)
 
 /* Function prototypes */
 Eterm db_get_trace_control_word_0(Process *p);
@@ -170,16 +294,22 @@ typedef struct match_prog {
     struct erl_heap_fragment *saved_program_buf;
     Eterm saved_program;
 #ifdef DMC_DEBUG
-    int stack_size;
+    int label_size;
 #endif
-    Eterm **stack;           /* Pointer to beginning of "large enough" 
-				stack Actually points to area after eheap.*/
-    Eterm *eheap;            /* Pointer to pre allocated erlang heap storage */
-    Eterm *heap;             /* Pointer to beginnng of variable bindings 
-				Actually points to area after text */
+    Uint heap_size;          /* size of: heap + eheap + stack */
+    Uint eheap_offset;
+    Uint stack_offset;
     Uint *labels;            /* Label offset's */
     Uint text[1];            /* Beginning of program */
 } MatchProg;
+
+/*
+ * The heap-eheap-stack block of a MatchProg is nowadays allocated
+ * when the match program is run.
+ * - heap: variable bindings
+ * - eheap: erlang heap storage
+ * - eheap: a "large enough" stack
+ */
 
 #define DMC_ERR_STR_LEN 100
 

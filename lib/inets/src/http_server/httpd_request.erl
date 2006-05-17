@@ -194,14 +194,18 @@ validate_uri(RequestURI) ->
     UriNoQueryNoHex = 
 	case string:str(RequestURI, "?") of
 	    0 ->
-		httpd_util:decode_hex(RequestURI);
+		(catch httpd_util:decode_hex(RequestURI));
 	    Ndx ->
-		httpd_util:decode_hex(string:left(RequestURI, Ndx))	
+		(catch httpd_util:decode_hex(string:left(RequestURI, Ndx)))	
 	end,
-
-    Path = format_request_uri(UriNoQueryNoHex),
-    Path2=[X||X<-string:tokens(Path, "/"),X=/="."], %% OTP-5938
-    validate_path( Path2,0, RequestURI).
+    case UriNoQueryNoHex of
+	{'EXIT',_Reason} ->
+	    {error, {bad_request, {malformed_syntax, RequestURI}}};
+	_ ->
+	    Path = format_request_uri(UriNoQueryNoHex),
+	    Path2=[X||X<-string:tokens(Path, "/"),X=/="."], %% OTP-5938
+	    validate_path( Path2,0, RequestURI)
+    end.
 
 validate_path([], _, _) ->
     ok;

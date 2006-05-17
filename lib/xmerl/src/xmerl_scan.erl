@@ -700,7 +700,8 @@ scan_misc([], S=#xmerl_scanner{continuation_fun = F}, Pos) ->
     F(fun(MoreBytes, S1) -> scan_misc(MoreBytes, S1, Pos) end,
       fun(S1) -> {[], S1} end,
       S);
-scan_misc("<!--" ++ T, S, Pos) -> % Comment
+scan_misc("<!--" ++ T, S0, Pos) -> % Comment
+    ?bump_col(4),
     {_, T1, S1} = scan_comment(T, S, Pos, _Parents = [], _Lang = []),
     scan_misc(T1,S1,Pos);
 scan_misc("<?" ++ T, S0, Pos) -> % PI
@@ -708,9 +709,10 @@ scan_misc("<?" ++ T, S0, Pos) -> % PI
     ?bump_col(2),
     {_PI, T1, S1} = scan_pi(T, S, Pos),
     scan_misc(T1,S1,Pos);
-scan_misc([H|T], S, Pos) when ?whitespace(H) ->
+scan_misc(T=[H|_T], S, Pos) when ?whitespace(H) ->
     ?dbg("prolog(whitespace)~n", []),
-    scan_misc(T,S,Pos);
+    {_,T1,S1}=strip(T,S),
+    scan_misc(T1,S1,Pos);
 scan_misc(T,S,_Pos) ->
     {T,S}.
 
@@ -782,7 +784,7 @@ scan_xml_decl2("encoding" ++ T, S0 = #xmerl_scanner{event_fun = Event},
     end;
 scan_xml_decl2(T="standalone" ++ _T,S,Decl) ->
     scan_xml_decl3(T,S,Decl);
-scan_xml_decl2(BadString,S,_Decl) ->
+scan_xml_decl2(_BadString,S,_Decl) ->
         ?fatal(preformat([expected,one,'of:'],['?>',standalone,encoding],","),S).
 %    ?fatal(lists:flatten(io_lib:format("~s ~s ~s: ~s, ~s, ~s",[expected,one,'of','?>',standalone,encoding])),S).
 %    ?fatal({expected_one_of,"?>",standalone,encoding},S).
@@ -876,7 +878,7 @@ scan_text_decl("?>"++T,S0 = #xmerl_scanner{hook_fun = Hook,
 					       data = Decl}, S1),
     {Ret, S3} = Hook(Decl, S2),
     {Ret, T1, S3};
-scan_text_decl([H|T],S,_) ->
+scan_text_decl([H|_T],S,_) ->
     ?fatal({unexpected_character_in_text_declaration,H},S).
 
 scan_optional_version("version"++T,S0) ->
@@ -977,9 +979,10 @@ scan_pi([], S=#xmerl_scanner{continuation_fun = F}, Pos) ->
     F(fun(MoreBytes, S1) -> scan_pi(MoreBytes, S1, Pos) end,
       fun(S1) -> ?fatal(unexpected_end, S1) end,
       S);
-scan_pi(Str = [H1,H2,H3 | T],S=#xmerl_scanner{line = L, col = C}, Pos)
+scan_pi(Str = [H1,H2,H3 | T],S0=#xmerl_scanner{line = L, col = C}, Pos)
   when H1==$x;H1==$X ->
     %% names beginning with [xX][mM][lL] are reserved for future use.
+    ?bump_col(3),
     if 
 	((H2==$m) or (H2==$M)) and
 	((H3==$l) or (H3==$L)) ->
@@ -1002,12 +1005,6 @@ scan_wellknown_pi("-stylesheet"++T, S0=#xmerl_scanner{line=L,col=C},Pos) ->
     scan_pi(T, S, "xml-stylesheet",L,C,Pos,[]);
 scan_wellknown_pi(Str,S,_Pos) ->
     ?fatal({invalid_target_name, lists:sublist(Str, 1, 10)}, S).
-% scan_wellknown_pi(Str,S=#xmerl_scanner{validation=true},_Pos) ->
-%     ?fatal({invalid_target_name, lists:sublist(Str, 1, 10)}, S).
-%     ?fatal({invalid_target_name, lists:sublist(Str, 1, 10)}, S);
-% scan_wellknown_pi(Str,S=#xmerl_scanner{line = L, col = C},Pos) ->
-%     {AddTarget,_NamespaceInfo,T1,S1} = scan_name(Str,S),
-%     scan_pi(T1,S1,"xml"++AddTarget,L,C,Pos,[]).
 
 
 
@@ -1112,7 +1109,9 @@ scan_doctype2(">" ++ T, S0, DTD) ->
     ?strip1,
     S2 = fetch_DTD(DTD, S1),
     check_decl(S2),
-    {T1, S2}.
+    {T1, S2};
+scan_doctype2(_T,S,_DTD) ->
+    ?fatal(expected_end_of_DOCTYPE_declaration, S).
 
 %% [28a] DeclSep   ::= PEReference | S
 %% [28b] intSubset ::= (markupdecl | DeclSep)*
@@ -1161,6 +1160,8 @@ fetch_DTD(undefined, S=#xmerl_scanner{doctype_DTD=URI}) when list(URI)->
     fetch_DTD({system,URI},S#xmerl_scanner{doctype_DTD=option_provided});
 fetch_DTD(undefined, S) ->
     S;
+% fetch_DTD(_,S=#xmerl_scanner{validation=false}) ->
+%     S;
 fetch_DTD(DTDSpec, S)-> 
     case fetch_and_parse(DTDSpec,S,[{text_decl,true},
 				    {environment,{external,subset}}]) of
@@ -1367,7 +1368,7 @@ scan_ext_subset("%" ++ T, S0) ->
     %% The replacement text of a parameter entity reference in a
     %% DeclSep must match the production extSubsetDecl.
     ?bump_col(1),
-    {_,T1,S1} = scan_decl_sep(T,S),
+    {T1,S1} = scan_decl_sep(T,S),
     scan_ext_subset(T1, S1);
 scan_ext_subset("<![" ++ T, S0) ->
     ?bump_col(3),
@@ -1383,30 +1384,43 @@ scan_ext_subset(T, S) ->
 
 
 %%%%%%% [28a] DeclSep ::= PEReference | S
-
-scan_decl_sep(T,S=#xmerl_scanner{rules_read_fun=Read,
-				 rules_write_fun=Write,
-				 rules_delete_fun=Delete}) ->
+scan_decl_sep(T,S) ->
     {PERefName, T1, S1} = scan_pe_reference(T, S),
     {ExpandedRef,S2} =
 	case expand_pe_reference(PERefName,S1,as_PE) of
 	    Tuple when tuple(Tuple) ->
 		%% {system,URI} or {public,URI}
-		{ExpRef,Sx}=fetch_not_parse(Tuple,S1),
-		{EntV,_,_S2} = scan_entity_value(ExpRef, Sx, no_delim,
-						 PERefName,parameter),
-		%% should do an update Write(parameter_entity) so next
-		%% expand_pe_reference is faster
-		Delete(parameter_entity,PERefName,_S2),
-		_S3 = Write(parameter_entity,PERefName,EntV,_S2),
-		EntV2 = Read(parameter_entity,PERefName,_S3),
-		{" " ++ EntV2 ++ " ",_S3};
+		{ExpRef,_Sx}=fetch_not_parse(Tuple,S1),
+		{ExpRef,S1};
 	    ExpRef ->
 		{ExpRef,S1}
-	end,		     
-    {_, T3, S3} = strip(ExpandedRef,S2),
-    {_T4,S4} = scan_ext_subset(T3,S3),
-    strip(T1,S4).
+	end,
+    {_,TRef,S3} = strip(ExpandedRef,S2),
+    {_,S4}=scan_ext_subset(TRef,S3),
+    {T1,S4}.
+% scan_decl_sep(T,S=#xmerl_scanner{rules_read_fun=Read,
+% 				 rules_write_fun=Write,
+% 				 rules_delete_fun=Delete}) ->
+%     {PERefName, T1, S1} = scan_pe_reference(T, S),
+%     {ExpandedRef,S2} =
+% 	case expand_pe_reference(PERefName,S1,as_PE) of
+% 	    Tuple when tuple(Tuple) ->
+% 		%% {system,URI} or {public,URI}
+% 		{ExpRef,Sx}=fetch_not_parse(Tuple,S1),
+% 		{EntV,_,_S2} = scan_entity_value(ExpRef, Sx, no_delim,
+% 						 PERefName,parameter),
+% 		%% should do an update Write(parameter_entity) so next
+% 		%% expand_pe_reference is faster
+% 		Delete(parameter_entity,PERefName,_S2),
+% 		_S3 = Write(parameter_entity,PERefName,EntV,_S2),
+% 		EntV2 = Read(parameter_entity,PERefName,_S3),
+% 		{" " ++ EntV2 ++ " ",_S3};
+% 	    ExpRef ->
+% 		{ExpRef,S1}
+% 	end,		     
+%     {_, T3, S3} = strip(ExpandedRef,S2),
+%     {_T4,S4} = scan_ext_subset(T3,S3),
+%     strip(T1,S4).
 
 %%%%%%% [61] ConditionalSect ::= includeSect | ignoreSect
 
@@ -1430,7 +1444,6 @@ scan_conditional_sect("INCLUDE" ++ T, S0) ->
     {_,T3,S3} = strip(T2,S1),
     scan_include(T3, S3);
 scan_conditional_sect("%"++T,S0) ->
-    ?bump_col(1),
     ?bump_col(1),
     {PERefName, T1, S1} = scan_pe_reference(T, S),
     ExpRef = expand_pe_reference(PERefName, S1,as_PE),
@@ -1504,12 +1517,11 @@ scan_markup_decl([], S=#xmerl_scanner{continuation_fun = F}) ->
       S);
 scan_markup_decl("<!--" ++ T, S0) ->
     ?bump_col(4),
-    {_, T1, S1} = scan_comment(T, S),
-    ?strip2;
+    scan_comment(T, S);
 scan_markup_decl("<?" ++ T, S0) ->
     ?bump_col(2),
     {_PI, T1, S1} = scan_pi(T, S,_Pos=markup),
-    ?strip2;
+    strip(T1, S1);
 scan_markup_decl("<!ELEMENT" ++ T, 
 		 #xmerl_scanner{rules_read_fun = Read,
 				rules_write_fun = Write,
@@ -1540,7 +1552,8 @@ scan_markup_decl("<!ELEMENT" ++ T,
     S7 = Write(elem_def, Ename,
 	       Element#xmlElement{name = Ename,
 				  content = Edef,
-				  elementdef=S6#xmerl_scanner.environment}, S6),
+				  elementdef=S6#xmerl_scanner.environment},
+	       S6#xmerl_scanner{col=S6#xmerl_scanner.col+1}),
     strip(T6,S7);
 scan_markup_decl("<!ENTITY" ++ T, S0) ->
     %% <!ENTITY [%] entity.name NDATA notation.name>
@@ -1550,13 +1563,13 @@ scan_markup_decl("<!ENTITY" ++ T, S0) ->
     ?bump_col(8),
     {_,T1,S1} = mandatory_strip(T,S),
     {T2, S2} = scan_entity(T1, S1),
-    ?strip3;
+    strip(T2,S2);
 scan_markup_decl("<!NOTATION" ++ T, S0) ->
     %% <!NOTATION notation.name "public.identifier" "helper.application">
     ?bump_col(10),
     {_,T1,S1} = mandatory_strip(T,S),
     {T2, S2} = scan_notation_decl(T1, S1),
-    ?strip3;
+    strip(T2,S2);
 scan_markup_decl("<!ATTLIST" ++ T, 
 		 #xmerl_scanner{rules_read_fun = Read,
 				rules_write_fun = Write,
@@ -1583,8 +1596,8 @@ scan_markup_decl("<!ATTLIST" ++ T,
     NewEdef = EDEF#xmlElement{name=Ename,attributes = MergedAttrs},
     S5 = Write(elem_def, Ename, NewEdef, S4),
     T5 = T4,
-    ?strip6;
-scan_markup_decl(Str,S) ->
+    strip(T5,S5);
+scan_markup_decl(_Str,S) ->
     ?fatal(expected_markup,S).
 
 scan_element_completion(T,S) ->
@@ -1628,7 +1641,7 @@ scan_attdef("%" ++ _T, S=#xmerl_scanner{environment=prolog}, _Attrs) ->
      ?fatal({error,{wfc_PEs_In_Internal_Subset}},S);
 scan_attdef("%" ++ T, S0, Attrs) ->
     ?bump_col(1),
-    {PERefName, T1, S1} = scan_pe_reference(T, S0),
+    {PERefName, T1, S1} = scan_pe_reference(T, S),
     ExpRef = expand_pe_reference(PERefName, S1,as_PE),
     {_,T2,S2} = strip(ExpRef ++ T1,S1),
     scan_attdef(T2, S2, Attrs);
@@ -1643,7 +1656,7 @@ scan_attdef2("%" ++ _T, S=#xmerl_scanner{environment=prolog}, _Attrs) ->
      ?fatal({error,{wfc_PEs_In_Internal_Subset}},S);
 scan_attdef2("%" ++ T, S0, Attrs) ->
     ?bump_col(1),
-    {PERefName, T1, S1} = scan_pe_reference(T, S0),
+    {PERefName, T1, S1} = scan_pe_reference(T, S),
     ExpRef = expand_pe_reference(PERefName, S1,as_PE),
     {_,T2,S2} = strip(ExpRef ++ T1,S1),
     scan_attdef2(T2, S2, Attrs);
@@ -1712,7 +1725,7 @@ scan_att_type("%" ++ _T, S=#xmerl_scanner{environment=prolog}) ->
     ?fatal({error,{wfc_PEs_In_Internal_Subset}},S);
 scan_att_type("%" ++ T, S0) ->
     ?bump_col(1),
-    {PERefName, T1, S1} = scan_pe_reference(T, S0),
+    {PERefName, T1, S1} = scan_pe_reference(T, S),
     ExpRef = expand_pe_reference(PERefName, S1,in_literal),
     {ExpRef,T1,S1}.
 
@@ -1975,10 +1988,10 @@ scan_element(">" ++ T, S0 = #xmerl_scanner{event_fun = Event,
     ?bump_col(1),
     Attrs = lists:reverse(Attrs0),
     wfc_unique_att_spec(Attrs,S),
-    XMLSpace = case lists:keysearch('xml:space', 1, Attrs) of
+    XMLSpace = case lists:keysearch('xml:space', #xmlAttribute.name, Attrs) of
 		   false ->			SpaceDefault;
-		   {value, "default"} ->	SpaceOption;
-		   {value, "preserve"} ->	preserve;
+		   {value, #xmlAttribute{value="default"}} ->	SpaceOption;
+		   {value, #xmlAttribute{value="preserve"}} ->	preserve;
 		   _ ->				SpaceDefault
 	       end,
     
@@ -2055,7 +2068,7 @@ get_att_type(S=#xmerl_scanner{rules_read_fun=Read},AttName,ElemName) ->
 
 resolve_relative_uri(NewBase="/"++_,CurrentBase) ->
     case xmerl_uri:parse(CurrentBase) of
-	{error,Reason} ->
+	{error,_Reason} ->
 	    NewBase;
 	{Scheme,Host,Port,_Path,_Query} ->
 	    atom_to_list(Scheme)++Host++":"++integer_to_list(Port)++NewBase
@@ -2181,7 +2194,7 @@ scan_att_value("%"++T,S0=#xmerl_scanner{rules_read_fun=Read,
 		{EntV2,_S3};
 	    ExpRef ->
 		{ExpRef,S1}
-	end,  
+	end,
     {_,T2,S3} = strip(ExpandedRef ++ T1,S2),
     scan_att_value(T2,S3,AttType);
 scan_att_value([H|T], S0,'CDATA'=AT) when H == $"; H == $' ->
@@ -2590,10 +2603,6 @@ scan_pe_reference(T, S) ->
 
 expand_pe_reference(Name, #xmerl_scanner{rules_read_fun = Read} = S,WS) ->
     case Read(parameter_entity, Name, S) of
-%	undefined when S#xmerl_scanner.validation==true;
-%		       S#xmerl_scanner.standalone==yes;
-%		       S#xmerl_scanner.environment==prolog ->
-%	    ?fatal({unknown_parameter_entity, Name}, S); % WFC or VC failure
 	undefined ->
 	    ?fatal({unknown_parameter_entity, Name}, S); % WFC or VC failure
 	Err={error,_Reason} ->
@@ -2949,7 +2958,7 @@ scan_contentspec("(" ++ T, S0) ->
     ?bump_col(1),
     ?strip1,
     scan_elem_content(T1, S1);
-scan_contentspec(Str,S) ->
+scan_contentspec(_Str,S) ->
     ?fatal(unexpected_character,S).
 
 
@@ -3353,6 +3362,11 @@ scan_entity_value([Delim|T], S0,
     {lists:flatten(lists:reverse(Acc)), T, S};
 scan_entity_value("%" ++ _T,S=#xmerl_scanner{environment=prolog},_,_,_,_,_) ->
     ?fatal({error,{wfc_PEs_In_Internal_Subset}},S);
+% %% This is a PEdecl in an external entity
+% scan_entity_value([$%,WS|T], S0, Delim, Acc, PEName,Namespace,PENesting) 
+%   when ?whitespace(WS) ->
+%     ?bump_col(2),
+%     scan_entity_value(T, S, Delim, [WS,$%|Acc], PEName,Namespace,PENesting);
 scan_entity_value("%" ++ T, S0, Delim, Acc, PEName,Namespace,PENesting) ->
     ?bump_col(1),
     {PERefName, T1, S1} = scan_pe_reference(T, S),
@@ -3381,9 +3395,13 @@ scan_entity_value("%" ++ T, S0, Delim, Acc, PEName,Namespace,PENesting) ->
 	    S3 = S2#xmerl_scanner{col=S2#xmerl_scanner.col+1},
 	    {Acc2,_,S4} = scan_entity_value(ExpandedRef,S3,no_delim,Acc,
 					    PEName,Namespace,[]),
-	    {_,T2,S5} = strip(" "++T1,S4),
-	    scan_entity_value(T2,S5,Delim,lists:reverse(Acc2),
-			      PEName,Namespace,PENesting)
+% 	    {_,T2,S5} = strip(" "++T1,S4),
+	    scan_entity_value(T1,S4#xmerl_scanner{line=S3#xmerl_scanner.line,
+						  col=S3#xmerl_scanner.col},
+			      Delim,lists:reverse(Acc2),
+ 			      PEName,Namespace,PENesting)
+% 	    scan_entity_value(T1,S4,Delim,lists:reverse(Acc2),
+% 			      PEName,Namespace,PENesting)
     end;
 scan_entity_value("&" ++ T, S0, Delim, Acc, PEName,Namespace,PENesting) ->
     %% This is either a character entity or a general entity (internal
@@ -3481,6 +3499,9 @@ scan_entity_value(")"++ T,S0,Delim,Acc,PEName, parameter=NS,PENesting) ->
     ?bump_col(1),
     scan_entity_value(T,S,Delim,[")"|Acc],PEName,NS,
 		      pe_pop(")",PENesting,S));
+scan_entity_value("\n"++T, S, Delim, Acc, PEName,Namespace,PENesting) ->
+    scan_entity_value(T, S#xmerl_scanner{line=S#xmerl_scanner.line+1}, 
+		      Delim, ["\n"|Acc], PEName,Namespace,PENesting);
 scan_entity_value([H|T], S0, Delim, Acc, PEName,Namespace,PENesting) ->
     case xmerl_lib:is_char(H) of
 	true ->
@@ -3567,7 +3588,8 @@ check_entity_recursion(EName,
     case catch sofs:family_to_digraph(Set, [acyclic]) of
 	{'EXIT',{cyclic,_}} ->
 	    ?fatal({illegal_recursion_in_Entity, EName}, S);
-	{graph,_,_,_,_} ->
+	DG ->
+	    digraph:delete(DG),
 	    ok
     end.
 
@@ -3597,25 +3619,21 @@ scan_comment1([], S=#xmerl_scanner{continuation_fun = F},
     F(fun(MoreBytes, S1) -> scan_comment1(MoreBytes, S1, Pos, Comment, Acc) end,
       fun(S1) -> ?fatal(unexpected_end, S1) end,
       S);
-scan_comment1("--" ++ T, S0 = #xmerl_scanner{col = C,
+scan_comment1("-->" ++ T, S0 = #xmerl_scanner{col = C,
 					     event_fun = Event,
 					     hook_fun = Hook}, 
 	     _Pos, Comment, Acc) ->
-    case hd(T) of
-	$> ->
-	    ?bump_col(2),
-	    Comment1 = Comment#xmlComment{value = lists:reverse(Acc)},
-	    S1=#xmerl_scanner{}=Event(#xmerl_event{event = ended,
+    ?bump_col(3),
+    Comment1 = Comment#xmlComment{value = lists:reverse(Acc)},
+    S1=#xmerl_scanner{}=Event(#xmerl_event{event = ended,
 						   line=S#xmerl_scanner.line,
 						   col = C,
 						   data = Comment1}, S),
-	    {Ret, S2} = Hook(Comment1, S1),
-	    T2 = tl(T),
-	    ?strip3,
-	    {Ret, T3, S3};
-	Char ->
-	    ?fatal({invalid_comment,"--"++[Char]}, S0)
-    end;
+    {Ret, S2} = Hook(Comment1, S1),
+    {_,T3,S3}=strip(T,S2),
+    {Ret,T3,S3};
+scan_comment1("--"++T,S,_Pos,_Comment,_Acc) ->
+    ?fatal({invalid_comment,"--"++[hd(T)]}, S);
 scan_comment1("\n" ++ T, S=#xmerl_scanner{line = L}, Pos, Cmt, Acc) ->
     scan_comment1(T, S#xmerl_scanner{line=L+1,col=1},Pos, Cmt, "\n" ++ Acc);
 scan_comment1("\r\n" ++ T, S=#xmerl_scanner{line = L}, Pos, Cmt, Acc) ->
@@ -3800,77 +3818,3 @@ rules_read(Context, Name, #xmerl_scanner{rules = T}) ->
 
 rules_delete(Context,Name,#xmerl_scanner{rules = T}) ->
     ets:delete(T,{Context,Name}).
-
-% decode_UTF8(Str) ->
-%     decode_UTF8(Str,[]).
-
-
-% decode_UTF8([],Acc) ->
-%     lists:reverse(Acc);
-% decode_UTF8([H|T],Acc) when H =< 127 ->
-%     decode_UTF8(T,[H|Acc]);
-% decode_UTF8([H1,H2|T],Acc) when H1 =< 16#DF->
-%     Ch = char_UTF8_2b(H1,H2),
-%     decode_UTF8(T,[Ch|Acc]);
-% decode_UTF8([H1,H2,H3|T],Acc) when H1 =< 16#EF ->
-%     Ch = char_UTF8_3b(H1,H2,H3),
-%     decode_UTF8(T,[Ch|Acc]);
-% decode_UTF8([H1,H2,H3,H4|T],Acc) when H1 =< 16#F7 ->
-%     Ch = char_UTF8_4b(H1,H2,H3,H4),
-%     decode_UTF8(T,[Ch|Acc]);
-% decode_UTF8([H1,H2,H3,H4,H5|T],Acc) when H1 =< 16#FB ->
-%     Ch = char_UTF8_5b(H1,H2,H3,H4,H5),
-%     decode_UTF8(T,[Ch|Acc]);
-% decode_UTF8([H1,H2,H3,H4,H5,H6|T],Acc) ->
-%     Ch = char_UTF8_6b(H1,H2,H3,H4,H5,H6),
-%     decode_UTF8(T,[Ch|Acc]).
-
-% char_UTF8_2b(H1,H2) ->
-%     Msb = (H1 band 16#1F) bsl 6,
-%     Lsb = H2 band 16#3F,
-%     Msb + Lsb.
-
-% char_UTF8_3b(H1,H2,H3) ->
-%     (H3 band 16#3F) + ((H2 band 16#3F) bsl 6) + ((H1 band 16#0F) bsl 12).
-
-% char_UTF8_4b(H1,H2,H3,H4) ->
-%     (H4 band 16#3F) + ((H3 band 16#3F) bsl 6) + ((H2 band 16#3F) bsl 12) + 
-% 	((H1 band 16#07) bsl 18).
-
-% char_UTF8_5b(H1,H2,H3,H4,H5) ->
-%     (H5 band 16#3F) + ((H4 band 16#3F) bsl 6) + ((H3 band 16#3F) bsl 12) + 
-% 	((H2 band 16#3F) bsl 18) + ((H1 band 16#03) band 24).
-
-% char_UTF8_6b(H1,H2,H3,H4,H5,H6) ->
-%     (H6 band 16#3F) + ((H5 band 16#3F) bsl 6) + ((H4 band 16#3F) bsl 12) +
-% 	((H3 band 16#3F) bsl 18) + ((H2 band 16#3F) bsl 24) +
-% 	((H1 band 16#01) bsl 30).
-
-
-
-% utf8_char([H|T],S0=#xmerl_scanner{encoding="UTF-16"}) ->
-%     ?bump_col(1),
-%     {H,T,S};
-% utf8_char([H|T],S0) when H =< 127 ->
-%     ?bump_col(1),
-%     {H,T,S};
-% utf8_char([H1,H2|T],S0) when H1 =< 16#DF->
-%     Ch = char_UTF8_2b(H1,H2),
-%     ?bump_col(2),
-%     {Ch,T,S};
-% utf8_char([H1,H2,H3|T],S0) when H1 =< 16#EF ->
-%     Ch = char_UTF8_3b(H1,H2,H3),
-%     ?bump_col(3),
-%     {Ch,T,S};
-% utf8_char([H1,H2,H3,H4|T],S0) when H1 =< 16#F7 ->
-%     Ch = char_UTF8_4b(H1,H2,H3,H4),
-%     ?bump_col(4),
-%     {Ch,T,S};
-% utf8_char([H1,H2,H3,H4,H5|T],S0) when H1 =< 16#FB ->
-%     Ch = char_UTF8_5b(H1,H2,H3,H4,H5),
-%     ?bump_col(5),
-%     {Ch,T,S};
-% utf8_char([H1,H2,H3,H4,H5,H6|T],S0) ->
-%     Ch = char_UTF8_6b(H1,H2,H3,H4,H5,H6),
-%     ?bump_col(6),
-%     {Ch,T,S}.

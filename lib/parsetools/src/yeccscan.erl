@@ -53,5 +53,9 @@ lex([Token | Tokens]) ->
 	{Category, Line, Symbol} ->
 	    [{Category, Line, Symbol} | lex(Tokens)];
 	{Other, Line} ->
-	    [{reserved_symbol, Line, Other} | lex(Tokens)]
+            Cat = case erl_scan:reserved_word(Other) of
+                      true -> reserved_word;
+                      false -> reserved_symbol
+                  end,
+            [{Cat, Line, Other} | lex(Tokens)]
     end.

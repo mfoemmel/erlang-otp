@@ -80,7 +80,7 @@
 %% Set socket options codes  'SET_SOCK_OPT' 
 -define(SET_TCP_NODELAY, 1).
 
--define(DEF_BACKLOG, 5).
+-define(DEF_BACKLOG, 128).
 
 -define(DEF_TIMEOUT, 10000).
 

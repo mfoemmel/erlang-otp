@@ -27,17 +27,17 @@
 %% Interface functions
 -export([f/2, g/2]).
 
-init(Env) ->
+init(_Env) ->
     {ok, []}.
 
-terminate(From, Reason) ->
+terminate(_From, _Reason) ->
     ok.
 
 f(State, In) ->
     io:format("f working ....\n", []),
     {reply, In, State}.
 
-g(State, In)  ->
+g(State, _In)  ->
     io:format("g working ....\n", []),
     {noreply, State}.
 

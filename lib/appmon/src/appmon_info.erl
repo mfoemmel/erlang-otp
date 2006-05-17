@@ -93,29 +93,21 @@
 %%	processes that are left.
 %%
 %%----------------------------------------------------------------------
-
-
-
 -module(appmon_info).
-%% For CC that doesn't understand fnutts.
-
--export([start_link/3, start_link2/3, stop/0]).
-
--export([app_ctrl/2, app_ctrl/4,
-	 load/2, load/4,
-	 app/3, app/4,
-	 set_opts/1, set_opts/2,
-	 pinfo/3, pinfo/4,
-	 register_client/2,
-	 status/0]).
-
--import(lists, [foldr/3]).
-
-%% gen server stuff
 -behaviour(gen_server).
+
+%% Exported functions
+-export([start_link/3, app/4, pinfo/4, load/4, app_ctrl/4]).
+
+%% For internal use (RPC call)
+-export([start_link2/3]).
+
+%% For debugging
+-export([status/0]).
+
+%% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-	 terminate/2]).
--export([code_change/3]).
+	 terminate/2, code_change/3]).
 
 
 %%----------------------------------------------------------------------
@@ -171,16 +163,10 @@ start_link2(Starter, Client, Opts) ->
     end.
 	
 
-stop() ->
-    ?MODULE ! stop.
-
-
 %% app_ctrl
 %%
 %%	Monitors which applications exist on a node
 %%
-app_ctrl(OnOff, Opts) ->
-    app_ctrl(?MODULE, nil, OnOff, Opts).
 app_ctrl(Serv, Aux, OnOff, Opts) ->
     gen_server:cast(Serv, {self(), app_ctrl, Aux, OnOff, Opts}).
 
@@ -189,8 +175,6 @@ app_ctrl(Serv, Aux, OnOff, Opts) ->
 %%
 %%	Monitors load on a node
 %%
-load(OnOff, Opts) ->
-    load(?MODULE, nil, OnOff, Opts).
 load(Serv, Aux, OnOff, Opts) ->
     gen_server:cast(Serv, {self(), load, Aux, OnOff, Opts}).
 
@@ -200,26 +184,13 @@ load(Serv, Aux, OnOff, Opts) ->
 %%	Monitors one application given by name (this ends up in a
 %%	process tree
 %%
-app(AppName, OnOff, Opts) ->
-    app(?MODULE, AppName, OnOff, Opts).
 app(Serv, AppName, OnOff, Opts) ->
     gen_server:cast(Serv, {self(), app, AppName, OnOff, Opts}).
-
-%% set_opts
-%%
-%%	Set global options
-%%
-set_opts(Opt) ->
-    set_opts(?MODULE, Opt).
-set_opts(Serv, Opt) ->
-    gen_server:cast(Serv, {self(), set_option, Opt}).
 
 %% pinfo
 %%
 %%	Process or Port info
 %%
-pinfo(Pid, OnOff, Opt) ->
-    pinfo(?MODULE, Pid, OnOff, Opt).
 pinfo(Serv, Pid, OnOff, Opt) ->
     gen_server:cast(Serv, {self(), pinfo, Pid, OnOff, Opt}).
 
@@ -267,8 +238,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%
 %%----------------------------------------------------------------------
 
-handle_call(stop, _From, State) ->
-    {reply, stop, normal, State};
 handle_call({register_client, Pid}, _From, State) ->
     NewState = case lists:member(Pid, State#state.clients) of
 		   true -> State;
@@ -284,15 +253,13 @@ handle_call(_Other, _From, State) ->
 %%
 %%----------------------------------------------------------------------
 
+%% Cmd = app_ctrl | load | app | pinfo
 handle_cast({From, Cmd, Aux, OnOff, Opts}, State) ->
     NewState = update_worklist(Cmd, Aux, From, OnOff, Opts, State),
     {noreply, NewState};
 handle_cast(status, State) ->
     print_state(State),
     {noreply, State};
-handle_cast({_From, set_option, Opt}, State) ->
-    NewOpts = ins_opt(Opt, State#state.opts),
-    {noreply, State#state{opts=NewOpts}};
 handle_cast(_Other, State) ->
     {noreply, State}.
 
@@ -303,8 +270,6 @@ handle_cast(_Other, State) ->
 %%
 %%----------------------------------------------------------------------
 
-handle_info(stop, State) ->
-    {stop, normal, State};
 handle_info({do_it, Key}, State) ->
     ok = do_work(Key, State),
     {noreply, State};
@@ -567,17 +532,17 @@ find_children({_, X, supervisor, _}, sup) ->
 %% updated queue. A link is considered secondary if its endpoint is in
 %% the queue of un-visited but known processes.
 add_children(CList, Paren, DB, _GL, _Avoid, sup) ->
-    foldr(fun(C, DB2) -> 
-		  case get_pid(C) of
-		      P when pid(P) -> 
-			  add_prim(C, Paren, DB2);
-		      _ -> DB2 end end,
-	  DB, CList);
+    lists:foldr(fun(C, DB2) -> 
+			case get_pid(C) of
+			    P when pid(P) -> 
+				add_prim(C, Paren, DB2);
+			    _ -> DB2 end end,
+		DB, CList);
 
 add_children(CList, Paren, DB, GL, Avoid, _Mode) ->
-    foldr(fun(C, DB2) ->
-		  maybe_add_child(C, Paren, DB2, GL, Avoid)
-	  end, DB, CList).
+    lists:foldr(fun(C, DB2) ->
+			maybe_add_child(C, Paren, DB2, GL, Avoid)
+		end, DB, CList).
 
 %% Check if the child is already in P
 maybe_add_child(C, Paren, DB, GL, Avoid) ->
@@ -966,23 +931,21 @@ print_work([]) -> ok.
 %%
 %%----------------------------------------------------------------------
 
+%% The only options ever set by a user is info_type, timeout,
+%% load_scale and load_method.
 get_opt(Name, Opts) ->
     case lists:keysearch(Name, 1, Opts) of
 	{value, Val} -> element(2, Val);
-	_ -> case lists:member(Name, Opts) of
-		 true -> true;
-		 _ -> default(Name)
-	     end
+	false -> default(Name)
     end.
 
 %% not all options have default values
+default(info_type)	-> link;
+default(load_average)	-> true;
 default(load_method)	-> time;
 default(load_scale)	-> prog;
-default(load_average)	-> true;
-default(timeout)	-> 2000;
-default(info_type)	-> link;
 default(stay_resident)	-> false;
-default({avoid, _})	-> false.
+default(timeout)	-> 2000.
 
 ins_opts([Opt | Opts], Opts2) ->
     ins_opts(Opts, ins_opt(Opt, Opts2));

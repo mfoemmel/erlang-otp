@@ -282,6 +282,12 @@ handle_http_msg({Method, Uri, Version, {RecordHeaders, Headers}, Body},
 				       403, URI),
 	    Reason = io_lib:format("Forbidden URI: ~p~n", [URI]),
 	    error_log(Reason, ModData),
+	    {stop, normal, State#state{response_sent = true}};
+	{error,{bad_request, {malformed_syntax, URI}}} ->
+	    httpd_response:send_status(ModData#mod{http_version = Version},
+				       400, URI),
+	    Reason = io_lib:format("Malformed syntax in URI: ~p~n", [URI]),
+	    error_log(Reason, ModData),
 	    {stop, normal, State#state{response_sent = true}}
     end;
 handle_http_msg({ChunkedHeaders, Body}, 

@@ -22,7 +22,12 @@
     {update, disksup, {advanced, "1.8"}},
     {update, nteventlog, {advanced, "1.8"}},
     {update, os_mon_sysinfo, {advanced, "1.8"}},
-    {update, os_sup, {advanced, "1.8"}}]}],
+    {update, os_sup, {advanced, "1.8"}}]},
+  {"2.0",
+   [{load_module, cpu_sup},
+    {load_module, disksup},
+    {update, memsup, {advanced, "2.0"}}]}
+ ],
  [{"1.8",
    [{update, os_mon, supervisor},
     {apply,
@@ -42,5 +47,14 @@
     {update, disksup, {advanced, "1.8"}},
     {update, nteventlog, {advanced, "1.8"}},
     {update, os_mon_sysinfo, {advanced, "1.8"}},
-    {update, os_sup, {advanced, "1.8"}}]}]
+    {update, os_sup, {advanced, "1.8"}}]},
+  {"2.0",
+   [{load_module, cpu_sup},
+    {load_module, disksup},
+    {apply,
+     {supervisor, terminate_child, [os_mon_sup, memsup]}},
+    {load_module, memsup},
+    {apply,
+     {supervisor, restart_child, [os_mon_sup, memsup]}}]}
+ ]
 }.

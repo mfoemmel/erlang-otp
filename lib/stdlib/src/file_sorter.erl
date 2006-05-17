@@ -41,7 +41,7 @@
                no_files = ?NOMERGE, tmpdir = default, order = ascending, 
                compressed = false, unique = false, header = 4}).
 
--compile({inline, [{badarg, 2}, {make_key,3}, {cfun,3}]}).
+-compile({inline, [{badarg, 2}, {make_key,2}, {make_stable_key,3}, {cfun,3}]}).
 
 %%%
 %%% Exported functions
@@ -55,7 +55,7 @@ sort(Input, Output) ->
 
 sort(Input0, Output0, Options) ->
     case {is_input(Input0), maybe_output(Output0), options(Options)}  of
-        {{true,Input}, {true,Output}, Opts} when record(Opts, opts) -> 
+        {{true,Input}, {true,Output}, #opts{}=Opts} -> 
             do_sort(0, Input, Output, Opts, sort);
         T -> 
             badarg(culprit(tuple_to_list(T)), [Input0, Output0, Options])
@@ -70,17 +70,17 @@ keysort(KeyPos, Input, Output) ->
 keysort(KeyPos, Input0, Output0, Options) ->
     R = case {is_keypos(KeyPos), is_input(Input0), 
               maybe_output(Output0), options(Options)} of
-            {_, _, _, Opts} when Opts#opts.format == binary -> 
+            {_, _, _, #opts{format = binary}} -> 
                 {Input0,Output0,[{badarg,format}]};
-            {_, _, _, Opts} when function(Opts#opts.order) -> 
+            {_, _, _, #opts{order = Order}} when is_function(Order) -> 
                 {Input0,Output0,[{badarg,order}]};
-            {true, {true,In}, {true,Out}, Opts} when record(Opts, opts) -> 
+            {true, {true,In}, {true,Out}, #opts{}=Opts} -> 
                 {In,Out,Opts};
             T -> 
                 {Input0,Output0,tuple_to_list(T)}
         end,
     case R of
-        {Input,Output,O} when record(O, opts) ->
+        {Input,Output,#opts{}=O} ->
             do_sort(KeyPos, Input, Output, O, sort);
         {_,_,O} ->
             badarg(culprit(O), [KeyPos, Input0, Output0, Options])
@@ -92,7 +92,7 @@ merge(Files, Output) ->
 merge(Files0, Output0, Options) ->
     case {is_files(Files0), maybe_output(Output0), options(Options)} of
         %% size not used
-        {{true,Files}, {true,Output}, Opts} when record(Opts, opts) ->
+        {{true,Files}, {true,Output}, #opts{}=Opts} ->
             do_sort(0, Files, Output, Opts, merge);
         T -> 
             badarg(culprit(tuple_to_list(T)), [Files0, Output0, Options])
@@ -104,17 +104,17 @@ keymerge(KeyPos, Files, Output) ->
 keymerge(KeyPos, Files0, Output0, Options) ->
     R = case {is_keypos(KeyPos), is_files(Files0), 
               maybe_output(Output0), options(Options)} of
-            {_, _, _, Opts} when Opts#opts.format == binary -> 
+            {_, _, _, #opts{format = binary}} -> 
                 {Files0,Output0,[{badarg,format}]};
-            {_, _, _, Opts} when function(Opts#opts.order) -> 
+            {_, _, _, #opts{order = Order}} when is_function(Order) -> 
                 {Files0,Output0,[{badarg,order}]};
-            {true, {true,Fs}, {true,Out}, Opts} when record(Opts, opts) -> 
+            {true, {true,Fs}, {true,Out}, #opts{}=Opts} -> 
                 {Fs,Out,Opts};
             T -> 
                 {Files0,Output0,tuple_to_list(T)}
         end,
     case R of
-        {Files,Output,O} when record(O, opts) -> 
+        {Files,Output,#opts{}=O} -> 
             do_sort(KeyPos, Files, Output, O, merge);
         {_,_,O} -> 
             badarg(culprit(O), [KeyPos, Files0, Output0, Options])
@@ -125,7 +125,7 @@ check(FileName) ->
 
 check(Files0, Options) ->
     case {is_files(Files0), options(Options)} of
-        {{true,Files}, Opts} when record(Opts, opts) ->
+        {{true,Files}, #opts{}=Opts} ->
             do_sort(0, Files, undefined, Opts, check);
         T ->
             badarg(culprit(tuple_to_list(T)), [Files0, Options])
@@ -136,17 +136,17 @@ keycheck(KeyPos, FileName) ->
 
 keycheck(KeyPos, Files0, Options) ->
     R = case {is_keypos(KeyPos), is_files(Files0), options(Options)} of
-            {_, _, Opts} when Opts#opts.format == binary -> 
+            {_, _, #opts{format = binary}} -> 
                 {Files0,[{badarg,format}]};
-            {_, _, Opts} when function(Opts#opts.order) -> 
+            {_, _, #opts{order = Order}} when is_function(Order) -> 
                 {Files0,[{badarg,order}]};
-            {true, {true,Fs}, Opts} when record(Opts, opts) -> 
+            {true, {true,Fs}, #opts{}=Opts} -> 
                 {Fs,Opts};
             T -> 
                 {Files0,tuple_to_list(T)}
         end,
     case R of
-        {Files,O} when record(O, opts) -> 
+        {Files,#opts{}=O} -> 
             do_sort(KeyPos, Files, undefined, O, check);
         {_,O} -> 
             badarg(culprit(O), [KeyPos, Files0, Options])
@@ -177,21 +177,23 @@ badarg({error, _} = E, _Args) ->
 badarg({badarg, _} = B, Args) ->
     erlang:fault(B, Args).
 
-options(Options) when list(Options) ->
+options(Options) when is_list(Options) ->
     options(Options, #opts{});
 options(Option) ->
     options([Option]).
 
-options([{format, Format} | L], Opts) when Format == binary; 
-                                           Format == term;
-                                           function(Format) ->
+options([{format, Format} | L], Opts) when Format =:= binary; 
+                                           Format =:= term;
+                                           is_function(Format),
+                                             is_function(Format, 1) ->
     options(L, Opts#opts{format = Format});
-options([{format, Format} | L], Opts) when Format == binary_term ->
+options([{format, binary_term} | L], Opts) ->
     options(L, Opts#opts{format = binary_term_fun()});
 options([{size, Size} | L], Opts) 
-            when integer(Size), Size > 0, Size < ?MAXSIZE ->
+            when is_integer(Size), Size > 0, Size < ?MAXSIZE ->
     options(L, Opts#opts{size = Size});
-options([{no_files, NoFiles} | L], Opts) when integer(NoFiles), NoFiles > 1 ->
+options([{no_files, NoFiles} | L], Opts) when is_integer(NoFiles), 
+                                              NoFiles > 1 ->
     options(L, Opts#opts{no_files = NoFiles});
 options([{tmpdir, ""} | L], Opts) ->
     options(L, Opts#opts{tmpdir = default});
@@ -202,21 +204,21 @@ options([{tmpdir, Dir} | L],  Opts) ->
         Error ->
             Error
     end;
-options([{order, Fun} | L], Opts) when function(Fun) ->
+options([{order, Fun} | L], Opts) when is_function(Fun), is_function(Fun, 2) ->
     options(L, Opts#opts{order = Fun});
-options([{order, Order} | L], Opts) when Order == ascending; 
-                                         Order == descending ->
+options([{order, Order} | L], Opts) when Order =:= ascending; 
+                                         Order =:= descending ->
     options(L, Opts#opts{order = Order});
-options([{compressed, Bool} | L], Opts) when Bool == true; Bool == false ->
+options([{compressed, Bool} | L], Opts) when Bool; not Bool ->
     options(L, Opts#opts{compressed = Bool});
-options([{unique, Bool} | L], Opts) when Bool == true; Bool == false ->
+options([{unique, Bool} | L], Opts) when Bool; not Bool ->
     options(L, Opts#opts{unique = Bool});
 options([{header, Len} | L], Opts) 
-                when integer(Len), Len > 0, Len < ?MAXSIZE ->
+                when is_integer(Len), Len > 0, Len < ?MAXSIZE ->
     options(L, Opts#opts{header = Len});
 options([], Opts) ->
     if 
-        Opts#opts.format == term, Opts#opts.header =/= 4 ->
+        Opts#opts.format =:= term, Opts#opts.header =/= 4 ->
             {badarg, header};
         true ->
             Opts
@@ -226,7 +228,8 @@ options([Bad | _], _Opts) ->
 options(Bad, _Opts) ->
     {badarg, Bad}.
 
--define(OBJ(X, Y), [X | Y]).
+-define(OBJ(X, Y), {X, Y}).
+-define(SK(T, I), [T | I]). % stable key
 
 do_sort(KeyPos0, Input0, Output0, Opts, Do) ->
     #opts{format = Format0, size = Size, no_files = NoFiles,
@@ -237,20 +240,17 @@ do_sort(KeyPos0, Input0, Output0, Opts, Do) ->
     Ref = make_ref(),
     KeyPos = case KeyPos0 of [Kp] -> Kp; _ -> KeyPos0 end,
     {Format, Input} = wrap_input(Format0, Do, Input0),
-    Z = if Compressed == true -> [compressed]; true -> [] end,
+    Z = if Compressed -> [compressed]; true -> [] end,
     {Output, FunOut} = wrap_output_terms(Format0, Output0, Z),
     W = #w{keypos = KeyPos, out = Output, fun_out = FunOut,
            prefix = Prefix, format = Format, runsize = Size, 
            no_files = NoFiles, order = Order, chunksize = ChunkSize, 
            ref = Ref, z = Z, unique = Unique, hdlen = HdLen, 
            inout_value = no_value},
-    case catch {Ref, doit(Do, Input, W)} of
-        {Ref, Reply} ->
-            Reply;
-        {'EXIT', Reason} ->
-            erlang:fault(Reason);
-        Thrown ->
-            throw(Thrown)
+    try
+        doit(Do, Input, W)
+    catch {Ref,Error} ->
+        Error
     end.
     
 doit(sort, Input, W) ->
@@ -275,7 +275,7 @@ wrap_input(term, merge, Files) ->
 wrap_input(Format, merge, Files) ->
     Input = lists:reverse(lists:map(fun merge_bins_fun/1, Files)),
     {Format, Input};
-wrap_input(term, sort, InFun) when function(InFun) ->
+wrap_input(term, sort, InFun) when is_function(InFun), is_function(InFun, 1) ->
     {binary_term_fun(), fun_rterms(InFun)};
 wrap_input(term, sort, Files) ->
     {binary_term_fun(), file_rterms(no_file, Files)};
@@ -289,7 +289,7 @@ merge_terms_fun(RFun) ->
             case RFun(read) of
                 end_of_input ->
                     eof;
-                {Objs, NRFun} when function(NRFun) ->
+                {Objs, NRFun} when is_function(NRFun), is_function(NRFun, 1) ->
                     {_, [], Ts, _} = fun_objs(Objs, [], 0, ?MAXSIZE, I, W),
                     {{I, Ts, ?CHUNKSIZE}, merge_terms_fun(NRFun)};
                 Error ->
@@ -305,12 +305,13 @@ merge_bins_fun(FileName) ->
             Fun(A)
     end.
 
-wrap_output_terms(term, OutFun, _Z) when function(OutFun) ->
+wrap_output_terms(term, OutFun, _Z) when is_function(OutFun),
+                                         is_function(OutFun, 1) ->
     {fun_wterms(OutFun), true};
 wrap_output_terms(term, File, Z) when File =/= undefined ->
     {file_wterms(name, File, Z++[write]), false};
 wrap_output_terms(_Format, Output, _Z) ->
-    {Output, erlang:is_function(Output)}.
+    {Output, is_function(Output) and is_function(Output, 1)}.
 
 binary_term_fun() ->
     fun binary_to_term/1.
@@ -338,26 +339,26 @@ check_run(IFun, F, FNs, W, L, I, Last) ->
             check_files(FNs, NW, L)
     end.
 
-check_objs0(IFun, F, FNs, W, L, I, nolast, [O | Os]) ->
-    check_objs1(IFun, F, FNs, W, L, I, O, Os);
+check_objs0(IFun, F, FNs, W, L, I, nolast, [?OBJ(T,_BT) | Os]) ->
+    check_objs1(IFun, F, FNs, W, L, I, T, Os);
 check_objs0(IFun, F, FNs, W, L, I, Last, []) ->
     check_run(IFun, F, FNs, W, L, I, Last);
 check_objs0(IFun, F, FNs, W, L, I, {last, Last}, Os) ->
     check_objs1(IFun, F, FNs, W, L, I, Last, Os).
 
-check_objs1(IFun, F, FNs, W, L, I, ?OBJ(LastT,LastBT), Os) ->
-    case W#w.order of
-        ascending when W#w.unique == true ->
-            ucheck_objs(IFun, F, FNs, W, L, I, LastT, LastBT, Os);
-        ascending ->
+check_objs1(IFun, F, FNs, W, L, I, LastT, Os) ->
+    case W of
+        #w{order = ascending, unique = true} ->
+            ucheck_objs(IFun, F, FNs, W, L, I, LastT, Os);
+        #w{order = ascending, unique = false} ->
             check_objs(IFun, F, FNs, W, L, I, LastT, Os);
-        descending when W#w.unique == true ->
-            rucheck_objs(IFun, F, FNs, W, L, I, LastT, LastBT, Os);
-        descending ->
+        #w{order = descending, unique = true} ->
+            rucheck_objs(IFun, F, FNs, W, L, I, LastT, Os);
+        #w{order = descending, unique = false} ->
             rcheck_objs(IFun, F, FNs, W, L, I, LastT, Os);
-        CF when W#w.unique == true ->
-            uccheck_objs(IFun, F, FNs, W, L, I, LastT, LastBT, Os, CF);
-        CF ->
+        #w{order = CF, unique = true} ->
+            uccheck_objs(IFun, F, FNs, W, L, I, LastT, Os, CF);
+        #w{order = CF, unique = false} ->
             ccheck_objs(IFun, F, FNs, W, L, I, LastT, Os, CF)
     end.
 
@@ -366,35 +367,28 @@ check_objs(IFun, F, FNs, W, L, I, Last, [?OBJ(T,_BT) | Os]) when T >= Last ->
 check_objs(IFun, F, FNs, W, L, I, _Last, [?OBJ(_T,BT) | _]) ->
     culprit_found(IFun, F, FNs, W, L, I, BT);
 check_objs(IFun, F, FNs, W, L, I, Last, []) ->
-    check_run(IFun, F, FNs, W, L, I, {last, ?OBJ(Last,foo)}).
+    check_run(IFun, F, FNs, W, L, I, {last, Last}).
 
 rcheck_objs(IFun, F, FNs, W, L, I, Last, [?OBJ(T,_BT) | Os]) when T =< Last ->
     rcheck_objs(IFun, F, FNs, W, L, I+1, T, Os);
 rcheck_objs(IFun, F, FNs, W, L, I, _Last, [?OBJ(_T,BT) | _]) ->
     culprit_found(IFun, F, FNs, W, L, I, BT);
 rcheck_objs(IFun, F, FNs, W, L, I, Last, []) ->
-    check_run(IFun, F, FNs, W, L, I, {last, ?OBJ(Last,foo)}).
+    check_run(IFun, F, FNs, W, L, I, {last, Last}).
 
-ucheck_objs(IFun, F, FNs, W, L, I, _LT, LBT, [?OBJ(_T,BT) | _]) 
-                                                              when LBT == BT ->
+ucheck_objs(IFun, F, FNs, W, L, I, LT, [?OBJ(T,_BT) | Os]) when T > LT ->
+    ucheck_objs(IFun, F, FNs, W, L, I+1, T, Os);
+ucheck_objs(IFun, F, FNs, W, L, I, _LT, [?OBJ(_T,BT) | _]) ->
     culprit_found(IFun, F, FNs, W, L, I, BT);
-ucheck_objs(IFun, F, FNs, W, L, I, LT, _LBT, [?OBJ(T,BT) | Os]) when T >= LT ->
-    ucheck_objs(IFun, F, FNs, W, L, I+1, T, BT, Os);
-ucheck_objs(IFun, F, FNs, W, L, I, _LT, _LBT, [?OBJ(_T,BT) | _]) ->
-    culprit_found(IFun, F, FNs, W, L, I, BT);
-ucheck_objs(IFun, F, FNs, W, L, I, LT, LBT, []) ->
-    check_run(IFun, F, FNs, W, L, I, {last, ?OBJ(LT, LBT)}).
+ucheck_objs(IFun, F, FNs, W, L, I, LT, []) ->
+    check_run(IFun, F, FNs, W, L, I, {last, LT}).
 
-rucheck_objs(IFun, F, FNs, W, L, I, _LT, LBT, [?OBJ(_T,BT) | _]) 
-                                                              when LBT == BT ->
+rucheck_objs(IFun, F, FNs, W, L, I, LT, [?OBJ(T,_BT) | Os]) when T < LT ->
+    rucheck_objs(IFun, F, FNs, W, L, I+1, T, Os);
+rucheck_objs(IFun, F, FNs, W, L, I, _LT, [?OBJ(_T,BT) | _]) ->
     culprit_found(IFun, F, FNs, W, L, I, BT);
-rucheck_objs(IFun, F, FNs, W, L, I, LT, _LBT, [?OBJ(T,BT) | Os]) 
-                                                              when T =< LT ->
-    rucheck_objs(IFun, F, FNs, W, L, I+1, T, BT, Os);
-rucheck_objs(IFun, F, FNs, W, L, I, _LT, _LBT, [?OBJ(_T,BT) | _]) ->
-    culprit_found(IFun, F, FNs, W, L, I, BT);
-rucheck_objs(IFun, F, FNs, W, L, I, LT, LBT, []) ->
-    check_run(IFun, F, FNs, W, L, I, {last, ?OBJ(LT, LBT)}).
+rucheck_objs(IFun, F, FNs, W, L, I, LT, []) ->
+    check_run(IFun, F, FNs, W, L, I, {last, LT}).
 
 ccheck_objs(IFun, F, FNs, W, L, I, LT, [?OBJ(T,BT) | Os], CF) ->
     case CF(LT, T) of
@@ -404,29 +398,31 @@ ccheck_objs(IFun, F, FNs, W, L, I, LT, [?OBJ(T,BT) | Os], CF) ->
             culprit_found(IFun, F, FNs, W, L, I, BT)
     end;
 ccheck_objs(IFun, F, FNs, W, L, I, LT, [], _CF) ->
-    check_run(IFun, F, FNs, W, L, I, {last, ?OBJ(LT, foo)}).
+    check_run(IFun, F, FNs, W, L, I, {last, LT}).
 
-uccheck_objs(IFun, F, FNs, W, L, I, _LT, LBT, [?OBJ(_T,BT) | _], _CF) 
-                                                             when LBT == BT ->
-    culprit_found(IFun, F, FNs, W, L, I, BT);
-uccheck_objs(IFun, F, FNs, W, L, I, LT, _LBT, [?OBJ(T,BT) | Os], CF) ->
+uccheck_objs(IFun, F, FNs, W, L, I, LT, [?OBJ(T,BT) | Os], CF) ->
     case CF(LT, T) of
         true -> % LT =< T
-            uccheck_objs(IFun, F, FNs, W, L, I+1, T, BT, Os, CF);
+            case CF(T, LT) of
+                true -> % T equal to LT
+                    culprit_found(IFun, F, FNs, W, L, I, BT);
+                false -> % LT < T
+                    uccheck_objs(IFun, F, FNs, W, L, I+1, T, Os, CF)
+            end;
         false -> % LT > T
             culprit_found(IFun, F, FNs, W, L, I, BT)
     end;
-uccheck_objs(IFun, F, FNs, W, L, I, LT, LBT, [], _CF) ->
-    check_run(IFun, F, FNs, W, L, I, {last, ?OBJ(LT, LBT)}).
+uccheck_objs(IFun, F, FNs, W, L, I, LT, [], _CF) ->
+    check_run(IFun, F, FNs, W, L, I, {last, LT}).
 
 culprit_found(IFun, F, FNs, W, L, I, [_Size | BT]) ->
     IFun(close),
     check_files(FNs, W, [{F,I,binary_to_term(BT)} | L]).
 
-files(_I, L, _LSz, W, []) when W#w.seq == 1 ->
+files(_I, L, _LSz, #w{seq = 1}=W, []) ->
     %% No temporary files created, everything in L.
     case W#w.out of
-        Fun when function(Fun) ->
+        Fun when is_function(Fun) ->
             SL = internal_sort(L, W),
             W1 = outfun(binterm_objects(SL, []), W),
             NW = close_input(W1),
@@ -438,7 +434,7 @@ files(_I, L, _LSz, W, []) when W#w.seq == 1 ->
 files(_I, L, _LSz, W, []) ->
     W1 = write_run(L, W),
     last_merge(lists:append(W1#w.runs), W1);
-files(I, L, LSz, W, Fun) when function(Fun) ->
+files(I, L, LSz, W, Fun) when is_function(Fun) ->
     NW = W#w{in = Fun},
     fun_run(I, L, LSz, NW, []);
 files(I, L, LSz, W, [FileName | FileNames]) ->
@@ -488,41 +484,35 @@ write_run(L, W, FileName) ->
     write(Fd, FileName, BTs, W1),
     close_file(Fd, W1).
 
-%% Returns a list in descending order.
-internal_sort(L, W) ->
-    case W#w.order of
-        CFun when function(CFun) ->
-            Fun = fun([T1 | _], [T2 | _]) -> CFun(T1, T2) end,
-            no_dups(lists:sort(Fun, L), ascending, W);
-        ascending when W#w.unique == true, W#w.keypos == 0  ->
-            lists:reverse(lists:usort(L));
-        descending when W#w.unique == true, W#w.keypos == 0  ->
-            lists:usort(L);
-        Order ->
-            no_dups(lists:sort(L), Order, W)
-    end.
-
-no_dups([], _Order, _W) ->
-    [];
-no_dups(L, ascending, W) when W#w.unique == false ->
-    lists:reverse(L);
-no_dups(L, descending, W) when W#w.unique == false ->
+%% Returns a list in reversed order.
+internal_sort([]=L, _W) ->
     L;
-no_dups([?OBJ(_T,BT) = E | Es], ascending, _W) ->
-    no_dups1(Es, BT, [E]);
-no_dups([?OBJ(_T,BT) = E | Es], descending, _W) ->
-    lists:reverse(no_dups1(Es, BT, [E])).
+internal_sort(L, #w{order = CFun, unique = Unique}) when is_function(CFun) ->
+    Fun = fun(?OBJ(T1, _), ?OBJ(T2, _)) -> CFun(T1, T2) end,
+    RL = lists:reverse(L),
+    lists:reverse(if
+                      Unique -> 
+                          lists:usort(Fun, RL);
+                      true -> 
+                          lists:sort(Fun, RL)
+                  end);
+internal_sort(L, #w{unique = true, keypos = 0}=W) ->
+    rev(lists:usort(L), W);
+internal_sort(L, #w{unique = false, keypos = 0}=W) ->
+    rev(lists:sort(L), W);
+internal_sort(L, #w{unique = true}=W) ->
+    rev(lists:ukeysort(1, lists:reverse(L)), W);
+internal_sort(L, #w{unique = false}=W) ->
+    rev(lists:keysort(1, lists:reverse(L)), W).
 
-no_dups1([?OBJ(_T1,BT1) | Es], BT, L) when BT == BT1 ->
-    no_dups1(Es, BT, L);
-no_dups1([?OBJ(_T1,BT1) = E1 | Es], _BT, L) ->
-    no_dups1(Es, BT1, [E1 | L]);
-no_dups1([], _BT, L) ->
+rev(L, #w{order = ascending}) ->
+    lists:reverse(L);
+rev(L, #w{order = descending}) ->
     L.
 
 last_merge(R, W) when length(R) =< W#w.no_files ->
     case W#w.out of
-        Fun when function(Fun) ->
+        Fun when is_function(Fun) ->
             {Fs, W1} = init_merge(lists:reverse(R), 1, [], W),
             ?DEBUG("merging ~p~n", [lists:reverse(R)]),
             W2 = merge_files(Fs, [], 0, nolast, W1),
@@ -564,7 +554,7 @@ merge_files(R, W, FileName) ->
 %% A file number, I, is used for making the merge phase stable.
 init_merge([FN | FNs], I, Fs, W) ->
     IFun = case FN of
-               _ when function(FN) ->
+               _ when is_function(FN) ->
                    %% When and only when merge/2,3 or keymerge/3,4 was called.
                    FN;
                _ ->
@@ -578,12 +568,12 @@ init_merge([FN | FNs], I, Fs, W) ->
         {eof, NW} -> % can only happen when merging files
             init_merge(FNs, I+1, Fs, NW)
     end;
-init_merge([], _I, Fs0, W) when W#w.order == ascending ->
+init_merge([], _I, Fs0, #w{order = ascending}=W) ->
     {lists:sort(Fs0), W};
-init_merge([], _I, Fs0, W) when W#w.order == descending ->
+init_merge([], _I, Fs0, #w{order = descending}=W) ->
     {lists:reverse(lists:sort(Fs0)), W};
-init_merge([], _I, Fs0, W) when function(W#w.order) ->
-    {lists:sort(cfun_files(W#w.order), Fs0), W}.
+init_merge([], _I, Fs0, #w{order = Order}=W) when is_function(Order) ->
+    {lists:sort(cfun_files(W#w.order), lists:reverse(Fs0)), W}.
 
 cfun_files(CFun) ->
     fun(F1, F2) ->
@@ -593,77 +583,118 @@ cfun_files(CFun) ->
     end.
 
 %% The argument Last is used when unique = true. It is the last kept
-%% element. The first value is 'nolast', then the value is a pair (of
-%% binaries).
+%% element.
 %% LSz is not the sum of the sizes of objects in L. Instead it is
 %% the number of bytes read. After init_merge it is set to 0, which
 %% means that the first chunk written may be quite large (it may take
 %% a while before buffers are exhausted).
-merge_files([F1, F2 | Fs], L, LSz, Last, W) when LSz < ?MERGESIZE ->
-    [Ts | InEtc] = F1,
+merge_files([F1, F2 | Fs], L0, LSz, Last0, W) when LSz < ?MERGESIZE ->
+    [Ts0 | InEtc] = F1,
+    Kind = merge_kind(W),
+    {Last, L, Ts} = case {Last0, Kind} of
+                        {{last, Lst}, Kind} -> 
+                            {Lst, L0, Ts0};
+                        {nolast, {ukmerge, _Kp}} -> 
+                            [?OBJ(?SK(T, _I), BT) | Ts1] = Ts0,
+                            {T, [BT], Ts1};
+                        {nolast, {rukmerge, _Kp}} -> 
+                            [?OBJ(?SK(T, _I), BT) | Ts1] = Ts0,
+                            {{T, BT}, [], Ts1};
+                        {nolast, _} ->
+                            [?OBJ(T, BT) | Ts1] = Ts0,
+                            {T, [BT], Ts1}
+                    end,
     [[?OBJ(T2, BT2) | Ts2T] = Ts2 | InEtc2] = F2,
     {NInEtc, NFs, NL, NLast} = 
-       case W#w.order of
-           ascending when W#w.unique == true ->
+       case Kind of 
+           umerge ->
                umerge_files(L, F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, Last);
-           ascending ->
+           {ukmerge, Kp} ->
+               ukmerge_files(L, F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, Kp, Last);
+           merge ->
                merge_files(L, F2, Fs, InEtc2, BT2, Ts2T, Ts, InEtc, T2);
-           descending when W#w.unique == true ->
+           rumerge ->
                rumerge_files(L, F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, Last);
-           descending ->
+           {rukmerge, Kp} ->
+               {Lt, LtBT} = Last,
+               rukmerge_files(L, F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, Kp, 
+                              Lt, LtBT);
+           rmerge ->
                rmerge_files(L, F2, Fs, InEtc2, BT2, Ts2T, Ts, InEtc, T2);
-           CF when W#w.unique == true ->
-               ucmerge_files(L, F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, CF, Last);
-           CF ->
-               cmerge_files(L, F2, Fs, InEtc2, BT2, Ts2T, Ts, InEtc, T2, CF)
+           {ucmerge, CF} ->
+               {I2, _} = InEtc2,
+               {I, _} = InEtc,
+               ucmerge_files(L, F2, Fs, InEtc2, Ts2, I2, Ts, I, InEtc, T2, CF,
+                             Last);
+           {cmerge, CF} ->
+               {I2, _} = InEtc2,
+               {I, _} = InEtc,
+               cmerge_files(L, F2, Fs, InEtc2, BT2, Ts2T, I2, Ts, I, InEtc, T2,
+                            CF)
        end,
     read_chunk(NInEtc, NFs, NL, LSz, NLast, W);
 merge_files([F1], L, LSz, Last, W) when LSz < ?MERGESIZE ->
     [Ts | InEtc] = F1,
-    {NL, NLast} = last_file(Ts, L, Last, W),
-    read_chunk(InEtc, [], NL, LSz, NLast, W);
+    NL = last_file(Ts, L, Last, merge_kind(W), W),
+    read_chunk(InEtc, [], NL, LSz, nolast, W);
 merge_files([], [], 0, nolast, W) ->
     %% When merging files, ensure that the output fun (if there is
     %% one) is called at least once before closing.
     merge_write(W, []);
-merge_files([], [], 0, _Last, W) ->
-    W;
-merge_files([], L, _LSz, _Last, W) ->
+merge_files([], L, _LSz, Last, W) ->
+    Last = nolast,
     merge_write(W, L);
 merge_files(Fs, L, _LSz, Last, W) ->
     NW = merge_write(W, L),
     merge_files(Fs, [], 0, Last, NW).
 
+merge_kind(#w{order = ascending, unique = true, keypos = 0}) ->
+    umerge;
+merge_kind(#w{order = ascending, unique = true, keypos = Kp}) ->
+    {ukmerge, Kp};
+merge_kind(#w{order = ascending, unique = false}) ->
+    merge;
+merge_kind(#w{order = descending, unique = true, keypos = 0}) ->
+    rumerge;
+merge_kind(#w{order = descending, unique = true, keypos = Kp}) ->
+    {rukmerge, Kp};
+merge_kind(#w{order = descending, unique = false}) ->
+    rmerge;
+merge_kind(#w{order = CF, unique = true}) ->
+    {ucmerge, CF};
+merge_kind(#w{order = CF, unique = false}) ->
+    {cmerge, CF}.
+
 merge_write(W, L) ->
      case {W#w.wfd, W#w.out} of
-         {undefined, Fun} when function(Fun) ->
+         {undefined, Fun} when is_function(Fun) ->
              outfun(objects(L, []), W);
          {{Fd, FileName}, _} ->
              write(Fd, FileName, lists:reverse(L), W),
              W
      end.
 
-umerge_files(L, F2, Fs, InEtc2, Ts2, [?OBJ(_T, BT) | Ts], InEtc, T2, Last) 
-            when Last == BT ->
+umerge_files(L, F2, Fs, InEtc2, Ts2, [?OBJ(T, _BT) | Ts], InEtc, T2, Last) 
+            when T == Last ->
     umerge_files(L, F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, Last);
 umerge_files(L, F2, Fs, InEtc2, Ts2, [?OBJ(T, BT) | Ts], InEtc, T2, _Last) 
             when T =< T2 ->
-    umerge_files([BT | L], F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, BT);
+    umerge_files([BT | L], F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, T);
 umerge_files(L, F2, Fs, _InEtc2, _Ts2, [], InEtc, _T2, Last) ->
-    {InEtc, [F2 | Fs], L, Last};
+    {InEtc, [F2 | Fs], L, {last, Last}};
 umerge_files(L, _F2, Fs, InEtc2, Ts2, Ts, InEtc, _T2, Last) ->
     [F3 | NFs] = insert([Ts | InEtc], Fs),
     [[?OBJ(T3,_BT3) | _] = Ts3 | InEtc3] = F3,
     umerge_files(L, F3, NFs, InEtc3, Ts3, Ts2, InEtc2, T3, Last).
 
-rumerge_files(L, F2, Fs, InEtc2, Ts2, [?OBJ(_T, BT) | Ts], InEtc, T2, Last) 
-            when Last == BT ->
+rumerge_files(L, F2, Fs, InEtc2, Ts2, [?OBJ(T, _BT) | Ts], InEtc, T2, Last) 
+            when T == Last ->
     rumerge_files(L, F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, Last);
 rumerge_files(L, F2, Fs, InEtc2, Ts2, [?OBJ(T, BT) | Ts], InEtc, T2, _Last) 
             when T >= T2 ->
-    rumerge_files([BT | L], F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, BT);
+    rumerge_files([BT | L], F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, T);
 rumerge_files(L, F2, Fs, _InEtc2, _Ts2, [], InEtc, _T2, Last) ->
-    {InEtc, [F2 | Fs], L, Last};
+    {InEtc, [F2 | Fs], L, {last, Last}};
 rumerge_files(L, _F2, Fs, InEtc2, Ts2, Ts, InEtc, _T2, Last) ->
     [F3 | NFs] = rinsert([Ts | InEtc], Fs),
     [[?OBJ(T3,_BT3) | _] = Ts3 | InEtc3] = F3,
@@ -673,7 +704,7 @@ merge_files(L, F2, Fs, InEtc2, BT2, Ts2, [?OBJ(T, BT) | Ts], InEtc, T2)
             when T =< T2 ->
     merge_files([BT | L], F2, Fs, InEtc2, BT2, Ts2, Ts, InEtc, T2);
 merge_files(L, F2, Fs, _InEtc2, _BT2, _Ts2, [], InEtc, _T2) ->
-    {InEtc, [F2 | Fs], L, nolast};
+    {InEtc, [F2 | Fs], L, {last, foo}};
 merge_files(L, _F2, Fs, InEtc2, BT2, Ts2, Ts, InEtc, _T2) ->
     L1 = [BT2 | L],
     [F3 | NFs] = insert([Ts | InEtc], Fs),
@@ -684,61 +715,142 @@ rmerge_files(L, F2, Fs, InEtc2, BT2, Ts2, [?OBJ(T, BT) | Ts], InEtc, T2)
             when T >= T2 ->
     rmerge_files([BT | L], F2, Fs, InEtc2, BT2, Ts2, Ts, InEtc, T2);
 rmerge_files(L, F2, Fs, _InEtc2, _BT2, _Ts2, [], InEtc, _T2) ->
-    {InEtc, [F2 | Fs], L, nolast};
+    {InEtc, [F2 | Fs], L, {last, foo}};
 rmerge_files(L, _F2, Fs, InEtc2, BT2, Ts2, Ts, InEtc, _T2) ->
     L1 = [BT2 | L],
     [F3 | NFs] = rinsert([Ts | InEtc], Fs),
     [[?OBJ(T3,BT3) | Ts3] | InEtc3] = F3,
     rmerge_files(L1, F3, NFs, InEtc3, BT3, Ts3, Ts2, InEtc2, T3).
 
-ucmerge_files(L, F2, Fs, InEtc2, Ts2, [?OBJ(_T, BT) | Ts], InEtc, T2, CF, Last)
-            when Last == BT ->
-    ucmerge_files(L, F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, CF, Last);
-ucmerge_files(L, F2, Fs, InEtc2, Ts2, [?OBJ(T, BT) | Ts] = Ts0, 
-              InEtc, T2, CF, Last) ->
+ukmerge_files(L, F2, Fs, InEtc2, Ts2, [?OBJ(?SK(T, _I),_BT) | Ts], InEtc, 
+              T2, Kp, Last) when T == Last ->
+    ukmerge_files(L, F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, Kp, Last);
+ukmerge_files(L, F2, Fs, InEtc2, Ts2, [?OBJ(?SK(T0,_I)=T,BT) | Ts], InEtc, 
+              T2, Kp, _Last) when T =< T2 ->
+    ukmerge_files([BT | L], F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, Kp, T0);
+ukmerge_files(L, F2, Fs, _InEtc2, _Ts2, [], InEtc, _T2, _Kp, Last) ->
+    {InEtc, [F2 | Fs], L, {last, Last}};
+ukmerge_files(L, _F2, Fs, InEtc2, Ts2, Ts, InEtc, _T2, Kp, Last) ->
+    [F3 | NFs] = insert([Ts | InEtc], Fs),
+    [[?OBJ(T3,_BT3) | _] = Ts3 | InEtc3] = F3,
+    ukmerge_files(L, F3, NFs, InEtc3, Ts3, Ts2, InEtc2, T3, Kp, Last).
+
+rukmerge_files(L, F2, Fs, InEtc2, Ts2, [?OBJ(?SK(T, _I), BT) | Ts], InEtc, 
+               T2, Kp, Last, _LastBT) when T == Last ->
+    rukmerge_files(L, F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, Kp, T, BT);
+rukmerge_files(L, F2, Fs, InEtc2, Ts2, [?OBJ(?SK(T0, _I)=T, BT) | Ts], InEtc, 
+               T2, Kp, _Last, LastBT) when T >= T2 ->
+    rukmerge_files([LastBT|L], F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, Kp, T0,BT);
+rukmerge_files(L, F2, Fs, _InEtc2, _Ts2, [], InEtc, _T2, _Kp, Last, LastBT) ->
+    {InEtc, [F2 | Fs], L, {last, {Last, LastBT}}};
+rukmerge_files(L, _F2, Fs, InEtc2, Ts2, Ts, InEtc, _T2, Kp, Last, LastBT) ->
+    [F3 | NFs] = rinsert([Ts | InEtc], Fs),
+    [[?OBJ(T3,_BT3) | _] = Ts3 | InEtc3] = F3,
+    rukmerge_files(L, F3, NFs, InEtc3, Ts3, Ts2, InEtc2, T3, Kp, Last,LastBT).
+
+ucmerge_files(L, F2, Fs, InEtc2, Ts2, I2, [?OBJ(T, BT) | Ts] = Ts0, I,
+              InEtc, T2, CF, Last) when I < I2 ->
     case CF(T, T2) of
-       true -> % T =< T2
-          ucmerge_files([BT | L], F2, Fs, InEtc2, Ts2, Ts, InEtc, T2, CF, BT);
+        true -> % T =< T2
+            case CF(T, Last) of
+                true ->
+                    ucmerge_files(L, F2, Fs, InEtc2, Ts2, I2, Ts, I, InEtc, T2,
+                                  CF, Last);
+                false ->
+                    ucmerge_files([BT | L], F2, Fs, InEtc2, Ts2, I2, Ts, I,
+                                  InEtc, T2, CF, T)
+            end;
        false -> % T > T2
           [F3 | NFs] = cinsert([Ts0 | InEtc], Fs, CF),
-          [[?OBJ(T3,_BT3) | _] = Ts3 | InEtc3] = F3,
-          ucmerge_files(L, F3, NFs, InEtc3, Ts3, Ts2, InEtc2, T3, CF, Last)
+          [[?OBJ(T3,_BT3) | _] = Ts3 | {I3,_} = InEtc3] = F3,
+          ucmerge_files(L, F3, NFs, InEtc3, Ts3, I3, Ts2, I2, InEtc2, T3, CF, Last)
     end;
-ucmerge_files(L, F2, Fs, _InEtc2, _Ts2, [], InEtc, _T2, _CF, Last) ->
-    {InEtc, [F2 | Fs], L, Last}.
+ucmerge_files(L, F2, Fs, InEtc2, Ts2, I2, [?OBJ(T, BT) | Ts] = Ts0, I,
+              InEtc, T2, CF, Last) -> % when I2 < I
+    case CF(T2, T) of
+        true -> % T2 =< T
+            [F3 | NFs] = cinsert([Ts0 | InEtc], Fs, CF),
+            [[?OBJ(T3,_BT3) | _] = Ts3 | {I3,_} = InEtc3] = F3,
+            ucmerge_files(L, F3, NFs, InEtc3, Ts3, I3, Ts2, I2, InEtc2, T3, 
+                          CF, Last);
+       false -> % T < T2
+            case CF(T, Last) of
+                true ->
+                    ucmerge_files(L, F2, Fs, InEtc2, Ts2, I2, Ts, I, InEtc, T2,
+                                  CF, Last);
+                false ->
+                    ucmerge_files([BT | L], F2, Fs, InEtc2, Ts2, I2, Ts, I,
+                                  InEtc, T2, CF, T)
+            end
+    end;
+ucmerge_files(L, F2, Fs, _InEtc2, _Ts2, _I2, [], _I, InEtc, _T2, _CF, Last) ->
+    {InEtc, [F2 | Fs], L, {last, Last}}.
 
-cmerge_files(L, F2, Fs, InEtc2, BT2, Ts2, [?OBJ(T, BT) | Ts] = Ts0, 
-             InEtc, T2, CF) ->
+cmerge_files(L, F2, Fs, InEtc2, BT2, Ts2, I2, [?OBJ(T, BT) | Ts] = Ts0, I,
+             InEtc, T2, CF) when I < I2 ->
     case CF(T, T2) of
        true -> % T =< T2
-          cmerge_files([BT|L], F2, Fs, InEtc2, BT2, Ts2, Ts, InEtc, T2, CF);
+          cmerge_files([BT|L], F2, Fs, InEtc2, BT2, Ts2, I2, Ts, I, InEtc, T2, CF);
        false -> % T > T2
           L1 = [BT2 | L],
           [F3 | NFs] = cinsert([Ts0 | InEtc], Fs, CF),
-          [[?OBJ(T3,BT3) | Ts3] | InEtc3] = F3,
-          cmerge_files(L1, F3, NFs, InEtc3, BT3, Ts3, Ts2, InEtc2, T3, CF)
+          [[?OBJ(T3,BT3) | Ts3] | {I3,_} = InEtc3] = F3,
+          cmerge_files(L1, F3, NFs, InEtc3, BT3, Ts3, I3, Ts2, I2, InEtc2, T3, CF)
     end;
-cmerge_files(L, F2, Fs, _InEtc2, _BT2, _Ts2, [], InEtc, _T2, _CF) ->
-    {InEtc, [F2 | Fs], L, nolast}.
+cmerge_files(L, F2, Fs, InEtc2, BT2, Ts2, I2, [?OBJ(T, BT) | Ts] = Ts0, I,
+             InEtc, T2, CF) -> % when I2 < I
+    case CF(T2, T) of
+       true -> % T2 =< T
+          L1 = [BT2 | L],
+          [F3 | NFs] = cinsert([Ts0 | InEtc], Fs, CF),
+          [[?OBJ(T3,BT3) | Ts3] | {I3,_} = InEtc3] = F3,
+          cmerge_files(L1, F3, NFs, InEtc3, BT3, Ts3, I3, Ts2, I2, InEtc2, T3, CF);
+       false -> % T < T2
+          cmerge_files([BT|L], F2, Fs, InEtc2, BT2, Ts2, I2, Ts, I, InEtc, T2, CF)
+    end;
+cmerge_files(L, F2, Fs, _InEtc2, _BT2, _Ts2, _I2, [], _I, InEtc, _T2, _CF) ->
+    {InEtc, [F2 | Fs], L, {last, foo}}.
 
-last_file(Ts, L, Last, W) when W#w.unique == true ->
-    ulast_file(Ts, Last, L);
-last_file(Ts, L, _Last, _W) ->
+last_file(Ts, L, {last, T}, {ukmerge,_}, _W) ->
+    kulast_file(Ts, T, L);
+last_file(Ts, L, {last, {T,BT}}, {rukmerge,_}, _W) ->
+    ruklast_file(Ts, T, BT, L);
+last_file(Ts, L, {last, T}, {ucmerge,CF}, _W) ->
+    uclast_file(Ts, T, CF, L);
+last_file(Ts, L, {last, T}, _Kind, #w{unique = true}) ->
+    ulast_file(Ts, T, L);
+last_file(Ts, L, _Last, _Kind, _W) ->
     last_file(Ts, L).
 
-ulast_file([?OBJ(_T, BT) | Ts], Last, L) when Last == BT ->
-    ulast_file(Ts, Last, L);
-ulast_file([?OBJ(_T, BT) | Ts], _Last, L) ->
-    ulast_file(Ts, BT, [BT | L]);
-ulast_file([], Last, L) ->
-    {L, Last}.
+ulast_file([?OBJ(T, _BT) | Ts], Last, L) when Last == T ->
+    last_file(Ts, L);
+ulast_file(Ts, _Last, L) ->
+    last_file(Ts, L).
     
+kulast_file([?OBJ(?SK(T, _I), _BT) | Ts], Last, L) when Last == T ->
+    last_file(Ts, L);
+kulast_file(Ts, _Last, L) ->
+    last_file(Ts, L).
+
+ruklast_file([?OBJ(?SK(T, _I), BT) | Ts], Last, _LastBT, L) when Last == T ->
+    last_file(Ts, [BT | L]);
+ruklast_file(Ts, _Last, LastBT, L) ->
+    last_file(Ts, [LastBT | L]).
+
+uclast_file([?OBJ(T, BT) | Ts], Last, CF, L) ->
+    case CF(T, Last) of
+        true ->
+            last_file(Ts, L);
+        false ->
+            last_file(Ts, [BT | L])
+    end.
+
 last_file([?OBJ(_Ta, BTa), ?OBJ(_Tb, BTb) | Ts], L) ->
     last_file(Ts, [BTb, BTa | L]);
 last_file([?OBJ(_T, BT) | Ts], L) ->
     last_file(Ts, [BT | L]);
 last_file([], L) ->
-    {L, nolast}.
+    L.
     
 %% OK for 16 files.
 insert(A, [X1, X2, X3, X4 | Xs]) when A > X4 ->
@@ -790,9 +902,14 @@ cinsert(A, _, _CF) ->
 
 %% Inlined.
 cfun(CF, F1, F2) ->
-    [[?OBJ(T1,_) | _] | _] = F1,
-    [[?OBJ(T2,_) | _] | _] = F2,
-    CF(T1, T2).
+    [[?OBJ(T1,_) | _] | {I1,_}] = F1,
+    [[?OBJ(T2,_) | _] | {I2,_}] = F2,
+    if 
+        I1 < I2 ->
+            CF(T1, T2);
+        true -> % I2 < I1
+            not CF(T2, T1)
+    end.
 
 binterm_objects([?OBJ(_T, [_Sz | BT]) | Ts], L) ->
     binterm_objects(Ts, [BT | L]);
@@ -814,17 +931,17 @@ binterms([], L) ->
 read_chunk(InEtc, Fs, L, LSz, Last, W) ->
     {I, IFun} = InEtc,
     case read_more(IFun, I, LSz, W) of
-        {Ts, NLSz, NIFun, NW} when W#w.order == ascending ->
+        {Ts, NLSz, NIFun, #w{order = ascending}=NW} ->
             NInEtc = {I, NIFun},
             NFs = insert([Ts | NInEtc], Fs),
             merge_files(NFs, L, NLSz, Last, NW);
-        {Ts, NLSz, NIFun, NW} when W#w.order == descending ->
+        {Ts, NLSz, NIFun, #w{order = descending}=NW} ->
             NInEtc = {I, NIFun},
             NFs = rinsert([Ts | NInEtc], Fs),
             merge_files(NFs, L, NLSz, Last, NW);
         {Ts, NLSz, NIFun, NW} ->
             NInEtc = {I, NIFun},
-            NFs = cinsert([Ts | NInEtc], Fs, W#w.order),
+            NFs = cinsert([Ts | NInEtc], Fs, NW#w.order),
             merge_files(NFs, L, NLSz, Last, NW);
         {eof, NW} ->
             merge_files(Fs, L, LSz, Last, NW)
@@ -895,7 +1012,7 @@ read_objs(Fd, FileName, I, L, Bin0, Size0, LSz, W) ->
                 Reply ->
                     {Reply, NLSz}
             end;
-        eof when size(Bin0) == 0 ->
+        eof when size(Bin0) =:= 0 ->
             eof;
         eof ->
             error({error, {premature_eof, FileName}}, W)
@@ -923,17 +1040,17 @@ file_loop1(L, I, B, Sz, Kp, F, HdLen) ->
 file_loop2(L, _I, B, Sz, SzB, 0, binary, HdLen) ->
     {NL, NB, NSz, NSzB} = file_binloop(L, Sz, SzB, B, HdLen),
     if 
-        size(NB) == NSz ->
+        size(NB) =:= NSz ->
             <<Bin:NSz/binary>> = NB,
             {0, [?OBJ(Bin, [NSzB | Bin]) | NL], <<>>, 0};
         true ->
             {0, NL, NB, NSz}
     end;
-file_loop2(L, _I, B, Sz, SzB, Kp, Fun, HdLen) when Kp == 0 ->
+file_loop2(L, _I, B, Sz, SzB, 0, Fun, HdLen) ->
     file_binterm_loop(L, Sz, SzB, B, Fun, HdLen);
-file_loop2(L, {merge, I}, B, Sz, SzB, Kp, Fun, HdLen) ->
+file_loop2(L, {merge, I}, B, Sz, SzB, Kp, Fun, HdLen) -> % when Kp =/= 0
     merge_loop(Kp, I, L, Sz, SzB, B, Fun, HdLen);
-file_loop2(L, I, B, Sz, SzB, Kp, Fun, HdLen) when integer(I) ->
+file_loop2(L, I, B, Sz, SzB, Kp, Fun, HdLen) when is_integer(I) ->
     key_loop(Kp, I, L, Sz, SzB, B, Fun, HdLen).
 
 file_binloop(L, Size, SizeB, B, HL) ->
@@ -960,17 +1077,16 @@ file_binterm_loop(L, Size, SizeB, B, Fun, HL) ->
             {0, L, B, Size}
     end.
 
-%% A sequence number (I) is used for making the internal sort stable.
 key_loop(KeyPos, I, L, Size, SizeB, B, Fun, HL) ->
     case B of
         <<BinTerm:Size/binary, NSizeB:HL/binary, R/binary>> ->
             <<NSize:HL/unit:8>> = NSizeB,
             BT = [SizeB | BinTerm],
-            UniqueKey = make_key(KeyPos, I, Fun(BinTerm)),
+            UniqueKey = make_key(KeyPos, Fun(BinTerm)),
             E = ?OBJ(UniqueKey, BT),
             key_loop(KeyPos, I+1, [E | L], NSize, NSizeB, R, Fun, HL);
         <<BinTerm:Size/binary>> ->
-            UniqueKey = make_key(KeyPos, I, Fun(BinTerm)),
+            UniqueKey = make_key(KeyPos, Fun(BinTerm)),
             NL = [?OBJ(UniqueKey, [SizeB | BinTerm]) | L], 
             {I+1, NL, <<>>, 0};
         _ ->
@@ -982,11 +1098,11 @@ merge_loop(KeyPos, I, L, Size, SizeB, B, Fun, HL) ->
         <<BinTerm:Size/binary, NSizeB:HL/binary, R/binary>> ->
             <<NSize:HL/unit:8>> = NSizeB,
             BT = [SizeB | BinTerm],
-            UniqueKey = make_key(KeyPos, I, Fun(BinTerm)),
+            UniqueKey = make_stable_key(KeyPos, I, Fun(BinTerm)),
             E = ?OBJ(UniqueKey, BT),
             merge_loop(KeyPos, I, [E | L], NSize, NSizeB, R, Fun, HL);
         <<BinTerm:Size/binary>> ->
-            UniqueKey = make_key(KeyPos, I, Fun(BinTerm)),
+            UniqueKey = make_stable_key(KeyPos, I, Fun(BinTerm)),
             NL = [?OBJ(UniqueKey, [SizeB | BinTerm]) | L], 
             {{merge, I}, NL, <<>>, 0};
         _ ->
@@ -1004,11 +1120,11 @@ fun_objs(Objs, L, LSz, NoBytes, I, W) ->
 
 fun_loop(Objs, L, LSz, RunSize, _I, 0, binary, HdLen) ->
     fun_binloop(Objs, L, LSz, RunSize, HdLen);
-fun_loop(Objs, L, LSz, RunSize, _I, Keypos, Fun, HdLen) when Keypos == 0 ->
+fun_loop(Objs, L, LSz, RunSize, _I, 0, Fun, HdLen) ->
     fun_loop(Objs, L, LSz, RunSize, Fun, HdLen);
 fun_loop(Objs, L, LSz, RunSize, {merge, I}, Keypos, Fun, HdLen) ->
     fun_mergeloop(Objs, L, LSz, RunSize, I, Keypos, Fun, HdLen);
-fun_loop(Objs, L, LSz, RunSize, I, Keypos, Fun, HdLen) when integer(I) ->
+fun_loop(Objs, L, LSz, RunSize, I, Keypos, Fun, HdLen) when is_integer(I) ->
     fun_keyloop(Objs, L, LSz, RunSize, I, Keypos, Fun, HdLen).
 
 fun_binloop([B | Bs], L, LSz, RunSize, HL) when LSz < RunSize ->
@@ -1027,7 +1143,7 @@ fun_loop(Bs, L, LSz, _RunSize, _Fun, _HL) ->
 
 fun_keyloop([B | Bs], L, LSz, RunSize, I, Kp, Fun, HL) when LSz < RunSize ->
     Size = size(B),
-    UniqueKey = make_key(Kp, I, Fun(B)),
+    UniqueKey = make_key(Kp, Fun(B)),
     E = ?OBJ(UniqueKey, [<<Size:HL/unit:8>> | B]),
     fun_keyloop(Bs, [E | L], LSz+Size, RunSize, I+1, Kp, Fun, HL);
 fun_keyloop(Bs, L, LSz, _RunSize, I, _Kp, _Fun, _HL) ->
@@ -1035,77 +1151,86 @@ fun_keyloop(Bs, L, LSz, _RunSize, I, _Kp, _Fun, _HL) ->
 
 fun_mergeloop([B | Bs], L, LSz, RunSize, I, Kp, Fun, HL) when LSz < RunSize ->
     Size = size(B),
-    UniqueKey = make_key(Kp, I, Fun(B)),
+    UniqueKey = make_stable_key(Kp, I, Fun(B)),
     E = ?OBJ(UniqueKey, [<<Size:HL/unit:8>> | B]),
     fun_mergeloop(Bs, [E | L], LSz+Size, RunSize, I, Kp, Fun, HL);
 fun_mergeloop(Bs, L, LSz, _RunSize, I, _Kp, _Fun, _HL) ->
     {{merge, I}, Bs, L, LSz}. % any I would do
 
 %% Inlined.
-make_key(Kp, I, T) when integer(Kp) ->
-    [element(Kp, T) | I];
-make_key([Kp1, Kp2], I, T) ->
-    [element(Kp1, T), element(Kp2, T) | I];
-make_key([Kp1, Kp2 | Kps], I, T) ->
-    [element(Kp1, T), element(Kp2, T) | make_key2(Kps, I, T)].
+make_key(Kp, T) when is_integer(Kp) ->
+    element(Kp, T);
+make_key([Kp1, Kp2], T) ->
+    [element(Kp1, T), element(Kp2, T)];
+make_key([Kp1, Kp2 | Kps], T) ->
+    [element(Kp1, T), element(Kp2, T) | make_key2(Kps, T)].
 
-make_key2([Kp | Kps], I, T) ->
-    [element(Kp, T) | make_key2(Kps, I, T)];
-make_key2([], I, _T) ->
-    [I].
+%% Inlined.
+%% A sequence number (I) is used for making the internal sort stable.
+%% I is ordering number of the file from which T was read.
+make_stable_key(Kp, I, T) when is_integer(Kp) ->
+    ?SK(element(Kp, T), I);
+make_stable_key([Kp1, Kp2], I, T) ->
+    ?SK([element(Kp1, T) | element(Kp2, T)], I);
+make_stable_key([Kp1, Kp2 | Kps], I, T) ->
+    ?SK([element(Kp1, T), element(Kp2, T) | make_key2(Kps, T)], I).
+
+make_key2([Kp], T) ->
+    [element(Kp, T)];
+make_key2([Kp | Kps], T) ->
+    [element(Kp, T) | make_key2(Kps, T)].
 
 max(A, B) when A < B -> B;
 max(A, _) -> A.
 
 infun(W) ->
     W1 = W#w{in = undefined},
-    case call_end(catch {W#w.ref, (W#w.in)(read)}, W1) of
+    try (W#w.in)(read) of
         end_of_input ->
             {end_of_input, W1};
         {end_of_input, Value} ->
             {end_of_input, W1#w{inout_value = {value, Value}}};
-        {Objs, NFun} when function(NFun), list(Objs) ->
+        {Objs, NFun} when is_function(NFun), 
+                          is_function(NFun, 1), 
+                          is_list(Objs) ->
             {cont, W#w{in = NFun}, Objs};
         Error ->
             error(Error, W1)
+    catch Class:Reason ->
+        cleanup(W1),
+        erlang:raise(Class, Reason, erlang:get_stacktrace())
     end.
 
 outfun(A, W) when W#w.inout_value =/= no_value ->
     W1 = W#w{inout_value = no_value},
     W2 = if 
-             W1#w.fun_out == true ->
+             W1#w.fun_out ->
                  outfun(W#w.inout_value, W1);
              true -> W1
          end,
     outfun(A, W2);
 outfun(A, W) ->
     W1 = W#w{out = undefined},
-    case call_end(catch {W#w.ref, (W#w.out)(A)}, W1) of
-        Reply when A == close ->
+    try (W#w.out)(A) of
+        Reply when A =:= close ->
             Reply;
-        NF when function(NF) ->
+        NF when is_function(NF), is_function(NF, 1) ->
             W#w{out = NF};
         Error ->
             error(Error, W1)
+    catch Class:Reason ->
+        cleanup(W1),
+        erlang:raise(Class, Reason, erlang:get_stacktrace())
     end.
 
-call_end({Ref, Reply}, W) when W#w.ref == Ref ->
-    Reply;
-call_end({'EXIT', Reason}, W) ->
-    cleanup(W),
-    erlang:fault(Reason);
-call_end(Thrown, W) ->
-    cleanup(W),
-    throw(Thrown).
-
-is_keypos(Keypos) when integer(Keypos), Keypos > 0 ->
+is_keypos(Keypos) when is_integer(Keypos), Keypos > 0 ->
     true;
 is_keypos([]) ->
     {badarg, []};
 is_keypos(L) ->
     is_keyposs(L).
 
-is_keyposs([Kp | Kps]) when integer(Kp), Kp > 0 ->
+is_keyposs([Kp | Kps]) when is_integer(Kp), Kp > 0 ->
     is_keyposs(Kps);
 is_keyposs([]) ->
     true;
@@ -1114,8 +1239,8 @@ is_keyposs([Bad | _]) ->
 is_keyposs(Bad) ->
     {badarg, Bad}.
 
-is_input(Fun) when function(Fun) ->
-    {true,Fun};
+is_input(Fun) when is_function(Fun), is_function(Fun, 1) ->
+    {true, Fun};
 is_input(Files) ->
     is_files(Files).
 
@@ -1134,7 +1259,7 @@ is_files([], L) ->
 is_files(Bad, _L) ->
     {badarg, Bad}.
 
-maybe_output(Fun) when function(Fun) ->
+maybe_output(Fun) when is_function(Fun), is_function(Fun, 1) ->
     {true, Fun};
 maybe_output(File) ->
     case read_file_info(File) of
@@ -1181,7 +1306,7 @@ next_temp(W) ->
 
 %% Would use the temporary directory (TMP|TEMP|TMPDIR), were it
 %% readily accessible.
-tmp_prefix(F, TmpDirOpt) when function(F); F == undefined ->
+tmp_prefix(F, TmpDirOpt) when is_function(F); F =:= undefined ->
     {ok, CurDir} = file:get_cwd(),
     tmp_prefix1(CurDir, TmpDirOpt);
 tmp_prefix(OutFile, TmpDirOpt) ->
@@ -1192,7 +1317,7 @@ tmp_prefix1(Dir, TmpDirOpt) ->
     U = "_",
     Node = node(),
     Pid = os:getpid(),
-    {MSecs,Secs,MySecs} = erlang:now(),
+    {MSecs,Secs,MySecs} = now(),
     F = lists:concat(["fs_",Node,U,Pid,U,MSecs,U,Secs,U,MySecs,"."]),
     TmpDir = case TmpDirOpt of
                  default ->
@@ -1245,7 +1370,7 @@ error(Error, W) ->
 cleanup(W) ->
     close_out(W),
     W1 = close_input(W),
-    F = fun(IFun) when function(IFun) -> 
+    F = fun(IFun) when is_function(IFun) -> 
                 IFun(close);
            ({Fd,FileName}) ->
                 file:close(Fd),
@@ -1255,13 +1380,13 @@ cleanup(W) ->
         end,
     lists:foreach(F, W1#w.temp).
 
-close_input(W) when function(W#w.in) ->
+close_input(W) when is_function(W#w.in) ->
     catch (W#w.in)(close),
     W#w{in = undefined};
-close_input(W) when W#w.in == undefined ->
+close_input(#w{in = undefined}=W) ->
     W.
 
-close_out(W) when function(W#w.out) ->
+close_out(W) when is_function(W#w.out) ->
     catch (W#w.out)(close);
 close_out(_) -> 
     ok.
@@ -1279,7 +1404,7 @@ close_file(Fd, W) ->
 file_rterms(no_file, Files) ->
     fun(close) ->
             ok;
-       (read) when Files == [] ->
+       (read) when Files =:= [] ->
             end_of_input;
        (read) ->
             [F | Fs] = Files,
@@ -1313,12 +1438,12 @@ file_rterms2(Fd, L, _LSz, FileName, Files) ->
     {lists:reverse(L), file_rterms({Fd, FileName}, Files)}.
 
 file_wterms(W, F, Args) ->
-    fun(close) when W == name ->
+    fun(close) when W =:= name ->
             ok;
        (close) ->
             {fd, Fd} = W,
             file:close(Fd);
-       (L) when W == name ->
+       (L) when W =:= name ->
             case file:open(F, Args) of
                 {ok, Fd} ->
                     write_terms(Fd, F, L, Args);
@@ -1346,7 +1471,9 @@ fun_rterms(InFun) ->
             InFun(close);
        (read) ->
             case InFun(read) of
-                {Ts, NInFun} when list(Ts), function(NInFun) ->
+                {Ts, NInFun} when is_list(Ts), 
+                                  is_function(NInFun),
+                                  is_function(NInFun, 1) ->
                     {to_bin(Ts, []), fun_rterms(NInFun)};
                 Else ->
                     Else
@@ -1358,7 +1485,7 @@ fun_wterms(OutFun) ->
             OutFun(close);
        (L) ->
             case OutFun(wterms_arg(L)) of
-                NOutFun when function(NOutFun) ->
+                NOutFun when is_function(NOutFun), is_function(NOutFun, 1) ->
                     fun_wterms(NOutFun);
                 Else ->
                     Else
@@ -1370,7 +1497,7 @@ to_bin([E | Es], L) ->
 to_bin([], L) ->
     lists:reverse(L).
 
-wterms_arg(L) when list(L) ->
+wterms_arg(L) when is_list(L) ->
     to_term(L, []);
 wterms_arg(Value) ->
     Value.

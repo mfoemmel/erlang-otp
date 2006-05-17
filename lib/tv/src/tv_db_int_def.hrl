@@ -45,16 +45,6 @@
 
 
 
--record(process_variables, {master_pid,
-			    etsread_pid,
-                            db_data      = #db_data{},
-			    list_of_keys = [],
-			    lists_as_strings = true
-                           }).
-
-
-
-
 -record(db_data, {db            = [],     % List containing all elements
 		  db_size       = 0,      % Number of elements in 'db'
 		  max_elem_size = 0,      % Size of largest element in db.
@@ -77,4 +67,14 @@
 		  ets_type                % 'bag' or 'set'
 		 }).
                       
+
+-record(process_variables, {master_pid,
+			    etsread_pid,
+                            db_data      = #db_data{},
+			    list_of_keys = [],
+			    lists_as_strings = true
+                           }).
+
+
+
 

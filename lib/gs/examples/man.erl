@@ -24,7 +24,6 @@
 -export([start/0,init/0]).
 -export([man_list/0]).
 -export([browser/1,browser_init/2]).
--import(lists,[sort/1,reverse/1,concat/1]).
 
 
 start() ->
@@ -39,7 +38,7 @@ start() ->
 
 %% ---- Man Directories -----
 dirManual() ->
-    concat([code:root_dir(), '/man/cat3/']).
+    filename:join([code:root_dir(), "man", "cat3"]).
 
 
 %% ----- init -----
@@ -82,34 +81,37 @@ man_loop(Width0,Height0) ->
 
 
 %% ----- man_list ----
-%% Stolen from Wikborg
 %%
 man_list() ->
     {ok,FirstList} = file:list_dir(dirManual()),
-    sort(check_4_last(FirstList)).
+    SecondList =
+	mapfilter(fun(File) ->
+			  case filename:extension(File) of
+			      ".3" ->
+				  {true, filename:basename(File, ".3")};
+			      _ -> false
+			  end
+		  end,
+		  FirstList),
+    lists:sort(SecondList).
 
-check_4_last([]) -> [];
-check_4_last([H|T]) ->
-    case catch(get_4_last(reverse(H))) of
-	[46,116,120,116] -> % ".txt"
-	    [remove_4_last(H)|check_4_last(T)];
-	_Any ->
-	    check_4_last(T)
-    end.
-
-get_4_last([H1,H2,H3,H4|_T]) ->
-    [H4,H3,H2,H1].
-
-remove_4_last(Str) ->
-    reverse(tl(tl(tl(tl(reverse(Str)))))).
+mapfilter(Fun, [H|T]) ->
+    case Fun(H) of
+	{true, Val} ->
+	    [Val|mapfilter(Fun, T)];
+	false ->
+	    mapfilter(Fun, T)
+    end;
+mapfilter(_Fun, []) ->
+    [].
 
 
 %% ------------------------------------------------------------
 %% Load in the Page
 
 load_page(Page) ->
-    %%io:format("man: load page start.~n",[]),
-    Filename = lists:flatten([dirManual(),Page,".txt"]),
+    %%io:format("man: load page start ~p.~n",[Page]),
+    Filename = filename:join([dirManual(),Page++".3"]),
     {ok,Bin}=file:read_file(Filename),
     _Txt=binary_to_list(Bin),
     gs:config(editor,{enable,true}),

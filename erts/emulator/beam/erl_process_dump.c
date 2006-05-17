@@ -36,14 +36,15 @@
 
 #define OUR_NIL	_make_header(0,_TAG_HEADER_FLOAT)
 
-static void dump_process_info(Process *p, CIO to);
-static void dump_element(Eterm x, CIO fd);
-static void dump_element_nl(Eterm x, CIO fd);
-static int stack_element_dump(Process* p, Eterm* sp, int yreg, CIO fd);
-static void print_function_from_pc(Eterm* x, CIO fd);
-static void heap_dump(Eterm x, CIO fd);
-static void dump_binaries(Binary* root, CIO fd);
-static void dump_externally(Eterm term, CIO fd);
+static void dump_process_info(int to, void *to_arg, Process *p);
+static void dump_element(int to, void *to_arg, Eterm x);
+static void dump_element_nl(int to, void *to_arg, Eterm x);
+static int stack_element_dump(int to, void *to_arg, Process* p, Eterm* sp,
+			      int yreg);
+static void print_function_from_pc(int to, void *to_arg, Eterm* x);
+static void heap_dump(int to, void *to_arg, Eterm x);
+static void dump_binaries(int to, void *to_arg, Binary* root);
+static void dump_externally(int to, void *to_arg, Eterm term);
 
 static Binary* all_binaries;
 
@@ -52,7 +53,7 @@ extern Eterm beam_exit[];
 
 
 void
-erts_deep_process_dump(CIO to)
+erts_deep_process_dump(int to, void *to_arg)
 {
     int i;
 
@@ -64,178 +65,166 @@ erts_deep_process_dump(CIO to)
 	       Process* p = process_tab[i];
 
 	       if (p->status != P_GARBING) {
-		   dump_process_info(p, to);
+		   dump_process_info(to, to_arg, p);
 	       }
 	   }
        }
     }
 
-    dump_binaries(all_binaries, to);
+    dump_binaries(to, to_arg, all_binaries);
 }
 
 static void
-dump_process_info(Process *p, CIO to)
+dump_process_info(int to, void *to_arg, Process *p)
 {
     Eterm* sp;
     ErlMessage* mp;
     int yreg = -1;
 
+    ERTS_SMP_MSGQ_MV_INQ2PRIVQ(p);
+
     if (p->msg.first) {
-	erl_printf(to, "=proc_messages:");
-	display(p->id, to);
-	erl_printf(to, "\n");
+	erts_print(to, to_arg, "=proc_messages:%T\n", p->id);
 	for (mp = p->msg.first; mp != NULL; mp = mp->next) {
 	    Eterm mesg = ERL_MESSAGE_TERM(mp);
-	    dump_element(mesg, to);
+	    dump_element(to, to_arg, mesg);
 	    mesg = ERL_MESSAGE_TOKEN(mp);
-	    erl_printf(to, ":");
-	    dump_element(mesg, to);
-	    erl_printf(to, "\n");
+	    erts_print(to, to_arg, ":");
+	    dump_element(to, to_arg, mesg);
+	    erts_print(to, to_arg, "\n");
 	}
     }
 
     if (p->dictionary) {
-	erl_printf(to, "=proc_dictionary:");
-	display(p->id, to);
-	erl_printf(to, "\n");
-	erts_deep_dictionary_dump(p->dictionary, dump_element_nl, to);
+	erts_print(to, to_arg, "=proc_dictionary:%T\n", p->id);
+	erts_deep_dictionary_dump(to, to_arg,
+				  p->dictionary, dump_element_nl);
     }
 
     if (p->debug_dictionary) {
-	erl_printf(to, "=debug_proc_dictionary:");
-	display(p->id, to);
-	erl_printf(to, "\n");
-	erts_deep_dictionary_dump(p->debug_dictionary, dump_element_nl, to);
+	erts_print(to, to_arg, "=debug_proc_dictionary:%T\n", p->id);
+	erts_deep_dictionary_dump(to, to_arg,
+				  p->debug_dictionary, dump_element_nl);
     }
 
-    erl_printf(to, "=proc_stack:");
-    display(p->id, to);
-    erl_printf(to, "\n");
+    erts_print(to, to_arg, "=proc_stack:%T\n", p->id);
 
     for (sp = p->stop; sp < STACK_START(p); sp++) {
-        yreg = stack_element_dump(p, sp, yreg, to);
+        yreg = stack_element_dump(to, to_arg, p, sp, yreg);
     }
 
-    erl_printf(to, "=proc_heap:");
-    display(p->id, to);
-    erl_printf(to, "\n");
+    erts_print(to, to_arg, "=proc_heap:%T\n", p->id);
 
     for (sp = p->stop; sp < STACK_START(p); sp++) {
 	Eterm term = *sp;
 
 	if (!is_catch(term) && !is_CP(term)) {
-	    heap_dump(term, to);
+	    heap_dump(to, to_arg, term);
 	}
     }
     
     for (mp = p->msg.first; mp != NULL; mp = mp->next) {
 	Eterm mesg = ERL_MESSAGE_TERM(mp);
-	heap_dump(mesg, to);
+	heap_dump(to, to_arg, mesg);
 	mesg = ERL_MESSAGE_TOKEN(mp);
-	heap_dump(mesg, to);
+	heap_dump(to, to_arg, mesg);
     }
 
     if (p->dictionary) {
-	erts_deep_dictionary_dump(p->dictionary, heap_dump, to);
+	erts_deep_dictionary_dump(to, to_arg, p->dictionary, heap_dump);
     }
 
     if (p->debug_dictionary) {
-	erts_deep_dictionary_dump(p->debug_dictionary, heap_dump, to);
+	erts_deep_dictionary_dump(to, to_arg, p->debug_dictionary, heap_dump);
     }
 }
 
 static void
-dump_element(Eterm x, CIO fd)
+dump_element(int to, void *to_arg, Eterm x)
 {
     if (is_list(x)) {
-	sys_printf(fd, "H" WORD_FMT, list_val(x));
+	erts_print(to, to_arg, "H" WORD_FMT, list_val(x));
     } else if (is_boxed(x)) {
-	sys_printf(fd, "H" WORD_FMT, boxed_val(x));
+	erts_print(to, to_arg, "H" WORD_FMT, boxed_val(x));
     } else if (is_immed(x)) {
 	if (is_atom(x)) {
-	    char* s = atom_tab(atom_val(x))->name;
+	    unsigned char* s = atom_tab(atom_val(x))->name;
 	    int len = atom_tab(atom_val(x))->len;
 	    int i;
 
-	    sys_printf(fd, "A%X:", atom_tab(atom_val(x))->len);
+	    erts_print(to, to_arg, "A%X:", atom_tab(atom_val(x))->len);
 	    for (i = 0; i < len; i++) {
-		erl_putc(*s++, fd);
+		erts_putc(to, to_arg, *s++);
 	    }
 	} else if (is_small(x)) {
-	    erl_putc('I', fd);
-	    display(x, fd);
+	    erts_print(to, to_arg, "I%T", x);
 	} else if (is_pid(x)) {
-	    erl_putc('P', fd);
-	    display(x, fd);
+	    erts_print(to, to_arg, "P%T", x);
 	} else if (is_port(x)) {
-	    erl_printf(fd, "p<%lu.%lu>",
-		       (unsigned long) port_channel_no(x),
-		       (unsigned long) port_number(x));
+	    erts_print(to, to_arg, "p<%bpu.%bpu>",
+		       port_channel_no(x), port_number(x));
 	} else if (is_nil(x)) {
-	    erl_putc('N', fd);
+	    erts_putc(to, to_arg, 'N');
 	}
     }
 }
 
 static void
-dump_element_nl(Eterm x, CIO fd)
+dump_element_nl(int to, void *to_arg, Eterm x)
 {
-    dump_element(x, fd);
-    erl_putc('\n', fd);
+    dump_element(to, to_arg, x);
+    erts_putc(to, to_arg, '\n');
 }
 
 
 static int
-stack_element_dump(Process* p, Eterm* sp, int yreg, CIO fd)
+stack_element_dump(int to, void *to_arg, Process* p, Eterm* sp, int yreg)
 {
     Eterm x = *sp;
 
     if (yreg < 0 || is_CP(x)) {
-        erl_printf(fd, "%p:", sp);
+        erts_print(to, to_arg, "%p:", sp);
     } else {
-        sys_printf(fd, "y%d:", yreg);
+        erts_print(to, to_arg, "y%d:", yreg);
         yreg++;
     }
 
     if (is_CP(x)) {
-        sys_printf(fd, "SReturn addr 0x%X (", (Eterm *) x);
-        print_function_from_pc(cp_val(x), fd);
-        sys_printf(fd, ")\n");
+        erts_print(to, to_arg, "SReturn addr 0x%X (", (Eterm *) x);
+        print_function_from_pc(to, to_arg, cp_val(x));
+        erts_print(to, to_arg, ")\n");
         yreg = 0;
     } else if is_catch(x) {
-        sys_printf(fd, "SCatch 0x%X (", catch_pc(x));
-        print_function_from_pc(catch_pc(x), fd);
-        sys_printf(fd, ")\n");
+        erts_print(to, to_arg, "SCatch 0x%X (", catch_pc(x));
+        print_function_from_pc(to, to_arg, catch_pc(x));
+        erts_print(to, to_arg, ")\n");
     } else {
-	dump_element(x, fd);
-	erl_putc('\n', fd);
+	dump_element(to, to_arg, x);
+	erts_putc(to, to_arg, '\n');
     }
     return yreg;
 }
 
 static void
-print_function_from_pc(Eterm* x, CIO fd)
+print_function_from_pc(int to, void *to_arg, Eterm* x)
 {
     Eterm* addr = find_function_from_pc(x);
     if (addr == NULL) {
         if (x == beam_exit) {
-            sys_printf(fd, "<terminate process>");
+            erts_print(to, to_arg, "<terminate process>");
         } else if (x == beam_apply+1) {
-            sys_printf(fd, "<terminate process normally>");
+            erts_print(to, to_arg, "<terminate process normally>");
         } else {
-            sys_printf(fd, "unknown function");
+            erts_print(to, to_arg, "unknown function");
         }
     } else {
-        display(addr[0], fd);
-        sys_printf(fd, ":");
-        display(addr[1], fd);
-        sys_printf(fd, "/%d", addr[2]);
-        sys_printf(fd, " + %d", ((x-addr)-2) * sizeof(Eterm));
+	erts_print(to, to_arg, "%T:%T/%bpu + %bpu",
+		   addr[0], addr[1], addr[2], ((x-addr)-2) * sizeof(Eterm));
     }
 }
 
 static void
-heap_dump(Eterm x, CIO fd)
+heap_dump(int to, void *to_arg, Eterm x)
 {
     Eterm* ptr;
     Eterm last = OUR_NIL;
@@ -253,11 +242,11 @@ heap_dump(Eterm x, CIO fd)
     } else if (is_list(x)) {
 	ptr = list_val(x);
 	if (ptr[0] != OUR_NIL) {
-	    sys_printf(fd, ADDR_FMT ":l", ptr);
-	    dump_element(ptr[0], fd);
-	    erl_putc('|', fd);
-	    dump_element(ptr[1], fd);
-	    erl_putc('\n', fd);
+	    erts_print(to, to_arg, ADDR_FMT ":l", ptr);
+	    dump_element(to, to_arg, ptr[0]);
+	    erts_putc(to, to_arg, '|');
+	    dump_element(to, to_arg, ptr[1]);
+	    erts_putc(to, to_arg, '\n');
 	    if (is_immed(ptr[1])) {
 		ptr[1] = make_small(0);
 	    }
@@ -272,22 +261,22 @@ heap_dump(Eterm x, CIO fd)
 	ptr = boxed_val(x);
 	hdr = *ptr;
 	if (hdr != OUR_NIL) {	/* If not visited */
-	    sys_printf(fd, ADDR_FMT ":", ptr);
+	    erts_print(to, to_arg, ADDR_FMT ":", ptr);
 	    if (is_arity_value(hdr)) {
 		Uint i;
 		Uint arity = arityval(hdr);
 
-		sys_printf(fd, "t" WORD_FMT ":", arity);
+		erts_print(to, to_arg, "t" WORD_FMT ":", arity);
 		for (i = 1; i <= arity; i++) {
-		    dump_element(ptr[i], fd);
+		    dump_element(to, to_arg, ptr[i]);
 		    if (is_immed(ptr[i])) {
 			ptr[i] = make_small(0);
 		    }
 		    if (i < arity) {
-			erl_putc(',', fd);
+			erts_putc(to, to_arg, ',');
 		    }
 		}
-		erl_putc('\n', fd);
+		erts_putc(to, to_arg, '\n');
 		if (arity == 0) {
 		    ptr[0] = OUR_NIL;
 		} else {
@@ -304,12 +293,10 @@ heap_dump(Eterm x, CIO fd)
 		GET_DOUBLE_DATA((ptr+1), f);
 		i = sys_double_to_chars(f.fd, (char*) sbuf);
 		sys_memset(sbuf+i, 0, 31-i);
-		sys_printf(fd, "F%X:%s\n", i, sbuf);
+		erts_print(to, to_arg, "F%X:%s\n", i, sbuf);
 		*ptr = OUR_NIL;
 	    } else if (_is_bignum_header(hdr)) {
-		erl_putc('B', fd);
-		display(x, fd);
-		erl_putc('\n', fd);
+		erts_print(to, to_arg, "B%T\n", x);
 		*ptr = OUR_NIL;
 	    } else if (is_binary_header(hdr)) {
 		Uint tag = thing_subtag(hdr);
@@ -319,21 +306,20 @@ heap_dump(Eterm x, CIO fd)
 		if (tag == HEAP_BINARY_SUBTAG) {
 		    byte* p;
 
-		    sys_printf(fd, "Yh%X:", size);
+		    erts_print(to, to_arg, "Yh%X:", size);
 		    GET_BINARY_BYTES(x, p);
 		    for (i = 0; i < size; i++) {
-			sys_printf(fd, "%02X", p[i]);
+			erts_print(to, to_arg, "%02X", p[i]);
 		    }
 		} else if (tag == REFC_BINARY_SUBTAG) {
 		    ProcBin* pb = (ProcBin *) binary_val(x);
 		    Binary* val = pb->val;
 
-		    if (val->refc != 0) {
+		    if (erts_smp_atomic_xchg(&val->refc, 0) != 0) {
 			val->flags = (Uint) all_binaries;
-			val->refc = 0;
 			all_binaries = val;
 		    }
-		    sys_printf(fd, "Yc%X:%X:%X", val,
+		    erts_print(to, to_arg, "Yc%X:%X:%X", val,
 			       pb->bytes - (byte *)val->orig_bytes,
 			       size);
 		} else if (tag == SUB_BINARY_SUBTAG) {
@@ -347,26 +333,23 @@ heap_dump(Eterm x, CIO fd)
 		    } else {	/* Heap binary */
 			val = real_bin;
 		    }
-		    sys_printf(fd, "Ys%X:%X:%X", val, Sb->offs, size);
+		    erts_print(to, to_arg, "Ys%X:%X:%X", val, Sb->offs, size);
 		}
-		erl_putc('\n', fd);
+		erts_putc(to, to_arg, '\n');
 		*ptr = OUR_NIL;
 	    } else if (is_external_pid_header(hdr)) {
-		erl_putc('P', fd);
-		display(x, fd);
-		erl_putc('\n', fd);
+		erts_print(to, to_arg, "P%T\n", x);
 		*ptr = OUR_NIL;
 	    } else if (is_external_port_header(hdr)) {
-		erl_printf(fd, "p<%lu.%lu>\n",
-			   (unsigned long) port_channel_no(x),
-			   (unsigned long) port_number(x));
+		erts_print(to, to_arg, "p<%bpu.%bpu>\n",
+			   port_channel_no(x), port_number(x));
 		*ptr = OUR_NIL;
 	    } else {
 		/*
 		 * All other we dump in the external term format.
 		 */
-		dump_externally(x, fd);
-		erl_putc('\n', fd);
+		dump_externally(to, to_arg, x);
+		erts_putc(to, to_arg, '\n');
 		*ptr = OUR_NIL;
 	    }
 	}
@@ -379,34 +362,34 @@ heap_dump(Eterm x, CIO fd)
 }
 
 static void
-dump_binaries(Binary* current, CIO fd)
+dump_binaries(int to, void *to_arg, Binary* current)
 {
     while (current) {
 	long i;
 	long size = current->orig_size;
-	byte* bytes = current->orig_bytes;
+	byte* bytes = (byte*) current->orig_bytes;
 
-	sys_printf(fd, "=binary:%X\n", current);
-	sys_printf(fd, "%X:", size);
+	erts_print(to, to_arg, "=binary:%X\n", current);
+	erts_print(to, to_arg, "%X:", size);
 	for (i = 0; i < size; i++) {
-	    sys_printf(fd, "%02X", bytes[i]);
+	    erts_print(to, to_arg, "%02X", bytes[i]);
 	}
-	erl_putc('\n', fd);
+	erts_putc(to, to_arg, '\n');
 	current = (Binary *) current->flags;
     }
 }
 
 static void
-dump_externally(Eterm term, CIO fd)
+dump_externally(int to, void *to_arg, Eterm term)
 {
-    byte sbuf[1024];
+    byte sbuf[1024]; /* encode and hope for the best ... */
     byte* s; 
     byte* p;
 
     s = p = sbuf;
-    erts_to_external_format(0, term, &p);
-    sys_printf(fd, "E%X:", p-s);
+    erts_to_external_format(NULL, term, &p, NULL, NULL);
+    erts_print(to, to_arg, "E%X:", p-s);
     while (s < p) {
-	sys_printf(fd, "%02X", *s++);
+	erts_print(to, to_arg, "%02X", *s++);
     }
 }

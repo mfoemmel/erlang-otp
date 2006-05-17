@@ -1,0 +1,443 @@
+<!doctype comref PUBLIC "-//Stork//DTD comref//EN">
+
+<!-- 
+ ``The contents of this file are subject to the Erlang Public License,
+ Version 1.1, (the "License"); you may not use this file except in
+ compliance with the License. You should have received a copy of the
+ Erlang Public License along with this software. If not, it can be
+ retrieved via the world wide web at http://www.erlang.org/.
+ 
+ Software distributed under the License is distributed on an "AS IS"
+ basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ the License for the specific language governing rights and limitations
+ under the License.
+ 
+ The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+ Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+ AB. All Rights Reserved.''
+ 
+     $Id$
+-->
+<COMREF>
+  <HEADER>
+    <TITLE>dialyzer</TITLE>
+    <PREPARED>Tobias Lindahl and Kostis Sagonas</PREPARED>
+    <DOCNO></DOCNO>
+    <DATE></DATE>
+    <REV></REV>
+  </HEADER>
+  <COM>dialyzer</COM>
+  <COMSUMMARY>Erlang Dialyzer</COMSUMMARY>
+  <DESCRIPTION>
+<P>This is the command line version for automated use. Below is a
+brief description of the list of its options. The same information can
+be obtained by writing</P>
+
+<PRE>
+	<INPUT>"dialyzer --help"</INPUT>
+</PRE>
+
+<P>in a shell. Please refer to the GUI description in the User's Guide, for more details on the operation of Dialyzer.</P>
+
+<P>The exit status of the command line version is:</P>
+
+<CODE>
+    0 - No problems were encountered during the analysis and no
+        warnings were emitted.
+    1 - Problems were encountered during the analysis.
+    2 - No problems were encountered, but warnings were emitted.
+
+
+
+Usage: dialyzer [--otp OTP_DIR] [--help] [--version] [--shell]
+		 [-pa dir]* [-plt plt] [-Ddefine]* [-I include_dir]* 
+		 [--output_plt file] [-Wwarn]*  [--src] 
+		 [-c applications] [-r applications] [-o outfile] [-q]
+
+Options: 
+   -c applications (or --command-line applications)
+       use Dialyzer from the command line (no GUI) to detect defects in the
+       specified applications (directories or .erl or .beam files)
+   -r applications
+       same as -c only that directories are searched recursively for 
+       subdirectories containing .erl or .beam files (depending on the 
+       type of analysis)
+   -o outfile (or --output outfile)
+       when using Dialyzer from the command line, send the analysis
+       results in the specified "outfile" rather than in stdout
+   --src
+       overwrite the default, which is to analyze BEAM bytecode, and
+       analyze starting from Erlang source code instead
+   -Dname (or -Dname=value)
+       when analyzing from source, pass the define to Dialyzer (**)
+   -I include_dir
+       when analyzing from source, pass the include_dir to Dialyzer (**)
+   --output_plt file
+       Store the plt at the specified location after building it.
+   --no_warn_on_inline
+       Suppress warnings when analyzing an inline compiled bytecode file.
+   -plt plt
+       Use the specified plt as the initial plt. If the plt was built 
+       during setup the files will be checked for consistency.
+   -pa dir
+       Include dir in the path for Erlang. Useful when analyzing files
+       that have '-include_lib()' directives.
+   -Wwarn
+       a family of option which selectively turn on/off warnings.
+	(for help on the names of warnings use dialyzer -Whelp)
+   --otp OTP_DIR 
+       overrides the default location of the Erlang/OTP system to use
+   --shell
+       do not disable the Erlang shell while running the GUI
+   --version (or -v)
+       prints the Dialyzer version and some more information and exits
+   --help (or -h)
+       prints this message and exits
+   -q
+       makes Dialyzer a bit more quiet
+</CODE>
+
+<Note>
+  <P>* denotes that multiple occurrences of these options are possible.</P>
+<P> ** options -D and -I work both from command-line and in the Dialyzer GUI;
+    the syntax of defines and includes is the same as that used by "erlc".</P>
+</NOTE>
+
+<CODE>
+Warning options:
+  -Wno_return
+     Suppress warnings for functions of no return.
+  -Wno_unused
+     Suppress warnings for unused functions.
+  -Wno_improper_lists
+     Suppress warnings for construction of improper lists.
+  -Wno_tuple_as_fun
+     Suppress warnings for using tuples instead of funs.
+  -Wno_fun_app
+     Suppress warnings for fun applications that will fail.
+  -Wno_match
+     Suppress warnings for pattern matching operations that will never 
+     succeed.
+  -Wno_comp
+     Suppress warnings for term comparisons that will always return false.
+  -Wno_guards
+     Suppress warnings for guards that will always fail.
+  -Wno_unsafe_beam
+     Suppress warnings for unsafe BEAM code produced by an old 
+     BEAM compiler.
+  -Werror_handling ***
+     Include warnings for functions that only return by means of an 
+     exception.
+Note:
+   *** This is the only option that turns on warnings rather than 
+       turning them off.
+</CODE>
+
+ </DESCRIPTION>
+
+
+<SECTION>
+    <TITLE>Identified discrepancies</TITLE>
+<P>The discrepancies currently identified by Dialyzer can be classified
+in the following categories:</P>
+
+
+
+    <P><EM>TYPE ERRORS</EM></P
+    <LIST>
+      <ITEM><P>Match failure</P>
+	<LIST>
+	  <ITEM><P>Warnings:</P>
+	    <LIST>
+	      <ITEM>
+		<P>"The clause matching on X will never match; argument is of type T"</P>
+	      </ITEM>
+	      <ITEM>
+		<P>"The clause matching on tuple with arity N will never match; "</P>
+	      </ITEM>
+	      <ITEM>
+		<P>" argument is of type T!"</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	  <ITEM><P>Description:</P>
+	    <LIST>
+	      <ITEM>
+		<P>The function or case clause will never match since the calling
+		  argument has a different type than the expected one.
+		  Note that due to pattern-matching compilation the X above may be
+		  an argument enclosed in some structured term (tuple or list).</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	</LIST>
+      </ITEM>
+    <ITEM><P>Function call with wrong arguments</P>
+	<LIST>
+	  <ITEM><P>Warning:</P>
+	    <LIST>
+	      <ITEM>
+		<P>"Call to function X with signature S will fail since the arguments are of type T!"</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	  <ITEM><P>Description:</P>
+	    <LIST>
+	      <ITEM>
+		<P>The arguments which the function is called with are
+		  not what the function implicitly expects.</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	</LIST>
+      <ITEM><P>Closure of wrong type</P>
+	<LIST>
+	  <ITEM><P>Warnings:</P>
+	    <LIST>
+	      <ITEM>
+		<P>"Fun application using type T instead of a fun!"</P>
+	      </ITEM>
+	      <ITEM>
+		<P>"Trying to use fun with type T with arguments AT"</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	  <ITEM><P>Description:</P>
+	    <LIST>
+	      <ITEM>
+		<P>The variable that is used in the fun application is either not 
+		  a closure (fun entry) or a closure with the wrong domain.</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	</LIST>
+      </ITEM>
+      <ITEM><P>Improper list construction</P>
+	<LIST>
+	  <ITEM><P>Warnings:</P>
+	    <LIST>
+	      <ITEM>
+		<P>"Cons will produce a non-proper list since its 2nd arg is of type T!"</P>
+	      </ITEM>
+	      <ITEM>
+		<P>"Call to '++'/2 will produce a non-proper list since its 2nd arg is of type T!"</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	  <ITEM><P>Description:</P>
+	    <LIST>
+	      <ITEM>
+		<P>This is a place where an improper list (i.e., a list whose last
+		  element is not the empty list []) is constructed. Strictly, these
+		  are not discrepancies in Erlang, but we strongly recommend that
+		  you fix these; there is ABSOLUTELY NO reason to create improper lists.</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	</LIST>
+      </ITEM>
+      <ITEM><P>Function of no return</P>
+	<LIST>
+	  <ITEM><P>Warning:</P>
+	    <LIST>
+	      <ITEM>
+		<P>"Function will never return a proper value!"</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	  <ITEM><P>Description:</P>
+	    <LIST>
+	      <ITEM>
+		<P>This is a function that never returns. Strictly speaking, this
+		  is not a function and the code is OK only if this is used as a
+		  point where an exception is thrown when handling an error.</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	</LIST>
+      </ITEM>
+    </LIST>
+
+
+
+    <P><EM>REDUNDANT OR UNREACHABLE CODE</EM></P>
+
+    <LIST>
+      <ITEM>
+	<P>Unreachable case clause</P>
+	<LIST>
+	  <ITEM>
+	    <P>Warning:</P>
+	    <LIST>
+	      <ITEM>
+		<P>"Type guard X will always fail since variable is of type T!"</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	  <ITEM>
+	    <P>Description:</P>
+	    <LIST>
+	      <ITEM>
+		<P>The case clause is redundant since the input argument is of a
+		  different type.</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	</LIST>
+      </ITEM>
+      <ITEM>
+	<P>Unreachable function clause</P>
+	<LIST>
+	  <ITEM>
+	    <P>Warning:</P>
+	    <LIST>
+	      <ITEM>
+		<P>"The guard X will always fail since the arguments are of type T!"</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	  <ITEM>
+	    <P>Description:</P>
+	    <LIST>
+	      <ITEM>
+		<P>The clause is made redundant due to one of its guards always failing.</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	</LIST>
+      </ITEM>
+      <ITEM>
+	<P>Term comparison failure</P>
+	<LIST>
+	  <ITEM>
+	    <P>Warnings:</P>
+	    <LIST>
+	      <ITEM>
+		<P>"=:= between T1 and T2 will always fail!"</P>
+	      </ITEM>
+	      <ITEM>
+		<P>"=/= between T1 and T2 will always fail!"</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	  <ITEM>
+	    <P>Description:</P>
+	    <LIST>
+	      <ITEM>
+		<P>The term comparison will always fail making the test always return
+		  'false' or, in a guard context, making the clause redundant.</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	</LIST>
+      </ITEM>
+      <ITEM>
+	<P>Unused function</P>
+	<LIST>
+	  <ITEM>
+	    <P>Warning:</P>
+	    <LIST>
+	      <ITEM>
+		<P>"Function will never be called!"</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	  <ITEM>
+	    <P>Description:</P>
+	    <LIST>
+	      <ITEM>
+		<P>The function is unused; no need to have it uncommented in the code.</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	</LIST>
+      </ITEM>
+    </LIST>
+
+
+
+    <P><EM>CODE RELICS</EM></P>
+
+    <LIST>
+      <ITEM>
+	<P>Tuple used as fun</P>
+	<LIST>
+	  <ITEM>
+	    <P>Warnings:</P>
+	    <LIST>
+	      <ITEM>
+		<P>"Unsafe use of tuple as a fun in call to X"</P>
+	      </ITEM>
+	      <ITEM>
+		<P>"Tuple used as fun will fail in native compiled code"</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	  <ITEM>
+	    <P>Description:</P>
+	    <LIST>
+	      <ITEM>
+		<P>A 2-tuple is used as a function closure. The modern way of
+		  calling higher-order code in Erlang is by using proper funs.
+		  The code should be rewritten using a proper 'fun' rather than
+		  a 2-tuple since among other things makes the code cleaner and
+		  is safer for execution in native code.</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	</LIST>
+      </ITEM>
+      <ITEM>
+	<P>Unsafe BEAM code</P>
+	<LIST>
+	  <ITEM>
+	    <P>Warning:</P>
+	    <LIST>
+	      <ITEM>
+		<P>"Unsafe BEAM code! Please recompile with a newer BEAM compiler."</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	  <ITEM>
+	    <P>Description:</P>
+	    <LIST>
+	      <ITEM>
+		<P>The analysis has encountered BEAM bytecode which will fail in a
+		  really bad way (even with a seg-fault) if used in an impoper way.
+		  Such code was produced by the BEAM compiler of R9C-0 (and prior)
+		  for some record expressions. The recommended action is to
+		  generate a new .beam file using a newer version of the BEAM
+		  compiler.</P>
+	      </ITEM>
+	    </LIST>
+	  </ITEM>
+	</LIST>
+      </ITEM>
+    </LIST>
+</SECTION>
+
+
+<SECTION>
+    <TITLE>Feedback & bug reports</TITLE>
+
+<P>At this point, we very much welcome user feedback (even wish-lists!).
+If you notice something weird, especially if the Dialyzer reports any
+discrepancy that is a false positive, please send an error report
+describing the symptoms and how to reproduce them</P>
+</SECTION>
+
+
+  <AUTHORS>
+    <ANAME> Tobias Lindahl</ANAME>
+    <EMAIL> tobias.lindahl@it.uu.se</EMAIL>
+    <ANAME> Kostis Sagonas</ANAME>
+    <EMAIL> kostis@it.uu.se</EMAIL>
+  </AUTHORS>
+</COMREF>
+
+
+
+
+
+
+

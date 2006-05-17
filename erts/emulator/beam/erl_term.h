@@ -74,7 +74,7 @@ struct erl_node_; /* Declared in erl_node_tables.h */
  * HEADER tags:
  *
  *	0000	ARITYVAL
- *      0001    Not used (was vector)
+ *      0001    BINARY_AGGREGATE                |
  *	001x	BIGNUM with sign bit		|
  *	0100	REF				|
  *	0101	FUN				| THINGS
@@ -99,6 +99,7 @@ struct erl_node_; /* Declared in erl_node_tables.h */
  * XXX: globally replace XXX_SUBTAG with TAG_HEADER_XXX
  */
 #define ARITYVAL_SUBTAG		(0x0 << _TAG_PRIMARY_SIZE) /* TUPLE */
+#define BIN_MATCHSTATE_SUBTAG	(0x1 << _TAG_PRIMARY_SIZE) 
 #define POS_BIG_SUBTAG		(0x2 << _TAG_PRIMARY_SIZE) /* BIG: tags 2&3 */
 #define NEG_BIG_SUBTAG		(0x3 << _TAG_PRIMARY_SIZE) /* BIG: tags 2&3 */
 #define _BIG_SIGN_BIT		(0x1 << _TAG_PRIMARY_SIZE)
@@ -114,6 +115,7 @@ struct erl_node_; /* Declared in erl_node_tables.h */
 #define EXTERNAL_PORT_SUBTAG	(0xD << _TAG_PRIMARY_SIZE) /* EXTERNAL_PORT */
 #define EXTERNAL_REF_SUBTAG	(0xE << _TAG_PRIMARY_SIZE) /* EXTERNAL_REF */
 
+
 #define _TAG_HEADER_ARITYVAL	(TAG_PRIMARY_HEADER|ARITYVAL_SUBTAG)
 #define _TAG_HEADER_FUN		(TAG_PRIMARY_HEADER|FUN_SUBTAG)
 #define _TAG_HEADER_POS_BIG	(TAG_PRIMARY_HEADER|POS_BIG_SUBTAG)
@@ -127,15 +129,18 @@ struct erl_node_; /* Declared in erl_node_tables.h */
 #define _TAG_HEADER_EXTERNAL_PID  (TAG_PRIMARY_HEADER|EXTERNAL_PID_SUBTAG)
 #define _TAG_HEADER_EXTERNAL_PORT (TAG_PRIMARY_HEADER|EXTERNAL_PORT_SUBTAG)
 #define _TAG_HEADER_EXTERNAL_REF  (TAG_PRIMARY_HEADER|EXTERNAL_REF_SUBTAG)
+#define _TAG_HEADER_BIN_MATCHSTATE (TAG_PRIMARY_HEADER|BIN_MATCHSTATE_SUBTAG)
+
 
 #define _TAG_HEADER_MASK	0x3F
 #define _HEADER_SUBTAG_MASK	0x3C	/* 4 bits for subtag */
 #define _HEADER_ARITY_OFFS	6
 
 #define header_is_transparent(x) \
- (((x) & (_HEADER_SUBTAG_MASK-0x1)) == ARITYVAL_SUBTAG)
+ (((x) & (_HEADER_SUBTAG_MASK)) == ARITYVAL_SUBTAG)
 #define header_is_arityval(x)	(((x) & _HEADER_SUBTAG_MASK) == ARITYVAL_SUBTAG)
 #define header_is_thing(x)	(!header_is_transparent((x)))
+#define header_is_bin_matchstate(x)	((((x) & (_HEADER_SUBTAG_MASK)) == BIN_MATCHSTATE_SUBTAG))
 
 #define _CPMASK		0x3
 

@@ -43,8 +43,6 @@
 
 extern void _dosmaperr(DWORD);
 
-EXTERN_FUNCTION(int, send_error_to_logger, (uint32));
-
 /*
  * Information kept for a registry port (since there is no controlling
  * Erlang process, all state must be kept here).

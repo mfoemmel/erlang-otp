@@ -323,19 +323,19 @@ print_mod_info(Prefix, {Module, Info}) ->
     ok.
 
 key1search(Key, Vals) ->
-    case key1search(Key, Vals, undefined) of
-        undefined ->
-            not_found;
-        Value ->
-            Value
-    end.
-
-key1search(Key, Vals, Def) ->
     case lists:keysearch(Key, 1, Vals) of
         {value, {Key, Val}} ->
             {value, Val};
         false ->
-            {value, Def}
+            not_found
+    end.
+
+key1search(Key, Vals, Def) ->
+    case key1search(Key, Vals) of
+	not_found ->
+	    {value, Def};
+	Value ->
+	    Value
     end.
 
 

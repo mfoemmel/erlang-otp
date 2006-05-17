@@ -733,17 +733,20 @@ just_call(Pid, Request) ->
 	    {'EXIT', Pid, Reason}
     after 0 ->
 	    Tag = {Mref, self()},
-	    T = case Request of
-		    #stop{} ->
-			?FPROF_SERVER_TIMEOUT;
-		    _ ->
-			0
-		end,
+	    {T, Demonitor} = case Request of
+				 #stop{} ->
+				     {?FPROF_SERVER_TIMEOUT, false};
+				 _ ->
+				     {0, true}
+			     end,
 	    %% io:format("~p request: ~p~n", [?MODULE, Request]),
 	    catch Pid ! {?FPROF_SERVER, Tag, Request},
 	    receive
 		{?FPROF_SERVER, Mref, Reply} ->
-		    erlang:demonitor(Mref),
+		    case Demonitor of
+			true -> erlang:demonitor(Mref);
+			false -> ok
+		    end,
 		    receive {'DOWN', Mref, _, _, _} -> ok after T -> ok end,
 		    Reply;
 		{'DOWN', Mref, _, _, Reason} ->

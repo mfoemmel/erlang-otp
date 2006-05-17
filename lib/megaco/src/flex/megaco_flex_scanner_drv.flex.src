@@ -39,11 +39,7 @@
 %{
 
 #define HAVE_UIO_H
-#if defined(OTP_R7)
-#include "opt_erl_driver.h"
-#else
 #include "erl_driver.h"
-#endif
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -245,18 +241,18 @@ static void 	  mfs_finish(void);
  */
 
 static ErlDrvEntry mfs_entry = {
-    NULL,                         /* init, always NULL for dynamic drivers */
-    mfs_start,    /* start, called when port is opened */
-    mfs_stop,     /* stop, called when port is closed */
-    mfs_command,  /* output, called when erlang has sent */
-    NULL,                         /* ready_input, called when input descriptor ready */
-    NULL,                         /* ready_output, called when output descriptor ready */
-    "megaco_flex_scanner_drv",    /* char *driver_name, the argument to open_port */
-    mfs_finish,   /* finish, called when unloaded */
-    NULL,                         /* void * that is not used (BC) */
-    mfs_control,  /* control, port_control callback */
-    NULL,                         /* timeout, called on timeouts */
-    NULL                          /* outputv, vector output interface */
+    NULL,              /* init, always NULL for dynamic drivers */
+    mfs_start,         /* start, called when port is opened */
+    mfs_stop,          /* stop, called when port is closed */
+    mfs_command,       /* output, called when erlang has sent */
+    NULL,              /* ready_input, called when input descriptor ready */
+    NULL,              /* ready_output, called when output descriptor ready */
+    MEGACO_DRV_NAME,   /* char *driver_name, the arg to open_port */
+    mfs_finish,        /* finish, called when unloaded */
+    NULL,              /* void * that is not used (BC) */
+    mfs_control,       /* control, port_control callback */
+    NULL,              /* timeout, called on timeouts */
+    NULL               /* outputv, vector output interface */
 };    
 
 #define LOAD_TOKEN(TokenTag) mfs_lower_load_token(TokenTag)

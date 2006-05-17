@@ -299,7 +299,6 @@ locate({Host, Port, InitObjkey, Index, TaggedProfile, HostData},
 %%-----------------------------------------------------------------
 init({orber_iiop_sup, Opts}) ->
     IIOP_port      =  orber:iiop_port(),
-    Bootstrap_port =  orber:bootstrap_port(),
     SSL_port       =  orber:iiop_ssl_port(),
     SupFlags       = {one_for_one, 5, 1000},	%Max 5 restarts in 1 second
     PortList = if
@@ -320,29 +319,7 @@ init({orber_iiop_sup, Opts}) ->
 		  permanent, 10000, worker, [orber_iiop_pm]}
 		];
 	    false ->
-		ChildSpec1 = 
-		    if
-			Bootstrap_port == IIOP_port ->
-			    [{orber_iiop_net, {orber_iiop_net, start,
-					       [[{port, normal, IIOP_port} | PortList]]},
-			      permanent, 10000, worker, [orber_iiop_net]}];
-			Bootstrap_port < 1024 ->
-			%% Used for testing without being root
-                        %% Bootstrap_port < 2024 -> 
-			    [{orber_iiop_net, {orber_iiop_net, start,
-					       [[{port, normal, IIOP_port}| PortList]]},
-			      permanent, 10000, worker, [orber_iiop_net]},
-			     {orber_bootstrap, {orber_bootstrap,
-						start, [{port, normal, Bootstrap_port}]}, permanent, 
-			      10000, worker, [orber_bootstrap]}];
-			true ->
-			    [{orber_iiop_net, {orber_iiop_net, start,
-					       [[{port, normal, IIOP_port},
-						 {port, normal, Bootstrap_port}| PortList]]},
-			      permanent, 10000, worker, [orber_iiop_net]}]
-		    end,
-		[
-		 {orber_iiop_outsup, {orber_iiop_outsup, start,
+		[{orber_iiop_outsup, {orber_iiop_outsup, start,
 				      [sup, Opts]},
 		  permanent, 10000, supervisor, [orber_iiop_outsup]},
 		 {orber_iiop_pm, {orber_iiop_pm, start,
@@ -353,9 +330,10 @@ init({orber_iiop_sup, Opts}) ->
 		  permanent, 10000, supervisor, [orber_iiop_insup]},
 		 {orber_iiop_socketsup, {orber_iiop_socketsup, start,
 					 [sup, Opts]},
-		  permanent, 10000, supervisor, [orber_iiop_socketsup]} | 
-		 ChildSpec1
-		]
+		  permanent, 10000, supervisor, [orber_iiop_socketsup]},
+		 {orber_iiop_net, {orber_iiop_net, start,
+				   [[{port, normal, IIOP_port} | PortList]]},
+		  permanent, 10000, worker, [orber_iiop_net]}]
 	end,
     {ok, {SupFlags, ChildSpec}}.
 
@@ -463,6 +441,13 @@ connect(Host, _, Objkey, Timeout, Index,
 	#host_data{protocol = ssl, 
 		   ssl_data = #'SSLIOP_SSL'{port = Port}, 
 		   csiv2_mech = undefined} = HostData,
+	TaggedProfile, IOR, Ctx) ->
+    connect2([{Host, Port}], Objkey, Timeout, Index, HostData, 
+	     TaggedProfile, IOR, Ctx);
+%% TEMPORARY FIX TO AVOID RUNNING CSIv2.
+connect(Host, _, Objkey, Timeout, Index, 
+	#host_data{protocol = ssl, 
+		   ssl_data = #'SSLIOP_SSL'{port = Port}} = HostData,
 	TaggedProfile, IOR, Ctx) ->
     connect2([{Host, Port}], Objkey, Timeout, Index, HostData, 
 	     TaggedProfile, IOR, Ctx);

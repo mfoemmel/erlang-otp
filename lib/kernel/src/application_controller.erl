@@ -521,24 +521,24 @@ init(Init, Kernel) ->
 %% Check the syntax of the .config file  [{ApplicationName, [{Parameter, Value}]}].
 check_conf_data([]) ->
     ok;
-check_conf_data(ConfData) when list(ConfData) ->
+check_conf_data(ConfData) when is_list(ConfData) ->
     [Application | ConfDataRem] = ConfData,
     case Application of
-	{kernel, List} when list(List) ->
+	{kernel, List} when is_list(List) ->
 	    case check_para_kernel(List) of
 		ok ->
 		    check_conf_data(ConfDataRem);
 		Error1 ->
 		    Error1
 	    end;
-	{AppName, List} when atom(AppName), list(List) ->
+	{AppName, List} when is_atom(AppName), is_list(List) ->
 	    case check_para(List, atom_to_list(AppName)) of
 		ok ->
 		    check_conf_data(ConfDataRem);
 		Error2 ->
 		    Error2
 	    end;
-	{AppName, List} when list(List)  ->
+	{AppName, List} when is_list(List)  ->
 	    ErrMsg = "application: "
 		++ lists:flatten(io_lib:format("~p",[AppName]))
 		++ "; application name must be an atom",
@@ -560,7 +560,7 @@ check_conf_data(_ConfData) ->
 %% Special check of distributed parameter for kernel
 check_para_kernel([]) ->
     ok;
-check_para_kernel([{distributed, Apps} | ParaList]) when list(Apps) ->
+check_para_kernel([{distributed, Apps} | ParaList]) when is_list(Apps) ->
     case check_distributed(Apps) of
 	{error, ErrorMsg} ->
 	    {error, ErrorMsg};
@@ -569,7 +569,7 @@ check_para_kernel([{distributed, Apps} | ParaList]) when list(Apps) ->
     end;
 check_para_kernel([{distributed, _Apps} | _ParaList]) ->
     {error, "application: kernel; erroneous parameter: distributed"};
-check_para_kernel([{Para, _Val} | ParaList]) when atom(Para) ->
+check_para_kernel([{Para, _Val} | ParaList]) when is_atom(Para) ->
     check_para_kernel(ParaList);
 check_para_kernel([{Para, _Val} | _ParaList]) ->
     {error, "application: kernel; invalid parameter: " ++ 
@@ -581,11 +581,11 @@ check_para_kernel(Else) ->
 
 check_distributed([]) ->
     ok;
-check_distributed([{App, List} | Apps]) when atom(App), list(List) ->
+check_distributed([{App, List} | Apps]) when is_atom(App), is_list(List) ->
     check_distributed(Apps);
-check_distributed([{App, infinity, List} | Apps]) when atom(App), list(List) ->
+check_distributed([{App, infinity, List} | Apps]) when is_atom(App), is_list(List) ->
     check_distributed(Apps);
-check_distributed([{App, Time, List} | Apps]) when atom(App), integer(Time), list(List) ->
+check_distributed([{App, Time, List} | Apps]) when is_atom(App), is_integer(Time), is_list(List) ->
     check_distributed(Apps);
 check_distributed(_Else) ->
     {error, "application: kernel; erroneous parameter: distributed"}.
@@ -593,7 +593,7 @@ check_distributed(_Else) ->
 
 check_para([], _AppName) ->
     ok;
-check_para([{Para, _Val} | ParaList], AppName) when atom(Para) ->
+check_para([{Para, _Val} | ParaList], AppName) when is_atom(Para) ->
     check_para(ParaList, AppName);
 check_para([{Para, _Val} | _ParaList], AppName) ->
     {error, "application: " ++ AppName ++ "; invalid parameter: " ++ 
@@ -601,11 +601,6 @@ check_para([{Para, _Val} | _ParaList], AppName) ->
 check_para([Else | _ParaList], AppName) ->
     {error, "application: " ++ AppName ++ "; invalid parameter: " ++ 
      lists:flatten(io_lib:format("~p",[Else]))}.
-    
-
-
-
-
 
 
 handle_call({load_application, Application}, From, S) ->
@@ -974,7 +969,7 @@ handle_application_started(AppName, Res, S) ->
 		    ok
 	    end,
 	    case R of
-		"application exited with reason: normal" ->
+		{{'EXIT',normal},_Call} ->
 		    {noreply, S#state{starting = keydelete(AppName, 1, Starting),
 				      start_req = Start_reqN}};
 		_ ->
@@ -1063,13 +1058,13 @@ handle_info({ac_change_application_req, AppName, Msg}, S) ->
 		    NRunning = [{AppName, {distributed, Node}} |
 				keydelete(AppName, 1, Running)],
 		    {noreply, S#state{running = NRunning}};
-		{takeover, _Node, _RT} when pid(Id) -> % it is running already
+		{takeover, _Node, _RT} when is_pid(Id) -> % it is running already
 		    notify_cntrl_started(AppName, Id, S, ok),
 		    {noreply, S};
 		{takeover, Node, RT} ->
 		    NewS = do_start(AppName, RT, {takeover, Node}, undefined, S),
 		    {noreply, NewS};
-		{failover, _Node, _RT} when pid(Id) -> % it is running already
+		{failover, _Node, _RT} when is_pid(Id) -> % it is running already
 		    notify_cntrl_started(AppName, Id, S, ok),
 		    {noreply, S};
 		{failover, Node, RT} ->
@@ -1091,7 +1086,7 @@ handle_info({ac_change_application_req, AppName, Msg}, S) ->
 					 {AppName, {distributed, []}}),
 		    {noreply, S#state{running = NRunning}};
 		%% We should not try to start a running application!
-		start_it when pid(Id) ->
+		start_it when is_pid(Id) ->
 		    notify_cntrl_started(AppName, Id, S, ok),
 		    {noreply, S};
 		start_it ->
@@ -1177,7 +1172,7 @@ terminate(Reason, S) ->
 	_ ->
 	    ok
     end,
-    foreach(fun({_AppName, Id}) when pid(Id) -> 
+    foreach(fun({_AppName, Id}) when is_pid(Id) -> 
 		    exit(Id, shutdown),
 		    receive
 			{'EXIT', Id, _} -> ok
@@ -1367,7 +1362,7 @@ start_appl(Appl, S, Type) ->
 %%-----------------------------------------------------------------
 %% Stop application locally.
 %%-----------------------------------------------------------------
-stop_appl(AppName, Id, Type) when pid(Id) ->
+stop_appl(AppName, Id, Type) when is_pid(Id) ->
     unlink(Id),
     application_master:stop(Id),
     info_exited(AppName, stopped, Type),
@@ -1410,11 +1405,11 @@ get_restart_type(undefined, OldRT) ->
 get_restart_type(RT, _OldRT) ->
     RT.
 
-get_appl_name(Name) when atom(Name) -> Name;
-get_appl_name({application, Name, _}) when atom(Name) -> Name;
+get_appl_name(Name) when is_atom(Name) -> Name;
+get_appl_name({application, Name, _}) when is_atom(Name) -> Name;
 get_appl_name(Appl) -> throw({error, {bad_application, Appl}}).
 
-make_appl(Name) when atom(Name) ->
+make_appl(Name) when is_atom(Name) ->
     FName = atom_to_list(Name) ++ ".app",
     case code:where_is_file(FName) of
 	non_existing ->
@@ -1430,8 +1425,7 @@ make_appl(Name) when atom(Name) ->
 make_appl(Application) ->
     {ok, make_appl_i(Application)}.
 
-make_appl_i({application, Name, Opts})
-  when atom(Name), list(Opts) ->
+make_appl_i({application, Name, Opts}) when is_atom(Name), is_list(Opts) ->
     Descr = get_opt(description, Opts, ""),
     Id = get_opt(id, Opts, ""),
     Vsn = get_opt(vsn, Opts, ""),
@@ -1440,7 +1434,7 @@ make_appl_i({application, Name, Opts})
     Apps = get_opt(applications, Opts, []),
     Mod =
 	case get_opt(mod, Opts, []) of
-	    {M,A} when atom(M) -> {M,A};
+	    {M,A} when is_atom(M) -> {M,A};
 	    [] -> [];
 	    Other -> throw({error, {badstartspec, Other}})
 	end,
@@ -1452,7 +1446,7 @@ make_appl_i({application, Name, Opts})
     {#appl_data{name = Name, regs = Regs, mod = Mod, phases = Phases, mods = Mods,
 		inc_apps = IncApps, maxP = MaxP, maxT = MaxT},
      Env, IncApps, Descr, Id, Vsn, Apps};
-make_appl_i({application, Name, Opts}) when list(Opts) ->
+make_appl_i({application, Name, Opts}) when is_list(Opts) ->
     throw({error,{invalid_name,Name}});
 make_appl_i({application, _Name, Opts}) ->
     throw({error,{invalid_options, Opts}});
@@ -1574,7 +1568,7 @@ make_term(Str) ->
 	    throw({error, {bad_environment_value, Str}})
     end.
 
-get_env_i(Name, #state{conf_data = ConfData}) when list(ConfData) ->
+get_env_i(Name, #state{conf_data = ConfData}) when is_list(ConfData) ->
     case keysearch(Name, 1, ConfData) of
 	{value, {_Name, Env}} -> Env;
 	_ -> []
@@ -1631,7 +1625,7 @@ del_env(Name) ->
 
 check_user() ->
     case whereis(user) of
-	User when pid(User) -> group_leader(User, self());
+	User when is_pid(User) -> group_leader(User, self());
 	_ -> ok
     end.
 
@@ -1925,13 +1919,13 @@ test_make_apps([A|Apps], Res) ->
 
 %%-----------------------------------------------------------------
 %% String conversion
-%% Exit reason needs to be a string of length <199
+%% Exit reason needs to be a printable string
+%% (and of length <200, but init now does the chopping).
 %%-----------------------------------------------------------------
 to_string(Term) ->
-    Str = case io_lib:printable_list(Term) of
-	      true ->
-		  Term;
-	      false ->
-		  lists:flatten(io_lib:write(Term))
-	  end,
-    lists:sublist(Str, 199).
+    case io_lib:printable_list(Term) of
+	true ->
+	    Term;
+	false ->
+	    lists:flatten(io_lib:write(Term))
+    end.

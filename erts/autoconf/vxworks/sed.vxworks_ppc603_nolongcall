@@ -29,3 +29,4 @@ s|@AR@|@TTPREFIX@arppc|
 # -Dasm(X)= is for beam
 s|@CFLAGS@|@GENERAL_CFLAGS@ -DCPU=PPC603 -DWANT_NONBLOCKING -DHAVE_MEMMOVE -DVXWORKS -I@WIND_BASE@/target/h -mstrict-align -fvolatile -fno-builtin -fno-for-scope -D_GNU_TOOL|
 s|@LIB_CFLAGS@|@GENERAL_CFLAGS@ -DCPU=PPC603 -DWANT_NONBLOCKING -DHAVE_MEMMOVE -DVXWORKS -I@WIND_BASE@/target/h -mstrict-align -fvolatile -fno-builtin -fno-for-scope -D_GNU_TOOL|
+

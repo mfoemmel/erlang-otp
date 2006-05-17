@@ -38,6 +38,7 @@
 -export([service_request/2, service_accept/2]).
 
 -export([get_session_id/1]).
+-export([peername/1]).
 
 %% io wrappers
 -export([yes_no/2, read_password/2]).
@@ -202,6 +203,9 @@ read_password(SSH, Prompt) when record(SSH,ssh)                          ->
 %%     CB:read_line(Prompt);
 %% read_line(SSH, Prompt) when record(SSH,ssh) ->
 %%     (SSH#ssh.io_cb):read_line(Prompt).
+
+peername(SSH) ->
+    call(SSH, peername).
 
 call(SSH, Req)                                                           ->
     Ref = make_ref(),
@@ -413,6 +417,9 @@ server_hello(S, User, SSH, Timeout) ->
 	    ?dbg(true, "client version: ~p\n",[Version]),
 	    case string:tokens(Version, "-") of
 		[_, "2.0" | _] ->
+		    negotiate(S, User, SSH#ssh { c_vsn = {2,0},
+						 c_version = Version}, false);
+		[_, "1.99" | _] ->
 		    negotiate(S, User, SSH#ssh { c_vsn = {2,0},
 						 c_version = Version}, false);
 		[_, "1.3" | _] ->
@@ -753,6 +760,10 @@ ssh_main(S, User, SSH) ->
 	    reply(From, ok),
 	    ok;
 
+	{ssh_call, From, peername} ->
+	    reply(From, inet:peername(S)),
+	    ssh_main(S, User, SSH);
+
 	{ssh_call, From, Req} ->
 	    ?dbg(true, "Call: ~p from ~p\n", [Req,From]),
 	    SSH1 = handle_call(Req, From, SSH),
@@ -822,7 +833,7 @@ sign_host_key(_S, SSH, Private, H)                                       ->
 	     end,
     case catch Module:sign(Private, H) of
 	{'EXIT', Reason} ->
-	    io:format("SIGN FAILED: ~p\n", [Reason]),
+	    error_logger:format("SIGN FAILED: ~p\n", [Reason]),
 	    {error, Reason};
 	SIG ->
 	    ssh_bits:encode([Module:alg_name() ,SIG],[string,binary])
@@ -838,7 +849,7 @@ verify_host_key(_S, SSH, K_S, H, H_SIG)                                  ->
 		    Public = #ssh_key { type=rsa, public={N,E} },
 		    case catch ssh_rsa:verify(Public, H, SIG) of
 			{'EXIT', Reason} ->
-			    io:format("VERIFY FAILED: ~p\n", [Reason]),
+			    error_logger:format("VERIFY FAILED: ~p\n", [Reason]),
 			    {error, bad_signature};
 			ok ->
 			    known_host_key(SSH, Public, "ssh-rsa")
@@ -853,7 +864,7 @@ verify_host_key(_S, SSH, K_S, H, H_SIG)                                  ->
 		    Public = #ssh_key { type=dsa, public={P,Q,G,Y} },
 		    case catch ssh_dsa:verify(Public, H, SIG) of
 			{'EXIT', Reason} ->
-			    io:format("VERIFY FAILED: ~p\n", [Reason]),
+			    error_logger:format("VERIFY FAILED: ~p\n", [Reason]),
 			    {error, bad_signature};
 			ok ->
 			    known_host_key(SSH, Public, "ssh-dss")
@@ -879,7 +890,7 @@ known_host_key(SSH, Public, Alg) ->
 	{ok, Public} ->
 	    ok;
 	{ok, BadPublic} ->
-	    io:format("known_host_key: Public ~p BadPublic ~p\n", [Public, BadPublic]),
+	    error_logger:format("known_host_key: Public ~p BadPublic ~p\n", [Public, BadPublic]),
 	    {error, bad_public_key};
 	{error, not_found} ->
 	    case accepted_host(SSH, Peer, Opts) of

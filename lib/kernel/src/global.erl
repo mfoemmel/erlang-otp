@@ -44,6 +44,8 @@
 
 -include_lib("stdlib/include/ms_transform.hrl").
 
+%% Set this variable to 'allow' to allow several names of a process.
+%% This is for backward compatibility only; the functionality is broken.
 -define(WARN_DUPLICATED_NAME, global_multi_name_action).
 
 %% Undocumented Kernel variable. Set this to 0 (zero) to get the old
@@ -191,15 +193,32 @@ register_name(Name, Pid) when is_pid(Pid) ->
 
 register_name(Name, Pid, Method) when is_pid(Pid) ->
     trans_all_known(fun(Nodes) ->
-		  case where(Name) of
-		      undefined ->
-			  gen_server:multi_call(Nodes,
-						global_name_server,
-						{register, Name, Pid, Method}),
-			  yes;
-		      _Pid -> no
-		  end
-	  end).
+        case (where(Name) =:= undefined) andalso check_dupname(Name, Pid) of
+            true ->
+                gen_server:multi_call(Nodes,
+                                      global_name_server,
+                                      {register, Name, Pid, Method}),
+                yes;
+            _ ->
+                no
+        end
+    end).
+
+check_dupname(Name, Pid) ->
+    case ets:lookup(global_pid_names, Pid) of
+        [] ->
+            true;
+        PidNames -> 
+            case application:get_env(kernel, ?WARN_DUPLICATED_NAME) of
+                {ok, allow} ->
+                    true;
+                _ ->
+                    S = "global: ~w registered under several names: ~w\n",
+                    Names = [Name | [Name1 || {_Pid, Name1} <- PidNames]],
+                    error_logger:error_msg(S, [Pid, Names]),
+                    false
+            end
+    end.
 
 unregister_name(Name) ->
     case where(Name) of
@@ -974,13 +993,13 @@ ins_name(Name, Pid, Method) ->
     ?trace({ins_name,insert,{name,Name},{pid,Pid}}),
     delete_global_name(Name),
     dolink(Pid),
-    insert_global_name_with_check(Name, Pid, Method, node(Pid)).
+    insert_global_name(Name, Pid, Method, node(Pid)).
 
 ins_name_ext(Name, Pid, Method, RegNode) ->
     ?trace({ins_name_ext, {name,Name}, {pid,Pid}}),
     delete_global_name(Name),
     dolink_ext(Pid, RegNode),
-    insert_global_name_with_check(Name, Pid, Method, RegNode),
+    insert_global_name(Name, Pid, Method, RegNode),
     true = ets:insert(global_names_ext, {Name, Pid, RegNode}).
 
 where(Name) ->
@@ -1104,30 +1123,10 @@ sync_other(Node, N) ->
     % monitor_node(Node, false),
     % exit(normal).
 
-insert_global_name_with_check(Name, Pid, Method, Node) ->
+insert_global_name(Name, Pid, Method, Node) ->
     true = ets:insert(global_pid_names, {Pid, Name}),
     true = ets:insert(global_names, {Name, Pid, Method}),
-    true = ets:insert(global_node_pids, {{name,Node}, Pid}),
-    case application:get_env(kernel, ?WARN_DUPLICATED_NAME) of
-        {ok, How} ->
-            Spec = ets:fun2ms(fun({Name,Pid0,_}) when Pid0 =:= Pid -> Name 
-                              end),
-            case ets:select(global_names, Spec) of
-                Names when length(Names) > 1 -> dupname(How, Pid, Names);
-                _ -> ok
-            end;
-        _ -> ok
-    end.
-
-dupname(How, Pid, Names) ->
-    S = "global: ~w registered under several names: ~w~n",
-    As = [Pid, Names],
-    case How of
-        info -> error_logger:info_msg(S, As);
-        warning -> error_logger:warning_msg(S, As);
-        error -> error_logger:error_msg(S, As);
-        _ -> ok
-    end.
+    true = ets:insert(global_node_pids, {{name,Node}, Pid}).
 
 delete_global_name(Name) ->
     case ets:lookup(global_names, Name) of

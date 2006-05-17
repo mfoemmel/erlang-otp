@@ -154,9 +154,9 @@
 %% how long we're allowed to wait for database tables to be available.
 -define(TABLE_TIMEOUT, infinite).
 
--record(rm_state, {default_options, type_options, node_port_ips}).
+%-record(rm_state, {default_options, type_options, node_port_ips}).
 
--record(node_port_ip, {node, port, ip}).
+%-record(node_port_ip, {node, port, ip}).
 
 -record(ft_replication_manager, {object_group_id,
 				 type_id,
@@ -175,10 +175,10 @@
 %			minimum_number_replicas}).
 
 % one should change things work with stdlib:proplist and clean up the mess.
--record(ft_criteria, {ft_properties, 
-		      object_location,
-		      object_init,
-		      object_impl}).
+%-record(ft_criteria, {ft_properties, 
+%		      object_location,
+%		      object_init,
+%		      object_impl}).
 
 %%------------------------------------------------------------
 %%
@@ -222,7 +222,7 @@ list_initial_services() ->
 	undefined ->
 	    Local;
 	InitRef ->
-	    Local ++ get_prefixes(InitRef, [])
+	    orber_tb:unique(Local ++ get_prefixes(InitRef, []))
     end.
 
 get_prefixes([], Acc) ->
@@ -876,7 +876,7 @@ add_context(Reply) ->
     case put(oe_server_out_context, undefined) of
 	undefined ->
 	    Reply;
-	 OutCtx ->
+	 _OutCtx ->
 	    %% The previous value wasn't 'undefined', which means that
 	    %% the server supplied a return context.
 	    Reply
@@ -1720,7 +1720,7 @@ request_from_iiop({Mod, _, _, _, _, _}, oe_get_interface,
 	    Interface
     end;
 request_from_iiop({_Mod, pseudo, Module, _UserDef, _OrberDef, _Flags} = ObjRef, 
-		  Func, Args, Types, ResponseExpected, ServiceCtx) ->
+		  Func, Args, Types, ResponseExpected, _ServiceCtx) ->
     State = binary_to_term(get_subobject_key(ObjRef)),
     case ResponseExpected of
 	true ->
@@ -1816,7 +1816,7 @@ request_from_iiop({_Mod, passive, Module, _UserDef, _OrberDef, _Flags} = ObjRef,
 				       completion_status=?COMPLETED_MAYBE}}
     end;
 request_from_iiop({_Mod, _Type, Key, _UserDef, _OrberDef, _Flags} = ObjRef, 
-		  Func, Args, Types, true, ServiceCtx) ->
+		  Func, Args, Types, true, _ServiceCtx) ->
     case catch gen_server:call(convert_key_to_pid(Key), 
 			       {ObjRef, [], Func, Args}, infinity) of
 	{'EXIT', What} ->
@@ -1829,7 +1829,7 @@ request_from_iiop({_Mod, _Type, Key, _UserDef, _OrberDef, _Flags} = ObjRef,
 	    Result
     end;
 request_from_iiop({_Mod, _Type, Key, _UserDef, _OrberDef, _Flags} = ObjRef, 
-		  Func, Args, Types, _, ServiceCtx) ->
+		  Func, Args, Types, _, _ServiceCtx) ->
     case catch gen_server:cast(convert_key_to_pid(Key), 
 			       {ObjRef, [], Func, Args}) of
 	{'EXIT', What} ->

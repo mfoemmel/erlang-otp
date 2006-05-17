@@ -511,28 +511,37 @@ handle_send_pdu(#state{note_store = NS} = S, Vsn, Pdu, MsgData, To, From) ->
     end.
 
 
-handle_send_pdu(S,Pdu,Addresses) ->
-    case (catch handle_send_pdu1(S,Pdu#pdu.type,Addresses)) of
+handle_send_pdu(S, #pdu{type = Type} = Pdu, Addresses) ->
+    handle_send_pdu(S, Type, Pdu, Addresses);
+handle_send_pdu(S, Trap, Addresses) ->
+    handle_send_pdu(S, trappdu, Trap, Addresses).
+
+handle_send_pdu(S, Type, Pdu, Addresses) ->
+    case (catch handle_send_pdu1(S, Type, Addresses)) of
 	{Reason,Sz} ->
 	    error_msg("[error] Cannot send message "
-		      "(size: ~p, reason: ~p, pdu: ~p)",
+		      "~n   size:   ~p"
+		      "~n   reason: ~p"
+		      "~n   pdu:    ~p",
 		      [Sz, Reason, Pdu]);
 	_ ->
 	    ok
     end.
 	    
-handle_send_pdu1(#state{log = Log, usock = Sock},PduType,Addresses) ->
-    lists:foreach(fun({snmpUDPDomain, {Ip, Port}, Packet}) ->
-			  ?vdebug("sending packet:"
-				  "~n   of size: ~p"
-				  "~n   to mgr:  ~p:~p",
-				  [sz(Packet),Ip,Port]),
-			  log(Log, PduType, Packet, Ip, Port),
-			  udp_send(Sock, Ip, Port, Packet);
-		     (_X) ->
-			  ?vlog("** bad res: ~p", [_X]),
-			  ok
-		  end, Addresses).
+handle_send_pdu1(#state{log = Log, usock = Sock}, Type, Addresses) ->
+    SendFun = 
+	fun({snmpUDPDomain, {Ip, Port}, Packet}) ->
+		?vdebug("sending packet:"
+			"~n   size: ~p"
+			"~n   to:   ~p:~p",
+			[sz(Packet), Ip, Port]),
+		log(Log, Type, Packet, Ip, Port),
+		udp_send(Sock, Ip, Port, Packet);
+	   (_X) ->
+		?vlog("** bad res: ~p", [_X]),
+		ok
+	end, 
+    lists:foreach(SendFun, Addresses).
 
 
 handle_response(Vsn, Pdu, From, S) ->

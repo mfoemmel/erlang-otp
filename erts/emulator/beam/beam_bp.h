@@ -72,6 +72,16 @@ typedef struct bp_data_count { /* Call count */
     Sint            count;
 } BpDataCount;
 
+extern erts_smp_spinlock_t erts_bp_lock;
+
+#ifdef ERTS_SMP
+#define ErtsSmpBPLock(BDC) erts_smp_spin_lock(&erts_bp_lock)
+#define ErtsSmpBPUnlock(BDC) erts_smp_spin_unlock(&erts_bp_lock)
+#else
+#define ErtsSmpBPLock(BDC)
+#define ErtsSmpBPUnlock(BDC)
+#endif
+
 #define ErtsCountBreak(pc,instr_result)                     \
 do {                                                        \
     BpDataCount *bdc = (BpDataCount *) (pc)[-4];            \
@@ -81,7 +91,9 @@ do {                                                        \
     bdc = (BpDataCount *) bdc->next;                        \
     ASSERT(bdc);                                            \
     (pc)[-4] = (Uint) bdc;                                  \
+    ErtsSmpBPLock(bdc);                                     \
     if (bdc->count >= 0) bdc->count++;                      \
+    ErtsSmpBPUnlock(bdc);                                   \
     *(instr_result) = bdc->orig_instr;                      \
 } while (0)
 

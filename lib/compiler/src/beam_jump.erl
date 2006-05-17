@@ -293,6 +293,8 @@ opt([{loop_rec,Lbl,_R}=I|Is], Acc, St) ->
     opt(Is, [I|Acc], label_used(Lbl, St));
 opt([{bif,_Name,Lbl,_As,_R}=I|Is], Acc, St) ->
     opt(Is, [I|Acc], label_used(Lbl, St));
+opt([{gc_bif,_Name,Lbl,_Live,_As,_R}=I|Is], Acc, St) ->
+    opt(Is, [I|Acc], label_used(Lbl, St));
 opt([{bs_put_integer,Lbl,_Bits,_Unit,_Fl,_Val}=I|Is], Acc, St) ->
     opt(Is, [I|Acc], label_used(Lbl, St));
 opt([{bs_put_binary,Lbl,_Bits,_Unit,_Fl,_Val}=I|Is], Acc, St) ->
@@ -476,6 +478,8 @@ ulbl({wait,Lbl}, Used) ->
 ulbl({wait_timeout,Lbl,_To}, Used) ->
     mark_used(Lbl, Used);
 ulbl({bif,_Name,Lbl,_As,_R}, Used) ->
+    mark_used(Lbl, Used);
+ulbl({gc_bif,_Name,Lbl,_Live,_As,_R}, Used) ->
     mark_used(Lbl, Used);
 ulbl({bs_init2,Lbl,_,_,_,_,_}, Used) ->
     mark_used(Lbl, Used);

@@ -36,8 +36,7 @@
 	 get_node/0,
 	 pspawn/3, 
 	 attach/1,
-	 pspawn_link/3, 
-	 get_node/0]).
+	 pspawn_link/3]).
 
 %% Internal Exports 
 -export([statistic_collector/0,

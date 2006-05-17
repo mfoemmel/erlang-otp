@@ -22,6 +22,9 @@
 %% when it should break a line, but breaks or does break according to
 %% some predefined rules whatever the consequences. It should really
 %% be smarter.
+%% This has now been improved upon: line breaks are sometimes inserted.
+%% The cost is however quite high since the same code may be traversed
+%% many times.
 
 %% The after hook has been extended to work at each level, attribute,
 %% function, clause, and expression. Lists of things, like guards, still
@@ -35,9 +38,12 @@
 -export([seq/1,seq/2]).
 -deprecated([{seq,1},{seq,2}]).
 
--import(lists, [flatten/1]).
--import(io_lib, [write/1,format/2,write_char/1,write_string/1,indentation/2]).
+-import(lists, [flatten/1, map/2, max/1]).
+-import(io_lib, [write/1,format/2,write_char/1,write_string/1]).
 -import(erl_parse, [inop_prec/1,preop_prec/1,func_prec/0]).
+
+-define(MAXLINE, 78).
+-define(LEFT, 8). % Minimum number of columns to be gained by a line break.
 
 %% seq(Expressions)
 %% seq(Expressions, Hook)
@@ -79,9 +85,9 @@ attribute(module, M, _Hook) ->
     format("-module(~s).\n", [pname(M)]);
 attribute(export, Falist, _Hook) ->
     format("-export(~s).\n", [falist(Falist)]);
-attribute(import, Name, _Hook) when list(Name) ->
+attribute(import, Name, _Hook) when is_list(Name) ->
     format("-import(~s).\n", [pname(Name)]);
-attribute(import, {From,Falist}, _Hook) when list(From) ->
+attribute(import, {From,Falist}, _Hook) when is_list(From) ->
     format("-import(~s, ~s).\n", [pname(From),falist(Falist)]);
 attribute(import, {From,Falist}, _Hook) ->
     format("-import(~w, ~s).\n", [From,falist(Falist)]);
@@ -107,7 +113,7 @@ pname([A]) ->
     write(A);
 pname([A | As]) ->
     [write(A),$.|pname(As)];
-pname(A) when atom(A) ->
+pname(A) when is_atom(A) ->
     write(A).
 
 falist([]) -> "[]";
@@ -123,8 +129,8 @@ function({function,_Line,Name,_Arity,Cs}, Hook) ->
     [clauses(fun (C, _, H) -> func_clause(Name, C, H) end, 0, Hook, Cs),".\n"].
 
 func_clause(Name, {clause,Line,Head,Guard,Body}, Hook) ->
-    [expr({call,Line,{atom,Line,Name},Head}, 0, Hook),
-     guard(Guard, 0, Hook),
+    Hl = expr({call,Line,{atom,Line,Name},Head}, 0, Hook),
+    [guard_when(Hl, Guard, 0, Hook),
      body(Body, 4, Hook)].
 
 rule(R) -> rule(R, none).
@@ -133,8 +139,8 @@ rule({rule,_Line,Name,_Arity,Cs}, Hook) ->
     [clauses(fun (C, _, H) -> rule_clause(Name, C, H) end, 0, Hook, Cs),".\n"].
 
 rule_clause(Name, {clause,Line,Head,Guard,Body}, Hook) ->
-    [expr({call,Line,{atom,Line,Name},Head}, 0, Hook),
-     guard(Guard, 0, Hook),
+    Hl = expr({call,Line,{atom,Line,Name},Head}, 0, Hook),
+    [guard_when(Hl, Guard, 0, Hook),
      rule_body(Body, 4, Hook)].
 
 rule_body(Es, I, Hook) ->
@@ -148,20 +154,34 @@ guard(Gs) -> guard(Gs, none).
 
 guard(Gs, Hook) -> guard(Gs, 0, Hook).
 
-guard_no_when([E|Es], I, Hook) when list(E) ->
-    separated_list(fun guard0/3, "; ", I, Hook, [E|Es]);
+guard_no_when([E|Es], I, Hook) when is_list(E) ->
+    separated_list_nl(fun guard0/3, "; ", I, Hook, [E|Es]);
 guard_no_when([E|Es], I, Hook) ->
     guard_no_when([[E|Es]], I, Hook);
 guard_no_when([], _, _) -> [].
 
-guard([E|Es], I, Hook) when list(E) ->
-    " when " ++ separated_list(fun guard0/3, "; ", I, Hook, [E|Es]);
+guard_when(BeforeL, Guard, I, Hook) ->
+    Szl = map( fun( E ) -> indentation(expr(E, Hook), 0) 
+               end, flatten(Guard)),
+    Wsz = 6, % " when "
+    Bsz = 3, % " ->"
+    I1 = I + 4,
+    Ia = indentation(BeforeL, I),
+    [BeforeL|case (Szl =:= []) orelse (max(Szl) + Ia + Wsz =< ?MAXLINE-Bsz) of
+                 false when I1+?LEFT =< Ia ->
+                     [nl_indent(I1),guard(Guard, Wsz+I1, Hook)];
+                 _ ->
+                     guard(Guard, Wsz+Ia, Hook)
+             end].
+
+guard([E|Es], I, Hook) when is_list(E) ->
+    " when " ++ separated_list_nl(fun guard0/3, "; ", I, Hook, [E|Es]);
 guard([E|Es], I, Hook) ->
     guard([[E|Es]], I, Hook);
 guard([], _, _) -> [].
 
 guard0([E|Es], I, Hook) ->
-    separated_list(fun expr/3, ", ", I, Hook, [E|Es]);
+    separated_list_nl(fun expr/3, ", ", I, Hook, [E|Es]);
 guard0([], _, _) -> [].
 
 %% body(Es, Indentation, Hook) -> [Char].
@@ -174,11 +194,13 @@ body(Es, I, Hook) ->
 %% exprs(Expressions, Indentation, Punctuation, Hook)
 %%  Prettyprint expressions.
 
+-define(NONL, -10000). %A hack to prohibit line breaks
+
 exprs(Es) ->
     exprs(Es, none).
 
 exprs(Es, Hook) ->
-    exprs(Es, -10000, Hook).			%A hack to prohibit line breaks
+    exprs(Es, ?NONL, Hook).
 
 exprs(Es, I, Hook) ->
     separated_list(fun expr/3, "," ++ nl_indent(I), I, Hook, Es).
@@ -191,24 +213,32 @@ exprs(Es, I, Hook) ->
 %%  operator precedences for arithmetic expressions as well.
 %%  N.B. We use a simple length/1 call to calculate indent
 
-expr(E) -> expr(E, -10000, 0, none).
+expr(E) -> expr(E, ?NONL, 0, none).
 
-expr(E, Hook) -> expr(E, -10000, 0, Hook).
+expr(E, Hook) -> expr(E, ?NONL, 0, Hook).
 
 expr(E, I, Hook) -> expr(E, I, 0, Hook).
 
-expr({var,_,V}, _, _, _) when integer(V) ->	%Special hack for Robert
+expr({var,_,V}, _, _, _) when is_integer(V) ->	%Special hack for Robert
     format("_~w", [V]);
 expr({var,_,V}, _, _, _) -> format("~s", [V]);
-expr({char,_,C}, _, _, _) -> write_char(C);	%When this comes
+expr({char,_,C}, _, _, _) -> write_char(C);
 expr({integer,_,N}, _, _, _) -> write(N);
 expr({float,_,F}, _, _, _) -> write(F);
 expr({atom,_,A}, _, _, _) -> write(A);
 expr({string,_,S}, _, _, _) -> write_string(S);
 expr({nil,_}, _, _, _) -> "[]";
 expr({cons,_,H,T}, I, _, Hook) ->
-    I1 = I + 1,
-    [$[,expr(H, I1, 0, Hook)|tail(T, I1, Hook)];
+    Hl = expr(H, ?NONL, 0, Hook),
+    Tl = tail(T, "", ?NONL, Hook),
+    Cl = [$[,Hl,Tl],
+    case too_wide(Cl, I) of
+        true -> 
+            I1 = I + 1,
+            [$[,expr(H, I1, 0, Hook)|tail(T, nl_indent(I1), I1, Hook)];
+        false ->
+            Cl
+    end;
 expr({lc,_,E,Qs}, I, _Prec, Hook) ->
     ["[ ",
      expr(E, I+2, 0, Hook),
@@ -267,6 +297,11 @@ expr({'case',_,Expr,Cs}, I, _, Hook) ->
      " of",nl_indent(I1),
      cr_clauses(Cs, I1, Hook),
      nl_indent(I),"end"];
+expr({'cond',_,Cs}, I, _, Hook) ->
+    I1 = I + 4,
+    ["cond",nl_indent(I1),
+     cond_clauses(Cs, I1, Hook),
+     nl_indent(I),"end"];
 expr({'receive',_,Cs}, I, _, Hook) ->
     I1 = I + 4,
     ["receive",nl_indent(I1),
@@ -274,9 +309,9 @@ expr({'receive',_,Cs}, I, _, Hook) ->
      nl_indent(I),"end"];
 expr({'receive',_,Cs,To,ToOpt}, I, _, Hook) ->
     I1 = I + 4,
-    ["receive",nl_indent(I1),
+    ["receive",
      if						%Must special case no clauses
-	 Cs /= [] -> cr_clauses(Cs, I1, Hook);
+	 Cs =/= [] -> [nl_indent(I1),cr_clauses(Cs, I1, Hook)];
 	 true -> ""
      end,
      %% Now for the timeout bit.
@@ -288,8 +323,7 @@ expr({'receive',_,Cs,To,ToOpt}, I, _, Hook) ->
 expr({'fun',_,{function,F,A}}, _I, _Prec, _Hook) ->
     ["fun ",write(F),$/,write(A)];
 expr({'fun',_,{function,F,A},Extra}, I, _Prec, _Hook) ->
-    [io_lib:format("% fun-info: ~p~n", [Extra]),
-     string:chars($\s, I),
+    [fun_info(Extra, I),
      "fun ",write(F),$/,write(A)];
 expr({'fun',_,{function,M,F,A}}, _I, _Prec, _Hook) ->
     ["fun ",write(M),$:,write(F),$/,write(A)];
@@ -298,8 +332,7 @@ expr({'fun',_,{clauses,Cs}}, I, _Prec, Hook) ->
      fun_clauses(Cs, I+4, Hook),
      " end"];
 expr({'fun',_,{clauses,Cs},Extra}, I, _Prec, Hook) ->
-    [io_lib:format("% fun-info: ~p~n", [Extra]),
-     string:chars($\s, I),
+    [fun_info(Extra, I),
      "fun ",
      fun_clauses(Cs, I+4, Hook),
      " end"];
@@ -307,25 +340,32 @@ expr({'query',_,Lc}, I, _Prec, Hook) ->
     ["query ",
      expr(Lc, I+6, 0, Hook),
      " end"];
+expr({call,L,{remote,_,{atom,_,M},{atom,_,F}=N}=Name,Args}, I, Prec, Hook) ->
+    case erl_internal:bif(M, F, length(Args)) of
+        true ->
+            expr({call,L,N,Args}, I, Prec, Hook);
+        false -> 
+            call(Name, Args, I, Prec, Hook)
+    end;
 expr({call,_,Name,Args}, I, Prec, Hook) ->
-    {F,P} = func_prec(),
-    Nl = expr(Name, I, F, Hook),
-    El = [Nl|expr_list(Args, "(", ")", indentation(Nl, I), Hook)],
-    maybe_paren(P, Prec, El);
+    call(Name, Args, I, Prec, Hook);
 expr({'try',_,Es,Scs,Ccs,As}, I, _, Hook) ->
     I1 = I + 4,
     ["try",nl_indent(I1),
-     exprs(Es, I1, Hook),
-     nl_indent(I),
-     if Scs == [] ->
+     exprs(Es, I1, Hook),nl_indent(I),
+     if Scs =:= [] ->
 	     [];
 	true ->
 	     ["of",nl_indent(I1),
 	      cr_clauses(Scs, I1, Hook),nl_indent(I)]
      end,
-     "catch",nl_indent(I1),
-     try_clauses(Ccs, I1, Hook),nl_indent(I),
-     if As == [] ->
+     if Ccs =:= [] ->
+             [];
+        true ->
+             ["catch",nl_indent(I1),
+              try_clauses(Ccs, I1, Hook),nl_indent(I)]
+     end,
+     if As =:= [] ->
 	     [];
 	true ->
 	     ["after",nl_indent(I1),
@@ -339,7 +379,15 @@ expr({'catch',_,Expr}, I, Prec, Hook) ->
 expr({match,_,Lhs,Rhs}, I, Prec, Hook) ->
     {L,P,R} = inop_prec('='),
     Pl = expr(Lhs, I, L, Hook),
-    El = [Pl," = ",expr(Rhs, indentation(Pl, I)+3, R, Hook)],
+    Ip = indentation(Pl, I)+3,
+    Rl1 = expr(Rhs, ?NONL, R, Hook),
+    El = [Pl," = ",
+          case too_wide(Rl1, Ip) of
+              true when Ip - I >= ?LEFT -> 
+                  [nl_indent(I+4), expr(Rhs, I+4, R, Hook)];
+              _ -> 
+                  expr(Rhs, Ip, R, Hook)
+          end],
     maybe_paren(P, Prec, El);
 expr({op,_,Op,Arg}, I, Prec, Hook) ->
     {P,R} = preop_prec(Op),
@@ -348,10 +396,33 @@ expr({op,_,Op,Arg}, I, Prec, Hook) ->
     maybe_paren(P, Prec, El);
 expr({op,_,Op,Larg,Rarg}, I, Prec, Hook) ->
     {L,P,R} = inop_prec(Op),
-    Ll = expr(Larg, I, L, Hook),
-    Ol = flatten(format(" ~s ", [Op])),
-    El = [Ll,Ol,expr(Rarg, indentation(Ll, I)+length(Ol), R, Hook)],
-    maybe_paren(P, Prec, El);
+    Ll1 = expr(Larg, ?NONL, L, Hook),
+    Ol1 = flatten(format(" ~s ", [Op])),
+    Lr1 = expr(Rarg, ?NONL, R, Hook),
+    El1 = maybe_paren(P, Prec, [Ll1,Ol1,Lr1]),
+    case too_wide(El1, I) of
+        true ->
+            X = n_paren(P, Prec),
+            Ll = expr(Larg, I+X, L, Hook),
+            Ol2 = flatten(format(" ~s", [Op])),
+            Ol = case too_wide(Ol2, indentation(Ll, I+X))  of
+		     true -> 
+			 [nl_indent(I+X), Ol2];
+		     false -> 
+                         Ol2
+                 end,
+            Lr1 = expr(Rarg, ?NONL, R, Hook),
+            Lr = case too_wide(Lr1, indentation([Ll,Ol," "], I+X)) of
+	        true ->
+		    [nl_indent(I+X), expr(Rarg, I+X, R, Hook)];
+                false ->
+                    [" ",Lr1]
+            end,
+            El = [Ll,Ol,Lr],
+            maybe_paren(P, Prec, El);
+        false -> 
+            El1
+    end;
 %% Special expressions which are not really legal everywhere.
 expr({remote,_,M,F}, I, Prec, Hook) ->
     {L,P,R} = inop_prec(':'),
@@ -367,14 +438,49 @@ expr({value,_,Val}, _, _,_) ->
 %% Now do the hook.
 expr(Other, _Indentation, _Precedence, none) ->
     format("INVALID-FORM:~w:",[Other]);
-expr(Expr, Indentation, Precedence, {Mod,Func,Eas}) when Mod /= 'fun' ->
+expr(Expr, Indentation, Precedence, {Mod,Func,Eas}) when Mod =/= 'fun' ->
     apply(Mod, Func, [Expr,Indentation,Precedence,{Mod,Func,Eas}|Eas]);
 expr(Expr, Indentation, Precedence, Func) ->
     Func(Expr, Indentation, Precedence, Func).
 
+call(Name, Args, I, Prec, Hook) ->
+    {F,P} = func_prec(),
+    Nl = expr(Name, I, F, Hook),
+    In = indentation(Nl, I),
+    Al = expr_list(Args, "(", ")", ?NONL, Hook),
+    case too_wide(maybe_paren(P, Prec, Al), In) of
+        true when In-I-4 >= ?LEFT ->
+            X = n_paren(P, Prec),
+            Inl = I + X+4,
+            El = [Nl,nl_indent(Inl),expr_list(Args, "(", ")", Inl, Hook)],
+            maybe_paren(P, Prec, El);
+        _ ->
+            El = [Nl|expr_list(Args, "(", ")", In, Hook)],
+            maybe_paren(P, Prec, El)
+    end.
+
+fun_info(Extra, I) when I >= 0 ->
+    [io_lib:format("% fun-info: ~p", [Extra]),
+     nl_indent(I)];
+fun_info(_Extra, _I) ->
+    %% Force line breaks just to get fun-info right.
+    not_a_valid_iolist.
+
 %% BITS:
 bit_grp(Fs,I,Hook) ->
-    ["<<", bit_elems(Fs,I+2,Hook),">>"].
+    try
+        S = bin_string(Fs),
+        true = io_lib:printable_list(S),
+        [{bin_element,L,_,_,_}|_] = Fs,
+        ["<<",expr({string,L,S}, I+2, 0, Hook),">>"]
+    catch _:_ ->
+        ["<<", bit_elems(Fs,I+2,Hook),">>"]
+    end.
+
+bin_string([]) ->
+    [];
+bin_string([{bin_element,_,{char,_,C},_,_}|Bin]) ->
+    [C | bin_string(Bin)].
 
 bit_elems([E], I, Hook) ->
     [ bit_elem(E, I, Hook) ];
@@ -422,15 +528,15 @@ record_field({record_field,_,F,Val}, I, Hook) ->
 record_field({record_field,_,F}, I, Hook) ->
     expr(F, I, Hook).
 
-tail({cons,_,H,T}, I, Hook) ->
-    [$,, expr(H, I, 0, Hook)|tail(T, I, Hook)];
-tail({nil,_}, _, _) -> "]";
-tail(Other, I, Hook) ->
-    [$|,expr(Other, I, 0, Hook),$]].
+tail({cons,_,H,T}, S, I, Hook) ->
+    [$,, S, expr(H, I, 0, Hook)|tail(T, S, I, Hook)];
+tail({nil,_}, _, _, _) -> "]";
+tail(Other, S, I, Hook) ->
+    [$|,S,expr(Other, I, 0, Hook),$]].
 
 expr_list(Es, First, Last, I, Hook) ->
     [First,
-     separated_list(fun expr/3, ",", I+length(First), Hook, Es),
+     separated_list_nl(fun expr/3, ",", I+length(First), Last, Hook, Es),
      Last].
 
 %% if_clauses(Clauses, Indentation, Hook) -> [Char].
@@ -439,10 +545,7 @@ expr_list(Es, First, Last, I, Hook) ->
 if_clauses(Cs, I, Hook) -> clauses(fun if_clause/3, I, Hook, Cs).
 
 if_clause({clause,_,[],G,B}, I, Hook) ->
-    [if
-	 G /= [] -> guard_no_when(G, I+2, Hook);
-	 true -> write(true)
-     end,
+    [guard_no_when(G, I+2, Hook),
      body(B, I+4, Hook)].
 
 %% cr_clauses(Clauses, Indentation, Hook) -> [Char].
@@ -451,8 +554,8 @@ if_clause({clause,_,[],G,B}, I, Hook) ->
 cr_clauses(Cs, I, Hook) -> clauses(fun cr_clause/3, I, Hook, Cs).
 
 cr_clause({clause,_,[T],G,B}, I, Hook) ->
-    [expr(T, I, 0, Hook),
-     guard(G, I, Hook),
+    El = expr(T, I, 0, Hook),
+    [guard_when(El, G, I, Hook),
      body(B, I+4, Hook)].
 
 %% try_clauses(Clauses, Indentation, Hook) -> [Char].
@@ -461,17 +564,16 @@ cr_clause({clause,_,[T],G,B}, I, Hook) ->
 try_clauses(Cs, I, Hook) -> clauses(fun try_clause/3, I, Hook, Cs).
 
 try_clause({clause,_,[{tuple,_,[{atom,_,throw},V,S]}],G,B}, I, Hook) ->
-    Vs = expr(V, I, 0, Hook),
-    [Vs,
-     stack_backtrace(S, I, Vs, Hook),
-     guard(G, I, Hook),
+    El = expr(V, I, 0, Hook),
+    Sl = stack_backtrace(S, El, I, Hook),
+    [guard_when([El,Sl], G, I, Hook),
      body(B, I+4, Hook)];
 try_clause({clause,_,[{tuple,_,[C,V,S]}],G,B}, I, Hook) ->
     Cs = expr(C, I, 0, Hook),
-    Es = expr(V, indentation(Cs, I)+1, 0, Hook),
-    [Cs, ":", Es,
-     stack_backtrace(S, I, Es, Hook),
-     guard(G, I, Hook),
+    El = expr(V, indentation(Cs, I)+1, 0, Hook),
+    CsEl = [Cs, ":", El],
+    Sl = stack_backtrace(S, indentation(CsEl, I), I, Hook),
+    [guard_when([CsEl,Sl], G, I, Hook),
      body(B, I+4, Hook)].
 
 stack_backtrace({var,_,'_'}, _Es, _I, _Hook) ->
@@ -485,8 +587,17 @@ stack_backtrace(S, Es, I, Hook) ->
 fun_clauses(Cs, I, Hook) -> clauses(fun fun_clause/3, I, Hook, Cs).
 
 fun_clause({clause,_,A,G,B}, I, Hook) ->
-    [expr_list(A, "(", ")", I, Hook),
-     guard(G, I, Hook),
+    El = expr_list(A, "(", ")", I, Hook),
+    [guard_when(El, G, I, Hook),
+     body(B, I+4, Hook)].
+
+%% cond_clauses(Clauses, Indentation, Hook) -> [Char].
+%%  Print 'cond' clauses.
+
+cond_clauses(Cs, I, Hook) -> clauses(fun cond_clause/3, I, Hook, Cs).
+
+cond_clause({clause,_,[],[[E]],B}, I, Hook) ->
+    [expr(E, I, 0, Hook),
      body(B, I+4, Hook)].
 
 %% clauses(Type, Identation, Hook) -> [Char].
@@ -495,12 +606,24 @@ fun_clause({clause,_,A,G,B}, I, Hook) ->
 clauses(Type, I, Hook, Cs) ->
     separated_list(Type, ";" ++ nl_indent(I), I, Hook, Cs).
 
+separated_list_nl(Fun, S, I, Hook, Es) ->
+    separated_list_nl(Fun, S, I, [], Hook, Es).
+
+separated_list_nl(Fun, S, I, After, Hook, Es) ->
+    L = separated_list(Fun, S, ?NONL, Hook, Es),
+    case too_wide([L,After], I) of
+        true -> 
+            separated_list(Fun, S ++ nl_indent(I), I, Hook, Es);
+        false ->
+            L
+    end.
+                       
 %% separated_list(Fun, Sep, Indentation, Hook, Es) -> [Char].
 %%  Generic function for printing a list of things with separators
 %%  between them. We can handle the empty case.
 
 separated_list(Fun, S, I, Hook, [E1|Es]) ->
-    [Fun(E1, I, Hook)|lists:map( fun (E) -> [S,Fun(E, I, Hook)] end, Es)];
+    [Fun(E1, I, Hook)|map( fun (E) -> [S,Fun(E, I, Hook)] end, Es)];
 separated_list(_Fun, _S, _I, _Hook, []) -> "".
 
 %% lc_quals(Qualifiers, Indentation, Hook)
@@ -519,8 +642,25 @@ lc_qual(Q, I, Hook) ->
 %% Utilities
 %%
 
+indentation(E, I) when I >= 0 ->
+    io_lib_format:indentation(E, I);
+indentation(_E, I) ->
+    I.
+
 maybe_paren(P, Prec, Expr) when P < Prec -> [$(,Expr,$)];
 maybe_paren(_P, _Prec, Expr) -> Expr.
 
+n_paren(P, Prec) when P < Prec ->
+    1;
+n_paren(_P, _Prec) ->
+    0.
+
 nl_indent(I) when I >= 0 -> [$\n|string:chars($\s, I)];
 nl_indent(_) -> " ".
+
+%% fun-info will always break the line
+too_wide(L, I) ->
+    try iolist_size(L),
+        (I >= 0) andalso (indentation(L, I) > ?MAXLINE)
+    catch _:_ -> true
+    end.

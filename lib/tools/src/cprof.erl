@@ -104,25 +104,25 @@ analyse() ->
     analyse(1).
 
 analyse(Limit) when integer(Limit) ->
-    L = [X || {M,N,_}=X <- [analyse(M, Limit) 
-			       || M <- [element(1, Mod) 
-					|| Mod <- code:all_loaded()]],
-		 N > 0, M /= ?MODULE],
-    N = lists:foldl(fun ({_,C,_}, Q) -> Q+C end, 0, L),
-    {N, lists:reverse(lists:keysort(2, L))};
+    L0 = [analyse(element(1, Mod), Limit) || Mod <- code:all_loaded()],
+    L1 = [{C,M,Lm} || {M,C,Lm} <- L0, C > 0, M /= ?MODULE],
+    N = lists:foldl(fun ({C,_,_}, Q) -> Q+C end, 0, L1),
+    L = [{M,C,Lm} || {C,M,Lm} <- lists:reverse(lists:sort(L1))],
+    {N,L};
 analyse(M) when atom(M) ->
     analyse(M, 1).
 
 analyse(M, Limit) when atom(M), integer(Limit) ->
-    L = [{MFA,C} 
-	 || {MFA,{_,C}} <- [begin
-				MFA = {M,F,A},
-				{MFA, erlang:trace_info(MFA, call_count)}
-			    end
-			    || {F, A} <- M:module_info(functions)],
-	    integer(C)],
-    N = lists:foldl(fun ({_, C}, Q) -> Q+C end, 0, L),
-    {M, N, lists:reverse(lists:keysort(2, [Y || {_,C}=Y <- L, C >= Limit]))}.
+    L0 = [begin
+	      MFA = {M,F,A},
+	      {_,C} = erlang:trace_info(MFA, call_count),
+	      [C|MFA]
+	  end || {F,A} <- M:module_info(functions)],
+    L1 = [X || [C|_]=X <- L0, is_integer(C)],
+    N = lists:foldl(fun ([C|_], Q) -> Q+C end, 0, L1),
+    L2 = [X || [C|_]=X <- L1, C >= Limit],
+    L = [{MFA,C} || [C|MFA] <- lists:reverse(lists:sort(L2))],
+    {M,N,L}.
 
 
 

@@ -21,9 +21,9 @@
 #endif
 
 #include "sys.h"
+#include "global.h"
+#include "erl_process.h"
 
-
-volatile int erl_fp_exception = 0;
 
 #ifdef NO_FPE_SIGNALS
 
@@ -35,7 +35,66 @@ erts_sys_init_float(void)
 # endif
 }
 
+static ERTS_INLINE void set_current_fp_exception(void)
+{
+    /* nothing to do */
+}
+
 #else  /* !NO_FPE_SIGNALS */
+
+#ifdef ERTS_SMP
+static erts_tsd_key_t fpe_key;
+
+static void
+fp_exception_cleanup(void)
+{
+    void *fpe = erts_tsd_get(fpe_key);
+    if (fpe) {
+	erts_tsd_set(fpe_key, NULL);
+	erts_free(ERTS_ALC_T_FP_EXCEPTION, fpe);
+    }
+}
+
+/* once-only initialisation early in the main thread (via erts_sys_init_float()) */
+static void erts_init_fp_exception(void)
+{
+    erts_tsd_key_create(&fpe_key);
+    erts_thr_install_exit_handler(fp_exception_cleanup);
+}
+
+void erts_thread_init_fp_exception(void)
+{
+    int *fpe = erts_alloc(ERTS_ALC_T_FP_EXCEPTION, sizeof(*fpe));
+    erts_tsd_set(fpe_key, fpe);
+}
+
+static ERTS_INLINE volatile int *erts_thread_get_fp_exception(void)
+{
+    return (volatile int*)erts_tsd_get(fpe_key);
+}
+
+#else /* !SMP */
+#define erts_init_fp_exception()	/*empty*/
+static volatile int fp_exception;
+#define erts_thread_get_fp_exception()	(&fp_exception)
+#endif /* SMP */
+
+volatile int *erts_get_current_fp_exception(void)
+{
+    Process *c_p;
+
+    c_p = erts_get_current_process();
+    if (c_p)
+	return &c_p->fp_exception;
+    return erts_thread_get_fp_exception();
+}
+
+static void set_current_fp_exception(void)
+{
+    volatile int *fpexnp = erts_get_current_fp_exception();
+    ASSERT(fpexnp != NULL);
+    *fpexnp = 1;
+}
 
 /* Is there no standard identifier for Darwin/MacOSX ? */
 #if defined(__ppc__) && defined(__APPLE__) && defined(__MACH__) && !defined(__DARWIN__)
@@ -313,10 +372,10 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
     mc->ss.srr0 += 4;
     mc->fs.fpscr = 0x80|0x40|0x10;
 #endif
-    erl_fp_exception = 1;
+    set_current_fp_exception();
 }
 
-void erts_sys_init_float(void)
+static void erts_thread_catch_fp_exceptions(void)
 {
     struct sigaction act;
     memset(&act, 0, sizeof act);
@@ -330,11 +389,10 @@ void erts_sys_init_float(void)
 
 static void fpe_sig_handler(int sig)
 {
-    erl_fp_exception = 1;
+    set_current_fp_exception();
 }
 
-void
-erts_sys_init_float(void)
+static void erts_thread_catch_fp_exceptions(void)
 {
     sys_sigset(SIGFPE, fpe_sig_handler);
     unmask_fpe();
@@ -342,7 +400,30 @@ erts_sys_init_float(void)
 
 #endif /* (__linux__ && (__i386__ || __x86_64__ || __powerpc__)) || __DARWIN__ */
 
+/* once-only initialisation early in the main thread */
+void erts_sys_init_float(void)
+{
+    erts_init_fp_exception();
+    erts_thread_catch_fp_exceptions();
+}
+
 #endif /* NO_FPE_SIGNALS */
+
+void erts_thread_init_float(void)
+{
+#ifdef ERTS_SMP
+    /* This allows Erlang schedulers to leave Erlang-process context
+       and still have working FP exceptions. XXX: is this needed? */
+    erts_thread_init_fp_exception();
+#endif
+
+#if !defined(NO_FPE_SIGNALS) && defined(__DARWIN__)
+    /* Darwin (7.9.0) does not appear to propagate FP exception settings
+       to a new thread from its parent. So if we want FP exceptions, we
+       must manually re-enable them in each new thread. */
+    erts_thread_catch_fp_exceptions();
+#endif
+}
 
 /* The following check is incorporated from the Vee machine */
     
@@ -379,6 +460,7 @@ sys_double_to_chars(double fp, char *buf)
 int
 sys_chars_to_double(char* buf, double* fp)
 {
+    volatile int *fpexnp = erts_get_current_fp_exception();
     char *s = buf, *t, *dp;
 
     /* Robert says that something like this is what he really wanted:
@@ -414,16 +496,16 @@ sys_chars_to_double(char* buf, double* fp)
 #ifdef NO_FPE_SIGNALS
     errno = 0;
 #endif
-    ERTS_FP_CHECK_INIT();
+    __ERTS_FP_CHECK_INIT(fpexnp);
     *fp = strtod(buf, &t);
-    ERTS_FP_ERROR(*fp, return -1);
+    __ERTS_FP_ERROR(fpexnp, *fp, return -1);
     if (t != s) {		/* Whole string not scanned */
 	/* Try again with other radix char */
 	*dp = (*dp == '.') ? ',' : '.';
 	errno = 0;
-	ERTS_FP_CHECK_INIT();
+	__ERTS_FP_CHECK_INIT(fpexnp);
 	*fp = strtod(buf, &t);
-	ERTS_FP_ERROR(*fp, return -1);
+	__ERTS_FP_ERROR(fpexnp, *fp, return -1);
     }
 
 #ifdef DEBUG
@@ -448,6 +530,6 @@ sys_chars_to_double(char* buf, double* fp)
 int
 matherr(struct exception *exc)
 {
-    erl_fp_exception = 1;
+    set_current_fp_exception();
     return 1;
 }

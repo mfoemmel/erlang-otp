@@ -91,7 +91,7 @@ APP_FILE =
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin -pa $(ERL_TOP)/lib/ic/ebin
+ERL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/orber/include \

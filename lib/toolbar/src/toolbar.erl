@@ -31,16 +31,9 @@
 %
 %%% Exports %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
--record(tbwindow,
-	{window,menubar,canvas,labelframe,
-	 label,helpmenu,
-	 no_of_buttons,
-	 min_height,min_width,cur_height,icons}).
-%
 -export([start/0,version/0]).
 -export([update/0,quit/0]).
 -export([create_tool_file/0,add_gs_contribs/0]).
--export([init/1,start_tool/3]). % spawn
 
 %
 -define (STARTUP_TIMEOUT, 20000).
@@ -55,7 +48,8 @@
 start() ->
     case whereis(toolbar) of
 	undefined ->
-	    PidInit = spawn (toolbar, init, [self ()]),
+	    Self = self(),
+	    PidInit = spawn(fun() -> init(Self)  end),
 	    init_ok (PidInit);
 
 	_Pid ->
@@ -203,7 +197,8 @@ loop(S,Window,LoopData,TimerRef) ->
 
 		%% Icon button clicked, start corresponding tool/uc
 		{start,Start} ->
-		    start_tool(Start),
+		    WinObj = toolbar_graphics:get_window(Window),
+		    start_tool(Start,WinObj),
 		    loop(S,Window,LoopData,TimerRef);
 		
 		%% Update Toolbar
@@ -230,14 +225,17 @@ loop(S,Window,LoopData,TimerRef) ->
 		%% Help
 		{help,Html} ->
 		    toolbar_graphics:cursor(Window,busy),
-		    tool_utils:open_help(S,Html),
+		    WinObj = toolbar_graphics:get_window(Window),
+		    tool_utils:open_help(WinObj, Html),
 		    toolbar_graphics:cursor(Window,arrow),
 		    loop(S,Window,LoopData,TimerRef);
 		
 		%% About help
 		about_help ->
-		    tool_utils:notify(S,["Help text is on HTML format",
-		                  "Requires Netscape to be up and running"]),
+		    WinObj = toolbar_graphics:get_window(Window),
+		    Text = ["Help text is on HTML format",
+			    "Requires Netscape to be up and running"],
+		    tool_utils:notify(WinObj, Text),
 		    loop(S,Window,LoopData,TimerRef);
 
 		%% Window has been resized, redraw it
@@ -556,21 +554,23 @@ absolute_path(Dir,File) ->
 %=============================================================================
 
 %----------------------------------------
-% start_tool({Module,Function,Arguments})
+% start_tool({Module,Function,Arguments}, GSobj)
 %   Module - atom() Module name
 %   Function - atom() Function name
 %   Argument - [term()] Function arguments
+%   GSobj - gs_obj()
 % Applies the given function in order to start a tool.
 %----------------------------------------
-start_tool({M,F,A}) ->
-    spawn(toolbar,start_tool,[M,F,A]).
+start_tool({M,F,A}, GSobj) ->
+    spawn(fun() -> start_tool(M, F, A, GSobj) end).
 
-start_tool(M,F,A) ->
+start_tool(M,F,A,GSobj) ->
     case catch apply(M,F,A) of
 	{'EXIT',Reason} ->
-	    String1 = io_lib:format("Failed to call apply(~p,~p,~p)",[M,F,A]),
+	    String1 = io_lib:format("Failed to call apply(~p,~p,~p)",
+				    [M,F,A]),
 	    String2 = io_lib:format("Reason: ~p",[Reason]),
-	    tool_utils:notify(gs:start(),[String1,String2]),
+	    tool_utils:notify(GSobj,[String1,String2]),
 	    false;
 	_ ->
 	    true

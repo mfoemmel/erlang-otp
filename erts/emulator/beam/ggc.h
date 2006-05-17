@@ -68,7 +68,7 @@ typedef struct {
     Uint sz[11];		/* Size of each vector. */
     Eterm* v_msg;		/* Pointer to messages to GC. */
     Eterm def_msg[32];		/* Default storage for messages (to avoid malloc). */
-#if defined(SHARED_HEAP) || defined(HYBRID)
+#ifdef HYBRID
     Uint n;
 #if defined(HIPE)
     Process *p;			/* For scanning the nstack. */
@@ -77,7 +77,7 @@ typedef struct {
 } Rootset;
 
 
-#if defined(SHARED_HEAP) || defined(HYBRID)
+#ifdef HYBRID
 extern char ma_gc_flags;
 
 /* Tell the GC to look at all processes. This flag i s set in the
@@ -89,7 +89,24 @@ extern char ma_gc_flags;
 #define GC_INCLUDE_ALL  0x01
 
 /* To let functions shared by local and global GC know this is a global GC */
-#define GC_GLOBAL     0x02
+#define GC_GLOBAL       0x02
+
+/* In IncNMGC, to indicate that a GC-cycle is in progress */
+#define GC_CYCLE        0x04
+
+/* In IncNMGC, to indicate that the next GC cycle will be a major one */
+#define GC_NEED_MAJOR   0x08
+
+/* In IncNMGC, to indicate that the current GC cycle is a major one */
+#define GC_MAJOR        0x10
+
+/* In IncNMGC, to indicate that the last call to the collector
+ * initiated a new collection cycle.
+ * NOTE!!
+ * This flag is only for communication with copy_stuct_lazy. copy_stuct_lazy
+ * will clear this flag after a copy is done.
+ */
+#define GC_CYCLE_START  0x20
 #endif
 
 
@@ -97,9 +114,8 @@ extern char ma_gc_flags;
 int setup_rootset(Process *p, Eterm *objv, int nobj, Rootset *rootset);
 Uint collect_roots(Process* current, Eterm *objv, int nobj, Rootset rootset[]);
 void restore_rootset(Process *p, Rootset *rootset);
-#ifdef INCREMENTAL_GC
+#ifdef INCREMENTAL
 void restore_one_rootset(Process *p, Rootset *rootset);
 #endif
-char* print_pid(Process *p); /* Returns a static char*!! */
 
 #endif /* __GGC_H__ */

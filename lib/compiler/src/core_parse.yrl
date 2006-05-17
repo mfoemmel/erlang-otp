@@ -29,7 +29,7 @@ attribute_list attribute
 function_definition function_definitions
 
 constant constants atomic_constant tuple_constant cons_constant tail_constant
-pattern other_pattern atomic_pattern tuple_pattern cons_pattern tail_pattern
+other_pattern atomic_pattern tuple_pattern cons_pattern tail_pattern
 binary_pattern segment_patterns segment_pattern
 
 expression single_expression
@@ -163,9 +163,6 @@ anno_pattern -> anno_variable : '$1'.
 
 anno_patterns -> anno_pattern ',' anno_patterns : ['$1' | '$3'].
 anno_patterns -> anno_pattern : ['$1'].
-
-pattern -> variable : '$1'.
-pattern -> other_pattern : '$1'.
 
 other_pattern -> atomic_pattern : '$1'.
 other_pattern -> tuple_pattern : '$1'.

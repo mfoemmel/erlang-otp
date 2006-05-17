@@ -65,14 +65,6 @@ lookup_corba_connector() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Handle configuration parameters
 
-env() ->
-    [
-     debug,
-     gen_server_module,
-     enable_corba,
-     corba_connector_name
-    ].
-
 get_env(E) ->
     case application:get_env(?APPLICATION, E) of
 	{ok, Val} ->
@@ -154,10 +146,10 @@ patched_start([]) ->
 
 patch_env(Env, Val) ->
     case catch do_check_env(Env, Val) of
-	{'EXIT', Reason} ->
+	{'EXIT', _Reason} ->
 	    {error, {bad_type, Env, Val}};
 	NewVal ->
-	    application_controller:set_env(?APPLICATION, Env, NewVal),
+	    application:set_env(?APPLICATION, Env, NewVal),
 	    NewVal
     end.
    

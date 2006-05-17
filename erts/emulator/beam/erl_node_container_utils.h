@@ -168,9 +168,6 @@ extern int erts_use_r9_pids_ports;
 					 || is_external_pid((x)))
 #define is_not_pid(x)			(!is_pid(x))
 
-/* Minimum NUMBER of processes for a small system to start */
-#define ERTS_MIN_PROCESSES		16
-
 #define ERTS_MAX_R9_PROCESSES		(1 << ERTS_R9_PROC_BITS)
 
 /*
@@ -190,6 +187,8 @@ extern int erts_use_r9_pids_ports;
 
 #define ERTS_R9_PROC_BITS		(_PID_R9_SER_SIZE + _PID_NUM_SIZE)
 #define ERTS_PROC_BITS			(_PID_SER_SIZE + _PID_NUM_SIZE)
+
+#define ERTS_INVALID_PID		make_internal_pid(ERTS_MAX_PID_DATA)
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
  * Ports                                                                   *

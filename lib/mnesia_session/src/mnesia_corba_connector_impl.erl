@@ -35,7 +35,7 @@ init([]) ->
     State = #state{debug = mnesia_session_lib:get_env(debug)},
     {ok,State}.
 
-terminate(Reason, State) -> 
+terminate(_Reason, _State) -> 
     ok.
 
 connect(State) ->

@@ -24,7 +24,7 @@
 -include("etop.hrl").
 -include("etop_defs.hrl").
 
--import(etop, [loadinfo/1, meminfo/2, dbgout/2, getopt/2]).
+-import(etop, [loadinfo/1, meminfo/2, getopt/2]).
 
 %% Heights
 -define(BarH, 28).      % height of menubar
@@ -310,8 +310,10 @@ makesysinfo(Node,Info,SysInfo) ->
     [Tot,Procs,Atom,Bin,Code,Ets] = 
 	meminfo(Info#etop_info.memi,[total,processes,atom,binary,code,ets]),
 
-    Str = io_lib:fwrite(?SYSFORM, [Node,Clock,Cpu,Tot,NProcs,Procs,
-				   RQ,Atom,Bin,Code,Ets]),
+    Str = io_lib:fwrite(?SYSFORM, [Node,Clock,
+				   Cpu,Tot,Bin,
+				   NProcs,Procs,Code,
+				   RQ,Atom,Ets]),
     gs:config(SysInfo,[{label,{text,Str}},{font,?Normal}]).
 
 

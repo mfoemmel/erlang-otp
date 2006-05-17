@@ -20,7 +20,9 @@
 %%%----------------------------------------------------------------------
 
 -module(mnesia_frag_old_hash).
--behaviour(mnesia_frag_hash).
+%%-behaviour(mnesia_frag_hash).
+
+-compile({nowarn_deprecated_function, {erlang,hash,2}}).
 
 %% Hashing callback functions
 -export([

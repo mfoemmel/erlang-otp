@@ -306,13 +306,8 @@ $1:
 	/* Set up C argument registers. */
 	mov	r0, P
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	$2
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(0)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET($2,0)
 	.size	$1, .-$1
 	.type	$1, %function
 #endif')
@@ -327,13 +322,8 @@ $1:
 	mov	r0, P
 	NBIF_ARG(r1,1,0)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	$2
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(1)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET($2,1)
 	.size	$1, .-$1
 	.type	$1, %function
 #endif')
@@ -349,13 +339,8 @@ $1:
 	NBIF_ARG(r1,2,0)
 	NBIF_ARG(r2,2,1)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	$2
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(2)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET($2,2)
 	.size	$1, .-$1
 	.type	$1, %function
 #endif')
@@ -372,13 +357,8 @@ $1:
 	NBIF_ARG(r2,3,1)
 	NBIF_ARG(r3,3,2)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	$2
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(3)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET($2,3)
 	.size	$1, .-$1
 	.type	$1, %function
 #endif')
@@ -401,13 +381,8 @@ $1:
 	NBIF_ARG(r2,5,1)
 	NBIF_ARG(r3,5,2)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	$2
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(5)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET($2,5)
 	.size	$1, .-$1
 	.type	$1, %function
 #endif')
@@ -429,13 +404,9 @@ define(noproc_primop_interface_0,
 #`define' HAVE_$1
 	.global	$1
 $1:
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	$2
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(0)
+	/* XXX: this case is always trivial; how to suppress the branch? */
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET($2,0)
 	.size	$1, .-$1
 	.type	$1, %function
 #endif')
@@ -449,13 +420,8 @@ $1:
 	/* Set up C argument registers. */
 	NBIF_ARG(r0,1,0)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	$2
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(1)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET($2,1)
 	.size	$1, .-$1
 	.type	$1, %function
 #endif')
@@ -470,13 +436,8 @@ $1:
 	NBIF_ARG(r0,2,0)
 	NBIF_ARG(r1,2,1)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	$2
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(2)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET($2,2)
 	.size	$1, .-$1
 	.type	$1, %function
 #endif')
@@ -492,13 +453,8 @@ $1:
 	NBIF_ARG(r1,3,1)
 	NBIF_ARG(r2,3,2)
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	$2
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(3)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET($2,3)
 	.size	$1, .-$1
 	.type	$1, %function
 #endif')
@@ -517,13 +473,8 @@ $1:
 	NBIF_ARG(r4,5,4)
 	str	r4, [sp, #0]
 
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_QUICK
-	bl	$2
-
-	/* Restore registers. */
-	RESTORE_CONTEXT_QUICK
-	NBIF_RET(5)
+	/* Perform a quick save;call;restore;ret sequence. */
+	QUICK_CALL_RET($2,5)
 	.size	$1, .-$1
 	.type	$1, %function
 #endif')

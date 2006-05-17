@@ -112,17 +112,17 @@ static char *plusM_other_switches[] = {
 #define sleep(seconds) Sleep(seconds*1000)
 #endif
 
-#define SHARED_SUFFIX	  ".shared"
+#define SMP_SUFFIX	  ".smp"
 #define HYBRID_SUFFIX	  ".hybrid"
 
 /* The length of the longest memory architecture suffix. */
-#define MA_SUFFIX_LENGTH  strlen(SHARED_SUFFIX)
+#define EMU_TYPE_SUFFIX_LENGTH  strlen(HYBRID_SUFFIX)
 
 /*
  * Define flags for different memory architectures.
  */
-#define MA_SHARED    0x0001
-#define MA_HYBRID    0x0002
+#define EMU_TYPE_SMP		0x0001
+#define EMU_TYPE_HYBRID		0x0002
 
 void usage(const char *switchname);
 void start_epmd(char *epmd);
@@ -177,7 +177,7 @@ static int verbose = 0;		/* If non-zero, print some extra information. */
 static int start_detached = 0;	/* If non-zero, the emulator should be
 				 * started detached (in the background).
 				 */
-static int mem_arch = 0;	/* If non-zero, start beam.ARCH or beam.ARCH.exe
+static int emu_type = 0;	/* If non-zero, start beam.ARCH or beam.ARCH.exe
 				 * instead of beam or beam.exe, where ARCH is defined by flags. */
 
 #ifdef __WIN32__
@@ -208,7 +208,7 @@ static char* home;		/* Path of user's home directory. */
  * except on Windows, where we insert it just before ".EXE".
  */
 static char*
-add_extra_suffixes(char *prog, int memarch)
+add_extra_suffixes(char *prog, int type)
 {
    char *res;
    char *p;
@@ -218,7 +218,7 @@ add_extra_suffixes(char *prog, int memarch)
    int exe = 0;
 #endif
 
-   if (!memarch) {
+   if (!type) {
        return prog;
    }
 
@@ -226,7 +226,7 @@ add_extra_suffixes(char *prog, int memarch)
 
    /* Worst-case allocation */
    p = emalloc(len +
-	       MA_SUFFIX_LENGTH +
+	       EMU_TYPE_SUFFIX_LENGTH +
 	       + 1);
    res = p;
    p = write_str(p, prog);
@@ -244,10 +244,10 @@ add_extra_suffixes(char *prog, int memarch)
    }
 #endif
 
-   if (memarch == MA_SHARED) {
-       p = write_str(p, SHARED_SUFFIX);
+   if (type == EMU_TYPE_SMP) {
+       p = write_str(p, SMP_SUFFIX);
    }
-   else if (memarch == MA_HYBRID) {
+   else if (type == EMU_TYPE_HYBRID) {
        p = write_str(p, HYBRID_SUFFIX);
    }
 #ifdef __WIN32__
@@ -325,11 +325,12 @@ int main(int argc, char **argv)
 	    }
 	}
 	else if (argv[i][0] == '-') {
-	    if (strcmp(argv[i], "-shared") == 0) {
-		mem_arch = MA_SHARED;
-	    }
-	    else if (strcmp(argv[i], "-hybrid") == 0) {
-		mem_arch = MA_HYBRID;
+	    if (strcmp(argv[i], "-smp") == 0) {
+		emu_type = EMU_TYPE_SMP;
+	    } else if (strcmp(argv[i], "-hybrid") == 0) {
+		emu_type = EMU_TYPE_HYBRID;
+	    } else if (strcmp(argv[i], "-extra") == 0) {
+		break;
 	    }
 	}
 	i++;
@@ -340,7 +341,7 @@ int main(int argc, char **argv)
 	    usage("+MYm");
     }
 #if !defined(__WIN32__)
-    emu = add_extra_suffixes(emu, mem_arch);
+    emu = add_extra_suffixes(emu, emu_type);
     sprintf(tmpStr, "%s" DIRSEP "%s" BINARY_EXT, bindir, emu);
     emu = strsave(tmpStr);
 #endif
@@ -363,10 +364,23 @@ int main(int argc, char **argv)
 
     i = 1;
 
+#ifdef __WIN32__
+#define ADD_BOOT_CONFIG					\
+    if (boot_script)					\
+	add_args("-boot", boot_script, NULL);		\
+    if (config_script)					\
+	add_args("-config", config_script, NULL);
+#else
+#define ADD_BOOT_CONFIG
+#endif
+
     get_home();
     add_args("-home", home, NULL);
     while (i < argc) {
-	if (process_args) {
+	if (!process_args) {	/* Copy arguments after '-extra' */
+	    add_arg(argv[i]);
+	    i++;
+	} else {
 	    switch (argv[i][0]) {
 	      case '-':
 		switch (argv[i][1]) {
@@ -432,6 +446,7 @@ int main(int argc, char **argv)
 		  case 'e':
 		    if (strcmp(argv[i], "-extra") == 0) {
 			process_args = 0;
+			ADD_BOOT_CONFIG;
 			add_arg(argv[i]);
 		    } else if (strcmp(argv[i], "-emu_args") == 0) { /* -emu_args */
 			verbose = 1;
@@ -562,6 +577,7 @@ int main(int argc, char **argv)
 		  case 'h':
 		  case 'i':
 		  case 'P':
+		  case 'S':
 		  case 'R':
 		  case 'W':
 		  case 'K':
@@ -635,18 +651,13 @@ int main(int argc, char **argv)
 		add_arg(argv[i]);
 	    } /* switch(argv[i][0] */
 	    i++;
-	} else {
-	    add_arg(argv[i]);
-	    i++;
 	}
     }
 
-#ifdef __WIN32__
-    if (boot_script)
-	add_args("-boot", boot_script, NULL);
-    if (config_script)
-	add_args("-config", config_script, NULL);
-#endif
+    if (process_args) {
+	ADD_BOOT_CONFIG;
+    }
+#undef ADD_BOOT_CONFIG
 
     /* Doesn't conflict with -extra, since -make skips all the rest of
        the arguments. */
@@ -774,7 +785,7 @@ usage(const char *switchname)
 	  "[-make] [-man [manopts] MANPAGE] [-x] [-emu_args] "
 	  "[+A THREADS] [+B[c|d|i]] [+c] [+h HEAP_SIZE] [+K BOOLEAN] "
 	  "[+l] [+M<SUBSWITCH> <ARGUMENT>] [+P MAX_PROCS] [+R COMPAT_REL] "
-	  "[+r] [+V] [+v] [+W<i|w>] [args ...]\n");
+	  "[+r] [+S NO_OF_SCHEDULERS] [+V] [+v] [+W<i|w>] [args ...]\n");
   exit(1);
 }
 
@@ -1274,9 +1285,12 @@ mergeargs(int *argc, char ***argv, char **addargs)
     *argc +=add;
     res = emalloc((*argc + 1) * sizeof(char *));
     rtmp = res;
-    for (tmp = *argv; (*rtmp = *tmp) != NULL; ++tmp, ++rtmp)
+    for (tmp = *argv; (*rtmp = *tmp) != NULL && strcmp(*rtmp, "-extra") != 0;
+	 ++tmp, ++rtmp)
 	;
-    for (tmp = addargs; (*rtmp = *tmp) != NULL; ++tmp, ++rtmp)
+    for ( ; (*rtmp = *addargs) != NULL; ++addargs, ++rtmp)
+	;
+    for ( ; (*rtmp = *tmp) != NULL; ++tmp, ++rtmp)
 	;
     *argv = res;
 }

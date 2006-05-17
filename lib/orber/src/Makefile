@@ -19,16 +19,19 @@ include $(ERL_TOP)/make/target.mk
 
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
+# To get hold of SYSTEM_VSN (e.g. R9C).
+#include $(ERL_TOP)/erts/vsn.mk
+
 # ----------------------------------------------------
 # Application version
 # ----------------------------------------------------
 include ../vsn.mk
-VSN=$(ORBER_VSN)
+
 
 # ----------------------------------------------------
 # Release directory specification
 # ----------------------------------------------------
-RELSYSDIR = $(RELEASE_PATH)/lib/orber-$(VSN)
+RELSYSDIR = $(RELEASE_PATH)/lib/orber-$(ORBER_VSN)
 
 # ----------------------------------------------------
 # Target Specs
@@ -46,7 +49,6 @@ MODULES= \
 	orber_request_number \
 	orber_objectkeys \
 	orber_initial_references \
-	orber_bootstrap \
 	cdrlib \
 	cdr_encode \
 	cdr_decode \
@@ -101,6 +103,13 @@ MODULES= \
 	orber_env \
 	orber_tb
 
+ASN_MODULES = OrberCSIv2
+ASN_SET = $(ASN_MODULES:%=%.set.asn)
+ASN_ASNS = $(ASN_MODULES:%=%.asn1)
+GEN_ASN_ERL = $(ASN_MODULES:%=%.erl)
+GEN_ASN_HRL = $(ASN_MODULES:%=%.hrl)
+GEN_ASN_DBS = $(ASN_MODULES:%=%.asn1db)
+GEN_ASN_TABLES = $(ASN_MODULES:%=%.table)
 
 EXTERNAL_HRL_FILES= ../include/corba.hrl \
 	../include/ifr_types.hrl \
@@ -127,7 +136,8 @@ GEN_ERL_FILES3 =  \
 	oe_OrberIFR.erl \
 	OrberApp_IFR.erl
 
-GEN_ERL_FILES =  $(GEN_ERL_FILES1) $(GEN_ERL_FILES2) $(GEN_ERL_FILES3)
+GEN_ERL_FILES =  $(GEN_ERL_FILES1) $(GEN_ERL_FILES2) \
+	$(GEN_ERL_FILES3) $(GEN_ASN_ERL)
 
 GEN_HRL_FILES1 = \
 	oe_erlang.hrl \
@@ -144,13 +154,15 @@ GEN_HRL_FILES3 = \
 
 GEN_HRL_FILES_EXT = $(GEN_HRL_FILES1)
 
-GEN_HRL_FILES_LOC = $(GEN_HRL_FILES2) $(GEN_HRL_FILES3)
+GEN_HRL_FILES_LOC = $(GEN_HRL_FILES2) $(GEN_HRL_FILES3) $(GEN_ASN_HRL)
 
 
 GEN_FILES = \
 	$(GEN_ERL_FILES) \
 	$(GEN_HRL_FILES_LOC) \
-	$(GEN_HRL_FILES_EXT)
+	$(GEN_HRL_FILES_EXT) \
+	$(GEN_ASN_DBS) \
+	$(GEN_ASN_TABLES)
 
 TARGET_FILES =  \
 	$(GEN_ERL_FILES:%.erl=$(EBIN)/%.$(EMULATOR)) \
@@ -173,7 +185,10 @@ ERL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin
 ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/orber/include \
 	+'{parse_transform,sys_pre_attributes}' \
 	+'{attribute,insert,app_vsn,"orber_$(ORBER_VSN)"}' \
-	-D'ORBVSN="$(VSN)"'
+	-D'ORBVSN="$(ORBER_VSN)"'
+
+ASN_FLAGS = -bber_bin +der +compact_bit_string +optimize \
+	+noobj -I $(ERL_TOP)/lib/ssl/pkix/
 
 # ----------------------------------------------------
 # Targets
@@ -188,10 +203,10 @@ clean:
 	rm -f errs core *~
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
-	sed -e 's;%VSN%;$(VSN);' $< > $@
+	sed -e 's;%VSN%;$(ORBER_VSN);' $< > $@
 
 $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
-	sed -e 's;%VSN%;$(VSN);' $< > $@
+	sed -e 's;%VSN%;$(ORBER_VSN);' $< > $@
 
 docs:
 
@@ -208,6 +223,14 @@ $(GEN_ERL_FILES2) $(GEN_HRL_FILES2): CORBA.idl
 $(GEN_ERL_FILES3) $(GEN_HRL_FILES3): OrberIFR.idl
 	erlc $(ERL_FLAGS) +'{this,"Orber::IFR"}' \
 	OrberIFR.idl
+
+$(GEN_ASN_ERL) $(GEN_ASN_HRL): OrberCSIv2.asn1 OrberCSIv2.set.asn
+	erlc $(ERL_FLAGS) $(ASN_FLAGS) OrberCSIv2.asn1 ;\
+	erlc $(GEN_ASN_ERL) 
+# Use the following when we safely can inline the ASN1 runtime code.
+# Requires igor (part of syntax_tools (introduced in R10B
+#	erlc $(ERL_FLAGS) $(ASN_FLAGS) +'{inline,"OrberCSIv2"}' OrberCSIv2.set.asn ; \
+#	rm -f $(GEN_ASN_ERL:%.erl=%.beam)
 
 # ----------------------------------------------------
 # Release Target

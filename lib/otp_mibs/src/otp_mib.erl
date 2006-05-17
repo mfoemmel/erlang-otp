@@ -68,7 +68,7 @@
 %%-------------------------------------------------------------------------
 load(Agent) ->
     MibDir = code:priv_dir(otp_mibs) ++ "/mibs",
-    snmp:load_mibs(Agent, [MibDir ++ "/OTP-MIB"]).
+    snmpa:load_mibs(Agent, [MibDir ++ "/OTP-MIB"]).
 
 %%-------------------------------------------------------------------------
 %% unload(Agent) ->  ok | {error, Reason}
@@ -77,7 +77,7 @@ load(Agent) ->
 %% Description: Loads the OTP-MIB
 %%-------------------------------------------------------------------------
 unload(Agent) ->
-    snmp:unload_mibs(Agent, ["OTP-MIB"]).
+    snmpa:unload_mibs(Agent, ["OTP-MIB"]).
     
 
 %%%=========================================================================

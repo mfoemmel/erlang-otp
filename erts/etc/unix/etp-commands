@@ -658,9 +658,10 @@ define etp-ct-variable-1
 #
 # Non-reentrant
 # Returns: $etp_ct_variable
-  if ((0101 <= ($arg0)) && (($arg0) <= 0132)) || \
-     (0137 == ($arg0)) || \
-     ((0300 <= ($arg0)) && (($arg0) != 0327) && (($arg0) <= 0336))
+  if ((056 == ($arg0)) || \
+      (0101 <= ($arg0)) && (($arg0) <= 0132)) || \
+      (0137 == ($arg0)) || \
+      ((0300 <= ($arg0)) && (($arg0) != 0327) && (($arg0) <= 0336))
     # Variable start character
     set $etp_ct_variable = 1
   else
@@ -676,7 +677,8 @@ define etp-ct-name-1
 #
 # Non-reentrant
 # Returns: $etp_ct_variable
-  if ($arg0) == 0100
+  if (($arg0) == 0100 || \
+      (060 <= ($arg0)) && (($arg0) <= 071))
     set $etp_ct_name = 1
   else
     etp-ct-atom-1 ($arg0)
@@ -995,12 +997,25 @@ define etp-cp-1
     end
   end
   if $etp_cp_p
+    printf "#Cp"
     etp-mfa-1 ($etp_cp_p) ($etp_cp-((Eterm)($etp_cp_p-2)))
   else
     if $etp_cp == beam_apply+1
-      printf "<terminate process normally>"
+      printf "#Cp<terminate process normally>"
     else
-      printf "#Cp<%#x>", $etp_cp
+      if *(Eterm*)($etp_cp) == beam_return_trace[0]
+        if ($etp_cp) == beam_exception_trace
+	  printf "#Cp<exception trace>"
+        else
+	  printf "#Cp<return trace>"
+	end
+      else
+        if *(Eterm*)($etp_cp) == beam_return_to_trace[0]
+	  printf "#Cp<return to trace>"
+	else
+          printf "#Cp<%#x>", $etp_cp
+	end
+      end
     end
   end
 end
@@ -1120,15 +1135,16 @@ define etp-stacktrace
 #
 # Non-reentrant
 #
-  set $etp_stackdump_p = ($arg0)->stop
-  set $etp_stackdump_end = ($arg0)->hend
-  printf "%% Stacktrace (%u):\n", $etp_stackdump_end-$etp_stackdump_p
-  while $etp_stackdump_p < $etp_stackdump_end
-    if ($etp_stackdump_p[0] & 0x3) == 0x0
+  set $etp_stacktrace_p = ($arg0)->stop
+  set $etp_stacktrace_end = ($arg0)->hend
+  printf "%% Stacktrace (%u): ", $etp_stacktrace_end-$etp_stacktrace_p
+  etp ($arg0)->cp
+  while $etp_stacktrace_p < $etp_stacktrace_end
+    if ($etp_stacktrace_p[0] & 0x3) == 0x0
       # Continuation pointer
-      etp $etp_stackdump_p[0]
-      end
-    set $etp_stackdump_p++
+      etp $etp_stacktrace_p[0]
+    end
+    set $etp_stacktrace_p++
   end
 end
 
@@ -1149,13 +1165,9 @@ define etp-stackdump
 #
   set $etp_stackdump_p = ($arg0)->stop
   set $etp_stackdump_end = ($arg0)->hend
-  printf "%% Stackdump (%u):\n", $etp_stackdump_end-$etp_stackdump_p
+  printf "%% Stackdump (%u): ", $etp_stackdump_end-$etp_stackdump_p
+  etp ($arg0)->cp
   while $etp_stackdump_p < $etp_stackdump_end
-    if ($etp_stackdump_p[0] & 0x3) == 0x0
-      # Continuation pointer
-      printf "\n%%---------------------------------------------------------\
-------------------\n"
-    end
     etp $etp_stackdump_p[0]
     set $etp_stackdump_p++
   end

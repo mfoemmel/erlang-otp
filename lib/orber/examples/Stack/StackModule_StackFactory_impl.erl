@@ -5,10 +5,10 @@
 -export([create_stack/1, destroy_stack/2, init/1, terminate/2]).
 
 
-init(Env) ->
+init(_Env) ->
     {ok, []}.
 
-terminate(From, Reason) ->
+terminate(_From, _Reason) ->
     ok.
 
 create_stack(State)  ->

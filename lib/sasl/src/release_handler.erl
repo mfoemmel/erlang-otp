@@ -383,7 +383,7 @@ upgrade_script(App, NewDir) ->
 				       [Script],[NewAppl],[OldAppl]) of
 	{ok, LowLevelScript} ->
 	    {ok, NewVsn, LowLevelScript};
-	{error, Reason} ->
+	{error, _SystoolsRC, Reason} ->
 	    throw(Reason)
     end.
 
@@ -397,7 +397,7 @@ downgrade_script(App, OldVsn, OldDir) ->
 				       [Script],[OldAppl],[NewAppl]) of
 	{ok, LowLevelScript} ->
 	    {ok, LowLevelScript};
-	{error, Reason} ->
+	{error, _SystoolsRC, Reason} ->
 	    throw(Reason)
     end.
 
@@ -451,7 +451,7 @@ read_app(App, Vsn, Dir) ->
     case systools_make:read_application(AppS, Vsn, Path, []) of
 	{ok, Appl} ->
 	    Appl;
-	{error, enoent} ->
+	{error, {not_found, _AppFile}} ->
 	    throw({no_app_found, Vsn, Dir});
 	{error, Reason} ->
 	    throw(Reason)

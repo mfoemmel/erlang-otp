@@ -22,24 +22,6 @@
 struct proc_bin;
 struct external_thing_;
 
-typedef struct erl_mesg {
-    struct erl_mesg* next;	/* Next message */
-    Eterm m[2];			/* m[0] = message, m[1] = seq trace token */
-} ErlMessage;
-
-#define ERL_MESSAGE_TERM(mp) ((mp)->m[0])
-#define ERL_MESSAGE_TOKEN(mp) ((mp)->m[1])
-
-/* Size of default message buffer (erl_message.c) */
-#define ERL_MESSAGE_BUF_SZ 500
-
-typedef struct {
-    ErlMessage* first;
-    ErlMessage** last;  /* point to the last next pointer */
-    ErlMessage** save;
-    int len;            /* queue length */
-} ErlMessageQueue;
-
 /*
  * This struct represents data that must be updated by structure copy,
  * but is stored outside of any heap.
@@ -47,10 +29,8 @@ typedef struct {
 
 typedef struct erl_off_heap {
     struct proc_bin* mso;	/* List of associated binaries. */
-#ifndef SHARED_HEAP
 #ifndef HYBRID /* FIND ME! */
     struct erl_fun_thing* funs;	/* List of funs. */
-#endif
 #endif
     struct external_thing_* externals; /* List of external things. */
     int overhead;		/* Administrative overhead (used to force GC). */
@@ -69,16 +49,92 @@ struct erl_heap_fragment {
     Eterm mem[1];		/* Data */
 };
 
+#define ERTS_SET_MBUF_HEAP_END(BP, HENDP)				\
+do {									\
+    unsigned real_size__ = (BP)->size;					\
+    ASSERT((BP)->mem <= (HENDP) && (HENDP) <= (BP)->mem + real_size__);	\
+    (BP)->size = (HENDP) - (BP)->mem;					\
+    ERTS_PROC_LESS_MEM(real_size__ - (BP)->size);			\
+    /* We do not reallocate since buffer *might* be moved.	*/	\
+    /* FIXME: Memory count is wrong, but at least it's almost	*/	\
+    /*        right...						*/	\
+} while (0)
+
+typedef struct erl_mesg {
+    struct erl_mesg* next;	/* Next message */
+#ifdef ERTS_SMP
+    ErlHeapFragment *bp;
+#endif
+    Eterm m[2];			/* m[0] = message, m[1] = seq trace token */
+} ErlMessage;
+
+#define ERL_MESSAGE_TERM(mp) ((mp)->m[0])
+#define ERL_MESSAGE_TOKEN(mp) ((mp)->m[1])
+
+/* Size of default message buffer (erl_message.c) */
+#define ERL_MESSAGE_BUF_SZ 500
+
+typedef struct {
+    ErlMessage* first;
+    ErlMessage** last;  /* point to the last next pointer */
+    ErlMessage** save;
+    int len;            /* queue length */
+} ErlMessageQueue;
+
+#ifdef ERTS_SMP
+
+typedef struct {
+    ErlMessage* first;
+    ErlMessage** last;  /* point to the last next pointer */
+    int len;            /* queue length */
+} ErlMessageInQueue;
+
+#endif
+
 /* Get "current" message */
 #define PEEK_MESSAGE(p)  (*(p)->msg.save)
 
-/* Add message last in message queue */
-#define LINK_MESSAGE(p, mp) do { \
+
+/* Add message last in private message queue */
+#define LINK_MESSAGE_PRIVQ(p, mp) do { \
     *(p)->msg.last = (mp); \
     (p)->msg.last = &(mp)->next; \
     (p)->msg.len++; \
     ERTS_PROC_MORE_MEM(sizeof(ErlMessage)); \
 } while(0)
+
+
+#ifdef ERTS_SMP
+
+/* Move in message queue to end of private message queue */
+#define ERTS_SMP_MSGQ_MV_INQ2PRIVQ(P)			\
+do {							\
+    if ((P)->msg_inq.first) {				\
+	*(P)->msg.last = (P)->msg_inq.first;		\
+	(P)->msg.last = (P)->msg_inq.last;		\
+	(P)->msg.len += (P)->msg_inq.len;		\
+	(P)->msg_inq.first = NULL;			\
+	(P)->msg_inq.last = &(P)->msg_inq.first;	\
+	(P)->msg_inq.len = 0;				\
+    }							\
+} while (0)
+
+/* Add message last in message queue */
+#define LINK_MESSAGE(p, mp) do { \
+    *(p)->msg_inq.last = (mp); \
+    (p)->msg_inq.last = &(mp)->next; \
+    (p)->msg_inq.len++; \
+    ERTS_PROC_MORE_MEM(sizeof(ErlMessage)); \
+} while(0)
+
+#else
+
+#define ERTS_SMP_MSGQ_MV_INQ2PRIVQ(P)
+
+/* Add message last in message queue */
+#define LINK_MESSAGE(p, mp) LINK_MESSAGE_PRIVQ((p), (mp))
+
+#endif
 
 /* Unlink current message */
 #define UNLINK_MESSAGE(p,msgp) do { \
@@ -103,12 +159,18 @@ struct process;
 void init_message(void);
 void free_message(ErlMessage *);
 ErlHeapFragment* new_message_buffer(Uint);
+ErlHeapFragment* erts_resize_message_buffer(ErlHeapFragment *, Uint,
+					    Eterm *, Uint);
 void free_message_buffer(ErlHeapFragment *);
-void queue_message_tt(struct process*, ErlHeapFragment*, Eterm, Eterm);
-void deliver_exit_message_tt(Eterm, struct process*, Eterm, Eterm);
-#define deliver_exit_message(a, b, c) deliver_exit_message_tt(a, b, c, NIL)
-void send_message(struct process*, struct process*, Eterm);
+void erts_queue_message(struct process*, Uint32, ErlHeapFragment*, Eterm, Eterm);
+void erts_deliver_exit_message(Eterm, struct process*, Uint32 *, Eterm, Eterm);
+void erts_send_message(struct process*, struct process*, Uint32 *, Eterm);
 
-void deliver_result(Eterm, Eterm, Eterm);
+void deliver_result(struct process*, Eterm, Eterm, Eterm);
+
+#ifdef ERTS_SMP
+void erts_move_msg_mbuf_to_heap(Eterm**, ErlOffHeap*, ErlMessage *);
+void erts_move_msg_mbuf_to_proc_mbufs(struct process*, ErlMessage *);
+#endif
 
 #endif

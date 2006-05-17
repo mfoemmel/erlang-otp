@@ -54,6 +54,9 @@ server_init(Starter, Port, Opts, Fun) ->
 		    server_loop(self(), Listen, Fun)
 	    end;
 	Error ->
+	    error_logger:format(
+	      "Failed to listen on port: ~p opts:~p: rsn:~p~n",
+	      [Port, Opts,Error]),
 	    Starter ! {self(), Error}
     end.
 
@@ -64,6 +67,9 @@ server(Port, Opts, Fun) ->
 	{ok, Listen} ->
 	    server_loop(self(), Listen, Fun);
 	Error ->
+	    error_logger:format(
+	      "Failed to listen on port: ~p opts:~p: rsn:~p~n",
+	      [Port, Opts,Error]),
 	    Error
     end.
 

@@ -636,14 +636,14 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 
 	{gs, _Id, click, help_button, _Args} ->
 	    HelpFile = filename:join([code:lib_dir(tv), "doc", "html", "index.html"]),
-	    tool_utils:open_help(gs:start([{kernel, true}]), HelpFile),
+	    tool_utils:open_help(win, HelpFile),
 	    loop(KindOfTable,CurrNode,MarkedCell,GridLines,WinSize,Tables,Shortcuts,
 		 UnreadHidden,SysTabHidden,SortKey,Children);
 
 
 	{gs, _Id, click, otp_help_button, _Args} ->
 	    IndexFile = filename:join([code:root_dir(), "doc", "index.html"]),
-	    tool_utils:open_help(gs:start([{kernel, true}]), IndexFile),
+	    tool_utils:open_help(win, IndexFile),
 	    loop(KindOfTable,CurrNode,MarkedCell,GridLines,WinSize,Tables,Shortcuts,
 		 UnreadHidden,SysTabHidden,SortKey,Children);
 
@@ -1011,7 +1011,7 @@ handle_keypress(show_info,KindOfTable,CurrNode,MarkedCell,GridLines,
 handle_keypress(help_button,KindOfTable,CurrNode,MarkedCell,GridLines,
 		WinSize,Tables,Shortcuts,UnreadHidden,SysTabHidden,SortKey,Children) ->
     HelpFile = filename:join([code:lib_dir(tv), "doc", "html", "index.html"]),
-    tool_utils:open_help(gs:start([{kernel, true}]), HelpFile),
+    tool_utils:open_help(win, HelpFile),
     loop(KindOfTable,CurrNode,MarkedCell,GridLines,WinSize,Tables,Shortcuts,
 	 UnreadHidden,SysTabHidden,SortKey,Children);
 

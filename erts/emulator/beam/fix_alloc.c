@@ -32,7 +32,18 @@
 #ifdef ERTS_ALC_N_MIN_A_FIXED_SIZE
 
 #if ERTS_ALC_MTA_FIXED_SIZE
-#error Implement thread safety for fix_alloc() ...
+#include "erl_threads.h"
+#include "erl_smp.h"
+#  ifdef ERTS_SMP
+#    define FA_LOCK(FA) erts_smp_spin_lock(&(FA)->slck)
+#    define FA_UNLOCK(FA) erts_smp_spin_unlock(&(FA)->slck)
+#  else
+#    define FA_LOCK(FA) erts_mtx_lock(&(FA)->mtx)
+#    define FA_UNLOCK(FA) erts_mtx_unlock(&(FA)->mtx)
+#  endif
+#else
+#  define FA_LOCK(FA)
+#  define FA_UNLOCK(FA)
 #endif
 
 typedef union {double d; long l;} align_t;
@@ -48,6 +59,13 @@ typedef struct fix_alloc {
     Uint no_free;
     Uint no_blocks;
     FixAllocBlock *blocks;
+#if ERTS_ALC_MTA_FIXED_SIZE
+#  ifdef ERTS_SMP
+    erts_smp_spinlock_t slck;
+#  else
+    erts_mtx_t mtx;
+#  endif
+#endif
 } FixAlloc;
 
 static void *(*core_alloc)(Uint); 
@@ -61,7 +79,7 @@ static FixAlloc **fa;
 #define FIX_POOL_SZ(I_SZ) \
   ((I_SZ)*NOPERBLOCK + sizeof(FixAllocBlock) - sizeof(align_t))
 
-#ifdef DEBUG
+#if defined(DEBUG) && !ERTS_ALC_MTA_FIXED_SIZE
 static int first_time;
 #endif
 
@@ -79,7 +97,7 @@ void erts_init_fix_alloc(Uint extra_block_size,
 
     for (i = 0; i < FA_SZ; i++)
 	fa[i] = NULL;
-#ifdef DEBUG
+#if defined(DEBUG) && !ERTS_ALC_MTA_FIXED_SIZE
     first_time = 1;
 #endif
 }
@@ -121,6 +139,15 @@ erts_set_fix_size(ErtsAlcType_t type, Uint size)
     if (fa[i])
 	erl_exit(-1, "Attempt to overwrite existing fix size (%d)", i);
     fa[i] = fs;
+
+#if ERTS_ALC_MTA_FIXED_SIZE
+#ifdef ERTS_SMP
+    erts_smp_spinlock_init_x(&fs->slck, "fix_alloc", make_small(i));
+#else
+    erts_mtx_init_x(&fs->mtx, "fix_alloc", make_small(i));
+#endif
+#endif
+
 }
 
 void
@@ -148,6 +175,8 @@ erts_fix_info(ErtsAlcType_t type, ErtsFixInfo *efip)
 
     real_item_size = f->item_size - xblk_sz;
 
+    FA_LOCK(f);
+
     efip->total += sizeof(FixAlloc);
     efip->total += f->no_blocks*FIX_POOL_SZ(real_item_size);
     efip->used = efip->total - f->no_free*real_item_size;
@@ -159,6 +188,8 @@ erts_fix_info(ErtsAlcType_t type, ErtsFixInfo *efip)
     for (i = 0, fp = f->freelist; fp; i++, fp = *((void **) fp));
     ASSERT(f->no_free == i);
 #endif
+
+    FA_UNLOCK(f);
 
 }
 
@@ -174,9 +205,11 @@ erts_fix_free(ErtsAlcType_t t_no, void *extra, void* ptr)
     i = FIX_IX(t_no);
     f = fa[i];
 
+    FA_LOCK(f);
     *((void **) ptr) = f->freelist;
     f->freelist = ptr;
     f->no_free++;
+    FA_UNLOCK(f);
 }
 
 
@@ -192,7 +225,7 @@ void *erts_fix_alloc(ErtsAlcType_t t_no, void *extra, Uint size)
     int i;
     FixAlloc *f;
 
-#ifdef DEBUG
+#if defined(DEBUG) && !ERTS_ALC_MTA_FIXED_SIZE
     ASSERT(ERTS_ALC_N_MIN_A_FIXED_SIZE <= t_no);
     ASSERT(t_no <= ERTS_ALC_N_MAX_A_FIXED_SIZE);
     if (first_time) { /* Check that all sizes have been initialized */
@@ -210,15 +243,19 @@ void *erts_fix_alloc(ErtsAlcType_t t_no, void *extra, Uint size)
     ASSERT(f);
     ASSERT(f->item_size >= size);
 
+    FA_LOCK(f);
     if (f->freelist == NULL) {  /* Gotta alloc some more mem */
 	char *ptr;
 	FixAllocBlock *bl;
 	Uint n;
 
+
+	FA_UNLOCK(f);
 	bl = (*core_alloc)(FIX_POOL_SZ(f->item_size));
 	if (!bl)
 	    return NULL;
 
+	FA_LOCK(f);
 	bl->next = f->blocks;  /* link in first */
 	f->blocks = bl;
 
@@ -229,8 +266,10 @@ void *erts_fix_alloc(ErtsAlcType_t t_no, void *extra, Uint size)
 	    f->freelist = (void *) ptr;
 	    ptr += f->item_size;
 	}
+#if !ERTS_ALC_MTA_FIXED_SIZE 
 	ASSERT(f->no_free == 0);
-	f->no_free = NOPERBLOCK;
+#endif
+	f->no_free += NOPERBLOCK;
 	f->no_blocks++;
     }
 
@@ -238,6 +277,8 @@ void *erts_fix_alloc(ErtsAlcType_t t_no, void *extra, Uint size)
     f->freelist = *((void **) f->freelist);
     ASSERT(f->no_free > 0);
     f->no_free--;
+
+    FA_UNLOCK(f);
 
     return ret;
 }

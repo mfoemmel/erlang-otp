@@ -18,7 +18,27 @@
 
 -module(gstk).
 
--compile(export_all).
+-export([start_link/4,
+	 stop/1,
+	 create/2,
+	 config/2,
+	 read/2,
+	 destroy/2,
+	 pid_died/2,
+	 event/2,
+	 request/2,
+	 init/1,
+	 create_impl/2,
+	 config_impl/3,
+	 read_impl/3,
+	 destroy_impl/2,
+	 worker_init/1,
+	 worker_do/1,
+	 make_extern_id/2,
+	 to_color/1,
+	 to_ascii/1,
+	 exec/1,
+	 call/1]).
 
 -include("gstk.hrl").
 
@@ -35,7 +55,7 @@ start_link(GsId,FrontendNode,Owner,Options) ->
 	{value, Node} ->
 	    rpc:call(Node,gen_server,start_link,[gstk, {Owner,Options},[]])
     end.
-	    
+
 stop(BackendServ) -> 
     request(BackendServ,stop).
 
@@ -109,17 +129,9 @@ init({GsId,FrontendNode,Owner,Opts}) ->
 loop(State) ->
     receive
 	X ->
-%	    io:format("GS backend. received: ~p~n",[X]),
 	    case (doit(X,State)) of
 		done -> loop(State);
-		 NewState when record(NewState,state) ->
-		    loop(NewState);
-		stop -> bye;
-		EXIT ->
-		    gs:error("GS backend. Last msg in: ~p~n",[X]),
-		    io:format("db:~p~nexit:~p",
-			      [ets:tab2list(State#state.db),EXIT]),
-		    exit(EXIT)
+		stop -> bye
 	    end
     end.
 
@@ -206,7 +218,7 @@ config_impl(DB,Id,Opts) ->
 	{error,Reason} -> {error,Reason};
 	Q -> {error,Q}
     end.
-    
+
 
 read_impl(DB,Id,Opt) ->
     Gstkid = gstk_db:lookup_gstkid(DB, Id), 
@@ -317,7 +329,7 @@ dec2hex(M,N,Ack) -> dec2hex(M-1,N bsr 4,[d2h(N band 15)|Ack]).
 d2h(N) when N<10 -> N+$0;
 d2h(N) -> N+$a-10.
 
-		
+
 %% ----- Value to String -----
 
 to_ascii(V) when list(V)    -> [$",to_ascii(V,[],[]),$"];  %% it's a string
@@ -327,13 +339,13 @@ to_ascii(V) when atom(V)    -> to_ascii( atom_to_list(V));
 to_ascii(V) when tuple(V)   -> to_ascii(lists:flatten(io_lib:format("~w",[V])));
 to_ascii(V) when pid(V)     -> pid_to_list(V).
 
-% FIXME: Currently we accept newlines in strings and handle this at
-% the Tcl side. Is this the best way or should we translate to "\n"
-% here?
+						% FIXME: Currently we accept newlines in strings and handle this at
+						% the Tcl side. Is this the best way or should we translate to "\n"
+						% here?
 to_ascii([$[|R], Y, X) ->  to_ascii(R, Y, [$[, $\\ | X]);
-to_ascii([$]|R], Y, X) ->  to_ascii(R, Y, [$], $\\ | X]);
+				    to_ascii([$]|R], Y, X) ->  to_ascii(R, Y, [$], $\\ | X]);
 to_ascii([${|R], Y, X) ->  to_ascii(R, Y, [${, $\\ | X]);
-to_ascii([$}|R], Y, X) ->  to_ascii(R, Y, [$}, $\\ | X]);
+				    to_ascii([$}|R], Y, X) ->  to_ascii(R, Y, [$}, $\\ | X]);
 to_ascii([$"|R], Y, X) ->  to_ascii(R, Y, [$", $\\ | X]);
 to_ascii([$$|R], Y, X) ->  to_ascii(R, Y, [$$, $\\ | X]);
 to_ascii([$\\|R], Y, X) ->  to_ascii(R, Y, [$\\, $\\ | X]);

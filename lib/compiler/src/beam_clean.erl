@@ -20,6 +20,7 @@
 -module(beam_clean).
 
 -export([module/2]).
+-export([bs_clean_saves/1]).
 -import(lists, [member/2,map/2,foldl/3,mapfoldl/3,reverse/1]).
 
 module({Mod,Exp,Attr,Fs0,_}, _Opt) ->
@@ -29,8 +30,14 @@ module({Mod,Exp,Attr,Fs0,_}, _Opt) ->
     {WorkList,Used0} = exp_to_labels(Fs0, gb_sets:from_list(Exp)),
     Used = find_all_used(WorkList, All, Used0),
     Fs1 = remove_unused(Order, Used, All),
-    {Fs,Lc} = clean_labels(Fs1),
+    {Fs2,Lc} = clean_labels(Fs1),
+    Fs = bs_fix(Fs2),
     {ok,{Mod,Exp,Attr,Fs,Lc}}.
+
+%% Remove all bs_save2/2 instructions not referenced by a bs_restore2/2.
+bs_clean_saves(Is) ->
+    Needed = bs_restores(Is, []),
+    bs_clean_saves_1(Is, gb_sets:from_list(Needed), []).
 
 %% Convert the export list ({Name,Arity} pairs) to a list of entry labels.
 
@@ -85,7 +92,7 @@ add_to_work_list(F, {Fs,Used}=Sets) ->
 %%% Coalesce adjacent labels. Renumber all labels to eliminate gaps.
 %%% This cleanup will slightly reduce file size and slightly speed up loading.
 %%%
-%%% We also expand internal_is_record/3 to a sequence of instructions. It is done
+%%% We also expand is_record/3 to a sequence of instructions. It is done
 %%% here merely because this module will always be called even if optimization
 %%% is turned off. We don't want to do the expansion in beam_asm because we
 %%% want to see the expanded code in a .S file.
@@ -108,34 +115,41 @@ function_renumber([{function,Name,Arity,_Entry,Asm0}|Fs], St0, Acc) ->
     function_renumber(Fs, St, [{function,Name,Arity,St#st.entry,Asm}|Acc]);
 function_renumber([], St, Acc) -> {Acc,St}.
 
-renumber_labels([{bif,internal_is_record,{f,_},
-		  [Term,Tag,{integer,Arity}],Dst}|Is], Acc, St) ->
+renumber_labels([{bif,is_record,{f,_},
+		  [Term,Tag,{integer,Arity}],Dst}|Is0], Acc, St) ->
     ContLabel = 900000000+2*St#st.lc,
     FailLabel = ContLabel+1,
     Fail = {f,FailLabel},
     Tmp = Dst,
-    renumber_labels([{test,is_tuple,Fail,[Term]},
-		     {test,test_arity,Fail,[Term,Arity]},
-		     {get_tuple_element,Term,0,Tmp},
-		     {test,is_eq_exact,Fail,[Tmp,Tag]},
-		     {move,{atom,true},Dst},
-		     {jump,{f,ContLabel}},
-		     {label,FailLabel},
-		     {move,{atom,false},Dst},
-		     {jump,{f,ContLabel}},	%Improves optimization by beam_dead.
-		     {label,ContLabel}|Is], Acc, St);
-renumber_labels([{test,internal_is_record,{f,_}=Fail,
-		  [Term,Tag,{integer,Arity}]}|Is], Acc, St) ->
+    Is = case is_literal(Term) of
+	     true ->
+		 [{move,{atom,false},Dst}|Is0];
+	     false ->
+		 [{test,is_tuple,Fail,[Term]},
+		  {test,test_arity,Fail,[Term,Arity]},
+		  {get_tuple_element,Term,0,Tmp},
+		  {test,is_eq_exact,Fail,[Tmp,Tag]},
+		  {move,{atom,true},Dst},
+		  {jump,{f,ContLabel}},
+		  {label,FailLabel},
+		  {move,{atom,false},Dst},
+		  {jump,{f,ContLabel}},	%Improves optimization by beam_dead.
+		  {label,ContLabel}|Is0]
+	 end,
+    renumber_labels(Is, Acc, St);
+renumber_labels([{test,is_record,{f,_}=Fail,
+		  [Term,Tag,{integer,Arity}]}|Is0], Acc, St) ->
     Tmp = {x,1023},
-    case Term of
-	{Reg,_} when Reg == x; Reg == y ->
-	    renumber_labels([{test,is_tuple,Fail,[Term]},
-			     {test,test_arity,Fail,[Term,Arity]},
-			     {get_tuple_element,Term,0,Tmp},
-			     {test,is_eq_exact,Fail,[Tmp,Tag]}|Is], Acc, St);
-	_ ->
-	    renumber_labels([{jump,Fail}|Is], Acc, St)
-    end;
+    Is = case is_literal(Term) of
+	     true ->
+		 [{jump,Fail}|Is0];
+	     false ->
+		 [{test,is_tuple,Fail,[Term]},
+		  {test,test_arity,Fail,[Term,Arity]},
+		  {get_tuple_element,Term,0,Tmp},
+		  {test,is_eq_exact,Fail,[Tmp,Tag]}|Is0]
+	 end,
+    renumber_labels(Is, Acc, St);
 renumber_labels([{label,Old}|Is], [{label,New}|_]=Acc, #st{lmap=D0}=St) ->
     D = [{Old,New}|D0],
     renumber_labels(Is, Acc, St#st{lmap=D});
@@ -148,6 +162,10 @@ renumber_labels([{func_info,_,_,_}=Fi|Is], Acc, St0) ->
 renumber_labels([I|Is], Acc, St0) ->
     renumber_labels(Is, [I|Acc], St0);
 renumber_labels([], Acc, St) -> {Acc,St}.
+
+is_literal({x,_}) -> false;
+is_literal({y,_}) -> false;
+is_literal(_) -> true.
 
 function_replace([{function,Name,Arity,Entry,Asm0}|Fs], Dict, Acc) ->
     Asm = try
@@ -195,6 +213,8 @@ replace([{wait_timeout,{f,Lbl},To}|Is], Acc, D) ->
     replace(Is, [{wait_timeout,{f,label(Lbl, D)},To}|Acc], D);
 replace([{bif,Name,{f,Lbl},As,R}|Is], Acc, D) when Lbl =/= 0 ->
     replace(Is, [{bif,Name,{f,label(Lbl, D)},As,R}|Acc], D);
+replace([{gc_bif,Name,{f,Lbl},Live,As,R}|Is], Acc, D) when Lbl =/= 0 ->
+    replace(Is, [{gc_bif,Name,{f,label(Lbl, D)},Live,As,R}|Acc], D);
 replace([{call,Ar,{f,Lbl}}|Is], Acc, D) ->
     replace(Is, [{call,Ar,{f,label(Lbl,D)}}|Acc], D);
 replace([{call_last,Ar,{f,Lbl},N}|Is], Acc, D) ->
@@ -234,3 +254,83 @@ redundant_values([_,{f,Fail}|Vls], Fail, Acc) ->
 redundant_values([Val,Lbl|Vls], Fail, Acc) ->
     redundant_values(Vls, Fail, [Lbl,Val|Acc]);
 redundant_values([], _, Acc) -> reverse(Acc).
+
+%%%
+%%% Final fixup of bs_start_match2/5,bs_save2/bs_restore2 instructions for
+%%% new bit syntax matching (introduced in R11B).
+%%%
+%%% Pass 1: Scan the code, looking for bs_restore2/2 instructions.
+%%%
+%%% Pass 2: Update bs_save2/2 and bs_restore/2 instructions. Remove
+%%% any bs_save2/2 instruction whose save position are never referenced
+%%% by any bs_restore2/2 instruction.
+%%%
+%%% Note this module can be invoked several times, so we must be careful
+%%% not to touch instructions that have already been fixed up.
+%%%
+
+bs_fix(Fs) ->
+    bs_fix(Fs, []).
+
+bs_fix([{function,Name,Arity,Entry,Asm0}|Fs], Acc) ->
+    Asm = bs_function(Asm0),
+    bs_fix(Fs, [{function,Name,Arity,Entry,Asm}|Acc]);
+bs_fix([], Acc) -> reverse(Acc).
+
+bs_function(Is) ->
+    Dict0 = bs_restores(Is, []),
+    S0 = sofs:relation(Dict0, [{context,save_point}]),
+    S1 = sofs:relation_to_family(S0),
+    S = sofs:to_external(S1),
+    Dict = make_save_point_dict(S, []),
+    bs_replace(Is, Dict, []).
+
+make_save_point_dict([{Ctx,Pts}|T], Acc0) ->
+    Acc = make_save_point_dict_1(Pts, Ctx, 0, Acc0),
+    make_save_point_dict(T, Acc);
+make_save_point_dict([], Acc) ->
+    gb_trees:from_orddict(ordsets:from_list(Acc)).
+
+make_save_point_dict_1([H|T], Ctx, I, Acc) ->
+    make_save_point_dict_1(T, Ctx, I+1, [{{Ctx,H},I}|Acc]);
+make_save_point_dict_1([], Ctx, I, Acc) ->
+    [{Ctx,I}|Acc].
+
+%% Pass 1.
+bs_restores([{bs_restore2,_,{_,_}=SavePoint}|Is], Dict) ->
+    bs_restores(Is, [SavePoint|Dict]);
+bs_restores([_|Is], Dict) ->
+    bs_restores(Is, Dict);
+bs_restores([], Dict) -> Dict.
+    
+%% Pass 2.
+bs_replace([{test,bs_start_match2,F,[Src,Live,Ctx,CtxR]}|T], Dict, Acc) when is_atom(Ctx) ->
+    Slots = case gb_trees:lookup(Ctx, Dict) of
+		{value,Slots0} -> Slots0;
+		none -> 0
+	    end,
+    I = {test,bs_start_match2,F,[Src,Live,Slots,CtxR]},
+    bs_replace(T, Dict, [I|Acc]);
+bs_replace([{bs_save2,CtxR,{_,_}=SavePoint}|T], Dict, Acc) ->
+    case gb_trees:lookup(SavePoint, Dict) of
+	{value,N} ->
+	    bs_replace(T, Dict, [{bs_save2,CtxR,N}|Acc]);
+	none ->
+	    bs_replace(T, Dict, Acc)
+    end;
+bs_replace([{bs_restore2,CtxR,{_,_}=SavePoint}|T], Dict, Acc) ->
+    N = gb_trees:get(SavePoint, Dict),
+    bs_replace(T, Dict, [{bs_restore2,CtxR,N}|Acc]);
+bs_replace([I|Is], Dict, Acc) ->
+    bs_replace(Is, Dict, [I|Acc]);
+bs_replace([], _, Acc) -> reverse(Acc).
+
+bs_clean_saves_1([{bs_save2,_,{_,_}=SavePoint}=I|Is], Needed, Acc) ->
+    case gb_sets:is_member(SavePoint, Needed) of
+	false -> bs_clean_saves_1(Is, Needed, Acc);
+	true -> bs_clean_saves_1(Is, Needed, [I|Acc])
+    end;
+bs_clean_saves_1([I|Is], Needed, Acc) ->
+    bs_clean_saves_1(Is, Needed, [I|Acc]);
+bs_clean_saves_1([], _, Acc) -> reverse(Acc).
+	    

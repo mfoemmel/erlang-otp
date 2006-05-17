@@ -69,11 +69,6 @@
  *
  */
 
-
-
-extern int dist_buf_size;
-extern byte *dist_buf;
-
 static byte* enc_term(DistEntry*, Eterm, byte*, Uint32);
 static byte* enc_atom(DistEntry*, Eterm, byte*);
 static byte* enc_pid(DistEntry*, Eterm, byte*);
@@ -448,39 +443,11 @@ dec_pid(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* objp
 	etp->node = node;
 	etp->data[0] = data;
 
-	node->refc++;
 	off_heap->externals = etp;
 	*objp = make_external_pid(etp);
     }
     return ep;
 }
-
-
-/* This function is written in this strange way because in dist.c
-   we call it twice for some messages, First we insert a control message 
-   in the buffer , and then we insert the actual message in the buffer
-   immediataly following the control message. If the real (2) message
-   makes the buffer owerflow, we must not destroy the work we have already
-   done, i.e we must not forget to copy the encoding of the 
-   control message as well, (If there is one)
-   
-   The buffer dist_buf initially points to tmp_buf, So if we write
-   an application where the encoding of all distributed messages are <
-   TMP_BUF_SIZE, all remote messages will be encoded into tmp_buf,
-   and no additional buffer allocation is necessary.
-   However, once a message does not fit into tmp_buf we 
-   allocate a larger buffer and set dist_buf to point to that buffer.
-   We never go back to tmp_buf situation again.
-
-   We don't have the energy to describe the external format in words here.
-   The code explains itself :-). However, All external encodings
-   are predeeded with the special character VERSION_MAGIC, which makes
-   it possible do distinguish encodings from incompatible erlang systems.
-   Every time the external format is changed, This VERSION_MAGIC shall be 
-   incremented.
-
-*/
-
 
 
 static byte*
@@ -763,46 +730,72 @@ enc_term(DistEntry *dep, Eterm obj, byte* ep, Uint32 dflags)
     return NULL;
 }
 
+/* This function is written in this strange way because in dist.c
+   we call it twice for some messages, First we insert a control message 
+   in the buffer , and then we insert the actual message in the buffer
+   immediataly following the control message. If the real (2) message
+   makes the buffer owerflow, we must not destroy the work we have already
+   done, i.e we must not forget to copy the encoding of the 
+   control message as well, (If there is one)
+   
+   If the caller of erts_to_external_format() passes a pointer to a
+   DistEntry, it also has to pass pointers to the buffer pointer and
+   the buffer size of the buffer to encode in. The buffer has to be
+   allocated with the ERTS_ALC_T_TMP_DIST_BUF type. The caller is
+   responsible for deallocating the buffer. If the buffer is to small,
+   erts_to_external_format() will reallocate it. Ugly, but it works...
+
+   We don't have the energy to describe the external format in words here.
+   The code explains itself :-). However, All external encodings
+   are predeeded with the special character VERSION_MAGIC, which makes
+   it possible do distinguish encodings from incompatible erlang systems.
+   Every time the external format is changed, This VERSION_MAGIC shall be 
+   incremented.
+
+*/
+
 int
-erts_to_external_format(DistEntry *dep, Eterm obj, byte **ext)
+erts_to_external_format(DistEntry *dep, Eterm obj, byte **ext,
+			byte **bufpp, Uint *bufszp)
 {
-    byte* ptr = *ext;
-    byte* dist_end = dist_buf + dist_buf_size;
+    byte* ptr;
     unsigned dflags;
 
-    if (dep) {
-	dflags = dep->flags;
-    } else {
+    ASSERT(ext);
+    ptr = *ext;
+    ASSERT(ptr);
+
+    if (!dep)
 	dflags = TERM_TO_BINARY_DFLAGS;
-    }
+    else {
+	Uint free_size;
+	Uint size;
 
-    /* check if we are using dist_buf !! */
-    if (dep && (ptr >= dist_buf) && (ptr < dist_end)) {
-	int size = 50 + encode_size_struct(obj, dflags);
+	dflags = dep->flags;
 
-	/* check if distbuf must grow */
-	if ((ptr + size) > dist_end) {
-	    int len = ptr - dist_buf;
-	    char* buf;
-	    
-	    size += (1000 + len);
-	    buf = (byte*) erts_alloc(ERTS_ALC_T_DIST_BUF,
-				     20+size); /* REMOVE THIS SLOPPY !!! */
-	    
-	    /* We need to restore the old contetnts of dist_buf
-	       before we can proceed */
-	    sys_memcpy(buf,dist_buf,len);
-	    if (dist_buf != tmp_buf)
-		erts_free(ERTS_ALC_T_DIST_BUF, (void *) dist_buf);
-	    dist_buf_size = size;
-	    dist_buf = buf;
-	    ptr =  dist_buf + len;
-	    *ext = ptr;
+	ASSERT(bufpp && bufszp);
+	ASSERT(*bufpp && *bufszp && *bufpp <= ptr && ptr < *bufpp + *bufszp);
+
+	free_size = *bufszp - (ptr - *bufpp); 
+	size = 50 /* ??? */ + encode_size_struct(obj, dflags);
+
+	if (size > free_size) {
+	    byte *bufp;
+
+	    *bufszp += size - free_size;
+	    bufp = erts_realloc(ERTS_ALC_T_TMP_DIST_BUF, *bufpp, *bufszp);
+
+	    if (bufp != *bufpp) {
+		ptr = *ext = bufp + (ptr - *bufpp);
+		*bufpp = bufp;
+	    }
 	}
     }
+
     *ptr++ = VERSION_MAGIC;
     if ((ptr = enc_term(dep, obj, ptr, dflags)) == NULL)
-	erl_exit(1, "Internal data structure error (in to_external)\n");
+	erl_exit(1, "Internal data structure error "
+		 "(in erts_to_external_format())\n");
     *ext = ptr;
     return 0;
 }
@@ -822,27 +815,29 @@ erts_from_external_format(DistEntry *dep,
     byte* ep = *ext;
 
     if (*ep++ != VERSION_MAGIC) {
-	cerr_pos = 0;
+	erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
 	if (dep)
-	    erl_printf(CBUF,
-		       "** Got message from noncompatible erlang on channel %d\n",
-		       dist_entry_channel_no(dep));
+	    erts_dsprintf(dsbufp,
+			  "** Got message from noncompatible erlang on "
+			  "channel %d\n",
+			  dist_entry_channel_no(dep));
 	else 
-	    erl_printf(CBUF,
-		       "** Attempt to convert old non compatible binary %d\n",
-		       *ep);
-	send_error_to_logger(NIL);
+	    erts_dsprintf(dsbufp,
+			  "** Attempt to convert old non compatible "
+			  "binary %d\n",
+			  *ep);
+	erts_send_error_to_logger_nogl(dsbufp);
 	return THE_NON_VALUE;
     }
     if ((ep = dec_term(dep, hpp, ep, off_heap, &obj)) == NULL) {
 	if (dep) {	/* Don't print this for binary_to_term */
-	    cerr_pos = 0;
-	    erl_printf(CBUF,"Got corrupted message on channel %d\n",
-		       dist_entry_channel_no(dep));
-	    send_error_to_logger(NIL);
+	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+	    erts_dsprintf(dsbufp, "Got corrupted message on channel %d\n",
+			  dist_entry_channel_no(dep));
+	    erts_send_error_to_logger_nogl(dsbufp);
 	}
 #ifdef DEBUG
-	bin_write(CERR,*ext,500);
+	bin_write(ERTS_PRINT_STDERR,NULL,*ext,500);
 #endif
 	return THE_NON_VALUE;
     }
@@ -934,17 +929,11 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 	    ep = dec_hashed_atom(dep, ep, objp);
 	    break;
 	case ATOM_EXT:
-	    {
-		Atom a;
-		
-		n = get_int16(ep);
-		ep += 2;
-		a.len = n;
-		a.name = ep;
-		ep += n;
-		*objp = make_atom(index_put(&atom_table, (void*) &a));
-		break;
-	    }
+	    n = get_int16(ep);
+	    ep += 2;
+	    *objp = am_atom_put((char*)ep, n);
+	    ep += n;
+	    break;
 	case LARGE_TUPLE_EXT:
 	    n = get_int32(ep);
 	    ep += 4;
@@ -1039,7 +1028,7 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		node = erts_find_or_insert_node(sysname, cre);
 
 		if(node == erts_this_node) {
-		  *objp = make_internal_port(num);
+		    *objp = make_internal_port(num);
 		}
 		else {
 		    ExternalThing *etp = (ExternalThing *) hp;
@@ -1050,7 +1039,6 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		    etp->node = node;
 		    etp->data[0] = num;
 
-		    node->refc++;
 		    off_heap->externals = etp;
 		    *objp = make_external_port(etp);
 		}
@@ -1126,7 +1114,6 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		    etp->next = off_heap->externals;
 		    etp->node = node;
 
-		    node->refc++;
 		    off_heap->externals = etp;
 		    *objp = make_external_ref(etp);
 		}
@@ -1167,7 +1154,7 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		    ProcBin* pb;
 		    dbin->flags = 0;
 		    dbin->orig_size = n;
-		    dbin->refc = 1;
+		    erts_refc_init(&dbin->refc, 1);
 		    sys_memcpy(dbin->orig_bytes, ep, n);
 		    pb = (ProcBin *) hp;
 		    hp += PROC_BIN_SIZE;
@@ -1176,7 +1163,7 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		    pb->next = off_heap->mso;
 		    off_heap->mso = pb;
 		    pb->val = dbin;
-		    pb->bytes = dbin->orig_bytes;
+		    pb->bytes = (byte*) dbin->orig_bytes;
 		    *objp = make_binary(pb);
 		}
 		ep += n;
@@ -1256,7 +1243,6 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		}
 		old_uniq = unsigned_val(temp);
 
-#ifndef SHARED_HEAP
 #ifndef HYBRID /* FIND ME! */
 		/*
 		 * It is safe to link the fun into the fun list only when
@@ -1264,7 +1250,6 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		 */
 		funp->next = off_heap->funs;
 		off_heap->funs = funp;
-#endif
 #endif
 
 		funp->fe = erts_put_fun_entry(module, old_uniq, old_index);
@@ -1342,7 +1327,6 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		    return NULL;
 		}
 		
-#ifndef SHARED_HEAP
 #ifndef HYBRID /* FIND ME! */
 		/*
 		 * It is safe to link the fun into the fun list only when
@@ -1350,7 +1334,6 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		 */
 		funp->next = off_heap->funs;
 		off_heap->funs = funp;
-#endif
 #endif
 
 		old_uniq = unsigned_val(temp);

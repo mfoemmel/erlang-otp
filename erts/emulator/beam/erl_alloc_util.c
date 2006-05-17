@@ -39,11 +39,14 @@
 #endif
 
 #include "global.h"
+#include "big.h"
+#include "erl_mtrace.h"
 #define GET_ERL_ALLOC_UTIL_IMPL
 #include "erl_alloc_util.h"
 #include "erl_mseg.h"
+#include "erl_threads.h"
 
-#ifdef ERTS_ALLOC_UTIL_HARD_DEBUG
+#if defined(ERTS_ALLOC_UTIL_HARD_DEBUG) && defined(__GNUC__)
 #warning "* * * * * * * * * *"
 #warning "* * * * * * * * * *"
 #warning "* * NOTE:       * *"
@@ -99,35 +102,6 @@ static Uint mseg_unit_size;
 #define DEC_CC(CC) ((CC).no == 0					\
 		    ? ((CC).giga_no--, (CC).no = ONE_GIGA - 1)		\
 		    : (CC).no--)
-
-/* mseg ... */
-
-#if HAVE_ERTS_MSEG
-
-#define MSEG_ALLOC(A, SP)						\
-  (INC_CC((A)->calls.mseg_alloc),					\
-   erts_mseg_alloc_opt((SP), &(A)->mseg_opt))
-
-#define MSEG_DEALLOC(A, C, S)						\
-  (INC_CC((A)->calls.mseg_dealloc),					\
-   erts_mseg_dealloc_opt((void *) (C), (S), &(A)->mseg_opt))
-
-#define MSEG_REALLOC(A, C, OS, SP)					\
-  (INC_CC((A)->calls.mseg_realloc),					\
-   erts_mseg_realloc_opt((void *) (C), (OS), (SP), &(A)->mseg_opt))
-
-#endif
-
-#undef  SYS_ALLOC
-#undef  SYS_REALLOC
-#undef  SYS_FREE
-
-#define SYS_ALLOC(A,S)		(INC_CC((A)->calls.sys_alloc),		\
-				 erts_sys_alloc(0, NULL, (S)))
-#define SYS_REALLOC(A,P,S)	(INC_CC((A)->calls.sys_realloc),	\
-				 erts_sys_realloc(0, NULL, (P), (S)))
-#define SYS_FREE(A,P)		(INC_CC((A)->calls.sys_free),		\
-				 erts_sys_free(0, NULL, (P)))
 
 /* ... */
 
@@ -446,6 +420,79 @@ do {									\
 #define DEBUG_CHECK_ALIGNMENT(P)
 #endif
 
+static void make_name_atoms(Allctr_t *allctr);
+
+
+/* mseg ... */
+
+#if HAVE_ERTS_MSEG
+
+static ERTS_INLINE void *
+alcu_mseg_alloc(Allctr_t *allctr, Uint *size_p)
+{
+    void *res;
+
+    res = erts_mseg_alloc_opt(allctr->alloc_no, size_p, &allctr->mseg_opt);
+    INC_CC(allctr->calls.mseg_alloc);
+    return res;
+}
+
+static ERTS_INLINE void *
+alcu_mseg_realloc(Allctr_t *allctr, void *seg, Uint old_size, Uint *new_size_p)
+{
+    void *res;
+
+    res = erts_mseg_realloc_opt(allctr->alloc_no, seg, old_size, new_size_p,
+				&allctr->mseg_opt);
+    INC_CC(allctr->calls.mseg_realloc);
+    return res;
+}
+
+static ERTS_INLINE void
+alcu_mseg_dealloc(Allctr_t *allctr, void *seg, Uint size)
+{
+    erts_mseg_dealloc_opt(allctr->alloc_no, seg, size, &allctr->mseg_opt);
+    INC_CC(allctr->calls.mseg_dealloc);
+}
+
+#endif
+
+static ERTS_INLINE void *
+alcu_sys_alloc(Allctr_t *allctr, Uint size)
+{
+    void *res;
+
+    res = erts_sys_alloc(0, NULL, size);
+    INC_CC(allctr->calls.sys_alloc);
+    if (erts_mtrace_enabled)
+	erts_mtrace_crr_alloc(res, allctr->alloc_no, ERTS_ALC_A_SYSTEM, size);
+    return res;
+}
+
+static ERTS_INLINE void *
+alcu_sys_realloc(Allctr_t *allctr, void *ptr, Uint size)
+{
+    void *res;
+
+    res = erts_sys_realloc(0, NULL, ptr, size);
+    INC_CC(allctr->calls.sys_realloc);
+    if (erts_mtrace_enabled)
+	erts_mtrace_crr_realloc(res,
+				allctr->alloc_no,
+				ERTS_ALC_A_SYSTEM,
+				ptr,
+				size);
+    return res;
+}
+
+static ERTS_INLINE void
+alcu_sys_free(Allctr_t *allctr, void *ptr)
+{
+    erts_sys_free(0, NULL, ptr);
+    INC_CC(allctr->calls.sys_free);
+    if (erts_mtrace_enabled)
+	erts_mtrace_crr_free(allctr->alloc_no, ERTS_ALC_A_SYSTEM, ptr);
+}
 
 static Uint
 get_next_mbc_size(Allctr_t *allctr)
@@ -1031,7 +1078,7 @@ create_carrier(Allctr_t *allctr, Uint umem_sz, Uint flags)
     crr_sz = MSEG_UNIT_CEILING(crr_sz);
     ASSERT(crr_sz % mseg_unit_size == 0);
 
-    crr = (Carrier_t *) MSEG_ALLOC(allctr, &crr_sz);
+    crr = (Carrier_t *) alcu_mseg_alloc(allctr, &crr_sz);
     if (!crr) {
 	have_tried_mseg = 1;
 	if (!(have_tried_sys_alloc || flags & CFLG_FORCE_MSEG))
@@ -1075,12 +1122,12 @@ create_carrier(Allctr_t *allctr, Uint umem_sz, Uint flags)
 	      ? UNIT_CEILING(bcrr_sz)
 	      : SYS_ALLOC_CARRIER_CEILING(bcrr_sz));
 
-    crr = (Carrier_t *) SYS_ALLOC(allctr, crr_sz);
+    crr = (Carrier_t *) alcu_sys_alloc(allctr, crr_sz);
 	
     if (!crr) {
 	if (crr_sz > UNIT_CEILING(bcrr_sz)) {
 	    crr_sz = UNIT_CEILING(bcrr_sz);
-	    crr = (Carrier_t *) SYS_ALLOC(allctr, crr_sz);
+	    crr = (Carrier_t *) alcu_sys_alloc(allctr, crr_sz);
 	}
 	if (!crr) {
 #if HAVE_ERTS_MSEG
@@ -1139,7 +1186,16 @@ create_carrier(Allctr_t *allctr, Uint umem_sz, Uint flags)
 	}
 
 	link_carrier(&allctr->mbc_list, crr);
+
+#ifdef ERTS_ALLOC_UTIL_HARD_DEBUG
+	if (sizeof(Unit_t) == sizeof(Uint))
+	    crr_sz += sizeof(Uint);
+#endif
 	CHECK_1BLK_CARRIER(allctr, 0, is_mseg, crr, crr_sz, blk, blk_sz);
+#ifdef ERTS_ALLOC_UTIL_HARD_DEBUG
+	if (sizeof(Unit_t) == sizeof(Uint))
+	    crr_sz -= sizeof(Uint);
+#endif
 	if (allctr->creating_mbc)
 	    (*allctr->creating_mbc)(allctr, crr);
 
@@ -1184,10 +1240,10 @@ resize_carrier(Allctr_t *allctr, Block_t *old_blk, Uint umem_sz, Uint flags)
 
 	    new_crr_sz = new_blk_sz + SBC_HDR_SZ;
 	    new_crr_sz = MSEG_UNIT_CEILING(new_crr_sz);
-	    new_crr = (Carrier_t *) MSEG_REALLOC(allctr,
-						 old_crr,
-						 old_crr_sz,
-						 &new_crr_sz);
+	    new_crr = (Carrier_t *) alcu_mseg_realloc(allctr,
+						      old_crr,
+						      old_crr_sz,
+						      &new_crr_sz);
 	    if (new_crr) {
 		SET_CARRIER_SZ(new_crr, new_crr_sz);
 		new_blk = SBC2BLK(new_crr);
@@ -1209,7 +1265,7 @@ resize_carrier(Allctr_t *allctr, Block_t *old_blk, Uint umem_sz, Uint flags)
 		       (void *) BLK2UMEM(old_blk),
 		       MIN(new_blk_sz, old_blk_sz) - ABLK_HDR_SZ);
 	    unlink_carrier(&allctr->sbc_list, old_crr);
-	    MSEG_DEALLOC(allctr, old_crr, old_crr_sz);
+	    alcu_mseg_dealloc(allctr, old_crr, old_crr_sz);
 	}
 	else {
 	    /* Old carrier unchanged; restore stat */
@@ -1226,9 +1282,9 @@ resize_carrier(Allctr_t *allctr, Block_t *old_blk, Uint umem_sz, Uint flags)
 			  ? UNIT_CEILING(new_bcrr_sz)
 			  : SYS_ALLOC_CARRIER_CEILING(new_bcrr_sz));
 
-	    new_crr = (Carrier_t *) SYS_REALLOC(allctr,
-						(void *) old_crr,
-						new_crr_sz);
+	    new_crr = (Carrier_t *) alcu_sys_realloc(allctr,
+						     (void *) old_crr,
+						     new_crr_sz);
 	    if (new_crr) {
 	    sys_realloc_success:
 		SET_CARRIER_SZ(new_crr, new_crr_sz);
@@ -1245,9 +1301,9 @@ resize_carrier(Allctr_t *allctr, Block_t *old_blk, Uint umem_sz, Uint flags)
 	    else if (new_crr_sz > UNIT_CEILING(new_bcrr_sz)) {
 		new_crr_sz = new_blk_sz + SBC_HDR_SZ;
 		new_crr_sz = UNIT_CEILING(new_crr_sz);
-		new_crr = (Carrier_t *) SYS_REALLOC(allctr,
-						    (void *) old_crr,
-						    new_crr_sz);
+		new_crr = (Carrier_t *) alcu_sys_realloc(allctr,
+							 (void *) old_crr,
+							 new_crr_sz);
 		if (new_crr)
 		    goto sys_realloc_success;
 	    }
@@ -1266,7 +1322,7 @@ resize_carrier(Allctr_t *allctr, Block_t *old_blk, Uint umem_sz, Uint flags)
 		       (void *) BLK2UMEM(old_blk),
 		       MIN(new_blk_sz, old_blk_sz) - ABLK_HDR_SZ);
 	    unlink_carrier(&allctr->sbc_list, old_crr);
-	    SYS_FREE(allctr, old_crr);
+	    alcu_sys_free(allctr, old_crr);
 	}
 	else {
 	    /* Old carrier unchanged; restore... */
@@ -1345,11 +1401,11 @@ destroy_carrier(Allctr_t *allctr, Block_t *blk)
 
 #if HAVE_ERTS_MSEG
     if (is_mseg) {
-	MSEG_DEALLOC(allctr, crr, crr_sz);
+	alcu_mseg_dealloc(allctr, crr, crr_sz);
     }
     else
 #endif
-	SYS_FREE(allctr, crr);
+	alcu_sys_free(allctr, crr);
 }
 
 
@@ -1418,80 +1474,139 @@ static ERTS_INLINE void atom_init(Eterm *atom, char *name)
 }
 #define AM_INIT(AM) atom_init(&am.AM, #AM)
 
+static erts_mtx_t init_atoms_mtx;
+
 static void
-init_atoms(void)
+init_atoms(Allctr_t *allctr)
 {
+
+#ifdef USE_THREADS
+    if (allctr && allctr->thread_safe)
+	erts_mtx_unlock(&allctr->mutex);
+#endif
+
+    erts_mtx_lock(&init_atoms_mtx);
+
+    if (!atoms_initialized) {
 #ifdef DEBUG
-    Eterm *atom;
-    for (atom = (Eterm *) &am; atom <= &am.end_of_atoms; atom++) {
-	*atom = THE_NON_VALUE;
-    }
+	Eterm *atom;
+
+	for (atom = (Eterm *) &am; atom <= &am.end_of_atoms; atom++) {
+	    *atom = THE_NON_VALUE;
+	}
 #endif
 
-    AM_INIT(versions);
+	AM_INIT(versions);
 
-    AM_INIT(options);
-    AM_INIT(e);
-    AM_INIT(sbct);
+	AM_INIT(options);
+	AM_INIT(e);
+	AM_INIT(sbct);
 #if HAVE_ERTS_MSEG
-    AM_INIT(asbcst);
-    AM_INIT(rsbcst);
+	AM_INIT(asbcst);
+	AM_INIT(rsbcst);
 #endif
-    AM_INIT(rsbcmt);
-    AM_INIT(mmbcs);
-    AM_INIT(msbclt);
+	AM_INIT(rsbcmt);
+	AM_INIT(mmbcs);
+	AM_INIT(msbclt);
 #if HAVE_ERTS_MSEG
-    AM_INIT(mmsbc);
-    AM_INIT(mmmbc);
+	AM_INIT(mmsbc);
+	AM_INIT(mmmbc);
 #endif
-    AM_INIT(lmbcs);
-    AM_INIT(smbcs);
-    AM_INIT(mbcgs);
+	AM_INIT(lmbcs);
+	AM_INIT(smbcs);
+	AM_INIT(mbcgs);
 
 #if HAVE_ERTS_MSEG
-    AM_INIT(mmc);
+	AM_INIT(mmc);
 #endif
-    AM_INIT(ycs);
+	AM_INIT(ycs);
 
-    AM_INIT(mbcs);
-    AM_INIT(sbcs);
-    AM_INIT(sys_alloc_carriers_size);
+	AM_INIT(mbcs);
+	AM_INIT(sbcs);
+	AM_INIT(sys_alloc_carriers_size);
 #if HAVE_ERTS_MSEG
-    AM_INIT(mseg_alloc_carriers_size);
+	AM_INIT(mseg_alloc_carriers_size);
 #endif
-    AM_INIT(carriers_size);
-    AM_INIT(sys_alloc_carriers);
+	AM_INIT(carriers_size);
+	AM_INIT(sys_alloc_carriers);
 #if HAVE_ERTS_MSEG
-    AM_INIT(mseg_alloc_carriers);
+	AM_INIT(mseg_alloc_carriers);
 #endif
-    AM_INIT(carriers);
-    AM_INIT(blocks_size);
-    AM_INIT(blocks);
+	AM_INIT(carriers);
+	AM_INIT(blocks_size);
+	AM_INIT(blocks);
 
-    AM_INIT(calls);
-    AM_INIT(sys_alloc);
-    AM_INIT(sys_free);
-    AM_INIT(sys_realloc);
+	AM_INIT(calls);
+	AM_INIT(sys_alloc);
+	AM_INIT(sys_free);
+	AM_INIT(sys_realloc);
 #if HAVE_ERTS_MSEG
-    AM_INIT(mseg_alloc);
-    AM_INIT(mseg_dealloc);
-    AM_INIT(mseg_realloc);
+	AM_INIT(mseg_alloc);
+	AM_INIT(mseg_dealloc);
+	AM_INIT(mseg_realloc);
 #endif
 
 #ifdef DEBUG
-    for (atom = (Eterm *) &am; atom < &am.end_of_atoms; atom++) {
-	ASSERT(*atom != THE_NON_VALUE);
-    }
+	for (atom = (Eterm *) &am; atom < &am.end_of_atoms; atom++) {
+	    ASSERT(*atom != THE_NON_VALUE);
+	}
 #endif
+    }
+
+    
+    if (allctr) {
+
+	make_name_atoms(allctr);
+
+	(*allctr->init_atoms)();
+
+#ifdef USE_THREADS
+	if (allctr->thread_safe)
+	    erts_mtx_lock(&allctr->mutex);
+#endif
+    	allctr->atoms_initialized = 1;
+    }
 
     atoms_initialized = 1;
+    erts_mtx_unlock(&init_atoms_mtx);
+
 }
 
+static ERTS_INLINE void
+ensure_atoms_initialized(Allctr_t *allctr)
+{
+    if (!allctr || !allctr->atoms_initialized)
+	init_atoms(allctr);
+}
 
 #define bld_uint	erts_bld_uint
 #define bld_cons	erts_bld_cons
 #define bld_tuple	erts_bld_tuple
 #define bld_string	erts_bld_string
+
+/*
+ * bld_unstable_uint() (instead bld_uint()) is used when values may
+ * change between size check and actual build. This because a value
+ * that would fit a small when size check is done may need to be built
+ * as a big when the actual build is performed. Caller is required to
+ * HRelease after build.
+ */
+static ERTS_INLINE Eterm
+bld_unstable_uint(Uint **hpp, Uint *szp, Uint ui)
+{
+    Eterm res = THE_NON_VALUE;
+    if (szp)
+	szp += BIG_UINT_HEAP_SIZE;
+    if (hpp) {
+	if (IS_USMALL(0, ui))
+	    res = make_small(ui);
+	else {
+	    res = uint_to_big(ui, *hpp);
+	    *hpp += BIG_UINT_HEAP_SIZE;
+	}
+    }
+    return res;
+}
 
 static ERTS_INLINE void
 add_2tup(Uint **hpp, Uint *szp, Eterm *lp, Eterm el1, Eterm el2)
@@ -1517,7 +1632,8 @@ static Eterm
 info_carriers(Allctr_t *allctr,
 	      CarriersStats_t *cs,
 	      char *prefix,
-	      CIO *ciop,
+	      int *print_to_p,
+	      void *print_to_arg,
 	      Uint **hpp,
 	      Uint *szp)
 {
@@ -1525,50 +1641,59 @@ info_carriers(Allctr_t *allctr,
     Uint curr_no   = cs->curr_mseg.no   + cs->curr_sys_alloc.no;
     Uint curr_size = cs->curr_mseg.size + cs->curr_sys_alloc.size;
 
-    if (ciop) {
-	CIO to = *ciop;
-	erl_printf(to,
-		   "%sblocks: %lu %lu %lu\n",
+    if (print_to_p) {
+	int to = *print_to_p;
+	void *arg = print_to_arg;
+	erts_print(to,
+		   arg,
+		   "%sblocks: %bpu %bpu %bpu\n",
 		   prefix,
 		   cs->blocks.curr.no,
 		   cs->blocks.max.no,
 		   cs->blocks.max_ever.no);
-	erl_printf(to,
-		   "%sblocks size: %lu %lu %lu\n",
+	erts_print(to,
+		   arg,
+		   "%sblocks size: %bpu %bpu %bpu\n",
 		   prefix,
 		   cs->blocks.curr.size,
 		   cs->blocks.max.size,
 		   cs->blocks.max_ever.size);
-	erl_printf(to,
-		   "%scarriers: %lu %lu %lu\n",
+	erts_print(to,
+		   arg,
+		   "%scarriers: %bpu %bpu %bpu\n",
 		   prefix,
 		   curr_no,
 		   cs->max.no,
 		   cs->max_ever.no);
 #if HAVE_ERTS_MSEG
-	erl_printf(to,
-		   "%smseg carriers: %lu\n",
+	erts_print(to,
+		   arg,
+		   "%smseg carriers: %bpu\n",
 		   prefix,
 		   cs->curr_mseg.no);
 #endif
-	erl_printf(to,
-		   "%ssys_alloc carriers: %lu\n",
+	erts_print(to,
+		   arg,
+		   "%ssys_alloc carriers: %bpu\n",
 		   prefix,
 		   cs->curr_sys_alloc.no);
-	erl_printf(to,
-		   "%scarriers size: %lu %lu %lu\n",
+	erts_print(to,
+		   arg,
+		   "%scarriers size: %bpu %bpu %bpu\n",
 		   prefix,
 		   curr_size,
 		   cs->max.size,
 		   cs->max_ever.size);
 #if HAVE_ERTS_MSEG
-	erl_printf(to,
-		   "%smseg carriers size: %lu\n",
+	erts_print(to,
+		   arg,
+		   "%smseg carriers size: %bpu\n",
 		   prefix,
 		   cs->curr_mseg.size);
 #endif
-	erl_printf(to,
-		   "%ssys_alloc carriers size: %lu\n",
+	erts_print(to,
+		   arg,
+		   "%ssys_alloc carriers size: %bpu\n",
 		   prefix,
 		   cs->curr_sys_alloc.size);
     }
@@ -1577,40 +1702,40 @@ info_carriers(Allctr_t *allctr,
 	res = NIL;
 	add_2tup(hpp, szp, &res,
 		 am.sys_alloc_carriers_size,
-		 bld_uint(hpp, szp, cs->curr_sys_alloc.size));
+		 bld_unstable_uint(hpp, szp, cs->curr_sys_alloc.size));
 #if HAVE_ERTS_MSEG
 	add_2tup(hpp, szp, &res,
 		 am.mseg_alloc_carriers_size,
-		 bld_uint(hpp, szp, cs->curr_mseg.size));
+		 bld_unstable_uint(hpp, szp, cs->curr_mseg.size));
 #endif
 	add_4tup(hpp, szp, &res,
 		 am.carriers_size,
-		 bld_uint(hpp, szp, curr_size),
-		 bld_uint(hpp, szp, cs->max.size),
-		 bld_uint(hpp, szp, cs->max_ever.size));
+		 bld_unstable_uint(hpp, szp, curr_size),
+		 bld_unstable_uint(hpp, szp, cs->max.size),
+		 bld_unstable_uint(hpp, szp, cs->max_ever.size));
 	add_2tup(hpp, szp, &res,
 		 am.sys_alloc_carriers,
-		 bld_uint(hpp, szp, cs->curr_sys_alloc.no));
+		 bld_unstable_uint(hpp, szp, cs->curr_sys_alloc.no));
 #if HAVE_ERTS_MSEG
 	add_2tup(hpp, szp, &res,
 		 am.mseg_alloc_carriers,
-		 bld_uint(hpp, szp, cs->curr_mseg.no));
+		 bld_unstable_uint(hpp, szp, cs->curr_mseg.no));
 #endif
 	add_4tup(hpp, szp, &res,
 		 am.carriers,
-		 bld_uint(hpp, szp, curr_no),
-		 bld_uint(hpp, szp, cs->max.no),
-		 bld_uint(hpp, szp, cs->max_ever.no));
+		 bld_unstable_uint(hpp, szp, curr_no),
+		 bld_unstable_uint(hpp, szp, cs->max.no),
+		 bld_unstable_uint(hpp, szp, cs->max_ever.no));
 	add_4tup(hpp, szp, &res,
 		 am.blocks_size,
-		 bld_uint(hpp, szp, cs->blocks.curr.size),
-		 bld_uint(hpp, szp, cs->blocks.max.size),
-		 bld_uint(hpp, szp, cs->blocks.max_ever.size));
+		 bld_unstable_uint(hpp, szp, cs->blocks.curr.size),
+		 bld_unstable_uint(hpp, szp, cs->blocks.max.size),
+		 bld_unstable_uint(hpp, szp, cs->blocks.max_ever.size));
 	add_4tup(hpp, szp, &res,
 		 am.blocks,
-		 bld_uint(hpp, szp, cs->blocks.curr.no),
-		 bld_uint(hpp, szp, cs->blocks.max.no),
-		 bld_uint(hpp, szp, cs->blocks.max_ever.no));
+		 bld_unstable_uint(hpp, szp, cs->blocks.curr.no),
+		 bld_unstable_uint(hpp, szp, cs->blocks.max.no),
+		 bld_unstable_uint(hpp, szp, cs->blocks.max_ever.no));
     }
 
     return res;
@@ -1643,53 +1768,53 @@ make_name_atoms(Allctr_t *allctr)
 
 static Eterm
 info_calls(Allctr_t *allctr,
-	   CIO *ciop,
+	   int *print_to_p,
+	   void *print_to_arg,
 	   Uint **hpp,
 	   Uint *szp)
 {
     Eterm res = THE_NON_VALUE;
 
 
-    if (ciop) {
+    if (print_to_p) {
 
-#define PRINT_CC_3(TO, NAME, CC)					\
+#define PRINT_CC_4(TO, TOA, NAME, CC)					\
     if ((CC).giga_no == 0)						\
-	erl_printf(TO, "%s calls: %lu\n", NAME, CC.no);			\
+	erts_print(TO, TOA, "%s calls: %bpu\n", NAME, CC.no);		\
     else								\
-	erl_printf(TO, "%s calls: %lu%09lu\n", NAME, CC.giga_no, CC.no)
+	erts_print(TO, TOA, "%s calls: %bpu%09lu\n", NAME, CC.giga_no, CC.no)
 
-#define PRINT_CC_4(TO, PRFX, NAME, CC)					\
+#define PRINT_CC_5(TO, TOA, PRFX, NAME, CC)				\
     if ((CC).giga_no == 0)						\
-	erl_printf(TO,"%s%s calls: %lu\n",PRFX,NAME,CC.no);		\
+	erts_print(TO, TOA, "%s%s calls: %bpu\n",PRFX,NAME,CC.no);	\
     else								\
-	erl_printf(TO,"%s%s calls: %lu%09lu\n",PRFX,NAME,CC.giga_no,CC.no)
+	erts_print(TO, TOA, "%s%s calls: %bpu%09lu\n",PRFX,NAME,CC.giga_no,CC.no)
 
 	char *prefix = allctr->name_prefix;
-	CIO to = *ciop;
+	int to = *print_to_p;
+	void *arg = print_to_arg;
 
-	PRINT_CC_4(to, prefix, "alloc",        allctr->calls.this_alloc);
-	PRINT_CC_4(to, prefix, "free",         allctr->calls.this_free);
-	PRINT_CC_4(to, prefix, "realloc",      allctr->calls.this_realloc);
+	PRINT_CC_5(to, arg, prefix, "alloc",        allctr->calls.this_alloc);
+	PRINT_CC_5(to, arg, prefix, "free",         allctr->calls.this_free);
+	PRINT_CC_5(to, arg, prefix, "realloc",      allctr->calls.this_realloc);
 
 #if HAVE_ERTS_MSEG
-	PRINT_CC_3(to,         "mseg_alloc",   allctr->calls.mseg_alloc);
-	PRINT_CC_3(to,         "mseg_dealloc", allctr->calls.mseg_dealloc);
-	PRINT_CC_3(to,         "mseg_realloc", allctr->calls.mseg_realloc);
+	PRINT_CC_4(to, arg,         "mseg_alloc",   allctr->calls.mseg_alloc);
+	PRINT_CC_4(to, arg,         "mseg_dealloc", allctr->calls.mseg_dealloc);
+	PRINT_CC_4(to, arg,         "mseg_realloc", allctr->calls.mseg_realloc);
 #endif
 
-	PRINT_CC_3(to,         "sys_alloc",    allctr->calls.sys_alloc);
-	PRINT_CC_3(to,         "sys_free",     allctr->calls.sys_free);
-	PRINT_CC_3(to,         "sys_realloc",  allctr->calls.sys_realloc);
+	PRINT_CC_4(to, arg,         "sys_alloc",    allctr->calls.sys_alloc);
+	PRINT_CC_4(to, arg,         "sys_free",     allctr->calls.sys_free);
+	PRINT_CC_4(to, arg,         "sys_realloc",  allctr->calls.sys_realloc);
 
-#undef PRINT_CC_3
 #undef PRINT_CC_4
+#undef PRINT_CC_5
 
     }
 
 
     if (hpp || szp) {
-	if (allctr->name.alloc == THE_NON_VALUE)
-	    make_name_atoms(allctr);
 
 	ASSERT(allctr->name.alloc   != THE_NON_VALUE);
 	ASSERT(allctr->name.realloc != THE_NON_VALUE);
@@ -1699,42 +1824,42 @@ info_calls(Allctr_t *allctr,
 
 	add_3tup(hpp, szp, &res,
 		 am.sys_realloc,
-		 bld_uint(hpp, szp, allctr->calls.sys_realloc.giga_no),
-		 bld_uint(hpp, szp, allctr->calls.sys_realloc.no));
+		 bld_unstable_uint(hpp, szp, allctr->calls.sys_realloc.giga_no),
+		 bld_unstable_uint(hpp, szp, allctr->calls.sys_realloc.no));
 	add_3tup(hpp, szp, &res,
 		 am.sys_free,
-		 bld_uint(hpp, szp, allctr->calls.sys_free.giga_no),
-		 bld_uint(hpp, szp, allctr->calls.sys_free.no));
+		 bld_unstable_uint(hpp, szp, allctr->calls.sys_free.giga_no),
+		 bld_unstable_uint(hpp, szp, allctr->calls.sys_free.no));
 	add_3tup(hpp, szp, &res,
 		 am.sys_alloc,
-		 bld_uint(hpp, szp, allctr->calls.sys_alloc.giga_no),
-		 bld_uint(hpp, szp, allctr->calls.sys_alloc.no));
+		 bld_unstable_uint(hpp, szp, allctr->calls.sys_alloc.giga_no),
+		 bld_unstable_uint(hpp, szp, allctr->calls.sys_alloc.no));
 #if HAVE_ERTS_MSEG
 	add_3tup(hpp, szp, &res,
 		 am.mseg_realloc,
-		 bld_uint(hpp, szp, allctr->calls.mseg_realloc.giga_no),
-		 bld_uint(hpp, szp, allctr->calls.mseg_realloc.no));
+		 bld_unstable_uint(hpp, szp, allctr->calls.mseg_realloc.giga_no),
+		 bld_unstable_uint(hpp, szp, allctr->calls.mseg_realloc.no));
 	add_3tup(hpp, szp, &res,
 		 am.mseg_dealloc,
-		 bld_uint(hpp, szp, allctr->calls.mseg_dealloc.giga_no),
-		 bld_uint(hpp, szp, allctr->calls.mseg_dealloc.no));
+		 bld_unstable_uint(hpp, szp, allctr->calls.mseg_dealloc.giga_no),
+		 bld_unstable_uint(hpp, szp, allctr->calls.mseg_dealloc.no));
 	add_3tup(hpp, szp, &res,
 		 am.mseg_alloc,
-		 bld_uint(hpp, szp, allctr->calls.mseg_alloc.giga_no),
-		 bld_uint(hpp, szp, allctr->calls.mseg_alloc.no));
+		 bld_unstable_uint(hpp, szp, allctr->calls.mseg_alloc.giga_no),
+		 bld_unstable_uint(hpp, szp, allctr->calls.mseg_alloc.no));
 #endif
 	add_3tup(hpp, szp, &res,
 		 allctr->name.realloc,
-		 bld_uint(hpp, szp, allctr->calls.this_realloc.giga_no),
-		 bld_uint(hpp, szp, allctr->calls.this_realloc.no));
+		 bld_unstable_uint(hpp, szp, allctr->calls.this_realloc.giga_no),
+		 bld_unstable_uint(hpp, szp, allctr->calls.this_realloc.no));
 	add_3tup(hpp, szp, &res,
 		 allctr->name.free,
-		 bld_uint(hpp, szp, allctr->calls.this_free.giga_no),
-		 bld_uint(hpp, szp, allctr->calls.this_free.no));
+		 bld_unstable_uint(hpp, szp, allctr->calls.this_free.giga_no),
+		 bld_unstable_uint(hpp, szp, allctr->calls.this_free.no));
 	add_3tup(hpp, szp, &res,
 		 allctr->name.alloc,
-		 bld_uint(hpp, szp, allctr->calls.this_alloc.giga_no),
-		 bld_uint(hpp, szp, allctr->calls.this_alloc.no));
+		 bld_unstable_uint(hpp, szp, allctr->calls.this_alloc.giga_no),
+		 bld_unstable_uint(hpp, szp, allctr->calls.this_alloc.no));
     }
 
     return res;
@@ -1742,15 +1867,16 @@ info_calls(Allctr_t *allctr,
 
 static Eterm
 info_options(Allctr_t *allctr,
-	     CIO *ciop,
+             int *print_to_p,
+	     void *print_to_arg,
 	     Uint **hpp,
 	     Uint *szp)
 {
     Eterm res = THE_NON_VALUE;
 
     if (!allctr) {
-	if (ciop)
-	    erl_printf(*ciop, "option e: false\n");
+	if (print_to_p)
+	    erts_print(*print_to_p, print_to_arg, "option e: false\n");
 	if (hpp || szp) {
 	    res = NIL;
 	    add_2tup(hpp, szp, &res, am.e, am_false);
@@ -1758,23 +1884,24 @@ info_options(Allctr_t *allctr,
 	return res;
     }
 
-    if (ciop) {
-	    erl_printf(*ciop,
+    if (print_to_p) {
+	    erts_print(*print_to_p,
+		       print_to_arg,
 		       "option e: true\n"
-		       "option sbct: %lu\n"
+		       "option sbct: %bpu\n"
 #if HAVE_ERTS_MSEG
-		       "option asbcst: %lu\n"
-		       "option rsbcst: %lu\n"
+		       "option asbcst: %bpu\n"
+		       "option rsbcst: %bpu\n"
 #endif
-		       "option rsbcmt: %lu\n"
-		       "option mmbcs: %lu\n"
+		       "option rsbcmt: %bpu\n"
+		       "option mmbcs: %bpu\n"
 #if HAVE_ERTS_MSEG
-		       "option mmsbc: %lu\n"
-		       "option mmmbc: %lu\n"
+		       "option mmsbc: %bpu\n"
+		       "option mmmbc: %bpu\n"
 #endif
-		       "option lmbcs: %lu\n"
-		       "option smbcs: %lu\n"
-		       "option mbcgs: %lu\n",
+		       "option lmbcs: %bpu\n"
+		       "option smbcs: %bpu\n"
+		       "option mbcgs: %bpu\n",
 		       allctr->sbc_threshold,
 #if HAVE_ERTS_MSEG
 		       allctr->mseg_opt.abs_shrink_th,
@@ -1791,7 +1918,8 @@ info_options(Allctr_t *allctr,
 		       allctr->mbc_growth_stages);
     }
 
-    res = (*allctr->info_options)(allctr, "option ", ciop, hpp, szp);
+    res = (*allctr->info_options)(allctr, "option ", print_to_p, print_to_arg,
+				  hpp, szp);
 
     if (hpp || szp) {
 	add_2tup(hpp, szp, &res,
@@ -1863,23 +1991,19 @@ reset_max_values(CarriersStats_t *cs)
 \*                                                                         */
 
 Eterm
-erts_alcu_au_info_options(CIO *ciop, Uint **hpp, Uint *szp)
+erts_alcu_au_info_options(int *print_to_p, void *print_to_arg,
+			  Uint **hpp, Uint *szp)
 {
-    Eterm res = THE_NON_VALUE;
+    Eterm res = THE_NON_VALUE;    
 
-    if (hpp || szp) {
-	if (!atoms_initialized)
-	    init_atoms();
-    }
-    
+    if (print_to_p) {
 
-    if (ciop) {
-
-	erl_printf(*ciop,
+	erts_print(*print_to_p,
+		   print_to_arg,
 #if HAVE_ERTS_MSEG
-		   "option mmc: %lu\n"
+		   "option mmc: %bpu\n"
 #endif
-		   "option ycs: %lu\n",
+		   "option ycs: %bpu\n",
 #if HAVE_ERTS_MSEG
 		   max_mseg_carriers,
 #endif
@@ -1888,6 +2012,7 @@ erts_alcu_au_info_options(CIO *ciop, Uint **hpp, Uint *szp)
 
     if (hpp || szp) {
 	res = NIL;
+	ensure_atoms_initialized(NULL);
 	add_2tup(hpp, szp, &res,
 		 am.ycs,
 		 bld_uint(hpp, szp, sys_alloc_carrier_size));
@@ -1904,32 +2029,25 @@ erts_alcu_au_info_options(CIO *ciop, Uint **hpp, Uint *szp)
 
 Eterm
 erts_alcu_info_options(Allctr_t *allctr,
-		       CIO *ciop,
+		       int *print_to_p,
+		       void *print_to_arg,
 		       Uint **hpp,
 		       Uint *szp)
 {
     Eterm res;
 
-    if (hpp || szp) {
-	if (!atoms_initialized)
-	    init_atoms();
-    }
-    
-    if (!allctr)
-	return info_options(allctr, ciop, hpp, szp);
 
 #ifdef USE_THREADS
     if (allctr->thread_safe)
 	erts_mtx_lock(&allctr->mutex);
 #endif
-
-    res = info_options(allctr, ciop, hpp, szp);
-
+    if (hpp || szp)
+	ensure_atoms_initialized(allctr);
+    res = info_options(allctr, print_to_p, print_to_arg, hpp, szp);
 #ifdef USE_THREADS
     if (allctr->thread_safe)
 	erts_mtx_unlock(&allctr->mutex);
 #endif
-
     return res;
 }
 
@@ -1938,7 +2056,8 @@ erts_alcu_info_options(Allctr_t *allctr,
 Eterm
 erts_alcu_info(Allctr_t *allctr,
 	       int begin_max_period,
-	       CIO *ciop,
+	       int *print_to_p,
+	       void *print_to_arg,
 	       Uint **hpp,
 	       Uint *szp)
 {
@@ -1947,17 +2066,20 @@ erts_alcu_info(Allctr_t *allctr,
     res  = THE_NON_VALUE;
 
     if (!allctr) {
-	if (ciop)
-	    erl_printf(*ciop, "false\n");
+	if (print_to_p)
+	    erts_print(*print_to_p, print_to_arg, "false\n");
 	if (szp)
 	    *szp = 0;
 	return am_false;
     }
 
 #ifdef USE_THREADS
-    if (allctr->thread_safe && !erts_writing_erl_crash_dump)
+    if (allctr->thread_safe)
 	erts_mtx_lock(&allctr->mutex);
 #endif
+
+    if (hpp || szp)
+	ensure_atoms_initialized(allctr);
 
     /* Update sbc values not continously updated */
     allctr->sbcs.blocks.curr.no
@@ -1967,23 +2089,23 @@ erts_alcu_info(Allctr_t *allctr,
     update_max_ever_values(&allctr->mbcs);
     update_max_ever_values(&allctr->sbcs);
 
-    if (ciop) {
-	erl_printf(*ciop,
+    if (print_to_p) {
+	erts_print(*print_to_p,
+		   print_to_arg,
 		   "versions: %s %s\n",
 		   allctr->vsn_str,
 		   ERTS_ALCU_VSN_STR);
     }
 
-    sett  = info_options(allctr, ciop, hpp, szp);
-    mbcs  = info_carriers(allctr, &allctr->mbcs, "mbcs ", ciop, hpp, szp);
-    sbcs  = info_carriers(allctr, &allctr->sbcs, "sbcs ", ciop, hpp, szp);
-    calls = info_calls(allctr, ciop, hpp, szp);
+    sett  = info_options(allctr, print_to_p, print_to_arg, hpp, szp);
+    mbcs  = info_carriers(allctr, &allctr->mbcs, "mbcs ", print_to_p,
+			  print_to_arg, hpp, szp);
+    sbcs  = info_carriers(allctr, &allctr->sbcs, "sbcs ", print_to_p,
+			  print_to_arg, hpp, szp);
+    calls = info_calls(allctr, print_to_p, print_to_arg, hpp, szp);
 
     if (hpp || szp) {
 	res = NIL;
-
-	if (!atoms_initialized)
-	    init_atoms();
 
 	add_2tup(hpp, szp, &res, am.calls, calls);
 	add_2tup(hpp, szp, &res, am.sbcs, sbcs);
@@ -2002,7 +2124,7 @@ erts_alcu_info(Allctr_t *allctr,
 
 
 #ifdef USE_THREADS
-    if (allctr->thread_safe && !erts_writing_erl_crash_dump)
+    if (allctr->thread_safe)
 	erts_mtx_unlock(&allctr->mutex);
 #endif
 
@@ -2059,6 +2181,22 @@ erts_alcu_alloc_ts(ErtsAlcType_t type, void *extra, Uint size)
     return res;
 }
 
+#ifdef ERTS_ALC_THR_SPEC_ALLOCS
+void *
+erts_alcu_alloc_thr_spec(ErtsAlcType_t type, void *unused, Uint size)
+{
+    void *vallctr = erts_tsd_get(erts_allctr_thr_spec[ERTS_ALC_T2A(T)].key);
+
+    if (!vallctr) {
+	vallctr = (*erts_allctr_thr_spec[ERTS_ALC_T2A(type)].start_default)();
+	if (!vallctr)
+	    return NULL;
+    }
+
+    return do_erts_alcu_alloc(type, vallctr, size);
+}
+#endif
+
 #endif
 
 /* ------------------------------------------------------------------------- */
@@ -2099,6 +2237,16 @@ erts_alcu_free_ts(ErtsAlcType_t type, void *extra, void *p)
     do_erts_alcu_free(type, extra, p);
     erts_mtx_unlock(&allctr->mutex);
 }
+
+#ifdef ERTS_ALC_THR_SPEC_ALLOCS
+void
+erts_alcu_free_thr_spec(ErtsAlcType_t type, void *unused, void *p)
+{
+    void *vallctr = erts_tsd_get(erts_allctr_thr_spec[ERTS_ALC_T2A(type)].key);
+    ASSERT(vallctr);
+    do_erts_alcu_free(type, vallctr, p);
+}
+#endif
 
 #endif
 
@@ -2211,6 +2359,23 @@ erts_alcu_realloc_ts(ErtsAlcType_t type, void *extra, void *ptr, Uint size)
     return res;
 }
 
+#ifdef ERTS_ALC_THR_SPEC_ALLOCS
+void *
+erts_alcu_realloc_thr_spec(ErtsAlcType_t type, void *unused,
+			   void *ptr, Uint size)
+{
+    void *vallctr = erts_tsd_get(erts_allctr_thr_spec[ERTS_ALC_T2A(T)].key);
+
+    if (!vallctr) {
+	vallctr = (*erts_allctr_thr_spec[ERTS_ALC_T2A(type)].start_default)();
+	if (!vallctr)
+	    return NULL;
+    }
+
+    return do_erts_alcu_realloc(type, vallctr, ptr, size);
+}
+#endif
+
 #endif
 
 /* ------------------------------------------------------------------------- */
@@ -2236,6 +2401,11 @@ erts_alcu_start(Allctr_t *allctr, AllctrInit_t *init)
     allctr->name_prefix			= init->name_prefix;
     if (!allctr->name_prefix)
 	goto error;
+
+    allctr->alloc_no			= init->alloc_no;
+    if (allctr->alloc_no < ERTS_ALC_A_MIN
+	|| ERTS_ALC_A_MAX < allctr->alloc_no)
+	allctr->alloc_no = ERTS_ALC_A_INVALID;
 
     if (!allctr->vsn_str)
 	goto error;
@@ -2273,7 +2443,9 @@ erts_alcu_start(Allctr_t *allctr, AllctrInit_t *init)
 #ifdef USE_THREADS
     if (init->ts) {
 	allctr->thread_safe = 1;
-	erts_mtx_init(&allctr->mutex);
+	erts_mtx_init_x(&allctr->mutex,
+			"alcu_allocator",
+			make_small(allctr->alloc_no));
 	erts_mtx_set_forksafe(&allctr->mutex);
     }
 #endif
@@ -2369,6 +2541,8 @@ erts_alcu_init(AlcUInit_t *init)
 #ifdef DEBUG
     carrier_alignment = sizeof(Unit_t);
 #endif
+
+    erts_mtx_init(&init_atoms_mtx, "alcu_init_atoms");
 
     atoms_initialized = 0;
     initialized = 1;

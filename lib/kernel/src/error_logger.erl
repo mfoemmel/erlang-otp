@@ -153,17 +153,17 @@ swap_handler(tty) ->
 			   {error_logger_tty_h, []}),
     simple_logger().
 
-add_report_handler(Module) when atom(Module) ->
+add_report_handler(Module) when is_atom(Module) ->
     gen_event:add_handler(error_logger, Module, []).
 
-add_report_handler(Module, Args) when atom(Module) ->
+add_report_handler(Module, Args) when is_atom(Module) ->
     gen_event:add_handler(error_logger, Module, Args).
 
-delete_report_handler(Module) when atom(Module) ->
+delete_report_handler(Module) when is_atom(Module) ->
     gen_event:delete_handler(error_logger, Module, []).
 
 %% Start the lowest level error_logger handler with Buffer.
-simple_logger(Buffer_size) when integer(Buffer_size) ->
+simple_logger(Buffer_size) when is_integer(Buffer_size) ->
     gen_event:add_handler(error_logger, error_logger, Buffer_size).
 
 %% Start the lowest level error_logger handler without Buffer.
@@ -210,7 +210,7 @@ tty(false) ->
 %%% This is the default error_logger handler.
 %%% ---------------------------------------------------
 
-init(Max) when integer(Max) ->
+init(Max) when is_integer(Max) ->
     {ok, {Max, 0, []}};
 %% This one is called if someone took over from us, and now wants to
 %% go back.
@@ -278,39 +278,12 @@ display({Tag,{warning_msg,_,{_,Format,Args}}}) ->
 display({Tag,{emulator,_,Chars}}) ->
     display2(Tag,Chars,[]).
 
-add_node(X, Pid) when atom(X) ->
+add_node(X, Pid) when is_atom(X) ->
     add_node(atom_to_list(X), Pid);
 add_node(X, Pid) ->
     lists:concat([X,"** at node ",node(Pid)," **~n"]).
 
-%% Can't do io_lib:format   :-(
+%% Can't do io_lib:format
 
 display2(Tag,F,A) ->
-    erlang:display({error_logger,Tag, nice(F), nice(A)}).
-
-nice(X) when tuple(X) ->
-    nice_tuple(X);
-
-nice([]) -> [];
-nice(L) when list(L) ->
-    case is_string(L) of
-	true ->
-	    list_to_atom(L);
-	false ->
-	    [H|T] = L,
-	    [nice(H) | nice(T)]
-    end;
-nice(X) -> X.
-
-nice_tuple(X) ->
-    nice_tuple(X,1,size(X) + 1).
-nice_tuple(X, Pos, Pos) -> X;
-nice_tuple(X, Pos, End) ->
-    nice_tuple(setelement(Pos, X, nice(element(Pos, X))), Pos+1, End).
-
-is_string([]) -> true;
-is_string([H|T]) when integer(H), H > 1, H < 255 -> is_string(T);
-is_string(_) -> false.
-
-
-
+    erlang:display({error_logger,Tag,F,A}).

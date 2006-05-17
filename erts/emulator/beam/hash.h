@@ -81,7 +81,7 @@ Hash* hash_init(ErtsAlcType_t, Hash*, char*, int, HashFunctions);
 
 void  hash_delete(Hash*);
 void  hash_get_info(HashInfo*, Hash*);
-void  hash_info(CIO, Hash*);
+void  hash_info(int, void *, Hash*);
 int   hash_table_sz(Hash *);
 
 void* hash_get(Hash*, void*);

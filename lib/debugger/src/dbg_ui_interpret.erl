@@ -122,7 +122,8 @@ gui_cmd({select, File}, State) ->
 	error ->
 	    Error = format_error(int:interpretable(File)),
 	    Msg = ["Error when interpreting:", File, Error],
-	    tool_utils:notify(State#state.gs, Msg)
+	    Window = dbg_ui_filedialog_win:get_window(State#state.win),
+	    tool_utils:notify(Window, Msg)
     end,
     State;
 gui_cmd({multiselect, Dir, FileNames}, State) ->
@@ -140,10 +141,11 @@ interpret_all(State, Dir, [File0|Files]) ->
 	    dbg_ui_filedialog_win:tag(State#state.win, File),
 	    interpret_all(State, Dir, Files);
 	error ->
+	    Window = dbg_ui_filedialog_win:get_window(State#state.win),
 	    Error = format_error(int:interpretable(File)),
 	    Msg = ["Error when interpreting:", File, Error,
 		   "Ok to continue?"],
-	    case tool_utils:confirm(State#state.gs, Msg) of
+	    case tool_utils:confirm(Window, Msg) of
 		ok -> interpret_all(State, Dir, Files);
 		cancel -> true
 	    end
@@ -153,4 +155,6 @@ interpret_all(_State, _Dir, []) ->
 
 format_error({error,no_beam}) -> "No BEAM file";
 format_error({error,no_debug_info}) -> "No debug_info in BEAM file";
-format_error({error,badarg}) -> "Not an Erlang module".
+format_error({error,badarg}) -> "File does not exist";
+format_error({error,{app,App}}) ->
+    "Cannot interpret "++atom_to_list(App)++" modules".

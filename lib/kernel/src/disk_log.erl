@@ -1301,12 +1301,13 @@ do_format_error(nodedown) ->
     io_lib:format("There seems to be no node up that can handle "
 		  "the request~n", []);
 do_format_error({corrupt_log_file, FileName}) ->
-    io_lib:format("The disk log file ~s contains corrupt data~n", [FileName]);
+    io_lib:format("The disk log file \"~s\" contains corrupt data~n", 
+                  [FileName]);
 do_format_error({need_repair, FileName}) ->
-    io_lib:format("The disk log file ~s has not been closed properly and "
+    io_lib:format("The disk log file \"~s\" has not been closed properly and "
 		  "needs repair~n", [FileName]);
 do_format_error({not_a_log_file, FileName}) ->
-    io_lib:format("The file ~s is not a wrap log file~n", [FileName]);
+    io_lib:format("The file \"~s\" is not a wrap log file~n", [FileName]);
 do_format_error({invalid_header, InvalidHeader}) ->
     io_lib:format("The disk log header is not wellformed: ~p~n", 
 		  [InvalidHeader]);
@@ -1314,12 +1315,12 @@ do_format_error(end_of_log) ->
     io_lib:format("An attempt was made to step outside a not yet "
 		  "full wrap log~n", []);
 do_format_error({invalid_index_file, FileName}) ->
-    io_lib:format("The wrap log index file ~s cannot be used~n",
+    io_lib:format("The wrap log index file \"~s\" cannot be used~n",
 		  [FileName]);
 do_format_error({no_continuation, BadCont}) ->
     io_lib:format("The term ~p is not a chunk continuation~n", [BadCont]);
 do_format_error({file_error, FileName, Reason}) ->
-    io_lib:format("~s: ~p~n", [FileName, file:format_error(Reason)]);
+    io_lib:format("\"~s\": ~p~n", [FileName, file:format_error(Reason)]);
 do_format_error(E) ->
     io_lib:format("~p~n", [E]).
 

@@ -575,18 +575,20 @@ recover_coordinator(Tid, Etabs) ->
 	    %% Tell the participants about the outcome
 	    Protocol = Prep#prep.protocol,
 	    Outcome = tell_outcome(Tid, Protocol, node(), CheckNodes, TellNodes),
-
+	    
 	    %% Recover locally
 	    CR = Prep#prep.records,
 	    {DiscNs, RamNs} = commit_nodes(CR, [], []),
-	    {value, Local} = lists:keysearch(node(), #commit.node, CR),
-
-	    ?eval_debug_fun({?MODULE, recover_coordinator, pre},
-			    [{tid, Tid}, {outcome, Outcome}, {prot, Protocol}]),
-	    recover_coordinator(Tid, Protocol, Outcome, Local, DiscNs, RamNs),
-	    ?eval_debug_fun({?MODULE, recover_coordinator, post},
-			    [{tid, Tid}, {outcome, Outcome}, {prot, Protocol}])
-    
+	    case lists:keysearch(node(), #commit.node, CR) of
+		{value, Local} ->
+		    ?eval_debug_fun({?MODULE, recover_coordinator, pre},
+				    [{tid, Tid}, {outcome, Outcome}, {prot, Protocol}]),
+		    recover_coordinator(Tid, Protocol, Outcome, Local, DiscNs, RamNs),
+		    ?eval_debug_fun({?MODULE, recover_coordinator, post},
+				    [{tid, Tid}, {outcome, Outcome}, {prot, Protocol}]);
+		false ->  %% When killed before store havn't been copied to 
+		    ok    %% to the new nested trans store.
+	    end
     end,
     erase_ets_tabs(Etabs),
     transaction_terminated(Tid),

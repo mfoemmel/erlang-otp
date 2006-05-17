@@ -165,8 +165,9 @@ static Block_t *	get_free_block		(Allctr_t *, Uint);
 static void		link_free_block		(Allctr_t *, Block_t *);
 static void		unlink_free_block	(Allctr_t *, Block_t *);
 static void		update_last_aux_mbc	(Allctr_t *, Carrier_t *);
-static Eterm		info_options		(Allctr_t *, char *, CIO *,
-						 Uint **, Uint *);
+static Eterm		info_options		(Allctr_t *, char *, int *,
+						 void *, Uint **, Uint *);
+static void		init_atoms		(void);
 
 #ifdef ERTS_ALLOC_UTIL_HARD_DEBUG
 static void		check_block		(Allctr_t *, Block_t *,  int);
@@ -215,10 +216,14 @@ erts_gfalc_start(GFAllctr_t *gfallctr,
     allctr->creating_mbc		= update_last_aux_mbc;
     allctr->destroying_mbc		= update_last_aux_mbc;
 
+    allctr->init_atoms			= init_atoms;
+
 #ifdef ERTS_ALLOC_UTIL_HARD_DEBUG
     allctr->check_block			= check_block;
     allctr->check_mbc			= check_mbc;
 #endif
+
+    allctr->atoms_initialized		= 0;
 
     if (init->sbct > BKT_MIN_SIZE_D-1)
 	gfallctr->bkt_intrvl_d =
@@ -493,6 +498,12 @@ init_atoms(void)
 {
 #ifdef DEBUG
     Eterm *atom;
+#endif
+
+    if (atoms_initialized)
+	return;
+
+#ifdef DEBUG
     for (atom = (Eterm *) &am; atom <= &am.end_of_atoms; atom++) {
 	*atom = THE_NON_VALUE;
     }
@@ -524,15 +535,17 @@ add_2tup(Uint **hpp, Uint *szp, Eterm *lp, Eterm el1, Eterm el2)
 static Eterm
 info_options(Allctr_t *allctr,
 	     char *prefix,
-	     CIO *ciop,
+	     int *print_to_p,
+	     void *print_to_arg,
 	     Uint **hpp,
 	     Uint *szp)
 {
     GFAllctr_t *gfallctr = (GFAllctr_t *) allctr;
     Eterm res = THE_NON_VALUE;
 
-    if (ciop) {
-	erl_printf(*ciop,
+    if (print_to_p) {
+	erts_print(*print_to_p,
+		   print_to_arg,
 		   "%smbsd: %lu\n"
 		   "%sas: gf\n",
 		   prefix, gfallctr->max_blk_search,
@@ -542,7 +555,8 @@ info_options(Allctr_t *allctr,
     if (hpp || szp) {
 	
 	if (!atoms_initialized)
-	    init_atoms();
+	    erl_exit(1, "%s:%d: Internal error: Atoms not initialized",
+		     __FILE__, __LINE__);;
 
 	res = NIL;
 	add_2tup(hpp, szp, &res, am.as, am.gf);
@@ -553,7 +567,6 @@ info_options(Allctr_t *allctr,
 
     return res;
 }
-
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
  * NOTE:  erts_gfalc_test() is only supposed to be used for testing.         *

@@ -13,7 +13,7 @@
  * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
  * AB. All Rights Reserved.''
  * 
- *     $Id $
+ *     $Id$
  */
 /*
 ** General hash functions
@@ -90,17 +90,17 @@ void hash_get_info(HashInfo *hi, Hash *h)
 **
 */
 
-void hash_info(CIO to, Hash* h)
+void hash_info(int to, void *arg, Hash* h)
 {
     HashInfo hi;
 
     hash_get_info(&hi, h);
 
-    erl_printf(to, "=hash_table:%s\n", hi.name);
-    erl_printf(to, "size: %d\n",       hi.size);
-    erl_printf(to, "used: %d\n",       hi.used);
-    erl_printf(to, "objs: %d\n",       hi.objs);
-    erl_printf(to, "depth: %d\n",      hi.depth);
+    erts_print(to, arg, "=hash_table:%s\n", hi.name);
+    erts_print(to, arg, "size: %d\n",       hi.size);
+    erts_print(to, arg, "used: %d\n",       hi.used);
+    erts_print(to, arg, "objs: %d\n",       hi.objs);
+    erts_print(to, arg, "depth: %d\n",      hi.depth);
 }
 
 

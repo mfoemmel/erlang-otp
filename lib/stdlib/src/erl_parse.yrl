@@ -33,12 +33,13 @@ tuple
 record_expr record_tuple record_field record_fields
 if_expr if_clause if_clauses case_expr cr_clause cr_clauses receive_expr
 fun_expr fun_clause fun_clauses
+%% cond_expr cond_clause cond_clauses
 try_expr try_catch try_clause try_clauses query_expr
 function_call argument_list
 exprs guard
 atomic strings
 prefix_op mult_op add_op list_op comp_op
-rule rule_clauses rule_clause rule_args rule_guard rule_body
+rule rule_clauses rule_clause rule_body
 binary bin_elements bin_element bit_expr
 opt_bit_size_expr bit_size_expr opt_bit_type_list bit_type_list bit_type.
 
@@ -48,6 +49,7 @@ char integer float atom string var
 '(' ')' ',' '->' ':-' '{' '}' '[' ']' '|' '||' '<-' ';' ':' '#' '.'
 'after' 'begin' 'case' 'try' 'catch' 'end' 'fun' 'if' 'of' 'receive' 'when'
 'andalso' 'orelse' 'query'
+%% 'cond'
 'bnot' 'not'
 '*' '/' 'div' 'rem' 'band' 'and'
 '+' '-' 'bor' 'bxor' 'bsl' 'bsr' 'or' 'xor'
@@ -56,6 +58,8 @@ char integer float atom string var
 '<<' '>>'
 '!' '='
 dot.
+
+Expect 2.
 
 Rootsymbol form.
 
@@ -145,6 +149,7 @@ expr_max -> if_expr : '$1'.
 expr_max -> case_expr : '$1'.
 expr_max -> receive_expr : '$1'.
 expr_max -> fun_expr : '$1'.
+%%expr_max -> cond_expr : '$1'.
 expr_max -> try_expr : '$1'.
 expr_max -> query_expr : '$1'.
 
@@ -295,6 +300,14 @@ try_clause -> var ':' expr clause_guard clause_body :
 	L = line('$1'),
 	{clause,L,[{tuple,L,['$1','$3',{var,L,'_'}]}],'$4','$5'}.
 
+%%cond_expr -> 'cond' cond_clauses 'end' : {'cond',line('$1'),'$2'}.
+
+%%cond_clauses -> cond_clause : ['$1'].
+%%cond_clauses -> cond_clause ';' cond_clauses : ['$1' | '$3'].
+
+%%cond_clause -> expr clause_body :
+%%	{clause,line('$1'),[],[['$1']],'$2'}.
+
 query_expr -> 'query' list_comprehension 'end' :
 	{'query',line('$1'),'$2'}.
 
@@ -360,12 +373,6 @@ rule_clauses -> rule_clause ';' rule_clauses : ['$1'|'$3'].
 rule_clause -> atom clause_args clause_guard rule_body :
 	{clause,line('$1'),element(3, '$1'),'$2','$3','$4'}.
 
-
-rule_args -> argument_list : element(1, '$1').
-
-rule_guard -> 'when' guard : '$2'.
-rule_guard -> '$empty' : [].
-
 rule_body -> ':-' lc_exprs: '$2'.
 
 
@@ -418,20 +425,20 @@ parse_form(Tokens) ->
 
 parse_exprs(Tokens) ->
     case parse([{atom,0,f},{'(',0},{')',0},{'->',0}|Tokens]) of
-	{ok,{function,Lf,f,0,[{clause,Lc,[],[],Exprs}]}} ->
+	{ok,{function,_Lf,f,0,[{clause,_Lc,[],[],Exprs}]}} ->
 	    {ok,Exprs};
 	{error,E} -> {error,E}
     end.
 
 parse_term(Tokens) ->
     case parse([{atom,0,f},{'(',0},{')',0},{'->',0}|Tokens]) of
-	{ok,{function,Lf,f,0,[{clause,Lc,[],[],[Expr]}]}} ->
+	{ok,{function,_Lf,f,0,[{clause,_Lc,[],[],[Expr]}]}} ->
 	    case catch normalise(Expr) of
-		{'EXIT',R} ->
+		{'EXIT',_R} ->
 		    {error,{line(Expr),?MODULE,"bad term"}};
 		Term -> {ok,Term}
 	    end;
-	{ok,{function,Lf,f,0,[{clause,Lc,[],[],[E1,E2|Es]}]}} ->
+	{ok,{function,_Lf,f,0,[{clause,_Lc,[],[],[_E1,E2|_Es]}]}} ->
 	    {error,{line(E2),?MODULE,"bad term"}};
 	{error,E} -> {error,E}
     end.
@@ -446,9 +453,9 @@ parse_term(Tokens) ->
 
 build_attribute({atom,La,module}, Val) ->
     case Val of
-	[{atom,Lm,Module}] ->
+	[{atom,_Lm,Module}] ->
 	    {attribute,La,module,Module};
-	[{atom,Lm,Module},ExpList] ->
+	[{atom,_Lm,Module},ExpList] ->
 	    {attribute,La,module,{Module,var_list(ExpList)}};
 	[Name] ->
 	    case package_segments(Name) of
@@ -464,14 +471,14 @@ build_attribute({atom,La,module}, Val) ->
 		Module ->
 		    {attribute,La,module,{Module,var_list(ExpList)}}
 	    end;
-	Other ->
+	_Other ->
 	    error_bad_decl(La, module)
     end;
 build_attribute({atom,La,export}, Val) ->
     case Val of
 	[ExpList] ->
 	    {attribute,La,export,farity_list(ExpList)};
-	Other -> error_bad_decl(La, export)
+	_Other -> error_bad_decl(La, export)
     end;
 build_attribute({atom,La,import}, Val) ->
     case Val of
@@ -482,7 +489,7 @@ build_attribute({atom,La,import}, Val) ->
 		Module ->
 		    {attribute,La,import,Module}
 	    end;
-	[{atom,Lm,Mod},ImpList] ->
+	[{atom,_Lm,Mod},ImpList] ->
 	    {attribute,La,import,{Mod,farity_list(ImpList)}};
 	[Name, ImpList] ->
 	    case package_segments(Name) of
@@ -491,58 +498,58 @@ build_attribute({atom,La,import}, Val) ->
 		Module ->
 		    {attribute,La,import,{Module,farity_list(ImpList)}}
 	    end;
-	Other -> error_bad_decl(La, import)
+	_Other -> error_bad_decl(La, import)
     end;
 build_attribute({atom,La,record}, Val) ->
     case Val of
-	[{atom,Ln,Record},RecTuple] ->
+	[{atom,_Ln,Record},RecTuple] ->
 	    {attribute,La,record,{Record,record_tuple(RecTuple)}};
-	Other -> error_bad_decl(La, record)
+	_Other -> error_bad_decl(La, record)
     end;
 build_attribute({atom,La,file}, Val) ->
     case Val of
-	[{string,Ln,Name},{integer,Ll,Line}] ->
+	[{string,_Ln,Name},{integer,_Ll,Line}] ->
 	    {attribute,La,file,{Name,Line}};
-	Other -> error_bad_decl(La, file)
+	_Other -> error_bad_decl(La, file)
     end;
 build_attribute({atom,La,Attr}, Val) ->
     case Val of
 	[Expr] ->
 	    {attribute,La,Attr,term(Expr)};
-	Other -> return_error(La, "bad attribute")
+	_Other -> return_error(La, "bad attribute")
     end.
 
-var_list({cons,Lc,{var,_,V},Tail}) ->
+var_list({cons,_Lc,{var,_,V},Tail}) ->
     [V|var_list(Tail)];
-var_list({nil,Ln}) -> [];
+var_list({nil,_Ln}) -> [];
 var_list(Other) ->
     return_error(line(Other), "bad variable list").
 
 error_bad_decl(L, S) ->
     return_error(L, io_lib:format("bad ~w declaration", [S])).
 
-farity_list({cons,Lc,{op,Lo,'/',{atom,La,A},{integer,Li,I}},Tail}) ->
+farity_list({cons,_Lc,{op,_Lo,'/',{atom,_La,A},{integer,_Li,I}},Tail}) ->
     [{A,I}|farity_list(Tail)];
-farity_list({nil,Ln}) -> [];
+farity_list({nil,_Ln}) -> [];
 farity_list(Other) ->
     return_error(line(Other), "bad function arity").
 
-record_tuple({tuple,Lt,Fields}) ->
+record_tuple({tuple,_Lt,Fields}) ->
     record_fields(Fields);
 record_tuple(Other) ->
     return_error(line(Other), "bad record declaration").
 
 record_fields([{atom,La,A}|Fields]) ->
     [{record_field,La,{atom,La,A}}|record_fields(Fields)];
-record_fields([{match,Lm,{atom,La,A},Expr}|Fields]) ->
+record_fields([{match,_Lm,{atom,La,A},Expr}|Fields]) ->
     [{record_field,La,{atom,La,A},Expr}|record_fields(Fields)];
-record_fields([Other|Fields]) ->
+record_fields([Other|_Fields]) ->
     return_error(line(Other), "bad record field");
 record_fields([]) -> [].
 
 term(Expr) ->
     case catch normalise(Expr) of
-	{'EXIT',R} -> return_error(line(Expr), "bad attribute");
+	{'EXIT',_R} -> return_error(line(Expr), "bad attribute");
 	Term -> Term
     end.
 
@@ -581,7 +588,7 @@ build_fun(Line, Cs) ->
 check_clauses(Cs, Name, Arity) ->
      mapl(fun ({clause,L,N,As,G,B}) when N == Name, length(As) == Arity ->
 		 {clause,L,As,G,B};
-	     ({clause,L,N,As,G,B}) ->
+	     ({clause,L,_N,_As,_G,_B}) ->
 		 return_error(L, "head mismatch") end, Cs).
 
 build_try(L,Es,Scs,{Ccs,As}) ->
@@ -701,12 +708,12 @@ abstract_string(T, String, Line) ->
 
 not_string([C|T], Result, Line) ->
     not_string(T, {cons, Line, {integer, Line, C}, Result}, Line);
-not_string([], Result, Line) ->
+not_string([], Result, _Line) ->
     Result.
 
 abstract_list([H|T], Line) ->
     [abstract(H, Line)|abstract_list(T, Line)];
-abstract_list([], Line) ->
+abstract_list([], _Line) ->
     [].
 
 %% tokens(AbsTerm) -> [Token]

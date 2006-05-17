@@ -37,6 +37,9 @@
 -export([finalize_bin/4, get_base/2]).
 -export([create_heap_binary/3, create_refc_binary/3]).
 -export([get_erts_mb/1]).
+-export([extract_offset/2, extract_binsize/2, extract_base/2, extract_orig/2]).
+-export([update_offset/2, create_matchstate/6]).
+-export([extract_slot/3, update_slot/3, extract_matchbuffer/2]).
 
 -include("hipe_literals.hrl").
 
@@ -72,7 +75,7 @@
 -define(TAG_IMMED2_NIL,   ((16#3 bsl ?TAG_IMMED1_SIZE) bor ?TAG_IMMED1_IMMED2)).
 
 -define(TAG_HEADER_ARITYVAL,((16#0 bsl ?TAG_PRIMARY_SIZE) bor ?TAG_PRIMARY_HEADER)).
--define(TAG_HEADER_VECTOR,  ((16#1 bsl ?TAG_PRIMARY_SIZE) bor ?TAG_PRIMARY_HEADER)).
+-define(TAG_HEADER_BIN_MATCHSTATE,   ((16#1 bsl ?TAG_PRIMARY_SIZE) bor ?TAG_PRIMARY_HEADER)).
 -define(TAG_HEADER_POS_BIG, ((16#2 bsl ?TAG_PRIMARY_SIZE) bor ?TAG_PRIMARY_HEADER)).
 -define(TAG_HEADER_NEG_BIG, ((16#3 bsl ?TAG_PRIMARY_SIZE) bor ?TAG_PRIMARY_HEADER)).
 -define(BIG_SIGN_BIT,	     (16#1 bsl ?TAG_PRIMARY_SIZE)).
@@ -812,24 +815,10 @@ finalize_bin(Dst, Base, Offset, TrueLblName) ->
    hipe_rtl:mk_goto(TrueLblName)].
 
 heap_arch_spec(HP) ->
-  case ?P_OFF_HEAP_MSO of
-    [] -> heap_arch_spec_shared(HP);
-    _ -> heap_arch_spec_non_shared(HP)
-  end.
-
-heap_arch_spec_non_shared(HP) ->
   Tmp1 = hipe_rtl:mk_new_reg(), % MSO state
   [hipe_rtl_arch:pcb_load(Tmp1, ?P_OFF_HEAP_MSO),
    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_NEXT), Tmp1),
    hipe_rtl_arch:pcb_store(?P_OFF_HEAP_MSO, HP)].
-
-heap_arch_spec_shared(HP) ->
-  Tmp1 = hipe_rtl:mk_new_reg(), % MSO state
-  MSO = hipe_rtl:mk_new_reg_gcsafe(),
-  [hipe_rtl:mk_load_address(MSO, erts_global_mso, c_const),
-   hipe_rtl:mk_load(Tmp1, MSO, hipe_rtl:mk_imm(?OFF_HEAP_MSO)),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_NEXT), Tmp1),
-   hipe_rtl:mk_store(MSO, hipe_rtl:mk_imm(?OFF_HEAP_MSO), HP)].
 
 get_base(Base, ByteSize) ->
   {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(), 
@@ -1001,3 +990,63 @@ get_erts_mb(MatchBuf) ->
       [hipe_rtl_arch:pcb_load(Tmp, Offset),
        hipe_rtl:mk_alu(MatchBuf, Tmp, 'add', hipe_rtl:mk_imm(?SCHED_DATA_ERTS_MB_OFFS))]
   end.
+
+extract_offset(Offset, MatchState) ->
+  Offs  = ?MS_MATCHBUFFER + ?MB_OFFSET - ?TAG_PRIMARY_BOXED,
+  hipe_rtl:mk_load(Offset, MatchState, hipe_rtl:mk_imm(Offs)).
+
+extract_orig(Orig, MatchState) ->
+  Offs  = ?MS_MATCHBUFFER + ?MB_ORIG - ?TAG_PRIMARY_BOXED,
+  hipe_rtl:mk_load(Orig, MatchState, hipe_rtl:mk_imm(Offs)).
+
+extract_base(Base, MatchState) ->
+  Offs  = ?MS_MATCHBUFFER + ?MB_BASE - ?TAG_PRIMARY_BOXED,
+  hipe_rtl:mk_load(Base, MatchState, hipe_rtl:mk_imm(Offs)).
+
+extract_binsize(BinSize, MatchState) ->
+  Offs  = ?MS_MATCHBUFFER + ?MB_SIZE - ?TAG_PRIMARY_BOXED,
+  hipe_rtl:mk_load(BinSize, MatchState, hipe_rtl:mk_imm(Offs)).
+
+update_offset(Offset, MatchState) ->
+  Offs  = ?MS_MATCHBUFFER + ?MB_OFFSET - ?TAG_PRIMARY_BOXED,
+  hipe_rtl:mk_store(MatchState, hipe_rtl:mk_imm(Offs), Offset).
+
+extract_slot(Dst, Slot, MatchState) ->
+  WordSize = hipe_rtl_arch:word_size(),
+  Offs  = ?MS_SAVEOFFSET + Slot*WordSize - ?TAG_PRIMARY_BOXED,
+  hipe_rtl:mk_load(Dst, MatchState, hipe_rtl:mk_imm(Offs)).
+
+extract_matchbuffer(Dst, MatchState) -> 
+  Offs  = ?MS_MATCHBUFFER - ?TAG_PRIMARY_BOXED,
+  hipe_rtl:mk_alu(Dst, MatchState, add, hipe_rtl:mk_imm(Offs)).
+
+update_slot(Slot, Src, MatchState) ->
+  WordSize = hipe_rtl_arch:word_size(),
+  Offs  = ?MS_SAVEOFFSET + Slot*WordSize - ?TAG_PRIMARY_BOXED,
+  hipe_rtl:mk_store(MatchState, hipe_rtl:mk_imm(Offs), Src).
+
+create_matchstate(Max, BinSize, Base, Offset, Orig, Ms) -> 
+  WordSize = hipe_rtl_arch:word_size(),
+  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
+  ByteSize = Max*WordSize + ?MS_SAVEOFFSET,
+  SizeInWords = ((ByteSize div WordSize) -1),
+  Header = hipe_rtl:mk_imm(mk_header(SizeInWords, 
+				     ?TAG_HEADER_BIN_MATCHSTATE)),
+  HeaderOffs = hipe_rtl:mk_imm(?MS_THING_WORD - ?TAG_PRIMARY_BOXED),
+  OrigOffs =  hipe_rtl:mk_imm(?MS_MATCHBUFFER + ?MB_ORIG - 
+			      ?TAG_PRIMARY_BOXED),
+  BaseOffs =   hipe_rtl:mk_imm(?MS_MATCHBUFFER + ?MB_BASE - 
+			       ?TAG_PRIMARY_BOXED),
+  BinSizeOffs =  hipe_rtl:mk_imm(?MS_MATCHBUFFER + ?MB_SIZE - 
+				 ?TAG_PRIMARY_BOXED),
+  OffsetOffs = hipe_rtl:mk_imm(?MS_MATCHBUFFER + ?MB_OFFSET - 
+			       ?TAG_PRIMARY_BOXED),
+  [GetHPInsn,
+   hipe_rtl:mk_alu(Ms, HP, add, hipe_rtl:mk_imm(?TAG_PRIMARY_BOXED)),
+   hipe_rtl:mk_store(Ms, HeaderOffs, Header),
+   hipe_rtl:mk_store(Ms, OrigOffs, Orig),
+   hipe_rtl:mk_store(Ms, BaseOffs, Base),
+   hipe_rtl:mk_store(Ms, BinSizeOffs, BinSize),
+   hipe_rtl:mk_store(Ms, OffsetOffs, Offset),
+   hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(ByteSize)),
+   PutHPInsn].

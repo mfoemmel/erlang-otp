@@ -760,7 +760,7 @@ do_terminate(reason)
       }
       else {
 	kill_old_erlang();
-	system(&cmd[0]);
+	system((char*)&cmd[0]);
 	print_error("Executed \"%s\". Terminating.",cmd);
       }
     }
@@ -801,7 +801,7 @@ heart_cmd_reply(int fd, char *s)
 
   m.op = HEART_CMD;
   m.len = htons(len + 2);	/* Include Op */
-  strcpy(m.fill, s);
+  strcpy((char*)m.fill, s);
 
   return write_message(fd, &m);
 }
@@ -863,7 +863,7 @@ read_message(fd, mp)
     return i;
   }
 
-  tmp = (char*) &(mp->len);
+  tmp = (unsigned char*) &(mp->len);
   rlen = (*tmp * 256) + *(tmp+1);
   if (rlen == 0) {
     return MSG_HDR_SIZE;

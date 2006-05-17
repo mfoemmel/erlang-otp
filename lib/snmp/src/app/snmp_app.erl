@@ -54,14 +54,11 @@ entities([], []) ->
 	    %% Skeleton start
 	    ?d("entities -> skeleton start", []),
 	    [];
-	undefined ->
-	    %% Skeleton start
-	    ?d("entities -> skeleton start", []),
-	    [];
 	OldConf when is_list(OldConf) ->
-	    ?d("entities -> old style start: ~n~p", [OldConf]),
+	    ?d("entities -> old style config: ~n~p", [OldConf]),
 	    %% Old style snmp (agent) application config format
 	    Conf = snmpa_app:convert_config(OldConf),
+	    ?d("entities -> converted config: ~n~p", [Conf]),
 	    [{agent, Conf}]
     end;
 entities([], E) ->

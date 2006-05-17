@@ -31,15 +31,32 @@
 #define EXPORT_RATE   100
 
 #define EXPORT_HASH(m,f,a) ((m)*(f)+(a))
-IndexTable export_table;
+static IndexTable export_table;
+
+#include "erl_smp.h"
+
+static erts_smp_rwmtx_t export_table_lock;
+
+#define export_read_lock()	erts_smp_rwmtx_rlock(&export_table_lock)
+#define export_read_unlock()	erts_smp_rwmtx_runlock(&export_table_lock)
+#define export_write_lock()	erts_smp_rwmtx_rwlock(&export_table_lock)
+#define export_write_unlock()	erts_smp_rwmtx_rwunlock(&export_table_lock)
+#define export_init_lock()	erts_smp_rwmtx_init(&export_table_lock, \
+						    "export_tab")
+
 
 extern Eterm* em_call_error_handler;
 extern Uint* em_call_traced_function;
 
 void
-export_info(CIO to)
+export_info(int to, void *to_arg)
 {
-    index_info(to, &export_table);
+    int lock = !ERTS_IS_CRASH_DUMPING;
+    if (lock)
+	export_read_lock();
+    index_info(to, to_arg, &export_table);
+    if (lock)
+	export_read_unlock();
 }
 
 
@@ -89,6 +106,7 @@ init_export_table(void)
 {
     HashFunctions f;
 
+    export_init_lock();
     f.hash = (H_FUN) export_hash;
     f.cmp  = (HCMP_FUN) export_cmp;
     f.alloc = (HALLOC_FUN) export_alloc;
@@ -115,8 +133,12 @@ Export*
 erts_find_export_entry(Eterm m, Eterm f, unsigned int a)
 {
     HashValue hval = EXPORT_HASH(m, f, a);
-    int ix = hval % export_table.htable.size;
-    HashBucket* b = export_table.htable.bucket[ix];
+    int ix;
+    HashBucket* b;
+
+    export_read_lock();
+    ix = hval % export_table.htable.size;
+    b = export_table.htable.bucket[ix];
 
     /*
      * Note: We have inlined the code from hash.c for speed.
@@ -125,11 +147,12 @@ erts_find_export_entry(Eterm m, Eterm f, unsigned int a)
     while (b != (HashBucket*) 0) {
 	Export* ep = (Export *) b;
 	if (ep->code[0] == m && ep->code[1] == f && ep->code[2] == a) {
-	    return ep;
+	    break;
 	}
 	b = b->next;
     }
-    return NULL;
+    export_read_unlock();
+    return (Export*)b;
 }
 
 
@@ -154,12 +177,13 @@ erts_find_function(Eterm m, Eterm f, unsigned int a)
     e.code[1] = f;
     e.code[2] = a;
 
-    if ((ep = hash_get(&export_table.htable, (void*) &e)) == NULL) {
-	return NULL;
+    export_read_lock();
+    ep = hash_get(&export_table.htable, (void*) &e);
+    if (ep != NULL && ep->address == ep->code+3 &&
+	ep->code[3] != (Uint) em_call_traced_function) {
+	ep = NULL;
     }
-    if (ep->address == ep->code+3 && ep->code[3] != (Uint) em_call_traced_function) {
-	return NULL;
-    }
+    export_read_unlock();
     return ep;
 }
 
@@ -174,6 +198,7 @@ erts_export_put(Eterm mod, Eterm func, unsigned int arity)
 {
     Export e;
     int ix;
+    Export *ep;
     
     ASSERT(is_atom(mod));
     ASSERT(is_atom(func));
@@ -186,14 +211,53 @@ erts_export_put(Eterm mod, Eterm func, unsigned int arity)
     e.address = e.code+3;
     e.code[4] = 0;
     e.match_prog_set = NULL;
+    export_write_lock();
     ix = index_put(&export_table, (void*) &e);
-    /*
-     * Note: there MUST be a sequence point between index_put()
-     * and export_list(). export_list() is a macro which contains
-     * export_list.table as a subexpression. Without the sequence
-     * point, the compiler may hoist that subexpression to before
-     * the index_put(), which breaks whenever index_put() modifies
-     * export_list.table.
-     */
-    return export_list(ix);
+    ep = (Export*)export_table.table[ix];
+    export_write_unlock();
+    return ep;
+}
+
+Export *export_list(int i)
+{
+    Export *ep;
+
+    export_read_lock();
+    ep = (Export*)export_table.table[i];
+    export_read_unlock();
+    return ep;
+}
+
+int export_list_size(void)
+{
+    int size;
+    int lock = !ERTS_IS_CRASH_DUMPING;
+    if (lock)
+	export_read_lock();
+    size = export_table.sz;
+    if (lock)
+	export_read_unlock();
+    return size;
+}
+
+int export_table_sz(void)
+{
+    int sz;
+    int lock = !ERTS_IS_CRASH_DUMPING;
+    if (lock)
+	export_read_lock();
+    sz = index_table_sz(&export_table);
+    if (lock)
+	export_read_unlock();
+    return sz;
+}
+
+Export *export_get(Export *e)
+{
+    Export *ep;
+
+    export_read_lock();
+    ep = hash_get(&export_table.htable, e);
+    export_read_unlock();
+    return ep;
 }

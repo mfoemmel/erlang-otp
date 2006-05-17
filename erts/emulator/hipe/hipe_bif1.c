@@ -408,15 +408,11 @@ BIF_RETTYPE hipe_bifs_gc_info_0(BIF_ALIST_0)
 #endif
     Eterm *hp;
     Uint used_heap = (BIF_P->htop - BIF_P->heap) +
-#if !(defined(NOMOVE) && defined(SHARED_HEAP))
                      (OLD_HTOP(BIF_P) - OLD_HEAP(BIF_P)) +
-#endif
                      MBUF_SIZE(BIF_P);
 
     Uint alloc_heap = (BIF_P->hend - BIF_P->heap) +
-#if !(defined(NOMOVE) && defined(SHARED_HEAP))
                       (OLD_HEND(BIF_P) - OLD_HEAP(BIF_P)) +
-#endif
                       MBUF_SIZE(BIF_P);
 
     hp = HAlloc(BIF_P, 7);
@@ -444,16 +440,12 @@ BIF_RETTYPE hipe_bifs_shared_gc_info_0(BIF_ALIST_0)
 #endif
     Eterm *hp;
 
-#if defined(SHARED_HEAP) || defined(HYBRID)
+#if defined(HYBRID)
     Uint tmp_used_heap = (Uint)((BIF_P->htop - BIF_P->heap) +
-#if !(defined(INCREMENTAL) && defined(SHARED_HEAP))
                                 (OLD_HTOP(BIF_P) - OLD_HEAP(BIF_P)) +
-#endif
                                 MBUF_SIZE(BIF_P));
     Uint tmp_allocated_heap = (Uint)((BIF_P->hend - BIF_P->heap) +
-#if !(defined(INCREMENTAL) && defined(SHARED_HEAP))
                                      (OLD_HEND(BIF_P) - OLD_HEAP(BIF_P)) +
-#endif
                                      MBUF_SIZE(BIF_P));
 #else
     Uint tmp_used_heap = 0;

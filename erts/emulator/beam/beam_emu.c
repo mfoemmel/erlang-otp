@@ -25,12 +25,14 @@
 #include "erl_vm.h"
 #include "global.h"
 #include "erl_process.h"
+#include "erl_nmgc.h"
 #include "error.h"
 #include "bif.h"
 #include "big.h"
 #include "beam_load.h"
 #include "erl_binary.h"
 #include "erl_bits.h"
+#include "dist.h"
 #include "beam_bp.h"
 #include "beam_catches.h"
 #ifdef HIPE
@@ -52,6 +54,80 @@
 #  define Goto(Rel) goto *(Rel)
 #  define LabelAddr(Label) &&Label
 #  define OpCode(OpCode)  (&&lb_##OpCode)
+#endif
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+#  ifdef ERTS_SMP
+#    define PROCESS_MAIN_CHK_LOCKS(P) \
+do { if ((P)) erts_proc_lc_chk_only_proc_main((P)); } while (0)
+#  else
+#    define PROCESS_MAIN_CHK_LOCKS(P) erts_lc_check_exact(NULL, 0)
+#  endif
+#else
+#  define PROCESS_MAIN_CHK_LOCKS(P)
+#endif
+
+#ifdef ERTS_SMP
+
+#if defined(HEAP_FRAG_ELIM_TEST) /* Shallow copy to heap if possible;
+				    otherwise, move to heap via garbage
+				    collection. */
+
+#define MV_MSG_MBUF_INTO_PROC(M)					\
+do {									\
+    if ((M)->bp) {							\
+	Uint need = (M)->bp->size;					\
+	if (E - HTOP >= need) {						\
+	    Uint *htop = HTOP;						\
+	    erts_move_msg_mbuf_to_heap(&htop, &MSO(c_p), (M));		\
+	    ASSERT(htop - HTOP == need);				\
+	    HTOP = htop;						\
+	}								\
+	else {								\
+	    SWAPOUT;							\
+	    reg[0] = r(0);						\
+	    PROCESS_MAIN_CHK_LOCKS(c_p);				\
+	    FCALLS -= erts_garbage_collect(c_p, 0, NULL, 0);		\
+	    PROCESS_MAIN_CHK_LOCKS(c_p);				\
+	    r(0) = reg[0];						\
+	    SWAPIN;							\
+	    ASSERT(!(M)->bp);						\
+	}								\
+    }									\
+    ASSERT(!(M)->bp);							\
+} while (0)
+
+#elif 0 /* Shallow copy to heap if possible; otherwise,
+	   move to proc mbuf list. */
+
+#define MV_MSG_MBUF_INTO_PROC(M)					\
+do {									\
+    if ((M)->bp) {							\
+	Uint need = (M)->bp->size;					\
+	if (E - HTOP < need)						\
+	    erts_move_msg_mbuf_to_proc_mbufs(c_p, (M));			\
+	else {								\
+	    Uint *htop = HTOP;						\
+	    erts_move_msg_mbuf_to_heap(&htop, &MSO(c_p), (M));		\
+	    ASSERT(htop - HTOP == need);				\
+	    HTOP = htop;						\
+	}								\
+    }									\
+    ASSERT(!(M)->bp);							\
+} while (0)
+
+#else /* Move to proc mbuf list. */
+
+#define MV_MSG_MBUF_INTO_PROC(M)					\
+do {									\
+    if ((M)->bp) erts_move_msg_mbuf_to_proc_mbufs(c_p, (M));		\
+    ASSERT(!(M)->bp);							\
+} while (0)
+
+#endif
+
+#else 
+#define MV_MSG_MBUF_INTO_PROC(M)
 #endif
 
 /*
@@ -198,12 +274,20 @@ do {                                     \
 
 Eterm beam_apply[2];
 Eterm beam_exit[1];
-Eterm beam_debug_apply[12];
-int beam_debug_apply_size = sizeof(beam_debug_apply)/sizeof(beam_debug_apply[0]);
 
 Eterm* em_call_error_handler;
 Eterm* em_apply_bif;
 Eterm* em_call_traced_function;
+
+
+/* NOTE These should be the only variables containing trace instructions.
+**      Sometimes tests are form the instruction value, and sometimes
+**      for the refering variable (one of these), and rouge references
+**      will most likely cause chaos.
+*/
+Eterm beam_return_to_trace[1]; /* OpCode(i_return_to_trace) */
+Eterm beam_return_trace[1];    /* OpCode(i_return_trace) */
+Eterm beam_exception_trace[1]; /* UGLY also OpCode(i_return_trace) */
 
 /*
  * All Beam instructions in numerical order.
@@ -213,22 +297,11 @@ Eterm* em_call_traced_function;
 void** beam_ops;
 #endif
 
+#ifndef ERTS_SMP /* Not supported with smp emulator */
 extern int count_instructions;
+#endif
 
-#if defined(SHARED_HEAP)
-#define SWAPIN                    \
-    HTOP = HEAP_TOP(c_p);         \
-    HeapLimit = HEAP_END(c_p);    \
-    StackLimit = STACK_END(c_p);  \
-    E = c_p->stop
-
-#define SWAPOUT                   \
-    HEAP_TOP(c_p) = HTOP;         \
-    HEAP_END(c_p) = HeapLimit;    \
-    STACK_END(c_p) = StackLimit;  \
-    c_p->stop = E
-
-#elif defined(HYBRID)
+#if defined(HYBRID)
 #define SWAPIN             \
     g_htop = global_htop;  \
     g_hend = global_hend;  \
@@ -262,79 +335,6 @@ extern int count_instructions;
 #define y(N) E[N]
 #define r(N) x##N
 
-#ifdef SHARED_HEAP
-
-#ifdef DEBUG
-#define DEBUG_MEMSET sys_memset(c_p->send, 0xff, c_p->stack_sz*sizeof(Eterm))
-#else
-#define DEBUG_MEMSET
-#endif
-
-#define AllocateStack(StackNeed)					\
-  do {									\
-    ASSERT(c_p->send <= E && E <= c_p->stack);				\
-    if (E - c_p->send < (StackNeed)) {					\
-      int used_stack = c_p->stack - E;					\
-      int new_sz = erts_next_heap_size(c_p->stack_sz + (StackNeed), 0);	\
-      Eterm *new_stack =						\
-        (Eterm*) ERTS_STACK_ALLOC(sizeof(Eterm) * new_sz);		\
-      sys_memmove((new_stack + new_sz) - used_stack, E,			\
-                  used_stack * sizeof(Eterm));				\
-      DEBUG_MEMSET;							\
-      ERTS_STACK_FREE((void *) c_p->send, c_p->stack_sz*sizeof(Eterm));	\
-      c_p->stack_sz = new_sz;						\
-      c_p->send = new_stack;						\
-      c_p->stop = new_stack + new_sz - used_stack;			\
-      c_p->stack = new_stack + new_sz;					\
-      E = c_p->stop;							\
-    }									\
-    E -= (StackNeed);							\
-    ASSERT(c_p->send <= E && E <= c_p->stack);				\
-  } while(0)
-
-/*
- * Makes sure that there are StackNeed and HeapNeed + 1 words available
- * on the stack and heap respectively, then allocates StackNeed + 1
- * words on the stack and saves CP.
- *
- * M is number of live registers to preserve during garbage collection
- */
-
-#define AH(StackNeed, HeapNeed, M)                                       \
-  do {                                                                   \
-     int needed;                                                         \
-     ASSERT(StackLimit <= E && E <= c_p->stack);                         \
-     ASSERT(HEAP_START(c_p) <= HTOP && HTOP <= HeapLimit);               \
-     needed = (StackNeed) + CP_SIZE;                                     \
-     if (E - StackLimit < needed) {                                      \
-       int used_stack = c_p->stack - E;                                  \
-       int new_sz = erts_next_heap_size(c_p->stack_sz + needed, 0);      \
-       Eterm *new_stack = (Eterm *)                                      \
-	   ERTS_STACK_ALLOC(sizeof(Eterm)*new_sz);                       \
-       sys_memcpy((new_stack + new_sz) - used_stack,                     \
-                   E,                                                    \
-                   used_stack * sizeof(Eterm));                          \
-       DEBUG_MEMSET;                                                     \
-       ERTS_STACK_FREE((void *) StackLimit, c_p->stack_sz*sizeof(Eterm));\
-       c_p->stack_sz = new_sz;                                           \
-       StackLimit = c_p->send = new_stack;                               \
-       c_p->stop = new_stack + new_sz - used_stack;                      \
-       c_p->stack = new_stack + new_sz;                                  \
-       E = c_p->stop;                                                    \
-     }                                                                   \
-     if ((HeapNeed) > HeapLimit - HTOP) {                                \
-           SWAPOUT;                                                      \
-           reg[0] = r(0);                                                \
-           FCALLS -= erts_garbage_collect(c_p, (HeapNeed), reg, (M));    \
-           r(0) = reg[0];                                                \
-           SWAPIN;                                                       \
-     }                                                                   \
-     E -= needed;                                                        \
-     SAVE_CP(E);                                                         \
-     ASSERT(c_p->send <= E && E <= c_p->stack);                          \
-     ASSERT(HEAP_START(c_p) <= HTOP && HTOP <= HeapLimit);               \
-  } while (0)
-#else
 /*
  * Makes sure that there are StackNeed + HeapNeed + 1 words available
  * on the combined heap/stack segment, then allocates StackNeed + 1
@@ -346,18 +346,19 @@ extern int count_instructions;
 #define AH(StackNeed, HeapNeed, M) \
   do { \
      int needed; \
-     needed = (StackNeed) + CP_SIZE; \
+     needed = (StackNeed) + 1; \
      if (E - HTOP < (needed + (HeapNeed))) { \
            SWAPOUT; \
            reg[0] = r(0); \
+           PROCESS_MAIN_CHK_LOCKS(c_p); \
            FCALLS -= erts_garbage_collect(c_p, needed + (HeapNeed), reg, (M)); \
+           PROCESS_MAIN_CHK_LOCKS(c_p); \
            r(0) = reg[0]; \
            SWAPIN; \
      } \
      E -= needed; \
      SAVE_CP(E); \
   } while (0)
-#endif
 
 #define Allocate(Ns, Live) AH(Ns, 0, Live)
 
@@ -403,7 +404,7 @@ extern int count_instructions;
 
 #define D(N)             \
      RESTORE_CP(E);      \
-     E += (N) + CP_SIZE;
+     E += (N) + 1;
 
 
 /*
@@ -411,36 +412,22 @@ extern int count_instructions;
  * Live is number of active argument registers to be preserved.
  */
 
-#ifdef SHARED_HEAP
-#define TestHeap(Nh, Live)                                      \
-  do {                                                          \
-    unsigned need = (Nh);                                       \
-    ASSERT(HEAP_START(c_p) <= HTOP && HTOP <= HeapLimit);       \
-    if (HeapLimit - HTOP < need) {                              \
-       SWAPOUT;                                                 \
-       reg[0] = r(0);                                           \
-       FCALLS -= erts_garbage_collect(c_p, need, reg, (Live));  \
-       ASSERT(IS_ACTIVE(c_p));                                  \
-       r(0) = reg[0];                                           \
-       SWAPIN;                                                  \
-    }                                                           \
-  } while (0)
-#else
 #define TestHeap(Nh, Live)                                      \
   do {                                                          \
     unsigned need = (Nh);                                       \
     if (E - HTOP < need) {                                      \
        SWAPOUT;                                                 \
        reg[0] = r(0);                                           \
+       PROCESS_MAIN_CHK_LOCKS(c_p);                             \
        FCALLS -= erts_garbage_collect(c_p, need, reg, (Live));  \
+       PROCESS_MAIN_CHK_LOCKS(c_p);                             \
        r(0) = reg[0];                                           \
        SWAPIN;                                                  \
     }                                                           \
   } while (0)
-#endif /* SHARED_HEAP */
 
 #ifdef HYBRID
-#ifdef INCREMENTAL_GC
+#ifdef INCREMENTAL
 #define TestGlobalHeap(Nh, Live, hp)                                    \
   do {                                                                  \
     unsigned need = (Nh);                                               \
@@ -533,9 +520,6 @@ extern int count_instructions;
      }								\
  } while (0)
 
-#ifdef SHARED_HEAP
-#define MAYBE_SHRINK(p,hp,res,alloc) ;
-#else
 #define MAYBE_SHRINK(p,hp,res,alloc)                                \
   do {                                                              \
       Uint actual;                                                  \
@@ -545,7 +529,6 @@ extern int count_instructions;
           erts_arith_shrink(p, hp+actual);                          \
       }                                                             \
   } while (0)
-#endif
 
 #ifdef DEBUG
 /*
@@ -584,7 +567,7 @@ extern int count_instructions;
      switch (beam_reg_tag(tr)) { \
      case R_REG_DEF: tr = r(0); break; \
      case X_REG_DEF: tr = xb(x_reg_offset(tr)); break; \
-     case Y_REG_DEF: ASSERT(y_reg_offset(tr) >= CP_SIZE); tr = yb(y_reg_offset(tr)); break; \
+     case Y_REG_DEF: ASSERT(y_reg_offset(tr) >= 1); tr = yb(y_reg_offset(tr)); break; \
      } \
      CHECK_TERM(tr); \
    } while (0)
@@ -773,50 +756,6 @@ extern int count_instructions;
 
 #define BsStartMatch(Src, Fail) erts_InitMatchBuf(Src, Fail)
 
-#define BsGetInteger8(Dst, Store, Fail)				\
- do {								\
-    Eterm _result;						\
-    if (erts_mb.size - erts_mb.offset < 8) { Fail; }		\
-    _result = make_small(erts_mb.base[erts_mb.offset/8]);	\
-    erts_mb.offset += 8;					\
-    Store(_result, Dst);					\
- } while (0)
-
-#define BsGetInteger16(Dst, Store, Fail)				\
- do {									\
-    Eterm _result;							\
-    if (erts_mb.size - erts_mb.offset < 16) { Fail; }			\
-    _result = make_small(get_int16(erts_mb.base + erts_mb.offset/8));	\
-    erts_mb.offset += 16;						\
-    Store(_result, Dst);						\
- } while (0)
-
-#define BsGetInteger32(Dst, Store, Fail)			\
- do {								\
-    Uint32 _integer;						\
-    Eterm _result;						\
-    if (erts_mb.size - erts_mb.offset < 32) { Fail; }	        \
-    _integer = get_int32(erts_mb.base + erts_mb.offset/8);	\
-    erts_mb.offset += 32;					\
-    if (IS_USMALL(0, _integer)) {				\
-	_result = make_small(_integer);				\
-    } else {							\
-	Eterm* _hp = BeamArithAlloc(c_p, BIG_UINT_HEAP_SIZE);	\
-	_result = uint_to_big((Uint) _integer, _hp);		\
-    }								\
-    Store(_result, Dst);					\
- } while (0)
-
-#define BsGetIntegerImm(Sz, Flags, Dst, Store, Fail)	\
- do {							\
-    Eterm _result;					\
-    SWAPOUT;						\
-    _result = erts_bs_get_integer(c_p, (Sz), (Flags));	\
-    HTOP = HEAP_TOP(c_p);				\
-    if (is_non_value(_result)) { Fail; }		\
-    else { Store(_result, Dst); }			\
- } while (0)
-
 #define BsGetInteger(Sz, Flags, Dst, Store, Fail)			\
  do {									\
     Eterm _result; Sint _size;						\
@@ -895,47 +834,216 @@ extern int count_instructions;
 
 #define BsSkipBitsImm(Bits, Fail)					\
  do {									\
-    size_t new_offset = erts_mb.offset + (Bits);			\
+   size_t new_offset = erts_mb.offset + (Bits);			\
     if (new_offset <= erts_mb.size) { erts_mb.offset = new_offset; }	\
     else { Fail; }							\
  } while (0)
 
+#define BsStartMatch2(Src, Live, Max, Dst, Store, Fail)	\
+ do {							\
+   Eterm _result; Uint _wordsneeded;			\
+   _wordsneeded = ERL_BIN_MATCHSTATE_SIZE(Max);		\
+   TestHeap(_wordsneeded, Live);			\
+   SWAPOUT;						\
+   _result = erts_bs_start_match_2(c_p, Src, Max);	\
+   HTOP = HEAP_TOP(c_p);				\
+   if (is_non_value(_result)) { Fail; }			\
+   else { Store(_result, Dst); }			\
+ } while(0)  
+
+#define BsGetInteger2_8(Ms, Dst, Store, Fail)				\
+ do {								\
+    ErlBinMatchBuffer *_mb;                                     \
+    Eterm _result;						\
+    _mb = ms_matchbuffer(Ms);                                   \
+    if (_mb->size - _mb->offset < 8) { Fail; }		\
+    _result = make_small(_mb->base[_mb->offset/8]);	\
+    _mb->offset += 8;					\
+    Store(_result, Dst);					\
+ } while (0)
+
+#define BsGetInteger2_16(Ms, Dst, Store, Fail)			\
+ do {								\
+    ErlBinMatchBuffer *_mb;					\
+    Eterm _result;						\
+    _mb = ms_matchbuffer(Ms);					\
+   if (_mb->size - _mb->offset < 16) { Fail; }			\
+    _result = make_small(get_int16(_mb->base + _mb->offset/8));	\
+    _mb->offset += 16;						\
+    Store(_result, Dst);					\
+ } while (0)
+
+#define BsGetInteger2_32(Ms, Live, Dst, Store, Fail)		\
+ do {								\
+    ErlBinMatchBuffer *_mb;                                     \
+   Uint32 _integer;						\
+    Eterm _result;						\
+    _mb = ms_matchbuffer(Ms);                                   \
+   if (_mb->size - _mb->offset < 32) { Fail; }	                \
+    _integer = get_int32(_mb->base + _mb->offset/8);	        \
+    _mb->offset += 32;					        \
+    if (IS_USMALL(0, _integer)) {				\
+	_result = make_small(_integer);				\
+    } else {							\
+        TestHeap(BIG_UINT_HEAP_SIZE, Live);			\
+	_result = uint_to_big((Uint) _integer, HTOP);	        \
+	HTOP += BIG_UINT_HEAP_SIZE;				\
+    }								\
+    Store(_result, Dst);					\
+ } while (0)
+
+#define BsGetIntegerImm2(Ms, Live, Sz, Flags, Dst, Store, Fail)	\
+  do {							                \
+    ErlBinMatchBuffer *_mb;						\
+    Eterm _result; unsigned wordneed;					\
+    if (Sz > 27) {							\
+      wordneed = 1+WSIZE(NBYTES(Sz));					\
+      TestHeap(wordneed, Live);						\
+    }									\
+    _mb = ms_matchbuffer(Ms);						\
+    SWAPOUT;								\
+    _result = erts_bs_get_integer_2(c_p, (Sz), (Flags), _mb);		\
+    HTOP = HEAP_TOP(c_p);						\
+    if (is_non_value(_result)) { Fail; }				\
+    else { Store(_result, Dst); }					\
+  } while (0)
+    
+#define BsGetInteger2(Ms, Live, Sz, Flags, Dst, Store, Fail)		\
+    do {								\
+      ErlBinMatchBuffer *_mb;						\
+      Eterm _result; Sint _size; unsigned wordneed;			\
+      if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { Fail; }	\
+      _size *= ((Flags) >> 3);						\
+      wordneed = 1+WSIZE(NBYTES(_size));				\
+      TestHeap(wordneed, Live);						\
+      _mb = ms_matchbuffer(Ms);						\
+      SWAPOUT;								\
+      _result = erts_bs_get_integer_2(c_p, _size, (Flags), _mb);	\
+      HTOP = HEAP_TOP(c_p);						\
+      if (is_non_value(_result)) { Fail; }				\
+      else { Store(_result, Dst); }					\
+    } while (0)
+
+#define BsGetFloat2(Ms, Live, Sz, Flags, Dst, Store, Fail)	\
+ do {								\
+   ErlBinMatchBuffer *_mb;					\
+   Eterm _result; Sint _size;					\
+   if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { Fail; }	\
+   _size *= ((Flags) >> 3);					\
+   TestHeap(FLOAT_SIZE_OBJECT, Live);				\
+   _mb = ms_matchbuffer(Ms);					\
+   SWAPOUT;							\
+   _result = erts_bs_get_float_2(c_p, _size, (Flags), _mb);	\
+   HTOP = HEAP_TOP(c_p);					\
+   if (is_non_value(_result)) { Fail; }				\
+   else { Store(_result, Dst); }				\
+ } while (0)
+
+#define BsGetBinaryImm_2(Ms, Live, Sz, Flags, Dst, Store, Fail)		\
+  do {									\
+    ErlBinMatchBuffer *_mb;                                             \
+    Eterm _result;							\
+    TestHeap(heap_bin_size(ERL_ONHEAP_BIN_LIMIT), Live);		\
+    _mb = ms_matchbuffer(Ms);						\
+    SWAPOUT;								\
+    _result = erts_bs_get_binary_2(c_p, (Sz), (Flags), _mb);		\
+    HTOP = HEAP_TOP(c_p);						\
+    if (is_non_value(_result)) { Fail; }				\
+    else { Store(_result, Dst); }					\
+  } while (0)
+
+#define BsGetBinary_2(Ms, Live, Sz, Flags, Dst, Store, Fail)		\
+  do {									\
+    ErlBinMatchBuffer *_mb;                                             \
+    Eterm _result; Sint _size;						\
+    if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { Fail; }	\
+    _size *= ((Flags) >> 3);						\
+    _mb = ms_matchbuffer(Ms);						\
+    SWAPOUT;								\
+    _result = erts_bs_get_binary_2(c_p, _size, (Flags), _mb);		\
+    HTOP = HEAP_TOP(c_p);						\
+    if (is_non_value(_result)) { Fail; }				\
+    else { Store(_result, Dst); }					\
+  } while (0)
+
+#define BsGetBinaryAll_2(Ms, Live, Dst, Store, Fail)	\
+  do {									\
+    ErlBinMatchBuffer *_mb;                                             \
+    Eterm _result;							\
+    TestHeap(ERL_SUB_BIN_SIZE, Live);					\
+    _mb = ms_matchbuffer(Ms);						\
+    SWAPOUT;								\
+    _result = erts_bs_get_binary_all_2(c_p, _mb);			\
+    HTOP = HEAP_TOP(c_p);						\
+    if (is_non_value(_result)) { Fail; }				\
+    else { Store(_result, Dst); }					\
+ } while (0)
+
+#define BsSkipBits2(Ms, Bits, Unit, Fail)				\
+ do {									\
+   ErlBinMatchBuffer *_mb;						\
+   size_t new_offset; Sint _size;					\
+    _mb = ms_matchbuffer(Ms);						\
+   if (!is_small(Bits) || (_size = signed_val(Bits)) < 0) { Fail; }	\
+    new_offset = _mb->offset + _size * (Unit);				\
+    if (new_offset <= _mb->size) { _mb->offset = new_offset; }		\
+    else { Fail; }							\
+ } while (0)
+
+#define BsSkipBitsAll2(Ms, Fail)		\
+ do {						\
+    ErlBinMatchBuffer *_mb;			\
+   _mb = ms_matchbuffer(Ms);			\
+   if (_mb->offset % 8 != 0) { Fail; }		\
+    _mb->offset = _mb->size;			\
+ } while (0)
+
+#define BsSkipBitsImm2(Ms, Bits, Fail)				\
+ do {								\
+   ErlBinMatchBuffer *_mb;					\
+   size_t new_offset;						\
+   _mb = ms_matchbuffer(Ms);					\
+   new_offset = _mb->offset + (Bits);				\
+   if (new_offset <= _mb->size) { _mb->offset = new_offset; }	\
+   else { Fail; }						\
+ } while (0)
+
 #define NewBsPutIntegerImm(Sz, Flags, Src)					\
  do {									\
-    if (!erts_new_bs_put_integer((Src), (Sz), (Flags))) { goto badarg; }	\
+    if (!erts_new_bs_put_integer(ERL_BITS_ARGS_3((Src), (Sz), (Flags)))) { goto badarg; }	\
  } while (0)
 
 #define NewBsPutInteger(Sz, Flags, Src)						\
  do {										\
     Sint _size = signed_val(Sz) * ((Flags) >> 3);				\
-    if (!erts_new_bs_put_integer((Src), _size, (Flags))) { goto badarg; }	\
+    if (!erts_new_bs_put_integer(ERL_BITS_ARGS_3((Src), _size, (Flags)))) { goto badarg; }	\
  } while (0)
 
 #define NewBsPutFloatImm(Sz, Flags, Src)					\
  do {									\
-    if (!erts_new_bs_put_float((Src), (Sz), (Flags))) { goto badarg; }	\
+    if (!erts_new_bs_put_float(c_p, (Src), (Sz), (Flags))) { goto badarg; }	\
  } while (0)
 
 #define NewBsPutFloat(Sz, Flags, Src)					\
  do {									\
     Sint _size = signed_val(Sz) * ((Flags) >> 3);			\
-    if (!erts_new_bs_put_float((Src), _size, (Flags))) { goto badarg; }	\
+    if (!erts_new_bs_put_float(c_p, (Src), _size, (Flags))) { goto badarg; }	\
  } while (0)
 
 #define NewBsPutBinary(Sz, Flags, Src)					\
  do {									\
     Sint _size = signed_val(Sz) * ((Flags) >> 3);			\
-    if (!erts_new_bs_put_binary((Src), _size)) { goto badarg; }		\
+    if (!erts_new_bs_put_binary(ERL_BITS_ARGS_2((Src), _size))) { goto badarg; }		\
  } while (0)
 
 #define NewBsPutBinaryImm(Sz, Src)				        \
  do {							        \
-    if (!erts_new_bs_put_binary((Src), (Sz))) { goto badarg; }	\
+    if (!erts_new_bs_put_binary(ERL_BITS_ARGS_2((Src), (Sz)))) { goto badarg; }	\
  } while (0)
 
 #define NewBsPutBinaryAll(Src)				        \
  do {							        \
-    if (!erts_new_bs_put_binary_all((Src))) { goto badarg; }	\
+    if (!erts_new_bs_put_binary_all(ERL_BITS_ARGS_1((Src)))) { goto badarg; }	\
  } while (0)
 
 /*
@@ -947,7 +1055,7 @@ extern int count_instructions;
     Sint _size;							        \
     if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { goto badarg; }	\
     _size *= ((Flags) >> 3);						\
-    if (!erts_bs_put_integer((Src), _size, (Flags))) { goto badarg; }	\
+    if (!erts_bs_put_integer(ERL_BITS_ARGS_3((Src), _size, (Flags)))) { goto badarg; }	\
  } while (0)
 
 #define BsPutFloat(Sz, Flags, Src)					\
@@ -955,7 +1063,7 @@ extern int count_instructions;
     Sint _size;							        \
     if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { goto badarg; }	\
     _size *= ((Flags) >> 3);						\
-    if (!erts_bs_put_float((Src), _size, (Flags))) { goto badarg; }	\
+    if (!erts_bs_put_float(c_p, (Src), _size, (Flags))) { goto badarg; }	\
  } while (0)
 
 #define BsPutBinary(Sz, Flags, Src)					\
@@ -963,12 +1071,12 @@ extern int count_instructions;
     Sint _size;							        \
     if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { goto badarg; }	\
     _size *= ((Flags) >> 3);						\
-    if (!erts_bs_put_binary((Src), _size)) { goto badarg; }		\
+    if (!erts_bs_put_binary(ERL_BITS_ARGS_2((Src), _size))) { goto badarg; }		\
  } while (0)
 
 #define BsPutBinaryAll(Src)				        \
  do {							        \
-    if (!erts_bs_put_binary_all((Src))) { goto badarg; }	\
+    if (!erts_bs_put_binary_all(ERL_BITS_ARGS_1((Src)))) { goto badarg; }	\
  } while (0)
 
 
@@ -977,7 +1085,7 @@ extern int count_instructions;
 #define IsRef(Src, Fail) if (is_not_ref(Src)) { Fail; }
 
 static Eterm* handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf);
-static Eterm* next_catch(Process* c_p);
+static Eterm* next_catch(Process* c_p, Eterm *reg);
 static void terminate_proc(Process* c_p, Eterm Value);
 static Eterm add_stacktrace(Process* c_p, Eterm Value, Eterm exc);
 static void save_stacktrace(Process* c_p, Eterm* pc, Eterm* reg,
@@ -1062,14 +1170,6 @@ void process_main(void)
      */
     register Eterm* HTOP REG_htop = NULL;
 
-#ifdef SHARED_HEAP
-    /* Heap limit and Stack limit. If possible, the c compiler might
-     * choose to place this variable in to a register.  In any case a
-     * local variable is faster than accessing the PCB.
-     */
-     Eterm *HeapLimit;
-     Eterm *StackLimit;
-#endif
 
 #ifdef HYBRID
      Eterm *g_htop;
@@ -1099,6 +1199,7 @@ void process_main(void)
     register Eterm tmp_arg2 REG_tmp_arg2 = NIL;
     Eterm tmp_big[2];		/* Temporary buffer for small bignums. */
 
+#ifndef ERTS_SMP
     static Eterm save_reg[MAX_REG];	
     /* X registers -- not used directly, but
      * through 'reg', because using it directly
@@ -1111,6 +1212,12 @@ void process_main(void)
      * Floating point registers.
      */
     static FloatDef freg[MAX_REG];
+#else
+    /* X regisers and floating point registers are located in
+     * scheduler specific data.
+     */
+    register FloatDef *freg;
+#endif
 
     /*
      * For keeping the negative old value of 'reds' when call saving is active.
@@ -1119,10 +1226,15 @@ void process_main(void)
 
 #ifndef NO_JUMP_TABLE
     static void* opcodes[] = { DEFINE_OPCODES };
+#ifndef ERTS_SMP /* Not supported with smp emulator */
     static void* counting_opcodes[] = { DEFINE_COUNTING_OPCODES };
+#endif
 #else
     int Go;
 #endif
+
+    ERL_BITS_DECLARE_STATEP; /* Has to be last declaration */
+
 
     /*
      * Note: In this function, we attempt to place rarely executed code towards
@@ -1137,7 +1249,9 @@ void process_main(void)
 	init_done = 1;
 	goto init_emulator;
     }
+#ifndef ERTS_SMP
     reg = save_reg;	/* XXX: probably wastes a register on x86 */
+#endif
     c_p = NULL;
     reds_used = 0;
     goto do_schedule1;
@@ -1145,7 +1259,14 @@ void process_main(void)
  do_schedule:
     reds_used = REDS_IN(c_p) - FCALLS;
  do_schedule1:
+    PROCESS_MAIN_CHK_LOCKS(c_p);
     c_p = schedule(c_p, reds_used);
+#ifdef ERTS_SMP
+    PROCESS_MAIN_CHK_LOCKS(c_p);
+    reg = c_p->scheduler_data->save_reg;
+    freg = c_p->scheduler_data->freg;
+#endif
+    ERL_BITS_RELOAD_STATEP(c_p);
 #ifdef HEAP_FRAG_ELIM_TEST
     ASSERT(SAVED_HEAP_TOP(c_p) == NULL);
 #endif
@@ -1381,7 +1502,9 @@ void process_main(void)
 
      SWAPOUT;
      c_p->fcalls = FCALLS - 1;
+     PROCESS_MAIN_CHK_LOCKS(c_p);
      result = send_2(c_p, r(0), x(1));
+     PROCESS_MAIN_CHK_LOCKS(c_p);
      PreFetch(0, next);
      FCALLS = c_p->fcalls;
 #ifdef HYBRID
@@ -1395,7 +1518,9 @@ void process_main(void)
 #ifdef HEAP_FRAG_ELIM_TEST
 	 if (MBUF(c_p) != NULL) {
 	     reg[0] = r(0);
+	     PROCESS_MAIN_CHK_LOCKS(c_p);
 	     FCALLS -= erts_garbage_collect(c_p, 0, reg, 1);
+	     PROCESS_MAIN_CHK_LOCKS(c_p);
 	     SWAPIN;
 	     r(0) = reg[0];
 	 }
@@ -1420,7 +1545,9 @@ void process_main(void)
 	 c_p->current = NULL;
 #ifdef HEAP_FRAG_ELIM_TEST
 	 if (MBUF(c_p) != NULL) {
+	     PROCESS_MAIN_CHK_LOCKS(c_p);
 	     FCALLS -= erts_garbage_collect(c_p, 0, argp, 2);
+	     PROCESS_MAIN_CHK_LOCKS(c_p);
 	 }
 #endif
 	 goto do_schedule;
@@ -1429,7 +1556,9 @@ void process_main(void)
 	 SET_I(((Export *)(c_p->def_arg_reg[0]))->address);
 #ifdef HEAP_FRAG_ELIM_TEST
 	 if (MBUF(c_p) != NULL) {
+	     PROCESS_MAIN_CHK_LOCKS(c_p);
 	     FCALLS -= erts_garbage_collect(c_p, 0, c_p->def_arg_reg+1, 2);
+	     PROCESS_MAIN_CHK_LOCKS(c_p);
 	 }
 #endif
 	 SWAPIN;
@@ -1503,19 +1632,13 @@ void process_main(void)
 		 SWAPIN;
 	     }
 	     /* only x(2) is included in the rootset here */
-#ifdef SHARED_HEAP
-	     if (HeapLimit - HTOP < 3) {
-		 SWAPOUT;
-		 FCALLS -= erts_garbage_collect(c_p, 3, reg+2, 1);
-		 SWAPIN;
-	     }
-#else
 	     if (E - HTOP < 3) {
 		 SWAPOUT;
+		 PROCESS_MAIN_CHK_LOCKS(c_p);
 		 FCALLS -= erts_garbage_collect(c_p, 3, reg+2, 1);
+		 PROCESS_MAIN_CHK_LOCKS(c_p);
 		 SWAPIN;
 	     }
-#endif
 	     r(0) = TUPLE2(HTOP, am_EXIT, x(2));
 	     HTOP += 3;
 	 }
@@ -1560,15 +1683,33 @@ void process_main(void)
      * Pick up the next message and place it in x(0).
      * If no message, jump to a wait or wait_timeout instruction.
      */
- OpCase(loop_rec_fr):
+ OpCase(i_loop_rec_fr):
  {
      Eterm* next;
-     ErlMessage* msgp = PEEK_MESSAGE(c_p);
+     ErlMessage* msgp;
 
-     if (msgp == NULL) {
-	 SET_I((Eterm *) Arg(0));
-	 Goto(*I);		/* Jump to a wait or wait_timeout instruction */
+ loop_rec__:
+
+     PROCESS_MAIN_CHK_LOCKS(c_p);
+
+     msgp = PEEK_MESSAGE(c_p);
+
+     if (!msgp) {
+#ifdef ERTS_SMP
+	 erts_smp_proc_lock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
+	 ERTS_SMP_MSGQ_MV_INQ2PRIVQ(c_p);
+	 msgp = PEEK_MESSAGE(c_p);
+	 if (msgp)
+	     erts_smp_proc_unlock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
+	 else {
+#endif
+	     SET_I((Eterm *) Arg(0));
+	     Goto(*I);		/* Jump to a wait or wait_timeout instruction */
+#ifdef ERTS_SMP
+	 }
+#endif
      }
+     MV_MSG_MBUF_INTO_PROC(msgp);
      PreFetch(1, next);
      r(0) = ERL_MESSAGE_TERM(msgp);
      NextPF(1, next);
@@ -1581,8 +1722,11 @@ void process_main(void)
      Eterm* next;
      ErlMessage* msgp;
 
+     PROCESS_MAIN_CHK_LOCKS(c_p);
+
      PreFetch(0, next);
      msgp = PEEK_MESSAGE(c_p);
+
      if (c_p->ct != NULL) {
 	 save_calls(c_p, &exp_receive);
      }
@@ -1609,6 +1753,9 @@ void process_main(void)
      JOIN_MESSAGE(c_p);
      CANCEL_TIMER(c_p);
      free_message(msgp);
+
+     PROCESS_MAIN_CHK_LOCKS(c_p);
+
      NextPF(0, next);
  }
 
@@ -1619,7 +1766,7 @@ void process_main(void)
  OpCase(loop_rec_end_f): {
      SET_I((Eterm *) Arg(0));
      SAVE_MESSAGE(c_p);
-     Goto(*I);		/* To loop_rec */
+     goto loop_rec__;
  }
     /*
      * Prepare to wait for a message or a timeout, whichever occurs first.
@@ -1628,7 +1775,13 @@ void process_main(void)
      * emulators, only timeout values that can be represented in 32 bits
      * (unsigned) or less are allowed.
      */
- OpCase(wait_timeout_fs): {
+
+
+ OpCase(i_wait_timeout_fs): {
+     erts_smp_proc_lock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
+     /* Fall through */
+ }
+ OpCase(i_wait_timeout_locked_fs): {
      Eterm timeout_value;
 
      /*
@@ -1667,9 +1820,14 @@ void process_main(void)
 	     set_timer(c_p, time_val);
 #endif
 	 } else {		/* Wrong time */
-	     OpCase(i_wait_error):
-	     c_p->freason = EXC_TIMEOUT_VALUE;
-	     goto find_func_info;
+	     OpCase(i_wait_error_locked): {
+		 erts_smp_proc_unlock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
+		 /* Fall through */
+	     }
+	     OpCase(i_wait_error): {
+		 c_p->freason = EXC_TIMEOUT_VALUE;
+		 goto find_func_info;
+	     }
 	 }
 
 	 /*
@@ -1682,6 +1840,7 @@ void process_main(void)
 	  * instruction following the wait_timeout instruction.
 	  */
 
+	 OpCase(wait_locked_f):
 	 OpCase(wait_f):
 
 	 wait2: {
@@ -1689,14 +1848,24 @@ void process_main(void)
 	     SWAPOUT;
 	     c_p->arity = 0;
 	     c_p->status = P_WAITING;
+	     erts_smp_proc_unlock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
 	     c_p->current = NULL;
 	     goto do_schedule;
 	 }
+	 OpCase(wait_unlocked_f): {
+	     erts_smp_proc_lock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
+	     goto wait2;
+	 }
      }
+     erts_smp_proc_unlock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
      Next(2);
  }
 
- OpCase(wait_timeout_fI):
+ OpCase(i_wait_timeout_fI): {
+     erts_smp_proc_lock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
+ }
+
+ OpCase(i_wait_timeout_locked_fI):
  {
      /*
       * If we have already set the timer, we must NOT set it again.  Therefore,
@@ -1713,6 +1882,10 @@ void process_main(void)
      * A timeout has occurred.  Reset the save pointer so that the next
      * receive statement will examine the first message first.
      */
+ OpCase(timeout_locked): {
+     erts_smp_proc_unlock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
+ }
+
  OpCase(timeout): {
      Eterm* next;
 
@@ -1720,8 +1893,9 @@ void process_main(void)
      if (IS_TRACED_FL(c_p, F_TRACE_RECEIVE)) {
 	 trace_receive(c_p, am_timeout);
      }
-     if (c_p->ct != NULL)
-	save_calls(c_p, &exp_timeout);
+     if (c_p->ct != NULL) {
+	 save_calls(c_p, &exp_timeout);
+     }
      c_p->flags &= ~F_TIMO;
      JOIN_MESSAGE(c_p);
      NextPF(0, next);
@@ -1813,7 +1987,9 @@ void process_main(void)
 	bf = (BifFunction) Arg(1);
 	SAVE_HTOP;
 	c_p->fcalls = FCALLS;
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	result = (*bf)(c_p, arg);
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 	if (is_value(result)) {
@@ -1838,7 +2014,9 @@ void process_main(void)
 	bf = (BifFunction) Arg(0);
 	SAVE_HTOP;
 	c_p->fcalls = FCALLS;
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	result = (*bf)(c_p, arg);
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 	if (is_value(result)) {
@@ -1846,7 +2024,6 @@ void process_main(void)
 	}
 	reg[0] = arg;
 	SWAPOUT;
-	c_p->cp = NULL;
 	I = handle_error(c_p, I, reg, bf);
 	goto post_error_handling;
     }
@@ -1862,7 +2039,9 @@ void process_main(void)
 	bf = (BifFunction) Arg(1);
 	SAVE_HTOP;
 	c_p->fcalls = FCALLS;
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	result = (*bf)(c_p, tmp_arg1, tmp_arg2);
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 	if (is_value(result)) {
@@ -1882,7 +2061,9 @@ void process_main(void)
 
 	bf = (BifFunction) Arg(0);
 	SAVE_HTOP;
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	result = (*bf)(c_p, tmp_arg1, tmp_arg2);
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ERTS_HOLE_CHECK(c_p);
 	if (is_value(result)) {
 	    ASSERT(!is_CP(result));
@@ -1891,7 +2072,6 @@ void process_main(void)
 	reg[0] = tmp_arg1;
 	reg[1] = tmp_arg2;
 	SWAPOUT;
-	c_p->cp = NULL;
 	I = handle_error(c_p, I, reg, bf);
 	goto post_error_handling;
     }
@@ -1913,7 +2093,9 @@ void process_main(void)
 	/*
 	 * A BIF with no arguments cannot fail (especially not with badarg).
 	 */
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	r(0) = (*bf)(c_p, I);
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 #ifdef HYBRID
@@ -1937,7 +2119,9 @@ void process_main(void)
 	   save_calls(c_p, (Export *) Arg(0));
 	}
 	PreFetch(1, next);
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	result = (*bf)(c_p, r(0), I);
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 #ifdef HYBRID
@@ -1961,7 +2145,6 @@ void process_main(void)
 	 */
 	ASSERT(c_p->stop == E);
 	reg[0] = r(0);
-	c_p->cp = NULL;
 	I = handle_error(c_p, I, reg, bf);
 	goto post_error_handling;
     }
@@ -1980,7 +2163,9 @@ void process_main(void)
 	PreFetch(1, next);
 	CHECK_TERM(r(0));
 	CHECK_TERM(x(1));
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	result = (*bf)(c_p, r(0), x(1), I);
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 #ifdef HYBRID
@@ -2004,7 +2189,6 @@ void process_main(void)
 	 */
 	ASSERT(c_p->stop == E);
 	reg[0] = r(0);
-	c_p->cp = NULL;
 	I = handle_error(c_p, I, reg, bf);
 	goto post_error_handling;
     }
@@ -2021,7 +2205,9 @@ void process_main(void)
 	   save_calls(c_p, (Export *) Arg(0));
 	}
 	PreFetch(1, next);
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	result = (*bf)(c_p, r(0), x(1), x(2), I);
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ERTS_HOLE_CHECK(c_p);
 	FCALLS = c_p->fcalls;
 #ifdef HYBRID
@@ -2052,7 +2238,6 @@ void process_main(void)
 	 */
 	ASSERT(c_p->stop == E);
 	reg[0] = r(0);
-	c_p->cp = NULL;
 	I = handle_error(c_p, I, reg, bf);
 	goto post_error_handling;
     }
@@ -2109,8 +2294,11 @@ void process_main(void)
      if (tmp_arg2 == SMALL_ZERO) {
 	 goto badarith;
      } else if (is_both_small(tmp_arg1, tmp_arg2)) {
-	 result = make_small(signed_val(tmp_arg1) / signed_val(tmp_arg2));
-	 StoreBifResult(1, result);
+	 Sint ires = signed_val(tmp_arg1) / signed_val(tmp_arg2);
+	 if (MY_IS_SSMALL(ires)) {
+	     result = make_small(ires);
+	     StoreBifResult(1, result);
+	 }
      }
      SAVE_HTOP;
      result = erts_int_div(c_p, tmp_arg1, tmp_arg2);
@@ -2533,7 +2721,9 @@ void process_main(void)
      c_p->arg_reg[0] = r(0);
      SWAPOUT;
      c_p->i = I;
+     erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_STATUS);
      add_to_schedule_q(c_p);
+     erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_STATUS);
      goto do_schedule1;
  }
 
@@ -2932,29 +3122,34 @@ void process_main(void)
 	c_p->fcalls = FCALLS - 1;
 	vbf = (BifFunction) Arg(0);
 	ASSERT(I[-1] <= 3);
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	switch (I[-1]) {
 	case 3:
 	    {
 		Eterm (*bf)(Process*, Eterm, Eterm, Eterm, Uint*) = vbf;
 		tmp_arg1 = (*bf)(c_p, r(0), x(1), x(2), I);
+		PROCESS_MAIN_CHK_LOCKS(c_p);
 	    }
 	    break;
 	case 2:
 	    {
 		Eterm (*bf)(Process*, Eterm, Eterm, Uint*) = vbf;
 		tmp_arg1 = (*bf)(c_p, r(0), x(1), I);
+		PROCESS_MAIN_CHK_LOCKS(c_p);
 	    }
 	    break;
 	case 1:
 	    {
 		Eterm (*bf)(Process*, Eterm, Uint*) = vbf;
 		tmp_arg1 = (*bf)(c_p, r(0), I);
+		PROCESS_MAIN_CHK_LOCKS(c_p);
 	    }
 	    break;
 	case 0:
 	    {
 		Eterm (*bf)(Process*, Uint*) = vbf;
 		tmp_arg1 = (*bf)(c_p, I);
+		PROCESS_MAIN_CHK_LOCKS(c_p);
 		break;
 	    }
 	}
@@ -2981,7 +3176,9 @@ void process_main(void)
 	    c_p->current = NULL;
 #ifdef HEAP_FRAG_ELIM_TEST
 	    if (MBUF(c_p) != NULL) {
+		PROCESS_MAIN_CHK_LOCKS(c_p);
 		erts_garbage_collect(c_p, 0, argp, c_p->arity);
+		PROCESS_MAIN_CHK_LOCKS(c_p);
 	    }
 #endif
 	    goto do_schedule;
@@ -2990,7 +3187,9 @@ void process_main(void)
 #ifdef HEAP_FRAG_ELIM_TEST
 	    if (MBUF(c_p) != NULL) {
 		/* SWAPOUT done above */
+		PROCESS_MAIN_CHK_LOCKS(c_p);
 		FCALLS -= erts_garbage_collect(c_p, 0, c_p->def_arg_reg+1, I[-1]);
+		PROCESS_MAIN_CHK_LOCKS(c_p);
 		SWAPIN;
 	    }
 #endif
@@ -3117,7 +3316,7 @@ void process_main(void)
 	 bptr = erts_bin_nrml_alloc(tmp_arg1);
 	 bptr->flags = 0;
 	 bptr->orig_size = tmp_arg1;
-	 bptr->refc = 1;
+	 erts_refc_init(&bptr->refc, 1);
 	 erts_current_bin = (byte *) bptr->orig_bytes;
 
 	 /*
@@ -3130,7 +3329,7 @@ void process_main(void)
 	 pb->next = MSO(c_p).mso;
 	 MSO(c_p).mso = pb;
 	 pb->val = bptr;
-	 pb->bytes = bptr->orig_bytes;
+	 pb->bytes = (byte*) bptr->orig_bytes;
 
 	 MSO(c_p).overhead += pb->size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
 	 StoreBifResult(2, make_binary(pb));
@@ -3217,13 +3416,15 @@ void process_main(void)
     {
 	Eterm* next;
 	PreFetch(2, next);
-	erts_new_bs_put_string((byte *) Arg(1), Arg(0));
+	erts_new_bs_put_string(ERL_BITS_ARGS_2((byte *) Arg(1), Arg(0)));
 	NextPF(2, next);
     }
 
  /*
   * Matching of binaries.
   */
+
+#if !defined(HEAP_FRAG_ELIM_TEST)
 
  OpCase(bs_test_zero_tail_f): {
      Eterm* next;
@@ -3259,6 +3460,87 @@ void process_main(void)
      PreFetch(1, next);
      erts_mb = erts_save_mb[Arg(0)];
      NextPF(1, next);
+ }
+
+#endif
+
+ OpCase(bs_test_zero_tail2_fr): {
+     Eterm* next;
+     ErlBinMatchBuffer *_mb;
+     
+     PreFetch(1, next);
+     _mb = (ErlBinMatchBuffer*) ms_matchbuffer(r(0));
+     if (_mb->size != _mb->offset) {
+	 ClauseFail();
+     }
+     NextPF(1, next);
+ }
+
+ OpCase(bs_test_zero_tail2_fx): {
+     Eterm* next;
+     ErlBinMatchBuffer *_mb;
+     
+     PreFetch(2, next);
+     _mb = (ErlBinMatchBuffer*) ms_matchbuffer(xb(Arg(1)));
+     if (_mb->size != _mb->offset) {
+	 ClauseFail();
+     }
+     NextPF(2, next);
+ }
+
+ OpCase(bs_test_tail_imm2_frI): {
+     Eterm* next;
+     ErlBinMatchBuffer *_mb;
+     PreFetch(2, next);
+     _mb = ms_matchbuffer(r(0));
+     if (_mb->size - _mb->offset != Arg(1)) {
+	 ClauseFail();
+     }
+     NextPF(2, next);
+ }
+ OpCase(bs_test_tail_imm2_fxI): {
+     Eterm* next;
+     ErlBinMatchBuffer *_mb;
+     PreFetch(3, next);
+     _mb = ms_matchbuffer(xb(Arg(1)));
+     if (_mb->size - _mb->offset != Arg(2)) {
+	 ClauseFail();
+     }
+     NextPF(3, next);
+ }
+
+ OpCase(bs_save2_rI): {
+     Eterm* next;
+     ErlBinMatchState *_ms;
+     PreFetch(1, next);
+     _ms = (ErlBinMatchState*) boxed_val((Eterm) r(0));
+     erts_bs_save_2(Arg(0), _ms);
+     NextPF(1, next);
+ }
+ OpCase(bs_save2_xI): {
+     Eterm* next;
+     ErlBinMatchState *_ms;
+     PreFetch(2, next);
+     _ms = (ErlBinMatchState*) boxed_val((Eterm) xb(Arg(0)));
+     erts_bs_save_2(Arg(1), _ms);
+     NextPF(2, next);
+ }
+
+ OpCase(bs_restore2_rI): {
+     Eterm* next;
+     ErlBinMatchState *_ms;
+     PreFetch(1, next);
+     _ms = (ErlBinMatchState*) boxed_val((Eterm) r(0));
+     erts_bs_restore_2(Arg(0), _ms);
+     NextPF(1, next);
+ }
+ OpCase(bs_restore2_xI): {
+     Eterm* next;
+     ErlBinMatchState *_ms;
+     PreFetch(2, next);
+     _ms = (ErlBinMatchState*) boxed_val((Eterm) xb(Arg(0)));
+     erts_bs_restore_2(Arg(1), _ms);
+     NextPF(2, next);
  }
 
 #include "beam_cold.h"
@@ -3298,33 +3580,40 @@ void process_main(void)
 
 	 SWAPOUT;
 	 reg[0] = r(0);
+	 PROCESS_MAIN_CHK_LOCKS(c_p);
 	 flags = erts_call_trace(c_p, ep->code, ep->match_prog_set, reg,
 				 0, &c_p->tracer_proc);
+	 PROCESS_MAIN_CHK_LOCKS(c_p);
+#ifdef ERTS_SMP
+	 if (c_p->is_exiting)
+	     goto no_error_handler;
+#endif 
 	 SWAPIN;
 	 
-	 if (flags & MATCH_SET_RETURN_TRACE) {
-	     static void* return_trace[1] = {OpCode(return_trace)};
-
-#ifdef SHARED_HEAP
-             AllocateStack(3);
-#else
+	 if (flags & MATCH_SET_RX_TRACE) {
 	     ASSERT(c_p->htop <= E && E <= c_p->hend);
 	     if (E - 3 < HTOP) {
 		 /* SWAPOUT, SWAPIN was done and r(0) was saved above */
+		 PROCESS_MAIN_CHK_LOCKS(c_p);
 		 FCALLS -= erts_garbage_collect(c_p, 3, reg, ep->code[2]);
+		 PROCESS_MAIN_CHK_LOCKS(c_p);
 		 r(0) = reg[0];
 		 SWAPIN;
 	     }
 	     E -= 3;
 	     ASSERT(c_p->htop <= E && E <= c_p->hend);
-#endif
 	     ASSERT(is_CP((Eterm)(ep->code)));
 	     ASSERT(is_internal_pid(c_p->tracer_proc) || 
 		    is_internal_port(c_p->tracer_proc));
 	     E[2] = make_cp(c_p->cp);
 	     E[1] = am_true; /* Process tracer */
 	     E[0] = make_cp(ep->code);
-	     c_p->cp = (Eterm *) make_cp((Uint*)return_trace);
+	     c_p->cp = (Eterm*)
+		 make_cp(flags & MATCH_SET_EXCEPTION_TRACE
+			 ? beam_exception_trace : beam_return_trace);
+	     erts_smp_proc_lock(c_p, ERTS_PROC_LOCKS_ALL_MINOR);
+	     c_p->trace_flags |= F_EXCEPTION_TRACE;
+	     erts_smp_proc_unlock(c_p, ERTS_PROC_LOCKS_ALL_MINOR);
 	 }
      }
      SET_I((Uint *) Arg(0));
@@ -3333,11 +3622,11 @@ void process_main(void)
 
  OpCase(return_trace): {
      Uint* code = (Uint *) E[0];
-     Eterm tracer_pid = E[1];
      
      SWAPOUT;		/* Needed for shared heap */
-     erts_trace_return(c_p, code, r(0), &tracer_pid);
+     erts_trace_return(c_p, code, r(0), E+1/*Process tracer*/);
      SWAPIN;
+     c_p->cp = NULL;
      SET_I((Eterm *) E[2]);
      E += 3;
      Goto(*I);
@@ -3364,6 +3653,7 @@ void process_main(void)
      Uint32 flags;
      Eterm tracer_pid;
      Uint *cpp;
+     int return_to_trace = 0, need = 0;
      flags = 0;
      SWAPOUT;
      reg[0] = r(0);
@@ -3373,17 +3663,23 @@ void process_main(void)
 	 cpp = (Uint*)&E[2];
      } else if (*cp_val((Eterm)c_p->cp) 
 		== (Uint) OpCode(i_return_to_trace)) {
+	 return_to_trace = !0;
 	 cpp = (Uint*)&E[0];
      } else {
 	 cpp = NULL;
      }
      if (cpp) {
+	 /* This _IS_ a tail recursive call, if there are
+	  * return_trace and/or i_return_to_trace stackframes
+	  * on the stack, they are not intermixed with y registers
+	  */
 	 Eterm *cp_save = c_p->cp;
 	 for (;;) {
 	     ASSERT(is_CP(*cpp));
 	     if (*cp_val(*cpp) == (Uint) OpCode(return_trace)) {
 		 cpp += 3;
 	     } else if (*cp_val(*cpp) == (Uint) OpCode(i_return_to_trace)) {
+		 return_to_trace = !0;
 		 cpp += 1;
 	     } else
 		 break;
@@ -3398,64 +3694,37 @@ void process_main(void)
 	 SWAPIN;		/* Needed by shared heap. */
      }
 
-     if ((flags & MATCH_SET_RETURN_TO_TRACE)) {
-	 static void* return_to_trace[1] = {OpCode(i_return_to_trace)};
-	 if ((Uint) c_p->cp != make_cp((Uint*)return_to_trace)) {
-	     /* Look down the stack for other return_to frames */
-	     int do_insert = 1;
-	     if (*cp_val((Eterm)c_p->cp) == (Uint) OpCode(return_trace)) {
-		 cpp = (Uint*)&E[2];
-		 for(;;) {
-		     ASSERT(is_CP(*cpp));
-		     if (*cp_val(*cpp) == 
-			 (Uint) OpCode(return_trace)) {
-			 cpp += 3;
-		     } else {
-			 break;
-		     }
-		 }
-		 if (*cp_val(*cpp) == 
-		     (Uint) OpCode(i_return_to_trace)) {
-		     do_insert = 0;
-		 }
-	     } 
-	     if (do_insert) {
-#ifdef SHARED_HEAP
-		 AllocateStack(1);
-#else
-		 ASSERT(c_p->htop <= E && E <= c_p->hend);
-		 if (E - 1 < HTOP) {
-		     /* SWAPOUT was done and r(0) was saved above */
-		     FCALLS -= erts_garbage_collect(c_p, 1, reg, I[-1]);
-		     r(0) = reg[0];
-		     SWAPIN;
-		 }
-		 E -= 1;
-		 ASSERT(c_p->htop <= E && E <= c_p->hend);
-#endif
-		 E[0] = make_cp(c_p->cp);
-		 c_p->cp = (Eterm *) make_cp((Uint*)return_to_trace);
-	     }
-	 }  
-     }
-     if (flags & MATCH_SET_RETURN_TRACE) {
-	 static void* return_trace[1] = {OpCode(return_trace)};
+#ifdef ERTS_SMP
+     if (c_p->is_exiting)
+	 goto no_error_handler;
+#endif 
 
-#ifdef SHARED_HEAP
-	 AllocateStack(3);
-#else
+     if ((flags & MATCH_SET_RETURN_TO_TRACE) && !return_to_trace) {
+	 need += 1;
+     }
+     if (flags & MATCH_SET_RX_TRACE) {
+	 need += 3;
+     }
+     if (need) {
 	 ASSERT(c_p->htop <= E && E <= c_p->hend);
-	 if (E - 3 < HTOP) {
-	     /* Stack pointer may have been changed by 
-		return_to trace above */
-	     SWAPOUT; 
-	     FCALLS -= erts_garbage_collect(c_p, 3, reg, I[-1]);
+	 if (E - need < HTOP) {
+	     /* SWAPOUT was done and r(0) was saved above */
+	     PROCESS_MAIN_CHK_LOCKS(c_p);
+	     FCALLS -= erts_garbage_collect(c_p, need, reg, I[-1]);
+	     PROCESS_MAIN_CHK_LOCKS(c_p);
 	     r(0) = reg[0];
 	     SWAPIN;
 	 }
+     }
+     if ((flags & MATCH_SET_RETURN_TO_TRACE) && !return_to_trace) {
+	 E -= 1;
+	 ASSERT(c_p->htop <= E && E <= c_p->hend);
+	 E[0] = make_cp(c_p->cp);
+	 c_p->cp = (Eterm *) make_cp(beam_return_to_trace);
+     }
+     if (flags & MATCH_SET_RX_TRACE) {
 	 E -= 3;
 	 ASSERT(c_p->htop <= E && E <= c_p->hend);
-#endif
 	 ASSERT(is_CP((Eterm) (I - 3)));
 	 ASSERT(am_true == tracer_pid || 
 		is_internal_pid(tracer_pid) || is_internal_port(tracer_pid));
@@ -3464,26 +3733,33 @@ void process_main(void)
 	 E[0] = make_cp(I - 3); /* We ARE at the beginning of an 
 				   instruction,
 				   the funcinfo is above i. */
-	 c_p->cp = (Eterm *) make_cp((Uint*)return_trace);
+	 c_p->cp = (Eterm*)
+	     make_cp(flags & MATCH_SET_EXCEPTION_TRACE
+		     ? beam_exception_trace : beam_return_trace);
+	 erts_smp_proc_lock(c_p, ERTS_PROC_LOCKS_ALL_MINOR);
+	 c_p->trace_flags |= F_EXCEPTION_TRACE;
+	 erts_smp_proc_unlock(c_p, ERTS_PROC_LOCKS_ALL_MINOR);
      }
      Goto(real_I);
  }
  
  OpCase(i_return_to_trace): {
-     Uint *cpp = (Uint*)&E[0];
-     for(;;) {
-	 ASSERT(is_CP(*cpp));
-	 if (*cp_val(*cpp) == (Uint) OpCode(return_trace)) {
-	     cpp += 3;
-	 } else {
-	     break;
-	 }
-     }
      if (IS_TRACED_FL(c_p, F_TRACE_RETURN_TO)) {
+	 Uint *cpp = (Uint*) E;
+	 for(;;) {
+	     ASSERT(is_CP(*cpp));
+	     if (*cp_val(*cpp) == (Uint) OpCode(return_trace)) {
+		 do ++cpp; while(is_not_CP(*cpp));
+		 cpp += 2;
+	     } else if (*cp_val(*cpp) == (Uint) OpCode(i_return_to_trace)) {
+		 do ++cpp; while(is_not_CP(*cpp));
+	     } else break;
+	 }
 	 SWAPOUT;		/* Needed for shared heap */
 	 erts_trace_return_to(c_p, cp_val(*cpp));
 	 SWAPIN;
      }
+     c_p->cp = NULL;
      SET_I((Eterm *) E[0]);
      E += 1;
      Goto(*I);
@@ -3532,7 +3808,7 @@ void process_main(void)
      hp[0] = r(0);
      hp[1] = x(1);
      r(0) = make_list(hp);
-#ifndef INCREMENTAL_GC
+#ifndef INCREMENTAL
      global_htop += 2;
 #endif
      NextPF(0,next);
@@ -3568,7 +3844,7 @@ void process_main(void)
          *hp++ = CAR(cons);
          list = CDR(cons);
      }
-#ifndef INCREMENTAL_GC
+#ifndef INCREMENTAL
      global_htop += len + 1;
 #endif
      NextPF(0,next);
@@ -3590,9 +3866,9 @@ void process_main(void)
          reg[0] = r(0);
          reg[1] = NIL;
          r(0) = copy_struct_lazy(c_p,r(0),0);
-         ASSERT(copy_src_top == 0);
-         ASSERT(copy_dst_top == 0);
-         ASSERT(copy_offset_top == 0);
+         ASSERT(ma_src_top == 0);
+         ASSERT(ma_dst_top == 0);
+         ASSERT(ma_offset_top == 0);
          SWAPIN;
          BM_SWAP_TIMER(copy,system);
      }
@@ -3684,7 +3960,7 @@ void process_main(void)
 	 Eterm* next;
 
 	 PreFetch(0, next);
-	 ERTS_FP_CHECK_INIT();
+	 ERTS_FP_CHECK_INIT(c_p);
 	 NextPF(0, next);
      }
 
@@ -3692,13 +3968,13 @@ void process_main(void)
 	 Eterm* next;
 
 	 PreFetch(0, next);
-	 ERTS_FP_ERROR(freg[0].fd, goto fbadarith);
+	 ERTS_FP_ERROR(c_p, freg[0].fd, goto fbadarith);
 	 NextPF(0, next);
      }
 #  undef ERTS_FP_CHECK_INIT
 #  undef ERTS_FP_ERROR
-#  define ERTS_FP_CHECK_INIT()
-#  define ERTS_FP_ERROR(a, b)
+#  define ERTS_FP_CHECK_INIT(p)
+#  define ERTS_FP_ERROR(p, a, b)
 #endif
 
 
@@ -3706,45 +3982,45 @@ void process_main(void)
      Eterm* next;
 
      PreFetch(3, next);
-     ERTS_FP_CHECK_INIT();
+     ERTS_FP_CHECK_INIT(c_p);
      fb(Arg(2)) = fb(Arg(0)) + fb(Arg(1));
-     ERTS_FP_ERROR(fb(Arg(2)), goto fbadarith);
+     ERTS_FP_ERROR(c_p, fb(Arg(2)), goto fbadarith);
      NextPF(3, next);
  }
  OpCase(i_fsub_lll): {
      Eterm* next;
 
      PreFetch(3, next);
-     ERTS_FP_CHECK_INIT();
+     ERTS_FP_CHECK_INIT(c_p);
      fb(Arg(2)) = fb(Arg(0)) - fb(Arg(1));
-     ERTS_FP_ERROR(fb(Arg(2)), goto fbadarith);
+     ERTS_FP_ERROR(c_p, fb(Arg(2)), goto fbadarith);
      NextPF(3, next);
  }
  OpCase(i_fmul_lll): {
      Eterm* next;
 
      PreFetch(3, next);
-     ERTS_FP_CHECK_INIT();
+     ERTS_FP_CHECK_INIT(c_p);
      fb(Arg(2)) = fb(Arg(0)) * fb(Arg(1));
-     ERTS_FP_ERROR(fb(Arg(2)), goto fbadarith);
+     ERTS_FP_ERROR(c_p, fb(Arg(2)), goto fbadarith);
      NextPF(3, next);
  }
  OpCase(i_fdiv_lll): {
      Eterm* next;
 
      PreFetch(3, next);
-     ERTS_FP_CHECK_INIT();
+     ERTS_FP_CHECK_INIT(c_p);
      fb(Arg(2)) = fb(Arg(0)) / fb(Arg(1));
-     ERTS_FP_ERROR(fb(Arg(2)), goto fbadarith);
+     ERTS_FP_ERROR(c_p, fb(Arg(2)), goto fbadarith);
      NextPF(3, next);
  }
  OpCase(i_fnegate_ll): {
      Eterm* next;
 
      PreFetch(2, next);
-     ERTS_FP_CHECK_INIT();
+     ERTS_FP_CHECK_INIT(c_p);
      fb(Arg(1)) = -fb(Arg(0));
-     ERTS_FP_ERROR(fb(Arg(1)), goto fbadarith);
+     ERTS_FP_ERROR(c_p, fb(Arg(1)), goto fbadarith);
      NextPF(2, next);
 
  fbadarith:
@@ -3802,6 +4078,11 @@ void process_main(void)
      c_p->def_arg_reg[4] = -neg_o_reds;
      reg[0] = r(0);
      c_p = hipe_mode_switch(c_p, cmd, reg);
+#ifdef ERTS_SMP
+     reg = c_p->scheduler_data->save_reg;
+     freg = c_p->scheduler_data->freg;
+#endif
+     ERL_BITS_RELOAD_STATEP(c_p);
      neg_o_reds = -c_p->def_arg_reg[4];
      FCALLS = c_p->fcalls;
      SWAPIN;
@@ -3850,7 +4131,9 @@ void process_main(void)
      c_p->arity = 1; /* One living register (the 'true' return value) */
      SWAPOUT;
      c_p->i = I + 1; /* Next instruction */
+     erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_STATUS);
      add_to_schedule_q(c_p);
+     erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_STATUS);
      goto do_schedule;
  }
 
@@ -3908,12 +4191,14 @@ void process_main(void)
     {
 	Eterm* next;
 	PreFetch(2, next);
-	erts_bs_put_string((byte *) Arg(1), Arg(0));
+	erts_bs_put_string(ERL_BITS_ARGS_2((byte *) Arg(1), Arg(0)));
 	NextPF(2, next);
     }
 
-
+#ifndef ERTS_SMP /* Not supported with smp emulator */
     DEFINE_COUNTING_LABELS;
+#endif
+
 #ifndef NO_JUMP_TABLE
 #ifdef DEBUG
  end_emulator_loop:
@@ -3935,17 +4220,22 @@ void process_main(void)
      Export* ep;
 
 #ifndef NO_JUMP_TABLE
+#ifndef ERTS_SMP /* Not supported with smp emulator */     
+
      /* Are tables correctly generated by beam_makeops? */
      ASSERT(sizeof(counting_opcodes) == sizeof(opcodes));
-     
-     if (!count_instructions) {
-	 beam_ops = opcodes;
-     } else {
+
+     if (count_instructions) {
 #ifdef DEBUG
 	 counting_opcodes[op_catch_end_y] = LabelAddr(lb_catch_end_y);
 #endif
 	 counting_opcodes[op_i_func_info_IaaI] = LabelAddr(lb_i_func_info_IaaI);
 	 beam_ops = counting_opcodes;
+     }
+     else
+#endif /* #ifndef ERTS_SMP */
+     {
+	 beam_ops = opcodes;
      }
 #endif /* NO_JUMP_TABLE */
      
@@ -3955,6 +4245,9 @@ void process_main(void)
      beam_apply[0] = (Eterm) OpCode(i_apply);
      beam_apply[1] = (Eterm) OpCode(normal_exit);
      beam_exit[0] = (Eterm) OpCode(error_action_code);
+     beam_return_to_trace[0] = (Eterm) OpCode(i_return_to_trace);
+     beam_return_trace[0] = (Eterm) OpCode(return_trace);
+     beam_exception_trace[0] = (Eterm) OpCode(return_trace); /* UGLY */
 
      /*
       * Enter all BIFs into the export table.
@@ -3967,40 +4260,6 @@ void process_main(void)
 	 ep->code[3] = (Eterm) OpCode(apply_bif);
 	 ep->code[4] = (Eterm) bif_table[i].f;
      }
-
-     /*
-      * erts_debug:apply(Mod, Func, Args, {M,F,A})
-      *  Applies Mod:Func with Args in the same way as apply/3.
-      *  If a BIF is applied and it fails, change the normal EXIT code
-      *  to look as if the error occurred in function {M,F,A}.
-      *  Also, the normal stack backtrace will be suppressed.
-      */
-
-     ep = erts_export_put(am_erts_debug, am_apply, 4);
-     ep->address = (Eterm *) (beam_debug_apply+5);
-
-     /* func_info 0 erts_debug apply 4 */
-     beam_debug_apply[0] = (Eterm) OpCode(i_func_info_IaaI);
-     beam_debug_apply[1] = 0;
-     beam_debug_apply[2] = am_erts_debug;
-     beam_debug_apply[3] = am_apply;
-     beam_debug_apply[4] = 4;
-
-     /* allocate 1 4 */
-     beam_debug_apply[5] = (Eterm) OpCode(allocate_tt);
-     beam_debug_apply[6] = (4 << BEAM_LOOSE_SHIFT) | 1;
-
-     /* move {x,3} {y,0} */
-     beam_debug_apply[7] = (Eterm) OpCode(move_xy);
-     beam_debug_apply[8] = ((1 << BEAM_LOOSE_SHIFT) * sizeof(Eterm)) |
-	 (3 * sizeof(Eterm));
-
-     /* i_apply */
-     beam_debug_apply[9] = (Eterm) OpCode(i_apply);
-
-     /* deallocate_return 1 */
-     beam_debug_apply[10] = (Eterm) OpCode(deallocate_return_P);
-     beam_debug_apply[11] = (1+1)*sizeof(Eterm);
 
      return;
  }
@@ -4131,9 +4390,9 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
     c_p->freason = PRIMARY_EXCEPTION(c_p->freason);
 
     /* Find a handler or die */
-    if ((c_p->catches <= 0) || (c_p->freason & EXF_PANIC)) {
-	terminate_proc(c_p, Value);
-    } else {
+    if ((c_p->catches > 0 || IS_TRACED_FL(c_p, F_EXCEPTION_TRACE))
+	&& !(c_p->freason & EXF_PANIC)) {
+	Eterm *new_pc;
         /* The Beam handler code (catch_end or try_end) checks reg[0]
 	   for THE_NON_VALUE to see if the previous code finished
 	   abnormally. If so, reg[1], reg[2] and reg[3] should hold the
@@ -4144,30 +4403,89 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
 	reg[1] = exception_tag[GET_EXC_CLASS(c_p->freason)];
 	reg[2] = Value;
 	reg[3] = c_p->ftrace;
-        return next_catch(c_p);
+        if ( (new_pc = next_catch(c_p, reg))) return new_pc;
+	if (c_p->catches > 0) erl_exit(1, "Catch not found");
     }
-    return 0;
+    terminate_proc(c_p, Value);
+    return NULL;
 }
 
 /*
- * Find the nearest catch handler, assuming there is one
+ * Find the nearest catch handler
  */
 static Eterm*
-next_catch(Process* c_p) {
-    Eterm* pc;
-    Eterm* ptr;
-    for (ptr = c_p->stop + CP_SIZE; ptr < STACK_START(c_p); ptr++) {
-        if (is_catch(*ptr)) {
-	    pc = catch_pc(*ptr);
-	    while (is_not_CP(*ptr)) {
-	        ptr--;
-		ASSERT(c_p->stop <= ptr);
-	    }
-	    c_p->stop = ptr;
-	    return pc;
+next_catch(Process* c_p, Eterm *reg) {
+    int have_return_to_trace = 0;
+    Eterm *ptr, *prev, *return_to_trace_ptr = NULL;
+    Uint i_return_trace = beam_return_trace[0];
+    Uint i_return_to_trace = beam_return_to_trace[0];
+    ptr = prev = c_p->stop;
+    ASSERT(is_CP(*ptr));
+    ASSERT(ptr <= STACK_START(c_p));
+    if (ptr == STACK_START(c_p)) return NULL;
+    if ((is_not_CP(*ptr) || (*cp_val(*ptr) != i_return_trace &&
+			     *cp_val(*ptr) != i_return_to_trace))
+	&& c_p->cp) {
+	/* Can not follow cp here - code may be unloaded */
+	Uint *cpp = cp_val((Eterm) c_p->cp);
+	if (cpp == beam_exception_trace) {
+	    erts_trace_exception(c_p, (Eterm*) ptr[0],
+				 reg[1], reg[2], ptr+1);
+	    /* Skip return_trace parameters */
+	    ptr += 2;
+	} else if (cpp == beam_return_trace) {
+	    /* Skip return_trace parameters */
+	    ptr += 2;
+	} else if (cpp == beam_return_to_trace) {
+	    have_return_to_trace = !0; /* Record next cp */
 	}
     }
-    erl_exit(1, "Catch not found");
+    while (ptr < STACK_START(c_p)) {
+	if (is_catch(*ptr)) goto found_catch;
+	else if (is_CP(*ptr)) {
+	    prev = ptr;
+	    if (*cp_val(*prev) == i_return_trace) {
+		/* Skip stack frame variables */
+		while (++ptr, ptr < STACK_START(c_p) && is_not_CP(*ptr)) {
+		    if (is_catch(*ptr)) goto found_catch;
+		}
+		if (cp_val(*prev) == beam_exception_trace) {
+		    erts_trace_exception(c_p, (Eterm*) ptr[0],
+					 reg[1], reg[2], ptr+1);
+		}
+		/* Skip return_trace parameters */
+		ptr += 2;
+	    } else if (*cp_val(*prev) == i_return_to_trace) {
+		/* Skip stack frame variables */
+		while (++ptr, ptr < STACK_START(c_p) && is_not_CP(*ptr)) {
+		    if (is_catch(*ptr)) goto found_catch;
+		}
+		have_return_to_trace = !0; /* Record next cp */
+		return_to_trace_ptr = NULL;
+	    } else {
+		if (have_return_to_trace) {
+		    /* Record this cp as possible return_to trace cp */
+		    have_return_to_trace = 0;
+		    return_to_trace_ptr = ptr;
+		} else return_to_trace_ptr = NULL;
+		ptr++;
+	    }
+	} else ptr++;
+    }
+    return NULL;
+    
+ found_catch:
+    ASSERT(ptr < STACK_START(c_p));
+    c_p->stop = prev;
+    if (IS_TRACED_FL(c_p, F_TRACE_RETURN_TO) && return_to_trace_ptr) {
+	/* The stackframe closest to the catch contained an
+	 * return_to_trace entry, so since the execution now
+	 * continues after the catch, a return_to trace message 
+	 * would be appropriate.
+	 */
+	erts_trace_return_to(c_p, cp_val(*return_to_trace_ptr));
+    }
+    return catch_pc(*ptr);
 }
 
 /*
@@ -4180,17 +4498,12 @@ void terminate_proc(Process* c_p, Eterm Value) {
     }
     /* EXF_LOG is a primary exception flag */
     if (c_p->freason & EXF_LOG) {
-        cerr_pos = 0;
-	erl_printf(CBUF, "Error in process ");
-	display(c_p->id, CBUF);
-	if (erts_this_node->sysname != am_Noname) {
-	    erl_printf(CBUF, " on node ");
-	    print_atom(atom_val(erts_this_node->sysname), CBUF);
-	}
-	erl_printf(CBUF, " with exit value: ");
-	ldisplay(Value, CBUF, display_items);
-	erl_printf(CBUF, "\n");
-	send_error_to_logger(c_p->group_leader);
+	erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+	erts_dsprintf(dsbufp, "Error in process %T ", c_p->id);
+	if (erts_is_alive())
+	    erts_dsprintf(dsbufp, "on node %T ", erts_this_node->sysname);
+	erts_dsprintf(dsbufp,"with exit value: %0.*T\n", display_items, Value);
+	erts_send_error_to_logger(c_p->group_leader, dsbufp);
     }
     /*
      * If we use a shared heap, the process will be garbage-collected.
@@ -4349,21 +4662,50 @@ save_stacktrace(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf,
     /* Save the actual stack trace */
     if (depth > 0) {
 	Eterm *ptr, *prev = s->depth ? s->trace[s->depth-1] : NULL;
+	Uint i_return_trace = beam_return_trace[0];
+	Uint i_return_to_trace = beam_return_to_trace[0];
 	/*
 	 * Traverse the stack backwards and add all unique continuation
 	 * pointers to the buffer, up to the maximum stack trace size.
+	 * 
+	 * Skip trace stack frames.
 	 */
-	for (ptr = c_p->stop;
-	     (ptr < STACK_START(c_p)) && (depth > 0); 
-	     ptr++) {
-	    if (is_CP(*ptr)) {
-		Eterm *cp = (Eterm *)(*ptr);
-		if (cp != prev) {
-		    prev = cp;
-		    s->trace[s->depth++] = cp;
-		    depth--;
-		}
+	ptr = c_p->stop;
+	if (ptr < STACK_START(c_p) 
+	    && (is_not_CP(*ptr)|| (*cp_val(*ptr) != i_return_trace &&
+				   *cp_val(*ptr) != i_return_to_trace))
+	    && c_p->cp) {
+	    /* Can not follow cp here - code may be unloaded */
+	    Uint *cpp = cp_val((Eterm) c_p->cp);
+	    if (cpp == beam_exception_trace || cpp == beam_return_trace) {
+		/* Skip return_trace parameters */
+		ptr += 2;
+	    } else if (cpp == beam_return_to_trace) {
+		/* Skip return_to_trace parameters */
+		ptr += 1;
 	    }
+	}
+	while (ptr < STACK_START(c_p) && depth > 0) {
+	    if (is_CP(*ptr)) {
+		if (*cp_val(*ptr) == i_return_trace) {
+		    /* Skip stack frame variables */
+		    do ++ptr; while (is_not_CP(*ptr));
+		    /* Skip return_trace parameters */
+		    ptr += 2;
+		} else if (*cp_val(*ptr) == i_return_to_trace) {
+		    /* Skip stack frame variables */
+		    do ++ptr; while (is_not_CP(*ptr));
+		} else {
+		    Eterm *cp = (Eterm *)(*ptr);
+		    if (cp != prev) {
+			/* Record non-duplicates only */
+			prev = cp;
+			s->trace[s->depth++] = cp;
+			depth--;
+		    }
+		    ptr++;
+		}
+	    } else ptr++;
 	}
     }
     ASSERT((Eterm *) (s->trace+s->depth) <= hp+2+1+sz);
@@ -4812,17 +5154,29 @@ hibernate(Process* c_p, Eterm module, Eterm function, Eterm args, Eterm* reg)
      * If there are no waiting messages, garbage collect and
      * shrink the heap. 
      */
+    erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_MSGQ|ERTS_PROC_LOCK_STATUS);
+    ERTS_SMP_MSGQ_MV_INQ2PRIVQ(c_p);
     if (c_p->msg.len > 0) {
 	add_to_schedule_q(c_p);
     } else {
+	erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_MSGQ|ERTS_PROC_LOCK_STATUS);
 	FLAGS(c_p) |= F_NEED_FULLSWEEP;
 	c_p->fvalue = NIL;
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	erts_garbage_collect(c_p, 0, c_p->arg_reg, c_p->arity);
+	PROCESS_MAIN_CHK_LOCKS(c_p);
 	new_sz = HEAP_TOP(c_p) - HEAP_START(c_p);
 	if (new_sz == 0) new_sz = 1; /* We want a heap... */
 	erts_shrink_new_heap(c_p, new_sz, c_p->arg_reg, c_p->arity);
+	erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_MSGQ|ERTS_PROC_LOCK_STATUS);
 	c_p->status = P_WAITING;
+#ifdef ERTS_SMP
+	ERTS_SMP_MSGQ_MV_INQ2PRIVQ(c_p);
+	if (c_p->msg.len > 0)
+	    add_to_schedule_q(c_p);
+#endif
     }
+    erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_MSGQ|ERTS_PROC_LOCK_STATUS);
     c_p->current = bif_export[BIF_hibernate_3]->code;
     return 1;
 }
@@ -5038,19 +5392,19 @@ new_fun(Process* p, Eterm* reg, ErlFunEntry* fe, int num_free)
     int i;
 
     if (HEAP_LIMIT(p) - HEAP_TOP(p) <= needed) {
+	PROCESS_MAIN_CHK_LOCKS(p);
 	erts_garbage_collect(p, needed, reg, num_free);
+	PROCESS_MAIN_CHK_LOCKS(p);
     }
     hp = p->htop;
     p->htop = hp + needed;
     funp = (ErlFunThing *) hp;
     hp = funp->env;
-    fe->refc++;
+    erts_refc_inc(&fe->refc, 2);
     funp->thing_word = HEADER_FUN;
-#ifndef SHARED_HEAP
 #ifndef HYBRID /* FIND ME! */
     funp->next = MSO(p).funs;
     MSO(p).funs = funp;
-#endif
 #endif
     funp->fe = fe;
     funp->num_free = num_free;
@@ -5088,7 +5442,7 @@ erts_is_builtin(Eterm Mod, Eterm Name, int arity)
     e.code[1] = Name;
     e.code[2] = arity;
 
-    if ((ep = hash_get(&export_table.htable, (void*) &e)) == NULL) {
+    if ((ep = export_get(&e)) == NULL) {
 	return 0;
     }
     return ep->address == ep->code+3 && (ep->code[3] == (Uint) em_apply_bif);

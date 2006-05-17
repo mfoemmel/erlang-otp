@@ -31,11 +31,22 @@
 
 
 Uint erts_allocated_binaries;
+erts_mtx_t erts_bin_alloc_mtx;
 
 void
 erts_init_binary(void)
 {
     erts_allocated_binaries = 0;
+    erts_mtx_init(&erts_bin_alloc_mtx, "binary_alloc");
+
+    /* Verify Binary alignment... */
+    if ((((Uint) &((Binary *) 0)->orig_bytes[0]) % ((Uint) 8)) != 0) {
+	/* I assume that any compiler should be able to optimize this
+	   away. If not, this test is not very expensive... */
+	erl_exit(ERTS_ABORT_EXIT,
+		 "Internal error: Address of orig_bytes[0] of a Binary"
+		 "is *not* 8-byte aligned\n");
+    }
 }
 
 /*
@@ -64,7 +75,7 @@ new_binary(Process *p, byte *buf, int len)
     bptr = erts_bin_nrml_alloc(len);
     bptr->flags = 0;
     bptr->orig_size = len;
-    bptr->refc = 1;
+    erts_refc_init(&bptr->refc, 1);
     if (buf != NULL) {
 	sys_memcpy(bptr->orig_bytes, buf, len);
     }
@@ -78,7 +89,7 @@ new_binary(Process *p, byte *buf, int len)
     pb->next = MSO(p).mso;
     MSO(p).mso = pb;
     pb->val = bptr;
-    pb->bytes = bptr->orig_bytes;
+    pb->bytes = (byte*) bptr->orig_bytes;
 
     /*
      * Miscellanous updates. Return the tagged binary.
@@ -128,7 +139,7 @@ Eterm new_binary_arith(Process *p, byte *buf, int len)
     bptr = erts_bin_nrml_alloc(len);
     bptr->flags = 0;
     bptr->orig_size = len;
-    bptr->refc = 1;
+    erts_refc_init(&bptr->refc, 1);
     if (buf != NULL) {
 	sys_memcpy(bptr->orig_bytes, buf, len);
     }
@@ -142,7 +153,7 @@ Eterm new_binary_arith(Process *p, byte *buf, int len)
     pb->next = MSO(p).mso;
     MSO(p).mso = pb;
     pb->val = bptr;
-    pb->bytes = bptr->orig_bytes;
+    pb->bytes = (byte*) bptr->orig_bytes;
 
     /*
      * Miscellanous updates. Return the tagged binary.
@@ -164,7 +175,7 @@ erts_realloc_binary(Eterm bin, size_t size)
 	newbin->orig_size = size;
 	pb->val = newbin;
 	pb->size = size;
-	pb->bytes = newbin->orig_bytes;
+	pb->bytes = (byte*) newbin->orig_bytes;
 	bin = make_binary(pb);
     }
     return bin;
@@ -331,9 +342,7 @@ erts_cleanup_mso(ProcBin* pb)
 {
     while (pb != NULL) {
 	ProcBin* next = pb->next;
-	ASSERT(pb->val->refc > 0);
-	pb->val->refc--;
-	if (pb->val->refc == 0) {
+	if (erts_refc_dectest(&pb->val->refc, 0) == 0) {
 	    if (pb->val->flags & BIN_FLAG_MATCH_PROG) {
 		erts_match_set_free(pb->val);
 	    } else {

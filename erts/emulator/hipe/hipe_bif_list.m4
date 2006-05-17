@@ -154,6 +154,9 @@ nofail_primop_interface_2(nbif_bs_get_binary, erts_bs_get_binary)
 nofail_primop_interface_2(nbif_bs_get_float, erts_bs_get_float)
 nofail_primop_interface_0(nbif_bs_get_binary_all, erts_bs_get_binary_all)
 nofail_primop_interface_0(nbif_bs_final, erts_bs_final)
+nofail_primop_interface_3(nbif_bs_get_integer_2, erts_bs_get_integer_2)
+nofail_primop_interface_3(nbif_bs_get_binary_2, erts_bs_get_binary_2)
+nofail_primop_interface_3(nbif_bs_get_float_2, erts_bs_get_float_2)
 
 /*
  * Bit-syntax primops without any P parameter.
@@ -167,6 +170,8 @@ noproc_primop_interface_1(nbif_bs_allocate, hipe_bs_allocate)
  * When ERTS_SMP is disabled, noproc_primop_interface_N()
  * should be used instead.
  */
+nocons_nofail_primop_interface_3(nbif_bs_put_float, erts_bs_put_float)
+nocons_nofail_primop_interface_5(nbif_bs_put_small_float, hipe_bs_put_small_float)
 ifelse(ERTS_SMP,1,`
 nocons_nofail_primop_interface_1(nbif_bs_start_match, hipe_bs_start_match)
 nocons_nofail_primop_interface_1(nbif_bs_skip_bits, hipe_bs_skip_bits)
@@ -178,10 +183,8 @@ nocons_nofail_primop_interface_0(nbif_bs_init, hipe_bs_init)
 nocons_nofail_primop_interface_3(nbif_bs_put_integer, hipe_bs_put_integer)
 nocons_nofail_primop_interface_2(nbif_bs_put_binary, hipe_bs_put_binary)
 nocons_nofail_primop_interface_1(nbif_bs_put_binary_all, hipe_bs_put_binary_all)
-nocons_nofail_primop_interface_3(nbif_bs_put_float, hipe_bs_put_float)
 nocons_nofail_primop_interface_2(nbif_bs_put_string, hipe_bs_put_string)
 nocons_nofail_primop_interface_5(nbif_bs_put_big_integer, hipe_bs_put_big_integer)
-nocons_nofail_primop_interface_5(nbif_bs_put_small_float, hipe_bs_put_small_float)
 ',`
 noproc_primop_interface_1(nbif_bs_start_match, erts_bs_start_match)
 noproc_primop_interface_1(nbif_bs_skip_bits, erts_bs_skip_bits)
@@ -193,10 +196,8 @@ noproc_primop_interface_0(nbif_bs_init, erts_bs_init)
 noproc_primop_interface_3(nbif_bs_put_integer, erts_bs_put_integer)
 noproc_primop_interface_2(nbif_bs_put_binary, erts_bs_put_binary)
 noproc_primop_interface_1(nbif_bs_put_binary_all, erts_bs_put_binary_all)
-noproc_primop_interface_3(nbif_bs_put_float, erts_bs_put_float)
 noproc_primop_interface_2(nbif_bs_put_string, erts_bs_put_string)
 noproc_primop_interface_5(nbif_bs_put_big_integer, hipe_bs_put_big_integer)
-noproc_primop_interface_5(nbif_bs_put_small_float, hipe_bs_put_small_float)
 ')dnl
 
 /*

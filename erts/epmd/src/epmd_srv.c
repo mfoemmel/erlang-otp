@@ -396,7 +396,7 @@ static int do_accept(EpmdVars *g,int listensock)
     icli_addr_len = sizeof(icli_addr);
 
     msgsock = accept(listensock,(struct sockaddr*) &icli_addr,
-		     (int*) &icli_addr_len);
+		     (unsigned int*) &icli_addr_len);
 
     if (msgsock < 0) {
         dbg_perror(g,"error in accept");
@@ -1214,7 +1214,7 @@ static void dbg_print_buf(EpmdVars *g,char *buf,int len)
 
   plen = len > 1024 ? 1024 : len; /* Limit the number of chars to print */
 
-  print_buf_hex(buf,plen,"***** ");
+  print_buf_hex((unsigned char*)buf,plen,"***** ");
 
   if (len != plen)
     fprintf(stderr,"***** ......and more\r\n");

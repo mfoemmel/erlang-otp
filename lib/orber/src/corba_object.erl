@@ -61,18 +61,38 @@
 %% Implementation of standard interface
 %%------------------------------------------------------------
 get_interface(Obj) ->
-    TypeId = iop_ior:get_typeID(Obj),
-    case mnesia:dirty_index_read(ir_InterfaceDef, TypeId, #ir_InterfaceDef.id) of
-	%% If all we get is an empty list there are no such
-	%% object registered in the IFR.
-	[] ->
-	    orber:dbg("[~p] corba_object:get_interface(~p); TypeID ~p not found in IFR.", 
-		      [?LINE, Obj, TypeId], ?DEBUG_LEVEL),
-	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
-	[#ir_InterfaceDef{ir_Internal_ID=Ref}] ->
-	    orber_ifr_interfacedef:describe_interface({ir_InterfaceDef, Ref})
+    case orber_env:light_ifr() of
+	false ->
+	    TypeId = iop_ior:get_typeID(Obj),
+	    case mnesia:dirty_index_read(ir_InterfaceDef, TypeId, #ir_InterfaceDef.id) of
+		%% If all we get is an empty list there are no such
+		%% object registered in the IFR.
+		[] ->
+		    orber:dbg("[~p] corba_object:get_interface(~p); TypeID ~p not found in IFR.", 
+			      [?LINE, Obj, TypeId], ?DEBUG_LEVEL),
+		    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
+		[#ir_InterfaceDef{ir_Internal_ID=Ref}] ->
+		    orber_ifr_interfacedef:describe_interface({ir_InterfaceDef, Ref})
+	    end;
+	true ->
+	    case catch iop_ior:get_key(Obj) of
+		{'external', _Key} ->
+		    orber:dbg("[~p] corba_object:get_interface(~p); Invalid object reference.", 
+			      [?LINE, Obj], ?DEBUG_LEVEL),
+		    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
+		{_Local, _Key, _, _, Module} ->
+		    case catch Module:oe_get_interface() of
+			{'EXIT', What} ->
+			    orber:dbg("[~p] corba_object:get_interface(~p);~n"
+				      "The call-back module does not exist or incorrect IC-version used.~n"
+				      "Reason: ~p", [?LINE, Module, What], ?DEBUG_LEVEL),
+			    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
+			InterfaceDesc ->
+			    InterfaceDesc
+		    end
+	    end
     end.
-
+	    
 
 is_nil(Object) when record(Object, 'IOP_IOR') ->
     iop_ior:check_nil(Object);
@@ -88,6 +108,8 @@ is_a(Obj, Logical_type_id) ->
 
 is_a(?ORBER_NIL_OBJREF, _, _Ctx) ->
     false;
+is_a(#'IOP_IOR'{type_id = Logical_type_id}, Logical_type_id, _Ctx) ->
+    true;
 is_a(Obj, Logical_type_id, Ctx) when list(Ctx) ->
     case catch iop_ior:get_key(Obj) of
 	{'external', Key} ->
@@ -176,7 +198,7 @@ existent_helper(Obj, Op, Ctx) ->
 
 is_remote(Obj) ->
     case catch iop_ior:get_key(Obj) of
-	{'external', _, _, _, _} ->
+	{'external', _} ->
 	    true;
 	_ ->
 	    false

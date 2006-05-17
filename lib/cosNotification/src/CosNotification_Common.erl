@@ -48,7 +48,8 @@
          send_stubborn/5,
          create_link/3, 
 	 disconnect/3, 
-	 do_disconnect/3]).
+	 do_disconnect/3,
+	 notify/1]).
 
 %% Internal AdminProperties
 -export([init_adm/1,
@@ -185,6 +186,23 @@ type_check(Obj, Mod) ->
 			      [?LINE, Obj, Mod, What], ?DEBUG_LEVEL),
 		    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
 	    end
+    end.
+	
+
+%%-----------------------------------------------------------%
+%% function : notify
+%% Arguments: Items - [Item]
+%%            Item - {proxy, IOR} | {client, IOR} | {reason, term()}
+%% Returns  : 'ok' or raises exception.
+%% Effect   : 
+%%------------------------------------------------------------
+notify(Items) ->
+    case cosNotificationApp:notify() of
+	false ->
+	    ok;
+	Module ->
+	    catch Module:terminated(Items),
+	    ok
     end.
 	
 

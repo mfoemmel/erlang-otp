@@ -1,8 +1,41 @@
 {"%VSN%",
  [
+  {"4.7.3",   
+   [
+    {load_module, snmp, soft_purge, soft_purge, []},
+    {load_module, snmp_app, soft_purge, soft_purge, []},
+    {update, snmpa_net_if, soft, soft_purge, soft_purge, []},
+    {update, snmpm_server, soft, soft_purge, soft_purge, []}
+   ]
+  },
+  {"4.7.2",   
+   [
+    {load_module, snmp, soft_purge, soft_purge, []},
+    {load_module, snmp_app, soft_purge, soft_purge, []},
+    {load_module, snmp_target_mib, soft_purge, soft_purge, []},
+    {update, snmpa_net_if, soft, soft_purge, soft_purge, []},
+    {update, snmpm_config, soft, soft_purge, soft_purge, []},
+    {update, snmpm_server, soft, soft_purge, soft_purge, []}
+   ]
+  },
+  {"4.7.1",   
+   [
+    {load_module, snmp, soft_purge, soft_purge, []},
+    {load_module, snmp_app, soft_purge, soft_purge, []},
+    {load_module, snmp_target_mib, soft_purge, soft_purge, []},
+    {update, snmpa_net_if, soft, soft_purge, soft_purge, []},
+    {update, snmpm_config, soft, soft_purge, soft_purge, []},
+    {update, snmpm_server, soft, soft_purge, soft_purge, []}, 
+    {update, snmpm_net_if, soft, soft_purge, soft_purge, []} 
+   ]
+  },
   {"4.7",   
    [
     {load_module, snmp, soft_purge, soft_purge, []},
+    {load_module, snmp_app, soft_purge, soft_purge, []},
+    {load_module, snmp_target_mib, soft_purge, soft_purge, []},
+    {update, snmpa_net_if, soft, soft_purge, soft_purge, []},
+    {update, snmpm_config, soft, soft_purge, soft_purge, []},
     {update, snmpm_misc_sup, supervisor},
     {apply, {supervisor, terminate_child, [snmpm_supervisor, snmpm_server]}},
     {apply, {supervisor, delete_child,    [snmpm_supervisor, snmpm_server]}},
@@ -10,19 +43,11 @@
     {apply, {supervisor, delete_child,    [snmpm_misc_sup, net_if]}},
     {apply, {supervisor, terminate_child, [snmpm_misc_sup, note_store]}},
     {apply, {supervisor, delete_child,    [snmpm_misc_sup, note_store]}},
+    {load_module, snmpm_server, soft_purge, soft_purge, []},
+    {load_module, snmpm_net_if, soft_purge, soft_purge, []},
     {add_module, snmpm_server_sup},
     {update, snmpm_supervisor, supervisor},
     {apply, {supervisor, restart_child,  [snmpm_supervisor, snmpm_server_sup]}}
-   ]
-  },
-  {"4.6.1", 
-   [
-    {restart_application, snmp}
-   ]
-  },
-  {"4.6",   
-   [
-    {restart_application, snmp}
    ]
   }
  ], 
@@ -30,9 +55,42 @@
 %% ---------------------------------------------------------------------------
 
  [
+  {"4.7.3",   
+   [
+    {load_module, snmp, soft_purge, soft_purge, []},
+    {load_module, snmp_app, soft_purge, soft_purge, []},
+    {update, snmpa_net_if, soft, soft_purge, soft_purge, []},
+    {update, snmpm_server, soft, soft_purge, soft_purge, []}
+   ]
+  },
+  {"4.7.2",   
+   [
+    {load_module, snmp, soft_purge, soft_purge, []},
+    {load_module, snmp_app, soft_purge, soft_purge, []},
+    {load_module, snmp_target_mib, soft_purge, soft_purge, []},
+    {update, snmpa_net_if, soft, soft_purge, soft_purge, []},
+    {update, snmpm_config, soft, soft_purge, soft_purge, []},
+    {update, snmpm_server, soft, soft_purge, soft_purge, []} 
+   ]
+  },
+  {"4.7.1",   
+   [
+    {load_module, snmp, soft_purge, soft_purge, []},
+    {load_module, snmp_app, soft_purge, soft_purge, []},
+    {load_module, snmp_target_mib, soft_purge, soft_purge, []},
+    {update, snmpa_net_if, soft, soft_purge, soft_purge, []},
+    {update, snmpm_config, soft, soft_purge, soft_purge, []},
+    {update, snmpm_server, soft, soft_purge, soft_purge, []}, 
+    {update, snmpm_net_if, soft, soft_purge, soft_purge, []} 
+   ]
+  },
   {"4.7",   
    [
     {load_module, snmp, soft_purge, soft_purge, []},
+    {load_module, snmp_app, soft_purge, soft_purge, []},
+    {load_module, snmp_target_mib, soft_purge, soft_purge, []},
+    {update, snmpa_net_if, soft, soft_purge, soft_purge, []},
+    {update, snmpm_config, soft, soft_purge, soft_purge, []},
     {apply, {supervisor, terminate_child, [snmpm_server_sup, snmpm_server]}},
     {apply, {supervisor, delete_child,    [snmpm_server_sup, snmpm_server]}},
     {apply, {supervisor, terminate_child, [snmpm_misc_sup, note_store]}},
@@ -42,19 +100,11 @@
     {update, snmpm_misc_sup, supervisor},
     {apply, {supervisor, terminate_child, [snmpm_supervisor, snmpm_server_sup]}},
     {apply, {supervisor, delete_child,    [snmpm_supervisor, snmpm_server_sup]}},
+    {load_module, snmpm_server, soft_purge, soft_purge, []},
+    {load_module, snmpm_net_if, soft_purge, soft_purge, []},
     {update, snmpm_supervisor, supervisor},
     {apply, {supervisor, restart_child, [snmpm_supervisor, snmpm_server]}},
     {delete_module, snmpm_server_sup}
-   ]
-  },
-  {"4.6.1", 
-   [
-    {restart_application, snmp}
-   ]
-  },
-  {"4.6",
-   [
-    {restart_application, snmp}
    ]
   }
  ]

@@ -131,7 +131,7 @@ gen(Sources, App, Packages, Modules, FileMap, Ctxt) ->
     Options = Ctxt#context.opts,
     Title = title(App, Options),
     CSS = stylesheet(Options),
-    Modules1 = sources(Sources, Dir, Modules, Env, Options),
+    {Modules1, Error} = sources(Sources, Dir, Modules, Env, Options),
     modules_frame(Dir, Modules1, Title, CSS),
     packages(Packages, Dir, FileMap, Env, Options),
     packages_frame(Dir, Packages, Title, CSS),
@@ -139,7 +139,11 @@ gen(Sources, App, Packages, Modules, FileMap, Ctxt) ->
     index_file(Dir, length(Packages) > 1, Title),
     edoc_lib:write_info_file(App, Packages, Modules1, Dir),
     copy_stylesheet(Dir, Options),
-    ok.
+    %% handle postponed error during processing of source files
+    case Error of
+	true -> exit(error);
+	false -> ok
+    end.
 
 
 %% NEW-OPTIONS: title
@@ -166,36 +170,37 @@ sources(Sources, Dir, Modules, Env, Options) ->
 				 ?DEFAULT_FILE_SUFFIX),
     Private = proplists:get_bool(private, Options),
     Hidden = proplists:get_bool(hidden, Options),
-    Ms = lists:foldl(fun (Src, Set) ->
-			     source(Src, Dir, Suffix, Env, Set,
-				    Private, Hidden, Options)
-		     end,
-		     sets:new(), Sources),
-    [M || M <- Modules, sets:is_element(M, Ms)].
+    {Ms, E} = lists:foldl(fun (Src, {Set, Error}) ->
+				  source(Src, Dir, Suffix, Env, Set,
+					 Private, Hidden, Error, Options)
+			  end,
+			  {sets:new(), false}, Sources),
+    {[M || M <- Modules, sets:is_element(M, Ms)], E}.
 
 
 %% Generating documentation for a source file, adding its name to the
-%% set if it was successful.
+%% set if it was successful. Errors are just flagged at this stage,
+%% allowing all source files to be processed even if some of them fail.
 
 source({M, P, Name, Path}, Dir, Suffix, Env, Set, Private, Hidden,
-       Options) ->
+       Error, Options) ->
     File = filename:join(Path, Name),
     case catch {ok, edoc:get_doc(File, Env, Options)} of
 	{ok, {Module, Doc}} ->
 	    check_name(Module, M, P, File),
-	    Text = edoc:layout(Doc, Options),
-	    Name1 = packages:last(M) ++ Suffix,
-	    edoc_lib:write_file(Text, Dir, Name1, P),
 	    case ((not is_private(Doc)) orelse Private)
 		andalso ((not is_hidden(Doc)) orelse Hidden) of
 		true ->
-		    sets:add_element(Module, Set);
+		    Text = edoc:layout(Doc, Options),
+		    Name1 = packages:last(M) ++ Suffix,
+		    edoc_lib:write_file(Text, Dir, Name1, P),
+		    {sets:add_element(Module, Set), Error};
 		false ->
-		    Set
+		    {Set, Error}
 	    end;
 	R ->
 	    report("skipping source file '~s': ~W.", [File, R, 15]),
-	    Set
+	    {Set, true}
     end.
 
 check_name(M, M0, P0, File) ->

@@ -20,7 +20,7 @@
 %%
 %% Author contact: richardc@csd.uu.se
 %%
-%% $Id: erl_prettypr.erl,v 1.50 2004/11/22 07:20:57 richardc Exp $
+%% $Id$
 %%
 %% =====================================================================
 %%
@@ -703,10 +703,10 @@ lay_2(Node, Ctxt) ->
 		    fun lay/2));
 	    
 	error_marker ->
-	    E = erl_syntax:warning_marker_info(Node),
-	    beside(text("-error("),
-		   beside(lay_concrete(E, reset_prec(Ctxt)),
-			  text(").")));
+	    E = erl_syntax:error_marker_info(Node),
+	    beside(text("** "),
+		   beside(lay_error_info(E, reset_prec(Ctxt)),
+			  text(" **")));
 
 	eof_marker ->
 	    empty();
@@ -900,9 +900,8 @@ lay_2(Node, Ctxt) ->
 
 	warning_marker ->
 	    E = erl_syntax:warning_marker_info(Node),
-	    beside(text("-warning("),
-		   beside(lay_concrete(E, reset_prec(Ctxt)),
-			  text(").")))
+	    beside(text("%% WARNING: "),
+		   lay_error_info(E, reset_prec(Ctxt)))
     end.
 
 lay_parentheses(D, _Ctxt) ->
@@ -1051,6 +1050,20 @@ lay_bit_types([T | Ts], Ctxt) ->
     beside(lay(T, Ctxt),
 	   beside(floating(text("-")),
 		  lay_bit_types(Ts, Ctxt))).
+
+lay_error_info({L, M, T}=T0, Ctxt) when is_integer(L), is_atom(M) ->
+    case catch M:format_error(T) of
+	S when is_list(S) ->
+	    if L > 0 ->
+		    beside(text(io_lib:format("~w: ",[L])), text(S));
+	       true ->
+		    text(S)
+	    end;
+	_ ->
+	    lay_concrete(T0, Ctxt)
+    end;
+lay_error_info(T, Ctxt) ->
+    lay_concrete(T, Ctxt).
 
 lay_concrete(T, Ctxt) ->
     lay(erl_syntax:abstract(T), Ctxt).

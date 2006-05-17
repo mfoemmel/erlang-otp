@@ -23,7 +23,6 @@
 %header_doc_include
 
 -module(mnesia_frag).
--behaviour(mnesia_access).
 
 %% Callback functions when accessed within an activity
 -export([
@@ -37,6 +36,8 @@
        ]).
 
 %header_doc_include
+
+%% -behaviour(mnesia_access).
 
 -export([
 	 change_table_frag/2,

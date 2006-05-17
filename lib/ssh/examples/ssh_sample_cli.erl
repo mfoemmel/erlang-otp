@@ -3,13 +3,14 @@
 %% api
 -export([listen/1, listen/2]).
 
-%% our shell function
--export([start_our_shell/0]).
+%% %% our shell function
+%% -export([start_our_shell/1]).
 
 %% our command functions
 -export([cli_prime/1, cli_primes/1, cli_gcd/2, cli_lcm/2,
 	 cli_factors/1, cli_exit/0, cli_rho/1, cli_help/0,
-	 cli_crash/0, cli_users/0]).
+	 cli_crash/0, cli_users/0, cli_self/0,
+	 cli_user/0]).
 
 %% imports
 -import(lists, [reverse/1, reverse/2, seq/2, prefix/2]).
@@ -20,8 +21,7 @@ listen(Port) ->
     listen(Port, []).
 
 listen(Port, Options) ->
-    ssh_cli:listen({?MODULE, start_our_shell, []},
-		   Port, Options).
+    ssh_cli:listen(fun(U) -> start_our_shell(U) end, Port, Options).
 
 %% our_routines
 our_routines() ->
@@ -35,7 +35,9 @@ our_routines() ->
      {"prime", cli_prime,    "<int>       check for primality"},
      {"primes", cli_primes,  "<int>       print all primes up to <int>"},
      {"rho", cli_rho,        "<int>       prime factors using rho's alg."},
-     {"users", cli_users,    "            lists users"}
+     {"who",  cli_users,     "            lists users"},
+     {"user", cli_user,      "            print name of user"},
+     {"self", cli_self,      "            print my pid"}
     ].
 
 %% (we could of course generate this from module_info() something like this)
@@ -103,10 +105,11 @@ expand(RevBefore) ->
 %%% spawns out shell loop, we use plain io to input and output
 %%% over ssh (the group module is our group leader, and takes
 %%% care of sending input to the ssh_sample_cli server)
-start_our_shell() ->
+start_our_shell(User) ->
     spawn(fun() ->
-		  io:setopts(expand_fun, fun(Bef) -> expand(Bef) end),
+		  io:setopts([{expand_fun, fun(Bef) -> expand(Bef) end}]),
 		  io:format("Enter command\n"),
+		  put(user, User),
 		  our_shell_loop()
 	  end).
 
@@ -129,7 +132,7 @@ command_to_function(Command) ->
     case lists:keysearch(Command, 1, our_routines()) of
 	{value, {_, Proc, _}} -> Proc;
 	false -> unknown_cli
-    end.	    
+    end.
 
 %%% evaluate a command line
 eval_cli(Line) ->
@@ -177,6 +180,9 @@ cli_lcm(A, B) when is_integer(A), is_integer(B) ->
 cli_factors(A) when A < 1000000 ->
     factors(A).
 
+cli_user() ->
+    get(user).
+
 cli_users() ->
     case ssh_userauth:get_auth_users() of
 	{ok, UsersPids} ->
@@ -184,6 +190,9 @@ cli_users() ->
 	E ->
 	    E
     end.
+
+cli_self() ->
+    self().
 
 cli_crash() ->
     crash.

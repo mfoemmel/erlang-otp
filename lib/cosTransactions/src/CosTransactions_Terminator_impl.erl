@@ -41,7 +41,7 @@
 -export([handle_call/3, handle_cast/2, handle_info/2, code_change/3]).
 
 %%--------------- LOCAL DATA ---------------------------------
--record(terminator, {reg_resources, rollback_only, regname, coordinator}).
+%-record(terminator, {reg_resources, rollback_only, regname, coordinator}).
 
 %%------------------------------------------------------------
 %% function : init, terminate

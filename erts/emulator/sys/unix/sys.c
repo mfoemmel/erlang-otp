@@ -34,6 +34,10 @@
 #include <ctype.h>
 #include <sys/utsname.h>
 
+#if defined(ERTS_SMP) && defined(USE_KERNEL_POLL)
+#  error "smp support and kernel poll currently not supported (use poll)"
+#endif
+
 #if !defined(USE_SELECT)
 
 #include <poll.h>
@@ -141,16 +145,15 @@ extern char **environ;
  * child_waiter().
  */
 
-EXTERN_FUNCTION(void, input_ready, (int, int));
-EXTERN_FUNCTION(void, output_ready, (int, int));
-EXTERN_FUNCTION(int, check_async_ready, (_VOID_));
-EXTERN_FUNCTION(int, driver_interrupt, (int, int));
-EXTERN_FUNCTION(void, increment_time, (int));
-EXTERN_FUNCTION(int, next_time, (_VOID_));
-int send_error_to_logger(Eterm);
-EXTERN_FUNCTION(void, do_break, (_VOID_));
+extern void input_ready(int, int);
+extern void output_ready(int, int);
+extern int  check_async_ready(void);
+extern int  driver_interrupt(int, int);
+/*EXTERN_FUNCTION(void, increment_time, (int));*/
+/*EXTERN_FUNCTION(int, next_time, (_VOID_));*/
+extern void do_break(void);
 
-EXTERN_FUNCTION(void, erl_sys_args, (int*, char**));
+extern void erl_sys_args(int*, char**);
 
 /* The following two defs should probably be moved somewhere else */
 
@@ -181,7 +184,7 @@ static struct readyfd* ready_fds;     /* Collect after poll */
 static int             nof_ready_fds; /* Number of fds after poll */
 
 #ifdef USE_KERNEL_POLL
-static int use_kernel_poll = 0;
+int erts_use_kernel_poll = 0;
 #endif
 
 #ifdef USE_DEVPOLL
@@ -249,9 +252,22 @@ static char *child_setup_prog;
 static int debug_log = 0;
 #endif
 
+static erts_smp_atomic_t sys_misc_mem_sz;
+
 #if CHLDWTHR
-static ethr_tid child_waiter_tid;
+static erts_tid_t child_waiter_tid;
+/* chld_stat_mtx is used to protect against concurrent accesses
+   of the driver_data fields pid, alive, and status. */
+erts_mtx_t chld_stat_mtx;
+erts_cnd_t chld_stat_cnd;
+static long children_alive;
+#define CHLD_STAT_LOCK		erts_mtx_lock(&chld_stat_mtx)
+#define CHLD_STAT_UNLOCK	erts_mtx_unlock(&chld_stat_mtx)
+#define CHLD_STAT_WAIT		erts_cnd_wait(&chld_stat_cnd, &chld_stat_mtx)
+#define CHLD_STAT_SIGNAL	erts_cnd_signal(&chld_stat_cnd)
 #else
+#define CHLD_STAT_LOCK
+#define CHLD_STAT_UNLOCK
 static volatile int children_died;
 #endif
 
@@ -279,6 +295,22 @@ static FUNCTION(void, note_child_death, (int, int));
 static FUNCTION(void *, child_waiter, (void *));
 #endif
 
+#ifdef ERTS_SMP
+
+typedef struct {
+    int started;
+    int fds[2];
+} io_thr_waker_data_t;
+
+static io_thr_waker_data_t io_thr_waker_data = {0};
+
+static void init_io_thr_waker_drv(void);
+erts_smp_mtx_t io_wake_mtx;
+erts_smp_atomic_t io_thread_waiting; /* io thread is waiting in poll,
+					select ... */
+int io_thread_alive = 0;
+#endif
+
 /********************* General functions ****************************/
 
 /* This is used by both the drivers and general I/O, must be set early */
@@ -294,6 +326,12 @@ static int replace_intr = 0;
 /* assume yes initially, ttsl_init will clear it */
 int using_oldshell = 1; 
 
+Uint
+erts_sys_misc_mem_sz(void)
+{
+    return (Uint) erts_smp_atomic_read(&sys_misc_mem_sz);
+}
+
 /*
  * reset the terminal to the original settings on exit
  */
@@ -307,7 +345,21 @@ void sys_tty_reset(void)
   }
 }
 
-#if defined(USE_THREADS) && defined(ETHR_HAVE_ETHR_SIG_FUNCS)
+#ifdef USE_THREADS
+static void *ethr_internal_alloc(size_t size)
+{
+    return erts_alloc_fnf(ERTS_ALC_T_ETHR_INTERNAL, (Uint) size);
+}
+static void *ethr_internal_realloc(void *ptr, size_t size)
+{
+    return erts_realloc_fnf(ERTS_ALC_T_ETHR_INTERNAL, ptr, (Uint) size);
+}
+static void ethr_internal_free(void *ptr)
+{
+    erts_free(ERTS_ALC_T_ETHR_INTERNAL, ptr);
+}
+
+#ifdef ERTS_THR_HAVE_SIG_FUNCS
 /*
  * Child thread inherits parents signal mask at creation. In order to
  * guarantee that the main thread will receive all SIGINT, SIGCHLD, and
@@ -340,19 +392,78 @@ thr_create_cleanup(void *saved_sigmask)
     erts_free(ERTS_ALC_T_TMP, saved_sigmask);
 }
 
+#endif /* #ifdef ERTS_THR_HAVE_SIG_FUNCS */
+#endif /* #ifdef USE_THREADS */
+
+#undef ERTS_CALL_INIT_LIBCCLOSE
+#if defined(ERTS_SMP) \
+    && defined(ERTS_SELECTER_THR_CLOSED_FD_BUG) \
+    && defined(HAVE_DLFCN_H)
+#include <dlfcn.h>
+#ifdef RTLD_NEXT
+/*
+ * Workaround for buggy poll() and select() implementations that
+ * do not return when a file descriptor in the poll set is closed
+ * by another thread.
+ *
+ * At least some Linux and OSF1 poll()/select() suffer from this bug. Also
+ * at least some emulatated poll() (which we don't use) on darwin suffer
+ * from this bug. select() (which we use) on darwin does not have this bug.
+ *
+ */
+#define ERTS_HAVE_SELECTER_THR_CLOSED_FD_BUG_WORKAROUND
+static int libcclose_initialized = 0;
+static int (*libcclose)(int) = NULL;
+
+#define ERTS_CALL_INIT_LIBCCLOSE
+static void
+init_libcclose(void)
+{
+    if (libcclose_initialized)
+	return;
+
+    libcclose = dlsym(RTLD_NEXT, "close");
+    if (!libcclose)
+	erl_exit(-1, "Failed to lookup close()\n");
+    libcclose_initialized = 1;
+}
+
+/*
+ * Override libc's close() with our own versions...
+ */
+int
+close(int fd)
+{
+    if (!libcclose_initialized)
+	init_libcclose();
+    if (erts_initialized)
+	erts_wake_io_thread(); /* Need to get the io thread out of
+				  poll()/select() */
+    return (*libcclose)(fd);
+}
+
+#endif
 #endif
 
 void
 erts_sys_pre_init(void)
 {
+#ifdef ERTS_CALL_INIT_LIBCCLOSE
+    init_libcclose();
+#endif
+    erts_printf_add_cr_to_stdout = 1;
+    erts_printf_add_cr_to_stderr = 1;
 #ifdef USE_THREADS
-    ethr_init_data *eidp = NULL;
-#ifdef ETHR_HAVE_ETHR_SIG_FUNCS
-    ethr_init_data eid = {thr_create_prepare,	/* Before creation in parent */
-			  thr_create_cleanup,	/* After creation in parent */
-			  NULL			/* After creation in child */};
-
-    eidp = &eid;
+    {
+    erts_thr_init_data_t eid = ERTS_THR_INIT_DATA_DEF_INITER;
+    eid.alloc = ethr_internal_alloc;
+    eid.realloc = ethr_internal_realloc;
+    eid.free = ethr_internal_free;
+#ifdef ERTS_THR_HAVE_SIG_FUNCS
+    /* Before creation in parent */
+    eid.thread_create_prepare_func = thr_create_prepare;
+    /* After creation in parent */
+    eid.thread_create_parent_func = thr_create_cleanup,
 
     sigemptyset(&thr_create_sigmask);
     sigaddset(&thr_create_sigmask, SIGINT);   /* block interrupt */
@@ -360,8 +471,15 @@ erts_sys_pre_init(void)
     sigaddset(&thr_create_sigmask, SIGUSR1);  /* block user defined signal */
 #endif
 
-    erts_thr_init(eidp);
+    erts_thr_init(&eid);
+#if CHLDWTHR
+    erts_mtx_init(&chld_stat_mtx, "child_status");
+    erts_cnd_init(&chld_stat_cnd);
+    children_alive = 0;
 #endif
+    }
+#endif
+    erts_smp_atomic_init(&sys_misc_mem_sz, 0);
 }
 
 void
@@ -383,7 +501,7 @@ erl_sys_init(void)
 		   + sizeof(CHILD_SETUP_PROG_NAME)
 		   + 1);
     child_setup_prog = erts_alloc(ERTS_ALC_T_CS_PROG_PATH, csp_path_sz);
-    erts_sys_misc_mem_sz += csp_path_sz;
+    erts_smp_atomic_add(&sys_misc_mem_sz, csp_path_sz);
     sprintf(child_setup_prog,
             "%s%c%s",
             bindir,
@@ -517,7 +635,7 @@ static RETSIGTYPE request_break(int signum)
   fprintf(stderr,"break!\n");
 #endif
   if (break_requested > 0)
-     erl_exit(0, "");
+      erl_exit(ERTS_INTR_EXIT, "");
 
   break_requested = 1;
 
@@ -570,7 +688,7 @@ static RETSIGTYPE do_quit(void)
 static RETSIGTYPE do_quit(int signum)
 #endif
 {
-    halt_0(0);
+    erl_exit(ERTS_INTR_EXIT, "");
 }
 
 /* Disable break */
@@ -727,12 +845,13 @@ char *getenv_string(GETENV_STATE *state0)
 
 /* I. Common stuff */
 
-#define SYS_TMP_BUF_MAX (sys_tmp_buf_size - 1024)
-static byte *sys_tmp_buf; /* different from the one in global.h/init.c */
-static Uint sys_tmp_buf_size;
-int cerr_pos;
+/*
+ * Decreasing the size of it below 16384 is not allowed.
+ */
 
 /* II. The spawn/fd/vanilla drivers */
+
+#define ERTS_SYS_READ_BUF_SZ (64*1024)
 
 /* This data is shared by these drivers - initialized by spawn_init() */
 static struct driver_data {
@@ -742,17 +861,6 @@ static struct driver_data {
     int alive;
     int status;
 } *driver_data;			/* indexed by fd */
-
-#if CHLDWTHR
-/* chld_stat_mtx is used to protect against concurrent accesses
-   of the driver_data fields pid, alive, and status. */
-ethr_mutex chld_stat_mtx = ETHR_MUTEX_INITER;
-#define CHLD_STAT_LOCK		erts_mtx_lock(&chld_stat_mtx)
-#define CHLD_STAT_UNLOCK	erts_mtx_unlock(&chld_stat_mtx)
-#else
-#define CHLD_STAT_LOCK
-#define CHLD_STAT_UNLOCK
-#endif
 
 /* Driver interfaces */
 static ErlDrvData spawn_start(ErlDrvPort, char*, SysDriverOpts*);
@@ -813,8 +921,7 @@ const struct erl_drv_entry vanilla_driver_entry = {
     NULL
 };
 
-#ifdef USE_THREADS
-
+#if defined(USE_THREADS) && !defined(ERTS_SMP)
 static int  async_drv_init(void);
 static ErlDrvData async_drv_start(ErlDrvPort, char*, SysDriverOpts*);
 static void async_drv_stop(ErlDrvData);
@@ -837,7 +944,6 @@ struct erl_drv_entry async_driver_entry = {
     NULL,
     NULL
 };
-
 #endif
 
 /* Handle SIGCHLD signals. */
@@ -897,7 +1003,8 @@ static int spawn_init()
    sys_sigset(SIGPIPE, SIG_IGN); /* Ignore - we'll handle the write failure */
    driver_data = (struct driver_data *)
        erts_alloc(ERTS_ALC_T_DRV_TAB, max_files * sizeof(struct driver_data));
-   erts_sys_misc_mem_sz += max_files * sizeof(struct driver_data);
+   erts_smp_atomic_add(&sys_misc_mem_sz,
+		       max_files * sizeof(struct driver_data));
 
    for (i = 0; i < max_files; i++)
       driver_data[i].pid = -1;
@@ -1019,13 +1126,16 @@ static char **build_unix_environment(char *block)
 
 static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 {
+#define CMD_LINE_PREFIX_STR "exec "
+#define CMD_LINE_PREFIX_STR_SZ (sizeof(CMD_LINE_PREFIX_STR) - 1)
+
     int ifd[2], ofd[2], len, pid, i;
-    char *p1, *p2;
     char **volatile new_environ; /* volatile since a vfork() then cannot
 				    cause 'new_environ' to be clobbered
 				    in the parent process. */
     int saved_errno;
     long res;
+    char *cmd_line;
 
     switch (opts->read_write) {
     case DO_READ:
@@ -1065,25 +1175,26 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 	return ERL_DRV_ERROR_GENERAL;
     }
 
-    /* make the string suitable for giving to "sh" (5 = strlen("exec ")) */
+    /* make the string suitable for giving to "sh" */
     len = strlen(name);
-    if (len + 5 >= sys_tmp_buf_size) {
+    cmd_line = (char *) erts_alloc_fnf(ERTS_ALC_T_TMP,
+				       CMD_LINE_PREFIX_STR_SZ + len + 1);
+    if (!cmd_line) {
 	close_pipes(ifd, ofd, opts->read_write);
-	errno = ENAMETOOLONG;
+	errno = ENOMEM;
 	return ERL_DRV_ERROR_ERRNO;
     }
-    /* name == sys_tmp_buf needs overlapping-safe move - just do it always */
-    /* should use memmove() but it isn't always available */
-    p1 = (char *)&sys_tmp_buf[len + 5];
-    p2 = name+len;
-    while (p2 >= name)
-	*p1-- = *p2--;
-    memcpy(sys_tmp_buf, "exec ", 5);
+    memcpy((void *) cmd_line,
+	   (void *) CMD_LINE_PREFIX_STR,
+	   CMD_LINE_PREFIX_STR_SZ);
+    memcpy((void *) (cmd_line + CMD_LINE_PREFIX_STR_SZ), (void *) name, len);
+    cmd_line[CMD_LINE_PREFIX_STR_SZ + len] = '\0';
 
     if (opts->envir == NULL) {
 	new_environ = environ;
     } else if ((new_environ = build_unix_environment(opts->envir)) == NULL) {
 	errno = ENOMEM;
+	erts_free(ERTS_ALC_T_TMP, (void *) cmd_line);
 	return ERL_DRV_ERROR_ERRNO;
     } 
 
@@ -1151,7 +1262,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 	    
 	    unblock_signals();
 
-	    execle("/bin/sh", "sh", "-c", sys_tmp_buf, (char *) NULL, new_environ);
+	    execle("/bin/sh", "sh", "-c", cmd_line, (char *) NULL, new_environ);
 
 	child_error:
 	    _exit(1);
@@ -1190,7 +1301,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 
 	cs_argv[CS_ARGV_PROGNAME_IX] = child_setup_prog;
 	cs_argv[CS_ARGV_WD_IX] = opts->wd ? opts->wd : ".";
-	cs_argv[CS_ARGV_CMD_IX] = sys_tmp_buf; /* Command */
+	cs_argv[CS_ARGV_CMD_IX] = cmd_line; /* Command */
 	cs_argv[CS_ARGV_FD_CR_IX] = fd_close_range;
 	for (i = 0; i < CS_ARGV_NO_OF_DUP2_OPS; i++)
 	    cs_argv[CS_ARGV_DUP2_OP_IX(i)] = &dup2_op[i][0];
@@ -1217,6 +1328,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 
     if (pid == -1) {
         saved_errno = errno;
+	erts_free(ERTS_ALC_T_TMP, (void *) cmd_line);
         unblock_signals();
         close_pipes(ifd, ofd, opts->read_write);
 	errno = saved_errno;
@@ -1240,14 +1352,17 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 	fcntl(i, F_SETFD, 1);
 
     qnx_spawn_options.flags = _SPAWN_SETSID;
-    if ((pid = spawnl(P_NOWAIT, "/bin/sh", "/bin/sh", "-c", sys_tmp_buf, 
+    if ((pid = spawnl(P_NOWAIT, "/bin/sh", "/bin/sh", "-c", cmd_line, 
                       (char *) 0)) < 0) {
+	erts_free(ERTS_ALC_T_TMP, (void *) cmd_line);
         reset_qnx_spawn();
 	close_pipes(ifd, ofd, opts->read_write);
 	return ERL_DRV_ERROR_GENERAL;
     }
     reset_qnx_spawn();
 #endif /* QNX */
+
+    erts_free(ERTS_ALC_T_TMP, (void *) cmd_line);
 
     if (new_environ != environ)
 	erts_free(ERTS_ALC_T_ENVIRONMENT, (void *) new_environ);
@@ -1272,10 +1387,19 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
        first complete putting away the info about our new subprocess. */
     unblock_signals();
 
+#if CHLDWTHR
+    ASSERT(children_alive >= 0);
+
+    if (!(children_alive++))
+	CHLD_STAT_SIGNAL; /* Wake up child waiter thread if no children
+			     was alive before we fork()ed ... */
     /* Don't unlock chld_stat_mtx until now of the same reason as above */
     CHLD_STAT_UNLOCK;
+#endif
 
     return (ErlDrvData)res;
+#undef CMD_LINE_PREFIX_STR
+#undef CMD_LINE_PREFIX_STR_SZ
 }
 
 #ifdef QNX
@@ -1450,8 +1574,8 @@ static void clear_fd_data(int fd)
 {
     if (fd_data[fd].sz > 0) {
 	erts_free(ERTS_ALC_T_FD_ENTRY_BUF, (void *) fd_data[fd].buf);
-	ASSERT(erts_sys_misc_mem_sz >= fd_data[fd].sz);
-	erts_sys_misc_mem_sz -= fd_data[fd].sz;
+	ASSERT(erts_smp_atomic_read(&sys_misc_mem_sz) >= fd_data[fd].sz);
+	erts_smp_atomic_add(&sys_misc_mem_sz, -1*fd_data[fd].sz);
     }
     fd_data[fd].buf = NULL;
     fd_data[fd].sz = 0;
@@ -1683,13 +1807,14 @@ static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
     int packet_bytes;
     int res;
     Uint h;
-    char *buf;
 
     port_num = driver_data[fd].port_num;
     packet_bytes = driver_data[fd].packet_bytes;
 
     if (packet_bytes == 0) {
-	res = read(ready_fd, sys_tmp_buf, sys_tmp_buf_size);
+	byte *read_buf = (byte *) erts_alloc(ERTS_ALC_T_SYS_READ_BUF,
+					     ERTS_SYS_READ_BUF_SZ);
+	res = read(ready_fd, read_buf, ERTS_SYS_READ_BUF_SZ);
 	if (res < 0) {
 	    if ((errno != EINTR) && (errno != ERRNO_BLOCK))
 		port_inp_failure(port_num, ready_fd, res);
@@ -1697,7 +1822,8 @@ static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
 	else if (res == 0)
 	    port_inp_failure(port_num, ready_fd, res);
 	else 
-	    driver_output(port_num, (char*)sys_tmp_buf, res);
+	    driver_output(port_num, (char*) read_buf, res);
+	erts_free(ERTS_ALC_T_SYS_READ_BUF, (void *) read_buf);
     }
     else if (fd_data[ready_fd].remain > 0) { /* We try to read the remainder */
 	/* space is allocated in buf */
@@ -1721,8 +1847,10 @@ static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
 	}
     }
     else if (fd_data[ready_fd].remain == 0) { /* clean fd */
+	byte *read_buf = (byte *) erts_alloc(ERTS_ALC_T_SYS_READ_BUF,
+					     ERTS_SYS_READ_BUF_SZ);
 	/* We make one read attempt and see what happens */
-	res = read(ready_fd, sys_tmp_buf, sys_tmp_buf_size);
+	res = read(ready_fd, read_buf, ERTS_SYS_READ_BUF_SZ);
 	if (res < 0) {  
 	    if ((errno != EINTR) && (errno != ERRNO_BLOCK))
 		port_inp_failure(port_num, ready_fd, res);
@@ -1732,11 +1860,11 @@ static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
 	} 
 	else if (res < packet_bytes - fd_data[ready_fd].psz) { 
 	    memcpy(fd_data[ready_fd].pbuf+fd_data[ready_fd].psz,
-		   sys_tmp_buf, res);
+		   read_buf, res);
 	    fd_data[ready_fd].psz += res;
 	}
 	else  { /* if (res >= packet_bytes) */
-	    unsigned char* cpos = sys_tmp_buf;
+	    unsigned char* cpos = read_buf;
 	    int bytes_left = res;
 
 	    while (1) {
@@ -1769,13 +1897,13 @@ static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
 		    continue;
 		}
 		else {		/* The last message we got was split */
-		    buf = erts_alloc_fnf(ERTS_ALC_T_FD_ENTRY_BUF, h);
+		        char *buf = erts_alloc_fnf(ERTS_ALC_T_FD_ENTRY_BUF, h);
 		    if (!buf) {
 			errno = ENOMEM;
 			port_inp_failure(port_num, ready_fd, -1);
 		    }
 		    else {
-			erts_sys_misc_mem_sz += h;
+			erts_smp_atomic_add(&sys_misc_mem_sz, h);
 			sys_memcpy(buf, cpos, bytes_left);
 			fd_data[ready_fd].buf = buf;
 			fd_data[ready_fd].sz = h;
@@ -1786,6 +1914,7 @@ static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
 		}
 	    }
 	}
+	erts_free(ERTS_ALC_T_SYS_READ_BUF, (void *) read_buf);
     }
 }
 
@@ -1825,6 +1954,145 @@ static void ready_output(ErlDrvData e, ErlDrvEvent ready_fd)
     return; /* 0; */
 }
 
+
+#ifdef ERTS_SMP
+
+static int do_driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on);
+
+typedef struct erts_select_entry_ erts_select_entry;
+struct erts_select_entry_ {
+    erts_select_entry *next;
+    ErlDrvPort ix;
+    ErlDrvEvent e;
+    int mode;
+    int on;
+};
+
+#define ERTS_PREALCD_SELECT_ENTRIES 20
+
+static erts_select_entry select_entries[ERTS_PREALCD_SELECT_ENTRIES];
+static erts_select_entry *free_select_entries;
+static erts_select_entry *selectq;
+static erts_select_entry *selectq_end;
+
+static void
+init_selectq(void)
+{
+    int i;
+#ifdef DEBUG
+    sys_memset((void *) &select_entries[0], 0xaf, sizeof(select_entries));
+#endif
+    for (i = 0; i < ERTS_PREALCD_SELECT_ENTRIES - 1; i++)
+	select_entries[i].next = &select_entries[i+1];
+    select_entries[ERTS_PREALCD_SELECT_ENTRIES-1].next = NULL;
+    free_select_entries = &select_entries[0];
+    selectq = NULL;
+    selectq_end = NULL;
+}
+
+static ERTS_INLINE erts_select_entry *
+mk_select_entry(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
+{
+    erts_select_entry *sep;
+    ERTS_SMP_LC_ASSERT(erts_smp_lc_io_is_locked());
+
+    if (!free_select_entries)
+	sep = (erts_select_entry *) erts_alloc(ERTS_ALC_T_SELECT_ENTRY,
+					       sizeof(erts_select_entry));
+    else {
+	sep = free_select_entries;
+	free_select_entries = free_select_entries->next;
+    }
+
+    sep->next =	NULL;
+    sep->ix =	ix;
+    sep->e =	e;
+    sep->mode =	mode;
+    sep->on =	on;
+
+    return sep;
+}
+
+static ERTS_INLINE void
+free_select_entry(erts_select_entry *sep)
+{
+    ERTS_SMP_LC_ASSERT(erts_smp_lc_io_is_locked());
+#ifdef DEBUG
+    sys_memset((void *) sep, 0xaf, sizeof(erts_select_entry));
+#endif
+    if (sep > &select_entries[ERTS_PREALCD_SELECT_ENTRIES-1]
+	|| sep < &select_entries[0])
+	erts_free(ERTS_ALC_T_SELECT_ENTRY, (void *) sep);
+    else {
+	sep->next = free_select_entries;
+	free_select_entries = sep;
+    }
+}
+
+static ERTS_INLINE int
+process_queued_selects(void)
+{
+    erts_select_entry *sep = selectq;
+    ERTS_SMP_LC_ASSERT(erts_smp_lc_io_is_locked());
+    while (sep) {
+	erts_select_entry *fsep;
+	(void) do_driver_select(sep->ix, sep->e, sep->mode, sep->on);
+	fsep = sep;
+	sep = sep->next;
+	free_select_entry(fsep);
+    }
+    selectq = NULL;
+    selectq_end = NULL;
+    ASSERT(max_fd >= 0 /* we should at least have the wakeup pipe ... */
+	   || ERTS_IS_CRASH_DUMPING); /* ... if we are not crashing */
+    return max_fd;
+}
+
+int
+driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
+{
+    ERTS_SMP_LC_ASSERT(erts_smp_lc_io_is_locked());
+    ASSERT(on || ((int) e) != io_thr_waker_data.fds[0]); /* Never deselect... */
+
+    if (io_thread_alive
+	&& erts_smp_equal_tids(erts_smp_thr_self(), erts_io_thr_tid)) {
+	(void) process_queued_selects();
+	return do_driver_select(ix, e, mode, on);
+    }
+    else {
+	erts_select_entry *sep;
+	int fd = (int) e;
+
+	if ((fd < 0) || (fd >= max_files))
+	    return -1;
+
+	sep = mk_select_entry(ix, e, mode, on);
+
+	if (selectq_end) {
+	    selectq_end->next = sep;
+	    selectq_end = sep;
+	}
+	else
+	    selectq = selectq_end = sep;
+
+	/*
+	 * If we have a poll() or select that does not return when
+	 * a file descriptor in the poll set is closed, and we haven't
+	 * got the close workaround (implemented above), wake
+	 * the io-thread also when deselecting.
+	 */
+#if !defined(ERTS_SELECTER_THR_CLOSED_FD_BUG) \
+    || defined(ERTS_HAVE_SELECTER_THR_CLOSED_FD_BUG_WORKAROUND)
+	if (on)
+#endif
+	    erts_wake_io_thread();
+
+	return 0;
+    }
+}
+
+#endif /* #ifdef ERTS_SMP */
+
 #if !defined(USE_SELECT)
 
 /* At least on FreeBSD, we need POLLRDNORM for normal files, not POLLIN. */
@@ -1838,7 +2106,11 @@ static void ready_output(ErlDrvData e, ErlDrvEvent ready_fd)
 #ifdef USE_KERNEL_POLL
 #define DRIVER_SELECT_P static int driver_select_p
 #else
+#ifdef ERTS_SMP
+#define DRIVER_SELECT_P static int do_driver_select
+#else
 #define DRIVER_SELECT_P int driver_select
+#endif
 #endif
 
 /* poll version of driver_select() */
@@ -2154,8 +2426,14 @@ int driver_event(ErlDrvPort ix, ErlDrvEvent e, ErlDrvEventData event_data) {
 
 #else  /* if defined(USE_SELECT) */
 
+#ifdef ERTS_SMP
+#define DRIVER_SELECT do_driver_select
+#else
+#define DRIVER_SELECT driver_select
+#endif
+
 /* Interface function available to driver writers */
-int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
+int DRIVER_SELECT(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
  {
    int this_port = (int)ix;
    int fd = (int)e;
@@ -2205,16 +2483,35 @@ int driver_event(ErlDrvPort ix, ErlDrvEvent e, ErlDrvEventData event_data) {
 /*
 ** Async opertation support
 */
-#ifdef USE_THREADS
-
+#if defined(USE_THREADS) && !defined(ERTS_SMP)
 static int async_fd[2];
+
+static void
+sys_async_ready_failed(int fd, int r, int err)
+{
+    char buf[120];
+    sprintf(buf, "sys_async_ready(): Fatal error: fd=%d, r=%d, errno=%d\n",
+	     fd, r, err);
+    (void) write(2, buf, strlen(buf));
+    abort();
+}
 
 /* called from threads !! */
 void sys_async_ready(int fd)
 {
     int r;
-    r = write(fd, "0", 1);  /* signal main thread fd MUST be async_fd[1] */
-    DEBUGF(("sys_async_ready: r = %d\r\n", r));
+    while (1) {
+	r = write(fd, "0", 1);  /* signal main thread fd MUST be async_fd[1] */
+	if (r == 1) {
+	    DEBUGF(("sys_async_ready(): r = 1\r\n"));
+	    break;
+	}
+	if (r < 0 && errno == EINTR) {
+	    DEBUGF(("sys_async_ready(): r = %d\r\n", r));
+	    continue;
+	}
+	sys_async_ready_failed(fd, r, errno);
+    }
 }
 
 static int async_drv_init(void)
@@ -2234,6 +2531,7 @@ static ErlDrvData async_drv_start(ErlDrvPort port_num,
 
     DEBUGF(("async_drv_start: %d\r\n", port_num));
 
+    SET_NONBLOCKING(async_fd[0]);
     driver_select(port_num, async_fd[0], DO_READ, 1);
 
     if (init_async(async_fd[1]) < 0)
@@ -2259,13 +2557,11 @@ static void async_drv_stop(ErlDrvData e)
 
 static void async_drv_input(ErlDrvData e, ErlDrvEvent fd)
 {
-    char buf[1];
-
+    char *buf[32];
     DEBUGF(("async_drv_input\r\n"));
-    read((int)fd, buf, 1);     /* fd MUST be async_fd[0] */
+    while (read((int) fd, (void *) buf, 32) > 0); /* fd MUST be async_fd[0] */
     check_async_ready();  /* invoke all async_ready */
 }
-
 #endif
 
 
@@ -2300,7 +2596,56 @@ static void do_break_handling(void)
     }
 }
 
+#ifdef ERTS_SMP
 
+static ERTS_INLINE int
+prepare_io_wait(SysTimeval *wait_time)
+{
+    int res;
+    erts_smp_atomic_xchg(&io_thread_waiting, 1);
+    erts_time_remaining(wait_time);
+    res = process_queued_selects();
+    erts_smp_io_unlock();
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_check_exact(NULL, 0); /* No locks should be locked */
+#endif
+    erts_smp_activity_change(ERTS_ACTIVITY_IO,
+			     ERTS_ACTIVITY_WAIT,
+			     NULL,
+			     NULL,
+			     NULL);
+    return res;
+}
+
+static ERTS_INLINE void
+finish_io_wait(void)
+{
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_check_exact(NULL, 0); /* No locks should be locked */
+#endif
+    erts_smp_activity_change(ERTS_ACTIVITY_WAIT,
+			     ERTS_ACTIVITY_IO,
+			     NULL,
+			     NULL,
+			     NULL);
+    erts_smp_io_lock();
+    erts_smp_atomic_xchg(&io_thread_waiting, 0);
+}
+
+static ERTS_INLINE void
+bump_timers(void)
+{
+#ifndef ERTS_TIMER_THREAD
+    long dt = do_time_read_and_reset();
+    if (dt) {
+	erts_smp_io_unlock();
+	bump_timer(dt);
+	erts_smp_io_lock();
+    }
+#endif
+}
+
+#endif
 
 /* See if there is any i/o pending. If do_wait is 1 wait for i/o.
    Both are done using "select". NULLTV (ie 0) causes select to wait.
@@ -2320,17 +2665,25 @@ int do_wait;
     SysTimeval *sel_time;
     SysTimeval poll;
 
-    int local_max_fd = max_fd;
+    int local_max_fd;
     int i, saved_errno;
     fd_set err_set;
 
+    sel_time = &wait_time;
+
+#ifdef ERTS_SMP
+
+    local_max_fd = prepare_io_wait(&wait_time);
+
+#else
+
+    local_max_fd = max_fd;
     /* choose timeout value for select() */
     if (do_wait) {
 	erts_time_remaining(&wait_time);
-	sel_time = &wait_time;
     } else if (max_fd == -1) {  /* No need to poll. 
 				 * (QNX's select crashes;-) */
-	erts_deliver_time(NULL); /* sync the machine's idea of time */
+	erts_deliver_time();	/* sync the machine's idea of time */
         return;
     } else {			/* poll only */
         poll.tv_sec  = 0;	/* zero time - used for polling */
@@ -2338,16 +2691,33 @@ int do_wait;
 	sel_time = &poll;	/* modify it */
     }
 
+#endif
+
     read_fds = input_fds; 
     write_fds = output_fds;
+
     i = select(max_fd + 1, &read_fds, &write_fds, NULLFDS, sel_time);
     saved_errno = errno; /* erts_deliver_time() and do_break_handling()
 			    might change errno... */
-    erts_deliver_time(NULL); /* sync the machine's idea of time */
+
+#ifdef ERTS_SMP
+    finish_io_wait();
+#endif
+
+    erts_deliver_time(); /* sync the machine's idea of time */
+
+#ifdef ERTS_SMP
+    bump_timers();
+#endif
 
     /* break handling moved here, signal handler just sets flag */
-    if (break_requested) 
+    if (break_requested) {
 	do_break_handling();
+    }
+
+#ifdef ERTS_SMP
+    local_max_fd = process_queued_selects();
+#endif
 
     errno = saved_errno;
     if (i <= 0) {
@@ -2365,14 +2735,14 @@ int do_wait;
 		    FD_SET(i, &err_set);
 		    if (select(max_fd + 1, &err_set, NULL, NULL, sel_time) == -1){
 			/* bad read FD found */
-			cerr_pos = 0;
-			erl_printf(CBUF, "Bad input_fd in select! "
-				   "fd,port,driver,name: %d,%d,%s,%s\n", 
-				   i, fd_data[i].inport, 
-				   erts_port[fd_data[i].inport].drv_ptr
-				   ->driver_name,
-				   erts_port[fd_data[i].inport].name);
-			send_error_to_logger(NIL);
+			erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+			erts_dsprintf(dsbufp,
+				      "Bad input_fd in select! "
+				      "fd,port,driver,name: %d,%d,%s,%s\n", 
+				      i, fd_data[i].inport,
+				      erts_port[fd_data[i].inport].drv_ptr->driver_name,
+				      erts_port[fd_data[i].inport].name);
+			erts_send_error_to_logger_nogl(dsbufp);
 			/* remove the bad fd */
 			FD_CLR(i, &input_fds);
 		    }
@@ -2387,14 +2757,13 @@ int do_wait;
 		    if (select(max_fd + 1, NULL, &err_set, NULL, sel_time) 
 			== -1) {
 			/* bad write FD found */
-			cerr_pos = 0;
-			erl_printf(CBUF, "Bad output_fd in select! "
-				   "fd,port,driver,name: %d,%d,%s,%s\n", 
-				   i, fd_data[i].outport, 
-				   erts_port[fd_data[i].outport].drv_ptr->
-				   driver_name,
-				   erts_port[fd_data[i].outport].name);
-			send_error_to_logger(NIL);
+			erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+			erts_dsprintf(dsbufp, "Bad output_fd in select! "
+				      "fd,port,driver,name: %d,%d,%s,%s\n", 
+				      i, fd_data[i].outport, 
+				      erts_port[fd_data[i].outport].drv_ptr->driver_name,
+				      erts_port[fd_data[i].outport].name);
+			erts_send_error_to_logger_nogl(dsbufp);
 			/* remove the bad fd */
 			FD_CLR(i, &output_fds);
 		    }
@@ -2403,6 +2772,7 @@ int do_wait;
 	}
 	return;
     }
+
     /* do the write's first */
     for(i =0; i <= local_max_fd; i++) {
 	if (FD_ISSET(i, &write_fds)) /* No need to check output_fds here
@@ -2412,7 +2782,11 @@ int do_wait;
 				      * output_ready is run before
 				      * input_ready.
 				      */
-	    output_ready(fd_data[i].outport, i);
+#ifdef ERTS_SMP
+	    if (FD_ISSET(i, &output_fds)) /* Needed when smp support is
+					     enabled */
+#endif
+		output_ready(fd_data[i].outport, i);
     }
     for (i = 0; i <= local_max_fd; i++) {
 	if (FD_ISSET(i, &read_fds) && FD_ISSET(i, &input_fds))
@@ -2433,23 +2807,40 @@ CHECK_IO_P(int do_wait)
 {
     SysTimeval wait_time;
     int r, i, saved_errno = 0;
-    int max_fd_plus_one = max_fd + 1;
+    int max_fd_plus_one;
     int timeout;		/* In milliseconds */
     struct readyfd* rp;
     struct readyfd* qp;
 
+
+#ifdef ERTS_SMP
+
+    max_fd_plus_one = prepare_io_wait(&wait_time) + 1;
+    timeout = wait_time.tv_sec * 1000 + wait_time.tv_usec / 1000;
+
+#else
+
+    max_fd_plus_one = max_fd + 1;
     /* Figure out timeout value */
     if (do_wait) {
 	erts_time_remaining(&wait_time);
 	timeout = wait_time.tv_sec * 1000 + wait_time.tv_usec / 1000;
     } else if (max_fd == -1) {  /* No need to poll. */
-	erts_deliver_time(NULL); /* sync the machine's idea of time */
+	erts_deliver_time();	/* sync the machine's idea of time */
         return;
     } else {			/* poll only */
 	timeout = 0;
     }
 
-    if ((r = poll(poll_fds, max_fd_plus_one, timeout)) > 0) {
+#endif
+
+    r = poll(poll_fds, max_fd_plus_one, timeout);
+
+#ifdef ERTS_SMP
+    finish_io_wait();
+#endif
+
+    if (r > 0) {
 	int rr = r;
 	/* collect ready fds into the ready_fds stucture,
 	 * this makes the calls to input ready/output ready
@@ -2478,9 +2869,13 @@ CHECK_IO_P(int do_wait)
 				might change errno... */
     }
 
-    erts_deliver_time(NULL); /* sync the machine's idea of time */
+    erts_deliver_time(); /* sync the machine's idea of time */
 
-    if (break_requested) 
+#ifdef ERTS_SMP
+    bump_timers();
+#endif
+
+    if (break_requested)
 	do_break_handling();
 
     if (r == 0)     /* timeout */
@@ -2488,16 +2883,21 @@ CHECK_IO_P(int do_wait)
 
     if (r < 0) {
 	errno = saved_errno;
-	if (errno == ERRNO_BLOCK || errno == EINTR)
-	    return;
-	cerr_pos = 0;
-	erl_printf(CBUF, "poll() error %d (%s)\n", errno, erl_errno_id(errno));
-	send_error_to_logger(NIL);
+	if (errno != ERRNO_BLOCK && errno != EINTR) {
+	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+	    erts_dsprintf(dsbufp, "poll() error %d (%s)\n", errno,
+			  erl_errno_id(errno));
+	    erts_send_error_to_logger_nogl(dsbufp);
+	}
 	return;
     }
 
     ASSERT(rp);
     ASSERT(nof_ready_fds > 0);
+
+#ifdef ERTS_SMP
+    max_fd_plus_one = process_queued_selects() + 1;
+#endif
 
     /* Note: this is *not* the same behaviour as in the select
      *       implementation, where *all* write ready file descriptors
@@ -2526,26 +2926,27 @@ CHECK_IO_P(int do_wait)
 		output_ready(qp->oport, fd);
 	}
 	else if (revents & POLLNVAL) {
-	    cerr_pos = 0;
+	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
 	    if (qp->pfd.events & POLL_INPUT) {
-		erl_printf(CBUF, "Bad input fd in poll()! fd,port,driver,name:"
-			   " %d,%d,%s,%s\n", fd,
-			   qp->iport, 
-			   erts_port[qp->iport].drv_ptr->driver_name,
-			   erts_port[qp->iport].name);
+		erts_dsprintf(dsbufp,
+			      "Bad input fd in poll()! fd,port,driver,name:"
+			      " %d,%d,%s,%s\n",
+			      fd, qp->iport, 
+			      erts_port[qp->iport].drv_ptr->driver_name,
+			      erts_port[qp->iport].name);
 	    } 
 	    else if (qp->pfd.events & POLLOUT) {
-		erl_printf(CBUF,
-			   "Bad output fd in poll()! fd,port,driver,name:"
-			   " %d,%d,%s,%s\n", fd,
-			   qp->oport,
-			   erts_port[qp->oport].drv_ptr->driver_name,
-			   erts_port[qp->oport].name);
+		erts_dsprintf(dsbufp,
+			      "Bad output fd in poll()! fd,port,driver,name:"
+			      " %d,%d,%s,%s\n",
+			      fd, qp->oport,
+			      erts_port[qp->oport].drv_ptr->driver_name,
+			      erts_port[qp->oport].name);
 	    } 
 	    else {
-		erl_printf(CBUF, "Bad fd in poll(), %d!\n", fd);
+		erts_dsprintf(dsbufp, "Bad fd in poll(), %d!\n", fd);
 	    }
-	    send_error_to_logger(NIL);
+	    erts_send_error_to_logger_nogl(dsbufp);
 
 	    /* unmap entry */
 	    if (qp->pfd.events & POLL_INPUT)
@@ -2578,7 +2979,7 @@ static void check_io_kp(int do_wait)
 	erts_time_remaining(&wait_time);
 	timeout = wait_time.tv_sec * 1000 + wait_time.tv_usec / 1000;
     } else if (max_fd == -1) {  /* No need to poll. */
-	erts_deliver_time(NULL); /* sync the machine's idea of time */
+	erts_deliver_time();	/* sync the machine's idea of time */
         return;
     } else {			/* poll only */
 	timeout = 0;
@@ -2768,7 +3169,7 @@ static void check_io_kp(int do_wait)
     } 
 #endif
 
-    erts_deliver_time(NULL); /* sync the machine's idea of time */
+    erts_deliver_time(); /* sync the machine's idea of time */
 
     if (break_requested) 
 	do_break_handling();
@@ -2778,11 +3179,12 @@ static void check_io_kp(int do_wait)
 
     if (r < 0) {
 	errno = saved_errno;
-	if (errno == ERRNO_BLOCK || errno == EINTR)
-	    return;
-	cerr_pos = 0;
-	erl_printf(CBUF, "poll() error %d (%s)\n", errno, erl_errno_id(errno));
-	send_error_to_logger(NIL);
+	if (errno != ERRNO_BLOCK && errno != EINTR) {
+	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+	    erts_dsprintf(dsbufp, "poll() error %d (%s)\n", errno,
+			  erl_errno_id(errno));
+	    erts_send_error_to_logger_nogl(dsbufp);
+	}
 	return;
     }
 
@@ -2820,11 +3222,14 @@ static void check_io_kp(int do_wait)
 	    if (qp->pfd.events & POLL_INPUT) {
                 Port* p = &erts_port[qp->iport];
                 if ( p->status == FREE ) {
-                    erl_printf(CBUF, "Driver input on free port! fd,port,driver,name:"
-                               " %d,%d,%s,%s\n", fd,
-                               qp->iport, 
-                               erts_port[qp->iport].drv_ptr->driver_name,
-                               erts_port[qp->iport].name);
+		    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+                    erts_dsprintf(dsbufp,
+				  "Driver input on free port! "
+				  "fd,port,driver,name: %d,%d,%s,%s\n",
+				  fd, qp->iport,
+				  erts_port[qp->iport].drv_ptr->driver_name,
+				  erts_port[qp->iport].name);
+		    erts_send_error_to_logger_nogl(dsbufp);
                 }
                 if ( qp->iport != -1 )
                     input_ready(qp->iport, fd);
@@ -2833,26 +3238,27 @@ static void check_io_kp(int do_wait)
 		output_ready(qp->oport, fd);
 	}
 	else if (revents & POLLNVAL) {
-	    cerr_pos = 0;
+	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
 	    if (qp->pfd.events & POLL_INPUT) {
-		erl_printf(CBUF, "Bad input fd in poll()! fd,port,driver,name:"
-			   " %d,%d,%s,%s\n", fd,
-			   qp->iport, 
-			   erts_port[qp->iport].drv_ptr->driver_name,
-			   erts_port[qp->iport].name);
+		erts_dsprintf(dsbufp,
+			      "Bad input fd in poll()! fd,port,driver,name:"
+			      " %d,%d,%s,%s\n",
+			      fd, qp->iport, 
+			      erts_port[qp->iport].drv_ptr->driver_name,
+			      erts_port[qp->iport].name);
 	    } 
 	    else if (qp->pfd.events & POLLOUT) {
-		erl_printf(CBUF,
-			   "Bad output fd in poll()! fd,port,driver,name:"
-			   " %d,%d,%s,%s\n", fd,
-			   qp->oport,
-			   erts_port[qp->oport].drv_ptr->driver_name,
-			   erts_port[qp->oport].name);
+		erts_dsprintf(dsbufp,
+			      "Bad output fd in poll()! fd,port,driver,name:"
+			      " %d,%d,%s,%s\n",
+			      fd, qp->oport,
+			      erts_port[qp->oport].drv_ptr->driver_name,
+			      erts_port[qp->oport].name);
 	    } 
 	    else {
-		erl_printf(CBUF, "Bad fd in poll(), %d!\n", fd);
+		erts_dsprintf(dsbufp, "Bad fd in poll(), %d!\n", fd);
 	    }
-	    send_error_to_logger(NIL);
+	    erts_send_error_to_logger_nogl(dsbufp);
 
 	    /* unmap entry */
 	    if (qp->pfd.events & POLL_INPUT)
@@ -2890,21 +3296,23 @@ void sys_get_pid(char *buffer){
 int sys_putenv(char *buffer){
     Uint sz = strlen(buffer)+1;
     char *env = erts_alloc(ERTS_ALC_T_PUTENV_STR, sz);
-    erts_sys_misc_mem_sz += sz;
+    erts_smp_atomic_add(&sys_misc_mem_sz, sz);
     strcpy(env,buffer);
     return(putenv(env));
 }
 
 void
-sys_init_io(byte *buf, Uint size)
+sys_init_io(void)
 {
-    sys_tmp_buf = buf;
-    sys_tmp_buf_size = size;
-    cerr_pos = 0;
-
+#ifdef ERTS_SMP
+    init_selectq();
+    erts_smp_atomic_init(&io_thread_waiting, 0);
+    io_thread_alive = 0;
+#endif
     fd_data = (struct fd_data *)
 	erts_alloc(ERTS_ALC_T_FD_TAB, max_files * sizeof(struct fd_data));
-    erts_sys_misc_mem_sz += max_files * sizeof(struct fd_data);
+    erts_smp_atomic_add(&sys_misc_mem_sz,
+			max_files * sizeof(struct fd_data));
 
     max_fd = -1;
 
@@ -2915,14 +3323,15 @@ sys_init_io(byte *buf, Uint size)
 #else
     poll_fds =  (struct pollfd *)
 	erts_alloc(ERTS_ALC_T_POLL_FDS, max_files * sizeof(struct pollfd));
-    erts_sys_misc_mem_sz += max_files * sizeof(struct pollfd);
+    erts_smp_atomic_add(&sys_misc_mem_sz, max_files * sizeof(struct pollfd));
     ready_fds =  (struct readyfd *)
 	erts_alloc(ERTS_ALC_T_READY_FDS, (ERL_POLL_READY_ENTRIES
 					  * max_files
 					  * sizeof(struct readyfd)));
-    erts_sys_misc_mem_sz += (ERL_POLL_READY_ENTRIES
-			     * max_files
-			     * sizeof(struct readyfd));
+    erts_smp_atomic_add(&sys_misc_mem_sz,
+			(ERL_POLL_READY_ENTRIES
+			 * max_files
+			 * sizeof(struct readyfd)));
 
     nof_ready_fds = 0;
     {
@@ -2940,7 +3349,7 @@ sys_init_io(byte *buf, Uint size)
 
 #ifdef USE_KERNEL_POLL
 
-    if (use_kernel_poll) {
+    if (erts_use_kernel_poll) {
 	driver_select_func = driver_select_kp;
 	check_io_func = check_io_kp;
 
@@ -2969,6 +3378,10 @@ sys_init_io(byte *buf, Uint size)
 #endif /* !USE_SELECT */
 
 #ifdef USE_THREADS
+#ifdef ERTS_SMP
+    if (init_async(-1) < 0)
+	erl_exit(1, "Failed to initialize async-threads\n");
+#else
     {
 	/* This is speical stuff, starting a driver from the 
 	 * system routines, but is a nice way of handling stuff
@@ -2979,10 +3392,17 @@ sys_init_io(byte *buf, Uint size)
 
 	sys_memset((void*)&dopts, 0, sizeof(SysDriverOpts));
 	add_driver_entry(&async_driver_entry);
-	/* FIXME: 7 == NIL */
-	ret = open_driver(&async_driver_entry, 7, "async", &dopts);
+	ret = open_driver(&async_driver_entry, NIL, "async", &dopts);
 	DEBUGF(("open_driver = %d\n", ret));
+	if (ret < 0)
+	    erl_exit(1, "Failed to open async driver\n");
+	erts_port[ret].status |= ERTS_IMMORTAL_PORT;
     }
+#endif
+#endif
+
+#ifdef ERTS_SMP
+    init_io_thr_waker_drv();
 #endif
 }
 
@@ -3040,92 +3460,6 @@ void *erts_sys_realloc(ErtsAlcType_t t, void *x, void *p, Uint sz)
 void erts_sys_free(ErtsAlcType_t t, void *x, void *p)
 {
     free(p);
-}
-
-/* What happens when we write to a buffer? Do we want the extra \r?
-   Now we do this also when not in raw mode. */
-static char *fix_nl(char *f, CIO where)
-{
-   char c;
-   static char buf[100];
-   char *from, *to;
-
-   if (where != CERR)
-      return f;
-
-   from = f;
-   to = buf;
-
-   while ((c = *from++) != '\0')
-   {
-      if (to >= buf+95)
-	 return f;
-      if (c == '\n')
-	 *to++ = '\r';
-      *to++ = c;
-   }
-   *to = '\0';
-   return buf;
-}
-
-/* XXX It isn't possible to do this safely without "*nsprintf"
-   (i.e. something that puts a limit on the number of chars printed)
-   - the below is probably the best we can do...    */
-    
-/*VARARGS*/
-void sys_printf(CIO where, char* format, ...)
-{
-    va_list va;
-    va_start(va,format);
-
-    format = fix_nl(format, where);
-
-    if (where == CBUF) {
-	if (cerr_pos < SYS_TMP_BUF_MAX) {
-	    vsprintf((char*)&sys_tmp_buf[cerr_pos],format,va);
-	    cerr_pos += sys_strlen((char*)&sys_tmp_buf[cerr_pos]);
-	    if (cerr_pos >= sys_tmp_buf_size)
-		erl_exit(1, "Internal buffer overflow in erl_printf\n");
-	    if (cerr_pos >= SYS_TMP_BUF_MAX) {
-		strcpy((char*)&sys_tmp_buf[SYS_TMP_BUF_MAX - 3], "...");
-		cerr_pos = SYS_TMP_BUF_MAX;
-	    }
-	}
-    }
-    else if (where == CERR)
-	erl_error(format, va);
-    else if (where == COUT)  {
-        vfprintf(stdout, format, va);
-    } else {
-        /* where indicates which fd to write to */
-        vsprintf((char*)sys_tmp_buf,format,va);
-	write(where,sys_tmp_buf,sys_strlen((char*)sys_tmp_buf));
-    }
-      
-    va_end(va);
-}
-
-void sys_putc(ch, where)
-int ch; CIO where;
-{
-    if (ch == '\n' && where == CERR)
-       sys_putc('\r', where);
-
-    if (where == CBUF) {
-	if (cerr_pos < SYS_TMP_BUF_MAX) {
-	    sys_tmp_buf[cerr_pos++] = ch;
-	    if (cerr_pos == SYS_TMP_BUF_MAX) {
-		strcpy((char*)&sys_tmp_buf[SYS_TMP_BUF_MAX - 3], "...");
-		cerr_pos = SYS_TMP_BUF_MAX;
-	    }
-	}
-	else if (cerr_pos >= sys_tmp_buf_size)
-	    erl_exit(1, "Internal buffer overflow in erl_printf\n");
-    }
-    else if (where == COUT) {
-	fputc(ch, stdout);
-    } else
-	sys_printf(where, "%c", ch);
 }
 
 /* Return a pointer to a vector of names of preloaded modules */
@@ -3212,8 +3546,16 @@ erl_assert_error(char* expr, char* file, int line)
     fprintf(stderr, "Assertion failed: %s in %s, line %d\n",
 	    expr, file, line);
     fflush(stderr);
+#if !defined(ERTS_SMP) && 0
+    /* Writing a crashdump from a failed assertion when smp support
+     * is enabled almost a guaranteed deadlocking, don't even bother.
+     *
+     * It could maybe be useful (but I'm not convinced) to write the
+     * crashdump if smp support is disabled...
+     */
     if (erts_initialized)
 	erl_crash_dump(file, line, "Assertion failed: %s\n", expr);
+#endif
     abort();
 }
 
@@ -3250,27 +3592,33 @@ static void note_child_death(int pid, int status)
 static void *
 child_waiter(void *unused)
 {
-  sigset_t chldsigset;
-  int sig;
   int pid;
   int status;
 
-  sigemptyset(&chldsigset);
-  sigaddset(&chldsigset, SIGCHLD);
+#ifdef ERTS_ENABLE_LOCK_CHECK
+  erts_lc_set_thread_name("child waiter");
+#endif
 
   while(1) {
-    do {
+#ifdef DEBUG
+      int waitpid_errno;
+#endif
       pid = waitpid(-1, &status, 0);
-      if(pid < 0 && errno == ECHILD) {
-	/* Based on that all threads block SIGCHLD all the time! */
-	erts_thr_sigwait(&chldsigset, &sig);
-	ASSERT(sig == SIGCHLD);
+#ifdef DEBUG
+      waitpid_errno = errno;
+#endif
+      CHLD_STAT_LOCK;
+      if (pid < 0) {
+	  ASSERT(waitpid_errno == ECHILD);
       }
-    } while(pid < 0);
-
-    CHLD_STAT_LOCK;
-    note_child_death(pid, status);
-    CHLD_STAT_UNLOCK;
+      else {
+	  children_alive--;
+	  ASSERT(children_alive >= 0);
+	  note_child_death(pid, status);
+      }
+      while (!children_alive)
+	  CHLD_STAT_WAIT; /* Wait for children to wait on... :) */
+      CHLD_STAT_UNLOCK;
   }
 
   return NULL;
@@ -3305,6 +3653,20 @@ static void check_children(void)
 void
 erl_sys_schedule(int runnable)
 {
+#ifdef ERTS_SMP
+    erts_smp_activity_begin(ERTS_ACTIVITY_IO, NULL, NULL, NULL);
+    erts_smp_io_lock();
+    io_thread_alive = 1;
+    while (1) {
+	check_io(1);
+#if !CHLDWTHR
+	check_children();
+#endif
+    }
+    /* Not reached ... */
+    erts_smp_io_unlock();
+    erts_smp_activity_end(ERTS_ACTIVITY_IO, NULL, NULL, NULL);
+#else
     if (runnable) {
 	check_io(0);		/* Poll for I/O */
 	check_async_ready();	/* Check async completions */
@@ -3312,6 +3674,7 @@ erl_sys_schedule(int runnable)
 	check_io(check_async_ready() ? 0 : 1);
     }
     check_children();
+#endif
 }
 
 
@@ -3330,7 +3693,7 @@ get_value(char* rest, char** argv, int* ip)
 	if (next[0] == '-'
 	    && next[1] == '-'
 	    &&  next[2] == '\0') {
-	    erl_printf(CERR, "bad \"%s\" value: \n", param);
+	    erts_fprintf(stderr, "bad \"%s\" value: \n", param);
 	    erts_usage();
 	}
 	(*ip)++;
@@ -3358,13 +3721,13 @@ erl_sys_args(int* argc, char** argv)
 	    case 'K': {
 		char *arg = get_value(argv[i] + 2, argv, &i);
 		if (strcmp("true", arg) == 0) {
-		    use_kernel_poll = 1;
+		    erts_use_kernel_poll = 1;
 		}
 		else if (strcmp("false", arg) == 0) {
-		    use_kernel_poll = 0;
+		    erts_use_kernel_poll = 0;
 		}
 		else {
-		    erl_printf(CERR, "bad \"K\" value: %s\n", arg);
+		    erts_fprintf(stderr, "bad \"K\" value: %s\n", arg);
 		    erts_usage();
 		}
 		break;
@@ -3411,9 +3774,10 @@ static void kqueue_init()
 					 (ERL_POLL_READY_ENTRIES
 					  * sizeof(struct kevent)
 					  * max_files));
-	erts_sys_misc_mem_sz += (ERL_POLL_READY_ENTRIES
-				 *sizeof(struct kevent)
-				 *max_files);
+	erts_smp_atomic_add(&sys_misc_mem_sz,
+			    (ERL_POLL_READY_ENTRIES
+			     *sizeof(struct kevent)
+			     *max_files));
     }
 }
 
@@ -3567,7 +3931,7 @@ static void solaris_devpoll_init(void)
         dev_poll_rfds =
 	    (struct pollfd *) erts_alloc(ERTS_ALC_T_POLL_FDS,
 					 max_files * sizeof(struct pollfd));
-	erts_sys_misc_mem_sz += max_files * sizeof(struct pollfd);
+	erts_smp_atomic_add(&sys_misc_mem_sz, max_files*sizeof(struct pollfd));
     }
 }
 
@@ -3678,3 +4042,285 @@ static void devpoll_clear_pix(int pix)
 #endif /* USE_DEVPOLL */
 
 #endif /* USE_KERNEL_POLL */
+
+#ifdef ERTS_SMP
+
+static int
+io_thr_waker_init(void)
+{
+    io_thr_waker_data.started = 0;
+    return 0;
+}
+
+static ErlDrvData
+io_thr_waker_start(ErlDrvPort port, char* buf, SysDriverOpts* opts)
+{
+    if (io_thr_waker_data.started)
+	return ERL_DRV_ERROR_BADARG;
+    if (pipe(io_thr_waker_data.fds) < 0)
+	return ERL_DRV_ERROR_ERRNO;
+    SET_NONBLOCKING(io_thr_waker_data.fds[0]);
+    SET_NONBLOCKING(io_thr_waker_data.fds[1]);
+    driver_select(port, io_thr_waker_data.fds[0], DO_READ, 1);
+    io_thr_waker_data.started = 1;
+    return (ErlDrvData) ((void *) &io_thr_waker_data);
+}
+
+static void
+io_thr_waker_ready_input(ErlDrvData drv_data, ErlDrvEvent event)
+{
+    char *buf[32];
+    while (read((int) event, (void *) buf, 32) > 0);
+}
+
+static ErlDrvEntry io_thr_waker_drv_entry = {
+    io_thr_waker_init,
+    io_thr_waker_start,
+    NULL,
+    NULL,
+    io_thr_waker_ready_input,
+    NULL,
+    "io_thr_waker",
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL
+};
+
+static void
+init_io_thr_waker_drv(void)
+{
+    SysDriverOpts dopts;
+    int ret;
+
+    erts_smp_mtx_init(&io_wake_mtx, "io_wake");
+    erts_smp_io_lock();
+
+    io_thr_waker_init();
+
+    sys_memset((void*)&dopts, 0, sizeof(SysDriverOpts));
+    add_driver_entry(&io_thr_waker_drv_entry);
+    ret = open_driver(&io_thr_waker_drv_entry, NIL, "io_thr_waker", &dopts);
+
+    erts_smp_io_unlock();
+    if (ret < 0)
+	erl_exit(1, "Failed to start io_thr_waker driver (%d)\n", ret);
+    erts_port[ret].status |= ERTS_IMMORTAL_PORT;
+}
+
+void
+erts_wake_io_thread(void)
+{
+    if (erts_smp_atomic_xchg(&io_thread_waiting, 0))
+	write(io_thr_waker_data.fds[1], "!", 1);
+}
+
+int
+erts_sys_no_processors(void)
+{
+#if !defined(NO_SYSCONF) && defined(_SC_NPROCESSORS_CONF)
+    return (int) sysconf(_SC_NPROCESSORS_CONF);
+#else
+    return 1;
+#endif
+}
+
+#endif /* #ifdef ERTS_SMP */
+
+#ifdef ERTS_TIMER_THREAD
+
+/*
+ * Interruptible-wait facility: low-level synchronisation state
+ * and methods that are implementation dependent.
+ *
+ * Constraint: Every implementation must define 'struct erts_iwait'
+ * with a field 'erts_smp_atomic_t state;'.
+ */
+
+/* values for struct erts_iwait's state field */
+#define IWAIT_WAITING	0
+#define IWAIT_AWAKE	1
+#define IWAIT_INTERRUPT	2
+
+#if 0	/* XXX: needs feature test in erts/configure.in */
+
+/*
+ * This is an implementation of the interruptible wait facility on
+ * top of Linux-specific futexes.
+ */
+#include <asm/unistd.h>
+#define FUTEX_WAIT		0
+#define FUTEX_WAKE		1
+static int sys_futex(void *futex, int op, int val, const struct timespec *timeout)
+{
+    return syscall(__NR_futex, futex, op, val, timeout);
+}
+
+struct erts_iwait {
+    erts_smp_atomic_t state; /* &state.counter is our futex */
+};
+
+static void iwait_lowlevel_init(struct erts_iwait *iwait) { /* empty */ }
+
+static void iwait_lowlevel_wait(struct erts_iwait *iwait, struct timeval *delay)
+{
+    struct timespec timeout;
+    int res;
+
+    timeout.tv_sec = delay->tv_sec;
+    timeout.tv_nsec = delay->tv_usec * 1000;
+    res = sys_futex((void*)&iwait->state.counter, FUTEX_WAIT, IWAIT_WAITING, &timeout);
+    if (res < 0 && errno != ETIMEDOUT && errno != EWOULDBLOCK && errno != EINTR)
+	perror("FUTEX_WAIT");
+}
+
+static void iwait_lowlevel_interrupt(struct erts_iwait *iwait)
+{
+    int res = sys_futex((void*)&iwait->state.counter, FUTEX_WAKE, 1, NULL);
+    if (res < 0)
+	perror("FUTEX_WAKE");
+}
+
+#elif !defined(USE_SELECT) /* apparently this is the way to say USE_POLL, bleah */
+
+/*
+ * This is an implementation of the interruptible wait facility on
+ * top of pipe(), poll(), read(), and write().
+ */
+struct erts_iwait {
+    erts_smp_atomic_t state;
+    int read_fd;	/* wait polls and reads this fd */
+    int write_fd;	/* interrupt writes this fd */
+};
+
+static void iwait_lowlevel_init(struct erts_iwait *iwait)
+{
+    int fds[2];
+
+    if (pipe(fds) < 0) {
+	perror("pipe()");
+	exit(1);
+    }
+    iwait->read_fd = fds[0];
+    iwait->write_fd = fds[1];
+}
+
+static void iwait_lowlevel_wait(struct erts_iwait *iwait, struct timeval *delay)
+{
+    struct pollfd pollfd;
+    int timeout;
+    int res;
+    char buf[64];
+
+    pollfd.fd = iwait->read_fd;
+    pollfd.events = POLLIN;
+    pollfd.revents = 0;
+    timeout = delay->tv_sec * 1000 + delay->tv_usec / 1000;
+    res = poll(&pollfd, 1, timeout);
+    if (res > 0)
+	(void)read(iwait->read_fd, buf, sizeof buf);
+    else if (res < 0 && errno != EINTR)
+	perror("poll()");
+}
+
+static void iwait_lowlevel_interrupt(struct erts_iwait *iwait)
+{
+    int res = write(iwait->write_fd, "!", 1);
+    if (res < 0)
+	perror("write()");
+}
+
+#else /* not using POLL */
+
+#warning "erts_iwait: using pthread_cond_timedwait()"
+/*
+ * This is an implementation of the interruptible wait facility on
+ * top of pthread_cond_timedwait(). This has two problems:
+ * 1. pthread_cond_timedwait() requires an absolute time point,
+ *    so the relative delay must be converted to absolute time.
+ *    Worse, this breaks if the machine's time is adjusted while
+ *    we're preparing to wait.
+ * 2. Each cond operation requires additional mutex lock/unlock operations.
+ *
+ * Problem 2 is probably not too bad on Linux (they'll just become
+ * relatively cheap futex operations), but problem 1 is the real killer.
+ * Only use this implementation if no better alternatives are available!
+ */
+struct erts_iwait {
+    erts_smp_atomic_t state;
+    pthread_cond_t cond;
+    pthread_mutex_t mutex;
+};
+
+static void iwait_lowlevel_init(struct erts_iwait *iwait)
+{
+    iwait->cond = (pthread_cond_t) PTHREAD_COND_INITIALIZER;
+    iwait->mutex = (pthread_mutex_t) PTHREAD_MUTEX_INITIALIZER;
+}
+
+static void iwait_lowlevel_wait(struct erts_iwait *iwait, struct timeval *delay)
+{
+    struct timeval tmp;
+    struct timespec timeout;
+
+    /* Due to pthread_cond_timedwait()'s use of absolute
+       time, this must be the real gettimeofday(), _not_
+       the "smoothed" one beam/erl_time_sup.c implements. */
+    gettimeofday(&tmp, NULL);
+
+    tmp.tv_sec += delay->tv_sec;
+    tmp.tv_usec += delay->tv_usec;
+    if (tmp.tv_usec >= 1000*1000) {
+	tmp.tv_usec -= 1000*1000;
+	tmp.tv_sec += 1;
+    }
+    timeout.tv_sec = tmp.tv_sec;
+    timeout.tv_nsec = tmp.tv_usec * 1000;
+    pthread_mutex_lock(&iwait->mutex);
+    pthread_cond_timedwait(&iwait->cond, &iwait->mutex, &timeout);
+    pthread_mutex_unlock(&iwait->mutex);
+}
+
+static void iwait_lowlevel_interrupt(struct erts_iwait *iwait)
+{
+    pthread_mutex_lock(&iwait->mutex);
+    pthread_cond_signal(&iwait->cond);
+    pthread_mutex_unlock(&iwait->mutex);
+}
+
+#endif /* not using POLL */
+
+/*
+ * Interruptible-wait facility. This is just a wrapper around the
+ * low-level synchronisation code, where we maintain our logical
+ * state in order to suppress some state transitions.
+ */
+
+struct erts_iwait *erts_iwait_init(void)
+{
+    struct erts_iwait *iwait = malloc(sizeof *iwait);
+    if (!iwait) {
+	perror("malloc");
+	exit(1);
+    }
+    iwait_lowlevel_init(iwait);
+    erts_smp_atomic_init(&iwait->state, IWAIT_AWAKE);
+    return iwait;
+}
+
+void erts_iwait_wait(struct erts_iwait *iwait, struct timeval *delay)
+{
+    if (erts_smp_atomic_xchg(&iwait->state, IWAIT_WAITING) != IWAIT_INTERRUPT)
+	iwait_lowlevel_wait(iwait, delay);
+    erts_smp_atomic_set(&iwait->state, IWAIT_AWAKE);
+}
+
+void erts_iwait_interrupt(struct erts_iwait *iwait)
+{
+    if (erts_smp_atomic_xchg(&iwait->state, IWAIT_INTERRUPT) == IWAIT_WAITING)
+	iwait_lowlevel_interrupt(iwait);
+}
+
+#endif /* ERTS_TIMER_THREAD */

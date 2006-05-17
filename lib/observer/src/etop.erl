@@ -21,7 +21,7 @@
 -export([start/0, start/1, config/2, stop/0, dump/1, help/0]).
 %% Internal
 -export([update/1]).
--export([loadinfo/1, meminfo/2, getopt/2, dbgout/2]).
+-export([loadinfo/1, meminfo/2, getopt/2]).
 
 -include("etop.hrl").
 -include("etop_defs.hrl").
@@ -94,7 +94,6 @@ start(Opts) ->
     process_flag(trap_exit, true),
     Config1 = handle_args(init:get_arguments() ++ Opts, #opts{}),
     Config2 = Config1#opts{server=self()},
-    dbgout("Config = ~p ~n", [Config2]),
 
     %% Connect to the node we want to look at
     Node = getopt(node, Config2),
@@ -128,8 +127,6 @@ start(Opts) ->
     Out = spawn_link(Config4#opts.out_mod, init, [Config4]),
     Config5 = Config4#opts{out_proc = Out},       
     
-
-    dbgout("Config = ~p ~n", [Config5]),
     init_data_handler(Config5),
     ok.
 
@@ -173,8 +170,7 @@ data_handler(Reader, Opts) ->
 	    io:format("Lost connection to node ~p exiting~n", [Opts#opts.node]),
 	    stop(Opts),
 	    connection_lost;
-	M ->
-	    dbgout("~p GOT MSG ~p ~n", [etop_server, M]),
+	_ ->
 	    data_handler(Reader, Opts)
     end.
 
@@ -241,16 +237,6 @@ get_tag(memory) -> #etop_proc_info.mem;
 get_tag(reductions) -> #etop_proc_info.reds;
 get_tag(msg_q) -> #etop_proc_info.mq.
     
-
-%%%%% Debug 
-dbgout(Str, Opts) ->
-    %%io:format("DBG ", []),    
-    if 
-	?debug_out == true->
-	    io:format(Str, Opts);
-       true  ->
-	    ignore
-    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% Configuration Management

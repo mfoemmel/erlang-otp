@@ -75,7 +75,7 @@ init(ConnectionType) -> {ok, #state{client_type = ConnectionType}}.
 code_change(_Vsn, State, _Extra) ->
     {ok, State}.
 
-terminate(Reason, State) ->  ok.
+terminate(_Reason, _State) ->  ok.
 
 %% Dirty functions
 

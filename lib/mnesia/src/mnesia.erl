@@ -1817,7 +1817,7 @@ do_dirty_rpc(_Tab, nowhere, _, _, Args) ->
 do_dirty_rpc(Tab, Node, M, F, Args) ->
     case rpc:call(Node, M, F, Args) of
 	{badrpc, Reason} ->
-	    erlang:yield(), %% Do not be too eager
+	    timer:sleep(20), %% Do not be too eager, and can't use yield on SMP
 	    case mnesia_controller:call({check_w2r, Node, Tab}) of % Sync
 		NewNode when NewNode == Node -> 
 		    ErrorTag = mnesia_lib:dirty_rpc_error_tag(Reason),
@@ -1835,7 +1835,7 @@ do_dirty_rpc(Tab, Node, M, F, Args) ->
 			_ ->
 			    %% Splendid! A dirty retry is safe
 			    %% 'Node' probably went down now
-			    %% Let mnesia_controller get broken link message first			    
+			    %% Let mnesia_controller get broken link message first
 			    do_dirty_rpc(Tab, NewNode, M, F, Args)
 		    end
 	    end;
@@ -2207,6 +2207,8 @@ system_info2(transaction_failures) -> mnesia_lib:read_counter(trans_failures);
 system_info2(transaction_commits) -> mnesia_lib:read_counter(trans_commits);
 system_info2(transaction_restarts) -> mnesia_lib:read_counter(trans_restarts);
 system_info2(transaction_log_writes) -> mnesia_dumper:get_log_writes();
+system_info2(core_dir) ->  mnesia_monitor:get_env(core_dir); 
+system_info2(no_table_loaders) ->  mnesia_monitor:get_env(no_table_loaders); 
 
 system_info2(Item) -> exit({badarg, Item}).
 
@@ -2248,6 +2250,8 @@ system_info_items(yes) ->
      transaction_restarts,
      transactions,
      use_dir,
+     core_dir,
+     no_table_loaders,
      version
     ];
 system_info_items(no) ->
@@ -2273,6 +2277,7 @@ system_info_items(no) ->
      schema_location,
      schema_version,
      use_dir,
+     core_dir,
      version
     ].
     
