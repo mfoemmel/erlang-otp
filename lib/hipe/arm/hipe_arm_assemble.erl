@@ -46,6 +46,7 @@ assemble(CompiledCode, Closures, Exports, Options) ->
 %%% Assembly Pass 1.
 %%% Process initial {MFA,Code,Data} list.
 %%% Translate each MFA's body, choosing operand & instruction kinds.
+%%% Manage placement of large immediates in the code segment. (ARM-specific)
 %%%
 %%% Assembly Pass 2.
 %%% Perform short/long form optimisation for jumps.
@@ -58,19 +59,40 @@ translate(Code, ConstMap) ->
   translate_mfas(Code, ConstMap, []).
 
 translate_mfas([{MFA,Insns,_Data}|Code], ConstMap, NewCode) ->
-  {NewInsns,CodeSize,LabelMap} =
-    translate_insns(Insns, MFA, ConstMap, gb_trees:empty(), 0, []),
+  {NewInsns,CodeSize,LabelMap} = translate_insns(Insns, MFA, ConstMap),
   translate_mfas(Code, ConstMap, [{MFA,NewInsns,CodeSize,LabelMap}|NewCode]);
 translate_mfas([], _ConstMap, NewCode) ->
   lists:reverse(NewCode).
 
-translate_insns([I|Insns], MFA, ConstMap, LabelMap, Address, NewInsns) ->
-  NewIs = translate_insn(I, MFA, ConstMap),
-  add_insns(NewIs, Insns, MFA, ConstMap, LabelMap, Address, NewInsns);
-translate_insns([], _MFA, _ConstMap, LabelMap, Address, NewInsns) ->
-  {lists:reverse(NewInsns), Address, LabelMap}.
+translate_insns(Insns, MFA, ConstMap) ->
+  translate_insns(Insns, MFA, ConstMap, gb_trees:empty(), 0, [],
+		  previous_empty(), pending_empty()).
 
-add_insns([I|Is], Insns, MFA, ConstMap, LabelMap, Address, NewInsns) ->
+translate_insns([I|Insns], MFA, ConstMap, LabelMap, Address, NewInsns, PrevImms, PendImms) ->
+  IsNotFallthroughInsn = is_not_fallthrough_insn(I),
+  MustFlushPending = must_flush_pending(PendImms, Address),
+  {NewIs,Insns1,PendImms1,DoFlushPending} =
+    case {MustFlushPending,IsNotFallthroughInsn} of
+      {true,false} ->
+	%% To avoid having to create new symbolic labels, which is problematic
+	%% in the assembler, we emit a forward branch with an offset computed
+	%% from the size of the pending literals.
+	N = pending_size(PendImms),	% N >= 1 since MustFlushPending is true
+	BranchOffset = N - 1,		% in units of 32-bit words!
+	NewIs0 = [{b, {do_cond('al'),{imm24,BranchOffset}}, #comment{term='skip'}}],
+	%% io:format("~w: forced flush of pending literals in ~w at ~w\n", [?MODULE,MFA,Address]),
+	{NewIs0,[I|Insns],PendImms,true};
+      {_,_} ->
+	{NewIs0,PendImms0} = translate_insn(I, MFA, ConstMap, Address, PrevImms, PendImms),
+	{NewIs0,Insns,PendImms0,IsNotFallthroughInsn}
+    end,
+  add_insns(NewIs, Insns1, MFA, ConstMap, LabelMap, Address, NewInsns, PrevImms, PendImms1, DoFlushPending);
+translate_insns([], _MFA, _ConstMap, LabelMap, Address, NewInsns, PrevImms, PendImms) ->
+  {LabelMap1, Address1, NewInsns1, _PrevImms1} = % at end-of-function we ignore PrevImms1
+    flush_pending(PendImms, LabelMap, Address, NewInsns, PrevImms),
+  {lists:reverse(NewInsns1), Address1, LabelMap1}.
+
+add_insns([I|Is], Insns, MFA, ConstMap, LabelMap, Address, NewInsns, PrevImms, PendImms, DoFlushPending) ->
   NewLabelMap =
     case I of
       {'.label',L,_} ->
@@ -79,9 +101,85 @@ add_insns([I|Is], Insns, MFA, ConstMap, LabelMap, Address, NewInsns) ->
 	LabelMap
     end,
   Address1 = Address + insn_size(I),
-  add_insns(Is, Insns, MFA, ConstMap, NewLabelMap, Address1, [I|NewInsns]);
-add_insns([], Insns, MFA, ConstMap, LabelMap, Address, NewInsns) ->
-  translate_insns(Insns, MFA, ConstMap, LabelMap, Address, NewInsns).
+  add_insns(Is, Insns, MFA, ConstMap, NewLabelMap, Address1, [I|NewInsns], PrevImms, PendImms, DoFlushPending);
+add_insns([], Insns, MFA, ConstMap, LabelMap, Address, NewInsns, PrevImms, PendImms, DoFlushPending) ->
+  {LabelMap1, Address1, NewInsns1, PrevImms1, PendImms1} =
+    case DoFlushPending of
+      true ->
+	{LabelMap0,Address0,NewInsns0,PrevImms0} =
+	  flush_pending(PendImms, LabelMap, Address, NewInsns, PrevImms),
+	{LabelMap0,Address0,NewInsns0,PrevImms0,pending_empty()};
+      false ->
+	PrevImms0 = expire_previous(PrevImms, Address),
+	{LabelMap,Address,NewInsns,PrevImms0,PendImms}
+    end,
+  translate_insns(Insns, MFA, ConstMap, LabelMap1, Address1, NewInsns1, PrevImms1, PendImms1).
+
+must_flush_pending(PendImms, Address) ->
+  case pending_firstref(PendImms) of
+    [] -> false;
+    LP0 ->
+      Distance = Address - LP0,
+      %% In "LP0: ldr R,[PC +/- imm12]", the PC value is LP0+8 so the
+      %% range for the ldr is [LP0-4084, LP0+4100] (32-bit alignment!).
+      %% LP0+4096 is the last point where we can emit a branch (4 bytes)
+      %% followed by the pending immediates.
+      %%
+      %% The translation of an individual instruction must not advance
+      %% . by more than 4 bytes, because that could cause us to miss
+      %% the point where PendImms must be flushed.
+      ?ASSERT(Distance =< 4096),
+      Distance =:= 4096
+  end.
+
+flush_pending(PendImms, LabelMap, Address, Insns, PrevImms) ->
+  Address1 = Address + 4*pending_size(PendImms),
+  PrevImms1 = expire_previous(PrevImms, Address1),
+  {LabelMap1,Address1,Insns1,PrevImms2} =
+    flush_pending2(pending_to_list(PendImms), LabelMap, Address, Insns, PrevImms1),
+  PrevImms3 = expire_previous(PrevImms2, Address1),
+  {LabelMap1,Address1,Insns1,PrevImms3}.
+
+flush_pending2([{Lab,RelocOrInt,Imm}|Imms], LabelMap, Address, Insns, PrevImms) ->
+  PrevImms1 = previous_append(PrevImms, Address, Lab, Imm),
+  LabelMap1 = gb_trees:insert(Lab, Address, LabelMap),
+  {RelocOpt,LongVal} =
+    if is_integer(RelocOrInt) ->
+	{[],RelocOrInt};
+       true ->
+	{[RelocOrInt],0}
+    end,
+  Insns1 =
+    [{'.long', LongVal, #comment{term=Imm}} |
+     RelocOpt ++
+     [{'.label', Lab, #comment{term=Imm}} |
+      Insns]],
+  flush_pending2(Imms, LabelMap1, Address+4, Insns1, PrevImms1);
+flush_pending2([], LabelMap, Address, Insns, PrevImms) ->
+  {LabelMap, Address, Insns, PrevImms}.
+
+expire_previous(PrevImms, CodeAddress) ->
+  case previous_findmin(PrevImms) of
+    [] -> PrevImms;
+    {ImmAddress,_Imm} ->
+      if CodeAddress - ImmAddress > 4084 ->
+	  expire_previous(previous_delmin(PrevImms), CodeAddress);
+	 true ->
+	  PrevImms
+      end
+  end.
+
+is_not_fallthrough_insn(I) ->
+  case I of
+    #b_fun{} -> true;
+    #b_label{'cond'='al'} -> true;
+    %% bl and blx are not included since they return to ".+4"
+    %% a load to PC was originally a pseudo_switch insn
+    #load{dst=#arm_temp{reg=15,type=Type}} when Type =/= 'double' -> true;
+    %% a move to PC was originally a pseudo_blr or pseudo_bx insn
+    #move{dst=#arm_temp{reg=15,type=Type}} when Type =/= 'double' -> true;
+    _ -> false
+  end.
 
 insn_size(I) ->
   case I of
@@ -90,7 +188,14 @@ insn_size(I) ->
     _ -> 4
   end.
 
-translate_insn(I, MFA, ConstMap) ->	% -> [{Op,Opnd,OrigI}]
+translate_insn(I, MFA, ConstMap, Address, PrevImms, PendImms) ->
+  case I of
+    %% pseudo_li is the only insn using MFA, ConstMap, Address, PrevImms, or PendLits
+    #pseudo_li{} -> do_pseudo_li(I, MFA, ConstMap, Address, PrevImms, PendImms);
+    _ -> {translate_insn(I), PendImms}
+  end.
+
+translate_insn(I) ->	% -> [{Op,Opnd,OrigI}]
   case I of
     #alu{} -> do_alu(I);
     #b_fun{} -> do_b_fun(I);
@@ -107,7 +212,7 @@ translate_insn(I, MFA, ConstMap) ->	% -> [{Op,Opnd,OrigI}]
     %% pseudo_blr: eliminated by finalise
     %% pseudo_call: eliminated by finalise
     %% pseudo_call_prepare: eliminated by frame
-    #pseudo_li{} -> do_pseudo_li(I, MFA, ConstMap);
+    %% pseudo_li: handled separately
     %% pseudo_move: eliminated by frame
     %% pseudo_switch: eliminated by finalise
     %% pseudo_tailcall: eliminated by frame
@@ -179,34 +284,41 @@ do_move(I) ->
   NewAm1 = do_am1(Am1),
   [{MovOp, {NewCond,NewS,NewDst,NewAm1}, I}].
 
-do_pseudo_li(I, MFA, ConstMap) ->
-  #pseudo_li{dst=Dst,imm=Imm} = I,
-  {RelocInsn,LongVal} =
-    if is_integer(Imm) ->
-	%% This is for immediates that require too much work
-	%% to reconstruct using only arithmetic instructions.
-	{[], Imm};
-       true ->
-	RelocData =
-	  case Imm of
-	    Atom when atom(Atom) ->
-	      {load_atom, Atom};
-	    {Label,constant} ->
-	      ConstNo = find_const({MFA,Label}, ConstMap),
-	      {load_address, {constant,ConstNo}};
-	    {Label,closure} ->
-	      {load_address, {closure,Label}};
-	    {Label,c_const} ->
-	      {load_address, {c_const,Label}}
-	  end,
-	{[{'.reloc', RelocData, #comment{term=reloc}}], 0}
+do_pseudo_li(I, MFA, ConstMap, Address, PrevImms, PendImms) ->
+  #pseudo_li{dst=Dst,imm=Imm,label=Label0} = I,
+  {Label1,PendImms1} =
+    case previous_lookup(PrevImms, Imm) of
+      {value,Lab} -> {Lab,PendImms};
+      none ->
+	case pending_lookup(PendImms, Imm) of
+	  {value,Lab} -> {Lab,PendImms};
+	  none ->
+	    RelocOrInt =
+	      if is_integer(Imm) ->
+		  %% This is for immediates that require too much work
+		  %% to reconstruct using only arithmetic instructions.
+		  Imm;
+		 true ->
+		  RelocData =
+		    case Imm of
+		      Atom when atom(Atom) ->
+			{load_atom, Atom};
+		      {Label,constant} ->
+			ConstNo = find_const({MFA,Label}, ConstMap),
+			{load_address, {constant,ConstNo}};
+		      {Label,closure} ->
+			{load_address, {closure,Label}};
+		      {Label,c_const} ->
+			{load_address, {c_const,Label}}
+		    end,
+		  {'.reloc', RelocData, #comment{term=reloc}}
+	      end,
+	    Lab = Label0, % preallocated: creating labels in the assembler doesn't work
+	    {Lab, pending_append(PendImms, Address, Lab, RelocOrInt, Imm)}
+	end
     end,
   NewDst = do_reg(Dst),
-  %% b 1f; .long <data>; 1: ldr dst, [pc,#-12]
-  [{b, {do_cond('al'),{imm24,0}}, #comment{term='skip'}} |
-   RelocInsn ++
-   [{'.long', LongVal, I},
-    {ldr, {do_cond('al'),NewDst,{immediate_offset,{r,15},'-',{imm12,12}}}, I}]].
+  {[{'.pseudo_li', {NewDst,do_label_ref(Label1)}, I}], PendImms1}.
 
 do_store(I) ->
   #store{stop=StOp,src=Src,am2=Am2} = I,
@@ -215,14 +327,14 @@ do_store(I) ->
   NewAm2 = do_am2(Am2),
   [{StOp, {NewCond,NewSrc,NewAm2}, I}].
 
-do_reg(#arm_temp{reg=Reg,type=Type}) when Reg >= 0, Reg < 16, Type /= 'double' ->
+do_reg(#arm_temp{reg=Reg,type=Type}) when Reg >= 0, Reg < 16, Type =/= 'double' ->
   {r,Reg}.
   
 do_cond(Cond) -> {'cond',Cond}.
 
 do_s(S) -> {'s', case S of false -> 0; true -> 1 end}.
 
-do_label_ref(Label) when integer(Label) ->
+do_label_ref(Label) when is_integer(Label) ->
   {label,Label}.	% symbolic, since offset is not yet computable
 
 do_am1(Am1) ->
@@ -307,14 +419,16 @@ encode_insns([I|Insns], Address, FunAddress, LabelMap, Relocs, AccCode, Options)
       print_insn(Address, [], I, Options),
       encode_insns(Insns, Address, FunAddress, LabelMap, Relocs, AccCode, Options);
     {'.reloc',Data,_} ->
+      print_insn(Address, [], I, Options),
       Reloc = encode_reloc(Data, Address, FunAddress, LabelMap),
       encode_insns(Insns, Address, FunAddress, LabelMap, [Reloc|Relocs], AccCode, Options);
     {'.long',Value,_} ->
+      print_insn(Address, Value, I, Options),
       Segment = <<Value:32/integer-big>>,
       NewAccCode = [Segment|AccCode],
       encode_insns(Insns, Address+4, FunAddress, LabelMap, Relocs, NewAccCode, Options);
     _ ->
-      {Op,Arg,_} = fix_jumps(I, Address, FunAddress, LabelMap),
+      {Op,Arg,_} = fix_pc_refs(I, Address, FunAddress, LabelMap),
       Word = hipe_arm_encode:insn_encode(Op, Arg),
       print_insn(Address, Word, I, Options),
       Segment = <<Word:32/integer-big>>,
@@ -353,7 +467,7 @@ encode_reloc(Data, Address, FunAddress, LabelMap) ->
 untag_mfa_or_prim(#arm_mfa{m=M,f=F,a=A}) -> {M,F,A};
 untag_mfa_or_prim(#arm_prim{prim=Prim}) -> Prim.
 
-fix_jumps(I, InsnAddress, FunAddress, LabelMap) ->
+fix_pc_refs(I, InsnAddress, FunAddress, LabelMap) ->
   case I of
     {b, {Cond,{label,L}}, OrigI} ->
       LabelAddress = gb_trees:get(L, LabelMap) + FunAddress,
@@ -362,6 +476,16 @@ fix_jumps(I, InsnAddress, FunAddress, LabelMap) ->
       ?ASSERT(Imm24 =<   16#7FFFFF),
       ?ASSERT(Imm24 >= -(16#800000)),
       {b, {Cond,{imm24,Imm24 band 16#FFFFFF}}, OrigI};
+    {'.pseudo_li', {Dst,{label,L}}, OrigI} ->
+      LabelAddress = gb_trees:get(L, LabelMap) + FunAddress,
+      Offset = LabelAddress - (InsnAddress+8),
+      {Sign,Imm12} =
+	if Offset < 0 -> {'-', -Offset};
+	   true -> {'+', Offset}
+	end,
+      ?ASSERT(Imm12 =< 16#FFF),
+      Am2 = {'immediate_offset',{r,15},Sign,{imm12,Imm12}},
+      {ldr, {do_cond('al'),Dst,Am2}, OrigI};
     _ -> I
   end.
 
@@ -408,10 +532,17 @@ print(String, Arglist, Options) ->
 print_insn(Address, Word, I, Options) ->
   ?when_option(pp_asm, Options, print_insn_2(Address, Word, I)).
 
-print_insn_2(Address, Word, {_,_,OrigI}) ->
+print_insn_2(Address, Word, {NewI,NewArgs,OrigI}) ->
   io:format("~8.16.0b | ", [Address]),
   print_code_list(word_to_bytes(Word), 0),
-  hipe_arm_pp:pp_insn(OrigI).
+  case NewI of
+    '.long' ->
+      io:format("\t.long ~.16x\n", [Word, "0x"]);
+    '.reloc' ->
+      io:format("\t.reloc ~w\n", [NewArgs]);
+    _ ->
+      hipe_arm_pp:pp_insn(OrigI)
+  end.
 
 word_to_bytes(W) ->
   case W of
@@ -433,7 +564,7 @@ print_byte(Byte) ->
 fill_spaces(N) when N > 0 ->
   io:format(" "),
   fill_spaces(N-1);
-fill_spaces(_) ->
+fill_spaces(0) ->
   [].
 
 %%%
@@ -446,3 +577,62 @@ find_const(N,[_|R]) ->
   find_const(N,R);
 find_const(C,[]) ->
   ?EXIT({constant_not_found,C}).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%
+%%% ADT for previous immediates.
+%%% This is a queue (fifo) of the previously defined immediates,
+%%% plus a mapping from these immediates to their labels.
+%%%
+-record(previous, {set, head, tail}). % INV: tail=[] if head=[]
+
+previous_empty() -> #previous{set=gb_trees:empty(), head=[], tail=[]}.
+
+previous_lookup(#previous{set=S}, Imm) -> gb_trees:lookup(Imm, S).
+
+previous_findmin(#previous{head=H}) ->
+  case H of
+    [X|_] -> X;
+    _ -> []
+  end.
+
+previous_delmin(#previous{set=S, head=[{_Address,Imm}|H], tail=T}) ->
+  {NewH,NewT} =
+    case H of
+      [] -> {lists:reverse(T), []};
+      _ -> {H, T}
+    end,
+  #previous{set=gb_trees:delete(Imm, S), head=NewH, tail=NewT}.
+
+previous_append(#previous{set=S, head=H, tail=T}, Address, Lab, Imm) ->
+  {NewH,NewT} =
+    case H of
+      [] -> {[{Address,Imm}], []};
+      _  -> {H, [{Address,Imm}|T]}
+    end,
+  #previous{set=gb_trees:insert(Imm, Lab, S), head=NewH, tail=NewT}.
+
+%%%
+%%% ADT for pending immediates.
+%%% This is a queue (fifo) of immediates pending definition,
+%%% plus a mapping from these immediates to their labels,
+%%% and a recording of the first (lowest) code address referring
+%%% to a pending immediate.
+%%%
+-record(pending, {set, list, firstref}).
+
+pending_empty() -> #pending{set=gb_trees:empty(), list=[], firstref=[]}.
+
+pending_to_list(#pending{list=L}) -> lists:reverse(L).
+
+pending_lookup(#pending{set=S}, Imm) -> gb_trees:lookup(Imm, S).
+
+pending_firstref(#pending{firstref=F}) -> F.
+
+pending_append(#pending{set=S, list=L, firstref=F}, Address, Lab, RelocOrInt, Imm) ->
+  #pending{set=gb_trees:insert(Imm, Lab, S),
+	   list=[{Lab,RelocOrInt,Imm}|L],
+	   firstref=case F of [] -> Address; _ -> F end}.
+
+pending_size(#pending{list=L}) -> length(L).

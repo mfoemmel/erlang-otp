@@ -22,9 +22,15 @@
 #include "sys.h"
 #include "assert.h"
 
+#ifdef __GNUC__
+#define LL_LITERAL(X) X##LL
+#else
+#define LL_LITERAL(X) X##i64
+#endif
+
 /******************* Routines for time measurement *********************/
 
-#define EPOCH_JULIAN_DIFF 11644473600i64
+#define EPOCH_JULIAN_DIFF LL_LITERAL(11644473600)
 
 static SysHrTime wrap = 0;
 static DWORD last_tick_count = 0;
@@ -45,8 +51,8 @@ sys_gettimeofday(SysTimeval *tv)
     GetSystemTime(&t);
     SystemTimeToFileTime(&t, &ft);
     memcpy(&lft, &ft, sizeof(lft));
-    tv->tv_usec = (long) ((lft / 10i64) % 1000000i64);
-    tv->tv_sec = (long) ((lft / 10000000i64) - EPOCH_JULIAN_DIFF);
+    tv->tv_usec = (long) ((lft / LL_LITERAL(10)) % LL_LITERAL(1000000));
+    tv->tv_sec = (long) ((lft / LL_LITERAL(10000000)) - EPOCH_JULIAN_DIFF);
 }
 
 SysHrTime 
@@ -54,10 +60,10 @@ sys_gethrtime(void)
 {
     DWORD ticks = (SysHrTime) (GetTickCount() & 0x7FFFFFFF);
     if (ticks < (SysHrTime) last_tick_count) {
-	wrap += 1i64 << 31;
+	wrap += LL_LITERAL(1) << 31;
     }
     last_tick_count = ticks;
-    return ((((LONGLONG) ticks) + wrap) * 1000000i64);
+    return ((((LONGLONG) ticks) + wrap) * LL_LITERAL(1000000));
 }
 
 clock_t 
@@ -77,8 +83,8 @@ sys_times(SysTimes *buffer) {
     system /= (LONGLONG)(10000000 / SYS_CLK_TCK);
     user /= (LONGLONG)(10000000 / SYS_CLK_TCK);
     
-    buffer->tms_utime = (clock_t) (user & 0x7FFFFFFFi64);
-    buffer->tms_utime = (clock_t) (system & 0x7FFFFFFFi64);
+    buffer->tms_utime = (clock_t) (user & LL_LITERAL(0x7FFFFFFF));
+    buffer->tms_utime = (clock_t) (system & LL_LITERAL(0x7FFFFFFF));
     return kernel_ticks;
 }
 

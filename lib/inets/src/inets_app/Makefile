@@ -34,32 +34,38 @@ APP_VSN = "inets-$(VSN)"
 # ----------------------------------------------------
 RELSYSDIR = $(RELEASE_PATH)/lib/inets-$(VSN)
 
+
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
 MODULES = \
+	inets \
 	inets_app \
 	inets_sup 
+
 HRL_FILES = inets_internal.hrl
 
 ERL_FILES = $(MODULES:%=%.erl)
 
-TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) \
-	      $(APPUP_TARGET)
+TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) \
+	$(APP_TARGET) \
+	$(APPUP_TARGET)
 
-APP_FILE= inets.app
-APPUP_FILE= inets.appup
+APP_FILE   = inets.app
+APPUP_FILE = inets.appup
 
-APP_SRC= $(APP_FILE).src
-APP_TARGET= $(EBIN)/$(APP_FILE)
+APP_SRC    = $(APP_FILE).src
+APP_TARGET = $(EBIN)/$(APP_FILE)
 
-APPUP_SRC= $(APPUP_FILE).src
-APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
+APPUP_SRC    = $(APPUP_FILE).src
+APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
+
 
 # ----------------------------------------------------
 # INETS FLAGS
 # ----------------------------------------------------
 INETS_FLAGS = -D'SERVER_SOFTWARE="inets/$(VSN)"' \
+
 
 # ----------------------------------------------------
 # FLAGS
@@ -69,6 +75,8 @@ ERL_FLAGS +=
 ERL_COMPILE_FLAGS += $(INETS_FLAGS) \
                      +'{parse_transform,sys_pre_attributes}' \
                      +'{attribute,insert,app_vsn,$(APP_VSN)}'
+
+
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
@@ -81,6 +89,7 @@ clean:
 
 docs:
 
+
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
@@ -90,6 +99,7 @@ $(APP_TARGET): $(APP_SRC) ../../vsn.mk
 
 $(APPUP_TARGET): $(APPUP_SRC) ../../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
+
 
 # ----------------------------------------------------
 # Release Target

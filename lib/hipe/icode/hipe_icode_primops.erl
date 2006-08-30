@@ -81,7 +81,7 @@ fails(_) -> true.
 
 pp(Op, Dev) ->
   case Op of
-    {X, BsOp} when X == hipe_bs_primop; X == hipe_bs_primop2 ->
+    {X, BsOp} when X =:= hipe_bs_primop; X =:= hipe_bs_primop2 ->
       case BsOp of 
 	{bs_create_space, Size, _} ->
 	  io:format(Dev, "bs_create_space<~w>", [Size]);
@@ -313,9 +313,9 @@ type(Primop, Args) ->
 %%% Binaries    
     {hipe_bs_primop, {bs_get_integer, Size, Flags}} ->
       Signed = Flags band 4,
-      if length(Args) == 4 -> %% No variable part of the size parameter.
-	  if Size < 9, Signed == 0 -> erl_types:t_byte();
-	     Size < 21, Signed == 0 -> erl_types:t_char();
+      if length(Args) =:= 4 -> %% No variable part of the size parameter.
+	  if Size < 9, Signed =:= 0 -> erl_types:t_byte();
+	     Size < 21, Signed =:= 0 -> erl_types:t_char();
 	     true -> erl_types:t_integer()
 	  end;
 	 true -> erl_types:t_integer()
@@ -328,9 +328,9 @@ type(Primop, Args) ->
       erl_types:t_binary();
     {hipe_bs_primop2, {bs_get_integer_2, Size, Flags}} ->
       Signed = Flags band 4,
-      if length(Args) == 1 -> %% No variable part of the size parameter.
-	  if Size < 9, Signed == 0 -> erl_types:t_byte();
-	     Size < 21, Signed == 0 -> erl_types:t_char();
+      if length(Args) =:= 1 -> %% No variable part of the size parameter.
+	  if Size < 9, Signed =:= 0 -> erl_types:t_byte();
+	     Size < 21, Signed =:= 0 -> erl_types:t_char();
 	     true -> erl_types:t_integer()
 	  end;
 	 true -> erl_types:t_integer()
@@ -347,8 +347,8 @@ type(Primop, Args) ->
       erl_types:t_integer();
     {hipe_bsi_primop, {bs_get_integer, Size, _, Flags}} ->
       Signed = Flags band 4,
-      if Size < 9, Signed == 0 -> erl_types:t_byte();
-	 Size < 21, Signed == 0 -> erl_types:t_char();
+      if Size < 9, Signed =:= 0 -> erl_types:t_byte();
+	 Size < 21, Signed =:= 0 -> erl_types:t_char();
 	 true -> erl_types:t_integer()
       end;
     {hipe_bsi_primop, {bs_get_float, _, _}} ->
@@ -370,7 +370,7 @@ type(Primop, Args) ->
     {mkfun, {_M, _F, A}, _MagicNum, _Index} ->
       %% Note that the arity includes the bound variables in args
       erl_types:t_fun(A - length(Args), erl_types:t_any());
-    Op when Op == call_fun; Op == enter_fun ->
+    Op when Op =:= call_fun; Op =:= enter_fun ->
       [Fun0|TailArgs0] = lists:reverse(Args),
       TailArgs = lists:reverse(TailArgs0),
       Fun = erl_types:t_inf(erl_types:t_fun(), Fun0),

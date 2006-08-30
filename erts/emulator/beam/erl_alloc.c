@@ -50,7 +50,7 @@
 #define GET_ERL_AF_ALLOC_IMPL
 #include "erl_afit_alloc.h"
 
-#if defined(SMALL_MEMORY) || defined(PURIFY)
+#if defined(SMALL_MEMORY) || defined(PURIFY) || defined(VALGRIND)
 #define AU_ALLOC_DEFAULT_ENABLE(X)	0
 #else
 #define AU_ALLOC_DEFAULT_ENABLE(X)	(X)
@@ -346,7 +346,7 @@ erts_alloc_init(int *argc, char **argv)
     }
 
 #ifdef ERTS_ALC_N_MIN_A_FIXED_SIZE
-#ifndef PURIFY
+#if !defined(PURIFY) && !defined(VALGRIND)
     erts_allctrs[ERTS_ALC_A_FIXED_SIZE].alloc		= erts_fix_alloc;
     erts_allctrs[ERTS_ALC_A_FIXED_SIZE].realloc		= erts_fix_realloc;
     erts_allctrs[ERTS_ALC_A_FIXED_SIZE].free		= erts_fix_free;
@@ -467,7 +467,8 @@ erts_alloc_init(int *argc, char **argv)
 
     erts_init_fix_alloc(extra_block_size, fix_core_alloc);
 
-#ifndef PURIFY
+
+#if !defined(PURIFY) && !defined(VALGRIND)
     erts_set_fix_size(ERTS_ALC_T_PROC,		sizeof(Process));
     erts_set_fix_size(ERTS_ALC_T_DB_TABLE,	sizeof(DbTable));
     erts_set_fix_size(ERTS_ALC_T_ATOM,		sizeof(Atom));

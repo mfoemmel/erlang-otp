@@ -21,8 +21,11 @@
 -module(megaco_test_generator).
 
 -export([start_link/1, start_link/2, stop/1, 
-	 tcp/2, tcp/3, tcp_await_reply/1, 
-	 megaco/2, megaco/3, megaco_await_reply/1, megaco_await_reply/2
+	 tcp/2, tcp/3, 
+	 megaco/2, megaco/3, 
+	 await_reply/2, await_reply/3, 
+	 tcp_await_reply/1, tcp_await_reply/2, 
+	 megaco_await_reply/1, megaco_await_reply/2
 	]).
 
 %% Internal exports
@@ -118,10 +121,14 @@ tcp(Pid, Instructions) ->
 
 tcp(Pid, Instructions, Timeout) 
   when is_pid(Pid) and is_list(Instructions) and is_integer(Timeout) ->
-    request(Pid, {tcp, Instructions, Timeout}).
+    request(Pid, {tcp, Instructions, Timeout}),
+    tcp_reply.
 
 tcp_await_reply(Pid) ->
-    await_reply(Pid, tcp_reply).
+    await_reply(tcp_reply, Pid).
+
+tcp_await_reply(Pid, Timeout) ->
+    await_reply(tcp_reply, Pid, Timeout).
 
 
 megaco(Pid, Instructions) ->
@@ -129,21 +136,23 @@ megaco(Pid, Instructions) ->
 
 megaco(Pid, Instructions, Timeout) 
   when is_pid(Pid) and is_list(Instructions) and is_integer(Timeout) ->
-    request(Pid, {megaco, Instructions, Timeout}).
+    request(Pid, {megaco, Instructions, Timeout}),
+    megaco_reply.
 
 megaco_await_reply(Pid) ->
-    await_reply(Pid, megaco_reply).
+    await_reply(megaco_reply, Pid).
 
-megaco_await_reply(Pid, To) ->
-    await_reply(Pid, megaco_reply, To).
+megaco_await_reply(Pid, Timeout) ->
+    await_reply(megaco_reply, Pid, Timeout).
 
 request(Pid, Req) ->
     Pid ! {Req, self()}.
+    
 
-await_reply(Pid, Tag) ->
-    await_reply(Pid, Tag, infinity).
+await_reply(Tag, Pid) ->
+    await_reply(Tag, Pid, infinity).
 
-await_reply(Pid, Tag, Timeout) ->
+await_reply(Tag, Pid, Timeout) ->
     receive
 	{Tag, Pid, Reply} ->
 	    Reply
@@ -189,7 +198,7 @@ loop(#state{parent = Parent} = State) ->
 	    Parent ! {tcp_reply, self(), Res},
 	    Timer = State#state.timer,
 	    Time = erlang:cancel_timer(Timer),
-	    d("loop -> Timer: ~p", [Time]),
+	    d("loop -> Time: ~w msec", [Time]),
 	    loop(State#state{handler = undefined, timer = undefined});
 
 	{{megaco, Instructions, Timeout}, Parent} ->
@@ -204,7 +213,7 @@ loop(#state{parent = Parent} = State) ->
 	    Parent ! {megaco_reply, self(), Res},
 	    Timer = State#state.timer,
 	    Time = erlang:cancel_timer(Timer),
-	    d("loop -> Timer: ~p", [Time]),
+	    d("loop -> Time: ~p", [Time]),
 	    loop(State#state{handler = undefined, timer = undefined});
 
 	{'EXIT', Handler, Reason} when State#state.handler == Handler ->
@@ -434,12 +443,16 @@ do_tcp({expect_receive, Desc, {Verify, To}},
 	    tcp_error(expect_receive, timeout)
     end;
 
-do_tcp({expect_nothing, To}, Tcp) ->
+do_tcp({expect_nothing, To}, #tcp{connection = Sock} = Tcp) ->
     p("expect_nothing ~w", [To]),
+    inet:setopts(Sock, [{active, once}]),
+    p("expect_nothing - await anything", []),
     receive
 	Any ->
+	    p("expect_nothing - received: ~p", [Any]),
 	    tcp_error(expect_nothing, Any)
     after To ->
+	    p("expect_nothing timeout after ~w", [To]),
 	    Tcp
     end;
 
@@ -623,6 +636,15 @@ do_megaco({debug, Debug}, State) ->
     p("debug: ~p", [Debug]),
     put(debug, Debug),
     State;
+
+do_megaco({expect_nothing, To}, State) ->
+    p("expect_nothing: ~p", [To]),
+    receive
+	Any ->
+	    megaco_error(expect_nothing, Any)
+    after To ->
+        State
+    end;
 
 do_megaco({megaco_trace, disable}, State) ->
     p("megaco trace: disable"),
@@ -1028,6 +1050,10 @@ parse_megaco([{debug, Debug}|Instrs], RevInstrs)
   when Debug == true; Debug == false ->
     parse_megaco(Instrs, [{debug, Debug}|RevInstrs]);
 
+parse_megaco([{expect_nothing, To}|Instrs], RevInstrs) 
+  when is_integer(To) and (To > 0) ->
+    parse_megaco(Instrs, [{expect_nothing, To}|RevInstrs]);
+
 parse_megaco([{megaco_trace, Level}|Instrs], RevInstrs) 
   when Level == disable; Level == max; Level == min ->
     Trace = {megaco_trace, Level},
@@ -1339,9 +1365,9 @@ p(P, undefined, F, A) ->
 	      "~n   " ++ F ++ "~n", 
 	      [format_timestamp(now()),self(),P|A]);
 p(P, N, F, A) ->
-    io:format("*** [~s] ~s~s *** " ++ 
+    io:format("*** [~s] ~p ~s~s *** " ++ 
 	      "~n   " ++ F ++ "~n", 
-	      [format_timestamp(now()),N,P|A]).
+	      [format_timestamp(now()),self(),N,P|A]).
 
 
 format_timestamp({_N1, _N2, N3} = Now) ->

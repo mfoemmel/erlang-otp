@@ -169,6 +169,10 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	    gen_extra_unsafe_add_2(Dst, Args, Cont);
 	  'unsafe_sub' ->
 	    gen_unsafe_add_sub_2(Dst, Args, Cont, Fail, '-', sub);
+	  'extra_unsafe_sub' ->
+	    gen_extra_unsafe_sub_2(Dst, Args, Cont);
+          %'unsafe_mul' ->
+          %  gen_unsafe_mul_2(Dst, Args, Cont, Fail, '*');
 	  'div' ->
 	    %% BIF call: am_div -> nbif_intdiv_2 -> intdiv_2
 	    [hipe_rtl:mk_call(Dst, 'div', Args, Cont, Fail, not_remote)];
@@ -198,7 +202,10 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	    gen_unsafe_bitop_2(Dst, Args, Cont, 'xor');
 	  'unsafe_bnot' ->
 	    gen_unsafe_bnot_2(Dst, Args, Cont);
-
+	  'unsafe_bsr' ->
+	    gen_unsafe_bsr_2(Dst, Args, Cont);
+          'unsafe_bsl' ->
+	    gen_unsafe_bsl_2(Dst, Args, Cont);
 	  %% List handling
 	  cons ->
 	    case Dst of
@@ -455,6 +462,15 @@ gen_extra_unsafe_add_2(Dst, Args, Cont) ->
       hipe_tagscheme:unsafe_fixnum_add(Arg1, Arg2, Res)
   end.
 
+gen_extra_unsafe_sub_2(Dst, Args, Cont) ->
+  [Arg1, Arg2] = Args,
+  case Dst of
+    [] ->      
+      [hipe_rtl:mk_goto(Cont)];
+    [Res] ->
+      hipe_tagscheme:unsafe_fixnum_sub(Arg1, Arg2, Res)
+  end.
+
 gen_op_general_case(Res, Op, Args, Cont, Fail, GenCaseLabel) ->
   [hipe_rtl:mk_goto(Cont),
    GenCaseLabel,
@@ -464,13 +480,13 @@ gen_op_general_case(Res, Op, Args, Cont, Fail, GenCaseLabel) ->
 %% We don't inline multiplication at the moment
 %%
 
-%%gen_mul_2([Res], Args, Cont, Fail, Op) ->
-%%   [Arg1, Arg2] = Args,
-%%   GenCaseLabel = hipe_rtl:mk_new_label(),
-%%   [hipe_tagscheme:test_two_fixnums(Arg1, Arg2,
-%%				    hipe_rtl:label_name(GenCaseLabel)),
-%%    hipe_tagscheme:fixnum_mul(Arg1, Arg2, Res, GenCaseLabel)|
-%%    gen_op_general_case(Res, Op, Args, Cont, Fail, GenCaseLabel)].
+%% gen_unsafe_mul_2([Res], Args, Cont, Fail, Op) ->
+%%    [Arg1, Arg2] = Args,
+%%    GenCaseLabel = hipe_rtl:mk_new_label(),
+%%    [hipe_tagscheme:test_two_fixnums(Arg1, Arg2,
+%% 				    hipe_rtl:label_name(GenCaseLabel)),
+%%     hipe_tagscheme:fixnum_mul(Arg1, Arg2, Res, GenCaseLabel)|
+%%     gen_op_general_case(Res, Op, Args, Cont, Fail, GenCaseLabel)].
 
 %%
 %% Inline bitoperations.
@@ -533,6 +549,27 @@ gen_bsr_2(Res, Args, Cont, Fail, Op) ->
     false ->
       [hipe_rtl:mk_call(Res, 'bsr', Args, Cont, Fail, not_remote)]
   end.
+
+gen_unsafe_bsr_2(Res, Args, Cont) ->
+  case Res of
+    [] -> %% The result is not used.
+      [hipe_rtl:mk_goto(Cont)];
+    [Res0] ->  
+      [Arg1, Arg2] = Args,
+      [hipe_tagscheme:fixnum_bsr(Arg1, Arg2, Res0),
+       hipe_rtl:mk_goto(Cont)]
+  end.
+
+gen_unsafe_bsl_2(Res, Args, Cont) ->
+  case Res of
+    [] -> %% The result is not used.
+      [hipe_rtl:mk_goto(Cont)];
+    [Res0] ->  
+      [Arg1, Arg2] = Args,
+      [hipe_tagscheme:fixnum_bsl(Arg1, Arg2, Res0),
+       hipe_rtl:mk_goto(Cont)]
+  end.
+
 %%
 %% Inline not.
 %%
@@ -941,12 +978,6 @@ gen_check_get_msg(Dsts, GotoCont, Fail) ->
     1 -> gen_check_get_msg_smp(Dsts, GotoCont, Fail)
   end.
 
-gen_next_msg([], GotoCont) ->
-  case ?ERTS_IS_SMP of
-    0 -> gen_next_msg_notsmp(GotoCont);
-    1 -> gen_next_msg_smp(GotoCont)
-  end.
-
 gen_clear_timeout([], GotoCont) ->
   case ?ERTS_IS_SMP of
     0 -> gen_clear_timeout_notsmp(GotoCont);
@@ -985,7 +1016,7 @@ gen_check_get_msg_notsmp(Dsts, GotoCont, Fail) ->
 %%%	ErlMessage *msg = *save;
 %%%	ErlMessage **next = &msg->next;
 %%%	p->msg.save = next;
-gen_next_msg_notsmp(GotoCont) ->
+gen_next_msg([], GotoCont) ->
   Save = hipe_rtl:mk_new_reg(),
   Msg = hipe_rtl:mk_new_reg(),
   Rest1 = [GotoCont],
@@ -1043,13 +1074,6 @@ gen_check_get_msg_smp(Dsts, GotoCont, Fail) ->
      [] -> % receive which throws away the message
        [GotoCont]
    end].
-
-gen_next_msg_smp(GotoCont) ->
-  RetLbl = hipe_rtl:mk_new_label(),
-  [hipe_rtl_arch:call_bif([], next_msg, [],
-			  hipe_rtl:label_name(RetLbl), []),
-   RetLbl,
-   GotoCont].
 
 gen_clear_timeout_smp(GotoCont) ->
   RetLbl = hipe_rtl:mk_new_label(),

@@ -22,6 +22,7 @@
 
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_v2.hrl").
+-define(encoder_version_pre_prev3c,true).
 -include("megaco_text_tokens.hrl").
 
 -define(d(F,A), io:format("DBG:"++F++"~n",A)).

@@ -98,7 +98,7 @@ struct ErtsSchedulerData_ {
     ErtsSchedulerData *prev;	/* Prev scheduler data */
     ethr_tid tid;		/* Thread id */
     Uint no;			/* Scheduler number */
-    Eterm save_reg[MAX_REG];	/* X registers */
+    Eterm save_reg[ERTS_X_REGS_ALLOCATED]; /* X registers */
     FloatDef freg[MAX_REG];	/* Floating point registers. */
     struct erl_bits_state erl_bits_state; /* erl_bits.c state */
     void *match_pseudo_process; /* erl_db_util.c:db_prog_match() */
@@ -109,7 +109,7 @@ struct ErtsSchedulerData_ {
 };
 
 #ifndef ERTS_SMP
-extern ErtsSchedulerData *erts_scheduler_data;
+extern ErtsSchedulerData erts_scheduler_data;
 #endif
 
 typedef struct _process_list {
@@ -132,6 +132,10 @@ typedef struct process {
     Uint heap_sz;		/* Size of heap in words */
     Uint min_heap_size;         /* Minimum size of heap (in words). */
 
+#if !defined(NO_FPE_SIGNALS)
+    volatile int fp_exception;
+#endif
+
 #ifdef HIPE
     /* HiPE-specific process fields. Put it early in struct process,
        to enable smaller & faster addressing modes on the x86. */
@@ -146,11 +150,7 @@ typedef struct process {
 				 */
     Eterm* arg_reg;		/* Pointer to argument registers. */
     unsigned max_arg_reg;	/* Maximum number of argument registers available. */
-#if defined(HIPE) && defined(__sparc__)
-    Eterm def_arg_reg[16];	/* Default array for argument registers. */
-#else
     Eterm def_arg_reg[6];	/* Default array for argument registers. */
-#endif
 
     Eterm* cp;			/* Continuation pointer (for threaded code). */
     Eterm* i;			/* Program counter for threaded code. */
@@ -238,12 +238,6 @@ typedef struct process {
     Eterm* arith_check_me;	/* Address to check for overwrite. */
 #endif
 
-#ifdef HEAP_FRAG_ELIM_TEST
-    Eterm* arith_lowest_htop;
-    Eterm* saved_htop;		/* Saved HTOP. */
-    ErlHeapFragment* halloc_mbuf; /* Pointer to first HAlloc() mbuf */
-#endif
-
 #ifdef ERTS_SMP
     ErtsSmpPTimer *ptimer;
 #else
@@ -262,10 +256,6 @@ typedef struct process {
 #ifdef HIPE
     struct hipe_process_state_smp hipe_smp;
 #endif
-#endif
-
-#if !defined(NO_FPE_SIGNALS)
-    volatile int fp_exception;
 #endif
 
 #ifdef HYBRID
@@ -383,9 +373,8 @@ typedef struct {
 
 #define KILL_CATCHES(p) (p)->catches = -1
 
-Eterm* erts_arith_alloc(Process* p, Eterm* htop, Uint need);
-Eterm* erts_heap_alloc(Process* p, Uint need);
 void erts_arith_shrink(Process* p, Eterm* hp);
+Eterm* erts_heap_alloc(Process* p, Uint need);
 
 extern Process** process_tab;
 #ifdef HYBRID
@@ -545,7 +534,7 @@ Sint erts_test_next_pid(int, Uint);
 #ifdef ERTS_SMP
 #  define ERTS_GET_SCHEDULER_DATA_FROM_PROC(PROC) ((PROC)->scheduler_data)
 #else
-#  define ERTS_GET_SCHEDULER_DATA_FROM_PROC(PROC) (erts_scheduler_data)
+#  define ERTS_GET_SCHEDULER_DATA_FROM_PROC(PROC) (&erts_scheduler_data)
 #endif
 
 #if defined(ERTS_SMP) || defined(USE_THREADS)
@@ -557,7 +546,7 @@ ERTS_GLB_INLINE ErtsSchedulerData *erts_get_scheduler_data(void);
 ERTS_GLB_INLINE
 ErtsSchedulerData *erts_get_scheduler_data(void)
 {
-    return erts_scheduler_data;
+    return &erts_scheduler_data;
 }
 #endif
 #endif

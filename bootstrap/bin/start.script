@@ -1,4 +1,4 @@
-%% script generated at {2006,5,16} {19,46,11}
+%% script generated at {2006,8,29} {19,39,24}
 {script,{"OTP  APN 181 01","R11B"},
         [{preLoaded,[erlang,
                      erl_prim_loader,
@@ -160,7 +160,7 @@
                             [{application,
                                  kernel,
                                  [{description,"ERTS  CXC 138 10"},
-                                  {vsn,"2.11"},
+                                  {vsn,"2.11.1"},
                                   {id,[]},
                                   {modules,
                                       [application,
@@ -273,7 +273,7 @@
                              [{application,
                                   stdlib,
                                   [{description,"ERTS  CXC 138 10"},
-                                   {vsn,"1.14"},
+                                   {vsn,"1.14.1"},
                                    {id,[]},
                                    {modules,
                                        [beam_lib,

@@ -27,7 +27,7 @@
 -record(callgraph, {codedict, scc_order}).
 
 is_empty(#callgraph{scc_order=SCCs}) ->
-  length(SCCs) == 0.
+  length(SCCs) =:= 0.
 
 take_first(CG=#callgraph{scc_order=SCCs, codedict=Dict}) when length(SCCs)>0 ->
   [H|T] = SCCs,

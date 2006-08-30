@@ -548,11 +548,15 @@ opt_bs_1([{bs_put_integer,_,{integer,8},1,_,{integer,_}}|_]=IsAll, Acc0) ->
 opt_bs_1([{bs_put_integer,Fail,{integer,Sz},1,F,{integer,N}}=I|Is0], Acc) when Sz > 8 ->
     case field_endian(F) of
 	big ->
+	    %% We can do this optimization for any field size without risk
+	    %% for code explosion.
 	    case bs_split_int(N, Sz, Fail, Is0) of
 		no_split -> opt_bs_1(Is0, [I|Acc]);
 		Is -> opt_bs_1(Is, Acc)
 	    end;
-	little ->
+	little when Sz < 128 ->
+	    %% We only try to optimize relatively small fields, to avoid
+	    %% an explosion in code size.
 	    try <<N:Sz/little>> of
 		<<Int:Sz>> ->
 		    Flags = force_big(F),
@@ -563,7 +567,8 @@ opt_bs_1([{bs_put_integer,Fail,{integer,Sz},1,F,{integer,N}}=I|Is0], Acc) when S
 		error:_ ->
 		    opt_bs_1(Is0, [I|Acc])
 	    end;
-	native -> opt_bs_1(Is0, [I|Acc])
+	_ -> 					%native or too wide little field
+	    opt_bs_1(Is0, [I|Acc])
     end;
 opt_bs_1([{Op,Fail,{integer,Sz},U,F,Src}|Is], Acc) when U > 1 ->
     opt_bs_1([{Op,Fail,{integer,U*Sz},1,F,Src}|Is], Acc);
@@ -620,6 +625,9 @@ bs_split_int(N, Sz, Fail, Acc) ->
 		  end,
     bs_split_int_1(N, FirstByteSz, Sz, Fail, Acc).
 
+bs_split_int_1(0, _, Sz, Fail, Acc) when Sz > 64 ->
+    I = {bs_put_integer,Fail,{integer,Sz},1,{field_flags,[big]},{integer,0}},
+    [I|Acc];
 bs_split_int_1(N, ByteSz, Sz, Fail, Acc) when Sz > 0 ->
     Mask = (1 bsl ByteSz) - 1,
     I = {bs_put_integer,Fail,{integer,ByteSz},1,

@@ -10,8 +10,7 @@
 %%   Contains utilities for creating and manipulating dominator trees
 %%   and dominance frontiers from a CFG.
 %% @end
-%%------------------------------------------------------------------------
-
+%%------------------------------------------------------------------------ 
 -module(hipe_dominators).
 
 -export([domTree_create/1,
@@ -28,8 +27,12 @@
 
 -record(domTree, {root, size, nodes}).
 
--record(workDataCell, {dfnum = 0, dfparent = none, semi = none, 
-		       ancestor = none, best = none, samedom = none, 
+-record(workDataCell, {dfnum = 0,
+		       dfparent = none,
+		       semi = none, 
+		       ancestor = none,
+		       best = none,
+		       samedom = none, 
 		       bucket = []}).
 
 %%>----------------------------------------------------------------------<
@@ -68,9 +71,9 @@ domTree_empty(Node) ->
 %%>----------------------------------------------------------------------<
 
 domTree_createNode(Node, DomTree) ->
-  DomTree2 = domTree_setNodes(gb_trees:enter(Node, {none,[]},
-					     domTree_getNodes(DomTree)),
-			      DomTree),
+  DomTree2 = domTree_setNodes(DomTree,
+			      gb_trees:enter(Node, {none,[]},
+					     domTree_getNodes(DomTree))),
   domTree_incSize(DomTree2).
 
 %%>----------------------------------------------------------------------<
@@ -91,8 +94,7 @@ domTree_getNode(Node, DomTree) ->
 %% Returns   : A map containing the nodes of the dominator tree.
 %%>----------------------------------------------------------------------<
 
-domTree_getNodes(DomTree) when is_record(DomTree, domTree) ->
-  DomTree#domTree.nodes.
+domTree_getNodes(#domTree{nodes=Nodes}) -> Nodes.
 
 %%>----------------------------------------------------------------------<
 %% Procedure : domTree_setNodes/2
@@ -103,8 +105,7 @@ domTree_getNodes(DomTree) when is_record(DomTree, domTree) ->
 %% Returns   : DomTree
 %%>----------------------------------------------------------------------<
 
-domTree_setNodes(Nodes, DomTree) when is_record(DomTree, domTree) ->
-  DomTree#domTree{nodes = Nodes}.
+domTree_setNodes(DomTree, Nodes) -> DomTree#domTree{nodes = Nodes}.
 
 %%>----------------------------------------------------------------------<
 %% Procedure : domTree_setSize/2
@@ -115,8 +116,7 @@ domTree_setNodes(Nodes, DomTree) when is_record(DomTree, domTree) ->
 %% Returns   : A dominator tree
 %%>----------------------------------------------------------------------<
 
-domTree_setSize(Size, DomTree) when is_record(DomTree, domTree) ->
-  DomTree#domTree{size = Size}.
+domTree_setSize(DomTree, Size) -> DomTree#domTree{size = Size}.
 
 %%>----------------------------------------------------------------------<
 %% Procedure : domTree_incSize/1
@@ -125,9 +125,9 @@ domTree_setSize(Size, DomTree) when is_record(DomTree, domTree) ->
 %% Returns   : DomTree
 %%>----------------------------------------------------------------------<
 
-domTree_incSize(DomTree) when is_record(DomTree, domTree) ->
+domTree_incSize(DomTree) ->
   Size = domTree_getSize(DomTree),
-  domTree_setSize(Size + 1, DomTree).
+  domTree_setSize(DomTree, Size + 1).
 
 %%>----------------------------------------------------------------------<
 %% Procedure : get IDom/2
@@ -156,7 +156,7 @@ domTree_getIDom(Node, DomTree) ->
 
 domTree_getChildren(Node, DomTree) ->
   case domTree_getNode(Node, DomTree) of
-      {value, {_, Children}} ->
+    {value, {_, Children}} ->
       Children;
     none ->
       []
@@ -169,8 +169,7 @@ domTree_getChildren(Node, DomTree) ->
 %% Returns   : A number denoting the size of the dominator tree
 %%>----------------------------------------------------------------------<
 
-domTree_getSize(DomTree) ->
-    DomTree#domTree.size.
+domTree_getSize(#domTree{size=Size}) -> Size.
 
 %%>----------------------------------------------------------------------<
 %% Procedure : domTree_getRoot/2
@@ -179,8 +178,7 @@ domTree_getSize(DomTree) ->
 %% Returns   : Number
 %%>----------------------------------------------------------------------<
 
-domTree_getRoot(DomTree) ->
-  DomTree#domTree.root.
+domTree_getRoot(#domTree{root=Root}) -> Root.
 
 %%>----------------------------------------------------------------------<
 %% Procedure : domTree_addChild/3
@@ -206,7 +204,7 @@ domTree_addChild(Node, Child, DomTree) ->
 	      gb_trees:enter(Node, {IDom, [Child|Children]},
 			     domTree_getNodes(DomTree))
 	  end,
-  domTree_setNodes(Nodes, DomTree).
+  domTree_setNodes(DomTree, Nodes).
 
 %%>----------------------------------------------------------------------<
 %% Procedure : setIDom/3
@@ -227,9 +225,9 @@ setIDom(Node, IDom, DomTree) ->
 	     end,
   DomTree2 = domTree_addChild(IDom, Node, DomTree1),
   {value, {_, Children}} = domTree_getNode(Node, DomTree2),
-  domTree_setNodes(gb_trees:enter(Node, {IDom,Children},
-				  domTree_getNodes(DomTree2)),
-		   DomTree2).
+  domTree_setNodes(DomTree2,
+		   gb_trees:enter(Node, {IDom,Children},
+				  domTree_getNodes(DomTree2))).
 
 %%>----------------------------------------------------------------------<
 %% Procedure : lookup
@@ -246,14 +244,14 @@ setIDom(Node, IDom, DomTree) ->
 lookup({Field, Key}, Table) ->
   WD = lookup(Key, Table),
   lookup(Field, WD);
-lookup(Node, DomTree) when is_record(DomTree, domTree) ->
+lookup(Node, DomTree = #domTree{}) ->
   case gb_trees:lookup(Node, domTree_getNodes(DomTree)) of
     {value, Data} ->
       Data;
     none ->
       {none, []}
   end;
-lookup(Field, WD) when is_record(WD, workDataCell) ->
+lookup(Field, WD = #workDataCell{}) ->
   case Field of
     dfnum    -> WD#workDataCell.dfnum; 
     dfparent -> WD#workDataCell.dfparent; 
@@ -262,7 +260,7 @@ lookup(Field, WD) when is_record(WD, workDataCell) ->
     best     -> WD#workDataCell.best;
     samedom  -> WD#workDataCell.samedom;
     bucket   -> WD#workDataCell.bucket;
-    _Other    -> {error, {idom, lookup, 2}}
+    _Other   -> erlang:fault({?MODULE, lookup, 2})
   end;
 lookup(N, Table) when is_integer(N) ->
   case gb_trees:lookup(N, Table) of
@@ -271,7 +269,7 @@ lookup(N, Table) when is_integer(N) ->
     none ->
       #workDataCell{}
   end.
-    
+
 %%>----------------------------------------------------------------------<
 %% Procedure : update
 %% Purpose   : This function is used as a wrapper for the update function 
@@ -296,14 +294,14 @@ update([], WD) -> WD.
 
 updateCell(Value, Field, WD) ->
   case Field of
-    dfnum   -> WD#workDataCell{dfnum   = Value}; 
-    dfparent-> WD#workDataCell{dfparent= Value}; 
-    semi    -> WD#workDataCell{semi    = Value}; 
-    ancestor-> WD#workDataCell{ancestor= Value}; 
-    best    -> WD#workDataCell{best    = Value}; 
-    samedom -> WD#workDataCell{samedom = Value}; 
-    bucket  -> WD#workDataCell{bucket  = Value};
-    _Other   -> {error, {idom, update, 3}} 
+    dfnum    -> WD#workDataCell{dfnum   = Value}; 
+    dfparent -> WD#workDataCell{dfparent= Value}; 
+    semi     -> WD#workDataCell{semi    = Value}; 
+    ancestor -> WD#workDataCell{ancestor= Value}; 
+    best     -> WD#workDataCell{best    = Value}; 
+    samedom  -> WD#workDataCell{samedom = Value}; 
+    bucket   -> WD#workDataCell{bucket  = Value};
+    _Other   -> erlang:fault({?MODULE, update, 3})
   end.
 
 %%>----------------------------------------------------------------------<
@@ -325,7 +323,7 @@ dfs(CFG, Node, Parent, N, WorkData, DFS) ->
   case lookup({dfnum, Node}, WorkData) of
     0 -> 	  
       WorkData2 = update(Node, [{dfnum, N}, {dfparent, Parent}, 
-				{semi, Node}, {best, Node}], WorkData),
+			{semi, Node}, {best, Node}], WorkData),
       DFS2 = gb_trees:enter(N, Node, DFS),
       dfsTraverse(hipe_gen_cfg:succ(CFG, Node), CFG, Node, 
 		  N + 1, WorkData2, DFS2);
@@ -491,8 +489,7 @@ linkTrees(Parent, Node, WorkData) ->
 filterBucket([Node | Bucket], Parent, WorkData, DomData) ->
   {Y, WorkData2} = getAncestorWithLowestSemi(Node, WorkData),
   {WorkData3, DomData2} = 
-    case lookup({semi, Y}, WorkData2) == 
-      lookup({semi, Node}, WorkData2) of
+    case lookup({semi, Y}, WorkData2) =:= lookup({semi, Node}, WorkData2) of
       true  -> {WorkData2, setIDom(Node, Parent, DomData)};
       false -> {update(Node, {samedom, Y}, WorkData2), DomData}
     end,
@@ -521,13 +518,13 @@ finalize(WorkData, DomData, N, Max, DFS) when N =< Max ->
       finalize(WorkData, DomData, N + 1, Max, DFS);
     SameDomN -> 
       case domTree_getIDom(SameDomN, DomData) of
-	IdomSameDomN when is_integer(IdomSameDomN)->
+	IdomSameDomN when is_integer(IdomSameDomN) ->
 	  DomData2 = setIDom(Node, IdomSameDomN, DomData),
 	  finalize(WorkData, DomData2, N + 1, Max, DFS)
       end
   end;
 finalize(_, DomData, _, _, _) ->
-  DomData.   
+  DomData.
 
 %%>----------------------------------------------------------------------<
 %% Procedure : domTree_dominates/3
@@ -542,7 +539,7 @@ domTree_dominates(Node1, Node1, _DomTree) ->
   true;
 domTree_dominates(Node1, Node2, DomTree) ->
   Children = domTree_getChildren(Node1, DomTree),
-  lists:any(fun(X)-> domTree_dominates(X,Node2,DomTree) end, Children).
+  lists:any(fun(X) -> domTree_dominates(X,Node2,DomTree) end, Children).
 
 %%>----------------------------------------------------------------------<
 %% Procedure : pp/1

@@ -2,6 +2,7 @@
  [{description,"INETS  CXC 138 49"},
   {vsn,"%VSN%"},
   {modules,[
+            inets,
             inets_sup,
             inets_app,                  
 

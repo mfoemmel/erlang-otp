@@ -683,7 +683,9 @@ send_inform(Addr, _Timeout, -1, _Msg,  Recv, _NetIf) ->
 	   []),
     deliver_recv(Recv, snmp_notification, {no_response, Addr});
 send_inform(Addr, Timeout, Retry, Msg, Recv, NetIf) ->
-    ?vtrace("~n   deliver send-pdu-request to net-if when Retry = ~p",[Retry]),
+    ?vtrace("~n   deliver send-pdu-request to net-if when"
+	    "~n   Timeout: ~p"
+	    "~n   Retry:   ~p",[Timeout, Retry]),
     NetIf ! Msg,
     receive
 	{snmp_response_received, _Vsn, _Pdu, _From} ->

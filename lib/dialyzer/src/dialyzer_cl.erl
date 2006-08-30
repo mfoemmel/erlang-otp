@@ -50,20 +50,38 @@ start(#options{} = DialyzerOptions) ->
 check_init_plt(Opts) ->
   process_flag(trap_exit, true),
   Quiet = get(dialyzer_options_quiet),
-  Msg = "    Creating initial PLT"
-    " (will take several minutes; please be patient)\n",
   case dialyzer_plt:check_init_plt(Opts#options.plt_libs,
 				   Opts#options.init_plt) of
     {fail, MD5, Libs, InitPlt} ->      
-      if Quiet -> io:format("~s\n", [Msg]);
-	 true  -> io:format(" no\n~s", [Msg])
+      if Quiet -> ok;
+	 true  -> io:format(" no\n", [])
       end,
-      create_init_plt(MD5, Libs, InitPlt, Opts#options.include_dirs);
+      case check_if_installed() of
+	true -> 
+	  Msg = "    The initial PLT is not up-to-date.\n"
+	    "    Since Dialyzer is installed no new PLT will be built.\n"
+	    "    Please refer to the manual.\n",
+	  io:format("~s", [Msg]),
+	  error;
+	false ->
+	  Msg = "    Creating initial PLT"
+	    " (will take several minutes; please be patient)\n",
+	  io:format("~s", [Msg]),
+	  create_init_plt(MD5, Libs, InitPlt, Opts#options.include_dirs),
+	  ok
+      end;
     {ok, _InitPlt} ->
       if Quiet -> ok;
 	 true  -> io:format(" yes\n")
-      end      
+      end,
+      ok
   end.
+
+check_if_installed() ->
+  case filename:basename(code:lib_dir(dialyzer)) of
+    "dialyzer" -> false;
+    "dialyzer-" ++ _Version -> true
+  end.  
 
 create_init_plt(MD5, Libs, InitPlt, IncludeDirs) ->  
   State = new_state_no_init(),
@@ -80,7 +98,7 @@ create_init_plt(MD5, Libs, InitPlt, IncludeDirs) ->
   cl_loop(run_analysis(State1, Analysis)).
 
 new_state(InitPlt) ->
-  NewInitPlt = dialyzer_plt:from_dets(dialyzer_init_plt, InitPlt),
+  NewInitPlt = dialyzer_plt:from_file(dialyzer_init_plt, InitPlt),
   new_state1(NewInitPlt).
 
 new_state_no_init() ->
@@ -127,10 +145,6 @@ cl_loop(State) ->
     {BackendPid, warnings, Warnings} ->
       NewState = print_warnings(State, Warnings),
       cl_loop(NewState);
-    {BackendPid, inlined_warnings, Warnings} ->
-      %% We do not differ between these.
-      NewState = print_warnings(State, Warnings),
-      cl_loop(NewState);
     {BackendPid, error, Msg} ->
       io:format(Output, "~s", [Msg]),
       cl_loop(State#cl_state{return_status=-1});
@@ -145,7 +159,7 @@ cl_loop(State) ->
     {'EXIT', BackendPid, {error, Reason}} ->
       Msg = failed_anal_msg(Reason),
       error(State, Msg);
-    {'EXIT', BackendPid, Reason} when Reason /= normal ->
+    {'EXIT', BackendPid, Reason} when Reason =/= 'normal' ->
       Msg = failed_anal_msg(Reason),
       maybe_close_output_file(State),
       error(State, Msg);
@@ -176,19 +190,20 @@ error(State, Msg) ->
 return_value(State = #cl_state{return_status=-1}) ->
   maybe_close_output_file(State),
   ?RET_INTERNAL_ERROR;
-return_value(State = #cl_state{nof_warnings=NofWarnings, output_plt=Dets,
-			       user_plt=Plt}) ->
-  if Dets =/= undefined ->
-      case dialyzer_plt:to_dets(Plt, Dets) of
+return_value(State = #cl_state{nof_warnings=NofWarnings, output_plt=OutputPlt,
+			       user_plt=UserPlt, init_plt=InitPlt}) ->
+  if OutputPlt =/= undefined ->
+      case dialyzer_plt:merge_and_write_file([InitPlt, UserPlt], OutputPlt) of
 	ok -> ok;
 	{error, What} -> 
-	  error(State, io_lib:format("Error while writing dets: ~w\n", [What]))
+	  error(State, io_lib:format("Error while writing plt to file: ~w\n", 
+				     [What]))
       end;
      true ->
       ok
   end,
   maybe_close_output_file(State),
-  if NofWarnings == 0 ->
+  if NofWarnings =:= 0 ->
       ?RET_NOTHING_SUSPICIOUS;
      true ->
       ?RET_DISCREPANCIES_FOUND

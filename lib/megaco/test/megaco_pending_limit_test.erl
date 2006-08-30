@@ -1416,15 +1416,15 @@ otp_4956_mg_verify_pending_limit_msg_fun() ->
 	    io:format("otp_4956_mg_verify_pending_limit_msg_fun -> entry with"
 		      "~n~p~n", [M]),
             #'Message'{messageBody = Body} = Mess,
-	    io:format("otp_4956_mg_verify_pending_limit_msg_fun -> Body"
-		      "~n~p~n", [Body]),
-	    case Body of
-		{messageError, ED} ->
+	    {transactions, [Trans]} = Body,
+	    {transactionReply, TR} = Trans,
+	    case element(4, TR) of
+		{transactionError, ED} ->
 		    EC = ?megaco_number_of_transactionpending_exceeded,
 		    #'ErrorDescriptor'{errorCode = EC} = ED,
 		    {ok, M};
 		_ ->
-		    {error, {invalid_messageBody, Body}}
+		    {error, {invalid_transactionReply, TR}}
 	    end;
        (M) ->
             {error, {invalid_message, M}}

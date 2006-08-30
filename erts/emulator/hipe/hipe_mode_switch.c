@@ -255,6 +255,7 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  DPRINTF("beam throws freason %#lx fvalue %#lx", p->freason, p->fvalue);
 	  hipe_pop_beam_trap_frame(p);
       do_throw_to_native:
+	  p->def_arg_reg[0] = exception_tag[GET_EXC_CLASS(p->freason)];
 	  hipe_find_handler(p);
 	  result = hipe_throw_to_native(p);
 	  break;

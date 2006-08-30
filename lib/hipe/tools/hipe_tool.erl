@@ -10,8 +10,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2005/12/12 21:58:04 $
-%%              $Revision: 1.11 $
+%%              $Date: 2006/07/25 07:37:35 $
+%%              $Revision: 1.12 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -28,18 +28,23 @@
 -define(HEADER_FONT, {screen, [bold], 12}).
 -define(NORMAL_FG_COLOR, {0,0,0}).
 
-start() ->
-    spawn(fun () -> init() end).
+-record(state, {win_created=false,	% :: bool(),
+		mindex=0,		% :: integer(),
+		mod,			% :: atom(),
+		funs=[],		% :: list(),
+		mods=[],		% :: list(),
+		options=[o2],		% :: list(),
+		compiling=false		% :: bool()
+	       }).
 
--record(state,{win_created=false,mindex=0,mod,funs=[],mods=[],
-	      options=[o2],compiling=false}).
+start() ->
+  spawn(fun () -> init() end).
 
 init() ->
   process_flag(trap_exit, true), 
   gs:start(),
   S = init_window(#state{}),
   loop(S).
-  
 
 loop(State) ->
     receive
@@ -51,7 +56,6 @@ loop(State) ->
 	hipe_tool:loop(NewState);
       {gs,compmod, click, _,_} ->
 	hipe_tool:loop(	compile(State));
-
       {gs,prof,click,[],["Turn off\nProfiling"]} ->
 	hipe_profile:prof_module_off(State#state.mod),
 	 hipe_tool:loop(
@@ -68,11 +72,10 @@ loop(State) ->
       {gs, win, configure, _, _} ->
 	gs:config(win, [{width, ?WINDOW_WIDTH}, {height, ?WINDOW_HEIGHT}]),
 	hipe_tool:loop(State);
-      show_window when State#state.win_created == true->
+      show_window when State#state.win_created =:= true ->
 	gs:config(win, [raise]),
 	hipe_tool:loop(State);
-      show_window when State#state.win_created == false ->
-	
+      show_window when State#state.win_created =:= false ->
 	hipe_tool:loop((init_window(State))#state{win_created=true});
 
       {gs, _Id, click, close_menu, _Args} ->

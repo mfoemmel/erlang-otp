@@ -17,8 +17,8 @@
 %%
 %% $Id$
 %%
-%% @author Richard Carlsson <richardc@csd.uu.se>
-%% @copyright 2000-2004 Richard Carlsson
+%% @author Richard Carlsson <richardc@it.uu.se>
+%% @copyright 2000-2006 Richard Carlsson
 %% @doc Translation from Core Erlang to HiPE Icode.
 
 %% TODO: annotate Icode leaf functions as such.
@@ -33,8 +33,6 @@
 -ifndef(NO_UNUSED).
 -export([function/3, function/4, module/1]).
 -endif.
-
--import(lists, [mapfoldl/3]).
 
 %% Added in an attempt to suppress message by Dialyzer, but I run into
 %% an internal compiler error in the old inliner and commented it out.
@@ -162,8 +160,8 @@ module_1(E, Options) ->
     end,
     S0 = init(M),
     S =  s__set_pmatch(proplists:get_value(pmatch, Options), S0),
-    {Icode, _} = mapfoldl(fun function_definition/2,
-			  S, cerl:module_defs(E)),
+    {Icode, _} = lists:mapfoldl(fun function_definition/2,
+				S, cerl:module_defs(E)),
     Icode.
 
 %% For now, we simply assume that all function bodies should have degree
@@ -388,11 +386,11 @@ expr_1(E, Ts, Ctxt, Env, S) ->
 
 expr_list(Es, Ctxt, Env, S) ->
     Ctxt1 = Ctxt#ctxt{effect = false, final = false},
-    mapfoldl(fun (E0, S0) ->
-		     V = make_var(),
-		     {V, expr(E0, [V], Ctxt1, Env, S0)}
-	     end,
-	     S, Es).
+    lists:mapfoldl(fun (E0, S0) ->
+			   V = make_var(),
+			   {V, expr(E0, [V], Ctxt1, Env, S0)}
+		   end,
+		   S, Es).
 
 %% This is for when we already have the target variables. It is expected
 %% that each expression in the list has degree one, so the result can be
@@ -564,21 +562,20 @@ expr_seq_1(E, F, Ctxt, Env, S) ->
 %% Binaries
 
 expr_binary(E, [V]=Ts, Ctxt, Env, S) ->
-    Offset=make_reg(),
-    Base=make_reg(),
+    Offset = make_reg(),
+    Base = make_reg(),
     Segs = cerl:binary_segments(E),
-    S1 =  case do_size_code(Segs, S, Env, Ctxt) of
-	      {const, S0, Size} ->
-		  add_code([icode_call_primop([V, Base, Offset], 
-					      {hipe_bs_primop, 
-					       {bs_init2, Size, 0}},
-					      [])], S0);
-	      {var, S0, SizeVar} ->
-		   add_code([icode_call_primop([V, Base, Offset], 
-					       {hipe_bs_primop, 
-						{bs_init2, 0}}, 
-					       [SizeVar])], S0)
-	  end,
+    S1 = case do_size_code(Segs, S, Env, Ctxt) of
+	     {const, S0, Size} ->
+		 Primop = {hipe_bs_primop, {bs_init2, Size, 0}},
+		 add_code([icode_call_primop([V, Base, Offset], Primop, [])],
+			  S0);
+	     {var, S0, SizeVar} ->
+		 Primop = {hipe_bs_primop, {bs_init2, 0}},
+		 add_code([icode_call_primop([V, Base, Offset],
+					     Primop, [SizeVar])],
+			  S0)
+	 end,
     Vars = make_vars(length(Segs)),
     S2 = binary_segments(Segs, Vars, Ctxt, Env, S1, 0, Base, Offset), 
     maybe_return(Ts, Ctxt, S2).
@@ -588,9 +585,9 @@ do_size_code(Segs, S, Env, Ctxt) ->
 	{[], [], Const, S1} ->
 	    {const, S1, (cerl:concrete(Const) + 7) div 8};
 	{Pairs, Bins, Const, S1} ->
-	    V1=make_var(),
-	    S2=add_code([icode_move(V1, icode_const(cerl:int_val(Const)))],S1),
-	    {S3, SizeVar}=create_size_code(Pairs, Bins, Ctxt, V1, S2),
+	    V1 = make_var(),
+	    S2 = add_code([icode_move(V1, icode_const(cerl:int_val(Const)))], S1),
+	    {S3, SizeVar} = create_size_code(Pairs, Bins, Ctxt, V1, S2),
 	    {var, S3, SizeVar}
     end.
 
@@ -615,42 +612,42 @@ add_val(NewVal, Const) ->
     cerl:c_int(NewVal + cerl:concrete(Const)).
 
 create_size_code([{UnitVal, Var}|Rest], Bins, Ctxt, Old, S0) ->
-    Dst=make_var(),
-    S=make_bs_add(UnitVal, Old, Var, Dst, Ctxt, S0),
+    Dst = make_var(),
+    S = make_bs_add(UnitVal, Old, Var, Dst, Ctxt, S0),
     create_size_code(Rest, Bins, Ctxt, Dst, S);
 create_size_code([], Bins, Ctxt, Old, S0) -> 
-    Dst=make_var(),
-    S=make_bs_bits_to_bytes(Old, Dst, Ctxt, S0),
+    Dst = make_var(),
+    S = make_bs_bits_to_bytes(Old, Dst, Ctxt, S0),
     create_size_code(Bins, Ctxt, Dst, S).
 
 create_size_code([{all,Bin}|Rest], Ctxt, Old, S0) ->
-    Dst=make_var(),
-    S=make_binary_size(Old, Bin, Dst, Ctxt, S0),
+    Dst = make_var(),
+    S = make_binary_size(Old, Bin, Dst, Ctxt, S0),
     create_size_code(Rest, Ctxt, Dst, S);
 create_size_code([], _Ctxt, Dst, S) ->
     {S, Dst}.
 
 make_bs_add(Unit, Old, Var, Dst, #ctxt{fail=FL, class=guard}, S0) ->
-    SL=new_label(),
-    add_code([icode_guardop([Dst], {hipe_bs_primop,{bs_add, Unit}}, [Old, Var]
-			    , SL, FL),
+    SL = new_label(),
+    Primop = {hipe_bs_primop, {bs_add, Unit}},
+    add_code([icode_guardop([Dst], Primop, [Old, Var], SL, FL),
 	      icode_label(SL)], S0);
 make_bs_add(Unit, Old, Var, Dst, _Ctxt, S0) ->
-     add_code([icode_call_primop([Dst], {hipe_bs_primop,{bs_add, Unit}}, 
-				 [Old, Var])], S0).
+    Primop = {hipe_bs_primop, {bs_add, Unit}},
+    add_code([icode_call_primop([Dst], Primop, [Old, Var])], S0).
 
 make_bs_bits_to_bytes(Old, Dst, #ctxt{fail=FL, class=guard}, S0) -> 
-    SL=new_label(),
-    add_code([icode_guardop([Dst], {hipe_bs_primop, bs_bits_to_bytes}, [Old], 
-			    SL, FL),
+    SL = new_label(),
+    Primop = {hipe_bs_primop, bs_bits_to_bytes},
+    add_code([icode_guardop([Dst], Primop, [Old], SL, FL),
 	      icode_label(SL)], S0);
 make_bs_bits_to_bytes(Old, Dst, _Ctxt, S0) ->
-    add_code([icode_call_primop([Dst], {hipe_bs_primop,bs_bits_to_bytes}, 
-				[Old])], S0).
+    Primop = {hipe_bs_primop, bs_bits_to_bytes},
+    add_code([icode_call_primop([Dst], Primop, [Old])], S0).
 
 make_binary_size(Old, Bin, Dst, #ctxt{fail=FL, class=guard}, S0) -> 
-    SL1=new_label(),
-    SL2=new_label(),
+    SL1 = new_label(),
+    SL2 = new_label(),
     add_code([icode_guardop([Dst], {erlang, size, 1}, [Bin], SL1, FL),
 	      icode_label(SL1),
 	      icode_guardop([Dst], '+', [Old, Dst], SL2, FL),
@@ -665,8 +662,7 @@ binary_segments(SegList, TList, Ctxt=#ctxt{}, Env, S, Align, Base,
 	{[Seg|Rest], [T|Ts], S1} ->
 	    {S2, NewAlign} = bitstr(Seg, [T], Ctxt, Env, S1, Align,
 				    Base, Offset),
-	    binary_segments(Rest, Ts, Ctxt, Env, S2, NewAlign, Base,
-			    Offset);
+	    binary_segments(Rest, Ts, Ctxt, Env, S2, NewAlign, Base, Offset);
 	{[], [], S1} ->
 	    S1
     end.
@@ -676,13 +672,13 @@ do_const_segs(SegList, TList, S, Align, Base, Offset) ->
 	{[], SegList, TList} ->
 	    {SegList, TList, S};
 	{ConstSegs, RestSegs, RestT} ->
-	    String=create_string(ConstSegs, <<>>, 0),
-	    Flags=translate_flags1([], Align),
+	    String = create_string(ConstSegs, <<>>, 0),
+	    Flags = translate_flags1([], Align),
 	    Name = {bs_put_string, String, length(String), Flags},
-	    {RestSegs, RestT, add_code([icode_call_primop(
-					  [Offset], 
-					  {hipe_bs_primop, Name},
-					  [Base, Offset])], S)}
+	    Primop = {hipe_bs_primop, Name},
+	    {RestSegs, RestT,
+	     add_code([icode_call_primop([Offset], Primop, [Base, Offset])],
+		      S)}
     end.
 	     
 get_segs([Seg|Rest], [_|RestT], Acc, AccSize, BestPresent) ->
@@ -693,7 +689,7 @@ get_segs([Seg|Rest], [_|RestT], Acc, AccSize, BestPresent) ->
 	{true, NewAccSize} ->
 	    case Acc of
 		[] ->
-		     get_segs(Rest, RestT, [Seg|Acc], NewAccSize, BestPresent);
+		    get_segs(Rest, RestT, [Seg|Acc], NewAccSize, BestPresent);
 		_ ->
 		    get_segs(Rest, RestT, [Seg|Acc], NewAccSize, 
 			     {lists:reverse([Seg|Acc]), Rest, RestT})
@@ -716,36 +712,32 @@ create_string([Seg|Rest], Bin, TotalSize) ->
     FlagVal = translate_flags(LiteralFlags, []),
     NewTotalSize = NewSize + TotalSize,
     Pad = (8 - NewTotalSize rem 8) rem 8,
-    case cerl:concrete(cerl:bitstr_type(Seg)) of
-	integer ->
-	    case {FlagVal band 2, FlagVal band 4} of
-		{2, 4} ->
-		    NewBin = <<Bin:TotalSize/binary-unit:1, 
-			      LitVal:NewSize/integer-little-signed, 0:Pad>>,
-		    NewBin;
-		{0, 4} ->
-		    NewBin = <<Bin:TotalSize/binary-unit:1, 
-			      LitVal:NewSize/integer-signed, 0:Pad>>,
-		    NewBin;
-		{2, 0} ->
-		    NewBin = <<Bin:TotalSize/binary-unit:1, 
-			      LitVal:NewSize/integer-little, 0:Pad>>,
-		    NewBin;
-		{0, 0} ->
-		    NewBin = <<Bin:TotalSize/binary-unit:1, 
-			      LitVal:NewSize/integer, 0:Pad>>,
-		    NewBin
-	    end;
-	float ->
-	    case FlagVal band 2 of
-		2 ->
-		    NewBin = <<Bin:TotalSize/binary-unit:1, LitVal:NewSize/float-little, 0:Pad>>,
-		    NewBin;
-		0 ->
-		    NewBin = <<Bin:TotalSize/binary-unit:1, LitVal:NewSize/float, 0:Pad>>,
-		    NewBin
-	    end
-    end,
+    NewBin = case cerl:concrete(cerl:bitstr_type(Seg)) of
+		 integer ->
+		     case {FlagVal band 2, FlagVal band 4} of
+			 {2, 4} ->
+			     <<Bin:TotalSize/binary-unit:1, 
+			      LitVal:NewSize/integer-little-signed, 0:Pad>>;
+			 {0, 4} ->
+			     <<Bin:TotalSize/binary-unit:1, 
+			      LitVal:NewSize/integer-signed, 0:Pad>>;
+			 {2, 0} ->
+			     <<Bin:TotalSize/binary-unit:1, 
+			      LitVal:NewSize/integer-little, 0:Pad>>;
+			 {0, 0} ->
+			     <<Bin:TotalSize/binary-unit:1, 
+			      LitVal:NewSize/integer, 0:Pad>>
+		     end;
+		 float ->
+		     case FlagVal band 2 of
+			 2 ->
+			     <<Bin:TotalSize/binary-unit:1,
+			      LitVal:NewSize/float-little, 0:Pad>>;
+			 0 ->
+			     <<Bin:TotalSize/binary-unit:1,
+			      LitVal:NewSize/float, 0:Pad>>
+		     end
+	     end,
     create_string(Rest, NewBin, NewTotalSize);
 
 create_string([], Bin, _Size) ->
@@ -792,12 +784,15 @@ bitstr_gen_op([V], #ctxt{fail=FL, class=guard}, SizeInfo, ConstInfo,
 		    binary ->
 			{bs_put_binary, NewUnit, Flags}
 		end,
-	    {add_code([icode_guardop([Offset], {hipe_bs_primop, Name} ,Args, SL, FL),
+	    Primop = {hipe_bs_primop, Name},
+	    {add_code([icode_guardop([Offset], Primop, Args, SL, FL),
 		       icode_label(SL)], S1), NewAlign};
 	{all, NewAlign, S1} ->
 	    Type = binary,
 	    Name = {bs_put_binary_all, Flags},
-	    {add_code([icode_guardop([Offset], {hipe_bs_primop, Name}, [V, Base, Offset], SL, FL),
+	    Primop = {hipe_bs_primop, Name},
+	    {add_code([icode_guardop([Offset], Primop,
+				     [V, Base, Offset], SL, FL),
 		       icode_label(SL)], S1), NewAlign}
     end;
 
@@ -815,12 +810,14 @@ bitstr_gen_op([V], _Ctxt, SizeInfo, ConstInfo, Type, Flags, Base,
 		    binary ->
 			{bs_put_binary, NewUnit, Flags}
 		end,
-	    {add_code([icode_call_primop([Offset], {hipe_bs_primop, Name} ,Args)], S), 
+	    Primop = {hipe_bs_primop, Name},
+	    {add_code([icode_call_primop([Offset], Primop, Args)], S), 
 	     NewAlign};
 	{all, NewAlign, S} ->
 	    Type = binary,
 	    Name = {bs_put_binary_all, Flags},
-	    {add_code([icode_call_primop([Offset], {hipe_bs_primop, Name}, 
+	    Primop = {hipe_bs_primop, Name},
+	    {add_code([icode_call_primop([Offset], Primop, 
 					 [V, Base, Offset])], S), 
 	     NewAlign}
     end.
@@ -1206,8 +1203,8 @@ expr_receive_1(E, F, Ctxt, Env, S) ->
 %% until a message has arrived and does not check for timeout. The test
 %% `suspend_msg_timeout' suspends the process and upon resuming
 %% execution selects the `true' branch if a message has arrived and the
-%% `false' branch otherwise. `clear_timeout'
-%% resets the message pointer when a timeout has occurred.
+%% `false' branch otherwise. `clear_timeout' resets the message pointer
+%% when a timeout has occurred (the name is somewhat misleading).
 %%
 %% Note: the receiving of a message must be performed so that the
 %% message pointer is always reset when the receive is done; thus, all
@@ -1250,7 +1247,7 @@ expr_receive_2(C, E, F, Ctxt, Env, S0) ->
     T = make_var(),    % T will hold the timeout value
     %% It would be harmless to generate code for `infinity', but we
     %% might as well avoid it if we can.
-    S1 = if After == 'infinity' -> S0;
+    S1 = if After =:= 'infinity' -> S0;
 	    true ->
 		 expr(Expiry, [T],
 		      Ctxt#ctxt{final = false, effect = false},
@@ -1302,7 +1299,7 @@ expr_receive_2(C, E, F, Ctxt, Env, S0) ->
     %% single constant value such as 'true', while the clauses may be
     %% producing 2 or more values.)
     Next = new_continuation_label(Ctxt),
-    S4 = if After == 'infinity' -> S3;
+    S4 = if After =:= 'infinity' -> S3;
 	    true ->
 		 add_continuation_jump(Next, Ctxt,
 				       F(cerl:receive_action(E), Ctxt,
@@ -1391,8 +1388,7 @@ expr_case_2(Vs, Cs, F, Ctxt, Env, S1) ->
 		false ->
 		    case is_binary_switch(Cs, S1) of
 			true ->
-			    switch_binary_clauses(Cs, F, Vs, Ctxt, Env,
-						  S1);
+			    switch_binary_clauses(Cs, F, Vs, Ctxt, Env, S1);
 			false ->
 			    clauses(Cs, F, Vs, Ctxt, Env, S1)
 		    end
@@ -1404,7 +1400,7 @@ expr_case_2(Vs, Cs, F, Ctxt, Env, S1) ->
 %% elements are all variables)
 
 is_constant_switch(Cs) ->
-    is_switch(Cs, fun (P) -> (cerl:type(P) == literal) andalso
+    is_switch(Cs, fun (P) -> (cerl:type(P) =:= literal) andalso
 				 is_constant(cerl:concrete(P)) end).
 
 is_tuple_switch(Cs) ->
@@ -1413,9 +1409,9 @@ is_tuple_switch(Cs) ->
 
 is_binary_switch(Cs, S) ->
     case s__get_pmatch(S) of
-	False when False == false; False == undefined ->
+	False when False =:= false; False =:= undefined ->
 	    false;
-	Other when Other == duplicate_all; Other == no_duplicates; Other == true->
+	Other when Other =:= duplicate_all; Other =:= no_duplicates; Other =:= true->
 	    is_binary_switch1(Cs, 0)
     end.
 
@@ -1426,9 +1422,9 @@ is_binary_switch1([C|Cs], N) ->
 		true ->
 		    is_binary_switch1(Cs, N + 1);
 		false -> 
-		    if Cs == [], N > 0 ->
+		    if Cs =:= [], N > 0 ->
 			    %% The final clause may be a catch-all.
-			    cerl:type(P) == var;
+			    cerl:type(P) =:= var;
 		       true ->
 			    false
 		    end
@@ -1457,9 +1453,9 @@ is_switch([C | Cs], F, N) ->
 		true ->
 		    is_switch(Cs, F, N + 1);
 		false ->
-		    if Cs == [], N > 1 ->
+		    if Cs =:= [], N > 1 ->
 			    %% The final clause may be a catch-all.
-			    cerl:type(P) == var;
+			    cerl:type(P) =:= var;
 		       true ->
 			    false
 		    end
@@ -1538,7 +1534,7 @@ get_binary_clauses(Cs) ->
     get_binary_clauses(Cs, []).
 
 get_binary_clauses([C|Cs], Acc) ->
-    [P]=cerl:clause_pats(C),
+    [P] = cerl:clause_pats(C),
     case cerl:is_c_binary(P) of 
 	true ->
 	    get_binary_clauses(Cs, [C|Acc]);
@@ -1548,8 +1544,7 @@ get_binary_clauses([C|Cs], Acc) ->
 get_binary_clauses([], Acc) ->
     {lists:reverse(Acc),[]}.
 
-switch_cases([{N, L, C} | Cs], V, F, Next, Fail, Ctxt, Env, Body,
-	     S0) ->
+switch_cases([{N, L, C} | Cs], V, F, Next, Fail, Ctxt, Env, Body, S0) ->
     S1 = add_code([icode_label(L)], S0),
     S2 = Body(icode_const_val(N), V, C, F, Next, Fail, Ctxt, Env, S1),
     switch_cases(Cs, V, F, Next, Fail, Ctxt, Env, Body, S2);
@@ -1579,7 +1574,7 @@ clauses_1([C | Cs], F, Vs, Fail, Next, Ctxt, Env, S) ->
 	    clauses_1(Cs, F, Vs, Fail1, Next, Ctxt, Env, S2)
     end;
 clauses_1([], _F, _Vs, Fail, _Next, Ctxt, _Env, S) ->
-    if Fail == undefined ->
+    if Fail =:= undefined ->
 	    L = new_label(),
 	    add_default_case(L, Ctxt, S);
        true ->
@@ -1687,7 +1682,7 @@ literal_pattern_1(P, V, Fail, Next, S) ->
 	    %% equality test.
 	    V1 = make_var(),
 	    add_code([icode_move(V1, icode_const(X)),
-		      make_if(?TEST_EQ, [V, V1], Next, Fail)],
+		      make_if(?TEST_EXACT_EQ, [V, V1], Next, Fail)],
 		     S)
     end.
 
@@ -1729,12 +1724,14 @@ binary_pattern(P, V, Fail, Env, S) ->
     Segs = cerl:binary_segments(P),
     Arity = length(Segs),
     Vars = make_vars(Arity),
-    S1 = add_code([icode_guardop([], {hipe_bs_primop, bs_start_match}, [V], L1, Fail),
+    Primop1 = {hipe_bs_primop, bs_start_match},
+    S1 = add_code([icode_guardop([], Primop1, [V], L1, Fail),
 		   icode_label(L1)],S),
     {Env1,S2} = bin_seg_patterns(Segs, Vars, Fail, Env, S1, 0),
     L2 = new_label(),
-    {Env1,add_code([icode_guardop([], {hipe_bs_primop, {bs_test_tail,0}}, [], L2, Fail),
-		    icode_label(L2)], S2)}.
+    Primop2 = {hipe_bs_primop, {bs_test_tail, 0}},
+    {Env1, add_code([icode_guardop([], Primop2, [], L2, Fail),
+		     icode_label(L2)], S2)}.
 
 bin_seg_patterns([Seg|Rest], [T|Ts], Fail, Env, S, Align) ->
     {{NewEnv, S1}, NewAlign} = bin_seg_pattern(Seg, T, Fail, Env, S, Align),
@@ -1750,7 +1747,7 @@ bin_seg_pattern(P, V, Fail, Env, S, Align) ->
     Type = cerl:concrete(cerl:bitstr_type(P)),
     LiteralFlags = cerl:bitstr_flags(P),
     T = cerl:bitstr_val(P), 
-    Flags=translate_flags(LiteralFlags, Align),
+    Flags = translate_flags(LiteralFlags, Align),
     case calculate_size(Unit, Size, Align, Env, S) of
 	{NewUnit, Args, S0, NewAlign} ->
 	    Name =
@@ -1762,14 +1759,16 @@ bin_seg_pattern(P, V, Fail, Env, S, Align) ->
 		    binary ->
 			{bs_get_binary, NewUnit, Flags}
 		end,
-	    S1= add_code([icode_guardop([V],{hipe_bs_primop, Name}, Args, L, Fail),
-			  icode_label(L)], S0),
+	    Primop = {hipe_bs_primop, Name},
+	    S1 = add_code([icode_guardop([V], Primop, Args, L, Fail),
+			   icode_label(L)], S0),
 	    {pattern(T, V, Fail, Env, S1), NewAlign};
 	{all, NewAlign, S0} ->
 	    Type = binary,
 	    Name = {bs_get_binary_all, Flags},
-	    S1= add_code([icode_guardop([V], {hipe_bs_primop, Name}, [], L, Fail),
-			  icode_label(L)], S0),
+	    Primop = {hipe_bs_primop, Name},
+	    S1 = add_code([icode_guardop([V], Primop, [], L, Fail),
+			   icode_label(L)], S0),
 	    {pattern(T, V, Fail, Env, S1), NewAlign}
     end.
 
@@ -2062,7 +2061,7 @@ comp_test(?PRIMOP_LE) -> ?TEST_LE;
 comp_test(?PRIMOP_GE) -> ?TEST_GE.
 
 type_test(?PRIMOP_IS_RECORD, As, True, False, Ctxt, Env, S)
-  when length(As) == 3 ->
+  when length(As) =:= 3 ->
     is_record_test(As, True, False, Ctxt, Env, S);
 type_test(Name, [A], True, False, Ctxt, Env, S) ->
     V = make_var(),
@@ -2080,7 +2079,7 @@ is_record_test([T, A, N] = As, True, False, Ctxt, Env, S) ->
 	    S1 = expr(T, [V], Ctxt1, Env, S),
 	    Atom = cerl:concrete(A),
 	    Size = cerl:concrete(N),
-	    add_code([make_type([V], ?TYPE_IS_RECORD(Atom, Size),True, False)],
+	    add_code([make_type([V], ?TYPE_IS_RECORD(Atom, Size), True, False)],
 		     S1);
 	false ->
 	    error_primop_badargs(?PRIMOP_IS_RECORD, As),
@@ -2110,13 +2109,13 @@ is_comp_op(?PRIMOP_LT, 2) -> true;
 is_comp_op(?PRIMOP_GT, 2) -> true;
 is_comp_op(?PRIMOP_LE, 2) -> true;
 is_comp_op(?PRIMOP_GE, 2) -> true;
-is_comp_op(_, _) -> false.
+is_comp_op(Op, A) when is_atom(Op), is_integer(A) -> false.
 
 is_bool_op(?PRIMOP_AND, 2) -> true;
 is_bool_op(?PRIMOP_OR, 2) -> true;
 is_bool_op(?PRIMOP_XOR, 2) -> true;
 is_bool_op(?PRIMOP_NOT, 1) -> true;
-is_bool_op(_, _) -> false.
+is_bool_op(Op, A) when is_atom(Op), is_integer(A) -> false.
 
 is_type_test(?PRIMOP_IS_ATOM, 1) -> true;
 is_type_test(?PRIMOP_IS_BIGNUM, 1) -> true;
@@ -2133,7 +2132,7 @@ is_type_test(?PRIMOP_IS_PORT, 1) -> true;
 is_type_test(?PRIMOP_IS_REFERENCE, 1) -> true;
 is_type_test(?PRIMOP_IS_TUPLE, 1) -> true;
 is_type_test(?PRIMOP_IS_RECORD, 3) -> true;
-is_type_test(_, _) -> false.
+is_type_test(Op, A) when is_atom(Op), is_integer(A) -> false.
 
 
 %% ---------------------------------------------------------------------
@@ -2388,8 +2387,7 @@ is_pure_op(N, A) ->
 	false ->
 	    case is_comp_op(N, A) of
 		true -> true;
-		false ->
-		    is_type_test(N, A)
+		false -> is_type_test(N, A)
 	    end
     end.
 
@@ -2419,7 +2417,6 @@ translate_flags1([], Align) ->
 	_ ->
 	    0
     end.
-
 
 get_const_info(Val, integer) ->
     case {cerl:is_c_var(Val), cerl:is_c_int(Val)} of
@@ -2611,7 +2608,7 @@ get_typesig(E) ->
 	false -> erl_types:t_any()
     end.
 
-get_type(List) when is_list(List)->
+get_type(List) when is_list(List) ->
     get_type_list(List, []);
 get_type(E) ->
     case lists:keysearch(type, 1, cerl:get_ann(E)) of
@@ -2709,7 +2706,8 @@ icode_switch_val(Arg, Fail, Length, Cases) ->
     hipe_icode:mk_switch_val(Arg, Fail, Length, Cases).
 
 icode_switch_tuple_arity(Arg, Fail, Length, Cases) ->
-    hipe_icode:mk_switch_tuple_arity(Arg, Fail, Length, Cases).
+    SortedCases = lists:keysort(1, Cases), %% immitate BEAM compiler - Kostis
+    hipe_icode:mk_switch_tuple_arity(Arg, Fail, Length, SortedCases).
 
 
 %% ---------------------------------------------------------------------
@@ -2775,7 +2773,7 @@ binary_match(BMatch, F, Vs, Next, Fail, Ctxt, Env, S) ->
     MState=#mstate{},
     Tree = cerl_binary_pattern_match:binary_match_clause_tree(BMatch),
     MTag = cerl_binary_pattern_match:binary_match_max_tag(BMatch),
-    VarList=make_vars(MTag),
+    VarList = make_vars(MTag),
     Orig = make_var(), 
     OrigOffset = make_var(),
     Size = make_var(),
@@ -2843,19 +2841,19 @@ do_match(Instr, NextTree, FailTree, VarList, F, State, Next, Fail, MState, Ctxt,
     clause_tree(FailTree, VarList, F, State, Next, Fail, MState1, Ctxt, Env, S4).
 
 do_match_group(Instr, NextTree, FailTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S) ->
-    ValList=cerl_binary_pattern_match:match_group_vals(Instr),
-    Tag=cerl_binary_pattern_match:match_group_tag(Instr),
+    ValList = cerl_binary_pattern_match:match_group_vals(Instr),
+    Tag = cerl_binary_pattern_match:match_group_tag(Instr),
     FL = new_label(),
-    FullCases=[{Val,{translate_value(Val),new_label()}}||Val<-ValList, is_ok_val(Val)],
-    Length=length(FullCases),
-    Cases=[Case||{_, Case} <- FullCases],
+    FullCases = [{Val,{translate_value(Val),new_label()}} || Val<-ValList, is_ok_val(Val)],
+    Length = length(FullCases),
+    Cases = [Case || {_, Case} <- FullCases],
     ResVar = get_resvar(Tag, VarList),
     S1 = add_code([icode_switch_val(ResVar,FL,Length,Cases)], S), 
     do_cases(FullCases, NextTree, FailTree, FL, VarList, F, State, Next, Fail, MState, Ctxt, Env, S1).
 
 do_cases([{Value,{_, Label}}|Rest], NextTree, FailTree, FL, VarList, F, State, 
 	 Next, Fail, MState, Ctxt, Env, S) -> 
-    {value, ClauseTree}=gb_trees:lookup(Value, NextTree),
+    {value, ClauseTree} = gb_trees:lookup(Value, NextTree),
     S1 = add_code([icode_label(Label)], S),
     {S2, MState1} = clause_tree(ClauseTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S1),
     do_cases(Rest, NextTree, FailTree, FL, VarList, F, State, Next, Fail, MState1, Ctxt, Env, S2); 
@@ -2864,14 +2862,14 @@ do_cases([], _NextTree, FailTree, FL, VarList, F, State, Next, Fail, MState, Ctx
     clause_tree(FailTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S1).
 
 do_label(Instr, NextTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S) ->
-    LabelAlias=cerl_binary_pattern_match:label_name(Instr),
-    {Label, MState1}=get_correct_label(LabelAlias, MState),
+    LabelAlias = cerl_binary_pattern_match:label_name(Instr),
+    {Label, MState1} = get_correct_label(LabelAlias, MState),
     S1 = add_code([icode_goto(Label),icode_label(Label)], S),
     clause_tree(NextTree, VarList, F, State, Next, Fail, MState1, Ctxt, Env, S1).
 
 do_goto(Instr, MState, S) ->    
-    LabelAlias=cerl_binary_pattern_match:goto_label(Instr),
-    {Label, MState1}=get_correct_label(LabelAlias, MState),
+    LabelAlias = cerl_binary_pattern_match:goto_label(Instr),
+    {Label, MState1} = get_correct_label(LabelAlias, MState),
     S1 = add_code([icode_goto(Label)], S),
     {S1, MState1}.
 
@@ -2882,7 +2880,7 @@ translate_binseg(Instr, VarList, State, Env, S) ->
     V = cerl_binary_pattern_match:read_seg_tag(Instr),
     ResVar = get_resvar(V, VarList),
     Align = test_align(Offset),
-    Flags=translate_flags(LiteralFlags, Align),
+    Flags = translate_flags(LiteralFlags, Align),
     Type = cerl:atom_val(LiteralType),
     OffsetVar = make_var(),
     OffsetConst = cerl_binary_pattern_match:size_const(Offset),
@@ -2905,9 +2903,7 @@ translate_value(Val) ->
 
 is_ok_val(Val) ->
     case cerl:concrete(Val) of
-	X when is_integer(X) ->
-	    true;
-	X when is_float(X) ->
+	X when is_number(X) -> % is_integer(X) or is_number(X)
 	    true;
 	_ ->
 	    false
@@ -2919,12 +2915,11 @@ translate_match(Instr, VarList, SL, FL, S) ->
     ResVar = get_resvar(V, VarList),
     case cerl:concrete(Val) of
 	X when is_integer(X) ->
-	    add_code([make_type([ResVar], ?TYPE_INTEGER(X), SL, FL)],
-		     S);
+	    add_code([make_type([ResVar], ?TYPE_INTEGER(X), SL, FL)], S);
 	X when is_float(X) ->
 	    V1 = make_var(),
 	    L = new_label(),
-	    %% First doing an "is float" test here might allow later
+	    %% First doing an "is_float" test here might allow later
 	    %% stages to use a specialized equality test.
 	    add_code([make_type([ResVar], ?TYPE_IS_FLOAT, L, FL),
 		      icode_label(L),
@@ -2932,24 +2927,24 @@ translate_match(Instr, VarList, SL, FL, S) ->
 		      make_if(?TEST_EQ, [ResVar, V1], SL, FL)],
 		     S);
 	_X ->
-	    %%If the constant is not a float nor an integer
-	    %%The match can not succeed
+	    %% If the constant is not a float nor an integer
+	    %% The match can not succeed
 	    add_code([icode_goto(FL)], S)
     end.
 
 translate_size_expr(Instr, {_,_,BinSize}, VarList, SL, FL, Env, S) ->
     SizeVar = make_var(),
     All = cerl_binary_pattern_match:size_all(Instr),
-    S1=add_size_exp_code(Instr, SizeVar, VarList, FL, Env, S),
-    S2=test_eight_div(SizeVar, FL, S1),
+    S1 = add_size_exp_code(Instr, SizeVar, VarList, FL, Env, S),
+    S2 = test_eight_div(SizeVar, FL, S1),
     test_size(SizeVar, BinSize, All, SL, FL, S2).
 
 add_final_code(integer, ResVar, SizeExpr, OffsetVar, OffsetConst,
 	       {Orig, OrigOffset, _}, Flags, S) ->
-    Offset=cerl:int_val(OffsetConst),
+    Offset = cerl:int_val(OffsetConst),
     case cerl:is_c_int(SizeExpr) of
 	true ->
-	    Size=cerl:int_val(SizeExpr),
+	    Size = cerl:int_val(SizeExpr),
 	    add_code([icode_call_primop([ResVar], {hipe_bsi_primop, {bs_get_integer, Size, Offset, Flags}}, 
 					[OffsetVar, Orig, OrigOffset])], S);
 	false ->
@@ -2959,10 +2954,10 @@ add_final_code(integer, ResVar, SizeExpr, OffsetVar, OffsetConst,
 
 add_final_code(float, ResVar, SizeExpr, OffsetVar, OffsetConst,
 	       {Orig, OrigOffset, _}, Flags, S) ->
-    Offset=cerl:int_val(OffsetConst),
+    Offset = cerl:int_val(OffsetConst),
     case cerl:is_c_int(SizeExpr) of
 	true ->
-	    Size=cerl:int_val(SizeExpr),
+	    Size = cerl:int_val(SizeExpr),
 	    add_code([icode_call_primop([ResVar], {hipe_bsi_primop, {bs_get_float, Size, Offset, Flags}}, 
 					[OffsetVar, Orig, OrigOffset])], S);
 	false ->
@@ -2972,10 +2967,10 @@ add_final_code(float, ResVar, SizeExpr, OffsetVar, OffsetConst,
 
 add_final_code(binary, ResVar, SizeExpr, OffsetVar, OffsetConst,
 	       {Orig, OrigOffset, BinSize}, Flags, S) ->
-    Offset=cerl:int_val(OffsetConst),
+    Offset = cerl:int_val(OffsetConst),
     case type_of_size(SizeExpr) of
 	const ->
-	    Size=cerl:int_val(SizeExpr),
+	    Size = cerl:int_val(SizeExpr),
 	    add_code([icode_call_primop([ResVar], {hipe_bsi_primop, {bs_get_binary, Size, Offset, Flags}}, 
 					[OffsetVar, Orig, OrigOffset])], S);
 	all ->
@@ -2992,7 +2987,7 @@ type_of_size(Size) ->
 	true ->
 	    const;
 	false ->
-	    {SizeExpr, _Unit}=Size,
+	    {SizeExpr, _Unit} = Size,
 	    case cerl:is_c_atom(SizeExpr) of
 		true ->
 		    all;
@@ -3004,89 +2999,95 @@ type_of_size(Size) ->
 add_size_code({{tag,Tag}, Unit}, SizeVar, VarList, _Env, S) ->
     UnitVal = cerl:int_val(Unit),
     NewSize = get_resvar(Tag, VarList),
-    add_code([icode_call_primop([SizeVar], {hipe_bsi_primop, {bs_make_size, UnitVal}}, 
+    add_code([icode_call_primop([SizeVar],
+				{hipe_bsi_primop, {bs_make_size, UnitVal}}, 
 				[NewSize])], S);
 add_size_code({Size, Unit}, SizeVar, _VarList, Env, S) ->
     NewSize = make_var(),
     UnitVal = cerl:int_val(Unit),
     S1 = expr(Size, [NewSize], #ctxt{final=false}, Env, S), 
-    add_code([icode_call_primop([SizeVar], {hipe_bsi_primop, {bs_make_size, UnitVal}}, 
+    add_code([icode_call_primop([SizeVar],
+				{hipe_bsi_primop, {bs_make_size, UnitVal}}, 
 				[NewSize])], S1).
 add_offset_code([{{tag,Tag}, Unit}|Rest], OffsetVar, VarList, Env, S) ->
-    Temp=make_var(),
+    Temp = make_var(),
     NewSize = get_resvar(Tag, VarList),
     UnitVal = cerl:int_val(Unit), 
-    Code = [icode_call_primop([Temp], {hipe_bsi_primop, {bs_make_size, UnitVal}}, 
+    Code = [icode_call_primop([Temp],
+			      {hipe_bsi_primop, {bs_make_size, UnitVal}}, 
 			      [NewSize]),
 	    icode_call_primop([OffsetVar], '+', [OffsetVar, Temp])],
     add_offset_code(Rest, OffsetVar, VarList, Env, add_code(Code, S));
-
 add_offset_code([{Size, Unit}|Rest], OffsetVar, VarList, Env, S) ->
-    Temp=make_var(),
+    Temp = make_var(),
     NewSize = make_var(),
     UnitVal = cerl:int_val(Unit),
     S1 = expr(Size, [NewSize], #ctxt{final=false}, Env, S), 
-    Code = [icode_call_primop([Temp], {hipe_bsi_primop, {bs_make_size, UnitVal}}, 
+    Code = [icode_call_primop([Temp],
+			      {hipe_bsi_primop, {bs_make_size, UnitVal}}, 
 			      [NewSize]),
-	    icode_call_primop([OffsetVar], {hipe_bsi_primop, bs_add},[OffsetVar, Temp])],
+	    icode_call_primop([OffsetVar], {hipe_bsi_primop, bs_add},
+			      [OffsetVar, Temp])],
     add_offset_code(Rest, OffsetVar, VarList, Env, add_code(Code, S1));
 add_offset_code([], _OffsetVar, _VarList, _Env, S) ->
     S;
 add_offset_code(Size, OffsetVar, VarList, Env, S) ->
-  Vars = cerl_binary_pattern_match:size_vars(Size),
-  DefVars = cerl_binary_pattern_match:size_def_vars(Size),
+    Vars = cerl_binary_pattern_match:size_vars(Size),
+    DefVars = cerl_binary_pattern_match:size_def_vars(Size),
     Code = [icode_move(OffsetVar, icode_const(0))],
     add_offset_code(DefVars++Vars, OffsetVar, VarList, Env, add_code(Code, S)).
 
 add_size_exp_code(Size, SizeVar, VarList, FL, Env, S) ->
     Vars = cerl_binary_pattern_match:size_vars(Size),
     DefVars = cerl_binary_pattern_match:size_def_vars(Size),
-  Const = cerl_binary_pattern_match:size_const(Size),
+    Const = cerl_binary_pattern_match:size_const(Size),
     Code = [icode_move(SizeVar, icode_const(0))],
     add_size_exp_code(DefVars++Vars, Const, SizeVar, VarList, FL, Env, add_code(Code, S)).
 
 add_size_exp_code([{{tag, Tag}, Unit}|Rest], Const, SizeVar, VarList, FL, Env, S) ->
-    Temp=make_var(),
+    Temp = make_var(),
     NewSize = get_resvar(Tag, VarList),
-    TL=new_label(),
+    TL = new_label(),
     UnitVal = cerl:int_val(Unit),
     Code = [icode_guardop([Temp], {hipe_bsi_primop, {bs_make_size, UnitVal}}, 
 			  [NewSize],TL,FL),
 	    icode_label(TL),
 	    icode_call_primop([SizeVar], '+',[SizeVar, Temp])],
     add_size_exp_code(Rest, Const, SizeVar, VarList, FL, Env, add_code(Code, S));
-
-
 add_size_exp_code([{Size, Unit}|Rest], Const, SizeVar, VarList, FL, Env, S) ->
-    Temp=make_var(),
-    TL=new_label(),
+    Temp = make_var(),
+    TL = new_label(),
     NewSize = make_var(),
     UnitVal = cerl:int_val(Unit),
     S1 = expr(Size, [NewSize], #ctxt{final=false}, Env, S),
     Code = [icode_guardop([Temp], {hipe_bsi_primop, {bs_make_size, UnitVal}}, 
 			  [NewSize],TL,FL),
 	    icode_label(TL),
-	    icode_call_primop([SizeVar], {hipe_bsi_primop, bs_add},[SizeVar, Temp])],
+	    icode_call_primop([SizeVar], {hipe_bsi_primop, bs_add},
+			      [SizeVar, Temp])],
     add_size_exp_code(Rest, Const, SizeVar, VarList, FL, Env, add_code(Code, S1));
-
 add_size_exp_code([], Const, SizeVar, _VarList, _FL, _Env, S) ->
-    CC=icode_const(cerl:int_val(Const)),
-    Temp=make_var(),
-    Code=[icode_move(Temp, CC),
-	  icode_call_primop([SizeVar], {hipe_bsi_primop, bs_add},[SizeVar, Temp])],
+    CC = icode_const(cerl:int_val(Const)),
+    Temp = make_var(),
+    Code = [icode_move(Temp, CC),
+	    icode_call_primop([SizeVar], {hipe_bsi_primop, bs_add},
+			      [SizeVar, Temp])],
     add_code(Code, S).
 
 test_eight_div(SizeVar, FL, S) ->
-    TL=new_label(),
-    add_code([icode_guardop([], {hipe_bsi_primop, bs_div_test},[SizeVar],TL,FL),
+    TL = new_label(),
+    add_code([icode_guardop([], {hipe_bsi_primop, bs_div_test},
+			    [SizeVar], TL, FL),
 	      icode_label(TL)], S).
 
 test_size(SizeVar, BinSize, All, SL, FL, S) ->
     case cerl:atom_val(All) of
 	all ->
-	    add_code([icode_guardop([], {hipe_bsi_primop, bs_size_test_all},[SizeVar, BinSize],SL,FL)], S);
+	    add_code([icode_guardop([], {hipe_bsi_primop, bs_size_test_all},
+				    [SizeVar, BinSize], SL, FL)], S);
 	_ ->
-	    add_code([icode_guardop([], {hipe_bsi_primop, bs_size_test},[SizeVar, BinSize],SL,FL)], S)
+	    add_code([icode_guardop([], {hipe_bsi_primop, bs_size_test},
+				    [SizeVar, BinSize], SL, FL)], S)
     end.
 
 test_align([{_Size, Unit}|Rest]) ->
@@ -3107,15 +3108,14 @@ get_resvar(N, VarList) ->
 
 translate_bin_guard(BinGuard, VarList, Env, S) ->
     Matches = cerl_binary_pattern_match:bin_guard_matches(BinGuard),
-    Env1=bind_matches(Matches, VarList, Env),
+    Env1 = bind_matches(Matches, VarList, Env),
     {Env1,S}.
 
 bind_matches([Match|Rest], VarList, Env) ->      
     Tag = cerl_binary_pattern_match:match_tag(Match),
     Val = cerl_binary_pattern_match:match_val(Match),
-    T=get_resvar(Tag, VarList),
+    T = get_resvar(Tag, VarList),
     bind_matches(Rest, VarList, bind_var(Val, T, Env));
-
 bind_matches([], _VarList, Env) ->
     Env. 
 

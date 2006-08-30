@@ -41,8 +41,33 @@
 	 action_first_encode_decode/5,
 	
 	 encode_message/4,
-	 decode_message/5
+	 decode_message/5,
+
+	 expect_instruction/3,
+	 expect_encode/3, 
+	 expect_encode_only/3, 
+	 expect_encode_decode/4,
+	 expect_encode_decode_only/4,
+	 expect_decode/3, 
+	 expect_decode_only/3, 
+	 expect_decode_encode/4,
+	 expect_decode_encode_only/4,
+	 expect_exec/2
 	]).
+
+
+-record(expect_instruction, 
+	{
+	  %% Short description of what this instruction does 
+	  description, % string()
+	  
+	  %% The actual instruction
+	  command,     % function(Data) -> term()
+
+	  %% Verification function of the instruction
+	  verify       % function(Res, Data) -> {ok, NewData} | {error, Reason}
+	  }
+	).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -374,11 +399,568 @@ decode_message(Codec, true, _Ver, EC, M) ->
     Codec:decode_message(EC, dynamic, M);
 decode_message(Codec, _, Ver, EC, M) ->
     d("decode_message -> entry with"
-      "~n   Ver: ~p", [Ver]),
+      "~n   Codec: ~p"
+      "~n   Ver:   ~p"
+      "~n   EC:    ~p", [Codec, Ver, EC]),
     Codec:decode_message(EC, Ver, M).
 
 
-%% ----------------------------------------------------------------------
+%% =======================================================================
+
+%% ------------------------------------------------------------------
+%% Create an instruction record
+%% ------------------------------------------------------------------
+
+expect_instruction(Desc, Cmd, Verify) 
+  when is_list(Desc) and is_function(Cmd) and is_function(Verify) ->
+    #expect_instruction{description = Desc,
+			command     = Cmd,
+			verify      = Verify}.
+    
+
+%% ------------------------------------------------------------------
+%% Function:    expect_encode
+%% Parameters:  Msg -> MegacoMessage
+%%              Encode -> function/1
+%%              Check -> function/1
+%% Description: This function simply encodes, with the Encode fun, 
+%%              and expects this to fail. The failure reason is 
+%%              checked with the Check fun.
+%% ------------------------------------------------------------------
+
+expect_encode(InitialData, Encode, Check) 
+  when is_function(Encode) and is_function(Check) ->
+    Instructions = 
+	[
+	 %% Initial encode
+	 expect_instruction(
+	   "Encode (initial) message",
+	   fun(Msg) when is_record(Msg, 'MegacoMessage') ->
+		   (catch Encode(Msg));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({error, Reason}, _) ->
+		   io:format("check error reason ", []),
+		   case (catch Check(Reason)) of
+		       ok ->
+			   {ok, done};
+		       Error ->
+			   Error
+		   end;
+	      ({ok, Bin}, Msg) when is_binary(Bin) ->
+		   M = binary_to_list(Bin), 
+		   {error, {unexpected_encode_success, {M, Msg}}};
+	      (Crap, _) ->
+		   {error, {unexpected_encode_result, Crap}}
+	   end)
+	],
+    expect_exec(Instructions, InitialData).
+
+
+%% ------------------------------------------------------------------
+%% Function:    expect_encode_only
+%% Parameters:  InitialData -> list() | binary()
+%%              Encode -> function/1
+%%              Check -> function/1
+%% Description: This function simply encodes, with the Encode fun, 
+%%              and expects it to succeed, which is checked by 
+%%              calling the Check fun with the resulting message.
+%% ------------------------------------------------------------------
+
+expect_encode_only(InitialData, Encode, Check) 
+  when is_function(Encode) and is_function(Check) ->
+    Instructions = 
+	[
+	 %% Initial encode
+	 expect_instruction(
+	   "Encode (initial) message",
+	   fun(Msg) when is_record(Msg, 'MegacoMessage') ->
+		   (catch Encode(Msg));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, Bin}, _Msg) when is_binary(Bin) ->
+		   case (catch Check(Bin)) of
+		       ok ->
+			   {ok, done};
+		       Error ->
+			   Error
+		   end;
+	      (Crap, _) ->
+		   {error, {unexpected_encode_result, Crap}}
+	   end)
+	],
+    expect_exec(Instructions, InitialData).
+
+
+%% ------------------------------------------------------------------
+%% Function:    expect_encode_decode
+%% Parameters:  InitialData -> MegacoMessage
+%%              Encode -> function/1
+%%              Decode -> function/1
+%%              Check -> function/2
+%% Description: This function simply encodes, with the Encode fun, and 
+%%              then decodes, with the Decode fun, the megaco message. 
+%%              The resulting message should be identical, but if it 
+%%              is not, the messages are checked, with the Check fun.
+%% ------------------------------------------------------------------
+
+expect_encode_decode(InitialData, Encode, Decode, Check) 
+  when is_function(Encode) and is_function(Decode) and is_function(Check) ->
+    Instructions = 
+	[
+	 %% Initial encode
+	 expect_instruction(
+	   "Encode (initial) message",
+	   fun(M) when is_record(M, 'MegacoMessage') ->
+		   (catch Encode(M));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, Bin}, M) when is_binary(Bin) ->
+		   {ok, {Bin, M}};
+	      ({error, Reason}, _) ->
+		   {error, {unexpected_encode_failure, Reason}};
+	      (Crap, _) ->
+		   {error, {unexpected_encode_result, Crap}}
+	   end),
+	 
+	 %% Decode the (encoded) message
+	 expect_instruction(
+	   "Decode message", 
+	   fun({Bin, _}) when is_binary(Bin) ->
+		   (catch Decode(Bin));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, Msg1}, {_Bin, Msg1}) 
+	      when is_record(Msg1, 'MegacoMessage') ->
+		   io:format("messages identical - done ", []),
+		   {ok, done};
+	      ({ok, Msg2}, {_Bin, Msg1}) ->
+		   io:format("messages not identical - check - ", []),
+		   case (catch Check(Msg1, Msg2)) of
+		       ok ->
+			   io:format("equal ", []),
+			   {ok, done};
+		       Error ->
+			   io:format("not equal ", []),
+			   io:format("~nError: ~p~n", [Error]),
+			   Error
+		   end;
+	      (Crap, _) ->
+		   {error, {unexpected_decode_result, Crap}}
+	   end)
+	],
+    expect_exec(Instructions, InitialData).
+
+
+%% ------------------------------------------------------------------
+%% Function:    expect_encode_decode_only
+%% Parameters:  InitialData -> MegacoMessage
+%%              Encode -> function/1
+%%              Decode -> function/1
+%%              Check -> function/2
+%% Description: This function simply encodes, with the Encode fun, 
+%%              and then decodes, with the Decode fun, the megaco 
+%%              message and expects it to succeed. The resulting 
+%%              message is checked by calling the Check fun with the 
+%%              resulting message.
+%% ------------------------------------------------------------------
+
+expect_encode_decode_only(InitialData, Encode, Decode, Check) 
+  when is_function(Encode) and is_function(Decode) and is_function(Check) ->
+    Instructions = 
+	[
+	 %% Initial encode
+	 expect_instruction(
+	   "Encode (initial) message",
+	   fun(M) when is_record(M, 'MegacoMessage') ->
+		   (catch Encode(M));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, Bin}, M) when is_binary(Bin) ->
+		   {ok, {Bin, M}};
+	      ({error, Reason}, _) ->
+		   {error, {unexpected_encode_failure, Reason}};
+	      (Crap, _) ->
+		   {error, {unexpected_encode_result, Crap}}
+	   end),
+	 
+	 %% Decode the (encoded) message
+	 expect_instruction(
+	   "Decode message", 
+	   fun({Bin, _}) when is_binary(Bin) ->
+		   (catch Decode(Bin));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, Msg}, _B) when is_record(Msg, 'MegacoMessage') ->
+		   io:format("decoded - now check ", []),
+		   case (catch Check(Msg)) of
+		       ok ->
+			   {ok, done};
+		       Error ->
+			   Error
+		   end;
+	      ({error, R}, _) ->
+		   {Line, Mod, Reason} = 
+		       case lists:keysearch(reason, 1, R) of
+			   {value, {reason, {L, M, Raw}}} 
+			   when is_list(Raw) ->
+			       {L, M, lists:flatten(Raw)};
+			   {value, {reason, {L, M, Raw}}} ->
+			       {L, M, Raw};
+			   _ ->
+			       {-1, undefined, R}
+		       end,
+		   Tokens = 
+		       case lists:keysearch(token, 1, R) of
+			   {value, {token, T}} ->
+			       T;
+			   _ ->
+			       undefined
+		       end,
+		   {error, {unexpected_decode_failure, 
+			    {Mod, Line, Reason, Tokens}}};
+	      (Crap, _) ->
+		   {error, {unexpected_decode_result, Crap}}
+	   end)
+	],
+    expect_exec(Instructions, InitialData).
+
+
+%% ------------------------------------------------------------------
+%% Function:    expect_decode
+%% Parameters:  InitialData -> list() | binary()
+%%              Decode -> function/1
+%%              Check -> function/1
+%% Description: This function simply decodes, with the Decode fun, 
+%%              and expects this to fail. The failure reason is 
+%%              checked with the Check fun.
+%% ------------------------------------------------------------------
+
+expect_decode(InitialData, Decode, Check) 
+  when is_list(InitialData) ->
+    expect_decode(list_to_binary(InitialData), Decode, Check);
+expect_decode(InitialData, Decode, Check) 
+  when is_function(Decode) and is_function(Check) ->
+    Instructions = 
+	[
+	 %% Initial decode
+	 expect_instruction(
+	   "Decode (initial) message",
+	   fun(Bin) when is_binary(Bin) ->
+		   (catch Decode(Bin));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({error, Reason}, _) ->
+		   io:format("check error reason - ", []),
+		   case (catch Check(Reason)) of
+		       ok ->
+			   {ok, done};
+		       Error ->
+			   Error
+		   end;
+	      ({ok, Msg}, Bin) ->
+		   io:format("unexpected decode success - ", []),
+		   M = binary_to_list(Bin),
+		   {error, {unexpected_decode_success, {Msg, M}}};
+	      (Crap, _) ->
+		   {error, {unexpected_decode_result, Crap}}
+	   end)
+	],
+    expect_exec(Instructions, InitialData).
+
+
+%% ------------------------------------------------------------------
+%% Function:    expect_decode_only
+%% Parameters:  InitialData -> list() | binary()
+%%              Decode -> function/1
+%%              Check -> function/2
+%% Description: This function simply decodes, with the Decode fun, 
+%%              and expects it to succeed, which is checked by 
+%%              calling the Check fun with the resulting message.
+%% ------------------------------------------------------------------
+
+expect_decode_only(InitialData, Decode, Check) 
+  when is_list(InitialData) ->
+    expect_decode_only(list_to_binary(InitialData), Decode, Check);
+expect_decode_only(InitialData, Decode, Check) 
+  when is_function(Decode) and is_function(Check) ->
+    Instructions = 
+	[
+	 %% Initial decode
+	 expect_instruction(
+	   "Decode (initial) message",
+	   fun(B) when is_binary(B) ->
+		   (catch Decode(B));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, Msg}, _B) when is_record(Msg, 'MegacoMessage') ->
+		   case (catch Check(Msg)) of
+		       ok ->
+			   {ok, done};
+		       Error ->
+			   Error
+		   end;
+	      ({error, R}, _) ->
+		   {Line, Mod, Reason} = 
+		       case lists:keysearch(reason, 1, R) of
+			   {value, {reason, {L, M, Raw}}} 
+			   when is_list(Raw) ->
+			       {L, M, lists:flatten(Raw)};
+			   {value, {reason, {L, M, Raw}}} ->
+			       {L, M, Raw};
+			   _ ->
+			       {-1, undefined, R}
+		       end,
+		   Tokens = 
+		       case lists:keysearch(token, 1, R) of
+			   {value, {token, T}} ->
+			       T;
+			   _ ->
+			       undefined
+		       end,
+		   {error, {unexpected_decode_failure, 
+			    {Mod, Line, Reason, Tokens}}};
+	      (Crap, _) ->
+		   {error, {unexpected_decode_result, Crap}}
+	   end)
+	],
+    expect_exec(Instructions, InitialData).
+
+
+%% ------------------------------------------------------------------
+%% Function:    expect_decode_encode
+%% Parameters:  InitialData -> list() | binary()
+%%              Decode -> function/1
+%%              Encode -> function/1
+%%              Check -> function/2
+%% Description: This function simply decodes, with the Decode fun, 
+%%              and then encodes, with the Encode fun, the megaco 
+%%              message. The resulting binary message should be 
+%%              identical, but if it is not, the messages are 
+%%              decoded again and then if necessary checked, with 
+%%              the Check fun.
+%% ------------------------------------------------------------------
+
+expect_decode_encode(InitialData, Decode, Encode, Check) 
+  when is_list(InitialData) ->
+    expect_decode_encode(list_to_binary(InitialData), Decode, Encode, Check);
+expect_decode_encode(InitialData, Decode, Encode, Check) 
+  when is_function(Decode) and is_function(Encode) and is_function(Check) ->
+    Instructions = 
+	[
+	 %% Initial decode
+	 expect_instruction(
+	   "Decode (initial) message",
+	   fun(B) when is_binary(B) ->
+		   (catch Decode(B));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, Msg}, B) when is_record(Msg, 'MegacoMessage') ->
+		   {ok, {Msg, B}};
+	      ({error, R}, _) ->
+		   {Line, Mod, Reason} = 
+		       case lists:keysearch(reason, 1, R) of
+			   {value, {reason, {L, M, Raw}}} 
+			   when is_list(Raw) ->
+			       {L, M, lists:flatten(Raw)};
+			   {value, {reason, {L, M, Raw}}} ->
+			       {L, M, Raw};
+			   _ ->
+			       {-1, undefined, R}
+		       end,
+		   Tokens = 
+		       case lists:keysearch(token, 1, R) of
+			   {value, {token, T}} ->
+			       T;
+			   _ ->
+			       undefined
+		       end,
+		   {error, {unexpected_decode_failure, 
+			    {Mod, Line, Reason, Tokens}}};
+	      (Crap, _) ->
+		   {error, {unexpected_decode_result, Crap}}
+	   end),
+	 
+	 
+	 %% Encode the (decoded) message
+	 expect_instruction(
+	   "Encode message", 
+	   fun({Msg, _Bin}) when is_record(Msg, 'MegacoMessage') -> 
+		   (catch Encode(Msg));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, B}, {_, B}) ->
+		   io:format("binaries equal - done ", []),
+		   {ok, done};
+	      ({ok, B}, {Msg, _}) ->
+		   {ok, {Msg, B}};
+	      ({error, Reason}, _) ->
+		   {error, {unexpected_encode_failure, Reason}};
+	      (Crap, _) ->
+		   {error, {unexpected_encode_result, Crap}}
+	   end),
+	 
+	 
+	 %% Fallback instruction in case encode produced
+	 %% a binary not equal to the initial
+	 expect_instruction(
+	   "Decode message (if binaries not equal)", 
+	   fun(done) ->
+		   done;
+	      ({_Msg, B}) when is_binary(B) ->
+		   (catch Decode(B));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, Msg}, {Msg, _Bin}) when is_record(Msg, 'MegacoMessage') ->
+		   io:format("messages identical - done ", []),
+		   {ok, done};
+	       (done, _) ->
+		   io:format("done ", []),
+		   {ok, done};
+	       ({ok, Msg2}, {Msg1, _}) ->
+		   io:format("messages not identical - check - ", []),
+		   case (catch Check(Msg1, Msg2)) of
+		       ok ->
+			   io:format("equal ", []),
+			   {ok, done};
+		       Error ->
+			   io:format("not equal ", []),
+			   Error
+		   end;
+	       ({error, Reason}, _) ->
+		      {error, {unexpected_decode_failure, Reason}};
+	       (Crap, _) ->
+		      {error, {unexpected_decode_result, Crap}}
+	      end)
+	],
+    expect_exec(Instructions, InitialData).
+
+
+%% ------------------------------------------------------------------
+%% Function:    expect_decode_encode_only
+%% Parameters:  InitialData -> list() | binary()
+%%              Decode -> function/1
+%%              Encode -> function/1
+%%              Check -> function/2
+%% Description: This function simply decodes, with the Decode fun, 
+%%              and then encodes, with the Encode fun, the megaco 
+%%              message. The resulting binary message is then checked
+%%              with the Check fun.
+%% ------------------------------------------------------------------
+
+expect_decode_encode_only(InitialData, Decode, Encode, Check) 
+  when is_list(InitialData) ->
+    expect_decode_encode_only(list_to_binary(InitialData), 
+			      Decode, Encode, Check);
+expect_decode_encode_only(InitialData, Decode, Encode, Check) 
+  when is_function(Decode) and is_function(Encode) and is_function(Check) ->
+    Instructions = 
+	[
+	 %% Initial decode
+	 expect_instruction(
+	   "Decode (initial) message",
+	   fun(B) when is_binary(B) ->
+		   (catch Decode(B));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, Msg}, B) when is_record(Msg, 'MegacoMessage') ->
+		   {ok, {Msg, B}};
+	      ({error, R}, _) ->
+		   {Line, Mod, Reason} = 
+		       case lists:keysearch(reason, 1, R) of
+			   {value, {reason, {L, M, Raw}}} 
+			   when is_list(Raw) ->
+			       {L, M, lists:flatten(Raw)};
+			   {value, {reason, {L, M, Raw}}} ->
+			       {L, M, Raw};
+			   _ ->
+			       {-1, undefined, R}
+		       end,
+		   Tokens = 
+		       case lists:keysearch(token, 1, R) of
+			   {value, {token, T}} ->
+			       T;
+			   _ ->
+			       undefined
+		       end,
+		   {error, {unexpected_decode_failure, 
+			    {Mod, Line, Reason, Tokens}}};
+	      (Crap, _) ->
+		   {error, {unexpected_decode_result, Crap}}
+	   end),
+	 
+	 
+	 %% Encode the (decoded) message
+	 expect_instruction(
+	   "Encode message", 
+	   fun({Msg, _Bin}) when is_record(Msg, 'MegacoMessage') -> 
+		   (catch Encode(Msg));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, B2}, {_, B1}) ->
+		   io:format("encode ok - check bins - ", []),
+		   case (catch Check(B1, B2)) of
+		       ok ->
+			   {ok, done};
+		       Crap ->
+			   {error, {unexpected_encode_check_result, Crap}}
+		   end;
+	      ({error, Reason}, _) ->
+		   {error, {unexpected_encode_failure, Reason}};
+	      (Crap, _) ->
+		   {error, {unexpected_encode_result, Crap}}
+	   end)
+	],
+    expect_exec(Instructions, InitialData).
+
+
+
+%% ------------------------------------------------------------------
+%% Function:    expect_exec
+%% Parameters:  Instructions -> [instruction()]
+%%              InitialData -> term()
+%% Description: This function is the engine in the codec test 
+%%              cases. It executes each instruction in turn.
+%% ------------------------------------------------------------------
+
+expect_exec(Instructions, InitialData) ->
+    expect_exec(Instructions, InitialData, 1).
+
+expect_exec([], _, _) ->
+    io:format("~n", []),
+    ok;
+expect_exec([#expect_instruction{description = Desc, 
+				 command     = Cmd, 
+				 verify      = Verify}|T], Data, Num) ->
+    io:format("~n   Exec command ~w: ~s => ", [Num, Desc]),
+    case Verify((catch Cmd(Data)), Data) of
+	{ok, NewData} ->
+	    io:format("ok", []),
+	    expect_exec(T, NewData, Num+1);
+	{error, Reason} ->
+	    io:format("error", []),
+	    {error, {Num, Desc, Reason}}
+    end.
+
+%% =======================================================================
+
+%% ------------------------------------------------------------------
+%% Internal functions
+%% ------------------------------------------------------------------
+
 
 d(F) ->
     d(F, []).

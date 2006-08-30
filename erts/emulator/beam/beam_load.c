@@ -240,7 +240,9 @@ typedef struct {
     int ci;			/* Current index into loaded code. */
     Label* labels;
     Uint put_strings;		/* Linked list of put_string instructions. */
+#if !defined(HEAP_FRAG_ELIM_TEST)
     Uint bs_put_strings;	/* Linked list of i_bs_put_string instructions. */
+#endif
     Uint new_bs_put_strings;	/* Linked list of i_new_bs_put_string instructions. */
     Uint catches;		/* Linked list of catch_yf instructions. */
     unsigned loaded_size;	/* Final size of code when loaded. */
@@ -999,6 +1001,15 @@ load_import_table(LoaderState* stp)
 static int
 read_export_table(LoaderState* stp)
 {
+    static struct {
+	Eterm mod;
+	Eterm func;
+	int arity;
+    } allow_redef[] = {
+	/* The BIFs that are allowed to be redefined by Erlang code */
+	{am_erlang,am_apply,2},
+	{am_erlang,am_apply,3},
+    };
     int i;
 
     GetInt(stp, 4, stp->num_exps);
@@ -1013,14 +1024,18 @@ read_export_table(LoaderState* stp)
     for (i = 0; i < stp->num_exps; i++) {
 	Uint n;
 	Uint value;
+	Eterm func;
+	Uint arity;
+	Export* e;
 
 	GetInt(stp, 4, n);
-	GetAtom(stp, n, stp->export[i].function);
-	GetInt(stp, 4, n);
-	if (n > MAX_REG) {
-	    LoadError2(stp, "export table entry %d: absurdly high arity %d", i, n);
+	GetAtom(stp, n, func);
+	stp->export[i].function = func;
+	GetInt(stp, 4, arity);
+	if (arity > MAX_REG) {
+	    LoadError2(stp, "export table entry %d: absurdly high arity %d", i, arity);
 	}
-	stp->export[i].arity = n;
+	stp->export[i].arity = arity;
 	GetInt(stp, 4, n);
 	if (n >= stp->num_labels) {
 	    LoadError3(stp, "export table entry %d: invalid label %d (highest defined label is %d)", i, n, stp->num_labels);
@@ -1030,6 +1045,28 @@ read_export_table(LoaderState* stp)
 	    LoadError2(stp, "export table entry %d: label %d not resolved", i, n);
 	}
 	stp->export[i].address = stp->code + value;
+
+	/*
+	 * Check that we are not redefining a BIF (except the ones allowed to
+	 * redefine).
+	 */
+	if ((e = erts_find_export_entry(stp->module, func, arity)) != NULL) {
+	    if (e->code[3] == (Uint) em_apply_bif) {
+		int j;
+
+		for (j = 0; j < sizeof(allow_redef)/sizeof(allow_redef[0]); j++) {
+		    if (stp->module == allow_redef[j].mod &&
+			func == allow_redef[j].func &&
+			arity == allow_redef[j].arity) {
+			break;
+		    }
+		}
+		if (j == sizeof(allow_redef)/sizeof(allow_redef[0])) {
+		    LoadError2(stp, "exported function %T/%d redefines BIF",
+			       func, arity);
+		}
+	    }
+	}
     }
     return 1;
 
@@ -1154,7 +1191,9 @@ read_code_header(LoaderState* stp)
     stp->code[MI_NUM_BREAKPOINTS] = 0;
 
     stp->put_strings = 0;
+#if !defined(HEAP_FRAG_ELIM_TEST)
     stp->bs_put_strings = 0;
+#endif
     stp->new_bs_put_strings = 0;
     stp->catches = 0;
     return 1;
@@ -1870,7 +1909,7 @@ load_code(LoaderState* stp)
 		stp->put_strings = ci - 4;
 	    }
 	    break;
-
+#if !defined(HEAP_FRAG_ELIM_TEST)
 	case op_i_bs_put_string_II:
 	    {
 		/*
@@ -1898,7 +1937,7 @@ load_code(LoaderState* stp)
 		stp->bs_put_strings = ci - 3;
 	    }
 	    break;
-
+#endif
 	case op_i_new_bs_put_string_II:
 	    {
 		/*
@@ -2231,12 +2270,14 @@ should_gen_heap_bin(LoaderState* stp, GenOpArg Src)
     return Src.val <= ERL_ONHEAP_BIN_LIMIT;
 }
 
+#if !defined(HEAP_FRAG_ELIM_TEST)
 static int
 old_bs_instructions(LoaderState* stp)
 {
     stp->new_instructions = 0;
     return 1;
 }
+#endif
 
 static int
 new_bs_instructions(LoaderState* stp)
@@ -2247,8 +2288,12 @@ new_bs_instructions(LoaderState* stp)
 
 #define query_new_instructions(stp) (stp->new_instructions)
  
-#define NEW_OR_OLD(New,Old) \
+#if defined(HEAP_FRAG_ELIM_TEST)
+# define NEW_OR_OLD(New,Old) New
+#else
+# define NEW_OR_OLD(New,Old) \
   (stp->new_instructions ? New : Old)
+#endif
 
 #define new_float_allocation(Stp) ((Stp)->new_float_instructions)
 
@@ -3229,6 +3274,7 @@ freeze_code(LoaderState* stp)
 	index = next;
     }
 
+#if !defined(HEAP_FRAG_ELIM_TEST)
     /*
      * Go through all i_bs_put_strings instructions, restore the pointer to
      * the instruction and convert string offsets to pointers (to the
@@ -3242,6 +3288,7 @@ freeze_code(LoaderState* stp)
 	code[index+2] = (Uint) (str_table + code[index+2]);
 	index = next;
     }
+#endif
 
     /*
      * Go through all i_new_bs_put_strings instructions, restore the pointer to
@@ -3509,8 +3556,26 @@ transform_engine(LoaderState* st)
 		    goto restart;
 		}
 		i = instr->a[ap].val;
-		if (i < st->num_imports && st->import[i].bf != NULL) {
-		    goto restart;
+
+		/*
+		 * erlang:apply/2,3 are strange. They exist as (dummy) BIFs
+		 * so that they are included in the export table before
+		 * the erlang module is loaded. They also exist in the erlang
+		 * module as functions. When used in code, a special Beam
+		 * instruction is used.
+		 * 
+		 * Below we specially recognize erlang:apply/2,3 as special.
+		 * This is necessary because after setting a trace pattern on
+		 * them, you cannot no longer see from the export entry that
+		 * they are special.
+		 */
+		if (i < st->num_imports) {
+		    if (st->import[i].bf != NULL ||
+			(st->import[i].module == am_erlang &&
+			 st->import[i].function == am_apply &&
+			 (st->import[i].arity == 2 || st->import[i].arity == 3))) {
+			goto restart;
+		    }
 		}
 	    }
 	    break;

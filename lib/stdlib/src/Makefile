@@ -15,6 +15,12 @@
 # 
 #     $Id$
 #
+
+ifdef BOOTSTRAP
+EGEN=$(BOOTSTRAP_TOP)/lib/stdlib/egen
+EBIN=$(BOOTSTRAP_TOP)/lib/stdlib/ebin
+endif
+
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
@@ -146,6 +152,7 @@ debug opt: $(TARGET_FILES)
 clean:
 	rm -f $(TARGET_FILES)
 	rm -f core
+	rm -f erl_parse.erl
 
 docs:
 

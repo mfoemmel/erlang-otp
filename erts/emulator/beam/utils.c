@@ -53,8 +53,8 @@
 #define HAVE_MALLOPT 0
 #endif
 
-static Eterm*
-do_alloc(Process* p, Eterm* last_htop, Uint need)
+Eterm*
+erts_heap_alloc(Process* p, Uint need)
 {
     ErlHeapFragment* bp;
     Uint n;
@@ -75,11 +75,7 @@ do_alloc(Process* p, Eterm* last_htop, Uint need)
     }
 
     /*
-     * Allocate a new arith heap.
-     */
-
-    /*
-     * Find a new suitable size.
+     * Allocate a new arith heap; first find a suitable size.
      */
 
     n = need;
@@ -130,12 +126,15 @@ do_alloc(Process* p, Eterm* last_htop, Uint need)
 #endif
 
 #ifdef HEAP_FRAG_ELIM_TEST
-    if (ARITH_LOWEST_HTOP(p) == NULL) {
-	if (SAVED_HEAP_TOP(p) != NULL) {
-	    last_htop = SAVED_HEAP_TOP(p);
-	}
-	if (last_htop != NULL) {
-	    ARITH_LOWEST_HTOP(p) = last_htop;
+    {
+	/*
+	 * When we have create a heap fragment, we are no longer allowed
+	 * to store anything more on the heap. 
+	 */
+	Eterm* htop = HEAP_TOP(p);
+	if (htop < HEAP_LIMIT(p)) {
+	    *htop = make_pos_bignum_header(HEAP_LIMIT(p)-htop-1);
+	    HEAP_TOP(p) = HEAP_LIMIT(p);
 	}
     }
 #endif
@@ -168,42 +167,6 @@ do_alloc(Process* p, Eterm* last_htop, Uint need)
     }
 #endif
     return bp->mem;
-}
-
-Eterm*
-erts_arith_alloc(Process* p, Eterm* last_htop, Uint need)
-{
-    return do_alloc(p, last_htop, need);
-}
-
-Eterm*
-erts_heap_alloc(Process* p, Uint need)
-{
-    Eterm* hp;
-
-#ifdef HEAP_FRAG_ELIM_TEST
-    if (need <= ARITH_AVAIL(p)) {
-	Eterm* hp = ARITH_HEAP(p);
-
-	ARITH_HEAP(p) += need;
-	ARITH_AVAIL(p) -= need;
-	return hp;
-    }
-#endif
-
-    hp = do_alloc(p, p->htop, need);
-
-#ifdef HEAP_FRAG_ELIM_TEST
-    if (SAVED_HEAP_TOP(p) == NULL) {
-	SAVED_HEAP_TOP(p) = HEAP_TOP(p);
-	HEAP_TOP(p) = HEAP_LIMIT(p);
-	MSO(p).overhead = HEAP_SIZE(p);
-	HALLOC_MBUF(p) = MBUF(p);
-    }
-    ARITH_AVAIL(p) = 0;
-    ARITH_HEAP(p) = NULL;
-#endif
-    return hp;
 }
 
 void erts_arith_shrink(Process* p, Eterm* hp)
@@ -306,6 +269,10 @@ erl_grow_stack(Eterm* ptr, size_t new_size)
 #endif
 
 #define IS_PRINT(c)  (!IS_CNTRL(c))
+
+#if defined(HEAP_FRAG_ELIM_TEST)
+# define ArithAlloc(a, b) (abort(), 0)
+#endif
 
 /*
  * Generate the integer part from a double.
@@ -2896,7 +2863,7 @@ erts_create_smp_ptimer(ErtsSmpPTimer **timer_ref,
 	    res->timer.flags = ERTS_PTMR_FLGS_SLALLCD;
 	}
 	else {
-	    res = erts_alloc(ERTS_ALC_T_SL_PTIMER, sizeof(ErtsSmpPTimer));
+	    res = erts_alloc(ERTS_ALC_T_LL_PTIMER, sizeof(ErtsSmpPTimer));
 	    res->timer.flags = ERTS_PTMR_FLGS_LLALLCD;
 	}
     }

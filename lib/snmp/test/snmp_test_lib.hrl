@@ -43,17 +43,27 @@
 
 %% - Time macros -
 
+-ifdef(DONT_USE_TEST_SERVER).
 -define(HOURS(N),       snmp_test_lib:hours(N)).
 -define(MINS(N),        snmp_test_lib:minutes(N)).
 -define(SECS(N),        snmp_test_lib:seconds(N)).
+-else.
+-define(HOURS(N),       test_server:hours(N)).
+-define(MINS(N),        test_server:minutes(N)).
+-define(SECS(N),        test_server:seconds(N)).
+-endif.
 
+-ifdef(DONT_USE_TEST_SERVER).
 -define(WD_START(T),    snmp_test_lib:watchdog_start(T)).
 -define(WD_STOP(P),     snmp_test_lib:watchdog_stop(P)).
+-else.
+-define(WD_START(T),    test_server:timetrap(T)).
+-define(WD_STOP(P),     test_server:timetrap_cancel(P)).
+-endif.
 
 -define(SLEEP(MSEC),    snmp_test_lib:sleep(MSEC)).
 -define(M(),            snmp_test_lib:millis()).
 -define(MDIFF(A,B),     snmp_test_lib:millis_diff(A,B)).
-
 
 %% - Process utility macros - 
 

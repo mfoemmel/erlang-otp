@@ -29,6 +29,11 @@
  *  sz: 8 | 16 | 32 | 64 | p
  */
 
+/* Without this, variable argument lists break on VxWorks */
+#ifdef VXWORKS
+#include <vxWorks.h>
+#endif
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -930,6 +935,7 @@ erts_printf_slong(fmtfn_t fn, void *arg, char conv, int pad, int width,
     int res;
     int fmt = 0;
     int prec = -1;
+    unsigned long ul_val;
     switch (conv) {
     case 'd': fmt |= FMTC_d; break;
     case 'i': fmt |= FMTC_i; break;
@@ -941,7 +947,8 @@ erts_printf_slong(fmtfn_t fn, void *arg, char conv, int pad, int width,
     }
     if (pad)
 	prec = width;
-    res = fmt_long(fn, arg, SIGN(val), val, width, prec, fmt, &count);
+    ul_val = (unsigned long) (val < 0 ? -val : val);
+    res = fmt_long(fn, arg, SIGN(val), ul_val, width, prec, fmt, &count);
     if (res < 0)
 	return res;
     return count;

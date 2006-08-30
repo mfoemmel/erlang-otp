@@ -364,7 +364,7 @@ multi_load(MGs, NumLoaders, NumReqs) ->
     end.
 
 do_multi_load(Pids, _NumLoaders, _NumReqs) ->
-    Fun = fun(P) -> P ! {apply_multi_load, self()} end,
+    Fun = fun({P,_}) -> P ! {apply_multi_load, self()} end,
     lists:foreach(Fun, Pids),
     await_multi_load_collectors(Pids, [], []).
 
@@ -374,7 +374,7 @@ multi_load_collector_start([{Mid, Node}|MGs], NumLoaders, NumReqs, Pids) ->
     Env = get(),
     Pid = spawn_link(?MODULE, multi_load_collector, 
 		     [self(), Node, Mid, NumLoaders, NumReqs, Env]),
-    multi_load_collector_start(MGs, NumLoaders, NumReqs, [Pid|Pids]).
+    multi_load_collector_start(MGs, NumLoaders, NumReqs, [{Pid,Mid}|Pids]).
 
 get_env(Key, Env) ->
     case lists:keysearch(Key, 1, Env) of
@@ -412,26 +412,56 @@ multi_load_collector_loop(Parent, Pid, Mid, NumLoaders, NumReqs) ->
     
 
 await_multi_load_collectors([], Oks, Errs) ->
+    i("await_multi_load_collectors -> done"),
     {ok, Oks, Errs};
 await_multi_load_collectors(Pids, Oks, Errs) ->
     receive
 	{load_complete, Pid, Mg, {ok, Ok, Err}} ->
-	    Pids2 = lists:delete(Pid, Pids),
+	    i("await_multi_load_collectors -> "
+	      "received ok complete from "
+	      "~n   ~p [~p]", [Pid, Mg]),
+	    Pids2 = lists:keydelete(Pid, 1, Pids),
 	    Oks2  = [{Mg, Ok, Err}|Oks],
 	    await_multi_load_collectors(Pids2, Oks2, Errs);
 	{load_complete, Pid, Mg, Error} ->
-	    Pids2 = lists:delete(Pid, Pids),
+	    i("await_multi_load_collectors -> "
+	      "received error complete from "
+	      "~n   ~p [~p]: "
+	      "~n   ~p", [Pid, Mg, Error]),
+	    Pids2 = lists:keydelete(Pid, 1, Pids),
 	    Errs2 = [{Mg, Error}|Errs],
 	    await_multi_load_collectors(Pids2, Oks, Errs2);
+
+	{'EXIT', Pid, normal} ->
+	    %% This is assumed to be one of the collectors
+	    i("await_multi_load_collectors -> "
+	      "received (normal) exit signal from ~p", [Pid]),
+	    await_multi_load_collectors(Pids, Oks, Errs);
+
+	{'EXIT', Pid, Reason} ->
+	    i("await_multi_load_collectors -> "
+	      "received unexpected exit from ~p:"
+	      "~n   ~p", [Pid, Reason]),
+	    case lists:keydelete(Pid, 1, Pids) of
+		Pids ->
+		    %% Not one of my procs, or a proc I have already
+		    %% received a complete from.
+		    await_multi_load_collectors(Pids, Oks, Errs);
+		Pids2 ->
+		    [{Pid,Mg}] = Pids -- Pids2,
+		    Errs2 = [{Mg, {unexpected_exit, Reason}}|Errs],
+		    await_multi_load_collectors(Pids, Oks, Errs2)
+	    end;
 
 	Else ->
 	    i("await_multi_load_collectors -> received unexpected message:"
 	      "~n~p", [Else]),
 	    await_multi_load_collectors(Pids, Oks, Errs)
     after 
-	300000 ->
-	    %% Cleanup?
-	    {error, {timeout, Pids, Oks, Errs}}
+	5000 ->
+	    i("await_multi_load_collectors -> still awaiting reply from:"
+	      "~n~p", [Pids]),
+	    await_multi_load_collectors(Pids, Oks, Errs)
     end.
 	    
 		

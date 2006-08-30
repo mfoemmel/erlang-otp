@@ -129,14 +129,23 @@ ifelse(OPSYS,darwin,``
 	LOAD	HP, P_HP(P) SEMI\
 	LOAD	NSP, P_NSP(P)'
 
-`#define SAVE_CONTEXT		\
+`#define SAVE_CONTEXT_BIF	\
 	mflr	TEMP_LR SEMI	\
-	STORE	TEMP_LR, P_NRA(P) SEMI\
-	SAVE_CACHED_STATE'
+	STORE	HP, P_HP(P)'
 
-`#define RESTORE_CONTEXT	\
+`#define RESTORE_CONTEXT_BIF	\
 	mtlr	TEMP_LR SEMI	\
-	RESTORE_CACHED_STATE'
+	LOAD	HP, P_HP(P)'
+
+`#define SAVE_CONTEXT_GC	\
+	mflr	TEMP_LR SEMI	\
+	STORE	TEMP_LR, P_NRA(P) SEMI	\
+	STORE	NSP, P_NSP(P) SEMI	\
+	STORE	HP, P_HP(P)'
+
+`#define RESTORE_CONTEXT_GC	\
+	mtlr	TEMP_LR SEMI	\
+	LOAD	HP, P_HP(P)'
 
 /*
  * Argument (parameter) registers.

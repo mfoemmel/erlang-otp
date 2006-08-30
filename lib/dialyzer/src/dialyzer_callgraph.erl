@@ -23,13 +23,17 @@
 %%%-------------------------------------------------------------------
 -module(dialyzer_callgraph).
 
--export([is_self_rec/2,
+-export([finalize/1,
+	 is_self_rec/2,
+	 non_local_calls/1,
 	 lookup_rec_var/2,	 
 	 scan_core_tree/2,
 	 scan_icode/2,
 	 new/0, 
 	 take_scc/1, 
 	 remove_external/1]).
+
+-export([all_nodes/1]).
 
 %%----------------------------------------------------------------------
 %%
@@ -56,6 +60,9 @@ new() ->
 		      rec_var_map=RecVarMap, 
 		      self_rec=SelfRecs}.
 
+all_nodes(#dialyzer_callgraph{digraph=DG}) ->
+  lists:flatten(DG).
+
 lookup_rec_var(Label, #dialyzer_callgraph{rec_var_map=RecVarMap}) ->
   dict:find(Label, RecVarMap).
 
@@ -67,18 +74,35 @@ add_edges([], CG) ->
 add_edges(Edges, CG =#dialyzer_callgraph{digraph=Callgraph}) ->
   CG#dialyzer_callgraph{digraph=digraph_add_edges(Edges, Callgraph)}.
 
+add_edges(Edges, MFAs, CG =#dialyzer_callgraph{digraph=DG}) ->
+  DG1 = digraph_confirm_vertices(MFAs, DG),
+  add_edges(Edges, CG#dialyzer_callgraph{digraph=DG1}).
+  
 
 take_scc(CG = #dialyzer_callgraph{digraph=Callgraph}) ->
-  case hipe_digraph:take_indep_scc(Callgraph) of
+  case digraph_take_indep_scc(Callgraph) of
     {ok, SCC, NewCallgraph} ->
       {ok, SCC, CG#dialyzer_callgraph{digraph=NewCallgraph}};
     none -> none
   end.
 
 remove_external(CG = #dialyzer_callgraph{digraph=DG}) ->
-  {NewDG, Ext} = digraph_remove_external(DG),
-  {CG#dialyzer_callgraph{digraph=NewDG}, Ext}.
+  {NewDG, External} = digraph_remove_external(DG),
+  {CG#dialyzer_callgraph{digraph=NewDG}, External}.
 
+non_local_calls(#dialyzer_callgraph{digraph=DG}) ->
+  Edges = digraph_edges(DG),		
+  find_non_local_calls(Edges, sets:new()).
+
+find_non_local_calls([{{M, _, _}, {M, _, _}}|Left], Set) ->
+  find_non_local_calls(Left, Set);
+find_non_local_calls([Edge={{M1, _, _},{M2, _, _}}|Left], Set) when M1 =/= M2 ->
+  find_non_local_calls(Left, sets:add_element(Edge, Set));
+find_non_local_calls([], Set) ->
+  sets:to_list(Set).
+
+finalize(CG = #dialyzer_callgraph{digraph=DG}) ->
+  CG#dialyzer_callgraph{digraph=digraph_finalize(DG)}.
 
 %%____________________________________________________________
 %%
@@ -121,7 +145,10 @@ scan_core_tree(Tree, CG=#dialyzer_callgraph{rec_var_map=RecVarMap,
   %% top level function. This is ok since the included functions are
   %% stored as scc with the parent.
   NamedEdges2 = scan_core_funs(Tree),
-  CG1 = add_edges(NamedEdges2++NamedEdges1, CG),
+
+  %% Confirm all nodes in the tree.
+  Names = lists:flatten([[X, Y]||{X, Y} <- NamedEdges1]),
+  CG1 = add_edges(NamedEdges2++NamedEdges1, Names, CG),
   
   CG1#dialyzer_callgraph{rec_var_map=RecVarMap1, self_rec=SelfRecs}.
 
@@ -220,7 +247,9 @@ get_label(T) ->
 
 scan_icode(List, Callgraph = #dialyzer_callgraph{self_rec=SelfRec}) ->
   {NewSelfRec, Edges} = scan_icode_funs(List, SelfRec, []),
-  add_edges(Edges, Callgraph#dialyzer_callgraph{self_rec=NewSelfRec}).
+  MFAs = [MFA || {MFA, _} <- List],
+  add_edges(Edges, MFAs, Callgraph#dialyzer_callgraph{self_rec=NewSelfRec}).
+  %add_edges(Edges, Callgraph#dialyzer_callgraph{self_rec=NewSelfRec}).
 
 scan_icode_funs([{MFA, Cfg}|Left], SelfRec, Edges) ->
   Icode = hipe_icode_cfg:cfg_to_linear(Cfg),
@@ -266,19 +295,80 @@ call_or_enter_fun(Ins) ->
 %% Digraph
 %%
 
+%digraph_new() ->
+%  hipe_digraph:new().
+
+%digraph_add_edges([{From, To}|Left], DG) ->
+%  digraph_add_edges(Left, hipe_digraph:add_edge(From, To, DG));
+%digraph_add_edges([], DG) ->
+%  DG.
+
+%digraph_remove_external(DG) ->
+%  List1 = hipe_digraph:to_list(DG),
+%  RealNodes = sets:from_list([X || {X, _} <- List1]),
+%  ExtCallees = sets:from_list([Y || {X, Y} <- List1, 
+%				    X =/= Y, 
+%				    sets:is_element(Y, RealNodes) =:= false]),
+%  List2 = lists:filter(fun({_, X})->sets:is_element(X, RealNodes)end, List1),
+%  {hipe_digraph:from_list(List2), sets:to_list(ExtCallees)}.
+
+%digraph_take_indep_scc(Callgraph) ->
+%  hipe_digraph:take_indep_scc(Callgraph).
+
 digraph_new() ->
-  hipe_digraph:new().
+  digraph:new().
 
 digraph_add_edges([{From, To}|Left], DG) ->
-  digraph_add_edges(Left, hipe_digraph:add_edge(From, To, DG));
+  case digraph:vertex(DG, From) of
+    false -> digraph:add_vertex(DG, From);
+    {From, _} -> ok
+  end,
+  case digraph:vertex(DG, To) of
+    false -> digraph:add_vertex(DG, To);
+    {To, _} -> ok
+  end,
+  digraph:add_edge(DG, {From, To}, From, To, []),
+  digraph_add_edges(Left, DG);
 digraph_add_edges([], DG) ->
   DG.
 
+digraph_confirm_vertices([MFA|Left], DG) ->
+  digraph:add_vertex(DG, MFA, confirmed),
+  digraph_confirm_vertices(Left, DG);
+digraph_confirm_vertices([], DG) ->
+  DG.
+  
 digraph_remove_external(DG) ->
-  List1 = hipe_digraph:to_list(DG),
-  RealNodes = sets:from_list([X || {X, _} <- List1]),
-  ExtCallees = sets:from_list([Y || {X, Y} <- List1, 
-				    X =/= Y, 
-				    sets:is_element(Y, RealNodes) =:= false]),
-  List2 = lists:filter(fun({_, X})->sets:is_element(X, RealNodes)end, List1),
-  {hipe_digraph:from_list(List2), sets:to_list(ExtCallees)}.
+  Vertices = digraph:vertices(DG),
+  Unconfirmed = remove_unconfirmed(Vertices, DG),
+  {DG, Unconfirmed}.
+
+digraph_edges(DG) ->
+  digraph:edges(DG).
+
+digraph_finalize(DG) ->
+  DG1 = digraph_utils:condensation(DG),
+  digraph:delete(DG),
+  Postorder = digraph_utils:postorder(DG1),
+  digraph:delete(DG1),
+  Postorder.
+
+remove_unconfirmed(Vertexes, DG) ->
+  remove_unconfirmed(Vertexes, DG, []).
+
+remove_unconfirmed([V|Left], DG, Unconfirmed) ->
+  case digraph:vertex(DG, V) of
+    {V, confirmed} -> remove_unconfirmed(Left, DG, Unconfirmed);
+    {V, []} -> remove_unconfirmed(Left, DG, [V|Unconfirmed])
+  end;
+remove_unconfirmed([], DG, Unconfirmed) ->
+  BadCalls = lists:append([digraph:in_edges(DG, V) || V <- Unconfirmed]),
+  BadCallsSorted = lists:keysort(1, BadCalls),
+  digraph:del_vertices(DG, Unconfirmed),
+  BadCallsSorted.
+
+digraph_take_indep_scc([SCC|Left]) ->
+  {ok, SCC, Left};
+digraph_take_indep_scc([]) ->
+  none.
+  

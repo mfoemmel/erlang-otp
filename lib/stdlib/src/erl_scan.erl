@@ -62,7 +62,7 @@ format_error(float) -> "bad float";
 %%
 format_error(Other) -> io_lib:write(Other).
 
-string_thing($') -> "atom";
+string_thing($') -> "atom";   %' Stupid Emacs
 string_thing(_) -> "string".
 
 
@@ -76,7 +76,7 @@ string_thing(_) -> "string".
 string(Cs) ->
     string(Cs, 1).
 
-string(Cs, Pos) when list(Cs), integer(Pos) ->
+string(Cs, Pos) when is_list(Cs), is_integer(Pos) ->
 %     %% Debug replacement line for chopping string into 1-char segments
 %     scan([], [], [], Pos, Cs, []).
     scan(Cs, [], [], Pos, [], []).
@@ -267,6 +267,10 @@ scan("|"=Cs, Stack, Toks, Pos, State, Errors) ->
 %% :-
 scan(":-"++Cs, Stack, Toks, Pos, State, Errors) ->
     scan(Cs, Stack, [{':-',Pos}|Toks], Pos, State, Errors);
+%% :: for typed records
+scan("::"++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'::',Pos}|Toks], Pos, State, Errors);
+%%
 scan(":"=Cs, Stack, Toks, Pos, State, Errors) ->
     more(Cs, Stack, Toks, Pos, State, Errors, fun scan/6);
 %% Full stop and plain '.'
@@ -284,7 +288,7 @@ scan(Eof, _Stack, Toks, Pos, State, Errors) ->
 
 scan_atom(Cs, Name, Toks, Pos, State, Errors) ->
     case catch list_to_atom(Name) of
-	Atom when atom(Atom) ->
+	Atom when is_atom(Atom) ->
 	    case reserved_word(Atom) of
 		true ->
 		    scan(Cs, [], [{Atom,Pos}|Toks], Pos, State, Errors);
@@ -297,7 +301,7 @@ scan_atom(Cs, Name, Toks, Pos, State, Errors) ->
 
 scan_variable(Cs, Name, Toks, Pos, State, Errors) ->
     case catch list_to_atom(Name) of
-	A when atom(A) ->
+	A when is_atom(A) ->
 	    scan(Cs, [], [{var,Pos,A}|Toks], Pos, State, Errors);
 	_ ->
 	    scan(Cs, [], Toks, Pos, State, [{{illegal,var},Pos}|Errors])
@@ -383,7 +387,7 @@ scan_string_escape(Eof, Stack, _Toks, Pos, State, Errors) ->
 scan_qatom([$'|Cs], Stack, Toks, Pos, State, Errors) ->
     [StartPos,$'|S] = reverse(Stack),
     case catch list_to_atom(S) of
-	A when atom(A) ->
+	A when is_atom(A) ->
 	    scan(Cs, [], [{atom,StartPos,A}|Toks], Pos, State, Errors);
 	_ ->
 	    scan(Cs, [], Toks, Pos, State, [{{illegal,atom},StartPos}|Errors])
@@ -481,7 +485,7 @@ scan_number([C|Cs], Stack, Toks, Pos, State, Errors) when C >= $0, C =< $9 ->
     scan_number(Cs, [C|Stack], Toks, Pos, State, Errors);
 scan_number([$#|Cs], Stack, Toks, Pos, State, Errors) ->
     case catch list_to_integer(reverse(Stack)) of
-	B when integer(B), B >= 2, B =< 1+$Z-$A+10 ->
+	B when is_integer(B), B >= 2, B =< 1+$Z-$A+10 ->
 	    scan_based_int(Cs, [B], Toks, Pos, State, Errors);
 	B ->
 	    scan(Cs, [], Toks, Pos, State, [{{base,B},Pos}|Errors])
@@ -490,7 +494,7 @@ scan_number([], Stack, Toks, Pos, State, Errors) ->
     more([], Stack, Toks, Pos, State, Errors, fun scan_number/6);
 scan_number(Cs, Stack, Toks, Pos, State, Errors) ->
     case catch list_to_integer(reverse(Stack)) of
-	N when integer(N) ->
+	N when is_integer(N) ->
 	    scan(Cs, [], [{integer,Pos,N}|Toks], Pos, State, Errors);
 	_ ->
 	    scan(Cs, [], Toks, Pos, State, [{{illegal,integer},Pos}|Errors])
@@ -509,7 +513,7 @@ scan_based_int([], Stack, Toks, Pos, State, Errors) ->
     more([], Stack, Toks, Pos, State, Errors, fun scan_based_int/6);
 scan_based_int(Cs, [B|Stack], Toks, Pos, State, Errors) ->
     case catch erlang:list_to_integer(reverse(Stack), B) of
-	N when integer(N) ->
+	N when is_integer(N) ->
 	    scan(Cs, [], [{integer,Pos,N}|Toks], Pos, State, Errors);
 	_ ->
 	    scan(Cs, [], Toks, Pos, State, [{{illegal,integer},Pos}|Errors])
@@ -525,7 +529,7 @@ scan_fraction([], Stack, Toks, Pos, State, Errors) ->
     more([], Stack, Toks, Pos, State, Errors, fun scan_fraction/6);
 scan_fraction(Cs, Stack, Toks, Pos, State, Errors) ->
     case catch list_to_float(reverse(Stack)) of
-	F when float(F) ->
+	F when is_float(F) ->
 	    scan(Cs, [], [{float,Pos,F}|Toks], Pos, State, Errors);
 	_ ->
 	    scan(Cs, [], Toks, Pos, State, [{{illegal,float},Pos}|Errors])
@@ -546,7 +550,7 @@ scan_exponent([], Stack, Toks, Pos, State, Errors) ->
     more([], Stack, Toks, Pos, State, Errors, fun scan_exponent/6);
 scan_exponent(Cs, Stack, Toks, Pos, State, Errors) ->
     case catch list_to_float(reverse(Stack)) of
-	F when float(F) ->
+	F when is_float(F) ->
 	    scan(Cs, [], [{float,Pos,F}|Toks], Pos, State, Errors);
 	_ ->
 	    scan(Cs, [], Toks, Pos, State, [{{illegal,float},Pos}|Errors])

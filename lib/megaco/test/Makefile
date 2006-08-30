@@ -123,6 +123,11 @@ info:
 
 make: $(TARGET_FILES)
 
+sdp: make
+	$(MERL) -noshell -sname megaco_sdp $(ERL_PATH) \
+            -s megaco_test_lib t megaco_sdp_test \
+            $(EHALT)
+
 config: make
 	$(MERL) -noshell -sname megaco_config $(ERL_PATH) \
             -s megaco_test_lib t megaco_config_test \
@@ -211,6 +216,16 @@ codec3b: make
 codec3b_tickets: make
 	$(MERL) -noshell -sname megaco_codec3b_tickets $(ERL_PATH) \
             -s megaco_codec_prev3b_test tickets \
+            -s erlang halt
+
+codec3c: make
+	$(MERL) -noshell -sname megaco_codec3c $(ERL_PATH) \
+            -s megaco_test_lib t megaco_codec_prev3c_test \
+            $(EHALT)
+
+codec3c_tickets: make
+	$(MERL) -noshell -sname megaco_codec3c_tickets $(ERL_PATH) \
+            -s megaco_codec_prev3c_test tickets \
             -s erlang halt
 
 conf: make
@@ -337,6 +352,11 @@ display_v2: make
             -s megaco_codec_v2_test display_text_messages \
             -s erlang halt
 
+generate_v2: make
+	$(MERL) -noshell -sname megaco_generate_text_msgs_v2 $(ERL_PATH) \
+            -s megaco_codec_v2_test generate_text_messages \
+            -s erlang halt
+
 display_prev3a: make
 	$(MERL) -noshell -sname megaco_display_text_msgs_prev3a $(ERL_PATH) \
             -s megaco_codec_prev3a_test display_text_messages \
@@ -350,6 +370,16 @@ display_prev3b: make
 generate_prev3b: make
 	$(MERL) -noshell -sname megaco_generate_text_msgs_prev3b $(ERL_PATH) \
             -s megaco_codec_prev3b_test generate_text_messages \
+            -s erlang halt
+
+display_prev3c: make
+	$(MERL) -noshell -sname megaco_display_text_msgs_prev3c $(ERL_PATH) \
+            -s megaco_codec_prev3c_test display_text_messages \
+            -s erlang halt
+
+generate_prev3c: make
+	$(MERL) -noshell -sname megaco_generate_text_msgs_prev3c $(ERL_PATH) \
+            -s megaco_codec_prev3c_test generate_text_messages \
             -s erlang halt
 
 node:

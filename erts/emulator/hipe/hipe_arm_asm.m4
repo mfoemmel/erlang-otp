@@ -41,14 +41,21 @@ define(NR_ARG_REGS,3)dnl admissible values are 0 to 6, inclusive
 	ldr	HP, [P, #P_HP];	\
 	ldr	NSP, [P, #P_NSP]'
 
-`#define SAVE_CONTEXT		\
+`#define SAVE_CONTEXT_BIF	\
+	mov	TEMP_LR, lr;	\
+	str	HP, [P, #P_HP]'
+
+`#define RESTORE_CONTEXT_BIF	\
+	ldr	HP, [P, #P_HP]'
+
+`#define SAVE_CONTEXT_GC	\
 	mov	TEMP_LR, lr;	\
 	str	lr, [P, #P_NRA];	\
-	SAVE_CACHED_STATE'
+	str	NSP, [P, #P_NSP];	\
+	str	HP, [P, #P_HP]'
 
-`#define RESTORE_CONTEXT	\
-	mov	lr, TEMP_LR;	\
-	RESTORE_CACHED_STATE'
+`#define RESTORE_CONTEXT_GC	\
+	ldr	HP, [P, #P_HP]'
 
 /*
  * Argument (parameter) registers.
@@ -114,18 +121,6 @@ define(SAR_N,`ifelse(eval($1 >= 0),0,,`SAR_N(eval($1-1))SAR_1($1)')')dnl
 define(STORE_ARG_REGS,`SAR_N(eval(NR_ARG_REGS-1))')dnl
 `#define STORE_ARG_REGS	'STORE_ARG_REGS
 
-dnl
-dnl NSP_RETN(NPOP)
-dnl NPOP should be non-zero.
-dnl
-define(NSP_RETN,`add	NSP, NSP, #$1
-	mov pc, lr')dnl
-
-dnl
-dnl NSP_RET0
-dnl
-define(NSP_RET0,`mov pc, lr')dnl
-
 dnl XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 dnl X								X
 dnl X			hipe_arm_bifs.m4 support		X
@@ -160,7 +155,12 @@ dnl
 dnl NBIF_RET(ARITY)
 dnl Generates a return from a native BIF, taking care to pop
 dnl any stacked formal parameters.
+dnl May only be used in BIF/primop wrappers where SAVE_CONTEXT
+dnl has saved LR in TEMP_LR.
 dnl
+define(NSP_RETN,`add	NSP, NSP, #$1
+	mov pc, TEMP_LP')dnl
+define(NSP_RET0,`mov pc, TEMP_LR')dnl
 define(RET_POP,`ifelse(eval($1 > NR_ARG_REGS),0,0,eval(4*($1 - NR_ARG_REGS)))')dnl
 define(NBIF_RET_N,`ifelse(eval($1),0,`NSP_RET0',`NSP_RETN($1)')')dnl
 define(NBIF_RET,`NBIF_RET_N(eval(RET_POP($1)))')dnl

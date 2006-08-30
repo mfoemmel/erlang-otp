@@ -484,6 +484,8 @@ valfun_4({bif,element,{f,Fail},[Pos,Tuple],Dst}, Vst0) ->
     set_type_reg(term, Dst, Vst);
 valfun_4({arithbif,Op,F,Src,Dst}, Vst) ->
     valfun_4({bif,Op,F,Src,Dst}, Vst);
+valfun_4({raise,{f,_}=Fail,Src,Dst}, Vst) ->
+    valfun_4({bif,raise,Fail,Src,Dst}, Vst);
 valfun_4({bif,Op,{f,Fail},Src,Dst}, Vst0) ->
     validate_src(Src, Vst0),
     Vst = branch_state(Fail, Vst0),
@@ -1345,7 +1347,7 @@ bif_type(hd, [_], _) -> term;
 bif_type(tl, [_], _) -> term;
 bif_type(get, [_], _) -> term;
 bif_type(raise, [_,_], _) -> exception;
-bif_type(_, _, _) -> term.
+bif_type(Bif, _, _) when is_atom(Bif) -> term.
 
 arith_type([A,B], Vst) ->
     case {get_term_type(A, Vst),get_term_type(B, Vst)} of
@@ -1374,7 +1376,8 @@ return_type_1(erlang, F, A, _) ->
     return_type_erl(F, A);
 return_type_1(math, F, A, _) ->
     return_type_math(F, A);
-return_type_1(_, _, _, _) -> term.
+return_type_1(M, F, A, _) when is_atom(M), is_atom(F), is_integer(A), A >= 0 ->
+    term.
 
 return_type_erl(exit, 1) -> exception;
 return_type_erl(throw, 1) -> exception;
@@ -1382,7 +1385,7 @@ return_type_erl(fault, 1) -> exception;
 return_type_erl(fault, 2) -> exception;
 return_type_erl(error, 1) -> exception;
 return_type_erl(error, 2) -> exception;
-return_type_erl(_, _) -> term.
+return_type_erl(F, A) when is_atom(F), is_integer(A), A >= 0 -> term.
 
 return_type_math(cos, 1) -> {float,[]};
 return_type_math(cosh, 1) -> {float,[]};
@@ -1405,7 +1408,7 @@ return_type_math(sqrt, 1) -> {float,[]};
 return_type_math(atan2, 2) -> {float,[]};
 return_type_math(pow, 2) -> {float,[]};
 return_type_math(pi, 0) -> {float,[]};
-return_type_math(_, _) -> term.
+return_type_math(F, A) when is_atom(F), is_integer(A), A >= 0 -> term.
 
 limit_check(Num) when is_integer(Num), Num >= ?MAXREG ->
     error(limit);

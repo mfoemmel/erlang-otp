@@ -45,21 +45,12 @@ static ERTS_INLINE void set_current_fp_exception(void)
 #ifdef ERTS_SMP
 static erts_tsd_key_t fpe_key;
 
-static void
-fp_exception_cleanup(void)
-{
-    void *fpe = erts_tsd_get(fpe_key);
-    if (fpe) {
-	erts_tsd_set(fpe_key, NULL);
-	erts_free(ERTS_ALC_T_FP_EXCEPTION, fpe);
-    }
-}
-
 /* once-only initialisation early in the main thread (via erts_sys_init_float()) */
 static void erts_init_fp_exception(void)
 {
+    /* XXX: the wrappers prevent using a pthread destructor to
+       deallocate the key's value; so when/where do we do that? */
     erts_tsd_key_create(&fpe_key);
-    erts_thr_install_exit_handler(fp_exception_cleanup);
 }
 
 void erts_thread_init_fp_exception(void)
@@ -72,7 +63,6 @@ static ERTS_INLINE volatile int *erts_thread_get_fp_exception(void)
 {
     return (volatile int*)erts_tsd_get(fpe_key);
 }
-
 #else /* !SMP */
 #define erts_init_fp_exception()	/*empty*/
 static volatile int fp_exception;
@@ -97,7 +87,7 @@ static void set_current_fp_exception(void)
 }
 
 /* Is there no standard identifier for Darwin/MacOSX ? */
-#if defined(__ppc__) && defined(__APPLE__) && defined(__MACH__) && !defined(__DARWIN__)
+#if defined(__APPLE__) && defined(__MACH__) && !defined(__DARWIN__)
 #define __DARWIN__ 1
 #endif
 
@@ -111,22 +101,110 @@ static void unmask_x87(void)
     __asm__ __volatile__("fldcw %0" : : "m"(cw));
 }
 
-#if defined(__x86_64__)
 static void unmask_sse2(void)
 {
     unsigned int mxcsr;
     __asm__ __volatile__("stmxcsr %0" : "=m"(mxcsr));
-    mxcsr &= ~(0x003F|0x0680); /* clear exn flags, unmask exns (not PM, UM, DM) */
+    mxcsr &= ~(0x003F|0x0680); /* clear exn flags, unmask OM, ZM, IM (not PM, UM, DM) */
     __asm__ __volatile__("ldmxcsr %0" : : "m"(mxcsr));
 }
-#else
-#define unmask_sse2()	do{}while(0)
-#endif
+
+#if defined(__x86_64__) || defined(__DARWIN__)
+static inline int cpu_has_sse2(void) { return 1; }
+#else /* !__x86_64__ */
+/*
+ * Check if an x86-32 processor has SSE2.
+ */
+static unsigned int xor_eflags(unsigned int mask)
+{
+    unsigned int eax, edx;
+
+    eax = mask;			/* eax = mask */
+    __asm__("pushfl\n\t"
+	    "popl %0\n\t"	/* edx = original EFLAGS */
+	    "xorl %0, %1\n\t"	/* eax = mask ^ EFLAGS */
+	    "pushl %1\n\t"
+	    "popfl\n\t"		/* new EFLAGS = mask ^ original EFLAGS */
+	    "pushfl\n\t"
+	    "popl %1\n\t"	/* eax = new EFLAGS */
+	    "xorl %0, %1\n\t"	/* eax = new EFLAGS ^ old EFLAGS */
+	    "pushl %0\n\t"
+	    "popfl"		/* restore original EFLAGS */
+	    : "=d"(edx), "=a"(eax)
+	    : "1"(eax));
+    return eax;
+}
+
+static __inline__ unsigned int cpuid_eax(unsigned int op)
+{
+    unsigned int eax;
+    __asm__("cpuid"
+	    : "=a"(eax)
+	    : "0"(op)
+	    : "bx", "cx", "dx");
+    return eax;
+}
+
+static __inline__ unsigned int cpuid_edx(unsigned int op)
+{
+    unsigned int eax, edx;
+    __asm__("cpuid"
+	    : "=a"(eax), "=d"(edx)
+	    : "0"(op)
+	    : "bx", "cx");
+    return edx;
+}
+
+/* The AC bit, bit #18, is a new bit introduced in the EFLAGS
+ * register on the Intel486 processor to generate alignment
+ * faults. This bit cannot be set on the Intel386 processor.
+ */
+static __inline__ int is_386(void)
+{
+    return ((xor_eflags(1<<18) >> 18) & 1) == 0;
+}
+
+/* Newer x86 processors have a CPUID instruction, as indicated by
+ * the ID bit (#21) in EFLAGS being modifiable.
+ */
+static __inline__ int has_CPUID(void)
+{
+    return (xor_eflags(1<<21) >> 21) & 1;
+}
+
+static int cpu_has_sse2(void)
+{
+    unsigned int maxlev, features;
+    static int has_sse2 = -1;
+
+    if (has_sse2 >= 0)
+	return has_sse2;
+    has_sse2 = 0;
+
+    if (is_386())
+	return 0;
+    if (!has_CPUID())
+	return 0;
+    maxlev = cpuid_eax(0);
+    /* Intel A-step Pentium had a preliminary version of CPUID.
+       It also didn't have SSE2. */
+    if ((maxlev & 0xFFFFFF00) == 0x0500)
+	return 0;
+    /* If max level is zero then CPUID cannot report any features. */
+    if (maxlev == 0)
+	return 0;
+    features = cpuid_edx(1);
+    has_sse2 = (features & (1 << 26)) != 0;
+
+    return has_sse2;
+}
+#endif /* !__x86_64__ */
 
 static void unmask_fpe(void)
 {
     unmask_x87();
-    unmask_sse2();
+    if (cpu_has_sse2())
+	unmask_sse2();
 }
 
 void erts_restore_fpu(void)
@@ -135,14 +213,26 @@ void erts_restore_fpu(void)
     unmask_x87();
 }
 
-#elif (defined(__powerpc__) && defined(__linux__)) || defined(__DARWIN__)
+#elif defined(__sparc__) && defined(__linux__)
+
+static void unmask_fpe(void)
+{
+    unsigned long fsr;
+
+    __asm__("st %%fsr, %0" : "=m"(fsr));
+    fsr &= ~(0x1FUL << 23);	/* clear FSR[TEM] field */
+    fsr |= (0x1AUL << 23);	/* enable NV, OF, DZ exceptions */
+    __asm__ __volatile__("ld %0, %%fsr" : : "m"(fsr));
+}
+
+#elif (defined(__powerpc__) && defined(__linux__)) || (defined(__ppc__) && defined(__DARWIN__))
 
 #if defined(__linux__)
 #include <sys/prctl.h>
 
 static void set_fpexc_precise(void)
 {
-    if( prctl(PR_SET_FPEXC, PR_FP_EXC_PRECISE) < 0 ) {
+    if (prctl(PR_SET_FPEXC, PR_FP_EXC_PRECISE) < 0) {
 	perror("PR_SET_FPEXC");
 	exit(1);
     }
@@ -231,26 +321,41 @@ static void unmask_fpe(void)
 
 #endif
 
+#if (defined(__linux__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__DARWIN__) && defined(__i386__))
+#include <ucontext.h>
+
 #if defined(__linux__) && defined(__x86_64__)
-static void skip_sse2_insn(mcontext_t *mc)
+#define mc_pc(mc)	((mc)->gregs[REG_RIP])
+typedef mcontext_t *erts_mcontext_ptr_t;
+#elif defined(__linux__) && defined(__i386__)
+#define mc_pc(mc)	((mc)->gregs[REG_EIP])
+typedef mcontext_t *erts_mcontext_ptr_t;
+#elif defined(__DARWIN__) && defined(__i386__)
+#define mc_pc(mc)	((mc)->ss.eip)
+typedef mcontext_t erts_mcontext_ptr_t;
+#endif
+
+static void skip_sse2_insn(erts_mcontext_ptr_t mc)
 {
-    unsigned char *pc0 = (unsigned char*)(mc->gregs[REG_RIP]);
+    unsigned char *pc0 = (unsigned char*)mc_pc(mc);
     unsigned char *pc = pc0;
     unsigned int opcode;
     unsigned int nr_skip_bytes;
 
     opcode = *pc++;
-    switch( opcode ) {
+    switch (opcode) {
     case 0x66: case 0xF2: case 0xF3:
 	opcode = *pc++;
     }
-    if( (opcode & 0xF0) == 0x40 )
+#if defined(__x86_64__)
+    if ((opcode & 0xF0) == 0x40)
 	opcode = *pc++;
+#endif
     do {
-	switch( opcode ) {
+	switch (opcode) {
 	case 0x0F:
 	    opcode = *pc++;
-	    switch( opcode ) {
+	    switch (opcode) {
 	    case 0x2A: /* cvtpi2ps,cvtsi2sd,cvtsi2ss /r */
 	    case 0x2C: /* cvttpd2pi,cvttps2pi,cvttsd2si,cvtss2si /r */
 	    case 0x2D: /* cvtpd2pi,cvtps2pi,cvtsd2si,cvtss2si /r */
@@ -276,19 +381,19 @@ static void skip_sse2_insn(mcontext_t *mc)
 	fprintf(stderr, "%s: unexpected code at %p:", __FUNCTION__, pc0);
 	do {
 	    fprintf(stderr, " %02X", *pc0++);
-	} while( pc0 < pc );
+	} while (pc0 < pc);
 	fprintf(stderr, "\r\n");
 	abort();
-    } while( 0 );
+    } while (0);
 
     /* Past the opcode. Parse and skip the mod/rm and sib bytes. */
     opcode = *pc++;
-    switch( (opcode >> 6) & 3 ) {	/* inspect mod */
+    switch ((opcode >> 6) & 3) {	/* inspect mod */
     case 0:
-	switch( opcode & 7 ) {		/* inspect r/m */
+	switch (opcode & 7) {		/* inspect r/m */
 	case 4:
 	    opcode = *pc++;		/* sib */
-	    switch( opcode & 7 ) {	/* inspect base */
+	    switch (opcode & 7) {	/* inspect base */
 	    case 5:
 		nr_skip_bytes += 4;	/* disp32 */
 		break;
@@ -301,7 +406,7 @@ static void skip_sse2_insn(mcontext_t *mc)
 	break;
     case 1:
 	nr_skip_bytes += 1;		/* disp8 */
-	switch( opcode & 7 ) {		/* inspect r/m */
+	switch (opcode & 7) {		/* inspect r/m */
 	case 4:
 	    pc += 1;			/* sib */
 	    break;
@@ -309,7 +414,7 @@ static void skip_sse2_insn(mcontext_t *mc)
 	break;
     case 2:
 	nr_skip_bytes += 4;		/* disp32 */
-	switch( opcode & 7 ) {		/* inspect r/m */
+	switch (opcode & 7) {		/* inspect r/m */
 	case 4:
 	    pc += 1;			/* sib */
 	    break;
@@ -326,13 +431,17 @@ static void skip_sse2_insn(mcontext_t *mc)
        no need to check the 15-byte instruction length limit here. */
 
     /* Done. */
-    mc->gregs[REG_RIP] = (long)pc;
+    mc_pc(mc) = (long)pc;
 }
-#endif /* __linux__ && __x86_64__ */
+#endif /* (__linux__ && (__x86_64__ || __i386__)) || (__DARWIN__ && __i386__) */
 
-#if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__powerpc__))) || defined(__DARWIN__)
+#if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__ppc__)))
 
+#if defined(__linux__) && defined(__i386__)
+#include <asm/sigcontext.h>
+#endif
 #include <ucontext.h>
+#include <string.h>
 
 static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
 {
@@ -347,7 +456,7 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
        The alternative is to mask SSE2 exceptions now and
        unmask them again later in erts_check_fpe(), but that
        relies too much on other code being cooperative. */
-    if( fpstate->mxcsr & 0x000F ) {
+    if (fpstate->mxcsr & 0x000D) { /* OE|ZE|IE; see unmask_sse2() */
 	fpstate->mxcsr &= ~(0x003F|0x0680);
 	skip_sse2_insn(mc);
     }
@@ -355,7 +464,17 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
 #elif defined(__i386__)
     mcontext_t *mc = &uc->uc_mcontext;
     fpregset_t fpstate = mc->fpregs;
+    if ((fpstate->status >> 16) == X86_FXSR_MAGIC &&
+	((struct _fpstate*)fpstate)->mxcsr & 0x000D) {
+	((struct _fpstate*)fpstate)->mxcsr &= ~(0x003F|0x0680);
+	skip_sse2_insn(mc);
+    }
     fpstate->sw &= ~0xFF;
+#elif defined(__sparc__)
+    /* on SPARC the 3rd parameter points to a sigcontext not a ucontext */
+    struct sigcontext *sc = (struct sigcontext*)puc;
+    sc->si_regs.pc = sc->si_regs.npc;
+    sc->si_regs.npc = (unsigned long)sc->si_regs.npc + 4;
 #elif defined(__powerpc__)
 #if defined(__powerpc64__)
     mcontext_t *mc = &uc->uc_mcontext;
@@ -367,7 +486,14 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
     regs[PT_NIP] += 4;
     regs[PT_FPSCR] = 0x80|0x40|0x10;	/* VE, OE, ZE; not UE or XE */
 #endif
-#elif defined(__DARWIN__)
+#elif defined(__DARWIN__) && defined(__i386__)
+    mcontext_t mc = uc->uc_mcontext;
+    if (mc->fs.fpu_mxcsr & 0x000D) {
+	mc->fs.fpu_mxcsr &= ~(0x003F|0x0680);
+	skip_sse2_insn(mc);
+    }
+    *(unsigned short *)&mc->fs.fpu_fsw &= ~0xFF;
+#elif defined(__DARWIN__) && defined(__ppc__)
     mcontext_t mc = uc->uc_mcontext;
     mc->ss.srr0 += 4;
     mc->fs.fpscr = 0x80|0x40|0x10;
@@ -385,7 +511,7 @@ static void erts_thread_catch_fp_exceptions(void)
     unmask_fpe();
 }
 
-#else  /* !((__linux__ && (__i386__ || __x86_64__ || __powerpc__)) || __DARWIN__) */
+#else  /* !((__linux__ && (__i386__ || __x86_64__ || __powerpc__)) || (__DARWIN__ && (__i386__ || __ppc__))) */
 
 static void fpe_sig_handler(int sig)
 {
@@ -398,7 +524,7 @@ static void erts_thread_catch_fp_exceptions(void)
     unmask_fpe();
 }
 
-#endif /* (__linux__ && (__i386__ || __x86_64__ || __powerpc__)) || __DARWIN__ */
+#endif /* (__linux__ && (__i386__ || __x86_64__ || __powerpc__)) || (__DARWIN__ && (__i386__ || __ppc__))) */
 
 /* once-only initialisation early in the main thread */
 void erts_sys_init_float(void)
@@ -417,10 +543,11 @@ void erts_thread_init_float(void)
     erts_thread_init_fp_exception();
 #endif
 
-#if !defined(NO_FPE_SIGNALS) && defined(__DARWIN__)
+#if !defined(NO_FPE_SIGNALS) && (defined(__DARWIN__) || defined(__FreeBSD__))
     /* Darwin (7.9.0) does not appear to propagate FP exception settings
        to a new thread from its parent. So if we want FP exceptions, we
-       must manually re-enable them in each new thread. */
+       must manually re-enable them in each new thread.
+       FreeBSD 6.1 appears to suffer from a similar issue. */
     erts_thread_catch_fp_exceptions();
 #endif
 }

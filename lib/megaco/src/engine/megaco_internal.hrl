@@ -85,10 +85,11 @@
 	  auth_data,
 	  user_mod,
 	  user_args,
-	  reply_action,       % call | cast
-	  reply_data,
-	  threaded,
-	  strict_version      % true
+	  reply_action,        % call | cast
+	  reply_data,          % term()
+	  threaded,            % boolean(), false
+	  strict_version,      % boolean(), true
+	  long_request_resend  % boolean(), false
 	 }).
 
 %% N.B. Update megaco_config when a new field is added
@@ -97,25 +98,10 @@
 	 user_node,
 	 monitor_ref}).
 
+
 %%%----------------------------------------------------------------------
 %%% Event Trace
 %%%----------------------------------------------------------------------
-
-%% -define(report(Level, C, Label, Contents),
-%% 	   if
-%% 	       record(C, conn_data), list(Contents) ->
-%% 		   megaco:report_event(Level, C#conn_data.conn_handle,
-%% 				       Label, [{line, ?MODULE, ?LINE}, C | Contents]);
-%% 	       record(C, megaco_receive_handle) ->
-%% 		   megaco:report_event(Level, C#megaco_receive_handle.local_mid,
-%% 				       Label, [{line, ?MODULE, ?LINE}, C | Contents]);
-%% 	       record(C, megaco_conn_handle) ->
-%% 		   megaco:report_event(Level, C#megaco_conn_handle.local_mid,
-%% 				       Label, [{line, ?MODULE, ?LINE}, C | Contents]);
-%% 	       true ->
-%% 		   megaco:report_event(Level, ?APPLICATION,
-%% 				       Label, [{line, ?MODULE, ?LINE}, C | Contents])
-%% 	   end).
 
 -ifdef(megaco_trace_io).
 -define(report(Level, C, Label, Contents), 

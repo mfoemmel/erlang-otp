@@ -43,7 +43,7 @@
 #endif
 
 /* Some system specific defines ... */
-#ifdef __WIN32__
+#if defined(__WIN32__) && !defined(__GNUC__)
 #	define INLINE __forceinline
 #else
 #	ifdef __GNUC__

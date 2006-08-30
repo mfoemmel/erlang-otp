@@ -190,8 +190,7 @@ allocatable() ->
     -- [?FCALLS, ?HEAP_POINTER, ?HEAP_LIMIT].
 
 allocatable_sse2() ->
-  [00,01,02,03,04,05,06,07,08,09,
-   10,11,12,13,14,15]. %% xmm0 - xmm15
+  [00,01,02,03,04,05,06,07,08,09,10,11,12,13,14,15]. %% xmm0 - xmm15
 
 allocatable_x87() ->
   [0,1,2,3,4,5,6].
@@ -215,12 +214,12 @@ arg(N) ->
 
 is_arg(R) ->
   case R of
-    ?ARG0  -> ?AMD64_NR_ARG_REGS > 0;
-    ?ARG1  -> ?AMD64_NR_ARG_REGS > 1;
-    ?ARG2  -> ?AMD64_NR_ARG_REGS > 2;
-    ?ARG3  -> ?AMD64_NR_ARG_REGS > 3;
-    ?ARG4  -> ?AMD64_NR_ARG_REGS > 4;
-    ?ARG5  -> ?AMD64_NR_ARG_REGS > 5;
+    ?ARG0 -> ?AMD64_NR_ARG_REGS > 0;
+    ?ARG1 -> ?AMD64_NR_ARG_REGS > 1;
+    ?ARG2 -> ?AMD64_NR_ARG_REGS > 2;
+    ?ARG3 -> ?AMD64_NR_ARG_REGS > 3;
+    ?ARG4 -> ?AMD64_NR_ARG_REGS > 4;
+    ?ARG5 -> ?AMD64_NR_ARG_REGS > 5;
     _ -> false
   end.
 

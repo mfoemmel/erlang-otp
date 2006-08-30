@@ -5,6 +5,7 @@
 #include "config.h"
 #endif
 #include "global.h"
+#include <sys/mman.h>
 
 #include "hipe_arch.h"
 #include "hipe_native_bif.h"	/* nbif_callemu() */
@@ -82,6 +83,11 @@ static void atexit_alloc_code_stats(void)
 #define ALLOC_CODE_STATS(X)	do{X;}while(0)
 #else
 #define ALLOC_CODE_STATS(X)	do{}while(0)
+#endif
+
+/* FreeBSD 6.1 and Darwin breakage */
+#if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
+#define MAP_ANONYMOUS MAP_ANON
 #endif
 
 static void morecore(unsigned int alloc_bytes)

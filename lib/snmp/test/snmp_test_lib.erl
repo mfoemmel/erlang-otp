@@ -30,7 +30,7 @@
 -export([start_node/2]).
 -export([is_app_running/1, is_crypto_running/0, is_mnesia_running/0]).
 -export([crypto_start/0, crypto_support/0]).
--export([watchdog/2, watchdog_start/1, watchdog_stop/1]).
+-export([watchdog/3, watchdog_start/1, watchdog_start/2, watchdog_stop/1]).
 -export([del_dir/1]).
 -export([cover/1]).
 -export([p/2, print/5]).
@@ -238,21 +238,55 @@ is_crypto_supported(Func) ->
 %% 
 
 watchdog_start(Timeout) ->
-    spawn_link(?MODULE, watchdog, [Timeout, self()]).
+    watchdog_start(unknown, Timeout).
+
+watchdog_start(Case, Timeout) ->
+    spawn_link(?MODULE, watchdog, [Case, Timeout, self()]).
 
 watchdog_stop(Pid) ->
     unlink(Pid),
     exit(Pid, kill),
     ok.
 
-watchdog(Timeout0, Pid) ->
+watchdog(Case, Timeout0, Pid) ->
     process_flag(priority, max),
     Timeout = timeout(Timeout0),
     receive
     after Timeout ->
-            exit(Pid, watchdog_timeout)
+	    Mon = erlang:monitor(process, Pid),
+	    case erlang:process_info(Pid) of
+		undefined ->
+		    ok;
+		ProcInfo ->
+		    Line = 
+			case lists:keysearch(dictionary,1, ProcInfo) of
+			    {value, {_, Dict}} when is_list(Dict) ->
+				case lists:keysearch(test_server_loc, 1, Dict) of
+				    {value, {_, {_Mod, L}}} when is_integer(L) ->
+					L;
+				    _ ->
+					0
+				end;
+			    _ -> % This borders on paranoia, but...
+				0
+			end,
+		    Trap = {timetrap_timeout, Timeout, Line},
+		    exit(Pid, Trap),
+		    receive
+			{'DOWN', Mon, process, Pid, _} ->
+			    ok
+		    after 10000 ->
+			    warning_msg("Failed stopping "
+					"test case ~p process ~p "
+					"[~w] after ~w: killing instead", 
+				[Case, Pid, Line, Timeout]),
+			    exit(Pid, kill)
+		    end
+	    end
     end.
 
+warning_msg(F, A) ->
+    (catch error_logger:warning_msg(F ++ "~n", A)).
 
 timeout(T) ->
     trunc(timeout(T,os:type())).

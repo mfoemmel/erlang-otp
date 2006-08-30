@@ -239,6 +239,10 @@ static int max_fd;
 #define ERL_BUILD_TYPE_MARKER ".purify"
 #elif defined(QUANTIFY)
 #define ERL_BUILD_TYPE_MARKER ".quantify"
+#elif defined(PURECOV)
+#define ERL_BUILD_TYPE_MARKER ".purecov"
+#elif defined(VALGRIND)
+#define ERL_BUILD_TYPE_MARKER ".valgrind"
 #else /* opt */
 #define ERL_BUILD_TYPE_MARKER
 #endif
@@ -2602,7 +2606,7 @@ static ERTS_INLINE int
 prepare_io_wait(SysTimeval *wait_time)
 {
     int res;
-    erts_smp_atomic_xchg(&io_thread_waiting, 1);
+    erts_smp_atomic_set(&io_thread_waiting, 1);
     erts_time_remaining(wait_time);
     res = process_queued_selects();
     erts_smp_io_unlock();
@@ -2629,7 +2633,7 @@ finish_io_wait(void)
 			     NULL,
 			     NULL);
     erts_smp_io_lock();
-    erts_smp_atomic_xchg(&io_thread_waiting, 0);
+    erts_smp_atomic_set(&io_thread_waiting, 0);
 }
 
 static ERTS_INLINE void
@@ -4115,16 +4119,6 @@ erts_wake_io_thread(void)
 {
     if (erts_smp_atomic_xchg(&io_thread_waiting, 0))
 	write(io_thr_waker_data.fds[1], "!", 1);
-}
-
-int
-erts_sys_no_processors(void)
-{
-#if !defined(NO_SYSCONF) && defined(_SC_NPROCESSORS_CONF)
-    return (int) sysconf(_SC_NPROCESSORS_CONF);
-#else
-    return 1;
-#endif
 }
 
 #endif /* #ifdef ERTS_SMP */

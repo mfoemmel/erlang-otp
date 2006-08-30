@@ -39,7 +39,9 @@ $(EBIN)/megaco_misc_sup.$(EMULATOR): megaco_misc_sup.erl
 
 $(EBIN)/megaco_monitor.$(EMULATOR): megaco_monitor.erl 
 
-$(EBIN)/megaco_sdp.$(EMULATOR): megaco_sdp.erl
+$(EBIN)/megaco_sdp.$(EMULATOR): \
+	megaco_sdp.erl \
+	../../include/megaco_sdp.hrl
 
 $(EBIN)/megaco_stats.$(EMULATOR): megaco_stats.erl 
 

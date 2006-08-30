@@ -465,17 +465,6 @@ Eterm hipe_check_get_msg(Process *c_p)
     return ret;
 }
 
-/* This is like the loop_rec_end_f BEAM instruction.
- */
-void hipe_next_msg(Process *c_p)
-{
-    /*
-     * Advance the save pointer to the next message (the current
-     * message didn't match), then jump to the loop_rec instruction.
-     */
-    SAVE_MESSAGE(c_p);
-}
-
 void hipe_atomic_inc(int *counter)
 {
     erts_smp_atomic_inc((erts_smp_atomic_t*)counter);

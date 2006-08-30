@@ -64,9 +64,17 @@ IDL_FILES = \
         $(INCDIR)/erlang.idl
 
 ifeq ($(findstring win32,$(TARGET)),win32)
+USING_MINGW=@MIXED_CYGWIN_MINGW@
+ifeq ($(USING_MINGW),yes)
+AR_OUT = rcv
+CC_FLAGS =
+LIBRARY = $(LIBDIR)/libic.a
+SKIP_BUILDING_BINARIES := false
+else
 LIBRARY = $(LIBDIR)/ic.lib
 AR_OUT = -out:
 CC_FLAGS = -MT
+endif
 ifeq ($(HOST_OS),)
 HOST_OS := $(shell $(ERL_TOP)/erts/autoconf/config.guess)
 endif

@@ -1,9 +1,10 @@
-%%%----------------------------------------------------------------------
-%%% File    : hipe_icode_mulret.erl
-%%% Author  : Christoffer Vikström <chvi3471@it.uu.se>
-%%% Purpose : 
-%%% Created : 23 Jun 2004 by Christoffer Vikström <chvi3471@it.uu.se>
-%%%----------------------------------------------------------------------
+%% -*- erlang-indent-level: 2 -*-
+%%----------------------------------------------------------------------
+%% File    : hipe_icode_mulret.erl
+%% Author  : Christoffer Vikström <chvi3471@it.uu.se>
+%% Purpose : 
+%% Created : 23 Jun 2004 by Christoffer Vikström <chvi3471@it.uu.se>
+%%----------------------------------------------------------------------
 
 -module(hipe_icode_mulret).
 -author('chvi3471@it.uu.se').
@@ -193,7 +194,7 @@ fixDstLst(DstLst, Size, Cnt, Res) when Cnt =< Size ->
 	{true, Var} ->
 	    fixDstLst(DstLst, Size, Cnt+1, [Var|Res]);
 	false  ->
-	    Var = {var, hipe_gensym:new_var(icode)},
+	    Var = hipe_icode:mk_var(hipe_gensym:new_var(icode)),
 	    fixDstLst(DstLst, Size, Cnt+1, [Var|Res])
     end;
 fixDstLst(_,Size,Cnt,Res) when Cnt > Size -> lists:reverse(Res).
@@ -289,9 +290,9 @@ searchBlockCode([]) -> noReturn.
 processReturnBlocks(Blocks, PredMap, Cfg) -> 
     processReturnBlocks(Blocks, PredMap, Cfg, {true, -1}, []).
 processReturnBlocks([{Label, Var}|BlockList], PredMap, 
-		    IcodeCfg,{Opts,Size},TypeLst) ->
+		    IcodeCfg, {Opts, Size}, TypeLst) ->
     {Opt, Type, Size2} = traverseCode(Label, Var, PredMap, IcodeCfg),
-    case (Size == -1) orelse (Size == Size2) of
+    case (Size =:= -1) orelse (Size =:= Size2) of
 	true ->
 	    processReturnBlocks(BlockList, PredMap, IcodeCfg, 
 				{Opt and Opts, Size2}, [Type|TypeLst]);
@@ -368,15 +369,18 @@ findDefine([#call{dstlist=Var,'fun'=mktuple,args=Vs}|_], Var) ->
 	    end
     end;
 findDefine([#move{dst=Var, src=Src}|Code], [Var]) ->
-    case Src of
-	{var, _} ->
+    case hipe_icode:is_var(Src) of
+	true ->
 	    findDefine(Code, [Src]);
-	{const,{flat, Tuple}} when is_tuple(Tuple) ->
-	    {found, const, size(Tuple)};
-	{const, {flat, _}} ->
-	    {found, const, 1};
-	_ ->
-	    findDefine(Code, [Var])
+	false ->
+	    case Src of
+		{const, {flat, Tuple}} when is_tuple(Tuple) ->
+		    {found, const, size(Tuple)};
+		{const, {flat, _}} ->
+		    {found, const, 1};
+		_ ->
+		    findDefine(Code, [Var])
+	    end
     end;
 findDefine([_|Code], Var) ->
     findDefine(Code, Var);
@@ -434,7 +438,7 @@ removeDuplicateCalls([], Res) -> lists:reverse(Res).
 
 containRecursiveCalls([Call|Calls], Fun) ->
     {callPair, Caller, {Callee, _}} = Call,
-    case (Callee == Fun) andalso (Caller == Fun) of
+    case (Callee =:= Fun) andalso (Caller =:= Fun) of
 	true ->
 	    true;
 	 false->
@@ -583,9 +587,9 @@ optimizeReturnBlock({Label,Var}, PredMap, Cfg, UpdateMap) ->
 optimizeDefine(Code, Dst) -> optimizeDefine(lists:reverse(Code), Dst, [], []).
 optimizeDefine([I|Code], Dst, DstLst, Res) -> 
     [Ds] = Dst,
-    case isCallPrimop(I, mktuple) and (length(DstLst) == 0) of
+    case isCallPrimop(I, mktuple) and (length(DstLst) =:= 0) of
 	true ->
-	    case (hipe_icode:call_dstlist(I) == Dst) of
+	    case (hipe_icode:call_dstlist(I) =:= Dst) of
 		true ->
 		    case (hipe_icode:call_args(I) > 1) of 
 			true ->
@@ -598,27 +602,32 @@ optimizeDefine([I|Code], Dst, DstLst, Res) ->
 		    optimizeDefine(Code, Dst, DstLst, [I|Res])
 	    end;
 	false ->
-	    case hipe_icode:is_move(I) and (length(DstLst) == 0) of
+	    case hipe_icode:is_move(I) and (length(DstLst) =:= 0) of
 		true ->
-		    case hipe_icode:move_dst(I) == Ds of
+		    case hipe_icode:move_dst(I) =:= Ds of
 			true ->
-			    case hipe_icode:move_src(I) of
-				{var, _} ->
+			    Src = hipe_icode:move_src(I),
+			    case hipe_icode:is_var(Src) of
+				true ->
 				    NewDst = hipe_icode:move_src(I),
 				    optimizeDefine(Code, [NewDst], 
 						   DstLst, Res);
-				{const, {flat, T}} when is_tuple(T) ->
-				    NewLst = tuple_to_list(T),
-				    optimizeDefine(Code, Dst, NewLst, Res);
-				_ ->
-				    {none, noOpt}
+				false ->
+				    case Src of
+					{const, {flat, T}} when is_tuple(T) ->
+					    NewLst = tuple_to_list(T),
+					    optimizeDefine(Code, Dst,
+							   NewLst, Res);
+					_ ->
+					    {none, noOpt}
+				    end
 			    end;
 			false ->
 			    optimizeDefine(Code, Dst, DstLst, [I|Res])
 		    end;
 		false ->
 		    case lists:member(Ds, hipe_icode:defines(I)) and 
-			(length(DstLst) == 0) of
+			(length(DstLst) =:= 0) of
 			true ->
 			    {none, noOpt};
 			false ->
@@ -756,7 +765,7 @@ checkForUnElems([Succ|Succs], OldVar, DstLst, Cfg) ->
 checkForUnElems2([I|Code], OldVar, DstLst, DstRes) ->
     case isCallPrimop(I, unsafe_element) of
 	true ->
-	    case (hipe_icode:call_args(I) == OldVar) of
+	    case (hipe_icode:call_args(I) =:= OldVar) of
 		true ->
 		    [Dst] = hipe_icode:call_dstlist(I),
 		    case lists:member(Dst, DstLst) of
@@ -772,7 +781,7 @@ checkForUnElems2([I|Code], OldVar, DstLst, DstRes) ->
 	false ->
 	    checkForUnElems2(Code, OldVar, DstLst, DstRes)
     end;
-checkForUnElems2([], _, DstLst, DstRes) -> DstLst == lists:reverse(DstRes).
+checkForUnElems2([], _, DstLst, DstRes) -> DstLst =:= lists:reverse(DstRes).
 
 
 containCallee([I|Code], Callee) ->
@@ -834,7 +843,7 @@ findType(CodeAfter, OldVar) -> findType(CodeAfter, OldVar, [], {none,none}).
 findType([I|Code], OldVar, Rest, Succs) ->
     case hipe_icode:is_type(I) of
 	true ->
-	    case hipe_icode:type_args(I) == OldVar of
+	    case hipe_icode:type_args(I) =:= OldVar of
 		true ->
 		    TrueLab = hipe_icode:type_true_label(I),
 		    FalseLab = hipe_icode:type_false_label(I),
@@ -845,7 +854,7 @@ findType([I|Code], OldVar, Rest, Succs) ->
 	false ->
 	    case hipe_icode:is_move(I) of
 		true ->
-		    case [hipe_icode:move_src(I)] == OldVar of
+		    case [hipe_icode:move_src(I)] =:= OldVar of
 			true ->
 			    findType(Code, hipe_icode:move_dst(I), 
 				     [I|Rest], Succs);
@@ -868,7 +877,7 @@ removeUnElems(Code, OldVar, DstLst) ->
 removeUnElems([I|Code], OldVar, DstLst, Res, Def, Lab)  ->
     case isCallPrimop(I, unsafe_element) of
 	true ->
-	    case (hipe_icode:call_args(I) == OldVar) of
+	    case (hipe_icode:call_args(I) =:= OldVar) of
 		true ->
 		    removeUnElems(Code, OldVar, DstLst, Res, Def, Lab);
 		false ->
@@ -893,7 +902,7 @@ removeUnElems([I|Code], OldVar, DstLst, Res, Def, Lab)  ->
 	false  ->
 	    case hipe_icode:is_move(I) of
 		true ->
-		    case hipe_icode:move_src(I) == OldVar of
+		    case hipe_icode:move_src(I) =:= OldVar of
 			true ->
 			    NewVar = hipe_icode:move_dst(I),
 			    removeUnElems(Code, NewVar, DstLst, 
@@ -905,7 +914,7 @@ removeUnElems([I|Code], OldVar, DstLst, Res, Def, Lab)  ->
 		false ->
 		    case hipe_icode:is_type(I) and not Def of
 			true ->
-			    case Lab == none of
+			    case Lab =:= none of
 				true ->
 				    NewFalseLab = 
 					hipe_gensym:get_next_label(icode);
@@ -977,7 +986,7 @@ checkUsesDefs([I|Code],OldVar,DstLst,FailLab,Res,Defined) ->
     [OVar] = OldVar,
     case hipe_icode:is_move(I) of
 	true ->
-	    case hipe_icode:move_src(I) == OldVar of
+	    case hipe_icode:move_src(I) =:= OldVar of
 		true ->
 		    NewVar = hipe_icode:move_dst(I),
 		    checkUsesDefs(Code, NewVar, DstLst, 
@@ -1028,7 +1037,7 @@ checkUsesDefs([],_,_,_,Res,Defined) -> {lists:reverse(Res),Defined}.
 
 
 insertMiddleFailBlock(Cfg, NewFailLabel, OldFailLabel, OldVar, DstLst) ->
-    case NewFailLabel == none of
+    case NewFailLabel =:= none of
 	true ->
 	    Cfg;
 	false ->
@@ -1042,8 +1051,8 @@ insertMiddleFailBlock(Cfg, NewFailLabel, OldFailLabel, OldVar, DstLst) ->
 isCallLocal(Instr, Fun) ->
     case hipe_icode:is_call(Instr) of
 	true ->
-	    ((hipe_icode:call_type(Instr) == local) and
-	     (hipe_icode:call_fun(Instr) == Fun));
+	    ((hipe_icode:call_type(Instr) =:= local) and
+	     (hipe_icode:call_fun(Instr) =:= Fun));
 	false ->
 	    false
     end.
@@ -1053,11 +1062,11 @@ isCallPrimop(Instr, Fun) ->
 	true ->
 	    case is_tuple(hipe_icode:call_fun(Instr)) of
 		true ->
-		    ((hipe_icode:call_type(Instr) == primop) and
-		     (element(1,hipe_icode:call_fun(Instr)) == Fun));
+		    ((hipe_icode:call_type(Instr) =:= primop) and
+		     (element(1,hipe_icode:call_fun(Instr)) =:= Fun));
 		false ->
-		    ((hipe_icode:call_type(Instr) == primop) and
-		     (hipe_icode:call_fun(Instr) == Fun))
+		    ((hipe_icode:call_type(Instr) =:= primop) and
+		     (hipe_icode:call_fun(Instr) =:= Fun))
 	    end;
 	false ->
 	    false
@@ -1203,9 +1212,9 @@ printCallList([]) -> io:format("~n").
 %%     case hipe_icode:is_call(I) of
 %% 	true ->
 %% 	    Fn = hipe_icode:call_fun(I),
-%% 	    case (hipe_icode:call_args(I) == Var) and is_tuple(Fn) of
+%% 	    case (hipe_icode:call_args(I) =:= Var) and is_tuple(Fn) of
 %% 		true ->
-%% 		    case element(1,Fn) == unsafe_element of 
+%% 		    case element(1,Fn) =:= unsafe_element of 
 %% 			true ->
 %% 			    removeUnElems(List, Var, Res);
 %% 			false ->
@@ -1244,7 +1253,7 @@ printCallList([]) -> io:format("~n").
 %%     case Src of
 %% 	{var, _} ->
 %% 	    findDefine(Code, [Src], [I|NewCode], [Src]);
-%% 	{const,{flat, Tuple}} ->
+%% 	{const, {flat, Tuple}} ->
 %% 	    findDefine(Code, [Var], [I|NewCode], []) %% Check this case! [Var]
 %%     end;
 %% findDefine([I|Code], Var, NewCode, Vars) ->
@@ -1342,15 +1351,18 @@ printCallList([]) -> io:format("~n").
 %% 	    optimizeDefine(Code, Var, Vs, Res)
 %%     end;
 %% optimizeDefine([I=#move{dst=Var, src=Src}|Code], [Var], Rets, Res) ->
-%%     case Src of
-%% 	{var, _} ->
+%%     case hipe_icode:is_var(Src) of
+%% 	true ->
 %% 	    optimizeDefine(Code, [Src], Rets, Res);
-%% 	{const,{flat, Tuple}} when is_tuple(Tuple) ->
-%% 	    optimizeDefine(Code, [Var], tuple_to_list(Tuple), [I|Res]);
-%% 	{const, {flat, _}} ->
-%% 	    {none, noOpt};
-%% 	_ ->
-%% 	    optimizeDefine(Code, [Var], Rets, [I|Res])
+%%      false ->
+%%          case Src of
+%% 	      {const,{flat, Tuple}} when is_tuple(Tuple) ->
+%% 	          optimizeDefine(Code, [Var], tuple_to_list(Tuple), [I|Res]);
+%% 	      {const, {flat, _}} ->
+%% 	          {none, noOpt};
+%% 	      _ ->
+%% 	          optimizeDefine(Code, [Var], Rets, [I|Res])
+%%          end
 %%     end;
 %% optimizeDefine([I|Code], Var, Rets, Res) ->
 %%     optimizeDefine(Code, Var, Rets, [I|Res]);

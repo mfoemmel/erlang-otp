@@ -65,12 +65,12 @@ analyze(CFG) ->
 livein(Liveness,L) ->
   [X || X <- hipe_x86_liveness:livein(Liveness,L),
  	     hipe_x86:temp_is_allocatable(X),
- 	     hipe_x86:temp_type(X)=='double'].
+ 	     hipe_x86:temp_type(X) =:= 'double'].
 
 liveout(BB_in_out_liveness,Label) ->
   [X || X <- hipe_x86_liveness:liveout(BB_in_out_liveness,Label),
 	     hipe_x86:temp_is_allocatable(X),
-	     hipe_x86:temp_type(X) == 'double'].
+	     hipe_x86:temp_type(X) =:= 'double'].
 
 %% Registers stuff
 
@@ -110,13 +110,13 @@ bb(CFG,L) ->
 
 -ifdef(notdef).
 def_use(Instruction) ->
-     {[X || X <- hipe_x86_defuse:insn_def(Instruction), 
- 	   hipe_x86:temp_is_allocatable(X),
- 	   temp_is_double(X)],
-      [X || X <- hipe_x86_defuse:insn_use(Instruction), 
- 	   hipe_x86:temp_is_allocatable(X),
- 	   temp_is_double(X)]
-     }.
+  {[X || X <- hipe_x86_defuse:insn_def(Instruction), 
+	      hipe_x86:temp_is_allocatable(X),
+ 	      temp_is_double(X)],
+   [X || X <- hipe_x86_defuse:insn_use(Instruction), 
+ 	      hipe_x86:temp_is_allocatable(X),
+ 	      temp_is_double(X)]
+  }.
 -endif.
  
 uses(I) ->
@@ -130,7 +130,7 @@ defines(I) ->
  	     temp_is_double(X)].
  
 temp_is_double(Temp)->
-  hipe_x86:temp_type(Temp) == 'double'.
+  hipe_x86:temp_type(Temp) =:= 'double'.
 
 reg_nr(Reg) ->
   hipe_x86:temp_reg(Reg).

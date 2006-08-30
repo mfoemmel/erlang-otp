@@ -1,56 +1,59 @@
 /* $Id$
- * hipe_sparc_glue.S
- *
  */
-
 #include "hipe_sparc_asm.h"
+#include "hipe_literals.h"
+#define ASM
+#include "hipe_mode_switch.h"
 
 	.section ".text"
+	.align	4
 
 /*
- * int sparc_large_call_to_native(Process *p);
+ * Return to the calling C function.
+ * The return value is in TEMP0.
+ *
+ * .flush_exit saves NSP and other cached P state.
+ * .suspend_exit also saves RA
+ */
+.suspend_exit:
+	/* save RA, so we can be resumed */
+	st	RA, [P+P_NRA]
+.flush_exit:
+	/* restore C return address (hoisted to avoid stall) */
+	ld	[%sp+96], %i7
+	/* flush cached P state */
+	st	FCALLS, [P+P_FCALLS]
+	st	NSP, [P+P_NSP]
+	st	HP, [P+P_HP]
+	/* restore callee-save registers, drop frame, return */
+	jmp	%i7+8				! ret
+	restore	%g0,TEMP0,%o0
+
+/*
+ * int sparc_call_to_native(Process *p);
  * Emulated code recursively calls native code.
  */
-	.align	4
-	.global	sparc_large_call_to_native
-	.type	sparc_large_call_to_native,#function
-	.proc	04
-sparc_large_call_to_native:
-	save %sp,-112,%sp
-	st %i7,[P+P_CRA]			! save C return address
-	ld [P+P_ARG3],ARG3			! Arg3
-	ld [P+P_ARG4],ARG4			! Arg4
-	ld [P+P_ARG5],ARG5			! Arg5
-	ld [P+P_ARG6],ARG6			! Arg6
-	ld [P+P_ARG7],ARG7			! Arg7
-	ld [P+P_ARG8],ARG8			! Arg8
-	ld [P+P_ARG9],ARG9			! Arg9	
-	ld [P+P_ARG10],ARG10			! Arg10
-	ld [P+P_ARG11],ARG11			! Arg11
-	ld [P+P_ARG12],ARG12			! Arg12
-	ld [P+P_ARG13],ARG13			! Arg13
-	ld [P+P_ARG14],ARG14			! Arg14
-	ba .load_globals
-	ld [P+P_ARG15],ARG15			! Arg15
-
 	.align	4
 	.global	sparc_call_to_native
 	.type	sparc_call_to_native,#function
 	.proc	04
 sparc_call_to_native:
-	save %sp,-112,%sp
-	st %i7,[P+P_CRA]			! save C return address
-.load_globals:	
+	save %sp,-112,%sp		! shifts %o0 to %i0, and P == %i0
+	st %i7,[%sp+96]			! save C return address
 	ld [P+P_ARG0],ARG0			! Arg0
 	ld [P+P_ARG1],ARG1			! Arg1
 	ld [P+P_ARG2],ARG2			! Arg2
+	ld [P+P_ARG3],ARG3			! Arg3
+	ld [P+P_ARG4],ARG4			! Arg4
+	ld [P+P_ARG5],ARG5			! Arg5
 	ld [P+P_FCALLS],FCALLS			! fcalls
 	ld [P+P_NSP],NSP			! nstop
 	ld [P+P_NSP_LIMIT],NSP_LIMIT		! nstack_max
 	ld [P+P_HP],HP				! htop
 	ld [P+P_HP_LIMIT],HP_LIMIT		! heap_margin
 	ld [P+P_NCALLEE],TEMP0			! call address	
-/*
+/* FALLTHROUGH
+ *
  * We export this return address so that hipe_mode_switch() can discover
  * when native code tailcalls emulated code.
  * Note: this is SPARC, so the value in the return address register
@@ -60,7 +63,8 @@ sparc_call_to_native:
 nbif_return:
 	jmpl TEMP0,RA				! Call native code
 	nop
-/*
+/* FALLTHROUGH
+ *
  * This is where native code returns to emulated code.
  * XXX:	Needs fix for multiple return values.	
  */
@@ -95,16 +99,6 @@ nbif_callemu:
 	st ARG3,[P+P_ARG3]			! Arg3
 	st ARG4,[P+P_ARG4]			! Arg4
 	st ARG5,[P+P_ARG5]			! Arg5
-	st ARG6,[P+P_ARG6]			! Arg6
-	st ARG7,[P+P_ARG7]			! Arg7
-	st ARG8,[P+P_ARG8]			! Arg8
-	st ARG9,[P+P_ARG9]			! Arg9
-	st ARG10,[P+P_ARG10]			! Arg10
-	st ARG11,[P+P_ARG11]			! Arg11
-	st ARG12,[P+P_ARG12]			! Arg12
-	st ARG13,[P+P_ARG13]			! Arg13
-	st ARG14,[P+P_ARG14]			! Arg14	
-	st ARG15,[P+P_ARG15]			! Arg15	
 	ba .flush_exit
 	mov HIPE_MODE_SWITCH_RES_CALL,TEMP0
 
@@ -128,16 +122,6 @@ nbif_apply:
  * of parameters in registers, not the total number of parameters.
  */
 
-	.global nbif_ccallemu16
-	.global nbif_ccallemu15
-	.global nbif_ccallemu14
-	.global nbif_ccallemu13
-	.global nbif_ccallemu12
-	.global nbif_ccallemu11
-	.global nbif_ccallemu10
-	.global nbif_ccallemu9
-	.global nbif_ccallemu8
-	.global nbif_ccallemu7
 	.global nbif_ccallemu6
 	.global nbif_ccallemu5
 	.global nbif_ccallemu4
@@ -146,40 +130,10 @@ nbif_apply:
 	.global nbif_ccallemu1
 	.global nbif_ccallemu0
 
-nbif_ccallemu16:
-	ld [NSP-4], TEMP0
-	ba .args15
-	st TEMP0,[P+P_CLOSURE]
-nbif_ccallemu15:
-	ba .args14
-	st ARG15,[P+P_CLOSURE]
-nbif_ccallemu14:
-	ba .args13
-	st ARG14,[P+P_CLOSURE]
-nbif_ccallemu13:
-	ba .args12
-	st ARG13,[P+P_CLOSURE]
-nbif_ccallemu12:
-	ba .args11
-	st ARG12,[P+P_CLOSURE]
-nbif_ccallemu11:
-	ba .args10
-	st ARG11,[P+P_CLOSURE]
-nbif_ccallemu10:
-	ba .args9
-	st ARG10,[P+P_CLOSURE]
-nbif_ccallemu9:
-	ba .args8
-	st ARG9,[P+P_CLOSURE]
-nbif_ccallemu8:
-	ba .args7
-	st ARG8,[P+P_CLOSURE]
-nbif_ccallemu7:
-	ba .args6
-	st ARG7,[P+P_CLOSURE]
 nbif_ccallemu6:
+	ld [NSP-4], TEMP0
 	ba .args5
-	st ARG6,[P+P_CLOSURE]
+	st TEMP0,[P+P_CLOSURE]
 nbif_ccallemu5:
 	ba .args4
 	st ARG5,[P+P_CLOSURE]	
@@ -199,16 +153,6 @@ nbif_ccallemu0:
 	ba .ccall
 	st ARG0,[P+P_CLOSURE]
 
-.args15:	st ARG15,[P+P_ARG15]	
-.args14:	st ARG14,[P+P_ARG14]
-.args13:	st ARG13,[P+P_ARG13]
-.args12:	st ARG12,[P+P_ARG12]
-.args11:	st ARG11,[P+P_ARG11]
-.args10:	st ARG10,[P+P_ARG10]
-.args9:		st ARG9,[P+P_ARG9]
-.args8:		st ARG8,[P+P_ARG8]
-.args7:		st ARG7,[P+P_ARG7]
-.args6:		st ARG6,[P+P_ARG6]
 .args5:		st ARG5,[P+P_ARG5]
 .args4:		st ARG4,[P+P_ARG4]
 .args3:		st ARG3,[P+P_ARG3]
@@ -238,7 +182,7 @@ nbif_suspend_msg:
 
 /*
  * Suspend from a receive with a timeout (waiting for a message)
- *	if( !(p->flags & F_TIMO) ) { suspend }
+ *	if (!(p->flags & F_TIMO)) { suspend }
  *	else { return 0; }
  */
 	.align 4
@@ -254,23 +198,6 @@ nbif_suspend_msg_timeout:
 	mov 0,%o0
 
 /*
- * Return to the calling C function.
- * The return value is in TEMP0.
- *
- * .flush_exit saves FCALLS, NSP, HP 
- * .suspend_exit also saves RA
- */
-.suspend_exit:	! like .flush_exit, but save RA too
-	st	RA, [P+P_NRA]
-.flush_exit:	! call with P intact and RV in TEMP0
-	ld	[P+P_CRA], %i7			! restore C return address
-	st	FCALLS, [P+P_FCALLS]
-	st	NSP, [P+P_NSP]
-	st	HP, [P+P_HP]
-	jmp	%i7+8				! ret
-	restore	%g0,TEMP0,%o0
-
-/*
  * int sparc_return_to_native(Process *p);
  * Emulated code returns to its native code caller.
  */
@@ -281,7 +208,7 @@ nbif_suspend_msg_timeout:
 sparc_return_to_native:
 	save %sp,-112,%sp
 	ld [P+P_NRA],RA				! XXX: was CALL_ADDRESS
-	st %i7,[P+P_CRA]			! save C return address
+	st %i7,[%sp+96]			! save C return address
 	ld [P+P_FCALLS],FCALLS			! fcalls
 	ld [P+P_NSP],NSP			! nstop
 	ld [P+P_NSP_LIMIT],NSP_LIMIT		! nstack_max
@@ -301,7 +228,7 @@ sparc_return_to_native:
 	.proc	04
 sparc_tailcall_to_native:
 	save %sp,-112,%sp
-	st %i7,[P+P_CRA]			! save C return address
+	st %i7,[%sp+96]			! save C return address
 	ld [P+P_NCALLEE],TEMP0			! call address
 	ld [P+P_FCALLS],FCALLS			! fcalls
 	ld [P+P_NSP],NSP			! nstop
@@ -313,19 +240,9 @@ sparc_tailcall_to_native:
 	ld [P+P_ARG2],ARG2			! Arg2
 	ld [P+P_ARG3],ARG3			! Arg3
 	ld [P+P_ARG4],ARG4			! Arg4
-	ld [P+P_ARG5],ARG5			! Arg5
-	ld [P+P_ARG6],ARG6			! Arg6
-	ld [P+P_ARG7],ARG7			! Arg7
-	ld [P+P_ARG8],ARG8			! Arg8
-	ld [P+P_ARG9],ARG9			! Arg9
-	ld [P+P_ARG10],ARG10			! Arg10
-	ld [P+P_ARG11],ARG11			! Arg11
-	ld [P+P_ARG12],ARG12			! Arg12
-	ld [P+P_ARG14],ARG14			! Arg14
-	ld [P+P_ARG15],ARG15			! Arg15			
 	ld [P+P_NRA],RA				! native return address
 	jmp TEMP0				! Call native code
-	ld [P+P_ARG13],ARG13			! Arg13
+	ld [P+P_ARG5],ARG5			! Arg5
 
 
 /*
@@ -338,7 +255,7 @@ sparc_tailcall_to_native:
 	.proc	04
 sparc_throw_to_native:
 	save %sp,-112,%sp
-	st %i7,[P+P_CRA]			! save C return address
+	st %i7,[%sp+96]			! save C return address
 	ld [P+P_NCALLEE],TEMP0			! handler address
 	ld [P+P_FCALLS],FCALLS			! fcalls
 	ld [P+P_NSP],NSP			! nstop
@@ -346,23 +263,6 @@ sparc_throw_to_native:
 	ld [P+P_HP],HP				! htop
 	ld [P+P_HP_LIMIT],HP_LIMIT		! heap_margin
 	jmp TEMP0				! invoke the handler
-	nop
-
-/*
- * Find and invoke catch handler (it must exist).
- * The stack/heap registers were just read from P.
- */
-.find_exn_handler:
-	/* find and prepare to invoke the handler */
-	st	TEMP3, [P+P_NRA]  	! TEMP3 = RetAdr, save to find current sdesc
-	call	hipe_handle_exception
-	mov	P, %o0                  ! (delayslot)
-	
-	ld	[P+P_HP],HP		! hipe_handle_exception() conses
-	/* now invoke the handler */
-	ld	[P+P_NCALLEE], %o1	! updated by hipe_find_handler()
-	ld	[P+P_NSP], NSP		! updated by hipe_find_handler()
-	jmp	%o1
 	nop
 
 /*
@@ -374,19 +274,17 @@ nbif_fail:
 	mov	HIPE_MODE_SWITCH_RES_THROW, TEMP0
 
 /*
- * We end up here when a bif called from native signals an
+ * We end up here when a BIF called from native signals an
  * exceptional condition, and RESCHEDULE cannot occur.
- * The stack/heap registers were just read from P.
+ * FCALLS was just read from P.
+ * HP has not been read from P.
+ * NSP has not been saved in P.
  * TEMP3 contains the native return address.
  */
-	.global	nbif_0_simple_exception
 	.global	nbif_1_simple_exception
 	.global	nbif_2_simple_exception
 	.global	nbif_3_simple_exception
 	.align	4
-nbif_0_simple_exception:
-	ba	.nbif_simple_exception
-	mov	0,ARG4
 nbif_1_simple_exception:
 	ba	.nbif_simple_exception
 	mov	1,ARG4
@@ -398,30 +296,57 @@ nbif_3_simple_exception:
 	!! FALLTHROUGH
 .nbif_simple_exception:
 	ld	[P+P_FREASON],ARG1
+	st	NSP,[P+P_NSP]
+.nbif_simple_exception2:
 	cmp	ARG1,FREASON_TRAP
-	bne	.find_exn_handler
+	beq	.handle_trap
 	nop
+	/*
+	 * Find and invoke catch handler (it must exist).
+	 * FCALLS was just read from P.
+	 * HP has not been read from P.
+	 * NSP has been saved in P.
+	 * TEMP3 should contain the current call's return address.
+	 */
+	/* find and prepare to invoke the handler */
+	st	TEMP3, [P+P_NRA]  	! TEMP3 = RetAdr, save to find current sdesc
+	call	hipe_handle_exception
+	mov	P, %o0                  ! (delayslot)
+	ld	[P+P_HP],HP		! hipe_handle_exception() conses
+	ld	[P+P_FCALLS],FCALLS	! updated by hipe_handle_exception()
+	/* now invoke the handler */
+	ld	[P+P_NCALLEE], %o1	! updated by hipe_find_handler()
+	ld	[P+P_NSP], NSP		! updated by hipe_find_handler()
+	jmp	%o1
+	nop
+
 	/*
 	 * A BIF failed with freason TRAP:
 	 * - the BIF stored the callee's Export* in p->def_arg_reg[0]
 	 * - the BIF stored the actual parameters in p->def_arg_reg[1..]
 	 * - the BIF's arity is in ARG4
 	 * - the native RA was saved in TEMP3 before the BIF call
-	 * - the native heap/stack/reds registers are saved in P
+	 * - FCALLS was just read from P
+	 * - HP has not been read from P
+	 * - NSP has been saved in P
 	 */
+.handle_trap:
 	mov	HIPE_MODE_SWITCH_RES_TRAP, TEMP0
 .bif_exit:
-	ld	[P+P_CRA], %i7			! restore C return address
+	/* restore C return address (hoisted to avoid stall) */
+	ld	[%sp+96], %i7
 	st	ARG4, [P+P_ARITY]
 	st	TEMP3, [P+P_NRA]		! RA
 	jmp	%i7+8
 	restore	%g0,TEMP0,%o0
 
 /*
- * We end up here when a bif called from native signals an
+ * We end up here when a BIF called from native signals an
  * exceptional condition, and RESCHEDULE _CAN_ occur.
- * TEMP3 contains the native return address, and the
- * stack/heap/reds registers were just read from P.
+ * TEMP3 contains the native return address.
+ * FCALLS was just read from P.
+ * HP has not been read from P.
+ * NSP has not been saved in P.
  * TEMP0 contains the address of the nbif which failed
  * TEMP1 contains the first actual parameter
  * TEMP2 contains the second actual parameter (if it is defined)
@@ -430,9 +355,10 @@ nbif_3_simple_exception:
 	.align	4
 	.global	nbif_hairy_exception
 nbif_hairy_exception:
-	ld	[P+P_FREASON],ARG1	! must not clobber bif retval in %o0
+	ld	[P+P_FREASON],ARG1
+	st	NSP,[P+P_NSP]
 	cmp	ARG1,FREASON_RESCHEDULE
-	bne	.nbif_simple_exception
+	bne	.nbif_simple_exception2
 	nop
 	/* handle reschedule */
 	st	TEMP0,[P+P_NCALLEE]
@@ -451,25 +377,17 @@ nbif_hairy_exception:
 nbif_stack_trap_ra:			! a return address, not a function
 	nop                             ! Simulate ret adr
 	nop
-	st %o0,[P+P_ARG0]
+	mov %o0,TEMP1			! save retval
 	mov P,%o0
 	!! Save registers and call the C function
-	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
 	call hipe_handle_stack_trap	! must not cons
 	st NSP,[P+P_NSP]                !  (delayslot)
-	
-                                        ! Returns 
+
 	mov %o0, TEMP0	                ! original RA    
 	!! Restore registers and return
-	ld [P+P_HP_LIMIT],HP_LIMIT
-	ld [P+P_NSP_LIMIT],NSP_LIMIT
-	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
 	!! We only restore argument1
-	ld [P+P_ARG0], %o0
 	jmpl TEMP0+8,%g0                ! resume at original RA
-	ld [P+P_NSP],NSP                !  (delayslot)
+	mov TEMP1,%o0			! restore retval
 
 /*   This procedure is called when nativecode runs out of stack.
  *   There is a special calling convention for this function
@@ -486,16 +404,6 @@ nbif_stack_trap_ra:			! a return address, not a function
  *   !!! THIS procedure may not use TEMP2
  */
 	.align	4
-	.global	nbif_inc_stack_16args	
-	.global	nbif_inc_stack_15args
-	.global	nbif_inc_stack_14args
-	.global	nbif_inc_stack_13args	
-	.global	nbif_inc_stack_12args	
-	.global	nbif_inc_stack_11args	
-	.global	nbif_inc_stack_10args
-	.global	nbif_inc_stack_9args
-	.global	nbif_inc_stack_8args	
-	.global	nbif_inc_stack_7args	
 	.global	nbif_inc_stack_6args	
 	.global	nbif_inc_stack_5args
 	.global	nbif_inc_stack_4args
@@ -504,26 +412,6 @@ nbif_stack_trap_ra:			! a return address, not a function
 	.global	nbif_inc_stack_1args	
 	.global	nbif_inc_stack_0args	
 	
-nbif_inc_stack_16args:	
-	st ARG15,[P+P_ARG15]
-nbif_inc_stack_15args:	
-	st ARG14,[P+P_ARG14]
-nbif_inc_stack_14args:	
-	st ARG13,[P+P_ARG13]
-nbif_inc_stack_13args:	
-	st ARG12,[P+P_ARG12]
-nbif_inc_stack_12args:
-	st ARG11,[P+P_ARG11]
-nbif_inc_stack_11args:	
-	st ARG10,[P+P_ARG10]
-nbif_inc_stack_10args:	
-	st ARG9,[P+P_ARG9]
-nbif_inc_stack_9args:	
-	st ARG8,[P+P_ARG8]
-nbif_inc_stack_8args:	
-	st ARG7,[P+P_ARG7]
-nbif_inc_stack_7args:
-	st ARG6,[P+P_ARG6]
 nbif_inc_stack_6args:	
 	st ARG5,[P+P_ARG5]
 nbif_inc_stack_5args:	
@@ -543,28 +431,12 @@ nbif_inc_stack_0args:
 	!! The argument to hipe_inc_stack is the PCB.
 	mov P, %o0	
 	!! Save registers and call the C function
-	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
-
 	call hipe_inc_nstack
 	st NSP,[P+P_NSP]       !! Delayslot
 
 	!! Restore registers and return
-	ld [P+P_HP_LIMIT],HP_LIMIT
 	ld [P+P_NSP_LIMIT],NSP_LIMIT
-	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
 	!! We restore all arguments, even unused ones. 	
-	ld [P+P_ARG15], ARG15
-	ld [P+P_ARG14], ARG14
-	ld [P+P_ARG13], ARG13
-	ld [P+P_ARG12], ARG12
-	ld [P+P_ARG11], ARG11
-	ld [P+P_ARG10], ARG10
-	ld [P+P_ARG9], ARG9
-	ld [P+P_ARG8], ARG8
-	ld [P+P_ARG7], ARG7
-	ld [P+P_ARG6], ARG6
 	ld [P+P_ARG5], ARG5
 	ld [P+P_ARG4], ARG4
 	ld [P+P_ARG3], ARG3

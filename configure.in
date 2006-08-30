@@ -1,11 +1,23 @@
 dnl Process this file with autoconf to produce a configure script.
 AC_PREREQ(2.8)dnl
 
-dnl Prevent caching
-define([AC_CACHE_LOAD], )dnl
-define([AC_CACHE_SAVE], )dnl
-
 AC_INIT()
+
+default_cache_file=./config.cache
+
+if test "x$no_recursion" != "xyes"; then
+    # The no_recursion variable is not documented, but the only
+    # action we take on it is disabling caching which is safe!
+    if test "x$cache_file" != "x$default_cache_file"; then
+	echo "Ignoring the --cache-file argument since it can cause the system to be erroneously configured"
+    fi
+    echo "Disabeling caching"
+    if test -f $cache_file; then
+	echo "Removing cache file $cache_file"
+	rm -f $cache_file
+    fi
+    cache_file=/dev/null
+fi
 
 dnl How to set srcdir absolute is taken from the GNU Emacs distribution
 #### Make srcdir absolute, if it isn't already.  It's important to
@@ -146,7 +158,6 @@ AC_ARG_ENABLE(erlang-mandir,
     *)  erl_mandir='$(ERLANG_ILIBDIR)/man' ;;
   esac ], erl_mandir='$(ERLANG_ILIBDIR)/man')
 AC_SUBST(erl_mandir)
-
 
 export ERL_TOP
 AC_CONFIG_SUBDIRS(lib erts)

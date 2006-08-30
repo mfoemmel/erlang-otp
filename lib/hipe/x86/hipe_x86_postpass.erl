@@ -92,7 +92,7 @@ peep([Move=#fmove{src=Src, dst=Dst},
 peep([#move{src=Src1, dst=Dst}, 
       #alu{aluop=Op,src=Src2,dst=Dst}|Insns], Res, Lst)
   when (Src1 == #x86_imm{}) and (Src2 /= #x86_imm{}) and 
-       ((Op=='add') or (Op=='and') or (Op=='or') or (Op=='xor'))  ->
+       ((Op =:= 'add') or (Op =:= 'and') or (Op =:= 'or') or (Op =:= 'xor'))  ->
   peep(Insns, [#alu{aluop=Op,src=Src1,dst=Dst},
 	       #move{src=Src2, dst=Dst}|Res], 
        [commuteBinALMD|Lst]);
@@ -102,7 +102,7 @@ peep([#move{src=Src1, dst=Dst},
 %% --------
 peep([C=#cmp{src=Src, dst=Dst},J=#jcc{cc=Cond, label=Lab}|Insns],Res,Lst) ->
     case (((Src == #x86_imm{value=0}) or (Dst == #x86_imm{value=0})) and
-	  ((Cond == 'eq') or (Cond == 'neq'))) of
+	  ((Cond =:= 'eq') or (Cond =:= 'neq'))) of
 	true ->
 	    Src2 = case Src of #x86_imm{value=0} -> Src; _ -> Dst end, 
 	    Cond2 = case Cond of 'eq' -> 'z'; 'neq' -> 'nz' end,
@@ -157,7 +157,7 @@ when (Dst==#x86_temp{}) ->
 %% ----------
 peep([B = #alu{aluop=Op,src=#x86_imm{value=Val},dst=Dst}|Insns], Res, Lst) ->
     {IsLog2, Size, Sign} = log2(Val),
-    case ((Op == imul) or (Op == idiv)) and IsLog2 of
+    case ((Op =:= imul) or (Op =:= idiv)) and IsLog2 of
 	true ->
 	    Sh = case Sign of positive -> 'bsl'; negative -> 'bsr' end,
 	    peep(Insns, 
@@ -224,7 +224,7 @@ expand([], Res) -> lists:reverse(Res).
 log2(Nr) -> log2(Nr, 0).
 log2(0, _) -> {false, 0, positive};
 log2(Nr, I) ->
-    case (Nr band 1) == 1 of
+    case (Nr band 1) =:= 1 of
 	true ->
 	    case Nr of
 		1 ->
@@ -239,7 +239,7 @@ log2(Nr, I) ->
     end.
 
 %% Skips through all comments and move instructions and returns the next one
-%% ------------------------------------------------------------------------
+%% -------------------------------------------------------------------------
 %% Used by ElimCmpTest above.
 check([I|Ins]) ->
     case I of

@@ -47,11 +47,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <process.h>
-#ifdef __GNUC__
-#include <Windows32/errors.h>
-#else
 #include <winerror.h>
-#endif
 
 #else
 #error "Missing thread implementation"
@@ -1623,7 +1619,7 @@ ethr_tid last_ix; /* Last thread table index used */
 ethr_tid thr_ix_mask; /* Mask used to mask out thread table index from a tid */
 
 /* Event used for conditional variables. On per thread. */
-typedef struct cnd_wait_event__ cnd_wait_event_;
+/*typedef struct cnd_wait_event__ cnd_wait_event_;*/
 struct cnd_wait_event__ {
     HANDLE handle;
     cnd_wait_event_ *prev;
@@ -1907,7 +1903,13 @@ fake_static_cond_init(ethr_cond *cnd)
     return 0;
 }
 
-#define EPOCH_JULIAN_DIFF 11644473600i64
+#ifdef __GNUC__
+#define LL_LITERAL(X) X##LL
+#else
+#define LL_LITERAL(X) X##i64
+#endif
+
+#define EPOCH_JULIAN_DIFF LL_LITERAL(11644473600)
 
 static ETHR_INLINE void
 get_curr_time(long *sec, long *nsec)
@@ -1919,8 +1921,8 @@ get_curr_time(long *sec, long *nsec)
     GetSystemTime(&t);
     SystemTimeToFileTime(&t, &ft);
     memcpy(&lft, &ft, sizeof(lft));
-    *nsec = ((long) (lft % 10000000i64))*100;
-    *sec = (long) ((lft / 10000000i64) - EPOCH_JULIAN_DIFF);
+    *nsec = ((long) (lft % LL_LITERAL(10000000)))*100;
+    *sec = (long) ((lft / LL_LITERAL(10000000)) - EPOCH_JULIAN_DIFF);
 }
 
 static ETHR_INLINE int

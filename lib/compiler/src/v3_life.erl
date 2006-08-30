@@ -44,7 +44,7 @@
 
 -export([vdb_find/2]).
 
--import(lists, [map/2,foldl/3,reverse/1,sort/1]).
+-import(lists, [member/2,map/2,foldl/3,reverse/1,sort/1]).
 -import(ordsets, [add_element/2,intersection/2,union/2,union/1]).
 
 -include("v3_kernel.hrl").
@@ -154,7 +154,7 @@ guard_expr(#k_bif{anno=A,op=Op,args=As,ret=Rs}, I, _Vdb) ->
 guard_expr(#k_put{anno=A,arg=Arg,ret=Rs}, I, _Vdb) ->
     #l{ke={set,var_list(Rs),literal(Arg, [])},i=I,a=A#k.a};
 guard_expr(#k_match{anno=A,body=Kb,ret=Rs}, I, Vdb) ->
-    %% Experimental support for andalso/orelse in guards.
+    %% Support for andalso/orelse in guards.
     %% Work out imported variables which need to be locked.
     Mdb = vdb_sub(I, I+1, Vdb),
     M = match(Kb, A#k.us, I+1, [], Mdb),
@@ -288,7 +288,10 @@ match(#k_alt{anno=A,first=Kf,then=Kt}, Ls, I, Ctxt, Vdb0) ->
     T = match(Kt, Ls, I+1, Ctxt, Vdb1),
     #l{ke={alt,F,T},i=I,vdb=Vdb1,a=A#k.a};
 match(#k_select{anno=A,var=V,types=Kts}, Ls0, I, Ctxt, Vdb0) ->
-    Ls1 = add_element(V#k_var.name, Ls0),
+    Ls1 = case member(no_usage, get_kanno(V)) of
+	      false -> add_element(V#k_var.name, Ls0);
+	      true -> Ls0
+	  end,
     Vdb1 = use_vars(union(A#k.us, Ls1), I, Vdb0),
     Ts = map(fun (Tc) -> type_clause(Tc, Ls1, I+1, Ctxt, Vdb1) end, Kts),
     #l{ke={select,literal(V, Ctxt),Ts},i=I,vdb=Vdb1,a=A#k.a};
@@ -308,8 +311,7 @@ type_clause(#k_type_clause{anno=A,type=T,values=Kvs}, Ls, I, Ctxt, Vdb0) ->
     #l{ke={type_clause,type(T),Vs},i=I,vdb=Vdb1,a=A#k.a}.
 
 val_clause(#k_val_clause{anno=A,val=V,body=Kb}, Ls0, I, Ctxt0, Vdb0) ->
-    {_Used,New} = match_pat_vars(V),
-    %% Not clear yet how Used should be used.
+    New = (get_kanno(V))#k.ns,
     Bus = (get_kanno(Kb))#k.us,
     %%ok = io:format("Ls0 = ~p, Used=~p\n  New=~p, Bus=~p\n", [Ls0,Used,New,Bus]),
     Ls1 = union(intersection(New, Bus), Ls0),	%Lock for safety
@@ -425,38 +427,6 @@ literal(#k_tuple{es=Es}, Ctxt) ->
 literal_list(Ks, Ctxt) ->
     map(fun(K) -> literal(K, Ctxt) end, Ks).
 
-%% literal_bin(#k_bin_seg{size=S,unit=U,type=T,flags=Fs,seg=Seg,next=N}) ->
-%%     {bin_seg,literal(S),U,T,Fs,[literal(Seg),literal(N)]}
-
-
-%% match_pat_vars(Pattern) -> {[UsedVarName],[NewVarName]}.
-
-match_pat_vars(#k_var{name=N}) -> {[],[N]};
-match_pat_vars(#k_int{}) -> {[],[]};
-match_pat_vars(#k_float{}) -> {[],[]};
-match_pat_vars(#k_atom{}) -> {[],[]};
-%%match_pat_vars(#k_char{}) -> {[],[]};
-%%match_pat_vars(#k_string{}) -> {[],[]};
-match_pat_vars(#k_nil{}) -> {[],[]};
-match_pat_vars(#k_cons{hd=H,tl=T}) ->
-    match_pat_list_vars([H,T]);
-match_pat_vars(#k_binary{segs=V}) ->
-    match_pat_vars(V);
-match_pat_vars(#k_bin_seg{size=S,seg=Seg,next=N}) ->
-    {U1,New1} = match_pat_vars(Seg),
-    {U2,New2} = match_pat_vars(N),
-    {[],U3} = match_pat_vars(S),
-    {union([U1,U2,U3]),union(New1, New2)};
-match_pat_vars(#k_bin_end{}) -> {[],[]};
-match_pat_vars(#k_tuple{es=Es}) ->
-    match_pat_list_vars(Es).
-
-match_pat_list_vars(Ps) ->
-    foldl(fun (P, {Used0,New0}) ->
-		  {Used,New} = match_pat_vars(P),
-		  {union(Used0, Used),union(New0, New)} end,
-	  {[],[]}, Ps).
-
 %% is_gc_bif(Name, Arity) -> true|false
 %%  Determines whether the BIF Name/Arity might do a GC.
 
@@ -475,11 +445,6 @@ is_gc_bif_1(element, 2) -> false;
 is_gc_bif_1(get, 1) -> false;
 is_gc_bif_1(internal_is_record, 3) -> false;
 is_gc_bif_1(raise, 2) -> false;
-is_gc_bif_1(is_record, 3) ->
-    %% Needed for boostrap purposes until
-    %% erl_internal:new_type_test(is_record, 3) returns true,
-    %% which should be in R11B-1.
-    false;
 is_gc_bif_1(Bif, Arity) ->
     not (erl_internal:bool_op(Bif, Arity) orelse
 	 erl_internal:new_type_test(Bif, Arity) orelse

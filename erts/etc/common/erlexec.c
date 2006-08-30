@@ -28,6 +28,7 @@
 #include "erl_driver.h"
 #include <stdlib.h>
 #include <stdarg.h>
+#include "erl_misc_utils.h"
 
 #ifdef __WIN32__
 #  include "erl_version.h"
@@ -132,6 +133,8 @@ void error(char* format, ...);
  * Local functions.
  */
 
+static void usage_notsup(const char *switchname);
+static void usage_msg(const char *msg);
 static void mergeargs(int *argc, char ***argv, char **addargs);
 static char **build_args_from_env(char *env_var);
 static void get_parameters(int argc, char** argv);
@@ -275,7 +278,6 @@ int main(int argc, char **argv)
     char *malloc_lib;
     int process_args = 1;
     int print_args_exit = 0;
-    int run_valgrind = 0;
 
 #ifdef __WIN32__
     this_module_handle = module;
@@ -326,15 +328,65 @@ int main(int argc, char **argv)
 	}
 	else if (argv[i][0] == '-') {
 	    if (strcmp(argv[i], "-smp") == 0) {
-		emu_type = EMU_TYPE_SMP;
+
+		if (i + 1 >= argc)
+		    goto smp;
+
+		if (strcmp(argv[i+1], "auto") == 0) {
+		    i++;
+		smp_auto:
+#ifdef ERTS_HAVE_SMP_EMU
+		    if (erts_no_of_cpus() > 1)
+			emu_type |= EMU_TYPE_SMP;
+		    else
+#endif
+			emu_type &= ~EMU_TYPE_SMP;
+		}
+		else if (strcmp(argv[i+1], "enable") == 0) {
+		    i++;
+		smp_enable:
+#ifdef ERTS_HAVE_SMP_EMU
+		    emu_type |= EMU_TYPE_SMP;
+#else
+		    usage_notsup("-smp enable");
+#endif
+		}
+		else if (strcmp(argv[i+1], "disable") == 0) {
+		    i++;
+		smp_disable:
+		    emu_type &= ~EMU_TYPE_SMP;
+		}
+		else {
+		smp:
+#ifdef ERTS_HAVE_SMP_EMU
+		    emu_type |= EMU_TYPE_SMP;
+#else
+		    usage_notsup("-smp");
+#endif
+		}
+	    } else if (strcmp(argv[i], "-smpenable") == 0) {
+		goto smp_enable;
+	    } else if (strcmp(argv[i], "-smpauto") == 0) {
+		goto smp_auto;
+	    } else if (strcmp(argv[i], "-smpdisable") == 0) {
+		goto smp_disable;
 	    } else if (strcmp(argv[i], "-hybrid") == 0) {
-		emu_type = EMU_TYPE_HYBRID;
+#ifdef ERTS_HAVE_HYBRID_EMU
+		emu_type |= EMU_TYPE_HYBRID;
+#else
+		usage_notsup("-hybrid");
+#endif
 	    } else if (strcmp(argv[i], "-extra") == 0) {
 		break;
 	    }
 	}
 	i++;
     }
+
+    if ((emu_type & EMU_TYPE_HYBRID) && (emu_type & EMU_TYPE_SMP))
+	usage_msg("Hybrid heap emulator with SMP support selected. The "
+		  "combination hybrid heap and SMP support is currently not "
+		  "supported.");
 
     if (malloc_lib) {
 	if (strcmp(malloc_lib, "libc") != 0)
@@ -556,8 +608,6 @@ int main(int argc, char **argv)
 		  case 'v':	/* -version */
 		    if (strcmp(argv[i], "-version") == 0) {
 			add_Eargs("-V");
-		    } else if (strcmp(argv[i], "-valgrind") == 0) {
-			run_valgrind = 1;
 		    } else {
 			add_arg(argv[i]);
 		    }
@@ -695,18 +745,6 @@ int main(int argc, char **argv)
     for (i = 0; i < argsCnt; i++)
 	Eargsp[EargsCnt++] = argsp[i];
     Eargsp[EargsCnt] = NULL;
-
-    if (run_valgrind) {
-	EargsCnt++;
-	ensure_EargsSz(EargsCnt + 1);
-	Eargsp[EargsCnt] = NULL;
-
-	for (i = EargsCnt-1; i > 0; i--) {
-	    Eargsp[i] = Eargsp[i-1];
-	}
-	Eargsp[0] = emu = "valgrind";
-    }
-
     
     if (print_args_exit) {
 	for (i = 1; i < EargsCnt; i++)
@@ -762,25 +800,35 @@ int main(int argc, char **argv)
 #ifdef DEBUG
     else
 #endif
-	if (run_valgrind) {
-	    execvp(emu, Eargsp);
-	} else {
-	    execv(emu, Eargsp);
-	}
+    {
+	execv(emu, Eargsp);
+    }
     error("Error %d executing \'%s\'.", errno, emu);
     return 1;
 #endif
 }
 
-void
-usage(const char *switchname)
+
+static void
+usage_aux(void)
 {
-  fprintf(stderr, "Missing argument(s) for \'%s\'.\n", switchname);
   fprintf(stderr,
 	  "Usage: erl [-version] [-sname NAME | -name NAME] "
 	  "[-noshell] [-noinput] [-env VAR VALUE] [-compile file ...] "
 #ifdef __WIN32__
 	  "[-start_erl [datafile]] "
+#endif
+	  "[-smp "
+#ifdef ERTS_HAVE_SMP_EMU
+	  "[enable|"
+#endif
+	  "auto|disable"
+#ifdef ERTS_HAVE_SMP_EMU
+	  "]"
+#endif
+	  "] "
+#ifdef ERTS_HAVE_HYBRID_EMU
+	  "[-hybrid] "
 #endif
 	  "[-make] [-man [manopts] MANPAGE] [-x] [-emu_args] "
 	  "[+A THREADS] [+B[c|d|i]] [+c] [+h HEAP_SIZE] [+K BOOLEAN] "
@@ -788,6 +836,28 @@ usage(const char *switchname)
 	  "[+r] [+S NO_OF_SCHEDULERS] [+V] [+v] [+W<i|w>] [args ...]\n");
   exit(1);
 }
+
+void
+usage(const char *switchname)
+{
+    fprintf(stderr, "Missing argument(s) for \'%s\'.\n", switchname);
+    usage_aux();
+}
+
+static void
+usage_notsup(const char *switchname)
+{
+    fprintf(stderr, "Argument \'%s\' not supported.\n", switchname);
+    usage_aux();
+}
+
+static void
+usage_msg(const char *msg)
+{
+    fprintf(stderr, "%s\n", msg);
+    usage_aux();
+}
+
 
 void
 start_epmd(char *epmd)

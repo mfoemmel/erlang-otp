@@ -29,6 +29,7 @@
 
 -include("../main/hipe.hrl").
 -include("hipe_icode.hrl").
+
 -define(no_debug_msg(Str,Xs),ok).
 %%-define(no_debug_msg(Str,Xs),msg(Str,Xs)).
 
@@ -439,11 +440,11 @@ trans_fun([{test,is_ge,{f,Lbl},[Arg1,Arg2]}|Instructions], Env) ->
   ICode ++ trans_fun(Instructions,Env1);
 %%--- is_eq ---
 trans_fun([{test,is_eq,{f,Lbl},[Arg1,Arg2]}|Instructions], Env) ->
-  {ICode,Env1} = trans_test_guard('==',Lbl,Arg1,Arg2,Env),
+  {ICode,Env1} = trans_is_eq(Lbl,Arg1,Arg2,Env),
   ICode ++ trans_fun(Instructions,Env1);
 %%--- is_ne ---
 trans_fun([{test,is_ne,{f,Lbl},[Arg1,Arg2]}|Instructions], Env) ->
-  {ICode,Env1} = trans_test_guard('/=',Lbl,Arg1,Arg2,Env),
+  {ICode,Env1} = trans_is_ne(Lbl,Arg1,Arg2,Env),
   ICode ++ trans_fun(Instructions,Env1);
 %%--- is_eq_exact ---
 trans_fun([{test,is_eq_exact,{f,Lbl},[Arg1,Arg2]}|Instructions], Env) ->
@@ -451,7 +452,7 @@ trans_fun([{test,is_eq_exact,{f,Lbl},[Arg1,Arg2]}|Instructions], Env) ->
   ICode ++ trans_fun(Instructions,Env1);
 %%--- is_ne_exact ---
 trans_fun([{test,is_ne_exact,{f,Lbl},[Arg1,Arg2]}|Instructions], Env) ->
-  {ICode,Env1} = trans_test_guard('=/=',Lbl,Arg1,Arg2,Env),
+  {ICode,Env1} = trans_is_ne_exact(Lbl,Arg1,Arg2,Env),
   ICode ++ trans_fun(Instructions,Env1);
 %%--------------------------------------------------------------------
 %%--- Translation of type tests {test,is_TYPE, ...} ---
@@ -574,7 +575,7 @@ trans_fun([{try_case_end,Arg}|Instructions], Env) ->
   Fail = hipe_icode:mk_fail([V],error),
   [Atom,Tuple,Fail | trans_fun(Instructions,Env)];
 %%--- raise ---
-trans_fun([{bif,raise,{f,0},[Reg1,Reg2],{x,0}}|Instructions], Env) ->
+trans_fun([{raise,{f,0},[Reg1,Reg2],{x,0}}|Instructions], Env) ->
   V1 = trans_arg(Reg1),
   V2 = trans_arg(Reg2),
   Fail = hipe_icode:mk_fail([V1,V2],rethrow),
@@ -1172,7 +1173,6 @@ trans_fun([{apply_last,Arity,_N}|Instructions], Env) -> % N is StackAdjustment?
   [hipe_icode:mk_comment(apply_last),
    hipe_icode:mk_enter_primop({apply_N,Arity}, [M,F|Args])
    | trans_fun(Instructions,Env)];
-
 %%--------------------------------------------------------------------
 %% New test instruction added in April 2004 (R10B).
 %%--------------------------------------------------------------------
@@ -1220,12 +1220,10 @@ trans_fun([], _) ->
 %%--------------------------------------------------------------------
 
 trans_call(MFA={M,F,_A}, Dst, Args, Type) ->
-  handle_fail(MFA, Args,
-	      fun () -> hipe_icode:mk_call(Dst,M,F,Args,Type) end).
+  handle_fail(MFA, Args, fun () -> hipe_icode:mk_call(Dst,M,F,Args,Type) end).
 
 trans_enter(MFA={M,F,_A}, Args, Type) ->
-  handle_fail(MFA, Args,
-	      fun () -> hipe_icode:mk_enter(M,F,Args,Type) end).
+  handle_fail(MFA, Args, fun () -> hipe_icode:mk_enter(M,F,Args,Type) end).
 
 handle_fail(MFA, Args, F) ->
   case MFA of
@@ -1357,7 +1355,8 @@ trans_bin([{bs_put_binary,{f,Lbl},Size,Unit,{field_flags,Flags},Source}|
     end,
   %% Generate code for calling the bs-op.
   SrcInstrs ++ trans_bin_call({hipe_bs_primop, Name}, 
-			     Lbl, Args, [Offset], Base, Offset, Env2, Instructions);
+			      Lbl, Args, [Offset],
+			      Base, Offset, Env2, Instructions);
 %%--- bs_put_string ---
 trans_bin([{bs_put_string,SizeInBytes,{string,String}}|Instructions], Base, 
 	  Offset, Env) ->
@@ -1374,7 +1373,7 @@ trans_bin([{bs_put_integer,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
   {Src, SrcInstrs, ConstInfo} = 
     case is_var(Source) of
       true ->
-	{mk_var(Source),[], var};
+	{mk_var(Source), [], var};
       false ->
 	case Source of
 	  {integer, X} when is_integer(X) ->
@@ -1404,7 +1403,8 @@ trans_bin([{bs_put_integer,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
 	end
     end,
   SrcInstrs ++ trans_bin_call({hipe_bs_primop, Name}, 
-			     Lbl, [Src|Args], [Offset], Base, Offset, Env2, Instructions);
+			      Lbl, [Src|Args], [Offset],
+			      Base, Offset, Env2, Instructions);
 trans_bin(Instructions, _Base, _Offset, Env) ->
   trans_fun(Instructions, Env).
 
@@ -1563,7 +1563,7 @@ trans_puts(Code, Vars, Moves, Env) ->    %% No more put operations
 %% instruction when it is applicable to take care of match expressions.
 %%-----------------------------------------------------------------------
 
-trans_is_eq_exact(Lbl,Arg1,Arg2,Env) ->
+trans_is_eq_exact(Lbl, Arg1, Arg2, Env) ->
   case {is_var(Arg1),is_var(Arg2)} of
     {true,true} ->
       True = mk_label(new),
@@ -1571,11 +1571,11 @@ trans_is_eq_exact(Lbl,Arg1,Arg2,Env) ->
 			   [mk_var(Arg1),mk_var(Arg2)],
 			   hipe_icode:label_name(True),map_label(Lbl)),
       {[I,True], Env};
-    {true,false} -> %% Right argument is a constant -- use type()!
+    {true,false} -> %% right argument is a constant -- use type()!
       trans_is_eq_exact_var_const(Lbl, Arg1, Arg2, Env);
     {false,true} -> %% mirror of the case above; swap args
       trans_is_eq_exact_var_const(Lbl, Arg2, Arg1, Env);
-    {false,false} -> %% Both arguments are constants !!!
+    {false,false} -> %% both arguments are constants !!!
       case Arg1 =:= Arg2 of
 	true ->
 	  {[], Env};
@@ -1597,15 +1597,115 @@ trans_is_eq_exact_var_const(Lbl, Arg1, Arg2, Env) -> % var =:= const
 			   [NewArg1, hipe_icode:mk_const(Float)],
 			   TrueLabName, FalseLabName);
 	_ ->
-	  hipe_icode:mk_type([NewArg1], Arg2,
-			     TrueLabName, FalseLabName)
+	  hipe_icode:mk_type([NewArg1], Arg2, TrueLabName, FalseLabName)
       end,
   {[I,True], Env}.
 
 %%-----------------------------------------------------------------------
+%% ... and this is analogous to the above
 %%-----------------------------------------------------------------------
 
-mk_move_and_var(Var,Env) ->
+trans_is_ne_exact(Lbl, Arg1, Arg2, Env) ->
+  case {is_var(Arg1),is_var(Arg2)} of
+    {true,true} ->
+      True = mk_label(new),
+      I = hipe_icode:mk_if('=/=',
+			   [mk_var(Arg1),mk_var(Arg2)],
+			   hipe_icode:label_name(True),map_label(Lbl)),
+      {[I,True], Env};
+    {true,false} -> %% right argument is a constant -- use type()!
+      trans_is_ne_exact_var_const(Lbl, Arg1, Arg2, Env);
+    {false,true} -> %% mirror of the case above; swap args
+      trans_is_ne_exact_var_const(Lbl, Arg2, Arg1, Env);
+    {false,false} -> %% both arguments are constants !!!
+      case Arg1 =/= Arg2 of
+	true ->
+	  {[], Env};
+	false ->   
+	  Never = mk_label(new),
+	  I = hipe_icode:mk_goto(map_label(Lbl)),
+	  {[I,Never], Env}
+      end
+  end.
+
+trans_is_ne_exact_var_const(Lbl, Arg1, Arg2, Env) -> % var =/= const
+  True = mk_label(new),
+  NewArg1 = mk_var(Arg1),
+  TrueLabName = hipe_icode:label_name(True),
+  FalseLabName = map_label(Lbl),
+  I = case Arg2 of
+	{float,Float} ->
+	  hipe_icode:mk_if('=/=',
+			   [NewArg1, hipe_icode:mk_const(Float)],
+			   TrueLabName, FalseLabName);
+	_ ->
+	  hipe_icode:mk_type([NewArg1], Arg2, FalseLabName, TrueLabName)
+      end,
+  {[I,True], Env}.
+
+%%-----------------------------------------------------------------------
+%% Try to do a relatively straightforward optimization: if equality with
+%% an atom is used, then convert this test to use of exact equality test
+%% with the same atom (which in turn will be translated to a `type' test
+%% instruction by the code of trans_is_eq_exact_var_const/4 above).
+%%-----------------------------------------------------------------------
+
+trans_is_eq(Lbl, Arg1, Arg2, Env) ->
+  case {is_var(Arg1),is_var(Arg2)} of
+    {true,true} ->   %% not much can be done in this case
+      trans_test_guard('==', Lbl, Arg1, Arg2, Env);
+    {true,false} ->  %% optimize this case, if possible
+      case Arg2 of
+	{atom,_SomeAtom} ->
+	  trans_is_eq_exact_var_const(Lbl, Arg1, Arg2, Env);
+	_ ->
+	  trans_test_guard('==', Lbl, Arg1, Arg2, Env)
+      end;
+    {false,true} ->  %% probably happens rarely; hence the recursive call
+      trans_is_eq(Lbl, Arg2, Arg1, Env);
+    {false,false} -> %% both arguments are constants !!!
+      case Arg1 == Arg2 of
+	true ->
+	  {[], Env};
+	false ->   
+	  Never = mk_label(new),
+	  I = hipe_icode:mk_goto(map_label(Lbl)),
+	  {[I,Never], Env}
+      end
+  end.
+
+%%-----------------------------------------------------------------------
+%% ... and this is analogous to the above
+%%-----------------------------------------------------------------------
+
+trans_is_ne(Lbl, Arg1, Arg2, Env) ->
+  case {is_var(Arg1),is_var(Arg2)} of
+    {true,true} ->   %% not much can be done in this case
+      trans_test_guard('/=', Lbl, Arg1, Arg2, Env);
+    {true,false} ->  %% optimize this case, if possible
+      case Arg2 of
+	{atom,_SomeAtom} ->
+	  trans_is_ne_exact_var_const(Lbl, Arg1, Arg2, Env);
+	_ ->
+	  trans_test_guard('/=', Lbl, Arg1, Arg2, Env)
+      end;
+    {false,true} ->  %% probably happens rarely; hence the recursive call
+      trans_is_ne(Lbl, Arg2, Arg1, Env);
+    {false,false} -> %% both arguments are constants !!!
+      case Arg1 /= Arg2 of
+	true ->
+	  {[], Env};
+	false ->   
+	  Never = mk_label(new),
+	  I = hipe_icode:mk_goto(map_label(Lbl)),
+	  {[I,Never], Env}
+      end
+  end.
+
+%%-----------------------------------------------------------------------
+%%-----------------------------------------------------------------------
+
+mk_move_and_var(Var, Env) ->
   case type(Var) of
     {const,C} ->
       V = mk_var(new),
@@ -2176,7 +2276,7 @@ put_nl(Stream) ->
 %%-----------------------------------------------------------------------
 
 %% Environment 
--record(environment, {mfa = {},entry}).
+-record(environment, {mfa, entry}).
 
 %% Constructor!
 env__mk_env() ->

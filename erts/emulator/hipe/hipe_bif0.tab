@@ -98,7 +98,6 @@ atom find_na_or_make_stub
 atom atomic_inc
 atom clear_timeout
 atom check_get_msg
-atom next_msg
 atom select_msg
 atom set_timeout
 atom cmp_2

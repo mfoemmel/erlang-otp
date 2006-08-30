@@ -1,3 +1,5 @@
+%% -*- erlang-indent-level: 2 -*-
+%%------------------------------------------------------------------------
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -14,15 +16,15 @@
 %%     $Id$
 %%
 
-%%% -*- erlang-indent-level: 2 -*-
-%%%-------------------------------------------------------------------
+%%%-----------------------------------------------------------------------
 %%% File    : dialyzer_gui.erl
 %%% Authors : Tobias Lindahl <tobiasl@csd.uu.se>
 %%%           Kostis Sagonas <kostis@it.uu.se>
 %%% Description : The graphical user interface for the Dialyzer tool.
 %%%
 %%% Created : 27 Apr 2004 by Tobias Lindahl <tobiasl@csd.uu.se>
-%%%-------------------------------------------------------------------
+%%%-----------------------------------------------------------------------
+
 -module(dialyzer_gui).
 
 -export([start/1]).
@@ -31,7 +33,7 @@
 -include("hipe_icode_type.hrl").
 
 -record(gui_state, {add_all, add_file, add_rec,
-		    chosen_box, analysis_pid, del_file, dets,
+		    chosen_box, analysis_pid, del_file,
 		    doc_plt, clear_chosen, clear_log, clear_warn, 
 		    empty_plt, fixpoint, init_plt, 
 		    user_plt, dir_entry, file_box, file_wd, gs, log, menu, mode,
@@ -342,7 +344,7 @@ start(DialyzerOptions = #options{}) ->
   
   EmptyPlt = dialyzer_plt:new(dialyzer_empty_plt),
   InitPlt0 = DialyzerOptions#options.init_plt,
-  InitPlt = dialyzer_plt:from_dets(dialyzer_init_plt, InitPlt0),
+  InitPlt = dialyzer_plt:from_file(dialyzer_init_plt, InitPlt0),
 
   State = #gui_state{add_all=AddAll,
 		     add_file=AddFile, 
@@ -502,7 +504,6 @@ gui_loop(State = #gui_state{}) ->
     %% ----- Analysis -----
     {BackendPid, ext_calls, ExtCalls} ->
       %% This also signals that the analysis is done.
-      maybe_to_dets(State),
       io:format("\nUnknown functions: ~p\n", [ExtCalls]),
       ExtMods = lists:usort([M || {M,_F,_A} <- ExtCalls]),
       Msg = io_lib:format("Functions from the following modules are called "
@@ -529,7 +530,6 @@ gui_loop(State = #gui_state{}) ->
 		    "*** Analysis failed! See warnings for details\n"),
       gui_loop(State);
     {BackendPid, done} ->
-      maybe_to_dets(State),
       dialyzer_plt:delete(State#gui_state.user_plt),
       message(State, "Analysis done"),
       config_gui_stop(State),
@@ -539,7 +539,7 @@ gui_loop(State = #gui_state{}) ->
       error(State, Reason),
       config_gui_stop(State),
       gui_loop(State);
-    {'EXIT', BackendPid, Reason} when Reason /= normal ->
+    {'EXIT', BackendPid, Reason} when Reason =/= 'normal' ->
       dialyzer_plt:delete(State#gui_state.user_plt),
       error(State, io_lib:format("~p", [Reason])),
       config_gui_stop(State),
@@ -904,7 +904,7 @@ overview(State) ->
   gs:config(Win, {map, true}),
   gs:config(Frame, WH),
 
-  AboutFile = filename:join([?DIALYZER_DIR, "doc", "overview.txt"]),
+  AboutFile = filename:join([code:lib_dir(dialyzer), "doc", "overview.txt"]),
   case gs:config(Editor, {load, AboutFile}) of
     {error, Reason} ->
       gs:destroy(Win),
@@ -932,7 +932,7 @@ manual(State) ->
   gs:config(Win, {map, true}),
   gs:config(Frame, WH),
 
-  AboutFile = filename:join([?DIALYZER_DIR, "doc", "manual.txt"]),
+  AboutFile = filename:join([code:lib_dir(dialyzer), "doc", "manual.txt"]),
   case gs:config(Editor, {load, AboutFile}) of
     {error, Reason} ->
       gs:destroy(Win),
@@ -960,7 +960,7 @@ help_warnings(State) ->
   gs:config(Win, {map, true}),
   gs:config(Frame, WH),
 
-  AboutFile = filename:join([?DIALYZER_DIR, "doc", "warnings.txt"]),
+  AboutFile = filename:join([code:lib_dir(dialyzer), "doc", "warnings.txt"]),
   case gs:config(Editor, {load, AboutFile}) of
     {error, Reason} ->
       gs:destroy(Win),
@@ -988,7 +988,7 @@ about(State) ->
   gs:config(Win, {map, true}),
   gs:config(Frame, WH),
 
-  AboutFile = filename:join([?DIALYZER_DIR, "doc", "about.txt"]),
+  AboutFile = filename:join([code:lib_dir(dialyzer), "doc", "about.txt"]),
   io:format("AboutFile: ~p\n", [AboutFile]),
   case gs:config(Editor, {load, AboutFile}) of
     {error, Reason} ->
@@ -1072,12 +1072,6 @@ save_loop(State, OkButton, CancelButton, Entry, Save, Editor) ->
   end.
 
 %% ---- Plt Menu ----
-
-maybe_to_dets(State) ->
-  case State#gui_state.dets of
-    undefined -> ok;
-    Dets -> dialyzer_plt:to_dets(State#gui_state.user_plt, Dets)
-  end.
 
 search_doc_plt(State) ->
   case State#gui_state.doc_plt of
@@ -1559,7 +1553,7 @@ run_analysis(State, Analysis) ->
 
 
 find_legal_warnings(#gui_state{menu=#menu{warnings=Warnings}}) ->
-  [Tag || {Tag, GSItem} <- Warnings, gs:read(GSItem, select) == true].
+  [Tag || {Tag, GSItem} <- Warnings, gs:read(GSItem, select) =:= true].
 
 
 flush() ->

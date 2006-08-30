@@ -70,7 +70,13 @@ get_rc() ->
     inet_db:get_rc().
 
 close(Socket) ->
-    prim_inet:close(Socket).
+    prim_inet:close(Socket),
+    receive
+	{Closed, Socket} when Closed == tcp_closed; Closed == udp_closed ->
+	    ok
+    after 0 ->
+	    ok
+    end.
 
 peername(Socket) -> prim_inet:peername(Socket).
 
@@ -828,21 +834,17 @@ format_error(Tag) ->
 
 %% Close a TCP socket.
 tcp_close(S) when port(S) ->
-    receive
-	{tcp_closed, S} -> 
-	    %% if exit_on_close is set we must force a close anyway!!!
-	    prim_inet:close(S),
-	    ok
-    after 0 ->
-	    prim_inet:close(S)
-    end.
+    %% if exit_on_close is set we must force a close even if remotely closed!!!
+    prim_inet:close(S),
+    receive {tcp_closed, S} -> ok after 0 -> ok end.
 
 %% Close a UDP socket.
 udp_close(S) when port(S) ->
     receive 
 	{udp_closed, S} -> ok
     after 0 ->
-	    prim_inet:close(S)
+	    prim_inet:close(S),
+	    receive {udp_closed, S} -> ok after 0 -> ok end
     end.
 
 %% Set controlling process for TCP socket.

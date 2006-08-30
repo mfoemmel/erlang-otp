@@ -27,7 +27,7 @@ cleanup(Rtl) ->
   Code = cleanup(hipe_rtl:rtl_code(Rtl), []),
   hipe_rtl:rtl_code_update(Rtl, Code).
 
-cleanup([I|Left], Acc)->
+cleanup([I|Left], Acc) ->
   Args = hipe_rtl:args(I),
   case [X || X <- Args, hipe_rtl:is_const_label(X)] of
     [] ->

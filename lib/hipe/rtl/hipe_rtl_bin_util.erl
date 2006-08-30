@@ -150,7 +150,7 @@ get_little_unknown_int(Dst1, Base, Offset, NewOffset, Shiftr, Type, TrueLblName)
    TagLbl] ++
     do_bignum_code(64, Type, LoadDst, Dst1, TrueLblName).
 
-do_bignum_code(Size, {Signedness,_}, Src, Dst1, TrueLblName) when is_integer(Size)->
+do_bignum_code(Size, {Signedness,_}, Src, Dst1, TrueLblName) when is_integer(Size) ->
   case {Size>?MAX_SMALL_BITS, Signedness} of
     {false, _} ->
       [hipe_tagscheme:tag_fixnum(Dst1, Src),
@@ -247,7 +247,7 @@ load_bytes(Dst, Base, Offset, {Signedness, Endianess},4) ->
       hipe_rtl_arch:load_little_4(Dst, Base, Offset, Signedness)
   end;
 
-load_bytes(Dst, Base, Offset, {Signedness, Endianess},X) when X > 1 ->
+load_bytes(Dst, Base, Offset, {Signedness, Endianess}, X) when X > 1 ->
   [LoopLbl, EndLbl] = create_lbls(2),
   [Tmp1, Limit, TmpOffset] = create_regs(3),
   case Endianess of
@@ -277,15 +277,16 @@ load_bytes(Dst, Base, Offset, {Signedness, Endianess},X) when X > 1 ->
        EndLbl,
        hipe_rtl:mk_move(Offset, Limit)]
   end.
-create_regs(0) ->
-  [];
-create_regs(X) when X > 0->
-  [hipe_rtl:mk_new_reg()|create_regs(X-1)].
 
+create_regs(X) when X > 0 ->
+  [hipe_rtl:mk_new_reg()|create_regs(X-1)];
+create_regs(0) ->
+  [].
+
+create_lbls(X) when X > 0 ->
+  [hipe_rtl:mk_new_label()|create_lbls(X-1)];
 create_lbls(0) ->
-  [];
-create_lbls(X) when X > 0->
-  [hipe_rtl:mk_new_label()|create_lbls(X-1)].
+  [].
 
 first_part(Variable, Register, FalseLblName) ->
   [SuccessLbl1, SuccessLbl2] = create_lbls(2),
@@ -335,7 +336,7 @@ multiply_code([ShiftSize| Rest], Register, Result, FalseLblName, Tmp1, OldCode) 
 multiply_code([], _Register, _Result, _FalseLblName, _Tmp1, Code) ->
   Code.
 
-number2list(X) when is_integer(X), X>=0  ->
+number2list(X) when is_integer(X), X>=0 ->
   number2list(X, []).
 
 number2list(1, Acc) ->
@@ -344,8 +345,10 @@ number2list(0, Acc) ->
   lists:reverse(Acc);
 number2list(X, Acc) ->
   number2list(X-round(math:pow(2,floorlog2(X))), [floorlog2(X)|Acc]).
+
 floorlog2(X) ->
   round(math:log(X)/math:log(2)-0.5). 
+
 set_high(X) ->
   set_high(X, 0).
 set_high(0, Y) ->

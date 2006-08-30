@@ -1,14 +1,18 @@
 #! /bin/sh
 
+# Expected autoconf version
+EXPECTED_AUTOCONF_VERSION=2.13
+
 # clearmake command to use
 clearmake=false
 
 # Global configuration variables
+#
+# NOTE: lazy_configure depends on '.' allways being last directory
 if [ -z "$ONLY_ERTS" ]; then
-    AUTOCONF_SUBDIRS=". lib lib/* erts"
-else 
-    AUTOCONF_SUBDIRS=". erts" 
+    AUTOCONF_SUBDIRS="lib lib/*"
 fi
+AUTOCONF_SUBDIRS="$AUTOCONF_SUBDIRS erts ."
 
 # Utility functions
 usage ()
@@ -18,7 +22,11 @@ usage ()
     echo "all [-a] <dir> - does autoconf, configure, primary, boot, release"
     echo "autoconf - (re)build the configure scripts"
     echo "configure [<configure parameters>] - does the actual configuration"
-    echo "opt [-a] - build a small Erlang system without bootstrap"
+    echo "plain [-a] - build a small Erlang system without bootstrap; plain flavor"
+    echo "opt [-a] - same as plain (above)"
+    echo "smp [-a] - build a small Erlang system without bootstrap; smp flavor"
+    echo "hybrid [-a] - build a small Erlang system without bootstrap; hybrid flavor"
+    echo "nofrag [-a] - build a small Erlang system without bootstrap; nofrag flavor"
     echo "primary - creates the primary bootstrap, the one shipped"
     echo "boot [-a] - bootstraps and build small system (after primary)"
     echo "release <target_dir> - creates a small release to <target_dir>"
@@ -28,7 +36,8 @@ usage ()
     echo "installer_win32 <dir> - creates a windows installer from <dir>" 
     echo ""
     echo "Before trying to build on windows, consider the following option"
-    echo "env_win32 - echo environment settings for win32, use with eval"
+    echo "env_win32 - echo environment settings for win32 with visual C++, use with eval"
+    echo "env_mingw32 - echo environment settings for win32 with MinGW, use with eval"
     echo "Before trying to build for vxworks, consider the following option"
     echo "env_vxworks <cpu>  - echo environment settings for vxworks, use with eval"
 }
@@ -82,6 +91,23 @@ set_config_flags ()
 	
 do_autoconf ()		
 {
+	exp_ac_vsn=$EXPECTED_AUTOCONF_VERSION
+	ac_vsn_blob=`autoconf --version`
+	ac_vsn=`echo x$ac_vsn_blob | sed "s|[^0-9]*\([0-9][^ \t\n]*\).*|\1|"`
+	case "$ac_vsn" in
+	    $exp_ac_vsn)
+		;;
+	    *)
+		echo "***************************************************" 1>&2
+		echo "***************************************************" 1>&2
+		echo "*** WARNING: System might fail to configure or"      1>&2
+		echo "***          might be erroneously configured"        1>&2
+		echo "***          since autoconf version $ac_vsn is used" 1>&2
+		echo "***          instead of version $exp_ac_vsn!"        1>&2
+		echo "***************************************************" 1>&2
+		echo "***************************************************" 1>&2
+		;;
+	esac
 	save_ot="$OVERRIDE_TARGET"
 	save_t="$TARGET"
 	if [ ! -z "$OVERRIDE_CONFIGURE" ]; then
@@ -135,8 +161,6 @@ mk_targetdir ()
     else
 	echo "existing $ERL_TOP/$TARGET is used for cache"
     fi
-    # Don't want this to be kept eh?
-    rm -rf $ERL_TOP/$TARGET/config.cache
 }
 
 do_configure ()
@@ -173,16 +197,90 @@ do_configure ()
     fi
     set_config_flags $CONFIG_FLAGS "$@"
     if [ -z "$ONLY_ERTS" ]; then
-	./configure --cache-file=$ERL_TOP/$TARGET/config.cache $CONFIG_FLAGS \
+	./configure --cache-file=/dev/null $CONFIG_FLAGS \
 	    || exit 1
     else
-	echo "erts/configure --cache-file=$ERL_TOP/$TARGET/config.cache $CONFIG_FLAGS"
-	(cd $ERL_TOP/erts; ./configure --cache-file=$ERL_TOP/$TARGET/config.cache $CONFIG_FLAGS) || exit 1
+	echo "erts/configure --cache-file=/dev/null $CONFIG_FLAGS"
+	(cd $ERL_TOP/erts; ./configure --cache-file=/dev/null $CONFIG_FLAGS) || exit 1
     fi
     OVERRIDE_TARGET="$save_ot"
     export OVERRIDE_TARGET
     TARGET="$save_t"
 }
+
+do_lazy_configure ()
+{
+    setup_make
+    case $TARGET in
+	vxworks_*|ose_*)
+	    echo "Not supported for target: $TARGET" >&2
+	    exit 1
+	    ;;
+	*)
+	    ;;
+    esac
+    set_config_flags $CONFIG_FLAGS "$@"
+    for c_dir in $AUTOCONF_SUBDIRS; do
+	if test -f $ERL_TOP/$c_dir/configure.in; then
+	    dir=$ERL_TOP/$c_dir
+	    echo ""
+	    echo "=== Begin configuring $dir"
+	    xc_dep= ;
+	    xcs_dep= ;
+	    test -d $dir/$TARGET || mkdir $dir/$TARGET
+	    test -f $dir/aclocal.m4 && xc_dep="$xcs_dep $dir/aclocal.m4"
+	    test -f $dir/acsite.m4 && xc_dep="$xcs_dep $dir/acsite.m4"
+	    test -f $dir/acconfig.h && xcs_dep="$xcs_dep $dir/config.h.in"
+	    $MAKE -f $ERL_TOP/make/lazy_configure.mk                         \
+		MAKE="$MAKE" TARGET=$TARGET                                  \
+		ERL_TOP=$ERL_TOP                                             \
+		CONFIGURE_FLAGS="$CONFIG_FLAGS"                              \
+		CONFIGURE_DIR=$dir                                           \
+		EXTRA_CONFIGURE_DEPENDENCIES=$xc_dep                         \
+		EXTRA_CONFIG_STATUS_DEPENDENCIES=$xcs_dep                    \
+		EXPECTED_AUTOCONF_VERSION=$EXPECTED_AUTOCONF_VERSION         \
+		lazy_configure
+	    echo "=== Done configuring $dir"
+	    echo ""
+	fi
+    done
+}
+
+do_lazy_configure_clean ()
+{
+    setup_make
+    case $TARGET in
+	vxworks_*|ose_*)
+	    echo "Not supported for target: $TARGET" >&2
+	    exit 1
+	    ;;
+	*)
+	    ;;
+    esac
+    for c_dir in $AUTOCONF_SUBDIRS; do
+	if test -f $ERL_TOP/$c_dir/configure.in; then
+	    dir=$ERL_TOP/$c_dir
+	    echo ""
+	    echo "=== Begin cleaning configure in $dir"
+	    xc_dep= ;
+	    xcs_dep= ;
+	    test -d $dir/$TARGET || mkdir $dir/$TARGET
+	    test -f $dir/aclocal.m4 && xc_dep="$xcs_dep $dir/aclocal.m4"
+	    test -f $dir/acsite.m4 && xc_dep="$xcs_dep $dir/acsite.m4"
+	    test -f $dir/acconfig.h && xcs_dep="$xcs_dep $dir/config.h.in"
+	    $MAKE -f $ERL_TOP/make/lazy_configure.mk                         \
+		MAKE="$MAKE" TARGET=$TARGET                                  \
+		ERL_TOP=$ERL_TOP                                             \
+		CONFIGURE_DIR=$dir                                           \
+		EXPECTED_AUTOCONF_VERSION=$EXPECTED_AUTOCONF_VERSION         \
+		lazy_configure_clean
+	    echo "=== Done cleaning configure in $dir"
+	    echo ""
+	fi
+    done
+
+}
+
 
 echo_setenv ()
 {
@@ -296,7 +394,76 @@ echo_env_win32 ()
     echo_setenv CXX cc.sh ';'
     echo_setenv AR ar.sh ';'
     echo_setenv RANLIB true ';'
-    echo_setenv PATH "$ERL_TOP/erts/etc/win32/cygwin_tools:$P3"
+    echo_setenv PATH "$ERL_TOP/erts/etc/win32/cygwin_tools/vc:$ERL_TOP/erts/etc/win32/cygwin_tools:$P3"
+    echo_envinfo
+}
+
+echo_env_mingw32 ()
+{
+    #echo_envinfo
+    if [ X"$SHELL" = X"" ]; then
+	echo "You need to export the shell variable first," \
+		"for bourne-like shells, type:" >&2
+	echo 'export SHELL' >&2
+	echo "and for csh-like shells, type:" >&2
+	echo 'setenv SHELL $SHELL' >&2
+	echo " - then try again." >&2
+	exit 1
+    fi
+    echo_env_erltop
+    P2=`echo $PATH | \
+	sed 's,",,g;s,:[cC]:,:/cygdrive/c,g;s,:[dD]:,:/cygdrive/d,g'`
+    P3=""
+    save_ifs=$IFS
+    IFS=:
+    for p in $P2; do
+	if [ -d "$p" ]; then
+	    C1="`(cygpath -d $p 2>/dev/null || cygpath -w $p)`" 2> /dev/null
+	    C2=`cygpath "$C1" 2> /dev/null` 2> /dev/null
+	else
+	    C2=""
+	fi
+	if [ ! -z "$C2" ]; then
+	    if [ -z "$P3" ];then 
+		P3="$C2"
+	    else 
+		P3="$P3:$C2"
+	    fi
+	fi
+    done
+    found=false
+    for p in $P3; do
+	if [ -f "$p/mingw32-gcc.exe" ]; then
+	    found=$p
+	fi
+    done
+    found2=false
+    for p in $P3; do
+	if [ -f "$p/wmc.exe" ]; then
+	    found2=$p
+	fi
+    done
+    IFS=$save_ifs
+    if [ X"$found" = X"false" ]; then
+	echo "Could not find mingw32-gcc in PATH, build with mingw not possible!" >&2
+	return
+    fi
+
+    if [ X"$found2" = X"false" ]; then
+	echo "Could not find wmc.exe in PATH, part of wine for windows, " >&2
+	echo "needed for message file compilation: http://wine.sourceforge.net!!" >&2
+	return
+    fi
+
+
+    echo_setenv OVERRIDE_TARGET win32 ';'
+    echo_setenv MINGW_EXE_PATH $found ';'
+    echo_setenv WINE_EXE_PATH $found2 ';'
+    echo_setenv CC cc.sh ';'
+    echo_setenv CXX cc.sh ';'
+    echo_setenv AR ar.sh ';'
+    echo_setenv RANLIB true ';'
+    echo_setenv PATH "$ERL_TOP/erts/etc/win32/cygwin_tools/mingw:$ERL_TOP/erts/etc/win32/cygwin_tools:$P3"
     echo_envinfo
 }
 
@@ -353,7 +520,7 @@ do_noboot_lib_and_erts ()
     if [ "x$MAKE" != "x$clearmake" ]; then
 	$MAKE MAKE="$MAKE" TARGET=$TARGET OTP_SMALL_BUILD=$OTP_SMALL_BUILD depend || exit 1;
     fi
-    $MAKE MAKE="$MAKE" TARGET=$TARGET OTP_SMALL_BUILD=$OTP_SMALL_BUILD TYPE=$TYPE noboot || exit 1
+    $MAKE MAKE="$MAKE" TARGET=$TARGET OTP_SMALL_BUILD=$OTP_SMALL_BUILD TYPE=$TYPE FLAVOR=$FLAVOR noboot || exit 1
 }
 
 do_primary_cross ()
@@ -380,7 +547,6 @@ do_primary ()
 	    do_primary_cross;;
 	*)
 	    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET primary_bootstrap || exit 1;
-	    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET primary_bootstrap_cleanup || exit 1;;
     esac
 }
 
@@ -389,6 +555,11 @@ do_boot_cross ()
     $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET depend || exit 1;
     $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET emulator || exit 1;
     $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET libs || exit 1;
+}
+
+do_boot_emu_cross ()
+{
+    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET emulator || exit 1;
 }
 
 do_boot ()
@@ -401,6 +572,19 @@ do_boot ()
 	    do_boot_cross;;
 	*)
 	    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET all || exit 1;;
+    esac
+}
+
+do_boot_emu ()
+{
+    setup_make
+    case $TARGET in
+	vxworks_*)
+	    do_boot_emu_cross;;
+        ose_*)
+	    do_boot_emu_cross;;
+	*)
+	    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET emulator || exit 1;;
     esac
 }
 
@@ -450,7 +634,7 @@ BUILDSYS=$TARGET
 case $TARGET in
     *-cygwin)
 	if [ X"$BUILD_FOR_CYGWIN" = X"" ]; then
-	    if [ X"$OVERRIDE_TARGET" = X"" -a X"$1" != X"env_win32" ];then
+	    if [ X"$OVERRIDE_TARGET" = X"" -a X"$1" != X"env_win32" -a  X"$1" != X"env_mingw32" ];then
 		echo "Building for windows, you should do the " \
 		    "following first:" >&2
 		echo 'eval `./otp_build env_win32`' >&2
@@ -499,6 +683,7 @@ case "$1" in
 		if [ $minus_a_flag = false ]; then 
 		    TYPE=opt
 		fi;
+		FLAVOR=plain
 		do_autoconf; 
 		do_configure; 
 		do_noboot_lib_and_erts;;
@@ -507,15 +692,27 @@ case "$1" in
 	configure)
 		shift;
 		do_configure "$@";;
-	opt)
+	lazy_configure)
+		shift;
+		do_lazy_configure "$@";;
+	lazy_configure_clean)
+		shift;
+		do_lazy_configure_clean;;
+	opt|plain|smp|hybrid|nofrag)
 		if [ $minus_a_flag = false ]; then 
 		    TYPE=opt
 		fi;
+		FLAVOR=$1
+		if [ $FLAVOR = opt ]; then
+		    FLAVOR=plain
+		fi
 		do_noboot_lib_and_erts;;
 	primary)
 		do_primary;;
 	boot)
 		do_boot;;
+        emulator)
+	        do_boot_emu;;
 	release)
 		if [ $minus_a_flag = true ]; then 
 		    shift
@@ -533,6 +730,8 @@ case "$1" in
 		do_installer_win32 "$2";;
 	env_win32)
 		echo_env_win32;;
+	env_mingw32)
+		echo_env_mingw32;;
 	env_vxworks)
 		echo_env_vxworks "$2";;
 	env_ose)

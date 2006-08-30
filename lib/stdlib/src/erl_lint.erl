@@ -254,7 +254,7 @@ pseudolocals() ->
 %% 
 
 exprs(Exprs, BindingsList) ->
-    {St0,Vs} = foldl(fun({{record,_Name},Attr0}, {St1,Vs1}) -> 
+    {St0,Vs} = foldl(fun({{record,_SequenceNumber,_Name},Attr0}, {St1,Vs1}) ->
                              Attr = zip_file_and_line(Attr0, "none"),
 			     {attribute_state(Attr, St1),Vs1};
                         ({V,_}, {St1,Vs1}) -> 
@@ -265,7 +265,7 @@ exprs(Exprs, BindingsList) ->
     return_status(St).
 
 used_vars(Exprs, BindingsList) ->
-    Vs = foldl(fun({{record,_Name},_Attr}, Vs0) -> Vs0;
+    Vs = foldl(fun({{record,_SequenceNumber,_Name},_Attr}, Vs0) -> Vs0;
 		  ({V,_Val}, Vs0) -> [{V,{bound,unused,[]}} | Vs0]
 	       end, [], BindingsList),
     Vt = orddict:from_list(Vs),

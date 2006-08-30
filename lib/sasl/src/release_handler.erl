@@ -410,8 +410,8 @@ eval_appup_script(App, ToVsn, ToDir, Script) ->
 					[]), % [Opt]
     case Res of
 	{ok, _Unpurged} ->
-	    application_controller:config_change(EnvBefore),
-	    application_controller:change_application_data(AppSpecL,[]);
+	    application_controller:change_application_data(AppSpecL,[]),
+	    application_controller:config_change(EnvBefore);
 	_Res ->
 	    ignore
     end,

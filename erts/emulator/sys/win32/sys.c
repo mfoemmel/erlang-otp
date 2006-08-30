@@ -2171,8 +2171,12 @@ Preload* sys_preloaded(void)
             beam_module = GetModuleHandle("beam.dll");
 #endif
 #endif
-	hRes = FindResource(beam_module, "0", "ERLANG_DICT");
-
+	hRes = FindResource(beam_module, 0, "ERLANG_DICT");
+	/* We might have a resource compiler laying out the 0 resource with
+	   "0" as a textual name instead... */
+	if (hRes == NULL) {
+	    hRes = FindResource(beam_module, "0", "ERLANG_DICT");
+	}
 	if (hRes == NULL) {
 	    DWORD n = GetLastError();
 	    fprintf(stderr, "No ERLANG_DICT resource\n");

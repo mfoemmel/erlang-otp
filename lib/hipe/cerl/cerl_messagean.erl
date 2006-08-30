@@ -18,7 +18,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@csd.uu.se
+%% Author contact: richardc@it.uu.se
 %%
 %% $Id$
 %%
@@ -205,7 +205,7 @@ ann_escape(T, L, Esc) ->
     end.
 
 append_ann(Tag, [X | Xs]) ->
-    if is_tuple(X), size(X) >= 1, element(1, X) == Tag -> 
+    if is_tuple(X), size(X) >= 1, element(1, X) =:= Tag -> 
 	    append_ann(Tag, Xs);
        true ->
 	    [X | append_ann(Tag, Xs)]
@@ -538,7 +538,7 @@ bind_defs([], Vars) ->
 bind_pats(Ps, none, Vars) ->
     bind_pats_single(Ps, empty(), Vars);
 bind_pats(Ps, Xs, Vars) ->
-    if length(Xs) == length(Ps) ->
+    if length(Xs) =:= length(Ps) ->
 	    bind_pats_list(Ps, Xs, Vars);
        true ->
 	    bind_pats_single(Ps, empty(), Vars)
@@ -624,7 +624,7 @@ get_tl(X) -> X.   % Tail of X has same type as X.
 bind_vars(Vs, none, Vars) ->
     bind_vars_single(Vs, empty(), Vars);
 bind_vars(Vs, Xs, Vars) ->
-    if length(Vs) == length(Xs) ->
+    if length(Vs) =:= length(Xs) ->
 	    bind_vars_list(Vs, Xs, Vars);
        true ->
 	    bind_vars_single(Vs, empty(), Vars)
@@ -682,7 +682,7 @@ add_dep(Source, Target, Deps) ->
 %% If the arity does not match the call, nothing is done here.
 
 bind_args(Vs, Xs, Vars, Limit) ->
-    if length(Vs) == length(Xs) ->
+    if length(Vs) =:= length(Xs) ->
 	    bind_args(Vs, Xs, Vars, Limit, false);
        true ->
 	    {Vars, false}
@@ -854,7 +854,7 @@ set_nth(N, Y, [X | Xs]) when N > 1 -> [X | set_nth(N - 1, Y, Xs)].
 join(none, Xs2) -> Xs2;
 join(Xs1, none) -> Xs1;
 join(Xs1, Xs2) ->
-    if length(Xs1) == length(Xs2) ->
+    if length(Xs1) =:= length(Xs2) ->
 	    join_1(Xs1, Xs2);
        true ->
 	    none
@@ -964,8 +964,8 @@ limit_single(V, _K) ->
 
 %% Set abstraction for label sets in the domain.
 
-% set__is_empty([]) -> true;
-% set__is_empty(_) -> false.
+%% set__is_empty([]) -> true;
+%% set__is_empty(_) -> false.
 
 set__new() -> [].
 
@@ -973,7 +973,7 @@ set__singleton(X) -> [X].
 
 set__to_list(S) -> S.
 
-% set__from_list(S) -> ordsets:from_list(S).
+%% set__from_list(S) -> ordsets:from_list(S).
 
 set__union(X, Y) -> ordsets:union(X, Y).
 
@@ -981,9 +981,9 @@ set__add(X, S) -> ordsets:add_element(X, S).
 
 set__is_member(X, S) -> ordsets:is_element(X, S).    
 
-% set__subtract(X, Y) -> ordsets:subtract(X, Y).
+%% set__subtract(X, Y) -> ordsets:subtract(X, Y).
 
-set__equal(X, Y) -> X == Y.
+set__equal(X, Y) -> X =:= Y.
 
 %% A simple but efficient functional queue.
 

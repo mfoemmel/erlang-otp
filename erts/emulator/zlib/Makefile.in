@@ -10,6 +10,8 @@
 #    make install
 # To install in $HOME instead of /usr/local, use:
 #    make install prefix=$HOME
+USING_MINGW=@MIXED_CYGWIN_MINGW@
+USING_VC=@MIXED_CYGWIN_VC@
 
 ARFLAGS = rc
 ifeq ($(findstring ose,$(TARGET)),ose)
@@ -35,7 +37,7 @@ OBJS = $(O:%=$(OBJDIR)/%)
 include $(ERL_TOP)/make/target.mk
 
 # On windows we need a separate zlib during debug build
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 ifeq ($(TYPE),debug)
 CFLAGS = $(subst -O2, -g, @CFLAGS@ @DEFS@ @DEBUG_FLAGS@)
 OBJDIR = $(ERL_TOP)/erts/obj.debug/$(TARGET)
@@ -49,7 +51,7 @@ endif
 
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
-ifeq ($(TARGET), win32)
+ifeq ($(USING_VC), yes)
 LIBRARY=$(OBJDIR)/z.lib
 else
 LIBRARY=$(OBJDIR)/libz.a
@@ -73,7 +75,7 @@ clean:
 
 #### end OTP targets
 
-ifeq ($(TARGET), win32)
+ifeq ($(USING_VC), yes)
 $(LIBRARY): $(OBJS)
 	$(AR) -out:$@ $(OBJS)
 else

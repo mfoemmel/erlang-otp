@@ -69,13 +69,13 @@ rtl_to_sparc2(MFA, SparcCfg2, Options) ->
       false ->
 	SparcCfg2;
       ultra ->
-	debug('schedule (ultra)~n', [MFA], Options),
+	debug("schedule (ultra)~n", [MFA], Options),
 	?opt_start_timer("Schedule (ultra)"),
 	SparcCfg3a = hipe_schedule:cfg(SparcCfg2),
 	?opt_stop_timer("Schedule (ultra)"),
 	SparcCfg3a;
       Machine ->
-	?msg('Schedule: machine ~p not available~n',[Machine]),
+	?msg("Schedule: machine ~p not available~n",[Machine]),
 	SparcCfg2
     end,
   SparcCfg3b.

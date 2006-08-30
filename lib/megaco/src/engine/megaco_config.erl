@@ -118,42 +118,43 @@ user_info(UserMid, receive_handle) ->
     end;
 user_info(UserMid, conn_data) ->
     HandlePat = #megaco_conn_handle{local_mid = UserMid, remote_mid = '_'},
-    Pat = #conn_data{conn_handle      	= HandlePat,
-                     serial           	= '_',
-                     max_serial       	= '_',
-                     request_timer    	= '_',
-                     long_request_timer = '_',
+    Pat = #conn_data{conn_handle      	  = HandlePat,
+                     serial           	  = '_',
+                     max_serial       	  = '_',
+                     request_timer    	  = '_',
+                     long_request_timer   = '_',
 
-                     auto_ack         	= '_',
+                     auto_ack         	  = '_',
 
-                     trans_ack   	= '_',
-                     trans_ack_maxcount	= '_',
+                     trans_ack   	  = '_',
+                     trans_ack_maxcount	  = '_',
 
-                     trans_req   	= '_',
-                     trans_req_maxcount	= '_',
-                     trans_req_maxsize	= '_',
+                     trans_req   	  = '_',
+                     trans_req_maxcount	  = '_',
+                     trans_req_maxsize	  = '_',
 
-                     trans_timer   	= '_',
-                     trans_sender       = '_',
+                     trans_timer   	  = '_',
+                     trans_sender         = '_',
 
-                     pending_timer     	= '_',
-                     sent_pending_limit = '_',
-                     recv_pending_limit = '_',
-                     reply_timer      	= '_',
-                     control_pid      	= '_',
-                     monitor_ref      	= '_',
-                     send_mod         	= '_',
-                     send_handle      	= '_',
-                     encoding_mod     	= '_',
-                     encoding_config  	= '_',
-                     protocol_version  	= '_',
-                     auth_data         	= '_',
-                     user_mod         	= '_',
-                     user_args         	= '_',
-                     reply_action     	= '_',
-                     reply_data       	= '_',
-		     threaded       	= '_',
-		     strict_version   	= '_'},
+                     pending_timer     	  = '_',
+                     sent_pending_limit   = '_',
+                     recv_pending_limit   = '_',
+                     reply_timer      	  = '_',
+                     control_pid      	  = '_',
+                     monitor_ref      	  = '_',
+                     send_mod         	  = '_',
+                     send_handle      	  = '_',
+                     encoding_mod     	  = '_',
+                     encoding_config  	  = '_',
+                     protocol_version  	  = '_',
+                     auth_data         	  = '_',
+                     user_mod         	  = '_',
+                     user_args         	  = '_',
+                     reply_action     	  = '_',
+                     reply_data       	  = '_',
+		     threaded       	  = '_',
+		     strict_version   	  = '_',
+		     long_request_resend  = '_'},
     %% ok = io:format("PATTERN: ~p~n", [Pat]),
     ets:match_object(megaco_local_conn, Pat);
 user_info(UserMid, connections) ->
@@ -257,41 +258,42 @@ conn_info(CD, Item) when record(CD, conn_data) ->
 					      undefined_serial
 				      end
 			      end;
-        max_trans_id       -> CD#conn_data.max_serial;
-        request_timer      -> CD#conn_data.request_timer;
-        long_request_timer -> CD#conn_data.long_request_timer;
+        max_trans_id         -> CD#conn_data.max_serial;
+        request_timer        -> CD#conn_data.request_timer;
+        long_request_timer   -> CD#conn_data.long_request_timer;
 
-        auto_ack           -> CD#conn_data.auto_ack;
+        auto_ack             -> CD#conn_data.auto_ack;
 
-        trans_ack          -> CD#conn_data.trans_ack;
-        trans_ack_maxcount -> CD#conn_data.trans_ack_maxcount;
+        trans_ack            -> CD#conn_data.trans_ack;
+        trans_ack_maxcount   -> CD#conn_data.trans_ack_maxcount;
 
-        trans_req          -> CD#conn_data.trans_req;
-        trans_req_maxcount -> CD#conn_data.trans_req_maxcount;
-        trans_req_maxsize  -> CD#conn_data.trans_req_maxsize;
+        trans_req            -> CD#conn_data.trans_req;
+        trans_req_maxcount   -> CD#conn_data.trans_req_maxcount;
+        trans_req_maxsize    -> CD#conn_data.trans_req_maxsize;
 
-        trans_timer        -> CD#conn_data.trans_timer;
+        trans_timer          -> CD#conn_data.trans_timer;
 
-        pending_timer      -> CD#conn_data.pending_timer;
-        orig_pending_limit -> CD#conn_data.sent_pending_limit;
-        sent_pending_limit -> CD#conn_data.sent_pending_limit;
-        recv_pending_limit -> CD#conn_data.recv_pending_limit;
-        reply_timer        -> CD#conn_data.reply_timer;
-        control_pid        -> CD#conn_data.control_pid;
-        monitor_ref        -> CD#conn_data.monitor_ref;
-        send_mod           -> CD#conn_data.send_mod;
-        send_handle        -> CD#conn_data.send_handle;
-        encoding_mod       -> CD#conn_data.encoding_mod;
-        encoding_config    -> CD#conn_data.encoding_config;
-        protocol_version   -> CD#conn_data.protocol_version;
-        auth_data          -> CD#conn_data.auth_data;
-        user_mod           -> CD#conn_data.user_mod;
-        user_args          -> CD#conn_data.user_args;
-        reply_action       -> CD#conn_data.reply_action;
-        reply_data         -> CD#conn_data.reply_data;
-        threaded           -> CD#conn_data.threaded;
-        strict_version     -> CD#conn_data.strict_version;
-        receive_handle     ->
+        pending_timer        -> CD#conn_data.pending_timer;
+        orig_pending_limit   -> CD#conn_data.sent_pending_limit;
+        sent_pending_limit   -> CD#conn_data.sent_pending_limit;
+        recv_pending_limit   -> CD#conn_data.recv_pending_limit;
+        reply_timer          -> CD#conn_data.reply_timer;
+        control_pid          -> CD#conn_data.control_pid;
+        monitor_ref          -> CD#conn_data.monitor_ref;
+        send_mod             -> CD#conn_data.send_mod;
+        send_handle          -> CD#conn_data.send_handle;
+        encoding_mod         -> CD#conn_data.encoding_mod;
+        encoding_config      -> CD#conn_data.encoding_config;
+        protocol_version     -> CD#conn_data.protocol_version;
+        auth_data            -> CD#conn_data.auth_data;
+        user_mod             -> CD#conn_data.user_mod;
+        user_args            -> CD#conn_data.user_args;
+        reply_action         -> CD#conn_data.reply_action;
+        reply_data           -> CD#conn_data.reply_data;
+        threaded             -> CD#conn_data.threaded;
+        strict_version       -> CD#conn_data.strict_version;
+	long_request_resend  -> CD#conn_data.long_request_resend;
+        receive_handle       ->
             LocalMid = (CD#conn_data.conn_handle)#megaco_conn_handle.local_mid,
             #megaco_receive_handle{local_mid       = LocalMid,
                                    encoding_mod    = CD#conn_data.encoding_mod,
@@ -582,37 +584,38 @@ start_scanner(M, F, A, Mods) ->
     end.
 
 init_user_defaults() ->
-    init_user_default(min_trans_id,       1),
-    init_user_default(max_trans_id,       infinity), 
-    init_user_default(request_timer,      #megaco_incr_timer{}),
-    init_user_default(long_request_timer, infinity),
+    init_user_default(min_trans_id,         1),
+    init_user_default(max_trans_id,         infinity), 
+    init_user_default(request_timer,        #megaco_incr_timer{}),
+    init_user_default(long_request_timer,   infinity),
 
-    init_user_default(auto_ack,           false),
+    init_user_default(auto_ack,             false),
 
-    init_user_default(trans_ack,          false),
-    init_user_default(trans_ack_maxcount, 10),
+    init_user_default(trans_ack,            false),
+    init_user_default(trans_ack_maxcount,   10),
 
-    init_user_default(trans_req,          false),
-    init_user_default(trans_req_maxcount, 10),
-    init_user_default(trans_req_maxsize,  2048),
+    init_user_default(trans_req,            false),
+    init_user_default(trans_req_maxcount,   10),
+    init_user_default(trans_req_maxsize,    2048),
 
-    init_user_default(trans_timer,        0),
-    init_user_default(trans_sender,       undefined),
+    init_user_default(trans_timer,          0),
+    init_user_default(trans_sender,         undefined),
 
-    init_user_default(pending_timer,      timer:seconds(30)),
-    init_user_default(sent_pending_limit, infinity),
-    init_user_default(recv_pending_limit, infinity),
-    init_user_default(reply_timer,        timer:seconds(30)),
-    init_user_default(send_mod,           megaco_tcp),
-    init_user_default(encoding_mod,       megaco_pretty_text_encoder),
-    init_user_default(protocol_version,   1),
-    init_user_default(auth_data,          asn1_NOVALUE),
-    init_user_default(encoding_config,    []),
-    init_user_default(user_mod,           megaco_user_default),
-    init_user_default(user_args,          []),
-    init_user_default(reply_data,         undefined),
-    init_user_default(threaded,           false),
-    init_user_default(strict_version,     true).
+    init_user_default(pending_timer,        timer:seconds(30)),
+    init_user_default(sent_pending_limit,   infinity),
+    init_user_default(recv_pending_limit,   infinity),
+    init_user_default(reply_timer,          timer:seconds(30)),
+    init_user_default(send_mod,             megaco_tcp),
+    init_user_default(encoding_mod,         megaco_pretty_text_encoder),
+    init_user_default(protocol_version,     1),
+    init_user_default(auth_data,            asn1_NOVALUE),
+    init_user_default(encoding_config,      []),
+    init_user_default(user_mod,             megaco_user_default),
+    init_user_default(user_args,            []),
+    init_user_default(reply_data,           undefined),
+    init_user_default(threaded,             false),
+    init_user_default(strict_version,       true),
+    init_user_default(long_request_resend,  false).
 
 init_user_default(Item, Default) when Item /= mid ->
     Val = get_env(Item, Default),
@@ -762,12 +765,12 @@ terminate(_Reason, _State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 
-code_change(_Vsn, S, upgrade_from_pre_3_2_3) ->
+code_change(_Vsn, S, upgrade_from_pre_3_4) ->
     upgrade_user_info(),
     upgrade_conn_data(),
     {ok, S};
 
-code_change(_Vsn, S, downgrade_to_pre_3_2_3) ->
+code_change(_Vsn, S, downgrade_to_pre_3_4) ->
     downgrade_user_info(),
     downgrade_conn_data(),
     {ok, S};
@@ -779,7 +782,7 @@ code_change(_Vsn, S, _Extra) ->
 %% -- Upgrade user info --
 
 upgrade_user_info() ->
-    NewValues = [{strict_version, true}],
+    NewValues = [{long_request_resend, false}],
     upgrade_user_info(NewValues).
 
 upgrade_user_info(NewValues) ->
@@ -799,7 +802,7 @@ upgrade_user_info(Users, Item, Val) ->
 %% -- Downgrade user info --
 
 downgrade_user_info() ->
-    NewItems = [strict_version],
+    NewItems = [long_request_resend],
     downgrade_user_info(NewItems).
 
 downgrade_user_info(NewItems) ->
@@ -826,20 +829,20 @@ upgrade_conn_data() ->
     upgrade_conn_data(Conns).
 
 upgrade_conn_data(Conns) ->
-    StrictVersionDefault = true,
+    LongReqResendDefault = true,
     F = fun(CH) ->
 		case lookup_local_conn(CH) of
 		    [] ->
 			ok;
 		    [CD] ->
-			upgrade_conn_data(CD, StrictVersionDefault)
+			upgrade_conn_data(CD, LongReqResendDefault)
 		end
 	end,
     lists:foreach(F, Conns),
     ok.
 
-upgrade_conn_data(OldStyleCD, StrictVersionDefault) ->
-    NewStyleCD = new_conn_data(OldStyleCD, StrictVersionDefault),
+upgrade_conn_data(OldStyleCD, LongReqResendDefault) ->
+    NewStyleCD = new_conn_data(OldStyleCD, LongReqResendDefault),
     ets:insert(megaco_local_conn, NewStyleCD).
     
 new_conn_data({conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
@@ -856,47 +859,49 @@ new_conn_data({conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr,
 	       EncodeMod, EncodeConf, 
 	       ProtV, AuthData, 
 	       UserMod, UserArgs, ReplyAction, ReplyData,
-	       Threaded
-	       %% StrictVersion - This is where to insert the new values
+	       Threaded,
+	       StrictVersion
+	       %% LongReqResend - This is where to insert the new values
 	      }, 
-	      StrictVersionDefault) ->
-    #conn_data{conn_handle        = CH, 
-	       serial             = Serial,
-	       max_serial         = MaxSerial,
-	       request_timer      = ReqTmr,
-	       long_request_timer = LongReqTmr,
+	      LongReqResendDefault) ->
+    #conn_data{conn_handle          = CH, 
+	       serial               = Serial,
+	       max_serial           = MaxSerial,
+	       request_timer        = ReqTmr,
+	       long_request_timer   = LongReqTmr,
 	       
-	       auto_ack           = AutoAck,
+	       auto_ack             = AutoAck,
 	       
-	       trans_ack          = TransAck,
-	       trans_ack_maxcount = TransAckMaxCnt,
+	       trans_ack            = TransAck,
+	       trans_ack_maxcount   = TransAckMaxCnt,
 	       
-	       trans_req          = TransReq,
-	       trans_req_maxcount = TransReqMaxCnt,
-	       trans_req_maxsize  = TransReqMaxSz,
+	       trans_req            = TransReq,
+	       trans_req_maxcount   = TransReqMaxCnt,
+	       trans_req_maxsize    = TransReqMaxSz,
 	       
-	       trans_timer        = TransTmr,
-	       trans_sender       = TransSndr,
+	       trans_timer          = TransTmr,
+	       trans_sender         = TransSndr,
 	       
-	       pending_timer      = PendingTmr,
-	       sent_pending_limit = SentPendingLimit,
-	       recv_pending_limit = RecvPendingLimit, 
+	       pending_timer        = PendingTmr,
+	       sent_pending_limit   = SentPendingLimit,
+	       recv_pending_limit   = RecvPendingLimit, 
 
-	       reply_timer        = ReplyTmr,
-	       control_pid        = CtrPid,
-	       monitor_ref        = MonRef,
-	       send_mod           = Sendmod,
-	       send_handle        = SendHandle,
-	       encoding_mod       = EncodeMod,
-	       encoding_config    = EncodeConf,
-	       protocol_version   = ProtV,
-	       auth_data          = AuthData,
-	       user_mod           = UserMod,
-	       user_args          = UserArgs,
-	       reply_action       = ReplyAction,
-	       reply_data         = ReplyData,
-	       threaded           = Threaded,
-	       strict_version     = StrictVersionDefault %% The new value
+	       reply_timer          = ReplyTmr,
+	       control_pid          = CtrPid,
+	       monitor_ref          = MonRef,
+	       send_mod             = Sendmod,
+	       send_handle          = SendHandle,
+	       encoding_mod         = EncodeMod,
+	       encoding_config      = EncodeConf,
+	       protocol_version     = ProtV,
+	       auth_data            = AuthData,
+	       user_mod             = UserMod,
+	       user_args            = UserArgs,
+	       reply_action         = ReplyAction,
+	       reply_data           = ReplyData,
+	       threaded             = Threaded,
+	       strict_version       = StrictVersion,
+	       long_request_resend  = LongReqResendDefault % The new value
 	      }.
 
 
@@ -921,43 +926,44 @@ do_downgrade_conn_data(NewStyleCD) ->
     OldStyleCD = old_conn_data(NewStyleCD),
     ets:insert(megaco_local_conn, OldStyleCD).
 
-old_conn_data(#conn_data{conn_handle        = CH, 
-			 serial             = Serial,
-			 max_serial         = MaxSerial,
-			 request_timer      = ReqTmr,
-			 long_request_timer = LongReqTmr,
+old_conn_data(#conn_data{conn_handle          = CH, 
+			 serial               = Serial,
+			 max_serial           = MaxSerial,
+			 request_timer        = ReqTmr,
+			 long_request_timer   = LongReqTmr,
 			 
-			 auto_ack           = AutoAck,
+			 auto_ack             = AutoAck,
 			 
-			 trans_ack          = TransAck,
-			 trans_ack_maxcount = TransAckMaxCnt,
+			 trans_ack            = TransAck,
+			 trans_ack_maxcount   = TransAckMaxCnt,
 			 
-			 trans_req          = TransReq,
-			 trans_req_maxcount = TransReqMaxCnt,
-			 trans_req_maxsize  = TransReqMaxSz,
+			 trans_req            = TransReq,
+			 trans_req_maxcount   = TransReqMaxCnt,
+			 trans_req_maxsize    = TransReqMaxSz,
 			 
-			 trans_timer        = TransTmr,
-			 trans_sender       = TransSndr,
+			 trans_timer          = TransTmr,
+			 trans_sender         = TransSndr,
 			 
-			 pending_timer      = PendingTmr,
-			 sent_pending_limit = SentPendingLimit,
-			 recv_pending_limit = RecvPendingLimit, 
+			 pending_timer        = PendingTmr,
+			 sent_pending_limit   = SentPendingLimit,
+			 recv_pending_limit   = RecvPendingLimit, 
 			 
-			 reply_timer        = ReplyTmr,
-			 control_pid        = CtrPid,
-			 monitor_ref        = MonRef,
-			 send_mod           = Sendmod,
-			 send_handle        = SendHandle,
-			 encoding_mod       = EncodeMod,
-			 encoding_config    = EncodeConf,
-			 protocol_version   = ProtV,
-			 auth_data          = AuthData,
-			 user_mod           = UserMod,
-			 user_args          = UserArgs,
-			 reply_action       = ReplyAction,
-			 reply_data         = ReplyData,
-			 threaded           = Threaded
-			 %% strict_version     = StrictVersion
+			 reply_timer          = ReplyTmr,
+			 control_pid          = CtrPid,
+			 monitor_ref          = MonRef,
+			 send_mod             = Sendmod,
+			 send_handle          = SendHandle,
+			 encoding_mod         = EncodeMod,
+			 encoding_config      = EncodeConf,
+			 protocol_version     = ProtV,
+			 auth_data            = AuthData,
+			 user_mod             = UserMod,
+			 user_args            = UserArgs,
+			 reply_action         = ReplyAction,
+			 reply_data           = ReplyData,
+			 threaded             = Threaded,
+			 strict_version       = StrictVersion
+			 %% long_request_resend  = LongReqResend
 			}) ->
     {conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
      AutoAck, 
@@ -972,7 +978,8 @@ old_conn_data(#conn_data{conn_handle        = CH,
      EncodeMod, EncodeConf, 
      ProtV, AuthData, 
      UserMod, UserArgs, ReplyAction, ReplyData,
-     Threaded}.
+     Threaded,
+     StrictVersion}.
 
 
 		
@@ -1055,6 +1062,7 @@ verify_val(Item, Val) ->
         reply_data                      -> true;
         threaded                        -> verify_bool(Val);
         strict_version                  -> verify_bool(Val);
+	long_request_resend             -> verify_bool(Val);
         _                               -> false
     end.
 
@@ -1138,45 +1146,46 @@ handle_update_conn_data(CD, Item, Val) ->
 
 replace_conn_data(CD, Item, Val) ->
     case Item of
-        trans_id           -> CD#conn_data{serial             = Val};
-        max_trans_id       -> CD#conn_data{max_serial         = Val};
-        request_timer      -> CD#conn_data{request_timer      = Val};
-        long_request_timer -> CD#conn_data{long_request_timer = Val};
+        trans_id             -> CD#conn_data{serial             = Val};
+        max_trans_id         -> CD#conn_data{max_serial         = Val};
+        request_timer        -> CD#conn_data{request_timer      = Val};
+        long_request_timer   -> CD#conn_data{long_request_timer = Val};
 
-	auto_ack           -> update_auto_ack(CD, Val);
+	auto_ack             -> update_auto_ack(CD, Val);
 
 	%% Accumulate trans ack before sending
-	trans_ack          -> update_trans_ack(CD, Val); 
-	trans_ack_maxcount -> update_trans_ack_maxcount(CD, Val);
+	trans_ack            -> update_trans_ack(CD, Val); 
+	trans_ack_maxcount   -> update_trans_ack_maxcount(CD, Val);
 
 	%% Accumulate trans req before sending
-	trans_req          -> update_trans_req(CD, Val); 
-	trans_req_maxcount -> update_trans_req_maxcount(CD, Val);
-	trans_req_maxsize  -> update_trans_req_maxsize(CD, Val);
+	trans_req            -> update_trans_req(CD, Val); 
+	trans_req_maxcount   -> update_trans_req_maxcount(CD, Val);
+	trans_req_maxsize    -> update_trans_req_maxsize(CD, Val);
 
-	trans_timer        -> update_trans_timer(CD, Val); 
+	trans_timer          -> update_trans_timer(CD, Val); 
 	%% trans_sender      - Automagically updated by 
 	%%                     update_auto_ack & update_trans_timer & 
 	%%                     update_trans_ack & update_trans_req
 
-        pending_timer      -> CD#conn_data{pending_timer      = Val};
-        sent_pending_limit -> CD#conn_data{sent_pending_limit = Val};
-        recv_pending_limit -> CD#conn_data{recv_pending_limit = Val};
-        reply_timer        -> CD#conn_data{reply_timer        = Val};
-        control_pid        -> CD#conn_data{control_pid        = Val};
-        monitor_ref        -> CD#conn_data{monitor_ref        = Val};
-        send_mod           -> CD#conn_data{send_mod           = Val};
-        send_handle        -> CD#conn_data{send_handle        = Val};
-        encoding_mod       -> CD#conn_data{encoding_mod       = Val};
-        encoding_config    -> CD#conn_data{encoding_config    = Val};
-        protocol_version   -> CD#conn_data{protocol_version   = Val};
-        auth_data          -> CD#conn_data{auth_data          = Val};
-        user_mod           -> CD#conn_data{user_mod           = Val};
-        user_args          -> CD#conn_data{user_args          = Val};
-        reply_action       -> CD#conn_data{reply_action       = Val};
-        reply_data         -> CD#conn_data{reply_data         = Val};
-        threaded           -> CD#conn_data{threaded           = Val};
-        strict_version     -> CD#conn_data{strict_version     = Val}
+        pending_timer        -> CD#conn_data{pending_timer        = Val};
+        sent_pending_limit   -> CD#conn_data{sent_pending_limit   = Val};
+        recv_pending_limit   -> CD#conn_data{recv_pending_limit   = Val};
+        reply_timer          -> CD#conn_data{reply_timer          = Val};
+        control_pid          -> CD#conn_data{control_pid          = Val};
+        monitor_ref          -> CD#conn_data{monitor_ref          = Val};
+        send_mod             -> CD#conn_data{send_mod             = Val};
+        send_handle          -> CD#conn_data{send_handle          = Val};
+        encoding_mod         -> CD#conn_data{encoding_mod         = Val};
+        encoding_config      -> CD#conn_data{encoding_config      = Val};
+        protocol_version     -> CD#conn_data{protocol_version     = Val};
+        auth_data            -> CD#conn_data{auth_data            = Val};
+        user_mod             -> CD#conn_data{user_mod             = Val};
+        user_args            -> CD#conn_data{user_args            = Val};
+        reply_action         -> CD#conn_data{reply_action         = Val};
+        reply_data           -> CD#conn_data{reply_data           = Val};
+        threaded             -> CD#conn_data{threaded             = Val};
+        strict_version       -> CD#conn_data{strict_version       = Val};
+	long_request_resend  -> CD#conn_data{long_request_resend  = Val}
     end.
 
 %% update auto_ack
@@ -1506,39 +1515,40 @@ init_conn_data(RH, RemoteMid, SendHandle, ControlPid) ->
     EncodingMod    = RH#megaco_receive_handle.encoding_mod,
     EncodingConfig = RH#megaco_receive_handle.encoding_config,
     SendMod        = RH#megaco_receive_handle.send_mod,
-    #conn_data{conn_handle        = ConnHandle,
-               serial             = undefined_serial,
-               max_serial         = user_info(Mid, max_trans_id),
-               request_timer      = user_info(Mid, request_timer),
-               long_request_timer = user_info(Mid, long_request_timer),
+    #conn_data{conn_handle          = ConnHandle,
+               serial               = undefined_serial,
+               max_serial           = user_info(Mid, max_trans_id),
+               request_timer        = user_info(Mid, request_timer),
+               long_request_timer   = user_info(Mid, long_request_timer),
 
-               auto_ack           = user_info(Mid, auto_ack),
-               trans_ack          = user_info(Mid, trans_req),
-               trans_req          = user_info(Mid, trans_req),
+               auto_ack             = user_info(Mid, auto_ack),
+               trans_ack            = user_info(Mid, trans_req),
+               trans_req            = user_info(Mid, trans_req),
 
-	       trans_timer        = user_info(Mid, trans_timer),
-	       trans_req_maxsize  = user_info(Mid, trans_req_maxsize),
-	       trans_req_maxcount = user_info(Mid, trans_req_maxcount),
-	       trans_ack_maxcount = user_info(Mid, trans_ack_maxcount),
+	       trans_timer          = user_info(Mid, trans_timer),
+	       trans_req_maxsize    = user_info(Mid, trans_req_maxsize),
+	       trans_req_maxcount   = user_info(Mid, trans_req_maxcount),
+	       trans_ack_maxcount   = user_info(Mid, trans_ack_maxcount),
 
-               pending_timer      = user_info(Mid, pending_timer),
-               sent_pending_limit = user_info(Mid, sent_pending_limit),
-               recv_pending_limit = user_info(Mid, recv_pending_limit),
-               reply_timer        = user_info(Mid, reply_timer),
-               control_pid        = ControlPid,
-               monitor_ref        = undefined_monitor_ref,
-               send_mod           = SendMod,
-               send_handle        = SendHandle,
-               encoding_mod       = EncodingMod,
-               encoding_config    = EncodingConfig,
-               protocol_version   = user_info(Mid, protocol_version),
-               auth_data          = user_info(Mid, auth_data),
-               user_mod           = user_info(Mid, user_mod),
-               user_args          = user_info(Mid, user_args),
-               reply_action       = undefined,
-               reply_data         = user_info(Mid, reply_data),
-	       threaded           = user_info(Mid, threaded),
-	       strict_version     = user_info(Mid, strict_version)}.
+               pending_timer        = user_info(Mid, pending_timer),
+               sent_pending_limit   = user_info(Mid, sent_pending_limit),
+               recv_pending_limit   = user_info(Mid, recv_pending_limit),
+               reply_timer          = user_info(Mid, reply_timer),
+               control_pid          = ControlPid,
+               monitor_ref          = undefined_monitor_ref,
+               send_mod             = SendMod,
+               send_handle          = SendHandle,
+               encoding_mod         = EncodingMod,
+               encoding_config      = EncodingConfig,
+               protocol_version     = user_info(Mid, protocol_version),
+               auth_data            = user_info(Mid, auth_data),
+               user_mod             = user_info(Mid, user_mod),
+               user_args            = user_info(Mid, user_args),
+               reply_action         = undefined,
+               reply_data           = user_info(Mid, reply_data),
+	       threaded             = user_info(Mid, threaded),
+	       strict_version       = user_info(Mid, strict_version),
+	       long_request_resend  = user_info(Mid, long_request_resend)}.
 
 handle_disconnect(ConnHandle) when record(ConnHandle, megaco_conn_handle) ->
     case ets:lookup(megaco_local_conn, ConnHandle) of

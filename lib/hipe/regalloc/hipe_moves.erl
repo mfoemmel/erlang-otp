@@ -83,11 +83,11 @@ add_active(Element, MoveSets) ->
   MoveSets.
 
 member_active(Element, MoveSets) ->
-  hipe_bifs:array_sub(MoveSets#movesets.membership, Element) == 'active'.
+  hipe_bifs:array_sub(MoveSets#movesets.membership, Element) =:= 'active'.
 
 is_empty_worklist(MoveSets) ->
   %% This is an approximation. See worklist_get_and_remove().
-  worklist(MoveSets) == [].
+  worklist(MoveSets) =:= [].
 
 worklist_get_and_remove(MoveSets) ->
   worklist_get_and_remove(worklist(MoveSets), MoveSets#movesets.membership, MoveSets).

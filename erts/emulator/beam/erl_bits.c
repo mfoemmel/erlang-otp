@@ -138,6 +138,8 @@ erts_init_bits(void)
 #endif
 }
 
+#if !defined(HEAP_FRAG_ELIM_TEST)
+
 /****************************************************************
  ***
  *** Matching binaries
@@ -452,6 +454,7 @@ erts_bs_get_binary_all(Process *p)
     }
     return THE_NON_VALUE;
 }
+#endif
 
 /*****************************************************************
  ***
@@ -663,7 +666,6 @@ erts_bs_get_float_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuffer
 	f.fd = 0.0;
 	hp = HAlloc(p, FLOAT_SIZE_OBJECT);
 	PUT_DOUBLE(f, hp);
-	ArithCheck(p);
 	return make_float(hp);
     }
     if (mb->size - mb->offset < num_bits) {	/* Asked for too many bits.  */
@@ -1180,6 +1182,8 @@ erts_new_bs_put_string(ERL_BITS_PROTO_2(byte* iptr, Uint num_bytes))
 }
 
 
+#if !defined(HEAP_FRAG_ELIM_TEST)
+
 /*
  * Old instructions for building binaries.
  */
@@ -1386,6 +1390,7 @@ erts_bs_put_string(ERL_BITS_PROTO_2(byte* iptr, Uint num_bytes))
     }
     erts_bin_offset += num_bytes*8;
 }
+#endif
 
 /*
  * The basic bit copy operation. Copies n bits from the source buffer to

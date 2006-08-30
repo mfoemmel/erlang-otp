@@ -252,7 +252,7 @@ critical_path(M,N,DAG,Prio) ->
 cpath(M,DAG,Prio) ->
     InitPrio = hipe_vectors:get(Prio,M),
     if
-	InitPrio == -1 ->
+	InitPrio =:= -1 ->
 	    cpath_node(M,DAG,Prio);
 	true ->
 	    Prio

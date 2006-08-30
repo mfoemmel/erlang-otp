@@ -379,16 +379,17 @@ init(From, MibFileName, Options) ->
 
 
 c_impl(File) ->
-    {ok, Mib} = parse(File),
+    {ok, PData} = parse(File),
     t("Syntax analysis:~n"
-      "   ~p",[Mib]),
-    MibName = compile_parsed_data(Mib),
-    CData = get(cdata),
+      "   ~p",[PData]),
+    MibName = compile_parsed_data(PData),
     t("Compiler output:~n"
-      "   ~p",[CData]),
-    save(File, MibName,get(options)).
+      "   ~p",[get(cdata)]),
+    save(File, MibName, get(options)).
 
-compile_parsed_data({_MibVer, MibName, Imports, Definitions}) ->
+compile_parsed_data(#pdata{mib_name = MibName, 
+			   imports  = Imports, 
+			   defs     = Definitions}) ->
     snmpc_lib:import(Imports),
     update_imports(Imports),
     Deprecated = get_deprecated(get(options)),
@@ -1202,8 +1203,8 @@ parse(FileName) ->
 		  end,
 	    %% t("parse -> parsed: ~n~p", [Res]),
 	    case Res of
-		{ok, Mib} ->
-		    {ok, Mib};
+		{ok, PData} ->
+		    {ok, PData};
 		{error, {LineNbr, Mod, Msg}} ->
 		    case catch format_yecc_error(LineNbr, Msg) of
 			{Line, Format, Data} -> 

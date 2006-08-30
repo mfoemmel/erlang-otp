@@ -1,90 +1,35 @@
 {"%VSN%",
- [{"3.3.4",
+ [
+  {"3.4.2",
    [
+    {load_module, megaco_messenger, soft_purge, soft_purge, []}
    ]
   },
-  {"3.3.3",
+  {"3.4.1",
    [
-    {load_module, megaco, soft_purge, soft_purge, []}
+    {load_module, megaco_messenger, soft_purge, soft_purge, []}
    ]
   },
-  {"3.3.2",
+  {"3.4",
    [
-    {load_module, megaco, soft_purge, soft_purge, [megaco_flex_scanner]},
-    {load_module, megaco_flex_scanner, soft_purge, soft_purge, []}
-   ]
-  },
-  {"3.3.1",
-   [
-    {load_module, megaco, soft_purge, soft_purge, [megaco_flex_scanner]},
-    {load_module, megaco_flex_scanner, soft_purge, soft_purge, []},   
-    {load_module, megaco_text_parser_v1, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_v2, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_prev3a, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_prev3b, soft_purge, soft_purge, []}
-   ]
-  },
-  {"3.3",
-   [
-    {load_module, megaco, soft_purge, soft_purge, [megaco_flex_scanner]},
-    {load_module, megaco_flex_scanner, soft_purge, soft_purge, []},
-    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
-    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
-    {load_module, megaco_compact_text_encoder_prev3a, soft_purge, soft_purge, []},
-    {load_module, megaco_compact_text_encoder_prev3b, soft_purge, soft_purge, []},
-    {load_module, megaco_pretty_text_encoder_v1, soft_purge, soft_purge, []},
-    {load_module, megaco_pretty_text_encoder_v2, soft_purge, soft_purge, []},
-    {load_module, megaco_pretty_text_encoder_prev3a, soft_purge, soft_purge, []},
-    {load_module, megaco_pretty_text_encoder_prev3b, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_v1, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_v2, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_prev3a, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_prev3b, soft_purge, soft_purge, []}
+    {load_module, megaco_messenger, soft_purge, soft_purge, []}
    ]
   }
  ],
-
- [{"3.3.4",
+ [
+  {"3.4.2",
    [
+    {load_module, megaco_messenger, soft_purge, soft_purge, []}
    ]
   },
-  {"3.3.3",
+  {"3.4.1",
    [
-    {load_module, megaco, soft_purge, soft_purge, []}
+    {load_module, megaco_messenger, soft_purge, soft_purge, []}
    ]
   },
-  {"3.3.2",
+  {"3.4",
    [
-    {load_module, megaco, soft_purge, soft_purge, [megaco_flex_scanner]},
-    {load_module, megaco_flex_scanner, soft_purge, soft_purge, []}
-   ]
-  },
-  {"3.3.1",
-   [
-    {load_module, megaco, soft_purge, soft_purge, [megaco_flex_scanner]},
-    {load_module, megaco_flex_scanner, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_v1, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_v2, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_prev3a, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_prev3b, soft_purge, soft_purge, []}
-   ]
-  },
-  {"3.3",
-   [
-    {load_module, megaco, soft_purge, soft_purge, [megaco_flex_scanner]},
-    {load_module, megaco_flex_scanner, soft_purge, soft_purge, []},
-    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
-    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
-    {load_module, megaco_compact_text_encoder_prev3a, soft_purge, soft_purge, []},
-    {load_module, megaco_compact_text_encoder_prev3b, soft_purge, soft_purge, []},
-    {load_module, megaco_pretty_text_encoder_v1, soft_purge, soft_purge, []},
-    {load_module, megaco_pretty_text_encoder_v2, soft_purge, soft_purge, []},
-    {load_module, megaco_pretty_text_encoder_prev3a, soft_purge, soft_purge, []},
-    {load_module, megaco_pretty_text_encoder_prev3b, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_v1, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_v2, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_prev3a, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_prev3b, soft_purge, soft_purge, []}
+    {load_module, megaco_messenger, soft_purge, soft_purge, []}
    ]
   }
  ]

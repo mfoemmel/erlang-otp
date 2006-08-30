@@ -183,11 +183,13 @@
 
 -export([flex_scanner_handler/1]).
 
--export([display_text_messages/0]).
+-export([display_text_messages/0, generate_text_messages/0]).
 
 
 %% ----
 
+-define(V2,           v2).
+-define(EC,           []).
 -define(VERSION,      2).
 -define(VERSION_STR, "2").
 -define(MSG_LIB, megaco_test_msg_v2_lib).
@@ -210,8 +212,19 @@
 %% ----
 
 display_text_messages() ->
-    Msgs = msgs1() ++ msgs4() ++ msgs5(),
+    Msgs = 
+	msgs1() ++ 
+	msgs4() ++ 
+	msgs5(),
     megaco_codec_test_lib:display_text_messages(?VERSION, Msgs).
+
+
+generate_text_messages() ->
+    Msgs = 
+%% 	msgs1() ++ 
+%% 	msgs4() ++ 
+	msgs5(),
+    megaco_codec_test_lib:generate_text_messages(?V2, ?VERSION, ?EC, Msgs).
 
 
 %% ----

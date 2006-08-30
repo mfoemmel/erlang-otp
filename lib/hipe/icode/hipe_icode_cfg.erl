@@ -17,7 +17,7 @@
          redirect/4,
 	 remove_trivial_bbs/1, remove_unreachable_code/1,
          succ/2, succ_map/1,
-	 visit/2, visited/2, none_visited/0
+	 visit/2, is_visited/2, none_visited/0
 	]).
 -export([postorder/1, reverse_postorder/1]).
 
@@ -130,13 +130,3 @@ cfg_to_linear(CFG) ->
 			      hipe_gensym:label_range(icode)),
   Icode1 = hipe_icode:icode_info_update(Icode, info(CFG)),
   hipe_icode:icode_closure_arity_update(Icode1, closure_arity(CFG)).
-
-%% init_gensym(CFG) ->
-%%   HighestVar = find_highest_var(CFG),
-%%   HighestLabel = find_highest_label(CFG),
-%%   hipe_gensym:init(),
-%%   hipe_gensym:set_var(icode, HighestVar),
-%%   hipe_gensym:set_label(icode, HighestLabel).
-%% 
-%% highest_var(Code) ->
-%%   hipe_icode:highest_var(Code).

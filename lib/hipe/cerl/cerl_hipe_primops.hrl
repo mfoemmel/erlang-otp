@@ -19,7 +19,7 @@
 %% Free Software Foundation, Inc., 59 Temple Place, Suite 330,
 %% Boston, MA 02111-1307 USA
 %%
-%% Author contact: richardc@csd.uu.se
+%% Author contact: richardc@it.uu.se
 %% =====================================================================
 
 %% These definitions give the names of Core Erlang primops recognized by

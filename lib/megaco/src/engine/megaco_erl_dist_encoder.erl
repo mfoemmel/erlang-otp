@@ -270,21 +270,21 @@ dmt2(AR, _MC) ->
 %% Note that the version (1) is of no importance.
 
 encode(M) -> e(M, 1).
-% encode(M) -> 
-%     i("encode -> entry with"
-%       "~nM: ~p", [M]),
-%     M1 = e(M, 1),
-%     i("encode -> encoded:"
-%       "~nM1: ~p", [M1]),
-%     M1.
+%% encode(M) -> 
+%%     i("encode -> entry with"
+%%       "~nM: ~p", [M]),
+%%     M1 = e(M, 1),
+%%     i("encode -> encoded:"
+%%       "~nM1: ~p", [M1]),
+%%     M1.
 decode(M) -> d(M, 1).
-% decode(M) -> 
-%     i("decode -> entry with"
-%       "~nM: ~p", [M]),
-%     M1 = d(M, 1),
-%     i("decode -> decoded:"
-%       "~nM1: ~p", [M1]),
-%     M1.
+%% decode(M) -> 
+%%     i("decode -> entry with"
+%%       "~nM: ~p", [M]),
+%%     M1 = d(M, 1),
+%%     i("decode -> decoded:"
+%%       "~nM1: ~p", [M1]),
+%%     M1.
 
 el(L, V)  when list(L) -> [e(T, V) || T <- L];
 el(L, _V)              -> L.
@@ -412,11 +412,57 @@ e({'ActionRequest', Cid, CtxReq, CtxAAR, [CmdReq]}, V) ->
 e({'ActionRequest', Cid, CtxReq, CtxAAR, CmdReqs}, V) ->
     {81, Cid, e(CtxReq, V), e(CtxAAR, V), el(CmdReqs, V)};
 
-e({'ContextRequest', P, E, T}, V) ->
-    {90, e(P, V), e(E, V), e(T, V)};
+e({'ContextRequest', P, E, T}, V) when V < 3 ->
+    {90, e(P, V), e(E, V), el(T, V)};
+e({'ContextRequest', P, E, T, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {91, e(P, V), e(E, V), el(T, V)};
+e({'ContextRequest', P, E, T, IC, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {92, e(P, V), e(E, V), el(T, V), e(IC, V)};
+e({'ContextRequest', P, E, T, IC, CP, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {93, e(P, V), e(E, V), el(T, V), e(IC, V), el(CP, V)};
+e({'ContextRequest', P, E, T, IC, CP, CL}, V) 
+  when V >= 3 ->
+    {94, e(P, V), e(E, V), el(T, V), e(IC, V), el(CP, V), el(CL, V)};
 
-e({'ContextAttrAuditRequest', P, E, T}, V) ->
+e({'ContextAttrAuditRequest', P, E, T}, V) when V < 3 ->
     {100, e(P, V), e(E, V), e(T, V)};
+e({'ContextAttrAuditRequest', P, E, T, 
+   asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {101, e(P, V), e(E, V), e(T, V)};
+e({'ContextAttrAuditRequest', P, E, T, 
+   IC, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {102, e(P, V), e(E, V), e(T, V), 
+     e(IC, V)};
+e({'ContextAttrAuditRequest', P, E, T, 
+   IC, CPA, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {103, e(P, V), e(E, V), e(T, V), 
+     e(IC, V), el(CPA, V)};
+e({'ContextAttrAuditRequest', P, E, T, 
+   IC, CPA, SP, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {104, e(P, V), e(E, V), e(T, V), 
+     e(IC, V), el(CPA, V), e(SP, V)};
+e({'ContextAttrAuditRequest', P, E, T, 
+   IC, CPA, SP, SE, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {105, e(P, V), e(E, V), e(T, V), 
+     e(IC, V), el(CPA, V), e(SP, V), e(SE, V)};
+e({'ContextAttrAuditRequest', P, E, T, 
+   IC, CPA, SP, SE, SIC, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {106, e(P, V), e(E, V), e(T, V), 
+     e(IC, V), el(CPA, V), e(SP, V), e(SE, V), e(SIC, V)};
+e({'ContextAttrAuditRequest', P, E, T, 
+   IC, CPA, SP, SE, SIC, SL}, V) 
+  when V >= 3 ->
+    {107, e(P, V), e(E, V), e(T, V), 
+     e(IC, V), el(CPA, V), e(SP, V), e(SE, V), e(SIC, V), e(SL, V)};
 
 e({'CommandRequest', Cmd, asn1_NOVALUE, asn1_NOVALUE}, V) ->
     {110, e(Cmd, V)};
@@ -433,6 +479,10 @@ e({'TopologyRequest', From, To, Dir}, 1 = V) ->
     {120, e(From, V), e(To, V), e(Dir, V)};
 e({'TopologyRequest', From, To, Dir, SID}, 2 = V) ->
     {121, e(From, V), e(To, V), e(Dir, V), e(SID, V)};
+e({'TopologyRequest', From, To, Dir, SID, asn1_NOVALUE}, V) when (V >= 3) ->
+    {122, e(From, V), e(To, V), e(Dir, V), e(SID, V)};
+e({'TopologyRequest', From, To, Dir, SID, TDE}, V) when (V >= 3) ->
+    {123, e(From, V), e(To, V), e(Dir, V), e(SID, V), e(TDE, V)};
 
 e({modReq, {'AmmRequest', TID, []}}, V) ->
     {130, el(TID, V)};
@@ -461,8 +511,12 @@ e({'SubtractRequest', TID, AudDesc}, V) ->
 e({auditValueRequest, AR}, V) ->
     {150, e(AR, V)};
 
-e({'AuditRequest', TID, AudDesc}, V) ->
+e({'AuditRequest', TID, AudDesc}, V) when V < 3 ->
     {160, e(TID, V), e(AudDesc, V)};
+e({'AuditRequest', TID, AudDesc, asn1_NOVALUE}, V) when V >= 3 ->
+    {161, e(TID, V), e(AudDesc, V)};
+e({'AuditRequest', TID, AudDesc, TIDs}, V) when V >= 3 ->
+    {162, e(TID, V), e(AudDesc, V), el(TIDs, V)};
 
 e({actionReplies, [AR]}, V) ->
     {170, e(AR, V)};
@@ -490,15 +544,18 @@ e({'AuditDescriptor', asn1_NOVALUE}, 1 = _V) ->
     {190};
 e({'AuditDescriptor', AT}, 1 = V) ->
     {191, el(AT, V)};
-e({'AuditDescriptor', asn1_NOVALUE, asn1_NOVALUE}, 2 = _V) ->
+e({'AuditDescriptor', asn1_NOVALUE, asn1_NOVALUE}, V) when V >= 2 ->
     {192};
-e({'AuditDescriptor', AT, APT}, 2 = V) when list(AT), list(APT) ->
+e({'AuditDescriptor', AT, APT}, V) 
+  when is_list(AT) and is_list(APT) and (V >= 2) ->
     {193, el(AT, V), el(APT, V)};
-e({'AuditDescriptor', AT, APT}, 2 = V) when list(APT) ->
+e({'AuditDescriptor', AT, APT}, V) 
+  when is_list(APT) and (V >= 2) ->
     {194, e(AT, V), el(APT, V)};
-e({'AuditDescriptor', AT, APT}, 2 = V) when list(AT) ->
+e({'AuditDescriptor', AT, APT}, V) 
+  when is_list(AT) and (V >= 2) ->
     {195, el(AT, V), e(APT, V)};
-e({'AuditDescriptor', AT, APT}, 2 = V) ->
+e({'AuditDescriptor', AT, APT}, V) when (V >= 2) ->
     {196, e(AT, V), e(APT, V)};
 
 e({notifyReq, {'NotifyRequest', TID, OED, asn1_NOVALUE}}, V) ->
@@ -575,12 +632,25 @@ e({multiStream, S}, V) ->
 e({'StreamDescriptor', SID, SP}, V) ->
     {292, e(SID, V), e(SP, V)};
 
-e({'StreamParms', LCD, asn1_NOVALUE, asn1_NOVALUE}, V) ->
+e({'StreamParms', LCD, asn1_NOVALUE, asn1_NOVALUE}, V) when V < 3 ->
     {300, e(LCD, V)};
-e({'StreamParms', LCD, LD, asn1_NOVALUE}, V) ->
+e({'StreamParms', LCD, LD, asn1_NOVALUE}, V) when V < 3 ->
     {301, e(LCD, V), e(LD, V)};
-e({'StreamParms', LCD, LD, RD}, V) ->
+e({'StreamParms', LCD, LD, RD}, V) when V < 3 ->
     {302, e(LCD, V), e(LD, V), e(RD, V)};
+
+e({'StreamParms', LCD, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {303, e(LCD, V)};
+e({'StreamParms', LCD, LD, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {304, e(LCD, V), e(LD, V)};
+e({'StreamParms', LCD, LD, RD, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {305, e(LCD, V), e(LD, V), e(RD, V)};
+e({'StreamParms', LCD, LD, RD, SD}, V) 
+  when V >= 3 ->
+    {306, e(LCD, V), e(LD, V), e(RD, V), e(SD, V)};
 
 e({'LocalControlDescriptor', SM, RV, RG, PP}, V) ->
     {310, e(SM, V), e(RV, V), e(RG, V), el(PP, V)};
@@ -717,6 +787,16 @@ e({'RequestedEvent', PN, SID, EA, EPL}, V) ->
 e({'RequestedActions', KA, EDM, SE, SD}, V) ->
     {440, e(KA, V), e(EDM, V), e(SE, V), e(SD, V)};
 
+e({'RequestedActions', KA, EDM, SE, SD, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {441, e(KA, V), e(EDM, V), e(SE, V), e(SD, V)};
+e({'RequestedActions', KA, EDM, SE, SD, NB, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {442, e(KA, V), e(EDM, V), e(SE, V), e(SD, V), e(NB, V)};
+e({'RequestedActions', KA, EDM, SE, SD, NB, RED}, V) 
+  when V >= 3 ->
+    {443, e(KA, V), e(EDM, V), e(SE, V), e(SD, V), e(NB, V), e(RED, V)};
+
 e({'SecondEventsDescriptor', RID, [E]}, V) ->
     {450, e(RID, V), e(E, V)};
 e({'SecondEventsDescriptor', RID, EL}, V) ->
@@ -727,6 +807,16 @@ e({'SecondRequestedEvent', PN, SID, EA, EPL}, V) ->
 
 e({'SecondRequestedActions', KA, EDM, SD}, V) ->
     {470, e(KA, V), e(EDM, V), e(SD, V)};
+
+e({'SecondRequestedActions', KA, EDM, SD, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {471, e(KA, V), e(EDM, V), e(SD, V)};
+e({'SecondRequestedActions', KA, EDM, SD, NB, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {472, e(KA, V), e(EDM, V), e(SD, V), e(NB, V)};
+e({'SecondRequestedActions', KA, EDM, SD, NB, RED}, V) 
+  when V >= 3 ->
+    {473, e(KA, V), e(EDM, V), e(SD, V), e(NB, V), e(RED, V)};
 
 e({'EventSpec', EN, SID, EPL}, V) ->
     {480, EN, e(SID, V), el(EPL, V)};
@@ -742,15 +832,37 @@ e({signal, S}, V) ->
 e({'Signal', SN, SID, ST, D, NC, KA, SPL}, V) ->
     {520, SN, e(SID, V), e(ST, V), e(D, V), e(NC, V), e(KA, V), el(SPL, V)};
 
+e({'Signal', SN, SID, ST, D, NC, KA, SPL, 
+   asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {521, SN, e(SID, V), e(ST, V), e(D, V), e(NC, V), e(KA, V), el(SPL, V)};
+e({'Signal', SN, SID, ST, D, NC, KA, SPL, 
+   SD, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {522, SN, e(SID, V), e(ST, V), e(D, V), e(NC, V), e(KA, V), el(SPL, V),
+     e(SD, V)};
+e({'Signal', SN, SID, ST, D, NC, KA, SPL, 
+   SD, RID, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {523, SN, e(SID, V), e(ST, V), e(D, V), e(NC, V), e(KA, V), el(SPL, V),
+     e(SD, V), e(RID, V)};
+e({'Signal', SN, SID, ST, D, NC, KA, SPL, 
+   SD, RID, IsD}, V) 
+  when V >= 3 ->
+    {524, SN, e(SID, V), e(ST, V), e(D, V), e(NC, V), e(KA, V), el(SPL, V),
+     e(SD, V), e(RID, V), e(IsD, V)};
+
 e({'SigParameter', SPN, Val, asn1_NOVALUE}, _V) ->
     {530, SPN, Val};
 e({'SigParameter', SPN, Val, EI}, _V) ->
     {531, SPN, Val, EI};
 
+e({modemDescriptor, MD}, V) ->
+    {550, e(MD, V)};
 e({'ModemDescriptor', MTL, MPL, asn1_NOVALUE}, _V) ->
-    {550, MTL, MPL};
+    {551, MTL, MPL};
 e({'ModemDescriptor', MTL, MPL, NSD}, _V) ->
-    {551, MTL, MPL, NSD};
+    {552, MTL, MPL, NSD};
 
 e({digitMapDescriptor, {'DigitMapDescriptor', DMN, DMV}}, V) ->
     {560, DMN, e(DMV, V)};
@@ -761,7 +873,7 @@ e({'DigitMapDescriptor', DMN, DMV}, V) ->
 
 e({'DigitMapValue', Start, Stop, Long, DMB}, 1 = V) ->
     {570, e(Start, V), e(Stop, V), e(Long, V), DMB};
-e({'DigitMapValue', Start, Stop, Long, DMB, Dur}, 2 = V) ->
+e({'DigitMapValue', Start, Stop, Long, DMB, Dur}, V) when V >= 2 ->
     {571, e(Start, V), e(Stop, V), e(Long, V), DMB, e(Dur, V)};
 
 e({'ServiceChangeParm', M, A, Ver, Prof, R, D, Id, asn1_NOVALUE, asn1_NOVALUE}, V) ->
@@ -772,6 +884,30 @@ e({'ServiceChangeParm', M, A, Ver, Prof, R, D, Id, TS, asn1_NOVALUE}, V) ->
 e({'ServiceChangeParm', M, A, Ver, Prof, R, D, Id, TS, NSD}, V) ->
     {582, e(M, V), e(A, V), e(Ver, V), e(Prof, V), R, e(D, V), e(Id, V), 
      e(TS, V), NSD};
+
+e({'ServiceChangeParm', M, A, Ver, Prof, R, D, Id, TS, NSD, asn1_NOVALUE}, V) 
+  when V == 2 ->
+    {583, e(M, V), e(A, V), e(Ver, V), e(Prof, V), R, e(D, V), e(Id, V),
+     e(TS, V), NSD};
+e({'ServiceChangeParm', M, A, Ver, Prof, R, D, Id, TS, NSD, Info}, V) 
+  when V == 2 ->
+    {584, e(M, V), e(A, V), e(Ver, V), e(Prof, V), R, e(D, V), e(Id, V),
+     e(TS, V), NSD, e(Info, V)};
+
+e({'ServiceChangeParm', M, A, Ver, Prof, R, D, Id, TS, NSD, 
+   asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {585, e(M, V), e(A, V), e(Ver, V), e(Prof, V), R, e(D, V), e(Id, V),
+     e(TS, V), NSD};
+e({'ServiceChangeParm', M, A, Ver, Prof, R, D, Id, TS, NSD, Info, 
+   asn1_NOVALUE}, V)  
+  when V >= 3 ->
+    {586, e(M, V), e(A, V), e(Ver, V), e(Prof, V), R, e(D, V), e(Id, V), 
+     e(TS, V), e(TS, V), NSD, e(Info, V)};
+e({'ServiceChangeParm', M, A, Ver, Prof, R, D, Id, TS, NSD, Info, Flag}, V)  
+  when V >= 3 ->
+    {587, e(M, V), e(A, V), e(Ver, V), e(Prof, V), R, e(D, V), e(Id, V), 
+     e(TS, V), NSD, e(Info, V), e(Flag, V)};
 
 e({serviceChangeResParms, {'ServiceChangeResParm', Id, A, Ver, Prof, TS}}, V) ->
     {590, Id, e(A, V), Ver, e(Prof, V), TS};
@@ -892,6 +1028,9 @@ e({'PackagesItem', "tdmc", 1}, _V) ->
 e({'PackagesItem', Name, Ver}, _V) ->
     {742, Name, Ver};
 
+e({emptyDescriptors, AD}, V) ->
+    {760, e(AD, V)};
+
 e({statisticsDescriptor, [SD]}, V) ->
     {770, e(SD, V)};
 e({statisticsDescriptor, SsD}, V) ->
@@ -907,77 +1046,146 @@ e({'MuxDescriptor', MT, TL, asn1_NOVALUE}, V) ->
 e({'MuxDescriptor', MT, TL, NSD}, V) ->
     {801, e(MT, V), el(TL, V), NSD};
 
-e({indAudPackagesDescriptor, {'IndAudPackagesDescriptor', N, Ver}}, 2 = _V) ->
+e({indAudPackagesDescriptor, {'IndAudPackagesDescriptor', N, Ver}}, V) 
+  when (V >= 2) ->
     {900, N, Ver};
-e({indAudPackagesDescriptor, IAPD}, 2 = V) ->
+e({indAudPackagesDescriptor, IAPD}, V) 
+  when (V >= 2) ->
     {900, e(IAPD, V)};
-e({'IndAudPackagesDescriptor', N, Ver}, 2 = _V) ->
+e({'IndAudPackagesDescriptor', N, Ver}, V) 
+  when (V >= 2) ->
     {901, N, Ver};
 
-e({indAudStatisticsDescriptor, {'IndAudStatisticsDescriptor', N}}, 2 = _V) ->
+e({indAudStatisticsDescriptor, {'IndAudStatisticsDescriptor', N}}, V) 
+  when (V >= 2) ->
     {910, N};
-e({indAudStatisticsDescriptor, IASD}, 2 = V) ->
+e({indAudStatisticsDescriptor, IASD}, V) 
+  when (V >= 2) ->
     {911, e(IASD, V)};
-e({'IndAudStatisticsDescriptor', N}, 2 = _V) ->
+e({'IndAudStatisticsDescriptor', N}, V) 
+  when (V >= 2) ->
     {912, N};
 
-e({indAudDigitMapDescriptor, {'IndAudDigitMapDescriptor', DMN}}, 2 = _V) ->
+e({indAudDigitMapDescriptor, {'IndAudDigitMapDescriptor', DMN}}, V) 
+  when (V >= 2) ->
     {920, DMN};
-e({indAudDigitMapDescriptor, IADMD}, 2 = V) ->
+e({indAudDigitMapDescriptor, IADMD}, V) 
+  when (V >= 2) ->
     {921, e(IADMD, V)};
-e({'IndAudDigitMapDescriptor', DMN}, 2 = _V) ->
+e({'IndAudDigitMapDescriptor', DMN}, V) 
+  when (V >= 2) ->
     {922, DMN};
 
-e({indAudSignalsDescriptor, {seqSigList, IASD}}, 2 = V) ->
+e({indAudSignalsDescriptor, {seqSigList, IASD}}, V)  
+  when (V >= 2) ->
     {930, e(IASD, V)};
-e({indAudSignalsDescriptor, {signal, IAS}}, 2 = V) ->
+e({indAudSignalsDescriptor, {signal, IAS}}, V)  
+  when (V >= 2) ->
     {931, e(IAS, V)};
 
-e({'IndAudSeqSigList', Id, SL}, 2 = V) ->
+e({'IndAudSeqSigList', Id, SL}, V)  
+  when (V >= 2) ->
     {940, Id, e(SL, V)};
 
-e({'IndAudSignal', N, SID}, 2 = V) ->
+e({'IndAudSignal', N, SID}, 2 = V)  ->
     {950, N, e(SID, V)};
+e({'IndAudSignal', N, SID, asn1_NOVALUE}, V)  
+  when (V >= 3) ->
+    {951, N, e(SID, V)};
+e({'IndAudSignal', N, SID, RID}, V)  
+  when (V >= 3) ->
+    {952, N, e(SID, V), e(RID, V)};
 
-e({indAudEventBufferDescriptor, {'IndAudEventBufferDescriptor', EN, SID}}, 2 = V) ->
+e({indAudEventBufferDescriptor, {'IndAudEventBufferDescriptor', EN, SID}}, V)  
+  when (V >= 2) ->
     {960, EN, e(SID, V)};
-e({indAudEventBufferDescriptor, IAEBD}, 2 = V) ->
+e({indAudEventBufferDescriptor, IAEBD}, V)  
+  when (V >= 2) ->
     {961, e(IAEBD, V)};
-e({'IndAudEventBufferDescriptor', EN, SID}, 2 = V) ->
+e({'IndAudEventBufferDescriptor', EN, SID}, V)  
+  when (V >= 2) ->
     {962, EN, e(SID, V)};
 
-e({indAudEventsDescriptor, {'IndAudEventsDescriptor', RID, N, SID}}, 2 = V) ->
+e({indAudEventsDescriptor, {'IndAudEventsDescriptor', RID, N, SID}}, V)  
+  when (V >= 2) ->
     {970, e(RID, V), N, e(SID, V)};
-e({indAudEventsDescriptor, IAED}, 2 = V) ->
+e({indAudEventsDescriptor, IAED}, V)  
+  when (V >= 2) ->
     {971, e(IAED, V)};
-e({'IndAudEventsDescriptor', RID, N, SID}, 2 = V) ->
+e({'IndAudEventsDescriptor', RID, N, SID}, V)  
+  when (V >= 2) ->
     {972, e(RID, V), N, e(SID, V)};
 
-e({indAudMediaDescriptor, {'IndAudMediaDescriptor', TSD, S}}, 2 = V) ->
+e({indAudMediaDescriptor, {'IndAudMediaDescriptor', TSD, S}}, V) when V >= 2 ->
     {980, e(TSD, V), e(S, V)};
-e({indAudMediaDescriptor, IAMD}, 2 = V) ->
+e({indAudMediaDescriptor, IAMD}, V) when V >= 2 ->
     {981, e(IAMD, V)};
-e({'IndAudMediaDescriptor', TSD, S}, 2 = V) ->
+e({'IndAudMediaDescriptor', TSD, S}, V) when V >= 2 ->
     {982, e(TSD, V), e(S, V)};
 
 e({'IndAudTerminationStateDescriptor', PP, EBC, SS}, 2 = V) ->
     {990, el(PP, V), e(EBC, V), e(SS, V)};
+e({'IndAudTerminationStateDescriptor', PP, EBC, SS, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {991, el(PP, V), e(EBC, V), e(SS, V)};
+e({'IndAudTerminationStateDescriptor', PP, EBC, SS, SSS}, V) 
+  when V >= 3 ->
+    {992, el(PP, V), e(EBC, V), e(SS, V), e(SSS, V)};
+
+e({'IndAudStreamDescriptor', SID, SP}, V) ->
+    {1000, d(SID, V), e(SP, V)};
 
 e({'IndAudStreamParms', LCD, asn1_NOVALUE, asn1_NOVALUE}, 2 = V) ->
-    {1000, e(LCD, V)};
+    {1010, e(LCD, V)};
 e({'IndAudStreamParms', LCD, LD, RD}, 2 = V) ->
-    {1001, e(LCD, V), e(LD, V), e(RD, V)};
+    {1011, e(LCD, V), e(LD, V), e(RD, V)};
+e({'IndAudStreamParms', LCD, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {1012, e(LCD, V)};
+e({'IndAudStreamParms', LCD, LD, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {1013, e(LCD, V), e(LD, V)};
+e({'IndAudStreamParms', LCD, LD, RD, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {1014, e(LCD, V), e(LD, V), e(RD, V)};
+e({'IndAudStreamParms', LCD, LD, RD, SD}, V) 
+  when V >= 3 ->
+    {1015, e(LCD, V), e(LD, V), e(RD, V), e(SD, V)};
 
 e({'IndAudLocalControlDescriptor', SM, RV, RG, asn1_NOVALUE}, 2 = V) ->
-    {1010, e(SM, V), e(RV, V), e(RG, V)};
+    {1020, e(SM, V), e(RV, V), e(RG, V)};
 e({'IndAudLocalControlDescriptor', SM, RV, RG, PP}, 2 = V) when list(PP) ->
-    {1011, e(SM, V), e(RV, V), e(RG, V), el(PP, V)};
+    {1021, e(SM, V), e(RV, V), e(RG, V), el(PP, V)};
+e({'IndAudLocalControlDescriptor', SM, RV, RG, asn1_NOVALUE, asn1_NOVALUE}, V) 
+  when V >= 3 ->
+    {1022, e(SM, V), e(RV, V), e(RG, V)};
+e({'IndAudLocalControlDescriptor', SM, RV, RG, PP, asn1_NOVALUE}, V) 
+  when is_list(PP) and (V >= 3) ->
+    {1023, e(SM, V), e(RV, V), e(RG, V), el(PP, V)};
+e({'IndAudLocalControlDescriptor', SM, RV, RG, PP, SMS}, V) 
+  when is_list(PP) and (V >= 3) ->
+    {1024, e(SM, V), e(RV, V), e(RG, V), el(PP, V), e(SMS, V)};
 
 e({'IndAudPropertyParm', N}, 2 = _V) ->
-    {1020, N};
+    {1030, N};
+e({'IndAudPropertyParm', N, asn1_NOVALUE}, V) when V >= 3 ->
+    {1031, N};
+e({'IndAudPropertyParm', N, PP}, V) when V >= 3 ->
+    {1032, N, e(PP, V)};
+
+e(oneway, _V) ->
+    {1100};
+e(bothway, _V) ->
+    {1101};
+e(isolate, _V) ->
+    {1102};
+e(onewayexternal, _V) ->
+    {1103};
+e(onewayboth, _V) ->
+    {1104};
 
 e(T, _V) ->
-%     io:format("e -> ~nT: ~w~n", [T]),
+%%     io:format("e(~w) -> ~nT: ~w~n", [_V, T]),
     T.
 
 
@@ -1098,10 +1306,43 @@ d({81, Cid, CtxReq, CtxAAR, CmdReqs}, V) ->
     {'ActionRequest', Cid, d(CtxReq, V), d(CtxAAR, V), dl(CmdReqs, V)};
 
 d({90, P, E, T}, V) ->
-    {'ContextRequest', d(P, V), d(E, V), d(T, V)};
+    {'ContextRequest', d(P, V), d(E, V), dl(T, V)};
+d({91, P, E, T}, V) ->
+    {'ContextRequest', d(P, V), d(E, V), dl(T, V), 
+     asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE};
+d({92, P, E, T, IC}, V) ->
+    {'ContextRequest', d(P, V), d(E, V), dl(T, V), 
+     d(IC, V), asn1_NOVALUE, asn1_NOVALUE};
+d({93, P, E, T, IC, CP}, V) ->
+    {'ContextRequest', d(P, V), d(E, V), dl(T, V), 
+     d(IC, V), dl(CP, V), asn1_NOVALUE};
+d({94, P, E, T, IC, CP, CL}, V) ->
+    {'ContextRequest', d(P, V), d(E, V), dl(T, V), 
+     d(IC, V), dl(CP, V), dl(CL, V)};
 
 d({100, P, E, T}, V) ->
     {'ContextAttrAuditRequest', d(P, V), d(E, V), d(T, V)};
+d({101, P, E, T}, V) ->
+    {'ContextAttrAuditRequest', d(P, V), d(E, V), d(T, V), 
+   asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE};
+d({102, P, E, T, IC}, V) ->
+    {'ContextAttrAuditRequest', d(P, V), d(E, V), d(T, V), 
+     d(IC, V), asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE};
+d({103, P, E, T, IC, CPA}, V) ->
+    {'ContextAttrAuditRequest', d(P, V), d(E, V), d(T, V), 
+     d(IC, V), dl(CPA, V), asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE};
+d({104, P, E, T, IC, CPA, SP}, V) ->
+    {'ContextAttrAuditRequest', d(P, V), d(E, V), d(T, V), 
+     d(IC, V), dl(CPA, V), d(SP, V), asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE};
+d({105, P, E, T, IC, CPA, SP, SE}, V) ->
+    {'ContextAttrAuditRequest', d(P, V), d(E, V), d(T, V), 
+     d(IC, V), dl(CPA, V), d(SP, V), d(SE, V), asn1_NOVALUE, asn1_NOVALUE};
+d({106, P, E, T, IC, CPA, SP, SE, SIC}, V) ->
+    {'ContextAttrAuditRequest', d(P, V), d(E, V), d(T, V), 
+     d(IC, V), dl(CPA, V), d(SP, V), d(SE, V), d(SIC, V), asn1_NOVALUE};
+d({107, P, E, T, IC, CPA, SP, SE, SIC, SL}, V) ->
+    {'ContextAttrAuditRequest', d(P, V), d(E, V), d(T, V), 
+     d(IC, V), dl(CPA, V), d(SP, V), d(SE, V), d(SIC, V), d(SL, V)};
 
 d({110, Cmd}, V) ->
     {'CommandRequest', d(Cmd, V), asn1_NOVALUE, asn1_NOVALUE};
@@ -1118,6 +1359,10 @@ d({120, From, To, Dir}, 1 = V) ->
     {'TopologyRequest', d(From, V), d(To, V), d(Dir, V)};
 d({121, From, To, Dir, SID}, 2 = V) ->
     {'TopologyRequest', d(From, V), d(To, V), d(Dir, V), d(SID, V)};
+d({122, From, To, Dir, SID}, V) when (V >= 3) ->
+    {'TopologyRequest', d(From, V), d(To, V), d(Dir, V), d(SID, V), asn1_NOVALUE};
+d({123, From, To, Dir, SID, TDE}, V) when (V >= 3) ->
+    {'TopologyRequest', d(From, V), d(To, V), d(Dir, V), d(SID, V), d(TDE, V)};
 
 d({130, TID}, V) ->
     {modReq, {'AmmRequest', dl(TID, V), []}};
@@ -1146,8 +1391,12 @@ d({143, TID, AudDesc}, V) ->
 d({150, AR}, V) ->
     {auditValueRequest, d(AR, V)};
 
-d({160, TID, AudDesc}, V) ->
+d({160, TID, AudDesc}, V) when V < 3 ->
     {'AuditRequest', d(TID, V), d(AudDesc, V)};
+d({161, TID, AudDesc}, V) when V >= 3 ->
+    {'AuditRequest', d(TID, V), d(AudDesc, V), asn1_NOVALUE};
+d({162, TID, AudDesc, TIDs}, V) when V >= 3 ->
+    {'AuditRequest', d(TID, V), d(AudDesc, V), dl(TIDs, V)};
 
 d({170, AR}, V) ->
     {actionReplies, [d(AR, V)]};
@@ -1175,15 +1424,15 @@ d({190}, 1 = _V) ->
     {'AuditDescriptor', asn1_NOVALUE};
 d({191, AT}, 1 = V) ->
     {'AuditDescriptor', dl(AT, V)};
-d({192}, 2 = _V) ->
+d({192}, V) when (V >= 2) ->
     {'AuditDescriptor', asn1_NOVALUE, asn1_NOVALUE};
-d({193, AT, APT}, 2 = V) when list(AT), list(APT) ->
+d({193, AT, APT}, V) when is_list(AT) and is_list(APT) and (V >= 2) ->
     {'AuditDescriptor', dl(AT, V), dl(APT, V)};
-d({194, AT, APT}, 2 = V) when list(APT) ->
+d({194, AT, APT}, V) when is_list(APT) and (V >= 2) ->
     {'AuditDescriptor', d(AT, V), dl(APT, V)};
-d({195, AT, APT}, 2 = V) when list(AT) ->
+d({195, AT, APT}, V) when is_list(AT) and (V >= 2) ->
     {'AuditDescriptor', dl(AT, V), d(APT, V)};
-d({196, AT, APT}, 2 = V) ->
+d({196, AT, APT}, V) when (V >= 2) ->
     {'AuditDescriptor', d(AT, V), d(APT, V)};
 
 d({200, TID, OED}, V) ->
@@ -1266,6 +1515,19 @@ d({301, LCD, LD}, V) ->
     {'StreamParms', d(LCD, V), d(LD, V), asn1_NOVALUE};
 d({302, LCD, LD, RD}, V) ->
     {'StreamParms', d(LCD, V), d(LD, V), d(RD, V)};
+
+d({303, LCD}, V)  
+  when V >= 3 ->
+    {'StreamParms', d(LCD, V), asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE};
+d({304, LCD, LD}, V)  
+  when V >= 3 ->
+    {'StreamParms', d(LCD, V), d(LD, V), asn1_NOVALUE, asn1_NOVALUE};
+d({305, LCD, LD, RD}, V)  
+  when V >= 3 ->
+    {'StreamParms', d(LCD, V), d(LD, V), d(RD, V), asn1_NOVALUE};
+d({306, LCD, LD, RD, SD}, V)  
+  when V >= 3 ->
+    {'StreamParms', d(LCD, V), d(LD, V), d(RD, V), d(SD, V)};
 
 d({310, SM, RV, RG, PP}, V) ->
     {'LocalControlDescriptor', d(SM, V), d(RV, V), d(RG, V), dl(PP, V)};
@@ -1401,6 +1663,18 @@ d({430, PN, SID, EA, EPL}, V) ->
 
 d({440, KA, EDM, SE, SD}, V) ->
     {'RequestedActions', d(KA, V), d(EDM, V), d(SE, V), d(SD, V)};
+d({441, KA, EDM, SE, SD}, V)  
+  when V >= 3 ->
+    {'RequestedActions', d(KA, V), d(EDM, V), d(SE, V), d(SD, V), 
+     asn1_NOVALUE, asn1_NOVALUE};
+d({442, KA, EDM, SE, SD, NB}, V)  
+  when V >= 3 ->
+    {'RequestedActions', d(KA, V), d(EDM, V), d(SE, V), d(SD, V), 
+     d(NB, V), asn1_NOVALUE};
+d({443, KA, EDM, SE, SD, NB, RED}, V)  
+  when V >= 3 ->
+    {'RequestedActions', d(KA, V), d(EDM, V), d(SE, V), d(SD, V), 
+     d(NB, V), d(RED, V)};
 
 d({450, RID, E}, V) ->
     {'SecondEventsDescriptor', d(RID, V), [d(E, V)]};
@@ -1412,6 +1686,18 @@ d({460, PN, SID, EA, EPL}, V) ->
 
 d({470, KA, EDM, SD}, V) ->
     {'SecondRequestedActions', d(KA, V), d(EDM, V), d(SD, V)};
+d({471, KA, EDM, SD}, V) 
+  when V >= 3 ->
+    {'SecondRequestedActions', d(KA, V), d(EDM, V), d(SD, V), 
+     asn1_NOVALUE, asn1_NOVALUE};
+d({472, KA, EDM, SD, NB}, V) 
+  when V >= 3 ->
+    {'SecondRequestedActions', d(KA, V), d(EDM, V), d(SD, V), 
+     d(NB, V), asn1_NOVALUE};
+d({473, KA, EDM, SD, NB, RED}, V) 
+  when V >= 3 ->
+    {'SecondRequestedActions', d(KA, V), d(EDM, V), d(SD, V), 
+     d(NB, V), d(RED, V)};
 
 d({480, EN, SID, EPL}, V) ->
     {'EventSpec', EN, d(SID, V), dl(EPL, V)};
@@ -1428,15 +1714,37 @@ d({510, S}, V) ->
 d({520, SN, SID, ST, D, NC, KA, SPL}, V) ->
     {'Signal', 
      SN, d(SID, V), d(ST, V), d(D, V), d(NC, V), d(KA, V), dl(SPL, V)};
+d({521, SN, SID, ST, D, NC, KA, SPL}, V) 
+  when V >= 3 ->
+    {'Signal', 
+     SN, d(SID, V), d(ST, V), d(D, V), d(NC, V), d(KA, V), dl(SPL, V),
+     asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE};
+d({522, SN, SID, ST, D, NC, KA, SPL, SD}, V) 
+  when V >= 3 ->
+    {'Signal', 
+     SN, d(SID, V), d(ST, V), d(D, V), d(NC, V), d(KA, V), dl(SPL, V),
+     d(SD, V), asn1_NOVALUE, asn1_NOVALUE};
+d({523, SN, SID, ST, D, NC, KA, SPL, SD, RID}, V) 
+  when V >= 3 ->
+    {'Signal', 
+     SN, d(SID, V), d(ST, V), d(D, V), d(NC, V), d(KA, V), dl(SPL, V),
+     d(SD, V), d(RID, V), asn1_NOVALUE};
+d({524, SN, SID, ST, D, NC, KA, SPL, SD, RID, IsD}, V) 
+  when V >= 3 ->
+    {'Signal', 
+     SN, d(SID, V), d(ST, V), d(D, V), d(NC, V), d(KA, V), dl(SPL, V),
+     d(SD, V), d(RID, V), d(IsD, V)};
 
 d({530, SPN, Val}, _V) ->
     {'SigParameter', SPN, Val, asn1_NOVALUE};
 d({531, SPN, Val, EI}, _V) ->
     {'SigParameter', SPN, Val, EI};
 
-d({550, MTL, MPL}, _V) ->
+d({550, MD}, V) ->
+    {modemDescriptor, d(MD, V)};
+d({551, MTL, MPL}, _V) ->
     {'ModemDescriptor', MTL, MPL, asn1_NOVALUE};
-d({551, MTL, MPL, NSD}, _V) ->
+d({552, MTL, MPL, NSD}, _V) ->
     {'ModemDescriptor', MTL, MPL, NSD};
 
 d({560, DMN, DMV}, V) ->
@@ -1448,7 +1756,7 @@ d({562, DMN, DMV}, V) ->
 
 d({570, Start, Stop, Long, DMB}, 1 = V) ->
     {'DigitMapValue', d(Start, V), d(Stop, V), d(Long, V), DMB};
-d({571, Start, Stop, Long, DMB, Dur}, 2 = V) ->
+d({571, Start, Stop, Long, DMB, Dur}, V) when V >= 2 ->
     {'DigitMapValue', d(Start, V), d(Stop, V), d(Long, V), DMB, d(Dur, V)};
 
 d({580, M, A, Ver, Prof, R, D, Id}, V) ->
@@ -1463,6 +1771,33 @@ d({582, M, A, Ver, Prof, R, D, Id, TS, NSD}, V) ->
     {'ServiceChangeParm', 
      d(M, V), d(A, V), d(Ver, V), d(Prof, V), R, d(D, V), d(Id, V), 
      d(TS, V), NSD};
+
+d({583, M, A, Ver, Prof, R, D, Id, TS, NSD}, V)  
+  when V == 2 ->
+    {'ServiceChangeParm', 
+     d(M, V), d(A, V), d(Ver, V), d(Prof, V), R, d(D, V), d(Id, V), 
+     d(TS, V), NSD, asn1_NOVALUE};
+d({584, M, A, Ver, Prof, R, D, Id, TS, NSD, Info}, V)  
+  when V == 2 ->
+    {'ServiceChangeParm', 
+     d(M, V), d(A, V), d(Ver, V), d(Prof, V), R, d(D, V), d(Id, V), 
+     d(TS, V), NSD, d(Info, V)};
+
+d({585, M, A, Ver, Prof, R, D, Id, TS, NSD}, V) 
+  when V >= 3 ->
+    {'ServiceChangeParm', 
+     d(M, V), d(A, V), d(Ver, V), d(Prof, V), R, d(D, V), d(Id, V), 
+     d(TS, V), NSD, asn1_NOVALUE, asn1_NOVALUE};
+d({586, M, A, Ver, Prof, R, D, Id, TS, NSD, Info}, V) 
+  when V >= 3 ->
+    {'ServiceChangeParm', 
+     d(M, V), d(A, V), d(Ver, V), d(Prof, V), R, d(D, V), d(Id, V), 
+     d(TS, V), NSD, d(Info, V), asn1_NOVALUE};
+d({587, M, A, Ver, Prof, R, D, Id, TS, NSD, Info, Flag}, V) 
+  when V >= 3 ->
+    {'ServiceChangeParm', 
+     d(M, V), d(A, V), d(Ver, V), d(Prof, V), R, d(D, V), d(Id, V), 
+     d(TS, V), NSD, d(Info, V), d(Flag, V)};
 
 d({590, Id, A, Ver, Prof, TS}, V) ->
     {serviceChangeResParms, {'ServiceChangeResParm', Id, d(A, V), Ver, d(Prof, V), TS}};
@@ -1583,6 +1918,9 @@ d({741}, _V) ->
 d({742, Name, Ver}, _V) ->
     {'PackagesItem', Name, Ver};
 
+d({760, AD}, V) ->
+    {emptyDescriptors, d(AD, V)};
+
 d({770, SD}, V) ->
     {statisticsDescriptor, [d(SD, V)]};
 d({771, SsD}, V) ->
@@ -1598,86 +1936,137 @@ d({800, MT, TL}, V) ->
 d({801, MT, TL, NSD}, V) ->
     {'MuxDescriptor', d(MT, V), dl(TL, V), NSD};
 
-d({900, N, Ver}, 2 = _V) ->
+d({900, N, Ver}, V) when (V >= 2) ->
     {indAudPackagesDescriptor, {'IndAudPackagesDescriptor', N, Ver}};
-d({900, IAPD}, 2 = V) ->
+d({900, IAPD}, V) when (V >= 2) ->
     {indAudPackagesDescriptor, d(IAPD, V)};
-d({901, N, Ver}, 2 = _V) ->
+d({901, N, Ver}, V) when (V >= 2) ->
     {'IndAudPackagesDescriptor', N, Ver};
 
-d({910, N}, 2 = _V) ->
+d({910, N}, V) when (V >= 2) ->
     {indAudStatisticsDescriptor, {'IndAudStatisticsDescriptor', N}};
-d({911, IASD}, 2 = V) ->
+d({911, IASD}, V) when (V >= 2) ->
     {indAudStatisticsDescriptor, d(IASD, V)};
-d({912, N}, 2 = _V) ->
+d({912, N}, V) when (V >= 2) ->
     {'IndAudStatisticsDescriptor', N};
 
-d({920, DMN}, 2 = _V) ->
+d({920, DMN}, V) when (V >= 2) ->
     {indAudDigitMapDescriptor, {'IndAudDigitMapDescriptor', DMN}};
-d({921, IADMD}, 2 = V) ->
+d({921, IADMD}, V) when (V >= 2) ->
     {indAudDigitMapDescriptor, d(IADMD, V)};
-d({922, DMN}, 2 = _V) ->
+d({922, DMN}, V) when (V >= 2) ->
     {'IndAudDigitMapDescriptor', DMN};
 
-d({930, IASD}, 2 = V) ->
+d({930, IASD}, V) when (V >= 2) ->
     {indAudSignalsDescriptor, {seqSigList, d(IASD, V)}};
-d({931, IAS}, 2 = V) ->
+d({931, IAS}, V) when (V >= 2) ->
     {indAudSignalsDescriptor, {signal, d(IAS, V)}};
 
-d({940, Id, SL}, 2 = V) ->
+d({940, Id, SL}, V) when (V >= 2) ->
     {'IndAudSeqSigList', Id, d(SL, V)};
 
 d({950, N, SID}, 2 = V) ->
     {'IndAudSignal', N, d(SID, V)};
+d({951, N, SID}, V) when (V >= 3) ->
+    {'IndAudSignal', N, d(SID, V), asn1_NOVALUE};
+d({952, N, SID, RID}, V) when (V >= 3) ->
+    {'IndAudSignal', N, d(SID, V), d(RID, V)};
 
-d({960, EN, SID}, 2 = V) ->
-    {indAudEventBufferDescriptor, {'IndAudEventBufferDescriptor', EN, d(SID, V)}};
-d({961, IAEBD}, 2 = V) ->
+d({960, EN, SID}, V) when (V >= 2) ->
+    {indAudEventBufferDescriptor, 
+     {'IndAudEventBufferDescriptor', EN, d(SID, V)}};
+d({961, IAEBD}, V) when (V >= 2) ->
     {indAudEventBufferDescriptor, d(IAEBD, V)};
-d({962, EN, SID}, 2 = V) ->
+d({962, EN, SID}, V) when (V >= 2) ->
     {'IndAudEventBufferDescriptor', EN, d(SID, V)};
 
-d({970, RID, N, SID}, 2 = V) ->
-    {indAudEventsDescriptor, {'IndAudEventsDescriptor', d(RID, V), N, d(SID, V)}};
-d({971, IAED}, 2 = V) ->
+d({970, RID, N, SID}, V) when (V >= 2) ->
+    {indAudEventsDescriptor, 
+     {'IndAudEventsDescriptor', d(RID, V), N, d(SID, V)}};
+d({971, IAED}, V) when (V >= 2) ->
     {indAudEventsDescriptor, d(IAED, V)};
-d({972, RID, N, SID}, 2 = V) ->
+d({972, RID, N, SID}, V) when (V >= 2) ->
     {'IndAudEventsDescriptor', d(RID, V), N, d(SID, V)};
 
-d({980, TSD, S}, 2 = V) ->
+d({980, TSD, S}, V) when (V >= 2) ->
     {indAudMediaDescriptor, {'IndAudMediaDescriptor', d(TSD, V), d(S, V)}};
-d({981, IAMD}, 2 = V) ->
+d({981, IAMD}, V) when (V >= 2) ->
     {indAudMediaDescriptor, d(IAMD, V)};
-d({982, TSD, S}, 2 = V) ->
+d({982, TSD, S}, V) when (V >= 2) ->
     {'IndAudMediaDescriptor', d(TSD, V), d(S, V)};
 
 d({990, PP, EBC, SS}, 2 = V) ->
     {'IndAudTerminationStateDescriptor', dl(PP, V), d(EBC, V), d(SS, V)};
+d({991, PP, EBC, SS}, V) when V >= 3 ->
+    {'IndAudTerminationStateDescriptor', dl(PP, V), d(EBC, V), d(SS, V), 
+     asn1_NOVALUE};
+d({992, PP, EBC, SS, SSS}, V) when V >= 3 ->
+    {'IndAudTerminationStateDescriptor', dl(PP, V), d(EBC, V), d(SS, V),
+     d(SSS, V)};
 
-d({1000, LCD}, 2 = V) ->
+d({1000, SID, SP}, V) ->
+    {'IndAudStreamDescriptor', d(SID, V), d(SP, V)};
+
+d({1010, LCD}, 2 = V) ->
     {'IndAudStreamParms', d(LCD, V), asn1_NOVALUE, asn1_NOVALUE};
-d({1001, LCD, LD, RD}, 2 = V) ->
+d({1011, LCD, LD, RD}, 2 = V) ->
     {'IndAudStreamParms', d(LCD, V), d(LD, V), d(RD, V)};
+d({1012, LCD}, V) when V >= 3 ->
+    {'IndAudStreamParms', d(LCD, V), asn1_NOVALUE, asn1_NOVALUE, asn1_NOVALUE};
+d({1013, LCD, LD}, V) when V >= 3 ->
+    {'IndAudStreamParms', d(LCD, V), d(LD, V), asn1_NOVALUE, asn1_NOVALUE};
+d({1014, LCD, LD, RD}, V) when V >= 3 ->
+    {'IndAudStreamParms', d(LCD, V), d(LD, V), d(RD, V), asn1_NOVALUE};
+d({1015, LCD, LD, RD, SD}, V) when V >= 3 ->
+    {'IndAudStreamParms', d(LCD, V), d(LD, V), d(RD, V), d(SD, V)};
 
-d({1010, SM, RV, RG}, 2 = V) ->
+d({1020, SM, RV, RG}, 2 = V) ->
     {'IndAudLocalControlDescriptor', 
      d(SM, V), d(RV, V), d(RG, V), asn1_NOVALUE};
-d({1011, SM, RV, RG, PP}, 2 = V) when list(PP) ->
+d({1021, SM, RV, RG, PP}, 2 = V) 
+  when list(PP) ->
     {'IndAudLocalControlDescriptor', d(SM, V), d(RV, V), d(RG, V), dl(PP, V)};
+d({1022, SM, RV, RG}, V) when (V >= 3) ->
+    {'IndAudLocalControlDescriptor', 
+     d(SM, V), d(RV, V), d(RG, V), asn1_NOVALUE, asn1_NOVALUE};
+d({1023, SM, RV, RG, PP}, V) 
+  when is_list(PP) and (V >= 3) ->
+    {'IndAudLocalControlDescriptor', d(SM, V), d(RV, V), d(RG, V), dl(PP, V),
+     asn1_NOVALUE};
+d({1024, SM, RV, RG, PP, SMS}, V) 
+  when is_list(PP) and (V >= 3) ->
+    {'IndAudLocalControlDescriptor', d(SM, V), d(RV, V), d(RG, V), dl(PP, V),
+     d(SMS, V)};
 
-d({1020, N}, 2 = _V) ->
+d({1030, N}, 2 = _V) ->
     {'IndAudPropertyParm', N};
+d({1031, N}, V) when V >= 3 ->
+    {'IndAudPropertyParm', N, asn1_NOVALUE};
+d({1032, N, PP}, V) when V >= 3 ->
+    {'IndAudPropertyParm', N, d(PP, V)};
 
-d(T, _) ->
+d({1100}, _V) ->
+    oneway;
+d({1101}, _V) ->
+    bothway;
+d({1102}, _V) ->
+    isolate;
+d({1103}, _V) ->
+    onewayexternal;
+d({1104}, _V) ->
+    onewayboth;
+
+d(T, _V) ->
+    %% io:format("d(~w) -> ~nT: ~w~n", [_V, T]),
     T.
 
 
-% i(F, A) ->
-%     %% i(get(dbg), F, A).
-%     i(true, F, A).
+%% i(F, A) ->
+%%     %% i(get(dbg), F, A).
+%%     i(true, F, A).
 
-% i(true, F, A) ->
-%     io:format("DBG:" ++ F ++ "~n", A);
-% i(_, _, _) ->
-%     ok.
+%% i(true, F, A) ->
+%%     io:format("DBG:" ++ F ++ "~n", A);
+%% i(_, _, _) ->
+%%     ok.
 

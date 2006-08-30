@@ -105,7 +105,7 @@ static struct {
 } lc_id;
 #endif
 #else /* !ERTS_SMP */
-ErtsSchedulerData *erts_scheduler_data;
+ErtsSchedulerData erts_scheduler_data;
 #endif
 
 static void init_sched_thr_data(ErtsSchedulerData *esdp);
@@ -466,13 +466,12 @@ erts_init_process(void)
 
 #else /* !ERTS_SMP */
 
-    esdp = erts_alloc(ERTS_ALC_T_SCHDLR_DATA, sizeof(ErtsSchedulerData));
+    esdp = &erts_scheduler_data;
 
 #ifdef USE_THREADS
     erts_tsd_set(sched_data_key, (void *) esdp);
 #endif
 
-    erts_scheduler_data = esdp;
     init_sched_thr_data(esdp);
 
 #endif
@@ -1945,7 +1944,7 @@ Process *schedule(Process *p, int calls)
 	ASSERT(esdp->current_process == p
 	       || esdp->free_process == p);
 #else
-	esdp = erts_scheduler_data;
+	esdp = &erts_scheduler_data;
 	ASSERT(esdp->current_process == p);
 	function_calls += calls;
 #endif
@@ -2498,11 +2497,6 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     } else {
 	sz = erts_next_heap_size(heap_need, 0);
     }
-#ifdef HEAP_FRAG_ELIM_TEST
-    p->arith_lowest_htop = (Eterm *) 0;
-    p->halloc_mbuf = NULL;
-#endif
-
 
 #ifdef HIPE
     hipe_init_process(&p->hipe);
@@ -2525,9 +2519,6 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->arith_heap = NULL;
 #ifdef DEBUG
     p->arith_check_me = NULL;
-#endif
-#ifdef HEAP_FRAG_ELIM_TEST
-    p->saved_htop = NULL;
 #endif
     p->catches = 0;
 
@@ -2752,11 +2743,6 @@ void erts_init_empty_process(Process *p)
     p->heap = NULL;
     p->gen_gcs = 0;
     p->max_gen_gcs = 0;
-#ifdef HEAP_FRAG_ELIM_TEST
-    p->arith_lowest_htop = (Eterm *) 0;
-    p->saved_htop = NULL;
-    p->halloc_mbuf = NULL;
-#endif
     p->min_heap_size = 0;
     p->status = P_RUNABLE;
     p->rstatus = P_RUNABLE;

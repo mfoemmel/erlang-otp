@@ -23,7 +23,7 @@
 #
 
 # ================================================================
-# Old bit syntax matching.
+# Old bit syntax instructions.
 #
 # No longer allowed.
 # ================================================================
@@ -38,3 +38,70 @@ bs_get_float Fail Sz Unit Flags Dst => too_old_compiler
 
 bs_skip_bits Fail Sz Unit Flags => too_old_compiler
 bs_test_tail Fail Bits => too_old_compiler
+
+bs_init Size Flags => too_old_compiler
+bs_need_buf Bits => too_old_compiler
+bs_final Fail Dst => too_old_compiler
+
+bs_put_string Len String => too_old_compiler
+
+#
+# Old floating point instructions.
+#
+fmove FR=l Dst=d => too_old_compiler
+
+#
+# New GCing arithmetic instructions.
+#
+
+gc_bif2 Fail I u$bif:erlang:splus/2 S1 S2 Dst=d => i_fetch S1 S2 | i_plus Fail I Dst
+gc_bif2 Fail I u$bif:erlang:sminus/2 S1 S2 Dst=d => i_fetch S1 S2 | i_minus Fail I Dst
+gc_bif2 Fail I u$bif:erlang:stimes/2 S1 S2 Dst=d => i_fetch S1 S2 | i_times Fail I Dst
+gc_bif2 Fail I u$bif:erlang:div/2 S1 S2 Dst=d => i_fetch S1 S2 | i_m_div Fail I Dst
+
+gc_bif2 Fail I u$bif:erlang:intdiv/2 S1 S2 Dst=d => i_fetch S1 S2 | i_int_div Fail I Dst
+gc_bif2 Fail I u$bif:erlang:rem/2 S1 S2 Dst=d => i_fetch S1 S2 | i_rem Fail I Dst
+
+gc_bif2 Fail I u$bif:erlang:bsl/2 S1 S2 Dst=d => i_fetch S1 S2 | i_bsl Fail I Dst
+gc_bif2 Fail I u$bif:erlang:bsr/2 S1 S2 Dst=d => i_fetch S1 S2 | i_bsr Fail I Dst
+
+gc_bif2 Fail I u$bif:erlang:band/2 S1 S2 Dst=d => i_fetch S1 S2 | i_band Fail I Dst
+gc_bif2 Fail I u$bif:erlang:bor/2 S1 S2 Dst=d => i_fetch S1 S2 | i_bor Fail I Dst
+gc_bif2 Fail I u$bif:erlang:bxor/2 S1 S2 Dst=d => i_fetch S1 S2 | i_bxor Fail I Dst
+
+gc_bif1 Fail I u$bif:erlang:bnot/1 Src Dst=d => i_int_bnot Fail Src I Dst
+
+gc_bif1 Fail I u$bif:erlang:sminus/1 Src Dst=d => i_fetch i Src | i_minus Fail I Dst
+gc_bif1 Fail I u$bif:erlang:splus/1 Src Dst=d => i_fetch i Src | i_plus Fail I Dst
+
+i_plus j I d
+i_minus j I d
+i_times j I d
+i_m_div j I d
+i_int_div j I d
+i_rem j I d
+
+i_bsl j I d
+i_bsr j I d
+
+i_band j I d
+i_bor j I d
+i_bxor j I d
+
+i_int_bnot j s I d
+
+#
+# Old arithmetic instructions are no longer allowed.
+#
+m_plus   Lbl S1 S2 D => too_old_compiler
+m_minus  Lbl S1 S2 D => too_old_compiler
+m_times  Lbl S1 S2 D => too_old_compiler
+m_div    Lbl S1 S2 D => too_old_compiler
+int_div  Lbl S1 S2 D => too_old_compiler
+int_rem  Lbl S1 S2 D => too_old_compiler
+int_bsl  Lbl S1 S2 D => too_old_compiler
+int_bsr  Lbl S1 S2 D => too_old_compiler
+int_band  Lbl S1 S2 D => too_old_compiler
+int_bor  Lbl S1 S2 D => too_old_compiler
+int_bxor  Lbl S1 S2 D => too_old_compiler
+int_bnot Fail Src Dst => too_old_compiler

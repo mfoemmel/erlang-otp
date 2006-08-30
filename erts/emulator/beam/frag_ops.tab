@@ -22,6 +22,26 @@
 #
 
 # ================================================================
+# Old bit syntax construction.
+# ================================================================
+
+%macro: i_bs_put_integer BsPutInteger
+i_bs_put_integer j s I s
+
+%macro: i_bs_put_float BsPutFloat
+i_bs_put_float j s I s
+
+%macro: i_bs_put_binary BsPutBinary
+i_bs_put_binary j s I s
+
+%macro: i_bs_put_binary_all BsPutBinaryAll
+i_bs_put_binary_all j s
+
+bs_put_string Len String => i_bs_put_string Len String
+i_bs_put_string I I
+
+
+# ================================================================
 # Old bit syntax matching.
 # ================================================================
 
@@ -96,3 +116,79 @@ bs_test_tail_imm f I
 #
 i_bs_get_binary_all Fail Dst | bs_test_tail f u==0 => i_bs_get_binary_all Fail Dst
 i_bs_skip_bits_all Fail | bs_test_tail f u==0 => i_bs_skip_bits_all Fail
+
+#
+# Old bit syntax construction.
+#
+bs_init Size Flags | old_bs_instructions() => i_bs_init_old
+bs_need_buf Bits =>
+
+bs_final Fail Dst => i_bs_final Fail Dst
+
+i_bs_init_old
+i_bs_final j d
+
+
+#
+# Old floating point instructions.
+#
+fmove FR=l Dst=d  => fmove_old FR Dst
+
+# The old instruction for moving a float out of a floating point register.
+# (Allocates a heap fragment.)
+
+fmove_old l d
+
+
+#
+# Old arithmetic instructions.
+#
+gc_bif2 Fail I u$bif:erlang:splus/2 S1 S2 Dst=d => m_plus Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:sminus/2 S1 S2 Dst=d => m_minus Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:stimes/2 S1 S2 Dst=d => m_times Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:div/2 S1 S2 Dst=d => m_div Fail S1 S2 Dst
+
+gc_bif2 Fail I u$bif:erlang:intdiv/2 S1 S2 Dst=d => int_div Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:rem/2 S1 S2 Dst=d => int_rem Fail S1 S2 Dst
+
+gc_bif2 Fail I u$bif:erlang:bsl/2 S1 S2 Dst=d => int_bsl Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:bsr/2 S1 S2 Dst=d => int_bsr Fail S1 S2 Dst
+
+gc_bif2 Fail I u$bif:erlang:band/2 S1 S2 Dst=d => int_band Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:bor/2 S1 S2 Dst=d => int_bor Fail S1 S2 Dst
+gc_bif2 Fail I u$bif:erlang:bxor/2 S1 S2 Dst=d => int_bxor Fail S1 S2 Dst
+gc_bif1 Fail I u$bif:erlang:bnot/1 Src Dst=d => int_bnot Fail Src Dst
+
+gc_bif1 Fail I u$bif:erlang:sminus/1 Src Dst=d => m_minus Fail i Src Dst
+gc_bif1 Fail I u$bif:erlang:splus/1 Src Dst=d => m_plus Fail i Src Dst
+
+m_plus   Lbl S1 S2 D => i_fetch S1 S2 | i_plus Lbl D
+m_minus  Lbl S1 S2 D => i_fetch S1 S2 | i_minus Lbl D
+m_times  Lbl S1 S2 D => i_fetch S1 S2 | i_times Lbl D
+m_div    Lbl S1 S2 D => i_fetch S1 S2 | i_m_div Lbl D
+int_div  Lbl S1 S2 D => i_fetch S1 S2 | i_int_div Lbl D
+int_rem  Lbl S1 S2 D => i_fetch S1 S2 | i_rem Lbl D
+int_bsl  Lbl S1 S2 D => i_fetch S1 S2 | i_bsl Lbl D
+int_bsr  Lbl S1 S2 D => i_fetch S1 S2 | i_bsr Lbl D
+int_band Lbl S1 S2 D => i_fetch S1 S2 | i_band Lbl D
+int_bor  Lbl S1 S2 D => i_fetch S1 S2 | i_bor Lbl D
+int_bxor Lbl S1 S2 D => i_fetch S1 S2 | i_bxor Lbl D
+
+int_bnot Fail Src Dst => i_int_bnot Fail Src Dst
+
+i_plus j d
+i_minus j d
+i_times j d
+i_m_div j d
+i_int_div j d
+i_rem j d
+
+i_bsl j d
+i_bsr j d
+
+i_band j d
+i_bor j d
+i_bxor j d
+
+i_int_bnot j s d
+

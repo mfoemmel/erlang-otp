@@ -1,3 +1,4 @@
+%% -*- erlang-indent-level: 2 -*-
 %%-------------------------------------------------------------------
 %% File    : cerl_bin_.erl
 %% Author  : Per Gustafsson <pergu@it.uu.se>
@@ -7,7 +8,6 @@
 %%-------------------------------------------------------------------
 
 -module(cerl_binary_pattern_match).
--author('pergu@it.uu.se').
 
 -export([add_offset_to_bin/1]).
 -export([read_seg_size/1, read_seg_offset/1, read_seg_type/1,
@@ -40,7 +40,7 @@
 %% Record definitions and access functions 
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% @type instr() = size() | read_seg() | match() | label() | goto() | bin_guard()
+%% @type instr() = size() | read_seg() | match() | label() | goto() | bin_guard().
 %% All these data types can be used as instructions 
 
 %% @type read_seg(). an abstract data type containing type,
@@ -81,14 +81,14 @@ b_clause_segments(#b_clause{segments=X}) -> X.
 -record(match, {val, tag}).
 %% @spec match_tag(match()) -> integer()
 %% @doc Returns the tag field from a match test
-match_tag(#match{tag=X})-> X.
+match_tag(#match{tag=X}) -> X.
 %% @spec match_val(match()) -> term()
 %% @doc Returns the val field from a match test
-match_val(#match{val=X})-> X.
+match_val(#match{val=X}) -> X.
 
 -record(match_group, {tag, vals}).
-match_group_tag(#match_group{tag=X})->X.
-match_group_vals(#match_group{vals=X}) ->X.
+match_group_tag(#match_group{tag=X}) -> X.
+match_group_vals(#match_group{vals=X}) -> X.
 
 %% @type binary_match(). Represents an entire binary matching, The structure 
 %% of the matching is described in the clause tree and the max tag shows
@@ -137,30 +137,33 @@ bin_guard_label(#bin_guard{label=X}) -> X.
 %% constant part, an "operator" part and two different
 %% variable parts one for locally defined variables and
 %% one for other variables
--record(size, {vars=[],  def_vars=[], const=cerl:c_int(0),  all=cerl:c_atom(false)}).
+-record(size, {vars=[],
+	       def_vars=[],
+	       const=cerl:c_int(0),
+	       all=cerl:c_atom(false)}).
 %% @spec size_const(size()) -> cerl:c_int()
 %% @doc Returns the constant part of a size expression
-size_const(#size{const=X})-> X.
+size_const(#size{const=X}) -> X.
 
 %% @spec size_all(size()) -> cerl:c_atom(false) | cerl:c_atom(all)
 %% @doc Returns cerl:c_atom(all) if the demand on the size is greater than
 %% returns cerl:c_atom(false) in other cases
-size_all(#size{all=X})-> X.
+size_all(#size{all=X}) -> X.
 
 %% @spec size_vars(size()) -> [cerl:c_var()]
 %% @doc Returns a list of the non-locally defined 
 %% variables of a size expression
-size_vars(#size{vars=X})-> X.
+size_vars(#size{vars=X}) -> X.
 
 %% @spec size_def_vars(size()) -> [cerl:c_var()]
 %% @doc Returns a list of the locally defined 
 %% variables of a size expression
-size_def_vars(#size{def_vars=X})-> X.
+size_def_vars(#size{def_vars=X}) -> X.
 
 %% @spec size_all_vars(size()) -> [cerl:c_var()]
 %% @doc Returns a list of all 
 %% variables of a size expression
-size_all_vars(#size{vars=X,def_vars=Y})-> X++Y.
+size_all_vars(#size{vars=X,def_vars=Y}) -> X++Y.
 
 %% @type label(). The label data type represents a binary match local label
 -record(label, {name}).
@@ -181,7 +184,7 @@ goto_label(#goto{label=X}) -> X.
 new_node(Key,Hash=#hash_cons{tree=Tree, number=Number}) ->
   case gb_trees:lookup(Key, Tree) of
     none ->
-      LabelName=cerl:c_int(Number),
+      LabelName = cerl:c_int(Number),
       {new, LabelName, Hash#hash_cons{tree=gb_trees:insert(Key, LabelName, Tree), number=Number+1}};
     {value, LabelName} ->
       {already_exists, LabelName}
@@ -195,7 +198,7 @@ new_node(Key,Hash=#hash_cons{tree=Tree, number=Number}) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
-%%End of record definitions
+%% End of record definitions
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -210,15 +213,14 @@ new_node(Key,Hash=#hash_cons{tree=Tree, number=Number}) ->
 %%========================================================================
 
 add_offset_to_bin(BinClauses) ->
-  {BClause0, MaxTag}=iterate_binclauses(BinClauses),
-  ITree=create_interference_tree(BClause0),
-  %%io:format("~nInterference:~n~p~n", [gb_trees:to_list(ITree)]),
-  {ClauseTree, _Hash}=adapt(BClause0, #hash_cons{}, ITree),
+  {BClause0, MaxTag} = iterate_binclauses(BinClauses),
+  ITree = create_interference_tree(BClause0),
+  %% io:format("~nInterference:~n~p~n", [gb_trees:to_list(ITree)]),
+  {ClauseTree, _Hash} = adapt(BClause0, #hash_cons{}, ITree),
   BM = #binary_match{clause_tree=ClauseTree, max_tag=MaxTag},
-  %dot(BM),
+  %% dot(BM),
   BM.
 
- 
 %%==========================================================================
 %%
 %% iterate_binclauses(Clauses) Frees segments from their context and creates
@@ -226,7 +228,6 @@ add_offset_to_bin(BinClauses) ->
 %% the first unused tag
 %%
 %%==========================================================================
-
 
 iterate_binclauses(Clauses) ->
   iterate_binclauses(Clauses, 0, gb_trees:empty()).
@@ -236,16 +237,16 @@ iterate_binclauses([Clause|Rest], Tag, TagMap) ->
   Body = cerl:clause_body(Clause),
   [Bin] = cerl:clause_pats(Clause),
   BinSegs = cerl:binary_segments(Bin),
-  {Matches, NewBinSegs, NewTag, NewTagMap} = 
+  {Matches, NewBinSegs, NewTag, NewTagMap} =
     iterate_binsegs(BinSegs, Tag, TagMap), 
   {Next, FinalTag} = iterate_binclauses(Rest, NewTag, NewTagMap),
   {#b_clause{segments=NewBinSegs, matches=Matches, guard=Guard,  
-	    body=Body, next_clause = Next}, FinalTag};
+	     body=Body, next_clause=Next}, FinalTag};
 iterate_binclauses([], Tag, _TagMap) ->
   {[], Tag}.
 
 iterate_binsegs(BinSegs, Tag, TagMap) ->
-  iterate_binsegs(BinSegs,  Tag, [], [], #size{}, [], [], TagMap).
+  iterate_binsegs(BinSegs, Tag, [], [], #size{}, [], [], TagMap).
   
 iterate_binsegs([Seg|Rest], Tag, ReadySegs, AccSegs, AccSize, AccMatches, AccDefs, TagMap) ->
   case annotate_seg(Seg, Tag, AccSize, AccDefs, TagMap) of
@@ -257,8 +258,8 @@ iterate_binsegs([Seg|Rest], Tag, ReadySegs, AccSegs, AccSize, AccMatches, AccDef
 		      NewAccSize, AccMatches, AccDefs, NewTagMap);
     {size, {SizeTest,{var, {{NewTag, NewTagMap}, ReadNode, Match}, NewAccSize}}} ->
       NewReadySegs = ReadySegs ++ [SizeTest|lists:reverse([ReadNode|AccSegs])],
-      iterate_binsegs(Rest, NewTag, NewReadySegs, [], NewAccSize, [Match|AccMatches], 
-		      [Match|AccDefs], NewTagMap);
+      iterate_binsegs(Rest, NewTag, NewReadySegs, [], NewAccSize,
+		      [Match|AccMatches], [Match|AccDefs], NewTagMap);
     {size, {SizeTest, {const, {{NewTag, NewTagMap}, ReadNode, MatchNode}, NewAccSize}}}->
       NewReadySegs = ReadySegs ++ [SizeTest|lists:reverse([MatchNode,ReadNode|AccSegs])],
       iterate_binsegs(Rest, NewTag, NewReadySegs, [], NewAccSize, AccMatches, 
@@ -317,8 +318,8 @@ sizekey(Size) ->
 
 offsetkey(Offset) ->
   {cerl:concrete(size_const(Offset)),
-   [{offset_untag(X), cerl:concrete(Y)}||{X,Y} <- size_def_vars(Offset)],
-   [{cerl:var_name(X), cerl:concrete(Y)}||{X,Y} <- size_vars(Offset)],
+   [{offset_untag(X), cerl:concrete(Y)}  || {X,Y} <- size_def_vars(Offset)],
+   [{cerl:var_name(X), cerl:concrete(Y)} || {X,Y} <- size_vars(Offset)],
    cerl:concrete(size_all(Offset))}.
 
 offset_untag({tag, Tag}) -> 
@@ -348,10 +349,11 @@ size_var_def(_Size, []) ->
 same_var(Var1, Var2) ->
   case cerl:is_c_var(Var1) andalso cerl:is_c_var(Var2) of
     true ->
-      cerl:var_name(Var1) == cerl:var_name(Var2);
+      cerl:var_name(Var1) =:= cerl:var_name(Var2);
     false ->
       false
   end.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% create_interference_tree(bclause()) -> gb_tree()
@@ -362,7 +364,7 @@ same_var(Var1, Var2) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 create_interference_tree(BClause0) ->
-  ReadSegs=get_all_unique_read_segments(BClause0, [], []),
+  ReadSegs = get_all_unique_read_segments(BClause0, [], []),
   find_interfering(ReadSegs, gb_trees:empty()).
 
 get_all_unique_read_segments(#b_clause{segments=Segs, next_clause=Next}, Acc, Tags) ->
@@ -376,7 +378,7 @@ it_clause_for_read([#read_seg{tag=Tag}=Read|Rest], Acc, Tags) ->
     true ->
       it_clause_for_read(Rest, Acc, Tags);
     false ->
-       it_clause_for_read(Rest, [Read|Acc], [Tag|Tags])
+      it_clause_for_read(Rest, [Read|Acc], [Tag|Tags])
   end;
 it_clause_for_read([_|Rest], Acc, Tags) ->
   it_clause_for_read(Rest, Acc, Tags);
@@ -384,7 +386,7 @@ it_clause_for_read([], Acc, Tags) ->
   {Acc, Tags}.
 
 find_interfering([ReadSeg|Rest], IntTree) ->
-  NewIntTree=find_interfering(Rest, ReadSeg, IntTree),
+  NewIntTree = find_interfering(Rest, ReadSeg, IntTree),
   find_interfering(Rest, NewIntTree);
 find_interfering([], IntTree) ->
   IntTree.
@@ -392,8 +394,8 @@ find_interfering([], IntTree) ->
 find_interfering([#read_seg{type=Type0, offset=Offset0, size=Size0, tag=Tag0}|Rest],
 		 #read_seg{type=Type, offset=Offset, size=Size, tag=Tag}=RSeg,
 		 IntTree) ->
-  Key=make_search_key(Tag, Tag0),
-  Cond  = 
+  Key = make_search_key(Tag, Tag0),
+  Cond = 
     sameType(Type, Type0) and sameVars(Offset, Offset0) and 
     is_constSize(Size0) and is_constSize(Size),
   if 
@@ -411,32 +413,32 @@ find_interfering([], _RSeg, IntTree) ->
   IntTree.
 
 interfering(Size, Offset, Tag, Size0, Offset0, Tag0) ->
-  Offs=cerl:concrete(size_const(Offset)),
-  Offs0=cerl:concrete(size_const(Offset0)),
-  S=cerl:concrete(Size),
-  S0=cerl:concrete(Size0),
+  Offs = cerl:concrete(size_const(Offset)),
+  Offs0 = cerl:concrete(size_const(Offset0)),
+  S = cerl:concrete(Size),
+  S0 = cerl:concrete(Size0),
   if
-    S == 0 ; S0 == 0 ->
+    S =:= 0 ; S0 =:= 0 ->
       false;
-    Offs>=Offs0, Offs+S =< Offs0+S0 ->   
+    Offs >= Offs0, Offs+S =< Offs0+S0 ->   
       Type = encapsulated,
       Right = Tag,
       Diff = Offs0+S0-Offs-S,
       ISize = S,
       {true, {Type, Right, Diff, ISize}};
-    Offs0>=Offs, Offs0+S0 =< Offs+S ->
+    Offs0 >= Offs, Offs0+S0 =< Offs+S ->
       Type = encapsulated,
       Right = Tag0,
       Diff = Offs+S-Offs0-S0,
       ISize = S0,
       {true, {Type, Right, Diff, ISize}};
-    Offs>=Offs0, Offs+S >= Offs0+S0, Offs0+S0 > Offs  ->
+    Offs >= Offs0, Offs+S >= Offs0+S0, Offs0+S0 > Offs  ->
       Type = overlapping,
       Right = Tag,
       Diff = Offs+S-Offs0-S0,
       ISize = Offs0+S0-Offs,
       {true, {Type, Right, Diff, ISize}};
-    Offs0>=Offs, Offs0+S0 >= Offs+S, Offs+S > Offs0 ->
+    Offs0 >= Offs, Offs0+S0 >= Offs+S, Offs+S > Offs0 ->
       Type = overlapping,
       Right = Tag0,
       Diff = Offs0+S0-Offs-S,
@@ -450,18 +452,18 @@ is_constSize(Size) ->
   cerl:is_c_int(Size).
 
 sameVars(Offset, Offset0) ->
-  Dv=[{offset_untag(X), cerl:concrete(Y)}||{X,Y} <- size_def_vars(Offset)],
-  Sv=[{cerl:var_name(X), cerl:concrete(Y)}||{X,Y} <- size_vars(Offset)],
-  Dv0=[{offset_untag(X), cerl:concrete(Y)}||{X,Y} <- size_def_vars(Offset0)],
-  Sv0=[{cerl:var_name(X), cerl:concrete(Y)}||{X,Y} <- size_vars(Offset0)],
-  (Dv == Dv0) and (Sv==Sv0).
+  Dv = [{offset_untag(X), cerl:concrete(Y)}||{X,Y} <- size_def_vars(Offset)],
+  Sv = [{cerl:var_name(X), cerl:concrete(Y)}||{X,Y} <- size_vars(Offset)],
+  Dv0 = [{offset_untag(X), cerl:concrete(Y)}||{X,Y} <- size_def_vars(Offset0)],
+  Sv0 = [{cerl:var_name(X), cerl:concrete(Y)}||{X,Y} <- size_vars(Offset0)],
+  (Dv =:= Dv0) and (Sv =:= Sv0).
 
 sameType({Sort, Flags}, {Sort0, Flags0}) ->
-  T0=cerl:concrete(Sort0),
-  T=cerl:concrete(Sort),
-  F0=cerl:concrete(Flags0),
-  F=cerl:concrete(Flags),
-  case {T,T0,F==F0} of
+  T0 = cerl:concrete(Sort0),
+  T = cerl:concrete(Sort),
+  F0 = cerl:concrete(Flags0),
+  F = cerl:concrete(Flags),
+  case {T, T0, F =:= F0} of
     {integer, integer, true} ->
       lists:member(unsigned,F) and lists:member(big,F);
     _ ->
@@ -475,22 +477,23 @@ sameType({Sort, Flags}, {Sort0, Flags0}) ->
 %%
 %%=========================================================================
 
-adapt([], Hash, _ITree)->
+adapt([], Hash, _ITree) ->
   {[], Hash};
 adapt(BClause, Hash, ITree) ->
   BClause0=BClause,
   case new_node(BClause0, Hash) of
     {new, NewLabelName, Hash1} ->
-      Lbl=#label{name=NewLabelName},
-      {Succ, Hash2}  = adapt0(BClause0, Hash1, ITree),
+      Lbl = #label{name=NewLabelName},
+      {Succ, Hash2} = adapt0(BClause0, Hash1, ITree),
       {#clause_tree{instr=Lbl, success=Succ}, Hash2};
     {already_exists, LabelName} ->
-      Goto=#goto{label=LabelName},
+      Goto = #goto{label=LabelName},
       {#clause_tree{instr=Goto}, Hash}
   end.
       
-adapt0(#b_clause{segments=[], matches=Matches, guard=Guard, body=Body, next_clause=NextClause}, 
-       Hash,  ITree) ->
+adapt0(#b_clause{segments=[], matches=Matches, guard=Guard,
+		 body=Body, next_clause=NextClause}, 
+       Hash, ITree) ->
   Ref = cerl:concrete(get_ref(Guard)),
   NewRef = make_newref(Ref),
   NewGuard = update_guard(Guard, NewRef),
@@ -501,16 +504,16 @@ adapt0(BClause, Hash, ITree) ->
   BinSeg = choose_binseg(BClause),
   case BinSeg of
     #match{} ->
-      MatchSet=get_all_similar_match(BinSeg,BClause),
+      MatchSet = get_all_similar_match(BinSeg,BClause),
       case gb_sets:size(MatchSet) of
 	1 ->
-	  NewSuccClause=remove_succ_match(BinSeg, BClause, ITree),
+	  NewSuccClause = remove_succ_match(BinSeg, BClause, ITree),
 	  {Succ, Hash1} = adapt(NewSuccClause, Hash, ITree),
-	   NewFailClause = remove_fail_match(BinSeg, BClause, ITree),
+	  NewFailClause = remove_fail_match(BinSeg, BClause, ITree),
 	  {Fail, Hash2} = adapt(NewFailClause, Hash1, ITree),
 	  {#clause_tree{instr=BinSeg, success=Succ, fail=Fail}, Hash2};
 	_ ->
-	  {SuccList,NewInstr,Hash1}=create_success_list(MatchSet, Hash, BClause, ITree),
+	  {SuccList,NewInstr,Hash1} = create_success_list(MatchSet, Hash, BClause, ITree),
 	  NewFailClause = remove_all_fail_match(MatchSet, BClause, ITree),
 	  {Fail, Hash2} = adapt(NewFailClause, Hash1, ITree),
 	  {#clause_tree{instr=NewInstr, success=SuccList, fail=Fail}, Hash2}
@@ -527,11 +530,11 @@ adapt0(BClause, Hash, ITree) ->
 
 
 get_all_similar_match(Match, BClause) ->
-  List=get_all_similar_match(Match, BClause, []),
+  List = get_all_similar_match(Match, BClause, []),
   gb_sets:from_list(List).
 
 get_all_similar_match(Match, #b_clause{segments=BinSegs, next_clause=Next}, Acc) ->
-  NewAcc=get_match(Match, BinSegs, Acc),
+  NewAcc = get_match(Match, BinSegs, Acc),
   get_all_similar_match(Match, Next, NewAcc);
 get_all_similar_match(_Match, [], Acc) ->
   Acc.
@@ -551,7 +554,7 @@ get_match(_Match, [], Acc) ->
 have_same_match(Match1, [Match2|Rest]) ->
   Val1 = cerl:concrete(match_val(Match1)),
   Val2 = cerl:concrete(match_val(Match2)),
-  case Val1 == Val2 of
+  case Val1 =:= Val2 of
     true ->
       true;
     false ->
@@ -563,23 +566,22 @@ have_same_match(_Match1, []) ->
 create_success_list(MatchSet, Hash, BClause, ITree) ->
   MatchList = gb_sets:to_list(MatchSet),
   Tag = match_tag(hd(MatchList)),
-  make_successor_list(MatchList, Hash, BClause, #match_group{tag=Tag, vals=[]}, 
+  make_successor_list(MatchList, Hash, BClause, #match_group{tag=Tag, vals=[]},
 		      gb_trees:empty(), ITree).
 
 make_successor_list([Match=#match{val=Val}|Rest], Hash, BClause, 
 		    MatchGroup=#match_group{vals=Acc}, SuccMap, ITree) ->
-  NewClause=remove_succ_match(Match, BClause, ITree),
-  {Succ, Hash1}=adapt(NewClause, Hash, ITree),
-  make_successor_list(Rest, Hash1, BClause,MatchGroup#match_group{vals=[Val|Acc]},
+  NewClause = remove_succ_match(Match, BClause, ITree),
+  {Succ, Hash1} = adapt(NewClause, Hash, ITree),
+  make_successor_list(Rest, Hash1, BClause,
+		      MatchGroup#match_group{vals=[Val|Acc]},
 		      gb_trees:insert(Val, Succ, SuccMap), ITree);
 make_successor_list([], Hash, _BClause, MatchGroup, SuccMap, _ITree) ->
   {SuccMap, MatchGroup, Hash}.
 
 remove_all_fail_match(MatchSet, BClause, ITree) ->
-  MatchList=gb_sets:to_list(MatchSet),
-  Fun = fun(X, Y) ->
-	    remove_fail_match(X,Y,ITree)
-	end,
+  MatchList = gb_sets:to_list(MatchSet),
+  Fun = fun(X, Y) -> remove_fail_match(X, Y, ITree) end,
   lists:foldl(Fun, BClause, MatchList).
 
 %%------------------------------------------------------------------------
@@ -594,16 +596,17 @@ remove_all_fail_match(MatchSet, BClause, ITree) ->
 %%
 %%------------------------------------------------------------------------- 
 
-prune_compatible_size(BClause=#b_clause{segments=BinSegs,next_clause=Next}, Size) ->
+prune_compatible_size(BClause=#b_clause{segments=BinSegs, next_clause=Next},
+		      Size) ->
   case remove_tests(BinSegs, Size, []) of
     fail ->
       prune_compatible_size(Next, Size);
     NewSegs ->
-      BClause#b_clause{segments=NewSegs, next_clause=prune_compatible_size(Next, Size)}
+      BClause#b_clause{segments=NewSegs,
+		       next_clause=prune_compatible_size(Next, Size)}
   end;
 prune_compatible_size([], _Size) ->
   [].
-
 
 remove_tests([SizeExpr=#size{all=AlliTerm}|Rest], Size=#size{all=AllTerm}, Acc) ->
   Alli = cerl:concrete(AlliTerm),
@@ -682,7 +685,6 @@ is_incompatible(SizeExpr=#size{all=AlliTerm}, Size=#size{all=AllTerm}) ->
 is_incompatible(_,_) ->
   false.
 
-
 %%-----------------------------------------------------------------------------
 %%
 %% remove_seg prunes all similar read actions
@@ -714,12 +716,15 @@ remove_same_seg([], _Tag) ->
 %%
 %%------------------------------------------------------------------------- 
 
-remove_succ_match(Match, BClause=#b_clause{segments=BinSegs, next_clause=Next}, ITree) -> 
+remove_succ_match(Match,
+		  BClause=#b_clause{segments=BinSegs, next_clause=Next},
+		  ITree) -> 
   case mismatch(Match, BinSegs, ITree) of
     true ->
       remove_succ_match(Match, Next, ITree);
     NewBinSegs ->
-      BClause#b_clause{segments=NewBinSegs, next_clause=remove_succ_match(Match, Next, ITree)} 
+      BClause#b_clause{segments=NewBinSegs,
+		       next_clause=remove_succ_match(Match, Next, ITree)} 
   end;
 remove_succ_match(_Match, [], _ITree) ->
   [].
@@ -728,7 +733,7 @@ mismatch(Match, BinSegs, ITree) ->
   mismatch(Match,BinSegs, [], ITree).
 
 mismatch(Match=#match{tag=Tag, val=Val1}, [#match{tag=Tag, val=Val2}|Rest], Acc, ITree) ->
-  case cerl:concrete(Val1)==cerl:concrete(Val2) of
+  case cerl:concrete(Val1) =:= cerl:concrete(Val2) of
     true -> mismatch(Match, Rest, Acc, ITree);
     false -> true
   end;
@@ -758,7 +763,7 @@ interference_conclusion_pos({encapsulated, Tag1, Diff, Size},
   			    Tag1, _Tag2, V1, V2) ->
     C2 = (V2 bsr Diff) band ((1 bsl Size) - 1), 
     C1 = V1,
-    case C1 == C2 of
+    case C1 =:= C2 of
       true ->
         no_info;
       false ->
@@ -768,7 +773,7 @@ interference_conclusion_pos({encapsulated, Tag2, Diff, Size},
  			    _Tag1, Tag2, V1, V2) ->
    C2 = V2, 
    C1 = (V1 bsr Diff) band ((1 bsl Size) - 1),
-   case C1 == C2 of
+   case C1 =:= C2 of
      true ->
        succeeds;
      false ->
@@ -778,7 +783,7 @@ interference_conclusion_pos({overlapping, Tag1, Diff, Size},
  			    Tag1, _Tag2, V1, V2) ->
    C1 = (V1 bsr Diff) band ((1 bsl Size) - 1),
    C2 = V2 band ((1 bsl Size) - 1),
-   case C1 == C2 of
+   case C1 =:= C2 of
      true ->
        no_info;
      false ->
@@ -788,13 +793,13 @@ interference_conclusion_pos({overlapping, Tag2, Diff, Size},
  			    _Tag1, Tag2, V1, V2) ->
    C2 = (V2 bsr Diff) band ((1 bsl Size) - 1),
    C1 = V1 band ((1 bsl Size) - 1),
-   case C1 == C2 of
+   case C1 =:= C2 of
      true ->
        no_info;
      false ->
        fails
    end;
-interference_conclusion_pos(_,_,_,_,_) ->
+interference_conclusion_pos(_, _, _, _, _) ->
   no_info.
 
 make_search_key(Tag1, Tag2) ->
@@ -815,7 +820,7 @@ remove_fail_match(_Match, [], _ITree) ->
   [].
 
 match(Match=#match{tag=Tag, val=Val1}, [#match{tag=Tag, val=Val2}|Rest], ITree) ->
-  case cerl:concrete(Val1)==cerl:concrete(Val2) of
+  case cerl:concrete(Val1) =:= cerl:concrete(Val2) of
     true -> true;
     false -> match(Match, Rest, ITree)
   end;
@@ -843,7 +848,7 @@ interference_conclusion_neg({encapsulated, Tag1, Diff, Size},
 			    Tag1, _Tag2, V1, V2) ->
   C1 = V1, 
   C2 = (V2 bsr Diff) band ((1 bsl Size) - 1),
-  case C1 == C2 of
+  case C1 =:= C2 of
     true ->
       fails;
     false ->
@@ -852,21 +857,21 @@ interference_conclusion_neg({encapsulated, Tag1, Diff, Size},
 interference_conclusion_neg(_Inter, _Tag1, _Tag2, _V1, _V2) ->
   no_info.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% choose_binseg/1 will chose the binseg or match with the 
 %% highest count from a list, if there are binsegs and matches 
 %% with the same count a binseg is chosen
 %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 choose_binseg(BClause) ->
-  CountTree=simpl_count(BClause),
-  BinSegs=b_clause_segments(BClause),
+  CountTree = simpl_count(BClause),
+  BinSegs = b_clause_segments(BClause),
   get_largest(BinSegs, BClause, CountTree).
 
 always_read(BinSegs, CountTree, BClause) ->
-  No=no_of_clauses(BClause),
+  No = no_of_clauses(BClause),
   find_binseg(BinSegs, CountTree, No).
     
 find_binseg([BinSeg=#read_seg{}|Rest], CountTree, No) ->
@@ -883,13 +888,13 @@ find_binseg([], _CountTree, _No) ->
   false.
 
 no_of_clauses(#b_clause{next_clause=Next}) ->
-  1+no_of_clauses(Next);
+  1 + no_of_clauses(Next);
 no_of_clauses([]) ->
   0.
 
 -ifdef(LEFT).
 get_largest(BinSegs=[FirstSeg|_], BClause, CountTree) ->
-  Seg=
+  Seg =
     case always_read(BinSegs, CountTree, BClause) of
       {true, BinSeg} -> BinSeg;
       false -> FirstSeg
@@ -897,7 +902,7 @@ get_largest(BinSegs=[FirstSeg|_], BClause, CountTree) ->
   legalize(Seg, BinSegs).
 -else.
 get_largest(BinSegs, BClause, CountTree) ->
-  Seg=
+  Seg =
     case always_read(BinSegs, CountTree, BClause) of
       {true, BinSeg} -> BinSeg;
       false ->
@@ -984,7 +989,7 @@ get_largest_count([BinSeg|Rest], CountTree, Top={_,Count}) ->
     #size{} ->
       {value, {_, MC, _, _}} = gb_trees:lookup(BinSeg, CountTree),
       NewMC = 1+MC/1000,
-      case NewMC>Count of
+      case NewMC > Count of
 	true -> {BinSeg, NewMC};
 	false -> Top
       end
@@ -994,20 +999,19 @@ get_largest_count([], _CountTree, {BinSeg, _Count}) ->
   BinSeg.
 -endif.
 
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Utility functions
 %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% Simpl count creates a mapping between segments and different 
-% frequency valued used to synthesize the traversal order
-%
+%%
+%% Simpl count creates a mapping between segments and different 
+%% frequency valued used to synthesize the traversal order
+%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 simpl_count(BinClauses) ->
   simpl_count(BinClauses, gb_trees:empty()).
 
@@ -1050,13 +1054,12 @@ simpl_count_segs([Seg=#size{}|Rest], Tree) ->
 simpl_count_segs([], Tree) ->
   Tree.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% legalize makes sure that a binseg selection is legal, if it is not, a legal 
 %% alternative is returned
 %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 legalize(BinSeg=#match{tag=Tag}, BinSegs) ->
   case has_read(Tag, BinSegs) of
@@ -1108,7 +1111,7 @@ size_allowed([], _Size) ->
   true.
 
 size_need_read(#size{def_vars=Defs}, #read_seg{tag=Tag}) ->
-  case [X || {{tag, X},_} <- Defs, X==Tag] of
+  case [X || {{tag, X},_} <- Defs, X =:= Tag] of
     [] ->
       false;
     _ ->
@@ -1121,6 +1124,7 @@ size_need_read(#size{def_vars=Defs}, #read_seg{tag=Tag}) ->
 %% or if Size is not an integer {Size, Unit}
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 combine(Size, Unit) ->
   case cerl:is_c_int(Size) of
     true ->
@@ -1146,30 +1150,31 @@ calc_offset(Size, SizeExpr=#size{const=Const}) ->
   SizeExpr#size{const=cerl:c_int(cerl:int_val(Size)+cerl:int_val(Const))}.
       
 seg_type(Segment) ->      
-  Type=cerl:bitstr_type(Segment),   
-  Flags=cerl:bitstr_flags(Segment),
+  Type = cerl:bitstr_type(Segment),   
+  Flags = cerl:bitstr_flags(Segment),
   {Type, Flags}.
 
 statically_equal(Size1=#size{const=Const1},
 		 Size2=#size{const=Const2}) ->
   C1 = cerl:concrete(Const1),
   C2 = cerl:concrete(Const2),
-  Var1=size_all_vars(Size1),
-  Var2=size_all_vars(Size2),
-  same_set(Var1, Var2) and (C1 == C2).
+  Var1 = size_all_vars(Size1),
+  Var2 = size_all_vars(Size2),
+  same_set(Var1, Var2) and (C1 =:= C2).
 
 statically_bigger(Size1=#size{const=Const1}, Size2=#size{const=Const2}) ->
   C1 = cerl:concrete(Const1),
   C2 = cerl:concrete(Const2),
-  Var1=size_all_vars(Size1),
-  Var2=size_all_vars(Size2),
+  Var1 = size_all_vars(Size1),
+  Var2 = size_all_vars(Size2),
   (C1 > C2) and subset(Var2, Var1). 
 
-statically_bigger_or_equal(Size1=#size{const=Const1},Size2=#size{const=Const2}) ->
+statically_bigger_or_equal(Size1=#size{const=Const1},
+			   Size2=#size{const=Const2}) ->
   C1 = cerl:concrete(Const1),
   C2 = cerl:concrete(Const2),
-  Var1=size_all_vars(Size1),
-  Var2=size_all_vars(Size2),
+  Var1 = size_all_vars(Size1),
+  Var2 = size_all_vars(Size2),
   (C1 >= C2) and subset(Var2, Var1).
 
 statically_different(Size1, Size2) ->
@@ -1195,7 +1200,6 @@ subset([First|Rest], List) ->
     false ->
       false
   end;
-
 subset([], _List) ->
   true.
 
@@ -1227,16 +1231,15 @@ get_ref(Guard) ->
 make_newref(Ref) ->
   case get(joint_unique_ref) of
     undefined ->
-      put(joint_unique_ref, 1),
+      put(joint_unique_ref, 1), % initial value
       {Ref, 0};
-    N ->
+    N when is_integer(N), N >= 1 -> % guards because of initial value
       put(joint_unique_ref, N+1),
       {Ref, N}
   end.
 
 update_guard(Guard, NewRef) ->
-  cerl:update_c_primop(Guard,cerl:primop_name(Guard), 
-		       [cerl:abstract(NewRef)]).
+  cerl:update_c_primop(Guard,cerl:primop_name(Guard), [cerl:abstract(NewRef)]).
 
 update_body(Expr, Ref, NewRef) ->
   Fun =
@@ -1247,7 +1250,7 @@ update_body(Expr, Ref, NewRef) ->
 	      {?PRIMOP_GOTO_LABEL, [Arg]} ->
 		case cerl:concrete(Arg) of
 		  Ref ->
-		    cerl:update_c_primop(E,cerl:primop_name(E), 
+		    cerl:update_c_primop(E, cerl:primop_name(E), 
 					 [cerl:abstract(NewRef)]);
 		  _X ->
 		    %% io:format("X:~w Ref:~w~n", [_X, Ref]),
@@ -1262,19 +1265,21 @@ update_body(Expr, Ref, NewRef) ->
     end,
   cerl_trees:map(Fun, Expr).
 
+%%=============================================================================
+
 -ifdef(BIN_PMATCH_DEBUG).
 
 annotate_clause_tree(#clause_tree{instr=I, success=Succ, fail=Fail}, N) ->
   {ACT1, N1} = annotate_clause_tree(Succ,N+1),
   {ACT2, N2} = annotate_clause_tree(Fail,N1),
   {#ann_clause_tree{instr=I, success=ACT1, fail=ACT2, ann=N}, N2};
-annotate_clause_tree(Val,N) ->
+annotate_clause_tree(Val, N) ->
   {Val,N}.
 
 remove_fail([{_,"Fail"}|Rest], LabelTree) ->
   remove_fail(Rest,LabelTree);
 remove_fail([{X,[{label,Key}]}|Rest], LabelTree) ->
-  {value,Name}=gb_trees:lookup(Key, LabelTree),
+  {value,Name} = gb_trees:lookup(Key, LabelTree),
   [{X,lists:flatten(Name)}|remove_fail(Rest,LabelTree)];
 remove_fail([X|Rest], LabelTree) ->
   [X|remove_fail(Rest,LabelTree)];
@@ -1284,7 +1289,7 @@ remove_fail([], _L) ->
 remove_options([{_,"Fail",_}|Rest], LabelTree) -> 
   remove_options(Rest,LabelTree);
 remove_options([{X,[{label,Key}],Opt}|Rest], LabelTree) ->
-  {value,Name}=gb_trees:lookup(Key, LabelTree),
+  {value,Name} = gb_trees:lookup(Key, LabelTree),
   [{X,lists:flatten(Name),Opt}|remove_options(Rest,LabelTree)];
 remove_options([X|Rest], LabelTree) ->
   [X|remove_options(Rest, LabelTree)];
@@ -1293,48 +1298,46 @@ remove_options([], _LabelTree) ->
 
 dot(#binary_match{clause_tree=CT}) ->
   {ACT,_} = annotate_clause_tree(CT, 0),
-  {LTree, Acc,Opts}=dot(ACT, gb_trees:empty(), [], []),
-  Dot=remove_fail(Acc,LTree),
-  DotOpts=remove_options(Opts,LTree),
+  {LTree, Acc,Opts} = dot(ACT, gb_trees:empty(), [], []),
+  Dot = remove_fail(Acc,LTree),
+  DotOpts = remove_options(Opts,LTree),
   hipe_dot:translate_list(Dot, ?DOT_FILE, "Stupid_Name", 
-			  fun(X)->X end,DotOpts).
+			  fun(X) -> X end, DotOpts).
 
 dot(#ann_clause_tree{instr=I, success=Succ, fail=Fail}=Self, 
-    LabelTree, Acc, Opts) -> 
+    LabelTree, Acc, Opts) ->
   case I of
     #label{name=X} ->
-      Int=cerl:concrete(X),
-      NewLabelTree=gb_trees:insert(Int, get_node_name1(Succ, LabelTree), 
-				   LabelTree),
+      Int = cerl:concrete(X),
+      NewLabelTree = gb_trees:insert(Int, get_node_name1(Succ, LabelTree), 
+				     LabelTree),
       dot(Succ, NewLabelTree, Acc, Opts);
     #size{} ->
-      SelfName=get_node_name(Self, LabelTree),
-      SuccName=get_node_name(Succ, LabelTree),
+      SelfName = get_node_name(Self, LabelTree),
+      SuccName = get_node_name(Succ, LabelTree),
       SuccOpt = make_succ_opt({SelfName,SuccName}),
       {NewLabelTree, NewAcc, NewOpts} = dot(Succ, LabelTree, 
-				   [{SelfName,SuccName}|Acc],
-				  [SuccOpt|Opts]),
-      FailName= get_node_name(Fail, LabelTree),
+					    [{SelfName,SuccName}|Acc],
+					    [SuccOpt|Opts]),
+      FailName = get_node_name(Fail, LabelTree),
       FailOpt = make_fail_opt({SelfName,FailName}),
-      dot(Fail, NewLabelTree,[{SelfName,FailName}|NewAcc],
-	 [FailOpt|NewOpts]);
+      dot(Fail, NewLabelTree, [{SelfName,FailName}|NewAcc], [FailOpt|NewOpts]);
     #match{} ->
-      SelfName=get_node_name(Self, LabelTree),
-      SuccName=get_node_name(Succ, LabelTree),
+      SelfName = get_node_name(Self, LabelTree),
+      SuccName = get_node_name(Succ, LabelTree),
       SuccOpt = make_succ_opt({SelfName,SuccName}),
       {NewLabelTree, NewAcc, NewOpts} = dot(Succ, LabelTree, 
-				   [{SelfName,SuccName}|Acc],
-				  [SuccOpt|Opts]),
-      FailName= get_node_name(Fail, LabelTree),
+					    [{SelfName,SuccName}|Acc],
+					    [SuccOpt|Opts]),
+      FailName = get_node_name(Fail, LabelTree),
       FailOpt = make_fail_opt({SelfName,FailName}),
-      dot(Fail, NewLabelTree,[{SelfName,FailName}|NewAcc],
-	  [FailOpt|NewOpts]);
+      dot(Fail, NewLabelTree, [{SelfName,FailName}|NewAcc], [FailOpt|NewOpts]);
     #read_seg{} ->
-      SelfName=get_node_name(Self, LabelTree),
-      SuccName=get_node_name(Succ, LabelTree),
+      SelfName = get_node_name(Self, LabelTree),
+      SuccName = get_node_name(Succ, LabelTree),
       dot(Succ, LabelTree, [{SelfName,SuccName}|Acc],Opts);
     #bin_guard{} ->
-      SelfName=get_node_name(Self, LabelTree),
+      SelfName = get_node_name(Self, LabelTree),
       BgOpt = make_bin_guard_opt(SelfName),
       {LabelTree, Acc, [BgOpt|Opts]};
       %% dot(Fail, LabelTree,Acc,[BgOpt|Opts]);
@@ -1345,10 +1348,10 @@ dot([], LabelTree, Acc, Opts) ->
   {LabelTree, Acc, Opts}.
 
 make_succ_opt({N1,N2}) ->
-  {N1,N2,{color,green}}.
+  {N1, N2, {color,green}}.
 
 make_fail_opt({N1,N2}) ->
-  {N1,N2,{color,red}}.
+  {N1, N2, {color,red}}.
 
 make_bin_guard_opt(Node) ->
   {Node, {shape,rectangle}}.
@@ -1368,7 +1371,7 @@ get_node_name1(#ann_clause_tree{instr=I, success=Succ, ann=N}, LabelTree) ->
 	  false ->
 	    "="
 	end,
-      Int=cerl:concrete(X),
+      Int = cerl:concrete(X),
       io_lib:format("size ~s ~w, (~w)", [Sign, Int, N]);
     #size{vars=Vars, const=X, all=C_atom} ->
       Sign =
@@ -1378,11 +1381,11 @@ get_node_name1(#ann_clause_tree{instr=I, success=Succ, ann=N}, LabelTree) ->
 	  false ->
 	    "="
 	end,
-      Int=cerl:concrete(X),
+      Int = cerl:concrete(X),
       io_lib:format("size ~s ~w + ~w (~w)", [Sign, Int, Vars,N]);
     #match{val=Val, tag=Tag} ->
-      CVal=cerl:concrete(Val),
-      io_lib:format("r~w == ~w (~w)", [Tag,CVal,N]);
+      CVal = cerl:concrete(Val),
+      io_lib:format("r~w = ~w (~w)", [Tag,CVal,N]);
     #read_seg{tag=Tag, offset=Off, size=Size} ->
       Sz = 
 	case cerl:is_c_int(Size) of
@@ -1397,14 +1400,14 @@ get_node_name1(#ann_clause_tree{instr=I, success=Succ, ann=N}, LabelTree) ->
 	end,
       case Off of
 	#size{vars=[], const=X} ->
-	  Int=cerl:concrete(X),
+	  Int = cerl:concrete(X),
 	  io_lib:format("r~w = r(~w, ~w) (~w)", [Tag, Int, Sz, N]);
 	#size{vars=Vars, const=X} ->
-	  Int=cerl:concrete(X),
+	  Int = cerl:concrete(X),
 	  io_lib:format("r~w = read(~w + ~w, ~w) (~w)", [Tag, Vars, Int, Sz, N])
       end;
     #bin_guard{label=Lbl} ->
-      [Arg]=cerl:primop_args(Lbl),
+      [Arg] = cerl:primop_args(Lbl),
       io_lib:format("Match ~w Succeded (~w)", [cerl:concrete(Arg), N]);
     #goto{label=X} ->
       [{label,cerl:concrete(X)}]     
@@ -1421,11 +1424,10 @@ get_node_name1([], _LabelTree) ->
 
 pp(#binary_match{clause_tree=CT}) ->
   pp(CT);
-
 pp(#clause_tree{instr=I, success=Succ, fail=Fail}) -> 
   case I of
     #label{name=X} ->
-      Int=cerl:concrete(X),
+      Int = cerl:concrete(X),
       io:format("Label: ~w~n", [Int]),
       pp(Succ);
     #size{vars=Vars, const=X, all=C_atom} ->
@@ -1436,17 +1438,17 @@ pp(#clause_tree{instr=I, success=Succ, fail=Fail}) ->
 	false ->
 	  "="
       end,
-      Int=cerl:concrete(X),
+      Int = cerl:concrete(X),
       io:format("Case size ~s ~w + ~w ~n", [Sign, Int, Vars]),
       do_split(Succ, Fail);
     #match{val=Val, tag=Tag} ->
-      CVal=cerl:concrete(Val),
-      io:format("Case r~w == ~w~n", [Tag,CVal]),
+      CVal = cerl:concrete(Val),
+      io:format("Case r~w = ~w~n", [Tag,CVal]),
       do_split(Succ, Fail);
     #match_group{vals=Vals, tag=Tag} ->
       io:format("Case r~w of~n", [Tag]),
       Succs = do_split_match_group(Vals, Succ, Fail),
-      [pp(X)||X<-Succs];
+      [pp(X) || X <- Succs];
     #read_seg{tag=Tag, offset=Off, size=Size} ->
       Sz = 
 	case cerl:is_c_int(Size) of
@@ -1454,7 +1456,7 @@ pp(#clause_tree{instr=I, success=Succ, fail=Fail}) ->
 	  false -> Size
 	end,
       #size{vars=Vars, const=X} = Off,
-      Int=cerl:concrete(X),
+      Int = cerl:concrete(X),
       io:format("r~w = read(~w + ~w, ~w)~n", [Tag, Vars, Int, Sz]),
       Lbl = get_label(Succ),
       io:format("goto ~w~n~n", [Lbl]),
@@ -1462,12 +1464,12 @@ pp(#clause_tree{instr=I, success=Succ, fail=Fail}) ->
     #bin_guard{label=Lbl} ->
       io:format("Matched pattern: ~w~n~n", [Lbl]);
     #goto{label=X} ->
-      Lbl=cerl:concrete(X),
+      Lbl = cerl:concrete(X),
       io:format("goto ~w~n~n", [Lbl])
   end.
 
 do_split_match_group([Val|Vals], SuccMap, Fail) ->
-  Succ=gb_trees:get(Val, SuccMap),
+  Succ = gb_trees:get(Val, SuccMap),
   CVal = cerl:concrete(Val),
   SL = get_label(Succ),
   io:format("    ~w -> ~w~n", [CVal, SL]),
@@ -1505,90 +1507,88 @@ get_label(#clause_tree{instr=I}) ->
 get_label([]) ->
   fail.
 
-%% @spec full_size(binary_match())-> integer()
+%% @spec full_size(binary_match()) -> integer()
 %% @doc measures the number of nodes of the clause_tree in 
 %% a binary_match
 full_size(#binary_match{clause_tree=CT}) ->
-    full_size(CT, 0) + 1.
+  full_size(CT, 0) + 1.
 full_size(#clause_tree{instr=I, success=Succ, fail=Fail}, Acc) ->
-    Acc1 = 
-	case I of 
-	    #label{name=X} ->
-		max(cerl:concrete(X), Acc);
-	    _ ->
-		Acc
-	end,
-    Acc2 = full_size(Succ, Acc1),
-    full_size(Fail, Acc2);
-
+  Acc1 = 
+    case I of 
+      #label{name=X} ->
+	max(cerl:concrete(X), Acc);
+      _ ->
+	Acc
+    end,
+  Acc2 = full_size(Succ, Acc1),
+  full_size(Fail, Acc2);
 full_size([], Acc) ->
-    Acc.
+  Acc.
 
-max(A, B) when A>B ->
-    A;
+max(A, B) when A > B ->
+  A;
 max(_A,B) ->
-    B.
+  B.
 
-%% @spec a_height(binary_match())-> float()
+%% @spec a_height(binary_match()) -> float()
 %% @doc measures the average height of the clause_tree in 
 %% a binary_match
 a_height(#binary_match{clause_tree=CT}) ->
-    Heights=a_height(CT, CT, [], 0),
-    Sorted=lists:keysort(2,Heights),
-    Added=calculate(Sorted),
-    lists:sum(Added)/length(Added).
+  Heights = a_height(CT, CT, [], 0),
+  Sorted = lists:keysort(2,Heights),
+  Added = calculate(Sorted),
+  lists:sum(Added)/length(Added).
 
 %% @spec max_height(binary_match())-> integer() 
 %% @doc measures the maximum height of the clause_tree in 
 %% a binary_match
 max_height(#binary_match{clause_tree=CT}) ->
-    Heights=a_height(CT, CT, [], 0),
-    [{High, _}|_]=lists:reverse(lists:keysort(1,Heights)),
-    High.
+  Heights = a_height(CT, CT, [], 0),
+  [{High, _}|_] = lists:reverse(lists:keysort(1,Heights)),
+  High.
 
 calculate([{X,Token}|Rest]) -> 
-    calculate(Rest, [X], Token, []).
+  calculate(Rest, [X], Token, []).
 
 calculate([{X,Token}|Rest], Acc, Token, AccList) ->
-    calculate(Rest, [X|Acc], Token, AccList);
+  calculate(Rest, [X|Acc], Token, AccList);
 calculate([{X,NewToken}|Rest], Acc, _Token, AccList) ->
-    Val=lists:sum(Acc)/length(Acc),
-    calculate(Rest, [X], NewToken, [Val|AccList]);
+  Val = lists:sum(Acc)/length(Acc),
+  calculate(Rest, [X], NewToken, [Val|AccList]);
 calculate([], Acc, _Token, AccList) ->
-    Val=lists:sum(Acc)/length(Acc),
-    [Val|AccList].
+  Val = lists:sum(Acc)/length(Acc),
+  [Val|AccList].
 
-a_height(#clause_tree{instr=I,success=Succ, fail=Fail}, OT, AccList, Acc) ->
-    case I of
-	#bin_guard{label=X} ->
-	    [{Acc+1, X}|AccList];
-	#label{} ->
-	    a_height(Succ, OT, AccList, Acc);
-	#goto{label=Label} ->
-	    {value,OtherSucc}=get_succ(OT, Label),
-	    a_height(OtherSucc, OT, AccList, Acc);
-	_ ->
-	    NewList=a_height(Succ, OT, AccList, Acc+1),
-	    a_height(Fail, OT, NewList, Acc+1)
-    end;
-
+a_height(#clause_tree{instr=I, success=Succ, fail=Fail}, OT, AccList, Acc) ->
+  case I of
+    #bin_guard{label=X} ->
+      [{Acc+1, X}|AccList];
+    #label{} ->
+      a_height(Succ, OT, AccList, Acc);
+    #goto{label=Label} ->
+      {value,OtherSucc} = get_succ(OT, Label),
+      a_height(OtherSucc, OT, AccList, Acc);
+    _ ->
+      NewList = a_height(Succ, OT, AccList, Acc+1),
+      a_height(Fail, OT, NewList, Acc+1)
+  end;
 a_height([], _OT, AccList,_Acc) ->
-    AccList.
+  AccList.
 
-get_succ(#clause_tree{instr=I,success=Succ, fail=Fail}, Label) ->
-    case I of
-	#label{name=Label} ->
-	    {value, Succ};
-	_ ->
-	    case get_succ(Succ, Label) of
-		none ->
-		    get_succ(Fail, Label);
-		Val ->
-		    Val
-	    end
-    end;
+get_succ(#clause_tree{instr=I, success=Succ, fail=Fail}, Label) ->
+  case I of
+    #label{name=Label} ->
+      {value, Succ};
+    _ ->
+      case get_succ(Succ, Label) of
+	none ->
+	  get_succ(Fail, Label);
+	Val ->
+	  Val
+      end
+  end;
 get_succ([], _Label) ->
-    none.
+  none.
 
 -endif.
 %% @clear  No warnings if not ifdef(BIN_PMATCH_DEBUG)

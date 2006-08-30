@@ -5,6 +5,7 @@
 #include "config.h"
 #endif
 #include "global.h"
+#include <sys/mman.h>
 
 #include "hipe_arch.h"
 #include "hipe_native_bif.h"	/* nbif_callemu() */

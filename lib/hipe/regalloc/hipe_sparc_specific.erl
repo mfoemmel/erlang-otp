@@ -80,17 +80,7 @@ all_args() ->
    hipe_sparc_registers:arg(2),
    hipe_sparc_registers:arg(3),
    hipe_sparc_registers:arg(4),
-   hipe_sparc_registers:arg(5),
-   hipe_sparc_registers:arg(6),
-   hipe_sparc_registers:arg(7),
-   hipe_sparc_registers:arg(8),
-   hipe_sparc_registers:arg(9),
-   hipe_sparc_registers:arg(10),
-   hipe_sparc_registers:arg(11),
-   hipe_sparc_registers:arg(12),
-   hipe_sparc_registers:arg(13),
-   hipe_sparc_registers:arg(14),
-   hipe_sparc_registers:arg(15)].
+   hipe_sparc_registers:arg(5)].
 
 is_arg(R) ->
   lists:member(R,all_args()).
@@ -112,9 +102,9 @@ arg_vars(_, Acc) -> Acc.
 arg_vars(N) ->
   case N >= hipe_sparc_registers:register_args() of
     false ->
-      arg_vars(N-1,[]);
+      arg_vars(N-1, []);
     true ->
-      arg_vars(hipe_sparc_registers:register_args()-1,[])
+      arg_vars(hipe_sparc_registers:register_args()-1, [])
   end.
 
 arg_var(X) ->
@@ -123,7 +113,6 @@ arg_var(X) ->
 arity(CFG) ->
   hipe_sparc_cfg:extra(CFG).
  
-
 labels(CFG) ->
   hipe_sparc_cfg:labels(CFG).
 
@@ -147,7 +136,6 @@ reverse_inorder(CFG) ->
 
 preorder(CFG) ->
   hipe_sparc_cfg:preorder(CFG).
-
 
 var_range(_CFG) ->
   hipe_gensym:var_range(sparc).
@@ -180,5 +168,5 @@ is_move(Instruction) ->
 reg_nr(Reg) ->
   hipe_sparc:reg_nr(Reg).
 
-new_spill_index(SpillIndex)->
+new_spill_index(SpillIndex) when is_integer(SpillIndex) ->
   SpillIndex + 1.

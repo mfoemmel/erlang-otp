@@ -102,10 +102,6 @@ clean:
 # Special Build Targets
 # ----------------------------------------------------
 
-$(EBIN)/dialyzer_cl_parse.$(EMULATOR): dialyzer_cl_parse.erl
-	erlc $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -Ddialyzer_def_libs="[$(DIALYZER_DEF_LIBS)]" -o$(EBIN) dialyzer_cl_parse.erl
-
-
 $(DIALYZER_DIR)/plt/dialyzer_init_plt:
 	@echo "Dialyzer will now build auxiliary information needed for subsequent analyses..."
 	@echo "A PLT for following libs will be built:"
@@ -125,7 +121,6 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 dialyzer.hrl: dialyzer.hrl.src ../vsn.mk Makefile
 	sed -e "s;%VSN%;$(VSN);" \
 	    -e "s;%DEF_LIBS%;\[$(DIALYZER_DEF_LIBS)\];" \
-	    -e "s;%DIALYZER_DIR%;\"$(DIALYZER_DIR)\";" \
 		$< > $@
 
 # ---------------------------------------------------------------------

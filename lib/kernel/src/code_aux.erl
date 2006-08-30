@@ -17,15 +17,12 @@
 %%
 -module(code_aux).
 
-%%-compile(export_all).
--export([
-	 to_atom/1,
+-export([to_atom/1,
 	 to_list/1,
 	 to_path/1,
 	 objfile_extension/0,
 	 sticky/2,
 	 do_purge/1]).
-
 
 
 objfile_extension() ->
@@ -35,17 +32,14 @@ objfile_extension() ->
 	"BEAM" -> ".beam"
     end.
 
+to_list(X) when is_list(X) -> X;
+to_list(X) when is_atom(X) -> atom_to_list(X).
 
-to_list(X) when list(X) -> X;
-to_list(X) when atom(X) -> atom_to_list(X).
-
-
-to_atom(X) when atom(X) -> X;
-to_atom(X) when list(X) -> list_to_atom(X).
+to_atom(X) when is_atom(X) -> X;
+to_atom(X) when is_list(X) -> list_to_atom(X).
 
 to_path(X) ->
     filename:join(packages:split(X)).
-
 
 
 %% The idea here is that we shall sucseed in loading 
@@ -59,8 +53,6 @@ sticky(Mod, Db) ->
 	    end;
 	_ -> false
     end.
-
-
 
 
 %% do_purge(Module)

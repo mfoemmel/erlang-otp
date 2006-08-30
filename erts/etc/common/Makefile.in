@@ -17,6 +17,11 @@
 #
 include $(ERL_TOP)/make/target.mk
 
+ERTS_LIB_TYPEMARKER=.$(TYPE)
+
+USING_MINGW=@MIXED_CYGWIN_MINGW@
+USING_VC=@MIXED_CYGWIN_VC@
+
 ifeq ($(TYPE),debug)
 PURIFY =
 TYPEMARKER = .debug
@@ -33,6 +38,7 @@ endif
 else
 PURIFY =
 TYPEMARKER =
+ERTS_LIB_TYPEMARKER=
 TYPE_FLAGS =
 endif
 endif
@@ -86,6 +92,8 @@ endif
 endif
 endif
 
+ERLEXEC_XLIBS=-L../../lib/internal/$(TARGET) -lerts_internal$(ERTS_LIB_TYPEMARKER)
+
 # ----------------------------------------------------
 # Release directory specification
 # ----------------------------------------------------
@@ -134,13 +142,6 @@ ifeq ($(TARGET),win32)
 CFLAGS += -I$(EMUOSDIR) -I$(WINETC)
 RC=rc.sh
 MC=mc.sh
-ERLSRV_OBJECTS= \
-	$(OBJDIR)/erlsrv_registry.o \
-	$(OBJDIR)/erlsrv_service.o  \
-	$(OBJDIR)/erlsrv_interactive.o \
-	$(OBJDIR)/erlsrv_main.o \
-	$(OBJDIR)/erlsrv_util.o \
-	$(OBJDIR)/erlsrv_logmess.res
 ERLSRV_HEADERS= \
 		$(WINETC)/erlsrv/erlsrv_global.h \
 		$(WINETC)/erlsrv/erlsrv_registry.h \
@@ -148,8 +149,31 @@ ERLSRV_HEADERS= \
 		$(WINETC)/erlsrv/erlsrv_interactive.h \
 		$(WINETC)/erlsrv/erlsrv_service.h
 
+ifeq ($(USING_VC), yes)
+ERLRES_OBJ=erl.res
+ERLSRV_OBJECTS= \
+	$(OBJDIR)/erlsrv_registry.o \
+	$(OBJDIR)/erlsrv_service.o  \
+	$(OBJDIR)/erlsrv_interactive.o \
+	$(OBJDIR)/erlsrv_main.o \
+	$(OBJDIR)/erlsrv_util.o \
+	$(OBJDIR)/erlsrv_logmess.res
 MC_OUTPUTS= \
 	$(OBJDIR)/erlsrv_logmess.h $(OBJDIR)/erlsrv_logmess.rc
+	MT_FLAG="-MT"
+else
+ERLRES_OBJ=erl_res.o
+ERLSRV_OBJECTS= \
+	$(OBJDIR)/erlsrv_registry.o \
+	$(OBJDIR)/erlsrv_service.o  \
+	$(OBJDIR)/erlsrv_interactive.o \
+	$(OBJDIR)/erlsrv_main.o \
+	$(OBJDIR)/erlsrv_util.o \
+	$(OBJDIR)/erlsrv_logmess.o
+MC_OUTPUTS= \
+	$(OBJDIR)/erlsrv_logmess.h $(OBJDIR)/erlsrv_logmess.res
+	MT_FLAG="-MD"
+endif
 INET_GETHOST = $(BINDIR)/inet_gethost.exe
 INSTALL_EMBEDDED_PROGS += $(BINDIR)/dialyzer.exe $(BINDIR)/erlc.exe $(BINDIR)/start_erl.exe
 INSTALL_SRC = $(WINETC)/start_erl.c $(WINETC)/Nmakefile.start_erl
@@ -169,7 +193,11 @@ INSTALL_PROGS =              \
 
 ENTRY_SRC=$(WINETC)/port_entry.c
 ENTRY_OBJ=$(OBJDIR)/port_entry.o
+ifeq ($(USING_VC), yes)
 WINDSOCK = ws2_32.lib mswsock.lib
+else
+WINDSOCK = -lws2_32
+endif
 PORT_ENTRY_POINT=erl_port_entry
 ENTRY_LDFLAGS=-entry:$(PORT_ENTRY_POINT)
 
@@ -200,7 +228,11 @@ endif
 endif
 endif
 
-etc:	$(ENTRY_OBJ) $(INSTALL_PROGS) $(INSTALL_LIBS) $(TEXTFILES) $(INSTALL_TOP_BIN)
+etc:	erts_lib $(ENTRY_OBJ) $(INSTALL_PROGS) $(INSTALL_LIBS) $(TEXTFILES) $(INSTALL_TOP_BIN)
+
+# erlexec needs the erts_internal library...
+erts_lib:
+	cd $(ERL_TOP)/erts/lib_src && $(MAKE) $(TYPE)
 
 docs:
 
@@ -208,7 +240,7 @@ clean:
 	rm -f $(INSTALL_PROGS)
 	rm -f $(ENTRY_OBJ) 
 	rm -f $(ERLSRV_OBJECTS) $(MC_OUTPUTS)
-	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erl.res
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/$(ERLRES_OBJ)
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/win_erlexec.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/init_file.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/start_erl.o
@@ -267,7 +299,7 @@ $(OBJDIR)/wd_keeper.o: ../unix/wd_keeper.c
 
 ifneq ($(TARGET),win32)
 $(BINDIR)/$(ERLEXEC): $(OBJDIR)/$(ERLEXEC).o
-	$(PURIFY) $(LD) $(LDFLAGS) -o $@ $(OBJDIR)/$(ERLEXEC).o
+	$(PURIFY) $(LD) $(LDFLAGS) -o $@ $(OBJDIR)/$(ERLEXEC).o $(ERLEXEC_XLIBS)
 
 $(OBJDIR)/$(ERLEXEC).o: $(ERLEXECDIR)/$(ERLEXEC).c
 	$(CC) -I$(EMUDIR) $(CFLAGS) -o $@ -c $(ERLEXECDIR)/$(ERLEXEC).c
@@ -295,17 +327,17 @@ $(OBJDIR)/dialyzer.o: dialyzer.c
 
 ifeq ($(TARGET),win32)
 
-$(BINDIR)/$(ERLEXEC): $(OBJDIR)/erlexec.o $(OBJDIR)/win_erlexec.o $(OBJDIR)/init_file.o  $(OBJDIR)/erl.res dbg
-	$(LD) -dll $(LDFLAGS) -o $@ $(OBJDIR)/erlexec.o $(OBJDIR)/win_erlexec.o $(OBJDIR)/init_file.o $(OBJDIR)/erl.res -L$(BINDIR) -lerl_dll
+$(BINDIR)/$(ERLEXEC): $(OBJDIR)/erlexec.o $(OBJDIR)/win_erlexec.o $(OBJDIR)/init_file.o  $(OBJDIR)/$(ERLRES_OBJ) dbg
+	$(LD) -dll $(LDFLAGS) -o $@ $(OBJDIR)/erlexec.o $(OBJDIR)/win_erlexec.o $(OBJDIR)/init_file.o $(OBJDIR)/$(ERLRES_OBJ) -L$(BINDIR) -lerl_dll $(ERLEXEC_XLIBS)
 
 dbg: 
 	echo DBG
 
-$(BINDIR)/erl@EXEEXT@: $(OBJDIR)/erl.o $(OBJDIR)/init_file.o $(OBJDIR)/erl.res
-	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/erl.o $(OBJDIR)/init_file.o $(OBJDIR)/erl.res 
+$(BINDIR)/erl@EXEEXT@: $(OBJDIR)/erl.o $(OBJDIR)/init_file.o $(OBJDIR)/$(ERLRES_OBJ)
+	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/erl.o $(OBJDIR)/init_file.o $(OBJDIR)/$(ERLRES_OBJ) 
 
-$(BINDIR)/werl@EXEEXT@: $(OBJDIR)/werl.o $(OBJDIR)/init_file.o $(OBJDIR)/erl.res
-	$(LD) $(LDFLAGS) -o $@  $(OBJDIR)/werl.o $(OBJDIR)/init_file.o $(OBJDIR)/erl.res 
+$(BINDIR)/werl@EXEEXT@: $(OBJDIR)/werl.o $(OBJDIR)/init_file.o $(OBJDIR)/$(ERLRES_OBJ)
+	$(LD) $(LDFLAGS) -o $@  $(OBJDIR)/werl.o $(OBJDIR)/init_file.o $(OBJDIR)/$(ERLRES_OBJ) 
 
 $(BINDIR)/start_erl@EXEEXT@: $(OBJDIR)/start_erl.o 
 	$(LD) $(LDFLAGS) -o $@  $(OBJDIR)/start_erl.o
@@ -314,22 +346,26 @@ $(BINDIR)/Install@EXEEXT@: $(OBJDIR)/Install.o  $(OBJDIR)/init_file.o
 	$(LD) $(LDFLAGS) -o $@  $(OBJDIR)/Install.o  $(OBJDIR)/init_file.o
 
 $(BINDIR)/erlsrv@EXEEXT@: $(ERLSRV_OBJECTS)
-	$(LD) $(LDFLAGS) -MT -o $@ $(ERLSRV_OBJECTS)
+	$(LD) $(LDFLAGS) $(MT_FLAG) -o $@ $(ERLSRV_OBJECTS)
 
-# The service expects to be compiled with -MT flag.
+# The service expects to be compiled with $(MT_FLAG) flag.
 
 $(OBJDIR)/%.o: $(WINETC)/erlsrv/%.c $(ERLSRV_HEADERS)
-	$(CC) $(CFLAGS) -MT -o $@ -c $<
+	$(CC) $(CFLAGS) $(MT_FLAG) -o $@ -c $<
 
 $(OBJDIR)/erlsrv_util.o: $(WINETC)/erlsrv/erlsrv_util.c $(ERLSRV_HEADERS) \
 $(OBJDIR)/erlsrv_logmess.h
-	$(CC) $(CFLAGS) -I$(OBJDIR) -MT -o $@ -c $<
+	$(CC) $(CFLAGS) -I$(OBJDIR) $(MT_FLAG) -o $@ -c $<
 
+ifeq ($(USING_VC), yes)
 $(OBJDIR)/erlsrv_logmess.res: $(OBJDIR)/erlsrv_logmess.rc
 	$(RC) -o $(OBJDIR)/erlsrv_logmess.res -I$(OBJDIR) $(OBJDIR)/erlsrv_logmess.rc
+else
+$(OBJDIR)/erlsrv_logmess.o: $(OBJDIR)/erlsrv_logmess.res
+	$(RC) -o $(OBJDIR)/erlsrv_logmess.o -I$(OBJDIR) $(OBJDIR)/erlsrv_logmess.res
+endif
 
-$(OBJDIR)/erlsrv_logmess.rc $(OBJDIR)/erlsrv_logmess.h: \
-$(WINETC)/erlsrv/erlsrv_logmess.mc
+$(MC_OUTPUTS): $(WINETC)/erlsrv/erlsrv_logmess.mc
 	$(MC) -o $(OBJDIR) $(WINETC)/erlsrv/erlsrv_logmess.mc
 
 $(OBJDIR)/werl.o: $(WINETC)/erl.c
@@ -354,7 +390,7 @@ $(OBJDIR)/init_file.o: $(WINETC)/init_file.c $(WINETC)/init_file.h
 $(OBJDIR)/Install.o: $(WINETC)/Install.c $(WINETC)/init_file.h
 	$(CC) $(CFLAGS) -o $@ -c $(WINETC)/Install.c
 
-$(OBJDIR)/erl.res: $(WINETC)/erl.rc $(WINETC)/erlang.ico $(WINETC)/erl_icon.ico $(WINETC)/hrl_icon.ico $(WINETC)/beam_icon.ico
+$(OBJDIR)/$(ERLRES_OBJ): $(WINETC)/erl.rc $(WINETC)/erlang.ico $(WINETC)/erl_icon.ico $(WINETC)/hrl_icon.ico $(WINETC)/beam_icon.ico
 	$(RC) -o $@ -I$(WINETC) $(WINETC)/erl.rc
 
 $(OBJDIR)/start_erl.o: $(WINETC)/start_erl.c

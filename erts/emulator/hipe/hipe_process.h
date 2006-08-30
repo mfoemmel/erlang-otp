@@ -23,7 +23,6 @@ struct hipe_process_state {
                                         of the current bif call.
                                         To find the first stack descriptor
 					at GC or exception. */
-    void (*ncra)(void);		/* C return address for native code. */
 #endif
 #if defined(__i386__) || defined(__x86_64__)
     Eterm *ncsp;		/* Saved C stack pointer. */
@@ -36,11 +35,6 @@ struct hipe_process_state {
 };
 
 extern void hipe_arch_print_pcb(struct hipe_process_state *p);
-
-#define HIPE_SPARC_ARGS_IN_REGS 16	/* Stored in p->def_arg_reg[]. */
-
-/* Guaranteed min stack size for leaf functions on SPARC. */
-#define HIPE_SPARC_LEAF_WORDS 20
 
 static __inline__ void hipe_init_process(struct hipe_process_state *p)
 {

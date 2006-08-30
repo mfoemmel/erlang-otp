@@ -10,7 +10,7 @@
 -export([cli_prime/1, cli_primes/1, cli_gcd/2, cli_lcm/2,
 	 cli_factors/1, cli_exit/0, cli_rho/1, cli_help/0,
 	 cli_crash/0, cli_users/0, cli_self/0,
-	 cli_user/0]).
+	 cli_user/0, cli_host/0]).
 
 %% imports
 -import(lists, [reverse/1, reverse/2, seq/2, prefix/2]).
@@ -21,7 +21,7 @@ listen(Port) ->
     listen(Port, []).
 
 listen(Port, Options) ->
-    ssh_cli:listen(fun(U) -> start_our_shell(U) end, Port, Options).
+    ssh_cli:listen(fun(U, H) -> start_our_shell(U, H) end, Port, Options).
 
 %% our_routines
 our_routines() ->
@@ -37,6 +37,7 @@ our_routines() ->
      {"rho", cli_rho,        "<int>       prime factors using rho's alg."},
      {"who",  cli_users,     "            lists users"},
      {"user", cli_user,      "            print name of user"},
+     {"host", cli_host,      "            print host addr"},
      {"self", cli_self,      "            print my pid"}
     ].
 
@@ -105,11 +106,12 @@ expand(RevBefore) ->
 %%% spawns out shell loop, we use plain io to input and output
 %%% over ssh (the group module is our group leader, and takes
 %%% care of sending input to the ssh_sample_cli server)
-start_our_shell(User) ->
+start_our_shell(User, Peer) ->
     spawn(fun() ->
 		  io:setopts([{expand_fun, fun(Bef) -> expand(Bef) end}]),
 		  io:format("Enter command\n"),
 		  put(user, User),
+		  put(peer_name, Peer),
 		  our_shell_loop()
 	  end).
 
@@ -182,6 +184,9 @@ cli_factors(A) when A < 1000000 ->
 
 cli_user() ->
     get(user).
+
+cli_host() ->
+    get(peer_name).
 
 cli_users() ->
     case ssh_userauth:get_auth_users() of

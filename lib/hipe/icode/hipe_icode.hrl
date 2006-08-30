@@ -4,8 +4,16 @@
 %%
 %%=====================================================================
 
--record(icode, {'fun', params, closure, closure_arity, leaf, 
-		code, data, var_range, label_range, info=[]}).
+-record(icode, {'fun',		% :: mfa(),
+		params,		% :: [var()],
+		is_closure,	% :: bool(),
+		closure_arity,	% :: byte(),
+		is_leaf, 	% :: bool(),
+		code,		% :: [icode_instruction()],
+		data,
+		var_range,	% :: {integer(), integer()},
+		label_range,	% :: {integer(), integer()},
+		info=[]}).
 
 -record('if', {op, args, true_label, false_label, p}).
 

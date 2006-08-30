@@ -16,6 +16,11 @@
  *     $Id$
  */
 
+/* Without this, variable argument lists break on VxWorks */
+#ifdef VXWORKS
+#include <vxWorks.h>
+#endif
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -37,7 +42,7 @@
 #define ASSERT(X) 
 #endif
 
-#ifdef __WIN32__
+#if defined(__WIN32__) && !defined(__GNUC__)
 typedef int ssize_t;
 #endif
 

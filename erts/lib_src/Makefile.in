@@ -32,17 +32,13 @@ INSTALL_PROGRAM=@INSTALL_PROGRAM@
 
 ERLANG_OSTYPE=@ERLANG_OSTYPE@
 
-OMIT_FP=
-ifeq ($(CC), gcc)
-OMIT_FP=-fomit-frame-pointer
-endif
-
-CFLAGS=$(subst O2,O3 $(OMIT_FP), @CFLAGS@)
+OMIT_FP=false
+CFLAGS=$(subst O2,O3, @CFLAGS@)
 
 ifeq ($(TYPE),debug)
 CFLAGS=@DEBUG_CFLAGS@ -DDEBUG
 TYPE_SUFFIX=.debug
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 LD_FLAGS += -g
 endif
 PRE_LD=
@@ -50,7 +46,7 @@ PRE_LD=
 else
 
 ifeq ($(TYPE),purify)
-CFLAGS += -DPURIFY
+CFLAGS=@DEBUG_CFLAGS@ -DPURIFY
 TYPE_SUFFIX=.purify
 PRE_LD=purify $(PURIFY_BUILD_OPTIONS)
 else
@@ -64,15 +60,32 @@ CFLAGS=@DEBUG_CFLAGS@ -DPURECOV
 TYPE_SUFFIX=.purecov
 PRE_LD=purecov $(PURECOV_BUILD_OPTIONS)
 else
+ifeq ($(TYPE),valgrind)
+CFLAGS=@DEBUG_CFLAGS@ -DVALGRIND
+TYPE_SUFFIX=.valgrind
+PRE_LD=
+else
+ifeq ($(TYPE),gprof)
+CFLAGS += -DGPROF -pg
+TYPE_SUFFIX=.gprof
+PRE_LD=
+else
 override TYPE=opt
+OMIT_FP=true
 TYPE_SUFFIX=
 PRE_LD=
 endif
 endif
 endif
 endif
+endif
+endif
 
 CREATE_DIRS=
+
+ifeq ($(CC)-$(OMIT_FP), gcc-true)
+CFLAGS += -fomit-frame-pointer
+endif
 
 CFLAGS += @WFLAGS@ @DEFS@
 
@@ -92,7 +105,10 @@ ERTS_INCL_INT=../include/internal
 
 INCLUDES=-I$(ERTS_INCL) -I$(ERTS_INCL)/$(TARGET) -I$(ERTS_INCL_INT) -I$(ERTS_INCL_INT)/$(TARGET)
 
-ifeq ($(TARGET),win32)
+USING_MINGW=@MIXED_CYGWIN_MINGW@
+USING_VC=@MIXED_CYGWIN_VC@
+
+ifeq ($(USING_VC),yes)
 LIB_SUFFIX=.lib
 LIB_PREFIX=
 else
@@ -123,7 +139,7 @@ ERTS_LIB_SRCS =	common/erl_memory_trace_parser.c
 ERTS_LIB_DIR=../lib/$(TARGET)
 CREATE_DIRS += $(ERTS_LIB_DIR)
 
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 # Windows obj dir
 ML_OBJ_DIR=$(OBJ_DIR)/ML
 MLd_OBJ_DIR=$(OBJ_DIR)/MLd
@@ -158,7 +174,7 @@ ERTS_LIB_OBJS=$(addprefix $(OBJ_DIR)/,$(notdir $(ERTS_LIB_SRCS:.c=.o)))
 
 endif
 
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 ERTS_ML_LIB=$(ERTS_LIB_DIR)/$(LIB_PREFIX)erts_ML$(TYPE_SUFFIX)$(LIB_SUFFIX)
 ERTS_MLd_LIB=$(ERTS_LIB_DIR)/$(LIB_PREFIX)erts_MLd$(TYPE_SUFFIX)$(LIB_SUFFIX)
 ERTS_MD_LIB=$(ERTS_LIB_DIR)/$(LIB_PREFIX)erts_MD$(TYPE_SUFFIX)$(LIB_SUFFIX)
@@ -195,11 +211,12 @@ ERTS_INTERNAL_LIBS=
 
 ERTS_INTERNAL_LIB_SRCS = \
 	common/erl_printf_format.c \
-	common/erl_printf.c
+	common/erl_printf.c \
+	common/erl_misc_utils.c
 
 ERTS_INTERNAL_LIB_NAME=erts_internal$(TYPE_SUFFIX)
 
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 ifeq ($(TYPE),debug)
 ERTS_INTERNAL_LIB_OBJS = \
 	$(addprefix $(MLd_OBJ_DIR)/,$(notdir $(ERTS_INTERNAL_LIB_SRCS:.c=.o)))
@@ -219,7 +236,7 @@ ERTS_INTERNAL_LIBS += $(ERTS_INTERNAL_LIB)
 ifneq ($(strip $(ETHR_LIB_NAME)),)
 ERTS_INTERNAL_r_LIB_NAME=erts_internal_r$(TYPE_SUFFIX)
 
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 ifeq ($(TYPE),debug)
 ERTS_INTERNAL_r_LIB_OBJS = \
 	$(addprefix $(MDd_OBJ_DIR)/,$(notdir $(ERTS_INTERNAL_LIB_SRCS:.c=.o)))
@@ -245,7 +262,7 @@ ifneq ($(strip $(ETHR_LIB_NAME)),)
 ETHREAD_LIB_SRC=common/ethread.c
 ETHREAD_LIB_NAME=ethread$(TYPE_SUFFIX)
 
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 ifeq ($(TYPE),debug)
 ETHREAD_LIB_OBJS = \
 	$(addprefix $(MDd_OBJ_DIR)/,$(notdir $(ETHREAD_LIB_SRC:.c=.o)))
@@ -277,7 +294,7 @@ all: $(CREATE_DIRS) $(ETHREAD_LIB) $(ERTS_LIBS) $(ERTS_INTERNAL_LIBS)
 #
 # The libs ...
 #
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 AR_OUT=-out:
 AR_FLAGS=
 else
@@ -469,7 +486,7 @@ clean:
 # Make dependencies
 #
 
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 DEP_CC=@EMU_CC@
 else
 DEP_CC=$(CC)
@@ -503,7 +520,7 @@ depend:
 	@echo "# " >> $(DEPEND_MK);
 ifneq ($(strip $(ETHREAD_LIB_SRC)),)
 	@echo "# ethread lib objects..." >> $(DEPEND_MK);
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 	$(DEP_CC) -MM $(THR_DEFS) $(CFLAGS) $(INCLUDES) $(ETHREAD_LIB_SRC) \
 		| $(SED_MD_DEPEND) >> $(DEPEND_MK)
 	$(DEP_CC) -MM $(THR_DEFS) $(CFLAGS) $(INCLUDES) $(ETHREAD_LIB_SRC) \
@@ -516,7 +533,7 @@ endif
 ifneq ($(strip $(ERTS_INTERNAL_LIB_SRCS)),)
 ifneq ($(strip $(ETHREAD_LIB_SRC)),)
 	@echo "# erts_internal_r lib objects..." >> $(DEPEND_MK);
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 	$(DEP_CC) -MM $(THR_DEFS) $(CFLAGS) $(INCLUDES) $(ERTS_INTERNAL_LIB_SRCS) \
 		| $(SED_MD_DEPEND) >> $(DEPEND_MK)
 	$(DEP_CC) -MM $(THR_DEFS) $(CFLAGS) $(INCLUDES) $(ERTS_INTERNAL_LIB_SRCS) \
@@ -527,7 +544,7 @@ else
 endif
 endif
 	@echo "# erts_internal lib objects..." >> $(DEPEND_MK);
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 	$(DEP_CC) -MM $(CFLAGS) $(INCLUDES) $(ERTS_INTERNAL_LIB_SRCS) \
 		| $(SED_ML_DEPEND) >> $(DEPEND_MK)
 	$(DEP_CC) -MM $(CFLAGS) $(INCLUDES) $(ERTS_INTERNAL_LIB_SRCS) \
@@ -538,7 +555,7 @@ else
 endif
 endif
 ifneq ($(strip $(ERTS_LIB_SRCS)),)
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 	@echo "# erts_ML lib objects..." >> $(DEPEND_MK);
 	$(DEP_CC) -MM $(CFLAGS) $(INCLUDES) $(ERTS_LIB_SRCS) \
 		| $(SED_ML_DEPEND) >> $(DEPEND_MK)

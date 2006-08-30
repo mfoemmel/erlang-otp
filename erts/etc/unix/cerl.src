@@ -19,6 +19,7 @@
 #   -purify     Run emulator compiled for purify
 #   -quantify   Run emulator compiled for quantify
 #   -purecov    Run emulator compiled for purecov
+#   -valgrind   Run emulator compiled for valgrind
 #   -nox        Unset the DISPLAY variable to disable us of X Windows
 #
 # FIXME For GDB you can also set the break point using "-break FUNCTION".
@@ -40,6 +41,7 @@ cxargs_add() {
 	shift
     done
 }
+
 core=
 
 GDB=
@@ -47,6 +49,7 @@ GDBBP=
 TYPE=
 EMU_TYPE=
 debug=
+run_valgrind=no
 
 # Default rootdir
 ROOTDIR=%SRC_ROOTDIR%
@@ -104,6 +107,11 @@ while [ $# -gt 0 ]; do
 	    cargs="$cargs -smp"
 	    EMU_TYPE=.smp
 	    ;;
+	"-gprof")
+	    shift
+	    cargs="$cargs -gprof"
+	    TYPE=.gprof
+	    ;;
 	"-hybrid")
 	    shift
 	    cargs="$cargs -hybrid"
@@ -154,6 +162,12 @@ while [ $# -gt 0 ]; do
 	    cargs="$cargs -purecov"
 	    TYPE=.purecov
 	    ;;
+	"-valgrind")
+	    shift
+	    cargs="$cargs -valgrind"
+	    TYPE=.valgrind
+	    run_valgrind=yes
+	    ;;
 	*)
 	    break
 	    ;;
@@ -168,7 +182,22 @@ PROGNAME="$PROGNAME $cargs"
 EMU=$EMU$TYPE$EMU_TYPE
 
 if [ "x$GDB" = "x" ]; then
-    exec $EXEC $xargs ${1+"$@"}
+    if [ $run_valgrind = yes ]; then
+	emu_xargs=`echo $xargs | sed "s|+|-|g"`
+	if [ "x$VALGRIND_LOG_DIR" = "x" ]; then
+	    valgrind_log=
+	else
+	    valgrind_log="--log-file=$VALGRIND_LOG_DIR/$EMU.log"
+	fi
+	beam_args=`$EXEC -emu_args_exit ${1+"$@"}`
+	# Ahhhh... Need to quote $PROGNAME...
+	early_beam_args=`echo $beam_args | sed "s|^\(.*-progname\).*$|\1|g"`
+	late_beam_args=`echo $beam_args | sed "s|^$pre_beam_args.*\(--.*\)$|\1|g"`
+	
+	exec valgrind $valgrind_log $BINDIR/$EMU $emu_xargs $early_beam_args "$PROGNAME" $late_beam_args
+    else
+	exec $EXEC $xargs ${1+"$@"}
+    fi
 else
     if [ "x$EMACS" = "x" ]; then
 	EMACS=emacs

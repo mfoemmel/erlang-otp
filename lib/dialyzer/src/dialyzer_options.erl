@@ -39,7 +39,8 @@ build(Opts) ->
 		  ?WARN_COMP,
 		  ?WARN_GUARDS,
 		  ?WARN_OLD_BEAM,
-		  ?WARN_FAILING_CALL],
+		  ?WARN_FAILING_CALL,
+		  ?WARN_CALLGRAPH],
   build_options(Opts, #options{legal_warnings=ordsets:from_list(DefaultWarns)}).
 
 build_options([Term={OptionName,Value}|Rest], Options) ->

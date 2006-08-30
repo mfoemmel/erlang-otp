@@ -7,9 +7,9 @@
 %%% Created : 23 Apr 2003 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%
 %%% CVS      :
-%%%              $Author: tobiasl $
-%%%              $Date: 2006/02/16 10:00:01 $
-%%%              $Revision: 1.30 $
+%%%              $Author: kostis $
+%%%              $Date: 2006/07/24 22:12:25 $
+%%%              $Revision: 1.33 $
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_fp).
@@ -131,7 +131,7 @@ place_fp_blocks(State)->
   WorkList = new_worklist(State),
   transform_block(WorkList, State).
 
-transform_block(WorkList, State)->
+transform_block(WorkList, State) ->
   case get_work(WorkList) of
     none ->
       State;
@@ -160,15 +160,15 @@ transform_block(WorkList, State)->
   end.
 
 
-transform_instrs([I|Left], PhiMap, Map, Acc)->
-  Defines = defines(I),
+transform_instrs([I|Left], PhiMap, Map, Acc) ->
+  Defines = hipe_icode:defines(I),
   NewMap = delete_all(Defines, Map),
   NewPhiMap = delete_all(Defines, PhiMap),
   
   case I of
     #phi{} ->
-      Uses = uses(I),
-      case [X||X<-Uses,lookup(X, PhiMap)/=none] of
+      Uses = hipe_icode:uses(I),
+      case [X || X <- Uses, lookup(X, PhiMap) =/= none] of
 	[] ->
 	  %% No ordinary variables from the argument has been untagged.
 	  transform_instrs(Left, NewPhiMap, NewMap, [I|Acc]);
@@ -187,9 +187,9 @@ transform_instrs([I|Left], PhiMap, Map, Acc)->
       end;
     #call{} ->
       case hipe_icode:call_fun(I) of
-	X when X == unsafe_untag_float; X == conv_to_float ->
-	  [Dst] = defines(I),
-	  case uses(I) of
+	X when X =:= unsafe_untag_float; X =:= conv_to_float ->
+	  [Dst] = hipe_icode:defines(I),
+	  case hipe_icode:uses(I) of
 	    [] -> %% Constant
 	      transform_instrs(Left, NewPhiMap, NewMap, [I|Acc]);
 	    [Src] ->
@@ -216,8 +216,8 @@ transform_instrs([I|Left], PhiMap, Map, Acc)->
 	      end
 	  end;
 	unsafe_tag_float ->
-	  [Dst] = defines(I),
-	  [Src] = uses(I),
+	  [Dst] = hipe_icode:defines(I),
+	  [Src] = hipe_icode:uses(I),
 	  NewMap1 = gb_trees:enter(Dst, {assigned, Src}, NewMap),
 	  transform_instrs(Left, NewPhiMap, NewMap1,[I|Acc]);
 	_ ->
@@ -242,7 +242,7 @@ check_for_fop_candidates(I, Map, Acc)->
       Op = fun_to_fop(hipe_icode:call_fun(I)), 
       case Fail of
 	[] ->
-	  Args = args(I),
+	  Args = hipe_icode:args(I),
 	  ConstArgs = [X || X <- Args, hipe_icode:is_const(X)],
 	  case catch [float(hipe_icode:const_value(X)) || X <- ConstArgs] of
 	    {'EXIT', _} -> 
@@ -252,9 +252,9 @@ check_for_fop_candidates(I, Map, Acc)->
 	      {Map, NewIs ++ Acc};
 	    _ ->
 	      %%io:format("Changing ~w to ~w\n", [hipe_icode:call_fun(I), Op]),
-	      Uses = uses(I),
-	      Defines = defines(I),
-	      Convs = [X||X <- remove_duplicates(Uses), lookup(X, Map)==none],
+	      Uses = hipe_icode:uses(I),
+	      Defines = hipe_icode:defines(I),
+	      Convs = [X||X <- remove_duplicates(Uses), lookup(X, Map) =:= none],
 	      NewMap0 = add_new_bindings_assigned(Convs, Map),
 	      NewMap = add_new_bindings_unassigned(Defines, NewMap0),
 	      ConvIns = get_conv_instrs(Convs, NewMap),
@@ -276,14 +276,13 @@ check_for_fop_candidates(I, Map, Acc)->
 %% end the fp ebb.
 
 handle_untagged_arguments(I, Map)->
-  case lists:filter(fun(X)-> must_be_tagged(X, Map)end, uses(I)) of
+  case lists:filter(fun(X)-> must_be_tagged(X, Map) end, hipe_icode:uses(I)) of
     [] ->
       [I];
     Tag ->
       TagIntrs = 
 	[hipe_icode:mk_primop([Dst], unsafe_tag_float, 
-			      [gb_trees:get(Dst, Map)])||
-	  Dst<-Tag],
+			      [gb_trees:get(Dst, Map)]) || Dst<-Tag],
       [I|TagIntrs]
   end.
 
@@ -296,14 +295,15 @@ do_prelude(Map)->
     {value, List} ->
       %%io:format("Adding phi: ~w\n", [List]),
       Fun = fun({FVar, Bindings}, Acc) -> 
-		[hipe_icode:mk_phi(FVar, Bindings)|Acc]end,
+		[hipe_icode:mk_phi(FVar, Bindings)|Acc]
+	    end,
       {lists:foldl(Fun, [], List), gb_trees:delete(phi, Map)}
   end.
 
-split_code(Code)->
+split_code(Code) ->
   split_code(Code, []).
 
-split_code([I|[]], Acc) ->
+split_code([I], Acc) ->
   {lists:reverse(Acc), I};
 split_code([I|Left], Acc)->
   split_code(Left, [I|Acc]).
@@ -314,7 +314,7 @@ split_code([I|Left], Acc)->
 %% information coming out of each predecessor. Otherwise, we must add
 %% a block in between.
 
-finalize(State)->
+finalize(State) ->
   Worklist = new_worklist(State),
   NewState = place_error_handling(Worklist, State),
   Edges = needs_fcheckerror(NewState),
@@ -337,11 +337,11 @@ needs_fcheckerror([Label|Left], State, Acc) ->
       needs_fcheckerror(Left, State, Acc);
     false ->
       Pred = state__pred(State, Label),
-      case [X || X <- Pred, state__get_in_block_out(State, X) /= false] of
+      case [X || X <- Pred, state__get_in_block_out(State, X) =/= false] of
 	[] ->
 	  needs_fcheckerror(Left, State, Acc);
 	NeedsFcheck ->	  
-	  case length(Pred) == length(NeedsFcheck) of
+	  case length(Pred) =:= length(NeedsFcheck) of
 	    true ->
 	      %% All edges needs fcheckerror. Add this to the
 	      %% beginning of the block instead.
@@ -355,12 +355,12 @@ needs_fcheckerror([Label|Left], State, Acc) ->
 needs_fcheckerror([], _State, Acc) ->
   Acc.
 
-add_fp_ebb_fixup(From, To, State) when From == none ->
+add_fp_ebb_fixup('none', To, State) ->
   %% Add the fcheckerror to the start of the block.
   BB = state__bb(State, To),
   Code = hipe_bb:code(BB),
-  Phis = lists:takewhile(fun(X)-> hipe_icode:is_phi(X)end,Code),
-  TailCode = lists:dropwhile(fun(X)-> hipe_icode:is_phi(X)end,Code),
+  Phis = lists:takewhile(fun(X) -> hipe_icode:is_phi(X) end, Code),
+  TailCode = lists:dropwhile(fun(X) -> hipe_icode:is_phi(X) end, Code),
   FC = hipe_icode:mk_primop([], fcheckerror, []),
   NewCode = Phis ++ [FC|TailCode],
   state__bb_add(State, To, hipe_bb:code_update(BB, NewCode));
@@ -467,8 +467,8 @@ place_error([I|Left], InBlock, Acc) ->
   case I of
     #call{} ->
       case hipe_icode:call_fun(I) of
-	X when X == fp_add; X == fp_sub; 
-	       X == fp_mul; X == fp_div; X == fnegate ->
+	X when X =:= fp_add; X =:= fp_sub; 
+	       X =:= fp_mul; X =:= fp_div; X =:= fnegate ->
 	  case InBlock of
 	    false ->
 	      Clear = hipe_icode:mk_primop([], {fclearerror, []}, []),
@@ -510,7 +510,7 @@ place_error([I|Left], InBlock, Acc) ->
 	      exit({"Fcheckerror has the wrong fail label",
 		    InBlock, NewInblock})
 	  end;
-	X when X == conv_to_float; X == unsafe_untag_float ->
+	X when X =:= conv_to_float; X =:= unsafe_untag_float ->
 	  place_error(Left, InBlock, [I|Acc]);
 	_Other ->
 	  case hipe_icode_primops:fails(hipe_icode:call_fun(I)) of
@@ -700,7 +700,7 @@ filter_map(Map, NofPreds) ->
   filter_map(gb_trees:to_list(Map), NofPreds, Map).
 
 filter_map([{Var, Bindings}|Left], NofPreds, Map) ->
-  case length(Bindings) == NofPreds of
+  case length(Bindings) =:= NofPreds of
     true ->
       case all_args_equal(Bindings) of
 	true ->
@@ -779,7 +779,7 @@ is_fop_cand(I) ->
     Fun ->
       case fun_to_fop(Fun) of
 	false -> false;
-	_ -> any_is_float(args(I))
+	_ -> any_is_float(hipe_icode:args(I))
       end
   end.
 
@@ -809,7 +809,7 @@ fun_to_fop(Fun) ->
     '-' -> fp_sub;
     '*' -> fp_mul;
     '/' -> fp_div;
-    _ ->false
+    _ -> false
   end.
 
 
@@ -820,13 +820,7 @@ must_be_tagged(Var, Map) ->
   case gb_trees:lookup(Var, Map) of
     none -> false;
     {value, {assigned, _}} -> false; 
-    {value, Val} -> 
-      case hipe_icode:is_fvar(Val) of
-	true->
-	  true;
-	false ->
-	  false
-      end
+    {value, Val} -> hipe_icode:is_fvar(Val)
   end.
 
 
@@ -859,25 +853,12 @@ conv_consts([], I, Subst) ->
   hipe_icode:subst_uses(Subst, I).
   
 
-
-%% ------------------------------------------------------------ 
-%% Defines and uses
-
-defines(I)->
-  hipe_icode:defines(I).
-
-args(I)->
-  hipe_icode:args(I).
-
-uses(I)->
-  hipe_icode:uses(I).
-
 %% _________________________________________________________________
 %%
 %% Handling the state
 %%
 
-new_state(Cfg)->
+new_state(Cfg) ->
   Start = hipe_icode_cfg:start_label(Cfg),  
   BlockMap = gb_trees:insert({inblock, Start}, false, empty()),
   EdgeMap = gb_trees:empty(),
@@ -958,9 +939,9 @@ join_in_block([{value, InBlock}|Left]) ->
 join_in_block([none|_], _Current)->
   false;
 join_in_block([{value, InBlock}|Left], Current) ->
-  if Current == InBlock -> join_in_block(Left, Current);
-     Current == false -> false;
-     InBlock == false -> false;
+  if Current =:= InBlock -> join_in_block(Left, Current);
+     Current =:= false -> false;
+     InBlock =:= false -> false;
      true -> exit("Basic block is in two different fp ebb:s")
   end;
 join_in_block([], Current) ->

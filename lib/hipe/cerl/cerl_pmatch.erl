@@ -18,8 +18,8 @@
 %%
 %% $Id$
 %%
-%% @author Richard Carlsson <richardc@csd.uu.se>
-%% @copyright 2000-2004 Richard Carlsson
+%% @author Richard Carlsson <richardc@it.uu.se>
+%% @copyright 2000-2006 Richard Carlsson
 %%
 %% @doc Core Erlang pattern matching compiler.
 %%
@@ -127,7 +127,7 @@ match([], Cs, Else, _Env) ->
     %% If the "default action" is the atom 'none', it is simply not
     %% added; otherwise it is put in the body of a final catch-all
     %% clause (which is often removed by the below optimization).
-    Cs1 = if Else == none -> Cs;
+    Cs1 = if Else =:= none -> Cs;
 	     true -> Cs ++ [cerl:c_clause([], Else)]
 	  end,
     %% This clause reduction is an important optimization. It selects a
@@ -152,7 +152,7 @@ group([X | _] = Xs, F) ->
     group(Xs, F, F(X)).
 
 group(Xs, F, P) ->
-    {First, Rest} = splitwith(fun (X) -> F(X) == P end, Xs),
+    {First, Rest} = splitwith(fun (X) -> F(X) =:= P end, Xs),
     [First | group(Rest, F)].
 
 is_var_clause(C) ->
@@ -240,7 +240,7 @@ match_congroup({D, A}, Vs, Cs, Else, Env) ->
     cerl:c_clause([make_pat(D, Vs1)], Body).
 
 make_switch(V, Cs, Else, Env) ->
-    cerl:c_case(V, if Else == none -> Cs;
+    cerl:c_case(V, if Else =:= none -> Cs;
 		      true -> Cs ++ [cerl:c_clause([new_var(Env)],
 						   Else)]
 		   end).
@@ -385,17 +385,12 @@ sub_pats(E) ->
     end.
 
 %% This avoids generating stupid things like "let X = ... in 'true'",
-%% keeping the generated code cleaner.
+%% and "let X = Y in X", keeping the generated code cleaner. It also
+%% prevents expressions from being considered "non-lightweight" when
+%% code duplication is disallowed (see is_lightweight for details).
 
 make_let(Vs, A, B) ->
-    case cerl:type(B) of
-	literal ->
-	    case is_simple(A) of
-		true -> B;
-		false -> cerl:c_let(Vs, A, B)
-	    end;
-	_ -> cerl:c_let(Vs, A, B)
-    end.
+    cerl_lib:reduce_expr(cerl:c_let(Vs, A, B)).
 
 %% ---------------------------------------------------------------------
 %% Rewriting a module or other expression:
@@ -537,10 +532,12 @@ add_defs(Ds, Env) ->
 %% This decides whether an expression is worth lifting out to a separate
 %% function instead of duplicating the code. In other words, whether its
 %% cost is about the same or smaller than that of a local function call.
+%% Note that variables must always be "lightweight"; otherwise, they may
+%% get lifted out of the case switch that introduces them.
 
 is_lightweight(E) ->
     case get('cerl_pmatch_duplicate_code') of
-	never -> false;    % Avoids all code duplication
+	never -> cerl:type(E) =:= var;    % Avoids all code duplication
 	always -> true;    % Does not lift code to new functions
 	_ -> is_lightweight_1(E)
     end.
@@ -572,7 +569,8 @@ is_lightweight_1(E) ->
 	    false
     end.
 
-%% "Simple" things have no (or negligible) runtime cost.
+%% "Simple" things have no (or negligible) runtime cost and are free
+%% from side effects.
 
 is_simple(E) ->
     case cerl:type(E) of

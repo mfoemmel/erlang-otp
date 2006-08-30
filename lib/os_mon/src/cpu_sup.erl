@@ -121,7 +121,9 @@ init([]) ->
 	       {unix, Flavor} when Flavor==darwin;
 				   Flavor==freebsd;
 				   Flavor==linux;
-				   Flavor==openbsd ->
+				   Flavor==openbsd;
+				   Flavor==irix64;
+				   Flavor==irix ->
 		   not_used;
 	       _ ->
 		   exit({unsupported_os, OS})
@@ -291,6 +293,22 @@ get_int_measurement(Request, #state{os_type = {unix, darwin}}) ->
 	    Ps = os:cmd("/bin/ps -ax | /usr/bin/wc -l"),
 	    {ok, [N], _} = io_lib:fread("~d", Ps),
 	    N-1
+    end;
+get_int_measurement(Request, #state{os_type = {unix, Sys}}) when Sys == irix64;
+								 Sys == irix ->
+    %% Get the load average using uptime.
+    %% "8:01pm  up 2 days, 22:12,  4 users,  load average: 0.70, 0.58, 0.43"
+    D = os:cmd("uptime") -- "\n",
+    Avg = lists:reverse(hd(string:tokens(lists:reverse(D), ":"))),
+    {ok, [L1, L5, L15], _} = io_lib:fread("~f, ~f, ~f", Avg),
+    case Request of
+	?avg1  -> sunify(L1);
+	?avg5  -> sunify(L5);
+	?avg15 -> sunify(L15);
+	?ping -> 4711;
+	?nprocs ->
+	    {ok, ProcList} = file:list_dir("/proc/pinfo"),
+	    length(ProcList)
     end.
 
 sunify(Val)  ->

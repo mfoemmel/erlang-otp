@@ -182,25 +182,25 @@ init({Options, CallerPid}) ->
 	true ->
 	    put(debug,get_value(debug,Options,false)),
 	    d("init -> (~p) extract options",[self()]),
- 	    PacksDbg = get_value(packet_server_debug,Options,false),
-	    RecBufSz = get_value(recbuf,Options,1024),
-	    Mibs     = get_value(mibs, Options, []),
-	    Udp      = get_value(agent_udp, Options, 4000),
-	    User     = get_value(user, Options, "initial"),
-	    EngineId = get_value(engine_id, Options, "agentEngine"),
+ 	    PacksDbg    = get_value(packet_server_debug, Options, false),
+	    RecBufSz    = get_value(recbuf,            Options, 1024),
+	    Mibs        = get_value(mibs,              Options, []),
+	    Udp         = get_value(agent_udp,         Options, 4000),
+	    User        = get_value(user,              Options, "initial"),
+	    EngineId    = get_value(engine_id,         Options, "agentEngine"),
 	    CtxEngineId = get_value(context_engine_id, Options, EngineId),
-	    TrapUdp  = get_value(trap_udp, Options, 5000),
-	    Dir      = get_value(dir, Options, "."),
-	    SecLevel = get_value(sec_level, Options, noAuthNoPriv),
-	    MiniMIB  = snmp_misc:make_mini_mib(Mibs),
-	    Version  = case lists:member(v2,Options) of
-			   true -> 'version-2';
-			   false -> 
-			       case lists:member(v3,Options) of
-				   true -> 'version-3';
-				   false -> 'version-1'
-			       end
-		       end,
+	    TrapUdp     = get_value(trap_udp,          Options, 5000),
+	    Dir         = get_value(dir,               Options, "."),
+	    SecLevel    = get_value(sec_level,         Options, noAuthNoPriv),
+	    MiniMIB     = snmp_mini_mib:create(Mibs),
+	    Version     = case lists:member(v2, Options) of
+			      true -> 'version-2';
+			      false -> 
+				  case lists:member(v3, Options) of
+				      true -> 'version-3';
+				      false -> 'version-1'
+				  end
+			  end,
 	    Com = case Version of
 		      'version-3' ->
 			  get_value(context, Options, "");
@@ -365,8 +365,7 @@ handle_info(iter_get_next, State)
   when record(State#state.last_received_pdu, pdu) ->
     d("handle_info -> iter_get_next request",[]),
     PrevPDU = State#state.last_received_pdu,
-    Oids = snmp_misc:map({?MODULE, get_oid_from_varbind}, [],
-			 PrevPDU#pdu.varbinds),
+    Oids    = [get_oid_from_varbind(Vb) || Vb <- PrevPDU#pdu.varbinds], 
     {noreply, execute_request(get_next, Oids, State)};
 
 handle_info(iter_get_next, State) ->
@@ -426,9 +425,10 @@ handle_call({name_to_oid, Name}, _From, State) ->
 	end,
     {reply, Reply, State};
 
-handle_call(stop, _From, State) ->
+handle_call(stop, _From, #state{mini_mib = MiniMIB} = State) ->
     d("handle_call -> stop request",[]),
-    {stop, normal, ok, State};
+    snmp_mini_mib:delete(MiniMIB),
+    {stop, normal, ok, State#state{mini_mib = undefined}};
 
 handle_call(discovery, _From, State) ->
     d("handle_call -> discovery",[]),
@@ -484,7 +484,7 @@ send_pdu(PDU, _MiniMIB, PackServ) ->
 
 purify_oid([A|T], MiniMib) when atom(A) ->
     Oid2 = 
-	case snmp_misc:oid(MiniMib, A) of
+	case snmp_mini_mib:oid(MiniMib, A) of
 	    false ->
 		throw({error, {unknown_aliasname, A}});
 	    Oid ->
@@ -504,22 +504,26 @@ verify_pure_oid([H | _]) ->
     throw({error, {not_pure_oid, H}}).
     
 flatten_oid(XOid, DB)  ->
-    Oid2 = case XOid of
-	       [A|T] when atom(A) -> [remove_atom(A, DB)|T];
-	       L when list(L) -> XOid;
+    Oid = case XOid of
+	       [A|T] when atom(A) -> 
+		   [remove_atom(A, DB)|T];
+	       L when list(L) -> 
+		   XOid;
 	       Shit -> 
 		   throw({error,
 			  {"Invalid oid, not a list of integers: ~w", [Shit]}})
 	   end,
-    check_is_pure_oid(lists:flatten(Oid2)).
+    check_is_pure_oid(lists:flatten(Oid)).
 
 remove_atom(AliasName, DB) when atom(AliasName) ->
-    case snmp_misc:oid(DB, AliasName) of
+    case snmp_mini_mib:oid(DB, AliasName) of
 	false ->
 	    throw({error, {"Unknown aliasname in oid: ~w", [AliasName]}});
-	Oid -> Oid
+	Oid -> 
+	    Oid
     end;
-remove_atom(X, _DB) -> X.
+remove_atom(X, _DB) -> 
+    X.
 
 %%----------------------------------------------------------------------
 %% Throws if not a list of integers
@@ -530,11 +534,11 @@ check_is_pure_oid([X | T]) when integer(X), X >= 0 ->
 check_is_pure_oid([X | _T]) ->
     throw({error, {"Invalid oid, it contains a non-integer: ~w", [X]}}).
 
-get_next_iter_impl(0, PrevPDU, _MiniMIB, _PackServ) -> PrevPDU;
+get_next_iter_impl(0, PrevPDU, _MiniMIB, _PackServ) -> 
+    PrevPDU;
 get_next_iter_impl(N, PrevPDU, MiniMIB, PackServ) ->
-    Oids = snmp_misc:map({?MODULE, get_oid_from_varbind}, [],
-			 PrevPDU#pdu.varbinds),
-    PDU = make_pdu(get_next, Oids, MiniMIB),
+    Oids = [get_oid_from_varbind(Vb) || Vb <- PrevPDU#pdu.varbinds],
+    PDU  = make_pdu(get_next, Oids, MiniMIB),
     send_pdu(PDU, MiniMIB, PackServ),
     case receive_response() of
 	{error, timeout} ->
@@ -554,45 +558,53 @@ get_next_iter_impl(N, PrevPDU, MiniMIB, PackServ) ->
 %%--------------------------------------------------
 
 make_pdu(set, VarsAndValues, MiniMIB) ->
-    VBs = snmp_misc:map({?MODULE, var_and_value_to_varbind}, [MiniMIB],
-			VarsAndValues),
+    VBs = [var_and_value_to_varbind(VAV, MiniMIB) || VAV <- VarsAndValues],
     make_pdu_impl(set, VBs);
 make_pdu(bulk, {NonRepeaters, MaxRepetitions, Oids}, MiniMIB) ->
-    Foids = snmp_misc:map({?MODULE, flatten_oid}, [MiniMIB], Oids),
-    #pdu{type = 'get-bulk-request',request_id = make_request_id(),
-	 error_status = NonRepeaters, error_index = MaxRepetitions,
-	 varbinds = snmp_misc:map({?MODULE, make_vb}, [], Foids)};
+    Foids = [flatten_oid(Oid, MiniMIB) || Oid <- Oids], 
+    #pdu{type = 'get-bulk-request',
+	 request_id   = make_request_id(),
+	 error_status = NonRepeaters, 
+	 error_index  = MaxRepetitions,
+	 varbinds     = [make_vb(Oid) || Oid <- Foids]};
 make_pdu(Operation, Oids, MiniMIB) ->
-    make_pdu_impl(Operation,
-		  snmp_misc:map({?MODULE, flatten_oid}, [MiniMIB], Oids)).
+    Foids = [flatten_oid(Oid, MiniMIB) || Oid <- Oids], 
+    make_pdu_impl(Operation, Foids).
 
 make_pdu_impl(get, Oids) ->
-    #pdu{type = 'get-request',request_id = make_request_id(),
-	 error_status = noError, error_index = 0,
-	 varbinds = snmp_misc:map({?MODULE, make_vb}, [], Oids)};
+    #pdu{type         = 'get-request',
+	 request_id   = make_request_id(),
+	 error_status = noError, 
+	 error_index  = 0,
+	 varbinds     = [make_vb(Oid) || Oid <- Oids]};
 
 make_pdu_impl(get_next, Oids) ->
-    #pdu{type = 'get-next-request', request_id = make_request_id(), 
-	 error_status = noError, error_index = 0,
-	 varbinds = snmp_misc:map({?MODULE, make_vb}, [], Oids)};
+    #pdu{type         = 'get-next-request', 
+	 request_id   = make_request_id(), 
+	 error_status = noError, 
+	 error_index  = 0,
+	 varbinds     = [make_vb(Oid) || Oid <- Oids]};
 
 make_pdu_impl(set, Varbinds) ->
-    #pdu{type = 'set-request', request_id = make_request_id(),
-	 error_status = noError, error_index = 0, varbinds = Varbinds}.
+    #pdu{type         = 'set-request', 
+	 request_id   = make_request_id(),
+	 error_status = noError, 
+	 error_index  = 0, 
+	 varbinds     = Varbinds}.
 
 make_discovery_pdu() ->
-    #pdu{type = 'get-request',request_id = make_request_id(),
-	 error_status = noError, error_index = 0,
-	 varbinds = snmp_misc:map({?MODULE, make_vb}, [], 
-				  [?sysDescr_instance])}.
+    make_pdu_impl(get, [?sysDescr_instance]).
 
 var_and_value_to_varbind({Oid, Type, Value}, MiniMIB) ->
     Oid2 = flatten_oid(Oid, MiniMIB), 
-    #varbind{oid = Oid2, variabletype = char_to_type(Type), value = Value};
+    #varbind{oid          = Oid2, 
+	     variabletype = char_to_type(Type), 
+	     value        = Value};
 var_and_value_to_varbind({XOid, Value}, MiniMIB) ->
     Oid = flatten_oid(XOid, MiniMIB), 
-    #varbind{oid = Oid, variabletype = snmp_misc:type(MiniMIB, Oid),
-	     value = Value}.
+    #varbind{oid          = Oid, 
+	     variabletype = snmp_mini_mib:type(MiniMIB, Oid),
+	     value        = Value}.
 
 char_to_type(o) ->
     'OBJECT IDENTIFIER';
@@ -611,8 +623,8 @@ make_vb(Oid) ->
 make_request_id() ->
     random:uniform(16#FFFFFFF-1).
 
-echo_pdu(PDU,MiniMIB) ->
-    io:format("~s",[snmp_misc:format_pdu(PDU,MiniMIB)]).
+echo_pdu(PDU, MiniMIB) ->
+    io:format("~s", [snmp_misc:format_pdu(PDU, MiniMIB)]).
 
 %%----------------------------------------------------------------------
 %% Test Sequence

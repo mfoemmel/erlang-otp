@@ -15,6 +15,17 @@
 # 
 #     $Id$
 #
+
+ifdef BOOTSTRAP_COMPILER
+EGEN=$(BOOTSTRAP_COMPILER)/egen
+EBIN=$(BOOTSTRAP_COMPILER)/ebin
+else
+ifdef BOOTSTRAP
+EGEN=$(BOOTSTRAP_TOP)/lib/compiler/egen
+EBIN=$(BOOTSTRAP_TOP)/lib/compiler/ebin
+endif
+endif
+
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
@@ -76,7 +87,7 @@ HRL_FILES= \
 	core_parse.hrl \
 	v3_kernel.hrl \
 	v3_life.hrl
-EXTRA_FILES= beam_opcodes.hrl
+EXTRA_FILES= $(EGEN)/beam_opcodes.hrl
 
 ERL_FILES= $(MODULES:%=%.erl)
 INSTALL_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
@@ -94,7 +105,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS += +inline
-ERL_COMPILE_FLAGS += -I../../stdlib/include -W
+ERL_COMPILE_FLAGS += -I../../stdlib/include -I$(EGEN) -W
 
 # ----------------------------------------------------
 # Targets
@@ -106,7 +117,8 @@ docs:
 
 clean:
 	rm -f $(TARGET_FILES)
-	rm -f beam_opcodes.erl beam_opcodes.hrl core_parse.erl
+	rm -f $(EGEN)/beam_opcodes.erl $(EGEN)/beam_opcodes.hrl
+	rm -f $(EGEN)/core_parse.erl
 	rm -f core
 
 # ----------------------------------------------------
@@ -119,16 +131,16 @@ $(APP_TARGET): $(APP_SRC) ../vsn.mk
 $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
-beam_opcodes.erl beam_opcodes.hrl: genop.tab
-	$(PERL) $(ERL_TOP)/erts/emulator/utils/beam_makeops -compiler $<
+$(EGEN)/beam_opcodes.erl $(EGEN)/beam_opcodes.hrl: genop.tab
+	$(PERL) $(ERL_TOP)/erts/emulator/utils/beam_makeops -compiler -outdir $(EGEN) $<
 
-$(EBIN)/beam_asm.beam: $(ESRC)/beam_asm.erl beam_opcodes.hrl
+$(EBIN)/beam_asm.beam: $(ESRC)/beam_asm.erl $(EGEN)/beam_opcodes.hrl
 	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -DCOMPILER_VSN='"$(VSN)"' -o$(EBIN) $<
 
 $(EBIN)/cerl_inline.beam: $(ESRC)/cerl_inline.erl
 	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) +nowarn_shadow_vars -o$(EBIN) $<
 
-$(EBIN)/beam_disasm.beam: beam_opcodes.hrl
+$(EBIN)/beam_disasm.beam: $(EGEN)/beam_opcodes.hrl
 
 # ----------------------------------------------------
 # Release Target

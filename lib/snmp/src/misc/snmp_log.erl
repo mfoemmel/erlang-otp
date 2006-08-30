@@ -214,9 +214,9 @@ convert_name(Name) ->
 do_log_to_file(Log, TextFile, Mibs, Start, Stop) ->
     case file:open(TextFile, write) of
         {ok, Fd} ->
-            Mib = snmp_misc:make_mini_mib(Mibs),
+            MiniMib = snmp_mini_mib:create(Mibs),
 	    Write = fun(X) -> 
-			    case format_msg(X, Mib, Start, Stop) of
+			    case format_msg(X, MiniMib, Start, Stop) of
 				{ok, S} ->
 				    io:format(Fd, "~s", [S]);
 				_ ->
@@ -224,6 +224,7 @@ do_log_to_file(Log, TextFile, Mibs, Start, Stop) ->
 			    end
 		    end,
             Res = (catch loop(disk_log:chunk(Log, start), Log, Write)),
+	    snmp_mini_mib:delete(MiniMib), 
             file:close(Fd),
             Res;
         {error, Reason} ->
@@ -232,16 +233,18 @@ do_log_to_file(Log, TextFile, Mibs, Start, Stop) ->
 
 
 do_log_to_io(Log, Mibs, Start, Stop) ->
-    Mib = snmp_misc:make_mini_mib(Mibs),
+    MiniMib = snmp_mini_mib:create(Mibs),
     Write = fun(X) -> 
-		    case format_msg(X, Mib, Start, Stop) of
+		    case format_msg(X, MiniMib, Start, Stop) of
 			{ok, S} ->
 			    io:format("~s", [S]);
 			_ ->
 			    ok
 		    end
 	    end,
-    (catch loop(disk_log:chunk(Log, start), Log, Write)).
+    (catch loop(disk_log:chunk(Log, start), Log, Write)),
+    snmp_mini_mib:delete(MiniMib),
+    ok.
 
 
 loop(eof, _Log, _Write) ->
@@ -530,7 +533,12 @@ log_open(Name, File) ->
 	    {type,   ?LOG_TYPE},
 	    {format, ?LOG_FORMAT},	    
 	    {mode,   read_only}],
-    disk_log:open(Opts).
+    case disk_log:open(Opts) of
+	{error, {badarg, size}} ->
+	    {error, no_such_log};
+	Else ->
+	    Else
+    end.
 
 
 move_log(File) ->

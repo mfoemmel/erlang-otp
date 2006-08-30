@@ -36,15 +36,17 @@
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--record(cfg, {table, info, data}).
--record(cfg_info, {'fun',
+-record(cfg_info, {'fun',         % mfa()  % i.e. {atom(),atom(),byte()}
 		   start_label,
-		   closure,
-		   closure_arity,
-		   leaf,
-		   params,
+		   is_closure,    % bool()
+		   closure_arity, % byte() | 'undefined'
+		   is_leaf,       % bool()
+		   params,        % list()
 		   extra,
 		   info=[]}).
+-record(cfg, {table,  %
+	      info,   % #cfg_info{}
+	      data}). %
 
 %%=====================================================================
 %% The following are ugly as hell, but what else can I do???
@@ -155,17 +157,16 @@ start_label_update(CFG, NewStartLabel) ->
 
 function(CFG) -> (CFG#cfg.info)#cfg_info.'fun'.
 
-is_closure(CFG) -> (CFG#cfg.info)#cfg_info.closure.
-is_leaf(CFG) -> (CFG#cfg.info)#cfg_info.leaf.
+is_closure(CFG) -> (CFG#cfg.info)#cfg_info.is_closure.
+is_leaf(CFG) -> (CFG#cfg.info)#cfg_info.is_leaf.
 
 mk_empty_cfg(Fun, StartLbl, Data, Closure, Leaf, Params, Extra) ->
-  Info = #cfg_info{
-    'fun' = Fun,
-    start_label=StartLbl,
-    closure=Closure,
-    leaf=Leaf,
-    params=Params,
-    extra=Extra},
+  Info = #cfg_info{'fun' = Fun,
+		   start_label=StartLbl,
+		   is_closure=Closure,
+		   is_leaf=Leaf,
+		   params=Params,
+		   extra=Extra},
   #cfg{table=gb_trees:empty(), data=Data, info=Info}.
 
 data(CFG) -> CFG#cfg.data.
@@ -506,7 +507,7 @@ reverse_postorder(CFG) ->
   Ordering.
 
 depth_search([N|Ns], Visited, Succ, Acc) ->
-  case visited(N, Visited) of 
+  case is_visited(N, Visited) of 
     true ->
       depth_search(Ns, Visited, Succ, Acc);
     false ->
@@ -532,7 +533,7 @@ depth_search([], Visited, _, Ordering) ->
 %%     Ordering.
 %% 
 %% df_search([N|Ns], Visited, Succ, Acc) ->
-%%   case visited(N, Visited) of 
+%%   case is_visited(N, Visited) of 
 %%     true ->
 %%       df_search(Ns, Visited, Succ, Acc);
 %%     false ->
@@ -552,7 +553,7 @@ reverse_inorder(CFG) ->
   Ordering. 
 
 inorder_search([N|Ns], Visited, Succ, Acc) ->
-  case visited(N, Visited) of 
+  case is_visited(N, Visited) of 
     true ->
       inorder_search(Ns, Visited, Succ, Acc);
     false ->
@@ -568,7 +569,7 @@ inorder_search([], Visited, _, Ordering) ->
   {Ordering,Visited}.
 
 %% post(X, Vis, Succ, PO) ->
-%%    case visited(X,Vis) of 
+%%    case is_visited(X,Vis) of 
 %%       true ->
 %% 	 {Vis, PO};
 %%       false ->
@@ -595,7 +596,7 @@ preorder(CFG) ->
   lists:reverse(Ordering).
 
 preorder_search([N|Ns], Visited, Succ, Acc) ->
-  case visited(N, Visited) of 
+  case is_visited(N, Visited) of 
     true ->
       preorder_search(Ns, Visited, Succ, Acc);
     false ->
@@ -619,7 +620,7 @@ reverse_breadthorder(CFG) ->
   RBO2.
 
 breadth_list([X|Xs], Vis, Succ, BO) ->
-  case visited(X,Vis) of
+  case is_visited(X,Vis) of
     true ->
       breadth_list(Xs, Vis, Succ, BO);
     false ->
@@ -635,7 +636,7 @@ none_visited() ->
 visit(X, Vis) -> 
   gb_sets:add(X, Vis).
 
-visited(X, Vis) ->
+is_visited(X, Vis) ->
   gb_sets:is_member(X, Vis).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -716,7 +717,7 @@ lin_succ([Label|Labels], CFG, Vis) ->
 lin_succ([], _CFG, Vis) ->
   {Vis, []};
 lin_succ(Label, CFG, Vis) ->
-  case visited(Label, Vis) of
+  case is_visited(Label, Vis) of
     true ->
       {Vis, []};      % already visited
     false ->
@@ -976,7 +977,7 @@ merge_successor(L,CFG) ->
 	{[Successor],[Successor]} ->
 	  %% The single successor is the fail-label; don't merge.
 	  CFG;
-	{[Successor],_} when Successor /= StartLabel ->
+	{[Successor],_} when Successor =/= StartLabel ->
 	  %% Make sure the succesor only have this block as predecessor.
 	  case  [L] =:= pred(pred_map(CFG),Successor) of
 	    true ->

@@ -38,6 +38,7 @@
 #include "erl_bif_timer.h"
 #include "erl_instrument.h"
 #include "erl_printf_term.h"
+#include "erl_misc_utils.h"
 
 #ifdef HIPE
 #include "hipe_mode_switch.h"	/* for hipe_mode_switch_init() */
@@ -207,7 +208,6 @@ erl_init(void)
     H_MIN_SIZE = erts_next_heap_size(H_MIN_SIZE, 0);
 
     erts_init_trace();
-    erts_bif_info_init();
     erts_init_binary();
     erts_init_bits();
     erts_init_fun_table();
@@ -216,6 +216,7 @@ erl_init(void)
     init_module_table();
     init_register_table();
     init_message();
+    erts_bif_info_init();
     init_emulator();
     erts_bp_init();
     init_db(); /* Must be after init_emulator */
@@ -562,7 +563,7 @@ early_init(int *argc, char **argv) /*
 #endif
     erl_sys_init();
 #ifdef ERTS_SMP
-    no_of_schedulers = erts_sys_no_processors();
+    no_of_schedulers = erts_no_of_cpus();
 #endif
     erl_sys_args(argc, argv);
 

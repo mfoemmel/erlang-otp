@@ -24,8 +24,9 @@
 	 test_integer/4, test_number/4, test_constant/4, test_tuple_N/5]).
 -export([realtag_fixnum/2, tag_fixnum/2, realuntag_fixnum/2, untag_fixnum/2]).
 -export([test_two_fixnums/3, test_fixnums/4, unsafe_fixnum_add/3,
+	 unsafe_fixnum_sub/3,
 	 fixnum_gt/5, fixnum_lt/5, fixnum_ge/5, fixnum_le/5, fixnum_val/1,
-	 fixnum_addsub/5, fixnum_andorxor/4, fixnum_not/2, fixnum_bsr/3]).
+	 fixnum_addsub/5, fixnum_andorxor/4, fixnum_not/2, fixnum_bsr/3, fixnum_bsl/3]).
 -export([unsafe_car/2, unsafe_cdr/2,
 	 unsafe_constant_element/3, unsafe_update_element/3, element/6]).
 -export([unsafe_closure_element/3]).
@@ -411,6 +412,13 @@ unsafe_fixnum_add(Arg1, Arg2, Res) ->
 		   hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
    hipe_rtl:mk_alu(Res, Arg1, add, Tmp)].
 
+%% We know the answer will be a fixnum
+unsafe_fixnum_sub(Arg1, Arg2, Res) ->
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
+  [hipe_rtl:mk_alu(Tmp, Arg2, sub, 
+		   hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
+   hipe_rtl:mk_alu(Res, Arg1, sub, Tmp)].
+
 %%% (16X+tag)+((16Y+tag)-tag) = 16X+tag+16Y = 16(X+Y)+tag
 %%% (16X+tag)-((16Y+tag)-tag) = 16X+tag-16Y = 16(X-Y)+tag
 fixnum_addsub(AluOp, Arg1, Arg2, Res, OtherLab) ->
@@ -448,7 +456,7 @@ fixnum_addsub(AluOp, Arg1, Arg2, Res, OtherLab) ->
 %%   [untag_fixnum(U1, Arg1),
 %%    hipe_rtl:mk_alu(U2, Arg2, 'sub', hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
 %%    hipe_rtl:mk_alub(Tmp, U1, 'mul', U2, overflow, hipe_rtl:label_name(OtherLab),
-%% 		    hipe_rtl:label_name(NoOverflowLab), 0.01),
+%%  		    hipe_rtl:label_name(NoOverflowLab), 0.01),
 %%    NoOverflowLab,
 %%    hipe_rtl:mk_alu(Res, Tmp, 'add', hipe_rtl:mk_imm(?TAG_IMMED1_SMALL))].
 
@@ -471,8 +479,16 @@ fixnum_bsr(Arg1, Arg2, Res) ->
   [untag_fixnum(Tmp1, Arg2),
    hipe_rtl:mk_alu(Tmp2, Arg1, 'sra', Tmp1),
    hipe_rtl:mk_alu(Res, Tmp2, 'or', hipe_rtl:mk_imm(?TAG_IMMED1_SMALL))].
-   
-  
+
+%% If someone knows how to make this better, please do.
+fixnum_bsl(Arg1, Arg2, Res) ->
+  Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp3 = hipe_rtl:mk_new_reg_gcsafe(),
+  [untag_fixnum(Tmp2, Arg2),
+   hipe_rtl:mk_alu(Tmp1, Arg1, 'sub', hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
+   hipe_rtl:mk_alu(Tmp3, Tmp1, 'sll', Tmp2),
+   hipe_rtl:mk_alu(Res, Tmp3, 'or', hipe_rtl:mk_imm(?TAG_IMMED1_SMALL))].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

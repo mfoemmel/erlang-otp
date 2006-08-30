@@ -576,9 +576,9 @@
 	 fail_class/1,
 	 fail_label/1,
 	 fail_set_label/2,
-	 %% var_name/1,
+	 var_name/1,
 	 var_annotation/1,
-	 %% fvar_name/1,
+	 fvar_name/1,
 	 %% reg_name/1,		 
 	 reg_is_gcsafe/1,
 	 const_value/1,
@@ -621,8 +621,8 @@
 %%
 mk_icode(Fun, Params, Closure, Leaf, Code, VarRange, LabelRange) ->
   #icode{'fun'=Fun, params=Params, code=Code,
-	 closure=Closure,
-	 leaf=Leaf,
+	 is_closure=Closure,
+	 is_leaf=Leaf,
 	 data=hipe_consttab:new(),
 	 var_range=VarRange,
 	 label_range=LabelRange}.
@@ -633,7 +633,7 @@ mk_icode(Fun, Params, Closure, Leaf, Code, VarRange, LabelRange) ->
 %%
 mk_icode(Fun, Params, Closure, Leaf, Code, Data, VarRange, LabelRange) ->
   #icode{'fun'=Fun, params=Params, code=Code,
-	 data=Data, closure=Closure, leaf=Leaf,
+	 data=Data, is_closure=Closure, is_leaf=Leaf,
 	 var_range=VarRange,
 	 label_range=LabelRange}.
 mk_typed_icode(Fun, Params, Closure, Leaf, Code, VarRange, 
@@ -641,8 +641,8 @@ mk_typed_icode(Fun, Params, Closure, Leaf, Code, VarRange,
   #icode{'fun'=Fun, 
 	 params=Params,
 	 code=Code,
-	 closure=Closure,
-	 leaf=Leaf,
+	 is_closure=Closure,
+	 is_leaf=Leaf,
 	 data=hipe_consttab:new(),
 	 var_range=VarRange,
 	 label_range=LabelRange,
@@ -655,9 +655,9 @@ icode_params(#icode{params=Params}) -> Params.
 icode_params_update(Icode, Params) -> 
   Icode#icode{params=Params}.
 %% @spec icode_is_closure(I::icode()) -> bool()
-icode_is_closure(#icode{closure=Closure}) -> Closure.
+icode_is_closure(#icode{is_closure=Closure}) -> Closure.
 %% @spec icode_is_leaf(I::icode()) -> bool()
-icode_is_leaf(#icode{leaf=Leaf}) -> Leaf.
+icode_is_leaf(#icode{is_leaf=Leaf}) -> Leaf.
 %% @spec icode_code(I::icode()) -> [icode_instruction()]
 icode_code(#icode{code=Code}) -> Code.
 %% @spec icode_code_update(I::icode(), [icode_instruction()]) -> icode()
@@ -789,7 +789,6 @@ fail_label(#fail{fail_label=Label}) -> Label.
 fail_set_label(I=#fail{}, Label) ->
   I#fail{fail_label = Label}.
 
-
 %%
 %% move
 %%
@@ -870,7 +869,7 @@ op_type(Fun) ->
     false -> primop
   end.
 
-is_mfa({M,F,A}) when is_atom(M), is_atom(F), is_integer(A) -> true;
+is_mfa({M,F,A}) when is_atom(M), is_atom(F), is_integer(A), A >= 0 -> true;
 is_mfa(_) -> false.
 
 
@@ -1025,51 +1024,60 @@ is_comment(_) -> false.
 %% Arguments (variables and constants)
 %%
 
-mk_const(C) -> {const,{flat,C}}.
+-record(const, {value}).
+-record(const_fun, {'fun'}).
+
+mk_const(C) -> #const{value={flat,C}}.
 %% mk_const_fun(MFA,U,I,Args) -> {const,{const_fun,{MFA,U,I,Args}}}.
-const_value({const,{flat,X}}) -> X;
-const_value({const,{const_fun,X}}) -> X.
+const_value(#const{value={flat,X}}) -> X;
+const_value(#const{value=#const_fun{'fun'=X}}) -> X.
 %% @spec is_const(icode_arg()) -> bool()
-is_const({const,_}) -> true;
+is_const(#const{}) -> true;
 is_const(_) -> false.
 %% @spec is_const_fun(icode_arg()) -> bool()
-is_const_fun({const,{const_fun,_}}) -> true;
+is_const_fun(#const{value=#const_fun{}}) -> true;
 is_const_fun(_) -> false.
 
-mk_var(V) -> {var,V}.
-var_name({var,Name}) -> Name.
+-record(var, {name}).   % 
+	      % type=erl_types:t_any()}). % type()
+
+mk_var(V) -> #var{name=V}.
+var_name(#var{name=Name}) -> Name.
 %% @spec is_var(icode_arg()) -> bool()
-is_var({var,_}) -> true;
+is_var(#var{}) -> true;
 is_var(_) -> false.
   
 %% This representation of a variable is used in the constraint based
 %% type pass and when pretty printing typed icode.
-annotate_var({var, Name}, Type)-> {var, Name, Type};
+annotate_var({var, Name}, Type) -> {var, Name, Type};
 annotate_var({var, Name, _OldType}, Type) -> {var, Name, Type}.
-is_annotated_var({var, _Name, _Type})-> true;
+is_annotated_var({var, _Name, _Type}) -> true;
 is_annotated_var(_) -> false.
-var_annotation({var, _Name, Type})-> Type.
+var_annotation({var, _Name, Type}) -> Type.
 unannotate_var({var, Name, _}) -> {var, Name}.
 
- 
-mk_reg(V) -> {reg,V}.
-reg_name({reg,Name}) -> Name.
-reg_is_gcsafe({reg,_}) -> false. % for now
+-record(reg, {name}).
+
+mk_reg(V) -> #reg{name=V}.
+reg_name(#reg{name=Name}) -> Name.
+reg_is_gcsafe(#reg{}) -> false. % for now
 %% @spec is_reg(icode_arg()) -> bool()
-is_reg({reg,_}) -> true;
+is_reg(#reg{}) -> true;
 is_reg(_) -> false.
 
-%% @spec is_var_or_fvar_or_reg(icode_arg()) -> bool()
-is_var_or_fvar_or_reg({var,_}) -> true;
-is_var_or_fvar_or_reg({fvar,_}) -> true;
-is_var_or_fvar_or_reg({reg,_}) -> true;
-is_var_or_fvar_or_reg(_) -> false.
+-record(fvar, {name}).
 
-mk_fvar(V) -> {fvar,V}.
-fvar_name({fvar,Name}) -> Name.
+mk_fvar(V) -> #fvar{name=V}.
+fvar_name(#fvar{name=Name}) -> Name.
 %% @spec is_fvar(icode_arg()) -> bool()
-is_fvar({fvar,_}) -> true;
+is_fvar(#fvar{}) -> true;
 is_fvar(_) -> false.
+
+%% @spec is_var_or_fvar_or_reg(icode_arg()) -> bool()
+is_var_or_fvar_or_reg(#var{}) -> true;
+is_var_or_fvar_or_reg(#fvar{}) -> true;
+is_var_or_fvar_or_reg(#reg{}) -> true;
+is_var_or_fvar_or_reg(_) -> false.
 
 %%
 %% Floating point Icode instructions.
@@ -1140,22 +1148,8 @@ defines(I) ->
   end.
 
 
-remove_constants([]) ->
-  [];
-remove_constants([{const,_}|Xs]) ->
-  remove_constants(Xs);
-remove_constants([{reg,Var}|Xs]) ->
-  [{reg,Var} | remove_constants(Xs)];
-remove_constants([{var,Var}|Xs]) ->
-  [{var,Var} | remove_constants(Xs)];
-remove_constants([{var,Var, Ann}|Xs]) ->
-  [{var,Var, Ann} | remove_constants(Xs)];
-remove_constants([{fvar,Var}|Xs]) ->
-  [{fvar,Var} | remove_constants(Xs)];
-remove_constants([{colored,Var}|Xs]) ->
-  [{colored,Var} | remove_constants(Xs)];
-remove_constants([_|Xs]) ->
-  remove_constants(Xs).
+remove_constants(L) ->
+  lists:filter(fun(X) -> not is_const(X) end, L).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1348,7 +1342,7 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 	  ToOld -> Jmp#fail{fail_label=ToNew};
 	  _ -> Jmp
 	end;
-      _ ->  Jmp
+      _ -> Jmp
     end,
   simplify_branch(NewIns).
 

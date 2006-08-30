@@ -19,6 +19,14 @@
 
 -behaviour(gen_server).
 
+-ifdef(DEBUG).
+-define(port_please_failure(), io:format("Net Kernel 2: EPMD port please failed at ~p:~p~n", [?MODULE,?LINE])).
+-define(port_please_failure2(Term), io:format("Net Kernel 2: EPMD port please failed at ~p:~p [~p]~n", [?MODULE,?LINE,Term])).
+-else.
+-define(port_please_failure(), noop).
+-define(port_please_failure2(Term), noop).
+-endif.
+
 %% External exports
 -export([start/0, start_link/0, stop/0, port_please/2, 
 	 port_please/3, names/0, names/1,
@@ -304,6 +312,7 @@ get_port_v0(Node, EpmdAddress) ->
 	    gen_tcp:send(Socket, [?int16(Len),?EPMD_PORT_PLEASE, Name]),
 	    wait_for_port_reply_v0(Socket, []);
 	_Error -> 
+	    ?port_please_failure(),
 	    noport
     end.
 
@@ -325,6 +334,7 @@ get_port(Node, EpmdAddress, Timeout) ->
 		    Other
 	    end;
 	_Error -> 
+	    ?port_please_failure2(_Error),
 	    noport
     end.
 
@@ -339,11 +349,14 @@ wait_for_port_reply_v0(Socket, SoFar) ->
 		Data when length(Data) < 2 ->
 		    wait_for_port_reply_v0(Socket, Data);
 		Garbage ->
+		    ?port_please_failure(),
 		    {error, {garbage_from_epmd, Garbage}}
 	    end;
 	{tcp_closed, Socket} ->
+	    ?port_please_failure(),
 	    noport
     after 10000 ->
+	    ?port_please_failure(),
 	    gen_tcp:close(Socket),
 	    noport
     end.
@@ -358,16 +371,20 @@ wait_for_port_reply(Socket, SoFar) ->
 			0 ->
 			    wait_for_port_reply_cont(Socket, Rest);
 			_ ->
+			    ?port_please_failure(),
 			    wait_for_close(Socket, noport)
 		    end;
 		Data when length(Data) < 2 ->
 		    wait_for_port_reply(Socket, Data);
 		Garbage ->
+		    ?port_please_failure(),
 		    {error, {garbage_from_epmd, Garbage}}
 	    end;
 	{tcp_closed, Socket} ->
+	    ?port_please_failure(),
 	    closed
     after 10000 ->
+	    ?port_please_failure(),
 	    gen_tcp:close(Socket),
 	    noport
     end.
@@ -383,11 +400,14 @@ wait_for_port_reply_cont(Socket, SoFar) ->
 		Data when length(Data) < 10 ->
 		    wait_for_port_reply_cont(Socket, Data);
 		Garbage ->
+		    ?port_please_failure(),
 		    {error, {garbage_from_epmd, Garbage}}
 	    end;
 	{tcp_closed, Socket} ->
+	    ?port_please_failure(),
 	    noport
     after 10000 ->
+	    ?port_please_failure(),
 	    gen_tcp:close(Socket),
 	    noport
     end.

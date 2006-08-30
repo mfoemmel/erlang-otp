@@ -19,7 +19,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@csd.uu.se
+%% Author contact: richardc@it.uu.se
 %%
 %% $Id$
 %%
@@ -35,14 +35,15 @@
 %%-export([analyze/2, analyze/5, annotate/1, annotate/2, annotate/5]).
 
 -import(erl_types, [t_any/0, t_atom/0, t_is_atom/1, t_binary/0, t_cons/2,
-		    t_cons_hd/1, t_cons_tl/1, t_improper_list/0,
+		    t_cons_hd/1, t_cons_tl/1, t_pos_improper_list/0,
 		    t_components/1, t_float/0, t_fun/0, t_fun/2,
 		    t_inf/2, t_integer/0, t_atom_vals/1, t_is_cons/1,
-		    t_is_improper_list/1, t_is_list/1, t_is_tuple/1,
+		    t_is_pos_improper_list/1, t_is_list/1, t_is_tuple/1,
 		    t_is_none/1, t_is_any/1, t_limit/2,
 		    t_list_elements/1, t_number/0, t_pid/0, t_port/0,
 		    t_product/1, t_ref/0, t_tuple/0, t_tuple/1,
-		    t_tuple_args/1, t_tuple_arity/1, t_sup/2,
+		    t_tuple_args/1, t_tuple_arity/1, t_tuple_subtypes/1, 
+		    t_sup/2,
 		    t_from_range/2, t_from_term/1, t_none/0]).
 
 -import(cerl, [ann_c_fun/3, ann_c_var/2, alias_pat/1, alias_var/1,
@@ -156,7 +157,7 @@ annotate(T, Limit, Esc, Dep, Par) ->
     {cerl_trees:map(F, T), Type, Vars}.
 
 append_ann(Tag, Val, [X | Xs]) ->
-    if is_tuple(X), size(X) >= 1, element(1, X) == Tag -> 
+    if is_tuple(X), size(X) >= 1, element(1, X) =:= Tag -> 
 	    append_ann(Tag, Val, Xs);
        true ->
 	    [X | append_ann(Tag, Val, Xs)]
@@ -165,7 +166,7 @@ append_ann(Tag, Val, []) ->
     [{Tag, Val}].
 
 delete_ann(Tag, [X | Xs]) ->
-    if is_tuple(X), size(X) >= 1, element(1, X) == Tag -> 
+    if is_tuple(X), size(X) >= 1, element(1, X) =:= Tag -> 
 	    delete_ann(Tag, Xs);
        true ->
 	    [X | delete_ann(Tag, Xs)]
@@ -444,7 +445,7 @@ visit(T, Env, St) ->
 	    {X1, St1} = join_visit_clauses([Any], receive_clauses(T),
 					   Env, St),
 	    {X2, St2} = visit(receive_timeout(T), Env, St1),
-	    case t_is_atom(X2) andalso (t_atom_vals(X2) == [infinity]) of
+	    case t_is_atom(X2) andalso (t_atom_vals(X2) =:= [infinity]) of
 		true ->
 		    {X1, St2};
 		false ->
@@ -526,7 +527,7 @@ bind_pats(Ps, any, Vars) ->
 bind_pats(Ps, none, Vars) ->
     bind_pats_single(Ps, t_none(), Vars);
 bind_pats(Ps, Xs, Vars) ->
-    if length(Xs) == length(Ps) ->
+    if length(Xs) =:= length(Ps) ->
 	    bind_pats_list(Ps, Xs, Vars);
        true ->
 	    bind_pats_single(Ps, t_none(), Vars)
@@ -570,7 +571,7 @@ bind_pat_vars(P, X, Vars) ->
 						  Vars),
 			    bind_pat_vars(cons_tl(P), X, Vars1);
 			false ->
-			    case t_is_improper_list(X) of
+			    case t_is_pos_improper_list(X) of
 				true ->
 				    %% If X is "cons cell of X1", both
 				    %% the head and tail have type X1.
@@ -587,13 +588,28 @@ bind_pat_vars(P, X, Vars) ->
 		    end
 	    end;
 	tuple ->
-	    case t_is_tuple(X) andalso
-		(t_tuple_arity(X) == tuple_arity(P)) of
+	    case t_is_tuple(X) of
 		true ->
-		    bind_pats_list(tuple_es(P), t_tuple_args(X), Vars);
+		    case t_tuple_subtypes(X) of
+			any -> 
+			    bind_vars_single(pat_vars(P), top_or_bottom(X), 
+					     Vars);
+			[Tuple] ->
+			    case t_tuple_arity(Tuple) =:= tuple_arity(P) of
+				true ->
+				    bind_pats_list(tuple_es(P), 
+						   t_tuple_args(Tuple), Vars);
+				
+				false ->
+				    bind_vars_single(pat_vars(P), 
+						     top_or_bottom(X), Vars)
+			    end;
+			List when is_list(List) ->
+			    bind_vars_single(pat_vars(P), top_or_bottom(X), 
+					     Vars)
+		    end;
 		false ->
-		    bind_vars_single(pat_vars(P), top_or_bottom(X),
-				     Vars)
+		    bind_vars_single(pat_vars(P), top_or_bottom(X), Vars)
 	    end;
 	binary ->
 	    bind_pats_single(binary_segments(P), t_none(), Vars);
@@ -651,7 +667,7 @@ bind_vars(Vs, any, Vars) ->
 bind_vars(Vs, none, Vars) ->
     bind_vars_single(Vs, t_none(), Vars);
 bind_vars(Vs, Xs, Vars) ->
-    if length(Vs) == length(Xs) ->
+    if length(Vs) =:= length(Xs) ->
 	    bind_vars_list(Vs, Xs, Vars);
        true ->
 	    bind_vars_single(Vs, t_none(), Vars)
@@ -706,7 +722,7 @@ call_site([], _, W, V, _, _) ->
 %% If the arity does not match the call, nothing is done here.
 
 bind_args(Vs, Xs, Vars, Limit) ->
-    if length(Vs) == length(Xs) ->
+    if length(Vs) =:= length(Xs) ->
 	    bind_args(Vs, Xs, Vars, Limit, false);
        true ->
 	    {Vars, false}
@@ -747,7 +763,7 @@ join_list([Xs | Xss]) ->
 join_list([]) ->
     t_none().
 
-equal(X, Y) -> X == Y.
+equal(X, Y) -> X =:= Y.
 
 limit(X, K) -> t_limit(X, K).
 
@@ -778,23 +794,23 @@ any_none([]) -> false.
 
 %% Set abstraction for label sets.
 
-% set__new() -> [].
+%% set__new() -> [].
 
 set__singleton(X) -> [X].
 
-% set__to_list(S) -> S.
+%% set__to_list(S) -> S.
 
-% set__from_list(S) -> ordsets:from_list(S).
+%% set__from_list(S) -> ordsets:from_list(S).
 
-% set__union(X, Y) -> ordsets:union(X, Y).
+%% set__union(X, Y) -> ordsets:union(X, Y).
 
 set__add(X, S) -> ordsets:add_element(X, S).
 
 set__is_member(X, S) -> ordsets:is_element(X, S).    
 
-% set__subtract(X, Y) -> ordsets:subtract(X, Y).
+%% set__subtract(X, Y) -> ordsets:subtract(X, Y).
 
-% set__equal(X, Y) -> X == Y.
+%% set__equal(X, Y) -> X =:= Y.
 
 %% A simple but efficient functional queue.
 
@@ -885,7 +901,7 @@ guard_filters(T, Env, Vars) ->
 			{erlang, is_integer, 1} ->
 			    filter(As, t_integer(), Env);
 			{erlang, is_list, 1} ->
-			    filter(As, t_improper_list(), Env);
+			    filter(As, t_pos_improper_list(), Env);
 			{erlang, is_number, 1} ->
 			    filter(As, t_number(), Env);
 			{erlang, is_pid, 1} ->

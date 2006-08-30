@@ -13,15 +13,7 @@
 #ifdef WIN32
 
 #include <errno.h>
-/*
-  GCC (Mingw32) has a different include file for the windows error
-  codes.
-*/
-#if defined(__GNUC__)
-#include <Windows32/errors.h>
-#else
 #include <winerror.h>
-#endif
 #include <stdlib.h>
 
 /* This is the error table that defines the mapping between OS error

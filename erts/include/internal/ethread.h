@@ -164,7 +164,7 @@ typedef pthread_key_t ethr_tsd_key;
 #endif
 #endif /* __GNUC__ */
 
-#ifdef PURIFY
+#if defined(PURIFY) || defined(VALGRIND)
 #undef ETHR_HAVE_NATIVE_ATOMICS
 #endif
 

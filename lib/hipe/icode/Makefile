@@ -46,7 +46,7 @@ DOC_MODULES = hipe_icode hipe_icode_cfg hipe_icode_liveness \
 	hipe_icode_ssa_const_prop \
 	hipe_icode_split_arith hipe_icode_callgraph 
 
-MODULES = $(DOC_MODULES) hipe_icode_ebb hipe_icode_mulret
+MODULES = $(DOC_MODULES) hipe_icode_ebb hipe_icode_mulret hipe_icode_range_an 
 
 HRL_FILES=hipe_icode.hrl hipe_icode_type.hrl
 ERL_FILES= $(MODULES:%=%.erl)

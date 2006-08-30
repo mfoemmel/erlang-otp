@@ -49,22 +49,18 @@
 	 is_tag_member/2,
 	 is_tmask_match/3,
 	 keyreplaceadd/4,
-	 load_mib/1,
-	 make_mini_mib/1,
 	 map/3,
 	 mem_size/1,
 	 mk_msg_flags/2,
 	 multi_map/2,
 	 %% now/0,
 	 now/1,
-	 oid/2,
 	 read_mib/1,
 	 set_option/3,
 	 sleep/1,
 	 strip_extension_from_filename/2, 
 	 str_xor/2,
 	 time/3,
-	 type/2,
 	 
 	 verify_behaviour/2
 	]).
@@ -353,91 +349,6 @@ ensure_trailing_dir_delimiter(DirSuggestion) ->
     end.
 
 
-%%%--------------------------------------------------
-%%% The Mini MIB representation
-%%%--------------------------------------------------
-
-%% Returns a Mini MIB
-make_mini_mib(Mibs) ->
-    remove_dubbletts(lists:keysort(1,
-			   lists:append(lists:map(fun load_mib/1, Mibs)))).
-
-
-%%----------------------------------------------------------------------
-%% Returns: A list of {Oid, Aliasname, Type}
-%%----------------------------------------------------------------------
-load_mib(MIB) ->
-    F1 = snmp_misc:strip_extension_from_filename(MIB, ".bin"),
-    ActualFileName = lists:append(F1, ".bin"),
-    case snmp_misc:read_mib(ActualFileName) of
-	{ok, #mib{mes = MEs, traps = Traps}} -> make_mini_mib_elem(MEs++Traps);
-	{error, Reason} -> exit({error, {MIB,Reason}})
-    end.
-
-
-%%----------------------------------------------------------------------
-%% Pre: List is sorted (dublettes are list neighbours)
-%%----------------------------------------------------------------------
-remove_dubbletts([])      -> [];
-remove_dubbletts([X])     -> [X];
-remove_dubbletts([X,X|T]) -> remove_dubbletts([X|T]);
-remove_dubbletts([X|T])   -> [X|remove_dubbletts(T)].
-
-
-%%----------------------------------------------------------------------
-%% Args: A list if Mes
-%% Returns: a list of {Oid, Aliasname, Type}
-%%----------------------------------------------------------------------
-make_mini_mib_elem([]) -> [];
-make_mini_mib_elem([#me{aliasname = N, oid = Oid, entrytype = variable,
-			 asn1_type = #asn1_type{bertype = Type}} | T]) ->
-    [{Oid, N, Type} | make_mini_mib_elem(T)];
-make_mini_mib_elem([#me{aliasname = N, oid = Oid, entrytype = table_column,
-			 asn1_type = ASN1}|T]) when record(ASN1, asn1_type)->
-    [{Oid, N, ASN1#asn1_type.bertype} | make_mini_mib_elem(T)];
-make_mini_mib_elem([#me{aliasname = N, oid = Oid,
-			 asn1_type = undefined}|T]) ->
-    [{Oid, N, undefined} | make_mini_mib_elem(T)];
-make_mini_mib_elem([#notification{trapname = N, oid = Oid}|T]) ->
-    [{Oid, N, undefined} | make_mini_mib_elem(T)];
-make_mini_mib_elem([_|T]) ->
-    make_mini_mib_elem(T).
-
-
-%% returns: Oid|false
-oid(MiniMib, AliasName) ->
-    case lists:keysearch(AliasName, 2, MiniMib) of
-	{value, {Oid, _Aliasname, _Type}} -> Oid;
-	false -> false
-    end.
-
-%% returns: Type|false
-type(MiniMib, Oid) ->
-    {_Oid, _Name, Type} = aliasname(MiniMib, Oid),
-    Type.
-
-
-%%----------------------------------------------------------------------
-%% Returns: false | {Oid, Aliasname, Type}
-%%----------------------------------------------------------------------
-aliasname(MiniMib, Oid) ->
-    aliasname_impl(MiniMib, Oid, false).
-
-
-%%----------------------------------------------------------------------
-%% Returns: false | {Oid, Aliasname, Type}
-%%----------------------------------------------------------------------
-aliasname_impl([], _Oid, Res) -> Res;
-aliasname_impl([{Oid, Aliasname, Type}|T], OidX, Res) when Oid =< OidX ->
-    case lists:prefix(Oid, OidX) of
-	true ->
-	    aliasname_impl(T, OidX, {Oid, Aliasname, Type});
-	false ->
-	    aliasname_impl(T, OidX, Res)
-    end;
-aliasname_impl([{_Oid, _Aliasname, _Type}|_T], _OidX, Res) ->
-    Res.
-
 format_pdu(PDU, MiniMib) when record(PDU, pdu) ->
     #pdu{type=T, error_status=ES, error_index=EI,
 	 request_id=RID,varbinds=VBs}=PDU,
@@ -466,7 +377,7 @@ format_pdu(PDU, MiniMib) when record(PDU, pdu) ->
 		   io_lib:format("Report            Request Id:~w~n", [RID]);
 	      true -> ""
 	   end,
-    [Txt1,Txt2,format_vbs(VBs, MiniMib)|"\n"];
+    [Txt1, Txt2, format_vbs(VBs, MiniMib)|"\n"];
 
 format_pdu(#trappdu{enterprise = Enterprise, agent_addr = AgentAddr,
 		  generic_trap = GenericTrap, specific_trap = SpecificTrap,
@@ -483,7 +394,7 @@ format_pdu(#trappdu{enterprise = Enterprise, agent_addr = AgentAddr,
      format_vbs(VBs, MiniMib) | "\n"].
 
 format_vbs(Vbs, MiniMib) ->
-    lists:map(fun (VB) -> format_vb(VB,MiniMib) end, Vbs).
+    [format_vb(VB, MiniMib) || VB <- Vbs].
 
 format_vb(#varbind{oid = Oid, variabletype = Type, value = Value}, MiniMib) ->
     {Soid, Mtype} = symbolify_oid(MiniMib, Oid),
@@ -508,7 +419,7 @@ format(Max, F, A) when integer(Max) ->
 %% Returns: (a nested) symbolified oid.
 %%----------------------------------------------------------------------
 symbolify_oid(MiniMib, Oid) ->
-    case aliasname(MiniMib, Oid) of
+    case snmp_mini_mib:aliasname(MiniMib, Oid) of
 	false ->
 	    {Oid, unknown};
 	{FoundOid, Aliasname, Type} ->

@@ -67,7 +67,7 @@ break_block(Instr, Acc) ->
   end.
 
 make_pass(CFG, [Label | Labels], Visited, BinChunks) ->
-  case hipe_icode_cfg:visited(Label, Visited) of 
+  case hipe_icode_cfg:is_visited(Label, Visited) of 
     true ->
       make_pass(CFG, Labels, Visited, BinChunks); 
     false ->
@@ -303,13 +303,13 @@ remove_members(Labels, Set) ->
   remove_members(Labels, Set, []).
 
 remove_members([Label | Labels], Set, Ok) ->
-  case hipe_icode_cfg:visited(Label, Set) of
+  case hipe_icode_cfg:is_visited(Label, Set) of
     true ->
       remove_members(Labels, Set, Ok);
     false ->
-      remove_members(Labels, Set, [Label |Ok])
+      remove_members(Labels, Set, [Label|Ok])
   end;
-remove_members([], _Set, Ok) ->		    
+remove_members([], _Set, Ok) ->
   Ok.
 
 calculate_need({Chunk, Hash}, Start) ->

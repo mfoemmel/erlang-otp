@@ -129,8 +129,8 @@ init([Manager, ConfigDB,AcceptTimeout]) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
-handle_call(_Request, _From, State) ->
-    {stop, call_api_violation, State}.
+handle_call(Request, From, State) ->
+    {stop, {call_api_violation, Request, From}, State}.
 
 %%--------------------------------------------------------------------
 %% handle_cast(Msg, State) -> {noreply, State} |
@@ -138,8 +138,8 @@ handle_call(_Request, _From, State) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
-handle_cast(_Msg, State) ->
-    {reply, cast_api_violation, State}.
+handle_cast(Msg, State) ->
+    {reply, {cast_api_violation, Msg}, State}.
 
 %%--------------------------------------------------------------------
 %% handle_info(Info, State) -> {noreply, State} |
@@ -193,9 +193,11 @@ handle_info(timeout, #state{mod = ModData} = State) ->
     {stop, normal, State#state{response_sent = true}};
 
 %% Default case
-handle_info(Unexpected,State) ->
-    error_log("Unexpected message received",Unexpected),
-    {noreply,State}.
+handle_info(Info, #state{mod = ModData} = State) ->
+    Error = lists:flatten(
+	      io_lib:format("Unexpected message received: ~n~p~n", [Info])),
+    error_log(Error, ModData),
+    {noreply, State}.
 
 %%--------------------------------------------------------------------
 %% terminate(Reason, State) -> void()

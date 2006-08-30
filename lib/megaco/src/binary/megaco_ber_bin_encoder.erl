@@ -42,17 +42,20 @@
 -define(V3_ASN1_MOD,         megaco_ber_bin_media_gateway_control_v3).
 -define(PREV3A_ASN1_MOD,     megaco_ber_bin_media_gateway_control_prev3a).
 -define(PREV3B_ASN1_MOD,     megaco_ber_bin_media_gateway_control_prev3b).
+-define(PREV3C_ASN1_MOD,     megaco_ber_bin_media_gateway_control_prev3c).
 -define(V1_ASN1_MOD_DRV,     megaco_ber_bin_drv_media_gateway_control_v1).
 -define(V2_ASN1_MOD_DRV,     megaco_ber_bin_drv_media_gateway_control_v2).
 -define(V3_ASN1_MOD_DRV,     megaco_ber_bin_drv_media_gateway_control_v3).
 -define(PREV3A_ASN1_MOD_DRV, megaco_ber_bin_drv_media_gateway_control_prev3a).
 -define(PREV3B_ASN1_MOD_DRV, megaco_ber_bin_drv_media_gateway_control_prev3b).
+-define(PREV3C_ASN1_MOD_DRV, megaco_ber_bin_drv_media_gateway_control_prev3c).
 
 -define(V1_TRANS_MOD,     megaco_binary_transformer_v1).
 -define(V2_TRANS_MOD,     megaco_binary_transformer_v2).
 -define(V3_TRANS_MOD,     megaco_binary_transformer_v3).
 -define(PREV3A_TRANS_MOD, megaco_binary_transformer_prev3a).
 -define(PREV3B_TRANS_MOD, megaco_binary_transformer_prev3b).
+-define(PREV3C_TRANS_MOD, megaco_binary_transformer_prev3c).
 
 -define(BIN_LIB, megaco_binary_encoder_lib).
 
@@ -62,6 +65,9 @@
 %% Return {ok, Version} | {error, Reason}
 %%----------------------------------------------------------------------
 
+version_of([{version3,prev3c},driver|EC], Binary) ->
+    Decoders = [?V1_ASN1_MOD_DRV, ?V2_ASN1_MOD_DRV, ?PREV3C_ASN1_MOD_DRV], 
+    ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
 version_of([{version3,prev3b},driver|EC], Binary) ->
     Decoders = [?V1_ASN1_MOD_DRV, ?V2_ASN1_MOD_DRV, ?PREV3B_ASN1_MOD_DRV], 
     ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
@@ -70,6 +76,9 @@ version_of([{version3,prev3a},driver|EC], Binary) ->
     ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
 version_of([{version3,v3},driver|EC], Binary) ->
     Decoders = [?V1_ASN1_MOD_DRV, ?V2_ASN1_MOD_DRV, ?V3_ASN1_MOD_DRV], 
+    ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
+version_of([{version3,prev3c}|EC], Binary) ->
+    Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?PREV3C_ASN1_MOD],
     ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
 version_of([{version3,prev3b}|EC], Binary) ->
     Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?PREV3B_ASN1_MOD],
@@ -150,6 +159,10 @@ encode_message(EC, 2, MegaMsg) ->
 
 %% -- Version 3 --
 
+encode_message([{version3,prev3c},driver|EC], 3, MegaMsg) ->
+    AsnMod   = ?PREV3C_ASN1_MOD_DRV, 
+    TransMod = ?PREV3C_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
 encode_message([{version3,prev3b},driver|EC], 3, MegaMsg) ->
     AsnMod   = ?PREV3B_ASN1_MOD_DRV, 
     TransMod = ?PREV3B_TRANS_MOD,
@@ -161,6 +174,10 @@ encode_message([{version3,prev3a},driver|EC], 3, MegaMsg) ->
 encode_message([{version3,v3},driver|EC], 3, MegaMsg) ->
     AsnMod   = ?V3_ASN1_MOD_DRV, 
     TransMod = ?V3_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message([{version3,prev3c}|EC], 3, MegaMsg) ->
+    AsnMod   = ?PREV3C_ASN1_MOD, 
+    TransMod = ?PREV3C_TRANS_MOD,
     ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
 encode_message([{version3,prev3b}|EC], 3, MegaMsg) ->
     AsnMod   = ?PREV3B_ASN1_MOD, 
@@ -438,6 +455,11 @@ decode_message(EC, Binary) ->
 %% -- Dynamic version detection --
 
 %% Select from message
+decode_message([{version3,prev3c},driver|EC], dynamic, Binary) ->
+    Mods = [{?V1_ASN1_MOD_DRV,     ?V1_TRANS_MOD},
+	    {?V2_ASN1_MOD_DRV,     ?V2_TRANS_MOD}, 
+	    {?PREV3C_ASN1_MOD_DRV, ?PREV3C_TRANS_MOD}], 
+    ?BIN_LIB:decode_message_dynamic(EC, Binary, Mods, binary);
 decode_message([{version3,prev3b},driver|EC], dynamic, Binary) ->
     Mods = [{?V1_ASN1_MOD_DRV,     ?V1_TRANS_MOD},
 	    {?V2_ASN1_MOD_DRV,     ?V2_TRANS_MOD}, 
@@ -452,6 +474,11 @@ decode_message([{version3,v3},driver|EC], dynamic, Binary) ->
     Mods = [{?V1_ASN1_MOD_DRV, ?V1_TRANS_MOD},
 	    {?V2_ASN1_MOD_DRV, ?V2_TRANS_MOD}, 
 	    {?V3_ASN1_MOD_DRV, ?V3_TRANS_MOD}], 
+    ?BIN_LIB:decode_message_dynamic(EC, Binary, Mods, binary);
+decode_message([{version3,prev3c}|EC], dynamic, Binary) ->
+    Mods = [{?V1_ASN1_MOD,     ?V1_TRANS_MOD},
+	    {?V2_ASN1_MOD,     ?V2_TRANS_MOD}, 
+	    {?PREV3C_ASN1_MOD, ?PREV3C_TRANS_MOD}], 
     ?BIN_LIB:decode_message_dynamic(EC, Binary, Mods, binary);
 decode_message([{version3,prev3b}|EC], dynamic, Binary) ->
     Mods = [{?V1_ASN1_MOD,     ?V1_TRANS_MOD},
@@ -531,6 +558,10 @@ decode_message(EC, 2, Binary) ->
 
 %% -- Version 3 --
 
+decode_message([{version3,prev3c},driver|EC], 3, Binary) ->
+    AsnMod   = ?PREV3C_ASN1_MOD_DRV, 
+    TransMod = ?PREV3C_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 decode_message([{version3,prev3b},driver|EC], 3, Binary) ->
     AsnMod   = ?PREV3B_ASN1_MOD_DRV, 
     TransMod = ?PREV3B_TRANS_MOD, 
@@ -542,6 +573,10 @@ decode_message([{version3,prev3a},driver|EC], 3, Binary) ->
 decode_message([{version3,v3},driver|EC], 3, Binary) ->
     AsnMod   = ?V3_ASN1_MOD_DRV, 
     TransMod = ?V3_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+decode_message([{version3,prev3c}|EC], 3, Binary) ->
+    AsnMod   = ?PREV3C_ASN1_MOD, 
+    TransMod = ?PREV3C_TRANS_MOD, 
     ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 decode_message([{version3,prev3b}|EC], 3, Binary) ->
     AsnMod   = ?PREV3B_ASN1_MOD, 
@@ -568,6 +603,11 @@ decode_message(EC, 3, Binary) ->
     ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary).
 
 
+decode_mini_message([{version3,prev3c},driver|EC], dynamic, Bin) ->
+    Mods = [?V1_ASN1_MOD_DRV, 
+	    ?V2_ASN1_MOD_DRV, 
+	    ?PREV3C_ASN1_MOD_DRV], 
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
 decode_mini_message([{version3,prev3b},driver|EC], dynamic, Bin) ->
     Mods = [?V1_ASN1_MOD_DRV, 
 	    ?V2_ASN1_MOD_DRV, 
@@ -582,6 +622,11 @@ decode_mini_message([{version3,v3},driver|EC], dynamic, Bin) ->
     Mods = [?V1_ASN1_MOD_DRV, 
 	    ?V2_ASN1_MOD_DRV, 
 	    ?V3_ASN1_MOD_DRV], 
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
+decode_mini_message([{version3,prev3c}|EC], dynamic, Bin) ->
+    Mods = [?V1_ASN1_MOD, 
+	    ?V2_ASN1_MOD, 
+	    ?PREV3C_ASN1_MOD], 
     ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
 decode_mini_message([{version3,prev3b}|EC], dynamic, Bin) ->
     Mods = [?V1_ASN1_MOD, 
@@ -632,6 +677,9 @@ decode_mini_message([driver|EC], 2, Bin) ->
 decode_mini_message(EC, 2, Bin) ->
     AsnMod = ?V2_ASN1_MOD, 
     ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([{version3,prev3c},driver|EC], 3, Bin) ->
+    AsnMod = ?PREV3C_ASN1_MOD_DRV, 
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
 decode_mini_message([{version3,prev3b},driver|EC], 3, Bin) ->
     AsnMod = ?PREV3B_ASN1_MOD_DRV, 
     ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
@@ -640,6 +688,9 @@ decode_mini_message([{version3,prev3a},driver|EC], 3, Bin) ->
     ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
 decode_mini_message([{version3,v3},driver|EC], 3, Bin) ->
     AsnMod = ?V3_ASN1_MOD_DRV, 
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([{version3,prev3c}|EC], 3, Bin) ->
+    AsnMod = ?PREV3C_ASN1_MOD, 
     ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
 decode_mini_message([{version3,prev3b}|EC], 3, Bin) ->
     AsnMod = ?PREV3B_ASN1_MOD, 

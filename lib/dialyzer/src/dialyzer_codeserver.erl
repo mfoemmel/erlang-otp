@@ -26,6 +26,7 @@
 -export([all_exports/1, 
 	 insert/3, 
 	 insert_exports/2,	 
+	 is_exported/2,
 	 lookup/3, 
 	 new/0,
 	 next_core_label/1,
@@ -48,6 +49,9 @@ insert_exports(List, CS = #dialyzer_codeserver{exports=Exports}) ->
   Set = sets:from_list(List),
   NewExports = sets:union(Exports, Set),
   CS#dialyzer_codeserver{exports=NewExports}.
+
+is_exported(MFA, #dialyzer_codeserver{exports=Exports}) ->
+  sets:is_element(MFA, Exports).
 
 all_exports(#dialyzer_codeserver{exports=Exports}) ->
   Exports.

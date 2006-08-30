@@ -145,7 +145,6 @@ pending(suite) ->
 
 reply(suite) ->
     [
-     single_trans_req_and_reply,
      multi_trans_req_and_reply,
      multi_trans_req_and_ack_and_reply,
      multi_ack_and_reply
@@ -5744,7 +5743,7 @@ multi_trans_req_and_ack_and_pending(doc) ->
 multi_trans_req_and_ack_and_pending(Config) when list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
-    put(tc,        multi_trans_req_and_ack_and_pending),
+    put(tc,        mtraaap),
     i("starting"),
 
     MgcNode = make_node_name(mgc),
@@ -6241,7 +6240,7 @@ mtraaap_notify_request_msg(Mid, TransId, Rid, TermId, Cid) ->
 
 
 %%
-%% Common functions for the multi_trans_req_timeout test case
+%% Common functions for this test case
 %%
 
 mtraaap_err_desc(T) ->
@@ -6257,16 +6256,6 @@ multi_ack_and_pending(suite) ->
 multi_ack_and_pending(doc) ->
     [];
 multi_ack_and_pending(Config) when list(Config) ->
-    ?SKIP(not_yet_implemented).
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-single_trans_req_and_reply(suite) ->
-    [];
-single_trans_req_and_reply(doc) ->
-    [];
-single_trans_req_and_reply(Config) when list(Config) ->
     ?SKIP(not_yet_implemented).
 
 
@@ -6816,6 +6805,13 @@ multi_ack_and_reply(Config) when list(Config) ->
 %% Common message creation functions
 %%
 
+cre_ErrDesc(T) ->
+    cre_ErrDesc(?megaco_internal_gateway_error, T).
+
+cre_ErrDesc(EC, T) ->
+    ET = lists:flatten(io_lib:format("~w",[T])),
+    #'ErrorDescriptor'{errorCode = EC, errorText = ET}.
+
 cre_serviceChangeParm(M,R,P) ->
     #'ServiceChangeParm'{serviceChangeMethod  = M, 
                          serviceChangeReason  = R, 
@@ -7082,7 +7078,7 @@ print(Severity, Verbosity, Ts, Tc, P, F, A) ->
 print(true, Ts, Tc, P, F, A) ->
     io:format("*** [~s] ~s ~p ~s:~w ***"
 	      "~n   " ++ F ++ "~n", 
-	      [format_timestamp(Ts), P, self(), get(sname), Tc | A]);
+	      [format_timestamp(Ts), P, self(), get(tc), Tc | A]);
 print(_, _, _, _, _, _) ->
     ok.
 

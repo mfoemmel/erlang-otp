@@ -171,6 +171,8 @@ init([]) ->
 		   {unix, freebsd} -> false;
 		   {unix, linux} -> false;
 		   {unix, openbsd} -> true;
+		   {unix, irix64} -> true;
+		   {unix, irix} -> true;
 		   {unix, sunos} -> true;
 		   {win32, _OSname} -> false;
 		   vxworks -> true;

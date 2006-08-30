@@ -307,14 +307,9 @@ nbif_fail:
  * exceptional condition, and RESCHEDULE cannot occur.
  * The stack/heap registers were just read from P.
  */
-	.global	nbif_0_simple_exception
 	.global	nbif_1_simple_exception
 	.global	nbif_2_simple_exception
 	.global	nbif_3_simple_exception
-	.align	4
-nbif_0_simple_exception:
-	xorl	%eax, %eax
-	jmp	.nbif_simple_exception
 	.align	4
 nbif_1_simple_exception:
 	movl	$1, %eax
@@ -418,10 +413,12 @@ nbif_stack_trap_ra:			# a return address, not a function
 	.global	nbif_inc_stack_0
 	.align	4
 nbif_inc_stack_0:
-	SWITCH_ERLANG_TO_C
+	SWITCH_ERLANG_TO_C_QUICK
 	STORE_ARG_REGS
 	movq	P, %rdi
+	# hipe_inc_nstack reads and writes NSP and NSP_LIMIT,
+	# but does not access HP or FCALLS (or the non-amd64 NRA).
 	call	hipe_inc_nstack
 	LOAD_ARG_REGS
-	SWITCH_C_TO_ERLANG
+	SWITCH_C_TO_ERLANG_QUICK
 	NSP_RET0

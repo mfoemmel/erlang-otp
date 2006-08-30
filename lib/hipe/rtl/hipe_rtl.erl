@@ -347,8 +347,8 @@
 
 -record(rtl, {'fun',        %% Name of the function (MFA)
 	      arglist,      %% List of argument names (formals)
-	      closure,      %% True if this is code for a closure.
-	      leaf,         %% True if this is a leaf function.
+	      is_closure,   %% True if this is code for a closure.
+	      is_leaf,      %% True if this is a leaf function.
 	      code,         %% Linear list of RTL-instructions.
 	      data,         %% Data segment
 	      var_range,    %% {Min,Max} First and last name used for
@@ -360,12 +360,12 @@
 
 mk_rtl(Fun, ArgList, Closure, Leaf, Code, Data, VarRange, LabelRange) ->
   #rtl{'fun'=Fun, arglist=ArgList, code=Code, 
-       data=Data, closure=Closure, leaf=Leaf,
+       data=Data, is_closure=Closure, is_leaf=Leaf,
        var_range=VarRange, label_range=LabelRange}.
 rtl_fun(#rtl{'fun'=Fun}) -> Fun.
 rtl_params(#rtl{arglist=ArgList}) -> ArgList.
-rtl_is_closure(#rtl{closure=Closure}) -> Closure.
-rtl_is_leaf(#rtl{leaf=Leaf}) -> Leaf.
+rtl_is_closure(#rtl{is_closure=Closure}) -> Closure.
+rtl_is_leaf(#rtl{is_leaf=Leaf}) -> Leaf.
 rtl_code(#rtl{code=Code}) -> Code.
 rtl_code_update(Rtl, Code) -> Rtl#rtl{code=Code}.
 rtl_data(#rtl{data=Data}) -> Data.
@@ -825,36 +825,48 @@ fconv_src_update(C, NewSrc) -> C#fconv{src=NewSrc}.
 %% change_var_to_reg(Var) ->
 %%   mk_reg(var_index(Var)).
 
-mk_reg(Num, IsGcSafe) when Num >= 0 -> {rtl_reg,Num,IsGcSafe}.
+-record(rtl_reg, {index,        % integer()
+		  is_gc_safe}). % bool()
+
+mk_reg(Num, IsGcSafe) when is_integer(Num), Num >= 0 ->
+  #rtl_reg{index=Num,is_gc_safe=IsGcSafe}.
 mk_reg(Num) -> mk_reg(Num, false).
 mk_reg_gcsafe(Num) -> mk_reg(Num, true).
 mk_new_reg() -> mk_reg(hipe_gensym:get_next_var(rtl), false).
 mk_new_reg_gcsafe() -> mk_reg(hipe_gensym:get_next_var(rtl), true).
-reg_index({rtl_reg,Index,_}) -> Index.
-reg_is_gcsafe({rtl_reg,_,IsGcSafe}) -> IsGcSafe.
-is_reg({rtl_reg,_,_}) -> true;
+reg_index(#rtl_reg{index=Index}) -> Index.
+reg_is_gcsafe(#rtl_reg{is_gc_safe=IsGcSafe}) -> IsGcSafe.
+is_reg(#rtl_reg{}) -> true;
 is_reg(_) -> false.
 
-mk_var(Num) when Num >= 0 -> {rtl_var,Num}.
+-record(rtl_var, {index}). % integer()
+
+mk_var(Num) when is_integer(Num), Num >= 0 -> #rtl_var{index=Num}.
 mk_new_var() -> mk_var(hipe_gensym:get_next_var(rtl)).
-var_index({rtl_var,Index}) -> Index.
-is_var({rtl_var,_}) -> true;
+var_index(#rtl_var{index=Index}) -> Index.
+is_var(#rtl_var{}) -> true;
 is_var(_) -> false.
 
-mk_fpreg(Num) when Num >= 0 -> {rtl_fpreg,Num}.
+-record(rtl_fpreg, {index}). % integer()
+
+mk_fpreg(Num) when is_integer(Num), Num >= 0 -> #rtl_fpreg{index=Num}.
 mk_new_fpreg() -> mk_fpreg(hipe_gensym:get_next_var(rtl)).
-fpreg_index({rtl_fpreg,Index}) -> Index.
-is_fpreg({rtl_fpreg,_}) -> true;
+fpreg_index(#rtl_fpreg{index=Index}) -> Index.
+is_fpreg(#rtl_fpreg{}) -> true;
 is_fpreg(_) -> false.
 
-mk_imm(Value) -> {rtl_imm,Value}.
-imm_value({rtl_imm,Value}) -> Value.
-is_imm({rtl_imm,_}) -> true;
+-record(rtl_imm, {value}).
+
+mk_imm(Value) -> #rtl_imm{value=Value}.
+imm_value(#rtl_imm{value=Value}) -> Value.
+is_imm(#rtl_imm{}) -> true;
 is_imm(_) -> false.
 
-mk_const_label(Label) -> {rtl_const_lbl, Label}.
-const_label_label({rtl_const_lbl, Label}) -> Label.
-is_const_label({rtl_const_lbl, _Label}) -> true;
+-record(rtl_const_lbl, {label}).
+
+mk_const_label(Label) -> #rtl_const_lbl{label=Label}.
+const_label_label(#rtl_const_lbl{label=Label}) -> Label.
+is_const_label(#rtl_const_lbl{}) -> true;
 is_const_label(_) -> false.
 
 
@@ -1128,21 +1140,34 @@ subst1([_|Xs], X) -> subst1(Xs,X).
 
 is_safe(Instr) ->
   case Instr of
-    #store{} -> false;
-    #fstore{} -> false;
+    #alu{} -> true;
+    #alub{} -> false;
+    #binbase{} -> true;
+    #branch{} -> false;
+    #call{} -> false;
+    #comment{} -> false;
+    #enter{} -> false;
+    #fconv{} -> true;
+    #fixnumop{} -> true;
+    #fload{} -> true;
+    #fmove{} -> true;
     #fp{} -> false;
     #fp_unop{} -> false;
-    #branch{} -> false;
-    #switch{} -> false; %% Maybe this is safe...
-    #alub{} -> false;
-    #call{} -> false;
-    #enter{} -> false;
+    #fstore{} -> false;
+    #gctest{} -> false;
     #goto{} -> false;
     #goto_index{} -> false;  % ???
+    #label{} -> true;
+    #load{} -> true;
+    #load_address{} -> true;
+    #load_atom{} -> true;
+    #load_word_index{} -> true;
+    #move{} -> true;
+    #multimove{} -> true;
+    #phi{} -> true;
     #return{} -> false;
-    #gctest{} -> false;
-    #comment{} -> false;
-    _ -> true
+    #store{} -> false;
+    #switch{} -> false %% Maybe this is safe...
   end.
 
 %%
@@ -1287,12 +1312,12 @@ pp(Dev, Rtl) ->
   case rtl_is_closure(Rtl) of
     true ->
       io:format(Dev, ";; Closure\n", []);
-    _ -> ok
+    false -> ok
   end,
   case rtl_is_leaf(Rtl) of
     true ->
       io:format(Dev, ";; Leaf function\n", []);
-    _ -> ok
+    false -> ok
   end,
   io:format(Dev, ";; Info: ~w\n", [rtl_info(Rtl)]),
   io:format(Dev, ".DataSegment\n", []),
@@ -1301,7 +1326,7 @@ pp(Dev, Rtl) ->
   pp_instrs(Dev, rtl_code(Rtl)).
 
 pp_instrs(_Dev, []) ->
-  clogs_done;
+  ok;
 pp_instrs(Dev, [I|Is]) ->
   case catch pp_instr(Dev, I) of
     {'EXIT', _} -> 

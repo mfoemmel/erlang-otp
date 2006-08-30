@@ -352,19 +352,28 @@ reduce_expr(E, Check) ->
 		    E
 	    end;
 	'seq' ->
-	    %% Rewrite `do <E1> do <E2> <E3>' to `do do <E1> <E2> <E3>'
-	    %% so that the "body" of the outermost seq-operator is the
-	    %% expression which produces the final result (i.e., E3).
-	    %% This can make other optimizations easier; see `let'.
 	    A = reduce_expr(cerl:seq_arg(E), Check),
 	    B = reduce_expr(cerl:seq_body(E), Check),
-	    case cerl:is_c_seq(B) of
+	    %% `do <E1> <E2>' is equivalent to `<E2>' if `<E1>' is
+	    %% "safe" (cannot effect the behaviour in any way).
+	    case is_safe_expr(A, Check) of
 		true ->
-		    B1 = cerl:seq_arg(B),
-		    B2 = cerl:seq_body(B),
-		    cerl:c_seq(cerl:c_seq(A, B1), B2);
+		    B;
 		false ->
-		    cerl:c_seq(A, B)
+		    case cerl:is_c_seq(B) of
+			true ->
+			    %% Rewrite `do <E1> do <E2> <E3>' to `do do
+			    %% <E1> <E2> <E3>' so that the "body" of the
+			    %% outermost seq-operator is the expression
+			    %% which produces the final result (i.e.,
+			    %% E3). This can make other optimizations
+			    %% easier; see `let'.
+			    B1 = cerl:seq_arg(B),
+			    B2 = cerl:seq_body(B),
+			    cerl:c_seq(cerl:c_seq(A, B1), B2);
+			false ->
+			    cerl:c_seq(A, B)
+		    end
 	    end;
 	'let' ->
 	    A = reduce_expr(cerl:let_arg(E), Check),
@@ -384,8 +393,8 @@ reduce_expr(E, Check) ->
 		    %% We give up if the body does not reduce to a
 		    %% single variable. This is not a generic copy
 		    %% propagation.
-		    case cerl:is_c_var(B) of
-			true when length(Vs) == 1 ->
+		    case cerl:type(B) of
+			var when length(Vs) =:= 1 ->
 			    %% We have `let <V1> = <E> in <V2>':
 			    [V] = Vs,
 			    N1 = cerl:var_name(V),
@@ -394,17 +403,15 @@ reduce_expr(E, Check) ->
 				    %% `let X = <E> in X' equals `<E>'
 				    A;
 			       true ->
-				    %% `let X = <E> in Y' is equivalent
-				    %% to `Y' if and only if `<E>' is
-				    %% "safe"; otherwise it is eqivalent
-				    %% to `do <E> Y'.
-				    case is_safe_expr(A, Check) of
-					true ->
-					    B;
-					false ->
-					    cerl:c_seq(A, B)
-				    end
+				    %% `let X = <E> in Y' when X and Y
+				    %% are different variables is
+				    %% equivalent to `do <E> Y'.
+				    reduce_expr(cerl:c_seq(A, B), Check)
 			    end;
+			literal ->
+			    %% `let X = <E> in T' when T is a literal
+			    %% term is equivalent to `do <E> T'.
+			    reduce_expr(cerl:c_seq(A, B), Check);
 			_ ->
 			    cerl:update_c_let(E, Vs, A, B)
 		    end

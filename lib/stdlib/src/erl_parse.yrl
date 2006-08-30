@@ -41,7 +41,8 @@ atomic strings
 prefix_op mult_op add_op list_op comp_op
 rule rule_clauses rule_clause rule_body
 binary bin_elements bin_element bit_expr
-opt_bit_size_expr bit_size_expr opt_bit_type_list bit_type_list bit_type.
+opt_bit_size_expr bit_size_expr opt_bit_type_list bit_type_list bit_type
+typed_expr typed_attr_val typed_exprs typed_tuple.
 
 Terminals
 char integer float atom string var
@@ -56,7 +57,7 @@ char integer float atom string var
 '++' '--'
 '==' '/=' '=<' '<' '>=' '>' '=:=' '=/='
 '<<' '>>'
-'!' '='
+'!' '=' '::'
 dot.
 
 Expect 2.
@@ -69,6 +70,21 @@ form -> function dot : '$1'.
 form -> rule dot : '$1'.
 
 attribute -> '-' atom '(' attr_val ')' : build_attribute('$2', '$4').
+%% Added for TypEr
+%%----------------
+attribute -> '-' atom '(' typed_attr_val ')' : build_t_attribute('$2', '$4').
+
+typed_attr_val -> expr ',' typed_tuple : ['$1' , '$3'].
+
+typed_tuple -> '{' typed_exprs '}' : {tuple,line('$1'),'$2'}.
+
+typed_exprs -> typed_expr : ['$1'].
+typed_exprs -> typed_expr ',' typed_exprs : ['$1'|'$3'].
+typed_exprs -> typed_expr ',' exprs : ['$1'|add_type_info('$3')].
+typed_exprs -> expr ',' typed_exprs : [add_type_info('$1')|'$3'].
+
+typed_expr -> expr '::' function_call : {typed,'$1','$3'}.
+%%----------------
 
 attr_val -> exprs : '$1'.
 
@@ -451,6 +467,23 @@ parse_term(Tokens) ->
 %%	{attribute,Line,file,{Name,Line}}
 %%	{attribute,Line,Name,Val}
 
+%% Added for TypEr
+%%----------------
+add_type_info([]) -> [];
+add_type_info([Field|Rest]) ->
+    [add_type_info(Field) | add_type_info(Rest)];
+add_type_info(Field) ->
+    Line = line(Field),
+    {typed,Field,{call,Line,{atom,Line,any},[]}}.
+
+build_t_attribute({atom,La,record}, Val) ->
+    case Val of
+	[{atom,_Ln,Record},RecTuple] ->
+	    {attribute,La,typed_record,{Record,record_tuple(RecTuple)}};
+	_Other -> error_bad_decl(La, record)
+    end.
+%%----------------
+
 build_attribute({atom,La,module}, Val) ->
     case Val of
 	[{atom,_Lm,Module}] ->
@@ -543,6 +576,9 @@ record_fields([{atom,La,A}|Fields]) ->
     [{record_field,La,{atom,La,A}}|record_fields(Fields)];
 record_fields([{match,_Lm,{atom,La,A},Expr}|Fields]) ->
     [{record_field,La,{atom,La,A},Expr}|record_fields(Fields)];
+record_fields([{typed,Field,TypeInfo}|Fields]) ->    % for TypEr
+    [{typed_record_field,hd(record_fields([Field])),TypeInfo}
+     |record_fields(Fields)];
 record_fields([Other|_Fields]) ->
     return_error(line(Other), "bad record field");
 record_fields([]) -> [].

@@ -888,7 +888,7 @@ resolve_call_link(Instr,Addr,OldRefs,Map)->
   FSize = hipe_sparc:sdesc_size(SD),
   Live =  list_to_tuple(hipe_sparc:sdesc_live_slots(SD)),
   Arity = case hipe_sparc:sdesc_arity(SD) of
-	    N when N > ?SPARC_ARGS_IN_REGS -> N - ?SPARC_ARGS_IN_REGS;
+	    N when N > ?SPARC_NR_ARG_REGS -> N - ?SPARC_NR_ARG_REGS;
 	    _ -> 0
 	  end,
   ExnRA = case ExnLab of

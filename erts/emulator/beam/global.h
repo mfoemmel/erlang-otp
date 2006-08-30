@@ -394,7 +394,9 @@ do {										\
 
 Eterm erts_new_heap_binary(Process *p, byte *buf, int len, byte** datap);
 Eterm new_binary(Process*, byte*, int);
+#if !defined(HEAP_FRAG_ELIM_TEST)
 Eterm new_binary_arith(Process*, byte*, int);
+#endif
 Eterm erts_realloc_binary(Eterm bin, size_t size);
 void erts_cleanup_mso(ProcBin* pb);
 
@@ -796,8 +798,10 @@ void erts_init_obsolete(void);
 
 ERTS_GLB_INLINE long do_time_read_and_reset(void);
 #ifdef ERTS_TIMER_THREAD
+ERTS_GLB_INLINE int next_time(void);
 ERTS_GLB_INLINE void bump_timer(long);
 #else
+int next_time(void);
 void bump_timer(long);
 extern erts_smp_atomic_t do_time;	/* set at clock interrupt */
 ERTS_GLB_INLINE void do_time_add(long);
@@ -807,6 +811,7 @@ ERTS_GLB_INLINE void do_time_add(long);
 
 #ifdef ERTS_TIMER_THREAD
 ERTS_GLB_INLINE long do_time_read_and_reset(void) { return 0; }
+ERTS_GLB_INLINE int next_time(void) { return -1; }
 ERTS_GLB_INLINE void bump_timer(long ignore) { }
 #else
 ERTS_GLB_INLINE long do_time_read_and_reset(void)
@@ -821,7 +826,6 @@ ERTS_GLB_INLINE void do_time_add(long elapsed)
 
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
 
-int next_time(void);
 void init_time(void);
 void erl_set_timer(ErlTimer*, ErlTimeoutProc, ErlCancelProc, void*, Uint);
 void erl_cancel_timer(ErlTimer*);
@@ -996,6 +1000,20 @@ Eterm erts_int_rem(Process* p, Eterm arg1, Eterm arg2);
 Eterm erts_band(Process* p, Eterm arg1, Eterm arg2);
 Eterm erts_bor(Process* p, Eterm arg1, Eterm arg2);
 Eterm erts_bxor(Process* p, Eterm arg1, Eterm arg2);
+Eterm erts_bnot(Process* p, Eterm arg);
+
+#if defined(HEAP_FRAG_ELIM_TEST)
+Eterm erts_gc_mixed_plus(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_mixed_minus(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_mixed_times(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_mixed_div(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_int_div(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_int_rem(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_band(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_bor(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_bxor(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_bnot(Process* p, Eterm* reg, Uint live);
+#endif
 
 Uint erts_current_reductions(Process* current, Process *p);
 

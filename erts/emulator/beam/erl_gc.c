@@ -102,15 +102,15 @@ typedef struct {
 static Uint setup_rootset(Process*, Eterm*, int, Rootset*);
 static void cleanup_rootset(Rootset *rootset);
 static void remove_message_buffers(Process* p);
-static int major_collection(Process* p, int need, Eterm* objv, int nobj);
-static int minor_collection(Process* p, int need, Eterm* objv, int nobj);
+static int major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl);
+static int minor_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl);
 static void do_minor(Process *p, int new_sz, Eterm* objv, int nobj);
 static Eterm* sweep_one_area(Eterm* n_hp, Eterm* n_htop, char* src, Uint src_size);
 static Eterm* sweep_old_heap(Process* p, Eterm* n_hp, Eterm* n_htop,
 			     char* src, Uint src_size);
 static Eterm* collect_heap_frags(Process* p, Eterm* heap,
 				 Eterm* htop, Eterm* objv, int nobj);
-static void adjust_after_fullsweep(Process *p, int size_before,
+static Uint adjust_after_fullsweep(Process *p, int size_before,
 				   int need, Eterm *objv, int nobj);
 static void grow_new_heap(Process *p, Uint new_sz, Eterm* objv, int nobj);
 static void sweep_proc_bins(Process *p, int fullsweep);
@@ -328,10 +328,6 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
         trace_gc(p, am_gc_start);
     }
     if (erts_system_monitor_long_gc != 0) get_now(&ms1, &s1, &us1);
-    if (SAVED_HEAP_TOP(p) != NULL) {
-	HEAP_TOP(p) = SAVED_HEAP_TOP(p);
-	SAVED_HEAP_TOP(p) = NULL;
-    }
     OverRunCheck();
     if (GEN_GCS(p) >= MAX_GEN_GCS(p)) {
         FLAGS(p) |= F_NEED_FULLSWEEP;
@@ -370,7 +366,6 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
     reclaimed += reclaimed_now;
     erts_smp_spin_unlock(&info_lck);
 
-    ARITH_LOWEST_HTOP(p) = (Eterm *) 0;
     ARITH_AVAIL(p) = 0;
     ARITH_HEAP(p) = NULL;
     MSO(p).overhead = 0;
@@ -921,7 +916,6 @@ remove_message_buffers(Process* p)
     ErlHeapFragment* bp = MBUF(p);
 
     MBUF(p) = NULL;
-    HALLOC_MBUF(p) = NULL;
     MBUF_SIZE(p) = 0;
     while (bp != NULL) {
 	ErlHeapFragment* next_bp = bp->next;
@@ -941,16 +935,11 @@ static Eterm*
 collect_root_array(Process* p, Eterm* n_htop, Eterm* objv, int nobj)
 {
     ErlHeapFragment* qb;
-    char* heap_part = (char *) ARITH_LOWEST_HTOP(p);
-    Uint heap_part_size;
     Eterm gval;
     Eterm* ptr;
     Eterm val;
 
     ASSERT(p->htop != NULL);
-    ASSERT(heap_part != NULL);
-    heap_part_size = (char *)p->htop - heap_part;
-
     while (nobj--) {
 	gval = *objv;
 	
@@ -963,14 +952,10 @@ collect_root_array(Process* p, Eterm* n_htop, Eterm* objv, int nobj)
 		ASSERT(is_boxed(val));
 		*objv++ = val;
 	    } else {
-		if (in_area(ptr, heap_part, heap_part_size)) {
-		    MOVE_BOXED(ptr,val,n_htop,objv);
-		} else {
-		    for (qb = MBUF(p); qb != NULL; qb = qb->next) {
-			if (in_area(ptr, qb->mem, qb->size*sizeof(Eterm))) {
-			    MOVE_BOXED(ptr,val,n_htop,objv);
-			    break;
-			}
+		for (qb = MBUF(p); qb != NULL; qb = qb->next) {
+		    if (in_area(ptr, qb->mem, qb->size*sizeof(Eterm))) {
+			MOVE_BOXED(ptr,val,n_htop,objv);
+			break;
 		    }
 		}
 		objv++;
@@ -984,14 +969,71 @@ collect_root_array(Process* p, Eterm* n_htop, Eterm* objv, int nobj)
 	    if (is_non_value(val)) {
 		*objv++ = ptr[1];
 	    } else {
-		if (in_area(ptr, heap_part, heap_part_size)) {
-		    MOVE_CONS(ptr,val,n_htop,objv);
-		} else {
-		    for (qb = MBUF(p); qb != NULL; qb = qb->next) {
-			if (in_area(ptr, qb->mem, qb->size*sizeof(Eterm))) {
-			    MOVE_CONS(ptr,val,n_htop,objv);
-			    break;
-			}
+		for (qb = MBUF(p); qb != NULL; qb = qb->next) {
+		    if (in_area(ptr, qb->mem, qb->size*sizeof(Eterm))) {
+			MOVE_CONS(ptr,val,n_htop,objv);
+			break;
+		    }
+		}
+		objv++;
+	    }
+	    break;
+	}
+
+	default: {
+	    objv++;
+	    break;
+	}
+	}
+    }
+    return n_htop;
+}
+
+static Eterm*
+disallow_heap_frag_ref(Process* p, Eterm* n_htop, Eterm* objv, int nobj)
+{
+    ErlHeapFragment* qb;
+    Eterm gval;
+    Eterm* ptr;
+    Eterm val;
+
+    ASSERT(p->htop != NULL);
+
+    while (nobj--) {
+	gval = *objv;
+	
+	switch (primary_tag(gval)) {
+
+	case TAG_PRIMARY_BOXED: {
+	    ptr = boxed_val(gval);
+	    val = *ptr;
+	    if (IS_MOVED(val)) {
+		ASSERT(is_boxed(val));
+		*objv++ = val;
+	    } else {
+		for (qb = MBUF(p); qb != NULL; qb = qb->next) {
+		    if (in_area(ptr, qb->mem, qb->size*sizeof(Eterm))) {
+			abort();
+			MOVE_BOXED(ptr,val,n_htop,objv);
+			break;
+		    }
+		}
+		objv++;
+	    }
+	    break;
+	}
+
+	case TAG_PRIMARY_LIST: {
+	    ptr = list_val(gval);
+	    val = *ptr;
+	    if (is_non_value(val)) {
+		*objv++ = ptr[1];
+	    } else {
+		for (qb = MBUF(p); qb != NULL; qb = qb->next) {
+		    if (in_area(ptr, qb->mem, qb->size*sizeof(Eterm))) {
+			abort();
+			MOVE_CONS(ptr,val,n_htop,objv);
+			break;
 		    }
 		}
 		objv++;
@@ -1118,7 +1160,6 @@ collect_heap_frags(Process* p, Eterm* n_hstart, Eterm* n_htop,
     char* frag_begin;
     Uint frag_size;
     ErlMessage* mp;
-    ErlHeapFragment* halloc_mbuf;
 
     /*
      * Go through the root set, move everything that it is in one of the
@@ -1146,7 +1187,7 @@ collect_heap_frags(Process* p, Eterm* n_hstart, Eterm* n_htop,
 				    p->dictionary->used);
     }
     if (p->debug_dictionary != NULL) {
-	n_htop = collect_root_array(p, n_htop,
+	n_htop = disallow_heap_frag_ref(p, n_htop,
 				    p->debug_dictionary->data,
 				    p->debug_dictionary->used);
     }
@@ -1167,51 +1208,9 @@ collect_heap_frags(Process* p, Eterm* n_hstart, Eterm* n_htop,
     /*
      * Now all references in the root set point to the new heap. However,
      * many references on the new heap point to heap fragments.
-     *
-     * We must scan the heap once for every heap framgent. Order:
-     *
-     * 1. All heap fragments allocated by HAlloc().
-     * 2. The part of the heap that may contain pointers into ArithAlloc'ed
-     *    heap fragments.
-     * 3. All heap fragments allocated by ArithAlloc().
      */
 
-    ASSERT(ARITH_LOWEST_HTOP(p) <= p->htop);
     qb = MBUF(p);
-    if ((halloc_mbuf = HALLOC_MBUF(p)) != NULL) {
-	/*
-	 * Sweep using all heap fragments allocated by HAlloc().
-	 */
-	for (;;) {
-	    frag_begin = (char *) qb->mem;
-	    frag_size = qb->size * sizeof(Eterm);
-	    n_htop = sweep_one_area(n_hstart, n_htop, frag_begin, frag_size);
-	    if (qb == halloc_mbuf) {
-		qb = qb->next;
-		break;
-	    }
-	    qb = qb->next;
-	}
-    }
-
-    /*
-     * Sweep using part of the heap as source.
-     */
-
-    frag_begin = (char *) ARITH_LOWEST_HTOP(p);
-    if (frag_begin == NULL) {
-	frag_size = 0;
-    } else {
-	frag_size = (char *)p->htop - frag_begin;
-    }
-    if (frag_size != 0) {
-	n_htop = sweep_one_area(n_hstart, n_htop, frag_begin, frag_size);
-    }
-
-    /*
-     * Sweep using the remaining heap fragments (allocated by ArithAlloc()).
-     */
-
     while (qb != NULL) {
 	frag_begin = (char *) qb->mem;
 	frag_size = qb->size * sizeof(Eterm);

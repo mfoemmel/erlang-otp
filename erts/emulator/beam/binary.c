@@ -116,6 +116,7 @@ erts_new_heap_binary(Process *p, byte *buf, int len, byte** datap)
     return make_binary(hb);
 }
 
+#if !defined(HEAP_FRAG_ELIM_TEST)
 /* Like new_binary, but uses ArithAlloc. */
 /* Silly name. Come up with something better. */
 Eterm new_binary_arith(Process *p, byte *buf, int len)
@@ -161,6 +162,7 @@ Eterm new_binary_arith(Process *p, byte *buf, int len)
     MSO(p).overhead += pb->size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
     return make_binary(pb);
 }
+#endif
 
 Eterm
 erts_realloc_binary(Eterm bin, size_t size)

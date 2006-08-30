@@ -10,6 +10,44 @@
  * with a number of orthogonal properties (e.g., UPDATES_HP,
  * NEEDS_NSP, CAN_FAIL, CAN_GC, etc), from which we should
  * generate appropriate interfaces.
+ *
+ * The classification is expressed in terms of the resources
+ * and BIF failure modes described below.
+ *
+ * Resources:
+ * - NSP: native stack pointer
+ *   NSP is read by GC BIFs and primops, and hipe_handle_exception().
+ *   NSP is updated at compiler-inserted calls to hipe_inc_nstack().
+ *   No other BIF or primop may access NSP.
+ * - NSP_LIMIT: native stack limit
+ *   NSP_LIMIT is only updated at compiler-inserted calls to inc_stack.
+ *   Everywhere else, the cached value equals the value stored in P.
+ * - NRA: native return address
+ *   NRA is read by GC BIFs and primops, and hipe_handle_exception().
+ *   No BIF or primop may update NRA.
+ * - HP: heap pointer
+ *   All BIFs can read and update HP.
+ *   Primops with access to P that do not access HP are called "nocons".
+ * - HP_LIMIT: heap limit
+ *   HP_LIMIT is only updated by GC BIFs and primops.
+ *   Everywhere else, the cached value equals the value stored in P.
+ * - FCALLS: reduction counter
+ *   All BIFs can read and update FCALLS (because BEAM abuses FCALLS
+ *   to trigger GCs). XXX: can we avoid that overhead?
+ *   All nocons primops do not access FCALLS.
+ *   All other primops with access to P can read and update FCALLS.
+ * - P: pointer to the state record for the process
+ *
+ * BIF failure modes:
+ * - none: zero-arity BIFs may not signal exceptions
+ *   The BIF wrapper needs no checks before returning.
+ * - standard: may signal any exception except RESCHEDULE
+ *   The BIF wrapper must check for an exception before returning.
+ * - expensive: may signal any exception including RESCHEDULE
+ *   The BIF wrapper must preserve the actual parameters before
+ *   calling the C code. After the C code returns, the BIF wrapper
+ *   must check for an exception and be prepared to supply the
+ *   actual parameters and its own start address to the handler.
  */
 
 /****************************************************************
@@ -24,10 +62,8 @@
  *
  * A BIF with implicit P parameter, 0-3 ordinary parameters,
  * which may fail but not with RESCHEDULE.
- * Native P state (RA/NSP/HP/etc) may be accessed and updated.
- * [XXX: most will CONS but not access P->hipe]
- * GC may not occur (NSP/HP limits unchanged).
- * [XXX: Some actually do GC. SPARC could be broken.]
+ * HP and FCALLS may be read and updated.
+ * HP_LIMIT, NSP, NSP_LIMIT, and NRA may not be accessed.
  */
 
 /*
@@ -49,12 +85,25 @@
  */
 
 /*
+ * gc_bif_interface_0(nbif_name, cbif_name)
+ * gc_bif_interface_1(nbif_name, cbif_name)
+ * gc_bif_interface_2(nbif_name, cbif_name)
+ *
+ * A BIF which may do a GC or walk the native stack.
+ * May read NSP, NSP_LIMIT, NRA, HP, HP_LIMIT, and FCALLS.
+ * May update HP, HP_LIMIT, and FCALLS.
+ * May not update NSP, NSP_LIMIT, or NRA.
+ * Otherwise identical to standard_bif_interface_N.
+ */
+
+/*
  * gc_nofail_primop_interface_1(nbif_name, cbif_name)
  *
  * A primop with implicit P parameter, 1 ordinary parameter,
  * and no failure mode.
- * Native P state (RA/NSP/HP/etc) may be accessed and updated.
- * GC may occur (NSP/HP limits changed).
+ * May read NSP, NSP_LIMIT, NRA, HP, HP_LIMIT, and FCALLS.
+ * May update HP, HP_LIMIT, and FCALLS.
+ * May not update NSP, NSP_LIMIT, or NRA.
  */
 
 /*
@@ -66,8 +115,7 @@
  *
  * A primop with implicit P parameter, 0-3 or 5 ordinary parameters,
  * and no failure mode.
- * Native P state will not be accessed or updated.
- * GC may not occur (NSP/HP limits unchanged).
+ * HP, HP_LIMIT, FCALLS, NSP, NSP_LIMIT, and NRA may not be accessed.
  */
 
 /*
@@ -79,8 +127,7 @@
  *
  * A primop with no P parameter, 0-3 or 5 ordinary parameters,
  * and no failure mode.
- * Native P state will not be accessed or updated.
- * GC may not occur (NSP/HP limits unchanged).
+ * HP, HP_LIMIT, FCALLS, NSP, NSP_LIMIT, and NRA may not be accessed.
  */
 
 /****************************************************************
@@ -101,12 +148,21 @@ expensive_bif_interface_1(nbif_unlink_1, unlink_1)
 expensive_bif_interface_1(nbif_hipe_bifs_test_reschedule_1, hipe_bifs_test_reschedule_1)
 
 /*
- * BIFs that may trigger a native stack walk with p->hipe.narity != 0.
- * Relevant when NR_ARG_REGS < the arity of the BIF.
+ * BIFs and primops that may do a GC (change heap limit and walk the native stack).
  */
-standard_bif_interface_2(nbif_check_process_code_2, hipe_check_process_code_2)
-standard_bif_interface_1(nbif_garbage_collect_1, hipe_garbage_collect_1)
-standard_bif_interface_1(nbif_hipe_bifs_show_nstack_1, hipe_show_nstack_1)
+gc_bif_interface_2(nbif_check_process_code_2, hipe_check_process_code_2)
+gc_bif_interface_0(nbif_garbage_collect_0, garbage_collect_0)
+gc_bif_interface_1(nbif_garbage_collect_1, hipe_garbage_collect_1)
+gc_nofail_primop_interface_1(nbif_gc_1, hipe_gc)
+
+/*
+ * Debug BIFs that need read access to the full state.
+ * hipe_bifs:nstack_used_size/0 only needs read access to NSP.
+ * They are classified as GC BIFs for simplicity.
+ */
+gc_bif_interface_1(nbif_hipe_bifs_show_nstack_1, hipe_show_nstack_1)
+gc_bif_interface_1(nbif_hipe_bifs_show_pcb_1, hipe_bifs_show_pcb_1)
+gc_bif_interface_0(nbif_hipe_bifs_nstack_used_size_0, hipe_bifs_nstack_used_size_0)
 
 /*
  * Arithmetic operators called indirectly by the HiPE compiler.
@@ -127,7 +183,6 @@ standard_bif_interface_1(nbif_bnot_1, bnot_1)
 /*
  * Miscellaneous primops.
  */
-gc_nofail_primop_interface_1(nbif_gc_1, hipe_gc)
 standard_bif_interface_1(nbif_set_timeout, hipe_set_timeout)
 standard_bif_interface_1(nbif_conv_big_to_float, hipe_conv_big_to_float)
 standard_bif_interface_2(nbif_rethrow, hipe_rethrow)
@@ -147,7 +202,9 @@ noproc_primop_interface_2(nbif_eq_2, eq)
 
 /*
  * Bit-syntax primops with implicit P parameter.
- * XXX: only get_integer conses on the ordinary heap
+ * XXX: all of the _2 versions cons on the ordinary heap
+ * XXX: the non-_2 versions only cons on the arithmetic heap
+ * XXX: all of them can cons and thus update FCALLS
  */
 nofail_primop_interface_2(nbif_bs_get_integer, erts_bs_get_integer)
 nofail_primop_interface_2(nbif_bs_get_binary, erts_bs_get_binary)
@@ -206,7 +263,6 @@ noproc_primop_interface_5(nbif_bs_put_big_integer, hipe_bs_put_big_integer)
 ifelse(ERTS_SMP,1,`
 nocons_nofail_primop_interface_0(nbif_clear_timeout, hipe_clear_timeout)
 nocons_nofail_primop_interface_0(nbif_check_get_msg, hipe_check_get_msg)
-nocons_nofail_primop_interface_0(nbif_next_msg, hipe_next_msg)
 noproc_primop_interface_1(nbif_atomic_inc, hipe_atomic_inc)
 ',)dnl
 

@@ -66,6 +66,11 @@
  *  the preprocessor (usually by a -D option).
  */
 
+#ifdef sgi
+#include <sys/types.h>
+#include <sys/sysmp.h>
+#endif
+
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -226,9 +231,18 @@ get_basic_mem(unsigned long *tot, unsigned long *used, unsigned long *pagesize){
 fail:
     print_error("%s", strerror(errno));
     exit(1);
+#elif defined(sgi)
+	struct rminfo rmi;
+	if (sysmp(MP_SAGET, MPSA_RMINFO, &rmi, sizeof(rmi)) != -1) {
+		*tot = (unsigned long)(rmi.physmem);
+		*used = (unsigned long)(rmi.physmem - rmi.freemem);
+		*pagesize = (unsigned long)getpagesize(); }
+	else {
+		print_error("%s", strerror(errno));
+		exit(1); }
 #else  /* SunOS4 */
-    *used = (1<<27) >> shiftleft;	       	/* Fake! 128 MB used */
-    *tot = (1<<28) >> shiftleft;		/* Fake! 256 MB total */
+    *used = (1<<27);	       	/* Fake! 128 MB used */
+    *tot = (1<<28);		/* Fake! 256 MB total */
     *pagesize = 1;
 #endif
 }    

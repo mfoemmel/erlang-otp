@@ -87,11 +87,15 @@ ifeq ($(SNMP_DEBUG),d)
   SNMP_FLAGS += -Dsnmp_debug
 endif
 
+ifeq ($(DONT_USE_TS),true)
+  SNMP_FLAGS += -DDONT_USE_TEST_SERVER
+endif
+
 
 SNMP_MIB_FLAGS += -pa ../ebin +version 
 
 ifneq ($(MIBS_VERBOSITY),) 
-SNMP_MIB_FLAGS += +'{verbosity,$(MIBS_VERBOSITY)}'
+  SNMP_MIB_FLAGS += +'{verbosity,$(MIBS_VERBOSITY)}'
 endif
 
 ifeq ($(SNMP_DESC),true)

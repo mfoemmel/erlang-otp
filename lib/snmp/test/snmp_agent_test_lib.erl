@@ -144,19 +144,29 @@ init_all(Config0) when list(Config0) ->
     %% Create necessary files
     %% 
 
-    Dir = ?config(priv_dir, Config),
-    ?DBG("init_all -> Dir ~p", [Dir]),
+    PrivDir = ?config(priv_dir, Config),
+    ?DBG("init_all -> PrivDir ~p", [PrivDir]),
+
+    TopDir = filename:join(PrivDir, snmp_agent_test),
+    case file:make_dir(TopDir) of
+	ok ->
+	    ok;
+	{error, eexist} ->
+	    ok;
+	Error ->
+	    ?FAIL({failed_creating_subsuite_top_dir, Error})
+    end,
 
     DataDir = ?config(data_dir, Config),
     ?DBG("init_all -> DataDir ~p", [DataDir]),
 
-    file:make_dir(MgrDir = filename:join(Dir, "mgr_dir/")),
+    ?line ok = file:make_dir(MgrDir = filename:join(TopDir, "mgr_dir/")),
     ?DBG("init_all -> MgrDir ~p", [MgrDir]),
 
-    file:make_dir(AgentDir = filename:join(Dir, "agent_dir/")),
+    ?line ok = file:make_dir(AgentDir = filename:join(TopDir, "agent_dir/")),
     ?DBG("init_all -> AgentDir ~p", [AgentDir]),
 
-    file:make_dir(SaDir = filename:join(Dir, "sa_dir/")),
+    ?line ok = file:make_dir(SaDir = filename:join(TopDir, "sa_dir/")),
     ?DBG("init_all -> SaDir ~p", [SaDir]),
 
 
@@ -172,11 +182,11 @@ init_all(Config0) when list(Config0) ->
     
     ?DBG("init_all -> application mnesia: set_env dir",[]),
     ?line application_controller:set_env(mnesia, dir, 
-					 filename:join(Dir, "Mnesia1")),
+					 filename:join(TopDir, "Mnesia1")),
 
     ?DBG("init_all -> application mnesia: set_env dir on node ~p",[SaNode]),
     ?line rpc:call(SaNode, application_controller, set_env,
-		   [mnesia, dir,  filename:join(Dir, "Mnesia2")]),
+		   [mnesia, dir,  filename:join(TopDir, "Mnesia2")]),
 
     ?DBG("init_all -> create mnesia schema",[]),
     ?line ok = mnesia:create_schema([SaNode, node()]),

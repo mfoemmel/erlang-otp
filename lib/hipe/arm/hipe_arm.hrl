@@ -87,7 +87,7 @@
 -record(pseudo_bx, {src}).		% alias for "mov pc,src" to help cfg
 -record(pseudo_call, {funv, sdesc, contlab, linkage}).
 -record(pseudo_call_prepare, {nrstkargs}).
--record(pseudo_li, {dst, imm}).
+-record(pseudo_li, {dst, imm, label}).	% pre-generated label for use by the assembler
 -record(pseudo_move, {dst, src}).
 -record(pseudo_switch, {jtab, index, labels}).
 -record(pseudo_tailcall, {funv, arity, stkargs, linkage}).

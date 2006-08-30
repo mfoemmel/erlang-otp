@@ -18,9 +18,9 @@
 %%              * 2001-07-30 EJ (happi@csd.uu.se):
 %%               Fixed some bugs and started cleanup.
 %%  CVS      :
-%%              $Author: mikpe $
-%%              $Date: 2005/09/15 13:45:48 $
-%%              $Revision: 1.20 $
+%%              $Author: kostis $
+%%              $Date: 2006/07/24 16:34:36 $
+%%              $Revision: 1.21 $
 %% ====================================================================
 %%  Exports  :
 %%    gen_switch_val(I, VarMap, ConstTab, Options)
@@ -539,7 +539,7 @@ inline_search(KeyList, LabelList, KeyReg, Default) ->
       %% append the code and return it
       A ++ B ++ [Lab3] ++ D;
     
-    Length == 2 ->
+    Length =:= 2 ->
       %% get the first and second elements and theirs labels
       Key_first = hd(KeyList),
       First_label = hd(LabelList),
@@ -563,7 +563,7 @@ inline_search(KeyList, LabelList, KeyReg, Default) ->
 			      hipe_rtl:label_name(Default) , 0.5)],
       A ++ B;
     
-    Length == 1 ->
+    Length =:= 1 ->
       Key = hd(KeyList),
       Label = hd(LabelList),
       
@@ -606,7 +606,7 @@ inline_atom_search(Start, End, Block, LBlock, KeyReg, Default, Labels) ->
       C = [inline_atom_search(Start1,End,Block,LBlock,KeyReg,Default,Labels)],
       A ++ B ++ [Lab3] ++ C;
     
-    Length == 2 ->
+    Length =:= 2 ->
       L1 = hipe_rtl:mk_new_label(),
       L2 = hipe_rtl:mk_new_label(),
       L3 = hipe_rtl:mk_new_label(),
@@ -627,7 +627,7 @@ inline_atom_search(Start, End, Block, LBlock, KeyReg, Default, Labels) ->
        hipe_rtl:mk_goto_index(LBlock, End, Labels)
       ];
     
-    Length == 1 ->
+    Length =:= 1 ->
       NewLab = hipe_rtl:mk_new_label(),
       [
        hipe_rtl:mk_load_word_index(Reg,Block,Start),

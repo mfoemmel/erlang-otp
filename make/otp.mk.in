@@ -92,9 +92,17 @@ ifneq (,$(findstring $(origin EBIN),$(DUBIOUS_ORIGINS)))
 EBIN = ../ebin
 endif
 
+# Generated (non ebin) files...
+ifneq (,$(findstring $(origin EGEN),$(DUBIOUS_ORIGINS)))
+EGEN = .
+endif
+
 ifneq (,$(findstring $(origin ESRC),$(DUBIOUS_ORIGINS)))
 ESRC = .
 endif
+
+$(EBIN)/%.beam: $(EGEN)/%.erl
+	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 
 $(EBIN)/%.beam: $(ESRC)/%.erl
 	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
@@ -111,14 +119,14 @@ $(EBIN)/%.beam: $(ESRC)/%.erl
 
 ## Uncomment these lines and add .idl to suffixes above to have erlc 
 ## eat IDL files
-##.idl.erl:
+##$(EGEN)/%.erl: $(ESRC)/%.idl
 ##	$(ERLC) $(IDL_FLAGS) $<
 
-.yrl.erl:
-	$(ERLC) $(YRL_FLAGS) $<
+$(EGEN)/%.erl: $(ESRC)/%.yrl
+	$(ERLC) $(YRL_FLAGS) -o$(EGEN) $<
 
-.xrl.erl:
-	$(ERLC) $(XRL_FLAGS) $<
+$(EGEN)/%.erl: $(ESRC)/%.xrl
+	$(ERLC) $(XRL_FLAGS) -o$(EGEN) $<
 
 # ----------------------------------------------------
 #	SNMP language section

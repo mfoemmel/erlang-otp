@@ -539,26 +539,26 @@ send_reply(CH, Reply, MaxSz, _ReqSz, Reqs, Acks) ->
 do_send_msg(CD, Trans, [], []) ->
     Body   = {transactions, [Trans]},
     Slogan = "send trans reply/pending", 
-    ?d("do_send_msg -> " ++ Slogan, []),
+    ?d("do_send_msg -> ~s", [Slogan]),
     megaco_messenger_misc:send_body(CD, Slogan, Body);
 do_send_msg(CD, Trans, Reqs0, []) ->
     Reqs   = [{transactionRequest, Req} || {_, Req} <- Reqs0],
     Body   = {transactions, [Trans|Reqs]},
     Slogan = "send trans reply/pending and reqs", 
-    ?d("do_send_msg -> " ++ Slogan, []),
+    ?d("do_send_msg -> ~s", [Slogan]),
     megaco_messenger_misc:send_body(CD, Slogan, Body);
 do_send_msg(CD, Trans, [], SerialRanges) ->
     Acks   = make_acks(ranges(SerialRanges), []),
     Body   = {transactions, [Trans, {transactionResponseAck, Acks}]},
     Slogan = "send trans reply/pending and acks", 
-    ?d("do_send_msg -> " ++ Slogan, []),
+    ?d("do_send_msg -> ~s", [Slogan]),
     megaco_messenger_misc:send_body(CD, Slogan, Body);
 do_send_msg(CD, Trans, Reqs0, SerialRanges) ->
     Acks   = make_acks(ranges(SerialRanges), []),
     Reqs   = [{transactionRequest, Req} || {_, Req} <- Reqs0],
     Body   = {transactions, [Trans, {transactionResponseAck, Acks}|Reqs]},
     Slogan = "send trans reply/pending, reqs and acks", 
-    ?d("do_send_msg -> " ++ Slogan, []),
+    ?d("do_send_msg -> ~s", [Slogan]),
     megaco_messenger_misc:send_body(CD, Slogan, Body).
 
 

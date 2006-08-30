@@ -20,33 +20,34 @@ include vsn.mk
 
 # ----------------------------------------------------------------------
 
-ERTSDIRS = emulator doc/src
-ERTSDIRS += etc epmd lib_src
+# Other erts dirs than the emulator dir...
+ERTSDIRS = doc/src etc epmd lib_src
 ifeq ($(NO_START_SCRIPTS),)
 ERTSDIRS += start_scripts
 endif
 
-ifeq ($(TARGET),win32)
-	BUILD_SHARED_EMU=false
-	BUILD_HYBRID_EMU=false
-else
-ifeq ($(findstring vxworks,$(TARGET)),vxworks)
-	BUILD_SHARED_EMU=false
-	BUILD_HYBRID_EMU=false
-else
-ifeq ($(findstring ose,$(TARGET)),ose)
-	BUILD_SHARED_EMU=false
-	BUILD_HYBRID_EMU=false
-else
-	BUILD_SHARED_EMU=false
-	BUILD_HYBRID_EMU=true
+BUILD_HYBRID_EMU=@ERTS_BUILD_HYBRID_EMU@
+
+EXTRA_FLAVORS=smp
+ifeq ($(BUILD_HYBRID_EMU),yes)
+EXTRA_FLAVORS += hybrid
 endif
-endif
-endif
+
+#
+# Some byggy 'make's get confused when a directory is created and used
+# for storing files which other files depend on during the same "make
+# session". As a workaround we do a 'make generate' (which creates
+# all directories) before doing 'make opt', etc...
+#
 
 all: hybrid smp opt
 
 debug opt docs clean:
+	@ case $@ in \
+	    docs|clean) ;; \
+	    *) ( cd emulator && $(MAKE) generate TYPE=$@ FLAVOR=$(FLAVOR)) ;; \
+	  esac
+	@ ( cd emulator && $(MAKE) $@ FLAVOR=$(FLAVOR))
 	@for d in $(ERTSDIRS); do \
 		 if test -d $$d; then ( cd $$d && $(MAKE) $@ )fi ; \
 	 done
@@ -56,26 +57,16 @@ debug opt docs clean:
 # - don't use them in scripts or assume they will always stay like this!
 #
 
-shared:
-ifeq ($(BUILD_SHARED_EMU),true)
-	( cd emulator && $(MAKE) $@ )
-else
-	@echo '*** Omitted build of shared heap emulator'
-	@echo '*** since target is $(TARGET)'
-endif
+$(EXTRA_FLAVORS):
+	@ ( cd emulator \
+	    && $(MAKE) generate TYPE=opt FLAVOR=$@ \
+	    && $(MAKE) opt FLAVOR=$@ )
 
+ifneq ($(BUILD_HYBRID_EMU),yes)
 hybrid:
-ifeq ($(BUILD_HYBRID_EMU),true)
-	( cd emulator && $(MAKE) $@ )
-else
 	@echo '*** Omitted build of hybrid heap emulator'
 	@echo '*** since target is $(TARGET)'
 endif
-
-smp:
-	( cd emulator && $(MAKE) $@ )
-
-
 
 # Make erl script and erlc in $(ERL_TOP)/bin which runs the compiled version
 # Note that erlc is not a script and requires extra handling on cygwin.
@@ -131,12 +122,13 @@ makefiles:
 #
 
 release release_docs:
-ifeq ($(BUILD_HYBRID_EMU),true)
-	@if test $@ = release; then ( cd emulator && $(MAKE) $@ TYPE=hybrid) fi
+ifeq ($(BUILD_HYBRID_EMU),yes)
+	@if test $@ = release; then ( cd emulator && $(MAKE) $@ FLAVOR=hybrid) fi
 else
 	@if test $@ = release; then ( $(MAKE) hybrid ) fi
 endif
-	@if test $@ = release; then ( cd emulator && $(MAKE) $@ TYPE=smp) fi
+	@if test $@ = release; then ( cd emulator && $(MAKE) $@ FLAVOR=smp) fi
+	@ (cd emulator && $(MAKE) $@ FLAVOR=plain)
 	@for d in $(ERTSDIRS); do \
 		 if test -d $$d; then ( cd $$d && $(MAKE) $@ )fi ; \
 	 done
@@ -144,4 +136,4 @@ endif
 # ----------------------------------------------------------------------
 
 .PHONY: debug opt docs clean local_setup configure release \
-	release_docs run_test_cases shared
+	release_docs run_test_cases hybrid smp

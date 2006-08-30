@@ -885,10 +885,10 @@ BIF_RETTYPE hipe_bifs_get_hrvtime_0(BIF_ALIST_0)
     Eterm res;
     FloatDef f;
 
-    if( !hrvtime_is_started() ) {
+    if (!hrvtime_is_started()) {
 	start_hrvtime();
-	if( !hrvtime_is_started() )
-	    BIF_ERROR(BIF_P, BADARG);
+	if (!hrvtime_is_started())
+	    BIF_RET(NIL); /* arity 0 BIFs may not fail */
     }
     f.fd = get_hrvtime();
     hp = HAlloc(BIF_P, FLOAT_SIZE_OBJECT);

@@ -106,7 +106,7 @@ do_coloring(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
   Coalesce = not(hipe_moves:is_empty_worklist(Moves)),
   Freeze   = not(hipe_reg_worklists:is_empty_freeze(Worklists)),
   Spill    = not(hipe_reg_worklists:is_empty_spill(Worklists)),
-  if Simplify == true ->
+  if Simplify =:= true ->
       {IG0, Worklists0, Moves0} = 
 	simplify(hipe_reg_worklists:simplify(Worklists),
 		 IG, 
@@ -115,17 +115,17 @@ do_coloring(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
 		 K),
       do_coloring(IG0, Worklists0, Moves0, Alias,
 		  K, SpillLimit, Target);
-     Coalesce == true ->
+     Coalesce =:= true ->
       {Moves0, IG0, Worklists0, Alias0} =
 	coalesce(Moves, IG, Worklists, Alias, K, Target),
       do_coloring(IG0, Worklists0, Moves0, Alias0, 
 		  K, SpillLimit, Target);
-     Freeze == true ->
+     Freeze =:= true ->
       {Worklists0,Moves0} = 
 	freeze(K, Worklists, Moves, IG, Alias),
       do_coloring(IG, Worklists0, Moves0, Alias, 
 		  K, SpillLimit, Target);
-     Spill == true ->
+     Spill =:= true ->
       {Worklists0, Moves0} = 
 	selectSpill(Worklists, Moves, IG, K, Alias, SpillLimit),
       do_coloring(IG, Worklists0, Moves0, Alias, 
@@ -558,7 +558,7 @@ coalesce(Moves, IG, Worklists, Alias, K, Target) ->
 		false -> {Alias_src, Alias_dst}
 	      end,
       %% When debugging, check that neither V nor U is on the stack.
-      if U == V ->
+      if U =:= V ->
 	  Moves1 = Moves0, % drop coalesced move Move
 	  Worklists1 = add_worklist(Worklists, U, K, Moves1, IG, Target),
 	  {Moves1, IG, Worklists1, Alias};
@@ -975,8 +975,8 @@ moves(U, Move, Alias, Moves) ->
   %% and coloured multiple times by assignColors(). Ouch!
   X1 = getAlias(X, Alias),
   Y1 = getAlias(Y, Alias),
-  if U == X1 -> Y1;
-     U == Y1 -> X1;
+  if U =:= X1 -> Y1;
+     U =:= Y1 -> X1;
      true -> exit({?MODULE,moves}) % XXX: shouldn't happen
   end.
 

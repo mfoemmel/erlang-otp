@@ -107,10 +107,10 @@ split_path([], _, Current, Path) ->
     lists:reverse(Path, [reverse_element(Current)]).
 
 reverse_element([]) -> ".";
-reverse_element([$"|T]) ->
+reverse_element([$"|T]) ->	%"
     case lists:reverse(T) of
-	[$"|List] -> List;
-	List -> List ++ [$"]
+	[$"|List] -> List;	%"
+	List -> List ++ [$"]	%"
     end;
 reverse_element(List) ->
     lists:reverse(List).

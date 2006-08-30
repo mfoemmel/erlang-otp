@@ -355,6 +355,7 @@ doit_loop(#state{coordinators = Coordinators, participants = Participants, super
 	
 	{From, {restart, Tid, Store}} ->
 	    A2 = restore_stores(Coordinators, Tid, Store),
+	    clear_fixtable([Store]),
 	    ?ets_match_delete(Store, '_'),
 	    ?ets_insert(Store, {nodes, node()}),
 	    reply(From, {restarted, Tid}, State#state{coordinators = A2});

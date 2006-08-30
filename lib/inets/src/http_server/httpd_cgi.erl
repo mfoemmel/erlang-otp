@@ -70,10 +70,16 @@ handle_headers(CGIHeaders) ->
 %%%========================================================================
 parse_headers(<<>>, Header, Headers) ->
     {?MODULE, parse_headers, [<<>>, Header, Headers]};
+parse_headers(<<?CR,?LF>>, Header, Headers) ->
+    {?MODULE, parse_headers, [<<?CR,?LF>>, Header, Headers]};
 parse_headers(<<?LF>>, Header, Headers) ->
     {?MODULE, parse_headers, [<<?LF>>, Header, Headers]};
+parse_headers(<<?CR, ?LF, ?CR, ?LF, Rest/binary>>, Header, Headers) ->
+    {ok, {[lists:reverse([?LF, ?CR | Header]) | Headers], Rest}};
 parse_headers(<<?LF, ?LF, Rest/binary>>, Header, Headers) ->
     {ok, {[lists:reverse([?LF | Header]) | Headers], Rest}};
+parse_headers(<<?CR, ?LF, Rest/binary>>, Header, Headers) ->
+    parse_headers(Rest, [], [lists:reverse([?LF, ?CR | Header]) | Headers]);
 parse_headers(<<?LF, Rest/binary>>, Header, Headers) ->
     parse_headers(Rest, [], [lists:reverse([?LF | Header]) | Headers]);
 parse_headers(<<Octet, Rest/binary>>, Header, Headers) ->
@@ -113,3 +119,4 @@ handle_headers([CGIHeader | CGIHeaders], HTTPHeaders, Status) ->
 	    handle_headers(CGIHeaders,
 			   [{FieldName, FieldValue} | HTTPHeaders], Status)
     end.	
+

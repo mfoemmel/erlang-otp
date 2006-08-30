@@ -67,7 +67,11 @@
 #	define ssize_t int
 #	define GET_SOCK_ERRNO() (WSAGetLastError() - WSABASEERR)
 #	define IS_INVALID_SOCKET(X) ((X) == INVALID_SOCKET)
+#	ifdef __GNUC__
+#		define INLINE __inline__
+#	else
 #	define INLINE __forceinline
+#       endif
 #	define DIR_SEP_CHAR '\\'
 #else
 #	define SOCKET int

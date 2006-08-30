@@ -82,9 +82,12 @@ cl_check_init_plt(Args) ->
 	  case parse_args(Args) of
 	    [Opts] when is_list(Opts) ->
 	      OptsRecord = dialyzer_options:build(Opts),
-	      dialyzer_cl:check_init_plt(OptsRecord);
+	      case dialyzer_cl:check_init_plt(OptsRecord) of
+		ok -> ok;
+		error -> exit(error)
+	      end;
 	    Other ->
-	      invalid_args("dialyzer:gui/1", Other)
+	      invalid_args("dialyzer:cl_check_init_plt/1", Other)
 	  end
       end,
   doit(F).
@@ -119,7 +122,7 @@ invalid_args(Where, Args) ->
   report("invalid arguments to ~s: ~w.", [Where, Args]),
   exit(error).
 
-parse_args([A | As]) when atom(A) ->
+parse_args([A | As]) when is_atom(A) ->
   [parse_arg(atom_to_list(A)) | parse_args(As)];
 parse_args([A | As]) ->
   [parse_arg(A) | parse_args(As)];

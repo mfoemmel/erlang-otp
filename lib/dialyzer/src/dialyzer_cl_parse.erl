@@ -1,3 +1,5 @@
+%% -*- erlang-indent-level: 2 -*-
+%%
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -14,24 +16,6 @@
 %%     $Id$
 %%
 
-%%% -*- erlang-indent-level: 2 -*-
-%% ``The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
-%%
 -module(dialyzer_cl_parse).
 
 -export([start/0]).
@@ -106,6 +90,11 @@ cl(["-pa",Path|T]) ->
     true -> cl(T);
     {error, _} -> error("Bad directory for -pa: "++Path)
   end;
+cl(["--plt", Plt|T]) ->
+  put(dialyzer_init_plt, Plt),
+  cl(T);
+cl(["--plt"]) ->
+  error("no plt specified for --plt");
 cl(["-q"|T]) ->
   put(dialyzer_options_quiet, true),
   cl(T);
@@ -137,6 +126,11 @@ command_line(T0) ->
   put(dialyzer_options_gui, false),
   {Args,T} = collect_args(T0),
   append_var(dialyzer_options_files, Args),
+  %% if all files specified are ".erl" files, set the 'src' flag automatically
+  case lists:all(fun(F) -> filename:extension(F) =:= ".erl" end, Args) of
+    true -> put(dialyzer_options_from, src_code);
+    false -> ok
+  end,
   cl(T).
 
 error(Str) ->
@@ -144,7 +138,6 @@ error(Str) ->
   erlang:halt(1).
 
 init() ->
-  os:putenv("DIALYZER_USE_CALLGRAPH", "true"),
   put(dialyzer_include, []),
   put(dialyzer_options_defines, []),
   put(dialyzer_options_gui, true),
@@ -156,7 +149,8 @@ init() ->
   put(dialyzer_options_from, byte_code),
   put(dialyzer_options_libs, ?dialyzer_def_libs),
 
-  InitPltDir =filename:join([code:lib_dir(dialyzer),"plt","dialyzer_init_plt"]),
+  InitPltDir = filename:join([code:lib_dir(dialyzer),
+			      "plt","dialyzer_init_plt"]),
   put(dialyzer_init_plt, InitPltDir),
   put(dialyzer_warnings, []).
 
@@ -192,18 +186,21 @@ doit() ->
   end,
   Opts = #options{init_plt=get(dialyzer_init_plt),
 		  plt_libs=get(dialyzer_options_libs)},
-  dialyzer_cl:check_init_plt(Opts),
-  case get(dialyzer_options_gui) of
-    true ->
-      if Quiet -> ok;
-	 true  -> io:put_chars("  Proceeding with startup...\n")
-      end,
-      gui();
-    false ->
-      if Quiet -> ok;
-	 true  -> io:put_chars("  Proceeding with analysis... ")
-      end,
-      cl()
+  case dialyzer_cl:check_init_plt(Opts) of
+    error -> erlang:halt(?RET_INTERNAL_ERROR);
+    ok -> 
+      case get(dialyzer_options_gui) of
+	true ->
+	  if Quiet -> ok;
+	     true  -> io:put_chars("  Proceeding with startup...\n")
+	  end,
+	  gui();
+	false ->
+	  if Quiet -> ok;
+	     true  -> io:put_chars("  Proceeding with analysis... ")
+	  end,
+	  cl()
+      end
   end.
 
 gui() ->

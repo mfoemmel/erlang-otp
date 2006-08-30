@@ -15,6 +15,8 @@
 %% 
 %%     $Id$
 %%
+%% Test: ts:run(snmp, snmp_agent_test, [batch]).
+%%
 -module(snmp_agent_test).
 
 %% TODO
@@ -87,12 +89,12 @@ all(suite) -> {req,
 	       [{conf, init_all, cases(), finish_all}]}.
 
 init_per_testcase(_Case, Config) when list(Config) ->
-    Dog = ?t:timetrap(?t:minutes(6)),
+    Dog = ?WD_START(?MINS(6)),
     [{watchdog, Dog}|Config].
 
 fin_per_testcase(_Case, Config) when list(Config) ->
     Dog = ?config(watchdog, Config),
-    ?t:timetrap_cancel(Dog),
+    ?WD_STOP(Dog),
     Config.
 
 cases() ->
@@ -110,14 +112,14 @@ cases() ->
 	    ];
 	_Else ->
   	    [
-   	     misc, 
+    	     misc, 
        	     test_v1, 
-     	     test_v2, 
-     	     test_v1_v2, 
-    	     test_v3, 
-             test_multi_threaded, 
-      	     mib_storage, 
-      	     tickets
+    	     test_v2, 
+    	     test_v1_v2, 
+   	     test_v3, 
+	     test_multi_threaded, 
+     	     mib_storage, 
+     	     tickets
 	    ]
     end.
 
@@ -4446,25 +4448,46 @@ loop_it_1(Oid, N) ->
 	   "\tOid: ~p~n"
 	   "\tN:   ~p",[Oid,N]),
     case get_next_req([Oid]) of
-	#pdu{type='get-response', error_status=noError, error_index=0,
-	     varbinds=[#varbind{oid = NOid,value = Value}]} when NOid > Oid ->
-	    ?DBG("loop_it_1 -> ~n"
-		   "\tNOid:  ~p~n"
-		   "\tValue: ~p",[NOid,Value]),
+	#pdu{type         = 'get-response', 
+	     error_status = noError, 
+	     error_index  = 0,
+	     varbinds     = [#varbind{oid   = NOid,
+				      value = Value}]} when NOid > Oid ->
+	    ?DBG("loop_it_1 -> "
+		   "~n   NOid:  ~p"
+		   "~n   Value: ~p",[NOid, Value]),
 	    ?line [Value2] = get_req(1, [NOid]), % must not be same
-	    ?DBG("loop_it_1 -> ~n"
-		   "\tValue2: ~p",[Value2]),
+	    ?DBG("loop_it_1 -> "
+		   "~n   Value2: ~p",[Value2]),
 	    loop_it_1(NOid, N+1);
-	#pdu{type='get-response', error_status=noSuchName, error_index=1,
-	     varbinds=[_]} ->
-	    ?DBG("loop_it_1 -> done",[]),
+
+	#pdu{type         = 'get-response', 
+	     error_status = noError, 
+	     error_index  = 0,
+	     varbinds     = Vbs} ->
+	    exit({unexpected_vbs, ?LINE, Vbs});
+
+	#pdu{type         = 'get-response', 
+	     error_status = noSuchName, 
+	     error_index = 1,
+	     varbinds    = [_]} ->
+	    ?DBG("loop_it_1 -> done: ~p",[N]),
 	    N;
 
-	#pdu{type = Type, error_status = Err, error_index = Idx,
-	     varbinds = Vbs} ->
+	#pdu{type         = 'get-response', 
+	     error_status = Err, 
+	     error_index  = Idx,
+	     varbinds     = Vbs} ->
+	    exit({unexpected_pdu, ?LINE, Err, Idx, Vbs});
+
+	#pdu{type         = Type, 
+	     error_status = Err, 
+	     error_index  = Idx,
+	     varbinds     = Vbs} ->
 	    exit({unexpected_pdu, ?LINE, Type, Err, Idx, Vbs})
     end.
 	    
+
 %% Req. As many mibs all possible
 loop_mib_2() ->
     ?DBG("loop_mib_1 -> entry",[]),
@@ -4476,24 +4499,49 @@ loop_mib_2() ->
     
 
 loop_it_2(Oid, N) ->
-    ?DBG("loop_it_2 -> entry with~n"
-	   "\tOid: ~p~n"
-	   "\tN:   ~p",[Oid,N]),
+    ?DBG("loop_it_2 -> entry with"
+	 "~n   Oid: ~p"
+	 "~n   N:   ~p",[Oid, N]),
     case get_next_req([Oid]) of
-	#pdu{type='get-response', error_status=noError, error_index=0,
-	     varbinds=[#varbind{oid = NOid, value = endOfMibView}]} ->
-	    ?DBG("loop_it_2 -> ~n"
-		   "\tNOid: ~p",[NOid]),
+	#pdu{type         = 'get-response', 
+	     error_status = noError, 
+	     error_index  = 0,
+	     varbinds     = [#varbind{oid = NOid, value = endOfMibView}]} ->
+	    ?DBG("loop_it_2 -> "
+		 "~n   NOid: ~p",[NOid]),
 	    N;
-	#pdu{type='get-response', error_status=noError, error_index=0,
-	     varbinds=[#varbind{oid = NOid,value = Value}]} when NOid > Oid ->
-	    ?DBG("loop_it_2 -> ~n"
-		   "\tNOid:  ~p~n"
-		   "\tValue: ~p",[NOid,Value]),
+
+	#pdu{type         = 'get-response', 
+	     error_status = noError, 
+	     error_index  = 0,
+	     varbinds     = [#varbind{oid   = NOid,
+				      value = Value}]} when NOid > Oid ->
+	    ?DBG("loop_it_2 -> "
+		 "~n   NOid:  ~p"
+		 "~n   Value: ~p",[NOid, Value]),
 	    ?line [Value2] = get_req(1, [NOid]), % must not be same
-	    ?DBG("loop_it_2 -> ~n"
-		   "\tValue2: ~p",[Value2]),
-	    loop_it_2(NOid, N+1)
+	    ?DBG("loop_it_2 -> "
+		 "~n   Value2: ~p",[Value2]),
+	    loop_it_2(NOid, N+1);
+
+	#pdu{type         = 'get-response', 
+	     error_status = noError, 
+	     error_index  = 0,
+	     varbinds     = Vbs} ->
+	    exit({unexpected_vbs, ?LINE, Vbs});
+
+	#pdu{type         = 'get-response', 
+	     error_status = ES, 
+	     error_index  = EI,
+	     varbinds     = Vbs} ->
+	    exit({unexpected_pdu, ?LINE, ES, EI, Vbs});
+
+	#pdu{type         = Type, 
+	     error_status = ES, 
+	     error_index  = EI,
+	     varbinds     = Vbs} ->
+	    exit({unexpected_pdu, ?LINE, Type, ES, EI, Vbs})
+
     end.
 	    
 

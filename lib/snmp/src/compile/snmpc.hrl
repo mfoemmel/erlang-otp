@@ -15,6 +15,13 @@
 %% 
 %%     $Id$
 %%
+
+%% Parser output
+-record(pdata, {mib_version, 
+		mib_name,
+		imports,
+		defs}).
+
 %% compilation information record
 -record(cdata, {module_identity,
 		asn1_types = [], 

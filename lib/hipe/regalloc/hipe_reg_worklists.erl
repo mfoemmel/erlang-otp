@@ -185,13 +185,13 @@ init([Initial|Initials], K, IG, Move_sets, Worklists) ->
 %%%----------------------------------------------------------------------
 
 is_empty_simplify(Worklists) ->
-    simplify(Worklists) == [].
+  simplify(Worklists) =:= [].
 
 is_empty_spill(Worklists) ->
-    spill(Worklists) == [].
+  spill(Worklists) =:= [].
 
 is_empty_freeze(Worklists) ->
-    freeze(Worklists) == [].
+  freeze(Worklists) =:= [].
 
 %%%----------------------------------------------------------------------
 %% Function:    add
@@ -308,13 +308,13 @@ transfer_freeze_spill(Element, Worklists) ->
 %%%----------------------------------------------------------------------
 
 member_coalesced_to(Element, Worklists) -> % only used by optimistic allocator
-    hipe_bifs:array_sub(Worklists#worklists.coalesced_to, Element) == 'coalesced_to'.
+    hipe_bifs:array_sub(Worklists#worklists.coalesced_to, Element) =:= 'coalesced_to'.
 
 member_freeze(Element, Worklists) ->
-  hipe_bifs:array_sub(Worklists#worklists.membership, Element) == 'freeze'.
+  hipe_bifs:array_sub(Worklists#worklists.membership, Element) =:= 'freeze'.
 
 member_stack_or_coalesced(Element, Worklists) ->
-  hipe_bifs:array_sub(Worklists#worklists.membership, Element) == 'stack_or_coalesced'.
+  hipe_bifs:array_sub(Worklists#worklists.membership, Element) =:= 'stack_or_coalesced'.
 
 non_stacked_or_coalesced_nodes(Nodes, Worklists) ->
   Membership = Worklists#worklists.membership,

@@ -22,7 +22,7 @@ fix_formals(Formals) ->
   fix_formals(hipe_arm_registers:nr_args(), Formals).
 
 fix_formals(N, [_|Rest]) when N > 0 -> fix_formals(N-1, Rest);
-fix_formals(_, Formals) -> Formals.
+fix_formals(N, Formals) when is_integer(N), N >= 0 -> Formals.
 
 do_body(CFG0, Liveness, Formals, Temps, ClobbersLR) ->
   Context = mk_context(Liveness, Formals, Temps, ClobbersLR),

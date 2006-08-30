@@ -42,7 +42,13 @@
 #include "hipe_arch.h"
 #endif
 
+#ifdef VALGRIND
+#include <valgrind/valgrind.h>
+#include <valgrind/memcheck.h>
+#endif
+
 #define DECL_AM(S) Eterm AM_ ## S = am_atom_put(#S, sizeof(#S) - 1)
+#define INIT_AM(S) AM_ ## S = am_atom_put(#S, sizeof(#S) - 1)
 
 #ifdef USE_THREADS
 extern int erts_async_max_threads;
@@ -91,8 +97,17 @@ static char erts_system_version[] = ("Erlang (" EMULATOR ")"
 #ifdef PURIFY
 				     " [purify-compiled]"
 #endif	
+#ifdef VALGRIND
+				     " [valgrind-compiled]"
+#endif
 				     "\n");
 
+#if defined(PURIFY) || defined(VALGRIND)
+static Eterm AM_error_checker;
+#ifdef VALGRIND
+static Eterm AM_valgrind;
+#endif
+#endif
 
 #define ASIZE(a) (sizeof(a)/sizeof(a[0]))
 
@@ -964,15 +979,40 @@ info_1_tuple(Process* BIF_P,	/* Pointer to current process. */
 	}
 	else
 	    return THE_NON_VALUE;
-#ifdef PURIFY
-    } else if (sel == am_purify) {
+#if defined(PURIFY) || defined(VALGRIND)
+    } else if (sel == AM_error_checker
+#if defined(PURIFY)
+	       || sel == am_purify
+#elif defined(VALGRIND)
+	       || sel == AM_valgrind
+#endif
+	) {
 	if (*tp == am_memory) {
+#if defined(PURIFY)
 	    BIF_RET(erts_make_integer(purify_new_leaks(), BIF_P));
+#elif defined(VALGRIND)
+	    VALGRIND_DO_LEAK_CHECK;
+	    BIF_RET(make_small(0));
+#endif
 	} else if (*tp == am_fd) {
+#if defined(PURIFY)
 	    BIF_RET(erts_make_integer(purify_new_fds_inuse(), BIF_P));
+#elif defined(VALGRIND)
+	    /* Not present in valgrind... */
+	    BIF_RET(make_small(0));
+#endif
 	} else if (*tp == am_running) {
+#if defined(PURIFY)
 	    BIF_RET(purify_is_running() ? am_true : am_false);
+#elif defined(VALGRIND)
+	    BIF_RET(RUNNING_ON_VALGRIND ? am_true : am_false);
+#endif
 	} else if (is_list(*tp)) {
+#if defined(PURIFY)
+#define ERTS_ERROR_CHECKER_PRINTF purify_printf
+#elif defined(VALGRIND)
+#define ERTS_ERROR_CHECKER_PRINTF VALGRIND_PRINTF
+#endif
 	    int buf_size = 8*1024; /* Try with 8KB first */
 	    char *buf = erts_alloc(ERTS_ALC_T_TMP, buf_size);
 	    int r = io_list_to_buf(*tp, (char*) buf, buf_size - 1);
@@ -987,9 +1027,10 @@ info_1_tuple(Process* BIF_P,	/* Pointer to current process. */
 		ASSERT(r == buf_size - 1);
 	    }
 	    buf[buf_size - 1 - r] = '\0';
-	    purify_printf("%s\n", buf);
+	    ERTS_ERROR_CHECKER_PRINTF("%s\n", buf);
 	    erts_free(ERTS_ALC_T_TMP, (void *) buf);
 	    BIF_RET(am_true);
+#undef ERTS_ERROR_CHECKER_PRINTF
 	}
 #endif
 #ifdef QUANTIFY
@@ -1508,7 +1549,7 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	return am_false;
     } else {
 	/* Arguments that are unusual... */
-	DECL_AM(scheduler);
+	DECL_AM(scheduler_id);
 	DECL_AM(schedulers);
 	DECL_AM(smp_support);
 	DECL_AM(stop_memory_trace);
@@ -1519,7 +1560,7 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 #else
 	    BIF_RET(am_false);
 #endif
-	} else if (BIF_ARG_1 == AM_scheduler) {
+	} else if (BIF_ARG_1 == AM_scheduler_id) {
 #ifdef ERTS_SMP
 	    ASSERT(BIF_P->scheduler_data);
 	    BIF_RET(erts_make_integer(BIF_P->scheduler_data->no, BIF_P));
@@ -2023,6 +2064,7 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 	case 2: {
 	    DECL_AM(link_list);
 	    DECL_AM(monitor_list);
+	    DECL_AM(channel_number);
 
 	    if (tp[1] == AM_link_list) {
 		/* Used by erl_link_SUITE (emulator) */
@@ -2098,6 +2140,18 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 		    }
 		}
 	    }
+	    else if (tp[1] == AM_channel_number) {
+		Eterm res;
+		DistEntry *dep = erts_find_dist_entry(tp[2]);
+		if (!dep)
+		    res = am_undefined;
+		else {
+		    Uint cno = dist_entry_channel_no(dep);
+		    res = make_small(cno);
+		    erts_deref_dist_entry(dep);
+		}
+		BIF_RET(res);
+	    }
 	    break;
 	}
 	default:
@@ -2171,5 +2225,11 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
 void
 erts_bif_info_init(void)
 {
+#if defined(PURIFY) || defined(VALGRIND)
+    INIT_AM(error_checker);
+#ifdef VALGRIND
+    INIT_AM(valgrind);
+#endif
+#endif
     erts_smp_atomic_init(&available_internal_state, 0);
 }

@@ -213,6 +213,7 @@
 -define(megaco_incorrect_identifier,                        410).
 -define(megaco_unknown_context_id,                          411).
 -define(megaco_no_context_id_available,                     412).
+-define(megaco_num_of_trans_exceeds_max,                    413).    % v3
 -define(megaco_unknown_action_or_illegal_combination_of_actions, 421).
 -define(megaco_syntax_error_in_action,                      422).
 -define(megaco_unknown_termination_id,                      430).
@@ -226,6 +227,8 @@
 -define(megaco_missing_remote_or_local_descriptor,          441).    % v2
 -define(megaco_missing_remote_descriptor,
 	?megaco_missing_remote_or_local_descriptor).                 
+-define(megaco_missing_local_descriptor,
+	?megaco_missing_remote_or_local_descriptor).                 
 -define(megaco_syntax_error_in_command,                     442).
 -define(megaco_unsupported_or_unknown_command,              443).
 -define(megaco_unsupported_or_unknown_descriptor,           444).
@@ -233,6 +236,15 @@
 -define(megaco_unsupported_or_unknown_parameter,            446).
 -define(megaco_descriptor_not_legal_in_this_command,        447).
 -define(megaco_descriptor_appears_twice_in_this_command,    448).
+-define(megaco_unsup_or_unknown_param_or_prop_value,        449).    % v3
+-define(megaco_unsupported_parameter_value, 
+        ?megaco_unsup_or_unknown_param_or_prop_value).
+-define(megaco_unsupported_proprty_value, 
+        ?megaco_unsup_or_unknown_param_or_prop_value).
+-define(megaco_unknown_parameter_value, 
+        ?megaco_unsup_or_unknown_param_or_prop_value).
+-define(megaco_unknown_proprty_value, 
+        ?megaco_unsup_or_unknown_param_or_prop_value).
 -define(megaco_no_such_property_in_this_package,            450).
 -define(megaco_no_such_event_in_this_package,               451).
 -define(megaco_no_such_signal_in_this_package,              452).
@@ -245,6 +257,12 @@
 -define(megaco_parameter_or_property_appears_twice_in_this_descriptor, 
 	?megaco_property_appears_twice_in_this_descriptor). 
 -define(megaco_missing_parameter_in_signal_or_event,        457).    % v2
+-define(megaco_unexpected_event_or_request_id,              458).    % v3
+-define(megaco_unexpected_event, 
+        ?megaco_unexpected_event_or_request_id).
+-define(megaco_unexpected_request_id, 
+        ?megaco_unexpected_event_or_request_id).
+-define(megaco_unable_to_set_statistic_on_stream,           460).    % v3
 -define(megaco_implied_add_for_multiplex_failure,           471).
 -define(megaco_internal_gateway_error,                      500).
 -define(megaco_not_implemented,                             501).
@@ -265,6 +283,7 @@
 -define(megaco_out_of_space_to_store_digit_map,             519).
 -define(megaco_mg_does_not_have_a_digit_map,                520).
 -define(megaco_termination_is_service_changing,             521).
+-define(megaco_unsupported_func_req_in_topology_triple,     522). % v3
 -define(megaco_insufficient_bandwidth,                      526).
 -define(megaco_internal_hardware_failure,                   529).
 -define(megaco_temporary_network_failure,                   530).
@@ -273,7 +292,9 @@
 -define(megaco_response_exceeds_maximum_transport_pdu_size, 533). % v2
 -define(megaco_illegal_write_of_read_only_property,         534). % v2
 -define(megaco_unexpected_initial_hook_state,               540). % v2
+-define(megaco_command_not_allowed_on_this_termination,     542). % v3
 -define(megaco_does_not_exist,                              581).
+
 
 %%----------------------------------------------------------------------
 %% Service change reasons
@@ -297,6 +318,10 @@
 -define(megaco_state_loss,                       "915").
 -define(megaco_packages_change,                  "916"). % v2
 -define(megaco_capabilities_change,              "917"). % v2
+-define(megaco_cancel_gracefull,                 "918"). % v3
+-define(megaco_warm_failover,                    "919"). % v3
+-define(megaco_cold_failover,                    "920"). % v3
+
 
 %%----------------------------------------------------------------------
 %% MGC listen ports for both TCP/IP and UDP/IP

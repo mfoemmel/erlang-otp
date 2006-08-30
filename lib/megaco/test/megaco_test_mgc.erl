@@ -28,7 +28,8 @@
 	 request_discard/1, request_discard/2, 
 	 request_pending/1, request_pending/2, request_pending_ignore/1, 
 	 request_handle/1, request_handle/2, 
-	 request_handle_sloppy/1, 
+	 request_handle_pending/1, request_handle_pending/2, 
+	 request_handle_sloppy/1, request_handle_sloppy/2, 
 	 ack_info/2, abort_info/2, req_info/2, 
 	 disconnect/2, 
 	 verbosity/2]).
@@ -58,7 +59,7 @@
 -define(A5556, ["11111111", "11111111", "11111111"]).
 
 -define(valid_actions, 
-	[ignore, pending, pending_ignore, discard_ack, handle_ack, handle_sloppy_ack]).
+	[ignore, pending, pending_ignore, discard_ack, handle_ack, handle_pending_ack, handle_sloppy_ack]).
 
 -record(mgc, {parent      = undefined,
 	      tcp_sup     = undefined,
@@ -212,8 +213,17 @@ request_handle(Pid) ->
 request_handle(Pid, To) ->
     request_action(Pid, {handle_ack, To}).
 
+request_handle_pending(Pid) ->
+    request_handle_pending(Pid, 0).
+
+request_handle_pending(Pid, To) ->
+    request_action(Pid, {handle_pending_ack, To}).
+
 request_handle_sloppy(Pid) ->
-    request_action(Pid, {handle_sloppy_ack, 0}).
+    request_handle_sloppy(Pid, 0).
+
+request_handle_sloppy(Pid, To) ->
+    request_action(Pid, {handle_sloppy_ack, To}).
 
 request_action(Pid, Action) ->
     server_request(Pid, request_action, Action, request_action_ack).

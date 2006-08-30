@@ -28,7 +28,6 @@ PRIMOP_LIST(am_gc_1, &nbif_gc_1)
 PRIMOP_LIST(am_atomic_inc, &nbif_atomic_inc)
 PRIMOP_LIST(am_clear_timeout, &nbif_clear_timeout)
 PRIMOP_LIST(am_check_get_msg, &nbif_check_get_msg)
-PRIMOP_LIST(am_next_msg, &nbif_next_msg)
 #endif
 PRIMOP_LIST(am_select_msg, &nbif_select_msg)
 PRIMOP_LIST(am_set_timeout, &nbif_set_timeout)

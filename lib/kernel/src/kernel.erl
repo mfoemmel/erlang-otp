@@ -140,8 +140,6 @@ init([]) ->
 		      permanent, infinity, supervisor,[erl_distribution]},
 	    DistAC = start_dist_ac(),
 
-	    Ddll = start_ddll(),
-
 	    Timer = start_timer(),
 
 	    SafeSupervisor = {kernel_safe_sup,
@@ -152,8 +150,7 @@ init([]) ->
 	    {ok, {SupFlags,
 		  [ErlDdll, Rpc, Global, InetDb | DistAC] ++ 
 		  [NetSup, Glo_grp, File, OldFile, Code, 
-		   User, Config, SafeSupervisor] ++
-		  Ddll ++ Timer}}
+		   User, Config, SafeSupervisor] ++ Timer}}
     end;
 
 init(safe) ->
@@ -179,15 +176,6 @@ start_dist_ac() ->
 		{ok, _} -> Spec;
 		_ -> []
 	    end
-    end.
-
-start_ddll() ->
-    case application:get_env(kernel, start_ddll) of
-	{ok, true} ->
-	    [{ddll_server, {erl_ddll, start_link, []}, permanent, 1000,
-	      worker, [erl_ddll]}];
-	_ ->
-	    []
     end.
 
 start_boot_server() ->

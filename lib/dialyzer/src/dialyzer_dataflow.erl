@@ -1,3 +1,5 @@
+%% -*- erlang-indent-level: 2 -*-
+%%--------------------------------------------------------------------
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -14,7 +16,6 @@
 %%     $Id$
 %%
 
-%%% -*- erlang-indent-level: 2 -*-
 %%%-------------------------------------------------------------------
 %%% File    : dialyzer_dataflow.erl
 %%% Author  : Tobias Lindahl <tobiasl@it.uu.se>
@@ -43,14 +44,15 @@
 	[ann_c_fun/3, alias_pat/1, alias_var/1,
 	 apply_args/1, apply_op/1, atom_val/1, bitstr_size/1,
 	 bitstr_val/1, bitstr_type/1, bitstr_flags/1,
-	 binary_segments/1, c_letrec/2, c_values/1,
+	 binary_segments/1, c_letrec/2, 
 	 call_args/1, call_module/1, call_name/1, case_arg/1,
 	 case_clauses/1, catch_body/1, clause_body/1, clause_guard/1,
 	 clause_pats/1, concrete/1, cons_hd/1, cons_tl/1,
+	 fname_arity/1, fname_id/1,
 	 fun_arity/1, fun_body/1, fun_vars/1, get_ann/1, int_val/1,
-	 is_c_fun/1, is_c_values/1, is_literal/1,
+	 is_c_fun/1, is_c_values/1, is_c_var/1, is_literal/1,
 	 let_arg/1, let_body/1, let_vars/1, letrec_body/1,
-	 letrec_defs/1, module_defs/1, module_vars/1,
+	 letrec_defs/1, module_defs/1, 
 	 primop_name/1, receive_action/1,
 	 receive_clauses/1, receive_timeout/1, seq_arg/1, seq_body/1,
 	 set_ann/2, subtrees/1,
@@ -60,10 +62,12 @@
 
 -export([annotate_module/1,
 	 doit/1,
-	 get_fun_types/4,
+	 get_fun_types/3,
+	 get_top_level_signatures/1,
 	 pp/1]).
 
 %-define(DEBUG, true).
+%-define(DEBUG_NAME_MAP, true).
 %-define(DEBUG_PP, true).
 %-define(DEBUG_TIME, true).
 %-define(DOT, true).
@@ -74,27 +78,55 @@
 -define(debug(S_, L_), ok).
 -endif.
 
+%-define(debug1(S_, L_), io:format(S_, L_)).
+%-define(debug1(S_, L_), ok).
 
 -define(TYPE_LIMIT, 4).
--define(FORWARD_LIMIT, 3).
+
 
 pp(Code) ->
   AnnTree = annotate_module(Code),
   io:put_chars(cerl_prettypr:format(AnnTree, [{hook, cerl_typean:pp_hook()}])),
   io:nl().
 
-get_fun_types(Tree, ForwardLimit, FunTypes, Plt) ->
-  State = analyze_module(Tree, ForwardLimit, Plt, FunTypes),
-  state__all_fun_types_unsafe(State).
+get_fun_types(Tree, FunTypes, Plt) ->
+  debug_build_namemap(Tree),
+  State = analyze_module(Tree, Plt, FunTypes),
+  state__all_fun_types(State).
 
-doit(Code) ->
-  AnnTree = annotate_module(Code),
-  Defs = module_defs(AnnTree),
-  [io:format("~w:: ~s\n", 
-	     [cerl:var_name(Var), 
-	      t_to_string(proplists:get_value(type, cerl:get_ann(Fun)))])
-   || {Var, Fun} <- Defs],
-  ok.
+get_top_level_signatures(Code) ->
+  get_top_level_signatures(Code, false).
+
+get_top_level_signatures(Code, _DoWarningPass) ->
+  {Tree, _} = cerl_trees:label(cerl:from_records(Code)),
+  Plt = dialyzer_plt:from_file(dialyzer_dataflow_plt, 
+			       filename:join([code:lib_dir(dialyzer),
+					      "plt","dialyzer_init_plt"])),
+  FunTypes = get_fun_types(Tree, dict:new(), Plt),
+  FunTypes1 = lists:foldl(fun({V, F}, Acc) ->
+			      Label = get_label(F),
+			      case dict:find(Label, Acc) of
+				error ->
+				  Arity = fname_arity(V),
+				  Type = t_fun(duplicate(Arity, t_none()), 
+					       t_none()),
+				  dict:store(Label, Type, Acc);
+				{ok, _} -> Acc
+			      end
+			  end, FunTypes, module_defs(Tree)),
+    
+%  if DoWarningPass -> dialyzer_warnings:get_warnings(Tree, FunTypes1, Plt);
+%     true -> ok
+%  end,
+  Sigs = [{{fname_id(V), fname_arity(V)}, dict:fetch(get_label(F), FunTypes1)} 
+	  || {V, F} <- module_defs(Tree)],
+  ordsets:from_list(Sigs).
+
+doit(Module) ->
+  {ok, _, Code} = compile:file(Module,[to_core,binary,strict_record_tests]),
+  Sigs = get_top_level_signatures(Code, true),
+  [io:format("~w/~w :: ~s\n", [F, A, t_to_string(T)])
+   || {{F, A}, T} <- Sigs].
 
 %%% ============================================================================
 %%%
@@ -103,14 +135,12 @@ doit(Code) ->
 %%% ============================================================================
 
 annotate_module(Code) ->
-  annotate_module(Code, ?FORWARD_LIMIT).
-
-annotate_module(Code, ForwardLimit) ->
   {Tree, _} = cerl_trees:label(cerl:from_records(Code)),
-  Plt = dialyzer_plt:from_dets(dialyzer_dataflow_plt, 
-			       filename:join([?DIALYZER_DIR, 
+  debug_build_namemap(Tree),
+  Plt = dialyzer_plt:from_file(dialyzer_dataflow_plt, 
+			       filename:join([code:lib_dir(dialyzer),
 					      "plt","dialyzer_init_plt"])),
-  State = analyze_module(Tree, ForwardLimit, Plt),
+  State = analyze_module(Tree, Plt),
   Map = state__get_env_out(Tree, State),
   annotate(Tree, State, Map).
 
@@ -129,15 +159,15 @@ set_type(Tree, State) ->
     true ->
       Type = state__fun_type(Tree, State),
       case t_is_any(Type) of
-	true -> set_ann(Tree, delete_ann(type, get_ann(Tree)));
-	false -> set_ann(Tree, append_ann(type, Type, get_ann(Tree)))
+	true -> set_ann(Tree, delete_ann(typesig, get_ann(Tree)));
+	false -> set_ann(Tree, append_ann(typesig, Type, get_ann(Tree)))
       end;
     false ->
       Tree
   end.
 
 append_ann(Tag, Val, [X | Xs]) ->
-  if is_tuple(X), size(X) >= 1, element(1, X) == Tag -> 
+  if is_tuple(X), size(X) >= 1, element(1, X) =:= Tag -> 
       append_ann(Tag, Val, Xs);
      true ->
       [X | append_ann(Tag, Val, Xs)]
@@ -146,7 +176,7 @@ append_ann(Tag, Val, []) ->
   [{Tag, Val}].
 
 delete_ann(Tag, [X | Xs]) ->
-  if is_tuple(X), size(X) >= 1, element(1, X) == Tag -> 
+  if is_tuple(X), size(X) >= 1, element(1, X) =:= Tag -> 
       delete_ann(Tag, Xs);
      true ->
       [X | delete_ann(Tag, Xs)]
@@ -160,25 +190,28 @@ delete_ann(_, []) ->
 %%%
 %%% ============================================================================
 
-analyze_module(Tree, ForwardLimit, Plt) ->
-  analyze_module(Tree, ForwardLimit, Plt, dict:new()).
+analyze_module(Tree, Plt) ->
+  analyze_module(Tree, Plt, dict:new()).
 
-analyze_module(Tree, ForwardLimit, Plt, FunSigs) ->
+analyze_module(Tree, Plt, FunSigs) ->
   debug_pp(Tree, false),
   {Deps0, Esc, Calls} = dialyzer_dep:analyze(Tree),
   %% We want the reverse dependencies to know who to envoke
   Deps = reverse_deps(Deps0),
+  ?debug("Reverse dependencies: ~p\n", [[{debug_lookup_name(X),
+					     [debug_lookup_name(Y0)||Y0 <-Y]} ||
+					     {X, Y} <- dict:to_list(Deps)]]),
 %  io:format("Parents: ~p\n", [dict:to_list(Parents)]),
 %  io:format("Deps: ~p\n", [dict:to_list(Deps)]),
 %  io:format("Esc: ~p\n", [Esc]),
   
   TopFun =  ann_c_fun([{label, top}], [], Tree),
-  State = state__new(Esc, Deps, Calls, TopFun, FunSigs, ForwardLimit, Plt),
+  State = state__new(Esc, Deps, Calls, TopFun, FunSigs, Plt),
   analyze_loop(State).
 
 reverse_deps(Deps) ->
   dict:fold(fun(Caller, CalleeSet, Acc) ->
-		lists:foldl(fun(Callee, Acc1)->
+		lists:foldl(fun(Callee, Acc1) ->
 				case dict:find(Callee, Acc1) of
 				  {ok, Set} -> 
 				    NewSet = ordsets:add_element(Caller, Set);
@@ -192,17 +225,31 @@ reverse_deps(Deps) ->
 analyze_loop(State) ->
   case state__get_work(State) of
     none -> State;
-    {{Fun, ArgTypes}, NewState} ->
-      ?debug("Handling fun ~p: ~p\n", [get_label(Fun), [t_to_string(X)
-						       ||X <- ArgTypes]]),
-      Map = state__fun_env(Fun, NewState),
-      Vars = fun_vars(Fun),
-      Map1 = enter_type_lists(Vars, ArgTypes, Map),
-      {State1, Map2, BodyType} = traverse(fun_body(Fun), Map1, NewState),
-      State2 = state__update_fun_entry(Fun, ArgTypes, BodyType, State1),
-      State3 = state__store_env_out(Fun, Map2, State2),
-      analyze_loop(State3)
-  end.	
+    {Fun, NewState} ->
+      ArgTypes = state__get_args(Fun, NewState),
+      case any_none(ArgTypes) of
+	true -> 
+	  ?debug("Not handling ~w: ~s\n", [debug_lookup_name(get_label(Fun)), 
+					    t_to_string(t_product(ArgTypes))]),
+	  analyze_loop(NewState);
+	false -> 
+	  ?debug("Handling fun ~p: ~p\n", [debug_lookup_name(get_label(Fun)), 
+					    [t_to_string(X)||X <- ArgTypes]]),
+	  Map = state__fun_env(Fun, NewState),
+	  Vars = fun_vars(Fun),
+	  Map1 = enter_type_lists(Vars, ArgTypes, Map),
+	  {State1, Map2, BodyType} = traverse(fun_body(Fun), Map1, NewState),
+	  ?debug("Done analyzing: ~w:~s\n", [debug_lookup_name(get_label(Fun)),
+				      t_to_string(t_fun(ArgTypes, BodyType))]),
+	  State2 = state__update_fun_entry(Fun, ArgTypes, BodyType, State1),
+	  ?debug("done adding stuff for ~w\n", 
+		 [debug_lookup_name(get_label(Fun))]),
+	  State3 = state__store_env_out(Fun, Map2, State2),
+	  %%debug_work(State3),
+	  %%debug_fun_type(get_label(Fun), State3),
+	  analyze_loop(State3)
+      end
+  end.
 
 traverse(Tree, Map, State) ->
   %%io:format("Handling ~s\n", [cerl_prettypr:format(Tree)]),
@@ -212,26 +259,26 @@ traverse(Tree, Map, State) ->
       Args = apply_args(Tree),
       Op = apply_op(Tree),
       {State1, Map1, ArgTypes} = traverse_list(Args, Map, State),
-      {State2, Map2, OpType} = traverse(Op, Map1, State1),
       case state__handle_apply(Tree, ArgTypes, State1) of
 	unknown ->
+	  {State2, Map2, OpType} = traverse(Op, Map1, State1),
 	  %% This is an externally defined closure
 	  OpType1 = t_inf(OpType, t_fun(length(Args), t_any())),
 	  case t_is_none(OpType1) of
 	    true ->
-	      Map3 = enter_type(Tree, t_none(), Map2),
-	      Map4 = enter_type(Op, t_none(), Map3),
-	      {State2, Map4, t_none()};
+	      {State2, Map2, t_none()};
 	    false ->
 	      OpRange = t_fun_range(OpType1),
-	      Map3 = enter_type(Tree, OpRange, Map2),
-	      {State2, Map3, OpRange}
+	      {State2, Map2, OpRange}
 	  end;
 	{NewArgTypes, Return} ->
-	  Map3 = enter_type(Tree, Return, Map2),
-	  Map4 = enter_type_lists(Args, NewArgTypes, Map3),
-	  State3 = state__forward_args(Tree, NewArgTypes, State2),
-	  {State3, Map4, Return}
+	  State2 = state__forward_args(Tree, NewArgTypes, State1),
+	  case t_is_none(Return) of
+	    true -> 	      
+	      {State2, Map1, t_none()};
+	    false ->
+	      {State2, Map1, Return}
+	  end
       end;
     binary ->
       {State1, Map1, _} = traverse_list(binary_segments(Tree), Map, State),
@@ -287,29 +334,31 @@ traverse(Tree, Map, State) ->
       FType = t_inf(t_atom(), FType0),
       case any_none([MType, FType|As]) of
 	true ->
-	  {State1, enter_type(Tree, t_none(), Map1), t_none()};
+	  {State1, Map1, t_none()};
 	false ->
 	  %% XXX: Consider doing this for all combinations of MF
 	  case {t_atom_vals(MType), t_atom_vals(FType)} of
 	    {[MAtom], [FAtom]} ->
 	      {Return, NewArgs} = do_call(MAtom, FAtom, As, State),
-	      Map2 = enter_type_lists([Tree|MFAList], 
-				      [Return, MType, FType|NewArgs], Map1),
+	      Map2 = enter_type_lists(call_args(Tree), NewArgs, Map1),
 	      {State1, Map2, Return};
+
 	    {_MAtoms, _FAtoms} ->
-	      Map2 = enter_type_lists([Tree, M, F], 
-				      [t_any(), MType, FType], Map1),
-	      {State1, Map2, t_any()}
+	      {State1, Map1, t_any()}
 	  end
       end;
     'case' ->
       Arg = case_arg(Tree),
       Clauses = filter_match_fail(case_clauses(Tree)),
       {State1, Map1, ArgType} = traverse(Arg, Map, State),
-      {MapList, State2, Type} = handle_clauses(Clauses, Arg, ArgType, State1, 
-					       t_none(), Map1, []),
-      Map2 = join_maps(MapList, Map1),
-      {State2, enter_type(Tree, Type, Map2), Type};      
+      case any_none(wrap_if_single(t_components(ArgType))) of
+	true -> {State1, Map1, t_none()};
+	false ->
+	  {MapList, State2, Type} = handle_clauses(Clauses, Arg, ArgType, 
+						   State1, [], Map1, []),
+	  Map2 = join_maps(MapList, Map1),
+	  {State2, Map2, Type}
+      end;
     'catch' ->
       {State1, Map1, _} = traverse(catch_body(Tree), Map, State),
       State2 = state__store_env_out(Tree, Map1, State1),
@@ -330,13 +379,13 @@ traverse(Tree, Map, State) ->
       Body = let_body(Tree),
       {State1, Map1, ArgTypes} = traverse(Arg, Map, State),
       Vars = let_vars(Tree),
-      VarTypes =
-	case t_is_none(ArgTypes) of
-	  true -> duplicate(length(Vars), t_none());
-	  false -> wrap_if_single(t_components(ArgTypes))
-	end,
-      Map2 = enter_type_lists(Vars, VarTypes, Map1),
-      traverse(Body, Map2, State1);
+      case t_is_none(ArgTypes) of
+	true -> {State1, Map1, t_none()};
+	false -> 
+	  VarTypes = wrap_if_single(t_components(ArgTypes)),
+	  Map2 = enter_type_lists(Vars, VarTypes, Map1),
+	  traverse(Body, Map2, State1)
+      end;
     letrec ->
       Defs = letrec_defs(Tree),
       Body = letrec_body(Tree),
@@ -355,9 +404,11 @@ traverse(Tree, Map, State) ->
       {State, Map, literal_type(Tree)};      
     module ->
       Defs = module_defs(Tree),
-      Vars = c_values(module_vars(Tree)),
-      Letrec = c_letrec(Defs, Vars),
-      {State1, Map1, _FunTypes} = traverse(Letrec, Map, State),
+      Defs1 = [{Var, Fun} || {Var, Fun} <- Defs, 
+			     state__is_escaping(get_label(Fun), State)],
+      Letrec = c_letrec(Defs1, cerl:c_int(42)),
+      State0 = state__store_module_defs(Defs, State),
+      {State1, Map1, _FunTypes} = traverse(Letrec, Map, State0),
       State2 = state__store_env_out(Tree, Map1, State1),
       {State2, Map1, t_any()};
     primop ->
@@ -367,13 +418,12 @@ traverse(Tree, Map, State) ->
 	  raise -> t_none();
 	  Other -> erlang:fault({'Unsupported primop', Other})
 	end,
-      Map1 = enter_type(Tree, Type, Map),
-      {State, Map1, Type};
+      {State, Map, Type};      
     'receive' ->
       Clauses = filter_match_fail(receive_clauses(Tree)),
       Timeout = receive_timeout(Tree),
       {MapList, State1, ReceiveType} = 
-	handle_clauses(Clauses, none, t_any(), State, t_none(), Map, []),
+	handle_clauses(Clauses, none, t_any(), State, [], Map, []),
 		       
       Map1 = join_maps(MapList, Map),
       {State2, Map2, TimeoutType} = traverse(Timeout, Map1, State1),
@@ -438,8 +488,15 @@ traverse(Tree, Map, State) ->
       {State1, Map1, EsType} = traverse_list(Elements, Map, State),      
       Type  = t_product(EsType),
       {State1, Map1, Type};
-    var ->      
-      {State, Map, lookup_type(Tree, Map)};
+    var ->
+      case state__is_module_defined(Tree, State) of
+	true ->
+	  Fun = state__get_fun_from_defs(Tree, State),
+	  State1 = state__add_work(Fun, State),
+	  {State1, Map, state__fun_type(Fun, State)};
+	false ->
+	  {State, Map, lookup_type(Tree, Map)}
+      end;
     Other ->
       erlang:fault({'Unsupported type', Other})
   end.
@@ -461,27 +518,32 @@ traverse_list([], Map, State, Acc) ->
 
 do_call(M, F, As, State) ->
   Arity = length(As),
-  BifRet = erl_bif_types:type(M, F, Arity, As),
-  case erl_bif_types:arg_types(M, F, Arity) of
-    any -> BifArgs = duplicate(Arity, t_any());
-    List -> BifArgs = List
-  end,
-  {PltRet, PltArg} = state__lookup_non_local(M, F, Arity, State),
-  ArgConstrs = t_inf_lists(BifArgs, PltArg),
-  NewArgs = t_inf_lists(ArgConstrs, As),
-  Ret = t_inf(BifRet, PltRet),
+  {Ret, ArgCs} = 
+    case erl_bif_types:is_known(M, F, Arity) of
+      true ->
+	BifRet = erl_bif_types:type(M, F, Arity, As),
+	BifArgs = 
+	  case erl_bif_types:arg_types(M, F, Arity) of
+	    any -> duplicate(Arity, t_any());
+	    List -> List
+	  end,
+	{BifRet, BifArgs};
+      false ->
+	state__lookup_non_local(M, F, Arity, State)
+    end,
+  NewArgs = t_inf_lists(ArgCs, As),
   case any_none([Ret|NewArgs]) of
     true -> {t_none(), duplicate(Arity, t_none())};
     false -> {Ret, NewArgs}
   end.
   
-handle_clauses([C|Left], Arg, ArgType, State, CaseType, MapIn, Acc) ->
+handle_clauses([C|Left], Arg, ArgType, State, CaseTypes, MapIn, Acc) ->
   {State1, ClauseMap, BodyType} = do_clause(C, Arg, ArgType, MapIn, State),
-  NewCaseType = t_sup(BodyType, CaseType),
+  NewCaseTypes = [BodyType|CaseTypes],
   NewAcc = [ClauseMap|Acc],
-  handle_clauses(Left, Arg, ArgType, State1, NewCaseType, MapIn, NewAcc);
-handle_clauses([], _Arg, _ArgType, State, CaseType, _MapIn, Acc) ->
-  {lists:reverse(Acc), State, CaseType}.
+  handle_clauses(Left, Arg, ArgType, State1, NewCaseTypes, MapIn, NewAcc);
+handle_clauses([], _Arg, _ArgType, State, CaseTypes, _MapIn, Acc) ->
+  {lists:reverse(Acc), State, t_sup(CaseTypes)}.
 
 do_clause(C, Arg, ArgType0, Map, State) ->
   Pats = clause_pats(C),
@@ -496,7 +558,7 @@ do_clause(C, Arg, ArgType0, Map, State) ->
 
   case bind_pat_vars(Pats, ArgTypes, [], Map1) of
     error -> ?debug("Failed binding pattern: ~s\nto ~s\n", 
-		   [cerl_prettypr:format(C), t_to_string(ArgType0)]),
+		    [cerl_prettypr:format(C), t_to_string(ArgType0)]),
 	     {State, Map, t_none()};
     {Map2, PatTypes} ->
       case Arg =:= none of
@@ -513,7 +575,7 @@ do_clause(C, Arg, ArgType0, Map, State) ->
 	error -> ?debug("Failed guard: ~s\n", 
 		       [cerl_prettypr:format(C, [{hook, cerl_typean:pp_hook()}])]),
 		 {State, Map, t_none()};
-	Map4 -> 	
+	Map4 ->
 	  {State1, Map5, Type} = traverse(Body, Map4, State),
 	  State2 = state__store_env_out(C, Map5, State1),
 	  {State2, Map5, Type}
@@ -708,7 +770,8 @@ bind_guard(Guard, Map) ->
       end
   catch
     throw:dont_know -> Map;
-    throw:fail -> error
+    throw:fail -> error;
+    throw:fatal_fail -> error
   end.
 
 bind_guard(Guard, Map, Env) ->
@@ -717,12 +780,27 @@ bind_guard(Guard, Map, Env) ->
     binary -> 
       {Map, t_binary()};
     'case' ->
-      %% Asserting that this is only stemming from the strict_record_tests.
+      %% This is so far only possible in strict record tests and
+      %% orelse-guards. This might have to be extended if general case
+      %% statements are allowed here.
       Arg = case_arg(Guard),
       [] = values_es(Arg),
       [C1, C2] = case_clauses(Guard),
-      fail = concrete(clause_body(C2)),
-      bind_guard(clause_guard(C1), Map, Env);
+      B1 = clause_body(C1),
+      B2 = clause_body(C2),
+      G1 = clause_guard(C1),
+      G2 = clause_guard(C2),
+      Erlang = cerl:c_atom(erlang),
+      And = cerl:c_atom('and'),
+      Or = cerl:c_atom('or'),
+      Call1 = cerl:c_call(Erlang, And, [G1, B1]),
+      Call2 = cerl:c_call(Erlang, And, [G2, B2]),
+      case is_literal(B2) andalso (concrete(B2) =:= fail) of
+	true -> %% Special case for strict record tests
+	  bind_guard(Call1, Map, Env);
+	false ->
+	  bind_guard(cerl:c_call(Erlang, Or, [Call1, Call2]), Map, Env)
+      end;
     cons ->
       {Map, t_cons()};
     literal ->
@@ -858,7 +936,8 @@ bind_guard(Guard, Map, Env) ->
 	    true -> throw(fail);
 	    false -> {enter_type(Arg, Type, Map1), t_atom(true)}
 	  end;
-	{erlang, internal_is_record, 3} ->
+	MFA when (MFA =:= {erlang, internal_is_record, 3}) or 
+		 (MFA =:= {erlang, is_record, 3}) ->
 	  [Rec, Tag, Arity] = Args,
 	  {Map1, RecType} = bind_guard(Rec, Map, Env),
 	  TupleType = t_tuple([t_atom(atom_val(Tag))
@@ -922,20 +1001,46 @@ bind_guard(Guard, Map, Env) ->
 	      {Map2, Bool2} = bind_guard(Arg2, Map1, Env),
 	      case t_is_none(t_inf(Bool2, True)) of
 		true ->
-		    {Map, t_none()};
+		  {Map, t_none()};
 		false ->
 		  {Map2, True}
 	      end
 	  end;
 	{erlang, 'or', 2} ->
-	  throw(dont_know);
+	  [Arg1, Arg2] = Args,
+	  True = t_atom(true),
+	  False = t_atom(false),
+	  {Map1, Bool1} = 
+	    try
+	      bind_guard(Arg1, Map, Env)
+	    catch
+	      throw:{fail, _, _} -> {Map, False}
+	    end,
+	  {Map2, Bool2} = 
+	    try
+	      bind_guard(Arg2, Map, Env)
+	    catch
+	      throw:{fail, _, _} -> {Map, False}
+	    end,
+	  case t_is_none(t_inf(Bool1, True)) of
+	    true -> 
+	      case t_is_none(t_inf(Bool2, True)) of
+		true -> {Map, t_none()};
+		false -> {Map2, Bool2}
+	      end;
+	    false ->
+	      case t_is_none(t_inf(Bool2, True)) of
+		true -> {Map1, Bool1};
+		false -> {join_maps([Map1, Map2], Map), True}
+	      end
+	  end;
 	{erlang, 'not', 1} ->
 	  throw(dont_know);
 	{M, F, A} ->
 	  {Map1, As} = bind_guard_list(Args, Map, Env),
 	  BifRet = erl_bif_types:type(M, F, A, As),
 	  case t_is_none(BifRet) of
-	    true -> {Map, BifRet};
+	    true -> throw(fatal_fail);
 	    false ->
 	      case erl_bif_types:arg_types(M, F, A) of
 		any -> BifArgs = duplicate(A, t_any());
@@ -967,18 +1072,34 @@ map__new() ->
 
 join_maps(Maps, MapOut) ->
   %%Time = ?debug_time_start(join_maps),
-  Keys0 = lists:foldl(fun({Map, Subst}, Acc)->
-			  [dict:fetch_keys(Map), dict:fetch_keys(Subst)|Acc]
-		      end, [], Maps),
-  Keys = ordsets:from_list(lists:flatten(Keys0)),
+%  Keys0 = lists:foldl(fun({Map, Subst}, Acc)->
+%			  [dict:fetch_keys(Map), dict:fetch_keys(Subst)|Acc]
+%		      end, [], Maps),
+%  Keys = ordsets:from_list(lists:flatten(Keys0)),
+  
+  {Map, Subst} = MapOut,
+  Keys = ordsets:from_list(dict:fetch_keys(Map) ++ dict:fetch_keys(Subst)),
   join_maps(Keys, Maps, MapOut).
 
 join_maps([Key|Left], Maps, MapOut) ->
-  Type = lists:foldl(fun(M, T) -> t_sup(lookup_type(Key, M), T)end,
-		     t_none(), Maps),
-  join_maps(Left, Maps, enter_type(Key, Type, MapOut));
+  Type = join_maps_one_key(Maps, Key, t_none()),
+  case t_is_equal(lookup_type(Key, MapOut), Type) of
+    true ->  join_maps(Left, Maps, MapOut);
+    false -> join_maps(Left, Maps, enter_type(Key, Type, MapOut))
+  end;
 join_maps([], _Maps, MapOut) ->
   MapOut.
+
+join_maps_one_key([Map|Left], Key, AccType) ->
+  case t_is_any(AccType) of
+    true ->
+      %% We can stop here
+      AccType;
+    false ->
+      join_maps_one_key(Left, Key, t_sup(lookup_type(Key, Map), AccType))
+  end;
+join_maps_one_key([], _Key, AccType) ->
+  AccType.
 
 enter_type_lists([Key|KeyTail], [Val|ValTail], Map) ->
   Map1 = enter_type(Key, Val, Map),
@@ -1013,8 +1134,11 @@ enter_type(Key, Val, MS = {Map, Subst}) ->
 	      enter_type(NewKey, Val, MS);
 	    error ->
 	      ?debug("Entering ~p :: ~s\n", [KeyLabel, t_to_string(Val)]),
-	      NewMap = dict:store(KeyLabel, Val, Map),
-	      {NewMap, Subst}
+	      case dict:find(KeyLabel, Map) of
+		{ok, Val} -> MS;
+		{ok, _OldVal} -> {dict:store(KeyLabel, Val, Map), Subst};
+		error -> {dict:store(KeyLabel, Val, Map), Subst}
+	      end
 	  end
       end
   end.
@@ -1026,14 +1150,21 @@ enter_subst(Key, Val, MS = {Map, Subst}) ->
       NewMap = dict:store(KeyLabel, literal_type(Val), Map),
       {NewMap, Subst};
     false ->
-      ValLabel = get_label(Val),
-      case dict:find(ValLabel, Subst) of
-	{ok, NewVal} ->
-	  enter_subst(Key, NewVal, MS);
-	error ->
-	  ?debug("Subst: storing ~p == ~p\n", [KeyLabel, ValLabel]),
-	  NewSubst = dict:store(KeyLabel, ValLabel, Subst),
-	  {Map, NewSubst}
+      case is_c_var(Val) of
+	false -> MS;
+	true ->
+	  ValLabel = get_label(Val),
+	  case dict:find(ValLabel, Subst) of
+	    {ok, NewVal} ->
+	      enter_subst(Key, NewVal, MS);
+	    error ->
+	      if KeyLabel =:= ValLabel -> MS;
+		 true ->
+		  ?debug("Subst: storing ~p = ~p\n", [KeyLabel, ValLabel]),
+		  NewSubst = dict:store(KeyLabel, ValLabel, Subst),
+		  {Map, NewSubst}
+	      end
+	  end
       end
   end.
 
@@ -1108,17 +1239,6 @@ any_none([X|Xs]) ->
   end;
 any_none([]) -> false.
 
-all_none([]) -> false;
-all_none(L) -> all_none_1(L).
-
-all_none_1([X|Xs]) ->
-  case t_is_none(X) of
-    true -> all_none_1(Xs);      
-    false -> false
-  end;
-all_none_1([]) ->
-  true.
-
 
 filter_match_fail([Clause]) ->
   Body = clause_body(Clause),
@@ -1145,17 +1265,48 @@ filter_match_fail([]) ->
 %%%
 %%% ============================================================================
 
--record(state, {deps, calls, envs, envs_out, forward_limit, fun_tab, fun_sigs,
+-record(state, {deps, calls, envs, envs_out, esc, fun_tab, fun_sigs, 
+		module_defs,
 		plt, tree_map, work}).
 
-state__new(Esc, Deps, Calls, Tree, FunSigs, ForwardLimit, Plt) -> 
+state__new(Esc, Deps, Calls, Tree, FunSigs, Plt) -> 
   TreeMap = build_tree_map(Tree),
   Funs = dict:fetch_keys(TreeMap),
   FunTab = init_fun_tab(Funs, dict:new(), TreeMap, Esc, FunSigs),
-  Work = init_work([{get_label(Tree), duplicate(fun_arity(Tree), t_any())}]),
-  #state{deps=Deps, calls=Calls, envs=dict:new(), envs_out=dict:new(), 
-	 forward_limit=ForwardLimit, fun_sigs=FunSigs, fun_tab=FunTab, plt=Plt, 
+  Work = init_work([get_label(Tree)]),
+  #state{deps=Deps, calls=Calls, envs=dict:new(), envs_out=dict:new(), esc=Esc,
+	 fun_sigs=FunSigs, fun_tab=FunTab, module_defs=[], plt=Plt, 
 	 work=Work, tree_map=TreeMap}.
+
+state__is_escaping(Fun, #state{esc=Esc}) ->
+  ordsets:is_element(Fun, Esc).
+
+state__is_module_defined(Tree, #state{module_defs=MD}) ->
+  orddict:is_key(get_label(Tree), MD).
+  
+state__get_fun_from_defs(Var, #state{module_defs=MD}) ->
+  Label = get_label(Var),
+  orddict:fetch(Label, MD).
+
+state__store_module_defs(Defs, State) ->
+  State#state{module_defs=orddict:from_list([{get_label(Var), get_label(Fun)}
+					      || {Var, Fun} <- Defs])}.
+
+%state__update_module_def_types(State = #state{envs=Envs, module_defs=MD}) ->
+%  Types = [{Var, state__fun_type(Fun, State)} || {Var, Fun} <- MD],
+%  NewEnvs = dict:map(fun(_, Map) ->
+%			 lists:foldl(fun({Var, Type}, AccMap) ->
+%					 enter_type(Var, Type, AccMap)
+%				     end, Map, Types)
+%		     end, Envs),
+%  State#state{envs=NewEnvs}.
+
+state__get_args(Tree, #state{fun_tab=FunTab}) ->
+  Fun = get_label(Tree),
+  case dict:find(Fun, FunTab) of
+    error -> [];
+    {ok, {ArgTypes, _}} -> ArgTypes
+  end.
 
 build_tree_map(Tree) ->
   Fun =
@@ -1189,15 +1340,12 @@ init_fun_tab([Fun|Left], Dict, TreeMap, Esc, FunSigs) ->
 	    end;
 	  false -> duplicate(Arity, t_none())
 	end,
-      FunEntry = [{Args, t_none()}],
+      FunEntry = {Args, t_none()},
       NewDict = dict:store(Fun, FunEntry, Dict),
       init_fun_tab(Left, NewDict, TreeMap, Esc, FunSigs)
   end;
 init_fun_tab([], Dict, _TreeMap, _Esc, _FunSigs) ->
   Dict.
-
-state__forward_limit(#state{forward_limit=FL}) ->
-  FL.
 
 state__update_fun_env(Tree, Map, State = #state{envs=Envs}) ->
   NewEnvs = dict:store(get_label(Tree), Map, Envs),
@@ -1210,126 +1358,92 @@ state__fun_env(Tree, #state{envs=Envs}) ->
     {ok, Map} -> Map
   end.
 
-state__all_fun_types_unsafe(#state{fun_tab=FunTab}) ->
-  FunTab1 = dict:erase(top, FunTab),
-  FoldFun = fun({Args, Return}, Acc) ->
-		case any_none(Args) of
-		  true -> Acc;
-		  false -> t_sup(t_fun(Args, Return), Acc)
-		end
-	    end,
-  dict:map(fun(Key, _Val) -> state__fun_type(Key, FunTab1, FoldFun)end,FunTab1).
+state__all_fun_types(#state{fun_tab=FunTab}) ->
+  Tab1 = dict:filter(fun(X, _) -> top =/= X end, FunTab),
+  dict:map(fun(_Fun, {Args, Ret}) -> t_fun(Args, Ret)end, Tab1).
+		      
 
-
-state__fun_type(Label, #state{fun_tab=FunTab}) ->
-  FoldFun = fun({Args, Return}, Acc) ->
-		case t_is_none(Return) orelse any_none(Args) of
-		  true -> Acc;
-		  false -> t_sup(t_fun(Args, Return), Acc)
-		end
-	    end, 
-  state__fun_type(Label, FunTab, FoldFun).
-
-state__fun_type(Label, FunTab, FoldFun) when is_integer(Label)->
+state__fun_type(Fun, #state{fun_tab=FunTab}) ->
+  Label = 
+    if is_integer(Fun) -> Fun;
+       true -> get_label(Fun)
+    end,
   case dict:find(Label, FunTab) of
     error -> 
       %% This is a function with no arguments that have not been analyzed.
       t_fun(0, t_none());
-    {ok, {widened, {Args, Return}}} ->
-      t_fun(Args, Return);
-    {ok, FunEntries = [{A, _}|_]} ->
-      lists:foldl(FoldFun, t_fun(duplicate(length(A), t_none()), t_none()), 
-		  FunEntries)
-  end;
-state__fun_type(Tree, State, FoldFun) ->
-  state__fun_type(get_label(Tree), State, FoldFun).
-
+    {ok, {A, R}} ->
+      t_fun(A, R)
+  end.
 
 state__update_fun_entry(Tree, ArgTypes, Out0, State = #state{fun_tab=FunTab}) ->
   Out = t_limit(Out0, ?TYPE_LIMIT),
   Fun = get_label(Tree),
   case dict:find(Fun, FunTab) of
-    {ok, {widened, {ArgTypes, OldOut}}} ->
+    {ok, {ArgTypes, OldOut}} ->
       case t_is_equal(OldOut, Out) of
-	true -> State;
+	true -> 
+	  ?debug("Fixpoint for ~w: ~s\n", 
+		  [debug_lookup_name(Fun), 
+		   t_to_string(t_fun(ArgTypes, Out))]),
+	  State;
 	false ->
-	  NewEntry = {widened, {ArgTypes, Out}},
+	  NewEntry = {ArgTypes, Out},
 	  ?debug("New Entry for ~w: ~s\n", 
-		    [Fun, t_to_string(t_fun(ArgTypes, Out))]),
+		 [debug_lookup_name(Fun), 
+		     t_to_string(t_fun(ArgTypes, Out))]),
 	  NewFunTab = dict:store(Fun, NewEntry, FunTab),
-	  State1 = state__add_work_from_fun(Tree, State),
-	  State1#state{fun_tab=NewFunTab}
+	  State1 = State#state{fun_tab=NewFunTab},
+	  state__add_work_from_fun(Tree, State1)
       end;
-    {ok, {widened, {_OldArgTypes, _OldOut}}} ->
-      %% Can happen in self-recursive functions.
-      State;
-    {ok, OldEntry} ->
-      case orddict:find(ArgTypes, OldEntry) of
-	{ok, OldOut} ->
-	  case t_is_equal(OldOut, Out) of
-	    true -> State;
-	    false ->
-	      NewEntry = orddict:store(ArgTypes, Out, OldEntry),
-	  ?debug("New Entry for ~w: ~s\n", 
-		    [Fun, t_to_string(t_fun(ArgTypes, Out))]),
-	      NewFunTab = dict:store(Fun, NewEntry, FunTab),
-	      State1 = state__add_work_from_fun(Tree, State),
-	      State1#state{fun_tab=NewFunTab}
-	  end;
-	error ->
-	  NewEntry = orddict:store(ArgTypes, Out, OldEntry),
-	  ?debug("New Entry for ~w: ~s\n", 
-		    [Fun, t_to_string(t_fun(ArgTypes, Out))]),
-	  NewFunTab = dict:store(Fun, NewEntry, FunTab),
-	  State1 = state__add_work_from_fun(Tree, State),
-	  State1#state{fun_tab=NewFunTab}
-      end;
-    error -> 
-      NewEntry = [{ArgTypes, Out}],
-	  ?debug("New Entry for ~w: ~s\n", 
-		    [Fun, t_to_string(t_fun(ArgTypes, Out))]),
+    {ok, {NewArgTypes, _OldOut}} ->
+      %% Can only happen in self-recursive functions. Only update the out type.
+      NewEntry = {NewArgTypes, Out},
+      ?debug("New Entry for ~w: ~s\n", 
+	     [debug_lookup_name(Fun), 
+	      t_to_string(t_fun(NewArgTypes, Out))]),
       NewFunTab = dict:store(Fun, NewEntry, FunTab),
-      State1 = state__add_work_from_fun(Tree, State),
-      State1#state{fun_tab=NewFunTab}
+      State1 = State#state{fun_tab=NewFunTab},
+      state__add_work_from_fun(Tree, State1);
+    error -> 
+      NewEntry = {ArgTypes, Out},
+      ?debug("New Entry for ~w: ~s\n", 
+	      [debug_lookup_name(Fun), 
+	       t_to_string(t_fun(ArgTypes, Out))]),
+      NewFunTab = dict:store(Fun, NewEntry, FunTab),
+      State1 = State#state{fun_tab=NewFunTab},
+      state__add_work_from_fun(Tree, State1)
   end.
 
 state__add_work_from_fun(Tree, State = #state{deps=Deps}) ->
-  case dict:find(get_label(Tree), Deps) of
+  Label = get_label(Tree),
+  case dict:find(Label, Deps) of
     error -> State;
     {ok, List} -> 
-      lists:foldl(fun(X, AccState)-> state__add_work(X, AccState)end,
+      ?debug("~w: Will try to add:~w\n", 
+	     [debug_lookup_name(get_label(Tree)),
+	      [debug_lookup_name(X) || X <- List]]),
+      lists:foldl(fun(X, AccState)->
+		      state__add_work(X, AccState)end,
 		  State, List)
   end.
 
 state__add_work(external, State) ->
   State;
-state__add_work(Fun, State = #state{work=Work, fun_tab=FunTab}) ->
-  %% Add work for all possible arguments.
-  case dict:find(Fun, FunTab) of
-    error -> NewWork = add_work({Fun, []}, Work);
-    {ok, {widened, {Args, _}}} ->
-      NewWork = add_work({Fun, Args}, Work);
-    {ok, FunEntry} ->
-      AllArgs = orddict:fetch_keys(FunEntry),
-      NewWork = add_work_list([{Fun, Args} || Args <- AllArgs, 
-					      all_none(Args) =:=false], Work)
-  end,
+state__add_work(top, State) ->
+  %% Instead of adding the top function we update all function
+  %% environments to reflect the current top-level bindings.
+%%  state__update_module_def_types(State);
+  State;
+state__add_work(Fun, State = #state{work=Work}) ->
+  NewWork = add_work(Fun, Work),
   State#state{work=NewWork}.
-
-%state__add_work(Tree, Args, State = #state{work=Work}) ->
-%  NewWork = add_work({get_label(Tree), Args}, Work),
-%  State#state{work=NewWork}.
 
 state__get_work(State = #state{work=Work, tree_map=TreeMap}) ->
   case get_work(Work) of
     none -> none;
-    {{Label, Args}, NewWork} -> 
-      case all_none(Args) of
-	true -> 
-	  state__get_work(State#state{work=NewWork});
-	false ->
-	  {{dict:fetch(Label, TreeMap), Args}, State#state{work=NewWork}}
-      end
+    {Fun, NewWork} ->
+      {dict:fetch(Fun, TreeMap), State#state{work=NewWork}}
   end.
 
 state__handle_apply(Tree, Args, State = #state{calls=Calls}) ->
@@ -1341,20 +1455,19 @@ state__handle_apply(Tree, Args, State = #state{calls=Calls}) ->
       case lists:member(external, List) of
 	true -> 
 	  {Args, t_any()};
-	false -> 
-	  FunInfo = [state__fun_apply(Fun, Args, State) || Fun <- List],
-	  Out = t_sup([FunOut || {_InfArgs, FunOut} <- FunInfo]),
-	  NewArgs0 = lists:foldl(fun(X, Acc) -> t_sup(t_product(X), Acc)end,
-				 t_none(), 
-				 [InfArgs || {InfArgs, _FunOut} <- FunInfo]),
-	  case t_is_none(NewArgs0) of
+	false ->
+	  {NewArgs, Out} =
+	    case [state__fun_apply(Fun, Args, State) || Fun <- List] of
+	      [{As, OutType}] -> {t_product(As), OutType};
+	      FunInfoList ->
+		{ArgList, FunOut} = lists:unzip(FunInfoList),
+		{t_sup([t_product(A) || A <- ArgList]),
+		 t_sup(FunOut)}
+	    end,
+	  case t_is_none(NewArgs) of
 	    true -> {duplicate(length(Args), t_none()), t_none()};
-	    false -> {wrap_if_single(t_components(NewArgs0)), Out}
+	    false -> {wrap_if_single(t_components(NewArgs)), Out}
 	  end
-%	  case t_is_none(NewArgs0) of
-%	    true -> {duplicate(length(Args), t_none()), t_none()};
-%	    false -> {wrap_if_single(t_components(NewArgs0)), Out}
-%	  end
       end
   end.
 
@@ -1376,95 +1489,53 @@ state__fun_apply(Fun, Args, #state{fun_sigs=FunSigs, fun_tab=FunTab}) ->
 	error ->
 	  %% Fun without args that have not been analyzed yet
 	  {NewArgs, t_none()};
-	{ok, {widened, {OldArgs, Out}}} ->
-	  case lists:all(fun({X, Y}) -> t_is_subtype(X, Y)end,
-			 lists:zip(NewArgs, OldArgs)) of
-	    true -> 
-	      {NewArgs, Out};
-	    false ->
-	      %% Haven't analyzed this yet
-	      {NewArgs, t_none()}
-	  end;
-	{ok, FunEntries} ->
-	  case orddict:find(NewArgs, FunEntries) of
-	    error ->
-	      %% Haven't analyzed this yet
-	      {NewArgs, t_none()};
-	    {ok, Return} ->
-	      {NewArgs, Return}
-	  end
+	{ok, {_OldArgs, Out}} -> 
+	  %% Keep the old out value. If it changes this function will
+	  %% be envoked again.
+	  {NewArgs, Out}
       end
   end.
 
-state__forward_args(Apply, ArgTypes0, State) when is_record(State, state) ->
+state__forward_args(Apply, ArgTypes0, State = #state{}) ->
   ArgTypes = [t_limit(T, ?TYPE_LIMIT) || T <- ArgTypes0],
-  Funs = dict:fetch(get_label(Apply), State#state.calls),
-  ForwardLimit = state__forward_limit(State),
-  {NewFunTab, NewWork} = forward_args(Funs, ArgTypes, State#state.fun_tab, 
-				      State#state.work, ForwardLimit),
-  State#state{work=NewWork, fun_tab=NewFunTab}.
-
-forward_args([external|Left], ArgTypes, FunTab, Work, ForwardLimit) ->
-  forward_args(Left, ArgTypes, FunTab, Work, ForwardLimit);
-forward_args([Fun|Left], ArgTypes, FunTab, Work, ForwardLimit) ->
-  case all_none(ArgTypes) of
-    true -> {FunTab, Work};
+  case any_none(ArgTypes) of
+    true -> State;
     false ->      
-      case dict:find(Fun, FunTab) of
-	error ->
-	  %% This must be a function without arguments that have not yet
-	  %% been analyzed. Add it to the worklist.
-	  ?debug("Forwarding args ~s for fun ~w\n", 
-		    [t_to_string(t_product(ArgTypes)), Fun]),
-	  NewWork = add_work({Fun, ArgTypes}, Work),
-	  forward_args(Left, ArgTypes, FunTab, NewWork, ForwardLimit);
-	{ok, {widened, {OldArgTypes, _}}} ->
-	  case t_is_subtype(t_product(ArgTypes), t_product(OldArgTypes)) of
-	    true -> 
-	      forward_args(Left, ArgTypes, FunTab, Work, ForwardLimit);
-	    false -> 
-	      NewArgTypes = [t_sup(X, Y) || 
-			      {X, Y} <- lists:zip(ArgTypes, OldArgTypes)],
-	      NewWork0 = clean_work(Fun, Work),
-	      NewWork = add_work({Fun, NewArgTypes}, NewWork0),
-	      ?debug("Forwarding args ~s for fun ~w\n", 
-			[t_to_string(t_product(NewArgTypes)), Fun]),
-	      
-	      NewFunTab = dict:store(Fun, {widened, {NewArgTypes, t_none()}}, 
-				     FunTab),
-	      forward_args(Left, ArgTypes, NewFunTab, NewWork, ForwardLimit)
-	  end;
-	{ok, FunEntries} ->
-	  case orddict:is_key(ArgTypes, FunEntries) of
-	    true ->
-	      forward_args(Left, ArgTypes, FunTab, Work, ForwardLimit);
-	    false ->
-	      case length(FunEntries) > ForwardLimit of
-		true ->
-		  OldArgs = lists:foldl(fun({ATs, _}, Acc) -> 
-					    t_sup(t_product(ATs), Acc)
-					end, t_none(), FunEntries),
-		  NewArgTypes0 = t_sup(t_product(ArgTypes), OldArgs),
-		  NewArgTypes = wrap_if_single(t_components(NewArgTypes0)),
-		  ?debug("Forwarding args ~s for fun ~w\n", 
-			    [t_to_string(t_product(NewArgTypes)), Fun]),
-		  NewWork0 = clean_work(Fun, Work),
-		  NewWork = add_work({Fun, NewArgTypes}, NewWork0),
-		  NewFunTab = 
-		    dict:store(Fun, {widened, {NewArgTypes, t_none()}}, FunTab),
-		  forward_args(Left, ArgTypes, NewFunTab, 
-			       NewWork, ForwardLimit);
-		false ->
-		  ?debug("Forwarding args ~s for fun ~w\n", 
-			    [t_to_string(t_product(ArgTypes)), Fun]),
-		  NewWork = add_work({Fun, ArgTypes}, Work),
-		  forward_args(Left, ArgTypes, FunTab, NewWork, ForwardLimit)
-	      end
-	  end
+      Funs = dict:fetch(get_label(Apply), State#state.calls),
+      forward_args(Funs, ArgTypes, State)
+  end.
+
+forward_args([external|Left], ArgTypes, State) ->
+  forward_args(Left, ArgTypes, State);
+forward_args([Fun|Left], ArgTypes, State = #state{work=Work, fun_tab=FunTab}) ->
+  case dict:find(Fun, FunTab) of
+    error ->
+      %% This must be a function without arguments that have not yet
+      %% been analyzed. Add it to the worklist.
+      %% For sanity,
+      [] = ArgTypes,
+      ?debug("~w: forwarding args ~s\n", 
+	     [debug_lookup_name(Fun), t_to_string(t_product(ArgTypes))]),
+      NewWork = add_work(Fun, Work),
+      forward_args(Left, ArgTypes, State#state{work=NewWork});
+    {ok, {OldArgTypes, OldOut}} ->
+      case t_is_subtype(t_product(ArgTypes), t_product(OldArgTypes)) of
+	true -> 
+	  forward_args(Left, ArgTypes, State);
+	false -> 
+	  NewArgTypes = [t_sup(X, Y) || 
+			  {X, Y} <- lists:zip(ArgTypes, OldArgTypes)],
+	  NewWork = add_work(Fun, Work),
+	  ?debug("~w: forwarding args ~s\n", 
+		 [debug_lookup_name(Fun), 
+		  t_to_string(t_product(NewArgTypes))]),
+	  NewFunTab = dict:store(Fun, {NewArgTypes, OldOut}, FunTab),
+	  forward_args(Left, ArgTypes, State#state{work=NewWork, 
+						   fun_tab=NewFunTab})
       end
   end;
-forward_args([], _ArgTypes, FunTab, Work, _ForwardLimit) ->
-  {FunTab, Work}.
+forward_args([], _ArgTypes, State) ->
+  State.
 
 state__store_env_out(Fun, Map, State = #state{envs_out=Envs}) ->  
   NewEnvs = dict:store(get_label(Fun), Map, Envs),
@@ -1508,32 +1579,12 @@ get_work({[], Rev, Set}) ->
 add_work(New, Work = {List, Rev, Set}) ->
   case sets:is_element(New, Set) of
     true -> 
+      ?debug("Did not add work: ~w\n", [debug_lookup_name(New)]),
       Work;
     false -> 
-      ?debug("Adding work: ~w: ~p\n", [element(1, New), 
-				      [t_to_string(X) || X <- element(2, New)]]), 
+      ?debug("Adding work: ~w\n", [debug_lookup_name(New)]),
       {List, [New|Rev], sets:add_element(New, Set)}
   end.
-
-add_work_list([H|T], Work) ->      
-  add_work_list(T, add_work(H, Work));
-add_work_list([], Work) ->
-  Work.
-
-clean_work(Label, {List, RevList, Set}) ->
-  %% Remove all entries that relates to the function.  Note that this
-  %% is really dependent on the entries in the worklist, so it the
-  %% representation changes this must also be changed.
-  Fun = fun({X, _}) -> X =/= Label end,
-  NewList = lists:filter(Fun, List),
-  NewRevList = lists:filter(Fun, RevList),
-  NewSet = sets:filter(Fun, Set),
-
-%  io:format("Cleaning work for label ~w\n", [Label]),
-%  io:format("NewLabels: ~w\nNewSet ~w\n", [[L || {L, _} <- NewList++RevList],
-%					   [L || {L, _} <- sets:to_list(NewSet)]]),
-  {NewList, NewRevList, NewSet}.
-
 
 %%% ============================================================================
 %%%
@@ -1558,4 +1609,47 @@ debug_pp(Tree, false) ->
 -else.
 debug_pp(_Tree, _UseHook) ->
   ok.
+-endif.
+
+-ifdef(DEBUG_NAME_MAP).
+debug_build_namemap(Tree) ->
+  Fun = fun(T, AccMap1) ->
+	    Defs = 
+	      case cerl:type(T) of
+		module -> cerl:module_defs(T);
+		letrec -> cerl:letrec_defs(T);
+		_      -> []
+	      end,
+	    lists:foldl(fun({Var, Fun}, AccMap2) ->
+			    Id = cerl:fname_id(Var),
+			    Arity = cerl:fname_arity(Var),
+			    Label = get_label(Fun),
+			    dict:store(Label, {Id, Arity}, AccMap2)
+			end, AccMap1, Defs)
+	end,
+  Map = cerl_trees:fold(Fun, dict:new(), Tree),
+  put(dialyzer_dataflow_namemap, Map),
+  ok.
+
+debug_lookup_name(Label) ->
+  Map = get(dialyzer_dataflow_namemap),  
+  case dict:find(Label, Map) of
+    error -> Label;
+    {ok, Name} -> Name
+  end.
+-else.
+debug_build_namemap(_Tree) ->
+  ok.
+-endif.
+
+-ifdef(DEBUG).
+debug_fun_type(Label, #state{fun_tab=FunTab}) ->
+  ?debug("Entries for fun: ~w\n", [debug_lookup_name(Label)]),
+  case dict:find(Label, FunTab) of
+    error -> 
+      %% This is a function with no arguments that have not been analyzed.
+      ok;
+    {ok, {_Args, _Return}} ->
+      ?debug("\t~s\n", [t_to_string(t_fun(_Args, _Return))])
+  end.
 -endif.

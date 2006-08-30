@@ -18,9 +18,6 @@ include(`hipe/hipe_x86_asm.m4')
  *   - demonitor/1, exit/2, group_leader/2, link/1, monitor/2,
  *     port_command/2, send/2, unlink/1: can fail with RESCHEDULE
  * - Appropriate BIF exception test for debug and non-debug mode.
- *
- * XXX: TODO:
- * - Can a BIF with arity 0 fail? beam_emu doesn't think so.
  */
 
 `#if THE_NON_VALUE == 0
@@ -30,49 +27,21 @@ include(`hipe/hipe_x86_asm.m4')
 #endif'
 
 /*
- * standard_bif_interface_0(nbif_name, cbif_name)
  * standard_bif_interface_1(nbif_name, cbif_name)
  * standard_bif_interface_2(nbif_name, cbif_name)
  * standard_bif_interface_3(nbif_name, cbif_name)
  *
- * Generate native interface for a BIF with 0-3 parameters and
+ * Generate native interface for a BIF with 1-3 parameters and
  * standard failure mode (may fail, but not with RESCHEDULE).
  */
-define(standard_bif_interface_0,
-`
-#ifndef HAVE_$1
-#`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
-	/* switch to C stack */
-	SWITCH_ERLANG_TO_C
-
-	/* make the call on the C stack */
-	pushl	P
-	call	$2
-	addl	`$'4, %esp
-
-	/* switch to native stack */
-	SWITCH_C_TO_ERLANG
-
-	/* throw exception if failure, otherwise return */
-	TEST_GOT_EXN
-	jz	nbif_0_simple_exception
-	NBIF_RET(0)
-	.size	$1,.-$1
-	.type	$1,@function
-#endif')
-
 define(standard_bif_interface_1,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(1)
 
@@ -80,10 +49,9 @@ $1:
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(1,0)
-	pushl	P
-	call	$2
-	addl	`$'8, %esp
+	NBIF_ARG_REG(0,P)
+	NBIF_ARG(1,1,0)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
@@ -92,18 +60,18 @@ $1:
 	TEST_GOT_EXN
 	jz	nbif_1_simple_exception
 	NBIF_RET(1)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 define(standard_bif_interface_2,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(2)
 
@@ -111,11 +79,10 @@ $1:
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(2,1)
-	pushl	NBIF_ARG(2,0)
-	pushl	P
-	call	$2
-	addl	`$'12, %esp
+	NBIF_ARG_REG(0,P)
+	NBIF_ARG(1,2,0)
+	NBIF_ARG(2,2,1)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
@@ -124,18 +91,18 @@ $1:
 	TEST_GOT_EXN
 	jz	nbif_2_simple_exception
 	NBIF_RET(2)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 define(standard_bif_interface_3,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(3)
 
@@ -143,12 +110,11 @@ $1:
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(3,2)
-	pushl	NBIF_ARG(3,1)
-	pushl	NBIF_ARG(3,0)
-	pushl	P
-	call	$2
-	addl	`$'16, %esp
+	NBIF_ARG_REG(0,P)
+	NBIF_ARG(1,3,0)
+	NBIF_ARG(2,3,1)
+	NBIF_ARG(3,3,2)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
@@ -157,8 +123,8 @@ $1:
 	TEST_GOT_EXN
 	jz	nbif_3_simple_exception
 	NBIF_RET(3)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 /*
@@ -172,10 +138,10 @@ define(expensive_bif_interface_1,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(1)
 
@@ -186,10 +152,9 @@ $1:
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(1,0)
-	pushl	P
-	call	$2
-	addl	`$'8, %esp
+	NBIF_ARG_REG(0,P)
+	NBIF_ARG(1,1,0)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
@@ -199,20 +164,20 @@ $1:
 	jz	1f
 	NBIF_RET(1)
 1:
-	movl	`$'$1, %edx	/* resumption address */
+	movl	`$'ASYM($1), %edx	/* resumption address */
 	jmp	nbif_1_hairy_exception
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 define(expensive_bif_interface_2,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(2)
 
@@ -223,11 +188,10 @@ $1:
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(2,1)
-	pushl	NBIF_ARG(2,0)
-	pushl	P
-	call	$2
-	addl	`$'12, %esp
+	NBIF_ARG_REG(0,P)
+	NBIF_ARG(1,2,0)
+	NBIF_ARG(2,2,1)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
@@ -237,10 +201,10 @@ $1:
 	jz	1f
 	NBIF_RET(2)
 1:
-	movl	`$'$1, %edx	/* resumption address */
+	movl	`$'ASYM($1), %edx	/* resumption address */
 	jmp	nbif_2_hairy_exception
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 /*
@@ -257,35 +221,34 @@ define(nofail_primop_interface_0,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	P
-	call	$2
-	addl	`$'4, %esp
+	NBIF_ARG_REG(0,P)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
 
 	/* return */
 	NBIF_RET(0)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 define(nofail_primop_interface_1,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(1)
 
@@ -293,28 +256,27 @@ $1:
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(1,0)
-	pushl	P
-	call	$2
-	addl	`$'8, %esp
+	NBIF_ARG_REG(0,P)
+	NBIF_ARG(1,1,0)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
 
 	/* return */
 	NBIF_RET(1)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 define(nofail_primop_interface_2,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(2)
 
@@ -322,29 +284,28 @@ $1:
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(2,1)
-	pushl	NBIF_ARG(2,0)
-	pushl	P
-	call	$2
-	addl	`$'12, %esp
+	NBIF_ARG_REG(0,P)
+	NBIF_ARG(1,2,0)
+	NBIF_ARG(2,2,1)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
 
 	/* return */
 	NBIF_RET(2)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 define(nofail_primop_interface_3,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(3)
 
@@ -352,20 +313,19 @@ $1:
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(3,2)
-	pushl	NBIF_ARG(3,1)
-	pushl	NBIF_ARG(3,0)
-	pushl	P
-	call	$2
-	addl	`$'16, %esp
+	NBIF_ARG_REG(0,P)
+	NBIF_ARG(1,3,0)
+	NBIF_ARG(2,3,1)
+	NBIF_ARG(3,3,2)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
 
 	/* return */
 	NBIF_RET(3)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 /*
@@ -383,35 +343,34 @@ define(nocons_nofail_primop_interface_0,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C_QUICK
 
 	/* make the call on the C stack */
-	pushl	P
-	call	$2
-	addl	`$'4, %esp
+	NBIF_ARG_REG(0,P)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
 	NBIF_RET(0)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 define(nocons_nofail_primop_interface_1,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(1)
 
@@ -419,28 +378,27 @@ $1:
 	SWITCH_ERLANG_TO_C_QUICK
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(1,0)
-	pushl	P
-	call	$2
-	addl	`$'8, %esp
+	NBIF_ARG_REG(0,P)
+	NBIF_ARG(1,1,0)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
 	NBIF_RET(1)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 define(nocons_nofail_primop_interface_2,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(2)
 
@@ -448,29 +406,28 @@ $1:
 	SWITCH_ERLANG_TO_C_QUICK
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(2,1)
-	pushl	NBIF_ARG(2,0)
-	pushl	P
-	call	$2
-	addl	`$'12, %esp
+	NBIF_ARG_REG(0,P)
+	NBIF_ARG(1,2,0)
+	NBIF_ARG(2,2,1)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
 	NBIF_RET(2)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 define(nocons_nofail_primop_interface_3,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(3)
 
@@ -478,30 +435,29 @@ $1:
 	SWITCH_ERLANG_TO_C_QUICK
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(3,2)
-	pushl	NBIF_ARG(3,1)
-	pushl	NBIF_ARG(3,0)
-	pushl	P
-	call	$2
-	addl	`$'16, %esp
+	NBIF_ARG_REG(0,P)
+	NBIF_ARG(1,3,0)
+	NBIF_ARG(2,3,1)
+	NBIF_ARG(3,3,2)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
 	NBIF_RET(3)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 define(nocons_nofail_primop_interface_5,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(5)
 
@@ -509,22 +465,21 @@ $1:
 	SWITCH_ERLANG_TO_C_QUICK
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(5,4)
-	pushl	NBIF_ARG(5,3)
-	pushl	NBIF_ARG(5,2)
-	pushl	NBIF_ARG(5,1)
-	pushl	NBIF_ARG(5,0)
-	pushl	P
-	call	$2
-	addl	`$'24, %esp
+	NBIF_ARG_REG(0,P)
+	NBIF_ARG(1,5,0)
+	NBIF_ARG(2,5,1)
+	NBIF_ARG(3,5,2)
+	NBIF_ARG(4,5,3)
+	NBIF_ARG(5,5,4)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
 	NBIF_RET(5)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 /*
@@ -542,33 +497,33 @@ define(noproc_primop_interface_0,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C_QUICK
 
 	/* make the call on the C stack */
-	call	$2
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
 	NBIF_RET(0)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 define(noproc_primop_interface_1,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(1)
 
@@ -576,27 +531,26 @@ $1:
 	SWITCH_ERLANG_TO_C_QUICK
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(1,0)
-	call	$2
-	addl	`$'4, %esp
+	NBIF_ARG(0,1,0)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
 	NBIF_RET(1)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 define(noproc_primop_interface_2,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(2)
 
@@ -604,28 +558,27 @@ $1:
 	SWITCH_ERLANG_TO_C_QUICK
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(2,1)
-	pushl	NBIF_ARG(2,0)
-	call	$2
-	addl	`$'8, %esp
+	NBIF_ARG(0,2,0)
+	NBIF_ARG(1,2,1)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
 	NBIF_RET(2)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 define(noproc_primop_interface_3,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(3)
 
@@ -633,29 +586,28 @@ $1:
 	SWITCH_ERLANG_TO_C_QUICK
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(3,2)
-	pushl	NBIF_ARG(3,1)
-	pushl	NBIF_ARG(3,0)
-	call	$2
-	addl	`$'12, %esp
+	NBIF_ARG(0,3,0)
+	NBIF_ARG(1,3,1)
+	NBIF_ARG(2,3,2)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
 	NBIF_RET(3)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 define(noproc_primop_interface_5,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
+	TEXT
 	.align	4
-	.global	$1
-$1:
+	GLOBAL(ASYM($1))
+ASYM($1):
 	/* copy native stack pointer */
 	NBIF_COPY_NSP(5)
 
@@ -663,27 +615,38 @@ $1:
 	SWITCH_ERLANG_TO_C_QUICK
 
 	/* make the call on the C stack */
-	pushl	NBIF_ARG(5,4)
-	pushl	NBIF_ARG(5,3)
-	pushl	NBIF_ARG(5,2)
-	pushl	NBIF_ARG(5,1)
-	pushl	NBIF_ARG(5,0)
-	call	$2
-	addl	`$'20, %esp
+	NBIF_ARG(0,5,0)
+	NBIF_ARG(1,5,1)
+	NBIF_ARG(2,5,2)
+	NBIF_ARG(3,5,3)
+	NBIF_ARG(4,5,4)
+	call	CSYM($2)
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
 	NBIF_RET(5)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
 #endif')
 
 /*
  * x86-specific primops.
  */
 noproc_primop_interface_0(nbif_handle_fp_exception, erts_restore_fpu)
+
+/*
+ * Implement standard_bif_interface_0 as nofail_primop_interface_0.
+ */
+define(standard_bif_interface_0,`nofail_primop_interface_0($1, $2)')
+
+/*
+ * Implement gc_bif_interface_N as standard_bif_interface_N (N=0,1,2).
+ */
+define(gc_bif_interface_0,`standard_bif_interface_0($1, $2)')
+define(gc_bif_interface_1,`standard_bif_interface_1($1, $2)')
+define(gc_bif_interface_2,`standard_bif_interface_2($1, $2)')
 
 /*
  * Implement gc_nofail_primop_interface_1 as nofail_primop_interface_1.

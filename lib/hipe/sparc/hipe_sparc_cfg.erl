@@ -157,7 +157,7 @@ predictionorder(CFG) ->
   lists:reverse(PO1).
 
 prediction_list([X|Xs], Vis, Succ, PO, CFG) ->
-  case visited(X,Vis) of 
+  case is_visited(X,Vis) of 
     true ->
       prediction_list(Xs, Vis, Succ, PO, CFG);
     false ->

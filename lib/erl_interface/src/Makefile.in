@@ -37,6 +37,9 @@ TARGET = @TARGET@
 include ../vsn.mk
 include $(TARGET)/eidefs.mk
 
+USING_MINGW=@MIXED_CYGWIN_MINGW@
+USING_VC=@MIXED_CYGWIN_VC@
+
 ifdef TESTROOT
 RELEASE_PATH=$(TESTROOT)
 else
@@ -88,7 +91,7 @@ RANLIB = @RANLIB@
 INCFLAGS = -I. -I../include -Iconnect -Iencode -Idecode -Imisc -Iepmd \
 	-Iregistry -I$(TARGET) 
 
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 WARNFLAGS = -Wall
 else
 WARNFLAGS = @WFLAGS@
@@ -139,15 +142,17 @@ vpath %.c connect:encode:decode:misc:epmd:legacy:registry
 ###########################################################################
 
 ifeq ($(TARGET),win32)
-
 EXE=.exe
+else
+EXE=
+endif
+
+ifeq ($(USING_VC),yes)
 LIBEXT=.lib
 LIBPRE=
 MTFLAG=-MT
 
 else
-
-EXE=
 LIBEXT=.a
 LIBPRE=lib
 MTFLAG=
@@ -185,7 +190,7 @@ else
 EXE_TARGETS = 
 endif
 
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC),yes)
 
 # Windows targets
 
@@ -222,6 +227,24 @@ FAKE_TARGETS = \
 
 else
 
+ifeq ($USING_MINGW,yes)
+TARGETS = \
+	$(BINDIR) \
+	$(OBJDIR) \
+	$(MD_OBJDIR) \
+	$(OBJ_TARGETS) \
+	$(EXE_TARGETS)
+
+OBJ_TARGETS = \
+	$(MD_EILIB) \
+	$(MD_ERLLIB)
+
+FAKE_TARGETS = \
+	$(OBJDIR)/erl_fake_prog_md$(EXE) \
+	$(OBJDIR)/ei_fake_prog_md$(EXE) \
+	$(OBJDIR)/erl_fake_prog_cxx_md$(EXE) \
+	$(OBJDIR)/ei_fake_prog_cxx_md$(EXE) 
+else
 # Unix targets
 
 ifdef THR_DEFS
@@ -273,6 +296,7 @@ endif
 
 endif
 
+endif
 ###########################################################################
 #  List all source files
 ###########################################################################

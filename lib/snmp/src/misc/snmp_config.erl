@@ -28,6 +28,7 @@
 	 write_agent_snmp_community_conf/1, 
 	 write_agent_snmp_standard_conf/2, 
 	 write_agent_snmp_target_addr_conf/4, 
+	 write_agent_snmp_target_addr_conf/6, 
 	 write_agent_snmp_target_params_conf/2, 
 	 write_agent_snmp_notify_conf/2, 
 	 write_agent_snmp_usm_conf/5, 
@@ -303,24 +304,31 @@ config_agent_sys() ->
 				    "(used for flow control) "
 				    "(infinity/pos integer)?", "infinity",
 				    fun verify_netif_req_limit/1),
-		NetIf = 
+		NetIfRecbuf = 
 		    case ask("27. Receive buffer size of the agent (in bytes) "
 			     "(default/pos integer)?", "default", 
 			     fun verify_netif_recbuf/1) of
 			default ->
-			    [{module,    NetIfMod},
-			     {verbosity, NetIfVerb},
-			     {options,   [{bind_to,   NetIfBindTo},
-					  {no_reuse,  NetIfNoReuse},
-					  {req_limit, NetIfReqLimit}]}];
-			NetIfRecbuf ->
-			    [{module,    NetIfMod},
-			     {verbosity, NetIfVerb},
-			     {options,   [{recbuf,    NetIfRecbuf},
-					  {bind_to,   NetIfBindTo},
-					  {no_reuse,  NetIfNoReuse},
-					  {req_limit, NetIfReqLimit}]}]
+			    [];
+			RecBufSz ->
+			    [{recbuf, RecBufSz}]
 		    end,
+		NetIfSndbuf = 
+		    case ask("28. Send buffer size of the agent (in bytes) "
+			     "(default/pos integer)?", "default", 
+			     fun verify_netif_sndbuf/1) of
+			default ->
+			    [];
+			SndBufSz ->
+			    [{sndbuf, SndBufSz}]
+		    end,
+		NetIfOpts = 
+		    [{bind_to,   NetIfBindTo},
+		     {no_reuse,  NetIfNoReuse},
+		     {req_limit, NetIfReqLimit}] ++ NetIfRecbuf ++ NetIfSndbuf,
+		NetIf = [{module,    NetIfMod},
+			 {verbosity, NetIfVerb},
+			 {options,   NetIfOpts}],
 		[{agent_type,      master},
 		 {agent_verbosity, MasterAgentVerb},
 		 {config,          [{dir,        ConfigDir}, 
@@ -524,39 +532,48 @@ config_manager_sys() ->
     NetIfNoReuse = ask("16. Shall the manager IP address and port "
 		       "be not reusable (true/false)?",
 		       "false", fun verify_bool/1),
-    NetIf = 
+    NetIfRecbuf = 
 	case ask("17. Receive buffer size of the manager (in bytes) "
 		 "(default/pos integer)?", "default", 
 		 fun verify_netif_recbuf/1) of
 	    default ->
-		[{module,    NetIfMod},
-		 {verbosity, NetIfVerb},
-		 {options,   [{bind_to,  NetIfBindTo},
-			      {no_reuse, NetIfNoReuse}]}];
-	    NetIfRecbuf ->
-		[{module,    NetIfMod},
-		 {verbosity, NetIfVerb},
-		 {options,   [{recbuf,   NetIfRecbuf},
-			      {bind_to,  NetIfBindTo},
-			      {no_reuse, NetIfNoReuse}]}]
+		[];
+	    RecBufSz ->
+		[{recbuf, RecBufSz}]
 	end,
+    NetIfSndbuf = 
+	case ask("18. Send buffer size of the manager (in bytes) "
+		 "(default/pos integer)?", "default", 
+		 fun verify_netif_sndbuf/1) of
+	    default ->
+		[];
+	    SndBufSz ->
+		[{sndbuf, SndBufSz}]
+	end,
+    NetIfOpts = 
+	[{bind_to,   NetIfBindTo},
+	 {no_reuse,  NetIfNoReuse}] ++ NetIfRecbuf ++ NetIfSndbuf,
+    NetIf = 
+	[{module,    NetIfMod},
+	 {verbosity, NetIfVerb},
+	 {options,   NetIfOpts}], 
     ATL = 
-	case ask("18. Shall the manager use an audit trail log "
+	case ask("19. Shall the manager use an audit trail log "
 		 "(y/n)?",
 		 "n", fun verify_yes_or_no/1) of
 	    yes ->
-		ATLDir = ask("18b. Where to store the "
+		ATLDir = ask("19b. Where to store the "
 			     "audit trail log?",
 			     DefDir, fun verify_dir/1),
-		ATLMaxFiles = ask("18c. Max number of files?", 
+		ATLMaxFiles = ask("19c. Max number of files?", 
 				  "10", 
 				  fun verify_pos_integer/1),
-		ATLMaxBytes = ask("18d. Max size (in bytes) "
+		ATLMaxBytes = ask("19d. Max size (in bytes) "
 				  "of each file?", 
 				  "10240", 
 				  fun verify_pos_integer/1),
 		ATLSize = {ATLMaxBytes, ATLMaxFiles},
-		ATLRepair = ask("18e. Audit trail log repair "
+		ATLRepair = ask("19e. Audit trail log repair "
 				"(true/false/truncate/snmp_repair)?", "true",
 				fun verify_atl_repair/1),
 		[{audit_trail_log, [{dir,    ATLDir},
@@ -566,14 +583,14 @@ config_manager_sys() ->
 		[]
 	end,
     DefUser = 
-	case ask("19. Do you wish to assign a default user [yes] or use~n"
+	case ask("20. Do you wish to assign a default user [yes] or use~n"
 		 "    the default settings [no] (y/n)?", "n", 
 		 fun verify_yes_or_no/1) of
 	    yes ->
-		DefUserMod = ask("19b. Default user module?", 
+		DefUserMod = ask("20b. Default user module?", 
 				 "snmpm_user_default",
 				 fun verify_module/1),
-		DefUserData = ask("19c. Default user data?", "undefined",
+		DefUserData = ask("20c. Default user data?", "undefined",
 				  fun verify_user_data/1),
 		[{def_user_mod,  DefUserMod},
 		 {def_user_data, DefUserData}];
@@ -1032,14 +1049,20 @@ verify_netif_req_limit(I0) ->
 	    {error, "invalid network interface request limit: " ++ I0}
     end.
 
-verify_netif_recbuf("default") ->
+verify_netif_recbuf(Val) ->
+    verify_netif_recbuf_or_sndbuf(Val, "recbuf").
+
+verify_netif_sndbuf(Val) ->
+    verify_netif_recbuf_or_sndbuf(Val, "sndbuf").
+
+verify_netif_recbuf_or_sndbuf("default", _) ->
     {ok, default};
-verify_netif_recbuf(I0) ->
+verify_netif_recbuf_or_sndbuf(I0, Buf) ->
     case (catch list_to_integer(I0)) of
 	I when integer(I), I > 0 ->
 	    {ok, I};
 	_ ->
-	    {error, "invalid network interface recbuf size: " ++ I0}
+	    {error, "invalid network interface " ++ Buf ++ " size: " ++ I0}
     end.
 
 
@@ -1584,6 +1607,15 @@ do_write_agent_standard_conf(Fid, {snmpEnableAuthenTraps = Tag, Val}) ->
 %% 
 
 write_agent_snmp_target_addr_conf(Dir, ManagerIp, UDP, Vsns) -> 
+    Timeout    = 1500, 
+    RetryCount = 3, 
+    write_agent_snmp_target_addr_conf(Dir, ManagerIp, UDP, 
+				      Timeout, RetryCount, 
+				      Vsns).
+
+write_agent_snmp_target_addr_conf(Dir, ManagerIp, UDP, 
+				  Timeout, RetryCount, 
+				  Vsns) -> 
     Comment = 
 "%% This file defines the target address parameters.\n"
 "%% The data is inserted into the snmpTargetAddrTable defined\n"
@@ -1605,21 +1637,21 @@ write_agent_snmp_target_addr_conf(Dir, ManagerIp, UDP, Vsns) ->
     Hdr = header() ++ Comment,
     F = fun(v1 = Vsn, Acc) ->
 		[{mk_ip(ManagerIp, Vsn), 
-		  ManagerIp, UDP, 1500, 3, 
+		  ManagerIp, UDP, Timeout, RetryCount, 
 		  "std_trap", mk_param(Vsn), "", [], 2048}| Acc];
 	   (v2 = Vsn, Acc) ->
 		[{mk_ip(ManagerIp, Vsn), 
-		  ManagerIp, UDP, 1500, 3, 
+		  ManagerIp, UDP, Timeout, RetryCount, 
 		  "std_trap", mk_param(Vsn), "", [], 2048},
 		 {lists:flatten(io_lib:format("~s.2",[mk_ip(ManagerIp, Vsn)])),
-		  ManagerIp, UDP, 1500, 3, 
+		  ManagerIp, UDP, Timeout, RetryCount, 
 		  "std_inform", mk_param(Vsn), "", [], 2048}| Acc];
 	   (v3 = Vsn, Acc) ->
 		[{mk_ip(ManagerIp, Vsn), 
-		  ManagerIp, UDP, 1500, 3, 
+		  ManagerIp, UDP, Timeout, RetryCount, 
 		  "std_trap", mk_param(Vsn), "", [], 2048},
 		 {lists:flatten(io_lib:format("~s.3",[mk_ip(ManagerIp, Vsn)])),
-		  ManagerIp, UDP, 1500, 3, 
+		  ManagerIp, UDP, Timeout, RetryCount, 
 		  "std_inform", mk_param(Vsn), "mgrEngine", [], 2048}| Acc]
 	end,
     Conf = lists:foldl(F, [], Vsns),

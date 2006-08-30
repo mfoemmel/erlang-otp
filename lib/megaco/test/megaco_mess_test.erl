@@ -29,30 +29,49 @@
 %%----------------------------------------------------------------------
 -module(megaco_mess_test).
 
-% -export([all/1, init_per_testcase/2, fin_per_testcase/2]).
-% -export([connect/1,
-% 	 request_and_reply/1,
-% 	 request_and_no_reply/1,
-% 	 pending_ack/1,
-% 	 dist/1,
+%% -export([all/1, init_per_testcase/2, fin_per_testcase/2]).
+%% -export([connect/1,
+	 
+%% 	 request_and_reply/1,
+%% 	 request_and_reply_plain/1,
+%% 	 request_and_no_reply/1,
+%% 	 request_and_reply_pending_ack_no_pending/1,
+%% 	 request_and_reply_pending_ack_one_pending/1,
+%% 	 single_trans_req_and_reply/1,
+%% 	 single_trans_req_and_reply_sendopts/1,
+%% 	 request_and_reply_and_ack/1,
+%% 	 request_and_reply_and_no_ack/1,
+%% 	 request_and_reply_and_late_ack/1,
 
-% 	 tickets/1,
-% 	 otp_4359/1
-% 	]).
+%% 	 pending_ack/1,
+
+%% 	 dist/1,
+
+%% 	 tickets/1,
+%% 	 otp_4359/1,
+%% 	 otp_4836/1,
+%% 	 otp_5805/1,
+%% 	 otp_5881/1,
+%% 	 otp_5887/1
+%% 	]).
 -compile(export_all).
 
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_v1.hrl").
 -include("megaco_test_lib.hrl").
 
+-define(VERSION, 1).
+
 -define(TEST_VERBOSITY, debug).
 -define(MGC_VERBOSITY,  debug).
 -define(MG_VERBOSITY,   debug).
 
--define(MGC_START(Pid, Mid, ET, Verb), 
-	megaco_test_mgc:start(Pid, Mid, ET, Verb)).
--define(MGC_STOP(Pid), megaco_test_mgc:stop(Pid)).
+-define(MGC_START(Pid, Mid, ET, Conf, Verb), 
+	megaco_test_mgc:start(Pid, Mid, ET, Conf, Verb)).
+-define(MGC_STOP(Pid),        megaco_test_mgc:stop(Pid)).
 -define(MGC_REQ_PEND(Pid,To), megaco_test_mgc:request_pending(Pid,To)).
+-define(MGC_REQ_HP(Pid,To),   megaco_test_mgc:request_handle_pending(Pid,To)).
+-define(MGC_ACK_INFO(Pid),    megaco_test_mgc:ack_info(Pid,self())).
 
 -define(MG_START(Pid, Mid, Enc, Transp, Conf, Verb), 
 	megaco_test_mg:start(Pid, Mid, Enc, Transp, Conf, Verb)).
@@ -103,12 +122,30 @@ all(suite) ->
     [
      connect,
      request_and_reply,
-     request_and_no_reply,
      pending_ack,
      dist,
 
      %% Tickets last
      tickets
+    ].
+
+request_and_reply(suite) ->
+    [
+     request_and_reply_plain,
+     request_and_no_reply,
+     request_and_reply_pending_ack_no_pending,
+     request_and_reply_pending_ack_one_pending,
+     single_trans_req_and_reply,
+     single_trans_req_and_reply_sendopts,
+     request_and_reply_and_ack,
+     request_and_reply_and_no_ack,
+     request_and_reply_and_late_ack
+    ].
+
+pending_ack(suite) ->
+    [
+     pending_ack_plain,
+     request_and_pending_and_late_reply
     ].
 
 tickets(suite) ->
@@ -127,7 +164,7 @@ connect(suite) ->
     [];
 connect(doc) ->
     [];
-connect(Config) when list(Config) ->
+connect(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     PrelMid = preliminary_mid,
     MgMid   = ipv4_mid(4711),
@@ -160,32 +197,32 @@ connect(Config) when list(Config) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-request_and_reply(suite) ->
+request_and_reply_plain(suite) ->
     [];
-request_and_reply(Config) when list(Config) ->
+request_and_reply_plain(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
-    d("request_and_reply -> start proxy",[]),
+    d("request_and_reply_plain -> start proxy",[]),
     megaco_mess_user_test:start_proxy(),
 
     PrelMid = preliminary_mid,
     MgMid   = ipv4_mid(4711),
     MgcMid  = ipv4_mid(),
     UserMod = megaco_mess_user_test,
-    d("request_and_reply -> start megaco app",[]),
+    d("request_and_reply_plain -> start megaco app",[]),
     ?VERIFY(ok, application:start(megaco)),
     UserConfig = [{user_mod, UserMod}, {send_mod, UserMod},
 		  {request_timer, infinity}, {reply_timer, infinity}],
-    d("request_and_reply -> start (MG) user ~p",[MgMid]),
+    d("request_and_reply_plain -> start (MG) user ~p",[MgMid]),
     ?VERIFY(ok,	megaco:start_user(MgMid, UserConfig)),
 
-    d("request_and_reply -> start (MGC) user ~p",[MgcMid]),
+    d("request_and_reply_plain -> start (MGC) user ~p",[MgcMid]),
     ?VERIFY(ok,	megaco:start_user(MgcMid, UserConfig)),
 
-    d("request_and_reply -> get receive info for ~p",[MgMid]),
+    d("request_and_reply_plain -> get receive info for ~p",[MgMid]),
     MgRH = user_info(MgMid, receive_handle),
-    d("request_and_reply -> get receive info for ~p",[MgcMid]),
+    d("request_and_reply_plain -> get receive info for ~p",[MgcMid]),
     MgcRH = user_info(MgcMid, receive_handle), 
-    d("request_and_reply -> start transport",[]),
+    d("request_and_reply_plain -> start transport",[]),
     {ok, MgPid, MgSH} =
 	?VERIFY({ok, _, _}, UserMod:start_transport(MgRH, MgcRH)),
     PrelMgCH = #megaco_conn_handle{local_mid = MgMid,
@@ -194,47 +231,47 @@ request_and_reply(Config) when list(Config) ->
 				remote_mid = MgcMid},
     MgcCH = #megaco_conn_handle{local_mid = MgcMid,
 				remote_mid = MgMid},
-    d("request_and_reply -> (MG) try connect to MGC",[]),
+    d("request_and_reply_plain -> (MG) try connect to MGC",[]),
     ?SEND(megaco:connect(MgRH, PrelMid, MgSH, MgPid)), % Mg prel
-    d("request_and_reply -> (MGC) await connect from MG",[]),
+    d("request_and_reply_plain -> (MGC) await connect from MG",[]),
     ?USER({connect, PrelMgCH, _V, []}, ok),
     ?RECEIVE([{res, _, {ok, PrelMgCH}}]),
 
-    d("request_and_reply -> (MG) send service change request",[]),
+    d("request_and_reply_plain -> (MG) send service change request",[]),
     Req = service_change_request(),
     ?SEND(megaco:call(PrelMgCH, [Req], [])),
 
-    d("request_and_reply -> (MGC) send service change reply",[]),
+    d("request_and_reply_plain -> (MGC) send service change reply",[]),
     ?USER({connect, MgcCH, _V, []}, ok), % Mgc auto
     Rep = service_change_reply(MgcMid),
     ?USER({request, MgcCH, _V, [[Req]]}, {discard_ack, [Rep]}),
     ?USER({connect, MgCH, _V, []}, ok), % Mg confirm
     ?RECEIVE([{res, _, {1, {ok, [Rep]}}}]),
 
-    d("request_and_reply -> get (system info) connections",[]),
+    d("request_and_reply_plain -> get (system info) connections",[]),
     connections([MgCH, MgcCH]),
-    d("request_and_reply -> get (~p) connections",[MgMid]),
+    d("request_and_reply_plain -> get (~p) connections",[MgMid]),
     ?VERIFY([MgCH], megaco:user_info(MgMid, connections)),
-    d("request_and_reply -> get (~p) connections",[MgcMid]),
+    d("request_and_reply_plain -> get (~p) connections",[MgcMid]),
     ?VERIFY([MgcCH], megaco:user_info(MgcMid, connections)),
 
     Reason = shutdown,
-    d("request_and_reply -> (MG) disconnect",[]),
+    d("request_and_reply_plain -> (MG) disconnect",[]),
     ?SEND(megaco:disconnect(MgCH, Reason)),
     ?USER({disconnect, MgCH, _V, [{user_disconnect, Reason}]}, ok),
     ?RECEIVE([{res, _, ok}]),
     ?VERIFY(ok,	megaco:stop_user(MgMid)),
 
-    d("request_and_reply -> (MGC) disconnect",[]),
+    d("request_and_reply_plain -> (MGC) disconnect",[]),
     ?SEND(megaco:disconnect(MgcCH, Reason)),
     ?USER({disconnect, MgcCH, _V, [{user_disconnect, Reason}]}, ok),
     ?RECEIVE([{res, _, ok}]),
     ?VERIFY(ok,	megaco:stop_user(MgcMid)),
 
-    d("request_and_reply -> stop megaco app",[]),
+    d("request_and_reply_plain -> stop megaco app",[]),
     ?VERIFY(ok, application:stop(megaco)),
     ?RECEIVE([]),
-    d("request_and_reply -> done",[]),
+    d("request_and_reply_plain -> done",[]),
     ok.
 
 
@@ -245,7 +282,7 @@ request_and_no_reply(suite) ->
     [];
 request_and_no_reply(doc) ->
     [];
-request_and_no_reply(Config) when list(Config) ->
+request_and_no_reply(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        request_and_no_reply),
@@ -259,11 +296,11 @@ request_and_no_reply(Config) when list(Config) ->
       [MgcNode, MgNode]),
     ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
 
-    %% Start the MGC and MGs
+    %% Start the MGC
     i("[MGC] start"),    
     ET = [{text,tcp}, {text,udp}, {binary,tcp}, {binary,udp}],
     {ok, Mgc} = 
-	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, ?MGC_VERBOSITY),
+	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, [], ?MGC_VERBOSITY),
 
     i("[MG] start"),    
     MgMid = {deviceName, "mg"},
@@ -277,6 +314,7 @@ request_and_no_reply(Config) when list(Config) ->
 				    incr        = 0,
 				    max_retries = 3
 				   },
+    %% Start the MGs
     PendingTmr = 10000,
     ReplyTmr = 16000,
     MgConfig = [{request_timer,      ReqTmr}, 
@@ -307,138 +345,4907 @@ request_and_no_reply(Config) when list(Config) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-pending_ack(suite) ->
+request_and_reply_pending_ack_no_pending(suite) ->
     [];
-pending_ack(Config) when list(Config) ->
+request_and_reply_pending_ack_no_pending(doc) ->
+    ["This test case tests that megaco correctly handles the return "
+     "value handle_pending_ack from handle_trans_request when NO "
+     "pending message has been sent"];
+request_and_reply_pending_ack_no_pending(Config) when is_list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        rar_panp),
+    i("starting"),
 
-%     MgcNode = make_node_name(mgc),
-%     Mg1Node = make_node_name(mg1),
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p",
+      [MgcNode, MgNode]),
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
 
-%     d("pending_ack -> create nodes",[]),
-%     ok = megaco_test_lib:start_nodes([MgcNode, Mg1Node], ?FILE, ?LINE),
+    d("[MGC] start the simulator "),
+    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
 
-%     d("pending_ack -> start MGC",[]),
-%     MgcMid = ipv4_mid(),
-%     ET = [{text,tcp}, {text,udp}, {binary,tcp}, {binary,udp}],
-%     {ok, Mgc} = ?MGC_START(MgcNode, MgcMid, ET, ?MGC_VERBOSITY),
+    d("[MGC] create the event sequence"),
+    MgcEvSeq = rarpanp_mgc_event_sequence(text, tcp),
 
-%     d("pending_ack -> start MG",[]),
-%     MgMid  = ipv4_mid(4711),
-%     {ok, Mg1} = ?MG_START(Mg1Node, MgMid, text, tcp, ?MG_VERBOSITY),
-    
-%     d("pending_ack -> (MGC) request action changed to pending",[]),
-%     {ok, _} = ?MGC_REQ_PEND(Mgc,3500),
+    i("wait some time before starting the MGC simulation"),
+    sleep(1000),
 
-%     d("pending_ack -> (MG) perform service change",[]),
-%     ok = ?MG_SERV_CHANGE(Mg1),
-    
-%     d("pending_ack -> wait some",[]),
-%     sleep(1000),
+    d("[MGC] start the simulation"),
+    megaco_test_generator:megaco(Mgc, MgcEvSeq),
 
-    %% ----------------------------------------------
+    i("wait some time before starting the MG simulator"),
+    sleep(1000),
 
-    ?ACQUIRE_NODES(1, Config),
-    d("pending_ack -> start proxy",[]),
-    megaco_mess_user_test:start_proxy(),
-    
-    PrelMid = preliminary_mid,
-    MgMid   = ipv4_mid(4711),
-    MgcMid  = ipv4_mid(),
-    UserMod = megaco_mess_user_test,
-    d("pending_ack -> start megaco app",[]),
-    ?VERIFY(ok, application:start(megaco)),
-    UserData = user_data,
-    UserConfig = [{user_mod, UserMod},
-		  {send_mod, UserMod},
-		  {request_timer, infinity},
-		  {long_request_timer, infinity},
-		  {reply_timer, infinity}],
-    
-    d("pending_ack -> start megaco user MG (~p)",[MgMid]),
-    ?VERIFY(ok,	megaco:start_user(MgMid, UserConfig)),
-    
-    d("pending_ack -> start megaco user MGC (~p)",[MgcMid]),
-    ?VERIFY(ok,	megaco:start_user(MgcMid, UserConfig)),
-    
-    d("pending_ack -> retrieve (user info) receive_handle for MG",[]),
-    MgRH = user_info(MgMid, receive_handle),
-    
-    d("pending_ack -> retrieve (user info) receive_handle for MGC",[]),
-    MgcRH = user_info(MgcMid, receive_handle), 
-    
-    d("pending_ack -> start transport",[]),
-    {ok, MgPid, MgSH} =
- 	?VERIFY({ok, _, _}, UserMod:start_transport(MgRH, MgcRH)),
-    PrelMgCH = #megaco_conn_handle{local_mid = MgMid,
-				    remote_mid = preliminary_mid},
-    MgCH  = #megaco_conn_handle{local_mid = MgMid,
-				 remote_mid = MgcMid},
-    MgcCH = #megaco_conn_handle{local_mid = MgcMid,
-				 remote_mid = MgMid},
-    
-    d("pending_ack -> (MG) connect",[]),
-    ?SEND(megaco:connect(MgRH, PrelMid, MgSH, MgPid)), % Mg prel
-    
-    d("pending_ack -> (MG) await connect",[]),
-    ?USER({connect, PrelMgCH, _V, []}, ok),
-    
-    ?RECEIVE([{res, _, {ok, PrelMgCH}}]),
-    
-    d("pending_ack -> (MG) send service change request",[]),
-    Req = service_change_request(),
-    ?VERIFY(ok, megaco:cast(PrelMgCH, [Req], [{reply_data, UserData}])),
-    
-    d("pending_ack -> (MGC) await connect",[]),
-    ?USER({connect, MgcCH, _V, []}, ok), % Mgc auto
-    
-    d("pending_ack -> (MGC) "
-       "await service change request (reply with pending)",[]),
-    RequestData = Req,
-    ?USER({request, MgcCH, _V, [[Req]]}, {pending, RequestData}),
-    Rep = service_change_reply(MgcMid),
-    AckData = ack_data,
-    %% BUGBUG: How do we verify that the MG rally gets a pending trans?
-    d("pending_ack -> (MGC) await long request (result of pending)",[]),
-    ?USER({long_request, MgcCH, _V, [RequestData]}, 
-	  {{handle_ack, AckData}, [Rep]}),
-    d("pending_ack -> (MG) await connect",[]),
-    ?USER({connect, MgCH, _V, []}, ok), % Mg confirm
+    d("[MG] start the simulator (generator)"),
+    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
 
-    %% **************************************************
-    %% The following 2 USER calls should really happen
-    %% in the order reply - ack, but due to timing, could
-    %% happen in ack - reply.
-    %% 
-    %% START
-    %% 
-    d("pending_ack -> (MG) await service change reply",[]),
-    ?USER({reply, MgCH, _V, [{ok, [Rep]}, UserData]}, ok),
+    d("[MG] create the event sequence"),
+    MgEvSeq = rarpanp_mg_event_sequence(text, tcp),
 
-    d("pending_ack -> (MGC) await service change ack",[]),
-    ?USER({ack, MgcCH, _V, [ok, AckData]}, ok),
+    i("wait some time before starting the MG simulation"),
+    sleep(1000),
 
-    %% 
-    %% END
-    %% 
-    %% **************************************************
+    d("[MG] start the simulation"),
+    megaco_test_generator:tcp(Mg, MgEvSeq),
 
+    d("[MGC] await the generator reply"),
+    case megaco_test_generator:megaco_await_reply(Mgc) of
+        {ok, MgcReply} ->
+            d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
+            ok;
+        {error, MgcReply} ->
+            d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
+            ?ERROR(mgc_failed)
+    end,
 
-    connections([MgCH, MgcCH]),
-    ?VERIFY([MgCH], megaco:user_info(MgMid, connections)),
-    ?VERIFY([MgcCH], megaco:user_info(MgcMid, connections)),
-    
-    %% Reason = shutdown,
-    ?SEND(application:stop(megaco)),
-    ?RECEIVE([{res, _, ok}]),
-    d("pending_ack -> done",[]),
+    d("[MG] await the generator reply"),
+    case megaco_test_generator:tcp_await_reply(Mg) of
+        {ok, MgReply} ->
+            d("[MG] OK => MgReply: ~n~p", [MgReply]),
+            ok;
+        {error, MgReply} ->
+            d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
+            ?ERROR(mg_failed)
+    end,
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_generator:stop(Mgc),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_generator:stop(Mg),
+
+    i("done", []),
     ok.
+
+
+%%
+%% MGC generator stuff
+%%
+
+rarpanp_mgc_event_sequence(text, tcp) ->
+    Mid = {deviceName,"ctrl"},
+    RI = [
+          {port,             2944},
+          {encoding_module,  megaco_pretty_text_encoder},
+          {encoding_config,  []},
+          {transport_module, megaco_tcp}
+         ],
+    ConnectVerify = fun rarpanp_mgc_verify_handle_connect/1,
+    ScrVerify = rarpanp_mgc_verify_service_change_req_fun(Mid),
+    NrVerify = rarpanp_mgc_verify_notify_request_fun(),
+    DiscoVerify = fun rarpanp_mgc_verify_handle_disconnect/1,
+    EvSeq = [
+             {debug, true},
+             {megaco_trace, disable},
+             {megaco_trace, max},
+             megaco_start,
+             {megaco_start_user, Mid, RI, []},
+             {megaco_update_user_info, sent_pending_limit, 100},
+             start_transport,
+             listen,
+             {megaco_callback, handle_connect,       ConnectVerify},
+             {megaco_conn_info, all},
+             {megaco_callback, handle_trans_request, ScrVerify},
+	     {megaco_callback, handle_trans_request, NrVerify},
+             {megaco_callback, nocall, 10000},
+             {megaco_callback, handle_disconnect,    DiscoVerify},
+             megaco_stop_user,
+             megaco_stop
+            ],
+    EvSeq.
+
+%% Connect verification
+rarpanp_mgc_verify_handle_connect({handle_connect, CH, ?VERSION}) ->
+    {ok, CH, ok};
+rarpanp_mgc_verify_handle_connect(Else) ->
+    {error, Else, ok}.
+
+%% Service Change verification
+rarpanp_mgc_verify_service_change_req_fun(Mid) ->
+    fun(Req) -> rarpanp_mgc_verify_service_change_req(Mid, Req) end.
+
+rarpanp_mgc_verify_service_change_req(
+  Mid, 
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch rarpanp_mgc_do_verify_service_change_req(Mid, AR));
+rarpanp_mgc_verify_service_change_req(_Mid, Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+rarpanp_mgc_do_verify_service_change_req(Mid, AR) ->
+    io:format("rarpanp_mgc_do_verify_service_change_req -> entry with"
+	      "~n   Mid: ~p"
+	      "~n   AR:  ~p"
+	      "~n", [Mid, AR]),
+    CR = 
+	case AR of
+	    #'ActionRequest'{commandRequests = [CmdReq]} ->
+		CmdReq;
+	    _ ->
+		Err1      = {invalid_action_request, AR},
+		ED1       = cre_ErrDesc(AR),
+		ErrReply1 = {discard_ack, ED1},
+		throw({error, Err1, ErrReply1})
+	end,
+    Cmd = 
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command; 
+	    _ ->
+		Err2      = {invalid_command_request, CR},
+		ED2       = cre_ErrDesc(CR),
+		ErrReply2 = {discard_ack, ED2},
+		throw({error, Err2, ErrReply2})
+	end,
+    {Tid, Parms} = 
+	case Cmd of
+	    {serviceChangeReq, 
+	     #'ServiceChangeRequest'{terminationID = [TermID],
+				     serviceChangeParms = ServChParms}} ->
+		{TermID, ServChParms};
+	    _ ->
+		Err3      = {invalid_command, Cmd},
+		ED3       = cre_ErrDesc(Cmd),
+		ErrReply3 = {discard_ack, ED3},
+		throw({error, Err3, ErrReply3})
+	end,
+    case Tid of
+	#megaco_term_id{contains_wildcards = false, id = ["root"]} ->
+	    ok;
+	_ ->
+	    Err4      = {invalid_termination_id, Tid},
+	    ED4       = cre_ErrDesc(Tid),
+	    ErrReply4 = {discard_ack, ED4},
+	    throw({error, Err4, ErrReply4})
+    end,
+    case Parms of
+	#'ServiceChangeParm'{serviceChangeMethod = restart,
+			     serviceChangeReason = [[$9,$0,$1|_]]} ->
+	    AckData = [rarpanp_mgc_service_change_reply_ar(Mid, 1)], 
+	    Reply   = {discard_ack, AckData},
+	    {ok, AR, Reply};
+	_ ->
+	    Err5      = {invalid_SCP, Parms},
+	    ED5       = cre_ErrDesc(Parms),
+	    ErrReply5 = {discard_ack, ED5},
+	    {error, Err5, ErrReply5}
+    end.
+
+
+%% Notify Request verification
+rarpanp_mgc_verify_notify_request_fun() ->
+    fun(Req) -> rarpanp_mgc_verify_notify_request(Req) end.
+
+rarpanp_mgc_verify_notify_request({handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch rarpanp_mgc_do_verify_notify_request(AR));
+rarpanp_mgc_verify_notify_request(Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+rarpanp_mgc_do_verify_notify_request(AR) ->
+    io:format("rarpanp_mgc_do_verify_notify_request -> entry with"
+	      "~n   AR: ~p"
+	      "~n", [AR]),
+    {Cid, CR} = 
+	case AR of
+	    #'ActionRequest'{contextId       = CtxID,
+			     commandRequests = [CmdReq]} ->
+		{CtxID, CmdReq};
+	    _ ->
+		Err1      = {invalid_action_request, AR},
+		ED1       = cre_ErrDesc(AR),
+		ErrReply1 = {discard_ack, ED1},
+		throw({error, Err1, ErrReply1})
+	end,
+    Cmd = 
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command;
+	    _ ->
+		Err2      = {invalid_command_request, CR},
+		ED2       = cre_ErrDesc(CR),
+		ErrReply2 = {discard_ack, ED2},
+		throw({error, Err2, ErrReply2})
+	end,
+    NR = 
+	case Cmd of
+	    {notifyReq, NotifReq} ->
+		NotifReq;
+	    _ ->
+		Err3      = {invalid_command, Cmd},
+		ED3       = cre_ErrDesc(Cmd),
+		ErrReply3 = {discard_ack, ED3},
+		throw({error, Err3, ErrReply3})
+	end,
+    {Tid, OED} = 
+	case NR of
+	    #'NotifyRequest'{terminationID            = [TermID],
+			     observedEventsDescriptor = ObsEvsDesc,
+			     errorDescriptor          = asn1_NOVALUE} ->
+		{TermID, ObsEvsDesc};
+	    _ ->
+		Err4      = {invalid_NR, NR},
+		ED4       = cre_ErrDesc(NR),
+		ErrReply4 = {discard_ack, ED4},
+		throw({error, Err4, ErrReply4})
+	end,
+    OE = 
+	case OED of 
+	    #'ObservedEventsDescriptor'{observedEventLst = [ObsEvLst]} ->
+		ObsEvLst;
+	    _ ->
+		Err5      = {invalid_OED, OED},
+		ED5       = cre_ErrDesc(NR),
+		ErrReply5 = {discard_ack, ED5},
+		throw({error, Err5, ErrReply5})
+	end,
+    case OE of
+	#'ObservedEvent'{eventName = "al/of"} ->
+	    AckData = notify_request_verified, 
+	    Replies = [rarpanp_mgc_notify_reply_ar(Cid, Tid)],
+	    Reply   = {{handle_pending_ack, AckData}, Replies},
+	    {ok, AR, Reply};
+	_ ->
+	    Err6      = {invalid_OE, OE},
+	    ED6       = cre_ErrDesc(OE),
+	    ErrReply6 = {discard_ack, ED6},
+	    throw({error, Err6, ErrReply6})
+    end.
+
+
+%% Disconnect verification
+rarpanp_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, _R}) ->
+    {ok, CH, ok};
+rarpanp_mgc_verify_handle_disconnect(Else) ->
+    {error, Else, ok}.
+
+rarpanp_mgc_service_change_reply_ar(Mid, Cid) ->
+    SCRP  = cre_serviceChangeResParm(Mid),
+    SCRes = cre_serviceChangeResult(SCRP),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReply([Root], SCRes),
+    CR    = cre_cmdReply(SCR),
+    AR    = cre_actionReply(Cid, [CR]),
+    AR.
+
+rarpanp_mgc_notify_reply_ar(Cid, TermId) ->
+    NR    = cre_notifyReply([TermId]),
+    CR    = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+
+%%
+%% MG generator stuff
+%%
+rarpanp_mg_event_sequence(text, tcp) ->
+    DecodeFun = rarpanp_mg_decode_msg_fun(megaco_pretty_text_encoder, []),
+    EncodeFun = rarpanp_mg_encode_msg_fun(megaco_pretty_text_encoder, []),
+    Mid       = {deviceName,"mg"},
+    ServiceChangeReq = rarpanp_mg_service_change_request_msg(Mid, 1, 0),
+    ScrVerifyFun = rarpanp_mg_verify_service_change_rep_msg_fun(),
+    TransId = 2, 
+    TermId = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NotifyReq = rarpanp_mg_notify_request_msg(Mid, TransId, 1, TermId, 1),
+    NrVerifyFun = rarpanp_mg_verify_notify_rep_msg_fun(TransId, TermId),
+    EvSeq = [{debug,  true},
+             {decode, DecodeFun},
+             {encode, EncodeFun},
+             {connect, 2944},
+             {send, "service-change-request", ServiceChangeReq},
+             {expect_receive, "service-change-reply", {ScrVerifyFun, 10000}},
+             {send, "notify request", NotifyReq},
+             {expect_receive, "notify-reply", {NrVerifyFun, 10000}},
+             {expect_nothing, 11000},
+             disconnect
+            ],
+    EvSeq.
+
+rarpanp_mg_encode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:encode_message(Conf, M)
+    end.
+
+rarpanp_mg_decode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:decode_message(Conf, M)
+    end.
+
+rarpanp_mg_verify_service_change_rep_msg_fun() ->
+    fun(Msg) -> (catch rarpanp_mg_verify_service_change_rep(Msg)) end.
+
+rarpanp_mg_verify_service_change_rep(#'MegacoMessage'{mess = Mess} = M) ->
+    io:format("rarpanp_mg_verify_service_change_rep -> entry with"
+	      "~n   Mess:  ~p"
+	      "~n", [Mess]),
+    Body = 
+	case Mess of 
+	    #'Message'{version     = _V,
+                       mId         = _MgMid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TR = 
+	case Trans of
+            {transactionReply, TransReply} ->
+		TransReply;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    TRes = 
+	case TR of
+            #'TransactionReply'{transactionId = _Tid,
+                                immAckRequired = asn1_NOVALUE,
+                                transactionResult = TransRes} ->
+		TransRes;
+	    _ ->
+		throw({error, {invalid_transactionReply, TR}})
+	end,
+    AR = 
+	case TRes of
+            {actionReplies, [ActRes]} ->
+		ActRes;
+	    _ ->
+		throw({error, {invalid_transactionResult, TRes}})
+	end,
+    CR = 
+	case AR of
+            #'ActionReply'{contextId       = _Cid,
+                           errorDescriptor = asn1_NOVALUE,
+                           contextReply    = _CtxReq,
+                           commandReply    = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		throw({error, {invalid_actionReplies, AR}})
+	end,
+    SCR = 
+	case CR of
+            {serviceChangeReply, ServChRep} ->
+		ServChRep;
+	    _ ->
+		throw({error, {invalid_commandReply, CR}})
+	end,
+    SCRes = 
+	case SCR of
+            #'ServiceChangeReply'{terminationID       = _TermID,
+                                  serviceChangeResult = ServChRes} ->
+		ServChRes;
+	    _ ->
+		throw({error, {invalid_serviceChangeReply, SCR}})
+	end,
+    SCRP = 
+	case SCRes of
+            {serviceChangeResParms, Parms} ->
+		Parms;
+	    _ ->
+		throw({error, {invalid_serviceChangeResult, SCRes}})
+	end,
+    case SCRP of
+	#'ServiceChangeResParm'{serviceChangeMgcId = _MgcMid} ->
+            {ok, M};
+	_ ->
+	    {error, {invalid_serviceChangeResParms, SCRP}}
+    end;
+rarpanp_mg_verify_service_change_rep(Crap) ->
+    {error, {invalid_message, Crap}}.
+
+rarpanp_mg_verify_notify_rep_msg_fun(TransId, TermId) ->
+    fun(Msg) -> (catch rarpanp_mg_verify_notify_rep(TransId, TermId, Msg)) end.
+
+rarpanp_mg_verify_notify_rep(TransId, TermId, 
+			     #'MegacoMessage'{mess = Mess} = M) ->
+    io:format("rarpanp_mg_verify_notify_rep -> entry with"
+	      "~n   TransId: ~p"
+	      "~n   TermId:  ~p"
+	      "~n   Mess:    ~p"
+	      "~n", [TransId, TermId, Mess]),
+    Body = 
+	case Mess of 
+	    #'Message'{version     = _V,
+                       mId         = _MgMid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TR = 
+	case Trans of
+            {transactionReply, TransReply} ->
+		TransReply;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    TRes = 
+	case TR of
+            #'TransactionReply'{transactionId     = TransId,
+                                immAckRequired    = asn1_NOVALUE, % No ack
+                                transactionResult = TransRes} ->
+		TransRes;
+	    _ ->
+		throw({error, {invalid_transactionReply, TR}})
+	end,
+    AR = 
+	case TRes of
+            {actionReplies, [ActRes]} ->
+		ActRes;
+	    _ ->
+		throw({error, {invalid_transactionResult, TRes}})
+	end,
+    CR = 
+	case AR of
+            #'ActionReply'{contextId       = _Cid,
+                           errorDescriptor = asn1_NOVALUE,
+                           contextReply    = _CtxReq,
+                           commandReply    = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		throw({error, {invalid_actionReplies, AR}})
+	end,
+    NR = 
+	case CR of
+            {notifyReply, NotifyRep} ->
+		NotifyRep;
+	    _ ->
+		throw({error, {invalid_commandReply, CR}})
+	end,
+
+    case NR of
+	#'NotifyReply'{terminationID   = [TermId],
+		       errorDescriptor = asn1_NOVALUE} ->
+            {ok, M};
+	#'NotifyReply'{terminationID   = A,
+		       errorDescriptor = B} ->
+	    throw({error, {invalid_notifyReply, 
+			   {A, TermId}, 
+			   {B, asn1_NOVALUE}}});
+	_ ->
+	    throw({error, {invalid_notifyReply, NR}})
+    end;
+rarpanp_mg_verify_notify_rep(_TransId, _TermId, Crap) ->
+    {error, {invalid_message, Crap}}.
+
+rarpanp_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+rarpanp_mg_service_change_request_msg(Mid, TransId, Cid) ->
+    AR    = rarpanp_mg_service_change_request_ar(Mid, Cid),
+    TR    = cre_transReq(TransId, [AR]),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+rarpanp_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+rarpanp_mg_notify_request_msg(Mid, TransId, Rid, TermId, Cid) ->
+    AR      = rarpanp_mg_notify_request_ar(Rid, TermId, Cid),
+    TR      = cre_transReq(TransId, [AR]),
+    Trans   = cre_transaction(TR),
+    Mess    = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+request_and_reply_pending_ack_one_pending(suite) ->
+    [];
+request_and_reply_pending_ack_one_pending(doc) ->
+    ["This test case tests that megaco correctly handles the return "
+     "value handle_pending_ack from handle_trans_request when ONE "
+     "pending message has been sent"];
+request_and_reply_pending_ack_one_pending(Config) when is_list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        rar_paop),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p",
+      [MgcNode, MgNode]),
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+    d("[MGC] start the simulator "),
+    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+
+    d("[MGC] create the event sequence"),
+    MgcEvSeq = rarpaop_mgc_event_sequence(text, tcp),
+
+    i("wait some time before starting the MGC simulation"),
+    sleep(1000),
+
+    d("[MGC] start the simulation"),
+    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+
+    i("wait some time before starting the MG simulator"),
+    sleep(1000),
+
+    d("[MG] start the simulator (generator)"),
+    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+
+    d("[MG] create the event sequence"),
+    MgEvSeq = rarpaop_mg_event_sequence(text, tcp),
+
+    i("wait some time before starting the MG simulation"),
+    sleep(1000),
+
+    d("[MG] start the simulation"),
+    megaco_test_generator:tcp(Mg, MgEvSeq),
+
+    d("[MGC] await the generator reply"),
+    case megaco_test_generator:megaco_await_reply(Mgc) of
+        {ok, MgcReply} ->
+            d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
+            ok;
+        {error, MgcReply} ->
+            d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
+            ?ERROR(mgc_failed)
+    end,
+
+    d("[MG] await the generator reply"),
+    case megaco_test_generator:tcp_await_reply(Mg) of
+        {ok, MgReply} ->
+            d("[MG] OK => MgReply: ~n~p", [MgReply]),
+            ok;
+        {error, MgReply} ->
+            d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
+            ?ERROR(mg_failed)
+    end,
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_generator:stop(Mgc),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_generator:stop(Mg),
+
+    i("done", []),
+    ok.
+
+
+%%
+%% MGC generator stuff
+%%
+
+rarpaop_mgc_event_sequence(text, tcp) ->
+    Mid = {deviceName,"ctrl"},
+    RI = [
+          {port,             2944},
+          {encoding_module,  megaco_pretty_text_encoder},
+          {encoding_config,  []},
+          {transport_module, megaco_tcp}
+         ],
+    ConnectVerify = fun rarpaop_mgc_verify_handle_connect/1,
+    ScrVerify = rarpaop_mgc_verify_service_change_req_fun(Mid),
+    NrVerify = rarpaop_mgc_verify_notify_request_fun(),
+    AckVerify = rarpaop_mgc_verify_reply_ack_fun(),
+    DiscoVerify = fun rarpaop_mgc_verify_handle_disconnect/1,
+    EvSeq = [
+             {debug, true},
+             {megaco_trace, disable},
+             {megaco_trace, max},
+             megaco_start,
+             {megaco_start_user, Mid, RI, []},
+             {megaco_update_user_info, sent_pending_limit, 100},
+             start_transport,
+             listen,
+             {megaco_callback, handle_connect,       ConnectVerify},
+             {megaco_conn_info, all},
+             {megaco_callback, handle_trans_request, ScrVerify},
+	     {megaco_callback, handle_trans_request, NrVerify},
+	     {megaco_callback, handle_trans_ack,     AckVerify},
+             {megaco_callback, nocall, 10000},
+             {megaco_callback, handle_disconnect,    DiscoVerify},
+             megaco_stop_user,
+             megaco_stop
+            ],
+    EvSeq.
+
+%% Connect verification
+rarpaop_mgc_verify_handle_connect({handle_connect, CH, ?VERSION}) ->
+    {ok, CH, ok};
+rarpaop_mgc_verify_handle_connect(Else) ->
+    {error, Else, ok}.
+
+%% Service Change verification
+rarpaop_mgc_verify_service_change_req_fun(Mid) ->
+    fun(Req) -> rarpaop_mgc_verify_service_change_req(Mid, Req) end.
+
+rarpaop_mgc_verify_service_change_req(
+  Mid, 
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch rarpaop_do_verify_service_change_req(Mid, AR));
+rarpaop_mgc_verify_service_change_req(_Mid, Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+rarpaop_do_verify_service_change_req(Mid, AR) ->
+    CR = 
+	case AR of
+	    #'ActionRequest'{commandRequests = [CmdReq]} ->
+		CmdReq;
+	    _ ->
+		Err1      = {invalid_action_request, AR},
+		ED1       = cre_ErrDesc(AR),
+		ErrReply1 = {discard_ack, ED1},
+		throw({error, Err1, ErrReply1})
+	end,
+    Cmd = 
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command; 
+	    _ ->
+		Err2      = {invalid_command_request, CR},
+		ED2       = cre_ErrDesc(CR),
+		ErrReply2 = {discard_ack, ED2},
+		throw({error, Err2, ErrReply2})
+	end,
+    {Tid, Parms} = 
+	case Cmd of
+	    {serviceChangeReq, 
+	     #'ServiceChangeRequest'{terminationID = [TermID],
+				     serviceChangeParms = ServChParms}} ->
+		{TermID, ServChParms};
+	    _ ->
+		Err3      = {invalid_command, Cmd},
+		ED3       = cre_ErrDesc(Cmd),
+		ErrReply3 = {discard_ack, ED3},
+		throw({error, Err3, ErrReply3})
+	end,
+    case Tid of
+	#megaco_term_id{contains_wildcards = false, id = ["root"]} ->
+	    ok;
+	_ ->
+	    Err4      = {invalid_termination_id, Tid},
+	    ED4       = cre_ErrDesc(Tid),
+	    ErrReply4 = {discard_ack, ED4},
+	    throw({error, Err4, ErrReply4})
+    end,
+    case Parms of
+	#'ServiceChangeParm'{serviceChangeMethod = restart,
+			     serviceChangeReason = [[$9,$0,$1|_]]} ->
+	    AckData = [rarpaop_mgc_service_change_reply_ar(Mid, 1)], 
+	    Reply   = {discard_ack, AckData},
+	    {ok, AR, Reply};
+	_ ->
+	    Err5      = {invalid_SCP, Parms},
+	    ED5       = cre_ErrDesc(Parms),
+	    ErrReply5 = {discard_ack, ED5},
+	    {error, Err5, ErrReply5}
+    end.
+
+
+%% Notify Request verification
+rarpaop_mgc_verify_notify_request_fun() ->
+    fun(Req) -> rarpaop_mgc_verify_notify_request(Req) end.
+
+rarpaop_mgc_verify_notify_request({handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch rarpaop_mgc_do_verify_notify_request(AR));
+rarpaop_mgc_verify_notify_request(Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+rarpaop_mgc_do_verify_notify_request(AR) ->
+    {Cid, CR} = 
+	case AR of
+	    #'ActionRequest'{contextId       = CtxID,
+			     commandRequests = [CmdReq]} ->
+		{CtxID, CmdReq};
+	    _ ->
+		Err1      = {invalid_action_request, AR},
+		ED1       = cre_ErrDesc(AR),
+		ErrReply1 = {discard_ack, ED1},
+		throw({error, Err1, ErrReply1})
+	end,
+    Cmd = 
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command;
+	    _ ->
+		Err2      = {invalid_command_request, CR},
+		ED2       = cre_ErrDesc(CR),
+		ErrReply2 = {discard_ack, ED2},
+		throw({error, Err2, ErrReply2})
+	end,
+    NR = 
+	case Cmd of
+	    {notifyReq, NotifReq} ->
+		NotifReq;
+	    _ ->
+		Err3      = {invalid_command, Cmd},
+		ED3       = cre_ErrDesc(Cmd),
+		ErrReply3 = {discard_ack, ED3},
+		throw({error, Err3, ErrReply3})
+	end,
+    {Tid, OED} = 
+	case NR of
+	    #'NotifyRequest'{terminationID            = [TermID],
+			     observedEventsDescriptor = ObsEvsDesc,
+			     errorDescriptor          = asn1_NOVALUE} ->
+		{TermID, ObsEvsDesc};
+	    _ ->
+		Err4      = {invalid_NR, NR},
+		ED4       = cre_ErrDesc(NR),
+		ErrReply4 = {discard_ack, ED4},
+		throw({error, Err4, ErrReply4})
+	end,
+    OE = 
+	case OED of 
+	    #'ObservedEventsDescriptor'{observedEventLst = [ObsEvLst]} ->
+		ObsEvLst;
+	    _ ->
+		Err5      = {invalid_OED, OED},
+		ED5       = cre_ErrDesc(NR),
+		ErrReply5 = {discard_ack, ED5},
+		throw({error, Err5, ErrReply5})
+	end,
+    case OE of
+	#'ObservedEvent'{eventName = "al/of"} ->
+	    AckData = notify_request_verified, 
+	    Replies = [rarpaop_mgc_notify_reply_ar(Cid, Tid)],
+	    Reply   = {{handle_pending_ack, AckData}, Replies},
+	    {ok, 5000, AR, Reply};
+	_ ->
+	    Err6      = {invalid_OE, OE},
+	    ED6       = cre_ErrDesc(OE),
+	    ErrReply6 = {discard_ack, ED6},
+	    throw({error, Err6, ErrReply6})
+    end.
+
+
+%% Ack verification
+rarpaop_mgc_verify_reply_ack_fun() ->
+    fun(M) -> rarpaop_mgc_verify_reply_ack(M) end.
+
+rarpaop_mgc_verify_reply_ack({handle_trans_ack, _, ?VERSION, ok, _}) ->
+    io:format("rarpaop_mgc_verify_reply_ack -> ok~n", []),
+    {ok, ok, ok};
+rarpaop_mgc_verify_reply_ack({handle_trans_ack, _, ?VERSION, AS, AD} = Crap) ->
+    io:format("rarpaop_mgc_verify_reply_ack -> incorrect ack-status:"
+	      "~n   AS: ~p"
+	      "~n   AD: ~p"
+	      "~n", [AS, AD]),
+    ED = cre_ErrDesc({invalid_ack_status, {AS, AD}}),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply};
+rarpaop_mgc_verify_reply_ack(Crap) ->
+    io:format("rarpaop_mgc_verify_reply_ack -> invalid ack:"
+	      "~n   Crap: ~p"
+	      "~n", [Crap]),
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+
+%% Disconnect verification
+rarpaop_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, _R}) ->
+    {ok, CH, ok};
+rarpaop_mgc_verify_handle_disconnect(Else) ->
+    {error, Else, ok}.
+
+rarpaop_mgc_service_change_reply_ar(Mid, Cid) ->
+    SCRP  = cre_serviceChangeResParm(Mid),
+    SCRes = cre_serviceChangeResult(SCRP),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReply([Root], SCRes),
+    CR    = cre_cmdReply(SCR),
+    AR    = cre_actionReply(Cid, [CR]),
+    AR.
+
+rarpaop_mgc_notify_reply_ar(Cid, TermId) ->
+    NR    = cre_notifyReply([TermId]),
+    CR    = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+
+%%
+%% MG generator stuff
+%%
+rarpaop_mg_event_sequence(text, tcp) ->
+    DecodeFun = rarpaop_mg_decode_msg_fun(megaco_pretty_text_encoder, []),
+    EncodeFun = rarpaop_mg_encode_msg_fun(megaco_pretty_text_encoder, []),
+    Mid       = {deviceName,"mg"},
+    TransId = 2, 
+    TermId = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    ServiceChangeReq = rarpaop_mg_service_change_request_msg(Mid, 1, 0),
+    ScrVerifyFun = rarpaop_mg_verify_service_change_rep_msg_fun(),
+    NotifyReq = rarpaop_mg_notify_request_msg(Mid, TransId, 1, TermId, 1),
+    PendVerifyFun = rarpaop_mg_verify_pending_msg_fun(TransId),
+    NrVerifyFun = rarpaop_mg_verify_notify_rep_msg_fun(TransId, TermId),
+    Ack = rarpaop_mg_ack_msg(Mid, TransId),
+    EvSeq = [{debug,  true},
+             {decode, DecodeFun},
+             {encode, EncodeFun},
+             {connect, 2944},
+             {send, "service-change-request", ServiceChangeReq},
+             {expect_receive, "service-change-reply", {ScrVerifyFun, 10000}},
+             {send, "notify request", NotifyReq},
+             {sleep, 2000},
+             {send, "notify request", NotifyReq},
+             {expect_receive, "pending", {PendVerifyFun, 5000}},
+             {expect_receive, "notify-reply", {NrVerifyFun, 5000}},
+             {send, "reply ack", Ack},
+             {expect_nothing, 11000},
+             disconnect
+            ],
+    EvSeq.
+
+rarpaop_mg_encode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:encode_message(Conf, M)
+    end.
+
+rarpaop_mg_decode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:decode_message(Conf, M)
+    end.
+
+rarpaop_mg_verify_service_change_rep_msg_fun() ->
+    fun(Msg) -> (catch rarpaop_mg_verify_service_change_rep(Msg)) end.
+
+rarpaop_mg_verify_service_change_rep(#'MegacoMessage'{mess = Mess} = M) ->
+    Body = 
+	case Mess of 
+	    #'Message'{version     = _V,
+                       mId         = _MgMid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TR = 
+	case Trans of
+            {transactionReply, TransReply} ->
+		TransReply;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    TRes = 
+	case TR of
+            #'TransactionReply'{transactionId = _Tid,
+                                immAckRequired = asn1_NOVALUE,
+                                transactionResult = TransRes} ->
+		TransRes;
+	    _ ->
+		throw({error, {invalid_transactionReply, TR}})
+	end,
+    AR = 
+	case TRes of
+            {actionReplies, [ActRes]} ->
+		ActRes;
+	    _ ->
+		throw({error, {invalid_transactionResult, TRes}})
+	end,
+    CR = 
+	case AR of
+            #'ActionReply'{contextId       = _Cid,
+                           errorDescriptor = asn1_NOVALUE,
+                           contextReply    = _CtxReq,
+                           commandReply    = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		throw({error, {invalid_actionReplies, AR}})
+	end,
+    SCR = 
+	case CR of
+            {serviceChangeReply, ServChRep} ->
+		ServChRep;
+	    _ ->
+		throw({error, {invalid_commandReply, CR}})
+	end,
+    SCRes = 
+	case SCR of
+            #'ServiceChangeReply'{terminationID       = _TermID,
+                                  serviceChangeResult = ServChRes} ->
+		ServChRes;
+	    _ ->
+		throw({error, {invalid_serviceChangeReply, SCR}})
+	end,
+    SCRP = 
+	case SCRes of
+            {serviceChangeResParms, Parms} ->
+		Parms;
+	    _ ->
+		throw({error, {invalid_serviceChangeResult, SCRes}})
+	end,
+    case SCRP of
+	#'ServiceChangeResParm'{serviceChangeMgcId = _MgcMid} ->
+            {ok, M};
+	_ ->
+	    {error, {invalid_serviceChangeResParms, SCRP}}
+    end;
+rarpaop_mg_verify_service_change_rep(Crap) ->
+    {error, {invalid_message, Crap}}.
+
+rarpaop_mg_verify_pending_msg_fun(TransId) ->
+    fun(Msg) -> (catch rarpaop_mg_verify_pending(TransId, Msg)) end.
+
+rarpaop_mg_verify_pending(TransId, #'MegacoMessage'{mess = Mess} = M) ->
+    Body = 
+	case Mess of 
+	    #'Message'{version     = _V,
+                       mId         = _MgMid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TP = 
+	case Trans of
+            {transactionPending, TransPending} ->
+		TransPending;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    case TP of
+	#'TransactionPending'{transactionId = TransId} ->
+	    {ok, M};
+	_ ->
+	    throw({error, {invalid_transactionPending, TP}})
+    end;
+rarpaop_mg_verify_pending(_TransId, Crap) ->
+    {error, {invalid_message, Crap}}.
+
+rarpaop_mg_verify_notify_rep_msg_fun(TransId, TermId) ->
+    fun(Msg) -> (catch rarpaop_mg_verify_notify_rep(TransId, TermId, Msg)) end.
+
+rarpaop_mg_verify_notify_rep(TransId, TermId, 
+			     #'MegacoMessage'{mess = Mess} = M) ->
+    Body = 
+	case Mess of 
+	    #'Message'{version     = _V,
+                       mId         = _MgMid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TR = 
+	case Trans of
+            {transactionReply, TransReply} ->
+		TransReply;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    TRes = 
+	case TR of
+            #'TransactionReply'{transactionId     = TransId,
+                                immAckRequired    = 'NULL', % Ack
+                                transactionResult = TransRes} ->
+		TransRes;
+	    _ ->
+		throw({error, {invalid_transactionReply, TR}})
+	end,
+    AR = 
+	case TRes of
+            {actionReplies, [ActRes]} ->
+		ActRes;
+	    _ ->
+		throw({error, {invalid_transactionResult, TRes}})
+	end,
+    CR = 
+	case AR of
+            #'ActionReply'{contextId       = _Cid,
+                           errorDescriptor = asn1_NOVALUE,
+                           contextReply    = _CtxReq,
+                           commandReply    = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		throw({error, {invalid_actionReplies, AR}})
+	end,
+    NR = 
+	case CR of
+            {notifyReply, NotifyRep} ->
+		NotifyRep;
+	    _ ->
+		throw({error, {invalid_commandReply, CR}})
+	end,
+
+    case NR of
+	#'NotifyReply'{terminationID   = [TermId],
+		       errorDescriptor = asn1_NOVALUE} ->
+            {ok, M};
+	#'NotifyReply'{terminationID   = A,
+		       errorDescriptor = B} ->
+	    throw({error, {invalid_notifyReply, 
+			   {A, TermId}, 
+			   {B, asn1_NOVALUE}}});
+	_ ->
+	    throw({error, {invalid_notifyReply, NR}})
+    end;
+rarpaop_mg_verify_notify_rep(_TransId, _TermId, Crap) ->
+    {error, {invalid_message, Crap}}.
+
+rarpaop_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+rarpaop_mg_service_change_request_msg(Mid, TransId, Cid) ->
+    AR    = rarpaop_mg_service_change_request_ar(Mid, Cid),
+    TR    = cre_transReq(TransId, [AR]),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+rarpaop_mg_ack_msg(Mid, TransId) ->
+    TR    = cre_transRespAck(cre_transAck(TransId)),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+rarpaop_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+rarpaop_mg_notify_request_msg(Mid, TransId, Rid, TermId, Cid) ->
+    AR      = rarpaop_mg_notify_request_ar(Rid, TermId, Cid),
+    TR      = cre_transReq(TransId, [AR]),
+    Trans   = cre_transaction(TR),
+    Mess    = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+single_trans_req_and_reply(suite) ->
+    [];
+single_trans_req_and_reply(doc) ->
+    ["Receive a (single) transaction request and then send a "
+     "reply (discard ack). "
+     "The MGC is a megaco instance (megaco event sequence) and the "
+     "MG is emulated (tcp event sequence)"];
+single_trans_req_and_reply(Config) when list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        strar),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p", 
+      [MgcNode, MgNode]),
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+
+    d("[MGC] start the simulator "),
+    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+
+    d("[MGC] create the event sequence"),
+    MgcEvSeq = strar_mgc_event_sequence(text, tcp),
+
+    i("wait some time before starting the MGC simulation"),
+    sleep(1000),
+
+    d("[MGC] start the simulation"),
+    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+
+    i("wait some time before starting the MG simulator"),
+    sleep(1000),
+
+    d("[MG] start the simulator (generator)"),
+    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+
+    d("[MG] create the event sequence"),
+    MgEvSeq = strar_mg_event_sequence(text, tcp),
+
+    i("wait some time before starting the MG simulation"),
+    sleep(1000),
+
+    d("[MG] start the simulation"),
+    megaco_test_generator:megaco(Mg, MgEvSeq),
+
+    d("[MGC] await the generator reply"),
+    case megaco_test_generator:megaco_await_reply(Mgc, 30000) of
+	{ok, MgcReply} ->
+	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
+	    ok;
+	{error, MgcReply} ->
+	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
+	    ?ERROR(mgc_failed)
+		end,
+
+    d("[MG] await the generator reply"),
+    case megaco_test_generator:megaco_await_reply(Mg, 30000) of
+	{ok, MgReply} ->
+	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
+	    ok;
+	{error, MgReply} ->
+	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
+	    ?ERROR(mg_failed)
+		end,
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_generator:stop(Mgc),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_generator:stop(Mg),
+
+    i("done", []),
+    ok.
+
+
+%%
+%% MGC generator stuff
+%% 
+strar_mgc_event_sequence(text, tcp) ->
+    Mid = {deviceName,"ctrl"},
+    RI = [
+	  {port,             2944},
+	  {encoding_module,  megaco_pretty_text_encoder},
+	  {encoding_config,  []},
+	  {transport_module, megaco_tcp}
+	 ],
+    ConnectVerify = fun strar_mgc_verify_handle_connect/1,
+    ServiceChangeReqVerify = strar_mgc_verify_service_change_req_fun(Mid),
+    %% Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NotifyReqVerify = strar_mgc_verify_notify_request_fun(),
+    DiscoVerify = fun strar_mgc_verify_handle_disconnect/1,
+%%     ReqTmr = #megaco_incr_timer{wait_for    = 500,
+%% 				factor      = 1,
+%% 				max_retries = 1},
+    EvSeq = [
+	     {debug, true},
+	     {megaco_trace, disable},
+	     megaco_start,
+	     {megaco_start_user, Mid, RI, []},
+	     start_transport,
+	     listen,
+	     {megaco_callback, handle_connect,       ConnectVerify},
+	     {megaco_callback, handle_trans_request, ServiceChangeReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_disconnect,    DiscoVerify},
+	     {sleep, 1000},
+	     megaco_stop_user,
+	     megaco_stop
+	    ],
+    EvSeq.
+
+
+strar_mgc_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
+    io:format("strar_mgc_verify_handle_connect -> ok"
+	      "~n   CH: ~p~n", [CH]),
+    {ok, CH, ok};
+strar_mgc_verify_handle_connect(Else) ->
+    io:format("strar_mgc_verify_handle_connect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+strar_mgc_verify_service_change_req_fun(Mid) ->
+    fun(Req) -> strar_mgc_verify_scr(Mid, Req) end.
+
+strar_mgc_verify_scr(Mid, {handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch strar_mgc_do_verify_scr(Mid, AR));
+strar_mgc_verify_scr(_Mid, Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+strar_mgc_do_verify_scr(Mid, AR) ->
+    io:format("strar_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    CR = 
+	case AR of
+	    #'ActionRequest'{commandRequests = [CmdReq]} ->
+		CmdReq;
+	    _ ->
+                Err1      = {invalid_action_request, AR},
+                ED1       = cre_ErrDesc(AR),
+                ErrReply1 = {discard_ack, ED1},
+                throw({error, Err1, ErrReply1})
+	end,
+    Cmd =
+        case CR of
+            #'CommandRequest'{command = Command} ->
+                Command;
+            _ ->
+                Err2      = {invalid_command_request, CR},
+                ED2       = cre_ErrDesc(CR),
+                ErrReply2 = {discard_ack, ED2},
+                throw({error, Err2, ErrReply2})
+        end,
+    {Tid, Parms} =
+        case Cmd of
+            {serviceChangeReq,
+             #'ServiceChangeRequest'{terminationID = [TermID],
+                                     serviceChangeParms = ServChParms}} ->
+                {TermID, ServChParms};
+            _ ->
+                Err3      = {invalid_command, Cmd},
+                ED3       = cre_ErrDesc(Cmd),
+                ErrReply3 = {discard_ack, ED3},
+                throw({error, Err3, ErrReply3})
+        end,
+    case Tid of
+        #megaco_term_id{contains_wildcards = false, id = ["root"]} ->
+            ok;
+        _ ->
+            Err4      = {invalid_termination_id, Tid},
+            ED4       = cre_ErrDesc(Tid),
+            ErrReply4 = {discard_ack, ED4},
+            throw({error, Err4, ErrReply4})
+    end,
+    case Parms of
+        #'ServiceChangeParm'{serviceChangeMethod = restart,
+                             serviceChangeReason = [[$9,$0,$1|_]]} ->
+            AckData = [strar_mgc_service_change_reply_ar(Mid, 1)],
+            Reply   = {discard_ack, AckData},
+            {ok, AR, Reply};
+        _ ->
+            Err5      = {invalid_SCP, Parms},
+            ED5       = cre_ErrDesc(Parms),
+            ErrReply5 = {discard_ack, ED5},
+            {error, Err5, ErrReply5}
+    end.
+
+strar_mgc_verify_notify_request_fun() ->
+    fun(Req) -> strar_mgc_verify_nr(Req) end.
+
+strar_mgc_verify_nr({handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch strar_mgc_do_verify_nr(AR));
+strar_mgc_verify_nr(Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+    
+strar_mgc_do_verify_nr(AR) ->
+    io:format("strar_mgc_do_verify_nr -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    {Cid, CR} =
+	case AR of
+	    #'ActionRequest'{contextId       = CtxID, 
+			     commandRequests = [CmdReq]} when (CtxID == 1) or
+							      (CtxID == 2) ->
+		{CtxID, CmdReq};
+	    _ ->
+                Err1      = {invalid_action_request, AR},
+                ED1       = cre_ErrDesc(AR),
+                ErrReply1 = {discard_ack, ED1},
+                throw({error, Err1, ErrReply1})
+        end,
+    Cmd =
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command;
+	    _ ->
+                Err2      = {invalid_command_request, CR},
+                ED2       = cre_ErrDesc(CR),
+                ErrReply2 = {discard_ack, ED2},
+                throw({error, Err2, ErrReply2})
+        end,
+    NR =
+        case Cmd of
+	    {notifyReq, NotifReq} ->
+		NotifReq;
+	    _ ->
+                Err3      = {invalid_command, Cmd},
+                ED3       = cre_ErrDesc(Cmd),
+                ErrReply3 = {discard_ack, ED3},
+                throw({error, Err3, ErrReply3})
+        end,
+    {Tid, OED} =
+        case NR of
+            #'NotifyRequest'{terminationID            = [TermID],
+                             observedEventsDescriptor = ObsEvsDesc,
+                             errorDescriptor          = asn1_NOVALUE} ->
+                {TermID, ObsEvsDesc};
+            _ ->
+                Err4      = {invalid_NR, NR},
+                ED4       = cre_ErrDesc(NR),
+                ErrReply4 = {discard_ack, ED4},
+                throw({error, Err4, ErrReply4})
+        end,
+    OE =
+	case OED of
+	    #'ObservedEventsDescriptor'{observedEventLst = [ObsEvLst]} ->
+		ObsEvLst;
+            _ ->
+                Err5      = {invalid_OED, OED},
+                ED5       = cre_ErrDesc(NR),
+                ErrReply5 = {discard_ack, ED5},
+                throw({error, Err5, ErrReply5})
+        end,
+    case OE of
+	#'ObservedEvent'{eventName = "al/of"} ->
+            Replies = [strar_mgc_notify_reply_ar(Cid, Tid)],
+            Reply   = {discard_ack, Replies},
+            {ok, AR, Reply};
+        _ ->
+            Err6      = {invalid_OE, OE},
+            ED6       = cre_ErrDesc(OE),
+            ErrReply6 = {discard_ack, ED6},
+            {error, Err6, ErrReply6}
+    end.
+
+strar_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, R}) -> 
+    io:format("strar_mgc_verify_handle_disconnect -> ok"
+	      "~n   CH: ~p"
+	      "~n   R:  ~p"
+	      "~n", [CH, R]),
+    {ok, CH, ok};
+strar_mgc_verify_handle_disconnect(Else) ->
+    io:format("strar_mgc_verify_handle_disconnect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+
+strar_mgc_service_change_reply_ar(Mid, Cid) ->
+    SCRP  = cre_serviceChangeResParm(Mid),
+    SCRes = cre_serviceChangeResult(SCRP),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReply([Root], SCRes),
+    CR    = cre_cmdReply(SCR),
+    cre_actionReply(Cid, [CR]).
+
+strar_mgc_notify_reply_ar(Cid, TermId) ->
+    NR    = cre_notifyReply([TermId]),
+    CR    = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+strar_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
+    AR    = strar_mgc_notify_reply_ar(Cid, TermId),
+    TRes  = cre_transResult([AR]),
+    TR    = cre_transReply(TransId, TRes),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+
+%%
+%% MG generator stuff
+%% 
+strar_mg_event_sequence(text, tcp) ->
+    Mid = {deviceName, "mg"},
+    RI = [
+	  {port,             2944},
+	  {encoding_module,  megaco_pretty_text_encoder},
+	  {encoding_config,  []},
+	  {transport_module, megaco_tcp}
+	 ],
+    ServiceChangeReq = [strar_mg_service_change_request_ar(Mid, 1)],
+    ConnectVerify = strar_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = strar_mg_verify_service_change_reply_fun(), 
+    Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NR = fun(Cid, Rid) ->
+		 [strar_mg_notify_request_ar(Rid, Tid, Cid)]
+	 end,
+    NotifyReplyVerify = fun strar_mg_verify_notify_reply/1, 
+    EvSeq = [
+	     {debug, true},
+	     megaco_start,
+	     {megaco_start_user, Mid, RI, []},
+	     start_transport,
+	     {megaco_trace, disable},
+	     {megaco_system_info, users},
+	     {megaco_system_info, connections},
+	     connect,
+	     {megaco_callback, handle_connect, ConnectVerify},
+	     megaco_connect,
+	     {megaco_cast, ServiceChangeReq, []},
+	     {megaco_callback, handle_connect, ConnectVerify}, 
+	     {megaco_callback, handle_trans_reply, ServiceChangeReplyVerify},
+	     {sleep, 1000},
+	     {megaco_system_info, users},
+	     {megaco_system_info, connections},
+	     {sleep, 1000},
+	     {megaco_conn_info, all},
+	     {megaco_cast, NR(1,1), []},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {sleep, 3000},
+	     megaco_stop_user,
+	     megaco_stop,
+	     {sleep, 1000}
+	    ],
+    EvSeq.
+
+strar_mg_verify_handle_connect_fun() ->
+    fun(Ev) -> strar_mg_verify_handle_connect(Ev) end.
+
+strar_mg_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
+    io:format("strar_mg_verify_handle_connect -> ok"
+	      "~n   CH: ~p~n", [CH]),
+    {ok, CH, ok};
+strar_mg_verify_handle_connect(Else) ->
+    io:format("strar_mg_verify_handle_connect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+strar_mg_verify_service_change_reply_fun() ->
+    fun(Rep) -> strar_mg_verify_scr(Rep) end.
+
+strar_mg_verify_scr({handle_trans_reply, _CH, ?VERSION, {ok, [AR]}, _}) ->
+    (catch strar_mg_do_verify_scr(AR));
+strar_mg_verify_scr(Crap) ->
+    {error, Crap, ok}.
+
+strar_mg_do_verify_scr(AR) ->
+    io:format("strar_mg_verify_scr -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    CR = 
+	case AR of
+	    #'ActionReply'{commandReply = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		Reason1 = {invalid_action_reply, AR},
+		throw({error, Reason1, ok})
+	end,
+    SCR = 
+	case CR of
+	    {serviceChangeReply, ServChRep} ->
+		ServChRep;
+	    _ ->
+		Reason2 = {invalid_command_reply, CR},
+		throw({error, Reason2, ok})
+	end,
+    {Tid, SCRes} = 
+	case SCR of
+	    #'ServiceChangeReply'{terminationID       = [TermID],
+				  serviceChangeResult = Res} ->
+		{TermID, Res};
+	    _ ->
+		Reason3 = {invalid_service_change_reply, SCR},
+		throw({error, Reason3, ok})
+	end,
+    case Tid of
+	#megaco_term_id{contains_wildcards = false, id = ["root"]} ->
+	    ok;
+	_ ->
+	    Reason4 = {invalid_termination_id, Tid},
+	    throw({error, Reason4, ok})
+    end,
+    SCRParm = 
+	case SCRes of
+	    {serviceChangeResParms, ServChResParms} ->
+		ServChResParms;
+	    _ ->
+		Reason5 = {invalid_serviceChangeResult, SCRes},
+		throw({error, Reason5, ok})
+	end,
+    case SCRParm of
+	#'ServiceChangeResParm'{serviceChangeMgcId = _RemoteMid} ->
+	    {ok, AR, ok};
+	_ ->
+	    Reason6 = {invalid_service_change_result, SCRParm},
+	    {error, Reason6, ok}
+    end.
+
+strar_mg_verify_notify_reply_fun() ->
+    fun(Rep) -> strar_mg_verify_notify_reply(Rep) end.
+	     
+strar_mg_verify_notify_reply({handle_trans_reply, _CH, ?VERSION, 
+			      {ok, [AR]}, _}) ->
+    io:format("strar_mg_verify_notify_reply -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    {ok, AR, ok};
+strar_mg_verify_notify_reply(Else) ->
+    io:format("strar_mg_verify_notify_reply -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+strar_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+strar_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+single_trans_req_and_reply_sendopts(suite) ->
+    [];
+single_trans_req_and_reply_sendopts(doc) ->
+    ["Receive a (single) transaction request and then send a "
+     "reply with handle_ack and a nre reply_timer in sendoptions. "
+     "The MGC is a megaco instance (megaco event sequence) and the "
+     "MG is emulated (tcp event sequence)"];
+single_trans_req_and_reply_sendopts(Config) when list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        straro),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p", 
+      [MgcNode, MgNode]),
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+
+    d("[MGC] start the simulator "),
+    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+
+    d("[MGC] create the event sequence"),
+    MgcEvSeq = straro_mgc_event_sequence(text, tcp),
+
+    i("wait some time before starting the MGC simulation"),
+    sleep(1000),
+
+    d("[MGC] start the simulation"),
+    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+
+    i("wait some time before starting the MG simulator"),
+    sleep(1000),
+
+    d("[MG] start the simulator (generator)"),
+    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+
+    d("[MG] create the event sequence"),
+    MgEvSeq = straro_mg_event_sequence(text, tcp),
+
+    i("wait some time before starting the MG simulation"),
+    sleep(1000),
+
+    d("[MG] start the simulation"),
+    megaco_test_generator:megaco(Mg, MgEvSeq),
+
+    d("[MGC] await the generator reply"),
+    case megaco_test_generator:megaco_await_reply(Mgc, 30000) of
+	{ok, MgcReply} ->
+	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
+	    ok;
+	{error, MgcReply} ->
+	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
+	    ?ERROR(mgc_failed)
+    end,
+
+    d("[MG] await the generator reply"),
+    case megaco_test_generator:megaco_await_reply(Mg, 30000) of
+	{ok, MgReply} ->
+	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
+	    ok;
+	{error, MgReply} ->
+	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
+	    ?ERROR(mg_failed)
+    end,
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_generator:stop(Mgc),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_generator:stop(Mg),
+
+    i("done", []),
+    ok.
+
+
+%%
+%% MGC generator stuff
+%% 
+straro_mgc_event_sequence(text, tcp) ->
+    Mid = {deviceName,"ctrl"},
+    RI = [
+	  {port,             2944},
+	  {encoding_module,  megaco_pretty_text_encoder},
+	  {encoding_config,  []},
+	  {transport_module, megaco_tcp}
+	 ],
+    ConnectVerify = fun straro_mgc_verify_handle_connect/1,
+    ServiceChangeReqVerify = straro_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify = straro_mgc_verify_notify_request_fun(),
+    TransAckVerify = straro_mgc_verify_handle_trans_ack_fun(), 
+    EvSeq = [
+	     {debug, true},
+	     {megaco_trace, disable},
+	     megaco_start,
+	     {megaco_start_user, Mid, RI, []},
+	     start_transport,
+	     listen,
+	     {megaco_callback, handle_connect,       ConnectVerify},
+	     {megaco_callback, handle_trans_request, ServiceChangeReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_trans_ack,     TransAckVerify},
+	     megaco_stop_user,
+	     megaco_stop
+	    ],
+    EvSeq.
+
+
+straro_mgc_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
+    io:format("straro_mgc_verify_handle_connect -> ok"
+	      "~n   CH: ~p~n", [CH]),
+    {ok, CH, ok};
+straro_mgc_verify_handle_connect(Else) ->
+    io:format("straro_mgc_verify_handle_connect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+straro_mgc_verify_service_change_req_fun(Mid) ->
+    fun(Req) -> straro_mgc_verify_scr(Mid, Req) end.
+
+straro_mgc_verify_scr(Mid, {handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch straro_mgc_do_verify_scr(Mid, AR));
+straro_mgc_verify_scr(_Mid, Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+straro_mgc_do_verify_scr(Mid, AR) ->
+    io:format("straro_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    CR = 
+	case AR of
+	    #'ActionRequest'{commandRequests = [CmdReq]} ->
+		CmdReq;
+	    _ ->
+                Err1      = {invalid_action_request, AR},
+                ED1       = cre_ErrDesc(AR),
+                ErrReply1 = {discard_ack, ED1},
+                throw({error, Err1, ErrReply1})
+	end,
+    Cmd =
+        case CR of
+            #'CommandRequest'{command = Command} ->
+                Command;
+            _ ->
+                Err2      = {invalid_command_request, CR},
+                ED2       = cre_ErrDesc(CR),
+                ErrReply2 = {discard_ack, ED2},
+                throw({error, Err2, ErrReply2})
+        end,
+    {Tid, Parms} =
+        case Cmd of
+            {serviceChangeReq,
+             #'ServiceChangeRequest'{terminationID = [TermID],
+                                     serviceChangeParms = ServChParms}} ->
+                {TermID, ServChParms};
+            _ ->
+                Err3      = {invalid_command, Cmd},
+                ED3       = cre_ErrDesc(Cmd),
+                ErrReply3 = {discard_ack, ED3},
+                throw({error, Err3, ErrReply3})
+        end,
+    case Tid of
+        #megaco_term_id{contains_wildcards = false, id = ["root"]} ->
+            ok;
+        _ ->
+            Err4      = {invalid_termination_id, Tid},
+            ED4       = cre_ErrDesc(Tid),
+            ErrReply4 = {discard_ack, ED4},
+            throw({error, Err4, ErrReply4})
+    end,
+    case Parms of
+        #'ServiceChangeParm'{serviceChangeMethod = restart,
+                             serviceChangeReason = [[$9,$0,$1|_]]} ->
+            AckData = [straro_mgc_service_change_reply_ar(Mid, 1)],
+            Reply   = {discard_ack, AckData},
+            {ok, AR, Reply};
+        _ ->
+            Err5      = {invalid_SCP, Parms},
+            ED5       = cre_ErrDesc(Parms),
+            ErrReply5 = {discard_ack, ED5},
+            {error, Err5, ErrReply5}
+    end.
+
+straro_mgc_verify_notify_request_fun() ->
+    fun(Req) -> straro_mgc_verify_nr(Req) end.
+
+straro_mgc_verify_nr({handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch straro_mgc_do_verify_nr(AR));
+straro_mgc_verify_nr(Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+    
+straro_mgc_do_verify_nr(AR) ->
+    io:format("straro_mgc_do_verify_nr -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    {Cid, CR} =
+	case AR of
+	    #'ActionRequest'{contextId       = CtxID, 
+			     commandRequests = [CmdReq]} when (CtxID == 1) or
+							      (CtxID == 2) ->
+		{CtxID, CmdReq};
+	    _ ->
+                Err1      = {invalid_action_request, AR},
+                ED1       = cre_ErrDesc(AR),
+                ErrReply1 = {discard_ack, ED1},
+                throw({error, Err1, ErrReply1})
+        end,
+    Cmd =
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command;
+	    _ ->
+                Err2      = {invalid_command_request, CR},
+                ED2       = cre_ErrDesc(CR),
+                ErrReply2 = {discard_ack, ED2},
+                throw({error, Err2, ErrReply2})
+        end,
+    NR =
+        case Cmd of
+	    {notifyReq, NotifReq} ->
+		NotifReq;
+	    _ ->
+                Err3      = {invalid_command, Cmd},
+                ED3       = cre_ErrDesc(Cmd),
+                ErrReply3 = {discard_ack, ED3},
+                throw({error, Err3, ErrReply3})
+        end,
+    {Tid, OED} =
+        case NR of
+            #'NotifyRequest'{terminationID            = [TermID],
+                             observedEventsDescriptor = ObsEvsDesc,
+                             errorDescriptor          = asn1_NOVALUE} ->
+                {TermID, ObsEvsDesc};
+            _ ->
+                Err4      = {invalid_NR, NR},
+                ED4       = cre_ErrDesc(NR),
+                ErrReply4 = {discard_ack, ED4},
+                throw({error, Err4, ErrReply4})
+        end,
+    OE =
+	case OED of
+	    #'ObservedEventsDescriptor'{observedEventLst = [ObsEvLst]} ->
+		ObsEvLst;
+            _ ->
+                Err5      = {invalid_OED, OED},
+                ED5       = cre_ErrDesc(NR),
+                ErrReply5 = {discard_ack, ED5},
+                throw({error, Err5, ErrReply5})
+        end,
+    case OE of
+	#'ObservedEvent'{eventName = "al/of"} ->
+            Replies = [straro_mgc_notify_reply_ar(Cid, Tid)],
+	    SendOpts = [{protocol_version, 99}],
+            Reply   = {{handle_ack, get(tc)}, Replies, SendOpts},
+            {ok, AR, Reply};
+        _ ->
+            Err6      = {invalid_OE, OE},
+            ED6       = cre_ErrDesc(OE),
+            ErrReply6 = {discard_ack, ED6},
+            {error, Err6, ErrReply6}
+    end.
+
+straro_mgc_verify_handle_trans_ack_fun() ->
+    fun(Ack) -> straro_mgc_verify_ta(Ack) end.
+
+straro_mgc_verify_ta({handle_trans_ack, _CH, ?VERSION, AS, _AD}) -> 
+    (catch straro_mgc_do_verify_ta(AS));
+straro_mgc_verify_ta(Crap) ->
+    {error, Crap, ok}.
+
+straro_mgc_do_verify_ta({error, {EM, [EC, Msg], Reason}}) ->
+    io:format("straro_mgc_do_verify_handle_ta -> entry with"
+	      "~n   EM:     ~p"
+	      "~n   EC:     ~p"
+	      "~n   Msg:    ~p"
+	      "~n   Reason: ~p"
+	      "~n", [EM, EC, Msg, Reason]),
+    case Reason of
+	{bad_version, 99} ->
+	    {ok, Reason, ok};
+	_ ->
+	    {error, {unexpected_reason, Reason}, ok}
+    end;
+straro_mgc_do_verify_ta(Else) ->
+    io:format("straro_mgc_verify_handle_ta -> unknown"
+	      "~n   Else: ~p"
+	      "~n", [Else]),
+    {error, Else, ok}.
+
+straro_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, R}) -> 
+    io:format("straro_mgc_verify_handle_disconnect -> ok"
+	      "~n   CH: ~p"
+	      "~n   R:  ~p"
+	      "~n", [CH, R]),
+    {ok, CH, ok};
+straro_mgc_verify_handle_disconnect(Else) ->
+    io:format("straro_mgc_verify_handle_disconnect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+
+straro_mgc_service_change_reply_ar(Mid, Cid) ->
+    SCRP  = cre_serviceChangeResParm(Mid),
+    SCRes = cre_serviceChangeResult(SCRP),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReply([Root], SCRes),
+    CR    = cre_cmdReply(SCR),
+    cre_actionReply(Cid, [CR]).
+
+straro_mgc_notify_reply_ar(Cid, TermId) ->
+    NR    = cre_notifyReply([TermId]),
+    CR    = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+straro_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
+    AR    = straro_mgc_notify_reply_ar(Cid, TermId),
+    TRes  = cre_transResult([AR]),
+    TR    = cre_transReply(TransId, TRes),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+
+%%
+%% MG generator stuff
+%% 
+straro_mg_event_sequence(text, tcp) ->
+    Mid = {deviceName, "mg"},
+    RI = [
+	  {port,             2944},
+	  {encoding_module,  megaco_pretty_text_encoder},
+	  {encoding_config,  []},
+	  {transport_module, megaco_tcp}
+	 ],
+    ServiceChangeReq = [straro_mg_service_change_request_ar(Mid, 1)],
+    ConnectVerify = straro_mg_verify_handle_connect_fun(), 
+    DiscoVerify = fun straro_mg_verify_handle_disconnect/1,
+    ServiceChangeReplyVerify = straro_mg_verify_service_change_reply_fun(), 
+    Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NR = fun(Cid, Rid) ->
+		 [straro_mg_notify_request_ar(Rid, Tid, Cid)]
+	 end,
+    EvSeq = [
+	     {debug, true},
+	     megaco_start,
+	     {megaco_start_user, Mid, RI, []},
+	     start_transport,
+	     {megaco_trace, disable},
+	     {megaco_system_info, users},
+	     {megaco_system_info, connections},
+	     connect,
+	     {megaco_callback, handle_connect, ConnectVerify},
+	     megaco_connect,
+	     {megaco_cast, ServiceChangeReq, []},
+	     {megaco_callback, handle_connect, ConnectVerify}, 
+	     {megaco_callback, handle_trans_reply, ServiceChangeReplyVerify},
+	     {sleep, 1000},
+	     {megaco_system_info, users},
+	     {megaco_system_info, connections},
+	     {sleep, 1000},
+	     {megaco_conn_info, all},
+	     {megaco_cast, NR(1,1), []},
+	     {megaco_callback, handle_disconnect, DiscoVerify}, 
+	     megaco_stop_user,
+	     megaco_stop,
+	     {sleep, 1000}
+	    ],
+    EvSeq.
+
+straro_mg_verify_handle_connect_fun() ->
+    fun(Ev) -> straro_mg_verify_handle_connect(Ev) end.
+
+straro_mg_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
+    io:format("straro_mg_verify_handle_connect -> ok"
+	      "~n   CH: ~p~n", [CH]),
+    {ok, CH, ok};
+straro_mg_verify_handle_connect(Else) ->
+    io:format("straro_mg_verify_handle_connect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+straro_mg_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, R}) -> 
+    io:format("straro_mg_verify_handle_disconnect -> ok"
+	      "~n   CH: ~p"
+	      "~n   R:  ~p"
+	      "~n", [CH, R]),
+    {ok, CH, ok};
+straro_mg_verify_handle_disconnect(Else) ->
+    io:format("straro_mg_verify_handle_disconnect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+
+straro_mg_verify_service_change_reply_fun() ->
+    fun(Rep) -> straro_mg_verify_scr(Rep) end.
+
+straro_mg_verify_scr({handle_trans_reply, _CH, ?VERSION, {ok, [AR]}, _}) ->
+    (catch straro_mg_do_verify_scr(AR));
+straro_mg_verify_scr(Crap) ->
+    {error, Crap, ok}.
+
+straro_mg_do_verify_scr(AR) ->
+    io:format("straro_mg_verify_scr -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    CR = 
+	case AR of
+	    #'ActionReply'{commandReply = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		Reason1 = {invalid_action_reply, AR},
+		throw({error, Reason1, ok})
+	end,
+    SCR = 
+	case CR of
+	    {serviceChangeReply, ServChRep} ->
+		ServChRep;
+	    _ ->
+		Reason2 = {invalid_command_reply, CR},
+		throw({error, Reason2, ok})
+	end,
+    {Tid, SCRes} = 
+	case SCR of
+	    #'ServiceChangeReply'{terminationID       = [TermID],
+				  serviceChangeResult = Res} ->
+		{TermID, Res};
+	    _ ->
+		Reason3 = {invalid_service_change_reply, SCR},
+		throw({error, Reason3, ok})
+	end,
+    case Tid of
+	#megaco_term_id{contains_wildcards = false, id = ["root"]} ->
+	    ok;
+	_ ->
+	    Reason4 = {invalid_termination_id, Tid},
+	    throw({error, Reason4, ok})
+    end,
+    SCRParm = 
+	case SCRes of
+	    {serviceChangeResParms, ServChResParms} ->
+		ServChResParms;
+	    _ ->
+		Reason5 = {invalid_serviceChangeResult, SCRes},
+		throw({error, Reason5, ok})
+	end,
+    case SCRParm of
+	#'ServiceChangeResParm'{serviceChangeMgcId = _RemoteMid} ->
+	    {ok, AR, ok};
+	_ ->
+	    Reason6 = {invalid_service_change_result, SCRParm},
+	    {error, Reason6, ok}
+    end.
+
+straro_mg_verify_notify_reply_fun() ->
+    fun(Rep) -> straro_mg_verify_notify_reply(Rep) end.
+	     
+straro_mg_verify_notify_reply({handle_trans_reply, _CH, ?VERSION, 
+			      {ok, [AR]}, _}) ->
+    io:format("straro_mg_verify_notify_reply -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    {ok, AR, ok};
+straro_mg_verify_notify_reply(Else) ->
+    io:format("straro_mg_verify_notify_reply -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+straro_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+straro_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+request_and_reply_and_ack(suite) ->
+    [];
+request_and_reply_and_ack(doc) ->
+    ["This test case tests that megaco correctly handles three-way-handshake"];
+request_and_reply_and_ack(Config) when is_list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        raraa),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p",
+      [MgcNode, MgNode]),
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+    d("[MGC] start the simulator "),
+    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+
+    d("[MGC] create the event sequence"),
+    MgcEvSeq = raraa_mgc_event_sequence(text, tcp),
+
+    i("wait some time before starting the MGC simulation"),
+    sleep(1000),
+
+    d("[MGC] start the simulation"),
+    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+
+    i("wait some time before starting the MG simulator"),
+    sleep(1000),
+
+    d("[MG] start the simulator (generator)"),
+    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+
+    d("[MG] create the event sequence"),
+    MgEvSeq = raraa_mg_event_sequence(text, tcp),
+
+    i("wait some time before starting the MG simulation"),
+    sleep(1000),
+
+    d("[MG] start the simulation"),
+    megaco_test_generator:tcp(Mg, MgEvSeq),
+
+    d("[MGC] await the generator reply"),
+    case megaco_test_generator:megaco_await_reply(Mgc) of
+        {ok, MgcReply} ->
+            d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
+            ok;
+        {error, MgcReply} ->
+            d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
+            ?ERROR(mgc_failed)
+    end,
+
+    d("[MG] await the generator reply"),
+    case megaco_test_generator:tcp_await_reply(Mg) of
+        {ok, MgReply} ->
+            d("[MG] OK => MgReply: ~n~p", [MgReply]),
+            ok;
+        {error, MgReply} ->
+            d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
+            ?ERROR(mg_failed)
+    end,
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_generator:stop(Mgc),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_generator:stop(Mg),
+
+    i("done", []),
+    ok.
+
+
+%%
+%% MGC generator stuff
+%%
+
+raraa_mgc_event_sequence(text, tcp) ->
+    Mid = {deviceName,"ctrl"},
+    RI = [
+          {port,             2944},
+          {encoding_module,  megaco_pretty_text_encoder},
+          {encoding_config,  []},
+          {transport_module, megaco_tcp}
+         ],
+    ConnectVerify = fun raraa_mgc_verify_handle_connect/1,
+    ScrVerify = raraa_mgc_verify_service_change_req_fun(Mid),
+    NrVerify = raraa_mgc_verify_notify_request_fun(),
+    AckVerify = raraa_mgc_verify_trans_ack_fun(),
+    DiscoVerify = fun raraa_mgc_verify_handle_disconnect/1,
+    EvSeq = [
+             {debug, true},
+             {megaco_trace, disable},
+             {megaco_trace, max},
+             megaco_start,
+             {megaco_start_user, Mid, RI, []},
+             {megaco_update_user_info, sent_pending_limit, 100},
+             start_transport,
+             listen,
+             {megaco_callback, handle_connect,           ConnectVerify},
+             {megaco_conn_info, all},
+             {megaco_callback, handle_trans_request,     ScrVerify},
+	     {megaco_callback, handle_trans_request,     NrVerify},
+	     {megaco_callback, handle_trans_ack,         AckVerify},
+             {megaco_callback, handle_disconnect,        DiscoVerify},
+             megaco_stop_user,
+             megaco_stop
+            ],
+    EvSeq.
+
+%% Connect verification
+raraa_mgc_verify_handle_connect({handle_connect, CH, ?VERSION}) ->
+    {ok, CH, ok};
+raraa_mgc_verify_handle_connect(Else) ->
+    {error, Else, ok}.
+
+%% Service Change verification
+raraa_mgc_verify_service_change_req_fun(Mid) ->
+    fun(Req) -> raraa_mgc_verify_service_change_req(Mid, Req) end.
+
+raraa_mgc_verify_service_change_req(
+  Mid, 
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch raraa_do_verify_service_change_req(Mid, AR));
+raraa_mgc_verify_service_change_req(_Mid, Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+raraa_do_verify_service_change_req(Mid, AR) ->
+    CR = 
+	case AR of
+	    #'ActionRequest'{commandRequests = [CmdReq]} ->
+		CmdReq;
+	    _ ->
+		Err1      = {invalid_action_request, AR},
+		ED1       = cre_ErrDesc(AR),
+		ErrReply1 = {discard_ack, ED1},
+		throw({error, Err1, ErrReply1})
+	end,
+    Cmd = 
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command; 
+	    _ ->
+		Err2      = {invalid_command_request, CR},
+		ED2       = cre_ErrDesc(CR),
+		ErrReply2 = {discard_ack, ED2},
+		throw({error, Err2, ErrReply2})
+	end,
+    {Tid, Parms} = 
+	case Cmd of
+	    {serviceChangeReq, 
+	     #'ServiceChangeRequest'{terminationID = [TermID],
+				     serviceChangeParms = ServChParms}} ->
+		{TermID, ServChParms};
+	    _ ->
+		Err3      = {invalid_command, Cmd},
+		ED3       = cre_ErrDesc(Cmd),
+		ErrReply3 = {discard_ack, ED3},
+		throw({error, Err3, ErrReply3})
+	end,
+    case Tid of
+	#megaco_term_id{contains_wildcards = false, id = ["root"]} ->
+	    ok;
+	_ ->
+	    Err4      = {invalid_termination_id, Tid},
+	    ED4       = cre_ErrDesc(Tid),
+	    ErrReply4 = {discard_ack, ED4},
+	    throw({error, Err4, ErrReply4})
+    end,
+    case Parms of
+	#'ServiceChangeParm'{serviceChangeMethod = restart,
+			     serviceChangeReason = [[$9,$0,$1|_]]} ->
+	    AckData = [raraa_mgc_service_change_reply_ar(Mid, 1)], 
+	    Reply   = {discard_ack, AckData},
+	    {ok, AR, Reply};
+	_ ->
+	    Err5      = {invalid_SCP, Parms},
+	    ED5       = cre_ErrDesc(Parms),
+	    ErrReply5 = {discard_ack, ED5},
+	    {error, Err5, ErrReply5}
+    end.
+
+
+%% Notify Request verification
+raraa_mgc_verify_notify_request_fun() ->
+    fun(Req) -> raraa_mgc_verify_notify_request(Req) end.
+
+raraa_mgc_verify_notify_request({handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch raraa_mgc_do_verify_notify_request(AR));
+raraa_mgc_verify_notify_request(Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+raraa_mgc_do_verify_notify_request(AR) ->
+    {Cid, CR} = 
+	case AR of
+	    #'ActionRequest'{contextId       = CtxID,
+			     commandRequests = [CmdReq]} ->
+		{CtxID, CmdReq};
+	    _ ->
+		Err1      = {invalid_action_request, AR},
+		ED1       = cre_ErrDesc(AR),
+		ErrReply1 = {discard_ack, ED1},
+		throw({error, Err1, ErrReply1})
+	end,
+    Cmd = 
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command;
+	    _ ->
+		Err2      = {invalid_command_request, CR},
+		ED2       = cre_ErrDesc(CR),
+		ErrReply2 = {discard_ack, ED2},
+		throw({error, Err2, ErrReply2})
+	end,
+    NR = 
+	case Cmd of
+	    {notifyReq, NotifReq} ->
+		NotifReq;
+	    _ ->
+		Err3      = {invalid_command, Cmd},
+		ED3       = cre_ErrDesc(Cmd),
+		ErrReply3 = {discard_ack, ED3},
+		throw({error, Err3, ErrReply3})
+	end,
+    {Tid, OED} = 
+	case NR of
+	    #'NotifyRequest'{terminationID            = [TermID],
+			     observedEventsDescriptor = ObsEvsDesc,
+			     errorDescriptor          = asn1_NOVALUE} ->
+		{TermID, ObsEvsDesc};
+	    _ ->
+		Err4      = {invalid_NR, NR},
+		ED4       = cre_ErrDesc(NR),
+		ErrReply4 = {discard_ack, ED4},
+		throw({error, Err4, ErrReply4})
+	end,
+    OE = 
+	case OED of 
+	    #'ObservedEventsDescriptor'{observedEventLst = [ObsEvLst]} ->
+		ObsEvLst;
+	    _ ->
+		Err5      = {invalid_OED, OED},
+		ED5       = cre_ErrDesc(NR),
+		ErrReply5 = {discard_ack, ED5},
+		throw({error, Err5, ErrReply5})
+	end,
+    case OE of
+	#'ObservedEvent'{eventName = "al/of"} ->
+	    AckData = raraa, 
+	    Replies = [raraa_mgc_notify_reply_ar(Cid, Tid)],
+	    Reply   = {{handle_ack, AckData}, Replies},
+	    {ok, AR, Reply};
+	_ ->
+	    Err6      = {invalid_OE, OE},
+	    ED6       = cre_ErrDesc(OE),
+	    ErrReply6 = {discard_ack, ED6},
+	    throw({error, Err6, ErrReply6})
+    end.
+
+
+raraa_mgc_verify_trans_ack_fun() ->
+    fun(Ack) -> raraa_mgc_verify_trans_ack(Ack) end.
+
+raraa_mgc_verify_trans_ack({handle_trans_ack, CH, ?VERSION, ok, raraa}) ->
+    io:format("raraa_mgc_verify_trans_ack -> ok"
+              "~n   CH: ~p"
+              "~n", [CH]),
+    {ok, CH, ok};
+raraa_mgc_verify_trans_ack(Crap) ->
+    io:format("raraa_mgc_verify_trans_ack -> unknown"
+              "~n   Crap: ~p~n", [Crap]),
+    {error, Crap, ok}.
+
+
+%% Disconnect verification
+raraa_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, _R}) ->
+    {ok, CH, ok};
+raraa_mgc_verify_handle_disconnect(Else) ->
+    {error, Else, ok}.
+
+raraa_mgc_service_change_reply_ar(Mid, Cid) ->
+    SCRP  = cre_serviceChangeResParm(Mid),
+    SCRes = cre_serviceChangeResult(SCRP),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReply([Root], SCRes),
+    CR    = cre_cmdReply(SCR),
+    AR    = cre_actionReply(Cid, [CR]),
+    AR.
+
+raraa_mgc_notify_reply_ar(Cid, TermId) ->
+    NR    = cre_notifyReply([TermId]),
+    CR    = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+
+%%
+%% MG generator stuff
+%%
+raraa_mg_event_sequence(text, tcp) ->
+    DecodeFun = raraa_mg_decode_msg_fun(megaco_pretty_text_encoder, []),
+    EncodeFun = raraa_mg_encode_msg_fun(megaco_pretty_text_encoder, []),
+    Mid       = {deviceName,"mg"},
+    ServiceChangeReq = raraa_mg_service_change_request_msg(Mid, 1, 0),
+    ScrVerifyFun = raraa_mg_verify_service_change_rep_msg_fun(),
+    TermId  = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    TransId = 2,
+    ReqId   = 1,
+    CtxId   = 1, 
+    NotifyReq = raraa_mg_notify_request_msg(Mid, TermId, 
+					    TransId, ReqId, CtxId),
+    NrVerifyFun = raraa_mg_verify_notify_rep_msg_fun(TermId, 
+						     TransId, ReqId, CtxId),
+    TransAck = raraa_mg_trans_ack_msg(Mid, TransId),
+    EvSeq = [{debug,  true},
+             {decode, DecodeFun},
+             {encode, EncodeFun},
+             {connect, 2944},
+             {send, "service-change-request", ServiceChangeReq},
+             {expect_receive, "service-change-reply", {ScrVerifyFun, 10000}},
+             {send, "notify request", NotifyReq},
+             {expect_receive, "notify-reply", {NrVerifyFun, 10000}},
+             {send, "transaction-ack", TransAck},
+             {expect_nothing, 11000},
+             disconnect
+            ],
+    EvSeq.
+
+raraa_mg_encode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:encode_message(Conf, M)
+    end.
+
+raraa_mg_decode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:decode_message(Conf, M)
+    end.
+
+raraa_mg_verify_service_change_rep_msg_fun() ->
+    fun(Msg) -> (catch raraa_mg_verify_service_change_rep(Msg)) end.
+
+raraa_mg_verify_service_change_rep(#'MegacoMessage'{mess = Mess} = M) ->
+    Body = 
+	case Mess of 
+	    #'Message'{version     = _V,
+                       mId         = _MgMid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TR = 
+	case Trans of
+            {transactionReply, TransReply} ->
+		TransReply;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    TRes = 
+	case TR of
+            #'TransactionReply'{transactionId = _Tid,
+                                immAckRequired = asn1_NOVALUE,
+                                transactionResult = TransRes} ->
+		TransRes;
+	    _ ->
+		throw({error, {invalid_transactionReply, TR}})
+	end,
+    AR = 
+	case TRes of
+            {actionReplies, [ActRes]} ->
+		ActRes;
+	    _ ->
+		throw({error, {invalid_transactionResult, TRes}})
+	end,
+    CR = 
+	case AR of
+            #'ActionReply'{contextId       = _Cid,
+                           errorDescriptor = asn1_NOVALUE,
+                           contextReply    = _CtxReq,
+                           commandReply    = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		throw({error, {invalid_actionReplies, AR}})
+	end,
+    SCR = 
+	case CR of
+            {serviceChangeReply, ServChRep} ->
+		ServChRep;
+	    _ ->
+		throw({error, {invalid_commandReply, CR}})
+	end,
+    SCRes = 
+	case SCR of
+            #'ServiceChangeReply'{terminationID       = _TermID,
+                                  serviceChangeResult = ServChRes} ->
+		ServChRes;
+	    _ ->
+		throw({error, {invalid_serviceChangeReply, SCR}})
+	end,
+    SCRP = 
+	case SCRes of
+            {serviceChangeResParms, Parms} ->
+		Parms;
+	    _ ->
+		throw({error, {invalid_serviceChangeResult, SCRes}})
+	end,
+    case SCRP of
+	#'ServiceChangeResParm'{serviceChangeMgcId = _MgcMid} ->
+            {ok, M};
+	_ ->
+	    {error, {invalid_serviceChangeResParms, SCRP}}
+    end;
+raraa_mg_verify_service_change_rep(Crap) ->
+    {error, {invalid_message, Crap}}.
+
+raraa_mg_verify_notify_rep_msg_fun(TermId, TransId, Rid, Cid) ->
+    fun(Msg) -> (catch raraa_mg_verify_notify_rep(Msg, 
+						  TermId, 
+						  TransId, Rid, Cid)) end.
+
+raraa_mg_verify_notify_rep(#'MegacoMessage'{mess = Mess} = M,
+			   TermId, TransId, _Rid, Cid) ->
+%%     io:format("raraa_mg_verify_notify_rep -> entry with"
+%% 	      "~n   M:       ~p"
+%% 	      "~n   TermId:  ~p"
+%% 	      "~n   TransId: ~p"
+%% 	      "~n   Rid:     ~p"
+%% 	      "~n   Cid:     ~p"
+%% 	      "~n", [M, TermId, TransId, Rid, Cid]),
+    Body = 
+	case Mess of 
+	    #'Message'{version     = ?VERSION,
+                       mId         = _Mid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TR = 
+	case Trans of
+            {transactionReply, TransReply} ->
+		TransReply;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    TRes = 
+	case TR of
+            #'TransactionReply'{transactionId     = TransId,
+                                immAckRequired    = 'NULL',
+                                transactionResult = TransRes} ->
+		TransRes;
+	    _ ->
+		throw({error, {invalid_transactionReply, TR}})
+	end,
+    AR = 
+	case TRes of
+            {actionReplies, [ActRes]} ->
+		ActRes;
+	    _ ->
+		throw({error, {invalid_transactionResult, TRes}})
+	end,
+    CR = 
+	case AR of
+            #'ActionReply'{contextId       = Cid,
+                           errorDescriptor = asn1_NOVALUE,
+                           contextReply    = _CtxReq,
+                           commandReply    = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		throw({error, {invalid_actionReplies, AR}})
+	end,
+    NR = 
+	case CR of
+            {notifyReply, NotifyReply} ->
+		NotifyReply;
+	    _ ->
+		throw({error, {invalid_commandReply, CR}})
+	end,
+    case NR of
+	#'NotifyReply'{terminationID   = [TermId],
+		       errorDescriptor = asn1_NOVALUE} ->
+	    {ok, M};
+	_ ->
+	    {error, {invalid_notifyReply, NR}}
+    end;
+raraa_mg_verify_notify_rep(Crap, _TermId, _TransId, _Rid, _Cid) ->
+    {error, {invalid_message, Crap}}.
+
+raraa_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+raraa_mg_service_change_request_msg(Mid, TransId, Cid) ->
+    AR    = raraa_mg_service_change_request_ar(Mid, Cid),
+    TR    = cre_transReq(TransId, [AR]),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+raraa_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+raraa_mg_notify_request_msg(Mid, TermId, TransId, Rid, Cid) ->
+    AR      = raraa_mg_notify_request_ar(Rid, TermId, Cid),
+    TR      = cre_transReq(TransId, [AR]),
+    Trans   = cre_transaction(TR),
+    Mess    = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+raraa_mg_trans_ack_msg(Mid, TransId) ->
+    TR    = cre_transRespAck(cre_transAck(TransId)),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+request_and_reply_and_no_ack(suite) ->
+    [];
+request_and_reply_and_no_ack(doc) ->
+    ["This test case tests that megaco handles a failed three-way-handshake,"
+     " i.e. when the ack never arrives"];
+request_and_reply_and_no_ack(Config) when is_list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        rarana),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p",
+      [MgcNode, MgNode]),
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+    d("[MGC] start the simulator "),
+    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+
+    d("[MGC] create the event sequence"),
+    MgcEvSeq = rarana_mgc_event_sequence(text, tcp),
+
+    i("wait some time before starting the MGC simulation"),
+    sleep(1000),
+
+    d("[MGC] start the simulation"),
+    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+
+    i("wait some time before starting the MG simulator"),
+    sleep(1000),
+
+    d("[MG] start the simulator (generator)"),
+    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+
+    d("[MG] create the event sequence"),
+    MgEvSeq = rarana_mg_event_sequence(text, tcp),
+
+    i("wait some time before starting the MG simulation"),
+    sleep(1000),
+
+    d("[MG] start the simulation"),
+    megaco_test_generator:tcp(Mg, MgEvSeq),
+
+    d("[MGC] await the generator reply"),
+    case megaco_test_generator:megaco_await_reply(Mgc) of
+        {ok, MgcReply} ->
+            d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
+            ok;
+        {error, MgcReply} ->
+            d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
+            ?ERROR(mgc_failed)
+    end,
+
+    d("[MG] await the generator reply"),
+    case megaco_test_generator:tcp_await_reply(Mg) of
+        {ok, MgReply} ->
+            d("[MG] OK => MgReply: ~n~p", [MgReply]),
+            ok;
+        {error, MgReply} ->
+            d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
+            ?ERROR(mg_failed)
+    end,
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_generator:stop(Mgc),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_generator:stop(Mg),
+
+    i("done", []),
+    ok.
+
+
+%%
+%% MGC generator stuff
+%%
+
+rarana_mgc_event_sequence(text, tcp) ->
+    Mid = {deviceName,"ctrl"},
+    RI = [
+          {port,             2944},
+          {encoding_module,  megaco_pretty_text_encoder},
+          {encoding_config,  []},
+          {transport_module, megaco_tcp}
+         ],
+    ConnectVerify = fun rarana_mgc_verify_handle_connect/1,
+    ScrVerify     = rarana_mgc_verify_service_change_req_fun(Mid),
+    NrVerify      = rarana_mgc_verify_notify_request_fun(),
+    AckVerify     = rarana_mgc_verify_trans_ack_fun(),
+    DiscoVerify   = fun rarana_mgc_verify_handle_disconnect/1,
+    EvSeq = [
+             {debug, true},
+             {megaco_trace, disable},
+             {megaco_trace, max},
+             megaco_start,
+             {megaco_start_user, Mid, RI, []},
+             {megaco_update_user_info, sent_pending_limit, 100},
+             {megaco_update_user_info, reply_timer,        9000},
+             start_transport,
+             listen,
+             {megaco_callback, handle_connect,           ConnectVerify},
+             {megaco_conn_info, all},
+             {megaco_callback, handle_trans_request,     ScrVerify},
+	     {megaco_callback, handle_trans_request,     NrVerify},
+	     {megaco_callback, handle_trans_ack,         AckVerify},
+	     %% {megaco_callback, nocall,                   8000},
+             {megaco_callback, handle_disconnect,        DiscoVerify},
+             megaco_stop_user,
+             megaco_stop
+            ],
+    EvSeq.
+
+%% Connect verification
+rarana_mgc_verify_handle_connect({handle_connect, CH, ?VERSION}) ->
+    {ok, CH, ok};
+rarana_mgc_verify_handle_connect(Else) ->
+    {error, Else, ok}.
+
+%% Service Change verification
+rarana_mgc_verify_service_change_req_fun(Mid) ->
+    fun(Req) -> rarana_mgc_verify_service_change_req(Mid, Req) end.
+
+rarana_mgc_verify_service_change_req(
+  Mid, 
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch rarana_do_verify_service_change_req(Mid, AR));
+rarana_mgc_verify_service_change_req(_Mid, Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+rarana_do_verify_service_change_req(Mid, AR) ->
+    CR = 
+	case AR of
+	    #'ActionRequest'{commandRequests = [CmdReq]} ->
+		CmdReq;
+	    _ ->
+		Err1      = {invalid_action_request, AR},
+		ED1       = cre_ErrDesc(AR),
+		ErrReply1 = {discard_ack, ED1},
+		throw({error, Err1, ErrReply1})
+	end,
+    Cmd = 
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command; 
+	    _ ->
+		Err2      = {invalid_command_request, CR},
+		ED2       = cre_ErrDesc(CR),
+		ErrReply2 = {discard_ack, ED2},
+		throw({error, Err2, ErrReply2})
+	end,
+    {Tid, Parms} = 
+	case Cmd of
+	    {serviceChangeReq, 
+	     #'ServiceChangeRequest'{terminationID = [TermID],
+				     serviceChangeParms = ServChParms}} ->
+		{TermID, ServChParms};
+	    _ ->
+		Err3      = {invalid_command, Cmd},
+		ED3       = cre_ErrDesc(Cmd),
+		ErrReply3 = {discard_ack, ED3},
+		throw({error, Err3, ErrReply3})
+	end,
+    case Tid of
+	#megaco_term_id{contains_wildcards = false, id = ["root"]} ->
+	    ok;
+	_ ->
+	    Err4      = {invalid_termination_id, Tid},
+	    ED4       = cre_ErrDesc(Tid),
+	    ErrReply4 = {discard_ack, ED4},
+	    throw({error, Err4, ErrReply4})
+    end,
+    case Parms of
+	#'ServiceChangeParm'{serviceChangeMethod = restart,
+			     serviceChangeReason = [[$9,$0,$1|_]]} ->
+	    AckData = [rarana_mgc_service_change_reply_ar(Mid, 1)], 
+	    Reply   = {discard_ack, AckData},
+	    {ok, AR, Reply};
+	_ ->
+	    Err5      = {invalid_SCP, Parms},
+	    ED5       = cre_ErrDesc(Parms),
+	    ErrReply5 = {discard_ack, ED5},
+	    {error, Err5, ErrReply5}
+    end.
+
+
+%% Notify Request verification
+rarana_mgc_verify_notify_request_fun() ->
+    fun(Req) -> rarana_mgc_verify_notify_request(Req) end.
+
+rarana_mgc_verify_notify_request({handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch rarana_mgc_do_verify_notify_request(AR));
+rarana_mgc_verify_notify_request(Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+rarana_mgc_do_verify_notify_request(AR) ->
+    {Cid, CR} = 
+	case AR of
+	    #'ActionRequest'{contextId       = CtxID,
+			     commandRequests = [CmdReq]} ->
+		{CtxID, CmdReq};
+	    _ ->
+		Err1      = {invalid_action_request, AR},
+		ED1       = cre_ErrDesc(AR),
+		ErrReply1 = {discard_ack, ED1},
+		throw({error, Err1, ErrReply1})
+	end,
+    Cmd = 
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command;
+	    _ ->
+		Err2      = {invalid_command_request, CR},
+		ED2       = cre_ErrDesc(CR),
+		ErrReply2 = {discard_ack, ED2},
+		throw({error, Err2, ErrReply2})
+	end,
+    NR = 
+	case Cmd of
+	    {notifyReq, NotifReq} ->
+		NotifReq;
+	    _ ->
+		Err3      = {invalid_command, Cmd},
+		ED3       = cre_ErrDesc(Cmd),
+		ErrReply3 = {discard_ack, ED3},
+		throw({error, Err3, ErrReply3})
+	end,
+    {Tid, OED} = 
+	case NR of
+	    #'NotifyRequest'{terminationID            = [TermID],
+			     observedEventsDescriptor = ObsEvsDesc,
+			     errorDescriptor          = asn1_NOVALUE} ->
+		{TermID, ObsEvsDesc};
+	    _ ->
+		Err4      = {invalid_NR, NR},
+		ED4       = cre_ErrDesc(NR),
+		ErrReply4 = {discard_ack, ED4},
+		throw({error, Err4, ErrReply4})
+	end,
+    OE = 
+	case OED of 
+	    #'ObservedEventsDescriptor'{observedEventLst = [ObsEvLst]} ->
+		ObsEvLst;
+	    _ ->
+		Err5      = {invalid_OED, OED},
+		ED5       = cre_ErrDesc(NR),
+		ErrReply5 = {discard_ack, ED5},
+		throw({error, Err5, ErrReply5})
+	end,
+    case OE of
+	#'ObservedEvent'{eventName = "al/of"} ->
+	    AckData = rarana, 
+	    Replies = [rarana_mgc_notify_reply_ar(Cid, Tid)],
+	    Reply   = {{handle_ack, AckData}, Replies},
+	    {ok, AR, Reply};
+	_ ->
+	    Err6      = {invalid_OE, OE},
+	    ED6       = cre_ErrDesc(OE),
+	    ErrReply6 = {discard_ack, ED6},
+	    throw({error, Err6, ErrReply6})
+    end.
+
+
+rarana_mgc_verify_trans_ack_fun() ->
+    fun(Ack) -> rarana_mgc_verify_trans_ack(Ack) end.
+
+rarana_mgc_verify_trans_ack({handle_trans_ack, CH, ?VERSION, 
+			    {error, timeout}, rarana}) ->
+    io:format("rarana_mgc_verify_trans_ack -> expected error: ok"
+              "~n   CH: ~p"
+              "~n", [CH]),
+    {ok, CH, ok};
+rarana_mgc_verify_trans_ack(Crap) ->
+    io:format("rarana_mgc_verify_trans_ack -> unknown"
+              "~n   Crap: ~p~n", [Crap]),
+    {error, Crap, ok}.
+
+
+%% Disconnect verification
+rarana_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, _R}) ->
+    {ok, CH, ok};
+rarana_mgc_verify_handle_disconnect(Else) ->
+    {error, Else, ok}.
+
+rarana_mgc_service_change_reply_ar(Mid, Cid) ->
+    SCRP  = cre_serviceChangeResParm(Mid),
+    SCRes = cre_serviceChangeResult(SCRP),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReply([Root], SCRes),
+    CR    = cre_cmdReply(SCR),
+    AR    = cre_actionReply(Cid, [CR]),
+    AR.
+
+rarana_mgc_notify_reply_ar(Cid, TermId) ->
+    NR    = cre_notifyReply([TermId]),
+    CR    = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+
+%%
+%% MG generator stuff
+%%
+rarana_mg_event_sequence(text, tcp) ->
+    DecodeFun = rarana_mg_decode_msg_fun(megaco_pretty_text_encoder, []),
+    EncodeFun = rarana_mg_encode_msg_fun(megaco_pretty_text_encoder, []),
+    Mid       = {deviceName,"mg"},
+    ServiceChangeReq = rarana_mg_service_change_request_msg(Mid, 1, 0),
+    ScrVerifyFun = rarana_mg_verify_service_change_rep_msg_fun(),
+    TermId  = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    TransId = 2,
+    ReqId   = 1,
+    CtxId   = 1, 
+    NotifyReq = rarana_mg_notify_request_msg(Mid, TermId, 
+					    TransId, ReqId, CtxId),
+    NrVerifyFun = rarana_mg_verify_notify_rep_msg_fun(TermId, 
+						     TransId, ReqId, CtxId),
+    EvSeq = [{debug,  true},
+             {decode, DecodeFun},
+             {encode, EncodeFun},
+             {connect, 2944},
+             {send, "service-change-request", ServiceChangeReq},
+             {expect_receive, "service-change-reply", {ScrVerifyFun, 10000}},
+             {send, "notify request", NotifyReq},
+             {expect_receive, "notify-reply", {NrVerifyFun, 10000}},
+             {expect_nothing, 11000},
+             disconnect
+            ],
+    EvSeq.
+
+rarana_mg_encode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:encode_message(Conf, M)
+    end.
+
+rarana_mg_decode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:decode_message(Conf, M)
+    end.
+
+rarana_mg_verify_service_change_rep_msg_fun() ->
+    fun(Msg) -> (catch rarana_mg_verify_service_change_rep(Msg)) end.
+
+rarana_mg_verify_service_change_rep(#'MegacoMessage'{mess = Mess} = M) ->
+    Body = 
+	case Mess of 
+	    #'Message'{version     = _V,
+                       mId         = _MgMid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TR = 
+	case Trans of
+            {transactionReply, TransReply} ->
+		TransReply;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    TRes = 
+	case TR of
+            #'TransactionReply'{transactionId = _Tid,
+                                immAckRequired = asn1_NOVALUE,
+                                transactionResult = TransRes} ->
+		TransRes;
+	    _ ->
+		throw({error, {invalid_transactionReply, TR}})
+	end,
+    AR = 
+	case TRes of
+            {actionReplies, [ActRes]} ->
+		ActRes;
+	    _ ->
+		throw({error, {invalid_transactionResult, TRes}})
+	end,
+    CR = 
+	case AR of
+            #'ActionReply'{contextId       = _Cid,
+                           errorDescriptor = asn1_NOVALUE,
+                           contextReply    = _CtxReq,
+                           commandReply    = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		throw({error, {invalid_actionReplies, AR}})
+	end,
+    SCR = 
+	case CR of
+            {serviceChangeReply, ServChRep} ->
+		ServChRep;
+	    _ ->
+		throw({error, {invalid_commandReply, CR}})
+	end,
+    SCRes = 
+	case SCR of
+            #'ServiceChangeReply'{terminationID       = _TermID,
+                                  serviceChangeResult = ServChRes} ->
+		ServChRes;
+	    _ ->
+		throw({error, {invalid_serviceChangeReply, SCR}})
+	end,
+    SCRP = 
+	case SCRes of
+            {serviceChangeResParms, Parms} ->
+		Parms;
+	    _ ->
+		throw({error, {invalid_serviceChangeResult, SCRes}})
+	end,
+    case SCRP of
+	#'ServiceChangeResParm'{serviceChangeMgcId = _MgcMid} ->
+            {ok, M};
+	_ ->
+	    {error, {invalid_serviceChangeResParms, SCRP}}
+    end;
+rarana_mg_verify_service_change_rep(Crap) ->
+    {error, {invalid_message, Crap}}.
+
+rarana_mg_verify_notify_rep_msg_fun(TermId, TransId, Rid, Cid) ->
+    fun(Msg) -> (catch rarana_mg_verify_notify_rep(Msg, 
+						  TermId, 
+						  TransId, Rid, Cid)) end.
+
+rarana_mg_verify_notify_rep(#'MegacoMessage'{mess = Mess} = M,
+			   TermId, TransId, _Rid, Cid) ->
+%%     io:format("rarana_mg_verify_notify_rep -> entry with"
+%% 	      "~n   M:       ~p"
+%% 	      "~n   TermId:  ~p"
+%% 	      "~n   TransId: ~p"
+%% 	      "~n   Rid:     ~p"
+%% 	      "~n   Cid:     ~p"
+%% 	      "~n", [M, TermId, TransId, Rid, Cid]),
+    Body = 
+	case Mess of 
+	    #'Message'{version     = ?VERSION,
+                       mId         = _Mid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TR = 
+	case Trans of
+            {transactionReply, TransReply} ->
+		TransReply;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    TRes = 
+	case TR of
+            #'TransactionReply'{transactionId     = TransId,
+                                immAckRequired    = 'NULL',
+                                transactionResult = TransRes} ->
+		TransRes;
+	    _ ->
+		throw({error, {invalid_transactionReply, TR}})
+	end,
+    AR = 
+	case TRes of
+            {actionReplies, [ActRes]} ->
+		ActRes;
+	    _ ->
+		throw({error, {invalid_transactionResult, TRes}})
+	end,
+    CR = 
+	case AR of
+            #'ActionReply'{contextId       = Cid,
+                           errorDescriptor = asn1_NOVALUE,
+                           contextReply    = _CtxReq,
+                           commandReply    = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		throw({error, {invalid_actionReplies, AR}})
+	end,
+    NR = 
+	case CR of
+            {notifyReply, NotifyReply} ->
+		NotifyReply;
+	    _ ->
+		throw({error, {invalid_commandReply, CR}})
+	end,
+    case NR of
+	#'NotifyReply'{terminationID   = [TermId],
+		       errorDescriptor = asn1_NOVALUE} ->
+	    {ok, M};
+	_ ->
+	    {error, {invalid_notifyReply, NR}}
+    end;
+rarana_mg_verify_notify_rep(Crap, _TermId, _TransId, _Rid, _Cid) ->
+    {error, {invalid_message, Crap}}.
+
+rarana_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+rarana_mg_service_change_request_msg(Mid, TransId, Cid) ->
+    AR    = rarana_mg_service_change_request_ar(Mid, Cid),
+    TR    = cre_transReq(TransId, [AR]),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+rarana_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+rarana_mg_notify_request_msg(Mid, TermId, TransId, Rid, Cid) ->
+    AR      = rarana_mg_notify_request_ar(Rid, TermId, Cid),
+    TR      = cre_transReq(TransId, [AR]),
+    Trans   = cre_transaction(TR),
+    Mess    = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+request_and_reply_and_late_ack(suite) ->
+    [];
+request_and_reply_and_late_ack(doc) ->
+    ["This test case tests that megaco handles three-way-handshake "
+     "when the ack is late (and requeire a retransmission)"];
+request_and_reply_and_late_ack(Config) when is_list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        rarala),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p",
+      [MgcNode, MgNode]),
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+    d("[MGC] start the simulator "),
+    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+
+    d("[MGC] create the event sequence"),
+    MgcEvSeq = rarala_mgc_event_sequence(text, tcp),
+
+    i("wait some time before starting the MGC simulation"),
+    sleep(1000),
+
+    d("[MGC] start the simulation"),
+    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+
+    i("wait some time before starting the MG simulator"),
+    sleep(1000),
+
+    d("[MG] start the simulator (generator)"),
+    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+
+    d("[MG] create the event sequence"),
+    MgEvSeq = rarala_mg_event_sequence(text, tcp),
+
+    i("wait some time before starting the MG simulation"),
+    sleep(1000),
+
+    d("[MG] start the simulation"),
+    megaco_test_generator:tcp(Mg, MgEvSeq),
+
+    d("[MGC] await the generator reply"),
+    case megaco_test_generator:megaco_await_reply(Mgc) of
+        {ok, MgcReply} ->
+            d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
+            ok;
+        {error, MgcReply} ->
+            d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
+            ?ERROR(mgc_failed)
+    end,
+
+    d("[MG] await the generator reply"),
+    case megaco_test_generator:tcp_await_reply(Mg) of
+        {ok, MgReply} ->
+            d("[MG] OK => MgReply: ~n~p", [MgReply]),
+            ok;
+        {error, MgReply} ->
+            d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
+            ?ERROR(mg_failed)
+    end,
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_generator:stop(Mgc),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_generator:stop(Mg),
+
+    i("done", []),
+    ok.
+
+
+%%
+%% MGC generator stuff
+%%
+
+rarala_mgc_event_sequence(text, tcp) ->
+    Mid = {deviceName,"ctrl"},
+    RI = [
+          {port,             2944},
+          {encoding_module,  megaco_pretty_text_encoder},
+          {encoding_config,  []},
+          {transport_module, megaco_tcp}
+         ],
+    RepTmr = #megaco_incr_timer{wait_for    = 3000,
+				factor      = 1, 
+				incr        = 0,
+				max_retries = 2
+			       },    
+    ConnectVerify = fun rarala_mgc_verify_handle_connect/1,
+    ScrVerify = rarala_mgc_verify_service_change_req_fun(Mid),
+    NrVerify = rarala_mgc_verify_notify_request_fun(),
+    AckVerify = rarala_mgc_verify_trans_ack_fun(),
+    DiscoVerify = fun rarala_mgc_verify_handle_disconnect/1,
+    EvSeq = [
+             {debug, true},
+             {megaco_trace, disable},
+             {megaco_trace, max},
+             megaco_start,
+             {megaco_start_user, Mid, RI, []},
+             {megaco_update_user_info, sent_pending_limit, 100},
+             {megaco_update_user_info, reply_timer,        RepTmr},
+             start_transport,
+             listen,
+             {megaco_callback, handle_connect,           ConnectVerify},
+             {megaco_conn_info, all},
+             {megaco_callback, handle_trans_request,     ScrVerify},
+	     {megaco_callback, handle_trans_request,     NrVerify},
+	     {megaco_callback, handle_trans_ack,         AckVerify},
+             {megaco_callback, handle_disconnect,        DiscoVerify},
+             megaco_stop_user,
+             megaco_stop
+            ],
+    EvSeq.
+
+%% Connect verification
+rarala_mgc_verify_handle_connect({handle_connect, CH, ?VERSION}) ->
+    {ok, CH, ok};
+rarala_mgc_verify_handle_connect(Else) ->
+    {error, Else, ok}.
+
+%% Service Change verification
+rarala_mgc_verify_service_change_req_fun(Mid) ->
+    fun(Req) -> rarala_mgc_verify_service_change_req(Mid, Req) end.
+
+rarala_mgc_verify_service_change_req(
+  Mid, 
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch rarala_do_verify_service_change_req(Mid, AR));
+rarala_mgc_verify_service_change_req(_Mid, Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+rarala_do_verify_service_change_req(Mid, AR) ->
+    CR = 
+	case AR of
+	    #'ActionRequest'{commandRequests = [CmdReq]} ->
+		CmdReq;
+	    _ ->
+		Err1      = {invalid_action_request, AR},
+		ED1       = cre_ErrDesc(AR),
+		ErrReply1 = {discard_ack, ED1},
+		throw({error, Err1, ErrReply1})
+	end,
+    Cmd = 
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command; 
+	    _ ->
+		Err2      = {invalid_command_request, CR},
+		ED2       = cre_ErrDesc(CR),
+		ErrReply2 = {discard_ack, ED2},
+		throw({error, Err2, ErrReply2})
+	end,
+    {Tid, Parms} = 
+	case Cmd of
+	    {serviceChangeReq, 
+	     #'ServiceChangeRequest'{terminationID = [TermID],
+				     serviceChangeParms = ServChParms}} ->
+		{TermID, ServChParms};
+	    _ ->
+		Err3      = {invalid_command, Cmd},
+		ED3       = cre_ErrDesc(Cmd),
+		ErrReply3 = {discard_ack, ED3},
+		throw({error, Err3, ErrReply3})
+	end,
+    case Tid of
+	#megaco_term_id{contains_wildcards = false, id = ["root"]} ->
+	    ok;
+	_ ->
+	    Err4      = {invalid_termination_id, Tid},
+	    ED4       = cre_ErrDesc(Tid),
+	    ErrReply4 = {discard_ack, ED4},
+	    throw({error, Err4, ErrReply4})
+    end,
+    case Parms of
+	#'ServiceChangeParm'{serviceChangeMethod = restart,
+			     serviceChangeReason = [[$9,$0,$1|_]]} ->
+	    AckData = [rarala_mgc_service_change_reply_ar(Mid, 1)], 
+	    Reply   = {discard_ack, AckData},
+	    {ok, AR, Reply};
+	_ ->
+	    Err5      = {invalid_SCP, Parms},
+	    ED5       = cre_ErrDesc(Parms),
+	    ErrReply5 = {discard_ack, ED5},
+	    {error, Err5, ErrReply5}
+    end.
+
+
+%% Notify Request verification
+rarala_mgc_verify_notify_request_fun() ->
+    fun(Req) -> rarala_mgc_verify_notify_request(Req) end.
+
+rarala_mgc_verify_notify_request({handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch rarala_mgc_do_verify_notify_request(AR));
+rarala_mgc_verify_notify_request(Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+rarala_mgc_do_verify_notify_request(AR) ->
+    io:format("rarala_mgc_do_verify_notify_request -> entry with"
+	      "~n   AR: ~p"
+	      "~n", [AR]),
+    {Cid, CR} = 
+	case AR of
+	    #'ActionRequest'{contextId       = CtxID,
+			     commandRequests = [CmdReq]} ->
+		{CtxID, CmdReq};
+	    _ ->
+		Err1      = {invalid_action_request, AR},
+		ED1       = cre_ErrDesc(AR),
+		ErrReply1 = {discard_ack, ED1},
+		throw({error, Err1, ErrReply1})
+	end,
+    Cmd = 
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command;
+	    _ ->
+		Err2      = {invalid_command_request, CR},
+		ED2       = cre_ErrDesc(CR),
+		ErrReply2 = {discard_ack, ED2},
+		throw({error, Err2, ErrReply2})
+	end,
+    NR = 
+	case Cmd of
+	    {notifyReq, NotifReq} ->
+		NotifReq;
+	    _ ->
+		Err3      = {invalid_command, Cmd},
+		ED3       = cre_ErrDesc(Cmd),
+		ErrReply3 = {discard_ack, ED3},
+		throw({error, Err3, ErrReply3})
+	end,
+    {Tid, OED} = 
+	case NR of
+	    #'NotifyRequest'{terminationID            = [TermID],
+			     observedEventsDescriptor = ObsEvsDesc,
+			     errorDescriptor          = asn1_NOVALUE} ->
+		{TermID, ObsEvsDesc};
+	    _ ->
+		Err4      = {invalid_NR, NR},
+		ED4       = cre_ErrDesc(NR),
+		ErrReply4 = {discard_ack, ED4},
+		throw({error, Err4, ErrReply4})
+	end,
+    OE = 
+	case OED of 
+	    #'ObservedEventsDescriptor'{observedEventLst = [ObsEvLst]} ->
+		ObsEvLst;
+	    _ ->
+		Err5      = {invalid_OED, OED},
+		ED5       = cre_ErrDesc(NR),
+		ErrReply5 = {discard_ack, ED5},
+		throw({error, Err5, ErrReply5})
+	end,
+    case OE of
+	#'ObservedEvent'{eventName = "al/of"} ->
+	    AckData = rarala, 
+	    Replies = [rarala_mgc_notify_reply_ar(Cid, Tid)],
+	    Reply   = {{handle_ack, AckData}, Replies},
+	    {ok, AR, Reply};
+	_ ->
+	    Err6      = {invalid_OE, OE},
+	    ED6       = cre_ErrDesc(OE),
+	    ErrReply6 = {discard_ack, ED6},
+	    throw({error, Err6, ErrReply6})
+    end.
+
+
+rarala_mgc_verify_trans_ack_fun() ->
+    fun(Ack) -> rarala_mgc_verify_trans_ack(Ack) end.
+
+rarala_mgc_verify_trans_ack({handle_trans_ack, CH, ?VERSION, ok, rarala}) ->
+    io:format("rarala_mgc_verify_trans_ack -> ok"
+              "~n   CH: ~p"
+              "~n", [CH]),
+    {ok, CH, ok};
+rarala_mgc_verify_trans_ack(Crap) ->
+    io:format("rarala_mgc_verify_trans_ack -> unknown"
+              "~n   Crap: ~p~n", [Crap]),
+    {error, Crap, ok}.
+
+
+%% Disconnect verification
+rarala_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, _R}) ->
+    {ok, CH, ok};
+rarala_mgc_verify_handle_disconnect(Else) ->
+    {error, Else, ok}.
+
+rarala_mgc_service_change_reply_ar(Mid, Cid) ->
+    SCRP  = cre_serviceChangeResParm(Mid),
+    SCRes = cre_serviceChangeResult(SCRP),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReply([Root], SCRes),
+    CR    = cre_cmdReply(SCR),
+    AR    = cre_actionReply(Cid, [CR]),
+    AR.
+
+rarala_mgc_notify_reply_ar(Cid, TermId) ->
+    NR    = cre_notifyReply([TermId]),
+    CR    = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+
+%%
+%% MG generator stuff
+%%
+rarala_mg_event_sequence(text, tcp) ->
+    DecodeFun = rarala_mg_decode_msg_fun(megaco_pretty_text_encoder, []),
+    EncodeFun = rarala_mg_encode_msg_fun(megaco_pretty_text_encoder, []),
+    Mid       = {deviceName,"mg"},
+    ServiceChangeReq = rarala_mg_service_change_request_msg(Mid, 1, 0),
+    ScrVerifyFun = rarala_mg_verify_service_change_rep_msg_fun(),
+    TermId  = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    TransId = 2,
+    ReqId   = 1,
+    CtxId   = 1, 
+    NotifyReq = rarala_mg_notify_request_msg(Mid, TermId, 
+					    TransId, ReqId, CtxId),
+    NrVerifyFun = rarala_mg_verify_notify_rep_msg_fun(TermId, 
+						     TransId, ReqId, CtxId),
+    TransAck = rarala_mg_trans_ack_msg(Mid, TransId),
+    EvSeq = [{debug,  true},
+             {decode, DecodeFun},
+             {encode, EncodeFun},
+             {connect, 2944},
+             {send, "service-change-request", ServiceChangeReq},
+             {expect_receive, "service-change-reply", {ScrVerifyFun, 10000}},
+             {send, "notify request", NotifyReq},
+             {expect_receive, "notify-reply", {NrVerifyFun, 4000}},
+             {expect_receive, "notify-reply", {NrVerifyFun, 4000}},
+             {expect_receive, "notify-reply", {NrVerifyFun, 4000}},
+             {send, "transaction-ack", TransAck},
+             {expect_nothing, 11000},
+             disconnect
+            ],
+    EvSeq.
+
+rarala_mg_encode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:encode_message(Conf, M)
+    end.
+
+rarala_mg_decode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:decode_message(Conf, M)
+    end.
+
+rarala_mg_verify_service_change_rep_msg_fun() ->
+    fun(Msg) -> (catch rarala_mg_verify_service_change_rep(Msg)) end.
+
+rarala_mg_verify_service_change_rep(#'MegacoMessage'{mess = Mess} = M) ->
+    Body = 
+	case Mess of 
+	    #'Message'{version     = _V,
+                       mId         = _MgMid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TR = 
+	case Trans of
+            {transactionReply, TransReply} ->
+		TransReply;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    TRes = 
+	case TR of
+            #'TransactionReply'{transactionId = _Tid,
+                                immAckRequired = asn1_NOVALUE,
+                                transactionResult = TransRes} ->
+		TransRes;
+	    _ ->
+		throw({error, {invalid_transactionReply, TR}})
+	end,
+    AR = 
+	case TRes of
+            {actionReplies, [ActRes]} ->
+		ActRes;
+	    _ ->
+		throw({error, {invalid_transactionResult, TRes}})
+	end,
+    CR = 
+	case AR of
+            #'ActionReply'{contextId       = _Cid,
+                           errorDescriptor = asn1_NOVALUE,
+                           contextReply    = _CtxReq,
+                           commandReply    = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		throw({error, {invalid_actionReplies, AR}})
+	end,
+    SCR = 
+	case CR of
+            {serviceChangeReply, ServChRep} ->
+		ServChRep;
+	    _ ->
+		throw({error, {invalid_commandReply, CR}})
+	end,
+    SCRes = 
+	case SCR of
+            #'ServiceChangeReply'{terminationID       = _TermID,
+                                  serviceChangeResult = ServChRes} ->
+		ServChRes;
+	    _ ->
+		throw({error, {invalid_serviceChangeReply, SCR}})
+	end,
+    SCRP = 
+	case SCRes of
+            {serviceChangeResParms, Parms} ->
+		Parms;
+	    _ ->
+		throw({error, {invalid_serviceChangeResult, SCRes}})
+	end,
+    case SCRP of
+	#'ServiceChangeResParm'{serviceChangeMgcId = _MgcMid} ->
+            {ok, M};
+	_ ->
+	    {error, {invalid_serviceChangeResParms, SCRP}}
+    end;
+rarala_mg_verify_service_change_rep(Crap) ->
+    {error, {invalid_message, Crap}}.
+
+rarala_mg_verify_notify_rep_msg_fun(TermId, TransId, Rid, Cid) ->
+    fun(Msg) -> (catch rarala_mg_verify_notify_rep(Msg, 
+						  TermId, 
+						  TransId, Rid, Cid)) end.
+
+rarala_mg_verify_notify_rep(#'MegacoMessage'{mess = Mess} = M,
+			   TermId, TransId, Rid, Cid) ->
+    io:format("rarala_mg_verify_notify_rep -> entry with"
+	      "~n   M:       ~p"
+	      "~n   TermId:  ~p"
+	      "~n   TransId: ~p"
+	      "~n   Rid:     ~p"
+	      "~n   Cid:     ~p"
+	      "~n", [M, TermId, TransId, Rid, Cid]),
+    Body = 
+	case Mess of 
+	    #'Message'{version     = ?VERSION,
+                       mId         = _Mid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TR = 
+	case Trans of
+            {transactionReply, TransReply} ->
+		TransReply;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    TRes = 
+	case TR of
+            #'TransactionReply'{transactionId     = TransId,
+                                immAckRequired    = 'NULL',
+                                transactionResult = TransRes} ->
+		TransRes;
+	    _ ->
+		throw({error, {invalid_transactionReply, TR}})
+	end,
+    AR = 
+	case TRes of
+            {actionReplies, [ActRes]} ->
+		ActRes;
+	    _ ->
+		throw({error, {invalid_transactionResult, TRes}})
+	end,
+    CR = 
+	case AR of
+            #'ActionReply'{contextId       = Cid,
+                           errorDescriptor = asn1_NOVALUE,
+                           contextReply    = _CtxReq,
+                           commandReply    = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		throw({error, {invalid_actionReplies, AR}})
+	end,
+    NR = 
+	case CR of
+            {notifyReply, NotifyReply} ->
+		NotifyReply;
+	    _ ->
+		throw({error, {invalid_commandReply, CR}})
+	end,
+    case NR of
+	#'NotifyReply'{terminationID   = [TermId],
+		       errorDescriptor = asn1_NOVALUE} ->
+	    {ok, M};
+	_ ->
+	    {error, {invalid_notifyReply, NR}}
+    end;
+rarala_mg_verify_notify_rep(Crap, _TermId, _TransId, _Rid, _Cid) ->
+    {error, {invalid_message, Crap}}.
+
+rarala_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+rarala_mg_service_change_request_msg(Mid, TransId, Cid) ->
+    AR    = rarala_mg_service_change_request_ar(Mid, Cid),
+    TR    = cre_transReq(TransId, [AR]),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+rarala_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+rarala_mg_notify_request_msg(Mid, TermId, TransId, Rid, Cid) ->
+    AR      = rarala_mg_notify_request_ar(Rid, TermId, Cid),
+    TR      = cre_transReq(TransId, [AR]),
+    Trans   = cre_transaction(TR),
+    Mess    = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+rarala_mg_trans_ack_msg(Mid, TransId) ->
+    TR    = cre_transRespAck(cre_transAck(TransId)),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+pending_ack_plain(suite) ->
+    [];
+pending_ack_plain(doc) ->
+    ["Receive a request and handle it as a long request, "
+     "i.e. return with {pending, _} and expect a call to the "
+     "long request function"];
+pending_ack_plain(Config) when is_list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        pap),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p",
+      [MgcNode, MgNode]),
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+    d("[MGC] start the simulator "),
+    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+
+    d("[MGC] create the event sequence"),
+    MgcEvSeq = pap_mgc_event_sequence(text, tcp),
+
+    i("wait some time before starting the MGC simulation"),
+    sleep(1000),
+
+    d("[MGC] start the simulation"),
+    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+
+    i("wait some time before starting the MG simulator"),
+    sleep(1000),
+
+    d("[MG] start the simulator (generator)"),
+    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+
+    d("[MG] create the event sequence"),
+    MgEvSeq = pap_mg_event_sequence(text, tcp),
+
+    i("wait some time before starting the MG simulation"),
+    sleep(1000),
+
+    d("[MG] start the simulation"),
+    megaco_test_generator:tcp(Mg, MgEvSeq),
+
+    d("[MGC] await the generator reply"),
+    case megaco_test_generator:megaco_await_reply(Mgc) of
+        {ok, MgcReply} ->
+            d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
+            ok;
+        {error, MgcReply} ->
+            d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
+            ?ERROR(mgc_failed)
+    end,
+
+    d("[MG] await the generator reply"),
+    case megaco_test_generator:tcp_await_reply(Mg) of
+        {ok, MgReply} ->
+            d("[MG] OK => MgReply: ~n~p", [MgReply]),
+            ok;
+        {error, MgReply} ->
+            d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
+            ?ERROR(mg_failed)
+    end,
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_generator:stop(Mgc),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_generator:stop(Mg),
+
+    i("done", []),
+    ok.
+
+
+%%
+%% MGC generator stuff
+%%
+
+pap_mgc_event_sequence(text, tcp) ->
+    Mid = {deviceName,"ctrl"},
+    RI = [
+          {port,             2944},
+          {encoding_module,  megaco_pretty_text_encoder},
+          {encoding_config,  []},
+          {transport_module, megaco_tcp}
+         ],
+    ConnectVerify = fun pap_mgc_verify_handle_connect/1,
+    ScrVerify = pap_mgc_verify_service_change_req_fun(Mid),
+    NrVerify1 = pap_mgc_verify_notify_request_fun(),
+    NrVerify2 = pap_mgc_verify_notify_request_long_fun(),
+    AckVerify = pap_mgc_verify_trans_ack_fun(),
+    DiscoVerify = fun pap_mgc_verify_handle_disconnect/1,
+    EvSeq = [
+             {debug, true},
+             {megaco_trace, disable},
+             {megaco_trace, max},
+             megaco_start,
+             {megaco_start_user, Mid, RI, []},
+             {megaco_update_user_info, sent_pending_limit, 100},
+             start_transport,
+             listen,
+             {megaco_callback, handle_connect,            ConnectVerify},
+             {megaco_conn_info, all},
+             {megaco_callback, handle_trans_request,      ScrVerify},
+	     {megaco_callback, handle_trans_request,      NrVerify1},
+	     {megaco_callback, handle_trans_long_request, NrVerify2},
+	     {megaco_callback, handle_trans_ack,          AckVerify},
+             {megaco_callback, handle_disconnect,         DiscoVerify},
+             megaco_stop_user,
+             megaco_stop
+            ],
+    EvSeq.
+
+%% Connect verification
+pap_mgc_verify_handle_connect({handle_connect, CH, ?VERSION}) ->
+    {ok, CH, ok};
+pap_mgc_verify_handle_connect(Else) ->
+    {error, Else, ok}.
+
+%% Service Change verification
+pap_mgc_verify_service_change_req_fun(Mid) ->
+    fun(Req) -> pap_mgc_verify_service_change_req(Mid, Req) end.
+
+pap_mgc_verify_service_change_req(
+  Mid, 
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    (catch pap_do_verify_service_change_req(Mid, AR));
+pap_mgc_verify_service_change_req(_Mid, Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+pap_do_verify_service_change_req(Mid, AR) ->
+    CR = 
+	case AR of
+	    #'ActionRequest'{commandRequests = [CmdReq]} ->
+		CmdReq;
+	    _ ->
+		Err1      = {invalid_action_request, AR},
+		ED1       = cre_ErrDesc(AR),
+		ErrReply1 = {discard_ack, ED1},
+		throw({error, Err1, ErrReply1})
+	end,
+    Cmd = 
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command; 
+	    _ ->
+		Err2      = {invalid_command_request, CR},
+		ED2       = cre_ErrDesc(CR),
+		ErrReply2 = {discard_ack, ED2},
+		throw({error, Err2, ErrReply2})
+	end,
+    {Tid, Parms} = 
+	case Cmd of
+	    {serviceChangeReq, 
+	     #'ServiceChangeRequest'{terminationID = [TermID],
+				     serviceChangeParms = ServChParms}} ->
+		{TermID, ServChParms};
+	    _ ->
+		Err3      = {invalid_command, Cmd},
+		ED3       = cre_ErrDesc(Cmd),
+		ErrReply3 = {discard_ack, ED3},
+		throw({error, Err3, ErrReply3})
+	end,
+    case Tid of
+	#megaco_term_id{contains_wildcards = false, id = ["root"]} ->
+	    ok;
+	_ ->
+	    Err4      = {invalid_termination_id, Tid},
+	    ED4       = cre_ErrDesc(Tid),
+	    ErrReply4 = {discard_ack, ED4},
+	    throw({error, Err4, ErrReply4})
+    end,
+    case Parms of
+	#'ServiceChangeParm'{serviceChangeMethod = restart,
+			     serviceChangeReason = [[$9,$0,$1|_]]} ->
+	    AckData = [pap_mgc_service_change_reply_ar(Mid, 1)], 
+	    Reply   = {discard_ack, AckData},
+	    {ok, AR, Reply};
+	_ ->
+	    Err5      = {invalid_SCP, Parms},
+	    ED5       = cre_ErrDesc(Parms),
+	    ErrReply5 = {discard_ack, ED5},
+	    {error, Err5, ErrReply5}
+    end.
+
+
+%% Notify Request verification
+pap_mgc_verify_notify_request_fun() ->
+    fun(Req) -> pap_mgc_verify_notify_request(Req) end.
+
+pap_mgc_verify_notify_request({handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("pap_mgc_do_verify_notify_request -> entry with"
+	      "~n   AR: ~p"
+	      "~n", [AR]),
+    Reply = {pending, AR}, 
+    {ok, AR, Reply};
+pap_mgc_verify_notify_request(Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+%% Notify Request verification
+pap_mgc_verify_notify_request_long_fun() ->
+    fun(Req) -> pap_mgc_verify_notify_request_long(Req) end.
+
+pap_mgc_verify_notify_request_long({handle_trans_long_request, _, 
+				    ?VERSION, AR}) ->
+    (catch pap_mgc_do_verify_notify_request_long(AR));
+pap_mgc_verify_notify_request_long(Crap) ->
+    ED = cre_ErrDesc(Crap),
+    ErrReply = {discard_ack, ED},
+    {error, Crap, ErrReply}.
+
+pap_mgc_do_verify_notify_request_long(AR) ->
+    io:format("pap_mgc_do_verify_notify_request_long -> entry with"
+	      "~n   AR: ~p"
+	      "~n", [AR]),
+    {Cid, CR} = 
+	case AR of
+	    #'ActionRequest'{contextId       = CtxID,
+			     commandRequests = [CmdReq]} ->
+		{CtxID, CmdReq};
+	    _ ->
+		Err1      = {invalid_action_request, AR},
+		ED1       = cre_ErrDesc(AR),
+		ErrReply1 = {discard_ack, ED1},
+		throw({error, Err1, ErrReply1})
+	end,
+    Cmd = 
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command;
+	    _ ->
+		Err2      = {invalid_command_request, CR},
+		ED2       = cre_ErrDesc(CR),
+		ErrReply2 = {discard_ack, ED2},
+		throw({error, Err2, ErrReply2})
+	end,
+    NR = 
+	case Cmd of
+	    {notifyReq, NotifReq} ->
+		NotifReq;
+	    _ ->
+		Err3      = {invalid_command, Cmd},
+		ED3       = cre_ErrDesc(Cmd),
+		ErrReply3 = {discard_ack, ED3},
+		throw({error, Err3, ErrReply3})
+	end,
+    {Tid, OED} = 
+	case NR of
+	    #'NotifyRequest'{terminationID            = [TermID],
+			     observedEventsDescriptor = ObsEvsDesc,
+			     errorDescriptor          = asn1_NOVALUE} ->
+		{TermID, ObsEvsDesc};
+	    _ ->
+		Err4      = {invalid_NR, NR},
+		ED4       = cre_ErrDesc(NR),
+		ErrReply4 = {discard_ack, ED4},
+		throw({error, Err4, ErrReply4})
+	end,
+    OE = 
+	case OED of 
+	    #'ObservedEventsDescriptor'{observedEventLst = [ObsEvLst]} ->
+		ObsEvLst;
+	    _ ->
+		Err5      = {invalid_OED, OED},
+		ED5       = cre_ErrDesc(NR),
+		ErrReply5 = {discard_ack, ED5},
+		throw({error, Err5, ErrReply5})
+	end,
+    case OE of
+	#'ObservedEvent'{eventName = "al/of"} ->
+	    AckData = pap, 
+	    Replies = [pap_mgc_notify_reply_ar(Cid, Tid)],
+	    Reply   = {{handle_ack, AckData}, Replies},
+	    {ok, AR, Reply};
+	_ ->
+	    Err6      = {invalid_OE, OE},
+	    ED6       = cre_ErrDesc(OE),
+	    ErrReply6 = {discard_ack, ED6},
+	    throw({error, Err6, ErrReply6})
+    end.
+
+
+pap_mgc_verify_trans_ack_fun() ->
+    fun(Ack) -> pap_mgc_verify_trans_ack(Ack) end.
+
+pap_mgc_verify_trans_ack({handle_trans_ack, CH, ?VERSION, ok, pap}) ->
+    io:format("pap_mgc_verify_trans_ack -> ok"
+              "~n   CH: ~p"
+              "~n", [CH]),
+    {ok, CH, ok};
+pap_mgc_verify_trans_ack(Crap) ->
+    io:format("pap_mgc_verify_trans_ack -> unknown"
+              "~n   Crap: ~p~n", [Crap]),
+    {error, Crap, ok}.
+
+
+%% Disconnect verification
+pap_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, _R}) ->
+    {ok, CH, ok};
+pap_mgc_verify_handle_disconnect(Else) ->
+    {error, Else, ok}.
+
+pap_mgc_service_change_reply_ar(Mid, Cid) ->
+    SCRP  = cre_serviceChangeResParm(Mid),
+    SCRes = cre_serviceChangeResult(SCRP),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReply([Root], SCRes),
+    CR    = cre_cmdReply(SCR),
+    AR    = cre_actionReply(Cid, [CR]),
+    AR.
+
+pap_mgc_notify_reply_ar(Cid, TermId) ->
+    NR    = cre_notifyReply([TermId]),
+    CR    = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+
+%%
+%% MG generator stuff
+%%
+pap_mg_event_sequence(text, tcp) ->
+    DecodeFun = pap_mg_decode_msg_fun(megaco_pretty_text_encoder, []),
+    EncodeFun = pap_mg_encode_msg_fun(megaco_pretty_text_encoder, []),
+    Mid       = {deviceName,"mg"},
+    ServiceChangeReq = pap_mg_service_change_request_msg(Mid, 1, 0),
+    ScrVerifyFun = pap_mg_verify_service_change_rep_msg_fun(),
+    TermId  = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    TransId = 2,
+    ReqId   = 1,
+    CtxId   = 1, 
+    NotifyReq = 
+	pap_mg_notify_request_msg(Mid, TermId, TransId, ReqId, CtxId),
+    PendingVerifyFun = 
+	pap_mg_verify_pending_msg_fun(TransId),
+    NrVerifyFun = 
+	pap_mg_verify_notify_rep_msg_fun(TermId, TransId, ReqId, CtxId),
+    TransAck = pap_mg_trans_ack_msg(Mid, TransId),
+    EvSeq = [{debug,  true},
+             {decode, DecodeFun},
+             {encode, EncodeFun},
+             {connect, 2944},
+             {send, "service-change-request", ServiceChangeReq},
+             {expect_receive, "service-change-reply", {ScrVerifyFun, 10000}},
+             {send, "notify request", NotifyReq},
+             {expect_receive, "pending",      {PendingVerifyFun, 4000}},
+             {expect_receive, "notify-reply", {NrVerifyFun, 4000}},
+             {send, "transaction-ack", TransAck},
+             {expect_nothing, 11000},
+             disconnect
+            ],
+    EvSeq.
+
+pap_mg_encode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:encode_message(Conf, M)
+    end.
+
+pap_mg_decode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:decode_message(Conf, M)
+    end.
+
+pap_mg_verify_service_change_rep_msg_fun() ->
+    fun(Msg) -> (catch pap_mg_verify_service_change_rep(Msg)) end.
+
+pap_mg_verify_service_change_rep(#'MegacoMessage'{mess = Mess} = M) ->
+    Body = 
+	case Mess of 
+	    #'Message'{version     = _V,
+                       mId         = _MgMid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TR = 
+	case Trans of
+            {transactionReply, TransReply} ->
+		TransReply;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    TRes = 
+	case TR of
+            #'TransactionReply'{transactionId = _Tid,
+                                immAckRequired = asn1_NOVALUE,
+                                transactionResult = TransRes} ->
+		TransRes;
+	    _ ->
+		throw({error, {invalid_transactionReply, TR}})
+	end,
+    AR = 
+	case TRes of
+            {actionReplies, [ActRes]} ->
+		ActRes;
+	    _ ->
+		throw({error, {invalid_transactionResult, TRes}})
+	end,
+    CR = 
+	case AR of
+            #'ActionReply'{contextId       = _Cid,
+                           errorDescriptor = asn1_NOVALUE,
+                           contextReply    = _CtxReq,
+                           commandReply    = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		throw({error, {invalid_actionReplies, AR}})
+	end,
+    SCR = 
+	case CR of
+            {serviceChangeReply, ServChRep} ->
+		ServChRep;
+	    _ ->
+		throw({error, {invalid_commandReply, CR}})
+	end,
+    SCRes = 
+	case SCR of
+            #'ServiceChangeReply'{terminationID       = _TermID,
+                                  serviceChangeResult = ServChRes} ->
+		ServChRes;
+	    _ ->
+		throw({error, {invalid_serviceChangeReply, SCR}})
+	end,
+    SCRP = 
+	case SCRes of
+            {serviceChangeResParms, Parms} ->
+		Parms;
+	    _ ->
+		throw({error, {invalid_serviceChangeResult, SCRes}})
+	end,
+    case SCRP of
+	#'ServiceChangeResParm'{serviceChangeMgcId = _MgcMid} ->
+            {ok, M};
+	_ ->
+	    {error, {invalid_serviceChangeResParms, SCRP}}
+    end;
+pap_mg_verify_service_change_rep(Crap) ->
+    {error, {invalid_message, Crap}}.
+
+pap_mg_verify_pending_msg_fun(TransId) ->
+    fun(Msg) -> (catch pap_mg_verify_pending(Msg, TransId)) end.
+
+pap_mg_verify_pending(#'MegacoMessage'{mess = Mess} = M, TransId) ->
+    io:format("pap_mg_verify_pending -> entry with"
+	      "~n   M:       ~p"
+	      "~n   TransId: ~p"
+	      "~n", [M, TransId]),
+    Body = 
+	case Mess of 
+	    #'Message'{version     = ?VERSION,
+                       mId         = _Mid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TP = 
+	case Trans of
+            {transactionPending, TransPending} ->
+		TransPending;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    case TP of
+	#'TransactionPending'{transactionId = TransId} ->
+	    {ok, M};
+	_ ->
+	    {error, {invalid_transactionPending, TP}}
+    end;
+pap_mg_verify_pending(Crap, _TransId) ->
+    {error, {invalid_message, Crap}}.
+
+pap_mg_verify_notify_rep_msg_fun(TermId, TransId, Rid, Cid) ->
+    fun(Msg) -> (catch pap_mg_verify_notify_rep(Msg, 
+						  TermId, 
+						  TransId, Rid, Cid)) end.
+
+pap_mg_verify_notify_rep(#'MegacoMessage'{mess = Mess} = M,
+			   TermId, TransId, Rid, Cid) ->
+    io:format("pap_mg_verify_notify_rep -> entry with"
+	      "~n   M:       ~p"
+	      "~n   TermId:  ~p"
+	      "~n   TransId: ~p"
+	      "~n   Rid:     ~p"
+	      "~n   Cid:     ~p"
+	      "~n", [M, TermId, TransId, Rid, Cid]),
+    Body = 
+	case Mess of 
+	    #'Message'{version     = ?VERSION,
+                       mId         = _Mid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TR = 
+	case Trans of
+            {transactionReply, TransReply} ->
+		TransReply;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    TRes = 
+	case TR of
+            #'TransactionReply'{transactionId     = TransId,
+                                immAckRequired    = 'NULL',
+                                transactionResult = TransRes} ->
+		TransRes;
+	    _ ->
+		throw({error, {invalid_transactionReply, TR}})
+	end,
+    AR = 
+	case TRes of
+            {actionReplies, [ActRes]} ->
+		ActRes;
+	    _ ->
+		throw({error, {invalid_transactionResult, TRes}})
+	end,
+    CR = 
+	case AR of
+            #'ActionReply'{contextId       = Cid,
+                           errorDescriptor = asn1_NOVALUE,
+                           contextReply    = _CtxReq,
+                           commandReply    = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		throw({error, {invalid_actionReplies, AR}})
+	end,
+    NR = 
+	case CR of
+            {notifyReply, NotifyReply} ->
+		NotifyReply;
+	    _ ->
+		throw({error, {invalid_commandReply, CR}})
+	end,
+    case NR of
+	#'NotifyReply'{terminationID   = [TermId],
+		       errorDescriptor = asn1_NOVALUE} ->
+	    {ok, M};
+	_ ->
+	    {error, {invalid_notifyReply, NR}}
+    end;
+pap_mg_verify_notify_rep(Crap, _TermId, _TransId, _Rid, _Cid) ->
+    {error, {invalid_message, Crap}}.
+
+pap_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+pap_mg_service_change_request_msg(Mid, TransId, Cid) ->
+    AR    = pap_mg_service_change_request_ar(Mid, Cid),
+    TR    = cre_transReq(TransId, [AR]),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+pap_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+pap_mg_notify_request_msg(Mid, TermId, TransId, Rid, Cid) ->
+    AR      = pap_mg_notify_request_ar(Rid, TermId, Cid),
+    TR      = cre_transReq(TransId, [AR]),
+    Trans   = cre_transaction(TR),
+    Mess    = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+pap_mg_trans_ack_msg(Mid, TransId) ->
+    TR    = cre_transRespAck(cre_transAck(TransId)),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+request_and_pending_and_late_reply(suite) ->
+    [];
+request_and_pending_and_late_reply(doc) ->
+    ["Receive a request and handle it as a long request, "
+     "i.e. return with {pending, _}. Then, expect the sender "
+     "to keep re-sending the request until the reply is sent."];
+request_and_pending_and_late_reply(Config) when is_list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        rapalr),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p",
+      [MgcNode, MgNode]),
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+    d("[MGC] start the simulator "),
+    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+
+    d("[MGC] create the event sequence"),
+    MgcEvSeq = rapalr_mgc_event_sequence(text, tcp),
+
+    i("wait some time before starting the MGC simulation"),
+    sleep(1000),
+
+    d("[MGC] start the simulation"),
+    MgcTag = megaco_test_generator:tcp(Mgc, MgcEvSeq),
+
+    i("wait some time before starting the MG simulator"),
+    sleep(1000),
+
+    d("[MG] start the simulator (generator)"),
+    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+
+    d("[MG] create the event sequence"),
+    MgEvSeq = rapalr_mg_event_sequence(text, tcp),
+
+    i("wait some time before starting the MG simulation"),
+    sleep(1000),
+
+    d("[MG] start the simulation"),
+    MgTag = megaco_test_generator:megaco(Mg, MgEvSeq),
+
+    d("[MGC] await the generator reply"),
+    case megaco_test_generator:await_reply(MgcTag, Mgc) of
+        {ok, MgcReply} ->
+            d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
+            ok;
+        {error, MgcReply} ->
+            d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
+            ?ERROR(mgc_failed)
+    end,
+
+    d("[MG] await the generator reply"),
+    case megaco_test_generator:megaco_await_reply(Mg) of
+        {ok, MgReply} ->
+            d("[MG] OK => MgReply: ~n~p", [MgReply]),
+            ok;
+        {error, MgReply} ->
+            d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
+            ?ERROR(mg_failed)
+    end,
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_generator:stop(Mgc),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_generator:stop(Mg),
+
+    i("done", []),
+    ok.
+
+
+%%
+%% MGC generator stuff
+%%
+
+rapalr_mgc_event_sequence(text, tcp) ->
+    DecodeFun = rapalr_mgc_decode_msg_fun(megaco_pretty_text_encoder, []),
+    EncodeFun = rapalr_mgc_encode_msg_fun(megaco_pretty_text_encoder, []),
+    Mid       = {deviceName,"mgc"},
+    ScrVerifyFun     = rapalr_mgc_verify_service_change_req_msg_fun(),
+    ServiceChangeRep = rapalr_mgc_service_change_reply_msg(Mid, 1),
+    TermId           = 
+	#megaco_term_id{id = ["00000000","00000000","01101101"]},
+    TransId   = 2,
+    ReqId     = 1,
+    CtxId     = 1, 
+    NrVerifyFun  = 
+	rapalr_mgc_verify_notify_req_msg_fun(TermId, TransId, ReqId, CtxId),
+    Pending      = rapalr_mgc_trans_pending_msg(Mid, TransId),
+    NotifyRep    = rapalr_mgc_notify_reply_msg(Mid, TransId, 
+					       CtxId, TermId),
+    AckVerifyFun = rapalr_mgc_verify_trans_ack_msg_fun(TransId),
+    EvSeq = [{debug,  false},
+             {decode, DecodeFun},
+             {encode, EncodeFun},
+             {listen, 2944},
+	     {expect_accept, any},
+             {expect_receive, "service-change-request", {ScrVerifyFun, 5000}},
+             {send, "service-change-reply", ServiceChangeRep},
+             {expect_receive, "notify-request(1)", {NrVerifyFun, 4000}},
+             {send, "pending", Pending},
+             {expect_receive, "notify-request(2)", {NrVerifyFun, 4000}},
+             {expect_receive, "notify-request(3)", {NrVerifyFun, 4000}},
+             {send, "notify reply", NotifyRep},
+             {expect_receive, "ack", {AckVerifyFun, 4000}},
+             {sleep, 1000},
+             disconnect
+            ],
+    EvSeq.
+
+rapalr_mgc_encode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:encode_message(Conf, M)
+    end.
+
+rapalr_mgc_decode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:decode_message(Conf, M)
+    end.
+
+rapalr_mgc_verify_service_change_req_msg_fun() ->
+    fun(Msg) -> 
+	    (catch rapalr_mgc_verify_service_change_req(Msg)) 
+    end.
+
+rapalr_mgc_verify_service_change_req(#'MegacoMessage'{mess = Mess} = M) ->
+    Body = 
+	case Mess of 
+	    #'Message'{version     = ?VERSION,
+                       mId         = _MgMid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TR = 
+	case Trans of
+            {transactionRequest, TransRequest} ->
+		TransRequest;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    AR = 
+	case TR of
+            #'TransactionRequest'{transactionId = _TransId,
+				  actions       = [ActionReq]} ->
+		ActionReq;
+	    _ ->
+		throw({error, {invalid_transactionRequest, TR}})
+	end,
+    CR = 
+	case AR of
+	    #'ActionRequest'{contextId       = _Cid, 
+			     commandRequests = [CmdReq]} ->
+		CmdReq;
+	    _ ->
+		throw({error, {invalid_action, AR}})
+	end,
+    Cmd = 
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command; 
+	    _ ->
+		throw({error, {invalid_commandRequest, CR}})
+	end,
+    {Tid, Parms} = 
+	case Cmd of
+	    {serviceChangeReq, 
+	     #'ServiceChangeRequest'{terminationID      = [TermID],
+				     serviceChangeParms = ServChParms}} ->
+		{TermID, ServChParms};
+	    _ ->
+		throw({error, {invalid_command, Cmd}})
+	end,
+    case Tid of
+	#megaco_term_id{contains_wildcards = false, id = ["root"]} ->
+	    ok;
+	_ ->
+	    throw({error, {invalid_terminationID, Tid}})
+    end,
+    case Parms of
+	#'ServiceChangeParm'{serviceChangeMethod = restart,
+			     serviceChangeReason = [[$9,$0,$1|_]]} ->
+	    {ok, M};
+	_ ->
+	    {error, {invalid_serviceChangeParms, Parms}}
+    end.
+
+rapalr_mgc_verify_notify_req_msg_fun(TermId, TransId, Rid, Cid) ->
+    fun(Msg) -> 
+	    (catch rapalr_mgc_verify_notify_req(Msg, 
+						TermId, TransId, Rid, Cid)) 
+    end.
+
+rapalr_mgc_verify_notify_req(#'MegacoMessage'{mess = Mess} = M,
+			     TermId, TransId, Rid, Cid) ->
+    io:format("rapalr_mgc_verify_notify_req -> entry with"
+	      "~n   M:       ~p"
+	      "~n   TermId:  ~p"
+	      "~n   TransId: ~p"
+	      "~n   Rid:     ~p"
+	      "~n   Cid:     ~p"
+	      "~n", [M, TermId, TransId, Rid, Cid]),
+    Body = 
+	case Mess of 
+	    #'Message'{version     = ?VERSION,
+                       mId         = _Mid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TR = 
+	case Trans of
+            {transactionRequest, TransRequest} ->
+		TransRequest;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    AR = 
+	case TR of
+            #'TransactionRequest'{transactionId = TransId,
+				  actions       = [ActReq]} ->
+		ActReq;
+	    _ ->
+		throw({error, {invalid_transactionRequest, TR}})
+	end,
+    CR = 
+	case AR of
+	    #'ActionRequest'{contextId       = Cid,
+			     commandRequests = [CmdReq]} ->
+		CmdReq;
+	    _ ->
+		throw({error, {invalid_actions, AR}})
+	end,
+    Cmd = 
+	case CR of
+	    #'CommandRequest'{command = Command} ->
+		Command;
+	    _ ->
+		throw({error, {invalid_commandRequests, CR}})
+	end,
+    NR = 
+	case Cmd of
+	    {notifyReq, NotifReq} ->
+		NotifReq;
+	    _ ->
+		throw({error, {invalid_command, Cmd}})
+	end,
+    OED = 
+	case NR of
+	    #'NotifyRequest'{terminationID            = [TermId],
+			     observedEventsDescriptor = ObsEvsDesc,
+			     errorDescriptor          = asn1_NOVALUE} ->
+		ObsEvsDesc;
+	    _ ->
+		throw({error, {invalid_notifyReq, NR}})
+	end,
+    OE = 
+	case OED of 
+	    #'ObservedEventsDescriptor'{observedEventLst = [ObsEvLst]} ->
+		ObsEvLst;
+	    _ ->
+		throw({error, {invalid_observedEventsDescriptor, OED}})
+	end,
+    case OE of
+	#'ObservedEvent'{eventName = "al/of"} ->
+	    {ok, M};
+	_ ->
+	    throw({error, {invalid_observedEventLst, OE}})
+    end;
+rapalr_mgc_verify_notify_req(Crap, _TermId, _TransId, _Rid, _Cid) ->
+    {error, {invalid_MegacoMessage, Crap}}.
+
+rapalr_mgc_verify_trans_ack_msg_fun(TransId) ->
+    fun(Msg) -> 
+	    (catch rapalr_mgc_verify_trans_ack(Msg, TransId)) 
+    end.
+
+rapalr_mgc_verify_trans_ack(#'MegacoMessage'{mess = Mess} = M, TransId) ->
+    io:format("rapalr_mgc_verify_trans_ack -> entry with"
+	      "~n   M:       ~p"
+	      "~n   TransId: ~p"
+	      "~n", [M, TransId]),
+    Body = 
+	case Mess of 
+	    #'Message'{version     = ?VERSION,
+                       mId         = _Mid,
+                       messageBody = MsgBody} ->
+		MsgBody;
+	    _ ->
+		throw({error, {invalid_Message, Mess}})
+	end,
+    Trans = 
+	case Body of
+            {transactions, [Transactions]} ->
+		Transactions;
+	    _ ->
+		throw({error, {invalid_messageBody, Body}})
+	end,
+    TA = 
+	case Trans of
+            {transactionResponseAck, [TransAck]} ->
+		TransAck;
+	    _ ->
+		throw({error, {invalid_transactions, Trans}})
+	end,
+    case TA of
+            #'TransactionAck'{firstAck = TransId,
+			      lastAck  = asn1_NOVALUE} ->
+		{ok, M};
+	    _ ->
+		throw({error, {invalid_transactionResponseAck, TA}})
+    end;
+rapalr_mgc_verify_trans_ack(Crap, _TransId) ->
+    {error, {invalid_MegacoMessage, Crap}}.
+
+rapalr_mgc_service_change_reply_msg(Mid, Cid) ->
+    SCRP  = cre_serviceChangeResParm(Mid),
+    SCRes = cre_serviceChangeResult(SCRP),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReply([Root], SCRes),
+    CR    = cre_cmdReply(SCR),
+    AR    = cre_actionReply(Cid, [CR]),
+    TRes  = cre_transResult([AR]),
+    TR    = cre_transReply(1, TRes),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+rapalr_mgc_notify_reply_ar(Cid, TermId) ->
+    NR    = cre_notifyReply([TermId]),
+    CR    = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+rapalr_mgc_notify_reply_msg(Mid, TransId, Cid, TermId) ->
+    AR    = rapalr_mgc_notify_reply_ar(Cid, TermId),
+    TRes  = cre_transResult([AR]),
+    TR    = cre_transReply(TransId, 'NULL', TRes),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+rapalr_mgc_trans_pending_msg(Mid, TransId) ->
+    TP   = #'TransactionPending'{transactionId = TransId},
+    Body = {transactions, [{transactionPending, TP}]},
+    Mess = #'Message'{version     = 1,
+		      mId         = Mid,
+		      messageBody = Body},
+    #'MegacoMessage'{mess = Mess}.
+
+
+
+%%
+%% MG generator stuff
+%%
+rapalr_mg_event_sequence(text, tcp) ->
+    Mid = {deviceName,"mg"},
+    RI = [
+          {port,             2944},
+          {encoding_module,  megaco_pretty_text_encoder},
+          {encoding_config,  []},
+          {transport_module, megaco_tcp}
+         ],
+    LReqTmr = #megaco_incr_timer{wait_for    = 3000,
+				 factor      = 1, 
+				 incr        = 0,
+				 max_retries = 2
+				},    
+    ServiceChangeReq = rapalr_mg_service_change_request_ar(Mid, 1),
+    ConnectVerify = rapalr_mg_verify_handle_connect_fun(),
+    ServiceChangeReplyVerify = rapalr_mg_verify_service_change_reply_fun(),
+    Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NotifyReq = rapalr_mg_notify_request_ar(1, Tid, 1),
+    NotifyReplyVerify = rapalr_mg_verify_notify_reply_fun(),
+    EvSeq = [
+             {debug, false},
+             megaco_start,
+             {megaco_start_user, Mid, RI, []},
+             start_transport,
+             {megaco_trace, disable},
+             {megaco_system_info, users},
+             {megaco_system_info, connections},
+             {megaco_update_user_info, long_request_resend, true},
+	     {megaco_update_user_info, long_request_timer,  LReqTmr}, 
+             connect,
+             {megaco_callback, handle_connect, ConnectVerify},
+             megaco_connect,
+             {megaco_cast,     [ServiceChangeReq], []},
+             {megaco_callback, handle_connect,     ConnectVerify},
+             {megaco_callback, handle_trans_reply, ServiceChangeReplyVerify},
+             {sleep, 1000},
+             {megaco_cast,     [NotifyReq],        []},
+             {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+             {sleep, 1000},
+             megaco_stop_user,
+             megaco_stop,
+             {sleep, 1000}
+            ],
+    EvSeq.
+
+
+rapalr_mg_verify_handle_connect_fun() ->
+    fun(Ev) -> rapalr_mg_verify_handle_connect(Ev) end.
+
+rapalr_mg_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
+    io:format("rapalr_mg_verify_handle_connect -> ok"
+	      "~n   CH: ~p~n", [CH]),
+    {ok, CH, ok};
+rapalr_mg_verify_handle_connect(Else) ->
+    io:format("rapalr_mg_verify_handle_connect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+
+rapalr_mg_verify_service_change_reply_fun() ->
+    fun(Rep) -> rapalr_mg_verify_scr(Rep) end.
+
+rapalr_mg_verify_scr({handle_trans_reply, _CH, ?VERSION, {ok, [AR]}, _}) ->
+    (catch rapalr_mg_do_verify_scr(AR));
+rapalr_mg_verify_scr(Crap) ->
+    {error, Crap, ok}.
+
+rapalr_mg_do_verify_scr(AR) ->
+    io:format("rapalr_mg_verify_scr -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    CR = 
+	case AR of
+	    #'ActionReply'{commandReply = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		Reason1 = {invalid_action_reply, AR},
+		throw({error, Reason1, ok})
+	end,
+    SCR = 
+	case CR of
+	    {serviceChangeReply, ServChRep} ->
+		ServChRep;
+	    _ ->
+		Reason2 = {invalid_command_reply, CR},
+		throw({error, Reason2, ok})
+	end,
+    {Tid, SCRes} = 
+	case SCR of
+	    #'ServiceChangeReply'{terminationID       = [TermID],
+				  serviceChangeResult = Res} ->
+		{TermID, Res};
+	    _ ->
+		Reason3 = {invalid_service_change_reply, SCR},
+		throw({error, Reason3, ok})
+	end,
+    case Tid of
+	#megaco_term_id{contains_wildcards = false, id = ["root"]} ->
+	    ok;
+	_ ->
+	    Reason4 = {invalid_termination_id, Tid},
+	    throw({error, Reason4, ok})
+    end,
+    SCRParm = 
+	case SCRes of
+	    {serviceChangeResParms, ServChResParms} ->
+		ServChResParms;
+	    _ ->
+		Reason5 = {invalid_serviceChangeResult, SCRes},
+		throw({error, Reason5, ok})
+	end,
+    case SCRParm of
+	#'ServiceChangeResParm'{serviceChangeMgcId = _RemoteMid} ->
+	    {ok, AR, ok};
+	_ ->
+	    Reason6 = {invalid_service_change_result, SCRParm},
+	    {error, Reason6, ok}
+    end.
+
+rapalr_mg_verify_notify_reply_fun() ->
+    fun(Rep) -> rapalr_mg_verify_notify_reply(Rep) end.
+	     
+rapalr_mg_verify_notify_reply({handle_trans_reply, _CH, ?VERSION, 
+			      {ok, [AR]}, _}) ->
+    io:format("rapalr_mg_verify_notify_reply -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    {ok, AR, ok};
+rapalr_mg_verify_notify_reply(Else) ->
+    io:format("rapalr_mg_verify_notify_reply -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+
+rapalr_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+rapalr_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+
+
+
+
+
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 dist(suite) ->
     [];
-dist(Config) when list(Config) ->
+dist(Config) when is_list(Config) ->
     [_Local, Dist] = ?ACQUIRE_NODES(2, Config),
     d("dist -> start proxy",[]),
     megaco_mess_user_test:start_proxy(),
@@ -558,7 +5365,7 @@ dist(Config) when list(Config) ->
 
 otp_4359(suite) ->
     [];
-otp_4359(Config) when list(Config) ->
+otp_4359(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Mid = {deviceName, "dummy_mid"},
 
@@ -633,7 +5440,7 @@ otp_4359_analyze_result(RH, [{M,ignore,_}|T]) ->
     otp_4359_analyze_result(RH,T).
 
 otp_4359_analyze_encoded_message(RH, ExpErrorCode, M) 
-  when record(RH, megaco_receive_handle), binary(M) ->
+  when is_record(RH, megaco_receive_handle), binary(M) ->
     #megaco_receive_handle{encoding_mod    = Mod,
 			   encoding_config = Conf} = RH,
     case (catch Mod:decode_message(Conf, M)) of
@@ -643,7 +5450,7 @@ otp_4359_analyze_encoded_message(RH, ExpErrorCode, M)
 		    case Reply of
 			#'TransactionReply'{transactionResult = Result} ->
 			    case Result of
-				{transactionError,ED} when record(ED, 'ErrorDescriptor') ->
+				{transactionError,ED} when is_record(ED, 'ErrorDescriptor') ->
 				    case ED#'ErrorDescriptor'.errorCode of
 					ExpErrorCode ->
 					    io:format("error code ~p ok~n", [ExpErrorCode]),
@@ -676,7 +5483,7 @@ otp_4359_analyze_encoded_message(RH, ExpErrorCode, M)
 
 otp_4836(suite) ->
     [];
-otp_4836(Config) when list(Config) ->
+otp_4836(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        otp_4836),
@@ -765,7 +5572,8 @@ otp_4836_mgc_event_sequence(text, tcp) ->
 		{sleep, 100},
 		{send, "pending 2", Pending}, 
 		{sleep, 500},
-  		{send, "notify-reply", NotifyReply}
+  		{send, "notify-reply", NotifyReply}, 
+		{sleep, 2000}
 	       ],
     MgcEvSeq.
 
@@ -880,7 +5688,7 @@ otp_4836_verify_notify_request_fun() ->
 
 otp_5805(suite) ->
     [];
-otp_5805(Config) when list(Config) ->
+otp_5805(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        otp_5805),
@@ -1291,7 +6099,7 @@ otp_5805_err_desc(T) ->
 
 otp_5881(suite) ->
     [];
-otp_5881(Config) when list(Config) ->
+otp_5881(Config) when is_list(Config) ->
     ?SKIP("deprecated by OTP-58XX"),
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
@@ -1510,7 +6318,7 @@ otp_5881_verify_notify_request_fun() ->
 
 otp_5887(suite) ->
     [];
-otp_5887(Config) when list(Config) ->
+otp_5887(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        otp_5887),
@@ -1755,6 +6563,17 @@ otp_5887_verify_notify_request_fun() ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+cre_ErrDesc(T) ->
+    EC = ?megaco_internal_gateway_error,
+    ET = lists:flatten(io_lib:format("~w",[T])),
+    #'ErrorDescriptor'{errorCode = EC, errorText = ET}.
+	    
+
+cre_serviceChangeParm(M,R,P) ->
+    #'ServiceChangeParm'{serviceChangeMethod  = M,
+                         serviceChangeReason  = R,
+                         serviceChangeProfile = P}.
+
 cre_serviceChangeParm(M, V, R, P) ->
     #'ServiceChangeParm'{serviceChangeMethod  = M, 
 			 serviceChangeVersion = V,
@@ -1780,41 +6599,67 @@ cre_notifyReq(Tid, EvsDesc) ->
     #'NotifyRequest'{terminationID            = Tid, 
                      observedEventsDescriptor = EvsDesc}.
 
-cre_command(R) when record(R, 'NotifyRequest') ->
+cre_command(R) when is_record(R, 'NotifyRequest') ->
     {notifyReq, R};
-cre_command(R) when record(R, 'ServiceChangeRequest') ->
+cre_command(R) when is_record(R, 'ServiceChangeRequest') ->
     {serviceChangeReq, R}.
 
 cre_cmdReq(Cmd) ->
     #'CommandRequest'{command = Cmd}.
 
-cre_actionReq(CtxId, CmdReqs) when list(CmdReqs) ->
+cre_actionReq(CtxId, CmdReqs) when is_list(CmdReqs) ->
     #'ActionRequest'{contextId       = CtxId,
                      commandRequests = CmdReqs}.
 
-cre_transReq(TransId, ARs) when list(ARs) ->
+cre_transReq(TransId, ARs) when is_list(ARs) ->
     #'TransactionRequest'{transactionId = TransId,
 			  actions       = ARs}.
 
+cre_transResult(ED) when record(ED, 'ErrorDescriptor') ->
+    {transactionError, ED};
+cre_transResult([AR|_] = ARs) when record(AR, 'ActionReply') ->
+    {actionReplies, ARs}.
+
+cre_transReply(TransId, Res) ->
+    #'TransactionReply'{transactionId     = TransId,
+			transactionResult = Res}.
+
+cre_transReply(TransId, IAR, Res) ->
+    #'TransactionReply'{transactionId     = TransId,
+			immAckRequired    = IAR, 
+			transactionResult = Res}.
+
+
 %% --
+
+cre_serviceChangeResParm(Mid) ->
+    cre_serviceChangeResParm(Mid, ?VERSION).
 
 cre_serviceChangeResParm(Mid, V) ->
     #'ServiceChangeResParm'{serviceChangeMgcId   = Mid, 
 			    serviceChangeVersion = V}.
 
-cre_serviceChangeResult(SCRP) when record(SCRP, 'ServiceChangeResParm') ->
+cre_serviceChangeResult(SCRP) when is_record(SCRP, 'ServiceChangeResParm') ->
     {serviceChangeResParms, SCRP};
-cre_serviceChangeResult(ED) when record(ED, 'ErrorDescriptor') ->
+cre_serviceChangeResult(ED) when is_record(ED, 'ErrorDescriptor') ->
     {errorDescriptor, ED}.
 
 cre_serviceChangeReply(Tid, Res) ->
     #'ServiceChangeReply'{terminationID       = Tid, 
                           serviceChangeResult = Res}.
 
-cre_cmdReply(R) when record(R, 'NotifyReply') ->
+cre_cmdReply(R) when is_record(R, 'NotifyReply') ->
     {notifyReply, R};
-cre_cmdReply(R) when record(R, 'ServiceChangeReply') ->
+cre_cmdReply(R) when is_record(R, 'ServiceChangeReply') ->
     {serviceChangeReply, R}.
+
+cre_transRespAck(TransAck) when is_record(TransAck, 'TransactionAck') ->
+    [TransAck];
+cre_transRespAck(TRA) when is_list(TRA) ->
+    TRA.
+
+cre_transAck(TransId) ->
+    #'TransactionAck'{firstAck = TransId}.
 
 cre_notifyReply(Tid) ->
     #'NotifyReply'{terminationID = Tid}.
@@ -1823,20 +6668,20 @@ cre_actionReply(CtxId, CmdRep) ->
     #'ActionReply'{contextId    = CtxId,
                    commandReply = CmdRep}.
 
-cre_serviceChangeProf(Name, Ver) when list(Name), integer(Ver) ->
+cre_serviceChangeProf(Name, Ver) when is_list(Name), integer(Ver) ->
     #'ServiceChangeProfile'{profileName = Name, 
                             version     = Ver}.
 
-cre_transaction(Trans) when record(Trans, 'TransactionRequest') ->
+cre_transaction(Trans) when is_record(Trans, 'TransactionRequest') ->
     {transactionRequest, Trans};
-cre_transaction(Trans) when record(Trans, 'TransactionPending') ->
+cre_transaction(Trans) when is_record(Trans, 'TransactionPending') ->
     {transactionPending, Trans};
-cre_transaction(Trans) when record(Trans, 'TransactionReply') ->
+cre_transaction(Trans) when is_record(Trans, 'TransactionReply') ->
     {transactionReply, Trans};
-cre_transaction(Trans) when record(Trans, 'TransactionAck') ->
+cre_transaction(Trans) when is_list(Trans) ->
     {transactionResponseAck, Trans}.
 
-cre_transactions(Trans) when list(Trans) ->
+cre_transactions(Trans) when is_list(Trans) ->
     {transactions, Trans}.
 
 cre_message(Version, Mid, Body) ->

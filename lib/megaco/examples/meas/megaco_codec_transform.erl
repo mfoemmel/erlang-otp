@@ -65,6 +65,8 @@
 
 -include_lib("kernel/include/file.hrl").
 
+-define(V3, prev3c).
+
 
 tt() ->
     t(pretty, [compact, per, ber, erlang]).
@@ -313,23 +315,23 @@ extension_of(erlang) ->
 
 decode_message(pretty, BinMsg) ->
     Mod  = megaco_pretty_text_encoder,
-    Conf = [{version3,prev3b}],
+    Conf = [{version3,?V3}],
     do_decode(Mod, Conf, BinMsg);
 decode_message(compact, BinMsg) ->
     Mod  = megaco_compact_text_encoder,
-    Conf = [{version3,prev3b}],
+    Conf = [{version3,?V3}],
     do_decode(Mod, Conf, BinMsg);
 decode_message(ber, BinMsg) ->
     Mod  = megaco_ber_bin_encoder,
-    Conf = [{version3,prev3b}],
+    Conf = [{version3,?V3}],
     do_decode(Mod, Conf, BinMsg);
 decode_message(per, BinMsg) ->
     Mod  = megaco_per_bin_encoder,
-    Conf = [{version3,prev3b}],
+    Conf = [{version3,?V3}],
     do_decode(Mod, Conf, BinMsg);
 decode_message(erlang, BinMsg) ->
     Mod  = megaco_erl_dist_encoder,
-    Conf = [{version3,prev3b}],
+    Conf = [{version3,?V3}],
     do_decode(Mod, Conf, BinMsg);
 decode_message(Codec, _) ->
     throw({error, {unsupported_codec, Codec}}).
@@ -359,23 +361,23 @@ do_decode(Mod, Conf, Bin) ->
 
 encode_message(pretty, Msg) ->
     Mod  = megaco_pretty_text_encoder,
-    Conf = [{version3,prev3b}],
+    Conf = [{version3,?V3}],
     do_encode(Mod, Conf, Msg);
 encode_message(compact, Msg) ->
     Mod  = megaco_compact_text_encoder,
-    Conf = [{version3,prev3b}],
+    Conf = [{version3,?V3}],
     do_encode(Mod, Conf, Msg);
 encode_message(ber, Msg) ->
     Mod  = megaco_ber_bin_encoder,
-    Conf = [{version3,prev3b}],
+    Conf = [{version3,?V3}],
     do_encode(Mod, Conf, Msg);
 encode_message(per, Msg) ->
     Mod  = megaco_per_bin_encoder,
-    Conf = [{version3,prev3b}],
+    Conf = [{version3,?V3}],
     do_encode(Mod, Conf, Msg);
 encode_message(erlang, Msg) ->
     Mod  = megaco_erl_dist_encoder,
-    Conf = [{version3,prev3b}],
+    Conf = [{version3,?V3}],
     do_encode(Mod, Conf, Msg);
 encode_message(Codec, _) ->
     throw({error, {unsupported_codec, Codec}}).

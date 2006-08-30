@@ -41,15 +41,9 @@ extern void nbif_inc_stack_3args(void);
 extern void nbif_inc_stack_4args(void);
 extern void nbif_inc_stack_5args(void);
 extern void nbif_inc_stack_6args(void);
-extern void nbif_inc_stack_7args(void);
-extern void nbif_inc_stack_8args(void);
-extern void nbif_inc_stack_9args(void);
-extern void nbif_inc_stack_10args(void);
-extern void nbif_inc_stack_11args(void);
-extern void nbif_inc_stack_12args(void);
-extern void nbif_inc_stack_13args(void);
-extern void nbif_inc_stack_14args(void);
-extern void nbif_inc_stack_15args(void);
-extern void nbif_inc_stack_16args(void);
+
+/* for hipe_bifs_enter_code_2 */
+extern void *hipe_alloc_code(Uint nrbytes, Eterm callees, Eterm *trampolines, Process *p);
+#define HIPE_ALLOC_CODE(n,c,t,p) hipe_alloc_code((n),(c),(t),(p))
 
 #endif /* HIPE_SPARC_H */

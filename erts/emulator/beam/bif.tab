@@ -605,7 +605,10 @@ bif erts_debug:get_internal_state/1
 bif 'erl.system.debug':get_internal_state/1 ebif_erts_debug_get_internal_state_1
 bif erts_debug:set_internal_state/2
 bif 'erl.system.debug':set_internal_state/2 ebif_erts_debug_set_internal_state_2
-# There is also a pseudo-BIF named erts_debug:apply/4.
+bif erts_debug:display/1
+bif 'erl.system.debug':display/1 ebif_erts_debug_display_1
+
+
 
 #
 # Monitor testing bif's...

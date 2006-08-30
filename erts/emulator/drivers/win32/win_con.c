@@ -28,7 +28,7 @@
 #define WM_CONBEEP      (0x0402)
 #define WM_SAVE_PREFS   (0x0403)
 
-#define USER_KEY "Software\\Ericsson\\Erlang\\"##ERLANG_VERSION
+#define USER_KEY "Software\\Ericsson\\Erlang\\" ERLANG_VERSION
 
 #define FRAME_HEIGHT ((2*GetSystemMetrics(SM_CYEDGE))+(2*GetSystemMetrics(SM_CYFRAME))+GetSystemMetrics(SM_CYCAPTION))
 #define FRAME_WIDTH  (2*GetSystemMetrics(SM_CXFRAME)+(2*GetSystemMetrics(SM_CXFRAME))+GetSystemMetrics(SM_CXVSCROLL))
@@ -109,9 +109,9 @@ static BOOL destroyed = FALSE;
 static int lines_to_save = 1000; /* Maximum number of screen lines to save. */
 
 static DWORD WINAPI ConThreadInit(LPVOID param);
-LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam);
-LRESULT CALLBACK FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK AboutDlgProc(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
+static LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam);
+static LRESULT CALLBACK FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam);
+static BOOL CALLBACK AboutDlgProc(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
 static ScreenLine_t *ConNewLine(void);
 static void DeleteTopLine(void);
 static void ensure_line_below(void);

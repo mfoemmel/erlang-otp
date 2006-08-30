@@ -440,13 +440,9 @@ ASYM(nbif_fail):
 /*
  * We end up here when a BIF called from native signals an
  * exceptional condition, and RESCHEDULE cannot occur.
- * The stack/heap registers were just read from P.
+ * The heap pointer was just read from P.
  * TEMP_LR contains a copy of LR
  */
-	GLOBAL(CSYM(nbif_0_simple_exception))
-CSYM(nbif_0_simple_exception):
-	li	r4, 0
-	b	.nbif_simple_exception
 	GLOBAL(CSYM(nbif_1_simple_exception))
 CSYM(nbif_1_simple_exception):
 	li	r4, 1
@@ -465,10 +461,11 @@ CSYM(nbif_3_simple_exception):
 	beq-	.handle_trap
 	/*
 	 * Find and invoke catch handler (it must exist).
-	 * The stack/heap registers were just read from P.
+	 * The heap pointer was just read from P.
 	 * TEMP_LR should contain the current call's return address.
 	 * r4 should contain the current call's arity.
 	 */
+	STORE	NSP, P_NSP(P)
 	STORE	TEMP_LR, P_NRA(P)
 	stw	r4, P_NARITY(P)	/* Note: narity is a 32-bit field */
 	/* find and prepare to invoke the handler */
@@ -492,6 +489,7 @@ CSYM(nbif_3_simple_exception):
 .handle_trap:
 	li	r3, HIPE_MODE_SWITCH_RES_TRAP
 .bif_exit:
+	STORE	NSP, P_NSP(P)
 	STORE	r4, P_ARITY(P)
 	STORE	TEMP_LR, P_NRA(P)
 	b	.nosave_exit
@@ -500,7 +498,7 @@ CSYM(nbif_3_simple_exception):
  * We end up here when a BIF called from native signals an
  * exceptional condition, and RESCHEDULE can occur.
  * r5 contains the address of the nbif which failed, and the
- * stack/heap/reds registers were just read from P.
+ * heap pointer was just read from P.
  * TEMP_ARG0 is the first actual parameter, if PPC_NR_ARG_REGS > 0.
  * TEMP_ARG1 is the second actual parameter (if defined), if PPC_NR_ARG_REGS > 1.
  */
@@ -538,28 +536,28 @@ CSYM(nbif_2_hairy_exception):
 ASYM(nbif_stack_trap_ra):		/* a return address, not a function */
 	# This only handles a single return value.
 	# If we have more, we need to save them in the PCB.
-	STORE	r3, P_ARG0(P)		/* save retval */
+	mr	TEMP_ARG0, r3		/* save retval */
 	STORE	NSP, P_NSP(P)
 	mr	r3, P
 	bl	CSYM(hipe_handle_stack_trap)	/* must not cons */
 	mtctr	r3			/* original RA */
-	LOAD	r3, P_ARG0(P)		/* restore retval */
+	mr	r3, TEMP_ARG0		/* restore retval */
 	bctr				/* resume at original RA */
 
 /*
  * hipe_ppc_inc_stack
- * Caller saved its LR in a C callee-save register before calling us.
+ * Caller saved its LR in TEMP_LR (== TEMP1) before calling us.
  */
 	GLOBAL(ASYM(hipe_ppc_inc_stack))
 ASYM(hipe_ppc_inc_stack):
 	STORE_ARG_REGS
-	mflr	r0
-	STORE	r0, P_NRA(P)
-	SAVE_CACHED_STATE
+	mflr	TEMP_ARG0
+	STORE	NSP, P_NSP(P)
 	mr	r3, P
+	# hipe_inc_nstack reads and writes NSP and NSP_LIMIT,
+	# but does not access LR/RA, HP, or FCALLS.
 	bl	CSYM(hipe_inc_nstack)
-	LOAD	r0, P_NRA(P)
-	mtlr	r0
-	RESTORE_CACHED_STATE
+	mtlr	TEMP_ARG0
+	LOAD	NSP, P_NSP(P)
 	LOAD_ARG_REGS
 	blr

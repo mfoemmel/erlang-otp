@@ -35,7 +35,7 @@
 %% External exports
 %%----------------------------------------------------------------------
 -export([
-         start_link/0, start_link/2, start_link/2, 
+         start_link/0, start_link/1, start_link/2, 
 	 start/0, start/1, start/2, 
 	 stop/0,
 	 info/0, 
@@ -77,7 +77,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {parent, id, reqs = []}).
--record(request, {from, ref, tmr, req_id, type}).
+%% -record(request, {from, ref, tmr, req_id, type}).
 
 
 %%----------------------------------------------------------------------

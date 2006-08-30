@@ -52,6 +52,7 @@
 
 -include_lib("kernel/include/file.hrl").
 
+-define(V3, prev3c).
 
 -define(MEASURE_TIMEOUT, 100000).
 
@@ -226,7 +227,7 @@ t1([{Dir, Codec, Conf, _} = EDir|Dirs], Results) ->
 measure({Dir, Codec, Conf, Count}) when list(Dir) ->
     io:format("measure using codec ~p ~p~n ", [Codec, Conf]),
     {Init, Conf1} = measure_init(Conf),
-    Conf2 = [{version3,prev3b}|Conf1],
+    Conf2 = [{version3,?V3}|Conf1],
     Res = measure(Dir, Codec, Conf2, read_files(Dir), [], Count),
     measure_fin(Init),
     Res.
@@ -316,13 +317,8 @@ measure(Dir, Codec, Conf, [File|Files], Results, MCount) ->
 	    measure(Dir, Codec, Conf, Files, [Stat | Results], MCount);
 
 	{error, S} ->
-	    case get(everbose) of
-		true ->
-		    io:format("~n", []),
-		    error(S,[]);
-		_ ->
-		    io:format("~n~s failed~n", [File])
-	    end,
+	    io:format("~n~s failed: ~n", [File]),
+	    error(S,[]),
 	    measure(Dir, Codec, Conf, Files, Results, MCount);
 
 	{info, S} ->

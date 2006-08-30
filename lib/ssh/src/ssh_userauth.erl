@@ -138,12 +138,22 @@ disconnect(Handle, Opts) ->
      end.
 
 connected_fun(User, PeerAddr, Opts, Method) ->
-     case proplists:get_value(connectfun, Opts) of
+    reg_user_auth(User),
+    case proplists:get_value(connectfun, Opts) of
 	undefined ->
-	     ok;
-	 CF ->
-	     CF(User, PeerAddr, Method)
-     end.
+	    ok;
+	CF ->
+	    CF(User, PeerAddr, Method)
+    end.
+
+infofun(User, Opts, Reason) ->
+    case proplists:get_value(infofun, Opts) of
+	undefined ->
+	    error_logger:info_msg("~p failed to login: ~p~n", [User, Reason]);
+	FF ->
+	    FF(User, Reason)
+    end.
+
 
 %% Reason for failfun() is a structured tuple, the following values are 
 %% possible
@@ -160,13 +170,12 @@ connected_fun(User, PeerAddr, Opts, Method) ->
 
 
 failfun(User, Opts, Reason) ->
-     case proplists:get_value(failfun, Opts) of
+    case proplists:get_value(failfun, Opts) of
 	undefined ->
-	     error_logger:format("~p failed to login: ~p~n", [User, Reason]);
-	 FF ->
-	     FF(User, Reason)
-     end.
-
+	    error_logger:format("~p failed to login: ~p~n", [User, Reason]);
+	FF ->
+	    FF(User, Reason)
+    end.
 
 
 get_password_option(Opts, User) ->
@@ -192,7 +201,10 @@ do_password(SSH, Service, User, Opts) ->
     case passwd_reply(SSH) of
 	ok -> ok;
 	{error, E} -> {error, E};
-	_  -> do_password(SSH, Service, User, Opts)
+	{failure, F} -> {failure, F};
+	_Other  ->
+	    ?dbg(true, "do_password: Other=~w\n", [_Other]),
+	    do_password(SSH, Service, User, Opts)
     end.	    
 
 public_key_reply(SSH) ->
@@ -267,7 +279,7 @@ do_auth_remote(SSH, Service, Opts) ->
  		    SSH ! {ssh_msg, self(), #ssh_msg_userauth_success{}},
  		    {ok, Handle};
  		{false, Str} ->
- 		    failfun(User, Opts, {passwd, Str}),
+ 		    infofun(User, Opts, {passwd, Str}),
 		    SSH ! {ssh_msg, self(), #ssh_msg_userauth_failure {
 					  authentications = "",
 					  partial_success = false}},
@@ -277,7 +289,7 @@ do_auth_remote(SSH, Service, Opts) ->
 						   service = Service,
 						   method = "none",
 						   data = _Data}} ->
-	    failfun(User, Opts, {authmethod, none}),
+	    infofun(User, Opts, {authmethod, none}),
 	    SSH ! {ssh_msg, self(), #ssh_msg_userauth_failure {
 				  authentications = "publickey,password",
 				  partial_success = false}},
@@ -300,7 +312,6 @@ do_auth_remote(SSH, Service, Opts) ->
 			    SSH ! {ssh_msg, self(),
 				   #ssh_msg_userauth_success{}},
  			    connected_fun(User, Peer, Opts, "publickey"),
-			    reg_user_auth(self(), User),
  			    {ok, {undefined, User}};
  			{error, ERR} ->
  			    %% we have a file, but failed to open/read it
@@ -323,7 +334,7 @@ do_auth_remote(SSH, Service, Opts) ->
 						    service = Service,
 						    method = Other,
 						    data = _Data}} ->
-	    failfun(User, Opts, {authmethod, Other}),
+	    infofun(User, Opts, {authmethod, Other}),
 	    SSH ! {ssh_msg, self(),
 		   #ssh_msg_userauth_failure {
 				  authentications = "publickey,password",
@@ -406,12 +417,13 @@ userauth_pk_messages() ->
      ].
 
 %% user registry (which is a really simple server)
-reg_user_auth(Pid, User) ->
+reg_user_auth(User) ->
     case whereis(?MODULE) of
 	undefined ->
 	    ok;
-	UPid ->
-	    UPid ! {reg, User, Pid, self()}
+	Pid ->
+	    Pid ! {reg, User, self()},
+	    receive {Pid, ok} -> ok end
     end.
 
 get_auth_users() ->
@@ -422,7 +434,7 @@ get_auth_users() ->
 	Pid ->
 	    Pid ! {get, Self},
 	    receive
-		{Self, R} -> R
+		{Pid, R} -> R
 	    end
     end.
 
@@ -449,11 +461,11 @@ reg_user_auth_server_loop(Users) ->
 	{get, From} ->
 	    NewUsers = [{U, P} || {U, P} <- Users,
 				  erlang:is_process_alive(P)],
-	    From ! {From, {ok, NewUsers}},
+	    From ! {self(), {ok, NewUsers}},
 	    reg_user_auth_server_loop(NewUsers);
-	{reg, User, Pid, From} ->
-	    NewUsers = [{User, Pid} | Users],
-	    From ! {From, ok},
+	{reg, User, From} ->
+	    NewUsers = [{User, From} | Users],
+	    From ! {self(), ok},
 	    reg_user_auth_server_loop(NewUsers);
 	_ ->
 	    ok

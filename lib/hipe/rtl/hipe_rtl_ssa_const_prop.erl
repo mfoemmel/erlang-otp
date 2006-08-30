@@ -226,8 +226,8 @@ visit_alu(Inst, Env) ->
 %%                    when one (or both) of the operands is nonconstant.
 
 lattice_meet(Val1, Val2) ->
-  M = if (Val1 ==  top) or (Val2 == top) -> top;
-         (Val1 == bottom) or (Val2 == bottom) -> bottom
+  M = if (Val1 =:= top) or (Val2 =:= top) -> top;
+         (Val1 =:= bottom) or (Val2 =:= bottom) -> bottom
 	 % the check is realy just sanity
       end,
   {M, M, M, M, M}.
@@ -235,30 +235,30 @@ lattice_meet(Val1, Val2) ->
 all_ones() ->
   (1 bsl hipe_rtl_arch:word_size() * 8) - 1.
 
-% when calling partial_eval*() we know that at least one of the Values are 
-% bottom or top. They return { Value, Sign, Zero, Overflow, Carry }. 
-% (just like hipe_rtl_arch:eval_alu)
+%% when calling partial_eval*() we know that at least one of the Values are 
+%% bottom or top. They return { Value, Sign, Zero, Overflow, Carry }. 
+%% (just like hipe_rtl_arch:eval_alu)
 
-% logic shifts are very similar each other. Limit is the number of
-% bits in the words.
+%% logic shifts are very similar each other. Limit is the number of
+%% bits in the words.
 partial_eval_shift(Limit, Val1, Val2) ->
   if 
-    Val2 == 0 -> {Val1, Val1,  Val1, Val1,  Val1};
+    Val2 == 0 -> {Val1, Val1, Val1, Val1, Val1};
     Val1 == 0 -> {0, false, true, false, false};
-    (Val2 /= top) and (Val2 /= bottom) and (Val2 >= Limit) -> 
+    (Val2 =/= top) and (Val2 =/= bottom) and (Val2 >= Limit) -> 
       {0, false, true, Val1, Val1}; % OVerflow & carry we dont know about.
     true -> lattice_meet(Val1, Val2)
   end.
 
 %%-----------------------------------------------------------------------------
 %% Procedure : partial_eval_alu/3
-%% Purpose   : try to evaluate as much as possible of a alu operation where at 
+%% Purpose   : try to evaluate as much as possible an alu operation where at 
 %%             least one of the operands is not constant.
 %% Arguments : Val1, Val2 - operands (integer, top or bottom)
 %%             Op  - the operation.
-%% Returns   : { Result, Sign, Zero, Overflow, Carry}
-%%              where result is Integer, top or bottom
-%%              and the others are Bool, top or bottom.
+%% Returns   : {Result, Sign, Zero, Overflow, Carry}
+%%              where Result is an integer, 'top' or 'bottom'
+%%              and the others are bool, 'top' or 'bottom'.
 %%-----------------------------------------------------------------------------
 
 partial_eval_alu(Val1, add, Val2) ->
@@ -278,15 +278,15 @@ partial_eval_alu(Val1, 'or', Val2) ->
     (Val1 == 0) -> {Val2,  Val2, Val2, false, false};
     (Val2 == 0) -> {Val1,  Val1, Val1, false, false};
     (Val1 == All_ones) or (Val2 == All_ones) -> 
-      { All_ones,  true, false, false, false};
+      {All_ones,  true, false, false, false};
     true -> lattice_meet(Val1, Val2)
   end;
 partial_eval_alu(Val1, 'and', Val2) ->
-  All_ones=all_ones(),
+  All_ones = all_ones(),
   if 
     Val1 == All_ones -> {Val2,  Val2, Val2, false, false};
     Val2 == All_ones -> {Val1,  Val1, Val1, false, false};
-    (Val1 == 0) or (Val2 == 0) -> { 0,  false, true, false, false};
+    (Val1 == 0) or (Val2 == 0) -> {0,  false, true, false, false};
     true -> lattice_meet(Val1, Val2)
   end;
 partial_eval_alu(Val1, 'xor', Val2) ->
@@ -296,27 +296,27 @@ partial_eval_alu(Val1, 'xor', Val2) ->
     true -> lattice_meet(Val1, Val2)
   end;
 partial_eval_alu(Val1, 'xornot', Val2) ->
-  All_ones=all_ones(),
+  All_ones = all_ones(),
   if
     Val1 == All_ones -> {Val2,  Val2, Val2, false, false};
     Val2 == All_ones -> {Val1,  Val1, Val1, false, false};
     true -> lattice_meet(Val1, Val2)
   end;
 partial_eval_alu(Val1, andnot, Val2) ->
-  All_ones=all_ones(),
+  All_ones = all_ones(),
   if 
     (Val2 == 0) -> {Val1,  Val1, Val1, false, false};
     (Val1 == 0) or (Val2 == All_ones) -> {0,  false, true, false, false};
     true -> lattice_meet(Val1, Val2)
   end;
-partial_eval_alu(Val1, Op, Val2) when (Op == sll) or (Op == srl) ->
+partial_eval_alu(Val1, Op, Val2) when (Op =:= 'sll') or (Op =:= 'srl') ->
   partial_eval_shift(hipe_rtl_arch:word_size()*8, Val1, Val2);
-partial_eval_alu(Val1, Op, Val2) when (Op == sllx) or (Op == srlx) ->
+partial_eval_alu(Val1, Op, Val2) when (Op =:= 'sllx') or (Op =:= 'srlx') ->
   partial_eval_shift(64, Val1, Val2);
 
 % arithmetic shifts are more tricky, shifting something unknown can
 % generate all_ones() and 0 depenging on the sign of Val1.
-partial_eval_alu(Val1, Op, Val2) when (Op == sra) or (Op == srax) ->
+partial_eval_alu(Val1, Op, Val2) when (Op =:= 'sra') or (Op =:= 'srax') ->
   if 
     (Val2 == 0) -> {Val1,  Val1, Val1, false, false};
     (Val1 == 0) -> {0, false, true, false, false};
@@ -326,17 +326,17 @@ partial_eval_alu(Val1, Op, Val2) when (Op == sra) or (Op == srax) ->
 %%-----------------------------------------------------------------------------
 %% Procedure : evaluate_alu/3 
 %% Purpose   : try to evaluate as much as possible of a alu operation.
-%% Arguments : Val1, Val2 - operands (integer, top or bottom)
-%%             Op  - the operation.
-%% Returns   : { Result, Sign, Zero, Overflow, Carry}
-%%              where result is Integer, top or bottom
-%%              and the others are Bool, top or bottom.
+%% Arguments : Val1, Val2 - operands (an integer, 'top' or 'bottom')
+%%             Op - the operation.
+%% Returns   : {Result, Sign, Zero, Overflow, Carry}
+%%              where result is an integer, 'top' or 'bottom'
+%%              and the others are Bool, 'top' or 'bottom'.
 %%-----------------------------------------------------------------------------
 
 evaluate_alu(Val1, Op, Val2) ->
   if 
-    (Val1 == top) or (Val2 == top) or 
-    (Val1 == bottom) or (Val2 == bottom) -> partial_eval_alu(Val1, Op, Val2);
+    (Val1 =:= top) or (Val2 =:= top) or 
+    (Val1 =:= bottom) or (Val2 =:= bottom) -> partial_eval_alu(Val1, Op, Val2);
     true ->
       case Op of
         sllx -> hipe_rtl_arith_64:eval_alu('sll', Val1, Val2);
@@ -754,8 +754,8 @@ update_srcs(Srcs, Env) ->
 
 partial_update_shift(Limit, Val1, Val2) ->
   if
-    (Val1 == bottom) and (Val2 == 0) -> move_src1;
-    (Val1 == 0) or ((Val2 /= bottom) and (Val2 >= Limit)) -> 0;
+    (Val1 =:= bottom) and (Val2 == 0) -> move_src1;
+    (Val1 == 0) or ((Val2 =/= bottom) and (Val2 >= Limit)) -> 0;
     true -> keep_it
   end.
 
@@ -772,19 +772,19 @@ partial_update_shift(Limit, Val1, Val2) ->
 %% returns what to do with the instruction (it's either replace with
 %% src1, replace src2 replace with constant or keep it.
 
-partial_update_alu(Val1, add, Val2) ->
+partial_update_alu(Val1, 'add', Val2) ->
   if
     (Val1 == 0) -> move_src2;
     (Val2 == 0) -> move_src1;
     true -> keep_it
   end;
-partial_update_alu(_Val1, sub, Val2) ->
+partial_update_alu(_Val1, 'sub', Val2) ->
   if
     (Val2 == 0) -> move_src1;
     true -> keep_it
   end;
 partial_update_alu(Val1, 'or', Val2) ->
-  All_ones=all_ones(),
+  All_ones = all_ones(),
   if 
     (Val1 == 0) -> move_src2;
     (Val2 == 0) -> move_src1;
@@ -792,7 +792,7 @@ partial_update_alu(Val1, 'or', Val2) ->
     true -> keep_it
   end;
 partial_update_alu(Val1, 'and', Val2) ->
-  All_ones=all_ones(),
+  All_ones = all_ones(),
   if 
     Val1 == All_ones -> move_src2;
     Val2 == All_ones -> move_src1;
@@ -806,24 +806,24 @@ partial_update_alu(Val1, 'xor', Val2) ->
     true -> keep_it
   end;
 partial_update_alu(Val1, 'xornot', Val2) ->
-  All_ones=all_ones(),
+  All_ones = all_ones(),
   if 
     (Val1 == All_ones) -> move_src2;
     (Val2 == All_ones) -> move_src1;
     true -> keep_it
   end;
 partial_update_alu(Val1, andnot, Val2) ->
-  All_ones=all_ones(),
+  All_ones = all_ones(),
   if 
     Val2 == 0 -> move_src1;
     (Val1 == 0) or (Val2 == All_ones) -> 0;
     true -> keep_it
   end;
-partial_update_alu(Val1, Op, Val2) when (Op == sll) or (Op == srl) ->
+partial_update_alu(Val1, Op, Val2) when (Op =:= 'sll') or (Op =:= 'srl') ->
   partial_update_shift(hipe_rtl_arch:word_size()*8, Val1, Val2);
-partial_update_alu(Val1, Op, Val2) when (Op == sllx) or (Op == srlx) ->
+partial_update_alu(Val1, Op, Val2) when (Op =:= 'sllx') or (Op =:= 'srlx') ->
   partial_update_shift(64, Val1, Val2);
-partial_update_alu(Val1, Op, Val2) when (Op == sra) or (Op == srax) ->
+partial_update_alu(Val1, Op, Val2) when (Op =:= 'sra') or (Op =:= 'srax') ->
   if 
     Val2 == 0 -> move_src1;
     Val1 == 0 -> 0;
@@ -842,9 +842,9 @@ update_alu(Inst, Env) ->
   Val1 = lookup_lattice_value(hipe_rtl:alu_src1(Inst), Env),
   Val2 = lookup_lattice_value(hipe_rtl:alu_src2(Inst), Env),
   if 
-    (Val1 == bottom) and (Val2 == bottom) ->
+    (Val1 =:= bottom) and (Val2 =:= bottom) ->
       [Inst];
-    (Val1 == bottom) or (Val2 == bottom) ->
+    (Val1 =:= bottom) or (Val2 =:= bottom) ->
       NewInst =
 	case partial_update_alu(Val1, hipe_rtl:alu_op(Inst), Val2) of
           move_src1 -> 
@@ -878,11 +878,11 @@ update_branch(Inst, Env) ->
   Val1 = lookup_lattice_value(Src1, Env),
   Val2 = lookup_lattice_value(Src2, Env),
   if
-    (Val1 == bottom) and (Val2 == bottom) ->
+    (Val1 =:= bottom) and (Val2 =:= bottom) ->
       [Inst];
-    Val1 == bottom ->
+    Val1 =:= bottom ->
       [hipe_rtl:subst_uses([{Src2, hipe_rtl:mk_imm(Val2)}], Inst)];
-    Val2 == bottom -> 
+    Val2 =:= bottom -> 
       [hipe_rtl:subst_uses([{Src1, hipe_rtl:mk_imm(Val1)}], Inst)];
     true ->
       case hipe_rtl_arch:eval_cond(hipe_rtl:branch_cond(Inst), Val1, Val2) of
@@ -939,8 +939,8 @@ update_alub(Inst, Env) ->
          % actualy happen ;) 
       Res = case ResVal of 
               bottom ->  % something nonconstant.
-                if (Val1 == bottom) -> Src1;
-	           (Val2 == bottom) -> Src2 
+                if (Val1 =:= bottom) -> Src1;
+	           (Val2 =:= bottom) -> Src2 
                 end;
               _ -> hipe_rtl:mk_imm(ResVal)
             end,

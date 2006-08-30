@@ -76,15 +76,29 @@ PREV3B_SPECS = $(BER_ASN1_PREV3B_SPEC)         \
                $(PER_BIN_ASN1_PREV3B_SPEC)     \
                $(PER_BIN_DRV_ASN1_PREV3B_SPEC) 
 
-V3_SPECS = $(PREV3A_SPECS) $(PREV3B_SPECS)
+PREV3C_SPECS = $(BER_ASN1_PREV3C_SPEC)         \
+               $(BER_BIN_ASN1_PREV3C_SPEC)     \
+               $(BER_BIN_DRV_ASN1_PREV3C_SPEC) \
+               $(PER_ASN1_PREV3C_SPEC)         \
+               $(PER_BIN_ASN1_PREV3C_SPEC)     \
+               $(PER_BIN_DRV_ASN1_PREV3C_SPEC) 
+
+V3_SPECS = $(PREV3A_SPECS) $(PREV3B_SPECS) $(PREV3C_SPECS)
 
 SPECS = $(V1_SPECS) $(V2_SPECS) $(V3_SPECS)
 
 V1_SPEC_BINS = $(V1_SPECS:%=%.erl) $(V1_SPECS:%=%.hrl) $(V1_SPECS:%=%.asn1db)
 V2_SPEC_BINS = $(V2_SPECS:%=%.erl) $(V2_SPECS:%=%.hrl) $(V2_SPECS:%=%.asn1db)
-PREV3A_SPEC_BINS = $(PREV3A_SPECS:%=%.erl) $(PREV3A_SPECS:%=%.hrl) $(PREV3A_SPECS:%=%.asn1db)
-PREV3B_SPEC_BINS = $(PREV3B_SPECS:%=%.erl) $(PREV3B_SPECS:%=%.hrl) $(PREV3B_SPECS:%=%.asn1db)
-V3_SPEC_BINS = $(PREV3A_SPEC_BINS) $(PREV3B_SPEC_BINS) 
+PREV3A_SPEC_BINS = $(PREV3A_SPECS:%=%.erl) \
+                   $(PREV3A_SPECS:%=%.hrl) \
+                   $(PREV3A_SPECS:%=%.asn1db)
+PREV3B_SPEC_BINS = $(PREV3B_SPECS:%=%.erl) \
+                   $(PREV3B_SPECS:%=%.hrl) \
+                   $(PREV3B_SPECS:%=%.asn1db)
+PREV3C_SPEC_BINS = $(PREV3C_SPECS:%=%.erl) \
+                   $(PREV3C_SPECS:%=%.hrl) \
+                   $(PREV3C_SPECS:%=%.asn1db)
+V3_SPEC_BINS = $(PREV3A_SPEC_BINS) $(PREV3B_SPEC_BINS)  $(PREV3C_SPEC_BINS) 
 SPEC_BINS    = $(V1_SPEC_BINS) $(V2_SPEC_BINS) $(V3_SPEC_BINS) 
 
 ERL_FILES = $(MODULES:%=%.erl)	

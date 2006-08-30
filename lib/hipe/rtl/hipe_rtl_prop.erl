@@ -17,16 +17,36 @@
 -include("../main/hipe.hrl").
 -include("hipe_rtl.hrl").
 
+-record(aliased_var, {name}).
+
+%%=====================================================================
+
 do(CFG) ->
+  %% io:format("%%------------- RTL code in beginning of rtl_prop -----------\n"),
+  %% hipe_rtl_cfg:pp(CFG),
   CFG1 = prop(CFG),
+  %% io:format("%%------------- After prop -----------\n"),
+  %% hipe_rtl_cfg:pp(CFG1),
   CFG2 = hipe_rtl_cfg:remove_trivial_bbs(CFG1),
+  %% io:format("%%------------- After remove_trivial_bbs -----------\n"),
   Liveness = hipe_rtl_liveness:analyze(CFG2),
   EBBs2 = hipe_rtl_ebb:cfg(CFG2),
   CFG3 = dead_code_ebbs(EBBs2, CFG2, Liveness),
+  %% io:format("%%------------- After dead_code_ebbs -----------\n"),
+  %% hipe_rtl_cfg:pp(CFG3),
   CFG4 = remove_loads(CFG3),
+  %% io:format("%%------------- After remove_loads -----------\n"),
+  %% hipe_rtl_cfg:pp(CFG4),
   CFG5 = hipe_rtl_cfg:remove_unreachable_code(CFG4),
+  %% io:format("%%------------- After remove_unreachable_code -----------\n"),
+  %% hipe_rtl_cfg:pp(CFG5),
   CFG6 = hipe_rtl_cfg:remove_trivial_bbs(CFG5),
-  remove_stores(CFG6).
+  %% io:format("%%------------- After remove_trivial_bbs -----------\n"),
+  %% hipe_rtl_cfg:pp(CFG6),
+  CFG7 = remove_stores(CFG6),
+  %% io:format("%%------------- After remove_stores -----------\n"),
+  %% hipe_rtl_cfg:pp(CFG7),
+  CFG7.
 
 prop(CFG) ->
   Start = hipe_rtl_cfg:start_label(CFG),
@@ -211,7 +231,7 @@ dead_code_instrs([I|Is], LiveOut) ->
   {NewIs, LiveOut0} = dead_code_instrs(Is, LiveOut),
   NewI = simplify_mm(I, LiveOut0),
   Def = gb_sets:from_list(hipe_rtl:defines(NewI)),
-  Dead = gb_sets:size(gb_sets:intersection(LiveOut0, Def)) == 0,
+  Dead = gb_sets:size(gb_sets:intersection(LiveOut0, Def)) =:= 0,
   case {hipe_rtl:is_safe(NewI), Dead} of
     {true, true} ->
       {NewIs, LiveOut0};
@@ -489,9 +509,9 @@ fix_remove([Label|Labels], CFG, PredMap, SuccMap, Info) ->
   CurrentBB = hipe_rtl_cfg:bb(CFG, Label),
   OldCode = hipe_bb:code(CurrentBB),
   case spread_info(OldCode, InfoIn) of
-    {_,OldInfoOut} ->
+    {_, OldInfoOut} ->
       fix_remove(Labels, CFG, PredMap, SuccMap, Info);
-    {_,NewInfoOut} ->
+    {_, NewInfoOut} ->
       Succ = hipe_rtl_cfg:succ(SuccMap, Label), 
       NewList = add_succ_to_list(Succ, Labels),
       NewInfo = add_info(Label, NewInfoOut, Info),
@@ -506,26 +526,26 @@ spread_info(Code, Info) ->
 do_instr(Instr, {Acc,Info}) ->
   case Instr of
     #call{} ->
-      {Acc++[Instr],new_load_env()};
+      {Acc++[Instr], new_load_env()};
     #store{} ->  
-      {Acc++[Instr],new_load_env()};
+      {Acc++[Instr], new_load_env()};
     #load{} ->
       Dst = hipe_rtl:load_dst(Instr),
       LoadType = {Dst, hipe_rtl:load_src(Instr), hipe_rtl:load_offset(Instr), 
 		  hipe_rtl:load_size(Instr), hipe_rtl:load_sign(Instr)},
       NewInstr = 
 	case get_aliased_var(LoadType, Info) of
-	  {var, Var} ->
+	  #aliased_var{name=Var} ->
 	    hipe_rtl:mk_move(Dst, Var);
 	  none ->
 	    Instr
 	end,
       Defs = hipe_rtl:defines(Instr),
       CleanInfo = remove_loads(Defs, Info),
-      {Acc++[NewInstr],gb_sets:add(LoadType, CleanInfo)};
+      {Acc++[NewInstr], gb_sets:add(LoadType, CleanInfo)};
     _ ->
       Defs = hipe_rtl:defines(Instr),
-      {Acc++[Instr],remove_loads(Defs, Info)}
+      {Acc++[Instr], remove_loads(Defs, Info)}
   end.
   
 remove_loads([Def|Defs], Info) ->
@@ -535,11 +555,11 @@ remove_loads([], Info) ->
   Info.
 
 remove_stores(CFG) ->
-  Labels=hipe_rtl_cfg:labels(CFG),
+  Labels = hipe_rtl_cfg:labels(CFG),
   remove_stores(Labels, CFG).
 
 remove_stores([Label|Labels], CFG) ->
-  BB=hipe_rtl_cfg:bb(CFG, Label),
+  BB = hipe_rtl_cfg:bb(CFG, Label),
   OldCode = hipe_bb:code(BB),
   case remove_store_from_bb(OldCode) of
     OldCode ->
@@ -623,7 +643,7 @@ find_aliased_var({Src, Offset, Size, Sign}, Iterator) ->
     none ->
       none;
     {{Var, Src, Offset, Size, Sign}, _}  ->
-      {var, Var};
+      #aliased_var{name=Var};
     {_,Next} ->
       find_aliased_var({Src, Offset, Size, Sign}, Next)
   end.

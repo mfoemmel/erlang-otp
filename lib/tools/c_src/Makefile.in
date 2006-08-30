@@ -19,6 +19,9 @@
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/erts/include/internal/$(TARGET)/ethread.mk
 
+USING_MINGW=@MIXED_CYGWIN_MINGW@
+USING_VC=@MIXED_CYGWIN_VC@
+
 CC=@CC@
 LD=@LD@
 AR=@AR@
@@ -107,8 +110,7 @@ EMEM_SRCS = erl_memory.c erl_memory_trace_block_table.c
 EMEM_CFLAGS = $(THR_DEFS) $(subst O2,O3, $(CFLAGS)) $(EMEM_INCLUDES)
 EMEM_LDFLAGS = $(LDFLAGS)
 
-ifeq ($(TARGET),win32)
-
+ifeq ($(USING_VC), yes)
 ifeq ($(TYPE),debug)
 MT_LIB=MDd
 else
@@ -201,7 +203,7 @@ release_docs_spec:
 # Make dependencies
 #
 
-ifeq ($(TARGET),win32)
+ifeq ($(USING_VC), yes)
 DEP_CC=@EMU_CC@
 else
 DEP_CC=$(CC)

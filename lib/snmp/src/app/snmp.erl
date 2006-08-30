@@ -46,7 +46,10 @@
          passwd2localized_key/3, localize_key/3,
  
 	 log_to_txt/5, log_to_txt/6, log_to_txt/7,
-	 change_log_size/2]).
+	 change_log_size/2,
+
+	 enable_trace/0, disable_trace/0, 
+	 set_trace/2, set_trace/3]).
 
 %% Compiler exports
 -export([c/1, c/2, is_consistent/1, mib_to_hrl/1, 
@@ -162,6 +165,140 @@ start_manager(Type) ->
 
 
 config() -> snmp_config:config().
+
+
+%%-----------------------------------------------------------------
+
+enable_trace() ->
+    HandleSpec = {fun handle_trace_event/2, dummy},
+    dbg:tracer(process, HandleSpec).
+
+disable_trace() ->    
+    dbg:stop().
+
+set_trace(Module, disable) when is_atom(Module) ->
+    dbg:ctp(Module);
+set_trace(Module, Opts) when is_atom(Module) and is_list(Opts) ->
+    set_trace(all, Module, Opts);
+set_trace(Modules, Opts) when is_list(Modules) and is_list(Opts) ->
+    set_trace(all, Modules, Opts).
+
+set_trace(Item, Module, Opts) when is_atom(Module) ->
+    set_trace(Item, [{Module, []}], Opts);
+set_trace(_Item, Modules, disable) when is_list(Modules) ->
+    DisableTrace = 
+	fun(Module) when is_atom(Module) ->
+		dbg:ctp(Module);
+	   ({Module, _}) when is_atom(Module) ->
+		dbg:ctp(Module);
+	   (_) ->
+		ok
+	end,
+    lists:foreach(DisableTrace, Modules);
+set_trace(Item, Modules, Opts) when is_list(Modules) ->
+    Mods = parse_modules(Modules, Opts, []),
+    SetTrace = 
+	fun({Module, ModOpts}) -> 
+		set_module_trace(Module, ModOpts)
+	end,
+    lists:foreach(SetTrace, Mods),
+    Flags = 
+	case lists:keysearch(timestamp, 1, Opts) of
+	    {value, {timestamp, true}} ->
+		[call, timestamp];
+	    _ ->
+		[call]
+	end,
+    dbg:p(Item, Flags).
+
+set_module_trace(Module, disable) ->
+    dbg:ctp(Module);
+set_module_trace(Module, Opts) ->
+    ReturnTrace = 
+	case lists:keysearch(return_trace, 1, Opts) of
+	    {value, {return_trace, true}} ->
+		[{return_trace}];
+	    _ ->
+		[]
+	end,
+    case lists:keysearch(target, 1, Opts) of
+	{value, {target, all_functions}} ->
+	    dbg:tpl(Module, [{'_', [], ReturnTrace}]);
+	{value, {target, exported_functions}}  ->
+	    dbg:tp(Module, [{'_', [], ReturnTrace}]);
+	{value, {target, Func}}  when is_atom(Func) ->
+	    dbg:tpl(Module, Func, [{'_', [], ReturnTrace}]);
+	{value, {target, {Func, Arity}}}  when is_atom(Func) and 
+					      is_integer(Arity) ->
+	    dbg:tpl(Module, Func, Arity, [{'_', [], ReturnTrace}])
+    end,
+    ok.
+
+parse_modules([], _Opts, Acc) ->
+    lists:reverse(Acc);
+
+parse_modules([Module|Modules], disable = Opts, Acc) 
+  when is_atom(Module) ->
+    parse_modules(Modules, Opts, [{Module, Opts}|Acc]);
+
+parse_modules([Module|Modules], Opts, Acc) 
+  when is_atom(Module) and is_list(Opts) ->
+    parse_modules(Modules, Opts, [{Module, Opts}|Acc]);
+
+parse_modules([{Module, _}|Modules], disable = Opts, Acc) 
+  when is_atom(Module) ->
+    parse_modules(Modules, Opts, [{Module, Opts}|Acc]);
+
+parse_modules([{Module, ModOpts}|Modules], Opts, Acc) 
+  when is_atom(Module) and is_list(ModOpts) and is_list(Opts) ->
+    NewModOpts = update_trace_options(Opts, ModOpts),
+    parse_modules(Modules, Opts, [{Module, NewModOpts}|Acc]);
+
+parse_modules([_|Modules], Opts, Acc) ->
+    parse_modules(Modules, Opts, Acc).
+
+
+update_trace_options([], Opts) ->
+    Opts;
+update_trace_options([{Key, _} = Opt|Opts], ModOpts) ->
+    case lists:keysearch(Key, 1, ModOpts) of
+	{value, _} ->
+	    update_trace_options(Opts, ModOpts);
+	_ ->
+	    update_trace_options(Opts, [Opt|ModOpts])
+    end;
+update_trace_options([_|Opts], ModOpts) ->
+    update_trace_options(Opts, ModOpts).
+
+
+    
+handle_trace_event({trace_ts, Who, call, Event, Ts}, Data) ->
+    io:format("*** call trace event ~s *** "
+	      "~n   Who:   ~p"
+	      "~n   Event: ~p"
+	      "~n", [format_timestamp(Ts), Who, Event]),
+    Data;
+handle_trace_event({trace_ts, Who, return_from, Func, Value, Ts}, Data) ->
+    io:format("*** return trace event ~s *** "
+	      "~n   Who:      ~p"
+	      "~n   Function: ~p"
+	      "~n   Value:    ~p"
+	      "~n", [format_timestamp(Ts), Who, Func, Value]),
+    Data;
+handle_trace_event(TraceEvent, Data) ->
+    io:format("*** trace event *** "
+	      "~n   TraceEvent: ~p"
+	      "~n", [TraceEvent]),
+    Data.
+
+format_timestamp({_N1, _N2, N3} = Now) ->
+    {Date, Time}   = calendar:now_to_datetime(Now),
+    {YYYY,MM,DD}   = Date,
+    {Hour,Min,Sec} = Time,
+    FormatDate =
+        io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+                      [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),
+    lists:flatten(FormatDate).
 
 
 %%-----------------------------------------------------------------

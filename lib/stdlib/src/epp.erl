@@ -21,7 +21,7 @@
 
 -export([open/2,open/3,close/1,format_error/1]).
 -export([scan_erl_form/1,parse_erl_form/1,macro_defs/1]).
--export([parse_file/3]).
+-export([parse_file/3,parse_file/4]).
 -export([interpret_file_attribute/1]).
 
 %% Epp state record.
@@ -107,9 +107,12 @@ format_error(E) -> file:format_error(E).
 %%	{ok,[Form]} | {error,OpenError}
 
 parse_file(Ifile, Path, Predefs) ->
+    parse_file(Ifile, Path, Predefs, []).
+
+parse_file(Ifile, Path, Predefs, Options) ->
     case open(Ifile, Path, Predefs) of
 	{ok,Epp} ->
-	    Forms = parse_file(Epp),
+	    Forms = parse_file(Epp, Options),
 	    close(Epp),
 	    {ok,Forms};
 	{error,E} ->
@@ -119,15 +122,35 @@ parse_file(Ifile, Path, Predefs) ->
 %% parse_file(Epp) ->
 %%	[Form]
 
-parse_file(Epp) ->
+parse_file(Epp, Options) ->
     case parse_erl_form(Epp) of
 	{ok,Form} ->
-	    [Form|parse_file(Epp)];
+	    case Form of
+		{attribute,La,typed_record,{Record, Val}} ->
+		    case lists:member(typed_record,Options) of
+			false ->
+			    [{attribute, La, record,
+			      {Record, normalize_typed_record_fields(Val)}}
+			     | parse_file(Epp, Options)];
+			true ->
+			    [{attribute, La, record,
+			      {Record, normalize_typed_record_fields(Val)}},
+                            Form | parse_file(Epp, Options)]
+		    end;
+		_ ->
+		    [Form|parse_file(Epp, Options)]
+	    end;
 	{error,E} ->
-	    [{error,E}|parse_file(Epp)];
+	    [{error,E}|parse_file(Epp, Options)];
 	{eof,Line} ->
 	    [{eof,Line}]
     end.
+
+normalize_typed_record_fields([]) ->[];
+normalize_typed_record_fields([{typed_record_field,Field,_}|Rest]) ->
+    [Field|normalize_typed_record_fields(Rest)];
+normalize_typed_record_fields([Field|Rest]) ->
+    [Field|normalize_typed_record_fields(Rest)].
 
 %% server(StarterPid, FileName, Path, PreDefMacros)
 
@@ -169,7 +192,7 @@ predef_macros(File) ->
 %%  Add the predefined macros to the macros dictionary. A macro without a
 %%  value gets the value 'true'.
 
-user_predef([{M,Val}|Pdm], Ms) when atom(M) ->
+user_predef([{M,Val}|Pdm], Ms) when is_atom(M) ->
     case dict:find({atom,M}, Ms) of
 	{ok,_Def} ->
 	    {error,{redefine,M}};
@@ -177,7 +200,7 @@ user_predef([{M,Val}|Pdm], Ms) when atom(M) ->
 	    Exp = erl_parse:tokens(erl_parse:abstract(Val)),
 	    user_predef(Pdm, dict:store({atom,M}, {none,Exp}, Ms))
     end;
-user_predef([M|Pdm], Ms) when atom(M) ->
+user_predef([M|Pdm], Ms) when is_atom(M) ->
     case dict:find({atom,M}, Ms) of
 	{ok,_Def} ->
 	    {error,{redefine,M}};
@@ -256,13 +279,13 @@ enter_file_reply(From, Name, Line, AtLine) ->
 
 %% Flatten filename to a string. Must be a valid filename.
 
-file_name([C | T]) when integer(C), C > 0, C =< 255 ->
+file_name([C | T]) when is_integer(C), C > 0, C =< 255 ->
     [C | file_name(T)];
 file_name([H|T]) ->
     file_name(H) ++ file_name(T);
 file_name([]) ->
     [];
-file_name(N) when atom(N) ->
+file_name(N) when is_atom(N) ->
     atom_to_list(N).
 
 leave_file(From, St) ->
@@ -327,7 +350,7 @@ scan_toks([{'-',_Lh},{atom,Le,endif}|Toks], From, St) ->
     scan_endif(Toks, Le, From, St);
 scan_toks([{'-',_Lh},{atom,Lf,file}|Toks0], From, St) ->
     case catch expand_macros(Toks0, {St#epp.macs, St#epp.uses}) of
-	Toks1 when list(Toks1) ->
+	Toks1 when is_list(Toks1) ->
             scan_file(Toks1, Lf, From, St);
 	{error,ErrL,What} ->
 	    epp_reply(From, {error,{ErrL,epp,What}}),
@@ -335,7 +358,7 @@ scan_toks([{'-',_Lh},{atom,Lf,file}|Toks0], From, St) ->
     end;
 scan_toks(Toks0, From, St) ->
     case catch expand_macros(Toks0, {St#epp.macs, St#epp.uses}) of
-	Toks1 when list(Toks1) ->
+	Toks1 when is_list(Toks1) ->
 	    epp_reply(From, {ok,Toks1}),
 	    wait_req_scan(St#epp{macs=scan_module(Toks1, St#epp.macs)});
 	{error,ErrL,What} ->
@@ -504,7 +527,7 @@ scan_include_lib([{'(',_Llp},{string,_Lf,NewName0},{')',_Lrp},{dot,_Ld}], Li,
 	    wait_req_scan(enter_file2(NewF, Pname, From, St, 1));
 	{error,_E1} ->
 	    case catch find_lib_dir(NewName) of
-		{LibDir, Rest} when list(LibDir) ->
+		{LibDir, Rest} when is_list(LibDir) ->
 		    LibName = filename:join([LibDir | Rest]),
 		    case file:open(LibName, read) of
 			{ok,NewF} ->
@@ -843,7 +866,7 @@ expand_arg([], Ts, L, Rest, Bs) ->
 
 token_src({dot, _}) ->
     ".";
-token_src({X, _}) when atom(X) ->
+token_src({X, _}) when is_atom(X) ->
     atom_to_list(X);
 token_src({var, _, X}) ->
     atom_to_list(X);

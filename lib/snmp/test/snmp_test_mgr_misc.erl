@@ -30,7 +30,6 @@
 -define(SNMP_USE_V3, true).
 -include_lib("snmp/include/snmp_types.hrl").
 
--record(mini_mib_elem,{aliasname, oid, type}).
 
 %%----------------------------------------------------------------------
 %% The InHandler process will receive messages on the form {snmp_pdu, Pdu}.

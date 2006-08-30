@@ -65,9 +65,16 @@ static ErlDrvData dyn_start(ErlDrvPort, char*, SysDriverOpts* opts);
 static void dyn_stop(ErlDrvData);
 static void handle_command(ErlDrvData, char*, int);
 static void unload_all(void);
+#if defined(VXWORKS)
+static int reset_ddll_drv(void);
+#endif
 
 struct erl_drv_entry ddll_driver_entry = {
+#if defined(VXWORKS)
+    reset_ddll_drv,             /* init needed */
+#else
     NULL,			/* init */
+#endif
     dyn_start,			/* start */
     dyn_stop,			/* stop */
     handle_command,		/* output */
@@ -80,9 +87,14 @@ struct erl_drv_entry ddll_driver_entry = {
 
 static long erlang_port = -1;
 
-#ifdef _OSE_
-void reset_ddll_drv() {
+#if defined(_OSE_) 
+void reset_ddll_drv(void) {
   erlang_port = -1;
+}
+#elif defined(VXWORKS)
+static int reset_ddll_drv(void) {
+  erlang_port = -1;
+  return 0;
 }
 #endif
 
@@ -147,7 +159,7 @@ static int unload(void* arg1, void* arg2, void* dummy1, void* dummy2)
     for (j = 0; j < erts_max_ports; j++) {
 	if (erts_port[j].status != FREE &&
 	    erts_port[j].drv_ptr == de->drv) {
-	    driver_failure(j, -1);
+	    driver_failure_atom(j, "driver_unloaded");
 	}
     }
 

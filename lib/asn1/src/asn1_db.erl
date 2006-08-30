@@ -109,7 +109,10 @@ dbloop(Includes, Tab) ->
 	    lists:foreach(fun(T) -> ets:delete(T) end,ModTabList),
 	    ets:delete(Tab),
 	    From ! {asn1db, cleared},
-	    dbloop(Includes, ets:new(asn1, [set]))
+	    dbloop(Includes, ets:new(asn1, [set]));
+	{From,{new_includes,[NewIncludes]}} ->
+	    From ! {asn1db,done},
+	    dbloop(NewIncludes,Tab)
     end.
 
 
@@ -156,7 +159,7 @@ start_server(Name,Mod,Fun,Args) ->
 	undefined ->
 	    register(Name, spawn(Mod,Fun, Args));
 	_Pid ->
-	    already_started
+	    req({new_includes,Args})
     end.
 
 

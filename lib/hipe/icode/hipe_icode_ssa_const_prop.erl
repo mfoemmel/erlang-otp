@@ -145,9 +145,8 @@ visit_switch_tuple_arity(Instruction, [Argument], Environment) ->
 
 get_switch_target([], _Argument, FailLabel) ->
   FailLabel;
-
 get_switch_target([{CaseValue, Target} | CaseList], Argument, FailLabel) ->
-  case CaseValue == Argument of
+  case CaseValue =:= Argument of
     true ->
       Target;
     false ->
@@ -222,7 +221,7 @@ visit_call(Ins, Args, Environment) ->
   visit_call(Dsts, Args, Fun, Cont, Fail, Environment).
 
 visit_call(Dst, Args, Fun, Cont, Fail, Environment) ->
-  case lists:any(fun(X) -> (X == bottom) end, Args) of
+  case lists:any(fun(X) -> (X =:= bottom) end, Args) of
     true ->
       FlowWork = Fail ++ Cont,
       {Environment1, SSAWork} =
@@ -370,7 +369,7 @@ evaluate_call_or_enter(Arguments, Fun) ->
 %%-----------------------------------------------------------------------------
 
 evaluate_if(Conditional, [Argument1, Argument2]) -> 
-  case ((Argument1 == bottom) or (Argument2 == bottom)) of
+  case ((Argument1 =:= bottom) or (Argument2 =:= bottom)) of
     true  -> bottom;
     false -> evaluate_if_const(Conditional, Argument1, Argument2)
   end;
@@ -409,11 +408,11 @@ evaluate_type_const(Type, [Arg|Left]) ->
       {nil,    _    }  -> false;
       {cons,   [_|_]}  -> true;
       {cons,   _    }  -> false;
-      {{tuple, N}, T} when is_tuple(T), size(T) == N -> true;
+      {{tuple, N}, T} when is_tuple(T), size(T) =:= N -> true;
       {atom,       A} when is_atom(A) -> true;
       {{atom, A},  A} when is_atom(A) -> true;
       {{record, A, S}, R} when is_tuple(R), 
-			       size(R) == S, 
+			       size(R) =:= S, 
 			       element(1, R) =:= A -> true;
       {{record, _, _}, _} -> false;
       _                -> bottom
@@ -517,7 +516,7 @@ update_enter(Ins, Env) ->
   Args = hipe_icode:enter_args(Ins),
   EvalArgs = [lookup_lattice_value(X, Env) || X<-Args],
   Fun = hipe_icode:enter_fun(Ins),
-  case lists:any(fun(X) -> (X == bottom) end, EvalArgs) of
+  case lists:any(fun(X) -> (X =:= bottom) end, EvalArgs) of
     true ->
       [Ins];
     false ->
@@ -553,7 +552,7 @@ update_if(Instruction, Environment) ->
     bottom ->
       %% Convert the if-test to a type test if possible.
       Op = hipe_icode:if_op(Instruction),
-      case Op == '=:=' orelse Op == '=/=' of
+      case Op =:= '=:=' orelse Op =:= '=/=' of
 	false -> [Instruction];
 	true ->
 	  [Arg1, Arg2] = Args,
@@ -570,7 +569,7 @@ update_if(Instruction, Environment) ->
 
 conv_if_to_type(I, Const, Arg) when is_atom(Const);
 				    is_integer(Const);
-				    Const == [] ->
+				    Const =:= [] ->
   Test =
     if is_atom(Const) -> {atom, Const};
        is_integer(Const) -> {integer, Const};

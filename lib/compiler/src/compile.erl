@@ -75,7 +75,7 @@ env_default_opts() ->
 		    []
 	    end
     end.
-	    
+
 do_compile(Input, Opts0) ->
     Opts = expand_opts(Opts0),
     Self = self(),
@@ -296,14 +296,14 @@ messages_per_file(Ms) ->
     T = lists:sort([{File,M} || {File,Messages} <- Ms, M <- Messages]),
     PMs = [epp, erl_parse],
     {Prio, Rest} = lists:partition(fun({_,{_,M,_}}) -> 
-                                           member(M, PMs);
-                                      (_) -> false
-                                   end, T),
+					   member(M, PMs);
+				      (_) -> false
+				   end, T),
     mpf(Prio) ++ mpf(Rest).
 
 mpf(Ms) ->
     [{File,[M || {F,M} <- Ms, F =:= File]} || 
-        File <- lists:usort([F || {F,_} <- Ms])].
+	File <- lists:usort([F || {F,_} <- Ms])].
 
 %% passes(form|file, [Option]) -> [{Name,PassFun}]
 %%  Figure out which passes that need to be run.
@@ -328,7 +328,7 @@ passes(file, Opts) ->
 			 end
 		 end,
 	    Fs = select_passes(Ps, Opts),
-    
+
 	    %% If the last pass saves the resulting binary to a file,
 	    %% insert a first pass to remove the file.
 	    case last(Fs)  of
@@ -471,7 +471,7 @@ kernel_passes() ->
     [?pass(core_dsetel_module),
      {iff,clint,?pass(core_lint_module)},
      {iff,core,?pass(save_core_code)},
-     
+
      %% Kernel Erlang and code generation.
      ?pass(kernel_module),
      {iff,dkern,{listing,"kernel"}},
@@ -613,7 +613,16 @@ parse_module(St) ->
     Opts = St#compile.options,
     Cwd = ".",
     IncludePath = [Cwd, St#compile.dir|inc_paths(Opts)],
-    R =  epp:parse_file(St#compile.ifile, IncludePath, pre_defs(Opts)),
+
+    %% TypEr
+    case member(typed_record,St#compile.options) of
+	true ->
+	    R =  epp:parse_file(St#compile.ifile, IncludePath, pre_defs(Opts), [typed_record]);
+	_ ->
+	    R =  epp:parse_file(St#compile.ifile, IncludePath, pre_defs(Opts))
+    end,
+    %% Done
+
     case R of
 	{ok,Forms} ->
 	    {ok,St#compile{code=Forms}};
@@ -766,11 +775,11 @@ test_old_inliner(#compile{options=Opts}) ->
     case any(fun(no_inline) -> true;
 		(_) -> false
 	     end, Opts) of
-      true -> false;
-      false ->
-	any(fun({inline,_}) -> true;
-	       (_) -> false
-	    end, Opts)
+	true -> false;
+	false ->
+	    any(fun({inline,_}) -> true;
+		   (_) -> false
+		end, Opts)
     end.
 
 test_core_inliner(#compile{options=Opts}) ->
@@ -961,7 +970,7 @@ is_informative_option(report_errors) -> false;
 is_informative_option(binary) -> false;
 is_informative_option(verbose) -> false;
 is_informative_option(_) -> true.
-    
+
 save_binary(#compile{code=none}=St) -> {ok,St};
 save_binary(St) ->
     Tfile = tmpfile(St#compile.ofile),		%Temp working file
@@ -1007,7 +1016,7 @@ report_warnings(#compile{options=Opts,warnings=Ws0}) ->
 	true ->
 	    Ws1 = flatmap(fun({{F,_L},Eds}) -> format_message(F, Eds);
 			     ({F,Eds}) -> format_message(F, Eds) end,
-		     Ws0),
+			  Ws0),
 	    Ws = ordsets:from_list(Ws1),
 	    foreach(fun({_,Str}) -> io:put_chars(Str) end, Ws);
 	false -> ok
@@ -1198,7 +1207,7 @@ make_erl_options(Opts) ->
 	case Warning of
 	    0 -> [];
 	    _ -> [report_warnings]
- 	end ++
+	end ++
 	map(
 	  fun ({Name, Value}) ->
 		  {d, Name, Value};

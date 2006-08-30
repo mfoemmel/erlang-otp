@@ -21,9 +21,9 @@
 int ei_accept_t(int fd, void   *addr,   void  *addrlen, unsigned ms);
 int ei_connect_t(int fd, void *sinp, int sin_siz, unsigned ms);
 int ei_read_fill(int fd, char* buf, int len);
-int ei_write_fill(int fd, char *buf, int len);
+int ei_write_fill(int fd, const char *buf, int len);
 int ei_read_fill_t(int fd, char* buf, int len, unsigned ms);
-int ei_write_fill_t(int fd, char *buf, int len, unsigned ms);
+int ei_write_fill_t(int fd, const char *buf, int len, unsigned ms);
 #ifdef HAVE_WRITEV
 int ei_writev_fill_t(int fd,  const  struct  iovec  *iov,  int iovcnt,
 		      unsigned ms);

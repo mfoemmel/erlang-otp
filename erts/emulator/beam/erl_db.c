@@ -212,7 +212,12 @@ static ERTS_INLINE void db_unlock(DbTable* tb, db_lock_kind_t kind)
     (void) db_unref(tb); /* May delete table... */
 }
     
-static DbTable* db_get_table(Process *p,Eterm id,int what,db_lock_kind_t kind)
+static ERTS_INLINE
+DbTable* db_get_table_aux(Process *p,
+			  Eterm id,
+			  int what,
+			  db_lock_kind_t kind,
+			  db_lock_kind_t (*get_kind)(DbTable *))
 {
     Sint i, j;
 
@@ -234,7 +239,10 @@ static DbTable* db_get_table(Process *p,Eterm id,int what,db_lock_kind_t kind)
 	     */
 	    tb = db_ref(db_tables[i].t);
 	    erts_smp_spin_unlock(&db_tables_lock);
-
+#ifdef ERTS_SMP
+	    if (get_kind)
+		kind = (*get_kind)(tb);
+#endif
 	    db_lock_take_over_ref(tb, kind);
 	    if (((tb->common.status & what) != 0) ||
 		(p->id == tb->common.owner)) {
@@ -252,6 +260,22 @@ static DbTable* db_get_table(Process *p,Eterm id,int what,db_lock_kind_t kind)
     }
     erts_smp_spin_unlock(&db_tables_lock);
     return NULL;
+}
+
+static DbTable* db_get_table(Process *p,
+			     Eterm id,
+			     int what,
+			     db_lock_kind_t kind)
+{
+    return db_get_table_aux(p, id, what, kind, NULL);
+}
+
+static DbTable* db_get_table2(Process *p,
+			      Eterm id,
+			      int what,
+			      db_lock_kind_t (*get_kind)(DbTable *))
+{
+    return db_get_table_aux(p, id, what, LCK_WRITE, get_kind);
 }
 
 /*
@@ -357,6 +381,19 @@ BIF_RETTYPE ets_safe_fixtable_2(BIF_ALIST_2)
     BIF_RET(am_true);
 }
 
+#ifdef ERTS_SMP
+#define STEP_LOCK_TYPE(T) \
+  (IS_TREE_TABLE((T)->common.type) ? LCK_WRITE : LCK_READ)
+#else
+#define STEP_LOCK_TYPE(T) LCK_WRITE
+#endif
+
+static db_lock_kind_t
+step_lock_type(DbTable *tb)
+{
+    return STEP_LOCK_TYPE(tb);
+}
+
 /* 
 ** Returns the first Key in a table 
 */
@@ -368,13 +405,15 @@ BIF_RETTYPE ets_first_1(BIF_ALIST_1)
 
     CHECK_TABLES();
 
-    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_READ, LCK_READ)) == NULL) {
+    tb = db_get_table2(BIF_P, BIF_ARG_1, DB_READ, step_lock_type);
+
+    if (!tb) {
 	BIF_ERROR(BIF_P, BADARG);
     }
 
     cret = tb->common.meth->db_first(BIF_P, tb, &ret);
 
-    db_unlock(tb, LCK_READ);
+    db_unlock(tb, STEP_LOCK_TYPE(tb));
 
     if (cret != DB_ERROR_NONE) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -393,13 +432,15 @@ BIF_RETTYPE ets_next_2(BIF_ALIST_2)
 
     CHECK_TABLES();
 
-    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_READ, LCK_READ)) == NULL) {
+    tb = db_get_table2(BIF_P, BIF_ARG_1, DB_READ, step_lock_type);
+
+    if (!tb) {
 	BIF_ERROR(BIF_P, BADARG);
     }
 
     cret = tb->common.meth->db_next(BIF_P, tb, BIF_ARG_2, &ret);
 
-    db_unlock(tb, LCK_READ);
+    db_unlock(tb, STEP_LOCK_TYPE(tb));
 
     if (cret != DB_ERROR_NONE) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -408,7 +449,7 @@ BIF_RETTYPE ets_next_2(BIF_ALIST_2)
 }
 
 /* 
-** Returns the first Key in a table 
+** Returns the last Key in a table 
 */
 BIF_RETTYPE ets_last_1(BIF_ALIST_1)
 {
@@ -418,13 +459,15 @@ BIF_RETTYPE ets_last_1(BIF_ALIST_1)
 
     CHECK_TABLES();
 
-    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_READ, LCK_READ)) == NULL) {
+    tb = db_get_table2(BIF_P, BIF_ARG_1, DB_READ, step_lock_type);
+
+    if (!tb) {
 	BIF_ERROR(BIF_P, BADARG);
     }
 
     cret = tb->common.meth->db_last(BIF_P, tb, &ret);
 
-    db_unlock(tb, LCK_READ);
+    db_unlock(tb, STEP_LOCK_TYPE(tb));
 
     if (cret != DB_ERROR_NONE) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -433,7 +476,7 @@ BIF_RETTYPE ets_last_1(BIF_ALIST_1)
 }
 
 /* 
-** The next BIF, given a key, return the "next" key 
+** The prev BIF, given a key, return the "previous" key 
 */
 BIF_RETTYPE ets_prev_2(BIF_ALIST_2)
 {
@@ -443,13 +486,15 @@ BIF_RETTYPE ets_prev_2(BIF_ALIST_2)
 
     CHECK_TABLES();
 
-    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_READ, LCK_READ)) == NULL) {
+    tb = db_get_table2(BIF_P, BIF_ARG_1, DB_READ, step_lock_type);
+
+    if (!tb) {
 	BIF_ERROR(BIF_P, BADARG);
     }
 
     cret = tb->common.meth->db_prev(BIF_P,tb,BIF_ARG_2,&ret);
 
-    db_unlock(tb, LCK_READ);
+    db_unlock(tb, STEP_LOCK_TYPE(tb));
 
     if (cret != DB_ERROR_NONE) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -703,12 +748,12 @@ BIF_RETTYPE ets_rename_2(BIF_ALIST_2)
 	goto badarg;
     }
 
-    oldslot = tb->common.slot;
-
     if (is_not_atom(tb->common.id)) { /* Not a named table */
 	tb->common.the_name = BIF_ARG_2;
-	BIF_RET(tb->common.id);
+	goto done;
     }
+
+    oldslot = tb->common.slot;
 
     /* Ok, a named table, find a new slot for it */
     erts_smp_spin_lock(&db_tables_lock);
@@ -762,6 +807,7 @@ BIF_RETTYPE ets_rename_2(BIF_ALIST_2)
 		     " in rename.");
 	}		
     }
+ done:
     ret = tb->common.id;
     db_unlock(tb, LCK_WRITE);
     BIF_RET(ret);
@@ -884,6 +930,10 @@ BIF_RETTYPE ets_new_2(BIF_ALIST_2)
 
     tb->common.the_name = BIF_ARG_1;
     tb->common.status = status;
+#ifdef ERTS_SMP
+    tb->common.type = status & ERTS_ETS_TABLE_TYPES;
+    /* Note, 'type' is *read only* from now on... */
+#endif
     tb->common.keypos = keypos;
     tb->common.owner = BIF_P->id;
 
@@ -2101,6 +2151,11 @@ void init_db(void)
     meta_pid_to_tab->common.the_name = am_true;
     meta_pid_to_tab->common.status = (DB_NORMAL | DB_BAG | DB_LHASH | 
 				      DB_PUBLIC);
+#ifdef ERTS_SMP
+    meta_pid_to_tab->common.type
+	= meta_pid_to_tab->common.status & ERTS_ETS_TABLE_TYPES;
+    /* Note, 'type' is *read only* from now on... */
+#endif
     meta_pid_to_tab->common.keypos = 1;
     meta_pid_to_tab->common.owner  = NIL;
     meta_pid_to_tab->common.nitems = 0;
@@ -2113,7 +2168,7 @@ void init_db(void)
 	erl_exit(1,"Unable to create ets metadata tables.");
     }
 
-    (void) erts_smp_atomic_xchg(&init_tb.common.memory_size, 0);
+    erts_smp_atomic_set(&init_tb.common.memory_size, 0);
     meta_pid_to_fixed_tab = (DbTable*) erts_db_alloc(ERTS_ALC_T_DB_TABLE,
 						     &init_tb,
 						     sizeof(DbTable));
@@ -2124,6 +2179,11 @@ void init_db(void)
     meta_pid_to_fixed_tab->common.the_name = am_true;
     meta_pid_to_fixed_tab->common.status = (DB_NORMAL | DB_BAG | DB_LHASH | 
 					    DB_PUBLIC);
+#ifdef ERTS_SMP
+    meta_pid_to_fixed_tab->common.type
+	= meta_pid_to_fixed_tab->common.status & ERTS_ETS_TABLE_TYPES;
+    /* Note, 'type' is *read only* from now on... */
+#endif
     meta_pid_to_fixed_tab->common.keypos = 1;
     meta_pid_to_fixed_tab->common.owner  = NIL;
     meta_pid_to_fixed_tab->common.nitems = 0;

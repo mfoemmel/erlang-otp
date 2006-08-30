@@ -150,13 +150,13 @@ peep([S=#store{src=Src, dst=Dst, off=Off},
 peep([B = #alu{dst=Dst, src1=Src1, op=Op, src2={sparc_imm, Val}}|Insns],
      Res, Lst) ->
     {IsLog2, Size, Sign} = log2(Val),
-    case ((Op == 'smul') or (Op == 'sdiv')) and IsLog2 of
+    case ((Op =:= 'smul') or (Op =:= 'sdiv')) and IsLog2 of
 	true ->
 	    Sh = case Sign of positive -> '<<'; negative -> '>>?' end,
 	    Alu = #alu{dst=Dst, src1=Src1, op=Sh, src2={sparc_imm, Size}},
 	    peep(Insns, [Alu|Res], [elimMDPow2|Lst]);
 	false ->
-	    case ((Op == 'umul') or (Op == 'udiv')) and IsLog2 of
+	    case ((Op =:= 'umul') or (Op =:= 'udiv')) and IsLog2 of
 		true ->
 		    Sh = case Sign of positive -> '<<'; negative -> '>>' end,
 		    Alu = #alu{dst=Dst, src1=Src1, 
@@ -191,7 +191,7 @@ peep([], Ack, Lst) -> printLst(Lst), lists:reverse(Ack).
 log2(Nr) -> log2(Nr, 0).
 log2(0, _) -> {false, 0, positive};
 log2(Nr, I) ->
-    case (Nr band 1) == 1 of
+    case (Nr band 1) =:= 1 of
 	false ->
 	    log2((Nr bsr 1), I+1);
 	true ->

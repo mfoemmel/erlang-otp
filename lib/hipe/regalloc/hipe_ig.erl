@@ -187,7 +187,7 @@ adjset_remove_edge(U0, V0, Set=#adjset_chunked{index=Index,chunks=Chunks}) -> % 
 adjset_are_adjacent(U0, V0, #adjset{index=Index,array=Array}) ->
   {U,V} =
     if U0 < V0 -> {U0,V0};
-       U0 == V0 -> exit({?MODULE,adjacent,U0,V0}); % XXX: probably impossible
+       U0 =:= V0 -> exit({?MODULE,adjacent,U0,V0}); % XXX: probably impossible
        true -> {V0,U0}
     end,
   %% INV: U < V
@@ -202,7 +202,7 @@ adjset_are_adjacent(U0, V0, #adjset{index=Index,array=Array}) ->
 adjset_are_adjacent(U0, V0, #adjset_chunked{index=Index,chunks=Chunks}) ->
   {U,V} =
     if U0 < V0 -> {U0,V0};
-       U0 == V0 -> exit({?MODULE,adjacent,U0,V0}); % XXX: probably impossible
+       U0 =:= V0 -> exit({?MODULE,adjacent,U0,V0}); % XXX: probably impossible
        true -> {V0,U0}
     end,
   %% INV: U < V

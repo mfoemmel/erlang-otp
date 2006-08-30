@@ -231,7 +231,10 @@
 	 help_option/1,
 	 help_debug_options/0,
 	 version/0,
-	 has_hipe_code/1]).
+	 has_hipe_code/1,
+	 set_architecture/1,
+         init/1,
+         pre_init/1]).
 
 -ifndef(DEBUG).
 -define(DEBUG,true).
@@ -464,10 +467,10 @@ compile(Name, File, Opts0) ->
 	  ?error_msg("Error compiling ~p:\n~p\n",[Source, Error]),
 	  ?EXIT({cant_compile_source_code, Error})
       end;
-    Other when Other == false; Other == undefined ->
+    Other when Other =:= false; Other =:= undefined ->
       NewOpts =
 	case proplists:get_value(use_callgraph, Opts) of
-	  No when No == false; No == undefined -> Opts;
+	  No when No =:= false; No =:= undefined -> Opts;
 	  _ ->
 	    case Name of
 	      {_M,_F,_A} ->
@@ -486,7 +489,7 @@ compile(Name, File, Opts0) ->
 
 compile_core(Name, Core0, File, Opts) ->
   Core = cerl:from_records(Core0),
-  Core1 = case (erlang:system_info(heap_type) == hybrid)
+  Core1 = case (erlang:system_info(heap_type) =:= hybrid)
 	    andalso proplists:get_bool(hybrid, Opts) of
 	    true -> cerl_hybrid_transform:transform(Core, Opts);
 	    false -> Core
@@ -715,7 +718,14 @@ compile_finish({Mod, Exports, Icode}, WholeModule, Options) ->
 %% Icode}' pairs, and returns `{ok, Binary}' or `{error, Reason}'.
 
 %% TODO: make the Exports info accessible to the compilation passes.
-finalize(OrigList, Mod, Exports, WholeModule, Opts) ->
+finalize(OrigList, Mod, Exports, WholeModule, Opts0) ->
+  Opts = 
+  case proplists:get_value(icode_range_analysis, Opts0) of
+    true ->
+      [{exports, Exports},concurrent_comp|Opts0];
+    _ ->
+      [{exports, Exports} |Opts0]
+  end,
   List = icode_multret(OrigList, Mod, Opts, Exports),
   {T1Compile,_} = erlang:statistics(runtime),
   CompiledCode =
@@ -724,8 +734,7 @@ finalize(OrigList, Mod, Exports, WholeModule, Opts) ->
 	%% Compiling the functions bottom-up by using a call graph
 	CallGraph = hipe_icode_callgraph:construct(List),
 	OrdList = hipe_icode_callgraph:to_list(CallGraph),
-	[finalize_fun({MFA, Icode}, Opts)
-	 || {MFA, Icode} <- OrdList];
+	finalize_fun(OrdList, Opts);
       fixpoint ->
 	%% Check that there is a plt, otherwise make one.
 	NewOpts =
@@ -738,8 +747,7 @@ finalize(OrigList, Mod, Exports, WholeModule, Opts) ->
       _ -> 
 	%% Compiling the functions bottom-up by reversing the list
 	OrdList = lists:reverse(List),
-	[finalize_fun({MFA, Icode}, Opts)
-	 || {MFA, Icode} <- OrdList]
+	finalize_fun(OrdList, Opts)
     end,
   {T2Compile,_} = erlang:statistics(runtime),
   ?when_option(verbose, Opts,
@@ -773,7 +781,17 @@ finalize(OrigList, Mod, Exports, WholeModule, Opts) ->
       end
   end.
 
-finalize_fun({MFA, Icode}, Opts) ->
+
+finalize_fun(MfaIcodeList, Opts) ->
+  case proplists:get_bool(concurrent_comp, Opts) of
+    true ->
+      hipe_main:concurrent_icode_ssa(MfaIcodeList, Opts);
+    false ->
+      [finalize_fun_sequential({MFA, Icode}, Opts) || {MFA, Icode} <- MfaIcodeList]
+  end.
+
+
+finalize_fun_sequential({MFA, Icode}, Opts) ->
   {T1,_} = erlang:statistics(runtime),
   ?when_option(verbose, Opts, ?debug_msg("Compiling ~w",[MFA])),
   case catch hipe_main:compile_icode(MFA, Icode, Opts) of
@@ -825,13 +843,14 @@ finalize_fun_fixpoint(CallGraph, Opts, Acc) ->
       case hipe_icode_callgraph:take_first(CallGraph) of
 	{[SCC], NewCallGraph} ->
 	  %% One function
+          [Res] = finalize_fun([SCC], Opts),
 	  finalize_fun_fixpoint(NewCallGraph, Opts, 
-				[finalize_fun(SCC, Opts)|Acc]);
+				[Res|Acc]);
 	{SCC, NewCallGraph} ->	  
 	  plt_fixpoint_loop(SCC, Opts),
 	  %% Now generate the result.
-	  Res = [finalize_fun(X, Opts) || X <- SCC],
-	  finalize_fun_fixpoint(NewCallGraph, Opts, [Res|Acc])
+	  Res = finalize_fun(SCC, Opts),
+	  finalize_fun_fixpoint(NewCallGraph, Opts, Res ++ Acc)
       end
   end.
 
@@ -856,7 +875,7 @@ plt_fixpoint_loop(SCC, Opts) ->
   end.
 
 plt_fixpoint_loop([Fun = {MFA, _}|Left], Redo, Opts) ->
-  Res = finalize_fun(Fun, Opts),
+  [Res] = finalize_fun([Fun], Opts),
   case Res of
     {MFA, fixpoint} ->
       plt_fixpoint_loop(Left, Redo, Opts);
@@ -1305,6 +1324,7 @@ hipe_timers() ->
 
 opt_keys() ->
     ['O',
+     concurrent_comp,
      check_for_inlining,
      core,
      core_transform,
@@ -1323,6 +1343,9 @@ opt_keys() ->
      icode_ssa_copy_prop,
      icode_ssa_const_prop,
      icode_type,
+     icode_range_analysis,
+     icode_range_analysis_annotate,
+     icode_range_analysis_warn,
      icode_multret,
      inline_bs,
      inline_fp,
@@ -1398,6 +1421,7 @@ o1_opts() ->
 
 o2_opts() ->
   Common = [icode_ssa_const_prop, icode_ssa_copy_prop, icode_type,
+	    %% icode_range_analysis,
 	    rtl_ssa, rtl_ssa_const_prop,
 	    spillmin_color, use_indexing, remove_comments | o1_opts()],
   case get(hipe_target_arch) of

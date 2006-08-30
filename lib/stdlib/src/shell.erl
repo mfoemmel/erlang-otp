@@ -467,9 +467,9 @@ exprs(Es, Bs0, RT, Lf, Ef) ->
     exprs(Es, Bs0, RT, Lf, Ef, Bs0).
 
 exprs([E0|Es], Bs1, RT, Lf, Ef, Bs0) ->
-    UsedRecords = 
-        [{{record,Name},Def} || {Name,Def} <- used_record_defs(E0, RT)],
-    case erl_eval:check_command(prep_check([E0]), UsedRecords ++ Bs1) of
+    UsedRecords = used_record_defs(E0, RT),
+    RBs = record_bindings(UsedRecords, Bs1),
+    case erl_eval:check_command(prep_check([E0]), RBs) of
         ok ->
             E1 = expand_records(UsedRecords, E0),
             {value,V,Bs2} = erl_eval:expr(E1, Bs1, Lf, Ef),
@@ -492,7 +492,17 @@ is_expand_variable(V) ->
     end.
 
 used_record_defs(E, RT) ->
-    record_defs(RT, lists:usort(used_records(E, [], RT))).
+    %% Be careful to return a list where used records come before
+    %% records that use them. The linter wants them ordered that way.
+    UR = case used_records(E, [], RT) of
+             [] -> 
+                 [];
+             L0 ->
+                 L1 = lists:zip(L0, lists:seq(1, length(L0))),
+                 L2 = lists:keysort(2, lists:ukeysort(1, L1)),
+                 [R || {R, _} <- L2]
+         end,
+    record_defs(RT, UR).
 
 used_records(E, U0, RT) ->
     case used_records(E) of
@@ -658,7 +668,7 @@ prep_check(E) ->
 expand_records([], E0) ->
     E0;
 expand_records(UsedRecords, E0) ->
-    RecordDefs = [Def || {{record,_Name},Def} <- UsedRecords],
+    RecordDefs = [Def || {_Name,Def} <- UsedRecords],
     L = 1,
     E = prep_rec(E0),
     Forms = RecordDefs ++ [{function,L,foo,0,[{clause,L,[],[],[E]}]}],
@@ -879,25 +889,39 @@ read_records(File, Selected, Options) ->
                    lists:member(Name, Sel)]
     end.
 
-add_records(RAs, Bs, RT) ->
-    D = orddict:from_list([{Name,D} || {attribute,_,_,{Name,_}}=D <- RAs]),
-    RNs = orddict:fetch_keys(D),
-    Recs = orddict:to_list(D),
-    RecDefs = [{{record,Name},Def} || {Name,Def} <- Recs],
-    case erl_eval:check_command([], RecDefs ++ Bs) of
+add_records(RAs, Bs0, RT) ->
+    Recs = [{Name,D} || {attribute,_,_,{Name,_}}=D <- RAs],
+    Bs1 = record_bindings(Recs, Bs0),
+    case erl_eval:check_command([], Bs1) of
         {error,{_Line,M,ErrDesc}} ->
             %% A source file that has not been compiled.
             ErrStr = io_lib:fwrite("~s", [M:format_error(ErrDesc)]),
             exit(lists:flatten(ErrStr));
         ok ->
             true = ets:insert(RT, Recs),
-            RNs
+            lists:usort([Name || {Name,_} <- Recs])
     end.
 
 listify(L) when is_list(L) ->
     L;
 listify(E) ->
     [E].
+
+%% Note that a sequence number is used here to make sure that if a
+%% record is used by another record, then the first record is parsed
+%% before the second record. (erl_eval:check_command() calls the
+%% linter which needs the records in a proper order.)
+record_bindings([], Bs) ->
+    Bs;
+record_bindings(Recs0, Bs0) ->
+    {Recs1, _} = lists:mapfoldl(fun ({Name,Def}, I) -> {{Name,I,Def},I+1} 
+                                end, 0, Recs0),
+    Recs2 = lists:keysort(2, lists:ukeysort(1, Recs1)),
+    Bs1 = lists:foldl(fun ({Name,I,Def}, Bs) ->
+                              erl_eval:add_binding({record,I,Name}, 
+                                                   Def, Bs)
+                      end, Bs0, Recs2),
+    Bs1.
 
 %%% Read record information from file(s)
 

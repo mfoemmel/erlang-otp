@@ -8,8 +8,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2005/12/12 23:20:17 $
-%%              $Revision: 1.55 $
+%%              $Date: 2006/07/03 13:46:32 $
+%%              $Revision: 1.56 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -474,15 +474,15 @@ endianess(true) ->
 endianess(false) ->
   big.
 
+create_regs(X) when X > 0 ->
+  [hipe_rtl:mk_new_reg()|create_regs(X-1)];
 create_regs(0) ->
-  [];
-create_regs(X) when X > 0->
-  [hipe_rtl:mk_new_reg()|create_regs(X-1)].
+  [].
 
+create_lbls(X) when X > 0 ->
+  [hipe_rtl:mk_new_label()|create_lbls(X-1)];
 create_lbls(0) ->
-  [];
-create_lbls(X) when X > 0->
-  [hipe_rtl:mk_new_label()|create_lbls(X-1)].
+  [].
 
 aligned(Flags) ->
   case Flags band ?BSF_ALIGNED of
@@ -507,10 +507,7 @@ get_real([]) ->
 get_real([NewOffset]) ->
   [NewOffset].
 
-
-
-
-%%---------------------------------------------------------------------------------
+%%-----------------------------------------------------------------------------
 %% Help functions implementing the bs operations in rtl code.
 %%
 %% The following functions are called from the translation switch:
@@ -537,15 +534,12 @@ get_real([NewOffset]) ->
 %% - expand_runtime/4 creates code that calculates a maximal heap need
 %%       before a binary match
 %%
-%%---------------------------------------------------------------------------------
-
-
+%%-----------------------------------------------------------------------------
 
 put_string(NewOffset, ConstTab, String, SizeInBytes, Base, Offset, TLName, 
 	   Aligned) ->
   [StringBase] = create_regs(1),
-  {NewTab, Lbl} = 
-    hipe_consttab:insert_block(ConstTab, byte, String),
+  {NewTab, Lbl} = hipe_consttab:insert_block(ConstTab, byte, String),
   case Aligned of
     true ->
       {[hipe_rtl:mk_load_address(StringBase, Lbl, constant)|
@@ -560,8 +554,8 @@ put_string(NewOffset, ConstTab, String, SizeInBytes, Base, Offset, TLName,
   end.
 							  
 const_init2(Size, Dst, Base, Offset, TrueLblName, _FalseLblName) ->
-  Log2WordSize=hipe_rtl_arch:log2_word_size(),
-  WordSize=hipe_rtl_arch:word_size(),
+  Log2WordSize = hipe_rtl_arch:log2_word_size(),
+  WordSize = hipe_rtl_arch:word_size(),
   NextLbl = hipe_rtl:mk_new_label(),
   case Size =< ?MAX_HEAP_BIN_SIZE of
     true ->
@@ -582,13 +576,13 @@ const_init2(Size, Dst, Base, Offset, TrueLblName, _FalseLblName) ->
   end.
 
 var_init2(Size, Dst, Base, Offset, TrueLblName, _FalseLblName) ->
-  Log2WordSize=hipe_rtl_arch:log2_word_size(),
-  WordSize=hipe_rtl_arch:word_size(),
+  Log2WordSize = hipe_rtl_arch:log2_word_size(),
+  WordSize = hipe_rtl_arch:word_size(),
   HeapLbl = hipe_rtl:mk_new_label(),
   REFCLbl = hipe_rtl:mk_new_label(),
   NextLbl = hipe_rtl:mk_new_label(),
-  USize=hipe_rtl:mk_new_reg(),
-  Tmp=hipe_rtl:mk_new_reg(),
+  USize = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg(),
   [hipe_tagscheme:untag_fixnum(USize, Size),
    hipe_rtl:mk_move(Offset, hipe_rtl:mk_imm(0)),
    hipe_rtl:mk_branch(USize, le, hipe_rtl:mk_imm(?MAX_HEAP_BIN_SIZE), 
@@ -724,11 +718,11 @@ put_float(NewOffset, Src, Base, Offset, 64, CCode, Aligned, LittleEndian,
   end;
 
 put_float(_NewOffset, _Src, _Base, _Offset, _Size, CCode, _Aligned, _LittleEndian, 
-			  _ConstInfo, _TrueLblName) ->
+	  _ConstInfo, _TrueLblName) ->
   CCode.
 
 put_static_int(NewOffset, Src, Base, Offset, Size, CCode, Aligned, 
-			      LittleEndian, TrueLblName) ->
+	       LittleEndian, TrueLblName) ->
   {Init, End, UntaggedSrc} = make_init_end(Src, CCode, TrueLblName),
   case {Aligned, LittleEndian} of
     {true, true} ->
@@ -748,7 +742,7 @@ put_static_int(NewOffset, Src, Base, Offset, Size, CCode, Aligned,
   end.
 
 put_unsafe_static_int(NewOffset, Src, Base, Offset, Size, CCode, Aligned, 
-			      LittleEndian, TrueLblName) ->
+		      LittleEndian, TrueLblName) ->
   {Init, End, UntaggedSrc} = make_init_end(Src, TrueLblName),
   case {Aligned, LittleEndian} of
     {true, true} ->
@@ -768,7 +762,7 @@ put_unsafe_static_int(NewOffset, Src, Base, Offset, Size, CCode, Aligned,
   end.
 
 put_dynamic_int(NewOffset, Src, Base, Offset, SizeReg, CCode, Aligned, 
-			      LittleEndian, TrueLblName) ->
+		LittleEndian, TrueLblName) ->
   {Init, End, UntaggedSrc} = make_init_end(Src, CCode, TrueLblName),
   case Aligned of
     true ->
@@ -787,7 +781,7 @@ put_dynamic_int(NewOffset, Src, Base, Offset, SizeReg, CCode, Aligned,
   end.
 
 put_unsafe_dynamic_int(NewOffset, Src, Base, Offset, SizeReg, CCode, Aligned, 
-			      LittleEndian, TrueLblName) ->
+		       LittleEndian, TrueLblName) ->
   {Init, End, UntaggedSrc} = make_init_end(Src, TrueLblName),
   case Aligned of
     true ->

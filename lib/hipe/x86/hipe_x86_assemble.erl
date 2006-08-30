@@ -309,7 +309,7 @@ translate_ret(I) ->
 
 -endif. % X86_SIMULATE_NSP
 
-translate_label(Label) when integer(Label) ->
+translate_label(Label) when is_integer(Label) ->
   {label,Label}.	% symbolic, since offset is not yet computable
 
 translate_fun(Arg, PatchTypeExt) ->
@@ -876,7 +876,7 @@ print_byte(Byte) ->
 fill_spaces(N) when N > 0 ->
   io:format(" "),
   fill_spaces(N-1);
-fill_spaces(_) ->
+fill_spaces(0) ->
   [].
 
 %%%

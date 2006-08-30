@@ -17,6 +17,28 @@ define(SIMULATE_NSP,0)dnl change to 1 to simulate call/ret insns
 `#define LEAF_WORDS	'LEAF_WORDS
 
 /*
+ * Workarounds for Darwin.
+ */
+ifelse(OPSYS,darwin,``
+/* Darwin */
+#define TEXT		.text
+#define JOIN(X,Y)	X##Y
+#define CSYM(NAME)	JOIN(_,NAME)
+#define ASYM(NAME)	CSYM(NAME)
+#define GLOBAL(NAME)	.globl NAME
+#define SET_SIZE(NAME)	/*empty*/
+#define TYPE_FUNCTION(NAME)	/*empty*/
+'',``
+/* Not Darwin */
+#define TEXT		.section ".text"
+#define CSYM(NAME)	NAME
+#define ASYM(NAME)	NAME
+#define GLOBAL(NAME)	.global NAME
+#define SET_SIZE(NAME)	.size NAME,.-NAME
+#define TYPE_FUNCTION(NAME)	.type NAME,@function
+'')dnl
+
+/*
  * Reserved registers.
  */
 `#define P	%ebp'
@@ -168,18 +190,52 @@ define(NBIF_COPY_NSP,`ifelse(eval($1 > NR_ARG_REGS),0,,`movl	%esp, TEMP_NSP')')d
 `/* #define NBIF_COPY_NSP_5	'NBIF_COPY_NSP(5)` */'
 
 dnl
-dnl NBIF_ARG(ARITY,ARGNO)
+dnl BASE_OFFSET(N)
+dnl Generates a base-register offset operand for the value N.
+dnl When N is zero the offset becomes the empty string, as this
+dnl may allow the assembler to choose a more compat encoding.
+dnl
+define(BASE_OFFSET,`ifelse(eval($1),0,`',`$1')')dnl
+
+dnl
+dnl NBIF_ARG_OPND(ARITY,ARGNO)
 dnl Generates an operand for this formal parameter.
 dnl It will be a register operand when 0 <= ARGNO < NR_ARG_REGS.
 dnl It will be a memory operand via TEMP_NSP when ARGNO >= NR_ARG_REGS.
 dnl
-define(NBIF_ARG,`ifelse(eval($2 >= NR_ARG_REGS),0,`ARG'$2,eval(($1-NR_ARG_REGS)*4-($2-NR_ARG_REGS)*4)`(TEMP_NSP)')')dnl
-`/* #define NBIF_ARG_1_0	'NBIF_ARG(1,0)` */'
-`/* #define NBIF_ARG_2_0	'NBIF_ARG(2,0)` */'
-`/* #define NBIF_ARG_2_1	'NBIF_ARG(2,1)` */'
-`/* #define NBIF_ARG_3_0	'NBIF_ARG(3,0)` */'
-`/* #define NBIF_ARG_3_1	'NBIF_ARG(3,1)` */'
-`/* #define NBIF_ARG_3_2	'NBIF_ARG(3,2)` */'
+define(NBIF_ARG_OPND,`ifelse(eval($2 >= NR_ARG_REGS),0,`ARG'$2,BASE_OFFSET(eval(($1-NR_ARG_REGS)*4-($2-NR_ARG_REGS)*4))`(TEMP_NSP)')')dnl
+`/* #define NBIF_ARG_OPND_1_0	'NBIF_ARG_OPND(1,0)` */'
+`/* #define NBIF_ARG_OPND_2_0	'NBIF_ARG_OPND(2,0)` */'
+`/* #define NBIF_ARG_OPND_2_1	'NBIF_ARG_OPND(2,1)` */'
+`/* #define NBIF_ARG_OPND_3_0	'NBIF_ARG_OPND(3,0)` */'
+`/* #define NBIF_ARG_OPND_3_1	'NBIF_ARG_OPND(3,1)` */'
+`/* #define NBIF_ARG_OPND_3_2	'NBIF_ARG_OPND(3,2)` */'
+`/* #define NBIF_ARG_OPND_5_0	'NBIF_ARG_OPND(5,0)` */'
+`/* #define NBIF_ARG_OPND_5_1	'NBIF_ARG_OPND(5,1)` */'
+`/* #define NBIF_ARG_OPND_5_2	'NBIF_ARG_OPND(5,2)` */'
+`/* #define NBIF_ARG_OPND_5_3	'NBIF_ARG_OPND(5,3)` */'
+`/* #define NBIF_ARG_OPND_5_4	'NBIF_ARG_OPND(5,4)` */'
+
+dnl
+dnl NBIF_ARG_REG(CARGNO,REG)
+dnl Generates code to move REG to C argument number CARGNO.
+dnl
+define(NBIF_ARG_REG,`movl $2,BASE_OFFSET(eval(4*$1))(%esp)')dnl
+`/* #define NBIF_ARG_REG_0_P	'NBIF_ARG_REG(0,P)` */'
+
+dnl
+dnl NBIF_ARG(CARGNO,ARITY,ARGNO)
+dnl Generates code to move Erlang parameter number ARGNO
+dnl in a BIF of arity ARITY to C parameter number CARGNO.
+dnl
+dnl This must be called after NBIF_COPY_NSP(ARITY).
+dnl
+dnl NBIF_ARG(_,_,ARGNO2) must be called after NBIF_ARG(_,_,ARGNO1)
+dnl if ARGNO2 > ARGNO1. (ARG0 may be reused as a temporary register
+dnl for Erlang parameters passed on the stack.)
+dnl
+define(NBIF_ARG_MEM,`movl NBIF_ARG_OPND($2,$3),%eax; NBIF_ARG_REG($1,%eax)')dnl
+define(NBIF_ARG,`ifelse(eval($3 >= NR_ARG_REGS),0,`NBIF_ARG_REG($1,`ARG'$3)',`NBIF_ARG_MEM($1,$2,$3)')')dnl
 
 dnl
 dnl NBIF_RET(ARITY)
@@ -210,24 +266,16 @@ define(NBIF_SAVE_RESCHED_ARGS,`NBIF_SVA_N(eval(NBIF_MIN($1,NR_ARG_REGS)-1))')dnl
 `/* #define NBIF_SAVE_RESCHED_ARGS_2 'NBIF_SAVE_RESCHED_ARGS(2)` */'
 
 dnl
-dnl NBIF_SAVE_CALLER_SAVE
-dnl NBIF_RESTORE_CALLER_SAVE(N)
-dnl Used in callee_save_primop_interface_0() macro to save and restore
-dnl C caller-save argument registers around calls to inc_stack_0.
-dnl The first 3 arguments registers are C caller-save, remaining ones
-dnl are C callee-save. (Yes: calleE_save_primop_interface_0
-dnl preserves the calleR-save registers.)
+dnl STORE_CALLER_SAVE
+dnl LOAD_CALLER_SAVE
+dnl Used to save and restore C caller-save argument registers around
+dnl calls to hipe_inc_nstack. The first 3 arguments registers are C 
+dnl caller-save, remaining ones are C callee-save.
 dnl
 define(NR_CALLER_SAVE,NBIF_MIN(NR_ARG_REGS,3))dnl
-define(NBIF_SCS_1,`pushl ARG$1 ; ')dnl
-define(NBIF_SCS_N,`ifelse(eval($1 >= 0),0,,`NBIF_SCS_1($1)NBIF_SCS_N(eval($1-1))')')dnl
-define(NBIF_SAVE_CALLER_SAVE,`NBIF_SCS_N(eval(NR_CALLER_SAVE-1))')dnl
-define(NBIF_RCS_1,`movl eval(4*($1+$2))(%esp), ARG$1 ; ')dnl
-define(NBIF_RCS_N,`ifelse(eval($1 >= 0),0,,
-`NBIF_RCS_N(eval($1-1),$2)NBIF_RCS_1($1,$2)')')dnl
-define(NBIF_RESTORE_CALLER_SAVE,
-`NBIF_RCS_N(eval(NR_CALLER_SAVE-1),$1)addl `$'eval(4*($1+NR_CALLER_SAVE))`, %esp'')dnl
-`#define NBIF_SAVE_CALLER_SAVE	'NBIF_SAVE_CALLER_SAVE
-`#define NBIF_RESTORE_CALLER_SAVE_1	'NBIF_RESTORE_CALLER_SAVE(1)
+define(STORE_CALLER_SAVE,`SAR_N(eval(NR_CALLER_SAVE-1))')dnl
+define(LOAD_CALLER_SAVE,`LAR_N(eval(NR_CALLER_SAVE-1))')dnl
+`#define STORE_CALLER_SAVE	'STORE_CALLER_SAVE
+`#define LOAD_CALLER_SAVE	'LOAD_CALLER_SAVE
 
 `#endif /* HIPE_X86_ASM_H */'

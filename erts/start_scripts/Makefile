@@ -26,6 +26,8 @@ SS_ROOT = $(ERL_TOP)/erts/start_scripts
 SS_TMP = $(SS_ROOT)/tmp
 LIBPATH= $(ERL_TOP)/lib
 SCRIPT_PATH = -I$(LIBPATH)/kernel/ebin -I$(LIBPATH)/stdlib/ebin -I$(LIBPATH)/sasl/ebin
+BOOTSTRAP_LIBPATH=$(BOOTSTRAP_TOP)/lib
+BOOTSTRAP_SCRIPT_PATH = -I$(BOOTSTRAP_LIBPATH)/kernel/ebin -I$(BOOTSTRAP_LIBPATH)/stdlib/ebin
 
 INSTALL_SCRIPTS = \
 	$(SS_ROOT)/start_clean.script \
@@ -142,10 +144,10 @@ bootstrap_scripts: $(SS_ROOT)/start_clean.rel
 	$(INSTALL_DIR) $(TESTROOT)/bin
 	$(INSTALL_DIR) $(SS_TMP)
 	( cd $(SS_TMP) && \
-	  $(ERLC) $(SCRIPT_PATH) +otp_build \
+	  $(ERLC) $(BOOTSTRAP_SCRIPT_PATH) +otp_build +no_module_tests \
 	    -o $(TESTROOT)/bin/start.script $(SS_ROOT)/start_clean.rel )
 	( cd $(SS_TMP) && \
-	  $(ERLC) $(SCRIPT_PATH) +otp_build \
+	  $(ERLC) $(BOOTSTRAP_SCRIPT_PATH) +otp_build +no_module_tests \
 	    -o $(TESTROOT)/bin/start_clean.script $(SS_ROOT)/start_clean.rel )
 
 clean:

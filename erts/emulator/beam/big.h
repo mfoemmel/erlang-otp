@@ -199,7 +199,8 @@ int big_decimal_estimate(Eterm);
 #if 0	/* XXX: unused */
 char* big_to_decimal(Eterm, char*, int);
 #endif
-Eterm big_to_list(Eterm, Eterm**);
+Eterm erts_big_to_list(Eterm, Eterm**);
+char *erts_big_to_string(Eterm x, char *buf, Uint buf_sz);
 
 Eterm big_plus(Eterm, Eterm, Eterm*);
 Eterm big_minus(Eterm, Eterm, Eterm*);

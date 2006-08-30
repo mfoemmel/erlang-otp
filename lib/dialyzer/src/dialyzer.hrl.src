@@ -15,6 +15,8 @@
 -define(RET_INTERNAL_ERROR, 1).
 -define(RET_DISCREPANCIES_FOUND, 2).
 
+-define(WARN_CALLGRAPH, warn_callgraph).
+
 -define(SRC_COMPILE_OPTS, 
 	[to_core, binary, report_errors, no_inline, strict_record_tests]).
 -define(HIPE_DEF_OPTS, 
@@ -22,7 +24,6 @@
 
 %% Values will be set by the Makefile
 -define(DEFAULT_LIBS, %DEF_LIBS%).
--define(DIALYZER_DIR, %DIALYZER_DIR%).
 
 -record(analysis, {analysis_pid, core_transform=cerl_typean,
 		   defines=[], doc_plt,

@@ -188,6 +188,7 @@ typedef struct db_table_common {
     erts_refc_t ref;    /* ref count ro prevent table deletion */
 #ifdef ERTS_SMP
     erts_smp_rwmtx_t rwlock;  /* rw lock on table */
+    Uint32 type;              /* hash or tree; *read only* after creation */
 #endif
     Eterm owner;              /* Pid of the creator */
     Eterm the_name;           /* an atom   */
@@ -222,6 +223,7 @@ typedef struct db_table_common {
 #define DB_DUPLICATE_BAG (1 << 8)
 #define DB_ORDERED_SET   (1 << 9)
 
+#define ERTS_ETS_TABLE_TYPES (DB_BAG|DB_SET|DB_DUPLICATE_BAG|DB_ORDERED_SET)
 
 #define IS_HASH_TABLE(Status) (!!((Status) & \
 				  (DB_BAG | DB_SET | DB_DUPLICATE_BAG)))

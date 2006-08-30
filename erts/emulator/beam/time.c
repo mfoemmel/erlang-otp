@@ -217,6 +217,7 @@ static int next_time_internal(void) /* PRE: tiw_lock taken by caller */
     return ((min >= dt) ? (min - dt) : 0);
 }
 
+#if !defined(ERTS_TIMER_THREAD)
 /* Private export to erl_time_sup.c */
 int next_time(void)
 {
@@ -228,6 +229,7 @@ int next_time(void)
     tiw_write_unlock();
     return ret;
 }
+#endif
 
 static ERTS_INLINE void bump_timer_internal(long dt) /* PRE: tiw_lock is write-locked */
 {
@@ -450,7 +452,7 @@ erl_set_timer(ErlTimer* p, ErlTimeoutProc timeout, ErlCancelProc cancel,
     p->active = 1;
     insert_timer(p, t);
     tiw_write_unlock();
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP) && !defined(ERTS_TIMER_THREAD)
     erts_wake_io_thread();
 #endif
 }

@@ -20,38 +20,13 @@ include(`hipe/hipe_amd64_asm.m4')
 #endif'
 
 /*
- * standard_bif_interface_0(nbif_name, cbif_name)
  * standard_bif_interface_1(nbif_name, cbif_name)
  * standard_bif_interface_2(nbif_name, cbif_name)
  * standard_bif_interface_3(nbif_name, cbif_name)
  *
- * Generate native interface for a BIF with 0-3 parameters and
+ * Generate native interface for a BIF with 1-3 parameters and
  * standard failure mode (may fail, but not with RESCHEDULE).
  */
-define(standard_bif_interface_0,
-`
-#ifndef HAVE_$1
-#`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
-	/* set up the parameters */
-	movq	P, %rdi
-
-	/* make the call on the C stack */
-	SWITCH_ERLANG_TO_C
-	call	$2
-	SWITCH_C_TO_ERLANG
-
-	/* throw exception if failure, otherwise return */
-	TEST_GOT_EXN
-	jz	nbif_0_simple_exception
-	NBIF_RET(0)
-	.size	$1,.-$1
-	.type	$1,@function
-#endif')
-
 define(standard_bif_interface_1,
 `
 #ifndef HAVE_$1
@@ -565,6 +540,18 @@ $1:
  * AMD64-specific primops.
  */
 noproc_primop_interface_0(nbif_handle_fp_exception, erts_restore_fpu)
+
+/*
+ * Implement standard_bif_interface_0 as nofail_primop_interface_0.
+ */
+define(standard_bif_interface_0,`nofail_primop_interface_0($1, $2)')
+
+/*
+ * Implement gc_bif_interface_N as standard_bif_interface_N (N=0,1,2).
+ */
+define(gc_bif_interface_0,`standard_bif_interface_0($1, $2)')
+define(gc_bif_interface_1,`standard_bif_interface_1($1, $2)')
+define(gc_bif_interface_2,`standard_bif_interface_2($1, $2)')
 
 /*
  * Implement gc_nofail_primop_interface_1 as nofail_primop_interface_1.

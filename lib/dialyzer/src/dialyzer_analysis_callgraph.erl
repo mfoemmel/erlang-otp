@@ -1,3 +1,5 @@
+%% -*- erlang-indent-level: 2 -*-
+%%--------------------------------------------------------------------
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -65,7 +67,6 @@ run_analysis(Analysis) ->
 loop(State, Analysis = #analysis{}, ExtCalls) ->
   AnalPid = Analysis#analysis.analysis_pid,
   Parent = State#state.parent,
-
   receive
     {AnalPid, log, LogMsg} ->
       send_log(Parent, LogMsg),
@@ -119,6 +120,8 @@ analysis_start(Parent, Analysis) ->
   Files = ordsets:from_list(Analysis#analysis.files),
   {Callgraph, NewCServer} = compile_and_store(Files, State),
   State1 = State#analysis_state{codeserver=NewCServer},
+  %% Remove all old versions of the files being analyzed
+  dialyzer_plt:delete_list(Plt, dialyzer_callgraph:all_nodes(Callgraph)),
   analyze_callgraph(Callgraph, State1),
   Exports = dialyzer_codeserver:all_exports(NewCServer),
   dialyzer_plt:strip_non_member_mfas(Plt, Exports),
@@ -242,7 +245,7 @@ compile_and_store(Files, State) ->
   case State#analysis_state.start_from of
     src_code -> 
       Fun = fun(File, {TmpCG, TmpCServer, TmpFailed}) -> 		
-		    case compile_src(File, Includes, Defines, 
+		case compile_src(File, Includes, Defines, 
 				 TmpCG, TmpCServer, CoreTransform) of
 		  {error, Reason} -> {TmpCG, TmpCServer, [{File, Reason}
 							  |TmpFailed]};
@@ -270,20 +273,49 @@ compile_and_store(Files, State) ->
   send_log(State#analysis_state.parent, Msg1),
 
   %%io:format("All exports: ~p\n", [dialyzer_codeserver:all_exports(NewCServer)]),
-	   
-  {NewCallgraph2, ExtCalls} = dialyzer_callgraph:remove_external(NewCallgraph1),
-  InitPlt = State#analysis_state.plt,
-  RealExtMFAs = lists:filter(fun(X) -> 
-				 not dialyzer_plt:contains_mfa(InitPlt, X)
-			     end, ExtCalls),
-  if RealExtMFAs =:= [] -> ok;
-     true -> send_ext_calls(State#analysis_state.parent, RealExtMFAs)
-  end,
+  
+  NewCallgraph2 = finalize_callgraph(State, NewCServer, NewCallgraph1, Files),
   send_scan_fail(State#analysis_state.parent, Failed),
   {T3, _} = statistics(runtime),
   Msg2 = io_lib:format("Done removing edges in ~.2g secs\n", [(T3-T2)/1000]),
   send_log(State#analysis_state.parent, Msg2),  
   {NewCallgraph2, NewCServer}.
+
+finalize_callgraph(#analysis_state{plt=InitPlt, parent=Parent, 
+				   start_from=StartFrom}, 
+		   CServer, Callgraph, Files) ->
+  {Callgraph1, ExtCalls} = dialyzer_callgraph:remove_external(Callgraph),
+  ExtCalls1 = lists:filter(fun({_From, To}) -> 
+			       not dialyzer_plt:contains_mfa(InitPlt, To)
+			   end, ExtCalls),
+  {BadCalls1, RealExtCalls} =
+    if ExtCalls1 =:= [] -> {[], []};
+       true -> 
+	Modules = 
+	  case StartFrom of
+	    byte_code -> [list_to_atom(filename:basename(F, ".beam"))
+			  || F <- Files];
+	    src_code -> [list_to_atom(filename:basename(F, ".erl"))
+			 || F <- Files]
+	  end,
+	ModuleSet = sets:from_list(Modules),
+	lists:partition(fun({_From, {M, _F, _A}}) -> 
+			    sets:is_element(M, ModuleSet)
+			end, ExtCalls1)
+    end,
+  NonLocalCalls = dialyzer_callgraph:non_local_calls(Callgraph1),
+  BadCalls2 = lists:filter(fun({_From, To}) ->
+			       not dialyzer_codeserver:is_exported(To, CServer)
+			   end, NonLocalCalls),
+  case BadCalls1 ++ BadCalls2 of
+    [] -> ok;
+    BadCalls -> send_bad_calls(Parent, BadCalls)
+  end,
+  if RealExtCalls =:= [] -> ok;
+     true ->
+      send_ext_calls(Parent, lists:usort([To || {_From, To} <- RealExtCalls]))
+  end,
+  dialyzer_callgraph:finalize(Callgraph1).
 
 compile_src(File, Includes, Defines, Callgraph, CServer, CoreTransform) ->
   DefaultIncludes = default_includes(filename:dirname(File)),
@@ -500,6 +532,13 @@ send_scan_fail(Parent, [{FailFile, Reason}|Left]) ->
   
 send_ext_calls(Parent, ExtCalls) ->
   Parent ! {self(), ext_calls, ExtCalls}.
+
+send_bad_calls(Parent, BadCalls) ->
+  Warnings = 
+    [{?WARN_CALLGRAPH, 
+      io_lib:format("~w calls missing or unexported function ~w\n", [From, To])} 
+     || {From, To} <- BadCalls],
+  send_warnings(Parent, Warnings).
 
 %%____________________________________________________________
 %%

@@ -32,6 +32,15 @@
 -define(debug(Term), ok).
 -endif.
 
+-ifdef(DEBUG).
+-define(connect_failure(Node,Term),
+	io:format("Net Kernel 2: Failed connection to node ~p, reason ~p~n",
+		  [Node,Term])).
+-else.
+-define(connect_failure(Node,Term),noop).
+-endif.
+
+
 %-define(mn_debug,1).
 %-define(mn_hard_debug,1).
 
@@ -98,6 +107,8 @@
 
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,
 	 terminate/2,code_change/3]).
+
+-export([passive_connect_monitor/2]).
 
 -import(error_logger,[error_msg/2]).
 
@@ -225,17 +236,54 @@ hidden_connect_node(Node) when atom(Node) ->
 connect(Node, Type) -> %% Type = normal | hidden
     case catch ets:lookup(sys_dist, Node) of
 	{'EXIT', _} ->
+	    ?connect_failure(Node,{table_missing, sys_dist}),
 	    false;
 	[#barred_connection{}] ->
-	    false;
+	    Pid = spawn(?MODULE,passive_connect_monitor,[self(),Node]),
+	    receive
+		{Pid, true} ->
+		    %io:format("Net Kernel: barred connection (~p) "
+			%      "connected from other end.~n",[Node]),
+		    true;
+		{Pid, false} ->
+		    ?connect_failure(Node,{barred_connection,  
+					   ets:lookup(sys_dist, Node)}),
+		    %io:format("Net Kernel: barred connection (~p) "
+			%      "- failure.~n",[Node]),
+		    false
+	    end;
 	_ ->
 	    case application:get_env(kernel, dist_auto_connect) of
 		{ok, never} ->
+		    ?connect_failure(Node,{dist_auto_connect,never}),
 		    false;
 		_ ->
 		    request({connect, Type, Node})
 	    end
     end.
+
+passive_connect_monitor(Parent, Node) ->
+    monitor_nodes(true,[{node_type,all}]),
+    case lists:member(Node,nodes([connected])) of
+	true ->
+	    monitor_nodes(false,[{node_type,all}]),
+	    Parent ! {self(),true};
+	_ ->
+	    Ref = make_ref(),
+	    Tref = erlang:send_after(connecttime(),self(),Ref),
+	    receive
+		Ref ->
+		    monitor_nodes(false,[{node_type,all}]),
+		    Parent ! {self(), false};
+		{nodeup,Node,_} ->
+		    monitor_nodes(false,[{node_type,all}]),
+		    erlang:cancel_timer(Tref),
+		    Parent ! {self(),true}
+	    end
+    end.
+		    
+    
+    
 
 %% If the net_kernel isn't running we ignore all requests to the 
 %% kernel, thus basically accepting them :-)
@@ -336,6 +384,7 @@ handle_call({connect, Type, Node}, From, State) ->
 		    Owners = [{SetupPid, Node} | State#state.conn_owners],
 		    {noreply,State#state{conn_owners=Owners}};
 		_  ->
+		    ?connect_failure(Node, {setup_call, failed}),
 		    {reply, false, State}
 	    end
     end;
@@ -551,7 +600,7 @@ handle_info({SetupPid, {nodeup,Node,Address,Type,Immediate}},
 						 waiting = [],
 						 type = Type}),
 	    SetupPid ! {self(), inserted},
-	    reply_waiting(Conn#connection.waiting, true),
+	    reply_waiting(Node,Conn#connection.waiting, true),
 	    case Type of
 		normal ->
 		    case Immediate of
@@ -790,7 +839,7 @@ pending_own_exit(Pid, State) ->
 	    State1 = State#state { pend_owners = NewPend },
 	    case get_conn(Node) of
 		{ok, Conn} when Conn#connection.state == up_pending ->
-		    reply_waiting(Conn#connection.waiting, true),
+		    reply_waiting(Node,Conn#connection.waiting, true),
 		    Conn1 = Conn#connection { state = up,
 					      waiting = [],
 					      pending_owner = undefined },
@@ -847,8 +896,11 @@ nodedown(Conn, Owner, Node, Reason, Type, OldState) ->
     end.
 
 pending_nodedown(Conn, Node, Type, State) ->
-    mark_sys_dist_nodedown(Node),
-    reply_waiting(Conn#connection.waiting, false),
+    % Don't bar connections that have never been alive
+    %mark_sys_dist_nodedown(Node),
+    % - instead just delete the node:
+    ets:delete(sys_dist, Node),
+    reply_waiting(Node,Conn#connection.waiting, false),
     case Type of
 	normal ->
 	    ?nodedown(Node, State);
@@ -1582,7 +1634,13 @@ get_nodes_info([], InfoList) ->
 %% Misc. functions
 %% ------------------------------------------------------------
 
-reply_waiting(Waiting, Rep) ->
+reply_waiting(_Node, Waiting, Rep) ->
+    case Rep of
+	false ->
+	    ?connect_failure(_Node, {setup_process, failure});
+	_ ->
+	    ok
+    end,
     reply_waiting1(lists:reverse(Waiting), Rep).
 
 reply_waiting1([From|W], Rep) ->

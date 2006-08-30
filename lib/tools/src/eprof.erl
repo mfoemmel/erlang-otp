@@ -195,10 +195,12 @@ handle_call({profile, Rootset, M, F, A}, FromTag, S) ->
     case ptrac([P|Rootset], true, all()) of
 	true ->
 	    call_trace_for_all(true),
+	    P ! {self(),go},
 	    {noreply, #state{table     = Tab, 
 			     profiling = true,
 			     rootset   = [P|Rootset]}};
 	false ->
+	    exit(P, kill),
 	    erase(replyto),
 	    {reply, error, #state{}}
     end;
@@ -259,7 +261,10 @@ handle_info({'EXIT',_P,_Reason}, S) ->
 %%%%%%%%%%%%%%%%%%
 
 call(Top, M, F, A) ->
-    Top ! {self(), {answer, apply(M,F,A)}}.
+    receive
+	{Top,go} ->
+	    Top ! {self(), {answer, apply(M,F,A)}}
+    end.
 
 call_trace_for_all(Flag) ->
     erlang:trace_pattern(on_load, Flag, [local]),

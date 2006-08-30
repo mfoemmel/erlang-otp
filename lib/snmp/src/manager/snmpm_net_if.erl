@@ -165,11 +165,12 @@ do_init(Server, NoteStore) ->
     IrGcRef    = irgc_start(IRB), 
 
     %% -- Socket --
+    SndBuf  = get_opt(Opts, sndbuf,   default),
     RecBuf  = get_opt(Opts, recbuf,   default),
     BindTo  = get_opt(Opts, bind_to,  false),
     NoReuse = get_opt(Opts, no_reuse, false),
     {ok, Port} = snmpm_config:system_info(port),
-    {ok, Sock} = do_open_port(Port, RecBuf, BindTo, NoReuse),
+    {ok, Sock} = do_open_port(Port, SndBuf, RecBuf, BindTo, NoReuse),
 
     %% -- Audit trail log ---
     {ok, ATL} = snmpm_config:system_info(audit_trail_log),
@@ -189,16 +190,18 @@ do_init(Server, NoteStore) ->
 
 
 %% Open port 
-do_open_port(Port, RecvSz, BindTo, NoReuse) ->
+do_open_port(Port, SendSz, RecvSz, BindTo, NoReuse) ->
     ?vtrace("do_open_port -> entry with"
 	    "~n   Port:    ~p"
+	    "~n   SendSz:  ~p"
 	    "~n   RecvSz:  ~p"
 	    "~n   BindTo:  ~p"
-	    "~n   NoReuse: ~p", [Port, RecvSz, BindTo, NoReuse]),
+	    "~n   NoReuse: ~p", [Port, SendSz, RecvSz, BindTo, NoReuse]),
     IpOpts1 = bind_to(BindTo),
     IpOpts2 = no_reuse(NoReuse),
     IpOpts3 = recbuf(RecvSz),
-    IpOpts  = [binary | IpOpts1 ++ IpOpts2 ++ IpOpts3],
+    IpOpts4 = sndbuf(SendSz),
+    IpOpts  = [binary | IpOpts1 ++ IpOpts2 ++ IpOpts3 ++ IpOpts4],
     case init:get_argument(snmpm_fd) of
 	{ok, [[FdStr]]} ->
 	    Fd = list_to_integer(FdStr),
@@ -228,6 +231,11 @@ recbuf(default) ->
     [];
 recbuf(Sz) ->
     [{recbuf, Sz}].
+
+sndbuf(default) ->
+    [];
+sndbuf(Sz) ->
+    [{sndbuf, Sz}].
 
 
 %% Open log

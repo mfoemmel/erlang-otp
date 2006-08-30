@@ -526,7 +526,9 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
     /*#if 0    Uint res;*/
     int cpu_ts = 0;
 
-    if (! erts_trace_flags(list, &mask, &tracer, &cpu_ts)) goto error;
+    if (! erts_trace_flags(list, &mask, &tracer, &cpu_ts)) {
+	BIF_ERROR(p, BADARG);
+    }
 
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
     erts_smp_block_system(0);
@@ -1687,7 +1689,7 @@ Eterm erts_seq_trace(Process *p, Eterm arg1, Eterm arg2,
         }
         new_seq_trace_token(p);
 	if (build_result) {
-	    hp = ArithAlloc(p,3);
+	    hp = HAlloc(p,3);
 	    old_value = TUPLE2(hp, SEQ_TRACE_TOKEN_LASTCNT(p),
 			       SEQ_TRACE_TOKEN_SERIAL(p));
 	}
@@ -1718,7 +1720,7 @@ new_seq_trace_token(Process* p)
     Eterm* hp;
 
     if (SEQ_TRACE_TOKEN(p) == NIL) {
-	hp = ArithAlloc(p, 6);
+	hp = HAlloc(p, 6);
 	SEQ_TRACE_TOKEN(p) = TUPLE5(hp, make_small(0),		/* Flags  */ 
 				    make_small(0),		/* Label  */
 				    make_small(0),		/* Serial */

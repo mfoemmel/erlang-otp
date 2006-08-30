@@ -27,9 +27,16 @@
 
 include $(ERL_TOP)/make/target.mk
 
-debug opt smp debug.smp purify.smp quantify.smp purecov.smp nofrag hybrid purify quantify purecov:
+opt debug purify quantify purecov valgrind gprof:
 	$(MAKE) -f $(TARGET)/Makefile TYPE=$@
+
+plain smp hybrid nofrag:
+	$(MAKE) -f $(TARGET)/Makefile FLAVOR=$@
 
 clean generate depend docs release release_spec release_docs release_docs_spec \
   tests release_tests release_tests_spec:
 	$(MAKE) -f $(TARGET)/Makefile $@
+
+
+
+

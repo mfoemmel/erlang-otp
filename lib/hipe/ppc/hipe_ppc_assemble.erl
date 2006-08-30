@@ -303,10 +303,10 @@ do_fp_unary(I) ->
 do_fpreg(#ppc_temp{reg=Reg,type='double'}) when Reg >= 0, Reg < 32 ->
   {fr,Reg}.
 
-do_reg(#ppc_temp{reg=Reg,type=Type}) when Reg >= 0, Reg < 32, Type /= 'double' ->
+do_reg(#ppc_temp{reg=Reg,type=Type}) when Reg >= 0, Reg < 32, Type =/= 'double' ->
   {r,Reg}.
   
-do_label_ref(Label) when integer(Label) ->
+do_label_ref(Label) when is_integer(Label) ->
   {label,Label}.	% symbolic, since offset is not yet computable
 
 do_reg_or_imm(Src) ->
@@ -564,7 +564,7 @@ print_byte(Byte) ->
 fill_spaces(N) when N > 0 ->
   io:format(" "),
   fill_spaces(N-1);
-fill_spaces(_) ->
+fill_spaces(0) ->
   [].
 
 %%%

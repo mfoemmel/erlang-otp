@@ -71,7 +71,7 @@ dummy_reply(get_check_interval) ->
 dummy_reply({set_check_interval, _}) ->
     ok;
 dummy_reply(get_almost_full_threshold) ->
-    trunc(os_mon:get_env(disksup, disk_almost_full_threshold) * 100);
+    round(os_mon:get_env(disksup, disk_almost_full_threshold) * 100);
 dummy_reply({set_almost_full_threshold, _}) ->
     ok.
 
@@ -100,7 +100,9 @@ init([]) ->
 				    Flavor==freebsd;
 				    Flavor==darwin;
 				    Flavor==linux;
-				    Flavor==openbsd ->
+				    Flavor==openbsd;
+				    Flavor==irix64;
+				    Flavor==irix ->
 		   start_portprogram();
 	       {win32, _OSname} ->
 		   not_used;
@@ -116,7 +118,7 @@ init([]) ->
     self() ! timeout,
 
     {ok, #state{port=Port, os=OS,
-		threshold=trunc(Threshold*100),
+		threshold=round(Threshold*100),
 		timeout=minutes_to_ms(Timeout)}}.
 
 handle_call(get_disk_data, _From, State) ->
@@ -131,7 +133,7 @@ handle_call({set_check_interval, Minutes}, _From, State) ->
 handle_call(get_almost_full_threshold, _From, State) ->
     {reply, State#state.threshold, State};
 handle_call({set_almost_full_threshold, Float}, _From, State) ->
-    Threshold = trunc(Float * 100),
+    Threshold = round(Float * 100),
     {reply, ok, State#state{threshold=Threshold}};
 
 handle_call({set_threshold, Threshold}, _From, State) -> % test only
@@ -208,6 +210,7 @@ get_os() ->
 		{4,_,_} -> {unix, sunos4};
 		V -> exit({unknown_os_version, V})
 	    end;
+        {unix, irix64} -> {unix, irix};
 	OS ->
 	    OS
     end.
@@ -247,6 +250,9 @@ check_disk_space({win32,_}, not_used, Threshold) ->
 check_disk_space({unix, solaris}, Port, Threshold) ->
     Result = my_cmd("/usr/bin/df -lk", Port),
     check_disks_solaris(skip_to_eol(Result), Threshold);
+check_disk_space({unix, irix}, Port, Threshold) ->
+    Result = my_cmd("/usr/sbin/df -lk",Port),
+    check_disks_irix(skip_to_eol(Result), Threshold);
 check_disk_space({unix, linux}, Port, Threshold) ->
     Result = my_cmd("/bin/df -lk", Port),
     check_disks_solaris(skip_to_eol(Result), Threshold);
@@ -281,6 +287,19 @@ check_disks_solaris(Str, Threshold) ->
 	     check_disks_solaris(RestStr, Threshold)];
 	_Other ->
 	    check_disks_solaris(skip_to_eol(Str),Threshold)
+    end.
+
+%% Irix: like Linux with an extra FS type column and no '%'.
+check_disks_irix("", _Threshold) -> [];
+check_disks_irix("\n", _Threshold) -> [];
+check_disks_irix(Str, Threshold) ->
+    case io_lib:fread("~s~s~d~d~d~d~s", Str) of
+	{ok, [_FS, _FSType, KB, _Used, _Avail, Cap, MntOn], RestStr} ->
+	    if Cap >= Threshold -> set_alarm({disk_almost_full, MntOn}, []);
+	       true             -> clear_alarm({disk_almost_full, MntOn}) end,
+	    [{MntOn, KB, Cap} | check_disks_irix(RestStr, Threshold)];
+	_Other ->
+	    check_disks_irix(skip_to_eol(Str),Threshold)
     end.
 
 check_disks_win32([], _Threshold) ->

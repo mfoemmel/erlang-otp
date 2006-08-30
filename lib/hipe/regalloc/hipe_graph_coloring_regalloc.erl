@@ -680,8 +680,8 @@ visit_all([],Vis) -> Vis;
 visit_all([X|Xs],Vis) ->
   visit_all(Xs,visit(X,Vis)).
 
-%%%%%%%%%%%%%%%%%%%%
-% Check that all arcs in IG are bidirectional + degree is correct
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Check that all arcs in IG are bidirectional + degree is correct
 
 % check_ig(IG) ->
 %    check_ig(list_ig(IG),IG).
@@ -693,7 +693,7 @@ visit_all([X|Xs],Vis) ->
 %    NumNs = length(Ns),
 %    D = degree(Info),
 %    if
-%       D == NumNs ->
+%       D =:= NumNs ->
 % 	 ok;
 %       true ->
 % 	 ?WARNING_MSG('node ~p has degree ~p but ~p neighbors~n',[N,D,NumNs])

@@ -53,7 +53,8 @@
 	 open_pty/3, open_pty/7, open_pty/9,
 	 set_user_ack/4, set_user/4,
 	 setenv/5, signal/3, winch/4,
-	 get_authhandle/1]).
+	 get_authhandle/1,
+	 get_peer_addr/1]).
 
 %% Special for ssh_userauth (and similar)
 %%-export([set_ssh_msg_handler/2, reset_ssh_msg_handler/1]).
@@ -352,6 +353,9 @@ set_user_ack(CM, Channel, Ack, TMO) ->
 get_authhandle(CM) ->
     gen_server:call(CM, get_authhandle).
 
+get_peer_addr(CM) ->
+    gen_server:call(CM, get_peer_addr).
+
 set_user(CM, Channel, User, TMO) ->
     gen_server:call(CM, {set_user, Channel, User}, TMO).
 
@@ -638,6 +642,8 @@ handle_call({set_user, Channel, User}, _From, State) ->
     {reply, Reply, State};
 handle_call(get_authhandle, _From, State) ->
     {reply, {State#state.authhandle,State#state.ssh}, State};
+handle_call(get_peer_addr, _From, State) ->
+    {reply, ssh_transport:peername(State#state.ssh), State};
 handle_call({set_user_ack, Channel,Ack}, _From, State) ->
     CTab = State#state.ctab,
     Reply = case ets:lookup(CTab, Channel) of

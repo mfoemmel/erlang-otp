@@ -19,14 +19,14 @@
 
 -import(erl_types, [t_any/0, t_atom/1, t_atom/0, t_atom_vals/1,
 		    t_binary/0, t_bool/0, t_cons/0, t_constant/0,
-		    t_improper_list/0,
+		    t_pos_improper_list/0,
 		    t_float/0, t_from_term/1, t_fun/0, t_fun/1, t_fun/2,
 		    t_fun_args/1, t_fun_arity/1, 
 		    t_fun_range/1,t_inf/2, t_inf_lists/2, 
 		    t_integer/0,
 		    t_integer/1, t_is_atom/1, t_is_any/1, t_is_binary/1,
 		    t_is_bool/1, t_is_char/1, t_is_cons/1, t_is_constant/1,
-		    t_is_improper_list/1, t_is_equal/2, t_is_float/1,
+		    t_is_pos_improper_list/1, t_is_equal/2, t_is_float/1,
 		    t_is_fun/1, t_is_integer/1, t_is_number/1,
 		    t_is_list/1, t_is_nil/1, t_is_port/1, t_is_pid/1,
 		    t_is_ref/1, t_is_subtype/2, 
@@ -146,7 +146,7 @@ analyse_block(Label, InfoIn, State)->
       %%io:format("Update info for ~w:\n~w\n", [Label, UpdateInfo]),
       do_updates(NewState1, UpdateInfo);
     _ ->
-      UpdateInfo = [{X, InfoOut}||X<-state__succ(NewState, Label)],
+      UpdateInfo = [{X, InfoOut} || X <- state__succ(NewState, Label)],
       %%io:format("Update info for ~w:\n~w", [Label, UpdateInfo]),
       do_updates(NewState, UpdateInfo)
   end.
@@ -204,7 +204,7 @@ do_call(I, Info)->
       Type = t_inf(BifType, PltType),
       %%      io:format("The result of the call to ~p is ~s\n", 
       %%      		[hipe_icode:call_fun(I), format_type(Type)]),
-      %%      io:format("Argtypes: ~p\n", [[format_type(X)||X<-ArgTypes]]),
+      %%      io:format("Argtypes: ~p\n", [[format_type(X) || X <- ArgTypes]]),
       enter_defines(I, Type, Info);
     local ->
       AnnotatedType =
@@ -410,7 +410,7 @@ do_switch_tuple_arity(I, Info)->
       end
   end.
 
-legal_switch_tuple_arity_cases(Cases, Type)->
+legal_switch_tuple_arity_cases(Cases, Type) ->
   case t_is_tuple(Type) of
     false -> 
       Inf = t_inf(t_tuple(), Type),
@@ -422,7 +422,7 @@ legal_switch_tuple_arity_cases(Cases, Type)->
       legal_switch_tuple_arity_cases_1(Cases, Type)
   end.
 
-legal_switch_tuple_arity_cases_1(Cases, Type)->
+legal_switch_tuple_arity_cases_1(Cases, Type) ->
   case t_tuple_arities(Type) of
     any -> 
       Cases;
@@ -530,7 +530,7 @@ test_number_or_atom(Fun, FunVals, X, Var, VarInfo, TypeTest,
 	true ->
 	  [{TrueLab, Info}];
 	maybe ->
-	  case FunVals(VarInfo) == any of
+	  case FunVals(VarInfo) =:= any of
 	    true ->
 	      [{TrueLab, enter(Var, Fun(X), Info)},
 	       {FalseLab, Info}];
@@ -560,8 +560,7 @@ test_record(Atom, Size, Var, VarInfo, TrueLab, FalseLab, Info) ->
       end
   end.
 
-
-test_type(Test, Type)->
+test_type(Test, Type) ->
   %%io:format("Test is: ~w\n", [Test]),
   %%io:format("Type is: ~s\n", [format_type(Type)]),
   Ans = 
@@ -670,7 +669,7 @@ test_type0(function, T) ->
 test_type0(boolean, T) ->
   t_is_bool(T);
 test_type0(list, T) ->
-  t_is_improper_list(T);
+  t_is_pos_improper_list(T);
 test_type0(cons, T) ->
   t_is_cons(T);
 test_type0(nil, T)->
@@ -694,7 +693,7 @@ true_branch_info(atom) ->
 true_branch_info({atom, A}) ->
   t_atom(A);
 true_branch_info(list) ->
-  t_improper_list();
+  t_pos_improper_list();
 true_branch_info(tuple) ->
   t_tuple();
 true_branch_info({tuple, N}) ->
@@ -734,8 +733,7 @@ true_branch_info(T) ->
 %% of the simplification of the cfg.
 %%
 
-
-simplify_controlflow([Label|Left], State, Dirty)->
+simplify_controlflow([Label|Left], State, Dirty) ->
   case state__bb(State, Label) of
     not_found ->
       simplify_controlflow(Left, State, Dirty);
@@ -871,12 +869,12 @@ simplify_controlflow([], State, true) ->
 simplify_controlflow([], State, _) ->
   State.
 
-mk_goto(State, BB, Label, Succ)->
+mk_goto(State, BB, Label, Succ) ->
   NewI = hipe_icode:mk_goto(Succ),
   NewBB = hipe_bb:code_update(BB, hipe_bb:butlast(BB)++[NewI]),
   state__bb_add(State, Label, NewBB).
 
-unset_fail(State, BB, Label, I)->
+unset_fail(State, BB, Label, I) ->
   %%io:format("Setting a guard that cannot fail\n", []),
   NewI = hipe_icode:call_set_fail_label(I, []),
   NewBB = hipe_bb:code_update(BB, hipe_bb:butlast(BB)++[NewI]),
@@ -892,12 +890,12 @@ unset_fail(State, BB, Label, I)->
 %% out of the block to annotate all variables in it.
 %%
 
-specialize(State)->
+specialize(State) ->
   Cfg = state__cfg(State),
   Labels = hipe_icode_cfg:labels(Cfg),
   transform_bbs(Labels, State).
 
-transform_bbs([Label|Left], State)->
+transform_bbs([Label|Left], State) ->
   BB = state__bb(State, Label),
   Code = hipe_bb:code(BB),
   Info = state__info_in(State, Label),
@@ -908,7 +906,7 @@ transform_bbs([Label|Left], State)->
 transform_bbs([], State) ->
   State.
 
-make_transformations([I|Left], Info, Acc)->
+make_transformations([I|Left], Info, Acc) ->
   NewInfo = analyse_insn(I, Info),
   NewI = transform_insn(I, Info),
   make_transformations(Left, NewInfo, [NewI|Acc]);
@@ -987,8 +985,7 @@ update_call_or_enter(I, NewFun, NewArgs) ->
   end.
 
 
-transform_element2(I, Info)->
-  %%Any = t_any(),
+transform_element2(I, Info) ->
   [Index, Tuple] = args(I),
   IndexType = safe_lookup(Index, Info),
   TupleType = safe_lookup(Tuple, Info),
@@ -1006,14 +1003,14 @@ transform_element2(I, Info)->
     case test_type(tuple, TupleType) of
       true ->
 	case t_tuple_arity(TupleType) of
-	  Arity when is_number(Arity)-> {tuple, Arity};
+	  Arity when is_number(Arity) -> {tuple, Arity};
 	  _ -> tuple
 	end;
       _ -> [] %% Might fail - don't care.
     end,
   case {NewTuple, NewIndex} of
     {{tuple, A}, {number, N}} ->
-      case lists:all(fun(X)->A>=X andalso X>0 end, N) of
+      case lists:all(fun(X) -> A>=X andalso X>0 end, N) of
 	true -> 
 	  case N of
 	    [Num] ->
@@ -1024,7 +1021,7 @@ transform_element2(I, Info)->
 	      update_call_or_enter(I, NewFun)
 	  end;
 	false ->
-	  case lists:all(fun(X)->hipe_tagscheme:is_fixnum(X) end, N) of
+	  case lists:all(fun(X) -> hipe_tagscheme:is_fixnum(X) end, N) of
 	    true ->
 	      NewFun = {element, [{tuple, A}, fixnums]},
 	      update_call_or_enter(I, NewFun);
@@ -1044,7 +1041,7 @@ transform_element2(I, Info)->
       end
   end.
 
-transform_hd_or_tl(I, Primop, Info)->
+transform_hd_or_tl(I, Primop, Info) ->
   [Arg] = args(I),
   case t_is_cons(safe_lookup(Arg, Info)) of
     true->
@@ -1053,7 +1050,7 @@ transform_hd_or_tl(I, Primop, Info)->
       I
   end.
 
-transform_bs_put_integer(I, Primop, Info)-> 
+transform_bs_put_integer(I, Primop, Info) -> 
   [Src|_] = safe_lookup_list(args(I), Info),
   case all_fixnums([Src]) of
     true ->
@@ -1061,8 +1058,7 @@ transform_bs_put_integer(I, Primop, Info)->
     false -> I
   end.
 
-
-transform_arith(I, Op = '+', Info)->
+transform_arith(I, Op = '+', Info) ->
   Args = safe_lookup_list(args(I), Info),
   NewInfo = analyse_insn(I, Info),
   Dst = case hipe_icode:is_call(I) of
@@ -1080,7 +1076,7 @@ transform_arith(I, Op = '+', Info)->
 	  I
       end
   end;
-transform_arith(I, Op, Info)->
+transform_arith(I, Op, Info) ->
   Args = safe_lookup_list(args(I), Info),
   case all_fixnums(Args) of
     true -> 
@@ -1088,7 +1084,7 @@ transform_arith(I, Op, Info)->
     false -> I
   end.
 
-arithop_to_unsafe(Op)->
+arithop_to_unsafe(Op) ->
   case Op of
     '+'    -> unsafe_add;
     '-'    -> unsafe_sub;
@@ -1098,25 +1094,25 @@ arithop_to_unsafe(Op)->
     'bnot' -> unsafe_bnot  
   end.
 
-get_unsafe_arithop(Fun)->  
+get_unsafe_arithop(Fun) ->  
   case Fun of
-    '+' ->              {true, fun(A, B)-> A + B end};
-    '-' ->              {true, fun(A, B)-> A - B end};
-    'band' ->           {true, fun(A, B)-> A band B end};
-    'bor'  ->           {true, fun(A, B)-> A bor B end};
-    'bxor' ->           {true, fun(A, B)-> A bxor B end};
-    'bnot' ->           {true, fun(A)-> bnot A end};
-    extra_unsafe_add -> {true, fun(A, B)-> A + B end};
-    unsafe_add ->       {true, fun(A, B)-> A + B end};
-    unsafe_sub ->       {true, fun(A, B)-> A - B end};
-    unsafe_band ->      {true, fun(A, B)-> A band B end};
-    unsafe_bor ->       {true, fun(A, B)-> A bor B end};
-    unsafe_bxor ->      {true, fun(A, B)-> A bxor B end};
-    unsafe_bnot ->      {true, fun(A)-> bnot A end};
+    '+' ->              {true, fun(A, B) -> A + B end};
+    '-' ->              {true, fun(A, B) -> A - B end};
+    'band' ->           {true, fun(A, B) -> A band B end};
+    'bor'  ->           {true, fun(A, B) -> A bor B end};
+    'bxor' ->           {true, fun(A, B) -> A bxor B end};
+    'bnot' ->           {true, fun(A) -> bnot A end};
+    extra_unsafe_add -> {true, fun(A, B) -> A + B end};
+    unsafe_add ->       {true, fun(A, B) -> A + B end};
+    unsafe_sub ->       {true, fun(A, B) -> A - B end};
+    unsafe_band ->      {true, fun(A, B) -> A band B end};
+    unsafe_bor ->       {true, fun(A, B) -> A bor B end};
+    unsafe_bxor ->      {true, fun(A, B) -> A bxor B end};
+    unsafe_bnot ->      {true, fun(A) -> bnot A end};
     _ -> false
   end.
 
-all_fixnums([Type|Left])->
+all_fixnums([Type|Left]) ->
   case t_is_char(Type) of
     true ->
       all_fixnums(Left);
@@ -1129,7 +1125,7 @@ all_fixnums([Type|Left])->
 all_fixnums([]) ->
   true.
 
-all_fixnum_values([Type|Left])->
+all_fixnum_values([Type|Left]) ->
   case t_is_number(Type) of
     false -> false;
     true ->
@@ -1147,8 +1143,7 @@ all_fixnum_values([Type|Left])->
 all_fixnum_values([]) ->
   true.
 
-
-primop_type(Op, Args)->
+primop_type(Op, Args) ->
   case Op of
     {mkfun, MFA = {_M, _F, _A}, _MagicNum, _Index} ->
       t_inf(t_fun(), find_signature_mfa(MFA));
@@ -1166,48 +1161,45 @@ primop_type(Op, Args)->
       end
   end.
 
-evaluate_unsafe_arith(Fun, [Arg])->
-  sup_list([t_from_term(Fun(X)) || X<-t_number_vals(Arg)]);
-evaluate_unsafe_arith(Fun, [Arg1, Arg2])->
-  sup_list([t_from_term(Fun(X, Y)) || X<-t_number_vals(Arg1), 
-				      Y<-t_number_vals(Arg2)]).
+evaluate_unsafe_arith(Fun, [Arg]) ->
+  sup_list([t_from_term(Fun(X)) || X <- t_number_vals(Arg)]);
+evaluate_unsafe_arith(Fun, [Arg1, Arg2]) ->
+  sup_list([t_from_term(Fun(X, Y)) || X <- t_number_vals(Arg1), 
+				      Y <- t_number_vals(Arg2)]).
 
-sup_list(List)->
+sup_list(List) ->
   sup_list(List, t_none()).
 
-sup_list([H|T], Acc)->
+sup_list([H|T], Acc) ->
   sup_list(T, t_sup(H, Acc));
 sup_list([], Acc) ->
   Acc.
-	      
-  
-
 
 %% _________________________________________________________________
 %%
 %% Various help functions.
 %%
 
-add_arg_types(Args,Types)->
+add_arg_types(Args, Types) ->
   add_arg_types(Args, Types, empty()).
 
-add_arg_types([Arg|Args],[Type|Types], Acc)->
+add_arg_types([Arg|Args], [Type|Types], Acc) ->
   Type1 =
     case t_is_none(Type) of
       true -> t_any();
       false -> Type
     end,
   add_arg_types(Args,Types, enter(Arg, Type1, Acc));
-add_arg_types([],[],Acc) ->
+add_arg_types([], [], Acc) ->
   Acc;
-add_arg_types(A,B,_) ->
+add_arg_types(A, B, _) ->
   exit({wrong_number_of_arguments, {A, B}}).
 
 
 %% Lookup treats anything that is neither in the map or a constant as
 %% t_none(). Use this during type propagation!
 
-lookup(Var, Tree)->
+lookup(Var, Tree) ->
   case gb_trees:lookup(Var, Tree) of
     none ->
       case hipe_icode:is_const(Var) of
@@ -1223,10 +1215,10 @@ lookup(Var, Tree)->
       end
   end.
 
-lookup_list(List, Info)->
+lookup_list(List, Info) ->
   lookup_list0(List, Info, []).
 
-lookup_list0([H|T], Info, Acc)->
+lookup_list0([H|T], Info, Acc) ->
   lookup_list0(T, Info, [lookup(H, Info)|Acc]);
 lookup_list0([], _, Acc) ->
   lists:reverse(Acc).
@@ -1235,7 +1227,7 @@ lookup_list0([], _, Acc) ->
 %% safe_lookup treats anything that is neither in the map nor a
 %% constant as t_any(). Use this during transformations.
 
-safe_lookup(Var, Tree)->
+safe_lookup(Var, Tree) ->
   case gb_trees:lookup(Var, Tree) of
     none ->
       case hipe_icode:is_const(Var) of
@@ -1253,10 +1245,10 @@ safe_lookup(Var, Tree)->
       end
   end.
 
-safe_lookup_list(List, Info)->
+safe_lookup_list(List, Info) ->
   safe_lookup_list0(List, Info, []).
 
-safe_lookup_list0([H|T], Info, Acc)->
+safe_lookup_list0([H|T], Info, Acc) ->
   safe_lookup_list0(T, Info, [safe_lookup(H, Info)|Acc]);
 safe_lookup_list0([], _, Acc) ->
   lists:reverse(Acc).
@@ -1267,9 +1259,9 @@ enter_list([Var|VarLeft], [Type|TypeLeft], Info) ->
 enter_list([], [], Info) ->
   Info.
 
-enter([Key], Value, Tree)->
+enter([Key], Value, Tree) ->
   enter(Key, Value, Tree);
-enter(Key, Value, Tree)->
+enter(Key, Value, Tree) ->
   case hipe_icode:is_var(Key) of
     true ->
       enter_to_leaf(Key, Value, Tree);
@@ -1277,7 +1269,7 @@ enter(Key, Value, Tree)->
       Tree
   end.
 
-enter_to_leaf(Key, Value, Tree)->
+enter_to_leaf(Key, Value, Tree) ->
   case gb_trees:lookup(Key, Tree) of
     {value, Value} ->
       Tree;
@@ -1302,19 +1294,19 @@ enter_to_leaf(Key, Value, Tree)->
       end
   end.
 
-empty()->
+empty() ->
   gb_trees:empty().
 
-join_list(List, Info)->
+join_list(List, Info) ->
   join_list(List, Info, t_none()).
  
-join_list([H|T], Info, Acc)->
+join_list([H|T], Info, Acc) ->
   Type = t_sup(lookup(H, Info), Acc),
   join_list(T, Info, Type);
 join_list([], _, Acc) ->
   Acc.
 
-join_info_in(Vars, OldInfo, NewInfo)->
+join_info_in(Vars, OldInfo, NewInfo) ->
   NewInfo2 = join_info_in(Vars, Vars, OldInfo, NewInfo, gb_trees:empty()),
   case info_is_equal(NewInfo2, OldInfo) of
     true -> fixpoint;
@@ -1326,7 +1318,7 @@ join_info_in(Vars, OldInfo, NewInfo)->
 %% only possible if the binding is the same from both traces and this
 %% variable is still live.
 
-join_info_in([Var|Left], LiveIn, Info1, Info2, Acc)->
+join_info_in([Var|Left], LiveIn, Info1, Info2, Acc) ->
   Type1 = gb_trees:lookup(Var, Info1),
   Type2 = gb_trees:lookup(Var, Info2),
   case {Type1, Type2} of
@@ -1388,13 +1380,13 @@ compare(_, _) ->
   false.
       
 
-const_type(Const)->
+const_type(Const) ->
   t_from_term(hipe_icode:const_value(Const)).
 
-do_updates(State, List)->
+do_updates(State, List) ->
   do_updates(State, List, []).
 
-do_updates(State, [{Label, Info}|Tail], Worklist)->
+do_updates(State, [{Label, Info}|Tail], Worklist) ->
   case state__info_in_update(State, Label, Info) of
     fixpoint ->
       %%io:format("Info in for ~w is: fixpoint\n", [Label]),
@@ -1408,7 +1400,7 @@ do_updates(State, [{Label, Info}|Tail], Worklist)->
 do_updates(State, [], Worklist) ->
   {State, Worklist}.
 
-enter_defines(I, Types, Info) when is_list(Types)->
+enter_defines(I, Types, Info) when is_list(Types) ->
   case defines(I) of
     [] -> Info;
     Def ->
@@ -1424,19 +1416,19 @@ enter_defines(I, Type, Info) ->
       lists:foldl(fun(X, Acc) -> enter(X, Type, Acc) end, Info, Def)
   end.
 
-defines(I)->
+defines(I) ->
   keep_vars(hipe_icode:defines(I)).
 
 call_dstlist(I) ->
   hipe_icode:call_dstlist(I).
 
-args(I)->
+args(I) ->
   hipe_icode:args(I).
 
-uses(I)->
+uses(I) ->
   keep_vars(hipe_icode:uses(I)).
 
-keep_vars(Vars)->
+keep_vars(Vars) ->
   [V || V <- Vars, hipe_icode:is_var(V)].
 
 butlast([_]) ->
@@ -1460,7 +1452,7 @@ any_is_none([]) ->
 -record(state, {succmap, predmap, info_map, cfg, liveness, arg_types,
 		created_funs=[]}).
 
-new_state(Cfg)->
+new_state(Cfg) ->
   SuccMap = hipe_icode_cfg:succ_map(Cfg),
   PredMap = hipe_icode_cfg:pred_map(Cfg),
   Start = hipe_icode_cfg:start_label(Cfg),  
@@ -1493,35 +1485,35 @@ new_state(Cfg)->
   #state{succmap=SuccMap, predmap=PredMap,info_map=InfoMap, 
 	 cfg=Cfg, liveness=Liveness, arg_types=ArgTypes}.
 
-state__cfg(#state{cfg=Cfg})->
+state__cfg(#state{cfg=Cfg}) ->
   Cfg.
 
-state__succ(#state{succmap=SM}, Label)->
+state__succ(#state{succmap=SM}, Label) ->
   hipe_icode_cfg:succ(SM, Label).
 
-state__pred(#state{predmap=PM}, Label)->
+state__pred(#state{predmap=PM}, Label) ->
   hipe_icode_cfg:pred(PM, Label).
 
-state__bb(#state{cfg=Cfg}, Label)->
+state__bb(#state{cfg=Cfg}, Label) ->
   hipe_icode_cfg:bb(Cfg, Label).
   
-state__bb_add(S=#state{cfg=Cfg}, Label, BB)->
+state__bb_add(S=#state{cfg=Cfg}, Label, BB) ->
   NewCfg = hipe_icode_cfg:bb_add(Cfg, Label, BB),
   S#state{cfg=NewCfg}.
 
-state__info_in(S, Label)->
+state__info_in(S, Label) ->
   state__info(S, {Label, in}).
 
-state__info_out(S, Label)->
+state__info_out(S, Label) ->
   state__info(S, {Label, out}).
 
-state__info(#state{info_map=IM}, Label)->
+state__info(#state{info_map=IM}, Label) ->
   case gb_trees:lookup(Label, IM) of
     {value, Info}-> Info;
     none -> gb_trees:empty()
   end.
 
-state__info_in_update(S=#state{info_map=IM, liveness=Liveness}, Label, Info)->
+state__info_in_update(S=#state{info_map=IM, liveness=Liveness}, Label, Info) ->
   Pred = state__pred(S, Label),
   RawLiveIn = [hipe_icode_ssa:ssa_liveness__livein(Liveness, Label, X) ||
 		X <- Pred],
@@ -1545,9 +1537,9 @@ state__info_in_update(S=#state{info_map=IM, liveness=Liveness}, Label, Info)->
       end
   end.
 
-state__info_out_update(S=#state{info_map=IM}, Label, Info)->
+state__info_out_update(S=#state{info_map=IM}, Label, Info) ->
   %%io:format("Info out for ~w is:\n", [Label]),
-  %%[io:format("~w: ~p\n", [X, format_type(Y)])|| {X, Y} <- gb_trees:to_list(Info)],
+  %%[io:format("~w: ~p\n", [X, format_type(Y)]) || {X, Y} <- gb_trees:to_list(Info)],
   S#state{info_map=gb_trees:enter({Label, out}, Info, IM)}.
 
 %% _________________________________________________________________
@@ -1555,12 +1547,12 @@ state__info_out_update(S=#state{info_map=IM}, Label, Info)->
 %% The worklist.
 %%
 
-init_work(State)->
+init_work(State) ->
   %%Labels = hipe_icode_cfg:reverse_postorder(state__cfg(State)),
   Labels = [hipe_icode_cfg:start_label(state__cfg(State))],
   {Labels, [], gb_sets:from_list(Labels)}.
 
-get_work({[Label|Left], List, Set})->
+get_work({[Label|Left], List, Set}) ->
   NewWork = {Left, List, gb_sets:delete(Label, Set)},
   {Label, NewWork};
 get_work({[], [], _Set}) ->
@@ -1568,7 +1560,7 @@ get_work({[], [], _Set}) ->
 get_work({[], List, Set}) ->
   get_work({lists:reverse(List), [], Set}).
 
-add_work(Work = {List1, List2, Set},[Label|Left])->
+add_work(Work = {List1, List2, Set},[Label|Left]) ->
   case gb_sets:is_member(Label, Set) of
     true ->
       add_work(Work, Left);
@@ -1585,7 +1577,7 @@ add_work(Work, []) ->
 %% Handle warnings on type errors.
 %%
 
-call_always_fails(I, Info)->
+call_always_fails(I, Info) ->
   {Args, Type, Fun} = 
   case I of      
     #call{} ->
@@ -1621,13 +1613,12 @@ call_always_fails(I, Info)->
 check_for_tuple_as_fun(Fun, [Arg|TailArgs]) ->
   case t_is_tuple(t_inf(t_tuple(2), Arg)) of
     false ->
-      %% This cannot succed!
+      %% This cannot succeed!
       false;
     true ->
       not t_is_none(t_inf(find_plt_return(Fun, [t_fun()|TailArgs]),
 			  primop_type(Fun, [t_fun()|TailArgs])))
   end.
-
 
 warn_on_type_errors(PreAnalysisCfg, OrigState, FinalState, IcodeFun, Options) ->
   Warn =
@@ -1785,7 +1776,6 @@ warn_on_instr([I|Left], Info, IcodeFun) ->
 warn_on_instr([], _Info, _IcodeFun) ->
   ok.
 
-
 warn_on_control_flow([Label|Left], State, IcodeFun) ->
   I = hipe_bb:last(state__bb(State, Label)),
   Info = state__info_out(State, Label),
@@ -1802,7 +1792,7 @@ warn_on_control_flow([Label|Left], State, IcodeFun) ->
 	#switch_val{} ->
 	  warn_on_switch_val(I, Info, IcodeFun);
 	#type{} ->
-	  warn_on_type(I, Info, IcodeFun, State);
+	  warn_on_type(I, Info, IcodeFun);
 	#call{} ->
 	  case hipe_icode:call_in_guard(I) of
 	    true ->
@@ -1818,7 +1808,7 @@ warn_on_control_flow([Label|Left], State, IcodeFun) ->
 warn_on_control_flow([], _State, _IcodeFun) ->
   ok.
 
-warn_on_type(I, Info, IcodeFun, State) ->
+warn_on_type(I, Info, IcodeFun) ->
   FalseLab = hipe_icode:type_false_label(I),
   case do_type(I, Info) of
     [{FalseLab, _}] ->
@@ -1827,32 +1817,34 @@ warn_on_type(I, Info, IcodeFun, State) ->
       ArgType = format_type(safe_lookup(Arg, Info)),
       W = 
 	case Test of
-%	  tuple ->
-%	    TrueLabel = hipe_icode:type_true_label(I),
-%	    String = construct_tuple(TrueLabel, State),
-%	    io_lib:format(String, [IcodeFun, ArgType]);
+	  'nil' ->
+	    io_lib:format("~w: Pattern matching with [] will always fail "
+			  "since variable has type ~s!\n",
+			  [IcodeFun, ArgType]);
 	  {tuple, N} ->
-	    TrueLabel = hipe_icode:type_true_label(I),
-	    Tuple = construct_n_tuple(N, TrueLabel, State),
-	    io_lib:format("~w: Pattern matching with ~s will always fail since "
-			  "variable has type ~s!\n",
+	    Tuple = construct_n_tuple(N),
+	    io_lib:format("~w: Pattern matching with ~s will always fail "
+			  "since variable has type ~s!\n",
 			  [IcodeFun, Tuple, ArgType]);
 	  {record, Atom, _Size} ->
-	    io_lib:format("~w: Pattern matching with #~w{} will always "
-			  "fail since variable has type ~s!\n",
+	    io_lib:format("~w: Pattern matching with #~w{} will always fail "
+			  "since variable has type ~s!\n",
 			  [IcodeFun, Atom, ArgType]);
 	  _ ->
-	    io_lib:format("~w: Type guard ~w will always fail since "
-			  "variable has type ~s!\n", [IcodeFun, Test, ArgType])
+	    io_lib:format("~w: Type guard ~w will always fail "
+			  "since variable has type ~s!\n",
+			  [IcodeFun, Test, ArgType])
 	end,
       warn(?WARN_MATCHING, W);
     _ ->
       ok
   end.
 
-construct_n_tuple(N, _Label, _State) ->
+construct_n_tuple(N) ->
   "{"++construct_underscores(N, [])++"}".
 
+construct_underscores(0, Acc) ->
+  Acc;
 construct_underscores(1, Acc) ->
   "_"++Acc;
 construct_underscores(N, Acc) ->
@@ -1957,14 +1949,14 @@ format_type(T) ->
 format_number(T) ->
   case t_number_vals(T) of
     Numbers when is_list(Numbers) ->
-      case lists:all(fun(N)->is_float(N)end, Numbers) of
+      case lists:all(fun(N) -> is_float(N) end, Numbers) of
 	true ->
 	  case t_is_any(T) of
 	    true -> io_lib:format("a float", []);
 	    false -> io_lib:format("the float ~s", [t_to_string(T)])
 	  end;
 	false ->
-	  case lists:all(fun(N)->is_integer(N)end, Numbers) of
+	  case lists:all(fun(N) -> is_integer(N) end, Numbers) of
 	    true ->
 	      case t_is_any(T) of
 		true -> io_lib:format("an integer", []);
@@ -1989,8 +1981,8 @@ warn_on_call(I, Ins, Info, IcodeFun) ->
       CallFun = hipe_icode:call_fun(I),
       Warn = 
 	case CallFun of
-	  {mkfun, {_M, F, _A},_,_} when length(Ins) == 1 -> {true, {'fun', F}};
-	  {erlang, make_ref, 0} when length(Ins) == 1 -> {true, ref};
+	  {mkfun, {_M,F,_A}, _, _} when length(Ins) =:= 1 -> {true, {'fun', F}};
+	  {erlang, make_ref, 0} when length(Ins) =:= 1 -> {true, ref};
 	  _  -> false
 	end,
       case Warn of
@@ -2049,7 +2041,7 @@ warn_on_call_1(I, Info, IcodeFun) ->
       end
   end.
 
-warn_on_enter(I, Info, IcodeFun)->
+warn_on_enter(I, Info, IcodeFun) ->
   case call_always_fails(I, Info) of
     true ->
       Fun = hipe_icode:enter_fun(I),
@@ -2067,7 +2059,6 @@ warn_on_enter(I, Info, IcodeFun)->
       ok
   end.
 
-
 warn_on_switch_tuple_arity(I, Info, IcodeFun) ->
   Arg = hipe_icode:switch_tuple_arity_arg(I),
   ArgType = safe_lookup(Arg, Info),
@@ -2082,7 +2073,7 @@ warn_on_switch_tuple_arity(I, Info, IcodeFun) ->
       Ws = [io_lib:format("~w: The clause matching on tuple with"
 			  " arity ~w will never match;"
 			  " argument is of type ~s!\n", 
-			  [IcodeFun, X, ArgType1])|| X <- Arities],
+			  [IcodeFun, X, ArgType1]) || X <- Arities],
       [warn(?WARN_MATCHING, X) || X <- Ws],
       ok
   end.
@@ -2160,7 +2151,6 @@ format_fun({element, _}) ->
 format_fun(Other) ->
   Other.
 
-
 warn(Tag, W) ->
   case get(warn_pid) of
     undefined ->
@@ -2187,7 +2177,7 @@ maybe_send_args(IcodeFun, Args) ->
 %% Pretty printer
 %%
 
-pp(State, IcodeFun, Options, Msg)->
+pp(State, IcodeFun, Options, Msg) ->
   PP =
     case proplists:get_value(pp_typed_icode, Options) of
       true ->
@@ -2267,9 +2257,9 @@ annotate_instr_list([I|Left], Info, Acc)->
 annotate_instr(I, DefInfo, UseInfo)->
   Def = defines(I),
   Use = uses(I),
-  Fun = fun(X, Y)->hipe_icode:annotate_var(X, Y)end,
-  DefSubst = [{X, Fun(X, lookup(X, DefInfo))}||X<-Def],
-  UseSubst = [{X, Fun(X, lookup(X, UseInfo))}||X<-Use],
+  Fun = fun(X, Y) -> hipe_icode:annotate_var(X, Y) end,
+  DefSubst = [{X, Fun(X, lookup(X, DefInfo))} || X <- Def],
+  UseSubst = [{X, Fun(X, lookup(X, UseInfo))} || X <- Use],
   case  DefSubst ++ UseSubst of
     [] ->
       I;
@@ -2281,7 +2271,7 @@ unannotate_cfg(Cfg) ->
   Labels = hipe_icode_cfg:labels(Cfg),
   unannotate_bbs(Labels, Cfg).
   
-unannotate_bbs([Label|Left], Cfg)->
+unannotate_bbs([Label|Left], Cfg) ->
   BB = hipe_icode_cfg:bb(Cfg, Label),
   Code = hipe_bb:code(BB),
   NewCode = unannotate_instr_list(Code, []),
@@ -2291,7 +2281,7 @@ unannotate_bbs([Label|Left], Cfg)->
 unannotate_bbs([], Cfg) ->
   Cfg.
 
-unannotate_instr_list([I|Left], Acc)->
+unannotate_instr_list([I|Left], Acc) ->
   NewI = unannotate_instr(I),
   unannotate_instr_list(Left, [NewI|Acc]);
 unannotate_instr_list([], Acc) ->
@@ -2305,7 +2295,6 @@ unannotate_instr(I) ->
   if Subst =:= [] -> I;
      true -> hipe_icode:subst(Subst, I)
   end.
-
 
 
 %% _________________________________________________________________
@@ -2404,7 +2393,6 @@ update_call_arguments(I, Info) ->
 %% Plt info
 %%
 
-
 init_mfa_info(MFA, Options) ->
   case proplists:get_value(icode_type, Options) of
     {plt, Plt} ->
@@ -2493,7 +2481,6 @@ find_plt_return(MFA, ArgTypes) ->
 	false -> t_fun_range(Sig)
       end
   end.
-
 
 plt_lookup(MFA) ->
   case get(hipe_mfa_plt) of

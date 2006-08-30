@@ -4130,7 +4130,6 @@ get_referenced(S,Emod,Ename,Pos) ->
     case asn1_db:dbget(Emod,Ename) of
 	undefined ->
 	    %% May be an imported entity in module Emod or Emod may not exist
-%	    throw({error,{asn1,{undefined_type_or_value,{Emod,Ename}}}});
 	    case asn1_db:dbget(Emod,'MODULE') of
 		undefined ->
 		    case parse_and_save(S,Emod) of
@@ -4140,7 +4139,6 @@ get_referenced(S,Emod,Ename,Pos) ->
 			    throw({error,{asn1,{module_not_found,Emod}}})
 		    end;
 		_ ->
-%%		    NewS = S#state{module=M},
 		    NewS = update_state(S,Emod),
 		    get_imported(NewS,Ename,Emod,Pos)
 	    end;
@@ -4183,6 +4181,7 @@ get_imported(S,Name,Module,Pos) ->
 		undefined ->
 		    case parse_and_save(S,Imodule) of
 			ok ->
+			    %% check with cover
 			    get_referenced(S,Module,Name,Pos);
 			_ ->
 			    throw({error,{asn1,{module_not_found,Imodule}}})
@@ -4229,8 +4228,12 @@ parse_and_save(S,Module) when record(S,state) ->
 	true ->
 	    ok;
 	_ ->
-	    save_asn1db_uptodate(S,Erule,Module),
-	    asn1ct:parse_and_save(Module,S)
+	    case asn1ct:parse_and_save(Module,S) of
+		ok ->
+		    save_asn1db_uptodate(S,Erule,Module);    
+		Err ->
+		    Err
+	    end
     end.
 
 asn1db_member(S,Erule,Module) ->

@@ -11,8 +11,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2002/05/13 11:30:31 $
-%%              $Revision: 1.2 $
+%%              $Date: 2006/07/25 07:37:35 $
+%%              $Revision: 1.3 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -85,8 +85,8 @@ advanced(Fun, Iterations) ->
   RStddev = stddev(RunTime),
   WVarCoff = 100 * WStddev / WMean,
   RVarCoff = 100 * RStddev / RMean,
-  WSum = sum(Wallclock),
-  RSum = sum(RunTime),
+  WSum = lists:sum(Wallclock),
+  RSum = lists:sum(RunTime),
 
   [{wallclock,[{min,WMin},
 	       {max,WMax},
@@ -161,12 +161,7 @@ median(L) ->
   end.
 
 even(S) ->
-  0 == (S band 1).
-
-sum(L) ->
-  lists:foldl(fun(X, Acc) ->
-		  X+Acc
-	      end, 0, L).
+  (S band 1) =:= 0.
 
 %% diffs(L,V) ->
 %%   lists:map(fun(X) ->
@@ -184,7 +179,7 @@ variance(L) ->
   Mean = mean(L),
   N = length(L),
   if N > 1 ->
-      sum(square_diffs(L,Mean)) / (N-1);
+      lists:sum(square_diffs(L,Mean)) / (N-1);
      true -> exit(two_few_values)
   end.
 

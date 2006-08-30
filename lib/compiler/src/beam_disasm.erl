@@ -16,7 +16,7 @@
 
 -export([file/1]). %% the main function and some utilities below
 -export([dfs/1, df/1, files/1, file/2, pp/1, pp/2, format_error/1]).
--export([function__arity/1, function__code/1, function__name/1]).
+-export([function__code/1]).
 
 -author("Kostis Sagonas").
 
@@ -31,17 +31,20 @@
 %%-----------------------------------------------------------------------
 %% Abstract Data Types (not visible in other parts of the system) and
 %% utility functions to get/set their fields. (Uncomment and export
-%% them as they get used in other files.)
+%% them when/if they get used in other files.)
 %%-----------------------------------------------------------------------
 
--record(function, {name, arity, entry, code}).
+-record(function, {name,    % atom()
+		   arity,   % byte()
+		   entry,   % unused ??
+		   code}).  % list of instructions
 
-function__name(#function{name=N}) -> N.
-function__arity(#function{arity=A}) -> A.
+%% function__name(#function{name=N}) -> N.
+%% function__arity(#function{arity=A}) -> A.
 %% function__entry(#function{entry=E}) -> E.
 function__code(#function{code=Code}) -> Code.
-%% function__code_update(Function, NewCode) ->
-%%    Function#function{code = NewCode}.
+function__code_update(Function, NewCode) ->
+  Function#function{code = NewCode}.
 
 %%-----------------------------------------------------------------------
 %% Error information
@@ -89,9 +92,8 @@ pp(Stream, Disasm) when is_pid(Stream), is_list(Disasm) ->
     lists:foreach(
       fun ({code,Code}) ->
 	      lists:foreach(
-		fun ({function,F,A,E,C}) -> 
-			io:format(Stream, "~p.~n", 
-				  [{function,F,A,E}]),
+		fun (#function{name=F,arity=A,entry=E,code=C}) ->
+			io:format(Stream, "~p.~n", [{function,F,A,E}]),
 			lists:foreach(
 			  fun (I) -> 
 				  io:put_chars(Stream, [pp_instr(I)|NL])
@@ -174,7 +176,6 @@ optional_chunk(F, ChunkTag) ->
 	{error,beam_lib,{missing_chunk,_,ChunkTag}} -> none
     end.
 
-
 %%-----------------------------------------------------------------------
 %% Disassembles the lambda (fun) table of a BEAM file.
 %%-----------------------------------------------------------------------
@@ -208,9 +209,10 @@ beam_disasm_code(<<_SS:32, % Sub-Size (length of information before code)
 	DisasmCode ->
 	    Functions = get_function_chunks(DisasmCode),
 	    Labels = mk_labels(local_labels(Functions)),
-	    [{function,F,A,E,
-	      resolve_names(Is, Imports, Str, Labels, Lambdas, M)}
-	     || {function,F,A,E,Is} <- Functions]
+	    [function__code_update(Function,
+				   resolve_names(Is, Imports, Str,
+						 Labels, Lambdas, M))
+	     || Function = #function{code=Is} <- Functions]
     end.
 
 %%-----------------------------------------------------------------------
@@ -240,7 +242,7 @@ get_function_chunks([]) ->
 get_function_chunks(Code) ->
     get_funs(labels_r(Code, [])).
 
-labels_r([], R) -> {R,[]};
+labels_r([], R) -> {R, []};
 labels_r([{label,_}=I|Is], R) ->
     labels_r(Is, [I|R]);
 labels_r(Is, R) -> {R, Is}.
@@ -248,11 +250,14 @@ labels_r(Is, R) -> {R, Is}.
 get_funs({[],[]}) -> [];
 get_funs({_,[]}) ->
     ?exit(no_func_info_in_code_segment);
-get_funs({LsR0,[{func_info,Args0}|Code0]}) ->
-    [{atom,_}=AtomM,{atom,F}=AtomF,A] = resolve_args(Args0),
+get_funs({LsR0,[{func_info,[{atom,M}=AtomM,{atom,F}=AtomF,ArityArg]}|Code0]})
+  when is_atom(M), is_atom(F) ->
+    Arity = resolve_arg_unsigned(ArityArg),
     {LsR,Code,RestCode} = get_fun(Code0, []),
-    [{function,F,A,undefined,
-      lists:reverse(LsR0, [{func_info,AtomM,AtomF,A}|Code])}
+    [#function{name=F,
+	       arity=Arity,
+	       % entry=undefined,
+	       code=lists:reverse(LsR0, [{func_info,AtomM,AtomF,Arity}|Code])}
      |get_funs({LsR,RestCode})].
 
 get_fun([{func_info,_}|_]=Is, R0) ->
@@ -271,22 +276,20 @@ get_fun([], R) ->
 %%-----------------------------------------------------------------------
 
 local_labels(Funs) ->
-    lists:sort(
-      lists:foldl(
-	fun ({function,_,_,_,Code}, R) ->
-		local_labels_1(Code, R)
-	end, [], Funs)).
+    lists:sort(lists:foldl(fun (F, R) ->
+				   local_labels_1(function__code(F), R)
+			   end, [], Funs)).
 
 %% The first clause below attempts to provide some (limited form of)
 %% backwards compatibility; it is not needed for .beam files generated
 %% by the R8 compiler.  The clause should one fine day be taken out.
 local_labels_1([{label,_}|[{label,_}|_]=Code], R) ->
     local_labels_1(Code, R);
-local_labels_1([{label,_},{func_info,{atom,M},{atom,F},A}|Code], R) ->
+local_labels_1([{label,_},{func_info,{atom,M},{atom,F},A}|Code], R)
+  when is_atom(M), is_atom(F) ->
     local_labels_2(Code, R, M, F, A);
-local_labels_1(Code, R) ->
-    io:format('beam_disasm: no label in ~p~n', [Code]),
-    R.
+local_labels_1(Code, _) ->
+    ?exit({'local_labels: no label in code',Code}).
 
 local_labels_2([{label,[{u,L}]}|Code], R, M, F, A) ->
     local_labels_2(Code, [{L,{M,F,A}}|R], M, F, A);
@@ -384,11 +387,11 @@ decode_arg([B|Bs0], Atoms) ->
 %%   beam_asm:encode(1, 429496729501) = [121,99,255,255,255,157]
 %%-----------------------------------------------------------------------
 
-decode_int(Tag,B,Bs) when (B band 16#08) == 0 ->
+decode_int(Tag,B,Bs) when (B band 16#08) =:= 0 ->
     %% N < 16 = 4 bits, NNNN:0:TTT
     N = B bsr 4,
     {{Tag,N},Bs};
-decode_int(Tag,B,Bs) when (B band 16#10) == 0 ->
+decode_int(Tag,B,Bs) when (B band 16#10) =:= 0 ->
     %% N < 2048 = 11 bits = 3:8 bits, NNN:01:TTT, NNNNNNNN
     [B1|Bs1] = Bs,
     Val0 = B band 2#11100000,
@@ -400,7 +403,7 @@ decode_int(Tag,B,Bs) ->
     {IntBs,RemBs} = take_bytes(Len,Bs1),
     N = build_arg(IntBs),
     [F|_] = IntBs,
-    Num = if F > 127, Tag == i -> decode_negative(N,Len);
+    Num = if F > 127, Tag =:= i -> decode_negative(N,Len);
 	     true -> N
 	  end,
     ?NO_DEBUG('Len = ~p, IntBs = ~p, Num = ~p~n', [Len,IntBs,Num]),
@@ -422,14 +425,14 @@ decode_int_length(B,Bs) ->
 	    {L+2,Bs}
     end.
     
-decode_negative(N,Len) ->
+decode_negative(N, Len) ->
     N - (1 bsl (Len*8)). % 8 is number of bits in a byte
 
 %%-----------------------------------------------------------------------
 %% Decodes lists and floating point numbers.
 %%-----------------------------------------------------------------------
 
-decode_z_tagged(Tag,B,Bs) when (B band 16#08) == 0 ->
+decode_z_tagged(Tag,B,Bs) when (B band 16#08) =:= 0 ->
     N = B bsr 4,
     case N of
 	0 -> % float
@@ -465,35 +468,33 @@ decode_alloc_list_1(N, Bs0, Acc) ->
     {{u,Type},Bs1} = decode_arg(Bs0),
     {{u,Val},Bs} = decode_arg(Bs1),
     case Type of
-	0 ->
-	    decode_alloc_list_1(N-1, Bs, [{words,Val}|Acc]);
-	1 ->
-	    decode_alloc_list_1(N-1, Bs, [{floats,Val}|Acc])
+	0 -> decode_alloc_list_1(N-1, Bs, [{words,Val}|Acc]);
+	1 -> decode_alloc_list_1(N-1, Bs, [{floats,Val}|Acc])
     end.
 
 %%-----------------------------------------------------------------------
-%% take N bytes from a stream, return { Taken_bytes, Remaining_bytes }
+%% take N bytes from a stream, return {Taken_bytes, Remaining_bytes}
 %%-----------------------------------------------------------------------
 
-take_bytes(N,Bs) ->
-    take_bytes(N,Bs,[]).
+take_bytes(N, Bs) ->
+    take_bytes(N, Bs, []).
 
-take_bytes(N,[B|Bs],Acc) when N > 0 ->
-    take_bytes(N-1,Bs,[B|Acc]);
-take_bytes(0,Bs,Acc) ->
-    { lists:reverse(Acc), Bs }.
+take_bytes(N, [B|Bs], Acc) when N > 0 ->
+    take_bytes(N-1, Bs, [B|Acc]);
+take_bytes(0, Bs, Acc) ->
+    {lists:reverse(Acc), Bs}.
 
 %%-----------------------------------------------------------------------
 %% from a list of bytes Bn,Bn-1,...,B1,B0
-%% build  (Bn << 8*n) bor ... bor B1 << 8 bor B0 << 0
+%% build  (Bn << 8*n) bor ... bor (B1 << 8) bor (B0 << 0)
 %%-----------------------------------------------------------------------
 
 build_arg(Bs) ->
-    build_arg(Bs,0).
+    build_arg(Bs, 0).
 
-build_arg([B|Bs],N) ->
+build_arg([B|Bs], N) ->
     build_arg(Bs, (N bsl 8) bor B);
-build_arg([],N) ->
+build_arg([], N) ->
     N.
 
 %%-----------------------------------------------------------------------
@@ -554,15 +555,15 @@ resolve_inst({make_fun2,Args}, _, _, _, Lambdas, M) ->
 	lists:keysearch(OldIndex, 1, Lambdas),
     {make_fun2,{M,F,A},OldIndex,OldUniq,NumFree};
 resolve_inst(Instr, Imports, Str, Lbls, _Lambdas, _M) ->
-%    io:format(?MODULE_STRING":resolve_inst ~p.~n", [Instr]),
+    %% io:format(?MODULE_STRING":resolve_inst ~p.~n", [Instr]),
     resolve_inst(Instr, Imports, Str, Lbls).
 
 resolve_inst({label,[{u,L}]},_,_,_) ->
     {label,L};
-resolve_inst(FuncInfo,_,_,_) when element(1, FuncInfo) == func_info -> 
+resolve_inst(FuncInfo,_,_,_) when element(1, FuncInfo) =:= func_info -> 
     FuncInfo; % already resolved
-% resolve_inst(int_code_end,_,_,_,_) ->  % instruction already handled
-%    int_code_end;                       % should not really be handled here
+%% resolve_inst(int_code_end,_,_,_,_) ->  % instruction already handled
+%%    int_code_end;                       % should not really be handled here
 resolve_inst({call,[{u,N},{f,L}]},_,_,Lbls) ->
     {call,N,lookup(L,Lbls)};
 resolve_inst({call_last,[{u,N},{f,L},{u,U}]},_,_,Lbls) ->
@@ -576,17 +577,17 @@ resolve_inst({call_ext_last,[{u,N},{u,MFAix},{u,X}]},Imports,_,_) ->
 resolve_inst({bif0,Args},Imports,_,_) ->
     [Bif,Reg] = resolve_args(Args),
     {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
-    %?NO_DEBUG('bif0(~p, ~p)~n',[BifName,Reg]),
+    %% ?NO_DEBUG('bif0(~p, ~p)~n',[BifName,Reg]),
     {bif,BifName,nofail,[],Reg};
 resolve_inst({bif1,Args},Imports,_,_) ->
     [F,Bif,A1,Reg] = resolve_args(Args),
     {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
-    %?NO_DEBUG('bif1(~p, ~p, ~p, ~p, ~p)~n',[Bif,BifName,F,[A1],Reg]),
+    %% ?NO_DEBUG('bif1(~p, ~p, ~p, ~p, ~p)~n',[Bif,BifName,F,[A1],Reg]),
     {bif,BifName,F,[A1],Reg};
 resolve_inst({bif2,Args},Imports,_,_) ->
     [F,Bif,A1,A2,Reg] = resolve_args(Args),
     {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
-    %?NO_DEBUG('bif2(~p, ~p, ~p, ~p, ~p)~n',[Bif,BifName,F,[A1,A2],Reg]),
+    %% ?NO_DEBUG('bif2(~p, ~p, ~p, ~p, ~p)~n',[Bif,BifName,F,[A1,A2],Reg]),
     {bif,BifName,F,[A1,A2],Reg};
 resolve_inst({allocate,[{u,X0},{u,X1}]},_,_,_) ->
     {allocate,X0,X1};
@@ -849,12 +850,13 @@ resolve_inst({'try',[Reg,Lbl]},_,_,_) -> % analogous to 'catch'
     {'try',Reg,Lbl};
 resolve_inst({try_end,[Reg]},_,_,_) ->   % analogous to 'catch_end'
     {try_end,Reg};
-resolve_inst({try_case,[Reg]},_,_,_) ->   % analogous to 'catch_end'
+resolve_inst({try_case,[Reg]},_,_,_) ->  % analogous to 'catch_end'
     {try_case,Reg};
 resolve_inst({try_case_end,[Arg]},_,_,_) ->
     {try_case_end,resolve_arg(Arg)};
 resolve_inst({raise,[Reg1,Reg2]},_,_,_) ->
-    {bif,raise,{f,0},[Reg1,Reg2],{x,0}};
+    {raise,{f,0},[Reg1,Reg2],{x,0}};	 % do NOT wrap this as a 'bif'
+					 % as there is no raise/2 bif!
 
 %%
 %% New bit syntax instructions added in February 2004 (R10B).
@@ -884,7 +886,6 @@ resolve_inst({apply_last,[{u,Arity},{u,D}]},_,_,_) ->
 resolve_inst({is_boolean=I,Args0},_,_,_) ->
     [L|Args] = resolve_args(Args0),
     {test,I,L,Args};
-
 
 %%
 %% New instruction added in June 2005.
@@ -923,17 +924,17 @@ resolve_inst({bs_restore2=I,[Ms,{u,N}]},_,_,_) ->
 resolve_inst({gc_bif0,Args},Imports,_,_) ->
     [F,Live,Bif,Reg] = resolve_args(Args),
     {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
-    %?NO_DEBUG('bif0(~p, ~p)~n',[BifName,Reg]),
+    %% ?NO_DEBUG('gc_bif0(~p, ~p)~n',[BifName,Reg]),
     {gc_bif,BifName,F,Live,[],Reg};
 resolve_inst({gc_bif1,Args},Imports,_,_) ->
     [F,Live,Bif,A1,Reg] = resolve_args(Args),
     {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
-    %?NO_DEBUG('bif1(~p, ~p, ~p, ~p, ~p)~n',[Bif,BifName,F,[A1],Reg]),
+    %% ?NO_DEBUG('gc_bif1(~p, ~p, ~p, ~p, ~p)~n',[Bif,BifName,F,[A1],Reg]),
     {gc_bif,BifName,F,Live,[A1],Reg};
 resolve_inst({gc_bif2,Args},Imports,_,_) ->
     [F,Live,Bif,A1,A2,Reg] = resolve_args(Args),
     {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
-    %?NO_DEBUG('bif2(~p, ~p, ~p, ~p, ~p)~n',[Bif,BifName,F,[A1,A2],Reg]),
+    %% ?NO_DEBUG('gc_bif2(~p, ~p, ~p, ~p, ~p)~n',[Bif,BifName,F,[A1,A2],Reg]),
     {gc_bif,BifName,F,Live,[A1,A2],Reg};
 
 %%
@@ -948,11 +949,19 @@ resolve_inst(X,_,_,_) -> ?exit({resolve_inst,X}).
 
 resolve_args(Args) -> [resolve_arg(A) || A <- Args].
 
-resolve_arg({u,N}) -> N;
-resolve_arg({i,N}) -> {integer,N};
-resolve_arg({atom,Atom}=A) when is_atom(Atom) -> A;
-resolve_arg(nil) -> nil;
-resolve_arg(Arg) -> Arg.
+resolve_arg({x,N} = Arg) when is_integer(N), N >= 0 -> Arg;
+resolve_arg({y,N} = Arg) when is_integer(N), N >= 0 -> Arg;
+resolve_arg({fr,N} = Arg) when is_integer(N), N >= 0 -> Arg;
+resolve_arg({f,N} = Arg) when is_integer(N), N >= 0 -> Arg;
+resolve_arg({u,_} = Arg) -> resolve_arg_unsigned(Arg);
+resolve_arg({i,_} = Arg) -> resolve_arg_integer(Arg);
+resolve_arg({atom,Atom} = Arg) when is_atom(Atom) -> Arg;
+resolve_arg({float,F} = Arg) when is_float(F) -> Arg;
+resolve_arg(nil) -> nil.
+
+resolve_arg_unsigned({u,N}) when is_integer(N), N >= 0 -> N.
+
+resolve_arg_integer({i,N}) when is_integer(N) -> {integer,N}.
 
 %%-----------------------------------------------------------------------
 %% The purpose of the following is just to add a hook for future changes.
@@ -969,8 +978,7 @@ decode_field_flags(FF) ->
 %%-----------------------------------------------------------------------
 
 mk_imports(ImportList) ->
-    gb_trees:from_orddict(
-      [{I,{extfunc,M,F,A}} || {I,M,F,A} <- ImportList]).
+    gb_trees:from_orddict([{I,{extfunc,M,F,A}} || {I,M,F,A} <- ImportList]).
 
 mk_atoms(AtomList) ->
     gb_trees:from_orddict(AtomList).

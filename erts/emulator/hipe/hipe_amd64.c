@@ -5,6 +5,7 @@
 #include "config.h"
 #endif
 #include "global.h"
+#include <sys/mman.h>
 #include "error.h"
 #include "bif.h"
 #include "big.h"	/* term_to_Sint() */

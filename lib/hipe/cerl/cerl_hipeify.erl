@@ -16,7 +16,7 @@
 %%
 %% $Id$
 %%
-%% @author Richard Carlsson <richardc@csd.uu.se>
+%% @author Richard Carlsson <richardc@it.uu.se>
 %% @copyright 2000-2004 Richard Carlsson
 %% @doc HiPE-ification of Core Erlang code. Prepares Core Erlang code
 %% for translation to ICode.
@@ -243,7 +243,7 @@ clauses([C|_]=Cs, Env, Ren, Ctxt, S) ->
 		  duplicate_all ->
 		      put('cerl_pmatch_duplicate_code', always),
 		      cerl_pmatch:clauses(Cs1, Env);
-		  Other when Other == false; Other == undefined ->
+		  Other when Other =:= false; Other =:= undefined ->
 		      Vs0 = new_vars(cerl:clause_arity(C), Env),
 		      {cerl:c_case(cerl:c_values(Vs0), Cs1), Vs0}
 	      end,
@@ -486,7 +486,7 @@ match_fail(E, R, Stack) ->
 %% local definitions within guards are used exactly once.
 
 let_expr(E, Env, Ren, Ctxt, S) ->
-    if Ctxt#ctxt.class == guard ->
+    if Ctxt#ctxt.class =:= guard ->
 	    case cerl:let_vars(E) of
 		[V] ->
 		    {Name, Ren1} = rename(cerl:var_name(V), Env, Ren),
@@ -508,7 +508,7 @@ let_expr_1(E, Env, Ren, Ctxt, S0) ->
 
 variable(E, Env, Ren, Ctxt, S) ->
     V = ren__map(cerl:var_name(E), Ren),
-    if Ctxt#ctxt.class == guard ->
+    if Ctxt#ctxt.class =:= guard ->
 	    case env__lookup(V, Env) of
 		{ok, {expr, E1}} ->
 		    expr(E1, Env, Ren, Ctxt, S);   % inline

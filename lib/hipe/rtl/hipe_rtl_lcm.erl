@@ -179,7 +179,7 @@ delete_exprs(Code, ExprMap, IdMap, [ExprId|Exprs]) ->
       (lists:foldl(fun(CodeExpr, Acc) ->
                      case is_expr(CodeExpr) of
                        true ->
-                         case expr_clear_dst(CodeExpr) == Expr of
+                         case expr_clear_dst(CodeExpr) =:= Expr of
                            true ->
                              pp_debug("  Deleting:         ", []),%DEBUG
                              pp_debug_instr(CodeExpr),%DEBUG
@@ -222,22 +222,20 @@ insert_exprs(CFG, Pred, Succ, ExprMap, IdMap, BetweenMap, [ExprId|Exprs])->
   Expr = expr_id_map_get_expr(IdMap, ExprId),
   Instr = expr_map_get_instr(ExprMap, Expr),
   Succs = hipe_rtl_cfg:succ(hipe_rtl_cfg:succ_map(CFG), Pred),
-  case length(Succs) == 1 of
-    true->
+  case length(Succs) =:= 1 of
+    true ->
       pp_debug("  Inserted last: ", []),%DEBUG
       pp_debug_instr(Instr),%DEBUG
       NewCFG = insert_expr_last(CFG, Pred, Instr),
       insert_exprs(NewCFG, Pred, Succ, ExprMap, IdMap, BetweenMap, Exprs);
-
     false ->
       Preds = hipe_rtl_cfg:pred(hipe_rtl_cfg:pred_map(CFG), Succ),
-      case length(Preds) == 1 of
-        true->
+      case length(Preds) =:= 1 of
+        true ->
 	  pp_debug("  Inserted first: ", []),%DEBUG
 	  pp_debug_instr(Instr),%DEBUG
           NewCFG = insert_expr_first(CFG, Succ, Instr),
           insert_exprs(NewCFG, Pred, Succ, ExprMap, IdMap, BetweenMap, Exprs);
-
         false ->
 	  pp_debug("  Inserted between: ", []),%DEBUG
 	  pp_debug_instr(Instr),%DEBUG
@@ -352,7 +350,7 @@ is_expr(I) ->
 %%    	  Src2 = hipe_rtl:alu_src2(I),
 
    	  %% Check if dest updates src
-%%    	  case Dst == Src1 orelse Dst == Src2 of
+%%    	  case Dst =:= Src1 orelse Dst =:= Src2 of
 %%    	    true ->
 %%    	      false;
 %%    	    false ->
@@ -361,7 +359,7 @@ is_expr(I) ->
 
 	  %% Check if alu expression is untagging of boxed (rX <- vX sub 2)
 %% 	  case hipe_rtl:is_reg(Dst) andalso hipe_rtl:is_var(Src1) andalso 
-%% 	    (hipe_rtl:alu_op(I) == sub) andalso hipe_rtl:is_imm(Src2) of
+%% 	    (hipe_rtl:alu_op(I) =:= sub) andalso hipe_rtl:is_imm(Src2) of
 %% 	    true ->
 %% 	      case hipe_rtl:imm_value(Src2) of
 %% 		2 -> false; %% Tag for boxed. TODO: Should not be hardcoded...
@@ -546,7 +544,7 @@ calc_avail_node(Label, CFG, NodeInfo) ->
 	{true, set_avail_out(NodeInfo, Label, AvailOut)};
       OldAvailOut ->
 	%% Check if the avail outs are equal.
-	case AvailOut == OldAvailOut of
+	case AvailOut =:= OldAvailOut of
 	  true ->
 	    {false, NodeInfo};
 	  false ->
@@ -632,7 +630,7 @@ calc_antic_node(Label, CFG, NodeInfo, AllExpr) ->
 
       OldAnticIn ->
 	%% Check if the antic in:s are equal.
-	case AnticIn == OldAnticIn of
+	case AnticIn =:= OldAnticIn of
 	  true ->
 	    {false, NodeInfo};
 	  false ->
@@ -708,7 +706,7 @@ calc_later_edge(From, To, _CFG, NodeInfo, EdgeInfo, AllExpr) ->
 %%  {Earliest, EdgeInfo1} = 
 %%    case lookup_earliest(EdgeInfo, {From, To}) of
 %%      none ->
-%%	IsStartLabel = (From == hipe_rtl_cfg:start_label(_CFG)),
+%%	IsStartLabel = (From =:= hipe_rtl_cfg:start_label(_CFG)),
 %%	CalcEarliest = calc_earliest_edge(NodeInfo, AllExpr, IsStartLabel,
 %%					  From, To),
 %%	{CalcEarliest, set_earliest(EdgeInfo, {From, To}, CalcEarliest)};
@@ -728,9 +726,9 @@ calc_later_edge(From, To, _CFG, NodeInfo, EdgeInfo, AllExpr) ->
       none ->
 	{true, set_later(EdgeInfo1, {From, To}, Later)};
 
-      %% FIXME use cases "Later -> " and "OldLater ->" instead of == ?
+      %% FIXME use cases "Later -> " and "OldLater ->" instead of =:= ?
       OldLater ->
-	case Later == OldLater of
+	case Later =:= OldLater of
 	  true ->
 	    {false, EdgeInfo1};
 	  false ->
@@ -751,7 +749,7 @@ calc_later_edge(From, To, _CFG, NodeInfo, EdgeInfo, AllExpr) ->
 	  NewLaterIn = ?SETS:intersection(OldLaterIn, Later),
 	  %% Check if something changed
 	  %% FIXME: Implement faster equality test?
-	  case NewLaterIn == OldLaterIn of 
+	  case NewLaterIn =:= OldLaterIn of 
 	    true ->
 	      {NodeInfo, EdgeInfo2, []};
 	    false ->
@@ -910,7 +908,7 @@ calc_killed_expr_bb([Instr|Instrs], UseMap, AllExpr, KilledExprs) ->
 calc_earliest(_, _, EdgeInfo, _, []) ->
   EdgeInfo;
 calc_earliest(CFG, NodeInfo, EdgeInfo, AllExpr, [From|Labels]) ->
-  IsStartLabel = (From == hipe_rtl_cfg:start_label(CFG)),
+  IsStartLabel = (From =:= hipe_rtl_cfg:start_label(CFG)),
   NewEdgeInfo = 
     lists:foldl(fun(To, EdgeInfoAcc) ->
 		    Earliest = 
@@ -958,7 +956,7 @@ calc_insert_edge(NodeInfo, EdgeInfo, From, To) ->
 calc_delete(_, NodeInfo, []) ->
   NodeInfo;
 calc_delete(CFG, NodeInfo, [Label|Labels]) ->
-  case Label == hipe_rtl_cfg:start_label(CFG) of
+  case Label =:= hipe_rtl_cfg:start_label(CFG) of
     true -> 
       NewNodeInfo = set_delete(NodeInfo, Label, ?SETS:new());
     false ->
@@ -1630,7 +1628,7 @@ pp_sets(ExprMap, IdMap, NodeInfo, EdgeInfo, AllExpr, CFG, [Label|Labels]) ->
   case up_exp(NodeInfo, Label) of
     none -> ok;
     UpExp -> 
-      case ?SETS:size(UpExp) == 0 of
+      case ?SETS:size(UpExp) =:= 0 of
 	false ->
 	  io:format(standard_io, "  UEExpr: ~n", []),
 	  pp_exprs(ExprMap, IdMap, ?SETS:to_list(UpExp));
@@ -1640,7 +1638,7 @@ pp_sets(ExprMap, IdMap, NodeInfo, EdgeInfo, AllExpr, CFG, [Label|Labels]) ->
   case down_exp(NodeInfo, Label) of
     none -> ok;
     DownExp -> 
-      case ?SETS:size(DownExp) == 0 of
+      case ?SETS:size(DownExp) =:= 0 of
 	false ->
 	  io:format(standard_io, "  DEExpr: ~n", []),
 	  pp_exprs(ExprMap, IdMap, ?SETS:to_list(DownExp));
@@ -1650,7 +1648,7 @@ pp_sets(ExprMap, IdMap, NodeInfo, EdgeInfo, AllExpr, CFG, [Label|Labels]) ->
   case killed_expr(NodeInfo, Label) of
     none -> ok;
     KilledExpr -> 
-      case ?SETS:size(KilledExpr) == 0 of
+      case ?SETS:size(KilledExpr) =:= 0 of
 	false ->
 	  io:format(standard_io, "  ExprKill: ~n", []),
 	  pp_exprs(ExprMap, IdMap, ?SETS:to_list(KilledExpr));
@@ -1660,7 +1658,7 @@ pp_sets(ExprMap, IdMap, NodeInfo, EdgeInfo, AllExpr, CFG, [Label|Labels]) ->
   case avail_in(NodeInfo, Label) of
     none -> ok;
     AvailIn ->
-      case ?SETS:size(AvailIn) == 0 of
+      case ?SETS:size(AvailIn) =:= 0 of
 	false ->
 	  io:format(standard_io, "  AvailIn:  ~n", []),
 	  pp_exprs(ExprMap, IdMap, ?SETS:to_list(AvailIn));
@@ -1670,7 +1668,7 @@ pp_sets(ExprMap, IdMap, NodeInfo, EdgeInfo, AllExpr, CFG, [Label|Labels]) ->
   case avail_out(NodeInfo, Label) of
     none -> ok;
     AvailOut ->
-      case ?SETS:size(AvailOut) == 0 of
+      case ?SETS:size(AvailOut) =:= 0 of
 	false ->
 	  io:format(standard_io, "  AvailOut: ~n", []),
 	  pp_exprs(ExprMap, IdMap, ?SETS:to_list(AvailOut));
@@ -1680,7 +1678,7 @@ pp_sets(ExprMap, IdMap, NodeInfo, EdgeInfo, AllExpr, CFG, [Label|Labels]) ->
   case antic_in(NodeInfo, Label) of
     none -> ok;
     AnticIn ->
-      case ?SETS:size(AnticIn) == 0 of
+      case ?SETS:size(AnticIn) =:= 0 of
 	false ->
 	  io:format(standard_io, "  AnticIn:  ~n", []),
 	  pp_exprs(ExprMap, IdMap, ?SETS:to_list(AnticIn));
@@ -1690,7 +1688,7 @@ pp_sets(ExprMap, IdMap, NodeInfo, EdgeInfo, AllExpr, CFG, [Label|Labels]) ->
   case antic_out(NodeInfo, Label) of
     none -> ok;
     AnticOut ->
-      case ?SETS:size(AnticOut) == 0 of
+      case ?SETS:size(AnticOut) =:= 0 of
 	false ->
 	  io:format(standard_io, "  AnticOut: ~n", []),
 	  pp_exprs(ExprMap, IdMap, ?SETS:to_list(AnticOut));
@@ -1700,7 +1698,7 @@ pp_sets(ExprMap, IdMap, NodeInfo, EdgeInfo, AllExpr, CFG, [Label|Labels]) ->
   case later_in(NodeInfo, Label) of
     none -> ok;
     LaterIn ->
-      case ?SETS:size(LaterIn) == 0 of
+      case ?SETS:size(LaterIn) =:= 0 of
 	false ->
 	  io:format(standard_io, "  LaterIn:  ~n", []),
 	  pp_exprs(ExprMap, IdMap, ?SETS:to_list(LaterIn));
@@ -1714,7 +1712,7 @@ pp_sets(ExprMap, IdMap, NodeInfo, EdgeInfo, AllExpr, CFG, [Label|Labels]) ->
   case delete(NodeInfo, Label) of
     none -> ok;
     Delete ->
-      case ?SETS:size(Delete) == 0 of
+      case ?SETS:size(Delete) =:= 0 of
 	false ->
 	  io:format(standard_io, "  Delete:   ~n", []),
 	  pp_exprs(ExprMap, IdMap, ?SETS:to_list(Delete));
@@ -1731,7 +1729,7 @@ pp_later(ExprMap, IdMap, EdgeInfo, Pred, [Succ|Succs]) ->
   case later(EdgeInfo, {Pred, Succ}) of
     none -> ok;
     Later ->
-      case ?SETS:size(Later) == 0 of
+      case ?SETS:size(Later) =:= 0 of
 	false ->
 	  io:format(standard_io, "  Later(~w->~w): ~n", [Pred,Succ]),
 	  pp_exprs(ExprMap, IdMap, ?SETS:to_list(Later));
@@ -1748,7 +1746,7 @@ pp_earliest(ExprMap, IdMap, EdgeInfo, Pred, [Succ|Succs]) ->
   case earliest(EdgeInfo, {Pred, Succ}) of
     none -> ok;
     Earliest ->
-      case ?SETS:size(Earliest) == 0 of
+      case ?SETS:size(Earliest) =:= 0 of
 	false ->
 	  io:format(standard_io, "  Earliest(~w->~w): ~n", [Pred,Succ]),
 	  pp_exprs(ExprMap, IdMap, ?SETS:to_list(Earliest));

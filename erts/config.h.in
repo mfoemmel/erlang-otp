@@ -338,6 +338,9 @@
 /* Define if you have the <sys/stropts.h> header file.  */
 #undef HAVE_SYS_STROPTS_H
 
+/* Define if you have the <sys/sysctl.h> header file.  */
+#undef HAVE_SYS_SYSCTL_H
+
 /* Define if you have the <sys/time.h> header file.  */
 #undef HAVE_SYS_TIME_H
 
@@ -404,6 +407,9 @@
 /* Define if you want to enable extended functionality in the ethread library */
 #undef ETHR_EXTENDED_LIB
 
+/* Define if the smp emulator is built */
+#undef ERTS_HAVE_SMP_EMU
+
 /* Define if windows.h includes winsock2.h */
 #undef WINDOWS_H_INCLUDES_WINSOCK2_H
 
@@ -439,6 +445,9 @@
 
 /* Define if sbrk()/brk() wrappers can track malloc()s core memory use */
 #undef ERTS_BRK_WRAPPERS_CAN_TRACK_MALLOC
+
+/* Define if the hybrid emulator is built */
+#undef ERTS_HAVE_HYBRID_EMU
 
 /* Define if poll()/select() bug when another thread closes fd is present. */
 #undef ERTS_SELECTER_THR_CLOSED_FD_BUG

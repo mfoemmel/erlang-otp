@@ -798,7 +798,7 @@ tree_to_bin(v, _F, _Max, Ws, WsSz) -> {Ws, WsSz};
 tree_to_bin(T, F, Max, Ws, WsSz) ->
     {N, L1, Ws1, WsSz1} = tree_to_bin2(T, F, Max, 0, [], Ws, WsSz),
     {N1, L2, Ws2, WsSz2} = F(N, lists:reverse(L1), Ws1, WsSz1),
-    {0, [], NWs, NWsSz} = F(N1, lists:reverse(L2), Ws2, WsSz2),
+    {0, [], NWs, NWsSz} = F(N1, L2, Ws2, WsSz2),
     {NWs, NWsSz}.
 
 tree_to_bin2(Tree, F, Max, N, Acc, Ws, WsSz) when N >= Max ->

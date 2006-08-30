@@ -49,7 +49,6 @@
 Nonterminals
 
     authenticationHeader
-    contextID
     daddr
     deviceName
     domainAddress
@@ -134,8 +133,6 @@ domainName           -> 'LESSER' safeToken 'GREATER'
                             : ensure_domainName('$2', asn1_NOVALUE) .
 
 deviceName           -> pathName  : {deviceName, '$1'} .
-
-contextID            -> safeToken : ensure_contextID('$1') .
 
 domainAddress        -> 'LSBRKT' daddr 'RSBRKT' 'COLON' portNumber optSep
                         : ensure_domainAddress('$2', '$5') .

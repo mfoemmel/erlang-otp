@@ -106,12 +106,17 @@ tokens2(Chars, Line0, Version, Tokens0) ->
     end.
 
 tokens2(Chars, Line, Acc) ->
+%%     d("tokens2 -> entry with"
+%%       "~n   Chars: ~s"
+%%       "~n   Line:  ~p", [Chars, Line]),
     case any_chars(Chars, Line) of
 	{token, Token, [], LatestLine} ->
+%% 	    d("tokens2 -> Token: ~n~p", [Token]),
 	    Tokens = [{endOfMessage, LatestLine, endOfMessage}, Token | Acc],
 	    {ok, lists:reverse(Tokens), Line};
 
 	{token, Token, Rest, LatestLine} ->
+%% 	    d("tokens2 -> Token: ~n~p", [Token]),
 	    tokens2(Rest, LatestLine, [Token | Acc]);
 
 	{bad_token, Token, _Rest, _LatestLine} ->
@@ -469,6 +474,7 @@ select_token(LowerText) ->
     case LowerText of
         "add"                   -> 'AddToken';
         "a"                     -> 'AddToken';
+        "andlgc"                -> 'AndAUDITSelectToken'; % v3
         "audit"                 -> 'AuditToken';
         "at"                    -> 'AuditToken';
         "auditcapability"       -> 'AuditCapToken';
@@ -489,12 +495,16 @@ select_token(LowerText) ->
         "c"                     -> 'CtxToken';
         "contextattr"           -> 'ContextAttrToken';  % v3
         "ct"                    -> 'ContextAttrToken';  % v3
+        "contextlist"           -> 'ContextListToken';  % v3
+        "clt"                   -> 'ContextListToken';  % v3
         "contextaudit"          -> 'ContextAuditToken';
         "ca"                    -> 'ContextAuditToken';
 	"digitmap"              -> 'DigitMapToken';
 	"dm"                    -> 'DigitMapToken';
-        "direction"             -> 'DirectionToken';    % v3
-        "di"                    -> 'DirectionToken';    % v3
+        "spadirection"          -> 'DirectionToken';    % v3
+        "direction"             -> 'DirectionToken';    % v3 (pre-v3a/v3b)
+        "spadi"                 -> 'DirectionToken';    % v3
+        "di"                    -> 'DirectionToken';    % v3 (pre-v3a/v3b)
         "discard"               -> 'DiscardToken';
         "ds"                    -> 'DiscardToken';
         "disconnected"          -> 'DisconnectedToken';
@@ -510,7 +520,10 @@ select_token(LowerText) ->
         "emergency"             -> 'EmergencyToken';
         "eg"                    -> 'EmergencyToken';
         "emergencyofftoken"     -> 'EmergencyOffToken';
+        "emergencyoff"          -> 'EmergencyOffToken';   % v3 (as of prev3c)
         "ego"                   -> 'EmergencyOffToken';
+        "emergencyvalue"        -> 'EmergencyValueToken'; % v3 
+        "egv"                   -> 'EmergencyValueToken'; % v3
         "error"                 -> 'ErrorToken';
         "er"                    -> 'ErrorToken';
         "eventbuffer"           -> 'EventBufferToken';
@@ -536,16 +549,20 @@ select_token(LowerText) ->
         "in"                    -> 'InactiveToken';
         "internal"              -> 'InternalToken';     % v3
         "it"                    -> 'InternalToken';     % v3
-        "isolate"               -> 'IsolateToken';
         "immackrequired"        -> 'ImmAckRequiredToken';
         "ia"                    -> 'ImmAckRequiredToken';
-        "is"                    -> 'IsolateToken';
         "inservice"             -> 'InSvcToken';
-        "interruptbyevent"      -> 'InterruptByEventToken';
+        "intersignal"           -> 'IntsigDelayToken'; % v3
+        "spais"                 -> 'IntsigDelayToken'; % v3
+        "intbyevent"            -> 'InterruptByEventToken';
         "ibe"                   -> 'InterruptByEventToken';
-        "interruptbynewsignalsdescr" -> 'InterruptByNewSignalsDescrToken';
+        "intbysigdescr"         -> 'InterruptByNewSignalsDescrToken';
         "ibs"                   -> 'InterruptByNewSignalsDescrToken';
         "iv"                    -> 'InSvcToken';
+        "isolate"               -> 'IsolateToken';
+        "is"                    -> 'IsolateToken';
+	"iterationtoken"        -> 'IterationToken'; % v3
+	"ir"                    -> 'IterationToken'; % v3
         "keepactive"            -> 'KeepActiveToken';
         "ka"                    -> 'KeepActiveToken';
 	"local"                 -> 'LocalToken';
@@ -560,6 +577,8 @@ select_token(LowerText) ->
         "m"                     -> 'MediaToken';
         %% "megaco"                -> 'MegacopToken';
 	%% "!"                     -> 'megacoptoken';
+	%% "segment"               -> 'MessageSegmentToken'; % v3
+	%% "sm"                    -> 'MessageSegmentToken'; % v3
         "method"                -> 'MethodToken';
         "mt"                    -> 'MethodToken';
         "mtp"                   -> 'MtpToken';
@@ -575,20 +594,31 @@ select_token(LowerText) ->
         "mv"                    -> 'MoveToken';
         "mux"                   -> 'MuxToken';
         "mx"                    -> 'MuxToken';
+        "nevernotify"           -> 'NeverNotifyToken'; % v3
+        "nbnn"                  -> 'NeverNotifyToken'; % v3
         "notify"                -> 'NotifyToken';
         "n"                     -> 'NotifyToken';
         "notifycompletion"      -> 'NotifyCompletionToken';
         "nc"                    -> 'NotifyCompletionToken';
+        "immediatenotify"       -> 'NotifyImmediateToken';    % v3
+        "nbin"                  -> 'NotifyImmediateToken';    % v3
+        "regulatednotify"       -> 'NotifyRegulatedToken';    % v3
+        "nbrn"                  -> 'NotifyRegulatedToken';    % v3
         "nx64kservice"          -> 'Nx64kToken';              % v2
         "n64"                   -> 'Nx64kToken';              % v2
         "observedevents"        -> 'ObservedEventsToken';
         "oe"                    -> 'ObservedEventsToken';
         "oneway"                -> 'OnewayToken';
         "ow"                    -> 'OnewayToken';
+        "onewayboth"            -> 'OnewayBothToken';     % v3
+        "owb"                   -> 'OnewayBothToken';     % v3
+        "onewayexternal"        -> 'OnewayExternalToken'; % v3
+        "owe"                   -> 'OnewayExternalToken'; % v3
         "off"                   -> 'OffToken';
         "on"                    -> 'OnToken';
         "onoff"                 -> 'OnOffToken';
         "oo"                    -> 'OnOffToken';
+        "orlgc"                 -> 'OrAUDITselectToken';  % v3
         "otherreason"           -> 'OtherReasonToken';
         "or"                    -> 'OtherReasonToken';
         "outofservice"          -> 'OutOfSvcToken';
@@ -609,16 +639,22 @@ select_token(LowerText) ->
         "rc"                    -> 'RecvonlyToken';
         "reply"                 -> 'ReplyToken';
         "p"                     -> 'ReplyToken';
+        "reseteventsdescriptor" -> 'ResetEventsDescriptorToken'; % v3
+        "rse"                   -> 'ResetEventsDescriptorToken'; % v3
         "transactionresponseack"-> 'ResponseAckToken';
         "k"                     -> 'ResponseAckToken';
         "restart"               -> 'RestartToken';
         "rs"                    -> 'RestartToken';
 	"remote"                -> 'RemoteToken';
 	"r"                     -> 'RemoteToken';
+        "sparequestid"          -> 'RequestIDToken';
+        "sparq"                 -> 'RequestIDToken';
         "reservedgroup"         -> 'ReservedGroupToken';
         "rg"                    -> 'ReservedGroupToken';
         "reservedvalue"         -> 'ReservedValueToken';
         "rv"                    -> 'ReservedValueToken';
+        "end"                   -> 'SegmentCompleteToken'; % v3
+        "&"                     -> 'SegmentCompleteToken'; % v3
         "sendonly"              -> 'SendonlyToken';
         "so"                    -> 'SendonlyToken';
         "sendreceive"           -> 'SendrecvToken';
@@ -692,10 +728,10 @@ select_token(LowerText) ->
 
 %% d(F) ->
 %%     d(F, []).
-%% 
+
 %% d(F, A) ->
 %%     d(get(dbg), F, A).
-%% 
+
 %% d(true, F, A) ->
 %%     io:format("DBG:~p:" ++ F ++ "~n", [?MODULE|A]);
 %% d(_, _, _) ->

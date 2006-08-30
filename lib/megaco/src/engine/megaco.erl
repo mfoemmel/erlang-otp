@@ -60,6 +60,9 @@
 	 encode_binary_term_id/2,
 	 decode_binary_term_id/2,
 
+	 encode_sdp/1,
+	 decode_sdp/1, 
+
 	 versions1/0, versions2/0, 
 	 print_version_info/0, print_version_info/1, 
 	 ms/0, nc/0, nc/1, ni/0, ni/1,
@@ -359,6 +362,30 @@ encode_binary_term_id(Config, TermId) ->
 
 decode_binary_term_id(Config, TermId) ->
     megaco_binary_term_id:decode(Config, TermId).
+
+
+%%-----------------------------------------------------------------
+%% encode_sdp(SDP) ->
+%% 
+%%   {ok, PP} | {error, Reason}
+%%
+%% Encode a SDP construct into a property parm construct
+%%-----------------------------------------------------------------
+
+encode_sdp(SDP) ->
+    megaco_sdp:encode(SDP).
+
+
+%%-----------------------------------------------------------------
+%% decode_sdp(PP) ->
+%% 
+%%   {ok, SDP} | {error, Reason}
+%%
+%% Decode a property parm construct into a SDP construct
+%%-----------------------------------------------------------------
+
+decode_sdp(PP) ->
+    megaco_sdp:decode(PP).
 
 
 %%-----------------------------------------------------------------

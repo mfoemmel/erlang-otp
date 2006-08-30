@@ -11,6 +11,21 @@
   <p>This document describes the changes made to the Dialyzer
     application.</p>
 
+<section><title>Dialyzer 1.4.2</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Improvements in PLT management.
+          <p>
+	    Own Id: OTP-6128
+        </item>
+      </list>
+    </section>
+
+</section>
+
   <section><title>Dialyzer 1.4.1</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

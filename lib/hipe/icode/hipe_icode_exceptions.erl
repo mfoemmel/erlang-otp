@@ -85,7 +85,7 @@ find_catches([L|Ls], State0) ->
       Cs1 = catches_out(Code, Cs),
       Ls1 = get_succ(L, State2) ++ Ls,
       Cs0 = get_catches_out(L, State2),
-      if Cs1 == Cs0 ->
+      if Cs1 =:= Cs0 ->
 	  find_catches(Ls1, State2);
 	 true ->
 	  State3 = set_catches_out(L, Cs1, State2),
@@ -247,7 +247,7 @@ update_call(I, Is, C, State0, Map) ->
 	      I1 = hipe_icode:call_set_fail_label(I, L),
 	      %% Now the call will end the block, so we must put the rest of
 	      %% the code (if nonempty) in a new block!
-	      if Is == [] ->
+	      if Is =:= [] ->
 		  {I1, Is, State0};
 		 true ->
 		  L1 = hipe_icode:label_name(hipe_icode:mk_new_label()),
@@ -257,7 +257,7 @@ update_call(I, Is, C, State0, Map) ->
 		  State3 = rewrite_bb(L1, [C], Is, State2, Map),
 		  {I2, [], State3}
 	      end;
-	    _ when Is == [] ->
+	    _ when Is =:= [] ->
 	      %% Something is very wrong if Is is not empty here. A call
 	      %% with a fail label should have ended its basic block.
 	      {I, Is, State0}
@@ -427,7 +427,7 @@ set_visited(L, State) ->
   State#state{visited = hipe_icode_cfg:visit(L, State#state.visited)}.
 
 is_visited(L, State) ->
-  hipe_icode_cfg:visited(L, State#state.visited).
+  hipe_icode_cfg:is_visited(L, State#state.visited).
 
 clear_visited(State) ->
   State#state{visited = hipe_icode_cfg:none_visited()}.

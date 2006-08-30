@@ -25,8 +25,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2005/11/06 13:10:51 $
-%%              $Revision: 1.32 $
+%%              $Date: 2006/07/24 16:48:37 $
+%%              $Revision: 1.34 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -189,7 +189,7 @@ rewrite_instr2(I, TempMap, FpMap, Need, Arity, RetLabel) ->
       %% XXX: Fix if we start using multiple return values
       %%      Acctually just fix gen_ret/2 to annotate the
       %%      jmp with the live registers...
-      case length(hipe_sparc:pseudo_return_regs(I)) == 1 of
+      case length(hipe_sparc:pseudo_return_regs(I)) =:= 1 of
 	true -> %% Just one retval all is ok
 	  hipe_sparc:goto_create(RetLabel);
 	false ->
@@ -855,7 +855,7 @@ gen_stack_test(StackNeed, SP, CP, Arity, Cfg) ->
 
   if (StackNeed) =:= 0 ->
       {[],[]};
-     (StackNeed) < ?HIPE_SPARC_LEAF_WORDS, Leaf =:= true ->
+     (StackNeed) < ?SPARC_LEAF_WORDS, Leaf =:= true ->
       {[],[]};
      true -> 
       Zero = hipe_sparc:mk_reg(hipe_sparc_registers:zero()),
@@ -868,7 +868,7 @@ gen_stack_test(StackNeed, SP, CP, Arity, Cfg) ->
       OverflowName = hipe_rtl:label_name(OverflowLbl), 
       StartName = hipe_rtl:label_name(StartLbl),
       TestName = hipe_rtl:label_name(TestLbl),
-      ByteNeed = (?HIPE_SPARC_LEAF_WORDS+StackNeed)*4, 
+      ByteNeed = (?SPARC_LEAF_WORDS+StackNeed)*4, 
       TestCode = 
 	if ByteNeed > 16#fff -> %% Max in simm13.
 	    [

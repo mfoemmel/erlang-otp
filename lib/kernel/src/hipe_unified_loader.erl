@@ -109,7 +109,10 @@ load_native_code(Mod, Bin) ->
 	undefined -> no_native;
 	NativeCode when is_binary(NativeCode) ->
 	  OldReferencesToPatch = patch_to_emu_step1(Mod),
-	  load_module(Mod, NativeCode, Bin, OldReferencesToPatch)
+	  case load_module(Mod, NativeCode, Bin, OldReferencesToPatch) of
+	    bad_crc -> no_native;
+	    Result -> Result
+	  end
       end
   end.
 
@@ -130,16 +133,6 @@ version_check(Version, Mod) ->
     true -> 
       ?msg("WARNING: Module (~w) has version ~w\n", [Mod, Version]);
     _ -> true
-  end.
-
-system_check(CRC, Mod) ->
-  case hipe_bifs:check_crc(CRC) of
-    false ->
-      ?error_msg("Module (~w) was compiled for an incompatible "
-		 "runtime system\n",
-		 [Mod]),
-      ?EXIT({bad_crc,Mod});
-    true -> true
   end.
 
 %%========================================================================
@@ -172,47 +165,53 @@ load_common(Mod, Bin, Beam, OldReferencesToPatch) ->
   ] = binary_to_term(Bin),
   %% Check that we are loading up-to-date code.
   version_check(Version, Mod),
-  system_check(CheckSum, Mod), % Throws exception...
-  %% Create data segment
-  {ConstAddr,ConstMap2} = create_data_segment(ConstAlign, ConstSize, ConstMap),
-  %% Find callees for which we may need trampolines.
-  CalleeMFAs = find_callee_mfas(Refs),
-  %% Write the code to memory.
-  {CodeAddress,Trampolines} = enter_code(CodeSize, CodeBinary, CalleeMFAs, Mod, Beam),
-  %% Construct CalleeMFA-to-trampoline mapping.
-  TrampolineMap = mk_trampoline_map(CalleeMFAs, Trampolines),
-  %% Patch references to code labels in data seg.
-  patch_consts(LabelMap, ConstAddr, CodeAddress),
-  %% Find out which functions are being loaded (and where).
-  %% Note: Addresses are sorted descending.
-  {MFAs,Addresses} = exports(ExportMap, CodeAddress),
-  %% Remove references to old versions of the module.
-  ReferencesToPatch = get_refs_from(MFAs, []),
-  remove_refs_from(MFAs),
-  %% Patch all dynamic references in the code.
-  %%  Function calls, Atoms, Constants, System calls
-  patch(Refs, CodeAddress, ConstMap2, Addresses, TrampolineMap),
-  %% Tell the system where the loaded funs are. 
-  %%  (patches the BEAM code to redirect to native.)
-  case Beam of
-    [] ->
-      export_funs(Addresses);
-    BeamBinary when is_binary(BeamBinary) ->
-      %% Find all closures in the code.
-      ClosurePatches = find_closure_patches(Refs),
-      AddressesOfClosuresToPatch =
-	calculate_addresses(ClosurePatches, CodeAddress, Addresses),
-      export_funs(Addresses),
-      export_funs(Mod, BeamBinary, Addresses, AddressesOfClosuresToPatch)
-  end,
-  %% Redirect references to the old module to the new module's BEAM stub.
-  patch_to_emu_step2(OldReferencesToPatch),
-  %% Patch referring functions to call the new function
-  %% The call to export_funs/1 above updated the native addresses
-  %% for the targets, so passing 'Addresses' is not needed.
-  redirect(ReferencesToPatch),
-  ?debug_msg("****************Loader Finished****************\n", []),
-  {module,Mod}.  % for compatibility with code:load_file/1
+  case hipe_bifs:check_crc(CheckSum) of
+    false ->
+      ?msg("Warning: not loading native code for module ~w: it was "
+	   "compiled for an incompatible runtime system\n", [Mod]),
+      bad_crc;
+    true ->
+      %% Create data segment
+      {ConstAddr,ConstMap2} = create_data_segment(ConstAlign, ConstSize, ConstMap),
+      %% Find callees for which we may need trampolines.
+      CalleeMFAs = find_callee_mfas(Refs),
+      %% Write the code to memory.
+      {CodeAddress,Trampolines} = enter_code(CodeSize, CodeBinary, CalleeMFAs, Mod, Beam),
+      %% Construct CalleeMFA-to-trampoline mapping.
+      TrampolineMap = mk_trampoline_map(CalleeMFAs, Trampolines),
+      %% Patch references to code labels in data seg.
+      patch_consts(LabelMap, ConstAddr, CodeAddress),
+      %% Find out which functions are being loaded (and where).
+      %% Note: Addresses are sorted descending.
+      {MFAs,Addresses} = exports(ExportMap, CodeAddress),
+      %% Remove references to old versions of the module.
+      ReferencesToPatch = get_refs_from(MFAs, []),
+      remove_refs_from(MFAs),
+      %% Patch all dynamic references in the code.
+      %%  Function calls, Atoms, Constants, System calls
+      patch(Refs, CodeAddress, ConstMap2, Addresses, TrampolineMap),
+      %% Tell the system where the loaded funs are. 
+      %%  (patches the BEAM code to redirect to native.)
+      case Beam of
+	[] ->
+	  export_funs(Addresses);
+	BeamBinary when is_binary(BeamBinary) ->
+	  %% Find all closures in the code.
+	  ClosurePatches = find_closure_patches(Refs),
+	  AddressesOfClosuresToPatch =
+	    calculate_addresses(ClosurePatches, CodeAddress, Addresses),
+	  export_funs(Addresses),
+	  export_funs(Mod, BeamBinary, Addresses, AddressesOfClosuresToPatch)
+      end,
+      %% Redirect references to the old module to the new module's BEAM stub.
+      patch_to_emu_step2(OldReferencesToPatch),
+      %% Patch referring functions to call the new function
+      %% The call to export_funs/1 above updated the native addresses
+      %% for the targets, so passing 'Addresses' is not needed.
+      redirect(ReferencesToPatch),
+      ?debug_msg("****************Loader Finished****************\n", []),
+      {module,Mod}  % for compatibility with code:load_file/1
+  end.
 
 %%----------------------------------------------------------------
 %% Scan the list of patches and build a set (returned as a tuple)

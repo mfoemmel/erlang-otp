@@ -56,9 +56,6 @@ TARGET_FILES =  \
 # FLAGS
 # ----------------------------------------------------
 
-# ----------------------------------------------------
-# Special Build Targets
-# ----------------------------------------------------
 ifeq ($(WARN_UNUSED_WARS),true)
 ERL_COMPILE_FLAGS += +warn_unused_vars
 endif
@@ -67,8 +64,22 @@ ifeq ($(USE_MEGACO_HIPE),true)
 ERL_COMPILE_FLAGS += +native
 endif
 
+ifeq ($(USE_VERBOSE_STATS),true)
+ERL_COMPILE_FLAGS += -DVERBOSE_STATS=true
+endif
+
+ifneq ($(MSTONE_TIME),)
+ERL_COMPILE_FLAGS += -DMSTONE_TIME=$(MSTONE_TIME)
+endif
+
 ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
 ERL_COMPILE_FLAGS += -I../include
+
+
+# ----------------------------------------------------
+# Special Build Targets
+# ----------------------------------------------------
+
 
 # ----------------------------------------------------
 # Targets
@@ -109,4 +120,10 @@ release_docs_spec:
 megaco_codec_transform.$(EMULATOR): megaco_codec_transform.erl
 
 megaco_codec_meas.$(EMULATOR): megaco_codec_meas.erl
+
+megaco_codec_mstone1.$(EMULATOR): megaco_codec_mstone1.erl
+
+megaco_codec_mstone2.$(EMULATOR): megaco_codec_mstone2.erl
+
+megaco_codec_mstone_lib.$(EMULATOR): megaco_codec_mstone_lib.erl
 

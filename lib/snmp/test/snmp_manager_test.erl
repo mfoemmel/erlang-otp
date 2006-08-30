@@ -19,6 +19,7 @@
 %% Purpose:
 %%
 %% Test:    ts:run(snmp, snmp_manager_test, [batch]).
+%% Test:    ts:run(snmp, snmp_manager_test, inform_swarm, [batch]).
 %% 
 %%----------------------------------------------------------------------
 -module(snmp_manager_test).
@@ -91,6 +92,7 @@
 	 inform2/1,
 	 inform3/1,
 	 inform4/1,
+	 inform_swarm/1,
 
 	 report/1
 
@@ -140,24 +142,49 @@ init_per_testcase2(Case, Config) ->
     [_|DataDir2] = lists:reverse(DataDir1),
     DataDir      = filename:join(lists:reverse(DataDir2) ++ [?snmp_test_data]),
 
-    SnmpPrivDir = ?config(priv_dir, Config),
+    PrivDir = ?config(priv_dir, Config),
 
-    ?line ok = file:make_dir(TopDir  = filename:join(SnmpPrivDir, Case)),
+    TopDir = filename:join(PrivDir, ?MODULE),
+    case file:make_dir(TopDir) of
+	ok ->
+	    ok;
+	{error, eexist} ->
+	    ok;
+	Error ->
+	    ?FAIL({failed_creating_subsuite_top_dir, Error})
+    end,
+	    
+    CaseTopDir = filename:join(TopDir, Case),
+    ?line ok   = file:make_dir(CaseTopDir),
     
-    %% -- Manager dirs:
-    ?line ok = file:make_dir(MgrTopDir  = filename:join(TopDir, "manager/")),
-    ?line ok = file:make_dir(MgrConfDir = filename:join(MgrTopDir,   "conf/")),
-    ?line ok = file:make_dir(MgrDbDir   = filename:join(MgrTopDir,   "db/")),
-    ?line ok = file:make_dir(MgrLogDir  = filename:join(MgrTopDir,   "log/")),
+    %% -- Manager dirs  --
+    MgrTopDir  = filename:join(CaseTopDir, "manager/"),
+    ?line ok   = file:make_dir(MgrTopDir),
 
-    %% -- Agent dirs:
-    ?line ok = file:make_dir(AgTopDir  = filename:join(TopDir, "agent/")),
-    ?line ok = file:make_dir(AgConfDir = filename:join(AgTopDir,   "conf/")),
-    ?line ok = file:make_dir(AgDbDir   = filename:join(AgTopDir,   "db/")),
-    ?line ok = file:make_dir(AgLogDir  = filename:join(AgTopDir,   "log/")),
+    MgrConfDir = filename:join(MgrTopDir,  "conf/"),
+    ?line ok   = file:make_dir(MgrConfDir),
+
+    MgrDbDir   = filename:join(MgrTopDir,  "db/"),
+    ?line ok   = file:make_dir(MgrDbDir),
+
+    MgrLogDir  = filename:join(MgrTopDir,  "log/"),
+    ?line ok   = file:make_dir(MgrLogDir),
+
+    %% -- Agent dirs --
+    AgTopDir  = filename:join(CaseTopDir, "agent/"),
+    ?line ok  = file:make_dir(AgTopDir),
+
+    AgConfDir = filename:join(AgTopDir,   "conf/"),
+    ?line ok  = file:make_dir(AgConfDir),
+
+    AgDbDir   = filename:join(AgTopDir,   "db/"),
+    ?line ok  = file:make_dir(AgDbDir),
+
+    AgLogDir  = filename:join(AgTopDir,   "log/"),
+    ?line ok  = file:make_dir(AgLogDir),
 
     Conf = [{snmp_data_dir,    DataDir},
-	    {watchdog,         ?WD_START(?MINS(2))},
+	    {watchdog,         ?WD_START(?MINS(5))},
 	    {ip,               ?LOCALHOST()},
 	    {top_dir,          TopDir},
 	    {agent_dir,        AgTopDir},
@@ -189,15 +216,29 @@ init_per_testcase3(Case, Config) ->
 	     inform2,
 	     inform3,
 	     inform4,
+	     inform_swarm,
 	     report
 	    ],
     case lists:member(Case, Cases) of
 	true ->
-	    AutoInform = not lists:member(Case, [inform1, inform2, inform3]),
-	    Conf1 = init_agent(Config),
-	    Conf2 = init_manager(AutoInform, Conf1),
-	    Conf3 = init_mgr_user(Conf2),
-	    init_mgr_user_data(Conf3);
+	    NoAutoInformCases = [inform1, inform2, inform3, inform_swarm], 
+	    AutoInform = not lists:member(Case, NoAutoInformCases),
+	    Conf1 = if 
+			Case == inform_swarm ->
+			    Verb = [{manager_config_verbosity,     silence},
+				    {manager_note_store_verbosity, silence},
+				    {manager_server_verbosity,     info},
+				    {manager_net_if_verbosity,     info},
+				    {agent_verbosity,              info}, 
+				    {agent_net_if_verbosity,       info}],
+			    Verb ++ Config;
+			true ->
+			    Config
+		    end,
+	    Conf2 = init_agent(Conf1),
+	    Conf3 = init_manager(AutoInform, Conf2), 
+	    Conf4 = init_mgr_user(Conf3),
+	    init_mgr_user_data(Conf4);
 	false ->
 	    Config
     end.
@@ -230,6 +271,7 @@ fin_per_testcase2(Case, Config) ->
 	     inform2,
 	     inform3,
 	     inform4,
+	     inform_swarm,
 	     report
 	    ],
     case lists:member(Case, Cases) of
@@ -329,6 +371,7 @@ event_tests(suite) ->
      inform2,
      inform3,
      inform4,
+     inform_swarm,
      report
     ].
 
@@ -2163,7 +2206,7 @@ trap1(Config) when list(Config) ->
 		after 10000 ->
 			receive 
 			    Any ->
-				{error, {crap, Any}}
+				{error, {timeout_crap, Any}}
 			after 1000 ->
 				{error, timeout}
 			end
@@ -2205,7 +2248,7 @@ trap1(Config) when list(Config) ->
 		after 10000 ->
 			receive 
 			    Any ->
-				{error, {crap, Any}}
+				{error, {timeout_crap, Any}}
 			after 1000 ->
 				{error, timeout}
 			end
@@ -2563,7 +2606,7 @@ inform1(Config) when list(Config) ->
 		after 10000 ->
 			receive 
 			    Any ->
-				{error, {crap, Any}}
+				{error, {timeout_crap, Any}}
 			after 1000 ->
 				{error, timeout}
 			end
@@ -2599,7 +2642,7 @@ inform1(Config) when list(Config) ->
 		after 20000 ->
 			receive 
 			    Any ->
-				{error, {crap, Any}}
+				{error, {timeout_crap, Any}}
 			after 1000 ->
 				{error, timeout}
 			end
@@ -2668,6 +2711,13 @@ inform2(Config) when list(Config) ->
 		    {snmp_targets, inform2_tag1, Addrs} ->
 			p("sent inform to ~p", [Addrs]),
 			ok
+		after 10000 ->
+			receive 
+			    Any ->
+				{error, {timeout_crap, Any}}
+			after 1000 ->
+				{error, timeout}
+			end
 		end
 	end,
 
@@ -2701,7 +2751,7 @@ inform2(Config) when list(Config) ->
 		after 10000 ->
 			receive 
 			    Any ->
-				{error, {crap, Any}}
+				{error, {timeout_crap, Any}}
 			after 1000 ->
 				{error, timeout}
 			end
@@ -2737,7 +2787,7 @@ inform2(Config) when list(Config) ->
 		after 20000 ->
 			receive 
 			    Any ->
-				{error, {crap, Any}}
+				{error, {timeout_crap, Any}}
 			after 1000 ->
 				{error, timeout}
 			end
@@ -2760,7 +2810,7 @@ inform2(Config) when list(Config) ->
 		after 10000 ->
 			receive 
 			    Any ->
-				{error, {crap, Any}}
+				{error, {timeout_crap, Any}}
 			after 1000 ->
 				{error, timeout}
 			end
@@ -2794,8 +2844,6 @@ inform3(Config) when list(Config) ->
 
     MgrNode   = ?config(manager_node, Config),
     AgentNode = ?config(agent_node, Config),
-    %% Addr = ?config(ip, Config),
-    %% Port = ?AGENT_PORT,
 
     ?line ok = mgr_user_load_mib(MgrNode, snmpv2_mib()),
     Test2Mib      = test2_mib(Config), 
@@ -2819,18 +2867,25 @@ inform3(Config) when list(Config) ->
 	fun() ->
 		agent_send_notif(AgentNode, 
 				 testTrapv22, 
-				 {inform2_tag1, self()}, 
+				 {inform3_tag1, self()}, 
 				 "standard inform",
-				[]),
+				 []),
 		ok
 	end,
 
     Cmd3 = 
 	fun() ->
 		receive
-		    {snmp_targets, inform2_tag1, [_Addr]} ->
+		    {snmp_targets, inform3_tag1, [_Addr]} ->
 			p("received inform-sent acknowledgement", []),
 			ok
+		after 10000 ->
+			receive 
+			    Crap ->
+				{error, {timeout_crap, Crap}}
+			after 0 ->
+				{error, timeout}
+			end
 		end
 	end,
 
@@ -2864,8 +2919,8 @@ inform3(Config) when list(Config) ->
 		after 50000 ->
 			receive 
 			    Any ->
-				{error, {crap, Any}}
-			after 1000 ->
+				{error, {timeout_crap, Any}}
+			after 0 ->
 				{error, timeout}
 			end
 		end
@@ -2874,17 +2929,24 @@ inform3(Config) when list(Config) ->
     Cmd7 = 
 	fun() ->
 		receive
-		    {snmp_notification, inform2_tag1, {no_response, Addr}} ->
+		    {snmp_notification, inform3_tag1, {no_response, Addr}} ->
 			p("received expected \"no response\" notification "
 			  "from: "
 			  "~n   ~p", [Addr]),
 			ok;
-		    {snmp_notification, inform2_tag1, {got_response, Addr}} ->
+		    {snmp_notification, inform3_tag1, {got_response, Addr}} ->
 			p("<ERROR> received unexpected \"got response\" "
 			  "notification from: "
 			  "~n   ~p", 
 			  [Addr]),
 			{error, {got_response, Addr}}
+		after 120000 ->
+			receive 
+			    Crap ->
+				{error, {timeout_crap, Crap}}
+			after 0 ->
+				{error, timeout}
+			end
 		end
 	end,
 
@@ -2893,7 +2955,7 @@ inform3(Config) when list(Config) ->
     Commands = 
 	[
 	 {1, "Manager and agent info at start of test", Cmd1},
-	 {2, "Send notifcation [no receiver] from agent", Cmd2},
+	 {2, "Send notifcation from agent", Cmd2},
 	 {3, "await inform-sent acknowledge from agent", Cmd3},
 	 {4, "Await first inform to manager - do not reply", Cmd4},
 	 {5, "Await first inform to manager - do not reply", Cmd4},
@@ -3023,6 +3085,143 @@ inform4(Config) when list(Config) ->
 
 
 %%======================================================================
+%% 
+%% Test: ts:run(snmp, snmp_manager_test, inform_swarm, [batch]).
+
+inform_swarm(suite) -> [];
+inform_swarm(Config) when list(Config) ->
+    process_flag(trap_exit, true),
+    put(tname, is),
+    p("starting with Config: ~p~n", [Config]),
+
+    MgrNode   = ?config(manager_node, Config),
+    AgentNode = ?config(agent_node, Config),
+
+    ?line ok = mgr_user_load_mib(MgrNode, snmpv2_mib()),
+    Test2Mib      = test2_mib(Config), 
+    TestTrapMib   = test_trap_mib(Config), 
+    TestTrapv2Mib = test_trap_v2_mib(Config), 
+    ?line ok = mgr_user_load_mib(MgrNode, Test2Mib),
+    ?line ok = mgr_user_load_mib(MgrNode, TestTrapMib),
+    ?line ok = mgr_user_load_mib(MgrNode, TestTrapv2Mib),
+    ?line ok = agent_load_mib(AgentNode,  Test2Mib),
+    ?line ok = agent_load_mib(AgentNode,  TestTrapMib),
+    ?line ok = agent_load_mib(AgentNode,  TestTrapv2Mib),
+    NumInforms = 100, 
+
+    Collector = self(),
+
+    Generator = 
+	erlang:spawn(
+	  fun() ->
+		  receive
+		      {Collector, start} ->
+			  ok
+		  end,
+		  Seqs = lists:seq(1, NumInforms),
+		  lists:foreach(
+		    fun(N) ->
+			    p("send notification ~w", [N]),
+			    agent_send_notif(AgentNode, 
+					     testTrapv22, 
+					     {inform2_tag1, Collector},
+					     "standard inform",
+					     []),
+			    %% Sleep 100 ms every tenth notification
+			    if 
+				N rem 10 == 0 ->
+				    ?SLEEP(100);
+				true ->
+				    ok
+			    end
+		    end,
+		    Seqs),
+		  ok
+	  end), 
+
+    Cmd1 = 
+	fun() ->
+		p("manager info: ~n~p", [mgr_info(MgrNode)]),
+		p("agent info: ~n~p", [agent_info(AgentNode)]),
+		ok
+	end,
+
+    Cmd2 = fun() -> Generator ! {Collector, start}, ok end,
+
+    Cmd3 = 
+	fun() ->
+		inform_swarm_collector(NumInforms)
+	end,
+
+
+    Cmd4 = fun() -> ?SLEEP(1000), ok end,
+
+    Commands = 
+	[
+	 {1, "Manager and agent info at start of test", Cmd1},
+	 {2, "Send notifcation(s) from agent", Cmd2},
+	 {3, "Await send-ack(s)/inform(s)/response(s)", Cmd3},
+	 {4, "Sleep some time (1 sec)", Cmd4},
+	 {5, "Manager and agent info after test completion", Cmd1}
+	],
+
+    command_handler(Commands).
+
+inform_swarm_collector(N) ->
+    inform_swarm_collector(N, 0, 0, 0, 10000).
+
+inform_swarm_collector(N, N, N, N, _) ->
+    ok;
+inform_swarm_collector(N, SentAckCnt, RecvCnt, RespCnt, Timeout) ->
+    p("inform_swarm_collector -> entry with"
+      "~n   N:          ~w"
+      "~n   SentAckCnt: ~w"
+      "~n   RecvCnt:    ~w"
+      "~n   RespCnt:    ~w", [N, SentAckCnt, RecvCnt, RespCnt]),
+    receive
+	{snmp_targets, inform2_tag1, [_Addr]} ->
+	    p("received inform-sent acknowledgement", []),
+	    inform_swarm_collector(N, SentAckCnt+1, RecvCnt, RespCnt, 
+				   Timeout);
+
+	{async_event, From, {inform, Pid, Inform}} ->
+	    p("received inform"),
+	    case Inform of
+		{noError, 0, VBs} when list(VBs) ->
+		    Pid ! {handle_inform_response, From}, 
+		    inform_swarm_collector(N, SentAckCnt, RecvCnt+1, RespCnt, 
+					   Timeout);
+		{Err, Idx, VBs} ->
+		    p("<ERROR> unexpected error status: "
+		      "~n   Err: ~p"
+		      "~n   Idx: ~p"
+		      "~n   VBs: ~p", [Err, Idx, VBs]),
+		    Reason = {unexpected_status, {Err, Idx, VBs}},
+		    {error, Reason}
+	    end;
+
+	{snmp_notification, inform2_tag1, {got_response, Addr}} ->
+	    p("received expected \"got response\" "
+	      "notification from: "
+	      "~n   ~p", 
+	      [Addr]),
+	    inform_swarm_collector(N, SentAckCnt, RecvCnt, RespCnt+1, 
+				   Timeout);
+
+	{snmp_notification, inform2_tag1, {no_response, Addr}} ->
+	    p("<ERROR> received expected \"no response\" notification "
+	      "from: "
+	      "~n   ~p", [Addr]),
+	    Reason = {no_response, Addr, {N, SentAckCnt, RecvCnt, RespCnt}},
+	    {error, Reason}
+
+    after Timeout ->
+	    %% Give up when we have been dead in the water for Timeout ms
+	    {error, {timeout, N, SentAckCnt, RecvCnt, RespCnt}}
+    end.
+		    
+
+%%======================================================================
 
 report(suite) -> [];
 report(Config) when list(Config) ->
@@ -3057,6 +3256,8 @@ async_collector(Expected, Acc) ->
 		    % Duplicate reply?
 		    ?FAIL({unexpected_async_event, ReqId, Reply})
 	    end
+    after 10000 ->
+	    ?FAIL({timeout, {Expected, Acc}})
     end.
 
 async_verify([]) ->
@@ -3127,10 +3328,10 @@ command_handler([{No, Desc, Cmd}|Cmds]) ->
             command_handler(Cmds);
         {error, Reason} ->
             p("<ERROR> command_handler -> ~w error: ~n~p",[No, Reason]),
-            ?line ?FAIL(Reason);
+            ?line ?FAIL({command_failed, No, Reason});
         Error ->
             p("<ERROR> command_handler -> ~w unexpected: ~n~p",[No, Error]),
-            ?line ?FAIL({unexpected_command_result, Error})
+            ?line ?FAIL({unexpected_command_result, No, Error})
     end.
 
 
@@ -3156,7 +3357,7 @@ init_manager(AutoInform, Config) ->
     ?line ok = init_crypto(Node),
 
     %% 
-    %% Write agent config
+    %% Write manager config
     %% 
 
     ?line ok = write_manager_config(Config),
@@ -3240,11 +3441,19 @@ init_mnesia(Node, Dir) ->
     ?DBG("init_mnesia -> load application mnesia", []),
     ?line ok = load_mnesia(Node),
 
-    ?DBG("init_mnesia -> application mnesia: set_env dir",[]),
+    ?DBG("init_mnesia -> application mnesia: set_env dir: ~n~p",[Dir]),
     ?line ok = set_mnesia_env(Node, dir, filename:join(Dir, "mnesia")),
 
     ?DBG("init_mnesia -> create mnesia schema",[]),
-    ?line ok = create_schema(Node),
+    ?line case create_schema(Node) of
+	      ok ->
+		  ok;
+	      {error, {Node, {already_exists, Node}}} ->
+		  ?line ok = delete_schema(Node),
+		  ?line ok = create_schema(Node);
+	      Error ->
+		  ?FAIL({failed_creating_mnesia_schema, Error})
+	  end,
     
     ?DBG("init_mnesia -> start application mnesia",[]),
     ?line ok = start_mnesia(Node),
@@ -3363,6 +3572,9 @@ set_mnesia_env(Node, Key, Val) -> set_app_env(Node, mnesia, Key, Val).
 
 create_schema(Node) ->
     rcall(Node, mnesia, create_schema, [[Node]]).
+
+delete_schema(Node) ->
+    rcall(Node, mnesia, delete_schema, [[Node]]).
 
 create_table(Node, Table) ->
     rcall(Node, mnesia, create_table, [Table]).
@@ -3595,6 +3807,11 @@ start_manager(Node, Vsns, Conf0, Opts) ->
     DbDir   = ?config(manager_db_dir, Conf0),
     IRB     = ?config(irb, Conf0),
 
+    ConfigVerbosity    = get_opt(manager_config_verbosity,     Conf0, trace),
+    NoteStoreVerbosity = get_opt(manager_note_store_verbosity, Conf0, log),
+    ServerVerbosity    = get_opt(manager_server_verbosity,     Conf0, trace),
+    NetIfVerbosity     = get_opt(manager_net_if_verbosity,     Conf0, trace),
+
     Env = [{versions,                     Vsns},
 	   {inform_response_behaviour,    IRB},
 	   {audit_trail_log, [{type,      read_write},
@@ -3603,10 +3820,10 @@ start_manager(Node, Vsns, Conf0, Opts) ->
 			      {repair,    true}]},
 	   {config,          [{dir,       ConfDir}, 
 			      {db_dir,    DbDir}, 
-			      {verbosity, trace}]},
-	   {note_store,      [{verbosity, log}]},
-	   {server,          [{verbosity, trace}]},
-	   {net_if,          [{verbosity, trace}]}],
+			      {verbosity, ConfigVerbosity}]},
+	   {note_store,      [{verbosity, NoteStoreVerbosity}]},
+	   {server,          [{verbosity, ServerVerbosity}]},
+	   {net_if,          [{verbosity, NetIfVerbosity}]}],
     ?line ok = set_mgr_env(Node, Env),
 
     ?line ok = start_snmp(Node),
@@ -3632,24 +3849,32 @@ start_agent(Node, Vsns, Conf0, Opts) ->
     ConfDir = ?config(agent_conf_dir, Conf0),
     DbDir   = ?config(agent_db_dir,   Conf0),
 
+    MAV  = get_opt(agent_verbosity,                Conf0, trace),
+    CV   = get_opt(agent_config_verbosity,         Conf0, info),
+    LDBV = get_opt(agent_local_db_verbosity,       Conf0, info),
+    MSV  = get_opt(agent_mib_server_verbosity,     Conf0, info),
+    NSV  = get_opt(agent_note_store_verbosity,     Conf0, info),
+    SSV  = get_opt(agent_symbolic_store_verbosity, Conf0, info),
+    NIV  = get_opt(agent_net_if_verbosity,         Conf0, log),
+
     Env = [{versions,        Vsns},
 	   {type,            master},
-	   {agent_verbosity, trace},
+	   {agent_verbosity, MAV},
 	   {audit_trail_log, [{type,   read_write},
 			      {dir,    AtlDir},
 			      {size,   {10240, 10}},
 			      {repair, true}]},
 	   {config,          [{dir,        ConfDir}, 
 			      {force_load, false}, 
-			      {verbosity,  trace}]},
+			      {verbosity,  CV}]},
 	   {db_dir,          DbDir},
 	   {local_db,        [{repair,    true},
 			      {auto_save, 10000},
-			      {verbosity, info}]},
-	   {mib_server,      [{verbosity, trace}]},
-	   {note_store,      [{verbosity, log}]},
-	   {stymbolic_store, [{verbosity, info}]},
-	   {net_if,          [{verbosity, trace}]},
+			      {verbosity, LDBV}]},
+	   {mib_server,      [{verbosity, MSV}]},
+	   {note_store,      [{verbosity, NSV}]},
+	   {stymbolic_store, [{verbosity, SSV}]},
+	   {net_if,          [{verbosity, NIV}]},
 	   {multi_threaded,  true}],
     ?line ok = set_agent_env(Node, Env),
 
@@ -3859,7 +4084,8 @@ update_agent_vacm(_Vsns, Dir) ->
     snmp_config:update_agent_vacm_config(Dir, Conf).
 
 write_agent_target_addr_conf(Dir, Addr, Vsns) -> 
-    snmp_config:write_agent_snmp_target_addr_conf(Dir, Addr, ?MGR_PORT, Vsns).
+    snmp_config:write_agent_snmp_target_addr_conf(Dir, Addr, ?MGR_PORT, 
+						  300, 3, Vsns).
 
 write_agent_target_params_conf(Dir, Vsns) -> 
     F = fun(v1) -> {"target_v1", v1,  v1,  "all-rights", noAuthNoPriv};
@@ -3910,6 +4136,12 @@ j(A, B) ->
 
 %% ------
 
+get_opt(Key, Opts, Def) ->
+    snmp_misc:get_option(Key, Opts, Def).
+
+
+%% ------
+
 rcall(Node, Mod, Func, Args) ->
     case rpc:call(Node, Mod, Func, Args) of
 	{badrpc, nodedown} ->
@@ -3929,5 +4161,18 @@ p(F, A) ->
     p(get(tname), F, A).
  
 p(TName, F, A) ->
-    io:format("~w -> " ++ F ++ "~n", [TName|A]).
+    io:format("*** [~w][~s] ***"
+              "~n" ++ F ++ "~n", [TName,format_timestamp(now())|A]).
+
+format_timestamp({_N1, _N2, N3}   = Now) ->
+    {Date, Time}   = calendar:now_to_datetime(Now),
+    {YYYY,MM,DD}   = Date,
+    {Hour,Min,Sec} = Time,
+    FormatDate =
+        io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+                      [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),
+    lists:flatten(FormatDate).
+
+%% p(TName, F, A) ->
+%%     io:format("~w -> " ++ F ++ "~n", [TName|A]).
 

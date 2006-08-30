@@ -231,7 +231,7 @@ mk_pseudo_call_prepare(NrStkArgs) ->
 pseudo_call_prepare_nrstkargs(#pseudo_call_prepare{nrstkargs=NrStkArgs}) ->
   NrStkArgs.
 
-mk_pseudo_li(Dst, Imm) -> #pseudo_li{dst=Dst, imm=Imm}.
+mk_pseudo_li(Dst, Imm) -> #pseudo_li{dst=Dst, imm=Imm, label=hipe_gensym:get_next_label(arm)}.
 
 mk_pseudo_move(Dst, Src) -> #pseudo_move{dst=Dst, src=Src}.
 is_pseudo_move(I) -> case I of #pseudo_move{} -> true; _ -> false end.

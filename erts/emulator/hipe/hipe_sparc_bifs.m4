@@ -4,6 +4,7 @@ changecom(`/*', `*/')dnl
  */
 
 #`include' "hipe_sparc_asm.h"
+#`include' "hipe_literals.h"
 
 /*
  * These m4 macros expand to assembly code which
@@ -19,59 +20,16 @@ changecom(`/*', `*/')dnl
  *
  * XXX: TODO:
  * - Replace "subcc ARG0,0,%g0; bz,pn" with "brz,pn ARG0"
- * - Can a BIF with arity 0 fail? beam_emu doesn't think so ...
- * - Can a bif change the native stack pointer?
- * - Can a bif change p->fcalls?
- * - If only some bifs change nsp and fcalls, can these be
- *   be handled separately?
- * - All standard BIF interfaces save RA in the PCB now. This
- *   is needed for those BIFs that can trigger a walk of the
- *   native stack, which includes those that can do a gc.
- *   Ideally this overhead should only be imposed for those BIFs
- *   that actually need it, but that set changes from time to
- *   time, and is difficult for us to track.
  */
 
 /*
- * standard_bif_interface_0(nbif_name, cbif_name)
  * standard_bif_interface_1(nbif_name, cbif_name)
  * standard_bif_interface_2(nbif_name, cbif_name)
  * standard_bif_interface_3(nbif_name, cbif_name)
  *
- * Generate native interface for a BIF with 0-3 arguments and
+ * Generate native interface for a BIF with 1-3 arguments and
  * standard failure mode (may fail, but not with RESCHEDULE).
  */
-define(standard_bif_interface_0,
-`
-#ifndef HAVE_$1
-#`define' HAVE_$1
-	.section ".text"
-	.align 4
-	.global $1
-$1:
-	!! Move P to the first C-arg
-	mov P,%o0
-
-	!! Save registers and call the C function
-	st RA,[P+P_NRA]
-	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
-	mov RA,TEMP3
-	call $2
-	st NSP,[P+P_NSP]
-
-	!! Restore registers and test for success/failure
-	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
-	subcc %o0,THE_NON_VALUE,%g0
-	bz,pn %icc,nbif_0_simple_exception
-	ld [P+P_NSP],NSP
-	jmpl TEMP3+8,%g0
-	nop
-	.size $1,.-$1
-	.type $1,#function
-#endif')
-
 define(standard_bif_interface_1,
 `
 #ifndef HAVE_$1
@@ -84,21 +42,17 @@ $1:
 	mov P,%o0
 
 	!! Save registers and call the C function
-	st RA,[P+P_NRA]
 	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
 	mov RA,TEMP3
 	call $2
-	st NSP,[P+P_NSP]
+	st HP,[P+P_HP]
 
 	!! Restore registers and test for success/failure
-	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
 	subcc %o0,THE_NON_VALUE,%g0
 	bz,pn %icc,nbif_1_simple_exception
-	ld [P+P_NSP],NSP
+	ld [P+P_FCALLS],FCALLS
 	jmpl TEMP3+8,%g0
-	nop
+	ld [P+P_HP],HP
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -115,21 +69,17 @@ $1:
 	mov P,%o0
 
 	!! Save registers and call the C function
-	st RA,[P+P_NRA]
 	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
 	mov RA,TEMP3
 	call $2
-	st NSP,[P+P_NSP]
+	st HP,[P+P_HP]
 
 	!! Restore registers and test for success/failure
-	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
 	subcc %o0,THE_NON_VALUE,%g0
 	bz,pn %icc,nbif_2_simple_exception
-	ld [P+P_NSP],NSP
+	ld [P+P_FCALLS],FCALLS
 	jmpl TEMP3+8,%g0
-	nop
+	ld [P+P_HP],HP
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -146,21 +96,17 @@ $1:
 	mov P,%o0
 
 	!! Save registers and call the C function
-	st RA,[P+P_NRA]
 	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
 	mov RA,TEMP3
 	call $2
-	st NSP,[P+P_NSP]
+	st HP,[P+P_HP]
 
 	!! Restore registers and test for success/failure
-	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
 	subcc %o0,THE_NON_VALUE,%g0
 	bz,pn %icc,nbif_3_simple_exception
-	ld [P+P_NSP],NSP
+	ld [P+P_FCALLS],FCALLS
 	jmpl TEMP3+8,%g0
-	nop
+	ld [P+P_HP],HP
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -187,21 +133,17 @@ $1:
 	mov ARG0,TEMP1
 
 	!! Save registers and call the C function
-	st RA,[P+P_NRA]
 	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
 	mov RA,TEMP3
 	call $2
-	st NSP,[P+P_NSP]
+	st HP,[P+P_HP]
 
 	!! Restore registers and test for success/failure
-	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
 	subcc %o0,THE_NON_VALUE,%g0
 	bz,pn %icc,1f
-	ld [P+P_NSP],NSP
+	ld [P+P_FCALLS],FCALLS
 	jmpl TEMP3+8,%g0
-	nop
+	ld [P+P_HP],HP
 1:
 	set $1,TEMP0
 	b nbif_hairy_exception
@@ -228,21 +170,17 @@ $1:
 	mov ARG1,TEMP2
 
 	!! Save registers and call the C function
-	st RA,[P+P_NRA]
 	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
 	mov RA,TEMP3
 	call $2
-	st NSP,[P+P_NSP]
+	st HP,[P+P_HP]
 
 	!! Restore registers and test for success/failure
-	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
 	subcc %o0,THE_NON_VALUE,%g0
 	bz,pn %icc,1f
-	ld [P+P_NSP],NSP
+	ld [P+P_FCALLS],FCALLS
 	jmpl TEMP3+8,%g0
-	nop
+	ld [P+P_HP],HP
 1:
 	set $1,TEMP0
 	b nbif_hairy_exception
@@ -281,11 +219,47 @@ $1:
 
 	!! Restore registers and return
 	ld [P+P_HP_LIMIT],HP_LIMIT
-	ld [P+P_NSP_LIMIT],NSP_LIMIT
 	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
 	jmpl TEMP3+8,%g0
-	ld [P+P_NSP],NSP
+	ld [P+P_HP],HP
+	.size $1,.-$1
+	.type $1,#function
+#endif')
+
+/*
+ * gc_bif_interface_N(nbif_name, cbif_name)
+ *
+ * Generate native interface for a BIF with 1-2 arguments and
+ * standard failure mode (may fail, but not with RESCHEDULE).
+ * The BIF may do a GC, so the heap limit register is reloaded
+ * after the call.
+ */
+define(gc_bif_interface_N,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	.section ".text"
+	.align 4
+	.global $1
+$1:
+	!! Move P to the first C-arg
+	mov P,%o0
+
+	!! Save registers and call the C function
+	st RA,[P+P_NRA]
+	st FCALLS,[P+P_FCALLS]
+	st HP,[P+P_HP]
+	mov RA,TEMP3
+	call $2
+	st NSP,[P+P_NSP]
+
+	!! Restore registers and test for success/failure
+	ld [P+P_HP_LIMIT],HP_LIMIT
+	subcc %o0,THE_NON_VALUE,%g0
+	bz,pn %icc,nbif_2_simple_exception
+	ld [P+P_FCALLS],FCALLS
+	jmpl TEMP3+8,%g0
+	ld [P+P_HP],HP
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -311,18 +285,15 @@ $1:
 	mov P,%o0
 
 	!! Save registers and call the C function
-	st RA,[P+P_NRA]
 	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
 	mov RA,TEMP3
 	call $2
-	st NSP,[P+P_NSP]
+	st HP,[P+P_HP]
 
 	!! Restore registers and return
 	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
 	jmpl TEMP3+8,%g0
-	ld [P+P_NSP],NSP
+	ld [P+P_HP],HP
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -340,18 +311,15 @@ $1:
 	mov P,%o0
 
 	!! Save registers and call the C function
-	st RA,[P+P_NRA]
 	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
 	mov RA,TEMP3
 	call $2
-	st NSP,[P+P_NSP]
+	st HP,[P+P_HP]
 
 	!! Restore registers and return
 	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
 	jmpl TEMP3+8,%g0
-	ld [P+P_NSP],NSP
+	ld [P+P_HP],HP
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -370,18 +338,15 @@ $1:
 	mov P,%o0
 
 	!! Save registers and call the C function
-	st RA,[P+P_NRA]
 	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
 	mov RA,TEMP3
 	call $2
-	st NSP,[P+P_NSP]
+	st HP,[P+P_HP]
 
 	!! Restore registers and return
 	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
 	jmpl TEMP3+8,%g0
-	ld [P+P_NSP],NSP
+	ld [P+P_HP],HP
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -400,18 +365,15 @@ $1:
 	mov P,%o0
 
 	!! Save registers and call the C function
-	st RA,[P+P_NRA]
 	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
 	mov RA,TEMP3
 	call $2
-	st NSP,[P+P_NSP]
+	st HP,[P+P_HP]
 
 	!! Restore registers and return
 	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
 	jmpl TEMP3+8,%g0
-	ld [P+P_NSP],NSP
+	ld [P+P_HP],HP
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -435,18 +397,10 @@ define(noproc_primop_interface_0,
 	.align 4
 	.global $1
 $1:
-	!! Save registers and call the C function
-	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
-	mov RA,TEMP3
-	call $2
-	st NSP,[P+P_NSP]
-
-	!! Restore registers and return
-	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
-	jmpl TEMP3+8,%g0
-	ld [P+P_NSP],NSP
+	!! XXX: this case is always trivial; how to suppress the branch?
+	!! Perform a quick save;call;restore;ret sequence.
+	b $2
+	nop
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -459,21 +413,9 @@ define(noproc_primop_interface_1,
 	.align 4
 	.global $1
 $1:
-	!! Move the parameters to C parameters.
+	!! Perform a quick save;call;restore;ret sequence.
+	b $2
 	mov ARG0,%o0
-
-	!! Save registers and call the C function
-	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
-	mov RA,TEMP3
-	call $2
-	st NSP,[P+P_NSP]
-
-	!! Restore registers and return
-	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
-	jmpl TEMP3+8,%g0
-	ld [P+P_NSP],NSP
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -486,22 +428,10 @@ define(noproc_primop_interface_2,
 	.align 4
 	.global $1
 $1:
-	!! Move the parameters to C parameters.
+	!! Perform a quick save;call;restore;ret sequence.
 	mov ARG0,%o0
+	b $2
 	mov ARG1,%o1
-
-	!! Save registers and call the C function
-	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
-	mov RA,TEMP3
-	call $2
-	st NSP,[P+P_NSP]
-
-	!! Restore registers and return
-	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
-	jmpl TEMP3+8,%g0
-	ld [P+P_NSP],NSP
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -514,23 +444,11 @@ define(noproc_primop_interface_3,
 	.align 4
 	.global $1
 $1:
-	!! Move the parameters to C parameters.
+	!! Perform a quick save;call;restore;ret sequence.
 	mov ARG0,%o0
 	mov ARG1,%o1
+	b $2
 	mov ARG2,%o2
-
-	!! Save registers and call the C function
-	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
-	mov RA,TEMP3
-	call $2
-	st NSP,[P+P_NSP]
-
-	!! Restore registers and return
-	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
-	jmpl TEMP3+8,%g0
-	ld [P+P_NSP],NSP
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -543,25 +461,13 @@ define(noproc_primop_interface_5,
 	.align 4
 	.global $1
 $1:
-	!! Move the parameters to C parameters.
+	!! Perform a quick save;call;restore;ret sequence.
 	mov ARG0,%o0
 	mov ARG1,%o1
 	mov ARG2,%o2
 	mov ARG3,%o3
+	b $2
 	mov ARG4,%o4
-
-	!! Save registers and call the C function
-	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
-	mov RA,TEMP3
-	call $2
-	st NSP,[P+P_NSP]
-
-	!! Restore registers and return
-	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
-	jmpl TEMP3+8,%g0
-	ld [P+P_NSP],NSP
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -581,21 +487,29 @@ define(nocons_nofail_primop_interface_N,
 	.align	4
 	.global	$1
 $1:
+	!! Perform a quick save;call;restore;ret sequence.
+	b $2
 	mov P,%o0
-	st FCALLS,[P+P_FCALLS]
-	st HP,[P+P_HP]
-	mov RA,TEMP3
-	call $2
-	st NSP,[P+P_NSP]
-
-	!! Restore registers and return
-	ld [P+P_FCALLS],FCALLS
-	ld [P+P_HP],HP
-	jmpl TEMP3+8,%g0
-	ld [P+P_NSP],NSP
 	.size	$1,.-$1
 	.type	$1,#function
 #endif')
+
+/*
+ * Implement standard_bif_interface_0 as nofail_primop_interface_0.
+ */
+define(standard_bif_interface_0,`nofail_primop_interface_0($1, $2)')
+
+/*
+ * Implement gc_bif_interface_0 as gc_nofail_primop_interface_1.
+ * (Arities do not match, but that does not matter for SPARC.)
+ */
+define(gc_bif_interface_0,`gc_nofail_primop_interface_1($1, $2)')
+
+/*
+ * Implement gc_bif_interface_{1,2} as gc_bif_interface_N.
+ */
+define(gc_bif_interface_1,`gc_bif_interface_N($1, $2)')
+define(gc_bif_interface_2,`gc_bif_interface_N($1, $2)')
 
 /*
  * Implement nocons_nofail_primop_interface_{0,1,2,3,5}

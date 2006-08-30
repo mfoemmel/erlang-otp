@@ -276,6 +276,8 @@ pp_fun(Dev, Fun, Args, Type, Guard) ->
       end
   end.
 
+pp_arg(Dev, {var, V, {T, R}}) ->
+  io:format(Dev, "v~p (~s, ~s)", [V, erl_types:t_to_string(T), hipe_icode_range_an:to_string(R)]);
 pp_arg(Dev, {var, V, T}) ->
   io:format(Dev, "v~p (~s)", [V, erl_types:t_to_string(T)]);
 pp_arg(Dev, {var, V}) ->

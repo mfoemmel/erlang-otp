@@ -135,21 +135,25 @@ do {									\
  * We need our special version because the heap top is in the
  * HTOP variable and not in the process structure.
  */
+#if !defined(HEAP_FRAG_ELIM_TEST)
+
 #if defined(DEBUG)
-#  define BeamArithAlloc(p, need)                               \
-   (ASSERT_EXPR((need) >= 0),                                   \
-    ((ARITH_AVAIL(p) < (need)) ?                                \
-     erts_arith_alloc((p), HTOP, (need)) :                      \
-     ((ARITH_HEAP(p) += (need)), (ARITH_AVAIL(p) -= (need)),    \
-      (ARITH_CHECK_ME(p) = ARITH_HEAP(p)),                      \
+#  define BeamArithAlloc(p, need)				\
+   (ASSERT_EXPR((need) >= 0),					\
+    ((ARITH_AVAIL(p) < (need)) ?				\
+     erts_heap_alloc((p), (need)) :				\
+     ((ARITH_HEAP(p) += (need)), (ARITH_AVAIL(p) -= (need)),	\
+      (ARITH_CHECK_ME(p) = ARITH_HEAP(p)),			\
       (ARITH_HEAP(p) - (need)))))
 #else
-#  define BeamArithAlloc(p, need)                               \
-    ((ARITH_AVAIL(p) < (need)) ?                                \
-     erts_arith_alloc((p), HTOP, (need)) :                      \
-     ((ARITH_HEAP(p) += (need)),                                \
-      (ARITH_AVAIL(p) -= (need)),                               \
+#  define BeamArithAlloc(p, need)		\
+    ((ARITH_AVAIL(p) < (need)) ?		\
+     erts_heap_alloc((p), (need)) :		\
+     ((ARITH_HEAP(p) += (need)),		\
+      (ARITH_AVAIL(p) -= (need)),		\
       (ARITH_HEAP(p) - (need))))
+#endif
+
 #endif
 
 /*
@@ -1200,7 +1204,7 @@ void process_main(void)
     Eterm tmp_big[2];		/* Temporary buffer for small bignums. */
 
 #ifndef ERTS_SMP
-    static Eterm save_reg[MAX_REG];	
+    static Eterm save_reg[ERTS_X_REGS_ALLOCATED];
     /* X registers -- not used directly, but
      * through 'reg', because using it directly
      * needs two instructions on a SPARC,
@@ -1223,6 +1227,12 @@ void process_main(void)
      * For keeping the negative old value of 'reds' when call saving is active.
      */
     int neg_o_reds = 0;
+
+#if defined(HEAP_FRAG_ELIM_TEST)
+    Eterm (*arith_func)(Process* p, Eterm* reg, Uint live);
+#else
+    Eterm (*arith_func)(Process* p, Eterm arg1, Eterm arg2);
+#endif
 
 #ifndef NO_JUMP_TABLE
     static void* opcodes[] = { DEFINE_OPCODES };
@@ -1320,7 +1330,19 @@ void process_main(void)
 #endif
 #include "beam_hot.h"
 
+#if defined(HEAP_FRAG_ELIM_TEST)
+#  define STORE_ARITH_RESULT(res) StoreBifResult(2, (res));
+#  define ARITH_FUNC(name) erts_gc_##name
+#else
+#  define STORE_ARITH_RESULT(r) StoreBifResult(1, (r));
+#  define ARITH_FUNC(name) erts_##name
+#endif
+
+#if defined(HEAP_FRAG_ELIM_TEST)
+ OpCase(i_plus_jId):
+#else
  OpCase(i_plus_jd):
+#endif
  {
      Eterm result;
 
@@ -1329,19 +1351,19 @@ void process_main(void)
 	 ASSERT(MY_IS_SSMALL(i) == IS_SSMALL(i));
 	 if (MY_IS_SSMALL(i)) {
 	     result = make_small(i);
-	     StoreBifResult(1, result);
+	     STORE_ARITH_RESULT(result);
 	 }
      
      }
-     SAVE_HTOP;
-     result = erts_mixed_plus(c_p, tmp_arg1, tmp_arg2);
-     if (is_value(result)) {
-	 StoreBifResult(1, result);
-     }
-     goto lb_Cl_error;
+     arith_func = ARITH_FUNC(mixed_plus);
+     goto do_big_arith2;
  }
 
+#if defined(HEAP_FRAG_ELIM_TEST)
+ OpCase(i_minus_jId):
+#else
  OpCase(i_minus_jd):
+#endif
  {
      Eterm result;
 
@@ -1350,15 +1372,11 @@ void process_main(void)
 	 ASSERT(MY_IS_SSMALL(i) == IS_SSMALL(i));
 	 if (MY_IS_SSMALL(i)) {
 	     result = make_small(i);
-	     StoreBifResult(1, result);
+	     STORE_ARITH_RESULT(result);
 	 }
      }
-     SAVE_HTOP;
-     result = erts_mixed_minus(c_p, tmp_arg1, tmp_arg2);
-     if (is_value(result)) {
-	 StoreBifResult(1, result);
-     }
-     goto lb_Cl_error;
+     arith_func = ARITH_FUNC(mixed_minus);
+     goto do_big_arith2;
  }
 
  OpCase(i_is_lt_f):
@@ -2246,17 +2264,111 @@ void process_main(void)
   * Arithmetic operations.
   */
 
+#if defined(HEAP_FRAG_ELIM_TEST)
+ OpCase(i_times_jId):
+#else
  OpCase(i_times_jd):
+#endif
+ {
+     arith_func = ARITH_FUNC(mixed_times);
+     goto do_big_arith2;
+ }
+
+#if defined(HEAP_FRAG_ELIM_TEST)
+ OpCase(i_m_div_jId):
+#else
+ OpCase(i_m_div_jd):
+#endif
+ {
+     arith_func = ARITH_FUNC(mixed_div);
+     goto do_big_arith2;
+ }
+
+#if defined(HEAP_FRAG_ELIM_TEST)
+ OpCase(i_int_div_jId):
+#else
+ OpCase(i_int_div_jd):
+#endif
  {
      Eterm result;
 
-     SAVE_HTOP;
-     result = erts_mixed_times(c_p, tmp_arg1, tmp_arg2);
-     if (is_value(result)) {
-	 StoreBifResult(1, result);
+     if (tmp_arg2 == SMALL_ZERO) {
+	 goto badarith;
+     } else if (is_both_small(tmp_arg1, tmp_arg2)) {
+	 Sint ires = signed_val(tmp_arg1) / signed_val(tmp_arg2);
+	 if (MY_IS_SSMALL(ires)) {
+	     result = make_small(ires);
+	     STORE_ARITH_RESULT(result);
+	 }
+     }
+     arith_func = ARITH_FUNC(int_div);
+     goto do_big_arith2;
+ }
+
+#if defined(HEAP_FRAG_ELIM_TEST)
+ OpCase(i_rem_jId):
+#else
+ OpCase(i_rem_jd):
+#endif
+ {
+     Eterm result;
+
+     if (tmp_arg2 == SMALL_ZERO) {
+	 goto badarith;
+     } else if (is_both_small(tmp_arg1, tmp_arg2)) {
+	 result = make_small(signed_val(tmp_arg1) % signed_val(tmp_arg2));
+	 STORE_ARITH_RESULT(result);
+     } else {
+	 arith_func = ARITH_FUNC(int_rem);
+	 goto do_big_arith2;
      }
  }
-    /* Fall through into lb_Cl_error. */
+
+#if defined(HEAP_FRAG_ELIM_TEST)
+ OpCase(i_band_jId):
+#else
+ OpCase(i_band_jd):
+#endif
+ {
+     Eterm result;
+
+     if (is_both_small(tmp_arg1, tmp_arg2)) {
+	 /*
+	  * No need to untag -- TAG & TAG == TAG.
+	  */
+	 result = tmp_arg1 & tmp_arg2;
+	 STORE_ARITH_RESULT(result);
+     }
+     arith_func = ARITH_FUNC(band);
+     goto do_big_arith2;
+ }
+
+ do_big_arith2:
+ {
+     Eterm result;
+#if defined(HEAP_FRAG_ELIM_TEST)
+     Uint live = Arg(1);
+
+     SWAPOUT;
+     reg[0] = r(0);
+     reg[live] = tmp_arg1;
+     reg[live+1] = tmp_arg2;
+     result = arith_func(c_p, reg, live);
+     r(0) = reg[0];
+     SWAPIN;
+     if (is_value(result)) {
+	 STORE_ARITH_RESULT(result);
+     }
+     goto lb_Cl_error;
+#else
+     SAVE_HTOP;
+     result = arith_func(c_p, tmp_arg1, tmp_arg2);
+     if (is_value(result)) {
+	 STORE_ARITH_RESULT(result);
+     }
+     goto lb_Cl_error;
+#endif
+ }
 
  /*
   * An error occured in an arithmetic operation or test that could
@@ -2275,77 +2387,11 @@ void process_main(void)
      goto find_func_info;
  }
 
- OpCase(i_m_div_jd):
- {
-     Eterm result;
-
-     SAVE_HTOP;
-     result = erts_mixed_div(c_p, tmp_arg1, tmp_arg2);
-     if (is_value(result)) {
-	 StoreBifResult(1, result);
-     }
-     goto lb_Cl_error;
- }
-
- OpCase(i_int_div_jd):
- {
-     Eterm result;
-
-     if (tmp_arg2 == SMALL_ZERO) {
-	 goto badarith;
-     } else if (is_both_small(tmp_arg1, tmp_arg2)) {
-	 Sint ires = signed_val(tmp_arg1) / signed_val(tmp_arg2);
-	 if (MY_IS_SSMALL(ires)) {
-	     result = make_small(ires);
-	     StoreBifResult(1, result);
-	 }
-     }
-     SAVE_HTOP;
-     result = erts_int_div(c_p, tmp_arg1, tmp_arg2);
-     if (is_value(result)) {
-	 StoreBifResult(1, result);
-     }
-     goto lb_Cl_error;
- }
-
- OpCase(i_rem_jd):
- {
-     Eterm result;
-
-     if (tmp_arg2 == SMALL_ZERO) {
-	 goto badarith;
-     } else if (is_both_small(tmp_arg1, tmp_arg2)) {
-	 result = make_small(signed_val(tmp_arg1) % signed_val(tmp_arg2));
-     } else {
-	 SAVE_HTOP;
-	 result = erts_int_rem(c_p, tmp_arg1, tmp_arg2);
-     }
-     if (is_value(result)) {
-	 StoreBifResult(1, result);
-     }
-     goto lb_Cl_error;
- }
-
- OpCase(i_band_jd):
- {
-     Eterm result;
-
-     if (is_both_small(tmp_arg1, tmp_arg2)) {
-	 /*
-	  * No need to untag -- TAG & TAG == TAG.
-	  */
-	 result = tmp_arg1 & tmp_arg2;
-	 StoreBifResult(1, result);
-     }
-     SAVE_HTOP;
-     result = erts_band(c_p, tmp_arg1, tmp_arg2);
-     if (is_value(result)) {
-	 StoreBifResult(1, result);
-     }
-     goto lb_Cl_error;
- }
-
+#if defined(HEAP_FRAG_ELIM_TEST)
+ OpCase(i_bor_jId):
+#else
  OpCase(i_bor_jd):
+#endif
  {
      Eterm result;
 
@@ -2354,17 +2400,17 @@ void process_main(void)
 	  * No need to untag -- TAG | TAG == TAG.
 	  */
 	 result = tmp_arg1 | tmp_arg2;
-	 StoreBifResult(1, result);
+	 STORE_ARITH_RESULT(result);
      }
-     SAVE_HTOP;
-     result = erts_bor(c_p, tmp_arg1, tmp_arg2);
-     if (is_value(result)) {
-	 StoreBifResult(1, result);
-     }
-     goto lb_Cl_error;
+     arith_func = ARITH_FUNC(bor);
+     goto do_big_arith2;
  }
 
+#if defined(HEAP_FRAG_ELIM_TEST)
+ OpCase(i_bxor_jId):
+#else
  OpCase(i_bxor_jd):
+#endif
  {
      Eterm result;
 
@@ -2374,16 +2420,104 @@ void process_main(void)
 	  * could mean a shift.  Therefore, play it safe here.
 	  */
 	 result = make_small(signed_val(tmp_arg1) ^ signed_val(tmp_arg2));
-	 StoreBifResult(1, result);
+	 STORE_ARITH_RESULT(result);
      }
-     SAVE_HTOP;
-     result = erts_bxor(c_p, tmp_arg1, tmp_arg2);
-     if (is_value(result)) {
-	 StoreBifResult(1, result);
-     }
-     goto lb_Cl_error;
+     arith_func = ARITH_FUNC(bxor);
+     goto do_big_arith2;
  }
 
+#if defined(HEAP_FRAG_ELIM_TEST)
+ {
+     Sint i;
+     Sint ires;
+     Eterm* bigp;
+
+     OpCase(i_bsr_jId):
+	 if (is_small(tmp_arg2)) {
+	     i = -signed_val(tmp_arg2);
+	     if (is_small(tmp_arg1)) {
+		 goto small_shift;
+	     } else if (is_big(tmp_arg1)) {
+		 if (i == 0) {
+		     StoreBifResult(2, tmp_arg1);
+		 }
+		 goto big_shift;
+	     }
+	 }
+     goto badarith;
+     
+     OpCase(i_bsl_jId):
+	 if (is_small(tmp_arg2)) {
+	     i = signed_val(tmp_arg2);
+
+	     if (is_small(tmp_arg1)) {
+	     small_shift:
+		 ires = signed_val(tmp_arg1);
+	     
+		 if (i == 0 || ires == 0) {
+		     StoreBifResult(2, tmp_arg1);
+		 } else if (i < 0)  { /* Right shift */
+		     i = -i;
+		     if (i >= SMALL_BITS-1) {
+			 tmp_arg1 = (ires < 0) ? SMALL_MINUS_ONE : SMALL_ZERO;
+		     } else {
+			 tmp_arg1 = make_small(ires >> i);
+		     }
+		     StoreBifResult(2, tmp_arg1);
+		 } else if (i < SMALL_BITS-1) { /* Left shift */
+		     if ((ires > 0 && ((~(Uint)0 << ((SMALL_BITS-1)-i)) & ires) == 0) ||
+			 ((~(Uint)0 << ((SMALL_BITS-1)-i)) & ~ires) == 0) {
+			 tmp_arg1 = make_small(ires << i);
+			 StoreBifResult(2, tmp_arg1);
+		     }
+		 }
+		 tmp_arg1 = small_to_big(ires, tmp_big);
+
+	     big_shift:
+		 if (i > 0) {	/* Left shift. */
+		     ires = big_size(tmp_arg1) + (i / D_EXP);
+		 } else {	/* Right shift. */
+		     ires = big_size(tmp_arg1);
+		     if (ires <= (-i / D_EXP))
+			 ires = 3; /* ??? */
+		     else
+			 ires -= (-i / D_EXP);
+		 }
+		 {
+		     Uint live = Arg(1);
+		     ires = BIG_NEED_SIZE(ires+1);
+		     SWAPOUT;
+		     reg[0] = r(0);
+		     reg[live] = tmp_arg1;
+		     
+		     PROCESS_MAIN_CHK_LOCKS(c_p);
+		     FCALLS -= erts_garbage_collect(c_p, ires, reg, live+1);
+		     PROCESS_MAIN_CHK_LOCKS(c_p);
+		     r(0) = reg[0];
+		     SWAPIN;
+		     ASSERT(!(M)->bp);
+
+		     bigp = HTOP;
+		     HTOP += ires;
+
+		     tmp_arg1 = big_lshift(reg[live], i, bigp);
+		 }
+		 if (is_nil(tmp_arg1)) {
+		     erts_arith_shrink(c_p, bigp);
+		     c_p->freason = SYSTEM_LIMIT;
+		     goto lb_Cl_error;
+		 }
+		 MAYBE_SHRINK(c_p,bigp,tmp_arg1,ires);
+		 StoreBifResult(2, tmp_arg1);
+	     } else if (is_big(tmp_arg1)) {
+		 if (i == 0) {
+		     StoreBifResult(2, tmp_arg1);
+		 }
+		 goto big_shift;
+	     }
+	 }
+ }
+#else
  {
      Sint i;
      Sint ires;
@@ -2444,7 +2578,6 @@ void process_main(void)
 
 		 tmp_arg1 = big_lshift(tmp_arg1, i, bigp);
 		 if (is_nil(tmp_arg1)) {
-		 system_limit:
 		     erts_arith_shrink(c_p, bigp);
 		     c_p->freason = SYSTEM_LIMIT;
 		     goto lb_Cl_error;
@@ -2460,22 +2593,38 @@ void process_main(void)
 	     }
 	 }
 
-     OpCase(int_bnot_jsd):
-	 GetArg1(1, tmp_arg1);
+ }
+#endif
+
+#if defined(HEAP_FRAG_ELIM_TEST)
+ OpCase(i_int_bnot_jsId):
+#else
+ OpCase(i_int_bnot_jsd):
+#endif
+ {
+     GetArg1(1, tmp_arg1);
      if (is_small(tmp_arg1)) {
 	 tmp_arg1 = make_small(~signed_val(tmp_arg1));
-     } else if (is_big(tmp_arg1)) {
-	 bigp = BeamArithAlloc(c_p, BIG_NEED_SIZE(big_size(tmp_arg1)+1));
-	 tmp_arg1 = big_bnot(tmp_arg1, bigp);
-	 if (is_nil(tmp_arg1)) {
-	     goto system_limit;
-	 }
-	 MAYBE_SHRINK(c_p,bigp,tmp_arg1,BIG_NEED_SIZE(big_size(tmp_arg1)+1));
-	 ArithCheck(c_p);
      } else {
-	 goto badarith;
+#if !defined(HEAP_FRAG_ELIM_TEST)
+	 tmp_arg1 = erts_bnot(c_p, tmp_arg1);
+#else
+	 Uint live = Arg(2);
+	 SWAPOUT;
+	 reg[0] = r(0);
+	 reg[live] = tmp_arg1;
+	 tmp_arg1 = erts_gc_bnot(c_p, reg, live);
+	 SWAPIN;
+#endif
+	 if (is_nil(tmp_arg1)) {
+	     goto lb_Cl_error;
+	 }
      }
-     StoreBifResult(2, tmp_arg1);
+#if defined(HEAP_FRAG_ELIM_TEST)
+ StoreBifResult(3, tmp_arg1);
+#else
+ StoreBifResult(2, tmp_arg1);
+#endif
  }
 
  badarith:
@@ -3937,6 +4086,7 @@ void process_main(void)
   * Old allocating fmove.
   */
 
+#if !defined(HEAP_FRAG_ELIM_TEST)
  OpCase(fmove_old_ld): {
      Eterm* hp = BeamArithAlloc(c_p, FLOAT_SIZE_OBJECT);
      Eterm dest = make_float(hp);
@@ -3949,7 +4099,7 @@ void process_main(void)
      StoreResult(dest, Arg(1));
      NextPF(2, next);
  }
-
+#endif
 
 #ifdef NO_FPE_SIGNALS
      OpCase(fclearerror):
@@ -4163,7 +4313,7 @@ void process_main(void)
  /*
   * Construction of binaries using old instructions.
   */
-
+#if !defined(HEAP_FRAG_ELIM_TEST)
  OpCase(i_bs_init_old): {
      Eterm *next;
      PreFetch(0, next);
@@ -4194,6 +4344,7 @@ void process_main(void)
 	erts_bs_put_string(ERL_BITS_ARGS_2((byte *) Arg(1), Arg(0)));
 	NextPF(2, next);
     }
+#endif
 
 #ifndef ERTS_SMP /* Not supported with smp emulator */
     DEFINE_COUNTING_LABELS;
@@ -4415,6 +4566,7 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
  */
 static Eterm*
 next_catch(Process* c_p, Eterm *reg) {
+    int active_catches = c_p->catches > 0;
     int have_return_to_trace = 0;
     Eterm *ptr, *prev, *return_to_trace_ptr = NULL;
     Uint i_return_trace = beam_return_trace[0];
@@ -4441,13 +4593,16 @@ next_catch(Process* c_p, Eterm *reg) {
 	}
     }
     while (ptr < STACK_START(c_p)) {
-	if (is_catch(*ptr)) goto found_catch;
+	if (is_catch(*ptr)) {
+	    if (active_catches) goto found_catch;
+	    ptr++;
+	}
 	else if (is_CP(*ptr)) {
 	    prev = ptr;
 	    if (*cp_val(*prev) == i_return_trace) {
 		/* Skip stack frame variables */
 		while (++ptr, ptr < STACK_START(c_p) && is_not_CP(*ptr)) {
-		    if (is_catch(*ptr)) goto found_catch;
+		    if (is_catch(*ptr) && active_catches) goto found_catch;
 		}
 		if (cp_val(*prev) == beam_exception_trace) {
 		    erts_trace_exception(c_p, (Eterm*) ptr[0],
@@ -4458,7 +4613,7 @@ next_catch(Process* c_p, Eterm *reg) {
 	    } else if (*cp_val(*prev) == i_return_to_trace) {
 		/* Skip stack frame variables */
 		while (++ptr, ptr < STACK_START(c_p) && is_not_CP(*ptr)) {
-		    if (is_catch(*ptr)) goto found_catch;
+		    if (is_catch(*ptr) && active_catches) goto found_catch;
 		}
 		have_return_to_trace = !0; /* Record next cp */
 		return_to_trace_ptr = NULL;

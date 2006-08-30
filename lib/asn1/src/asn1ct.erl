@@ -91,7 +91,7 @@ compile(File,Options) when list(Options) ->
 	{single_file,SuffixedFile} -> %% "e.g. "/tmp/File.asn"
  	    (catch compile1(SuffixedFile,Options2));
 	{multiple_files_file,SetBase,FileName} ->
-	    FileList = get_file_list(FileName,Options2),
+	    FileList = get_file_list(FileName,Includes),
 	    io:format("FileList: ~p~n",[FileList]),
 	    case [X||{inline,X}<-Options2] of
 		[] ->
@@ -151,6 +151,7 @@ compile_inline(Name,DirName,Modules,Options) ->
 		[ber_bin_v2|Options--[ber_bin]];
 	    _ -> Options
 	end,
+
     Fun = fun(M)-> compile(filename:join([DirName,M]),Options1) end,
     lists:foreach(Fun,Modules),
     RTmodule = get_runtime_mod(Options1),
@@ -848,9 +849,7 @@ generate({false,M},_,_,_) ->
 parse_and_save(Module,S) ->
     Options = S#state.options,
     SourceDir = S#state.sourcedir,
-%    CurrDir = ".",
     Includes = [I || {i,I} <-Options],
-%    Base = filename:basename(File),
     Options1 =
 	case {lists:member(optimize,Options),lists:member(ber_bin,Options)} of
 	    {true,true} -> 
@@ -858,28 +857,28 @@ parse_and_save(Module,S) ->
 	    _ -> Options
 	end,
     
-%    case get_input_file(Module,[SourceDir,CurrDir|Includes]) of
-    case get_input_file(Module,[SourceDir|Includes]) of
-	{file,SuffixedFile} ->
-	    case dbfile_uptodate(SuffixedFile,Options1) of
+    case get_input_file(Module,[SourceDir|Includes]) of 
+	%% search for asn1 source
+	{file,SuffixedASN1source} ->
+	    case dbfile_uptodate(SuffixedASN1source,Options1) of
 		false ->
-		    parse_and_save1(SuffixedFile,Options1);
+		    parse_and_save1(SuffixedASN1source,Options1,Includes);
 		_ -> ok
 	    end;
-	_Err ->
-%	    {error,{asn1,input_file_error,Err}}
-	    exit({error,{asn1,Module,"no such file"}})
+	Err ->
+	    io:format("Warning: could not do a consistency check of the ~p file: no asn1 source file was found.~n",[lists:concat([Module,".asn1db"])]),
+	    {error,{asn1,input_file_error,Err}}
     end.
-parse_and_save1(File,Options) ->
+parse_and_save1(File,Options,Includes) ->
     Ext = filename:extension(File),
     Base = filename:basename(File,Ext),
     DbFile = outfile(Base,"asn1db",Options),
-    Includes = [I || {i,I} <- Options],
     Continue1 = scan(File,Options),
     M =
 	case parse(Continue1,File,Options) of
 	    {true,Mod} -> Mod;
 	    _ ->
+%%		io:format("~p~nnow I die!!!!!!!!!!!~n",[File]),
 		exit({error,{asn1,File,"no such file"}})
 	end,
 %    start(["."|Includes]),
@@ -894,11 +893,11 @@ get_input_file(Module,[]) ->
 get_input_file(Module,[I|Includes]) ->
     case (catch input_file_type(filename:join([I,Module]))) of
 	{single_file,FileName} ->
-	    case file:read_file_info(FileName) of
-		{ok,_} ->
+%% 	    case file:read_file_info(FileName) of
+%% 		{ok,_} ->
 		    {file,FileName};
-		_ -> get_input_file(Module,Includes)
-	    end;
+%% 		_ -> get_input_file(Module,Includes)
+%% 	    end;
 	_ -> 
 	    get_input_file(Module,Includes)
     end.
@@ -911,8 +910,6 @@ dbfile_uptodate(File,Options) ->
     case file:read_file_info(DbFile) of
 	{error,enoent} ->
 	    false;
-% 	{error,Reason} ->
-% 	    io:format("Reason:~n~p~n",[Reason]);
 	{ok,FileInfoDb} ->
 	    %% file exists, check date and finally encodingrule
 	    {ok,FileInfoAsn} = file:read_file_info(File),
@@ -993,7 +990,7 @@ input_file_type(File) ->
 	".asn1config" ->
 	    case read_config_file(File,asn1_module) of
 		{ok,Asn1Module} -> 
-		    put(asn1_config_file,File),
+%		    put(asn1_config_file,File),
 		    input_file_type(Asn1Module);
 		Error ->
 		    Error
@@ -1018,15 +1015,15 @@ input_file_type(File) ->
 	    end
     end.
 
-get_file_list(File,Options) ->
+get_file_list(File,Includes) ->
     case file:open(File,read) of
 	{error,Reason} ->
 	    {error,{File,file:format_error(Reason)}};
 	{ok,Stream} ->
-	    get_file_list1(Stream,filename:dirname(File),Options,[])
+	    get_file_list1(Stream,filename:dirname(File),Includes,[])
     end.
 
-get_file_list1(Stream,Dir,Options,Acc) ->
+get_file_list1(Stream,Dir,Includes,Acc) ->
     Ret = io:get_line(Stream,''),
     case Ret of
 	eof ->
@@ -1034,17 +1031,15 @@ get_file_list1(Stream,Dir,Options,Acc) ->
 	    lists:reverse(Acc);
 	FileName ->
 	    SuffixedNameList =
-		case (catch input_file_type(filename:join([Dir,lists:delete($\n,FileName)]),Options)) of
-%		case (catch input_file_type(lists:delete($\n,FileName))) of
+		case (catch input_file_type(filename:join([Dir,lists:delete($\n,FileName)]),Includes)) of
 		    {empty_name,[]} -> [];
 		    {single_file,Name} -> [Name];
 		    {multiple_files_file,_,Name} ->
-			get_file_list(Name,Options);
+			get_file_list(Name,Includes);
 		    _Err ->
-			io:format("FileName: ~p, Dir: ~p~n",[FileName,Dir]),
 			[]
 		end,
-	    get_file_list1(Stream,Dir,Options,SuffixedNameList++Acc)
+	    get_file_list1(Stream,Dir,Includes,SuffixedNameList++Acc)
     end.
 
 get_rule(Options) ->
@@ -1152,10 +1147,15 @@ includes(File,Options) ->
     case filename:dirname(File) of
 	[] ->
 	    Options;
-	_ ->
-	    case lists:member({i,"."},Options) of
-		false -> Options ++ [{i,"."}];
-		_ -> Options
+	Dir ->
+	    Options2 =
+		case lists:member({i,"."},Options) of
+		    false -> Options ++ [{i,"."}];
+		    _ -> Options
+		end,
+	    case lists:member({i,Dir}, Options) of
+		false -> Options2 ++ [{i,Dir}];
+		_ -> Options2
 	    end
     end.
 

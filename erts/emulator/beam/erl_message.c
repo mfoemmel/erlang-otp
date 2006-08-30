@@ -237,11 +237,6 @@ link_mbuf_to_proc(Process *proc, ErlHeapFragment *bp)
 	MBUF(proc) = bp;
 	MBUF_SIZE(proc) += bp->size;
 	MSO(proc).overhead += (sizeof(ErlHeapFragment) / sizeof(Eterm) - 1);
-#ifdef HEAP_FRAG_ELIM_TEST
-	if (ARITH_LOWEST_HTOP(proc) == NULL) {
-	    ARITH_LOWEST_HTOP(proc) = proc->htop;
-	}
-#endif
 
 	/* Move any binaries into the process */
 	if (bp->off_heap.mso != NULL) {

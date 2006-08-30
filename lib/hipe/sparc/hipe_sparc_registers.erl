@@ -45,7 +45,6 @@
 	 temp2/0,
 	 %% temp3/0,
 	 cpsave/0,
-	 %% cplink/0
          alignment/0
 	]).
 
@@ -170,36 +169,25 @@ fpreg_name(FR) ->
 %%
 %% Pre-allocated registers.
 %%
--define(STACK_POINTER,?SPARC_REG_NSP).
--define(STACK_LIMIT,?SPARC_REG_NSP_LIMIT).
--define(HEAP_POINTER,?SPARC_REG_HP).
--define(HEAP_LIMIT,?SPARC_REG_HP_LIMIT).
--define(PROC_POINTER,?SPARC_REG_P).
--define(FCALLS,?SPARC_REG_FCALLS).
--define(RETURN_ADDRESS,?SPARC_REG_RA).
--define(ARG0,?SPARC_REG_ARG0).
--define(ARG1,?SPARC_REG_ARG1). 
--define(ARG2,?SPARC_REG_ARG2).
--define(ARG3,?SPARC_REG_ARG3).
--define(ARG4,?SPARC_REG_ARG4).
--define(ARG5,?SPARC_REG_ARG5).
--define(ARG6,?SPARC_REG_ARG6). 
--define(ARG7,?SPARC_REG_ARG7).
--define(ARG8,?SPARC_REG_ARG8).
--define(ARG9,?SPARC_REG_ARG9).
--define(ARG10,?SPARC_REG_ARG10).
--define(ARG11,?SPARC_REG_ARG11). 
--define(ARG12,?SPARC_REG_ARG12).
--define(ARG13,?SPARC_REG_ARG13).
--define(ARG14,?SPARC_REG_ARG14).
--define(ARG15,?SPARC_REG_ARG15).
--define(TEMP0,?SPARC_REG_TEMP0).%% used in emu <-> native transitions
--define(TEMP1,?SPARC_REG_TEMP1).	%% used in emu <-> native transitions
--define(TEMP2,?SPARC_REG_TEMP2).	%% used in emu <-> native transitions
--define(TEMP3,?SPARC_REG_TEMP3).
+-define(STACK_POINTER,?I3).
+-define(STACK_LIMIT,?I4).
+-define(HEAP_POINTER,?I1).
+-define(HEAP_LIMIT,?I2).
+-define(PROC_POINTER,?I0).
+-define(FCALLS,?I5).
+-define(RETURN_ADDRESS,?O7).
+-define(ARG0,?O1).
+-define(ARG1,?O2).
+-define(ARG2,?O3).
+-define(ARG3,?O4).
+-define(ARG4,?O5).
+-define(ARG5,?O0).	%% also retval
+-define(TEMP0,?G1).	%% used in emu <-> native transitions
+-define(TEMP1,?L7).	%% used in emu <-> native transitions
+-define(TEMP2,?L6).	%% used in emu <-> native transitions
+-define(TEMP3,?L5).
 
--define(CPSAVE, ?SPARC_REG_TEMP2).   %% used in calls to inc_stack.
--define(CPLINK, ?SPARC_REG_TEMP1).   %% see hipe_sparc_glue.S
+-define(CPSAVE, ?TEMP2).	%% used in calls to inc_stack.
 
 %%
 %% The lowest of the virtual registers.
@@ -245,37 +233,17 @@ arg(X) ->
       3 -> ?ARG3;
       4 -> ?ARG4;
       5 -> ?ARG5;
-      6 -> ?ARG6;
-      7 -> ?ARG7;
-      8 -> ?ARG8;
-      9 -> ?ARG9;
-      10 -> ?ARG10;
-      11 -> ?ARG11;
-      12 -> ?ARG12;
-      13 -> ?ARG13;
-      14 -> ?ARG14;
-      15 -> ?ARG15;
       Other -> exit({?MODULE, {"Argument out of range", Other}})
    end.
 
 ret(X) ->
    case X of
-      0 -> ?ARG15;
+      0 -> ?ARG5;
       1 -> ?ARG0;
       2 -> ?ARG1;
       3 -> ?ARG2;
       4 -> ?ARG3;
       5 -> ?ARG4;
-      6 -> ?ARG5;
-      7 -> ?ARG6;
-      8 -> ?ARG7;
-      9 -> ?ARG8;
-      10 -> ?ARG9;
-      11 -> ?ARG10;
-      12 -> ?ARG11;
-      13 -> ?ARG12;
-      14 -> ?ARG13;
-      15 -> ?ARG14;
       Other -> exit({?MODULE, {"Ret value of range", Other}})
    end.
 temp0() -> ?TEMP0.
@@ -283,7 +251,6 @@ temp1() -> ?TEMP1.
 temp2() -> ?TEMP2.
 %% temp3() -> ?TEMP3.
 cpsave() -> ?CPSAVE.
-%% cplink() -> ?CPLINK.
   
 
 %%
@@ -312,9 +279,10 @@ cpsave() -> ?CPSAVE.
 allocatable() ->
   %% To discourage the regalloc from using argument registers they
   %% are placed at the end. This should be handled somewhere else.
-  [?TEMP3, ?TEMP2, ?TEMP1, ?ARG14, ?ARG13, ?ARG12,
-   ?ARG11, ?ARG10, ?ARG9, ?ARG8, ?ARG7, ?ARG6, ?ARG5, 
-   ?ARG4, ?ARG3, ?ARG2, ?ARG1, ?ARG0, ?ARG15]. 
+  %% XXX: this order has no effect on the iterated coalescing regalloc
+  [?TEMP3, ?TEMP2, ?TEMP1, ?I7, ?G5, ?G4,
+   ?G3, ?G2, ?L4, ?L3, ?L2, ?L1, ?L0,
+   ?ARG4, ?ARG3, ?ARG2, ?ARG1, ?ARG0, ?O0].
 
 %%
 %% Fixed registers.
@@ -343,44 +311,17 @@ global() ->
 %% A list of all precoulored regs
 %%
 all_precoloured() ->
-   [?STACK_POINTER,
-    ?STACK_LIMIT,
-    ?HEAP_POINTER,
-    ?HEAP_LIMIT,
-    ?PROC_POINTER,
-    ?FCALLS,
-    ?RETURN_ADDRESS,
-    ?Z,
-    ?XCC,
-    ?ICC,
-    ?Y,
-    ?TEMP0,
-    ?TEMP1,
-    ?TEMP2,
-    ?TEMP3,
-    ?ARG0,
-    ?ARG1,
-    ?ARG2,
-    ?ARG3,
-    ?ARG4,
-    ?ARG5,
-    ?ARG6,
-    ?ARG7,
-    ?ARG8,
-    ?ARG9,
-    ?ARG10,
-    ?ARG11,
-    ?ARG12,
-    ?ARG13,
-    ?ARG14,
-    ?ARG15
-].
+  [?G0,?G1,?G2,?G3,?G4,?G5,?G6,?G7,
+   ?O0,?O1,?O2,?O3,?O4,?O5,?O6,?O7,
+   ?L0,?L1,?L2,?L3,?L4,?L5,?L6,?L7,
+   ?I0,?I1,?I2,?I3,?I4,?I5,?I6,?I7,
+   ?ICC,?XCC,?FCC0,?FCC1,?FCC2,?FCC3,?Y].
 
 %%
 %% The number of arguments that are passed in registers.
 %%
-register_args() -> ?SPARC_ARGS_IN_REGS.
-register_rets() -> ?SPARC_ARGS_IN_REGS.
+register_args() -> ?SPARC_NR_ARG_REGS.
+register_rets() -> ?SPARC_NR_ARG_REGS.
 
 %%
 %% The actual register number a precoulored register should use.

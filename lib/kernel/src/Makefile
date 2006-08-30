@@ -15,6 +15,12 @@
 # 
 #     $Id$
 #
+
+ifdef BOOTSTRAP
+EGEN=$(BOOTSTRAP_TOP)/lib/kernel/egen
+EBIN=$(BOOTSTRAP_TOP)/lib/kernel/ebin
+endif
+
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
@@ -133,12 +139,12 @@ TARGET_FILES = $(PRE_LOADED_MODULES:%=$(EBIN)/%.$(EMULATOR)) $(NON_PRECIOUS_TARG
 APP_FILE= kernel.app
 
 APP_SRC= $(APP_FILE).src
-APP_TARGET= ../ebin/$(APP_FILE)
+APP_TARGET= $(EBIN)/$(APP_FILE)
 
 APPUP_FILE= kernel.appup
 
 APPUP_SRC= $(APPUP_FILE).src
-APPUP_TARGET= ../ebin/$(APPUP_FILE)
+APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 
 # ----------------------------------------------------
 # FLAGS

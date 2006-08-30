@@ -15,6 +15,7 @@ MODULES = \
 	megaco_codec_v2_test \
 	megaco_codec_prev3a_test \
 	megaco_codec_prev3b_test \
+	megaco_codec_prev3c_test \
 	megaco_config_test \
 	megaco_digit_map_test \
 	megaco_examples_test \
@@ -34,6 +35,7 @@ MODULES = \
 	megaco_test_msg_v2_lib \
 	megaco_test_msg_prev3a_lib \
 	megaco_test_msg_prev3b_lib \
+	megaco_test_msg_prev3c_lib \
 	megaco_test_lib
 
 

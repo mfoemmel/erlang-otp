@@ -31,6 +31,9 @@
 #  include "config.h"
 #endif
 
+/* Needed for VxWorks va_arg */
+#include "sys.h"
+
 #ifdef ERTS_ENABLE_LOCK_CHECK
 
 #include "erl_lock_check.h"

@@ -17,6 +17,10 @@
 %%
 %%----------------------------------------------------------------------
 %% Purpose:
+%%
+%% Test:    ts:run(snmp, snmp_log_test, [batch]).
+%% Test:    ts:run(snmp, snmp_log_test, log_to_txt2, [batch]).
+%% 
 %%----------------------------------------------------------------------
 -module(snmp_log_test).
 
@@ -65,16 +69,27 @@
 %% External functions
 %%======================================================================
 
-init_per_testcase(_Case, Config) when list(Config) ->
-    Dir = ?config(priv_dir, Config),
-    LogDir = join(Dir, "log_dir/"),
-    ?line ok = file:make_dir(LogDir),
-    [{log_dir, LogDir}|Config].
+init_per_testcase(Case, Config) when list(Config) ->
+    Dir        = ?config(priv_dir, Config),
+    LogTestDir = join(Dir,        ?MODULE),
+    CaseDir    = join(LogTestDir, Case),
+    case file:make_dir(LogTestDir) of
+	ok ->
+	    ok;
+	{error, eexist} ->
+	    ok;
+	Error ->
+	    ?FAIL({failed_creating_subsuite_top_dir, Error})
+    end,
+    ?line ok = file:make_dir(CaseDir),
+    Dog = ?WD_START(?MINS(5)),
+    [{log_dir, CaseDir}, {watchdog, Dog}|Config].
 
 fin_per_testcase(_Case, Config) when list(Config) ->
-    LogDir = ?config(log_dir, Config),
-    ?line ok = ?DEL_DIR(LogDir),
-    lists:keydelete(comp_dir, 1, Config).
+    %% Leave the dirs created above (enable debugging of the test case(s))
+    Dog = ?config(watchdog, Config),
+    ?WD_STOP(Dog),
+    lists:keydelete(watchdog, 1, Config).
 
 
 %%======================================================================
@@ -174,12 +189,12 @@ log_to_io1(doc) -> "Log to io from the same process that opened "
 		       "and wrote the log";
 log_to_io1(Config) when list(Config) ->
     p(log_to_io1),
-    put(sname,log_to_io1),
+    put(sname,l2i1),
     put(verbosity,trace),
     ?DBG("log_to_io1 -> start", []),
     Dir    = ?config(log_dir, Config),
-    Name   = "snmp_test",
-    File   = join(Dir, "snmp_test.log"),
+    Name   = "snmp_test_l2i1",
+    File   = join(Dir, "snmp_test_l2i1.log"),
     Size   = {1024, 10},
     Repair = true,
     ?DBG("log_to_io1 -> create log", []),
@@ -229,12 +244,12 @@ log_to_io2(doc) -> "Log to io from a different process than which "
 log_to_io2(Config) when list(Config) ->
     process_flag(trap_exit, true),
     p(log_to_io2),
-    put(sname,log_to_io2),
+    put(sname, l2i2),
     put(verbosity,trace),
     ?DBG("log_to_io2 -> start", []),
     Dir    = ?config(log_dir, Config),
-    Name   = "snmp_test",
-    File   = join(Dir, "snmp_test.log"),
+    Name   = "snmp_test_l2i2",
+    File   = join(Dir, "snmp_test_l2i2.log"),
     Size   = {1024, 10},
     Repair = true,
     
@@ -288,12 +303,12 @@ log_to_io2(Config) when list(Config) ->
 log_to_txt1(suite) -> [];
 log_to_txt1(Config) when list(Config) ->
     p(log_to_txt1),
-    put(sname,log_to_txt1),
+    put(sname,l2t1),
     put(verbosity,trace),
     ?DBG("log_to_txt1 -> start", []),
     Dir    = ?config(log_dir, Config),
-    Name   = "snmp_test",
-    File   = join(Dir, "snmp_test.log"),
+    Name   = "snmp_test_l2t1",
+    File   = join(Dir, "snmp_test_l2t1.log"),
     Size   = {10240, 10},
     Repair = true,
     ?DBG("log_to_txt1 -> create log", []),
@@ -385,6 +400,8 @@ log_to_txt1(Config) when list(Config) ->
 %% Starta en logger-process som med ett visst intervall loggar
 %% meddelanden. Starta en reader-process som vid ett viss tillfälle
 %% läser från loggen.
+%%
+%% Test: ts:run(snmp, snmp_log_test, log_to_txt2, [batch]).
 
 log_to_txt2(suite) -> [];
 log_to_txt2(doc) -> "Log to txt file from a different process than which "
@@ -392,16 +409,20 @@ log_to_txt2(doc) -> "Log to txt file from a different process than which "
 log_to_txt2(Config) when list(Config) ->
     process_flag(trap_exit, true),
     p(log_to_txt2),
-    put(sname,log_to_txt2),
+    put(sname,l2t2),
     put(verbosity,trace),
     ?DBG("log_to_txt2 -> start", []),
     Dir     = ?config(log_dir, Config),
-    Name    = "snmp_test",
-    LogFile = join(Dir, "snmp_test.log"),
-    TxtFile = join(Dir, "snmp_test.txt"),
-    Size    = {1024, 10},
+    Name    = "snmp_test_l2t2",
+    LogFile = join(Dir, "snmp_test_l2t2.log"),
+    TxtFile = join(Dir, "snmp_test_l2t2.txt"),
+    Meg     = 1024*1024,
+    Size    = {10*Meg, 10},
     Repair  = true,
-    
+
+    StdMibDir = filename:join(code:priv_dir(snmp), "mibs") ++ "/",
+    Mibs = [join(StdMibDir, "SNMPv2-MIB")],
+
     ?DBG("log_to_txt2 -> create log writer process", []),
     ?line {ok, Log, Logger} = log_writer_start(Name, LogFile, Size, Repair),
 
@@ -422,8 +443,13 @@ log_to_txt2(Config) when list(Config) ->
 	log_reader_log_to(Reader, 
 			  fun() -> 
 				  I = disk_log:info(Log),
+				  T1 = t(), 
 				  R = snmp_log:log_to_txt(Log, LogFile, Dir, 
-							  [], TxtFile),
+							  Mibs, TxtFile),
+				  T2 = t(), 
+				  io:format(user, 
+					    "Time converting file: ~w ms~n",
+					    [T2 - T1]),
 				  {R, I}
 			  end),
 
@@ -433,7 +459,7 @@ log_to_txt2(Config) when list(Config) ->
 	    ?line {ok, #file_info{size = FileSize}} = 
 		file:read_file_info(TxtFile),
 	    ?DBG("log_to_txt2 -> text file size: ~p", [FileSize]),
-	    validate_size(Size);
+	    validate_size(FileSize);
 	{Error, Info} ->
 	    ?DBG("log_to_txt2 -> log to txt failed: "
 		 "~n   Error: ~p"
@@ -516,11 +542,11 @@ log_writer_sleep(Pid, Time) ->
 
 log_writer_main(Name, File, Size, Repair, P) ->
     process_flag(trap_exit, true),
-    put(sname,log_writer),
-    put(verbosity,trace),
+    %% put(sname,log_writer),
+    %% put(verbosity,trace),
     {ok, Log} = snmp_log:create(Name, File, Size, Repair),
     P ! {log, Log, self()},
-    Msgs   = messages(),
+    Msgs   = lists:flatten(lists:duplicate(100, messages())),
     Addr   = ?LOCALHOST(),
     Port   = 162,
     Logger =  fun(Packet) ->

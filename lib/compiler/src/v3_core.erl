@@ -107,8 +107,9 @@
 
 module({Mod,Exp,Forms}, _Opts) ->
     Cexp = map(fun ({N,A}) -> #c_fname{id=N,arity=A} end, Exp),
-    {Kfs0,As,Ws,_File} = foldl(fun form/2, {[],[],[],[]}, Forms),
+    {Kfs0,As0,Ws,_File} = foldl(fun form/2, {[],[],[],[]}, Forms),
     Kfs = reverse(Kfs0),
+    As = reverse(As0),
     {ok,#c_module{name=#c_atom{val=Mod},exports=Cexp,attrs=As,defs=Kfs},Ws}.
 
 form({function,_,_,_,_}=F0, {Fs,As,Ws0,File}) ->
@@ -170,6 +171,8 @@ clause({clause,Lc,H0,G0,B0}, St0) ->
             Anno = lineno_anno(Lc, St2),
 	    {#iclause{anno=#a{anno=Anno},pats=H1,guard=G1,body=B1},St2}
     end.
+
+clause_arity({clause,_,H0,_,_}) -> length(H0).
 
 %% head([P], State) -> [P].
 
@@ -423,7 +426,10 @@ expr({'try',L,Es0,[],[],As0}, St0) ->
     %% 'try ... after ... end'
     {Es1,St1} = exprs(Es0, St0),
     {As1,St2} = exprs(As0, St1),
-    {Evs,Hs,St3} = try_after(As1,St2),
+    {Evs,Hs0,St3} = try_after(As1,St2),
+    %% We must kill the id for any funs in the duplicated after body,
+    %% to avoid getting two local functions having the same name.
+    Hs = kill_id_anns(Hs0),
     {V,St4} = new_var(St3),		% (must not exist in As1)
     %% TODO: this duplicates the 'after'-code; should lift to function.
     Lanno = lineno_anno(L, St4),
@@ -588,8 +594,8 @@ bitstr({bin_element,_,E0,Size0,[Type,{unit,Unit}|Flags]}, St0) ->
 %% fun_tq(Id, [Clauses], Line, State) -> {Fun,[PreExp],State}.
 
 fun_tq(Id, Cs0, L, St0) ->
+    Arity = clause_arity(hd(Cs0)),
     {Cs1,St1} = clauses(Cs0, St0),
-    Arity = length((hd(Cs1))#iclause.pats),
     {Args,St2} = new_vars(Arity, St1),
     {Ps,St3} = new_vars(Arity, St2),		%Need new variables here
     Fc = fail_clause(Ps, #c_tuple{es=[#c_atom{val=function_clause}|Ps]}),
@@ -1378,6 +1384,22 @@ cexpr(Lit, _As, St) ->
     %%Vs = lit_vars(Lit),
     {core_lib:set_anno(Lit, Anno#a.anno),[],Vs,St}.
 
+%% Kill the id annoations for any fun inside the expression.
+%% Necessary when duplicating code in try ... after.
+kill_id_anns(#ifun{}=Fun) ->
+    Fun#ifun{id=[]};
+kill_id_anns(#a{}=A) ->
+    %% Optimization: Don't waste time searching for funs inside annotations.
+    A;
+kill_id_anns([H|T]) ->
+    [kill_id_anns(H)|kill_id_anns(T)];
+kill_id_anns([]) -> [];
+kill_id_anns(Tuple) when is_tuple(Tuple) ->
+    L0 = tuple_to_list(Tuple),
+    L = kill_id_anns(L0),
+    list_to_tuple(L);
+kill_id_anns(Other) -> Other.
+
 %% lit_vars(Literal) -> [Var].
 
 lit_vars(Lit) -> lit_vars(Lit, []).
@@ -1421,6 +1443,7 @@ get_lineno_anno(Ce) ->
     end.
 
 
+
 %%%
 %%% Handling of warnings.
 %%%
@@ -1433,4 +1456,3 @@ format_error(bad_binary) ->
 add_warning(Line, Term, #core{ws=Ws,file=[{file,File}]}=St) when Line >= 0 ->
     St#core{ws=[{File,[{Line,?MODULE,Term}]}|Ws]};
 add_warning(_, _, St) -> St.
-

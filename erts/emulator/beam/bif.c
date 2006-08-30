@@ -1797,6 +1797,8 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 	erts_send_message(p, rp, &rp_locks, msg);
 #ifdef ERTS_SMP
 	res = rp->msg_inq.len*4;
+	if (ERTS_PROC_LOCK_MAIN & rp_locks)
+	    res += rp->msg.len*4;
 #else
 	res = rp->msg.len*4;
 #endif
@@ -1929,159 +1931,9 @@ BIF_RETTYPE apply_3(BIF_ALIST_3)
 }
 
 
-/* maths abs function */
-BIF_RETTYPE abs_1(BIF_ALIST_1)
-{
-    Eterm res;
-    Sint i0, i;
-    Eterm* hp;
-
-    /* integer arguments */
-    if (is_small(BIF_ARG_1)) {
-	i0 = signed_val(BIF_ARG_1);
-	i = labs(i0);
-	if (i0 == MIN_SMALL)
-	    BIF_RET(erts_make_integer(i, BIF_P));
-	else {
-	    BIF_RET(make_small(i));
-	}
-    }
-    else if (is_big(BIF_ARG_1)) {
-	if (!big_sign(BIF_ARG_1)) {
-	    BIF_RET(BIF_ARG_1);
-	} else {
-	    int sz = big_arity(BIF_ARG_1) + 1;
-	    Uint* x;
-
-	    hp = ArithAlloc(BIF_P, sz);	/* See note at beginning of file */
-	    sz--;
-	    res = make_big(hp);
-	    x = big_val(BIF_ARG_1);
-	    *hp++ = make_pos_bignum_header(sz);
-	    x++;                          /* skip thing */
-	    while(sz--)
-		*hp++ = *x++;
-	    BIF_RET(res);
-	}
-    }
-    else if (is_float(BIF_ARG_1)) {
-	FloatDef f;
-
-	GET_DOUBLE(BIF_ARG_1, f);
-	if (f.fd < 0.0) {
-	    hp = ArithAlloc(BIF_P, FLOAT_SIZE_OBJECT); 	/* See note at beginning of file */
-	    f.fd = fabs(f.fd);
-	    res = make_float(hp);
-	    PUT_DOUBLE(f, hp);
-	    BIF_RET(res);
-	}
-	else
-	    BIF_RET(BIF_ARG_1);
-    }
-    BIF_ERROR(BIF_P, BADARG);
-}
-
 /**********************************************************************/
 
 /* integer to float */
-BIF_RETTYPE float_1(BIF_ALIST_1)
-{
-    Eterm res;
-    Eterm* hp;
-    FloatDef f;
-     
-    /* check args */
-    if (is_not_integer(BIF_ARG_1)) {
-	if (is_float(BIF_ARG_1))  {
-	    BIF_RET(BIF_ARG_1);
-	} else {
-	badarg:
-	    BIF_ERROR(BIF_P, BADARG);
-	}
-    }
-    if (is_small(BIF_ARG_1)) {
-	Sint i = signed_val(BIF_ARG_1);
-	f.fd = i;		/* use "C"'s auto casting */
-    } else if (big_to_double(BIF_ARG_1, &f.fd) < 0) {
-	goto badarg;
-    }
-    hp = ArithAlloc(BIF_P, FLOAT_SIZE_OBJECT);	/* See note at beginning of file */
-    res = make_float(hp);
-    PUT_DOUBLE(f, hp);
-    BIF_RET(res);
-}
-
-/**********************************************************************/
-
-/* truncate a float returning an integer */
-BIF_RETTYPE trunc_1(BIF_ALIST_1)
-{
-    Eterm res;
-    FloatDef f;
-     
-    /* check arg */
-    if (is_not_float(BIF_ARG_1)) {
-	if (is_integer(BIF_ARG_1)) 
-	    BIF_RET(BIF_ARG_1);
-	BIF_ERROR(BIF_P, BADARG);
-    }
-    /* get the float */
-    GET_DOUBLE(BIF_ARG_1, f);
-
-    /* truncate it and return the resultant integer */
-    res = double_to_integer(BIF_P, (f.fd >= 0.0) ? floor(f.fd) : ceil(f.fd));
-    BIF_RET(res);
-}
-
-/**********************************************************************/
-
-/* round a 'number' to an integer */
-
-BIF_RETTYPE round_1(BIF_ALIST_1)
-{
-    Eterm res;
-    FloatDef f;
-     
-    /* check arg */ 
-    if (is_not_float(BIF_ARG_1)) {
-	if (is_integer(BIF_ARG_1)) 
-	    BIF_RET(BIF_ARG_1);
-	BIF_ERROR(BIF_P, BADARG);
-    }
-     
-    /* get the float */
-    GET_DOUBLE(BIF_ARG_1, f);
-
-    /* round it and return the resultant integer */
-    res = double_to_integer(BIF_P, (f.fd > 0.0) ? f.fd + 0.5 : f.fd - 0.5);
-    BIF_RET(res);
-}
-
-/**********************************************************************/
-
-/* return the length of a list */
-
-BIF_RETTYPE length_1(BIF_ALIST_1)
-{
-    Eterm list;
-    Uint i;
-     
-    if (is_nil(BIF_ARG_1)) 
-	BIF_RET(SMALL_ZERO);
-    if (is_not_list(BIF_ARG_1)) {
-	BIF_ERROR(BIF_P, BADARG);
-    }
-    list = BIF_ARG_1;
-    i = 0;
-    while (is_list(list)) {
-	i++;
-	list = CDR(list_val(list));
-    }
-    if (is_not_nil(list))  {
-	BIF_ERROR(BIF_P, BADARG);
-    }
-    BIF_RET(make_small(i));
-}
 
 /**********************************************************************/
 
@@ -2106,23 +1958,6 @@ BIF_RETTYPE tl_1(BIF_ALIST_1)
     }
     BIF_RET(CDR(list_val(BIF_ARG_1)));
 }
-
-/**********************************************************************/
-
-/* returns the size of a tuple or a binary */
-
-BIF_RETTYPE size_1(BIF_ALIST_1)
-{
-    if (is_tuple(BIF_ARG_1)) {
-	Eterm* tupleptr = tuple_val(BIF_ARG_1);
-
-	BIF_RET(make_small(arityval(*tupleptr)));
-    } else if (is_binary(BIF_ARG_1)) {
-	BIF_RET(erts_make_integer(binary_size(BIF_ARG_1), BIF_P));
-    }
-    BIF_ERROR(BIF_P, BADARG);
-}
-
 
 /**********************************************************************/
 
@@ -2342,7 +2177,7 @@ BIF_RETTYPE integer_to_list_1(BIF_ALIST_1)
 	need = 2*n;
 	hp = HAlloc(BIF_P, need);
         hp_end = hp + need;
-	res = big_to_list(BIF_ARG_1, &hp);
+	res = erts_big_to_list(BIF_ARG_1, &hp);
         HRelease(BIF_P,hp_end,hp);
 	BIF_RET(res);
     }
@@ -3292,6 +3127,27 @@ BIF_RETTYPE display_1(BIF_ALIST_1)
     erts_printf("%.*T\n", INT_MAX, BIF_ARG_1);
     BIF_RET(am_true);
 }
+
+/*
+ * erts_debug:display/1 is for debugging erlang:display/1
+ */
+BIF_RETTYPE erts_debug_display_1(BIF_ALIST_1)
+{
+    int pres;
+    Eterm res;
+    Eterm *hp;
+    erts_dsprintf_buf_t *dsbufp = erts_create_tmp_dsbuf(64);       
+    pres = erts_dsprintf(dsbufp, "%.*T\n", INT_MAX, BIF_ARG_1);
+    if (pres < 0)
+	erl_exit(1, "Failed to convert term to string: %d (s)\n",
+		 -pres, erl_errno_id(-pres));
+    hp = HAlloc(BIF_P, 2*dsbufp->str_len); /* we need length * 2 heap words */
+    res = buf_to_intlist(&hp, dsbufp->str, dsbufp->str_len, NIL);
+    erts_printf("%s", dsbufp->str);
+    erts_destroy_tmp_dsbuf(dsbufp);
+    BIF_RET(res);
+}
+
 
 Eterm
 display_string_1(Process* p, Eterm string)

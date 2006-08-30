@@ -8,6 +8,11 @@ dnl
 AC_PREREQ(2.13)
 AC_INIT(vsn.mk)
 
+if test "x$no_recursion" != "xyes"; then
+    # We do not want to use a common cache!
+    cache_file=/dev/null
+fi
+
 dnl How to set srcdir absolute is taken from the GNU Emacs distribution
 #### Make srcdir absolute, if it isn't already.  It's important to
 #### avoid running the path through pwd unnecessary, since pwd can
@@ -164,10 +169,13 @@ case $host_os in
     *) ;;
 esac
 
+MIXED_CYGWIN=no
+
 AC_MSG_CHECKING(for mixed cygwin and native VC++ environment)
-if test "X$CC" = "Xcc.sh" -a "X$host" = "Xwin32"; then
+if test "X$CC" = "Xcc.sh" -a "X$host" = "Xwin32" -a "x$GCC" != x"yes"; then
 	if test -x /usr/bin/cygpath; then
 		CFLAGS="-O2"
+		MIXED_CYGWIN=yes
 		AC_MSG_RESULT([yes])
 		MIXED_CYGWIN_VC=yes
 	else
@@ -180,7 +188,32 @@ else
 fi
 AC_SUBST(MIXED_CYGWIN_VC)
 
+AC_MSG_CHECKING(for mixed cygwin and native MinGW environment)
+if test "X$CC" = "Xcc.sh" -a "X$host" = "Xwin32" -a "x$GCC" = x"yes"; then
+	if test -x /usr/bin/cygpath; then
+		CFLAGS="-O2"
+		MIXED_CYGWIN=yes
+		AC_MSG_RESULT([yes])
+		MIXED_CYGWIN_MINGW=yes
+	else
+		AC_MSG_RESULT([undeterminable])
+		AC_MSG_ERROR(Seems to be mixed windows but not with cygwin, cannot handle this!)
+	fi
+else
+	AC_MSG_RESULT([no])
+	MIXED_CYGWIN_MINGW=no
+fi
+AC_SUBST(MIXED_CYGWIN_MINGW)
 
+AC_MSG_CHECKING(if we mix cygwin with any native compiler)
+if test "X$MIXED_CYGWIN" = "Xyes" ; then
+	AC_MSG_RESULT([yes])	
+else
+	AC_MSG_RESULT([no])
+fi
+
+AC_SUBST(MIXED_CYGWIN)
+	
 dnl
 dnl Flags to the C compiler
 dnl
@@ -252,6 +285,7 @@ esac
 ARCH=noarch
 case `uname -m` in
 sun4u)	ARCH=ultrasparc;;
+sparc64)	ARCH=ultrasparc;;
 sun4v)	ARCH=ultrasparc;;
 i86pc)	ARCH=x86;;
 i386)	ARCH=x86;;
@@ -465,7 +499,7 @@ case $ERTS_BUILD_SMP_EMU in
 		ERTS_BUILD_SMP_EMU=no
 		;;
 
-	    *-okgcc-yes-ultrasparc-sol2-4|*-okgcc-yes-ppc-darwin-4)
+	    *-okgcc-yes-ultrasparc-sol2-4|*-okgcc-yes-ppc-darwin-4|*-okgcc-yes-x86-darwin-4)
 		case $host_os in
 		    solaris2.[[0-7]]|solaris2.[[0-7]].*)
 			ERTS_BUILD_SMP_EMU=no;;
@@ -559,7 +593,7 @@ if test $ERTS_BUILD_SMP_EMU = yes; then
 
 	AC_DEFINE(ETHR_EXTENDED_LIB, 1, \
 [Define if you want to enable extended functionality in the ethread library])
-
+	AC_DEFINE(ERTS_HAVE_SMP_EMU, 1, [Define if the smp emulator is built])
 	enable_threads=force
 fi
 
@@ -846,14 +880,18 @@ dnl Interactive UX needs <net/errno.h> for socket related error codes.
 dnl Some Linuxes needs <sys/socketio.h> instead of <sys/sockio.h>
 dnl
 AC_CHECK_HEADERS(fcntl.h limits.h unistd.h syslog.h dlfcn.h ieeefp.h \
-                 sys/stropts.h \
+                 sys/stropts.h sys/sysctl.h \
                  sys/ioctl.h sys/time.h sys/uio.h sys/sockio.h sys/socketio.h \
                  net/errno.h malloc.h mach-o/dyld.h arpa/nameser.h)
 
 dnl Check if we have kernel poll support
 AC_CHECK_HEADER(sys/devpoll.h, AC_DEFINE(HAVE_SYS_DEVPOLL_H))
 AC_CHECK_HEADER(linux/kpoll.h, AC_DEFINE(HAVE_LINUX_KPOLL_H))
-AC_CHECK_HEADER(sys/event.h, AC_DEFINE(HAVE_SYS_EVENT_H)) 
+AC_CHECK_HEADER(sys/event.h, AC_DEFINE(HAVE_SYS_EVENT_H))
+
+HAVE_VALGRIND=no
+AC_CHECK_HEADER(valgrind/valgrind.h, HAVE_VALGRIND=yes)
+AC_SUBST(HAVE_VALGRIND)
 
 LM_DECL_SO_BSDCOMPAT
 LM_DECL_INADDR_LOOPBACK
@@ -1480,7 +1518,7 @@ AC_TRY_RUN([
 volatile int erl_fp_exception;
 
 /* Is there no standard identifier for Darwin/MacOSX ? */
-#if defined(__ppc__) && defined(__APPLE__) && defined(__MACH__) && !defined(__DARWIN__)
+#if defined(__APPLE__) && defined(__MACH__) && !defined(__DARWIN__)
 #define __DARWIN__ 1
 #endif
 
@@ -1494,22 +1532,110 @@ static void unmask_x87(void)
     __asm__ __volatile__("fldcw %0" : : "m"(cw));
 }
 
-#if defined(__x86_64__)
 static void unmask_sse2(void)
 {
     unsigned int mxcsr;
     __asm__ __volatile__("stmxcsr %0" : "=m"(mxcsr));
-    mxcsr &= ~(0x003F|0x0680); /* clear exn flags, unmask exns (not PM, UM, DM) */
+    mxcsr &= ~(0x003F|0x0680); /* clear exn flags, unmask OM, ZM, IM (not PM, UM, DM) */
     __asm__ __volatile__("ldmxcsr %0" : : "m"(mxcsr));
 }
-#else
-#define unmask_sse2()	do{}while(0)
-#endif
+
+#if defined(__x86_64__) || defined(__DARWIN__)
+static inline int cpu_has_sse2(void) { return 1; }
+#else /* !__x86_64__ */
+/*
+ * Check if an x86-32 processor has SSE2.
+ */
+static unsigned int xor_eflags(unsigned int mask)
+{
+    unsigned int eax, edx;
+
+    eax = mask;			/* eax = mask */
+    __asm__("pushfl\n\t"
+	    "popl %0\n\t"	/* edx = original EFLAGS */
+	    "xorl %0, %1\n\t"	/* eax = mask ^ EFLAGS */
+	    "pushl %1\n\t"
+	    "popfl\n\t"		/* new EFLAGS = mask ^ original EFLAGS */
+	    "pushfl\n\t"
+	    "popl %1\n\t"	/* eax = new EFLAGS */
+	    "xorl %0, %1\n\t"	/* eax = new EFLAGS ^ old EFLAGS */
+	    "pushl %0\n\t"
+	    "popfl"		/* restore original EFLAGS */
+	    : "=d"(edx), "=a"(eax)
+	    : "1"(eax));
+    return eax;
+}
+
+static __inline__ unsigned int cpuid_eax(unsigned int op)
+{
+    unsigned int eax;
+    __asm__("cpuid"
+	    : "=a"(eax)
+	    : "0"(op)
+	    : "bx", "cx", "dx");
+    return eax;
+}
+
+static __inline__ unsigned int cpuid_edx(unsigned int op)
+{
+    unsigned int eax, edx;
+    __asm__("cpuid"
+	    : "=a"(eax), "=d"(edx)
+	    : "0"(op)
+	    : "bx", "cx");
+    return edx;
+}
+
+/* The AC bit, bit #18, is a new bit introduced in the EFLAGS
+ * register on the Intel486 processor to generate alignment
+ * faults. This bit cannot be set on the Intel386 processor.
+ */
+static __inline__ int is_386(void)
+{
+    return ((xor_eflags(1<<18) >> 18) & 1) == 0;
+}
+
+/* Newer x86 processors have a CPUID instruction, as indicated by
+ * the ID bit (#21) in EFLAGS being modifiable.
+ */
+static __inline__ int has_CPUID(void)
+{
+    return (xor_eflags(1<<21) >> 21) & 1;
+}
+
+static int cpu_has_sse2(void)
+{
+    unsigned int maxlev, features;
+    static int has_sse2 = -1;
+
+    if (has_sse2 >= 0)
+	return has_sse2;
+    has_sse2 = 0;
+
+    if (is_386())
+	return 0;
+    if (!has_CPUID())
+	return 0;
+    maxlev = cpuid_eax(0);
+    /* Intel A-step Pentium had a preliminary version of CPUID.
+       It also didn't have SSE2. */
+    if ((maxlev & 0xFFFFFF00) == 0x0500)
+	return 0;
+    /* If max level is zero then CPUID cannot report any features. */
+    if (maxlev == 0)
+	return 0;
+    features = cpuid_edx(1);
+    has_sse2 = (features & (1 << 26)) != 0;
+
+    return has_sse2;
+}
+#endif /* !__x86_64__ */
 
 static void unmask_fpe(void)
 {
     unmask_x87();
-    unmask_sse2();
+    if (cpu_has_sse2())
+	unmask_sse2();
 }
 
 static __inline__ int check_fpe(double f)
@@ -1522,14 +1648,32 @@ static __inline__ int check_fpe(double f)
     return 1;
 }
 
-#elif (defined(__powerpc__) && defined(__linux__)) || defined(__DARWIN__)
+#elif defined(__sparc__) && defined(__linux__)
+
+static void unmask_fpe(void)
+{
+    unsigned long fsr;
+
+    __asm__("st %%fsr, %0" : "=m"(fsr));
+    fsr &= ~(0x1FUL << 23);	/* clear FSR[TEM] field */
+    fsr |= (0x1AUL << 23);	/* enable NV, OF, DZ exceptions */
+    __asm__ __volatile__("ld %0, %%fsr" : : "m"(fsr));
+}
+
+static __inline__ int check_fpe(double f)
+{
+    __asm__ __volatile__("" : "=m"(erl_fp_exception) : "em"(f));
+    return erl_fp_exception;
+}
+
+#elif (defined(__powerpc__) && defined(__linux__)) || (defined(__ppc__) && defined(__DARWIN__))
 
 #if defined(__linux__)
 #include <sys/prctl.h>
 
 static void set_fpexc_precise(void)
 {
-    if( prctl(PR_SET_FPEXC, PR_FP_EXC_PRECISE) < 0 ) {
+    if (prctl(PR_SET_FPEXC, PR_FP_EXC_PRECISE) < 0) {
 	perror("PR_SET_FPEXC");
 	exit(1);
     }
@@ -1630,9 +1774,13 @@ static __inline__ int check_fpe(double f)
 
 #endif
 
-#if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__powerpc__))) || defined(__DARWIN__)
+#if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__ppc__)))
 
+#if defined(__linux__) && defined(__i386__)
+#include <asm/sigcontext.h>
+#endif
 #include <ucontext.h>
+#include <string.h>
 
 static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
 {
@@ -1646,7 +1794,14 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
 #elif defined(__i386__)
     mcontext_t *mc = &uc->uc_mcontext;
     fpregset_t fpstate = mc->fpregs;
+    if ((fpstate->status >> 16) == X86_FXSR_MAGIC)
+	((struct _fpstate*)fpstate)->mxcsr = 0x1F80;
     fpstate->sw &= ~0xFF;
+#elif defined(__sparc__)
+    /* on SPARC the 3rd parameter points to a sigcontext not a ucontext */
+    struct sigcontext *sc = (struct sigcontext*)puc;
+    sc->si_regs.pc = sc->si_regs.npc;
+    sc->si_regs.npc = (unsigned long)sc->si_regs.npc + 4;
 #elif defined(__powerpc__)
 #if defined(__powerpc64__)
     mcontext_t *mc = &uc->uc_mcontext;
@@ -1658,7 +1813,12 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
     regs[PT_NIP] += 4;
     regs[PT_FPSCR] = 0x80|0x40|0x10;	/* VE, OE, ZE; not UE or XE */
 #endif
-#elif defined(__DARWIN__)
+#elif defined(__DARWIN__) && defined(__i386__)
+    mcontext_t mc = uc->uc_mcontext;
+    i386_float_state_t *fpstate = &mc->fs;
+    fpstate->fpu_mxcsr = 0x1F80;
+    *(unsigned short *)&fpstate->fpu_fsw &= ~0xFF;
+#elif defined(__DARWIN__) && defined(__ppc__)
     mcontext_t mc = uc->uc_mcontext;
     mc->ss.srr0 += 4;
     mc->fs.fpscr = 0x80|0x40|0x10;
@@ -1879,6 +2039,20 @@ fi
 AC_SUBST(TSP_APP)
 
 #
+# Check if we should build hybrid emulator
+#
+
+case $host_os in
+    win32|vxworks|ose) # vxworks and ose have their own "configure scripts"...
+	ERTS_BUILD_HYBRID_EMU=no;;
+    *)
+	AC_DEFINE(ERTS_HAVE_HYBRID_EMU, 1, [Define if the hybrid emulator is built])
+	ERTS_BUILD_HYBRID_EMU=yes;;
+esac
+
+AC_SUBST(ERTS_BUILD_HYBRID_EMU)
+
+#
 # Check if we should enable HiPE.
 #
 
@@ -1888,13 +2062,13 @@ HIPE_HELPERS=
 # if not disabled, autoenable HiPE on known supported platforms
 if test X${enable_hipe} != Xno; then
   case "$ARCH-$OPSYS" in
-    ultrasparc-sol2|x86-sol2)
+    ultrasparc-sol2|ultrasparc-linux|x86-sol2)
       if test X$ac_cv_sizeof_void_p != X4; then
        AC_MSG_WARN([HiPE is not supported in 64-bit builds])
       else
        enable_hipe=yes
       fi;;
-    x86-linux|amd64-linux|ppc-linux|ppc-darwin)
+    x86-linux|amd64-linux|ppc-linux|ppc-darwin|arm-linux)
       enable_hipe=yes
       ;;
   esac
@@ -2248,7 +2422,7 @@ elif test "x$with_ssl" = "xyes" -o "x$with_ssl" = "x" ;then
     # of Shining Light OpenSSL, which can be found by poking in
     # the uninstall section in the registry, it's worth a try...
     extra_dir=""
-    if  test "x$MIXED_CYGWIN_VC" = "xyes"; then
+    if  test "x$MIXED_CYGWIN" = "xyes"; then
     	AC_CHECK_PROG(REGTOOL, regtool, regtool, false)
 	if test "$ac_cv_prog_REGTOOL" != false; then
 		wrp="/machine/software/microsoft/windows/currentversion/"
@@ -2278,7 +2452,7 @@ elif test "x$with_ssl" = "xyes" -o "x$with_ssl" = "x" ;then
        if test -f $dir/include/openssl/opensslv.h; then
 		is_real_ssl=yes
 		SSL_ROOT="$dir"
-		if test "x$MIXED_CYGWIN_VC" = "xyes"; then
+		if test "x$MIXED_CYGWIN" = "xyes" ; then
 			if test -f "$dir/lib/VC/ssleay32.lib" -o \
 				-f "$dir/lib/VC/openssl.lib"; then 
 				SSL_LIBDIR="$dir/lib/VC"
@@ -2362,7 +2536,7 @@ else
        AC_MSG_ERROR(Invalid path to option --with-ssl=PATH)
     fi
     SSL_ROOT="$with_ssl"
-    if test "x$MIXED_CYGWIN_VC" = "xyes" -a -d "$with_ssl/lib/VC"; then
+    if test "x$MIXED_CYGWIN" = "xyes" -a -d "$with_ssl/lib/VC"; then
 	SSL_LIBDIR="$with_ssl/lib/VC"
     else
 	SSL_LIBDIR="$with_ssl/lib"
@@ -2511,59 +2685,10 @@ dnl ----------------------------------------------------------------------
 erts=${erl_top}/erts
 
 erts_dirs="								
-  $erts/obj $erts/obj.beam $erts/obj.debug $erts/obj.debug.beam
+  $erts/obj $erts/obj.debug
 									
   $erts/obj/$host
   $erts/obj.debug/$host
-
-  $erts/obj.beam
-  $erts/obj.beam/$host
-
-  $erts/obj.smp.beam
-  $erts/obj.smp.beam/$host
-
-  $erts/obj.debug.smp.beam
-  $erts/obj.debug.smp.beam/$host
-
-  $erts/obj.purify.smp.beam
-  $erts/obj.purify.smp.beam/$host
-
-  $erts/obj.quantify.smp.beam
-  $erts/obj.quantify.smp.beam/$host
-
-  $erts/obj.purecov.smp.beam
-  $erts/obj.purecov.smp.beam/$host
-
-  $erts/obj.debug.beam
-  $erts/obj.debug.beam/$host						
-
-  $erts/obj.nofrag.beam
-  $erts/obj.nofrag.beam/$host
-
-  $erts/obj.hybrid.beam
-  $erts/obj.hybrid.beam/$host
-
-  $erts/obj.purify.beam
-  $erts/obj.purify.beam/$host
-      									
-  $erts/obj.quantify.beam
-  $erts/obj.quantify.beam/$host
-      									
-  $erts/obj.purecov.beam
-  $erts/obj.purecov.beam/$host
-    									
-  $erts/emulator/$host/opt
-  $erts/emulator/$host/smp
-  $erts/emulator/$host/debug.smp
-  $erts/emulator/$host/purify.smp
-  $erts/emulator/$host/quantify.smp
-  $erts/emulator/$host/purecov.smp
-  $erts/emulator/$host/debug
-  $erts/emulator/$host/nofrag
-  $erts/emulator/$host/hybrid
-  $erts/emulator/$host/purify
-  $erts/emulator/$host/quantify
-  $erts/emulator/$host/purecov
 
 "
 for d in ${erl_top}/bin ${erl_top}/bin/$host $erts_dirs ;
@@ -2587,6 +2712,7 @@ AC_OUTPUT(
   etc/common/$host/Makefile:etc/common/Makefile.in
   include/internal/$host/ethread.mk:include/internal/ethread.mk.in
   lib_src/$host/Makefile:lib_src/Makefile.in
+  Makefile:Makefile.in
   ../make/$host/otp.mk:../make/otp.mk.in
 dnl
 dnl The ones below should be moved to their respective lib

@@ -49,7 +49,7 @@ non_alloc(CFG) ->
   non_alloc(hipe_ppc_registers:nr_args(), hipe_ppc_cfg:params(CFG)).
 
 non_alloc(N, [_|Rest]) when N > 0 -> non_alloc(N-1, Rest);
-non_alloc(_, Params) -> Params.
+non_alloc(N, Params) when is_integer(N), N >= 0 -> Params.
 
 %% Liveness stuff
 
@@ -131,7 +131,7 @@ reg_nr(Reg) ->
 
 %%% Linear Scan stuff
 
-new_spill_index(SpillIndex)->
+new_spill_index(SpillIndex) when is_integer(SpillIndex) ->
   SpillIndex+1.
 
 breadthorder(CFG) ->

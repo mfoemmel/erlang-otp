@@ -57,7 +57,8 @@ help() ->
 	   "q()        -- quit - shorthand for init:stop()\n"
 	   "regs()     -- information about registered processes\n"
 	   "nregs()    -- information about all registered processes\n"
-	   "xm(M)      -- cross reference check a module\n").
+	   "xm(M)      -- cross reference check a module\n"
+           "y(File)    -- generate a Yecc parser\n").
 
 %% c(FileName)
 %%  Compile a file/module.
@@ -665,9 +666,7 @@ xm(M) ->
 %% Call yecc 
 %% 
 
-y(File) ->
-    yecc:file(File).
+y(File) -> y(File, []).
 
 y(File, Opts) ->
     yecc:file(File, Opts).
-

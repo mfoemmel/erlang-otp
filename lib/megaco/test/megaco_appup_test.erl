@@ -361,12 +361,29 @@ module_of(_) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%% The version is a string consting of numbers separated by dots: "."
+%% Example: "3.3.3"
+%% 
 check_version(V) when list(V) ->
-    ok;
+    case do_check_version(string:tokens(V, [$.])) of
+	ok ->
+	    ok;
+	{error, BadVersionPart} ->
+	    throw({error, {bad_version, V, BadVersionPart}})
+    end;
 check_version(V) ->
     error({bad_version, V}).
 
-
+do_check_version([]) ->
+    ok;
+do_check_version([H|T]) ->
+    case (catch list_to_integer(H)) of
+	I when is_integer(I) ->
+	    do_check_version(T);
+	_ ->
+	    {error, H}
+    end.
+	    
 check_module(M, Modules) when atom(M) ->
     case lists:member(M,Modules) of
         true ->

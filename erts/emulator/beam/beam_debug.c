@@ -47,7 +47,6 @@ void dbg_where(Eterm* addr, Eterm x0, Eterm* reg);
 
 static void print_big(int to, void *to_arg, Eterm* addr);
 static int print_op(int to, void *to_arg, int op, int size, Eterm* addr);
-
 Eterm
 erts_debug_same_2(Process* p, Eterm term1, Eterm term2)
 {

@@ -364,25 +364,25 @@ static BOOL start_a_service(ServerInfo *srvi){
   SECURITY_ATTRIBUTES attr;
   HANDLE nul;
   SaveAclStruct save_acl;
-  char *environ;
+  char *my_environ;
   BOOL console_allocated = FALSE;
 
   if(!(*(srvi->keys[Env].data.bytes))){
-      environ = NULL;
+      my_environ = NULL;
   } else {
       char *tmp;
       char **merged = merge_environment((tmp = GetEnvironmentStrings()),
 					srvi->keys[Env].data.bytes);
       FreeEnvironmentStrings(tmp);
-      environ = arg_to_env(merged);
+      my_environ = arg_to_env(merged);
   }
       
   if(!*(srvi->keys[Machine].data.bytes) || 
      (!*(srvi->keys[SName].data.bytes) && 
 	 !*(srvi->keys[Name].data.bytes))){
     log_error("Not enough parameters for erlang service.");
-    if(environ)
-	free(environ);
+    if(my_environ)
+	free(my_environ);
     return FALSE;
   }
 
@@ -426,8 +426,8 @@ static BOOL start_a_service(ServerInfo *srvi){
     pipe_security.bInheritHandle = TRUE;
     if(!CreatePipe(&read_pipe,&write_pipe,&pipe_security,0)){
 	log_error("Could not create pipe for erlang service.");
-	if(environ)
-	    free(environ);
+	if(my_environ)
+	    free(my_environ);
 	return FALSE;
     }
     if(srvi->keys[DebugType].data.value != DEBUG_TYPE_NO_DEBUG){
@@ -500,7 +500,7 @@ static BOOL start_a_service(ServerInfo *srvi){
 		    (read_pipe != NULL),
 		    CREATE_DEFAULT_ERROR_MODE | 
 		    (srvi->keys[Priority].data.value),
-		    environ,
+		    my_environ,
 		    (*(srvi->keys[WorkDir].data.bytes)) ?
 		    srvi->keys[WorkDir].data.bytes : NULL,
 		    &start,
@@ -520,8 +520,8 @@ static BOOL start_a_service(ServerInfo *srvi){
     if(console_allocated) 
 	FreeConsole();
     reset_acl(&save_acl);
-    if(environ)
-	free(environ);
+    if(my_environ)
+	free(my_environ);
     return FALSE;
   }
   if(console_allocated) 
@@ -540,8 +540,8 @@ static BOOL start_a_service(ServerInfo *srvi){
   }
 
   reset_acl(&save_acl);
-  if(environ)
-      free(environ);
+  if(my_environ)
+      free(my_environ);
   return TRUE;
 }
 

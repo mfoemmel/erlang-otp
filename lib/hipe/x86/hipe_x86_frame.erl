@@ -35,8 +35,9 @@ frame(Defun, _Options) ->
 
 fix_formals(Formals) ->
   fix_formals(?HIPE_X86_REGISTERS:nr_args(), Formals).
+
 fix_formals(N, [_|Rest]) when N > 0 -> fix_formals(N-1, Rest);
-fix_formals(_, Formals) -> Formals.
+fix_formals(N, Formals) when is_integer(N), N >= 0 -> Formals.
 
 do_body(CFG0, Liveness, Formals, Temps) ->
   Context = mk_context(Liveness, Formals, Temps),

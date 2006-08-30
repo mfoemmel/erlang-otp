@@ -1,17 +1,45 @@
 {"%VSN%",
  [
+  {"4.7.4",
+   [
+    {add_module, inets}, 
+    {load_module, ftp, soft_purge, soft_purge, []}, 
+    {load_module, http_uri, soft_purge, soft_purge, []}, 
+    {load_module, httpd_cgi, soft_purge, soft_purge, []}, 
+    {load_module, httpd_request_handler, soft_purge, soft_purge, [httpd_cgi]}
+   ]				 
+  },				 
   {"4.7.3",
    [
+    {add_module, inets}, 
+    {load_module, ftp, soft_purge, soft_purge, []}, 
+    {load_module, http_uri, soft_purge, soft_purge, []}, 
+    {load_module, httpd_cgi,soft_purge,soft_purge,[]},
     {load_module, httpd_util,soft_purge,soft_purge,[]},
-    {load_module, httpc_manager,soft_purge,soft_purge,[]}
+    {load_module, httpc_manager,soft_purge,soft_purge,[]}, 
+    {load_module, httpd_request_handler, soft_purge, soft_purge, [httpd_cgi]}
    ]				 
   }				 
  ],   
  [
+  {"4.7.4",
+   [
+    {delete_module, inets}, 
+    {load_module, ftp, soft_purge, soft_purge, []}, 
+    {load_module, http_uri, soft_purge, soft_purge, []}, 
+    {load_module, httpd_cgi,soft_purge,soft_purge,[]}, 
+    {load_module, httpd_request_handler, soft_purge, soft_purge, [httpd_cgi]}
+   ]				 
+  },				 
   {"4.7.3",
    [
+    {delete_module, inets}, 
+    {load_module, ftp, soft_purge, soft_purge, []}, 
+    {load_module, http_uri, soft_purge, soft_purge, []}, 
+    {load_module, httpd_cgi,soft_purge,soft_purge,[]},
     {load_module, httpc_manager,soft_purge,soft_purge,[]},
-    {load_module, httpd_util,soft_purge,soft_purge,[]}
+    {load_module, httpd_util,soft_purge,soft_purge,[]}, 
+    {load_module, httpd_request_handler, soft_purge, soft_purge, [httpd_cgi]}
    ]				 
   }
  ]

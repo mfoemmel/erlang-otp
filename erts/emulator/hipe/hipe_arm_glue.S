@@ -275,13 +275,10 @@ nbif_fail:
 /*
  * We end up here when a BIF called from native signals an
  * exceptional condition, and RESCHEDULE cannot occur.
- * The stack/heap registers were just read from P.
+ * HP was just read from P.
+ * NSP has not been saved in P.
  * TEMP_LR contains a copy of LR
  */
-	.global	nbif_0_simple_exception
-nbif_0_simple_exception:
-	mov	r1, #0
-	b	.nbif_simple_exception
 	.global	nbif_1_simple_exception
 nbif_1_simple_exception:
 	mov	r1, #1
@@ -296,14 +293,17 @@ nbif_3_simple_exception:
 	/*FALLTHROUGH*/
 .nbif_simple_exception:
 	ldr	r0, [P, #P_FREASON]
+.nbif_simple_exception2:
 	cmp	r0, #FREASON_TRAP
 	beq	.handle_trap
 	/*
 	 * Find and invoke catch handler (it must exist).
-	 * The stack/heap registers were just read from P.
+	 * HP was just read from P.
+	 * NSP has not been saved in P.
 	 * TEMP_LR should contain the current call's return address.
 	 * r1 should contain the current call's arity.
 	 */
+	str	NSP, [P, #P_NSP]
 	str	TEMP_LR, [P, #P_NRA]
 	str	r1, [P, #P_NARITY]
 	/* find and prepare to invoke the handler */
@@ -319,11 +319,13 @@ nbif_3_simple_exception:
 	 * - the BIF stored the actual parameters in p->def_arg_reg[1..]
 	 * - the BIF's arity is in r1
 	 * - the native RA was saved in TEMP_LR before the BIF call
-	 * - the native heap/stack/reds registers are saved in P
+	 * - HP was just read from P
+	 * - NSP has not been saved in P
 	 */
 .handle_trap:
 	mov	r0, #HIPE_MODE_SWITCH_RES_TRAP
 .bif_exit:
+	str	NSP, [P, #P_NSP]
 	str	r1, [P, #P_ARITY]
 	str	TEMP_LR, [P, #P_NRA]
 	b	.nosave_exit
@@ -331,8 +333,9 @@ nbif_3_simple_exception:
 /*
  * We end up here when a BIF called from native signals an
  * exceptional condition, and RESCHEDULE can occur.
- * r2 contains the address of the nbif which failed, and the
- * stack/heap/reds registers were just read from P.
+ * r2 contains the address of the nbif which failed.
+ * HP was just read from P.
+ * NSP has not been saved in P.
  * TEMP_ARG0 is the first actual parameter, if NR_ARG_REGS > 0.
  * TEMP_ARG1 is the second actual parameter (if defined), if NR_ARG_REGS > 1.
  */
@@ -347,7 +350,7 @@ nbif_2_hairy_exception:
 .nbif_hairy_exception:
 	ldr	r0, [P, #P_FREASON]
 	cmp	r0, #FREASON_RESCHEDULE
-	bne	.nbif_simple_exception
+	bne	.nbif_simple_exception2
 	/* handle reschedule */
 	str	r2, [P, #P_NCALLEE]
 #if NR_ARG_REGS == 0
@@ -380,15 +383,18 @@ nbif_stack_trap_ra:		/* a return address, not a function */
 
 /*
  * hipe_arm_inc_stack
- * Caller saved its LR in a C callee-save register before calling us.
+ * Caller saved its LR in TEMP_LR (== TEMP1) before calling us.
  */
 	.global	hipe_arm_inc_stack
 hipe_arm_inc_stack:
 	STORE_ARG_REGS
-	str	lr, [P, #P_NRA]
-	SAVE_CACHED_STATE
+	mov	TEMP_ARG0, lr
+	str	NSP, [P, #P_NSP]
 	mov	r0, P
+	# hipe_inc_nstack reads and writes NSP and NSP_LIMIT,
+	# but does not access LR/RA, HP, or FCALLS.
 	bl	hipe_inc_nstack
-	RESTORE_CACHED_STATE
+	ldr	NSP, [P, #P_NSP]
 	LOAD_ARG_REGS
-	ldr	pc, [P, #P_NRA]
+	# this relies on LOAD_ARG_REGS not clobbering TEMP_ARG0
+	mov	pc, TEMP_ARG0

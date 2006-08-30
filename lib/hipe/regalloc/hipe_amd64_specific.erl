@@ -76,7 +76,7 @@ non_alloc(CFG) ->
   non_alloc(hipe_amd64_registers:nr_args(), hipe_x86_cfg:params(CFG)).
 
 non_alloc(N, [_|Rest]) when N > 0 -> non_alloc(N-1, Rest);
-non_alloc(_, Params) -> Params.
+non_alloc(N, Params) when is_integer(N), N >= 0 -> Params.
 
 %% Liveness stuff
 
@@ -86,16 +86,16 @@ analyze(CFG) ->
 livein(Liveness,L) ->
   [X || X <- hipe_amd64_liveness:livein(Liveness,L),
  	     hipe_x86:temp_is_allocatable(X),
- 	     hipe_x86:temp_reg(X) /= hipe_amd64_registers:fcalls(),
- 	     hipe_x86:temp_reg(X) /= hipe_amd64_registers:heap_limit(),
-	     hipe_x86:temp_type(X) /= 'double'].
+ 	     hipe_x86:temp_reg(X) =/= hipe_amd64_registers:fcalls(),
+ 	     hipe_x86:temp_reg(X) =/= hipe_amd64_registers:heap_limit(),
+	     hipe_x86:temp_type(X) =/= 'double'].
 
 liveout(BB_in_out_liveness,Label) ->
   [X || X <- hipe_amd64_liveness:liveout(BB_in_out_liveness,Label),
  	     hipe_x86:temp_is_allocatable(X),
-	     hipe_x86:temp_reg(X) /= hipe_amd64_registers:fcalls(),
-	     hipe_x86:temp_reg(X) /= hipe_amd64_registers:heap_limit(),
-	     hipe_x86:temp_type(X) /= 'double'].
+	     hipe_x86:temp_reg(X) =/= hipe_amd64_registers:fcalls(),
+	     hipe_x86:temp_reg(X) =/= hipe_amd64_registers:heap_limit(),
+	     hipe_x86:temp_type(X) =/= 'double'].
 
 %% Registers stuff
 
@@ -134,22 +134,22 @@ bb(CFG,L) ->
 
 def_use(Instruction) ->
   {[X || X <- hipe_amd64_defuse:insn_def(Instruction), 
- 	   hipe_x86:temp_is_allocatable(X),
- 	   hipe_x86:temp_type(X) /= 'double'],
+ 	      hipe_x86:temp_is_allocatable(X),
+ 	      hipe_x86:temp_type(X) =/= 'double'],
    [X || X <- hipe_amd64_defuse:insn_use(Instruction), 
- 	   hipe_x86:temp_is_allocatable(X),
-	   hipe_x86:temp_type(X) /= 'double']
+ 	      hipe_x86:temp_is_allocatable(X),
+	      hipe_x86:temp_type(X) =/= 'double']
   }.
 
 uses(I) ->
   [X || X <- hipe_amd64_defuse:insn_use(I),
  	     hipe_x86:temp_is_allocatable(X),
- 	     hipe_x86:temp_type(X) /= 'double'].
+ 	     hipe_x86:temp_type(X) =/= 'double'].
 
 defines(I) ->
   [X || X <- hipe_amd64_defuse:insn_def(I),
 	     hipe_x86:temp_is_allocatable(X),
-	     hipe_x86:temp_type(X) /= 'double'].
+	     hipe_x86:temp_type(X) =/= 'double'].
 
 is_move(Instruction) ->
   case hipe_x86:is_move(Instruction) of
@@ -175,5 +175,5 @@ is_move(Instruction) ->
 reg_nr(Reg) ->
   hipe_x86:temp_reg(Reg).
 
-new_spill_index(SpillIndex)->
+new_spill_index(SpillIndex) when is_integer(SpillIndex) ->
   SpillIndex+1.

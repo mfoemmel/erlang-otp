@@ -60,7 +60,7 @@
 	  dsock = undefined, % socket() - Data connection socket 
 	  verbose = false,   % boolean() 
 	  ldir = undefined,  % string() - Current local directory
-	  type = ftp_server_default,  % atom() - binary | ascci 
+	  type = ftp_server_default,  % atom() - binary | ascii 
 	  chunk = false,     % boolean() - Receiving data chunks 
 	  mode = ?DEFAULT_MODE,    % passive | active
 	  timeout = ?CONNECTION_TIMEOUT, % integer()
@@ -733,10 +733,10 @@ handle_call({_, {quote, Cmd}}, From, #state{chunk = false} = State) ->
 handle_call(_, _, #state{chunk = true} = State) ->
     {reply, {error, echunk}, State};
 
-%% Catch all -  This can oly happen if the application programmer writes 
+%% Catch all -  This can only happen if the application programmer writes 
 %% really bad code that violates the API.
 handle_call(Request, _Timeout, State) ->
-    {stop, {'API_violation_connection_colsed', Request},
+    {stop, {'API_violation_connection_closed', Request},
      {error, {connection_terminated, 'API_violation'}}, State}.
 
 %%--------------------------------------------------------------------------
@@ -767,6 +767,12 @@ handle_cast(Msg, State) ->
 %% Description: Handles tcp messages from the ftp-server.
 %% Note: The order of the function clauses is significant.
 %%--------------------------------------------------------------------------
+
+handle_info(timeout, #state{caller = open} = State) ->
+    {stop, timeout, State};
+
+handle_info(timeout, State) ->
+    {noreply, State};
 
 %%% Data socket messages %%%
 handle_info({tcp, Socket, Data}, 
@@ -872,6 +878,9 @@ handle_info({tcp_error, Socket, Reason}, _) ->
 %% down there is no point in continuing.
 handle_info({'DOWN', _Ref, _Type, _Process, normal}, State) ->
     {stop, normal, State#state{client = undefined}};
+
+handle_info({'DOWN', _Ref, _Type, _Process, shutdown}, State) ->
+    {stop, normal, State#state{client = undefined}};
     
 handle_info({'DOWN', _Ref, _Type, _Process, timeout}, State) ->
     {stop, normal, State#state{client = undefined}};
@@ -962,8 +971,7 @@ handle_user_account(Acc, State) ->
 %%--------------------------------------------------------------------------
 %%--------------------------------------------------------------------------
 %% Handling of control connection setup
-handle_ctrl_result({pos_compl, _}, #state{caller = open,
-					  client = From} 
+handle_ctrl_result({pos_compl, _}, #state{caller = open, client = From} 
 		   = State) ->
     gen_server:reply(From,  {ok, self()}),
     {noreply, State#state{client = undefined, 
@@ -1223,7 +1231,8 @@ ctrl_result_response(Status, #state{client = From} = State, _) when
 Status == etnospc; Status == epnospc; Status == efnamena; Status == econn ->
 %Status == etnospc; Status == epnospc; Status == econn ->
     gen_server:reply(From, {error, Status}),
-    {stop, normal, {error, Status}, State#state{client = undefined}};
+%%    {stop, normal, {error, Status}, State#state{client = undefined}};
+    {stop, normal, State#state{client = undefined}};
 
 ctrl_result_response(_, #state{client = From} = State, ErrorMsg) ->
     gen_server:reply(From, ErrorMsg),
@@ -1284,11 +1293,19 @@ handle_caller(#state{caller = {transfer_data, {Cmd, Bin, RemoteFile}}} =
 %% Connect to FTP server at Host (default is TCP port 21) 
 %% in order to establish a control connection.
 setup_ctrl_connection(Host, Port, Timeout, State)->
+    T = t(),
     case connect(Host, Port, Timeout, State) of
 	{ok, CSock} ->
 	    NewState = State#state{csock = CSock},
 	    activate_ctrl_connection(NewState),
-	    {noreply, NewState#state{caller = open}};
+	    case Timeout - (t() - T) of
+		Timeout2 when (Timeout2 >= 0) ->
+		    {noreply, NewState#state{caller = open}, Timeout2};
+		_ ->
+		    %% Oups: Simulate timeout
+		    self() ! timeout,
+		    {noreply, NewState#state{caller = open}}
+	    end;
 	{error, _} ->
 	    gen_server:reply(State#state.client, {error, ehost}),
 	    {stop, normal, State#state{client = undefined}}
@@ -1562,3 +1579,8 @@ progress_report({binary, Data}, #state{progress = ProgressPid}) ->
     ftp_progress:report(ProgressPid, {transfer_size, size(Data)});
 progress_report(Report,  #state{progress = ProgressPid}) ->
     ftp_progress:report(ProgressPid, Report).
+
+%% Time in milli seconds
+t() ->
+    {A,B,C} = erlang:now(),
+    A*1000000000+B*1000+(C div 1000).

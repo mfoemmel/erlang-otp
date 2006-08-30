@@ -27,8 +27,10 @@
 #undef RESTORE_CACHED_STATE
 #undef SAVE_CONTEXT_QUICK
 #undef RESTORE_CONTEXT_QUICK
-#undef SAVE_CONTEXT
-#undef RESTORE_CONTEXT
+#undef SAVE_CONTEXT_BIF
+#undef RESTORE_CONTEXT_BIF
+#undef SAVE_CONTEXT_GC
+#undef RESTORE_CONTEXT_GC
 #undef NR_ARG_REGS
 #undef LOAD_ARG_REGS
 #undef STORE_ARG_REGS
@@ -107,7 +109,7 @@
 #undef NR_ARG_REGS
 #undef LEAF_WORDS
 #undef TEMP_RV
-#include "hipe_sparc_registers.h"
+#include "hipe_sparc_asm.h"
 #undef P
 #undef HP
 #undef TEMP0
@@ -250,18 +252,6 @@ static const struct literal {
     { "P_ARG3", offsetof(struct process, def_arg_reg[3]) },
     { "P_ARG4", offsetof(struct process, def_arg_reg[4]) },
     { "P_ARG5", offsetof(struct process, def_arg_reg[5]) },
-#if defined(__sparc__)
-    { "P_ARG6", offsetof(struct process, def_arg_reg[6]) },
-    { "P_ARG7", offsetof(struct process, def_arg_reg[7]) },
-    { "P_ARG8", offsetof(struct process, def_arg_reg[8]) },
-    { "P_ARG9", offsetof(struct process, def_arg_reg[9]) },
-    { "P_ARG10", offsetof(struct process, def_arg_reg[10]) },
-    { "P_ARG11", offsetof(struct process, def_arg_reg[11]) },
-    { "P_ARG12", offsetof(struct process, def_arg_reg[12]) },
-    { "P_ARG13", offsetof(struct process, def_arg_reg[13]) },
-    { "P_ARG14", offsetof(struct process, def_arg_reg[14]) },
-    { "P_ARG15", offsetof(struct process, def_arg_reg[15]) },
-#endif
 #ifdef HIPE
     { "P_NSP", offsetof(struct process, hipe.nsp) },
     { "P_NCALLEE", offsetof(struct process, hipe.ncallee) },
@@ -269,7 +259,6 @@ static const struct literal {
 #if defined(__sparc__)
     { "P_NSP_LIMIT", offsetof(struct process, hipe.nstend) },
     { "P_NRA", offsetof(struct process, hipe.nra) },
-    { "P_CRA", offsetof(struct process, hipe.ncra) },
 #elif defined(__i386__) || defined(__x86_64__)
     { "P_NSP_LIMIT", offsetof(struct process, hipe.nstack) },
     { "P_CSP", offsetof(struct process, hipe.ncsp) },
@@ -324,6 +313,11 @@ static const struct literal {
     { "MS_MATCHBUFFER", offsetof(struct erl_bin_match_struct, mb)},
     { "MS_SAVEOFFSET", offsetof(struct erl_bin_match_struct, save_offset)},
     
+    /* messages */
+    { "P_MSG_FIRST", offsetof(struct process, msg.first) },
+    { "P_MSG_SAVE", offsetof(struct process, msg.save) },
+    { "MSG_NEXT", offsetof(struct erl_mesg, next) },
+
     /* ARM */
     { "ARM_LEAF_WORDS", ARM_LEAF_WORDS },
     { "ARM_NR_ARG_REGS", ARM_NR_ARG_REGS },
@@ -364,37 +358,8 @@ static const struct literal {
 #endif
 
     /* SPARC */
-#ifdef HIPE
-    { "HIPE_SPARC_LEAF_WORDS", HIPE_SPARC_LEAF_WORDS },
-    { "SPARC_ARGS_IN_REGS", HIPE_SPARC_ARGS_IN_REGS},
-#endif
-    { "SPARC_REG_P", P_NR},
-    { "SPARC_REG_NSP", NSP_NR},
-    { "SPARC_REG_NSP_LIMIT", NSP_LIMIT_NR},
-    { "SPARC_REG_HP", HP_NR},
-    { "SPARC_REG_HP_LIMIT", HP_LIMIT_NR},
-    { "SPARC_REG_FCALLS", FCALLS_NR},
-    { "SPARC_REG_RA", RA_NR},
-    { "SPARC_REG_TEMP0", TEMP0_NR},
-    { "SPARC_REG_TEMP1", TEMP1_NR},
-    { "SPARC_REG_TEMP2", TEMP2_NR},
-    { "SPARC_REG_TEMP3", TEMP3_NR},
-    { "SPARC_REG_ARG0", ARG0_NR},
-    { "SPARC_REG_ARG1", ARG1_NR},
-    { "SPARC_REG_ARG2", ARG2_NR},
-    { "SPARC_REG_ARG3", ARG3_NR},
-    { "SPARC_REG_ARG4", ARG4_NR},
-    { "SPARC_REG_ARG5", ARG5_NR},
-    { "SPARC_REG_ARG6", ARG6_NR},
-    { "SPARC_REG_ARG7", ARG7_NR},
-    { "SPARC_REG_ARG8", ARG8_NR},
-    { "SPARC_REG_ARG9", ARG9_NR},
-    { "SPARC_REG_ARG10", ARG10_NR},
-    { "SPARC_REG_ARG11", ARG11_NR},
-    { "SPARC_REG_ARG12", ARG12_NR},
-    { "SPARC_REG_ARG13", ARG13_NR},
-    { "SPARC_REG_ARG14", ARG14_NR},
-    { "SPARC_REG_ARG15", ARG15_NR},
+    { "SPARC_LEAF_WORDS", SPARC_LEAF_WORDS },
+    { "SPARC_NR_ARG_REGS", SPARC_NR_ARG_REGS},
 };
 
 #define NR_LITERALS	ARRAY_SIZE(literals)
@@ -458,26 +423,9 @@ static const struct rts_param {
       0
 #endif
     },
-    /* messages */
-    { 16, "P_MSG_FIRST",
-#if !defined(ERTS_SMP)
-      1, offsetof(struct process, msg.first)
-#endif
-    },
-    { 17, "P_MSG_SAVE",
-#if !defined(ERTS_SMP)
-      1, offsetof(struct process, msg.save)
-#endif
-    },
-    { 18, "MSG_NEXT",
-#if !defined(ERTS_SMP)
-      1, offsetof(struct erl_mesg, next)
-#endif
-    },
+    /* This parameter is always defined, but its value depends on ERTS_SMP. */
     { 19, "MSG_MESSAGE",
-#if !defined(ERTS_SMP)
       1, offsetof(struct erl_mesg, m[0])
-#endif
     },
 };
 

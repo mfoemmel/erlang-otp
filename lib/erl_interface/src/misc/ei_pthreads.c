@@ -24,8 +24,15 @@
 #include "ei.h"
 #include "ei_locking.h"
 
+#ifdef __WIN32__
+#ifdef USE_DECLSPEC_THREAD
 /* Define (and initialize) the variable __erl_errno */
 volatile __declspec(thread) int __erl_errno = 0;
+#else
+static volatile DWORD errno_tls_index = TLS_OUT_OF_INDEXES;
+static LONG volatile tls_init_mutex = 0;
+#endif
+#endif
 
 #if defined(VXWORKS)
 
@@ -33,7 +40,7 @@ volatile __declspec(thread) int __erl_errno = 0;
    Moved to each of the erl_*threads.c files, as they seem to know how
    to get thread-safety. 
 */
-
+static volatile int __erl_errno;
 volatile int *__erl_errno_place(void)
 {
     /* This check is somewhat insufficient, double task var entries will occur
@@ -48,10 +55,50 @@ volatile int *__erl_errno_place(void)
 
 #if defined(__WIN32__)
 
+#ifdef USE_DECLSPEC_THREAD
+
 volatile int *__erl_errno_place(void)
 {
     return &__erl_errno;
 }
+
+#else
+static void tls_init_once(void)
+{
+
+    if (errno_tls_index != TLS_OUT_OF_INDEXES) {
+	return;
+    }
+    if (InterlockedExchange((LPLONG) &tls_init_mutex,1L) == 0) {
+	/* I was first */
+	errno_tls_index = TlsAlloc();
+	if (errno_tls_index == TLS_OUT_OF_INDEXES) {
+	    fprintf(stderr, 
+		    "FATAL ERROR: can not allocate TLS index for "
+		    "erl_errno (error code = %d)!\n",GetLastError());
+	    exit(1);
+	}
+    } else {
+	while (errno_tls_index == TLS_OUT_OF_INDEXES) {
+	    SwitchToThread();
+	}
+    }
+}
+
+volatile int *__erl_errno_place(void)
+{
+    volatile int *ptr;
+    tls_init_once();
+    ptr = TlsGetValue(errno_tls_index);
+    if (ptr == NULL) {
+	ptr = malloc(sizeof(int));
+	*ptr = 0;
+	TlsSetValue(errno_tls_index, (PVOID) ptr);
+    }
+    return ptr;
+}
+
+#endif /* USE_DECLSPEC_THREAD */
 
 #endif /* __WIN32__ */
 
@@ -123,33 +170,43 @@ static void erl_errno_key_alloc(void)
 
 /*
  * Return a pointer to the erl_errno locus.
- * If pthread functions fail we fall back to using __erl_errno
+ * If pthread functions fail we fall back to using fallback_errno
  * so that the main thread (actually not a thread in all ascpects)
  * still will set and get an erl_errno value.
- * FIXME is this a bit too nice???
- * If -lpthread is not given on Solaris __erl_errno will be used
- * but it costs some....,
+ * Actually this is a bit to nice, it would be preferrable to exit fatal
+ * as we do on windows, but we might break some code with one thread
+ * but still compiled with -D_REENTRANT, so we'll leave it here.
  */
 volatile int *__erl_errno_place(void)
 {
     int *erl_errno_p;
+    static volatile int use_fallback = 0;
+    static volatile int fallback_errno = 0;
+
+    if (use_fallback) {
+	return &fallback_errno;
+    }	
 
     /* This will create the key once for all threads */
-    if (pthread_once(&erl_errno_key_once, erl_errno_key_alloc) != 0)
-	return &__erl_errno;
+    if (pthread_once(&erl_errno_key_once, erl_errno_key_alloc) != 0) {
+	use_fallback = 1;
+	return &fallback_errno;
+    }
 
     /* This is the normal case, return the pointer to the data */
-    if ((erl_errno_p = pthread_getspecific(erl_errno_key)) != NULL)
+    if ((erl_errno_p = pthread_getspecific(erl_errno_key)) != NULL) {
 	return erl_errno_p;
+    }
 
-    /* Case where it is the first time we access this data in this thread. */
-    /* FIXME check malloc but what to do????? */
-    erl_errno_p = malloc(sizeof(int));
+    if ((erl_errno_p = malloc(sizeof(int))) == NULL) {
+	use_fallback = 1;
+	return &fallback_errno;
+    }
 
     if (pthread_setspecific(erl_errno_key, erl_errno_p) != 0 ||
 	(erl_errno_p = pthread_getspecific(erl_errno_key)) == NULL) {
 	free(erl_errno_p);
-	return &__erl_errno;
+	return &fallback_errno;
     }
 
     return erl_errno_p;

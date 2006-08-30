@@ -252,7 +252,7 @@ gen_fmove(I, VarMap, ConstTab) ->
 gen_fail(I, VarMap, ConstTab) ->
   Fail = hipe_icode:fail_label(I),
   {Label, VarMap0} =
-    if Fail == [] ->
+    if Fail =:= [] ->
 	%% not in a catch
 	{[], VarMap};
        true ->
@@ -499,8 +499,8 @@ gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab, Options) ->
       exit({?MODULE,{"unknown type",Other}})
   end;
 gen_type_test([X,Y], Type, TrueLbl, FalseLbl, Pred, ConstTab, _Options) ->
-  case Type
-    of function2 ->
+  case Type of
+    function2 ->
       {hipe_tagscheme:test_fun2(X, Y, TrueLbl, FalseLbl, Pred), ConstTab};
     Other ->
       exit({?MODULE,{"unknown type",Other}})
@@ -701,7 +701,6 @@ type_of_const(Const)->
       end
   end.
       
-  
 
 tagged_val_of([]) -> hipe_tagscheme:mk_nil();
 tagged_val_of(X) when is_integer(X) -> hipe_tagscheme:mk_fixnum(X).

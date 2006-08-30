@@ -16,7 +16,7 @@
 %%
 %% $Id$
 %%
-%% @author Richard Carlsson <richardc@csd.uu.se>
+%% @author Richard Carlsson <richardc@it.uu.se>
 %% @copyright 2000-2004 Richard Carlsson
 %% @doc Closure conversion of Core Erlang modules. This is done as a
 %% step in the translation from Core Erlang down to HiPE Icode, and is
@@ -505,7 +505,7 @@ lookup_var(V, Env) ->
 make_vars(N) when N > 0 ->
     [cerl:c_var(list_to_atom("X" ++ integer_to_list(N)))
      | make_vars(N - 1)];
-make_vars(_) ->
+make_vars(0) ->
     [].
 
 %% All funs that are not bound by module or letrec definitions will be

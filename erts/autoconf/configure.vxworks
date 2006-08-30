@@ -60,18 +60,7 @@ MKDIRS="${ERL_TOP}/lib/os_mon/priv/bin/$target
         ${ERL_TOP}/lib/runtime_tools/priv/obj/$target
 	${ERL_TOP}/erts/obj/$target
 	${ERL_TOP}/erts/obj.debug/$target
-	${ERL_TOP}/erts/obj.purify.beam/$target
-	${ERL_TOP}/erts/obj.quantify.beam/$target
-	${ERL_TOP}/erts/obj.purecov.beam/$target
-	${ERL_TOP}/erts/obj.nofrag.beam
-	${ERL_TOP}/erts/obj.nofrag.beam/$target
-	${ERL_TOP}/erts/emulator/$target/opt
-	${ERL_TOP}/erts/emulator/$target/debug
-	${ERL_TOP}/erts/emulator/$target/nofrag
 	${ERL_TOP}/bin/$target"
-for tag in '' '.debug' '.purify' '.quantify' '.purecov'; do
-   MKDIRS="$MKDIRS ${ERL_TOP}/erts/obj$tag.beam/$target"
-done
 
 for dir in $MKDIRS; do
   test ! -d "$dir" && mkdir -p "$dir"

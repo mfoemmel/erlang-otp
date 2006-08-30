@@ -42,12 +42,14 @@
 -define(V3_ASN1_MOD,     megaco_per_media_gateway_control_v3).
 -define(PREV3A_ASN1_MOD, megaco_per_media_gateway_control_prev3a).
 -define(PREV3B_ASN1_MOD, megaco_per_media_gateway_control_prev3b).
+-define(PREV3C_ASN1_MOD, megaco_per_media_gateway_control_prev3c).
 
 -define(V1_TRANS_MOD,     megaco_binary_transformer_v1).
 -define(V2_TRANS_MOD,     megaco_binary_transformer_v2).
 -define(V3_TRANS_MOD,     megaco_binary_transformer_v3).
 -define(PREV3A_TRANS_MOD, megaco_binary_transformer_prev3a).
 -define(PREV3B_TRANS_MOD, megaco_binary_transformer_prev3b).
+-define(PREV3C_TRANS_MOD, megaco_binary_transformer_prev3c).
 
 -define(BIN_LIB, megaco_binary_encoder_lib).
 
@@ -57,6 +59,9 @@
 %% Return {ok, Version} | {error, Reason}
 %%----------------------------------------------------------------------
 
+version_of([{version3,prev3c}|EC], Binary) ->
+    Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?PREV3C_ASN1_MOD],
+    ?BIN_LIB:version_of(EC, Binary, 1, Decoders);
 version_of([{version3,prev3b}|EC], Binary) ->
     Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?PREV3B_ASN1_MOD],
     ?BIN_LIB:version_of(EC, Binary, 1, Decoders);
@@ -107,6 +112,10 @@ encode_message(EC, 2, MegaMsg) ->
 
 %% -- Version 3 --
 
+encode_message([{version3,prev3c}|EC], 3, MegaMsg) ->
+    AsnMod   = ?PREV3C_ASN1_MOD, 
+    TransMod = ?PREV3C_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
 encode_message([{version3,prev3b}|EC], 3, MegaMsg) ->
     AsnMod   = ?PREV3B_ASN1_MOD, 
     TransMod = ?PREV3B_TRANS_MOD,
@@ -243,6 +252,10 @@ decode_message(EC, 2, Binary) ->
 
 %% -- Version 3 --
 
+decode_message([{version3,prev3c}|EC], 3, Binary) ->
+    AsnMod   = ?PREV3C_ASN1_MOD, 
+    TransMod = ?PREV3C_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, io_list);
 decode_message([{version3,prev3b}|EC], 3, Binary) ->
     AsnMod   = ?PREV3B_ASN1_MOD, 
     TransMod = ?PREV3B_TRANS_MOD, 

@@ -330,7 +330,7 @@ do_coloring(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
   Coalesce = not(hipe_moves:is_empty_worklist(Moves)),
   Freeze   = not(hipe_reg_worklists:is_empty_freeze(Worklists)),
   Spill    = not(hipe_reg_worklists:is_empty_spill(Worklists)),
-  if Simplify == true ->
+  if Simplify =:= true ->
       {IG0, Worklists0, Moves0} = 
 	simplify_O(hipe_reg_worklists:simplify(Worklists),
 		 IG, 
@@ -339,17 +339,17 @@ do_coloring(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
 		 K),
       do_coloring(IG0, Worklists0, Moves0, Alias,
 		  K, SpillLimit, Target);
-     Coalesce == true ->
+     Coalesce =:= true ->
       {Moves0, IG0, Worklists0, Alias0} =
 	coalesce_O(Moves, IG, Worklists, Alias, K, Target),
       do_coloring(IG0, Worklists0, Moves0, Alias0, 
 		  K, SpillLimit, Target);
-     Freeze == true ->
+     Freeze =:= true ->
       {Worklists0,Moves0} = 
 	freeze(K, Worklists, Moves, IG, Alias),
       do_coloring(IG, Worklists0, Moves0, Alias, 
 		  K, SpillLimit, Target);
-     Spill == true ->
+     Spill =:= true ->
       {Worklists0, Moves0} = 
 	selectSpill_O(Worklists, Moves, IG, K, Alias, SpillLimit),
       do_coloring(IG, Worklists0, Moves0, Alias, 
@@ -412,7 +412,7 @@ do_coalescing(IG, Worklists, Moves, Alias, K, Target) ->
 do_simplify_or_spill(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
   Simplify = not(hipe_reg_worklists:is_empty_simplify(Worklists)),
   Spill    = not(hipe_reg_worklists:is_empty_spill(Worklists)),
-  if Simplify == true ->
+  if Simplify =:= true ->
       {IG0, Worklists0, Moves0} = 
 	simplify(hipe_reg_worklists:simplify(Worklists),
 		 IG, 
@@ -421,7 +421,7 @@ do_simplify_or_spill(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
 		 K),
       do_simplify_or_spill(IG0, Worklists0, Moves0, Alias,
 		  K, SpillLimit, Target);
-     Spill == true ->
+     Spill =:= true ->
       Worklists0 = 
 	selectSpill(Worklists, IG, SpillLimit),
       do_simplify_or_spill(IG, Worklists0, Moves, Alias, 
@@ -662,21 +662,22 @@ compare_sanity({[], _C}, {_Coloring_list_N, _C_N}) ->
   ?debug_msg("Sanity - unequal numbers~n", []),
   false;
 compare_sanity({[Color|Coloring_list], C}, {[Color_N|Coloring_list_N], C_N}) ->
-  case element(1, Color) == element(1, Color_N) of
+  case element(1, Color) =:= element(1, Color_N) of
     false ->
       ?debug_msg("Sanity - unequal measure~n", []),
       false;
     _ -> 
-      case element(2, Color) == element(2, Color_N) of
+      case element(2, Color) =:= element(2, Color_N) of
         false ->  
 	  ?debug_msg("Sanity - unequal color~n", []),
 	  false;
 	_ ->
-	  case C == C_N of
+	  case C =:= C_N of
 	    false ->
 	      ?debug_msg("Sanity - unequal last element~n", []),
 	      false;
-	    _ -> compare_sanity({Coloring_list, C}, {Coloring_list_N, C_N})
+	    _ ->
+	      compare_sanity({Coloring_list, C}, {Coloring_list_N, C_N})
 	  end
       end
   end.
@@ -752,7 +753,7 @@ build_reglist_O([Node|Ns],Color,List) ->
 build_reglist_N([],_Color,List,_OrgList) -> 
   List;
 build_reglist_N([Node|Ns],Color,List,OrgList) ->
-  %XXX this could be done more efficiently if both lists were sorted
+  %% XXX this could be done more efficiently if both lists were sorted
   case is_already_in_list(Node, OrgList) of
     true -> build_reglist_N(Ns, Color, List, OrgList);
     _ -> build_reglist_N(Ns,Color,[{Node,{reg,getColor(Node,Color)}}|List], OrgList)
@@ -762,7 +763,7 @@ is_already_in_list(_Node, []) ->
   false;
 is_already_in_list(Node, [L|List]) ->
   ?debug_msg("---test--- Node ~w  element ~w~n", [Node, element(1, L)]),
-  case Node == element(1, L) of
+  case Node =:= element(1, L) of
     true -> true;
     _ -> is_already_in_list(Node, List)
   end.
@@ -837,7 +838,8 @@ sort_stack_split(Pivot, [H|T], Smaller, Bigger) ->
 %%   Alias          --  The updated aliases.
 %%----------------------------------------------------------------------
 
-assignColors(Worklists, Stack, NodeSets, Color, No_Temporaries, SavedAdjList, SavedSpillCosts, IG, Alias, AllColors, Target) ->
+assignColors(Worklists, Stack, NodeSets, Color, No_Temporaries,
+	     SavedAdjList, SavedSpillCosts, IG, Alias, AllColors, Target) ->
   case Stack of
     [] ->
       {Color,NodeSets,Alias};
@@ -1275,7 +1277,7 @@ coalesce(Moves, IG, Worklists, Alias, K, Target) ->
 		false -> {Alias_src, Alias_dst}
 	      end,
       %% When debugging, check that neither V nor U is on the stack.
-      case U == V of
+      case U =:= V of
         true ->
 	  %% drop coalesced move Move
 	  {Moves0, IG, Alias, Worklists};
@@ -1342,7 +1344,7 @@ coalesce_O(Moves, IG, Worklists, Alias, K, Target) ->
 		false -> {Alias_src, Alias_dst}
 	      end,
       %% When debugging, check that neither V nor U is on the stack.
-      case U == V of
+      case U =:= V of
          true ->
 	  Moves1 = Moves0, % drop coalesced move Move
 	  Worklists1 = add_worklist(Worklists, U, K, Moves1, IG, Target),
@@ -1638,7 +1640,7 @@ findPrimitiveNodes(0, _N, _Alias, PrimitiveNodes) ->
   PrimitiveNodes;
 findPrimitiveNodes(Node, N, Alias, PrimitiveNodes) ->
   NextNode = Node - 1,
-  case (getAlias(NextNode, Alias) == N) of
+  case (getAlias(NextNode, Alias) =:= N) of
     true -> findPrimitiveNodes(NextNode, N, Alias, [NextNode | PrimitiveNodes]);
     _ -> findPrimitiveNodes(NextNode, N, Alias, PrimitiveNodes)
   end.
@@ -1718,17 +1720,9 @@ findNew(Adj, Saved) ->
 findNew([], _Saved, New) ->
   New;
 findNew([A| Adj], Saved, New) ->
-  case isElement(A, Saved) of
+  case lists:member(A, Saved) of
     true -> findNew(Adj, Saved, New);
     _ -> findNew(Adj, Saved, [A| New])
-  end.
-
-isElement(_E, []) ->
-  false;
-isElement(E, [L| List]) ->
-  case (E == L) of
-    true -> true;
-    _ -> isElement(E, List)
   end.
 
 %test_fixAdj(0, _SavedAdj, IG, _Target) ->
@@ -2012,8 +2006,8 @@ moves(U, Move, Alias, Moves) ->
   %% and coloured multiple times by assignColors(). Ouch!
   X1 = getAlias(X, Alias),
   Y1 = getAlias(Y, Alias),
-  if U == X1 -> Y1;
-     U == Y1 -> X1;
+  if U =:= X1 -> Y1;
+     U =:= Y1 -> X1;
      true -> exit({?MODULE,moves}) % XXX: shouldn't happen
   end.
 

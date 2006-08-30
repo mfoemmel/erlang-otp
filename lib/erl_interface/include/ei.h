@@ -136,11 +136,6 @@
 extern "C" {
 #endif
 
-/* MS C uses __declspec() to do its magic */
-#if !defined(__WIN32__)
-# define __declspec(foo) /* nothing */
-#endif
-
 /*
  * GCC's attributes are too useful to not use. Other compilers
  * just lose opportunities to optimize and warn.
@@ -159,17 +154,10 @@ extern "C" {
 /* 'erl_errno' as a function return value */
 volatile int* __erl_errno_place(void) __attribute__ ((__const__));
 
-/* 'erl_errno' as a variable. */
-extern __declspec(thread) volatile int __erl_errno;
-
-/* FIXME merge with erl_init defines below and maybe not use function
-   if not threaded */
-
 #define erl_errno (*__erl_errno_place ())
 
 #else /* !_REENTRANT && !VXWORKS && !__WIN32__ */
 
-/* FIXME need to be volatile? */
 extern volatile int __erl_errno;
 
 #define erl_errno __erl_errno

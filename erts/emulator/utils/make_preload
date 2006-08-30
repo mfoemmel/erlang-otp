@@ -37,6 +37,7 @@ use File::Basename;
 
 my $gen_rc = 0;
 my $gen_old = 0;
+my $windres = 0;
 my $file;
 
 my $progname = basename($0);
@@ -45,6 +46,8 @@ while (@ARGV && $ARGV[0] =~ /^-(\w+)/) {
     my $opt = shift;
     if ($opt eq '-rc') {
 	$gen_rc = 1;
+    } elsif ($opt eq '-windres') {
+	$windres = 1;
     } elsif ($opt eq '-old') {
 	$gen_old = 1;
     } else {
@@ -95,6 +98,10 @@ foreach $file (@ARGV) {
 	$comment =~ s@\*/@..@g; # Comment terminator.
 	print "     " x (8-($i % 8)), " /* $comment */\n};\n";
     }
+}
+
+if ($windres) {
+    $modules[$#modules] =~ s/,$//;
 }
 
 if ($gen_rc) {

@@ -220,7 +220,7 @@ static int
 print_term(fmtfn_t fn, void* arg, Eterm obj, long *dcount)
 {
     int res;
-    int i, k;
+    int i;
     Uint32 *ref_num;
     Eterm* nobj;
 
@@ -266,17 +266,25 @@ print_term(fmtfn_t fn, void* arg, Eterm obj, long *dcount)
     case SMALL_DEF:
 	PRINT_SLONG(res, fn, arg, 'd', 0, 1, (signed long) signed_val(obj));
 	break;
-    case BIG_DEF:
-	nobj = big_val(obj);
-	i = BIG_SIZE(nobj);
-	if (BIG_SIGN(nobj))
-	    PRINT_STRING(res, fn, arg, "-16#");
+    case BIG_DEF: {
+	int print_res;
+	char def_buf[64];
+	char *buf, *big_str;
+	Uint sz = (Uint) big_decimal_estimate(obj);
+	sz++;
+	if (sz <= 64)
+	    buf = &def_buf[0];
 	else
-	    PRINT_STRING(res, fn, arg, "16#");
-	for (k = i-1; k >= 0; k--)
-	    PRINT_ULONG(res, fn, arg, 'X', 1, D_EXP/4,
-			(unsigned long) BIG_DIGIT(nobj, k));
+	    buf = erts_alloc(ERTS_ALC_T_TMP, sz);
+	big_str = erts_big_to_string(obj, buf, sz);
+	print_res = erts_printf_string(fn, arg, big_str);
+	if (buf != &def_buf[0])
+	    erts_free(ERTS_ALC_T_TMP, (void *) buf);
+	if (print_res < 0)
+	    return print_res;
+	res += print_res;
 	break;
+    }
     case REF_DEF:
     case EXTERNAL_REF_DEF:
 	PRINT_STRING(res, fn, arg, "#Ref<");

@@ -4,18 +4,17 @@
 
 # Strange, VxWorks HAVE_SENS not set here, see "ei_resolve.h"
 
-# For unknown reasons the detection of gethosbyname in this file
-# conflicts with "$ERL_TOP/erts/configure.in" if they share the
-# cache so we turn that stupid thing of!
-define([AC_CACHE_LOAD], )dnl
-define([AC_CACHE_SAVE], )dnl
-
 # Find the erl_interface version number and set m4 macro to it.
 # We do this because AC_INIT can't handle shell variables. Still broken.
 dnl m4_define(EI_VERSION,`grep EI_VSN ../vsn.mk | sed 's/^.*=[ ]*//'`)
 dnl m4_define(EI_VERSION,regexp(m4_include(VERSION),[version \([-.0-9A-Za-z]+\)],[\1]))
 
 AC_INIT()
+
+if test "x$no_recursion" != "xyes"; then
+    # We do not want to use a common cache!
+    cache_file=/dev/null
+fi
 
 dnl How to set srcdir absolute is taken from the GNU Emacs distribution
 #### Make srcdir absolute, if it isn't already.  It's important to
@@ -198,6 +197,51 @@ elif test "x$with_gmp" != "xno" -a -n "$with_gmp" ;then
     # FIXME return ERROR if no lib
 fi
 
+MIXED_CYGWIN=no
+
+AC_MSG_CHECKING(for mixed cygwin and native VC++ environment)
+if test "X$CC" = "Xcc.sh" -a "X$host" = "Xwin32" -a "x$GCC" != x"yes"; then
+	if test -x /usr/bin/cygpath; then
+		CFLAGS="-O2"
+		MIXED_CYGWIN=yes
+		AC_MSG_RESULT([yes])
+		MIXED_CYGWIN_VC=yes
+	else
+		AC_MSG_RESULT([undeterminable])
+		AC_MSG_ERROR(Seems to be mixed windows but not with cygwin, cannot handle this!)
+	fi
+else
+	AC_MSG_RESULT([no])
+	MIXED_CYGWIN_VC=no
+fi
+AC_SUBST(MIXED_CYGWIN_VC)
+
+AC_MSG_CHECKING(for mixed cygwin and native MinGW environment)
+if test "X$CC" = "Xcc.sh" -a "X$host" = "Xwin32" -a "x$GCC" = x"yes"; then
+	if test -x /usr/bin/cygpath; then
+		CFLAGS="-O2"
+		MIXED_CYGWIN=yes
+		AC_MSG_RESULT([yes])
+		MIXED_CYGWIN_MINGW=yes
+	else
+		AC_MSG_RESULT([undeterminable])
+		AC_MSG_ERROR(Seems to be mixed windows but not with cygwin, cannot handle this!)
+	fi
+else
+	AC_MSG_RESULT([no])
+	MIXED_CYGWIN_MINGW=no
+fi
+AC_SUBST(MIXED_CYGWIN_MINGW)
+
+AC_MSG_CHECKING(if we mix cygwin with any native compiler)
+if test "X$MIXED_CYGWIN" = "Xyes" ; then
+	AC_MSG_RESULT([yes])	
+else
+	AC_MSG_RESULT([no])
+fi
+
+AC_SUBST(MIXED_CYGWIN)
+	
 dnl
 dnl Threads
 dnl
@@ -217,6 +261,13 @@ case "$threads_disabled" in
 		    found_threads=yes
 		    EI_THREADS="true"	
 		    AC_MSG_RESULT([yes])
+		    AC_MSG_CHECKING([for __declspec(thread) usability])
+		    if test "X$GCC" = "Xyes"; then
+		        AC_MSG_RESULT([no])
+		    else
+		        THR_DEFS="$THR_DEFS -DUSE_DECLSPEC_THREAD"
+			AC_MSG_RESULT([yes])
+		    fi	
 		else
 		    AC_MSG_RESULT(no)
 

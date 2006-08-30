@@ -18,7 +18,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@csd.uu.se
+%% Author contact: richardc@it.uu.se
 %%
 %% $Id$
 %%
@@ -449,11 +449,11 @@ lay_1(Node, Ctxt) ->
 
 lay_literal(Node, Ctxt) ->
     case concrete(Node) of
-	V when atom(V) ->
+	V when is_atom(V) ->
 	    text(atom_lit(Node));
-	V when float(V) ->
+	V when is_float(V) ->
 	    text(tidy_float(float_lit(Node)));
-	V when integer(V) ->
+	V when is_integer(V) ->
 	    %% Note that we do not even try to recognize values
 	    %% that could represent printable characters - we
 	    %% always print an integer.
@@ -463,7 +463,7 @@ lay_literal(Node, Ctxt) ->
 	[_ | _] ->
 	    %% `lay_cons' will check for strings.
 	    lay_cons(Node, Ctxt);
-	V when tuple(V) ->
+	V when is_tuple(V) ->
 	    lay_tuple(Node, Ctxt)
     end.
 
@@ -473,7 +473,7 @@ lay_var(Node, Ctxt) ->
     %% variable name either has the character sequence of a proper
     %% variable, or otherwise does not need single-quoting.
     case var_name(Node) of
-	V when atom(V) ->
+	V when is_atom(V) ->
 	    S = atom_to_list(V),
 	    case S of
 		[C | _] when C >= $A, C =< $Z ->
@@ -488,11 +488,11 @@ lay_var(Node, Ctxt) ->
 		    %% E.g. 'foo' => "_foo".
 		    text([$_ | S])
 	    end;
-	V when integer(V) ->
+	V when is_integer(V) ->
 	    %% Integers are always simply prefixed with "_";
 	    %% e.g. 4711 => "_4711".
 	    text([$_ | integer_to_list(V)]);
-	{N, A} when atom(N), integer(A) ->
+	{N, A} when is_atom(N), is_integer(A) ->
 	    %% Function names have no overlap problem.
 	    beside(lay_noann(c_atom(to_string(N)), Ctxt),
 		   beside(text("/"), lay_noann(c_int(A), Ctxt)))
@@ -773,12 +773,12 @@ lay_list_elements(Node, Ctxt) ->
 	end,
     H = lay(cons_hd(Node), Ctxt),
     case is_c_cons(T) of
-	true when A == [] ->
+	true when A =:= [] ->
 	    [beside(H, floating(text(",")))
 	     | lay_list_elements(T, Ctxt)];
 	_ ->
 	    case is_c_nil(T) of
-		true when A == [] ->
+		true when A =:= [] ->
 		    [H];
 		_ ->
 		    [H, beside(floating(text("| ")),
@@ -816,7 +816,7 @@ vertical([]) ->
 % horizontal([]) ->
 %     [].
 
-to_string(Atom) when atom(Atom) ->
+to_string(Atom) when is_atom(Atom) ->
     atom_to_list(Atom);
 to_string(String) ->
     String.
@@ -849,19 +849,18 @@ tidy_float_2([$e | Cs]) -> tidy_float_2([$e, $+ | Cs]);
 tidy_float_2([_ | Cs]) -> tidy_float_2(Cs);
 tidy_float_2([]) -> [].
 
-get_line([L | _As]) when integer(L) ->
+get_line([L | _As]) when is_integer(L) ->
     L;
 get_line([_ | As]) ->
     get_line(As);
 get_line([]) ->
     none.
 
-strip_line([A | As]) when integer(A) ->
+strip_line([A | As]) when is_integer(A) ->
     strip_line(As);
 strip_line([A | As]) ->
     [A | strip_line(As)];
 strip_line([]) ->
     [].
-
 
 %% =====================================================================

@@ -308,7 +308,12 @@ client_init(User, Host, Port, Opts) ->
 		      atom(Host) -> atom_to_list(Host);
 		      list(Host) -> Host
 		   end,
-	    client_hello(S, User, SSH#ssh { peer = Peer }, Tmo);
+	    case client_hello(S, User, SSH#ssh { peer = Peer }, Tmo) of
+		{error, E} ->
+		    User ! {self(), {error, E}};
+		_ ->
+		    ok
+	    end;
 	Error ->
 	    User ! {self(), Error}
     end.
@@ -332,7 +337,6 @@ server_init(UserFun, Addr, Port, Opts) ->
 %%
 ssh_init(S, Role, Opts) ->
     ssh_bits:install_messages(transport_messages()),
-    crypto:start(),
     {A,B,C} = erlang:now(),
     random:seed(A, B, C),
     put(send_sequence, 0),
@@ -465,7 +469,15 @@ client_hello(S, User, SSH, Timeout) ->
 	{tcp, S, _Line} ->
 	    ?dbg(true, "info: ~p\n", [_Line]),
 	    inet:setopts(S, [{active, once}]),
-	    client_hello(S, User, SSH, Timeout)
+	    client_hello(S, User, SSH, Timeout);
+        {tcp_error, S, Reason} ->
+            ?dbg(true, "client_hello got tcp error ~p\n", [Reason]),
+            {error, {tcp_error, Reason}};
+	{tcp_closed, S} ->
+	    ?dbg(true, "client_hello: tcp_closed\n", []),
+	    {error, tcp_closed};
+	Other ->
+	    io:format("Other ~p\n", [Other])
     after Timeout ->
 	    ?dbg(true, "client_hello timeout ~p\n", [Timeout]),
 	    gen_tcp:close(S),
@@ -761,7 +773,9 @@ ssh_main(S, User, SSH) ->
 	    ok;
 
 	{ssh_call, From, peername} ->
-	    reply(From, inet:peername(S)),
+	    P = inet:peername(S),
+	    io:format("peername~p\n", [P]),
+	    reply(From, P),
 	    ssh_main(S, User, SSH);
 
 	{ssh_call, From, Req} ->

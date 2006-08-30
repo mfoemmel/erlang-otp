@@ -19,6 +19,9 @@
 #define __SYS_H__
 
 /* xxxP __VXWORKS__ */
+#ifdef VXWORKS
+#include <vxWorks.h>
+#endif
 
 #ifdef ERTS_SMP
 /*
@@ -33,7 +36,7 @@
    erl_${OS}_sys.h #include files: it controls whether
    certain optional facilities should be defined or not. */
 #ifdef ERTS_SMP
-#define ERTS_TIMER_THREAD /* optional */
+/* #define ERTS_TIMER_THREAD No timer thread for now (bugs present) */
 #endif
 
 #if defined (__WIN32__)
@@ -170,7 +173,6 @@ EXTERN_FUNCTION(int, real_printf, (const char *fmt, ...));
 #endif
 
 #ifdef ERTS_SMP
-int erts_sys_no_processors(void);
 void erts_wake_io_thread(void);
 #endif
 

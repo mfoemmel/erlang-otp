@@ -16,7 +16,10 @@
 %%     $Id$
 %%
 %%----------------------------------------------------------------------
-%% Purpose:
+%% Purpose: Test the snmp mib compiler
+%% 
+%% Run test: ts:run(snmp, snmp_compiler_test, [batch]).
+%% 
 %%----------------------------------------------------------------------
 -module(snmp_compiler_test).
 
@@ -38,7 +41,10 @@
 	 description/1,
 	 oid_conflicts/1,
 	 imports/1,
-	 module_identity/1
+	 module_identity/1,
+
+	 tickets/1,
+	 otp_6150/1
 
 	]).
 
@@ -62,9 +68,12 @@
 
 init_per_testcase(_Case, Config) when list(Config) ->
     Dir = ?config(priv_dir, Config),
+    DataDir = ?config(data_dir, Config),
+    [_|RL] = lists:reverse(filename:split(DataDir)),
+    MibDir = join(lists:reverse(["snmp_test_data"|RL])),
     CompDir = join(Dir, "comp_dir/"),
     ?line ok = file:make_dir(CompDir),
-    [{comp_dir, CompDir}|Config].
+    [{comp_dir, CompDir},{mib_dir, MibDir}|Config].
 
 fin_per_testcase(_Case, Config) when list(Config) ->
     CompDir = ?config(comp_dir, Config),
@@ -81,7 +90,13 @@ all(suite) ->
      description,
      oid_conflicts,
      imports,
-     module_identity
+     module_identity,
+     tickets
+    ].
+
+tickets(suite) ->
+    [
+     otp_6150
     ].
 
 
@@ -91,6 +106,9 @@ all(suite) ->
 
 description(suite) -> [];
 description(Config) when list(Config) ->
+    put(tname,desc),
+    p("starting with Config: ~p~n", [Config]),
+
     Dir = ?config(comp_dir, Config),
     Filename   = join(Dir,"test"),
     MibSrcName = Filename ++ ".mib",
@@ -121,6 +139,9 @@ description(Config) when list(Config) ->
 
 oid_conflicts(suite) -> [];
 oid_conflicts(Config) when list(Config) ->
+    put(tname,oid_conflicts),
+    p("starting with Config: ~p~n", [Config]),
+
     Dir = ?config(comp_dir, Config),
     Mib = join(Dir,"TESTv2.mib"),
     ?line ok = write_oid_conflict_mib(Mib),
@@ -139,6 +160,20 @@ module_identity(suite) ->
     [];
 module_identity(Config) when list(Config) ->
     ?SKIP(not_yet_implemented).
+
+
+otp_6150(suite) ->
+    [];
+otp_6150(Config) when is_list(Config) ->
+    put(tname,otp_6150),
+    p("starting with Config: ~p~n", [Config]),
+
+    Dir     = ?config(comp_dir, Config),
+    MibDir  = ?config(mib_dir,  Config),
+    MibFile = join(MibDir, "ERICSSON-TOP-MIB.mib"),
+    ?line {ok, Mib} = snmpc:compile(MibFile, [{outdir, Dir}, {verbosity, trace}]),
+    io:format("otp_6150 -> Mib: ~n~p~n", [Mib]),
+    ok.
 
 
 %%======================================================================
@@ -324,5 +359,31 @@ check_desc(Desc1, Desc2) ->
     exit({'description not equal', Desc1, Desc2}).
 
 
+join(Comp) ->
+    filename:join(Comp).
+
 join(A,B) ->
     filename:join(A,B).
+
+
+%% ------
+
+%% p(F) ->
+%%     p(F, []).
+
+p(F, A) ->
+    p(get(tname), F, A).
+
+p(TName, F, A) ->
+    io:format("*** [~w][~s] ***"
+              "~n" ++ F ++ "~n", [TName,format_timestamp(now())|A]).
+
+format_timestamp({_N1, _N2, N3}   = Now) ->
+    {Date, Time}   = calendar:now_to_datetime(Now),
+    {YYYY,MM,DD}   = Date,
+    {Hour,Min,Sec} = Time,
+    FormatDate =
+        io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+                      [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),
+    lists:flatten(FormatDate).
+

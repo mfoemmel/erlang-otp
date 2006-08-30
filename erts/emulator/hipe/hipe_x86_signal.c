@@ -140,7 +140,38 @@ static void do_init(void)
 #define INIT()	do { if( !init_done() ) do_init(); } while(0)
 #endif	/* glibc 2.1 */
 
-#if !defined(__GLIBC__)
+/* Is there no standard identifier for Darwin/MacOSX ? */
+#if defined(__APPLE__) && defined(__MACH__) && !defined(__DARWIN__)
+#define __DARWIN__ 1
+#endif
+
+#if defined(__DARWIN__)
+/*
+ * Darwin appears to require code patching in order to catch
+ * and redirect calls to library functions. That functionality
+ * is implemented by the mach_override library.
+ */
+#include "mach_override.h"
+static int my_sigaction(int signum, const struct sigaction *act, struct sigaction *oldact);
+static int (*__next_sigaction)(int, const struct sigaction*, struct sigaction*);
+#define init_done()	(__next_sigaction != 0)
+static void do_init(void)
+{
+    kern_return_t err;
+
+    err = mach_override_ptr((void*)sigaction,
+			    (void*)my_sigaction,
+			    (void**)&__next_sigaction);
+    if (!err)
+	return;
+    perror("mach_override");
+    abort();
+}
+#define _NSIG NSIG
+#define INIT()	do { if( !init_done() ) do_init(); } while(0)
+#endif /* __DARWIN__ */
+
+#if !defined(__GLIBC__) && !defined(__DARWIN__)
 /*
  * Assume Solaris/x86 2.8.
  * There is a number of sigaction() procedures in libc:
@@ -174,7 +205,7 @@ static void do_init(void)
 }
 #define _NSIG NSIG
 #define INIT()	do { if( !init_done() ) do_init(); } while(0)
-#endif	/* not glibc */
+#endif	/* not glibc or darwin */
 
 /*
  * This is our wrapper for sigaction(). sigaction() can be called before
@@ -213,10 +244,12 @@ int __SIGACTION(int signum, const struct sigaction *act, struct sigaction *oldac
 /*
  * This catches the application's own sigaction() calls.
  */
+#if !defined(__DARWIN__)
 int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
 {
     return my_sigaction(signum, act, oldact);
 }
+#endif
 
 /*
  * Set alternate signal stack for the invoking thread.

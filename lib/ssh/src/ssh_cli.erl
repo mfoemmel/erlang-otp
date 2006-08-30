@@ -137,6 +137,10 @@ handle_info({ssh_cm, CM, {open, Channel, _RemoteChannel, {session}}}, State) ->
 			   {arity, 1} ->
 			       User = ssh_userauth:get_user_from_cm(CM),
 			       fun() -> Shell(User) end;
+			   {arity, 2} ->
+			       User = ssh_userauth:get_user_from_cm(CM),
+			       {ok, PeerAddr} = ssh_cm:get_peer_addr(CM),
+			       fun() -> Shell(User, PeerAddr) end;
 			   _ ->
 			       Shell
 		       end;
@@ -184,6 +188,9 @@ handle_info({get_cm, From}, #state{cm=CM} = State) ->
     {noreply, State};
 handle_info({ssh_cm, _CM, {eof, _Channel}}, State) ->
     {stop, normal, State};
+handle_info({ssh_cm, _CM, {closed, _Channel}}, State) ->
+    %% ignore -- we'll get an {eof, Channel} soon??
+    {noreply, State};
 handle_info({'EXIT', Group, normal},
 	    #state{cm=CM, channel=Channel, group=Group} = State) ->
     ssh_cm:close(CM, Channel),

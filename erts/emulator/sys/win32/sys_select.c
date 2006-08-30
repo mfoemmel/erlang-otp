@@ -75,6 +75,12 @@ N+M  | Object N+M        |		    /
 #include "erl_alloc.h"
 #include "erl_driver.h"
 
+#if defined(__GNUC__)
+#  define WIN_SYS_INLINE __inline__
+#elif defined(__WIN32__)
+#  define WIN_SYS_INLINE __forceinline
+#endif
+
 /*
  * The following values are non-zero, constant, odd, large, and atypical.
  *      Non-zero values help find bugs assuming zero filled data.
@@ -158,7 +164,7 @@ static void* debug_realloc(ErtsAlcType_t, void *, Uint);
 #  define SEL_ALLOC	erts_alloc
 #  define SEL_REALLOC	realloc_wrap
 #  define SEL_FREE	erts_free
-static __forceinline void *
+static WIN_SYS_INLINE void *
 realloc_wrap(ErtsAlcType_t t, void *p, Uint ps, Uint s)
 {
     return erts_realloc(t, p, s);
@@ -535,7 +541,7 @@ void win_check_io(int wait)
      */
 
     if (!sys_io_ready) {
-	erts_deliver_time(NULL);
+	erts_deliver_time();
 	return;
     }
 
@@ -554,7 +560,7 @@ void win_check_io(int wait)
 				 * a newly inserted waiter.
 				 */
 
-    erts_deliver_time(NULL);
+    erts_deliver_time();
     in_win_check_io = TRUE;
     for (i = 0; i < n; i++) {
 	Waiter* w = waiter[i];

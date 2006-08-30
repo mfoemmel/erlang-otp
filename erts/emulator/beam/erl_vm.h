@@ -46,6 +46,11 @@
 #define MAX_ARG 256	        /* Max number of arguments allowed */
 #define MAX_REG 1024            /* Max number of x(N) registers used */
 
+/*
+ * The new arithmetic operations need some extra X registers in the register array.
+ */
+#define ERTS_X_REGS_ALLOCATED (MAX_REG+2)
+
 #ifndef ERTS_SMP
 #define INPUT_REDUCTIONS (2 * CONTEXT_REDS)
 #endif
@@ -108,7 +113,6 @@
 
 #define ARITH_HEAP(p)     (p)->arith_heap
 #define ARITH_AVAIL(p)    (p)->arith_avail
-#define ARITH_LOWEST_HTOP(p) (p)->arith_lowest_htop
 #ifdef DEBUG
 #  define ARITH_CHECK_ME(p) (p)->arith_check_me
 #endif
@@ -119,26 +123,27 @@
 # define ERTS_HOLE_MARKER (((0xcafebabeUL << 24) << 8) | 0xaf5e78ccUL)
 #endif
 
-
+#if !defined(HEAP_FRAG_ELIM_TEST)
 #if defined(DEBUG)
 #  define ARITH_MARKER (((0xcafebabeUL << 24) << 8) | 0xaf5e78ccUL)
 #  define ArithCheck(p) \
       ASSERT(ARITH_CHECK_ME(p)[0] == ARITH_MARKER);
-#  define ArithAlloc(p, need)                                   \
-   (ASSERT_EXPR((need) >= 0),                                   \
-    ((ARITH_AVAIL(p) < (need)) ?                                \
-     erts_arith_alloc((p), (p)->htop, (need)) :                 \
-     ((ARITH_HEAP(p) += (need)), (ARITH_AVAIL(p) -= (need)),    \
-      (ARITH_CHECK_ME(p) = ARITH_HEAP(p)),                      \
+#  define ArithAlloc(p, need)					\
+   (ASSERT_EXPR((need) >= 0),					\
+    ((ARITH_AVAIL(p) < (need)) ?				\
+     erts_heap_alloc((p), (need)) :				\
+     ((ARITH_HEAP(p) += (need)), (ARITH_AVAIL(p) -= (need)),	\
+      (ARITH_CHECK_ME(p) = ARITH_HEAP(p)),			\
       (ARITH_HEAP(p) - (need)))))
 #else
 #  define ArithCheck(p)
-#  define ArithAlloc(p, need)                       \
-    ((ARITH_AVAIL(p) < (need)) ?                    \
-      erts_arith_alloc((p), (p)->htop, (need)) :    \
-      ((ARITH_HEAP(p) += (need)),                   \
-       (ARITH_AVAIL(p) -= (need)),                  \
+#  define ArithAlloc(p, need)			\
+    ((ARITH_AVAIL(p) < (need)) ?		\
+      erts_heap_alloc((p), (need)) :		\
+      ((ARITH_HEAP(p) += (need)),		\
+       (ARITH_AVAIL(p) -= (need)),		\
        (ARITH_HEAP(p) - (need))))
+#endif
 #endif
 
 /*

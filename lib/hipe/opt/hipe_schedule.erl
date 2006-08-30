@@ -162,8 +162,8 @@ block(_L,[I]) ->
     end;
 block(_L,Blk) ->
     IxBlk = indexed_bb(Blk),
-    case length(IxBlk) == 1 of % have to check length again, because comments
-	true ->                % and nops can have been removed.
+    case length(IxBlk) =:= 1 of % have to check length again, because comments
+	true ->                 % and nops can have been removed.
 	    {_N,I} = hd(IxBlk),
 	    case hipe_sparc:is_any_branch(I) of
 		true -> [hipe_sparc:nop_create(), I];
@@ -453,7 +453,7 @@ finalize_block(Sch, IxBlk) ->
     ?debug5("Sch: ~p~nIxBlk: ~p~n",[Sch,IxBlk]),
     finalize_block(1, hipe_vectors:size(Sch), 1, Sch, IxBlk, []).
 
-finalize_block(N, End, _C, Sch, IxBlk, _Instrs) when N == End - 1 ->
+finalize_block(N, End, _C, Sch, IxBlk, _Instrs) when N =:= End - 1 ->
     NextLast = get_instr(Sch, IxBlk, N),
     Last     = get_instr(Sch, IxBlk, End),
     ?debug5("NextLast: ~p~nLast: ~p~n",[NextLast,Last]),
@@ -678,10 +678,10 @@ update_earliest([{Lat,N}|Xs],Cycle,Preds,Earl,Ready) ->
     Num_preds = hipe_vectors:get(Preds,N),
     NewPreds = hipe_vectors:set(Preds,N,Num_preds-1),
     if
-	Num_preds == 0 ->
+	Num_preds =:= 0 ->
 	    ?debug('inconsistent DAG~n',[]),
 	    exit({update_earliest,N});
-	Num_preds == 1 ->
+	Num_preds =:= 1 ->
 	    NewReady = [{New_earl,N}|Ready],
 	    NewPreds2 = hipe_vectors:set(NewPreds,N,0),
 	    update_earliest(Xs,Cycle,NewPreds2,NewEarl,NewReady);
@@ -1147,7 +1147,7 @@ md_type(I) ->
 	    N = hipe_sparc:reg_nr(Src),
 	    Off = hipe_sparc:load_off(I),
 	    if
-		N == Sp -> % operation on stack
+		N =:= Sp -> % operation on stack
 		    {ld,{sp,Off}};
 		true ->
 		    {ld,{hp,Src,Off}}
@@ -1158,7 +1158,7 @@ md_type(I) ->
 	    N = hipe_sparc:reg_nr(Dst),
 	    Off = hipe_sparc:store_off(I),
 	    if
-		N == Sp ->
+		N =:= Sp ->
 		    {st,{sp,Off}};
 		true ->
 		    {st,{hp,Dst,Off}}
@@ -1284,7 +1284,7 @@ hp_dep([{N,_,_}|Xs], {Reg,Off},Dep,Indep) ->
 %% Description : Returns a list of nodes that are depending on a stack store
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 sp_dep_only(Stores,Off) ->
-    [ N || {N,Off0} <- Stores, Off == Off0 ].
+    [ N || {N,Off0} <- Stores, Off =:= Off0 ].
 
 %% Dependences from heap stores to heap loads.
 %% *** UNFINISHED ***

@@ -1076,8 +1076,9 @@ get_match(#k_binary{}, St0) ->
     {[V]=Mes,St1} = new_vars(1, St0),
     {#k_binary{segs=V},Mes,St1};
 get_match(#k_bin_seg{}=Seg, St0) ->
-    {[S,N]=Mes,St1} = new_vars(2, St0),
-    {Seg#k_bin_seg{seg=S,next=N},Mes,St1};
+    {[S,N0],St1} = new_vars(2, St0),
+    N = set_kanno(N0, [no_usage]),
+    {Seg#k_bin_seg{seg=S,next=N},[S,N],St1};
 get_match(#k_tuple{es=Es}, St0) ->
     {Mes,St1} = new_vars(length(Es), St0),
     {#k_tuple{es=Mes},Mes,St1};
@@ -1186,6 +1187,13 @@ arg_val(Arg) ->
 	#k_binary{} -> 0
     end.
 
+%% ubody_used_vars(Expr, State) -> [UsedVar]
+%%  Return all used variables for the body sequence. Much more
+%%  efficient than using ubody/3 if the body contains nested letrecs.
+ubody_used_vars(Expr, St) ->
+    {_,Used,_} = ubody(Expr, return, St#kern{funs=ignore}),
+    Used.
+
 %% ubody(Expr, Break, State) -> {Expr,[UsedVar],State}.
 %%  Tag the body sequence with its used variables.  These bodies
 %%  either end with a #k_break{}, or with #k_return{} or an expression
@@ -1193,8 +1201,8 @@ arg_val(Arg) ->
 
 ubody(#iset{vars=[],arg=#iletrec{}=Let,body=B0}, Br, St0) ->
     %% An iletrec{} should never be last.
-    St1 = iletrec_funs(Let, St0),
-    ubody(B0, Br, St1);
+    St = iletrec_funs(Let, St0),
+    ubody(B0, Br, St);
 ubody(#iset{anno=A,vars=Vs,arg=E0,body=B0}, Br, St0) ->
     {E1,Eu,St1} = uexpr(E0, {break,Vs}, St0),
     {B1,Bu,St2} = ubody(B0, Br, St1),
@@ -1229,7 +1237,7 @@ iletrec_funs(#iletrec{defs=Fs}, St0) ->
     %% Use union of all free variables.
     %% First just work out free variables for all functions.
     Free = foldl(fun ({_,#ifun{vars=Vs,body=Fb0}}, Free0) ->
-			 {_,Fbu,_} = ubody(Fb0, return, St0),
+			 Fbu = ubody_used_vars(Fb0, St0),
 			 Ns = lit_list_vars(Vs),
 			 Free1 = subtract(Fbu, Ns),
 			 union(Free1, Free0)
@@ -1239,16 +1247,23 @@ iletrec_funs(#iletrec{defs=Fs}, St0) ->
     St1 = foldl(fun ({N,#ifun{vars=Vs}}, Lst) ->
 			store_free(N, length(Vs), FreeVs, Lst)
 		end, St0, Fs),
-    %% Now regenerate local functions to use free variable information.
-    St2 = foldl(fun ({N,#ifun{anno=Fa,vars=Vs,body=Fb0}}, Lst0) ->
-			{Fb1,_,Lst1} = ubody(Fb0, return, Lst0),
-			Arity = length(Vs) + length(FreeVs),
-			Fun = #k_fdef{anno=#k{us=[],ns=[],a=Fa},
-				      func=N,arity=Arity,
-				      vars=Vs ++ FreeVs,body=Fb1},
-			Lst1#kern{funs=[Fun|Lst1#kern.funs]}
-		end, St1, Fs),
-    St2.
+    iletrec_funs_gen(Fs, FreeVs, St1).
+
+%% Now regenerate local functions to use free variable information.
+iletrec_funs_gen(_, _, #kern{funs=ignore}=St) ->
+    %% Optimization: The ultimate caller is only interested in the used variables,
+    %% not the updated state. Makes a difference if there are nested letrecs.
+    St;
+iletrec_funs_gen(Fs, FreeVs, St) ->
+    foldl(fun ({N,#ifun{anno=Fa,vars=Vs,body=Fb0}}, Lst0) ->
+		  {Fb1,_,Lst1} = ubody(Fb0, return, Lst0),
+		  Arity = length(Vs) + length(FreeVs),
+		  Fun = #k_fdef{anno=#k{us=[],ns=[],a=Fa},
+				func=N,arity=Arity,
+				vars=Vs ++ FreeVs,body=Fb1},
+		  Lst1#kern{funs=[Fun|Lst1#kern.funs]}
+	  end, St, Fs).
+
 
 %% is_exit_expr(Kexpr) -> bool().
 %%  Test whether Kexpr always exits and never returns.
@@ -1444,18 +1459,17 @@ uexpr(#ifun{anno=A,vars=Vs,body=B0}=IFun, {break,Rs}, St0) ->
  	    args=[#k_atom{val=Fname},#k_int{val=Arity},
  		  #k_int{val=Index},#k_int{val=Uniq}|Fvs],
  	    ret=Rs},
-%      {#k_call{anno=#k{us=Free,ns=lit_list_vars(Rs),a=A},
-% 	     op=#k_internal{name=make_fun,arity=length(Free)+3},
-% 	     args=[#k_atom{val=Fname},#k_int{val=Arity},
-% 		   #k_int{val=Index},#k_int{val=Uniq}|Fvs],
-% 	     ret=Rs},
-     Free,St3#kern{funs=[Fun|St3#kern.funs]}};
+     Free,add_local_function(Fun, St3)};
 uexpr(Lit, {break,Rs}, St) ->
     %% Transform literals to puts here.
     %%ok = io:fwrite("uexpr ~w:~p~n", [?LINE,Lit]),
     Used = lit_vars(Lit),
     {#k_put{anno=#k{us=Used,ns=lit_list_vars(Rs),a=get_kanno(Lit)},
 	    arg=Lit,ret=Rs},Used,St}.
+
+add_local_function(_, #kern{funs=ignore}=St) -> St;
+add_local_function(F, #kern{funs=Funs}=St) -> St#kern{funs=[F|Funs]}.
+
 
 %% get_free(Name, Arity, State) -> [Free].
 %% store_free(Name, Arity, [Free], State) -> State.
@@ -1494,13 +1508,17 @@ umatch(#k_alt{anno=A,first=F0,then=T0}, Br, St0) ->
      Used,St2};
 umatch(#k_select{anno=A,var=V,types=Ts0}, Br, St0) ->
     {Ts1,Tus,St1} = umatch_list(Ts0, Br, St0),
-    Used = add_element(V#k_var.name, Tus),
+    Used = case member(no_usage, get_kanno(V)) of
+	       true -> Tus;
+	       false -> add_element(V#k_var.name, Tus)
+	   end,
     {#k_select{anno=#k{us=Used,ns=[],a=A},var=V,types=Ts1},Used,St1};
 umatch(#k_type_clause{anno=A,type=T,values=Vs0}, Br, St0) ->
     {Vs1,Vus,St1} = umatch_list(Vs0, Br, St0),
     {#k_type_clause{anno=#k{us=Vus,ns=[],a=A},type=T,values=Vs1},Vus,St1};
-umatch(#k_val_clause{anno=A,val=P,body=B0}, Br, St0) ->
-    {U0,Ps} = pat_vars(P),
+umatch(#k_val_clause{anno=A,val=P0,body=B0}, Br, St0) ->
+    {U0,Ps} = pat_vars(P0),
+    P = set_kanno(P0, #k{us=U0,ns=Ps,a=get_kanno(P0)}),
     {B1,Bu,St1} = umatch(B0, Br, St0),
     Used = union(U0, subtract(Bu, Ps)),
     {#k_val_clause{anno=#k{us=Used,ns=[],a=A},val=P,body=B1},
@@ -1568,8 +1586,8 @@ pat_vars(#k_cons{hd=H,tl=T}) ->
     pat_list_vars([H,T]);
 pat_vars(#k_binary{segs=V}) ->
     pat_vars(V);
-pat_vars(#k_bin_seg{size=Size,seg=S,next=N}) ->
-    {U1,New} = pat_list_vars([S,N]),
+pat_vars(#k_bin_seg{size=Size,seg=S}) ->
+    {U1,New} = pat_list_vars([S]),
     {[],U2} = pat_vars(Size),
     {union(U1, U2),New};
 pat_vars(#k_bin_end{}) -> {[],[]};

@@ -66,6 +66,7 @@
 %%----------------------------------------------------------------------
 
 -define(PrettyAddToken                   , "Add"                   ).
+-define(PrettyAndAUDITSelectToken        , "ANSLgc"                ).
 -define(PrettyAuditToken                 , "Audit"                 ).
 -define(PrettyAuditCapToken              , "AuditCapability"       ).
 -define(PrettyAuditValueToken            , "AuditValue"            ).
@@ -75,18 +76,27 @@
 -define(PrettyBriefToken                 , "Brief"                 ).
 -define(PrettyBufferToken                , "Buffer"                ).
 -define(PrettyCtxToken                   , "Context"               ).
--define(PrettyContextAttrToken           , "ContextAttr"           ). % v3
 -define(PrettyContextAuditToken          , "ContextAudit"          ).
+-define(PrettyContextAttrToken           , "ContextAttr"           ). % v3
 -define(PrettyContextListToken           , "ContextList"           ). % v3
 -define(PrettyDigitMapToken              , "DigitMap"              ).
--define(PrettyDirectionToken             , "Direction"             ). % v3 BMK BMK BMK
+-ifdef(encoder_version_pre_prev3c).
+-define(PrettyDirectionToken             , "Direction"             ). % v3 
+-else.
+-define(PrettyDirectionToken             , "SPADirection"          ). % v3 
+-endif.
 -define(PrettyDiscardToken               , "Discard"               ).
 -define(PrettyDisconnectedToken          , "Disconnected"          ).
 -define(PrettyDelayToken                 , "Delay"                 ).
 -define(PrettyDurationToken              , "Duration"              ).
 -define(PrettyEmbedToken                 , "Embed"                 ).
 -define(PrettyEmergencyToken             , "Emergency"             ).
--define(PrettyEmergencyOffToken          , "EmergencyOffToken"     ).
+-ifdef(encoder_version_pre_prev3c).
+-define(PrettyEmergencyOffToken          , "EmergencyOffToken"     ). % v2
+-else.
+-define(PrettyEmergencyOffToken          , "EmergencyOff"          ). % v3
+-endif.
+-define(PrettyEmergencyValueToken        , "EmergencyValue"        ). % v3
 -define(PrettyErrorToken                 , "Error"                 ).
 -define(PrettyEventBufferToken           , "EventBuffer"           ).
 -define(PrettyEventsToken                , "Events"                ).
@@ -102,10 +112,12 @@
 -define(PrettyImmAckRequiredToken        , "ImmAckRequired"        ).
 -define(PrettyInactiveToken              , "Inactive"              ).
 -define(PrettyInternalToken              , "Internal"              ). % v3
+-define(PrettyIntsigDelayToken           , "Intersignal"           ). % v3
 -define(PrettyInterruptByEventToken      , "IntByEvent"            ). 
 -define(PrettyInterruptByNewSignalsDescrToken, "IntBySigDescr"     ). 
 -define(PrettyIsolateToken               , "Isolate"               ).
 -define(PrettyInSvcToken                 , "InService"             ).
+-define(PrettyIterationToken             , "Iteration"             ). % v3
 -define(PrettyKeepActiveToken            , "KeepActive"            ).
 -define(PrettyLocalToken                 , "Local"                 ).
 -define(PrettyLocalControlToken          , "LocalControl"          ).
@@ -113,6 +125,7 @@
 -define(PrettyLoopbackToken              , "Loopback"              ).
 -define(PrettyMediaToken                 , "Media"                 ).
 -define(PrettyMegacopToken               , "MEGACO"                ).
+%% -define(PrettyMessageSegmentToken        , "Segment"               ). % v3
 -define(PrettyMethodToken                , "Method"                ).
 -define(PrettyMgcIdToken                 , "MgcIdToTry"            ).
 -define(PrettyModeToken                  , "Mode"                  ).
@@ -121,13 +134,19 @@
 -define(PrettyMoveToken                  , "Move"                  ).
 -define(PrettyMtpToken                   , "MTP"                   ).
 -define(PrettyMuxToken                   , "Mux"                   ).
+-define(PrettyNeverNotifyToken           , "NeverNotify"           ). % v3
 -define(PrettyNotifyToken                , "Notify"                ).
 -define(PrettyNotifyCompletionToken      , "NotifyCompletion"      ).
+-define(PrettyNotifyImmediateToken       , "ImmediateNotify"       ). % v3
+-define(PrettyNotifyRegulatedToken       , "RegulatedNotify"       ). % v3
 -define(PrettyNx64kToken                 , "Nx64Kservice"          ).
 -define(PrettyObservedEventsToken        , "ObservedEvents"        ).
 -define(PrettyOffToken                   , "OFF"                   ).
 -define(PrettyOnewayToken                , "Oneway"                ).
+-define(PrettyOnewayBothToken            , "OnewayBoth"            ). % v3
+-define(PrettyOnewayExternalToken        , "OnewayExternal"        ). % v3
 -define(PrettyOnOffToken                 , "OnOff"                 ).
+-define(PrettyOrAUDITselectToken         , "ORLgc"                 ). % v3
 -define(PrettyOnToken                    , "ON"                    ).
 -define(PrettyOtherReasonToken           , "OtherReason"           ).
 -define(PrettyOutOfSvcToken              , "OutOfService"          ).
@@ -138,12 +157,17 @@
 -define(PrettyReasonToken                , "Reason"                ).
 -define(PrettyRecvonlyToken              , "ReceiveOnly"           ).
 -define(PrettyReplyToken                 , "Reply"                 ).
--define(PrettyRequestIDToken             , "RequestID"             ). % v3
--define(PrettyResponseAckToken           , "TransactionResponseAck").
+-define(PrettyResetEventsDescriptorToken , "ResetEventsDescriptor" ). % v3
 -define(PrettyRestartToken               , "Restart"               ).
 -define(PrettyRemoteToken                , "Remote"                ).
+-ifdef(encoder_version_pre_prev3c).
+-define(PrettyRequestIDToken             , "RequestID"             ). % v3
+-else.
+-define(PrettyRequestIDToken             , "SPARequestID"          ). % v3
+-endif.
 -define(PrettyReservedGroupToken         , "ReservedGroup"         ).
 -define(PrettyReservedValueToken         , "ReservedValue"         ).
+%% -define(PrettySegmentationCompleteToken  , "END"                   ). % v3
 -define(PrettySendonlyToken              , "SendOnly"              ).
 -define(PrettySendrecvToken              , "SendReceive"           ).
 -define(PrettyServicesToken              , "Services"              ).
@@ -163,6 +187,7 @@
 -define(PrettyTimeOutToken               , "TimeOut"               ).
 -define(PrettyTopologyToken              , "Topology"              ).
 -define(PrettyTransToken                 , "Transaction"           ).
+-define(PrettyResponseAckToken           , "TransactionResponseAck").
 -define(PrettyV18Token                   , "V18"                   ).
 -define(PrettyV22Token                   , "V22"                   ).
 -define(PrettyV22bisToken                , "V22b"                  ).
@@ -179,6 +204,7 @@
 %%----------------------------------------------------------------------
 
 -define(CompactAddToken                   , "A"                    ).
+-define(CompactAndAUDITSelectToken        , "ANSLgc"               ).
 -define(CompactAuditToken                 , "AT"                   ).
 -define(CompactAuditCapToken              , "AC"                   ).
 -define(CompactAuditValueToken            , "AV"                   ).
@@ -188,11 +214,15 @@
 -define(CompactBriefToken                 , "BR"                   ).
 -define(CompactBufferToken                , "BF"                   ).
 -define(CompactCtxToken                   , "C"                    ).
--define(CompactContextAttrToken           , "CT"                   ). % v3
 -define(CompactContextAuditToken          , "CA"                   ).
+-define(CompactContextAttrToken           , "CT"                   ). % v3
 -define(CompactContextListToken           , "CLT"                  ). % v3
 -define(CompactDigitMapToken              , "DM"                   ).
--define(CompactDirectionToken             , "DI"                   ). % v3 BMK BMK BMK
+-ifdef(encoder_version_pre_prev3c).
+-define(CompactDirectionToken             , "DI"                   ). % v3 
+-else.
+-define(CompactDirectionToken             , "SPADI"                ). % v3 
+-endif.
 -define(CompactDiscardToken               , "DS"                   ).
 -define(CompactDisconnectedToken          , "DC"                   ).
 -define(CompactDelayToken                 , "DL"                   ).
@@ -200,6 +230,7 @@
 -define(CompactEmbedToken                 , "EM"                   ).
 -define(CompactEmergencyToken             , "EG"                   ).
 -define(CompactEmergencyOffToken          , "EGO"                  ).
+-define(CompactEmergencyValueToken        , "EGV"                  ). % v3
 -define(CompactErrorToken                 , "ER"                   ).
 -define(CompactEventBufferToken           , "EB"                   ).
 -define(CompactEventsToken                , "E"                    ).
@@ -215,10 +246,12 @@
 -define(CompactImmAckRequiredToken        , "IA"                   ).
 -define(CompactInactiveToken              , "IN"                   ).
 -define(CompactInternalToken              , "IT"                   ). % v3
+-define(CompactIntsigDelayToken           , "SPAIS"                ). % v3
 -define(CompactInterruptByEventToken      , "IBE"                  ).
 -define(CompactInterruptByNewSignalsDescrToken, "IBS"              ). 
 -define(CompactIsolateToken               , "IS"                   ).
 -define(CompactInSvcToken                 , "IV"                   ).
+-define(CompactIterationToken             , "IR"                   ). % v3
 -define(CompactKeepActiveToken            , "KA"                   ).
 -define(CompactLocalToken                 , "L"                    ).
 -define(CompactLocalControlToken          , "O"                    ).
@@ -226,6 +259,7 @@
 -define(CompactLoopbackToken              , "LB"                   ).
 -define(CompactMediaToken                 , "M"                    ).
 -define(CompactMegacopToken               , "!"                    ).
+%% -define(CompactMessageSegmentToken        , "SM"                   ). % v3
 -define(CompactMethodToken                , "MT"                   ).
 -define(CompactMgcIdToken                 , "MG"                   ).
 -define(CompactModeToken                  , "MO"                   ).
@@ -234,13 +268,19 @@
 -define(CompactMoveToken                  , "MV"                   ).
 -define(CompactMtpToken                   , ?PrettyMtpToken        ).
 -define(CompactMuxToken                   , "MX"                   ).
+-define(CompactNeverNotifyToken           , "NBNN"                 ). % v3
 -define(CompactNotifyToken                , "N"                    ).
 -define(CompactNotifyCompletionToken      , "NC"                   ).
+-define(CompactNotifyImmediateToken       , "NBIN"                 ). % v3
+-define(CompactNotifyRegulatedToken       , "NBRN"                 ). % v3
 -define(CompactNx64kToken                 , "N64"                  ).
 -define(CompactObservedEventsToken        , "OE"                   ).
 -define(CompactOffToken                   , "OFF"                  ).
 -define(CompactOnewayToken                , "OW"                   ).
+-define(CompactOnewayBothToken            , "OWB"                  ). % v3
+-define(CompactOnewayExternalToken        , "OWE"                  ). % v3
 -define(CompactOnOffToken                 , "OO"                   ).
+-define(CompactOrAUDITselectToken         , "ORLgc"                ). % v3
 -define(CompactOnToken                    , "ON"                   ).
 -define(CompactOtherReasonToken           , "OR"                   ).
 -define(CompactOutOfSvcToken              , "OS"                   ).
@@ -251,12 +291,17 @@
 -define(CompactReasonToken                , "RE"                   ).
 -define(CompactRecvonlyToken              , "RC"                   ).
 -define(CompactReplyToken                 , "P"                    ).
--define(CompactRequestIDToken             , "RQ"                   ). % v3
--define(CompactResponseAckToken           , "K"                    ).
+-define(CompactResetEventsDescriptorToken , "RSE"                  ). % v3
 -define(CompactRestartToken               , "RS"                   ).
 -define(CompactRemoteToken                , "R"                    ).
+-ifdef(encoder_version_pre_prev3c).
+-define(CompactRequestIDToken             , "RQ"                   ). % v3
+-else.
+-define(CompactRequestIDToken             , "SPARQ"                ). % v3
+-endif.
 -define(CompactReservedGroupToken         , "RG"                   ).
 -define(CompactReservedValueToken         , "RV"                   ).
+%% -define(CompactSegmentationCompleteToken  , "&"                    ). % v3
 -define(CompactSendonlyToken              , "SO"                   ).
 -define(CompactSendrecvToken              , "SR"                   ).
 -define(CompactServicesToken              , "SV"                   ).
@@ -276,6 +321,7 @@
 -define(CompactTimeOutToken               , "TO"                   ).
 -define(CompactTopologyToken              , "TP"                   ).
 -define(CompactTransToken                 , "T"                    ).
+-define(CompactResponseAckToken           , "K"                    ).
 -define(CompactV18Token                   , ?PrettyV18Token        ).
 -define(CompactV22Token                   , ?PrettyV22Token        ).
 -define(CompactV22bisToken                , ?PrettyV22bisToken     ).

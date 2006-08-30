@@ -16,11 +16,6 @@
 %%     $Id$
 %%
 
-%% Backwards compatibility ;-)
-%% erl44: yecc:yecc(snmpc_mib_gram,snmpc_mib_gram,false,snmpc_mib_gram), c(snmpc_mib_gram).
-%% erl431: yecc:yecc(snmpc_mib_gram,snmpc_mib_gram,snmpc_mib_gram), c(snmpc_mib_gram).
-%% erl45: yecc:yecc("snmpc_mib_gram","snmpc_mib_gram"), c(snmpc_mib_gram).
-
 %%----------------------------------------------------------------------
 %% Number of expected shift/reduce warnings
 %% This is ugly but...
@@ -210,11 +205,14 @@ Endsymbol '$end'.
 mib -> mibname 'DEFINITIONS' implies 'BEGIN'
        import v1orv2 'END' 
     : {Version, Defs} = '$6',
-      {Version, '$1', '$5', Defs}.
+      #pdata{mib_version = Version, 
+             mib_name    = '$1', 
+             imports     = '$5', 
+             defs        = Defs}.
 
 v1orv2 -> moduleidentity listofdefinitionsv2 :
-			  {v2_mib,['$1'|lists:reverse('$2')]}.
-v1orv2 -> listofdefinitions : {v1_mib,lists:reverse('$1')}.
+			  {v2_mib, ['$1'|lists:reverse('$2')]}.
+v1orv2 -> listofdefinitions : {v1_mib, lists:reverse('$1')}.
 
 definition -> objectidentifier : '$1'.
 definition -> objecttypev1 : '$1'.
@@ -222,7 +220,7 @@ definition -> newtype : '$1'.
 definition -> tableentrydefinition : '$1'.
 definition -> traptype : '$1'.
 
-listofdefinitions -> definition : ['$1'].
+listofdefinitions -> definition : ['$1'] .
 listofdefinitions -> listofdefinitions definition : ['$2' | '$1'].
 
 import -> '$empty' : [].
@@ -505,7 +503,7 @@ definitionv2 -> objectgroup : '$1'.
 definitionv2 -> notificationgroup : '$1'.
 definitionv2 -> modulecompliance : '$1'.
 
-listofdefinitionsv2 -> definitionv2 : ['$1'].
+listofdefinitionsv2 -> '$empty' : [] .
 listofdefinitionsv2 -> listofdefinitionsv2 definitionv2 : ['$2' | '$1'].
 
 textualconvention -> newtypename implies 'TEXTUAL-CONVENTION' displaypart

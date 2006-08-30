@@ -1129,26 +1129,21 @@ int big_decimal_estimate(Eterm x)
 ** Convert a bignum into a string of decimal numbers
 */
 
-Eterm big_to_list(Eterm x, Eterm **hp)
+static void write_big(Eterm x, void (*write_func)(void *, char), void *arg)
 {
     Eterm* xp = big_val(x);
     digit_t* dx = BIG_V(xp);
     dsize_t xl = BIG_SIZE(xp);
     short sign = BIG_SIGN(xp);
     digit_t rem;
-    Eterm prev = NIL;
-    Eterm* curr = *hp;
 
     if (xl == 1 && *dx < D_DECIMAL_BASE) {
 	rem = *dx;
-	if (rem == 0) {
-	    prev = CONS(curr, make_small('0'), prev);
-	    curr += 2;
-	}
+	if (rem == 0)
+	    (*write_func)(arg, '0');
 	else {
 	    while(rem) {
-		prev = CONS(curr, make_small((rem % 10)+'0'), prev);
-		curr += 2;
+		(*write_func)(arg, (rem % 10) + '0');
 		rem /= 10;
 	    }
 	}
@@ -1164,8 +1159,7 @@ Eterm big_to_list(Eterm x, Eterm **hp)
 	    tmpl = D_div(tmp, tmpl, D_DECIMAL_BASE, tmp, &rem);
 	    if (tmpl == 1 && *tmp == 0) {
 		while(rem) {
-		    prev = CONS(curr, make_small((rem % 10)+'0'), prev);
-		    curr += 2;
+		    (*write_func)(arg, (rem % 10)+'0');
 		    rem /= 10;
 		}
 		break;
@@ -1173,8 +1167,7 @@ Eterm big_to_list(Eterm x, Eterm **hp)
 	    else {
 		int i = D_DECIMAL_EXP;
 		while(i--) {
-		    prev = CONS(curr, make_small((rem % 10)+'0'), prev);
-		    curr += 2;
+		    (*write_func)(arg, (rem % 10)+'0');
 		    rem /= 10;
 		}
 	    }
@@ -1182,12 +1175,46 @@ Eterm big_to_list(Eterm x, Eterm **hp)
 	erts_free(ERTS_ALC_T_TMP, (void *) tmp);
     }
 
-    if (sign) {
-	prev = CONS(curr, make_small('-'), prev);
-	curr += 2;
-    }
-    *hp = curr;
-    return prev;
+    if (sign)
+	(*write_func)(arg, '-');
+}
+
+struct big_list__ {
+    Eterm *hp;
+    Eterm res;
+};
+
+static void
+write_list(void *arg, char c)
+{
+    struct big_list__ *blp = (struct big_list__ *) arg;
+    blp->res = CONS(blp->hp, make_small(c), blp->res);
+    blp->hp += 2;
+}
+
+Eterm erts_big_to_list(Eterm x, Eterm **hpp)
+{
+    struct big_list__ bl;
+    bl.hp = *hpp;
+    bl.res = NIL;
+    write_big(x, write_list, (void *) &bl);
+    *hpp = bl.hp;
+    return bl.res;
+}
+
+static void
+write_string(void *arg, char c)
+{
+    *(--(*((char **) arg))) = c;
+}
+
+char *erts_big_to_string(Eterm x, char *buf, Uint buf_sz)
+{
+    char *big_str = buf + buf_sz - 1;
+    *big_str = '\0';
+    write_big(x, write_string, (void *) &big_str);
+    ASSERT(buf <= big_str && big_str <= buf + buf_sz - 1);
+    return big_str;
 }
 
 /*

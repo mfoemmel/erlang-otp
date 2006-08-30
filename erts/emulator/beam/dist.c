@@ -749,6 +749,10 @@ int net_mess2(Process *c_p,
 #if defined(PURIFY)
 #  define PURIFY_MSG(msg) \
     purify_printf("%s, line %d: %s", __FILE__, __LINE__, msg)
+#elif defined(VALGRIND)
+#  define PURIFY_MSG(msg) \
+    VALGRIND_PRINTF("%s, line %d: %s", __FILE__, __LINE__, msg)
+#  define PURIFY_MSG
 #else
 #  define PURIFY_MSG(msg)
 #endif

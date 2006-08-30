@@ -29,6 +29,9 @@ BER_BIN_DRV_PREV3A_FLAGS = +noobj +asn1config +optimize +driver
 BER_PREV3B_FLAGS         = +noobj
 BER_BIN_PREV3B_FLAGS     = +noobj +asn1config +optimize
 BER_BIN_DRV_PREV3B_FLAGS = +noobj +asn1config +optimize +driver
+BER_PREV3C_FLAGS         = +noobj
+BER_BIN_PREV3C_FLAGS     = +noobj +asn1config +optimize
+BER_BIN_DRV_PREV3C_FLAGS = +noobj +asn1config +optimize +driver
 PER_V1_FLAGS             = +noobj
 PER_BIN_V1_FLAGS         = +noobj
 PER_BIN_DRV_V1_FLAGS     = +noobj +optimize
@@ -41,6 +44,9 @@ PER_BIN_DRV_PREV3A_FLAGS = +noobj +optimize
 PER_PREV3B_FLAGS         = +noobj
 PER_BIN_PREV3B_FLAGS     = +noobj
 PER_BIN_DRV_PREV3B_FLAGS = +noobj +optimize
+PER_PREV3C_FLAGS         = +noobj
+PER_BIN_PREV3C_FLAGS     = +noobj
+PER_BIN_DRV_PREV3C_FLAGS = +noobj +optimize
 
 # --- Version 1 ---
 
@@ -173,7 +179,7 @@ $(EBIN)/$(PER_BIN_DRV_ASN1_V2_SPEC).$(EMULATOR): \
 
 # --- Version 3 ---
 
-# -- (prev3b) --
+# -- (prev3a) --
 
 $(BER_ASN1_PREV3A_SPEC).erl $(BER_ASN1_PREV3A_SPEC).hrl: \
 	$(BER_ASN1_PREV3A_SPEC).set.asn \
@@ -302,6 +308,71 @@ $(EBIN)/$(PER_BIN_DRV_ASN1_PREV3B_SPEC).$(EMULATOR): \
 	$(PER_BIN_DRV_ASN1_PREV3B_SPEC).hrl
 
 
+# -- (prev3c) --
+
+$(BER_ASN1_PREV3C_SPEC).erl $(BER_ASN1_PREV3C_SPEC).hrl: \
+	$(BER_ASN1_PREV3C_SPEC).set.asn \
+	$(ASN1_PREV3C_SPEC).asn
+	@echo "$(BER_ASN1_PREV3C_SPEC):"
+	$(ERLC) -bber $(BER_PREV3C_FLAGS) $(BER_ASN1_PREV3C_SPEC).set.asn
+
+$(EBIN)/$(BER_ASN1_PREV3C_SPEC).$(EMULATOR): \
+	$(BER_ASN1_PREV3C_SPEC).erl \
+	$(BER_ASN1_PREV3C_SPEC).hrl
+
+$(BER_BIN_ASN1_PREV3C_SPEC).erl $(BER_BIN_ASN1_PREV3C_SPEC).hrl: \
+	$(BER_BIN_ASN1_PREV3C_SPEC).set.asn \
+	$(BER_BIN_ASN1_PREV3C_SPEC).asn1config \
+	$(ASN1_PREV3C_SPEC).asn
+	@echo "$(BER_BIN_ASN1_PREV3C_SPEC):"
+	$(ERLC) -bber_bin $(BER_BIN_PREV3C_FLAGS) $(BER_BIN_ASN1_PREV3C_SPEC).set.asn
+
+$(EBIN)/$(BER_BIN_ASN1_PREV3C_SPEC).$(EMULATOR): \
+	$(BER_BIN_ASN1_PREV3C_SPEC).erl \
+	$(BER_BIN_ASN1_PREV3C_SPEC).hrl
+
+$(BER_BIN_DRV_ASN1_PREV3C_SPEC).erl $(BER_BIN_DRV_ASN1_PREV3C_SPEC).hrl: \
+	$(BER_BIN_DRV_ASN1_PREV3C_SPEC).set.asn \
+	$(BER_BIN_DRV_ASN1_PREV3C_SPEC).asn1config \
+	$(ASN1_PREV3C_SPEC).asn
+	@echo "$(BER_BIN_DRV_ASN1_PREV3C_SPEC):"
+	$(ERLC) -bber_bin $(BER_BIN_DRV_PREV3C_FLAGS) $(BER_BIN_DRV_ASN1_PREV3C_SPEC).set.asn
+
+$(EBIN)/$(BER_BIN_DRV_ASN1_PREV3C_SPEC).$(EMULATOR): \
+	$(BER_BIN_DRV_ASN1_PREV3C_SPEC).erl \
+	$(BER_BIN_DRV_ASN1_PREV3C_SPEC).hrl
+
+$(PER_ASN1_PREV3C_SPEC).erl $(PER_ASN1_PREV3C_SPEC).hrl: \
+	$(PER_ASN1_PREV3C_SPEC).set.asn \
+	$(ASN1_PREV3C_SPEC).asn
+	@echo "$(PER_ASN1_PREV3C_SPEC):"
+	$(ERLC) -bper $(PER_PREV3C_FLAGS) $(PER_ASN1_PREV3C_SPEC).set.asn
+
+$(EBIN)/$(PER_ASN1_PREV3C_SPEC).$(EMULATOR): \
+	$(PER_ASN1_PREV3C_SPEC).erl \
+	$(PER_ASN1_PREV3C_SPEC).hrl
+
+$(PER_BIN_ASN1_PREV3C_SPEC).erl $(PER_BIN_ASN1_PREV3C_SPEC).hrl: \
+	$(PER_BIN_ASN1_PREV3C_SPEC).set.asn \
+	$(ASN1_PREV3C_SPEC).asn
+	@echo "$(PER_BIN_ASN1_PREV3C_SPEC):"
+	$(ERLC) -bper_bin $(PER_BIN_PREV3C_FLAGS) $(PER_BIN_ASN1_PREV3C_SPEC).set.asn
+
+$(EBIN)/$(PER_BIN_ASN1_PREV3C_SPEC).$(EMULATOR): \
+	$(PER_BIN_ASN1_PREV3C_SPEC).erl \
+	$(PER_BIN_ASN1_PREV3C_SPEC).hrl
+
+$(PER_BIN_DRV_ASN1_PREV3C_SPEC).erl $(PER_BIN_DRV_ASN1_PREV3C_SPEC).hrl: \
+	$(PER_BIN_DRV_ASN1_PREV3C_SPEC).set.asn \
+	$(ASN1_PREV3C_SPEC).asn
+	@echo "$(PER_BIN_DRV_ASN1_PREV3C_SPEC):"
+	$(ERLC) -bper_bin $(PER_BIN_DRV_PREV3C_FLAGS) $(PER_BIN_DRV_ASN1_PREV3C_SPEC).set.asn
+
+$(EBIN)/$(PER_BIN_DRV_ASN1_PREV3C_SPEC).$(EMULATOR): \
+	$(PER_BIN_DRV_ASN1_PREV3C_SPEC).erl \
+	$(PER_BIN_DRV_ASN1_PREV3C_SPEC).hrl
+
+
 # -------------
 
 $(EBIN)/megaco_ber_encoder.$(EMULATOR): megaco_ber_encoder.erl \
@@ -334,6 +405,9 @@ $(EBIN)/megaco_binary_name_resolver_prev3a.$(EMULATOR): \
 $(EBIN)/megaco_binary_name_resolver_prev3b.$(EMULATOR): \
 	megaco_binary_name_resolver_prev3b.erl
 
+$(EBIN)/megaco_binary_name_resolver_prev3c.$(EMULATOR): \
+	megaco_binary_name_resolver_prev3c.erl
+
 $(EBIN)/megaco_binary_term_id.$(EMULATOR): megaco_binary_term_id.erl
 
 $(EBIN)/megaco_binary_term_id_gen.$(EMULATOR): megaco_binary_term_id_gen.erl
@@ -357,4 +431,9 @@ $(EBIN)/megaco_binary_transformer_prev3b.$(EMULATOR): \
 	megaco_binary_transformer_prev3b.erl \
         $(MEGACO_INCLUDEDIR)/megaco.hrl \
         $(MEGACO_INCLUDEDIR)/megaco_message_prev3b.hrl
+
+$(EBIN)/megaco_binary_transformer_prev3c.$(EMULATOR): \
+	megaco_binary_transformer_prev3c.erl \
+        $(MEGACO_INCLUDEDIR)/megaco.hrl \
+        $(MEGACO_INCLUDEDIR)/megaco_message_prev3c.hrl
 

@@ -96,7 +96,8 @@
           timer_ref,
           version,
           bytes,
-          ack_action           % discard_ack | {handle_ack, Data}
+          ack_action,          % discard_ack | {handle_ack, Data}
+	  send_handle
          }).
 
 -record(trans_id,
@@ -125,7 +126,6 @@
 -define(report_pending_limit_exceeded(ConnData),
 	?report_important(ConnData, "<ERROR> pending limit exceeded", [])).
 
-%% -define(megaco_extended_trace,true).
 -ifdef(megaco_extended_trace).
 -define(rt1(T,F,A),?report_trace(T,F,A)).
 -define(rt2(F,A),  ?rt1(ignore,F,A)).
@@ -174,14 +174,14 @@ reset_stats(ConnHandleOrCounter) ->
 %%----------------------------------------------------------------------
 
 cleanup(#megaco_conn_handle{local_mid = LocalMid}, Force) 
-  when Force == true; Force == false ->
+  when (Force == true) or (Force == false) ->
     Pat = #reply{trans_id  = '$1', 
 		 local_mid = LocalMid, 
 		 state     = '$2',
 		 _         = '_'},
     do_cleanup(Pat, Force);
 cleanup(LocalMid, Force) 
-  when Force == true; Force == false ->
+  when (Force == true) or (Force == false) ->
     Pat = #reply{trans_id  = '$1', 
 		 local_mid = LocalMid, 
 		 state     = '$2',
@@ -284,7 +284,7 @@ mk_ch(LM, RM) ->
 
 %% Returns {ok, ConnHandle} | {error, Reason}
 connect(RH, RemoteMid, SendHandle, ControlPid)
-  when record(RH, megaco_receive_handle) ->
+  when is_record(RH, megaco_receive_handle) ->
     case megaco_config:connect(RH, RemoteMid, SendHandle, ControlPid) of
         {ok, ConnData} ->
             do_connect(ConnData);
@@ -309,7 +309,7 @@ do_connect(CD) ->
         error ->
             megaco_config:disconnect(CH),
             {error, {connection_refused, CD, error}};
-        {error, ED} when record(ED,'ErrorDescriptor') ->
+        {error, ED} when is_record(ED,'ErrorDescriptor') ->
             megaco_config:disconnect(CH),
             {error, {connection_refused, CD, ED}};
         _Error ->
@@ -378,7 +378,7 @@ connect_remote(CH, ControlPid, UserMonitorPid)
     end.
 
 disconnect(ConnHandle, DiscoReason)
-  when record(ConnHandle, megaco_conn_handle) ->
+  when is_record(ConnHandle, megaco_conn_handle) ->
     case megaco_config:disconnect(ConnHandle) of
         {ok, ConnData, RemoteConnData} ->
             ControlRef = ConnData#conn_data.monitor_ref,
@@ -467,7 +467,7 @@ process_received_message(ReceiveHandle, ControlPid, SendHandle, Bin, Receiver) -
 process_received_message(ReceiveHandle, ControlPid, SendHandle, Bin) ->
     Flag = process_flag(trap_exit, true),
     case prepare_message(ReceiveHandle, SendHandle, Bin, ControlPid) of
-        {ok, ConnData, MegaMsg} when record(MegaMsg, 'MegacoMessage') ->
+        {ok, ConnData, MegaMsg} when is_record(MegaMsg, 'MegacoMessage') ->
 	    ?rt1(ConnData, "message prepared", [MegaMsg]),
             Mess = MegaMsg#'MegacoMessage'.mess,
             case Mess#'Message'.messageBody of
@@ -479,7 +479,7 @@ process_received_message(ReceiveHandle, ControlPid, SendHandle, Bin) ->
 			[] ->
 			    ?rt3("no requests"),
 			    ignore;
-			[Req|Reqs] when ConnData#conn_data.threaded ->
+			[Req|Reqs] when (ConnData#conn_data.threaded == true) ->
 % 			    lists:foreach(
 % 			      fun() -> 
 % 				      spawn(?MODULE,handle_request,[R]) 
@@ -512,13 +512,13 @@ process_received_message(ReceiveHandle, ControlPid, SendHandle, Bin) ->
     ok.
 
 prepare_message(RH, SH, Bin, Pid)
-  when record(RH, megaco_receive_handle), pid(Pid) ->
+  when is_record(RH, megaco_receive_handle) and is_pid(Pid) ->
     ?report_trace(RH, "receive bytes", [{bytes, Bin}]),
     EncodingMod    = RH#megaco_receive_handle.encoding_mod,
     EncodingConfig = RH#megaco_receive_handle.encoding_config,
     ProtVersion    = RH#megaco_receive_handle.protocol_version,
     case (catch EncodingMod:decode_message(EncodingConfig, ProtVersion, Bin)) of
-        {ok, MegaMsg} when record(MegaMsg, 'MegacoMessage') ->
+        {ok, MegaMsg} when is_record(MegaMsg, 'MegacoMessage') ->
 	    ?report_trace(RH, "receive message", [{message, MegaMsg}]),
             Mess       = MegaMsg#'MegacoMessage'.mess,
             RemoteMid  = Mess#'Message'.mId,
@@ -708,9 +708,9 @@ handle_syntax_error_callback(ReceiveHandle, ConnData, PrepError) ->
             {verbose_fail, ConnData, PrepError}
     end.
 
-fake_conn_data(CH) when record(CH, megaco_conn_handle) ->
+fake_conn_data(CH) when is_record(CH, megaco_conn_handle) ->
     case (catch megaco_config:conn_info(CH, receive_handle)) of
-	RH when record(RH, megaco_receive_handle) ->
+	RH when is_record(RH, megaco_receive_handle) ->
 	    RemoteMid = CH#megaco_conn_handle.remote_mid,
 	    ConnData = 
 		fake_conn_data(RH, RemoteMid, no_send_handle, no_control_pid),
@@ -775,19 +775,19 @@ fake_user_data(RH, RemoteMid, SendHandle, ControlPid) ->
 
 prepare_error(Error) ->
     case Error of
-        {error, ED} when record(ED, 'ErrorDescriptor') ->
+        {error, ED} when is_record(ED, 'ErrorDescriptor') ->
             Code   = ED#'ErrorDescriptor'.errorCode,
             Reason = ED#'ErrorDescriptor'.errorText,
             {Code, Reason, Error};
-        {error, [{reason, {bad_token, _}, Line}]} when integer(Line) ->
+        {error, [{reason, {bad_token, _}, Line}]} when is_integer(Line) ->
             Reason = lists:concat(["Illegal token on line ", Line]),
             Code = ?megaco_bad_request,
             {Code, Reason, Error};
-        {error, [{reason, {Line, _, _}} | _]} when integer(Line) ->
+        {error, [{reason, {Line, _, _}} | _]} when is_integer(Line) ->
             Reason = lists:concat(["Syntax error on line ", Line]),
             Code = ?megaco_bad_request,
             {Code, Reason, Error};
-        {error, {connection_refused, ED}} when record(ED,'ErrorDescriptor') ->
+        {error, {connection_refused, ED}} when is_record(ED,'ErrorDescriptor') ->
             Code   = ED#'ErrorDescriptor'.errorCode,
             Reason = ED#'ErrorDescriptor'.errorText,
             {Code, Reason, Error};
@@ -811,7 +811,7 @@ prepare_error(Error) ->
             Reason = "Syntax error",
             Code = ?megaco_bad_request,
             {Code, Reason, Error};
-        {ok, MegaMsg} when record (MegaMsg, 'MegacoMessage') ->
+        {ok, MegaMsg} when is_record (MegaMsg, 'MegacoMessage') ->
             Reason = "MID does not match config",
             Code = ?megaco_incorrect_identifier,
             {Code, Reason, Error};
@@ -830,7 +830,7 @@ prepare_trans(ConnData, [Trans | Rest], AckList, ReqList)
     %% function has not yet returned before the eager MG
     %% re-sends its initial service change message.
     case Trans of
-        {transactionRequest, T} when record(T, 'TransactionRequest') ->
+        {transactionRequest, T} when is_record(T, 'TransactionRequest') ->
 	    
             Serial = T#'TransactionRequest'.transactionId,
 	    ConnData2 = ConnData#conn_data{serial = Serial},
@@ -871,21 +871,21 @@ prepare_trans(ConnData, [Trans | Rest], AckList, ReqList) ->
             Reason = "Syntax error in message: transaction id missing",
 	    send_trans_error(ConnData2, Code, Reason),
             prepare_trans(ConnData2, Rest, AckList, ReqList);
-        {transactionRequest, T} when record(T, 'TransactionRequest') ->
+        {transactionRequest, T} when is_record(T, 'TransactionRequest') ->
             Serial = T#'TransactionRequest'.transactionId,
             ConnData2 = ConnData#conn_data{serial = Serial},
             prepare_request(ConnData2, T, Rest, AckList, ReqList);
-        {transactionPending, T} when record(T, 'TransactionPending') ->
+        {transactionPending, T} when is_record(T, 'TransactionPending') ->
             Serial = T#'TransactionPending'.transactionId,
             ConnData2 = ConnData#conn_data{serial = Serial},
             handle_pending(ConnData2, T),
             prepare_trans(ConnData2, Rest, AckList, ReqList);
-        {transactionReply, T} when record(T, 'TransactionReply') ->
+        {transactionReply, T} when is_record(T, 'TransactionReply') ->
             Serial = T#'TransactionReply'.transactionId,
             ConnData2 = ConnData#conn_data{serial = Serial},
             handle_reply(ConnData2, T),
 	    prepare_trans(ConnData2, Rest, AckList, ReqList);
-        {transactionResponseAck, List} when list(List) ->
+        {transactionResponseAck, List} when is_list(List) ->
             prepare_ack(ConnData, List, Rest, AckList, ReqList)
 
     end;
@@ -914,14 +914,16 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
 	    %% monitor_ref == undefined_monitor_ref).
 	    %% 
 
-	    #conn_data{pending_timer    = InitTimer,
+	    #conn_data{send_handle      = SendHandle,
+		       pending_timer    = InitTimer,
 		       protocol_version = Version} = ConnData,
 	    {WaitFor, CurrTimer} = init_timer(InitTimer),
 	    M = ?MODULE,
 	    F = pending_timeout,
 	    A = [ConnData, TransId, CurrTimer],	    
 	    PendingRef = megaco_monitor:apply_after(M, F, A, WaitFor),
-            Rep = #reply{trans_id          = TransId,
+            Rep = #reply{send_handle       = SendHandle,
+			 trans_id          = TransId,
 			 local_mid         = LocalMid,
 			 pending_timer_ref = PendingRef,
 			 handler           = self(),
@@ -933,7 +935,7 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
         [#reply{state             = State, 
 		handler           = Pid,
 		pending_timer_ref = Ref} = Rep] 
-	when State == prepare; State == eval_request ->
+	when (State == prepare) or (State == eval_request) ->
 
 	    ?rt2("request resend", [State, Pid, Ref]),
 
@@ -1055,17 +1057,8 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
             ConnData2 = ConnData#conn_data{protocol_version = Version},
             ?report_trace(ConnData2, 
 			  "re-send trans reply", [T | {bytes, Bin}]),
-            case megaco_messenger_misc:send_message(ConnData2, Bin) of
-                {ok, _} ->
-                    prepare_trans(ConnData2, Rest, AckList, ReqList);
-                {error, Reason} ->
-                    ?report_important(ConnData2, 
-				      "<ERROR> re-send trans reply failed",
-                                      [{bytes, Bin}, {error, Reason}]),
-		    error_msg("re-send transaction reply failed: ~w", 
-			      [Reason]),
-                    prepare_trans(ConnData2, Rest, AckList, ReqList)
-            end;
+            megaco_messenger_misc:send_message(ConnData2, Bin),
+	    prepare_trans(ConnData2, Rest, AckList, ReqList);
 
 	[#reply{state = aborted} = Rep] ->
 	    ?rt3("request resend when already in aborted state"),
@@ -1082,7 +1075,7 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
         end.
 
 prepare_ack(ConnData, [TA | T], Rest, AckList, ReqList) 
-  when record(TA, 'TransactionAck') ->
+  when is_record(TA, 'TransactionAck') ->
     First     = TA#'TransactionAck'.firstAck,
     Last      = TA#'TransactionAck'.lastAck,
     TA2       = TA#'TransactionAck'{lastAck = asn1_NOVALUE},
@@ -1140,7 +1133,7 @@ check_and_maybe_create_pending_limit(Limit, Direction, TransId) ->
     end.
 
 check_pending_limit(infinity, _, _) ->
-    ok;
+    {ok, 0};
 check_pending_limit(Limit, Direction, TransId) ->
     ?rt2("check pending limit", [Direction, Limit, TransId]),
     case (catch megaco_config:get_pending_counter(Direction, TransId)) of
@@ -1157,7 +1150,7 @@ check_pending_limit(Limit, Direction, TransId) ->
 	    %% Since we have no intention to increment here, it
 	    %% is ok to be _at_ the limit
 	    ?rt2("check pending limit - ok", [Val]),
-	    ok;
+	    {ok, Val};
 	_Val ->
 	    ?rt2("check pending limit - aborted", [_Val]),
 	    aborted
@@ -1220,14 +1213,14 @@ handle_request(ConnData, TransId, T) ->
 	ok ->
 	    %% Ok so far, now update state
 	    case megaco_monitor:lookup_reply(TransId) of
-		[Rep] when record(Rep, reply) ->
+		[Rep] when is_record(Rep, reply) ->
 		    Rep2 = Rep#reply{state = eval_request},
 		    megaco_monitor:insert_reply(Rep2),
 		    
 		    Actions = T#'TransactionRequest'.actions,
 		    {AckAction, SendReply} = 
 			handle_request_callback(ConnData, TransId, Actions, T),
-	    
+
 		    %% Next step, while we where in the callback function,
 		    %% the pending limit could have been exceeded, so check
 		    %% it again...
@@ -1281,6 +1274,9 @@ do_handle_request(AckAction, {ok, Bin}, ConnData, TransId) ->
     case megaco_monitor:lookup_reply(TransId) of
 	[#reply{pending_timer_ref = PendingRef} = Rep] ->
 
+%% 	    d("do_handle_request -> found reply record:"
+%% 	      "~n   Rep: ~p", [Rep]),
+	    
 	    #conn_data{reply_timer = InitTimer,
 		       conn_handle = ConnHandle} = ConnData,
 
@@ -1288,7 +1284,7 @@ do_handle_request(AckAction, {ok, Bin}, ConnData, TransId) ->
 	    %%   - Cancel the pending timer, if running
 	    %%   - Delete the pending counter
 	    %% 
-	    
+
 	    megaco_monitor:cancel_apply_after(PendingRef),
 	    megaco_config:del_pending_counter(sent, TransId),
 
@@ -1301,12 +1297,16 @@ do_handle_request(AckAction, {ok, Bin}, ConnData, TransId) ->
 	    Ref = megaco_monitor:apply_after(Method, M, F, A, 
 					     WaitFor),
 	    Rep2 = Rep#reply{pending_timer_ref = undefined,
-			     handler    = undefined,
-			     bytes      = OptBin,
-			     state      = waiting_for_ack,
-			     timer_ref  = Ref,
-			     ack_action = AckAction},
+			     handler           = undefined,
+			     bytes             = OptBin,
+			     state             = waiting_for_ack,
+			     timer_ref         = Ref,
+			     ack_action        = AckAction},
 	    megaco_monitor:insert_reply(Rep2), % Timing problem?
+
+%% 	    d("do_handle_request -> "
+%% 	      "~n   Rep2: ~p", [Rep2]),
+
 	    ignore;
 	_ ->
 	    %% Been removed already?
@@ -1321,8 +1321,20 @@ do_handle_request(_, {error, aborted}, ConnData, TransId) ->
 	    ok
     end,
     ignore;
-do_handle_request(_, {error, Reason}, ConnData, TransId) ->
-    ?report_trace(ConnData, "send trans reply error", [TransId, Reason]),
+do_handle_request(AckAction, {error, Reason}, ConnData, TransId) ->
+    ?report_trace(ConnData, "error", [TransId, Reason]),
+    case megaco_monitor:lookup_reply(TransId) of
+	[Rep] ->
+	    Rep2 = Rep#reply{state      = waiting_for_ack,
+			     ack_action = AckAction},
+	    cancel_reply(ConnData, Rep2, Reason);
+	_ ->
+	    ok
+    end,
+    ignore;
+do_handle_request(AckAction, SendReply, ConnData, TransId) ->
+    ?report_trace(ConnData, "unknown send trans reply result", 
+		  [TransId, AckAction, SendReply]),
     ignore.
     
 
@@ -1338,8 +1350,8 @@ handle_requests([], Pending) ->
     ?rt2("handle requests - done", [Pending]),
     Pending.
 
-%%opt_garb_binary(timeout, Bin) -> garb_binary; % Need msg at restart of timer
-opt_garb_binary(_Timer, Bin)   -> Bin.
+%% opt_garb_binary(timeout, _Bin) -> garb_binary; % Need msg at restart of timer
+opt_garb_binary(_Timer,   Bin) -> Bin.
 
 timer_method(discard_ack) ->
     apply_method;
@@ -1360,7 +1372,7 @@ handle_long_request({ConnData, TransId, RequestData}) ->
     #conn_data{sent_pending_limit = Limit} = ConnData,
 
     case check_pending_limit(Limit, sent, TransId) of
-	ok ->
+	{ok, _} ->
 	    handle_long_request(ConnData, TransId, RequestData);
 	_ ->
 	    %% Already exceeded the limit
@@ -1372,7 +1384,7 @@ handle_long_request(ConnData, TransId, RequestData) ->
 		  [TransId, {request_data, RequestData}]),
     
     case megaco_monitor:lookup_reply(TransId) of
-	[Rep] when record(Rep, reply) ->
+	[Rep] when is_record(Rep, reply) ->
 	    %% Update (possibly) new handler
 	    megaco_monitor:insert_reply(Rep#reply{handler = self()}),
 	    {AckAction, Res} = 
@@ -1386,7 +1398,7 @@ handle_long_request(ConnData, TransId, RequestData) ->
 
 do_handle_long_request(AckAction, {ok, Bin}, ConnData, TransId) ->
     case megaco_monitor:lookup_reply(TransId) of
-	[Rep] when record(Rep, reply) ->
+	[Rep] when is_record(Rep, reply) ->
 	    Method = timer_method(AckAction),
 	    InitTimer = ConnData#conn_data.reply_timer,
 	    {WaitFor, CurrTimer} = init_timer(InitTimer),
@@ -1444,37 +1456,106 @@ handle_request_callback(ConnData, TransId, Actions, T) ->
 	ignore_trans_request -> 
 	    {discard_ack, ignore_trans_request};
 
-	{discard_ack, Replies} when list(Replies) ->
+	{discard_ack, Replies} when is_list(Replies) ->
 	    Reply     = {actionReplies, Replies},
 	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
-					 asn1_NOVALUE),
+					 [], asn1_NOVALUE),
 	    {discard_ack, SendReply};
-	{discard_ack, Error} when record(Error, 'ErrorDescriptor') ->
+	{discard_ack, Error} when is_record(Error, 'ErrorDescriptor') ->
 	    Reply     = {transactionError, Error},
 	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
-					 asn1_NOVALUE),
+					 [], asn1_NOVALUE),
 	    {discard_ack, SendReply};
-	{{handle_ack, AckData}, Replies} when list(Replies) ->
+	{discard_ack, Replies, SendOpts} when is_list(Replies) and 
+					      is_list(SendOpts) ->
 	    Reply     = {actionReplies, Replies},
 	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
-					 'NULL'),
+					 SendOpts, asn1_NOVALUE),
+	    {discard_ack, SendReply};
+	{discard_ack, Error, SendOpts} 
+	when is_record(Error, 'ErrorDescriptor') and 
+	     is_list(SendOpts) ->
+	    Reply     = {transactionError, Error},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 SendOpts, asn1_NOVALUE),
+	    {discard_ack, SendReply};
+
+	{{handle_pending_ack, AckData}, Replies} when is_list(Replies) ->
+	    Reply     = {actionReplies, Replies},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 [], when_pending_sent),
+	    {{handle_ack, AckData}, SendReply};
+	{{handle_pending_ack, AckData}, Error} 
+	when is_record(Error, 'ErrorDescriptor') ->
+	    Reply     = {transactionError, Error},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 [], when_pending_sent),
+	    {{handle_ack, AckData}, SendReply};
+	{{handle_pending_ack, AckData}, Replies, SendOpts} 
+	when is_list(Replies) and 
+	     is_list(SendOpts) ->
+	    Reply     = {actionReplies, Replies},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 SendOpts, when_pending_sent),
+	    {{handle_ack, AckData}, SendReply};
+	{{handle_pending_ack, AckData}, Error, SendOpts} 
+	when is_record(Error, 'ErrorDescriptor') and 
+	     is_list(SendOpts) ->
+	    Reply     = {transactionError, Error},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 SendOpts, when_pending_sent),
+	    {{handle_ack, AckData}, SendReply};
+
+	{{handle_ack, AckData}, Replies} when is_list(Replies) ->
+	    Reply     = {actionReplies, Replies},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 [], 'NULL'),
 	    {{handle_ack, AckData}, SendReply};
 	{{handle_ack, AckData}, Error} 
-	when record(Error, 'ErrorDescriptor') ->
+	when is_record(Error, 'ErrorDescriptor') ->
 	    Reply     = {transactionError, Error},
 	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
-					 'NULL'),
+					 [], 'NULL'),
 	    {{handle_ack, AckData}, SendReply};
-	{{handle_sloppy_ack, AckData}, Replies} when list(Replies) ->
+	{{handle_ack, AckData}, Replies, SendOpts} 
+	when is_list(Replies) and 
+	     is_list(SendOpts) ->
 	    Reply     = {actionReplies, Replies},
 	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
-					 asn1_NOVALUE),
+					 SendOpts, 'NULL'),
 	    {{handle_ack, AckData}, SendReply};
-	{{handle_sloppy_ack, AckData}, Error} 
-	when record(Error, 'ErrorDescriptor') ->
+	{{handle_ack, AckData}, Error, SendOpts} 
+	when is_record(Error, 'ErrorDescriptor') and 
+	     is_list(SendOpts) ->
 	    Reply     = {transactionError, Error},
 	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
-					 asn1_NOVALUE),
+					 SendOpts, 'NULL'),
+	    {{handle_ack, AckData}, SendReply};
+
+	{{handle_sloppy_ack, AckData}, Replies} when is_list(Replies) ->
+	    Reply     = {actionReplies, Replies},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 [], asn1_NOVALUE),
+	    {{handle_ack, AckData}, SendReply};
+	{{handle_sloppy_ack, AckData}, Error} 
+	when is_record(Error, 'ErrorDescriptor') ->
+	    Reply     = {transactionError, Error},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 [], asn1_NOVALUE),
+	    {{handle_ack, AckData}, SendReply};
+	{{handle_sloppy_ack, AckData}, Replies, SendOpts} 
+	when is_list(Replies) and 
+	     is_list(SendOpts) ->
+	    Reply     = {actionReplies, Replies},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 SendOpts, asn1_NOVALUE),
+	    {{handle_ack, AckData}, SendReply};
+	{{handle_sloppy_ack, AckData}, Error, SendOpts} 
+	when is_record(Error, 'ErrorDescriptor') and 
+	     is_list(SendOpts) ->
+	    Reply     = {transactionError, Error},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 SendOpts, asn1_NOVALUE),
 	    {{handle_ack, AckData}, SendReply};
 	
 	{pending, RequestData} ->
@@ -1495,10 +1576,9 @@ handle_request_callback(ConnData, TransId, Actions, T) ->
 	    error_msg("trans request callback failed: ~w", [Error]),
 	    Reply = {transactionError, ED},
 	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
-					 asn1_NOVALUE),
+					 [], asn1_NOVALUE),
 	    {discard_ack, SendReply}
     end.
-
 
 handle_long_request_callback(ConnData, TransId, RequestData) ->
     ?report_trace(ConnData, "callback: trans long request", [RequestData]),
@@ -1514,16 +1594,28 @@ handle_long_request_callback(ConnData, TransId, RequestData) ->
 	ignore ->
 	    {discard_ack, ignore};
 	
-	{discard_ack, Replies} when list(Replies) ->
+	{discard_ack, Replies} when is_list(Replies) ->
 	    Reply     = {actionReplies, Replies},
 	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
-					 asn1_NOVALUE),
+					 [], asn1_NOVALUE),
+	    {discard_ack, SendReply};
+	{discard_ack, Replies, SendOpts} when is_list(Replies) and 
+					      is_list(SendOpts) ->
+	    Reply     = {actionReplies, Replies},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 SendOpts, asn1_NOVALUE),
 	    {discard_ack, SendReply};
 	
-	{{handle_ack, AckData}, Replies} when list(Replies) ->
+	{{handle_ack, AckData}, Replies} when is_list(Replies) ->
 	    Reply     = {actionReplies, Replies},
 	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
-					 'NULL'),
+					 [], 'NULL'),
+	    {{handle_ack, AckData}, SendReply};
+	{{handle_ack, AckData}, Replies, SendOpts} when is_list(Replies) and 
+							is_list(SendOpts) ->
+	    Reply     = {actionReplies, Replies},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 SendOpts, 'NULL'),
 	    {{handle_ack, AckData}, SendReply};
 	
 	Error ->
@@ -1535,7 +1627,7 @@ handle_long_request_callback(ConnData, TransId, RequestData) ->
 	    error_msg("long trans request callback failed: ~w", [Error]),
 	    Reply     = {transactionError, ED},
 	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
-					 asn1_NOVALUE),
+					 [], asn1_NOVALUE),
 	    {discard_ack, SendReply}
     end.
 
@@ -1601,11 +1693,13 @@ handle_pending(ConnData, T) ->
 	    return_unexpected_trans(ConnData, T)
     end.
 
-handle_recv_pending(#conn_data{conn_handle = ConnHandle} = ConnData, TransId,
+handle_recv_pending(#conn_data{long_request_resend = LRR,
+			       conn_handle         = ConnHandle} = ConnData, 
+		    TransId,
 		    #request{timer_ref       = {short, Ref},
 			     init_long_timer = InitTimer} = Req, T) ->
 
-    ?rt2("handle pending - long request", [InitTimer]),
+    ?rt2("handle pending - long request", [LRR, InitTimer]),
 
     %% The request seems to take a while,
     %% let's reset our transmission timer.
@@ -1625,9 +1719,16 @@ handle_recv_pending(#conn_data{conn_handle = ConnHandle} = ConnData, TransId,
     F = request_timeout,
     A = [ConnHandle, TransId],
     Ref2 = megaco_monitor:apply_after(M, F, A, WaitFor),
-    Req2 = Req#request{bytes      = {no_send, garb_binary},
-		       timer_ref  = {long, Ref2},
-		       curr_timer = CurrTimer},
+    Req2 = 
+	case LRR of
+	    true ->
+		Req#request{timer_ref  = {long, Ref2},
+			    curr_timer = CurrTimer};
+	    false ->
+		Req#request{bytes      = {no_send, garb_binary}, 
+			    timer_ref  = {long, Ref2},
+			    curr_timer = CurrTimer}
+	end,
     ?report_trace(ConnData, "trans pending (timer restarted)", [T]),
     megaco_monitor:insert_request(Req2); % Timing problem?
     
@@ -1775,14 +1876,11 @@ handle_ack(ConnData, AckStatus, Rep, T) ->
 %     megaco_monitor:delete_reply(TransId),
 %     handle_ack_callback(ConnData, AckStatus, Rep#reply.ack_action, T).
 
-handle_ack_callback(ConnData, AckStatus, discard_ack = AckAction, T) ->
-    case AckStatus of
-        ok ->
-            ok;
-        {error, Reason} ->
-            ?report_trace(ConnData, "handle ack (no callback)",
-                          [T, AckAction, {error, Reason}])
-    end;
+handle_ack_callback(_CD, ok = _AS, discard_ack = _AA, _T) ->
+    ok;
+handle_ack_callback(ConnData, {error, Reason}, discard_ack = AckAction, T) ->
+    ?report_trace(ConnData, "handle ack (no callback)",
+		  [T, AckAction, {error, Reason}]);
 handle_ack_callback(ConnData, AckStatus, {handle_ack, AckData}, T) ->
     ?report_trace(ConnData, "callback: trans ack", [{ack_data, AckData}]),
     ConnHandle = ConnData#conn_data.conn_handle,
@@ -1799,6 +1897,7 @@ handle_ack_callback(ConnData, AckStatus, {handle_ack, AckData}, T) ->
 	    ok
     end,
     Res.
+
 
 handle_message_error(ConnData, _Error) 
   when ConnData#conn_data.monitor_ref == undefined_monitor_ref ->
@@ -1825,7 +1924,7 @@ handle_message_error(ConnData, Error) ->
     Res.
 
 handle_disconnect_callback(ConnData, UserReason)
-  when record(ConnData, conn_data) ->
+  when is_record(ConnData, conn_data) ->
     ?report_trace(ConnData, "callback: disconnect", [{reason, UserReason}]),
     ConnHandle = ConnData#conn_data.conn_handle,
     Version    = ConnData#conn_data.protocol_version,
@@ -1857,8 +1956,8 @@ handle_disconnect_callback(ConnData, UserReason)
 %% 
 test_request(ConnHandle, Actions, 
 	     Version, EncodingMod, EncodingConfig)
-  when record(ConnHandle, megaco_conn_handle),
-       integer(Version), atom(EncodingMod) ->
+  when is_record(ConnHandle, megaco_conn_handle) and
+       is_integer(Version) and is_atom(EncodingMod) ->
     %% Create a fake conn_data structure
     ConnData = #conn_data{serial           = 1, 
 			  protocol_version = Version,
@@ -1874,7 +1973,7 @@ test_request(ConnHandle, Actions,
     {MegaMsg, EncodeRes}.
 
 
-test_req_compose_transactions(ConnData, [A|_] = ActionsList) when list(A) ->
+test_req_compose_transactions(ConnData, [A|_] = ActionsList) when is_list(A) ->
     LastSerial = ConnData#conn_data.serial,
     test_req_compose_transactions(LastSerial, lists:reverse(ActionsList), []);
 test_req_compose_transactions(#conn_data{serial = Serial}, Actions) ->
@@ -1891,11 +1990,11 @@ test_req_compose_transactions(Serial, [A|As], Acc) ->
 
 
 test_reply(ConnHandle, Version, EncodingMod, EncodingConfig, Error) 
-  when record(Error, 'ErrorDescriptor') ->
+  when is_record(Error, 'ErrorDescriptor') ->
     Reply = {transactionError, Error},
     test_reply_encode(ConnHandle, Version, EncodingMod, EncodingConfig, Reply);
 test_reply(ConnHandle, Version, EncodingMod, EncodingConfig, Replies) 
-  when list(Replies) ->
+  when is_list(Replies) ->
     Reply = {actionReplies, Replies},
     test_reply_encode(ConnHandle, Version, EncodingMod, EncodingConfig, Reply).
 
@@ -1938,15 +2037,15 @@ test_reply_encode(ConnHandle, Version, EncodingMod, EncodingConfig, Reply) ->
 %% EncodedActionsList -> binary() | [binary()]
 %% Reason -> term()
 encode_actions(CH, [A|_] = ActionsList, Opts) 
-  when record(CH, megaco_conn_handle), list(A) ->
+  when is_record(CH, megaco_conn_handle), list(A) ->
     (catch encode_multi_actions(CH, ActionsList, Opts));
 
 encode_actions(CH, [A|_] = Actions, Opts) 
-  when record(CH, megaco_conn_handle), tuple(A) ->
+  when is_record(CH, megaco_conn_handle), tuple(A) ->
     do_encode_actions(CH, Actions, Opts).
     
 encode_multi_actions(CH, ActionsList, Opts) ->
-    case prepare_send_options(CH, Opts) of
+    case prepare_req_send_options(CH, Opts) of
 	{ok, CD} ->
 	    ActsList = [encode_multi_actions(CD, Acts) || Acts <- ActionsList],
 	    {ok, ActsList};
@@ -1963,26 +2062,31 @@ encode_multi_actions(CD, Actions) ->
     end.
 
 do_encode_actions(CH, Actions, Opts) 
-  when record(CH, megaco_conn_handle) ->
-    case prepare_send_options(CH, Opts) of
+  when is_record(CH, megaco_conn_handle) ->
+    case prepare_req_send_options(CH, Opts) of
         {ok, CD} ->
 	    megaco_messenger_misc:encode_actions(CD, "encode actions", Actions);
 	Error ->
 	    Error
     end.
 
-prepare_send_options(CH, Opts) ->
+prepare_req_send_options(CH, Opts) ->
     case megaco_config:lookup_local_conn(CH) of
         [CD] ->
-            override_send_options(CD, Opts);
+            override_req_send_options(CD, Opts);
         [] ->
             {error, {not_found, conn_data}}
     end.
     
 
 call(ConnHandle, Actions, Options) ->
-    Options2 = [{reply_data, self()} | Options],
-    call_or_cast(call, ConnHandle, Actions, Options2).
+    case lists:keymember(reply_data, 1, Options) of
+	true ->
+	    {error, {bad_option, reply_data}};
+	false ->
+	    Options2 = [{reply_data, self()} | Options],
+	    call_or_cast(call, ConnHandle, Actions, Options2)
+    end.
 
 cast(ConnHandle, Actions, Options) ->
     call_or_cast(cast, ConnHandle, Actions, Options).
@@ -1995,35 +2099,37 @@ cast(ConnHandle, Actions, Options) ->
 %% ActionRequest. That is, action requests for several transactions.
 %% It could also be a binary or a list of binaries (if 
 %% the actions has already been encoded).
-call_or_cast(CallOrCast, ConnHandle, [A|_] = Actions, Options) when tuple(A) ->
+call_or_cast(CallOrCast, ConnHandle, [A|_] = Actions, Options) 
+  when is_tuple(A) ->
     %% Just one transaction
     case call_or_cast(CallOrCast, ConnHandle, [Actions], Options) of
 	ok ->
 	    ok;
 	{error, Reason} ->
 	    {error, Reason};
-	{Version, [Reply]} when integer(Version) ->
+	{Version, [Reply]} when is_integer(Version) ->
 	    {Version, Reply};
-	{Version, Error} when integer(Version) ->
+	{Version, Error} when is_integer(Version) ->
 	    {Version, Error}
     end;
 
-call_or_cast(CallOrCast, ConnHandle, Actions, Options) when binary(Actions) ->
+call_or_cast(CallOrCast, ConnHandle, Actions, Options) 
+  when is_binary(Actions) ->
     %% Just one transaction (although the actions has already been encoded)
     case call_or_cast(CallOrCast, ConnHandle, [Actions], Options) of
 	ok ->
 	    ok;
 	{error, Reason} ->
 	    {error, Reason};
-	{Version, [Reply]} when integer(Version) ->
+	{Version, [Reply]} when is_integer(Version) ->
 	    {Version, Reply};
-	{Version, Error} when integer(Version) ->
+	{Version, Error} when is_integer(Version) ->
 	    {Version, Error}
     end;
 
 call_or_cast(CallOrCast, ConnHandle, ActionsList, Options)
-  when record(ConnHandle, megaco_conn_handle) ->
-    case prepare_send_options(ConnHandle, Options, ActionsList) of
+  when is_record(ConnHandle, megaco_conn_handle) ->
+    case prepare_req_send_options(ConnHandle, Options, ActionsList) of
         {ok, ConnData} ->
 	    ?report_trace(ConnData, "call_or_cast - options prepared", []),
             case encode_requests(ConnData, ActionsList) of
@@ -2086,7 +2192,7 @@ send_request(#conn_data{control_pid  = CP,
 			trans_req    = true, 
 			trans_sender = Pid} = CD, 
 	     CH, [Serial], Action, [Bin])
-  when pid(Pid), integer(Serial), node(CP) == node() ->
+  when is_pid(Pid) and is_integer(Serial) and (node(CP) == node()) ->
 
     ?report_trace(CD, "send_request - one transaction via trans-sender", [Serial]),
 
@@ -2104,7 +2210,7 @@ send_request(#conn_data{control_pid  = CP,
 			trans_req    = true, 
 			trans_sender = Pid} = CD, 
 	     CH, TransInfo, Action, Bins)
-  when pid(Pid), list(Bins), node(CP) == node() ->
+  when is_pid(Pid) and is_list(Bins) and (node(CP) == node()) ->
 
     ?report_trace(CD, "send_request - multi transactions via trans_sender", [TransInfo, Pid]),
 
@@ -2120,7 +2226,7 @@ send_request(#conn_data{control_pid  = CP,
 %% this encoded message.
 send_request(#conn_data{control_pid = CP} = CD, 
 	     CH, TRs, Action, Bin)
-  when list(TRs), binary(Bin), node(CP) == node() ->
+  when is_list(TRs) and is_binary(Bin) and (node(CP) == node()) ->
 
 %     d("send_request -> entry with"
 %       "~n   TRs: ~p", [TRs]),
@@ -2160,7 +2266,7 @@ insert_requests(_, _, [], _, _, _, _) ->
 
 insert_requests(ConnData, ConnHandle, [Serial|Serials], 
 		Action, [Bin|Bins], InitTimer, LongTimer) 
-  when integer(Serial), binary(Bin) ->
+  when is_integer(Serial) and is_binary(Bin) ->
     TransId = to_local_trans_id(ConnHandle, Serial),
     insert_request(ConnData, ConnHandle, 
 		   TransId, Action, Bin, InitTimer, LongTimer),
@@ -2171,7 +2277,7 @@ insert_requests(ConnData, ConnHandle, [Serial|Serials],
 insert_requests(ConnData, ConnHandle, 
 		[{transactionRequest, TR}|TRs], 
 		Action, Bin, InitTimer, LongTimer) 
-  when record(TR, 'TransactionRequest'), binary(Bin) ->
+  when is_record(TR, 'TransactionRequest') and is_binary(Bin) ->
     #'TransactionRequest'{transactionId = Serial} = TR,
     TransId = to_local_trans_id(ConnHandle, Serial),
     insert_request(ConnData, ConnHandle, 
@@ -2216,35 +2322,35 @@ send_request_remote(ReplyNode, ConnData, TransInfo, Bin) ->
     ConnData2  = ConnData#conn_data{reply_data = ReplyNode},
     send_request(ConnData2, ConnHandle, TransInfo, Action, Bin).
 
-prepare_send_options(ConnHandle, Options, Actions) ->
+prepare_req_send_options(ConnHandle, Options, Actions) ->
     %% Ensures that two processes cannot get same transaction id.
     %% Bad send options may cause spurious transaction id to be consumed.
     Incr = number_of_transactions(Actions),
     case megaco_config:incr_trans_id_counter(ConnHandle, Incr) of
         {ok, ConnData} ->
-            override_send_options(ConnData, Options);
+            override_req_send_options(ConnData, Options);
         {error, Reason} ->
             {error, Reason}
     end.
 
-number_of_transactions([Action|_]) when tuple(Action) ->
+number_of_transactions([Action|_]) when is_tuple(Action) ->
     1;
 number_of_transactions(ActionsList) ->
     length(ActionsList).
 
-override_send_options(ConnData, [{Key, Val} | Tail]) ->
+override_req_send_options(ConnData, [{Key, Val} | Tail]) ->
     case Key of
 	protocol_version ->
             ConnData2 = ConnData#conn_data{protocol_version = Val},
-            override_send_options(ConnData2, Tail);	    
+            override_req_send_options(ConnData2, Tail);	    
         send_handle ->
             ConnData2 = ConnData#conn_data{send_handle = Val},
-            override_send_options(ConnData2, Tail);
+            override_req_send_options(ConnData2, Tail);
         request_timer ->
             case megaco_config:verify_val(Key, Val) of
                 true ->
                     ConnData2 = ConnData#conn_data{request_timer = Val},
-                    override_send_options(ConnData2, Tail);
+                    override_req_send_options(ConnData2, Tail);
                 false ->
                     {error, {bad_send_option, {Key, Val}}}
             end;
@@ -2252,19 +2358,19 @@ override_send_options(ConnData, [{Key, Val} | Tail]) ->
             case megaco_config:verify_val(Key, Val) of
                 true ->
                     ConnData2 = ConnData#conn_data{long_request_timer = Val},
-                    override_send_options(ConnData2, Tail);
+                    override_req_send_options(ConnData2, Tail);
                 false ->
                     {error, {bad_send_option, {Key, Val}}}
             end;
         reply_data ->
             ConnData2 = ConnData#conn_data{reply_data = Val},
-            override_send_options(ConnData2, Tail);
-        user_mod when atom(Val) ->
+            override_req_send_options(ConnData2, Tail);
+        user_mod when is_atom(Val) ->
             ConnData2 = ConnData#conn_data{user_mod = Val},
-            override_send_options(ConnData2, Tail);
-        user_args when list(Val) ->
+            override_req_send_options(ConnData2, Tail);
+        user_args when is_list(Val) ->
             ConnData2 = ConnData#conn_data{user_args = Val},
-            override_send_options(ConnData2, Tail);
+            override_req_send_options(ConnData2, Tail);
 	trans_req when Val == false -> 
 	    %% We only allow turning the transaction-sender off, since
 	    %% the opposite (turning it on) would causing to much headake...
@@ -2272,11 +2378,41 @@ override_send_options(ConnData, [{Key, Val} | Tail]) ->
 	    %% occasional messages
 	    ConnData2 = ConnData#conn_data{trans_req = Val, 
 					   trans_sender = undefined},
-	    override_send_options(ConnData2, Tail);
+	    override_req_send_options(ConnData2, Tail);
         _Bad ->
             {error, {bad_send_option, {Key, Val}}}
     end;
-override_send_options(ConnData, []) ->
+override_req_send_options(ConnData, []) ->
+    {ok, ConnData}.
+
+override_rep_send_options(ConnData, [{Key, Val} | Tail]) ->
+    case Key of
+	protocol_version ->
+            ConnData2 = ConnData#conn_data{protocol_version = Val},
+            override_rep_send_options(ConnData2, Tail);	    
+        send_handle ->
+            ConnData2 = ConnData#conn_data{send_handle = Val},
+            override_rep_send_options(ConnData2, Tail);
+        reply_timer ->
+            case megaco_config:verify_val(Key, Val) of
+                true ->
+                    ConnData2 = ConnData#conn_data{reply_timer = Val},
+                    override_rep_send_options(ConnData2, Tail);
+                false ->
+                    {error, {bad_send_option, {Key, Val}}}
+            end;
+	trans_req when Val == false -> 
+	    %% We only allow turning the transaction-sender off, since
+	    %% the opposite (turning it on) would causing to much headake...
+	    %% This vould allow not using the transaction sender for
+	    %% occasional messages
+	    ConnData2 = ConnData#conn_data{trans_req = Val, 
+					   trans_sender = undefined},
+	    override_rep_send_options(ConnData2, Tail);
+        _Bad ->
+            {error, {bad_send_option, {Key, Val}}}
+    end;
+override_rep_send_options(ConnData, []) ->
     {ok, ConnData}.
 
 
@@ -2289,7 +2425,7 @@ override_send_options(ConnData, []) ->
 encode_requests(#conn_data{trans_req    = true,
 			   trans_sender = Pid,
 			   serial       = LastSerial} = CD, ActionsList) 
-  when pid(Pid) ->
+  when is_pid(Pid) ->
     (catch encode_requests(CD, LastSerial, 
 			   lists:reverse(ActionsList), [], []));
 encode_requests(#conn_data{serial    = LastSerial} = CD, ActionsList) ->
@@ -2347,15 +2483,32 @@ do_encode_request(CD, Serial, Actions) ->
     megaco_messenger_misc:encode_trans_request(CD, TR).
     
 
+imm_ack_req(Counter,  when_pending_sent) when (Counter > 0) -> 'NULL';
+imm_ack_req(_Counter, when_pending_sent)                    -> asn1_NOVALUE;
+imm_ack_req(_Counter, ImmAck)                               -> ImmAck.
 
 maybe_send_reply(#conn_data{sent_pending_limit = Limit} = ConnData, 
-		 TransId, Result, ImmAck) ->
+		 TransId, Result, SendOpts, ImmAck) ->
+
+%%     d("maybe_send_reply -> entry with"
+%%       "~n   Limit:    ~p"
+%%       "~n   TransId:  ~p"
+%%       "~n   Result:   ~p"
+%%       "~n   SendOpts: ~p"
+%%       "~n   ImmAck:   ~p", [Limit, TransId, Result, SendOpts, ImmAck]),
+
     %% Pending limit
     %% Before we can send the reply we must check that we have 
     %% not passed the pending limit (and sent an error message).
     case check_pending_limit(Limit, sent, TransId) of
-	ok ->
-	    send_reply(ConnData, Result, ImmAck);
+	{ok, Counter} ->
+	    case override_rep_send_options(ConnData, SendOpts) of
+		{ok, ConnData2} ->
+		    send_reply(ConnData2, Result, 
+			       imm_ack_req(Counter, ImmAck));
+		Error ->
+		    Error
+	    end;
 	aborted ->
 	    {error, aborted}
     end.
@@ -2383,10 +2536,17 @@ send_reply(#conn_data{serial       = Serial,
 	    error_msg("encode trans reply body failed: ~s", 
 		      [format_encode_error_reason(Reason)]),
 	    Body2 = {transactions, [{transactionReply, TR2}]},
-	    megaco_messenger_misc:send_body(CD, TraceLabel, Body2)
+	    megaco_messenger_misc:send_body(CD, TraceLabel, Body2),
+	    Error
     end;
 send_reply(#conn_data{serial = Serial} = CD, Result, ImmAck) ->
     %% Encapsule the transaction result into a reply message
+
+%%     d("send_reply -> entry with"
+%%       "~n   Serial: ~p"
+%%       "~n   Result: ~p"
+%%       "~n   ImmAck: ~p", [Serial, Result, ImmAck]),
+
     TR = #'TransactionReply'{transactionId     = Serial,
                              immAckRequired    = ImmAck,
                              transactionResult = Result},
@@ -2404,7 +2564,8 @@ send_reply(#conn_data{serial = Serial} = CD, Result, ImmAck) ->
 	    error_msg("encode trans reply body failed: ~s", 
 		      [format_encode_error_reason(Reason)]),
             Body2 = {transactions, [{transactionReply, TR2}]},
-            megaco_messenger_misc:send_body(CD, TraceLabel, Body2)
+            megaco_messenger_misc:send_body(CD, TraceLabel, Body2),
+	    Error
     end.
 
 format_encode_error_reason(Reason) ->
@@ -2499,7 +2660,7 @@ maybe_send_ack(_, #conn_data{auto_ack = false}) ->
 maybe_send_ack(_, #conn_data{serial       = Serial,
 			     trans_ack    = true,
 			     trans_sender = Pid}) 
-  when pid(Pid) ->
+  when is_pid(Pid) ->
     %% Send (later) via the transaction sender
     megaco_trans_sender:send_ack(Pid, Serial),
     ok;
@@ -2515,22 +2676,22 @@ send_ack(#conn_data{serial = Serial} = CD) ->
     megaco_messenger_misc:send_body(CD, "send trans ack", Body).
 
 
+send_pending_limit_error(ConnData) ->
+    ?report_pending_limit_exceeded(ConnData),
+    Code   = ?megaco_number_of_transactionpending_exceeded,
+    Reason = "Pending limit exceeded",
+    send_trans_error(ConnData, Code, Reason).
+    
 send_trans_error(ConnData, Code, Reason) ->
     %% Encapsule the transaction error into a reply message
     ED     = #'ErrorDescriptor'{errorCode = Code, errorText = Reason},
     Serial = ConnData#conn_data.serial,
     TR     = #'TransactionReply'{transactionId     = Serial,
-				 transactionResult = {transactionError,ED}},
+				 transactionResult = {transactionError, ED}},
     Body   = {transactions, [{transactionReply, TR}]},
     megaco_messenger_misc:send_body(ConnData, "send trans error", Body).
 
 
-send_pending_limit_error(ConnData) ->
-    ?report_pending_limit_exceeded(ConnData),
-    Code = ?megaco_number_of_transactionpending_exceeded,
-    Reason = "Pending limit exceeded",
-    send_message_error(ConnData, Code, Reason).
-    
 send_message_error(ConnData, Code, Reason) ->
     ED = #'ErrorDescriptor'{errorCode = Code, errorText = Reason},
     Body = {messageError, ED},
@@ -2545,7 +2706,7 @@ send_message_error(ConnData, Code, Reason) ->
     end.
 	    
 
-cancel(ConnHandle, Reason) when record(ConnHandle, megaco_conn_handle) ->
+cancel(ConnHandle, Reason) when is_record(ConnHandle, megaco_conn_handle) ->
     case megaco_config:lookup_local_conn(ConnHandle) of
         [ConnData] ->
 	    do_cancel(ConnHandle, Reason, ConnData);
@@ -2589,7 +2750,7 @@ cancel_requests(ConnData, [{transactionRequest,TR}|TRs], Reason) ->
     case megaco_monitor:lookup_request(TransId) of
 	[] ->
 	    ignore;
-	[Req] when record(Req, request) ->
+	[Req] when is_record(Req, request) ->
 	    cancel_request(ConnData, Req, Reason)
     end,
     cancel_requests(ConnData, TRs, Reason).
@@ -2622,7 +2783,7 @@ return_reply(ConnData, TransId, UserReply) ->
     Version  = ConnData#conn_data.protocol_version,
     UserData = ConnData#conn_data.reply_data,
     case ConnData#conn_data.reply_action of
-        call when pid(UserData) ->
+        call when is_pid(UserData) ->
 	    ?report_trace(ConnData, "callback: (call) trans reply", 
 			  [UserReply]),
             Pid = UserData,
@@ -2676,8 +2837,8 @@ receive_reply_remote(ConnData, UserReply) ->
 	    return_unexpected_trans_reply(ConnData, TransId, UserReply)
     end.
 
-cancel_reply(ConnData, #reply{state = wait_for_ack} = Rep, Reason) ->
-    ?report_trace(ignore, "cancel reply [wait_for_ack]", [Rep]),
+cancel_reply(ConnData, #reply{state = waiting_for_ack} = Rep, Reason) ->
+    ?report_trace(ignore, "cancel reply [waiting_for_ack]", [Rep]),
     megaco_monitor:cancel_apply_after(Rep#reply.pending_timer_ref),
     Serial = (Rep#reply.trans_id)#trans_id.serial,
     ConnData2 = ConnData#conn_data{serial = Serial},
@@ -2706,7 +2867,12 @@ cancel_reply(_ConnData, Rep, ignore) ->
     megaco_config:del_pending_counter(TransId),    % BMK BMK Still existing?
     ok;
 
-cancel_reply(_, _, _) ->
+cancel_reply(_CD, _Rep, _Reason) ->
+%%     io:format("cancel_reply -> entry with"
+%% 	      "~n   CD:     ~p"
+%% 	      "~n   Rep:    ~p"
+%% 	      "~n   Reason: ~p"
+%% 	      "~n", [_CD, _Rep, _Reason]),
     ok.
 
 
@@ -2715,7 +2881,7 @@ request_timeout(ConnHandle, TransId) ->
     case megaco_monitor:lookup_request(TransId) of
 	[] ->
 	    ignore;
-	[Req] when record(Req, request) ->
+	[Req] when is_record(Req, request) ->
 	    case megaco_config:lookup_local_conn(ConnHandle) of
 		[ConnData] ->
  		    incNumTimerRecovery(ConnHandle),
@@ -2807,15 +2973,15 @@ do_request_timeout(ConnHandle, TransId, ConnData,
     end.
 
 maybe_encode(#conn_data{trans_req = false} = CD, {_Serial, Bin}) 
-  when binary(Bin) ->
+  when is_binary(Bin) ->
     Body = {transactions, [{transactionRequest, Bin}]},
     megaco_messenger_misc:encode_body(CD, "encode trans request msg", Body);
-maybe_encode(_CD, {_Serial, Bin} = D) when binary(Bin) ->
+maybe_encode(_CD, {_Serial, Bin} = D) when is_binary(Bin) ->
     {ok, D};
 maybe_encode(#conn_data{trans_req    = true,
 			trans_sender = Pid} = CD, 
 	     #'TransactionRequest'{transactionId = Serial} = TR) 
-  when pid(Pid) ->
+  when is_pid(Pid) ->
     case megaco_messenger_misc:encode_trans_request(CD, TR) of
 	{ok, Bin} ->
 	    {ok, {Serial, Bin}};
@@ -2823,16 +2989,16 @@ maybe_encode(#conn_data{trans_req    = true,
 	    Error
     end;
 maybe_encode(CD, TR) 
-  when record(TR, 'TransactionRequest') ->
+  when is_record(TR, 'TransactionRequest') ->
     Body = {transactions, [{transactionRequest, TR}]},
     megaco_messenger_misc:encode_body(CD, "encode trans request msg", Body);
 maybe_encode(_CD, Trash) ->
     {error, {invalid_bin, Trash}}.
 
-maybe_send_message(CD, Bin) when binary(Bin) ->
+maybe_send_message(CD, Bin) when is_binary(Bin) ->
     megaco_messenger_misc:send_message(CD, Bin);
 maybe_send_message(#conn_data{trans_sender = Pid}, {Serial, Bin}) 
-  when pid(Pid), integer(Serial), binary(Bin) ->
+  when is_pid(Pid) and is_integer(Serial) and is_binary(Bin) ->
     megaco_trans_sender:send_req(Pid, Serial, Bin).
 
     
@@ -2847,25 +3013,79 @@ reply_timeout(ConnHandle, TransId, {_, timeout}) ->
 
 reply_timeout(ConnHandle, TransId, Timer) ->
     ?report_trace(ConnHandle, "reply timeout", [Timer, TransId]),
+
+%%     d("reply_timeout -> entry with"
+%%       "~n   ConnHandle: ~p"
+%%       "~n   TransId:    ~p"
+%%       "~n   Timer:      ~p", [ConnHandle, TransId, Timer]),
+
     case megaco_monitor:lookup_reply(TransId) of
 	[] ->
 	    ignore; % Trace ??
-	[#reply{state = State} = Rep] when State == waiting_for_ack; 
-					   State == aborted ->
-	    {WaitFor, Timer2} = recalc_timer(Timer),
-	    OptBin = opt_garb_binary(Timer2, Rep#reply.bytes),
-	    M = ?MODULE,
-	    F = reply_timeout,
-	    A = [ConnHandle, TransId, Timer2],
-	    Ref2 = megaco_monitor:apply_after(M, F, A, WaitFor),
-	    Rep2 = Rep#reply{bytes     = OptBin,
-			     timer_ref = Ref2},
-	    megaco_monitor:insert_reply(Rep2); % Timing problem?
+
+	[#reply{state      = waiting_for_ack, 
+		ack_action = {handle_ack, _}} = Rep] ->
+	    case megaco_config:lookup_local_conn(ConnHandle) of
+		[ConnData] ->
+ 		    incNumTimerRecovery(ConnHandle),
+ 		    do_reply_timeout(ConnHandle, TransId, ConnData, 
+				     Timer, Rep);
+		[] ->
+ 		    incNumTimerRecovery(ConnHandle),
+ 		    ConnData = fake_conn_data(ConnHandle),
+ 		    do_reply_timeout(ConnHandle, TransId, ConnData, 
+				     Timer, Rep)
+	    end;
+
+	[#reply{state = waiting_for_ack} = Rep] ->
+	    do_reply_timeout(ConnHandle, TransId, Timer, Rep);
+		    
+	[#reply{state = aborted} = Rep] ->
+	    do_reply_timeout(ConnHandle, TransId, Timer, Rep);
+		    
 	_ ->
 	    ignore
 		
     end.
 
+do_reply_timeout(ConnHandle, TransId, ConnData, Timer, 
+		 #reply{send_handle = SH,
+			version     = V,
+			bytes       = Bytes} = Rep) ->
+
+    CD = ConnData#conn_data{send_handle      = SH,
+			    protocol_version = V},
+    
+%%     d("do_reply_timeout -> entry with"
+%%       "~n   ConnHandle: ~p"
+%%       "~n   TransId:    ~p"
+%%       "~n   Timer:      ~p"
+%%       "~n   Rep:        ~p"
+%%       "~n", [ConnHandle, TransId, Timer, Rep]),
+
+    case megaco_messenger_misc:send_message(CD, Bytes) of
+	ok ->
+	    ignore;
+	{ok, _} ->
+	    ignore;
+	{error, Reason} ->
+	    ?report_important(CD, "<ERROR> re-send trans reply failed",
+			      [{bytes, Bytes}, {error, Reason}])
+    end,
+    do_reply_timeout(ConnHandle, TransId, Timer, Rep).
+
+do_reply_timeout(ConnHandle, TransId, Timer, #reply{bytes = Bytes} = Rep) ->
+    {WaitFor, Timer2} = recalc_timer(Timer),
+    OptBin = opt_garb_binary(Timer2, Bytes),
+    M = ?MODULE,
+    F = reply_timeout,
+    A = [ConnHandle, TransId, Timer2],
+    Ref2 = megaco_monitor:apply_after(M, F, A, WaitFor),
+    Rep2 = Rep#reply{bytes     = OptBin,
+		     timer_ref = Ref2},
+    megaco_monitor:insert_reply(Rep2). % Timing problem?
+
+    
 handle_reply_timer_timeout(ConnHandle, TransId) ->
     ?report_trace(ConnHandle, "reply timeout", [timeout,TransId]),
     incNumTimerRecovery(ConnHandle),
@@ -3022,22 +3242,22 @@ to_local_trans_id(#conn_data{conn_handle = CH, serial = Serial}) ->
     #trans_id{mid = Mid, serial = Serial}.
 
 to_local_trans_id(#conn_data{conn_handle = CH}, [S|_] = Serials) 
-  when integer(S) ->
+  when is_integer(S) ->
     Mid = CH#megaco_conn_handle.local_mid, 
     [#trans_id{mid = Mid, serial = Serial} || Serial <- Serials];
 to_local_trans_id(#conn_data{conn_handle = CH}, 
 		  [{transactionRequest, TR}|_] = TRs) 
-  when record(TR, 'TransactionRequest') ->
+  when is_record(TR, 'TransactionRequest') ->
     Mid = CH#megaco_conn_handle.local_mid, 
     [#trans_id{mid = Mid, serial = Serial} || 
 	{transactionRequest, 
 	 #'TransactionRequest'{transactionId = Serial}} <- TRs];
 
 to_local_trans_id(#megaco_conn_handle{local_mid = Mid}, Serial) 
-  when integer(Serial) ->
+  when is_integer(Serial) ->
     #trans_id{mid = Mid, serial = Serial};
 to_local_trans_id(#conn_data{conn_handle = CH}, Serial) 
-  when integer(Serial) ->
+  when is_integer(Serial) ->
     Mid = CH#megaco_conn_handle.local_mid, 
     #trans_id{mid = Mid, serial = Serial}.    
     
@@ -3045,9 +3265,9 @@ to_local_trans_id(#conn_data{conn_handle = CH}, Serial)
 %% Returns {WaitFor, NewTimer} | {WaitFor, timeout}
 init_timer(SingleWaitFor) when SingleWaitFor == infinity ->
     {SingleWaitFor, timeout};
-init_timer(SingleWaitFor) when integer(SingleWaitFor) ->
+init_timer(SingleWaitFor) when is_integer(SingleWaitFor) ->
     {SingleWaitFor, timeout};
-init_timer(Timer) when record(Timer, megaco_incr_timer) ->
+init_timer(Timer) when is_record(Timer, megaco_incr_timer) ->
     return_incr(Timer).
 
 return_incr(Timer) ->
@@ -3057,14 +3277,14 @@ return_incr(Timer) ->
 	    {WaitFor, Timer};
 	infinity_restartable ->
 	    {WaitFor, {Timer, timeout}};
-	Int when integer(Int), Int > 0 -> 
+	Int when is_integer(Int), Int > 0 -> 
 	    {WaitFor, Timer};
 	0  ->
 	    {WaitFor, timeout}
     end.
 
 %% Returns {WaitFor, NewTimer} | {WaitFor, timeout}
-recalc_timer(Timer) when record(Timer, megaco_incr_timer) ->
+recalc_timer(Timer) when is_record(Timer, megaco_incr_timer) ->
     Old     = Timer#megaco_incr_timer.wait_for,
     Factor  = Timer#megaco_incr_timer.factor,
     Incr    = Timer#megaco_incr_timer.incr,
@@ -3073,7 +3293,7 @@ recalc_timer(Timer) when record(Timer, megaco_incr_timer) ->
     Timer2  = Timer#megaco_incr_timer{wait_for    = New,
                                       max_retries = Max},
     return_incr(Timer2);
-recalc_timer({Timer, timeout}) when record(Timer, megaco_incr_timer) ->
+recalc_timer({Timer, timeout}) when is_record(Timer, megaco_incr_timer) ->
     recalc_timer(Timer).
 
 decr(infinity = V)             -> V;
@@ -3102,8 +3322,7 @@ error_msg(F, A) ->
 %% d(_, _, _) ->
 %%     ok.
 
-%% format_timestamp(Now) ->
-%%     {N1, N2, N3}   = Now,
+%% format_timestamp({_N1, _N2, N3} = Now) ->
 %%     {Date, Time}   = calendar:now_to_datetime(Now),
 %%     {YYYY,MM,DD}   = Date,
 %%     {Hour,Min,Sec} = Time,

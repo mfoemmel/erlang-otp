@@ -1,5 +1,5 @@
 #! /bin/sh
-TOOLDIR=$ERL_TOP/erts/etc/win32/cygwin_tools
+TOOLDIR=$ERL_TOP/erts/etc/win32/cygwin_tools/mingw
 COFFIX=$TOOLDIR/coffix
 WTOOLDIR=`(cygpath -d $TOOLDIR 2>/dev/null || cygpath -w $TOOLDIR)`
 

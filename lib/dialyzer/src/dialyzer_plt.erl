@@ -31,14 +31,15 @@
 	 copy/2,
 	 contains_mfa/2,
 	 delete/1,
+	 delete_list/2,
 	 delete_module/2,
-	 from_dets/2,
+	 from_file/2,
 	 insert/2,
 	 lookup/2,
 	 lookup/4,
+	 merge_and_write_file/2,
 	 new/1,
 	 strip_non_member_mfas/2,
-	 to_dets/2,
 	 to_edoc/1,
 	 to_edoc/4
 	]).
@@ -75,14 +76,26 @@ lookup(Plt, M, F, A) when is_atom(M), is_atom(F), is_integer(A), A >= 0 ->
     [{_MFA, Ret, Arg}] -> {value, {Ret, Arg}}
   end.
 
-from_dets(Name, Dets) ->
+from_file(Name, Dets) ->
   Plt = new(Name),
   {ok, D} = dets:open_file(Dets, [{access, read}]),
   true = ets:from_dets(Plt, D),
   ok = dets:close(D),
   Plt.
 
-to_dets(Plt, Dets) ->
+merge_and_write_file(PltList, File) ->
+  NewPlt = merge_plts(PltList--[none]),
+  to_file(NewPlt, File).
+
+merge_plts([Plt]) ->
+  Plt;
+merge_plts([Plt1, Plt2|Left]) ->
+  ets:foldl(fun(Obj, _) -> insert(Plt1, Obj) end, [], Plt2),
+  ets:delete(Plt2),
+  merge_plts([Plt1|Left]).
+		
+
+to_file(Plt, Dets) ->
   file:delete(Dets),
   MinSize = ets:info(Plt, size),
   {ok, Dets} = dets:open_file(Dets, [{min_no_slots, MinSize}]),
@@ -143,12 +156,23 @@ compute_md5(Libs) ->
 		   || {Dir, X} <- List, filename:extension(X)==".beam"],
       Context = erlang:md5_init(),
       Fun = fun(X, Acc) ->
-		{ok,Bin} = file:read_file(X),
-		erlang:md5_update(Acc, Bin)
+		compute_md5_from_file(X, Acc)
 	    end,
       FinalContext = lists:foldl(Fun, Context, BeamFiles),
       erlang:md5_final(FinalContext)
   end.
+
+compute_md5_from_file(File, Acc) ->
+  %% Avoid adding stuff like compile time etc.
+  ChunkNames = sets:from_list(["Atom", "Code", "FunT", "StrT", "ImpT", "ExpT"]),
+  {ok, _, Chunks} = beam_lib:all_chunks(File),
+  Fun = fun({Name, Content}, FunAcc) ->
+	    case sets:is_element(Name, ChunkNames) of
+	      true -> erlang:md5_update(FunAcc, Content);
+	      false -> FunAcc
+	    end
+	end,
+  lists:foldl(Fun, Acc, Chunks).
 
 list_dirs(Dirs) ->
   list_dirs(Dirs, [], []).
@@ -159,7 +183,7 @@ list_dirs([Dir|Left], Error, Acc) ->
     {error, _} -> list_dirs(Left, [Dir|Error], Acc)
   end;
 list_dirs([], [], Acc) -> 
-  {ok, lists:flatten([[{Dir, X} || X <- List] || {Dir, List} <- Acc])};
+  {ok, lists:sort(lists:flatten([[{Dir, X} || X <- List] || {Dir, List} <- Acc]))};
 list_dirs([], Error, _Acc) ->
   {error, lists:flatten(Error)}.
 

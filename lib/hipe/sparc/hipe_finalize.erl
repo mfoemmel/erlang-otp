@@ -375,7 +375,7 @@ fix_addressing_mode(I) ->
 	  NewI = hipe_sparc:store_src_update(I1,Tmp),
 	  [Mov, NewI];
 	false ->
-	  if Changed == true -> [I1];
+	  if Changed =:= true -> [I1];
 	     true -> unchanged
           end
       end;

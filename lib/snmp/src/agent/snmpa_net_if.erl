@@ -180,7 +180,8 @@ do_init(Prio, NoteStore, MasterAgent, Parent, Opts) ->
     IPOpts1 = ip_opt_bind_to_ip_address(Opts, IPAddress),
     IPOpts2 = ip_opt_no_reuse_address(Opts),
     IPOpts3 = ip_opt_recbuf(Opts),
-    IPOpts  = [binary | IPOpts1 ++ IPOpts2 ++ IPOpts3], 
+    IPOpts4 = ip_opt_sndbuf(Opts),
+    IPOpts  = [binary | IPOpts1 ++ IPOpts2 ++ IPOpts3 ++ IPOpts4], 
     ?vdebug("open socket with options: ~w",[IPOpts]),
     case gen_udp_open(UDPPort, IPOpts) of
 	{ok, Sock} ->
@@ -678,6 +679,14 @@ ip_opt_recbuf(Opts) ->
 	    [{recbuf, Sz}]
     end.
 
+ip_opt_sndbuf(Opts) ->
+    case get_sndbuf(Opts) of
+	use_default ->
+	    [];
+	Sz ->
+	    [{sndbuf, Sz}]
+    end.
+
 
 %% ----------------------------------------------------------------
 
@@ -711,6 +720,9 @@ get_req_limit(O) ->
 
 get_recbuf(Opts) -> 
     snmp_misc:get_option(recbuf, Opts, use_default).
+
+get_sndbuf(Opts) -> 
+    snmp_misc:get_option(sndbuf, Opts, use_default).
 
 get_no_reuse_address(Opts) -> 
     snmp_misc:get_option(no_reuse, Opts, false).

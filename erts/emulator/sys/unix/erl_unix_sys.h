@@ -200,35 +200,48 @@ extern void sys_stop_cat(void);
 #  define __ERTS_FP_ERROR_THOROUGH(fpexnp, f, Action) __ERTS_FP_ERROR(fpexnp, f, Action)
 #  define __ERTS_SAVE_FP_EXCEPTION(fpexnp)
 #  define __ERTS_RESTORE_FP_EXCEPTION(fpexnp)
-#else
+
+#else /* !NO_FPE_SIGNALS */
+
 extern volatile int *erts_get_current_fp_exception(void);
 #ifdef ERTS_SMP
 extern void erts_thread_init_fp_exception(void);
 #endif
-#  define __ERTS_FP_CHECK_INIT(fpexnp) do { *(fpexnp) = 0; } while (0)
 #  if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
-extern void erts_restore_fpu(void);
+#    define erts_fwait(fpexnp,f) \
+	__asm__ __volatile__("fwait" : "=m"(*(fpexnp)) : "m"(f))
+#  elif (defined(__powerpc__) || defined(__ppc__)) && defined(__GNUC__)
+#    define erts_fwait(fpexnp,f) \
+	__asm__ __volatile__("" : "=m"(*(fpexnp)) : "fm"(f))
+#  elif defined(__sparc__) && defined(__linux__) && defined(__GNUC__)
+#    define erts_fwait(fpexnp,f) \
+	__asm__ __volatile__("" : "=m"(*(fpexnp)) : "em"(f))
+#  else
+#    define erts_fwait(fpexnp,f) \
+	__asm__ __volatile__("" : "=m"(*(fpexnp)) : "g"(f))
+#  endif
+#  if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
+     extern void erts_restore_fpu(void);
+#  else
+#    define erts_restore_fpu() /*empty*/
+#  endif
+#  if (!defined(__GNUC__) || \
+       (__GNUC__ < 2) || \
+       (__GNUC__ == 2 && __GNUC_MINOR < 96)) && \
+      !defined(__builtin_expect)
+#    define __builtin_expect(x, expected_value) (x)
+#  endif
 static __inline__ int erts_check_fpe(volatile int *fp_exception, double f)
 {
-    __asm__ __volatile__("fwait" : "=m"(*fp_exception) : "m"(f));
-    if (!*fp_exception)
+    erts_fwait(fp_exception, f);
+    if (__builtin_expect(!*fp_exception, 1))
        return 0;
     erts_restore_fpu();
     return 1;
 }
-#  elif (defined(__powerpc__) || defined(__ppc__)) && defined(__GNUC__)
-static __inline__ int erts_check_fpe(volatile int *fp_exception, double f)
-{
-    __asm__ __volatile__("" : "=m"(*fp_exception) : "fm"(f));
-    return *fp_exception;
-}
-#  else
-static __inline__ int erts_check_fpe(volatile int *fp_exception, double f)
-{
-    __asm__ __volatile__("" : "=m"(*fp_exception) : "g"(f));
-    return *fp_exception;
-}
-#  endif
+#  undef erts_fwait
+#  undef erts_restore_fpu
+#  define __ERTS_FP_CHECK_INIT(fpexnp) do { *(fpexnp) = 0; } while (0)
 #  define __ERTS_FP_ERROR(fpexnp, f, Action) do { if (erts_check_fpe((fpexnp),(f))) { Action; } } while (0)
 #  define __ERTS_SAVE_FP_EXCEPTION(fpexnp) int old_erl_fp_exception = *(fpexnp)
 #  define __ERTS_RESTORE_FP_EXCEPTION(fpexnp) \
@@ -241,11 +254,11 @@ static __inline__ int erts_check_fpe_thorough(volatile int *fp_exception, double
 }
 #  define __ERTS_FP_ERROR_THOROUGH(fpexnp, f, Action) \
   do { if (erts_check_fpe_thorough((fpexnp),(f))) { Action; } } while (0)
-#endif
+
+#endif /* !NO_FPE_SIGNALS */
+
 #define ERTS_FP_CHECK_INIT(p)		__ERTS_FP_CHECK_INIT(&(p)->fp_exception)
 #define ERTS_FP_ERROR(p, f, A)		__ERTS_FP_ERROR(&(p)->fp_exception, f, A)
-#define ERTS_SAVE_FP_EXCEPTION(p)	__ERTS_SAVE_FP_EXCEPTION(&(p)->fp_exception)
-#define ERTS_RESTORE_FP_EXCEPTION(p)	__ERTS_RESTORE_FP_EXCEPTION(&(p)->fp_exception)
 #define ERTS_FP_ERROR_THOROUGH(p, f, A)	__ERTS_FP_ERROR_THOROUGH(&(p)->fp_exception, f, A)
 
 

@@ -27,12 +27,18 @@
 -export([handshake_we_started/1, handshake_other_started/1,
 	 start_timer/1, setup_timer/2, 
 	 reset_timer/1, cancel_timer/1,
-	 shutdown/2, shutdown/3]).
+	 shutdown/3, shutdown/4]).
 
 -import(error_logger,[error_msg/2]).
 
 -include("dist_util.hrl").
 -include("dist.hrl").
+
+-ifdef(DEBUG).
+-define(shutdown_trace(A,B), io:format(A,B)).
+-else.
+-define(shutdown_trace(A,B), noop).
+-endif.
 
 -define(to_port(FSend, Socket, Data),
 	case FSend(Socket, Data) of
@@ -270,10 +276,13 @@ is_pending(Kernel, Node) ->
 %% is closed in a controlled way by inet_drv.
 %%
 
-shutdown(Line, Data) ->
-    shutdown(Line, Data, shutdown).
+shutdown(Module, Line, Data) ->
+    shutdown(Module, Line, Data, shutdown).
 
-shutdown(_Line, _Data, Reason) ->
+shutdown(_Module, _Line, _Data, Reason) ->
+    ?shutdown_trace("Net Kernel 2: shutting down connection "
+		    "~p:~p, data ~p,reason ~p~n",
+		    [_Module,_Line, _Data, Reason]),
     flush_down(),
     exit(Reason).
 %% Use this line to debug connection.  

@@ -1,7 +1,7 @@
 %%=======================================================================
 %% File        : hipe_gensym.erl
 %% Author      : Eric Johansson, Kostis Sagonas
-%% Description : Generates unique symbols and fresh numbers.
+%% Description : Generates unique symbols and fresh integer counts.
 %%=======================================================================
 %% $Id$
 %%=======================================================================

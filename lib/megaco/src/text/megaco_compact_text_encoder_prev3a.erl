@@ -31,6 +31,7 @@
 
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_prev3a.hrl").
+-define(encoder_version_pre_prev3c,true).
 -include("megaco_text_tokens.hrl").
 
 

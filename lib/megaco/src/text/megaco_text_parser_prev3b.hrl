@@ -22,6 +22,7 @@
 
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_prev3b.hrl").
+-define(encoder_version_pre_prev3c,true).
 -include("megaco_text_tokens.hrl").
 
 make_safe_token({_TokenTag, Line, Text}) ->
@@ -318,6 +319,9 @@ merge_indAudLocalControlDescriptor(Parms) ->
 					  #'IndAudLocalControlDescriptor'{}).
 					  
 do_merge_indAudLocalControlDescriptor([Parm | Parms], Desc) ->
+%%     d("do_merge_indAudLocalControlDescriptor -> entry when"
+%%       "~n   Parm: ~p"
+%%       "~n   Desc: ~p", [Parm, Desc]),
     case Parm of
 	modeToken when Desc#'IndAudLocalControlDescriptor'.streamMode == asn1_NOVALUE ->
 	    Desc2 = Desc#'IndAudLocalControlDescriptor'{streamMode = 'NULL'},
@@ -339,6 +343,8 @@ do_merge_indAudLocalControlDescriptor([Parm | Parms], Desc) ->
 	    do_merge_indAudLocalControlDescriptor(Parms, Desc2)
     end;
 do_merge_indAudLocalControlDescriptor([], Desc) ->
+%%     d("do_merge_indAudLocalControlDescriptor -> entry when"
+%%       "~n   Desc: ~p", [Desc]),
     case Desc#'IndAudLocalControlDescriptor'.propertyParms of
 	[_ | _] = PropParms -> % List has more then one element
 	    PropParms2= lists:reverse(PropParms),
@@ -1351,9 +1357,9 @@ value_of({_TokenTag, _Line, Text}) ->
 %% d(F, A) ->
 %%     %% d(true, F, A).
 %%     d(get(dbg), F, A).
-%% 
+
 %% d(true, F, A) ->
 %%     io:format("DBG:~w:" ++ F ++ "~n", [?MODULE | A]);
 %% d(_, _, _) ->
 %%     ok.
-%% 
+

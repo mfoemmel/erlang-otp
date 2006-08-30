@@ -1,5 +1,3 @@
-
-
 % ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -412,7 +410,10 @@ scan_segment(C0,Acc) ->
 %%%      escaped       = "%" hex hex
 scan_query([],Acc) ->
     lists:reverse(Acc);
-scan_query([$%,H1,H2|C0],Acc) -> % escaped
+scan_query([$%,H1,H2|C0],Acc) when ((($a=<H1) and (H1=<$f)) or
+            (($A=<H1) and (H1=<$F)) or (($0=<H1) and (H1=<$9))) and
+           ((($a=<H2) and (H2=<$f)) or (($A=<H2) and (H2=<$F)) or
+            (($0=<H2) and (H2=<$9))) -> % escaped
     scan_query([hex2dec(H1)*16+hex2dec(H2)|C0],Acc);
 scan_query([H|C0],Acc) when $a=<H,H=<$z;$A=<H,H=<$Z;$0=<H,H=<$9 -> % alphanum
     scan_query(C0,[H|Acc]);
@@ -422,7 +423,7 @@ scan_query([H|C0],Acc) when H==$;; H==$/; H==$?; H==$:; H==$@; H==$[; H==$];
 scan_query([H|C0],Acc) when H==$-; H==$_; H==$.; H==$!; H==$~;
 			    H==$*; H==$'; H==$(; H==$) -> % mark
     scan_query(C0,[H|Acc]);
-scan_query([H|C0],Acc) when 0=<H,H=<127 -> % US ASCII
+scan_query([H|C0],Acc) when 0=<H,H=<255 ->
     {H1,H2}=dec2hex(H),
     scan_query(C0,[H2,H1,$%|Acc]);    
 scan_query([_H|_C0],_Acc) ->
@@ -433,7 +434,10 @@ scan_query([_H|_C0],_Acc) ->
 %%%                      ":" | "@" | "&" | "=" | "+" | "$" | ","
 scan_pchars([],Acc) ->
     {[],Acc};
-scan_pchars([$%,H1,H2|C0],Acc) -> % escaped
+scan_pchars([$%,H1,H2|C0],Acc) when ((($a=<H1) and (H1=<$f)) or
+             (($A=<H1) and (H1=<$F)) or (($0=<H1) and (H1=<$9))) and
+            ((($a=<H2) and (H2=<$f)) or (($A=<H2) and (H2=<$F)) or
+             (($0=<H2) and (H2=<$9))) -> % escaped
     scan_pchars([hex2dec(H1)*16+hex2dec(H2)|C0],Acc);
 scan_pchars([H|C0],Acc) when $a=<H,H=<$z;$A=<H,H=<$Z;$0=<H,H=<$9  -> % alphanum
     scan_pchars(C0,[H|Acc]);
@@ -442,7 +446,7 @@ scan_pchars([H|C0],Acc) when H==$-; H==$_; H==$.; H==$!; H==$~;
     scan_pchars(C0,[H|Acc]);
 scan_pchars([H|C0],Acc) when H==$:; H==$@; H==$&; H==$=; H==$+; H==$$; H==$, ->
     scan_pchars(C0,[H|Acc]);
-scan_pchars([H|C0],Acc) when 0=<H,H=<127, % US ASCII
+scan_pchars([H|C0],Acc) when 0=<H,H=<255,
 			     H=/=$?,H=/=$;,H=/=$/,H=/=$# -> 
     {H1,H2}=dec2hex(H),
     scan_pchars(C0,[H2,H1,$%|Acc]);    
